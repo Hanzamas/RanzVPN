@@ -10,6 +10,7 @@
 #include "Protocol.h"
 #include "Connection.h"
 #include "IPC.h"
+#include "MsChapV2.h"
 #include "Server.h"
 #include "Proto_PPP.h"
 

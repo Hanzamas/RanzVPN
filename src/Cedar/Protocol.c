@@ -14,6 +14,7 @@
 #include "IPC.h"
 #include "Link.h"
 #include "Logging.h"
+#include "MsChapV2.h"
 #include "Proto_IPsec.h"
 #include "Proto_OpenVPN.h"
 #include "Proto_PPP.h"

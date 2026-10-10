@@ -6,7 +6,7 @@ if (Test-Path "env:BUILD_BINARIESDIRECTORY") {
 	$BUILD_BINARIESDIRECTORY = "build"
 }
 
-# ('s', 'c', 'b', 'sm', 'cm') ??
+# Start/stop smoke test: server and client modes must exit without leaks
 ('s', 'c') | % {
 
 	[String] $mode = $_
@@ -16,6 +16,25 @@ if (Test-Path "env:BUILD_BINARIESDIRECTORY") {
 	$t = ($full | Select-String -Pattern 'NO MEMORY LEAKS' -CaseSensitive)
 
 	if (($t).Count -ne 1) {
+		$full
+		Write-Error 'failed'
+		return $false
+	} else {
+		Write-Host 'ok'
+	}
+}
+
+# Named self-tests: must print their OK marker and no leak
+('mschapv2') | % {
+
+	[String] $test = $_
+	Write-Host "testing: $test"
+
+	$full = (Write-Output "q\n" | & "$BUILD_BINARIESDIRECTORY\vpntest.exe" $test)
+	$ok = ($full | Select-String -Pattern ($test.ToUpper() + ' TEST OK') -CaseSensitive)
+	$leak = ($full | Select-String -Pattern 'NO MEMORY LEAKS' -CaseSensitive)
+
+	if (($ok).Count -ne 1 -or ($leak).Count -ne 1) {
 		$full
 		Write-Error 'failed'
 		return $false

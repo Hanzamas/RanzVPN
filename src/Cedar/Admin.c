@@ -16,6 +16,7 @@
 #include "Layer3.h"
 #include "Link.h"
 #include "Listener.h"
+#include "MsChapV2.h"
 #include "Nat.h"
 #include "Remote.h"
 #include "Proto.h"

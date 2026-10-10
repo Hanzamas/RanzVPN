@@ -9,6 +9,7 @@
 #define	IPC_H
 
 #include "Cedar.h"
+#include "MsChapV2.h"
 #include "Proto_WireGuard.h"
 
 #include "Mayaqua/TcpIp.h"
@@ -24,8 +25,6 @@
 #define	IPC_MAX_PACKET_QUEUE_LEN		10000
 
 #define	IPC_DHCP_VENDOR_ID				"MSFT 5.0"
-
-#define	IPC_PASSWORD_MSCHAPV2_TAG		"xH7DiNlurDhcYV4a:"
 
 #define IPC_LAYER_2						2
 #define IPC_LAYER_3						3
@@ -161,16 +160,6 @@ struct IPC
 	UINT64 IPv6ServerEUI;				// The EUI of the server (from the IPC Mac address)
 };
 
-// MS-CHAPv2 authentication information
-struct IPC_MSCHAP_V2_AUTHINFO
-{
-	char MsChapV2_PPPUsername[MAX_SIZE];	// MS-CHAPv2 Username
-	UCHAR MsChapV2_ServerChallenge[16];	// MS-CHAPv2 Server Challenge
-	UCHAR MsChapV2_ClientChallenge[16];	// MS-CHAPv2 Client Challenge
-	UCHAR MsChapV2_ClientResponse[24];	// MS-CHAPv2 Client Response
-	EAP_CLIENT *MsChapV2_EapClient;		// EAP client
-};
-
 struct IPC_IPV6_ROUTER_ADVERTISEMENT
 {
 	IP RoutedPrefix;
@@ -242,7 +231,5 @@ BLOCK *IPCIPv6Recv(IPC *ipc);
 void IPCIPv6Send(IPC *ipc, void *data, UINT size);
 void IPCIPv6SendWithDestMacAddr(IPC *ipc, void *data, UINT size, UCHAR *dest_mac_addr);
 void IPCIPv6SendUnicast(IPC *ipc, void *data, UINT size, IP *next_ip);
-
-bool ParseAndExtractMsChapV2InfoFromPassword(IPC_MSCHAP_V2_AUTHINFO *d, char *password);
 
 #endif	// IPC_H

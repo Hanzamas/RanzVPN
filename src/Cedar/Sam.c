@@ -12,6 +12,7 @@
 #include "Connection.h"
 #include "Hub.h"
 #include "IPC.h"
+#include "MsChapV2.h"
 #include "Proto_PPP.h"
 #include "Radius.h"
 #include "Server.h"
