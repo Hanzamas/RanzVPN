@@ -1517,7 +1517,6 @@ void RegistWindowsFirewallAll()
 
 	MsRegistWindowsFirewallEx2(CEDAR_CLIENT_STR, "vpnclient.exe", exedir);
 	MsRegistWindowsFirewallEx2(CEDAR_SERVER_STR, "vpnserver.exe", exedir);
-	MsRegistWindowsFirewallEx2(CEDAR_BRIDGE_STR, "vpnbridge.exe", exedir);
 	MsRegistWindowsFirewallEx2(CEDAR_CUI_STR, "vpncmd.exe", exedir);
 	MsRegistWindowsFirewallEx2(CEDAR_PRODUCT_STR, "vpntest.exe", exedir);
 }

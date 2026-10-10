@@ -80,7 +80,7 @@ add_subdirectory(src)
 
 if(UNIX)
   # Packaging
-  set(CPACK_COMPONENTS_ALL common vpnserver vpnclient vpnbridge vpncmd)
+  set(CPACK_COMPONENTS_ALL common vpnserver vpnclient vpncmd)
   set(CPACK_PACKAGE_DIRECTORY ${BUILD_DIRECTORY})
   set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
   set(CPACK_PACKAGE_VENDOR "SoftEther")

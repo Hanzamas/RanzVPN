@@ -24,7 +24,6 @@ Microsoft Defender may flag the following SoftEther VPN 5.x components as `Troja
 
 - `vpnclient.exe` - VPN Client executable
 - `vpnserver.exe` - VPN Server executable  
-- `vpnbridge.exe` - VPN Bridge executable
 - `vpncmd.exe` - VPN Command-line utility
 - Start menu shortcuts
 - Registry entries

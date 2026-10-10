@@ -147,9 +147,6 @@ add_subdirectory(vpnserver)
 # vpnclient
 add_subdirectory(vpnclient)
 
-# vpnbridge
-add_subdirectory(vpnbridge)
-
 # vpncmd
 add_subdirectory(vpncmd)
 
@@ -218,7 +215,6 @@ if(UNIX)
   install(CODE "message(\"\n----------------------------------------------------------------------------------------------------------------------------\")")
   install(CODE "message(\"Build completed successfully.\n\")")
   install(CODE "message(\"Execute 'vpnserver start' to run the SoftEther VPN Server background service.\")")
-  install(CODE "message(\"Execute 'vpnbridge start' to run the SoftEther VPN Bridge background service.\")")
   install(CODE "message(\"Execute 'vpnclient start' to run the SoftEther VPN Client background service.\")")
   install(CODE "message(\"Execute 'vpncmd' to run the SoftEther VPN Command-Line Utility to configure VPN Server, VPN Bridge or VPN Client.\")")
   install(CODE "message(\"----------------------------------------------------------------------------------------------------------------------------\n\")")

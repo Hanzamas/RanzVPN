@@ -36,21 +36,6 @@ void server_test(UINT num, char **arg)
 	StFree();
 }
 
-void bridge_test(UINT num, char **arg)
-{
-	Print("VPN Bridge Test. Press Enter key to stop the VPN Bridge .\n");
-
-	StInit();
-
-	StStartServer(true);
-
-	GetLine(NULL, 0);
-
-	StStopServer();
-
-	StFree();
-}
-
 #ifdef OS_WIN32
 void setup_test(UINT num, char **arg)
 {
@@ -84,7 +69,6 @@ TEST_LIST test_list[] =
 {
 	{"c", client_test, "VPN Client in Test Mode, enter key to graceful stop."},
 	{"s", server_test, "VPN Server in Test Mode, enter key to graceful stop."},
-	{"b", bridge_test, "VPN Bridge in Test Mode, enter key to graceful stop."},
 #ifdef OS_WIN32
 	{"setupapi", setup_test, "SetupAPI test: tries to retrieve the specified NIC's status."},
 #endif

@@ -7,7 +7,7 @@ if (Test-Path "env:BUILD_BINARIESDIRECTORY") {
 }
 
 # ('s', 'c', 'b', 'sm', 'cm') ??
-('s', 'c', 'b') | % {
+('s', 'c') | % {
 
 	[String] $mode = $_
 	Write-Host "testing: $mode"
