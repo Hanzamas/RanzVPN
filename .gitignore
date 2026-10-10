@@ -210,3 +210,7 @@ developer_tools/stbchecker/**/*.binlog
 developer_tools/stbchecker/**/*.nvuser
 developer_tools/stbchecker/**/.mfractor/
 /vcpkg_installed
+
+# local tooling indexes (never commit)
+.codegraph/
+graphify-out/
