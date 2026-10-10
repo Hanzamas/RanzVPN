@@ -70,6 +70,13 @@ jobs:
       shell: powershell
       run: |
         . .ci/appveyor-vpntest.ps1
+    - name: Self-check
+      shell: pwsh
+      run: |
+        $out = & build\vpncmd.exe /TOOLS /CMD Check 2>&1 | Out-String
+        Write-Host $out
+        if ($LASTEXITCODE -ne 0) { throw "vpncmd self-check exited with code $LASTEXITCODE" }
+        if ($out -notmatch 'All checks passed') { throw "vpncmd self-check did not report 'All checks passed'" }
     - uses: actions/upload-artifact@v4
       with:
         if-no-files-found: error

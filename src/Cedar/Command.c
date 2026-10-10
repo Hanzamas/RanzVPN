@@ -799,7 +799,7 @@ bool SystemCheck()
 		UniPrint(L"%s\n\n", _UU("CHECK_RESULT_2"));
 	}
 
-	return true;
+	return ng == false;
 }
 
 
