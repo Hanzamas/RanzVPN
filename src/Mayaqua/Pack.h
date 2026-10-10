@@ -59,40 +59,13 @@ struct ELEMENT
 	UINT num_value;			// Number of values (>=1)
 	UINT type;				// Type
 	VALUE **values;			// List of pointers to the value
-	bool JsonHint_IsArray;
-	bool JsonHint_IsBool;
-	bool JsonHint_IsDateTime;
-	bool JsonHint_IsIP;
-	char JsonHint_GroupName[MAX_ELEMENT_NAME_LEN + 1];
 };
 
 // PACK object
 struct PACK
 {
 	LIST *elements;			// Element list
-	LIST *json_subitem_names;	// JSON sub-item names
-	char CurrentJsonHint_GroupName[MAX_ELEMENT_NAME_LEN + 1];
 };
-
-
-#define MAX_JSONPACK_HINT_ITEMS			64
-#define JSONPACK_HINT_TYPE_ARRAY		1
-
-// JSON/PACK converter hint element
-struct JSONPACKHINT_ITEM
-{
-	UINT Type;
-	char ArrayNumNameInPack[MAX_ELEMENT_NAME_LEN + 1];
-	char ArrayMembersInPack[MAX_SIZE + 1];
-};
-
-// JSON/PACK converter hint
-struct JSONPACKHINT
-{
-	UINT NumHints;
-	JSONPACKHINT_ITEM Hints[MAX_JSONPACK_HINT_ITEMS];
-};
-
 
 // Function prototype
 PACK *NewPack();
@@ -189,18 +162,6 @@ bool PackGetIp6Addr(PACK *p, char *name, IPV6_ADDR *addr);
 bool PackGetData2(PACK *p, char *name, void *data, UINT size);
 bool PackGetDataEx2(PACK *p, char *name, void *data, UINT size, UINT index);
 bool PackIsValueExists(PACK *p, char *name);
-void PackSetCurrentJsonGroupName(PACK *p, char *json_group_name);
 ELEMENT *ElementNullSafe(ELEMENT *p);
-
-JSON_VALUE *PackToJson(PACK *p);
-char *PackToJsonStr(PACK *p);
-
-PACK *JsonToPack(JSON_VALUE *v);
-PACK *JsonStrToPack(char *str);
-
-void PackArrayElementToJsonArray(JSON_ARRAY *ja, PACK *p, ELEMENT *e, UINT index);
-void PackElementToJsonObject(JSON_OBJECT *o, PACK *p, ELEMENT *e, UINT index);
-char *DetermineJsonSuffixForPackElement(ELEMENT *e);
-bool JsonTryParseValueAddToPack(PACK *p, JSON_VALUE *v, char *v_name, UINT index, UINT total, bool is_single);
 
 #endif	// PACK_H

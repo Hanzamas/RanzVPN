@@ -902,10 +902,6 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 			no_log = true;
 		}
 
-		if (hub->IsVgsHub)
-		{
-			no_log = false;
-		}
 	}
 
 	syslog_setting = SiGetSysLogSaveStatus(s);

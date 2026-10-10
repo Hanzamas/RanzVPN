@@ -24,7 +24,6 @@
 #include "UdpAccel.h"
 #include "VLanUnix.h"
 #include "WaterMark.h"
-#include "WebUI.h"
 #include "Wpc.h"
 
 #include "Mayaqua/Cfg.h"
@@ -5781,10 +5780,6 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 		if (h == NULL)
 		{
 			c->Err = ERR_CLIENT_IS_NOT_VPN;
-			if (c->IsJsonRpc)
-			{
-				c->Err = ERR_DISCONNECTED;
-			}
 			return false;
 		}
 
@@ -5793,42 +5788,6 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 		{
 			// Receive the data since it's POST
 			data_size = GetContentLength(h);
-
-			if (server->DisableJsonRpcWebApi == false)
-			{
-				if (StrCmpi(h->Target, "/api") == 0 || StrCmpi(h->Target, "/api/") == 0)
-				{
-					c->IsJsonRpc = true;
-					c->Type = CONNECTION_TYPE_ADMIN_RPC;
-
-					JsonRpcProcPost(c, s, h, data_size);
-
-					FreeHttpHeader(h);
-
-					if (c->JsonRpcAuthed)
-					{
-						num = 0;
-					}
-
-					continue;
-				}
-				else if (StartWith(h->Target, "/admin"))
-				{
-					c->IsJsonRpc = true;
-					c->Type = CONNECTION_TYPE_ADMIN_RPC;
-
-					AdminWebProcPost(c, s, h, data_size, h->Target);
-
-					FreeHttpHeader(h);
-
-					if (c->JsonRpcAuthed)
-					{
-						num = 0;
-					}
-
-					continue;
-				}
-			}
 
 			if ((data_size > MAX_WATERMARK_SIZE || data_size < SizeOfWaterMark()) && (data_size != StrLen(HTTP_VPN_TARGET_POSTDATA)))
 			{
@@ -5873,26 +5832,6 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 					// WaterMark is incorrect
 					HttpSendForbidden(s, h->Target, NULL);
 					*error_detail_str = "POST_WaterMark_Error";
-				}
-			}
-			FreeHttpHeader(h);
-		}
-		else if (StrCmpi(h->Method, "OPTIONS") == 0)
-		{
-			if (server->DisableJsonRpcWebApi == false)
-			{
-				if (StrCmpi(h->Target, "/api") == 0 || StrCmpi(h->Target, "/api/") == 0 || StartWith(h->Target, "/admin"))
-				{
-					c->IsJsonRpc = true;
-					c->Type = CONNECTION_TYPE_ADMIN_RPC;
-
-					JsonRpcProcOptions(c, s, h, h->Target);
-
-					FreeHttpHeader(h);
-
-					num = 0;
-
-					continue;
 				}
 			}
 			FreeHttpHeader(h);
@@ -5948,51 +5887,13 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 				if (StrCmpi(h->Target, "/") == 0)
 				{
 					// Root directory
-					BUF *b = NULL;
 					*error_detail_str = "HTTP_ROOT";
 
-					if (server->DisableJsonRpcWebApi == false)
-					{
-						b = ReadDump("|wwwroot/index.html");
-					}
-
-					if (b != NULL)
-					{
-						FreeHttpHeader(h);
-						h = NewHttpHeader("HTTP/1.1", "202", "OK");
-						AddHttpValue(h, NewHttpValue("Content-Type", HTTP_CONTENT_TYPE4));
-						AddHttpValue(h, NewHttpValue("Connection", "Keep-Alive"));
-						AddHttpValue(h, NewHttpValue("Keep-Alive", HTTP_KEEP_ALIVE));
-
-						PostHttp(c->FirstSock, h, b->Buf, b->Size);
-
-						FreeBuf(b);
-					}
-					else
-					{
-						HttpSendForbidden(c->FirstSock, h->Target, "");
-					}
+					HttpSendForbidden(c->FirstSock, h->Target, "");
 				}
 				else
 				{
 					bool b = false;
-
-					// Show the WebUI if the configuration allow to use the WebUI
-					if (c->Cedar->Server != NULL && c->Cedar->Server->UseWebUI)
-					{
-						WU_WEBPAGE *page;
-
-						// Show the WebUI
-						page = WuGetPage(h->Target, c->Cedar->WebUI);
-
-						if (page != NULL)
-						{
-							PostHttp(s, page->header, page->data, page->size);
-							b = true;
-							WuFreeWebPage(page);
-						}
-
-					}
 
 					if (IsLocalHostIP(&c->FirstSock->RemoteIP))
 					{
@@ -6031,41 +5932,6 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 
 					if (b == false)
 					{
-						if (server->DisableJsonRpcWebApi == false)
-						{
-							if (StartWith(h->Target, "/api?") || StartWith(h->Target, "/api/") || StrCmpi(h->Target, "/api") == 0)
-							{
-								c->IsJsonRpc = true;
-								c->Type = CONNECTION_TYPE_ADMIN_RPC;
-
-								JsonRpcProcGet(c, s, h, h->Target);
-
-								if (c->JsonRpcAuthed)
-								{
-									num = 0;
-								}
-
-								FreeHttpHeader(h);
-
-								continue;
-							}
-							else if (StartWith(h->Target, "/admin"))
-							{
-								c->IsJsonRpc = true;
-								c->Type = CONNECTION_TYPE_ADMIN_RPC;
-
-								AdminWebProcGet(c, s, h, h->Target);
-
-								if (c->JsonRpcAuthed)
-								{
-									num = 0;
-								}
-
-								FreeHttpHeader(h);
-
-								continue;
-							}
-						}
 					}
 
 					if (b == false)

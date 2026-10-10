@@ -402,8 +402,6 @@ struct HUB
 	UINT LastVersion;					// Version of when the update notification is issued at the last
 	wchar_t *Msg;						// Message to be displayed when the client is connected
 	LIST *UserList;						// Cache of the user list file
-	bool IsVgsHub;						// Whether it's a VGS Virtual HUB
-	bool IsVgsSuperRelayHub;			// Whether it's a VGS Super Relay Virtual HUB
 	UINT64 LastFlushTick;				// Last tick to flush the MAC address table
 	bool StopAllLinkFlag;				// Stop all link flag
 	bool ForceDisableComm;				// Disable the communication function

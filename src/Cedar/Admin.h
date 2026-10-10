@@ -40,7 +40,6 @@ struct ADMIN
 	LIST *LogFileList;			// Accessible log file list
 	UINT ClientBuild;			// Build number of the client
 	RPC_WINVER ClientWinVer;	// Windows version of client
-	UINT MaxJsonRpcRecvSize;	// Max JSON-RPC Receive Size
 	char dummy1[MAX_HUBNAME_LEN + 1];	// hubname buffer (dummy)
 };
 
@@ -936,10 +935,6 @@ struct RPC_AZURE_STATUS
 	bool IsConnected;						// Whether it's connected
 };
 
-// Constants
-#define ADMIN_RPC_MAX_POST_SIZE_BY_SERVER_ADMIN		MAX_PACK_SIZE
-#define ADMIN_RPC_MAX_POST_SIZE_BY_HUB_ADMIN		(8 * 1024 * 1024)
-
 
 // Function prototype
 UINT AdminAccept(CONNECTION *c, PACK *p);
@@ -964,26 +959,6 @@ BUF *DownloadFileFromServer(RPC *r, char *server_name, char *filepath, UINT tota
 bool CheckAdminSourceAddress(SOCK *sock, char *hubname);
 void SiEnumSessionMain(SERVER *s, RPC_ENUM_SESSION *t);
 bool SiIsEmptyPassword(void *hash_password);
-void JsonRpcProcPost(CONNECTION *c, SOCK *s, HTTP_HEADER *h, UINT post_data_size);
-void JsonRpcProcGet(CONNECTION *c, SOCK *s, HTTP_HEADER *h, char *url_target);
-void JsonRpcProcOptions(CONNECTION *c, SOCK *s, HTTP_HEADER *h, char *url_target);
-JSON_VALUE *JsonRpcProcRequestObject(ADMIN *admin, CONNECTION *c, SOCK *s, JSON_VALUE *json_req, char *method_name);
-JSON_VALUE *JsonRpcNewError(int code, wchar_t *message);
-JSON_VALUE *JsonRpcNewResponse(PACK *p);
-bool HttpParseBasicAuthHeader(HTTP_HEADER *h, char *username, UINT username_size, char *password, UINT password_size);
-ADMIN *JsonRpcAuthLogin(CEDAR *c, SOCK *sock, HTTP_HEADER *h);
-JSON_VALUE *QueryStringToJsonListValue(char *qs);
-JSON_VALUE *ConstructDummyJsonRpcRequest(char *method_name, JSON_VALUE *p);
-void AdminWebProcPost(CONNECTION *c, SOCK *s, HTTP_HEADER *h, UINT post_data_size, char *url_target);
-void AdminWebProcGet(CONNECTION *c, SOCK *s, HTTP_HEADER *h, char *url_target);
-bool AdminWebHandleFileRequest(ADMIN *a, CONNECTION *c, SOCK *s, HTTP_HEADER *h, char *url_src, char *query_string, char *virtual_root_dir, char *physical_root_dir);
-BUF *AdminWebProcessServerSideInclude(BUF *src_txt, char *filename, UINT depth);
-bool AdminWebSendBody(SOCK *s, UINT status_code, char *status_string, UCHAR *data, UINT data_size, char *content_type, char *add_header_name, char *add_header_value, HTTP_HEADER *request_headers);
-bool AdminWebSend404Error(SOCK *s, HTTP_HEADER *request_headers);
-bool AdminWebSend302Redirect(SOCK *s, char *url, char *query_string, HTTP_HEADER *request_headers);
-BUF *AdminWebTryFindAndReadFile(char *vroot, char *proot, char *url, char *ret_filename, UINT ret_filename_size, bool *is_index_html);
-BUF *AdminWebTryOneFile(char *filename, char *ret_filename, UINT ret_filename_size);
-bool AdminWebSendUnauthorized(SOCK *s, HTTP_HEADER *http_request_headers);
 
 UINT StTest(ADMIN *a, RPC_TEST *t);
 UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t);
@@ -1133,8 +1108,6 @@ UINT StGetAzureStatus(ADMIN *a, RPC_AZURE_STATUS *t);
 UINT StSetAzureStatus(ADMIN *a, RPC_AZURE_STATUS *t);
 UINT StGetDDnsInternetSetting(ADMIN *a, INTERNET_SETTING *t);
 UINT StSetDDnsInternetSetting(ADMIN *a, INTERNET_SETTING *t);
-UINT StSetVgsConfig(ADMIN *a, VGS_CONFIG *t);
-UINT StGetVgsConfig(ADMIN *a, VGS_CONFIG *t);
 
 UINT ScTest(RPC *r, RPC_TEST *t);
 UINT ScGetServerInfo(RPC *r, RPC_SERVER_INFO *t);
@@ -1284,8 +1257,6 @@ UINT ScGetAzureStatus(RPC *r, RPC_AZURE_STATUS *t);
 UINT ScSetAzureStatus(RPC *r, RPC_AZURE_STATUS *t);
 UINT ScGetDDnsInternetSetting(RPC *r, INTERNET_SETTING *t);
 UINT ScSetDDnsInternetSetting(RPC *r, INTERNET_SETTING *t);
-UINT ScSetVgsConfig(RPC *r, VGS_CONFIG *t);
-UINT ScGetVgsConfig(RPC *r, VGS_CONFIG *t);
 
 void InRpcTest(RPC_TEST *t, PACK *p);
 void OutRpcTest(PACK *p, RPC_TEST *t);

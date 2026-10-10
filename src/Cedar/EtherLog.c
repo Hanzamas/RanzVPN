@@ -574,7 +574,6 @@ void OutRpcEnumDevice(PACK *p, RPC_ENUM_DEVICE *t)
 
 	PackAddInt(p, "NumItem", t->NumItem);
 
-	PackSetCurrentJsonGroupName(p, "DeviceList");
 	for (i = 0;i < t->NumItem;i++)
 	{
 		RPC_ENUM_DEVICE_ITEM *d = &t->Items[i];
@@ -582,7 +581,6 @@ void OutRpcEnumDevice(PACK *p, RPC_ENUM_DEVICE *t)
 		PackAddStrEx(p, "DeviceName", d->DeviceName, i, t->NumItem);
 		PackAddBoolEx(p, "Active", d->Active, i, t->NumItem);
 	}
-	PackSetCurrentJsonGroupName(p, NULL);
 
 	PackAddBool(p, "IsLicenseSupported", t->IsLicenseSupported);
 }

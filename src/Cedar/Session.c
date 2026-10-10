@@ -1356,7 +1356,6 @@ void PrintSessionTotalDataSize(SESSION *s)
 void ClientThread(THREAD *t, void *param)
 {
 	SESSION *s;
-	bool is_vpngate_connection = false;
 	CEDAR *cedar;
 	bool num_active_sessions_incremented = false;
 	// Validate arguments
@@ -1917,18 +1916,6 @@ SESSION *NewServerSessionEx(CEDAR *cedar, CONNECTION *c, HUB *h, char *username,
 			Format(name, sizeof(name), "SID-%s-[%s]-%u", user_name_upper, c->InProcPrefix, Inc(h->SessionCounter));
 		}
 
-		if (h->IsVgsHub || h->IsVgsSuperRelayHub)
-		{
-			UCHAR rand[5];
-			char tmp[32];
-
-			Rand(rand, sizeof(rand));
-
-			BinToStr(tmp, sizeof(tmp), rand, sizeof(rand));
-
-			StrCat(name, sizeof(name), "-");
-			StrCat(name, sizeof(name), tmp);
-		}
 	}
 	else
 	{

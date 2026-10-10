@@ -187,7 +187,6 @@ struct SERVER
 	UCHAR MyRandomKey[SHA1_SIZE];		// Their own random key
 	bool FarmControllerInited;			// Initialization of farm controller has been completed
 	bool DisableDeadLockCheck;			// Disable the deadlock check
-	bool UseWebUI;						// Use the WebUI
 	bool SaveDebugLog;					// Save the debug log
 	bool NoSendSignature;				// Let the client not to send a signature
 	bool UseWebTimePage;				// Use WebTimePage
@@ -275,7 +274,6 @@ struct SERVER
 
 	IP ListenIP;						// Listen IP
 	bool StrictSyslogDatetimeFormat;	// Make syslog datetime format strict RFC3164
-	bool DisableJsonRpcWebApi;					// Disable JSON-RPC Web API
 };
 
 
@@ -579,8 +577,6 @@ UINT SiDebugProcGetExeFileName(SERVER *s, char *in_str, char *ret_str, UINT ret_
 UINT SiDebugProcCrash(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
 UINT SiDebugProcGetIPsecMessageDisplayedValue(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
 UINT SiDebugProcSetIPsecMessageDisplayedValue(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcGetVgsMessageDisplayedValue(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcSetVgsMessageDisplayedValue(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
 UINT SiDebugProcGetCurrentTcpSendQueueLength(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
 UINT SiDebugProcGetCurrentGetIPThreadCount(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
 

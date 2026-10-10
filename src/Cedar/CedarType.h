@@ -635,22 +635,6 @@ typedef struct AZURE_PARAM AZURE_PARAM;
 
 
 // ==============================================================
-//  VPN Gate Service
-// ==============================================================
-
-typedef struct VGS VGS;
-typedef struct VGS_CONFIG VGS_CONFIG;
-typedef struct VGC VGC;
-typedef struct VGHOST VGHOST;
-typedef struct VGHOSTLIST VGHOSTLIST;
-typedef struct VGHOSTDAT VGHOSTDAT;
-typedef struct VGCPOLLTASK VGCPOLLTASK;
-typedef struct VGS_LOG VGS_LOG;
-typedef struct VGC_UDPHOST VGC_UDPHOST;
-typedef struct MIRROR_SERVER MIRROR_SERVER;
-
-
-// ==============================================================
 //   Native Stack
 // ==============================================================
 

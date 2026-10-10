@@ -81,8 +81,6 @@ UINT SiDebug(SERVER *s, RPC_TEST *ret, UINT i, char *str)
 		{7, "Crash the process", "", SiDebugProcCrash},
 		{8, "Get IPsecMessageDisplayed Flag", "", SiDebugProcGetIPsecMessageDisplayedValue},
 		{9, "Set IPsecMessageDisplayed Flag", "", SiDebugProcSetIPsecMessageDisplayedValue},
-		{10, "Get VgsMessageDisplayed Flag", "", SiDebugProcGetVgsMessageDisplayedValue},
-		{11, "Set VgsMessageDisplayed Flag", "", SiDebugProcSetVgsMessageDisplayedValue},
 		{12, "Get the current TCP send queue length", "", SiDebugProcGetCurrentTcpSendQueueLength},
 		{13, "Get the current GetIP thread count", "", SiDebugProcGetCurrentGetIPThreadCount},
 	};
@@ -258,30 +256,6 @@ UINT SiDebugProcSetIPsecMessageDisplayedValue(SERVER *s, char *in_str, char *ret
 
 	return ERR_NO_ERROR;
 }
-UINT SiDebugProcGetVgsMessageDisplayedValue(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size)
-{
-	// Validate arguments
-	if (s == NULL || in_str == NULL || ret_str == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-#if	0
-	if (VgDoNotPopupMessage() == false)
-	{
-		ToStr(ret_str, s->VgsMessageDisplayed);
-	}
-	else
-	{
-		ToStr(ret_str, 1);
-	}
-#else
-	// Do not show the VGS message in VPN Server of the current version
-	ToStr(ret_str, 1);
-#endif	
-
-	return ERR_NO_ERROR;
-}
 UINT SiDebugProcGetCurrentTcpSendQueueLength(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size)
 {
 	char tmp1[64], tmp2[64], tmp3[64];
@@ -319,17 +293,6 @@ UINT SiDebugProcGetCurrentGetIPThreadCount(SERVER *s, char *in_str, char *ret_st
 		"Current threads = %s\n"
 		"Quota           = %s\n",
 		tmp1, tmp2);
-
-	return ERR_NO_ERROR;
-}
-UINT SiDebugProcSetVgsMessageDisplayedValue(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size)
-{
-	// Validate arguments
-	if (s == NULL || in_str == NULL || ret_str == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
 
 	return ERR_NO_ERROR;
 }
@@ -1718,7 +1681,6 @@ void OutRpcCapsList(PACK *p, CAPSLIST *t)
 		return;
 	}
 
-	PackSetCurrentJsonGroupName(p, "CapsList");
 	for (i = 0;i < LIST_NUM(t->CapsList);i++)
 	{
 		char tmp[MAX_SIZE];
@@ -1748,7 +1710,6 @@ void OutRpcCapsList(PACK *p, CAPSLIST *t)
 		PackAddIntEx(p, "CapsValue", c->Value, i, LIST_NUM(t->CapsList));
 		PackAddUniStrEx(p, "CapsDescrption", ct_description, i, LIST_NUM(t->CapsList));
 	}
-	PackSetCurrentJsonGroupName(p, NULL);
 }
 void FreeRpcCapsList(CAPSLIST *t)
 {
@@ -5800,9 +5761,6 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 		SetEraserCheckInterval(CfgGetInt(f, "AutoDeleteCheckIntervalSecs"));
 		s->Eraser = NewEraser(s->Logger, CfgGetInt64(f, "AutoDeleteCheckDiskFreeSpaceMin"));
 
-		// WebUI
-		s->UseWebUI = CfgGetBool(f, "UseWebUI");
-
 
 		// WebTimePage
 		s->UseWebTimePage = CfgGetBool(f, "UseWebTimePage");
@@ -6043,7 +6001,6 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 		s->StrictSyslogDatetimeFormat = CfgGetBool(f, "StrictSyslogDatetimeFormat");
 
 		// Disable JSON-RPC Web API
-		s->DisableJsonRpcWebApi = CfgGetBool(f, "DisableJsonRpcWebApi");
 
 		// Bits of Diffie-Hellman parameters
 		c->DhParamBits = CfgGetInt(f, "DhParamBits");
@@ -6232,9 +6189,6 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s)
 		CfgAddInt64(f, "AutoDeleteCheckDiskFreeSpaceMin", s->Eraser->MinFreeSpace);
 		CfgAddInt(f, "AutoDeleteCheckIntervalSecs", GetEraserCheckInterval());
 
-		// WebUI
-		CfgAddBool(f, "UseWebUI", s->UseWebUI);
-
 
 		// NoLinuxArpFilter
 		if (GetOsInfo()->OsType == OSTYPE_LINUX)
@@ -6377,7 +6331,6 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s)
 		CfgAddBool(f, "StrictSyslogDatetimeFormat", s->StrictSyslogDatetimeFormat);
 
 		// Disable JSON-RPC Web API
-		CfgAddBool(f, "DisableJsonRpcWebApi", s->DisableJsonRpcWebApi);
 	}
 	Unlock(c->lock);
 }

@@ -2296,7 +2296,6 @@ void OutRpcClientEnumCa(PACK *p, RPC_CLIENT_ENUM_CA *e)
 
 	PackAddNum(p, "NumItem", e->NumItem);
 
-	PackSetCurrentJsonGroupName(p, "CAList");
 	for (i = 0;i < e->NumItem;i++)
 	{
 		RPC_CLIENT_ENUM_CA_ITEM *item = e->Items[i];
@@ -2305,7 +2304,6 @@ void OutRpcClientEnumCa(PACK *p, RPC_CLIENT_ENUM_CA *e)
 		PackAddUniStrEx(p, "IssuerName", item->IssuerName, i, e->NumItem);
 		PackAddTime64Ex(p, "Expires", item->Expires, i, e->NumItem);
 	}
-	PackSetCurrentJsonGroupName(p, NULL);
 }
 
 // RPC_GET_ISSUER
@@ -2576,7 +2574,6 @@ void OutRpcClientEnumSecure(PACK *p, RPC_CLIENT_ENUM_SECURE *e)
 
 	PackAddNum(p, "NumItem", e->NumItem);
 
-	PackSetCurrentJsonGroupName(p, "SecureDeviceList");
 	for (i = 0;i < e->NumItem;i++)
 	{
 		RPC_CLIENT_ENUM_SECURE_ITEM *item = e->Items[i];
@@ -2586,7 +2583,6 @@ void OutRpcClientEnumSecure(PACK *p, RPC_CLIENT_ENUM_SECURE *e)
 		PackAddStrEx(p, "DeviceName", item->DeviceName, i, e->NumItem);
 		PackAddStrEx(p, "Manufacturer", item->Manufacturer, i, e->NumItem);
 	}
-	PackSetCurrentJsonGroupName(p, NULL);
 }
 
 // RPC_USE_SECURE
@@ -2643,13 +2639,11 @@ void OutRpcEnumObjectInSecure(PACK *p, RPC_ENUM_OBJECT_IN_SECURE *e)
 	PackAddNum(p, "NumItem", e->NumItem);
 	PackAddInt(p, "hWnd", e->hWnd);
 
-	PackSetCurrentJsonGroupName(p, "ObjectList");
 	for (i = 0;i < e->NumItem;i++)
 	{
 		PackAddStrEx(p, "ItemName", e->ItemName[i], i, e->NumItem);
 		PackAddIntEx(p, "ItemType", e->ItemType[i], i, e->NumItem);
 	}
-	PackSetCurrentJsonGroupName(p, NULL);
 }
 
 // RPC_CLIENT_CREATE_VLAN
@@ -2769,7 +2763,6 @@ void OutRpcClientEnumVLan(PACK *p, RPC_CLIENT_ENUM_VLAN *v)
 
 	PackAddNum(p, "NumItem", v->NumItem);
 
-	PackSetCurrentJsonGroupName(p, "VLanList");
 	for (i = 0;i < v->NumItem;i++)
 	{
 		RPC_CLIENT_ENUM_VLAN_ITEM *item = v->Items[i];
@@ -2779,7 +2772,6 @@ void OutRpcClientEnumVLan(PACK *p, RPC_CLIENT_ENUM_VLAN *v)
 		PackAddStrEx(p, "MacAddress", item->MacAddress, i, v->NumItem);
 		PackAddStrEx(p, "Version", item->Version, i, v->NumItem);
 	}
-	PackSetCurrentJsonGroupName(p, NULL);
 }
 
 // CLIENT_OPTION
@@ -3111,7 +3103,6 @@ void OutRpcClientEnumAccount(PACK *p, RPC_CLIENT_ENUM_ACCOUNT *e)
 
 	PackAddNum(p, "NumItem", e->NumItem);
 
-	PackSetCurrentJsonGroupName(p, "AccountList");
 	for (i = 0;i < e->NumItem;i++)
 	{
 		RPC_CLIENT_ENUM_ACCOUNT_ITEM *item = e->Items[i];
@@ -3131,7 +3122,6 @@ void OutRpcClientEnumAccount(PACK *p, RPC_CLIENT_ENUM_ACCOUNT *e)
 		PackAddTime64Ex(p, "UpdateDateTime", item->UpdateDateTime, i, e->NumItem);
 		PackAddTime64Ex(p, "LastConnectDateTime", item->LastConnectDateTime, i, e->NumItem);
 	}
-	PackSetCurrentJsonGroupName(p, NULL);
 }
 
 // RPC_CLIENT_DELETE_ACCOUNT

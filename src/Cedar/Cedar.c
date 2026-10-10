@@ -18,7 +18,6 @@
 #include "Server.h"
 #include "Session.h"
 #include "VLanWin32.h"
-#include "WebUI.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/Encrypt.h"
@@ -1187,7 +1186,6 @@ void CleanupCedar(CEDAR *c)
 		return;
 	}
 
-	WuFreeWebUI(c->WebUI);
 	FreeCedarLayer3(c);
 
 	for (i = 0; i < LIST_NUM(c->WgkList); ++i)
@@ -1636,7 +1634,6 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 
 	InitCedarLayer3(c);
 
-	c->WebUI = WuNewWebUI(c);
 
 #ifdef	ALPHA_VERSION
 	beta_str = "Alpha";

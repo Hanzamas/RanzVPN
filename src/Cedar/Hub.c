@@ -37,8 +37,6 @@
 	}
 
 static UCHAR broadcast[] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-static char vgs_ua_str[9] = {0};
-static bool g_vgs_emb_tag = false;
 
 // A list of administration options that are currently supported and its default values
 // These names must be shorter than 64 bytes

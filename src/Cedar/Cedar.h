@@ -868,9 +868,6 @@
 #define	ERR_SPECIAL_LISTENER_DNS_ERROR	141	// Socket for DNS port can not be opened
 #define	ERR_OPENVPN_IS_NOT_ENABLED		142	// OpenVPN server feature is not enabled
 #define	ERR_NOT_SUPPORTED_AUTH_ON_OPENSOURCE	143	// It is the type of user authentication that are not supported in the open source version
-#define	ERR_VPNGATE						144 // Operation on VPN Gate Server is not available
-#define	ERR_VPNGATE_CLIENT				145 // Operation on VPN Gate Client is not available
-#define	ERR_VPNGATE_INCLIENT_CANT_STOP	146	// Can not be stopped if operating within VPN Client mode
 #define	ERR_NOT_SUPPORTED_FUNCTION_ON_OPENSOURCE	147	// It is a feature that is not supported in the open source version
 #define	ERR_SUSPENDING					148	// System is suspending
 #define ERR_HOSTNAME_MISMATCH			149	// SSL hostname mismatch
@@ -971,7 +968,6 @@ struct CEDAR
 	COUNTER *AssignedBridgeLicense;	// Number of assigned bridge licenses
 	UINT64 LicenseViolationTick;	// License violation occurs
 	LIST *NonSslList;				// Non-SSL connection list
-	struct WEBUI *WebUI;			// Data for WebUI service
 	UINT Beta;						// Beta number
 	LOCK *CedarSuperLock;			// Cedar super lock!
 	bool DisableIPv6Listener;		// Disable IPv6 listener
