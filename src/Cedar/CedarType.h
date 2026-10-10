@@ -97,11 +97,6 @@ typedef struct CONNECTION CONNECTION;
 typedef struct NODE_INFO NODE_INFO;
 typedef struct PACKET_ADAPTER PACKET_ADAPTER;
 typedef struct SESSION SESSION;
-typedef struct UI_PASSWORD_DLG UI_PASSWORD_DLG;
-typedef struct UI_MSG_DLG UI_MSG_DLG;
-typedef struct UI_NICINFO UI_NICINFO;
-typedef struct UI_CONNECTERROR_DLG UI_CONNECTERROR_DLG;
-typedef struct UI_CHECKCERT UI_CHECKCERT;
 
 
 // ==============================================================
@@ -257,7 +252,6 @@ typedef struct RPC_CLIENT_NOTIFY RPC_CLIENT_NOTIFY;
 typedef struct REMOTE_CLIENT REMOTE_CLIENT;
 typedef struct NOTIFY_CLIENT NOTIFY_CLIENT;
 typedef struct UNIX_VLAN UNIX_VLAN;
-typedef struct CM_SETTING CM_SETTING;
 
 
 // ==============================================================
@@ -408,11 +402,6 @@ typedef struct SNAT SNAT;
 //  WinUI
 // ==============================================================
 
-typedef struct LED LED;
-typedef struct WIZARD WIZARD;
-typedef struct WIZARD_PAGE WIZARD_PAGE;
-typedef struct WINUI_UPDATE WINUI_UPDATE;
-typedef struct WINUI_UPDATE_DLG_PARAM WINUI_UPDATE_DLG_PARAM;
 
 
 

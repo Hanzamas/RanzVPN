@@ -1007,6 +1007,9 @@ TRAFFIC *NewTraffic();
 void FreeTraffic(TRAFFIC *t);
 CEDAR *NewCedar(X *server_x, K *server_k);
 void CedarForceLink();
+#ifdef	OS_WIN32
+void RegistWindowsFirewallAll();
+#endif	// OS_WIN32
 void SetCedarVpnBridge(CEDAR *c);
 void SetCedarCert(CEDAR *c, X *server_x, K *server_k);
 void SetCedarCertAndChain(CEDAR *c, X *server_x, K *server_k, LIST *server_chain);

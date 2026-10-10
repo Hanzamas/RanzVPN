@@ -32,7 +32,6 @@
 #include "Mayaqua/Tick64.h"
 
 // TODO: Mayaqua should not depend on Cedar.
-#include "Cedar/WinUi.h"
 
 // Main routine of the session
 void SessionMain(SESSION *s)
@@ -56,8 +55,6 @@ void SessionMain(SESSION *s)
 	bool block_all_packets = false;
 	UINT64 next_check_block_all_packets = 0;
 	TRAFFIC t;
-	SOCK *msgdlg_sock = NULL;
-	SOCK *nicinfo_sock = NULL;
 	bool is_server_session = false;
 	bool lock_receive_blocks_queue = false;
 	UINT static_ip = 0;
@@ -174,39 +171,6 @@ void SessionMain(SESSION *s)
 		if (policy->NoRouting == false || policy->NoBridge == false)
 		{
 			s->IsBridgeMode = true;
-		}
-	}
-
-	if (s->ServerMode == false && s->Cedar->Client != NULL)
-	{
-		if (IsEmptyUniStr(s->Client_Message) == false)
-		{
-			UI_MSG_DLG dlg;
-
-			Zero(&dlg, sizeof(dlg));
-			if (s->ClientOption != NULL)
-			{
-				StrCpy(dlg.HubName, sizeof(dlg.HubName), s->ClientOption->HubName);
-				StrCpy(dlg.ServerName, sizeof(dlg.ServerName), s->ClientOption->Hostname);
-			}
-
-			dlg.Msg = s->Client_Message;
-
-			msgdlg_sock = CncMsgDlg(&dlg);
-		}
-
-		if (s->Win32HideNicInfoWindow == false)
-		{
-			UI_NICINFO info;
-
-			Zero(&info, sizeof(info));
-			if (s->ClientOption != NULL)
-			{
-				StrCpy(info.NicName, sizeof(info.NicName), s->ClientOption->DeviceName);
-				UniStrCpy(info.AccountName, sizeof(info.AccountName), s->ClientOption->AccountName);
-			}
-
-			nicinfo_sock = CncNicInfo(&info);
 		}
 	}
 
@@ -716,16 +680,6 @@ CLEANUP:
 
 	// Terminate the connection
 	EndTunnelingMode(c);
-
-	if (nicinfo_sock != NULL)
-	{
-		CncNicInfoFree(nicinfo_sock);
-	}
-
-	if (msgdlg_sock != NULL)
-	{
-		CndMsgDlgFree(msgdlg_sock);
-	}
 
 	c->Err = err;
 }
@@ -1402,8 +1356,6 @@ void PrintSessionTotalDataSize(SESSION *s)
 void ClientThread(THREAD *t, void *param)
 {
 	SESSION *s;
-	bool use_password_dlg;
-	bool no_save_password = false;
 	bool is_vpngate_connection = false;
 	CEDAR *cedar;
 	bool num_active_sessions_incremented = false;
@@ -1438,7 +1390,6 @@ void ClientThread(THREAD *t, void *param)
 
 	if (s->Cedar->Client != NULL)
 	{
-		no_save_password = s->Cedar->Client->DontSavePassword;
 	}
 
 	s->Win32HideConnectWindow = s->ClientOption->HideStatusWindow;
@@ -1505,274 +1456,41 @@ void ClientThread(THREAD *t, void *param)
 		if (s->Halt && (s->RetryFlag == false) || s->ForceStopFlag)
 		{
 			// Must be aborted
-			if (s->Err == ERR_DEVICE_DRIVER_ERROR)
-			{
-#ifdef	OS_WIN32
-				wchar_t tmp[MAX_SIZE];
-				if (s->Account != NULL && s->Cedar->Client != NULL)
-				{
-					UniFormat(tmp, sizeof(tmp), _UU("ERRDLG_DEVICE_ERROR"), s->ClientOption->DeviceName,
-						s->Err, _E(s->Err));
-					MsgBox(NULL, 0x10000 | 0x40000 | 0x200000 | 0x30, tmp);
-				}
-#endif	// OS_WIN32
-			}
 			break;
 		}
-		// Determine whether to display the password re-entry dialog
-		use_password_dlg = false;
-
-		if (s->Account != NULL && s->Cedar->Client != NULL)
-		{
-#ifdef	OS_WIN32
-			if (s->ClientAuth->AuthType == CLIENT_AUTHTYPE_PASSWORD || s->ClientAuth->AuthType == CLIENT_AUTHTYPE_PLAIN_PASSWORD)
-			{
-				if (s->Err == ERR_AUTH_FAILED || s->Err == ERR_PROXY_AUTH_FAILED)
-				{
-					use_password_dlg = true;
-				}
-			}
-#endif	// OS_WIN32
-		}
-
 		// Failed to connect or the connection is disconnected
 		// Wait for retry interval
-		if (use_password_dlg == false)
+		UINT retry_interval = s->RetryInterval;
+
+		if (s->LinkModeClient)
 		{
-			UINT retry_interval = s->RetryInterval;
+			UINT current_num_links = Count(s->Cedar->CurrentActiveLinks);
+			UINT max_retry_interval = MAX(1000 * current_num_links, retry_interval);
 
-			if (s->LinkModeClient)
+			retry_interval += retry_interval * MIN(s->CurrentRetryCount, 1000);
+			retry_interval = MIN(retry_interval, max_retry_interval);
+
+			// On the cascade client, adjust the retry_interval. (+/- 20%)
+			if (retry_interval >= 1000 && retry_interval <= (60 * 60 * 1000))
 			{
-				UINT current_num_links = Count(s->Cedar->CurrentActiveLinks);
-				UINT max_retry_interval = MAX(1000 * current_num_links, retry_interval);
-
-				retry_interval += retry_interval * MIN(s->CurrentRetryCount, 1000);
-				retry_interval = MIN(retry_interval, max_retry_interval);
-
-				// On the cascade client, adjust the retry_interval. (+/- 20%)
-				if (retry_interval >= 1000 && retry_interval <= (60 * 60 * 1000))
-				{
-					retry_interval = (retry_interval * 8 / 10) + (Rand32() % (retry_interval * 4 / 10));
-				}
+				retry_interval = (retry_interval * 8 / 10) + (Rand32() % (retry_interval * 4 / 10));
 			}
-
-			if (s->Err == ERR_HUB_IS_BUSY || s->Err == ERR_LICENSE_ERROR ||
-				s->Err == ERR_HUB_STOPPING || s->Err == ERR_TOO_MANY_USER_SESSION)
-			{
-				retry_interval = RETRY_INTERVAL_SPECIAL;
-			}
-
-			if (s->CurrentRetryCount >= s->ClientOption->NumRetry)
-			{
-				// Retry count excess
-
-#ifndef	OS_WIN32
-
-				break;
-
-#else	// OS_WIN32
-
-				if (s->Win32HideConnectWindow == false &&
-					s->Cedar->Client != NULL && s->Account != NULL)
-				{
-					// Show a reconnection dialog
-					UI_CONNECTERROR_DLG p;
-					Zero(&p, sizeof(p));
-					UniStrCpy(p.AccountName, sizeof(p.AccountName), s->ClientOption->AccountName);
-					StrCpy(p.ServerName, sizeof(p.ServerName), s->ClientOption->Hostname);
-					p.Err = s->Err;
-					p.CurrentRetryCount = s->CurrentRetryCount + 1;
-					s->Halt = false;
-					p.RetryLimit = 0;
-					p.RetryIntervalSec = 0;
-					p.CancelEvent = s->HaltEvent;
-					p.HideWindow = s->Win32HideConnectWindow;
-					if (CncConnectErrorDlg(s, &p) == false)
-					{
-						// Abort
-						break;
-					}
-					else
-					{
-						s->Win32HideConnectWindow = p.HideWindow;
-						goto SKIP;
-					}
-				}
-				else
-				{
-					break;
-				}
-
-#endif
-			}
-
-#ifndef	OS_WIN32
-
-			// Simple wait
-			Wait(s->HaltEvent, retry_interval);
-
-#else	// OS_WIN32
-
-			if (s->Win32HideConnectWindow == false &&
-				s->Cedar->Client != NULL && s->Account != NULL)
-			{
-				// Show a reconnection dialog
-				UI_CONNECTERROR_DLG p;
-				Zero(&p, sizeof(p));
-				UniStrCpy(p.AccountName, sizeof(p.AccountName), s->ClientOption->AccountName);
-				StrCpy(p.ServerName, sizeof(p.ServerName), s->ClientOption->Hostname);
-				p.Err = s->Err;
-				p.CurrentRetryCount = s->CurrentRetryCount + 1;
-				p.RetryLimit = s->ClientOption->NumRetry;
-				p.RetryIntervalSec = retry_interval;
-				p.CancelEvent = s->HaltEvent;
-				s->Halt = false;
-				p.HideWindow = s->Win32HideConnectWindow;
-				if (CncConnectErrorDlg(s, &p) == false)
-				{
-					// Abort
-					break;
-				}
-				s->Win32HideConnectWindow = p.HideWindow;
-			}
-			else
-			{
-				// Simple wait
-				Wait(s->HaltEvent, s->RetryInterval);
-			}
-
-#endif	// OS_WIN32
 		}
-		else
+
+		if (s->Err == ERR_HUB_IS_BUSY || s->Err == ERR_LICENSE_ERROR ||
+			s->Err == ERR_HUB_STOPPING || s->Err == ERR_TOO_MANY_USER_SESSION)
 		{
-#ifdef	OS_WIN32
-			// Wait for re-entry the password
-			UI_PASSWORD_DLG p;
-			Zero(&p, sizeof(p));
-			if (s->Client_NoSavePassword == false)
-			{
-				p.ShowNoSavePassword = true;
-			}
-			p.NoSavePassword = no_save_password;
-			p.CancelEvent = s->HaltEvent;
-			if (s->Err == ERR_PROXY_AUTH_FAILED)
-			{
-				p.ProxyServer = true;
-			}
-
-			if (p.ProxyServer)
-			{
-				StrCpy(p.Username, sizeof(p.Username), s->ClientOption->ProxyUsername);
-				StrCpy(p.Password, sizeof(p.Password), s->ClientOption->ProxyPassword);
-				StrCpy(p.ServerName, sizeof(p.ServerName), s->ClientOption->ProxyName);
-			}
-			else
-			{
-				bool empty = false;
-
-				StrCpy(p.Username, sizeof(p.Username), s->ClientAuth->Username);
-				if (s->ClientAuth->AuthType == AUTHTYPE_RADIUS)
-				{
-					if (StrLen(s->ClientAuth->PlainPassword) == 0)
-					{
-						empty = true;
-					}
-				}
-				else if (s->ClientAuth->AuthType == AUTHTYPE_PASSWORD)
-				{
-					if (IsZero(s->ClientAuth->HashedPassword, sizeof(s->ClientAuth->HashedPassword)))
-					{
-						empty = true;
-					}
-				}
-
-				StrCpy(p.Password, sizeof(p.Password), empty ? "" : HIDDEN_PASSWORD);
-				StrCpy(p.ServerName, sizeof(p.ServerName), s->ClientOption->Hostname);
-			}
-
-			p.RetryIntervalSec = s->RetryInterval / 1000;
-			p.Type = s->ClientAuth->AuthType;
-
-			// Display the password re-entry dialog
-			if (CncPasswordDlg(s, &p) == false)
-			{
-				// Abort the connection
-				break;
-			}
-			else
-			{
-				// Overwrite the user name
-				if (p.ProxyServer)
-				{
-					// User name of the proxy
-					StrCpy(s->ClientOption->ProxyUsername, sizeof(s->ClientOption->ProxyUsername), p.Username);
-				}
-				else
-				{
-					// The user name for connecting to the server
-					StrCpy(s->ClientAuth->Username, sizeof(s->ClientAuth->Username), p.Username);
-					s->ClientAuth->AuthType = p.Type;
-				}
-
-				if (StrCmp(p.Password, HIDDEN_PASSWORD) != 0)
-				{
-					// Password is re-entered
-					if (p.ProxyServer)
-					{
-						// Password for the proxy server
-						StrCpy(s->ClientOption->ProxyPassword, sizeof(s->ClientOption->ProxyPassword), p.Password);
-					}
-					else
-					{
-						if (s->ClientAuth->AuthType == CLIENT_AUTHTYPE_PLAIN_PASSWORD)
-						{
-							// Plaintext password authentication
-							StrCpy(s->ClientAuth->PlainPassword, sizeof(s->ClientAuth->PlainPassword), p.Password);
-						}
-						else
-						{
-							// Encrypted password authentication
-							HashPassword(s->ClientAuth->HashedPassword, s->ClientAuth->Username, p.Password);
-						}
-					}
-				}
-
-				no_save_password = p.NoSavePassword;
-
-				if (s->Account != NULL && s->Cedar->Client != NULL)
-				{
-					s->Cedar->Client->DontSavePassword = no_save_password;
-					if (p.NoSavePassword == false)
-					{
-						// Update the account database of the client
-						if (p.ProxyServer == false)
-						{
-							// Update the Server connection information
-							ACCOUNT *a = s->Account;
-							Lock(a->lock);
-							{
-								CiFreeClientAuth(a->ClientAuth);
-								a->ClientAuth = CopyClientAuth(s->ClientAuth);
-							}
-							Unlock(a->lock);
-							CiSaveConfigurationFile(s->Cedar->Client);
-						}
-						else
-						{
-							// Update the proxy connection information
-							ACCOUNT *a = s->Account;
-							Lock(a->lock);
-							{
-								Copy(a->ClientOption, s->ClientOption, sizeof(CLIENT_OPTION));
-							}
-							Unlock(a->lock);
-							CiSaveConfigurationFile(s->Cedar->Client);
-						}
-					}
-				}
-			}
-#endif	// OS_WIN32
+			retry_interval = RETRY_INTERVAL_SPECIAL;
 		}
+
+		if (s->CurrentRetryCount >= s->ClientOption->NumRetry)
+		{
+			// Retry count excess
+			break;
+		}
+
+		// Simple wait
+		Wait(s->HaltEvent, retry_interval);
 
 SKIP:
 		// Increase the number of retries

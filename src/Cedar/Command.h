@@ -301,7 +301,6 @@ bool CheckNetwork();
 void InputToNull(void *p);
 UINT RetZero();
 
-void Win32CmdDebug(bool is_uac);
 
 
 UINT PtConnect(CONSOLE *c, wchar_t *cmdline);

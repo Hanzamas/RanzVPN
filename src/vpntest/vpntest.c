@@ -4,10 +4,8 @@
 #define VPN_EXE
 
 #include "Cedar/Client.h"
-#include "Cedar/CM.h"
 #include "Cedar/Command.h"
 #include "Cedar/Server.h"
-#include "Cedar/SM.h"
 
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Mayaqua.h"
@@ -54,16 +52,6 @@ void bridge_test(UINT num, char **arg)
 }
 
 #ifdef OS_WIN32
-void server_manager_test(UINT num, char **arg)
-{
-	SMExec();
-}
-
-void client_manager_test(UINT num, char **arg)
-{
-	CMExec();
-}
-
 void setup_test(UINT num, char **arg)
 {
 	char name[MAX_SIZE];
@@ -98,8 +86,6 @@ TEST_LIST test_list[] =
 	{"s", server_test, "VPN Server in Test Mode, enter key to graceful stop."},
 	{"b", bridge_test, "VPN Bridge in Test Mode, enter key to graceful stop."},
 #ifdef OS_WIN32
-	{"sm", server_manager_test, "VPN Server Manager UI in Test Mode."},
-	{"cm", client_manager_test, "VPN Client Manager UI in Test Mode."},
 	{"setupapi", setup_test, "SetupAPI test: tries to retrieve the specified NIC's status."},
 #endif
 	{"memory_leak", memory_leak_test, "Memory leak test: Try to leak one byte by malloc()."},

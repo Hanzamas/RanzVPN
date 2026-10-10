@@ -22,7 +22,6 @@
 #include "Radius.h"
 #include "Sam.h"
 #include "SecureNAT.h"
-#include "WinUi.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/DNS.h"

@@ -41,13 +41,6 @@
 #define	SVC_ARG_SERVICE				"/service"
 #define	SVC_ARG_SETUP_INSTALL		"/setup_install"
 #define	SVC_ARG_SETUP_UNINSTALL		"/setup_uninstall"
-#define	SVC_ARG_TCP					"/tcp"
-#define	SVC_ARG_TCP_UAC				"/tcp_uac"
-#define	SVC_ARG_TCP_UAC_W			L"/tcp_uac"
-#define	SVC_ARG_TCP_SETUP			"/tcpsetup"
-#define	SVC_ARG_TRAFFIC				"/traffic"
-#define	SVC_ARG_UIHELP				"/uihelp"
-#define	SVC_ARG_UIHELP_W			L"/uihelp"
 #define SVC_ARG_SILENT				"/silent"
 
 // Time to suicide, if the service freezed
@@ -83,11 +76,6 @@
 #define	SVC_MODE_SERVICE			7
 #define	SVC_MODE_SETUP_INSTALL		8
 #define	SVC_MODE_SETUP_UNINSTALL	9
-#define	SVC_MODE_TCP				13
-#define	SVC_MODE_TCPSETUP			14
-#define	SVC_MODE_TRAFFIC			15
-#define	SVC_MODE_UIHELP				16
-#define	SVC_MODE_TCP_UAC			17
 
 #define	VISTA_MMCSS_KEYNAME			"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks"
 #define	VISTA_MMCSS_FILENAME		"mmcss_backup.dat"
@@ -95,9 +83,6 @@
 #define	SVC_NAME					"SVC_%s_NAME"
 #define	SVC_TITLE					"SVC_%s_TITLE"
 #define	SVC_DESCRIPT				"SVC_%s_DESCRIPT"
-
-#define	SVC_USERMODE_SETTING_KEY	"Software\\" GC_REG_COMPANY_NAME "\\PacketiX VPN\\UserMode Settings"
-#define	SVC_HIDETRAY_REG_VALUE		"HideTray_%S"
 
 #define	SVC_CALLING_SM_PROCESS_ID_KEY	"Software\\" GC_REG_COMPANY_NAME "\\PacketiX VPN\\Service Control\\%s"
 #define SVC_CALLING_SM_PROCESS_ID_VALUE	"ProcessId"
@@ -778,12 +763,6 @@ bool MsServiceStopProc();
 void MsServiceStoperMainThread(THREAD *t, void *p);
 void MsServiceStarterMainThread(THREAD *t, void *p);
 LRESULT CALLBACK MsUserModeWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-bool MsShowIconOnTray(HWND hWnd, HICON icon, wchar_t *tooltip, UINT msg);
-void MsRestoreIconOnTray();
-void MsChangeIconOnTray(HICON icon, wchar_t *tooltip);
-bool MsChangeIconOnTrayEx(HICON icon, wchar_t *tooltip, wchar_t *info_title, wchar_t *info, UINT info_flags, bool add);
-void MsHideIconOnTray();
-void MsUserModeTrayMenu(HWND hWnd);
 bool MsAppendMenu(HMENU hMenu, UINT flags, UINT_PTR id, wchar_t *str);
 bool MsInsertMenu(HMENU hMenu, UINT pos, UINT flags, UINT_PTR id_new_item, wchar_t *lp_new_item);
 BOOL CALLBACK MsEnumChildWindowProc(HWND hWnd, LPARAM lParam);

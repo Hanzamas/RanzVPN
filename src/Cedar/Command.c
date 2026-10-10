@@ -20,7 +20,6 @@
 #include "Radius.h"
 #include "Server.h"
 #include "Virtual.h"
-#include "WinUi.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/FileIO.h"
@@ -24750,21 +24749,6 @@ UINT VpnCmdProc(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		{"PROGRAMMING", NULL, NULL, NULL, NULL},
 	};
 
-#ifdef	OS_WIN32
-	if (UniStrCmpi(str, L"/debug") == 0)
-	{
-		// Debug information write mode
-		Win32CmdDebug(false);
-		return 0;
-	}
-	if (UniStrCmpi(str, L"/debug_uac") == 0)
-	{
-		// Debug information write mode
-		Win32CmdDebug(true);
-		return 0;
-	}
-#endif	// OS_WIN32
-
 	if (c->ConsoleType == CONSOLE_LOCAL)
 	{
 		// Initialize the execute path information
@@ -25042,66 +25026,4 @@ UINT CommandMain(wchar_t *command_line)
 
 	return ret;
 }
-
-#ifdef	OS_WIN32
-// Debug information write mode
-void Win32CmdDebug(bool is_uac)
-{
-	wchar_t *dst;
-	wchar_t def_filename[MAX_SIZE];
-	SYSTEMTIME st;
-
-	InitWinUi(_UU("CMD_DEBUG_SOFTNAME"), NULL, 0);
-
-	UniPrint(_UU("CMD_DEBUG_PRINT"));
-
-	if (is_uac && MsIsAdmin() == false)
-	{
-		MsgBox(NULL, 0x00000040L, _UU("CMD_DEBUG_NOT_ADMIN"));
-		goto LABEL_CLEANUP;
-	}
-
-	if (MsIsAdmin() == false)
-	{
-		void *process_handle = NULL;
-
-		// Launch myself using the UAC
-		if (MsExecuteEx2W(MsGetExeFileNameW(), L"/debug_uac", &process_handle, true) == false)
-		{
-			MsgBox(NULL, 0x00000030L, _UU("CMD_DEBUG_UAC_FAILED"));
-			return;
-		}
-
-		MsCloseHandle(process_handle);
-		goto LABEL_CLEANUP;
-	}
-
-	LocalTime(&st);
-
-	UniFormat(def_filename, sizeof(def_filename), L"vpn_debuginfo_%04u%02u%02u_%02u%02u%02u.zip",
-		st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
-
-	// Specify the destination
-	dst = SaveDlg(NULL, _UU("DLG_ZIP_FILER"), _UU("CMD_DEBUG_SAVE_TITLE"), def_filename, L".zip");
-	if (dst != NULL)
-	{
-		if (MsSaveSystemInfo(dst) == false)
-		{
-			// Failure
-			MsgBoxEx(NULL, 0x00000030L, _UU("CMD_DEBUG_NG"), dst);
-		}
-		else
-		{
-			// Success
-			MsgBoxEx(NULL, 0x00000040L, _UU("CMD_DEBUG_OK"), dst);
-		}
-
-		Free(dst);
-	}
-
-LABEL_CLEANUP:
-	FreeWinUi();
-}
-
-#endif	// OS_WIN32
 

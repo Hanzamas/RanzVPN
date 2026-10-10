@@ -69,9 +69,6 @@ jobs:
         call "%VCVARS_PATH%"
         cmake -G "Ninja" -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=%VCPKG_TRIPLET% -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER="%COMPILER_PATH%" -DCMAKE_CXX_COMPILER="%COMPILER_PATH%" -DBUILD_NUMBER=%BUILD_NUMBER% %CMAKE_EXTRA_FLAGS% ..
         cmake --build .
-        mkdir installers
-        vpnsetup /SFXMODE:vpnclient /SFXOUT:"installers\softether-vpnclient-%VERSION%.%BUILD_NUMBER%.%ARCHITECTURE%.exe"
-        vpnsetup /SFXMODE:vpnserver_vpnbridge /SFXOUT:"installers\softether-vpnserver_vpnbridge-%VERSION%.%BUILD_NUMBER%.%ARCHITECTURE%.exe"
       shell: cmd
     - name: Test
       shell: powershell
@@ -92,8 +89,3 @@ jobs:
           build/*.exe
           build/*.pdb
           build/*.se2
-    - uses: actions/upload-artifact@v4
-      with:
-        if-no-files-found: error
-        name: Installers-${{ matrix.platform.ARCHITECTURE }}
-        path: build/installers

@@ -9,7 +9,6 @@
 
 #include "Admin.h"
 #include "Client.h"
-#include "CM.h"
 #include "DDNS.h"
 #include "Hub.h"
 #include "IPC.h"
@@ -26,7 +25,6 @@
 #include "VLanUnix.h"
 #include "WaterMark.h"
 #include "WebUI.h"
-#include "WinUi.h"
 #include "Wpc.h"
 
 #include "Mayaqua/Cfg.h"
@@ -4223,10 +4221,6 @@ bool ClientSecureSign(CONNECTION *c, UCHAR *sign, UCHAR *random, X **x)
 	ss->UseSecureDeviceId = c->Cedar->Client->UseSecureDeviceId;
 	Copy(ss->Random, random, SHA1_SIZE);
 
-#ifdef	OS_WIN32
-	ss->BitmapId = CmGetSecureBitmapId(c->ServerName);
-#endif	// OS_WIN32
-
 	p->SecureSignProc = a->SecureSignProc;
 
 	// Create a thread
@@ -6545,19 +6539,8 @@ SOCK *BindTcpConnectEx3(IP *localIP, UINT localport, char *hostname, UINT port, 
 //SOCK *TcpConnectEx4(char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, bool no_nat_t, UINT *nat_t_error_code, bool try_start_ssl, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err, char *hint_str, IP *ret_ip)
 SOCK *BindTcpConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, bool no_nat_t, UINT *nat_t_error_code, bool try_start_ssl, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err, char *hint_str, IP *ret_ip)
 {
-#ifdef	OS_WIN32
-	if (hWnd == NULL)
-	{
-#endif	// OS_WIN32
 //		return ConnectEx5(hostname, port, timeout, cancel_flag, (no_nat_t ? NULL : VPN_RUDP_SVC_NAME), nat_t_error_code, try_start_ssl, true, ssl_option, ssl_err, hint_str, ret_ip);
-		return BindConnectEx5(localIP, localport, hostname, port, timeout, cancel_flag, (no_nat_t ? NULL : VPN_RUDP_SVC_NAME), nat_t_error_code, try_start_ssl, true, ssl_option, ssl_err, hint_str, ret_ip);
-#ifdef	OS_WIN32
-	}
-	else
-	{
-		return WinConnectEx4((HWND)hWnd, hostname, port, timeout, 0, NULL, NULL, nat_t_error_code, (no_nat_t ? NULL : VPN_RUDP_SVC_NAME), try_start_ssl, ssl_option, ssl_err, hint_str);
-	}
-#endif	// OS_WIN32
+	return BindConnectEx5(localIP, localport, hostname, port, timeout, cancel_flag, (no_nat_t ? NULL : VPN_RUDP_SVC_NAME), nat_t_error_code, try_start_ssl, true, ssl_option, ssl_err, hint_str, ret_ip);
 }
 
 // Connect with TCP/IP

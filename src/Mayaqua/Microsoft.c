@@ -22,12 +22,6 @@
 #include "Tick64.h"
 #include "Win32.h"
 
-// TODO: Mayaqua should not depend on Cedar.
-#include <Cedar/Cedar.h>
-#include <Cedar/Client.h>
-#include <Cedar/CM.h>
-#include <Cedar/WinUi.h>
-
 #define SECURITY_WIN32
 
 // The struct is defined in Microsoft's <cfg.h>, but Mayaqua's one gets included instead.
@@ -87,9 +81,6 @@ static SERVICE_FUNCTION *g_start, *g_stop;
 static bool exiting = false;
 static bool wnd_end;
 static bool is_usermode = false;
-static HICON tray_icon;
-static NOTIFYICONDATAW nid_nt;
-static bool tray_inited = false;
 static HWND hWndUsermode = NULL;
 static HANDLE hLsa = NULL;
 static ULONG lsa_package_id = 0;
@@ -3115,114 +3106,6 @@ void MsPlaySound(char *name)
 	FreeBuf(b);
 }
 
-// Show an icon in the task tray
-bool MsShowIconOnTray(HWND hWnd, HICON icon, wchar_t *tooltip, UINT msg)
-{
-	bool ret = true;
-	// Validate arguments
-	if (hWnd == NULL || icon == NULL)
-	{
-		return true;
-	}
-
-	Zero(&nid_nt, sizeof(nid_nt));
-	nid_nt.cbSize = sizeof(nid_nt);
-	nid_nt.hWnd = hWnd;
-	nid_nt.uID = 1;
-	nid_nt.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_INFO;
-	nid_nt.uCallbackMessage = msg;
-	nid_nt.hIcon = icon;
-	UniStrCpy(nid_nt.szTip, sizeof(nid_nt.szTip), tooltip);
-
-	ret = Shell_NotifyIconW(NIM_ADD, &nid_nt);
-
-	tray_inited = true;
-
-	return ret;
-}
-
-// Restore the icon in the task tray
-void MsRestoreIconOnTray()
-{
-	if (tray_inited == false)
-	{
-		return;
-	}
-
-	Shell_NotifyIconW(NIM_ADD, &nid_nt);
-}
-
-// Change the icon in the task tray
-void MsChangeIconOnTray(HICON icon, wchar_t *tooltip)
-{
-	MsChangeIconOnTrayEx(icon, tooltip, NULL, NULL, NIIF_NONE, false);
-}
-bool MsChangeIconOnTrayEx(HICON icon, wchar_t *tooltip, wchar_t *info_title, wchar_t *info, UINT info_flags, bool add)
-{
-	bool changed = false;
-	bool ret = true;
-
-	if (tray_inited == false)
-	{
-		return ret;
-	}
-
-	if (icon != NULL)
-	{
-		if (nid_nt.hIcon != icon)
-		{
-			changed = true;
-			nid_nt.hIcon = icon;
-		}
-	}
-
-	if (tooltip != NULL)
-	{
-		wchar_t tmp[MAX_SIZE];
-		UniStrCpy(tmp, sizeof(tmp), tooltip);
-
-		if (UniStrCmp(nid_nt.szTip, tmp) != 0)
-		{
-			UniStrCpy(nid_nt.szTip, sizeof(nid_nt.szTip), tmp);
-			changed = true;
-		}
-	}
-
-	if (info_title != NULL && info != NULL)
-	{
-		wchar_t tmp1[MAX_SIZE];
-		wchar_t tmp2[MAX_PATH];
-
-		UniStrCpy(tmp1, sizeof(tmp1), info_title);
-		UniStrCpy(tmp2, sizeof(tmp2), info);
-
-		if (UniStrCmp(nid_nt.szInfo, tmp1) != 0 ||
-			UniStrCmp(nid_nt.szInfoTitle, tmp2) != 0)
-		{
-			UniStrCpy(nid_nt.szInfo, sizeof(nid_nt.szInfo), tmp1);
-			UniStrCpy(nid_nt.szInfoTitle, sizeof(nid_nt.szInfoTitle), tmp2);
-			nid_nt.dwInfoFlags = info_flags;
-
-			changed = true;
-		}
-	}
-
-	if (changed || add)
-	{
-		UINT op = (add ? NIM_ADD : NIM_MODIFY);
-		ret = Shell_NotifyIconW(op, &nid_nt);
-	}
-
-	return ret;
-}
-
-// Remove the icon in the task tray
-void MsHideIconOnTray()
-{
-	Shell_NotifyIconW(NIM_DELETE, &nid_nt);
-	tray_inited = false;
-}
-
 // Insert a menu item
 bool MsInsertMenu(HMENU hMenu, UINT pos, UINT flags, UINT_PTR id_new_item, wchar_t *lp_new_item)
 {
@@ -3235,60 +3118,13 @@ bool MsAppendMenu(HMENU hMenu, UINT flags, UINT_PTR id, wchar_t *str)
 	return AppendMenuW(hMenu, flags, id, str);
 }
 
-// Display the menu
-void MsUserModeTrayMenu(HWND hWnd)
-{
-	HMENU h;
-	POINT p;
-	wchar_t tmp[MAX_SIZE];
-	wchar_t caption[MAX_SIZE];
-	// Validate arguments
-	if (hWnd == NULL)
-	{
-		return;
-	}
-
-	// Create a menu
-	h = CreatePopupMenu();
-	MsAppendMenu(h, MF_ENABLED | MF_STRING, 10001, _UU("SVC_USERMODE_MENU_1"));
-	MsAppendMenu(h, MF_SEPARATOR, 10002, NULL);
-
-	GetWindowTextW(hWnd, caption, sizeof(caption) / sizeof(caption[0]));
-
-	UniFormat(tmp, sizeof(tmp), _UU("SVC_USERMODE_MENU_2"), caption);
-	MsAppendMenu(h, MF_ENABLED | MF_STRING, 10003, tmp);
-
-	// Display the menu
-	GetCursorPos(&p);
-
-	SetForegroundWindow(hWnd);
-	TrackPopupMenu(h, TPM_LEFTALIGN, p.x, p.y, 0, hWnd, NULL);
-	PostMessage(hWnd, WM_NULL, 0, 0);
-
-	DestroyMenu(h);
-}
-
 // Window procedure for the user mode
 LRESULT CALLBACK MsUserModeWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-	wchar_t tmp[MAX_SIZE];
-	char title[MAX_SIZE];
-	wchar_t title_w[MAX_SIZE];
-	char value_name[MAX_SIZE];
-	static UINT taskbar_msg = 0;
 	// Validate arguments
 	if (hWnd == NULL)
 	{
 		return 0;
-	}
-
-	if (msg == taskbar_msg && taskbar_msg != 0)
-	{
-		// The taskbar was regenerated
-		if (MsRegReadInt(REG_CURRENT_USER, SVC_USERMODE_SETTING_KEY, value_name) == 0)
-		{
-			MsRestoreIconOnTray();
-		}
 	}
 
 	switch (msg)
@@ -3303,46 +3139,11 @@ LRESULT CALLBACK MsUserModeWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		// Start
 		exiting = false;
 		g_start();
-		GetWindowText(hWnd, title, sizeof(title));
-		StrToUni(title_w, sizeof(title_w), title);
-		UniFormat(tmp, sizeof(tmp), _UU("SVC_TRAY_TOOLTIP"), title);
-
-		if (taskbar_msg == 0)
-		{
-			taskbar_msg = RegisterWindowMessage("TaskbarCreated");
-		}
-
-		Format(value_name, sizeof(value_name), SVC_HIDETRAY_REG_VALUE, title_w);
-		if (MsRegReadInt(REG_CURRENT_USER, SVC_USERMODE_SETTING_KEY, value_name) == 0)
-		{
-			MsShowIconOnTray(hWnd, tray_icon, tmp, WM_APP + 33);
-		}
-
-		break;
-	case WM_APP + 33:
-		if (wParam == 1)
-		{
-			// The operation to the icon in the task tray
-			switch (lParam)
-			{
-			case WM_RBUTTONDOWN:
-				// Right click
-				MsUserModeTrayMenu(hWnd);
-				break;
-			case WM_LBUTTONDBLCLK:
-				// Left double-click
-				break;
-			}
-		}
-		break;
-	case WM_LBUTTONDOWN:
-		MsUserModeTrayMenu(hWnd);
 		break;
 	case WM_QUERYENDSESSION:
 		if (exiting == false)
 		{
 			exiting = true;
-			MsHideIconOnTray();
 			g_stop();
 			DestroyWindow(hWnd);
 		}
@@ -3353,35 +3154,11 @@ LRESULT CALLBACK MsUserModeWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		{
 			exiting = true;
 			g_stop();
-			MsHideIconOnTray();
 			DestroyWindow(hWnd);
 		}
 		break;
 	case WM_DESTROY:
 		wnd_end = true;
-		break;
-	case WM_COMMAND:
-		switch (wParam)
-		{
-		case 10001:
-			GetWindowText(hWnd, title, sizeof(title));
-			StrToUni(title_w, sizeof(title_w), title);
-			// Display a confirmation message
-			if (MsgBoxEx(hWnd, MB_ICONINFORMATION | MB_OKCANCEL | MB_DEFBUTTON2 |
-				MB_SYSTEMMODAL, _UU("SVC_HIDE_TRAY_MSG"), title, title) == IDOK)
-			{
-				char tmp[MAX_SIZE];
-				Format(tmp, sizeof(tmp), SVC_HIDETRAY_REG_VALUE, title_w);
-				// Write to the registry
-				MsRegWriteInt(REG_CURRENT_USER, SVC_USERMODE_SETTING_KEY, tmp, 1);
-				// Hide the icon
-				MsHideIconOnTray();
-			}
-			break;
-		case 10003:
-			SendMessage(hWnd, WM_CLOSE, 0, 0);
-			break;
-		}
 		break;
 	}
 	return DefWindowProc(hWnd, msg, wParam, lParam);
@@ -3697,11 +3474,11 @@ void MsFreeSuspendHandler(MS_SUSPEND_HANDLER *h)
 void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT icon)
 {
 	WNDCLASS wc;
-	HINSTANCE hDll;
 	HWND hWnd;
 	MSG msg;
 	INSTANCE *inst;
 	char title_a[MAX_PATH];
+	wchar_t msg_str[MAX_SIZE];
 	MS_USERMODE_SVC_PULSE_THREAD_PARAM p;
 	THREAD *recv_thread = NULL;
 	// Validate arguments
@@ -3719,28 +3496,15 @@ void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop
 	inst = NewSingleInstance(NULL);
 	if (inst == NULL)
 	{
-		MsgBoxEx(NULL, MB_ICONINFORMATION, _UU("SVC_USERMODE_MUTEX"), ms->ExeFileNameW);
+		UniFormat(msg_str, sizeof(msg_str), _UU("SVC_USERMODE_MUTEX"), ms->ExeFileNameW);
+		UniPrint(L"%s\n", msg_str);
 		return;
 	}
 
-	if (Is64())
-	{
-		hDll = MsLoadLibraryAsDataFile(PENCORE_DLL_NAME);
-	}
-	else
-	{
-		hDll = MsLoadLibrary(PENCORE_DLL_NAME);
-	}
-
-	// Read icon
-	tray_icon = LoadImage(hDll, MAKEINTRESOURCE(icon), IMAGE_ICON, 16, 16,
-		LR_SHARED | LR_VGACOLOR);
-
-	// Creating the main window
+	// Creating the main window (hidden; no icon and no task tray)
 	Zero(&wc, sizeof(wc));
 	wc.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);
 	wc.hCursor = LoadCursor(NULL,IDC_ARROW);
-	wc.hIcon = LoadIcon(hDll, MAKEINTRESOURCE(icon));
 	wc.hInstance = ms->hInst;
 	wc.lpfnWndProc = MsUserModeWindowProc;
 	wc.lpszClassName = title_a;
@@ -3971,6 +3735,7 @@ void MsTestMode(char *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop)
 void MsTestModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop)
 {
 	INSTANCE *inst;
+	wchar_t msg[MAX_SIZE];
 	// Validate arguments
 	if (title == NULL || start == NULL || stop == NULL)
 	{
@@ -3983,15 +3748,18 @@ void MsTestModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop
 	if (inst == NULL)
 	{
 		// Already started
-		MsgBoxEx(NULL, MB_ICONINFORMATION, _UU("SVC_TEST_MUTEX"), ms->ExeFileNameW);
+		UniFormat(msg, sizeof(msg), _UU("SVC_TEST_MUTEX"), ms->ExeFileNameW);
+		UniPrint(L"%s\n", msg);
 		return;
 	}
 
 	// Start
 	start();
 
-	// Display the message
-	MsgBoxEx(NULL, MB_ICONINFORMATION | MB_SYSTEMMODAL, _UU("SVC_TEST_MSG"), title);
+	// Display the message and wait until Enter is pressed
+	UniFormat(msg, sizeof(msg), _UU("SVC_TEST_MSG"), title);
+	UniPrint(L"%s\n", msg);
+	GetLine(NULL, 0);
 
 	// Stop
 	stop();
@@ -4042,14 +3810,12 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 	UINT mode;
 	UINT ret = 0;
 	char *arg;
-	wchar_t *arg_w;
 	TOKEN_LIST *t = NULL;
-	UNI_TOKEN_LIST *ut = NULL;
 	char *service_name;
 	wchar_t *service_title;
 	wchar_t *service_description;
-	wchar_t *service_title_uni;
 	char tmp[MAX_SIZE];
+	wchar_t msg[MAX_SIZE * 4];
 	bool restoreReg = false;
 	bool silent = false;
 	bool is_win32_service_mode = false;
@@ -4136,14 +3902,14 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 	service_name = _SS(tmp);
 	Format(tmp, sizeof(tmp), SVC_TITLE, name);
 	service_title = _UU(tmp);
-	service_title_uni = _UU(tmp);
 	Format(tmp, sizeof(tmp), SVC_DESCRIPT, name);
 	service_description = _UU(tmp);
 
 	if (StrLen(service_name) == 0 || UniStrLen(service_title) == 0)
 	{
 		// The service information isn't found
-		MsgBoxEx(NULL, MB_ICONSTOP, _UU("SVC_NOT_FOUND"), name);
+		UniFormat(msg, sizeof(msg), _UU("SVC_NOT_FOUND"), name);
+		UniPrint(L"%s\n", msg);
 	}
 	else
 	{
@@ -4153,9 +3919,6 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 
 		t = GetCommandLineToken();
 		arg = NULL;
-
-		ut = GetCommandLineUniToken();
-		arg_w = NULL;
 
 		if (t->NumTokens >= 1)
 		{
@@ -4167,11 +3930,6 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 			{
 				silent = true;
 			}
-		}
-
-		if (ut->NumTokens >= 1)
-		{
-			arg_w = ut->Token[0];
 		}
 
 		if (arg != NULL)
@@ -4208,39 +3966,10 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 			{
 				mode = SVC_MODE_SETUP_UNINSTALL;
 			}
-			if (StrCmpi(arg, SVC_ARG_TCP) == 0)
+			if (StrCmpi(arg, SVC_ARG_USERMODE_SHOWTRAY) == 0 || StrCmpi(arg, SVC_ARG_USERMODE_HIDETRAY) == 0)
 			{
-				mode = SVC_MODE_TCP;
-			}
-			if (StrCmpi(arg, SVC_ARG_TCP_UAC) == 0)
-			{
-				mode = SVC_MODE_TCP_UAC;
-			}
-			if (StrCmpi(arg, SVC_ARG_TCP_SETUP) == 0)
-			{
-				mode = SVC_MODE_TCPSETUP;
-			}
-			if (StrCmpi(arg, SVC_ARG_TRAFFIC) == 0)
-			{
-				mode = SVC_MODE_TRAFFIC;
-			}
-			if (StrCmpi(arg, SVC_ARG_UIHELP) == 0)
-			{
-				mode = SVC_MODE_UIHELP;
-			}
-			if (StrCmpi(arg, SVC_ARG_USERMODE_SHOWTRAY) == 0)
-			{
-				char tmp[MAX_SIZE];
+				// Legacy arguments: there is no task tray icon any more, so these are the same as /usermode
 				mode = SVC_MODE_USERMODE;
-				Format(tmp, sizeof(tmp), SVC_HIDETRAY_REG_VALUE, service_title);
-				MsRegDeleteValue(REG_CURRENT_USER, SVC_USERMODE_SETTING_KEY, tmp);
-			}
-			if (StrCmpi(arg, SVC_ARG_USERMODE_HIDETRAY) == 0)
-			{
-				char tmp[MAX_SIZE];
-				mode = SVC_MODE_USERMODE;
-				Format(tmp, sizeof(tmp), SVC_HIDETRAY_REG_VALUE, service_title);
-				MsRegWriteInt(REG_CURRENT_USER, SVC_USERMODE_SETTING_KEY, tmp, 1);
 			}
 			if (StrCmpi(arg, SVC_ARG_SERVICE) == 0)
 			{
@@ -4262,14 +3991,14 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 			(IsNt() == false))
 		{
 			// Tried to use the command for the NT in non-WindowsNT system
-			MsgBox(NULL, MB_ICONSTOP, _UU("SVC_NT_ONLY"));
+			UniPrint(L"%s\n", _UU("SVC_NT_ONLY"));
 		}
 		else if ((mode == SVC_MODE_INSTALL || mode == SVC_MODE_UNINSTALL || mode == SVC_MODE_START ||
 			mode == SVC_MODE_STOP || mode == SVC_MODE_SERVICE) &&
 			(ms->IsAdmin == false))
 		{
 			// Do not have Administrators privilege
-			MsgBox(NULL, MB_ICONEXCLAMATION, _UU("SVC_NOT_ADMIN"));
+			UniPrint(L"%s\n", _UU("SVC_NOT_ADMIN"));
 		}
 		else
 		{
@@ -4278,24 +4007,9 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 			{
 			case SVC_MODE_NONE:
 				// Exit by showing a guidance message
-				if (arg_w != NULL && UniEndWith(arg_w, L".vpn"))
-				{
-					if (MsgBox(NULL, MB_ICONQUESTION | MB_YESNO, _UU("CM_VPN_FILE_CLICKED")) == IDYES)
-					{
-						wchar_t vpncmgr[MAX_PATH];
-						wchar_t filename[MAX_PATH];
-
-						UniFormat(filename, sizeof(filename), L"\"%s\"", arg_w);
-						UniFormat(vpncmgr, sizeof(vpncmgr), L"%s\\vpncmgr.exe", MsGetExeDirNameW());
-
-						RunW(vpncmgr, filename, false, false);
-					}
-				}
-				else
-				{
-					MsgBoxEx(NULL, MB_ICONINFORMATION, _UU("SVC_HELP"),
-						service_title, service_name, service_title, service_title, service_name, service_title, service_name, service_title, service_name, service_title, service_name, service_title, service_title);
-				}
+				UniFormat(msg, sizeof(msg), _UU("SVC_HELP"),
+					service_title, service_name, service_title, service_title, service_name, service_title, service_name, service_title, service_name, service_title, service_name, service_title, service_title);
+				UniPrint(L"%s\n", msg);
 				break;
 
 			case SVC_MODE_SETUP_INSTALL:
@@ -4353,40 +4067,38 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 						// Always cancel the operation
 						break;
 					}
-					if (MsgBoxEx(NULL, MB_ICONQUESTION | MB_YESNO | MB_DEFBUTTON2, _UU("SVC_ALREADY_INSTALLED"),
-						service_title, service_name) == IDNO)
+					// The operator explicitly requested /install, so uninstall and then re-install
+					UniFormat(msg, sizeof(msg), _UU("SVC_ALREADY_INSTALLED"),
+						service_title, service_name);
+					UniPrint(L"%s\n", msg);
+
+					// Whether the existing service is working?
+					if (MsIsServiceRunning(service_name))
 					{
-						// Cancel the operation
-						break;
-					}
-					else
-					{
-						// Whether the existing service is working?
-						if (MsIsServiceRunning(service_name))
+						// Try to stop
+						if (MsStopService(service_name) == false)
 						{
-							// Try to stop
-							if (MsStopService(service_name) == false)
-							{
-								// Failed to stop
-								if(silent == false)
-								{
-									MsgBoxEx(NULL, MB_ICONSTOP, _UU("SVC_STOP_FAILED"),
-										service_title, service_name);
-								}
-								break;
-							}
-						}
-						// Uninstall
-						if (MsUninstallService(service_name) == false)
-						{
-							// Failed to uninstall
+							// Failed to stop
 							if(silent == false)
 							{
-								MsgBoxEx(NULL, MB_ICONSTOP, _UU("SVC_UNINSTALL_FAILED"),
+								UniFormat(msg, sizeof(msg), _UU("SVC_STOP_FAILED"),
 									service_title, service_name);
+								UniPrint(L"%s\n", msg);
 							}
 							break;
 						}
+					}
+					// Uninstall
+					if (MsUninstallService(service_name) == false)
+					{
+						// Failed to uninstall
+						if(silent == false)
+						{
+							UniFormat(msg, sizeof(msg), _UU("SVC_UNINSTALL_FAILED"),
+								service_title, service_name);
+							UniPrint(L"%s\n", msg);
+						}
+						break;
 					}
 				}
 
@@ -4396,8 +4108,9 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 					// Failed to install
 					if(silent == false)
 					{
-						MsgBoxEx(NULL, MB_ICONSTOP, _UU("SVC_INSTALL_FAILED"),
+						UniFormat(msg, sizeof(msg), _UU("SVC_INSTALL_FAILED"),
 							service_title, service_name);
+						UniPrint(L"%s\n", msg);
 					}
 					break;
 				}
@@ -4408,8 +4121,9 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 					// Failed to start
 					if(silent == false)
 					{
-						MsgBoxEx(NULL, MB_ICONEXCLAMATION, _UU("SVC_INSTALL_FAILED_2"),
+						UniFormat(msg, sizeof(msg), _UU("SVC_INSTALL_FAILED_2"),
 							service_title, service_name, path);
+						UniPrint(L"%s\n", msg);
 					}
 					break;
 				}
@@ -4417,8 +4131,9 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 				// All successful
 				if(silent == false)
 				{
-					MsgBoxEx(NULL, MB_ICONINFORMATION, _UU("SVC_INSTALL_OK"),
+					UniFormat(msg, sizeof(msg), _UU("SVC_INSTALL_OK"),
 						service_title, service_name, path);
+					UniPrint(L"%s\n", msg);
 				}
 				break;
 
@@ -4432,8 +4147,9 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 				{
 					if(silent == false)
 					{
-						MsgBoxEx(NULL, MB_ICONEXCLAMATION, _UU("SVC_NOT_INSTALLED"),
+						UniFormat(msg, sizeof(msg), _UU("SVC_NOT_INSTALLED"),
 							service_title, service_name, path);
+						UniPrint(L"%s\n", msg);
 					}
 					break;
 				}
@@ -4447,8 +4163,9 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 						// Failed to stop
 						if(silent == false)
 						{
-							MsgBoxEx(NULL, MB_ICONSTOP, _UU("SVC_STOP_FAILED"),
+							UniFormat(msg, sizeof(msg), _UU("SVC_STOP_FAILED"),
 								service_title, service_name);
+							UniPrint(L"%s\n", msg);
 						}
 						break;
 					}
@@ -4459,8 +4176,9 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 				{
 					if(silent == false)
 					{
-						MsgBoxEx(NULL, MB_ICONSTOP, _UU("SVC_UNINSTALL_FAILED"),
+						UniFormat(msg, sizeof(msg), _UU("SVC_UNINSTALL_FAILED"),
 							service_title, service_name);
+						UniPrint(L"%s\n", msg);
 					}
 					break;
 				}
@@ -4468,8 +4186,9 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 				// All successful
 				if(silent == false)
 				{
-					MsgBoxEx(NULL, MB_ICONINFORMATION, _UU("SVC_UNINSTALL_OK"),
+					UniFormat(msg, sizeof(msg), _UU("SVC_UNINSTALL_OK"),
 						service_title, service_name);
+					UniPrint(L"%s\n", msg);
 				}
 				break;
 
@@ -4483,8 +4202,9 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 					// Service is not installed
 					if(silent == false)
 					{
-						MsgBoxEx(NULL, MB_ICONEXCLAMATION, _UU("SVC_NOT_INSTALLED"),
+						UniFormat(msg, sizeof(msg), _UU("SVC_NOT_INSTALLED"),
 							service_title, service_name);
+						UniPrint(L"%s\n", msg);
 					}
 					break;
 				}
@@ -4495,8 +4215,9 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 					// Service is running
 					if(silent == false)
 					{
-						MsgBoxEx(NULL, MB_ICONINFORMATION, _UU("SVR_ALREADY_START"),
+						UniFormat(msg, sizeof(msg), _UU("SVR_ALREADY_START"),
 							service_title, service_name);
+						UniPrint(L"%s\n", msg);
 					}
 					break;
 				}
@@ -4507,8 +4228,9 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 					// Failed to start
 					if(silent == false)
 					{
-						MsgBoxEx(NULL, MB_ICONEXCLAMATION, _UU("SVC_START_FAILED"),
+						UniFormat(msg, sizeof(msg), _UU("SVC_START_FAILED"),
 							service_title, service_name);
+						UniPrint(L"%s\n", msg);
 					}
 					break;
 				}
@@ -4516,8 +4238,9 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 				// All successful
 				if(silent == false)
 				{
-					MsgBoxEx(NULL, MB_ICONINFORMATION, _UU("SVC_START_OK"),
+					UniFormat(msg, sizeof(msg), _UU("SVC_START_OK"),
 						service_title, service_name);
+					UniPrint(L"%s\n", msg);
 				}
 				break;
 
@@ -4531,8 +4254,9 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 					// Service is not installed
 					if(silent == false)
 					{
-						MsgBoxEx(NULL, MB_ICONEXCLAMATION, _UU("SVC_NOT_INSTALLED"),
+						UniFormat(msg, sizeof(msg), _UU("SVC_NOT_INSTALLED"),
 							service_title, service_name);
+						UniPrint(L"%s\n", msg);
 					}
 					break;
 				}
@@ -4543,8 +4267,9 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 					// The service is stopped
 					if(silent == false)
 					{
-					MsgBoxEx(NULL, MB_ICONINFORMATION, _UU("SVC_ALREADY_STOP"),
+					UniFormat(msg, sizeof(msg), _UU("SVC_ALREADY_STOP"),
 						service_title, service_name);
+					UniPrint(L"%s\n", msg);
 					}
 					break;
 				}
@@ -4554,8 +4279,9 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 					// Failed to stop
 					if(silent == false)
 					{
-						MsgBoxEx(NULL, MB_ICONEXCLAMATION, _UU("SVC_STOP_FAILED"),
+						UniFormat(msg, sizeof(msg), _UU("SVC_STOP_FAILED"),
 							service_title, service_name);
+						UniPrint(L"%s\n", msg);
 					}
 					break;
 				}
@@ -4563,8 +4289,9 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 				// All successful
 				if(silent == false)
 				{
-					MsgBoxEx(NULL, MB_ICONINFORMATION, _UU("SVC_STOP_OK"),
+					UniFormat(msg, sizeof(msg), _UU("SVC_STOP_OK"),
 						service_title, service_name);
+					UniPrint(L"%s\n", msg);
 				}
 				break;
 
@@ -4581,78 +4308,10 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 				// Obsoleted (2012.12.31) (Do this in the above code)
 				//MsServiceMode(start, stop);
 				break;
-
-			case SVC_MODE_TCP:
-			case SVC_MODE_TCP_UAC:
-				// TCP Utility
-				InitCedar();
-				InitWinUi(service_title_uni, NULL, 0);
-
-				if (MsIsAdmin() == false && mode != SVC_MODE_TCP_UAC)
-				{
-					void *handle = NULL;
-					if (MsExecuteEx2W(ms->ExeFileNameW, SVC_ARG_TCP_UAC_W, &handle, true) == false)
-					{
-						ShowTcpIpConfigUtil(NULL, true);
-					}
-					else
-					{
-						MsWaitProcessExit(handle);
-					}
-				}
-				else
-				{
-					ShowTcpIpConfigUtil(NULL, true);
-				}
-
-				FreeWinUi();
-				FreeCedar();
-				break;
-
-			case SVC_MODE_TCPSETUP:
-				// TCP optimization mode (This is called by the installer)
-				InitCedar();
-				InitWinUi(service_title_uni, NULL, 0);
-
-				if (MsIsAdmin() == false)
-				{
-					void *handle = NULL;
-					if (MsExecuteEx2W(ms->ExeFileNameW, arg_w, &handle, true) == false)
-					{
-						ShowTcpIpConfigUtil(NULL, false);
-					}
-					else
-					{
-						MsWaitProcessExit(handle);
-					}
-				}
-				else
-				{
-					ShowTcpIpConfigUtil(NULL, false);
-				}
-
-				FreeWinUi();
-				FreeCedar();
-				break;
-
-			case SVC_MODE_TRAFFIC:
-				// Communication throughput measurement tool
-				InitCedar();
-				InitWinUi(service_title_uni, NULL, 0);
-				CmTraffic(NULL);
-				FreeWinUi();
-				FreeCedar();
-				break;
-
-			case SVC_MODE_UIHELP:
-				// Starting the UI Helper
-				CnStart();
-				break;
 			}
 
 		}
 		FreeToken(t);
-		UniFreeToken(ut);
 
 		if (restoreReg)
 		{

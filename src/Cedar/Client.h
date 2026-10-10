@@ -13,8 +13,6 @@
 #include "Wpc.h"
 
 #define	CLIENT_CONFIG_PORT					GC_CLIENT_CONFIG_PORT		// Client port number
-#define	CLIENT_NOTIFY_PORT					GC_CLIENT_NOTIFY_PORT		// Client notification port number
-#define CLIENT_WAIT_CN_READY_TIMEOUT		(10 * 1000)	// Standby time to start the client notification service
 
 // Constants
 #define	CLIENT_CONFIG_FILE_NAME				"$vpn_client.config"
@@ -30,8 +28,6 @@
 #define	CLIENT_MACOS_TAP_NAME				"tap0"
 
 #define	CLIENT_SAVER_INTERVAL				(30 * 1000)
-
-#define	CLIENT_NOTIFY_SERVICE_INSTANCENAME	GC_SW_SOFTETHER_PREFIX "vpnclient_uihelper"
 
 #define	CLIENT_WIN32_EXE_FILENAME			"vpnclient.exe"
 
@@ -73,8 +69,6 @@ struct ACCOUNT
 	LOCK *lock;								// Lock
 	SESSION *ClientSession;					// Client session
 	CLIENT_STATUS_PRINTER *StatusPrinter;	// Status indicator
-
-	SOCK *StatusWindow;						// Status window
 };
 
 // Client Settings
@@ -395,7 +389,6 @@ struct CLIENT
 	bool DontSavePassword;					// Flag for not to save the password
 	ERASER *Eraser;							// Eraser
 	SOCKLIST *SockList;						// Socket list
-	CM_SETTING *CmSetting;					// CM configuration
 	void *GlobalPulse;						// Global pulse
 	THREAD *PulseRecvThread;				// Pulse reception thread
 	volatile bool HaltPulseThread;			// Stop flag for the pulse reception thread
@@ -435,14 +428,6 @@ struct NOTIFY_CLIENT
 	SOCK *Sock;
 };
 
-// CM configuration
-struct CM_SETTING
-{
-	bool EasyMode;							// Simple mode
-	bool LockMode;							// Setting lock mode
-	UCHAR HashedPassword[SHA1_SIZE];		// Password
-};
-
 
 
 
@@ -457,8 +442,6 @@ void CcDisconnectNotify(NOTIFY_CLIENT *n);
 void CcStopNotify(NOTIFY_CLIENT *n);
 bool CcWaitNotify(NOTIFY_CLIENT *n);
 UINT CcGetClientVersion(REMOTE_CLIENT *r, RPC_CLIENT_VERSION *a);
-UINT CcSetCmSetting(REMOTE_CLIENT *r, CM_SETTING *a);
-UINT CcGetCmSetting(REMOTE_CLIENT *r, CM_SETTING *a);
 UINT CcSetPassword(REMOTE_CLIENT *r, RPC_CLIENT_PASSWORD *pass);
 UINT CcGetPasswordSetting(REMOTE_CLIENT *r, RPC_CLIENT_PASSWORD_SETTING *a);
 UINT CcEnumCa(REMOTE_CLIENT *r, RPC_CLIENT_ENUM_CA *e);
@@ -496,69 +479,10 @@ void CcSetServiceToForegroundProcess(REMOTE_CLIENT *r);
 char *CiGetFirstVLan(CLIENT *c);
 void CiNormalizeAccountVLan(CLIENT *c);
 
-void CnStart();
-void CnListenerProc(THREAD *thread, void *param);
-
-void CnReleaseSocket(SOCK *s, PACK *p);
-
-void CnStatusPrinter(SOCK *s, PACK *p);
-void Win32CnStatusPrinter(SOCK *s, PACK *p);
-
-void CnConnectErrorDlg(SOCK *s, PACK *p);
-void Win32CnConnectErrorDlg(SOCK *s, PACK *p);
-void Win32CnConnectErrorDlgThreadProc(THREAD *thread, void *param);
-
-void CnPasswordDlg(SOCK *s, PACK *p);
-void Win32CnPasswordDlg(SOCK *s, PACK *p);
-void Win32CnPasswordDlgThreadProc(THREAD *thread, void *param);
-
-void CnMsgDlg(SOCK *s, PACK *p);
-void Win32CnMsgDlg(SOCK *s, PACK *p);
-void Win32CnMsgDlgThreadProc(THREAD *thread, void *param);
-
-void CnNicInfo(SOCK *s, PACK *p);
-void Win32CnNicInfo(SOCK *s, PACK *p);
-void Win32CnNicInfoThreadProc(THREAD *thread, void *param);
-
-void CnCheckCert(SOCK *s, PACK *p);
-void Win32CnCheckCert(SOCK *s, PACK *p);
-void Win32CnCheckCertThreadProc(THREAD *thread, void *param);
-
-void CnExecDriverInstaller(SOCK *s, PACK *p);
-void Win32CnExecDriverInstaller(SOCK *s, PACK *p);
-
-bool CnCheckAlreadyExists(bool lock);
-bool CnIsCnServiceReady();
-void CnWaitForCnServiceReady();
-
-void CnSecureSign(SOCK *s, PACK *p);
-
-SOCK *CncConnect();
-SOCK *CncConnectEx(UINT timeout);
-void CncReleaseSocket();
-void CncExit();
-bool CncExecDriverInstaller(char *arg);
-SOCK *CncStatusPrinterWindowStart(SESSION *s);
-void CncStatusPrinterWindowPrint(SOCK *s, wchar_t *str);
-void CncStatusPrinterWindowStop(SOCK *s);
-void CncStatusPrinterWindowThreadProc(THREAD *thread, void *param);
-bool CncConnectErrorDlg(SESSION *session, UI_CONNECTERROR_DLG *dlg);
-void CncConnectErrorDlgHaltThread(THREAD *thread, void *param);
-bool CncPasswordDlg(SESSION *session, UI_PASSWORD_DLG *dlg);
-void CncCheckCert(SESSION *session, UI_CHECKCERT *dlg);
-void CncCheckCertHaltThread(THREAD *thread, void *param);
-bool CncSecureSignDlg(SECURE_SIGN *sign);
-SOCK *CncMsgDlg(UI_MSG_DLG *dlg);
-void CndMsgDlgFree(SOCK *s);
-SOCK *CncNicInfo(UI_NICINFO *info);
-void CncNicInfoFree(SOCK *s);
-
 void CtStartClient();
 void CtStopClient();
 void CtReleaseClient(CLIENT *c);
 bool CtGetClientVersion(CLIENT *c, RPC_CLIENT_VERSION *ver);
-bool CtGetCmSetting(CLIENT *c, CM_SETTING *s);
-bool CtSetCmSetting(CLIENT *c, CM_SETTING *s);
 bool CtSetPassword(CLIENT *c, RPC_CLIENT_PASSWORD *pass);
 bool CtGetPasswordSetting(CLIENT *c, RPC_CLIENT_PASSWORD_SETTING *a);
 bool CtEnumCa(CLIENT *c, RPC_CLIENT_ENUM_CA *e);
@@ -632,7 +556,6 @@ void CiWriteVLan(CLIENT *c, FOLDER *f, UNIX_VLAN *v);
 void CiFreeClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st);
 bool CiCheckCertProc(SESSION *s, CONNECTION *c, X *server_x, bool *expired);
 bool CiSecureSignProc(SESSION *s, CONNECTION *c, SECURE_SIGN *sign);
-bool Win32CiSecureSign(SECURE_SIGN *sign);
 void CiFreeClientAuth(CLIENT_AUTH *auth);
 void CiFreeClientCreateAccount(RPC_CLIENT_CREATE_ACCOUNT *a);
 void CiFreeClientGetAccount(RPC_CLIENT_GET_ACCOUNT *a);
@@ -747,8 +670,6 @@ void InRpcTraffic(TRAFFIC *t, PACK *p);
 void OutRpcTraffic(PACK *p, TRAFFIC *t);
 void InRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i);
 void OutRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i, UINT num);
-void OutRpcCmSetting(PACK *p, CM_SETTING *c);
-void InRpcCmSetting(CM_SETTING *c, PACK *p);
 
 #ifdef OS_WIN32
 typedef struct MS_DRIVER_VER MS_DRIVER_VER;

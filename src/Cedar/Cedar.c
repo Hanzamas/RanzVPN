@@ -1509,6 +1509,22 @@ void SetCedarVpnBridge(CEDAR *c)
 	c->ServerStr = CopyStr(CEDAR_BRIDGE_STR);
 }
 
+#ifdef	OS_WIN32
+// Register the executables in the Windows Firewall exception list
+void RegistWindowsFirewallAll()
+{
+	char exedir[MAX_SIZE];
+
+	GetExeDir(exedir, sizeof(exedir));
+
+	MsRegistWindowsFirewallEx2(CEDAR_CLIENT_STR, "vpnclient.exe", exedir);
+	MsRegistWindowsFirewallEx2(CEDAR_SERVER_STR, "vpnserver.exe", exedir);
+	MsRegistWindowsFirewallEx2(CEDAR_BRIDGE_STR, "vpnbridge.exe", exedir);
+	MsRegistWindowsFirewallEx2(CEDAR_CUI_STR, "vpncmd.exe", exedir);
+	MsRegistWindowsFirewallEx2(CEDAR_PRODUCT_STR, "vpntest.exe", exedir);
+}
+#endif	// OS_WIN32
+
 void CedarForceLink()
 {
 }

@@ -12,8 +12,6 @@
 
 #include <stdio.h>
 
-#define	PENCORE_DLL_NAME		"|PenCore.dll"
-
 //#define	USE_PROBE						// Use Probe
 
 // Macro for the release flag
@@ -30,7 +28,6 @@ void InitProcessCallOnce();
 #ifdef VPN_EXE
 // To build the executable file
 #ifdef OS_WIN32
-#include "../PenCore/resource.h"
 int main(int argc, char *argv[]);
 int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 {
