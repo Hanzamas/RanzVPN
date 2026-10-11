@@ -66,7 +66,7 @@ void mschapv2_test(UINT num, char **arg)
 	char *expect_challenge8 = "D02E4386BCE91226";
 	char *expect_pw_hash = "44EBBA8D5312B8D611474411F56989AE";
 	char *expect_pw_hash_hash = "41C00C584BD2D91C4017A2A12FA59F3F";
-	char *expect_nt_response = "82309ECD8D708B5EA08FAA4981CD83544233114A3D85D6DF";
+	char *expect_nt_response = "82309ECD8D708B5EA08FAA3981CD83544233114A3D85D6DF";
 	char *expect_auth_response = "S=407A5589115FD0D6209F510FE9C04566932CDA56";
 
 	BUF *auth_challenge = StrToBin(auth_challenge_hex);
@@ -161,7 +161,7 @@ void mschapv2_test(UINT num, char **arg)
 		IPC_MSCHAP_V2_AUTHINFO d;
 
 		Format(pw, sizeof(pw), "%s%s:%s:%s:%s:%s", IPC_PASSWORD_MSCHAPV2_TAG, username,
-		       auth_challenge_hex, peer_challenge_hex, expect_nt_response, "0000000000000000");
+		       auth_challenge_hex, peer_challenge_hex, nt_response_str, "0000000000000000");
 
 		if (ParseAndExtractMsChapV2InfoFromPassword(&d, pw) &&
 		        StrCmp(d.MsChapV2_PPPUsername, username) == 0 &&
