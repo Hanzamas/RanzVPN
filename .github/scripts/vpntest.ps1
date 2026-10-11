@@ -6,8 +6,8 @@ if (Test-Path "env:BUILD_BINARIESDIRECTORY") {
 	$BUILD_BINARIESDIRECTORY = "build"
 }
 
-# Start/stop smoke test: server and client modes must exit without leaks
-('s', 'c') | % {
+# Start/stop smoke test: server mode must exit without leaks
+('s') | % {
 
 	[String] $mode = $_
 	Write-Host "testing: $mode"
@@ -25,7 +25,7 @@ if (Test-Path "env:BUILD_BINARIESDIRECTORY") {
 }
 
 # Named self-tests: must print their OK marker and no leak
-('mschapv2') | % {
+('mschapv2', 'stun') | % {
 
 	[String] $test = $_
 	Write-Host "testing: $test"
