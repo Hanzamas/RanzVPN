@@ -8,7 +8,6 @@
 #include "Link.h"
 
 #include "Account.h"
-#include "Client.h"
 #include "Connection.h"
 #include "Hub.h"
 #include "Logging.h"

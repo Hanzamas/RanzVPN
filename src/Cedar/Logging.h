@@ -136,8 +136,6 @@ void WriteHubLog(HUB *h, wchar_t *str);
 void HLog(HUB *h, char *name, ...);
 void WriteServerLog(CEDAR *c, wchar_t *str);
 void ALog(ADMIN *a, HUB *h, char *name, ...);
-void CLog(CLIENT *c, char *name, ...);
-void WriteClientLog(CLIENT *c, wchar_t *str);
 ERASER *NewEraser(LOG *log, UINT64 min_size);
 void FreeEraser(ERASER *e);
 void ELog(ERASER *e, char *name, ...);

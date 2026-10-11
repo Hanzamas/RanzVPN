@@ -7,8 +7,8 @@
 
 #include "Protocol.h"
 
+#include "Account.h"
 #include "Admin.h"
-#include "Client.h"
 #include "Hub.h"
 #include "Link.h"
 #include "Logging.h"
@@ -3553,9 +3553,6 @@ bool ClientConnect(CONNECTION *c)
 
 	PrintStatus(sess, L"free");
 
-	CLog(c->Cedar->Client, "LC_CONNECT_2", c->Session->ClientOption->AccountName,
-		session_name);
-
 	if (c->Session->LinkModeClient && c->Session->Link != NULL)
 	{
 		HLog(c->Session->Link->Hub, "LH_CONNECT_2", c->Session->ClientOption->AccountName, session_name);
@@ -4455,8 +4452,6 @@ SOCK *ClientConnectToServer(CONNECTION *c)
 		c->Err = ERR_SERVER_IS_NOT_VPN;
 		return NULL;
 	}
-
-	CLog(c->Cedar->Client, "LC_SSL_CONNECTED", c->Session->ClientOption->AccountName,	s->SslVersion, s->CipherName);
 
 	return s;
 }

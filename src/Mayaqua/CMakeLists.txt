@@ -108,7 +108,6 @@ if(WIN32)
       "DbgHelp.Lib"
       "dwmapi.lib"
       "iphlpapi.lib"
-      "newdev.lib"
       "Psapi.Lib"
       "Secur32.Lib"
       "setupapi.lib"

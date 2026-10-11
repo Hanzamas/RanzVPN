@@ -8,7 +8,8 @@
 #ifndef	SERVER_H
 #define	SERVER_H
 
-#include "Client.h"
+#include "Account.h"
+#include "Wpc.h"
 
 // Default ports
 #define	SERVER_DEF_PORTS_1				443

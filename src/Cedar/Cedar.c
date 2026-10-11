@@ -17,7 +17,6 @@
 #include "Sam.h"
 #include "Server.h"
 #include "Session.h"
-#include "VLanWin32.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/Encrypt.h"
@@ -165,6 +164,59 @@ bool IsSupportedWinVer(RPC_WINVER *v)
 
 	return false;
 }
+
+#ifdef	OS_WIN32
+// Get the version information of Windows
+void Win32GetWinVer(RPC_WINVER *v)
+{
+	// Validate arguments
+	if (v == NULL)
+	{
+		return;
+	}
+
+	Zero(v, sizeof(RPC_WINVER));
+
+	v->IsWindows = true;
+
+	if (true)
+	{
+		OSVERSIONINFOEX os;
+		Zero(&os, sizeof(os));
+		os.dwOSVersionInfoSize = sizeof(os);
+		Win32GetVersionExInternal((LPOSVERSIONINFOA)&os);
+
+		v->IsNT = true;
+		v->Build = os.dwBuildNumber;
+		v->ServicePack = os.wServicePackMajor;
+
+		if (os.wProductType != VER_NT_WORKSTATION)
+		{
+			v->IsServer = true;
+		}
+		v->VerMajor = os.dwMajorVersion;
+		v->VerMinor = os.dwMinorVersion;
+
+		if (GetOsInfo()->OsServicePack == 0)
+		{
+			StrCpy(v->Title, sizeof(v->Title), GetOsInfo()->OsProductName);
+		}
+		else
+		{
+			Format(v->Title, sizeof(v->Title), "%s Service Pack %u",
+				GetOsInfo()->OsProductName,
+				GetOsInfo()->OsServicePack);
+		}
+		Trim(v->Title);
+
+		if (InStr(GetOsInfo()->OsVersion, "rc") ||
+			InStr(GetOsInfo()->OsVersion, "beta"))
+		{
+			v->IsBeta = true;
+		}
+	}
+}
+#endif	// OS_WIN32
 
 // Get version of Windows
 void GetWinVer(RPC_WINVER *v)
@@ -1393,7 +1445,6 @@ void RegistWindowsFirewallAll()
 
 	GetExeDir(exedir, sizeof(exedir));
 
-	MsRegistWindowsFirewallEx2(CEDAR_CLIENT_STR, "vpnclient.exe", exedir);
 	MsRegistWindowsFirewallEx2(CEDAR_SERVER_STR, "vpnserver.exe", exedir);
 	MsRegistWindowsFirewallEx2(CEDAR_CUI_STR, "vpncmd.exe", exedir);
 	MsRegistWindowsFirewallEx2(CEDAR_PRODUCT_STR, "vpntest.exe", exedir);

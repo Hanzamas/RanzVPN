@@ -22,12 +22,11 @@ These are **normal and necessary operations** for any VPN software, but they can
 
 Microsoft Defender may flag the following SoftEther VPN 5.x components as `Trojan:Win32/KepavII!rfn`:
 
-- `vpnclient.exe` - VPN Client executable
 - `vpnserver.exe` - VPN Server executable  
 - `vpncmd.exe` - VPN Command-line utility
 - Start menu shortcuts
 - Registry entries
-- Windows services (`SEVPNCLIENTDEV`, `SEVPNSERVERDEV`, etc.)
+- Windows services (`SEVPNSERVERDEV`, etc.)
 
 ### Detection Details
 

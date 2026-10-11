@@ -26,9 +26,6 @@ source code tree as follows:
 - SeLow_x64.sys
   You can build these files from the source code on the 'SeLow' directory.
 
-- vpn_driver6_x64.sys
-  You can build these files from the source code on the 'Neo6' directory.
-
 It is recommended to build these files on the 'SEVPN.sln' Visual Studio 2008
 solution file.
 

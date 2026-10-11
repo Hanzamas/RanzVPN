@@ -10,9 +10,9 @@
 
 #include "Account.h"
 #include "Cedar.h"
-#include "Client.h"
 #include "Hub.h"
 #include "Logging.h"
+#include "Wpc.h"
 
 #include "Mayaqua/Kernel.h"
 
@@ -1193,8 +1193,6 @@ void OutRpcMsg(PACK *p, RPC_MSG *t);
 void FreeRpcMsg(RPC_MSG *t);
 void InRpcWinVer(RPC_WINVER *t, PACK *p);
 void OutRpcWinVer(PACK *p, RPC_WINVER *t);
-void InRpcInternetSetting(INTERNET_SETTING *t, PACK *p);
-void OutRpcInternetSetting(PACK *p, INTERNET_SETTING *t);
 
 #endif	// ADMIN_H
 

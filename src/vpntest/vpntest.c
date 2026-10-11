@@ -1,9 +1,8 @@
 // vpntest.c
-// VPN Server / VPN Client / VPN Bridge test program
+// VPN Server test program
 
 #define VPN_EXE
 
-#include "Cedar/Client.h"
 #include "Cedar/Command.h"
 #include "Cedar/MsChapV2.h"
 #include "Cedar/Server.h"
@@ -13,14 +12,6 @@
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Str.h"
-
-void client_test(UINT num, char **arg)
-{
-	Print("VPN Client Test. Press Enter key to stop the VPN Client .\n");
-	CtStartClient();
-	GetLine(NULL, 0);
-	CtStopClient();
-}
 
 void server_test(UINT num, char **arg)
 {
@@ -36,16 +27,6 @@ void server_test(UINT num, char **arg)
 
 	StFree();
 }
-
-#ifdef OS_WIN32
-void setup_test(UINT num, char **arg)
-{
-	char name[MAX_SIZE];
-	Print("SetupAPI test. Please enter the name of the NIC I should retrieve the status of.\n");
-	GetLine(name, sizeof(name));
-	Print("Status: %s\n", MsIsVLanEnabledWithoutLock(name) ? "enabled" : "disabled");
-}
-#endif
 
 void memory_leak_test(UINT num, char **arg)
 {
@@ -204,11 +185,7 @@ typedef struct TEST_LIST
 
 TEST_LIST test_list[] =
 {
-	{"c", client_test, "VPN Client in Test Mode, enter key to graceful stop."},
 	{"s", server_test, "VPN Server in Test Mode, enter key to graceful stop."},
-#ifdef OS_WIN32
-	{"setupapi", setup_test, "SetupAPI test: tries to retrieve the specified NIC's status."},
-#endif
 	{"memory_leak", memory_leak_test, "Memory leak test: Try to leak one byte by malloc()."},
 	{"mschapv2", mschapv2_test, "MS-CHAPv2 / NT-hash helpers against RFC 2759 test vectors."},
 };
@@ -222,7 +199,7 @@ int TestMain(char *cmd)
 	int status = 0;
 
 	Print("SoftEther VPN Project\n");
-	Print("vpntest: VPN Server / VPN Client / VPN Bridge test program\n");
+	Print("vpntest: VPN Server test program\n");
 	Print("Usage: vpntest [/memcheck] [command]\n\n");
 	Print("Enter '?' or 'help' to show the command list.\n");
 	Print("Enter 'q' or 'exit' to exit the process.\n\n");

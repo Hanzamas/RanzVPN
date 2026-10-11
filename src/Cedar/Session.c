@@ -7,9 +7,9 @@
 
 #include "Session.h"
 
+#include "Account.h"
 #include "BridgeUnix.h"
 #include "BridgeWin32.h"
-#include "Client.h"
 #include "Connection.h"
 #include "Hub.h"
 #include "Link.h"
@@ -22,7 +22,6 @@
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Mayaqua.h"
 #include "Mayaqua/Memory.h"
-#include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
@@ -49,7 +48,6 @@ void SessionMain(SESSION *s)
 	UINT err = ERR_SESSION_TIMEOUT;
 	UINT64 next_black_list_check = 0;
 	UINT64 next_update_hub_last_comm = 0;
-	UINT64 auto_disconnect_tick = 0;
 	bool block_all_packets = false;
 	UINT64 next_check_block_all_packets = 0;
 	TRAFFIC t;
@@ -64,8 +62,6 @@ void SessionMain(SESSION *s)
 
 	Debug("SessionMain: %s\n", s->Name);
 
-	Notify(s, CLIENT_NOTIFY_ACCOUNT_CHANGED);
-
 	// Generate a string from the session key
 	BinToStr(s->SessionKeyStr, sizeof(s->SessionKeyStr), s->SessionKey, sizeof(s->SessionKey));
 
@@ -79,19 +75,6 @@ void SessionMain(SESSION *s)
 	policy = s->Policy;
 
 	// Initialize the packet adapter
-#ifdef	OS_WIN32
-	if (s->IsVPNClientAndVLAN_Win32)
-	{
-		MsBeginVLanCard();
-
-		if (MsIsVLanCardShouldStop())
-		{
-			err = ERR_SUSPENDING;
-			goto CLEANUP;
-		}
-	}
-#endif	// OS_WIN32
-
 	pa = s->PacketAdapter;
 	if (pa->Init(s) == false)
 	{
@@ -136,26 +119,12 @@ void SessionMain(SESSION *s)
 		s->FirstConnectionEstablisiedTime = Tick64(); /* !!! Do not correct the spelling to keep the backward protocol compatibility !!!  */
 	}
 
-	if (s->ServerMode == false && s->Cedar->Client != NULL)
-	{
-		if (s->Policy != NULL)
-		{
-			if (s->Policy->AutoDisconnect)
-			{
-				auto_disconnect_tick = s->CurrentConnectionEstablishTime +
-					(UINT64)s->Policy->AutoDisconnect * 1000ULL;
-			}
-		}
-	}
-
 	s->LastIncrementTraffic = Tick64();
 
 	c->Err = ERR_SESSION_TIMEOUT;
 	s->VLanDeviceErrorCount = 0;
 
 	s->LastTryAddConnectTime = Tick64();
-
-	Notify(s, CLIENT_NOTIFY_ACCOUNT_CHANGED);
 
 	if (policy != NULL)
 	{
@@ -235,18 +204,6 @@ void SessionMain(SESSION *s)
 			err = ERR_DISCONNECTED;
 			pa_fail = true;
 		}
-
-#ifdef	OS_WIN32
-		if (s->IsVPNClientAndVLAN_Win32)
-		{
-			if (MsIsVLanCardShouldStop())
-			{
-				// System is suspending
-				err = ERR_SUSPENDING;
-				pa_fail = true;
-			}
-		}
-#endif	// OS_WIN32
 
 		// Pass the received block to the PacketAdapter
 		if (lock_receive_blocks_queue)
@@ -444,14 +401,6 @@ void SessionMain(SESSION *s)
 		// Send a block
 		ConnectionSend(c, now);
 
-		// Determine the automatic disconnection
-		if (auto_disconnect_tick != 0 && auto_disconnect_tick <= now)
-		{
-			err = ERR_AUTO_DISCONNECTED;
-			s->CurrentRetryCount = INFINITE;
-			break;
-		}
-
 		// Stop determination
 		if (s->Halt)
 		{
@@ -579,7 +528,6 @@ CLEANUP:
 	}
 
 	s->ConnectSucceed = false;
-	Notify(s, CLIENT_NOTIFY_ACCOUNT_CHANGED);
 
 	if (s->Connection)
 	{
@@ -598,13 +546,6 @@ CLEANUP:
 	{
 		pa->Free(s);
 	}
-
-#ifdef	OS_WIN32
-	if (s->IsVPNClientAndVLAN_Win32)
-	{
-		MsEndVLanCard();
-	}
-#endif	// OS_WIN32
 
 	if (s->ServerMode == false)
 	{
@@ -1018,35 +959,6 @@ bool SessionConnect(SESSION *s)
 
 	s->CancelConnect = false;
 
-	if (s->Cedar->Client != NULL)
-	{
-		if (s->Policy != NULL)
-		{
-			if (s->Policy->NoSavePassword)
-			{
-				s->Client_NoSavePassword = true;
-
-				if (s->Account != NULL)
-				{
-					Lock(s->Account->lock);
-					{
-						if (s->Account->ClientAuth != NULL)
-						{
-							if (s->Account->ClientAuth->AuthType == AUTHTYPE_PASSWORD)
-							{
-								Zero(s->Account->ClientAuth->HashedPassword, sizeof(s->Account->ClientAuth->HashedPassword));
-								Zero(s->Account->ClientAuth->PlainPassword, sizeof(s->Account->ClientAuth->PlainPassword));
-							}
-						}
-					}
-					Unlock(s->Account->lock);
-
-					CiSaveConfigurationFile(s->Cedar->Client);
-				}
-			}
-		}
-	}
-
 	if (c->ClientConnectError_NoSavePassword)
 	{
 		s->Client_NoSavePassword = true;
@@ -1284,7 +1196,6 @@ void ClientThread(THREAD *t, void *param)
 {
 	SESSION *s;
 	CEDAR *cedar;
-	bool num_active_sessions_incremented = false;
 	// Validate arguments
 	if (t == NULL || param == NULL)
 	{
@@ -1298,12 +1209,6 @@ void ClientThread(THREAD *t, void *param)
 	s->Thread = t;
 	AddRef(t->ref);
 
-	if (s->LinkModeClient == false)
-	{
-		CiIncrementNumActiveSessions();
-		num_active_sessions_incremented = true;
-	}
-
 	NoticeThreadInit(t);
 
 	cedar = s->Cedar;
@@ -1311,12 +1216,6 @@ void ClientThread(THREAD *t, void *param)
 	s->ClientStatus = CLIENT_STATUS_CONNECTING;
 	s->RetryFlag = true;
 	s->CurrentRetryCount = 0;
-
-	Notify(s, CLIENT_NOTIFY_ACCOUNT_CHANGED);
-
-	if (s->Cedar->Client != NULL)
-	{
-	}
 
 	s->Win32HideConnectWindow = s->ClientOption->HideStatusWindow;
 	s->Win32HideNicInfoWindow = s->ClientOption->HideNicInfoWindow;
@@ -1335,7 +1234,6 @@ void ClientThread(THREAD *t, void *param)
 			break;
 		}
 
-		CLog(s->Cedar->Client, "LC_CONNECT_1", s->ClientOption->AccountName, s->CurrentRetryCount + 1);
 		if (s->LinkModeClient && s->Link != NULL)
 		{
 			HLog(s->Link->Hub, "LH_CONNECT_1", s->ClientOption->AccountName, s->CurrentRetryCount + 1);
@@ -1361,8 +1259,6 @@ void ClientThread(THREAD *t, void *param)
 
 		PrintSessionTotalDataSize(s);
 
-		CLog(s->Cedar->Client, "LC_CONNECT_ERROR", s->ClientOption->AccountName,
-			GetUniErrorStr(s->Err), s->Err);
 #ifdef OS_UNIX
 		UnixVLanSetState(s->ClientOption->DeviceName, false);
 #endif
@@ -1442,15 +1338,7 @@ SKIP:
 		ReleaseSession(s);
 	}
 
-	Notify(s, CLIENT_NOTIFY_ACCOUNT_CHANGED);
-
-
 	ReleaseSession(s);
-
-	if (num_active_sessions_incremented)
-	{
-		CiDecrementNumActiveSessions();
-	}
 }
 
 // Create an RPC session
@@ -1590,19 +1478,6 @@ SESSION *NewClientSessionEx(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *au
 
 	// Interval for additional connection creation is at least 1 second
 	s->ClientOption->AdditionalConnectionInterval = MAX(s->ClientOption->AdditionalConnectionInterval, 1);
-
-	// Hold whether the virtual LAN card is used in client mode
-	s->ClientModeAndUseVLan = (StrLen(s->ClientOption->DeviceName) == 0) ? false : true;
-
-	if (s->ClientOption->NoRoutingTracking)
-	{
-		s->ClientModeAndUseVLan = false;
-	}
-
-	if (pa->Id == PACKET_ADAPTER_ID_VLAN_WIN32)
-	{
-		s->IsVPNClientAndVLAN_Win32 = true;
-	}
 
 	// Copy the client authentication data
 	s->ClientAuth = Malloc(sizeof(CLIENT_AUTH));
@@ -1817,8 +1692,7 @@ SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, P
 void PrintStatus(SESSION *s, wchar_t *str)
 {
 	// Validate arguments
-	if (s == NULL || str == NULL || s->Account == NULL || s->Cedar->Client == NULL
-		|| s->Account->StatusPrinter == NULL)
+	if (s == NULL || str == NULL || s->Account == NULL || s->Account->StatusPrinter == NULL)
 	{
 		return;
 	}
@@ -1893,16 +1767,4 @@ void ReleaseCancelList(LIST *o)
 	}
 
 	ReleaseList(o);
-}
-
-// Notify to the client
-void Notify(SESSION *s, UINT code)
-{
-	// Validate arguments
-	if (s == NULL || s->Account == NULL || s->Cedar->Client == NULL)
-	{
-		return;
-	}
-
-	CiNotify(s->Cedar->Client);
 }

@@ -132,9 +132,7 @@ typedef struct WPC_CONNECT WPC_CONNECT;
 //   VLAN
 // ==============================================================
 
-typedef struct ROUTE_TRACKING ROUTE_TRACKING;
 typedef struct VLAN VLAN;
-typedef struct INSTANCE_LIST INSTANCE_LIST;
 typedef struct VLAN_PARAM VLAN_PARAM;
 
 #ifdef	OS_UNIX
@@ -174,35 +172,7 @@ typedef struct L3PACKET L3PACKET;
 // ==============================================================
 
 typedef struct ACCOUNT ACCOUNT;
-typedef struct CLIENT_CONFIG CLIENT_CONFIG;
-typedef struct RPC_CLIENT_VERSION RPC_CLIENT_VERSION;
-typedef struct RPC_CLIENT_PASSWORD RPC_CLIENT_PASSWORD;
-typedef struct RPC_CLIENT_PASSWORD_SETTING RPC_CLIENT_PASSWORD_SETTING;
-typedef struct RPC_CLIENT_ENUM_CA_ITEM RPC_CLIENT_ENUM_CA_ITEM;
-typedef struct RPC_CLIENT_ENUM_CA RPC_CLIENT_ENUM_CA;
-typedef struct RPC_CERT RPC_CERT;
-typedef struct RPC_CLIENT_DELETE_CA RPC_CLIENT_DELETE_CA;
-typedef struct RPC_GET_CA RPC_GET_CA;
-typedef struct RPC_GET_ISSUER RPC_GET_ISSUER;
-typedef struct RPC_CLIENT_CREATE_VLAN RPC_CLIENT_CREATE_VLAN;
-typedef struct RPC_CLIENT_GET_VLAN RPC_CLIENT_GET_VLAN;
-typedef struct RPC_CLIENT_SET_VLAN RPC_CLIENT_SET_VLAN;
-typedef struct RPC_CLIENT_ENUM_VLAN_ITEM RPC_CLIENT_ENUM_VLAN_ITEM;
-typedef struct RPC_CLIENT_ENUM_VLAN RPC_CLIENT_ENUM_VLAN;
-typedef struct RPC_CLIENT_CREATE_ACCOUNT RPC_CLIENT_CREATE_ACCOUNT;
-typedef struct RPC_CLIENT_ENUM_ACCOUNT_ITEM RPC_CLIENT_ENUM_ACCOUNT_ITEM;
-typedef struct RPC_CLIENT_ENUM_ACCOUNT RPC_CLIENT_ENUM_ACCOUNT;
-typedef struct RPC_CLIENT_DELETE_ACCOUNT RPC_CLIENT_DELETE_ACCOUNT;
-typedef struct RPC_RENAME_ACCOUNT RPC_RENAME_ACCOUNT;
-typedef struct RPC_CLIENT_GET_ACCOUNT RPC_CLIENT_GET_ACCOUNT;
-typedef struct RPC_CLIENT_CONNECT RPC_CLIENT_CONNECT;
 typedef struct RPC_CLIENT_GET_CONNECTION_STATUS RPC_CLIENT_GET_CONNECTION_STATUS;
-typedef struct CLIENT_RPC_CONNECTION CLIENT_RPC_CONNECTION;
-typedef struct CLIENT CLIENT;
-typedef struct RPC_CLIENT_NOTIFY RPC_CLIENT_NOTIFY;
-typedef struct REMOTE_CLIENT REMOTE_CLIENT;
-typedef struct NOTIFY_CLIENT NOTIFY_CLIENT;
-typedef struct UNIX_VLAN UNIX_VLAN;
 
 
 // ==============================================================
@@ -331,7 +301,6 @@ typedef struct CMD_EVAL_MIN_MAX CMD_EVAL_MIN_MAX;
 // ==============================================================
 
 typedef struct PS PS;
-typedef struct PC PC;
 typedef struct CT CT;
 typedef struct CTC CTC;
 typedef struct CTR CTR;

@@ -40,8 +40,6 @@ IF MICROSOFT DEFENDER QUARANTINES SOFTETHER VPN:
    
    d) Click "Add an exclusion" -> "Folder" and add:
       
-      C:\Program Files\SoftEther VPN Client
-      C:\Program Files\SoftEther VPN Client Developer Edition
       C:\Program Files\SoftEther VPN Server
       C:\Program Files\SoftEther VPN Server Developer Edition
       
@@ -92,9 +90,8 @@ Getting Started
 
 After adding antivirus exclusions (if needed):
 
-1. Launch "SoftEther VPN Client Manager" from the Start Menu
-2. Configure your VPN connection settings
-3. Connect to your VPN server
+1. Run "vpncmd" and connect to the VPN Server
+2. Configure your Virtual Hubs and cascade connections
 
 For detailed documentation, visit: https://www.softether.org/
 

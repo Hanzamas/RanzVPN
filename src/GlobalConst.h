@@ -31,14 +31,11 @@
 //// Default Port Number
 
 #define	GC_DEFAULT_PORT		5555
-#define	GC_CLIENT_CONFIG_PORT	9931
-#define	GC_CLIENT_NOTIFY_PORT	9984
 
 
 //// Software Name
 
 #define	GC_SVC_NAME_VPNSERVER		"SEVPNSERVERDEV"
-#define	GC_SVC_NAME_VPNCLIENT		"SEVPNCLIENTDEV"
 
 
 

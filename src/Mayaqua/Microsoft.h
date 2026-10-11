@@ -46,22 +46,6 @@
 // Time to suicide, if the service freezed
 #define	SVC_SELFKILL_TIMEOUT		(5 * 60 * 1000)
 
-// The name of the device driver of the virtual LAN card for Win32 (first part)
-#define	VLAN_ADAPTER_NAME			"VPN Client Adapter"
-#define	VLAN_ADAPTER_NAME_OLD		"SoftEther VPN Client 2.0 Adapter"
-
-// The name of the device driver of the virtual LAN card for Win32 (full name)
-#define	VLAN_ADAPTER_NAME_TAG		"VPN Client Adapter - %s"
-#define	VLAN_ADAPTER_NAME_TAG_OLD	"SoftEther VPN Client 2.0 Adapter - %s"
-
-// Display name of Virtual LAN card in the [Network Connections] in Win32 (full name)
-#define	VLAN_CONNECTION_NAME		"%s - VPN Client"
-#define	VLAN_CONNECTION_NAME_OLD	"%s - SoftEther VPN Client 2.0"
-
-
-// Suspend handler windows class name
-#define	MS_SUSPEND_HANDLER_WNDCLASSNAME	"MS_SUSPEND_HANDLER"
-
 // Command line format in the service mode
 #define	SVC_RUN_COMMANDLINE			L"\"%s\" /service"
 
@@ -96,55 +80,7 @@
 
 
 
-// Vista driver installer related
-#define	VISTA_DRIVER_INSTALLER_SRC		L"|vpndrvinst.exe"
-#define	VISTA_DRIVER_INSTALLER_DST		L"%s\\vpndrvinst.exe"
-
-#define	DRIVER_DEVICE_ID_TAG		"NeoAdapter_%s"
-
 #ifdef	MICROSOFT_C
-// WCM related code on Windows 8
-typedef enum _MS_WCM_PROPERTY
-{
-	ms_wcm_global_property_domain_policy,
-	ms_wcm_global_property_minimize_policy,
-	ms_wcm_global_property_roaming_policy,
-	ms_wcm_global_property_powermanagement_policy,
-	ms_wcm_intf_property_connection_cost,   //used to set/get cost level and flags for the connection
-	ms_wcm_intf_property_dataplan_status,   //used by MNO to indicate plan data associated with new cost
-	ms_wcm_intf_property_hotspot_profile,   //used to store hotspot profile (WISPr credentials)
-} MS_WCM_PROPERTY, * MS_PWCM_PROPERTY;
-
-typedef struct _MS_WCM_POLICY_VALUE {
-	BOOL fValue;
-	BOOL fIsGroupPolicy;
-} MS_WCM_POLICY_VALUE, * MS_PWCM_POLICY_VALUE;
-
-#define MS_WCM_MAX_PROFILE_NAME            256
-
-typedef enum _MS_WCM_MEDIA_TYPE
-{
-	ms_wcm_media_unknown,
-	ms_wcm_media_ethernet,
-	ms_wcm_media_wlan,
-	ms_wcm_media_mbn,
-	ms_wcm_media_invalid,
-	ms_wcm_media_max
-} MS_WCM_MEDIA_TYPE, * MS_PWCM_MEDIA_TYPE;
-
-typedef struct _MS_WCM_PROFILE_INFO {
-	WCHAR strProfileName[MS_WCM_MAX_PROFILE_NAME];
-	GUID AdapterGUID;
-	MS_WCM_MEDIA_TYPE Media;
-} MS_WCM_PROFILE_INFO, * MS_PWCM_PROFILE_INFO;
-
-typedef struct _MS_WCM_PROFILE_INFO_LIST {
-	UINT            dwNumberOfItems;
-
-	MS_WCM_PROFILE_INFO ProfileInfo[1];
-
-} MS_WCM_PROFILE_INFO_LIST, * MS_PWCM_PROFILE_INFO_LIST;
-
 // Internal structure
 typedef struct MS
 {
@@ -332,21 +268,6 @@ typedef struct ENUM_CHILD_WINDOW_PARAM
 	bool include_ipcontrol;
 } ENUM_CHILD_WINDOW_PARAM;
 
-// Driver version information
-typedef struct MS_DRIVER_VER
-{
-	UINT Year, Month, Day;
-	UINT Major, Minor, Build;
-} MS_DRIVER_VER;
-
-// Suspend handler
-typedef struct MS_SUSPEND_HANDLER
-{
-	HWND hWnd;
-	THREAD *Thread;
-	volatile bool AboutToClose;
-} MS_SUSPEND_HANDLER;
-
 
 // Function prototype
 void MsInit();
@@ -393,9 +314,6 @@ bool MsRegWriteValueEx2W(UINT root, char *keyname, char *valuename, UINT type, v
 bool MsRegWriteStr(UINT root, char *keyname, char *valuename, char *str);
 bool MsRegWriteStrEx(UINT root, char *keyname, char *valuename, char *str, bool force32bit);
 bool MsRegWriteStrEx2(UINT root, char *keyname, char *valuename, char *str, bool force32bit, bool force64bit);
-bool MsRegWriteStrExpand(UINT root, char *keyname, char *valuename, char *str);
-bool MsRegWriteStrExpandEx(UINT root, char *keyname, char *valuename, char *str, bool force32bit);
-bool MsRegWriteStrExpandEx2(UINT root, char *keyname, char *valuename, char *str, bool force32bit, bool force64bit);
 bool MsRegWriteStrW(UINT root, char *keyname, char *valuename, wchar_t *str);
 bool MsRegWriteStrExW(UINT root, char *keyname, char *valuename, wchar_t *str, bool force32bit);
 bool MsRegWriteStrEx2W(UINT root, char *keyname, char *valuename, wchar_t *str, bool force32bit, bool force64bit);
@@ -440,14 +358,7 @@ void MsStopIsLockedThread();
 
 bool MsShutdown(bool reboot, bool force);
 bool MsCheckLogon(wchar_t *username, char *password);
-TOKEN_LIST *MsEnumNetworkAdapters(char *start_with_name, char *start_with_name_2);
-char *MsGetNetworkAdapterGuid(char *tag_name, char *instance_name);
 wchar_t *MsGetNetworkConnectionName(char *guid);
-char *MsGetNetworkConfigRegKeyNameFromGuid(char *guid);
-char *MsGetNetworkConfigRegKeyNameFromInstanceName(char *tag_name, char *instance_name);
-void MsSetNetworkConfig(char *tag_name, char *instance_name, char *friendly_name, bool show_icon);
-void MsInitNetworkConfig(char *tag_name, char *instance_name, char *connection_tag_name);
-void MsNormalizeInterfaceDefaultGatewaySettings(char *tag_name, char *instance_name);
 
 char *MsGetSpecialDir(int id);
 wchar_t *MsGetSpecialDirW(int id);
@@ -460,34 +371,6 @@ void MsDeleteTempDir();
 void MsDeleteAllFile(char *dir);
 void MsDeleteAllFileW(wchar_t *dir);
 
-bool MsInstallVLan(char *tag_name, char *connection_tag_name, char *instance_name, MS_DRIVER_VER *ver);
-bool MsInstallVLanWithoutLock(char *tag_name, char *connection_tag_name, char *instance_name, MS_DRIVER_VER *ver);
-bool MsInstallVLanInternal(wchar_t *infpath, wchar_t *hwid_w, char *hwid);
-bool MsUpgradeVLan(char *tag_name, char *connection_tag_name, char *instance_name, MS_DRIVER_VER *ver);
-bool MsUpgradeVLanWithoutLock(char *tag_name, char *connection_tag_name, char *instance_name, MS_DRIVER_VER *ver);
-bool MsEnableVLan(char *instance_name);
-bool MsEnableVLanWithoutLock(char *instance_name);
-bool MsDisableVLan(char *instance_name);
-bool MsDisableVLanWithoutLock(char *instance_name);
-bool MsUninstallVLan(char *instance_name);
-bool MsUninstallVLanWithoutLock(char *instance_name);
-bool MsIsVLanEnabled(char *instance_name);
-bool MsIsVLanEnabledWithoutLock(char *instance_name);
-bool MsIsValidVLanInstanceNameForInfCatalog(char *instance_name);
-void MsGetInfCatalogDir(char *dst, UINT size);
-void MsRestartVLan(char *instance_name);
-void MsRestartVLanWithoutLock(char *instance_name);
-bool MsIsVLanExists(char *tag_name, char *instance_name);
-void MsDeleteTroubleVLAN(char *tag_name, char *instance_name);
-bool MsStartDriverInstall(char *instance_name, UCHAR *mac_address, char *neo_sys, UCHAR *ret_mac_address, MS_DRIVER_VER *ver);
-void MsFinishDriverInstall(char *instance_name, char *neo_sys);
-void MsGetDriverPath(char *instance_name, wchar_t *src_inf, wchar_t *src_sys, wchar_t *dest_inf, wchar_t *dest_sys, wchar_t *src_cat, wchar_t *dest_cat, char *neo_sys);
-void MsGetDriverPathA(char *instance_name, char *src_inf, char *src_sys, char *dest_inf, char *dest_sys, char *src_cat, char *dst_cat, char *neo_sys);
-void MsGenMacAddress(UCHAR *mac);
-char *MsGetMacAddress(char *tag_name, char *instance_name);
-void MsSetMacAddress(char *tag_name, char *instance_name, char *mac_address);
-char *MsGetDriverVersion(char *tag_name, char *instance_name);
-char *MsGetDriverFileName(char *tag_name, char *instance_name);
 void MsTest();
 void MsInitGlobalNetworkConfig();
 void MsDisableNetworkOffloadingEtc();
@@ -547,7 +430,6 @@ bool MsIsUserMode();
 void MsTestOnly();
 void MsPlaySound(char *name);
 void MsSetThreadSingleCpu();
-bool MsCheckVLanDeviceIdFromRootEnum(char *name);
 LIST *MsGetProcessList();
 LIST *MsGetProcessList9x();
 LIST *MsGetProcessListNt();
@@ -583,7 +465,6 @@ void MsFreeAdapterListModule();
 MS_ADAPTER_LIST *MsCreateAdapterList();
 MS_ADAPTER_LIST *MsCreateAdapterListEx(bool no_info);
 void MsGetAdapterTcpIpInformation(MS_ADAPTER *a);
-MS_ADAPTER *MsGetAdapter(char *title);
 MS_ADAPTER *MsGetAdapterByGuid(char *guid);
 MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid);
 UINT ConvertMidStatusVistaToXp(UINT st);
@@ -607,12 +488,9 @@ void MsDeleteTcpConfigReg();
 
 UINT MsGetConsoleWidth();
 UINT MsSetConsoleWidth(UINT size);
-NO_WARNING *MsInitNoWarning();
 NO_WARNING *MsInitNoWarningEx(UINT start_timer);
 void MsFreeNoWarning(NO_WARNING *nw);
 void MsNoWarningThreadProc(THREAD *thread, void *param);
-char *MsNoWarningSoundInit();
-void MsNoWarningSoundFree(char *s);
 bool MsCloseWarningWindow(NO_WARNING *nw, UINT thread_id);
 LIST *MsEnumChildWindows(LIST *o, HWND hWnd);
 void MsAddWindowToList(LIST *o, HWND hWnd);
@@ -625,7 +503,6 @@ LIST *EnumAllChildWindow(HWND hWnd);
 LIST *EnumAllChildWindowEx(HWND hWnd, bool no_recursion, bool include_ipcontrol, bool no_self);
 LIST *EnumAllTopWindow();
 
-bool MsExecDriverInstaller(char *arg);
 void MsRegistWindowsFirewallEx(char *title, char *exe);
 void MsRegistWindowsFirewallEx2(char *title, char *exe, char *dir);
 bool MsIs64BitWindows();
@@ -687,7 +564,6 @@ void MsSendGlobalPulse(void *p);
 
 bool MsPerformMsChapV2AuthByLsa(char *username, UCHAR *challenge8, UCHAR *client_response_24, UCHAR *ret_pw_hash_hash);
 
-void MsDisableWcmNetworkMinimize();
 bool MsSetFileSecureAcl(wchar_t *path);
 
 bool MsGetMsiInstalledDir(char *component_code, wchar_t *dir, UINT dir_size);
@@ -711,28 +587,10 @@ bool MsSaveSystemInfo(wchar_t *dst_filename);
 bool MsCollectVpnInfo(BUF *bat, char *tmpdir, char *svc_name, wchar_t *config_name, wchar_t *logdir_name);
 void MsInitProcessCallOnce();
 
-MS_SUSPEND_HANDLER *MsNewSuspendHandler();
-void MsFreeSuspendHandler(MS_SUSPEND_HANDLER *h);
-
-void MsBeginVLanCard();
-void MsEndVLanCard();
-bool MsIsVLanCardShouldStop();
-void MsProcEnterSuspend();
-void MsProcLeaveSuspend();
-UINT64 MsGetSuspendModeBeginTick();
-
 // Inner functions
 #ifdef MICROSOFT_C
-#include <SetupAPI.h>
-
 LONG CALLBACK MsExceptionHandler(struct _EXCEPTION_POINTERS *ExceptionInfo);
 HKEY MsGetRootKeyFromInt(UINT root);
-void MsDestroyDevInfo(HDEVINFO info);
-HDEVINFO MsGetDevInfoFromDeviceId(SP_DEVINFO_DATA *dev_info_data, char *device_id);
-bool MsStartDevice(HDEVINFO info, SP_DEVINFO_DATA *dev_info_data);
-bool MsStopDevice(HDEVINFO info, SP_DEVINFO_DATA *dev_info_data);
-bool MsDeleteDevice(HDEVINFO info, SP_DEVINFO_DATA *dev_info_data);
-bool MsIsDeviceRunning(HDEVINFO info, SP_DEVINFO_DATA *dev_info_data);
 void CALLBACK MsServiceDispatcher(DWORD argc, LPTSTR *argv);
 void CALLBACK MsServiceHandler(DWORD opcode);
 bool MsServiceStopProc();
@@ -748,8 +606,6 @@ HANDLE MsCreateUserToken();
 SID *MsGetSidFromAccountName(char *name);
 void MsFreeSid(SID *sid);
 BOOL CALLBACK MsEnumResourcesInternalProc(HMODULE hModule, const char *type, char *name, LONG_PTR lParam);
-LRESULT CALLBACK MsSuspendHandlerWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-void MsSuspendHandlerThreadProc(THREAD *thread, void *param);
 #endif // MICROSOFT_C
 
 #endif // MICROSOFT_H

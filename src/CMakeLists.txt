@@ -144,9 +144,6 @@ add_subdirectory(Mayaqua)
 # vpnserver
 add_subdirectory(vpnserver)
 
-# vpnclient
-add_subdirectory(vpnclient)
-
 # vpncmd
 add_subdirectory(vpncmd)
 
@@ -202,12 +199,6 @@ else()
       WORKING_DIRECTORY "${BUILD_DIRECTORY}"
       VERBATIM
   )
-endif()
-
-if(WIN32)
-  # vpndrvinst
-  add_subdirectory(vpndrvinst)
-  add_dependencies(hamcore-archive-build vpndrvinst)
 endif()
 
 if(UNIX)

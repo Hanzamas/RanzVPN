@@ -65,9 +65,6 @@ struct PACKET_ADAPTER
 	UINT Id;
 };
 
-// Packet Adapter IDs
-#define	PACKET_ADAPTER_ID_VLAN_WIN32		1
-
 
 // Session structure
 struct SESSION
@@ -109,7 +106,6 @@ struct SESSION
 	UINT Timeout;					// Time-out period
 	UINT64 NextConnectionTime;		// Time to put next additional connection
 	IP ServerIP;					// IP address of the server
-	bool ClientModeAndUseVLan;		// Use a virtual LAN card in client mode
 	LOCK *TrafficLock;				// Traffic data lock
 	LINK *Link;						// A reference to the link object
 	BRIDGE *Bridge;					// A reference to the Bridge object
@@ -157,7 +153,6 @@ struct SESSION
 	UINT64 CurrentConnectionEstablishTime;	// Completion time of this connection
 	UINT NumConnectionsEstablished;	// Number of connections established so far
 	UINT AdjustMss;					// MSS adjustment value
-	bool IsVPNClientAndVLAN_Win32;	// Is the VPN Client session with a VLAN card (Win32)
 
 	bool UseUdpAcceleration;		// Use of UDP acceleration mode
 	UINT UdpAccelerationVersion;	// UDP acceleration version
@@ -233,7 +228,6 @@ void ClientAdditionalThread(THREAD *t, void *param);
 void PrintSessionTotalDataSize(SESSION *s);
 void AddTrafficForSession(SESSION *s, TRAFFIC *t);
 void IncrementUserTraffic(HUB *hub, char *username, SESSION *s);
-void Notify(SESSION *s, UINT code);
 void PrintStatus(SESSION *s, wchar_t *str);
 LIST *NewCancelList();
 void ReleaseCancelList(LIST *o);

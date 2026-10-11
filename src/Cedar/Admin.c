@@ -6323,39 +6323,6 @@ void CopyOsInfo(OS_INFO *dst, OS_INFO *info)
 	dst->KernelVersion = CopyStr(info->KernelVersion);
 }
 
-// INTERNET_SETTING
-void InRpcInternetSetting(INTERNET_SETTING *t, PACK *p)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	t->ProxyType = PackGetInt(p, "ProxyType");
-	PackGetStr(p, "ProxyHostName", t->ProxyHostName, sizeof(t->ProxyHostName));
-	t->ProxyPort = PackGetInt(p, "ProxyPort");
-	PackGetStr(p, "ProxyUsername", t->ProxyUsername, sizeof(t->ProxyUsername));
-	PackGetStr(p, "ProxyPassword", t->ProxyPassword, sizeof(t->ProxyPassword));
-	PackGetStr(p, "CustomHttpHeader", t->CustomHttpHeader, sizeof(t->CustomHttpHeader));
-}
-void OutRpcInternetSetting(PACK *p, INTERNET_SETTING *t)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "ProxyType", t->ProxyType);
-	PackAddStr(p, "ProxyHostName", t->ProxyHostName);
-	PackAddInt(p, "ProxyPort", t->ProxyPort);
-	PackAddStr(p, "ProxyUsername", t->ProxyUsername);
-	PackAddStr(p, "ProxyPassword", t->ProxyPassword);
-	PackAddStr(p, "CustomHttpHeader", t->CustomHttpHeader);
-}
-
-
 // RPC_WINVER
 void InRpcWinVer(RPC_WINVER *t, PACK *p)
 {

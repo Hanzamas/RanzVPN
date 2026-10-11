@@ -408,9 +408,6 @@
 #define	HUB_PACKET_LOG_FILE_NAME	HUB_PACKET_LOG_DIR_NAME"/%s"
 #define	HUB_PACKET_LOG_PREFIX		"pkt"
 
-#define	CLIENT_LOG_DIR_NAME			"@client_log"
-#define	CLIENT_LOG_PREFIX			"client"
-
 // Packet log settings
 #define	NUM_PACKET_LOG				16
 #define	PACKET_LOG_TCP_CONN			0		// TCP connection log
@@ -657,21 +654,10 @@
 #define	ERR_SECURE_NO_PRIVATE_KEY		27	// Specified private key is not stored
 #define	ERR_SECURE_CANT_WRITE			28	// Write failure
 #define	ERR_OBJECT_NOT_FOUND			29	// Specified object can not be found
-#define	ERR_VLAN_ALREADY_EXISTS			30	// Virtual LAN card with the specified name already exists
-#define	ERR_VLAN_INSTALL_ERROR			31	// Specified virtual LAN card cannot be created
-#define	ERR_VLAN_INVALID_NAME			32	// Specified name of the virtual LAN card is invalid
 #define	ERR_NOT_SUPPORTED				33	// Unsupported
-#define	ERR_ACCOUNT_ALREADY_EXISTS		34	// Account already exists
-#define	ERR_ACCOUNT_ACTIVE				35	// Account is operating
-#define	ERR_ACCOUNT_NOT_FOUND			36	// Specified account doesn't exist
-#define	ERR_ACCOUNT_INACTIVE			37	// Account is offline
 #define	ERR_INVALID_PARAMETER			38	// Parameter is invalid
 #define	ERR_SECURE_DEVICE_ERROR			39	// Error has occurred in the operation of the secure device
 #define	ERR_NO_SECURE_DEVICE_SPECIFIED	40	// Secure device is not specified
-#define	ERR_VLAN_IS_USED				41	// Virtual LAN card in use by account
-#define	ERR_VLAN_FOR_ACCOUNT_NOT_FOUND	42	// Virtual LAN card of the account can not be found
-#define	ERR_VLAN_FOR_ACCOUNT_USED		43	// Virtual LAN card of the account is already in use
-#define	ERR_VLAN_FOR_ACCOUNT_DISABLED	44	// Virtual LAN card of the account is disabled
 #define	ERR_INVALID_VALUE				45	// Value is invalid
 #define	ERR_NOT_FARM_CONTROLLER			46	// Not a farm controller
 #define	ERR_TRYING_TO_CONNECT			47	// Attempting to connect
@@ -747,7 +733,6 @@
 #define ERR_BETA_EXPIRES				123	// Destination Beta VPN Server has expired
 #define ERR_BRANDED_C_TO_S				124 // Branding string of connection limit is different (Authentication on the server side)
 #define ERR_BRANDED_C_FROM_S			125	// Branding string of connection limit is different (Authentication for client-side)
-#define	ERR_AUTO_DISCONNECTED			126	// VPN session is disconnected for a certain period of time has elapsed
 #define	ERR_CLIENT_ID_REQUIRED			127	// Client ID does not match
 #define	ERR_TOO_MANY_USERS_CREATED		128	// Too many created users
 #define	ERR_SUBSCRIPTION_IS_OLDER		129	// Subscription expiration date Is earlier than the build date of the VPN Server
@@ -755,7 +740,6 @@
 #define	ERR_MSCHAP2_PASSWORD_NEED_RESET	138	// Necessary that password is changed
 #define	ERR_NOT_SUPPORTED_AUTH_ON_OPENSOURCE	143	// It is the type of user authentication that are not supported in the open source version
 #define	ERR_NOT_SUPPORTED_FUNCTION_ON_OPENSOURCE	147	// It is a feature that is not supported in the open source version
-#define	ERR_SUSPENDING					148	// System is suspending
 #define ERR_HOSTNAME_MISMATCH			149	// SSL hostname mismatch
 #define ERR_SSL_PROTOCOL_VERSION		150 // SSL version not supported
 #define ERR_SSL_SHARED_CIPHER			151 // Can't find common cipher
@@ -839,7 +823,6 @@ struct CEDAR
 	LIST *NetSvcList;				// Network service list
 	char *VerString;				// Version string
 	char *BuildInfo;				// Build Information
-	struct CLIENT *Client;			// Client
 	struct SERVER *Server;			// Server
 	UINT64 CreatedTick;				// Generation date and time
 	bool CheckExpires;				// Check the expiration date
@@ -930,6 +913,9 @@ void FreeTinyLog(TINY_LOG *t);
 void WriteTinyLog(TINY_LOG *t, char *str);
 TINY_LOG *NewTinyLog();
 void GetWinVer(RPC_WINVER *v);
+#ifdef	OS_WIN32
+void Win32GetWinVer(RPC_WINVER *v);
+#endif	// OS_WIN32
 bool IsSupportedWinVer(RPC_WINVER *v);
 void GetCedarVersion(char *tmp, UINT size);
 UINT GetCedarVersionNumber();

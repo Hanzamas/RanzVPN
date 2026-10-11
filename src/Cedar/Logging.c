@@ -8,7 +8,6 @@
 #include "Logging.h"
 
 #include "Admin.h"
-#include "Client.h"
 #include "Remote.h"
 #include "Server.h"
 
@@ -530,29 +529,6 @@ void SLog(CEDAR *c, char *name, ...)
 	va_end(args);
 }
 
-// Client log
-void CLog(CLIENT *c, char *name, ...)
-{
-	wchar_t buf[MAX_SIZE * 2];
-	va_list args;
-	// Validate arguments
-	if (name == NULL)
-	{
-		return;
-	}
-
-	if (c == NULL || c->NoSaveLog)
-	{
-		return;
-	}
-
-	va_start(args, name);
-	UniFormatArgs(buf, sizeof(buf), _UU(name), args);
-
-	WriteClientLog(c, buf);
-	va_end(args);
-}
-
 void ALog(ADMIN *a, HUB *h, char *name, ...)
 {
 	wchar_t buf[MAX_SIZE * 2];
@@ -644,18 +620,6 @@ void WriteHubLog(HUB *h, wchar_t *str)
 	{
 		InsertUnicodeRecord(h->SecurityLogger, str);
 	}
-}
-
-// Save the client log
-void WriteClientLog(CLIENT *c, wchar_t *str)
-{
-	// Validate arguments
-	if (c == NULL)
-	{
-		return;
-	}
-
-	InsertUnicodeRecord(c->Logger, str);
 }
 
 // Save the security log of the server
