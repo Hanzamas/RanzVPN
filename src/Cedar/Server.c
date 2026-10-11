@@ -4894,6 +4894,10 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 
 		s->StrictSyslogDatetimeFormat = CfgGetBool(f, "StrictSyslogDatetimeFormat");
 
+		// STUN server for UDP acceleration (missing or empty = STUN disabled)
+		CfgGetStr(f, "StunServer", c->StunServer, sizeof(c->StunServer));
+		Trim(c->StunServer);
+
 		// Disable JSON-RPC Web API
 
 		// Bits of Diffie-Hellman parameters
@@ -5124,6 +5128,9 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s)
 		CfgAddBool(f, "DisableSessionReconnect", GetGlobalServerFlag(GSF_DISABLE_SESSION_RECONNECT));
 
 		CfgAddBool(f, "StrictSyslogDatetimeFormat", s->StrictSyslogDatetimeFormat);
+
+		// STUN server for UDP acceleration
+		CfgAddStr(f, "StunServer", c->StunServer);
 
 		// Disable JSON-RPC Web API
 	}

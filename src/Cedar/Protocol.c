@@ -2195,6 +2195,13 @@ bool ServerAccept(CONNECTION *c)
 		}
 		Unlock(hub->lock);
 
+		if (s->UseUdpAcceleration && s->UdpAccel != NULL)
+		{
+			// Learn the public endpoint of the UDP acceleration socket by STUN (only if configured and the peer is not local).
+			// This is done after releasing the hub lock because the query may block for a while.
+			UdpAccelQueryStun(s->UdpAccel, &c->FirstSock->RemoteIP);
+		}
+
 		// Send a Welcome packet to the client
 		p = PackWelcome(s);
 
@@ -3179,6 +3186,9 @@ bool ClientConnect(CONNECTION *c)
 				if (sess->UdpAccel == NULL)
 				{
 					sess->UdpAccel = NewUdpAccel(c->Cedar, &s->LocalIP, true, true);
+
+					// Learn the public endpoint of the UDP acceleration socket by STUN (only if configured and the peer is not local)
+					UdpAccelQueryStun(sess->UdpAccel, &s->RemoteIP);
 				}
 			}
 		}
@@ -3678,8 +3688,17 @@ PACK *PackWelcome(SESSION *s)
 		// UDP acceleration function
 		PackAddBool(p, "use_udp_acceleration", true);
 		PackAddInt(p, "udp_acceleration_version", s->UdpAccel->Version);
-		PackAddIp(p, "udp_acceleration_server_ip", &s->UdpAccel->MyIp);
-		PackAddInt(p, "udp_acceleration_server_port", s->UdpAccel->MyPort);
+		if (s->UdpAccel->UseStun)
+		{
+			// Public endpoint learned by STUN
+			PackAddIp(p, "udp_acceleration_server_ip", &s->UdpAccel->StunIp);
+			PackAddInt(p, "udp_acceleration_server_port", s->UdpAccel->StunPort);
+		}
+		else
+		{
+			PackAddIp(p, "udp_acceleration_server_ip", &s->UdpAccel->MyIp);
+			PackAddInt(p, "udp_acceleration_server_port", s->UdpAccel->MyPort);
+		}
 		PackAddData(p, "udp_acceleration_server_key", s->UdpAccel->MyKey, sizeof(s->UdpAccel->MyKey));
 		PackAddData(p, "udp_acceleration_server_key_v2", s->UdpAccel->MyKey_V2, sizeof(s->UdpAccel->MyKey_V2));
 		PackAddInt(p, "udp_acceleration_server_cookie", s->UdpAccel->MyCookie);
@@ -4040,7 +4059,14 @@ bool ClientUploadAuth(CONNECTION *c)
 		PackAddInt(p, "udp_acceleration_version", c->Session->UdpAccel->Version);
 
 		IP my_ip;
-		if (IsLocalHostIP(&c->Session->UdpAccel->MyIp) == false)
+		UINT my_port = c->Session->UdpAccel->MyPort;
+		if (c->Session->UdpAccel->UseStun)
+		{
+			// Public endpoint learned by STUN
+			Copy(&my_ip, &c->Session->UdpAccel->StunIp, sizeof(my_ip));
+			my_port = c->Session->UdpAccel->StunPort;
+		}
+		else if (IsLocalHostIP(&c->Session->UdpAccel->MyIp) == false)
 		{
 			Copy(&my_ip, &c->Session->UdpAccel->MyIp, sizeof(my_ip));
 		}
@@ -4050,7 +4076,7 @@ bool ClientUploadAuth(CONNECTION *c)
 		}
 
 		PackAddIp(p, "udp_acceleration_client_ip", &my_ip);
-		PackAddInt(p, "udp_acceleration_client_port", c->Session->UdpAccel->MyPort);
+		PackAddInt(p, "udp_acceleration_client_port", my_port);
 		PackAddData(p, "udp_acceleration_client_key", c->Session->UdpAccel->MyKey, UDP_ACCELERATION_COMMON_KEY_SIZE_V1);
 		PackAddData(p, "udp_acceleration_client_key_v2", c->Session->UdpAccel->MyKey_V2, UDP_ACCELERATION_COMMON_KEY_SIZE_V2);
 		PackAddBool(p, "support_hmac_on_udp_acceleration", true);

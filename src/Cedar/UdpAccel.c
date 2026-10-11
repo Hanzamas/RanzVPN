@@ -13,6 +13,7 @@
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
+#include "Mayaqua/Stun.h"
 #include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
 
@@ -758,6 +759,64 @@ bool UdpAccelInitClient(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, IP *reported_
 	a->Inited = true;
 
 	return true;
+}
+
+// Learn the public endpoint of the UDP socket by STUN if a STUN server is configured.
+// On success the STUN-derived address and port are reported to the peer instead of
+// MyIp and MyPort. With no STUN server configured, nothing is sent. STUN is also
+// skipped when the peer (peer_ip) is on a private, loopback, IPv6 link-local or IPv6
+// unique local address, because such a peer does not reach this host through the
+// public endpoint.
+void UdpAccelQueryStun(UDP_ACCEL *a, IP *peer_ip)
+{
+	char server[MAX_HOST_NAME_LEN + 1];
+	IP ip;
+	UINT port;
+	// Validate arguments
+	if (a == NULL || a->UdpSock == NULL || peer_ip == NULL)
+	{
+		return;
+	}
+
+	Lock(a->Cedar->lock);
+	{
+		StrCpy(server, sizeof(server), a->Cedar->StunServer);
+	}
+	Unlock(a->Cedar->lock);
+
+	if (IsEmptyStr(server))
+	{
+		// STUN is disabled
+		return;
+	}
+
+	if (IsIPPrivate(peer_ip) || IsLocalHostIP(peer_ip) ||
+		(IsIP6(peer_ip) && ((GetIPAddrType6(peer_ip) & IPV6_ADDR_LOCAL_UNICAST) || (peer_ip->address[0] & 0xfe) == 0xfc)))
+	{
+		// The peer is on the local side of the NAT: report the local endpoint
+		return;
+	}
+
+	if (StunGetMappedAddress(a->UdpSock, server, &ip, &port) == false)
+	{
+		Debug("UdpAccelQueryStun(): STUN query to %s failed, reporting the local endpoint.\n", server);
+		return;
+	}
+
+	// The result must be a unicast address of the socket's family (not zero, loopback,
+	// multicast or broadcast), because STUN has no integrity protection here
+	if (IsIP6(&ip) != a->IsIPv6 || port == 0 || port > 65535 || IsLocalHostIP(&ip) ||
+		(IsIP6(&ip) ? IsValidUnicastIPAddress6(&ip) : IsValidUnicastIPAddress4(&ip)) == false)
+	{
+		Debug("UdpAccelQueryStun(): unusable STUN result: %r, port: %u\n", &ip, port);
+		return;
+	}
+
+	Copy(&a->StunIp, &ip, sizeof(a->StunIp));
+	a->StunPort = (USHORT)port;
+	a->UseStun = true;
+
+	Debug("UdpAccelQueryStun(): local port: %u, public endpoint: %r, port: %u\n", a->MyPort, &a->StunIp, a->StunPort);
 }
 
 // Create a new UDP acceleration function

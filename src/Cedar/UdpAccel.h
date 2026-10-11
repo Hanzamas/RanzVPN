@@ -86,6 +86,9 @@ struct UDP_ACCEL
 	UCHAR MyKey_V2[UDP_ACCELERATION_COMMON_KEY_SIZE_V2];	// Send-direction common key (version 2)
 	UCHAR NextIv_V2[UDP_ACCELERATION_PACKET_IV_SIZE_V2];	// IV to be used next (version 2)
 	bool ReadRawFlagMode;								// Read raw flag mode
+	bool UseStun;										// Whether the public endpoint was learned by STUN
+	IP StunIp;											// Public IP address learned by STUN
+	USHORT StunPort;									// Public port number learned by STUN
 };
 
 // Function prototype
@@ -101,5 +104,6 @@ bool UdpAccelIsSendReady(UDP_ACCEL *a, bool check_keepalive);
 void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT max_size, bool high_priority);
 void UdpAccelSendBlock(UDP_ACCEL *a, BLOCK *b);
 UINT UdpAccelCalcMss(UDP_ACCEL *a);
+void UdpAccelQueryStun(UDP_ACCEL *a, IP *peer_ip);
 
 #endif	// UDPACCEL_H
