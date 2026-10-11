@@ -52,7 +52,6 @@ static HANDLE hCurrentProcessHandle = NULL;
 static CRITICAL_SECTION fasttick_lock;
 static UINT64 start_tick = 0;
 static bool use_heap_api = false;
-static bool win32_is_nt = false;
 
 // File I/O data for Win32
 typedef struct WIN32IO
@@ -204,16 +203,6 @@ bool Win32SetFolderCompressW(wchar_t *path, bool compressed)
 		return false;
 	}
 
-	if (IsNt() == false)
-	{
-		char *path_a = CopyUniToStr(path);
-		bool ret = Win32SetFolderCompress(path_a, compressed);
-
-		Free(path_a);
-
-		return ret;
-	}
-
 	InnerFilePathW(tmp, sizeof(tmp), path);
 
 	// Open the folder
@@ -283,18 +272,6 @@ bool Win32GetDiskFreeW(wchar_t *path, UINT64 *free_size, UINT64 *used_size, UINT
 	if (path == NULL)
 	{
 		return false;
-	}
-
-	if (IsNt() == false)
-	{
-		bool ret;
-		char *path_a = CopyUniToStr(path);
-
-		ret = Win32GetDiskFree(path_a, free_size, used_size, total_size);
-
-		Free(path_a);
-
-		return ret;
 	}
 
 	Zero(&v1, sizeof(v1));
@@ -431,7 +408,6 @@ DIRLIST *Win32EnumDirEx(char *dirname, COMPARE *compare)
 }
 DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 {
-	WIN32_FIND_DATAA data_a;
 	WIN32_FIND_DATAW data_w;
 	HANDLE h;
 	wchar_t tmp[MAX_PATH];
@@ -453,21 +429,9 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 
 	o = NewListFast(compare);
 
-	Zero(&data_a, sizeof(data_a));
 	Zero(&data_w, sizeof(data_w));
 
-	if (IsNt())
-	{
-		h = FindFirstFileW(tmp, &data_w);
-	}
-	else
-	{
-		char *tmp_a = CopyUniToStr(tmp);
-
-		h = FindFirstFileA(tmp_a, &data_a);
-
-		Free(tmp_a);
-	}
+	h = FindFirstFileW(tmp, &data_w);
 
 	if (h != INVALID_HANDLE_VALUE)
 	{
@@ -475,17 +439,6 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 
 		do
 		{
-			if (IsNt() == false)
-			{
-				Zero(&data_w, sizeof(data_w));
-				StrToUni(data_w.cFileName, sizeof(data_w.cFileName), data_a.cFileName);
-				data_w.dwFileAttributes = data_a.dwFileAttributes;
-				data_w.ftCreationTime = data_a.ftCreationTime;
-				data_w.ftLastWriteTime = data_a.ftLastWriteTime;
-				data_w.nFileSizeHigh = data_a.nFileSizeHigh;
-				data_w.nFileSizeLow = data_a.nFileSizeLow;
-			}
-
 			if (UniStrCmpi(data_w.cFileName, L"..") != 0 &&
 				UniStrCmpi(data_w.cFileName, L".") != 0)
 			{
@@ -553,16 +506,8 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 			}
 
 			Zero(&data_w, sizeof(data_w));
-			Zero(&data_a, sizeof(data_a));
 
-			if (IsNt())
-			{
-				b = FindNextFileW(h, &data_w);
-			}
-			else
-			{
-				b = FindNextFileA(h, &data_a);
-			}
+			b = FindNextFileW(h, &data_w);
 		}
 		while (b);
 
@@ -589,17 +534,6 @@ void Win32GetExeNameW(wchar_t *name, UINT size)
 		return;
 	}
 
-	if (IsNt() == false)
-	{
-		char name_a[MAX_PATH];
-
-		Win32GetExeName(name_a, sizeof(name_a));
-
-		StrToUni(name, size, name_a);
-
-		return;
-	}
-
 	UniStrCpy(name, size, L"");
 
 	GetModuleFileNameW(NULL, name, size);
@@ -623,17 +557,6 @@ void Win32GetCurrentDirW(wchar_t *dir, UINT size)
 	// Validate arguments
 	if (dir == NULL)
 	{
-		return;
-	}
-
-	if (IsNt() == false)
-	{
-		char dir_a[MAX_PATH];
-
-		Win32GetCurrentDir(dir_a, sizeof(dir_a));
-
-		StrToUni(dir, size, dir_a);
-
 		return;
 	}
 
@@ -822,7 +745,6 @@ bool Win32IsSupportedOs()
 // Show an alert
 void Win32AlertW(wchar_t *msg, wchar_t *caption)
 {
-	char *s;
 	// Validate arguments
 	if (msg == NULL)
 	{
@@ -833,19 +755,10 @@ void Win32AlertW(wchar_t *msg, wchar_t *caption)
 		caption = CEDAR_PRODUCT_STR_W L" VPN Kernel";
 	}
 
-	s = GetCommandLineStr();
-
-	if (SearchStr(s, "win9x_uninstall", 0) == INFINITE && SearchStr(s, "win9x_install", 0) == INFINITE)
-	{
-		// Hide during the uninstallation in Win9x service mode
-		MessageBoxW(NULL, msg, caption, MB_SETFOREGROUND | MB_TOPMOST | MB_SERVICE_NOTIFICATION | MB_OK | MB_ICONEXCLAMATION);
-	}
-
-	Free(s);
+	MessageBoxW(NULL, msg, caption, MB_SETFOREGROUND | MB_TOPMOST | MB_SERVICE_NOTIFICATION | MB_OK | MB_ICONEXCLAMATION);
 }
 void Win32Alert(char *msg, char *caption)
 {
-	char *s;
 	// Validate arguments
 	if (msg == NULL)
 	{
@@ -856,15 +769,7 @@ void Win32Alert(char *msg, char *caption)
 		caption = CEDAR_PRODUCT_STR " VPN Kernel";
 	}
 
-	s = GetCommandLineStr();
-
-	if (SearchStr(s, "win9x_uninstall", 0) == INFINITE && SearchStr(s, "win9x_install", 0) == INFINITE)
-	{
-		// Hide during the uninstallation in Win9x service mode
-		MessageBox(NULL, msg, caption, MB_SETFOREGROUND | MB_TOPMOST | MB_SERVICE_NOTIFICATION | MB_OK | MB_ICONEXCLAMATION);
-	}
-
-	Free(s);
+	MessageBox(NULL, msg, caption, MB_SETFOREGROUND | MB_TOPMOST | MB_SERVICE_NOTIFICATION | MB_OK | MB_ICONEXCLAMATION);
 }
 void Win32DebugAlert(char *msg)
 {
@@ -1060,338 +965,57 @@ bool Win32GetVersionExInternalForWindows81orLater(void *info)
 	return true;
 }
 
-// Acquisition whether it's a Windows NT
-bool Win32IsNt()
-{
-	OSVERSIONINFO os;
-	Zero(&os, sizeof(os));
-	os.dwOSVersionInfoSize = sizeof(os);
-
-	if (GetVersionEx(&os) == FALSE)
-	{
-		// Failure?
-		return false;
-	}
-
-	if (os.dwPlatformId == VER_PLATFORM_WIN32_NT)
-	{
-		// NT
-		return true;
-	}
-
-	// 9x
-	return false;
-}
-
 // Get the OS type
 UINT Win32GetOsType()
 {
-	OSVERSIONINFO os;
+	OSVERSIONINFOEX os;
 	Zero(&os, sizeof(os));
 	os.dwOSVersionInfoSize = sizeof(os);
 
-	if (Win32GetVersionExInternal(&os) == FALSE)
+	if (Win32GetVersionExInternal((LPOSVERSIONINFOA)&os) == FALSE)
 	{
 		// Failure?
 		return 0;
 	}
 
-	if (os.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS)
+	if (os.dwPlatformId != VER_PLATFORM_WIN32_NT)
 	{
-		// Windows 9x system
-		if (os.dwMajorVersion == 4)
-		{
-			if (os.dwMinorVersion == 0)
-			{
-				return OSTYPE_WINDOWS_95;
-			}
-			else if (os.dwMinorVersion == 10)
-			{
-				return OSTYPE_WINDOWS_98;
-			}
-			else if (os.dwMinorVersion == 90)
-			{
-				return OSTYPE_WINDOWS_ME;
-			}
-			else
-			{
-				return OSTYPE_WINDOWS_UNKNOWN;
-			}
-		}
-		else if (os.dwMajorVersion >= 5)
-		{
-			return OSTYPE_WINDOWS_UNKNOWN;
-		}
+		// Can not be determined
+		return 0;
 	}
-	else if (os.dwPlatformId == VER_PLATFORM_WIN32_NT)
+
+	if (os.dwMajorVersion < 6 || (os.dwMajorVersion == 6 && os.dwMinorVersion < 4))
 	{
-		UINT sp = Win32GetSpVer(os.szCSDVersion);
-		if (os.dwMajorVersion == 4)
+		// Windows 8.1 or earlier
+		return 0;
+	}
+
+	if ((os.dwMajorVersion == 6 && os.dwMinorVersion == 4) || (os.dwMajorVersion == 10 && os.dwMinorVersion == 0))
+	{
+		if (os.wProductType == VER_NT_WORKSTATION)
 		{
-			if (sp < 6)
-			{
-				// SP6 or earlier
-				return 0;
-			}
-		}
-		if (os.dwMajorVersion < 4)
-		{
-			// NT 3.51 or earlier
-			return 0;
+			// Windows 10
+			return OSTYPE_WINDOWS_10;
 		}
 		else
 		{
-			OSVERSIONINFOEX os;
-			Zero(&os, sizeof(os));
-			os.dwOSVersionInfoSize = sizeof(os);
-			Win32GetVersionExInternal((LPOSVERSIONINFOA)&os);
-
-			if (os.dwMajorVersion == 4)
-			{
-				// Windows NT 4.0
-				if (os.wProductType == VER_NT_DOMAIN_CONTROLLER || os.wProductType == VER_NT_SERVER)
-				{
-					if ((os.wSuiteMask & VER_SUITE_TERMINAL) || (os.wSuiteMask & VER_SUITE_SINGLEUSERTS))
-					{
-						return OSTYPE_WINDOWS_NT_4_TERMINAL_SERVER;
-					}
-					if (os.wSuiteMask & VER_SUITE_ENTERPRISE)
-					{
-						return OSTYPE_WINDOWS_NT_4_SERVER_ENTERPRISE;
-					}
-					if (os.wSuiteMask & VER_SUITE_BACKOFFICE)
-					{
-						return OSTYPE_WINDOWS_NT_4_BACKOFFICE;
-					}
-					if ((os.wSuiteMask & VER_SUITE_SMALLBUSINESS) || (os.wSuiteMask & VER_SUITE_SMALLBUSINESS_RESTRICTED))
-					{
-						return OSTYPE_WINDOWS_NT_4_SMS;
-					}
-					else
-					{
-						return OSTYPE_WINDOWS_NT_4_SERVER;
-					}
-				}
-				else
-				{
-					return OSTYPE_WINDOWS_NT_4_WORKSTATION;
-				}
-			}
-			else if (os.dwMajorVersion == 5)
-			{
-				// Windows 2000, XP, Server 2003
-				if (os.dwMinorVersion == 0)
-				{
-					// Windows 2000
-					if (os.wProductType == VER_NT_DOMAIN_CONTROLLER || os.wProductType == VER_NT_SERVER)
-					{
-						// Server
-						if (os.wSuiteMask & VER_SUITE_DATACENTER)
-						{
-							return OSTYPE_WINDOWS_2000_DATACENTER_SERVER;
-						}
-						else if ((os.wSuiteMask & VER_SUITE_SMALLBUSINESS) || (os.wSuiteMask & VER_SUITE_SMALLBUSINESS_RESTRICTED))
-						{
-							return OSTYPE_WINDOWS_2000_SBS;
-						}
-						else if (os.wSuiteMask & VER_SUITE_BACKOFFICE)
-						{
-							return OSTYPE_WINDOWS_2000_BACKOFFICE;
-						}
-						else if (os.wSuiteMask & VER_SUITE_ENTERPRISE)
-						{
-							return OSTYPE_WINDOWS_2000_ADVANCED_SERVER;
-						}
-						else
-						{
-							return OSTYPE_WINDOWS_2000_SERVER;
-						}
-					}
-					else
-					{
-						// Client
-						return OSTYPE_WINDOWS_2000_PROFESSIONAL;
-					}
-				}
-				else if (os.dwMinorVersion == 1)
-				{
-					// Windows XP
-					if (os.wSuiteMask & VER_SUITE_PERSONAL)
-					{
-						return OSTYPE_WINDOWS_XP_HOME;
-					}
-					else
-					{
-						return OSTYPE_WINDOWS_XP_PROFESSIONAL;
-					}
-				}
-				else if (os.dwMinorVersion == 2)
-				{
-					// Windows Server 2003
-					if (os.wProductType == VER_NT_DOMAIN_CONTROLLER || os.wProductType == VER_NT_SERVER)
-					{
-						// Server
-						if (os.wSuiteMask & VER_SUITE_DATACENTER)
-						{
-							return OSTYPE_WINDOWS_2003_DATACENTER;
-						}
-						else if ((os.wSuiteMask & VER_SUITE_SMALLBUSINESS) || (os.wSuiteMask & VER_SUITE_SMALLBUSINESS_RESTRICTED))
-						{
-							return OSTYPE_WINDOWS_2003_SBS;
-						}
-						else if (os.wSuiteMask & VER_SUITE_BACKOFFICE)
-						{
-							return OSTYPE_WINDOWS_2003_BACKOFFICE;
-						}
-						else if (os.wSuiteMask & VER_SUITE_ENTERPRISE)
-						{
-							return OSTYPE_WINDOWS_2003_ENTERPRISE;
-						}
-						else if (os.wSuiteMask & VER_SUITE_BLADE)
-						{
-							return OSTYPE_WINDOWS_2003_WEB;
-						}
-						else
-						{
-							return OSTYPE_WINDOWS_2003_STANDARD;
-						}
-					}
-					else
-					{
-						// Client (Unknown XP?)
-						return OSTYPE_WINDOWS_XP_PROFESSIONAL;
-					}
-				}
-				else
-				{
-					// Windows Longhorn
-					if (os.wProductType == VER_NT_DOMAIN_CONTROLLER || os.wProductType == VER_NT_SERVER)
-					{
-						return OSTYPE_WINDOWS_LONGHORN_SERVER;
-					}
-					else
-					{
-						return OSTYPE_WINDOWS_LONGHORN_PROFESSIONAL;
-					}
-				}
-			}
-			else
-			{
-				if (os.dwMajorVersion == 6 && os.dwMinorVersion == 0)
-				{
-					// Windows Vista, Server 2008
-					if (os.wProductType == VER_NT_DOMAIN_CONTROLLER || os.wProductType == VER_NT_SERVER)
-					{
-						return OSTYPE_WINDOWS_LONGHORN_SERVER;
-					}
-					else
-					{
-						return OSTYPE_WINDOWS_LONGHORN_PROFESSIONAL;
-					}
-				}
-				else if (os.dwMajorVersion == 6 && os.dwMinorVersion == 1)
-				{
-					if (os.wProductType == VER_NT_WORKSTATION)
-					{
-						// Windows 7
-						return OSTYPE_WINDOWS_7;
-					}
-					else
-					{
-						// Windows Server 2008 R2
-						return OSTYPE_WINDOWS_SERVER_2008_R2;
-					}
-				}
-				else if (os.dwMajorVersion == 6 && os.dwMinorVersion == 2)
-				{
-					if (os.wProductType == VER_NT_WORKSTATION)
-					{
-						// Windows 8
-						return OSTYPE_WINDOWS_8;
-					}
-					else
-					{
-						// Windows Server 2012
-						return OSTYPE_WINDOWS_SERVER_8;
-					}
-				}
-				else if (os.dwMajorVersion == 6 && os.dwMinorVersion == 3)
-				{
-					if (os.wProductType == VER_NT_WORKSTATION)
-					{
-						// Windows 8.1
-						return OSTYPE_WINDOWS_81;
-					}
-					else
-					{
-						// Windows Server 2012 R2
-						return OSTYPE_WINDOWS_SERVER_81;
-					}
-				}
-				else if ((os.dwMajorVersion == 6 && os.dwMinorVersion == 4) || (os.dwMajorVersion == 10 && os.dwMinorVersion == 0))
-				{
-					if (os.wProductType == VER_NT_WORKSTATION)
-					{
-						// Windows 10
-						return OSTYPE_WINDOWS_10;
-					}
-					else
-					{
-						// Windows Server 10
-						return OSTYPE_WINDOWS_SERVER_10;
-					}
-				}
-				else
-				{
-					if (os.wProductType == VER_NT_WORKSTATION)
-					{
-						// Windows 11 or later
-						return OSTYPE_WINDOWS_11;
-					}
-					else
-					{
-						// Windows Server 11 or later
-						return OSTYPE_WINDOWS_SERVER_11;
-					}
-				}
-			}
+			// Windows Server 10
+			return OSTYPE_WINDOWS_SERVER_10;
 		}
 	}
-
-	// Can not be determined
-	return 0;
-}
-
-// Get the SP version from the string
-UINT Win32GetSpVer(char *str)
-{
-	UINT ret, i;
-	TOKEN_LIST *t;
-	// Validate arguments
-	if (str == NULL)
+	else
 	{
-		return 0;
-	}
-
-	t = ParseToken(str, NULL);
-	if (t == NULL)
-	{
-		return 0;
-	}
-
-	ret = 0;
-	for (i = 0;i < t->NumTokens;i++)
-	{
-		ret = ToInt(t->Token[i]);
-		if (ret != 0)
+		if (os.wProductType == VER_NT_WORKSTATION)
 		{
-			break;
+			// Windows 11 or later
+			return OSTYPE_WINDOWS_11;
+		}
+		else
+		{
+			// Windows Server 11 or later
+			return OSTYPE_WINDOWS_SERVER_11;
 		}
 	}
-
-	FreeToken(t);
-
-	return ret;
 }
 
 // Kill the process
@@ -1498,18 +1122,6 @@ void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id,
 	if (filename == NULL)
 	{
 		return NULL;
-	}
-
-	if (IsNt() == false)
-	{
-		char *filename_a = CopyUniToStr(filename);
-		char *arg_a = CopyUniToStr(arg);
-		void *ret = Win32RunEx3(filename_a, arg_a, hide, process_id, disableWow);
-
-		Free(filename_a);
-		Free(arg_a);
-
-		return ret;
 	}
 
 	UniStrCpy(name, sizeof(name), filename);
@@ -1672,20 +1284,6 @@ bool Win32RunW(wchar_t *filename, wchar_t *arg, bool hide, bool wait)
 		return false;
 	}
 
-	if (IsNt() == false)
-	{
-		char *filename_a = CopyUniToStr(filename);
-		char *arg_a = CopyUniToStr(arg);
-		bool ret;
-
-		ret = Win32Run(filename_a, arg_a, hide, wait);
-
-		Free(filename_a);
-		Free(arg_a);
-
-		return ret;
-	}
-
 	UniStrCpy(name, sizeof(name), filename);
 	UniTrim(name);
 
@@ -1816,18 +1414,6 @@ bool Win32FileRenameW(wchar_t *old_name, wchar_t *new_name)
 		return false;
 	}
 
-	if (IsNt() == false)
-	{
-		char *old_name_a = CopyUniToStr(old_name);
-		char *new_name_a = CopyUniToStr(new_name);
-		bool ret = Win32FileRename(old_name_a, new_name_a);
-
-		Free(old_name_a);
-		Free(new_name_a);
-
-		return ret;
-	}
-
 	// Rename
 	if (MoveFileW(old_name, new_name) == FALSE)
 	{
@@ -1861,17 +1447,6 @@ void Win32GetExeDirW(wchar_t *name, UINT size)
 	// Validate arguments
 	if (name == NULL)
 	{
-		return;
-	}
-
-	if (IsNt() == false)
-	{
-		char name_a[MAX_PATH];
-
-		Win32GetExeDir(name_a, sizeof(name_a));
-
-		StrToUni(name, size, name_a);
-
 		return;
 	}
 
@@ -2029,16 +1604,6 @@ bool Win32DeleteDirW(wchar_t *name)
 		return false;
 	}
 
-	if (IsNt() == false)
-	{
-		char *name_a = CopyUniToStr(name);
-		bool ret = Win32DeleteDir(name_a);
-
-		Free(name_a);
-
-		return ret;
-	}
-
 	if (RemoveDirectoryW(name) == FALSE)
 	{
 		return false;
@@ -2067,16 +1632,6 @@ bool Win32MakeDirW(wchar_t *name)
 	if (name == NULL)
 	{
 		return false;
-	}
-
-	if (IsNt() == false)
-	{
-		char *name_a = CopyUniToStr(name);
-		bool ret = Win32MakeDir(name_a);
-
-		Free(name_a);
-
-		return ret;
 	}
 
 	if (CreateDirectoryW(name, NULL) == FALSE)
@@ -2109,18 +1664,6 @@ bool Win32FileDeleteW(wchar_t *name)
 	if (name == NULL)
 	{
 		return false;
-	}
-
-	if (IsNt() == false)
-	{
-		bool ret;
-		char *name_a = CopyUniToStr(name);
-
-		ret = Win32FileDelete(name_a);
-
-		Free(name_a);
-
-		return ret;
 	}
 
 	if (DeleteFileW(name) == FALSE)
@@ -2383,18 +1926,6 @@ void *Win32FileOpenW(wchar_t *name, bool write_mode, bool read_lock)
 		return NULL;
 	}
 
-	if (IsNt() == false)
-	{
-		void *ret;
-		char *name_a = CopyUniToStr(name);
-
-		ret = Win32FileOpen(name_a, write_mode, read_lock);
-
-		Free(name_a);
-
-		return ret;
-	}
-
 	if (write_mode)
 	{
 		lock_mode = FILE_SHARE_READ;
@@ -2490,18 +2021,6 @@ void *Win32FileCreateW(wchar_t *name)
 	if (name == NULL)
 	{
 		return NULL;
-	}
-
-	if (IsNt() == false)
-	{
-		void *ret;
-		char *name_a = CopyUniToStr(name);
-
-		ret = Win32FileCreate(name_a);
-
-		Free(name_a);
-
-		return ret;
 	}
 
 	// Create a file
@@ -2871,23 +2390,6 @@ bool Win32InitThread(THREAD *t)
 void Win32Init()
 {
 	INITCOMMONCONTROLSEX c;
-	OSVERSIONINFO os;
-
-	// Get whether it's in a Windows NT
-	Zero(&os, sizeof(os));
-	os.dwOSVersionInfoSize = sizeof(os);
-	GetVersionEx(&os);
-
-	if (os.dwPlatformId == VER_PLATFORM_WIN32_NT)
-	{
-		// NT system
-		win32_is_nt = true;
-	}
-	else
-	{
-		// 9x system
-		win32_is_nt = false;
-	}
 
 	// Open the stdout
 	if (hstdout == INVALID_HANDLE_VALUE)
@@ -2916,12 +2418,6 @@ void Win32Init()
 	if (MayaquaIsDotNetMode())
 	{
 		// If an heap API is called from .NET API, it might crush
-		use_heap_api = false;
-	}
-
-	if (IsNt() == false)
-	{
-		// Do not use the heap related API in Win9x
 		use_heap_api = false;
 	}
 
@@ -3240,6 +2736,7 @@ UINT64 Win32FastTick64()
 bool Win32InputW(wchar_t *str, UINT size)
 {
 	bool ret = false;
+	DWORD read_size = 0;
 	// Validate arguments
 	if (str == NULL)
 	{
@@ -3260,47 +2757,17 @@ bool Win32InputW(wchar_t *str, UINT size)
 		return Win32InputFromFileW(NULL, 0);
 	}
 
-	if (IsNt())
+	if (ReadConsoleW(hstdin, str, (size / sizeof(wchar_t)) - 1, &read_size, NULL))
 	{
-		DWORD read_size = 0;
+		str[read_size] = 0;
 
-		if (ReadConsoleW(hstdin, str, (size / sizeof(wchar_t)) - 1, &read_size, NULL))
-		{
-			str[read_size] = 0;
+		UniTrimCrlf(str);
 
-			UniTrimCrlf(str);
-
-			ret = true;
-		}
-		else
-		{
-			ret = Win32InputFromFileW(str, size);
-		}
+		ret = true;
 	}
 	else
 	{
-		DWORD read_size = 0;
-		UINT a_size = size / sizeof(wchar_t) + 16;
-		char *a;
-
-		a = ZeroMalloc(a_size);
-
-		if (ReadConsoleA(hstdin, a, a_size - 1, &read_size, NULL))
-		{
-			a[read_size] = 0;
-
-			StrToUni(str, size, a);
-
-			UniTrimCrlf(str);
-
-			ret = true;
-		}
-		else
-		{
-			ret = Win32InputFromFileW(str, size);
-		}
-
-		Free(a);
+		ret = Win32InputFromFileW(str, size);
 	}
 
 	return ret;
@@ -3384,23 +2851,9 @@ void Win32PrintW(wchar_t *str)
 		return;
 	}
 
-	if (IsNt())
+	if (WriteConsoleW(hstdout, str, UniStrLen(str), &write_size, NULL) == false)
 	{
-		if (WriteConsoleW(hstdout, str, UniStrLen(str), &write_size, NULL) == false)
-		{
-			Win32PrintToFileW(str);
-		}
-	}
-	else
-	{
-		char *ansi_str = CopyUniToStr(str);
-
-		if (WriteConsoleA(hstdout, ansi_str, StrLen(ansi_str), &write_size, NULL) == false)
-		{
-			Win32PrintToFileW(str);
-		}
-
-		Free(ansi_str);
+		Win32PrintToFileW(str);
 	}
 }
 void Win32PrintToFileW(wchar_t *str)

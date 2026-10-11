@@ -20,7 +20,7 @@
 #include "Mayaqua/Tick64.h"
 #include "Mayaqua/Win32.h"
 
-#include "Neo/Neo.h"
+#include "Neo6/Neo6.h"
 
 typedef DWORD(CALLBACK* OPENVXDHANDLE)(HANDLE);
 
@@ -625,7 +625,6 @@ void RouteTrackingStart(SESSION *s)
 	GetDefaultDns(&t->OldDnsServer);
 
 	// Get as soon as releasing the IP address in the case of using DHCP
-	if (IsNt())
 	{
 		char tmp[MAX_SIZE];
 		MS_ADAPTER *a;
@@ -959,7 +958,6 @@ void VLanPaFree(SESSION *s)
 	}
 
 	// Release the IP address if you are using DHCP
-	if (IsNt())
 	{
 		char tmp[MAX_SIZE];
 		MS_ADAPTER *a;

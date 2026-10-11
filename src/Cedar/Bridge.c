@@ -74,30 +74,6 @@ UINT GetEthDeviceHash()
 #endif	// OS_UNIX
 }
 
-// Get whether WinPcap is needed
-bool IsNeedWinPcap()
-{
-	if (IsBridgeSupported() == false)
-	{
-		// Not in Windows
-		return false;
-	}
-	else
-	{
-		// Windows
-		if (IsEthSupported())
-		{
-			// Already success to access the Ethernet device
-			return false;
-		}
-		else
-		{
-			// Failed to access the Ethernet device
-			return true;
-		}
-	}
-}
-
 // Get whether the local-bridging is supported by current OS
 bool IsBridgeSupported()
 {

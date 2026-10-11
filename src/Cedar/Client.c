@@ -290,12 +290,6 @@ void CiChangeAllVLanMacAddressIfCleared(CLIENT *c)
 		return;
 	}
 
-	if (MsIsInfCatalogRequired() == false)
-	{
-		// Not required for other than Windows 8
-		return;
-	}
-
 	Zero(&t, sizeof(t));
 	if (CtEnumVLan(c, &t))
 	{
@@ -6547,14 +6541,11 @@ bool CtCreateVLan(CLIENT *c, RPC_CLIENT_CREATE_VLAN *create)
 	}
 
 	// Regulation in Windows 8 / 10
-	if (MsIsInfCatalogRequired())
+	if (CiIsValidVLanRegulatedName(create->DeviceName) == false)
 	{
-		if (CiIsValidVLanRegulatedName(create->DeviceName) == false)
-		{
-			// Name is invalid
-			CiSetError(c, ERR_VLAN_INVALID_NAME);
-			return false;
-		}
+		// Name is invalid
+		CiSetError(c, ERR_VLAN_INVALID_NAME);
+		return false;
 	}
 
 	// Check whether the LAN card with the specified name already exists
@@ -8586,7 +8577,7 @@ bool CtGetClientVersion(CLIENT *c, RPC_CLIENT_VERSION *ver)
 
 #ifdef	OS_WIN32
 	ver->ProcessId = MsGetProcessId();
-	ver->IsVLanNameRegulated = MsIsInfCatalogRequired();
+	ver->IsVLanNameRegulated = true;
 
 #endif	// OS_WIN32
 
@@ -8609,10 +8600,7 @@ CLIENT *CiNewClient()
 	}
 
 #ifdef	OS_WIN32
-	if (MsIsWindows7())
-	{
-		c->MsSuspendHandler = MsNewSuspendHandler();
-	}
+	c->MsSuspendHandler = MsNewSuspendHandler();
 #endif	// OS_WIN32
 
 	c->SockList = NewSockList();

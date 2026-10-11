@@ -680,7 +680,6 @@ struct RPC_ENUM_LOCALBRIDGE
 struct RPC_BRIDGE_SUPPORT
 {
 	bool IsBridgeSupportedOs;				// Whether the OS supports the bridge
-	bool IsWinPcapNeeded;					// Whether WinPcap is necessary
 };
 
 // Config operation

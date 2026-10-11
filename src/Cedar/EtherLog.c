@@ -285,7 +285,6 @@ UINT EtGetBridgeSupport(EL *a, RPC_BRIDGE_SUPPORT *t)
 	Zero(t, sizeof(RPC_BRIDGE_SUPPORT));
 
 	t->IsBridgeSupportedOs = IsBridgeSupported();
-	t->IsWinPcapNeeded = IsNeedWinPcap();
 
 	return ERR_NO_ERROR;
 }

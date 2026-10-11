@@ -9666,12 +9666,6 @@ UINT PsCaps(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 		if (StartWith(c->Name, "b_"))
 		{
-			bool icon_pass = c->Value == 0 ? false : true;
-			if (StrCmpi(c->Name, "b_must_install_pcap") == 0)
-			{
-				// Reverse only item of WinPcap
-				icon_pass = !icon_pass;
-			}
 			CtInsert(ct, title, c->Value == 0 ? _UU("CAPS_NO") : _UU("CAPS_YES"));
 		}
 		else

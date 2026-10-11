@@ -41,7 +41,7 @@
 #define	BUF_SIZE			512
 
 // Support Windows OS list
-#define	SUPPORTED_WINDOWS_LIST		"Windows 98 / 98 SE / ME / NT 4.0 SP6a / 2000 SP4 / XP SP2, SP3 / Vista SP1, SP2 / 7 SP1 / 8 / 8.1 / 10 / Server 2003 SP2 / Server 2008 SP1, SP2 / Hyper-V Server 2008 / Server 2008 R2 SP1 / Hyper-V Server 2008 R2 / Server 2012 / Hyper-V Server 2012 / Server 2012 R2 / Hyper-V Server 2012 R2 / Server 2016 / Server 2019"
+#define	SUPPORTED_WINDOWS_LIST		"Windows 10 / 11 / Server 2016 / Server 2019 / Server 2022"
 
 // Infinite
 #ifndef	INFINITE
@@ -181,38 +181,6 @@ typedef pid_t PID;
 #endif
 
 // OS type
-#define	OSTYPE_WINDOWS_95						1100	// Windows 95
-#define	OSTYPE_WINDOWS_98						1200	// Windows 98
-#define	OSTYPE_WINDOWS_ME						1300	// Windows Me
-#define	OSTYPE_WINDOWS_UNKNOWN					1400	// Windows (unknown)
-#define	OSTYPE_WINDOWS_NT_4_WORKSTATION			2100	// Windows NT 4.0 Workstation
-#define	OSTYPE_WINDOWS_NT_4_SERVER				2110	// Windows NT 4.0 Server
-#define	OSTYPE_WINDOWS_NT_4_SERVER_ENTERPRISE	2111	// Windows NT 4.0 Server, Enterprise Edition
-#define	OSTYPE_WINDOWS_NT_4_TERMINAL_SERVER		2112	// Windows NT 4.0 Terminal Server
-#define	OSTYPE_WINDOWS_NT_4_BACKOFFICE			2113	// BackOffice Server 4.5
-#define	OSTYPE_WINDOWS_NT_4_SMS					2114	// Small Business Server 4.5
-#define	OSTYPE_WINDOWS_2000_PROFESSIONAL		2200	// Windows 2000 Professional
-#define	OSTYPE_WINDOWS_2000_SERVER				2211	// Windows 2000 Server
-#define	OSTYPE_WINDOWS_2000_ADVANCED_SERVER		2212	// Windows 2000 Advanced Server
-#define	OSTYPE_WINDOWS_2000_DATACENTER_SERVER	2213	// Windows 2000 Datacenter Server
-#define	OSTYPE_WINDOWS_2000_BACKOFFICE			2214	// BackOffice Server 2000
-#define	OSTYPE_WINDOWS_2000_SBS					2215	// Small Business Server 2000
-#define	OSTYPE_WINDOWS_XP_HOME					2300	// Windows XP Home Edition
-#define	OSTYPE_WINDOWS_XP_PROFESSIONAL			2301	// Windows XP Professional
-#define	OSTYPE_WINDOWS_2003_WEB					2410	// Windows Server 2003 Web Edition
-#define	OSTYPE_WINDOWS_2003_STANDARD			2411	// Windows Server 2003 Standard Edition
-#define	OSTYPE_WINDOWS_2003_ENTERPRISE			2412	// Windows Server 2003 Enterprise Edition
-#define	OSTYPE_WINDOWS_2003_DATACENTER			2413	// Windows Server 2003 DataCenter Edition
-#define	OSTYPE_WINDOWS_2003_BACKOFFICE			2414	// BackOffice Server 2003
-#define	OSTYPE_WINDOWS_2003_SBS					2415	// Small Business Server 2003
-#define	OSTYPE_WINDOWS_LONGHORN_PROFESSIONAL	2500	// Windows Vista
-#define	OSTYPE_WINDOWS_LONGHORN_SERVER			2510	// Windows Server 2008
-#define	OSTYPE_WINDOWS_7						2600	// Windows 7
-#define	OSTYPE_WINDOWS_SERVER_2008_R2			2610	// Windows Server 2008 R2
-#define	OSTYPE_WINDOWS_8						2700	// Windows 8
-#define	OSTYPE_WINDOWS_SERVER_8					2710	// Windows Server 2012
-#define	OSTYPE_WINDOWS_81						2701	// Windows 8.1
-#define	OSTYPE_WINDOWS_SERVER_81				2711	// Windows Server 2012 R2
 #define	OSTYPE_WINDOWS_10						2702	// Windows 10
 #define	OSTYPE_WINDOWS_SERVER_10				2712	// Windows Server 10
 #define	OSTYPE_WINDOWS_11						2800	// Windows 11 or later

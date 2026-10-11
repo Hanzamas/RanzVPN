@@ -282,7 +282,6 @@ if (IsTrackingEnabled()) {													\
 // Function prototype
 void InitMayaqua(bool memcheck, bool debug, int argc, char **argv);
 void FreeMayaqua();
-bool IsNt();
 bool MayaquaIsDotNetMode();
 void MayaquaMinimalMode();
 bool MayaquaIsMinimalMode();

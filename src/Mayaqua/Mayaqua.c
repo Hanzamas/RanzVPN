@@ -47,7 +47,6 @@ static bool dot_net_mode = false;
 static bool minimal_mode = false;
 static UINT last_time_check = 0;
 static UINT first_time_check = 0;
-static bool is_nt = false;
 static bool is_ham_mode = false;
 static UINT init_mayaqua_counter = 0;
 static bool use_probe = false;
@@ -372,12 +371,6 @@ bool MayaquaIsMinimalMode()
 	return minimal_mode;
 }
 
-// Whether in NT
-bool IsNt()
-{
-	return is_nt;
-}
-
 // Initialization of Mayaqua library
 void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 {
@@ -405,11 +398,6 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 #else
 	g_foreground = false;
 #endif // OS_UNIX
-
-	// Acquisition whether NT
-#ifdef	OS_WIN32
-	is_nt = Win32IsNt();
-#endif	// OS_WIN32
 
 	// Check endian
 	CheckEndian();

@@ -211,18 +211,15 @@ CAPSLIST *ScGetCapsEx(RPC *rpc)
 			if (ScGetBridgeSupport(rpc, &b) == ERR_NO_ERROR)
 			{
 				AddCapsBool(t, "b_local_bridge", b.IsBridgeSupportedOs);
-				AddCapsBool(t, "b_must_install_pcap", b.IsWinPcapNeeded);
 			}
 			else
 			{
 				AddCapsBool(t, "b_local_bridge", false);
-				AddCapsBool(t, "b_must_install_pcap", false);
 			}
 		}
 		else
 		{
 			AddCapsBool(t, "b_local_bridge", false);
-			AddCapsBool(t, "b_must_install_pcap", false);
 		}
 
 		AddCapsBool(t, "b_tap_supported", false);
@@ -2802,7 +2799,6 @@ UINT StGetBridgeSupport(ADMIN *a, RPC_BRIDGE_SUPPORT *t)
 	Zero(t, sizeof(RPC_BRIDGE_SUPPORT));
 
 	t->IsBridgeSupportedOs = IsBridgeSupported();
-	t->IsWinPcapNeeded = IsNeedWinPcap();
 
 	return ERR_NO_ERROR;
 }
@@ -9299,7 +9295,6 @@ void InRpcBridgeSupport(RPC_BRIDGE_SUPPORT *t, PACK *p)
 	Zero(t, sizeof(RPC_BRIDGE_SUPPORT));
 
 	t->IsBridgeSupportedOs = PackGetBool(p, "IsBridgeSupportedOs");
-	t->IsWinPcapNeeded = PackGetBool(p, "IsWinPcapNeeded");
 }
 void OutRpcBridgeSupport(PACK *p, RPC_BRIDGE_SUPPORT *t)
 {
@@ -9310,7 +9305,6 @@ void OutRpcBridgeSupport(PACK *p, RPC_BRIDGE_SUPPORT *t)
 	}
 
 	PackAddBool(p, "IsBridgeSupportedOs", t->IsBridgeSupportedOs);
-	PackAddBool(p, "IsWinPcapNeeded",t->IsWinPcapNeeded);
 }
 
 // RPC_ADD_ACCESS

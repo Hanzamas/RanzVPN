@@ -583,11 +583,6 @@ void MsDisableWcmNetworkMinimize()
 	MS_WCM_POLICY_VALUE v;
 	bool b;
 
-	if (MsIsWindows8() == false)
-	{
-		return;
-	}
-
 	HMODULE hWcmapi = LoadLibrary("wcmapi.dll");
 	if (!hWcmapi)
 	{
@@ -1122,17 +1117,6 @@ bool MsExecuteEx2W(wchar_t *exe, wchar_t *arg, void **process_handle, bool runas
 		return false;
 	}
 
-	if (IsNt() == false)
-	{
-		char exe_a[MAX_SIZE];
-		char arg_a[MAX_SIZE];
-
-		UniToStr(exe_a, sizeof(exe_a), exe);
-		UniToStr(arg_a, sizeof(arg_a), arg);
-
-		return MsExecuteEx(exe_a, arg_a, process_handle);
-	}
-
 	Zero(&info, sizeof(info));
 	info.cbSize = sizeof(info);
 	info.lpVerb = (runas ? L"runas" : L"open");
@@ -1195,17 +1179,6 @@ bool MsExecute2W(wchar_t *exe, wchar_t *arg, bool runas)
 	if (exe == NULL)
 	{
 		return false;
-	}
-
-	if (IsNt() == false)
-	{
-		char exe_a[MAX_SIZE];
-		char arg_a[MAX_SIZE];
-
-		UniToStr(exe_a, sizeof(exe_a), exe);
-		UniToStr(arg_a, sizeof(arg_a), arg);
-
-		return MsExecute(exe_a, arg_a);
 	}
 
 	d = (DWORD)ShellExecuteW(NULL, (runas ? L"runas" : L"open"), exe, arg, MsGetExeDirNameW(), SW_SHOWNORMAL);
@@ -1509,57 +1482,6 @@ HANDLE MsCreateUserToken()
 	return hNewToken;
 }
 
-// Check whether SHA-2 kernel mode signature is supported
-bool MsIsSha2KernelModeSignatureSupported()
-{
-	HINSTANCE hDll;
-	bool ret = false;
-
-	if (MsIsWindows8())
-	{
-		return true;
-	}
-
-	hDll = LoadLibrary("Wintrust.dll");
-	if (hDll == NULL)
-	{
-		return false;
-	}
-
-	if (GetProcAddress(hDll, "CryptCATAdminAcquireContext2") != NULL)
-	{
-		ret = true;
-	}
-
-	FreeLibrary(hDll);
-
-	return ret;
-}
-
-// Check whether KB3033929 is required
-bool MsIsKB3033929RequiredAndMissing()
-{
-	OS_INFO *info = GetOsInfo();
-
-	if (info == NULL)
-	{
-		return false;
-	}
-
-	if (GET_KETA(info->OsType, 100) == 6)
-	{
-		if (MsIsX64())
-		{
-			if (MsIsSha2KernelModeSignatureSupported() == false)
-			{
-				return true;
-			}
-		}
-	}
-
-	return false;
-}
-
 // Check the digital signature of the file
 bool MsCheckFileDigitalSignatureW(HWND hWnd, wchar_t *name, bool *danger)
 {
@@ -1758,16 +1680,7 @@ void MsRegistWindowsFirewallEx2(char *title, char *exe, char *dir)
 }
 void MsRegistWindowsFirewallEx(char *title, char *exe)
 {
-	char *data =
-		"Option Explicit\r\nConst NET_FW_PROFILE_DOMAIN = 0\r\nConst NET_FW_PROFILE_STANDARD = 1\r\n"
-		"Const NET_FW_SCOPE_ALL = 0\r\nConst NET_FW_IP_VERSION_ANY = 2\r\nDim fwMgr\r\n"
-		"Set fwMgr = CreateObject(\"HNetCfg.FwMgr\")\r\nDim profile\r\n"
-		"Set profile = fwMgr.LocalPolicy.CurrentProfile\r\nDim app\r\n"
-		"Set app = CreateObject(\"HNetCfg.FwAuthorizedApplication\")\r\n"
-		"app.ProcessImageFileName = \"$PATH$\"\r\napp.Name = \"$TITLE$\"\r\n"
-		"app.Scope = NET_FW_SCOPE_ALL\r\napp.IpVersion = NET_FW_IP_VERSION_ANY\r\n"
-		"app.Enabled = TRUE\r\nOn Error Resume Next\r\nprofile.AuthorizedApplications."
-		"Add app\r\n";
+	char *data;
 	char *tmp;
 	UINT tmp_size;
 	char filename[MAX_PATH];
@@ -2101,21 +2014,7 @@ void *MsLoadLibraryW(wchar_t *name)
 		FreeBuf(b);
 	}
 
-	if (IsNt())
-	{
-		return LoadLibraryW(tmp_dll_name);
-	}
-	else
-	{
-		char tmp_dll_name_a[MAX_SIZE];
-		HINSTANCE ret;
-
-		UniToStr(tmp_dll_name_a, sizeof(tmp_dll_name_a), tmp_dll_name);
-
-		ret = LoadLibraryA(tmp_dll_name_a);
-
-		return ret;
-	}
+	return LoadLibraryW(tmp_dll_name);
 }
 void *MsLoadLibrary(char *name)
 {
@@ -2805,21 +2704,6 @@ bool MsGetShortPathNameW(wchar_t *long_path, wchar_t *short_path, UINT short_pat
 	if (long_path == NULL || short_path == NULL)
 	{
 		return false;
-	}
-
-	if (IsNt() == false)
-	{
-		char short_path_a[MAX_SIZE];
-		char long_path_a[MAX_SIZE];
-		bool ret;
-
-		UniToStr(long_path_a, sizeof(long_path_a), long_path);
-
-		ret = MsGetShortPathNameA(long_path_a, short_path_a, sizeof(short_path_a));
-
-		StrToUni(short_path, short_path_size, short_path_a);
-
-		return ret;
 	}
 
 	if (GetShortPathNameW(long_path, short_path, short_path_size) == 0)
@@ -3952,13 +3836,6 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 		UniFormat(path, sizeof(path), SVC_RUN_COMMANDLINE, ms->ExeFileNameW);
 
 		if ((mode == SVC_MODE_INSTALL || mode == SVC_MODE_UNINSTALL || mode == SVC_MODE_START ||
-			mode == SVC_MODE_STOP || mode == SVC_MODE_SERVICE) &&
-			(IsNt() == false))
-		{
-			// Tried to use the command for the NT in non-WindowsNT system
-			UniPrint(L"%s\n", _UU("SVC_NT_ONLY"));
-		}
-		else if ((mode == SVC_MODE_INSTALL || mode == SVC_MODE_UNINSTALL || mode == SVC_MODE_START ||
 			mode == SVC_MODE_STOP || mode == SVC_MODE_SERVICE) &&
 			(ms->IsAdmin == false))
 		{
@@ -5195,15 +5072,12 @@ bool MsUpgradeVLanWithoutLock(char *tag_name, char *connection_tag_name, char *i
 		return false;
 	}
 
-	if (MsIsInfCatalogRequired())
+	if (MsIsValidVLanInstanceNameForInfCatalog(instance_name) == false)
 	{
-		if (MsIsValidVLanInstanceNameForInfCatalog(instance_name) == false)
-		{
-			return false;
-		}
-
-		StrUpper(instance_name);
+		return false;
 	}
+
+	StrUpper(instance_name);
 
 	Zero(hwid, sizeof(hwid));
 	Format(hwid, sizeof(hwid), DRIVER_DEVICE_ID_TAG, instance_name);
@@ -5376,14 +5250,6 @@ BOOL CALLBACK EnumChildWindowProc(HWND hWnd, LPARAM lParam)
 		ok = true;
 	}
 
-	if (MsIsWine())
-	{
-		if (StrCmpi(c1, "SysIPAddress32") == 0 || StrCmpi(c2, "SysIPAddress32") == 0)
-		{
-			ok = true;
-		}
-	}
-
 	if (ok)
 	{
 		AddWindow(o, hWnd);
@@ -5495,100 +5361,6 @@ int CmpWindowList(void *p1, void *p2)
 LIST *NewWindowList()
 {
 	return NewListFast(CmpWindowList);
-}
-
-// Determine whether it's Windows 7 or later
-bool MsIsWindows7()
-{
-	OS_INFO *info = GetOsInfo();
-
-	if (info == NULL)
-	{
-		return false;
-	}
-
-	if (GET_KETA(info->OsType, 100) >= 6)
-	{
-		return true;
-	}
-
-	return false;
-}
-
-// Determine whether it's Windows 10 or later
-bool MsIsWindows10()
-{
-	OS_INFO *info = GetOsInfo();
-
-	if (info == NULL)
-	{
-		return false;
-	}
-
-	if (GET_KETA(info->OsType, 100) == 7)
-	{
-		if (GET_KETA(info->OsType, 1) >= 2)
-		{
-			return true;
-		}
-	}
-
-	if (GET_KETA(info->OsType, 100) >= 8)
-	{
-		return true;
-	}
-
-	return false;
-}
-
-// Determine whether it's Windows 8.1 or later
-bool MsIsWindows81()
-{
-	OS_INFO *info = GetOsInfo();
-
-	if (info == NULL)
-	{
-		return false;
-	}
-
-	if (GET_KETA(info->OsType, 100) == 7)
-	{
-		if (GET_KETA(info->OsType, 1) >= 1)
-		{
-			return true;
-		}
-	}
-
-	if (GET_KETA(info->OsType, 100) >= 8)
-	{
-		return true;
-	}
-
-	return false;
-}
-
-// Determine whether it's Windows 8 or later
-bool MsIsWindows8()
-{
-	OS_INFO *info = GetOsInfo();
-
-	if (info == NULL)
-	{
-		return false;
-	}
-
-	if (GET_KETA(info->OsType, 100) >= 7)
-	{
-		return true;
-	}
-
-	return false;
-}
-
-// Whether INF catalog signature is required
-bool MsIsInfCatalogRequired()
-{
-	return MsIsWindows8();
 }
 
 // Get the process path of the owner of the window
@@ -5952,7 +5724,7 @@ void MsGetInfCatalogDir(char *dst, UINT size)
 		return;
 	}
 
-	Format(dst, size, "|DriverPackages\\%s\\%s", (MsIsWindows10() ? "Neo6_Win10" : "Neo6_Win8"), (MsIsX64() ? "x64" : "x86"));
+	Format(dst, size, "|DriverPackages\\Neo6_Win10\\%s", (MsIsX64() ? "x64" : "x86"));
 }
 
 // Examine whether the virtual LAN card name can be used as a instance name of the VLAN
@@ -6074,6 +5846,7 @@ bool MsInstallVLanWithoutLock(char *tag_name, char *connection_tag_name, char *i
 	bool ret = false;
 	char neo_sys[MAX_PATH];
 	UCHAR new_mac_address[6];
+	char mac_address_str[MAX_SIZE];
 	UINT i;
 	// Validate arguments
 	if (instance_name == NULL || tag_name == NULL || connection_tag_name == NULL || ver == NULL)
@@ -6081,16 +5854,13 @@ bool MsInstallVLanWithoutLock(char *tag_name, char *connection_tag_name, char *i
 		return false;
 	}
 
-	if (MsIsInfCatalogRequired())
+	if (MsIsValidVLanInstanceNameForInfCatalog(instance_name) == false)
 	{
-		if (MsIsValidVLanInstanceNameForInfCatalog(instance_name) == false)
-		{
-			Debug("MsIsValidVLanInstanceNameForInfCatalog() returns false.\n");
-			return false;
-		}
-
-		StrUpper(instance_name);
+		Debug("MsIsValidVLanInstanceNameForInfCatalog() returns false.\n");
+		return false;
 	}
+
+	StrUpper(instance_name);
 
 	Zero(hwid, sizeof(hwid));
 	Format(hwid, sizeof(hwid), DRIVER_DEVICE_ID_TAG, instance_name);
@@ -6105,24 +5875,7 @@ bool MsInstallVLanWithoutLock(char *tag_name, char *connection_tag_name, char *i
 	}
 
 	// Determining destination .sys file name of the installation
-	if (MsIsInfCatalogRequired() == false)
-	{
-		if (MsMakeNewNeoDriverFilename(neo_sys, sizeof(neo_sys)) == false)
-		{
-			return false;
-		}
-	}
-	else
-	{
-		if (MsIsWindows10() == false)
-		{
-			Format(neo_sys, sizeof(neo_sys), "Neo_%s.sys", instance_name);
-		}
-		else
-		{
-			Format(neo_sys, sizeof(neo_sys), "Neo6_%s_%s.sys", (MsIsX64() ? "x64" : "x86"), instance_name);
-		}
-	}
+	Format(neo_sys, sizeof(neo_sys), "Neo6_%s_%s.sys", (MsIsX64() ? "x64" : "x86"), instance_name);
 
 	// Starting the Installation
 	if (MsStartDriverInstall(instance_name, NULL, neo_sys, new_mac_address, ver) == false)
@@ -6143,13 +5896,10 @@ bool MsInstallVLanWithoutLock(char *tag_name, char *connection_tag_name, char *i
 	for (i = 0;i < 5;i++)
 	{
 		MsInitNetworkConfig(tag_name, instance_name, connection_tag_name);
-		if (MsIsInfCatalogRequired())
-		{
-			// Write the MAC address
-			char mac_address_str[MAX_SIZE];
-			BinToStr(mac_address_str, sizeof(mac_address_str), new_mac_address, sizeof(new_mac_address));
-			MsSetMacAddress(VLAN_ADAPTER_NAME_TAG, instance_name, mac_address_str);
-		}
+
+		// Write the MAC address
+		BinToStr(mac_address_str, sizeof(mac_address_str), new_mac_address, sizeof(new_mac_address));
+		MsSetMacAddress(VLAN_ADAPTER_NAME_TAG, instance_name, mac_address_str);
 
 		SleepThread(1000);
 	}
@@ -6872,96 +6622,32 @@ void MsFinishDriverInstall(char *instance_name, char *neo_sys)
 // Get the path to the driver file
 void MsGetDriverPath(char* instance_name, wchar_t* src_inf, wchar_t* src_sys, wchar_t* dest_inf, wchar_t* dest_sys, wchar_t* src_cat, wchar_t* dest_cat, char* neo_sys)
 {
-	wchar_t* src_filename;
-	wchar_t* src_sys_filename;
 	// Validate arguments
 	if (instance_name == NULL)
 	{
 		return;
 	}
 
-	if (MsIsX64())
-	{
-		src_filename = L"|DriverPackages\\Neo\\x64\\Neo_x64.inf";
-		src_sys_filename = L"|DriverPackages\\Neo\\x64\\Neo_x64.sys";
-	}
-	else
-	{
-		src_filename = L"|DriverPackages\\Neo\\x86\\Neo_x86.inf";
-		src_sys_filename = L"|DriverPackages\\Neo\\x86\\Neo_x86.sys";
-	}
-
-	if (MsIsWindows7())
-	{
-		// Use the NDIS 6.2 driver for Windows 7 or later
-		if (MsIsX64())
-		{
-			src_filename = L"|DriverPackages\\Neo6\\x64\\Neo6_x64.inf";
-			src_sys_filename = L"|DriverPackages\\Neo6\\x64\\Neo6_x64.sys";
-		}
-		else
-		{
-			src_filename = L"|DriverPackages\\Neo6\\x86\\Neo6_x86.inf";
-			src_sys_filename = L"|DriverPackages\\Neo6\\x86\\Neo6_x86.sys";
-		}
-	}
-
-	if (MsIsInfCatalogRequired())
-	{
-		// Windows 8 or later
-		if (MsIsX64())
-		{
-			src_filename = L"|DriverPackages\\Neo6_Win8\\x64\\Neo6_x64.inf";
-			src_sys_filename = L"|DriverPackages\\Neo6_Win8\\x64\\Neo6_x64.sys";
-		}
-		else
-		{
-			src_filename = L"|DriverPackages\\Neo6_Win8\\x86\\Neo6_x86.inf";
-			src_sys_filename = L"|DriverPackages\\Neo6_Win8\\x86\\Neo6_x86.sys";
-		}
-	}
-
 	if (src_inf != NULL)
 	{
-		if (MsIsInfCatalogRequired() == false)
-		{
-			// Windows 7 or before
-			UniStrCpy(src_inf, MAX_PATH, src_filename);
-		}
-		else
-		{
-			// Windows 8.1 or later
-			char tmp[MAX_SIZE];
+		char tmp[MAX_SIZE];
 
-			MsGetInfCatalogDir(tmp, sizeof(tmp));
+		MsGetInfCatalogDir(tmp, sizeof(tmp));
 
-			UniFormat(src_inf, MAX_PATH, L"%S\\Neo6_%S_%S.inf", tmp, (MsIsX64() ? "x64" : "x86"), instance_name);
-		}
+		UniFormat(src_inf, MAX_PATH, L"%S\\Neo6_%S_%S.inf", tmp, (MsIsX64() ? "x64" : "x86"), instance_name);
 	}
 
 	if (src_sys != NULL)
 	{
-		UniStrCpy(src_sys, MAX_PATH, src_sys_filename);
-
-		if (MsIsWindows10())
-		{
-			UniFormat(src_sys, MAX_PATH, L"|DriverPackages\\Neo6_Win10\\%S\\Neo6_%S_%S.sys",
-				(MsIsX64() ? "x64" : "x86"), (MsIsX64() ? "x64" : "x86"), instance_name);
-		}
+		UniFormat(src_sys, MAX_PATH, L"|DriverPackages\\Neo6_Win10\\%S\\Neo6_%S_%S.sys",
+			(MsIsX64() ? "x64" : "x86"), (MsIsX64() ? "x64" : "x86"), instance_name);
 	}
 
 	if (dest_inf != NULL)
 	{
 		char inf_name[MAX_PATH];
 
-		if (MsIsInfCatalogRequired() == false)
-		{
-			Format(inf_name, sizeof(inf_name), "Neo_%s.inf", instance_name);
-		}
-		else
-		{
-			Format(inf_name, sizeof(inf_name), "Neo6_%s_%s.inf", (MsIsX64() ? "x64" : "x86"), instance_name);
-		}
+		Format(inf_name, sizeof(inf_name), "Neo6_%s_%s.inf", (MsIsX64() ? "x64" : "x86"), instance_name);
 		UniFormat(dest_inf, MAX_PATH, L"%s\\%S", ms->MyTempDirW, inf_name);
 	}
 
@@ -6974,53 +6660,17 @@ void MsGetDriverPath(char* instance_name, wchar_t* src_inf, wchar_t* src_sys, wc
 
 	if (src_cat != NULL)
 	{
-		if (MsIsInfCatalogRequired())
-		{
-			char tmp[MAX_SIZE];
+		char tmp[MAX_SIZE];
 
-			MsGetInfCatalogDir(tmp, sizeof(tmp));
+		MsGetInfCatalogDir(tmp, sizeof(tmp));
 
-			if (MsIsWindows8() == false)
-			{
-				// Windows Vista and Windows 7 uses SHA-1 catalog files
-				// (Unused? Never reach here!)
-				UniFormat(src_cat, MAX_PATH, L"%S\\inf.cat", tmp);
-			}
-			else
-			{
-				// Windows 8 or above uses SHA-256 catalog files
-				UniFormat(src_cat, MAX_PATH, L"%S\\inf2.cat", tmp);
-			}
-
-			if (MsIsWindows10())
-			{
-				// Windows 10
-				UniFormat(src_cat, MAX_PATH, L"%S\\Neo6_%S_%S.cat", tmp, (MsIsX64() ? "x64" : "x86"), instance_name);
-			}
-		}
-		else
-		{
-			UniStrCpy(src_cat, MAX_PATH, L"");
-		}
+		// Windows 10
+		UniFormat(src_cat, MAX_PATH, L"%S\\Neo6_%S_%S.cat", tmp, (MsIsX64() ? "x64" : "x86"), instance_name);
 	}
 
 	if (dest_cat != NULL)
 	{
-		if (MsIsInfCatalogRequired())
-		{
-			if (MsIsWindows10() == false)
-			{
-				UniFormat(dest_cat, MAX_PATH, L"%s\\inf_%S.cat", ms->MyTempDirW, instance_name);
-			}
-			else
-			{
-				UniFormat(dest_cat, MAX_PATH, L"%s\\Neo6_%S_%S.cat", ms->MyTempDirW, (MsIsX64() ? "x64" : "x86"), instance_name);
-			}
-		}
-		else
-		{
-			UniStrCpy(dest_cat, MAX_PATH, L"");
-		}
+		UniFormat(dest_cat, MAX_PATH, L"%s\\Neo6_%S_%S.cat", ms->MyTempDirW, (MsIsX64() ? "x64" : "x86"), instance_name);
 	}
 }
 void MsGetDriverPathA(char *instance_name, char *src_inf, char *src_sys, char *dest_inf, char *dest_sys, char *src_cat, char *dst_cat, char *neo_sys)
@@ -7073,26 +6723,13 @@ void MsDeleteTempDir()
 {
 	HANDLE h;
 	wchar_t dir_mask[MAX_PATH];
-	WIN32_FIND_DATAA data_a;
 	WIN32_FIND_DATAW data_w;
 
-	Zero(&data_a, sizeof(data_a));
 	Zero(&data_w, sizeof(data_w));
 
 	UniFormat(dir_mask, sizeof(dir_mask), L"%s\\*", ms->TempDirW);
 
-	if (IsNt())
-	{
-		h = FindFirstFileW(dir_mask, &data_w);
-	}
-	else
-	{
-		char *tmp_a = CopyUniToStr(dir_mask);
-
-		h = FindFirstFileA(tmp_a, &data_a);
-
-		Free(tmp_a);
-	}
+	h = FindFirstFileW(dir_mask, &data_w);
 
 	if (h != INVALID_HANDLE_VALUE)
 	{
@@ -7100,17 +6737,6 @@ void MsDeleteTempDir()
 
 		do
 		{
-			if (IsNt() == false)
-			{
-				Zero(&data_w, sizeof(data_w));
-				StrToUni(data_w.cFileName, sizeof(data_w.cFileName), data_a.cFileName);
-				data_w.dwFileAttributes = data_a.dwFileAttributes;
-				data_w.ftCreationTime = data_a.ftCreationTime;
-				data_w.ftLastWriteTime = data_a.ftLastWriteTime;
-				data_w.nFileSizeHigh = data_a.nFileSizeHigh;
-				data_w.nFileSizeLow = data_a.nFileSizeLow;
-			}
-
 			if (UniStrCmpi(data_w.cFileName, L".") != 0 &&
 				UniStrCmpi(data_w.cFileName, L"..") != 0)
 			{
@@ -7179,16 +6805,8 @@ void MsDeleteTempDir()
 
 
 			Zero(&data_w, sizeof(data_w));
-			Zero(&data_a, sizeof(data_a));
 
-			if (IsNt())
-			{
-				b = FindNextFileW(h, &data_w);
-			}
-			else
-			{
-				b = FindNextFileA(h, &data_a);
-			}
+			b = FindNextFileW(h, &data_w);
 		}
 		while (b);
 
@@ -7244,17 +6862,6 @@ void MsDeleteAllFileW(wchar_t *dir)
 	// Validate arguments
 	if (dir == NULL || UniIsEmptyStr(dir))
 	{
-		return;
-	}
-
-	if (IsNt() == false)
-	{
-		char *dir_a = CopyUniToStr(dir);
-
-		MsDeleteAllFile(dir_a);
-
-		Free(dir_a);
-
 		return;
 	}
 
@@ -7983,6 +7590,7 @@ char *MsGetNetworkAdapterGuid(char *tag_name, char *instance_name)
 wchar_t *MsGetNetworkConnectionName(char *guid)
 {
 	wchar_t *ncname = NULL;
+	char tmp[MAX_SIZE];
 	// Validate arguments
 	if (guid == NULL)
 	{
@@ -7990,178 +7598,10 @@ wchar_t *MsGetNetworkConnectionName(char *guid)
 	}
 
 	// Get the network connection name
-	if (IsNt() != false && GetOsInfo()->OsType >= OSTYPE_WINDOWS_2000_PROFESSIONAL)
-	{
-		char tmp[MAX_SIZE];
-		Format(tmp, sizeof(tmp), "SYSTEM\\CurrentControlSet\\Control\\Network\\{4D36E972-E325-11CE-BFC1-08002BE10318}\\%s\\Connection", guid);
-		ncname = MsRegReadStrW(REG_LOCAL_MACHINE, tmp, "Name");
-	}
+	Format(tmp, sizeof(tmp), "SYSTEM\\CurrentControlSet\\Control\\Network\\{4D36E972-E325-11CE-BFC1-08002BE10318}\\%s\\Connection", guid);
+	ncname = MsRegReadStrW(REG_LOCAL_MACHINE, tmp, "Name");
 
 	return ncname;
-}
-
-// Generate driver file name for the new Neo
-bool MsMakeNewNeoDriverFilename(char *name, UINT size)
-{
-	TOKEN_LIST *t = MsEnumNeoDriverFilenames();
-	UINT i;
-	bool ret = false;
-
-	i = 0;
-	while (true)
-	{
-		char tmp[MAX_PATH];
-		UINT n;
-
-		i++;
-		if (i >= 10000)
-		{
-			break;
-		}
-
-		n = Rand32() % DRIVER_INSTALL_SYS_NAME_TAG_MAXID;
-
-		MsGenerateNeoDriverFilenameFromInt(tmp, sizeof(tmp), n);
-
-		if (IsInToken(t, tmp) == false)
-		{
-			StrCpy(name, size, tmp);
-			ret = true;
-			break;
-		}
-	}
-
-	FreeToken(t);
-
-	return ret;
-}
-
-// Generate the driver file name of Neo from a integer
-void MsGenerateNeoDriverFilenameFromInt(char *name, UINT size, UINT n)
-{
-	Format(name, size, DRIVER_INSTALL_SYS_NAME_TAG_NEW, n);
-}
-
-// Enumeration of the driver file names of installed Neo
-TOKEN_LIST *MsEnumNeoDriverFilenames()
-{
-	TOKEN_LIST *neos = MsEnumNetworkAdaptersNeo();
-	LIST *o = NewListFast(NULL);
-	TOKEN_LIST *ret;
-	UINT i;
-
-	for (i = 0;i < neos->NumTokens;i++)
-	{
-		char filename[MAX_PATH];
-		if (MsGetNeoDriverFilename(filename, sizeof(filename), neos->Token[i]))
-		{
-			Add(o, CopyStr(filename));
-		}
-	}
-
-	FreeToken(neos);
-
-	ret = ListToTokenList(o);
-	FreeStrList(o);
-
-	return ret;
-}
-
-// Get the driver file name of Neo
-bool MsGetNeoDriverFilename(char *name, UINT size, char *instance_name)
-{
-	char tmp[MAX_SIZE];
-	char *ret;
-	// Validate arguments
-	if (name == NULL || instance_name == NULL)
-	{
-		return false;
-	}
-
-	Format(tmp, sizeof(tmp), "SYSTEM\\CurrentControlSet\\Services\\Neo_%s", instance_name);
-
-	ret = MsRegReadStr(REG_LOCAL_MACHINE, tmp, "ImagePath");
-	if (ret == NULL)
-	{
-		return false;
-	}
-
-	GetFileNameFromFilePath(name, size, ret);
-	Free(ret);
-
-	return true;
-}
-
-// Enumeration of the network adapter (only Neo)
-TOKEN_LIST *MsEnumNetworkAdaptersNeo()
-{
-	TOKEN_LIST *key_list;
-	TOKEN_LIST *ret;
-	LIST *o;
-	UINT i;
-
-	// Enumerate the key
-	key_list = MsRegEnumKey(REG_LOCAL_MACHINE,
-		"SYSTEM\\CurrentControlSet\\Control\\Class\\{4D36E972-E325-11CE-BFC1-08002bE10318}");
-
-	if (key_list == NULL)
-	{
-		return NULL;
-	}
-
-	o = NewListFast(CompareStr);
-
-	for (i = 0;i < key_list->NumTokens;i++)
-	{
-		char *key_name = key_list->Token[i];
-		char full_key_name[MAX_SIZE];
-		char *driver_desc;
-		char *device_id;
-
-		Format(full_key_name, sizeof(full_key_name),
-			"SYSTEM\\CurrentControlSet\\Control\\Class\\{4D36E972-E325-11CE-BFC1-08002bE10318}\\%s",
-			key_name);
-
-		// Read the DriverDesc
-		driver_desc = MsRegReadStr(REG_LOCAL_MACHINE, full_key_name, "DriverDesc");
-		if (driver_desc != NULL)
-		{
-			// Check whether it starts with the specific name
-			device_id = MsRegReadStr(REG_LOCAL_MACHINE, full_key_name, "MatchingDeviceId");
-
-			if (device_id != NULL)
-			{
-				if (MsCheckVLanDeviceIdFromRootEnum(device_id))
-				{
-					char *tag = "neoadapter_";
-					if (StartWith(device_id, tag))
-					{
-						char tmp[MAX_SIZE];
-						StrCpy(tmp, sizeof(tmp), &device_id[StrLen(tag)]);
-
-						Add(o, CopyStr(tmp));
-					}
-				}
-				Free(device_id);
-			}
-
-			Free(driver_desc);
-		}
-	}
-
-	FreeToken(key_list);
-
-	ret = ZeroMalloc(sizeof(TOKEN_LIST));
-	ret->NumTokens = LIST_NUM(o);
-	ret->Token = ZeroMalloc(sizeof(char *) * ret->NumTokens);
-	for (i = 0;i < ret->NumTokens;i++)
-	{
-		ret->Token[i] = LIST_DATA(o, i);
-	}
-
-	ReleaseList(o);
-
-	return ret;
 }
 
 // Enumeration of the network adapter
@@ -8353,33 +7793,6 @@ bool MsEnablePrivilege(char *name, bool enable)
 
 	Free(tp);
 	CloseHandle(hToken);
-
-	return ret;
-}
-
-// Get whether the current system is WINE
-bool MsIsWine()
-{
-	bool ret = false;
-
-	if (ms == NULL)
-	{
-		HINSTANCE h = LoadLibrary("kernel32.dll");
-
-		if (h != NULL)
-		{
-			if (GetProcAddress(h, "wine_get_unix_file_name") != NULL)
-			{
-				ret = true;
-			}
-
-			FreeLibrary(h);
-		}
-	}
-	else
-	{
-		ret = ms->IsWine;
-	}
 
 	return ret;
 }
@@ -8845,30 +8258,6 @@ bool MsRegWriteValueEx2W(UINT root, char *keyname, char *valuename, UINT type, v
 		return false;
 	}
 
-	if (IsNt() == false)
-	{
-		UINT size_a;
-		void *data_a;
-		bool ret;
-
-		if (type == REG_SZ || type == REG_MULTI_SZ || type == REG_EXPAND_SZ)
-		{
-			data_a = CopyUniToStr(data);
-			size_a = StrSize(data_a);
-		}
-		else
-		{
-			data_a = Clone(data, size);
-			size_a = size;
-		}
-
-		ret = MsRegWriteValueEx2(root, keyname, valuename, type, data_a, size_a, force32bit, force64bit);
-
-		Free(data_a);
-
-		return ret;
-	}
-
 	// Create a key
 	MsRegNewKeyEx2(root, keyname, force32bit, force64bit);
 
@@ -9230,35 +8619,6 @@ bool MsRegReadValueEx2W(UINT root, char *keyname, char *valuename, void **data, 
 	*type = 0;
 	*size = 0;
 
-	if (IsNt() == false)
-	{
-		bool ret;
-		void *data_a = NULL;
-		DWORD type_a = 0, size_a = 0;
-
-		ret = MsRegReadValueEx2(root, keyname, valuename, &data_a, &type_a, &size_a, force32bit, force64bit);
-
-		if (ret != false)
-		{
-			if (type_a == REG_SZ || type_a == REG_MULTI_SZ || type_a == REG_EXPAND_SZ)
-			{
-				*data = CopyStrToUni(data_a);
-				Free(data_a);
-
-				size_a = UniStrSize(*data);
-			}
-			else
-			{
-				*data = data_a;
-			}
-
-			*type = type_a;
-			*size = size_a;
-		}
-
-		return ret;
-	}
-
 	// Open the key
 	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_READ | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS)
 	{
@@ -9585,16 +8945,6 @@ wchar_t *MsGetSpecialDirW(int id)
 	LPITEMIDLIST t = NULL;
 	wchar_t tmp[MAX_PATH];
 
-	if (IsNt() == false)
-	{
-		char *tmp = MsGetSpecialDir(id);
-		wchar_t *ret = CopyStrToUni(tmp);
-
-		Free(tmp);
-
-		return ret;
-	}
-
 	if (SHGetSpecialFolderLocation(NULL, id, &t) != S_OK)
 	{
 		return UniCopyStr(ms->ExeFileDirW);
@@ -9644,7 +8994,6 @@ void MsGetSpecialDirs()
 	ms->TempDir = CopyStr(tmp);
 
 	// Get the Temp (Unicode)
-	if (IsNt())
 	{
 		wchar_t tmp_w[MAX_PATH];
 
@@ -9652,10 +9001,6 @@ void MsGetSpecialDirs()
 		Win32NukuEnW(tmp_w, sizeof(tmp_w), tmp_w);
 
 		ms->TempDirW = CopyUniStr(tmp_w);
-	}
-	else
-	{
-		ms->TempDirW = CopyStrToUni(tmp);
 	}
 	MakeDirExW(ms->TempDirW);
 	MakeDirEx(ms->TempDir);
@@ -9813,7 +9158,6 @@ void MsInit()
 {
 	char *str_ansi;
 	wchar_t *str_unicode;
-	OSVERSIONINFO os;
 	char tmp[MAX_SIZE];
 	DWORD size;
 	if (ms != NULL)
@@ -9846,18 +9190,7 @@ void MsInit()
 	Free(str_unicode);
 	Free(str_ansi);
 
-	// Get the version of the OS
-	Zero(&os, sizeof(os));
-	os.dwOSVersionInfoSize = sizeof(os);
-	GetVersionEx(&os);
-
-
 	ms->IsAdmin = MsCheckIsAdmin();
-
-	if (GetProcAddress(ms->hKernel32, "wine_get_unix_file_name") != NULL)
-	{
-		ms->IsWine = true;
-	}
 
 	// Get information about the current process
 	ms->hCurrentProcess = GetCurrentProcess();
@@ -9870,7 +9203,6 @@ void MsInit()
 	ms->ExeFileDir = CopyStr(tmp);
 
 	// Get the EXE file name (Unicode)
-	if (IsNt())
 	{
 		wchar_t tmp_w[MAX_PATH];
 
@@ -9879,11 +9211,6 @@ void MsInit()
 
 		Win32GetDirFromPathW(tmp_w, sizeof(tmp_w), tmp_w);
 		ms->ExeFileDirW = CopyUniStr(tmp_w);
-	}
-	else
-	{
-		ms->ExeFileNameW = CopyStrToUni(ms->ExeFileName);
-		ms->ExeFileDirW = CopyStrToUni(ms->ExeFileDir);
 	}
 
 	// Get the special directories

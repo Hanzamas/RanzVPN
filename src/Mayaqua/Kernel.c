@@ -470,24 +470,6 @@ bool GetEnvW_ForWin32(wchar_t *name, wchar_t *data, UINT size)
 		return false;
 	}
 
-	if (IsNt() == false)
-	{
-		bool ret;
-		char *name_a = CopyUniToStr(name);
-		char data_a[MAX_SIZE];
-
-		ret = GetEnv(name_a, data_a, sizeof(data_a));
-
-		if (ret)
-		{
-			StrToUni(data, size, data_a);
-		}
-
-		Free(name_a);
-
-		return ret;
-	}
-
 	UniStrCpy(data, size, L"");
 
 	ret = _wgetenv(name);

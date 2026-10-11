@@ -20,17 +20,13 @@
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Tick64.h"
 
-#include "See/Devioctl.h"
+#include <winioctl.h>
 
 // Load the drivers hive
 bool SuLoadDriversHive()
 {
 	wchar_t config_dir[MAX_PATH];
 	wchar_t filename[MAX_PATH];
-	if (MsIsWindows10() == false)
-	{
-		return false;
-	}
 
 	MsEnablePrivilege(SE_RESTORE_NAME, true);
 	MsEnablePrivilege(SE_BACKUP_NAME, true);
@@ -45,11 +41,6 @@ bool SuLoadDriversHive()
 bool SuUnloadDriversHive()
 {
 	// todo: always failed.
-	if (MsIsWindows10() == false)
-	{
-		return false;
-	}
-
 	return MsRegUnloadHive(REG_LOCAL_MACHINE, L"DRIVERS");
 }
 
@@ -81,11 +72,6 @@ void SuDeleteGarbageInfsInner()
 	TOKEN_LIST *keys;
 	HINSTANCE hSetupApiDll = NULL;
 	BOOL (WINAPI *_SetupUninstallOEMInfA)(PCSTR, DWORD, PVOID) = NULL;
-
-	if (MsIsWindows10() == false)
-	{
-		return;
-	}
 
 	hSetupApiDll = LoadLibraryA("setupapi.dll");
 	if (hSetupApiDll == NULL)
@@ -200,7 +186,7 @@ bool SuInstallDriverInner(bool force)
 
 		// Read the current version from the registry
 		current_sl_ver = MsRegReadIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME,
-			(MsIsWindows10() ? SL_REG_VER_VALUE_WIN10 : SL_REG_VER_VALUE),
+			SL_REG_VER_VALUE_WIN10,
 			false, true);
 
 		path = MsRegReadStrEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "ImagePath", false, true);
@@ -221,32 +207,15 @@ bool SuInstallDriverInner(bool force)
 	}
 
 	// Copy necessary files to a temporary directory
-	UniFormat(src_sys, sizeof(src_sys), L"|DriverPackages\\%S\\%S\\SeLow_%S.sys",
-		(MsIsWindows10() ? "SeLow_Win10" : "SeLow_Win8"),
+	UniFormat(src_sys, sizeof(src_sys), L"|DriverPackages\\SeLow_Win10\\%S\\SeLow_%S.sys",
 		cpu_type, cpu_type);
-	if (MsIsWindows8() == false)
-	{
-		// Windows Vista and Windows 7 uses SHA-1 catalog files
-		UniFormat(src_cat, sizeof(src_cat), L"|DriverPackages\\SeLow_Win8\\%S\\inf.cat", cpu_type);
-	}
-	else
-	{
-		// Windows 8 or above uses SHA-256 catalog files
-		UniFormat(src_cat, sizeof(src_cat), L"|DriverPackages\\SeLow_Win8\\%S\\inf2.cat", cpu_type);
-
-		if (MsIsWindows10())
-		{
-			// Windows 10 uses WHQL catalog files
-			UniFormat(src_cat, sizeof(src_cat), L"|DriverPackages\\SeLow_Win10\\%S\\SeLow_Win10_%S.cat", cpu_type, cpu_type);
-		}
-	}
-	UniFormat(src_inf, sizeof(src_inf), L"|DriverPackages\\%S\\%S\\SeLow_%S.inf",
-		(MsIsWindows10() ? "SeLow_Win10" : "SeLow_Win8"),
+	// Windows 10 uses WHQL catalog files
+	UniFormat(src_cat, sizeof(src_cat), L"|DriverPackages\\SeLow_Win10\\%S\\SeLow_Win10_%S.cat", cpu_type, cpu_type);
+	UniFormat(src_inf, sizeof(src_inf), L"|DriverPackages\\SeLow_Win10\\%S\\SeLow_%S.inf",
 		cpu_type, cpu_type);
 
 	UniFormat(dst_sys, sizeof(dst_cat), L"%s\\SeLow_%S.sys", tmp_dir, cpu_type);
-	UniFormat(dst_cat, sizeof(dst_cat), L"%s\\SeLow_%S_%S.cat", tmp_dir,
-		(MsIsWindows10() ? "Win10" : "Win8"),
+	UniFormat(dst_cat, sizeof(dst_cat), L"%s\\SeLow_Win10_%S.cat", tmp_dir,
 		cpu_type);
 
 	UniFormat(dst_inf, sizeof(dst_inf), L"%s\\SeLow_%S.inf", tmp_dir, cpu_type);
@@ -259,20 +228,14 @@ bool SuInstallDriverInner(bool force)
 
 		nw = MsInitNoWarningEx(SL_USER_AUTO_PUSH_TIMER);
 
-		if (MsIsWindows10())
+		if (MsIsServiceInstalled(SL_PROTOCOL_NAME) == false && MsIsServiceRunning(SL_PROTOCOL_NAME) == false)
 		{
-			if (MsIsServiceInstalled(SL_PROTOCOL_NAME) == false && MsIsServiceRunning(SL_PROTOCOL_NAME) == false)
-			{
-				// On Windows 10, if there are no SwLow service installed, then uinstall the protocol driver first.
-				// TODO: currently do nothing. On some versions of Windows 10 beta builds it is necessary to do something...
-			}
+			// On Windows 10, if there are no SwLow service installed, then uinstall the protocol driver first.
+			// TODO: currently do nothing. On some versions of Windows 10 beta builds it is necessary to do something...
 		}
 
-		if (MsIsWindows10())
-		{
-			// Delete garbage INFs
-			SuDeleteGarbageInfs();
-		}
+		// Delete garbage INFs
+		SuDeleteGarbageInfs();
 
 		// Call the installer
 		if (InstallNdisProtocolDriver(dst_inf, L"SeLow", SL_USER_INSTALL_LOCK_TIMEOUT) == false)
@@ -290,7 +253,7 @@ bool SuInstallDriverInner(bool force)
 
 			// Write the version number into the registry
 			MsRegWriteIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME,
-				(MsIsWindows10() ? SL_REG_VER_VALUE_WIN10 : SL_REG_VER_VALUE),
+				SL_REG_VER_VALUE_WIN10,
 				SL_VER, false, true);
 
 			// Set to automatic startup
@@ -386,45 +349,7 @@ bool SuIsSupportedOs(bool on_install)
 		return false;
 	}
 
-	if (MsIsWindows10())
-	{
-		// Windows 10 or later are always supported.
-		return true;
-	}
-
-	if (on_install)
-	{
-		// If Microsoft Routing and Remote Access service is running,
-		// then return false.
-		if (MsIsServiceRunning("RemoteAccess"))
-		{
-			return false;
-		}
-	}
-
-	// If the Su driver is currently running,
-	// then return true.
-	if (MsIsServiceRunning(SL_PROTOCOL_NAME))
-	{
-		return true;
-	}
-
-	// Currently Windows 8.1 or later are supported
-	if (MsIsWindows81() == false)
-	{
-		return false;
-	}
-
-	if (on_install == false)
-	{
-		// If Microsoft Routing and Remote Access service is running,
-		// then return false.
-		if (MsIsServiceRunning("RemoteAccess"))
-		{
-			return false;
-		}
-	}
-
+	// Windows 10 or later are always supported.
 	return true;
 }
 
@@ -921,16 +846,13 @@ LABEL_RETRY:
 			{
 				Debug("MsStartService(%s) Failed.\n", SL_PROTOCOL_NAME);
 
-				if (MsIsWindows10())
+				if (flag2 == false)
 				{
-					if (flag2 == false)
-					{
-						flag2 = true;
+					flag2 = true;
 
-						if (SuInstallDriver(true))
-						{
-							goto LABEL_RETRY;
-						}
+					if (SuInstallDriver(true))
+					{
+						goto LABEL_RETRY;
 					}
 				}
 			}

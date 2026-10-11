@@ -96,11 +96,6 @@
 
 
 
-// Constants about driver
-#define	DRIVER_INSTALL_SYS_NAME_TAG_NEW	"Neo_%04u.sys"
-#define	DRIVER_INSTALL_SYS_NAME_TAG_MAXID	128				// Maximum number of install
-
-
 // Vista driver installer related
 #define	VISTA_DRIVER_INSTALLER_SRC		L"|vpndrvinst.exe"
 #define	VISTA_DRIVER_INSTALLER_DST		L"%s\\vpndrvinst.exe"
@@ -211,7 +206,6 @@ typedef struct MS
 	wchar_t *UserNameExW;
 	wchar_t *MinidumpBaseFileNameW;
 	IO *LockFile;
-	bool IsWine;
 } MS;
 
 typedef struct MS_EVENTLOG
@@ -434,7 +428,6 @@ bool MsRegLoadHive(UINT root, wchar_t *keyname, wchar_t *filename);
 bool MsRegUnloadHive(UINT root, wchar_t *keyname);
 
 bool MsIsAdmin();
-bool MsIsWine();
 bool MsEnablePrivilege(char *name, bool enable);
 void *MsGetCurrentProcess();
 UINT MsGetCurrentProcessId();
@@ -448,11 +441,6 @@ void MsStopIsLockedThread();
 bool MsShutdown(bool reboot, bool force);
 bool MsCheckLogon(wchar_t *username, char *password);
 TOKEN_LIST *MsEnumNetworkAdapters(char *start_with_name, char *start_with_name_2);
-TOKEN_LIST *MsEnumNetworkAdaptersNeo();
-bool MsGetNeoDriverFilename(char *name, UINT size, char *instance_name);
-bool MsMakeNewNeoDriverFilename(char *name, UINT size);
-void MsGenerateNeoDriverFilenameFromInt(char *name, UINT size, UINT n);
-TOKEN_LIST *MsEnumNeoDriverFilenames();
 char *MsGetNetworkAdapterGuid(char *tag_name, char *instance_name);
 wchar_t *MsGetNetworkConnectionName(char *guid);
 char *MsGetNetworkConfigRegKeyNameFromGuid(char *guid);
@@ -645,16 +633,8 @@ bool MsIsX64();
 bool MsIsIA64();
 void *MsDisableWow64FileSystemRedirection();
 void MsRestoreWow64FileSystemRedirection(void *p);
-bool MsIsWindows10();
-bool MsIsWindows81();
-bool MsIsWindows8();
-bool MsIsWindows7();
-bool MsIsInfCatalogRequired();
 
 bool MsCheckFileDigitalSignatureW(HWND hWnd, wchar_t *name, bool *danger);
-
-bool MsIsKB3033929RequiredAndMissing();
-bool MsIsSha2KernelModeSignatureSupported();
 
 bool MsGetProcessExeName(char *path, UINT size, UINT id);
 bool MsGetWindowOwnerProcessExeName(char *path, UINT size, HWND hWnd);
@@ -688,7 +668,6 @@ void MsRestartMMCSS();
 bool MsIsMMCSSNetworkThrottlingEnabled();
 void MsSetMMCSSNetworkThrottlingEnable(bool enable);
 void MsSetShutdownParameters(UINT level, UINT flag);
-bool MsIsWinXPOrWinVista();
 bool MsGetFileInformation(void *h, void *info);
 void MsSetErrorModeToSilent();
 void MsSetEnableMinidump(bool enabled);

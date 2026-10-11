@@ -1341,17 +1341,6 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 	// Local-bridge function is available
 	AddCapsBool(t, "b_local_bridge", IsBridgeSupported());
 
-	if (OS_IS_WINDOWS(GetOsInfo()->OsType))
-	{
-		// Packet capture driver is not installed
-		AddCapsBool(t, "b_must_install_pcap", IsEthSupported() == false ? true : false);
-	}
-	else
-	{
-		// Regard that the driver is installed in the Linux version
-		AddCapsBool(t, "b_must_install_pcap", false);
-	}
-
 	if (IsBridgeSupported())
 	{
 		// TUN / TAP device availability (Linux and BSD)
@@ -1447,7 +1436,7 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 
 	// Support for display name of the network connection for the local bridge
 #ifdef	OS_WIN32
-	if (IsBridgeSupported() && IsNt() && GetOsInfo()->OsType >= OSTYPE_WINDOWS_2000_PROFESSIONAL)
+	if (IsBridgeSupported())
 	{
 		AddCapsBool(t, "b_support_network_connection_name", true);
 	}

@@ -13,8 +13,6 @@
 
 #include <Windows.h>
 
-#include <VersionHelpers.h>
-
 const char *GetArch()
 {
 	SYSTEM_INFO info;
@@ -46,25 +44,7 @@ const char *GetDriverPath()
 		return path;
 	}
 
-	const char *type_folder;
-	if (IsWindows10OrGreater())
-	{
-		type_folder = "Neo6_Win10";
-	}
-	else if (IsWindows8OrGreater())
-	{
-		type_folder = "Neo6_Win8";
-	}
-	else if (IsWindows7OrGreater())
-	{
-		type_folder = "Neo6";
-	}
-	else
-	{
-		type_folder = "Neo";
-	}
-
-	snprintf(path, sizeof(path), "DriverPackages/%s/%s/", type_folder, GetArch());
+	snprintf(path, sizeof(path), "DriverPackages/Neo6_Win10/%s/", GetArch());
 
 	set = true;
 	return path;
@@ -97,19 +77,12 @@ void GetCatPath(char *dst, const size_t size, const char *instance)
 		return;
 	}
 
-	if (IsWindows10OrGreater())
+	if (!instance)
 	{
-		if (!instance)
-		{
-			return;
-		}
+		return;
+	}
 
-		snprintf(dst, size, "%sNeo6_%s_%s.cat", GetDriverPath(), GetArch(), instance);
-	}
-	else if (IsWindows8OrGreater())
-	{
-		snprintf(dst, size, "%sinf2.cat", GetDriverPath());
-	}
+	snprintf(dst, size, "%sNeo6_%s_%s.cat", GetDriverPath(), GetArch(), instance);
 }
 
 void GetInfPath(char *dst, const size_t size, const char *instance)
@@ -119,23 +92,12 @@ void GetInfPath(char *dst, const size_t size, const char *instance)
 		return;
 	}
 
-	if (IsWindows8OrGreater())
+	if (!instance)
 	{
-		if (!instance)
-		{
-			return;
-		}
+		return;
+	}
 
-		snprintf(dst, size, "%sNeo6_%s_%s.inf", GetDriverPath(), GetArch(), instance);
-	}
-	else if (IsWindows7OrGreater())
-	{
-		snprintf(dst, size, "%sNeo6_%s.inf", GetDriverPath(), GetArch());
-	}
-	else
-	{
-		snprintf(dst, size, "%sNeo_%s.inf", GetDriverPath(), GetArch());
-	}
+	snprintf(dst, size, "%sNeo6_%s_%s.inf", GetDriverPath(), GetArch(), instance);
 }
 
 void GetSysPath(char *dst, const size_t size, const char *instance)
@@ -145,32 +107,16 @@ void GetSysPath(char *dst, const size_t size, const char *instance)
 		return;
 	}
 
-	if (IsWindows10OrGreater())
+	if (!instance)
 	{
-		if (!instance)
-		{
-			return;
-		}
+		return;
+	}
 
-		snprintf(dst, size, "%sNeo6_%s_%s.sys", GetDriverPath(), GetArch(), instance);
-	}
-	else if (IsWindows7OrGreater())
-	{
-		snprintf(dst, size, "%sNeo6_%s.sys", GetDriverPath(), GetArch());
-	}
-	else
-	{
-		snprintf(dst, size, "%sNeo_%s.sys", GetDriverPath(), GetArch());
-	}
+	snprintf(dst, size, "%sNeo6_%s_%s.sys", GetDriverPath(), GetArch(), instance);
 }
 
 bool IsInstanceNameOK(HAMCORE *hamcore, const char *instance)
 {
-	if (!IsWindows8OrGreater())
-	{
-		return true;
-	}
-
 	if (!hamcore || !instance)
 	{
 		return false;
@@ -185,16 +131,11 @@ bool IsInstanceNameOK(HAMCORE *hamcore, const char *instance)
 
 bool IsMacAddressManual()
 {
-	return IsWindows8OrGreater();
+	return true;
 }
 
 bool PrepareCat(HAMCORE *hamcore, char *dst, const size_t size, const char *instance)
 {
-	if (!IsWindows8OrGreater())
-	{
-		return true;
-	}
-
 	if (!hamcore || !dst || size == 0 || !instance)
 	{
 		return false;
@@ -218,14 +159,7 @@ bool PrepareCat(HAMCORE *hamcore, char *dst, const size_t size, const char *inst
 		return false;
 	}
 
-	if (IsWindows10OrGreater())
-	{
-		snprintf(dst, size, "%s%s", GetTmpPath(), PathFileName(src, false));
-	}
-	else
-	{
-		snprintf(dst, size, "%sinf_%s.cat", GetTmpPath(), instance);
-	}
+	snprintf(dst, size, "%s%s", GetTmpPath(), PathFileName(src, false));
 
 	bool ok = false;
 
@@ -277,25 +211,7 @@ bool PrepareInf(HAMCORE *hamcore, char *dst, const size_t size, const char *inst
 		return false;
 	}
 
-	if (IsWindows10OrGreater())
-	{
-		snprintf(dst, size, "%s%s", GetTmpPath(), PathFileName(src, false));
-	}
-	else if (IsWindows7OrGreater())
-	{
-		snprintf(dst, size, "%sNeo6_%s_%s.inf", GetTmpPath(), GetArch(), instance);
-	}
-	else
-	{
-		snprintf(dst, size, "%sNeo_%s_%s.inf", GetTmpPath(), GetArch(), instance);
-	}
-
-	if (!IsWindows8OrGreater())
-	{
-		buf = StrReplace(buf, &buf_size, "$TAG_INSTANCE_NAME$", instance, false);
-		buf = StrReplace(buf, &buf_size, "$TAG_MAC_ADDRESS$", mac, false);
-		buf = StrReplace(buf, &buf_size, "$TAG_SYS_NAME$", PathFileName(sys, true), true);
-	}
+	snprintf(dst, size, "%s%s", GetTmpPath(), PathFileName(src, false));
 
 	bool ok = false;
 
@@ -345,14 +261,7 @@ bool PrepareSys(HAMCORE *hamcore, char *dst, const size_t size, const char *inst
 		return false;
 	}
 
-	if (IsWindows10OrGreater())
-	{
-		snprintf(dst, size, "%s%s", GetTmpPath(), PathFileName(src, false));
-	}
-	else
-	{
-		snprintf(dst, size, "%sNeo_%s.sys", GetTmpPath(), instance);
-	}
+	snprintf(dst, size, "%s%s", GetTmpPath(), PathFileName(src, false));
 
 	bool ok = false;
 

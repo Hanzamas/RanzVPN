@@ -56,7 +56,6 @@ void FreeLocalBridgeList(CEDAR *c);
 void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool monitor, bool tapmode, char *tapaddr, bool limit_broadcast);
 bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename);
 bool IsBridgeSupported();
-bool IsNeedWinPcap();
 UINT GetEthDeviceHash();
 bool IsRawIpBridgeSupported();
 

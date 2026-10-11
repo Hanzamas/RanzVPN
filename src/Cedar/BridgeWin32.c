@@ -27,21 +27,13 @@
 
 #include <Ws2tcpip.h>
 
-static WP *wp = NULL;
 static LIST *eth_list = NULL;
 
 static LOCK *eth_list_lock = NULL;
-static bool is_see_mode = false;
 static bool is_using_selow = false;
 static bool enable_selow = true;
 
 static bool g_bridge_win32_show_all_if = false;
-
-#define	LOAD_DLL_ADDR(name)				\
-	{									\
-		void *addr = GetProcAddress(h, #name);	\
-		Copy(&wp->name, &addr, sizeof(void *));	\
-	}
 
 // Set the flag which indicates whether using SeLow
 void Win32SetEnableSeLow(bool b)
@@ -630,10 +622,8 @@ bool GetClassRegKeyWin32(char *key, UINT key_size, char *short_key, UINT short_k
 // Send multiple packets
 void EthPutPackets(ETH *e, UINT num, void **datas, UINT *sizes)
 {
-	UINT i, total_size;
-	UCHAR *buf;
-	UINT write_pointer;
-	UINT err = 0;
+	UINT i;
+	bool ok = true;
 	// Validate arguments
 	if (e == NULL || num == 0 || datas == NULL || sizes == NULL)
 	{
@@ -644,101 +634,34 @@ void EthPutPackets(ETH *e, UINT num, void **datas, UINT *sizes)
 		return;
 	}
 
-	if (e->SuAdapter != NULL)
+	// Send packets with SeLow
+	for (i = 0;i < num;i++)
 	{
-		bool ok = true;
-
-		// Send packets with SeLow
-		for (i = 0;i < num;i++)
-		{
-			UCHAR *data = datas[i];
-			UINT size = sizes[i];
-
-			if (ok)
-			{
-				// Actually, only enqueuing
-				ok = SuPutPacket(e->SuAdapter, data, size);
-			}
-
-			if (ok == false)
-			{
-				// Free memory on write error
-				Free(data);
-			}
-		}
+		UCHAR *data = datas[i];
+		UINT size = sizes[i];
 
 		if (ok)
 		{
-			// Send all data in queue at once
-			ok = SuPutPacket(e->SuAdapter, NULL, 0);
+			// Actually, only enqueuing
+			ok = SuPutPacket(e->SuAdapter, data, size);
 		}
 
 		if (ok == false)
 		{
-			// Error occurred
-			e->HasFatalError = true;
-		}
-
-		return;
-	}
-
-	if (IsWin32BridgeWithSee() == false)
-	{
-		if (e->LastSetSingleCpu == 0 || (e->LastSetSingleCpu + 10000) <= Tick64())
-		{
-			e->LastSetSingleCpu = Tick64();
-			MsSetThreadSingleCpu();
+			// Free memory on write error
+			Free(data);
 		}
 	}
 
-	// Calculate buffer size
-	total_size = 0;
-	for (i = 0;i < num;i++)
+	if (ok)
 	{
-		void *data = datas[i];
-		UINT size = sizes[i];
-		if (data != NULL && size >= 14 && size <= MAX_PACKET_SIZE)
-		{
-			total_size += size + sizeof(struct dump_bpf_hdr);
-		}
+		// Send all data in queue at once
+		ok = SuPutPacket(e->SuAdapter, NULL, 0);
 	}
 
-	buf = MallocFast(total_size * 100 / 75 + 1600);
-
-	write_pointer = 0;
-	// Enqueue
-	for (i = 0;i < num;i++)
+	if (ok == false)
 	{
-		void *data = datas[i];
-		UINT size = sizes[i];
-		if (data != NULL && size >= 14 && size <= MAX_PACKET_SIZE)
-		{
-			struct dump_bpf_hdr *h;
-
-			h = (struct dump_bpf_hdr *)(buf + write_pointer);
-			Zero(h, sizeof(struct dump_bpf_hdr));
-			h->caplen = h->len = size;
-			write_pointer += sizeof(struct dump_bpf_hdr);
-			Copy(buf + write_pointer, data, size);
-			write_pointer += size;
-
-			PROBE_DATA2("EthPutPackets", data, size);
-		}
-		// Free original buffer
-		Free(data);
-	}
-
-	// Send
-	if (total_size != 0)
-	{
-		err = wp->PacketSendPackets(e->Adapter, buf, total_size, true);
-	}
-
-	Free(buf);
-
-	if (err == 0x7FFFFFFF)
-	{
-		// Critical error (infinite loop) occurred on sending
+		// Error occurred
 		e->HasFatalError = true;
 	}
 }
@@ -758,8 +681,7 @@ void EthPutPacket(ETH *e, void *data, UINT size)
 // Read next packet
 UINT EthGetPacket(ETH *e, void **data)
 {
-	BLOCK *b;
-	bool flag = false;
+	UINT size;
 	// Validate arguments
 	if (e == NULL || data == NULL)
 	{
@@ -770,99 +692,15 @@ UINT EthGetPacket(ETH *e, void **data)
 		return INFINITE;
 	}
 
-	if (e->SuAdapter != NULL)
+	// Read packet with SeLow
+	if (SuGetNextPacket(e->SuAdapter, data, &size) == false)
 	{
-		// Read packet with SeLow
-		UINT size;
-		if (SuGetNextPacket(e->SuAdapter, data, &size) == false)
-		{
-			// Error occurred
-			e->HasFatalError = true;
-			return INFINITE;
-		}
-
-		return size;
+		// Error occurred
+		e->HasFatalError = true;
+		return INFINITE;
 	}
 
-RETRY:
-	// Check the presence of the packet in queue
-	b = GetNext(e->PacketQueue);
-	if (b != NULL)
-	{
-		UINT size;
-		size = b->Size;
-		*data = b->Buf;
-		Free(b);
-
-		if (e->PacketQueue->num_item == 0)
-		{
-			e->Empty = true;
-		}
-
-		return size;
-	}
-
-	if (e->Empty)
-	{
-		e->Empty = false;
-		return 0;
-	}
-
-	if (flag == false)
-	{
-		// Try to get next packet
-		PROBE_STR("EthGetPacket: PacketInitPacket");
-		wp->PacketInitPacket(e->Packet, e->Buffer, e->BufferSize);
-		PROBE_STR("EthGetPacket: PacketReceivePacket");
-		if (wp->PacketReceivePacket(e->Adapter, e->Packet, false) == false)
-		{
-			// Failed
-			return INFINITE;
-		}
-		else
-		{
-			UCHAR *buf;
-			UINT total;
-			UINT offset;
-
-			buf = (UCHAR *)e->Packet->Buffer;
-			total = e->Packet->ulBytesReceived;
-			offset = 0;
-
-			while (offset < total)
-			{
-				struct bpf_hdr *header;
-				UINT packet_size;
-				UCHAR *packet_data;
-
-				header = (struct bpf_hdr *)(buf + offset);
-				packet_size = header->bh_caplen;
-				offset += header->bh_hdrlen;
-				packet_data = buf + offset;
-				offset = Packet_WORDALIGN(offset + packet_size);
-
-				if (packet_size >= 14)
-				{
-					UCHAR *tmp;
-					BLOCK *b;
-
-					PROBE_DATA2("EthGetPacket: NewBlock", packet_data, packet_size);
-					
-					tmp = MallocFast(packet_size);
-
-					Copy(tmp, packet_data, packet_size);
-					b = NewBlock(tmp, packet_size, 0);
-					InsertQueue(e->PacketQueue, b);
-				}
-			}
-
-			flag = true;
-			goto RETRY;
-		}
-	}
-
-	// No more packet
-	return 0;
+	return size;
 }
 
 // Get cancel object
@@ -882,7 +720,6 @@ CANCEL *EthGetCancel(ETH *e)
 // Close adapter
 void CloseEth(ETH *e)
 {
-	BLOCK *b;
 	// Validate arguments
 	if (e == NULL)
 	{
@@ -891,29 +728,12 @@ void CloseEth(ETH *e)
 
 	ReleaseCancel(e->Cancel);
 
-	if (e->SuAdapter != NULL)
-	{
-		// Close SeLow adapter
-		SuCloseAdapter(e->SuAdapter);
-		SuFree(e->Su);
-	}
-	else
-	{
-		// Close SEE adapter
-		wp->PacketCloseAdapter(e->Adapter);
-		wp->PacketFreePacket(e->Packet);
-		wp->PacketFreePacket(e->PutPacket);
-	}
-
-	while (b = GetNext(e->PacketQueue))
-	{
-		FreeBlock(b);
-	}
-	ReleaseQueue(e->PacketQueue);
+	// Close SeLow adapter
+	SuCloseAdapter(e->SuAdapter);
+	SuFree(e->Su);
 
 	Free(e->Name);
 	Free(e->Title);
-	Free(e->Buffer);
 
 	Free(e);
 }
@@ -997,7 +817,6 @@ ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
 {
 	WP_ADAPTER *t;
 	ETH *e;
-	ADAPTER *a = NULL;
 	HANDLE h;
 	CANCEL *c;
 	MS_ADAPTER *ms;
@@ -1030,46 +849,26 @@ ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
 
 	Debug("OpenEthInternal: %s\n", t->Name);
 
-	if (StartWith(t->Name, SL_ADAPTER_ID_PREFIX))
+	// Open with SU
+	su = SuInit();
+	if (su == NULL)
 	{
-		// Open with SU
-		su = SuInit();
-		if (su == NULL)
-		{
-			// Fail to initialize SU
-			Unlock(eth_list_lock);
-			return NULL;
-		}
-
-		su_adapter = SuOpenAdapter(su, t->Name);
-
-		if (su_adapter == NULL)
-		{
-			// Fail to get adapter
-			SuFree(su);
-			Unlock(eth_list_lock);
-			return NULL;
-		}
-
-		is_using_selow = true;
+		// Fail to initialize SU
+		Unlock(eth_list_lock);
+		return NULL;
 	}
-	else
+
+	su_adapter = SuOpenAdapter(su, t->Name);
+
+	if (su_adapter == NULL)
 	{
-		// Open with SEE
-		a = wp->PacketOpenAdapter(t->Name);
-		if (a == NULL)
-		{
-			Unlock(eth_list_lock);
-			return NULL;
-		}
-
-		if (IsWin32BridgeWithSee() == false)
-		{
-			MsSetThreadSingleCpu();
-		}
-
-		is_using_selow = false;
+		// Fail to get adapter
+		SuFree(su);
+		Unlock(eth_list_lock);
+		return NULL;
 	}
+
+	is_using_selow = true;
 
 	e = ZeroMalloc(sizeof(ETH));
 	e->Name = CopyStr(t->Name);
@@ -1077,61 +876,15 @@ ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
 	Win32EthMakeCombinedName(name_with_id, sizeof(name_with_id), t->Title, t->Guid);
 	e->Title = CopyStr(name_with_id);
 
-	if (su_adapter != NULL)
-	{
-		// SU
-		e->SuAdapter = su_adapter;
-		e->Su = su;
+	// SU
+	e->SuAdapter = su_adapter;
+	e->Su = su;
 
-		// Get event object
-		h = e->SuAdapter->hEvent;
+	// Get event object
+	h = e->SuAdapter->hEvent;
 
-		c = NewCancelSpecial(h);
-		e->Cancel = c;
-	}
-	else
-	{
-		// SEE
-		e->Adapter = a;
-
-		wp->PacketSetBuff(e->Adapter, BRIDGE_WIN32_ETH_BUFFER);
-		wp->PacketSetHwFilter(e->Adapter, local ? 0x0080 : 0x0020);
-		wp->PacketSetMode(e->Adapter, PACKET_MODE_CAPT);
-		wp->PacketSetReadTimeout(e->Adapter, -1);
-		wp->PacketSetNumWrites(e->Adapter, 1);
-
-		if (wp->PacketSetLoopbackBehavior != NULL)
-		{
-			// Filter loopback packet in kernel
-			if (GET_KETA(GetOsType(), 100) >= 3)
-			{
-				if (MsIsWindows8() == false)
-				{
-					// Enable for Windows XP, Server 2003 or later
-					// But disable for Windows 8 or later
-					bool ret = wp->PacketSetLoopbackBehavior(e->Adapter, 1);
-					Debug("*** PacketSetLoopbackBehavior: %u\n", ret);
-
-					e->LoopbackBlock = ret;
-				}
-			}
-		}
-
-		// Get event object
-		h = wp->PacketGetReadEvent(e->Adapter);
-
-		c = NewCancelSpecial(h);
-		e->Cancel = c;
-
-		e->Packet = wp->PacketAllocatePacket();
-
-		e->PutPacket = wp->PacketAllocatePacket();
-	}
-
-	e->Buffer = Malloc(BRIDGE_WIN32_ETH_BUFFER);
-	e->BufferSize = BRIDGE_WIN32_ETH_BUFFER;
-
-	e->PacketQueue = NewQueue();
+	c = NewCancelSpecial(h);
+	e->Cancel = c;
 
 	// Get MAC address by GUID
 	ms = MsGetAdapterByGuid(t->Guid);
@@ -1406,8 +1159,6 @@ LIST *GetEthAdapterListInternal()
 {
 	LIST *o;
 	LIST *ret;
-	ULONG size;
-	char *buf;
 	UINT i, j;
 	char *qos_tag = "(Microsoft's Packet Scheduler)";	// Allow to combine "FriendlyName" consisting of a NULL character and QOS tag.
 	SU *su = NULL;
@@ -1420,9 +1171,6 @@ LIST *GetEthAdapterListInternal()
 	}
 
 	o = NewListFast(CompareWpAdapter);
-
-	size = 200000;
-	buf = ZeroMalloc(size);
 
 	// Try to enumerate with SeLow
 	if (su != NULL)
@@ -1479,121 +1227,6 @@ LIST *GetEthAdapterListInternal()
 			Add(o, a);
 		}
 	}
-	else
-	{
-		// When SeLow is not used, create adapter list with SEE or WinPcap
-		if (wp->PacketGetAdapterNames(buf, &size) == false)
-		{
-			Free(buf);
-			return o;
-		}
-
-		i = 0;
-
-		if (true)
-		{
-			// Windows NT
-			if (size >= 2 && buf[0] != 0 && buf[1] != 0)
-			{
-				goto ANSI_STR;
-			}
-
-			while (true)
-			{
-				wchar_t tmp[MAX_SIZE];
-				WP_ADAPTER *a;
-				UniStrCpy(tmp, sizeof(tmp), L"");
-
-				if (*((wchar_t *)(&buf[i])) == 0)
-				{
-					i += sizeof(wchar_t);
-					break;
-				}
-
-				for (;*((wchar_t *)(&buf[i])) != 0;i += sizeof(wchar_t))
-				{
-					wchar_t str[2];
-					str[0] = *((wchar_t *)(&buf[i]));
-					str[1] = 0;
-					UniStrCat(tmp, sizeof(tmp), str);
-				}
-
-				i += sizeof(wchar_t);
-
-				a = ZeroMalloc(sizeof(WP_ADAPTER));
-				UniToStr(a->Name, sizeof(a->Name), tmp);
-
-				Add(o, a);
-			}
-		}
-		else
-		{
-ANSI_STR:
-			while (true)
-			{
-				char tmp[MAX_SIZE];
-				WP_ADAPTER *a;
-				StrCpy(tmp, sizeof(tmp), "");
-
-				if (*((char *)(&buf[i])) == 0)
-				{
-					i += sizeof(char);
-					break;
-				}
-
-				for (;*((char *)(&buf[i])) != 0;i += sizeof(char))
-				{
-					char str[2];
-					str[0] = *((char *)(&buf[i]));
-					str[1] = 0;
-					StrCat(tmp, sizeof(tmp), str);
-				}
-
-				i += sizeof(char);
-
-				a = ZeroMalloc(sizeof(WP_ADAPTER));
-				StrCpy(a->Name, sizeof(a->Name), tmp);
-
-				Add(o, a);
-			}
-		}
-
-		for (j = 0;j < LIST_NUM(o);j++)
-		{
-			WP_ADAPTER *a = LIST_DATA(o, j);
-
-			StrCpy(a->Title, sizeof(a->Title), &buf[i]);
-			i += StrSize(a->Title);
-
-			TrimCrlf(a->Title);
-			Trim(a->Title);
-			TrimCrlf(a->Title);
-			Trim(a->Title);
-
-			if (EndWith(a->Title, qos_tag))
-			{
-				a->Title[StrLen(a->Title) - StrLen(qos_tag)] = 0;
-				TrimCrlf(a->Title);
-				Trim(a->Title);
-				TrimCrlf(a->Title);
-				Trim(a->Title);
-			}
-		}
-	}
-
-	for (j = 0;j < LIST_NUM(o);j++)
-	{
-		// Extract GUID
-		WP_ADAPTER *a = LIST_DATA(o, j);
-
-		if (IsEmptyStr(a->Guid))
-		{
-			StrCpy(a->Guid, sizeof(a->Guid), a->Name);
-			ReplaceStr(a->Guid, sizeof(a->Guid), a->Guid, "\\Device\\SEE_", "");
-			ReplaceStr(a->Guid, sizeof(a->Guid), a->Guid, "\\Device\\NPF_", "");
-			ReplaceStr(a->Guid, sizeof(a->Guid), a->Guid, "\\Device\\PCD_", "");
-		}
-	}
 
 	// Sort
 	if (su_adapter_list != NULL)
@@ -1607,7 +1240,6 @@ ANSI_STR:
 	for (i = 0;i < LIST_NUM(o);i++)
 	{
 		WP_ADAPTER *a = LIST_DATA(o, i);
-		ADAPTER *ad;
 		bool is_ethernet = false;
 		bool ok = false;
 
@@ -1623,30 +1255,8 @@ ANSI_STR:
 			continue;
 		}
 
-		// Determine whether the adapter type is Ethernet
-		if (su == NULL)
-		{
-			// Determine with See
-			ad = wp->PacketOpenAdapter(a->Name);
-			if (ad != NULL)
-			{
-				NetType type;
-				if (wp->PacketGetNetType(ad, &type))
-				{
-					if (type.LinkType == 0)
-					{
-						is_ethernet = true;
-					}
-				}
-
-				wp->PacketCloseAdapter(ad);
-			}
-		}
-		else
-		{
-			// In using SeLow, all devices should be Ethernet device
-			is_ethernet = true;
-		}
+		// In using SeLow, all devices should be Ethernet device
+		is_ethernet = true;
 
 		if (is_ethernet)
 		{
@@ -1694,8 +1304,6 @@ ANSI_STR:
 			Free(a);
 		}
 	}
-
-	Free(buf);
 
 	Sort(ret);
 
@@ -1758,268 +1366,25 @@ bool Win32EthIsSuSupported()
 // Is the Ethernet supported
 bool IsEthSupported()
 {
-	bool ret = IsEthSupportedInner();
-
-	if (ret == false)
-	{
-		ret = Win32EthIsSuSupported();
-	}
-
-	return ret;
-}
-bool IsEthSupportedInner()
-{
-	if (wp == NULL)
-	{
-		return false;
-	}
-
-	return wp->Inited;
-}
-
-// Is the PCD driver supported in current OS
-bool IsPcdSupported()
-{
-	return !MsIsWindows10();
-}
-
-// Save build number of PCD driver
-void SavePcdDriverBuild(UINT build)
-{
-	MsRegWriteInt(REG_LOCAL_MACHINE, BRIDGE_WIN32_PCD_REGKEY, BRIDGE_WIN32_PCD_BUILDVALUE,
-		build);
-}
-
-// Load build number of PCD driver
-UINT LoadPcdDriverBuild()
-{
-	return MsRegReadInt(REG_LOCAL_MACHINE, BRIDGE_WIN32_PCD_REGKEY, BRIDGE_WIN32_PCD_BUILDVALUE);
-}
-
-// Try to install PCD driver
-HINSTANCE InstallPcdDriver()
-{
-	HINSTANCE ret;
-	void *p = MsDisableWow64FileSystemRedirection();
-
-	ret = InstallPcdDriverInternal();
-
-	MsRestoreWow64FileSystemRedirection(p);
-
-	return ret;
-}
-HINSTANCE InstallPcdDriverInternal()
-{
-	char tmp[MAX_PATH];
-	bool install_driver = true;
-	HINSTANCE h;
-	char *dll_filename;
-
-	// Confirm whether the see.sys is installed in system32\drivers folder
-	Format(tmp, sizeof(tmp), "%s\\drivers\\see.sys", MsGetSystem32Dir());
-
-	if (IsFileExists(tmp))
-	{
-		// If driver file is exist, try to get build number from registry
-		if (LoadPcdDriverBuild() >= CEDAR_VERSION_BUILD)
-		{
-			// Already latest driver is installed
-			install_driver = false;
-		}
-	}
-
-	if (install_driver)
-	{
-		char *src_filename = BRIDGE_WIN32_PCD_SYS;
-		// If need to install the driver, confirm user is administrator
-		if (MsIsAdmin() == false)
-		{
-			// Non administrator can't install driver
-			return NULL;
-		}
-
-		if (MsIsX64())
-		{
-			src_filename = BRIDGE_WIN32_PCD_SYS_X64;
-		}
-
-		// Copy see.sys
-		if (FileCopy(src_filename, tmp) == false)
-		{
-			return NULL;
-		}
-
-		// Save build number
-		SavePcdDriverBuild(CEDAR_VERSION_BUILD);
-	}
-
-	dll_filename = BRIDGE_WIN32_PCD_DLL;
-
-	if (Is64())
-	{
-		if (MsIsX64())
-		{
-			dll_filename = BRIDGE_WIN32_PCD_DLL_X64;
-		}
-	}
-
-	// Try to load see.dll and initialize
-	h = MsLoadLibrary(dll_filename);
-	if (h == NULL)
-	{
-		return NULL;
-	}
-
-	return h;
+	return Win32EthIsSuSupported();
 }
 
 // Initialize Ethernet
 void InitEth()
 {
-	HINSTANCE h;
-	if (wp != NULL)
+	if (eth_list_lock != NULL)
 	{
 		// Already initialized
 		return;
 	}
 
 	eth_list_lock = NewLock();
-
-	wp = ZeroMalloc(sizeof(WP));
-
-	is_see_mode = false;
-
-	if (IsPcdSupported())
-	{
-		// PCD is supported in this OS
-		h = InstallPcdDriver();
-		if (h != NULL)
-		{
-			// Try to initialize with PCD
-			if (InitWpWithLoadLibrary(wp, h) == false)
-			{
-				Debug("InitEth: SEE Failed.\n");
-				FreeLibrary(h);
-			}
-			else
-			{
-				Debug("InitEth: SEE Loaded.\n");
-				is_see_mode = true;
-			}
-		}
-	}
-
-	if (wp->Inited == false)
-	{
-		// Try to initialize with Packet.dll of WinPcap
-		h = LoadLibrary(BRIDGE_WIN32_PACKET_DLL);
-		if (h != NULL)
-		{
-			if (InitWpWithLoadLibrary(wp, h) == false)
-			{
-				Debug("InitEth: Packet.dll Failed.\n");
-				FreeLibrary(h);
-			}
-			else
-			{
-				Debug("InitEth: Packet.dll Loaded.\n");
-			}
-		}
-	}
-}
-
-// Get whether local-bridge uses see.sys
-bool IsWin32BridgeWithSee()
-{
-	return is_see_mode;
-}
-
-// Initialize WP structure with DLL
-bool InitWpWithLoadLibrary(WP *wp, HINSTANCE h)
-{
-	TOKEN_LIST *o;
-	UINT total_num = 0;
-	// Validate arguments
-	if (wp == NULL || h == NULL)
-	{
-		return false;
-	}
-	wp->Inited = true;
-	wp->hPacketDll = h;
-
-	LOAD_DLL_ADDR(PacketGetVersion);
-	LOAD_DLL_ADDR(PacketGetDriverVersion);
-	LOAD_DLL_ADDR(PacketSetMinToCopy);
-	LOAD_DLL_ADDR(PacketSetNumWrites);
-	LOAD_DLL_ADDR(PacketSetMode);
-	LOAD_DLL_ADDR(PacketSetReadTimeout);
-	LOAD_DLL_ADDR(PacketSetBpf);
-	LOAD_DLL_ADDR(PacketSetSnapLen);
-	LOAD_DLL_ADDR(PacketGetStats);
-	LOAD_DLL_ADDR(PacketGetStatsEx);
-	LOAD_DLL_ADDR(PacketSetBuff);
-	LOAD_DLL_ADDR(PacketGetNetType);
-	LOAD_DLL_ADDR(PacketOpenAdapter);
-	LOAD_DLL_ADDR(PacketSendPacket);
-	LOAD_DLL_ADDR(PacketSendPackets);
-	LOAD_DLL_ADDR(PacketAllocatePacket);
-	LOAD_DLL_ADDR(PacketInitPacket);
-	LOAD_DLL_ADDR(PacketFreePacket);
-	LOAD_DLL_ADDR(PacketReceivePacket);
-	LOAD_DLL_ADDR(PacketSetHwFilter);
-	LOAD_DLL_ADDR(PacketGetAdapterNames);
-	LOAD_DLL_ADDR(PacketGetNetInfoEx);
-	LOAD_DLL_ADDR(PacketRequest);
-	LOAD_DLL_ADDR(PacketGetReadEvent);
-	LOAD_DLL_ADDR(PacketSetDumpName);
-	LOAD_DLL_ADDR(PacketSetDumpLimits);
-	LOAD_DLL_ADDR(PacketSetDumpLimits);
-	LOAD_DLL_ADDR(PacketIsDumpEnded);
-	LOAD_DLL_ADDR(PacketStopDriver);
-	LOAD_DLL_ADDR(PacketCloseAdapter);
-	LOAD_DLL_ADDR(PacketSetLoopbackBehavior);
-
-	if (wp->PacketSetMinToCopy == NULL ||
-		wp->PacketSetNumWrites == NULL ||
-		wp->PacketSetMode == NULL ||
-		wp->PacketSetReadTimeout == NULL ||
-		wp->PacketSetBuff == NULL ||
-		wp->PacketGetNetType == NULL ||
-		wp->PacketOpenAdapter == NULL ||
-		wp->PacketSendPacket == NULL ||
-		wp->PacketSendPackets == NULL ||
-		wp->PacketAllocatePacket == NULL ||
-		wp->PacketInitPacket == NULL ||
-		wp->PacketFreePacket == NULL ||
-		wp->PacketReceivePacket == NULL ||
-		wp->PacketSetHwFilter == NULL ||
-		wp->PacketGetAdapterNames == NULL ||
-		wp->PacketGetNetInfoEx == NULL ||
-		wp->PacketCloseAdapter == NULL)
-	{
-RELEASE:
-		wp->Inited = false;
-		wp->hPacketDll = NULL;
-
-		return false;
-	}
-
-	o = GetEthListEx(&total_num, true, false);
-	if (o == NULL || total_num == 0)
-	{
-		FreeToken(o);
-		goto RELEASE;
-	}
-
-	FreeToken(o);
-
-	return true;
 }
 
 // Free Ethernet
 void FreeEth()
 {
-	if (wp == NULL)
+	if (eth_list_lock == NULL)
 	{
 		// Not initialized
 		return;
@@ -2027,15 +1392,6 @@ void FreeEth()
 
 	// Free adapter list
 	FreeEthAdaptersList();
-
-	if (wp->Inited)
-	{
-		// Free DLL
-		FreeLibrary(wp->hPacketDll);
-	}
-
-	Free(wp);
-	wp = NULL;
 
 	DeleteLock(eth_list_lock);
 	eth_list_lock = NULL;
@@ -2045,7 +1401,7 @@ void FreeEth()
 void GetEthNetworkConnectionName(wchar_t *dst, UINT size, char *device_name)
 {
 	WP_ADAPTER *t;
-	char *tmp = NULL, guid[MAX_SIZE];
+	char guid[MAX_SIZE];
 	wchar_t *ncname = NULL;
 
 	UniStrCpy(dst, size, L"");
@@ -2068,28 +1424,8 @@ void GetEthNetworkConnectionName(wchar_t *dst, UINT size, char *device_name)
 		return;
 	}
 
-	tmp = CopyStr(t->Name);
+	StrCpy(guid, sizeof(guid), t->Guid);
 	Unlock(eth_list_lock);
-
-	if (IsEmptyStr(t->Guid) == false)
-	{
-		StrCpy(guid, sizeof(guid), t->Guid);
-
-		Free(tmp);
-	}
-	else
-	{
-		ReplaceStr(guid, sizeof(guid), tmp, "\\Device\\SEE_", "");
-		Free(tmp);
-
-		ReplaceStr(guid, sizeof(guid), guid, "\\Device\\NPF_", "");
-		ReplaceStr(guid, sizeof(guid), guid, "\\Device\\PCD_", "");
-	}
-
-	if(guid == NULL)
-	{
-		return;
-	}
 
 	ncname = MsGetNetworkConnectionName(guid);
 	if(ncname != NULL)

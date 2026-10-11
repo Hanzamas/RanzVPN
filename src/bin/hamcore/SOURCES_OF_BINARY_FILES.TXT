@@ -1,5 +1,5 @@
 All binary files on the 'hamcore' directory are free software under
-the Apache License, Version 2.0. (Except WinPcap binaries.)
+the Apache License, Version 2.0.
 
 Some geeks should be interested in how to rebuild .sys (driver) files on
 this directory. This text file helps such crazy geeks.
@@ -20,42 +20,20 @@ the source code.
 However, the entire source code of all the .sys files are contained on the
 source code tree as follows:
 
-- pxwfp_x86.sys and pxwfp_x64.sys
+- pxwfp_x64.sys
   You can build these files from the source code on the 'Wfp' directory.
 
-- see.sys and see_x64.sys
-  You can build these files from the source code on the 'See' directory.
-
-- SeLow_x86.sys and SeLow_x64.sys
+- SeLow_x64.sys
   You can build these files from the source code on the 'SeLow' directory.
 
-- vpn_driver.sys, vpn_driver_x64.sys and vpn_driver_9x.sys
-  You can build these files from the source code on the 'Neo' directory.
-
-- vpn_driver6.sys and vpn_driver6_x64.sys
+- vpn_driver6_x64.sys
   You can build these files from the source code on the 'Neo6' directory.
 
 It is recommended to build these files on the 'SEVPN.sln' Visual Studio 2008
 solution file.
 
 Note that rebuilding these files require Windows Driver Kits.
-Loading the re-built .sys files requires your Authenticode certificate file
-if the operating system is Windows Vista or later.
-
-
-
-How to rebuild these 'vpn16.exe' files?
----------------------------------------
-
-The vpn16.exe binary is the 16-bit Driver Install Utility for Windows 9x.
-You can build this file from the 'vpn16' directory. However, you need
-Visual C++ 16-bit edition and Windows 98 DDK to rebuild this 'vpn16.exe'.
-
-
-'winpcap_installer.exe' and 'winpcap_installer_win9x.exe'
----------------------------------------------------------
-They are WinPcap binaries from http://www.winpcap.org/.
-The WinPcap license is at http://www.winpcap.org/misc/copyright.htm page.
+Loading the re-built .sys files requires your Authenticode certificate file.
 
 
 License
