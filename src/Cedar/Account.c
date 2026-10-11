@@ -10,7 +10,6 @@
 #include "Hub.h"
 #include "Layer3.h"
 #include "MsChapV2.h"
-#include "Proto_PPP.h"
 
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"

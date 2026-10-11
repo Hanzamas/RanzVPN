@@ -301,7 +301,6 @@
 #define	CONNECTION_TYPE_ADMIN_RPC		5	// RPC for Management
 #define	CONNECTION_TYPE_ENUM_HUB		6	// HUB enumeration
 #define	CONNECTION_TYPE_PASSWORD		7	// Password change
-#define	CONNECTION_TYPE_OTHER			0xffffffff	// E.g. Third-party protocol
 
 // Protocol
 #define	CONNECTION_TCP					0	// TCP protocol
@@ -366,7 +365,6 @@
 #define	AUTHTYPE_ROOTCERT				3			// Root certificate which is issued by trusted Certificate Authority
 #define	AUTHTYPE_NT						5			// Windows NT authentication
 #define AUTHTYPE_EXTERNAL				96			// External authentication (completed)
-#define	AUTHTYPE_OPENVPN_CERT    		98			// TLS client certificate authentication
 #define	AUTHTYPE_TICKET					99			// Ticket authentication
 
 // Constant of the client side

@@ -3018,20 +3018,6 @@ void ConnectionAccept(CONNECTION *c)
 	initial_timeout += GetMachineRand() % (CONNECTING_TIMEOUT / 2);
 	SetTimeout(s, initial_timeout);
 
-	// Handle third-party protocols
-	if (s->IsReverseAcceptedSocket == false && s->Type == SOCK_TCP)
-	{
-		if (c->Cedar != NULL && c->Cedar->Server != NULL)
-		{
-			PROTO *proto = c->Cedar->Server->Proto;
-			if (proto && ProtoHandleConnection(proto, s, NULL) == true)
-			{
-				c->Type = CONNECTION_TYPE_OTHER;
-				goto FINAL;
-			}
-		}
-	}
-
 	// Specify the encryption algorithm
 	Lock(c->Cedar->lock);
 	{

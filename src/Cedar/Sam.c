@@ -13,7 +13,6 @@
 #include "Hub.h"
 #include "IPC.h"
 #include "MsChapV2.h"
-#include "Proto_PPP.h"
 #include "Server.h"
 
 #include "Mayaqua/Encoding.h"
@@ -412,7 +411,7 @@ bool SamAuthUserByAnonymous(HUB *h, char *username)
 }
 
 // Plaintext password authentication of user
-bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *password, bool ast, UCHAR *mschap_v2_server_response_20)
+bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *password, bool ast)
 {
 	bool b = false;
 	wchar_t *name = NULL;
@@ -481,54 +480,21 @@ bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *p
 	{
 		// NT authentication
 #ifdef	OS_WIN32
-		IPC_MSCHAP_V2_AUTHINFO mschap;
 		Unlock(hub->lock);
 
-		if (ParseAndExtractMsChapV2InfoFromPassword(&mschap, password) == false)
-		{
-			// Plaintext password authentication
-			b = MsCheckLogon(name, password);
-		}
-		else
-		{
-			UCHAR challenge8[8];
-			UCHAR nt_pw_hash_hash[16];
-			char nt_name[MAX_SIZE];
-
-			UniToStr(nt_name, sizeof(nt_name), name);
-
-			// MS-CHAPv2 authentication
-			MsChapV2_GenerateChallenge8(challenge8, mschap.MsChapV2_ClientChallenge,
-				mschap.MsChapV2_ServerChallenge,
-				mschap.MsChapV2_PPPUsername);
-
-			Debug("MsChapV2_PPPUsername = %s, nt_name = %s\n", mschap.MsChapV2_PPPUsername, nt_name);
-
-			b = MsPerformMsChapV2AuthByLsa(nt_name, challenge8, mschap.MsChapV2_ClientResponse, nt_pw_hash_hash);
-
-			if (b)
-			{
-				if (mschap_v2_server_response_20 != NULL)
-				{
-					MsChapV2Server_GenerateResponse(mschap_v2_server_response_20, nt_pw_hash_hash,
-						mschap.MsChapV2_ClientResponse, challenge8);
-				}
-			}
-		}
+		// Plaintext password authentication
+		b = MsCheckLogon(name, password);
 
 		Lock(hub->lock);
 #else	// OS_WIN32
 		// Unix / Samba Winbind
 
-		IPC_MSCHAP_V2_AUTHINFO mschap;
 		Unlock(hub->lock);
 
 		char nt_name[MAX_SIZE];
 		char nt_username[MAX_SIZE];
 		char nt_groupname[MAX_SIZE];
 		char nt_domainname[MAX_SIZE];
-		UCHAR challenge8[8];
-		UCHAR nt_pw_hash_hash[16];
 
 		nt_groupname[0] = 0;
 
@@ -539,31 +505,8 @@ bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *p
 
 		ParseNtUsername(nt_name, nt_username, sizeof(nt_username), nt_domainname, sizeof(nt_domainname), false);
 
-		if (ParseAndExtractMsChapV2InfoFromPassword(&mschap, password) == false)
-		{
-			// Plaintext password authentication
-			b = SmbCheckLogon(nt_username, password, nt_domainname, nt_groupname, timeout);
-		}
-		else
-		{
-			// MS-CHAPv2 authentication
-			MsChapV2_GenerateChallenge8(challenge8, mschap.MsChapV2_ClientChallenge,
-				mschap.MsChapV2_ServerChallenge,
-				mschap.MsChapV2_PPPUsername);
-
-			Debug("MsChapV2_PPPUsername = %s, nt_name = %s\n", mschap.MsChapV2_PPPUsername, nt_name);
-
-			b = SmbPerformMsChapV2Auth(nt_username, nt_domainname, nt_groupname, challenge8, mschap.MsChapV2_ClientResponse, nt_pw_hash_hash, timeout);
-
-			if (b)
-			{
-				if (mschap_v2_server_response_20 != NULL)
-				{
-					MsChapV2Server_GenerateResponse(mschap_v2_server_response_20, nt_pw_hash_hash,
-						mschap.MsChapV2_ClientResponse, challenge8);
-				}
-			}
-		}
+		// Plaintext password authentication
+		b = SmbCheckLogon(nt_username, password, nt_domainname, nt_groupname, timeout);
 
 		Lock(hub->lock);
 #endif	// OS_WIN32 / OS_LINUX

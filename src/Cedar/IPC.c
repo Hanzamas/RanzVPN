@@ -176,7 +176,7 @@ IPC *NewIPCByParam(CEDAR *cedar, IPC_PARAM *param, UINT *error_code)
 	             param->UserName, param->Password, error_code,
 	             &param->ClientIp, param->ClientPort, &param->ServerIp, param->ServerPort,
 	             param->ClientHostname, param->CryptName,
-	             param->BridgeMode, param->Mss, NULL, false,
+	             param->BridgeMode, param->Mss, false,
 				 param->Layer);
 
 	return ipc;
@@ -186,7 +186,7 @@ IPC *NewIPCByParam(CEDAR *cedar, IPC_PARAM *param, UINT *error_code)
 IPC *NewIPC(CEDAR *cedar, char *client_name, char *postfix, char *hubname, char *username, char *password,
             UINT *error_code, IP *client_ip, UINT client_port, IP *server_ip, UINT server_port,
             char *client_hostname, char *crypt_name,
-            bool bridge_mode, UINT mss, X *client_certificate, bool external_auth,
+            bool bridge_mode, UINT mss, bool external_auth,
             UINT layer)
 {
 	IPC *ipc;
@@ -285,11 +285,7 @@ IPC *NewIPC(CEDAR *cedar, char *client_name, char *postfix, char *hubname, char 
 	FreePack(p);
 
 	// Upload the authentication data
-	if (client_certificate != NULL)
-	{
-		p = PackLoginWithOpenVPNCertificate(hubname, username, client_certificate);
-	}
-	else if (external_auth)
+	if (external_auth)
 	{
 		p = PackLoginWithExternal(hubname, username);
 	}

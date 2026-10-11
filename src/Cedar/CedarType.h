@@ -266,9 +266,7 @@ typedef struct RPC_SERVER_INFO RPC_SERVER_INFO;
 typedef struct RPC_SERVER_STATUS RPC_SERVER_STATUS;
 typedef struct RPC_LISTENER RPC_LISTENER;
 typedef struct RPC_LISTENER_LIST RPC_LISTENER_LIST;
-typedef struct RPC_PORTS RPC_PORTS;
 typedef struct RPC_STR RPC_STR;
-typedef struct RPC_PROTO_OPTIONS RPC_PROTO_OPTIONS;
 typedef struct RPC_SET_PASSWORD RPC_SET_PASSWORD;
 typedef struct RPC_FARM RPC_FARM;
 typedef struct RPC_FARM_HUB RPC_FARM_HUB;
@@ -438,30 +436,6 @@ typedef struct LICENSE_STATUS LICENSE_STATUS;
 typedef struct SECURE_PACK_FOLDER SECURE_PACK_FOLDER;
 typedef struct WIDE_MACHINE_ID WIDE_MACHINE_ID;
 typedef struct TRIAL_INFO TRIAL_INFO;
-
-
-// ==============================================================
-//  Proto
-// ==============================================================
-
-typedef struct PROTO_OPTION PROTO_OPTION;
-
-
-// ==============================================================
-//  PPP
-// ==============================================================
-
-typedef struct PPP_SESSION PPP_SESSION;
-typedef struct PPP_OPTION PPP_OPTION;
-typedef struct PPP_LCP PPP_LCP;
-typedef struct PPP_PACKET PPP_PACKET;
-typedef struct PPP_IPOPTION PPP_IPOPTION;
-typedef struct PPP_IPV6OPTION PPP_IPV6OPTION;
-typedef struct PPP_REQUEST_RESEND PPP_REQUEST_RESEND;
-typedef struct PPP_DELAYED_PACKET PPP_DELAYED_PACKET;
-typedef struct PPP_EAP PPP_EAP;
-typedef struct PPP_EAP_TLS_CONTEXT PPP_EAP_TLS_CONTEXT;
-typedef struct ETHERIP_ID ETHERIP_ID;
 
 
 // ==============================================================

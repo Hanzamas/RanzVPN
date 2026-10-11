@@ -148,7 +148,6 @@ PACK *PackLoginWithAnonymous(char *hubname, char *username);
 PACK *PackLoginWithPassword(char *hubname, char *username, void *secure_password);
 PACK *PackLoginWithPlainPassword(char *hubname, char *username, void *plain_password);
 PACK *PackLoginWithCert(char *hubname, char *username, X *x, void *sign, UINT sign_size);
-PACK *PackLoginWithOpenVPNCertificate(char *hubname, char *username, X *x);
 bool GetMethodFromPack(PACK *p, char *method, UINT size);
 bool GetHubnameAndUsernameFromPack(PACK *p, char *username, UINT username_size,
 								   char *hubname, UINT hubname_size);

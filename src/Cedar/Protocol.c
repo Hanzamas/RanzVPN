@@ -15,7 +15,6 @@
 #include "Link.h"
 #include "Logging.h"
 #include "MsChapV2.h"
-#include "Proto_PPP.h"
 #include "Sam.h"
 #include "Server.h"
 #include "UdpAccel.h"
@@ -1636,9 +1635,6 @@ bool ServerAccept(CONNECTION *c)
 				case AUTHTYPE_EXTERNAL:
 					authtype_str = _UU("LH_AUTH_EXTERNAL");
 					break;
-				case AUTHTYPE_OPENVPN_CERT:
-					authtype_str = _UU("LH_AUTH_OPENVPN_CERT");
-					break;
 				case AUTHTYPE_TICKET:
 					authtype_str = _UU("LH_AUTH_TICKET");
 					break;
@@ -1656,84 +1652,7 @@ bool ServerAccept(CONNECTION *c)
 			auth_ret = SamAuthUserByAnonymous(hub, username);
 			if (auth_ret)
 			{
-				if (c->IsInProc)
-				{
-					IPC_MSCHAP_V2_AUTHINFO mschap;
-					char password_tmp[MAX_SIZE];
-
-					Zero(&mschap, sizeof(mschap));
-
-					Zero(password_tmp, sizeof(password_tmp));
-					PackGetStr(p, "plain_password", password_tmp, sizeof(password_tmp));
-
-					if (ParseAndExtractMsChapV2InfoFromPassword(&mschap, password_tmp))
-					{
-						// Because the server don't know the NTLM hashed password, the bet to the possibility of
-						// the same character to the user name and empty, search a password of different
-						// versions of the upper and lower case characters in the case of anonymous authentication.
-						// Returns the MS-CHAPv2 response by using the password if there is a match.
-						// Fail the authentication if no match is found.
-						// (Because, if return a false MS-CHAPv2 Response, PPP client cause an error)
-						LIST *o = NewListFast(NULL);
-						char tmp1[MAX_SIZE];
-						char tmp2[MAX_SIZE];
-						char tmp3[MAX_SIZE];
-						char tmp4[MAX_SIZE];
-						char *response_pw;
-
-						ParseNtUsername(mschap.MsChapV2_PPPUsername, tmp1, sizeof(tmp1), tmp2, sizeof(tmp2), false);
-						ParseNtUsername(mschap.MsChapV2_PPPUsername, tmp3, sizeof(tmp3), tmp4, sizeof(tmp4), true);
-
-						Add(o, "");
-						Add(o, "-");
-						Add(o, ".");
-						Add(o, "*");
-						Add(o, "?");
-						Add(o, " ");
-						Add(o, "p");
-						Add(o, "guest");
-						Add(o, "anony");
-						Add(o, "anonymous");
-						Add(o, "password");
-						Add(o, "passwd");
-						Add(o, "pass");
-						Add(o, "pw");
-						Add(o, mschap.MsChapV2_PPPUsername);
-						Add(o, tmp1);
-						Add(o, tmp2);
-						Add(o, tmp3);
-						Add(o, tmp4);
-
-						response_pw = MsChapV2DoBruteForce(&mschap, o);
-
-						ReleaseList(o);
-
-						if (response_pw != NULL)
-						{
-							UCHAR challenge8[8];
-							UCHAR nt_hash[16];
-							UCHAR nt_hash_hash[16];
-
-							GenerateNtPasswordHash(nt_hash, response_pw);
-							GenerateNtPasswordHashHash(nt_hash_hash, nt_hash);
-							MsChapV2_GenerateChallenge8(challenge8, mschap.MsChapV2_ClientChallenge, mschap.MsChapV2_ServerChallenge,
-								mschap.MsChapV2_PPPUsername);
-							MsChapV2Server_GenerateResponse(mschap_v2_server_response_20, nt_hash_hash,
-								mschap.MsChapV2_ClientResponse, challenge8);
-
-							Free(response_pw);
-						}
-						else
-						{
-							auth_ret = false;
-						}
-					}
-				}
-
-				if (auth_ret)
-				{
-					is_empty_password = true;
-				}
+				is_empty_password = true;
 			}
 
 			if (auth_ret == false)
@@ -1844,7 +1763,7 @@ bool ServerAccept(CONNECTION *c)
 
 							if (fail_ext_user_auth == false)
 							{
-								auth_ret = SamAuthUserByPlainPassword(c, hub, username, plain_password, true, mschap_v2_server_response_20);
+								auth_ret = SamAuthUserByPlainPassword(c, hub, username, plain_password, true);
 							}
 
 							if (auth_ret && pol == NULL)
@@ -1923,50 +1842,6 @@ bool ServerAccept(CONNECTION *c)
 					{
 						// Certificate authentication is not supported in the open source version
 						HLog(hub, "LH_AUTH_CERT_NOT_SUPPORT_ON_OPEN_SOURCE", c->Name, username);
-						Unlock(hub->lock);
-						ReleaseHub(hub);
-						FreePack(p);
-						c->Err = ERR_AUTHTYPE_NOT_SUPPORTED;
-						goto CLEANUP;
-					}
-					break;
-
-				case AUTHTYPE_OPENVPN_CERT:
-					// For OpenVPN; mostly same as CLIENT_AUTHTYPE_CERT, but without
-					// signature verification, because it was already performed during TLS handshake.
-					if (c->IsInProc)
-					{
-						// Certificate authentication
-						cert_size = PackGetDataSize(p, "cert");
-						if (cert_size >= 1 && cert_size <= 100000)
-						{
-							cert_buf = ZeroMalloc(cert_size);
-							if (PackGetData(p, "cert", cert_buf))
-							{
-								BUF *b = NewBuf();
-								X *x;
-								WriteBuf(b, cert_buf, cert_size);
-								x = BufToX(b, false);
-								if (x != NULL && x->is_compatible_bit)
-								{
-									Debug("Got to SamAuthUserByCert %s\n", username); // XXX
-									// Check whether the certificate is valid.
-									auth_ret = SamAuthUserByCert(hub, username, x);
-									if (auth_ret)
-									{
-										// Copy the certificate
-										c->ClientX = CloneX(x);
-									}
-								}
-								FreeX(x);
-								FreeBuf(b);
-							}
-							Free(cert_buf);
-						}
-					}
-					else
-					{
-						// OpenVPN certificate authentication cannot be used directly by external clients
 						Unlock(hub->lock);
 						ReleaseHub(hub);
 						FreePack(p);
@@ -6412,59 +6287,6 @@ PACK *PackLoginWithPlainPassword(char *hubname, char *username, void *plain_pass
 	PackAddStr(p, "username", username);
 	PackAddInt(p, "authtype", CLIENT_AUTHTYPE_PLAIN_PASSWORD);
 	PackAddStr(p, "plain_password", plain_password);
-
-	return p;
-}
-
-// Generate a packet of OpenVPN certificate login
-PACK *PackLoginWithOpenVPNCertificate(char *hubname, char *username, X *x)
-{
-	PACK *p;
-	char cn_username[128];
-	BUF *cert_buf = NULL;
-	// Validate arguments
-	if (hubname == NULL || username == NULL || x == NULL)
-	{
-		return NULL;
-	}
-
-	p = NewPack();
-	PackAddStr(p, "method", "login");
-
-	if (IsEmptyStr(username))
-	{
-		if (x->subject_name == NULL)
-		{
-			FreePack(p);
-			return NULL;
-		}
-
-		UniToStr(cn_username, sizeof(cn_username), x->subject_name->CommonName);
-
-		if (strchr(cn_username, '@') != NULL)
-
-		{
-			PackAddStr(p, "username", strtok(cn_username, "@"));
-			PackAddStr(p, "hubname", strtok(NULL, ""));
-		}
-		else
-		{
-			PackAddStr(p, "username", cn_username);
-			PackAddStr(p, "hubname", hubname);
-		}
-
-	}
-	else
-	{
-		PackAddStr(p, "username", username);
-		PackAddStr(p, "hubname", hubname);
-	}
-
-	PackAddInt(p, "authtype", AUTHTYPE_OPENVPN_CERT);
-
-	cert_buf = XToBuf(x, false);
-	PackAddBuf(p, "cert", cert_buf);
-	FreeBuf(cert_buf);
 
 	return p;
 }

@@ -1979,10 +1979,8 @@ void SiInitListenerList(SERVER *s)
 	SiLockListenerList(s);
 	{
 		{
-			// Register the 4 ports (443, 992, 1194, 8888) as the default port
+			// Register the 2 ports (443, 5555) as the default port
 			SiAddListener(s, SERVER_DEF_PORTS_1, true);
-			SiAddListener(s, SERVER_DEF_PORTS_2, true);
-			SiAddListener(s, SERVER_DEF_PORTS_3, true);
 			SiAddListener(s, SERVER_DEF_PORTS_4, true);
 		}
 	}
@@ -2372,17 +2370,6 @@ void SiLoadInitialConfiguration(SERVER *s)
 		// Disable VPN-over-ICMP and VPN-over-DNS by default
 		s->EnableVpnOverIcmp = false;
 		s->EnableVpnOverDns = false;
-
-		{
-			LIST *ports = s->PortsUDP;
-
-			AddInt(ports, SERVER_DEF_PORTS_1);
-			AddInt(ports, SERVER_DEF_PORTS_2);
-			AddInt(ports, SERVER_DEF_PORTS_3);
-			AddInt(ports, SERVER_DEF_PORTS_4);
-
-			ProtoSetUdpPorts(s->Proto, ports);
-		}
 	}
 
 	s->Eraser = NewEraser(s->Logger, 0);
@@ -2483,12 +2470,6 @@ void SiInitConfiguration(SERVER *s)
 
 	s->AutoSaveConfigSpan = SERVER_FILE_SAVE_INTERVAL_DEFAULT;
 	s->BackupConfigOnlyWhenModified = true;
-
-	if (s->Cedar->Bridge == false)
-	{
-		// Protocols handler
-		s->Proto = ProtoNew(s->Cedar);
-	}
 
 	SLog(s->Cedar, "LS_LOAD_CONFIG_1");
 	if (SiLoadConfigurationFile(s) == false)
@@ -5287,7 +5268,6 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 	s->DontBackupConfig = CfgGetBool(f, "DontBackupConfig");
 
 	CfgGetIp(f, "ListenIP", &s->ListenIP);
-	ProtoSetListenIP(s->Proto, &s->ListenIP);
 
 	if (CfgIsItem(f, "BackupConfigOnlyWhenModified"))
 	{
@@ -5315,23 +5295,6 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 	Lock(c->lock);
 	{
 		FOLDER *ff;
-		{
-			UINT i;
-			LIST *ports;
-
-			// Load and set UDP ports
-			CfgGetStr(f, "PortsUDP", tmp, sizeof(tmp));
-			NormalizeIntListStr(tmp, sizeof(tmp), tmp, true, ", ");
-
-			ports = StrToIntList(tmp, true);
-			for (i = 0; i < LIST_NUM(ports); ++i)
-			{
-				AddInt(s->PortsUDP, *(UINT *)LIST_DATA(ports, i));
-			}
-			ReleaseIntList(ports);
-
-			ProtoSetUdpPorts(s->Proto, s->PortsUDP);
-		}
 		{
 			RPC_KEEP k;
 
@@ -5389,13 +5352,6 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 			set.Port = CfgGetInt(ff, "Port");
 
 			SiSetSysLogSetting(s, &set);
-		}
-
-		// Proto
-		ff = CfgGetFolder(f, "Proto");
-		if (ff != NULL)
-		{
-			SiLoadProtoCfg(s->Proto, ff);
 		}
 
 		// Whether to disable the IPv6 listener
@@ -5579,32 +5535,6 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 			s->DisableNatTraversal = true;
 		}
 
-		if (CfgGetStr(f, "PortsUDP", tmp, sizeof(tmp)))
-		{
-			UINT i;
-			TOKEN_LIST *tokens;
-			LIST *ports = s->PortsUDP;
-
-			for (i = 0; i < LIST_NUM(ports); ++i)
-			{
-				Free(LIST_DATA(ports, i));
-			}
-			DeleteAll(ports);
-
-			NormalizeIntListStr(tmp, sizeof(tmp), tmp, true, ", ");
-
-			tokens = ParseTokenWithoutNullStr(tmp, ", ");
-			for (i = 0; i < tokens->NumTokens; ++i)
-			{
-				char *str = tokens->Token[i];
-				if (IsNum(str))
-				{
-					InsertIntDistinct(ports, ToInt(str));
-				}
-			}
-			FreeToken(tokens);
-		}
-
 		if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
 		{
 			char tmp[6 * MAX_PUBLIC_PORT_NUM + 1];
@@ -5767,12 +5697,6 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s)
 
 	CfgAddIp(f, "ListenIP", &s->ListenIP);
 
-	{
-		char str[MAX_SIZE];
-		IntListToStr(str, sizeof(str), s->PortsUDP, ", ");
-		CfgAddStr(f, "PortsUDP", str);
-	}
-
 	if (s->Logger != NULL)
 	{
 		CfgAddInt(f, "ServerLogSwitchType", s->Logger->SwitchType);
@@ -5814,13 +5738,6 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s)
 			CfgAddInt(ff, "SaveType", set.SaveType);
 			CfgAddStr(ff, "HostName", set.Hostname);
 			CfgAddInt(ff, "Port", set.Port);
-		}
-
-		// Proto
-		ff = CfgCreateFolder(f, "Proto");
-		if (ff != NULL)
-		{
-			SiWriteProtoCfg(ff, s->Proto);
 		}
 
 		// IPv6 listener disable setting
@@ -5984,109 +5901,6 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s)
 		// Disable JSON-RPC Web API
 	}
 	Unlock(c->lock);
-}
-
-void SiLoadProtoCfg(PROTO *p, FOLDER *f)
-{
-	UINT i;
-
-	if (p == NULL || f == NULL)
-	{
-		return;
-	}
-
-	for (i = 0; i < LIST_NUM(p->Containers); ++i)
-	{
-		UINT j;
-		const PROTO_CONTAINER *container = LIST_DATA(p->Containers, i);
-		LIST *options = container->Options;
-		FOLDER *ff = CfgGetFolder(f, container->Name);
-		if (ff == NULL)
-		{
-			continue;
-		}
-
-		LockList(options);
-
-		for (j = 0; j < LIST_NUM(options); ++j)
-		{
-			PROTO_OPTION *option = LIST_DATA(options, j);
-			if (CfgIsItem(ff, option->Name) == false)
-			{
-				continue;
-			}
-
-			switch (option->Type)
-			{
-			case PROTO_OPTION_BOOL:
-				option->Bool = CfgGetBool(ff, option->Name);
-				break;
-			case PROTO_OPTION_UINT32:
-				option->UInt32 = CfgGetInt(ff, option->Name);
-				break;
-			case PROTO_OPTION_STRING:
-			{
-				UINT size;
-				char buf[MAX_SIZE];
-				if (CfgGetStr(ff, option->Name, buf, sizeof(buf)) == false)
-				{
-					continue;
-				}
-
-				size = StrLen(buf) + 1;
-				option->String = ReAlloc(option->String, size);
-				StrCpy(option->String, size, buf);
-
-				break;
-			}
-			default:
-				Debug("SiLoadProtoCfg(): unhandled option type %u!\n", option->Type);
-			}
-		}
-
-		UnlockList(options);
-	}
-}
-
-void SiWriteProtoCfg(FOLDER *f, PROTO *p)
-{
-	UINT i;
-
-	if (f == NULL || p == NULL)
-	{
-		return;
-	}
-
-	for (i = 0; i < LIST_NUM(p->Containers); ++i)
-	{
-		UINT j;
-		const PROTO_CONTAINER *container = LIST_DATA(p->Containers, i);
-		LIST *options = container->Options;
-		FOLDER *ff = CfgCreateFolder(f, container->Name);
-
-		LockList(options);
-
-		for (j = 0; j < LIST_NUM(options); ++j)
-		{
-			const PROTO_OPTION *option = LIST_DATA(options, j);
-			switch (option->Type)
-			{
-				case PROTO_OPTION_STRING:
-					CfgAddStr(ff, option->Name, option->String);
-					break;
-				case PROTO_OPTION_BOOL:
-					CfgAddBool(ff, option->Name, option->Bool);
-					break;
-				case PROTO_OPTION_UINT32:
-					CfgAddInt(ff, option->Name, option->UInt32);
-					break;
-				default:
-					Debug("SiWriteProtoCfg(): unhandled option type %u!\n", option->Type);
-			}
-		}
-
-		UnlockList(options);
-	}
 }
 
 // Read the traffic information
@@ -6255,12 +6069,6 @@ void SiFreeConfiguration(SERVER *s)
 
 	s->SaveHaltEvent = NULL;
 	s->SaveThread = NULL;
-
-	// Stop the protocols handler
-	if (s->Proto != NULL)
-	{
-		ProtoDelete(s->Proto);
-	}
 
 	// Terminate the DDNS client
 	if (s->DDnsClient != NULL)
@@ -6586,8 +6394,6 @@ void SiCleanupServer(SERVER *s)
 
 	// Stop all listeners
 	SiStopAllListener(s);
-
-	ReleaseIntList(s->PortsUDP);
 
 	if (s->ServerType == SERVER_TYPE_FARM_CONTROLLER)
 	{
@@ -10441,7 +10247,6 @@ SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_serve
 
 	s->Cedar->CheckExpires = true;
 	s->ServerListenerList = NewList(CompareServerListener);
-	s->PortsUDP = NewIntList(true);
 	s->StartTime = SystemTime64();
 	s->TasksFromFarmControllerLock = NewLock();
 

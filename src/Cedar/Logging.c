@@ -10,7 +10,6 @@
 #include "Admin.h"
 #include "Client.h"
 #include "Nat.h"
-#include "Proto_PPP.h"
 #include "Remote.h"
 #include "SecureNAT.h"
 #include "Server.h"
@@ -626,39 +625,6 @@ void NLog(VH *v, char *name, ...)
 
 	WriteHubLog(v->nat->SecureNAT->Hub, buf);
 	va_end(args);
-}
-
-// Write a PPP log
-void PPPLog(PPP_SESSION *p, char *name, ...)
-{
-	wchar_t buf[MAX_SIZE * 2];
-	wchar_t buf2[MAX_SIZE * 2];
-	char ipstr[128];
-	char *s1 = "", *s2 = "";
-	va_list args;
-	// Validate arguments
-	if (p == NULL)
-	{
-		return;
-	}
-
-	if (StrCmpi(p->Postfix, "PPP") != 0)
-	{
-		s1 = p->Postfix;
-		s2 = " ";
-	}
-
-	va_start(args, name);
-	UniFormatArgs(buf2, sizeof(buf2), _UU(name), args);
-	va_end(args);
-
-	IPToStr(ipstr, sizeof(ipstr), &p->ClientIP);
-
-	UniFormat(buf, sizeof(buf), _UU("LP_PREFIX"), s1, s2, ipstr, p->ClientPort);
-
-	UniStrCat(buf, sizeof(buf), buf2);
-
-	WriteServerLog(p->Cedar, buf);
 }
 
 // Save the security log of the HUB

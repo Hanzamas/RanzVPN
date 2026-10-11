@@ -50,9 +50,6 @@ struct DYN_VALUE
 
 #define	SOCKET_BUFFER_SIZE			0x10000000
 
-#define	UDPLISTENER_CHECK_INTERVAL	1000ULL
-#define	UDPLISTENER_WAIT_INTERVAL	1234
-
 #define	UDP_MAX_MSG_SIZE_DEFAULT	65507
 
 #define	MAX_NUM_IGNORE_ERRORS		1024
@@ -450,30 +447,6 @@ struct TUBEPAIR_DATA
 	SOCK_EVENT *SockEvent1, *SockEvent2;	// SockEvent
 };
 
-// TCP raw data
-struct TCP_RAW_DATA
-{
-	IP SrcIP;							// Source IP address
-	IP DstIP;							// Destination IP address
-	UINT SrcPort;						// Source port
-	UINT DstPort;						// Destination port
-	FIFO *Data;							// Data body
-};
-
-// UDP listener socket entry
-struct UDPLISTENER_SOCK
-{
-	IP IpAddress;						// IP address
-	UINT Port;							// Port number
-	SOCK *Sock;							// Socket
-	bool HasError;						// Whether an error occurs
-	bool Mark;							// Mark
-	bool ErrorDebugDisplayed;			// Whether the error has been displayed
-	UINT64 NextMyIpAndPortPollTick;		// Time to check the self IP address and port number next
-	IP PublicIpAddress;					// Global IP address
-	UINT PublicPort;					// Global port number
-};
-
 // UDP packet
 struct UDPPACKET
 {
@@ -484,46 +457,6 @@ struct UDPPACKET
 	UINT Size;							// Data size
 	void *Data;							// Data body
 	UINT Type;							// Type
-};
-
-// UDP listener packet receipt notification procedure
-typedef void (UDPLISTENER_RECV_PROC)(UDPLISTENER *u, LIST *packet_list);
-
-// UDP listener
-struct UDPLISTENER
-{
-	bool Halt;							// Halting flag
-	SOCK_EVENT *Event;					// Event
-	THREAD *Thread;						// Thread
-	LIST *PortList;						// Port list
-	LIST *SockList;						// Socket list
-	UINT64 LastCheckTick;				// Time which the socket list was checked last
-	UDPLISTENER_RECV_PROC *RecvProc;	// Receive procedure
-	LIST *SendPacketList;				// Transmission packet list
-	UINT PacketType;					// The type to set when creating an UDPPACKET
-	void *Param;						// Parameters
-	INTERRUPT_MANAGER *Interrupts;		// Interrupt manager
-	bool HostIPAddressListChanged;		// IP address list of the host has changed
-	bool IsEspRawPortOpened;			// Whether the raw port opens
-	bool PollMyIpAndPort;				// Examine whether the global IP and the port number of its own
-	QUERYIPTHREAD *GetNatTIpThread;		// NAT-T IP address acquisition thread
-	IP ListenIP;						// Listen IP
-};
-
-#define	QUERYIPTHREAD_INTERVAL_LAST_OK	(3 * 60 * 60 * 1000)
-#define	QUERYIPTHREAD_INTERVAL_LAST_NG	(30 * 1000)
-
-// IP address acquisition thread
-struct QUERYIPTHREAD
-{
-	THREAD *Thread;						// Thread
-	EVENT *HaltEvent;					// Halting event
-	bool Halt;							// Halting flag
-	LOCK *Lock;							// Lock
-	IP Ip;								// Get the IP address
-	char Hostname[MAX_SIZE];			// Host name
-	UINT IntervalLastOk;				// Interval if last was OK
-	UINT IntervalLastNg;				// Interval if last was NG
 };
 
 // Interrupt management
@@ -1374,21 +1307,8 @@ void AddHostIPAddressToList(LIST *o, IP *ip);
 int CmpIpAddressList(void *p1, void *p2);
 UINT64 GetHostIPAddressListHash();
 
-UDPLISTENER *NewUdpListener(UDPLISTENER_RECV_PROC *recv_proc, void *param, IP *listen_ip);
-UDPLISTENER *NewUdpListenerEx(UDPLISTENER_RECV_PROC *recv_proc, void *param, IP *listen_ip, UINT packet_type);
-void UdpListenerThread(THREAD *thread, void *param);
-void StopUdpListener(UDPLISTENER *u);
-void FreeUdpListener(UDPLISTENER *u);
-void AddPortToUdpListener(UDPLISTENER *u, UINT port);
-void DeletePortFromUdpListener(UDPLISTENER *u, UINT port);
-void DeleteAllPortFromUdpListener(UDPLISTENER *u);
-void UdpListenerSendPackets(UDPLISTENER *u, LIST *packet_list);
-TCP_RAW_DATA *NewTcpRawData(IP *src_ip, UINT src_port, IP *dst_ip, UINT dst_port);
-void FreeTcpRawData(TCP_RAW_DATA *trd);
 UDPPACKET *NewUdpPacket(IP *src_ip, UINT src_port, IP *dst_ip, UINT dst_port, void *data, UINT size);
 void FreeUdpPacket(UDPPACKET *p);
-UDPLISTENER_SOCK *DetermineUdpSocketForSending(UDPLISTENER *u, UDPPACKET *p);
-bool IsUdpPortOpened(UDPLISTENER *u, IP *server_ip, UINT port);
 
 INTERRUPT_MANAGER *NewInterruptManager();
 void FreeInterruptManager(INTERRUPT_MANAGER *m);
@@ -1466,11 +1386,6 @@ void GetCurrentDDnsFqdn(char *name, UINT size);
 UINT GetCurrentDDnsFqdnHash();
 
 void DisableRDUPServerGlobally();
-
-void QueryIpThreadMain(THREAD *thread, void *param);
-QUERYIPTHREAD *NewQueryIpThread(char *hostname, UINT interval_last_ok, UINT interval_last_ng);
-bool GetQueryIpThreadResult(QUERYIPTHREAD *t, IP *ip);
-void FreeQueryIpThread(QUERYIPTHREAD *t);
 
 #ifdef	OS_WIN32
 LIST *Win32GetNicList();

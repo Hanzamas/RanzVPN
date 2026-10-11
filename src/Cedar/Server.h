@@ -9,12 +9,9 @@
 #define	SERVER_H
 
 #include "Client.h"
-#include "Proto.h"
 
 // Default ports
 #define	SERVER_DEF_PORTS_1				443
-#define	SERVER_DEF_PORTS_2				992
-#define	SERVER_DEF_PORTS_3				1194
 #define	SERVER_DEF_PORTS_4				GC_DEFAULT_PORT
 
 #define	SERVER_DEF_PORTS_INCLIENT_1		995
@@ -152,7 +149,6 @@ struct SERVER
 	UINT ServerType;					// Type of server
 	UINT UpdatedServerType;				// Type of updated server
 	LIST *ServerListenerList;			// Server listener list
-	LIST *PortsUDP;						// The ports used by Proto's UDP listener
 	UCHAR HashedPassword[SHA1_SIZE];	// Password
 	char ControllerName[MAX_HOST_NAME_LEN + 1];		// Controller name
 	UINT ControllerPort;				// Controller port
@@ -232,7 +228,6 @@ struct SERVER
 	volatile bool HaltDeadLockThread;	// Halting flag
 	EVENT *DeadLockWaitEvent;			// Waiting Event
 
-	PROTO *Proto;						// Protocols handler
 	DDNS_CLIENT *DDnsClient;			// DDNS client feature
 
 	AZURE_CLIENT *AzureClient;			// VPN Azure client
@@ -403,8 +398,6 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f);
 void SiWriteGlobalParamsCfg(FOLDER *f);
 void SiLoadGlobalParamsCfg(FOLDER *f);
 void SiLoadGlobalParamItem(UINT id, UINT value);
-void SiLoadProtoCfg(PROTO *p, FOLDER *f);
-void SiWriteProtoCfg(FOLDER *f, PROTO *p);
 void SiWriteTraffic(FOLDER *parent, char *name, TRAFFIC *t);
 void SiWriteTrafficInner(FOLDER *parent, char *name, TRAFFIC_ENTRY *e);
 void SiLoadTrafficInner(FOLDER *parent, char *name, TRAFFIC_ENTRY *e);
