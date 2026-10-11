@@ -2,7 +2,6 @@
 
 #include "Cedar.h"
 #include "Logging.h"
-#include "Proto_WireGuard.h"
 #include "Server.h"
 
 #include "Mayaqua/Internat.h"
@@ -196,9 +195,6 @@ PROTO *ProtoNew(CEDAR *cedar)
 	proto->Sessions = NewHashList(ProtoSessionHash, ProtoSessionCompare, 0, true);
 
 	AddRef(cedar->ref);
-
-	// WireGuard
-	Add(proto->Containers, ProtoContainerNew(WgsGetProtoImpl()));
 
 	proto->UdpListener = NewUdpListener(ProtoHandleDatagrams, proto, &cedar->Server->ListenIP);
 

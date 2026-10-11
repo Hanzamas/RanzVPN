@@ -30,38 +30,6 @@ set_target_properties(cedar
 
 target_link_libraries(cedar PUBLIC mayaqua)
 
-cmake_host_system_information(RESULT HAS_SSE2 QUERY HAS_SSE2)
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|arm64v8|ARM64")
-  message(STATUS "Target architecture is ARM64")
-  set(BLAKE2_SRC_PATH "${TOP_DIRECTORY}/3rdparty/BLAKE2/neon")
-  set(BLAKE2_SRC "${BLAKE2_SRC_PATH}/blake2s-neon.c")
-else()
-  set(BLAKE2_SRC_PATH $<IF:$<BOOL:${HAS_SSE2}>,${TOP_DIRECTORY}/3rdparty/BLAKE2/sse,${TOP_DIRECTORY}/3rdparty/BLAKE2/ref>)
-  set(BLAKE2_SRC $<IF:$<BOOL:${HAS_SSE2}>,${BLAKE2_SRC_PATH}/blake2s.c,${BLAKE2_SRC_PATH}/blake2s-ref.c>)
-  if(HAS_SSE2)
-    # If SSE2 is enabled, a build failure occurs with MSVC because it doesn't define "__SSE2__".
-    # The fix consists in defining "HAVE_SSE2" manually, effectively overriding the check.
-    set_property(SOURCE ${BLAKE2_SRC} PROPERTY COMPILE_DEFINITIONS "HAVE_SSE2")
-  endif()
-endif()
-target_include_directories(cedar PUBLIC ${BLAKE2_SRC_PATH})
-target_sources(cedar PRIVATE ${BLAKE2_SRC})
-
-if(VCPKG_TARGET_TRIPLET)
-  find_package(unofficial-sodium CONFIG REQUIRED)
-  target_link_libraries(cedar PUBLIC unofficial-sodium::sodium)
-else()
-  find_package(PkgConfig REQUIRED)
-  pkg_search_module(SODIUM libsodium REQUIRED)
-  target_include_directories(cedar PUBLIC ${SODIUM_INCLUDE_DIRS})
-  if(NOT ("$ENV{TRAVIS_CPU_ARCH}" STREQUAL ppc64le))
-    target_link_libraries(cedar PUBLIC $<IF:$<BOOL:SODIUM_LINK_LIBRARIES>,${SODIUM_LINK_LIBRARIES},${SODIUM_LIBRARIES}>)
-  else()
-    # TODO: investigate why on ppc64le the use of SODIUM_LINK_LIBRARIES causes undefined references to libsodium functions.
-    target_link_libraries(cedar PUBLIC ${SODIUM_LIBRARIES})
-  endif()
-endif()
-
 if(WIN32)
   set_target_properties(cedar
     PROPERTIES

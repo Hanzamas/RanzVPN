@@ -32,8 +32,6 @@
 #include "Mayaqua/Tick64.h"
 #include "Mayaqua/Win32.h"
 
-#include <sodium.h>
-
 static UINT init_cedar_counter = 0;
 static REF *cedar_log_ref = NULL;
 static LOG *cedar_log;
@@ -1188,13 +1186,6 @@ void CleanupCedar(CEDAR *c)
 
 	FreeCedarLayer3(c);
 
-	for (i = 0; i < LIST_NUM(c->WgkList); ++i)
-	{
-		WGK *wgk = LIST_DATA(c->WgkList, i);
-		Free(wgk);
-	}
-	ReleaseList(c->WgkList);
-
 	for (i = 0;i < LIST_NUM(c->CaList);i++)
 	{
 		X *x = LIST_DATA(c->CaList, i);
@@ -1612,7 +1603,6 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 	c->Traffic = NewTraffic();
 	c->TrafficLock = NewLock();
 	c->CaList = NewList(CompareCert);
-	c->WgkList = NewList(CompareWgk);
 
 	c->TrafficDiffList = NewList(NULL);
 
@@ -1721,12 +1711,6 @@ void InitCedar()
 {
 	if ((init_cedar_counter++) > 0)
 	{
-		return;
-	}
-
-	if (sodium_init() == -1)
-	{
-		Debug("InitCedar(): sodium_init() failed!\n");
 		return;
 	}
 

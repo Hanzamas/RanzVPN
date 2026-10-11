@@ -1362,42 +1362,7 @@ bool ServerAccept(CONNECTION *c)
 
 		// Get authentication method and initiate login process
 		authtype = GetAuthTypeFromPack(p);
-		if (authtype == AUTHTYPE_WIREGUARD_KEY)
-		{
-			WGK *wgk, tmp;
-			bool ok = false;
-
-			if (PackGetStr(p, "key", tmp.Key, sizeof(tmp.Key)) == false)
-			{
-				FreePack(p);
-				c->Err = ERR_PROTOCOL_ERROR;
-				error_detail = "GetWireGuardKeyFromPack";
-				goto CLEANUP;
-			}
-
-			LockList(c->Cedar->WgkList);
-			{
-				wgk = Search(c->Cedar->WgkList, &tmp);
-				if (wgk != NULL)
-				{
-					ok = true;
-					StrCpy(hubname, sizeof(hubname), wgk->Hub);
-					StrCpy(username, sizeof(username), wgk->User);
-					StrCpy(node.HubName, sizeof(node.HubName), hubname);
-				}
-			}
-			UnlockList(c->Cedar->WgkList);
-
-			if (ok == false)
-			{
-				FreePack(p);
-				c->Err = ERR_AUTH_FAILED;
-				SLog(c->Cedar, "LS_WG_KEY_NOT_FOUND", c->Name, hubname);
-				error_detail = "ERR_AUTH_FAILED";
-				goto CLEANUP;
-			}
-		}
-		else if (GetHubnameAndUsernameFromPack(p, username, sizeof(username), hubname, sizeof(hubname)) == false)
+		if (GetHubnameAndUsernameFromPack(p, username, sizeof(username), hubname, sizeof(hubname)) == false)
 		{
 			FreePack(p);
 			c->Err = ERR_PROTOCOL_ERROR;
@@ -1700,9 +1665,6 @@ bool ServerAccept(CONNECTION *c)
 				case AUTHTYPE_EXTERNAL:
 					authtype_str = _UU("LH_AUTH_EXTERNAL");
 					break;
-				case AUTHTYPE_WIREGUARD_KEY:
-					authtype_str = _UU("LH_AUTH_WIREGUARD_KEY");
-					break;
 				case AUTHTYPE_OPENVPN_CERT:
 					authtype_str = _UU("LH_AUTH_OPENVPN_CERT");
 					break;
@@ -1990,24 +1952,6 @@ bool ServerAccept(CONNECTION *c)
 					{
 						// Certificate authentication is not supported in the open source version
 						HLog(hub, "LH_AUTH_CERT_NOT_SUPPORT_ON_OPEN_SOURCE", c->Name, username);
-						Unlock(hub->lock);
-						ReleaseHub(hub);
-						FreePack(p);
-						c->Err = ERR_AUTHTYPE_NOT_SUPPORTED;
-						goto CLEANUP;
-					}
-					break;
-
-				case AUTHTYPE_WIREGUARD_KEY:
-					// We already retrieved the hubname and username associated with the key.
-					// Now we only have to verify that the user effectively exists.
-					if (c->IsInProc)
-					{
-						auth_ret = SamIsUser(hub, username);
-					}
-					else
-					{
-						// WireGuard public key authentication cannot be used directly by external clients.
 						Unlock(hub->lock);
 						ReleaseHub(hub);
 						FreePack(p);
@@ -6539,24 +6483,6 @@ PACK *PackLoginWithPlainPassword(char *hubname, char *username, void *plain_pass
 	PackAddStr(p, "username", username);
 	PackAddInt(p, "authtype", CLIENT_AUTHTYPE_PLAIN_PASSWORD);
 	PackAddStr(p, "plain_password", plain_password);
-
-	return p;
-}
-
-// Generate a packet of WireGuard key login
-PACK *PackLoginWithWireGuardKey(char *key)
-{
-	PACK *p;
-	// Validate arguments
-	if (key == NULL)
-	{
-		return NULL;
-	}
-
-	p = NewPack();
-	PackAddStr(p, "method", "login");
-	PackAddInt(p, "authtype", AUTHTYPE_WIREGUARD_KEY);
-	PackAddStr(p, "key", key);
 
 	return p;
 }

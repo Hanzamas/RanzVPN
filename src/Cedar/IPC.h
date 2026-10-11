@@ -10,7 +10,6 @@
 
 #include "Cedar.h"
 #include "MsChapV2.h"
-#include "Proto_WireGuard.h"
 
 #include "Mayaqua/TcpIp.h"
 
@@ -80,7 +79,6 @@ struct IPC_PARAM
 	char HubName[MAX_HUBNAME_LEN + 1];
 	char UserName[MAX_USERNAME_LEN + 1];
 	char Password[MAX_PASSWORD_LEN + 1];
-	char WgKey[WG_KEY_BASE64_SIZE];
 	IP ClientIp;
 	UINT ClientPort;
 	IP ServerIp;
@@ -168,7 +166,7 @@ struct IPC_IPV6_ROUTER_ADVERTISEMENT
 	UCHAR RouterLinkLayerAddress[6];
 };
 
-IPC *NewIPC(CEDAR *cedar, char *client_name, char *postfix, char *hubname, char *username, char *password, char *wg_key,
+IPC *NewIPC(CEDAR *cedar, char *client_name, char *postfix, char *hubname, char *username, char *password,
             UINT *error_code, IP *client_ip, UINT client_port, IP *server_ip, UINT server_port,
             char *client_hostname, char *crypt_name,
             bool bridge_mode, UINT mss, EAP_CLIENT *eap_client, X *client_certificate, bool external_auth,
