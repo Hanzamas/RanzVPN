@@ -18,6 +18,7 @@ Architecture decision records live in `docs/adr/`; the reasoning behind them is 
 - [ADR-0012](../adr/0012-remove-vpnclient-from-slim-fork-keep-cascade.md) — Remove vpnclient from the slim fork, keep cascade (Accepted, ticket #23).
 - [ADR-0013](../adr/0013-selow-stays-in-slim-fork-not-in-l3-core.md) — SeLow stays: Local Bridge in the fork, L2 bridging in the new product (Accepted).
 - [ADR-0014](../adr/0014-dual-mode-networks-l2-first-class.md) — Dual-mode virtual networks, L2 switched first-class and L3 routed, one binary with both backends (Accepted).
+- [ADR-0015](../adr/0015-nat-traversal-p2p-and-relay.md) — NAT traversal, P2P and relay: libjuice ICE, libplum port mapping, Burrow's own relay role, relay-first with background upgrade (Accepted).
 
 ## Discussion log
 
