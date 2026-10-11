@@ -930,44 +930,6 @@ SOCK *GetReverseListeningSock(CEDAR *c)
 	return s;
 }
 
-// Get in-process listener socket in Cedar
-SOCK *GetInProcListeningSock(CEDAR *c)
-{
-	SOCK *s = NULL;
-	// Validate arguments
-	if (c == NULL)
-	{
-		return NULL;
-	}
-
-	LockList(c->ListenerList);
-	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(c->ListenerList);i++)
-		{
-			LISTENER *r = LIST_DATA(c->ListenerList, i);
-
-			if (r->Protocol == LISTENER_INPROC)
-			{
-				Lock(r->lock);
-				{
-					s = r->Sock;
-
-					if (s != NULL)
-					{
-						AddRef(s->ref);
-					}
-				}
-				Unlock(r->lock);
-				break;
-			}
-		}
-	}
-	UnlockList(c->ListenerList);
-
-	return s;
-}
-
 // Add a new listener to Cedar
 void AddListener(CEDAR *c, LISTENER *r)
 {

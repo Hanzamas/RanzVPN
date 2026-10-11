@@ -191,7 +191,6 @@ struct CONNECTION
 	struct SESSION *Session;		// Session
 	UINT Protocol;					// Protocol
 	SOCK *FirstSock;				// Socket for negotiation
-	SOCK *TubeSock;					// Socket for in-process communication
 	TCP *Tcp;						// TCP communication data structure
 	UDP *Udp;						// UDP communication data structure
 	bool ServerMode;				// Server mode
@@ -231,9 +230,6 @@ struct CONNECTION
 	char ClientHostname[MAX_HOST_NAME_LEN + 1];	// Client host name
 	UINT Type;						// Type
 	void *hWndForUI;				// Parent window
-	bool IsInProc;					// In-process
-	char InProcPrefix[64];			// Prefix
-	UINT InProcLayer;				// InProc layer
 	UINT AdditionalConnectionFailedCounter;		// Additional connection failure counter
 	UINT64 LastCounterResetTick;	// Time the counter was reset finally
 	bool WasDatProxy;				// DAT proxy processed

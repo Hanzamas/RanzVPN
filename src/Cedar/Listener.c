@@ -223,7 +223,7 @@ void TCPAccepted(LISTENER *r, SOCK *s)
 	num_clients_from_this_ip = GetNumIpClient(&s->RemoteIP);
 
 #ifdef	USE_DOS_ATTACK_DETECTION
-	if (disable_dos == false && r->DisableDos == false && r->Protocol != LISTENER_INPROC)
+	if (disable_dos == false && r->DisableDos == false)
 	{
 		UINT max_uec, now_uec;
 		// DOS attack check
@@ -600,10 +600,6 @@ void ListenerTCPMainLoop(LISTENER *r)
 					}
 				}
 			}
-			else if (r->Protocol == LISTENER_INPROC)
-			{
-				s = ListenInProc();
-			}
 			else if (r->Protocol == LISTENER_RUDP)
 			{
 				s = ListenRUDPEx(VPN_RUDP_SVC_NAME, NULL, ListenerRUDPRpcRecvProc, NULL, 0, false, false, r->NatTGlobalUdpPort, r->RandPortId, &r->Cedar->Server->ListenIP);
@@ -758,7 +754,6 @@ void ListenerThread(THREAD *thread, void *param)
 	switch (r->Protocol)
 	{
 	case LISTENER_TCP:
-	case LISTENER_INPROC:
 	case LISTENER_RUDP:
 	case LISTENER_DNS:
 	case LISTENER_ICMP:
@@ -994,7 +989,7 @@ LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc,
 		return NULL;
 	}
 	// Check the protocol number
-	if (proto != LISTENER_TCP && proto != LISTENER_INPROC &&
+	if (proto != LISTENER_TCP &&
 		proto != LISTENER_RUDP && proto != LISTENER_ICMP && proto != LISTENER_DNS &&
 		proto != LISTENER_REVERSE)
 	{

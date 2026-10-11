@@ -142,7 +142,6 @@ struct SOCK_EVENT
 // Type of socket
 #define	SOCK_TCP				1
 #define	SOCK_UDP				2
-#define	SOCK_INPROC				3
 #define	SOCK_RUDP_LISTEN		5
 #define	SOCK_REVERSE_LISTEN		6
 
@@ -206,11 +205,6 @@ struct SOCK
 	bool IsRawSocket;			// Whether it is a raw socket
 	const char *SslVersion;		// SSL version
 	UINT RawSocketIPProtocol;	// IP protocol number if it's a raw socket
-	TUBE *SendTube;				// Tube for transmission
-	TUBE *RecvTube;				// Tube for reception
-	QUEUE *InProcAcceptQueue;	// Accept queue of the in-process socket
-	EVENT *InProcAcceptEvent;	// Accept event of the in-process socket
-	FIFO *InProcRecvFifo;		// Receive FIFO of the in-process socket
 	UINT UdpMaxMsgSize;			// Maximum transmitting and receiving size at a time on UDP
 	int CurrentTos;				// Current ToS value
 	bool IsTtlSupported;		// Whether the TTL value is supported
@@ -260,8 +254,6 @@ struct SOCK
 #define	SOCK_UNDERLAY_NAT_T			"VPN over UDP with NAT-T (IPv4)"
 #define	SOCK_UNDERLAY_DNS			"VPN over DNS (IPv4)"
 #define	SOCK_UNDERLAY_ICMP			"VPN over ICMP (IPv4)"
-#define	SOCK_UNDERLAY_INPROC		"In-Process Pipe"
-#define	SOCK_UNDERLAY_INPROC_EX		"Legacy VPN - %s"
 #define	SOCK_UNDERLAY_AZURE			"TCP/IP via VPN Azure (IPv4)"
 
 // Constant of the return value
@@ -405,12 +397,6 @@ struct ROUTE_CHANGE
 	ROUTE_CHANGE_DATA *Data;
 };
 
-// Tube flush list
-struct TUBE_FLUSH_LIST
-{
-	LIST *List;							// List
-};
-
 // Tube
 struct TUBE
 {
@@ -422,7 +408,6 @@ struct TUBE
 	UINT SizeOfHeader;					// Header size
 	TUBEPAIR_DATA *TubePairData;		// Tube pair data
 	UINT IndexInTubePair;				// Number in the tube pair
-	bool IsInFlushList;					// Whether it is registered in the Tube Flush List
 	void *Param1, *Param2, *Param3;
 	UINT IntParam1, IntParam2, IntParam3;
 	UINT64 DataTimeout;
@@ -1293,11 +1278,6 @@ bool IsTubeConnected(TUBE *t);
 void SetTubeSockEvent(TUBE *t, SOCK_EVENT *e);
 SOCK_EVENT *GetTubeSockEvent(TUBE *t);
 
-TUBE_FLUSH_LIST *NewTubeFlushList();
-void FreeTubeFlushList(TUBE_FLUSH_LIST *f);
-void AddTubeToFlushList(TUBE_FLUSH_LIST *f, TUBE *t);
-void FlushTubeFlushList(TUBE_FLUSH_LIST *f);
-
 LIST *GetHostIPAddressListInternal();
 LIST *GetHostIPAddressList();
 LIST *CloneIPAddressList(LIST *o);
@@ -1315,15 +1295,6 @@ void FreeInterruptManager(INTERRUPT_MANAGER *m);
 void AddInterrupt(INTERRUPT_MANAGER *m, UINT64 tick);
 UINT GetNextIntervalForInterrupt(INTERRUPT_MANAGER *m);
 
-void NewSocketPair(SOCK **client, SOCK **server, IP *client_ip, UINT client_port, IP *server_ip, UINT server_port);
-SOCK *NewInProcSocket(TUBE *tube_send, TUBE *tube_recv);
-SOCK *ListenInProc();
-SOCK *AcceptInProc(SOCK *s);
-SOCK *ConnectInProc(SOCK *listen_sock, IP *client_ip, UINT client_port, IP *server_ip, UINT server_port);
-UINT SendInProc(SOCK *sock, void *data, UINT size);
-UINT RecvInProc(SOCK *sock, void *data, UINT size);
-void WaitForTubes(TUBE **tubes, UINT num, UINT timeout);
-
 SOCK *ListenReverse();
 SOCK *AcceptReverse(SOCK *s);
 void InjectNewReverseSocketToAccept(SOCK *listen_sock, SOCK *s, IP *client_ip, UINT client_port);
@@ -1333,12 +1304,6 @@ SOCK *ListenAnyPortEx2(bool local_only, bool disable_ca);
 
 ICMP_RESULT *IcmpApiEchoSend(IP *dest_ip, UCHAR ttl, UCHAR *data, UINT size, UINT timeout);
 void IcmpApiFreeResult(ICMP_RESULT *ret);
-
-#ifdef	OS_WIN32
-void Win32WaitForTubes(TUBE **tubes, UINT num, UINT timeout);
-#else	// OS_WIN32
-void UnixWaitForTubes(TUBE **tubes, UINT num, UINT timeout);
-#endif	// OS_WIN32
 
 #define PREVERIFY_ERR_MESSAGE_SIZE 100
 // Info on client certificate collected during TLS handshake

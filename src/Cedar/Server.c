@@ -9826,7 +9826,6 @@ SERVER *SiNewServer(bool bridge)
 SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_server)
 {
 	SERVER *s;
-	LISTENER *inproc;
 	LISTENER *azure;
 	LISTENER *rudp;
 
@@ -9943,10 +9942,6 @@ SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_serve
 
 		s->FarmControllerInited = true;
 	}
-
-	// Start a in-processlistener 
-	inproc = NewListener(s->Cedar, LISTENER_INPROC, 0);
-	ReleaseListener(inproc);
 
 	// Start a listener for Azure
 	if (s->AzureClient != NULL)

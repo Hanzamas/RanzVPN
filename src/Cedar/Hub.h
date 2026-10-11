@@ -408,8 +408,6 @@ bool IsHub(CEDAR *cedar, char *name);
 void StopHub(HUB *h);
 void AddSession(HUB *h, SESSION *s);
 void DelSession(HUB *h, SESSION *s);
-SESSION *SearchSessionByUniqueId(HUB *h, UINT id);
-UINT GetNewUniqueId(HUB *h);
 void StopAllSession(HUB *h);
 bool HubPaInit(SESSION *s);
 void HubPaFree(SESSION *s);

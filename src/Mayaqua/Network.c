@@ -8193,27 +8193,9 @@ void UnixSelect(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2)
 			if (s != NULL)
 			{
 				UnixInitAsyncSocket(s);
-				if (s->Type == SOCK_INPROC)
+				if (s->NoNeedToRead == false)
 				{
-					TUBE *t = s->RecvTube;
-					if (t != NULL)
-					{
-						reads[num_read++] = t->SockEvent->pipe_read;
-
-						sock_events[num_sock_events++] = t->SockEvent;
-
-						if (t->SockEvent->current_pipe_data != 0)
-						{
-							any_of_tubes_are_readable = true;
-						}
-					}
-				}
-				else
-				{
-					if (s->NoNeedToRead == false)
-					{
-						reads[num_read++] = s->socket;
-					}
+					reads[num_read++] = s->socket;
 				}
 
 				if (s->BulkRecvTube != NULL)
@@ -8388,10 +8370,7 @@ void UnixJoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event)
 	UnlockList(event->SockList);
 
 	// Make the socket asynchronous mode
-	if (sock->Type != SOCK_INPROC)
-	{
-		UnixSetSocketNonBlockingMode(sock->socket, true);
-	}
+	UnixSetSocketNonBlockingMode(sock->socket, true);
 
 	// Increase the reference count of the SOCK_EVENT
 	AddRef(event->ref);
@@ -8749,17 +8728,14 @@ void UnixInitAsyncSocket(SOCK *sock)
 		// The socket has been set in asynchronous mode already
 		return;
 	}
-	if (sock->ListenMode != false || ((sock->Type == SOCK_TCP || sock->Type == SOCK_INPROC) && sock->Connected == false))
+	if (sock->ListenMode != false || (sock->Type == SOCK_TCP && sock->Connected == false))
 	{
 		return;
 	}
 
 	sock->AsyncMode = true;
 
-	if (sock->Type != SOCK_INPROC)
-	{
-		UnixSetSocketNonBlockingMode(sock->socket, true);
-	}
+	UnixSetSocketNonBlockingMode(sock->socket, true);
 
 #if OPENSSL_VERSION_NUMBER < 0x10100000L
 	if (sock->ssl != NULL && sock->ssl->s3 != NULL)
@@ -9775,34 +9751,18 @@ void Win32InitAsyncSocket(SOCK *sock)
 		// This socket is already in asynchronous mode
 		return;
 	}
-	if (sock->ListenMode || ((sock->Type == SOCK_TCP || sock->Type == SOCK_INPROC) && sock->Connected == false))
+	if (sock->ListenMode || (sock->Type == SOCK_TCP && sock->Connected == false))
 	{
 		return;
 	}
 
 	sock->AsyncMode = true;
 
-	if (sock->Type == SOCK_INPROC)
-	{
-		// Fetch the event of the TUBE
-		TUBE *t = sock->RecvTube;
+	// Creating an Event
+	sock->hEvent = (void *)CreateEvent(NULL, FALSE, FALSE, NULL);
 
-		if (t != NULL)
-		{
-			if (t->SockEvent != NULL)
-			{
-				sock->hEvent = t->SockEvent->hEvent;
-			}
-		}
-	}
-	else
-	{
-		// Creating an Event
-		sock->hEvent = (void *)CreateEvent(NULL, FALSE, FALSE, NULL);
-
-		// Association
-		WSAEventSelect(sock->socket, sock->hEvent, FD_READ | FD_WRITE | FD_CLOSE);
-	}
+	// Association
+	WSAEventSelect(sock->socket, sock->hEvent, FD_READ | FD_WRITE | FD_CLOSE);
 }
 
 // Release the asynchronous socket
@@ -9817,10 +9777,7 @@ void Win32FreeAsyncSocket(SOCK *sock)
 	// Asynchronous socket
 	if (sock->hEvent != NULL)
 	{
-		if (sock->Type != SOCK_INPROC)
-		{
-			CloseHandle((HANDLE)sock->hEvent);
-		}
+		CloseHandle((HANDLE)sock->hEvent);
 	}
 	sock->hEvent = NULL;
 	sock->AsyncMode = false;
@@ -10173,13 +10130,6 @@ void JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event)
 	// Validate arguments
 	if (sock == NULL || event == NULL)
 	{
-		return;
-	}
-
-	if (sock->Type == SOCK_INPROC)
-	{
-		// Set the SockEvent on the receiver TUBE for in-process type socket
-		SetTubeSockEvent(sock->RecvTube, event);
 		return;
 	}
 
@@ -11706,11 +11656,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 	{
 		ssl_err = &dummy_err;
 	}
-	if (sock->Connected && sock->Type == SOCK_INPROC && sock->ListenMode == false)
-	{
-		sock->SecureMode = true;
-		return true;
-	}
 	if (sock->Connected == false || sock->socket == INVALID_SOCKET ||
 	        sock->ListenMode != false)
 	{
@@ -12550,10 +12495,6 @@ UINT Peek(SOCK *sock, void *data, UINT size)
 	{
 		return 0;
 	}
-	if (sock->Type == SOCK_INPROC)
-	{
-		return 0;
-	}
 	if (sock->Type != SOCK_TCP || sock->Connected == false || sock->ListenMode != false ||
 	        sock->socket == INVALID_SOCKET)
 	{
@@ -12597,10 +12538,6 @@ UINT Recv(SOCK *sock, void *data, UINT size, bool secure)
 
 	sock->NoNeedToRead = false;
 
-	if (sock->Type == SOCK_INPROC)
-	{
-		return RecvInProc(sock, data, size);
-	}
 	if (sock->Type != SOCK_TCP || sock->Connected == false || sock->ListenMode != false ||
 	        sock->socket == INVALID_SOCKET)
 	{
@@ -12699,10 +12636,6 @@ UINT Send(SOCK *sock, void *data, UINT size, bool secure)
 	{
 		return 0;
 	}
-	if (sock->Type == SOCK_INPROC)
-	{
-		return SendInProc(sock, data, size);
-	}
 	size = MIN(size, MAX_SEND_BUF_MEM_SIZE);
 	if (sock->Type != SOCK_TCP || sock->Connected == false || sock->ListenMode != false ||
 	        sock->socket == INVALID_SOCKET)
@@ -12776,7 +12709,7 @@ UINT GetTimeout(SOCK *sock)
 	{
 		return INFINITE;
 	}
-	if (sock->Type != SOCK_TCP && sock->Type != SOCK_INPROC)
+	if (sock->Type != SOCK_TCP)
 	{
 		return INFINITE;
 	}
@@ -12806,27 +12739,24 @@ void SetTimeout(SOCK *sock, UINT timeout)
 
 //	Debug("SetTimeout(%u)\n",timeout);
 
-	if (sock->Type != SOCK_INPROC)
-	{
 #ifdef OS_WIN32
-		setsockopt(sock->socket, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(UINT));
-		setsockopt(sock->socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(UINT));
+	setsockopt(sock->socket, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(UINT));
+	setsockopt(sock->socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(UINT));
 #endif
 
 #ifdef OS_UNIX
 #ifndef UNIX_SOLARIS
-		{
-			struct timeval tv_timeout;
+	{
+		struct timeval tv_timeout;
 
-			tv_timeout.tv_sec = timeout / 1000; // miliseconds to seconds
-			tv_timeout.tv_usec = (timeout % 1000) * 1000; // miliseconds to microseconds
+		tv_timeout.tv_sec = timeout / 1000; // miliseconds to seconds
+		tv_timeout.tv_usec = (timeout % 1000) * 1000; // miliseconds to microseconds
 
-			(void)setsockopt(sock->socket, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv_timeout, sizeof(tv_timeout));
-			(void)setsockopt(sock->socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv_timeout, sizeof(tv_timeout));
-		}
+		(void)setsockopt(sock->socket, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv_timeout, sizeof(tv_timeout));
+		(void)setsockopt(sock->socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv_timeout, sizeof(tv_timeout));
+	}
 #endif // UNIX_SOLARIS
 #endif // OS_UNIX
-	}
 }
 
 // Disable GetHostName call by accepting new TCP connection
@@ -12884,10 +12814,6 @@ SOCK *Accept(SOCK *sock)
 	if (sock == NULL)
 	{
 		return NULL;
-	}
-	if (sock->Type == SOCK_INPROC)
-	{
-		return AcceptInProc(sock);
 	}
 	if (sock->Type == SOCK_REVERSE_LISTEN)
 	{
@@ -13520,45 +13446,6 @@ void Disconnect(SOCK *sock)
 			sock->SecureMode = false;
 		}
 		Unlock(sock->lock);
-	}
-	else if (sock->Type == SOCK_INPROC)
-	{
-		// In-process socket
-		if (sock->ListenMode)
-		{
-			// Stop the Accept process
-			sock->CancelAccept = true;
-
-			Set(sock->InProcAcceptEvent);
-
-			LockQueue(sock->InProcAcceptQueue);
-			{
-				while (true)
-				{
-					SOCK *ss = GetNext(sock->InProcAcceptQueue);
-					if (ss == NULL)
-					{
-						break;
-					}
-
-					Disconnect(ss);
-					ReleaseSock(ss);
-				}
-			}
-			UnlockQueue(sock->InProcAcceptQueue);
-		}
-		else
-		{
-			// Disconnect the Tube
-			TubeDisconnect(sock->SendTube);
-			TubeDisconnect(sock->RecvTube);
-
-			sock->socket = INVALID_SOCKET;
-			sock->AsyncMode = false;
-			sock->Connected = false;
-			sock->ListenMode = false;
-			sock->SecureMode = false;
-		}
 	}
 	else if (sock->Type == SOCK_RUDP_LISTEN)
 	{
@@ -15419,28 +15306,6 @@ void CleanupSock(SOCK *s)
 //	{Debug("CleanupSock: Disconnect() Called: %s %u\n", __FILE__, __LINE__);Disconnect(s);}
 	Disconnect(s);
 
-	if (s->InProcAcceptQueue != NULL)
-	{
-		while (true)
-		{
-			SOCK *ss = GetNext(s->InProcAcceptQueue);
-			if (ss == NULL)
-			{
-				break;
-			}
-
-			Disconnect(ss);
-			ReleaseSock(ss);
-		}
-
-		ReleaseQueue(s->InProcAcceptQueue);
-	}
-
-	if (s->InProcAcceptEvent != NULL)
-	{
-		ReleaseEvent(s->InProcAcceptEvent);
-	}
-
 	if (s->ReverseAcceptQueue != NULL)
 	{
 		while (true)
@@ -15463,18 +15328,6 @@ void CleanupSock(SOCK *s)
 		ReleaseEvent(s->ReverseAcceptEvent);
 	}
 
-	if (s->SendTube != NULL)
-	{
-		TubeDisconnect(s->SendTube);
-		ReleaseTube(s->SendTube);
-	}
-
-	if (s->RecvTube != NULL)
-	{
-		TubeDisconnect(s->RecvTube);
-		ReleaseTube(s->RecvTube);
-	}
-
 	if (s->BulkRecvTube != NULL)
 	{
 		TubeDisconnect(s->BulkRecvTube);
@@ -15495,11 +15348,6 @@ void CleanupSock(SOCK *s)
 	if (s->BulkRecvKey != NULL)
 	{
 		ReleaseSharedBuffer(s->BulkRecvKey);
-	}
-
-	if (s->InProcRecvFifo != NULL)
-	{
-		ReleaseFifo(s->InProcRecvFifo);
 	}
 
 	if (s->R_UDP_Stack != NULL)
@@ -18429,495 +18277,6 @@ SOCK *AcceptReverse(SOCK *s)
 
 		Wait(s->ReverseAcceptEvent, INFINITE);
 	}
-}
-
-// Start listening on the in-process socket
-SOCK *ListenInProc()
-{
-	SOCK *s = NewSock();
-
-	s->Type = SOCK_INPROC;
-	s->ListenMode = true;
-	s->InProcAcceptQueue = NewQueue();
-	s->InProcAcceptEvent = NewEvent();
-	s->Connected = true;
-
-	return s;
-}
-
-// Accept at the in-process socket
-SOCK *AcceptInProc(SOCK *s)
-{
-	// Validate arguments
-	if (s == NULL || s->Type != SOCK_INPROC || s->ListenMode == false)
-	{
-		return NULL;
-	}
-
-	while (true)
-	{
-		SOCK *ret;
-		if (s->Disconnecting || s->CancelAccept)
-		{
-			return NULL;
-		}
-
-		LockQueue(s->InProcAcceptQueue);
-		{
-			ret = GetNext(s->InProcAcceptQueue);
-		}
-		UnlockQueue(s->InProcAcceptQueue);
-
-		if (ret != NULL)
-		{
-			StrCpy(ret->UnderlayProtocol, sizeof(ret->UnderlayProtocol), SOCK_UNDERLAY_INPROC);
-
-			AddProtocolDetailsStr(ret->ProtocolDetails, sizeof(ret->ProtocolDetails), "InProc");
-
-			return ret;
-		}
-
-		Wait(s->InProcAcceptEvent, INFINITE);
-	}
-}
-
-// Connect by the in-process socket
-SOCK *ConnectInProc(SOCK *listen_sock, IP *client_ip, UINT client_port, IP *server_ip, UINT server_port)
-{
-	SOCK *ss, *sc;
-	bool ok = false;
-	// Validate arguments
-	if (listen_sock == NULL || listen_sock->Type != SOCK_INPROC || listen_sock->ListenMode == false)
-	{
-		return NULL;
-	}
-
-	NewSocketPair(&sc, &ss, client_ip, client_port, server_ip, server_port);
-
-	LockQueue(listen_sock->InProcAcceptQueue);
-	{
-		if (listen_sock->CancelAccept == false && listen_sock->Disconnecting == false)
-		{
-			InsertQueue(listen_sock->InProcAcceptQueue, ss);
-
-			ok = true;
-		}
-	}
-	UnlockQueue(listen_sock->InProcAcceptQueue);
-
-	if (ok == false)
-	{
-		ReleaseSock(ss);
-		ReleaseSock(sc);
-		return NULL;
-	}
-
-	Set(listen_sock->InProcAcceptEvent);
-
-	return sc;
-}
-
-// Creating a new socket pair
-void NewSocketPair(SOCK **client, SOCK **server, IP *client_ip, UINT client_port, IP *server_ip, UINT server_port)
-{
-	IP iptmp;
-	TUBE *t1, *t2;
-	SOCK *sc, *ss;
-	SOCK_EVENT *e1, *e2;
-	// Validate arguments
-	if (client == NULL || server == NULL)
-	{
-		return;
-	}
-
-	SetIP(&iptmp, 127, 0, 0, 1);
-	if (client_ip == NULL)
-	{
-		client_ip = &iptmp;
-	}
-	if (server_ip == NULL)
-	{
-		server_ip = &iptmp;
-	}
-
-	// Creating a tube
-	NewTubePair(&t1, &t2, 0);	// t1: C -> S,  t2: S -> C
-
-	// Creating a socket event
-	e1 = NewSockEvent();
-	e2 = NewSockEvent();
-
-	SetTubeSockEvent(t1, e1);
-	SetTubeSockEvent(t2, e2);
-
-	sc = NewInProcSocket(t1, t2);
-	ss = NewInProcSocket(t2, t1);
-
-	Copy(&sc->LocalIP, client_ip, sizeof(IP));
-	sc->LocalPort = client_port;
-	Copy(&sc->RemoteIP, server_ip, sizeof(IP));
-	sc->RemotePort = server_port;
-
-	Copy(&ss->LocalIP, server_ip, sizeof(IP));
-	ss->LocalPort = server_port;
-	Copy(&ss->RemoteIP, client_ip, sizeof(IP));
-	ss->RemotePort = client_port;
-
-	sc->Connected = true;
-	sc->ServerMode = false;
-
-	ss->Connected = true;
-	ss->ServerMode = true;
-
-	SetTimeout(sc, INFINITE);
-	SetTimeout(ss, INFINITE);
-
-	QuerySocketInformation(sc);
-	QuerySocketInformation(ss);
-
-	ReleaseSockEvent(e1);
-	ReleaseSockEvent(e2);
-
-	ReleaseTube(t1);
-	ReleaseTube(t2);
-
-	*client = sc;
-	*server = ss;
-}
-
-// Creating a new in-process socket
-SOCK *NewInProcSocket(TUBE *tube_send, TUBE *tube_recv)
-{
-	SOCK *s;
-	// Validate arguments
-	if (tube_recv == NULL || tube_send == NULL)
-	{
-		return NULL;
-	}
-
-	s = NewSock();
-
-	s->Type = SOCK_INPROC;
-
-	s->SendTube = tube_send;
-	s->RecvTube = tube_recv;
-
-	AddRef(tube_send->Ref);
-	AddRef(tube_recv->Ref);
-
-	s->InProcRecvFifo = NewFifo();
-
-	s->Connected = true;
-
-	return s;
-}
-
-// Transmission process for the in-process socket
-UINT SendInProc(SOCK *sock, void *data, UINT size)
-{
-	if (sock == NULL || sock->Type != SOCK_INPROC || sock->Disconnecting || sock->Connected == false)
-	{
-		return 0;
-	}
-
-	if (IsTubeConnected(sock->SendTube) == false)
-	{
-		return 0;
-	}
-
-	if (TubeSend(sock->SendTube, data, size, NULL) == false)
-	{
-		return 0;
-	}
-
-	return size;
-}
-
-// Receiving process for the in-process socket
-UINT RecvInProc(SOCK *sock, void *data, UINT size)
-{
-	FIFO *f;
-	UINT ret;
-	UINT timeout;
-	UINT64 giveup_time;
-	TUBEDATA *d = NULL;
-	if (sock == NULL || sock->Type != SOCK_INPROC || sock->Disconnecting || sock->Connected == false)
-	{
-		return 0;
-	}
-
-	if (IsTubeConnected(sock->SendTube) == false)
-	{
-		return 0;
-	}
-
-	f = sock->InProcRecvFifo;
-	if (f == NULL)
-	{
-		return 0;
-	}
-
-	// If there is data in the FIFO, return it immediately
-	ret = ReadFifo(f, data, size);
-	if (ret != 0)
-	{
-		return ret;
-	}
-
-	timeout = GetTimeout(sock);
-
-	giveup_time = Tick64() + (UINT)timeout;
-
-	// When there is no data in the FIFO, read the next data from the tube
-	d = NULL;
-
-	while (true)
-	{
-		UINT64 now = 0;
-		UINT interval;
-
-		if (sock->AsyncMode == false)
-		{
-			now = Tick64();
-
-			if (now >= giveup_time)
-			{
-				break;
-			}
-		}
-
-		d = TubeRecvAsync(sock->RecvTube);
-
-		if (d != NULL)
-		{
-			break;
-		}
-
-		if (IsTubeConnected(sock->RecvTube) == false)
-		{
-			break;
-		}
-
-		if (sock->AsyncMode)
-		{
-			break;
-		}
-
-		interval = (UINT)(giveup_time - now);
-
-		Wait(sock->RecvTube->Event, interval);
-	}
-
-	if (d == NULL)
-	{
-		if (IsTubeConnected(sock->RecvTube) == false)
-		{
-			return 0;
-		}
-
-		if (sock->AsyncMode == false)
-		{
-			// If a timeout occurs in synchronous mode, disconnect ir
-			Disconnect(sock);
-
-			return 0;
-		}
-		else
-		{
-			// If a timeout occurs in asynchronous mode, returns the blocking error
-			return SOCK_LATER;
-		}
-	}
-	else
-	{
-		// If the received data is larger than the requested size, write the rest to FIFO
-		if (d->DataSize > size)
-		{
-			WriteFifo(f, ((UCHAR *)d->Data) + size, d->DataSize - size);
-			ret = size;
-		}
-		else
-		{
-			ret = d->DataSize;
-		}
-
-		Copy(data, d->Data, ret);
-
-		FreeTubeData(d);
-
-		return ret;
-	}
-}
-
-// Wait for the arrival of data on multiple tubes
-void WaitForTubes(TUBE **tubes, UINT num, UINT timeout)
-{
-	// Validate arguments
-	if (num != 0 && tubes == NULL)
-	{
-		return;
-	}
-	if (timeout == 0)
-	{
-		return;
-	}
-	if (num == 0)
-	{
-		SleepThread(timeout);
-		return;
-	}
-
-#ifdef	OS_WIN32
-	Win32WaitForTubes(tubes, num, timeout);
-#else	// OS_WIN32
-	UnixWaitForTubes(tubes, num, timeout);
-#endif	// OS_WIN32
-}
-
-#ifdef	OS_WIN32
-void Win32WaitForTubes(TUBE **tubes, UINT num, UINT timeout)
-{
-	HANDLE array[MAXIMUM_WAIT_OBJECTS];
-	UINT i;
-
-	Zero(array, sizeof(array));
-
-	for (i = 0; i < num; i++)
-	{
-		TUBE *t = tubes[i];
-
-		array[i] = t->Event->pData;
-	}
-
-	if (num == 1)
-	{
-		WaitForSingleObject(array[0], timeout);
-	}
-	else
-	{
-		WaitForMultipleObjects(num, array, false, timeout);
-	}
-}
-#else	// OS_WIN32
-void UnixWaitForTubes(TUBE **tubes, UINT num, UINT timeout)
-{
-	int *fds;
-	UINT i;
-	char tmp[MAX_SIZE];
-	bool any_of_tubes_are_readable = false;
-
-	fds = ZeroMalloc(sizeof(int) * num);
-
-	for (i = 0; i < num; i++)
-	{
-		fds[i] = tubes[i]->SockEvent->pipe_read;
-
-		if (tubes[i]->SockEvent->current_pipe_data != 0)
-		{
-			any_of_tubes_are_readable = true;
-		}
-	}
-
-	if (any_of_tubes_are_readable == false)
-	{
-		UnixSelectInner(num, fds, 0, NULL, timeout);
-	}
-
-	for (i = 0; i < num; i++)
-	{
-		int fd = fds[i];
-		int readret;
-
-		tubes[i]->SockEvent->current_pipe_data = 0;
-
-		do
-		{
-			readret = read(fd, tmp, sizeof(tmp));
-		}
-		while (readret >= 1);
-	}
-
-	Free(fds);
-}
-#endif	// OS_WIN32
-
-// Creating a Tube Flush List
-TUBE_FLUSH_LIST *NewTubeFlushList()
-{
-	TUBE_FLUSH_LIST *f = ZeroMalloc(sizeof(TUBE_FLUSH_LIST));
-
-	f->List = NewListFast(NULL);
-
-	return f;
-}
-
-// Release of the Tube Flush List
-void FreeTubeFlushList(TUBE_FLUSH_LIST *f)
-{
-	UINT i;
-	// Validate arguments
-	if (f == NULL)
-	{
-		return;
-	}
-
-	for (i = 0; i < LIST_NUM(f->List); i++)
-	{
-		TUBE *t = LIST_DATA(f->List, i);
-
-		ReleaseTube(t);
-	}
-
-	ReleaseList(f->List);
-
-	Free(f);
-}
-
-// Add a Tube to the Tube Flush List
-void AddTubeToFlushList(TUBE_FLUSH_LIST *f, TUBE *t)
-{
-	// Validate arguments
-	if (f == NULL || t == NULL)
-	{
-		return;
-	}
-
-	if (t->IsInFlushList)
-	{
-		return;
-	}
-
-	if (IsInList(f->List, t) == false)
-	{
-		Add(f->List, t);
-
-		AddRef(t->Ref);
-
-		t->IsInFlushList = true;
-	}
-}
-
-// Flush the all tubes in the Tube Flush List
-void FlushTubeFlushList(TUBE_FLUSH_LIST *f)
-{
-	UINT i;
-	// Validate arguments
-	if (f == NULL)
-	{
-		return;
-	}
-
-	for (i = 0; i < LIST_NUM(f->List); i++)
-	{
-		TUBE *t = LIST_DATA(f->List, i);
-
-		TubeFlush(t);
-		t->IsInFlushList = false;
-
-		ReleaseTube(t);
-	}
-
-	DeleteAll(f->List);
 }
 
 // Store the error value into PACK

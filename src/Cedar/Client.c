@@ -11,7 +11,6 @@
 #include "Admin.h"
 #include "Cedar.h"
 #include "Connection.h"
-#include "IPC.h"
 #include "Listener.h"
 #include "Logging.h"
 #include "Protocol.h"
@@ -4376,22 +4375,8 @@ void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s)
 				StrCpy(st->ProtocolDetails, sizeof(st->ProtocolDetails), s->ProtocolDetails);
 				Trim(st->ProtocolDetails);
 				// UDP acceleration function
-				if (s->IpcSessionShared != NULL && IsEmptyStr(s->IpcSessionShared->ProtocolDetails) == false)
-				{
-					char tmp[sizeof(s->IpcSessionShared->ProtocolDetails)];
-					StrCpy(tmp, sizeof(tmp), s->IpcSessionShared->ProtocolDetails);
-					Trim(tmp);
-					StrCat(st->ProtocolDetails, sizeof(st->ProtocolDetails), " ");
-					StrCat(st->ProtocolDetails, sizeof(st->ProtocolDetails), tmp);
-
-					st->IsUdpAccelerationEnabled = s->IpcSessionShared->EnableUdpAccel;
-					st->IsUsingUdpAcceleration = s->IpcSessionShared->UsingUdpAccel;
-				}
-				else
-				{
-					st->IsUdpAccelerationEnabled = s->UseUdpAcceleration;
-					st->IsUsingUdpAcceleration = s->IsUsingUdpAcceleration;
-				}
+				st->IsUdpAccelerationEnabled = s->UseUdpAcceleration;
+				st->IsUsingUdpAcceleration = s->IsUsingUdpAcceleration;
 				// Session key
 				Copy(st->SessionKey, s->SessionKey, SHA1_SIZE);
 				// Policy

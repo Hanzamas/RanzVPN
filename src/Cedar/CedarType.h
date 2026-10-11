@@ -401,15 +401,7 @@ typedef struct TRIAL_INFO TRIAL_INFO;
 //  In-Process VPN Client
 // ==============================================================
 
-typedef struct IPC IPC;
-typedef struct IPC_ARP IPC_ARP;
-typedef struct IPC_ASYNC IPC_ASYNC;
-typedef struct IPC_PARAM IPC_PARAM;
-typedef struct IPC_DHCP_RELEASE_QUEUE IPC_DHCP_RELEASE_QUEUE;
 typedef struct IPC_MSCHAP_V2_AUTHINFO IPC_MSCHAP_V2_AUTHINFO;
-typedef struct IPC_SESSION_SHARED_BUFFER_DATA IPC_SESSION_SHARED_BUFFER_DATA;
-typedef struct IPC_IPV6_ROUTER_ADVERTISEMENT IPC_IPV6_ROUTER_ADVERTISEMENT;
-typedef struct IPC_DHCPV4_AWAIT IPC_DHCPV4_AWAIT;
 
 
 // ==============================================================

@@ -213,16 +213,6 @@ void SessionMain(SESSION *s)
 			}
 		}
 
-		if (s->InProcMode)
-		{
-			if (c->TubeSock == NULL || IsTubeConnected(c->TubeSock->SendTube) == false || IsTubeConnected(c->TubeSock->RecvTube) == false)
-			{
-				// Disconnection occurs in the in-process mode
-				err = ERR_DISCONNECTED;
-				pa_fail = true;
-			}
-		}
-
 		if (s->IsRUDPSession)
 		{
 			if (s->NumDisconnected >= 1 && s->EnableUdpRecovery == false)
@@ -523,7 +513,7 @@ void SessionMain(SESSION *s)
 			}
 		}
 
-		if (s->LinkModeServer == false && s->BridgeMode == false && s->L3SwitchMode == false && s->InProcMode == false)
+		if (s->LinkModeServer == false && s->BridgeMode == false && s->L3SwitchMode == false)
 		{
 			bool timeouted = false;
 
@@ -1293,8 +1283,6 @@ void CleanupSession(SESSION *s)
 
 	DeleteCounter(s->LoggingRecordCount);
 
-	ReleaseSharedBuffer(s->IpcSessionSharedBuffer);
-
 	Free(s);
 }
 
@@ -1819,10 +1807,6 @@ void if_free(SESSION *s);
 // Create a server session
 SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, POLICY *policy)
 {
-	return NewServerSessionEx(cedar, c, h, username, policy, false, NULL);
-}
-SESSION *NewServerSessionEx(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, POLICY *policy, bool inproc_mode, UCHAR *ipc_mac_address)
-{
 	SESSION *s;
 	char name[MAX_SIZE];
 	char hub_name_upper[MAX_SIZE];
@@ -1871,15 +1855,7 @@ SESSION *NewServerSessionEx(CEDAR *cedar, CONNECTION *c, HUB *h, char *username,
 
 	if ((StrCmpi(username, ADMINISTRATOR_USERNAME) != 0) && (StrCmpi(username, BRIDGE_USER_NAME) != 0) || (cedar->Server == NULL || cedar->Server->ServerType == SERVER_TYPE_STANDALONE))
 	{
-		if (IsEmptyStr(c->InProcPrefix))
-		{
-			Format(name, sizeof(name), "SID-%s-%u", user_name_upper, Inc(h->SessionCounter));
-		}
-		else
-		{
-			Format(name, sizeof(name), "SID-%s-[%s]-%u", user_name_upper, c->InProcPrefix, Inc(h->SessionCounter));
-		}
-
+		Format(name, sizeof(name), "SID-%s-%u", user_name_upper, Inc(h->SessionCounter));
 	}
 	else
 	{
@@ -1919,7 +1895,6 @@ SESSION *NewServerSessionEx(CEDAR *cedar, CONNECTION *c, HUB *h, char *username,
 
 	s->Name = CopyStr(name);
 	s->Policy = policy;
-	s->InProcMode = inproc_mode;
 
 	// Add a SESSION to the HUB
 	AddSession(h, s);
@@ -1927,58 +1902,7 @@ SESSION *NewServerSessionEx(CEDAR *cedar, CONNECTION *c, HUB *h, char *username,
 	// Create a key
 	NewSessionKey(cedar, s->SessionKey, &s->SessionKey32);
 
-	// Generate a MAC address for IPC
-	if (s->InProcMode)
-	{
-		if (ipc_mac_address != NULL)
-		{
-			Copy(s->IpcMacAddress, ipc_mac_address, 6);
-		}
-		else
-		{
-			char tmp[MAX_SIZE];
-			char machine[MAX_SIZE];
-			UCHAR hash[SHA1_SIZE];
-
-			GetMachineName(machine, sizeof(machine));
-
-			Format(tmp, sizeof(tmp), "%s@%s@%u", machine, h->Name, s->UniqueId);
-
-			StrUpper(tmp);
-			Trim(tmp);
-
-			Sha0(hash, tmp, StrLen(tmp));
-
-			s->IpcMacAddress[0] = 0xCA;
-			s->IpcMacAddress[1] = hash[1];
-			s->IpcMacAddress[2] = hash[2];
-			s->IpcMacAddress[3] = hash[3];
-			s->IpcMacAddress[4] = hash[4];
-			s->IpcMacAddress[5] = hash[5];
-
-			MacToStr(tmp, sizeof(tmp), s->IpcMacAddress);
-			Debug("MAC Address for IPC: %s\n", tmp);
-		}
-	}
-
 	return s;
-}
-
-// Check whether the specified MAC address is IPC address
-bool IsIpcMacAddress(UCHAR *mac)
-{
-	// Validate arguments
-	if (mac == NULL)
-	{
-		return false;
-	}
-
-	if (mac[0] == 0xCA)
-	{
-		return true;
-	}
-
-	return false;
 }
 
 // Display the status on the client

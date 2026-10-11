@@ -1026,33 +1026,30 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 
 		num_available = 0;
 
-		if (c->IsInProc == false)
+		for (i = 0;i < num;i++)
 		{
-			for (i = 0;i < num;i++)
+			TCPSOCK *tcpsock = tcpsocks[i];
+			if (s != NULL && tcpsock->Sock->Connected && tcpsock->Sock->AsyncMode &&
+				IS_SEND_TCP_SOCK(tcpsock))
 			{
-				TCPSOCK *tcpsock = tcpsocks[i];
-				if (s != NULL && tcpsock->Sock->Connected && tcpsock->Sock->AsyncMode &&
-					IS_SEND_TCP_SOCK(tcpsock))
+				// Processing of KeepAlive
+				if (now >= tcpsock->NextKeepAliveTime || tcpsock->NextKeepAliveTime == 0 ||
+					(s->UseUdpAcceleration && s->UdpAccel != NULL && s->UdpAccel->MyIpOrPortNatTChanged))
 				{
-					// Processing of KeepAlive
-					if (now >= tcpsock->NextKeepAliveTime || tcpsock->NextKeepAliveTime == 0 ||
-						(s->UseUdpAcceleration && s->UdpAccel != NULL && s->UdpAccel->MyIpOrPortNatTChanged))
+					// Send the KeepAlive
+					SendKeepAlive(c, tcpsock);
+					tcpsock->NextKeepAliveTime = now + (UINT64)GenNextKeepAliveSpan(c);
+
+					if (s->UseUdpAcceleration && s->UdpAccel != NULL)
 					{
-						// Send the KeepAlive
-						SendKeepAlive(c, tcpsock);
-						tcpsock->NextKeepAliveTime = now + (UINT64)GenNextKeepAliveSpan(c);
-
-						if (s->UseUdpAcceleration && s->UdpAccel != NULL)
-						{
-							s->UdpAccel->MyIpOrPortNatTChanged = false;
-						}
+						s->UdpAccel->MyIpOrPortNatTChanged = false;
 					}
-
-					// Count the number of available sockets to send
-					num_available++;
-
-					ts_hp = tcpsock;
 				}
+
+				// Count the number of available sockets to send
+				num_available++;
+
+				ts_hp = tcpsock;
 			}
 		}
 
@@ -1171,132 +1168,12 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 					}
 					else
 					{
-						if (c->IsInProc == false)
+						if (s->UseUdpAcceleration && s->UdpAccel != NULL && UdpAccelIsSendReady(s->UdpAccel, true))
 						{
-							if (s->UseUdpAcceleration && s->UdpAccel != NULL && UdpAccelIsSendReady(s->UdpAccel, true))
-							{
-								// UDP acceleration mode
-								while (b = GetNext(q))
-								{
-									UdpAccelSendBlock(s->UdpAccel, b);
-
-									s->TotalSendSize += b->Size;
-									s->TotalSendSizeReal += b->Size;
-
-									c->CurrentSendQueueSize -= b->Size;
-
-									FreeBlock(b);
-								}
-							}
-							else if (s->IsRUDPSession && s->EnableBulkOnRUDP && ts->Sock != NULL && ts->Sock->BulkSendTube != NULL)
-							{
-								// R-UDP bulk transfer
-								TUBE *t = ts->Sock->BulkSendTube;
-								bool flush = false;
-								TCP_PAIR_HEADER h;
-
-								Zero(&h, sizeof(h));
-								h.EnableHMac = s->EnableHMacOnBulkOfRUDP;
-
-								while (b = GetNext(q))
-								{
-									if (b->Compressed == false)
-									{
-										// Uncompressed
-										TubeSendEx(t, b->Buf, b->Size, &h, true);
-
-										s->TotalSendSize += b->Size;
-										s->TotalSendSizeReal += b->Size;
-
-										c->CurrentSendQueueSize -= b->Size;
-									}
-									else
-									{
-										// Compressed
-										UCHAR *new_buf = Malloc(b->Size + sizeof(UINT64));
-
-										WRITE_UINT64(new_buf, CONNECTION_BULK_COMPRESS_SIGNATURE);
-
-										Copy(new_buf + sizeof(UINT64), b->Buf, b->Size);
-
-										TubeSendEx(t, new_buf, b->Size + sizeof(UINT64), &h, true);
-
-										s->TotalSendSize += b->SizeofData;
-										s->TotalSendSizeReal += b->Size;
-
-										c->CurrentSendQueueSize -= b->Size;
-
-										Free(new_buf);
-									}
-
-									FreeBlock(b);
-
-									flush = true;
-								}
-
-								if (flush)
-								{
-									TubeFlush(t);
-								}
-							}
-							else
-							{
-								// TCP/IP socket
-								bool update_keepalive_timer = false;
-								// Number of data
-								num_data = Endian32(q->num_item);
-								PROBE_DATA2("WriteSendFifo num", &num_data, sizeof(UINT));
-								WriteSendFifo(s, tss, &num_data, sizeof(UINT));
-
-								s->TotalSendSize += sizeof(UINT);
-								s->TotalSendSizeReal += sizeof(UINT);
-
-								while (b = GetNext(q))
-								{
-									// Size data
-									UINT size_data;
-									size_data = Endian32(b->Size);
-									PROBE_DATA2("WriteSendFifo size", &size_data, sizeof(UINT));
-									WriteSendFifo(s, tss, &size_data, sizeof(UINT));
-
-									c->CurrentSendQueueSize -= b->Size;
-
-									s->TotalSendSize += sizeof(UINT);
-									s->TotalSendSizeReal += sizeof(UINT);
-
-									// Data body
-									PROBE_DATA2("WriteSendFifo data", b->Buf, b->Size);
-									WriteSendFifo(s, tss, b->Buf, b->Size);
-
-									s->TotalSendSize += b->SizeofData;
-									s->TotalSendSizeReal += b->Size;
-
-									update_keepalive_timer = true;
-
-									// Block release
-									FreeBlock(b);
-								}
-
-								if (s->UseUdpAcceleration && s->UdpAccel != NULL && UdpAccelIsSendReady(s->UdpAccel, false))
-								{
-									update_keepalive_timer = false;
-								}
-
-								if (update_keepalive_timer)
-								{
-									// Increase the KeepAlive timer
-									tss->NextKeepAliveTime = now + (UINT64)GenNextKeepAliveSpan(c);
-								}
-							}
-						}
-						else
-						{
-							bool flush = false;
-							// In-process socket
+							// UDP acceleration mode
 							while (b = GetNext(q))
 							{
-								TubeSendEx(ts->Sock->SendTube, b->Buf, b->Size, NULL, true);
-								flush = true;
+								UdpAccelSendBlock(s->UdpAccel, b);
 
 								s->TotalSendSize += b->Size;
 								s->TotalSendSizeReal += b->Size;
@@ -1305,10 +1182,105 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 
 								FreeBlock(b);
 							}
+						}
+						else if (s->IsRUDPSession && s->EnableBulkOnRUDP && ts->Sock != NULL && ts->Sock->BulkSendTube != NULL)
+						{
+							// R-UDP bulk transfer
+							TUBE *t = ts->Sock->BulkSendTube;
+							bool flush = false;
+							TCP_PAIR_HEADER h;
+
+							Zero(&h, sizeof(h));
+							h.EnableHMac = s->EnableHMacOnBulkOfRUDP;
+
+							while (b = GetNext(q))
+							{
+								if (b->Compressed == false)
+								{
+									// Uncompressed
+									TubeSendEx(t, b->Buf, b->Size, &h, true);
+
+									s->TotalSendSize += b->Size;
+									s->TotalSendSizeReal += b->Size;
+
+									c->CurrentSendQueueSize -= b->Size;
+								}
+								else
+								{
+									// Compressed
+									UCHAR *new_buf = Malloc(b->Size + sizeof(UINT64));
+
+									WRITE_UINT64(new_buf, CONNECTION_BULK_COMPRESS_SIGNATURE);
+
+									Copy(new_buf + sizeof(UINT64), b->Buf, b->Size);
+
+									TubeSendEx(t, new_buf, b->Size + sizeof(UINT64), &h, true);
+
+									s->TotalSendSize += b->SizeofData;
+									s->TotalSendSizeReal += b->Size;
+
+									c->CurrentSendQueueSize -= b->Size;
+
+									Free(new_buf);
+								}
+
+								FreeBlock(b);
+
+								flush = true;
+							}
 
 							if (flush)
 							{
-								TubeFlush(ts->Sock->SendTube);
+								TubeFlush(t);
+							}
+						}
+						else
+						{
+							// TCP/IP socket
+							bool update_keepalive_timer = false;
+							// Number of data
+							num_data = Endian32(q->num_item);
+							PROBE_DATA2("WriteSendFifo num", &num_data, sizeof(UINT));
+							WriteSendFifo(s, tss, &num_data, sizeof(UINT));
+
+							s->TotalSendSize += sizeof(UINT);
+							s->TotalSendSizeReal += sizeof(UINT);
+
+							while (b = GetNext(q))
+							{
+								// Size data
+								UINT size_data;
+								size_data = Endian32(b->Size);
+								PROBE_DATA2("WriteSendFifo size", &size_data, sizeof(UINT));
+								WriteSendFifo(s, tss, &size_data, sizeof(UINT));
+
+								c->CurrentSendQueueSize -= b->Size;
+
+								s->TotalSendSize += sizeof(UINT);
+								s->TotalSendSizeReal += sizeof(UINT);
+
+								// Data body
+								PROBE_DATA2("WriteSendFifo data", b->Buf, b->Size);
+								WriteSendFifo(s, tss, b->Buf, b->Size);
+
+								s->TotalSendSize += b->SizeofData;
+								s->TotalSendSizeReal += b->Size;
+
+								update_keepalive_timer = true;
+
+								// Block release
+								FreeBlock(b);
+							}
+
+							if (s->UseUdpAcceleration && s->UdpAccel != NULL && UdpAccelIsSendReady(s->UdpAccel, false))
+							{
+								update_keepalive_timer = false;
+							}
+
+							if (update_keepalive_timer)
+							{
+								// Increase the KeepAlive timer
+								tss->NextKeepAliveTime = now + (UINT64)GenNextKeepAliveSpan(c);
 							}
 						}
 					}
@@ -1317,89 +1289,86 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 		}
 
 		// Send the reserved data to send registered in each socket now
-		if (c->IsInProc == false)
+		for (i = 0;i < num;i++)
 		{
-			for (i = 0;i < num;i++)
-			{
-				ts = tcpsocks[i];
+			ts = tcpsocks[i];
 
 SEND_START:
-				if (ts->Sock->Connected == false)
+			if (ts->Sock->Connected == false)
+			{
+				s->LastTryAddConnectTime = Tick64();
+				// Communication is disconnected
+				LockList(tcp->TcpSockList);
 				{
-					s->LastTryAddConnectTime = Tick64();
-					// Communication is disconnected
-					LockList(tcp->TcpSockList);
-					{
-						// Remove the socket from socket list
-						Delete(tcp->TcpSockList, ts);
-						// Release of TCPSOCK
-						FreeTcpSock(ts);
-						// Decrement the count
-						Dec(c->CurrentNumConnection);
-						Debug("--- TCP Connection Decremented: %u (%s Line %u)\n", Count(c->CurrentNumConnection), __FILE__, __LINE__);
-						Debug("LIST_NUM(tcp->TcpSockList): %u\n", LIST_NUM(tcp->TcpSockList));
-					}
-					UnlockList(tcp->TcpSockList);
+					// Remove the socket from socket list
+					Delete(tcp->TcpSockList, ts);
+					// Release of TCPSOCK
+					FreeTcpSock(ts);
+					// Decrement the count
+					Dec(c->CurrentNumConnection);
+					Debug("--- TCP Connection Decremented: %u (%s Line %u)\n", Count(c->CurrentNumConnection), __FILE__, __LINE__);
+					Debug("LIST_NUM(tcp->TcpSockList): %u\n", LIST_NUM(tcp->TcpSockList));
+				}
+				UnlockList(tcp->TcpSockList);
 
+				continue;
+			}
+
+			// Get Fifo size
+			if (ts->SendFifo->size != 0)
+			{
+				UCHAR *buf;
+				UINT want_send_size;
+				// Send only if the data to send exists by 1 byte or more
+				// Get the pointer to the buffer
+				buf = (UCHAR *)ts->SendFifo->p + ts->SendFifo->pos;
+				want_send_size = ts->SendFifo->size;
+
+				PROBE_DATA2("TcpSockSend", buf, want_send_size);
+				size = TcpSockSend(s, ts, buf, want_send_size);
+
+				if (size == 0)
+				{
+					// Disconnected
 					continue;
 				}
-
-				// Get Fifo size
-				if (ts->SendFifo->size != 0)
+				else if (size == SOCK_LATER)
 				{
-					UCHAR *buf;
-					UINT want_send_size;
-					// Send only if the data to send exists by 1 byte or more
-					// Get the pointer to the buffer
-					buf = (UCHAR *)ts->SendFifo->p + ts->SendFifo->pos;
-					want_send_size = ts->SendFifo->size;
-
-					PROBE_DATA2("TcpSockSend", buf, want_send_size);
-					size = TcpSockSend(s, ts, buf, want_send_size);
-
-					if (size == 0)
+					// Packet is jammed
+					ts->LateCount++; // Increment of the delay counter
+					PROBE_STR("ts->LateCount++;");
+				}
+				else
+				{
+					// Packet is sent only by 'size'
+					// Advance FIFO
+					ReadFifo(ts->SendFifo, NULL, size);
+					if (size < want_send_size)
 					{
-						// Disconnected
-						continue;
-					}
-					else if (size == SOCK_LATER)
-					{
-						// Packet is jammed
-						ts->LateCount++; // Increment of the delay counter
-						PROBE_STR("ts->LateCount++;");
+						// Fail to transmit all of the data that has been scheduled
+#ifdef	USE_PROBE
+						{
+							char tmp[MAX_SIZE];
+
+							snprintf(tmp, sizeof(tmp), "size < want_send_size: %u < %u",
+								size, want_send_size);
+
+							PROBE_STR(tmp);
+						}
+#endif	// USE_PROBE
 					}
 					else
 					{
-						// Packet is sent only by 'size'
-						// Advance FIFO
-						ReadFifo(ts->SendFifo, NULL, size);
-						if (size < want_send_size)
-						{
-							// Fail to transmit all of the data that has been scheduled
-#ifdef	USE_PROBE
-							{
-								char tmp[MAX_SIZE];
+						// Because sending all the packets is completed
+						// (The queue is exhausted), reset the delay counter
+						ts->LateCount = 0;
 
-								snprintf(tmp, sizeof(tmp), "size < want_send_size: %u < %u",
-									size, want_send_size);
-
-								PROBE_STR(tmp);
-							}
-#endif	// USE_PROBE
-						}
-						else
-						{
-							// Because sending all the packets is completed
-							// (The queue is exhausted), reset the delay counter
-							ts->LateCount = 0;
-
-							PROBE_STR("TcpSockSend All Completed");
-						}
-						// Updated the last communication date and time
-						UPDATE_LAST_COMM_TIME(c->Session->LastCommTime, now);
-
-						goto SEND_START;
+						PROBE_STR("TcpSockSend All Completed");
 					}
+					// Updated the last communication date and time
+					UPDATE_LAST_COMM_TIME(c->Session->LastCommTime, now);
+
+					goto SEND_START;
 				}
 			}
 		}
@@ -1861,30 +1830,197 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 				}
 			}
 
-			if (c->IsInProc)
+			UINT current_fifo_budget = 0;
+			UINT current_packet_index = 0;
+			// A normal socket (Not in-process)
+			if (ts->WantSize == 0)
 			{
-				TUBEDATA *d;
-				UINT current_packet_index = 0;
+				// Read for sizeof(UINT) first
+				ts->WantSize = sizeof(UINT);
+			}
 
-				// Socket for in-process connection
-				if (IsTubeConnected(sock->RecvTube) == false)
+			now = Tick64();
+
+RECV_START:
+			current_fifo_budget = CedarGetFifoBudgetBalance(c->Cedar);
+			// Receive
+			if (ts->RecvFifo->size < current_fifo_budget)
+			{
+				UINT recv_buf_size = current_fifo_budget - ts->RecvFifo->size;
+
+				recv_buf_size = MIN(recv_buf_size, RECV_BUF_SIZE);
+
+				size = TcpSockRecv(s, ts, buf, recv_buf_size);
+			}
+			else
+			{
+				size = SOCK_LATER;
+
+				UPDATE_LAST_COMM_TIME(c->Session->LastCommTime, now);
+				UPDATE_LAST_COMM_TIME(ts->LastCommTime, now);
+			}
+
+			/*
+			// Experiment
+			if (c->ServerMode)
+			{
+				if ((ts->EstablishedTick + (UINT64)3000) <= now)
 				{
-					// Communication is disconnected
-					goto DISCONNECT_THIS_TCP;
+					size = 0;
+					WHERE;
+				}
+			}*/
+
+			if (size == 0)
+			{
+DISCONNECT_THIS_TCP:
+				s->LastTryAddConnectTime = Tick64();
+				s->NumDisconnected++;
+				// Communication is disconnected
+				LockList(tcp->TcpSockList);
+				{
+					// Remove the socket from socket list
+					Delete(tcp->TcpSockList, ts);
+					// Release of TCPSOCK
+					FreeTcpSock(ts);
+					// Decrement
+					Dec(c->CurrentNumConnection);
+					Debug("--- TCP Connection Decremented: %u (%s Line %u)\n", Count(c->CurrentNumConnection), __FILE__, __LINE__);
+					Debug("LIST_NUM(tcp->TcpSockList): %u\n", LIST_NUM(tcp->TcpSockList));
+				}
+				UnlockList(tcp->TcpSockList);
+
+				continue;
+			}
+			else if (size == SOCK_LATER)
+			{
+				// State of waiting reception : don't do anything
+				if (IS_RECV_TCP_SOCK(ts))
+				{
+					if ((now > ts->LastCommTime) && ((now - ts->LastCommTime) >= ((UINT64)s->Timeout)))
+					{
+						// The connection has timed out
+						Debug("Connection %u Timeouted.\n", i);
+						goto DISCONNECT_THIS_TCP;
+					}
+				}
+			}
+			else
+			{
+				UINT budget_balance = CedarGetFifoBudgetBalance(c->Cedar);
+				UINT fifo_size_limit = budget_balance;
+
+				if (fifo_size_limit > MAX_BUFFERING_PACKET_SIZE)
+				{
+					fifo_size_limit = MAX_BUFFERING_PACKET_SIZE;
 				}
 
-				while (true)
-				{
-					BLOCK *block;
-					// Get the packet data from the tube
-					d = TubeRecvAsync(sock->RecvTube);
-					if (d == NULL)
-					{
-						// All acquisition completed
-						break;
-					}
+				// Update the last communication time
+				UPDATE_LAST_COMM_TIME(c->Session->LastCommTime, now);
+				UPDATE_LAST_COMM_TIME(ts->LastRecvTime, now);
 
-					block = NewBlock(Clone(d->Data, d->DataSize), d->DataSize, 0);
+				CedarAddFifoBudget(c->Cedar, (int)size);
+				recv_fifo_size_middle_update += (int)size;
+
+				// Write the received data into the FIFO
+				PROBE_DATA2("WriteRecvFifo", buf, size);
+				WriteRecvFifo(s, ts, buf, size);
+
+				// Stop receiving  when the receive buffer is full
+				if (ts->RecvFifo->size < fifo_size_limit)
+				{
+					goto RECV_START;
+				}
+			}
+
+			current_recv_fifo_size += FifoSize(ts->RecvFifo);
+
+			// process the data written to FIFO
+			while (ts->RecvFifo->size >= ts->WantSize)
+			{
+				UCHAR *buf;
+				void *data;
+				BLOCK *block;
+				UINT sz;
+				// A sufficient amount of data is already stored
+				// Get the pointer of the data
+				buf = (UCHAR *)ts->RecvFifo->p + ts->RecvFifo->pos;
+
+				switch (ts->Mode)
+				{
+				case 0:
+					// The number of Data blocks
+					ts->WantSize = sizeof(UINT);
+					Copy(&sz, buf, sizeof(UINT));
+					PROBE_DATA2("ReadFifo 0", buf, sizeof(UINT));
+					sz = Endian32(sz);
+					ts->NextBlockNum = sz;
+					ReadFifo(ts->RecvFifo, NULL, sizeof(UINT));
+
+					s->TotalRecvSize += sizeof(UINT);
+					s->TotalRecvSizeReal += sizeof(UINT);
+
+					ts->CurrentPacketNum = 0;
+					if (ts->NextBlockNum != 0)
+					{
+						if (ts->NextBlockNum == KEEP_ALIVE_MAGIC)
+						{
+							ts->Mode = 3;
+						}
+						else
+						{
+							ts->Mode = 1;
+						}
+					}
+					break;
+
+				case 1:
+					// Data block size
+					Copy(&sz, buf, sizeof(UINT));
+					sz = Endian32(sz);
+					PROBE_DATA2("ReadFifo 1", buf, sizeof(UINT));
+					if (sz > (MAX_PACKET_SIZE * 2))
+					{
+						// received a strange data size
+						// TCP/IP Error?
+						Debug("%s %u sz > (MAX_PACKET_SIZE * 2)\n", __FILE__, __LINE__);
+						Disconnect(ts->Sock);
+					}
+					ts->NextBlockSize = MIN(sz, MAX_PACKET_SIZE * 2);
+					ReadFifo(ts->RecvFifo, NULL, sizeof(UINT));
+
+					s->TotalRecvSize += sizeof(UINT);
+					s->TotalRecvSizeReal += sizeof(UINT);
+
+					ts->WantSize = ts->NextBlockSize;
+					if (ts->WantSize != 0)
+					{
+						ts->Mode = 2;
+					}
+					else
+					{
+						ts->Mode = 1;
+						ts->WantSize = sizeof(UINT);
+						ts->CurrentPacketNum++;
+						if (ts->CurrentPacketNum >= ts->NextBlockNum)
+						{
+							ts->Mode = 0;
+						}
+					}
+					break;
+
+				case 2:
+					// Data block body
+					ts->WantSize = sizeof(UINT);
+					ts->CurrentPacketNum++;
+					data = MallocFast(ts->NextBlockSize);
+					Copy(data, buf, ts->NextBlockSize);
+					PROBE_DATA2("ReadFifo 2", buf, ts->NextBlockSize);
+					ReadFifo(ts->RecvFifo, NULL, ts->NextBlockSize);
+					block = NewBlock(data, ts->NextBlockSize, s->UseCompress ? -1 : 0);
+
+					UPDATE_LAST_COMM_TIME(c->Session->LastCommTime, now);
+					UPDATE_LAST_COMM_TIME(ts->LastCommTime, now);
 
 					if (block->Size > MAX_PACKET_SIZE)
 					{
@@ -1916,342 +2052,112 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 						}
 					}
 
-					FreeTubeData(d);
-				}
+					if (ts->CurrentPacketNum >= ts->NextBlockNum)
+					{
+						// Reception of all the data blocks completed
+						ts->Mode = 0;
+					}
+					else
+					{
+						// Receive next data block size
+						ts->Mode = 1;
+					}
+					break;
 
-				UPDATE_LAST_COMM_TIME(c->Session->LastCommTime, now);
-			}
-			else
-			{
-				UINT current_fifo_budget = 0;
-				UINT current_packet_index = 0;
-				// A normal socket (Not in-process)
-				if (ts->WantSize == 0)
-				{
-					// Read for sizeof(UINT) first
-					ts->WantSize = sizeof(UINT);
-				}
-
-				now = Tick64();
-
-RECV_START:
-				current_fifo_budget = CedarGetFifoBudgetBalance(c->Cedar);
-				// Receive
-				if (ts->RecvFifo->size < current_fifo_budget)
-				{
-					UINT recv_buf_size = current_fifo_budget - ts->RecvFifo->size;
-
-					recv_buf_size = MIN(recv_buf_size, RECV_BUF_SIZE);
-
-					size = TcpSockRecv(s, ts, buf, recv_buf_size);
-				}
-				else
-				{
-					size = SOCK_LATER;
+				case 3:
+					// Keep-Alive packet size
+					ts->Mode = 4;
+					Copy(&sz, buf, sizeof(UINT));
+					PROBE_DATA2("ReadFifo 3", buf, sizeof(UINT));
+					sz = Endian32(sz);
+					if (sz > MAX_KEEPALIVE_SIZE)
+					{
+						// received a strange data size
+						// TCP/IP Error?
+						Debug("%s %u sz > MAX_KEEPALIVE_SIZE\n", __FILE__, __LINE__);
+						Disconnect(ts->Sock);
+					}
+					ts->NextBlockSize = MIN(sz, MAX_KEEPALIVE_SIZE);
+					ReadFifo(ts->RecvFifo, NULL, sizeof(UINT));
 
 					UPDATE_LAST_COMM_TIME(c->Session->LastCommTime, now);
 					UPDATE_LAST_COMM_TIME(ts->LastCommTime, now);
-				}
 
-				/*
-				// Experiment
-				if (c->ServerMode)
-				{
-					if ((ts->EstablishedTick + (UINT64)3000) <= now)
-					{
-						size = 0;
-						WHERE;
-					}
-				}*/
+					s->TotalRecvSize += sizeof(UINT);
+					s->TotalRecvSizeReal += sizeof(UINT);
 
-				if (size == 0)
-				{
-DISCONNECT_THIS_TCP:
-					s->LastTryAddConnectTime = Tick64();
-					s->NumDisconnected++;
-					// Communication is disconnected
-					LockList(tcp->TcpSockList);
-					{
-						// Remove the socket from socket list
-						Delete(tcp->TcpSockList, ts);
-						// Release of TCPSOCK
-						FreeTcpSock(ts);
-						// Decrement
-						Dec(c->CurrentNumConnection);
-						Debug("--- TCP Connection Decremented: %u (%s Line %u)\n", Count(c->CurrentNumConnection), __FILE__, __LINE__);
-						Debug("LIST_NUM(tcp->TcpSockList): %u\n", LIST_NUM(tcp->TcpSockList));
-					}
-					UnlockList(tcp->TcpSockList);
+					ts->WantSize = sz;
+					break;
 
-					continue;
-				}
-				else if (size == SOCK_LATER)
-				{
-					// State of waiting reception : don't do anything
-					if (IS_RECV_TCP_SOCK(ts))
+				case 4:
+					// Keep-Alive packet body
+					//Debug("KeepAlive Recved.\n");
+					ts->Mode = 0;
+					sz = ts->NextBlockSize;
+
+					if (s->UseUdpAcceleration && s->UdpAccel != NULL)
 					{
-						if ((now > ts->LastCommTime) && ((now - ts->LastCommTime) >= ((UINT64)s->Timeout)))
+						const UCHAR *keep_alive_buffer = FifoPtr(ts->RecvFifo);
+						const UINT nat_t_ip_sig_size = StrLen(UDP_NAT_T_IP_SIGNATURE_IN_KEEP_ALIVE);
+						const UINT nat_t_port_sig_size = StrLen(UDP_NAT_T_PORT_SIGNATURE_IN_KEEP_ALIVE);
+						UINT cur_size = sz;
+
+						if (cur_size >= nat_t_port_sig_size + sizeof(USHORT))
 						{
-							// The connection has timed out
-							Debug("Connection %u Timeouted.\n", i);
-							goto DISCONNECT_THIS_TCP;
+							if (Cmp(keep_alive_buffer, UDP_NAT_T_PORT_SIGNATURE_IN_KEEP_ALIVE, nat_t_port_sig_size) == 0)
+							{
+								cur_size -= nat_t_port_sig_size;
+								keep_alive_buffer += nat_t_port_sig_size;
+
+								const USHORT port = READ_USHORT(keep_alive_buffer);
+								cur_size -= sizeof(USHORT);
+								keep_alive_buffer += sizeof(USHORT);
+
+								if (port && s->UdpAccel->YourPortNatT != port)
+								{
+									s->UdpAccel->YourPortNatT = port;
+									s->UdpAccel->YourIpOrPortNatTChanged = true;
+
+									Debug("ConnectionReceive(): New peer NAT-T port: %u\n", port);
+								}
+							}
+						}
+
+						if (cur_size >= nat_t_ip_sig_size + sizeof(s->UdpAccel->YourIpNatT.address))
+						{
+							if (Cmp(keep_alive_buffer, UDP_NAT_T_IP_SIGNATURE_IN_KEEP_ALIVE, nat_t_ip_sig_size) == 0)
+							{
+								keep_alive_buffer += nat_t_ip_sig_size;
+
+								IP ip;
+								SetIP6(&ip, keep_alive_buffer);
+								if (IsZeroIP(&ip) == false && CmpIpAddr(&s->UdpAccel->YourIpNatT, &ip) != 0)
+								{
+									Copy(&s->UdpAccel->YourIpNatT, &ip, sizeof(s->UdpAccel->YourIpNatT));
+									s->UdpAccel->YourIpOrPortNatTChanged = true;
+
+									Debug("ConnectionReceive(): New peer NAT-T IP: %r\n", &ip);
+								}
+							}
 						}
 					}
-				}
-				else
-				{
-					UINT budget_balance = CedarGetFifoBudgetBalance(c->Cedar);
-					UINT fifo_size_limit = budget_balance;
 
-					if (fifo_size_limit > MAX_BUFFERING_PACKET_SIZE)
-					{
-						fifo_size_limit = MAX_BUFFERING_PACKET_SIZE;
-					}
+					PROBE_DATA2("ReadFifo 4", NULL, 0);
+					ReadFifo(ts->RecvFifo, NULL, sz);
 
-					// Update the last communication time
 					UPDATE_LAST_COMM_TIME(c->Session->LastCommTime, now);
-					UPDATE_LAST_COMM_TIME(ts->LastRecvTime, now);
+					UPDATE_LAST_COMM_TIME(ts->LastCommTime, now);
 
-					CedarAddFifoBudget(c->Cedar, (int)size);
-					recv_fifo_size_middle_update += (int)size;
+					s->TotalRecvSize += sz;
+					s->TotalRecvSizeReal += sz;
 
-					// Write the received data into the FIFO
-					PROBE_DATA2("WriteRecvFifo", buf, size);
-					WriteRecvFifo(s, ts, buf, size);
-
-					// Stop receiving  when the receive buffer is full
-					if (ts->RecvFifo->size < fifo_size_limit)
-					{
-						goto RECV_START;
-					}
+					ts->WantSize = sizeof(UINT);
+					break;
 				}
-
-				current_recv_fifo_size += FifoSize(ts->RecvFifo);
-
-				// process the data written to FIFO
-				while (ts->RecvFifo->size >= ts->WantSize)
-				{
-					UCHAR *buf;
-					void *data;
-					BLOCK *block;
-					UINT sz;
-					// A sufficient amount of data is already stored
-					// Get the pointer of the data
-					buf = (UCHAR *)ts->RecvFifo->p + ts->RecvFifo->pos;
-
-					switch (ts->Mode)
-					{
-					case 0:
-						// The number of Data blocks
-						ts->WantSize = sizeof(UINT);
-						Copy(&sz, buf, sizeof(UINT));
-						PROBE_DATA2("ReadFifo 0", buf, sizeof(UINT));
-						sz = Endian32(sz);
-						ts->NextBlockNum = sz;
-						ReadFifo(ts->RecvFifo, NULL, sizeof(UINT));
-
-						s->TotalRecvSize += sizeof(UINT);
-						s->TotalRecvSizeReal += sizeof(UINT);
-
-						ts->CurrentPacketNum = 0;
-						if (ts->NextBlockNum != 0)
-						{
-							if (ts->NextBlockNum == KEEP_ALIVE_MAGIC)
-							{
-								ts->Mode = 3;
-							}
-							else
-							{
-								ts->Mode = 1;
-							}
-						}
-						break;
-
-					case 1:
-						// Data block size
-						Copy(&sz, buf, sizeof(UINT));
-						sz = Endian32(sz);
-						PROBE_DATA2("ReadFifo 1", buf, sizeof(UINT));
-						if (sz > (MAX_PACKET_SIZE * 2))
-						{
-							// received a strange data size
-							// TCP/IP Error?
-							Debug("%s %u sz > (MAX_PACKET_SIZE * 2)\n", __FILE__, __LINE__);
-							Disconnect(ts->Sock);
-						}
-						ts->NextBlockSize = MIN(sz, MAX_PACKET_SIZE * 2);
-						ReadFifo(ts->RecvFifo, NULL, sizeof(UINT));
-
-						s->TotalRecvSize += sizeof(UINT);
-						s->TotalRecvSizeReal += sizeof(UINT);
-
-						ts->WantSize = ts->NextBlockSize;
-						if (ts->WantSize != 0)
-						{
-							ts->Mode = 2;
-						}
-						else
-						{
-							ts->Mode = 1;
-							ts->WantSize = sizeof(UINT);
-							ts->CurrentPacketNum++;
-							if (ts->CurrentPacketNum >= ts->NextBlockNum)
-							{
-								ts->Mode = 0;
-							}
-						}
-						break;
-
-					case 2:
-						// Data block body
-						ts->WantSize = sizeof(UINT);
-						ts->CurrentPacketNum++;
-						data = MallocFast(ts->NextBlockSize);
-						Copy(data, buf, ts->NextBlockSize);
-						PROBE_DATA2("ReadFifo 2", buf, ts->NextBlockSize);
-						ReadFifo(ts->RecvFifo, NULL, ts->NextBlockSize);
-						block = NewBlock(data, ts->NextBlockSize, s->UseCompress ? -1 : 0);
-
-						UPDATE_LAST_COMM_TIME(c->Session->LastCommTime, now);
-						UPDATE_LAST_COMM_TIME(ts->LastCommTime, now);
-
-						if (block->Size > MAX_PACKET_SIZE)
-						{
-							// Packet size exceeded
-							FreeBlock(block);
-						}
-						else
-						{
-							if (CedarGetQueueBudgetBalance(c->Cedar) == 0)
-							{
-								FreeBlock(block);
-							}
-							else
-							{
-								// Add the data block to queue
-								InsertReceivedBlockToQueue(c, block, true);
-
-								if ((current_packet_index % 32) == 0)
-								{
-									UINT current_recv_block_num = c->ReceivedBlocks->num_item;
-									int diff = (int)current_recv_block_num - (int)c->LastRecvBlocksNum;
-
-									CedarAddQueueBudget(c->Cedar, diff);
-
-									c->LastRecvBlocksNum = current_recv_block_num;
-								}
-
-								current_packet_index++;
-							}
-						}
-
-						if (ts->CurrentPacketNum >= ts->NextBlockNum)
-						{
-							// Reception of all the data blocks completed
-							ts->Mode = 0;
-						}
-						else
-						{
-							// Receive next data block size
-							ts->Mode = 1;
-						}
-						break;
-
-					case 3:
-						// Keep-Alive packet size
-						ts->Mode = 4;
-						Copy(&sz, buf, sizeof(UINT));
-						PROBE_DATA2("ReadFifo 3", buf, sizeof(UINT));
-						sz = Endian32(sz);
-						if (sz > MAX_KEEPALIVE_SIZE)
-						{
-							// received a strange data size
-							// TCP/IP Error?
-							Debug("%s %u sz > MAX_KEEPALIVE_SIZE\n", __FILE__, __LINE__);
-							Disconnect(ts->Sock);
-						}
-						ts->NextBlockSize = MIN(sz, MAX_KEEPALIVE_SIZE);
-						ReadFifo(ts->RecvFifo, NULL, sizeof(UINT));
-
-						UPDATE_LAST_COMM_TIME(c->Session->LastCommTime, now);
-						UPDATE_LAST_COMM_TIME(ts->LastCommTime, now);
-
-						s->TotalRecvSize += sizeof(UINT);
-						s->TotalRecvSizeReal += sizeof(UINT);
-
-						ts->WantSize = sz;
-						break;
-
-					case 4:
-						// Keep-Alive packet body
-						//Debug("KeepAlive Recved.\n");
-						ts->Mode = 0;
-						sz = ts->NextBlockSize;
-
-						if (s->UseUdpAcceleration && s->UdpAccel != NULL)
-						{
-							const UCHAR *keep_alive_buffer = FifoPtr(ts->RecvFifo);
-							const UINT nat_t_ip_sig_size = StrLen(UDP_NAT_T_IP_SIGNATURE_IN_KEEP_ALIVE);
-							const UINT nat_t_port_sig_size = StrLen(UDP_NAT_T_PORT_SIGNATURE_IN_KEEP_ALIVE);
-							UINT cur_size = sz;
-
-							if (cur_size >= nat_t_port_sig_size + sizeof(USHORT))
-							{
-								if (Cmp(keep_alive_buffer, UDP_NAT_T_PORT_SIGNATURE_IN_KEEP_ALIVE, nat_t_port_sig_size) == 0)
-								{
-									cur_size -= nat_t_port_sig_size;
-									keep_alive_buffer += nat_t_port_sig_size;
-
-									const USHORT port = READ_USHORT(keep_alive_buffer);
-									cur_size -= sizeof(USHORT);
-									keep_alive_buffer += sizeof(USHORT);
-
-									if (port && s->UdpAccel->YourPortNatT != port)
-									{
-										s->UdpAccel->YourPortNatT = port;
-										s->UdpAccel->YourIpOrPortNatTChanged = true;
-
-										Debug("ConnectionReceive(): New peer NAT-T port: %u\n", port);
-									}
-								}
-							}
-
-							if (cur_size >= nat_t_ip_sig_size + sizeof(s->UdpAccel->YourIpNatT.address))
-							{
-								if (Cmp(keep_alive_buffer, UDP_NAT_T_IP_SIGNATURE_IN_KEEP_ALIVE, nat_t_ip_sig_size) == 0)
-								{
-									keep_alive_buffer += nat_t_ip_sig_size;
-
-									IP ip;
-									SetIP6(&ip, keep_alive_buffer);
-									if (IsZeroIP(&ip) == false && CmpIpAddr(&s->UdpAccel->YourIpNatT, &ip) != 0)
-									{
-										Copy(&s->UdpAccel->YourIpNatT, &ip, sizeof(s->UdpAccel->YourIpNatT));
-										s->UdpAccel->YourIpOrPortNatTChanged = true;
-
-										Debug("ConnectionReceive(): New peer NAT-T IP: %r\n", &ip);
-									}
-								}
-							}
-						}
-
-						PROBE_DATA2("ReadFifo 4", NULL, 0);
-						ReadFifo(ts->RecvFifo, NULL, sz);
-
-						UPDATE_LAST_COMM_TIME(c->Session->LastCommTime, now);
-						UPDATE_LAST_COMM_TIME(ts->LastCommTime, now);
-
-						s->TotalRecvSize += sz;
-						s->TotalRecvSizeReal += sz;
-
-						ts->WantSize = sizeof(UINT);
-						break;
-					}
-				}
-
-				ShrinkFifoMemory(ts->RecvFifo);
-				//printf("Fifo: %u\n", ts->RecvFifo->memsize);
 			}
+
+			ShrinkFifoMemory(ts->RecvFifo);
+			//printf("Fifo: %u\n", ts->RecvFifo->memsize);
 		}
 
 		if (true)
@@ -2805,12 +2711,6 @@ void StartTunnelingMode(CONNECTION *c)
 		// TCP
 		s = c->FirstSock;
 
-		if (c->IsInProc)
-		{
-			AddRef(s->ref);
-			c->TubeSock = s;
-		}
-
 		ts = NewTcpSock(s);
 
 		if (c->ServerMode == false)
@@ -3179,9 +3079,6 @@ void CleanupConnection(CONNECTION *c)
 	ReleaseSock(c->FirstSock);
 	c->FirstSock = NULL;
 
-	ReleaseSock(c->TubeSock);
-	c->TubeSock = NULL;
-
 	ReleaseThread(c->Thread);
 	Free(c->Name);
 
@@ -3368,12 +3265,6 @@ CONNECTION *NewServerConnection(CEDAR *cedar, SOCK *s, THREAD *t)
 	if (s != NULL && s->RemoteX != NULL)
 	{
 		c->ServerX = CloneX(s->RemoteX);
-	}
-
-	if (s != NULL && s->Type == SOCK_INPROC)
-	{
-		// In-process socket
-		c->IsInProc = true;
 	}
 
 	// Creating a Queue

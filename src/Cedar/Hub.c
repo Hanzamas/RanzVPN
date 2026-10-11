@@ -5871,55 +5871,8 @@ void AddSession(HUB *h, SESSION *s)
 		Insert(h->SessionList, s);
 		AddRef(s->ref);
 		Debug("Session %s Inserted to %s.\n", s->Name, h->Name);
-
-		if (s->InProcMode)
-		{
-			s->UniqueId = GetNewUniqueId(h);
-		}
 	}
 	UnlockList(h->SessionList);
-}
-
-// Create a new unique ID of the HUB
-UINT GetNewUniqueId(HUB *h)
-{
-	UINT id;
-	// Validate arguments
-	if (h == NULL)
-	{
-		return 0;
-	}
-
-	for (id = 1;;id++)
-	{
-		if (SearchSessionByUniqueId(h, id) == NULL)
-		{
-			return id;
-		}
-	}
-}
-
-// Search for a session by the unique session ID
-SESSION *SearchSessionByUniqueId(HUB *h, UINT id)
-{
-	UINT i;
-	// Validate arguments
-	if (h == NULL)
-	{
-		return NULL;
-	}
-
-	for (i = 0;i < LIST_NUM(h->SessionList);i++)
-	{
-		SESSION *s = LIST_DATA(h->SessionList, i);
-
-		if (s->UniqueId == id)
-		{
-			return s;
-		}
-	}
-
-	return NULL;
 }
 
 // Stop the operation of the HUB

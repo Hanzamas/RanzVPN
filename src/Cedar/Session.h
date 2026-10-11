@@ -83,7 +83,6 @@ struct SESSION
 	bool BridgeMode;				// Bridge session
 	bool BridgeIsEthLoopbackBlock;	// Loopback is disabled on the Ethernet level
 	bool L3SwitchMode;				// Layer-3 switch mode
-	bool InProcMode;				// In-process mode
 	THREAD *Thread;					// Management thread
 	CONNECTION *Connection;			// Connection
 	char ClientIP[64];				// Client IP
@@ -122,9 +121,6 @@ struct SESSION
 	IP DefaultDns;					// IP address of the default DNS server
 	bool IPv6Session;				// IPv6 session (Physical communication is IPv6)
 	UINT VLanId;					// VLAN ID
-	UINT UniqueId;					// Unique ID
-	UCHAR IpcMacAddress[6];			// MAC address for IPC
-	UCHAR Padding[2];
 
 	IP ServerIP_CacheForNextConnect;	// Server IP, cached for next connect
 	IP LocalIP_CacheForNextConnect;		// Local  IP, cached for next connect (2nd and subsequent), assigned by first outgoing connection
@@ -223,9 +219,6 @@ struct SESSION
 	// Measures for D-Link bug
 	UINT64 LastDLinkSTPPacketSendTick;	// Last D-Link STP packet transmission time
 	UCHAR LastDLinkSTPPacketDataHash[MD5_SIZE];	// Last D-Link STP packet hash
-
-	SHARED_BUFFER *IpcSessionSharedBuffer;	// A shared buffer between IPC and Session
-	IPC_SESSION_SHARED_BUFFER_DATA *IpcSessionShared;	// Shared data between IPC and Session
 };
 
 
@@ -236,7 +229,6 @@ SESSION *NewRpcSession(CEDAR *cedar, CLIENT_OPTION *option);
 SESSION *NewRpcSessionEx(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *client_str);
 SESSION *NewRpcSessionEx2(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *client_str, void *hWnd);
 SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, POLICY *policy);
-SESSION *NewServerSessionEx(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, POLICY *policy, bool inproc_mode, UCHAR *ipc_mac_address);
 void ClientThread(THREAD *t, void *param);
 void ReleaseSession(SESSION *s);
 void CleanupSession(SESSION *s);
@@ -250,7 +242,6 @@ void FreePacketAdapter(PACKET_ADAPTER *pa);
 void SessionMain(SESSION *s);
 void NewSessionKey(CEDAR *cedar, UCHAR *session_key, UINT *session_key_32);
 SESSION *GetSessionFromKey(CEDAR *cedar, UCHAR *session_key);
-bool IsIpcMacAddress(UCHAR *mac);
 void ClientAdditionalConnectChance(SESSION *s);
 void SessionAdditionalConnect(SESSION *s);
 void ClientAdditionalThread(THREAD *t, void *param);

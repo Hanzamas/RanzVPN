@@ -394,7 +394,6 @@
 // Protocol to be used for the listener
 #define	LISTENER_TCP				0		// TCP/IP
 #define	LISTENER_UDP				1		// UDP/IP (not being used)
-#define	LISTENER_INPROC				2		// In-process communication
 #define	LISTENER_RUDP				3		// R-UDP with NAT-T
 #define	LISTENER_ICMP				4		// VPN over ICMP
 #define	LISTENER_DNS				5		// VPN over DNS
@@ -983,7 +982,6 @@ void WriteTinyLog(TINY_LOG *t, char *str);
 TINY_LOG *NewTinyLog();
 void GetWinVer(RPC_WINVER *v);
 bool IsSupportedWinVer(RPC_WINVER *v);
-SOCK *GetInProcListeningSock(CEDAR *c);
 SOCK *GetReverseListeningSock(CEDAR *c);
 void GetCedarVersion(char *tmp, UINT size);
 UINT GetCedarVersionNumber();

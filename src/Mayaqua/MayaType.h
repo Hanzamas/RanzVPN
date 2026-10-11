@@ -361,7 +361,6 @@ typedef struct PSEUDO PSEUDO;
 typedef struct TUBEPAIR_DATA TUBEPAIR_DATA;
 typedef struct UDPPACKET UDPPACKET;
 typedef struct INTERRUPT_MANAGER INTERRUPT_MANAGER;
-typedef struct TUBE_FLUSH_LIST TUBE_FLUSH_LIST;
 typedef struct ICMP_RESULT ICMP_RESULT;
 typedef struct SSL_PIPE SSL_PIPE;
 typedef struct SSL_BIO SSL_BIO;

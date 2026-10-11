@@ -11,7 +11,6 @@
 #include "Client.h"
 #include "DDNS.h"
 #include "Hub.h"
-#include "IPC.h"
 #include "Link.h"
 #include "Logging.h"
 #include "MsChapV2.h"
@@ -1095,7 +1094,6 @@ bool ServerAccept(CONNECTION *c)
 	UCHAR ticket[SHA1_SIZE];
 	UINT authtype;
 	POLICY *policy;
-	UCHAR assigned_ipc_mac_address[6];
 	HUB *hub;
 	SESSION *s = NULL;
 	UINT64 user_expires = 0;
@@ -1166,8 +1164,6 @@ bool ServerAccept(CONNECTION *c)
 	GenerateMachineUniqueHash(unique2);
 
 	Zero(ctoken_hash_str, sizeof(ctoken_hash_str));
-
-	Zero(assigned_ipc_mac_address, sizeof(assigned_ipc_mac_address));
 
 	Zero(mschap_v2_server_response_20, sizeof(mschap_v2_server_response_20));
 
@@ -1483,68 +1479,26 @@ bool ServerAccept(CONNECTION *c)
 			support_hmac_on_bulk_of_rudp = PackGetBool(p, "support_hmac_on_bulk_of_rudp");
 			support_udp_recovery = PackGetBool(p, "support_udp_recovery");
 
-			if (c->IsInProc)
+			if (c->CipherName != NULL)
 			{
-				char tmp[MAX_SIZE];
-
-				PackGetStr(p, "inproc_postfix", c->InProcPrefix, sizeof(c->InProcPrefix));
-				Zero(tmp, sizeof(tmp));
-				PackGetStr(p, "inproc_cryptname", tmp, sizeof(tmp));
-				c->InProcLayer = PackGetInt(p, "inproc_layer");
-
-				if (c->FirstSock != NULL)
-				{
-					if (IsEmptyStr(c->InProcPrefix) == false)
-					{
-						Format(c->FirstSock->UnderlayProtocol, sizeof(c->FirstSock->UnderlayProtocol), SOCK_UNDERLAY_INPROC_EX, c->InProcPrefix);
-						AddProtocolDetailsStr(c->FirstSock->UnderlayProtocol, sizeof(c->FirstSock->UnderlayProtocol), c->InProcPrefix);
-					}
-				}
-
-				if (c->CipherName != NULL)
-				{
-					Free(c->CipherName);
-				}
-
-				c->CipherName = NULL;
-
-				if (c->SslVersion != NULL)
-				{
-					Free(c->SslVersion);
-				}
-				c->SslVersion = NULL;
-
-				if (IsEmptyStr(tmp) == false)
-				{
-					c->CipherName = CopyStr(tmp);
-					use_encrypt = true;
-				}
-
-				use_udp_acceleration_client = false;
+				Free(c->CipherName);
 			}
-			else
+			c->CipherName = NULL;
+
+			if (c->SslVersion != NULL)
 			{
-				if (c->CipherName != NULL)
-				{
-					Free(c->CipherName);
-				}
-				c->CipherName = NULL;
+				Free(c->SslVersion);
+			}
+			c->SslVersion = NULL;
 
-				if (c->SslVersion != NULL)
-				{
-					Free(c->SslVersion);
-				}
-				c->SslVersion = NULL;
+			if (c->FirstSock != NULL && IsEmptyStr(c->FirstSock->CipherName) == false)
+			{
+				c->CipherName = CopyStr(c->FirstSock->CipherName);
+			}
 
-				if (c->FirstSock != NULL && IsEmptyStr(c->FirstSock->CipherName) == false)
-				{
-					c->CipherName = CopyStr(c->FirstSock->CipherName);
-				}
-
-				if (c->FirstSock != NULL && IsEmptyStr(c->FirstSock->SslVersion) == false)
-				{
-					c->SslVersion = CopyStr(c->FirstSock->SslVersion);
-				}
+			if (c->FirstSock != NULL && IsEmptyStr(c->FirstSock->SslVersion) == false)
+			{
+				c->SslVersion = CopyStr(c->FirstSock->SslVersion);
 			}
 
 			if (support_bulk_on_rudp && c->FirstSock != NULL && c->FirstSock->IsRUDPSocket &&
@@ -1719,9 +1673,9 @@ bool ServerAccept(CONNECTION *c)
 						// Plaintext password authentication
 						Zero(plain_password, sizeof(plain_password));
 						PackGetStr(p, "plain_password", plain_password, sizeof(plain_password));
-						if (c->IsInProc == false && StartWith(plain_password, IPC_PASSWORD_MSCHAPV2_TAG))
+						if (StartWith(plain_password, IPC_PASSWORD_MSCHAPV2_TAG))
 						{
-							// Do not allow the MS-CHAPv2 authentication other than IPC sessions
+							// Do not allow the MS-CHAPv2 authentication (it was only available to IPC sessions)
 							Zero(plain_password, sizeof(plain_password));
 						}
 
@@ -1912,8 +1866,6 @@ bool ServerAccept(CONNECTION *c)
 				// Get the policy
 				if (farm_member == false)
 				{
-					bool is_asterisk_user = false;
-
 					// In the case of not a farm member
 					user = AcGetUser(hub, username);
 					if (user == NULL)
@@ -1928,29 +1880,12 @@ bool ServerAccept(CONNECTION *c)
 							error_detail = "AcGetUser";
 							goto CLEANUP;
 						}
-
-						is_asterisk_user = true;
 					}
 
 					policy = NULL;
 
 					Lock(user->lock);
 					{
-						if (is_asterisk_user == false)
-						{
-							UCHAR associated_mac_address[6];
-
-							// Get the associated virtual MAC address
-							if (GetUserMacAddressFromUserNote(associated_mac_address, user->Note))
-							{
-								if (IsZero(assigned_ipc_mac_address, 6))
-								{
-									WHERE;
-									Copy(assigned_ipc_mac_address, associated_mac_address, 6);
-								}
-							}
-						}
-
 						// Get the expiration date
 						user_expires = user->ExpireTime;
 
@@ -2084,12 +2019,6 @@ bool ServerAccept(CONNECTION *c)
 			if (GetHubAdminOption(hub, "deny_routing") != 0)
 			{
 				policy->NoRouting = true;
-			}
-
-			if (c->IsInProc)
-			{
-				policy->NoBridge = false;
-				policy->NoRouting = false;
 			}
 
 			if (hub->Option->ClientMinimumRequiredBuild > c->ClientBuild &&
@@ -2594,8 +2523,7 @@ bool ServerAccept(CONNECTION *c)
 
 			// Create a Session
 			StrLower(username);
-			s = NewServerSessionEx(c->Cedar, c, hub, username, policy, c->IsInProc,
-				(c->IsInProc && IsZero(assigned_ipc_mac_address, 6) == false) ? assigned_ipc_mac_address : NULL);
+			s = NewServerSession(c->Cedar, c, hub, username, policy);
 
 			s->EnableUdpRecovery = enable_udp_recovery;
 			s->LocalHostSession = local_host_session;
@@ -2628,11 +2556,6 @@ bool ServerAccept(CONNECTION *c)
 			if (server != NULL)
 			{
 				s->NoSendSignature = server->NoSendSignature;
-			}
-
-			if (c->IsInProc)
-			{
-				s->NoSendSignature = true;
 			}
 
 			// Determine whether the use of UDP acceleration mode
@@ -2822,15 +2745,6 @@ bool ServerAccept(CONNECTION *c)
 		p = PackWelcome(s);
 
 		PackAddBool(p, "suppress_client_update_notification", suppress_client_update_notification);
-
-		if (s != NULL && s->InProcMode)
-		{
-			if (IsZero(mschap_v2_server_response_20, sizeof(mschap_v2_server_response_20)) == false)
-			{
-				// MS-CHAPv2 Response
-				PackAddData(p, "IpcMsChapV2ServerResponse", mschap_v2_server_response_20, sizeof(mschap_v2_server_response_20));
-			}
-		}
 
 		if (true)
 		{
@@ -4848,23 +4762,6 @@ PACK *PackWelcome(SESSION *s)
 	if (s->NoSendSignature)
 	{
 		PackAddBool(p, "no_send_signature", true);
-	}
-
-	if (s->InProcMode)
-	{
-		// MAC address for IPC
-		PackAddData(p, "IpcMacAddress", s->IpcMacAddress, 6);
-
-		// Virtual HUB name
-		PackAddStr(p, "IpcHubName", s->Hub->Name);
-
-		// Shared Buffer
-		s->IpcSessionSharedBuffer = NewSharedBuffer(NULL, sizeof(IPC_SESSION_SHARED_BUFFER_DATA));
-		AddRef(s->IpcSessionSharedBuffer->Ref);
-
-		s->IpcSessionShared = s->IpcSessionSharedBuffer->Data;
-
-		PackAddInt64(p, "IpcSessionSharedBuffer", (UINT64)s->IpcSessionSharedBuffer);
 	}
 
 	if (s->UdpAccel != NULL)

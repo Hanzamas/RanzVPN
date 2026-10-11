@@ -11,7 +11,6 @@
 #include "Cedar.h"
 #include "Connection.h"
 #include "Hub.h"
-#include "IPC.h"
 #include "MsChapV2.h"
 #include "Server.h"
 
