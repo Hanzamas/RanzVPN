@@ -167,8 +167,7 @@ void mschapv2_test(UINT num, char **arg)
 		        StrCmp(d.MsChapV2_PPPUsername, username) == 0 &&
 		        Cmp(d.MsChapV2_ServerChallenge, auth_challenge->Buf, 16) == 0 &&
 		        Cmp(d.MsChapV2_ClientChallenge, peer_challenge->Buf, 16) == 0 &&
-		        Cmp(d.MsChapV2_ClientResponse, nt_response, 24) == 0 &&
-		        d.MsChapV2_EapClient == NULL)
+		        Cmp(d.MsChapV2_ClientResponse, nt_response, 24) == 0)
 		{
 			Print("  [PASS] ParseAndExtractMsChapV2InfoFromPassword round-trip\n");
 		}

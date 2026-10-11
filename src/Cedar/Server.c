@@ -18,7 +18,6 @@
 #include "Listener.h"
 #include "Nat.h"
 #include "Protocol.h"
-#include "Radius.h"
 #include "Sam.h"
 #include "SecureNAT.h"
 
@@ -1361,10 +1360,6 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 	// VPN client can be connected
 	AddCapsBool(t, "b_vpn_client_connect", s->Cedar->Bridge == false ? true : false);
 
-	// External authentication server is available
-	AddCapsBool(t, "b_support_radius", s->ServerType != SERVER_TYPE_FARM_MEMBER &&
-		s->Cedar->Bridge == false);
-
 	// Local-bridge function is available
 	AddCapsBool(t, "b_local_bridge", IsBridgeSupported());
 
@@ -1490,10 +1485,6 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 
 	// Support for status check of the TCP connection
 	AddCapsBool(t, "b_support_check_tcp_state", true);
-
-	// Can specify multiple server and retry intervals in Radius authentication
-	AddCapsBool(t, "b_support_radius_retry_interval_and_several_servers", s->ServerType != SERVER_TYPE_FARM_MEMBER &&
-		s->Cedar->Bridge == false);
 
 	// Can manage the ID of the tagged VLAN in the MAC address table
 	AddCapsBool(t, "b_support_vlan", true);
@@ -3776,13 +3767,10 @@ void SiLoadHubOptionCfg(FOLDER *f, HUB_OPTION *o)
 	o->DisableCheckMacOnLocalBridge = CfgGetBool(f, "DisableCheckMacOnLocalBridge");
 	o->DisableCorrectIpOffloadChecksum = CfgGetBool(f, "DisableCorrectIpOffloadChecksum");
 	o->SuppressClientUpdateNotification = CfgGetBool(f, "SuppressClientUpdateNotification");
-	o->AssignVLanIdByRadiusAttribute = CfgGetBool(f, "AssignVLanIdByRadiusAttribute");
-	o->DenyAllRadiusLoginWithNoVlanAssign = CfgGetBool(f, "DenyAllRadiusLoginWithNoVlanAssign");
 	o->SecureNAT_RandomizeAssignIp = CfgGetBool(f, "SecureNAT_RandomizeAssignIp");
 	o->DetectDormantSessionInterval = CfgGetInt(f, "DetectDormantSessionInterval");
 	o->NoPhysicalIPOnPacketLog = CfgGetBool(f, "NoPhysicalIPOnPacketLog");
 	o->UseHubNameAsDhcpUserClassOption = CfgGetBool(f, "UseHubNameAsDhcpUserClassOption");
-	o->UseHubNameAsRadiusNasId = CfgGetBool(f, "UseHubNameAsRadiusNasId");
 	o->AllowEapMatchUserByCert = CfgGetBool(f, "AllowEapMatchUserByCert");
 	o->DhcpDiscoverTimeoutMs = CfgGetInt(f, "DhcpDiscoverTimeoutMs");
 	if (o->DhcpDiscoverTimeoutMs == 0)
@@ -3865,8 +3853,6 @@ void SiWriteHubOptionCfg(FOLDER *f, HUB_OPTION *o)
 	CfgAddBool(f, "DropArpInPrivacyFilterMode", o->DropArpInPrivacyFilterMode);
 	CfgAddBool(f, "AllowSameUserInPrivacyFilterMode", o->AllowSameUserInPrivacyFilterMode);
 	CfgAddBool(f, "SuppressClientUpdateNotification", o->SuppressClientUpdateNotification);
-	CfgAddBool(f, "AssignVLanIdByRadiusAttribute", o->AssignVLanIdByRadiusAttribute);
-	CfgAddBool(f, "DenyAllRadiusLoginWithNoVlanAssign", o->DenyAllRadiusLoginWithNoVlanAssign);
 	CfgAddBool(f, "SecureNAT_RandomizeAssignIp", o->SecureNAT_RandomizeAssignIp);
 	CfgAddBool(f, "NoPhysicalIPOnPacketLog", o->NoPhysicalIPOnPacketLog);
 	CfgAddInt(f, "DetectDormantSessionInterval", o->DetectDormantSessionInterval);
@@ -3891,7 +3877,6 @@ void SiWriteHubOptionCfg(FOLDER *f, HUB_OPTION *o)
 	CfgAddBool(f, "DisableCheckMacOnLocalBridge", o->DisableCheckMacOnLocalBridge);
 	CfgAddBool(f, "DisableCorrectIpOffloadChecksum", o->DisableCorrectIpOffloadChecksum);
 	CfgAddBool(f, "UseHubNameAsDhcpUserClassOption", o->UseHubNameAsDhcpUserClassOption);
-	CfgAddBool(f, "UseHubNameAsRadiusNasId", o->UseHubNameAsRadiusNasId);
 	CfgAddBool(f, "AllowEapMatchUserByCert", o->AllowEapMatchUserByCert);
 	CfgAddInt(f, "DhcpDiscoverTimeoutMs", o->DhcpDiscoverTimeoutMs);
 }
@@ -3901,7 +3886,6 @@ void SiWriteUserCfg(FOLDER *f, USER *u)
 {
 	BUF *b;
 	AUTHPASSWORD *password;
-	AUTHRADIUS *radius;
 	AUTHNT *nt;
 	AUTHUSERCERT *usercert;
 	AUTHROOTCERT *rootcert;
@@ -3951,11 +3935,6 @@ void SiWriteUserCfg(FOLDER *f, USER *u)
 			case AUTHTYPE_NT:
 				nt = (AUTHNT *)u->AuthData;
 				CfgAddUniStr(f, "AuthNtUserName", nt->NtUsername);
-				break;
-
-			case AUTHTYPE_RADIUS:
-				radius = (AUTHRADIUS *)u->AuthData;
-				CfgAddUniStr(f, "AuthRadiusUsername", radius->RadiusUsername);
 				break;
 
 			case AUTHTYPE_USERCERT:
@@ -4054,17 +4033,6 @@ void SiLoadUserCfg(HUB *h, FOLDER *f)
 		else
 		{
 			authdata = NewNTAuthData(NULL);
-		}
-		break;
-
-	case AUTHTYPE_RADIUS:
-		if (CfgGetUniStr(f, "AuthRadiusUsername", tmp, sizeof(tmp)))
-		{
-			authdata = NewRadiusAuthData(tmp);
-		}
-		else
-		{
-			authdata = NewRadiusAuthData(NULL);
 		}
 		break;
 
@@ -4684,25 +4652,6 @@ void SiWriteHubCfg(FOLDER *f, HUB *h)
 		return;
 	}
 
-	// Radius server name
-	Lock(h->RadiusOptionLock);
-	{
-		if (h->RadiusServerName != NULL)
-		{
-			CfgAddStr(f, "RadiusServerName", h->RadiusServerName);
-			CfgAddBuf(f, "RadiusSecret", h->RadiusSecret);
-		}
-		CfgAddInt(f, "RadiusServerPort", h->RadiusServerPort);
-		CfgAddInt(f, "RadiusRetryInterval", h->RadiusRetryInterval);
-		CfgAddInt(f, "RadiusRetryTimeout", h->RadiusRetryTimeout);
-		CfgAddStr(f, "RadiusSuffixFilter", h->RadiusSuffixFilter);
-		CfgAddStr(f, "RadiusRealm", h->RadiusRealm);
-
-		CfgAddBool(f, "RadiusConvertAllMsChapv2AuthRequestToEap", h->RadiusConvertAllMsChapv2AuthRequestToEap);
-		CfgAddBool(f, "RadiusUsePeapInsteadOfEap", h->RadiusUsePeapInsteadOfEap);
-	}
-	Unlock(h->RadiusOptionLock);
-
 	// Password
 	CfgAddByte(f, "HashedPassword", h->HashedPassword, sizeof(h->HashedPassword));
 	CfgAddByte(f, "SecurePassword", h->SecurePassword, sizeof(h->SecurePassword));
@@ -4853,54 +4802,6 @@ void SiLoadHubCfg(SERVER *s, FOLDER *f, char *name)
 	if (h != NULL)
 	{
 		HUB_LOG g;
-		// Radius server settings
-		Lock(h->RadiusOptionLock);
-		{
-			char name[MAX_SIZE];
-			BUF *secret;
-			UINT port;
-			UINT interval;
-			UINT timeout;
-
-			port = CfgGetInt(f, "RadiusServerPort");
-			interval = CfgGetInt(f, "RadiusRetryInterval");
-			timeout = CfgGetInt(f, "RadiusRetryTimeout");
-
-			CfgGetStr(f, "RadiusSuffixFilter", h->RadiusSuffixFilter, sizeof(h->RadiusSuffixFilter));
-			CfgGetStr(f, "RadiusRealm", h->RadiusRealm, sizeof(h->RadiusRealm));
-
-			h->RadiusConvertAllMsChapv2AuthRequestToEap = CfgGetBool(f, "RadiusConvertAllMsChapv2AuthRequestToEap");
-			h->RadiusUsePeapInsteadOfEap = CfgGetBool(f, "RadiusUsePeapInsteadOfEap");
-
-			if (interval == 0)
-			{
-				interval = RADIUS_RETRY_INTERVAL;
-			}
-
-			if (timeout == 0) {
-				timeout = RADIUS_RETRY_TIMEOUT;
-			}
-
-			if (port != 0 && CfgGetStr(f, "RadiusServerName", name, sizeof(name)))
-			{
-				secret = CfgGetBuf(f, "RadiusSecret");
-				if (secret != NULL)
-				{
-					char secret_str[MAX_SIZE];
-					Zero(secret_str, sizeof(secret_str));
-					if (secret->Size < sizeof(secret_str))
-					{
-						Copy(secret_str, secret->Buf, secret->Size);
-					}
-					secret_str[sizeof(secret_str) - 1] = 0;
-					//SetRadiusServer(h, name, port, secret_str);
-					SetRadiusServerEx2(h, name, port, secret_str, interval, timeout);
-					FreeBuf(secret);
-				}
-			}
-		}
-		Unlock(h->RadiusOptionLock);
-
 		// Password
 		if (CfgGetByte(f, "HashedPassword", h->HashedPassword, sizeof(h->HashedPassword)) != sizeof(h->HashedPassword))
 		{
@@ -7191,8 +7092,6 @@ void SiCalledUpdateHub(SERVER *s, PACK *p)
 	o.DropArpInPrivacyFilterMode = PackGetBool(p, "DropArpInPrivacyFilterMode");
 	o.AllowSameUserInPrivacyFilterMode= PackGetBool(p, "AllowSameUserInPrivacyFilterMode");
 	o.SuppressClientUpdateNotification = PackGetBool(p, "SuppressClientUpdateNotification");
-	o.AssignVLanIdByRadiusAttribute = PackGetBool(p, "AssignVLanIdByRadiusAttribute");
-	o.DenyAllRadiusLoginWithNoVlanAssign = PackGetBool(p, "DenyAllRadiusLoginWithNoVlanAssign");
 	o.SecureNAT_RandomizeAssignIp = PackGetBool(p, "SecureNAT_RandomizeAssignIp");
 	o.DetectDormantSessionInterval = PackGetInt(p, "DetectDormantSessionInterval");
 	o.VlanTypeId = PackGetInt(p, "VlanTypeId");
@@ -7239,7 +7138,6 @@ void SiCalledUpdateHub(SERVER *s, PACK *p)
 	o.DisableCheckMacOnLocalBridge = PackGetBool(p, "DisableCheckMacOnLocalBridge");
 	o.DisableCorrectIpOffloadChecksum = PackGetBool(p, "DisableCorrectIpOffloadChecksum");
 	o.UseHubNameAsDhcpUserClassOption = PackGetBool(p, "UseHubNameAsDhcpUserClassOption");
-	o.UseHubNameAsRadiusNasId = PackGetBool(p, "UseHubNameAsRadiusNasId");
 	o.AllowEapMatchUserByCert = PackGetBool(p, "AllowEapMatchUserByCert");
 	o.DhcpDiscoverTimeoutMs = PackGetInt(p, "DhcpDiscoverTimeoutMs");
 	if (o.DhcpDiscoverTimeoutMs == 0)
@@ -9024,8 +8922,6 @@ void SiPackAddCreateHub(PACK *p, HUB *h)
 	PackAddBool(p, "DropArpInPrivacyFilterMode", h->Option->DropArpInPrivacyFilterMode);
 	PackAddBool(p, "AllowSameUserInPrivacyFilterMode", h->Option->AllowSameUserInPrivacyFilterMode);
 	PackAddBool(p, "SuppressClientUpdateNotification", h->Option->SuppressClientUpdateNotification);
-	PackAddBool(p, "AssignVLanIdByRadiusAttribute", h->Option->AssignVLanIdByRadiusAttribute);
-	PackAddBool(p, "DenyAllRadiusLoginWithNoVlanAssign", h->Option->DenyAllRadiusLoginWithNoVlanAssign);
 	PackAddInt(p, "ClientMinimumRequiredBuild", h->Option->ClientMinimumRequiredBuild);
 	PackAddBool(p, "SecureNAT_RandomizeAssignIp", h->Option->SecureNAT_RandomizeAssignIp);
 	PackAddBool(p, "NoPhysicalIPOnPacketLog", h->Option->NoPhysicalIPOnPacketLog);
@@ -9079,7 +8975,6 @@ void SiPackAddCreateHub(PACK *p, HUB *h)
 	PackAddData(p, "HashedPassword", h->HashedPassword, SHA1_SIZE);
 	PackAddData(p, "SecurePassword", h->SecurePassword, SHA1_SIZE);
 	PackAddBool(p, "UseHubNameAsDhcpUserClassOption", h->Option->UseHubNameAsDhcpUserClassOption);
-	PackAddBool(p, "UseHubNameAsRadiusNasId", h->Option->UseHubNameAsRadiusNasId);
 	PackAddBool(p, "AllowEapMatchUserByCert", h->Option->AllowEapMatchUserByCert);
 	PackAddInt(p, "DhcpDiscoverTimeoutMs", h->Option->DhcpDiscoverTimeoutMs);
 
@@ -10416,7 +10311,7 @@ void SiGetCurrentRegion(CEDAR *c, char *region, UINT region_size)
 // since March 19, 2014. However, these functions are disabled on
 // SoftEther VPN Servers which run in Japan and China.
 // 
-// - RADIUS / NT Domain user authentication
+// - NT Domain user authentication
 // - RSA certificate authentication
 // - Deep-inspect packet logging
 // - Source IP address control list

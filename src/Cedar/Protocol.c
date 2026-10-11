@@ -16,7 +16,6 @@
 #include "Logging.h"
 #include "MsChapV2.h"
 #include "Proto_PPP.h"
-#include "Radius.h"
 #include "Sam.h"
 #include "Server.h"
 #include "UdpAccel.h"
@@ -1097,7 +1096,6 @@ bool ServerAccept(CONNECTION *c)
 	UCHAR ticket[SHA1_SIZE];
 	UINT authtype;
 	POLICY *policy;
-	UINT assigned_vlan_id = 0;
 	UCHAR assigned_ipc_mac_address[6];
 	HUB *hub;
 	SESSION *s = NULL;
@@ -1160,7 +1158,6 @@ bool ServerAccept(CONNECTION *c)
 	char *error_detail = NULL;
 	char *error_detail_2 = NULL;
 	char ctoken_hash_str[64];
-	EAP_CLIENT *release_me_eap_client = NULL;
 
 	// Validate arguments
 	if (c == NULL)
@@ -1452,7 +1449,6 @@ bool ServerAccept(CONNECTION *c)
 			USER *user;
 			USERGROUP *group;
 			char plain_password[MAX_PASSWORD_LEN + 1];
-			RADIUS_LOGIN_OPTION radius_login_opt;
 
 			if (hub->Halt || hub->Offline)
 			{
@@ -1462,18 +1458,6 @@ bool ServerAccept(CONNECTION *c)
 				ReleaseHub(hub);
 				c->Err = ERR_HUB_STOPPING;
 				goto CLEANUP;
-			}
-
-			Zero(&radius_login_opt, sizeof(radius_login_opt));
-
-			if (hub->Option != NULL)
-			{
-				radius_login_opt.In_CheckVLanId = hub->Option->AssignVLanIdByRadiusAttribute;
-				radius_login_opt.In_DenyNoVlanId = hub->Option->DenyAllRadiusLoginWithNoVlanAssign;
-				if (hub->Option->UseHubNameAsRadiusNasId)
-				{
-					StrCpy(radius_login_opt.NasId, sizeof(radius_login_opt.NasId), hubname);
-				}
 			}
 
 			// Get the various flags
@@ -1504,13 +1488,6 @@ bool ServerAccept(CONNECTION *c)
 			if (c->IsInProc)
 			{
 				char tmp[MAX_SIZE];
-				UINT64 ptr;
-
-				ptr = PackGetInt64(p, "release_me_eap_client");
-				if (ptr != 0)
-				{
-					release_me_eap_client = (EAP_CLIENT *)ptr;
-				}
 
 				PackGetStr(p, "inproc_postfix", c->InProcPrefix, sizeof(c->InProcPrefix));
 				Zero(tmp, sizeof(tmp));
@@ -1546,9 +1523,6 @@ bool ServerAccept(CONNECTION *c)
 				}
 
 				use_udp_acceleration_client = false;
-
-				Format(radius_login_opt.In_VpnProtocolState, sizeof(radius_login_opt.In_VpnProtocolState),
-					"L%u:%s", c->InProcLayer, c->InProcPrefix);
 			}
 			else
 			{
@@ -1573,9 +1547,6 @@ bool ServerAccept(CONNECTION *c)
 				{
 					c->SslVersion = CopyStr(c->FirstSock->SslVersion);
 				}
-
-				Format(radius_login_opt.In_VpnProtocolState, sizeof(radius_login_opt.In_VpnProtocolState),
-					"L%u:%s", IPC_LAYER_2, "SEVPN");
 			}
 
 			if (support_bulk_on_rudp && c->FirstSock != NULL && c->FirstSock->IsRUDPSocket &&
@@ -1873,7 +1844,7 @@ bool ServerAccept(CONNECTION *c)
 
 							if (fail_ext_user_auth == false)
 							{
-								auth_ret = SamAuthUserByPlainPassword(c, hub, username, plain_password, true, mschap_v2_server_response_20, &radius_login_opt);
+								auth_ret = SamAuthUserByPlainPassword(c, hub, username, plain_password, true, mschap_v2_server_response_20);
 							}
 
 							if (auth_ret && pol == NULL)
@@ -2061,34 +2032,6 @@ bool ServerAccept(CONNECTION *c)
 
 			// Authentication success
 			FreePack(p);
-
-			// Check the assigned VLAN ID
-			if (radius_login_opt.Out_IsRadiusLogin)
-			{
-				if (radius_login_opt.In_CheckVLanId)
-				{
-					if (radius_login_opt.Out_VLanId != 0)
-					{
-						assigned_vlan_id = radius_login_opt.Out_VLanId;
-					}
-
-					if (radius_login_opt.In_DenyNoVlanId && assigned_vlan_id == 0 || assigned_vlan_id >= 4096)
-					{
-						// Deny this session
-						Unlock(hub->lock);
-						ReleaseHub(hub);
-						c->Err = ERR_ACCESS_DENIED;
-						error_detail = "In_DenyNoVlanId";
-						goto CLEANUP;
-					}
-				}
-			}
-
-			// Check the assigned MAC Address
-			if (radius_login_opt.Out_IsRadiusLogin)
-			{
-				Copy(assigned_ipc_mac_address, radius_login_opt.Out_VirtualMacAddress, 6);
-			}
 
 			if (StrCmpi(username, ADMINISTRATOR_USERNAME) != 0)
 			{
@@ -2774,15 +2717,6 @@ bool ServerAccept(CONNECTION *c)
 
 			// Remove the connection from Cedar
 			DelConnection(c->Cedar, c);
-
-			// VLAN ID
-			if (assigned_vlan_id != 0)
-			{
-				if (policy->VLanId == 0)
-				{
-					policy->VLanId = assigned_vlan_id;
-				}
-			}
 
 			// Create a Session
 			StrLower(username);
@@ -3643,11 +3577,6 @@ CLEANUP:
 	SleepThread(25);
 
 	SLog(c->Cedar, "LS_CONNECTION_ERROR", c->Name, GetUniErrorStr(c->Err), c->Err);
-
-	if (release_me_eap_client != NULL)
-	{
-		ReleaseEapClient(release_me_eap_client);
-	}
 
 	return ret;
 }

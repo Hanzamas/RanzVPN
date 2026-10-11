@@ -220,9 +220,6 @@ CAPSLIST *ScGetCapsEx(RPC *rpc)
 
 		AddCapsBool(t, "b_vpn_client_connect", is_bridge == false ? true : false);
 
-		AddCapsBool(t, "b_support_radius", info.ServerType != SERVER_TYPE_FARM_MEMBER &&
-			is_bridge == false);
-
 		if (build >= 3600)
 		{
 			RPC_BRIDGE_SUPPORT b;
@@ -374,8 +371,6 @@ PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 	DECLARE_RPC("GetHub", RPC_CREATE_HUB, StGetHub, InRpcCreateHub, OutRpcCreateHub)
 	DECLARE_RPC_EX("EnumHub", RPC_ENUM_HUB, StEnumHub, InRpcEnumHub, OutRpcEnumHub, FreeRpcEnumHub)
 	DECLARE_RPC("DeleteHub", RPC_DELETE_HUB, StDeleteHub, InRpcDeleteHub, OutRpcDeleteHub)
-	DECLARE_RPC("GetHubRadius", RPC_RADIUS, StGetHubRadius, InRpcRadius, OutRpcRadius)
-	DECLARE_RPC("SetHubRadius", RPC_RADIUS, StSetHubRadius, InRpcRadius, OutRpcRadius)
 	DECLARE_RPC_EX("EnumConnection", RPC_ENUM_CONNECTION, StEnumConnection, InRpcEnumConnection, OutRpcEnumConnection, FreeRpcEnumConnection)
 	DECLARE_RPC("DisconnectConnection", RPC_DISCONNECT_CONNECTION, StDisconnectConnection, InRpcDisconnectConnection, OutRpcDisconnectConnection)
 	DECLARE_RPC("GetConnectionInfo", RPC_CONNECTION_INFO, StGetConnectionInfo, InRpcConnectionInfo, OutRpcConnectionInfo)
@@ -549,8 +544,6 @@ DECLARE_SC("SetHub", RPC_CREATE_HUB, ScSetHub, InRpcCreateHub, OutRpcCreateHub)
 DECLARE_SC("GetHub", RPC_CREATE_HUB, ScGetHub, InRpcCreateHub, OutRpcCreateHub)
 DECLARE_SC_EX("EnumHub", RPC_ENUM_HUB, ScEnumHub, InRpcEnumHub, OutRpcEnumHub, FreeRpcEnumHub)
 DECLARE_SC("DeleteHub", RPC_DELETE_HUB, ScDeleteHub, InRpcDeleteHub, OutRpcDeleteHub)
-DECLARE_SC("GetHubRadius", RPC_RADIUS, ScGetHubRadius, InRpcRadius, OutRpcRadius)
-DECLARE_SC("SetHubRadius", RPC_RADIUS, ScSetHubRadius, InRpcRadius, OutRpcRadius)
 DECLARE_SC_EX("EnumConnection", RPC_ENUM_CONNECTION, ScEnumConnection, InRpcEnumConnection, OutRpcEnumConnection, FreeRpcEnumConnection)
 DECLARE_SC("DisconnectConnection", RPC_DISCONNECT_CONNECTION, ScDisconnectConnection, InRpcDisconnectConnection, OutRpcDisconnectConnection)
 DECLARE_SC("GetConnectionInfo", RPC_CONNECTION_INFO, ScGetConnectionInfo, InRpcConnectionInfo, OutRpcConnectionInfo)
@@ -4440,7 +4433,7 @@ UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
 
 	if (GetGlobalServerFlag(GSF_DISABLE_RADIUS_AUTH) != 0)
 	{
-		if (t->AuthType == AUTHTYPE_USERCERT || t->AuthType == AUTHTYPE_RADIUS || t->AuthType == AUTHTYPE_ROOTCERT || t->AuthType == AUTHTYPE_NT)
+		if (t->AuthType == AUTHTYPE_USERCERT || t->AuthType == AUTHTYPE_ROOTCERT || t->AuthType == AUTHTYPE_NT)
 		{
 			return ERR_NOT_SUPPORTED_AUTH_ON_OPENSOURCE;
 		}
@@ -4448,7 +4441,7 @@ UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
 
 	if (StrCmpi(t->Name, "*") == 0)
 	{
-		if (t->AuthType != AUTHTYPE_RADIUS && t->AuthType != AUTHTYPE_NT)
+		if (t->AuthType != AUTHTYPE_NT)
 		{
 			return ERR_INVALID_PARAMETER;
 		}
@@ -4573,7 +4566,7 @@ UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
 
 	if (GetGlobalServerFlag(GSF_DISABLE_RADIUS_AUTH) != 0)
 	{
-		if (t->AuthType == AUTHTYPE_USERCERT || t->AuthType == AUTHTYPE_RADIUS || t->AuthType == AUTHTYPE_ROOTCERT || t->AuthType == AUTHTYPE_NT)
+		if (t->AuthType == AUTHTYPE_USERCERT || t->AuthType == AUTHTYPE_ROOTCERT || t->AuthType == AUTHTYPE_NT)
 		{
 			return ERR_NOT_SUPPORTED_AUTH_ON_OPENSOURCE;
 		}
@@ -4600,7 +4593,7 @@ UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
 
 	if (StrCmpi(t->Name, "*") == 0)
 	{
-		if (t->AuthType != AUTHTYPE_RADIUS && t->AuthType != AUTHTYPE_NT)
+		if (t->AuthType != AUTHTYPE_NT)
 		{
 			return ERR_INVALID_PARAMETER;
 		}
@@ -7000,86 +6993,6 @@ UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t)
 		}
 	}
 	UnlockList(c->ConnectionList);
-
-	return ERR_NO_ERROR;
-}
-
-// Set Radius options of the hub
-UINT StSetHubRadius(ADMIN *a, RPC_RADIUS *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	HUB *h = NULL;
-
-	NO_SUPPORT_FOR_BRIDGE;
-
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
-	if (GetGlobalServerFlag(GSF_DISABLE_RADIUS_AUTH) != 0 && IsEmptyStr(t->RadiusServerName) == false)
-	{
-		return ERR_NOT_SUPPORTED_FUNCTION_ON_OPENSOURCE;
-	}
-
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
-	if (h == NULL)
-	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	//SetRadiusServer(h, t->RadiusServerName, t->RadiusPort, t->RadiusSecret);
-	SetRadiusServerEx2(h, t->RadiusServerName, t->RadiusPort, t->RadiusSecret, t->RadiusRetryInterval, t->RadiusRetryTimeout);
-
-	ALog(a, h, "LA_SET_HUB_RADIUS");
-
-	ReleaseHub(h);
-
-	IncrementServerConfigRevision(s);
-
-	return ERR_NO_ERROR;
-}
-
-// Get Radius options of the hub
-UINT StGetHubRadius(ADMIN *a, RPC_RADIUS *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	HUB *h = NULL;
-
-	CHECK_RIGHT;
-
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
-	if (h == NULL)
-	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	Zero(t, sizeof(RPC_RADIUS));
-	//GetRadiusServer(h, t->RadiusServerName, sizeof(t->RadiusServerName),
-	//	&t->RadiusPort, t->RadiusSecret, sizeof(t->RadiusSecret));
-	GetRadiusServerEx2(h, t->RadiusServerName, sizeof(t->RadiusServerName),
-		&t->RadiusPort, t->RadiusSecret, sizeof(t->RadiusSecret), &t->RadiusRetryInterval, &t->RadiusRetryTimeout);
-
-	ReleaseHub(h);
 
 	return ERR_NO_ERROR;
 }
@@ -10986,39 +10899,6 @@ void OutRpcHubOption(PACK *p, RPC_HUB_OPTION *t)
 	PackAddBool(p, "NoEnum", t->NoEnum);
 }
 
-// RPC_RADIUS
-void InRpcRadius(RPC_RADIUS *t, PACK *p)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_RADIUS));
-	PackGetStr(p, "RadiusServerName", t->RadiusServerName, sizeof(t->RadiusServerName));
-	t->RadiusPort = PackGetInt(p, "RadiusPort");
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	PackGetStr(p, "RadiusSecret", t->RadiusSecret, sizeof(t->RadiusSecret));
-	t->RadiusRetryInterval = PackGetInt(p, "RadiusRetryInterval");
-	t->RadiusRetryTimeout = PackGetInt(p, "RadiusRetryTimeout");
-}
-void OutRpcRadius(PACK *p, RPC_RADIUS *t)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "RadiusServerName", t->RadiusServerName);
-	PackAddInt(p, "RadiusPort", t->RadiusPort);
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddStr(p, "RadiusSecret", t->RadiusSecret);
-	PackAddInt(p, "RadiusRetryInterval", t->RadiusRetryInterval);
-	PackAddInt(p, "RadiusRetryTimeout", t->RadiusRetryTimeout);
-}
-
 // RPC_HUB
 void InRpcHub(RPC_HUB *t, PACK *p)
 {
@@ -11997,7 +11877,6 @@ void *InRpcAuthData(PACK *p, UINT *authtype, char *username)
 	AUTHPASSWORD *pw;
 	AUTHUSERCERT *usercert;
 	AUTHROOTCERT *rootcert;
-	AUTHRADIUS *radius;
 	AUTHNT *nt;
 	BUF *b;
 	char plain_pw[MAX_SIZE];
@@ -12049,18 +11928,6 @@ void *InRpcAuthData(PACK *p, UINT *authtype, char *username)
 		}
 		return rootcert;
 
-	case AUTHTYPE_RADIUS:
-		radius = ZeroMalloc(sizeof(AUTHRADIUS));
-		if (PackGetUniStr(p, "RadiusUsername", tmp, sizeof(tmp)))
-		{
-			radius->RadiusUsername = CopyUniStr(tmp);
-		}
-		else
-		{
-			radius->RadiusUsername = CopyUniStr(L"");
-		}
-		return radius;
-
 	case AUTHTYPE_NT:
 		nt = ZeroMalloc(sizeof(AUTHNT));
 		if (PackGetUniStr(p, "NtUsername", tmp, sizeof(tmp)))
@@ -12081,7 +11948,6 @@ void OutRpcAuthData(PACK *p, void *authdata, UINT authtype)
 	AUTHPASSWORD *pw = authdata;
 	AUTHUSERCERT *usercert = authdata;
 	AUTHROOTCERT *rootcert = authdata;
-	AUTHRADIUS *radius = authdata;
 	AUTHNT *nt = authdata;
 	// Validate arguments
 	if (p == NULL)
@@ -12111,10 +11977,6 @@ void OutRpcAuthData(PACK *p, void *authdata, UINT authtype)
 		{
 			PackAddUniStr(p, "CommonName", rootcert->CommonName);
 		}
-		break;
-
-	case AUTHTYPE_RADIUS:
-		PackAddUniStr(p, "RadiusUsername", radius->RadiusUsername);
 		break;
 
 	case AUTHTYPE_NT:

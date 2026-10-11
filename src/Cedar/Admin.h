@@ -241,17 +241,6 @@ struct RPC_HUB_OPTION
 	bool NoEnum;						// Not listed
 };
 
-// Radius server options
-struct RPC_RADIUS
-{
-	char HubName[MAX_HUBNAME_LEN + 1];	// HUB Name
-	char RadiusServerName[MAX_HOST_NAME_LEN + 1];	// Radius server name
-	UINT RadiusPort;					// Radius port number
-	char RadiusSecret[MAX_PASSWORD_LEN + 1];	// Secret key
-	UINT RadiusRetryInterval;			// Radius retry interval
-	UINT RadiusRetryTimeout;			// Radius retry timeout
-};
-
 // Specify the HUB
 struct RPC_HUB
 {
@@ -971,8 +960,6 @@ UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t);
 UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t);
 UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t);
 UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t);
-UINT StGetHubRadius(ADMIN *a, RPC_RADIUS *t);
-UINT StSetHubRadius(ADMIN *a, RPC_RADIUS *t);
 UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t);
 UINT StDisconnectConnection(ADMIN *a, RPC_DISCONNECT_CONNECTION *t);
 UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t);
@@ -1108,8 +1095,6 @@ UINT ScSetHub(RPC *r, RPC_CREATE_HUB *t);
 UINT ScGetHub(RPC *r, RPC_CREATE_HUB *t);
 UINT ScEnumHub(RPC *r, RPC_ENUM_HUB *t);
 UINT ScDeleteHub(RPC *r, RPC_DELETE_HUB *t);
-UINT ScGetHubRadius(RPC *r, RPC_RADIUS *t);
-UINT ScSetHubRadius(RPC *r, RPC_RADIUS *t);
 UINT ScEnumConnection(RPC *r, RPC_ENUM_CONNECTION *t);
 UINT ScDisconnectConnection(RPC *r, RPC_DISCONNECT_CONNECTION *t);
 UINT ScGetConnectionInfo(RPC *r, RPC_CONNECTION_INFO *t);
@@ -1257,8 +1242,6 @@ void InRpcFarmConnectionStatus(RPC_FARM_CONNECTION_STATUS *t, PACK *p);
 void OutRpcFarmConnectionStatus(PACK *p, RPC_FARM_CONNECTION_STATUS *t);
 void InRpcHubOption(RPC_HUB_OPTION *t, PACK *p);
 void OutRpcHubOption(PACK *p, RPC_HUB_OPTION *t);
-void InRpcRadius(RPC_RADIUS *t, PACK *p);
-void OutRpcRadius(PACK *p, RPC_RADIUS *t);
 void InRpcHub(RPC_HUB *t, PACK *p);
 void OutRpcHub(PACK *p, RPC_HUB *t);
 void InRpcCreateHub(RPC_CREATE_HUB *t, PACK *p);

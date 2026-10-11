@@ -20,7 +20,6 @@ struct IPC_MSCHAP_V2_AUTHINFO
 	UCHAR MsChapV2_ServerChallenge[16];	// MS-CHAPv2 Server Challenge
 	UCHAR MsChapV2_ClientChallenge[16];	// MS-CHAPv2 Client Challenge
 	UCHAR MsChapV2_ClientResponse[24];	// MS-CHAPv2 Client Response
-	EAP_CLIENT *MsChapV2_EapClient;		// EAP client
 };
 
 void GenerateNtPasswordHash(UCHAR *dst, char *password);

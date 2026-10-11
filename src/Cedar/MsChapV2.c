@@ -245,15 +245,10 @@ bool ParseAndExtractMsChapV2InfoFromPassword(IPC_MSCHAP_V2_AUTHINFO *d, char *pa
 		if (IsEmptyStr(t->Token[1]) == false && b1->Size == 16 && b2->Size == 16 && b3->Size == 24
 		        && b4->Size == 8)
 		{
-			UINT64 eap_client_ptr = 0;
-
 			StrCpy(d->MsChapV2_PPPUsername, sizeof(d->MsChapV2_PPPUsername), t->Token[1]);
 			Copy(d->MsChapV2_ServerChallenge, b1->Buf, 16);
 			Copy(d->MsChapV2_ClientChallenge, b2->Buf, 16);
 			Copy(d->MsChapV2_ClientResponse, b3->Buf, 24);
-			Copy(&eap_client_ptr, b4->Buf, 8);
-
-			d->MsChapV2_EapClient = (EAP_CLIENT *)eap_client_ptr;
 
 			ret = true;
 		}

@@ -176,13 +176,10 @@ struct HUB_OPTION
 	bool AllowSameUserInPrivacyFilterMode;	// Allow packets if both the source and destination session user are the same
 	bool SuppressClientUpdateNotification;	// Suppress the update notification function on the VPN Client
 	UINT FloodingSendQueueBufferQuota;	// The global quota of send queues of flooding packets
-	bool AssignVLanIdByRadiusAttribute;	// Assign the VLAN ID for the VPN session, by the attribute value of RADIUS
-	bool DenyAllRadiusLoginWithNoVlanAssign;	// Deny all RADIUS login with no VLAN ID assigned
 	bool SecureNAT_RandomizeAssignIp;	// Randomize the assignment IP address for new DHCP client
 	UINT DetectDormantSessionInterval;	// Interval (seconds) threshold to detect a dormant VPN session
 	bool NoPhysicalIPOnPacketLog;		// Disable saving physical IP address on the packet log
 	bool UseHubNameAsDhcpUserClassOption;	// Add HubName to DHCP request as User-Class option
-	bool UseHubNameAsRadiusNasId;		// Add HubName to Radius request as NAS-Identifier attrioption
 	bool AllowEapMatchUserByCert;		// Allow matching EAP Identity with user certificate CNs
 	UINT DhcpDiscoverTimeoutMs;			// Timeout to wait for DHCP server response on DISCOVER request
 };
@@ -335,16 +332,6 @@ struct HUB
 	UINT Type;							// Type
 	HUBDB *HubDb;						// Database
 	char *Name;							// The name of the HUB
-	LOCK *RadiusOptionLock;				// Lock for Radius option
-	char *RadiusServerName;				// Radius server name
-	UINT RadiusServerPort;				// Radius server port number
-	UINT RadiusRetryInterval;			// Radius retry interval
-	UINT RadiusRetryTimeout;			// Radius timeout, it will no longer retry
-	BUF *RadiusSecret;					// Radius shared key
-	char RadiusSuffixFilter[MAX_SIZE];	// Radius suffix filter
-	char RadiusRealm[MAX_SIZE];			// Radius realm (optional)
-	bool RadiusConvertAllMsChapv2AuthRequestToEap;	// Convert all MS-CHAPv2 auth request to EAP
-	bool RadiusUsePeapInsteadOfEap;			// Use PEAP instead of EAP
 	volatile bool Halt;					// Halting flag
 	bool Offline;						// Offline
 	bool BeingOffline;					// Be Doing Offline
@@ -477,13 +464,6 @@ bool ApplyAccessListToForwardPacket(HUB *hub, SESSION *src_session, SESSION *des
 bool IsPacketMaskedByAccessList(SESSION *s, PKT *p, ACCESS *a, UINT64 dest_username, UINT64 dest_groupname, SESSION *dest_session);
 void GetAccessListStr(char *str, UINT size, ACCESS *a);
 void DeleteOldIpTableEntry(LIST *o);
-void SetRadiusServer(HUB *hub, char *name, UINT port, char *secret);
-void SetRadiusServerEx(HUB *hub, char *name, UINT port, char *secret, UINT interval);
-void SetRadiusServerEx2(HUB *hub, char *name, UINT port, char *secret, UINT interval, UINT timeout);
-bool GetRadiusServer(HUB *hub, char *name, UINT size, UINT *port, char *secret, UINT secret_size);
-bool GetRadiusServerEx(HUB *hub, char *name, UINT size, UINT *port, char *secret, UINT secret_size, UINT *interval);
-bool GetRadiusServerEx2(HUB *hub, char *name, UINT size, UINT *port, char *secret, UINT secret_size, UINT *interval, UINT *timeout);
-bool GetRadiusServerEx3(HUB *hub, char *name, UINT size, UINT *port, char *secret, UINT secret_size, UINT *interval, UINT *timeout, char *suffix_filter, UINT suffix_filter_size);
 int CompareCert(void *p1, void *p2);
 void GetHubLogSetting(HUB *h, HUB_LOG *setting);
 void SetHubLogSetting(HUB *h, HUB_LOG *setting);
@@ -540,8 +520,6 @@ bool IsUserMatchInUserList(LIST *o, char *filename, UINT64 user_hash);
 bool IsUserMatchInUserListWithCacheExpires(LIST *o, char *filename, UINT64 user_hash, UINT64 lifetime);
 bool IsUserMatchInUserListWithCacheExpiresAcl(LIST *o, char *name_in_acl, UINT64 user_hash, UINT64 lifetime);
 bool CheckMaxLoggedPacketsPerMinute(SESSION *s, UINT max_packets, UINT64 now);
-EAP_CLIENT *HubNewEapClient(CEDAR *cedar, char *hubname, char *client_ip_str, char *username, char *vpn_protocol_state_str, bool proxy_only, 
-							PPP_LCP **response, UCHAR last_recv_eapid);
 
 #endif	// HUB_H
 

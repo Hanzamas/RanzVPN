@@ -364,7 +364,6 @@
 #define	AUTHTYPE_PASSWORD				1			// Password authentication
 #define	AUTHTYPE_USERCERT				2			// User certificate authentication
 #define	AUTHTYPE_ROOTCERT				3			// Root certificate which is issued by trusted Certificate Authority
-#define	AUTHTYPE_RADIUS					4			// Radius authentication
 #define	AUTHTYPE_NT						5			// Windows NT authentication
 #define AUTHTYPE_EXTERNAL				96			// External authentication (completed)
 #define	AUTHTYPE_OPENVPN_CERT    		98			// TLS client certificate authentication
@@ -1060,7 +1059,6 @@ UINT CedarGetQueueBudgetConsuming(CEDAR *c);
 UINT CedarGetFifoBudgetConsuming(CEDAR *c);
 UINT CedarGetQueueBudgetBalance(CEDAR *c);
 UINT CedarGetFifoBudgetBalance(CEDAR *c);
-bool CedarIsThereAnyEapEnabledRadiusConfig(CEDAR *c);
 
 
 

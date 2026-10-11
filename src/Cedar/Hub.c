@@ -14,7 +14,6 @@
 #include "Nat.h"
 #include "NativeStack.h"
 #include "Protocol.h"
-#include "Radius.h"
 #include "SecureNAT.h"
 #include "Server.h"
 
@@ -87,121 +86,6 @@ ADMIN_OPTION admin_options[] =
 
 UINT num_admin_options = sizeof(admin_options) / sizeof(ADMIN_OPTION);
 
-
-// Create an EAP client for the specified Virtual Hub
-EAP_CLIENT *HubNewEapClient(CEDAR *cedar, char *hubname, char *client_ip_str, char *username, char *vpn_protocol_state_str, bool proxy_only, 
-							PPP_LCP **response, UCHAR last_recv_eapid)
-{
-	HUB *hub = NULL;
-	EAP_CLIENT *ret = NULL;
-	char radius_servers[MAX_PATH] = {0};
-	UINT radius_port = 0;
-	UINT radius_retry_interval = 0;
-	UINT radius_retry_timeout = 0;
-	char radius_secret[MAX_PATH] = {0};
-	char radius_suffix_filter[MAX_PATH] = {0};
-	if (cedar == NULL || hubname == NULL || client_ip_str == NULL || username == NULL)
-	{
-		return NULL;
-	}
-
-	// Find the Virtual Hub
-	LockHubList(cedar);
-	{
-		hub = GetHub(cedar, hubname);
-	}
-	UnlockHubList(cedar);
-
-	if (hub != NULL)
-	{
-		if (GetRadiusServerEx3(hub, radius_servers, sizeof(radius_servers), &radius_port, radius_secret,
-			sizeof(radius_secret), &radius_retry_interval, &radius_retry_timeout, radius_suffix_filter, sizeof(radius_suffix_filter)))
-		{
-			bool use_peap = hub->RadiusUsePeapInsteadOfEap;
-
-			if (IsEmptyStr(radius_suffix_filter) || EndWith(username, radius_suffix_filter))
-			{
-				TOKEN_LIST *radius_servers_list = ParseToken(radius_servers, " ,;\t");
-
-				if (radius_servers_list != NULL && radius_servers_list->NumTokens >= 1)
-				{
-					// Try for each of RADIUS servers
-					UINT i;
-					bool finish = false;
-
-					for (i = 0;i < radius_servers_list->NumTokens;i++)
-					{
-						EAP_CLIENT *eap;
-						IP ip;
-
-						if (GetIP(&ip, radius_servers_list->Token[i]))
-						{
-							eap = NewEapClient(&ip, radius_port, radius_secret, radius_retry_interval,
-								RADIUS_INITIAL_EAP_TIMEOUT, client_ip_str, username, hubname, last_recv_eapid);
-
-							if (eap != NULL)
-							{
-								if (IsEmptyStr(vpn_protocol_state_str) == false)
-								{
-									StrCpy(eap->In_VpnProtocolState, sizeof(eap->In_VpnProtocolState), vpn_protocol_state_str);
-								}
-
-								if (proxy_only && response != NULL)
-								{
-									// EAP proxy for EAP-capable clients
-									PPP_LCP *lcp = EapClientSendEapIdentity(eap);
-									if (lcp != NULL)
-									{
-										*response = lcp;
-										eap->GiveupTimeout = RADIUS_RETRY_TIMEOUT;
-										ret = eap;
-										finish = true;
-									}
-								}
-								else if (use_peap == false)
-								{
-									// EAP
-									if (EapClientSendMsChapv2AuthRequest(eap))
-									{
-										eap->GiveupTimeout = RADIUS_RETRY_TIMEOUT;
-										ret = eap;
-										finish = true;
-									}
-								}
-								else
-								{
-									// PEAP
-									if (PeapClientSendMsChapv2AuthRequest(eap))
-									{
-										eap->GiveupTimeout = RADIUS_RETRY_TIMEOUT;
-										ret = eap;
-										finish = true;
-									}
-								}
-
-								if (finish == false)
-								{
-									ReleaseEapClient(eap);
-								}
-							}
-						}
-
-						if (finish)
-						{
-							break;
-						}
-					}
-				}
-
-				FreeToken(radius_servers_list);
-			}
-		}
-	}
-
-	ReleaseHub(hub);
-
-	return ret;
-}
 
 // Create a user list
 LIST *NewUserList()
@@ -621,13 +505,10 @@ void DataToHubOptionStruct(HUB_OPTION *o, RPC_ADMIN_OPTION *ao)
 	GetHubAdminOptionDataAndSet(ao, "AllowSameUserInPrivacyFilterMode", o->AllowSameUserInPrivacyFilterMode);
 	GetHubAdminOptionDataAndSet(ao, "SuppressClientUpdateNotification", o->SuppressClientUpdateNotification);
 	GetHubAdminOptionDataAndSet(ao, "FloodingSendQueueBufferQuota", o->FloodingSendQueueBufferQuota);
-	GetHubAdminOptionDataAndSet(ao, "AssignVLanIdByRadiusAttribute", o->AssignVLanIdByRadiusAttribute);
-	GetHubAdminOptionDataAndSet(ao, "DenyAllRadiusLoginWithNoVlanAssign", o->DenyAllRadiusLoginWithNoVlanAssign);
 	GetHubAdminOptionDataAndSet(ao, "SecureNAT_RandomizeAssignIp", o->SecureNAT_RandomizeAssignIp);
 	GetHubAdminOptionDataAndSet(ao, "DetectDormantSessionInterval", o->DetectDormantSessionInterval);
 	GetHubAdminOptionDataAndSet(ao, "NoPhysicalIPOnPacketLog", o->NoPhysicalIPOnPacketLog);
 	GetHubAdminOptionDataAndSet(ao, "UseHubNameAsDhcpUserClassOption", o->UseHubNameAsDhcpUserClassOption);
-	GetHubAdminOptionDataAndSet(ao, "UseHubNameAsRadiusNasId", o->UseHubNameAsRadiusNasId);
 	GetHubAdminOptionDataAndSet(ao, "AllowEapMatchUserByCert", o->AllowEapMatchUserByCert);
 	GetHubAdminOptionDataAndSet(ao, "DhcpDiscoverTimeoutMs", o->DhcpDiscoverTimeoutMs);
 }
@@ -697,13 +578,10 @@ void HubOptionStructToData(RPC_ADMIN_OPTION *ao, HUB_OPTION *o, char *hub_name)
 	Add(aol, NewAdminOption("AllowSameUserInPrivacyFilterMode", o->AllowSameUserInPrivacyFilterMode));
 	Add(aol, NewAdminOption("SuppressClientUpdateNotification", o->SuppressClientUpdateNotification));
 	Add(aol, NewAdminOption("FloodingSendQueueBufferQuota", o->FloodingSendQueueBufferQuota));
-	Add(aol, NewAdminOption("AssignVLanIdByRadiusAttribute", o->AssignVLanIdByRadiusAttribute));
-	Add(aol, NewAdminOption("DenyAllRadiusLoginWithNoVlanAssign", o->DenyAllRadiusLoginWithNoVlanAssign));
 	Add(aol, NewAdminOption("SecureNAT_RandomizeAssignIp", o->SecureNAT_RandomizeAssignIp));
 	Add(aol, NewAdminOption("DetectDormantSessionInterval", o->DetectDormantSessionInterval));
 	Add(aol, NewAdminOption("NoPhysicalIPOnPacketLog", o->NoPhysicalIPOnPacketLog));
 	Add(aol, NewAdminOption("UseHubNameAsDhcpUserClassOption", o->UseHubNameAsDhcpUserClassOption));
-	Add(aol, NewAdminOption("UseHubNameAsRadiusNasId", o->UseHubNameAsRadiusNasId));
 	Add(aol, NewAdminOption("AllowEapMatchUserByCert", o->AllowEapMatchUserByCert));
 	Add(aol, NewAdminOption("DhcpDiscoverTimeoutMs", o->DhcpDiscoverTimeoutMs));
 
@@ -6410,134 +6288,6 @@ void ReleaseHub(HUB *h)
 	}
 }
 
-// Get the Radius server information
-bool GetRadiusServer(HUB *hub, char *name, UINT size, UINT *port, char *secret, UINT secret_size)
-{
-	UINT interval;
-	
-	return GetRadiusServerEx(hub, name, size, port, secret, secret_size, &interval);
-}
-bool GetRadiusServerEx(HUB *hub, char *name, UINT size, UINT *port, char *secret, UINT secret_size, UINT *interval) {
-	UINT timeout;
-
-	return GetRadiusServerEx2(hub, name, size, port, secret, secret_size, interval, &timeout);
-}
-bool GetRadiusServerEx2(HUB *hub, char *name, UINT size, UINT *port, char *secret, UINT secret_size, UINT *interval, UINT *timeout)
-{
-	return GetRadiusServerEx3(hub, name, size, port, secret, secret_size, interval, timeout, NULL, 0);
-}
-bool GetRadiusServerEx3(HUB *hub, char *name, UINT size, UINT *port, char *secret, UINT secret_size, UINT *interval, UINT *timeout, char *suffix_filter, UINT suffix_filter_size)
-{
-	bool ret = false;
-	// Validate arguments
-	if (hub == NULL || name == NULL || port == NULL || secret == NULL || interval == NULL || timeout == NULL)
-	{
-		return false;
-	}
-
-	Lock(hub->RadiusOptionLock);
-	{
-		if (hub->RadiusServerName != NULL)
-		{
-			char *tmp;
-			UINT tmp_size;
-			StrCpy(name, size, hub->RadiusServerName);
-			*port = hub->RadiusServerPort;
-			*interval = hub->RadiusRetryInterval;
-			*timeout = hub->RadiusRetryTimeout;
-
-			tmp_size = hub->RadiusSecret->Size + 1;
-			tmp = ZeroMalloc(tmp_size);
-			Copy(tmp, hub->RadiusSecret->Buf, hub->RadiusSecret->Size);
-			StrCpy(secret, secret_size, tmp);
-			Free(tmp);
-
-			if (suffix_filter != NULL)
-			{
-				StrCpy(suffix_filter, suffix_filter_size, hub->RadiusSuffixFilter);
-			}
-
-			ret = true;
-		}
-	}
-	Unlock(hub->RadiusOptionLock);
-
-	return ret;
-}
-
-// Set the Radius server information
-void SetRadiusServer(HUB *hub, char *name, UINT port, char *secret)
-{
-	SetRadiusServerEx(hub, name, port, secret, RADIUS_RETRY_INTERVAL);
-}
-void SetRadiusServerEx(HUB *hub, char *name, UINT port, char *secret, UINT interval)
-{
-	SetRadiusServerEx2(hub, name, port, secret, interval, RADIUS_RETRY_TIMEOUT);
-}
-void SetRadiusServerEx2(HUB *hub, char *name, UINT port, char *secret, UINT interval, UINT timeout)
-{
-	// Validate arguments
-	if (hub == NULL)
-	{
-		return;
-	}
-
-	Lock(hub->RadiusOptionLock);
-	{
-		if (hub->RadiusServerName != NULL)
-		{
-			Free(hub->RadiusServerName);
-		}
-
-		if (name == NULL)
-		{
-			hub->RadiusServerName = NULL;
-			hub->RadiusServerPort = 0;
-			hub->RadiusRetryInterval = RADIUS_RETRY_INTERVAL;
-			hub->RadiusRetryTimeout = RADIUS_RETRY_TIMEOUT;
-
-			FreeBuf(hub->RadiusSecret);
-		}
-		else
-		{
-			hub->RadiusServerName = CopyStr(name);
-			hub->RadiusServerPort = port;
-
-			if (timeout == 0) {
-				timeout = RADIUS_RETRY_TIMEOUT;
-			}
-			hub->RadiusRetryTimeout = timeout;
-
-			if (interval == 0)
-			{
-				hub->RadiusRetryInterval = RADIUS_RETRY_INTERVAL; ///What happens here is that RADIUS_RETRY_TIMEOUT is not configurable, and RADIUS_RETRY_INTERVAL is set to the timeout if it's larger.
-			}
-			
-			if (interval > timeout)
-			{
-				hub->RadiusRetryInterval = timeout;
-			}
-			else
-			{
-				hub->RadiusRetryInterval = interval;
-			}
-			FreeBuf(hub->RadiusSecret);
-
-			if (secret == NULL)
-			{
-				hub->RadiusSecret = NewBuf();
-			}
-			else
-			{
-				hub->RadiusSecret = NewBuf();
-				WriteBuf(hub->RadiusSecret, secret, StrLen(secret));
-				SeekBuf(hub->RadiusSecret, 0, 0);
-			}
-		}
-	}
-	Unlock(hub->RadiusOptionLock);
-}
-
 // Add the traffic information for Virtual HUB
 void IncrementHubTraffic(HUB *h)
 {
@@ -6628,11 +6378,6 @@ void CleanupHub(HUB *h)
 
 	FreeAccessList(h);
 
-	if (h->RadiusServerName != NULL)
-	{
-		Free(h->RadiusServerName);
-		FreeBuf(h->RadiusSecret);
-	}
 	ReleaseAllLink(h);
 	DeleteHubDb(h->HubDb);
 	ReleaseCedar(h->Cedar);
@@ -6662,8 +6407,6 @@ void CleanupHub(HUB *h)
 	}
 
 	ReleaseList(h->TicketList);
-
-	DeleteLock(h->RadiusOptionLock);
 
 	FreeLog(h->PacketLogger);
 	FreeLog(h->SecurityLogger);
@@ -7026,9 +6769,6 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 	// IPv6 address for the HUB
 	GenerateEui64LocalAddress(&ip6, h->HubMacAddr);
 	IPToIPv6Addr(&h->HubIpV6, &ip6);
-
-	h->RadiusOptionLock = NewLock();
-	h->RadiusServerPort = RADIUS_DEFAULT_PORT;
 
 	h->TicketList = NewList(NULL);
 

@@ -14,7 +14,6 @@
 #include "IPC.h"
 #include "MsChapV2.h"
 #include "Proto_PPP.h"
-#include "Radius.h"
 #include "Server.h"
 
 #include "Mayaqua/Encoding.h"
@@ -413,16 +412,15 @@ bool SamAuthUserByAnonymous(HUB *h, char *username)
 }
 
 // Plaintext password authentication of user
-bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *password, bool ast, UCHAR *mschap_v2_server_response_20, RADIUS_LOGIN_OPTION *opt)
+bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *password, bool ast, UCHAR *mschap_v2_server_response_20)
 {
 	bool b = false;
 	wchar_t *name = NULL;
 	wchar_t *groupname = NULL;
 	UINT timeout = 90;
-	bool auth_by_nt = false;
 	HUB *h;
 	// Validate arguments
-	if (hub == NULL || c == NULL || username == NULL || password == NULL || opt == NULL)
+	if (hub == NULL || c == NULL || username == NULL || password == NULL)
 	{
 		return false;
 	}
@@ -452,32 +450,7 @@ bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *p
 		{
 			Lock(u->lock);
 			{
-				if (u->AuthType == AUTHTYPE_RADIUS)
-				{
-					// Radius authentication
-					AUTHRADIUS *auth = (AUTHRADIUS *)u->AuthData;
-					if (auth->RadiusUsername == NULL || UniStrLen(auth->RadiusUsername) == 0)
-					{
-						if( IsEmptyStr(h->RadiusRealm) == false )
-						{	
-							char name_and_realm[MAX_SIZE];
-							StrCpy(name_and_realm, sizeof(name_and_realm), username);
-							StrCat(name_and_realm, sizeof(name_and_realm), "@");
-							StrCat(name_and_realm, sizeof(name_and_realm), h->RadiusRealm);
-							name = CopyStrToUni(name_and_realm);
-						}
-						else
-						{
-							name = CopyStrToUni(username);
-						}
-					}
-					else
-					{
-						name = CopyUniStr(auth->RadiusUsername);
-					}
-					auth_by_nt = false;
-				}
-				else if (u->AuthType == AUTHTYPE_NT)
+				if (u->AuthType == AUTHTYPE_NT)
 				{
 					// NT authentication
 					AUTHNT *auth = (AUTHNT *)u->AuthData;
@@ -496,8 +469,6 @@ bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *p
 					{
 						timeout = u->Policy->TimeOut;
 					}
-
-					auth_by_nt = true;
 				}
 			}
 			Unlock(u->lock);
@@ -508,208 +479,94 @@ bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *p
 
 	if (name != NULL)
 	{
-		if (auth_by_nt == false)
+		// NT authentication
+#ifdef	OS_WIN32
+		IPC_MSCHAP_V2_AUTHINFO mschap;
+		Unlock(hub->lock);
+
+		if (ParseAndExtractMsChapV2InfoFromPassword(&mschap, password) == false)
 		{
-			// Radius authentication
-			char radius_server_addr[MAX_SIZE];
-			UINT radius_server_port;
-			char radius_secret[MAX_SIZE];
-			char suffix_filter[MAX_SIZE];
-			wchar_t suffix_filter_w[MAX_SIZE];
-			UINT interval;
-			UINT timeout;
-			EAP_CLIENT *eap = NULL;
-			char password1[MAX_SIZE];
-			UCHAR client_challenge[16];
-			UCHAR server_challenge[16];
-			UCHAR challenge8[8];
-			UCHAR client_response[24];
-			UCHAR ntlm_hash[MD5_SIZE];
-
-			Zero(suffix_filter, sizeof(suffix_filter));
-			Zero(suffix_filter_w, sizeof(suffix_filter_w));
-
-			// MSCHAPv2 / EAP wrapper for SEVPN
-			if (c->IsInProc == false && StartWith(password, IPC_PASSWORD_MSCHAPV2_TAG) == false)
-			{
-				char client_ip_str[MAX_SIZE];
-				char utf8[MAX_SIZE];
-
-				// Convert the user name to a Unicode string
-				UniToStr(utf8, sizeof(utf8), name);
-				utf8[MAX_SIZE-1] = 0;
-
-				Zero(client_ip_str, sizeof(client_ip_str));
-				if (c != NULL && c->FirstSock != NULL)
-				{
-					IPToStr(client_ip_str, sizeof(client_ip_str), &c->FirstSock->RemoteIP);
-				}
-
-				if (hub->RadiusConvertAllMsChapv2AuthRequestToEap)
-				{
-					// Do EAP or PEAP
-					eap = HubNewEapClient(hub->Cedar, hub->Name, client_ip_str, utf8, opt->In_VpnProtocolState, false, NULL, 0);
-
-					// Prepare MSCHAP response and replace plain password
-					if (eap != NULL)
-					{
-						char server_challenge_hex[MAX_SIZE];
-						char client_challenge_hex[MAX_SIZE];
-						char client_response_hex[MAX_SIZE];
-						char eap_client_hex[64];
-
-						MsChapV2Client_GenerateChallenge(client_challenge);
-						GenerateNtPasswordHash(ntlm_hash, password);
-						Copy(server_challenge, eap->MsChapV2Challenge.Chap_ChallengeValue, 16);
-						MsChapV2_GenerateChallenge8(challenge8, client_challenge, server_challenge, utf8);
-						MsChapV2Client_GenerateResponse(client_response, challenge8, ntlm_hash);
-
-						BinToStr(server_challenge_hex, sizeof(server_challenge_hex),
-								server_challenge, sizeof(server_challenge));
-						BinToStr(client_challenge_hex, sizeof(client_challenge_hex),
-								client_challenge, sizeof(client_challenge));
-						BinToStr(client_response_hex, sizeof(client_response_hex),
-								client_response, sizeof(client_response));
-						BinToStr(eap_client_hex, sizeof(eap_client_hex), &eap, 8);
-						Format(password1, sizeof(password1), "%s%s:%s:%s:%s:%s",
-										IPC_PASSWORD_MSCHAPV2_TAG,
-										utf8,
-										server_challenge_hex,
-										client_challenge_hex,
-										client_response_hex,
-										eap_client_hex);
-						password = password1;
-					}
-				}
-				else
-				{
-					// Todo: Do MSCHAPv2
-				}
-			}
-
-			// Get the Radius server information
-			if (GetRadiusServerEx3(hub, radius_server_addr, sizeof(radius_server_addr), &radius_server_port, radius_secret, sizeof(radius_secret), &interval, &timeout, suffix_filter, sizeof(suffix_filter)))
-			{
-				Unlock(hub->lock);
-
-				StrToUni(suffix_filter_w, sizeof(suffix_filter_w), suffix_filter);
-
-				if (UniIsEmptyStr(suffix_filter_w) || UniEndWith(name, suffix_filter_w))
-				{
-					// Attempt to login
-					b = RadiusLogin(c, radius_server_addr, radius_server_port,
-						radius_secret, StrLen(radius_secret),
-						name, password, interval, timeout, mschap_v2_server_response_20, opt, hub->Name);
-
-					if (b)
-					{
-						opt->Out_IsRadiusLogin = true;
-					}
-				}
-
-				Lock(hub->lock);
-			}
-			else
-			{
-				HLog(hub, "LH_NO_RADIUS_SETTING", name);
-			}
-
-			if (eap != NULL)
-			{
-				ReleaseEapClient(eap);
-			}
+			// Plaintext password authentication
+			b = MsCheckLogon(name, password);
 		}
 		else
 		{
-			// NT authentication
-#ifdef	OS_WIN32
-			IPC_MSCHAP_V2_AUTHINFO mschap;
-			Unlock(hub->lock);
-
-			if (ParseAndExtractMsChapV2InfoFromPassword(&mschap, password) == false)
-			{
-				// Plaintext password authentication
-				b = MsCheckLogon(name, password);
-			}
-			else
-			{
-				UCHAR challenge8[8];
-				UCHAR nt_pw_hash_hash[16];
-				char nt_name[MAX_SIZE];
-
-				UniToStr(nt_name, sizeof(nt_name), name);
-
-				// MS-CHAPv2 authentication
-				MsChapV2_GenerateChallenge8(challenge8, mschap.MsChapV2_ClientChallenge,
-					mschap.MsChapV2_ServerChallenge,
-					mschap.MsChapV2_PPPUsername);
-
-				Debug("MsChapV2_PPPUsername = %s, nt_name = %s\n", mschap.MsChapV2_PPPUsername, nt_name);
-
-				b = MsPerformMsChapV2AuthByLsa(nt_name, challenge8, mschap.MsChapV2_ClientResponse, nt_pw_hash_hash);
-
-				if (b)
-				{
-					if (mschap_v2_server_response_20 != NULL)
-					{
-						MsChapV2Server_GenerateResponse(mschap_v2_server_response_20, nt_pw_hash_hash,
-							mschap.MsChapV2_ClientResponse, challenge8);
-					}
-				}
-			}
-
-			Lock(hub->lock);
-#else	// OS_WIN32
-			// Unix / Samba Winbind
-
-			IPC_MSCHAP_V2_AUTHINFO mschap;
-			Unlock(hub->lock);
-
-			char nt_name[MAX_SIZE];
-			char nt_username[MAX_SIZE];
-			char nt_groupname[MAX_SIZE];
-			char nt_domainname[MAX_SIZE];
 			UCHAR challenge8[8];
 			UCHAR nt_pw_hash_hash[16];
-
-			nt_groupname[0] = 0;
+			char nt_name[MAX_SIZE];
 
 			UniToStr(nt_name, sizeof(nt_name), name);
 
-			if (groupname != NULL)
-				UniToStr(nt_groupname, sizeof(nt_groupname), groupname);
+			// MS-CHAPv2 authentication
+			MsChapV2_GenerateChallenge8(challenge8, mschap.MsChapV2_ClientChallenge,
+				mschap.MsChapV2_ServerChallenge,
+				mschap.MsChapV2_PPPUsername);
 
-			ParseNtUsername(nt_name, nt_username, sizeof(nt_username), nt_domainname, sizeof(nt_domainname), false);
+			Debug("MsChapV2_PPPUsername = %s, nt_name = %s\n", mschap.MsChapV2_PPPUsername, nt_name);
 
-			if (ParseAndExtractMsChapV2InfoFromPassword(&mschap, password) == false)
+			b = MsPerformMsChapV2AuthByLsa(nt_name, challenge8, mschap.MsChapV2_ClientResponse, nt_pw_hash_hash);
+
+			if (b)
 			{
-				// Plaintext password authentication
-				b = SmbCheckLogon(nt_username, password, nt_domainname, nt_groupname, timeout);
-			}
-			else
-			{
-				// MS-CHAPv2 authentication
-				MsChapV2_GenerateChallenge8(challenge8, mschap.MsChapV2_ClientChallenge,
-					mschap.MsChapV2_ServerChallenge,
-					mschap.MsChapV2_PPPUsername);
-
-				Debug("MsChapV2_PPPUsername = %s, nt_name = %s\n", mschap.MsChapV2_PPPUsername, nt_name);
-
-				b = SmbPerformMsChapV2Auth(nt_username, nt_domainname, nt_groupname, challenge8, mschap.MsChapV2_ClientResponse, nt_pw_hash_hash, timeout);
-
-				if (b)
+				if (mschap_v2_server_response_20 != NULL)
 				{
-					if (mschap_v2_server_response_20 != NULL)
-					{
-						MsChapV2Server_GenerateResponse(mschap_v2_server_response_20, nt_pw_hash_hash,
-							mschap.MsChapV2_ClientResponse, challenge8);
-					}
+					MsChapV2Server_GenerateResponse(mschap_v2_server_response_20, nt_pw_hash_hash,
+						mschap.MsChapV2_ClientResponse, challenge8);
 				}
 			}
-
-			Lock(hub->lock);
-#endif	// OS_WIN32 / OS_LINUX
 		}
+
+		Lock(hub->lock);
+#else	// OS_WIN32
+		// Unix / Samba Winbind
+
+		IPC_MSCHAP_V2_AUTHINFO mschap;
+		Unlock(hub->lock);
+
+		char nt_name[MAX_SIZE];
+		char nt_username[MAX_SIZE];
+		char nt_groupname[MAX_SIZE];
+		char nt_domainname[MAX_SIZE];
+		UCHAR challenge8[8];
+		UCHAR nt_pw_hash_hash[16];
+
+		nt_groupname[0] = 0;
+
+		UniToStr(nt_name, sizeof(nt_name), name);
+
+		if (groupname != NULL)
+			UniToStr(nt_groupname, sizeof(nt_groupname), groupname);
+
+		ParseNtUsername(nt_name, nt_username, sizeof(nt_username), nt_domainname, sizeof(nt_domainname), false);
+
+		if (ParseAndExtractMsChapV2InfoFromPassword(&mschap, password) == false)
+		{
+			// Plaintext password authentication
+			b = SmbCheckLogon(nt_username, password, nt_domainname, nt_groupname, timeout);
+		}
+		else
+		{
+			// MS-CHAPv2 authentication
+			MsChapV2_GenerateChallenge8(challenge8, mschap.MsChapV2_ClientChallenge,
+				mschap.MsChapV2_ServerChallenge,
+				mschap.MsChapV2_PPPUsername);
+
+			Debug("MsChapV2_PPPUsername = %s, nt_name = %s\n", mschap.MsChapV2_PPPUsername, nt_name);
+
+			b = SmbPerformMsChapV2Auth(nt_username, nt_domainname, nt_groupname, challenge8, mschap.MsChapV2_ClientResponse, nt_pw_hash_hash, timeout);
+
+			if (b)
+			{
+				if (mschap_v2_server_response_20 != NULL)
+				{
+					MsChapV2Server_GenerateResponse(mschap_v2_server_response_20, nt_pw_hash_hash,
+						mschap.MsChapV2_ClientResponse, challenge8);
+				}
+			}
+		}
+
+		Lock(hub->lock);
+#endif	// OS_WIN32 / OS_LINUX
 
 		// Memory release
 		if( groupname != NULL )

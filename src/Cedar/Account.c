@@ -513,17 +513,6 @@ void *NewNTAuthData(wchar_t *username)
 	return a;
 }
 
-// Create a Radius authentication data
-void *NewRadiusAuthData(wchar_t *username)
-{
-	AUTHRADIUS *a;
-	// Validate arguments
-	a = ZeroMallocEx(sizeof(AUTHRADIUS), true);
-	a->RadiusUsername = CopyUniStr(username);
-
-	return a;
-}
-
 // Create a root certification authentication data
 void *NewRootCertAuthData(X_SERIAL *serial, wchar_t *common_name)
 {
@@ -619,7 +608,6 @@ void *CopyAuthData(void *authdata, UINT authtype)
 	AUTHPASSWORD *pw = (AUTHPASSWORD *)authdata;
 	AUTHUSERCERT *usercert = (AUTHUSERCERT *)authdata;
 	AUTHROOTCERT *rootcert = (AUTHROOTCERT *)authdata;
-	AUTHRADIUS *radius = (AUTHRADIUS *)authdata;
 	AUTHNT *nt = (AUTHNT *)authdata;
 	// Validate arguments
 	if (authdata == NULL || authtype == AUTHTYPE_ANONYMOUS)
@@ -650,14 +638,6 @@ void *CopyAuthData(void *authdata, UINT authtype)
 			AUTHROOTCERT *ret = ZeroMalloc(sizeof(AUTHROOTCERT));
 			ret->CommonName = CopyUniStr(rootcert->CommonName);
 			ret->Serial = CloneXSerial(rootcert->Serial);
-			return ret;
-		}
-		break;
-
-	case AUTHTYPE_RADIUS:
-		{
-			AUTHRADIUS *ret = ZeroMalloc(sizeof(AUTHRADIUS));
-			ret->RadiusUsername = UniCopyStr(radius->RadiusUsername);
 			return ret;
 		}
 		break;
@@ -1097,7 +1077,6 @@ void FreeAuthData(UINT authtype, void *authdata)
 	AUTHPASSWORD *pw = (AUTHPASSWORD *)authdata;
 	AUTHUSERCERT *uc = (AUTHUSERCERT *)authdata;
 	AUTHROOTCERT *rc = (AUTHROOTCERT *)authdata;
-	AUTHRADIUS *rd = (AUTHRADIUS *)authdata;
 	AUTHNT *nt = (AUTHNT *)authdata;
 	// Validate arguments
 	if (authtype == AUTHTYPE_ANONYMOUS || authdata == NULL)
@@ -1127,11 +1106,6 @@ void FreeAuthData(UINT authtype, void *authdata)
 		{
 			Free(rc->CommonName);
 		}
-		break;
-
-	case AUTHTYPE_RADIUS:
-		// Radius authentication
-		Free(rd->RadiusUsername);
 		break;
 
 	case AUTHTYPE_NT:

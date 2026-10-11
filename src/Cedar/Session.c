@@ -1102,8 +1102,7 @@ bool SessionConnect(SESSION *s)
 					{
 						if (s->Account->ClientAuth != NULL)
 						{
-							if (s->Account->ClientAuth->AuthType == AUTHTYPE_PASSWORD ||
-								s->Account->ClientAuth->AuthType == AUTHTYPE_RADIUS)
+							if (s->Account->ClientAuth->AuthType == AUTHTYPE_PASSWORD)
 							{
 								Zero(s->Account->ClientAuth->HashedPassword, sizeof(s->Account->ClientAuth->HashedPassword));
 								Zero(s->Account->ClientAuth->PlainPassword, sizeof(s->Account->ClientAuth->PlainPassword));

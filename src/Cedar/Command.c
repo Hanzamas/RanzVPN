@@ -15,7 +15,6 @@
 #include "DDNS.h"
 #include "Layer3.h"
 #include "Nat.h"
-#include "Radius.h"
 #include "Server.h"
 #include "Virtual.h"
 
@@ -4758,7 +4757,7 @@ UINT PcAccountPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			HashPassword(t.ClientAuth->HashedPassword, t.ClientAuth->Username,
 				GetParamStr(o, "PASSWORD"));
 		}
-		else if (StartWith("radius", typestr) || StartWith("ntdomain", typestr))
+		else if (StartWith("ntdomain", typestr))
 		{
 			t.ClientAuth->AuthType = CLIENT_AUTHTYPE_PLAIN_PASSWORD;
 
@@ -7609,9 +7608,6 @@ void PsMain(PS *ps)
 			{"SetEnumAllow", PsSetEnumAllow},
 			{"SetEnumDeny", PsSetEnumDeny},
 			{"OptionsGet", PsOptionsGet},
-			{"RadiusServerSet", PsRadiusServerSet},
-			{"RadiusServerDelete", PsRadiusServerDelete},
-			{"RadiusServerGet", PsRadiusServerGet},
 			{"StatusGet", PsStatusGet},
 			{"LogGet", PsLogGet},
 			{"LogEnable", PsLogEnable},
@@ -7675,7 +7671,6 @@ void PsMain(PS *ps)
 			{"UserCertSet", PsUserCertSet},
 			{"UserCertGet", PsUserCertGet},
 			{"UserSignedSet", PsUserSignedSet},
-			{"UserRadiusSet", PsUserRadiusSet},
 			{"UserNTLMSet", PsUserNTLMSet},
 			{"UserPolicyRemove", PsUserPolicyRemove},
 			{"UserPolicySet", PsUserPolicySet},
@@ -11574,190 +11569,6 @@ UINT PsOptionsGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-// Setting the Radius server to use for user authentication
-UINT PsRadiusServerSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_RADIUS t;
-	char *host;
-	UINT port;
-	// Parameter list that can be specified
-	CMD_EVAL_MIN_MAX minmax =
-	{
-		"CMD_RadiusServerSet_EVAL_NUMINTERVAL", RADIUS_RETRY_INTERVAL, RADIUS_RETRY_TIMEOUT,
-	};
-	PARAM args[] =
-	{
-		// "name", prompt_proc, prompt_param, eval_proc, eval_param
-		{"[server_name:port]", CmdPrompt, _UU("CMD_RadiusServerSet_Prompt_Host"), CmdEvalNotEmpty, NULL},
-		{"SECRET", CmdPromptChoosePassword, _UU("CMD_RadiusServerSet_Prompt_Secret"), NULL, NULL},
-		{"RETRY_INTERVAL", CmdPrompt, _UU("CMD_RadiusServerSet_Prompt_RetryInterval"), CmdEvalMinMax, &minmax},
-		
-		// Support for setting timeout through commandline not added
-		// {"RETRY_TIMEOUT", CmdPrompt, _UU("CMD_RadiusServerSet_Prompt_RetryTimeout"), CmdEvalMinMax, &minmax},
-	};
-
-	// If virtual HUB is not selected, it's an error
-	if (ps->HubName == NULL)
-	{
-		c->Write(c, _UU("CMD_Hub_Not_Selected"));
-		return ERR_INVALID_PARAMETER;
-	}
-
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	if (ParseHostPort(GetParamStr(o, "[server_name:port]"), &host, &port, 1812))
-	{
-		Zero(&t, sizeof(t));
-
-		StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
-		t.RadiusPort = port;
-		StrCpy(t.RadiusServerName, sizeof(t.RadiusServerName), host);
-		StrCpy(t.RadiusSecret, sizeof(t.RadiusSecret), GetParamStr(o, "SECRET"));
-		t.RadiusRetryInterval = GetParamInt(o, "RETRY_INTERVAL");
-		// t.RadiusRetryTimeout = GetParamInt(o, "RETRY_TIMEOUT");
-
-		Free(host);
-
-		// RPC call
-		ret = ScSetHubRadius(ps->Rpc, &t);
-
-		if (ret != ERR_NO_ERROR)
-		{
-			// An error has occured
-			CmdPrintError(c, ret);
-			FreeParamValueList(o);
-			return ret;
-		}
-	}
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
-// Delete the Radius server configuration to be used for user authentication
-UINT PsRadiusServerDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_RADIUS t;
-
-	// If virtual HUB is not selected, it's an error
-	if (ps->HubName == NULL)
-	{
-		c->Write(c, _UU("CMD_Hub_Not_Selected"));
-		return ERR_INVALID_PARAMETER;
-	}
-
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-
-	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
-	t.RadiusPort = 1812;
-
-	// RPC call
-	ret = ScSetHubRadius(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
-// Get the Radius server settings to use for user authentication
-UINT PsRadiusServerGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_RADIUS t;
-
-	// If virtual HUB is not selected, it's an error
-	if (ps->HubName == NULL)
-	{
-		c->Write(c, _UU("CMD_Hub_Not_Selected"));
-		return ERR_INVALID_PARAMETER;
-	}
-
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-
-	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
-
-	// RPC call
-	ret = ScGetHubRadius(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-	else
-	{
-		CT *ct;
-		wchar_t tmp[MAX_SIZE];
-
-		ct = CtNewStandard();
-
-		if (IsEmptyStr(t.RadiusServerName))
-		{
-			CtInsert(ct, _UU("CMD_RadiusServerGet_STATUS"), _UU("CMD_MSG_DISABLE"));
-		}
-		else
-		{
-			CtInsert(ct, _UU("CMD_RadiusServerGet_STATUS"), _UU("CMD_MSG_ENABLE"));
-
-			StrToUni(tmp, sizeof(tmp), t.RadiusServerName);
-			CtInsert(ct, _UU("CMD_RadiusServerGet_HOST"), tmp);
-
-			UniToStri(tmp, t.RadiusPort);
-			CtInsert(ct, _UU("CMD_RadiusServerGet_PORT"), tmp);
-
-			StrToUni(tmp, sizeof(tmp), t.RadiusSecret);
-			CtInsert(ct, _UU("CMD_RadiusServerGet_SECRET"), tmp);
-
-			UniToStri(tmp, t.RadiusRetryInterval);
-			CtInsert(ct, _UU("CMD_RadiusServerGet_RetryInterval"), tmp);
-
-			UniToStri(tmp, t.RadiusRetryTimeout);
-			CtInsert(ct, _UU("CMD_RadiusServerGet_RetryTimeout"), tmp);
-		}
-
-		CtFree(ct, c);
-	}
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
 // Get the current status of the Virtual HUB
 UINT PsStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
@@ -13363,7 +13174,7 @@ UINT PsCascadePasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			HashPassword(t.ClientAuth->HashedPassword, t.ClientAuth->Username,
 				GetParamStr(o, "PASSWORD"));
 		}
-		else if (StartWith("radius", typestr) || StartWith("ntdomain", typestr))
+		else if (StartWith("ntdomain", typestr))
 		{
 			t.ClientAuth->AuthType = CLIENT_AUTHTYPE_PLAIN_PASSWORD;
 
@@ -16853,8 +16664,8 @@ UINT PsUserCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	Trim(t.Name);
 	if (StrCmpi(t.Name, "*") == 0)
 	{
-		t.AuthType = AUTHTYPE_RADIUS;
-		t.AuthData = NewRadiusAuthData(NULL);
+		t.AuthType = AUTHTYPE_NT;
+		t.AuthData = NewNTAuthData(NULL);
 	}
 	else
 	{
@@ -17109,16 +16920,15 @@ UINT PsUserGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			}
 			break;
 
-		case AUTHTYPE_RADIUS:
 		case AUTHTYPE_NT:
 			if (t.AuthData != NULL)
 			{
-				AUTHRADIUS *ar = (AUTHRADIUS *)t.AuthData;
+				AUTHNT *an = (AUTHNT *)t.AuthData;
 
 				// Authentication user name of the external authentication server
-				if (IsEmptyUniStr(ar->RadiusUsername) == false)
+				if (IsEmptyUniStr(an->NtUsername) == false)
 				{
-					CtInsert(ct, _UU("CMD_UserGet_Column_RadiusAlias"), ar->RadiusUsername);
+					CtInsert(ct, _UU("CMD_UserGet_Column_RadiusAlias"), an->NtUsername);
 				}
 			}
 			break;
@@ -17536,79 +17346,6 @@ UINT PsUserSignedSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-// Set the authentication method for the user to the Radius authentication
-UINT PsUserRadiusSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_SET_USER t;
-	// Parameter list that can be specified
-	PARAM args[] =
-	{
-		// "name", prompt_proc, prompt_param, eval_proc, eval_param
-		{"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
-		{"ALIAS", CmdPrompt, _UU("CMD_UserRadiusSet_Prompt_ALIAS"), NULL, NULL},
-	};
-
-	// If virtual HUB is not selected, it's an error
-	if (ps->HubName == NULL)
-	{
-		c->Write(c, _UU("CMD_Hub_Not_Selected"));
-		return ERR_INVALID_PARAMETER;
-	}
-
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-	// Get the user object
-	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
-	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "[name]"));
-
-	ret = ScGetUser(ps->Rpc, &t);
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	// Update the information
-	FreeAuthData(t.AuthType, t.AuthData);
-
-	{
-		AUTHRADIUS *a;
-
-		a = NewRadiusAuthData(GetParamUniStr(o, "ALIAS"));
-
-		// Set to Radius authentication
-		t.AuthType = AUTHTYPE_RADIUS;
-		t.AuthData = a;
-	}
-
-	// Write the user object
-	ret = ScSetUser(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	FreeRpcSetUser(&t);
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
 // Set the authentication method for the user to the NT domain authentication
 UINT PsUserNTLMSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
@@ -17655,9 +17392,9 @@ UINT PsUserNTLMSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	FreeAuthData(t.AuthType, t.AuthData);
 
 	{
-		AUTHRADIUS *a;
+		AUTHNT *a;
 
-		a = NewRadiusAuthData(GetParamUniStr(o, "ALIAS"));
+		a = NewNTAuthData(GetParamUniStr(o, "ALIAS"));
 
 		// Set to the NT domain authentication
 		t.AuthType = AUTHTYPE_NT;

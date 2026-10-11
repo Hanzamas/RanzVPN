@@ -13,7 +13,6 @@
 #include "Connection.h"
 #include "Hub.h"
 #include "Protocol.h"
-#include "Radius.h"
 #include "Virtual.h"
 
 #include "Mayaqua/Memory.h"
@@ -177,7 +176,7 @@ IPC *NewIPCByParam(CEDAR *cedar, IPC_PARAM *param, UINT *error_code)
 	             param->UserName, param->Password, error_code,
 	             &param->ClientIp, param->ClientPort, &param->ServerIp, param->ServerPort,
 	             param->ClientHostname, param->CryptName,
-	             param->BridgeMode, param->Mss, NULL, NULL, param->RadiusOK,
+	             param->BridgeMode, param->Mss, NULL, false,
 				 param->Layer);
 
 	return ipc;
@@ -187,7 +186,7 @@ IPC *NewIPCByParam(CEDAR *cedar, IPC_PARAM *param, UINT *error_code)
 IPC *NewIPC(CEDAR *cedar, char *client_name, char *postfix, char *hubname, char *username, char *password,
             UINT *error_code, IP *client_ip, UINT client_port, IP *server_ip, UINT server_port,
             char *client_hostname, char *crypt_name,
-            bool bridge_mode, UINT mss, EAP_CLIENT *eap_client, X *client_certificate, bool external_auth,
+            bool bridge_mode, UINT mss, X *client_certificate, bool external_auth,
             UINT layer)
 {
 	IPC *ipc;
@@ -316,14 +315,6 @@ IPC *NewIPC(CEDAR *cedar, char *client_name, char *postfix, char *hubname, char 
 	PackAddBool(p, "require_bridge_routing_mode", bridge_mode);
 	PackAddBool(p, "require_monitor_mode", false);
 	PackAddBool(p, "qos", false);
-
-	if (eap_client != NULL)
-	{
-		UINT64 ptr = (UINT64)eap_client;
-		PackAddInt64(p, "release_me_eap_client", ptr);
-
-		AddRef(eap_client->Ref);
-	}
 
 	// Unique ID is determined by the sum of the connecting client IP address and the client_name
 	b = NewBuf();

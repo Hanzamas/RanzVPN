@@ -14,7 +14,6 @@
 #include "IPC.h"
 #include "Logging.h"
 #include "MsChapV2.h"
-#include "Radius.h"
 #include "Server.h"
 
 #include "Mayaqua/Memory.h"
@@ -50,10 +49,6 @@ void PPPThread(THREAD *thread, void *param)
 	p->RecvPacketList = NewList(NULL);
 	p->SentReqPacketList = NewList(NULL);
 	p->DelayedPackets = NewList(PPPDelayedPacketsComparator);
-
-	p->UseEapRadius = CedarIsThereAnyEapEnabledRadiusConfig(p->Cedar);
-
-	Debug("UseEapRadius = 0x%x\n", p->UseEapRadius);
 
 	//// Link establishment phase
 
@@ -293,7 +288,6 @@ void PPPThread(THREAD *thread, void *param)
 				eapPacket = lcpEap->Data;
 				Copy(eapPacket->Data, welcomeMessage, StrLen(welcomeMessage));
 				PPPSetStatus(p, PPP_STATUS_AUTHENTICATING);
-				PPPFreeEapClient(p);
 				if (PPPSendAndRetransmitRequest(p, PPP_PROTOCOL_EAP, lcpEap) == false)
 				{
 					PPPSetStatus(p, PPP_STATUS_FAIL);
@@ -599,7 +593,6 @@ THREAD *NewPPPSession(CEDAR *cedar, IP *client_ip, UINT client_port, IP *server_
 	p->EnableMSCHAPv2 = true;
 	p->AuthProtocol = PPP_UNSPECIFIED;
 	p->MsChapV2_ErrorCode = 691;
-	p->EapClient = NULL;
 	Zero(&p->Eap_Identity, sizeof(p->Eap_Identity));
 	p->Eap_TlsCtx.DisableTls13 = false;
 	p->Eap_TlsCtx.Tls13SessionTicketsCount = 2; // Default count as per hardcoded in OpenSSL
@@ -1057,19 +1050,8 @@ bool PPPProcessCHAPResponsePacketEx(PPP_SESSION *p, PPP_PACKET *pp, PPP_PACKET *
 
 		ok = PPPParseMSCHAP2ResponsePacketEx(p, chap, use_eap);
 
-		// If we got only first packet of double CHAP then send second challenge
-		if (ok && p->UseEapRadius && p->EapClient != NULL && p->Ipc == NULL)
-		{
-			lcp = BuildMSCHAP2ChallengePacket(p);
-			if (PPPSendAndRetransmitRequest(p, PPP_PROTOCOL_CHAP, lcp) == false)
-			{
-				PPPSetStatus(p, PPP_STATUS_FAIL);
-				WHERE;
-				return false;
-			}
-		}
 		// We got a successful MSCHAPv2 response, so let's send a SUCCESS
-		else if (ok)
+		if (ok)
 		{
 			char hex[MAX_SIZE];
 			char ret_str[MAX_SIZE];
@@ -1275,12 +1257,6 @@ bool PPPProcessEAPResponsePacket(PPP_SESSION *p, PPP_PACKET *pp, PPP_PACKET *req
 		WRITE_USHORT(ms_chap_v2_code, PPP_LCP_AUTH_CHAP);
 		ms_chap_v2_code[2] = PPP_CHAP_ALG_MS_CHAP_V2;
 
-		// Forward EAP response to Radius server
-		if (p->EapClient != NULL)
-		{
-			return PPPProcessEapResponseForRadius(p, eap_packet, eap_datasize);
-		}
-
 		switch (eap_packet->Type)
 		{
 		case PPP_EAP_TYPE_IDENTITY:
@@ -1345,46 +1321,6 @@ bool PPPProcessEAPResponsePacket(PPP_SESSION *p, PPP_PACKET *pp, PPP_PACKET *req
 			// Select EAP method based on auth type
 			switch (authtype)
 			{
-			case AUTHTYPE_RADIUS:
-				// Create EAP client if needed
-				if (p->EapClient == NULL)
-				{
-					char client_ip_tmp[256];
-					PPP_LCP *response = NULL;
-					IPToStr(client_ip_tmp, sizeof(client_ip_tmp), &p->ClientIP);
-					Debug("Creating EAP RADIUS client\n");
-					p->EapClient = HubNewEapClient(p->Cedar, p->Eap_Identity.HubName, client_ip_tmp, p->Eap_Identity.UserName, "L3:PPP", true, 
-													&response, pp->Lcp->Id);
-
-					if (p->EapClient == NULL || response == NULL)
-					{
-						PPP_PACKET *pack = ZeroMalloc(sizeof(PPP_PACKET));
-						pack->IsControl = true;
-						pack->Protocol = PPP_PROTOCOL_EAP;
-						PPPSetStatus(p, PPP_STATUS_AUTH_FAIL);
-						pack->Lcp = NewPPPLCP(PPP_EAP_CODE_FAILURE, p->Eap_PacketId);
-						Debug("Failed to connect to a RADIUS server\n");
-
-						if (PPPSendPacketAndFree(p, pack) == false)
-						{
-							PPPSetStatus(p, PPP_STATUS_FAIL);
-							WHERE;
-							return false;
-						}
-					}
-					else
-					{
-						// Send first response to client
-						if (PPPSendAndRetransmitRequest(p, PPP_PROTOCOL_EAP, response) == false)
-						{
-							PPPSetStatus(p, PPP_STATUS_FAIL);
-							WHERE;
-							return false;
-						}
-					}	
-
-					break;
-				}
 			case AUTHTYPE_ANONYMOUS:
 			case AUTHTYPE_PASSWORD:
 			case AUTHTYPE_NT:
@@ -1524,85 +1460,6 @@ bool PPPProcessIPv6CPResponsePacket(PPP_SESSION *p, PPP_PACKET *pp, PPP_PACKET *
 
 	Debug("Accepted server IPv6CP handshake\n");
 	IPC_PROTO_SET_STATUS(p->Ipc, IPv6State, IPC_PROTO_STATUS_CONFIG_WAIT);
-	return true;
-}
-
-// Process EAP response for RADIUS (as proxy)
-bool PPPProcessEapResponseForRadius(PPP_SESSION *p, PPP_EAP *eap_packet, UINT eap_datasize)
-{
-	PPP_LCP *lcp;
-	IPC *ipc;
-	UINT error_code;
-
-	if (p == NULL || eap_packet == NULL || p->EapClient == NULL)
-	{
-		return false;
-	}
-
-	lcp = EapClientSendEapRequest(p->EapClient, eap_packet, eap_datasize);
-	if (lcp == NULL)
-	{
-		return false;
-	}
-
-	switch (lcp->Code)
-	{
-	case PPP_EAP_CODE_REQUEST:
-		// Send back to client
-		if (PPPSendAndRetransmitRequest(p, PPP_PROTOCOL_EAP, lcp) == false)
-		{
-			PPPSetStatus(p, PPP_STATUS_FAIL);
-			WHERE;
-			return false;
-		}
-
-		return true;
-	case PPP_EAP_CODE_SUCCESS:
-		if (p->Ipc == NULL)
-		{
-			Debug("PPP Radius creating IPC\n");
-			ipc = NewIPC(p->Cedar, p->ClientSoftwareName, p->Postfix, p->Eap_Identity.HubName, p->Eap_Identity.UserName, "",
-							&error_code, &p->ClientIP, p->ClientPort, &p->ServerIP, p->ServerPort,
-							p->ClientHostname, p->CryptName, false, p->AdjustMss, p->EapClient, NULL,
-							true, IPC_LAYER_3);
-
-			if (ipc != NULL)
-			{
-				p->Ipc = ipc;
-
-				// Setting user timeouts
-				p->PacketRecvTimeout = (UINT64)p->Ipc->Policy->TimeOut * 1000 * 3 / 4; // setting to 3/4 of the user timeout
-				p->DataTimeout = (UINT64)p->Ipc->Policy->TimeOut * 1000;
-				if (p->TubeRecv != NULL)
-				{
-					p->TubeRecv->DataTimeout = p->DataTimeout;
-				}
-				p->UserConnectionTimeout = (UINT64)p->Ipc->Policy->AutoDisconnect * 1000;
-				p->UserConnectionTick = Tick64();
-				p->AuthOk = true;
-				PPPSetStatus(p, PPP_STATUS_AUTH_SUCCESS);
-				break;
-			}
-		}
-	case PPP_EAP_CODE_FAILURE:
-	default:
-		PPPSetStatus(p, PPP_STATUS_AUTH_FAIL);
-		break;
-	}
-
-	// Send success or failure
-	PPP_PACKET* pack;
-	pack = ZeroMalloc(sizeof(PPP_PACKET));
-	pack->IsControl = true;
-	pack->Protocol = PPP_PROTOCOL_EAP;
-	pack->Lcp = lcp;
-	if (PPPSendPacketAndFree(p, pack) == false)
-	{
-		PPPSetStatus(p, PPP_STATUS_FAIL);
-		WHERE;
-		return false;
-	}
-
 	return true;
 }
 
@@ -1853,7 +1710,7 @@ bool PPPProcessPAPRequestPacket(PPP_SESSION *p, PPP_PACKET *pp)
 
 								ipc = NewIPC(p->Cedar, p->ClientSoftwareName, p->Postfix, hub, id, password,
 								             &error_code, &p->ClientIP, p->ClientPort, &p->ServerIP, p->ServerPort,
-								             p->ClientHostname, p->CryptName, false, p->AdjustMss, NULL, NULL,
+								             p->ClientHostname, p->CryptName, false, p->AdjustMss, NULL,
 								             false, IPC_LAYER_3);
 
 								if (ipc != NULL)
@@ -3083,9 +2940,6 @@ bool PPPParseMSCHAP2ResponsePacketEx(PPP_SESSION *p, PPP_LCP *lcp, bool use_eap)
 {
 	bool ok = false;
 
-	char client_ip_tmp[256];
-	EAP_CLIENT *eap;
-
 	UCHAR client_response_buffer[49];
 	UCHAR *client_challenge_16;
 	UCHAR *client_response_24;
@@ -3097,10 +2951,8 @@ bool PPPParseMSCHAP2ResponsePacketEx(PPP_SESSION *p, PPP_LCP *lcp, bool use_eap)
 	char server_challenge_hex[MAX_SIZE];
 	char client_challenge_hex[MAX_SIZE];
 	char client_response_hex[MAX_SIZE];
-	char eap_client_hex[64];
 	ETHERIP_ID d;
 	UINT error_code;
-	UINT64 eap_client_ptr = (UINT64)p->EapClient;
 
 	if (lcp != NULL && lcp->DataSize >= 51)
 	{
@@ -3141,8 +2993,6 @@ bool PPPParseMSCHAP2ResponsePacketEx(PPP_SESSION *p, PPP_LCP *lcp, bool use_eap)
 			StrCpy(hub, sizeof(hub), d.HubName);
 			Debug("MS-CHAPv2: username=%s, hubname=%s\n", id, hub);
 
-			IPToStr(client_ip_tmp, sizeof(client_ip_tmp), &p->ClientIP);
-
 			// Convert the MS-CHAPv2 data to a password string
 			BinToStr(server_challenge_hex, sizeof(server_challenge_hex),
 			         p->MsChapV2_ServerChallenge, sizeof(p->MsChapV2_ServerChallenge));
@@ -3150,8 +3000,6 @@ bool PPPParseMSCHAP2ResponsePacketEx(PPP_SESSION *p, PPP_LCP *lcp, bool use_eap)
 			         p->MsChapV2_ClientChallenge, sizeof(p->MsChapV2_ClientChallenge));
 			BinToStr(client_response_hex, sizeof(client_response_hex),
 			         p->MsChapV2_ClientResponse, sizeof(p->MsChapV2_ClientResponse));
-			BinToStr(eap_client_hex, sizeof(eap_client_hex),
-			         &eap_client_ptr, 8);
 
 			Format(password, sizeof(password), "%s%s:%s:%s:%s:%s",
 			       IPC_PASSWORD_MSCHAPV2_TAG,
@@ -3159,30 +3007,14 @@ bool PPPParseMSCHAP2ResponsePacketEx(PPP_SESSION *p, PPP_LCP *lcp, bool use_eap)
 			       server_challenge_hex,
 			       client_challenge_hex,
 			       client_response_hex,
-			       eap_client_hex);
+			       "0000000000000000");	// Unused trailing field, kept so the IPC password format stays unchanged
 
-			// Normal MSCHAPv2 only
-			// For EAP-MSCHAPv2, EAP client is created before sending the challenge
-			if (p->UseEapRadius && p->EapClient == NULL && use_eap == false)
-			{
-				Debug("Double MSCHAPv2 creating EAP client\n");
-				eap = HubNewEapClient(p->Cedar, hub, client_ip_tmp, id, "L3:PPP", false, NULL, 0);
-
-				// We do not know the user's auth type, so do not fail PPP if eap is null
-				if (eap)
-				{
-					ok = true;
-					p->EapClient = eap;
-					FreeBuf(b);
-					return ok;
-				}
-			}
 			if (p->Ipc == NULL)
 			{
 				Debug("MSCHAPv2 creating IPC\n");
 				ipc = NewIPC(p->Cedar, p->ClientSoftwareName, p->Postfix, hub, id, password,
 				             &error_code, &p->ClientIP, p->ClientPort, &p->ServerIP, p->ServerPort,
-				             p->ClientHostname, p->CryptName, false, p->AdjustMss, p->EapClient, NULL,
+				             p->ClientHostname, p->CryptName, false, p->AdjustMss, NULL,
 				             false, IPC_LAYER_3);
 
 				if (ipc != NULL)
@@ -3335,14 +3167,7 @@ PPP_LCP *BuildMSCHAP2ChallengePacket(PPP_SESSION *p)
 	// Generate a Server Challenge packet of MS-CHAP v2
 	GetMachineHostName(machine_name, sizeof(machine_name));
 
-	if (p->EapClient == NULL)
-	{
-		MsChapV2Server_GenerateChallenge(p->MsChapV2_ServerChallenge);
-	}
-	else
-	{
-		Copy(p->MsChapV2_ServerChallenge, p->EapClient->MsChapV2Challenge.Chap_ChallengeValue, 16);
-	}
+	MsChapV2Server_GenerateChallenge(p->MsChapV2_ServerChallenge);
 
 	p->MsChapV2_PacketId = p->NextId++;
 	lcp = NewPPPLCP(PPP_CHAP_CODE_CHALLENGE, p->MsChapV2_PacketId);
@@ -3818,7 +3643,7 @@ bool PPPProcessEAPTlsResponse(PPP_SESSION *p, PPP_EAP *eap_packet, UINT eapSize)
 
 				ipc = NewIPC(p->Cedar, p->ClientSoftwareName, p->Postfix, p->Eap_Identity.HubName, p->Eap_Identity.UserName, "",
 					&error_code, &p->ClientIP, p->ClientPort, &p->ServerIP, p->ServerPort,
-					p->ClientHostname, p->CryptName, false, p->AdjustMss, NULL, p->Eap_TlsCtx.ClientCert.X,
+					p->ClientHostname, p->CryptName, false, p->AdjustMss, p->Eap_TlsCtx.ClientCert.X,
 					false, IPC_LAYER_3);
 
 				// We use the SAM authentication here, because the handshake can still fail at this point
@@ -4140,8 +3965,6 @@ void FreePPPSession(PPP_SESSION *p)
 		FreeIPC(p->Ipc);
 	}
 
-	PPPFreeEapClient(p);
-
 	Free(p);
 }
 
@@ -4204,22 +4027,6 @@ void FreePPPPacketEx(PPP_PACKET *pp, bool no_free_struct)
 		Free(pp);
 	}
 }
-
-// Free the associated EAP client
-void PPPFreeEapClient(PPP_SESSION *p)
-{
-	if (p == NULL)
-	{
-		return;
-	}
-
-	if (p->EapClient != NULL)
-	{
-		ReleaseEapClient(p->EapClient);
-		p->EapClient = NULL;
-	}
-}
-
 
 // Utility functions used not only in PPP stack
 

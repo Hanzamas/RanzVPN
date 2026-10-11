@@ -30,25 +30,7 @@ typedef struct USER USER;
 typedef struct AUTHPASSWORD AUTHPASSWORD;
 typedef struct AUTHUSERCERT AUTHUSERCERT;
 typedef struct AUTHROOTCERT AUTHROOTCERT;
-typedef struct AUTHRADIUS AUTHRADIUS;
 typedef struct AUTHNT AUTHNT;
-
-
-// ==============================================================
-//   RADIUS
-// ==============================================================
-
-typedef struct RADIUS_LOGIN_OPTION RADIUS_LOGIN_OPTION;
-typedef struct RADIUS_PACKET RADIUS_PACKET;
-typedef struct RADIUS_AVP RADIUS_AVP;
-typedef struct EAP_CLIENT EAP_CLIENT;
-typedef struct EAP_MESSAGE EAP_MESSAGE;
-typedef struct EAP_MSCHAPV2_GENERAL EAP_MSCHAPV2_GENERAL;
-typedef struct EAP_MSCHAPV2_CHALLENGE EAP_MSCHAPV2_CHALLENGE;
-typedef struct EAP_MSCHAPV2_RESPONSE EAP_MSCHAPV2_RESPONSE;
-typedef struct EAP_MSCHAPV2_SUCCESS_SERVER EAP_MSCHAPV2_SUCCESS_SERVER;
-typedef struct EAP_MSCHAPV2_SUCCESS_CLIENT EAP_MSCHAPV2_SUCCESS_CLIENT;
-typedef struct EAP_PEAP EAP_PEAP;
 
 
 // ==============================================================
@@ -296,7 +278,6 @@ typedef struct RPC_ENUM_FARM RPC_ENUM_FARM;
 typedef struct RPC_FARM_CONNECTION_STATUS RPC_FARM_CONNECTION_STATUS;
 typedef struct RPC_KEY_PAIR RPC_KEY_PAIR;
 typedef struct RPC_HUB_OPTION RPC_HUB_OPTION;
-typedef struct RPC_RADIUS RPC_RADIUS;
 typedef struct RPC_HUB RPC_HUB;
 typedef struct RPC_CREATE_HUB RPC_CREATE_HUB;
 typedef struct RPC_ENUM_HUB_ITEM RPC_ENUM_HUB_ITEM;

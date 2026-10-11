@@ -129,12 +129,6 @@ struct AUTHROOTCERT
 	wchar_t *CommonName;			// CommonName
 };
 
-// Radius authentication data
-struct AUTHRADIUS
-{
-	wchar_t *RadiusUsername;		// User name in the Radius
-};
-
 // Windows NT authentication data
 struct AUTHNT
 {
@@ -191,7 +185,6 @@ void *NewPasswordAuthData(char *username, char *password);
 void *NewPasswordAuthDataRaw(UCHAR *hashed_password, UCHAR *ntlm_secure_hash);
 void *NewUserCertAuthData(X *x);
 void *NewRootCertAuthData(X_SERIAL *serial, wchar_t *common_name);
-void *NewRadiusAuthData(wchar_t *username);
 void *NewNTAuthData(wchar_t *username);
 void HashPassword(void *dst, char *username, char *password);
 POLICY *GetDefaultPolicy();

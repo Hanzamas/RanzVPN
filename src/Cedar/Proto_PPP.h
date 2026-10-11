@@ -303,9 +303,6 @@ struct PPP_SESSION
 	UINT MsChapV2_ErrorCode;			// Authentication failure error code of MS-CHAPv2
 	UINT MsChapV2_PacketId;				// MS-CHAPv2 Packet ID
 
-	bool UseEapRadius;					// Use EAP for RADIUS authentication
-	EAP_CLIENT *EapClient;				// EAP client
-
 	UCHAR ServerInterfaceId[8];			// Server IPv6CP Interface Identifier
 	UCHAR ClientInterfaceId[8];			// Client IPv6CP Interface Identifier
 
@@ -352,7 +349,6 @@ bool PPPProcessCHAPResponsePacketEx(PPP_SESSION *p, PPP_PACKET *pp, PPP_PACKET *
 bool PPPProcessIPCPResponsePacket(PPP_SESSION *p, PPP_PACKET *pp, PPP_PACKET *req);
 bool PPPProcessEAPResponsePacket(PPP_SESSION *p, PPP_PACKET *pp, PPP_PACKET *req);
 bool PPPProcessIPv6CPResponsePacket(PPP_SESSION *p, PPP_PACKET *pp, PPP_PACKET *req);
-bool PPPProcessEapResponseForRadius(PPP_SESSION *p, PPP_EAP *eap_packet, UINT eap_datasize);
 // Request packets
 bool PPPProcessRequestPacket(PPP_SESSION *p, PPP_PACKET *pp);
 bool PPPProcessLCPRequestPacket(PPP_SESSION *p, PPP_PACKET *pp);
@@ -416,7 +412,6 @@ void FreePPPLCP(PPP_LCP *c);
 void FreePPPOptionList(LIST *o);
 void FreePPPPacket(PPP_PACKET *pp);
 void FreePPPPacketEx(PPP_PACKET *pp, bool no_free_struct);
-void PPPFreeEapClient(PPP_SESSION *p);
 
 // Utility functions used not only in PPP stack
 bool PPPParseUsername(CEDAR *cedar, char *src, ETHERIP_ID *dst);
