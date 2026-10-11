@@ -104,7 +104,7 @@ No combined size estimate for the dual-mode product was made.
 
 ## 5. Windows APIs instead of reinvented wheels
 
-Hilmi's principle: wherever Windows already has an API, use it; the data path stays ours. The full mapping is ADR-0008. Items that cannot or should not be replaced: `Network.c` and `HTTP.c` on the server side (HTTPS encapsulation is the protocol; WinHTTP/Schannel cannot serve it and the PQ hybrid group only exists in OpenSSL), `Str.c`/`Internat.c`/`Cfg.c`/`Pack.c` in the fork (thousands of call sites, and the config format must still load old files), and MS-RPC/ALPC for administration (it would tie the future web UI to Windows auth; the admin surface is the web UI's API).
+Hilmi's principle: wherever Windows already has an API, use it; the data path stays ours. The full mapping is ADR-0008. Items that cannot or should not be replaced: the raw-socket listener logic of `Network.c` and `HTTP.c` on the server side in the **slim fork** (the SE-VPN HTTPS encapsulation is the protocol and its PQ hybrid group only exists in OpenSSL there), `Str.c`/`Internat.c`/`Cfg.c`/`Pack.c` in the fork (thousands of call sites, and the config format must still load old files), and MS-RPC/ALPC for administration (it would tie the future web UI to Windows auth; the admin surface is the web UI's API). For the new core the TLS stack question was later settled in favour of Schannel (section 11).
 
 ## 6. Adapters and drivers
 
@@ -120,9 +120,15 @@ Clarifications that came up:
 - Protocol mimicry of complex applications fails ("The Parrot is Dead"); what works is being the real protocol (HTTPS to a real site, a real HTTP/3 server, real WebRTC) and hiding data inside it. Three fingerprints must be right: ClientHello (JA3/JA4), certificate, length and timing patterns.
 - "Looks like ordinary browsing to my own domain" is the Trojan/NaiveProxy model; "looks like access to Microsoft/Apple" is REALITY; "looks like HTTP/3" is Hysteria2/TUIC; "via CDN" is WebSocket/gRPC/XHTTP through Cloudflare.
 - Cloudflare proxies only HTTP-shaped traffic (HTTPS, WebSocket, gRPC, HTTP/3), not raw TCP/UDP (that is the paid Spectrum product). The TCP leg is WebSocket inside HTTPS; the UDP leg is HTTP/3 to Cloudflare's anycast edge with XHTTP-style request splitting; the origin leg is best done with Cloudflare Tunnel so the server needs no inbound port and its IP stays hidden. Because the CDN terminates TLS, the end-to-end Noise-style session layer inside the transport is mandatory, which is why ADR-0005 makes it unconditional.
-- Client-side DPI evasion for ISP-level blocking (ECH, ClientHello splitting, SNI omission, fake-TTL tricks, domain fronting) and their limits are in ADR-0006. ECH is the proper fix for SNI-based blocking as practised in Indonesia and is a red flag in China/Russia.
+- Client-side DPI evasion for ISP-level blocking (ECH, ClientHello splitting, SNI omission, fake-TTL tricks, domain fronting) and their limits are in ADR-0006. ECH was first described as the proper fix for SNI-based blocking as practised in Indonesia (and a red flag in China/Russia); after the Schannel decision (section 11) ECH is sidecar-only.
 - Licensing matters for "borrowing" from the Chinese ecosystem: Hysteria MIT, Xray-core MPL-2.0, sing-box (and therefore AnyTLS) GPLv3; GPL code cannot be merged into the Apache-2.0 fork, only run as a separate process.
-- Stealth requirements rule out Schannel (no ClientHello control, no ECH), which is how ADR-0007 landed on OpenSSL 3.5.
+- The assistant first argued that stealth requirements rule out Schannel (no ClientHello control, no ECH) and recommended OpenSSL 3.5; Hilmi later decided the opposite for tiers 1 and 2 (section 11): Schannel's fingerprint *is* the camouflage.
+
+Corrections recorded on 2026-10-11, from an external analysis Hilmi pasted (right about the three-path transport design and the TCP-only origin leg, wrong about the JA3 direction):
+
+- JA3/JA4 is the **client's** ClientHello fingerprint, observed by the censor on the client's network. Sending traffic through Cloudflare does not change the client's JA3; only the server side (anycast IP, certificate, JA3S) becomes Cloudflare's.
+- Through the Cloudflare reverse proxy there is no end-to-end QUIC: the client-to-edge leg may be HTTP/3 only in HTTP-request form (XHTTP pattern); WebSocket at Cloudflare is HTTP/1.1 or HTTP/2 over TCP; edge-to-origin is TCP; raw UDP needs Spectrum (Enterprise).
+- Cloudflare's "primarily HTML" terms clause was removed in 2023; heavy non-web traffic risks throttling or termination, it is not an automatic violation; Cloudflare Tunnel on the origin side is intended use.
 
 Sources consulted for the circumvention landscape (web search on 2026-10-11; vendor blogs and secondary summaries, not measurement studies):
 
@@ -143,7 +149,7 @@ Hilmi's own framing of the end state: "I am purely building a server that can al
 
 ## 9. Open items at the time of writing
 
-- Hilmi's confirmation of: the transport stack (ADR-0005), OpenSSL versus Schannel (ADR-0007), the extended safe-cleanup list (ADR-0003 items 5 to 13), the L2 client adapter (Neo6 versus tap-windows6, ADR-0009).
+- Hilmi's confirmation of: the transport stack (ADR-0005), the extended safe-cleanup list (ADR-0003 items 5 to 13), the L2 client adapter (Neo6 versus tap-windows6, ADR-0009). The TLS stack is settled (ADR-0007, section 11).
 - The language of the new core.
 - The control plane design (own coordination service, MAC-to-node learning and group subscription for L2, BGP/EVPN at the edge) has no ADR yet.
 - A size estimate for the dual-mode product.
@@ -159,3 +165,11 @@ After the ADRs above were first drafted, Hilmi overruled the L3-only recommendat
 - One node binary carries both backends (ADR-0011, Accepted).
 - Consequences for earlier ADRs: ADR-0004 is Superseded; ADR-0009 drops the "no SoftEther-signed drivers at all" line; ADR-0013 is Accepted for the new product as well; ADR-0005's session layer carries Ethernet frames or IP packets depending on the network type.
 - The slim fork's L2 code (Virtual Hub switching, Local Bridge, cascade) is therefore a reference for the L2 backend, not disposable compatibility code; its specific sins (flooding, DHCP relay hacks, SecureNAT) are what the new backend must avoid.
+
+## 11. Second correction: Schannel instead of OpenSSL in the new core
+
+On 2026-10-11 Hilmi decided ("y catat") that the new core uses **Schannel** for the TLS/TCP 443 path and **msquic with the Schannel backend** for QUIC in censorship tiers 1 and 2, and that OpenSSL is dropped from the new core (ADR-0007, now Accepted; the slim fork keeps OpenSSL, liboqs and oqs-provider as before).
+
+The reasoning that changed the earlier recommendation: the ClientHello of Schannel is identical to that of WinHTTP, Office, the Microsoft Store, Windows telemetry and thousands of other Windows applications, and msquic with Schannel is the QUIC stack behind Windows' own HTTP/3 and SMB over QUIC. The engine therefore blends in without any fingerprint engineering, and ships with zero third-party crypto. The earlier argument for OpenSSL (ECH and ClientHello control) only matters for tier 3, which is the sidecar's job anyway.
+
+Consequences: minimum OS for the new core is Windows 11 / Server 2022 (QUIC in Schannel); no ECH in the core (accepted, since Indonesian SNI blocking is domain-list based and the product's domain is not listed); REALITY, ECH and uTLS-style tricks stay in the tier-3 sidecar; the crypto rows of ADR-0008 resolve to CNG; post-quantum hybrid key exchange is used where the OS provides it rather than through liboqs.

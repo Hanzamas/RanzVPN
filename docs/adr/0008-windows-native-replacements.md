@@ -14,7 +14,7 @@ The principle agreed in the discussion: the data path stays ours (that is the pr
 |---|---|---|
 | sockets / UDP in `Network.c` | Winsock2 with **RIO** (registered buffers, completion queues) or IOCP with `WSARecvMsg`; `UDP_SEND_MSG_SIZE` (USO), `UDP_RECV_MAX_COALESCED_SIZE` (URO) | the NIC segments and coalesces, not the CPU |
 | multi-TCP plus UDP Acceleration | **msquic** | already has RIO/USO/URO/XDP datapaths; do not write QUIC |
-| `Encrypt.c` wrappers | OpenSSL EVP (per ADR-0007) or CNG if Schannel is chosen | one crypto stack |
+| `Encrypt.c` wrappers | CNG/bcrypt (AES-GCM, SHA-2, X25519, `BCryptGenRandom`), Schannel for TLS (ADR-0007) | one crypto stack, zero third-party crypto |
 | own routing table code | IP Helper: `CreateIpForwardEntry2`, `NotifyRouteChange2`, `GetIpInterfaceEntry` | already partly used |
 | SecureNAT (12k lines) | WinNAT (`New-NetNat`, kernel NAT in Windows 10+) | built-in |
 | host firewall / ACL | **WFP user-mode API** (`FwpmFilterAdd0`) or `INetFwPolicy2` | kernel-enforced filters defined from user mode, no driver |
@@ -30,7 +30,7 @@ The principle agreed in the discussion: the data path stays ours (that is the pr
 | `hamcore.se2` and string tables | Windows resources or plain files, English strings plus JSON i18n | |
 | own LIST/QUEUE/HASH/BUF | the language's standard library | |
 | `Tick64`, own RNG, base64/hex | `QueryPerformanceCounter`, `BCryptGenRandom`, `CryptBinaryToString` | |
-| own X.509 handling | Windows certificate store (`CertOpenStore`) plus CNG or OpenSSL | |
+| own X.509 handling | Windows certificate store (`CertOpenStore`) plus CNG | |
 | own keepalive / retry / reconnect | built into QUIC | |
 | own SOCKS/HTTP proxy client | `WinHttpGetProxyForUrl` plus a small CONNECT | |
 | `vpnsetup` installer | MSIX or winget | |
@@ -41,5 +41,5 @@ What remains hand-written: the packet engine (Wintun to peer table to QUIC), fra
 ## Consequences
 
 - This table applies to the **new core**, not to the slim fork; the fork keeps Mayaqua as a reference and compatibility gateway.
-- Several rows depend on ADR-0007 (OpenSSL versus Schannel/CNG) and ADR-0004 (L3).
+- The crypto rows follow ADR-0007 (Schannel/CNG, Accepted); the adapter and routing rows follow ADR-0014 (dual-mode) rather than ADR-0004.
 - The language for the new core (C with msquic and OpenSSL, or Rust with quinn/msquic bindings, wintun and aes-gcm crates) was discussed but not decided; Rust was called the natural pick for user-space performance with memory safety, C the faster start from the current code.
