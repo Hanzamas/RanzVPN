@@ -16,9 +16,7 @@
 #include "Logging.h"
 #include "MsChapV2.h"
 #include "Proto_IPsec.h"
-#include "Proto_OpenVPN.h"
 #include "Proto_PPP.h"
-#include "Proto_SSTP.h"
 #include "Radius.h"
 #include "Sam.h"
 #include "Server.h"
@@ -2899,18 +2897,6 @@ bool ServerAccept(CONNECTION *c)
 			if (c->IsInProc)
 			{
 				s->NoSendSignature = true;
-			}
-
-			if (c->IsInProc && StrCmpi(c->InProcPrefix, OPENVPN_IPC_POSTFIX_L3) == 0)
-			{
-				// OpenVPN L3 session
-				s->IsOpenVPNL3Session = true;
-			}
-
-			if (c->IsInProc && StrCmpi(c->InProcPrefix, OPENVPN_IPC_POSTFIX_L2) == 0)
-			{
-				// OpenVPN L2 session
-				s->IsOpenVPNL2Session = true;
 			}
 
 			// Determine whether the use of UDP acceleration mode
@@ -5835,42 +5821,6 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 					*error_detail_str = "POST_WaterMark_Error";
 				}
 			}
-			FreeHttpHeader(h);
-		}
-		else if (StrCmpi(h->Method, "SSTP_DUPLEX_POST") == 0 && (ProtoEnabled(server->Proto, "SSTP") || s->IsReverseAcceptedSocket) && GetServerCapsBool(server, "b_support_sstp"))
-		{
-			// SSTP client is connected
-			c->WasSstp = true;
-
-			if (StrCmpi(h->Target, SSTP_URI) == 0)
-			{
-				bool sstp_ret;
-				// Accept the SSTP connection
-				c->Type = CONNECTION_TYPE_OTHER;
-
-				sstp_ret = ProtoHandleConnection(server->Proto, s, "SSTP");
-
-				c->Err = ERR_DISCONNECTED;
-				FreeHttpHeader(h);
-
-				if (sstp_ret)
-				{
-					*error_detail_str = "";
-				}
-				else
-				{
-					*error_detail_str = "SSTP_ABORT";
-				}
-
-				return false;
-			}
-			else
-			{
-				// URI is invalid
-				HttpSendNotFound(s, h->Target);
-				*error_detail_str = "SSTP_URL_WRONG";
-			}
-
 			FreeHttpHeader(h);
 		}
 		else

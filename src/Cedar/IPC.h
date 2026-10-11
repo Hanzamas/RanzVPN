@@ -90,7 +90,6 @@ struct IPC_PARAM
 	bool BridgeMode;
 	UINT Mss;
 	bool IsL3Mode;
-	X *ClientCertificate;
 	bool RadiusOK;
 	UINT Layer;
 };

@@ -155,8 +155,6 @@ struct SESSION
 	bool HalfConnection;			// Half connection mode
 	bool QoS;						// VoIP / QoS
 	bool NoSendSignature;			// Do not send a signature
-	bool IsOpenVPNL3Session;		// Whether OpenVPN L3 session
-	bool IsOpenVPNL2Session;		// Whether OpenVPN L2 session
 	UINT NumDisconnected;			// Number of socket disconnection
 	bool NoReconnectToSession;		// Disable to reconnect to the session
 	char UnderlayProtocol[64];		// Physical communication protocol

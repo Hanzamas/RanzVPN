@@ -237,7 +237,6 @@ struct CONNECTION
 	UINT InProcLayer;				// InProc layer
 	UINT AdditionalConnectionFailedCounter;		// Additional connection failure counter
 	UINT64 LastCounterResetTick;	// Time the counter was reset finally
-	bool WasSstp;					// Processed the SSTP
 	bool WasDatProxy;				// DAT proxy processed
 	UCHAR CToken_Hash[SHA1_SIZE];	// CTOKEN_HASH
 	UINT LastTcpQueueSize;			// The last queue size of TCP sockets

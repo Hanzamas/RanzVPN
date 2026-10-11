@@ -1287,14 +1287,6 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 		// (Only works in stand-alone mode currently)
 		AddCapsBool(t, "b_support_ipsec", (s->ServerType == SERVER_TYPE_STANDALONE));
 
-		// SSTP
-		// (Only works in stand-alone mode currently)
-		AddCapsBool(t, "b_support_sstp", (s->ServerType == SERVER_TYPE_STANDALONE));
-
-		// OpenVPN
-		// (Only works in stand-alone mode currently)
-		AddCapsBool(t, "b_support_openvpn", (s->ServerType == SERVER_TYPE_STANDALONE));
-
 		// DDNS
 		AddCapsBool(t, "b_support_ddns", (s->DDnsClient != NULL));
 
@@ -1338,12 +1330,6 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 
 		// IPsec
 		AddCapsBool(t, "b_support_ipsec", false);
-
-		// SSTP
-		AddCapsBool(t, "b_support_sstp", false);
-
-		// OpenVPN
-		AddCapsBool(t, "b_support_openvpn", false);
 
 		// DDNS
 		AddCapsBool(t, "b_support_ddns", false);
@@ -7007,7 +6993,6 @@ void SiCleanupServer(SERVER *s)
 	FreeTinyLog(s->DebugLog);
 
 	DeleteLock(s->TasksFromFarmControllerLock);
-	DeleteLock(s->OpenVpnSstpConfigLock);
 
 
 	Free(s);
@@ -10801,7 +10786,6 @@ SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_serve
 	s->lock = NewLock();
 
 
-	s->OpenVpnSstpConfigLock = NewLock();
 	s->SaveCfgLock = NewLock();
 	s->ref = NewRef();
 	s->Cedar = NewCedar(NULL, NULL);

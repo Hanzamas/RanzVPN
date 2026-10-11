@@ -3078,23 +3078,6 @@ bool ParseUDP(PKT *p, UCHAR *buf, UINT size)
 		}
 	}
 
-	// Determine whether it's an OpenVPN UDP packet
-	if (size == 14)
-	{
-		if (buf[0] == 0x38)
-		{
-			if (IsZero(buf + 9, 5))
-			{
-				if (IsZero(buf + 1, 8) == false)
-				{
-					// An OpenVPN connection request packet is found
-					p->TypeL7 = L7_OPENVPNCONN;
-					return true;
-				}
-			}
-		}
-	}
-
 	return true;
 }
 

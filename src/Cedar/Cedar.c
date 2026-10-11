@@ -1274,8 +1274,6 @@ void CleanupCedar(CEDAR *c)
 
 	ReleaseIntList(c->UdpPortList);
 
-	DeleteLock(c->OpenVPNPublicPortsLock);
-
 	DeleteLock(c->CurrentRegionLock);
 
 	DeleteLock(c->CurrentTcpQueueSizeLock);
@@ -1583,7 +1581,6 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 	c->lock = NewLock();
 	c->ref = NewRef();
 
-	c->OpenVPNPublicPortsLock = NewLock();
 	c->CurrentTcpConnections = GetNumTcpConnectionsCounter();
 
 	c->ListenerList = NewList(CompareListener);

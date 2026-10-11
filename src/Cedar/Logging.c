@@ -1070,11 +1070,6 @@ UINT CalcPacketLoggingLevelEx(HUB_LOG *g, PKT *packet)
 				ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
 				break;
 
-			case L7_OPENVPNCONN:
-				// OpenVPN connection request
-				ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
-				break;
-
 			case L7_DNS:
 				// DNS request
 				ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
@@ -1119,11 +1114,6 @@ UINT CalcPacketLoggingLevelEx(HUB_LOG *g, PKT *packet)
 			{
 			case L7_IKECONN:
 				// IKE connection request
-				ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
-				break;
-
-			case L7_OPENVPNCONN:
-				// OpenVPN connection request
 				ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
 				break;
 
@@ -1511,11 +1501,6 @@ char *PacketLogParseProc(RECORD *rec)
 
 					break;
 
-				case L7_OPENVPNCONN:
-					// OpenVPN connection request packet
-					t->Token[6] = CopyStr("OPENVPN_CONNECTv4");
-					break;
-
 				case L7_IKECONN:
 					// IKE connection request packet
 					t->Token[6] = CopyStr("IKE_CONNECTv4");
@@ -1790,11 +1775,6 @@ char *PacketLogParseProc(RECORD *rec)
 
 				switch (p->TypeL7)
 				{
-				case L7_OPENVPNCONN:
-					// OpenVPN connection request packet
-					t->Token[6] = CopyStr("OPENVPN_CONNECTv6");
-					break;
-
 				case L7_IKECONN:
 					// IKE connection request packet
 					t->Token[6] = CopyStr("IKE_CONNECTv6");

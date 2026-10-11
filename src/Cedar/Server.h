@@ -146,13 +146,6 @@ struct SYSLOG_SETTING
 	UINT Port;								// Port number
 };
 
-// Setting of SSTP and OpenVPN
-struct OPENVPN_SSTP_CONFIG
-{
-	bool EnableOpenVPN;						// OpenVPN is enabled
-	bool EnableSSTP;						// SSTP is enabled
-};
-
 // WireGuard key structure
 struct WGK
 {
@@ -251,7 +244,6 @@ struct SERVER
 	PROTO *Proto;						// Protocols handler
 	IPSEC_SERVER *IPsecServer;			// IPsec server function
 	DDNS_CLIENT *DDnsClient;			// DDNS client feature
-	LOCK *OpenVpnSstpConfigLock;		// Lock OpenVPN and SSTP configuration
 
 	AZURE_CLIENT *AzureClient;			// VPN Azure client
 	bool EnableVpnAzure;				// Flag whether VPN Azure client is enabled

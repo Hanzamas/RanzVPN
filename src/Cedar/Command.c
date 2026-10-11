@@ -7742,7 +7742,6 @@ void PsMain(PS *ps)
 			{"EtherIpClientAdd", PsEtherIpClientAdd},
 			{"EtherIpClientDelete", PsEtherIpClientDelete},
 			{"EtherIpClientList", PsEtherIpClientList},
-			{"OpenVpnMakeConfig", PsOpenVpnMakeConfig},
 			{"ServerCertRegenerate", PsServerCertRegenerate},
 			{"VpnOverIcmpDnsEnable", PsVpnOverIcmpDnsEnable},
 			{"VpnOverIcmpDnsGet", PsVpnOverIcmpDnsGet},
@@ -22043,72 +22042,6 @@ UINT PsEtherIpClientList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	FreeParamValueList(o);
 
 	return 0;
-}
-
-// Generate a OpenVPN sample configuration file that can connect to the OpenVPN compatible server function
-UINT PsOpenVpnMakeConfig(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_READ_LOG_FILE t;
-	// Parameter list that can be specified
-	PARAM args[] =
-	{
-		// "name", prompt_proc, prompt_param, eval_proc, eval_param
-		{"[ZIP_FileName]", CmdPrompt, _UU("CMD_OpenVpnMakeConfig_Prompt_ZIP"), CmdEvalNotEmpty, NULL},
-	};
-
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-
-	// RPC call
-	ret = ScMakeOpenVpnConfigFile(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-	else
-	{
-		// Determine the file name to save
-		wchar_t filename[MAX_SIZE];
-		wchar_t tmp[MAX_SIZE];
-
-		UniStrCpy(filename, sizeof(filename), GetParamUniStr(o, "[ZIP_FileName]"));
-
-		if (UniEndWith(filename, L".zip") == false)
-		{
-			UniStrCat(filename, sizeof(filename), L".zip");
-		}
-
-		if (DumpBufW(t.Buffer, filename) == false)
-		{
-			ret = ERR_INTERNAL_ERROR;
-
-			UniFormat(tmp, sizeof(tmp), _UU("CMD_OpenVpnMakeConfig_ERROR"), filename);
-		}
-		else
-		{
-			UniFormat(tmp, sizeof(tmp), _UU("CMD_OpenVpnMakeConfig_OK"), filename);
-		}
-
-		c->Write(c, tmp);
-
-		FreeRpcReadLogFile(&t);
-	}
-
-	FreeParamValueList(o);
-
-	return ret;
 }
 
 // Register to the VPN Server by creating a new self-signed certificate with the specified CN (Common Name)

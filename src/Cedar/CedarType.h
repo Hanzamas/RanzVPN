@@ -273,7 +273,6 @@ typedef struct SYSLOG_SETTING SYSLOG_SETTING;
 typedef struct HUB_SNAPSHOT HUB_SNAPSHOT;
 typedef struct SERVER_SNAPSHOT SERVER_SNAPSHOT;
 typedef struct SERVER_HUB_CREATE_HISTORY SERVER_HUB_CREATE_HISTORY;
-typedef struct OPENVPN_SSTP_CONFIG OPENVPN_SSTP_CONFIG;
 typedef struct WGK WGK;
 
 // ==============================================================
@@ -594,28 +593,6 @@ typedef struct IPC_DHCPV4_AWAIT IPC_DHCPV4_AWAIT;
 // ==============================================================
 
 typedef struct UDP_ACCEL UDP_ACCEL;
-
-
-// ==============================================================
-//   SSTP (Microsoft Secure Socket Tunneling Protocol) Stack
-// ==============================================================
-
-typedef struct SSTP_SERVER SSTP_SERVER;
-typedef struct SSTP_PACKET SSTP_PACKET;
-typedef struct SSTP_ATTRIBUTE SSTP_ATTRIBUTE;
-
-
-// ==============================================================
-//   OpenVPN Protocol Stack
-// ==============================================================
-
-typedef struct OPENVPN_SERVER OPENVPN_SERVER;
-typedef struct OPENVPN_SERVER_UDP OPENVPN_SERVER_UDP;
-typedef struct OPENVPN_SESSION OPENVPN_SESSION;
-typedef struct OPENVPN_CHANNEL OPENVPN_CHANNEL;
-typedef struct OPENVPN_PACKET OPENVPN_PACKET;
-typedef struct OPENVPN_CONTROL_PACKET OPENVPN_CONTROL_PACKET;
-typedef struct OPENVPN_KEY_METHOD_2 OPENVPN_KEY_METHOD_2;
 
 
 // ==============================================================

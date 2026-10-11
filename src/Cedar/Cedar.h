@@ -866,7 +866,6 @@
 #define	ERR_DDNS_DISCONNECTED			139	// Communication to the dynamic DNS server is disconnected
 #define	ERR_SPECIAL_LISTENER_ICMP_ERROR	140	// The ICMP socket can not be opened
 #define	ERR_SPECIAL_LISTENER_DNS_ERROR	141	// Socket for DNS port can not be opened
-#define	ERR_OPENVPN_IS_NOT_ENABLED		142	// OpenVPN server feature is not enabled
 #define	ERR_NOT_SUPPORTED_AUTH_ON_OPENSOURCE	143	// It is the type of user authentication that are not supported in the open source version
 #define	ERR_NOT_SUPPORTED_FUNCTION_ON_OPENSOURCE	147	// It is a feature that is not supported in the open source version
 #define	ERR_SUSPENDING					148	// System is suspending
@@ -975,8 +974,6 @@ struct CEDAR
 	UINT64 BuiltDate;				// Build Date
 	LIST *UdpPortList;				// UDP port list in use
 	char CurrentDDnsFqdn[MAX_SIZE];	// FQDN of the current DDNS
-	char OpenVPNPublicPorts[MAX_SIZE];	// OpenVPN public UDP port list
-	LOCK *OpenVPNPublicPortsLock;	// Lock of OpenVPN public UDP port list
 	LOCK *CurrentRegionLock;		// Current region lock
 	char CurrentRegion[128];		// Current region
 	LOCK *CurrentTcpQueueSizeLock;	// Current TCP send queue size lock

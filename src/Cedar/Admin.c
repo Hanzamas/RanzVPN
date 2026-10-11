@@ -21,7 +21,6 @@
 #include "Remote.h"
 #include "Proto.h"
 #include "Proto_IPsec.h"
-#include "Proto_OpenVPN.h"
 #include "Proto_PPP.h"
 #include "Protocol.h"
 #include "Sam.h"
@@ -485,12 +484,9 @@ PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 	DECLARE_RPC("GetEtherIpId", ETHERIP_ID, StGetEtherIpId, InEtherIpId, OutEtherIpId)
 	DECLARE_RPC("DeleteEtherIpId", ETHERIP_ID, StDeleteEtherIpId, InEtherIpId, OutEtherIpId)
 	DECLARE_RPC_EX("EnumEtherIpId", RPC_ENUM_ETHERIP_ID, StEnumEtherIpId, InRpcEnumEtherIpId, OutRpcEnumEtherIpId, FreeRpcEnumEtherIpId)
-	DECLARE_RPC("SetOpenVpnSstpConfig", OPENVPN_SSTP_CONFIG, StSetOpenVpnSstpConfig, InOpenVpnSstpConfig, OutOpenVpnSstpConfig)
-	DECLARE_RPC("GetOpenVpnSstpConfig", OPENVPN_SSTP_CONFIG, StGetOpenVpnSstpConfig, InOpenVpnSstpConfig, OutOpenVpnSstpConfig)
 	DECLARE_RPC("GetDDnsClientStatus", DDNS_CLIENT_STATUS, StGetDDnsClientStatus, InDDnsClientStatus, OutDDnsClientStatus)
 	DECLARE_RPC("ChangeDDnsClientHostname", RPC_TEST, StChangeDDnsClientHostname, InRpcTest, OutRpcTest)
 	DECLARE_RPC("RegenerateServerCert", RPC_TEST, StRegenerateServerCert, InRpcTest, OutRpcTest)
-	DECLARE_RPC_EX("MakeOpenVpnConfigFile", RPC_READ_LOG_FILE, StMakeOpenVpnConfigFile, InRpcReadLogFile, OutRpcReadLogFile, FreeRpcReadLogFile)
 	DECLARE_RPC("SetSpecialListener", RPC_SPECIAL_LISTENER, StSetSpecialListener, InRpcSpecialListener, OutRpcSpecialListener)
 	DECLARE_RPC("GetSpecialListener", RPC_SPECIAL_LISTENER, StGetSpecialListener, InRpcSpecialListener, OutRpcSpecialListener)
 	DECLARE_RPC("GetAzureStatus", RPC_AZURE_STATUS, StGetAzureStatus, InRpcAzureStatus, OutRpcAzureStatus)
@@ -672,12 +668,9 @@ DECLARE_SC("AddEtherIpId", ETHERIP_ID, ScAddEtherIpId, InEtherIpId, OutEtherIpId
 DECLARE_SC("GetEtherIpId", ETHERIP_ID, ScGetEtherIpId, InEtherIpId, OutEtherIpId)
 DECLARE_SC("DeleteEtherIpId", ETHERIP_ID, ScDeleteEtherIpId, InEtherIpId, OutEtherIpId)
 DECLARE_SC_EX("EnumEtherIpId", RPC_ENUM_ETHERIP_ID, ScEnumEtherIpId, InRpcEnumEtherIpId, OutRpcEnumEtherIpId, FreeRpcEnumEtherIpId)
-DECLARE_SC("SetOpenVpnSstpConfig", OPENVPN_SSTP_CONFIG, ScSetOpenVpnSstpConfig, InOpenVpnSstpConfig, OutOpenVpnSstpConfig)
-DECLARE_SC("GetOpenVpnSstpConfig", OPENVPN_SSTP_CONFIG, ScGetOpenVpnSstpConfig, InOpenVpnSstpConfig, OutOpenVpnSstpConfig)
 DECLARE_SC("GetDDnsClientStatus", DDNS_CLIENT_STATUS, ScGetDDnsClientStatus, InDDnsClientStatus, OutDDnsClientStatus)
 DECLARE_SC("ChangeDDnsClientHostname", RPC_TEST, ScChangeDDnsClientHostname, InRpcTest, OutRpcTest)
 DECLARE_SC("RegenerateServerCert", RPC_TEST, ScRegenerateServerCert, InRpcTest, OutRpcTest)
-DECLARE_SC_EX("MakeOpenVpnConfigFile", RPC_READ_LOG_FILE, ScMakeOpenVpnConfigFile, InRpcReadLogFile, OutRpcReadLogFile, FreeRpcReadLogFile)
 DECLARE_SC("SetSpecialListener", RPC_SPECIAL_LISTENER, ScSetSpecialListener, InRpcSpecialListener, OutRpcSpecialListener)
 DECLARE_SC("GetSpecialListener", RPC_SPECIAL_LISTENER, ScGetSpecialListener, InRpcSpecialListener, OutRpcSpecialListener)
 DECLARE_SC("GetAzureStatus", RPC_AZURE_STATUS, ScGetAzureStatus, InRpcAzureStatus, OutRpcAzureStatus)
@@ -842,103 +835,6 @@ UINT StSetSpecialListener(ADMIN *a, RPC_SPECIAL_LISTENER *t)
 	return ERR_NO_ERROR;
 }
 
-// Set configurations for OpenVPN and SSTP
-UINT StSetOpenVpnSstpConfig(ADMIN *a, OPENVPN_SSTP_CONFIG *t)
-{
-	PROTO *proto = a->Server->Proto;
-	PROTO_CONTAINER *container, tmp_c;
-	PROTO_OPTION *option, tmp_o;
-	UINT ret = ERR_NO_ERROR;
-	bool changed = false;
-
-	SERVER_ADMIN_ONLY;
-
-	if (proto == NULL)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
-	tmp_o.Name = PROTO_OPTION_TOGGLE_NAME;
-	tmp_c.Name = "OpenVPN";
-
-	container = Search(proto->Containers, &tmp_c);
-	if (container != NULL)
-	{
-		option = Search(container->Options, &tmp_o);
-		if (option != NULL)
-		{
-			if (option->Type == PROTO_OPTION_BOOL)
-			{
-				option->Bool = t->EnableOpenVPN;
-				changed = true;
-			}
-			else
-			{
-				ret = ERR_INVALID_PARAMETER;
-			}
-		}
-		else
-		{
-			ret = ERR_OBJECT_NOT_FOUND;
-		}
-	}
-	else
-	{
-		ret = ERR_OBJECT_NOT_FOUND;
-	}
-
-	tmp_c.Name = "SSTP";
-
-	container = Search(proto->Containers, &tmp_c);
-	if (container != NULL)
-	{
-		option = Search(container->Options, &tmp_o);
-		if (option != NULL)
-		{
-			if (option->Type == PROTO_OPTION_BOOL)
-			{
-				option->Bool = t->EnableSSTP;
-				changed = true;
-			}
-			else
-			{
-				ret = ERR_INVALID_PARAMETER;
-			}
-		}
-		else
-		{
-			ret = ERR_OBJECT_NOT_FOUND;
-		}
-	}
-	else
-	{
-		ret = ERR_OBJECT_NOT_FOUND;
-	}
-
-	if (changed)
-	{
-		ALog(a, NULL, "LA_SET_OVPN_SSTP_CONFIG");
-		IncrementServerConfigRevision(a->Server);
-	}
-
-	return ret;
-}
-
-// Get configurations for OpenVPN and SSTP
-UINT StGetOpenVpnSstpConfig(ADMIN *a, OPENVPN_SSTP_CONFIG *t)
-{
-	PROTO *proto = a->Server->Proto;
-	if (proto == NULL)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
-	t->EnableOpenVPN = ProtoEnabled(proto, "OpenVPN");
-	t->EnableSSTP = ProtoEnabled(proto, "SSTP");
-
-	return ERR_NO_ERROR;
-}
-
 // Get status of DDNS client
 UINT StGetDDnsClientStatus(ADMIN *a, DDNS_CLIENT_STATUS *t)
 {
@@ -1008,272 +904,6 @@ UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t)
 
 	FreeX(x);
 	FreeK(k);
-
-	return ERR_NO_ERROR;
-}
-
-// Generate OpenVPN configuration files
-UINT StMakeOpenVpnConfigFile(ADMIN *a, RPC_READ_LOG_FILE *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
-	ZIP_PACKER *p;
-	FIFO *f;
-	BUF *readme_buf;
-	BUF *readme_pdf_buf;
-	BUF *sample_buf;
-	LIST *port_list;
-	char my_hostname[MAX_SIZE];
-
-	SERVER_ADMIN_ONLY;
-	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType != SERVER_TYPE_STANDALONE)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
-	if (ProtoEnabled(s->Proto, "OpenVPN") == false)
-	{
-		return ERR_OPENVPN_IS_NOT_ENABLED;
-	}
-
-	port_list = s->PortsUDP;
-
-	FreeRpcReadLogFile(t);
-	Zero(t, sizeof(RPC_READ_LOG_FILE));
-
-	p = NewZipPacker();
-
-	// readme.txt
-	readme_buf = ReadDump("|openvpn_readme.txt");
-
-	// readme.pdf
-	readme_pdf_buf = ReadDump("|openvpn_readme.pdf");
-
-	// sample.ovpn
-	sample_buf = ReadDump("|openvpn_sample.ovpn");
-
-	// host name
-	GetMachineHostName(my_hostname, sizeof(my_hostname));
-	my_hostname[16] = 0;
-
-	if (readme_buf == NULL || sample_buf == NULL || readme_pdf_buf == NULL)
-	{
-		ret = ERR_INTERNAL_ERROR;
-	}
-	else
-	{
-		BUF *config_l3_buf, *config_l2_buf;
-		X *x = NULL;
-		BUF *x_buf;
-		char protocol[MAX_SIZE];
-		UINT port = OPENVPN_UDP_PORT;
-		char port_str[MAX_SIZE];
-		char hostname[MAX_SIZE];
-		char tag_before_hostname[MAX_SIZE];
-		DDNS_CLIENT_STATUS ddns;
-		UCHAR *zero_buffer;
-		UINT zero_buffer_size = 128 * 1024;
-		char name_tmp[MAX_SIZE];
-
-		zero_buffer = ZeroMalloc(zero_buffer_size);
-
-
-		if (x == NULL)
-		{
-			Lock(c->lock);
-			{
-				x = CloneX(c->ServerX);
-			}
-			Unlock(c->lock);
-
-			if (x != NULL)
-			{
-				// Get the root certificate
-				if (x->root_cert == false)
-				{
-					X *root_x = NULL;
-					LIST *cert_list = NewCertList(true);
-
-					if (TryGetRootCertChain(cert_list, x, true, &root_x))
-					{
-						FreeX(x);
-						x = root_x;
-					}
-
-					FreeCertList(cert_list);
-				}
-			}
-		}
-
-		x_buf = XToBuf(x, true);
-
-		SeekBufToEnd(x_buf);
-		WriteBufChar(x_buf, 0);
-		SeekBufToBegin(x_buf);
-
-		FreeX(x);
-		Zero(hostname, sizeof(hostname));
-		Zero(tag_before_hostname, sizeof(tag_before_hostname));
-
-		Zero(&ddns, sizeof(ddns));
-		if (s->DDnsClient != NULL)
-		{
-			DCGetStatus(s->DDnsClient, &ddns);
-
-			if (IsEmptyStr(ddns.CurrentHostName) == false && IsEmptyStr(ddns.DnsSuffix) == false &&
-				ddns.Err_IPv4 == ERR_NO_ERROR)
-			{
-				StrCpy(tag_before_hostname, sizeof(tag_before_hostname),
-					"# Note: The below hostname is came from the Dynamic DNS Client function\r\n"
-					"#       which is running on the VPN Server. If you don't want to use\r\n"
-					"#       the Dynamic DNS hostname, replace it to either IP address or\r\n"
-					"#       other domain's hostname.\r\n\r\n");
-
-				Format(hostname, sizeof(hostname), "%s.v4%s", ddns.CurrentHostName, ddns.DnsSuffix);
-			}
-		}
-
-		if (IsEmptyStr(hostname))
-		{
-			IP myip;
-
-			Zero(&myip, sizeof(myip));
-			GetCurrentGlobalIP(&myip, false);
-
-			if (IsZeroIP(&myip))
-			{
-				GetCurrentGlobalIPGuess(&myip, false);
-			}
-
-			IPToStr(hostname, sizeof(hostname), &myip);
-		}
-
-		SeekBuf(sample_buf, sample_buf->Size, 0);
-		WriteBuf(sample_buf, zero_buffer, zero_buffer_size);
-
-		config_l3_buf = CloneBuf(sample_buf);
-		config_l2_buf = CloneBuf(sample_buf);
-
-		// Generate contents of configuration
-		if (LIST_NUM(port_list) >= 1)
-		{
-			StrCpy(protocol, sizeof(protocol), "udp");
-
-			if (IsIntInList(port_list, OPENVPN_UDP_PORT))
-			{
-				port = OPENVPN_UDP_PORT;
-			}
-			else
-			{
-				port = *((UINT *)(LIST_DATA(port_list, 0)));
-			}
-		}
-		else
-		{
-			RPC_LISTENER_LIST tt;
-			UINT i;
-
-			port = 0;
-
-			StrCpy(protocol, sizeof(protocol), "tcp");
-
-			Zero(&tt, sizeof(tt));
-
-			StEnumListener(a, &tt);
-
-			for (i = 0;i < tt.NumPort;i++)
-			{
-				if (tt.Enables[i] && tt.Errors[i] == false)
-				{
-					port = tt.Ports[i];
-					break;
-				}
-			}
-
-			FreeRpcListenerList(&tt);
-
-			if (port == 0)
-			{
-				StrCpy(protocol, sizeof(protocol), "udp");
-				port = OPENVPN_UDP_PORT;
-			}
-		}
-
-		ToStr(port_str, port);
-
-		if (IsEmptyStr(my_hostname) == false)
-		{
-			StrCat(my_hostname, sizeof(my_hostname), "_");
-
-			StrLower(my_hostname);
-		}
-
-		ZipAddFileSimple(p, "readme.txt", LocalTime64(), 0, readme_buf->Buf, readme_buf->Size);
-		ZipAddFileSimple(p, "readme.pdf", LocalTime64(), 0, readme_pdf_buf->Buf, readme_pdf_buf->Size);
-
-		ReplaceStrEx((char *)config_l3_buf->Buf, config_l3_buf->Size, (char *)config_l3_buf->Buf,
-			"$TAG_TUN_TAP$", "tun", false);
-		ReplaceStrEx((char *)config_l3_buf->Buf, config_l3_buf->Size, (char *)config_l3_buf->Buf,
-			"$TAG_PROTO$", protocol, false);
-		ReplaceStrEx((char *)config_l3_buf->Buf, config_l3_buf->Size, (char *)config_l3_buf->Buf,
-			"$TAG_HOSTNAME$", hostname, false);
-		ReplaceStrEx((char *)config_l3_buf->Buf, config_l3_buf->Size, (char *)config_l3_buf->Buf,
-			"$TAG_BEFORE_REMOTE$", tag_before_hostname, false);
-		ReplaceStrEx((char *)config_l3_buf->Buf, config_l3_buf->Size, (char *)config_l3_buf->Buf,
-			"$TAG_PORT$", port_str, false);
-
-		if (x_buf != NULL)
-		{
-			ReplaceStrEx((char *)config_l3_buf->Buf, config_l3_buf->Size, (char *)config_l3_buf->Buf,
-				"$CA$", x_buf->Buf, false);
-		}
-
-		Format(name_tmp, sizeof(name_tmp), "%sopenvpn_remote_access_l3.ovpn", my_hostname);
-		ZipAddFileSimple(p, name_tmp, LocalTime64(), 0, config_l3_buf->Buf, StrLen(config_l3_buf->Buf));
-
-		ReplaceStrEx((char *)config_l2_buf->Buf, config_l2_buf->Size, (char *)config_l2_buf->Buf,
-			"$TAG_TUN_TAP$", "tap", false);
-		ReplaceStrEx((char *)config_l2_buf->Buf, config_l2_buf->Size, (char *)config_l2_buf->Buf,
-			"$TAG_PROTO$", protocol, false);
-		ReplaceStrEx((char *)config_l2_buf->Buf, config_l2_buf->Size, (char *)config_l2_buf->Buf,
-			"$TAG_HOSTNAME$", hostname, false);
-		ReplaceStrEx((char *)config_l2_buf->Buf, config_l2_buf->Size, (char *)config_l2_buf->Buf,
-			"$TAG_BEFORE_REMOTE$", tag_before_hostname, false);
-		ReplaceStrEx((char *)config_l2_buf->Buf, config_l2_buf->Size, (char *)config_l2_buf->Buf,
-			"$TAG_PORT$", port_str, false);
-
-		if (x_buf != NULL)
-		{
-			ReplaceStrEx((char *)config_l2_buf->Buf, config_l2_buf->Size, (char *)config_l2_buf->Buf,
-				"$CA$", x_buf->Buf, false);
-		}
-
-		Format(name_tmp, sizeof(name_tmp), "%sopenvpn_site_to_site_bridge_l2.ovpn", my_hostname);
-		ZipAddFileSimple(p, name_tmp, LocalTime64(), 0, config_l2_buf->Buf, StrLen(config_l2_buf->Buf));
-
-		FreeBuf(config_l3_buf);
-		FreeBuf(config_l2_buf);
-
-		f = ZipFinish(p);
-
-		if (f != NULL)
-		{
-			t->Buffer = NewBuf();
-			WriteBuf(t->Buffer, FifoPtr(f), FifoSize(f));
-			SeekBuf(t->Buffer, 0, 0);
-		}
-
-		FreeBuf(readme_buf);
-		FreeBuf(sample_buf);
-		FreeBuf(readme_pdf_buf);
-		FreeBuf(x_buf);
-
-		Free(zero_buffer);
-	}
-
-	FreeZipPacker(p);
 
 	return ERR_NO_ERROR;
 }
@@ -9269,32 +8899,6 @@ void CopyOsInfo(OS_INFO *dst, OS_INFO *info)
 	dst->OsVersion = CopyStr(info->OsVersion);
 	dst->KernelName = CopyStr(info->KernelName);
 	dst->KernelVersion = CopyStr(info->KernelVersion);
-}
-
-// OPENVPN_SSTP_CONFIG
-void InOpenVpnSstpConfig(OPENVPN_SSTP_CONFIG *t, PACK *p)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(OPENVPN_SSTP_CONFIG));
-
-	t->EnableOpenVPN = PackGetBool(p, "EnableOpenVPN");
-	t->EnableSSTP = PackGetBool(p, "EnableSSTP");
-}
-void OutOpenVpnSstpConfig(PACK *p, OPENVPN_SSTP_CONFIG *t)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddBool(p, "EnableOpenVPN", t->EnableOpenVPN);
-	PackAddBool(p, "EnableSSTP", t->EnableSSTP);
 }
 
 // DDNS_CLIENT_STATUS

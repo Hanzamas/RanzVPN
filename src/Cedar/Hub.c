@@ -4075,7 +4075,7 @@ DISCARD_PACKET:
 						}
 
 						// Register since it is not registered
-						if ((s->Policy->MaxMac != 0 || s->Policy->NoBridge) && (s->IsOpenVPNL3Session == false))
+						if (s->Policy->MaxMac != 0 || s->Policy->NoBridge)
 						{
 							UINT i, num_mac_for_me = 0;
 							UINT limited_count;

@@ -2,8 +2,6 @@
 
 #include "Cedar.h"
 #include "Logging.h"
-#include "Proto_OpenVPN.h"
-#include "Proto_SSTP.h"
 #include "Proto_WireGuard.h"
 #include "Server.h"
 
@@ -201,10 +199,6 @@ PROTO *ProtoNew(CEDAR *cedar)
 
 	// WireGuard
 	Add(proto->Containers, ProtoContainerNew(WgsGetProtoImpl()));
-	// OpenVPN
-	Add(proto->Containers, ProtoContainerNew(OvsGetProtoImpl()));
-	// SSTP
-	Add(proto->Containers, ProtoContainerNew(SstpGetProtoImpl()));
 
 	proto->UdpListener = NewUdpListener(ProtoHandleDatagrams, proto, &cedar->Server->ListenIP);
 

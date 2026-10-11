@@ -628,7 +628,6 @@ struct PKT
 #define	L7_UNKNOWN			0		// Unknown
 #define	L7_DHCPV4			1		// DHCPv4 packet
 #define	L7_IKECONN			2		// IKE connection request packet
-#define	L7_OPENVPNCONN		3		// OpenVPN connection request packet
 #define L7_DNS				4		// DNS packet
 
 

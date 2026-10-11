@@ -41,12 +41,6 @@ IPC_ASYNC *NewIPCAsync(CEDAR *cedar, IPC_PARAM *param, SOCK_EVENT *sock_event)
 
 	Copy(&a->Param, param, sizeof(IPC_PARAM));
 
-	if (param->ClientCertificate != NULL)
-	{
-		// Client certificate must be copied for async processing
-		a->Param.ClientCertificate = CloneX(param->ClientCertificate);
-	}
-
 	if (sock_event != NULL)
 	{
 		a->SockEvent = sock_event;
@@ -166,11 +160,6 @@ void FreeIPCAsync(IPC_ASYNC *a)
 
 	ReleaseTube(a->TubeForDisconnect);
 
-	if (a->Param.ClientCertificate != NULL)
-	{
-		FreeX(a->Param.ClientCertificate);
-	}
-
 	Free(a);
 }
 
@@ -188,7 +177,7 @@ IPC *NewIPCByParam(CEDAR *cedar, IPC_PARAM *param, UINT *error_code)
 	             param->UserName, param->Password, param->WgKey, error_code,
 	             &param->ClientIp, param->ClientPort, &param->ServerIp, param->ServerPort,
 	             param->ClientHostname, param->CryptName,
-	             param->BridgeMode, param->Mss, NULL, param->ClientCertificate, param->RadiusOK,
+	             param->BridgeMode, param->Mss, NULL, NULL, param->RadiusOK,
 				 param->Layer);
 
 	return ipc;
