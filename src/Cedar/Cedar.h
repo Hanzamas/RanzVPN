@@ -176,7 +176,6 @@
 
 #define	MAX_SEND_SOCKET_QUEUE_NUM	VPN_GP(GP_MAX_SEND_SOCKET_QUEUE_NUM, 128)		// Maximum number of transmission queue items per processing
 #define	MAX_TCP_CONNECTION			32		// The maximum number of TCP connections
-#define	NUM_TCP_CONNECTION_FOR_UDP_RECOVERY	2	// Maximum number of connections when using UDP recovery
 #define	SELECT_TIME					VPN_GP(GP_SELECT_TIME, 256)
 #define	SELECT_TIME_FOR_NAT			VPN_GP(GP_SELECT_TIME_FOR_NAT, 30)
 #define	SELECT_TIME_FOR_DELAYED_PKT	1		// If there is a delayed packet
@@ -190,7 +189,6 @@
 #define	MAX_RETRY_INTERVAL			(300 * 1000)	// Maximum retry interval
 #define	RETRY_INTERVAL_SPECIAL		(60 * 1000)		// Reconnection interval of a special case
 
-#define	MAX_ADDITIONAL_CONNECTION_FAILED_COUNTER	16	// Allowable number that can be serially failed to additional connection
 #define	ADDITIONAL_CONNECTION_COUNTER_RESET_INTERVAL	(30 * 60 * 1000)	// Reset period of additional connection failure counter
 
 #define	MAC_MIN_LIMIT_COUNT			3		// Minimum number of MAC addresses
@@ -211,11 +209,6 @@
 #define	STORM_DISCARD_VALUE_START	VPN_GP(GP_STORM_DISCARD_VALUE_START, 3)		// Broadcast packet discard value start value
 #define	STORM_DISCARD_VALUE_END		VPN_GP(GP_STORM_DISCARD_VALUE_END, 1024)	// Broadcast packet discard value end value
 
-#define	KEEP_INTERVAL_MIN			5		// Packet transmission interval minimum value
-#define	KEEP_INTERVAL_DEFAULT		50		// Packet transmission interval default value
-#define	KEEP_INTERVAL_MAX			600		// Packet transmission interval maximum value
-#define KEEP_TCP_TIMEOUT			1000	// TCP time-out value
-
 #define	TICKET_EXPIRES				(60 * 1000)	// Expiration date of ticket
 
 #define	SEND_KILL_NUM_X				256			// Number of 'X' characters to send the Kill
@@ -225,9 +218,6 @@
 
 
 #define	SE_UDP_SIGN			"SE2P"		// Not used (only old UDP mode)
-
-// R-UDP service name
-#define	VPN_RUDP_SVC_NAME		"SoftEther_VPN"
 
 // Traffic information update interval
 #define	INCREMENT_TRAFFIC_INTERVAL		(10 * 1000)
@@ -265,13 +255,6 @@
 // Connection-related constant
 // 
 //////////////////////////////////////////////////////////////////////
-
-// Internet connection maintenance function (KeepAlive)
-
-#define	KEEP_RETRY_INTERVAL		(60 * 1000)			// Reconnection interval on connection failure
-#define	KEEP_MIN_PACKET_SIZE	1					// Minimum packet size
-#define	KEEP_MAX_PACKET_SIZE	128					// Maximum packet size
-#define	KEEP_POLLING_INTERVAL	250					// KEEP polling interval
 
 // Constants
 #define	RECV_BUF_SIZE				65536			// Buffer size to be received at a time
@@ -378,10 +361,6 @@
 // Protocol to be used for the listener
 #define	LISTENER_TCP				0		// TCP/IP
 #define	LISTENER_UDP				1		// UDP/IP (not being used)
-#define	LISTENER_RUDP				3		// R-UDP with NAT-T
-#define	LISTENER_ICMP				4		// VPN over ICMP
-#define	LISTENER_DNS				5		// VPN over DNS
-#define	LISTENER_REVERSE			6		// Reverse socket
 
 // Status of the listener
 #define	LISTENER_STATUS_TRYING		0		// While attempting
@@ -773,17 +752,7 @@
 #define	ERR_TOO_MANY_USERS_CREATED		128	// Too many created users
 #define	ERR_SUBSCRIPTION_IS_OLDER		129	// Subscription expiration date Is earlier than the build date of the VPN Server
 #define	ERR_ILLEGAL_TRIAL_VERSION		130	// Many trial license is used continuously
-#define	ERR_NAT_T_TWO_OR_MORE			131	// There are multiple servers in the back of a global IP address in the NAT-T connection
-#define	ERR_DUPLICATE_DDNS_KEY			132	// DDNS host key duplicate
-#define	ERR_DDNS_HOSTNAME_EXISTS		133	// Specified DDNS host name already exists
-#define	ERR_DDNS_HOSTNAME_INVALID_CHAR	134	// Characters that can not be used for the host name is included
-#define	ERR_DDNS_HOSTNAME_TOO_LONG		135	// Host name is too long
-#define	ERR_DDNS_HOSTNAME_IS_EMPTY		136	// Host name is not specified
-#define	ERR_DDNS_HOSTNAME_TOO_SHORT		137	// Host name is too short
 #define	ERR_MSCHAP2_PASSWORD_NEED_RESET	138	// Necessary that password is changed
-#define	ERR_DDNS_DISCONNECTED			139	// Communication to the dynamic DNS server is disconnected
-#define	ERR_SPECIAL_LISTENER_ICMP_ERROR	140	// The ICMP socket can not be opened
-#define	ERR_SPECIAL_LISTENER_DNS_ERROR	141	// Socket for DNS port can not be opened
 #define	ERR_NOT_SUPPORTED_AUTH_ON_OPENSOURCE	143	// It is the type of user authentication that are not supported in the open source version
 #define	ERR_NOT_SUPPORTED_FUNCTION_ON_OPENSOURCE	147	// It is a feature that is not supported in the open source version
 #define	ERR_SUSPENDING					148	// System is suspending
@@ -889,7 +858,6 @@ struct CEDAR
 	UINT ClientId;					// Client ID
 	UINT64 BuiltDate;				// Build Date
 	LIST *UdpPortList;				// UDP port list in use
-	char CurrentDDnsFqdn[MAX_SIZE];	// FQDN of the current DDNS
 	LOCK *CurrentRegionLock;		// Current region lock
 	char CurrentRegion[128];		// Current region
 	LOCK *CurrentTcpQueueSizeLock;	// Current TCP send queue size lock
@@ -963,7 +931,6 @@ void WriteTinyLog(TINY_LOG *t, char *str);
 TINY_LOG *NewTinyLog();
 void GetWinVer(RPC_WINVER *v);
 bool IsSupportedWinVer(RPC_WINVER *v);
-SOCK *GetReverseListeningSock(CEDAR *c);
 void GetCedarVersion(char *tmp, UINT size);
 UINT GetCedarVersionNumber();
 UINT64 GetCurrentBuildDate();

@@ -2005,12 +2005,7 @@ void InRpcClientConfig(CLIENT_CONFIG *c, PACK *p)
 	}
 
 	Zero(c, sizeof(CLIENT_CONFIG));
-	c->UseKeepConnect = PackGetInt(p, "UseKeepConnect") == 0 ? false : true;
-	c->KeepConnectPort = PackGetInt(p, "KeepConnectPort");
-	c->KeepConnectProtocol = PackGetInt(p, "KeepConnectProtocol");
-	c->KeepConnectInterval = PackGetInt(p, "KeepConnectInterval");
 	c->AllowRemoteConfig = PackGetInt(p, "AllowRemoteConfig") == 0 ? false : true;
-	PackGetStr(p, "KeepConnectHost", c->KeepConnectHost, sizeof(c->KeepConnectHost));
 }
 void OutRpcClientConfig(PACK *p, CLIENT_CONFIG *c)
 {
@@ -2020,12 +2015,7 @@ void OutRpcClientConfig(PACK *p, CLIENT_CONFIG *c)
 		return;
 	}
 
-	PackAddInt(p, "UseKeepConnect", c->UseKeepConnect);
-	PackAddInt(p, "KeepConnectPort", c->KeepConnectPort);
-	PackAddInt(p, "KeepConnectProtocol", c->KeepConnectProtocol);
-	PackAddInt(p, "KeepConnectInterval", c->KeepConnectInterval);
 	PackAddInt(p, "AllowRemoteConfig", c->AllowRemoteConfig);
-	PackAddStr(p, "KeepConnectHost", c->KeepConnectHost);
 }
 
 // RPC_CLIENT_VERSION
@@ -2542,13 +2532,6 @@ void InRpcClientOption(CLIENT_OPTION *c, PACK *p)
 
 	PackGetUniStr(p, "AccountName", c->AccountName, sizeof(c->AccountName));
 	PackGetStr(p, "Hostname", c->Hostname, sizeof(c->Hostname));
-	// Extract hint string from hostname
-	UINT i = SearchStrEx(c->Hostname, "/", 0, false);
-	if (i != INFINITE)
-	{
-		StrCpy(c->HintStr, sizeof(c->HintStr), c->Hostname + i + 1);
-		c->Hostname[i] = 0;
-	}
 	c->Port = PackGetInt(p, "Port");
 	c->PortUDP = PackGetInt(p, "PortUDP");
 	c->ProxyType = PackGetInt(p, "ProxyType");
@@ -2589,20 +2572,7 @@ void OutRpcClientOption(PACK *p, CLIENT_OPTION *c)
 	}
 
 	PackAddUniStr(p, "AccountName", c->AccountName);
-	// Append hint string to hostname
-	if (IsEmptyStr(c->HintStr))
-	{
-		// No hint
-		PackAddStr(p, "Hostname", c->Hostname);
-	}
-	else
-	{
-		char hostname[MAX_SIZE];
-		StrCpy(hostname, sizeof(hostname), c->Hostname);
-		StrCat(hostname, sizeof(hostname), "/");
-		StrCat(hostname, sizeof(hostname), c->HintStr);
-		PackAddStr(p, "Hostname", hostname);
-	}
+	PackAddStr(p, "Hostname", c->Hostname);
 	PackAddStr(p, "ProxyName", c->ProxyName);
 	PackAddStr(p, "ProxyUsername", c->ProxyUsername);
 	PackAddStr(p, "ProxyPassword", c->ProxyPassword);
@@ -3089,7 +3059,6 @@ void InRpcClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *s, PACK *p
 	s->QoS = PackGetInt(p, "QoS") ? true : false;
 	s->UseEncrypt = PackGetInt(p, "UseEncrypt") ? true : false;
 	s->UseCompress = PackGetInt(p, "UseCompress") ? true : false;
-	s->IsRUDPSession = PackGetInt(p, "IsRUDPSession") ? true : false;
 	PackGetStr(p, "UnderlayProtocol", s->UnderlayProtocol, sizeof(s->UnderlayProtocol));
 	PackGetStr(p, "ProtocolDetails", s->ProtocolDetails, sizeof(s->ProtocolDetails));
 	s->IsUdpAccelerationEnabled = PackGetInt(p, "IsUdpAccelerationEnabled") ? true : false;
@@ -3153,7 +3122,6 @@ void OutRpcClientGetConnectionStatus(PACK *p, RPC_CLIENT_GET_CONNECTION_STATUS *
 	PackAddInt(p, "NumTcpConnectionsDownload", c->NumTcpConnectionsDownload);
 	PackAddBool(p, "UseEncrypt", c->UseEncrypt);
 	PackAddBool(p, "UseCompress", c->UseCompress);
-	PackAddBool(p, "IsRUDPSession", c->IsRUDPSession);
 	PackAddStr(p, "UnderlayProtocol", c->UnderlayProtocol);
 	PackAddStr(p, "ProtocolDetails", c->ProtocolDetails);
 	PackAddBool(p, "IsUdpAccelerationEnabled", c->IsUdpAccelerationEnabled);
@@ -3584,46 +3552,6 @@ void CiRpcServerThread(THREAD *thread, void *param)
 	MsRegDeleteValueEx2(REG_LOCAL_MACHINE, CLIENT_WIN32_REGKEYNAME, CLIENT_WIN32_REGVALUE_PORT, false, true);
 	MsRegDeleteValueEx2(REG_LOCAL_MACHINE, CLIENT_WIN32_REGKEYNAME, CLIENT_WIN32_REGVALUE_PID, false, true);
 #endif	// OS_WIN32
-}
-
-// Start the Keep
-void CiInitKeep(CLIENT *c)
-{
-	// Validate arguments
-	if (c == NULL)
-	{
-		return;
-	}
-
-	c->Keep = StartKeep();
-
-	// Apply settings
-	if (c->Config.UseKeepConnect)
-	{
-		KEEP *k = c->Keep;
-		Lock(k->lock);
-		{
-			StrCpy(k->ServerName, sizeof(k->ServerName), c->Config.KeepConnectHost);
-			k->ServerPort = c->Config.KeepConnectPort;
-			k->Interval = c->Config.KeepConnectInterval * 1000;
-			k->UdpMode = (c->Config.KeepConnectProtocol == CONNECTION_UDP) ? true : false;
-			k->Enable = true;
-		}
-		Unlock(k->lock);
-	}
-}
-
-// Stop the Keep
-void CiFreeKeep(CLIENT *c)
-{
-	// Validate arguments
-	if (c == NULL)
-	{
-		return;
-	}
-
-	StopKeep(c->Keep);
-	c->Keep = NULL;
 }
 
 // Start the RPC
@@ -4113,8 +4041,6 @@ void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s)
 				}
 				// Use of compression
 				st->UseCompress = s->UseCompress;
-				// R-UDP
-				st->IsRUDPSession = s->IsRUDPSession;
 				// Physical communication protocol
 				StrCpy(st->UnderlayProtocol, sizeof(st->UnderlayProtocol), s->UnderlayProtocol);
 				// Protocol details
@@ -4814,22 +4740,10 @@ bool CtRenameAccount(CLIENT *c, RPC_RENAME_ACCOUNT *rename, bool inner)
 // Set the client configuration
 bool CtSetClientConfig(CLIENT *c, CLIENT_CONFIG *o)
 {
-	KEEP *k;
 	// Validate arguments
 	if (c == NULL || o == NULL)
 	{
 		return false;
-	}
-
-	if (o->UseKeepConnect)
-	{
-		if (IsEmptyStr(o->KeepConnectHost) ||
-			o->KeepConnectPort == 0 ||
-			o->KeepConnectPort >= 65536)
-		{
-			CiSetError(c, ERR_INVALID_PARAMETER);
-			return false;
-		}
 	}
 
 	Lock(c->lock);
@@ -4840,25 +4754,6 @@ bool CtSetClientConfig(CLIENT *c, CLIENT_CONFIG *o)
 
 	// Save the settings
 	CiSaveConfigurationFile(c);
-
-	// Apply the Keep Connect
-	k = c->Keep;
-	Lock(k->lock);
-	{
-		if (o->UseKeepConnect)
-		{
-			StrCpy(k->ServerName, sizeof(k->ServerName), c->Config.KeepConnectHost);
-			k->ServerPort = c->Config.KeepConnectPort;
-			k->Interval = c->Config.KeepConnectInterval * 1000;
-			k->UdpMode = (c->Config.KeepConnectProtocol == CONNECTION_UDP) ? true : false;
-			k->Enable = true;
-		}
-		else
-		{
-			k->Enable = false;
-		}
-	}
-	Unlock(k->lock);
 
 	// Apply TAP state
 	LockList(c->AccountList);
@@ -5101,12 +4996,6 @@ bool CtEnumAccount(CLIENT *c, RPC_CLIENT_ENUM_ACCOUNT *e)
 
 			// Server name
 			StrCpy(item->ServerName, sizeof(item->ServerName), a->ClientOption->Hostname);
-			// Append hint string to hostname
-			if (IsEmptyStr(a->ClientOption->HintStr) == false)
-			{
-				StrCat(item->ServerName, sizeof(item->ServerName), "/");
-				StrCat(item->ServerName, sizeof(item->ServerName), a->ClientOption->HintStr);
-			}
 
 			// Proxy type
 			item->ProxyType = a->ClientOption->ProxyType;
@@ -6937,11 +6826,6 @@ void CiInitConfiguration(CLIENT *c)
 		// Initialize the client configuration
 		// Disable remote management
 		c->Config.AllowRemoteConfig = false;
-		StrCpy(c->Config.KeepConnectHost, sizeof(c->Config.KeepConnectHost), CLIENT_DEFAULT_KEEPALIVE_HOST);
-		c->Config.KeepConnectPort = CLIENT_DEFAULT_KEEPALIVE_PORT;
-		c->Config.KeepConnectProtocol = CONNECTION_UDP;
-		c->Config.KeepConnectInterval = CLIENT_DEFAULT_KEEPALIVE_INTERVAL;
-		c->Config.UseKeepConnect = false;	// Don't use the connection maintenance function by default in the Client
 		// Eraser
 		c->Eraser = NewEraser(c->Logger, 0);
 
@@ -7089,12 +6973,7 @@ void CiLoadClientConfig(CLIENT_CONFIG *c, FOLDER *f)
 		return;
 	}
 
-	c->UseKeepConnect = CfgGetBool(f, "UseKeepConnect");
-	CfgGetStr(f, "KeepConnectHost", c->KeepConnectHost, sizeof(c->KeepConnectHost));
-	c->KeepConnectPort = CfgGetInt(f, "KeepConnectPort");
-	c->KeepConnectProtocol = CfgGetInt(f, "KeepConnectProtocol");
 	c->AllowRemoteConfig = CfgGetBool(f, "AllowRemoteConfig");
-	c->KeepConnectInterval = MAKESURE(CfgGetInt(f, "KeepConnectInterval"), KEEP_INTERVAL_MIN, KEEP_INTERVAL_MAX);
 	c->NoChangeWcmNetworkSettingOnWindows8 = CfgGetBool(f, "NoChangeWcmNetworkSettingOnWindows8");
 
 	if (CfgIsItem(f, "DisableRpcDynamicPortListener"))
@@ -7197,13 +7076,6 @@ CLIENT_OPTION *CiLoadClientOption(FOLDER *f)
 
 	CfgGetUniStr(f, "AccountName", o->AccountName, sizeof(o->AccountName));
 	CfgGetStr(f, "Hostname", o->Hostname, sizeof(o->Hostname));
-	// Extract hint string from hostname
-	UINT i = SearchStrEx(o->Hostname, "/", 0, false);
-	if (i != INFINITE)
-	{
-		StrCpy(o->HintStr, sizeof(o->HintStr), o->Hostname + i + 1);
-		o->Hostname[i] = 0;
-	}
 	o->Port = CfgGetInt(f, "Port");
 	o->PortUDP = CfgGetInt(f, "PortUDP");
 	o->ProxyType = CfgGetInt(f, "ProxyType");
@@ -7657,12 +7529,7 @@ void CiWriteClientConfig(FOLDER *cc, CLIENT_CONFIG *config)
 		return;
 	}
 
-	CfgAddBool(cc, "UseKeepConnect", config->UseKeepConnect);
-	CfgAddStr(cc, "KeepConnectHost", config->KeepConnectHost);
-	CfgAddInt(cc, "KeepConnectPort", config->KeepConnectPort);
-	CfgAddInt(cc, "KeepConnectProtocol", config->KeepConnectProtocol);
 	CfgAddBool(cc, "AllowRemoteConfig", config->AllowRemoteConfig);
-	CfgAddInt(cc, "KeepConnectInterval", config->KeepConnectInterval);
 	CfgAddBool(cc, "NoChangeWcmNetworkSettingOnWindows8", config->NoChangeWcmNetworkSettingOnWindows8);
 	CfgAddBool(cc, "DisableRpcDynamicPortListener", config->DisableRpcDynamicPortListener);
 }
@@ -7731,20 +7598,7 @@ void CiWriteClientOption(FOLDER *f, CLIENT_OPTION *o)
 	}
 
 	CfgAddUniStr(f, "AccountName", o->AccountName);
-	// Append hint string to hostname
-	if (IsEmptyStr(o->HintStr))
-	{
-		// No hint
-		CfgAddStr(f, "Hostname", o->Hostname);
-	}
-	else
-	{
-		char hostname[MAX_SIZE];
-		StrCpy(hostname, sizeof(hostname), o->Hostname);
-		StrCat(hostname, sizeof(hostname), "/");
-		StrCat(hostname, sizeof(hostname), o->HintStr);
-		CfgAddStr(f, "Hostname", hostname);
-	}
+	CfgAddStr(f, "Hostname", o->Hostname);
 	CfgAddInt(f, "Port", o->Port);
 	CfgAddInt(f, "PortUDP", o->PortUDP);
 	CfgAddInt(f, "ProxyType", o->ProxyType);
@@ -8422,9 +8276,6 @@ void CtStartClient()
 	// Creating a client
 	client = CiNewClient();
 
-	// Start the Keep
-	CiInitKeep(client);
-
 	// Start the RPC server
 	CiStartRpcServer(client);
 
@@ -8478,9 +8329,6 @@ void CtStopClient()
 
 	// Disconnect all the RPC
 	CiStopRpcServer(client);
-
-	// Exit the Keep
-	CiFreeKeep(client);
 
 	// Disconnect all accounts connected
 	LockList(client->AccountList);

@@ -213,16 +213,6 @@ void SessionMain(SESSION *s)
 			}
 		}
 
-		if (s->IsRUDPSession)
-		{
-			if (s->NumDisconnected >= 1 && s->EnableUdpRecovery == false)
-			{
-				// Disconnection occurs in the R-UDP session (UDP recovery is invalid)
-				err = ERR_DISCONNECTED;
-				pa_fail = true;
-			}
-		}
-		
 		// Chance of additional connection
 		if (is_server_session == false)
 		{
@@ -534,11 +524,8 @@ void SessionMain(SESSION *s)
 						(UINT64)(s->ClientOption->AdditionalConnectionInterval * 1000 * 2 + CONNECTING_TIMEOUT * 2))
 						<= Tick64())
 					{
-						if (s->IsRUDPSession == false ||  LIST_NUM(s->Connection->Tcp->TcpSockList) == 0)
-						{
-							timeouted = true;
-							WHERE;
-						}
+						timeouted = true;
+						WHERE;
 					}
 
 					// If all the specified number of tcp connections are not alive continuously, then terminate the session.
@@ -834,18 +821,6 @@ void ClientAdditionalConnectChance(SESSION *s)
 		// Connect additionally only in the case of TCP protocol
 		return;
 	}
-	if (s->IsRUDPSession && s->EnableUdpRecovery == false)
-	{
-		// Do not connect additionally if the UDP recovery is disabled in the case of R-UDP session
-		return;
-	}
-
-	if (s->IsRUDPSession && (s->Connection->AdditionalConnectionFailedCounter > MAX_ADDITIONAL_CONNECTION_FAILED_COUNTER))
-	{
-		// Not to make a large amount of repeated connection retry within a certain time in the case of R-UDP session
-		return;
-	}
-
 	while (true)
 	{
 		if (s->Halt)

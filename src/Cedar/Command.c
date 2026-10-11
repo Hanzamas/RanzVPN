@@ -8,11 +8,9 @@
 #include "Command.h"
 
 #include "Admin.h"
-#include "AzureClient.h"
 #include "Connection.h"
 #include "Console.h"
 #include "Database.h"
-#include "DDNS.h"
 #include "Layer3.h"
 #include "Server.h"
 
@@ -2067,7 +2065,7 @@ void TtcThread(THREAD *thread, void *param)
 			IPToStr(target_host, sizeof(target_host), &ip_ret);
 		}
 
-		s = ConnectEx4(target_host, ttc->Port, 0, ttc->Cancel, NULL, NULL, false, true, &ip_ret);
+		s = ConnectEx4(target_host, ttc->Port, 0, ttc->Cancel, true, &ip_ret);
 
 		if (s == NULL)
 		{
@@ -3123,10 +3121,6 @@ void PcMain(PC *pc)
 			{"AccountImport", PcAccountImport},
 			{"RemoteEnable", PcRemoteEnable},
 			{"RemoteDisable", PcRemoteDisable},
-			{"KeepEnable", PcKeepEnable},
-			{"KeepDisable", PcKeepDisable},
-			{"KeepSet", PcKeepSet},
-			{"KeepGet", PcKeepGet},
 			{"MakeCert", PtMakeCert},
 			{"MakeCert2048", PtMakeCert2048},
 			{"TrafficClient", PtTrafficClient},
@@ -4184,7 +4178,6 @@ UINT PcAccountSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		// Success
 		t.ClientOption->Port = port;
 		StrCpy(t.ClientOption->Hostname, sizeof(t.ClientOption->Hostname), host);
-		t.ClientOption->HintStr[0] = 0;
 		StrCpy(t.ClientOption->HubName, sizeof(t.ClientOption->HubName), GetParamStr(o, "HUB"));
 
 		SetRpcClientCreateAccountFromGetAccount(&c, &t);
@@ -4245,18 +4238,7 @@ UINT PcAccountGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		CtInsert(ct, _UU("CMD_ACCOUNT_COLUMN_NAME"), t.ClientOption->AccountName);
 
 		// Host name of the destination VPN Server
-		if (IsEmptyStr(t.ClientOption->HintStr))
-		{
-			StrToUni(tmp, sizeof(tmp), t.ClientOption->Hostname);
-		}
-		else
-		{
-			char hostname[MAX_SIZE];
-			StrCpy(hostname, sizeof(hostname), t.ClientOption->Hostname);
-			StrCat(hostname, sizeof(hostname), "/");
-			StrCat(hostname, sizeof(hostname), t.ClientOption->HintStr);
-			StrToUni(tmp, sizeof(tmp), hostname);
-		}
+		StrToUni(tmp, sizeof(tmp), t.ClientOption->Hostname);
 		CtInsert(ct, _UU("CMD_ACCOUNT_COLUMN_HOSTNAME"), tmp);
 
 		// The port number to connect to VPN Server
@@ -6888,203 +6870,6 @@ UINT PcRemoteDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return ret;
 }
 
-// Enable the maintenance function of the Internet connection
-UINT PcKeepEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PC *pc = (PC *)param;
-	UINT ret = ERR_NO_ERROR;
-	CLIENT_CONFIG t;
-
-	// Get the parameter list
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	// RPC call
-	Zero(&t, sizeof(t));
-
-	ret = CcGetClientConfig(pc->RemoteClient, &t);
-
-	if (ret == ERR_NO_ERROR)
-	{
-		// Change the settings
-		t.UseKeepConnect = true;
-		ret = CcSetClientConfig(pc->RemoteClient, &t);
-	}
-
-	if (ret == ERR_NO_ERROR)
-	{
-		// Success
-	}
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// Error has occurred
-		CmdPrintError(c, ret);
-	}
-
-	// Release of the parameter list
-	FreeParamValueList(o);
-
-	return ret;
-}
-
-// Disable the maintenance function of the Internet connection
-UINT PcKeepDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PC *pc = (PC *)param;
-	UINT ret = ERR_NO_ERROR;
-	CLIENT_CONFIG t;
-
-	// Get the parameter list
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	// RPC call
-	Zero(&t, sizeof(t));
-
-	ret = CcGetClientConfig(pc->RemoteClient, &t);
-
-	if (ret == ERR_NO_ERROR)
-	{
-		// Change the settings
-		t.UseKeepConnect = false;
-		ret = CcSetClientConfig(pc->RemoteClient, &t);
-	}
-
-	if (ret == ERR_NO_ERROR)
-	{
-		// Success
-	}
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// Error has occurred
-		CmdPrintError(c, ret);
-	}
-
-	// Release of the parameter list
-	FreeParamValueList(o);
-
-	return ret;
-}
-
-// Set the maintenance function of the Internet connection
-UINT PcKeepSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PC *pc = (PC *)param;
-	UINT ret = ERR_NO_ERROR;
-	CLIENT_CONFIG t;
-	char *host;
-	UINT port;
-	// Parameter list that can be specified
-	PARAM args[] =
-	{
-		// "name", prompt_proc, prompt_param, eval_proc, eval_param
-		{"HOST", CmdPrompt, _UU("CMD_KeepSet_PROMPT_HOST"), CmdEvalHostAndPort, NULL},
-		{"PROTOCOL", CmdPrompt, _UU("CMD_KeepSet_PROMPT_PROTOCOL"), CmdEvalTcpOrUdp, NULL},
-		{"INTERVAL", CmdPrompt, _UU("CMD_KeepSet_PROMPT_INTERVAL"), NULL, NULL},
-	};
-
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	// RPC call
-	Zero(&t, sizeof(t));
-
-	ret = CcGetClientConfig(pc->RemoteClient, &t);
-
-	if (ret == ERR_NO_ERROR)
-	{
-		if (ParseHostPort(GetParamStr(o, "HOST"), &host, &port, 0))
-		{
-			StrCpy(t.KeepConnectHost, sizeof(t.KeepConnectHost), host);
-			t.KeepConnectPort = port;
-			t.KeepConnectInterval = GetParamInt(o, "INTERVAL");
-			t.KeepConnectProtocol = (StrCmpi(GetParamStr(o, "PROTOCOL"), "tcp") == 0) ? 0 : 1;
-			Free(host);
-
-			ret = CcSetClientConfig(pc->RemoteClient, &t);
-		}
-	}
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// Error has occurred
-		CmdPrintError(c, ret);
-	}
-
-	// Release of the parameter list
-	FreeParamValueList(o);
-
-	return ret;
-}
-
-// Get the maintenance function of the Internet connection
-UINT PcKeepGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PC *pc = (PC *)param;
-	UINT ret = ERR_NO_ERROR;
-	CLIENT_CONFIG t;
-
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	// RPC call
-	Zero(&t, sizeof(t));
-
-	ret = CcGetClientConfig(pc->RemoteClient, &t);
-
-	if (ret == ERR_NO_ERROR)
-	{
-		wchar_t tmp[MAX_SIZE];
-		CT *ct = CtNewStandard();
-
-		StrToUni(tmp, sizeof(tmp), t.KeepConnectHost);
-		CtInsert(ct, _UU("CMD_KeepGet_COLUMN_1"), tmp);
-
-		UniToStru(tmp, t.KeepConnectPort);
-		CtInsert(ct, _UU("CMD_KeepGet_COLUMN_2"), tmp);
-
-		UniToStru(tmp, t.KeepConnectInterval);
-		CtInsert(ct, _UU("CMD_KeepGet_COLUMN_3"), tmp);
-
-		CtInsert(ct, _UU("CMD_KeepGet_COLUMN_4"),
-			t.KeepConnectProtocol == 0 ? L"TCP/IP" : L"UDP/IP");
-
-		CtInsert(ct, _UU("CMD_KeepGet_COLUMN_5"),
-			t.UseKeepConnect ? _UU("SM_ACCESS_ENABLE") : _UU("SM_ACCESS_DISABLE"));
-
-		CtFree(ct, c);
-	}
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// Error has occurred
-		CmdPrintError(c, ret);
-	}
-
-	// Release of the parameter list
-	FreeParamValueList(o);
-
-	return ret;
-}
-
 
 // Creat a new client management tool context
 PC *NewPc(CONSOLE *c, REMOTE_CLIENT *remote_client, char *servername, wchar_t *cmdline)
@@ -7323,10 +7108,6 @@ void PsMain(PS *ps)
 			{"ServerCertSet", PsServerCertSet},
 			{"ServerCipherGet", PsServerCipherGet},
 			{"ServerCipherSet", PsServerCipherSet},
-			{"KeepEnable", PsKeepEnable},
-			{"KeepDisable", PsKeepDisable},
-			{"KeepSet", PsKeepSet},
-			{"KeepGet", PsKeepGet},
 			{"SyslogGet", PsSyslogGet},
 			{"SyslogDisable", PsSyslogDisable},
 			{"SyslogEnable", PsSyslogEnable},
@@ -7469,12 +7250,6 @@ void PsMain(PS *ps)
 			{"LicenseList", PsLicenseList},
 			{"LicenseStatus", PsLicenseStatus},
 			{"ServerCertRegenerate", PsServerCertRegenerate},
-			{"VpnOverIcmpDnsEnable", PsVpnOverIcmpDnsEnable},
-			{"VpnOverIcmpDnsGet", PsVpnOverIcmpDnsGet},
-			{"DynamicDnsGetStatus", PsDynamicDnsGetStatus},
-			{"DynamicDnsSetHostname", PsDynamicDnsSetHostname},
-			{"VpnAzureGetStatus", PsVpnAzureGetStatus},
-			{"VpnAzureSetEnable", PsVpnAzureSetEnable},
 		};
 
 		// Generate a prompt
@@ -7986,113 +7761,6 @@ UINT PsServerCipherSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-// Enabling the maintenance function of the Internet connection
-UINT PsKeepEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_KEEP t;
-
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-
-	// RPC call
-	ret = ScGetKeep(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	t.UseKeepConnect = true;
-
-	ret = ScSetKeep(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
-// Disabling the maintenance function of the Internet connection
-UINT PsKeepDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_KEEP t;
-
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-
-	// RPC call
-	ret = ScGetKeep(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	t.UseKeepConnect = false;
-
-	ret = ScSetKeep(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
-// Evaluate the UDP or the TCP
-bool CmdEvalTcpOrUdp(CONSOLE *c, wchar_t *str, void *param)
-{
-	// Validate arguments
-	if (c == NULL || str == NULL)
-	{
-		return false;
-	}
-
-	if (UniStrCmpi(str, L"tcp") == 0 || UniStrCmpi(str, L"udp") == 0)
-	{
-		return true;
-	}
-
-	c->Write(c, _UU("CMD_KeepSet_EVAL_TCP_UDP"));
-
-	return false;
-}
-
 // Enable the syslog configuration
 UINT PsSyslogEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
@@ -8248,122 +7916,6 @@ wchar_t *GetSyslogSettingName(UINT n)
 	Format(tmp, sizeof(tmp), "SM_SYSLOG_%u", n);
 
 	return _UU(tmp);
-}
-
-// Setting of maintenance function of the Internet connection
-UINT PsKeepSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_KEEP t;
-	char *host;
-	UINT port;
-	// Parameter list that can be specified
-	PARAM args[] =
-	{
-		// "name", prompt_proc, prompt_param, eval_proc, eval_param
-		{"HOST", CmdPrompt, _UU("CMD_KeepSet_PROMPT_HOST"), CmdEvalHostAndPort, NULL},
-		{"PROTOCOL", CmdPrompt, _UU("CMD_KeepSet_PROMPT_PROTOCOL"), CmdEvalTcpOrUdp, NULL},
-		{"INTERVAL", CmdPrompt, _UU("CMD_KeepSet_PROMPT_INTERVAL"), NULL, NULL},
-	};
-
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-
-	// RPC call
-	ret = ScGetKeep(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	if (ParseHostPort(GetParamStr(o, "HOST"), &host, &port, 0))
-	{
-		StrCpy(t.KeepConnectHost, sizeof(t.KeepConnectHost), host);
-		t.KeepConnectPort = port;
-		t.KeepConnectInterval = GetParamInt(o, "INTERVAL");
-		t.KeepConnectProtocol = (StrCmpi(GetParamStr(o, "PROTOCOL"), "tcp") == 0) ? 0 : 1;
-		Free(host);
-
-		// RPC call
-		ret = ScSetKeep(ps->Rpc, &t);
-
-		if (ret != ERR_NO_ERROR)
-		{
-			// An error has occured
-			CmdPrintError(c, ret);
-			FreeParamValueList(o);
-			return ret;
-		}
-	}
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
-// Get the maintenance function of the Internet connection
-UINT PsKeepGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_KEEP t;
-
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-
-	// RPC call
-	ret = ScGetKeep(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-	else
-	{
-		wchar_t tmp[MAX_SIZE];
-		CT *ct = CtNewStandard();
-
-		StrToUni(tmp, sizeof(tmp), t.KeepConnectHost);
-		CtInsert(ct, _UU("CMD_KeepGet_COLUMN_1"), tmp);
-
-		UniToStru(tmp, t.KeepConnectPort);
-		CtInsert(ct, _UU("CMD_KeepGet_COLUMN_2"), tmp);
-
-		UniToStru(tmp, t.KeepConnectInterval);
-		CtInsert(ct, _UU("CMD_KeepGet_COLUMN_3"), tmp);
-
-		CtInsert(ct, _UU("CMD_KeepGet_COLUMN_4"),
-			t.KeepConnectProtocol == 0 ? L"TCP/IP" : L"UDP/IP");
-
-		CtInsert(ct, _UU("CMD_KeepGet_COLUMN_5"),
-			t.UseKeepConnect ? _UU("SM_ACCESS_ENABLE") : _UU("SM_ACCESS_DISABLE"));
-
-		CtFree(ct, c);
-	}
-
-	FreeParamValueList(o);
-
-	return 0;
 }
 
 // Get the connection type string
@@ -11555,7 +11107,6 @@ UINT PsCascadeSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	t.ClientOption->Port = port;
 	StrCpy(t.ClientOption->Hostname, sizeof(t.ClientOption->Hostname), host);
-	t.ClientOption->HintStr[0] = 0;
 	StrCpy(t.ClientOption->HubName, sizeof(t.ClientOption->HubName), GetParamStr(o, "HUB"));
 
 	Free(host);
@@ -11662,18 +11213,7 @@ UINT PsCascadeGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		CtInsert(ct, _UU("CMD_ACCOUNT_COLUMN_NAME"), t.ClientOption->AccountName);
 
 		// Host name of the destination VPN Server
-		if (IsEmptyStr(t.ClientOption->HintStr))
-		{
-			StrToUni(tmp, sizeof(tmp), t.ClientOption->Hostname);
-		}
-		else
-		{
-			char hostname[MAX_SIZE];
-			StrCpy(hostname, sizeof(hostname), t.ClientOption->Hostname);
-			StrCat(hostname, sizeof(hostname), "/");
-			StrCat(hostname, sizeof(hostname), t.ClientOption->HintStr);
-			StrToUni(tmp, sizeof(tmp), hostname);
-		}
+		StrToUni(tmp, sizeof(tmp), t.ClientOption->Hostname);
 		CtInsert(ct, _UU("CMD_ACCOUNT_COLUMN_HOSTNAME"), tmp);
 
 		// The port number to connect to VPN Server
@@ -19031,317 +18571,6 @@ UINT PsServerCertRegenerate(CONSOLE *c, char *cmd_name, wchar_t *str, void *para
 	return 0;
 }
 
-// Enable / disable the VPN over ICMP / VPN over DNS server function
-UINT PsVpnOverIcmpDnsEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_SPECIAL_LISTENER t;
-	// Parameter list that can be specified
-	PARAM args[] =
-	{
-		// "name", prompt_proc, prompt_param, eval_proc, eval_param
-		{"ICMP", CmdPrompt, _UU("CMD_VpnOverIcmpDnsEnable_Prompt_ICMP"), CmdEvalNotEmpty, NULL},
-		{"DNS", CmdPrompt, _UU("CMD_VpnOverIcmpDnsEnable_Prompt_DNS"), CmdEvalNotEmpty, NULL},
-	};
-
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-	t.VpnOverIcmpListener = GetParamYes(o, "ICMP");
-	t.VpnOverDnsListener = GetParamYes(o, "DNS");
-
-	// RPC call
-	ret = ScSetSpecialListener(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
-// Get current settings of VPN over ICMP / VPN over DNS server function
-UINT PsVpnOverIcmpDnsGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_SPECIAL_LISTENER t;
-
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-
-	// RPC call
-	ret = ScGetSpecialListener(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-	else
-	{
-		CT *ct = CtNewStandard();
-
-		CtInsert(ct, _UU("CMD_VpnOverIcmpDnsGet_PRINT_ICMP"), _UU(t.VpnOverIcmpListener ? "SEC_YES" : "SEC_NO"));
-		CtInsert(ct, _UU("CMD_VpnOverIcmpDnsGet_PRINT_DNS"), _UU(t.VpnOverDnsListener ? "SEC_YES" : "SEC_NO"));
-
-		CtFree(ct, c);
-	}
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
-// Enable / disable the VPN Azure function
-UINT PsVpnAzureSetEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_AZURE_STATUS t;
-	// Parameter list that can be specified
-	PARAM args[] =
-	{
-		// "name", prompt_proc, prompt_param, eval_proc, eval_param
-		{"[yes|no]", CmdPrompt, _UU("VpnAzureSetEnable_PROMPT"), CmdEvalNotEmpty, NULL},
-	};
-
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-	t.IsEnabled = GetParamYes(o, "[yes|no]");
-
-	// RPC call
-	ret = ScSetAzureStatus(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
-// Get the current state of the VPN Azure function
-UINT PsVpnAzureGetStatus(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_AZURE_STATUS t;
-	DDNS_CLIENT_STATUS t2;
-
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-	Zero(&t2, sizeof(t2));
-
-	// RPC call
-	ret = ScGetAzureStatus(ps->Rpc, &t);
-
-	if (ret == ERR_NO_ERROR)
-	{
-		ret = ScGetDDnsClientStatus(ps->Rpc, &t2);
-	}
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-	else
-	{
-		CT *ct = CtNewStandard();
-
-		CtInsert(ct, _UU("CMD_VpnAzureGetStatus_PRINT_ENABLED"), _UU(t.IsEnabled ? "SEC_YES" : "SEC_NO"));
-
-		if (t.IsEnabled)
-		{
-			wchar_t tmp[MAX_SIZE];
-
-			UniFormat(tmp, sizeof(tmp), L"%S%S", t2.CurrentHostName, AZURE_DOMAIN_SUFFIX);
-
-			CtInsert(ct, _UU("CMD_VpnAzureGetStatus_PRINT_CONNECTED"), _UU(t.IsConnected ? "SEC_YES" : "SEC_NO"));
-			CtInsert(ct, _UU("CMD_VpnAzureGetStatus_PRINT_HOSTNAME"), tmp);
-		}
-
-		CtFree(ct, c);
-	}
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
-// Get the current state of the dynamic DNS function
-UINT PsDynamicDnsGetStatus(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	DDNS_CLIENT_STATUS t;
-
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-
-	// RPC call
-	ret = ScGetDDnsClientStatus(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-	else
-	{
-		CT *ct = CtNewStandard();
-		wchar_t tmp[MAX_SIZE];
-
-		// FQDN
-		if (IsEmptyStr(t.CurrentFqdn) == false)
-		{
-			StrToUni(tmp, sizeof(tmp), t.CurrentFqdn);
-		}
-		else
-		{
-			UniStrCpy(tmp, sizeof(tmp), _UU("SM_DDNS_FQDN_EMPTY"));
-		}
-		CtInsert(ct, _UU("CMD_DynamicDnsGetStatus_PRINT_FQDN"), tmp);
-
-		// Hostname
-		if (IsEmptyStr(t.CurrentHostName) == false)
-		{
-			StrToUni(tmp, sizeof(tmp), t.CurrentHostName);
-		}
-		else
-		{
-			UniStrCpy(tmp, sizeof(tmp), _UU("SM_DDNS_FQDN_EMPTY"));
-		}
-		CtInsert(ct, _UU("CMD_DynamicDnsGetStatus_PRINT_HOSTNAME"), tmp);
-
-		// Suffix
-		if (IsEmptyStr(t.DnsSuffix) == false)
-		{
-			StrToUni(tmp, sizeof(tmp), t.DnsSuffix);
-		}
-		else
-		{
-			UniStrCpy(tmp, sizeof(tmp), _UU("SM_DDNS_FQDN_EMPTY"));
-		}
-		CtInsert(ct, _UU("CMD_DynamicDnsGetStatus_PRINT_SUFFIX"), tmp);
-
-		// IPv4
-		if (t.Err_IPv4 == ERR_NO_ERROR)
-		{
-			StrToUni(tmp, sizeof(tmp), t.CurrentIPv4);
-		}
-		else
-		{
-			UniStrCpy(tmp, sizeof(tmp), _E(t.Err_IPv4));
-		}
-		CtInsert(ct, _UU("CMD_DynamicDnsGetStatus_PRINT_IPv4"), tmp);
-
-		// IPv6
-		if (t.Err_IPv6 == ERR_NO_ERROR)
-		{
-			StrToUni(tmp, sizeof(tmp), t.CurrentIPv6);
-		}
-		else
-		{
-			UniStrCpy(tmp, sizeof(tmp), _E(t.Err_IPv6));
-		}
-		CtInsert(ct, _UU("CMD_DynamicDnsGetStatus_PRINT_IPv6"), tmp);
-
-		CtFree(ct, c);
-	}
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
-// Configure the dynamic DNS host name
-UINT PsDynamicDnsSetHostname(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_TEST t;
-	// Parameter list that can be specified
-	PARAM args[] =
-	{
-		// "name", prompt_proc, prompt_param, eval_proc, eval_param
-		{"[hostname]", CmdPrompt, _UU("CMD_DynamicDnsSetHostname_Prompt_hostname"), CmdEvalNotEmpty, NULL},
-	};
-
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-	StrCpy(t.StrValue, sizeof(t.StrValue), GetParamStr(o, "[hostname]"));
-
-	// RPC call
-	ret = ScChangeDDnsClientHostname(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
 // Register a new license key
 UINT PsLicenseAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
@@ -20813,12 +20042,6 @@ UINT PsConnect(CONSOLE *c, char *host, UINT port, char *hub, char *adminhub, wch
 	Zero(&o, sizeof(o));
 	UniStrCpy(o.AccountName, sizeof(o.AccountName), L"VPNCMD");
 	StrCpy(o.Hostname, sizeof(o.Hostname), host);
-	UINT i = SearchStrEx(o.Hostname, "/", 0, false);
-	if (i != INFINITE)
-	{
-		StrCpy(o.HintStr, sizeof(o.HintStr), o.Hostname + i + 1);
-		o.Hostname[i] = 0;
-	}
 	o.Port = port;
 	o.ProxyType = PROXY_DIRECT;
 

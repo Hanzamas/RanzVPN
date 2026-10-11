@@ -41,7 +41,6 @@ typedef struct DOS DOS;
 typedef struct LISTENER LISTENER;
 typedef struct TCP_ACCEPTED_PARAM TCP_ACCEPTED_PARAM;
 typedef struct UDP_ENTRY UDP_ENTRY;
-typedef struct DYNAMIC_LISTENER DYNAMIC_LISTENER;
 
 
 // ==============================================================
@@ -60,7 +59,6 @@ typedef struct SLOG SLOG;
 //   Connection
 // ==============================================================
 
-typedef struct KEEP KEEP;
 typedef struct RC4_KEY_PAIR RC4_KEY_PAIR;
 typedef struct CLIENT_OPTION CLIENT_OPTION;
 typedef struct CLIENT_AUTH CLIENT_AUTH;
@@ -111,8 +109,6 @@ typedef struct CHECK_CERT_THREAD_PROC CHECK_CERT_THREAD_PROC;
 typedef struct RAND_CACHE RAND_CACHE;
 typedef struct BLACK BLACK;
 typedef struct SEND_SIGNATURE_PARAM SEND_SIGNATURE_PARAM;
-typedef struct UPDATE_CLIENT UPDATE_CLIENT;
-typedef struct UPDATE_CLIENT_SETTING UPDATE_CLIENT_SETTING;
 
 
 // ==============================================================
@@ -278,7 +274,6 @@ typedef struct RPC_ENUM_MAC_TABLE RPC_ENUM_MAC_TABLE;
 typedef struct RPC_ENUM_IP_TABLE_ITEM RPC_ENUM_IP_TABLE_ITEM;
 typedef struct RPC_ENUM_IP_TABLE RPC_ENUM_IP_TABLE;
 typedef struct RPC_DELETE_TABLE RPC_DELETE_TABLE;
-typedef struct RPC_KEEP RPC_KEEP;
 typedef struct RPC_ENUM_ETH_ITEM RPC_ENUM_ETH_ITEM;
 typedef struct RPC_ENUM_ETH RPC_ENUM_ETH;
 typedef struct RPC_LOCALBRIDGE RPC_LOCALBRIDGE;
@@ -310,8 +305,6 @@ typedef struct RPC_ENUM_ETH_VLAN_ITEM RPC_ENUM_ETH_VLAN_ITEM;
 typedef struct RPC_ENUM_ETH_VLAN RPC_ENUM_ETH_VLAN;
 typedef struct RPC_MSG RPC_MSG;
 typedef struct RPC_WINVER RPC_WINVER;
-typedef struct RPC_SPECIAL_LISTENER RPC_SPECIAL_LISTENER;
-typedef struct RPC_AZURE_STATUS RPC_AZURE_STATUS;
 
 
 // ==============================================================
@@ -391,22 +384,6 @@ typedef struct IPC_MSCHAP_V2_AUTHINFO IPC_MSCHAP_V2_AUTHINFO;
 // ==============================================================
 
 typedef struct UDP_ACCEL UDP_ACCEL;
-
-
-// ==============================================================
-//   Dynamic DNS Client
-// ==============================================================
-
-typedef struct DDNS_CLIENT DDNS_CLIENT;
-typedef struct DDNS_REGISTER_PARAM DDNS_REGISTER_PARAM;
-typedef struct DDNS_CLIENT_STATUS DDNS_CLIENT_STATUS;
-
-
-// ==============================================================
-//   VPN Azure Client
-// ==============================================================
-typedef struct AZURE_CLIENT AZURE_CLIENT;
-typedef struct AZURE_PARAM AZURE_PARAM;
 
 
 // ==============================================================

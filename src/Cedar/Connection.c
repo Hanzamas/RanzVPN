@@ -39,443 +39,6 @@
 #define	IS_RECV_TCP_SOCK(ts)		\
 	((ts->Direction == TCP_BOTH) || ((ts->Direction == TCP_SERVER_TO_CLIENT) && (s->ServerMode == false)) || ((ts->Direction == TCP_CLIENT_TO_SERVER) && (s->ServerMode)))
 
-// Generate the next packet
-BUF *NewKeepPacket(bool server_mode)
-{
-	BUF *b = NewBuf();
-	char *string = KEEP_ALIVE_STRING;
-
-	WriteBuf(b, string, StrLen(string));
-
-	SeekBuf(b, 0, 0);
-
-	return b;
-}
-
-// KEEP thread
-void KeepThread(THREAD *thread, void *param)
-{
-	KEEP *k = (KEEP *)param;
-	SOCK *s;
-	char server_name[MAX_HOST_NAME_LEN + 1];
-	UINT server_port;
-	bool udp_mode;
-	bool enabled;
-	// Validate arguments
-	if (thread == NULL || k == NULL)
-	{
-		return;
-	}
-
-WAIT_FOR_ENABLE:
-	Wait(k->HaltEvent, KEEP_POLLING_INTERVAL);
-
-	// Wait until it becomes enabled
-	while (true)
-	{
-		enabled = false;
-		Lock(k->lock);
-		{
-			if (k->Enable)
-			{
-				if (StrLen(k->ServerName) != 0 && k->ServerPort != 0 && k->Interval != 0)
-				{
-					StrCpy(server_name, sizeof(server_name), k->ServerName);
-					server_port = k->ServerPort;
-					udp_mode = k->UdpMode;
-					enabled = true;
-				}
-			}
-		}
-		Unlock(k->lock);
-		if (enabled)
-		{
-			break;
-		}
-		if (k->Halt)
-		{
-			return;
-		}
-		Wait(k->HaltEvent, KEEP_POLLING_INTERVAL);
-	}
-
-	if (udp_mode == false)
-	{
-		// TCP mode
-		// Try until a success to connection
-		while (true)
-		{
-			UINT64 connect_started_tick;
-			bool changed = false;
-			Lock(k->lock);
-			{
-				if (StrCmpi(k->ServerName, server_name) != 0 ||
-					k->ServerPort != server_port || k->Enable == false ||
-					k->UdpMode)
-				{
-					changed = true;
-				}
-			}
-			Unlock(k->lock);
-			if (changed)
-			{
-				// Settings are changed
-				goto WAIT_FOR_ENABLE;
-			}
-
-			if (k->Halt)
-			{
-				// Stop
-				return;
-			}
-
-			// Attempt to connect to the server
-			connect_started_tick = Tick64();
-			s = ConnectEx2(server_name, server_port, KEEP_TCP_TIMEOUT, (bool *)&k->Halt);
-			if (s != NULL)
-			{
-				// Successful connection
-				break;
-			}
-
-			// Connection failure: Wait until timeout or the setting is changed
-			while (true)
-			{
-				changed = false;
-				if (k->Halt)
-				{
-					// Stop
-					return;
-				}
-				Lock(k->lock);
-				{
-					if (StrCmpi(k->ServerName, server_name) != 0 ||
-						k->ServerPort != server_port || k->Enable == false ||
-						k->UdpMode)
-					{
-						changed = true;
-					}
-				}
-				Unlock(k->lock);
-
-				if (changed)
-				{
-					// Settings are changed
-					goto WAIT_FOR_ENABLE;
-				}
-
-				if ((Tick64() - connect_started_tick) >= KEEP_RETRY_INTERVAL)
-				{
-					break;
-				}
-
-				Wait(k->HaltEvent, KEEP_POLLING_INTERVAL);
-			}
-		}
-
-		// Success to connect the server
-		// Send and receive packet data periodically
-		if (s != NULL)
-		{
-			UINT64 last_packet_sent_time = 0;
-			while (true)
-			{
-				SOCKSET set;
-				UINT ret;
-				UCHAR buf[MAX_SIZE];
-				bool changed;
-
-				InitSockSet(&set);
-				AddSockSet(&set, s);
-
-				Select(&set, KEEP_POLLING_INTERVAL, k->Cancel, NULL);
-
-				ret = Recv(s, buf, sizeof(buf), false);
-				if (ret == 0)
-				{
-					// Disconnected
-					Disconnect(s);
-					ReleaseSock(s);
-					s = NULL;
-				}
-
-				if (s != NULL)
-				{
-					if ((Tick64() - last_packet_sent_time) >= (UINT64)k->Interval)
-					{
-						BUF *b;
-
-						// Send the next packet
-						last_packet_sent_time = Tick64();
-
-						b = NewKeepPacket(k->Server);
-
-						ret = Send(s, b->Buf, b->Size, false);
-						FreeBuf(b);
-
-						if (ret == 0)
-						{
-							// Disconnected
-							Disconnect(s);
-							ReleaseSock(s);
-							s = NULL;
-						}
-					}
-				}
-
-				changed = false;
-
-				Lock(k->lock);
-				{
-					if (StrCmpi(k->ServerName, server_name) != 0 ||
-						k->ServerPort != server_port || k->Enable == false ||
-						k->UdpMode)
-					{
-						changed = true;
-					}
-				}
-				Unlock(k->lock);
-
-				if (changed || s == NULL)
-				{
-					// Setting has been changed or disconnected
-					Disconnect(s);
-					ReleaseSock(s);
-					s = NULL;
-					goto WAIT_FOR_ENABLE;
-				}
-				else
-				{
-					if (k->Halt)
-					{
-						// Stop
-						Disconnect(s);
-						ReleaseSock(s);
-						return;
-					}
-				}
-			}
-		}
-	}
-	else
-	{
-		IP dest_ip;
-		// UDP mode
-		// Try to create socket until it successes
-		while (true)
-		{
-			UINT64 connect_started_tick;
-			bool changed = false;
-			Lock(k->lock);
-			{
-				if (StrCmpi(k->ServerName, server_name) != 0 ||
-					k->ServerPort != server_port || k->Enable == false ||
-					k->UdpMode == false)
-				{
-					changed = true;
-				}
-			}
-			Unlock(k->lock);
-			if (changed)
-			{
-				// Settings are changed
-				goto WAIT_FOR_ENABLE;
-			}
-
-			if (k->Halt)
-			{
-				// Stop
-				return;
-			}
-
-			// Attempt to create a socket
-			connect_started_tick = Tick64();
-
-			// Attempt to resolve the name first
-			if (GetIP(&dest_ip, server_name))
-			{
-				// After successful name resolution, create a socket
-				s = NewUDP(0);
-				if (s != NULL)
-				{
-					// Creating success
-					break;
-				}
-			}
-
-			// Failure to create: wait until timeout or the setting is changed
-			while (true)
-			{
-				changed = false;
-				if (k->Halt)
-				{
-					// Stop
-					return;
-				}
-				Lock(k->lock);
-				{
-					if (StrCmpi(k->ServerName, server_name) != 0 ||
-						k->ServerPort != server_port || k->Enable == false ||
-						k->UdpMode == false)
-					{
-						changed = true;
-					}
-				}
-				Unlock(k->lock);
-
-				if (changed)
-				{
-					// Settings are changed
-					goto WAIT_FOR_ENABLE;
-				}
-
-				if ((Tick64() - connect_started_tick) >= KEEP_RETRY_INTERVAL)
-				{
-					break;
-				}
-
-				Wait(k->HaltEvent, KEEP_POLLING_INTERVAL);
-			}
-		}
-
-		// Send the packet data periodically
-		if (s != NULL)
-		{
-			UINT64 last_packet_sent_time = 0;
-			UINT num_ignore_errors = 0;
-			while (true)
-			{
-				SOCKSET set;
-				UINT ret;
-				UCHAR buf[MAX_SIZE];
-				bool changed;
-				IP src_ip;
-				UINT src_port;
-
-				InitSockSet(&set);
-				AddSockSet(&set, s);
-
-				Select(&set, KEEP_POLLING_INTERVAL, k->Cancel, NULL);
-
-				// Receive
-				ret = RecvFrom(s, &src_ip, &src_port, buf, sizeof(buf));
-				if (ret == 0)
-				{
-					if (s->IgnoreRecvErr == false)
-					{
-LABEL_DISCONNECTED:
-						// Disconnected
-						Disconnect(s);
-						ReleaseSock(s);
-						s = NULL;
-					}
-					else
-					{
-						if ((num_ignore_errors++) >= MAX_NUM_IGNORE_ERRORS)
-						{
-							goto LABEL_DISCONNECTED;
-						}
-					}
-				}
-
-				if (s != NULL)
-				{
-					if ((Tick64() - last_packet_sent_time) >= (UINT64)k->Interval)
-					{
-						BUF *b;
-
-						// Send the next packet
-						last_packet_sent_time = Tick64();
-
-						b = NewKeepPacket(k->Server);
-
-						ret = SendTo(s, &dest_ip, server_port, b->Buf, b->Size);
-						FreeBuf(b);
-
-						if (ret == 0 && s->IgnoreSendErr == false)
-						{
-							// Disconnected
-							Disconnect(s);
-							ReleaseSock(s);
-							s = NULL;
-						}
-					}
-				}
-
-				changed = false;
-
-				Lock(k->lock);
-				{
-					if (StrCmpi(k->ServerName, server_name) != 0 ||
-						k->ServerPort != server_port || k->Enable == false ||
-						k->UdpMode == false)
-					{
-						changed = true;
-					}
-				}
-				Unlock(k->lock);
-
-				if (changed || s == NULL)
-				{
-					// Setting has been changed or disconnected
-					Disconnect(s);
-					ReleaseSock(s);
-					s = NULL;
-					goto WAIT_FOR_ENABLE;
-				}
-				else
-				{
-					if (k->Halt)
-					{
-						// Stop
-						Disconnect(s);
-						ReleaseSock(s);
-						return;
-					}
-				}
-			}
-		}
-	}
-}
-
-// Stop the KEEP
-void StopKeep(KEEP *k)
-{
-	// Validate arguments
-	if (k == NULL)
-	{
-		return;
-	}
-
-	k->Halt = true;
-	Set(k->HaltEvent);
-	Cancel(k->Cancel);
-
-	WaitThread(k->Thread, INFINITE);
-	ReleaseThread(k->Thread);
-	DeleteLock(k->lock);
-
-	ReleaseCancel(k->Cancel);
-	ReleaseEvent(k->HaltEvent);
-
-	Free(k);
-}
-
-// Start the KEEP
-KEEP *StartKeep()
-{
-	KEEP *k = ZeroMalloc(sizeof(KEEP));
-
-	k->lock = NewLock();
-	k->HaltEvent = NewEvent();
-	k->Cancel = NewCancel();
-
-	// Thread start
-	k->Thread = NewThread(KeepThread, k);
-
-	return k;
-}
-
 // Copy the client authentication data
 CLIENT_AUTH *CopyClientAuth(CLIENT_AUTH *a)
 {
@@ -835,9 +398,7 @@ void SendKeepAlive(CONNECTION *c, TCPSOCK *ts)
 	UINT size, i, num;
 	UINT size_be;
 	SESSION *s;
-	UDP_ACCEL *udp_accel;
 	UCHAR *buf;
-	bool insert_natt_port = false, insert_natt_ip = false;
 	// Validate arguments
 	if (c == NULL || ts == NULL)
 	{
@@ -850,60 +411,14 @@ void SendKeepAlive(CONNECTION *c, TCPSOCK *ts)
 		return;
 	}
 
-	udp_accel = s->UdpAccel;
-
 	size = rand() % MAX_KEEPALIVE_SIZE;
 	num = KEEP_ALIVE_MAGIC;
-
-	if (s->UseUdpAcceleration && udp_accel != NULL)
-	{
-		UINT required_size = 0;
-
-		if (udp_accel->MyPortNatT != 0)
-		{
-			required_size += StrLen(UDP_NAT_T_PORT_SIGNATURE_IN_KEEP_ALIVE) + sizeof(USHORT);
-
-			insert_natt_port = true;
-		}
-
-		if (IsZeroIP(&udp_accel->MyIpNatT) == false)
-		{
-			required_size += StrLen(UDP_NAT_T_IP_SIGNATURE_IN_KEEP_ALIVE) + sizeof(udp_accel->MyIpNatT.address);
-
-			insert_natt_ip = true;
-		}
-
-		size = MAX(size, required_size);
-
-	}
 
 	buf = MallocFast(size);
 
 	for (i = 0; i < size; ++i)
 	{
 		buf[i] = rand();
-	}
-
-	UCHAR *seek = buf;
-
-	if (insert_natt_port)
-	{
-		const UINT nat_t_port_sig_size = StrLen(UDP_NAT_T_PORT_SIGNATURE_IN_KEEP_ALIVE);
-		const USHORT port = Endian16(udp_accel->MyPortNatT);
-
-		Copy(buf, UDP_NAT_T_PORT_SIGNATURE_IN_KEEP_ALIVE, nat_t_port_sig_size);
-		seek += nat_t_port_sig_size;
-		Copy(seek, &port, sizeof(port));
-		seek += sizeof(port);
-	}
-
-	if (insert_natt_ip)
-	{
-		const UINT nat_t_ip_sig_size = StrLen(UDP_NAT_T_IP_SIGNATURE_IN_KEEP_ALIVE);
-
-		Copy(seek, UDP_NAT_T_IP_SIGNATURE_IN_KEEP_ALIVE, nat_t_ip_sig_size);
-		seek += nat_t_ip_sig_size;
-		Copy(seek, udp_accel->MyIpNatT.address, sizeof(udp_accel->MyIpNatT.address));
 	}
 
 	num = Endian32(num);
@@ -923,7 +438,6 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 {
 	UINT i, num;
 	UINT min_count;
-	UINT64 max_recv_tick;
 	TCPSOCK **tcpsocks;
 	UINT size;
 	SESSION *s;
@@ -951,7 +465,6 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 		TCPSOCK *ts;
 		TCPSOCK *ts_hp;
 		UINT num_available;
-		bool is_rudp = false;
 		UINT tcp_queue_size = 0;
 		int tcp_queue_size_diff = 0;
 		LockList(tcp->TcpSockList);
@@ -961,15 +474,9 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 		}
 		UnlockList(tcp->TcpSockList);
 
-		if (s != NULL)
-		{
-			is_rudp = s->IsRUDPSession;
-		}
-
 		// Select the socket that will be used to send
 		// Select a socket which have least delay count
 		min_count = INFINITE;
-		max_recv_tick = 0;
 		ts = NULL;
 		ts_hp = NULL;
 
@@ -982,17 +489,11 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 				IS_SEND_TCP_SOCK(tcpsock))
 			{
 				// Processing of KeepAlive
-				if (now >= tcpsock->NextKeepAliveTime || tcpsock->NextKeepAliveTime == 0 ||
-					(s->UseUdpAcceleration && s->UdpAccel != NULL && s->UdpAccel->MyIpOrPortNatTChanged))
+				if (now >= tcpsock->NextKeepAliveTime || tcpsock->NextKeepAliveTime == 0)
 				{
 					// Send the KeepAlive
 					SendKeepAlive(c, tcpsock);
 					tcpsock->NextKeepAliveTime = now + (UINT64)GenNextKeepAliveSpan(c);
-
-					if (s->UseUdpAcceleration && s->UdpAccel != NULL)
-					{
-						s->UdpAccel->MyIpOrPortNatTChanged = false;
-					}
 				}
 
 				// Count the number of available sockets to send
@@ -1026,23 +527,11 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 
 				if (b)
 				{
-					if (is_rudp == false)
+					// Use a socket which have minimum delay occurrences in the case of such as a TCP socket
+					if (tcpsock->LateCount <= min_count)
 					{
-						// Use a socket which have minimum delay occurrences in the case of such as a TCP socket
-						if (tcpsock->LateCount <= min_count)
-						{
-							min_count = tcpsock->LateCount;
-							ts = tcpsock;
-						}
-					}
-					else
-					{
-						// Use socket which have the largest last received time in the case of R-UDP socket
-						if (tcpsock->LastRecvTime >= max_recv_tick)
-						{
-							max_recv_tick = tcpsock->LastRecvTime;
-							ts = tcpsock;
-						}
+						min_count = tcpsock->LateCount;
+						ts = tcpsock;
 					}
 				}
 			}
@@ -1130,57 +619,6 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 								c->CurrentSendQueueSize -= b->Size;
 
 								FreeBlock(b);
-							}
-						}
-						else if (s->IsRUDPSession && s->EnableBulkOnRUDP && ts->Sock != NULL && ts->Sock->BulkSendTube != NULL)
-						{
-							// R-UDP bulk transfer
-							TUBE *t = ts->Sock->BulkSendTube;
-							bool flush = false;
-							TCP_PAIR_HEADER h;
-
-							Zero(&h, sizeof(h));
-							h.EnableHMac = s->EnableHMacOnBulkOfRUDP;
-
-							while (b = GetNext(q))
-							{
-								if (b->Compressed == false)
-								{
-									// Uncompressed
-									TubeSendEx(t, b->Buf, b->Size, &h, true);
-
-									s->TotalSendSize += b->Size;
-									s->TotalSendSizeReal += b->Size;
-
-									c->CurrentSendQueueSize -= b->Size;
-								}
-								else
-								{
-									// Compressed
-									UCHAR *new_buf = Malloc(b->Size + sizeof(UINT64));
-
-									WRITE_UINT64(new_buf, CONNECTION_BULK_COMPRESS_SIGNATURE);
-
-									Copy(new_buf + sizeof(UINT64), b->Buf, b->Size);
-
-									TubeSendEx(t, new_buf, b->Size + sizeof(UINT64), &h, true);
-
-									s->TotalSendSize += b->SizeofData;
-									s->TotalSendSizeReal += b->Size;
-
-									c->CurrentSendQueueSize -= b->Size;
-
-									Free(new_buf);
-								}
-
-								FreeBlock(b);
-
-								flush = true;
-							}
-
-							if (flush)
-							{
-								TubeFlush(t);
 							}
 						}
 						else
@@ -1705,80 +1143,6 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 			TCPSOCK *ts = tcpsocks[i];
 			SOCK *sock = ts->Sock;
 
-			if (s->IsRUDPSession)
-			{
-				TUBE *t = sock->BulkRecvTube;
-
-				if (s->EnableBulkOnRUDP)
-				{
-					// R-UDP bulk transfer data reception
-					if (t != NULL && IsTubeConnected(t))
-					{
-						UINT current_packet_index = 0;
-						while (true)
-						{
-							TUBEDATA *d = TubeRecvAsync(t);
-							BLOCK *block;
-							if (d == NULL)
-							{
-								// All reception complete
-								break;
-							}
-
-							if (d->DataSize > sizeof(UINT64) && READ_UINT64(d->Data) == CONNECTION_BULK_COMPRESS_SIGNATURE)
-							{
-								// Compression
-								block = NewBlock(Clone(((UCHAR *)d->Data) + sizeof(UINT64),
-									d->DataSize - sizeof(UINT64)),
-									d->DataSize - sizeof(UINT64),
-									-1);
-							}
-							else
-							{
-								// Uncompressed
-								block = NewBlock(Clone(d->Data, d->DataSize), d->DataSize, 0);
-							}
-
-							if (block->Size > MAX_PACKET_SIZE)
-							{
-								// Packet size exceeded
-								FreeBlock(block);
-							}
-							else
-							{
-								if (CedarGetQueueBudgetBalance(c->Cedar) == 0)
-								{
-									FreeBlock(block);
-								}
-								else
-								{
-									// Add the data block to queue
-									InsertReceivedBlockToQueue(c, block, true);
-
-									if ((current_packet_index % 32) == 0)
-									{
-										UINT current_recv_block_num = c->ReceivedBlocks->num_item;
-										int diff = (int)current_recv_block_num - (int)c->LastRecvBlocksNum;
-
-										CedarAddQueueBudget(c->Cedar, diff);
-
-										c->LastRecvBlocksNum = current_recv_block_num;
-									}
-
-									current_packet_index++;
-								}
-							}
-
-							FreeTubeData(d);
-
-							UPDATE_LAST_COMM_TIME(ts->LastCommTime, now);
-							UPDATE_LAST_COMM_TIME(ts->LastRecvTime, now);
-							UPDATE_LAST_COMM_TIME(c->Session->LastCommTime, now);
-						}
-					}
-				}
-			}
-
 			UINT current_fifo_budget = 0;
 			UINT current_packet_index = 0;
 			// A normal socket (Not in-process)
@@ -2043,53 +1407,6 @@ DISCONNECT_THIS_TCP:
 					//Debug("KeepAlive Recved.\n");
 					ts->Mode = 0;
 					sz = ts->NextBlockSize;
-
-					if (s->UseUdpAcceleration && s->UdpAccel != NULL)
-					{
-						const UCHAR *keep_alive_buffer = FifoPtr(ts->RecvFifo);
-						const UINT nat_t_ip_sig_size = StrLen(UDP_NAT_T_IP_SIGNATURE_IN_KEEP_ALIVE);
-						const UINT nat_t_port_sig_size = StrLen(UDP_NAT_T_PORT_SIGNATURE_IN_KEEP_ALIVE);
-						UINT cur_size = sz;
-
-						if (cur_size >= nat_t_port_sig_size + sizeof(USHORT))
-						{
-							if (Cmp(keep_alive_buffer, UDP_NAT_T_PORT_SIGNATURE_IN_KEEP_ALIVE, nat_t_port_sig_size) == 0)
-							{
-								cur_size -= nat_t_port_sig_size;
-								keep_alive_buffer += nat_t_port_sig_size;
-
-								const USHORT port = READ_USHORT(keep_alive_buffer);
-								cur_size -= sizeof(USHORT);
-								keep_alive_buffer += sizeof(USHORT);
-
-								if (port && s->UdpAccel->YourPortNatT != port)
-								{
-									s->UdpAccel->YourPortNatT = port;
-									s->UdpAccel->YourIpOrPortNatTChanged = true;
-
-									Debug("ConnectionReceive(): New peer NAT-T port: %u\n", port);
-								}
-							}
-						}
-
-						if (cur_size >= nat_t_ip_sig_size + sizeof(s->UdpAccel->YourIpNatT.address))
-						{
-							if (Cmp(keep_alive_buffer, UDP_NAT_T_IP_SIGNATURE_IN_KEEP_ALIVE, nat_t_ip_sig_size) == 0)
-							{
-								keep_alive_buffer += nat_t_ip_sig_size;
-
-								IP ip;
-								SetIP6(&ip, keep_alive_buffer);
-								if (IsZeroIP(&ip) == false && CmpIpAddr(&s->UdpAccel->YourIpNatT, &ip) != 0)
-								{
-									Copy(&s->UdpAccel->YourIpNatT, &ip, sizeof(s->UdpAccel->YourIpNatT));
-									s->UdpAccel->YourIpOrPortNatTChanged = true;
-
-									Debug("ConnectionReceive(): New peer NAT-T IP: %r\n", &ip);
-								}
-							}
-						}
-					}
 
 					PROBE_DATA2("ReadFifo 4", NULL, 0);
 					ReadFifo(ts->RecvFifo, NULL, sz);

@@ -16,25 +16,7 @@
 // Magic number indicating that the packet is compressed
 #define	CONNECTION_BULK_COMPRESS_SIGNATURE	0xDEADBEEFCAFEFACEULL
 
-#define	KEEP_ALIVE_STRING				"Internet Connection Keep Alive Packet"
-
 #define	UPDATE_LAST_COMM_TIME(v, n)		{if ((v) <= (n)) { v = (n); } }
-
-// KEEP CONNECT structure
-struct KEEP
-{
-	LOCK *lock;										// Lock
-	bool Server;									// Server mode
-	volatile bool Halt;								// Stop flag
-	bool Enable;									// Enable flag
-	char ServerName[MAX_HOST_NAME_LEN + 1];			// Server name
-	UINT ServerPort;								// Server port number
-	bool UdpMode;									// UDP mode
-	UINT Interval;									// Packet transmission interval
-	THREAD *Thread;									// Connection thread
-	EVENT *HaltEvent;								// Stop event
-	CANCEL *Cancel;									// Cancel
-};
 
 // Function type declaration
 typedef bool (CHECK_CERT_PROC)(SESSION *s, CONNECTION *c, X *server_x, bool *expired);
@@ -93,7 +75,6 @@ struct CLIENT_OPTION
 	char pad12[3];
 	UCHAR HostUniqueKey[SHA1_SIZE];							// Host unique key
 	char CustomHttpHeader[HTTP_CUSTOM_HEADER_MAX_SIZE];		// Custom HTTP proxy header
-	char HintStr[MAX_HOST_NAME_LEN + 1];					// Hint string for NAT-T
 	IP   BindLocalIP;										// Source IP address for outgoing connection
 	UINT BindLocalPort;										// Source port number for outgoing connection
 };
@@ -256,10 +237,6 @@ UINT TcpSockSend(SESSION *s, TCPSOCK *ts, void *data, UINT size);
 void WriteSendFifo(SESSION *s, TCPSOCK *ts, void *data, UINT size);
 void WriteRecvFifo(SESSION *s, TCPSOCK *ts, void *data, UINT size);
 CLIENT_AUTH *CopyClientAuth(CLIENT_AUTH *a);
-BUF *NewKeepPacket(bool server_mode);
-void KeepThread(THREAD *thread, void *param);
-KEEP *StartKeep();
-void StopKeep(KEEP *k);
 void NormalizeEthMtu(BRIDGE *b, CONNECTION *c, UINT packet_size);
 UINT GetMachineRand();
 

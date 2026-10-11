@@ -124,63 +124,10 @@ void RouteTrackingMain(SESSION *s)
 	}
 	if (t->NextTrackingTime != 0 && t->NextTrackingTime > now)
 	{
-		if (s->UseUdpAcceleration && s->UdpAccel != NULL && s->UdpAccel->NatT_IP_Changed)
-		{
-			// Check always if the IP address of the NAT-T server has changed
-		}
-		else
-		{
-			PROBE_STR("RouteTrackingMain 2");
-			return;
-		}
+		PROBE_STR("RouteTrackingMain 2");
+		return;
 	}
 	PROBE_STR("RouteTrackingMain 3");
-
-	if (s->UseUdpAcceleration && s->UdpAccel != NULL)
-	{
-		IP nat_t_ip;
-
-		s->UdpAccel->NatT_IP_Changed = false;
-
-		Zero(&nat_t_ip, sizeof(nat_t_ip));
-
-		Lock(s->UdpAccel->NatT_Lock);
-		{
-			Copy(&nat_t_ip, &s->UdpAccel->NatT_IP, sizeof(IP));
-		}
-		Unlock(s->UdpAccel->NatT_Lock);
-
-		// Add a route to the NAT-T server
-		if (IsZeroIp(&nat_t_ip) == false)
-		{
-			if (t->RouteToNatTServer == NULL)
-			{
-				if (t->RouteToEight != NULL)
-				{
-					ROUTE_ENTRY *e = Clone(t->RouteToEight, sizeof(ROUTE_ENTRY));
-					char ip_str[64];
-					char ip_str2[64];
-
-					Copy(&e->DestIP, &nat_t_ip, sizeof(IP));
-
-					IPToStr(ip_str, sizeof(ip_str), &e->DestIP);
-					IPToStr(ip_str2, sizeof(ip_str2), &e->GatewayIP);
-
-					t->RouteToNatTServer = e;
-
-					if (AddRouteEntry(t->RouteToNatTServer))
-					{
-						Debug("Adding Static Route to %s via %s metric %u: ok.\n", ip_str, ip_str2, e->Metric);
-					}
-					else
-					{
-						FreeRouteEntry(t->RouteToNatTServer);
-						t->RouteToNatTServer = NULL;
-					}
-				}
-			}
-		}
-	}
 
 	// Get the current routing table
 	table = GetRouteTable();
@@ -468,7 +415,6 @@ void RouteTrackingStart(SESSION *s)
 	UINT if_id = 0;
 	ROUTE_ENTRY *e;
 	ROUTE_ENTRY *dns = NULL;
-	ROUTE_ENTRY *route_to_real_server_global = NULL;
 	char tmp[64];
 	UINT exclude_if_id = 0;
 	bool already_exists = false;
@@ -576,24 +522,6 @@ void RouteTrackingStart(SESSION *s)
 		}
 	}
 
-	if (s->IsAzureSession && IsZeroIP(&s->AzureRealServerGlobalIp) == false)
-	{
-		// Add also a static route to the real server in the case of via VPN Azure
-		if (IsMyIPAddress(&s->AzureRealServerGlobalIp) == false)
-		{
-			route_to_real_server_global = GetBestRouteEntryEx(&s->AzureRealServerGlobalIp, exclude_if_id);
-
-			if (route_to_real_server_global != NULL)
-			{
-				if (AddRouteEntry(route_to_real_server_global) == false)
-				{
-					FreeRouteEntry(route_to_real_server_global);
-					route_to_real_server_global = NULL;
-				}
-			}
-		}
-	}
-
 	// Initialize
 	if (s->Cedar->Client != NULL && s->Account != NULL)
 	{
@@ -606,7 +534,6 @@ void RouteTrackingStart(SESSION *s)
 	t->RouteToServerAlreadyExists = already_exists;
 	t->RouteToServer = e;
 	t->RouteToDefaultDns = dns;
-	t->RouteToRealServerGlobal = route_to_real_server_global;
 	t->VLanInterfaceId = if_id;
 	t->NextTrackingTime = 0;
 	t->DeletedDefaultGateway = NewQueue();
@@ -731,19 +658,12 @@ void RouteTrackingStop(SESSION *s, ROUTE_TRACKING *t)
 		}
 
 		DeleteRouteEntry(t->RouteToDefaultDns);
-
-		DeleteRouteEntry(t->RouteToNatTServer);
-
-		DeleteRouteEntry(t->RouteToRealServerGlobal);
 	}
 
 	FreeRouteEntry(t->RouteToDefaultDns);
 	FreeRouteEntry(t->RouteToServer);
 	FreeRouteEntry(t->RouteToEight);
-	FreeRouteEntry(t->RouteToNatTServer);
-	FreeRouteEntry(t->RouteToRealServerGlobal);
-	t->RouteToDefaultDns = t->RouteToServer = t->RouteToEight =
-		t->RouteToNatTServer = t->RouteToRealServerGlobal = NULL;
+	t->RouteToDefaultDns = t->RouteToServer = t->RouteToEight = NULL;
 
 	if (s->Cedar->Client != NULL && s->Account != NULL)
 	{

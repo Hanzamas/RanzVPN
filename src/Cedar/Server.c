@@ -8,11 +8,9 @@
 #include "Server.h"
 
 #include "Admin.h"
-#include "AzureClient.h"
 #include "BridgeUnix.h"
 #include "BridgeWin32.h"
 #include "Connection.h"
-#include "DDNS.h"
 #include "Layer3.h"
 #include "Link.h"
 #include "Listener.h"
@@ -1206,18 +1204,6 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 
 		// syslog
 		AddCapsBool(t, "b_support_syslog", true);
-
-		// DDNS
-		AddCapsBool(t, "b_support_ddns", (s->DDnsClient != NULL));
-
-		if (s->DDnsClient != NULL)
-		{
-			// DDNS via Proxy
-			AddCapsBool(t, "b_support_ddns_proxy", true);
-		}
-
-		// VPN over ICMP, VPN over DNS
-		AddCapsBool(t, "b_support_special_listener", true);
 	}
 	else
 	{
@@ -1247,12 +1233,6 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 
 		// syslog
 		AddCapsBool(t, "b_support_syslog", true);
-
-		// DDNS
-		AddCapsBool(t, "b_support_ddns", false);
-
-		// VPN over ICMP, VPN over DNS
-		AddCapsBool(t, "b_support_special_listener", false);
 	}
 
 	// Maximum MAC address table  size / Virtual HUB
@@ -1428,9 +1408,6 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 	// SeLow driver
 	AddCapsBool(t, "b_using_selow_driver", Win32IsUsingSeLow());
 #endif	// OS_WIN32
-
-	// VPN Azure function
-	AddCapsBool(t, "b_support_azure", SiIsAzureSupported(s));
 
 	// VPN3
 	AddCapsBool(t, "b_vpn3", true);
@@ -2146,7 +2123,6 @@ void SiSetDefaultLogSetting(HUB_LOG *g)
 // Set the initial configuration
 void SiLoadInitialConfiguration(SERVER *s)
 {
-	RPC_KEEP k;
 	// Validate arguments
 	if (s == NULL)
 	{
@@ -2158,29 +2134,6 @@ void SiLoadInitialConfiguration(SERVER *s)
 	s->BackupConfigOnlyWhenModified = true;
 
 	SiLoadGlobalParamsCfg(NULL);
-
-	// KEEP related
-	Zero(&k, sizeof(k));
-
-	{
-		k.UseKeepConnect = true;
-	}
-	k.KeepConnectPort = 80;
-	StrCpy(k.KeepConnectHost, sizeof(k.KeepConnectHost), CLIENT_DEFAULT_KEEPALIVE_HOST);
-	k.KeepConnectInterval = KEEP_INTERVAL_DEFAULT * 1000;
-	k.KeepConnectProtocol = CONNECTION_UDP;
-
-	Lock(s->Keep->lock);
-	{
-		KEEP *keep = s->Keep;
-		keep->Enable = k.UseKeepConnect;
-		keep->Server = true;
-		StrCpy(keep->ServerName, sizeof(keep->ServerName), k.KeepConnectHost);
-		keep->ServerPort = k.KeepConnectPort;
-		keep->UdpMode = k.KeepConnectProtocol;
-		keep->Interval = k.KeepConnectInterval;
-	}
-	Unlock(s->Keep->lock);
 
 	// Initialize the password
 	{
@@ -2201,65 +2154,10 @@ void SiLoadInitialConfiguration(SERVER *s)
 		SiInitDefaultHubList(s);
 	}
 
-	if (s->Cedar->Bridge == false)
-	{
-		// Create a DDNS client
-		s->DDnsClient = NewDDNSClient(s->Cedar, NULL, NULL);
-	}
-
-
 	// Set the listener list to default setting
 	SiInitListenerList(s);
 
-	if (s->Cedar->Bridge)
-	{
-		// NAT traversal can not be used in the bridge environment
-		s->DisableNatTraversal = true;
-	}
-	else
-	{
-		// Disable VPN-over-ICMP and VPN-over-DNS by default
-		s->EnableVpnOverIcmp = false;
-		s->EnableVpnOverDns = false;
-	}
-
 	s->Eraser = NewEraser(s->Logger, 0);
-}
-
-// Check whether the ports required for VPN-over-ICMP can be opened
-bool SiCanOpenVpnOverIcmpPort()
-{
-	// Whether the ICMP can be opened
-	SOCK *s = NewUDP(MAKE_SPECIAL_PORT(IP_PROTO_ICMPV4));
-
-	if (s == NULL)
-	{
-		// Failure
-		return false;
-	}
-
-	Disconnect(s);
-	ReleaseSock(s);
-
-	return true;
-}
-
-// Check whether the ports required for VPN-over-DNS can be opened
-bool SiCanOpenVpnOverDnsPort()
-{
-	// Whether UDP Port 53 can be listen on
-	SOCK *s = NewUDP(53);
-
-	if (s == NULL)
-	{
-		// Listening failure
-		return false;
-	}
-
-	Disconnect(s);
-	ReleaseSock(s);
-
-	return true;
 }
 
 // Read the configuration file (main)
@@ -2362,14 +2260,6 @@ void SiInitConfiguration(SERVER *s)
 
 	s->AutoSaveConfigSpanSaved = s->AutoSaveConfigSpan;
 
-	// Create a VPN Azure client
-	if (s->DDnsClient != NULL && s->Cedar->Bridge == false)
-	{
-		s->AzureClient = NewAzureClient(s->Cedar, s);
-
-		AcSetEnable(s->AzureClient, s->EnableVpnAzure);
-	}
-
 	// Reduce the storage interval in the case of user mode
 #ifdef	OS_WIN32
 	if (MsIsUserMode())
@@ -2384,73 +2274,10 @@ void SiInitConfiguration(SERVER *s)
 	s->SaveThread = NewThread(SiSaverThread, s);
 }
 
-// Set the state of Enabled / Disabled of Azure Client
-void SiSetAzureEnable(SERVER *s, bool enabled)
-{
-	// Validate arguments
-	if (s == NULL)
-	{
-		return;
-	}
-
-	if (s->AzureClient != NULL)
-	{
-		AcSetEnable(s->AzureClient, enabled);
-	}
-
-	s->EnableVpnAzure = enabled;
-}
-
-// Apply the Config to the Azure Client
-void SiApplyAzureConfig(SERVER *s, DDNS_CLIENT_STATUS *ddns_status)
-{
-	// Validate arguments
-	if (s == NULL)
-	{
-		return;
-	}
-
-	AcApplyCurrentConfig(s->AzureClient, ddns_status);
-}
-
-// Get whether the Azure Client is enabled
-bool SiIsAzureEnabled(SERVER *s)
-{
-	// Validate arguments
-	if (s == NULL)
-	{
-		return false;
-	}
-
-	if (s->AzureClient == NULL)
-	{
-		return false;
-	}
-
-	return s->EnableVpnAzure;
-}
-
-// Get whether the Azure Client is supported
-bool SiIsAzureSupported(SERVER *s)
-{
-	// Validate arguments
-	if (s == NULL)
-	{
-		return false;
-	}
-
-	if (s->AzureClient == NULL)
-	{
-		return false;
-	}
-
-	return true;
-}
-
 // Read the server settings from the CFG
 bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root)
 {
-	FOLDER *f1, *f2, *f3, *f4, *f5, *f6, *f8;
+	FOLDER *f1, *f2, *f3, *f4, *f5, *f6;
 	// Validate arguments
 	if (s == NULL || root == NULL)
 	{
@@ -2463,7 +2290,6 @@ bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root)
 	f4 = CfgGetFolder(root, "LocalBridgeList");
 	f5 = CfgGetFolder(root, "VirtualLayer3SwitchList");
 	f6 = CfgGetFolder(root, "LicenseManager");
-	f8 = CfgGetFolder(root, "DDnsClient");
 
 	if (f1 == NULL)
 	{
@@ -2515,64 +2341,6 @@ bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root)
 	if (s->Cedar->Bridge == false && f5 != NULL)
 	{
 		SiLoadL3Switchs(s, f5);
-	}
-
-	if (s->Cedar->Bridge == false)
-	{
-		if (f8 == NULL)
-		{
-			// Create a DDNS client with a new key
-			s->DDnsClient = NewDDNSClient(s->Cedar, NULL, NULL);
-		}
-		else
-		{
-			// Create by reading the setting of the DDNS client
-			UCHAR key[SHA1_SIZE];
-			if (CfgGetBool(f8, "Disabled"))
-			{
-				// Disabled
-			}
-			else
-			{
-				char machine_name[MAX_SIZE];
-				char machine_name2[MAX_SIZE];
-				INTERNET_SETTING t;
-				BUF *pw;
-
-				// Proxy Setting
-				Zero(&t, sizeof(t));
-				t.ProxyType = CfgGetInt(f8, "ProxyType");
-				CfgGetStr(f8, "ProxyHostName", t.ProxyHostName, sizeof(t.ProxyHostName));
-				t.ProxyPort = CfgGetInt(f8, "ProxyPort");
-				CfgGetStr(f8, "ProxyUsername", t.ProxyUsername, sizeof(t.ProxyUsername));
-				pw = CfgGetBuf(f8, "ProxyPassword");
-				if (pw != NULL)
-				{
-					char *pw_str = DecryptPassword(pw);
-					StrCpy(t.ProxyPassword, sizeof(t.ProxyPassword), pw_str);
-
-					Free(pw_str);
-					FreeBuf(pw);
-				}
-
-				CfgGetStr(f8, "CustomHttpHeader", t.CustomHttpHeader, sizeof(t.CustomHttpHeader));
-
-				GetMachineHostName(machine_name, sizeof(machine_name));
-
-				CfgGetStr(f8, "LocalHostname", machine_name2, sizeof(machine_name2));
-
-				if (CfgGetByte(f8, "Key", key, sizeof(key)) != sizeof(key) || StrCmpi(machine_name, machine_name2) != 0)
-				{
-					// Create a DDNS client with a new key
-					s->DDnsClient = NewDDNSClient(s->Cedar, NULL, &t);
-				}
-				else
-				{
-					// Create the DDNS client with stored key
-					s->DDnsClient = NewDDNSClient(s->Cedar, key, &t);
-				}
-			}
-		}
 	}
 
 	return true;
@@ -2857,47 +2625,6 @@ FOLDER *SiWriteConfigurationToCfg(SERVER *s)
 	{
 		CfgAddBool(root, "Led", true);
 		CfgAddBool(root, "LedSpecial", s->LedSpecial);
-	}
-
-	if (s->Cedar->Bridge == false)
-	{
-		FOLDER *ddns_folder = CfgCreateFolder(root, "DDnsClient");
-
-		if (s->DDnsClient == NULL)
-		{
-			// Disabled
-			CfgAddBool(ddns_folder, "Disabled", true);
-		}
-		else
-		{
-			char machine_name[MAX_SIZE];
-			BUF *pw;
-			INTERNET_SETTING *t;
-			// Enabled
-			CfgAddBool(ddns_folder, "Disabled", false);
-			CfgAddByte(ddns_folder, "Key", s->DDnsClient->Key, SHA1_SIZE);
-
-			GetMachineHostName(machine_name, sizeof(machine_name));
-			CfgAddStr(ddns_folder, "LocalHostname", machine_name);
-
-			t = &s->DDnsClient->InternetSetting;
-
-			CfgAddInt(ddns_folder, "ProxyType", t->ProxyType);
-			CfgAddStr(ddns_folder, "ProxyHostName", t->ProxyHostName);
-			CfgAddInt(ddns_folder, "ProxyPort", t->ProxyPort);
-			CfgAddStr(ddns_folder, "ProxyUsername", t->ProxyUsername);
-
-			if (IsEmptyStr(t->ProxyPassword) == false)
-			{
-				pw = EncryptPassword(t->ProxyPassword);
-
-				CfgAddBuf(ddns_folder, "ProxyPassword", pw);
-
-				FreeBuf(pw);
-			}
-
-			CfgAddStr(ddns_folder, "CustomHttpHeader", t->CustomHttpHeader);
-		}
 	}
 
 
@@ -5023,49 +4750,6 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 	Lock(c->lock);
 	{
 		FOLDER *ff;
-		{
-			RPC_KEEP k;
-
-			// Keep-alive related
-			Zero(&k, sizeof(k));
-			k.UseKeepConnect = CfgGetBool(f, "UseKeepConnect");
-			CfgGetStr(f, "KeepConnectHost", k.KeepConnectHost, sizeof(k.KeepConnectHost));
-			k.KeepConnectPort = CfgGetInt(f, "KeepConnectPort");
-			k.KeepConnectProtocol = CfgGetInt(f, "KeepConnectProtocol");
-			k.KeepConnectInterval = CfgGetInt(f, "KeepConnectInterval") * 1000;
-			if (k.KeepConnectPort == 0)
-			{
-				k.KeepConnectPort = 80;
-			}
-			if (StrLen(k.KeepConnectHost) == 0)
-			{
-				StrCpy(k.KeepConnectHost, sizeof(k.KeepConnectHost), CLIENT_DEFAULT_KEEPALIVE_HOST);
-			}
-			if (k.KeepConnectInterval == 0)
-			{
-				k.KeepConnectInterval = KEEP_INTERVAL_DEFAULT * 1000;
-			}
-			if (k.KeepConnectInterval < 5000)
-			{
-				k.KeepConnectInterval = 5000;
-			}
-			if (k.KeepConnectInterval > 600000)
-			{
-				k.KeepConnectInterval = 600000;
-			}
-
-			Lock(s->Keep->lock);
-			{
-				KEEP *keep = s->Keep;
-				keep->Enable = k.UseKeepConnect;
-				keep->Server = true;
-				StrCpy(keep->ServerName, sizeof(keep->ServerName), k.KeepConnectHost);
-				keep->ServerPort = k.KeepConnectPort;
-				keep->UdpMode = k.KeepConnectProtocol;
-				keep->Interval = k.KeepConnectInterval;
-			}
-			Unlock(s->Keep->lock);
-		}
 
 		// syslog
 		ff = CfgGetFolder(f, "SyslogSettings");
@@ -5118,32 +4802,6 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 #ifdef	OS_WIN32
 			MsSetEnableMinidump(false);
 #endif	// OS_WIN32
-		}
-
-		// Disable the NAT-traversal feature
-		s->DisableNatTraversal = CfgGetBool(f, "DisableNatTraversal");
-
-		if (s->Cedar->Bridge == false)
-		{
-			// Enable the VPN-over-ICMP
-			if (CfgIsItem(f, "EnableVpnOverIcmp"))
-			{
-				s->EnableVpnOverIcmp = CfgGetBool(f, "EnableVpnOverIcmp");
-			}
-			else
-			{
-				s->EnableVpnOverIcmp = false;
-			}
-
-			// Enable the VPN-over-DNS
-			if (CfgIsItem(f, "EnableVpnOverDns"))
-			{
-				s->EnableVpnOverDns = CfgGetBool(f, "EnableVpnOverDns");
-			}
-			else
-			{
-				s->EnableVpnOverDns = false;
-			}
 		}
 
 		// Debug log
@@ -5228,15 +4886,6 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 		{
 			Sha0(s->HashedPassword, "", 0);
 		}
-
-		if (s->Cedar->Bridge)
-		{
-			// NAT traversal function can not be used in the bridge environment
-			s->DisableNatTraversal = true;
-		}
-
-		// Configuration of VPN Azure Client
-		s->EnableVpnAzure = CfgGetBool(f, "EnableVpnAzure");
 
 		// Disable GetHostName when accepting TCP
 		s->DisableGetHostNameWhenAcceptTcp = CfgGetBool(f, "DisableGetHostNameWhenAcceptTcp");
@@ -5394,16 +5043,6 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s)
 	Lock(c->lock);
 	{
 		FOLDER *ff;
-		Lock(s->Keep->lock);
-		{
-			KEEP *k = s->Keep;
-			CfgAddBool(f, "UseKeepConnect", k->Enable);
-			CfgAddStr(f, "KeepConnectHost", k->ServerName);
-			CfgAddInt(f, "KeepConnectPort", k->ServerPort);
-			CfgAddInt(f, "KeepConnectProtocol", k->UdpMode);
-			CfgAddInt(f, "KeepConnectInterval", k->Interval / 1000);
-		}
-		Unlock(s->Keep->lock);
 
 		// syslog
 		ff = CfgCreateFolder(f, "SyslogSettings");
@@ -5451,21 +5090,6 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s)
 		CfgAddBool(f, "NoDebugDump", s->NoDebugDump);
 #endif	// OS_WIN32
 
-		if (c->Bridge == false)
-		{
-			// Disable the NAT-traversal feature
-			CfgAddBool(f, "DisableNatTraversal", s->DisableNatTraversal);
-		}
-
-		if (c->Bridge == false)
-		{
-			// VPN over ICMP
-			CfgAddBool(f, "EnableVpnOverIcmp", s->EnableVpnOverIcmp);
-
-			// VPN over DNS
-			CfgAddBool(f, "EnableVpnOverDns", s->EnableVpnOverDns);
-		}
-
 		// WebTimePage
 		CfgAddBool(f, "UseWebTimePage", s->UseWebTimePage);
 
@@ -5507,12 +5131,6 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s)
 
 		// Password
 		CfgAddByte(f, "HashedPassword", s->HashedPassword, sizeof(s->HashedPassword));
-
-		// VPN Azure Client
-		if (s->AzureClient != NULL)
-		{
-			CfgAddBool(f, "EnableVpnAzure", s->EnableVpnAzure);
-		}
 
 		CfgAddBool(f, "DisableGetHostNameWhenAcceptTcp", s->DisableGetHostNameWhenAcceptTcp);
 		CfgAddBool(f, "DisableCoreDumpOnUnix", s->DisableCoreDumpOnUnix);
@@ -5702,20 +5320,6 @@ void SiFreeConfiguration(SERVER *s)
 	s->SaveHaltEvent = NULL;
 	s->SaveThread = NULL;
 
-	// Terminate the DDNS client
-	if (s->DDnsClient != NULL)
-	{
-		FreeDDNSClient(s->DDnsClient);
-		s->DDnsClient = NULL;
-	}
-
-	// Terminate the VPN Azure client
-	if (s->AzureClient != NULL)
-	{
-		FreeAzureClient(s->AzureClient);
-		s->AzureClient = NULL;
-	}
-
 	FreeCfgRw(s->CfgRw);
 	s->CfgRw = NULL;
 
@@ -5818,28 +5422,6 @@ void SiRebootServerEx(bool bridge, bool reset_setting)
 	ReleaseThread(t);
 }
 
-// Set the state of the special listener
-void SiApplySpecialListenerStatus(SERVER *s)
-{
-	// Validate arguments
-	if (s == NULL)
-	{
-		return;
-	}
-
-	if (s->DynListenerDns != NULL)
-	{
-		*s->DynListenerDns->EnablePtr = s->EnableVpnOverDns;
-		ApplyDynamicListener(s->DynListenerDns);
-	}
-
-	if (s->DynListenerIcmp != NULL)
-	{
-		*s->DynListenerIcmp->EnablePtr = s->EnableVpnOverIcmp;
-		ApplyDynamicListener(s->DynListenerIcmp);
-	}
-}
-
 // Stop all listeners
 void SiStopAllListener(SERVER *s)
 {
@@ -5870,14 +5452,6 @@ void SiStopAllListener(SERVER *s)
 	SiUnlockListenerList(s);
 
 	ReleaseList(s->ServerListenerList);
-
-	// Stop the VPN over ICMP listener
-	FreeDynamicListener(s->DynListenerIcmp);
-	s->DynListenerIcmp = NULL;
-
-	// Stop the VPN over DNS listener
-	FreeDynamicListener(s->DynListenerDns);
-	s->DynListenerDns = NULL;
 }
 
 // Clean-up the server
@@ -5960,18 +5534,9 @@ void SiCleanupServer(SERVER *s)
 	SLog(s->Cedar, "LS_END_1");
 	SLog(s->Cedar, "L_LINE");
 
-#ifdef	ENABLE_AZURE_SERVER
-	if (s->AzureServer != NULL)
-	{
-		FreeAzureServer(s->AzureServer);
-	}
-#endif	// ENABLE_AZURE_SERVER
-
 	ReleaseCedar(s->Cedar);
 	DeleteLock(s->lock);
 	DeleteLock(s->SaveCfgLock);
-
-	StopKeep(s->Keep);
 
 	FreeEraser(s->Eraser);
 
@@ -6131,8 +5696,6 @@ SERVER *SiNewServer(bool bridge)
 SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_server)
 {
 	SERVER *s;
-	LISTENER *azure;
-	LISTENER *rudp;
 
 	DnsThreadNumMaxSet(DNS_THREAD_DEFAULT_NUM_MAX);
 
@@ -6161,16 +5724,6 @@ SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_serve
 	s->IsInVm = UnixIsInVm();
 #endif	// OS_WIN32
 
-#ifdef	ENABLE_AZURE_SERVER
-	if (IsFileExists("@azureserver.config"))
-	{
-		DisableRDUPServerGlobally();
-		s->AzureServer = NewAzureServer(s->Cedar);
-
-		SleepThread(500);
-	}
-#endif	// ENABLE_AZURE_SERVER
-
 	s->Cedar->CheckExpires = true;
 	s->ServerListenerList = NewList(CompareServerListener);
 	s->StartTime = SystemTime64();
@@ -6186,8 +5739,6 @@ SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_serve
 		RegistWindowsFirewallAll();
 	}
 #endif
-
-	s->Keep = StartKeep();
 
 	// Log related
 	MakeDir(bridge == false ? SERVER_LOG_DIR_NAME : BRIDGE_LOG_DIR_NAME);
@@ -6219,28 +5770,6 @@ SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_serve
 #ifdef	OS_UNIX
 	UnixSetHighOomScore();
 #endif	// OS_UNIX
-
-	// Start a listener for Azure
-	if (s->AzureClient != NULL)
-	{
-		azure = NewListener(s->Cedar, LISTENER_REVERSE, 0);
-		ReleaseListener(azure);
-	}
-
-	// Start a R-UDP listener
-	if (s->DisableNatTraversal == false && s->Cedar->Bridge == false)
-	{
-		rudp = NewListenerEx4(s->Cedar, LISTENER_RUDP, 0, TCPAcceptedThread, NULL, false, false,
-			&s->NatTGlobalUdpPort, RAND_PORT_ID_SERVER_LISTEN);
-		ReleaseListener(rudp);
-	}
-
-	// Start a VPN-over-ICMP listener
-	s->DynListenerIcmp = NewDynamicListener(s->Cedar, &s->EnableVpnOverIcmp, LISTENER_ICMP, 0);
-
-	// Start a VPN-over-DNS listener
-	s->DynListenerDns = NewDynamicListener(s->Cedar, &s->EnableVpnOverDns, LISTENER_DNS, 53);
-
 
 	SiInitDeadLockCheck(s);
 

@@ -77,9 +77,6 @@ struct DYN_VALUE
 #define	IS_SPECIAL_PORT(p)			(MAKEBOOL((p) & (UINT)0x10000))
 #define	GET_SPECIAL_PORT(p)			(UINT)((UINT)(p) & (UINT)0xffff)
 
-// Random R-UDP port ID
-#define	RAND_PORT_ID_SERVER_LISTEN	1
-
 // UDP buffer size
 #define	UDP_MAX_BUFFER_SIZE			11911168
 
@@ -142,8 +139,6 @@ struct SOCK_EVENT
 // Type of socket
 #define	SOCK_TCP				1
 #define	SOCK_UDP				2
-#define	SOCK_RUDP_LISTEN		5
-#define	SOCK_REVERSE_LISTEN		6
 
 // SSL Accept Settings
 struct SSL_ACCEPT_SETTINGS
@@ -209,14 +204,8 @@ struct SOCK
 	int CurrentTos;				// Current ToS value
 	bool IsTtlSupported;		// Whether the TTL value is supported
 	UINT CurrentTtl;			// Current TTL value
-	RUDP_STACK *R_UDP_Stack;	// R-UDP stack
 	char UnderlayProtocol[64];	// Underlying protocol
 	char ProtocolDetails[256];	// Protocol details
-	QUEUE *ReverseAcceptQueue;	// Accept queue for the reverse socket
-	EVENT *ReverseAcceptEvent;	// Accept event for the reverse socket
-	bool IsReverseAcceptedSocket;	// Whether it is a reverse socket
-	IP Reverse_MyServerGlobalIp;	// Self global IP address when using the reverse socket
-	UINT Reverse_MyServerPort;		// Self port number when using the reverse socket
 	UCHAR Ssl_Init_Async_SendAlert[2];	// Initial state of SSL send_alert
 	SSL_ACCEPT_SETTINGS SslAcceptSettings;	// SSL Accept Settings
 	bool RawIP_HeaderIncludeFlag;
@@ -231,14 +220,6 @@ struct SOCK
 
 	void *hAcceptEvent;			// Event for Accept
 
-	// R-UDP socket related
-	bool IsRUDPSocket;			// Whether this is R-UDP socket
-	TUBE *BulkSendTube;			// Tube for Bulk send
-	TUBE *BulkRecvTube;			// Tube for Bulk receive
-	SHARED_BUFFER *BulkSendKey;	// Bulk send key
-	SHARED_BUFFER *BulkRecvKey;	// Bulk receive key
-	UINT RUDP_OptimizedMss;		// Optimal MSS value
-
 #ifdef	OS_UNIX
 	pthread_t CallingThread;	// Thread that is calling the system call
 #endif	// OS_UNIX
@@ -251,10 +232,6 @@ struct SOCK
 // Underlying protocol description string of socket
 #define	SOCK_UNDERLAY_NATIVE_V6		"Standard TCP/IP (IPv6)"
 #define	SOCK_UNDERLAY_NATIVE_V4		"Standard TCP/IP (IPv4)"
-#define	SOCK_UNDERLAY_NAT_T			"VPN over UDP with NAT-T (IPv4)"
-#define	SOCK_UNDERLAY_DNS			"VPN over DNS (IPv4)"
-#define	SOCK_UNDERLAY_ICMP			"VPN over ICMP (IPv4)"
-#define	SOCK_UNDERLAY_AZURE			"TCP/IP via VPN Azure (IPv4)"
 
 // Constant of the return value
 #define	SOCK_LATER	(0xffffffff)	// In blocking
@@ -397,41 +374,6 @@ struct ROUTE_CHANGE
 	ROUTE_CHANGE_DATA *Data;
 };
 
-// Tube
-struct TUBE
-{
-	REF *Ref;							// Reference counter
-	LOCK *Lock;							// Lock
-	QUEUE *Queue;						// Packet queue
-	EVENT *Event;						// Event
-	SOCK_EVENT *SockEvent;				// SockEvent
-	UINT SizeOfHeader;					// Header size
-	TUBEPAIR_DATA *TubePairData;		// Tube pair data
-	UINT IndexInTubePair;				// Number in the tube pair
-	void *Param1, *Param2, *Param3;
-	UINT IntParam1, IntParam2, IntParam3;
-	UINT64 DataTimeout;
-};
-
-// Data that is to send and to receive in the tube
-struct TUBEDATA
-{
-	void *Data;							// Body of data
-	UINT DataSize;						// The size of the data
-	void *Header;						// The body of the header
-	UINT HeaderSize;					// Size of the header
-};
-
-// Tube pair data
-struct TUBEPAIR_DATA
-{
-	bool IsDisconnected;				// Disconnection flag
-	REF *Ref;							// Reference counter
-	LOCK *Lock;							// Lock
-	EVENT *Event1, *Event2;				// Event
-	SOCK_EVENT *SockEvent1, *SockEvent2;	// SockEvent
-};
-
 // UDP packet
 struct UDPPACKET
 {
@@ -480,255 +422,9 @@ struct IPBLOCK
 };
 
 
-// R-UDP related constants
-#define	RUDP_RESEND_TIMER				200			// Retransmission timer (initial value)
-#define	RUDP_RESEND_TIMER_MAX			4792		// Retransmission timer (maximum value)
-#define	RUDP_KEEPALIVE_INTERVAL_MIN		2500		// Transmission interval of Keep Alive (minimum)
-#define	RUDP_KEEPALIVE_INTERVAL_MAX		4792		// Transmission interval of Keep Alive (maximum)
-#define	RUDP_TIMEOUT					12000		// Time-out of R-UDP communication
-#define	RUDP_DIRECT_CONNECT_TIMEOUT		5000		// R-UDP direct connection time-out
-#define	RUDP_MAX_SEGMENT_SIZE			512			// Maximum segment size
-#define	RUDP_BULK_KEY_SIZE_MAX			128			// Bulk key size Max
-
-#define	RUDP_BULK_KEY_SIZE_V2			32			// V2: Bulk key size
-#define	RUDP_BULK_IV_SIZE_V2			12			// V2: Bulk IV size
-#define	RUDP_BULK_MAC_SIZE_V2			16			// V2: Bulk MAC size
-
-// Maximum R-UDP packet size
-#define	RUDP_MAX_PACKET_SIZE			(RUDP_MAX_SEGMENT_SIZE + sizeof(UINT64) * RUDP_MAX_NUM_ACK + SHA1_SIZE * 2 + sizeof(UINT64) * 4 + sizeof(UINT) + 255)
-#define	RUDP_MAX_NUM_ACK				64			// Maximum number of ACKs
-#define	RUDP_LOOP_WAIT_INTERVAL_S		1234		// Waiting time in the thread main loop (in server side)
-#define	RUDP_LOOP_WAIT_INTERVAL_C		100			// Waiting time in the thread main loop (in client side)
-#define	RUDP_MAX_FIFO_SIZE				(1600 * 1600)	// The maximum FIFO buffer size
-
-// Interval for sending ICMP Echo from the client side when R-UDP used in ICMP mode
-#define	RUDP_CLIENT_ECHO_REQUEST_SEND_INTERVAL_MIN	1000
-#define	RUDP_CLIENT_ECHO_REQUEST_SEND_INTERVAL_MAX	3000
-
-// R-UDP error code
-#define	RUDP_ERROR_OK					0			// Success
-#define	RUDP_ERROR_UNKNOWN				1			// Unknown Error
-#define	RUDP_ERROR_TIMEOUT				2			// Time-out
-#define	RUDP_ERROR_NAT_T_GETIP_FAILED	3			// IP address acquisition failure of NAT-T server
-#define	RUDP_ERROR_NAT_T_NO_RESPONSE	4			// There is no response from the NAT-T server
-#define	RUDP_ERROR_NAT_T_TWO_OR_MORE	5			// There are two or more hosts on the same destination IP address
-#define	RUDP_ERROR_NAT_T_NOT_FOUND		6			// Host does not exist at the specified IP address
-#define	RUDP_ERROR_USER_CANCELED		7			// Cancel by the user
-
-// R-UDP segment
-struct RUDP_SEGMENT
-{
-	UINT64 SeqNo;									// Sequence number
-	UINT Size;										// Size
-	UCHAR Data[RUDP_MAX_SEGMENT_SIZE];				// Data
-	UINT64 NextSendTick;							// Next transmission time
-	UINT NumSent;									// Number of times sent
-};
-
-// Status of R-UDP session
-#define	RUDP_SESSION_STATUS_CONNECT_SENT	0		// Connection request sent
-#define	RUDP_SESSION_STATUS_ESTABLISHED		1		// Connection established
-
-// Quota
-#define	RUDP_QUOTA_MAX_NUM_SESSIONS_PER_IP	DYN32(RUDP_QUOTA_MAX_NUM_SESSIONS_PER_IP, 1000)	// The number of R-UDP sessions per an IP address
-#define	RUDP_QUOTA_MAX_NUM_SESSIONS			DYN32(RUDP_QUOTA_MAX_NUM_SESSIONS, 30000)	// Limit of the Number of sessions
-
-// Range of the sequence numbers of bulk packet
-#define	RUDP_BULK_SEQ_NO_RANGE				16384ULL
-#define	RUDP_BULK_MAX_RECV_PKTS_IN_QUEUE	8192
-
-// R-UDP session
-struct RUDP_SESSION
-{
-	UINT Status;						// Status
-	bool ServerMode;					// Whether it's in the server mode
-	bool DisconnectFlag;				// Disconnection flag
-	bool DisconnectedByYou;				// Disconnected from opponent
-	bool UseHMac;
-	IP MyIp;							// IP address of itself
-	UINT MyPort;						// Port number of itself
-	IP YourIp;							// Opponent IP address
-	UINT YourPort;						// Opponent port number
-	LIST *SendSegmentList;				// Transmission segment list
-	LIST *RecvSegmentList;				// Received segments list
-	LIST *ReplyAckList;					// List of ACKs in response
-	SOCK *TcpSock;						// Corresponding TCP socket
-	UINT64 LastSentTick;				// Time which the data has been sent last
-	UINT64 LastRecvTick;				// Time which the data has been received last
-	UCHAR Key_Init[SHA1_SIZE];			// Initial key
-	UCHAR Key_Send[SHA1_SIZE];			// Key that is used to send
-	UCHAR Key_Recv[SHA1_SIZE];			// Key that is used to receive
-	UCHAR Magic_KeepAliveRequest[SHA1_SIZE];	// The magic number for the KeepAlive request
-	UCHAR Magic_KeepAliveResponse[SHA1_SIZE];	// The magic number for KeepAlive response
-	UINT64 Magic_Disconnect;			// Disconnection Signal
-	UINT64 NextSendSeqNo;				// Transmission sequence number to be used next
-	UINT64 LastRecvCompleteSeqNo;		// Sequence number of receiving complete
-	// (This indicates all segments which have sequence number up to this number are received completely)
-	UCHAR NextIv[SHA1_SIZE];			// IV value to be used next
-	UINT NextKeepAliveInterval;			// Interval value of KeepAlive to be used next
-	FIFO *RecvFifo;						// Reception FIFO
-	FIFO *SendFifo;						// Transmission FIFO
-	UINT64 YourTick;					// The largest value among received Tick from the opponent
-	UINT64 LatestRecvMyTick;			// Value of the last tick among the received tick values
-	UINT64 LatestRecvMyTick2;			// Variable for confirming whether LatestRecvMyTick2 changes
-	UINT CurrentRtt;					// Current RTT value
-
-	UINT Icmp_Type;						// Number of Type to be used in the ICMP
-	USHORT Dns_TranId;					// Value of transaction ID used in DNS
-	UINT64 Client_Icmp_NextSendEchoRequest;	// Time to send the next Echo Request in the ICMP
-	SHARED_BUFFER *BulkSendKey;			// Bulk send key
-	SHARED_BUFFER *BulkRecvKey;			// Bulk receive key
-	UCHAR BulkNextIv[SHA1_SIZE];		// Next IV to the bulk send
-	UINT64 BulkNextSeqNo;				// Next SEQ NO to the bulk send
-	bool FlushBulkSendTube;				// Flag to be Flush the bulk send Tube
-	UINT64 BulkRecvSeqNoMax;			// Highest sequence number received
-	UCHAR BulkNextIv_V2[RUDP_BULK_IV_SIZE_V2];	// Next IV to the bulk send (version 2)
-};
-
-// NAT Traversal Server Information
-#define	UDP_NAT_T_SERVER_TAG				"x%c.x%c.dev.servers.nat-traversal.softether-network.net."
-#define	UDP_NAT_T_SERVER_TAG_ALT			"x%c.x%c.dev.servers.nat-traversal.uxcom.jp."
-#define	UDP_NAT_T_PORT						5004
-
-// Related to processing to get the IP address of the NAT-T server
-#define	UDP_NAT_T_GET_IP_INTERVAL			DYN32(UDP_NAT_T_GET_IP_INTERVAL, (5 * 1000))		// IP address acquisition interval of NAT-T server (before success)
-#define	UDP_NAT_T_GET_IP_INTERVAL_MAX		DYN32(UDP_NAT_T_GET_IP_INTERVAL, (150 * 1000))		// IP address acquisition interval of NAT-T server (before success)
-#define	UDP_NAT_T_GET_IP_INTERVAL_AFTER		DYN32(UDP_NAT_T_GET_IP_INTERVAL_AFTER, (5 * 60 * 1000))	// IP address acquisition interval of NAT-T server (after success)
-
-// Related to process to get the private IP address of itself with making a TCP connection to the NAT-T server
-#define	UDP_NAT_T_GET_PRIVATE_IP_TCP_SERVER		"www.msftncsi.com."
-
-#define	UDP_NAT_T_PORT_FOR_TCP_1			80
-#define	UDP_NAT_T_PORT_FOR_TCP_2			443
-
-#define	UDP_NAT_TRAVERSAL_VERSION			1
-
-#define	UDP_NAT_T_GET_PRIVATE_IP_INTERVAL	DYN32(UDP_NAT_T_GET_PRIVATE_IP_INTERVAL, (15 * 60 * 1000))			// Polling interval (before success)
-#define	UDP_NAT_T_GET_PRIVATE_IP_INTERVAL_AFTER_MIN	DYN32(UDP_NAT_T_GET_PRIVATE_IP_INTERVAL_AFTER_MIN, (30 * 60 * 1000))	// Polling interval (after success)
-#define	UDP_NAT_T_GET_PRIVATE_IP_INTERVAL_AFTER_MAX	DYN32(UDP_NAT_T_GET_PRIVATE_IP_INTERVAL_AFTER_MAX, (60 * 60 * 1000))	// Polling interval (after success)
-#define	UDP_NAT_T_GET_PRIVATE_IP_CONNECT_TIMEOUT	DYN32(UDP_NAT_T_GET_PRIVATE_IP_CONNECT_TIMEOUT, (5 * 1000))			// TCP connection time-out
-
-// About token acquisition from the NAT-T server
-#define	UDP_NAT_T_GET_TOKEN_INTERVAL_1		DYN32(UDP_NAT_T_GET_TOKEN_INTERVAL_1, (5 * 1000))		// Token acquisition interval from the NAT-T server (If not acquired)
-#define	UDP_NAT_T_GET_TOKEN_INTERVAL_FAIL_MAX	DYN32(UDP_NAT_T_GET_TOKEN_INTERVAL_FAIL_MAX, 20)
-#define	UDP_NAT_T_GET_TOKEN_INTERVAL_2_MIN	DYN32(UDP_NAT_T_GET_TOKEN_INTERVAL_2_MIN, (20 * 60 * 1000))	// Token acquisition interval minimum value from the NAT-T server (If token have been obtained)
-#define	UDP_NAT_T_GET_TOKEN_INTERVAL_2_MAX	DYN32(UDP_NAT_T_GET_TOKEN_INTERVAL_2_MAX, (30 * 60 * 1000))	// Token acquisition interval maximum value from the NAT-T server (If token have been obtained)
-
-// The Register interval for NAT-T server
-#define	UDP_NAT_T_REGISTER_INTERVAL_INITIAL	DYN32(UDP_NAT_T_REGISTER_INTERVAL_INITIAL, (5 * 1000))		// Transmission interval when the Register is not completed
-#define	UDP_NAT_T_REGISTER_INTERVAL_FAIL_MAX	DYN32(UDP_NAT_T_REGISTER_INTERVAL_FAIL_MAX, 20)
-#define	UDP_NAT_T_REGISTER_INTERVAL_MIN		DYN32(UDP_NAT_T_REGISTER_INTERVAL_MIN, (220 * 1000))		// Minimum value of the Register interval
-#define	UDP_NAT_T_REGISTER_INTERVAL_MAX		DYN32(UDP_NAT_T_REGISTER_INTERVAL_MAX, (240 * 1000))		// Maximum value of the Register interval
-
-// Interval for checking whether the port number or the IP address is changed
-#define	UDP_NAT_T_NAT_STATUS_CHECK_INTERVAL_MIN	DYN32(UDP_NAT_T_NAT_STATUS_CHECK_INTERVAL_MIN, (24 * 1000))
-#define	UDP_NAT_T_NAT_STATUS_CHECK_INTERVAL_MAX	DYN32(UDP_NAT_T_NAT_STATUS_CHECK_INTERVAL_MAX, (28 * 1000))
-
-// The Connect Request interval for NAT-T server
-#define	UDP_NAT_T_CONNECT_INTERVAL			DYN32(UDP_NAT_T_CONNECT_INTERVAL, 200)
-
-// Polling interval for its own IP information acquisition to the NAT-T server in regular communication between the client and the server
-#define	UDP_NAT_T_INTERVAL_MIN				DYN32(UDP_NAT_T_INTERVAL_MIN, (5 * 60 * 1000))
-#define	UDP_NAT_T_INTERVAL_MAX				DYN32(UDP_NAT_T_INTERVAL_MAX, (10 * 60 * 1000))
-#define	UDP_NAT_T_INTERVAL_INITIAL			DYN32(UDP_NAT_T_INTERVAL_INITIAL, (3 * 1000))
-#define	UDP_NAT_T_INTERVAL_FAIL_MAX			DYN32(UDP_NAT_T_INTERVAL_FAIL_MAX, 60)
-
-// R-UDP stack callback function definition
-typedef void (RUDP_STACK_INTERRUPTS_PROC)(RUDP_STACK *r);
-typedef bool (RUDP_STACK_RPC_RECV_PROC)(RUDP_STACK *r, UDPPACKET *p);
-
 // ICMP protocol number
 #define	IP_PROTO_ICMPV4		0x01	// ICMPv4 protocol
 #define	IP_PROTO_ICMPV6		0x3a	// ICMPv6 protocol
-
-// R-UDP protocol
-#define	RUDP_PROTOCOL_UDP				0	// UDP
-#define	RUDP_PROTOCOL_ICMP				1	// ICMP
-#define	RUDP_PROTOCOL_DNS				2	// DNS
-
-// Maximum time of continuously changing of the NAT-T hostname
-#define	RUDP_NATT_MAX_CONT_CHANGE_HOSTNAME	30
-#define	RUDP_NATT_CONT_CHANGE_HOSTNAME_RESET_INTERVAL	(5 * 60 * 1000)
-
-// Minimum time to wait for a trial to connect by ICMP and DNS in case failing to connect by TCP
-#define	SOCK_CONNECT_WAIT_FOR_ICMP_AND_DNS_AT_LEAST		5000
-
-#define	RUDP_MAX_VALIDATED_SOURCE_IP_ADDRESSES		512
-#define	RUDP_VALIDATED_SOURCE_IP_ADDRESS_EXPIRES	(RUDP_TIMEOUT * 2)
-
-// Validated Source IP Addresses for R-UDP
-struct RUDP_SOURCE_IP
-{
-	UINT64 ExpiresTick;					// Expires
-	IP ClientIP;						// Client IP address
-};
-
-// R-UDP stack
-struct RUDP_STACK
-{
-	bool ServerMode;					// Whether it's in the server mode
-	char SvcName[MAX_SIZE];				// Service name
-	UCHAR SvcNameHash[SHA1_SIZE];		// Hash of the service name
-	bool Halt;							// Halting flag
-	void *Param;						// Parameters that can be used by developers
-	UINT64 Now;							// Current time
-	EVENT *HaltEvent;					// Halting event
-	INTERRUPT_MANAGER *Interrupt;		// Interrupt manager
-	LIST *SessionList;					// Session List
-	SOCK *UdpSock;						// UDP socket
-	UINT Port;							// Port number
-	UINT Protocol;						// Protocol
-	SOCK_EVENT *SockEvent;				// Socket event
-	THREAD *Thread;						// Thread
-	LOCK *Lock;							// Lock
-	RUDP_STACK_INTERRUPTS_PROC *ProcInterrupts;	// Interrupt notification callback
-	RUDP_STACK_RPC_RECV_PROC *ProcRpcRecv;	// RPC reception notification callback
-	THREAD *IpQueryThread;				// NAT-T server IP inquiry thread
-	UCHAR TmpBuf[65536];				// Temporary buffer
-	LIST *SendPacketList;				// Transmission UDP packet list
-	EVENT *NewSockConnectEvent;			// Event to inform that a new socket is connected
-	QUEUE *NewSockQueue;				// Queue of new socket
-	UINT64 TotalPhysicalReceived;		// Physical amount of data received
-	UINT64 TotalLogicalReceived;		// Logical amount of data received
-	UINT64 TotalPhysicalSent;			// Physical amount of data transmitted
-	UINT64 TotalLogicalSent;			// Logical amount of data transmitted
-	char CurrentRegisterHostname[MAX_SIZE];	// The host name of the the current destination of registration
-	UINT NumChangedHostname;			// How number of changing NAT-T hostname has occured continuously
-	UINT64 NumChangedHostnameValueResetTick;
-
-	// NAT-T server related
-	bool NoNatTRegister;				// Flag not to register with the NAT-T server
-	UINT64 NatT_TranId;					// Transaction ID is used to communicate with the NAT-T server
-	UINT64 NatT_SessionKey;				// Current Session Key
-	IP NatT_IP;							// IP address of the NAT-T server
-	IP NatT_IP_Safe;					// IP address of the NAT-T server (thread-safe)
-	IP My_Private_IP;					// Private IP address of itself
-	IP My_Private_IP_Safe;				// Private IP address of itself (thread-safe)
-	UINT64 NatT_GetTokenNextTick;		// Time to get the next token
-	UINT NatT_GetTokenFailNum;			// Token acquisition failure times
-	char NatT_Token[MAX_SIZE];			// Token needed to communicate with NAT-T Server
-	bool NatT_Token_Ok;					// Flag of whether it have a valid token
-	UINT64 NatT_RegisterNextTick;		// Time to register next
-	UINT NatT_RegisterFailNum;			// The number of Register failures
-	bool NatT_Register_Ok;				// Is a successful registration
-	char NatT_Registered_IPAndPort[128];		// IP address and port number at the time of registration success
-	UINT64 NatT_NextNatStatusCheckTick;	// Time to check the NAT state next
-	UINT LastDDnsFqdnHash;				// DNS FQDN hash value when last checked
-	volatile UINT *NatTGlobalUdpPort;	// NAT-T global UDP port
-	UCHAR RandPortId;					// Random UDP port ID
-	bool NatT_EnableSourceIpValidation;	// Enable the source IP address validation mechanism
-	LIST *NatT_SourceIpList;			// Authenticated source IP address list
-
-	// For Client
-	bool TargetIpAndPortInited;			// The target IP address and the port number are initialized
-	IP TargetIp;						// Target IP address
-	UINT TargetPort;					// Target port number
-	EVENT *TargetConnectedEvent;		// Event to be set when the connection to the target is successful
-	SOCK *TargetConnectedSock;			// Connected socket
-	bool ClientInitiated;				// Flag to indicate that the connection is initiated
-	bool DoNotSetTargetConnectedSock;	// Flag indicating that it should not set the TargetConnectedSock
-	USHORT Client_IcmpId, Client_IcmpSeqNo;	// Sequence number and ICMP ID that is randomly generated on the client side
-};
 
 // Data for the thread for serial connection attempts to a list of addresses
 struct CONNECT_SERIAL_PARAM
@@ -740,12 +436,9 @@ struct CONNECT_SERIAL_PARAM
 	UINT Port;
 	UINT Timeout;
 	char Hostname[MAX_SIZE];
-	char HintStr[MAX_SIZE];
 	bool No_Get_Hostname;
 	bool *CancelFlag;
 	bool *NoDelayFlag;
-	UINT *NatT_ErrorCode;
-	char NatT_SvcName[MAX_SIZE];
 	SOCK *Sock;
 	bool Finished;
 	bool Ok;
@@ -753,40 +446,7 @@ struct CONNECT_SERIAL_PARAM
 	EVENT *FinishEvent;
 	UINT Delay;
 	UINT RetryDelay;
-	bool Tcp_TryStartSsl;
-	SSL_VERIFY_OPTION *SslOption;
-	UINT *SslErr;
-	bool Use_NatT;
-	bool Force_NatT;
 	IP *Ret_Ip;
-};
-
-// Data for the thread for concurrent connection attempts for the R-UDP and TCP
-struct CONNECT_TCP_RUDP_PARAM
-{
-	IP Ip;
-	UINT Port;
-	UINT Timeout;
-	char Hostname[MAX_SIZE];
-	bool *CancelFlag;
-	UINT NatT_ErrorCode;
-	char SvcName[MAX_SIZE];
-	char HintStr[MAX_SIZE];
-	char TargetHostname[MAX_SIZE];
-	SOCK *Result_Nat_T_Sock;
-	SOCK *Result_Tcp_Sock;
-	bool Finished;
-	bool Ok;
-	UINT64 FinishedTick;
-	EVENT *FinishEvent;
-	UINT RUdpProtocol;
-	UINT Delay;
-	bool Tcp_TryStartSsl;
-	SSL_VERIFY_OPTION *SslOption;
-	UINT *SslErr;
-	LOCK *CancelLock;
-	SOCK *CancelDisconnectSock;
-	bool Tcp_InNegotiation;
 };
 
 struct SSL_VERIFY_OPTION
@@ -798,35 +458,6 @@ struct SSL_VERIFY_OPTION
 	LIST *CaList;					// Trusted CA list
 	X *SavedCert;					// Saved server certificate
 };
-
-// Header for TCP Pair
-struct TCP_PAIR_HEADER
-{
-	bool EnableHMac;
-};
-
-// The constants for file query by using UDP
-#define	UDP_FILE_QUERY_RETRY_INTERVAL	100			// Retry interval
-#define	UDP_FILE_QUERY_DST_PORT			5004		// Destination UDP port number
-#define	UDP_FILE_QUERY_MAGIC_NUMBER		"{5E465695-7923-4CCD-9B51-44444BE1E758}"	// Magic number
-#define	UDP_FILE_QUERY_BFLETS_TXT_FILENAME	"|BFletsUdpList.txt"	// Text file name of the IPv6 node list
-
-// The constant for DNS proxy for the B FLETs
-#define	BFLETS_DNS_PROXY_PORT			443
-#define	BFLETS_DNS_PROXY_PATH			"/ddns/queryhost.aspx"
-#define	BFLETS_DNS_PROXY_CERT_HASH		"EFAC5FA0CDD14E0F864EED58A73C35D7E33B62F3"
-#define	BFLETS_DNS_PROXY_TIMEOUT_FOR_GET_F	500		// Timeout when searching for the server by UDP
-#define	BFLETS_DNS_PROXY_TIMEOUT_FOR_QUERY	3000	// Timeout for the response from the proxy DNS server
-
-// FLET'S Hikar-Next (East) DNS proxy host name
-#define	FLETS_NGN_EAST_DNS_PROXY_HOSTNAME		"senet.aoi.flets-east.jp"
-#define	FLETS_NGN_WEST_DNS_PROXY_HOSTNAME		"senet.p-ns.flets-west.jp"
-#define	FLETS_NGN_DNS_QUERY_TIMEOUT				1000		// FLET'S Hikar-Next host name query timeout
-
-// Detection result of the type of FLET'S line
-#define	FLETS_DETECT_TYPE_EAST_BFLETS_PRIVATE		1	// NTT East B-FLETs
-#define	FLETS_DETECT_TYPE_EAST_NGN_PRIVATE			2	// Wrapping in network of NTT East NGN
-#define	FLETS_DETECT_TYPE_WEST_NGN_PRIVATE			4	// Wrapping in network of NTT West NGN
 
 // NIC adapter entry
 struct NIC_ENTRY
@@ -840,8 +471,6 @@ int GetCurrentTimezone();
 bool GetSniNameFromSslPacket(UCHAR *packet_buf, UINT packet_size, char *sni, UINT sni_size);
 
 void SetDhParam(DH_CTX *dh);
-
-bool IsUseAlternativeHostname();
 
 #ifdef	OS_WIN32
 int GetCurrentTimezoneWin32();
@@ -859,18 +488,7 @@ void CreateDummyValue(PACK *p);
 
 char *RecvLine(SOCK *s, UINT max_size);
 
-bool GetIPViaDnsProxyForJapanFlets(IP *ip_ret, char *hostname, bool ipv6, UINT timeout, bool *cancel, char *dns_proxy_hostname);
-bool GetDnsProxyIPAddressForJapanBFlets(IP *ip_ret, UINT timeout, bool *cancel);
-BUF *QueryFileByUdpForJapanBFlets(UINT timeout, bool *cancel);
-BUF *QueryFileByIPv6Udp(LIST *ip_list, UINT timeout, bool *cancel);
-UINT DetectFletsType();
-
-void ListenTcpForPopupFirewallDialog();
-
 bool DetectIsServerSoftEtherVPN(SOCK *s);
-void ConnectThreadForTcp(THREAD *thread, void *param);
-void ConnectThreadForRUDP(THREAD *thread, void *param);
-void ConnectThreadForOverDnsOrIcmp(THREAD *thread, void *param);
 void ConnectThreadForIPv4(THREAD *thread, void *param);
 void ConnectThreadForIPv6(THREAD *thread, void *param);
 
@@ -878,59 +496,9 @@ void BindConnectThreadForIPv4(THREAD *thread, void *param);
 void BindConnectThreadForIPv6(THREAD *thread, void *param);
 
 SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname, char *hostname_original);
-SOCK *NewRUDPClientNatT(char *svc_name, IP *ip, UINT *error_code, UINT timeout, bool *cancel, char *hint_str, char *target_hostname);
-RUDP_STACK *NewRUDPServer(char *svc_name, RUDP_STACK_INTERRUPTS_PROC *proc_interrupts, RUDP_STACK_RPC_RECV_PROC *proc_rpc_recv, void *param, UINT port, bool no_natt_register, bool over_dns_mode, volatile UINT *natt_global_udp_port, UCHAR rand_port_id, IP *listen_ip);
-SOCK *NewRUDPClientDirect(char *svc_name, IP *ip, UINT port, UINT *error_code, UINT timeout, bool *cancel, SOCK *sock, SOCK_EVENT *sock_event, UINT local_port, bool over_dns_mode);
-RUDP_STACK *NewRUDP(bool server_mode, char *svc_name, RUDP_STACK_INTERRUPTS_PROC *proc_interrupts, RUDP_STACK_RPC_RECV_PROC *proc_rpc_recv, void *param, UINT port, SOCK *sock, SOCK_EVENT *sock_event, bool server_no_natt_register, bool over_dns_mode, IP *client_target_ip, volatile UINT *natt_global_udp_port, UCHAR rand_port_id, IP *listen_ip);
-void FreeRUDP(RUDP_STACK *r);
-void RUDPMainThread(THREAD *thread, void *param);
-void RUDPRecvProc(RUDP_STACK *r, UDPPACKET *p);
-void RUDPInterruptProc(RUDP_STACK *r);
-void RUDPIpQueryThread(THREAD *thread, void *param);
-void RUDPSendPacket(RUDP_STACK *r, IP *dest_ip, UINT dest_port, void *data, UINT size, UINT icmp_type);
 void GetCurrentMachineIpProcessHash(void *hash);
 void GetCurrentMachineIpProcessHashInternal(void *hash);
-int RUDPCompareSessionList(void *p1, void *p2);
-RUDP_SESSION *RUDPNewSession(bool server_mode, IP *my_ip, UINT my_port, IP *your_ip, UINT your_port, UCHAR *init_key);
-void RUDPFreeSession(RUDP_SESSION *se);
-int RUDPCompareSegmentList(void *p1, void *p2);
-RUDP_SESSION *RUDPSearchSession(RUDP_STACK *r, IP *my_ip, UINT my_port, IP *your_ip, UINT your_port);
-void RUDPSendSegmentNow(RUDP_STACK *r, RUDP_SESSION *se, UINT64 seq_no, void *data, UINT size);
-void RUDPSendSegment(RUDP_STACK *r, RUDP_SESSION *se, void *data, UINT size);
-bool RUDPProcessRecvPacket(RUDP_STACK *r, RUDP_SESSION *se, void *recv_data, UINT recv_size);
-bool RUDPCheckSignOfRecvPacket(RUDP_STACK *r, RUDP_SESSION *se, void *recv_data, UINT recv_size);
-void RUDPProcessAck(RUDP_STACK *r, RUDP_SESSION *se, UINT64 seq);
-void RUDPProcessAck2(RUDP_STACK *r, RUDP_SESSION *se, UINT64 max_seq);
-void RUDPProcessRecvPayload(RUDP_STACK *r, RUDP_SESSION *se, UINT64 seq, void *payload_data, UINT payload_size);
-void RUDPInitSock(RUDP_STACK *r, RUDP_SESSION *se);
-void RUDPDisconnectSession(RUDP_STACK *r, RUDP_SESSION *se, bool disconnected_by_you);
-UINT64 RUDPGetCurrentSendingMinSeqNo(RUDP_SESSION *se);
-UINT64 RUDPGetCurrentSendingMaxSeqNo(RUDP_SESSION *se);
-SOCK *ListenRUDP(char *svc_name, RUDP_STACK_INTERRUPTS_PROC *proc_interrupts, RUDP_STACK_RPC_RECV_PROC *proc_rpc_recv, void *param, UINT port, bool no_natt_register, bool over_dns_mode);
-SOCK *ListenRUDPEx(char *svc_name, RUDP_STACK_INTERRUPTS_PROC *proc_interrupts, RUDP_STACK_RPC_RECV_PROC *proc_rpc_recv, void *param, UINT port, bool no_natt_register, bool over_dns_mode,
-                   volatile UINT *natt_global_udp_port, UCHAR rand_port_id, IP *listen_ip);
-SOCK *AcceptRUDP(SOCK *s);
-void *InitWaitUntilHostIPAddressChanged();
-void FreeWaitUntilHostIPAddressChanged(void *p);
-void WaitUntilHostIPAddressChanged(void *p, EVENT *event, UINT timeout, UINT ip_check_interval);
-UINT GetHostIPAddressHash32();
-bool GetMyPrivateIP(IP *ip, bool from_vg);
-char *GetRandHostNameForGetMyPrivateIP();
-UINT GenRandInterval(UINT min, UINT max);
-void RUDPProcess_NatT_Recv(RUDP_STACK *r, UDPPACKET *udp);
-void RUDPDo_NatT_Interrupt(RUDP_STACK *r);
-void RUDPGetRegisterHostNameByIP(char *dst, UINT size, IP *ip);
-bool RUDPParseIPAndPortStr(void *data, UINT data_size, IP *ip, UINT *port);
 void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_size, char *dst_domain, UINT dst_domain_size, bool do_not_parse_atmark);
-void RUDPBulkSend(RUDP_STACK *r, RUDP_SESSION *se, void *data, UINT data_size);
-bool RUDPProcessBulkRecvPacket(RUDP_STACK *r, RUDP_SESSION *se, void *recv_data, UINT recv_size);
-UINT RUDPCalcBestMssForBulk(RUDP_STACK *r, RUDP_SESSION *se);
-bool IsIPLocalHostOrMySelf(IP *ip);
-bool RUDPIsIpInValidateList(RUDP_STACK *r, IP *ip);
-void RUDPAddIpToValidateList(RUDP_STACK *r, IP *ip);
-
-bool GetBestLocalIpForTarget(IP *local_ip, IP *target_ip);
-SOCK *NewUDP4ForSpecificIp(IP *target_ip, UINT port);
 
 #ifdef OS_WIN32
 
@@ -1036,16 +604,14 @@ void CleanupSock(SOCK *s);
 SOCK *Connect(char *hostname, UINT port);
 SOCK *ConnectEx(char *hostname, UINT port, UINT timeout);
 SOCK *ConnectEx2(char *hostname, UINT port, UINT timeout, bool *cancel_flag);
-SOCK *ConnectEx3(char *hostname, UINT port, UINT timeout, bool *cancel_flag, char *nat_t_svc_name, UINT *nat_t_error_code, bool try_start_ssl, bool no_get_hostname);
-SOCK *ConnectEx4(char *hostname, UINT port, UINT timeout, bool *cancel_flag, char *nat_t_svc_name, UINT *nat_t_error_code, bool try_start_ssl, bool no_get_hostname, IP *ret_ip);
-SOCK *ConnectEx5(char *hostname, UINT port, UINT timeout, bool *cancel_flag, char *nat_t_svc_name, UINT *nat_t_error_code, bool try_start_ssl, bool no_get_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err, char *hint_str, IP *ret_ip);
+SOCK *ConnectEx3(char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname);
+SOCK *ConnectEx4(char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname, IP *ret_ip);
 SOCKET ConnectTimeoutIPv4(IP *ip, UINT port, UINT timeout, bool *cancel_flag);
 
 // New function named with prefix "Bind" binds outgoing connection to a specific address. New one is wrapped in original one.
 #define	BIND_LOCALIP_NULL			NULL		// NULL IP address specifies no binding
 #define	BIND_LOCALPORT_NULL			0			// NULL port number specifies no binding
-SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, char *nat_t_svc_name, UINT *nat_t_error_code, bool try_start_ssl, bool no_get_hostname, IP *ret_ip);
-SOCK *BindConnectEx5(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, char *nat_t_svc_name, UINT *nat_t_error_code, bool try_start_ssl, bool no_get_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err, char *hint_str, IP *ret_ip);
+SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname, IP *ret_ip);
 SOCKET BindConnectTimeoutIPv4(IP *localIP, UINT localport, IP *ip, UINT port, UINT timeout, bool *cancel_flag);
 
 bool SetSocketBufferSize(SOCKET s, bool send, UINT size);
@@ -1095,8 +661,6 @@ SOCK *NewUDPEx2(UINT port, bool ipv6, IP *ip);
 SOCK *NewUDPEx3(UINT port, IP *ip);
 SOCK *NewUDP4(UINT port, IP *ip);
 SOCK *NewUDP6(UINT port, IP *ip);
-SOCK *NewUDPEx2Rand(bool ipv6, IP *ip, void *rand_seed, UINT rand_seed_size, UINT num_retry);
-SOCK *NewUDPEx2RandMachineAndExePath(bool ipv6, IP *ip, UINT num_retry, UCHAR rand_port_id);
 void ClearSockDfBit(SOCK *s);
 void SetRawSockHeaderIncludeOption(SOCK *s, bool enable);
 UINT SendTo(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size);
@@ -1175,7 +739,6 @@ bool IsRouteChanged(ROUTE_CHANGE *r);
 void RouteToStr(char *str, UINT str_size, ROUTE_ENTRY *e);
 void DebugPrintRoute(ROUTE_ENTRY *e);
 void DebugPrintRouteTable(ROUTE_TABLE *r);
-bool IsIPv6LocalNetworkAddress(IP *ip);
 void AddProtocolDetailsStr(char *dst, UINT dst_size, char *str);
 void AddProtocolDetailsKeyValueStr(char *dst, UINT dst_size, char *key, char *value);
 void AddProtocolDetailsKeyValueInt(char *dst, UINT dst_size, char *key, UINT value);
@@ -1257,27 +820,6 @@ void MaskToStr32(char *str, UINT size, UINT mask);
 void MaskToStr32Ex(char *str, UINT size, UINT mask, bool always_full_address);
 void MaskToStrEx(char *str, UINT size, IP *mask, bool always_full_address);
 
-TUBEDATA *NewTubeData(void *data, UINT size, void *header, UINT header_size);
-void FreeTubeData(TUBEDATA *d);
-TUBE *NewTube(UINT size_of_header);
-void ReleaseTube(TUBE *t);
-void CleanupTube(TUBE *t);
-bool TubeSend(TUBE *t, void *data, UINT size, void *header);
-bool TubeSendEx(TUBE *t, void *data, UINT size, void *header, bool no_flush);
-bool TubeSendEx2(TUBE *t, void *data, UINT size, void *header, bool no_flush, UINT max_num_in_queue);
-void TubeFlush(TUBE *t);
-void TubeFlushEx(TUBE *t, bool force);
-TUBEDATA *TubeRecvAsync(TUBE *t);
-TUBEDATA *TubeRecvSync(TUBE *t, UINT timeout);
-TUBEPAIR_DATA *NewTubePairData();
-void ReleaseTubePairData(TUBEPAIR_DATA *d);
-void CleanupTubePairData(TUBEPAIR_DATA *d);
-void NewTubePair(TUBE **t1, TUBE **t2, UINT size_of_header);
-void TubeDisconnect(TUBE *t);
-bool IsTubeConnected(TUBE *t);
-void SetTubeSockEvent(TUBE *t, SOCK_EVENT *e);
-SOCK_EVENT *GetTubeSockEvent(TUBE *t);
-
 LIST *GetHostIPAddressListInternal();
 LIST *GetHostIPAddressList();
 LIST *CloneIPAddressList(LIST *o);
@@ -1294,13 +836,6 @@ INTERRUPT_MANAGER *NewInterruptManager();
 void FreeInterruptManager(INTERRUPT_MANAGER *m);
 void AddInterrupt(INTERRUPT_MANAGER *m, UINT64 tick);
 UINT GetNextIntervalForInterrupt(INTERRUPT_MANAGER *m);
-
-SOCK *ListenReverse();
-SOCK *AcceptReverse(SOCK *s);
-void InjectNewReverseSocketToAccept(SOCK *listen_sock, SOCK *s, IP *client_ip, UINT client_port);
-
-bool NewTcpPair(SOCK **s1, SOCK **s2);
-SOCK *ListenAnyPortEx2(bool local_only, bool disable_ca);
 
 ICMP_RESULT *IcmpApiEchoSend(IP *dest_ip, UCHAR ttl, UCHAR *data, UINT size, UINT timeout);
 void IcmpApiFreeResult(ICMP_RESULT *ret);
@@ -1345,12 +880,6 @@ void RefreshLocalMacAddressList();
 struct ssl_ctx_st *NewSSLCtx(bool server_mode);
 void FreeSSLCtx(struct ssl_ctx_st *ctx);
 UINT GetOSSecurityLevel();
-
-void SetCurrentDDnsFqdn(char *name);
-void GetCurrentDDnsFqdn(char *name, UINT size);
-UINT GetCurrentDDnsFqdnHash();
-
-void DisableRDUPServerGlobally();
 
 #ifdef	OS_WIN32
 LIST *Win32GetNicList();

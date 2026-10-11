@@ -76,9 +76,6 @@ struct SERVER
 	bool NoLinuxArpFilter;				// Not to set arp_filter in Linux
 	bool NoHighPriorityProcess;			// Not to raise the priority of the process
 	bool NoDebugDump;					// Not to output the debug dump
-	bool DisableNatTraversal;			// Disable the NAT-traversal feature
-	bool EnableVpnOverIcmp;				// VPN over ICMP is enabled
-	bool EnableVpnOverDns;				// VPN over DNS is enabled
 	bool NoMoreSave;					// Do not save any more
 	bool EnableConditionalAccept;		// Apply the Conditional Accept the Listener
 	bool EnableLegacySSL;				// Enable Legacy SSL
@@ -93,7 +90,6 @@ struct SERVER
 	THREAD *SaveThread;					// Settings saving thread
 	LIST *HubCreateHistoryList;			// Virtual HUB creation history list
 
-	KEEP *Keep;							// Maintaining connections
 	LOG *Logger;						// Server logger
 	ERASER *Eraser;						// Eraser
 
@@ -123,24 +119,14 @@ struct SERVER
 	volatile bool HaltDeadLockThread;	// Halting flag
 	EVENT *DeadLockWaitEvent;			// Waiting Event
 
-	DDNS_CLIENT *DDnsClient;			// DDNS client feature
-
-	AZURE_CLIENT *AzureClient;			// VPN Azure client
-	bool EnableVpnAzure;				// Flag whether VPN Azure client is enabled
-
 	bool DisableGetHostNameWhenAcceptTcp;	// Disable GetHostName when accepting TCP
 	bool DisableCoreDumpOnUnix;			// Disable core dump on UNIX
 
 	TINY_LOG *DebugLog;					// Debug log
 
-	DYNAMIC_LISTENER *DynListenerIcmp;	// VPN over ICMP listener
-	DYNAMIC_LISTENER *DynListenerDns;	// VPN over DNS listener
-
 	bool IsInVm;						// Whether I'm within the VM
 
 
-
-	volatile UINT NatTGlobalUdpPort;	// NAT-T global UDP port
 
 	IP ListenIP;						// Listen IP
 	bool StrictSyslogDatetimeFormat;	// Make syslog datetime format strict RFC3164
@@ -412,15 +398,6 @@ void SiDelHubCreateHistory(SERVER *s, char *name);
 bool SiIsHubRegistedOnCreateHistory(SERVER *s, char *name);
 
 bool SiTooManyUserObjectsInServer(SERVER *s, bool oneMore);
-
-bool SiCanOpenVpnOverDnsPort();
-bool SiCanOpenVpnOverIcmpPort();
-void SiApplySpecialListenerStatus(SERVER *s);
-
-bool SiIsAzureEnabled(SERVER *s);
-bool SiIsAzureSupported(SERVER *s);
-void SiApplyAzureConfig(SERVER *s, DDNS_CLIENT_STATUS *ddns_status);
-void SiSetAzureEnable(SERVER *s, bool enabled);
 
 void SiUpdateCurrentRegion(CEDAR *c, char *region, bool force_update);
 void SiGetCurrentRegion(CEDAR *c, char *region, UINT region_size);

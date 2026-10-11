@@ -6,8 +6,8 @@
 
 SOCK *Internal_ProxyTcpConnect(PROXY_PARAM_IN *param, volatile bool *cancel_flag, IP *resolved_ip)
 {
-	//return ConnectEx4(param->Hostname, param->Port, param->Timeout, (bool*)cancel_flag, NULL, NULL, false, true, resolved_ip);
-	return BindConnectEx4(param->BindLocalIP, param->BindLocalPort, param->Hostname, param->Port, param->Timeout, (bool *)cancel_flag, NULL, NULL, false, true, resolved_ip);
+	//return ConnectEx4(param->Hostname, param->Port, param->Timeout, (bool*)cancel_flag, true, resolved_ip);
+	return BindConnectEx4(param->BindLocalIP, param->BindLocalPort, param->Hostname, param->Port, param->Timeout, (bool *)cancel_flag, true, resolved_ip);
 }
 
 // Connect to an HTTP proxy

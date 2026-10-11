@@ -35,8 +35,6 @@ struct ROUTE_TRACKING
 	ROUTE_ENTRY *VistaDefaultGateway1, *VistaDefaultGateway2, *VistaOldDefaultGatewayByVLan;
 	ROUTE_ENTRY *RouteToDefaultDns;
 	ROUTE_ENTRY *RouteToEight;
-	ROUTE_ENTRY *RouteToNatTServer;
-	ROUTE_ENTRY *RouteToRealServerGlobal;
 	UINT64 NextTrackingTime;
 	UINT64 NextTrackingTimeAdd;
 	UINT64 NextRouteChangeCheckTime;

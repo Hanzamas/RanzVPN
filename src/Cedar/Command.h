@@ -231,7 +231,6 @@ bool CmdEvalHostAndPort(CONSOLE *c, wchar_t *str, void *param);
 K *CmdLoadKey(CONSOLE *c, wchar_t *filename);
 bool CmdLoadCertAndKey(CONSOLE *c, X **xx, K **kk, wchar_t *cert_filename, wchar_t *key_filename);
 bool CmdLoadCertChainAndKey(CONSOLE *c, X **xx, K **kk, LIST **cc, wchar_t *cert_filename, wchar_t *key_filename);
-bool CmdEvalTcpOrUdp(CONSOLE *c, wchar_t *str, void *param);
 wchar_t *GetConnectionTypeStr(UINT type);
 bool CmdEvalHostAndSubnetMask4(CONSOLE *c, wchar_t *str, void *param);
 bool CmdEvalNetworkAndSubnetMask4(CONSOLE *c, wchar_t *str, void *param);
@@ -377,10 +376,6 @@ UINT PcAccountExport(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PcAccountImport(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PcRemoteEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PcRemoteDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcKeepEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcKeepDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcKeepSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcKeepGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 
 
 PS *NewPs(CONSOLE *c, RPC *rpc, char *servername, UINT serverport, char *hubname, char *adminhub, wchar_t *cmdline);
@@ -404,10 +399,6 @@ UINT PsServerKeyGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsServerCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsServerCipherGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsServerCipherSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsKeepEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsKeepDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsKeepSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsKeepGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsSyslogGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsSyslogDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsSyslogEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
@@ -548,12 +539,6 @@ UINT PsLicenseDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsLicenseList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsLicenseStatus(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsServerCertRegenerate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsVpnOverIcmpDnsEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsVpnOverIcmpDnsGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsDynamicDnsGetStatus(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsDynamicDnsSetHostname(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsVpnAzureSetEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsVpnAzureGetStatus(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 
 
 #endif	// COMMAND_H

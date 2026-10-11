@@ -9,7 +9,6 @@
 
 #include "Admin.h"
 #include "Client.h"
-#include "DDNS.h"
 #include "Hub.h"
 #include "Link.h"
 #include "Logging.h"
@@ -490,272 +489,6 @@ void AddAllRootCertsToCertList(LIST *o)
 	Debug("AddAllRootCertsToCertList: ok=%u error=%u total_list_len=%u\n", num_ok, num_error, LIST_NUM(o));
 }
 
-// Convert the date of YYYYMMDD format to a number
-UINT64 ShortStrToDate64(char *str)
-{
-	UINT v;
-	SYSTEMTIME st;
-	// Validate arguments
-	if (str == NULL)
-	{
-		return 0;
-	}
-
-	v = ToInt(str);
-
-	Zero(&st, sizeof(st));
-
-	st.wYear = (v % 100000000) / 10000;
-	st.wMonth = (v % 10000) / 100;
-	st.wDay = v % 100;
-
-	return SystemToUINT64(&st);
-}
-
-// Handle the response that is returned from the server in the update client
-void UpdateClientThreadProcessResults(UPDATE_CLIENT *c, BUF *b)
-{
-	bool exit = false;
-	// Validate arguments
-	if (c == NULL || b == NULL)
-	{
-		return;
-	}
-
-	SeekBufToBegin(b);
-
-	while (true)
-	{
-		char *line = CfgReadNextLine(b);
-		if (line == NULL)
-		{
-			break;
-		}
-
-		Trim(line);
-
-		if (StartWith(line, "#") == false && IsEmptyStr(line) == false)
-		{
-			TOKEN_LIST *t = ParseTokenWithNullStr(line, " \t");
-
-			if (t != NULL)
-			{
-				if (t->NumTokens >= 5)
-				{
-					if (StrCmpi(t->Token[0], c->FamilyName) == 0)
-					{
-						// Match
-						UINT64 date = ShortStrToDate64(t->Token[1]);
-						if (date != 0)
-						{
-							UINT build = ToInt(t->Token[2]);
-							if (build != 0)
-							{
-								if (build > c->MyBuild && build > c->LatestBuild && build > c->Setting.LatestIgnoreBuild)
-								{
-									c->Callback(c, build, date, t->Token[3], t->Token[4], &c->HaltFlag, c->Param);
-
-									c->LatestBuild = build;
-
-									exit = true;
-								}
-							}
-						}
-					}
-				}
-
-				FreeToken(t);
-			}
-		}
-
-		Free(line);
-
-		if (exit)
-		{
-			break;
-		}
-	}
-}
-
-// Update client main process
-void UpdateClientThreadMain(UPDATE_CLIENT *c)
-{
-	char url[MAX_SIZE];
-	char id[MAX_SIZE];
-	URL_DATA data;
-	BUF *cert_hash;
-	UINT ret = 0;
-	BUF *recv;
-	// Validate arguments
-	if (c == NULL)
-	{
-		return;
-	}
-
-	// Generate the URL
-	Format(url, sizeof(url), IsUseAlternativeHostname() ? UPDATE_SERVER_URL_CHINA : UPDATE_SERVER_URL_GLOBAL, c->FamilyName, c->SoftwareName, c->MyBuild, c->MyLanguage);
-
-	if (IsEmptyStr(c->ClientId) == false)
-	{
-		Format(id, sizeof(id), "&id=%s", c->ClientId);
-		StrCat(url, sizeof(url), id);
-	}
-
-	// Get a text file at this URL
-	if (ParseUrl(&data, url, false, NULL) == false)
-	{
-		return;
-	}
-
-	cert_hash = StrToBin(UPDATE_SERVER_CERT_HASH);
-
-	StrCpy(data.SniString, sizeof(data.SniString), DDNS_SNI_VER_STRING);
-
-	recv = HttpRequestEx3(&data, NULL, UPDATE_CONNECT_TIMEOUT, UPDATE_COMM_TIMEOUT, &ret, false, NULL, NULL,
-		NULL, ((cert_hash != NULL && (cert_hash->Size % SHA1_SIZE) == 0) ? cert_hash->Buf : NULL),
-		(cert_hash != NULL ? (cert_hash->Size / SHA1_SIZE) : 0),
-		(bool *)&c->HaltFlag, 0, NULL, NULL);
-
-	FreeBuf(cert_hash);
-
-	if (recv != NULL)
-	{
-		UpdateClientThreadProcessResults(c, recv);
-
-		FreeBuf(recv);
-	}
-}
-
-// Update client main thread
-void UpdateClientThreadProc(THREAD *thread, void *param)
-{
-	UPDATE_CLIENT *c = (UPDATE_CLIENT *)param;
-	bool first_loop = true;
-	// Validate arguments
-	if (thread == NULL || param == NULL)
-	{
-		return;
-	}
-
-	while (true)
-	{
-		// Termination check
-		if (c->HaltFlag)
-		{
-			break;
-		}
-
-		if (first_loop == false)
-		{
-			// Wait for the foreground
-			if (c->IsForegroundCb != NULL)
-			{
-				while (true)
-				{
-					if (c->HaltFlag)
-					{
-						break;
-					}
-
-					if (c->IsForegroundCb(c, c->Param))
-					{
-						break;
-					}
-
-					Wait(c->HaltEvent, 1000);
-				}
-			}
-		}
-
-		first_loop = false;
-
-		if (c->HaltFlag)
-		{
-			break;
-		}
-
-		if (c->Setting.DisableCheck == false)
-		{
-			UpdateClientThreadMain(c);
-		}
-
-		// Wait until the next attempt
-		Wait(c->HaltEvent, GenRandInterval(UPDATE_CHECK_INTERVAL_MIN, UPDATE_CHECK_INTERVAL_MAX));
-	}
-}
-
-// Update the configuration of the update client
-void SetUpdateClientSetting(UPDATE_CLIENT *c, UPDATE_CLIENT_SETTING *s)
-{
-	// Validate arguments
-	if (c == NULL || s == NULL)
-	{
-		return;
-	}
-
-	Copy(&c->Setting, s, sizeof(UPDATE_CLIENT_SETTING));
-
-	Set(c->HaltEvent);
-}
-
-// Start the update client
-UPDATE_CLIENT *NewUpdateClient(UPDATE_NOTIFY_PROC *cb, UPDATE_ISFOREGROUND_PROC *isforeground_cb, void *param, char *family_name, char *software_name, wchar_t *software_title, UINT my_build, UINT64 my_date, char *my_lang, UPDATE_CLIENT_SETTING *current_setting, char *client_id)
-{
-	UPDATE_CLIENT *c;
-	// Validate arguments
-	if (family_name == NULL || software_title == NULL || software_name == NULL || my_build == 0 ||
-		my_lang == NULL || current_setting == NULL || cb == NULL)
-	{
-		return NULL;
-	}
-
-	c = ZeroMalloc(sizeof(UPDATE_CLIENT));
-
-	c->Callback = cb;
-	c->IsForegroundCb = isforeground_cb;
-
-	StrCpy(c->ClientId, sizeof(c->ClientId), client_id);
-	StrCpy(c->FamilyName, sizeof(c->FamilyName), family_name);
-	StrCpy(c->SoftwareName, sizeof(c->SoftwareName), software_name);
-	UniStrCpy(c->SoftwareTitle, sizeof(c->SoftwareTitle), software_title);
-	c->MyBuild = my_build;
-	c->MyDate = my_date;
-	StrCpy(c->MyLanguage, sizeof(c->MyLanguage), my_lang);
-
-	Copy(&c->Setting, current_setting, sizeof(c->Setting));
-
-	c->Param = param;
-
-	c->HaltEvent = NewEvent();
-
-	// Create a thread
-	c->Thread = NewThread(UpdateClientThreadProc, c);
-
-	return c;
-}
-
-// Terminate the update client
-void FreeUpdateClient(UPDATE_CLIENT *c)
-{
-	// Validate arguments
-	if (c == NULL)
-	{
-		return;
-	}
-
-	// Thread stop
-	c->HaltFlag = true;
-	Set(c->HaltEvent);
-
-	// Wait for thread termination
-	WaitThread(c->Thread, INFINITE);
-
-	ReleaseThread(c->Thread);
-	ReleaseEvent(c->HaltEvent);
-
-	Free(c);
-}
-
 // Generate unique IDs for each machine
 void GenerateMachineUniqueHash(void *data)
 {
@@ -1102,8 +835,6 @@ bool ServerAccept(CONNECTION *c)
 	bool use_udp_acceleration_client;
 	UINT client_udp_acceleration_max_version = 1;
 	UINT udp_acceleration_version = 1;
-	UINT client_rudp_bulk_max_version = 1;
-	UINT rudp_bulk_version = 1;
 	bool support_hmac_on_udp_acceleration_client = false;
 	bool support_udp_accel_fast_disconnect_detect;
 	bool use_hmac_on_udp_acceleration = false;
@@ -1119,12 +850,6 @@ bool ServerAccept(CONNECTION *c)
 	bool no_reconnect_to_session = false;
 	bool require_bridge_routing_mode;
 	bool require_monitor_mode;
-	bool support_bulk_on_rudp = false;
-	bool support_hmac_on_bulk_of_rudp = false;
-	bool support_udp_recovery = false;
-	bool enable_bulk_on_rudp = false;
-	bool enable_udp_recovery = false;
-	bool enable_hmac_on_bulk_of_rudp = false;
 	bool use_client_license = false, use_bridge_license = false;
 	bool local_host_session = false;
 	char sessionname[MAX_SESSION_NAME_LEN + 1];
@@ -1422,16 +1147,8 @@ bool ServerAccept(CONNECTION *c)
 			{
 				client_udp_acceleration_max_version = 1;
 			}
-			client_rudp_bulk_max_version = PackGetInt(p, "rudp_bulk_max_version");
-			if (client_rudp_bulk_max_version == 0)
-			{
-				client_rudp_bulk_max_version = 1;
-			}
 			support_hmac_on_udp_acceleration_client = PackGetBool(p, "support_hmac_on_udp_acceleration");
 			support_udp_accel_fast_disconnect_detect = PackGetBool(p, "support_udp_accel_fast_disconnect_detect");
-			support_bulk_on_rudp = PackGetBool(p, "support_bulk_on_rudp");
-			support_hmac_on_bulk_of_rudp = PackGetBool(p, "support_hmac_on_bulk_of_rudp");
-			support_udp_recovery = PackGetBool(p, "support_udp_recovery");
 
 			if (c->CipherName != NULL)
 			{
@@ -1453,22 +1170,6 @@ bool ServerAccept(CONNECTION *c)
 			if (c->FirstSock != NULL && IsEmptyStr(c->FirstSock->SslVersion) == false)
 			{
 				c->SslVersion = CopyStr(c->FirstSock->SslVersion);
-			}
-
-			if (support_bulk_on_rudp && c->FirstSock != NULL && c->FirstSock->IsRUDPSocket &&
-				c->FirstSock->BulkRecvKey != NULL && c->FirstSock->BulkSendKey != NULL)
-			{
-				// Allow UDP bulk transfer if the client side supports
-				// in the case of using R-UDP Socket
-				enable_bulk_on_rudp = true;
-
-				enable_hmac_on_bulk_of_rudp = support_hmac_on_bulk_of_rudp;
-			}
-
-			if (support_udp_recovery && c->FirstSock != NULL && c->FirstSock->IsRUDPSocket)
-			{
-				// Allow UDP recovery
-				enable_udp_recovery = true;
 			}
 
 			if (use_udp_acceleration_client)
@@ -2201,12 +1902,6 @@ bool ServerAccept(CONNECTION *c)
 				}
 			}
 
-			if (use_encrypt == false && c->FirstSock->IsReverseAcceptedSocket)
-			{
-				// On VPN Azure, SSL encryption is mandated.
-				use_encrypt = true;
-			}
-
 			if (use_client_license || use_bridge_license)
 			{
 				// Examine whether not to conflict with the limit of simultaneous connections
@@ -2308,28 +2003,6 @@ bool ServerAccept(CONNECTION *c)
 			max_connection = MIN(max_connection, MAX_TCP_CONNECTION);
 			max_connection = MAX(max_connection, 1);
 
-			if (c->FirstSock->IsRUDPSocket)
-			{
-				// In the case of TCP-over-UDP
-				half_connection = false;
-
-				// Disable the QoS
-				qos = false;
-
-				if (enable_udp_recovery == false)
-				{
-					// Disable the session reconnection feature
-					no_reconnect_to_session = true;
-					max_connection = 1;
-				}
-				else
-				{
-					// If the UDP recovery is enabled, permit the session re-connection feature (for 2)
-					no_reconnect_to_session = false;
-					max_connection = NUM_TCP_CONNECTION_FOR_UDP_RECOVERY;
-				}
-			}
-
 			if (half_connection)
 			{
 				// Number of connections should be more than 2 in the case of Half Connection
@@ -2355,29 +2028,10 @@ bool ServerAccept(CONNECTION *c)
 			StrLower(username);
 			s = NewServerSession(c->Cedar, c, hub, username, policy);
 
-			s->EnableUdpRecovery = enable_udp_recovery;
 			s->LocalHostSession = local_host_session;
 			s->NormalClient = true;
 
 			IPToStr(s->ClientIP, sizeof(s->ClientIP), &c->ClientIp);
-
-			if (c->FirstSock->IsRUDPSocket)
-			{
-				// R-UDP session
-				s->IsRUDPSession = true;
-				s->RUdpMss = c->FirstSock->RUDP_OptimizedMss;
-				Debug("ServerAccept(): Optimized MSS Value for R-UDP: %u\n", s->RUdpMss);
-				AddProtocolDetailsKeyValueInt(s->ProtocolDetails, sizeof(s->ProtocolDetails), "RUDP_MSS", s->RUdpMss);
-			}
-
-			if (enable_bulk_on_rudp)
-			{
-				// Allow bulk transfer on R-UDP
-				s->EnableBulkOnRUDP = true;
-				s->EnableHMacOnBulkOfRUDP = enable_hmac_on_bulk_of_rudp;
-			}
-
-			s->IsAzureSession = c->FirstSock->IsReverseAcceptedSocket;
 
 			StrCpy(s->UnderlayProtocol, sizeof(s->UnderlayProtocol), c->FirstSock->UnderlayProtocol);
 
@@ -2402,29 +2056,8 @@ bool ServerAccept(CONNECTION *c)
 				}
 			}
 
-			if (client_rudp_bulk_max_version >= 2)
-			{
-				rudp_bulk_version = 2;
-			}
-
-			s->BulkOnRUDPVersion = rudp_bulk_version;
-
-			if (s->EnableBulkOnRUDP)
-			{
-				AddProtocolDetailsKeyValueInt(s->ProtocolDetails, sizeof(s->ProtocolDetails), "RUDP_Bulk_Ver", s->BulkOnRUDPVersion);
-			}
-
 			if (hub->Option != NULL && hub->Option->DisableUdpAcceleration)
 			{
-				s->UseUdpAcceleration = false;
-			}
-
-			if (IsZeroIP(&c->FirstSock->Reverse_MyServerGlobalIp) == false &&
-				CmpIpAddr(&c->FirstSock->Reverse_MyServerGlobalIp, &c->FirstSock->RemoteIP) == 0)
-			{
-				// Disable forcibly the UDP acceleration mode if VPN Server and VPN Client
-				// are in same LAN in the case of using VPN Azure.
-				// (Or this may cause infinite loop of packet)
 				s->UseUdpAcceleration = false;
 			}
 
@@ -2439,11 +2072,8 @@ bool ServerAccept(CONNECTION *c)
 
 			if (s->UseUdpAcceleration)
 			{
-				bool no_nat_t = false;
-
-
 				// Initialize the UDP acceleration function
-				s->UdpAccel = NewUdpAccel(c->Cedar, (c->FirstSock->IsRUDPSocket ? NULL : &c->FirstSock->LocalIP), false, c->FirstSock->IsRUDPSocket, no_nat_t);
+				s->UdpAccel = NewUdpAccel(c->Cedar, &c->FirstSock->LocalIP, false, false);
 				if (s->UdpAccel == NULL)
 				{
 					s->UseUdpAcceleration = false;
@@ -2628,40 +2258,6 @@ bool ServerAccept(CONNECTION *c)
 
 			if (IsURLMsg(msg, NULL, 0) == false)
 			{
-
-				if (s != NULL && s->IsRUDPSession && c != NULL)
-				{
-					// Show the warning message if the connection is made by NAT-T
-					wchar_t *tmp2;
-					UINT tmp2_size = 2400 * sizeof(wchar_t);
-					char local_name[128];
-					wchar_t local_name_2[128];
-					char local_name_3[128];
-
-					Zero(local_name, sizeof(local_name));
-					Zero(local_name_2, sizeof(local_name_2));
-					Zero(local_name_3, sizeof(local_name_3));
-
-					GetMachineName(local_name, sizeof(local_name));
-
-#ifdef	OS_WIN32
-					MsGetComputerNameFullEx(local_name_2, sizeof(local_name_2), true);
-
-					UniToStr(local_name_3, sizeof(local_name_3), local_name_2);
-
-					if (IsEmptyStr(local_name_3) == false)
-					{
-						StrCpy(local_name, sizeof(local_name), local_name_3);
-					}
-#endif	// OS_WIN32
-
-					tmp2 = ZeroMalloc(tmp2_size);
-					UniFormat(tmp2, tmp2_size, _UU("NATT_MSG"), local_name);
-
-					UniStrCat(tmp, tmpsize, tmp2);
-
-					Free(tmp2);
-				}
 
 				{
 					if (GetGlobalServerFlag(GSF_SHOW_OSS_MSG) != 0)
@@ -2871,18 +2467,6 @@ bool ServerAccept(CONNECTION *c)
 
 		// Add the socket of this connection to the connection list of the session (TCP)
 		sock = c->FirstSock;
-
-		if (sock->IsRUDPSocket && sock->BulkRecvKey != NULL && sock->BulkSendKey != NULL)
-		{
-			if (s->BulkRecvKeySize != 0 && s->BulkSendKeySize != 0)
-			{
-				// Restore R-UDP bulk send/recv keys for additional connections
-				Copy(sock->BulkRecvKey->Data, s->BulkRecvKey, s->BulkRecvKeySize);
-				sock->BulkRecvKey->Size = s->BulkRecvKeySize;
-				Copy(sock->BulkSendKey->Data, s->BulkSendKey, s->BulkSendKeySize);
-				sock->BulkSendKey->Size = s->BulkSendKeySize;
-			}
-		}
 
 		ts = NewTcpSock(sock);
 		SetTimeout(sock, CONNECTING_TIMEOUT);
@@ -3363,19 +2947,6 @@ bool ClientAdditionalConnect(CONNECTION *c, THREAD *t)
 
 	Debug("Additional Connect Succeed!\n");
 
-	if (s->IsRUDPSocket && s->BulkRecvKey != NULL && s->BulkSendKey != NULL)
-	{
-		// Restore R-UDP bulk send/recv keys for additional connections
-		if (c->Session->BulkRecvKeySize != 0 && c->Session->BulkSendKeySize != 0)
-		{
-			Copy(s->BulkRecvKey->Data, c->Session->BulkRecvKey, c->Session->BulkRecvKeySize);
-			s->BulkRecvKey->Size = c->Session->BulkRecvKeySize;
-
-			Copy(s->BulkSendKey->Data, c->Session->BulkSendKey, c->Session->BulkSendKeySize);
-			s->BulkSendKey->Size = c->Session->BulkSendKeySize;
-		}
-	}
-
 	// Success the additional connection
 	// Add to the TcpSockList of the connection
 	ts = NewTcpSock(s);
@@ -3612,16 +3183,7 @@ bool ClientConnect(CONNECTION *c)
 			{
 				if (sess->UdpAccel == NULL)
 				{
-					bool no_nat_t = false;
-
-					if (sess->ClientOption->PortUDP != 0)
-					{
-						// There is no need for NAT-T treatment on my part if the UDP port on the other end is known beforehand
-						no_nat_t = true;
-					}
-
-
-					sess->UdpAccel = NewUdpAccel(c->Cedar, &s->LocalIP, true, true, no_nat_t);
+					sess->UdpAccel = NewUdpAccel(c->Cedar, &s->LocalIP, true, true);
 				}
 			}
 		}
@@ -3723,20 +3285,6 @@ bool ClientConnect(CONNECTION *c)
 		}
 	}
 
-	if (c->Cedar->Server == NULL)
-	{
-		// Suppress client notification flag
-		if (PackIsValueExists(p, "suppress_client_update_notification"))
-		{
-			bool suppress_client_update_notification = PackGetBool(p, "suppress_client_update_notification");
-
-#ifdef	OS_WIN32
-			MsRegWriteIntEx2(REG_LOCAL_MACHINE, PROTO_SUPPRESS_CLIENT_UPDATE_NOTIFICATION_REGKEY, PROTO_SUPPRESS_CLIENT_UPDATE_NOTIFICATION_REGVALUE,
-				(suppress_client_update_notification ? 1 : 0), false, true);
-#endif	// OS_WIN32
-		}
-	}
-
 	if (true)
 	{
 		// Message retrieval
@@ -3798,21 +3346,14 @@ bool ClientConnect(CONNECTION *c)
 	Lock(c->Session->lock);
 	{
 		// Deploy and update connection parameters
-		sess->EnableUdpRecovery = PackGetBool(p, "enable_udp_recovery");
 		c->Session->MaxConnection = PackGetInt(p, "max_connection");
-
-		if (sess->EnableUdpRecovery == false)
-		{
-			c->Session->MaxConnection = MIN(c->Session->MaxConnection, c->Session->ClientOption->MaxConnection);
-		}
-
+		c->Session->MaxConnection = MIN(c->Session->MaxConnection, c->Session->ClientOption->MaxConnection);
 		c->Session->MaxConnection = MIN(c->Session->MaxConnection, MAX_TCP_CONNECTION);
 		c->Session->MaxConnection = MAX(c->Session->MaxConnection, 1);
 		c->Session->UseCompress = PackGetInt(p, "use_compress") == 0 ? false : true;
 		c->Session->UseEncrypt = PackGetInt(p, "use_encrypt") == 0 ? false : true;
 		c->Session->NoSendSignature = PackGetBool(p, "no_send_signature");
 		c->Session->HalfConnection = PackGetInt(p, "half_connection") == 0 ? false : true;
-		c->Session->IsAzureSession = PackGetInt(p, "is_azure_session") == 0 ? false : true;
 		c->Session->Timeout = PackGetInt(p, "timeout");
 		c->Session->QoS = PackGetInt(p, "qos") == 0 ? false : true;
 		if (c->Session->QoS)
@@ -3821,47 +3362,10 @@ bool ClientConnect(CONNECTION *c)
 		}
 		c->Session->VLanId = PackGetInt(p, "vlan_id");
 
-		// R-UDP Session ?
-		c->Session->IsRUDPSession = s->IsRUDPSocket;
-
-		ZeroIP4(&c->Session->AzureRealServerGlobalIp);
-
-		if (c->Session->IsAzureSession)
-		{
-			// Disable the life parameter of the connection in the case of VPN Azure relayed session
-			c->Session->ClientOption->ConnectionDisconnectSpan = 0;
-
-			// Get the AzureRealServerGlobalIp the case of VPN Azure relayed
-			PackGetIp(p, "azure_real_server_global_ip", &c->Session->AzureRealServerGlobalIp);
-		}
-
-		if (c->Session->IsRUDPSession)
-		{
-			// Disable the life parameter of the connection in the case of R-UDP session
-			c->Session->ClientOption->ConnectionDisconnectSpan = 0;
-
-			// Disable QoS, etc. in the case of R-UDP session
-			c->Session->QoS = false;
-			c->Session->HalfConnection = false;
-
-			if (c->Session->EnableUdpRecovery == false)
-			{
-				// Set the number of connection to 1 if UDP recovery is not supported
-				c->Session->MaxConnection = 1;
-			}
-		}
-
 		// Physical communication protocol
 		StrCpy(c->Session->UnderlayProtocol, sizeof(c->Session->UnderlayProtocol), s->UnderlayProtocol);
 
 		AddProtocolDetailsStr(c->Session->ProtocolDetails, sizeof(c->Session->ProtocolDetails), s->ProtocolDetails);
-
-		if (c->Session->IsAzureSession)
-		{
-			StrCpy(c->Session->UnderlayProtocol, sizeof(c->Session->UnderlayProtocol), SOCK_UNDERLAY_AZURE);
-
-			AddProtocolDetailsStr(c->Session->ProtocolDetails, sizeof(c->Session->ProtocolDetails), "VPN Azure");
-		}
 
 		if (c->Protocol == CONNECTION_UDP)
 		{
@@ -3876,57 +3380,6 @@ bool ClientConnect(CONNECTION *c)
 				PackGetData(p, "udp_recv_key", c->Session->UdpRecvKey);
 			}
 		}
-
-		sess->EnableBulkOnRUDP = false;
-		sess->EnableHMacOnBulkOfRUDP = false;
-		if (s != NULL && s->IsRUDPSocket && s->BulkRecvKey != NULL && s->BulkSendKey != NULL)
-		{
-			// Bulk transfer on R-UDP
-			sess->EnableHMacOnBulkOfRUDP = PackGetBool(p, "enable_hmac_on_bulk_of_rudp");
-			sess->BulkOnRUDPVersion = PackGetInt(p, "rudp_bulk_version");
-
-			if (PackGetBool(p, "enable_bulk_on_rudp"))
-			{
-				// Receive the key
-				UCHAR key_send[RUDP_BULK_KEY_SIZE_MAX];
-				UCHAR key_recv[RUDP_BULK_KEY_SIZE_MAX];
-
-				UINT key_size = SHA1_SIZE;
-
-				if (sess->BulkOnRUDPVersion == 2)
-				{
-					key_size = RUDP_BULK_KEY_SIZE_V2;
-				}
-
-				if (PackGetData2(p, "bulk_on_rudp_send_key", key_send, key_size) &&
-					PackGetData2(p, "bulk_on_rudp_recv_key", key_recv, key_size))
-				{
-					sess->EnableBulkOnRUDP = true;
-
-					Copy(s->BulkSendKey->Data, key_send, key_size);
-					Copy(s->BulkRecvKey->Data, key_recv, key_size);
-
-					s->BulkSendKey->Size = key_size;
-					s->BulkRecvKey->Size = key_size;
-
-					// Backup R-UDP bulk send/recv keys for additional connections
-					Copy(sess->BulkSendKey, s->BulkSendKey->Data, s->BulkSendKey->Size);
-					sess->BulkSendKeySize = s->BulkSendKey->Size;
-
-					Copy(sess->BulkRecvKey, s->BulkRecvKey->Data, s->BulkRecvKey->Size);
-					sess->BulkRecvKeySize = s->BulkRecvKey->Size;
-
-					AddProtocolDetailsKeyValueInt(sess->ProtocolDetails, sizeof(sess->ProtocolDetails), "RUDP_Bulk_Ver", sess->BulkOnRUDPVersion);
-				}
-			}
-
-			sess->EnableHMacOnBulkOfRUDP = PackGetBool(p, "enable_hmac_on_bulk_of_rudp");
-		}
-
-		Debug("EnableBulkOnRUDP = %u\n", sess->EnableBulkOnRUDP);
-		Debug("EnableHMacOnBulkOfRUDP = %u\n", sess->EnableHMacOnBulkOfRUDP);
-		Debug("EnableUdpRecovery = %u\n", sess->EnableUdpRecovery);
-		Debug("BulkOnRUDPVersion = %u\n", sess->BulkOnRUDPVersion);
 
 		sess->UseUdpAcceleration = false;
 		sess->IsUsingUdpAcceleration = false;
@@ -3978,11 +3431,6 @@ bool ClientConnect(CONNECTION *c)
 							IP remote_ip;
 
 							Copy(&remote_ip, &s->RemoteIP, sizeof(IP));
-
-							if (IsZeroIp(&c->Session->AzureRealServerGlobalIp) == false)
-							{
-								Copy(&remote_ip, &c->Session->AzureRealServerGlobalIp, sizeof(IP));
-							}
 
 							sess->UdpAccel->Version = 1;
 							if (udp_acceleration_version == 2)
@@ -4208,7 +3656,6 @@ PACK *PackWelcome(SESSION *s)
 	PackAddInt(p, "half_connection", s->HalfConnection == false ? 0 : 1);
 	PackAddInt(p, "timeout", s->Timeout);
 	PackAddInt(p, "qos", s->QoS ? 1 : 0);
-	PackAddInt(p, "is_azure_session", s->IsAzureSession);
 
 	// Session key
 	PackAddData(p, "session_key", s->SessionKey, SHA1_SIZE);
@@ -4252,54 +3699,6 @@ PACK *PackWelcome(SESSION *s)
 		PackAddBool(p, "use_hmac_on_udp_acceleration", s->UdpAccel->UseHMac);
 		PackAddBool(p, "udp_accel_fast_disconnect_detect", s->UdpAccelFastDisconnectDetect);
 	}
-
-	if (s->EnableBulkOnRUDP)
-	{
-		// Allow bulk transfer on R-UDP
-		PackAddBool(p, "enable_bulk_on_rudp", true);
-		PackAddBool(p, "enable_hmac_on_bulk_of_rudp", s->EnableHMacOnBulkOfRUDP);
-		PackAddInt(p, "rudp_bulk_version", s->BulkOnRUDPVersion);
-
-		if (s->BulkOnRUDPVersion == 2)
-		{
-			PackAddData(p, "bulk_on_rudp_send_key", s->Connection->FirstSock->BulkRecvKey->Data, RUDP_BULK_KEY_SIZE_V2);
-			s->Connection->FirstSock->BulkRecvKey->Size = RUDP_BULK_KEY_SIZE_V2;
-
-			PackAddData(p, "bulk_on_rudp_recv_key", s->Connection->FirstSock->BulkSendKey->Data, RUDP_BULK_KEY_SIZE_V2);
-			s->Connection->FirstSock->BulkSendKey->Size = RUDP_BULK_KEY_SIZE_V2;
-		}
-		else
-		{
-			PackAddData(p, "bulk_on_rudp_send_key", s->Connection->FirstSock->BulkRecvKey->Data, SHA1_SIZE);
-			s->Connection->FirstSock->BulkRecvKey->Size = SHA1_SIZE;
-
-			PackAddData(p, "bulk_on_rudp_recv_key", s->Connection->FirstSock->BulkSendKey->Data, SHA1_SIZE);
-			s->Connection->FirstSock->BulkSendKey->Size = SHA1_SIZE;
-		}
-
-		// Backup R-UDP bulk send/recv keys for additional connections
-		Copy(s->BulkSendKey, s->Connection->FirstSock->BulkSendKey->Data,
-			s->Connection->FirstSock->BulkSendKey->Size);
-
-		s->BulkSendKeySize = s->Connection->FirstSock->BulkSendKey->Size;
-
-		Copy(s->BulkRecvKey, s->Connection->FirstSock->BulkRecvKey->Data,
-			s->Connection->FirstSock->BulkRecvKey->Size);
-
-		s->BulkRecvKeySize = s->Connection->FirstSock->BulkRecvKey->Size;
-	}
-
-	if (s->IsAzureSession)
-	{
-		if (s->Connection != NULL && s->Connection->FirstSock != NULL)
-		{
-			SOCK *sock = s->Connection->FirstSock;
-
-			PackAddIp(p, "azure_real_server_global_ip", &sock->Reverse_MyServerGlobalIp);
-		}
-	}
-
-	PackAddBool(p, "enable_udp_recovery", s->EnableUdpRecovery);
 
 	return p;
 }
@@ -4640,13 +4039,6 @@ bool ClientUploadAuth(CONNECTION *c)
 	// VoIP / QoS flag
 	PackAddBool(p, "qos", o->DisableQoS ? false : true);
 
-	// Bulk transfer support
-	PackAddBool(p, "support_bulk_on_rudp", true);
-	PackAddBool(p, "support_hmac_on_bulk_of_rudp", true);
-
-	// UDP recovery support
-	PackAddBool(p, "support_udp_recovery", true);
-
 	// Unique ID
 	GenerateMachineUniqueHash(unique);
 	PackAddData(p, "unique_id", unique, SHA1_SIZE);
@@ -4676,8 +4068,6 @@ bool ClientUploadAuth(CONNECTION *c)
 		PackAddBool(p, "support_udp_accel_fast_disconnect_detect", true);
 		PackAddInt(p, "udp_acceleration_max_version", 2);
 	}
-
-	PackAddInt(p, "rudp_bulk_max_version", 2);
 
 	// Brand string for the connection limit
 	{
@@ -5129,13 +4519,10 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 
 	if (o->ProxyType == PROXY_DIRECT)
 	{
-		UINT ssl_err = 0;
-		UINT nat_t_err = 0;
 		wchar_t tmp[MAX_SIZE];
 		UniFormat(tmp, sizeof(tmp), _UU("STATUS_4"), hostname);
 		PrintStatus(sess, tmp);
 
-		if (o->PortUDP == 0)
 		{
 			IP		*localIP;
 			UINT	localport;
@@ -5175,54 +4562,16 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 			}
 			// Bottom of Bind outgoing connection
 
-			// If additional_connect == false, enable trying to NAT-T connection
-			// If additional_connect == true, follow the IsRUDPSession setting in this session
-			// In additional connect or redirect we do not need ssl verification as the certificate is always compared with a saved one
-			sock = BindTcpIpConnectEx2(localIP, localport, hostname, c->ServerPort,
-				(bool *)cancel_flag, c->hWndForUI, &nat_t_err, (additional_connect ? (!sess->IsRUDPSession) : false),
-				true, (additional_connect ? NULL : sess->SslOption), &ssl_err, o->HintStr, &resolved_ip);
-		}
-		else
-		{
-			// Mode to connect with R-UDP directly without using NAT-T server when using UDP
-			IP ip;
-			if (StrToIP(&ip, hostname))
-			{
-				sock = NewRUDPClientDirect(VPN_RUDP_SVC_NAME, &ip, o->PortUDP, &nat_t_err,
-					TIMEOUT_TCP_PORT_CHECK, (bool *)cancel_flag, NULL, NULL, 0, false);
-
-				if (sock != NULL)
-				{
-					StrCpy(sock->UnderlayProtocol, sizeof(sock->UnderlayProtocol), SOCK_UNDERLAY_NAT_T);
-				}
-			}
+			sock = BindTcpIpConnectEx(localIP, localport, hostname, c->ServerPort,
+				(bool *)cancel_flag, c->hWndForUI, &resolved_ip);
 		}
 
 		if (sock == NULL)
 		{
 			// Connection failure
-			if (nat_t_err != RUDP_ERROR_NAT_T_TWO_OR_MORE)
-			{
-				if (ssl_err != 0)
-				{
-					c->Err = ssl_err;
-				}
-				else
-				{
-					c->Err = ERR_CONNECT_FAILED;
-				}
-			}
-			else
-			{
-				c->Err = ERR_NAT_T_TWO_OR_MORE;
-			}
+			c->Err = ERR_CONNECT_FAILED;
 
 			return NULL;
-		}
-
-		if (ssl_err != 0)
-		{
-			c->Err = ssl_err;
 		}
 	}
 	else
@@ -5376,66 +4725,38 @@ UINT ProxyCodeToCedar(UINT code)
 }
 
 // TCP connection function
-SOCK *TcpConnectEx3(char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, bool no_nat_t, UINT *nat_t_error_code, bool try_start_ssl, IP *ret_ip)
+SOCK *TcpConnectEx3(char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, IP *ret_ip)
 {
-	return BindTcpConnectEx3(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, hostname, port, timeout, cancel_flag, hWnd, no_nat_t, nat_t_error_code, try_start_ssl, ret_ip);
-}
-
-SOCK *TcpConnectEx4(char * hostname, UINT port, UINT timeout, bool * cancel_flag, void *hWnd, bool no_nat_t, UINT *nat_t_error_code, bool try_start_ssl, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err, char *hint_str, IP *ret_ip)
-{
-	return BindTcpConnectEx4(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, hostname, port, timeout, cancel_flag, hWnd, no_nat_t, nat_t_error_code, try_start_ssl, ssl_option, ssl_err, hint_str, ret_ip);
+	return BindTcpConnectEx3(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, hostname, port, timeout, cancel_flag, hWnd, ret_ip);
 }
 
 // Connect with TCP/IP
-SOCK *TcpIpConnectEx(char *hostname, UINT port, bool *cancel_flag, void *hWnd, UINT *nat_t_error_code, bool no_nat_t, bool try_start_ssl, IP *ret_ip)
+SOCK *TcpIpConnectEx(char *hostname, UINT port, bool *cancel_flag, void *hWnd, IP *ret_ip)
 {
-	return BindTcpIpConnectEx(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, hostname, port, cancel_flag, hWnd, nat_t_error_code, no_nat_t, try_start_ssl, ret_ip);
-}
-
-SOCK *TcpIpConnectEx2(char * hostname, UINT port, bool * cancel_flag, void *hWnd, UINT *nat_t_error_code, bool no_nat_t, bool try_start_ssl, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err, char *hint_str, IP *ret_ip)
-{
-	return BindTcpIpConnectEx2(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, hostname, port, cancel_flag, hWnd, nat_t_error_code, no_nat_t, try_start_ssl, ssl_option, ssl_err, hint_str, ret_ip);
+	return BindTcpIpConnectEx(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, hostname, port, cancel_flag, hWnd, ret_ip);
 }
 
 // TCP connection function
-//SOCK* TcpConnectEx3(char* hostname, UINT port, UINT timeout, bool* cancel_flag, void* hWnd, bool no_nat_t, UINT* nat_t_error_code, bool try_start_ssl, IP* ret_ip)
-SOCK *BindTcpConnectEx3(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, bool no_nat_t, UINT *nat_t_error_code, bool try_start_ssl, IP *ret_ip)
+//SOCK* TcpConnectEx3(char* hostname, UINT port, UINT timeout, bool* cancel_flag, void* hWnd, IP* ret_ip)
+SOCK *BindTcpConnectEx3(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, IP *ret_ip)
 {
-//	return TcpConnectEx4(hostname, port, timeout, cancel_flag, hWnd, no_nat_t, nat_t_error_code, try_start_ssl, NULL, NULL, NULL, ret_ip);
-	return BindTcpConnectEx4(localIP, localport, hostname, port, timeout, cancel_flag, hWnd, no_nat_t, nat_t_error_code, try_start_ssl, NULL, NULL, NULL, ret_ip);
-}
-//SOCK *TcpConnectEx4(char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, bool no_nat_t, UINT *nat_t_error_code, bool try_start_ssl, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err, char *hint_str, IP *ret_ip)
-SOCK *BindTcpConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, bool no_nat_t, UINT *nat_t_error_code, bool try_start_ssl, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err, char *hint_str, IP *ret_ip)
-{
-//		return ConnectEx5(hostname, port, timeout, cancel_flag, (no_nat_t ? NULL : VPN_RUDP_SVC_NAME), nat_t_error_code, try_start_ssl, true, ssl_option, ssl_err, hint_str, ret_ip);
-	return BindConnectEx5(localIP, localport, hostname, port, timeout, cancel_flag, (no_nat_t ? NULL : VPN_RUDP_SVC_NAME), nat_t_error_code, try_start_ssl, true, ssl_option, ssl_err, hint_str, ret_ip);
+//	return ConnectEx4(hostname, port, timeout, cancel_flag, true, ret_ip);
+	return BindConnectEx4(localIP, localport, hostname, port, timeout, cancel_flag, true, ret_ip);
 }
 
 // Connect with TCP/IP
-//SOCK *TcpIpConnectEx(char *hostname, UINT port, bool *cancel_flag, void *hWnd, UINT *nat_t_error_code, bool no_nat_t, bool try_start_ssl, IP *ret_ip)
-SOCK *BindTcpIpConnectEx(IP *localIP, UINT localport, char *hostname, UINT port, bool *cancel_flag, void *hWnd, UINT *nat_t_error_code, bool no_nat_t, bool try_start_ssl, IP *ret_ip)
-{
-//	return TcpIpConnectEx2(hostname, port, cancel_flag, hWnd, nat_t_error_code, no_nat_t, try_start_ssl, NULL, NULL, NULL, ret_ip);
-	return BindTcpIpConnectEx2(localIP, localport, hostname, port, cancel_flag, hWnd, nat_t_error_code, no_nat_t, try_start_ssl, NULL, NULL, NULL, ret_ip);
-}
-//SOCK *TcpIpConnectEx2(char *hostname, UINT port, bool *cancel_flag, void *hWnd, UINT *nat_t_error_code, bool no_nat_t, bool try_start_ssl, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err, char *hint_str, IP *ret_ip)
-SOCK *BindTcpIpConnectEx2(IP *localIP, UINT localport, char *hostname, UINT port, bool *cancel_flag, void *hWnd, UINT *nat_t_error_code, bool no_nat_t, bool try_start_ssl, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err, char *hint_str, IP *ret_ip)
+//SOCK *TcpIpConnectEx(char *hostname, UINT port, bool *cancel_flag, void *hWnd, IP *ret_ip)
+SOCK *BindTcpIpConnectEx(IP *localIP, UINT localport, char *hostname, UINT port, bool *cancel_flag, void *hWnd, IP *ret_ip)
 {
 	SOCK *s = NULL;
-	UINT dummy_int = 0;
 	// Validate arguments
-	if (nat_t_error_code == NULL)
-	{
-		nat_t_error_code = &dummy_int;
-	}
-	*nat_t_error_code = 0;
 	if (hostname == NULL || port == 0)
 	{
 		return NULL;
 	}
 
-//	s = TcpConnectEx4(hostname, port, 0, cancel_flag, hWnd, no_nat_t, nat_t_error_code, try_start_ssl, ssl_option, ssl_err, hint_str, ret_ip);
-	s = BindTcpConnectEx4(localIP, localport, hostname, port, 0, cancel_flag, hWnd, no_nat_t, nat_t_error_code, try_start_ssl, ssl_option, ssl_err, hint_str, ret_ip);
+//	s = TcpConnectEx3(hostname, port, 0, cancel_flag, hWnd, ret_ip);
+	s = BindTcpConnectEx3(localIP, localport, hostname, port, 0, cancel_flag, hWnd, ret_ip);
 	if (s == NULL)
 	{
 		return NULL;

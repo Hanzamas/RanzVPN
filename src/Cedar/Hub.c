@@ -3380,11 +3380,6 @@ bool HubPaPutPacket(SESSION *s, void *data, UINT size)
 			// If the link is established with UDP acceleration function, use optimum value of the UDP acceleration function
 			target_mss = MIN(target_mss, s->UdpAccelMss);
 		}
-		else if (s->IsRUDPSession && s->RUdpMss != 0)
-		{
-			// If the link with UDP acceleration is not established, use the optimum value for R-UDP in the case of using R-UDP connection
-			target_mss = MIN(target_mss, s->RUdpMss);
-		}
 
 		if (target_mss != INFINITE)
 		{
@@ -5148,8 +5143,7 @@ void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *
 	if (src != NULL && dest->Session != NULL && src->Hub != NULL && src->Hub->Option != NULL)
 	{
 		if (dest->Session->AdjustMss != 0 ||
-			(dest->Session->UseUdpAcceleration && dest->Session->UdpAccelMss != 0) ||
-			(dest->Session->IsRUDPSession && dest->Session->RUdpMss != 0))
+			(dest->Session->UseUdpAcceleration && dest->Session->UdpAccelMss != 0))
 		{
 			if (src->Hub->Option->DisableAdjustTcpMss == false)
 			{
@@ -5163,10 +5157,6 @@ void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *
 				if (dest->Session->UseUdpAcceleration && dest->Session->UdpAccelMss != 0)
 				{
 					target_mss = MIN(target_mss, dest->Session->UdpAccelMss);
-				}
-				else if (dest->Session->IsRUDPSession && dest->Session->RUdpMss != 0)
-				{
-					target_mss = MIN(target_mss, dest->Session->RUdpMss);
 				}
 
 				// Processing of Adjust TCP MSS

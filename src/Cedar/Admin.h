@@ -541,16 +541,6 @@ struct RPC_DELETE_TABLE
 	UINT Key;										// Key
 };
 
-// KEEP setting
-struct RPC_KEEP
-{
-	bool UseKeepConnect;					// Keep connected to the Internet
-	char KeepConnectHost[MAX_HOST_NAME_LEN + 1];	// Host name
-	UINT KeepConnectPort;					// Port number
-	UINT KeepConnectProtocol;				// Protocol
-	UINT KeepConnectInterval;				// Interval
-};
-
 // Ethernet enumeration item
 struct RPC_ENUM_ETH_ITEM
 {
@@ -780,20 +770,6 @@ struct RPC_MSG
 	wchar_t *Msg;							// Message
 };
 
-// Set the special listener
-struct RPC_SPECIAL_LISTENER
-{
-	bool VpnOverIcmpListener;				// VPN over ICMP
-	bool VpnOverDnsListener;				// VPN over DNS
-};
-
-// Get / Set the Azure state
-struct RPC_AZURE_STATUS
-{
-	bool IsEnabled;							// Whether enabled
-	bool IsConnected;						// Whether it's connected
-};
-
 
 // Function prototype
 UINT AdminAccept(CONNECTION *c, PACK *p);
@@ -878,8 +854,6 @@ UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t);
 UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t);
 UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t);
 UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t);
-UINT StSetKeep(ADMIN *a, RPC_KEEP *t);
-UINT StGetKeep(ADMIN *a, RPC_KEEP *t);
 UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t);
 UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t);
 UINT StDeleteLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t);
@@ -928,15 +902,7 @@ UINT StCrash(ADMIN *a, RPC_TEST *t);
 UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t);
 UINT StFlush(ADMIN *a, RPC_TEST *t);
 UINT StDebug(ADMIN *a, RPC_TEST *t);
-UINT StGetDDnsClientStatus(ADMIN *a, DDNS_CLIENT_STATUS *t);
-UINT StChangeDDnsClientHostname(ADMIN *a, RPC_TEST *t);
 UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t);
-UINT StSetSpecialListener(ADMIN *a, RPC_SPECIAL_LISTENER *t);
-UINT StGetSpecialListener(ADMIN *a, RPC_SPECIAL_LISTENER *t);
-UINT StGetAzureStatus(ADMIN *a, RPC_AZURE_STATUS *t);
-UINT StSetAzureStatus(ADMIN *a, RPC_AZURE_STATUS *t);
-UINT StGetDDnsInternetSetting(ADMIN *a, INTERNET_SETTING *t);
-UINT StSetDDnsInternetSetting(ADMIN *a, INTERNET_SETTING *t);
 
 UINT ScTest(RPC *r, RPC_TEST *t);
 UINT ScGetServerInfo(RPC *r, RPC_SERVER_INFO *t);
@@ -997,8 +963,6 @@ UINT ScDeleteIpTable(RPC *r, RPC_DELETE_TABLE *t);
 UINT ScGetLink(RPC *a, RPC_CREATE_LINK *t);
 UINT ScSetLink(RPC *a, RPC_CREATE_LINK *t);
 UINT ScSetAccessList(RPC *r, RPC_ENUM_ACCESS_LIST *t);
-UINT ScSetKeep(RPC *r, RPC_KEEP *t);
-UINT ScGetKeep(RPC *r, RPC_KEEP *t);
 UINT ScEnumEthernet(RPC *r, RPC_ENUM_ETH *t);
 UINT ScAddLocalBridge(RPC *r, RPC_LOCALBRIDGE *t);
 UINT ScDeleteLocalBridge(RPC *r, RPC_LOCALBRIDGE *t);
@@ -1047,15 +1011,7 @@ UINT ScCrash(RPC *r, RPC_TEST *t);
 UINT ScGetAdminMsg(RPC *r, RPC_MSG *t);
 UINT ScFlush(RPC *r, RPC_TEST *t);
 UINT ScDebug(RPC *r, RPC_TEST *t);
-UINT ScGetDDnsClientStatus(RPC *r, DDNS_CLIENT_STATUS *t);
-UINT ScChangeDDnsClientHostname(RPC *r, RPC_TEST *t);
 UINT ScRegenerateServerCert(RPC *r, RPC_TEST *t);
-UINT ScSetSpecialListener(RPC *r, RPC_SPECIAL_LISTENER *t);
-UINT ScGetSpecialListener(RPC *r, RPC_SPECIAL_LISTENER *t);
-UINT ScGetAzureStatus(RPC *r, RPC_AZURE_STATUS *t);
-UINT ScSetAzureStatus(RPC *r, RPC_AZURE_STATUS *t);
-UINT ScGetDDnsInternetSetting(RPC *r, INTERNET_SETTING *t);
-UINT ScSetDDnsInternetSetting(RPC *r, INTERNET_SETTING *t);
 
 void InRpcTest(RPC_TEST *t, PACK *p);
 void OutRpcTest(PACK *p, RPC_TEST *t);
@@ -1172,8 +1128,6 @@ void OutRpcAddAccess(PACK *p, RPC_ADD_ACCESS *t);
 void InRpcDeleteAccess(RPC_DELETE_ACCESS *t, PACK *p);
 void OutRpcDeleteAccess(PACK *p, RPC_DELETE_ACCESS *t);
 void FreeRpcSetGroup(RPC_SET_GROUP *t);
-void InRpcKeep(RPC_KEEP *t, PACK *p);
-void OutRpcKeep(PACK *p, RPC_KEEP *t);
 void InRpcOsInfo(OS_INFO *t, PACK *p);
 void OutRpcOsInfo(PACK *p, OS_INFO *t);
 void FreeRpcOsInfo(OS_INFO *t);
@@ -1240,12 +1194,6 @@ void OutRpcMsg(PACK *p, RPC_MSG *t);
 void FreeRpcMsg(RPC_MSG *t);
 void InRpcWinVer(RPC_WINVER *t, PACK *p);
 void OutRpcWinVer(PACK *p, RPC_WINVER *t);
-void InDDnsClientStatus(DDNS_CLIENT_STATUS *t, PACK *p);
-void OutDDnsClientStatus(PACK *p, DDNS_CLIENT_STATUS *t);
-void InRpcSpecialListener(RPC_SPECIAL_LISTENER *t, PACK *p);
-void OutRpcSpecialListener(PACK *p, RPC_SPECIAL_LISTENER *t);
-void InRpcAzureStatus(RPC_AZURE_STATUS *t, PACK *p);
-void OutRpcAzureStatus(PACK *p, RPC_AZURE_STATUS *t);
 void InRpcInternetSetting(INTERNET_SETTING *t, PACK *p);
 void OutRpcInternetSetting(PACK *p, INTERNET_SETTING *t);
 

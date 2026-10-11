@@ -16,9 +16,6 @@
 
 // Constants
 #define	CLIENT_CONFIG_FILE_NAME				"$vpn_client.config"
-#define	CLIENT_DEFAULT_KEEPALIVE_HOST		"keepalive.softether.org"
-#define	CLIENT_DEFAULT_KEEPALIVE_PORT		80
-#define	CLIENT_DEFAULT_KEEPALIVE_INTERVAL	KEEP_INTERVAL_DEFAULT
 
 #define	CLIENT_RPC_MODE_NOTIFY				0
 #define	CLIENT_RPC_MODE_MANAGEMENT			1
@@ -75,11 +72,6 @@ struct ACCOUNT
 struct CLIENT_CONFIG
 {
 	bool AllowRemoteConfig;					// Allow the remote configuration
-	bool UseKeepConnect;					// Keep connected to the Internet
-	char KeepConnectHost[MAX_HOST_NAME_LEN + 1];	// Host name
-	UINT KeepConnectPort;					// Port number
-	UINT KeepConnectProtocol;				// Protocol
-	UINT KeepConnectInterval;				// Interval
 	bool NoChangeWcmNetworkSettingOnWindows8;	// Don't change the WCM network settings on Windows 8
 	bool DisableRpcDynamicPortListener;
 };
@@ -301,7 +293,6 @@ struct RPC_CLIENT_GET_CONNECTION_STATUS
 	char CipherName[32];					// Cipher algorithm name
 	char ProtocolName[64];					// Protocol name
 	bool UseCompress;						// Use of compression
-	bool IsRUDPSession;						// R-UDP session
 	char UnderlayProtocol[64];				// Physical communication protocol
 	char ProtocolDetails[256];				// Protocol details
 	bool IsUdpAccelerationEnabled;			// The UDP acceleration is enabled
@@ -351,7 +342,6 @@ struct CLIENT
 	THREAD *SaverThread;					// Saver thread
 	EVENT *SaverHalter;						// The event to stop the Saver thread
 	LIST *NotifyCancelList;					// Notification event list
-	KEEP *Keep;								// Keep Connection
 	LIST *UnixVLanList;						// List of virtual LAN cards in UNIX
 	LOG *Logger;							// Logger
 	bool DontSavePassword;					// Flag for not to save the password
@@ -538,8 +528,6 @@ void CiFreeAccount(ACCOUNT *a);
 void CiNotify(CLIENT *c);
 void CiNotifyInternal(CLIENT *c);
 void CiClientStatusPrinter(SESSION *s, wchar_t *status);
-void CiInitKeep(CLIENT *c);
-void CiFreeKeep(CLIENT *c);
 int CiCompareUnixVLan(void *p1, void *p2);
 BUF *CiAccountToCfg(RPC_CLIENT_CREATE_ACCOUNT *t);
 RPC_CLIENT_CREATE_ACCOUNT *CiCfgToAccount(BUF *b);

@@ -159,13 +159,6 @@ struct SESSION
 	UINT AdjustMss;					// MSS adjustment value
 	bool IsVPNClientAndVLAN_Win32;	// Is the VPN Client session with a VLAN card (Win32)
 
-	bool IsRUDPSession;				// Whether R-UDP session
-	UINT RUdpMss;					// The value of the MSS should be applied while the R-UDP is used
-	bool EnableBulkOnRUDP;			// Allow the bulk transfer in the R-UDP session
-	UINT BulkOnRUDPVersion;			// RUDP Bulk version
-	bool EnableHMacOnBulkOfRUDP;	// Use the HMAC to sign the bulk transfer of R-UDP session
-	bool EnableUdpRecovery;			// Enable the R-UDP recovery
-
 	bool UseUdpAcceleration;		// Use of UDP acceleration mode
 	UINT UdpAccelerationVersion;	// UDP acceleration version
 	bool UseHMacOnUdpAcceleration;	// Use the HMAC in the UDP acceleration mode
@@ -173,9 +166,6 @@ struct SESSION
 	bool IsUsingUdpAcceleration;	// Flag of whether the UDP acceleration is used
 	UINT UdpAccelMss;				// MSS value to be applied while the UDP acceleration is used
 	bool UdpAccelFastDisconnectDetect;	// Fast disconnection detection is enabled
-
-	bool IsAzureSession;			// Whether the session via VPN Azure
-	IP AzureRealServerGlobalIp;		// Real global IP of the server-side in the case of session via VPN Azure
 
 	ACCOUNT *Account;				// Client account
 	UINT VLanDeviceErrorCount;		// Number of times that the error occurred in the virtual LAN card
@@ -206,11 +196,6 @@ struct SESSION
 	bool FirstTimeHttpRedirect;		// Redirect HTTP only for the first time
 	char FirstTimeHttpRedirectUrl[128];	// URL for redirection only the first time
 	UINT FirstTimeHttpAccessCheckIp;	// IP address for access checking
-
-	UCHAR BulkSendKey[RUDP_BULK_KEY_SIZE_MAX];	// RUDP Bulk Send Key
-	UINT BulkSendKeySize;						// RUDP Bulk Send Key size
-	UCHAR BulkRecvKey[RUDP_BULK_KEY_SIZE_MAX];	// RUDP Bulk Recv Key
-	UINT BulkRecvKeySize;						// RUDP Bulk Recv Key size
 
 	// To examine the maximum number of allowed logging target packets per minute
 	UINT64 MaxLoggedPacketsPerMinuteStartTick;	// Inspection start time

@@ -8,11 +8,9 @@
 #include "Admin.h"
 
 #include "Account.h"
-#include "AzureClient.h"
 #include "BridgeUnix.h"
 #include "BridgeWin32.h"
 #include "Connection.h"
-#include "DDNS.h"
 #include "Layer3.h"
 #include "Link.h"
 #include "Listener.h"
@@ -359,8 +357,6 @@ PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 	DECLARE_RPC("DeleteMacTable", RPC_DELETE_TABLE, StDeleteMacTable, InRpcDeleteTable, OutRpcDeleteTable)
 	DECLARE_RPC_EX("EnumIpTable", RPC_ENUM_IP_TABLE, StEnumIpTable, InRpcEnumIpTable, OutRpcEnumIpTable, FreeRpcEnumIpTable)
 	DECLARE_RPC("DeleteIpTable", RPC_DELETE_TABLE, StDeleteIpTable, InRpcDeleteTable, OutRpcDeleteTable)
-	DECLARE_RPC("SetKeep", RPC_KEEP, StSetKeep, InRpcKeep, OutRpcKeep)
-	DECLARE_RPC("GetKeep", RPC_KEEP, StGetKeep, InRpcKeep, OutRpcKeep)
 	DECLARE_RPC_EX("EnumEthernet", RPC_ENUM_ETH, StEnumEthernet, InRpcEnumEth, OutRpcEnumEth, FreeRpcEnumEth)
 	DECLARE_RPC("AddLocalBridge", RPC_LOCALBRIDGE, StAddLocalBridge, InRpcLocalBridge, OutRpcLocalBridge)
 	DECLARE_RPC("DeleteLocalBridge", RPC_LOCALBRIDGE, StDeleteLocalBridge, InRpcLocalBridge, OutRpcLocalBridge)
@@ -409,15 +405,7 @@ PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 	DECLARE_RPC_EX("GetAdminMsg", RPC_MSG, StGetAdminMsg, InRpcMsg, OutRpcMsg, FreeRpcMsg)
 	DECLARE_RPC("Flush", RPC_TEST, StFlush, InRpcTest, OutRpcTest)
 	DECLARE_RPC("Debug", RPC_TEST, StDebug, InRpcTest, OutRpcTest)
-	DECLARE_RPC("GetDDnsClientStatus", DDNS_CLIENT_STATUS, StGetDDnsClientStatus, InDDnsClientStatus, OutDDnsClientStatus)
-	DECLARE_RPC("ChangeDDnsClientHostname", RPC_TEST, StChangeDDnsClientHostname, InRpcTest, OutRpcTest)
 	DECLARE_RPC("RegenerateServerCert", RPC_TEST, StRegenerateServerCert, InRpcTest, OutRpcTest)
-	DECLARE_RPC("SetSpecialListener", RPC_SPECIAL_LISTENER, StSetSpecialListener, InRpcSpecialListener, OutRpcSpecialListener)
-	DECLARE_RPC("GetSpecialListener", RPC_SPECIAL_LISTENER, StGetSpecialListener, InRpcSpecialListener, OutRpcSpecialListener)
-	DECLARE_RPC("GetAzureStatus", RPC_AZURE_STATUS, StGetAzureStatus, InRpcAzureStatus, OutRpcAzureStatus)
-	DECLARE_RPC("SetAzureStatus", RPC_AZURE_STATUS, StSetAzureStatus, InRpcAzureStatus, OutRpcAzureStatus)
-	DECLARE_RPC("GetDDnsInternetSetting", INTERNET_SETTING, StGetDDnsInternetSetting, InRpcInternetSetting, OutRpcInternetSetting)
-	DECLARE_RPC("SetDDnsInternetSetting", INTERNET_SETTING, StSetDDnsInternetSetting, InRpcInternetSetting, OutRpcInternetSetting)
 	// RPC function declaration: till here
 
 
@@ -516,8 +504,6 @@ DECLARE_SC_EX("EnumMacTable", RPC_ENUM_MAC_TABLE, ScEnumMacTable, InRpcEnumMacTa
 DECLARE_SC("DeleteMacTable", RPC_DELETE_TABLE, ScDeleteMacTable, InRpcDeleteTable, OutRpcDeleteTable)
 DECLARE_SC_EX("EnumIpTable", RPC_ENUM_IP_TABLE, ScEnumIpTable, InRpcEnumIpTable, OutRpcEnumIpTable, FreeRpcEnumIpTable)
 DECLARE_SC("DeleteIpTable", RPC_DELETE_TABLE, ScDeleteIpTable, InRpcDeleteTable, OutRpcDeleteTable)
-DECLARE_SC("SetKeep", RPC_KEEP, ScSetKeep, InRpcKeep, OutRpcKeep)
-DECLARE_SC("GetKeep", RPC_KEEP, ScGetKeep, InRpcKeep, OutRpcKeep)
 DECLARE_SC_EX("EnumEthernet", RPC_ENUM_ETH, ScEnumEthernet, InRpcEnumEth, OutRpcEnumEth, FreeRpcEnumEth)
 DECLARE_SC("AddLocalBridge", RPC_LOCALBRIDGE, ScAddLocalBridge, InRpcLocalBridge, OutRpcLocalBridge)
 DECLARE_SC("DeleteLocalBridge", RPC_LOCALBRIDGE, ScDeleteLocalBridge, InRpcLocalBridge, OutRpcLocalBridge)
@@ -566,220 +552,8 @@ DECLARE_SC("Crash", RPC_TEST, ScCrash, InRpcTest, OutRpcTest)
 DECLARE_SC_EX("GetAdminMsg", RPC_MSG, ScGetAdminMsg, InRpcMsg, OutRpcMsg, FreeRpcMsg)
 DECLARE_SC("Flush", RPC_TEST, ScFlush, InRpcTest, OutRpcTest)
 DECLARE_SC("Debug", RPC_TEST, ScDebug, InRpcTest, OutRpcTest)
-DECLARE_SC("GetDDnsClientStatus", DDNS_CLIENT_STATUS, ScGetDDnsClientStatus, InDDnsClientStatus, OutDDnsClientStatus)
-DECLARE_SC("ChangeDDnsClientHostname", RPC_TEST, ScChangeDDnsClientHostname, InRpcTest, OutRpcTest)
 DECLARE_SC("RegenerateServerCert", RPC_TEST, ScRegenerateServerCert, InRpcTest, OutRpcTest)
-DECLARE_SC("SetSpecialListener", RPC_SPECIAL_LISTENER, ScSetSpecialListener, InRpcSpecialListener, OutRpcSpecialListener)
-DECLARE_SC("GetSpecialListener", RPC_SPECIAL_LISTENER, ScGetSpecialListener, InRpcSpecialListener, OutRpcSpecialListener)
-DECLARE_SC("GetAzureStatus", RPC_AZURE_STATUS, ScGetAzureStatus, InRpcAzureStatus, OutRpcAzureStatus)
-DECLARE_SC("SetAzureStatus", RPC_AZURE_STATUS, ScSetAzureStatus, InRpcAzureStatus, OutRpcAzureStatus)
-DECLARE_SC("GetDDnsInternetSetting", INTERNET_SETTING, ScGetDDnsInternetSetting, InRpcInternetSetting, OutRpcInternetSetting)
-DECLARE_SC("SetDDnsInternetSetting", INTERNET_SETTING, ScSetDDnsInternetSetting, InRpcInternetSetting, OutRpcInternetSetting)
 // RPC call function declaration: till here
-
-// Get DDNS proxy configuration
-UINT StGetDDnsInternetSetting(ADMIN *a, INTERNET_SETTING *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
-
-	SERVER_ADMIN_ONLY;
-	NO_SUPPORT_FOR_BRIDGE;
-
-	if (s->DDnsClient == NULL)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
-	Zero(t, sizeof(INTERNET_SETTING));
-
-	DCGetInternetSetting(s->DDnsClient, t);
-
-	return ret;
-}
-
-// Set DDNS proxy configuration
-UINT StSetDDnsInternetSetting(ADMIN *a, INTERNET_SETTING *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
-
-	SERVER_ADMIN_ONLY;
-	NO_SUPPORT_FOR_BRIDGE;
-
-	if (s->DDnsClient == NULL)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
-	DCSetInternetSetting(s->DDnsClient, t);
-
-	IncrementServerConfigRevision(s);
-
-	return ret;
-}
-
-// Get Azure status
-UINT StGetAzureStatus(ADMIN *a, RPC_AZURE_STATUS *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
-	AZURE_CLIENT *ac;
-
-	SERVER_ADMIN_ONLY;
-	NO_SUPPORT_FOR_BRIDGE;
-
-	if (SiIsAzureSupported(s) == false)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
-	ac = s->AzureClient;
-	if (ac == NULL)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
-	Zero(t, sizeof(RPC_AZURE_STATUS));
-
-	Lock(ac->Lock);
-	{
-		t->IsConnected = ac->IsConnected;
-		t->IsEnabled = ac->IsEnabled;
-	}
-	Unlock(ac->Lock);
-
-	return ERR_NO_ERROR;
-}
-
-// Set Azure status
-UINT StSetAzureStatus(ADMIN *a, RPC_AZURE_STATUS *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
-
-	SERVER_ADMIN_ONLY;
-	NO_SUPPORT_FOR_BRIDGE;
-
-	if (SiIsAzureSupported(s) == false)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
-	SiSetAzureEnable(s, t->IsEnabled);
-
-	IncrementServerConfigRevision(s);
-
-	return ERR_NO_ERROR;
-}
-
-// Get special listener status
-UINT StGetSpecialListener(ADMIN *a, RPC_SPECIAL_LISTENER *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
-
-	SERVER_ADMIN_ONLY;
-	NO_SUPPORT_FOR_BRIDGE;
-
-	Zero(t, sizeof(RPC_SPECIAL_LISTENER));
-	t->VpnOverDnsListener = s->EnableVpnOverDns;
-	t->VpnOverIcmpListener = s->EnableVpnOverIcmp;
-
-	return ERR_NO_ERROR;
-}
-
-// Set special listener status
-UINT StSetSpecialListener(ADMIN *a, RPC_SPECIAL_LISTENER *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
-
-	SERVER_ADMIN_ONLY;
-	NO_SUPPORT_FOR_BRIDGE;
-
-	// Check ports
-	if (t->VpnOverDnsListener && (MAKEBOOL(s->EnableVpnOverDns) != MAKEBOOL(t->VpnOverDnsListener)))
-	{
-		if (SiCanOpenVpnOverDnsPort() == false)
-		{
-			return ERR_SPECIAL_LISTENER_DNS_ERROR;
-		}
-	}
-
-	if (t->VpnOverIcmpListener && (MAKEBOOL(s->EnableVpnOverIcmp) != MAKEBOOL(t->VpnOverIcmpListener)))
-	{
-		if (SiCanOpenVpnOverIcmpPort() == false)
-		{
-			return ERR_SPECIAL_LISTENER_ICMP_ERROR;
-		}
-	}
-
-	s->EnableVpnOverDns = t->VpnOverDnsListener;
-	s->EnableVpnOverIcmp = t->VpnOverIcmpListener;
-
-	SiApplySpecialListenerStatus(s);
-
-	ALog(a, NULL, "LA_SET_SPECIAL_LISTENER");
-
-	IncrementServerConfigRevision(s);
-
-	return ERR_NO_ERROR;
-}
-
-// Get status of DDNS client
-UINT StGetDDnsClientStatus(ADMIN *a, DDNS_CLIENT_STATUS *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
-
-	SERVER_ADMIN_ONLY;
-	NO_SUPPORT_FOR_BRIDGE;
-
-	if (s->DDnsClient == NULL)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
-	Zero(t, sizeof(DDNS_CLIENT_STATUS));
-	DCGetStatus(s->DDnsClient, t);
-
-	return ERR_NO_ERROR;
-}
-
-// Change host-name for DDNS client
-UINT StChangeDDnsClientHostname(ADMIN *a, RPC_TEST *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
-
-	SERVER_ADMIN_ONLY;
-	NO_SUPPORT_FOR_BRIDGE;
-
-	if (s->DDnsClient == NULL)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
-	ret = DCChangeHostName(s->DDnsClient, t->StrValue);
-
-	if (ret == ERR_NO_ERROR)
-	{
-		ALog(a, NULL, "LA_DDNS_HOSTNAME_CHANGED", t->StrValue);
-	}
-
-	IncrementServerConfigRevision(s);
-
-	return ret;
-}
 
 // Regenerate server certification
 UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t)
@@ -2798,71 +2572,6 @@ UINT StGetSysLog(ADMIN *a, SYSLOG_SETTING *t)
 			t->Port = 0;
 		}
 	}
-
-	return ERR_NO_ERROR;
-}
-
-// Set keep-alive function setting
-UINT StSetKeep(ADMIN *a, RPC_KEEP *t)
-{
-	SERVER *s = a->Server;
-
-	if (t->UseKeepConnect)
-	{
-		if (IsEmptyStr(t->KeepConnectHost) ||
-			t->KeepConnectPort == 0 ||
-			t->KeepConnectPort >= 65536)
-		{
-			return ERR_INVALID_PARAMETER;
-		}
-	}
-
-	SERVER_ADMIN_ONLY;
-
-	Lock(s->Keep->lock);
-	{
-		KEEP *keep = s->Keep;
-		keep->Enable = t->UseKeepConnect;
-		keep->Server = true;
-		StrCpy(keep->ServerName, sizeof(keep->ServerName), t->KeepConnectHost);
-		keep->ServerPort = t->KeepConnectPort;
-		keep->UdpMode = t->KeepConnectProtocol;
-		keep->Interval = t->KeepConnectInterval * 1000;
-		if (keep->Interval < 5000)
-		{
-			keep->Interval = 5000;
-		}
-		else if (keep->Interval > 600000)
-		{
-			keep->Interval = 600000;
-		}
-	}
-	Unlock(s->Keep->lock);
-
-	ALog(a, NULL, "LA_SET_KEEP");
-
-	IncrementServerConfigRevision(s);
-
-	return ERR_NO_ERROR;
-}
-
-// Get keep-alive function setting
-UINT StGetKeep(ADMIN *a, RPC_KEEP *t)
-{
-	SERVER *s = a->Server;
-
-	Zero(t, sizeof(RPC_KEEP));
-
-	Lock(s->Keep->lock);
-	{
-		KEEP *k = s->Keep;
-		t->UseKeepConnect = k->Enable;
-		StrCpy(t->KeepConnectHost, sizeof(t->KeepConnectHost), k->ServerName);
-		t->KeepConnectPort = k->ServerPort;
-		t->KeepConnectProtocol = k->UdpMode;
-		t->KeepConnectInterval = k->Interval / 1000;
-	}
-	Unlock(s->Keep->lock);
 
 	return ERR_NO_ERROR;
 }
@@ -6615,47 +6324,6 @@ void CopyOsInfo(OS_INFO *dst, OS_INFO *info)
 	dst->KernelVersion = CopyStr(info->KernelVersion);
 }
 
-// DDNS_CLIENT_STATUS
-void InDDnsClientStatus(DDNS_CLIENT_STATUS *t, PACK *p)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(DDNS_CLIENT_STATUS));
-
-	t->Err_IPv4 = PackGetInt(p, "Err_IPv4");
-	t->Err_IPv6 = PackGetInt(p, "Err_IPv6");
-
-	PackGetStr(p, "CurrentHostName", t->CurrentHostName, sizeof(t->CurrentHostName));
-	PackGetStr(p, "CurrentFqdn", t->CurrentFqdn, sizeof(t->CurrentFqdn));
-	PackGetStr(p, "DnsSuffix", t->DnsSuffix, sizeof(t->DnsSuffix));
-	PackGetStr(p, "CurrentIPv4", t->CurrentIPv4, sizeof(t->CurrentIPv4));
-	PackGetStr(p, "CurrentIPv6", t->CurrentIPv6, sizeof(t->CurrentIPv6));
-	PackGetUniStr(p, "ErrStr_IPv4", t->ErrStr_IPv4, sizeof(t->ErrStr_IPv4));
-	PackGetUniStr(p, "ErrStr_IPv6", t->ErrStr_IPv6, sizeof(t->ErrStr_IPv6));
-}
-void OutDDnsClientStatus(PACK *p, DDNS_CLIENT_STATUS *t)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "Err_IPv4", t->Err_IPv4);
-	PackAddInt(p, "Err_IPv6", t->Err_IPv6);
-	PackAddStr(p, "CurrentHostName", t->CurrentHostName);
-	PackAddStr(p, "CurrentFqdn", t->CurrentFqdn);
-	PackAddStr(p, "DnsSuffix", t->DnsSuffix);
-	PackAddStr(p, "CurrentIPv4", t->CurrentIPv4);
-	PackAddStr(p, "CurrentIPv6", t->CurrentIPv6);
-	PackAddUniStr(p, "ErrStr_IPv4", t->ErrStr_IPv4);
-	PackAddUniStr(p, "ErrStr_IPv6", t->ErrStr_IPv6);
-}
-
 // INTERNET_SETTING
 void InRpcInternetSetting(INTERNET_SETTING *t, PACK *p)
 {
@@ -6686,58 +6354,6 @@ void OutRpcInternetSetting(PACK *p, INTERNET_SETTING *t)
 	PackAddStr(p, "ProxyUsername", t->ProxyUsername);
 	PackAddStr(p, "ProxyPassword", t->ProxyPassword);
 	PackAddStr(p, "CustomHttpHeader", t->CustomHttpHeader);
-}
-
-// RPC_AZURE_STATUS
-void InRpcAzureStatus(RPC_AZURE_STATUS *t, PACK *p)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_AZURE_STATUS));
-
-	t->IsConnected = PackGetBool(p, "IsConnected");
-	t->IsEnabled = PackGetBool(p, "IsEnabled");
-}
-void OutRpcAzureStatus(PACK *p, RPC_AZURE_STATUS *t)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddBool(p, "IsConnected", t->IsConnected);
-	PackAddBool(p, "IsEnabled", t->IsEnabled);
-}
-
-// RPC_SPECIAL_LISTENER
-void InRpcSpecialListener(RPC_SPECIAL_LISTENER *t, PACK *p)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_SPECIAL_LISTENER));
-
-	t->VpnOverIcmpListener = PackGetBool(p, "VpnOverIcmpListener");
-	t->VpnOverDnsListener = PackGetBool(p, "VpnOverDnsListener");
-}
-void OutRpcSpecialListener(PACK *p, RPC_SPECIAL_LISTENER *t)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddBool(p, "VpnOverIcmpListener", t->VpnOverIcmpListener);
-	PackAddBool(p, "VpnOverDnsListener", t->VpnOverDnsListener);
 }
 
 
@@ -10283,37 +9899,6 @@ void OutRpcDeleteTable(PACK *p, RPC_DELETE_TABLE *t)
 
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddInt(p, "Key", t->Key);
-}
-
-// RPC_KEEP
-void InRpcKeep(RPC_KEEP *t, PACK *p)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_KEEP));
-	t->UseKeepConnect = PackGetBool(p, "UseKeepConnect");
-	PackGetStr(p, "KeepConnectHost", t->KeepConnectHost, sizeof(t->KeepConnectHost));
-	t->KeepConnectPort = PackGetInt(p, "KeepConnectPort");
-	t->KeepConnectProtocol = PackGetInt(p, "KeepConnectProtocol");
-	t->KeepConnectInterval = PackGetInt(p, "KeepConnectInterval");
-}
-void OutRpcKeep(PACK *p, RPC_KEEP *t)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddBool(p, "UseKeepConnect", t->UseKeepConnect);
-	PackAddStr(p, "KeepConnectHost", t->KeepConnectHost);
-	PackAddInt(p, "KeepConnectPort", t->KeepConnectPort);
-	PackAddInt(p, "KeepConnectProtocol", t->KeepConnectProtocol);
-	PackAddInt(p, "KeepConnectInterval", t->KeepConnectInterval);
 }
 
 // test RPC function
