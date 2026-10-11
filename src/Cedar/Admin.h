@@ -62,7 +62,6 @@ struct RPC_SERVER_INFO
 	UINT ServerBuildInt;				// Server build number integer value
 	char ServerHostName[MAX_HOST_NAME_LEN + 1];	// Server host name
 	UINT64 ServerBuildDate;				// Build date and time of the server
-	char ServerFamilyName[128];			// Family name
 	OS_INFO OsInfo;						// OS information
 };
 

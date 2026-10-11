@@ -6294,7 +6294,6 @@ UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t)
 	st.wSecond = BUILD_DATE_SE;
 
 	t->ServerBuildDate = SystemToUINT64(&st);
-	StrCpy(t->ServerFamilyName, sizeof(t->ServerFamilyName), UPDATE_FAMILY_NAME);
 
 	info = GetOsInfo();
 	if (info != NULL)
@@ -7851,7 +7850,6 @@ void InRpcServerInfo(RPC_SERVER_INFO *t, PACK *p)
 	t->ServerBuildInt = PackGetInt(p, "ServerBuildInt");
 	PackGetStr(p, "ServerHostName", t->ServerHostName, sizeof(t->ServerHostName));
 	t->ServerBuildDate = PackGetInt64(p, "ServerBuildDate");
-	PackGetStr(p, "ServerFamilyName", t->ServerFamilyName, sizeof(t->ServerFamilyName));
 	InRpcOsInfo(&t->OsInfo, p);
 }
 void OutRpcServerInfo(PACK *p, RPC_SERVER_INFO *t)
@@ -7869,7 +7867,6 @@ void OutRpcServerInfo(PACK *p, RPC_SERVER_INFO *t)
 	PackAddInt(p, "ServerBuildInt", t->ServerBuildInt);
 	PackAddStr(p, "ServerHostName", t->ServerHostName);
 	PackAddTime64(p, "ServerBuildDate", t->ServerBuildDate);
-	PackAddStr(p, "ServerFamilyName", t->ServerFamilyName);
 	OutRpcOsInfo(p, &t->OsInfo);
 }
 void FreeRpcServerInfo(RPC_SERVER_INFO *t)
