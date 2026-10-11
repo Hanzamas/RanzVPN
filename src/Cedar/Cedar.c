@@ -1461,12 +1461,13 @@ void GetCedarVersion(char *tmp, UINT size)
 		return;
 	}
 
-	Format(tmp, size, "%u.%02u.%u", CEDAR_VERSION_MAJOR, CEDAR_VERSION_MINOR, CEDAR_VERSION_BUILD);
+	Format(tmp, size, "%u.%u.%u", CEDAR_VERSION_MAJOR, CEDAR_VERSION_MINOR, CEDAR_VERSION_BUILD);
 }
 
+// Get the version number sent to and compared by peers
 UINT GetCedarVersionNumber()
 {
-	return CEDAR_VERSION_MAJOR * 100 + CEDAR_VERSION_MINOR;
+	return CEDAR_WIRE_VER;
 }
 
 // Create Cedar object
@@ -1526,7 +1527,7 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 	}
 
 	c->Version = GetCedarVersionNumber();
-	c->Build = CEDAR_VERSION_BUILD;
+	c->Build = CEDAR_WIRE_BUILD;
 	c->ServerStr = CopyStr(CEDAR_SERVER_STR);
 
 	GetMachineName(tmp, sizeof(tmp));
@@ -1570,7 +1571,7 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 	Format(tmp2, sizeof(tmp2), " %s %s ", beta_str, tmp2);
 
 	Format(tmp, sizeof(tmp),
-		"Version %u.%02u Build %u"
+		"Version %u.%u.%u"
 		"%s"    // Alpha, Beta, Release Candidate or nothing
 		"(%s)", // Language
 		CEDAR_VERSION_MAJOR, CEDAR_VERSION_MINOR, CEDAR_VERSION_BUILD,

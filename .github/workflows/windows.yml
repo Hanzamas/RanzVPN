@@ -41,7 +41,7 @@ jobs:
         VCPKG_TRIPLET: ${{ matrix.platform.VCPKG_TRIPLET }}
         CMAKE_EXTRA_FLAGS: ${{ matrix.platform.CMAKE_EXTRA_FLAGS }}
       run: |
-        set BUILD_NUMBER=0
+        set BUILD_NUMBER=%GITHUB_RUN_NUMBER%
         mkdir build
         cd build
 

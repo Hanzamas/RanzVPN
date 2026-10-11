@@ -33,12 +33,12 @@
 
 static SERVER *server = NULL;
 static LOCK *server_lock = NULL;
-char *SERVER_CONFIG_FILE_NAME = "$vpn_server.config";
+char *SERVER_CONFIG_FILE_NAME = "$burrow_server.config";
 char *SERVER_CONFIG_FILE_NAME_IN_CLIENT = "$vpn_gate_svc.config";
 char *SERVER_CONFIG_FILE_NAME_IN_CLIENT_RELAY = "$vpn_gate_relay.config";
 char *BRIDGE_CONFIG_FILE_NAME = "$vpn_bridge.config";
-char *SERVER_CONFIG_TEMPLATE_NAME = "$vpn_server_template.config";
-char *BRIDGE_CONFIG_TEMPLATE_NAME = "$vpn_server_template.config";
+char *SERVER_CONFIG_TEMPLATE_NAME = "$burrow_server_template.config";
+char *BRIDGE_CONFIG_TEMPLATE_NAME = "$burrow_server_template.config";
 
 static bool server_reset_setting = false;
 
@@ -747,8 +747,6 @@ void GetServerProductName(SERVER *s, char *name, UINT size)
 #endif	// CPU_64
 
 	StrCat(name, size, cpu);
-
-	StrCat(name, size, " (Open Source)");
 }
 void GetServerProductNameInternal(SERVER *s, char *name, UINT size)
 {
@@ -4996,7 +4994,7 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s)
 
 	CfgAddInt(f, "MaxConcurrentDnsClientThreads", DnsThreadNumMax());
 
-	CfgAddInt(f, "CurrentBuild", s->Cedar->Build);
+	CfgAddInt(f, "CurrentBuild", CEDAR_VERSION_BUILD);
 
 	CfgAddInt(f, "AutoSaveConfigSpan", s->AutoSaveConfigSpanSaved / 1000);
 

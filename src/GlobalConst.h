@@ -13,18 +13,18 @@
 
 //// Basic Variables
 
-#define	CEDAR_PRODUCT_STR			"SoftEther"
-#define	CEDAR_PRODUCT_STR_W			L"SoftEther"
-#define	CEDAR_SERVER_STR			"SoftEther VPN Server Developer Edition"
-#define	CEDAR_BRIDGE_STR			"SoftEther VPN Bridge Developer Edition"
-#define	CEDAR_BETA_SERVER			"SoftEther VPN Server Pre Release Developer Edition"
-#define	CEDAR_MANAGER_STR			"SoftEther VPN Server Manager Developer Edition"
-#define	CEDAR_CUI_STR				"SoftEther VPN Command-Line Admin Tool"
-#define CEDAR_ELOG					"SoftEther EtherLogger Developer Edition"
-#define	CEDAR_CLIENT_STR			"SoftEther VPN Client Developer Edition"
-#define CEDAR_CLIENT_MANAGER_STR	"SoftEther VPN Client Connection Manager Developer Edition"
-#define	CEDAR_SERVER_LINK_STR		"SoftEther VPN Server Developer Edition (Cascade Mode)"
-#define	CEDAR_BRIDGE_LINK_STR		"SoftEther VPN Bridge Developer Edition (Cascade Mode)"
+#define	CEDAR_PRODUCT_STR			"Burrow"
+#define	CEDAR_PRODUCT_STR_W			L"Burrow"
+#define	CEDAR_SERVER_STR			"Burrow VPN Server"
+#define	CEDAR_BRIDGE_STR			"Burrow VPN Bridge"
+#define	CEDAR_BETA_SERVER			"Burrow VPN Server Pre Release"
+#define	CEDAR_MANAGER_STR			"Burrow VPN Server Manager"
+#define	CEDAR_CUI_STR				"Burrow VPN Command-Line Admin Tool"
+#define CEDAR_ELOG					"Burrow EtherLogger"
+#define	CEDAR_CLIENT_STR			"Burrow VPN Client"
+#define CEDAR_CLIENT_MANAGER_STR	"Burrow VPN Client Connection Manager"
+#define	CEDAR_SERVER_LINK_STR		"Burrow VPN Server (Cascade Mode)"
+#define	CEDAR_BRIDGE_LINK_STR		"Burrow VPN Bridge (Cascade Mode)"
 
 
 
@@ -41,14 +41,15 @@
 
 //// Registry
 
-#define	GC_REG_COMPANY_NAME			"SoftEther VPN Developer Edition"
+// Product key under Software\ (organisation\product): Software\Hanzcodes\Burrow VPN
+#define	GC_REG_COMPANY_NAME			"Hanzcodes\\Burrow VPN"
 
 
 
 
 //// Setup Wizard
 
-#define	GC_SW_UIHELPER_REGVALUE		"SoftEther VPN Client UI Helper Developer Edition"
+#define	GC_SW_UIHELPER_REGVALUE		"Burrow VPN Client UI Helper"
 #define	GC_SW_SOFTETHER_PREFIX		"sedev"
 #define	GC_SW_SOFTETHER_PREFIX_W	L"sedev"
 
@@ -56,6 +57,6 @@
 
 //// VPN UI Components
 
-#define	GC_UI_APPID_CM				L"SoftEther.SoftEther VPN Client Developer Edition"
+#define	GC_UI_APPID_CM				L"Hanzcodes.Burrow VPN Client"
 
 #endif	// GLOBAL_CONST_H

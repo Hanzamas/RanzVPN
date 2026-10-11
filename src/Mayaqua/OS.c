@@ -18,7 +18,7 @@ char *OsTypeToStr(UINT type)
 	switch (type)
 	{
 	case 0:
-		return "Unsupported OS by SoftEther VPN\0\n";
+		return "Unsupported OS by Burrow VPN\0\n";
 	case OSTYPE_WINDOWS_10:
 		return "Windows 10\0\n";
 	case OSTYPE_WINDOWS_SERVER_10:

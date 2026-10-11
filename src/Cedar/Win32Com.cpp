@@ -46,7 +46,7 @@ bool UninstallNdisProtocolDriver(wchar_t *id, UINT lock_timeout)
 		{
 			LPWSTR locked_by;
 
-			hr = pLock->AcquireWriteLock(lock_timeout, L"SoftEther VPN", &locked_by);
+			hr = pLock->AcquireWriteLock(lock_timeout, L"Burrow VPN", &locked_by);
 
 			if (SUCCEEDED(hr))
 			{
@@ -198,7 +198,7 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout
 		{
 			LPWSTR locked_by;
 
-			hr = pLock->AcquireWriteLock(lock_timeout, L"SoftEther VPN", &locked_by);
+			hr = pLock->AcquireWriteLock(lock_timeout, L"Burrow VPN", &locked_by);
 
 			if (SUCCEEDED(hr))
 			{

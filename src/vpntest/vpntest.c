@@ -459,7 +459,7 @@ int TestMain(char *cmd)
 	bool exit_now = false;
 	int status = 0;
 
-	Print("SoftEther VPN Project\n");
+	Print("Burrow VPN\n");
 	Print("vpntest: VPN Server test program\n");
 	Print("Usage: vpntest [/memcheck] [command]\n\n");
 	Print("Enter '?' or 'help' to show the command list.\n");

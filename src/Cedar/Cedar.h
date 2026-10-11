@@ -42,6 +42,13 @@
 #define	CEDAR_VERSION_BUILD		0
 #endif	// CEDAR_VERSION_BUILD
 
+// The version above (major.minor.build) is for display only. Peers receive
+// and compare these fixed values instead (hello/welcome packs, node info,
+// admin RPC, server caps), kept at the last SoftEther VPN 5.02 build 5187
+// so that existing peers keep gating features the same way.
+#define	CEDAR_WIRE_VER			502		// Major * 100 + minor
+#define	CEDAR_WIRE_BUILD		5187
+
 // Beta number
 //#define	BETA_NUMBER					3
 

@@ -310,9 +310,9 @@ bool MsSaveSystemInfo(wchar_t *dst_filename)
 	WriteBufLine(bat, tmp);
 
 	// Collect the information of the VPN software
-	MsCollectVpnInfo(bat, tmpdir, "vpnserver", L"vpn_server.config", L"server_log");
+	MsCollectVpnInfo(bat, tmpdir, "vpnserver", L"burrow_server.config", L"server_log");
 
-	MsCollectVpnInfo(bat, tmpdir, "sevpnserver", L"vpn_server.config", L"server_log");
+	MsCollectVpnInfo(bat, tmpdir, "sevpnserver", L"burrow_server.config", L"server_log");
 
 	WriteBufLine(bat, "");
 

@@ -112,7 +112,7 @@ into it. So that is what will be described below.
 
 1. Build number
 
-   You can change the build number in `CMakeSettings.json`. Use any integer no less than 5180.
+   You can change the build number in `CMakeSettings.json`. The build number becomes the third version component (0.1.N); CI uses the GitHub run number.
 
    Delete and regenerate CMake cache after the change.
 
