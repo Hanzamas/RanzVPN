@@ -13,7 +13,6 @@
 #include "Connection.h"
 #include "Hub.h"
 #include "Protocol.h"
-#include "Virtual.h"
 
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Object.h"

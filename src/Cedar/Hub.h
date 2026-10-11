@@ -157,15 +157,7 @@ struct HUB_OPTION
 	bool DisableUdpFilterForLocalBridgeNic;	// Not to perform filtering DHCP packets associated with local bridge NIC
 	bool ApplyIPv4AccessListOnArpPacket;	// Apply an IPv4 access list to the ARP packet
 	bool RemoveDefGwOnDhcpForLocalhost;	// Remove the designation of the DHCP server from the DHCP response packet addressed to localhost
-	UINT SecureNAT_MaxTcpSessionsPerIp;		// Maximum number of TCP sessions per IP address
-	UINT SecureNAT_MaxTcpSynSentPerIp;		// Maximum number of TCP sessions of SYN_SENT state per IP address
-	UINT SecureNAT_MaxUdpSessionsPerIp;		// Maximum number of UDP sessions per IP address
-	UINT SecureNAT_MaxDnsSessionsPerIp;		// Maximum number of DNS sessions per IP address
-	UINT SecureNAT_MaxIcmpSessionsPerIp;	// Maximum number of ICMP sessions per IP address
 	UINT AccessListIncludeFileCacheLifetime;	// Expiration of the access list external file (in seconds)
-	bool DisableKernelModeSecureNAT;			// Disable the kernel mode NAT
-	bool DisableIpRawModeSecureNAT;			// Disable the IP Raw Mode NAT
-	bool DisableUserModeSecureNAT;			// Disable the user mode NAT
 	bool DisableCheckMacOnLocalBridge;	// Disable the MAC address verification in local bridge
 	bool DisableCorrectIpOffloadChecksum;	// Disable the correction of checksum that is IP-Offloaded
 	bool BroadcastLimiterStrictMode;	// Strictly broadcast packets limiting mode
@@ -176,7 +168,6 @@ struct HUB_OPTION
 	bool AllowSameUserInPrivacyFilterMode;	// Allow packets if both the source and destination session user are the same
 	bool SuppressClientUpdateNotification;	// Suppress the update notification function on the VPN Client
 	UINT FloodingSendQueueBufferQuota;	// The global quota of send queues of flooding packets
-	bool SecureNAT_RandomizeAssignIp;	// Randomize the assignment IP address for new DHCP client
 	UINT DetectDormantSessionInterval;	// Interval (seconds) threshold to detect a dormant VPN session
 	bool NoPhysicalIPOnPacketLog;		// Disable saving physical IP address on the packet log
 	bool UseHubNameAsDhcpUserClassOption;	// Add HubName to DHCP request as User-Class option
@@ -367,9 +358,6 @@ struct HUB
 	bool FarmMember;					// Farm member
 	UINT64 LastIncrementTraffic;		// Traffic reporting time
 	UINT64 LastSendArpTick;				// ARP transmission time of the last
-	SNAT *SecureNAT;					// SecureNAT
-	bool EnableSecureNAT;				// SecureNAT enable / disable flag
-	VH_OPTION *SecureNATOption;			// SecureNAT Option
 	THREAD *WatchDogThread;				// Watchdog thread
 	EVENT *WatchDogEvent;				// Watchdog event
 	bool WatchDogStarted;				// Whether the watchdog thread is used
@@ -472,8 +460,6 @@ void DeleteExpiredIpTableEntry(LIST *o);
 void DeleteExpiredMacTableEntry(HASH_LIST *h);
 void AddTrafficDiff(HUB *h, char *name, UINT type, TRAFFIC *traffic);
 void IncrementHubTraffic(HUB *h);
-void EnableSecureNAT(HUB *h, bool enable);
-void EnableSecureNATEx(HUB *h, bool enable, bool no_change);
 void StartHubWatchDog(HUB *h);
 void StopHubWatchDog(HUB *h);
 void HubWatchDogThread(THREAD *t, void *param);

@@ -17,14 +17,11 @@
 #include "Link.h"
 #include "Listener.h"
 #include "MsChapV2.h"
-#include "Nat.h"
 #include "Remote.h"
 #include "Protocol.h"
 #include "Sam.h"
-#include "SecureNAT.h"
 #include "Server.h"
 #include "Session.h"
-#include "Virtual.h"
 #include "Wpc.h"
 
 #include "Mayaqua/Cfg.h"
@@ -184,17 +181,6 @@ CAPSLIST *ScGetCapsEx(RPC *rpc)
 
 		AddCapsInt(t, "i_max_mac_tables", 10000);
 		AddCapsInt(t, "i_max_ip_tables", 10000);
-
-		if (info.ServerType == SERVER_TYPE_STANDALONE)
-		{
-			AddCapsBool(t, "b_support_securenat", (build >= 3600) ? true : false);
-			AddCapsInt(t, "i_max_secnat_tables", 4096);
-		}
-		else
-		{
-			AddCapsBool(t, "b_support_securenat", false);
-			AddCapsInt(t, "i_max_secnat_tables", 0);
-		}
 
 		if (is_bridge)
 		{
@@ -408,13 +394,6 @@ PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 	DECLARE_RPC("DeleteIpTable", RPC_DELETE_TABLE, StDeleteIpTable, InRpcDeleteTable, OutRpcDeleteTable)
 	DECLARE_RPC("SetKeep", RPC_KEEP, StSetKeep, InRpcKeep, OutRpcKeep)
 	DECLARE_RPC("GetKeep", RPC_KEEP, StGetKeep, InRpcKeep, OutRpcKeep)
-	DECLARE_RPC("EnableSecureNAT", RPC_HUB, StEnableSecureNAT, InRpcHub, OutRpcHub)
-	DECLARE_RPC("DisableSecureNAT", RPC_HUB, StDisableSecureNAT, InRpcHub, OutRpcHub)
-	DECLARE_RPC("SetSecureNATOption", VH_OPTION, StSetSecureNATOption, InVhOption, OutVhOption)
-	DECLARE_RPC("GetSecureNATOption", VH_OPTION, StGetSecureNATOption, InVhOption, OutVhOption)
-	DECLARE_RPC_EX("EnumNAT", RPC_ENUM_NAT, StEnumNAT, InRpcEnumNat, OutRpcEnumNat, FreeRpcEnumNat)
-	DECLARE_RPC_EX("EnumDHCP", RPC_ENUM_DHCP, StEnumDHCP, InRpcEnumDhcp, OutRpcEnumDhcp, FreeRpcEnumDhcp)
-	DECLARE_RPC("GetSecureNATStatus", RPC_NAT_STATUS, StGetSecureNATStatus, InRpcNatStatus, OutRpcNatStatus)
 	DECLARE_RPC_EX("EnumEthernet", RPC_ENUM_ETH, StEnumEthernet, InRpcEnumEth, OutRpcEnumEth, FreeRpcEnumEth)
 	DECLARE_RPC("AddLocalBridge", RPC_LOCALBRIDGE, StAddLocalBridge, InRpcLocalBridge, OutRpcLocalBridge)
 	DECLARE_RPC("DeleteLocalBridge", RPC_LOCALBRIDGE, StDeleteLocalBridge, InRpcLocalBridge, OutRpcLocalBridge)
@@ -577,13 +556,6 @@ DECLARE_SC_EX("EnumIpTable", RPC_ENUM_IP_TABLE, ScEnumIpTable, InRpcEnumIpTable,
 DECLARE_SC("DeleteIpTable", RPC_DELETE_TABLE, ScDeleteIpTable, InRpcDeleteTable, OutRpcDeleteTable)
 DECLARE_SC("SetKeep", RPC_KEEP, ScSetKeep, InRpcKeep, OutRpcKeep)
 DECLARE_SC("GetKeep", RPC_KEEP, ScGetKeep, InRpcKeep, OutRpcKeep)
-DECLARE_SC("EnableSecureNAT", RPC_HUB, ScEnableSecureNAT, InRpcHub, OutRpcHub)
-DECLARE_SC("DisableSecureNAT", RPC_HUB, ScDisableSecureNAT, InRpcHub, OutRpcHub)
-DECLARE_SC("SetSecureNATOption", VH_OPTION, ScSetSecureNATOption, InVhOption, OutVhOption)
-DECLARE_SC("GetSecureNATOption", VH_OPTION, ScGetSecureNATOption, InVhOption, OutVhOption)
-DECLARE_SC_EX("EnumNAT", RPC_ENUM_NAT, ScEnumNAT, InRpcEnumNat, OutRpcEnumNat, FreeRpcEnumNat)
-DECLARE_SC_EX("EnumDHCP", RPC_ENUM_DHCP, ScEnumDHCP, InRpcEnumDhcp, OutRpcEnumDhcp, FreeRpcEnumDhcp)
-DECLARE_SC("GetSecureNATStatus", RPC_NAT_STATUS, ScGetSecureNATStatus, InRpcNatStatus, OutRpcNatStatus)
 DECLARE_SC_EX("EnumEthernet", RPC_ENUM_ETH, ScEnumEthernet, InRpcEnumEth, OutRpcEnumEth, FreeRpcEnumEth)
 DECLARE_SC("AddLocalBridge", RPC_LOCALBRIDGE, ScAddLocalBridge, InRpcLocalBridge, OutRpcLocalBridge)
 DECLARE_SC("DeleteLocalBridge", RPC_LOCALBRIDGE, ScDeleteLocalBridge, InRpcLocalBridge, OutRpcLocalBridge)
@@ -3541,10 +3513,6 @@ UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t)
 		{
 			ret = ERR_LINK_CANT_DISCONNECT;
 		}
-		else if (sess->SecureNATMode)
-		{
-			ret = ERR_SNAT_CANT_DISCONNECT;
-		}
 		else if (sess->BridgeMode)
 		{
 			ret = ERR_BRIDGE_CANT_DISCONNECT;
@@ -6241,531 +6209,6 @@ UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
 		UnlockList(s->FarmMemberList);
 	}
 
-	if (h->Type != HUB_TYPE_FARM_STATIC)
-	{
-		t->SecureNATEnabled = h->EnableSecureNAT;
-	}
-
-	ReleaseHub(h);
-
-	return ERR_NO_ERROR;
-}
-
-// Enable SecureNAT function of the hub
-UINT StEnableSecureNAT(ADMIN *a, RPC_HUB *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	HUB *h;
-
-	CHECK_RIGHT;
-
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
-	if (h == NULL)
-	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (h->Type == HUB_TYPE_FARM_STATIC || GetServerCapsBool(s, "b_support_securenat") == false)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_SUPPORTED;
-	}
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_FARM_CONTROLLER;
-	}
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_securenat") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
-	}
-
-	ALog(a, h, "LA_ENABLE_SNAT");
-
-	EnableSecureNAT(h, true);
-
-	h->CurrentVersion++;
-	SiHubUpdateProc(h);
-
-	IncrementServerConfigRevision(s);
-
-	ReleaseHub(h);
-
-	return ERR_NO_ERROR;
-}
-
-// Disable the SecureNAT function of the hub
-UINT StDisableSecureNAT(ADMIN *a, RPC_HUB *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	HUB *h;
-
-	CHECK_RIGHT;
-
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
-	if (h == NULL)
-	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (h->Type == HUB_TYPE_FARM_STATIC || GetServerCapsBool(s, "b_support_securenat") == false)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_SUPPORTED;
-	}
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_FARM_CONTROLLER;
-	}
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_securenat") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
-	}
-
-	ALog(a, h, "LA_DISABLE_SNAT");
-
-	EnableSecureNAT(h, false);
-
-	h->CurrentVersion++;
-	SiHubUpdateProc(h);
-
-	IncrementServerConfigRevision(s);
-
-	ReleaseHub(h);
-
-	return ERR_NO_ERROR;
-}
-
-// Enumerate NAT entries of the SecureNAT
-UINT StEnumNAT(ADMIN *a, RPC_ENUM_NAT *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	HUB *h;
-	UINT ret = ERR_NO_ERROR;
-	char hubname[MAX_HUBNAME_LEN + 1];
-	UINT i;
-
-	CHECK_RIGHT;
-
-	StrCpy(hubname, sizeof(hubname), t->HubName);
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
-	if (h == NULL)
-	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (h->Type == HUB_TYPE_FARM_STATIC || GetServerCapsBool(s, "b_support_securenat") == false)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_SUPPORTED;
-	}
-
-	Lock(h->lock_online);
-	{
-		if (h->SecureNAT == NULL)
-		{
-			ret = ERR_SNAT_NOT_RUNNING;
-		}
-		else
-		{
-			NtEnumNatList(h->SecureNAT->Nat, t);
-		}
-	}
-	Unlock(h->lock_online);
-
-	if (h->Type == HUB_TYPE_FARM_DYNAMIC)
-	{
-		if (ret == ERR_SNAT_NOT_RUNNING)
-		{
-			// Get status of remote SecureNAT
-			LockList(s->FarmMemberList);
-			{
-				for (i = 0;i < LIST_NUM(s->FarmMemberList);i++)
-				{
-					FARM_MEMBER *f = LIST_DATA(s->FarmMemberList, i);
-					if (f->Me == false)
-					{
-						RPC_ENUM_NAT tmp;
-
-						Zero(&tmp, sizeof(tmp));
-
-						SiCallEnumNat(s, f, hubname, &tmp);
-
-						if (tmp.NumItem >= 1)
-						{
-							FreeRpcEnumNat(t);
-							Copy(t, &tmp, sizeof(RPC_ENUM_NAT));
-							ret = ERR_NO_ERROR;
-							break;
-						}
-						else
-						{
-							FreeRpcEnumNat(&tmp);
-						}
-					}
-				}
-			}
-			UnlockList(s->FarmMemberList);
-		}
-	}
-
-	ReleaseHub(h);
-
-	ret = ERR_NO_ERROR;
-
-	return ret;
-}
-
-// Get status of the SecureNAT
-UINT StGetSecureNATStatus(ADMIN *a, RPC_NAT_STATUS *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	HUB *h;
-	UINT ret = ERR_NO_ERROR;
-	char hubname[MAX_HUBNAME_LEN + 1];
-	UINT i;
-
-	CHECK_RIGHT;
-
-	StrCpy(hubname, sizeof(hubname), t->HubName);
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
-	if (h == NULL)
-	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (h->Type == HUB_TYPE_FARM_STATIC || GetServerCapsBool(s, "b_support_securenat") == false)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_SUPPORTED;
-	}
-
-	Lock(h->lock_online);
-	{
-		if (h->SecureNAT == NULL)
-		{
-			ret = ERR_SNAT_NOT_RUNNING;
-		}
-		else
-		{
-			NtGetStatus(h->SecureNAT->Nat, t);
-		}
-	}
-	Unlock(h->lock_online);
-
-	if (h->Type == HUB_TYPE_FARM_DYNAMIC)
-	{
-		if (ret == ERR_SNAT_NOT_RUNNING)
-		{
-			// Get status of remote secureNAT
-			LockList(s->FarmMemberList);
-			{
-				for (i = 0;i < LIST_NUM(s->FarmMemberList);i++)
-				{
-					FARM_MEMBER *f = LIST_DATA(s->FarmMemberList, i);
-					if (f->Me == false)
-					{
-						RPC_NAT_STATUS tmp;
-
-						Zero(&tmp, sizeof(tmp));
-
-						SiCallGetNatStatus(s, f, hubname, &tmp);
-
-						if (tmp.NumDhcpClients == 0 && tmp.NumTcpSessions == 0 && tmp.NumUdpSessions == 0)
-						{
-						}
-						else
-						{
-							Copy(t, &tmp, sizeof(RPC_NAT_STATUS));
-							ret = ERR_NO_ERROR;
-							break;
-						}
-					}
-				}
-			}
-			UnlockList(s->FarmMemberList);
-		}
-	}
-
-	ReleaseHub(h);
-
-	StrCpy(t->HubName, sizeof(t->HubName), hubname);
-	ret = ERR_NO_ERROR;
-
-	return ret;
-}
-
-// Enumerate DHCP entries
-UINT StEnumDHCP(ADMIN *a, RPC_ENUM_DHCP *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	HUB *h;
-	UINT ret = ERR_NO_ERROR;
-	char hubname[MAX_HUBNAME_LEN + 1];
-	UINT i;
-	StrCpy(hubname, sizeof(hubname), t->HubName);
-
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
-	if (h == NULL)
-	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (h->Type == HUB_TYPE_FARM_STATIC || GetServerCapsBool(s, "b_support_securenat") == false)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_SUPPORTED;
-	}
-
-	Lock(h->lock_online);
-	{
-		if (h->SecureNAT == NULL)
-		{
-			ret = ERR_SNAT_NOT_RUNNING;
-		}
-		else
-		{
-			NtEnumDhcpList(h->SecureNAT->Nat, t);
-		}
-	}
-	Unlock(h->lock_online);
-
-	if (h->Type == HUB_TYPE_FARM_DYNAMIC)
-	{
-		if (ret == ERR_SNAT_NOT_RUNNING)
-		{
-			// Get status of remote DHCP service
-			LockList(s->FarmMemberList);
-			{
-				for (i = 0;i < LIST_NUM(s->FarmMemberList);i++)
-				{
-					FARM_MEMBER *f = LIST_DATA(s->FarmMemberList, i);
-					if (f->Me == false)
-					{
-						RPC_ENUM_DHCP tmp;
-
-						Zero(&tmp, sizeof(tmp));
-
-						SiCallEnumDhcp(s, f, hubname, &tmp);
-
-						if (tmp.NumItem >= 1)
-						{
-							FreeRpcEnumDhcp(t);
-							Copy(t, &tmp, sizeof(RPC_ENUM_DHCP));
-							ret = ERR_NO_ERROR;
-							break;
-						}
-						else
-						{
-							FreeRpcEnumDhcp(&tmp);
-						}
-					}
-				}
-			}
-			UnlockList(s->FarmMemberList);
-		}
-	}
-
-	ReleaseHub(h);
-
-	ret = ERR_NO_ERROR;
-
-	return ret;
-}
-
-// Set SecureNAT options
-UINT StSetSecureNATOption(ADMIN *a, VH_OPTION *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	HUB *h;
-	char push_routes_str_old[MAX_DHCP_CLASSLESS_ROUTE_TABLE_STR_SIZE];
-
-
-	if (IsZero(t->MacAddress, sizeof(t->MacAddress)) ||
-		IsHostIPAddress4(&t->Ip) == false ||
-		IsSubnetMask4(&t->Mask) == false)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-	if ((IPToUINT(&t->Ip) & (~(IPToUINT(&t->Mask)))) == 0)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-	if (GetServerCapsBool(s, "b_support_securenat") == false)
-	{
-		t->ApplyDhcpPushRoutes = false;
-	}
-	if (t->ApplyDhcpPushRoutes)
-	{
-		if (NormalizeClasslessRouteTableStr(t->DhcpPushRoutes, sizeof(t->DhcpPushRoutes), t->DhcpPushRoutes) == false)
-		{
-			return ERR_INVALID_PARAMETER;
-		}
-	}
-
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
-	if (h == NULL)
-	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (h->Type == HUB_TYPE_FARM_STATIC || GetServerCapsBool(s, "b_support_securenat") == false)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_SUPPORTED;
-	}
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_FARM_CONTROLLER;
-	}
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_securenat") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
-	}
-
-	if (h->SecureNATOption->UseNat == false && t->UseNat)
-	{
-		if (a->ServerAdmin == false && GetHubAdminOption(h, "no_securenat_enablenat") != 0)
-		{
-			ReleaseHub(h);
-			return ERR_NOT_ENOUGH_RIGHT;
-		}
-	}
-
-	if (h->SecureNATOption->UseDhcp == false && t->UseDhcp)
-	{
-		if (a->ServerAdmin == false && GetHubAdminOption(h, "no_securenat_enabledhcp") != 0)
-		{
-			ReleaseHub(h);
-			return ERR_NOT_ENOUGH_RIGHT;
-		}
-	}
-
-	StrCpy(push_routes_str_old, sizeof(push_routes_str_old), h->SecureNATOption->DhcpPushRoutes);
-	Copy(h->SecureNATOption, t, sizeof(VH_OPTION));
-	if (t->ApplyDhcpPushRoutes == false)
-	{
-		StrCpy(h->SecureNATOption->DhcpPushRoutes, sizeof(h->SecureNATOption->DhcpPushRoutes), push_routes_str_old);
-	}
-
-	if (h->Type != HUB_TYPE_STANDALONE && h->Cedar != NULL && h->Cedar->Server != NULL &&
-		h->Cedar->Server->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		NiClearUnsupportedVhOptionForDynamicHub(h->SecureNATOption, false);
-	}
-
-	Lock(h->lock_online);
-	{
-		if (h->SecureNAT != NULL)
-		{
-			SetVirtualHostOption(h->SecureNAT->Nat->Virtual, t);
-		}
-	}
-	Unlock(h->lock_online);
-
-	ALog(a, h, "LA_SET_SNAT_OPTION");
-
-	h->CurrentVersion++;
-	SiHubUpdateProc(h);
-
-	IncrementServerConfigRevision(s);
-
-	ReleaseHub(h);
-
-	return ERR_NO_ERROR;
-}
-
-// Get SecureNAT options
-UINT StGetSecureNATOption(ADMIN *a, VH_OPTION *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	HUB *h;
-	char hubname[MAX_HUBNAME_LEN + 1];
-
-	StrCpy(hubname, sizeof(hubname), t->HubName);
-
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
-	if (h == NULL)
-	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (h->Type == HUB_TYPE_FARM_STATIC || GetServerCapsBool(s, "b_support_securenat") == false)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_SUPPORTED;
-	}
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_FARM_CONTROLLER;
-	}
-
-	Zero(t, sizeof(VH_OPTION));
-	Copy(t, h->SecureNATOption, sizeof(VH_OPTION));
-	StrCpy(t->HubName, sizeof(t->HubName), h->Name);
-	t->ApplyDhcpPushRoutes = true;
-
 	ReleaseHub(h);
 
 	return ERR_NO_ERROR;
@@ -7362,11 +6805,6 @@ UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 		{
 			SetHubOffline(h);
 		}
-	}
-
-	if (h->Type == HUB_TYPE_FARM_STATIC)
-	{
-		EnableSecureNAT(h, false);
 	}
 
 	h->CurrentVersion++;
@@ -9583,7 +9021,6 @@ void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t)
 				e->CreatedTime = Tick64ToTime64(s->CreatedTime);
 				e->LastCommTime = Tick64ToTime64(s->LastCommTime);
 				e->LinkMode = s->LinkModeServer;
-				e->SecureNATMode = s->SecureNATMode;
 				e->BridgeMode = s->BridgeMode;
 				e->Layer3Mode = s->L3SwitchMode;
 				e->VLanId = s->VLanId;
@@ -10823,7 +10260,6 @@ void InRpcHubStatus(RPC_HUB_STATUS *t, PACK *p)
 	t->NumGroups = PackGetInt(p, "NumGroups");
 	t->NumMacTables = PackGetInt(p, "NumMacTables");
 	t->NumIpTables = PackGetInt(p, "NumIpTables");
-	t->SecureNATEnabled = PackGetBool(p, "SecureNATEnabled");
 	InRpcTraffic(&t->Traffic, p);
 	t->LastCommTime = PackGetInt64(p, "LastCommTime");
 	t->CreatedTime = PackGetInt64(p, "CreatedTime");
@@ -10849,7 +10285,6 @@ void OutRpcHubStatus(PACK *p, RPC_HUB_STATUS *t)
 	PackAddInt(p, "NumGroups", t->NumGroups);
 	PackAddInt(p, "NumMacTables", t->NumMacTables);
 	PackAddInt(p, "NumIpTables", t->NumIpTables);
-	PackAddBool(p, "SecureNATEnabled", t->SecureNATEnabled);
 	OutRpcTraffic(p, &t->Traffic);
 	PackAddTime64(p, "LastCommTime", t->LastCommTime);
 	PackAddTime64(p, "CreatedTime", t->CreatedTime);
@@ -11891,7 +11326,6 @@ void InRpcEnumSession(RPC_ENUM_SESSION *t, PACK *p)
 		e->PacketNum = PackGetInt64Ex(p, "PacketNum", i);
 		e->RemoteSession = PackGetBoolEx(p, "RemoteSession", i);
 		e->LinkMode = PackGetBoolEx(p, "LinkMode", i);
-		e->SecureNATMode = PackGetBoolEx(p, "SecureNATMode", i);
 		e->BridgeMode = PackGetBoolEx(p, "BridgeMode", i);
 		e->Layer3Mode = PackGetBoolEx(p, "Layer3Mode", i);
 		e->Client_BridgeMode = PackGetBoolEx(p, "Client_BridgeMode", i);
@@ -11932,7 +11366,6 @@ void OutRpcEnumSession(PACK *p, RPC_ENUM_SESSION *t)
 		PackAddBoolEx(p, "RemoteSession", e->RemoteSession, i, t->NumSession);
 		PackAddStrEx(p, "RemoteHostname", e->RemoteHostname, i, t->NumSession);
 		PackAddBoolEx(p, "LinkMode", e->LinkMode, i, t->NumSession);
-		PackAddBoolEx(p, "SecureNATMode", e->SecureNATMode, i, t->NumSession);
 		PackAddBoolEx(p, "BridgeMode", e->BridgeMode, i, t->NumSession);
 		PackAddBoolEx(p, "Layer3Mode", e->Layer3Mode, i, t->NumSession);
 		PackAddBoolEx(p, "Client_BridgeMode", e->Client_BridgeMode, i, t->NumSession);

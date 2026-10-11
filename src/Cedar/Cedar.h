@@ -136,8 +136,6 @@
 
 #define	SERVER_MAX_SESSIONS			4096	// Maximum number of sessions that the server supports
 #define SERVER_MAX_SESSIONS_FOR_CARRIER_EDITION	100000	// Maximum number of sessions that the server supports (Carrier Edition)
-#define	NAT_MAX_SESSIONS			4096	// Maximum number of sessions that are supported by NAT
-#define	NAT_MAX_SESSIONS_KERNEL		65536	// Maximum number of sessions that are supported by NAT (In the case of kernel-mode NAT)
 #define	MAX_HUBS					4096	// The maximum number of virtual HUB
 #define MAX_HUBS_FOR_CARRIER_EDITION	100000	// The maximum number of virtual HUB (Carrier Edition)
 #define	MAX_ACCESSLISTS				(4096 * 8)	// Maximum number of access list entries
@@ -307,7 +305,6 @@
 #define	CONNECTION_UDP					1	// UDP protocol
 #define	CONNECTION_HUB_LAYER3			6	// Layer-3 switch session
 #define	CONNECTION_HUB_BRIDGE			7	// Bridge session
-#define	CONNECTION_HUB_SECURE_NAT		8	// Secure NAT session
 #define	CONNECTION_HUB_LINK_SERVER		9	// HUB link session
 
 
@@ -449,11 +446,6 @@
 #define	HUB_PACKET_LOG_FILE_NAME	HUB_PACKET_LOG_DIR_NAME"/%s"
 #define	HUB_PACKET_LOG_PREFIX		"pkt"
 
-#define	NAT_LOG_DIR				"secure_nat_log"
-#define	NAT_LOG_DIR_NAME			"@"NAT_LOG_DIR
-#define	NAT_LOG_FILE_NAME			NAT_LOG_DIR_NAME"/%s"
-#define	NAT_LOG_PREFIX				"snat"
-
 #define	CLIENT_LOG_DIR_NAME			"@client_log"
 #define	CLIENT_LOG_PREFIX			"client"
 
@@ -539,18 +531,6 @@
 
 //////////////////////////////////////////////////////////////////////
 // 
-// Constant related to SecureNAT connection
-// 
-//////////////////////////////////////////////////////////////////////
-
-#define	SNAT_DEVICE_NAME		"_SEHUBSECURENAT_"
-#define	SNAT_USER_NAME			"securenat"
-#define	SNAT_USER_NAME_PRINT	"SecureNAT"
-
-
-
-//////////////////////////////////////////////////////////////////////
-// 
 // Constant related to bridge connection
 // 
 //////////////////////////////////////////////////////////////////////
@@ -594,7 +574,7 @@
 
 //////////////////////////////////////////////////////////////////////
 // 
-// Constant related to User-mode Router
+// Constant related to the virtual IP stack
 // 
 //////////////////////////////////////////////////////////////////////
 
@@ -603,36 +583,11 @@
 #define	ARP_REQUEST_TIMEOUT			(1000)			// ARP request time-out period
 #define	ARP_REQUEST_GIVEUP			(5 * 1000)		// Time to give up sending the ARP request
 #define	IP_WAIT_FOR_ARP_TIMEOUT		(5 * 1000)		// Total time that an IP packet waiting for ARP table
-#define	IP_COMBINE_TIMEOUT			(10 * 1000)		// Time-out of IP packet combining
-#define	NAT_TCP_MAX_TIMEOUT			(2000000 * 1000)	// Maximum TCP session timeout in seconds
-#define	NAT_UDP_MAX_TIMEOUT			(2000000 * 1000)	// Maximum UDP session timeout in seconds
-#define	NAT_TCP_MIN_TIMEOUT			(1 * 60 * 1000)		// Minimum TCP session timeout in seconds
-#define	NAT_UDP_MIN_TIMEOUT			(10 * 1000)			// Minimum UDP session timeout in seconds
-#define	NAT_TCP_RECV_WINDOW_SIZE	64512				// TCP receive window size
-#define	NAT_TCP_SYNACK_SEND_TIMEOUT	250					// Sending TCP SYN+ACK interval
-#define	NAT_ICMP_TIMEOUT			(10 * 1000)			// ICMP timeout in seconds
-#define	NAT_ICMP_TIMEOUT_WITH_API	(3 * 1000)			// Timeout in seconds in the case of using the ICMP API
-#define	NAT_SEND_BUF_SIZE			(64 * 1024)			// TCP send buffer size
-#define	NAT_RECV_BUF_SIZE			(64 * 1024)			// TCP receive buffer size
-#define	NAT_TMPBUF_SIZE				(128 * 1024)		// TCP temporally memory area size
-#define	NAT_ACK_KEEPALIVE_SPAN		(5 * 1000)			// ACK transmission interval for TCP keep alive
-#define	NAT_INITIAL_RTT_VALUE		500					// Initial RTT value
-#define	NAT_FIN_SEND_INTERVAL		1000				// FIN transmission interval
-#define	NAT_FIN_SEND_MAX_COUNT		5					// Total number of FIN transmissions
-#define	NAT_DNS_PROXY_PORT			53					// DNS proxy port number
-#define	NAT_DNS_RESPONSE_TTL		(20 * 60)			// TTL of the DNS response
 #define	NAT_DHCP_SERVER_PORT		67					// DHCP server port number
 #define	NAT_DHCP_CLIENT_PORT		68					// DHCP client port number
-#define	DHCP_MIN_EXPIRE_TIMESPAN	(15 * 1000)			// DHCP minimum expiration date
-#define	DHCP_POLLING_INTERVAL		1000				// DHCP polling interval
-#define	X32							((UINT64)4294967296ULL)	// 32bit + 1
-#define	NAT_DNS_QUERY_TIMEOUT		(512)				// Time-out value of DNS queries
 
 // Beacon transmission interval
 #define	BEACON_SEND_INTERVAL		(5 * 1000)
-
-// Total size quota allowed in the queue for the combining the IP packet
-#define	IP_COMBINE_WAIT_QUEUE_SIZE_QUOTA	(50 * 1024 * 1024)
 
 // Header size constant
 #define	MAC_HEADER_SIZE				(sizeof(MAC_HEADER))
@@ -651,19 +606,6 @@
 // IP packet option constant
 #define	DEFAULT_IP_TOS				0				// TOS in the IP header
 #define	DEFAULT_IP_TTL				128				// TTL in the IP header
-
-// Type of NAT session
-#define	NAT_TCP						0		// TCP NAT
-#define	NAT_UDP						1		// UDP NAT
-#define	NAT_DNS						2		// DNS NAT
-#define	NAT_ICMP					3		// ICMP NAT
-
-// State of NAT session
-#define	NAT_TCP_CONNECTING			0		// Connecting
-#define	NAT_TCP_SEND_RESET			1		// Send the RST (Connection failure or disconnected)
-#define	NAT_TCP_CONNECTED			2		// Connection complete
-#define	NAT_TCP_ESTABLISHED			3		// Connection established
-#define	NAT_TCP_WAIT_DISCONNECT		4		// Wait for socket disconnection
 
 
 //////////////////////////////////////////////////////////////////////
@@ -798,9 +740,6 @@
 #define	ERR_ALREADY_ONLINE				75	// It is already online
 #define	ERR_OFFLINE						76	// It is offline
 #define	ERR_NOT_RSA_1024				77	// The certificate is not RSA 1024bit
-#define	ERR_SNAT_CANT_DISCONNECT		78	// SecureNAT session cannot be disconnected
-#define	ERR_SNAT_NEED_STANDALONE		79	// SecureNAT works only in stand-alone HUB
-#define	ERR_SNAT_NOT_RUNNING			80	// SecureNAT function is not working
 #define	ERR_SE_VPN_BLOCK				81	// Stopped by PacketiX VPN Block
 #define	ERR_BRIDGE_CANT_DISCONNECT		82	// Bridge session can not be disconnected
 #define	ERR_LOCAL_BRIDGE_STOPPING		83	// Bridge function is stopped

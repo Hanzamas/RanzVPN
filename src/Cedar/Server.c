@@ -16,10 +16,8 @@
 #include "Layer3.h"
 #include "Link.h"
 #include "Listener.h"
-#include "Nat.h"
 #include "Protocol.h"
 #include "Sam.h"
-#include "SecureNAT.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/DNS.h"
@@ -1143,7 +1141,6 @@ void UpdateGlobalServerFlags(SERVER *s, CAPSLIST *t)
 
 	is_restricted = SiIsEnterpriseFunctionsRestrictedOnOpenSource(s->Cedar);
 
-	SetGlobalServerFlag(GSF_DISABLE_PUSH_ROUTE, is_restricted);
 	SetGlobalServerFlag(GSF_DISABLE_RADIUS_AUTH, is_restricted);
 	SetGlobalServerFlag(GSF_DISABLE_CERT_AUTH, is_restricted);
 	SetGlobalServerFlag(GSF_DISABLE_DEEP_LOGGING, is_restricted);
@@ -1178,15 +1175,11 @@ UINT GetGlobalServerFlag(UINT index)
 // Main of the acquisition of Caps of the server
 void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 {
-	bool is_restricted = false;
-
 	// Validate arguments
 	if (s == NULL || t == NULL)
 	{
 		return;
 	}
-
-	is_restricted = SiIsEnterpriseFunctionsRestrictedOnOpenSource(s->Cedar);
 
 	// Initialize
 	InitCapsList(t);
@@ -1306,21 +1299,6 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 
 	// Maximum IP address table  size / Virtual HUB
 	AddCapsInt(t, "i_max_ip_tables", MAX_IP_TABLES);
-
-	// SecureNAT function is available
-	AddCapsBool(t, "b_support_securenat", true);
-
-	// Pushing routing table function of SecureNAT Virtual DHCP Server is available
-	AddCapsBool(t, "b_suppport_push_route", !is_restricted);
-	AddCapsBool(t, "b_suppport_push_route_config", true);
-
-	if (s->ServerType != SERVER_TYPE_STANDALONE)
-	{
-		AddCapsBool(t, "b_virtual_nat_disabled", true);
-	}
-
-	// Maximum NAT table size / Virtual HUB
-	AddCapsInt(t, "i_max_secnat_tables", NAT_MAX_SESSIONS);
 
 	// Cascade connection
 	if (s->ServerType == SERVER_TYPE_STANDALONE)
@@ -3293,20 +3271,6 @@ void SiLoadHubLinkCfg(FOLDER *f, HUB *h)
 	CiFreeClientAuth(a);
 }
 
-// Write the SecureNAT of the Virtual HUB
-void SiWriteSecureNAT(HUB *h, FOLDER *f)
-{
-	// Validate arguments
-	if (h == NULL || f == NULL)
-	{
-		return;
-	}
-
-	CfgAddBool(f, "Disabled", h->EnableSecureNAT ? false : true);
-
-	NiWriteVhOptionEx(h->SecureNATOption, f);
-}
-
 // Read the administration options for the virtual HUB
 void SiLoadHubAdminOptions(HUB *h, FOLDER *f)
 {
@@ -3730,11 +3694,6 @@ void SiLoadHubOptionCfg(FOLDER *f, HUB_OPTION *o)
 	{
 		o->RemoveDefGwOnDhcpForLocalhost = true;
 	}
-	o->SecureNAT_MaxTcpSessionsPerIp = CfgGetInt(f, "SecureNAT_MaxTcpSessionsPerIp");
-	o->SecureNAT_MaxTcpSynSentPerIp = CfgGetInt(f, "SecureNAT_MaxTcpSynSentPerIp");
-	o->SecureNAT_MaxUdpSessionsPerIp = CfgGetInt(f, "SecureNAT_MaxUdpSessionsPerIp");
-	o->SecureNAT_MaxDnsSessionsPerIp = CfgGetInt(f, "SecureNAT_MaxDnsSessionsPerIp");
-	o->SecureNAT_MaxIcmpSessionsPerIp = CfgGetInt(f, "SecureNAT_MaxIcmpSessionsPerIp");
 	o->AccessListIncludeFileCacheLifetime = CfgGetInt(f, "AccessListIncludeFileCacheLifetime");
 
 	if (o->AccessListIncludeFileCacheLifetime == 0)
@@ -3742,13 +3701,9 @@ void SiLoadHubOptionCfg(FOLDER *f, HUB_OPTION *o)
 		o->AccessListIncludeFileCacheLifetime = ACCESS_LIST_INCLUDE_FILE_CACHE_LIFETIME;
 	}
 
-	o->DisableKernelModeSecureNAT = CfgGetBool(f, "DisableKernelModeSecureNAT");
-	o->DisableIpRawModeSecureNAT = CfgGetBool(f, "DisableIpRawModeSecureNAT");
-	o->DisableUserModeSecureNAT = CfgGetBool(f, "DisableUserModeSecureNAT");
 	o->DisableCheckMacOnLocalBridge = CfgGetBool(f, "DisableCheckMacOnLocalBridge");
 	o->DisableCorrectIpOffloadChecksum = CfgGetBool(f, "DisableCorrectIpOffloadChecksum");
 	o->SuppressClientUpdateNotification = CfgGetBool(f, "SuppressClientUpdateNotification");
-	o->SecureNAT_RandomizeAssignIp = CfgGetBool(f, "SecureNAT_RandomizeAssignIp");
 	o->DetectDormantSessionInterval = CfgGetInt(f, "DetectDormantSessionInterval");
 	o->NoPhysicalIPOnPacketLog = CfgGetBool(f, "NoPhysicalIPOnPacketLog");
 	o->UseHubNameAsDhcpUserClassOption = CfgGetBool(f, "UseHubNameAsDhcpUserClassOption");
@@ -3834,7 +3789,6 @@ void SiWriteHubOptionCfg(FOLDER *f, HUB_OPTION *o)
 	CfgAddBool(f, "DropArpInPrivacyFilterMode", o->DropArpInPrivacyFilterMode);
 	CfgAddBool(f, "AllowSameUserInPrivacyFilterMode", o->AllowSameUserInPrivacyFilterMode);
 	CfgAddBool(f, "SuppressClientUpdateNotification", o->SuppressClientUpdateNotification);
-	CfgAddBool(f, "SecureNAT_RandomizeAssignIp", o->SecureNAT_RandomizeAssignIp);
 	CfgAddBool(f, "NoPhysicalIPOnPacketLog", o->NoPhysicalIPOnPacketLog);
 	CfgAddInt(f, "DetectDormantSessionInterval", o->DetectDormantSessionInterval);
 	CfgAddBool(f, "NoLookBPDUBridgeId", o->NoLookBPDUBridgeId);
@@ -3846,15 +3800,7 @@ void SiWriteHubOptionCfg(FOLDER *f, HUB_OPTION *o)
 	CfgAddBool(f, "DisableUdpFilterForLocalBridgeNic", o->DisableUdpFilterForLocalBridgeNic);
 	CfgAddBool(f, "ApplyIPv4AccessListOnArpPacket", o->ApplyIPv4AccessListOnArpPacket);
 	CfgAddBool(f, "RemoveDefGwOnDhcpForLocalhost", o->RemoveDefGwOnDhcpForLocalhost);
-	CfgAddInt(f, "SecureNAT_MaxTcpSessionsPerIp", o->SecureNAT_MaxTcpSessionsPerIp);
-	CfgAddInt(f, "SecureNAT_MaxTcpSynSentPerIp", o->SecureNAT_MaxTcpSynSentPerIp);
-	CfgAddInt(f, "SecureNAT_MaxUdpSessionsPerIp", o->SecureNAT_MaxUdpSessionsPerIp);
-	CfgAddInt(f, "SecureNAT_MaxDnsSessionsPerIp", o->SecureNAT_MaxDnsSessionsPerIp);
-	CfgAddInt(f, "SecureNAT_MaxIcmpSessionsPerIp", o->SecureNAT_MaxIcmpSessionsPerIp);
 	CfgAddInt(f, "AccessListIncludeFileCacheLifetime", o->AccessListIncludeFileCacheLifetime);
-	CfgAddBool(f, "DisableKernelModeSecureNAT", o->DisableKernelModeSecureNAT);
-	CfgAddBool(f, "DisableIpRawModeSecureNAT", o->DisableIpRawModeSecureNAT);
-	CfgAddBool(f, "DisableUserModeSecureNAT", o->DisableUserModeSecureNAT);
 	CfgAddBool(f, "DisableCheckMacOnLocalBridge", o->DisableCheckMacOnLocalBridge);
 	CfgAddBool(f, "DisableCorrectIpOffloadChecksum", o->DisableCorrectIpOffloadChecksum);
 	CfgAddBool(f, "UseHubNameAsDhcpUserClassOption", o->UseHubNameAsDhcpUserClassOption);
@@ -4668,15 +4614,6 @@ void SiWriteHubCfg(FOLDER *f, HUB *h)
 		SiWriteHubLinks(CfgCreateFolder(f, "CascadeList"), h);
 	}
 
-	if (h->Type != HUB_TYPE_FARM_STATIC)
-	{
-		if (GetServerCapsBool(h->Cedar->Server, "b_support_securenat"))
-		{
-			// SecureNAT
-			SiWriteSecureNAT(h, CfgCreateFolder(f, "SecureNAT"));
-		}
-	}
-
 	// Access list
 	SiWriteHubAccessLists(CfgCreateFolder(f, "AccessList"), h);
 
@@ -4765,7 +4702,6 @@ void SiLoadHubCfg(SERVER *s, FOLDER *f, char *name)
 	CEDAR *c;
 	HUB_OPTION o;
 	bool online;
-	UINT hub_old_type = 0;
 	// Validate arguments
 	if (s == NULL || f == NULL || name == NULL)
 	{
@@ -4815,7 +4751,7 @@ void SiLoadHubCfg(SERVER *s, FOLDER *f, char *name)
 		SiLoadHubAccessLists(h, CfgGetFolder(f, "AccessList"));
 
 		// Type of HUB
-		hub_old_type = h->Type = CfgGetInt(f, "Type");
+		h->Type = CfgGetInt(f, "Type");
 
 		if (s->ServerType == SERVER_TYPE_STANDALONE)
 		{
@@ -4863,24 +4799,6 @@ void SiLoadHubCfg(SERVER *s, FOLDER *f, char *name)
 			}
 		}
 
-		// SecureNAT
-		if (GetServerCapsBool(h->Cedar->Server, "b_support_securenat"))
-		{
-			if (h->Type == HUB_TYPE_STANDALONE || h->Type == HUB_TYPE_FARM_DYNAMIC)
-			{
-				// SecureNAT is used only in the case of dynamic HUB or standalone HUB
-				SiLoadSecureNAT(h, CfgGetFolder(f, "SecureNAT"));
-
-				if (h->Type != HUB_TYPE_STANDALONE && h->Cedar != NULL && h->Cedar->Server != NULL &&
-					h->Cedar->Server->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-				{
-					NiClearUnsupportedVhOptionForDynamicHub(h->SecureNATOption,
-						hub_old_type == HUB_TYPE_STANDALONE);
-				}
-
-			}
-		}
-
 		// Administration options
 		SiLoadHubAdminOptions(h, CfgGetFolder(f, "AdminOption"));
 
@@ -4923,25 +4841,6 @@ void SiLoadHubCfg(SERVER *s, FOLDER *f, char *name)
 
 		ReleaseHub(h);
 	}
-}
-
-// Read the SecureNAT configuration
-void SiLoadSecureNAT(HUB *h, FOLDER *f)
-{
-	VH_OPTION o;
-	// Validate arguments
-	if (h == NULL || f == NULL)
-	{
-		return;
-	}
-
-	// Read the VH_OPTION
-	NiLoadVhOptionEx(&o, f);
-
-	// Set the VH_OPTION
-	Copy(h->SecureNATOption, &o, sizeof(VH_OPTION));
-
-	EnableSecureNAT(h, CfgGetBool(f, "Disabled") ? false : true);
 }
 
 // Read the virtual layer 3 switch settings
@@ -6898,7 +6797,6 @@ void SiCalledUpdateHub(SERVER *s, PACK *p)
 	o.DropArpInPrivacyFilterMode = PackGetBool(p, "DropArpInPrivacyFilterMode");
 	o.AllowSameUserInPrivacyFilterMode= PackGetBool(p, "AllowSameUserInPrivacyFilterMode");
 	o.SuppressClientUpdateNotification = PackGetBool(p, "SuppressClientUpdateNotification");
-	o.SecureNAT_RandomizeAssignIp = PackGetBool(p, "SecureNAT_RandomizeAssignIp");
 	o.DetectDormantSessionInterval = PackGetInt(p, "DetectDormantSessionInterval");
 	o.VlanTypeId = PackGetInt(p, "VlanTypeId");
 	o.NoPhysicalIPOnPacketLog = PackGetBool(p, "NoPhysicalIPOnPacketLog");
@@ -6928,19 +6826,11 @@ void SiCalledUpdateHub(SERVER *s, PACK *p)
 	o.DisableUdpFilterForLocalBridgeNic = PackGetBool(p, "DisableUdpFilterForLocalBridgeNic");
 	o.ApplyIPv4AccessListOnArpPacket = PackGetBool(p, "ApplyIPv4AccessListOnArpPacket");
 	o.RemoveDefGwOnDhcpForLocalhost = PackGetBool(p, "RemoveDefGwOnDhcpForLocalhost");
-	o.SecureNAT_MaxTcpSessionsPerIp = PackGetInt(p, "SecureNAT_MaxTcpSessionsPerIp");
-	o.SecureNAT_MaxTcpSynSentPerIp = PackGetInt(p, "SecureNAT_MaxTcpSynSentPerIp");
-	o.SecureNAT_MaxUdpSessionsPerIp = PackGetInt(p, "SecureNAT_MaxUdpSessionsPerIp");
-	o.SecureNAT_MaxDnsSessionsPerIp = PackGetInt(p, "SecureNAT_MaxDnsSessionsPerIp");
-	o.SecureNAT_MaxIcmpSessionsPerIp = PackGetInt(p, "SecureNAT_MaxIcmpSessionsPerIp");
 	o.AccessListIncludeFileCacheLifetime = PackGetInt(p, "AccessListIncludeFileCacheLifetime");
 	if (o.AccessListIncludeFileCacheLifetime == 0)
 	{
 		o.AccessListIncludeFileCacheLifetime = ACCESS_LIST_INCLUDE_FILE_CACHE_LIFETIME;
 	}
-	o.DisableKernelModeSecureNAT = PackGetBool(p, "DisableKernelModeSecureNAT");
-	o.DisableIpRawModeSecureNAT = PackGetBool(p, "DisableIpRawModeSecureNAT");
-	o.DisableUserModeSecureNAT = PackGetBool(p, "DisableUserModeSecureNAT");
 	o.DisableCheckMacOnLocalBridge = PackGetBool(p, "DisableCheckMacOnLocalBridge");
 	o.DisableCorrectIpOffloadChecksum = PackGetBool(p, "DisableCorrectIpOffloadChecksum");
 	o.UseHubNameAsDhcpUserClassOption = PackGetBool(p, "UseHubNameAsDhcpUserClassOption");
@@ -7016,37 +6906,6 @@ void SiCalledUpdateHub(SERVER *s, PACK *p)
 		ACCESS *a = SiPackToAccess(p, i);
 		AddAccessList(h, a);
 		Free(a);
-	}
-
-	if (PackGetBool(p, "EnableSecureNAT"))
-	{
-		VH_OPTION t;
-		bool changed;
-
-		InVhOption(&t, p);
-
-		changed = Cmp(h->SecureNATOption, &t, sizeof(VH_OPTION)) == 0 ? false : true;
-		Copy(h->SecureNATOption, &t, sizeof(VH_OPTION));
-
-		EnableSecureNAT(h, true);
-
-		if (changed)
-		{
-			Lock(h->lock_online);
-			{
-				if (h->SecureNAT != NULL)
-				{
-					SetVirtualHostOption(h->SecureNAT->Nat->Virtual, &t);
-					Debug("SiCalledUpdateHub: SecureNAT Updated.\n");
-				}
-			}
-			Unlock(h->lock_online);
-		}
-	}
-	else
-	{
-		EnableSecureNAT(h, false);
-		Debug("SiCalledUpdateHub: SecureNAT Disabled.\n");
 	}
 
 	if (type_changed)
@@ -7217,7 +7076,7 @@ void SiCalledDeleteSession(SERVER *s, PACK *p)
 
 	if (sess != NULL)
 	{
-		if (sess->BridgeMode == false && sess->LinkModeServer == false && sess->SecureNATMode == false)
+		if (sess->BridgeMode == false && sess->LinkModeServer == false)
 		{
 			StopSession(sess);
 		}
@@ -7363,141 +7222,6 @@ PACK *SiCalledEnumMacTable(SERVER *s, PACK *p)
 	ret = NewPack();
 	OutRpcEnumMacTable(ret, &t);
 	FreeRpcEnumMacTable(&t);
-
-	return ret;
-}
-
-// NAT status acquisition directive
-PACK *SiCalledGetNatStatus(SERVER *s, PACK *p)
-{
-	char hubname[MAX_HUBNAME_LEN + 1];
-	RPC_NAT_STATUS t;
-	PACK *ret;
-	HUB *h;
-	// Validate arguments
-	if (s == NULL || p == NULL)
-	{
-		return NewPack();
-	}
-	if (PackGetStr(p, "HubName", hubname, sizeof(hubname)) == false)
-	{
-		return NewPack();
-	}
-	Zero(&t, sizeof(t));
-
-	LockHubList(s->Cedar);
-	{
-		h = GetHub(s->Cedar, hubname);
-	}
-	UnlockHubList(s->Cedar);
-
-	if (h != NULL)
-	{
-		Lock(h->lock_online);
-		{
-			if (h->SecureNAT != NULL)
-			{
-				NtGetStatus(h->SecureNAT->Nat, &t);
-			}
-		}
-		Unlock(h->lock_online);
-	}
-
-	ReleaseHub(h);
-
-	ret = NewPack();
-	OutRpcNatStatus(ret, &t);
-	FreeRpcNatStatus(&t);
-
-	return ret;
-}
-
-// DHCP table enumeration directive
-PACK *SiCalledEnumDhcp(SERVER *s, PACK *p)
-{
-	char hubname[MAX_HUBNAME_LEN + 1];
-	RPC_ENUM_DHCP t;
-	PACK *ret;
-	HUB *h;
-	// Validate arguments
-	if (s == NULL || p == NULL)
-	{
-		return NewPack();
-	}
-	if (PackGetStr(p, "HubName", hubname, sizeof(hubname)) == false)
-	{
-		return NewPack();
-	}
-	Zero(&t, sizeof(t));
-
-	LockHubList(s->Cedar);
-	{
-		h = GetHub(s->Cedar, hubname);
-	}
-	UnlockHubList(s->Cedar);
-
-	if (h != NULL)
-	{
-		Lock(h->lock_online);
-		{
-			if (h->SecureNAT != NULL)
-			{
-				NtEnumDhcpList(h->SecureNAT->Nat, &t);
-			}
-		}
-		Unlock(h->lock_online);
-	}
-
-	ReleaseHub(h);
-
-	ret = NewPack();
-	OutRpcEnumDhcp(ret, &t);
-	FreeRpcEnumDhcp(&t);
-
-	return ret;
-}
-
-// NAT table enumeration directive
-PACK *SiCalledEnumNat(SERVER *s, PACK *p)
-{
-	char hubname[MAX_HUBNAME_LEN + 1];
-	RPC_ENUM_NAT t;
-	PACK *ret;
-	HUB *h;
-	// Validate arguments
-	if (s == NULL || p == NULL)
-	{
-		return NewPack();
-	}
-	if (PackGetStr(p, "HubName", hubname, sizeof(hubname)) == false)
-	{
-		return NewPack();
-	}
-	Zero(&t, sizeof(t));
-
-	LockHubList(s->Cedar);
-	{
-		h = GetHub(s->Cedar, hubname);
-	}
-	UnlockHubList(s->Cedar);
-
-	if (h != NULL)
-	{
-		Lock(h->lock_online);
-		{
-			if (h->SecureNAT != NULL)
-			{
-				NtEnumNatList(h->SecureNAT->Nat, &t);
-			}
-		}
-		Unlock(h->lock_online);
-	}
-
-	ReleaseHub(h);
-
-	ret = NewPack();
-	OutRpcEnumNat(ret, &t);
-	FreeRpcEnumNat(&t);
 
 	return ret;
 }
@@ -7678,18 +7402,6 @@ void SiCalledCreateHub(SERVER *s, PACK *p)
 		ACCESS *a = SiPackToAccess(p, i);
 		AddAccessList(h, a);
 		Free(a);
-	}
-
-	if (PackGetBool(p, "EnableSecureNAT"))
-	{
-		VH_OPTION t;
-
-		InVhOption(&t, p);
-
-		Copy(h->SecureNATOption, &t, sizeof(VH_OPTION));
-		EnableSecureNAT(h, true);
-
-		Debug("SiCalledCreateHub: SecureNAT Created.\n");
 	}
 
 	AddHub(s->Cedar, h);
@@ -8518,69 +8230,6 @@ void SiCallEnumMacTable(SERVER *s, FARM_MEMBER *f, char *hubname, RPC_ENUM_MAC_T
 	FreePack(p);
 }
 
-// Send a SecureNAT status acquisition directive
-void SiCallGetNatStatus(SERVER *s, FARM_MEMBER *f, char *hubname, RPC_NAT_STATUS *t)
-{
-	PACK *p;
-	// Validate arguments
-	if (s == NULL || f == NULL || hubname == NULL || t == NULL)
-	{
-		return;
-	}
-
-	p = NewPack();
-	PackAddStr(p, "HubName", hubname);
-
-	p = SiCallTask(f, p, "getnatstatus");
-
-	Zero(t, sizeof(RPC_NAT_STATUS));
-	InRpcNatStatus(t, p);
-
-	FreePack(p);
-}
-
-// Submit a DHCP entry enumeration directive
-void SiCallEnumDhcp(SERVER *s, FARM_MEMBER *f, char *hubname, RPC_ENUM_DHCP *t)
-{
-	PACK *p;
-	// Validate arguments
-	if (s == NULL || f == NULL || hubname == NULL || t == NULL)
-	{
-		return;
-	}
-
-	p = NewPack();
-	PackAddStr(p, "HubName", hubname);
-
-	p = SiCallTask(f, p, "enumdhcp");
-
-	Zero(t, sizeof(RPC_ENUM_DHCP));
-	InRpcEnumDhcp(t, p);
-
-	FreePack(p);
-}
-
-// Submit a NAT entry enumeration directive 
-void SiCallEnumNat(SERVER *s, FARM_MEMBER *f, char *hubname, RPC_ENUM_NAT *t)
-{
-	PACK *p;
-	// Validate arguments
-	if (s == NULL || f == NULL || hubname == NULL || t == NULL)
-	{
-		return;
-	}
-
-	p = NewPack();
-	PackAddStr(p, "HubName", hubname);
-
-	p = SiCallTask(f, p, "enumnat");
-
-	Zero(t, sizeof(RPC_ENUM_NAT));
-	InRpcEnumNat(t, p);
-
-	FreePack(p);
-}
-
 // Send a session enumeration directive
 void SiCallEnumSession(SERVER *s, FARM_MEMBER *f, char *hubname, RPC_ENUM_SESSION *t)
 {
@@ -8729,7 +8378,6 @@ void SiPackAddCreateHub(PACK *p, HUB *h)
 	PackAddBool(p, "AllowSameUserInPrivacyFilterMode", h->Option->AllowSameUserInPrivacyFilterMode);
 	PackAddBool(p, "SuppressClientUpdateNotification", h->Option->SuppressClientUpdateNotification);
 	PackAddInt(p, "ClientMinimumRequiredBuild", h->Option->ClientMinimumRequiredBuild);
-	PackAddBool(p, "SecureNAT_RandomizeAssignIp", h->Option->SecureNAT_RandomizeAssignIp);
 	PackAddBool(p, "NoPhysicalIPOnPacketLog", h->Option->NoPhysicalIPOnPacketLog);
 	PackAddInt(p, "DetectDormantSessionInterval", h->Option->DetectDormantSessionInterval);
 	PackAddBool(p, "FixForDLinkBPDU", h->Option->FixForDLinkBPDU);
@@ -8758,15 +8406,7 @@ void SiPackAddCreateHub(PACK *p, HUB *h)
 	PackAddBool(p, "ApplyIPv4AccessListOnArpPacket", h->Option->ApplyIPv4AccessListOnArpPacket);
 	PackAddBool(p, "RemoveDefGwOnDhcpForLocalhost", h->Option->RemoveDefGwOnDhcpForLocalhost);
 
-	PackAddInt(p, "SecureNAT_MaxTcpSessionsPerIp", h->Option->SecureNAT_MaxTcpSessionsPerIp);
-	PackAddInt(p, "SecureNAT_MaxTcpSynSentPerIp", h->Option->SecureNAT_MaxTcpSynSentPerIp);
-	PackAddInt(p, "SecureNAT_MaxUdpSessionsPerIp", h->Option->SecureNAT_MaxUdpSessionsPerIp);
-	PackAddInt(p, "SecureNAT_MaxDnsSessionsPerIp", h->Option->SecureNAT_MaxDnsSessionsPerIp);
-	PackAddInt(p, "SecureNAT_MaxIcmpSessionsPerIp", h->Option->SecureNAT_MaxIcmpSessionsPerIp);
 	PackAddInt(p, "AccessListIncludeFileCacheLifetime", h->Option->AccessListIncludeFileCacheLifetime);
-	PackAddBool(p, "DisableKernelModeSecureNAT", h->Option->DisableKernelModeSecureNAT);
-	PackAddBool(p, "DisableIpRawModeSecureNAT", h->Option->DisableIpRawModeSecureNAT);
-	PackAddBool(p, "DisableUserModeSecureNAT", h->Option->DisableUserModeSecureNAT);
 	PackAddBool(p, "DisableCheckMacOnLocalBridge", h->Option->DisableCheckMacOnLocalBridge);
 	PackAddBool(p, "DisableCorrectIpOffloadChecksum", h->Option->DisableCorrectIpOffloadChecksum);
 
@@ -8785,12 +8425,6 @@ void SiPackAddCreateHub(PACK *p, HUB *h)
 	PackAddInt(p, "DhcpDiscoverTimeoutMs", h->Option->DhcpDiscoverTimeoutMs);
 
 	SiAccessListToPack(p, h->AccessList);
-
-	if (h->EnableSecureNAT)
-	{
-		PackAddBool(p, "EnableSecureNAT", h->EnableSecureNAT);
-		OutVhOption(p, h->SecureNATOption);
-	}
 }
 
 // Setting of the HUB has been updated
@@ -9259,18 +8893,6 @@ PACK *SiCalledTask(FARM_CONTROLLER *f, PACK *p, char *taskname)
 		else if (StrCmpi(taskname, "createticket") == 0)
 		{
 			ret = SiCalledCreateTicket(s, p);
-		}
-		else if (StrCmpi(taskname, "enumnat") == 0)
-		{
-			ret = SiCalledEnumNat(s, p);
-		}
-		else if (StrCmpi(taskname, "enumdhcp") == 0)
-		{
-			ret = SiCalledEnumDhcp(s, p);
-		}
-		else if (StrCmpi(taskname, "getnatstatus") == 0)
-		{
-			ret = SiCalledGetNatStatus(s, p);
 		}
 		else if (StrCmpi(taskname, "enumsession") == 0)
 		{

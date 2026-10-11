@@ -80,10 +80,8 @@ struct SESSION
 	bool NormalClient;				// Connecting session from a regular client (not such as localbridge)
 	bool LinkModeClient;			// Link mode client
 	bool LinkModeServer;			// Link mode server
-	bool SecureNATMode;				// SecureNAT session
 	bool BridgeMode;				// Bridge session
 	bool BridgeIsEthLoopbackBlock;	// Loopback is disabled on the Ethernet level
-	bool VirtualHost;				// Virtual host mode
 	bool L3SwitchMode;				// Layer-3 switch mode
 	bool InProcMode;				// In-process mode
 	THREAD *Thread;					// Management thread
@@ -115,7 +113,6 @@ struct SESSION
 	bool ClientModeAndUseVLan;		// Use a virtual LAN card in client mode
 	LOCK *TrafficLock;				// Traffic data lock
 	LINK *Link;						// A reference to the link object
-	SNAT *SecureNAT;				// A reference to the SecureNAT object
 	BRIDGE *Bridge;					// A reference to the Bridge object
 	NODE_INFO NodeInfo;				// Node information
 	UINT64 LastIncrementTraffic;	// Last time that updated the traffic data of the user
@@ -268,9 +265,6 @@ void AddCancelList(LIST *o, CANCEL *c);
 void CancelList(LIST *o);
 bool IsPriorityHighestPacketForQoS(void *data, UINT size);
 UINT GetNextDelayedPacketTickDiff(SESSION *s);
-
-UINT PrepareDHCPRequestForStaticIPv4(SESSION *s, BLOCK *b);
-void ClearDHCPLeaseRecordForIPv4(SESSION *s, UINT static_ip);
 
 #endif	// SESSION_H
 

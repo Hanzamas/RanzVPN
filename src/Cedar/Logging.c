@@ -9,9 +9,7 @@
 
 #include "Admin.h"
 #include "Client.h"
-#include "Nat.h"
 #include "Remote.h"
-#include "SecureNAT.h"
 #include "Server.h"
 
 #include "Mayaqua/DNS.h"
@@ -23,6 +21,7 @@
 #include "Mayaqua/Tick64.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
+#include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Unix.h"
 #include "Mayaqua/Win32.h"
 
@@ -606,24 +605,6 @@ void HLog(HUB *h, char *name, ...)
 	UniFormatArgs(buf, sizeof(buf), _UU(name), args);
 
 	WriteHubLog(h, buf);
-	va_end(args);
-}
-void NLog(VH *v, char *name, ...)
-{
-	wchar_t buf[MAX_SIZE * 2];
-	static wchar_t snat_prefix[] = L"SecureNAT: ";
-	va_list args;
-	// Validate arguments
-	if (name == NULL || v == NULL || v->nat == NULL || v->nat->SecureNAT == NULL || v->SaveLog == false)
-	{
-		return;
-	}
-
-	va_start(args, name);
-	Copy(buf, snat_prefix, sizeof(snat_prefix));
-	UniFormatArgs(&buf[11], sizeof(buf) - 12 * sizeof(wchar_t), _UU(name), args);
-
-	WriteHubLog(v->nat->SecureNAT->Hub, buf);
 	va_end(args);
 }
 

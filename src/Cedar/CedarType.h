@@ -127,25 +127,6 @@ typedef struct LINK LINK;
 
 
 // ==============================================================
-//   Virtual
-// ==============================================================
-
-typedef struct ARP_ENTRY ARP_ENTRY;
-typedef struct ARP_WAIT ARP_WAIT;
-typedef struct IP_WAIT IP_WAIT;
-typedef struct IP_PART IP_PART;
-typedef struct IP_COMBINE IP_COMBINE;
-typedef struct NAT_ENTRY NAT_ENTRY;
-typedef struct TCP_OPTION TCP_OPTION;
-typedef struct VH VH;
-typedef struct VH_OPTION VH_OPTION;
-typedef struct DHCP_LEASE DHCP_LEASE;
-typedef struct NATIVE_NAT NATIVE_NAT;
-typedef struct NATIVE_NAT_ENTRY NATIVE_NAT_ENTRY;
-typedef struct DNS_PARSED_PACKET DNS_PARSED_PACKET;
-
-
-// ==============================================================
 //   WPC
 // ==============================================================
 
@@ -352,28 +333,6 @@ typedef struct RPC_AZURE_STATUS RPC_AZURE_STATUS;
 
 
 // ==============================================================
-//  NAT
-// ==============================================================
-
-typedef struct NAT NAT;
-typedef struct NAT_ADMIN NAT_ADMIN;
-typedef struct RPC_DUMMY RPC_DUMMY;
-typedef struct RPC_NAT_STATUS RPC_NAT_STATUS;
-typedef struct RPC_NAT_INFO RPC_NAT_INFO;
-typedef struct RPC_ENUM_NAT_ITEM RPC_ENUM_NAT_ITEM;
-typedef struct RPC_ENUM_NAT RPC_ENUM_NAT;
-typedef struct RPC_ENUM_DHCP_ITEM RPC_ENUM_DHCP_ITEM;
-typedef struct RPC_ENUM_DHCP RPC_ENUM_DHCP;
-
-
-// ==============================================================
-//  SecureNAT
-// ==============================================================
-
-typedef struct SNAT SNAT;
-
-
-// ==============================================================
 //  WinUI
 // ==============================================================
 
@@ -474,15 +433,6 @@ typedef struct DDNS_CLIENT_STATUS DDNS_CLIENT_STATUS;
 // ==============================================================
 typedef struct AZURE_CLIENT AZURE_CLIENT;
 typedef struct AZURE_PARAM AZURE_PARAM;
-
-
-// ==============================================================
-//   Native Stack
-// ==============================================================
-
-typedef struct NATIVE_STACK NATIVE_STACK;
-typedef struct IPTABLES_STATE IPTABLES_STATE;
-typedef struct IPTABLES_ENTRY IPTABLES_ENTRY;
 
 
 // ==============================================================

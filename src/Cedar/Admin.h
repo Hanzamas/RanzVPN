@@ -339,7 +339,6 @@ struct RPC_HUB_STATUS
 	UINT NumMacTables;					// Number of MAC table entries
 	UINT NumIpTables;					// Number of IP table entries
 	TRAFFIC Traffic;					// Traffic
-	bool SecureNATEnabled;				// Whether SecureNAT is enabled
 	UINT64 LastCommTime;				// Last communication date and time
 	UINT64 LastLoginTime;				// Last login date and time
 	UINT64 CreatedTime;					// Creation date and time
@@ -564,7 +563,6 @@ struct RPC_ENUM_SESSION_ITEM
 	UINT64 PacketSize;								// Packet size
 	UINT64 PacketNum;								// Number of packets
 	bool LinkMode;									// Link mode
-	bool SecureNATMode;								// SecureNAT mode
 	bool BridgeMode;								// Bridge mode
 	bool Layer3Mode;								// Layer 3 mode
 	bool Client_BridgeMode;							// Client is bridge mode
@@ -984,13 +982,6 @@ UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t);
 UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t);
 UINT StSetKeep(ADMIN *a, RPC_KEEP *t);
 UINT StGetKeep(ADMIN *a, RPC_KEEP *t);
-UINT StEnableSecureNAT(ADMIN *a, RPC_HUB *t);
-UINT StDisableSecureNAT(ADMIN *a, RPC_HUB *t);
-UINT StSetSecureNATOption(ADMIN *a, VH_OPTION *t);
-UINT StGetSecureNATOption(ADMIN *a, VH_OPTION *t);
-UINT StEnumNAT(ADMIN *a, RPC_ENUM_NAT *t);
-UINT StEnumDHCP(ADMIN *a, RPC_ENUM_DHCP *t);
-UINT StGetSecureNATStatus(ADMIN *a, RPC_NAT_STATUS *t);
 UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t);
 UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t);
 UINT StDeleteLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t);
@@ -1115,13 +1106,6 @@ UINT ScSetLink(RPC *a, RPC_CREATE_LINK *t);
 UINT ScSetAccessList(RPC *r, RPC_ENUM_ACCESS_LIST *t);
 UINT ScSetKeep(RPC *r, RPC_KEEP *t);
 UINT ScGetKeep(RPC *r, RPC_KEEP *t);
-UINT ScEnableSecureNAT(RPC *r, RPC_HUB *t);
-UINT ScDisableSecureNAT(RPC *r, RPC_HUB *t);
-UINT ScSetSecureNATOption(RPC *r, VH_OPTION *t);
-UINT ScGetSecureNATOption(RPC *r, VH_OPTION *t);
-UINT ScEnumNAT(RPC *r, RPC_ENUM_NAT *t);
-UINT ScEnumDHCP(RPC *r, RPC_ENUM_DHCP *t);
-UINT ScGetSecureNATStatus(RPC *r, RPC_NAT_STATUS *t);
 UINT ScEnumEthernet(RPC *r, RPC_ENUM_ETH *t);
 UINT ScAddLocalBridge(RPC *r, RPC_LOCALBRIDGE *t);
 UINT ScDeleteLocalBridge(RPC *r, RPC_LOCALBRIDGE *t);

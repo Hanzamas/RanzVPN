@@ -307,7 +307,6 @@ struct LOG_FILE
 
 // Global server flags
 #define	NUM_GLOBAL_SERVER_FLAGS			128
-#define	GSF_DISABLE_PUSH_ROUTE			1
 #define	GSF_DISABLE_RADIUS_AUTH			2
 #define	GSF_DISABLE_CERT_AUTH			3
 #define	GSF_DISABLE_DEEP_LOGGING		4
@@ -446,8 +445,6 @@ void SiWriteAcList(FOLDER *f, LIST *o);
 void SiLoadAcList(LIST *o, FOLDER *f);
 void SiWritePolicyCfg(FOLDER *f, POLICY *p, bool cascade_mode);
 void SiLoadPolicyCfg(POLICY *p, FOLDER *f);
-void SiLoadSecureNAT(HUB *h, FOLDER *f);
-void SiWriteSecureNAT(HUB *h, FOLDER *f);
 void SiRebootServerEx(bool bridge, bool reset_setting);
 void SiRebootServer(bool bridge);
 void SiRebootServerThread(THREAD *thread, void *param);
@@ -476,9 +473,6 @@ void SiCallCreateHub(SERVER *s, FARM_MEMBER *f, HUB *h);
 void SiCallUpdateHub(SERVER *s, FARM_MEMBER *f, HUB *h);
 void SiCallDeleteHub(SERVER *s, FARM_MEMBER *f, HUB *h);
 void SiCallEnumSession(SERVER *s, FARM_MEMBER *f, char *hubname, RPC_ENUM_SESSION *t);
-void SiCallEnumNat(SERVER *s, FARM_MEMBER *f, char *hubname, RPC_ENUM_NAT *t);
-void SiCallEnumDhcp(SERVER *s, FARM_MEMBER *f, char *hubname, RPC_ENUM_DHCP *t);
-void SiCallGetNatStatus(SERVER *s, FARM_MEMBER *f, char *hubname, RPC_NAT_STATUS *t);
 void SiCallEnumMacTable(SERVER *s, FARM_MEMBER *f, char *hubname, RPC_ENUM_MAC_TABLE *t);
 void SiCallEnumIpTable(SERVER *s, FARM_MEMBER *f, char *hubname, RPC_ENUM_IP_TABLE *t);
 void SiCallDeleteSession(SERVER *s, FARM_MEMBER *f, char *hubname, char *session_name);
@@ -493,9 +487,6 @@ void SiCalledDeleteMacTable(SERVER *s, PACK *p);
 void SiCalledDeleteIpTable(SERVER *s, PACK *p);
 PACK *SiCalledCreateTicket(SERVER *s, PACK *p);
 PACK *SiCalledEnumSession(SERVER *s, PACK *p);
-PACK *SiCalledEnumNat(SERVER *s, PACK *p);
-PACK *SiCalledEnumDhcp(SERVER *s, PACK *p);
-PACK *SiCalledGetNatStatus(SERVER *s, PACK *p);
 PACK *SiCalledEnumMacTable(SERVER *s, PACK *p);
 PACK *SiCalledEnumIpTable(SERVER *s, PACK *p);
 void SiCalledEnumHub(SERVER *s, PACK *p, PACK *req);

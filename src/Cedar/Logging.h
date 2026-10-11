@@ -134,7 +134,6 @@ void DebugLog(CEDAR *c, char *fmt, ...);
 void SLog(CEDAR *c, char *name, ...);
 void WriteHubLog(HUB *h, wchar_t *str);
 void HLog(HUB *h, char *name, ...);
-void NLog(VH *v, char *name, ...);
 void WriteServerLog(CEDAR *c, wchar_t *str);
 void ALog(ADMIN *a, HUB *h, char *name, ...);
 void CLog(CLIENT *c, char *name, ...);

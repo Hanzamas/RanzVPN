@@ -13,13 +13,10 @@
 #include "Layer3.h"
 #include "Link.h"
 #include "Listener.h"
-#include "Nat.h"
 #include "Protocol.h"
 #include "Server.h"
-#include "SecureNAT.h"
 #include "Session.h"
 #include "UdpAccel.h"
-#include "Virtual.h"
 
 #include "Mayaqua/DNS.h"
 #include "Mayaqua/Kernel.h"
@@ -29,6 +26,7 @@
 #include "Mayaqua/Pack.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
+#include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
 
 #include <stdlib.h>
@@ -1442,32 +1440,6 @@ SEND_START:
 			ReleaseSock(sock);
 		}
 	}
-	else if (c->Protocol == CONNECTION_HUB_SECURE_NAT)
-	{
-		// SecureNAT session
-		SNAT *snat = s->SecureNAT;
-		VH *v = snat->Nat->Virtual;
-		BLOCK *block;
-		UINT num_packet = 0;
-
-		if (hub != NULL)
-		{
-			NatSetHubOption(v, hub->Option);
-		}
-
-		while (block = GetNext(c->SendBlocks))
-		{
-			num_packet++;
-			c->CurrentSendQueueSize -= block->Size;
-			VirtualPutPacket(v, block->Buf, block->Size);
-			Free(block);
-		}
-
-		if (num_packet != 0)
-		{
-			VirtualPutPacket(v, NULL, 0);
-		}
-	}
 	else if (c->Protocol == CONNECTION_HUB_LAYER3)
 	{
 		// Layer-3 session
@@ -1717,10 +1689,6 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 
 		// Select
 		time = SELECT_TIME;
-		if (s->VirtualHost)
-		{
-			time = MIN(time, SELECT_TIME_FOR_NAT);
-		}
 		next_delay_packet_diff = GetNextDelayedPacketTickDiff(s);
 		time = MIN(time, next_delay_packet_diff);
 		num_delayed = LIST_NUM(s->DelayedPacketList);
@@ -2385,81 +2353,6 @@ DISCONNECT_THIS_TCP:
 			Select(NULL, SELECT_TIME, c1, c2);
 		}
 	}
-	else if (c->Protocol == CONNECTION_HUB_SECURE_NAT)
-	{
-		SNAT *snat = c->Session->SecureNAT;
-		VH *v = snat->Nat->Virtual;
-		UINT size;
-		void *data;
-		UINT num;
-		UINT select_wait_time = SELECT_TIME_FOR_NAT;
-		UINT next_delay_packet_diff = 0;
-
-		if (snat->Nat != NULL && snat->Nat->Option.UseNat == false)
-		{
-			select_wait_time = SELECT_TIME;
-		}
-		else
-		{
-			if (snat->Nat != NULL)
-			{
-				LockList(v->NatTable);
-				{
-					if (LIST_NUM(v->NatTable) == 0 && LIST_NUM(v->ArpWaitTable) == 0)
-					{
-						select_wait_time = SELECT_TIME;
-					}
-				}
-				UnlockList(v->NatTable);
-			}
-		}
-
-		next_delay_packet_diff = GetNextDelayedPacketTickDiff(s);
-		select_wait_time = MIN(select_wait_time, next_delay_packet_diff);
-		num_delayed = LIST_NUM(s->DelayedPacketList);
-
-		if (no_spinlock_for_delay || select_wait_time >= 50 || num_delayed == false)
-		{
-			Select(NULL, (num_delayed == 0 ? select_wait_time :
-				(select_wait_time > 100 ? (select_wait_time - 100) : 1)), c1, c2);
-		}
-		else
-		{
-			YieldCpu();
-		}
-
-		num = 0;
-
-		if (hub != NULL)
-		{
-			NatSetHubOption(v, hub->Option);
-		}
-
-		// Receive a packet from the virtual machine
-		while (size = VirtualGetNextPacket(v, &data))
-		{
-			BLOCK *block;
-
-			// Generate packet block
-			block = NewBlock(data, size, 0);
-			if (block->Size > MAX_PACKET_SIZE)
-			{
-				// Packet size exceeded
-				FreeBlock(block);
-			}
-			else
-			{
-				// Add the data block to queue
-				InsertReceivedBlockToQueue(c, block, true);
-			}
-			num++;
-			if (num >= MAX_SEND_SOCKET_QUEUE_NUM)
-			{
-//				WHERE;
-				break;
-			}
-		}
-	}
 	else if (c->Protocol == CONNECTION_HUB_LINK_SERVER)
 	{
 		// HUB Link
@@ -2775,7 +2668,7 @@ BLOCK *NewBlock(void *data, UINT size, int compress)
 
 	b->IsFlooding = false;
 
-	b->PriorityQoS = b->Ttl = b->Param1 = 0;
+	b->PriorityQoS = b->Param1 = 0;
 
 	if (compress == 0)
 	{
@@ -3526,20 +3419,13 @@ CONNECTION *NewClientConnectionEx(SESSION *s, char *client_str, UINT client_ver,
 		c->ClientVer = s->Cedar->Version;
 		c->ClientBuild = s->Cedar->Build;
 
-		if (c->Session->VirtualHost == false)
+		if (c->Session->LinkModeClient == false)
 		{
-			if (c->Session->LinkModeClient == false)
-			{
-				StrCpy(c->ClientStr, sizeof(c->ClientStr), CEDAR_CLIENT_STR);
-			}
-			else
-			{
-				StrCpy(c->ClientStr, sizeof(c->ClientStr), CEDAR_SERVER_LINK_STR);
-			}
+			StrCpy(c->ClientStr, sizeof(c->ClientStr), CEDAR_CLIENT_STR);
 		}
 		else
 		{
-			StrCpy(c->ClientStr, sizeof(c->ClientStr), CEDAR_ROUTER_STR);
+			StrCpy(c->ClientStr, sizeof(c->ClientStr), CEDAR_SERVER_LINK_STR);
 		}
 	}
 	else

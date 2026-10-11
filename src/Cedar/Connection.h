@@ -177,7 +177,6 @@ struct BLOCK
 	UINT SizeofData;				// Data size
 	UCHAR *Buf;						// Buffer
 	bool PriorityQoS;				// Priority packet for VoIP / QoS function
-	UINT Ttl;						// TTL value (Used only in ICMP NAT of Virtual.c)
 	UINT Param1;					// Parameter 1
 	bool IsFlooding;				// Is flooding packet
 	UCHAR RawFlagRetUdpAccel;		// Raw flag returned by UDP accel

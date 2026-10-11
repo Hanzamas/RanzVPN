@@ -9,7 +9,6 @@
 
 #include "AzureClient.h"
 #include "Server.h"
-#include "Virtual.h"
 
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Mayaqua.h"
@@ -570,7 +569,6 @@ UINT DCRegister(DDNS_CLIENT *c, bool ipv6, DDNS_REGISTER_PARAM *p, char *replace
 	{
 		if (err == ERR_NO_ERROR)
 		{
-			char snat_t[MAX_SIZE];
 			char current_region[128];
 
 			// Current host name
@@ -580,11 +578,6 @@ UINT DCRegister(DDNS_CLIENT *c, bool ipv6, DDNS_REGISTER_PARAM *p, char *replace
 			PackGetStr(ret, "current_ipv6", c->CurrentIPv6, sizeof(c->CurrentIPv6));
 			PackGetStr(ret, "dns_suffix", c->DnsSuffix, sizeof(c->DnsSuffix));
 			PackGetStr(ret, "current_region", current_region, sizeof(current_region));
-
-			// SecureNAT connectivity check parameters
-			Zero(snat_t, sizeof(snat_t));
-			PackGetStr(ret, "snat_t", snat_t, sizeof(snat_t));
-			NnSetSecureNatTargetHostname(snat_t);
 
 			if (ipv6 == false)
 			{

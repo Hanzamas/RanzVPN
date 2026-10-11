@@ -11,7 +11,6 @@
 #include "Hub.h"
 #include "Server.h"
 #include "Session.h"
-#include "Virtual.h"
 
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Kernel.h"

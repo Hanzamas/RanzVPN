@@ -12,12 +12,12 @@
 #include "Connection.h"
 #include "Hub.h"
 #include "Session.h"
-#include "Virtual.h"
 
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
+#include "Mayaqua/TcpIp.h"
 
 // Hash the list of current Ethernet devices
 UINT GetEthDeviceHash()

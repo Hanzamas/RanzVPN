@@ -16,7 +16,6 @@
 #include "Logging.h"
 #include "Protocol.h"
 #include "Remote.h"
-#include "Virtual.h"
 #include "VLanUnix.h"
 #include "VLanWin32.h"
 #include "Win32Com.h"
@@ -39,6 +38,7 @@
 #include "Mayaqua/Secure.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
+#include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
 #include "Mayaqua/Win32.h"
 

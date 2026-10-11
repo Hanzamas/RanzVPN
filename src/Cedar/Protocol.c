@@ -1137,7 +1137,6 @@ bool ServerAccept(CONNECTION *c)
 	char sessionname[MAX_SESSION_NAME_LEN + 1];
 	bool is_server_or_bridge = false;
 	bool qos = false;
-	bool cluster_dynamic_secure_nat = false;
 	bool no_save_password = false;
 	NODE_INFO node;
 	wchar_t *msg = NULL;
@@ -2988,17 +2987,6 @@ bool ServerAccept(CONNECTION *c)
 			ts->Direction = TCP_CLIENT_TO_SERVER;
 		}
 
-		if (s->Hub->Type == HUB_TYPE_FARM_DYNAMIC && s->Cedar->Server != NULL && s->Cedar->Server->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-		{
-			if (s->Hub->BeingOffline == false)
-			{
-				// Start the SecureNAT on the dynamic Virtual HUB
-				EnableSecureNATEx(s->Hub, false, true);
-
-				cluster_dynamic_secure_nat = true;
-			}
-		}
-
 		if (s->LocalHostSession)
 		{
 			// Update the local MAC address list
@@ -3064,12 +3052,6 @@ bool ServerAccept(CONNECTION *c)
 		PrintSessionTotalDataSize(s);
 
 		HLog(s->Hub, "LH_END_SESSION", s->Name, s->TotalSendSizeReal, s->TotalRecvSizeReal);
-
-		if (cluster_dynamic_secure_nat && s->Hub->BeingOffline == false)
-		{
-			// Stop the SecureNAT on the dynamic Virtual HUB
-			EnableSecureNATEx(s->Hub, false, true);
-		}
 
 		if (s->UdpAccel != NULL)
 		{

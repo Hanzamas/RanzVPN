@@ -23,7 +23,6 @@
 #define CEDAR_ELOG					"SoftEther EtherLogger Developer Edition"
 #define	CEDAR_CLIENT_STR			"SoftEther VPN Client Developer Edition"
 #define CEDAR_CLIENT_MANAGER_STR	"SoftEther VPN Client Connection Manager Developer Edition"
-#define	CEDAR_ROUTER_STR			"SoftEther VPN User-mode Router Developer Edition"
 #define	CEDAR_SERVER_LINK_STR		"SoftEther VPN Server Developer Edition (Cascade Mode)"
 #define	CEDAR_BRIDGE_LINK_STR		"SoftEther VPN Bridge Developer Edition (Cascade Mode)"
 #define	CEDAR_SERVER_FARM_STR		"SoftEther VPN Server Developer Edition (Cluster RPC Mode)"

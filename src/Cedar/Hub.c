@@ -11,10 +11,7 @@
 #include "Bridge.h"
 #include "Connection.h"
 #include "Link.h"
-#include "Nat.h"
-#include "NativeStack.h"
 #include "Protocol.h"
-#include "SecureNAT.h"
 #include "Server.h"
 
 #include "Mayaqua/Cfg.h"
@@ -486,15 +483,7 @@ void DataToHubOptionStruct(HUB_OPTION *o, RPC_ADMIN_OPTION *ao)
 	GetHubAdminOptionDataAndSet(ao, "DisableUdpFilterForLocalBridgeNic", o->DisableUdpFilterForLocalBridgeNic);
 	GetHubAdminOptionDataAndSet(ao, "ApplyIPv4AccessListOnArpPacket", o->ApplyIPv4AccessListOnArpPacket);
 	GetHubAdminOptionDataAndSet(ao, "RemoveDefGwOnDhcpForLocalhost", o->RemoveDefGwOnDhcpForLocalhost);
-	GetHubAdminOptionDataAndSet(ao, "SecureNAT_MaxTcpSessionsPerIp", o->SecureNAT_MaxTcpSessionsPerIp);
-	GetHubAdminOptionDataAndSet(ao, "SecureNAT_MaxTcpSynSentPerIp", o->SecureNAT_MaxTcpSynSentPerIp);
-	GetHubAdminOptionDataAndSet(ao, "SecureNAT_MaxUdpSessionsPerIp", o->SecureNAT_MaxUdpSessionsPerIp);
-	GetHubAdminOptionDataAndSet(ao, "SecureNAT_MaxDnsSessionsPerIp", o->SecureNAT_MaxDnsSessionsPerIp);
-	GetHubAdminOptionDataAndSet(ao, "SecureNAT_MaxIcmpSessionsPerIp", o->SecureNAT_MaxIcmpSessionsPerIp);
 	GetHubAdminOptionDataAndSet(ao, "AccessListIncludeFileCacheLifetime", o->AccessListIncludeFileCacheLifetime);
-	GetHubAdminOptionDataAndSet(ao, "DisableKernelModeSecureNAT", o->DisableKernelModeSecureNAT);
-	GetHubAdminOptionDataAndSet(ao, "DisableIpRawModeSecureNAT", o->DisableIpRawModeSecureNAT);
-	GetHubAdminOptionDataAndSet(ao, "DisableUserModeSecureNAT", o->DisableUserModeSecureNAT);
 	GetHubAdminOptionDataAndSet(ao, "DisableCheckMacOnLocalBridge", o->DisableCheckMacOnLocalBridge);
 	GetHubAdminOptionDataAndSet(ao, "DisableCorrectIpOffloadChecksum", o->DisableCorrectIpOffloadChecksum);
 	GetHubAdminOptionDataAndSet(ao, "BroadcastLimiterStrictMode", o->BroadcastLimiterStrictMode);
@@ -505,7 +494,6 @@ void DataToHubOptionStruct(HUB_OPTION *o, RPC_ADMIN_OPTION *ao)
 	GetHubAdminOptionDataAndSet(ao, "AllowSameUserInPrivacyFilterMode", o->AllowSameUserInPrivacyFilterMode);
 	GetHubAdminOptionDataAndSet(ao, "SuppressClientUpdateNotification", o->SuppressClientUpdateNotification);
 	GetHubAdminOptionDataAndSet(ao, "FloodingSendQueueBufferQuota", o->FloodingSendQueueBufferQuota);
-	GetHubAdminOptionDataAndSet(ao, "SecureNAT_RandomizeAssignIp", o->SecureNAT_RandomizeAssignIp);
 	GetHubAdminOptionDataAndSet(ao, "DetectDormantSessionInterval", o->DetectDormantSessionInterval);
 	GetHubAdminOptionDataAndSet(ao, "NoPhysicalIPOnPacketLog", o->NoPhysicalIPOnPacketLog);
 	GetHubAdminOptionDataAndSet(ao, "UseHubNameAsDhcpUserClassOption", o->UseHubNameAsDhcpUserClassOption);
@@ -559,15 +547,7 @@ void HubOptionStructToData(RPC_ADMIN_OPTION *ao, HUB_OPTION *o, char *hub_name)
 	Add(aol, NewAdminOption("DisableUdpFilterForLocalBridgeNic", o->DisableUdpFilterForLocalBridgeNic));
 	Add(aol, NewAdminOption("ApplyIPv4AccessListOnArpPacket", o->ApplyIPv4AccessListOnArpPacket));
 	Add(aol, NewAdminOption("RemoveDefGwOnDhcpForLocalhost", o->RemoveDefGwOnDhcpForLocalhost));
-	Add(aol, NewAdminOption("SecureNAT_MaxTcpSessionsPerIp", o->SecureNAT_MaxTcpSessionsPerIp));
-	Add(aol, NewAdminOption("SecureNAT_MaxTcpSynSentPerIp", o->SecureNAT_MaxTcpSynSentPerIp));
-	Add(aol, NewAdminOption("SecureNAT_MaxUdpSessionsPerIp", o->SecureNAT_MaxUdpSessionsPerIp));
-	Add(aol, NewAdminOption("SecureNAT_MaxDnsSessionsPerIp", o->SecureNAT_MaxDnsSessionsPerIp));
-	Add(aol, NewAdminOption("SecureNAT_MaxIcmpSessionsPerIp", o->SecureNAT_MaxIcmpSessionsPerIp));
 	Add(aol, NewAdminOption("AccessListIncludeFileCacheLifetime", o->AccessListIncludeFileCacheLifetime));
-	Add(aol, NewAdminOption("DisableKernelModeSecureNAT", o->DisableKernelModeSecureNAT));
-	Add(aol, NewAdminOption("DisableIpRawModeSecureNAT", o->DisableIpRawModeSecureNAT));
-	Add(aol, NewAdminOption("DisableUserModeSecureNAT", o->DisableUserModeSecureNAT));
 	Add(aol, NewAdminOption("DisableCheckMacOnLocalBridge", o->DisableCheckMacOnLocalBridge));
 	Add(aol, NewAdminOption("DisableCorrectIpOffloadChecksum", o->DisableCorrectIpOffloadChecksum));
 	Add(aol, NewAdminOption("BroadcastLimiterStrictMode", o->BroadcastLimiterStrictMode));
@@ -578,7 +558,6 @@ void HubOptionStructToData(RPC_ADMIN_OPTION *ao, HUB_OPTION *o, char *hub_name)
 	Add(aol, NewAdminOption("AllowSameUserInPrivacyFilterMode", o->AllowSameUserInPrivacyFilterMode));
 	Add(aol, NewAdminOption("SuppressClientUpdateNotification", o->SuppressClientUpdateNotification));
 	Add(aol, NewAdminOption("FloodingSendQueueBufferQuota", o->FloodingSendQueueBufferQuota));
-	Add(aol, NewAdminOption("SecureNAT_RandomizeAssignIp", o->SecureNAT_RandomizeAssignIp));
 	Add(aol, NewAdminOption("DetectDormantSessionInterval", o->DetectDormantSessionInterval));
 	Add(aol, NewAdminOption("NoPhysicalIPOnPacketLog", o->NoPhysicalIPOnPacketLog));
 	Add(aol, NewAdminOption("UseHubNameAsDhcpUserClassOption", o->UseHubNameAsDhcpUserClassOption));
@@ -1646,68 +1625,6 @@ void HubWatchDogThread(THREAD *t, void *param)
 	}
 ESCAPE:
 	return;
-}
-
-// Enable / disable the SecureNAT
-void EnableSecureNAT(HUB *h, bool enable)
-{
-	EnableSecureNATEx(h, enable, false);
-}
-void EnableSecureNATEx(HUB *h, bool enable, bool no_change)
-{
-	bool for_cluster = false;
-	// Validate arguments
-	if (h == NULL)
-	{
-		return;
-	}
-
-	if (h->Cedar->Server != NULL && h->Cedar->Server->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		if (h->Type == HUB_TYPE_FARM_DYNAMIC)
-		{
-			for_cluster = true;
-		}
-	}
-
-	Lock(h->lock_online);
-	{
-		if (no_change == false)
-		{
-			h->EnableSecureNAT = enable;
-		}
-
-		if (h->EnableSecureNAT == false)
-		{
-STOP:
-			// Stop if it's already started
-			if (h->SecureNAT != NULL)
-			{
-				SnFreeSecureNAT(h->SecureNAT);
-				h->SecureNAT = NULL;
-			}
-		}
-		else
-		{
-			if (for_cluster)
-			{
-				if ((h->SecureNAT != NULL && LIST_NUM(h->SessionList) <= 1) ||
-					(h->SecureNAT == NULL && LIST_NUM(h->SessionList) == 0))
-				{
-					// It is in a start mode, but stop when there is no other sessions
-					// in the case of dynamic Virtual HUB
-					goto STOP;
-				}
-			}
-
-			// Start if the HUB is online and not started
-			if (h->SecureNAT == NULL && h->Offline == false)
-			{
-				h->SecureNAT = SnNewSecureNAT(h, h->SecureNATOption);
-			}
-		}
-	}
-	Unlock(h->lock_online);
 }
 
 // Convert an access list to a string
@@ -3571,31 +3488,6 @@ LABEL_TRY_AGAIN:
 	}
 
 
-	if (packet != NULL)
-	{
-		if (packet->TypeL7 == L7_DHCPV4)
-		{
-			if (packet->TypeL3 == L3_IPV4 && packet->TypeL4 == L4_UDP)
-			{
-				if (packet->L7.DHCPv4Header != NULL)
-				{
-					DHCPV4_HEADER *dhcp = packet->L7.DHCPv4Header;
-
-					if (dhcp->OpCode == 1)
-					{
-						if (NsIsMacAddressOnLocalhost(dhcp->ClientMacAddress))
-						{
-							// Filter DHCP requests sent from local kernel-mode virtual NAT
-							// not to re-enter it to the virtual HUB along the local bridge
-							FreePacket(packet);
-							packet = NULL;
-						}
-					}
-				}
-			}
-		}
-	}
-
 	if (no_parse_dhcp == false && packet != NULL)
 	{
 		if (hub != NULL && hub->Option != NULL && hub->Option->RemoveDefGwOnDhcpForLocalhost)
@@ -5024,7 +4916,7 @@ bool CheckMaxLoggedPacketsPerMinute(SESSION *s, UINT max_packets, UINT64 now)
 	}
 
 	if ((s->Policy != NULL && s->Policy->NoBroadcastLimiter) ||
-		s->SecureNATMode || s->BridgeMode || s->LinkModeServer || s->LinkModeClient ||
+		s->BridgeMode || s->LinkModeServer || s->LinkModeClient ||
 		s->L3SwitchMode)
 	{
 		return true;
@@ -6058,19 +5950,10 @@ void StopHub(HUB *h)
 // Online the Virtual HUB
 void SetHubOnline(HUB *h)
 {
-	bool for_cluster = false;
 	// Validate arguments
 	if (h == NULL)
 	{
 		return;
-	}
-
-	if (h->Cedar->Server != NULL && h->Cedar->Server->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		if (h->Type == HUB_TYPE_FARM_DYNAMIC)
-		{
-			for_cluster = true;
-		}
 	}
 
 	Lock(h->lock_online);
@@ -6084,18 +5967,6 @@ void SetHubOnline(HUB *h)
 
 		// Start all links
 		StartAllLink(h);
-
-		// Start the SecureNAT
-		if (h->EnableSecureNAT)
-		{
-			if (h->SecureNAT == NULL)
-			{
-				if (for_cluster == false)
-				{
-					h->SecureNAT = SnNewSecureNAT(h, h->SecureNATOption);
-				}
-			}
-		}
 
 		// Start all of the local bridges that is associated with this HUB
 		if (h->Type != HUB_TYPE_FARM_DYNAMIC)
@@ -6164,10 +6035,6 @@ void SetHubOffline(HUB *h)
 
 		// Stop all links
 		StopAllLink(h);
-
-		// Stop the SecureNAT
-		SnFreeSecureNAT(h->SecureNAT);
-		h->SecureNAT = NULL;
 
 		// Stop all the local bridges that is associated with this HUB
 		LockList(h->Cedar->LocalBridgeList);
@@ -6396,8 +6263,6 @@ void CleanupHub(HUB *h)
 	FreeTraffic(h->Traffic);
 	FreeTraffic(h->OldTraffic);
 	Free(h->Option);
-
-	Free(h->SecureNATOption);
 
 	DeleteLock(h->TrafficLock);
 
@@ -6749,17 +6614,6 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 	h->Option->AllowSameUserInPrivacyFilterMode = false;
 
 	Rand(h->HubSignature, sizeof(h->HubSignature));
-
-	// SecureNAT related
-	h->EnableSecureNAT = false;
-	h->SecureNAT = NULL;
-	h->SecureNATOption = ZeroMalloc(sizeof(VH_OPTION));
-	NiSetDefaultVhOption(NULL, h->SecureNATOption);
-
-	if (h->Cedar != NULL && h->Cedar->Server != NULL && h->Cedar->Server->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		NiClearUnsupportedVhOptionForDynamicHub(h->SecureNATOption, true);
-	}
 
 	// Generate a temporary MAC address for the HUB
 	GenerateMachineUniqueHash(hash);
