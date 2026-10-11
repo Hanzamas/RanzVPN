@@ -10,8 +10,6 @@
 #include "Admin.h"
 #include "Client.h"
 #include "Nat.h"
-#include "Proto_EtherIP.h"
-#include "Proto_IKE.h"
 #include "Proto_PPP.h"
 #include "Remote.h"
 #include "SecureNAT.h"
@@ -628,92 +626,6 @@ void NLog(VH *v, char *name, ...)
 
 	WriteHubLog(v->nat->SecureNAT->Hub, buf);
 	va_end(args);
-}
-
-// Writing EtherIP log
-void EtherIPLog(ETHERIP_SERVER *s, char *name, ...)
-{
-	wchar_t prefix[MAX_SIZE * 2];
-	wchar_t buf2[MAX_SIZE * 2];
-	char server_ip[64];
-	char client_ip[64];
-	va_list args;
-	// Validate arguments
-	if (s == NULL)
-	{
-		return;
-	}
-
-	IPToStr(server_ip, sizeof(server_ip), &s->ServerIP);
-	IPToStr(client_ip, sizeof(client_ip), &s->ClientIP);
-
-	UniFormat(prefix, sizeof(prefix), _UU("LE_PREFIX"), s->Id,
-	          server_ip, s->ServerPort, client_ip, s->ClientPort);
-
-	va_start(args, name);
-	UniFormatArgs(buf2, sizeof(buf2), _UU(name), args);
-	va_end(args);
-
-	UniStrCat(prefix, sizeof(prefix), buf2);
-
-	WriteServerLog(s->Cedar, prefix);
-}
-
-// Write an IPsec log
-void IPsecLog(IKE_SERVER *ike, IKE_CLIENT *c, IKE_SA *ike_sa, IPSECSA *ipsec_sa, char *name, ...)
-{
-	wchar_t prefix[MAX_SIZE * 2];
-	wchar_t buf2[MAX_SIZE * 2];
-	char server_ip[64];
-	char client_ip[64];
-	va_list args;
-	// Validate arguments
-	if (ike == NULL)
-	{
-		return;
-	}
-	if (ipsec_sa != NULL)
-	{
-		c = ipsec_sa->IkeClient;
-	}
-	else if (ike_sa != NULL)
-	{
-		c = ike_sa->IkeClient;
-	}
-
-	if (c == NULL)
-	{
-		UniStrCpy(prefix, sizeof(prefix), _UU("LI_PREFIX_RAW"));
-	}
-	else
-	{
-		IPToStr(server_ip, sizeof(server_ip), &c->ServerIP);
-		IPToStr(client_ip, sizeof(client_ip), &c->ClientIP);
-
-		if (ipsec_sa != NULL)
-		{
-			UniFormat(prefix, sizeof(prefix), _UU("LI_PREFIX_IPSEC"),
-			          ipsec_sa->Id, c->Id, client_ip, c->ClientPort, server_ip, c->ServerPort);
-		}
-		else if (ike_sa != NULL)
-		{
-			UniFormat(prefix, sizeof(prefix), _UU("LI_PREFIX_IKE"),
-			          ike_sa->Id, c->Id, client_ip, c->ClientPort, server_ip, c->ServerPort);
-		}
-		else
-		{
-			UniFormat(prefix, sizeof(prefix), _UU("LI_PREFIX_CLIENT"),
-			          c->Id, client_ip, c->ClientPort, server_ip, c->ServerPort);
-		}
-	}
-
-	va_start(args, name);
-	UniFormatArgs(buf2, sizeof(buf2), _UU(name), args);
-	va_end(args);
-
-	UniStrCat(prefix, sizeof(prefix), buf2);
-
-	WriteServerLog(ike->Cedar, prefix);
 }
 
 // Write a PPP log

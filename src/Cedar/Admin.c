@@ -20,7 +20,6 @@
 #include "Nat.h"
 #include "Remote.h"
 #include "Proto.h"
-#include "Proto_IPsec.h"
 #include "Proto_PPP.h"
 #include "Protocol.h"
 #include "Sam.h"
@@ -478,12 +477,6 @@ PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 	DECLARE_RPC_EX("GetAdminMsg", RPC_MSG, StGetAdminMsg, InRpcMsg, OutRpcMsg, FreeRpcMsg)
 	DECLARE_RPC("Flush", RPC_TEST, StFlush, InRpcTest, OutRpcTest)
 	DECLARE_RPC("Debug", RPC_TEST, StDebug, InRpcTest, OutRpcTest)
-	DECLARE_RPC("SetIPsecServices", IPSEC_SERVICES, StSetIPsecServices, InIPsecServices, OutIPsecServices)
-	DECLARE_RPC("GetIPsecServices", IPSEC_SERVICES, StGetIPsecServices, InIPsecServices, OutIPsecServices)
-	DECLARE_RPC("AddEtherIpId", ETHERIP_ID, StAddEtherIpId, InEtherIpId, OutEtherIpId)
-	DECLARE_RPC("GetEtherIpId", ETHERIP_ID, StGetEtherIpId, InEtherIpId, OutEtherIpId)
-	DECLARE_RPC("DeleteEtherIpId", ETHERIP_ID, StDeleteEtherIpId, InEtherIpId, OutEtherIpId)
-	DECLARE_RPC_EX("EnumEtherIpId", RPC_ENUM_ETHERIP_ID, StEnumEtherIpId, InRpcEnumEtherIpId, OutRpcEnumEtherIpId, FreeRpcEnumEtherIpId)
 	DECLARE_RPC("GetDDnsClientStatus", DDNS_CLIENT_STATUS, StGetDDnsClientStatus, InDDnsClientStatus, OutDDnsClientStatus)
 	DECLARE_RPC("ChangeDDnsClientHostname", RPC_TEST, StChangeDDnsClientHostname, InRpcTest, OutRpcTest)
 	DECLARE_RPC("RegenerateServerCert", RPC_TEST, StRegenerateServerCert, InRpcTest, OutRpcTest)
@@ -662,12 +655,6 @@ DECLARE_SC("Crash", RPC_TEST, ScCrash, InRpcTest, OutRpcTest)
 DECLARE_SC_EX("GetAdminMsg", RPC_MSG, ScGetAdminMsg, InRpcMsg, OutRpcMsg, FreeRpcMsg)
 DECLARE_SC("Flush", RPC_TEST, ScFlush, InRpcTest, OutRpcTest)
 DECLARE_SC("Debug", RPC_TEST, ScDebug, InRpcTest, OutRpcTest)
-DECLARE_SC("SetIPsecServices", IPSEC_SERVICES, ScSetIPsecServices, InIPsecServices, OutIPsecServices)
-DECLARE_SC("GetIPsecServices", IPSEC_SERVICES, ScGetIPsecServices, InIPsecServices, OutIPsecServices)
-DECLARE_SC("AddEtherIpId", ETHERIP_ID, ScAddEtherIpId, InEtherIpId, OutEtherIpId)
-DECLARE_SC("GetEtherIpId", ETHERIP_ID, ScGetEtherIpId, InEtherIpId, OutEtherIpId)
-DECLARE_SC("DeleteEtherIpId", ETHERIP_ID, ScDeleteEtherIpId, InEtherIpId, OutEtherIpId)
-DECLARE_SC_EX("EnumEtherIpId", RPC_ENUM_ETHERIP_ID, ScEnumEtherIpId, InRpcEnumEtherIpId, OutRpcEnumEtherIpId, FreeRpcEnumEtherIpId)
 DECLARE_SC("GetDDnsClientStatus", DDNS_CLIENT_STATUS, ScGetDDnsClientStatus, InDDnsClientStatus, OutDDnsClientStatus)
 DECLARE_SC("ChangeDDnsClientHostname", RPC_TEST, ScChangeDDnsClientHostname, InRpcTest, OutRpcTest)
 DECLARE_SC("RegenerateServerCert", RPC_TEST, ScRegenerateServerCert, InRpcTest, OutRpcTest)
@@ -904,166 +891,6 @@ UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t)
 
 	FreeX(x);
 	FreeK(k);
-
-	return ERR_NO_ERROR;
-}
-
-// Set IPsec service configuration
-UINT StSetIPsecServices(ADMIN *a, IPSEC_SERVICES *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
-
-	SERVER_ADMIN_ONLY;
-	NO_SUPPORT_FOR_BRIDGE;
-	if (GetServerCapsBool(s, "b_support_ipsec") == false || s->IPsecServer == NULL)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
-	IPsecServerSetServices(s->IPsecServer, t);
-
-	ALog(a, NULL, "LA_SET_IPSEC_CONFIG");
-
-	IncrementServerConfigRevision(s);
-
-	return ERR_NO_ERROR;
-}
-
-// Get IPsec service configuration
-UINT StGetIPsecServices(ADMIN *a, IPSEC_SERVICES *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
-
-	SERVER_ADMIN_ONLY;
-	NO_SUPPORT_FOR_BRIDGE;
-	if (GetServerCapsBool(s, "b_support_ipsec") == false || s->IPsecServer == NULL)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
-	Zero(t, sizeof(IPSEC_SERVICES));
-	IPsecServerGetServices(s->IPsecServer, t);
-
-	return ERR_NO_ERROR;
-}
-
-// Add EtherIP ID setting
-UINT StAddEtherIpId(ADMIN *a, ETHERIP_ID *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
-
-	SERVER_ADMIN_ONLY;
-	NO_SUPPORT_FOR_BRIDGE;
-	if (GetServerCapsBool(s, "b_support_ipsec") == false || s->IPsecServer == NULL)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
-	AddEtherIPId(s->IPsecServer, t);
-
-	ALog(a, NULL, "LA_ADD_ETHERIP_ID", t->Id);
-
-	IncrementServerConfigRevision(s);
-
-	return ERR_NO_ERROR;
-}
-
-// Get EtherIP ID setting
-UINT StGetEtherIpId(ADMIN *a, ETHERIP_ID *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
-	char id[MAX_SIZE];
-
-	SERVER_ADMIN_ONLY;
-	NO_SUPPORT_FOR_BRIDGE;
-	if (GetServerCapsBool(s, "b_support_ipsec") == false || s->IPsecServer == NULL)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
-	StrCpy(id, sizeof(id), t->Id);
-
-	Zero(t, sizeof(ETHERIP_ID));
-	if (SearchEtherIPId(s->IPsecServer, t, id) == false)
-	{
-		return ERR_OBJECT_NOT_FOUND;
-	}
-
-	return ERR_NO_ERROR;
-}
-
-// Delete EtherIP ID setting
-UINT StDeleteEtherIpId(ADMIN *a, ETHERIP_ID *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
-	char id[MAX_SIZE];
-
-	SERVER_ADMIN_ONLY;
-	NO_SUPPORT_FOR_BRIDGE;
-	if (GetServerCapsBool(s, "b_support_ipsec") == false || s->IPsecServer == NULL)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
-	StrCpy(id, sizeof(id), t->Id);
-
-	if (DeleteEtherIPId(s->IPsecServer, id) == false)
-	{
-		return ERR_OBJECT_NOT_FOUND;
-	}
-
-	ALog(a, NULL, "LA_DEL_ETHERIP_ID", id);
-
-	IncrementServerConfigRevision(s);
-
-	return ERR_NO_ERROR;
-}
-
-// Enumerate EtherIP ID settings
-UINT StEnumEtherIpId(ADMIN *a, RPC_ENUM_ETHERIP_ID *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
-	SERVER_ADMIN_ONLY;
-	NO_SUPPORT_FOR_BRIDGE;
-	if (GetServerCapsBool(s, "b_support_ipsec") == false || s->IPsecServer == NULL)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
-	FreeRpcEnumEtherIpId(t);
-	Zero(t, sizeof(RPC_ENUM_ETHERIP_ID));
-
-	Lock(s->IPsecServer->LockSettings);
-	{
-		UINT i;
-		UINT num;
-
-		num = LIST_NUM(s->IPsecServer->EtherIPIdList);
-
-		t->NumItem = num;
-		t->IdList = ZeroMalloc(sizeof(ETHERIP_ID) * num);
-
-		for (i = 0;i < num;i++)
-		{
-			ETHERIP_ID *d = &t->IdList[i];
-			ETHERIP_ID *src = LIST_DATA(s->IPsecServer->EtherIPIdList, i);
-
-			Copy(d, src, sizeof(ETHERIP_ID));
-		}
-	}
-	Unlock(s->IPsecServer->LockSettings);
 
 	return ERR_NO_ERROR;
 }
@@ -9026,127 +8853,6 @@ void OutRpcSpecialListener(PACK *p, RPC_SPECIAL_LISTENER *t)
 	PackAddBool(p, "VpnOverDnsListener", t->VpnOverDnsListener);
 }
 
-
-// ETHERIP_ID
-void InEtherIpId(ETHERIP_ID *t, PACK *p)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(ETHERIP_ID));
-
-	PackGetStr(p, "Id", t->Id, sizeof(t->Id));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	PackGetStr(p, "UserName", t->UserName, sizeof(t->UserName));
-	PackGetStr(p, "Password", t->Password, sizeof(t->Password));
-}
-void OutEtherIpId(PACK *p, ETHERIP_ID *t)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "Id", t->Id);
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddStr(p, "UserName", t->UserName);
-	PackAddStr(p, "Password", t->Password);
-}
-
-// RPC_ENUM_ETHERIP_ID
-void InRpcEnumEtherIpId(RPC_ENUM_ETHERIP_ID *t, PACK *p)
-{
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_ENUM_ETHERIP_ID));
-
-	t->NumItem = PackGetInt(p, "NumItem");
-	t->IdList = ZeroMalloc(sizeof(ETHERIP_ID) * t->NumItem);
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		ETHERIP_ID *e = &t->IdList[i];
-
-		PackGetStrEx(p, "Id", e->Id, sizeof(e->Id), i);
-		PackGetStrEx(p, "HubName", e->HubName, sizeof(e->HubName), i);
-		PackGetStrEx(p, "UserName", e->UserName, sizeof(e->UserName), i);
-		PackGetStrEx(p, "Password", e->Password, sizeof(e->Password), i);
-	}
-}
-void OutRpcEnumEtherIpId(PACK *p, RPC_ENUM_ETHERIP_ID *t)
-{
-	UINT i;
-	// Validate arguments
-	if (p == NULL || t == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "NumItem", t->NumItem);
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		ETHERIP_ID *e = &t->IdList[i];
-
-		PackAddStrEx(p, "Id", e->Id, i, t->NumItem);
-		PackAddStrEx(p, "HubName", e->HubName, i, t->NumItem);
-		PackAddStrEx(p, "UserName", e->UserName, i, t->NumItem);
-		PackAddStrEx(p, "Password", e->Password, i, t->NumItem);
-	}
-}
-void FreeRpcEnumEtherIpId(RPC_ENUM_ETHERIP_ID *t)
-{
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->IdList);
-}
-
-// IPSEC_SERVICES
-void InIPsecServices(IPSEC_SERVICES *t, PACK *p)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(IPSEC_SERVICES));
-
-	t->L2TP_Raw = PackGetBool(p, "L2TP_Raw");
-	t->L2TP_IPsec = PackGetBool(p, "L2TP_IPsec");
-	t->EtherIP_IPsec = PackGetBool(p, "EtherIP_IPsec");
-
-	PackGetStr(p, "IPsec_Secret", t->IPsec_Secret, sizeof(t->IPsec_Secret));
-	PackGetStr(p, "L2TP_DefaultHub", t->L2TP_DefaultHub, sizeof(t->L2TP_DefaultHub));
-}
-void OutIPsecServices(PACK *p, IPSEC_SERVICES *t)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddBool(p, "L2TP_Raw", t->L2TP_Raw);
-	PackAddBool(p, "L2TP_IPsec", t->L2TP_IPsec);
-	PackAddBool(p, "EtherIP_IPsec", t->EtherIP_IPsec);
-
-	PackAddStr(p, "IPsec_Secret", t->IPsec_Secret);
-	PackAddStr(p, "L2TP_DefaultHub", t->L2TP_DefaultHub);
-}
 
 // RPC_WINVER
 void InRpcWinVer(RPC_WINVER *t, PACK *p)

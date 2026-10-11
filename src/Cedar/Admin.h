@@ -914,13 +914,6 @@ struct RPC_MSG
 	wchar_t *Msg;							// Message
 };
 
-// EtherIP setting list
-struct RPC_ENUM_ETHERIP_ID
-{
-	UINT NumItem;
-	ETHERIP_ID *IdList;
-};
-
 // Set the special listener
 struct RPC_SPECIAL_LISTENER
 {
@@ -1090,12 +1083,6 @@ UINT StCrash(ADMIN *a, RPC_TEST *t);
 UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t);
 UINT StFlush(ADMIN *a, RPC_TEST *t);
 UINT StDebug(ADMIN *a, RPC_TEST *t);
-UINT StSetIPsecServices(ADMIN *a, IPSEC_SERVICES *t);
-UINT StGetIPsecServices(ADMIN *a, IPSEC_SERVICES *t);
-UINT StAddEtherIpId(ADMIN *a, ETHERIP_ID *t);
-UINT StGetEtherIpId(ADMIN *a, ETHERIP_ID *t);
-UINT StDeleteEtherIpId(ADMIN *a, ETHERIP_ID *t);
-UINT StEnumEtherIpId(ADMIN *a, RPC_ENUM_ETHERIP_ID *t);
 UINT StGetDDnsClientStatus(ADMIN *a, DDNS_CLIENT_STATUS *t);
 UINT StChangeDDnsClientHostname(ADMIN *a, RPC_TEST *t);
 UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t);
@@ -1236,12 +1223,6 @@ UINT ScCrash(RPC *r, RPC_TEST *t);
 UINT ScGetAdminMsg(RPC *r, RPC_MSG *t);
 UINT ScFlush(RPC *r, RPC_TEST *t);
 UINT ScDebug(RPC *r, RPC_TEST *t);
-UINT ScSetIPsecServices(RPC *r, IPSEC_SERVICES *t);
-UINT ScGetIPsecServices(RPC *r, IPSEC_SERVICES *t);
-UINT ScAddEtherIpId(RPC *r, ETHERIP_ID *t);
-UINT ScGetEtherIpId(RPC *r, ETHERIP_ID *t);
-UINT ScDeleteEtherIpId(RPC *r, ETHERIP_ID *t);
-UINT ScEnumEtherIpId(RPC *r, RPC_ENUM_ETHERIP_ID *t);
 UINT ScGetDDnsClientStatus(RPC *r, DDNS_CLIENT_STATUS *t);
 UINT ScChangeDDnsClientHostname(RPC *r, RPC_TEST *t);
 UINT ScRegenerateServerCert(RPC *r, RPC_TEST *t);
@@ -1463,13 +1444,6 @@ void OutRpcMsg(PACK *p, RPC_MSG *t);
 void FreeRpcMsg(RPC_MSG *t);
 void InRpcWinVer(RPC_WINVER *t, PACK *p);
 void OutRpcWinVer(PACK *p, RPC_WINVER *t);
-void InIPsecServices(IPSEC_SERVICES *t, PACK *p);
-void OutIPsecServices(PACK *p, IPSEC_SERVICES *t);
-void InRpcEnumEtherIpId(RPC_ENUM_ETHERIP_ID *t, PACK *p);
-void OutRpcEnumEtherIpId(PACK *p, RPC_ENUM_ETHERIP_ID *t);
-void FreeRpcEnumEtherIpId(RPC_ENUM_ETHERIP_ID *t);
-void InEtherIpId(ETHERIP_ID *t, PACK *p);
-void OutEtherIpId(PACK *p, ETHERIP_ID *t);
 void InDDnsClientStatus(DDNS_CLIENT_STATUS *t, PACK *p);
 void OutDDnsClientStatus(PACK *p, DDNS_CLIENT_STATUS *t);
 void InRpcSpecialListener(RPC_SPECIAL_LISTENER *t, PACK *p);

@@ -17,7 +17,6 @@
 #include "Link.h"
 #include "Listener.h"
 #include "Nat.h"
-#include "Proto_IPsec.h"
 #include "Protocol.h"
 #include "Radius.h"
 #include "Sam.h"
@@ -79,8 +78,6 @@ UINT SiDebug(SERVER *s, RPC_TEST *ret, UINT i, char *str)
 		{5, "Set the process priority high", "", SiDebugProcSetHighPriority},
 		{6, "Get the .exe filename of the process", "", SiDebugProcGetExeFileName},
 		{7, "Crash the process", "", SiDebugProcCrash},
-		{8, "Get IPsecMessageDisplayed Flag", "", SiDebugProcGetIPsecMessageDisplayedValue},
-		{9, "Set IPsecMessageDisplayed Flag", "", SiDebugProcSetIPsecMessageDisplayedValue},
 		{12, "Get the current TCP send queue length", "", SiDebugProcGetCurrentTcpSendQueueLength},
 		{13, "Get the current GetIP thread count", "", SiDebugProcGetCurrentGetIPThreadCount},
 	};
@@ -229,30 +226,6 @@ UINT SiDebugProcCrash(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size)
 	}
 
 	CrashNow();
-
-	return ERR_NO_ERROR;
-}
-UINT SiDebugProcGetIPsecMessageDisplayedValue(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size)
-{
-	// Validate arguments
-	if (s == NULL || in_str == NULL || ret_str == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	ToStr(ret_str, s->IPsecMessageDisplayed);
-
-	return ERR_NO_ERROR;
-}
-UINT SiDebugProcSetIPsecMessageDisplayedValue(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size)
-{
-	// Validate arguments
-	if (s == NULL || in_str == NULL || ret_str == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	s->IPsecMessageDisplayed = ToInt(in_str);
 
 	return ERR_NO_ERROR;
 }
@@ -1283,10 +1256,6 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 		// syslog
 		AddCapsBool(t, "b_support_syslog", true);
 
-		// IPsec
-		// (Only works in stand-alone mode currently)
-		AddCapsBool(t, "b_support_ipsec", (s->ServerType == SERVER_TYPE_STANDALONE));
-
 		// DDNS
 		AddCapsBool(t, "b_support_ddns", (s->DDnsClient != NULL));
 
@@ -1327,9 +1296,6 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 
 		// syslog
 		AddCapsBool(t, "b_support_syslog", true);
-
-		// IPsec
-		AddCapsBool(t, "b_support_ipsec", false);
 
 		// DDNS
 		AddCapsBool(t, "b_support_ddns", false);
@@ -2538,8 +2504,6 @@ void SiInitConfiguration(SERVER *s)
 	{
 		// Protocols handler
 		s->Proto = ProtoNew(s->Cedar);
-		// IPsec server
-		s->IPsecServer = NewIPsecServer(s->Cedar);
 	}
 
 	SLog(s->Cedar, "LS_LOAD_CONFIG_1");
@@ -2670,7 +2634,7 @@ bool SiIsAzureSupported(SERVER *s)
 // Read the server settings from the CFG
 bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root)
 {
-	FOLDER *f1, *f2, *f3, *f4, *f5, *f6, *f7, *f8, *f9;
+	FOLDER *f1, *f2, *f3, *f4, *f5, *f6, *f8, *f9;
 	// Validate arguments
 	if (s == NULL || root == NULL)
 	{
@@ -2683,7 +2647,6 @@ bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root)
 	f4 = CfgGetFolder(root, "LocalBridgeList");
 	f5 = CfgGetFolder(root, "VirtualLayer3SwitchList");
 	f6 = CfgGetFolder(root, "LicenseManager");
-	f7 = CfgGetFolder(root, "IPsec");
 	f8 = CfgGetFolder(root, "DDnsClient");
 	f9 = CfgGetFolder(root, "WireGuardKeyList");
 
@@ -2766,11 +2729,6 @@ bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root)
 		SiLoadL3Switchs(s, f5);
 	}
 
-	if (f7 != NULL && GetServerCapsBool(s, "b_support_ipsec"))
-	{
-		SiLoadIPsec(s, f7);
-	}
-
 	if (s->Cedar->Bridge == false)
 	{
 		if (f8 == NULL)
@@ -2828,8 +2786,6 @@ bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root)
 			}
 		}
 	}
-
-	s->IPsecMessageDisplayed = CfgGetBool(root, "IPsecMessageDisplayed");
 
 	return true;
 }
@@ -3138,11 +3094,6 @@ FOLDER *SiWriteConfigurationToCfg(SERVER *s)
 		CfgAddBool(root, "LedSpecial", s->LedSpecial);
 	}
 
-	if (GetServerCapsBool(s, "b_support_ipsec"))
-	{
-		SiWriteIPsec(CfgCreateFolder(root, "IPsec"), s);
-	}
-
 	if (s->Cedar->Bridge == false)
 	{
 		FOLDER *ddns_folder = CfgCreateFolder(root, "DDnsClient");
@@ -3183,8 +3134,6 @@ FOLDER *SiWriteConfigurationToCfg(SERVER *s)
 			CfgAddStr(ddns_folder, "CustomHttpHeader", t->CustomHttpHeader);
 		}
 	}
-
-	CfgAddBool(root, "IPsecMessageDisplayed", s->IPsecMessageDisplayed);
 
 
 	return root;
@@ -5346,130 +5295,6 @@ void SiWriteL3Switchs(FOLDER *f, SERVER *s)
 	UnlockList(c->L3SwList);
 }
 
-// Read the IPsec server configuration
-void SiLoadIPsec(SERVER *s, FOLDER *f)
-{
-	IPSEC_SERVICES sl;
-	FOLDER *list_folder;
-	// Validate arguments
-	if (s == NULL || f == NULL)
-	{
-		return;
-	}
-
-	Zero(&sl, sizeof(sl));
-
-	CfgGetStr(f, "IPsec_Secret", sl.IPsec_Secret, sizeof(sl.IPsec_Secret));
-	CfgGetStr(f, "L2TP_DefaultHub", sl.L2TP_DefaultHub, sizeof(sl.L2TP_DefaultHub));
-
-	if (s->ServerType == SERVER_TYPE_STANDALONE)
-	{
-		// IPsec feature only be enabled on a standalone server
-		sl.L2TP_Raw = CfgGetBool(f, "L2TP_Raw");
-		sl.L2TP_IPsec = CfgGetBool(f, "L2TP_IPsec");
-		sl.EtherIP_IPsec = CfgGetBool(f, "EtherIP_IPsec");
-	}
-
-	IPsecServerSetServices(s->IPsecServer, &sl);
-
-	list_folder = CfgGetFolder(f, "EtherIP_IDSettingsList");
-
-	if (list_folder != NULL)
-	{
-		TOKEN_LIST *t = CfgEnumFolderToTokenList(list_folder);
-		if (t != NULL)
-		{
-			UINT i;
-
-			for (i = 0;i < t->NumTokens;i++)
-			{
-				char *name = t->Token[i];
-				FOLDER *f = CfgGetFolder(list_folder, name);
-
-				if (f != NULL)
-				{
-					ETHERIP_ID d;
-					BUF *b;
-
-					Zero(&d, sizeof(d));
-
-					StrCpy(d.Id, sizeof(d.Id), name);
-					CfgGetStr(f, "HubName", d.HubName, sizeof(d.HubName));
-					CfgGetStr(f, "UserName", d.UserName, sizeof(d.UserName));
-
-					b = CfgGetBuf(f, "EncryptedPassword");
-					if (b != NULL)
-					{
-						char *pass = DecryptPassword2(b);
-
-						StrCpy(d.Password, sizeof(d.Password), pass);
-
-						Free(pass);
-
-						AddEtherIPId(s->IPsecServer, &d);
-
-						FreeBuf(b);
-					}
-				}
-			}
-
-			FreeToken(t);
-		}
-	}
-}
-
-// Write the IPsec server configuration
-void SiWriteIPsec(FOLDER *f, SERVER *s)
-{
-	IPSEC_SERVICES sl;
-	FOLDER *list_folder;
-	UINT i;
-	// Validate arguments
-	if (s == NULL || f == NULL)
-	{
-		return;
-	}
-
-	if (s->IPsecServer == NULL)
-	{
-		return;
-	}
-
-	Zero(&sl, sizeof(sl));
-	IPsecServerGetServices(s->IPsecServer, &sl);
-
-	CfgAddStr(f, "IPsec_Secret", sl.IPsec_Secret);
-	CfgAddStr(f, "L2TP_DefaultHub", sl.L2TP_DefaultHub);
-
-	CfgAddBool(f, "L2TP_Raw", sl.L2TP_Raw);
-	CfgAddBool(f, "L2TP_IPsec", sl.L2TP_IPsec);
-	CfgAddBool(f, "EtherIP_IPsec", sl.EtherIP_IPsec);
-
-	list_folder = CfgCreateFolder(f, "EtherIP_IDSettingsList");
-
-	Lock(s->IPsecServer->LockSettings);
-	{
-		for (i = 0;i < LIST_NUM(s->IPsecServer->EtherIPIdList);i++)
-		{
-			ETHERIP_ID *d = LIST_DATA(s->IPsecServer->EtherIPIdList, i);
-			FOLDER *f;
-			BUF *b;
-
-			f = CfgCreateFolder(list_folder, d->Id);
-
-			CfgAddStr(f, "HubName", d->HubName);
-			CfgAddStr(f, "UserName", d->UserName);
-
-			b = EncryptPassword2(d->Password);
-
-			CfgAddBuf(f, "EncryptedPassword", b);
-
-			FreeBuf(b);
-		}
-	}
-	Unlock(s->IPsecServer->LockSettings);
-}
-
 // Write the license list
 void SiWriteLicenseManager(FOLDER *f, SERVER *s)
 {
@@ -5768,9 +5593,6 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 
 		// Disable the NAT-traversal feature
 		s->DisableNatTraversal = CfgGetBool(f, "DisableNatTraversal");
-
-		// Disable IPsec's aggressive mode
-		s->DisableIPsecAggressiveMode = CfgGetBool(f, "DisableIPsecAggressiveMode");
 
 		if (s->Cedar->Bridge == false)
 		{
@@ -6198,8 +6020,6 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s)
 			}
 		}
 
-		CfgAddBool(f, "DisableIPsecAggressiveMode", s->DisableIPsecAggressiveMode);
-
 		if (c->Bridge == false)
 		{
 			// VPN over ICMP
@@ -6595,13 +6415,6 @@ void SiFreeConfiguration(SERVER *s)
 	if (s->Proto != NULL)
 	{
 		ProtoDelete(s->Proto);
-	}
-
-	// Stop the IPsec server
-	if (s->IPsecServer != NULL)
-	{
-		FreeIPsecServer(s->IPsecServer);
-		s->IPsecServer = NULL;
 	}
 
 	// Terminate the DDNS client

@@ -370,7 +370,6 @@ typedef struct RPC_ENUM_ETH_VLAN_ITEM RPC_ENUM_ETH_VLAN_ITEM;
 typedef struct RPC_ENUM_ETH_VLAN RPC_ENUM_ETH_VLAN;
 typedef struct RPC_MSG RPC_MSG;
 typedef struct RPC_WINVER RPC_WINVER;
-typedef struct RPC_ENUM_ETHERIP_ID RPC_ENUM_ETHERIP_ID;
 typedef struct RPC_SPECIAL_LISTENER RPC_SPECIAL_LISTENER;
 typedef struct RPC_AZURE_STATUS RPC_AZURE_STATUS;
 
@@ -470,27 +469,6 @@ typedef struct PROTO_OPTION PROTO_OPTION;
 
 
 // ==============================================================
-//  IPsec
-// ==============================================================
-
-typedef struct IPSEC_SERVER IPSEC_SERVER;
-typedef struct IPSEC_SERVICES IPSEC_SERVICES;
-typedef struct ETHERIP_ID ETHERIP_ID;
-
-
-// ==============================================================
-//  L2TP
-// ==============================================================
-
-typedef struct L2TP_SERVER L2TP_SERVER;
-typedef struct L2TP_TUNNEL L2TP_TUNNEL;
-typedef struct L2TP_SESSION L2TP_SESSION;
-typedef struct L2TP_PACKET L2TP_PACKET;
-typedef struct L2TP_AVP L2TP_AVP;
-typedef struct L2TP_QUEUE L2TP_QUEUE;
-
-
-// ==============================================================
 //  PPP
 // ==============================================================
 
@@ -504,73 +482,7 @@ typedef struct PPP_REQUEST_RESEND PPP_REQUEST_RESEND;
 typedef struct PPP_DELAYED_PACKET PPP_DELAYED_PACKET;
 typedef struct PPP_EAP PPP_EAP;
 typedef struct PPP_EAP_TLS_CONTEXT PPP_EAP_TLS_CONTEXT;
-
-
-// ==============================================================
-//  EtherIP
-// ==============================================================
-
-typedef struct ETHERIP_SERVER ETHERIP_SERVER;
-
-
-// ==============================================================
-//  IKE
-// ==============================================================
-
-typedef struct IKE_SERVER IKE_SERVER;
-typedef struct IKE_SA IKE_SA;
-typedef struct IKE_SA_TRANSFORM_SETTING IKE_SA_TRANSFORM_SETTING;
-typedef struct IKE_CLIENT IKE_CLIENT;
-typedef struct IPSECSA IPSECSA;
-typedef struct IKE_CAPS IKE_CAPS;
-
-// ==============================================================
-//  IPSec Packet
-// ==============================================================
-
-typedef struct IKE_COMMON_HEADER IKE_COMMON_HEADER;
-typedef struct IKE_SA_HEADER IKE_SA_HEADER;
-typedef struct IKE_PROPOSAL_HEADER IKE_PROPOSAL_HEADER;
-typedef struct IKE_TRANSFORM_HEADER IKE_TRANSFORM_HEADER;
-typedef struct IKE_TRANSFORM_VALUE IKE_TRANSFORM_VALUE;
-typedef struct IKE_ID_HEADER IKE_ID_HEADER;
-typedef struct IKE_CERT_HEADER IKE_CERT_HEADER;
-typedef struct IKE_CERT_REQUEST_HEADER IKE_CERT_REQUEST_HEADER;
-typedef struct IKE_NOTICE_HEADER IKE_NOTICE_HEADER;
-typedef struct IKE_DELETE_HEADER IKE_DELETE_HEADER;
-typedef struct IKE_NAT_OA_HEADER IKE_NAT_OA_HEADER;
-typedef struct IPSEC_SA_TRANSFORM_SETTING IPSEC_SA_TRANSFORM_SETTING;
-
-typedef struct IKE_PACKET_SA_PAYLOAD IKE_PACKET_SA_PAYLOAD;
-typedef struct IKE_PACKET_PROPOSAL_PAYLOAD IKE_PACKET_PROPOSAL_PAYLOAD;
-typedef struct IKE_PACKET_TRANSFORM_PAYLOAD IKE_PACKET_TRANSFORM_PAYLOAD;
-typedef struct IKE_PACKET_TRANSFORM_VALUE IKE_PACKET_TRANSFORM_VALUE;
-typedef struct IKE_PACKET_DATA_PAYLOAD IKE_PACKET_DATA_PAYLOAD;
-typedef struct IKE_PACKET_ID_PAYLOAD IKE_PACKET_ID_PAYLOAD;
-typedef struct IKE_PACKET_CERT_PAYLOAD IKE_PACKET_CERT_PAYLOAD;
-typedef struct IKE_PACKET_CERT_REQUEST_PAYLOAD IKE_PACKET_CERT_REQUEST_PAYLOAD;
-typedef struct IKE_PACKET_NOTICE_PAYLOAD IKE_PACKET_NOTICE_PAYLOAD;
-typedef struct IKE_PACKET_DELETE_PAYLOAD IKE_PACKET_DELETE_PAYLOAD;
-typedef struct IKE_PACKET_NAT_OA_PAYLOAD IKE_PACKET_NAT_OA_PAYLOAD;
-
-typedef struct IKE_PACKET_PAYLOAD IKE_PACKET_PAYLOAD;
-typedef struct IKE_PACKET IKE_PACKET;
-
-typedef struct IKE_P1_KEYSET IKE_P1_KEYSET;
-
-typedef struct IKE_CRYPTO IKE_CRYPTO;
-typedef struct IKE_HASH IKE_HASH;
-typedef struct IKE_DH IKE_DH;
-typedef struct IKE_ENGINE IKE_ENGINE;
-typedef struct IKE_CRYPTO_KEY IKE_CRYPTO_KEY;
-typedef struct IKE_CRYPTO_PARAM IKE_CRYPTO_PARAM;
-
-
-// ==============================================================
-//  IPSec for Windows 7 / Vista / 2008 / 2008 R2
-// ==============================================================
-
-typedef struct IPSEC_WIN7 IPSEC_WIN7;
+typedef struct ETHERIP_ID ETHERIP_ID;
 
 
 // ==============================================================

@@ -192,7 +192,6 @@ struct SERVER
 	bool NoMoreSave;					// Do not save any more
 	bool EnableConditionalAccept;		// Apply the Conditional Accept the Listener
 	bool EnableLegacySSL;				// Enable Legacy SSL
-	bool DisableIPsecAggressiveMode;	// Disable IPsec's aggressive mode
 
 	volatile bool Halt;					// Halting flag
 	LOCK *lock;							// Lock
@@ -242,7 +241,6 @@ struct SERVER
 	EVENT *DeadLockWaitEvent;			// Waiting Event
 
 	PROTO *Proto;						// Protocols handler
-	IPSEC_SERVER *IPsecServer;			// IPsec server function
 	DDNS_CLIENT *DDnsClient;			// DDNS client feature
 
 	AZURE_CLIENT *AzureClient;			// VPN Azure client
@@ -255,8 +253,6 @@ struct SERVER
 
 	DYNAMIC_LISTENER *DynListenerIcmp;	// VPN over ICMP listener
 	DYNAMIC_LISTENER *DynListenerDns;	// VPN over DNS listener
-
-	bool IPsecMessageDisplayed;			// Flag for whether the message about IPsec is displayed
 
 	bool IsInVm;						// Whether I'm within the VM
 
@@ -428,8 +424,6 @@ void SiLoadL3Switchs(SERVER *s, FOLDER *f);
 void SiLoadL3SwitchCfg(L3SW *sw, FOLDER *f);
 void SiWriteL3Switchs(FOLDER *f, SERVER *s);
 void SiWriteL3SwitchCfg(FOLDER *f, L3SW *sw);
-void SiLoadIPsec(SERVER *s, FOLDER *f);
-void SiWriteIPsec(FOLDER *f, SERVER *s);
 void SiWriteHubs(FOLDER *f, SERVER *s);
 void SiLoadHubs(SERVER *s, FOLDER *f);
 void SiWriteHubCfg(FOLDER *f, HUB *h);
@@ -567,8 +561,6 @@ UINT SiDebugProcRestorePriority(SERVER *s, char *in_str, char *ret_str, UINT ret
 UINT SiDebugProcSetHighPriority(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
 UINT SiDebugProcGetExeFileName(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
 UINT SiDebugProcCrash(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcGetIPsecMessageDisplayedValue(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcSetIPsecMessageDisplayedValue(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
 UINT SiDebugProcGetCurrentTcpSendQueueLength(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
 UINT SiDebugProcGetCurrentGetIPThreadCount(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
 

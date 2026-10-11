@@ -575,9 +575,6 @@ bool MsGetShortPathNameA(char *long_path, char *short_path, UINT short_path_size
 bool MsGetShortPathNameW(wchar_t *long_path, wchar_t *short_path, UINT short_path_size);
 void MsWriteCallingServiceManagerProcessId(char *svcname, UINT pid);
 UINT MsReadCallingServiceManagerProcessId(char *svcname, bool current_user);
-bool MsStopIPsecService();
-char *MsGetIPsecServiceName();
-bool MsStartIPsecService();
 
 void MsGenerateUserModeSvcGlobalPulseName(char *name, UINT size, char *svc_name);
 void *MsCreateUserModeSvcGlocalPulse(char *svc_name);

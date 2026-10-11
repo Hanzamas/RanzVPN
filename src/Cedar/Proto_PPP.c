@@ -4308,17 +4308,6 @@ bool PPPParseUsername(CEDAR *cedar, char *src_username, ETHERIP_ID *dst)
 	{
 		// Select the default Virtual HUB if the Virtual HUB name is not specified
 		StrCpy(token2, sizeof(token2), SERVER_DEFAULT_HUB_NAME);
-		if (cedar->Server != NULL && cedar->Server->IPsecServer != NULL)
-		{
-			Lock(cedar->Server->IPsecServer->LockSettings);
-			{
-				IPsecNormalizeServiceSetting(cedar->Server->IPsecServer);
-
-				StrCpy(token2, sizeof(token2), cedar->Server->IPsecServer->Services.L2TP_DefaultHub);
-			}
-			Unlock(cedar->Server->IPsecServer->LockSettings);
-		}
-
 	}
 
 	// Return the results

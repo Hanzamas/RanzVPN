@@ -136,8 +136,6 @@ void WriteHubLog(HUB *h, wchar_t *str);
 void HLog(HUB *h, char *name, ...);
 void NLog(VH *v, char *name, ...);
 void PPPLog(PPP_SESSION *p, char *name, ...);
-void IPsecLog(IKE_SERVER *ike, IKE_CLIENT *c, IKE_SA *ike_sa, IPSECSA *ipsec_sa, char *name, ...);
-void EtherIPLog(ETHERIP_SERVER *s, char *name, ...);
 void WriteServerLog(CEDAR *c, wchar_t *str);
 void ALog(ADMIN *a, HUB *h, char *name, ...);
 void CLog(CLIENT *c, char *name, ...);

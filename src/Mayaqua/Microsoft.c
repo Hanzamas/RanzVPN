@@ -817,39 +817,6 @@ void *MsOpenOrCreateGlobalPulse(char *name)
 	return (void *)h;
 }
 
-// Stop the IPsec service
-bool MsStopIPsecService()
-{
-	if (MsIsServiceRunning(MsGetIPsecServiceName()))
-	{
-		Debug("Stopping Windows Service: %s\n", MsGetIPsecServiceName());
-		if (MsStopService(MsGetIPsecServiceName()))
-		{
-			return true;
-		}
-	}
-
-	return false;
-}
-
-// Start the IPsec service
-bool MsStartIPsecService()
-{
-	if (MsIsServiceRunning(MsGetIPsecServiceName()) == false)
-	{
-		Debug("Starting Windows Service: %s\n", MsGetIPsecServiceName());
-		return MsStartService(MsGetIPsecServiceName());
-	}
-
-	return false;
-}
-
-// Get the IPsec service name
-char *MsGetIPsecServiceName()
-{
-	return "ikeext";
-}
-
 // Initialize the global lock
 void *MsInitGlobalLock(char *name, bool ts_local)
 {

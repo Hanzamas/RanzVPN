@@ -15,7 +15,6 @@
 #include "Link.h"
 #include "Logging.h"
 #include "MsChapV2.h"
-#include "Proto_IPsec.h"
 #include "Proto_PPP.h"
 #include "Radius.h"
 #include "Sam.h"
@@ -1748,7 +1747,6 @@ bool ServerAccept(CONNECTION *c)
 						char tmp3[MAX_SIZE];
 						char tmp4[MAX_SIZE];
 						char *response_pw;
-						char psk[MAX_SIZE];
 
 						ParseNtUsername(mschap.MsChapV2_PPPUsername, tmp1, sizeof(tmp1), tmp2, sizeof(tmp2), false);
 						ParseNtUsername(mschap.MsChapV2_PPPUsername, tmp3, sizeof(tmp3), tmp4, sizeof(tmp4), true);
@@ -1772,20 +1770,6 @@ bool ServerAccept(CONNECTION *c)
 						Add(o, tmp2);
 						Add(o, tmp3);
 						Add(o, tmp4);
-
-						Zero(psk, sizeof(psk));
-
-						if (c->Cedar->Server != NULL)
-						{
-							SERVER *s = c->Cedar->Server;
-
-							if (s->IPsecServer != NULL)
-							{
-								StrCpy(psk, sizeof(psk), s->IPsecServer->Services.IPsec_Secret);
-
-								Add(o, psk);
-							}
-						}
 
 						response_pw = MsChapV2DoBruteForce(&mschap, o);
 

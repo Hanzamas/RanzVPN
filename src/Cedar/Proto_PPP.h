@@ -9,7 +9,7 @@
 #define	PROTO_PPP_H
 
 #include "CedarType.h"
-#include "Proto_IPsec.h"
+#include "Cedar.h"
 
 #include "Mayaqua/TcpIp.h"
 
@@ -143,6 +143,15 @@
 #define	PPP_UNSPECIFIED					0xFFFF
 
 //// Type
+
+// EtherIP key list entry
+struct ETHERIP_ID
+{
+	char Id[MAX_SIZE];							// ID
+	char HubName[MAX_HUBNAME_LEN + 1];			// Virtual HUB name
+	char UserName[MAX_USERNAME_LEN + 1];		// User name
+	char Password[MAX_USERNAME_LEN + 1];		// Password
+};
 
 // IP options used in the PPP
 struct PPP_IPOPTION
