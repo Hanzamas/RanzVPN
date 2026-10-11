@@ -8,9 +8,6 @@
 
 #ifdef OS_WIN32
 #include <WS2tcpip.h>
-#else
-#include <netdb.h>
-#include <sys/socket.h>
 #endif
 
 #ifndef AI_ALL

@@ -8,8 +8,6 @@ endif()
 
 if(WIN32)
   add_library(cedar STATIC ${SOURCES_CEDAR} ${SOURCES_CEDAR_CPP} ${HEADERS_CEDAR})
-else()
-  add_library(cedar SHARED ${SOURCES_CEDAR} ${SOURCES_CEDAR_CPP} ${HEADERS_CEDAR})
 endif()
 
 if(MSVC)
@@ -40,24 +38,11 @@ if(WIN32)
   target_link_libraries(cedar PRIVATE comctl32.lib urlmon.lib)
 endif()
 
-if(UNIX)
-  find_package(Curses REQUIRED)
-  find_library(LIB_READLINE readline)
-
-  target_link_libraries(cedar PRIVATE ${CURSES_LIBRARIES} ${LIB_READLINE})
-
-  if(${CMAKE_SYSTEM_NAME} STREQUAL "Darwin")
-    target_link_libraries(cedar PRIVATE mayaqua pcap)
-  endif()
-endif()
-
 # Version
 add_definitions(-DCEDAR_VERSION_MAJOR=${PROJECT_VERSION_MAJOR} -DCEDAR_VERSION_MINOR=${PROJECT_VERSION_MINOR} -DCEDAR_VERSION_BUILD=${PROJECT_VERSION_PATCH})
 
 # Builder
-if(UNIX)
-  add_definitions(-DBUILDER_NAME="$ENV{USER}")
-elseif(WIN32)
+if(WIN32)
   add_definitions(-DBUILDER_NAME="$ENV{USERNAME}")
 endif()
 
@@ -75,11 +60,3 @@ string(REGEX REPLACE "^0([^ ]*)" "\\1" BUILD_SECOND "${TIME_SECOND}")
 
 add_definitions(-DBUILD_DATE_D=${BUILD_DAY} -DBUILD_DATE_M=${BUILD_MONTH} -DBUILD_DATE_Y=${BUILD_YEAR})
 add_definitions(-DBUILD_DATE_HO=${BUILD_HOUR} -DBUILD_DATE_MI=${BUILD_MINUTE} -DBUILD_DATE_SE=${BUILD_SECOND})
-
-if(UNIX)
-  install(TARGETS cedar
-    COMPONENT "common"
-    DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-    PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
-  )
-endif()

@@ -135,17 +135,6 @@ typedef struct WPC_CONNECT WPC_CONNECT;
 typedef struct VLAN VLAN;
 typedef struct VLAN_PARAM VLAN_PARAM;
 
-#ifdef	OS_UNIX
-typedef struct UNIX_VLAN_LIST UNIX_VLAN_LIST;
-#endif	// OS_UNIX
-
-// ==============================================================
-//   Null LAN
-// ==============================================================
-
-typedef struct NULL_LAN NULL_LAN;
-
-
 // ==============================================================
 //   Bridge
 // ==============================================================

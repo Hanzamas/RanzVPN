@@ -3,8 +3,6 @@ file(GLOB HEADERS_MAYAQUA "*.h" "Crypto/*.h")
 
 if(WIN32)
   add_library(mayaqua STATIC ${SOURCES_MAYAQUA} ${HEADERS_MAYAQUA})
-else()
-  add_library(mayaqua SHARED ${SOURCES_MAYAQUA} ${HEADERS_MAYAQUA})
 endif()
 
 target_include_directories(mayaqua PUBLIC .)
@@ -115,55 +113,4 @@ if(WIN32)
       "ws2_32.lib"
       "WtsApi32.Lib"
     )
-endif()
-
-if(UNIX)
-  find_package(Threads REQUIRED)
-
-  # In some cases libiconv is not included in libc
-  find_library(LIB_ICONV iconv)
-
-  find_library(LIB_M m)
-  find_library(LIB_RT rt)
-
-  target_link_libraries(mayaqua
-    PRIVATE
-      Threads::Threads
-      $<$<BOOL:${LIB_ICONV}>:${LIB_ICONV}>
-      $<$<BOOL:${LIB_M}>:${LIB_M}>
-      $<$<BOOL:${LIB_RT}>:${LIB_RT}>
-  )
-
-  if (NOT HAVE_SYS_AUXV OR SKIP_CPU_FEATURES)
-    add_definitions(-DSKIP_CPU_FEATURES)
-  elseif(${CMAKE_SYSTEM_NAME} STREQUAL "FreeBSD" AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(amd64|i386)")
-    message("cpu_features is not available on FreeBSD/${CMAKE_SYSTEM_PROCESSOR}")
-    add_definitions(-DSKIP_CPU_FEATURES)
-  elseif(${CMAKE_SYSTEM_NAME} STREQUAL "Darwin" AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|x86_64)")
-    # macOS runs only on Intel or ARM architecrues, should not reach here
-    add_definitions(-DSKIP_CPU_FEATURES)
-  elseif(${CMAKE_SYSTEM_NAME} STREQUAL "SunOS" OR ${CMAKE_SYSTEM_NAME} STREQUAL "OpenBSD")
-    message("cpu_features is not available on ${CMAKE_SYSTEM_NAME}")
-    add_definitions(-DSKIP_CPU_FEATURES)
-  elseif(USE_SYSTEM_CPU_FEATURES)
-    CHECK_INCLUDE_FILE(cpu_features_macros.h HAVE_CPU_FEATURES)
-    message("-- Using system's cpu_features")
-    target_link_libraries(mayaqua PRIVATE cpu_features)
-  else()
-    message("-- Using bundled cpu_features")
-    set(BUILD_SHARED_LIBS OFF)
-    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-    add_subdirectory(3rdparty/cpu_features)
-    target_link_libraries(mayaqua PRIVATE cpu_features)
-  endif()
-
-  if(${CMAKE_SYSTEM_NAME} STREQUAL "SunOS")
-    target_link_libraries(mayaqua PRIVATE nsl socket)
-  endif()
-
-  install(TARGETS mayaqua
-    COMPONENT "common"
-    DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-    PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
-  )
 endif()

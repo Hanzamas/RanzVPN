@@ -16,16 +16,11 @@
 #include "Str.h"
 #include "Table.h"
 #include "Tracking.h"
-#include "Unix.h"
 #include "Win32.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-
-#ifdef OS_UNIX
-#include <sys/time.h>
-#endif
 
 #ifndef TM_YEAR_MAX
 #define TM_YEAR_MAX         2106
@@ -73,7 +68,6 @@ L"- - $ : : $ Sun Mon Tue Wed Thu Fri Sat : : : $ (None)";
 
 
 static LOCALE current_locale;
-LOCK *tick_manual_lock = NULL;
 
 #define MONSPERYEAR 12
 #define DAYSPERNYEAR 365
@@ -178,67 +172,6 @@ struct tm * c_gmtime_r(const time_64t* timep, struct tm *tm)
 	return tm;
 }
 
-// Get the real-time system timer
-UINT TickRealtime()
-{
-#if	defined(OS_WIN32) || defined(CLOCK_REALTIME) || defined(CLOCK_MONOTONIC) || defined(CLOCK_HIGHRES) || defined(UNIX_MACOS)
-	return Tick() + 1;
-#else
-	return TickRealtimeManual() + 1;
-#endif
-}
-
-#ifndef	OS_WIN32
-
-static UINT64 last_manual_tick = 0;
-static UINT64 manual_tick_add_value = 0;
-
-// For systems which not have clock_gettime (such as MacOS X)
-UINT TickRealtimeManual()
-{
-	UINT64 ret;
-	Lock(tick_manual_lock);
-	{
-		ret = TickGetRealtimeTickValue64();
-
-		if (last_manual_tick != 0 && (last_manual_tick > ret))
-		{
-			manual_tick_add_value += (last_manual_tick - ret);
-		}
-
-		last_manual_tick = ret;
-	}
-	Unlock(tick_manual_lock);
-
-	return (UINT)(ret + manual_tick_add_value);
-}
-
-// Returns a appropriate value from the current time
-UINT64 TickGetRealtimeTickValue64()
-{
-	struct timeval tv;
-	struct timezone tz;
-	UINT64 ret;
-
-	memset(&tv, 0, sizeof(tv));
-	memset(&tz, 0, sizeof(tz));
-
-	gettimeofday(&tv, &tz);
-
-	if (sizeof(tv.tv_sec) != 4)
-	{
-		ret = (UINT64)tv.tv_sec * 1000ULL + (UINT64)tv.tv_usec / 1000ULL;
-	}
-	else
-	{
-		ret = (UINT64)((UINT64)((UINT)tv.tv_sec)) * 1000ULL + (UINT64)tv.tv_usec / 1000ULL;
-	}
-
-	return ret;
-}
-
-#endif	// OS_WIN32
-
 // Get the number of CPUs
 UINT GetNumberOfCpu()
 {
@@ -250,8 +183,6 @@ UINT GetNumberOfCpu()
 
 #ifdef	OS_WIN32
 		i = Win32GetNumberOfCpuInner();
-#else	// OS_WIN32
-		i = UnixGetNumberOfCpuInner();
 #endif	// OS_WIN32
 
 		if (i == 0)
@@ -422,8 +353,6 @@ void GetHomeDirW(wchar_t *path, UINT size)
 		{
 #ifdef	OS_WIN32
 			Win32GetCurrentDirW(path, size);
-#else	// OS_WIN32
-			UnixGetCurrentDirW(path, size);
 #endif	// OS_WIN32
 		}
 	}
@@ -455,8 +384,6 @@ bool GetEnvW(wchar_t *name, wchar_t *data, UINT size)
 {
 #ifdef	OS_WIN32
 	return GetEnvW_ForWin32(name, data, size);
-#else	// OS_WIN32
-	return GetEnvW_ForUnix(name, data, size);
 #endif	// OS_WIN32
 }
 
@@ -484,35 +411,6 @@ bool GetEnvW_ForWin32(wchar_t *name, wchar_t *data, UINT size)
 }
 
 #endif	// OS_WIN32
-
-#ifdef	OS_UNIX
-
-bool GetEnvW_ForUnix(wchar_t *name, wchar_t *data, UINT size)
-{
-	char *name_a;
-	bool ret;
-	char data_a[MAX_SIZE];
-	// Validate arguments
-	if (name == NULL || data == NULL)
-	{
-		return false;
-	}
-
-	name_a = CopyUniToUtf(name);
-
-	ret = GetEnv(name_a, data_a, sizeof(data_a));
-
-	if (ret)
-	{
-		UtfToUni(data, size, data_a);
-	}
-
-	Free(name_a);
-
-	return ret;
-}
-
-#endif	// OS_UNIX
 
 // Get the memory information
 void GetMemInfo(MEMINFO *info)
@@ -931,25 +829,6 @@ void SetThreadName(UINT thread_id, char *name, void *param)
 
 		Win32SetThreadName(thread_id, tmp);
 	}
-#else	// OS_WIN32
-#ifdef	_DEBUG
-#ifdef	PR_SET_NAME
-	char tmp[MAX_SIZE];
-
-	if (name == NULL)
-	{
-		strcpy(tmp, "idle");
-	}
-	else
-	{
-		sprintf(tmp, "%s (%p)", name, param);
-	}
-
-	tmp[15] = 0;
-
-	prctl(PR_SET_NAME, (unsigned long)tmp, 0, 0, 0);
-#endif	// PR_SET_NAME
-#endif	// _DEBUG
 #endif	// OS_WIN32
 }
 
@@ -1852,13 +1731,8 @@ INT64 GetTimeDiffEx(SYSTEMTIME *basetime, bool local_time)
 		return 0;
 	}
 
-#ifndef	OS_UNIX
 	Copy(&t1, localtime(&tmp), sizeof(struct tm));
 	Copy(&t2, gmtime(&tmp), sizeof(struct tm));
-#else	// OS_UNIX
-	localtime_r(&tmp, &t1);
-	gmtime_r(&tmp, &t2);
-#endif	// OS_UNIX
 
 	TmToSystem(&s1, &t1);
 	TmToSystem(&s2, &t2);
@@ -2063,13 +1937,6 @@ void AbortExit()
 {
 #ifdef	OS_WIN32
 	_exit(1);
-#else	// OS_WIN32
-
-#ifdef	RLIMIT_CORE
-	UnixSetResourceLimit(RLIMIT_CORE, 0);
-#endif	// RLIMIT_CORE
-
-	abort();
 #endif	// OS_WIN32
 }
 
@@ -2120,13 +1987,6 @@ void AbortExitEx(char *msg)
 
 #ifdef	OS_WIN32
 	_exit(1);
-#else	// OS_WIN32
-
-#ifdef	RLIMIT_CORE
-	UnixSetResourceLimit(RLIMIT_CORE, 0);
-#endif	// RLIMIT_CORE
-
-	abort();
 #endif	// OS_WIN32
 }
 

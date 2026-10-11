@@ -47,15 +47,11 @@ int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 // Directory separator
 #ifdef	OS_WIN32
 #define	PATH_BACKSLASH	// Backslash (\)
-#else	// WIN32
-#define	PATH_SLASH		// Slash (/)
 #endif	// WIN32
 
 // Character code
 #ifdef	OS_WIN32
 #define	CODE_SHIFTJIS	// Shift_JIS code
-#else	// WIN32
-#define	CODE_EUC		// euc-jp code
 #endif	// WIN32
 
 // Endian
@@ -68,28 +64,8 @@ int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 #endif	// OS_WIN32
 
 // Compiler dependent
-#ifndef	OS_WIN32
-// GCC or Clang compiler
-#define	GCC_PACKED		__attribute__ ((__packed__))
-// Clang compiler
-#if defined(__has_feature)
-#if __has_feature(thread_sanitizer)
-#define ATTRIBUTE_NO_TSAN			__attribute__((no_sanitize("thread")))
-#endif	// __has_feature(thread_sanitizer)
-#endif	// __has_feature
-// GCC compiler
-#if defined(__SANITIZE_THREAD__) && !defined(ATTRIBUTE_NO_TSAN)
-#define ATTRIBUTE_NO_TSAN			__attribute__((no_sanitize("thread")))
-#endif	// __SANITIZE_THREAD__
-// Other or older Clang/GCC compiler
-#ifndef ATTRIBUTE_NO_TSAN
-#define ATTRIBUTE_NO_TSAN
-#endif	// ATTRIBUTE_NO_TSAN
-#else	// OS_WIN32
 // VC++ compiler
 #define	GCC_PACKED
-#define ATTRIBUTE_NO_TSAN
-#endif	// OS_WIN32
 
 // Macro that displays the current file name and line number
 #define	WHERE			if (IsDebug()){printf("%s: %u\n", __FILE__, __LINE__); SleepThread(10);}
@@ -121,13 +97,7 @@ int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 // Macro that displays the current time
 #ifdef	WIN32
 #define	WHEN			if (IsDebug()){WHERE; MsPrintTick();}
-#else	// WIN32
-#define	WHEN
 #endif	// WIN32
-
-#ifdef OS_UNIX
-#define closesocket(s) close(s)
-#endif
 
 // Global variables
 extern bool g_memcheck;
@@ -135,8 +105,6 @@ extern bool g_debug;
 extern char *cmdline;
 extern wchar_t *uni_cmdline;
 extern bool g_little_endian;
-extern LOCK *tick_manual_lock;
-extern bool g_foreground;
 
 // Kernel state
 #define	NUM_KERNEL_STATUS	128

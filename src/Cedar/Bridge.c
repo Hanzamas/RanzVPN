@@ -6,7 +6,6 @@
 // Ethernet Bridge Program (Local Bridge)
 
 #include "Bridge.h"
-#include "BridgeUnix.h"
 #include "BridgeWin32.h"
 
 #include "Connection.h"
@@ -22,32 +21,6 @@
 // Hash the list of current Ethernet devices
 UINT GetEthDeviceHash()
 {
-#ifdef	OS_UNIX
-	// UNIX
-	UINT num = 0;
-	UINT i;
-	char tmp[4096];
-	UCHAR hash[SHA1_SIZE];
-	TOKEN_LIST *t = GetEthList();
-
-	tmp[0] = 0;
-
-	if (t != NULL)
-	{
-		num = t->NumTokens;
-		for (i = 0; i < t->NumTokens; i++)
-		{
-			StrCat(tmp, sizeof(tmp), t->Token[i]);
-		}
-		FreeToken(t);
-	}
-
-	Sha0(hash, tmp, StrLen(tmp));
-
-	Copy(&num, hash, sizeof(UINT));
-
-	return num;
-#else	// OS_UNIX
 	// Win32
 	UINT ret = 0;
 	MS_ADAPTER_LIST *a = MsCreateAdapterListEx(true);
@@ -71,7 +44,6 @@ UINT GetEthDeviceHash()
 	Copy(&num, hash, sizeof(UINT));
 
 	return num;
-#endif	// OS_UNIX
 }
 
 // Get whether the local-bridging is supported by current OS
@@ -422,15 +394,5 @@ BRIDGE *BrNewBridge(HUB *h, char *name, POLICY *p, bool local, bool monitor, boo
 	ReleaseThread(t);
 
 	return b;
-}
-
-// Raw IP bridge is supported only on Linux
-bool IsRawIpBridgeSupported()
-{
-#ifdef	UNIX_LINUX
-	return true;
-#else	// UNIX_LINUX
-	return false;
-#endif	// UNIX_LINUX
 }
 

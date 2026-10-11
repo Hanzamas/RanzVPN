@@ -125,8 +125,6 @@ typedef struct OS_DISPATCH_TABLE
 // Include the OS-specific header
 #ifdef	OS_WIN32
 #include <Mayaqua/Win32.h>
-#else	//OS_WIN32
-#include <Mayaqua/Unix.h>
 #endif	// OS_WIN32
 
 #endif	// OS_H

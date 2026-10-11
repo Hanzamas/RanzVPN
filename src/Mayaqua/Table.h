@@ -88,7 +88,6 @@ void FreeLangList(LIST *o);
 
 LANGLIST *GetBestLangByName(LIST *o, char *name);
 LANGLIST *GetBestLangByLcid(LIST *o, UINT lcid);
-LANGLIST *GetBestLangByLangStr(LIST *o, char *str);
 LANGLIST *GetBestLangForCurrentEnvironment(LIST *o);
 LANGLIST *GetLangById(LIST *o, UINT id);
 

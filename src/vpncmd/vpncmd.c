@@ -25,9 +25,6 @@ int main(int argc, char *argv[])
 
 #ifdef	OS_WIN32
 	SetConsoleTitleA(CEDAR_PRODUCT_STR " VPN Command Line Utility");
-#else
-	// For *nix, disable output buffering to allow for interactive use
-	setbuf(stdout,NULL);
 #endif	// OS_WIN32
 
 #if defined(_DEBUG) || defined(DEBUG)	// In VC++ compilers, the macro is "_DEBUG", not "DEBUG".

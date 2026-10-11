@@ -8,7 +8,6 @@
 #include "EtherLog.h"
 
 #include "Admin.h"
-#include "BridgeUnix.h"
 #include "BridgeWin32.h"
 #include "Listener.h"
 #include "Remote.h"

@@ -8,7 +8,6 @@
 #include "Server.h"
 
 #include "Admin.h"
-#include "BridgeUnix.h"
 #include "BridgeWin32.h"
 #include "Connection.h"
 #include "Layer3.h"
@@ -170,8 +169,6 @@ UINT SiDebugProcDump(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size)
 
 #ifdef	OS_WIN32
 	MsWriteMinidump(NULL, NULL);
-#else	// OS_WIN32
-	return ERR_NOT_SUPPORTED;
 #endif	// OS_WIN32
 
 	return ERR_NO_ERROR;
@@ -1348,11 +1345,6 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 	{
 		AddCapsBool(t, "b_support_network_connection_name", true);
 	}
-#else	// OS_WIN32
-	if (IsBridgeSupported() && EthIsInterfaceDescriptionSupportedUnix())
-	{
-		AddCapsBool(t, "b_support_network_connection_name", true);
-	}
 #endif	// OS_WIN32
 
 	// Support for MAC address filtering
@@ -2473,10 +2465,6 @@ void SiWriteLocalBridges(FOLDER *f, SERVER *s)
 	CfgAddBool(f, "EnableSoftEtherKernelModeDriver", Win32GetEnableSeLow());
 #endif	// OS_WIN32
 
-#ifdef	UNIX_LINUX
-	CfgAddBool(f, "DoNotDisableOffloading", GetGlobalServerFlag(GSF_LOCALBRIDGE_NO_DISABLE_OFFLOAD));
-#endif	// UNIX_LINUX
-
 	LockList(s->Cedar->LocalBridgeList);
 	{
 		UINT i;
@@ -2555,10 +2543,6 @@ void SiLoadLocalBridges(SERVER *s, FOLDER *f)
 #ifdef	OS_WIN32
 	Win32EthSetShowAllIf(CfgGetBool(f, "ShowAllInterfaces"));
 #endif	// OS_WIN32
-
-#ifdef	UNIX_LINUX
-	SetGlobalServerFlag(GSF_LOCALBRIDGE_NO_DISABLE_OFFLOAD, CfgGetBool(f, "DoNotDisableOffloading"));
-#endif	// UNIX_LINUX
 
 	t = CfgEnumFolderToTokenList(f);
 
@@ -4922,13 +4906,6 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 		SetDhParam(DhNewFromBits(c->DhParamBits));
 	}
 	Unlock(c->lock);
-
-#ifdef	OS_UNIX
-	if (s->DisableCoreDumpOnUnix)
-	{
-		UnixDisableCoreDump();
-	}
-#endif	// OS_UNIX
 }
 
 // Load global params
@@ -5720,8 +5697,6 @@ SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_serve
 
 #ifdef	OS_WIN32
 	s->IsInVm = MsIsInVm();
-#else	// OS_WIN32
-	s->IsInVm = UnixIsInVm();
 #endif	// OS_WIN32
 
 	s->Cedar->CheckExpires = true;
@@ -5766,10 +5741,6 @@ SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_serve
 	{
 		OSSetHighPriority();
 	}
-
-#ifdef	OS_UNIX
-	UnixSetHighOomScore();
-#endif	// OS_UNIX
 
 	SiInitDeadLockCheck(s);
 

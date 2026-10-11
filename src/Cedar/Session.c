@@ -8,7 +8,6 @@
 #include "Session.h"
 
 #include "Account.h"
-#include "BridgeUnix.h"
 #include "BridgeWin32.h"
 #include "Connection.h"
 #include "Hub.h"
@@ -16,7 +15,6 @@
 #include "Protocol.h"
 #include "Server.h"
 #include "UdpAccel.h"
-#include "VLanUnix.h"
 
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
@@ -1063,9 +1061,6 @@ void CleanupSession(SESSION *s)
 	// Release the client connection options
 	if (s->ClientOption != NULL)
 	{
-#ifdef OS_UNIX
-		UnixVLanSetState(s->ClientOption->DeviceName, false);
-#endif
 		Free(s->ClientOption);
 	}
 
@@ -1259,9 +1254,6 @@ void ClientThread(THREAD *t, void *param)
 
 		PrintSessionTotalDataSize(s);
 
-#ifdef OS_UNIX
-		UnixVLanSetState(s->ClientOption->DeviceName, false);
-#endif
 		if (s->LinkModeClient && s->Link != NULL)
 		{
 			HLog(s->Link->Hub, "LH_CONNECT_ERROR", s->ClientOption->AccountName,

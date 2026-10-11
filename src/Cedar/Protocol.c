@@ -16,7 +16,6 @@
 #include "Sam.h"
 #include "Server.h"
 #include "UdpAccel.h"
-#include "VLanUnix.h"
 #include "WaterMark.h"
 #include "Wpc.h"
 
@@ -2697,9 +2696,6 @@ void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
 	Free(product_id);
 
 	// Client host name
-#ifndef	OS_WIN32
-	GetMachineName(info->ClientHostname, sizeof(info->ClientHostname));
-#else	// OS_WIN32
 	if (true)
 	{
 		wchar_t namew[256];
@@ -2719,7 +2715,6 @@ void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
 		StrCpy(info->ClientHostname, sizeof(info->ClientHostname), namea);
 
 	}
-#endif	// OS_WIN32
 	// Client IP address
 	if (IsIP6(&c->FirstSock->LocalIP) == false)
 	{
@@ -3537,9 +3532,6 @@ bool ClientConnect(CONNECTION *c)
 	}
 
 	PrintStatus(sess, _UU("STATUS_9"));
-#ifdef OS_UNIX
-	UnixVLanSetState(c->Session->ClientOption->DeviceName, true);
-#endif
 	// Shift the connection to the tunneling mode
 	StartTunnelingMode(c);
 	s = NULL;

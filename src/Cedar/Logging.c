@@ -21,7 +21,6 @@
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 #include "Mayaqua/TcpIp.h"
-#include "Mayaqua/Unix.h"
 #include "Mayaqua/Win32.h"
 
 static char *delete_targets[] =
@@ -45,8 +44,6 @@ static UINT eraser_check_interval = DISK_FREE_CHECK_INTERVAL_DEFAULT;
 static UINT64 logger_max_log_size = MAX_LOG_SIZE_DEFAULT;
 
 static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *log_date_changed, char *current_logfile_datename, char *current_file_name);
-static bool LogThreadWriteStdout(LOG *log_object, BUF *buffer, IO *io);
-static IO *GetIO4Stdout();
 
 // Send with syslog
 void SendSysLog(SLOG *g, wchar_t *str)
@@ -2179,7 +2176,7 @@ void LogThread(THREAD *thread, void *param)
 
 	g = (LOG *)param;
 
-	io = g_foreground ? GetIO4Stdout() : NULL;
+	io = NULL;
 	b = NewBuf();
 
 #ifdef	OS_WIN32
@@ -2197,19 +2194,9 @@ void LogThread(THREAD *thread, void *param)
 
 		while (true)
 		{
-			if (g_foreground)
+			if (! LogThreadWriteGeneral(g, b, &io, &log_date_changed, current_logfile_datename, current_file_name))
 			{
-				if (! LogThreadWriteStdout(g, b, io))
-				{
-					break;
-				}
-			}
-			else
-			{
-				if (! LogThreadWriteGeneral(g, b, &io, &log_date_changed, current_logfile_datename, current_file_name))
-				{
-					break;
-				}
+				break;
 			}
 		}
 
@@ -2244,7 +2231,7 @@ void LogThread(THREAD *thread, void *param)
 		}
 	}
 
-	if (io != NULL && !g_foreground)
+	if (io != NULL)
 	{
 		FileCloseEx(io, true);
 	}
@@ -2487,60 +2474,6 @@ static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *l
 	Free(rec);
 
 	return (*io != NULL);
-}
-
-static bool LogThreadWriteStdout(LOG *log_object, BUF *buffer, IO *io)
-{
-	RECORD *rec;
-
-	// Retrieve a record from the head of the queue
-	LockQueue(log_object->RecordQueue);
-	{
-		rec = GetNext(log_object->RecordQueue);
-	}
-	UnlockQueue(log_object->RecordQueue);
-
-	if (rec == NULL)
-	{
-		Set(log_object->FlushEvent);
-		return false;
-	}
-
-	ClearBuf(buffer);
-	WriteRecordToBuffer(buffer, rec);
-	if (!FileWrite(io, buffer->Buf, buffer->Size))
-	{
-		ClearBuf(buffer);
-	}
-	Free(rec);
-
-	return true;
-}
-
-static IO *GetIO4Stdout()
-{
-#ifndef UNIX
-	return NULL;
-#else // UNIX
-	static IO IO4Stdout =
-	{
-		.Name = {0},
-		.NameW = {0},
-		.pData = NULL,
-		.WriteMode = true,
-		.HamMode = false,
-		.HamBuf = NULL,
-	};
-
-	if (!g_foreground)
-	{
-		return NULL;
-	}
-
-	IO4Stdout.pData = GetUnixio4Stdout();
-
-	return &IO4Stdout;
-#endif // UNIX
 }
 
 // Write the contents of the log to the buffer

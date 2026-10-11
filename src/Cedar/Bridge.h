@@ -10,9 +10,6 @@
 
 #include "Cedar.h"
 
-// Constants
-#define	BRIDGE_SPECIAL_IPRAW_NAME "ipv4_rawsocket_virtual_router"
-
 // Bridge
 struct BRIDGE
 {
@@ -57,7 +54,6 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename);
 bool IsBridgeSupported();
 UINT GetEthDeviceHash();
-bool IsRawIpBridgeSupported();
 
 #endif	// BRIDGE_H
 

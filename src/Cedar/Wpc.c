@@ -1037,8 +1037,6 @@ bool GetProxyServerNameAndPortFromIeProxyRegStr(char *name, UINT name_size, UINT
 	FreeToken(t);
 
 	return ret;
-#else	// OS_WIN32
-	return true;
 #endif	// OS_WIN32
 }
 
@@ -1112,8 +1110,6 @@ void GetSystemInternetSetting(INTERNET_SETTING *setting)
 			Free(str);
 		}
 	}
-#else	// OS_WIN32
-	Zero(setting, sizeof(INTERNET_SETTING));
 #endif	// OS_WIN32
 }
 

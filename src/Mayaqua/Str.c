@@ -2079,16 +2079,11 @@ void InitStringLibrary()
 	// Create a lock for token
 	token_lock = NewLock();
 
-	// Initialization of the International Library
-	InitInternational();
-
 	// Operation check
 	if (CheckStringLibrary() == false)
 	{
 #ifdef	OS_WIN32
 		Alert("String Library Init Failed.\r\nPlease check your locale settings.", NULL);
-#else	// OS_WIN32
-		Alert("String Library Init Failed.\r\nPlease check your locale settings and iconv() libraries.", NULL);
 #endif	// OS_WIN32
 		exit(0);
 	}
@@ -2097,9 +2092,6 @@ void InitStringLibrary()
 // Release of the string library
 void FreeStringLibrary()
 {
-	// Release of the International Library
-	FreeInternational();
-
 	// Release of the lock for token
 	DeleteLock(token_lock);
 	token_lock = NULL;
@@ -2618,13 +2610,9 @@ void PrintStr(char *str)
 		return;
 	}
 
-#ifdef	OS_UNIX
-	fputs(str, stdout);
-#else	// OS_UNIX
 	unistr = CopyStrToUni(str);
 	UniPrintStr(unistr);
 	Free(unistr);
-#endif	// OS_UNIX
 }
 
 // Display a string with arguments

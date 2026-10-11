@@ -30,20 +30,3 @@ if(WIN32)
 endif()
 
 target_link_libraries(vpncmd cedar)
-
-if(UNIX)
-  # Copy binary and "hamcore.se2" to /usr/lib(exec)/softether/, install launch script
-  install(TARGETS vpncmd
-    COMPONENT "vpncmd"
-    DESTINATION "${CMAKE_INSTALL_LIBEXECDIR}/softether/vpncmd"
-    PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
-  )
-
-  install(FILES "${BUILD_DIRECTORY}/hamcore.se2"
-    COMPONENT "vpncmd"
-    DESTINATION "${CMAKE_INSTALL_LIBEXECDIR}/softether/vpncmd"
-    PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
-  )
-
-  install_wrapper_script("vpncmd")
-endif()

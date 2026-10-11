@@ -4106,42 +4106,6 @@ void InitCryptLibrary()
 
 	ssl_clientcert_index = SSL_get_ex_new_index(0, "struct SslClientCertInfo *", NULL, NULL, NULL);
 
-#ifdef	OS_UNIX
-	{
-		char *name1 = "/dev/random";
-		char *name2 = "/dev/urandom";
-		IO *o;
-		o = FileOpen(name1, false);
-		if (o == NULL)
-		{
-			o = FileOpen(name2, false);
-			if (o == NULL)
-			{
-				UINT64 now = SystemTime64();
-				BUF *b;
-				UINT i;
-				b = NewBuf();
-				for (i = 0;i < 4096;i++)
-				{
-					UCHAR c = rand() % 256;
-					WriteBuf(b, &c, 1);
-				}
-				WriteBuf(b, &now, sizeof(now));
-				RAND_seed(b->Buf, b->Size);
-				FreeBuf(b);
-			}
-			else
-			{
-				FileClose(o);
-			}
-		}
-		else
-		{
-			FileClose(o);
-		}
-	}
-#endif	// OS_UNIX
-
 	RAND_poll();
 
 #ifdef	OS_WIN32

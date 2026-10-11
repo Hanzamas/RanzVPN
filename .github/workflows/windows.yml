@@ -16,7 +16,6 @@ jobs:
       fail-fast: false
       matrix:
         platform: [
-          { ARCHITECTURE: x86, VCPKG_TRIPLET: "x86-windows-static", RUNNER: "windows-2022", CMAKE_EXTRA_FLAGS: ""},
           { ARCHITECTURE: x64, VCPKG_TRIPLET: "x64-windows-static", RUNNER: "windows-latest", CMAKE_EXTRA_FLAGS: ""},
           { ARCHITECTURE: arm64, VCPKG_TRIPLET: "arm64-windows-static", RUNNER: "windows-11-arm", CMAKE_EXTRA_FLAGS: "-DOQS_PERMIT_UNSUPPORTED_ARCHITECTURE=ON"}
         ]
@@ -52,10 +51,7 @@ jobs:
           exit /b 1
         )
 
-        if /i "%ARCHITECTURE%"=="x86" (
-          set "VCVARS_PATH=%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
-          set "COMPILER_PATH=%VSINSTALL%\VC\Tools\Llvm\bin\clang-cl.exe"
-        ) else if /i "%ARCHITECTURE%"=="x64" (
+        if /i "%ARCHITECTURE%"=="x64" (
           set "VCVARS_PATH=%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
           set "COMPILER_PATH=%VSINSTALL%\VC\Tools\Llvm\x64\bin\clang-cl.exe"
         ) else if /i "%ARCHITECTURE%"=="arm64" (
@@ -73,7 +69,7 @@ jobs:
     - name: Test
       shell: powershell
       run: |
-        . .ci/appveyor-vpntest.ps1
+        . .github/scripts/vpntest.ps1
     - name: Self-check
       shell: pwsh
       run: |

@@ -1,16 +1,9 @@
 # SoftEther VPN
 
-||Badges|
-|---|---|
-|GitLab CI|[![GitLab CI build status](https://gitlab.com/SoftEther/SoftEtherVPN/badges/master/pipeline.svg)](https://gitlab.com/SoftEther/SoftEtherVPN/pipelines)|
-|Coverity Scan|[![Coverity Scan build status](https://scan.coverity.com/projects/16304/badge.svg)](https://scan.coverity.com/projects/softethervpn-softethervpn)|
-|Cirrus CI|[![Cirrus CI build status](https://api.cirrus-ci.com/github/SoftEtherVPN/SoftEtherVPN.svg)](https://cirrus-ci.com/github/SoftEtherVPN/SoftEtherVPN)|
-
 - [SoftEther VPN](#softether-vpn)
 - [BOARD MEMBERS OF THIS REPOSITORY](#board-members-of-this-repository)
 - [SOFTETHER VPN ADVANTAGES](#softether-vpn-advantages)
 - [Installation](#installation)
-  * [For FreeBSD](#for-freebsd)
   * [For Windows](#for-windows)
   * [From binary installers (stable channel)](#from-binary-installers-stable-channel)
   * [Build from Source code](#build-from-source-code)
@@ -172,34 +165,6 @@ https://github.com/chipitsine
 
 # Installation
 
-## For FreeBSD
-
-SoftEther VPN in FreeBSD Ports Collection is maintained by
-[Koichiro Iwao](https://people.FreeBSD.org/~meta/) ([@metalefty](https://github.com/metalefty)).
-
-Binary package can be installed by pkg:
-```
-pkg install softether5
-```
-
-Alternatively, it can be built & installed by ports:
-```
-make install -C /usr/ports/security/softether5
-```
-
-To run SoftEther VPN Server:
-```
-service softether_server start
-```
-
-To configure SoftEther VPN Server startup on boot:
-```
-sysrc softether_server_enable=yes
-```
-
-Also SoftEther VPN [Stable Edition](https://www.freshports.org/security/softether-devel/) and
-[RTM version](https://www.freshports.org/security/softether/) are available on FreeBSD.
-
 ## For Windows
 
 [Releases](https://github.com/SoftEtherVPN/SoftEtherVPN/releases)
@@ -214,13 +179,9 @@ Also SoftEther VPN [Stable Edition](https://www.freshports.org/security/softethe
 Those can be found under https://www.softether-download.com/
 There you can also find SoftEtherVPN source code in zip and tar formats.
 
-## Docker Container Image
-
-Please look at the [ContainerREADME.md](ContainerREADME.md)
-
 ## Build from Source code
 
-see [BUILD_UNIX](src/BUILD_UNIX.md) or [BUILD_WINDOWS](src/BUILD_WINDOWS.md)
+see [BUILD_WINDOWS](src/BUILD_WINDOWS.md)
 
 There are two flavours of SoftEtherVPN source code:
 

@@ -8,7 +8,6 @@
 #include "Admin.h"
 
 #include "Account.h"
-#include "BridgeUnix.h"
 #include "BridgeWin32.h"
 #include "Connection.h"
 #include "Layer3.h"
@@ -825,8 +824,6 @@ UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t)
 			ret = ERR_INTERNAL_ERROR;
 		}
 	}
-#else	// OS_WIN32
-	ret = ERR_NOT_SUPPORTED;
 #endif	// OS_WIN32
 
 	return ret;
@@ -857,8 +854,6 @@ UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t)
 			ret = ERR_INTERNAL_ERROR;
 		}
 	}
-#else	// OS_WIN32
-	ret = ERR_NOT_SUPPORTED;
 #endif	// OS_WIN32
 
 	return ret;
@@ -2360,13 +2355,8 @@ UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t)
 	TOKEN_LIST *o;
 	UINT i;
 	char tmp[MAX_SIZE];
-	bool unix_support = false;
 
 	SERVER_ADMIN_ONLY;
-
-#ifdef	OS_UNIX
-	unix_support = EthIsInterfaceDescriptionSupportedUnix();
-#endif	// OS_UNIX
 
 	o = GetEthList();
 	if (o == NULL)
@@ -2390,20 +2380,6 @@ UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t)
 
 #ifdef OS_WIN32
 		GetEthNetworkConnectionName(e->NetworkConnectionName, sizeof(e->NetworkConnectionName), e->DeviceName);
-#else
-		if (unix_support == false)
-		{
-			StrCpy(tmp, sizeof(tmp), "");
-		}
-		else
-		{
-			if (EthGetInterfaceDescriptionUnix(e->DeviceName, tmp, sizeof(tmp)) == false)
-			{
-				StrCpy(tmp, sizeof(tmp), e->DeviceName);
-			}
-		}
-
-		StrToUni(e->NetworkConnectionName, sizeof(e->NetworkConnectionName), tmp);
 #endif
 	}
 

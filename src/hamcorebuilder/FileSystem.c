@@ -35,12 +35,6 @@ ENTRIES *EnumEntries(const char *path)
 				continue;
 			}
 		}
-#ifndef OS_WINDOWS
-		if (IsWindowsExtension(file.extension))
-		{
-			continue;
-		}
-#endif
 		++entries->Num;
 		entries->List = realloc(entries->List, sizeof(ENTRY) * entries->Num);
 
@@ -118,24 +112,3 @@ void FreeEntries(ENTRIES *entries)
 
 	free(entries);
 }
-
-#ifndef OS_WINDOWS
-bool IsWindowsExtension(const char *extension)
-{
-	if (!extension)
-	{
-		return false;
-	}
-
-	if (strcmp(extension, "cat") == 0 ||
-		strcmp(extension, "dll") == 0 ||
-		strcmp(extension, "exe") == 0 ||
-		strcmp(extension, "inf") == 0 ||
-		strcmp(extension, "sys") == 0)
-	{
-		return true;
-	}
-
-	return false;
-}
-#endif

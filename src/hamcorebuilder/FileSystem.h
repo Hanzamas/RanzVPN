@@ -23,8 +23,4 @@ ENTRIES *EnumEntries(const char *path);
 ENTRIES *EnumEntriesRecursively(const char *path, const bool files_only);
 void FreeEntries(ENTRIES *entries);
 
-#ifndef OS_WINDOWS
-bool IsWindowsExtension(const char *extension);
-#endif
-
 #endif

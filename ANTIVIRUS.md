@@ -213,7 +213,7 @@ SoftEther VPN is **fully open source** and can be verified:
 
 2. **Build from Source**
    - You can compile SoftEther VPN yourself from source
-   - See: [BUILD_WINDOWS.md](src/BUILD_WINDOWS.md) and [BUILD_UNIX.md](src/BUILD_UNIX.md)
+   - See: [BUILD_WINDOWS.md](src/BUILD_WINDOWS.md)
    - Self-compiled builds may have fewer false positive issues
 
 3. **Community Trust**

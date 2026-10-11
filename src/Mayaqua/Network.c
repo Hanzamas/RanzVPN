@@ -19,37 +19,11 @@
 #include "Str.h"
 #include "TcpIp.h"
 #include "Tick64.h"
-#include "Unix.h"
 
 #include <string.h>
 
 #include <openssl/err.h>
 #include <openssl/ssl.h>
-
-#ifdef OS_UNIX
-#include <fcntl.h>
-#include <netdb.h>
-#include <poll.h>
-#include <signal.h>
-
-#include <netinet/tcp.h>
-#include <sys/socket.h>
-#include <sys/time.h>
-#endif
-
-#ifdef UNIX_MACOS
-#include <sys/event.h>
-#endif
-
-#ifdef UNIX
-#ifdef UNIX_SOLARIS
-#define USE_STATVFS
-#include <sys/statvfs.h>
-#else
-#define MAYAQUA_SUPPORTS_GETIFADDRS
-#include <ifaddrs.h>
-#endif
-#endif
 
 #ifdef OS_WIN32
 #include <iphlpapi.h>
@@ -65,11 +39,6 @@ struct ROUTE_CHANGE_DATA
 };
 #endif
 
-// Whether the blocking occurs in SSL
-#if	defined(UNIX_BSD) || defined(UNIX_MACOS)
-#define	FIX_SSL_BLOCKING
-#endif
-
 // HTTP constant
 static char http_detect_server_startwith[] = "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\r\n<HTML><HEAD>\r\n<TITLE>403 Forbidden</TITLE>\r\n</HEAD><BODY>\r\n<H1>Forbidden</H1>\r\nYou don't have permission to access ";
 static char http_detect_server_tag_future[] = "9C37197CA7C2428388C2E6E59B829B30";
@@ -79,8 +48,6 @@ static LOCK *machine_name_lock = NULL;
 static LOCK *disconnect_function_lock = NULL;
 extern LOCK *openssl_lock;
 static COUNTER *num_tcp_connections = NULL;
-static LOCK *unix_dns_server_addr_lock = NULL;
-static IP unix_dns_server;
 static LIST *WaitThreadList = NULL;
 static UCHAR machine_ip_process_hash[SHA1_SIZE];
 static LOCK *machine_ip_process_hash_lock = NULL;
@@ -318,25 +285,6 @@ int GetCurrentTimezone()
 
 #ifdef	OS_WIN32
 	ret = GetCurrentTimezoneWin32();
-#else	// OS_WIN32
-	{
-#if	defined(UNIX_MACOS) || defined(UNIX_BSD)
-		struct timeval tv;
-		struct timezone tz;
-
-		Zero(&tv, sizeof(tv));
-		Zero(&tz, sizeof(tz));
-
-		gettimeofday(&tv, &tz);
-
-		ret = tz.tz_minuteswest;
-
-#else	// defined(UNIX_MACOS) || defined(UNIX_BSD)
-		tzset();
-
-		ret = timezone / 60;
-#endif	// defined(UNIX_MACOS) || defined(UNIX_BSD)
-	}
 #endif	// OS_WIN32
 
 	return ret;
@@ -1149,8 +1097,6 @@ ICMP_RESULT *IcmpApiEchoSend(IP *dest_ip, UCHAR ttl, UCHAR *data, UINT size, UIN
 		return NULL;
 	}
 
-#else	// OS_WIN32
-	return NULL;
 #endif	// OS_WIN32
 }
 
@@ -1159,8 +1105,6 @@ ROUTE_CHANGE *NewRouteChange()
 {
 #ifdef	OS_WIN32
 	return Win32NewRouteChange2(true, true, NULL);
-#else	// OS_WIN32
-	return NULL;
 #endif	// OS_WIN32
 }
 
@@ -1177,8 +1121,6 @@ bool IsRouteChanged(ROUTE_CHANGE *r)
 {
 #ifdef	OS_WIN32
 	return Win32IsRouteChanged2(r);
-#else	// OS_WIN32
-	return false;
 #endif	// OS_WIN32
 }
 
@@ -3018,676 +2960,6 @@ bool IsSubnetMask32(UINT ip)
 	return IsSubnetMask4(&p);
 }
 
-#ifdef	OS_UNIX			// Code for UNIX
-
-// Turn on and off the non-blocking mode of the socket
-void UnixSetSocketNonBlockingMode(int fd, bool nonblock)
-{
-	// Validate arguments
-	if (fd == INVALID_SOCKET)
-	{
-		return;
-	}
-
-	const int flags = fcntl(fd, F_GETFL, 0);
-	if (flags != -1)
-	{
-		fcntl(fd, F_SETFL, nonblock ? flags | O_NONBLOCK : flags & ~O_NONBLOCK);
-	}
-}
-
-// Do Nothing
-ROUTE_TABLE *UnixGetRouteTable()
-{
-	ROUTE_TABLE *ret = ZeroMalloc(sizeof(ROUTE_TABLE));
-	ret->NumEntry = 0;
-	ret->Entry = ZeroMalloc(0);
-
-	return ret;
-}
-
-// Do Nothing
-bool UnixAddRouteEntry(ROUTE_ENTRY *e, bool *already_exists)
-{
-	return true;
-}
-
-// Do Nothing
-void UnixDeleteRouteEntry(ROUTE_ENTRY *e)
-{
-	return;
-}
-
-// Do Nothing
-UINT UnixGetVLanInterfaceID(char *instance_name)
-{
-	return 1;
-}
-
-// Do Nothing
-char **UnixEnumVLan(char *tag_name)
-{
-	char **list;
-
-	list = ZeroMalloc(sizeof(char *));
-
-	return list;
-}
-
-// Get the IP address of the default DNS server
-bool UnixGetDefaultDns(IP *ip)
-{
-	BUF *b;
-	// Validate arguments
-	if (ip == NULL)
-	{
-		return false;
-	}
-
-	Lock(unix_dns_server_addr_lock);
-	{
-		if (IsZero(&unix_dns_server, sizeof(IP)) == false)
-		{
-			Copy(ip, &unix_dns_server, sizeof(IP));
-			Unlock(unix_dns_server_addr_lock);
-			return true;
-		}
-
-		GetLocalHostIP4(ip);
-
-		b = ReadDump("/etc/resolv.conf");
-		if (b != NULL)
-		{
-			char *s;
-			bool f = false;
-			while ((s = CfgReadNextLine(b)) != NULL)
-			{
-				TOKEN_LIST *t = ParseToken(s, "\" \t,");
-				if (t->NumTokens == 2)
-				{
-					if (StrCmpi(t->Token[0], "nameserver") == 0)
-					{
-						StrToIP(ip, t->Token[1]);
-						f = IsIP4(ip);
-					}
-				}
-				FreeToken(t);
-
-				Free(s);
-
-				if (f)
-				{
-					break;
-				}
-			}
-			FreeBuf(b);
-		}
-		Copy(&unix_dns_server, ip, sizeof(IP));
-	}
-	Unlock(unix_dns_server_addr_lock);
-
-	return true;
-}
-
-
-// Select procedure
-void UnixSelect(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2)
-{
-	UINT reads[MAXIMUM_WAIT_OBJECTS];
-	UINT writes[MAXIMUM_WAIT_OBJECTS];
-	UINT num_read, num_write, i;
-	UINT p1, p2;
-	SOCK *s;
-	UCHAR tmp[MAX_SIZE];
-	int ret;
-	// Initialization of array
-	Zero(reads, sizeof(reads));
-	Zero(writes, sizeof(writes));
-	num_read = num_write = 0;
-
-	// Setting the event array
-	if (set != NULL)
-	{
-		for (i = 0; i < set->NumSocket; i++)
-		{
-			s = set->Sock[i];
-			if (s != NULL)
-			{
-				UnixInitAsyncSocket(s);
-				if (s->NoNeedToRead == false)
-				{
-					reads[num_read++] = s->socket;
-				}
-
-				if (s->WriteBlocked)
-				{
-					writes[num_write++] = s->socket;
-				}
-			}
-		}
-	}
-
-	if (timeout == 0)
-	{
-		return;
-	}
-
-	p1 = p2 = -1;
-
-	if (c1 != NULL)
-	{
-		reads[num_read++] = p1 = c1->pipe_read;
-
-		if (c1->SpecialFlag)
-		{
-			if (c1->pipe_special_read2 != -1 && c1->pipe_special_read2 != 0)
-			{
-				reads[num_read++] = c1->pipe_special_read2;
-			}
-
-			if (c1->pipe_special_read3 != -1 && c1->pipe_special_read3 != 0)
-			{
-				reads[num_read++] = c1->pipe_special_read3;
-			}
-		}
-	}
-	if (c2 != NULL)
-	{
-		reads[num_read++] = p2 = c2->pipe_read;
-
-		if (c2->SpecialFlag)
-		{
-			if (c2->pipe_special_read2 != -1 && c2->pipe_special_read2 != 0)
-			{
-				reads[num_read++] = c2->pipe_special_read2;
-			}
-
-			if (c2->pipe_special_read3 != -1 && c2->pipe_special_read3 != 0)
-			{
-				reads[num_read++] = c2->pipe_special_read3;
-			}
-		}
-	}
-
-	// Call the select
-	UnixSelectInner(num_read, reads, num_write, writes, timeout);
-
-	// Read from the pipe
-	if (c1 != NULL && c1->SpecialFlag == false && p1 != -1)
-	{
-		do
-		{
-			ret = read(p1, tmp, sizeof(tmp));
-		}
-		while (ret >= 1);
-	}
-	if (c2 != NULL && c2->SpecialFlag == false && p2 != -1)
-	{
-		do
-		{
-			ret = read(p2, tmp, sizeof(tmp));
-		}
-		while (ret >= 1);
-	}
-}
-
-// Cancel
-void UnixCancel(CANCEL *c)
-{
-	// Validate arguments
-	if (c == NULL)
-	{
-		return;
-	}
-
-	UnixWritePipe(c->pipe_write);
-}
-
-// Release of the cancel object
-void UnixCleanupCancel(CANCEL *c)
-{
-	// Validate arguments
-	if (c == NULL)
-	{
-		return;
-	}
-
-	if (c->SpecialFlag == false)
-	{
-		UnixDeletePipe(c->pipe_read, c->pipe_write);
-	}
-
-	Free(c);
-}
-
-// Creating a new cancel object
-CANCEL *UnixNewCancel()
-{
-	CANCEL *c = ZeroMallocFast(sizeof(CANCEL));
-
-	c->ref = NewRef();
-	c->SpecialFlag = false;
-
-	UnixNewPipe(&c->pipe_read, &c->pipe_write);
-
-	c->pipe_special_read2 = c->pipe_special_read3 = -1;
-
-	return c;
-}
-
-// Add the socket to the socket event
-void UnixJoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event)
-{
-	// Validate arguments
-	if (sock == NULL || event == NULL || sock->AsyncMode)
-	{
-		return;
-	}
-	if (sock->ListenMode != false || (sock->Type == SOCK_TCP && sock->Connected == false))
-	{
-		return;
-	}
-
-	sock->AsyncMode = true;
-
-	LockList(event->SockList);
-	{
-		Add(event->SockList, sock);
-		AddRef(sock->ref);
-	}
-	UnlockList(event->SockList);
-
-	// Make the socket asynchronous mode
-	UnixSetSocketNonBlockingMode(sock->socket, true);
-
-	// Increase the reference count of the SOCK_EVENT
-	AddRef(event->ref);
-	sock->SockEvent = event;
-
-	// Set the socket event
-	SetSockEvent(event);
-}
-
-// Wait for a socket event
-bool UnixWaitSockEvent(SOCK_EVENT *event, UINT timeout)
-{
-	UINT num_read, num_write;
-	UINT *reads, *writes;
-	UINT n;
-	char tmp[MAX_SIZE];
-	int readret = 0;
-	bool event_pipe_is_readable = false;
-	// Validate arguments
-	if (event == NULL)
-	{
-		return false;
-	}
-
-	LockList(event->SockList);
-	{
-		UINT i;
-		reads = ZeroMallocFast(sizeof(SOCK *) * (LIST_NUM(event->SockList) + 1));
-
-		num_write = 0;
-		num_read = 0;
-
-		for (i = 0; i < LIST_NUM(event->SockList); i++)
-		{
-			SOCK *s = LIST_DATA(event->SockList, i);
-
-			if (s->NoNeedToRead == false)
-			{
-				reads[num_read++] = s->socket;
-			}
-
-			if (s->WriteBlocked)
-			{
-				num_write++;
-			}
-		}
-
-		reads[num_read++] = event->pipe_read;
-
-		if (event->current_pipe_data != 0)
-		{
-			event_pipe_is_readable = true;
-		}
-
-		writes = ZeroMallocFast(sizeof(SOCK *) * num_write);
-
-		n = 0;
-
-		for (i = 0; i < (num_read - 1); i++)
-		{
-			SOCK *s = LIST_DATA(event->SockList, i);
-			if (s->WriteBlocked)
-			{
-				writes[n++] = s->socket;
-			}
-		}
-	}
-	UnlockList(event->SockList);
-
-	if (event_pipe_is_readable == false)
-	{
-		UnixSelectInner(num_read, reads, num_write, writes, timeout);
-	}
-
-	event->current_pipe_data = 0;
-	do
-	{
-		readret = read(event->pipe_read, tmp, sizeof(tmp));
-	}
-	while (readret >= 1);
-
-	Free(reads);
-	Free(writes);
-
-	return true;
-}
-
-// Set the socket event
-void UnixSetSockEvent(SOCK_EVENT *event)
-{
-	// Validate arguments
-	if (event == NULL)
-	{
-		return;
-	}
-
-	if (event->current_pipe_data <= 100)
-	{
-		UnixWritePipe(event->pipe_write);
-		event->current_pipe_data++;
-	}
-}
-
-// This is a helper function for select()
-int safe_fd_set(int fd, fd_set *fds, int *max_fd) {
-	FD_SET(fd, fds);
-	if (fd > *max_fd) {
-		*max_fd = fd;
-	}
-	return 0;
-}
-
-// Execute 'select' for the socket
-void UnixSelectInner(UINT num_read, UINT *reads, UINT num_write, UINT *writes, UINT timeout)
-{
-#ifdef	UNIX_MACOS
-	fd_set rfds; //read descriptors
-	fd_set wfds; //write descriptors
-	int max_fd = 0; //maximum descriptor id
-	struct timeval tv; //timeval for timeout
-#else	// UNIX_MACOS
-	struct pollfd *p;
-#endif	// UNIX_MACOS
-	UINT num;
-	UINT i;
-	UINT n;
-	UINT num_read_total, num_write_total;
-
-	if (num_read != 0 && reads == NULL)
-	{
-		num_read = 0;
-	}
-	if (num_write != 0 && writes == NULL)
-	{
-		num_write = 0;
-	}
-
-	if (timeout == 0)
-	{
-		return;
-	}
-
-	num_read_total = num_write_total = 0;
-	for (i = 0; i < num_read; i++)
-	{
-		if (reads[i] != INVALID_SOCKET)
-		{
-			num_read_total++;
-		}
-	}
-	for (i = 0; i < num_write; i++)
-	{
-		if (writes[i] != INVALID_SOCKET)
-		{
-			num_write_total++;
-		}
-	}
-
-	num = num_read_total + num_write_total;
-#ifdef	UNIX_MACOS
-	FD_ZERO(&rfds); //zero out descriptor set for read descriptors
-	FD_ZERO(&wfds); //same for write
-#else	// UNIX_MACOS
-	p = ZeroMallocFast(sizeof(struct pollfd) * num);
-#endif	// UNIX_MACOS
-
-	n = 0;
-
-	for (i = 0; i < num_read; i++)
-	{
-		if (reads[i] != INVALID_SOCKET)
-		{
-#ifdef	UNIX_MACOS
-			safe_fd_set(reads[i], &rfds, &max_fd);
-#else	// UNIX_MACOS
-			struct pollfd *pfd = &p[n++];
-			pfd->fd = reads[i];
-			pfd->events = POLLIN | POLLPRI | POLLERR | POLLHUP;
-#endif	// UNIX_MACOS
-		}
-	}
-
-	for (i = 0; i < num_write; i++)
-	{
-		if (writes[i] != INVALID_SOCKET)
-		{
-#ifdef	UNIX_MACOS
-			safe_fd_set(writes[i], &wfds, &max_fd);
-#else	// UNIX_MACOS
-			struct pollfd *pfd = &p[n++];
-			pfd->fd = writes[i];
-			pfd->events = POLLIN | POLLPRI | POLLERR | POLLHUP | POLLOUT;
-#endif	// UNIX_MACOS
-		}
-	}
-
-	if (num != 0)
-	{
-#ifdef	UNIX_MACOS
-		tv.tv_sec = timeout / 1000;
-		tv.tv_usec = (timeout % 1000) * 1000l;
-		select(max_fd + 1, &rfds, &wfds, NULL, timeout == INFINITE ? NULL : &tv);
-#else	// UNIX_MACOS
-		(void)poll(p, num, timeout == INFINITE ? -1 : (int)timeout);
-#endif	// UNIX_MACOS
-	}
-	else
-	{
-		SleepThread(timeout);
-	}
-
-#ifndef	UNIX_MACOS
-	Free(p);
-#endif	// not UNIX_MACOS
-}
-
-// Clean-up of the socket event
-void UnixCleanupSockEvent(SOCK_EVENT *event)
-{
-	UINT i;
-	// Validate arguments
-	if (event == NULL)
-	{
-		return;
-	}
-
-	for (i = 0; i < LIST_NUM(event->SockList); i++)
-	{
-		SOCK *s = LIST_DATA(event->SockList, i);
-
-		ReleaseSock(s);
-	}
-
-	ReleaseList(event->SockList);
-
-	UnixDeletePipe(event->pipe_read, event->pipe_write);
-
-	Free(event);
-}
-
-// Create a socket event
-SOCK_EVENT *UnixNewSockEvent()
-{
-	SOCK_EVENT *e = ZeroMallocFast(sizeof(SOCK_EVENT));
-
-	e->SockList = NewList(NULL);
-	e->ref = NewRef();
-
-	UnixNewPipe(&e->pipe_read, &e->pipe_write);
-
-	return e;
-}
-
-// Close the pipe
-void UnixDeletePipe(int p1, int p2)
-{
-	if (p1 != -1)
-	{
-		close(p1);
-	}
-
-	if (p2 != -1)
-	{
-		close(p2);
-	}
-}
-
-// Write to the pipe
-void UnixWritePipe(int pipe_write)
-{
-	char c = 1;
-	write(pipe_write, &c, 1);
-}
-
-// Create a new pipe
-void UnixNewPipe(int *pipe_read, int *pipe_write)
-{
-	int fd[2];
-	// Validate arguments
-	if (pipe_read == NULL || pipe_write == NULL)
-	{
-		return;
-	}
-
-	fd[0] = fd[1] = 0;
-
-	pipe(fd);
-
-	*pipe_read = fd[0];
-	*pipe_write = fd[1];
-
-	UnixSetSocketNonBlockingMode(*pipe_write, true);
-	UnixSetSocketNonBlockingMode(*pipe_read, true);
-}
-
-// Release the asynchronous socket
-void UnixFreeAsyncSocket(SOCK *sock)
-{
-	UINT p;
-	// Validate arguments
-	if (sock == NULL)
-	{
-		return;
-	}
-
-	Lock(sock->lock);
-	{
-		if (sock->AsyncMode == false)
-		{
-			Unlock(sock->lock);
-			return;
-		}
-
-		sock->AsyncMode = false;
-
-		// Examine whether this socket are associated to SockEvent
-		if (sock->SockEvent != NULL)
-		{
-			SOCK_EVENT *e = sock->SockEvent;
-
-			AddRef(e->ref);
-
-			p = e->pipe_write;
-			LockList(e->SockList);
-			{
-				if (Delete(e->SockList, sock))
-				{
-					ReleaseSock(sock);
-				}
-			}
-			UnlockList(e->SockList);
-
-			// Release the socket event
-			ReleaseSockEvent(sock->SockEvent);
-			sock->SockEvent = NULL;
-
-			SetSockEvent(e);
-
-			ReleaseSockEvent(e);
-		}
-	}
-	Unlock(sock->lock);
-}
-
-// Set the socket to asynchronous mode
-void UnixInitAsyncSocket(SOCK *sock)
-{
-	// Validate arguments
-	if (sock == NULL)
-	{
-		return;
-	}
-	if (sock->AsyncMode)
-	{
-		// The socket has been set in asynchronous mode already
-		return;
-	}
-	if (sock->ListenMode != false || (sock->Type == SOCK_TCP && sock->Connected == false))
-	{
-		return;
-	}
-
-	sock->AsyncMode = true;
-
-	UnixSetSocketNonBlockingMode(sock->socket, true);
-
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-	if (sock->ssl != NULL && sock->ssl->s3 != NULL)
-	{
-		sock->Ssl_Init_Async_SendAlert[0] = sock->ssl->s3->send_alert[0];
-		sock->Ssl_Init_Async_SendAlert[1] = sock->ssl->s3->send_alert[1];
-	}
-#endif
-}
-
-// Initializing the socket library
-void UnixInitSocketLibrary()
-{
-	// Do not do anything special
-}
-
-// Release of the socket library
-void UnixFreeSocketLibrary()
-{
-	// Do not do anything special
-}
-
-#endif	// OS_UNIX
-
 #ifdef OS_WIN32		// Code for Windows
 
 // Comparison of IP_ADAPTER_INDEX_MAP
@@ -4903,51 +4175,6 @@ void FreeWaitThread()
 	WaitThreadList = NULL;
 }
 
-// Get a domain name for UNIX
-bool UnixGetDomainName(char *name, UINT size)
-{
-	bool ret = false;
-	BUF *b = ReadDump("/etc/resolv.conf");
-
-	if (b == NULL)
-	{
-		return false;
-	}
-
-	while (true)
-	{
-		char *s = CfgReadNextLine(b);
-		TOKEN_LIST *t;
-
-		if (s == NULL)
-		{
-			break;
-		}
-
-		Trim(s);
-
-		t = ParseToken(s, " \t");
-		if (t != NULL)
-		{
-			if (t->NumTokens == 2)
-			{
-				if (StrCmpi(t->Token[0], "domain") == 0)
-				{
-					StrCpy(name, size, t->Token[1]);
-					ret = true;
-				}
-			}
-			FreeToken(t);
-		}
-
-		Free(s);
-	}
-
-	FreeBuf(b);
-
-	return ret;
-}
-
 // Get the domain name
 bool GetDomainName(char *name, UINT size)
 {
@@ -4968,8 +4195,6 @@ bool GetDomainName(char *name, UINT size)
 	{
 		ret = Win32GetDnsSuffix(name, size);
 	}
-#else	// OS_WIN32
-	ret = UnixGetDomainName(name, size);
 #endif	// OS_WIN32
 
 	if (ret == false)
@@ -4985,8 +4210,6 @@ bool GetDefaultDns(IP *ip)
 {
 #ifdef	OS_WIN32
 	return Win32GetDefaultDns(ip, NULL, 0);
-#else
-	return UnixGetDefaultDns(ip);
 #endif	// OS_WIN32
 }
 
@@ -4995,8 +4218,6 @@ SOCK_EVENT *NewSockEvent()
 {
 #ifdef	OS_WIN32
 	return Win32NewSockEvent();
-#else
-	return UnixNewSockEvent();
 #endif	// OS_WIN32
 }
 
@@ -5005,8 +4226,6 @@ void SetSockEvent(SOCK_EVENT *event)
 {
 #ifdef	OS_WIN32
 	Win32SetSockEvent(event);
-#else
-	UnixSetSockEvent(event);
 #endif	// OS_WIN32
 }
 
@@ -5015,8 +4234,6 @@ void CleanupSockEvent(SOCK_EVENT *event)
 {
 #ifdef	OS_WIN32
 	Win32CleanupSockEvent(event);
-#else
-	UnixCleanupSockEvent(event);
 #endif	// OS_WIN32
 }
 
@@ -5026,8 +4243,6 @@ bool WaitSockEvent(SOCK_EVENT *event, UINT timeout)
 	bool ret = false;
 #ifdef	OS_WIN32
 	ret = Win32WaitSockEvent(event, timeout);
-#else
-	ret = UnixWaitSockEvent(event, timeout);
 #endif	// OS_WIN32
 	return ret;
 }
@@ -5058,8 +4273,6 @@ void JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event)
 
 #ifdef	OS_WIN32
 	Win32JoinSockToSockEvent(sock, event);
-#else
-	UnixJoinSockToSockEvent(sock, event);
 #endif	// OS_WIN32
 }
 
@@ -5079,9 +4292,6 @@ CANCEL *NewCancelSpecial(void *hEvent)
 
 #ifdef	OS_WIN32
 	c->hEvent = (HANDLE)hEvent;
-#else	// OS_WIN32
-	c->pipe_read = (int)hEvent;
-	c->pipe_write = -1;
 #endif	// OS_WIN32
 
 	return c;
@@ -5093,8 +4303,6 @@ CANCEL *NewCancel()
 	CANCEL *c = NULL;
 #ifdef	OS_WIN32
 	c = Win32NewCancel();
-#else
-	c = UnixNewCancel();
 #endif	// OS_WIN32
 	return c;
 }
@@ -5119,8 +4327,6 @@ void CleanupCancel(CANCEL *c)
 {
 #ifdef	OS_WIN32
 	Win32CleanupCancel(c);
-#else
-	UnixCleanupCancel(c);
 #endif
 }
 
@@ -5129,8 +4335,6 @@ void Cancel(CANCEL *c)
 {
 #ifdef	OS_WIN32
 	Win32Cancel(c);
-#else
-	UnixCancel(c);
 #endif
 }
 
@@ -5265,8 +4469,6 @@ UINT GetVLanInterfaceID(char *tag_name)
 	UINT ret = 0;
 #ifdef	OS_WIN32
 	ret = Win32GetVLanInterfaceID(tag_name);
-#else	// OS_WIN32
-	ret = UnixGetVLanInterfaceID(tag_name);
 #endif	// OS_WIN32
 	return ret;
 }
@@ -5302,8 +4504,6 @@ char **EnumVLan(char *tag_name)
 	char **ret = NULL;
 #ifdef	OS_WIN32
 	ret = Win32EnumVLan(tag_name);
-#else	// OS_WIN32
-	ret = UnixEnumVLan(tag_name);
 #endif	// OS_WIN32
 	return ret;
 }
@@ -5383,8 +4583,6 @@ void DeleteRouteEntry(ROUTE_ENTRY *e)
 	Debug("DeleteRouteEntry();\n");
 #ifdef	OS_WIN32
 	Win32DeleteRouteEntry2(e);
-#else	// OS_WIN32
-	UnixDeleteRouteEntry(e);
 #endif
 }
 
@@ -5400,8 +4598,6 @@ bool AddRouteEntryEx(ROUTE_ENTRY *e, bool *already_exists)
 	Debug("AddRouteEntryEx();\n");
 #ifdef	OS_WIN32
 	ret = Win32AddRouteEntry2(e, already_exists);
-#else	// OS_WIN32
-	ret = UnixAddRouteEntry(e, already_exists);
 #endif
 	return ret;
 }
@@ -5416,8 +4612,6 @@ ROUTE_TABLE *GetRouteTable()
 
 #ifdef	OS_WIN32
 	t = Win32GetRouteTable2(true, true);
-#else	//OS_WIN32
-	t = UnixGetRouteTable();
 #endif	// OS_WIN32
 
 	WriteBuf(buf, &t->NumEntry, sizeof(t->NumEntry));
@@ -5463,8 +4657,6 @@ UINT RecvFrom(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 	int ret = 0;
 #ifdef	OS_WIN32
 	int socklen = sizeof(addr);
-#else
-	socklen_t socklen = sizeof(addr);
 #endif
 
 	// Validate arguments
@@ -5531,19 +4723,6 @@ UINT RecvFrom(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 		{
 			Debug("RecvFrom(): recvfrom() failed with error: %u\n", WSAGetLastError());
 		}
-#else
-		if (errno == ECONNREFUSED || errno == ECONNRESET || errno == EMSGSIZE || errno == ENOBUFS || errno == ENOMEM || errno == EINTR)
-		{
-			sock->IgnoreRecvErr = true;
-		}
-		else if (errno == EAGAIN)
-		{
-			return SOCK_LATER;
-		}
-		else
-		{
-			Debug("RecvFrom(): recvfrom() failed with error: %s\n", strerror(errno));
-		}
 #endif
 		return 0;
 	}
@@ -5554,8 +4733,6 @@ UINT RecvFrom6(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 	int ret = 0;
 #ifdef	OS_WIN32
 	int socklen = sizeof(addr);
-#else
-	socklen_t socklen = sizeof(addr);
 #endif
 
 	// Validate arguments
@@ -5618,19 +4795,6 @@ UINT RecvFrom6(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 		else
 		{
 			Debug("RecvFrom(): recvfrom() failed with error: %u\n", WSAGetLastError());
-		}
-#else
-		if (errno == ECONNREFUSED || errno == ECONNRESET || errno == EMSGSIZE || errno == ENOBUFS || errno == ENOMEM || errno == EINTR)
-		{
-			sock->IgnoreRecvErr = true;
-		}
-		else if (errno == EAGAIN)
-		{
-			return SOCK_LATER;
-		}
-		else
-		{
-			Debug("RecvFrom(): recvfrom() failed with error: %s\n", strerror(errno));
 		}
 #endif
 		return 0;
@@ -5723,15 +4887,6 @@ UINT SendToEx(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size, 
 			UINT e = WSAGetLastError();
 			Debug("SendTo Error; %u\n", e);
 		}
-#else	// OS_WIN32
-		if (errno == ECONNREFUSED || errno == ECONNRESET || errno == EMSGSIZE || errno == ENOBUFS || errno == ENOMEM || errno == EINTR || errno == EINVAL)
-		{
-			sock->IgnoreSendErr = true;
-		}
-		else if (errno == EAGAIN)
-		{
-			return SOCK_LATER;
-		}
 #endif	// OS_WIN32
 		return 0;
 	}
@@ -5814,15 +4969,6 @@ UINT SendTo6Ex(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size,
 			sock->IgnoreSendErr = true;
 		}
 		else if (WSAGetLastError() == WSAEWOULDBLOCK || WSAGetLastError() == WSAEINPROGRESS)
-		{
-			return SOCK_LATER;
-		}
-#else	// OS_WIN32
-		if (errno == ECONNREFUSED || errno == ECONNRESET || errno == EMSGSIZE || errno == ENOBUFS || errno == ENOMEM || errno == EINTR)
-		{
-			sock->IgnoreSendErr = true;
-		}
-		else if (errno == EAGAIN)
 		{
 			return SOCK_LATER;
 		}
@@ -6052,10 +5198,6 @@ SOCK *NewUDP6(UINT port, IP *ip)
 
 	UINT true_flag = 1;
 	UINT false_flag = 0;
-#ifdef	OS_UNIX
-	// It is necessary to set the IPv6 Only flag on a UNIX system
-	(void)setsockopt(s, IPPROTO_IPV6, IPV6_V6ONLY, &true_flag, sizeof(true_flag));
-#endif	// OS_UNIX
 
 	if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
 	{
@@ -6121,8 +5263,6 @@ void Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2)
 {
 #ifdef	OS_WIN32
 	Win32Select(set, timeout, c1, c2);
-#else
-	UnixSelect(set, timeout, c1, c2);
 #endif	// OS_WIN32
 }
 
@@ -6474,10 +5614,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 	UINT dummy_err = 0;
 	long ssl_verify_err;
 
-#ifdef UNIX_SOLARIS
-	SOCKET_TIMEOUT_PARAM *ttparam;
-#endif //UNIX_SOLARIS
-
 	// Validate arguments
 	if (sock == NULL)
 	{
@@ -6604,8 +5740,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 						}
 						CertCloseStore(hStore, 0);
 					}
-#else
-					SSL_CTX_set_default_verify_paths(ssl_ctx);
 #endif
 				}
 
@@ -6696,19 +5830,9 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 	{
 //		Lock(ssl_connect_lock);
 
-// Run the time-out thread for SOLARIS
-#ifdef UNIX_SOLARIS
-		ttparam = NewSocketTimeout(sock);
-#endif // UNIX_SOLARIS
-
 		// Server mode
 		if (SSL_accept(sock->ssl) <= 0)
 		{
-
-// Stop the timeout thread
-#ifdef UNIX_SOLARIS
-			FreeSocketTimeout(ttparam);
-#endif // UNIX_SOLARIS
 
 			//			Unlock(ssl_connect_lock);
 			// SSL-Accept failure
@@ -6762,11 +5886,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 		}
 #endif	// TLSEXT_NAMETYPE_host_name
 #endif	// SSL_CTRL_SET_TLSEXT_HOSTNAME
-
-// Stop the timeout thread
-#ifdef UNIX_SOLARIS
-		FreeSocketTimeout(ttparam);
-#endif // UNIX_SOLARIS
 
 		//		Unlock(ssl_connect_lock);
 	}
@@ -7052,10 +6171,6 @@ UINT SecureRecv(SOCK *sock, void *data, UINT size)
 	int ret, e = SSL_ERROR_NONE;
 	SSL *ssl;
 
-#ifdef UNIX_SOLARIS
-	SOCKET_TIMEOUT_PARAM *ttparam;
-#endif //UNIX_SOLARIS
-
 	ssl = sock->ssl;
 
 	if (sock->AsyncMode)
@@ -7128,33 +6243,8 @@ UINT SecureRecv(SOCK *sock, void *data, UINT size)
 			return 0;
 		}
 
-#ifdef	OS_UNIX
-		if (sock->AsyncMode == false)
-		{
-			sock->CallingThread = pthread_self();
-		}
-#endif	// OS_UNIX
-
-		// Run the time-out thread for SOLARIS
-#ifdef UNIX_SOLARIS
-		ttparam = NewSocketTimeout(sock);
-#endif // UNIX_SOLARIS
-
 		ERR_clear_error();
 		ret = SSL_read(ssl, data, size);
-
-		// Stop the timeout thread
-#ifdef UNIX_SOLARIS
-		FreeSocketTimeout(ttparam);
-#endif // UNIX_SOLARIS
-
-
-#ifdef	OS_UNIX
-		if (sock->AsyncMode == false)
-		{
-			sock->CallingThread = 0;
-		}
-#endif	// OS_UNIX
 
 #if OPENSSL_VERSION_NUMBER < 0x30000000L
 		if (ret < 0) // OpenSSL version < 3.0.0
@@ -7358,10 +6448,6 @@ UINT Recv(SOCK *sock, void *data, UINT size, bool secure)
 	SOCKET s;
 	int ret;
 
-#ifdef UNIX_SOLARIS
-	SOCKET_TIMEOUT_PARAM *ttparam;
-#endif //UNIX_SOLARIS
-
 	// Validate arguments
 	if (sock == NULL || data == NULL || size == 0)
 	{
@@ -7388,32 +6474,7 @@ UINT Recv(SOCK *sock, void *data, UINT size, bool secure)
 	// Receive
 	s = sock->socket;
 
-
-#ifdef	OS_UNIX
-	if (sock->AsyncMode == false)
-	{
-		sock->CallingThread = pthread_self();
-	}
-#endif	// OS_UNIX
-
-// Start of the timeout thread for SOLARIS
-#ifdef UNIX_SOLARIS
-	ttparam = NewSocketTimeout(sock);
-#endif // UNIX_SOLARIS
-
 	ret = recv(s, data, size, 0);
-
-// Stop the timeout thread
-#ifdef UNIX_SOLARIS
-	FreeSocketTimeout(ttparam);
-#endif // UNIX_SOLARIS
-
-#ifdef	OS_UNIX
-	if (sock->AsyncMode == false)
-	{
-		sock->CallingThread = 0;
-	}
-#endif	// OS_UNIX
 
 	if (ret > 0)
 	{
@@ -7442,12 +6503,6 @@ UINT Recv(SOCK *sock, void *data, UINT size, bool secure)
 			else
 			{
 				//Debug("Socket Error: %u\n", WSAGetLastError());
-			}
-#else	// OS_WIN32
-			if (errno == EAGAIN)
-			{
-				// In blocking
-				return SOCK_LATER;
 			}
 #endif	// OS_WIN32
 		}
@@ -7517,13 +6572,6 @@ UINT Send(SOCK *sock, void *data, UINT size, bool secure)
 			{
 				//Debug("Socket Error: %u\n", WSAGetLastError());
 			}
-#else	// OS_WIN32
-			if (errno == EAGAIN)
-			{
-				// In blocking
-				sock->WriteBlocked = true;
-				return SOCK_LATER;
-			}
 #endif	// OS_WIN32
 		}
 	}
@@ -7576,19 +6624,6 @@ void SetTimeout(SOCK *sock, UINT timeout)
 	setsockopt(sock->socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(UINT));
 #endif
 
-#ifdef OS_UNIX
-#ifndef UNIX_SOLARIS
-	{
-		struct timeval tv_timeout;
-
-		tv_timeout.tv_sec = timeout / 1000; // miliseconds to seconds
-		tv_timeout.tv_usec = (timeout % 1000) * 1000; // miliseconds to microseconds
-
-		(void)setsockopt(sock->socket, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv_timeout, sizeof(tv_timeout));
-		(void)setsockopt(sock->socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv_timeout, sizeof(tv_timeout));
-	}
-#endif // UNIX_SOLARIS
-#endif // OS_UNIX
 }
 
 // Disable GetHostName call by accepting new TCP connection
@@ -7668,13 +6703,6 @@ SOCK *Accept(SOCK *sock)
 	Zero(&addr, sizeof(addr));
 	size = sizeof(addr);
 
-#ifdef	OS_UNIX
-#if	defined(UNIX_LINUX) || defined(UNIX_MACOS)
-	UnixIgnoreSignalForThread(SIGUSR1);
-#endif	// defined(UNIX_LINUX) || defined(UNIX_MACOS)
-	sock->CallingThread = pthread_self();
-#endif	// OS_UNIX
-
 #ifdef	OS_WIN32
 	if (sock->EnableConditionalAccept)
 	{
@@ -7684,13 +6712,7 @@ SOCK *Accept(SOCK *sock)
 	{
 		new_socket = accept(s, (struct sockaddr *)&addr,(int *)&size);
 	}
-#else	// OS_WIN32
-	new_socket = accept(s, (struct sockaddr *)&addr,(int *)&size);
 #endif	// OS_WIN32
-
-#ifdef	OS_UNIX
-	sock->CallingThread = 0;
-#endif	// OS_UNIX
 
 	if (new_socket == INVALID_SOCKET)
 	{
@@ -7780,13 +6802,6 @@ SOCK *Accept6(SOCK *sock)
 	Zero(&addr, sizeof(addr));
 	size = sizeof(addr);
 
-#ifdef	OS_UNIX
-#if	defined(UNIX_LINUX) || defined(UNIX_MACOS)
-	UnixIgnoreSignalForThread(SIGUSR1);
-#endif	// defined(UNIX_LINUX) || defined(UNIX_MACOS)
-	sock->CallingThread = pthread_self();
-#endif	// OS_UNIX
-
 #ifdef	OS_WIN32
 	if (sock->EnableConditionalAccept)
 	{
@@ -7796,13 +6811,7 @@ SOCK *Accept6(SOCK *sock)
 	{
 		new_socket = accept(s, (struct sockaddr *)&addr,(int *)&size);
 	}
-#else	// OS_WIN32
-	new_socket = accept(s, (struct sockaddr *)&addr,(int *)&size);
 #endif	// OS_WIN32
-
-#ifdef	OS_UNIX
-	sock->CallingThread = 0;
-#endif	// OS_UNIX
 
 	if (new_socket == INVALID_SOCKET)
 	{
@@ -7917,13 +6926,6 @@ SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 	}
 
 	UINT true_flag = 1;
-#ifdef	OS_UNIX
-	// It is necessary to set the IPv6 Only flag on a UNIX system
-	(void)setsockopt(s, IPPROTO_IPV6, IPV6_V6ONLY, &true_flag, sizeof(true_flag));
-	// This only have enabled for UNIX system since there is a bug
-	// in the implementation of REUSEADDR in Windows OS
-	(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&true_flag, sizeof(true_flag));
-#endif	// OS_UNIX
 
 	if (bind(s, (struct sockaddr *)&addr, sizeof(struct sockaddr_in6)) != 0)
 	{
@@ -8021,11 +7023,6 @@ SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 	}
 
 	UINT true_flag = 1;
-#ifdef	OS_UNIX
-	// This only have enabled for UNIX system since there is a bug
-	// in the implementation of REUSEADDR in Windows OS
-	(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&true_flag, sizeof(true_flag));
-#endif	// OS_UNIX
 
 	if (bind(s, (struct sockaddr *)&addr, sizeof(struct sockaddr_in)) != 0)
 	{
@@ -8081,30 +7078,12 @@ void Disconnect(SOCK *sock)
 	SockCloseSslLogging(sock);
 #endif	// ENABLE_SSL_LOGGING
 
-#ifdef	OS_UNIX
-	UnixFreeAsyncSocket(sock);
-#endif	// UnixFreeAsyncSocket
-
 	if (sock->Type == SOCK_TCP && sock->ListenMode)
 	{
 		bool no_tcp_check_port = false;
 
 		// Connect to localhost if the socket is in listening
 		sock->CancelAccept = true;
-
-#if	defined(UNIX_LINUX) || defined(UNIX_MACOS)
-		{
-			pthread_t t = sock->CallingThread;
-
-			// Send a signal to the socket to abort accept() forcibly on Linux
-			if (t != 0)
-			{
-				pthread_kill(t, SIGUSR1);
-
-				SleepThread(200);
-			}
-		}
-#endif	// defined(UNIX_LINUX) || defined(UNIX_MACOS)
 
 #ifdef	OS_WIN32
 		if (sock->hAcceptEvent != NULL)
@@ -8185,15 +7164,6 @@ void Disconnect(SOCK *sock)
 
 			// Close the socket
 			closesocket(s);
-
-#ifdef	OS_UNIX
-#ifdef	FIX_SSL_BLOCKING
-			if (sock->CallingThread != NULL)
-			{
-				pthread_kill(sock->CallingThread, 64);
-			}
-#endif	// FIX_SSL_BLOCKING
-#endif	// OS_UNIX
 
 			// Release the SSL
 			Lock(sock->ssl_lock);
@@ -8306,69 +7276,6 @@ bool CheckTCPPort(char *hostname, UINT port)
 	return CheckTCPPortEx(hostname, port, TIMEOUT_TCP_PORT_CHECK);
 }
 
-#ifdef	OS_UNIX
-// Connection with timeout (UNIX version)
-int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool *cancel_flag)
-{
-	SOCKSET set;
-	bool ok = false;
-	UINT64 start_time;
-	// Validate arguments
-	if (s == INVALID_SOCKET || addr == NULL)
-	{
-		return -1;
-	}
-	if (timeout == 0)
-	{
-		timeout = TIMEOUT_TCP_PORT_CHECK;
-	}
-
-	UnixSetSocketNonBlockingMode(s, true);
-
-	start_time = Tick64();
-
-	while (true)
-	{
-		int ret;
-		ret = connect(s, addr, size);
-		if (ret == 0 || errno == EISCONN)
-		{
-			ok = true;
-			break;
-		}
-		else
-		{
-			if (((start_time + (UINT64)timeout) <= Tick64()) || (errno != EAGAIN && errno != EINPROGRESS && errno != EALREADY))
-			{
-				// Failure
-				break;
-			}
-			else if (*cancel_flag)
-			{
-				// Cancel
-				break;
-			}
-			else
-			{
-				// Connecting
-				SleepThread(50);
-				UnixSelectInner(1, (UINT *)&s, 1, (UINT *)&s, 100);
-			}
-		}
-	}
-
-	UnixSetSocketNonBlockingMode(s, false);
-
-	if (ok)
-	{
-		return 0;
-	}
-	else
-	{
-		return -1;
-	}
-}
-#else
 #if 0
 LPSTR PrintError(int ErrorCode)
 {
@@ -8529,7 +7436,6 @@ int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool
 		return -1;
 	}
 }
-#endif	// OS_UNIX
 
 // Set the TOS value of the socket
 void SetSockTos(SOCK *s, int tos)
@@ -8608,10 +7514,6 @@ int bind_sock(SOCKET sock, IP *ip, UINT port)
 		//inet_pton(AF_INET6, tmp, &sockaddr_in.sin6_addr.s6_bytes);
 
 		UINT true_flag = 1;
-#ifdef	OS_UNIX
-		// It is necessary to set the IPv6 Only flag on a UNIX system
-		(void)setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, &true_flag, sizeof(true_flag));
-#endif	// OS_UNIX
 		// This only have enabled for UNIX system since there is a bug
 		// in the implementation of REUSEADDR in Windows OS
 		(void)setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char*)&true_flag, sizeof(true_flag));
@@ -8667,8 +7569,6 @@ SOCKET BindConnectTimeoutIPv4(IP* localIP, UINT localport, IP* ip, UINT port, UI
 #ifdef	OS_WIN32
 				ier = WSAGetLastError();
 				Debug("IPv4 bind() failed with error: %d %s\n", ier, PrintError(ier));
-#else
-				Debug("IPv4 bind() failed with error: %d %s\n", errno, strerror(errno));
 #endif
 				closesocket(s);
 				s = INVALID_SOCKET;
@@ -8977,8 +7877,6 @@ void BindConnectThreadForIPv6(THREAD* thread, void* param)
 #ifdef	OS_WIN32
 					ier = WSAGetLastError();
 					Debug("IPv6 bind() failed with error: %d %s\n", ier, PrintError(ier));
-#else
-					Debug("IPv6 bind() failed with error: %d %s\n", errno, strerror(errno));
 #endif
 					closesocket(s);
 					s = INVALID_SOCKET;
@@ -9609,8 +8507,6 @@ void CleanupSock(SOCK *s)
 
 #ifdef	OS_WIN32
 	Win32FreeAsyncSocket(s);
-#else	// OS_WIN32
-	UnixFreeAsyncSocket(s);
 #endif	// OS_WIN32
 
 	FreeBuf(s->SendBuf);
@@ -9618,8 +8514,6 @@ void CleanupSock(SOCK *s)
 	{
 #ifdef	OS_WIN32
 		closesocket(s->socket);
-#else	// OS_WIN32
-		close(s->socket);
 #endif	// OS_WIN32
 	}
 	Free(s->RemoteHostname);
@@ -10401,8 +9295,6 @@ void InitNetwork()
 #ifdef	OS_WIN32
 	// Initializing the socket library
 	Win32InitSocketLibrary();
-#else
-	UnixInitSocketLibrary();
 #endif	// OS_WIN32
 
 	DnsInit();
@@ -10411,8 +9303,6 @@ void InitNetwork()
 	machine_name_lock = NewLock();
 	disconnect_function_lock = NewLock();
 	machine_ip_process_hash_lock = NewLock();
-	unix_dns_server_addr_lock = NewLock();
-	Zero(&unix_dns_server, sizeof(unix_dns_server));
 	local_mac_list_lock = NewLock();
 
 	current_global_ip_lock = NewLock();
@@ -10866,10 +9756,7 @@ void FreeNetwork()
 	// Release of thread-related
 	FreeWaitThread();
 
-	Zero(&unix_dns_server, sizeof(unix_dns_server));
-
 	// Release the locks
-	DeleteLock(unix_dns_server_addr_lock);
 	DeleteLock(machine_name_lock);
 	DeleteLock(disconnect_function_lock);
 	DeleteLock(machine_ip_process_hash_lock);
@@ -10880,8 +9767,6 @@ void FreeNetwork()
 #ifdef	OS_WIN32
 	// Release of the socket library
 	Win32FreeSocketLibrary();
-#else
-	UnixFreeSocketLibrary();
 #endif	// OS_WIN32
 
 	DeleteCounter(num_tcp_connections);
@@ -10967,65 +9852,6 @@ SOCKLIST *NewSockList()
 	sl->SockList = NewList(NULL);
 
 	return sl;
-}
-
-// Time-out thread of the socket on Solaris
-void SocketTimeoutThread(THREAD *t, void *param)
-{
-	SOCKET_TIMEOUT_PARAM *ttparam;
-	ttparam = (SOCKET_TIMEOUT_PARAM *)param;
-
-	// Wait for time-out period
-	Select(NULL, ttparam->sock->TimeOut, ttparam->cancel, NULL);
-
-	// Disconnect if it is blocked
-	if(! ttparam->unblocked)
-	{
-//		Debug("Socket timeouted\n");
-		closesocket(ttparam->sock->socket);
-	}
-	else
-	{
-//		Debug("Socket timeout cancelled\n");
-	}
-}
-
-// Initialize and start the thread for time-out
-SOCKET_TIMEOUT_PARAM *NewSocketTimeout(SOCK *sock)
-{
-	SOCKET_TIMEOUT_PARAM *ttp;
-	if(! sock->AsyncMode && sock->TimeOut != TIMEOUT_INFINITE)
-	{
-//		Debug("NewSockTimeout(%u)\n",sock->TimeOut);
-
-		ttp = (SOCKET_TIMEOUT_PARAM *)Malloc(sizeof(SOCKET_TIMEOUT_PARAM));
-
-		// Set the parameters of the time-out thread
-		ttp->cancel = NewCancel();
-		ttp->sock = sock;
-		ttp->unblocked = false;
-		ttp->thread = NewThread(SocketTimeoutThread, ttp);
-		return ttp;
-	}
-	return NULL;
-}
-
-// Stop and free the thread for timeout
-void FreeSocketTimeout(SOCKET_TIMEOUT_PARAM *ttp)
-{
-	if(ttp == NULL)
-	{
-		return;
-	}
-
-	ttp->unblocked = true;
-	Cancel(ttp->cancel);
-	WaitThread(ttp->thread, INFINITE);
-	ReleaseCancel(ttp->cancel);
-	ReleaseThread(ttp->thread);
-	Free(ttp);
-//	Debug("FreeSocketTimeout succeed\n");
-	return;
 }
 
 // Parse the IP address and subnet mask
@@ -11640,7 +10466,6 @@ LIST *GetHostIPAddressListInternal()
 		AddHostIPAddressToList(o, &local6);
 	}
 
-#ifndef	MAYAQUA_SUPPORTS_GETIFADDRS
 	// IPv4
 	if (true)
 	{
@@ -11678,7 +10503,6 @@ LIST *GetHostIPAddressListInternal()
 		}
 	}
 
-#ifndef	UNIX_LINUX
 	// IPv6
 	if (is_v6_supported)
 	{
@@ -11717,56 +10541,6 @@ LIST *GetHostIPAddressListInternal()
 			freeaddrinfo(info);
 		}
 	}
-#endif	// UNIX_LINUX
-#endif	// MAYAQUA_SUPPORTS_GETIFADDRS
-
-#ifdef	MAYAQUA_SUPPORTS_GETIFADDRS
-	// If the getifaddrs is available, use this
-	if (true)
-	{
-		struct ifaddrs *aa = NULL;
-
-		if (getifaddrs(&aa) == 0)
-		{
-			struct ifaddrs *a = aa;
-
-			while (a != NULL)
-			{
-				if (a->ifa_addr != NULL)
-				{
-					struct sockaddr *addr = a->ifa_addr;
-
-					if (addr->sa_family == AF_INET)
-					{
-						IP ip;
-						struct sockaddr_in *d = (struct sockaddr_in *)addr;
-						struct in_addr *addr = &d->sin_addr;
-
-						InAddrToIP(&ip, addr);
-
-						AddHostIPAddressToList(o, &ip);
-					}
-					else if (addr->sa_family == AF_INET6)
-					{
-						IP ip;
-						struct sockaddr_in6 *d = (struct sockaddr_in6 *)addr;
-						UINT scope_id = d->sin6_scope_id;
-						struct in6_addr *addr = &d->sin6_addr;
-
-						InAddrToIP6(&ip, addr);
-						ip.ipv6_scope_id = scope_id;
-
-						AddHostIPAddressToList(o, &ip);
-					}
-				}
-
-				a = a->ifa_next;
-			}
-
-			freeifaddrs(aa);
-		}
-	}
-#endif	// MAYAQUA_SUPPORTS_GETIFADDRS
 
 	return o;
 }

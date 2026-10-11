@@ -28,7 +28,7 @@
 #include <WinSock2.h>
 #include <ws2ipdef.h>
 #else
-#include <unistd.h>
+#error "Burrow VPN builds on Windows only."
 #endif
 
 // 
@@ -160,26 +160,6 @@ typedef int (COMPARE)(void *p1, void *p2);
 // 
 typedef int64_t time_64t;
 
-#ifdef OS_WIN32
-typedef uint32_t PID;
-#else
-typedef int32_t  INT;
-typedef int64_t  INT64;
-
-typedef uint32_t UINT;
-typedef uint64_t UINT64;
-
-typedef uint8_t  BYTE;
-typedef uint8_t  UCHAR;
-typedef uint16_t USHORT;
-
-typedef int SOCKET;
-typedef pid_t PID;
-
-#define	__cdecl
-#define	__declspec(x)
-#endif
-
 // OS type
 #define	OSTYPE_WINDOWS_10						2702	// Windows 10
 #define	OSTYPE_WINDOWS_SERVER_10				2712	// Windows Server 10
@@ -213,21 +193,6 @@ typedef struct OS_INFO
 	char *KernelName;							// Kernel name
 	char *KernelVersion;						// Kernel version
 } OS_INFO;
-
-// Time type
-#ifndef	OS_WIN32
-typedef struct SYSTEMTIME
-{
-	USHORT wYear;
-	USHORT wMonth;
-	USHORT wDayOfWeek;
-	USHORT wDay;
-	USHORT wHour;
-	USHORT wMinute;
-	USHORT wSecond;
-	USHORT wMilliseconds;
-} SYSTEMTIME;
-#endif	// WINDOWS_H
 
 // Object.h
 typedef struct LOCK LOCK;

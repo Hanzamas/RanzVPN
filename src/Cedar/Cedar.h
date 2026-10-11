@@ -542,8 +542,6 @@
 #define	ARP_REQUEST_TIMEOUT			(1000)			// ARP request time-out period
 #define	ARP_REQUEST_GIVEUP			(5 * 1000)		// Time to give up sending the ARP request
 #define	IP_WAIT_FOR_ARP_TIMEOUT		(5 * 1000)		// Total time that an IP packet waiting for ARP table
-#define	NAT_DHCP_SERVER_PORT		67					// DHCP server port number
-#define	NAT_DHCP_CLIENT_PORT		68					// DHCP client port number
 
 // Beacon transmission interval
 #define	BEACON_SEND_INTERVAL		(5 * 1000)
@@ -565,25 +563,6 @@
 // IP packet option constant
 #define	DEFAULT_IP_TOS				0				// TOS in the IP header
 #define	DEFAULT_IP_TTL				128				// TTL in the IP header
-
-
-//////////////////////////////////////////////////////////////////////
-// 
-// For UNIX virtual LAN card related constant
-// 
-//////////////////////////////////////////////////////////////////////
-
-#define	UNIX_VLAN_CLIENT_IFACE_PREFIX		"vpn"			// Prefix of UNIX virtual LAN card interface (used for client)
-#define	UNIX_VLAN_BRIDGE_IFACE_PREFIX		"tap"			// Prefix of UNIX virtual LAN card interface (used for bridge destination)
-
-#ifndef	UNIX_BSD
-#define	TAP_FILENAME_1				"/dev/net/tun"
-#define	TAP_FILENAME_2				"/dev/tun"
-#else	// UNIX_BSD
-#define	TAP_NAME					"tap"
-#define	TAP_DIR						"/dev/"
-#define	TAP_MAX						(512)
-#endif	// UNIX_BSD
 
 
 #define	LICENSE_EDITION_VPN3_NO_LICENSE					0		// Without license

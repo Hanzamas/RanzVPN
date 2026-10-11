@@ -229,9 +229,6 @@ void GetWinVer(RPC_WINVER *v)
 
 #ifdef	OS_WIN32
 	Win32GetWinVer(v);
-#else	// OS_WIN32
-	Zero(v, sizeof(RPC_WINVER));
-	StrCpy(v->Title, sizeof(v->Title), GetOsInfo()->OsProductName);
 #endif	// OS_WIN32
 }
 

@@ -12,7 +12,6 @@
 #include "Microsoft.h"
 #include "Object.h"
 #include "Str.h"
-#include "Unix.h"
 #include "Win32.h"
 
 static TICK64 *tk64 = NULL;
@@ -26,10 +25,6 @@ UINT64 TickHighres64()
 
 	return (UINT64)(MsGetHiResTimeSpan(MsGetHiResCounter()) * 1000.0f);
 
-#else	// OS_WIN32
-
-	return Tick64();
-
 #endif	// OS_WIN32
 
 }
@@ -41,10 +36,6 @@ UINT64 TickHighresNano64(bool raw)
 #ifdef	OS_WIN32
 
 	ret = (UINT64)(MsGetHiResTimeSpan(MsGetHiResCounter()) * 1000000000.0f);
-
-#else	// OS_WIN32
-
-	ret = UnixGetHighresTickNano64(raw);
 
 #endif	// OS_WIN32
 
@@ -91,18 +82,6 @@ UINT64 Tick64()
 {
 #ifdef	OS_WIN32
 	return Win32FastTick64();
-#else	// OS_WIN32
-	UINT64 tick64;
-	if (tk64 == NULL)
-	{
-		return 0;
-	}
-	Lock(tk64->TickLock);
-	{
-		tick64 = tk64->Tick;
-	}
-	Unlock(tk64->TickLock);
-	return tick64;
 #endif	// OS_WIN32
 }
 
@@ -126,13 +105,6 @@ void Tick64Thread(THREAD *thread, void *param)
 
 	tick_span = TICK64_SPAN_WIN32;
 
-#else	// OS_WIN32
-
-	// Raise the priority of a POSIX threads
-	UnixSetThreadPriorityRealtime();
-
-	tick_span = TICK64_SPAN;
-
 #endif	// OS_WIN32
 
 	while (true)
@@ -140,40 +112,8 @@ void Tick64Thread(THREAD *thread, void *param)
 		UINT tick;
 		UINT64 tick64;
 
-#ifndef	OS_WIN32
-		tick = TickRealtime();		// Get the current system clock
-
-		if (tk64->LastTick > tick)
-		{
-			if ((tk64->LastTick - tick) >= (UINT64)0x0fffffff)
-			{
-				// The Tick has gone lap around
-				tk64->RoundCount++;
-			}
-			else
-			{
-				// tick skewed (System administrator might change hardware clock)
-				// Normally, the clock skew appears as sub-seconds error
-				tick = tk64->LastTick;
-			}
-		}
-		tk64->LastTick = tick;
-
-		tick64 = (UINT64)tk64->RoundCount * (UINT64)4294967296LL + (UINT64)tick;
-
-		Lock(tk64->TickLock);
-		{
-			if (tk64->TickStart == 0)
-			{
-				tk64->TickStart = tick64;
-			}
-			tick64 = tk64->Tick = tick64 - tk64->TickStart + (UINT64)1;
-		}
-		Unlock(tk64->TickLock);
-#else	// OS_WIN32
 		tick64 = Win32FastTick64();
 		tick = (UINT)tick64;
-#endif	// OS_WIN32
 
 		if (create_first_entry)
 		{
@@ -235,8 +175,6 @@ void Tick64Thread(THREAD *thread, void *param)
 
 #ifdef	OS_WIN32
 		Wait(halt_tick_event, tick_span);
-#else	// OS_WIN32
-		SleepThread(tick_span);
 #endif	// OS_WIN32
 	}
 }
@@ -267,7 +205,6 @@ void InitTick64()
 
 	// Initialize the structure
 	tk64 = ZeroMalloc(sizeof(TICK64));
-	tk64->TickLock = NewLock();
 	tk64->AdjustTime = NewList(NULL);
 
 	// Creating a thread
@@ -298,7 +235,6 @@ void FreeTick64()
 		Free(t);
 	}
 	ReleaseList(tk64->AdjustTime);
-	DeleteLock(tk64->TickLock);
 	Free(tk64);
 	tk64 = NULL;
 

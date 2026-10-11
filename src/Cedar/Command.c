@@ -28,16 +28,10 @@
 #include "Mayaqua/Table.h"
 #include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
-#include "Mayaqua/Unix.h"
 
 #include "Mayaqua/Crypto/Key.h"
 
 #include <stdlib.h>
-
-#ifdef OS_UNIX
-#include <signal.h>
-#include <sys/wait.h>
-#endif
 
 // System checker definition
 typedef bool (CHECKER_PROC_DEF)();
@@ -451,12 +445,8 @@ bool CheckFileSystem()
 		UINT size = 1234567;
 		UCHAR *buf;
 		IO *io;
-#ifndef	OS_WIN32
-		wchar_t *filename = L"/tmp/vpn_checker_tmp";
-#else	// OS_WIN32
 		wchar_t filename[MAX_PATH];
 		CombinePathW(filename, sizeof(filename), MsGetMyTempDirW(), L"vpn_checker_tmp");
-#endif	// OS_WIN32
 
 		buf = Malloc(size);
 		for (i = 0;i < size;i++)
@@ -695,60 +685,6 @@ bool CheckKernel()
 			return false;
 		}
 	}
-
-#ifdef	OS_UNIX
-	{
-		// Test of child process
-		UINT pid;
-		char exe[MAX_SIZE];
-
-		GetExeName(exe, sizeof(exe));
-
-		pid = fork();
-
-		if (pid == -1)
-		{
-			Print("fork Failed.\n");
-			return false;
-		}
-
-		if (pid == 0)
-		{
-			char *param = UNIX_ARG_EXIT;
-			char **args;
-
-			args = ZeroMalloc(sizeof(char *) * 3);
-			args[0] = exe;
-			args[1] = param;
-			args[2] = NULL;
-
-			setsid();
-
-			// Close the standard I/O
-			UnixCloseIO();
-
-			// Stop unwanted signals
-			signal(SIGHUP, SIG_IGN);
-
-			execvp(exe, args);
-			AbortExit();
-		}
-		else
-		{
-			int status = 0, ret;
-
-			// Wait for the termination of the child process
-			ret = waitpid(pid, &status, 0);
-
-			if (WIFEXITED(status) == 0)
-			{
-				// Aborted
-				Print("waitpid Failed: 0x%x\n", ret);
-				return false;
-			}
-		}
-	}
-#endif	// OS_UNIX
 
 	return true;
 }

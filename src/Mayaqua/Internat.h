@@ -48,7 +48,6 @@ void UniTrimRight(wchar_t *str);
 void UniTrimCrlf(wchar_t *str);
 bool UniGetLine(wchar_t *str, UINT size);
 bool UniGetLineWin32(wchar_t *str, UINT size);
-bool UniGetLineUnix(wchar_t *str, UINT size);
 void UniFreeToken(UNI_TOKEN_LIST *tokens);
 UNI_TOKEN_LIST *UniParseToken(wchar_t *src, wchar_t *separator);
 UINT UniSearchStrEx(wchar_t *string, wchar_t *keyword, UINT start, bool case_sensitive);
@@ -85,13 +84,10 @@ UNI_TOKEN_LIST *UniNullToken();
 bool UniIsNum(wchar_t *str);
 bool IsEmptyUniStr(wchar_t *str);
 bool UniIsEmptyStr(wchar_t *str);
-void InitInternational();
-void FreeInternational();
 USHORT *WideToUtf16(wchar_t *str);
 wchar_t *Utf16ToWide(USHORT *str);
 wchar_t *InternalFormatArgs(wchar_t *fmt, va_list args, bool ansi_mode);
 UINT UniStrWidth(wchar_t *str);
-UNI_TOKEN_LIST *UnixUniParseToken(wchar_t *src, wchar_t *separator);
 void UniToStr3(wchar_t *str, UINT size, UINT64 value);
 bool UniEndWith(wchar_t *str, wchar_t *key);
 bool UniStartWith(wchar_t *str, wchar_t *key);
@@ -108,21 +104,6 @@ wchar_t *UniDefaultTokenSplitChars();
 bool UniIsCharInStr(wchar_t *str, wchar_t c);
 UNI_TOKEN_LIST *UniParseTokenWithNullStr(wchar_t *str, wchar_t *split_chars);
 UNI_TOKEN_LIST *UniParseTokenWithoutNullStr(wchar_t *str, wchar_t *split_chars);
-
-
-#ifdef	OS_UNIX
-void GetCurrentCharSet(char *name, UINT size);
-UINT UnixCalcStrToUni(char *str);
-UINT UnixStrToUni(wchar_t *s, UINT size, char *str);
-UINT UnixCalcUniToStr(wchar_t *s);
-UINT UnixUniToStr(char *str, UINT size, wchar_t *s);
-void *IconvWideToStr();
-void *IconvStrToWide();
-int IconvFree(void *d);
-void *IconvWideToStrInternal();
-void *IconvStrToWideInternal();
-int IconvFreeInternal(void *d);
-#endif	// OS_UNIX
 
 #endif	// INTERNAT_H
 

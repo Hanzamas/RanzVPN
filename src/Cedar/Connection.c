@@ -7,7 +7,6 @@
 
 #include "Connection.h"
 
-#include "BridgeUnix.h"
 #include "BridgeWin32.h"
 #include "Hub.h"
 #include "Layer3.h"

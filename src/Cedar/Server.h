@@ -188,7 +188,6 @@ struct LOG_FILE
 #define	GSF_DISABLE_AC					5
 #define	GSF_DISABLE_SYSLOG				6
 #define	GSF_SHOW_OSS_MSG				7
-#define	GSF_LOCALBRIDGE_NO_DISABLE_OFFLOAD	8
 #define	GSF_DISABLE_SESSION_RECONNECT	9
 
 // Global parameters

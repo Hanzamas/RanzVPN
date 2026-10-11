@@ -50,8 +50,6 @@ void OSInit()
 	// Get the dispatch table
 #ifdef	OS_WIN32
 	os = Win32GetDispatchTable();
-#else	// OS_WIN32
-	os = UnixGetDispatchTable();
 #endif	// OS_WIN32
 
 	// Calling the OS-specific initialization function

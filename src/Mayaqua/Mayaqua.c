@@ -34,7 +34,6 @@ bool kernel_status_inited = false;				// Kernel state initialization flag
 bool g_little_endian = true;
 char *cmdline = NULL;							// Command line
 wchar_t *uni_cmdline = NULL;					// Unicode command line
-bool g_foreground = false;					// Execute service in foreground mode
 
 // Static variable
 static char *exename = NULL;						// EXE file name (ANSI)
@@ -392,12 +391,6 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 		setbuf(stdout, NULL);
 	}
 
-#ifdef OS_UNIX
-	g_foreground = (argc >= 3 && StrCmpi(argv[2], UNIX_SVC_ARG_FOREGROUND) == 0);
-#else
-	g_foreground = false;
-#endif // OS_UNIX
-
 	// Check endian
 	CheckEndian();
 
@@ -413,8 +406,6 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 
 	// Initialize the random number
 	srand((UINT)SystemTime64());
-
-	tick_manual_lock = NewLock();
 
 	// Initialization of CRC32
 	InitCrc32();
@@ -587,9 +578,6 @@ void FreeMayaqua()
 	// Release of the kernel status
 	FreeKernelStatus();
 
-	DeleteLock(tick_manual_lock);
-	tick_manual_lock = NULL;
-
 	// Release of OS
 	OSFree();
 }
@@ -750,13 +738,8 @@ void InitCommandLineStr(int argc, char **argv)
 {
 	if (argc >= 1)
 	{
-#ifdef	OS_UNIX
-		exename_w = CopyUtfToUni(argv[0]);
-		exename = CopyUniToStr(exename_w);
-#else	// OS_UNIX
 		exename = CopyStr(argv[0]);
 		exename_w = CopyStrToUni(exename);
-#endif	// OS_UNIX
 	}
 	if (argc < 2 || argv == NULL)
 	{
