@@ -1,6 +1,6 @@
 # ADR-0003: Catalogue of safe (behaviour-preserving) cleanups
 
-**Status:** Partly accepted. Items 1, 3 and 4 are Accepted (Hilmi: "penting mah itu 1 3 4"). The extended list (items 5 to 12) was presented in answer to "dan apalagi?" and was not explicitly confirmed; treat those as Proposed.
+**Status:** Accepted (2026-10-11). Items 1, 3 and 4 were accepted first (Hilmi: "penting mah itu 1 3 4"). On 2026-10-11 Hilmi confirmed the extended list (items 5 to 13) as the "sapu aman" phase and it became the spec `Hanzamas/SoftEtherVPN#24`, with two amendments: the comment item (10) now deletes most comments instead of rewriting them, and items 3 and 4 (file splits, per-module headers) are deferred to the harness phase so that the sweep stays pure deletion; the `static` half of item 4 stays in the sweep.
 
 ## Context
 
@@ -18,13 +18,14 @@ Run in this order, each as its own ticket, each verified by the existing CI:
 7. **Debug scaffolding** (Proposed): `KS_*` counters, `Tracking.c`, `Probe`, scattered `Debug()`. Exception: the malloc tracker that produces the `NO MEMORY LEAKS` marker stays until it is replaced by the CRT debug heap (`_CrtDumpMemoryLeaks`).
 8. **Include hygiene** (Proposed): each `.c` includes only what it uses (CodeGraph can compute it); this is what makes the dependency graph honest after item 4.
 9. **Byte-identical duplicates** (Proposed): merge function pairs whose bodies are identical (diff-verified). Flatten `Ex`/`Ex2`/... wrapper chains only with tooling plus CI, never by hand.
-10. **Comments** (Proposed): rewrite the machine-translated comments and the per-file headers per module. Zero risk, large readability gain.
+10. **Comments** (Accepted 2026-10-11, amended): delete comments rather than rewrite them. Keep the Apache license header on every file and comments that explain a reason, a wire or pack format, a magic number, a Windows API quirk or a security consideration; rewrite those in plain English. Delete per-function one-line headers, `// Validate arguments` markers, restatements of the next line, banners, stale TODOs and headers of deleted sections. Expected: about nine in ten comment lines go.
 11. **Warnings as a tool** (Proposed): enable `-Wall -Wextra` under clang-cl in CI and fix only the mechanical subset (unused variables and parameters, unreachable code). Do not touch things like `while (err = ERR_get_error())` seen in the CI log; "fixing" them can change behaviour.
 12. **Map for humans** (Proposed): `CONTEXT.md` plus ADRs generated from the CodeGraph dependency graph: about twelve modules, one sentence of contract each, who may call whom. Target: one-way dependencies for Admin, Command and Config; cycles among Hub, Session and Connection are the protocol core and are allowed.
 13. **Metrics in CI** (Proposed): executable size and line counts per commit, so progress is visible and size regressions are caught.
 
 ## Consequences
 
+- Order and tickets for the sweep are defined in spec `Hanzamas/SoftEtherVPN#24`: CI steps (warnings-as-errors for unused code, size metrics) first, then dead functions, orphan declarations, dead branches, debug scaffolding, duplicates and forwarding wrappers, unconsumed config and pack keys, include hygiene and `static`, comments, string-table re-prune, module map. Items 3 and 4 (file splits, per-module headers) run after the harness exists.
 - Verification for every item above is the existing CI (build, smoke test, vector test, self-check).
 - Expected result of the full catalogue: Mayaqua about 100k to 70k lines, Cedar about 70k to 50k lines; total C about 135k to 150k including headers. These are estimates.
 - `WaterMark.c` (4.3k lines) is a JPEG stored as a C array; moving it to hamcore removes it from the code count with low risk but does touch the load path, so it is listed here only as a candidate.
