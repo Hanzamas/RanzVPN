@@ -47,8 +47,6 @@ if(WIN32 AND VCPKG_TARGET_TRIPLET AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
   message (FATAL_ERROR "vcpkg not installed or integrated with Visual Studio. Install it and run\n\tvcpkg integrate install")
 endif()
 
-configure_file("${TOP_DIRECTORY}/AUTHORS.TXT" "${TOP_DIRECTORY}/src/bin/hamcore/authors.txt" COPYONLY)
-
 # Date and time
 string(TIMESTAMP DATE_DAY "%d" UTC)
 string(TIMESTAMP DATE_MONTH "%m" UTC)

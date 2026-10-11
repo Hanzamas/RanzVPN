@@ -10,7 +10,6 @@ Makefile
 !/src/bin/hamcore/wwwroot/
 build/
 cmake-build-debug/
-src/bin/hamcore/authors.txt
 src/bin/BuiltHamcoreFiles/
 tmp/
 .gitconfig

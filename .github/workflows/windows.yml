@@ -66,6 +66,18 @@ jobs:
         cmake -G "Ninja" -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=%VCPKG_TRIPLET% -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER="%COMPILER_PATH%" -DCMAKE_CXX_COMPILER="%COMPILER_PATH%" -DBUILD_NUMBER=%BUILD_NUMBER% %CMAKE_EXTRA_FLAGS% ..
         cmake --build .
       shell: cmd
+    - name: Set up .NET for stbchecker
+      if: matrix.platform.ARCHITECTURE == 'x64'
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+    - name: Check string tables
+      if: matrix.platform.ARCHITECTURE == 'x64'
+      shell: pwsh
+      run: |
+        cd developer_tools/stbchecker
+        dotnet run -- ../../src/bin/hamcore
+        if ($LASTEXITCODE -ne 0) { throw "stbchecker reported differences between the string tables (exit code $LASTEXITCODE)" }
     - name: Test
       shell: powershell
       run: |
