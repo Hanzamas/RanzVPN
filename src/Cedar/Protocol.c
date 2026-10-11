@@ -30,7 +30,6 @@
 #include "Mayaqua/Object.h"
 #include "Mayaqua/OS.h"
 #include "Mayaqua/Pack.h"
-#include "Mayaqua/Secure.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 #include "Mayaqua/Tick64.h"
@@ -1091,7 +1090,6 @@ bool ServerAccept(CONNECTION *c)
 	char username[MAX_SIZE];
 	char groupname[MAX_SIZE];
 	UCHAR session_key[SHA1_SIZE];
-	UCHAR ticket[SHA1_SIZE];
 	UINT authtype;
 	POLICY *policy;
 	HUB *hub;
@@ -1119,9 +1117,6 @@ bool ServerAccept(CONNECTION *c)
 	UINT max_connection;
 	UINT timeout;
 	bool no_reconnect_to_session = false;
-	bool farm_controller = false;
-	bool farm_member = false;
-	bool farm_mode = false;
 	bool require_bridge_routing_mode;
 	bool require_monitor_mode;
 	bool support_bulk_on_rudp = false;
@@ -1140,9 +1135,7 @@ bool ServerAccept(CONNECTION *c)
 	wchar_t *msg = NULL;
 	bool suppress_client_update_notification = false;
 	USER *loggedin_user_object = NULL;
-	FARM_MEMBER *f = NULL;
 	SERVER *server = NULL;
-	POLICY ticketed_policy;
 	UCHAR unique[SHA1_SIZE], unique2[SHA1_SIZE];
 	CEDAR *cedar;
 	RPC_WINVER winver;
@@ -1192,20 +1185,7 @@ bool ServerAccept(CONNECTION *c)
 
 	if (c->Cedar->Server != NULL)
 	{
-		SERVER *s = c->Cedar->Server;
-		server = s;
-
-		if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-		{
-			farm_member = true;
-			farm_mode = true;
-		}
-
-		if (s->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-		{
-			farm_controller = true;
-			farm_mode = true;
-		}
+		server = c->Cedar->Server;
 	}
 
 	// Receive the signature
@@ -1359,32 +1339,6 @@ bool ServerAccept(CONNECTION *c)
 			c->Err = ERR_PROTOCOL_ERROR;
 			error_detail = "GetHubnameAndUsernameFromPack";
 			goto CLEANUP;
-		}
-
-		if (farm_member)
-		{
-			bool ok = false;
-
-			if (StrCmpi(username, ADMINISTRATOR_USERNAME) == 0 &&
-				authtype == AUTHTYPE_PASSWORD)
-			{
-				ok = true;
-			}
-
-			if (authtype == AUTHTYPE_TICKET)
-			{
-				ok = true;
-			}
-
-			if (ok == false)
-			{
-				// Logging on directly to server farm members by
-				// non-Administrators are prohibited
-				FreePack(p);
-				SLog(c->Cedar, "LS_FARMMEMBER_NOT_ADMIN", c->Name, hubname, ADMINISTRATOR_USERNAME, username);
-				c->Err = ERR_ACCESS_DENIED;
-				goto CLEANUP;
-			}
 		}
 
 		Debug("Username = %s, HubName = %s\n", username, hubname);
@@ -1588,9 +1542,6 @@ bool ServerAccept(CONNECTION *c)
 				case AUTHTYPE_EXTERNAL:
 					authtype_str = _UU("LH_AUTH_EXTERNAL");
 					break;
-				case AUTHTYPE_TICKET:
-					authtype_str = _UU("LH_AUTH_TICKET");
-					break;
 				}
 				IPToStr(ip1, sizeof(ip1), &c->FirstSock->RemoteIP);
 				IPToStr(ip2, sizeof(ip2), &c->FirstSock->LocalIP);
@@ -1620,17 +1571,6 @@ bool ServerAccept(CONNECTION *c)
 				case AUTHTYPE_EXTERNAL:
 					// External authentication already completed
 					auth_ret = true;
-					break;
-
-				case AUTHTYPE_TICKET:
-					// Ticket authentication
-					if (PackGetDataSize(p, "ticket") == SHA1_SIZE)
-					{
-						PackGetData(p, "ticket", ticket);
-
-						auth_ret = SiCheckTicket(hub, ticket, username, sizeof(username), username_real, sizeof(username_real),
-							&ticketed_policy, sessionname, sizeof(sessionname), groupname, sizeof(groupname));
-					}
 					break;
 
 				case CLIENT_AUTHTYPE_PASSWORD:
@@ -1864,77 +1804,68 @@ bool ServerAccept(CONNECTION *c)
 			if (StrCmpi(username, ADMINISTRATOR_USERNAME) != 0)
 			{
 				// Get the policy
-				if (farm_member == false)
+				user = AcGetUser(hub, username);
+				if (user == NULL)
 				{
-					// In the case of not a farm member
-					user = AcGetUser(hub, username);
+					user = AcGetUser(hub, "*");
 					if (user == NULL)
 					{
-						user = AcGetUser(hub, "*");
-						if (user == NULL)
+						// User acquisition failure
+						Unlock(hub->lock);
+						ReleaseHub(hub);
+						c->Err = ERR_ACCESS_DENIED;
+						error_detail = "AcGetUser";
+						goto CLEANUP;
+					}
+				}
+
+				policy = NULL;
+
+				Lock(user->lock);
+				{
+					// Get the expiration date
+					user_expires = user->ExpireTime;
+
+					StrCpy(username_real, sizeof(username_real), user->Name);
+					group = user->Group;
+					if (group != NULL)
+					{
+						AddRef(group->ref);
+
+						Lock(group->lock);
 						{
-							// User acquisition failure
-							Unlock(hub->lock);
-							ReleaseHub(hub);
-							c->Err = ERR_ACCESS_DENIED;
-							error_detail = "AcGetUser";
-							goto CLEANUP;
+							// Get the group name
+							StrCpy(groupname, sizeof(groupname), group->Name);
 						}
+						Unlock(group->lock);
 					}
 
-					policy = NULL;
-
-					Lock(user->lock);
+					if (user->Policy != NULL)
 					{
-						// Get the expiration date
-						user_expires = user->ExpireTime;
-
-						StrCpy(username_real, sizeof(username_real), user->Name);
-						group = user->Group;
-						if (group != NULL)
+						policy = ClonePolicy(user->Policy);
+					}
+					else
+					{
+						if (group)
 						{
-							AddRef(group->ref);
-
 							Lock(group->lock);
 							{
-								// Get the group name
-								StrCpy(groupname, sizeof(groupname), group->Name);
+								if (group->Policy != NULL)
+								{
+									policy = ClonePolicy(group->Policy);
+								}
 							}
 							Unlock(group->lock);
 						}
-
-						if (user->Policy != NULL)
-						{
-							policy = ClonePolicy(user->Policy);
-						}
-						else
-						{
-							if (group)
-							{
-								Lock(group->lock);
-								{
-									if (group->Policy != NULL)
-									{
-										policy = ClonePolicy(group->Policy);
-									}
-								}
-								Unlock(group->lock);
-							}
-						}
-
-						if (group != NULL)
-						{
-							ReleaseGroup(group);
-						}
 					}
-					Unlock(user->lock);
-					loggedin_user_object = user;
+
+					if (group != NULL)
+					{
+						ReleaseGroup(group);
+					}
 				}
-				else
-				{
-					// In the case of farm member
-					policy = ClonePolicy(&ticketed_policy);
-				}
+				Unlock(user->lock);
+				loggedin_user_object = user;
 			}
 			else
 			{
@@ -2168,8 +2099,7 @@ bool ServerAccept(CONNECTION *c)
 			}
 
 
-			if (server != NULL && server->ServerType != SERVER_TYPE_FARM_MEMBER &&
-				policy != NULL)
+			if (server != NULL && policy != NULL)
 			{
 				if (GetServerCapsBool(hub->Cedar->Server, "b_support_limit_multilogin"))
 				{
@@ -2252,98 +2182,6 @@ bool ServerAccept(CONNECTION *c)
 			// Update the number of log-ins
 			hub->LastCommTime = hub->LastLoginTime = SystemTime64();
 
-			if (farm_controller)
-			{
-				wchar_t *msg = GetHubMsg(hub);
-
-				Unlock(hub->lock);
-
-				Lock(cedar->CedarSuperLock);
-
-				// In the case of farm controller, choose a farm members to host this HUB
-				LockList(server->FarmMemberList);
-				{
-					HLog(hub, "LH_FARM_SELECT_1", c->Name);
-					f = SiGetHubHostingMember(server, hub, admin_mode, c);
-
-					if (f == NULL)
-					{
-						// Failed in the selection
-						HLog(hub, "LH_FARM_SELECT_2", c->Name);
-						UnlockList(server->FarmMemberList);
-						Unlock(cedar->CedarSuperLock);
-						ReleaseHub(hub);
-						c->Err = ERR_COULD_NOT_HOST_HUB_ON_FARM;
-						Free(policy);
-						Free(msg);
-						goto CLEANUP;
-					}
-					else
-					{
-						if (f->Me == false)
-						{
-							UCHAR ticket[SHA1_SIZE];
-							PACK *p;
-							BUF *b;
-							UINT i;
-
-							SLog(c->Cedar, "LH_FARM_SELECT_4", c->Name, f->hostname);
-
-							// Create a session on the selected server farm member
-							Rand(ticket, sizeof(ticket));
-							SiCallCreateTicket(server, f, hub->Name,
-								username, username_real, policy, ticket, Inc(hub->SessionCounter), groupname);
-
-							p = NewPack();
-							PackAddInt(p, "Redirect", 1);
-							PackAddIp32(p, "Ip", f->Ip);
-							for (i = 0;i < f->NumPort;i++)
-							{
-								PackAddIntEx(p, "Port", f->Ports[i], i, f->NumPort);
-							}
-							PackAddData(p, "Ticket", ticket, sizeof(ticket));
-
-							if (true)
-							{
-								char *utf = CopyUniToUtf(msg);
-
-								PackAddData(p, "Msg", utf, StrLen(utf));
-
-								Free(utf);
-							}
-
-							b = XToBuf(f->ServerCert, false);
-							PackAddBuf(p, "Cert", b);
-							FreeBuf(b);
-
-							UnlockList(server->FarmMemberList);
-							Unlock(cedar->CedarSuperLock);
-							ReleaseHub(hub);
-
-							HttpServerSend(c->FirstSock, p);
-							FreePack(p);
-
-							c->Err = 0;
-							Free(policy);
-
-							FreePack(HttpServerRecv(c->FirstSock));
-							Free(msg);
-							goto CLEANUP;
-						}
-						else
-						{
-							HLog(hub, "LH_FARM_SELECT_3", c->Name);
-							// Continue the process because myself was selected
-							UnlockList(server->FarmMemberList);
-							Unlock(cedar->CedarSuperLock);
-							f->Point = SiGetPoint(server);
-							Lock(hub->lock);
-							Free(msg);
-						}
-					}
-				}
-			}
-
 			if (admin_mode == false)
 			{
 				// Check the maximum number of connections of the HUB
@@ -2396,12 +2234,8 @@ bool ServerAccept(CONNECTION *c)
 			{
 				// Examine whether not to conflict with the limit of simultaneous connections
 				// number of sessions(client) defined by the Virtual HUB management options
-				if (((GetHubAdminOption(hub, "max_sessions_client_bridge_apply") != 0
-					) &&
-					Count(hub->NumSessionsClient) >= GetHubAdminOption(hub, "max_sessions_client") && hub->Cedar->Server != NULL && hub->Cedar->Server->ServerType != SERVER_TYPE_FARM_MEMBER)
-					||
-					(hub->FarmMember_MaxSessionClientBridgeApply &&
-					Count(hub->NumSessionsClient) >= hub->FarmMember_MaxSessionClient))
+				if (GetHubAdminOption(hub, "max_sessions_client_bridge_apply") != 0 &&
+					Count(hub->NumSessionsClient) >= GetHubAdminOption(hub, "max_sessions_client") && hub->Cedar->Server != NULL)
 				{
 					// Can not connect any more
 					Unlock(hub->lock);
@@ -2419,12 +2253,8 @@ bool ServerAccept(CONNECTION *c)
 			{
 				// Examine whether not to conflict with the limit of simultaneous connections
 				// number of sessions(bridge) defined by the Virtual HUB management options
-				if (((GetHubAdminOption(hub, "max_sessions_client_bridge_apply") != 0
-					) &&
-					Count(hub->NumSessionsBridge) >= GetHubAdminOption(hub, "max_sessions_bridge") && hub->Cedar->Server != NULL && hub->Cedar->Server->ServerType != SERVER_TYPE_FARM_MEMBER)
-					||
-					(hub->FarmMember_MaxSessionClientBridgeApply &&
-					Count(hub->NumSessionsBridge) >= hub->FarmMember_MaxSessionBridge))
+				if (GetHubAdminOption(hub, "max_sessions_client_bridge_apply") != 0 &&
+					Count(hub->NumSessionsBridge) >= GetHubAdminOption(hub, "max_sessions_bridge") && hub->Cedar->Server != NULL)
 				{
 					// Can not connect any more
 					Unlock(hub->lock);
@@ -2682,13 +2512,8 @@ bool ServerAccept(CONNECTION *c)
 			if (server != NULL)
 			{
 				// Update the total allocation of the number of licenses for Server structure
-				if (server->ServerType == SERVER_TYPE_STANDALONE)
-				{
-					// Update only stand-alone mode
-					// (Periodically poll in the cluster controller mode)
-					server->CurrentAssignedClientLicense = Count(s->Cedar->AssignedClientLicense);
-					server->CurrentAssignedBridgeLicense = Count(s->Cedar->AssignedBridgeLicense);
-				}
+				server->CurrentAssignedClientLicense = Count(s->Cedar->AssignedClientLicense);
+				server->CurrentAssignedBridgeLicense = Count(s->Cedar->AssignedBridgeLicense);
 			}
 
 			if (StrLen(sessionname) != 0)
@@ -2952,13 +2777,8 @@ bool ServerAccept(CONNECTION *c)
 			if (server != NULL)
 			{
 				// Update the total allocation of the number of licenses for Server structure
-				if (server->ServerType == SERVER_TYPE_STANDALONE)
-				{
-					// Update only stand-alone mode
-					// (Periodically polled in the cluster controller mode)
-					server->CurrentAssignedClientLicense = Count(s->Cedar->AssignedClientLicense);
-					server->CurrentAssignedBridgeLicense = Count(s->Cedar->AssignedBridgeLicense);
-				}
+				server->CurrentAssignedClientLicense = Count(s->Cedar->AssignedClientLicense);
+				server->CurrentAssignedBridgeLicense = Count(s->Cedar->AssignedBridgeLicense);
 			}
 		}
 		Unlock(s->Hub->lock);
@@ -3175,110 +2995,6 @@ bool ServerAccept(CONNECTION *c)
 
 		error_detail = "enum_hub";
 
-		goto CLEANUP;
-	}
-	else if (StrCmpi(method, "farm_connect") == 0)
-	{
-		// Server farm connection request
-		CEDAR *cedar = c->Cedar;
-		c->Type = CONNECTION_TYPE_FARM_RPC;
-		c->Err = 0;
-		if (c->Cedar->Server == NULL)
-		{
-			// Unsupported
-			c->Err = ERR_NOT_FARM_CONTROLLER;
-		}
-		else
-		{
-			SERVER *s = c->Cedar->Server;
-			if (s->ServerType != SERVER_TYPE_FARM_CONTROLLER || s->FarmControllerInited == false)
-			{
-				// Not a farm controller
-				SLog(c->Cedar, "LS_FARM_ACCEPT_1", c->Name);
-				c->Err = ERR_NOT_FARM_CONTROLLER;
-			}
-			else
-			{
-				UCHAR check_secure_password[SHA1_SIZE];
-				UCHAR secure_password[SHA1_SIZE];
-				// User authentication
-				SecurePassword(check_secure_password, s->HashedPassword, c->Random);
-				if (PackGetDataSize(p, "SecurePassword") == sizeof(secure_password))
-				{
-					PackGetData(p, "SecurePassword", secure_password);
-				}
-				else
-				{
-					Zero(secure_password, sizeof(secure_password));
-				}
-
-				if (Cmp(secure_password, check_secure_password, SHA1_SIZE) != 0)
-				{
-					// Password is different
-					SLog(c->Cedar, "LS_FARM_ACCEPT_2", c->Name);
-					c->Err = ERR_ACCESS_DENIED;
-				}
-				else
-				{
-					// Get the certificate
-					BUF *b;
-					X *server_x;
-
-					SLog(c->Cedar, "LS_FARM_ACCEPT_3", c->Name);
-					b = PackGetBuf(p, "ServerCert");
-					if (b == NULL)
-					{
-						c->Err = ERR_PROTOCOL_ERROR;
-					}
-					else
-					{
-						server_x = BufToX(b, false);
-						FreeBuf(b);
-						if (server_x == NULL)
-						{
-							c->Err = ERR_PROTOCOL_ERROR;
-						}
-						else
-						{
-							UINT ip;
-							UINT point;
-							char hostname[MAX_SIZE];
-
-#ifdef	OS_WIN32
-							MsSetThreadPriorityRealtime();
-#endif	// OS_WIN32
-
-							SetTimeout(c->FirstSock, SERVER_CONTROL_TCP_TIMEOUT);
-
-							ip = PackGetIp32(p, "PublicIp");
-							point = PackGetInt(p, "Point");
-							if (PackGetStr(p, "HostName", hostname, sizeof(hostname)))
-							{
-								UINT num_port = PackGetIndexCount(p, "PublicPort");
-								if (num_port >= 1 && num_port <= MAX_PUBLIC_PORT_NUM)
-								{
-									UINT *ports = ZeroMalloc(sizeof(UINT) * num_port);
-									UINT i;
-
-									for (i = 0;i < num_port;i++)
-									{
-										ports[i] = PackGetIntEx(p, "PublicPort", i);
-									}
-
-									SiFarmServ(s, c->FirstSock, server_x, ip, num_port, ports, hostname, point,
-										PackGetInt(p, "Weight"), PackGetInt(p, "MaxSessions"));
-
-									Free(ports);
-								}
-							}
-
-							FreeX(server_x);
-						}
-					}
-				}
-			}
-		}
-		FreePack(p);
 		goto CLEANUP;
 	}
 	else if (StrCmpi(method, "admin") == 0 && c->Cedar->Server != NULL)
@@ -3558,76 +3274,6 @@ SOCK *ClientAdditionalConnectToServer(CONNECTION *c)
 	return s;
 }
 
-// Attempt to sign by the secure device
-UINT SecureSign(SECURE_SIGN *sign, UINT device_id, char *pin)
-{
-	SECURE *sec;
-	X *x;
-	// Validate arguments
-	if (sign == false || pin == NULL || device_id == 0)
-	{
-		return ERR_INTERNAL_ERROR;
-	}
-
-	// Open the device
-	sec = OpenSec(device_id);
-	if (sec == NULL)
-	{
-		return ERR_SECURE_DEVICE_OPEN_FAILED;
-	}
-
-	// Open the session
-	if (OpenSecSession(sec, 0) == false)
-	{
-		CloseSec(sec);
-		return ERR_SECURE_DEVICE_OPEN_FAILED;
-	}
-
-	// Login
-	if (LoginSec(sec, pin) == false)
-	{
-		CloseSecSession(sec);
-		CloseSec(sec);
-		return ERR_SECURE_PIN_LOGIN_FAILED;
-	}
-
-	// Read the certificate
-	x = ReadSecCert(sec, sign->SecurePublicCertName);
-	if (x == NULL)
-	{
-		LogoutSec(sec);
-		CloseSecSession(sec);
-		CloseSec(sec);
-		return ERR_SECURE_NO_CERT;
-	}
-
-	// Sign by the private key
-	if (SignSec(sec, sign->SecurePrivateKeyName, sign->Signature, sign->Random, SHA1_SIZE) == false)
-	{
-		// Signing failure
-		FreeX(x);
-		LogoutSec(sec);
-		CloseSecSession(sec);
-		CloseSec(sec);
-		return ERR_SECURE_NO_PRIVATE_KEY;
-	}
-
-	// Convert the certificate to buffer
-	sign->ClientCert = x;
-
-	// Log out
-	LogoutSec(sec);
-
-	// Close the session
-	CloseSecSession(sec);
-
-	// Close the device
-	CloseSec(sec);
-
-	// Success
-	return ERR_NO_ERROR;
-}
-
 // Client connects to the server additionally
 bool ClientAdditionalConnect(CONNECTION *c, THREAD *t)
 {
@@ -3788,92 +3434,6 @@ CLEANUP:
 	return false;
 }
 
-// Secure device signing thread
-void ClientSecureSignThread(THREAD *thread, void *param)
-{
-	SECURE_SIGN_THREAD_PROC *p = (SECURE_SIGN_THREAD_PROC *)param;
-	// Validate arguments
-	if (thread == NULL || param == NULL)
-	{
-		return;
-	}
-
-	NoticeThreadInit(thread);
-
-	p->Ok = p->SecureSignProc(p->Connection->Session, p->Connection, p->SecureSign);
-	p->UserFinished = true;
-}
-
-// Signing with the secure device
-bool ClientSecureSign(CONNECTION *c, UCHAR *sign, UCHAR *random, X **x)
-{
-	SECURE_SIGN_THREAD_PROC *p;
-	SECURE_SIGN *ss;
-	SESSION *s;
-	CLIENT_OPTION *o;
-	CLIENT_AUTH *a;
-	THREAD *thread;
-	UINT64 start;
-	bool ret;
-	// Validate arguments
-	if (c == NULL || sign == NULL || random == NULL || x == NULL)
-	{
-		return false;
-	}
-
-	s = c->Session;
-	o = s->ClientOption;
-	a = s->ClientAuth;
-
-	p = ZeroMalloc(sizeof(SECURE_SIGN_THREAD_PROC));
-	p->Connection = c;
-	ss = p->SecureSign = ZeroMallocEx(sizeof(SECURE_SIGN), true);
-	StrCpy(ss->SecurePrivateKeyName, sizeof(ss->SecurePrivateKeyName),
-		a->SecurePrivateKeyName);
-	StrCpy(ss->SecurePublicCertName, sizeof(ss->SecurePublicCertName),
-		a->SecurePublicCertName);
-	ss->UseSecureDeviceId = c->Cedar->Client->UseSecureDeviceId;
-	Copy(ss->Random, random, SHA1_SIZE);
-
-	p->SecureSignProc = a->SecureSignProc;
-
-	// Create a thread
-	thread = NewThread(ClientSecureSignThread, p);
-	WaitThreadInit(thread);
-
-	// Poll every 0.5 seconds until signing is completed or canceled
-	start = Tick64();
-	while (true)
-	{
-		if ((Tick64() - start) > CONNECTING_POOLING_SPAN)
-		{
-			// Send a NOOP periodically for disconnection prevention
-			start = Tick64();
-			ClientUploadNoop(c);
-		}
-		if (p->UserFinished)
-		{
-			// User selected
-			break;
-		}
-		WaitThread(thread, 500);
-	}
-	ReleaseThread(thread);
-
-	ret = p->Ok;
-
-	if (ret)
-	{
-		Copy(sign, ss->Signature, sizeof(ss->Signature));
-		*x = ss->ClientCert;
-	}
-
-	Free(p->SecureSign);
-	Free(p);
-
-	return ret;
-}
-
 // Server certificate confirmation thread
 void ClientCheckServerCertThread(THREAD *thread, void *param)
 {
@@ -3994,8 +3554,6 @@ bool ClientConnect(CONNECTION *c)
 	PrintStatus(sess, L"init");
 	PrintStatus(sess, _UU("STATUS_1"));
 
-REDIRECTED:
-
 	// [Connecting]
 	c->Status = CONNECTION_STATUS_CONNECTING;
 	c->Session->ClientStatus = CLIENT_STATUS_CONNECTING;
@@ -4030,13 +3588,6 @@ REDIRECTED:
 			c->Session->ForceStopFlag = true;
 		}
 
-		goto CLEANUP;
-	}
-
-	// Check the certificate of the redirected VPN server
-	if (c->UseTicket && CompareX(s->RemoteX, c->ServerX) == false)
-	{
-		c->Err = ERR_CERT_NOT_TRUSTED;
 		goto CLEANUP;
 	}
 
@@ -4214,84 +3765,6 @@ REDIRECTED:
 		}
 
 		Free(utf);
-	}
-
-	if (PackGetInt(p, "Redirect") != 0)
-	{
-		UINT i;
-		UINT ip;
-		UINT num_port;
-		UINT *ports;
-		UINT use_port = 0;
-		UINT current_port = c->ServerPort;
-		UCHAR ticket[SHA1_SIZE];
-		X *server_cert = NULL;
-		BUF *b;
-
-		// Redirect mode
-		PrintStatus(sess, _UU("STATUS_8"));
-
-		ip = PackGetIp32(p, "Ip");
-		num_port = MAX(MIN(PackGetIndexCount(p, "Port"), MAX_PUBLIC_PORT_NUM), 1);
-		ports = ZeroMalloc(sizeof(UINT) * num_port);
-		for (i = 0;i < num_port;i++)
-		{
-			ports[i] = PackGetIntEx(p, "Port", i);
-		}
-
-		// Select a port number
-		for (i = 0;i < num_port;i++)
-		{
-			if (ports[i] == current_port)
-			{
-				use_port = current_port;
-			}
-		}
-		if (use_port == 0)
-		{
-			use_port = ports[0];
-		}
-
-		Free(ports);
-
-		if (PackGetDataSize(p, "Ticket") == SHA1_SIZE)
-		{
-			PackGetData(p, "Ticket", ticket);
-		}
-
-		b = PackGetBuf(p, "Cert");
-		if (b != NULL)
-		{
-			server_cert = BufToX(b, false);
-			FreeBuf(b);
-		}
-
-		if (c->ServerX != NULL)
-		{
-			FreeX(c->ServerX);
-		}
-		c->ServerX = server_cert;
-
-		IPToStr32(c->ServerName, sizeof(c->ServerName), ip);
-		c->ServerPort = use_port;
-
-		c->UseTicket = true;
-		Copy(c->Ticket, ticket, SHA1_SIZE);
-
-		FreePack(p);
-
-		p = NewPack();
-		HttpClientSend(s, p);
-		FreePack(p);
-
-		p = NULL;
-
-		c->FirstSock = NULL;
-		Disconnect(s);
-		ReleaseSock(s);
-		s = NULL;
-
-		goto REDIRECTED;
 	}
 
 	PrintStatus(sess, _UU("STATUS_7"));
@@ -5069,7 +4542,6 @@ bool ClientUploadAuth(CONNECTION *c)
 	PACK *p = NULL;
 	CLIENT_AUTH *a;
 	CLIENT_OPTION *o;
-	X *x;
 	bool ret;
 	NODE_INFO info;
 	UCHAR secure_password[SHA1_SIZE];
@@ -5087,87 +4559,55 @@ bool ClientUploadAuth(CONNECTION *c)
 	a = c->Session->ClientAuth;
 	o = c->Session->ClientOption;
 
-	if (c->UseTicket == false)
+	switch (a->AuthType)
 	{
-		switch (a->AuthType)
+	case CLIENT_AUTHTYPE_ANONYMOUS:
+		// Anonymous authentication
+		p = PackLoginWithAnonymous(o->HubName, a->Username);
+		break;
+
+	case CLIENT_AUTHTYPE_PASSWORD:
+		// Password authentication
+		SecurePassword(secure_password, a->HashedPassword, c->Random);
+		p = PackLoginWithPassword(o->HubName, a->Username, secure_password);
+		break;
+
+	case CLIENT_AUTHTYPE_PLAIN_PASSWORD:
+		// Plaintext password authentication
+		p = PackLoginWithPlainPassword(o->HubName, a->Username, a->PlainPassword);
+		break;
+
+	case CLIENT_AUTHTYPE_CERT:
+		// Certificate authentication
+		if (a->ClientX != NULL && a->ClientX->is_compatible_bit &&
+			a->ClientX->bits != 0 && (a->ClientX->bits / 8) <= sizeof(sign))
 		{
-		case CLIENT_AUTHTYPE_ANONYMOUS:
-			// Anonymous authentication
-			p = PackLoginWithAnonymous(o->HubName, a->Username);
-			break;
-
-		case CLIENT_AUTHTYPE_PASSWORD:
-			// Password authentication
-			SecurePassword(secure_password, a->HashedPassword, c->Random);
-			p = PackLoginWithPassword(o->HubName, a->Username, secure_password);
-			break;
-
-		case CLIENT_AUTHTYPE_PLAIN_PASSWORD:
-			// Plaintext password authentication
-			p = PackLoginWithPlainPassword(o->HubName, a->Username, a->PlainPassword);
-			break;
-
-		case CLIENT_AUTHTYPE_CERT:
-			// Certificate authentication
-			if (a->ClientX != NULL && a->ClientX->is_compatible_bit &&
-				a->ClientX->bits != 0 && (a->ClientX->bits / 8) <= sizeof(sign))
+			if (RsaSignEx(sign, c->Random, SHA1_SIZE, a->ClientK, a->ClientX->bits))
 			{
-				if (RsaSignEx(sign, c->Random, SHA1_SIZE, a->ClientK, a->ClientX->bits))
-				{
-					p = PackLoginWithCert(o->HubName, a->Username, a->ClientX, sign, a->ClientX->bits / 8);
-					c->ClientX = CloneX(a->ClientX);
-				}
+				p = PackLoginWithCert(o->HubName, a->Username, a->ClientX, sign, a->ClientX->bits / 8);
+				c->ClientX = CloneX(a->ClientX);
 			}
-			break;
-
-		case CLIENT_AUTHTYPE_OPENSSLENGINE:
-			// Certificate authentication
-			if (a->ClientX != NULL && a->ClientX->is_compatible_bit &&
-				a->ClientX->bits != 0 && (a->ClientX->bits / 8) <= sizeof(sign))
-			{
-				if (RsaSignEx(sign, c->Random, SHA1_SIZE, a->ClientK, a->ClientX->bits))
-				{
-					p = PackLoginWithCert(o->HubName, a->Username, a->ClientX, sign, a->ClientX->bits / 8);
-					c->ClientX = CloneX(a->ClientX);
-				}
-			}
-			break;
-
-
-		case CLIENT_AUTHTYPE_SECURE:
-			// Authentication by secure device
-			if (ClientSecureSign(c, sign, c->Random, &x))
-			{
-				p = PackLoginWithCert(o->HubName, a->Username, x, sign, x->bits / 8);
-				c->ClientX = CloneX(x);
-				FreeX(x);
-			}
-			else
-			{
-				c->Err = ERR_SECURE_DEVICE_OPEN_FAILED;
-				c->Session->ForceStopFlag = true;
-			}
-			break;
 		}
-	}
-	else
-	{
-		// Ticket
-		p = NewPack();
-		PackAddStr(p, "method", "login");
-		PackAddStr(p, "hubname", o->HubName);
-		PackAddStr(p, "username", a->Username);
-		PackAddInt(p, "authtype", AUTHTYPE_TICKET);
-		PackAddData(p, "ticket", c->Ticket, SHA1_SIZE);
+		break;
+
+	case CLIENT_AUTHTYPE_OPENSSLENGINE:
+		// Certificate authentication
+		if (a->ClientX != NULL && a->ClientX->is_compatible_bit &&
+			a->ClientX->bits != 0 && (a->ClientX->bits / 8) <= sizeof(sign))
+		{
+			if (RsaSignEx(sign, c->Random, SHA1_SIZE, a->ClientK, a->ClientX->bits))
+			{
+				p = PackLoginWithCert(o->HubName, a->Username, a->ClientX, sign, a->ClientX->bits / 8);
+				c->ClientX = CloneX(a->ClientX);
+			}
+		}
+		break;
 	}
 
 	if (p == NULL)
 	{
 		// Error
-		if (c->Err != ERR_SECURE_DEVICE_OPEN_FAILED)
-		{
-			c->Err = ERR_PROTOCOL_ERROR;
-		}
+		c->Err = ERR_PROTOCOL_ERROR;
 		return false;
 	}
 
@@ -5740,7 +5180,7 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 			// In additional connect or redirect we do not need ssl verification as the certificate is always compared with a saved one
 			sock = BindTcpIpConnectEx2(localIP, localport, hostname, c->ServerPort,
 				(bool *)cancel_flag, c->hWndForUI, &nat_t_err, (additional_connect ? (!sess->IsRUDPSession) : false),
-				true, ((additional_connect || c->UseTicket) ? NULL : sess->SslOption), &ssl_err, o->HintStr, &resolved_ip);
+				true, (additional_connect ? NULL : sess->SslOption), &ssl_err, o->HintStr, &resolved_ip);
 		}
 		else
 		{

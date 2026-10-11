@@ -29,102 +29,15 @@ extern char *SERVER_CONFIG_FILE_NAME;
 #define	SERVER_DEFAULT_CERT_DAYS		(365 * 10)
 #define	SERVER_DEFAULT_HUB_NAME			"DEFAULT"
 #define	SERVER_DEFAULT_BRIDGE_NAME		"BRIDGE"
-#define	SERVER_CONTROL_TCP_TIMEOUT		(60 * 1000)
-#define	SERVER_FARM_CONTROL_INTERVAL	(10 * 1000)
 
 #define	SERVER_FILE_SAVE_INTERVAL_DEFAULT	(5 * 60 * 1000)
 #define	SERVER_FILE_SAVE_INTERVAL_MIN		(5 * 1000)
 #define	SERVER_FILE_SAVE_INTERVAL_MAX		(3600 * 1000)
 #define	SERVER_FILE_SAVE_INTERVAL_USERMODE	(1 * 60 * 1000)
 
-#define	SERVER_LICENSE_VIOLATION_SPAN	(SERVER_FARM_CONTROL_INTERVAL * 2)
-
-
 #define SERVER_DEADLOCK_CHECK_SPAN		(2 * 60 * 1000)
 #define SERVER_DEADLOCK_CHECK_TIMEOUT	(10 * 60 * 1000)
 
-
-#define	RETRY_CONNECT_TO_CONTROLLER_INTERVAL	(1 * 1000)
-
-#define	MAX_PUBLIC_PORT_NUM				128
-
-#define	MEMBER_SELECTOR_TXT_FILENAME	"$member_selector.config"
-#define	MEMBER_SELECTOR_CONNECT_TIMEOUT	2000
-#define	MEMBER_SELECTOR_DATA_TIMEOUT	5000
-
-#define FIRM_SERV_RECV_PACK_MAX_SIZE	(100 * 1024 * 1024)
-
-// Virtual HUB list hosted by each farm member
-struct HUB_LIST
-{
-	struct FARM_MEMBER *FarmMember;		// Farm member
-	bool DynamicHub;					// Dynamic HUB
-	char Name[MAX_HUBNAME_LEN + 1];		// HUB Name
-	UINT NumSessions;					// Number of sessions
-	UINT NumSessionsClient;				// Number of client sessions
-	UINT NumSessionsBridge;				// Number of bridge sessions
-	UINT NumMacTables;					// Number of MAC table entries
-	UINT NumIpTables;					// Number of IP table entries
-};
-
-// Task
-struct FARM_TASK
-{
-	EVENT *CompleteEvent;				// Completion notice
-	PACK *Request;						// Request
-	PACK *Response;						// Response
-	FARM_MEMBER *FarmMember;			// Destination farm member
-	char TaskName[MAX_PATH];			// Task name
-	char HostName[MAX_PATH];			// Host name
-};
-
-// Farm member
-struct FARM_MEMBER
-{
-	CEDAR *Cedar;						// Cedar
-	UINT64 ConnectedTime;				// Connection date and time
-	UINT Me;							// Myself
-	UINT Ip;							// IP address
-	UINT NumPort;						// Number of port numbers
-	UINT *Ports;						// Port number
-	char hostname[MAX_HOST_NAME_LEN + 1];	// Host name
-	X *ServerCert;						// Server certificate
-	LIST *HubList;						// Virtual HUB list
-	QUEUE *TaskQueue;					// Task queue
-	EVENT *TaskPostEvent;				// Task queuing event
-	UINT Point;							// Point
-	volatile bool Halting;				// Stopped
-	UINT NumSessions;					// Number of sessions
-	UINT MaxSessions;					// Maximum number of sessions
-	UINT NumTcpConnections;				// Number of TCP connections
-	TRAFFIC Traffic;					// Traffic information
-	UINT AssignedClientLicense;			// Number of assigned client licenses
-	UINT AssignedBridgeLicense;			// Number of assigned bridge licenses
-	UINT Weight;						// Performance ratio
-	UCHAR RandomKey[SHA1_SIZE];			// Random number key (license check)
-	UINT64 SystemId;					// System ID (license check)
-};
-
-// Connection to the farm controller
-struct FARM_CONTROLLER
-{
-	LOCK *lock;							// Lock
-	struct SERVER *Server;				// Server
-	THREAD *Thread;						// Thread
-	SOCK *Sock;							// Socket
-	SESSION *Session;					// Session
-	volatile bool Halt;					// Halting flag
-	EVENT *HaltEvent;					// Halting event
-	UINT LastError;						// Last error
-	bool Online;						// Online flag
-	UINT64 StartedTime;					// Connection start time
-	UINT64 CurrentConnectedTime;		// Connection time of this time
-	UINT64 FirstConnectedTime;			// First connection time
-	UINT NumConnected;					// Number of connection count
-	UINT NumTry;						// Number of trials
-	UINT NumFailed;						// Connection failure count
-	bool IsConnected;					// Whether it's connected
-};
 
 // Server listener
 struct SERVER_LISTENER
@@ -146,18 +59,8 @@ struct SYSLOG_SETTING
 // Server object
 struct SERVER
 {
-	UINT ServerType;					// Type of server
-	UINT UpdatedServerType;				// Type of updated server
 	LIST *ServerListenerList;			// Server listener list
 	UCHAR HashedPassword[SHA1_SIZE];	// Password
-	char ControllerName[MAX_HOST_NAME_LEN + 1];		// Controller name
-	UINT ControllerPort;				// Controller port
-	UINT Weight;						// Performance ratio
-	bool ControllerOnly;				// Only controller function
-	UCHAR MemberPassword[SHA1_SIZE];	// Password for farm members
-	UINT PublicIp;						// Public IP 
-	UINT NumPublicPort;					// Number of public ports
-	UINT *PublicPorts;					// Public port array
 	UINT64 StartTime;					// Start-up time
 	UINT AutoSaveConfigSpan;			// Auto save interval
 	UINT AutoSaveConfigSpanSaved;		// Auto save interval (stored value)
@@ -166,7 +69,6 @@ struct SERVER
 	UINT ConfigRevision;				// Configuration file revision
 	bool DisableDosProtection;			// Disable the DoS attack protection
 	UCHAR MyRandomKey[SHA1_SIZE];		// Their own random key
-	bool FarmControllerInited;			// Initialization of farm controller has been completed
 	bool DisableDeadLockCheck;			// Disable the deadlock check
 	bool SaveDebugLog;					// Save the debug log
 	bool NoSendSignature;				// Let the client not to send a signature
@@ -189,12 +91,6 @@ struct SERVER
 	LOCK *SaveCfgLock;					// Settings saving lock
 	EVENT *SaveHaltEvent;				// Saving thread halting event
 	THREAD *SaveThread;					// Settings saving thread
-	FARM_CONTROLLER *FarmController;	// Farm controller
-	LOCK *TasksFromFarmControllerLock;	// Lock while processing tasks from farm controller
-	LIST *FarmMemberList;				// Farm members list
-	FARM_MEMBER *Me;					// Register myself as a farm member
-	THREAD *FarmControlThread;			// Farm control thread
-	EVENT *FarmControlThreadHaltEvent;	// Farm control thread halting event
 	LIST *HubCreateHistoryList;			// Virtual HUB creation history list
 
 	KEEP *Keep;							// Maintaining connections
@@ -204,7 +100,6 @@ struct SERVER
 	bool Led;							// Use the LED display board
 	bool LedSpecial;					// LED Special
 
-	UINT CurrentTotalNumSessionsOnFarm;	// Total number of sessions in this server farm
 	UINT CurrentAssignedClientLicense;	// Current number of assigned client licenses
 	UINT CurrentAssignedBridgeLicense;	// Current number of assigned bridge license
 
@@ -278,12 +173,6 @@ struct RPC_SESSION_STATUS
 };
 
 
-// Type of server
-#define	SERVER_TYPE_STANDALONE			0		// Stand-alone server
-#define	SERVER_TYPE_FARM_CONTROLLER		1		// Farm controller server
-#define	SERVER_TYPE_FARM_MEMBER			2		// Farm member server
-
-
 // Caps related
 struct CAPS
 {
@@ -299,7 +188,6 @@ struct CAPSLIST
 struct LOG_FILE
 {
 	char Path[MAX_PATH];				// Path name
-	char ServerName[MAX_HOST_NAME_LEN + 1];	// Server name
 	UINT FileSize;						// File size
 	UINT64 UpdatedTime;					// Updating date
 };
@@ -450,71 +338,11 @@ void SiRebootServer(bool bridge);
 void SiRebootServerThread(THREAD *thread, void *param);
 void StInit();
 void StFree();
-void SiSetServerType(SERVER *s, UINT type,
-					 UINT ip, UINT num_port, UINT *ports,
-					 char *controller_name, UINT controller_port, UCHAR *password, UINT weight, bool controller_only);
-FARM_CONTROLLER *SiStartConnectToController(SERVER *s);
-void SiStopConnectToController(FARM_CONTROLLER *f);
-void SiFarmServ(SERVER *server, SOCK *sock, X *cert, UINT ip, UINT num_port, UINT *ports, char *hostname, UINT point, UINT weight, UINT max_sessions);
-int CompareHubList(void *p1, void *p2);
-void SiFarmServMain(SERVER *server, SOCK *sock, FARM_MEMBER *f);
-FARM_TASK *SiFarmServPostTask(FARM_MEMBER *f, PACK *request);
-PACK *SiFarmServWaitTask(FARM_TASK *t);
-PACK *SiExecTask(FARM_MEMBER *f, PACK *p);
-PACK *SiCallTask(FARM_MEMBER *f, PACK *p, char *taskname);
-void SiAcceptTasksFromController(FARM_CONTROLLER *f, SOCK *sock);
-void SiAcceptTasksFromControllerMain(FARM_CONTROLLER *f, SOCK *sock);
-PACK *SiCalledTask(FARM_CONTROLLER *f, PACK *p, char *taskname);
-void SiHubOnlineProc(HUB *h);
-void SiHubOfflineProc(HUB *h);
-FARM_MEMBER *SiGetNextFarmMember(SERVER *s, CONNECTION *c, HUB *h);
-bool SiGetMemberSelectorUrl(char *url, UINT url_size);
-void SiCallCreateHub(SERVER *s, FARM_MEMBER *f, HUB *h);
-void SiCallUpdateHub(SERVER *s, FARM_MEMBER *f, HUB *h);
-void SiCallDeleteHub(SERVER *s, FARM_MEMBER *f, HUB *h);
-void SiCallEnumSession(SERVER *s, FARM_MEMBER *f, char *hubname, RPC_ENUM_SESSION *t);
-void SiCallEnumMacTable(SERVER *s, FARM_MEMBER *f, char *hubname, RPC_ENUM_MAC_TABLE *t);
-void SiCallEnumIpTable(SERVER *s, FARM_MEMBER *f, char *hubname, RPC_ENUM_IP_TABLE *t);
-void SiCallDeleteSession(SERVER *s, FARM_MEMBER *f, char *hubname, char *session_name);
-void SiCallCreateTicket(SERVER *s, FARM_MEMBER *f, char *hubname, char *username, char *realusername, POLICY *policy, UCHAR *ticket, UINT counter, char *groupname);
-void SiCallDeleteMacTable(SERVER *s, FARM_MEMBER *f, char *hubname, UINT key);
-void SiCallDeleteIpTable(SERVER *s, FARM_MEMBER *f, char *hubname, UINT key);
-void SiCalledCreateHub(SERVER *s, PACK *p);
-void SiCalledUpdateHub(SERVER *s, PACK *p);
-void SiCalledDeleteHub(SERVER *s, PACK *p);
-void SiCalledDeleteSession(SERVER *s, PACK *p);
-void SiCalledDeleteMacTable(SERVER *s, PACK *p);
-void SiCalledDeleteIpTable(SERVER *s, PACK *p);
-PACK *SiCalledCreateTicket(SERVER *s, PACK *p);
-PACK *SiCalledEnumSession(SERVER *s, PACK *p);
-PACK *SiCalledEnumMacTable(SERVER *s, PACK *p);
-PACK *SiCalledEnumIpTable(SERVER *s, PACK *p);
-void SiCalledEnumHub(SERVER *s, PACK *p, PACK *req);
-void SiPackAddCreateHub(PACK *p, HUB *h);
-FARM_MEMBER *SiGetHubHostingMember(SERVER *s, HUB *h, bool admin_mode, CONNECTION *c);
-void SiCallEnumHub(SERVER *s, FARM_MEMBER *f);
-void SiStartFarmControl(SERVER *s);
-void SiStopFarmControl(SERVER *s);
-void SiFarmControlThread(THREAD *thread, void *param);
-void SiAccessListToPack(PACK *p, LIST *o);
-void SiAccessToPack(PACK *p, ACCESS *a, UINT i, UINT total);
-ACCESS *SiPackToAccess(PACK *p, UINT i);
-UINT SiNumAccessFromPack(PACK *p);
-void SiHubUpdateProc(HUB *h);
-bool SiCheckTicket(HUB *h, UCHAR *ticket, char *username, UINT username_size, char *usernamereal, UINT usernamereal_size, POLICY *policy, char *sessionname, UINT sessionname_size, char *groupname, UINT groupname_size);
-UINT SiGetPoint(SERVER *s);
-UINT SiCalcPoint(SERVER *s, UINT num, UINT weight);
-bool SiCallGetSessionStatus(SERVER *s, FARM_MEMBER *f, RPC_SESSION_STATUS *t);
-PACK *SiCalledGetSessionStatus(SERVER *s, PACK *p);
-bool SiCallEnumLogFileList(SERVER *s, FARM_MEMBER *f, RPC_ENUM_LOG_FILE *t, char *hubname);
-PACK *SiCalledEnumLogFileList(SERVER *s, PACK *p);
-bool SiCallReadLogFile(SERVER *s, FARM_MEMBER *f, RPC_READ_LOG_FILE *t);
-PACK *SiCalledReadLogFile(SERVER *s, PACK *p);
 int CmpLogFile(void *p1, void *p2);
 LIST *EnumLogFile(char *hubname);
 void EnumLogFileDir(LIST *o, char *dirname);
 void FreeEnumLogFile(LIST *o);
-bool CheckLogFileNameFromEnumList(LIST *o, char *name, char *server_name);
+bool CheckLogFileNameFromEnumList(LIST *o, char *name);
 void IncrementServerConfigRevision(SERVER *s);
 void GetServerProductName(SERVER *s, char *name, UINT size);
 void GetServerProductNameInternal(SERVER *s, char *name, UINT size);

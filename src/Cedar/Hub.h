@@ -68,9 +68,6 @@ struct SE_TEST
 	LIST *TestHistory;					// Reception history
 };
 
-// Macro
-#define	NO_ACCOUNT_DB(h)		((h)->FarmMember)
-
 // Database in the case of a stand-alone or a farm master HUB
 struct HUBDB
 {
@@ -257,27 +254,6 @@ struct ACCESS
 	UINT UniqueId;						// Unique ID
 };
 
-// Ticket
-struct TICKET
-{
-	UINT64 CreatedTick;						// Creation date and time
-	UCHAR Ticket[SHA1_SIZE];				// Ticket
-	char Username[MAX_USERNAME_LEN + 1];	// User name
-	char UsernameReal[MAX_USERNAME_LEN + 1];	// Real user name
-	char GroupName[MAX_USERNAME_LEN + 1];	// Group name
-	char SessionName[MAX_SESSION_NAME_LEN + 1];	// Session name
-	POLICY Policy;							// Policy
-};
-
-// Traffic difference
-struct TRAFFIC_DIFF
-{
-	UINT Type;							// Type
-	TRAFFIC Traffic;					// Traffic
-	char *HubName;						// HUB name
-	char *Name;							// Name
-};
-
 // Administration options
 struct ADMIN_OPTION
 {
@@ -320,7 +296,6 @@ struct HUB
 	LOCK *lock_online;					// Lock for Online
 	REF *ref;							// Reference counter
 	CEDAR *Cedar;						// Cedar
-	UINT Type;							// Type
 	HUBDB *HubDb;						// Database
 	char *Name;							// The name of the HUB
 	volatile bool Halt;					// Halting flag
@@ -329,7 +304,6 @@ struct HUB
 	LIST *SessionList;					// Session list
 	COUNTER *SessionCounter;			// Session number generation counter
 	TRAFFIC *Traffic;					// Traffic information
-	TRAFFIC *OldTraffic;				// Old traffic information
 	LOCK *TrafficLock;					// Traffic lock
 	COUNTER *NumSessions;				// The current number of sessions
 	COUNTER *NumSessionsClient;			// The current number of sessions (client)
@@ -354,9 +328,6 @@ struct HUB
 	LOG *SecurityLogger;				// Security logger
 	UCHAR HashedPassword[SHA1_SIZE];	// Password
 	UCHAR SecurePassword[SHA1_SIZE];	// Secure password
-	LIST *TicketList;					// Ticket list
-	bool FarmMember;					// Farm member
-	UINT64 LastIncrementTraffic;		// Traffic reporting time
 	UINT64 LastSendArpTick;				// ARP transmission time of the last
 	THREAD *WatchDogThread;				// Watchdog thread
 	EVENT *WatchDogEvent;				// Watchdog event
@@ -368,11 +339,6 @@ struct HUB
 	UINT64 LastLoginTime;				// Last login date and time
 	UINT NumLogin;						// Number of logins
 	bool HubIsOnlineButHalting;			// Virtual HUB is really online, but it is in offline state to stop
-	UINT FarmMember_MaxSessionClient;	// Maximum client connection sessions for cluster members
-	UINT FarmMember_MaxSessionBridge;	// Maximum bridge connection sessions for cluster members
-	bool FarmMember_MaxSessionClientBridgeApply;	// Apply the FarmMember_MaxSession*
-	UINT CurrentVersion;				// The current version
-	UINT LastVersion;					// Version of when the update notification is issued at the last
 	wchar_t *Msg;						// Message to be displayed when the client is connected
 	LIST *UserList;						// Cache of the user list file
 	UINT64 LastFlushTick;				// Last tick to flush the MAC address table
@@ -456,8 +422,6 @@ void SetHubLogSetting(HUB *h, HUB_LOG *setting);
 void SetHubLogSettingEx(HUB *h, HUB_LOG *setting, bool no_change_switch_type);
 void DeleteExpiredIpTableEntry(LIST *o);
 void DeleteExpiredMacTableEntry(HASH_LIST *h);
-void AddTrafficDiff(HUB *h, char *name, UINT type, TRAFFIC *traffic);
-void IncrementHubTraffic(HUB *h);
 void StartHubWatchDog(HUB *h);
 void StopHubWatchDog(HUB *h);
 void HubWatchDogThread(THREAD *t, void *param);

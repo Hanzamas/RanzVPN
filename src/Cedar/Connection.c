@@ -39,51 +39,6 @@
 #define	IS_RECV_TCP_SOCK(ts)		\
 	((ts->Direction == TCP_BOTH) || ((ts->Direction == TCP_SERVER_TO_CLIENT) && (s->ServerMode == false)) || ((ts->Direction == TCP_CLIENT_TO_SERVER) && (s->ServerMode)))
 
-// Conversion of SECURE_SIGN
-void InRpcSecureSign(SECURE_SIGN *t, PACK *p)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(SECURE_SIGN));
-	PackGetStr(p, "SecurePublicCertName", t->SecurePublicCertName, sizeof(t->SecurePublicCertName));
-	PackGetStr(p, "SecurePrivateKeyName", t->SecurePrivateKeyName, sizeof(t->SecurePrivateKeyName));
-	t->ClientCert = PackGetX(p, "ClientCert");
-	PackGetData2(p, "Random", t->Random, sizeof(t->Random));
-	PackGetData2(p, "Signature", t->Signature, sizeof(t->Signature));
-	t->UseSecureDeviceId = PackGetInt(p, "UseSecureDeviceId");
-	t->BitmapId = PackGetInt(p, "BitmapId");
-}
-void OutRpcSecureSign(PACK *p, SECURE_SIGN *t)
-{
-	// Validate arguments
-	if (p == NULL || t == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "SecurePublicCertName", t->SecurePublicCertName);
-	PackAddStr(p, "SecurePrivateKeyName", t->SecurePrivateKeyName);
-	PackAddX(p, "ClientCert", t->ClientCert);
-	PackAddData(p, "Random", t->Random, sizeof(t->Random));
-	PackAddData(p, "Signature", t->Signature, sizeof(t->Signature));
-	PackAddInt(p, "UseSecureDeviceId", t->UseSecureDeviceId);
-	PackAddInt(p, "BitmapId", t->BitmapId);
-}
-void FreeRpcSecureSign(SECURE_SIGN *t)
-{
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	FreeX(t->ClientCert);
-}
-
 // Generate the next packet
 BUF *NewKeepPacket(bool server_mode)
 {
@@ -556,12 +511,6 @@ CLIENT_AUTH *CopyClientAuth(CLIENT_AUTH *a)
 		// Certificate authentication
 		ret->ClientX = CloneX(a->ClientX);
 		ret->ClientK = CloneK(a->ClientK);
-		break;
-
-	case CLIENT_AUTHTYPE_SECURE:
-		// Secure device authentication
-		StrCpy(ret->SecurePublicCertName, sizeof(ret->SecurePublicCertName), a->SecurePublicCertName);
-		StrCpy(ret->SecurePrivateKeyName, sizeof(ret->SecurePrivateKeyName), a->SecurePrivateKeyName);
 		break;
 
 	case CLIENT_AUTHTYPE_OPENSSLENGINE:

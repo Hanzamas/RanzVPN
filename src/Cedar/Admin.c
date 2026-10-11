@@ -157,18 +157,9 @@ CAPSLIST *ScGetCapsEx(RPC *rpc)
 			AddCapsInt(t, "i_max_hubs", 4096);
 			AddCapsInt(t, "i_max_sessions", 4096);
 
-			if (info.ServerType != SERVER_TYPE_FARM_MEMBER)
-			{
-				AddCapsInt(t, "i_max_users_per_hub", 10000);
-				AddCapsInt(t, "i_max_groups_per_hub", 10000);
-				AddCapsInt(t, "i_max_access_lists", 4096);
-			}
-			else
-			{
-				AddCapsInt(t, "i_max_users_per_hub", 0);
-				AddCapsInt(t, "i_max_groups_per_hub", 0);
-				AddCapsInt(t, "i_max_access_lists", 0);
-			}
+			AddCapsInt(t, "i_max_users_per_hub", 10000);
+			AddCapsInt(t, "i_max_groups_per_hub", 10000);
+			AddCapsInt(t, "i_max_access_lists", 4096);
 		}
 		else
 		{
@@ -186,21 +177,12 @@ CAPSLIST *ScGetCapsEx(RPC *rpc)
 		{
 			AddCapsBool(t, "b_bridge", true);
 		}
-		else if (info.ServerType == SERVER_TYPE_STANDALONE)
+		else
 		{
 			AddCapsBool(t, "b_standalone", true);
 		}
-		else if (info.ServerType == SERVER_TYPE_FARM_CONTROLLER)
-		{
-			AddCapsBool(t, "b_cluster_controller", true);
-		}
-		else
-		{
-			AddCapsBool(t, "b_cluster_member", true);
-		}
 
-		AddCapsBool(t, "b_support_config_hub", info.ServerType != SERVER_TYPE_FARM_MEMBER &&
-			is_bridge == false);
+		AddCapsBool(t, "b_support_config_hub", is_bridge == false);
 
 		AddCapsBool(t, "b_vpn_client_connect", is_bridge == false ? true : false);
 
@@ -224,17 +206,10 @@ CAPSLIST *ScGetCapsEx(RPC *rpc)
 
 		AddCapsBool(t, "b_tap_supported", false);
 
-		if (info.ServerType == SERVER_TYPE_STANDALONE)
-		{
-			AddCapsBool(t, "b_support_cascade", true);
-		}
-		else
-		{
-			AddCapsBool(t, "b_support_cascade", false);
-		}
+		AddCapsBool(t, "b_support_cascade", true);
 
 		AddCapsBool(t, "b_support_cascade_cert", false);
-		AddCapsBool(t, "b_support_config_log", info.ServerType != SERVER_TYPE_FARM_MEMBER);
+		AddCapsBool(t, "b_support_config_log", true);
 		AddCapsBool(t, "b_support_autodelete", false);
 	}
 
@@ -333,11 +308,6 @@ PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 	DECLARE_RPC("DeleteListener", RPC_LISTENER, StDeleteListener, InRpcListener, OutRpcListener)
 	DECLARE_RPC("EnableListener", RPC_LISTENER, StEnableListener, InRpcListener, OutRpcListener)
 	DECLARE_RPC("SetServerPassword", RPC_SET_PASSWORD, StSetServerPassword, InRpcSetPassword, OutRpcSetPassword)
-	DECLARE_RPC_EX("SetFarmSetting", RPC_FARM, StSetFarmSetting, InRpcFarm, OutRpcFarm, FreeRpcFarm)
-	DECLARE_RPC_EX("GetFarmSetting", RPC_FARM, StGetFarmSetting, InRpcFarm, OutRpcFarm, FreeRpcFarm)
-	DECLARE_RPC_EX("GetFarmInfo", RPC_FARM_INFO, StGetFarmInfo, InRpcFarmInfo, OutRpcFarmInfo, FreeRpcFarmInfo)
-	DECLARE_RPC_EX("EnumFarmMember", RPC_ENUM_FARM, StEnumFarmMember, InRpcEnumFarm, OutRpcEnumFarm, FreeRpcEnumFarm)
-	DECLARE_RPC("GetFarmConnectionStatus", RPC_FARM_CONNECTION_STATUS, StGetFarmConnectionStatus, InRpcFarmConnectionStatus, OutRpcFarmConnectionStatus)
 	DECLARE_RPC_EX("SetServerCert", RPC_KEY_PAIR, StSetServerCert, InRpcKeyPair, OutRpcKeyPair, FreeRpcKeyPair)
 	DECLARE_RPC_EX("GetServerCert", RPC_KEY_PAIR, StGetServerCert, InRpcKeyPair, OutRpcKeyPair, FreeRpcKeyPair)
 	DECLARE_RPC_EX("GetServerCipherList", RPC_STR, StGetServerCipherList, InRpcStr, OutRpcStr, FreeRpcStr)
@@ -495,11 +465,6 @@ DECLARE_SC_EX("EnumListener", RPC_LISTENER_LIST, ScEnumListener, InRpcListenerLi
 DECLARE_SC("DeleteListener", RPC_LISTENER, ScDeleteListener, InRpcListener, OutRpcListener)
 DECLARE_SC("EnableListener", RPC_LISTENER, ScEnableListener, InRpcListener, OutRpcListener)
 DECLARE_SC("SetServerPassword", RPC_SET_PASSWORD, ScSetServerPassword, InRpcSetPassword, OutRpcSetPassword)
-DECLARE_SC_EX("SetFarmSetting", RPC_FARM, ScSetFarmSetting, InRpcFarm, OutRpcFarm, FreeRpcFarm)
-DECLARE_SC_EX("GetFarmSetting", RPC_FARM, ScGetFarmSetting, InRpcFarm, OutRpcFarm, FreeRpcFarm)
-DECLARE_SC_EX("GetFarmInfo", RPC_FARM_INFO, ScGetFarmInfo, InRpcFarmInfo, OutRpcFarmInfo, FreeRpcFarmInfo)
-DECLARE_SC_EX("EnumFarmMember", RPC_ENUM_FARM, ScEnumFarmMember, InRpcEnumFarm, OutRpcEnumFarm, FreeRpcEnumFarm)
-DECLARE_SC("GetFarmConnectionStatus", RPC_FARM_CONNECTION_STATUS, ScGetFarmConnectionStatus, InRpcFarmConnectionStatus, OutRpcFarmConnectionStatus)
 DECLARE_SC_EX("SetServerCert", RPC_KEY_PAIR, ScSetServerCert, InRpcKeyPair, OutRpcKeyPair, FreeRpcKeyPair)
 DECLARE_SC_EX("GetServerCert", RPC_KEY_PAIR, ScGetServerCert, InRpcKeyPair, OutRpcKeyPair, FreeRpcKeyPair)
 DECLARE_SC_EX("GetServerCipherList", RPC_STR, ScGetServerCipherList, InRpcStr, OutRpcStr, FreeRpcStr)
@@ -852,10 +817,6 @@ UINT StSetHubMsg(ADMIN *a, RPC_MSG *t)
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
 	if (UniStrLen(t->Msg) > HUB_MAXMSG_LEN)
 	{
 		return ERR_MEMORY_NOT_ENOUGH;
@@ -899,10 +860,6 @@ UINT StGetHubMsg(ADMIN *a, RPC_MSG *t)
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
 	if (UniStrLen(t->Msg) > HUB_MAXMSG_LEN)
 	{
 		return ERR_MEMORY_NOT_ENOUGH;
@@ -1158,7 +1115,7 @@ UINT StDelLicenseKey(ADMIN *a, RPC_TEST *t)
 }
 
 // Download a log file
-BUF *DownloadFileFromServer(RPC *r, char *server_name, char *filepath, UINT total_size, DOWNLOAD_PROC *proc, void *param)
+BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PROC *proc, void *param)
 {
 	UINT offset;
 	BUF *buf;
@@ -1166,11 +1123,6 @@ BUF *DownloadFileFromServer(RPC *r, char *server_name, char *filepath, UINT tota
 	if (r == NULL || filepath == NULL)
 	{
 		return NULL;
-	}
-
-	if (server_name == NULL)
-	{
-		server_name = "";
 	}
 
 	offset = 0;
@@ -1186,7 +1138,6 @@ BUF *DownloadFileFromServer(RPC *r, char *server_name, char *filepath, UINT tota
 		Zero(&t, sizeof(t));
 		StrCpy(t.FilePath, sizeof(t.FilePath), filepath);
 		t.Offset = offset;
-		StrCpy(t.ServerName, sizeof(t.ServerName), server_name);
 
 		ret = ScReadLogFile(r, &t);
 
@@ -1245,7 +1196,6 @@ UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
 	char logfilename[MAX_PATH];
 	char servername[MAX_HOST_NAME_LEN + 1];
 	UINT offset;
-	bool local = true;
 
 	if (IsEmptyStr(t->FilePath))
 	{
@@ -1253,13 +1203,9 @@ UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
 	}
 
 	StrCpy(logfilename, sizeof(logfilename), t->FilePath);
-	StrCpy(servername, sizeof(servername), t->ServerName);
 	offset = t->Offset;
 
-	if (s->ServerType != SERVER_TYPE_FARM_CONTROLLER)
-	{
-		GetMachineName(servername, sizeof(servername));
-	}
+	GetMachineName(servername, sizeof(servername));
 
 	// Check the permission to read the log file
 	if (a->LogFileList == NULL)
@@ -1279,7 +1225,7 @@ UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
 			return elf_ret;
 		}
 	}
-	if (CheckLogFileNameFromEnumList(a->LogFileList, logfilename, servername) == false)
+	if (CheckLogFileNameFromEnumList(a->LogFileList, logfilename) == false)
 	{
 		// There is no such file in the log file list
 		return ERR_OBJECT_NOT_FOUND;
@@ -1288,54 +1234,8 @@ UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
 	FreeRpcReadLogFile(t);
 	Zero(t, sizeof(RPC_READ_LOG_FILE));
 
-	if (s->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		UINT i;
-
-		// When the host name in request is a cluster member, redirect the request
-		LockList(s->FarmMemberList);
-		{
-			for (i = 0;i < LIST_NUM(s->FarmMemberList);i++)
-			{
-				FARM_MEMBER *f = LIST_DATA(s->FarmMemberList, i);
-
-				if (f->Me == false)
-				{
-					if (StrCmpi(f->hostname, servername) == 0)
-					{
-						RPC_READ_LOG_FILE tt;
-
-						Zero(&tt, sizeof(tt));
-						local = false;
-
-						StrCpy(tt.ServerName, sizeof(tt.ServerName), servername);
-						StrCpy(tt.FilePath, sizeof(tt.FilePath), logfilename);
-						tt.Offset = offset;
-
-						if (SiCallReadLogFile(s, f, &tt))
-						{
-							if (tt.Buffer != NULL && tt.Buffer->Size > 0)
-							{
-								t->Buffer = NewBuf();
-								WriteBuf(t->Buffer, tt.Buffer->Buf, tt.Buffer->Size);
-							}
-						}
-
-						FreeRpcReadLogFile(&tt);
-
-						break;
-					}
-				}
-			}
-		}
-		UnlockList(s->FarmMemberList);
-	}
-
 	// Read a local file
-	if (local)
-	{
-		SiReadLocalLogFile(s, logfilename, offset, t);
-	}
+	SiReadLocalLogFile(s, logfilename, offset, t);
 
 	if (offset == 0)
 	{
@@ -1343,7 +1243,6 @@ UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
 	}
 
 	StrCpy(t->FilePath, sizeof(t->FilePath), logfilename);
-	StrCpy(t->ServerName, sizeof(t->ServerName), servername);
 	t->Offset = offset;
 
 	return ERR_NO_ERROR;
@@ -1370,15 +1269,6 @@ UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t)
 
 		ReleaseHub(h);
 	}
-	else
-	{
-		if (s->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-		{
-			// Since Management session will become unstable if log files are
-			// enumerated on a cluster controller, it forbids. 
-			return ERR_NOT_SUPPORTED;
-		}
-	}
 
 	if (no_access)
 	{
@@ -1390,57 +1280,6 @@ UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t)
 
 	// Enumerate local log files
 	SiEnumLocalLogFileList(s, a->ServerAdmin ? NULL : a->HubName, t);
-
-	if (s->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		UINT i;
-		LIST *tt_list = NewListFast(NULL);
-
-		LockList(s->FarmMemberList);
-		{
-			for (i = 0;i < LIST_NUM(s->FarmMemberList);i++)
-			{
-				FARM_MEMBER *f = LIST_DATA(s->FarmMemberList, i);
-
-				if (f->Me == false)
-				{
-					// Enumerate log files on other cluster members.
-					RPC_ENUM_LOG_FILE *tt;
-					tt = ZeroMalloc(sizeof(RPC_ENUM_LOG_FILE));
-
-					if (SiCallEnumLogFileList(s, f, tt, a->ServerAdmin ? "" : a->HubName))
-					{
-						UINT i;
-						for (i = 0;i < tt->NumItem;i++)
-						{
-							RPC_ENUM_LOG_FILE_ITEM *e = &tt->Items[i];
-
-							StrCpy(e->ServerName, sizeof(e->ServerName), f->hostname);
-						}
-
-						Add(tt_list, tt);
-					}
-					else
-					{
-						Free(tt);
-					}
-				}
-			}
-		}
-		UnlockList(s->FarmMemberList);
-
-		for (i = 0;i < LIST_NUM(tt_list);i++)
-		{
-			RPC_ENUM_LOG_FILE *tt = LIST_DATA(tt_list, i);
-
-			AdjoinRpcEnumLogFile(t, tt);
-			FreeRpcEnumLogFile(tt);
-
-			Free(tt);
-		}
-
-		ReleaseList(tt_list);
-	}
 
 	// Cache the last list of log files on RPC session
 	if (a->LogFileList != NULL)
@@ -1458,7 +1297,6 @@ UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t)
 		f->FileSize = e->FileSize;
 		f->UpdatedTime = e->UpdatedTime;
 		StrCpy(f->Path, sizeof(f->Path), e->FilePath);
-		StrCpy(f->ServerName, sizeof(f->ServerName), e->ServerName);
 
 		Insert(a->LogFileList, f);
 	}
@@ -1478,11 +1316,6 @@ UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t)
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
@@ -1542,11 +1375,6 @@ UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t)
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
 	h = GetHub(c, hubname);
@@ -1602,11 +1430,6 @@ UINT StSetCrl(ADMIN *a, RPC_CRL *t)
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 	key = t->Key;
 
@@ -1672,11 +1495,6 @@ UINT StGetCrl(ADMIN *a, RPC_CRL *t)
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 	key = t->Key;
 
@@ -1732,11 +1550,6 @@ UINT StDelCrl(ADMIN *a, RPC_CRL *t)
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
 	h = GetHub(c, hubname);
@@ -1800,11 +1613,6 @@ UINT StAddCrl(ADMIN *a, RPC_CRL *t)
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
 	h = GetHub(c, hubname);
@@ -1861,11 +1669,6 @@ UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t)
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 	FreeRpcEnumCrl(t);
 	Zero(t, sizeof(RPC_ENUM_CRL));
@@ -2450,11 +2253,6 @@ UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 		return ERR_TOO_MANT_ITEMS;
 	}
 
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 
 	CHECK_RIGHT;
 
@@ -2490,9 +2288,6 @@ UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	Unlock(h->lock);
 
 	ALog(a, NULL, "LA_SET_HUB_EXT_OPTION", h->Name);
-
-	h->CurrentVersion++;
-	SiHubUpdateProc(h);
 
 	ReleaseHub(h);
 
@@ -2555,11 +2350,6 @@ UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	}
 
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	CHECK_RIGHT;
 
 	if (a->ServerAdmin == false)
@@ -2608,9 +2398,6 @@ UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 
 	ALog(a, NULL, "LA_SET_HUB_ADMIN_OPTION", h->Name);
 
-	h->CurrentVersion++;
-	SiHubUpdateProc(h);
-
 	ReleaseHub(h);
 
 	IncrementServerConfigRevision(s);
@@ -2629,11 +2416,6 @@ UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	CHECK_RIGHT;
 
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -2678,11 +2460,6 @@ UINT StGetDefaultHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	UINT i;
 
 	NO_SUPPORT_FOR_BRIDGE;
-	if (a->Server->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	FreeRpcAdminOption(t);
 	Zero(t, sizeof(RPC_ADMIN_OPTION));
 
@@ -3132,27 +2909,6 @@ UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t)
 	}
 	UnlockList(h->IpTable);
 
-	if (ret == ERR_OBJECT_NOT_FOUND)
-	{
-		if (s->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-		{
-			UINT i;
-			LockList(s->FarmMemberList);
-			{
-				for (i = 0;i < LIST_NUM(s->FarmMemberList);i++)
-				{
-					FARM_MEMBER *f = LIST_DATA(s->FarmMemberList, i);
-					if (f->Me == false)
-					{
-						SiCallDeleteIpTable(s, f, t->HubName, t->Key);
-						ret = ERR_NO_ERROR;
-					}
-				}
-			}
-			UnlockList(s->FarmMemberList);
-		}
-	}
-
 	ReleaseHub(h);
 
 	return ret;
@@ -3203,8 +2959,6 @@ UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t)
 			e->DhcpAllocated = table->DhcpAllocated;
 			e->CreatedTime = TickToTime(table->CreatedTime);
 			e->UpdatedTime = TickToTime(table->UpdatedTime);
-
-			GetMachineName(e->RemoteHostname, sizeof(e->RemoteHostname));
 		}
 	}
 	UnlockList(h->IpTable);
@@ -3221,7 +2975,6 @@ UINT StEnumIpTable(ADMIN *a, RPC_ENUM_IP_TABLE *t)
 	CEDAR *c = s->Cedar;
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
-	UINT i;
 
 	CHECK_RIGHT;
 
@@ -3235,30 +2988,6 @@ UINT StEnumIpTable(ADMIN *a, RPC_ENUM_IP_TABLE *t)
 	if (ret != ERR_NO_ERROR)
 	{
 		return ret;
-	}
-
-	if (s->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		// Get remote IP address table
-		LockList(s->FarmMemberList);
-		{
-			for (i = 0;i < LIST_NUM(s->FarmMemberList);i++)
-			{
-				FARM_MEMBER *f = LIST_DATA(s->FarmMemberList, i);
-				if (f->Me == false)
-				{
-					RPC_ENUM_IP_TABLE tmp;
-
-					Zero(&tmp, sizeof(tmp));
-
-					SiCallEnumIpTable(s, f, hubname, &tmp);
-
-					AdjoinRpcEnumIpTable(t, &tmp);
-					FreeRpcEnumIpTable(&tmp);
-				}
-			}
-		}
-		UnlockList(s->FarmMemberList);
 	}
 
 	return ret;
@@ -3305,27 +3034,6 @@ UINT StDeleteMacTable(ADMIN *a, RPC_DELETE_TABLE *t)
 		}
 	}
 	UnlockHashList(h->MacHashTable);
-
-	if (ret == ERR_OBJECT_NOT_FOUND)
-	{
-		if (s->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-		{
-			UINT i;
-			LockList(s->FarmMemberList);
-			{
-				for (i = 0;i < LIST_NUM(s->FarmMemberList);i++)
-				{
-					FARM_MEMBER *f = LIST_DATA(s->FarmMemberList, i);
-					if (f->Me == false)
-					{
-						SiCallDeleteMacTable(s, f, t->HubName, t->Key);
-						ret = ERR_NO_ERROR;
-					}
-				}
-			}
-			UnlockList(s->FarmMemberList);
-		}
-	}
 
 	ReleaseHub(h);
 
@@ -3375,8 +3083,6 @@ UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t)
 			e->CreatedTime = TickToTime(mac->CreatedTime);
 			e->UpdatedTime = TickToTime(mac->UpdatedTime);
 			e->VlanId = mac->VlanId;
-
-			GetMachineName(e->RemoteHostname, sizeof(e->RemoteHostname));
 		}
 
 		Free(pp);
@@ -3396,7 +3102,6 @@ UINT StEnumMacTable(ADMIN *a, RPC_ENUM_MAC_TABLE *t)
 	HUB *h = NULL;
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
-	UINT i;
 
 	CHECK_RIGHT;
 
@@ -3409,30 +3114,6 @@ UINT StEnumMacTable(ADMIN *a, RPC_ENUM_MAC_TABLE *t)
 	if (ret != ERR_NO_ERROR)
 	{
 		return ret;
-	}
-
-	if (s->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		// Get remote MAC address table
-		LockList(s->FarmMemberList);
-		{
-			for (i = 0;i < LIST_NUM(s->FarmMemberList);i++)
-			{
-				FARM_MEMBER *f = LIST_DATA(s->FarmMemberList, i);
-				if (f->Me == false)
-				{
-					RPC_ENUM_MAC_TABLE tmp;
-
-					Zero(&tmp, sizeof(tmp));
-
-					SiCallEnumMacTable(s, f, hubname, &tmp);
-
-					AdjoinRpcEnumMacTable(t, &tmp);
-					FreeRpcEnumMacTable(&tmp);
-				}
-			}
-		}
-		UnlockList(s->FarmMemberList);
 	}
 
 	return ret;
@@ -3480,28 +3161,7 @@ UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t)
 
 	if (sess == NULL)
 	{
-		if (s->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-		{
-			// Cluster controller
-			UINT i;
-			LockList(s->FarmMemberList);
-			{
-				for (i = 0;i < LIST_NUM(s->FarmMemberList);i++)
-				{
-					FARM_MEMBER *f = LIST_DATA(s->FarmMemberList, i);
-					if (f->Me == false)
-					{
-						// Try to disconnect
-						SiCallDeleteSession(s, f, t->HubName, t->Name);
-					}
-				}
-			}
-			UnlockList(s->FarmMemberList);
-		}
-		else
-		{
-			ret = ERR_OBJECT_NOT_FOUND;
-		}
+		ret = ERR_OBJECT_NOT_FOUND;
 	}
 	else
 	{
@@ -3581,52 +3241,8 @@ UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
 
 	if (sess == NULL)
 	{
-		if (s->ServerType != SERVER_TYPE_FARM_CONTROLLER)
-		{
-			// Session is not found
-			ret = ERR_OBJECT_NOT_FOUND;
-		}
-		else
-		{
-			UINT i;
-			// Try to find the session on other cluster member
-			LockList(s->FarmMemberList);
-			{
-				for (i = 0;i < LIST_NUM(s->FarmMemberList);i++)
-				{
-					FARM_MEMBER *f = LIST_DATA(s->FarmMemberList, i);
-					if (f->Me == false)
-					{
-						RPC_SESSION_STATUS tmp;
-						Zero(&tmp, sizeof(tmp));
-						StrCpy(tmp.HubName, sizeof(tmp.HubName), t->HubName);
-						StrCpy(tmp.Name, sizeof(tmp.Name), t->Name);
-
-						if (SiCallGetSessionStatus(s, f, &tmp))
-						{
-							if (StrLen(tmp.HubName) != 0)
-							{
-								// Success to get session status
-								Copy(t, &tmp, sizeof(RPC_SESSION_STATUS));
-								break;
-							}
-							else
-							{
-								FreeRpcSessionStatus(&tmp);
-							}
-						}
-					}
-				}
-
-				if (i == LIST_NUM(s->FarmMemberList))
-				{
-					// not found after all
-					// 
-					ret = ERR_OBJECT_NOT_FOUND;
-				}
-			}
-			UnlockList(s->FarmMemberList);
-		}
+		// Session is not found
+		ret = ERR_OBJECT_NOT_FOUND;
 	}
 	else
 	{
@@ -3670,7 +3286,6 @@ void SiEnumSessionMain(SERVER *s, RPC_ENUM_SESSION *t)
 	char hubname[MAX_HUBNAME_LEN + 1];
 	UINT ret = ERR_NO_ERROR;
 	UINT num;
-	UINT i;
 	// Validate arguments
 	if (s == NULL || t == NULL)
 	{
@@ -3687,57 +3302,6 @@ void SiEnumSessionMain(SERVER *s, RPC_ENUM_SESSION *t)
 	num = 0;
 	SiEnumLocalSession(s, hubname, t);
 
-	if (s->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		LIST *fm_list;
-
-		fm_list = NewListFast(NULL);
-
-		// Remote session enumeration
-		LockList(s->FarmMemberList);
-		{
-			while (true)
-			{
-				bool escape = true;
-
-				for (i = 0;i < LIST_NUM(s->FarmMemberList);i++)
-				{
-					FARM_MEMBER *f = LIST_DATA(s->FarmMemberList, i);
-
-					if (IsInList(fm_list, f) == false)
-					{
-						Add(fm_list, f);
-						escape = false;
-
-						if (f->Me == false)
-						{
-							RPC_ENUM_SESSION tmp;
-
-							Zero(&tmp, sizeof(tmp));
-
-							SiCallEnumSession(s, f, hubname, &tmp);
-
-							AdjoinRpcEnumSession(t, &tmp);
-							FreeRpcEnumSession(&tmp);
-						}
-
-						break;
-					}
-				}
-
-				if (escape)
-				{
-					break;
-				}
-
-				UnlockList(s->FarmMemberList);
-				LockList(s->FarmMemberList);
-			}
-		}
-		UnlockList(s->FarmMemberList);
-
-		ReleaseList(fm_list);
-	}
 }
 
 // Enumerate sessions
@@ -3788,11 +3352,6 @@ UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 	CHECK_RIGHT;
 
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 
 	LockHubList(c);
 	{
@@ -3881,11 +3440,6 @@ UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t)
 	CHECK_RIGHT;
 
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -3940,11 +3494,6 @@ UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t)
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
 	LockHubList(c);
@@ -4009,11 +3558,6 @@ UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t)
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -4078,19 +3622,9 @@ UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_FARM_CONTROLLER;
-	}
-
 	CHECK_RIGHT;
 
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -4155,11 +3689,6 @@ UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -4240,11 +3769,6 @@ UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t)
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -4301,11 +3825,6 @@ UINT StGetUser(ADMIN *a, RPC_SET_USER *t)
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	FreeRpcSetUser(t);
 	Zero(t, sizeof(RPC_SET_USER));
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
@@ -4378,11 +3897,6 @@ UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
 	}
 
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	CHECK_RIGHT;
 
 	if (GetGlobalServerFlag(GSF_DISABLE_RADIUS_AUTH) != 0)
@@ -4511,11 +4025,6 @@ UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
 	}
 
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	CHECK_RIGHT;
 
 	if (GetGlobalServerFlag(GSF_DISABLE_RADIUS_AUTH) != 0)
@@ -4643,11 +4152,6 @@ UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -4692,11 +4196,6 @@ UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t)
 	UINT i;
 	bool exists;
 
-
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_FARM_CONTROLLER;
-	}
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
@@ -4765,11 +4264,6 @@ UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 	bool no_include = false;
 
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	CHECK_RIGHT;
 
 	if (t->NumAccess > GetServerCapsInt(a->Server, "i_max_access_lists"))
@@ -4854,8 +4348,6 @@ UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 
 		IncrementServerConfigRevision(s);
 
-		h->CurrentVersion++;
-		SiHubUpdateProc(h);
 	}
 
 	ReleaseHub(h);
@@ -4874,11 +4366,6 @@ UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t)
 
 
 	NO_SUPPORT_FOR_BRIDGE;
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	CHECK_RIGHT;
 
 	LockHubList(c);
@@ -4932,9 +4419,6 @@ UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t)
 
 	AddAccessList(h, &t->Access);
 
-	h->CurrentVersion++;
-	SiHubUpdateProc(h);
-
 	ReleaseHub(h);
 
 	IncrementServerConfigRevision(s);
@@ -4956,11 +4440,6 @@ UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
 	if (UniIsEmptyStr(t->OldAccountName) || UniIsEmptyStr(t->NewAccountName))
 	{
 		return ERR_INVALID_PARAMETER;
-	}
-
-	if (s->ServerType != SERVER_TYPE_STANDALONE)
-	{
-		return ERR_NOT_SUPPORTED;
 	}
 
 	CHECK_RIGHT;
@@ -5076,11 +4555,6 @@ UINT StDeleteLink(ADMIN *a, RPC_LINK *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	if (s->ServerType != SERVER_TYPE_STANDALONE)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	CHECK_RIGHT;
 
 	LockHubList(c);
@@ -5170,11 +4644,6 @@ UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	if (s->ServerType != SERVER_TYPE_STANDALONE)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	CHECK_RIGHT;
 
 	LockHubList(c);
@@ -5260,11 +4729,6 @@ UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	if (s->ServerType != SERVER_TYPE_STANDALONE)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	CHECK_RIGHT;
 
 	LockHubList(c);
@@ -5348,11 +4812,6 @@ UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t)
 	if (UniIsEmptyStr(t->AccountName))
 	{
 		return ERR_INVALID_PARAMETER;
-	}
-
-	if (s->ServerType != SERVER_TYPE_STANDALONE)
-	{
-		return ERR_NOT_SUPPORTED;
 	}
 
 	CHECK_RIGHT;
@@ -5445,11 +4904,6 @@ UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t)
 	char hubname[MAX_HUBNAME_LEN + 1];
 	UINT i;
 
-	if (s->ServerType != SERVER_TYPE_STANDALONE)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	CHECK_RIGHT;
 
 	LockHubList(c);
@@ -5516,17 +4970,7 @@ UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t)
 	char hubname[MAX_SIZE];
 	LINK *k;
 
-	if (s->ServerType != SERVER_TYPE_STANDALONE)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	CHECK_RIGHT;
-
-	if (s->ServerType != SERVER_TYPE_STANDALONE)
-	{
-		return ERR_LINK_CANT_CREATE_ON_FARM;
-	}
 
 	LockHubList(c);
 	{
@@ -5609,17 +5053,7 @@ UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 	LINK *k;
 
 
-	if (s->ServerType != SERVER_TYPE_STANDALONE)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	CHECK_RIGHT;
-
-	if (s->ServerType != SERVER_TYPE_STANDALONE)
-	{
-		return ERR_LINK_CANT_CREATE_ON_FARM;
-	}
 
 	LockHubList(c);
 	{
@@ -5729,11 +5163,6 @@ UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t)
 	CHECK_RIGHT;
 
 
-	if (s->ServerType != SERVER_TYPE_STANDALONE)
-	{
-		return ERR_LINK_CANT_CREATE_ON_FARM;
-	}
-
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -5824,11 +5253,6 @@ UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t)
 	HUB *h;
 	UINT ret = ERR_NO_ERROR;
 
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_FARM_CONTROLLER;
-	}
-
 	NO_SUPPORT_FOR_BRIDGE;
 	CHECK_RIGHT;
 
@@ -5883,11 +5307,6 @@ UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t)
 	char hubname[MAX_HUBNAME_LEN + 1];
 	UINT key;
 
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_FARM_CONTROLLER;
-	}
-
 	NO_SUPPORT_FOR_BRIDGE;
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
@@ -5939,11 +5358,6 @@ UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
 	HUB *h;
 	char hubname[MAX_HUBNAME_LEN + 1];
 	UINT i;
-
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_FARM_CONTROLLER;
-	}
 
 	NO_SUPPORT_FOR_BRIDGE;
 
@@ -6001,11 +5415,6 @@ UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t)
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	HUB *h;
-
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_FARM_CONTROLLER;
-	}
 
 	if (c->Bridge)
 	{
@@ -6106,9 +5515,6 @@ UINT StSetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 	SetHubLogSettingEx(h, &t->LogSetting,
 		(a->ServerAdmin == false && GetHubAdminOption(h, "no_change_log_switch_type") != 0));
 
-	h->CurrentVersion++;
-	SiHubUpdateProc(h);
-
 	ReleaseHub(h);
 
 	IncrementServerConfigRevision(s);
@@ -6141,7 +5547,6 @@ UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
 	Lock(h->lock);
 	{
 		StrCpy(t->HubName, sizeof(t->HubName), h->Name);
-		t->HubType = h->Type;
 		t->Online = h->Offline ? false : true;
 		t->NumSessions = LIST_NUM(h->SessionList);
 		t->NumSessionsClient = Count(h->NumSessionsClient);
@@ -6170,41 +5575,6 @@ UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
 	}
 	Unlock(h->lock);
 
-	if (s->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		UINT i;
-		LockList(s->FarmMemberList);
-		{
-			for (i = 0;i < LIST_NUM(s->FarmMemberList);i++)
-			{
-				UINT k;
-				FARM_MEMBER *f = LIST_DATA(s->FarmMemberList, i);
-
-				if (f->Me == false)
-				{
-					LockList(f->HubList);
-					{
-						for (k = 0;k < LIST_NUM(f->HubList);k++)
-						{
-							HUB_LIST *h = LIST_DATA(f->HubList, k);
-
-							if (StrCmpi(h->Name, t->HubName) == 0)
-							{
-								t->NumSessions += h->NumSessions;
-								t->NumSessionsClient += h->NumSessionsClient;
-								t->NumSessionsBridge += h->NumSessionsBridge;
-								t->NumMacTables += h->NumMacTables;
-								t->NumIpTables += h->NumIpTables;
-							}
-						}
-					}
-					UnlockList(f->HubList);
-				}
-			}
-		}
-		UnlockList(s->FarmMemberList);
-	}
-
 	ReleaseHub(h);
 
 	return ERR_NO_ERROR;
@@ -6216,11 +5586,6 @@ UINT StSetHubOnline(ADMIN *a, RPC_SET_HUB_ONLINE *t)
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	HUB *h;
-
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_FARM_CONTROLLER;
-	}
 
 
 	NO_SUPPORT_FOR_BRIDGE;
@@ -6260,9 +5625,6 @@ UINT StSetHubOnline(ADMIN *a, RPC_SET_HUB_ONLINE *t)
 		ALog(a, h, "LA_SET_HUB_OFFLINE");
 		SetHubOffline(h);
 	}
-
-	h->CurrentVersion++;
-	SiHubUpdateProc(h);
 
 	IncrementServerConfigRevision(s);
 
@@ -6433,11 +5795,6 @@ UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t)
 	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
 
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_FARM_CONTROLLER;
-	}
-
 
 	if (IsEmptyStr(t->HubName) || IsSafeStr(t->HubName) == false)
 	{
@@ -6529,7 +5886,6 @@ UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 
 				StrCpy(e->HubName, sizeof(e->HubName), h->Name);
 				e->Online = h->Offline ? false : true;
-				e->HubType = h->Type;
 
 				e->NumSessions = LIST_NUM(h->SessionList);
 
@@ -6579,43 +5935,6 @@ UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 	}
 	UnlockHubList(c);
 
-	if (s->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		UINT i, j, k;
-		LockList(s->FarmMemberList);
-		{
-			for (i = 0;i < LIST_NUM(s->FarmMemberList);i++)
-			{
-				FARM_MEMBER *f = LIST_DATA(s->FarmMemberList, i);
-
-				LockList(f->HubList);
-				{
-					if (f->Me == false)
-					{
-						for (j = 0;j < LIST_NUM(f->HubList);j++)
-						{
-							HUB_LIST *o = LIST_DATA(f->HubList, j);
-
-							for (k = 0;k < t->NumHub;k++)
-							{
-								RPC_ENUM_HUB_ITEM *e = &t->Hubs[k];
-
-								if (StrCmpi(e->HubName, o->Name) == 0)
-								{
-									e->NumIpTables += o->NumIpTables;
-									e->NumMacTables += o->NumMacTables;
-									e->NumSessions += o->NumSessions;
-								}
-							}
-						}
-					}
-				}
-				UnlockList(f->HubList);
-			}
-		}
-		UnlockList(s->FarmMemberList);
-	}
-
 	return ERR_NO_ERROR;
 }
 
@@ -6627,19 +5946,9 @@ UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t)
 	UINT ret = ERR_NO_ERROR;
 	HUB *h;
 
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_FARM_CONTROLLER;
-	}
-
 	if (IsEmptyStr(t->HubName) || IsSafeStr(t->HubName) == false)
 	{
 		return ERR_INVALID_PARAMETER;
-	}
-
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_FARM_CONTROLLER;
 	}
 
 	NO_SUPPORT_FOR_BRIDGE;
@@ -6662,7 +5971,6 @@ UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t)
 	{
 		StrCpy(t->HubName, sizeof(t->HubName), h->Name);
 		t->Online = h->Offline ? false : true;
-		t->HubType = h->Type;
 		t->HubOption.MaxSession = h->Option->MaxSession;
 		t->HubOption.NoEnum = h->Option->NoEnum;
 	}
@@ -6681,11 +5989,6 @@ UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 	HUB *h;
 	UINT ret = ERR_NO_ERROR;
 
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_FARM_CONTROLLER;
-	}
-
 	if (IsEmptyStr(t->HubName) || IsSafeStr(t->HubName) == false)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -6693,27 +5996,6 @@ UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_FARM_CONTROLLER;
-	}
-
-	if (s->ServerType == SERVER_TYPE_STANDALONE)
-	{
-		if (t->HubType != HUB_TYPE_STANDALONE)
-		{
-			return ERR_INVALID_PARAMETER;
-		}
-	}
-
-	if (s->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		if (t->HubType == HUB_TYPE_STANDALONE)
-		{
-			return ERR_INVALID_PARAMETER;
-		}
-	}
 
 	LockHubList(c);
 	{
@@ -6724,12 +6006,6 @@ UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 	if (h == NULL)
 	{
 		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (h->Type != t->HubType)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_SUPPORTED;
 	}
 
 	// For JSON-RPC
@@ -6768,22 +6044,14 @@ UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 
 	Lock(h->lock);
 	{
-		if (a->ServerAdmin == false && h->Type != t->HubType)
-		{
-			ret = ERR_NOT_ENOUGH_RIGHT;
-		}
-		else
-		{
-			h->Type = t->HubType;
-			h->Option->MaxSession = t->HubOption.MaxSession;
-			h->Option->NoEnum = t->HubOption.NoEnum;
+		h->Option->MaxSession = t->HubOption.MaxSession;
+		h->Option->NoEnum = t->HubOption.NoEnum;
 
-			if (IsZero(t->HashedPassword, sizeof(t->HashedPassword)) == false &&
-				IsZero(t->SecurePassword, sizeof(t->SecurePassword)) == false)
-			{
-				Copy(h->HashedPassword, t->HashedPassword, SHA1_SIZE);
-				Copy(h->SecurePassword, t->SecurePassword, SHA1_SIZE);
-			}
+		if (IsZero(t->HashedPassword, sizeof(t->HashedPassword)) == false &&
+			IsZero(t->SecurePassword, sizeof(t->SecurePassword)) == false)
+		{
+			Copy(h->HashedPassword, t->HashedPassword, SHA1_SIZE);
+			Copy(h->SecurePassword, t->SecurePassword, SHA1_SIZE);
 		}
 	}
 	Unlock(h->lock);
@@ -6802,9 +6070,6 @@ UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 			SetHubOffline(h);
 		}
 	}
-
-	h->CurrentVersion++;
-	SiHubUpdateProc(h);
 
 	IncrementServerConfigRevision(s);
 
@@ -6825,22 +6090,12 @@ UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
 	UINT current_hub_num;
 	bool b;
 
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_FARM_CONTROLLER;
-	}
-
 	if (IsEmptyStr(t->HubName) || IsSafeStr(t->HubName) == false)
 	{
 		return ERR_INVALID_PARAMETER;
 	}
 
 	NO_SUPPORT_FOR_BRIDGE;
-
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_FARM_CONTROLLER;
-	}
 
 	SERVER_ADMIN_ONLY;
 
@@ -6850,23 +6105,6 @@ UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
 		return ERR_INVALID_PARAMETER;
 	}
 	if (StartWith(t->HubName, ".") || EndWith(t->HubName, "."))
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_FARM_CONTROLLER;
-	}
-
-	if (s->ServerType == SERVER_TYPE_STANDALONE)
-	{
-		if (t->HubType != HUB_TYPE_STANDALONE)
-		{
-			return ERR_INVALID_PARAMETER;
-		}
-	}
-	else if (t->HubType != HUB_TYPE_FARM_DYNAMIC && t->HubType != HUB_TYPE_FARM_STATIC)
 	{
 		return ERR_INVALID_PARAMETER;
 	}
@@ -6915,8 +6153,6 @@ UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
 	h = NewHub(c, t->HubName, &o);
 	Copy(h->HashedPassword, t->HashedPassword, SHA1_SIZE);
 	Copy(h->SecurePassword, t->SecurePassword, SHA1_SIZE);
-
-	h->Type = t->HubType;
 
 	AddHub(c, h);
 
@@ -7081,284 +6317,6 @@ UINT StSetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
 	ALog(a, NULL, "LA_SET_SERVER_CERT");
 
 	IncrementServerConfigRevision(s);
-
-	return ERR_NO_ERROR;
-}
-
-// Get status of connection to cluster controller
-UINT StGetFarmConnectionStatus(ADMIN *a, RPC_FARM_CONNECTION_STATUS *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	FARM_CONTROLLER *fc;
-
-	if (s->ServerType != SERVER_TYPE_FARM_MEMBER)
-	{
-		return ERR_NOT_FARM_MEMBER;
-	}
-
-	Zero(t, sizeof(RPC_FARM_CONNECTION_STATUS));
-
-	fc = s->FarmController;
-
-	Lock(fc->lock);
-	{
-		if (fc->Sock != NULL)
-		{
-			t->Ip = IPToUINT(&fc->Sock->RemoteIP);
-			t->Port = fc->Sock->RemotePort;
-		}
-
-		t->Online = fc->Online;
-		t->LastError = ERR_NO_ERROR;
-
-		if (t->Online == false)
-		{
-			t->LastError = fc->LastError;
-		}
-		else
-		{
-			t->CurrentConnectedTime = fc->CurrentConnectedTime;
-		}
-
-		t->StartedTime = fc->StartedTime;
-		t->FirstConnectedTime = fc->FirstConnectedTime;
-
-		t->NumConnected = fc->NumConnected;
-		t->NumTry = fc->NumTry;
-		t->NumFailed = fc->NumFailed;
-	}
-	Unlock(fc->lock);
-
-	return ERR_NO_ERROR;
-}
-
-// Enumerate cluster members
-UINT StEnumFarmMember(ADMIN *a, RPC_ENUM_FARM *t)
-{
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	UINT i;
-
-	FreeRpcEnumFarm(t);
-	Zero(t, sizeof(RPC_ENUM_FARM));
-
-	if (s->ServerType != SERVER_TYPE_FARM_CONTROLLER)
-	{
-		return ERR_NOT_FARM_CONTROLLER;
-	}
-
-	Zero(t, sizeof(RPC_ENUM_FARM));
-
-	LockList(s->FarmMemberList);
-	{
-		t->NumFarm = LIST_NUM(s->FarmMemberList);
-		t->Farms = ZeroMalloc(sizeof(RPC_ENUM_FARM_ITEM) * t->NumFarm);
-
-		for (i = 0;i < t->NumFarm;i++)
-		{
-			FARM_MEMBER *f = LIST_DATA(s->FarmMemberList, i);
-			RPC_ENUM_FARM_ITEM *e = &t->Farms[i];
-
-			e->Id = POINTER_TO_KEY(f);
-			e->Controller = f->Me;
-
-			if (e->Controller)
-			{
-				e->ConnectedTime = TickToTime(c->CreatedTick);
-				e->Ip = 0x0100007f;
-				GetMachineName(e->Hostname, sizeof(e->Hostname));
-				e->Point = f->Point;
-				e->NumSessions = Count(c->CurrentSessions);
-				e->NumTcpConnections = Count(c->CurrentTcpConnections);
-
-				e->AssignedBridgeLicense = Count(c->AssignedBridgeLicense);
-				e->AssignedClientLicense = Count(c->AssignedClientLicense);
-			}
-			else
-			{
-				e->ConnectedTime = f->ConnectedTime;
-				e->Ip = f->Ip;
-				StrCpy(e->Hostname, sizeof(e->Hostname), f->hostname);
-				e->Point = f->Point;
-				e->NumSessions = f->NumSessions;
-				e->NumTcpConnections = f->NumTcpConnections;
-
-				e->AssignedBridgeLicense = f->AssignedBridgeLicense;
-				e->AssignedClientLicense = f->AssignedClientLicense;
-			}
-			e->NumHubs = LIST_NUM(f->HubList);
-		}
-	}
-	UnlockList(s->FarmMemberList);
-
-	return ERR_NO_ERROR;
-}
-
-// Get cluster member information
-UINT StGetFarmInfo(ADMIN *a, RPC_FARM_INFO *t)
-{
-	SERVER *s = a->Server;
-	UINT id = t->Id;
-	UINT i;
-	UINT ret = ERR_NO_ERROR;
-
-	FreeRpcFarmInfo(t);
-	Zero(t, sizeof(RPC_FARM_INFO));
-
-	if (s->ServerType != SERVER_TYPE_FARM_CONTROLLER)
-	{
-		return ERR_NOT_FARM_CONTROLLER;
-	}
-
-	LockList(s->FarmMemberList);
-	{
-		if (IsInListKey(s->FarmMemberList, id))
-		{
-			FARM_MEMBER *f = ListKeyToPointer(s->FarmMemberList, id);
-
-			t->Id = id;
-			t->Controller = f->Me;
-			t->Weight = f->Weight;
-
-			LockList(f->HubList);
-			{
-				t->NumFarmHub = LIST_NUM(f->HubList);
-				t->FarmHubs = ZeroMalloc(sizeof(RPC_FARM_HUB) * t->NumFarmHub);
-
-				for (i = 0;i < t->NumFarmHub;i++)
-				{
-					RPC_FARM_HUB *h = &t->FarmHubs[i];
-					HUB_LIST *hh = LIST_DATA(f->HubList, i);
-
-					h->DynamicHub = hh->DynamicHub;
-					StrCpy(h->HubName, sizeof(h->HubName), hh->Name);
-				}
-			}
-			UnlockList(f->HubList);
-
-			if (t->Controller)
-			{
-				t->ConnectedTime = TickToTime(s->Cedar->CreatedTick);
-				t->Ip = 0x0100007f;
-				GetMachineName(t->Hostname, sizeof(t->Hostname));
-				t->Point = f->Point;
-
-				LockList(s->ServerListenerList);
-				{
-					UINT i, n;
-					t->NumPort = 0;
-					for (i = 0;i < LIST_NUM(s->ServerListenerList);i++)
-					{
-						SERVER_LISTENER *o = LIST_DATA(s->ServerListenerList, i);
-						if (o->Enabled)
-						{
-							t->NumPort++;
-						}
-					}
-					t->Ports = ZeroMalloc(sizeof(UINT) * t->NumPort);
-					n = 0;
-					for (i = 0;i < LIST_NUM(s->ServerListenerList);i++)
-					{
-						SERVER_LISTENER *o = LIST_DATA(s->ServerListenerList, i);
-						if (o->Enabled)
-						{
-							t->Ports[n++] = o->Port;
-						}
-					}
-				}
-				UnlockList(s->ServerListenerList);
-
-				t->ServerCert = CloneX(s->Cedar->ServerX);
-				t->NumSessions = Count(s->Cedar->CurrentSessions);
-				t->NumTcpConnections = Count(s->Cedar->CurrentTcpConnections);
-			}
-			else
-			{
-				t->ConnectedTime = f->ConnectedTime;
-				t->Ip = f->Ip;
-				StrCpy(t->Hostname, sizeof(t->Hostname), f->hostname);
-				t->Point = f->Point;
-				t->NumPort = f->NumPort;
-				t->Ports = ZeroMalloc(sizeof(UINT) * t->NumPort);
-				Copy(t->Ports, f->Ports, sizeof(UINT) * t->NumPort);
-				t->ServerCert = CloneX(f->ServerCert);
-				t->NumSessions = f->NumSessions;
-				t->NumTcpConnections = f->NumTcpConnections;
-			}
-		}
-		else
-		{
-			ret = ERR_OBJECT_NOT_FOUND;
-		}
-	}
-	UnlockList(s->FarmMemberList);
-
-	return ret;
-}
-
-// Get clustering configuration
-UINT StGetFarmSetting(ADMIN *a, RPC_FARM *t)
-{
-	SERVER *s;
-	FreeRpcFarm(t);
-	Zero(t, sizeof(RPC_FARM));
-
-	s = a->Server;
-	t->ServerType = s->ServerType;
-	t->ControllerOnly = s->ControllerOnly;
-	t->Weight = s->Weight;
-
-	if (t->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		t->NumPort = s->NumPublicPort;
-		t->Ports = ZeroMalloc(sizeof(UINT) * t->NumPort);
-		Copy(t->Ports, s->PublicPorts, sizeof(UINT) * t->NumPort);
-		t->PublicIp = s->PublicIp;
-		StrCpy(t->ControllerName, sizeof(t->ControllerName), s->ControllerName);
-		t->ControllerPort = s->ControllerPort;
-	}
-	else
-	{
-		t->NumPort = 0;
-		t->Ports = ZeroMalloc(0);
-	}
-
-	return ERR_NO_ERROR;
-}
-
-// Set clustering configuration
-UINT StSetFarmSetting(ADMIN *a, RPC_FARM *t)
-{
-	bool cluster_allowed = false;
-
-	SERVER_ADMIN_ONLY;
-	NO_SUPPORT_FOR_BRIDGE;
-
-
-	cluster_allowed = GetServerCapsInt(a->Server, "b_support_cluster");
-
-	if (t->ServerType != SERVER_TYPE_STANDALONE && cluster_allowed == false)
-	{
-		// When clustering function is disabled, deny turning into clustering mode
-		return ERR_NOT_SUPPORTED;
-	}
-
-	if (IsZero(t->MemberPassword, sizeof(t->MemberPassword)))
-	{
-		if (IsEmptyStr(t->MemberPasswordPlaintext) == false)
-		{
-			// For JSON-RPC
-			HashAdminPassword(t->MemberPassword, t->MemberPasswordPlaintext);
-		}
-	}
-
-	ALog(a, NULL, "LA_SET_FARM_SETTING");
-
-	IncrementServerConfigRevision(a->Server);
-
-	SiSetServerType(a->Server, t->ServerType, t->PublicIp, t->NumPort, t->Ports,
-		t->ControllerName, t->ControllerPort, t->MemberPassword, t->Weight, t->ControllerOnly);
 
 	return ERR_NO_ERROR;
 }
@@ -7538,30 +6496,10 @@ UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 
 	GetMemInfo(&t->MemInfo);
 
-	t->ServerType = a->Server->ServerType;
-	t->NumTcpConnections = t->NumTcpConnectionsLocal = t->NumTcpConnectionsRemote = 0;
-	t->NumSessionsTotal = t->NumSessionsLocal = t->NumSessionsRemote = 0;
+	t->NumTcpConnections = t->NumTcpConnectionsLocal = 0;
+	t->NumSessionsTotal = t->NumSessionsLocal = 0;
 
 	t->NumTcpConnectionsLocal = Count(c->CurrentTcpConnections);
-
-	if (a->Server->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		LockList(a->Server->FarmMemberList);
-		{
-			for (i = 0;i < LIST_NUM(a->Server->FarmMemberList);i++)
-			{
-				FARM_MEMBER *f = LIST_DATA(a->Server->FarmMemberList, i);
-
-				if (f->Me == false)
-				{
-					t->NumTcpConnectionsRemote += f->NumTcpConnections;
-					t->NumSessionsRemote += f->NumSessions;
-					AddTraffic(&t->Traffic, &f->Traffic);
-				}
-			}
-		}
-		UnlockList(a->Server->FarmMemberList);
-	}
 
 	t->NumMacTables = t->NumIpTables = t->NumUsers = t->NumGroups = 0;
 
@@ -7570,27 +6508,14 @@ UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 	{
 		t->NumHubTotal = LIST_NUM(c->HubList);
 
-		t->NumHubStandalone = t->NumHubDynamic = t->NumHubStatic = 0;
+		t->NumHubStandalone = 0;
 
 		for (i = 0;i < LIST_NUM(c->HubList);i++)
 		{
 			HUB *h = LIST_DATA(c->HubList, i);
 			Lock(h->lock);
 			{
-				switch (h->Type)
-				{
-				case HUB_TYPE_STANDALONE:
-					t->NumHubStandalone++;
-					break;
-
-				case HUB_TYPE_FARM_STATIC:
-					t->NumHubStatic++;
-					break;
-
-				case HUB_TYPE_FARM_DYNAMIC:
-					t->NumHubDynamic++;
-					break;
-				}
+				t->NumHubStandalone++;
 			}
 
 			t->NumMacTables += HASH_LIST_NUM(h->MacHashTable);
@@ -7609,8 +6534,8 @@ UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 
 	// The number of sessions
 	t->NumSessionsLocal = Count(c->CurrentSessions);
-	t->NumSessionsTotal = t->NumSessionsLocal + t->NumSessionsRemote;
-	t->NumTcpConnections = t->NumTcpConnectionsLocal + t->NumTcpConnectionsRemote;
+	t->NumSessionsTotal = t->NumSessionsLocal;
+	t->NumTcpConnections = t->NumTcpConnectionsLocal;
 
 	t->AssignedBridgeLicenses = Count(c->AssignedBridgeLicense);
 	t->AssignedClientLicenses = Count(c->AssignedClientLicense);
@@ -7650,7 +6575,6 @@ UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t)
 	t->ServerVerInt = c->Version;
 	t->ServerBuildInt = c->Build;
 	GetMachineName(t->ServerHostName, sizeof(t->ServerHostName));
-	t->ServerType = c->Server->ServerType;
 
 	Zero(&st, sizeof(st));
 	st.wYear = BUILD_DATE_Y;
@@ -7984,7 +6908,6 @@ void InRpcEnumLogFile(RPC_ENUM_LOG_FILE *t, PACK *p)
 		RPC_ENUM_LOG_FILE_ITEM *e = &t->Items[i];
 
 		PackGetStrEx(p, "FilePath", e->FilePath, sizeof(e->FilePath), i);
-		PackGetStrEx(p, "ServerName", e->ServerName, sizeof(e->ServerName), i);
 		e->FileSize = PackGetIntEx(p, "FileSize", i);
 		e->UpdatedTime = PackGetInt64Ex(p, "UpdatedTime", i);
 	}
@@ -8005,7 +6928,6 @@ void OutRpcEnumLogFile(PACK *p, RPC_ENUM_LOG_FILE *t)
 		RPC_ENUM_LOG_FILE_ITEM *e = &t->Items[i];
 
 		PackAddStrEx(p, "FilePath", e->FilePath, i, t->NumItem);
-		PackAddStrEx(p, "ServerName", e->ServerName, i, t->NumItem);
 		PackAddIntEx(p, "FileSize", e->FileSize, i, t->NumItem);
 		PackAddTime64Ex(p, "UpdatedTime", e->UpdatedTime, i, t->NumItem);
 	}
@@ -8020,66 +6942,6 @@ void FreeRpcEnumLogFile(RPC_ENUM_LOG_FILE *t)
 
 	Free(t->Items);
 }
-void AdjoinRpcEnumLogFile(RPC_ENUM_LOG_FILE *t, RPC_ENUM_LOG_FILE *src)
-{
-	LIST *o;
-	UINT i;
-	// Validate arguments
-	if (t == NULL || src == NULL)
-	{
-		return;
-	}
-
-	o = NewListFast(CmpLogFile);
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_ENUM_LOG_FILE_ITEM *e = &t->Items[i];
-		LOG_FILE *f = ZeroMalloc(sizeof(LOG_FILE));
-
-		f->FileSize = e->FileSize;
-		StrCpy(f->Path, sizeof(f->Path), e->FilePath);
-		StrCpy(f->ServerName, sizeof(f->ServerName), e->ServerName);
-		f->UpdatedTime = e->UpdatedTime;
-
-		Add(o, f);
-	}
-
-	for (i = 0;i < src->NumItem;i++)
-	{
-		RPC_ENUM_LOG_FILE_ITEM *e = &src->Items[i];
-		LOG_FILE *f = ZeroMalloc(sizeof(LOG_FILE));
-
-		f->FileSize = e->FileSize;
-		StrCpy(f->Path, sizeof(f->Path), e->FilePath);
-		StrCpy(f->ServerName, sizeof(f->ServerName), e->ServerName);
-		f->UpdatedTime = e->UpdatedTime;
-
-		Add(o, f);
-	}
-
-	FreeRpcEnumLogFile(t);
-
-	Sort(o);
-
-	Zero(t, sizeof(RPC_ENUM_LOG_FILE));
-	t->NumItem = LIST_NUM(o);
-	t->Items = ZeroMalloc(sizeof(RPC_ENUM_LOG_FILE_ITEM) * t->NumItem);
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		LOG_FILE *f = LIST_DATA(o, i);
-		RPC_ENUM_LOG_FILE_ITEM *e = &t->Items[i];
-
-		StrCpy(e->FilePath, sizeof(e->FilePath), f->Path);
-		StrCpy(e->ServerName, sizeof(e->ServerName), f->ServerName);
-		e->FileSize = f->FileSize;
-		e->UpdatedTime = f->UpdatedTime;
-	}
-
-	FreeEnumLogFile(o);
-}
-
 // RPC_READ_LOG_FILE
 void InRpcReadLogFile(RPC_READ_LOG_FILE *t, PACK *p)
 {
@@ -8091,7 +6953,6 @@ void InRpcReadLogFile(RPC_READ_LOG_FILE *t, PACK *p)
 
 	Zero(t, sizeof(RPC_READ_LOG_FILE));
 	PackGetStr(p, "FilePath", t->FilePath, sizeof(t->FilePath));
-	PackGetStr(p, "ServerName", t->ServerName, sizeof(t->ServerName));
 	t->Offset = PackGetInt(p, "Offset");
 
 	t->Buffer = PackGetBuf(p, "Buffer");
@@ -8105,7 +6966,6 @@ void OutRpcReadLogFile(PACK *p, RPC_READ_LOG_FILE *t)
 	}
 
 	PackAddStr(p, "FilePath", t->FilePath);
-	PackAddStr(p, "ServerName", t->ServerName);
 	PackAddInt(p, "Offset", t->Offset);
 
 	if (t->Buffer != NULL)
@@ -8960,7 +7820,6 @@ void SiEnumLocalLogFileList(SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t)
 		RPC_ENUM_LOG_FILE_ITEM *e = &t->Items[i];
 
 		StrCpy(e->FilePath, sizeof(e->FilePath), f->Path);
-		StrCpy(e->ServerName, sizeof(e->ServerName), f->ServerName);
 		e->FileSize = f->FileSize;
 		e->UpdatedTime = f->UpdatedTime;
 	}
@@ -9063,8 +7922,6 @@ void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t)
 				}
 			}
 			Unlock(s->lock);
-
-			GetMachineName(e->RemoteHostname, sizeof(e->RemoteHostname));
 		}
 	}
 	UnlockList(h->SessionList);
@@ -9377,7 +8234,6 @@ void InRpcServerInfo(RPC_SERVER_INFO *t, PACK *p)
 	t->ServerVerInt = PackGetInt(p, "ServerVerInt");
 	t->ServerBuildInt = PackGetInt(p, "ServerBuildInt");
 	PackGetStr(p, "ServerHostName", t->ServerHostName, sizeof(t->ServerHostName));
-	t->ServerType = PackGetInt(p, "ServerType");
 	t->ServerBuildDate = PackGetInt64(p, "ServerBuildDate");
 	PackGetStr(p, "ServerFamilyName", t->ServerFamilyName, sizeof(t->ServerFamilyName));
 	InRpcOsInfo(&t->OsInfo, p);
@@ -9396,7 +8252,6 @@ void OutRpcServerInfo(PACK *p, RPC_SERVER_INFO *t)
 	PackAddInt(p, "ServerVerInt", t->ServerVerInt);
 	PackAddInt(p, "ServerBuildInt", t->ServerBuildInt);
 	PackAddStr(p, "ServerHostName", t->ServerHostName);
-	PackAddInt(p, "ServerType", t->ServerType);
 	PackAddTime64(p, "ServerBuildDate", t->ServerBuildDate);
 	PackAddStr(p, "ServerFamilyName", t->ServerFamilyName);
 	OutRpcOsInfo(p, &t->OsInfo);
@@ -9422,17 +8277,12 @@ void InRpcServerStatus(RPC_SERVER_STATUS *t, PACK *p)
 	}
 
 	Zero(t, sizeof(RPC_SERVER_STATUS));
-	t->ServerType = PackGetInt(p, "ServerType");
 	t->NumTcpConnections = PackGetInt(p, "NumTcpConnections");
 	t->NumTcpConnectionsLocal = PackGetInt(p, "NumTcpConnectionsLocal");
-	t->NumTcpConnectionsRemote = PackGetInt(p, "NumTcpConnectionsRemote");
 	t->NumHubTotal = PackGetInt(p, "NumHubTotal");
 	t->NumHubStandalone = PackGetInt(p, "NumHubStandalone");
-	t->NumHubStatic = PackGetInt(p, "NumHubStatic");
-	t->NumHubDynamic = PackGetInt(p, "NumHubDynamic");
 	t->NumSessionsTotal = PackGetInt(p, "NumSessionsTotal");
 	t->NumSessionsLocal = PackGetInt(p, "NumSessionsLocal");
-	t->NumSessionsRemote = PackGetInt(p, "NumSessionsRemote");
 	t->NumMacTables = PackGetInt(p, "NumMacTables");
 	t->NumIpTables = PackGetInt(p, "NumIpTables");
 	t->NumUsers = PackGetInt(p, "NumUsers");
@@ -9457,17 +8307,12 @@ void OutRpcServerStatus(PACK *p, RPC_SERVER_STATUS *t)
 		return;
 	}
 
-	PackAddInt(p, "ServerType", t->ServerType);
 	PackAddInt(p, "NumHubTotal", t->NumHubTotal);
 	PackAddInt(p, "NumHubStandalone", t->NumHubStandalone);
-	PackAddInt(p, "NumHubStatic", t->NumHubStatic);
-	PackAddInt(p, "NumHubDynamic", t->NumHubDynamic);
 	PackAddInt(p, "NumSessionsTotal", t->NumSessionsTotal);
 	PackAddInt(p, "NumSessionsLocal", t->NumSessionsLocal);
-	PackAddInt(p, "NumSessionsRemote", t->NumSessionsRemote);
 	PackAddInt(p, "NumTcpConnections", t->NumTcpConnections);
 	PackAddInt(p, "NumTcpConnectionsLocal", t->NumTcpConnectionsLocal);
-	PackAddInt(p, "NumTcpConnectionsRemote", t->NumTcpConnectionsRemote);
 	PackAddInt(p, "NumMacTables", t->NumMacTables);
 	PackAddInt(p, "NumIpTables", t->NumIpTables);
 	PackAddInt(p, "NumUsers", t->NumUsers);
@@ -9629,277 +8474,6 @@ void OutRpcSetPassword(PACK *p, RPC_SET_PASSWORD *t)
 	PackAddStr(p, "PlainTextPassword", t->PlainTextPassword);
 }
 
-// RPC_FARM
-void InRpcFarm(RPC_FARM *t, PACK *p)
-{
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_FARM));
-	t->ServerType = PackGetInt(p, "ServerType");
-	t->NumPort = PackGetIndexCount(p, "Ports");
-	t->Ports = ZeroMalloc(sizeof(UINT) * t->NumPort);
-	for (i = 0;i < t->NumPort;i++)
-	{
-		t->Ports[i] = PackGetIntEx(p, "Ports", i);
-	}
-	t->PublicIp = PackGetIp32(p, "PublicIp");
-	PackGetStr(p, "ControllerName", t->ControllerName, sizeof(t->ControllerName));
-	t->ControllerPort = PackGetInt(p, "ControllerPort");
-	PackGetData2(p, "MemberPassword", t->MemberPassword, sizeof(t->MemberPassword));
-	PackGetStr(p, "MemberPasswordPlaintext", t->MemberPasswordPlaintext, sizeof(t->MemberPasswordPlaintext));
-	t->Weight = PackGetInt(p, "Weight");
-	t->ControllerOnly = PackGetBool(p, "ControllerOnly");
-}
-void OutRpcFarm(PACK *p, RPC_FARM *t)
-{
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "ServerType", t->ServerType);
-	for (i = 0;i < t->NumPort;i++)
-	{
-		PackAddIntEx(p, "Ports", t->Ports[i], i, t->NumPort);
-	}
-	PackAddIp32(p, "PublicIp", t->PublicIp);
-	PackAddStr(p, "ControllerName", t->ControllerName);
-	PackAddInt(p, "ControllerPort", t->ControllerPort);
-	PackAddData(p, "MemberPassword", t->MemberPassword, sizeof(t->MemberPassword));
-	PackAddStr(p, "MemberPasswordPlaintext", t->MemberPasswordPlaintext);
-	PackAddInt(p, "Weight", t->Weight);
-	PackAddBool(p, "ControllerOnly", t->ControllerOnly);
-}
-void FreeRpcFarm(RPC_FARM *t)
-{
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Ports);
-}
-
-// RPC_FARM_HUB
-void InRpcFarmHub(RPC_FARM_HUB *t, PACK *p)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_FARM_HUB));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->DynamicHub = PackGetBool(p, "DynamicHub");
-}
-void OutRpcFarmHub(PACK *p, RPC_FARM_HUB *t)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddBool(p, "DynamicHub", t->DynamicHub);
-}
-
-// RPC_FARM_INFO
-void InRpcFarmInfo(RPC_FARM_INFO *t, PACK *p)
-{
-	UINT i;
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_FARM_INFO));
-	t->Id = PackGetInt(p, "Id");
-	t->Controller = PackGetBool(p, "Controller");
-	t->ConnectedTime = PackGetInt64(p, "ConnectedTime");
-	t->Ip = PackGetIp32(p, "Ip");
-	PackGetStr(p, "Hostname", t->Hostname, sizeof(t->Hostname));
-	t->Point = PackGetInt(p, "Point");
-	t->NumPort = PackGetIndexCount(p, "Ports");
-	t->Ports = ZeroMalloc(sizeof(UINT) * t->NumPort);
-	for (i = 0;i < t->NumPort;i++)
-	{
-		t->Ports[i] = PackGetIntEx(p, "Ports", i);
-	}
-	t->ServerCert = PackGetX(p, "ServerCert");
-	t->NumFarmHub = PackGetIndexCount(p, "HubName");
-	t->FarmHubs = ZeroMalloc(sizeof(RPC_FARM_HUB) * t->NumFarmHub);
-	for (i = 0;i < t->NumFarmHub;i++)
-	{
-		PackGetStrEx(p, "HubName", t->FarmHubs[i].HubName, sizeof(t->FarmHubs[i].HubName), i);
-		t->FarmHubs[i].DynamicHub = PackGetBoolEx(p, "DynamicHub", i);
-	}
-	t->NumSessions = PackGetInt(p, "NumSessions");
-	t->NumTcpConnections = PackGetInt(p, "NumTcpConnections");
-	t->Weight = PackGetInt(p, "Weight");
-}
-void OutRpcFarmInfo(PACK *p, RPC_FARM_INFO *t)
-{
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "Id", t->Id);
-	PackAddBool(p, "Controller", t->Controller);
-	PackAddTime64(p, "ConnectedTime", t->ConnectedTime);
-	PackAddIp32(p, "Ip", t->Ip);
-	PackAddStr(p, "Hostname", t->Hostname);
-	PackAddInt(p, "Point", t->Point);
-	for (i = 0;i < t->NumPort;i++)
-	{
-		PackAddIntEx(p, "Ports", t->Ports[i], i, t->NumPort);
-	}
-	PackAddX(p, "ServerCert", t->ServerCert);
-
-	for (i = 0;i < t->NumFarmHub;i++)
-	{
-		PackAddStrEx(p, "HubName", t->FarmHubs[i].HubName, i, t->NumFarmHub);
-		PackAddBoolEx(p, "DynamicHub", t->FarmHubs[i].DynamicHub, i, t->NumFarmHub);
-	}
-
-	PackAddInt(p, "NumSessions", t->NumSessions);
-	PackAddInt(p, "NumTcpConnections", t->NumTcpConnections);
-	PackAddInt(p, "Weight", t->Weight);
-}
-void FreeRpcFarmInfo(RPC_FARM_INFO *t)
-{
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Ports);
-	Free(t->FarmHubs);
-	FreeX(t->ServerCert);
-}
-
-void InRpcEnumFarm(RPC_ENUM_FARM *t, PACK *p)
-{
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_ENUM_FARM));
-	t->NumFarm = PackGetIndexCount(p, "Id");
-	t->Farms = ZeroMalloc(sizeof(RPC_ENUM_FARM_ITEM) * t->NumFarm);
-
-	for (i = 0;i < t->NumFarm;i++)
-	{
-		RPC_ENUM_FARM_ITEM *e = &t->Farms[i];
-
-		e->Id = PackGetIntEx(p, "Id", i);
-		e->Controller = PackGetBoolEx(p, "Controller", i);
-		e->ConnectedTime = PackGetInt64Ex(p, "ConnectedTime", i);
-		e->Ip = PackGetIp32Ex(p, "Ip", i);
-		PackGetStrEx(p, "Hostname", e->Hostname, sizeof(e->Hostname), i);
-		e->Point = PackGetIntEx(p, "Point", i);
-		e->NumSessions = PackGetIntEx(p, "NumSessions", i);
-		e->NumTcpConnections = PackGetIntEx(p, "NumTcpConnections", i);
-		e->NumHubs = PackGetIntEx(p, "NumHubs", i);
-		e->AssignedClientLicense = PackGetIntEx(p, "AssignedClientLicense", i);
-		e->AssignedBridgeLicense = PackGetIntEx(p, "AssignedBridgeLicense", i);
-	}
-}
-void OutRpcEnumFarm(PACK *p, RPC_ENUM_FARM *t)
-{
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	for (i = 0;i < t->NumFarm;i++)
-	{
-		RPC_ENUM_FARM_ITEM *e = &t->Farms[i];
-
-		PackAddIntEx(p, "Id", e->Id, i, t->NumFarm);
-		PackAddBoolEx(p, "Controller", e->Controller, i, t->NumFarm);
-		PackAddTime64Ex(p, "ConnectedTime", e->ConnectedTime, i, t->NumFarm);
-		PackAddIp32Ex(p, "Ip", e->Ip, i, t->NumFarm);
-		PackAddStrEx(p, "Hostname", e->Hostname, i, t->NumFarm);
-		PackAddIntEx(p, "Point", e->Point, i, t->NumFarm);
-		PackAddIntEx(p, "NumSessions", e->NumSessions, i, t->NumFarm);
-		PackAddIntEx(p, "NumTcpConnections", e->NumTcpConnections, i, t->NumFarm);
-		PackAddIntEx(p, "NumHubs", e->NumHubs, i, t->NumFarm);
-		PackAddIntEx(p, "AssignedClientLicense", e->AssignedClientLicense, i, t->NumFarm);
-		PackAddIntEx(p, "AssignedBridgeLicense", e->AssignedBridgeLicense, i, t->NumFarm);
-	}
-}
-void FreeRpcEnumFarm(RPC_ENUM_FARM *t)
-{
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Farms);
-}
-
-// RPC_FARM_CONNECTION_STATUS
-void InRpcFarmConnectionStatus(RPC_FARM_CONNECTION_STATUS *t, PACK *p)
-{
-	Zero(t, sizeof(RPC_FARM_CONNECTION_STATUS));
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	t->Ip = PackGetIp32(p, "Ip");
-	t->Port = PackGetInt(p, "Port");
-	t->Online = PackGetBool(p, "Online");
-	t->LastError = PackGetInt(p, "LastError");
-	t->StartedTime = PackGetInt64(p, "StartedTime");
-	t->CurrentConnectedTime = PackGetInt64(p, "CurrentConnectedTime");
-	t->FirstConnectedTime = PackGetInt64(p, "FirstConnectedTime");
-	t->NumConnected = PackGetInt(p, "NumConnected");
-	t->NumTry = PackGetInt(p, "NumTry");
-	t->NumFailed = PackGetInt(p, "NumFailed");
-}
-void OutRpcFarmConnectionStatus(PACK *p, RPC_FARM_CONNECTION_STATUS *t)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddIp32(p, "Ip", t->Ip);
-	PackAddInt(p, "Port", t->Port);
-	PackAddBool(p, "Online", t->Online);
-	PackAddInt(p, "LastError", t->LastError);
-	PackAddTime64(p, "StartedTime", t->StartedTime);
-	PackAddTime64(p, "CurrentConnectedTime", t->CurrentConnectedTime);
-	PackAddTime64(p, "FirstConnectedTime", t->FirstConnectedTime);
-	PackAddInt(p, "NumConnected", t->NumConnected);
-	PackAddInt(p, "NumTry", t->NumTry);
-	PackAddInt(p, "NumFailed", t->NumFailed);
-}
-
 // RPC_HUB_OPTION
 void InRpcHubOption(RPC_HUB_OPTION *t, PACK *p)
 {
@@ -9964,7 +8538,6 @@ void InRpcCreateHub(RPC_CREATE_HUB *t, PACK *p)
 	PackGetStr(p, "AdminPasswordPlainText", t->AdminPasswordPlainText, sizeof(t->AdminPasswordPlainText));
 	t->Online = PackGetBool(p, "Online");
 	InRpcHubOption(&t->HubOption, p);
-	t->HubType = PackGetInt(p, "HubType");
 }
 void OutRpcCreateHub(PACK *p, RPC_CREATE_HUB *t)
 {
@@ -9980,7 +8553,6 @@ void OutRpcCreateHub(PACK *p, RPC_CREATE_HUB *t)
 	PackAddBool(p, "Online", t->Online);
 	PackAddStr(p, "AdminPasswordPlainText", t->AdminPasswordPlainText);
 	OutRpcHubOption(p, &t->HubOption);
-	PackAddInt(p, "HubType", t->HubType);
 }
 
 // RPC_ENUM_HUB
@@ -10003,7 +8575,6 @@ void InRpcEnumHub(RPC_ENUM_HUB *t, PACK *p)
 
 		PackGetStrEx(p, "HubName", e->HubName, sizeof(e->HubName), i);
 		e->Online = PackGetBoolEx(p, "Online", i);
-		e->HubType = PackGetIntEx(p, "HubType", i);
 		e->NumSessions = PackGetIntEx(p, "NumSessions", i);
 		e->NumUsers = PackGetIntEx(p, "NumUsers", i);
 		e->NumGroups = PackGetIntEx(p, "NumGroups", i);
@@ -10033,7 +8604,6 @@ void OutRpcEnumHub(PACK *p, RPC_ENUM_HUB *t)
 
 		PackAddStrEx(p, "HubName", e->HubName, i, t->NumHub);
 		PackAddBoolEx(p, "Online", e->Online, i, t->NumHub);
-		PackAddIntEx(p, "HubType", e->HubType, i, t->NumHub);
 		PackAddIntEx(p, "NumSessions", e->NumSessions, i, t->NumHub);
 		PackAddIntEx(p, "NumUsers", e->NumUsers, i, t->NumHub);
 		PackAddIntEx(p, "NumGroups", e->NumGroups, i, t->NumHub);
@@ -10245,7 +8815,6 @@ void InRpcHubStatus(RPC_HUB_STATUS *t, PACK *p)
 
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	t->Online = PackGetBool(p, "Online");
-	t->HubType = PackGetInt(p, "HubType");
 	t->NumSessions = PackGetInt(p, "NumSessions");
 	t->NumSessionsClient = PackGetInt(p, "NumSessionsClient");
 	t->NumSessionsBridge = PackGetInt(p, "NumSessionsBridge");
@@ -10270,7 +8839,6 @@ void OutRpcHubStatus(PACK *p, RPC_HUB_STATUS *t)
 
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddBool(p, "Online", t->Online);
-	PackAddInt(p, "HubType", t->HubType);
 	PackAddInt(p, "NumSessions", t->NumSessions);
 	PackAddInt(p, "NumSessionsClient", t->NumSessionsClient);
 	PackAddInt(p, "NumSessionsBridge", t->NumSessionsBridge);
@@ -11318,13 +9886,11 @@ void InRpcEnumSession(RPC_ENUM_SESSION *t, PACK *p)
 		e->CurrentNumTcp = PackGetIntEx(p, "CurrentNumTcp", i);
 		e->PacketSize = PackGetInt64Ex(p, "PacketSize", i);
 		e->PacketNum = PackGetInt64Ex(p, "PacketNum", i);
-		e->RemoteSession = PackGetBoolEx(p, "RemoteSession", i);
 		e->LinkMode = PackGetBoolEx(p, "LinkMode", i);
 		e->BridgeMode = PackGetBoolEx(p, "BridgeMode", i);
 		e->Layer3Mode = PackGetBoolEx(p, "Layer3Mode", i);
 		e->Client_BridgeMode = PackGetBoolEx(p, "Client_BridgeMode", i);
 		e->Client_MonitorMode = PackGetBoolEx(p, "Client_MonitorMode", i);
-		PackGetStrEx(p, "RemoteHostname", e->RemoteHostname, sizeof(e->RemoteHostname), i);
 		e->VLanId = PackGetIntEx(p, "VLanId", i);
 		PackGetDataEx2(p, "UniqueId", e->UniqueId, sizeof(e->UniqueId), i);
 		e->IsDormantEnabled = PackGetBoolEx(p, "IsDormantEnabled", i);
@@ -11357,8 +9923,6 @@ void OutRpcEnumSession(PACK *p, RPC_ENUM_SESSION *t)
 		PackAddIntEx(p, "CurrentNumTcp", e->CurrentNumTcp, i, t->NumSession);
 		PackAddInt64Ex(p, "PacketSize", e->PacketSize, i, t->NumSession);
 		PackAddInt64Ex(p, "PacketNum", e->PacketNum, i, t->NumSession);
-		PackAddBoolEx(p, "RemoteSession", e->RemoteSession, i, t->NumSession);
-		PackAddStrEx(p, "RemoteHostname", e->RemoteHostname, i, t->NumSession);
 		PackAddBoolEx(p, "LinkMode", e->LinkMode, i, t->NumSession);
 		PackAddBoolEx(p, "BridgeMode", e->BridgeMode, i, t->NumSession);
 		PackAddBoolEx(p, "Layer3Mode", e->Layer3Mode, i, t->NumSession);
@@ -11592,8 +10156,6 @@ void InRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t, PACK *p)
 		e->VlanId = PackGetIntEx(p, "VlanId", i);
 		e->CreatedTime = PackGetInt64Ex(p, "CreatedTime", i);
 		e->UpdatedTime = PackGetInt64Ex(p, "UpdatedTime", i);
-		e->RemoteItem = PackGetBoolEx(p, "RemoteItem", i);
-		PackGetStrEx(p, "RemoteHostname", e->RemoteHostname, sizeof(e->RemoteHostname), i);
 	}
 }
 void OutRpcEnumMacTable(PACK *p, RPC_ENUM_MAC_TABLE *t)
@@ -11617,8 +10179,6 @@ void OutRpcEnumMacTable(PACK *p, RPC_ENUM_MAC_TABLE *t)
 		PackAddIntEx(p, "VlanId", e->VlanId, i, t->NumMacTable);
 		PackAddTime64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumMacTable);
 		PackAddTime64Ex(p, "UpdatedTime", e->UpdatedTime, i, t->NumMacTable);
-		PackAddBoolEx(p, "RemoteItem", e->RemoteItem, i, t->NumMacTable);
-		PackAddStrEx(p, "RemoteHostname", e->RemoteHostname, i, t->NumMacTable);
 	}
 }
 void FreeRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t)
@@ -11662,8 +10222,6 @@ void InRpcEnumIpTable(RPC_ENUM_IP_TABLE *t, PACK *p)
 		e->DhcpAllocated = PackGetBoolEx(p, "DhcpAllocated", i);
 		e->CreatedTime = PackGetInt64Ex(p, "CreatedTime", i);
 		e->UpdatedTime = PackGetInt64Ex(p, "UpdatedTime", i);
-		e->RemoteItem = PackGetBoolEx(p, "RemoteItem", i);
-		PackGetStrEx(p, "RemoteHostname", e->RemoteHostname, sizeof(e->RemoteHostname), i);
 	}
 }
 void OutRpcEnumIpTable(PACK *p, RPC_ENUM_IP_TABLE *t)
@@ -11689,8 +10247,6 @@ void OutRpcEnumIpTable(PACK *p, RPC_ENUM_IP_TABLE *t)
 		PackAddBoolEx(p, "DhcpAllocated", e->DhcpAllocated, i, t->NumIpTable);
 		PackAddTime64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumIpTable);
 		PackAddTime64Ex(p, "UpdatedTime", e->UpdatedTime, i, t->NumIpTable);
-		PackAddBoolEx(p, "RemoteItem", e->RemoteItem, i, t->NumIpTable);
-		PackAddStrEx(p, "RemoteHostname", e->RemoteHostname, i, t->NumIpTable);
 	}
 }
 void FreeRpcEnumIpTable(RPC_ENUM_IP_TABLE *t)
@@ -11727,84 +10283,6 @@ void OutRpcDeleteTable(PACK *p, RPC_DELETE_TABLE *t)
 
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddInt(p, "Key", t->Key);
-}
-
-// Adjoin RPC_ENUM_IP_TABLE
-void AdjoinRpcEnumIpTable(RPC_ENUM_IP_TABLE *dest, RPC_ENUM_IP_TABLE *src)
-{
-	UINT old_num;
-	UINT i, n;
-	if (dest == NULL || src == NULL)
-	{
-		return;
-	}
-
-	if (src->NumIpTable == 0)
-	{
-		return;
-	}
-
-	old_num = dest->NumIpTable;
-	dest->NumIpTable += src->NumIpTable;
-	dest->IpTables = ReAlloc(dest->IpTables, sizeof(RPC_ENUM_IP_TABLE_ITEM) * dest->NumIpTable);
-
-	n = 0;
-	for (i = old_num;i < dest->NumIpTable;i++)
-	{
-		Copy(&dest->IpTables[i], &src->IpTables[n++], sizeof(RPC_ENUM_IP_TABLE_ITEM));
-	}
-}
-
-// Adjoin RPC_ENUM_MAC_TABLE
-void AdjoinRpcEnumMacTable(RPC_ENUM_MAC_TABLE *dest, RPC_ENUM_MAC_TABLE *src)
-{
-	UINT old_num;
-	UINT i, n;
-	if (dest == NULL || src == NULL)
-	{
-		return;
-	}
-
-	if (src->NumMacTable == 0)
-	{
-		return;
-	}
-
-	old_num = dest->NumMacTable;
-	dest->NumMacTable += src->NumMacTable;
-	dest->MacTables = ReAlloc(dest->MacTables, sizeof(RPC_ENUM_MAC_TABLE_ITEM) * dest->NumMacTable);
-
-	n = 0;
-	for (i = old_num;i < dest->NumMacTable;i++)
-	{
-		Copy(&dest->MacTables[i], &src->MacTables[n++], sizeof(RPC_ENUM_MAC_TABLE_ITEM));
-	}
-}
-
-// Adjoin RPC_ENUM_SESSION
-void AdjoinRpcEnumSession(RPC_ENUM_SESSION *dest, RPC_ENUM_SESSION *src)
-{
-	UINT old_num;
-	UINT i, n;
-	if (dest == NULL || src == NULL)
-	{
-		return;
-	}
-
-	if (src->NumSession == 0)
-	{
-		return;
-	}
-
-	old_num = dest->NumSession;
-	dest->NumSession += src->NumSession;
-	dest->Sessions = ReAlloc(dest->Sessions, sizeof(RPC_ENUM_SESSION_ITEM) * dest->NumSession);
-
-	n = 0;
-	for (i = old_num;i < dest->NumSession;i++)
-	{
-		Copy(&dest->Sessions[i], &src->Sessions[n++], sizeof(RPC_ENUM_SESSION_ITEM));
-	}
 }
 
 // RPC_KEEP
@@ -12054,11 +10532,6 @@ UINT AdminAccept(CONNECTION *c, PACK *p)
 	else
 	{
 		// Hub admin mode
-		if (server != NULL && server->ServerType == SERVER_TYPE_FARM_MEMBER)
-		{
-			// Connection with hub admin mode to cluster member is not permitted
-			return ERR_NOT_ENOUGH_RIGHT;
-		}
 		SLog(c->Cedar, "LA_CONNECTED_2", c->Name, hubname);
 	}
 
@@ -12176,14 +10649,6 @@ UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hub
 	else
 	{
 		HUB *h;
-
-#if	0
-		if (c->Server->ServerType == SERVER_TYPE_FARM_MEMBER)
-		{
-			// In cluster member mode, hub admin mode is disabled
-			return ERR_FARM_MEMBER_HUB_ADMIN;
-		}
-#endif
 
 		// Hub admin mode
 		LockHubList(c);

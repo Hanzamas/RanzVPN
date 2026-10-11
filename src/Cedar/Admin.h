@@ -61,7 +61,6 @@ struct RPC_SERVER_INFO
 	UINT ServerVerInt;					// Server version integer value
 	UINT ServerBuildInt;				// Server build number integer value
 	char ServerHostName[MAX_HOST_NAME_LEN + 1];	// Server host name
-	UINT ServerType;					// Type of server
 	UINT64 ServerBuildDate;				// Build date and time of the server
 	char ServerFamilyName[128];			// Family name
 	OS_INFO OsInfo;						// OS information
@@ -70,17 +69,12 @@ struct RPC_SERVER_INFO
 // Server status
 struct RPC_SERVER_STATUS
 {
-	UINT ServerType;					// Type of server
 	UINT NumTcpConnections;				// Total number of TCP connections
 	UINT NumTcpConnectionsLocal;		// Number of Local TCP connections
-	UINT NumTcpConnectionsRemote;		// Number of remote TCP connections
 	UINT NumHubTotal;					// Total number of HUBs
 	UINT NumHubStandalone;				// Number of stand-alone HUB
-	UINT NumHubStatic;					// Number of static HUBs
-	UINT NumHubDynamic;					// Number of Dynamic HUBs
 	UINT NumSessionsTotal;				// Total number of sessions
 	UINT NumSessionsLocal;				// Number of Local sessions (only controller)
-	UINT NumSessionsRemote;				// The number of remote sessions (other than the controller)
 	UINT NumMacTables;					// Number of MAC table entries
 	UINT NumIpTables;					// Number of IP table entries
 	UINT NumUsers;						// Number of users
@@ -131,85 +125,6 @@ struct RPC_SET_PASSWORD
 	char PlainTextPassword[MAX_SIZE];	// Plaintext password (for JSON-RPC)
 };
 
-// Server farm configuration *
-struct RPC_FARM
-{
-	UINT ServerType;					// Type of server
-	UINT NumPort;						// Number of public ports
-	UINT *Ports;						// Public port list
-	UINT PublicIp;						// Public IP
-	char ControllerName[MAX_HOST_NAME_LEN + 1];	// Controller name
-	UINT ControllerPort;				// Controller port
-	UCHAR MemberPassword[SHA1_SIZE];	// Member password
-	char MemberPasswordPlaintext[MAX_SIZE];	// Member password (plaintext)
-	UINT Weight;						// Performance ratio
-	bool ControllerOnly;				// Only controller function
-};
-
-// HUB item of each farm member
-struct RPC_FARM_HUB
-{
-	char HubName[MAX_HUBNAME_LEN + 1];	// HUB Name
-	bool DynamicHub;					// Dynamic HUB
-};
-
-// Server farm member information acquisition *
-struct RPC_FARM_INFO
-{
-	UINT Id;							// ID
-	bool Controller;					// Controller
-	UINT64 ConnectedTime;				// Connection time
-	UINT Ip;							// IP address
-	char Hostname[MAX_HOST_NAME_LEN + 1];	// Host name
-	UINT Point;							// Point
-	UINT NumPort;						// Number of ports
-	UINT *Ports;						// Port
-	X *ServerCert;						// Server certificate
-	UINT NumFarmHub;					// Number of farm HUB
-	RPC_FARM_HUB *FarmHubs;				// Farm HUB
-	UINT NumSessions;					// Number of sessions
-	UINT NumTcpConnections;				// Number of TCP connections
-	UINT Weight;						// Performance ratio
-};
-
-// Server farm members enumeration items
-struct RPC_ENUM_FARM_ITEM
-{
-	UINT Id;							// ID
-	bool Controller;					// Controller
-	UINT64 ConnectedTime;				// Connection time
-	UINT Ip;							// IP address
-	char Hostname[MAX_HOST_NAME_LEN + 1];	// Host name
-	UINT Point;							// Point
-	UINT NumSessions;					// Number of sessions
-	UINT NumTcpConnections;				// Number of TCP connections
-	UINT NumHubs;						// Number of HUBs
-	UINT AssignedClientLicense;			// Number of assigned client licenses
-	UINT AssignedBridgeLicense;			// Number of assigned bridge licenses
-};
-
-// Server farm member enumeration *
-struct RPC_ENUM_FARM
-{
-	UINT NumFarm;						// Number of farm members
-	RPC_ENUM_FARM_ITEM *Farms;			// Farm member list
-};
-
-// Connection state to the controller
-struct RPC_FARM_CONNECTION_STATUS
-{
-	UINT Ip;							// IP address
-	UINT Port;							// Port number
-	bool Online;						// Online state
-	UINT LastError;						// Last error
-	UINT64 StartedTime;					// Connection start time
-	UINT64 FirstConnectedTime;			// First connection time
-	UINT64 CurrentConnectedTime;		// Connection time of this time
-	UINT NumTry;						// Number of trials
-	UINT NumConnected;					// Number of connection count
-	UINT NumFailed;						// Connection failure count
-};
-
 // Key pair
 struct RPC_KEY_PAIR
 {
@@ -241,7 +156,6 @@ struct RPC_CREATE_HUB
 	char AdminPasswordPlainText[MAX_SIZE];	// Password (plaintext)
 	bool Online;						// Online flag
 	RPC_HUB_OPTION HubOption;			// HUB options
-	UINT HubType;						// Type of HUB
 };
 
 // Enumeration items of HUB
@@ -249,7 +163,6 @@ struct RPC_ENUM_HUB_ITEM
 {
 	char HubName[MAX_HUBNAME_LEN + 1];	// HUB Name
 	bool Online;						// Online
-	UINT HubType;						// Type of HUB
 	UINT NumUsers;						// Number of users
 	UINT NumGroups;						// Number of groups
 	UINT NumSessions;					// Number of sessions
@@ -329,7 +242,6 @@ struct RPC_HUB_STATUS
 {
 	char HubName[MAX_HUBNAME_LEN + 1];	// HUB Name
 	bool Online;						// Online
-	UINT HubType;						// Type of HUB
 	UINT NumSessions;					// Number of sessions
 	UINT NumSessionsClient;				// Number of sessions (client)
 	UINT NumSessionsBridge;				// Number of sessions (bridge)
@@ -552,8 +464,6 @@ struct RPC_DELETE_USER
 struct RPC_ENUM_SESSION_ITEM
 {
 	char Name[MAX_SESSION_NAME_LEN + 1];			// Session name
-	bool RemoteSession;								// Remote session
-	char RemoteHostname[MAX_HOST_NAME_LEN + 1];		// Remote server name
 	char Username[MAX_USERNAME_LEN + 1];			// User name
 	UINT Ip;										// IP address (IPv4)
 	IP ClientIP;									// IP address (IPv4 / IPv6)
@@ -592,8 +502,6 @@ struct RPC_ENUM_MAC_TABLE_ITEM
 	UCHAR Padding[2];
 	UINT64 CreatedTime;								// Creation date and time
 	UINT64 UpdatedTime;								// Updating date
-	bool RemoteItem;								// Remote items
-	char RemoteHostname[MAX_HOST_NAME_LEN + 1];		// Remote host name
 	UINT VlanId;									// VLAN ID
 };
 
@@ -616,8 +524,6 @@ struct RPC_ENUM_IP_TABLE_ITEM
 	bool DhcpAllocated;								// Assigned by the DHCP
 	UINT64 CreatedTime;								// Creation date and time
 	UINT64 UpdatedTime;								// Updating date
-	bool RemoteItem;								// Remote items
-	char RemoteHostname[MAX_HOST_NAME_LEN + 1];		// Remote host name
 };
 
 // Enumeration of IP table
@@ -785,7 +691,6 @@ struct RPC_AC_LIST
 // Log file enumeration
 struct RPC_ENUM_LOG_FILE_ITEM
 {
-	char ServerName[MAX_HOST_NAME_LEN + 1];	// Server name
 	char FilePath[MAX_PATH];				// File Path
 	UINT FileSize;							// File size
 	UINT64 UpdatedTime;						// Updating date
@@ -799,7 +704,6 @@ struct RPC_ENUM_LOG_FILE
 // Read a Log file
 struct RPC_READ_LOG_FILE
 {
-	char ServerName[MAX_HOST_NAME_LEN + 1];	// Server name
 	char FilePath[MAX_PATH];				// File Path
 	UINT Offset;							// Offset
 	BUF *Buffer;							// Buffer
@@ -910,7 +814,7 @@ UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t);
 void SiEnumLocalLogFileList(SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t);
 void SiReadLocalLogFile(SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FILE *t);
 typedef bool (DOWNLOAD_PROC)(DOWNLOAD_PROGRESS *progress);
-BUF *DownloadFileFromServer(RPC *r, char *server_name, char *filepath, UINT total_size, DOWNLOAD_PROC *proc, void *param);
+BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PROC *proc, void *param);
 bool CheckAdminSourceAddress(SOCK *sock, char *hubname);
 void SiEnumSessionMain(SERVER *s, RPC_ENUM_SESSION *t);
 bool SiIsEmptyPassword(void *hash_password);
@@ -923,11 +827,6 @@ UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t);
 UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t);
 UINT StEnableListener(ADMIN *a, RPC_LISTENER *t);
 UINT StSetServerPassword(ADMIN *a, RPC_SET_PASSWORD *t);
-UINT StSetFarmSetting(ADMIN *a, RPC_FARM *t);
-UINT StGetFarmSetting(ADMIN *a, RPC_FARM *t);
-UINT StGetFarmInfo(ADMIN *a, RPC_FARM_INFO *t);
-UINT StEnumFarmMember(ADMIN *a, RPC_ENUM_FARM *t);
-UINT StGetFarmConnectionStatus(ADMIN *a, RPC_FARM_CONNECTION_STATUS *t);
 UINT StSetServerCert(ADMIN *a, RPC_KEY_PAIR *t);
 UINT StGetServerCert(ADMIN *a, RPC_KEY_PAIR *t);
 UINT StGetServerCipherList(ADMIN *a, RPC_STR *t);
@@ -1047,11 +946,6 @@ UINT ScEnumListener(RPC *r, RPC_LISTENER_LIST *t);
 UINT ScDeleteListener(RPC *r, RPC_LISTENER *t);
 UINT ScEnableListener(RPC *r, RPC_LISTENER *t);
 UINT ScSetServerPassword(RPC *r, RPC_SET_PASSWORD *t);
-UINT ScSetFarmSetting(RPC *r, RPC_FARM *t);
-UINT ScGetFarmSetting(RPC *r, RPC_FARM *t);
-UINT ScGetFarmInfo(RPC *r, RPC_FARM_INFO *t);
-UINT ScEnumFarmMember(RPC *r, RPC_ENUM_FARM *t);
-UINT ScGetFarmConnectionStatus(RPC *r, RPC_FARM_CONNECTION_STATUS *t);
 UINT ScSetServerCert(RPC *r, RPC_KEY_PAIR *t);
 UINT ScGetServerCert(RPC *r, RPC_KEY_PAIR *t);
 UINT ScGetServerCipherList(RPC *r, RPC_STR *t);
@@ -1181,19 +1075,6 @@ void OutRpcStr(PACK *p, RPC_STR *t);
 void FreeRpcStr(RPC_STR *t);
 void InRpcSetPassword(RPC_SET_PASSWORD *t, PACK *p);
 void OutRpcSetPassword(PACK *p, RPC_SET_PASSWORD *t);
-void InRpcFarm(RPC_FARM *t, PACK *p);
-void OutRpcFarm(PACK *p, RPC_FARM *t);
-void FreeRpcFarm(RPC_FARM *t);
-void InRpcFarmHub(RPC_FARM_HUB *t, PACK *p);
-void OutRpcFarmHub(PACK *p, RPC_FARM_HUB *t);
-void InRpcFarmInfo(RPC_FARM_INFO *t, PACK *p);
-void OutRpcFarmInfo(PACK *p, RPC_FARM_INFO *t);
-void FreeRpcFarmInfo(RPC_FARM_INFO *t);
-void InRpcEnumFarm(RPC_ENUM_FARM *t, PACK *p);
-void OutRpcEnumFarm(PACK *p, RPC_ENUM_FARM *t);
-void FreeRpcEnumFarm(RPC_ENUM_FARM *t);
-void InRpcFarmConnectionStatus(RPC_FARM_CONNECTION_STATUS *t, PACK *p);
-void OutRpcFarmConnectionStatus(PACK *p, RPC_FARM_CONNECTION_STATUS *t);
 void InRpcHubOption(RPC_HUB_OPTION *t, PACK *p);
 void OutRpcHubOption(PACK *p, RPC_HUB_OPTION *t);
 void InRpcHub(RPC_HUB *t, PACK *p);
@@ -1291,9 +1172,6 @@ void OutRpcAddAccess(PACK *p, RPC_ADD_ACCESS *t);
 void InRpcDeleteAccess(RPC_DELETE_ACCESS *t, PACK *p);
 void OutRpcDeleteAccess(PACK *p, RPC_DELETE_ACCESS *t);
 void FreeRpcSetGroup(RPC_SET_GROUP *t);
-void AdjoinRpcEnumSession(RPC_ENUM_SESSION *dest, RPC_ENUM_SESSION *src);
-void AdjoinRpcEnumMacTable(RPC_ENUM_MAC_TABLE *dest, RPC_ENUM_MAC_TABLE *src);
-void AdjoinRpcEnumIpTable(RPC_ENUM_IP_TABLE *dest, RPC_ENUM_IP_TABLE *src);
 void InRpcKeep(RPC_KEEP *t, PACK *p);
 void OutRpcKeep(PACK *p, RPC_KEEP *t);
 void InRpcOsInfo(OS_INFO *t, PACK *p);
@@ -1344,7 +1222,6 @@ void FreeRpcAcList(RPC_AC_LIST *t);
 void InRpcEnumLogFile(RPC_ENUM_LOG_FILE *t, PACK *p);
 void OutRpcEnumLogFile(PACK *p, RPC_ENUM_LOG_FILE *t);
 void FreeRpcEnumLogFile(RPC_ENUM_LOG_FILE *t);
-void AdjoinRpcEnumLogFile(RPC_ENUM_LOG_FILE *t, RPC_ENUM_LOG_FILE *src);
 void InRpcReadLogFile(RPC_READ_LOG_FILE *t, PACK *p);
 void OutRpcReadLogFile(PACK *p, RPC_READ_LOG_FILE *t);
 void FreeRpcReadLogFile(RPC_READ_LOG_FILE *t);

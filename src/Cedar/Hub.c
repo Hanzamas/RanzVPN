@@ -5922,55 +5922,38 @@ void SetHubOnline(HUB *h)
 		StartAllLink(h);
 
 		// Start all of the local bridges that is associated with this HUB
-		if (h->Type != HUB_TYPE_FARM_DYNAMIC)
+		LockList(h->Cedar->LocalBridgeList);
 		{
-			LockList(h->Cedar->LocalBridgeList);
+			UINT i;
+			for (i = 0;i < LIST_NUM(h->Cedar->LocalBridgeList);i++)
 			{
-				UINT i;
-				for (i = 0;i < LIST_NUM(h->Cedar->LocalBridgeList);i++)
-				{
-					LOCALBRIDGE *br = LIST_DATA(h->Cedar->LocalBridgeList, i);
+				LOCALBRIDGE *br = LIST_DATA(h->Cedar->LocalBridgeList, i);
 
-					if (StrCmpi(br->HubName, h->Name) == 0)
+				if (StrCmpi(br->HubName, h->Name) == 0)
+				{
+					if (br->Bridge == NULL)
 					{
-						if (br->Bridge == NULL)
-						{
-							br->Bridge = BrNewBridge(h, br->DeviceName, NULL, br->Local, br->Monitor,
-								br->TapMode, br->TapMacAddress, br->LimitBroadcast, br);
-						}
+						br->Bridge = BrNewBridge(h, br->DeviceName, NULL, br->Local, br->Monitor,
+							br->TapMode, br->TapMacAddress, br->LimitBroadcast, br);
 					}
 				}
 			}
-			UnlockList(h->Cedar->LocalBridgeList);
 		}
+		UnlockList(h->Cedar->LocalBridgeList);
 
 		h->Offline = false;
 	}
 	Unlock(h->lock_online);
-
-	if (h->Cedar->Server != NULL)
-	{
-		SiHubOnlineProc(h);
-	}
 }
 
 // Offline the Virtual HUB
 void SetHubOffline(HUB *h)
 {
 	UINT i;
-	bool for_cluster = false;
 	// Validate arguments
 	if (h == NULL)
 	{
 		return;
-	}
-
-	if (h->Cedar->Server != NULL && h->Cedar->Server->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		if (h->Type == HUB_TYPE_FARM_DYNAMIC)
-		{
-			for_cluster = true;
-		}
 	}
 
 	h->BeingOffline = true;
@@ -6014,11 +5997,6 @@ void SetHubOffline(HUB *h)
 	Unlock(h->lock_online);
 
 	h->BeingOffline = false;
-
-	if (h->Cedar->Server != NULL)
-	{
-		SiHubOfflineProc(h);
-	}
 }
 
 // Get whether a HUB which have the specified name exists
@@ -6108,76 +6086,6 @@ void ReleaseHub(HUB *h)
 	}
 }
 
-// Add the traffic information for Virtual HUB
-void IncrementHubTraffic(HUB *h)
-{
-	TRAFFIC t;
-	// Validate arguments
-	if (h == NULL || h->FarmMember == false)
-	{
-		return;
-	}
-
-	Zero(&t, sizeof(t));
-
-	Lock(h->TrafficLock);
-	{
-		t.Send.BroadcastBytes =
-			h->Traffic->Send.BroadcastBytes - h->OldTraffic->Send.BroadcastBytes;
-		t.Send.BroadcastCount =
-			h->Traffic->Send.BroadcastCount - h->OldTraffic->Send.BroadcastCount;
-		t.Send.UnicastBytes =
-			h->Traffic->Send.UnicastBytes - h->OldTraffic->Send.UnicastBytes;
-		t.Send.UnicastCount =
-			h->Traffic->Send.UnicastCount - h->OldTraffic->Send.UnicastCount;
-		t.Recv.BroadcastBytes =
-			h->Traffic->Recv.BroadcastBytes - h->OldTraffic->Recv.BroadcastBytes;
-		t.Recv.BroadcastCount =
-			h->Traffic->Recv.BroadcastCount - h->OldTraffic->Recv.BroadcastCount;
-		t.Recv.UnicastBytes =
-			h->Traffic->Recv.UnicastBytes - h->OldTraffic->Recv.UnicastBytes;
-		t.Recv.UnicastCount =
-			h->Traffic->Recv.UnicastCount - h->OldTraffic->Recv.UnicastCount;
-		Copy(h->OldTraffic, h->Traffic, sizeof(TRAFFIC));
-	}
-	Unlock(h->TrafficLock);
-
-	if (IsZero(&t, sizeof(TRAFFIC)))
-	{
-		return;
-	}
-
-	AddTrafficDiff(h, h->Name, TRAFFIC_DIFF_HUB, &t);
-}
-
-// Adding Traffic information
-void AddTrafficDiff(HUB *h, char *name, UINT type, TRAFFIC *traffic)
-{
-	TRAFFIC_DIFF *d;
-	// Validate arguments
-	if (h == NULL || h->FarmMember == false || name == NULL || traffic == NULL)
-	{
-		return;
-	}
-
-	if (LIST_NUM(h->Cedar->TrafficDiffList) > MAX_TRAFFIC_DIFF)
-	{
-		return;
-	}
-
-	d = ZeroMallocFast(sizeof(TRAFFIC_DIFF));
-	d->HubName = CopyStr(h->Name);
-	d->Name = CopyStr(name);
-	d->Type = type;
-	Copy(&d->Traffic, traffic, sizeof(TRAFFIC));
-
-	LockList(h->Cedar->TrafficDiffList);
-	{
-		Insert(h->Cedar->TrafficDiffList, d);
-	}
-	UnlockList(h->Cedar->TrafficDiffList);
-}
-
 // Cleanup of HUB
 void CleanupHub(HUB *h)
 {
@@ -6214,17 +6122,9 @@ void CleanupHub(HUB *h)
 	DeleteCounter(h->NumSessionsBridge);
 	DeleteCounter(h->SessionCounter);
 	FreeTraffic(h->Traffic);
-	FreeTraffic(h->OldTraffic);
 	Free(h->Option);
 
 	DeleteLock(h->TrafficLock);
-
-	for (i = 0;i < LIST_NUM(h->TicketList);i++)
-	{
-		Free(LIST_DATA(h->TicketList, i));
-	}
-
-	ReleaseList(h->TicketList);
 
 	FreeLog(h->PacketLogger);
 	FreeLog(h->SecurityLogger);
@@ -6524,7 +6424,6 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 	h->ref = NewRef();
 	h->Cedar = cedar;
 	AddRef(h->Cedar->ref);
-	h->Type = HUB_TYPE_STANDALONE;
 
 	ConvertSafeFileName(safe_hub_name, sizeof(safe_hub_name), HubName);
 	h->Name = CopyStr(safe_hub_name);
@@ -6552,7 +6451,6 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 	h->LinkList = NewList(NULL);
 
 	h->Traffic = NewTraffic();
-	h->OldTraffic = NewTraffic();
 
 	h->Option = ZeroMalloc(sizeof(HUB_OPTION));
 	Copy(h->Option, option, sizeof(HUB_OPTION));
@@ -6577,8 +6475,6 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 	GenerateEui64LocalAddress(&ip6, h->HubMacAddr);
 	IPToIPv6Addr(&h->HubIpV6, &ip6);
 
-	h->TicketList = NewList(NULL);
-
 	InitAccessList(h);
 
 	// Create a user list
@@ -6601,11 +6497,6 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 	// Start the security logger
 	Format(tmp, sizeof(tmp), HUB_SECURITY_LOG_FILE_NAME, h->Name);
 	h->SecurityLogger = NewLog(tmp, HUB_SECURITY_LOG_PREFIX, h->LogSetting.SecurityLogSwitchType);
-
-	if (h->Cedar->Server != NULL && h->Cedar->Server->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		h->FarmMember = true;
-	}
 
 	// Start the HUB
 	SetHubOnline(h);

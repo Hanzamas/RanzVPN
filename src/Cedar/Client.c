@@ -34,7 +34,6 @@
 #include "Mayaqua/Object.h"
 #include "Mayaqua/OS.h"
 #include "Mayaqua/Pack.h"
-#include "Mayaqua/Secure.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 #include "Mayaqua/TcpIp.h"
@@ -662,54 +661,6 @@ PACK *CiRpcDispatch(RPC *rpc, char *name, PACK *p)
 		}
 		CiFreeGetCa(&a);
 	}
-	else if (StrCmpi(name, "EnumSecure") == 0)
-	{
-		RPC_CLIENT_ENUM_SECURE a;
-		if (CtEnumSecure(c, &a) == false)
-		{
-			RpcError(ret, c->Err);
-		}
-		else
-		{
-			OutRpcClientEnumSecure(ret, &a);
-			CiFreeClientEnumSecure(&a);
-		}
-	}
-	else if (StrCmpi(name, "UseSecure") == 0)
-	{
-		RPC_USE_SECURE a;
-		InRpcUseSecure(&a, p);
-		if (CtUseSecure(c, &a) == false)
-		{
-			RpcError(ret, c->Err);
-		}
-	}
-	else if (StrCmpi(name, "GetUseSecure") == 0)
-	{
-		RPC_USE_SECURE a;
-		Zero(&a, sizeof(a));
-		if (CtGetUseSecure(c, &a) == false)
-		{
-			RpcError(ret, c->Err);
-		}
-		else
-		{
-			OutRpcUseSecure(ret, &a);
-		}
-	}
-	else if (StrCmpi(name, "EnumObjectInSecure") == 0)
-	{
-		RPC_ENUM_OBJECT_IN_SECURE a;
-		if (CtEnumObjectInSecure(c, &a) == false)
-		{
-			RpcError(ret, c->Err);
-		}
-		else
-		{
-			OutRpcEnumObjectInSecure(ret, &a);
-			CiFreeEnumObjectInSecure(&a);
-		}
-	}
 	else if (StrCmpi(name, "CreateVLan") == 0)
 	{
 		RPC_CLIENT_CREATE_VLAN a;
@@ -1191,88 +1142,6 @@ UINT CcGetCa(REMOTE_CLIENT *r, RPC_GET_CA *get)
 		InRpcGetCa(get, ret);
 	}
 	else
-	{
-		err = RpcGetError(ret);
-	}
-
-	FreePack(ret);
-
-	return err;
-}
-
-// Enumeration of the secure devices
-UINT CcEnumSecure(REMOTE_CLIENT *r, RPC_CLIENT_ENUM_SECURE *e)
-{
-	PACK *ret;
-	UINT err = 0;
-	// Validate arguments
-	if (r == NULL || e == NULL)
-	{
-		return ERR_INTERNAL_ERROR;
-	}
-
-	ret = RpcCall(r->Rpc, "EnumSecure", NULL);
-
-	if (RpcIsOk(ret))
-	{
-		InRpcClientEnumSecure(e, ret);
-	}
-	else
-	{
-		err = RpcGetError(ret);
-	}
-
-	FreePack(ret);
-
-	return err;
-}
-
-// Get the secure device that the user is using
-UINT CcGetUseSecure(REMOTE_CLIENT *r, RPC_USE_SECURE *sec)
-{
-	PACK *p, *ret;
-	UINT err = 0;
-	// Validate arguments
-	if (r == NULL || sec == NULL)
-	{
-		return ERR_INTERNAL_ERROR;
-	}
-
-	p = NewPack();
-
-	ret = RpcCall(r->Rpc, "GetUseSecure", p);
-
-	if (RpcIsOk(ret) == false)
-	{
-		err = RpcGetError(ret);
-	}
-	else
-	{
-		InRpcUseSecure(sec, ret);
-	}
-
-	FreePack(ret);
-
-	return err;
-}
-
-// Use the secure device
-UINT CcUseSecure(REMOTE_CLIENT *r, RPC_USE_SECURE *sec)
-{
-	PACK *p, *ret;
-	UINT err = 0;
-	// Validate arguments
-	if (r == NULL || sec == NULL)
-	{
-		return ERR_INTERNAL_ERROR;
-	}
-
-	p = NewPack();
-	OutRpcUseSecure(p, sec);
-
-	ret = RpcCall(r->Rpc, "UseSecure", p);
-
-	if (RpcIsOk(ret) == false)
 	{
 		err = RpcGetError(ret);
 	}
@@ -2532,113 +2401,6 @@ void OutRpcGetCa(PACK *p, RPC_GET_CA *c)
 	}
 }
 
-// RPC_CLIENT_ENUM_SECURE
-void InRpcClientEnumSecure(RPC_CLIENT_ENUM_SECURE *e, PACK *p)
-{
-	UINT i;
-	// Validate arguments
-	if (e == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(e, sizeof(RPC_CLIENT_ENUM_SECURE));
-
-	e->NumItem = PackGetNum(p, "NumItem");
-	e->Items = ZeroMalloc(sizeof(RPC_CLIENT_ENUM_SECURE_ITEM *) * e->NumItem);
-	for (i = 0;i < e->NumItem;i++)
-	{
-		RPC_CLIENT_ENUM_SECURE_ITEM *item = e->Items[i] = ZeroMalloc(sizeof(RPC_CLIENT_ENUM_SECURE_ITEM));
-
-		item->DeviceId = PackGetIntEx(p, "DeviceId", i);
-		item->Type = PackGetIntEx(p, "Type", i);
-		PackGetStrEx(p, "DeviceName", item->DeviceName, sizeof(item->DeviceName), i);
-		PackGetStrEx(p, "Manufacturer", item->Manufacturer, sizeof(item->Manufacturer), i);
-	}
-}
-void OutRpcClientEnumSecure(PACK *p, RPC_CLIENT_ENUM_SECURE *e)
-{
-	UINT i;
-	// Validate arguments
-	if (e == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddNum(p, "NumItem", e->NumItem);
-
-	for (i = 0;i < e->NumItem;i++)
-	{
-		RPC_CLIENT_ENUM_SECURE_ITEM *item = e->Items[i];
-
-		PackAddIntEx(p, "DeviceId", item->DeviceId, i, e->NumItem);
-		PackAddIntEx(p, "Type", item->Type, i, e->NumItem);
-		PackAddStrEx(p, "DeviceName", item->DeviceName, i, e->NumItem);
-		PackAddStrEx(p, "Manufacturer", item->Manufacturer, i, e->NumItem);
-	}
-}
-
-// RPC_USE_SECURE
-void InRpcUseSecure(RPC_USE_SECURE *u, PACK *p)
-{
-	// Validate arguments
-	if (u == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(u, sizeof(RPC_USE_SECURE));
-	u->DeviceId = PackGetInt(p, "DeviceId");
-}
-void OutRpcUseSecure(PACK *p, RPC_USE_SECURE *u)
-{
-	// Validate arguments
-	if (u == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "DeviceId", u->DeviceId);
-}
-
-// Release the RPC_ENUM_OBJECT_IN_SECURE
-void CiFreeEnumObjectInSecure(RPC_ENUM_OBJECT_IN_SECURE *a)
-{
-	UINT i;
-	// Validate arguments
-	if (a == NULL)
-	{
-		return;
-	}
-
-	for (i = 0;i < a->NumItem;i++)
-	{
-		Free(a->ItemName[i]);
-	}
-	Free(a->ItemName);
-	Free(a->ItemType);
-}
-
-// RPC_ENUM_OBJECT_IN_SECURE
-void OutRpcEnumObjectInSecure(PACK *p, RPC_ENUM_OBJECT_IN_SECURE *e)
-{
-	UINT i;
-	// Validate arguments
-	if (e == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddNum(p, "NumItem", e->NumItem);
-	PackAddInt(p, "hWnd", e->hWnd);
-
-	for (i = 0;i < e->NumItem;i++)
-	{
-		PackAddStrEx(p, "ItemName", e->ItemName[i], i, e->NumItem);
-		PackAddIntEx(p, "ItemType", e->ItemType[i], i, e->NumItem);
-	}
-}
-
 // RPC_CLIENT_CREATE_VLAN
 void InRpcCreateVLan(RPC_CLIENT_CREATE_VLAN *v, PACK *p)
 {
@@ -2917,11 +2679,6 @@ void InRpcClientAuth(CLIENT_AUTH *c, PACK *p)
 		}
 		break;
 
-	case CLIENT_AUTHTYPE_SECURE:
-		PackGetStr(p, "SecurePublicCertName", c->SecurePublicCertName, sizeof(c->SecurePublicCertName));
-		PackGetStr(p, "SecurePrivateKeyName", c->SecurePrivateKeyName, sizeof(c->SecurePrivateKeyName));
-		break;
-
   case CLIENT_AUTHTYPE_OPENSSLENGINE:
 		b = PackGetBuf(p, "ClientX");
 		if (b != NULL)
@@ -2972,11 +2729,6 @@ void OutRpcClientAuth(PACK *p, CLIENT_AUTH *c)
 			PackAddBuf(p, "ClientK", b);
 			FreeBuf(b);
 		}
-		break;
-
-	case CLIENT_AUTHTYPE_SECURE:
-		PackAddStr(p, "SecurePublicCertName", c->SecurePublicCertName);
-		PackAddStr(p, "SecurePrivateKeyName", c->SecurePrivateKeyName);
 		break;
 
 	case CLIENT_AUTHTYPE_OPENSSLENGINE:
@@ -4566,13 +4318,6 @@ bool CiCheckCertProc(SESSION *s, CONNECTION *c, X *server_x, bool *expired)
 	return false;
 }
 
-// Signature procedure with a secure device
-bool CiSecureSignProc(SESSION *s, CONNECTION *c, SECURE_SIGN *sign)
-{
-	// Not implemented: signing with a secure device requires the UI helper
-	return false;
-}
-
 // Disconnect
 bool CtDisconnect(CLIENT *c, RPC_CLIENT_CONNECT *connect, bool inner)
 {
@@ -4731,12 +4476,6 @@ bool CtConnect(CLIENT *c, RPC_CLIENT_CONNECT *connect)
 				// Already in connecting
 				CiSetError(c, ERR_ACCOUNT_ACTIVE);
 			}
-			else if (r->ClientAuth->AuthType == CLIENT_AUTHTYPE_SECURE &&
-				c->UseSecureDeviceId == 0)
-			{
-				// Secure device is not specified
-				CiSetError(c, ERR_NO_SECURE_DEVICE_SPECIFIED);
-			}
 #ifdef	OS_WIN32
 			else if (MsIsVLanExists(VLAN_ADAPTER_NAME_TAG, r->ClientOption->DeviceName) == false &&
 				MsIsVLanExists(VLAN_ADAPTER_NAME_TAG_OLD, r->ClientOption->DeviceName) == false)
@@ -4790,21 +4529,6 @@ bool CtConnect(CLIENT *c, RPC_CLIENT_CONNECT *connect)
 				{
 					// Start the connection
 					PACKET_ADAPTER *pa = VLanGetPacketAdapter();
-
-					if (r->ClientAuth->AuthType == CLIENT_AUTHTYPE_SECURE)
-					{
-						// Register a procedure for secure device authentication
-						r->ClientAuth->SecureSignProc = CiSecureSignProc;
-					}
-					else if (r->ClientAuth->AuthType == CLIENT_AUTHTYPE_OPENSSLENGINE)
-					{
-						/* r->ClientAuth->ClientK = OpensslEngineToK("asdf"); */
-						r->ClientAuth->SecureSignProc = NULL;
-					}
-					else
-					{
-						r->ClientAuth->SecureSignProc = NULL;
-					}
 
 					if (r->CheckServerCert)
 					{
@@ -6608,121 +6332,6 @@ bool CtCreateVLan(CLIENT *c, RPC_CLIENT_CREATE_VLAN *create)
 #endif	// OS_WIN32
 }
 
-// Enumerate objects in the secure device
-bool CtEnumObjectInSecure(CLIENT *c, RPC_ENUM_OBJECT_IN_SECURE *e)
-{
-	UINT i;
-	// Validate arguments
-	if (c == NULL || e == NULL)
-	{
-		return false;
-	}
-
-	e->NumItem = 5;
-	e->ItemName = ZeroMalloc(sizeof(char *) * e->NumItem);
-	e->ItemType = ZeroMalloc(sizeof(bool) * e->NumItem);
-
-	for (i = 0;i < e->NumItem;i++)
-	{
-		char tmp[MAX_SIZE];
-		Format(tmp, sizeof(tmp), "Test Object %u", i);
-		e->ItemName[i] = CopyStr(tmp);
-		e->ItemType[i] = (i % 2 == 0) ? false : true;
-	}
-
-	return true;
-}
-
-// Get the secure device to be used
-bool CtGetUseSecure(CLIENT *c, RPC_USE_SECURE *sec)
-{
-	// Validate arguments
-	if (c == NULL || sec == NULL)
-	{
-		return false;
-	}
-
-	sec->DeviceId = c->UseSecureDeviceId;
-
-	return true;
-}
-
-// Specifying a secure device to be used
-bool CtUseSecure(CLIENT *c, RPC_USE_SECURE *sec)
-{
-	// Validate arguments
-	if (c == NULL || sec == NULL)
-	{
-		return false;
-	}
-
-// Do not check whether there is the specified device on the client manager
-/*	if (CheckSecureDeviceId(sec->DeviceId))
-	{
-		c->UseSecureDeviceId = sec->DeviceId;
-	}
-	else
-	{
-		CiSetError(c, ERR_OBJECT_NOT_FOUND);
-		return false;
-	}
-*/
-	c->UseSecureDeviceId = sec->DeviceId;
-
-	CiSaveConfigurationFile(c);
-
-	return true;
-}
-
-// Enumeration of secure devices
-bool CtEnumSecure(CLIENT *c, RPC_CLIENT_ENUM_SECURE *e)
-{
-	LIST *o;
-	UINT i;
-	// Validate arguments
-	if (c == NULL || e == NULL)
-	{
-		return false;
-	}
-
-	o = GetSecureDeviceList();
-
-	e->NumItem = LIST_NUM(o);
-	e->Items = ZeroMalloc(sizeof(RPC_CLIENT_ENUM_SECURE_ITEM *) * e->NumItem);
-
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		RPC_CLIENT_ENUM_SECURE_ITEM *item = ZeroMalloc(sizeof(RPC_CLIENT_ENUM_SECURE_ITEM));
-		SECURE_DEVICE *s = LIST_DATA(o, i);
-
-		item->DeviceId = s->Id;
-		StrCpy(item->DeviceName, sizeof(item->DeviceName), s->DeviceName);
-		StrCpy(item->Manufacturer, sizeof(item->Manufacturer), s->Manufacturer);
-		item->Type = s->Type;
-
-		e->Items[i] = item;
-	}
-
-	return true;
-}
-
-// Release the secure device enumeration
-void CiFreeClientEnumSecure(RPC_CLIENT_ENUM_SECURE *e)
-{
-	UINT i;
-	// Validate arguments
-	if (e == NULL)
-	{
-		return;
-	}
-
-	for (i = 0;i < e->NumItem;i++)
-	{
-		Free(e->Items[i]);
-	}
-	Free(e->Items);
-}
-
 // Release the RPC_GET_ISSUER
 void CiFreeGetIssuer(RPC_GET_ISSUER *a)
 {
@@ -7554,11 +7163,6 @@ CLIENT_AUTH *CiLoadClientAuth(FOLDER *f)
 		FreeBuf(b);
 		break;
 
-	case CLIENT_AUTHTYPE_SECURE:
-		CfgGetStr(f, "SecurePublicCertName", a->SecurePublicCertName, sizeof(a->SecurePublicCertName));
-		CfgGetStr(f, "SecurePrivateKeyName", a->SecurePrivateKeyName, sizeof(a->SecurePrivateKeyName));
-		break;
-
 	case CLIENT_AUTHTYPE_OPENSSLENGINE:
 		b = CfgGetBuf(f, "ClientCert");
 		if (b != NULL)
@@ -7989,7 +7593,6 @@ bool CiReadSettingFromCfg(CLIENT *c, FOLDER *root)
 	}
 
 	c->PasswordRemoteOnly = CfgGetBool(root, "PasswordRemoteOnly");
-	c->UseSecureDeviceId = CfgGetInt(root, "UseSecureDeviceId");
 
 	if (CfgGetStr(root, "UserAgent", user_agent, sizeof(user_agent)))
 	{
@@ -8103,11 +7706,6 @@ void CiWriteClientAuth(FOLDER *f, CLIENT_AUTH *a)
 			CfgAddByte(f, "ClientKey", b->Buf, b->Size);
 			FreeBuf(b);
 		}
-		break;
-
-	case CLIENT_AUTHTYPE_SECURE:
-		CfgAddStr(f, "SecurePublicCertName", a->SecurePublicCertName);
-		CfgAddStr(f, "SecurePrivateKeyName", a->SecurePrivateKeyName);
 		break;
 
 	case CLIENT_AUTHTYPE_OPENSSLENGINE:
@@ -8515,9 +8113,6 @@ void CiWriteSettingToCfg(CLIENT *c, FOLDER *root)
 	// Password
 	CfgAddByte(root, "EncryptedPassword", c->EncryptedPassword, SHA1_SIZE);
 	CfgAddBool(root, "PasswordRemoteOnly", c->PasswordRemoteOnly);
-
-	// UseSecureDeviceId
-	CfgAddInt(root, "UseSecureDeviceId", c->UseSecureDeviceId);
 
 	// DontSavePassword
 	CfgAddBool(root, "DontSavePassword", c->DontSavePassword);

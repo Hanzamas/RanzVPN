@@ -61,7 +61,6 @@ typedef struct SLOG SLOG;
 // ==============================================================
 
 typedef struct KEEP KEEP;
-typedef struct SECURE_SIGN SECURE_SIGN;
 typedef struct RC4_KEY_PAIR RC4_KEY_PAIR;
 typedef struct CLIENT_OPTION CLIENT_OPTION;
 typedef struct CLIENT_AUTH CLIENT_AUTH;
@@ -97,8 +96,6 @@ typedef struct MAC_TABLE_ENTRY MAC_TABLE_ENTRY;
 typedef struct IP_TABLE_ENTRY IP_TABLE_ENTRY;
 typedef struct LOOP_LIST LOOP_LIST;
 typedef struct ACCESS ACCESS;
-typedef struct TICKET TICKET;
-typedef struct TRAFFIC_DIFF TRAFFIC_DIFF;
 typedef struct HUB HUB;
 typedef struct ADMIN_OPTION ADMIN_OPTION;
 typedef struct CRL CRL;
@@ -111,7 +108,6 @@ typedef struct USERLIST USERLIST;
 // ==============================================================
 
 typedef struct CHECK_CERT_THREAD_PROC CHECK_CERT_THREAD_PROC;
-typedef struct SECURE_SIGN_THREAD_PROC SECURE_SIGN_THREAD_PROC;
 typedef struct RAND_CACHE RAND_CACHE;
 typedef struct BLACK BLACK;
 typedef struct SEND_SIGNATURE_PARAM SEND_SIGNATURE_PARAM;
@@ -192,10 +188,6 @@ typedef struct RPC_CERT RPC_CERT;
 typedef struct RPC_CLIENT_DELETE_CA RPC_CLIENT_DELETE_CA;
 typedef struct RPC_GET_CA RPC_GET_CA;
 typedef struct RPC_GET_ISSUER RPC_GET_ISSUER;
-typedef struct RPC_CLIENT_ENUM_SECURE_ITEM RPC_CLIENT_ENUM_SECURE_ITEM;
-typedef struct RPC_CLIENT_ENUM_SECURE RPC_CLIENT_ENUM_SECURE;
-typedef struct RPC_USE_SECURE RPC_USE_SECURE;
-typedef struct RPC_ENUM_OBJECT_IN_SECURE RPC_ENUM_OBJECT_IN_SECURE;
 typedef struct RPC_CLIENT_CREATE_VLAN RPC_CLIENT_CREATE_VLAN;
 typedef struct RPC_CLIENT_GET_VLAN RPC_CLIENT_GET_VLAN;
 typedef struct RPC_CLIENT_SET_VLAN RPC_CLIENT_SET_VLAN;
@@ -221,10 +213,6 @@ typedef struct UNIX_VLAN UNIX_VLAN;
 //   Server
 // ==============================================================
 
-typedef struct HUB_LIST HUB_LIST;
-typedef struct FARM_TASK FARM_TASK;
-typedef struct FARM_MEMBER FARM_MEMBER;
-typedef struct FARM_CONTROLLER FARM_CONTROLLER;
 typedef struct SERVER_LISTENER SERVER_LISTENER;
 typedef struct SERVER SERVER;
 typedef struct RPC_ENUM_SESSION RPC_ENUM_SESSION;
@@ -249,12 +237,6 @@ typedef struct RPC_LISTENER RPC_LISTENER;
 typedef struct RPC_LISTENER_LIST RPC_LISTENER_LIST;
 typedef struct RPC_STR RPC_STR;
 typedef struct RPC_SET_PASSWORD RPC_SET_PASSWORD;
-typedef struct RPC_FARM RPC_FARM;
-typedef struct RPC_FARM_HUB RPC_FARM_HUB;
-typedef struct RPC_FARM_INFO RPC_FARM_INFO;
-typedef struct RPC_ENUM_FARM_ITEM RPC_ENUM_FARM_ITEM;
-typedef struct RPC_ENUM_FARM RPC_ENUM_FARM;
-typedef struct RPC_FARM_CONNECTION_STATUS RPC_FARM_CONNECTION_STATUS;
 typedef struct RPC_KEY_PAIR RPC_KEY_PAIR;
 typedef struct RPC_HUB_OPTION RPC_HUB_OPTION;
 typedef struct RPC_HUB RPC_HUB;

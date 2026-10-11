@@ -282,12 +282,6 @@ typedef struct AES_KEY_VALUE AES_KEY_VALUE;
 typedef struct CIPHER CIPHER;
 typedef struct MD MD;
 
-// Secure.h
-typedef struct SECURE_DEVICE SECURE_DEVICE;
-typedef struct SEC_INFO SEC_INFO;
-typedef struct SECURE SECURE;
-typedef struct SEC_OBJ SEC_OBJ;
-
 // Kernel.h
 typedef struct MEMINFO MEMINFO;
 typedef struct LOCALE LOCALE;

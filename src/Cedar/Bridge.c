@@ -230,7 +230,7 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 	UnlockList(c->HubList);
 
 	// Start the local-bridge immediately
-	if (h != NULL && br != NULL && h->Type != HUB_TYPE_FARM_DYNAMIC)
+	if (h != NULL && br != NULL)
 	{
 		Lock(h->lock_online);
 		{

@@ -1159,16 +1159,6 @@ void CleanupCedar(CEDAR *c)
 		Free(c->CipherList);
 	}
 
-	for (i = 0;i < LIST_NUM(c->TrafficDiffList);i++)
-	{
-		TRAFFIC_DIFF *d = LIST_DATA(c->TrafficDiffList, i);
-		Free(d->Name);
-		Free(d->HubName);
-		Free(d);
-	}
-
-	ReleaseList(c->TrafficDiffList);
-
 	Free(c->ServerStr);
 	Free(c->MachineName);
 
@@ -1537,8 +1527,6 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 	c->Traffic = NewTraffic();
 	c->TrafficLock = NewLock();
 	c->CaList = NewList(CompareCert);
-
-	c->TrafficDiffList = NewList(NULL);
 
 	SetCedarCipherList(c, SERVER_DEFAULT_CIPHER_NAME);
 

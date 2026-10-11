@@ -656,7 +656,6 @@ LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, 
 
 	// Copy the authentication data
 	a = CopyClientAuth(auth);
-	a->SecureSignProc = NULL;
 	a->CheckCertProc = NULL;
 
 	// Link object

@@ -16,7 +16,6 @@
 #include "Network.h"
 #include "Object.h"
 #include "OS.h"
-#include "Secure.h"
 #include "Str.h"
 #include "Table.h"
 #include "Tick64.h"
@@ -464,9 +463,6 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 	MsInit();	// Microsoft Win32
 #endif	// OS_WIN32
 
-	// Initialization of the security token module
-	InitSecure();
-
 	if (OSIsSupportedOs() == false)
 	{
 		// Abort
@@ -537,9 +533,6 @@ void FreeMayaqua()
 
 	// Delete the table
 	FreeTable();
-
-	// Release of security token module
-	FreeSecure();
 
 	// Release of the operating system specific module
 #ifdef	OS_WIN32

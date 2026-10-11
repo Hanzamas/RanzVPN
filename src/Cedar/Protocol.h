@@ -21,16 +21,6 @@ struct CHECK_CERT_THREAD_PROC
 	bool Ok;
 };
 
-// The parameters that will be passed to the secure device signature thread
-struct SECURE_SIGN_THREAD_PROC
-{
-	SECURE_SIGN_PROC *SecureSignProc;
-	CONNECTION *Connection;
-	SECURE_SIGN *SecureSign;
-	bool UserFinished;
-	bool Ok;
-};
-
 // Signature sending thread parameters
 struct SEND_SIGNATURE_PARAM
 {
@@ -165,13 +155,10 @@ bool ClientUploadAuth2(CONNECTION *c, SOCK *s);
 bool GetSessionKeyFromPack(PACK *p, UCHAR *session_key, UINT *session_key_32);
 
 void CreateNodeInfo(NODE_INFO *info, CONNECTION *c);
-UINT SecureSign(SECURE_SIGN *sign, UINT device_id, char *pin);
 void ClientUploadNoop(CONNECTION *c);
 void ServerUploadNoop(CONNECTION *c);
 bool ClientCheckServerCert(CONNECTION *c, bool *expired);
 void ClientCheckServerCertThread(THREAD *thread, void *param);
-bool ClientSecureSign(CONNECTION *c, UCHAR *sign, UCHAR *random, X **x);
-void ClientSecureSignThread(THREAD *thread, void *param);
 TOKEN_LIST *EnumHub(SESSION *s);
 UINT ChangePasswordAccept(CONNECTION *c, PACK *p);
 UINT ChangePassword(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, char *username, char *old_pass, char *new_pass);

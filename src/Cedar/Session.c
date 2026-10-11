@@ -492,24 +492,11 @@ void SessionMain(SESSION *s)
 
 		if (is_server_session)
 		{
-			HUB *hub;
-
 			// Update of traffic data of the user
 			if ((s->LastIncrementTraffic + INCREMENT_TRAFFIC_INTERVAL) <= now)
 			{
 				IncrementUserTraffic(s->Hub, s->UserNameReal, s);
 				s->LastIncrementTraffic = now;
-			}
-
-			hub = s->Hub;
-
-			if (hub != NULL)
-			{
-				if ((hub->LastIncrementTraffic + INCREMENT_TRAFFIC_INTERVAL) <= now)
-				{
-					hub->LastIncrementTraffic = now;
-					IncrementHubTraffic(s->Hub);
-				}
 			}
 		}
 
@@ -766,37 +753,28 @@ void IncrementUserTraffic(HUB *hub, char *username, SESSION *s)
 			s->Traffic->Recv.UnicastCount - s->OldTraffic->Recv.UnicastCount;
 		Copy(s->OldTraffic, s->Traffic, sizeof(TRAFFIC));
 
-		if (hub->FarmMember == false)
+		AcLock(hub);
 		{
-			// Update the user information in the local database if it is not a farm member
-			AcLock(hub);
+			USER *u = AcGetUser(hub, username);
+			if (u != NULL)
 			{
-				USER *u = AcGetUser(hub, username);
-				if (u != NULL)
+				Lock(u->lock);
 				{
-					Lock(u->lock);
-					{
-						AddTraffic(u->Traffic, &report_traffic);
-					}
-					Unlock(u->lock);
-					if (u->Group != NULL)
-					{
-						Lock(u->Group->lock);
-						{
-							AddTraffic(u->Group->Traffic, &report_traffic);
-						}
-						Unlock(u->Group->lock);
-					}
-					ReleaseUser(u);
+					AddTraffic(u->Traffic, &report_traffic);
 				}
+				Unlock(u->lock);
+				if (u->Group != NULL)
+				{
+					Lock(u->Group->lock);
+					{
+						AddTraffic(u->Group->Traffic, &report_traffic);
+					}
+					Unlock(u->Group->lock);
+				}
+				ReleaseUser(u);
 			}
-			AcUnlock(hub);
 		}
-		else
-		{
-			// Update the traffic difference report list in the case of farm member
-			AddTrafficDiff(hub, username, TRAFFIC_DIFF_USER, &report_traffic);
-		}
+		AcUnlock(hub);
 	}
 	Unlock(s->TrafficLock);
 }
@@ -1592,8 +1570,7 @@ SESSION *NewClientSessionEx(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *au
 	SESSION *s;
 	THREAD *t;
 	// Validate arguments
-	if (cedar == NULL || option == NULL || auth == NULL || pa == NULL ||
-		(auth->AuthType == CLIENT_AUTHTYPE_SECURE && auth->SecureSignProc == NULL))
+	if (cedar == NULL || option == NULL || auth == NULL || pa == NULL)
 	{
 		return NULL;
 	}
@@ -1719,12 +1696,6 @@ SESSION *NewClientSessionEx(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *au
 	}
 
 	s->Account = account;
-
-	if (s->ClientAuth->AuthType == CLIENT_AUTHTYPE_SECURE)
-	{
-		// Do not retry in the case of a smart card authentication
-		s->ClientOption->NumRetry = 0;
-	}
 
 	// Create a client thread
 	t = NewThread(ClientThread, (void *)s);
@@ -1853,45 +1824,7 @@ SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, P
 	StrCpy(user_name_upper, sizeof(user_name_upper), username);
 	StrUpper(user_name_upper);
 
-	if ((StrCmpi(username, ADMINISTRATOR_USERNAME) != 0) && (StrCmpi(username, BRIDGE_USER_NAME) != 0) || (cedar->Server == NULL || cedar->Server->ServerType == SERVER_TYPE_STANDALONE))
-	{
-		Format(name, sizeof(name), "SID-%s-%u", user_name_upper, Inc(h->SessionCounter));
-	}
-	else
-	{
-		UCHAR rand[SHA1_SIZE];
-		char tmp[MAX_SIZE];
-		Rand(rand, sizeof(rand));
-		BinToStr(tmp, sizeof(tmp), rand, 3);
-
-		if (StrCmpi(username, BRIDGE_USER_NAME) != 0)
-		{
-			Format(name, sizeof(name), "SID-%s-%s", user_name_upper,
-				tmp);
-		}
-		else
-		{
-			char pc_name[MAX_SIZE];
-			TOKEN_LIST *t;
-
-			GetMachineName(tmp, sizeof(tmp));
-			t = ParseToken(tmp, ".");
-			if (t->NumTokens >= 1)
-			{
-				StrCpy(pc_name, sizeof(pc_name), t->Token[0]);
-			}
-			else
-			{
-				StrCpy(pc_name, sizeof(pc_name), "pc");
-			}
-			FreeToken(t);
-
-			StrUpper(pc_name);
-
-			Format(name, sizeof(name), "SID-%s-%s-%u", user_name_upper, pc_name,
-				Inc(h->SessionCounter));
-		}
-	}
+	Format(name, sizeof(name), "SID-%s-%u", user_name_upper, Inc(h->SessionCounter));
 
 	s->Name = CopyStr(name);
 	s->Policy = policy;

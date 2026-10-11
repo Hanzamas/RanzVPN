@@ -156,37 +156,6 @@ struct RPC_GET_ISSUER
 	X *issuer_x;							// Issuer
 };
 
-// Secure device enumeration item
-struct RPC_CLIENT_ENUM_SECURE_ITEM
-{
-	UINT DeviceId;							// Device ID
-	UINT Type;								// Type
-	char DeviceName[MAX_SIZE];				// Device name
-	char Manufacturer[MAX_SIZE];			// Manufacturer
-};
-
-// Enumeration of secure devices
-struct RPC_CLIENT_ENUM_SECURE
-{
-	UINT NumItem;							// Number of items
-	RPC_CLIENT_ENUM_SECURE_ITEM **Items;	// Item
-};
-
-// Specify a secure device
-struct RPC_USE_SECURE
-{
-	UINT DeviceId;							// Device ID
-};
-
-// Enumerate objects in the secure device
-struct RPC_ENUM_OBJECT_IN_SECURE
-{
-	UINT hWnd;								// Window handle
-	UINT NumItem;							// Number of items
-	char **ItemName;						// Item name
-	bool *ItemType;							// Type (true = secret key, false = public key)
-};
-
 // Create a virtual LAN
 struct RPC_CLIENT_CREATE_VLAN
 {
@@ -374,7 +343,6 @@ struct CLIENT
 	LIST *AccountList;						// Account list
 	UCHAR EncryptedPassword[SHA1_SIZE];		// Password
 	bool PasswordRemoteOnly;				// Password is required only remote access
-	UINT UseSecureDeviceId;					// Secure device ID to be used
 	CLIENT_CONFIG Config;					// Client Settings
 	LIST *RpcConnectionList;				// RPC connection list
 	SOCK *RpcListener;						// RPC listener
@@ -448,9 +416,6 @@ UINT CcEnumCa(REMOTE_CLIENT *r, RPC_CLIENT_ENUM_CA *e);
 UINT CcAddCa(REMOTE_CLIENT *r, RPC_CERT *cert);
 UINT CcDeleteCa(REMOTE_CLIENT *r, RPC_CLIENT_DELETE_CA *p);
 UINT CcGetCa(REMOTE_CLIENT *r, RPC_GET_CA *get);
-UINT CcEnumSecure(REMOTE_CLIENT *r, RPC_CLIENT_ENUM_SECURE *e);
-UINT CcUseSecure(REMOTE_CLIENT *r, RPC_USE_SECURE *sec);
-UINT CcGetUseSecure(REMOTE_CLIENT *r, RPC_USE_SECURE *sec);
 UINT CcCreateVLan(REMOTE_CLIENT *r, RPC_CLIENT_CREATE_VLAN *create);
 UINT CcUpgradeVLan(REMOTE_CLIENT *r, RPC_CLIENT_CREATE_VLAN *create);
 UINT CcGetVLan(REMOTE_CLIENT *r, RPC_CLIENT_GET_VLAN *get);
@@ -489,10 +454,6 @@ bool CtEnumCa(CLIENT *c, RPC_CLIENT_ENUM_CA *e);
 bool CtAddCa(CLIENT *c, RPC_CERT *cert);
 bool CtDeleteCa(CLIENT *c, RPC_CLIENT_DELETE_CA *p);
 bool CtGetCa(CLIENT *c, RPC_GET_CA *get);
-bool CtEnumSecure(CLIENT *c, RPC_CLIENT_ENUM_SECURE *e);
-bool CtUseSecure(CLIENT *c, RPC_USE_SECURE *sec);
-bool CtGetUseSecure(CLIENT *c, RPC_USE_SECURE *sec);
-bool CtEnumObjectInSecure(CLIENT *c, RPC_ENUM_OBJECT_IN_SECURE *e);
 bool CtCreateVLan(CLIENT *c, RPC_CLIENT_CREATE_VLAN *create);
 bool CtUpgradeVLan(CLIENT *c, RPC_CLIENT_CREATE_VLAN *create);
 bool CtGetVLan(CLIENT *c, RPC_CLIENT_GET_VLAN *get);
@@ -555,14 +516,11 @@ void CiWriteVLanList(CLIENT *c, FOLDER *f);
 void CiWriteVLan(CLIENT *c, FOLDER *f, UNIX_VLAN *v);
 void CiFreeClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st);
 bool CiCheckCertProc(SESSION *s, CONNECTION *c, X *server_x, bool *expired);
-bool CiSecureSignProc(SESSION *s, CONNECTION *c, SECURE_SIGN *sign);
 void CiFreeClientAuth(CLIENT_AUTH *auth);
 void CiFreeClientCreateAccount(RPC_CLIENT_CREATE_ACCOUNT *a);
 void CiFreeClientGetAccount(RPC_CLIENT_GET_ACCOUNT *a);
 void CiFreeClientEnumVLan(RPC_CLIENT_ENUM_VLAN *e);
-void CiFreeClientEnumSecure(RPC_CLIENT_ENUM_SECURE *e);
 void CiFreeClientEnumCa(RPC_CLIENT_ENUM_CA *e);
-void CiFreeEnumObjectInSecure(RPC_ENUM_OBJECT_IN_SECURE *a);
 void CiFreeGetCa(RPC_GET_CA *a);
 void CiFreeGetIssuer(RPC_GET_ISSUER *a);
 void CiFreeClientEnumAccount(RPC_CLIENT_ENUM_ACCOUNT *a);
@@ -629,11 +587,6 @@ void InRpcClientDeleteCa(RPC_CLIENT_DELETE_CA *c, PACK *p);
 void OutRpcClientDeleteCa(PACK *p, RPC_CLIENT_DELETE_CA *c);
 void InRpcGetCa(RPC_GET_CA *c, PACK *p);
 void OutRpcGetCa(PACK *p, RPC_GET_CA *c);
-void InRpcClientEnumSecure(RPC_CLIENT_ENUM_SECURE *e, PACK *p);
-void OutRpcClientEnumSecure(PACK *p, RPC_CLIENT_ENUM_SECURE *e);
-void InRpcUseSecure(RPC_USE_SECURE *u, PACK *p);
-void OutRpcUseSecure(PACK *p, RPC_USE_SECURE *u);
-void OutRpcEnumObjectInSecure(PACK *p, RPC_ENUM_OBJECT_IN_SECURE *e);
 void InRpcCreateVLan(RPC_CLIENT_CREATE_VLAN *v, PACK *p);
 void OutRpcCreateVLan(PACK *p, RPC_CLIENT_CREATE_VLAN *v);
 void InRpcClientGetVLan(RPC_CLIENT_GET_VLAN *v, PACK *p);

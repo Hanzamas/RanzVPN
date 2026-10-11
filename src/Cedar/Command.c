@@ -26,7 +26,6 @@
 #include "Mayaqua/Object.h"
 #include "Mayaqua/OS.h"
 #include "Mayaqua/Pack.h"
-#include "Mayaqua/Secure.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 #include "Mayaqua/TcpIp.h"
@@ -3070,9 +3069,6 @@ void PcMain(PC *pc)
 			{"CertAdd", PcCertAdd},
 			{"CertDelete", PcCertDelete},
 			{"CertGet", PcCertGet},
-			{"SecureList", PcSecureList},
-			{"SecureSelect", PcSecureSelect},
-			{"SecureGet", PcSecureGet},
 			{"NicCreate", PcNicCreate},
 			{"NicDelete", PcNicDelete},
 			{"NicUpgrade", PcNicUpgrade},
@@ -3119,7 +3115,6 @@ void PcMain(PC *pc)
 			{"AccountNicSet", PcAccountNicSet},
 			{"AccountStatusShow", PcAccountStatusShow},
 			{"AccountStatusHide", PcAccountStatusHide},
-			{"AccountSecureCertSet", PcAccountSecureCertSet},
 			{"AccountOpensslEngineCertSet", PcAccountOpensslEngineCertSet},
 			{"AccountRetrySet", PcAccountRetrySet},
 			{"AccountStartupSet", PcAccountStartupSet},
@@ -3515,169 +3510,6 @@ UINT PcCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		}
 
 		CiFreeGetCa(&t);
-	}
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// Error has occurred
-		CmdPrintError(c, ret);
-	}
-
-	// Release of the parameter list
-	FreeParamValueList(o);
-
-	return ret;
-}
-
-// Get the list of the type of smart card that can be used
-UINT PcSecureList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PC *pc = (PC *)param;
-	UINT ret = ERR_NO_ERROR;
-	RPC_CLIENT_ENUM_SECURE t;
-
-	// Get the parameter list
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	// RPC call
-	Zero(&t, sizeof(t));
-
-	ret = CcEnumSecure(pc->RemoteClient, &t);
-
-	if (ret == ERR_NO_ERROR)
-	{
-		CT *ct;
-		UINT i;
-		wchar_t tmp1[MAX_SIZE];
-		wchar_t tmp2[MAX_SIZE];
-		wchar_t tmp4[MAX_SIZE];
-		wchar_t *tmp3;
-
-		// Success
-		ct = CtNew();
-		CtInsertColumn(ct, _UU("SEC_COLUMN1"), false);
-		CtInsertColumn(ct, _UU("SEC_COLUMN2"), false);
-		CtInsertColumn(ct, _UU("SEC_COLUMN3"), false);
-		CtInsertColumn(ct, _UU("SEC_COLUMN4"), false);
-
-		for (i = 0;i < t.NumItem;i++)
-		{
-			RPC_CLIENT_ENUM_SECURE_ITEM *e = t.Items[i];
-
-			// ID
-			UniToStru(tmp1, e->DeviceId);
-
-			// Device name
-			StrToUni(tmp2, sizeof(tmp2), e->DeviceName);
-
-			// Type
-			tmp3 = (e->Type == SECURE_IC_CARD) ? _UU("SEC_SMART_CARD") : _UU("SEC_USB_TOKEN");
-
-			// Manufacturer
-			StrToUni(tmp4, sizeof(tmp4), e->Manufacturer);
-
-			CtInsert(ct, tmp1, tmp2, tmp3, tmp4);
-		}
-
-		CtFreeEx(ct, c, true);
-
-		CiFreeClientEnumSecure(&t);
-	}
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// Error has occurred
-		CmdPrintError(c, ret);
-	}
-
-	// Release of the parameter list
-	FreeParamValueList(o);
-
-	return ret;
-}
-
-// Select the type of smart card to be used
-UINT PcSecureSelect(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PC *pc = (PC *)param;
-	UINT ret = ERR_NO_ERROR;
-	RPC_USE_SECURE t;
-	// Parameter list that can be specified
-	PARAM args[] =
-	{
-		{"[id]", CmdPrompt, _UU("CMD_SecureSelect_PROMPT_ID"), NULL, NULL},
-	};
-
-	// Get the parameter list
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	// RPC call
-	Zero(&t, sizeof(t));
-	t.DeviceId = GetParamInt(o, "[id]");
-
-	ret = CcUseSecure(pc->RemoteClient, &t);
-
-	if (ret == ERR_NO_ERROR)
-	{
-		// Success
-	}
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// Error has occurred
-		CmdPrintError(c, ret);
-	}
-
-	// Release of the parameter list
-	FreeParamValueList(o);
-
-	return ret;
-}
-
-// Get the type ID of smart card to be used
-UINT PcSecureGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PC *pc = (PC *)param;
-	UINT ret = ERR_NO_ERROR;
-	RPC_USE_SECURE t;
-
-	// Get the parameter list
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	// RPC call
-	Zero(&t, sizeof(t));
-
-	ret = CcGetUseSecure(pc->RemoteClient, &t);
-
-	if (ret == ERR_NO_ERROR)
-	{
-		// Success
-		wchar_t tmp[MAX_SIZE];
-
-		if (t.DeviceId != 0)
-		{
-			UniFormat(tmp, sizeof(tmp), _UU("CMD_SecureGet_Print"), t.DeviceId);
-		}
-		else
-		{
-			UniStrCpy(tmp, sizeof(tmp), _UU("CMD_SecureGet_NoPrint"));
-		}
-		c->Write(c, tmp);
 	}
 
 	if (ret != ERR_NO_ERROR)
@@ -6513,64 +6345,6 @@ UINT PcAccountStatusHide(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return ret;
 }
 
-// Set the type of user authentication of connection settings to the smart card authentication
-UINT PcAccountSecureCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PC *pc = (PC *)param;
-	UINT ret = ERR_NO_ERROR;
-	RPC_CLIENT_GET_ACCOUNT t;
-	// Parameter list that can be specified
-	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_AccountCreate_Prompt_Name"), CmdEvalNotEmpty, NULL},
-		{"CERTNAME", CmdPrompt, _UU("CMD_AccountSecureCertSet_PROMPT_CERTNAME"), CmdEvalNotEmpty, NULL},
-		{"KEYNAME", CmdPrompt, _UU("CMD_AccountSecureCertSet_PROMPT_KEYNAME"), CmdEvalNotEmpty, NULL},
-	};
-
-	// Get the parameter list
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	// RPC call
-	Zero(&t, sizeof(t));
-
-	UniStrCpy(t.AccountName, sizeof(t.AccountName), GetParamUniStr(o, "[name]"));
-
-	ret = CcGetAccount(pc->RemoteClient, &t);
-
-	if (ret == ERR_NO_ERROR)
-	{
-		RPC_CLIENT_CREATE_ACCOUNT z;
-		// Change the settings
-		t.ClientAuth->AuthType = CLIENT_AUTHTYPE_SECURE;
-		StrCpy(t.ClientAuth->SecurePublicCertName, sizeof(t.ClientAuth->SecurePublicCertName),
-			GetParamStr(o, "CERTNAME"));
-		StrCpy(t.ClientAuth->SecurePrivateKeyName, sizeof(t.ClientAuth->SecurePrivateKeyName),
-			GetParamStr(o, "KEYNAME"));
-
-		SetRpcClientCreateAccountFromGetAccount(&z, &t);
-
-		ret = CcSetAccount(pc->RemoteClient, &z);
-	}
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// Error has occurred
-		CmdPrintError(c, ret);
-	}
-
-	CiFreeClientGetAccount(&t);
-
-	// Release of the parameter list
-	FreeParamValueList(o);
-
-	return ret;
-}
-
 UINT PcAccountOpensslEngineCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
@@ -7544,14 +7318,6 @@ void PsMain(PS *ps)
 			{"ListenerEnable", PsListenerEnable},
 			{"ListenerDisable", PsListenerDisable},
 			{"ServerPasswordSet", PsServerPasswordSet},
-			{"ClusterSettingGet", PsClusterSettingGet},
-			{"ClusterSettingStandalone", PsClusterSettingStandalone},
-			{"ClusterSettingController", PsClusterSettingController},
-			{"ClusterSettingMember", PsClusterSettingMember},
-			{"ClusterMemberList", PsClusterMemberList},
-			{"ClusterMemberInfoGet", PsClusterMemberInfoGet},
-			{"ClusterMemberCertGet", PsClusterMemberCertGet},
-			{"ClusterConnectionStatusGet", PsClusterConnectionStatusGet},
 			{"ServerCertGet", PsServerCertGet},
 			{"ServerKeyGet", PsServerKeyGet},
 			{"ServerCertSet", PsServerCertSet},
@@ -7589,11 +7355,7 @@ void PsMain(PS *ps)
 			{"LogFileList", PsLogFileList},
 			{"LogFileGet", PsLogFileGet},
 			{"HubCreate", PsHubCreate},
-			{"HubCreateDynamic", PsHubCreateDynamic},
-			{"HubCreateStatic", PsHubCreateStatic},
 			{"HubDelete", PsHubDelete},
-			{"HubSetStatic", PsHubSetStatic},
-			{"HubSetDynamic", PsHubSetDynamic},
 			{"HubList", PsHubList},
 			{"Hub", PsHub},
 			{"Online", PsOnline},
@@ -7784,86 +7546,6 @@ UINT PsXxx(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-// Set to the stand-alone mode
-UINT PsClusterSettingStandalone(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_FARM t;
-
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-	t.ServerType = SERVER_TYPE_STANDALONE;
-
-	// RPC call
-	ret = ScSetFarmSetting(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
-// Set to the cluster controller mode
-UINT PsClusterSettingController(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_FARM t;
-	UINT weight;
-	PARAM args[] =
-	{
-		{"WEIGHT", NULL, NULL, NULL, NULL},
-		{"ONLY", NULL, NULL, NULL, NULL},
-	};
-
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	weight = GetParamInt(o, "WEIGHT");
-	if (weight == 0)
-	{
-		weight = FARM_DEFAULT_WEIGHT;
-	}
-
-	Zero(&t, sizeof(t));
-	t.ServerType = SERVER_TYPE_FARM_CONTROLLER;
-	t.Weight = weight;
-	t.ControllerOnly = GetParamYes(o, "ONLY");
-
-	// RPC call
-	ret = ScSetFarmSetting(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
 // Evaluate the IP address
 bool CmdEvalIp(CONSOLE *c, wchar_t *str, void *param)
 {
@@ -7886,190 +7568,6 @@ bool CmdEvalIp(CONSOLE *c, wchar_t *str, void *param)
 	}
 
 	return true;
-}
-
-// Convert a string to port list
-LIST *StrToPortList(char *str, bool limit_range)
-{
-	LIST *o;
-	TOKEN_LIST *t;
-	UINT i;
-	if (str == NULL)
-	{
-		return NULL;
-	}
-
-	// Convert to token
-	t = ParseToken(str, ", ");
-	if (t == NULL)
-	{
-		return NULL;
-	}
-	if (t->NumTokens == 0)
-	{
-		FreeToken(t);
-		return NULL;
-	}
-
-	o = NewListFast(NULL);
-
-	for (i = 0;i < t->NumTokens;i++)
-	{
-		char *s = t->Token[i];
-		UINT n;
-		if (IsNum(s) == false)
-		{
-			ReleaseList(o);
-			FreeToken(t);
-			return NULL;
-		}
-		n = ToInt(s);
-		if (limit_range && (n == 0 || n >= 65536))
-		{
-			ReleaseList(o);
-			FreeToken(t);
-			return NULL;
-		}
-		if (IsInList(o, (void *)n))
-		{
-			ReleaseList(o);
-			FreeToken(t);
-			return NULL;
-		}
-		Add(o, (void *)n);
-	}
-
-	FreeToken(t);
-
-	if (LIST_NUM(o) > MAX_PUBLIC_PORT_NUM)
-	{
-		ReleaseList(o);
-		return NULL;
-	}
-
-	return o;
-}
-
-// Set to the cluster member mode
-UINT PsClusterSettingMember(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_FARM t;
-	char *host_and_port;
-	char *host;
-	UINT port;
-	UINT weight;
-	// Parameter list that can be specified
-	PARAM args[] =
-	{
-		// "name", prompt_proc, prompt_param, eval_proc, eval_param
-		{"[server:port]", CmdPrompt, _UU("CMD_ClusterSettingMember_Prompt_HOST_1"), CmdEvalHostAndPort, NULL},
-		{"IP", PsClusterSettingMemberPromptIp, NULL, CmdEvalIp, NULL},
-		{"PORTS", PsClusterSettingMemberPromptPorts, NULL, CmdEvalPortList, (void *)true},
-		{"PASSWORD", CmdPromptChoosePassword, NULL, NULL, NULL},
-		{"WEIGHT", NULL, NULL, NULL, NULL},
-	};
-
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	weight = GetParamInt(o, "WEIGHT");
-
-	if (weight == 0)
-	{
-		weight = FARM_DEFAULT_WEIGHT;
-	}
-
-	Zero(&t, sizeof(t));
-	host_and_port = GetParamStr(o, "[server:port]");
-	if (ParseHostPort(host_and_port, &host, &port, 0))
-	{
-		char *pw;
-		char *ports_str;
-		LIST *ports;
-		UINT i;
-
-		StrCpy(t.ControllerName, sizeof(t.ControllerName), host);
-		t.ControllerPort = port;
-		Free(host);
-
-		pw = GetParamStr(o, "PASSWORD");
-
-		Sha0(t.MemberPassword, pw, StrLen(pw));
-		t.PublicIp = StrToIP32(GetParamStr(o, "IP"));
-		t.ServerType = SERVER_TYPE_FARM_MEMBER;
-
-		ports_str = GetParamStr(o, "PORTS");
-
-		ports = StrToPortList(ports_str, true);
-
-		t.NumPort = LIST_NUM(ports);
-		t.Ports = ZeroMalloc(sizeof(UINT) * t.NumPort);
-
-		for (i = 0;i < t.NumPort;i++)
-		{
-			t.Ports[i] = (UINT)LIST_DATA(ports, i);
-		}
-
-		t.Weight = weight;
-
-		ReleaseList(ports);
-
-		// RPC call
-		ret = ScSetFarmSetting(ps->Rpc, &t);
-
-		if (ret != ERR_NO_ERROR)
-		{
-			// An error has occured
-			CmdPrintError(c, ret);
-			FreeParamValueList(o);
-			return ret;
-		}
-
-		FreeRpcFarm(&t);
-	}
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
-// Evaluate the port list
-bool CmdEvalPortList(CONSOLE *c, wchar_t *str, void *param)
-{
-	char *s;
-	bool ret = false;
-	LIST *o;
-	// Validate arguments
-	if (c == NULL || str == NULL)
-	{
-		return false;
-	}
-
-	s = CopyUniToStr(str);
-
-	o = StrToPortList(s, (bool)param);
-
-	if (o != NULL)
-	{
-		ret = true;
-	}
-
-	ReleaseList(o);
-
-	Free(s);
-
-	if (ret == false)
-	{
-		c->Write(c, _UU("CMD_PORTLIST_EVAL_FAILED"));
-	}
-
-	return ret;
 }
 
 // Check the string of the form of the host name and port number
@@ -8095,366 +7593,6 @@ bool CmdEvalHostAndPort(CONSOLE *c, wchar_t *str, void *param)
 	Free(tmp);
 
 	return ret;
-}
-
-// Input the public port number
-wchar_t *PsClusterSettingMemberPromptPorts(CONSOLE *c, void *param)
-{
-	wchar_t *ret;
-	// Validate arguments
-	if (c == NULL)
-	{
-		return NULL;
-	}
-
-	c->Write(c, _UU("CMD_ClusterSettingMember_Prompt_PORT_1"));
-	c->Write(c, L"");
-
-	ret = c->ReadLine(c, _UU("CMD_ClusterSettingMember_Prompt_PORT_2"), true);
-
-	return ret;
-}
-
-// Input the public IP address
-wchar_t *PsClusterSettingMemberPromptIp(CONSOLE *c, void *param)
-{
-	wchar_t *ret;
-	// Validate arguments
-	if (c == NULL)
-	{
-		return NULL;
-	}
-
-	c->Write(c, _UU("CMD_ClusterSettingMember_Prompt_IP_1"));
-	c->Write(c, L"");
-
-	ret = c->ReadLine(c, _UU("CMD_ClusterSettingMember_Prompt_IP_2"), true);
-
-	return ret;
-}
-
-// Show the cluster members list
-UINT PsClusterMemberList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_ENUM_FARM t;
-	CT *ct;
-	UINT i;
-
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-
-	// RPC call
-	ret = ScEnumFarmMember(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	ct = CtNew();
-
-	CtInsertColumn(ct, _UU("CMD_ID"), true);
-	CtInsertColumn(ct, _UU("SM_FM_COLUMN_1"), false);
-	CtInsertColumn(ct, _UU("SM_FM_COLUMN_2"), false);
-	CtInsertColumn(ct, _UU("SM_FM_COLUMN_3"), false);
-	CtInsertColumn(ct, _UU("SM_FM_COLUMN_4"), true);
-	CtInsertColumn(ct, _UU("SM_FM_COLUMN_5"), true);
-	CtInsertColumn(ct, _UU("SM_FM_COLUMN_6"), true);
-	CtInsertColumn(ct, _UU("SM_FM_COLUMN_7"), true);
-	CtInsertColumn(ct, _UU("SM_FM_COLUMN_8"), true);
-	CtInsertColumn(ct, _UU("SM_FM_COLUMN_9"), true);
-
-	for (i = 0;i < t.NumFarm;i++)
-	{
-		RPC_ENUM_FARM_ITEM *e = &t.Farms[i];
-		wchar_t tmp0[64];
-		wchar_t tmp1[MAX_SIZE];
-		wchar_t tmp2[MAX_SIZE];
-		wchar_t tmp3[64];
-		wchar_t tmp4[64];
-		wchar_t tmp5[64];
-		wchar_t tmp6[64];
-		wchar_t tmp7[64];
-		wchar_t tmp8[64];
-
-		GetDateTimeStrEx64(tmp1, sizeof(tmp1), SystemToLocal64(e->ConnectedTime), NULL);
-		StrToUni(tmp2, sizeof(tmp2), e->Hostname);
-		UniToStru(tmp3, e->Point);
-		UniToStru(tmp4, e->NumSessions);
-		UniToStru(tmp5, e->NumTcpConnections);
-		UniToStru(tmp6, e->NumHubs);
-		UniToStru(tmp7, e->AssignedClientLicense);
-		UniToStru(tmp8, e->AssignedBridgeLicense);
-
-		UniToStru(tmp0, e->Id);
-
-		CtInsert(ct, tmp0,
-			e->Controller ? _UU("SM_FM_CONTROLLER") : _UU("SM_FM_MEMBER"),
-			tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7, tmp8);
-	}
-
-	CtFree(ct, c);
-
-	FreeRpcEnumFarm(&t);
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
-// Get information of cluster members
-UINT PsClusterMemberInfoGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_FARM_INFO t;
-	CT *ct;
-	// Parameter list that can be specified
-	PARAM args[] =
-	{
-		// "name", prompt_proc, prompt_param, eval_proc, eval_param
-		{"[id]", CmdPrompt, _UU("CMD_ClusterMemberInfoGet_PROMPT_ID"), NULL, NULL},
-	};
-
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-	t.Id = UniToInt(GetParamUniStr(o, "[id]"));
-
-	// RPC call
-	ret = ScGetFarmInfo(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	ct = CtNewStandard();
-
-	{
-		wchar_t tmp[MAX_SIZE];
-		char str[MAX_SIZE];
-		UINT i;
-
-		CtInsert(ct, _UU("SM_FMINFO_TYPE"),
-			t.Controller ? _UU("SM_FARM_CONTROLLER") : _UU("SM_FARM_MEMBER"));
-
-		GetDateTimeStrEx64(tmp, sizeof(tmp), SystemToLocal64(t.ConnectedTime), NULL);
-		CtInsert(ct, _UU("SM_FMINFO_CONNECT_TIME"), tmp);
-
-		IPToStr32(str, sizeof(str), t.Ip);
-		StrToUni(tmp, sizeof(tmp), str);
-		CtInsert(ct, _UU("SM_FMINFO_IP"), tmp);
-
-		StrToUni(tmp, sizeof(tmp), t.Hostname);
-		CtInsert(ct, _UU("SM_FMINFO_HOSTNAME"), tmp);
-
-		UniToStru(tmp, t.Point);
-		CtInsert(ct, _UU("SM_FMINFO_POINT"), tmp);
-
-		UniToStru(tmp, t.Weight);
-		CtInsert(ct, _UU("SM_FMINFO_WEIGHT"), tmp);
-
-		UniToStru(tmp, t.NumPort);
-		CtInsert(ct, _UU("SM_FMINFO_NUM_PORT"), tmp);
-
-		for (i = 0;i < t.NumPort;i++)
-		{
-			wchar_t tmp2[MAX_SIZE];
-			UniFormat(tmp, sizeof(tmp), _UU("SM_FMINFO_PORT"), i + 1);
-			UniToStru(tmp2, t.Ports[i]);
-			CtInsert(ct, tmp, tmp2);
-		}
-
-		UniToStru(tmp, t.NumFarmHub);
-		CtInsert(ct, _UU("SM_FMINFO_NUM_HUB"), tmp);
-
-		for (i = 0;i < t.NumFarmHub;i++)
-		{
-			wchar_t tmp2[MAX_SIZE];
-			UniFormat(tmp, sizeof(tmp), _UU("SM_FMINFO_HUB"), i + 1);
-			UniFormat(tmp2, sizeof(tmp2),
-				t.FarmHubs[i].DynamicHub ? _UU("SM_FMINFO_HUB_TAG_2") : _UU("SM_FMINFO_HUB_TAG_1"),
-				t.FarmHubs[i].HubName);
-			CtInsert(ct, tmp, tmp2);
-		}
-
-		UniToStru(tmp, t.NumSessions);
-		CtInsert(ct, _UU("SM_FMINFO_NUM_SESSION"), tmp);
-
-		UniToStru(tmp, t.NumTcpConnections);
-		CtInsert(ct, _UU("SM_FMINFO_NUN_CONNECTION"), tmp);
-	}
-
-	CtFree(ct, c);
-
-	FreeRpcFarmInfo(&t);
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
-// Get certificates of cluster members
-UINT PsClusterMemberCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_FARM_INFO t;
-	// Parameter list that can be specified
-	PARAM args[] =
-	{
-		// "name", prompt_proc, prompt_param, eval_proc, eval_param
-		{"[id]", CmdPrompt, _UU("CMD_ClusterMemberCertGet_PROMPT_ID"), NULL, NULL},
-		{"SAVECERT", CmdPrompt, _UU("CMD_SAVECERTPATH"), CmdEvalNotEmpty, NULL},
-	};
-
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-
-	t.Id = UniToInt(GetParamUniStr(o, "[id]"));
-
-	// RPC call
-	ret = ScGetFarmInfo(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-	else
-	{
-		X *x = t.ServerCert;
-		wchar_t *filename = GetParamUniStr(o, "SAVECERT");
-
-		if (XToFileW(x, filename, true) == false)
-		{
-			c->Write(c, _UU("CMD_SAVECERT_FAILED"));
-
-			ret = ERR_INTERNAL_ERROR;
-		}
-	}
-
-	FreeRpcFarmInfo(&t);
-
-	FreeParamValueList(o);
-
-	return ret;
-}
-
-// Get the status of the connection to the cluster controller
-UINT PsClusterConnectionStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_FARM_CONNECTION_STATUS t;
-	wchar_t tmp[MAX_SIZE];
-
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-
-	// RPC call
-	ret = ScGetFarmConnectionStatus(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-	else
-	{
-		CT *ct = CtNewStandard();
-		char str[MAX_SIZE];
-
-		if (t.Online == false)
-		{
-			CtInsert(ct, _UU("SM_FC_IP"), _UU("SM_FC_NOT_CONNECTED"));
-
-			CtInsert(ct, _UU("SM_FC_PORT"), _UU("SM_FC_NOT_CONNECTED"));
-		}
-		else
-		{
-			IPToStr32(str, sizeof(str), t.Ip);
-			StrToUni(tmp, sizeof(tmp), str);
-			CtInsert(ct, _UU("SM_FC_IP"), tmp);
-
-			UniToStru(tmp, t.Port);
-			CtInsert(ct, _UU("SM_FC_PORT"), tmp);
-		}
-
-		CtInsert(ct,
-			_UU("SM_FC_STATUS"),
-			t.Online ? _UU("SM_FC_ONLINE") : _UU("SM_FC_OFFLINE"));
-
-		if (t.Online == false)
-		{
-			UniFormat(tmp, sizeof(tmp), _UU("SM_FC_ERROR_TAG"), _E(t.LastError), t.LastError);
-			CtInsert(ct,
-				_UU("SM_FC_LAST_ERROR"), tmp);
-		}
-
-		GetDateTimeStrEx64(tmp, sizeof(tmp), SystemToLocal64(t.StartedTime), NULL);
-		CtInsert(ct, _UU("SM_FC_START_TIME"), tmp);
-
-		GetDateTimeStrEx64(tmp, sizeof(tmp), SystemToLocal64(t.FirstConnectedTime), NULL);
-		CtInsert(ct, _UU("SM_FC_FIRST_TIME"), tmp);
-
-		//if (t.Online == false)
-		{
-			GetDateTimeStrEx64(tmp, sizeof(tmp), SystemToLocal64(t.CurrentConnectedTime), NULL);
-			CtInsert(ct, _UU("SM_FC_CURRENT_TIME"), tmp);
-		}
-
-		UniToStru(tmp, t.NumTry);
-		CtInsert(ct, _UU("SM_FC_NUM_TRY"), tmp);
-
-		UniToStru(tmp, t.NumConnected);
-		CtInsert(ct, _UU("SM_FC_NUM_CONNECTED"), tmp);
-
-		UniToStru(tmp, t.NumFailed);
-		CtInsert(ct, _UU("SM_FC_NUM_FAILED"), tmp);
-
-		CtFree(ct, c);
-	}
-
-	FreeParamValueList(o);
-
-	return 0;
 }
 
 // Get the SSL certificate of the VPN Server
@@ -10561,12 +9699,11 @@ UINT PsLogFileList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		CtInsertColumn(ct, _UU("SM_LOG_FILE_COLUMN_1"), false);
 		CtInsertColumn(ct, _UU("SM_LOG_FILE_COLUMN_2"), true);
 		CtInsertColumn(ct, _UU("SM_LOG_FILE_COLUMN_3"), false);
-		CtInsertColumn(ct, _UU("SM_LOG_FILE_COLUMN_4"), false);
 
 		for (i = 0;i < t.NumItem;i++)
 		{
 			RPC_ENUM_LOG_FILE_ITEM *e = &t.Items[i];
-			wchar_t tmp1[MAX_PATH], tmp2[128], tmp3[128], tmp4[MAX_HOST_NAME_LEN + 1];
+			wchar_t tmp1[MAX_PATH], tmp2[128], tmp3[128];
 			char tmp[MAX_SIZE];
 
 			StrToUni(tmp1, sizeof(tmp1), e->FilePath);
@@ -10576,9 +9713,7 @@ UINT PsLogFileList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 			GetDateTimeStr64Uni(tmp3, sizeof(tmp3), SystemToLocal64(e->UpdatedTime));
 
-			StrToUni(tmp4, sizeof(tmp4), e->ServerName);
-
-			CtInsert(ct, tmp1, tmp2, tmp3, tmp4);
+			CtInsert(ct, tmp1, tmp2, tmp3);
 		}
 
 		CtFreeEx(ct, c, true);
@@ -10599,13 +9734,11 @@ UINT PsLogFileGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	UINT ret = 0;
 	BUF *buf;
 	char *filename = NULL;
-	char *server_name;
 	// Parameter list that can be specified
 	PARAM args[] =
 	{
 		// "name", prompt_proc, prompt_param, eval_proc, eval_param
 		{"[name]", CmdPrompt, _UU("CMD_LogFileGet_PROMPT_NAME"), CmdEvalNotEmpty, NULL},
-		{"SERVER", NULL, NULL, NULL, NULL},
 		{"SAVEPATH", NULL, NULL, NULL, NULL},
 	};
 
@@ -10623,9 +9756,7 @@ UINT PsLogFileGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	c->Write(c, _UU("CMD_LogFileGet_START"));
 
-	server_name = GetParamStr(o, "SERVER");
-
-	buf = DownloadFileFromServer(ps->Rpc, server_name,
+	buf = DownloadFileFromServer(ps->Rpc,
 		GetParamStr(o, "[name]"), 0, NULL, NULL);
 
 	if (buf == NULL)
@@ -10684,72 +9815,6 @@ UINT PsHubCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	UINT ret = 0;
 	RPC_CREATE_HUB t;
 	char *pass = "";
-	UINT hub_type = HUB_TYPE_STANDALONE;
-	// Parameter list that can be specified
-	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_HubCreate_PROMPT_NAME"), CmdEvalNotEmpty, NULL},
-		{"PASSWORD", CmdPromptChoosePassword, NULL, NULL, NULL},
-	};
-
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-	else
-	{
-		RPC_SERVER_INFO t;
-		Zero(&t, sizeof(t));
-		if (ScGetServerInfo(ps->Rpc, &t) == ERR_NO_ERROR)
-		{
-			if (t.ServerType == SERVER_TYPE_FARM_CONTROLLER)
-			{
-				hub_type = HUB_TYPE_FARM_DYNAMIC;
-			}
-			FreeRpcServerInfo(&t);
-		}
-	}
-
-	Zero(&t, sizeof(t));
-
-	StrCpy(t.HubName, sizeof(t.HubName), GetParamStr(o, "[name]"));
-	t.HubType = hub_type;
-
-	if (IsEmptyStr(GetParamStr(o, "PASSWORD")) == false)
-	{
-		pass = GetParamStr(o, "PASSWORD");
-	}
-
-	Sha0(t.HashedPassword, pass, StrLen(pass));
-	HashPassword(t.SecurePassword, ADMINISTRATOR_USERNAME, pass);
-	t.Online = true;
-
-	// RPC call
-	ret = ScCreateHub(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
-// Create a New Virtual HUB (dynamic mode)
-UINT PsHubCreateDynamic(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_CREATE_HUB t;
-	char *pass = "";
-	UINT hub_type = HUB_TYPE_FARM_DYNAMIC;
 	// Parameter list that can be specified
 	PARAM args[] =
 	{
@@ -10766,59 +9831,6 @@ UINT PsHubCreateDynamic(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	Zero(&t, sizeof(t));
 
 	StrCpy(t.HubName, sizeof(t.HubName), GetParamStr(o, "[name]"));
-	t.HubType = hub_type;
-
-	if (IsEmptyStr(GetParamStr(o, "PASSWORD")) == false)
-	{
-		pass = GetParamStr(o, "PASSWORD");
-	}
-
-	Sha0(t.HashedPassword, pass, StrLen(pass));
-	HashPassword(t.SecurePassword, ADMINISTRATOR_USERNAME, pass);
-	t.Online = true;
-
-	// RPC call
-	ret = ScCreateHub(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
-// Create a New Virtual HUB (static mode)
-UINT PsHubCreateStatic(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_CREATE_HUB t;
-	char *pass = "";
-	UINT hub_type = HUB_TYPE_FARM_STATIC;
-	// Parameter list that can be specified
-	PARAM args[] =
-	{
-		{"[name]", CmdPrompt, _UU("CMD_HubCreate_PROMPT_NAME"), CmdEvalNotEmpty, NULL},
-		{"PASSWORD", CmdPromptChoosePassword, NULL, NULL, NULL},
-	};
-
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-
-	StrCpy(t.HubName, sizeof(t.HubName), GetParamStr(o, "[name]"));
-	t.HubType = hub_type;
 
 	if (IsEmptyStr(GetParamStr(o, "PASSWORD")) == false)
 	{
@@ -10885,116 +9897,6 @@ UINT PsHubDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-// Set the Virtual HUB to static
-UINT PsHubSetStatic(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_CREATE_HUB t;
-	// Parameter list that can be specified
-	PARAM args[] =
-	{
-		// "name", prompt_proc, prompt_param, eval_proc, eval_param
-		{"[name]", CmdPrompt, _UU("CMD_HubChange_PROMPT_NAME"), CmdEvalNotEmpty, NULL},
-	};
-
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-
-	StrCpy(t.HubName, sizeof(t.HubName), GetParamStr(o, "[name]"));
-
-	// Retrieve the current setting first
-	ret = ScGetHub(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	// Change the settings
-	StrCpy(t.HubName, sizeof(t.HubName), GetParamStr(o, "[name]"));
-	t.HubType = HUB_TYPE_FARM_STATIC;
-
-	// Write
-	ret = ScSetHub(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
-// Change the type of Virtual HUB to dynamic Virtual HUB
-UINT PsHubSetDynamic(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret = 0;
-	RPC_CREATE_HUB t;
-	// Parameter list that can be specified
-	PARAM args[] =
-	{
-		// "name", prompt_proc, prompt_param, eval_proc, eval_param
-		{"[name]", CmdPrompt, _UU("CMD_HubChange_PROMPT_NAME"), CmdEvalNotEmpty, NULL},
-	};
-
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-
-	StrCpy(t.HubName, sizeof(t.HubName), GetParamStr(o, "[name]"));
-
-	// Retrieve the current setting first
-	ret = ScGetHub(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	// Change the settings
-	StrCpy(t.HubName, sizeof(t.HubName), GetParamStr(o, "[name]"));
-	t.HubType = HUB_TYPE_FARM_DYNAMIC;
-
-	// Write
-	ret = ScSetHub(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		// An error has occured
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
 // Get the list of Virtual HUB
 UINT PsHubList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
@@ -11028,7 +9930,6 @@ UINT PsHubList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 		CtInsertColumn(ct, _UU("SM_HUB_COLUMN_1"), false);
 		CtInsertColumn(ct, _UU("SM_HUB_COLUMN_2"), false);
-		CtInsertColumn(ct, _UU("SM_HUB_COLUMN_3"), false);
 		CtInsertColumn(ct, _UU("SM_HUB_COLUMN_4"), false);
 		CtInsertColumn(ct, _UU("SM_HUB_COLUMN_5"), false);
 		CtInsertColumn(ct, _UU("SM_HUB_COLUMN_6"), false);
@@ -11095,7 +9996,6 @@ UINT PsHubList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			CtInsert(ct,
 				name,
 				e->Online ? _UU("SM_HUB_ONLINE") : _UU("SM_HUB_OFFLINE"),
-				GetHubTypeStr(e->HubType),
 				s1, s2, s3, s4, s5, s6, s7, s8, s9, s10);
 		}
 
@@ -11533,8 +10433,6 @@ UINT PsOptionsGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 		CtInsert(ct, _UU("CMD_OptionsGet_STATUS"), t.Online ? _UU("SM_HUB_ONLINE") : _UU("SM_HUB_OFFLINE"));
 
-		CtInsert(ct, _UU("CMD_OptionsGet_TYPE"), GetHubTypeStr(t.HubType));
-
 		CtFree(ct, c);
 	}
 
@@ -11592,10 +10490,6 @@ UINT PsStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		// Online
 		CtInsert(ct, _UU("SM_HUB_STATUS_ONLINE"),
 			t.Online ? _UU("SM_HUB_ONLINE") : _UU("SM_HUB_OFFLINE"));
-
-		// Type of HUB
-		CtInsert(ct, _UU("SM_HUB_TYPE"),
-			GetHubTypeStr(t.HubType));
 
 		// Other values
 		UniToStru(tmp, t.NumSessions);
@@ -18301,7 +17195,6 @@ UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ENUM_SESSION t;
-	UINT server_type = 0;
 
 	o = ParseCommandList(c, cmd_name, str, NULL, 0);
 	if (o == NULL)
@@ -18314,20 +17207,6 @@ UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	{
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
-	}
-
-	{
-		// Get the server type
-		RPC_SERVER_INFO t;
-
-		Zero(&t, sizeof(t));
-
-		if (ScGetServerInfo(ps->Rpc, &t) == ERR_NO_ERROR)
-		{
-			server_type = t.ServerType;
-
-			FreeRpcServerInfo(&t);
-		}
 	}
 
 	Zero(&t, sizeof(t));
@@ -18368,40 +17247,12 @@ UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			wchar_t tmp6[MAX_SIZE];
 			wchar_t tmp7[MAX_SIZE];
 			wchar_t tmp8[MAX_SIZE];
-			bool free_tmp2 = false;
 
 			StrToUni(tmp1, sizeof(tmp1), e->Name);
 
 			tmp2 = _UU("SM_SESS_NORMAL");
-			if (server_type != SERVER_TYPE_STANDALONE)
-			{
-				if (e->RemoteSession)
-				{
-					tmp2 = ZeroMalloc(MAX_SIZE);
-					UniFormat(tmp2, MAX_SIZE, _UU("SM_SESS_REMOTE"), e->RemoteHostname);
-					free_tmp2 = true;
-				}
-				else
-				{
-					if (StrLen(e->RemoteHostname) == 0)
-					{
-						tmp2 = _UU("SM_SESS_LOCAL");
-					}
-					else
-					{
-						tmp2 = ZeroMalloc(MAX_SIZE);
-						UniFormat(tmp2, MAX_SIZE, _UU("SM_SESS_LOCAL_2"), e->RemoteHostname);
-						free_tmp2 = true;
-					}
-				}
-			}
 			if (e->LinkMode)
 			{
-				if (free_tmp2)
-				{
-					Free(tmp2);
-					free_tmp2 = false;
-				}
 				tmp2 = _UU("SM_SESS_LINK");
 			}
 
@@ -18444,11 +17295,6 @@ UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			}
 
 			CtInsert(ct, tmp1, tmp8, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7);
-
-			if (free_tmp2)
-			{
-				Free(tmp2);
-			}
 		}
 
 
@@ -18724,7 +17570,6 @@ UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		CtInsertColumn(ct, _UU("SM_MAC_COLUMN_2"), false);
 		CtInsertColumn(ct, _UU("SM_MAC_COLUMN_3"), false);
 		CtInsertColumn(ct, _UU("SM_MAC_COLUMN_4"), false);
-		CtInsertColumn(ct, _UU("SM_MAC_COLUMN_5"), false);
 
 		for (i = 0;i < t.NumMacTable;i++)
 		{
@@ -18734,7 +17579,6 @@ UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			wchar_t tmp2[MAX_SIZE];
 			wchar_t tmp3[MAX_SIZE];
 			wchar_t tmp4[MAX_SIZE];
-			wchar_t tmp5[MAX_SIZE];
 			wchar_t tmp6[MAX_SIZE];
 
 			RPC_ENUM_MAC_TABLE_ITEM *e = &t.MacTables[i];
@@ -18752,15 +17596,6 @@ UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 				GetDateTimeStr64Uni(tmp4, sizeof(tmp4), SystemToLocal64(e->UpdatedTime));
 
-				if (StrLen(e->RemoteHostname) == 0)
-				{
-					UniStrCpy(tmp5, sizeof(tmp5), _UU("SM_MACIP_LOCAL"));
-				}
-				else
-				{
-					UniFormat(tmp5, sizeof(tmp5), _UU("SM_MACIP_SERVER"), e->RemoteHostname);
-				}
-
 				UniToStru(tmp6, e->VlanId);
 				if (e->VlanId == 0)
 				{
@@ -18768,7 +17603,7 @@ UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 				}
 
 				CtInsert(ct,
-					tmp0, tmp1, tmp6, tmp2, tmp3, tmp4, tmp5);
+					tmp0, tmp1, tmp6, tmp2, tmp3, tmp4);
 			}
 		}
 
@@ -18886,7 +17721,6 @@ UINT PsIpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		CtInsertColumn(ct, _UU("SM_IP_COLUMN_2"), false);
 		CtInsertColumn(ct, _UU("SM_IP_COLUMN_3"), false);
 		CtInsertColumn(ct, _UU("SM_IP_COLUMN_4"), false);
-		CtInsertColumn(ct, _UU("SM_IP_COLUMN_5"), false);
 
 		for (i = 0;i < t.NumIpTable;i++)
 		{
@@ -18896,7 +17730,6 @@ UINT PsIpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			wchar_t tmp2[MAX_SIZE];
 			wchar_t tmp3[MAX_SIZE];
 			wchar_t tmp4[MAX_SIZE];
-			wchar_t tmp5[MAX_SIZE];
 			RPC_ENUM_IP_TABLE_ITEM *e = &t.IpTables[i];
 
 			if (session_name == NULL || StrCmpi(e->SessionName, session_name) == 0)
@@ -18920,17 +17753,8 @@ UINT PsIpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 				GetDateTimeStr64Uni(tmp4, sizeof(tmp4), SystemToLocal64(e->UpdatedTime));
 
-				if (StrLen(e->RemoteHostname) == 0)
-				{
-					UniStrCpy(tmp5, sizeof(tmp5), _UU("SM_MACIP_LOCAL"));
-				}
-				else
-				{
-					UniFormat(tmp5, sizeof(tmp5), _UU("SM_MACIP_SERVER"), e->RemoteHostname);
-				}
-
 				CtInsert(ct,
-					tmp0, tmp1, tmp2, tmp3, tmp4, tmp5);
+					tmp0, tmp1, tmp2, tmp3, tmp4);
 			}
 		}
 
@@ -20808,106 +19632,6 @@ UINT PsLicenseStatus(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-
-// Get the cluster configuration
-UINT PsClusterSettingGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret;
-	RPC_FARM t;
-	CT *ct;
-
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-
-	ret = ScGetFarmSetting(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	if (t.Weight == 0)
-	{
-		t.Weight = FARM_DEFAULT_WEIGHT;
-	}
-
-	// Show the cluster configuration
-	ct = CtNewStandard();
-
-	CtInsert(ct, _UU("CMD_ClusterSettingGet_Current"),
-		GetServerTypeStr(t.ServerType));
-
-	if (t.ServerType == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		CtInsert(ct, _UU("CMD_ClusterSettingGet_ControllerOnly"), t.ControllerOnly ? _UU("SEC_YES") : _UU("SEC_NO"));
-	}
-
-	if (t.ServerType != SERVER_TYPE_STANDALONE)
-	{
-		wchar_t tmp[MAX_SIZE];
-
-		UniToStru(tmp, t.Weight);
-
-		CtInsert(ct, _UU("CMD_ClusterSettingGet_Weight"), tmp);
-	}
-
-	if (t.ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		wchar_t tmp[MAX_SIZE];
-		UINT i;
-
-		// Public IP address
-		if (t.PublicIp != 0)
-		{
-			IPToUniStr32(tmp, sizeof(tmp), t.PublicIp);
-		}
-		else
-		{
-			UniStrCpy(tmp, sizeof(tmp), _UU("CMD_ClusterSettingGet_None"));
-		}
-
-		CtInsert(ct, _UU("CMD_ClusterSettingGet_PublicIp"), tmp);
-
-		// Public port list
-		tmp[0] = 0;
-		for (i = 0;i < t.NumPort;i++)
-		{
-			wchar_t tmp2[64];
-
-			UniFormat(tmp2, sizeof(tmp2), L"%u, ", t.Ports[i]);
-
-			UniStrCat(tmp, sizeof(tmp), tmp2);
-		}
-
-		if (UniEndWith(tmp, L", "))
-		{
-			tmp[UniStrLen(tmp) - 2] = 0;
-		}
-
-		CtInsert(ct, _UU("CMD_ClusterSettingGet_PublicPorts"), tmp);
-
-		// Controller to connect
-		UniFormat(tmp, sizeof(tmp), L"%S:%u", t.ControllerName, t.ControllerPort);
-		CtInsert(ct, _UU("CMD_ClusterSettingGet_Controller"), tmp);
-	}
-
-	CtFree(ct, c);
-
-	FreeRpcFarm(&t);
-	FreeParamValueList(o);
-
-	return 0;
-}
-
 // Set the server password
 UINT PsServerPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
@@ -21685,9 +20409,6 @@ UINT PsServerInfoGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	StrToUni(tmp, sizeof(tmp), t.ServerHostName);
 	CtInsert(ct, _UU("SM_INFO_HOSTNAME"), tmp);
 
-	// Type
-	CtInsert(ct, _UU("SM_ST_SERVER_TYPE"), GetServerTypeStr(t.ServerType));
-
 	// OS
 	StrToUni(tmp, sizeof(tmp), t.OsInfo.OsSystemName);
 	CtInsert(ct, _UU("SM_OS_SYSTEM_NAME"), tmp);
@@ -21722,34 +20443,6 @@ UINT PsServerInfoGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-// Get the string for type of the HUB
-wchar_t *GetHubTypeStr(UINT type)
-{
-	if (type == HUB_TYPE_FARM_STATIC)
-	{
-		return _UU("SM_HUB_STATIC");
-	}
-	else if (type == HUB_TYPE_FARM_DYNAMIC)
-	{
-		return _UU("SM_HUB_DYNAMIC");
-	}
-	return _UU("SM_HUB_STANDALONE");
-}
-
-// Get a string of the type of server
-wchar_t *GetServerTypeStr(UINT type)
-{
-	if (type == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		return _UU("SM_FARM_CONTROLLER");
-	}
-	else if (type == SERVER_TYPE_FARM_MEMBER)
-	{
-		return _UU("SM_FARM_MEMBER");
-	}
-	return _UU("SM_SERVER_STANDALONE");
-}
-
 // ServerStatusGet command
 UINT PsServerStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
@@ -21781,55 +20474,17 @@ UINT PsServerStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	CtInsertColumn(ct, _UU("SM_STATUS_COLUMN_1"), false);
 	CtInsertColumn(ct, _UU("SM_STATUS_COLUMN_2"), false);
 
-	// Type of server
-	CtInsert(ct, _UU("SM_ST_SERVER_TYPE"),
-		t.ServerType == SERVER_TYPE_STANDALONE ? _UU("SM_SERVER_STANDALONE") :
-		t.ServerType == SERVER_TYPE_FARM_MEMBER ? _UU("SM_FARM_MEMBER") : _UU("SM_FARM_CONTROLLER"));
-
 	// Number of TCP connections
 	UniToStru(tmp, t.NumTcpConnections);
 	CtInsert(ct, _UU("SM_ST_NUM_TCP"), tmp);
-
-	if (t.ServerType == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		// Number of local TCP connections
-		UniToStru(tmp, t.NumTcpConnectionsLocal);
-		CtInsert(ct, _UU("SM_ST_NUM_TCP_LOCAL"), tmp);
-
-		// Number of remote TCP connections
-		UniToStru(tmp, t.NumTcpConnectionsRemote);
-		CtInsert(ct, _UU("SM_ST_NUM_TCP_REMOTE"), tmp);
-	}
 
 	// Number of Virtual HUBs
 	UniToStru(tmp, t.NumHubTotal);
 	CtInsert(ct, _UU("SM_ST_NUM_HUB_TOTAL"), tmp);
 
-	if (t.ServerType != SERVER_TYPE_STANDALONE)
-	{
-		// Number of static HUBs
-		UniToStru(tmp, t.NumHubStatic);
-		CtInsert(ct, _UU("SM_ST_NUM_HUB_STATIC"), tmp);
-
-		// Number of dynamic HUBs
-		UniToStru(tmp, t.NumHubDynamic);
-		CtInsert(ct, _UU("SM_ST_NUM_HUB_DYNAMIC"), tmp);
-	}
-
 	// Number of sessions
 	UniToStru(tmp, t.NumSessionsTotal);
 	CtInsert(ct, _UU("SM_ST_NUM_SESSION_TOTAL"), tmp);
-
-	if (t.ServerType == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		// Number of local sessions
-		UniToStru(tmp, t.NumSessionsLocal);
-		CtInsert(ct, _UU("SM_ST_NUM_SESSION_LOCAL"), tmp);
-
-		// Number of remote sessions
-		UniToStru(tmp, t.NumSessionsRemote);
-		CtInsert(ct, _UU("SM_ST_NUM_SESSION_REMOTE"), tmp);
-	}
 
 	// Number of MAC tables
 	UniToStru(tmp, t.NumMacTables);
@@ -21853,15 +20508,6 @@ UINT PsServerStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	UniToStru(tmp, t.AssignedBridgeLicenses);
 	CtInsert(ct, _UU("SM_ST_BRIDGE_LICENSE"), tmp);
-
-	if (t.ServerType == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		UniToStru(tmp, t.AssignedClientLicensesTotal);
-		CtInsert(ct, _UU("SM_ST_CLIENT_LICENSE_EX"), tmp);
-
-		UniToStru(tmp, t.AssignedBridgeLicensesTotal);
-		CtInsert(ct, _UU("SM_ST_BRIDGE_LICENSE_EX"), tmp);
-	}
 
 	// Traffic
 	CmdInsertTrafficInfo(ct, &t.Traffic);

@@ -221,9 +221,6 @@
 #define	SEND_KILL_NUM_X				256			// Number of 'X' characters to send the Kill
 
 
-#define	FARM_BASE_POINT				100000		// Reference value of the cluster score
-#define	FARM_DEFAULT_WEIGHT			100			// Standard performance ratio
-
 #define DH_PARAM_BITS_DEFAULT		2048		// Bits of Diffie-Hellman Parameters
 
 
@@ -295,7 +292,6 @@
 #define	CONNECTION_TYPE_INIT			1	// During initialization
 #define	CONNECTION_TYPE_LOGIN			2	// Login connection
 #define	CONNECTION_TYPE_ADDITIONAL		3	// Additional connection
-#define	CONNECTION_TYPE_FARM_RPC		4	// RPC for server farm
 #define	CONNECTION_TYPE_ADMIN_RPC		5	// RPC for Management
 #define	CONNECTION_TYPE_ENUM_HUB		6	// HUB enumeration
 #define	CONNECTION_TYPE_PASSWORD		7	// Password change
@@ -329,16 +325,6 @@
 
 #define	SE_HUB_MAC_ADDR_SIGN				0xAE					// Sign virtual HUB MAC address
 
-// Traffic difference value
-#define	TRAFFIC_DIFF_USER		0		// User
-#define	TRAFFIC_DIFF_HUB		1		// Virtual HUB
-#define	MAX_TRAFFIC_DIFF		30000	// Maximum number of items
-
-// Type of HUB
-#define	HUB_TYPE_STANDALONE			0	// Stand-alone HUB
-#define	HUB_TYPE_FARM_STATIC		1	// Static HUB
-#define	HUB_TYPE_FARM_DYNAMIC		2	// Dynamic HUB
-
 // Related to delay, jitter, packet loss in the access list
 #define	HUB_ACCESSLIST_DELAY_MAX	10000		// Maximum delay
 #define	HUB_ACCESSLIST_JITTER_MAX	100			// Maximum jitter
@@ -362,14 +348,12 @@
 #define	AUTHTYPE_ROOTCERT				3			// Root certificate which is issued by trusted Certificate Authority
 #define	AUTHTYPE_NT						5			// Windows NT authentication
 #define AUTHTYPE_EXTERNAL				96			// External authentication (completed)
-#define	AUTHTYPE_TICKET					99			// Ticket authentication
 
 // Constant of the client side
 #define	CLIENT_AUTHTYPE_ANONYMOUS		0			// Anonymous authentication
 #define	CLIENT_AUTHTYPE_PASSWORD		1			// Password authentication
 #define	CLIENT_AUTHTYPE_PLAIN_PASSWORD	2			// Plain password authentication
 #define	CLIENT_AUTHTYPE_CERT			3			// Certificate authentication
-#define	CLIENT_AUTHTYPE_SECURE			4			// Secure device authentication
 #define	CLIENT_AUTHTYPE_OPENSSLENGINE			5			// Openssl engine authentication
 
 
@@ -890,7 +874,6 @@ struct CEDAR
 	struct SERVER *Server;			// Server
 	UINT64 CreatedTick;				// Generation date and time
 	bool CheckExpires;				// Check the expiration date
-	LIST *TrafficDiffList;			// Traffic difference list
 	struct LOG *DebugLog;			// Debug log
 	UCHAR UniqueId[16];				// Unique ID
 	LIST *LocalBridgeList;			// Local bridge list
@@ -923,8 +906,6 @@ struct CEDAR
 // Type of CEDAR
 #define	CEDAR_CLIENT				0	// Client
 #define	CEDAR_STANDALONE_SERVER		1	// Stand-alone server
-#define	CEDAR_FARM_CONTROLLER		2	// Server farm controller
-#define	CEDAR_FARM_MEMBER			3	// Server farm member
 
 ////////////////////////////
 // Function prototype

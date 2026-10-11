@@ -36,21 +36,8 @@ struct KEEP
 	CANCEL *Cancel;									// Cancel
 };
 
-// SECURE_SIGN Structure
-struct SECURE_SIGN
-{
-	char SecurePublicCertName[MAX_SECURE_DEVICE_FILE_LEN + 1];	// Secure device certificate name
-	char SecurePrivateKeyName[MAX_SECURE_DEVICE_FILE_LEN + 1];	// Secure device secret key name
-	X *ClientCert;					// Client certificate
-	UCHAR Random[SHA1_SIZE];		// Random value for signature
-	UCHAR Signature[4096 / 8];		// Signed data
-	UINT UseSecureDeviceId;
-	UINT BitmapId;					// Bitmap ID
-};
-
 // Function type declaration
 typedef bool (CHECK_CERT_PROC)(SESSION *s, CONNECTION *c, X *server_x, bool *expired);
-typedef bool (SECURE_SIGN_PROC)(SESSION *s, CONNECTION *c, SECURE_SIGN *sign);
 
 // RC4 key pair
 struct RC4_KEY_PAIR
@@ -120,12 +107,9 @@ struct CLIENT_AUTH
 	char PlainPassword[MAX_PASSWORD_LEN + 1];		// Password
 	X *ClientX;										// Client certificate
 	K *ClientK;										// Client private key
-	char SecurePublicCertName[MAX_SECURE_DEVICE_FILE_LEN + 1];	// Secure device certificate name
-	char SecurePrivateKeyName[MAX_SECURE_DEVICE_FILE_LEN + 1];	// Secure device secret key name
 	char OpensslEnginePrivateKeyName[MAX_SECURE_DEVICE_FILE_LEN + 1];	// Secure device secret key name
 	char OpensslEngineName[MAX_SECURE_DEVICE_FILE_LEN + 1];	// Secure device secret key name
 	CHECK_CERT_PROC *CheckCertProc;					// Server certificate confirmation procedure
-	SECURE_SIGN_PROC *SecureSignProc;				// Security signing procedure
 };
 
 // TCP socket data structure
@@ -218,8 +202,6 @@ struct CONNECTION
 	char ServerName[MAX_HOST_NAME_LEN + 1];	// Server name
 	UINT ServerPort;				// Port number
 	bool RestoreServerNameAndPort;	// Flag to restore the  server name and port number to original
-	bool UseTicket;					// Ticket using flag
-	UCHAR Ticket[SHA1_SIZE];		// Ticket
 	UINT CurrentSendQueueSize;		// Total size of the transmission queue
 	X *ServerX;						// Server certificate
 	X *ClientX;						// Client certificate
@@ -278,9 +260,6 @@ BUF *NewKeepPacket(bool server_mode);
 void KeepThread(THREAD *thread, void *param);
 KEEP *StartKeep();
 void StopKeep(KEEP *k);
-void InRpcSecureSign(SECURE_SIGN *t, PACK *p);
-void OutRpcSecureSign(PACK *p, SECURE_SIGN *t);
-void FreeRpcSecureSign(SECURE_SIGN *t);
 void NormalizeEthMtu(BRIDGE *b, CONNECTION *c, UINT packet_size);
 UINT GetMachineRand();
 

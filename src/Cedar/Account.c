@@ -790,7 +790,7 @@ bool AcIsGroup(HUB *h, char *name)
 {
 	USERGROUP *g;
 	// Validate arguments
-	if (h == NULL || name == NULL || NO_ACCOUNT_DB(h))
+	if (h == NULL || name == NULL)
 	{
 		return false;
 	}
@@ -810,7 +810,7 @@ bool AcIsUser(HUB *h, char *name)
 {
 	USER *u;
 	// Validate arguments
-	if (h == NULL || name == NULL || NO_ACCOUNT_DB(h))
+	if (h == NULL || name == NULL)
 	{
 		return false;
 	}
@@ -830,7 +830,7 @@ USERGROUP *AcGetGroup(HUB *h, char *name)
 {
 	USERGROUP *g, t;
 	// Validate arguments
-	if (h == NULL || name == NULL || NO_ACCOUNT_DB(h))
+	if (h == NULL || name == NULL)
 	{
 		return NULL;
 	}
@@ -851,7 +851,7 @@ USER *AcGetUser(HUB *h, char *name)
 {
 	USER *u, t;
 	// Validate arguments
-	if (h == NULL || name == NULL || NO_ACCOUNT_DB(h))
+	if (h == NULL || name == NULL)
 	{
 		return NULL;
 	}
@@ -966,7 +966,7 @@ bool AcDeleteGroup(HUB *h, char *name)
 bool AcAddGroup(HUB *h, USERGROUP *g)
 {
 	// Validate arguments
-	if (h == NULL || g == NULL || NO_ACCOUNT_DB(h))
+	if (h == NULL || g == NULL)
 	{
 		return false;
 	}
@@ -991,7 +991,7 @@ bool AcAddGroup(HUB *h, USERGROUP *g)
 bool AcAddUser(HUB *h, USER *u)
 {
 	// Validate arguments
-	if (h == NULL || u == NULL || NO_ACCOUNT_DB(h))
+	if (h == NULL || u == NULL)
 	{
 		return false;
 	}
@@ -1210,11 +1210,6 @@ void AcLock(HUB *h)
 	{
 		return;
 	}
-	if (NO_ACCOUNT_DB(h))
-	{
-		return;
-	}
-
 	// Lock group list and user list
 	LockList(h->HubDb->GroupList);
 	LockList(h->HubDb->UserList);
@@ -1228,11 +1223,6 @@ void AcUnlock(HUB *h)
 	{
 		return;
 	}
-	if (NO_ACCOUNT_DB(h))
-	{
-		return;
-	}
-
 	// Unlock group list and user list
 	UnlockList(h->HubDb->UserList);
 	UnlockList(h->HubDb->GroupList);
