@@ -1,15 +1,25 @@
-on: [push, pull_request]
+# Oracle build: the original SoftEther VPN source at the fork point, built unchanged for Windows.
+# Ranz VPN uses these binaries as a test oracle (ADR-0017, spec #27): the same input is fed to the old
+# and the new code and the outputs are compared. The source on this branch is never modified; only this
+# workflow differs from upstream. Each build is published as a pinned pre-release "oracle-<sha8>".
+on:
+  push:
+    branches: [main-oracle]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  build_and_test:
+  build:
     strategy:
       fail-fast: false
       matrix:
         platform: [
-          { ARCHITECTURE: x86, VCPKG_TRIPLET: "x86-windows-static", RUNNER: "windows-2022", CMAKE_EXTRA_FLAGS: ""},
           { ARCHITECTURE: x64, VCPKG_TRIPLET: "x64-windows-static", RUNNER: "windows-latest", CMAKE_EXTRA_FLAGS: ""},
           { ARCHITECTURE: arm64, VCPKG_TRIPLET: "arm64-windows-static", RUNNER: "windows-11-arm", CMAKE_EXTRA_FLAGS: "-DOQS_PERMIT_UNSUPPORTED_ARCHITECTURE=ON"}
         ]
@@ -23,12 +33,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: 'build/vcpkg_installed/'
-        key: vcpkg-${{ matrix.platform.VCPKG_TRIPLET }}
-    - name: Set version variables
-      run: |
-        $v = python version.py
-        echo "VERSION=$v" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
-      shell: pwsh
+        key: oracle-vcpkg-${{ matrix.platform.VCPKG_TRIPLET }}
     - name: Build
       env:
         ARCHITECTURE: ${{ matrix.platform.ARCHITECTURE }}
@@ -45,10 +50,7 @@ jobs:
           exit /b 1
         )
 
-        if /i "%ARCHITECTURE%"=="x86" (
-          set "VCVARS_PATH=%VSINSTALL%\VC\Auxiliary\Build\vcvars32.bat"
-          set "COMPILER_PATH=%VSINSTALL%\VC\Tools\Llvm\bin\clang-cl.exe"
-        ) else if /i "%ARCHITECTURE%"=="x64" (
+        if /i "%ARCHITECTURE%"=="x64" (
           set "VCVARS_PATH=%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
           set "COMPILER_PATH=%VSINSTALL%\VC\Tools\Llvm\x64\bin\clang-cl.exe"
         ) else if /i "%ARCHITECTURE%"=="arm64" (
@@ -62,9 +64,6 @@ jobs:
         call "%VCVARS_PATH%"
         cmake -G "Ninja" -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=%VCPKG_TRIPLET% -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER="%COMPILER_PATH%" -DCMAKE_CXX_COMPILER="%COMPILER_PATH%" -DBUILD_NUMBER=%BUILD_NUMBER% %CMAKE_EXTRA_FLAGS% ..
         cmake --build .
-        mkdir installers
-        vpnsetup /SFXMODE:vpnclient /SFXOUT:"installers\softether-vpnclient-%VERSION%.%BUILD_NUMBER%.%ARCHITECTURE%.exe"
-        vpnsetup /SFXMODE:vpnserver_vpnbridge /SFXOUT:"installers\softether-vpnserver_vpnbridge-%VERSION%.%BUILD_NUMBER%.%ARCHITECTURE%.exe"
       shell: cmd
     - name: Test
       shell: powershell
@@ -73,13 +72,33 @@ jobs:
     - uses: actions/upload-artifact@v4
       with:
         if-no-files-found: error
-        name: Binaries-${{ matrix.platform.ARCHITECTURE }}
+        name: oracle-${{ matrix.platform.ARCHITECTURE }}
         path: |
           build/*.exe
           build/*.pdb
           build/*.se2
-    - uses: actions/upload-artifact@v4
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/download-artifact@v4
       with:
-        if-no-files-found: error
-        name: Installers-${{ matrix.platform.ARCHITECTURE }}
-        path: build/installers
+        path: oracle
+    - name: Publish pinned pre-release
+      env:
+        GH_TOKEN: ${{ github.token }}
+        GH_REPO: ${{ github.repository }}
+      run: |
+        SHA8="${GITHUB_SHA::8}"
+        TAG="oracle-${SHA8}"
+        cd oracle
+        for d in */; do (cd "$d" && zip -q -r "../${d%/}.zip" .); done
+        NOTES="Original SoftEther VPN source at the fork point (main-oracle ${GITHUB_SHA}), built unchanged for Windows x64 and arm64. Test oracle for Ranz VPN (ADR-0017, spec #27). Do not deploy."
+        if gh release view "$TAG" >/dev/null 2>&1; then
+          gh release upload "$TAG" *.zip --clobber
+        else
+          gh release create "$TAG" *.zip --prerelease --target "$GITHUB_SHA" --title "Oracle ${SHA8} (SoftEther upstream, unmodified)" --notes "$NOTES"
+        fi
