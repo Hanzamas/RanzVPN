@@ -13,17 +13,17 @@
 
 //// Basic Variables
 
-#define	CEDAR_PRODUCT_STR			"Burrow"
-#define	CEDAR_PRODUCT_STR_W			L"Burrow"
-#define	CEDAR_SERVER_STR			"Burrow VPN Server"
-#define	CEDAR_BRIDGE_STR			"Burrow VPN Bridge"
-#define	CEDAR_BETA_SERVER			"Burrow VPN Server Pre Release"
-#define	CEDAR_MANAGER_STR			"Burrow VPN Server Manager"
-#define	CEDAR_CUI_STR				"Burrow VPN Command-Line Admin Tool"
-#define	CEDAR_CLIENT_STR			"Burrow VPN Client"
-#define CEDAR_CLIENT_MANAGER_STR	"Burrow VPN Client Connection Manager"
-#define	CEDAR_SERVER_LINK_STR		"Burrow VPN Server (Cascade Mode)"
-#define	CEDAR_BRIDGE_LINK_STR		"Burrow VPN Bridge (Cascade Mode)"
+#define	CEDAR_PRODUCT_STR			"Ranz"
+#define	CEDAR_PRODUCT_STR_W			L"Ranz"
+#define	CEDAR_SERVER_STR			"Ranz VPN Server"
+#define	CEDAR_BRIDGE_STR			"Ranz VPN Bridge"
+#define	CEDAR_BETA_SERVER			"Ranz VPN Server Pre Release"
+#define	CEDAR_MANAGER_STR			"Ranz VPN Server Manager"
+#define	CEDAR_CUI_STR				"Ranz VPN Command-Line Admin Tool"
+#define	CEDAR_CLIENT_STR			"Ranz VPN Client"
+#define CEDAR_CLIENT_MANAGER_STR	"Ranz VPN Client Connection Manager"
+#define	CEDAR_SERVER_LINK_STR		"Ranz VPN Server (Cascade Mode)"
+#define	CEDAR_BRIDGE_LINK_STR		"Ranz VPN Bridge (Cascade Mode)"
 
 
 
@@ -40,15 +40,15 @@
 
 //// Registry
 
-// Product key under Software\ (organisation\product): Software\Hanzcodes\Burrow VPN
-#define	GC_REG_COMPANY_NAME			"Hanzcodes\\Burrow VPN"
+// Product key under Software\ (organisation\product): Software\Hanzcodes\Ranz VPN
+#define	GC_REG_COMPANY_NAME			"Hanzcodes\\Ranz VPN"
 
 
 
 
 //// Setup Wizard
 
-#define	GC_SW_UIHELPER_REGVALUE		"Burrow VPN Client UI Helper"
+#define	GC_SW_UIHELPER_REGVALUE		"Ranz VPN Client UI Helper"
 #define	GC_SW_SOFTETHER_PREFIX		"sedev"
 #define	GC_SW_SOFTETHER_PREFIX_W	L"sedev"
 
@@ -56,6 +56,6 @@
 
 //// VPN UI Components
 
-#define	GC_UI_APPID_CM				L"Hanzcodes.Burrow VPN Client"
+#define	GC_UI_APPID_CM				L"Hanzcodes.Ranz VPN Client"
 
 #endif	// GLOBAL_CONST_H

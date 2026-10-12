@@ -39,7 +39,7 @@
 #ifdef	WIN32
 #define	OS_WIN32	// Microsoft Windows
 #else
-#error "Burrow VPN builds on Windows only."
+#error "Ranz VPN builds on Windows only."
 #endif
 
 

@@ -1,9 +1,9 @@
-Burrow VPN
+Ranz VPN
 Copyright (c) 2026 Hanzcodes
 
 This product is derived from SoftEther VPN
 (https://github.com/SoftEtherVPN/SoftEtherVPN), which is licensed under the
-Apache License, Version 2.0. Burrow VPN is distributed under the same license;
+Apache License, Version 2.0. Ranz VPN is distributed under the same license;
 see the LICENSE file.
 
 SoftEther VPN
@@ -12,7 +12,7 @@ Copyright (c) Daiyuu Nobori, SoftEther Project at University of Tsukuba,
 and SoftEther Corporation.
 The authors of SoftEther VPN are listed in the AUTHORS.TXT file.
 
-Modifications by Hanzcodes, 2026: the product was renamed to Burrow VPN,
+Modifications by Hanzcodes, 2026: the product was renamed to Ranz VPN,
 reduced to the native SE-VPN protocol on Windows, and the components listed
 in README.md were removed. The copyright and license notices of the original
 authors are retained in the source files.
@@ -20,6 +20,6 @@ authors are retained in the source files.
 This product includes third-party software. Their copyright notices and
 license terms are in the src/THIRD_PARTY.TXT file.
 
-SoftEther is a registered trademark of SoftEther Corporation. Burrow VPN is
+SoftEther is a registered trademark of SoftEther Corporation. Ranz VPN is
 not affiliated with or endorsed by SoftEther Corporation or the SoftEther VPN
 Project.

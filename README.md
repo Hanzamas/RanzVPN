@@ -1,6 +1,6 @@
-# Burrow VPN
+# Ranz VPN
 
-Burrow VPN is a Windows-only slim fork of [SoftEther VPN](https://github.com/SoftEtherVPN/SoftEtherVPN), maintained by Hanzcodes. It keeps the native SE-VPN protocol (SSL-VPN over TCP, with UDP Acceleration) and removes everything else.
+Ranz VPN is a Windows-only slim fork of [SoftEther VPN](https://github.com/SoftEtherVPN/SoftEtherVPN), maintained by Hanzcodes. It keeps the native SE-VPN protocol (SSL-VPN over TCP, with UDP Acceleration) and removes everything else.
 
 The version is `0.1.N`, where `N` is the number of the GitHub Actions run that built the binaries.
 
@@ -10,8 +10,8 @@ The version is `0.1.N`, where `N` is the number of the GitHub Actions run that b
 - Windows 10 and Windows Server 2016 or later, on x64 and arm64. x86 and other platforms are not supported.
 - Default listeners are TCP 443 and 5555.
 - Peers still see the SoftEther VPN 5.02 build 5187 version numbers and the `SE-VPN4-PROTOCOL` signature, so SE-VPN clients and servers keep working with it.
-- The server reads `burrow_server.config` next to `vpnserver.exe`. Configuration files from SoftEther VPN (`vpn_server.config`) are not read or migrated.
-- Settings in the Windows registry live under `Software\Hanzcodes\Burrow VPN`.
+- The server reads `ranz_server.config` next to `vpnserver.exe`. Configuration files from SoftEther VPN (`vpn_server.config`) are not read or migrated.
+- Settings in the Windows registry live under `Software\Hanzcodes\Ranz VPN`.
 
 ## Removed from SoftEther VPN
 
@@ -29,7 +29,7 @@ The version is `0.1.N`, where `N` is the number of the GitHub Actions run that b
 
 ## Build
 
-Burrow VPN is built only on GitHub Actions, by [`.github/workflows/windows.yml`](.github/workflows/windows.yml), with clang-cl, vcpkg and Ninja. Each run passes its run number to CMake as `BUILD_NUMBER`, runs the self-tests and uploads the executables, debug symbols and `hamcore.se2` as artifacts.
+Ranz VPN is built only on GitHub Actions, by [`.github/workflows/windows.yml`](.github/workflows/windows.yml), with clang-cl, vcpkg and Ninja. Each run passes its run number to CMake as `BUILD_NUMBER`, runs the self-tests and uploads the executables, debug symbols and `hamcore.se2` as artifacts.
 
 The configure step the workflow runs is:
 
@@ -40,12 +40,12 @@ cmake --build .
 
 ## License
 
-Burrow VPN is licensed under the [Apache License 2.0](LICENSE), the same license as SoftEther VPN.
+Ranz VPN is licensed under the [Apache License 2.0](LICENSE), the same license as SoftEther VPN.
 
-Burrow VPN is derived from [SoftEther VPN](https://github.com/SoftEtherVPN/SoftEtherVPN). See [NOTICE](NOTICE) for the attribution, [AUTHORS.TXT](AUTHORS.TXT) for the authors of SoftEther VPN and [src/THIRD_PARTY.TXT](src/THIRD_PARTY.TXT) for the licenses of included third-party software.
+Ranz VPN is derived from [SoftEther VPN](https://github.com/SoftEtherVPN/SoftEtherVPN). See [NOTICE](NOTICE) for the attribution, [AUTHORS.TXT](AUTHORS.TXT) for the authors of SoftEther VPN and [src/THIRD_PARTY.TXT](src/THIRD_PARTY.TXT) for the licenses of included third-party software.
 
 Copyright (c) all contributors on SoftEther VPN project in GitHub.
 Copyright (c) Daiyuu Nobori, SoftEther Project at University of Tsukuba, and SoftEther Corporation.
 Modifications Copyright (c) 2026 Hanzcodes.
 
-SoftEther is a registered trademark of SoftEther Corporation. Burrow VPN is not affiliated with or endorsed by SoftEther Corporation or the SoftEther VPN Project.
+SoftEther is a registered trademark of SoftEther Corporation. Ranz VPN is not affiliated with or endorsed by SoftEther Corporation or the SoftEther VPN Project.
