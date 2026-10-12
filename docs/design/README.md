@@ -11,7 +11,7 @@ Architecture decision records live in `docs/adr/`; the reasoning behind them is 
 - [ADR-0005](../adr/0005-transport-stack-quic-tls-noise-cdn.md) — QUIC primary, Trojan-style TLS/TCP fallback, Noise-style session layer, CDN path, stealth sidecar (Proposed).
 - [ADR-0006](../adr/0006-censorship-circumvention-tiers.md) — Censorship circumvention as a tiered edge feature (Proposed).
 - [ADR-0007](../adr/0007-tls-stack-openssl-vs-schannel.md) — One TLS stack for the new core: Schannel and msquic+Schannel, OpenSSL dropped (Accepted; minimum OS Windows 11 / Server 2022).
-- [ADR-0008](../adr/0008-windows-native-replacements.md) — Windows-native replacements for SoftEther's runtime (Proposed).
+- [ADR-0008](../adr/0008-windows-native-replacements.md) — Windows-native replacements for SoftEther's runtime (Accepted as a principle; IOCP + USO/URO, RIO crossed out).
 - [ADR-0009](../adr/0009-adapter-choice.md) — Adapters: Wintun for L3 (Accepted), TAP for L2 with Neo6 vs tap-windows6 open (Proposed), SeLow for bridging (Accepted).
 - [ADR-0010](../adr/0010-routing-at-the-edge-no-in-daemon-bgp.md) — Routing by the OS, BGP only at the edge (Proposed).
 - [ADR-0011](../adr/0011-single-node-binary-with-roles.md) — One node binary with roles and both data-path backends (Accepted with ADR-0014).
