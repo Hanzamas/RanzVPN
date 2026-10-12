@@ -79,10 +79,12 @@ jobs:
         dotnet run -- ../../src/bin/hamcore
         if ($LASTEXITCODE -ne 0) { throw "stbchecker reported differences between the string tables (exit code $LASTEXITCODE)" }
     - name: Test
+      timeout-minutes: 10
       shell: powershell
       run: |
         . .github/scripts/vpntest.ps1
     - name: Self-check
+      timeout-minutes: 10
       shell: pwsh
       run: |
         $out = & build\vpncmd.exe /TOOLS /CMD Check 2>&1 | Out-String
@@ -172,26 +174,23 @@ jobs:
     - name: ASan start-up diagnostics
       shell: pwsh
       timeout-minutes: 5
-      env:
-        ASAN_OPTIONS: windows_hook_rtl_allocators=1:verbosity=1
       run: |
         Get-ChildItem build -Filter *.dll | ForEach-Object { Write-Host "dll: $($_.Name)" }
         Get-ChildItem build -Filter hamcore.se2 | ForEach-Object { Write-Host "hamcore: $($_.Length) bytes" }
-        $p = Start-Process -FilePath build\vpntest.exe -ArgumentList 'mschapv2' -NoNewWindow -Wait -PassThru -RedirectStandardOutput diag-out.txt -RedirectStandardError diag-err.txt
-        Write-Host "vpntest mschapv2 exit code: $($p.ExitCode) (0x$('{0:X8}' -f $p.ExitCode))"
-        Write-Host '--- stdout'; Get-Content diag-out.txt -ErrorAction SilentlyContinue | Select-Object -Last 40
-        Write-Host '--- stderr'; Get-Content diag-err.txt -ErrorAction SilentlyContinue | Select-Object -Last 60
+        # Informational: vpntest with and without windows_hook_rtl_allocators=1
+        foreach ($opts in @('verbosity=1', 'windows_hook_rtl_allocators=1:verbosity=1')) {
+          $env:ASAN_OPTIONS = $opts
+          $p = Start-Process -FilePath build\vpntest.exe -ArgumentList 'mschapv2' -NoNewWindow -Wait -PassThru -RedirectStandardOutput diag-out.txt -RedirectStandardError diag-err.txt
+          Write-Host "=== ASAN_OPTIONS '$opts': vpntest mschapv2 exit code $($p.ExitCode) (0x$('{0:X8}' -f $p.ExitCode))"
+          Write-Host '--- stdout'; Get-Content diag-out.txt -ErrorAction SilentlyContinue | Select-Object -Last 20
+          Write-Host '--- stderr'; Get-Content diag-err.txt -ErrorAction SilentlyContinue | Select-Object -Last 30
+        }
     - name: vpntest smoke test under ASan
       shell: pwsh
       timeout-minutes: 10
       env:
-        # Mayaqua allocates from a private heap; Clang's ASan runtime hooks HeapAlloc only with this
-        # option (default false), effective with the one-DLL runtime (LLVM 20 and later) only:
-        # https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/compiler-rt/lib/asan/asan_flags.inc
-        # https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/compiler-rt/lib/asan/asan_malloc_win.cpp
-        ASAN_OPTIONS: windows_hook_rtl_allocators=1
         # harness and bench have time budgets that AddressSanitizer would exceed; run them in build_and_test only.
-        RANZ_SMOKE_TESTS: mschapv2,stun,stress
+        RANZ_SMOKE_TESTS: mschapv2,stun,watermark,stress
       run: |
         # The smoke test script of build_and_test itself, so both jobs run the same test list:
         # its new path (.github/scripts) first, its old one second. Its output and the vpntest
@@ -207,15 +206,11 @@ jobs:
     - name: Fuzz seed replay (deterministic)
       shell: pwsh
       timeout-minutes: 10
-      env:
-        ASAN_OPTIONS: windows_hook_rtl_allocators=1
       run: |
         ./src/fuzz/run_fuzzers.ps1 -BuildDir build -Seconds 0
     - name: Fuzz (60 s per target)
       shell: pwsh
       timeout-minutes: 30
-      env:
-        ASAN_OPTIONS: windows_hook_rtl_allocators=1
       run: |
         ./src/fuzz/run_fuzzers.ps1 -BuildDir build -Seconds 60 -Seed 1
     - uses: actions/upload-artifact@v4

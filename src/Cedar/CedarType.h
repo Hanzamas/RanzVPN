@@ -145,18 +145,6 @@ typedef struct LOCALBRIDGE LOCALBRIDGE;
 
 
 // ==============================================================
-//   Layer-3 Switch
-// ==============================================================
-
-typedef struct L3IF L3IF;
-typedef struct L3SW L3SW;
-typedef struct L3TABLE L3TABLE;
-typedef struct L3ARPENTRY L3ARPENTRY;
-typedef struct L3ARPWAIT L3ARPWAIT;
-typedef struct L3PACKET L3PACKET;
-
-
-// ==============================================================
 //   Client
 // ==============================================================
 
@@ -240,13 +228,6 @@ typedef struct RPC_ENUM_LOCALBRIDGE RPC_ENUM_LOCALBRIDGE;
 typedef struct RPC_BRIDGE_SUPPORT RPC_BRIDGE_SUPPORT;
 typedef struct RPC_CONFIG RPC_CONFIG;
 typedef struct RPC_ADMIN_OPTION RPC_ADMIN_OPTION;
-typedef struct RPC_L3SW RPC_L3SW;
-typedef struct RPC_L3IF RPC_L3IF;
-typedef struct RPC_L3TABLE RPC_L3TABLE;
-typedef struct RPC_ENUM_L3SW_ITEM RPC_ENUM_L3SW_ITEM;
-typedef struct RPC_ENUM_L3SW RPC_ENUM_L3SW;
-typedef struct RPC_ENUM_L3IF RPC_ENUM_L3IF;
-typedef struct RPC_ENUM_L3TABLE RPC_ENUM_L3TABLE;
 typedef struct RPC_CRL RPC_CRL;
 typedef struct RPC_ENUM_CRL_ITEM RPC_ENUM_CRL_ITEM;
 typedef struct RPC_ENUM_CRL RPC_ENUM_CRL;
@@ -301,19 +282,6 @@ typedef struct TT_RESULT TT_RESULT;
 typedef struct TTS_SOCK TTS_SOCK;
 typedef struct TTC_SOCK TTC_SOCK;
 typedef struct PT PT;
-
-// ==============================================================
-//  EtherLogger
-// ==============================================================
-
-typedef struct EL EL;
-typedef struct EL_DEVICE EL_DEVICE;
-typedef struct EL_LICENSE_STATUS EL_LICENSE_STATUS;
-typedef struct RPC_ADD_DEVICE RPC_ADD_DEVICE;
-typedef struct RPC_DELETE_DEVICE RPC_DELETE_DEVICE;
-typedef struct RPC_ENUM_DEVICE_ITEM RPC_ENUM_DEVICE_ITEM;
-typedef struct RPC_ENUM_DEVICE RPC_ENUM_DEVICE;
-typedef struct RPC_EL_LICENSE_STATUS RPC_EL_LICENSE_STATUS;
 
 
 // ==============================================================

@@ -7,7 +7,9 @@
 #include "Cedar/Command.h"
 #include "Cedar/MsChapV2.h"
 #include "Cedar/Server.h"
+#include "Cedar/WaterMark.h"
 
+#include "Mayaqua/Encrypt.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Mayaqua.h"
 #include "Mayaqua/Memory.h"
@@ -436,6 +438,74 @@ void stun_test(UINT num, char **arg)
 // Mayaqua runtime stress test (stress.c)
 void stress_test(UINT num, char **arg);
 
+// Watermark test: the hamcore file must hold the bytes of the former WaterMark[] C array
+void watermark_test(UINT num, char **arg)
+{
+	// Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c
+	UINT expect_size = 1411;
+	char *expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
+
+	UCHAR hash[SHA256_SIZE];
+	char hash_str[SHA256_SIZE * 2 + 1];
+	bool ok = true;
+	BUF *b;
+
+	Print("Watermark test (hamcore %s)\n", WATERMARK_FILENAME);
+
+	// Same code path as InitWaterMark() at startup
+	b = LoadWaterMark();
+	if (b == NULL)
+	{
+		Print("  [FAIL] LoadWaterMark(): file missing, or its size or SHA-256 is wrong\n");
+		Print("WATERMARK TEST FAILED\n");
+		return;
+	}
+
+	if (b->Size == expect_size)
+	{
+		Print("  [PASS] Size = %u\n", b->Size);
+	}
+	else
+	{
+		Print("  [FAIL] Size = %u (expected %u)\n", b->Size, expect_size);
+		ok = false;
+	}
+
+	Sha2_256(hash, b->Buf, b->Size);
+	BinToStr(hash_str, sizeof(hash_str), hash, sizeof(hash));
+	if (StrCmpi(hash_str, expect_sha256) == 0)
+	{
+		Print("  [PASS] SHA-256 = %s\n", hash_str);
+	}
+	else
+	{
+		Print("  [FAIL] SHA-256 = %s (expected %s)\n", hash_str, expect_sha256);
+		ok = false;
+	}
+
+	// The buffer loaded by InitCedar() must hold the same bytes
+	if (WaterMark != NULL && WaterMarkSize == b->Size && Cmp(WaterMark, b->Buf, b->Size) == 0)
+	{
+		Print("  [PASS] Startup buffer matches the file\n");
+	}
+	else
+	{
+		Print("  [FAIL] Startup buffer does not match the file\n");
+		ok = false;
+	}
+
+	FreeBuf(b);
+
+	if (ok)
+	{
+		Print("WATERMARK TEST OK\n");
+	}
+	else
+	{
+		Print("WATERMARK TEST FAILED\n");
+	}
+}
+
 // The list of test functions
 // Test function definition list
 typedef void (TEST_PROC)(UINT num, char **arg);
@@ -456,6 +526,7 @@ TEST_LIST test_list[] =
 	{"harness", harness_test, "In-process server: hubs, cascade, frames, vpncmd golden outputs, config round-trip."},
 	{"bench", bench_test, "Cascade frame throughput and Pack encode/decode benchmark (informational)."},
 	{"stress", stress_test, "Mayaqua runtime stress test: stress [timing] [case ...]."},
+	{"watermark", watermark_test, "Watermark: hamcore watermark.bin size and SHA-256 against the former C array."},
 };
 
 // Test function

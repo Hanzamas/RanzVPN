@@ -29,16 +29,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# Mayaqua allocates from a private heap (HeapCreate/HeapAlloc when VPN_SPEED is defined, see
-# WIN32_USE_HEAP_API_FOR_MEMORY in Mayaqua.h). Clang's ASan runtime hooks HeapAlloc only with
-# this option (default false), and only in the one-DLL runtime of LLVM 20 and later, which
-# cmake/RanzSanitizers.cmake requires:
-# https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/compiler-rt/lib/asan/asan_flags.inc
-# https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/compiler-rt/lib/asan/asan_malloc_win.cpp
-# Appended to options set by the caller, unless the caller sets this one itself.
-if ($env:ASAN_OPTIONS -notmatch 'windows_hook_rtl_allocators') {
-	$env:ASAN_OPTIONS = (@($env:ASAN_OPTIONS, 'windows_hook_rtl_allocators=1') | Where-Object { $_ }) -join ':'
-}
+# RANZ_ASAN builds allocate from the CRT heap (Mayaqua.h leaves WIN32_USE_HEAP_API_FOR_MEMORY
+# undefined), which AddressSanitizer checks without extra ASAN_OPTIONS.
 
 # Largest input per target (-max_len); fuzz_tcpip matches its FUZZ_MAX_FRAME_SIZE, fuzz_http is
 # above twice HTTP_HEADER_LINE_MAX_SIZE (4096) so that over-long lines are reached

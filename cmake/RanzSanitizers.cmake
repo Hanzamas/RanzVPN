@@ -11,10 +11,10 @@
 #
 # CRT linkage: /MT stays. LLVM 20 and later have a single ASan runtime DLL for every CRT; with
 # /MT the EXE links its import library plus a static thunk. LLVM 19 and earlier linked ASan
-# statically with /MT, and that runtime never hooks HeapAlloc ([ASAN-WIN]), which Mayaqua's
-# Malloc() uses in non-Debug builds (WIN32_USE_HEAP_API_FOR_MEMORY): it is rejected.
-# The one-DLL runtime hooks HeapAlloc only with ASAN_OPTIONS=windows_hook_rtl_allocators=1
-# (default false, [ASAN-FLAGS]); src/fuzz/run_fuzzers.ps1 and the fuzz-asan CI job set it.
+# statically with /MT, and that runtime never hooks HeapAlloc ([ASAN-WIN]): it is rejected.
+# RANZ_ASAN builds allocate from the CRT heap (Mayaqua.h leaves WIN32_USE_HEAP_API_FOR_MEMORY
+# undefined), so no ASAN_OPTIONS are needed. windows_hook_rtl_allocators=1 ([ASAN-FLAGS]) is not
+# set: with it, vpntest did not start on the CI runner (0xC0000142, STATUS_DLL_INIT_FAILED).
 #
 # CMake links MSVC-style targets by calling the linker (lld-link, or link.exe) directly, not
 # through clang-cl, so the sanitizer runtime libraries that clang-cl would add in its own link

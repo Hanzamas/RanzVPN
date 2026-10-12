@@ -31,7 +31,7 @@ static char *delete_targets[] =
 	"backup.vpn_gate_svc.config",
 	"backup.etherlogger.config",
 	HUB_PACKET_LOG_DIR,
-	EL_PACKET_LOG_DIR,
+	"etherlogger_log",
 	"secure_nat_log",
 	HUB_SECURITY_LOG_DIR,
 	SERVER_LOG_DIR,

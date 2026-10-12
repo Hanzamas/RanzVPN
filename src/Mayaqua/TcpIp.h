@@ -812,7 +812,6 @@ UCHAR GetNextByte(BUF *b);
 bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address);
 
 USHORT IpChecksum(void *buf, UINT size);
-bool IpCheckChecksum(IPV4_HEADER *ip);
 
 void GenMacAddress(UCHAR *mac);
 UINT GetBroadcastAddress(UINT addr, UINT mask);
