@@ -1,6 +1,8 @@
-# ADR-0001: Burrow VPN 0.1 slim-down scope
+# ADR-0001: Ranz VPN 0.1 slim-down scope
 
 **Status:** Accepted (2026-10-10, Hilmi: "konfirmasi")
+
+**Amended 2026-10-12:** the product name changed from Burrow VPN to Ranz VPN (Hilmi: "ganti ke ini Ranz VPN"). The rename is user-visible only, like the original one: executables, internal service names, hamcore.se2, the Cedar and Mayaqua modules and the SE-VPN wire signature are unchanged; the configuration file is ranz_server.config and the registry key Software\Hanzcodes\Ranz VPN.
 
 ## Context
 
@@ -10,7 +12,7 @@ The scope was settled in a grilling session and published as the spec issue [Han
 
 ## Decision
 
-The spec in issue #1 is the authoritative scope for the slim-down phase. In one sentence: keep only the native SE-VPN protocol (with VPN over ICMP/DNS and UDP Acceleration), Windows 10 / Server 2016 and later on x64 and arm64, the headless executables, no cloud dependencies, no GUI, no JSON-RPC, no foreign protocols; add a standalone MS-CHAPv2 helper module and an optional STUN client; rename to Burrow VPN 0.1 by Hanzcodes; one branch, one commit per ticket, each kept green by the Windows workflow, one pull request ([#22](https://github.com/Hanzamas/SoftEtherVPN/pull/22)).
+The spec in issue #1 is the authoritative scope for the slim-down phase. In one sentence: keep only the native SE-VPN protocol (with VPN over ICMP/DNS and UDP Acceleration), Windows 10 / Server 2016 and later on x64 and arm64, the headless executables, no cloud dependencies, no GUI, no JSON-RPC, no foreign protocols; add a standalone MS-CHAPv2 helper module and an optional STUN client; rename to Ranz VPN 0.1 by Hanzcodes; one branch, one commit per ticket, each kept green by the Windows workflow, one pull request ([#22](https://github.com/Hanzamas/SoftEtherVPN/pull/22)).
 
 Removal means deletion, not stubbing. Error codes and auth-type constants are not renumbered.
 

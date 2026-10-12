@@ -28,7 +28,7 @@
 #include <WinSock2.h>
 #include <ws2ipdef.h>
 #else
-#error "Burrow VPN builds on Windows only."
+#error "Ranz VPN builds on Windows only."
 #endif
 
 // 
