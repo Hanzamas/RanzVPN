@@ -1091,6 +1091,7 @@ bool SendHttpHeader(SOCK *s, HTTP_HEADER *header)
 }
 
 // Receive an HTTP header
+// src/fuzz/fuzz_http.c repeats this loop (and RecvLine) over a buffer: change it with this function
 HTTP_HEADER *RecvHttpHeader(SOCK *s)
 {
 	TOKEN_LIST *token = NULL;

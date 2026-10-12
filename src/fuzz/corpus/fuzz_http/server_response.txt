@@ -1,0 +1,6 @@
+HTTP/1.1 200 OK
+Content-Type: application/octet-stream
+Connection: Keep-Alive
+Keep-Alive: timeout=15; max=19
+Content-Length: 2048
+

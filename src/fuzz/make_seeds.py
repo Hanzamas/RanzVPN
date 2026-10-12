@@ -1,0 +1,420 @@
+# make_seeds.py
+# Writes the seed corpus of the libFuzzer targets into src/fuzz/corpus/<target>/.
+# Python standard library only; deterministic (same bytes on every run).
+#
+# Usage: python -I src/fuzz/make_seeds.py
+
+import base64
+import hashlib
+import os
+import random
+import struct
+
+CORPUS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'corpus')
+
+# Non-ASCII sample characters: LATIN SMALL LETTER E WITH ACUTE, CJK "sun"
+E_ACUTE = chr(0xE9)
+CJK_SUN = chr(0x65E5)
+
+
+def write_seed(target, name, data):
+    directory = os.path.join(CORPUS, target)
+    os.makedirs(directory, exist_ok=True)
+    with open(os.path.join(directory, name), 'wb') as f:
+        f.write(data)
+
+
+# ---------------------------------------------------------------------------
+# PACK (Mayaqua/Pack.c WritePack): big-endian UINT counts and sizes
+# ---------------------------------------------------------------------------
+VALUE_INT, VALUE_DATA, VALUE_STR, VALUE_UNISTR, VALUE_INT64 = 0, 1, 2, 3, 4
+
+
+def buf_str(s):
+    # WriteBufStr: length + 1, then the bytes without terminator
+    b = s.encode('ascii')
+    return struct.pack('>I', len(b) + 1) + b
+
+
+def pack_value(vtype, v):
+    if vtype == VALUE_INT:
+        return struct.pack('>I', v)
+    if vtype == VALUE_INT64:
+        return struct.pack('>Q', v)
+    if vtype == VALUE_DATA:
+        return struct.pack('>I', len(v)) + v
+    if vtype == VALUE_STR:
+        b = v.encode('ascii')
+        return struct.pack('>I', len(b)) + b
+    if vtype == VALUE_UNISTR:
+        b = v.encode('utf-8') + b'\0'      # UTF-8 size includes the terminator
+        return struct.pack('>I', len(b)) + b
+    raise ValueError(vtype)
+
+
+def pack(elements):
+    out = struct.pack('>I', len(elements))
+    for name, vtype, values in elements:
+        out += buf_str(name) + struct.pack('>II', vtype, len(values))
+        for v in values:
+            out += pack_value(vtype, v)
+    return out
+
+
+def make_pack_seeds():
+    write_seed('fuzz_pack', 'minimal.bin', pack([('hello', VALUE_INT, [1])]))
+    # Shaped like the client's login PACK: every value type, one multi-value element
+    write_seed('fuzz_pack', 'login.bin', pack([
+        ('method', VALUE_STR, ['login']),
+        ('hubname', VALUE_STR, ['DEFAULT']),
+        ('username', VALUE_STR, ['fuzz']),
+        ('authtype', VALUE_INT, [1]),
+        ('secure_password', VALUE_DATA, [bytes(range(20))]),
+        ('client_str', VALUE_STR, ['Ranz VPN Client']),
+        ('client_ver', VALUE_INT, [502]),
+        ('client_build', VALUE_INT, [5187]),
+        ('unique_id', VALUE_DATA, [bytes(range(100, 120))]),
+        ('max_connection', VALUE_INT, [1]),
+        ('use_encrypt', VALUE_INT, [1]),
+        ('use_compress', VALUE_INT, [0]),
+        ('half_connection', VALUE_INT, [0]),
+        ('qos', VALUE_INT, [0]),
+        ('client_hostname', VALUE_UNISTR, ['fuzz-host ' + E_ACUTE + CJK_SUN]),
+        ('timestamp', VALUE_INT64, [0x0000019A2B3C4D5E]),
+        ('ports', VALUE_INT, [443, 992, 5555]),
+    ]))
+
+
+# ---------------------------------------------------------------------------
+# Configuration (Mayaqua/Cfg.c): text and binary
+# ---------------------------------------------------------------------------
+TAG_CPYRIGHT = (b'\xef\xbb\xbf# Software Configuration File\r\n# ---------------------------\r\n# \r\n'
+                b'# You may edit this file when the VPN Server / Client / Bridge program is not running.\r\n# \r\n'
+                b'# In prior to edit this file manually by your text editor,\r\n'
+                b'# shutdown the VPN Server / Client / Bridge background service.\r\n'
+                b'# Otherwise, all changes will be lost.\r\n# \r\n')
+
+CFG_TEXT = '\r\n'.join([
+    'declare root',
+    '{',
+    '\tuint ConfigRevision 3',
+    '\tbool IPsecMessageDisplayed false',
+    '\tstring Region $',
+    '\tdeclare ServerConfiguration',
+    '\t{',
+    '\t\tuint64 AutoDeleteCheckDiskFreeSpaceMin 104857600',
+    '\t\tbool DisableNatTraversal true',
+    '\t\tbyte HashedPassword AAECAwQFBgcICQoLDA0ODxAREhM=',
+    '\t\tstring ServerName Ranz$20VPN',
+    '\t\tuint ServerType 0',
+    '\t}',
+    '\tdeclare VirtualHUB',
+    '\t{',
+    '\t\tdeclare DEFAULT',
+    '\t\t{',
+    '\t\t\tbool Online true',
+    '\t\t\tstring HubType 0',
+    '\t\t}',
+    '\t}',
+    '}',
+    '',
+]).encode('ascii')
+
+ITEM_TYPE_INT, ITEM_TYPE_INT64, ITEM_TYPE_BYTE, ITEM_TYPE_STRING, ITEM_TYPE_BOOL = 1, 2, 3, 4, 5
+
+
+def sha0(data):
+    # SHA-0 (FIPS 180), as Mayaqua's Sha0(): SHA-1 without the rotation in the message schedule
+    h = [0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0]
+    msg = data + b'\x80' + b'\0' * ((55 - len(data)) % 64) + struct.pack('>Q', len(data) * 8)
+    rol = lambda x, n: ((x << n) | (x >> (32 - n))) & 0xFFFFFFFF
+    for off in range(0, len(msg), 64):
+        w = list(struct.unpack('>16I', msg[off:off + 64]))
+        for t in range(16, 80):
+            w.append(w[t - 3] ^ w[t - 8] ^ w[t - 14] ^ w[t - 16])
+        a, b, c, d, e = h
+        for t in range(80):
+            if t < 20:
+                f, k = (d ^ (b & (c ^ d))), 0x5A827999
+            elif t < 40:
+                f, k = (b ^ c ^ d), 0x6ED9EBA1
+            elif t < 60:
+                f, k = ((b & c) | (d & (b | c))), 0x8F1BBCDC
+            else:
+                f, k = (b ^ c ^ d), 0xCA62C1D6
+            a, b, c, d, e = (rol(a, 5) + f + e + k + w[t]) & 0xFFFFFFFF, a, rol(b, 30), c, d
+        h = [(x + y) & 0xFFFFFFFF for x, y in zip(h, [a, b, c, d, e])]
+    return b''.join(struct.pack('>I', x) for x in h)
+
+
+def cfg_bin_folder(name, folders, items):
+    # CfgOutputFolderBin: name, subfolder count, subfolders, item count, items
+    out = buf_str(name) + struct.pack('>I', len(folders))
+    for sub in folders:
+        out += cfg_bin_folder(*sub)
+    out += struct.pack('>I', len(items))
+    for iname, itype, value in items:
+        out += buf_str(iname) + struct.pack('>I', itype)
+        if itype in (ITEM_TYPE_INT, ITEM_TYPE_BOOL):
+            out += struct.pack('>I', value)
+        elif itype == ITEM_TYPE_INT64:
+            out += struct.pack('>Q', value)
+        else:
+            b = value if itype == ITEM_TYPE_BYTE else value.encode('utf-8')
+            out += struct.pack('>I', len(b)) + b
+    return out
+
+
+def make_cfg_seeds():
+    write_seed('fuzz_cfg', 'server_text.config', TAG_CPYRIGHT + b'\r\n' + CFG_TEXT)
+    body = cfg_bin_folder('root', [
+        ('ServerConfiguration', [], [
+            ('AutoDeleteCheckDiskFreeSpaceMin', ITEM_TYPE_INT64, 104857600),
+            ('HashedPassword', ITEM_TYPE_BYTE, bytes(range(20))),
+            ('ServerName', ITEM_TYPE_STRING, 'Ranz VPN ' + E_ACUTE),
+            ('DisableNatTraversal', ITEM_TYPE_BOOL, 1),
+        ]),
+    ], [
+        ('ConfigRevision', ITEM_TYPE_INT, 3),
+        ('IPsecMessageDisplayed', ITEM_TYPE_BOOL, 0),
+    ])
+    # CfgFolderToBufBin: "SEVPN_DB", SHA-0 of the body, body
+    write_seed('fuzz_cfg', 'server_binary.config', b'SEVPN_DB' + sha0(body) + body)
+
+
+# ---------------------------------------------------------------------------
+# Ethernet frames (Mayaqua/TcpIp.c ParsePacketEx4)
+# ---------------------------------------------------------------------------
+MAC_A = bytes.fromhex('5e0000000001')
+MAC_B = bytes.fromhex('5e0000000002')
+BROADCAST = b'\xff' * 6
+
+
+def csum(data):
+    if len(data) % 2:
+        data += b'\0'
+    s = sum(struct.unpack('>%dH' % (len(data) // 2), data))
+    while s >> 16:
+        s = (s & 0xFFFF) + (s >> 16)
+    return (~s) & 0xFFFF
+
+
+def ipv4(src, dst, proto, payload, ident=1):
+    hdr = struct.pack('>BBHHHBBH4s4s', 0x45, 0, 20 + len(payload), ident, 0x4000, 64, proto, 0,
+                      bytes(src), bytes(dst))
+    return hdr[:10] + struct.pack('>H', csum(hdr)) + hdr[12:] + payload
+
+
+def l4_csum(src, dst, proto, segment):
+    pseudo = bytes(src) + bytes(dst) + struct.pack('>BBH', 0, proto, len(segment))
+    return csum(pseudo + segment)
+
+
+def udp(src, dst, sport, dport, payload):
+    seg = struct.pack('>HHHH', sport, dport, 8 + len(payload), 0) + payload
+    return seg[:6] + struct.pack('>H', l4_csum(src, dst, 17, seg)) + seg[8:]
+
+
+def tcp(src, dst, sport, dport, seq, ack, flags, payload):
+    seg = struct.pack('>HHIIBBHHH', sport, dport, seq, ack, 5 << 4, flags, 65535, 0, 0) + payload
+    return seg[:16] + struct.pack('>H', l4_csum(src, dst, 6, seg)) + seg[18:]
+
+
+def eth(dst, src, ethertype, payload):
+    return dst + src + struct.pack('>H', ethertype) + payload
+
+
+def make_tcpip_seeds():
+    a, b = [10, 0, 0, 1], [10, 0, 0, 2]
+    dns_query = (struct.pack('>HHHHHH', 0x1234, 0x0100, 1, 0, 0, 0) +
+                 b'\x07example\x03com\x00' + struct.pack('>HH', 1, 1))
+    write_seed('fuzz_tcpip', 'ipv4_udp_dns.bin',
+               eth(MAC_B, MAC_A, 0x0800, ipv4(a, b, 17, udp(a, b, 53000, 53, dns_query))))
+
+    http_get = b'GET /index.html HTTP/1.1\r\nHost: example.com\r\nUser-Agent: fuzz\r\n\r\n'
+    write_seed('fuzz_tcpip', 'ipv4_tcp_http.bin',
+               eth(MAC_B, MAC_A, 0x0800, ipv4(a, b, 6, tcp(a, b, 49152, 80, 1000, 2000, 0x18, http_get), 2)))
+
+    arp = struct.pack('>HHBBH', 1, 0x0800, 6, 4, 1) + MAC_A + bytes(a) + b'\0' * 6 + bytes(b)
+    write_seed('fuzz_tcpip', 'arp_request.bin', eth(BROADCAST, MAC_A, 0x0806, arp))
+
+    # DHCPDISCOVER from 0.0.0.0:68 to 255.255.255.255:67
+    zero, bcast = [0, 0, 0, 0], [255, 255, 255, 255]
+    bootp = (struct.pack('>BBBBIHH', 1, 1, 6, 0, 0x2A2B2C2D, 0, 0x8000) + b'\0' * 16 +
+             MAC_A + b'\0' * 10 + b'\0' * 192 + b'\x63\x82\x53\x63' +
+             b'\x35\x01\x01' + b'\x37\x03\x01\x03\x06' + b'\xff')
+    write_seed('fuzz_tcpip', 'ipv4_udp_dhcp_discover.bin',
+               eth(BROADCAST, MAC_A, 0x0800, ipv4(zero, bcast, 17, udp(zero, bcast, 68, 67, bootp), 3)))
+
+    # IPv6 ICMPv6 neighbor solicitation for fe80::2 from fe80::1
+    src6 = bytes.fromhex('fe800000000000000000000000000001')
+    dst6 = bytes.fromhex('ff0200000000000000000001ff000002')
+    target6 = bytes.fromhex('fe800000000000000000000000000002')
+    icmp6 = struct.pack('>BBHI', 135, 0, 0, 0) + target6 + b'\x01\x01' + MAC_A
+    pseudo6 = src6 + dst6 + struct.pack('>I3xB', len(icmp6), 58)
+    icmp6 = icmp6[:2] + struct.pack('>H', csum(pseudo6 + icmp6)) + icmp6[4:]
+    ip6 = struct.pack('>IHBB', 0x60000000, len(icmp6), 58, 255) + src6 + dst6 + icmp6
+    write_seed('fuzz_tcpip', 'ipv6_icmpv6_ns.bin', eth(bytes.fromhex('3333ff000002'), MAC_A, 0x86DD, ip6))
+
+    # 802.1Q VLAN 10, IPv4 ICMP echo request
+    echo = struct.pack('>BBHHH', 8, 0, 0, 0x4242, 1) + b'ranz-fuzz-ping'
+    echo = echo[:2] + struct.pack('>H', csum(echo)) + echo[4:]
+    vlan = struct.pack('>HH', 10, 0x0800) + ipv4(a, b, 1, echo, 4)
+    write_seed('fuzz_tcpip', 'vlan_ipv4_icmp_echo.bin', eth(MAC_B, MAC_A, 0x8100, vlan))
+
+
+# ---------------------------------------------------------------------------
+# X.509: self-signed RSA-2048 / SHA-256 certificate built with the standard library.
+# The key comes from a fixed-seed PRNG and is not stored: the certificate is test data only.
+# ---------------------------------------------------------------------------
+def der(tag, content):
+    n = len(content)
+    if n < 0x80:
+        length = bytes([n])
+    else:
+        lb = n.to_bytes((n.bit_length() + 7) // 8, 'big')
+        length = bytes([0x80 | len(lb)]) + lb
+    return bytes([tag]) + length + content
+
+
+def der_int(v):
+    return der(0x02, v.to_bytes(v.bit_length() // 8 + 1, 'big'))
+
+
+def der_oid(dotted):
+    parts = [int(p) for p in dotted.split('.')]
+    out = bytes([parts[0] * 40 + parts[1]])
+    for p in parts[2:]:
+        chunk = [p & 0x7F]
+        p >>= 7
+        while p:
+            chunk.insert(0, 0x80 | (p & 0x7F))
+            p >>= 7
+        out += bytes(chunk)
+    return der(0x06, out)
+
+
+def der_seq(*items):
+    return der(0x30, b''.join(items))
+
+
+def der_name(pairs):
+    rdns = b''
+    for oid, tag, value in pairs:
+        rdns += der(0x31, der_seq(der_oid(oid), der(tag, value.encode('utf-8'))))
+    return der(0x30, rdns)
+
+
+def is_probable_prime(n, rng):
+    if n < 2:
+        return False
+    for p in (3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47):
+        if n % p == 0:
+            return n == p
+    d, r = n - 1, 0
+    while d % 2 == 0:
+        d //= 2
+        r += 1
+    for _ in range(40):
+        x = pow(rng.randrange(2, n - 1), d, n)
+        if x in (1, n - 1):
+            continue
+        for _ in range(r - 1):
+            x = pow(x, 2, n)
+            if x == n - 1:
+                break
+        else:
+            return False
+    return True
+
+
+def gen_prime(bits, e, rng):
+    while True:
+        p = rng.getrandbits(bits) | (3 << (bits - 2)) | 1
+        if (p - 1) % e != 0 and is_probable_prime(p, rng):
+            return p
+
+
+def make_x509_seeds():
+    rng = random.Random(20261012)
+    e = 65537
+    p, q = gen_prime(1024, e, rng), gen_prime(1024, e, rng)
+    n = p * q
+    d = pow(e, -1, (p - 1) * (q - 1))
+    k = (n.bit_length() + 7) // 8
+
+    sha256_rsa = der_seq(der_oid('1.2.840.113549.1.1.11'), der(0x05, b''))
+    name = der_name([
+        ('2.5.4.6', 0x13, 'JP'),
+        ('2.5.4.10', 0x0C, 'Ranz VPN'),
+        ('2.5.4.3', 0x0C, 'Ranz VPN fuzz seed'),
+    ])
+    rsa_pub = der_seq(der_int(n), der_int(e))
+    spki = der_seq(der_seq(der_oid('1.2.840.113549.1.1.1'), der(0x05, b'')), der(0x03, b'\0' + rsa_pub))
+    ski = hashlib.sha1(rsa_pub).digest()
+    extensions = der_seq(
+        der_seq(der_oid('2.5.29.19'), der(0x01, b'\xff'), der(0x04, der_seq(der(0x01, b'\xff')))),
+        der_seq(der_oid('2.5.29.15'), der(0x01, b'\xff'), der(0x04, der(0x03, b'\x01\x86'))),
+        der_seq(der_oid('2.5.29.14'), der(0x04, der(0x04, ski))),
+        der_seq(der_oid('2.5.29.17'), der(0x04, der_seq(der(0x82, b'fuzz.ranz.invalid')))),
+    )
+    tbs = der_seq(
+        der(0xA0, der_int(2)),                                   # v3
+        der_int(0x0B0220261012),                                 # serial
+        sha256_rsa,
+        name,                                                    # issuer
+        der_seq(der(0x17, b'260101000000Z'), der(0x17, b'360101000000Z')),
+        name,                                                    # subject (self-signed)
+        spki,
+        der(0xA3, extensions),
+    )
+
+    # RSASSA-PKCS1-v1_5 with SHA-256 (RFC 8017 section 8.2)
+    digest_info = bytes.fromhex('3031300d060960864801650304020105000420') + hashlib.sha256(tbs).digest()
+    em = b'\x00\x01' + b'\xff' * (k - len(digest_info) - 3) + b'\x00' + digest_info
+    sig = pow(int.from_bytes(em, 'big'), d, n)
+    assert pow(sig, e, n) == int.from_bytes(em, 'big')
+    cert = der_seq(tbs, sha256_rsa, der(0x03, b'\0' + sig.to_bytes(k, 'big')))
+
+    b64 = base64.b64encode(cert).decode('ascii')
+    pem = '-----BEGIN CERTIFICATE-----\n'
+    pem += ''.join(b64[i:i + 64] + '\n' for i in range(0, len(b64), 64))
+    pem += '-----END CERTIFICATE-----\n'
+    write_seed('fuzz_x509', 'selfsigned_rsa2048.der', cert)
+    write_seed('fuzz_x509', 'selfsigned_rsa2048.pem', pem.encode('ascii'))
+
+
+# ---------------------------------------------------------------------------
+# HTTP headers of the SE-VPN handshake (Cedar/Protocol.c, Mayaqua/HTTP.c HttpHeaderToStr)
+# ---------------------------------------------------------------------------
+def make_http_seeds():
+    write_seed('fuzz_http', 'client_connect.txt', (
+        b'POST /vpnsvc/connect.cgi HTTP/1.1\r\n'
+        b'Host: 192.0.2.1\r\n'
+        b'Content-Type: image/jpeg\r\n'
+        b'Connection: Keep-Alive\r\n'
+        b'Content-Length: 1411\r\n'
+        b'\r\n'))
+    write_seed('fuzz_http', 'server_response.txt', (
+        b'HTTP/1.1 200 OK\r\n'
+        b'Content-Type: application/octet-stream\r\n'
+        b'Connection: Keep-Alive\r\n'
+        b'Keep-Alive: timeout=15; max=19\r\n'
+        b'Content-Length: 2048\r\n'
+        b'\r\n'))
+    write_seed('fuzz_http', 'browser_get.txt', (
+        b'GET /vpnsvc/vpn.cgi HTTP/1.1\r\n'
+        b'Host: vpn.example.invalid\r\n'
+        b'User-Agent: Mozilla/5.0\r\n'
+        b'Accept: */*\r\n'
+        b'\r\n'))
+    write_seed('fuzz_http', 'http09.txt', b'GET / HTTP/0.9\r\n')
+
+
+if __name__ == '__main__':
+    assert sha0(b'abc').hex() == '0164b8a914cd2a5e74c4f7ff082c4d97f1edf880'
+    make_pack_seeds()
+    make_cfg_seeds()
+    make_tcpip_seeds()
+    make_x509_seeds()
+    make_http_seeds()

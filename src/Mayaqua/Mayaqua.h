@@ -17,7 +17,9 @@
 // Macro for the release flag
 #ifdef	VPN_SPEED
 
+#ifndef	RANZ_ASAN	// AddressSanitizer must see every allocation, so ASan builds keep the CRT heap
 #define	WIN32_USE_HEAP_API_FOR_MEMORY	// Use the heap API to allocate memory
+#endif	// RANZ_ASAN
 #define	WIN32_NO_DEBUG_HELP_DLL			// Do not call the DLL for debugging
 #define	DONT_ALLOW_RUN_ON_DEBUGGER		// Do not allow running on the debugger
 

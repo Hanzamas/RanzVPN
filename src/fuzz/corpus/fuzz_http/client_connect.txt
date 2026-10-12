@@ -1,0 +1,6 @@
+POST /vpnsvc/connect.cgi HTTP/1.1
+Host: 192.0.2.1
+Content-Type: image/jpeg
+Connection: Keep-Alive
+Content-Length: 1411
+
