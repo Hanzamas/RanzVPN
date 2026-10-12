@@ -1,6 +1,6 @@
 # ADR-0003: Catalogue of safe (behaviour-preserving) cleanups
 
-**Status:** Accepted (2026-10-11). Items 1, 3 and 4 were accepted first (Hilmi: "penting mah itu 1 3 4"). On 2026-10-11 Hilmi confirmed the extended list (items 5 to 13) as the "sapu aman" phase and it became the spec `Hanzamas/SoftEtherVPN#24`, with two amendments: the comment item (10) now deletes most comments instead of rewriting them, and items 3 and 4 (file splits, per-module headers) are deferred to the harness phase so that the sweep stays pure deletion; the `static` half of item 4 stays in the sweep.
+**Status:** Accepted (2026-10-11). Items 1, 3 and 4 were accepted first (Hilmi: "penting mah itu 1 3 4"). On 2026-10-11 Hilmi confirmed the extended list (items 5 to 13) as the "sapu aman" phase and it became the spec `Hanzamas/RanzVPN#24`, with two amendments: the comment item (10) now deletes most comments instead of rewriting them, and items 3 and 4 (file splits, per-module headers) are deferred to the harness phase so that the sweep stays pure deletion; the `static` half of item 4 stays in the sweep.
 
 ## Context
 
@@ -26,7 +26,7 @@ Run in this order, each as its own ticket, each verified by the existing CI:
 
 ## Consequences
 
-- Order and tickets for the sweep are defined in spec `Hanzamas/SoftEtherVPN#24`: CI steps (warnings-as-errors for unused code, size metrics) first, then dead functions, orphan declarations, dead branches, debug scaffolding, duplicates and forwarding wrappers, unconsumed config and pack keys, include hygiene and `static`, comments, string-table re-prune, module map, and the one-time reformat (item 14) last. Items 3 and 4 (file splits, per-module headers) run after the harness exists.
+- Order and tickets for the sweep are defined in spec `Hanzamas/RanzVPN#24`: CI steps (warnings-as-errors for unused code, size metrics) first, then dead functions, orphan declarations, dead branches, debug scaffolding, duplicates and forwarding wrappers, unconsumed config and pack keys, include hygiene and `static`, comments, string-table re-prune, module map, and the one-time reformat (item 14) last. Items 3 and 4 (file splits, per-module headers) run after the harness exists.
 - Verification for every item above is the existing CI (build, smoke test, vector test, self-check).
 - Expected result of the full catalogue: Mayaqua about 100k to 70k lines, Cedar about 70k to 50k lines; total C about 135k to 150k including headers. These are estimates.
 - `WaterMark.c` (4.3k lines) is a JPEG stored as a C array; moving it to hamcore removes it from the code count with low risk but does touch the load path, so it is listed here only as a candidate.

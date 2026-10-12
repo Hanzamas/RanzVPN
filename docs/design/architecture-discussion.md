@@ -4,7 +4,7 @@ This is the reasoning behind the ADRs in `docs/adr/`, written for someone who wa
 
 ## 1. Where the slim-down stands and what the numbers say
 
-Starting point (measured on the clone of `Hanzamas/SoftEtherVPN` at `69c0aa69`):
+Starting point (measured on the clone of `Hanzamas/SoftEtherVPN` (renamed `Hanzamas/RanzVPN` on 2026-10-13) at `69c0aa69`):
 
 | What | Lines |
 |---|---|

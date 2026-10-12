@@ -1,6 +1,6 @@
 # ADR-0008: Replace SoftEther's self-written runtime with Windows and standard APIs where they exist
 
-**Status:** Proposed (assistant's table in answer to "yang reinventing the wheel ganti ke Windows API"; Hilmi stated the principle and did not confirm the individual rows).
+**Status:** Accepted as a principle (2026-10-13, Hilmi: "windows native total yang fast and furious"); individual rows are decided when the spec that touches them is written (Windows-native runtime #30, new core). Amended 2026-10-13: RIO is crossed out (Hilmi: "gas").
 
 ## Context
 
@@ -12,8 +12,8 @@ The principle agreed in the discussion: the data path stays ours (that is the pr
 
 | SoftEther component | Replacement | Why |
 |---|---|---|
-| sockets / UDP in `Network.c` | Winsock2 with **RIO** (registered buffers, completion queues) or IOCP with `WSARecvMsg`; `UDP_SEND_MSG_SIZE` (USO), `UDP_RECV_MAX_COALESCED_SIZE` (URO) | the NIC segments and coalesces, not the CPU |
-| multi-TCP plus UDP Acceleration | **msquic** | already has RIO/USO/URO/XDP datapaths; do not write QUIC |
+| sockets / UDP in `Network.c` | Winsock2 with **IOCP** (overlapped `WSARecvMsg`/`WSASendMsg`, a completion port per core group), `UDP_SEND_MSG_SIZE` (USO) and `UDP_RECV_MAX_COALESCED_SIZE` (URO); **RIO crossed out**: with USO/URO batching it adds little, and MsQuic's Windows datapath does not use it either | the NIC segments and coalesces, not the CPU |
+| multi-TCP plus UDP Acceleration | **msquic** | its Windows datapath already uses IOCP, USO/URO, `WSASendMsg`/`WSARecvMsg` and CPU affinity, plus an optional XDP datapath (ADR-0018); do not write QUIC |
 | `Encrypt.c` wrappers | CNG/bcrypt (AES-GCM, SHA-2, X25519, `BCryptGenRandom`), Schannel for TLS (ADR-0007) | one crypto stack, zero third-party crypto |
 | own routing table code | IP Helper: `CreateIpForwardEntry2`, `NotifyRouteChange2`, `GetIpInterfaceEntry` | already partly used |
 | SecureNAT (12k lines) | WinNAT (`New-NetNat`, kernel NAT in Windows 10+) | built-in |

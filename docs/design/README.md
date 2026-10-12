@@ -11,9 +11,9 @@ Architecture decision records live in `docs/adr/`; the reasoning behind them is 
 - [ADR-0005](../adr/0005-transport-stack-quic-tls-noise-cdn.md) — QUIC primary, Trojan-style TLS/TCP fallback, Noise-style session layer, CDN path, stealth sidecar (Proposed).
 - [ADR-0006](../adr/0006-censorship-circumvention-tiers.md) — Censorship circumvention as a tiered edge feature (Proposed).
 - [ADR-0007](../adr/0007-tls-stack-openssl-vs-schannel.md) — One TLS stack for the new core: Schannel and msquic+Schannel, OpenSSL dropped (Accepted; minimum OS Windows 11 / Server 2022).
-- [ADR-0008](../adr/0008-windows-native-replacements.md) — Windows-native replacements for SoftEther's runtime (Proposed).
+- [ADR-0008](../adr/0008-windows-native-replacements.md) — Windows-native replacements for SoftEther's runtime (Accepted as a principle; IOCP + USO/URO, RIO crossed out).
 - [ADR-0009](../adr/0009-adapter-choice.md) — Adapters: Wintun for L3 (Accepted), TAP for L2 with Neo6 vs tap-windows6 open (Proposed), SeLow for bridging (Accepted).
-- [ADR-0010](../adr/0010-routing-at-the-edge-no-in-daemon-bgp.md) — Routing by the OS, BGP only at the edge (Proposed).
+- [ADR-0010](../adr/0010-routing-at-the-edge-no-in-daemon-bgp.md) — Routing: Windows IP forwarding between networks/VLANs via loopback adapters, automatic overlay routes from the control plane, BGP at the edge through a GoBGP sidecar, no OSPF (Accepted).
 - [ADR-0011](../adr/0011-single-node-binary-with-roles.md) — One node binary with roles and both data-path backends (Accepted with ADR-0014).
 - [ADR-0012](../adr/0012-remove-vpnclient-from-slim-fork-keep-cascade.md) — Remove vpnclient from the slim fork, keep cascade (Accepted, ticket #23).
 - [ADR-0013](../adr/0013-selow-stays-in-slim-fork-not-in-l3-core.md) — SeLow stays: Local Bridge in the fork, L2 bridging in the new product (Accepted).
@@ -22,6 +22,7 @@ Architecture decision records live in `docs/adr/`; the reasoning behind them is 
 - [ADR-0016](../adr/0016-windows-native-runtime-thin-inline-header.md) — Windows-native runtime for Mayaqua behind one thin inline header (`Lock(x)` stays readable), wrapper flip per primitive, semantics preserved, after the harness (Accepted).
 - [ADR-0017](../adr/0017-roadmap-foundation-before-new-core.md) — Roadmap: slim-down, scope cuts, safe sweep, harness, table-driven RPC/vpncmd, structural refactor and Windows-native runtime, and only then the new core (Accepted).
 - [ADR-0018](../adr/0018-packet-io-xdp-for-windows.md) — Packet I/O and XDP for Windows: TLS/TCP 443 fallback stays on the Windows TCP stack (Accepted); QUIC gets XDP only through MsQuic, and an AF_XDP Local Bridge backend after a spike (Proposed).
+- [ADR-0019](../adr/0019-l2-isolation-vlans-and-policy-engine.md) — New core: isolation primitives kept, full VLAN support (access/trunk ports, native VLAN, QinQ, per-VLAN limits), stateful identity-based policy engine replacing the access list (Accepted).
 
 ## Discussion log
 
