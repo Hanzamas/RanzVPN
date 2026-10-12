@@ -95,6 +95,11 @@ execute_process(
   RESULT_VARIABLE _ranz_rc
 )
 file(TO_CMAKE_PATH "${RANZ_RT_DIR}" RANZ_RT_DIR)
+# The CI job may have found the libraries elsewhere (<resource-dir>/lib/windows in official LLVM builds)
+if(DEFINED ENV{RANZ_RT_DIR} AND IS_DIRECTORY "$ENV{RANZ_RT_DIR}")
+  file(TO_CMAKE_PATH "$ENV{RANZ_RT_DIR}" RANZ_RT_DIR)
+  set(_ranz_rc 0)
+endif()
 if(NOT _ranz_rc EQUAL 0 OR NOT IS_DIRECTORY "${RANZ_RT_DIR}")
   message(FATAL_ERROR "RANZ_ASAN: '${CMAKE_C_COMPILER} -print-runtime-dir' did not name a directory (got '${RANZ_RT_DIR}')")
 endif()
