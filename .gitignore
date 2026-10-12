@@ -10,7 +10,6 @@ Makefile
 !/src/bin/hamcore/wwwroot/
 build/
 cmake-build-debug/
-src/bin/hamcore/authors.txt
 src/bin/BuiltHamcoreFiles/
 tmp/
 .gitconfig
@@ -210,3 +209,7 @@ developer_tools/stbchecker/**/*.binlog
 developer_tools/stbchecker/**/*.nvuser
 developer_tools/stbchecker/**/.mfractor/
 /vcpkg_installed
+
+# local tooling indexes (never commit)
+.codegraph/
+graphify-out/

@@ -18,8 +18,6 @@ if(WIN32)
 
   configure_file("${TOP_DIRECTORY}/src/BuildFiles/VerScript/ver.rc" "${CMAKE_CURRENT_BINARY_DIR}/ver.rc")
   target_sources(vpnserver PRIVATE "vpnserver.rc" "${CMAKE_CURRENT_BINARY_DIR}/ver.rc")
-else()
-  add_executable(vpnserver vpnserver.c)
 endif()
 
 set_target_properties(vpnserver
@@ -30,23 +28,3 @@ set_target_properties(vpnserver
 )
 
 target_link_libraries(vpnserver cedar)
-
-if(UNIX)
-  # Copy binary and "hamcore.se2" to /usr/lib(exec)/softether/, install launch script and systemd service
-  install(TARGETS vpnserver
-    COMPONENT "vpnserver"
-    DESTINATION "${CMAKE_INSTALL_LIBEXECDIR}/softether/vpnserver"
-    PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
-  )
-
-  install(FILES "${BUILD_DIRECTORY}/hamcore.se2"
-    COMPONENT "vpnserver"
-    DESTINATION "${CMAKE_INSTALL_LIBEXECDIR}/softether/vpnserver"
-    PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
-  )
-
-  install_wrapper_script("vpnserver")
-  if(NOT "${CMAKE_INSTALL_SYSTEMD_UNITDIR}" STREQUAL "")
-    install_unit_file("vpnserver")
-  endif()
-endif()

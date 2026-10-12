@@ -17,8 +17,6 @@
 #include "Sam.h"
 #include "Server.h"
 #include "Session.h"
-#include "VLanWin32.h"
-#include "WebUI.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/Encrypt.h"
@@ -33,39 +31,9 @@
 #include "Mayaqua/Tick64.h"
 #include "Mayaqua/Win32.h"
 
-#include <sodium.h>
-
 static UINT init_cedar_counter = 0;
 static REF *cedar_log_ref = NULL;
 static LOG *cedar_log;
-
-// Check whether there is any EAP-enabled RADIUS configuration
-bool CedarIsThereAnyEapEnabledRadiusConfig(CEDAR *c)
-{
-	bool ret = false;
-	UINT i;
-	if (c == NULL)
-	{
-		return false;
-	}
-
-	LockHubList(c);
-	{
-		for (i = 0;i < LIST_NUM(c->HubList);i++)
-		{
-			HUB *hub = LIST_DATA(c->HubList, i);
-
-			if (hub->RadiusConvertAllMsChapv2AuthRequestToEap)
-			{
-				ret = true;
-				break;
-			}
-		}
-	}
-	UnlockHubList(c);
-
-	return ret;
-}
 
 // Get build date of current code
 UINT64 GetCurrentBuildDate()
@@ -197,6 +165,59 @@ bool IsSupportedWinVer(RPC_WINVER *v)
 	return false;
 }
 
+#ifdef	OS_WIN32
+// Get the version information of Windows
+void Win32GetWinVer(RPC_WINVER *v)
+{
+	// Validate arguments
+	if (v == NULL)
+	{
+		return;
+	}
+
+	Zero(v, sizeof(RPC_WINVER));
+
+	v->IsWindows = true;
+
+	if (true)
+	{
+		OSVERSIONINFOEX os;
+		Zero(&os, sizeof(os));
+		os.dwOSVersionInfoSize = sizeof(os);
+		Win32GetVersionExInternal((LPOSVERSIONINFOA)&os);
+
+		v->IsNT = true;
+		v->Build = os.dwBuildNumber;
+		v->ServicePack = os.wServicePackMajor;
+
+		if (os.wProductType != VER_NT_WORKSTATION)
+		{
+			v->IsServer = true;
+		}
+		v->VerMajor = os.dwMajorVersion;
+		v->VerMinor = os.dwMinorVersion;
+
+		if (GetOsInfo()->OsServicePack == 0)
+		{
+			StrCpy(v->Title, sizeof(v->Title), GetOsInfo()->OsProductName);
+		}
+		else
+		{
+			Format(v->Title, sizeof(v->Title), "%s Service Pack %u",
+				GetOsInfo()->OsProductName,
+				GetOsInfo()->OsServicePack);
+		}
+		Trim(v->Title);
+
+		if (InStr(GetOsInfo()->OsVersion, "rc") ||
+			InStr(GetOsInfo()->OsVersion, "beta"))
+		{
+			v->IsBeta = true;
+		}
+	}
+}
+#endif	// OS_WIN32
+
 // Get version of Windows
 void GetWinVer(RPC_WINVER *v)
 {
@@ -208,9 +229,6 @@ void GetWinVer(RPC_WINVER *v)
 
 #ifdef	OS_WIN32
 	Win32GetWinVer(v);
-#else	// OS_WIN32
-	Zero(v, sizeof(RPC_WINVER));
-	StrCpy(v->Title, sizeof(v->Title), GetOsInfo()->OsProductName);
 #endif	// OS_WIN32
 }
 
@@ -926,79 +944,6 @@ void StopAllHub(CEDAR *c)
 	Free(hubs);
 }
 
-// Get reverse listener socket in Cedar
-SOCK *GetReverseListeningSock(CEDAR *c)
-{
-	SOCK *s = NULL;
-	// Validate arguments
-	if (c == NULL)
-	{
-		return NULL;
-	}
-
-	LockList(c->ListenerList);
-	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(c->ListenerList);i++)
-		{
-			LISTENER *r = LIST_DATA(c->ListenerList, i);
-
-			if (r->Protocol == LISTENER_REVERSE)
-			{
-				Lock(r->lock);
-				{
-					s = r->Sock;
-
-					AddRef(s->ref);
-				}
-				Unlock(r->lock);
-				break;
-			}
-		}
-	}
-	UnlockList(c->ListenerList);
-
-	return s;
-}
-
-// Get in-process listener socket in Cedar
-SOCK *GetInProcListeningSock(CEDAR *c)
-{
-	SOCK *s = NULL;
-	// Validate arguments
-	if (c == NULL)
-	{
-		return NULL;
-	}
-
-	LockList(c->ListenerList);
-	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(c->ListenerList);i++)
-		{
-			LISTENER *r = LIST_DATA(c->ListenerList, i);
-
-			if (r->Protocol == LISTENER_INPROC)
-			{
-				Lock(r->lock);
-				{
-					s = r->Sock;
-
-					if (s != NULL)
-					{
-						AddRef(s->ref);
-					}
-				}
-				Unlock(r->lock);
-				break;
-			}
-		}
-	}
-	UnlockList(c->ListenerList);
-
-	return s;
-}
-
 // Add a new listener to Cedar
 void AddListener(CEDAR *c, LISTENER *r)
 {
@@ -1187,15 +1132,7 @@ void CleanupCedar(CEDAR *c)
 		return;
 	}
 
-	WuFreeWebUI(c->WebUI);
 	FreeCedarLayer3(c);
-
-	for (i = 0; i < LIST_NUM(c->WgkList); ++i)
-	{
-		WGK *wgk = LIST_DATA(c->WgkList, i);
-		Free(wgk);
-	}
-	ReleaseList(c->WgkList);
 
 	for (i = 0;i < LIST_NUM(c->CaList);i++)
 	{
@@ -1236,16 +1173,6 @@ void CleanupCedar(CEDAR *c)
 		Free(c->CipherList);
 	}
 
-	for (i = 0;i < LIST_NUM(c->TrafficDiffList);i++)
-	{
-		TRAFFIC_DIFF *d = LIST_DATA(c->TrafficDiffList, i);
-		Free(d->Name);
-		Free(d->HubName);
-		Free(d);
-	}
-
-	ReleaseList(c->TrafficDiffList);
-
 	Free(c->ServerStr);
 	Free(c->MachineName);
 
@@ -1275,8 +1202,6 @@ void CleanupCedar(CEDAR *c)
 	DeleteCounter(c->AcceptingSockets);
 
 	ReleaseIntList(c->UdpPortList);
-
-	DeleteLock(c->OpenVPNPublicPortsLock);
 
 	DeleteLock(c->CurrentRegionLock);
 
@@ -1509,6 +1434,20 @@ void SetCedarVpnBridge(CEDAR *c)
 	c->ServerStr = CopyStr(CEDAR_BRIDGE_STR);
 }
 
+#ifdef	OS_WIN32
+// Register the executables in the Windows Firewall exception list
+void RegistWindowsFirewallAll()
+{
+	char exedir[MAX_SIZE];
+
+	GetExeDir(exedir, sizeof(exedir));
+
+	MsRegistWindowsFirewallEx2(CEDAR_SERVER_STR, "vpnserver.exe", exedir);
+	MsRegistWindowsFirewallEx2(CEDAR_CUI_STR, "vpncmd.exe", exedir);
+	MsRegistWindowsFirewallEx2(CEDAR_PRODUCT_STR, "vpntest.exe", exedir);
+}
+#endif	// OS_WIN32
+
 void CedarForceLink()
 {
 }
@@ -1522,12 +1461,13 @@ void GetCedarVersion(char *tmp, UINT size)
 		return;
 	}
 
-	Format(tmp, size, "%u.%02u.%u", CEDAR_VERSION_MAJOR, CEDAR_VERSION_MINOR, CEDAR_VERSION_BUILD);
+	Format(tmp, size, "%u.%u.%u", CEDAR_VERSION_MAJOR, CEDAR_VERSION_MINOR, CEDAR_VERSION_BUILD);
 }
 
+// Get the version number sent to and compared by peers
 UINT GetCedarVersionNumber()
 {
-	return CEDAR_VERSION_MAJOR * 100 + CEDAR_VERSION_MINOR;
+	return CEDAR_WIRE_VER;
 }
 
 // Create Cedar object
@@ -1570,7 +1510,6 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 	c->lock = NewLock();
 	c->ref = NewRef();
 
-	c->OpenVPNPublicPortsLock = NewLock();
 	c->CurrentTcpConnections = GetNumTcpConnectionsCounter();
 
 	c->ListenerList = NewList(CompareListener);
@@ -1588,7 +1527,7 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 	}
 
 	c->Version = GetCedarVersionNumber();
-	c->Build = CEDAR_VERSION_BUILD;
+	c->Build = CEDAR_WIRE_BUILD;
 	c->ServerStr = CopyStr(CEDAR_SERVER_STR);
 
 	GetMachineName(tmp, sizeof(tmp));
@@ -1602,9 +1541,6 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 	c->Traffic = NewTraffic();
 	c->TrafficLock = NewLock();
 	c->CaList = NewList(CompareCert);
-	c->WgkList = NewList(CompareWgk);
-
-	c->TrafficDiffList = NewList(NULL);
 
 	SetCedarCipherList(c, SERVER_DEFAULT_CIPHER_NAME);
 
@@ -1620,7 +1556,6 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 
 	InitCedarLayer3(c);
 
-	c->WebUI = WuNewWebUI(c);
 
 #ifdef	ALPHA_VERSION
 	beta_str = "Alpha";
@@ -1636,7 +1571,7 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 	Format(tmp2, sizeof(tmp2), " %s %s ", beta_str, tmp2);
 
 	Format(tmp, sizeof(tmp),
-		"Version %u.%02u Build %u"
+		"Version %u.%u.%u"
 		"%s"    // Alpha, Beta, Release Candidate or nothing
 		"(%s)", // Language
 		CEDAR_VERSION_MAJOR, CEDAR_VERSION_MINOR, CEDAR_VERSION_BUILD,
@@ -1712,12 +1647,6 @@ void InitCedar()
 {
 	if ((init_cedar_counter++) > 0)
 	{
-		return;
-	}
-
-	if (sodium_init() == -1)
-	{
-		Debug("InitCedar(): sodium_init() failed!\n");
 		return;
 	}
 

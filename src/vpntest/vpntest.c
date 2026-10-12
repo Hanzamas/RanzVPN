@@ -1,27 +1,19 @@
 // vpntest.c
-// VPN Server / VPN Client / VPN Bridge test program
+// VPN Server test program
 
 #define VPN_EXE
 
-#include "Cedar/Client.h"
-#include "Cedar/CM.h"
 #include "Cedar/Command.h"
+#include "Cedar/MsChapV2.h"
 #include "Cedar/Server.h"
-#include "Cedar/SM.h"
 
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Mayaqua.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
+#include "Mayaqua/Network.h"
 #include "Mayaqua/Str.h"
-
-void client_test(UINT num, char **arg)
-{
-	Print("VPN Client Test. Press Enter key to stop the VPN Client .\n");
-	CtStartClient();
-	GetLine(NULL, 0);
-	CtStopClient();
-}
+#include "Mayaqua/Stun.h"
 
 void server_test(UINT num, char **arg)
 {
@@ -38,47 +30,406 @@ void server_test(UINT num, char **arg)
 	StFree();
 }
 
-void bridge_test(UINT num, char **arg)
-{
-	Print("VPN Bridge Test. Press Enter key to stop the VPN Bridge .\n");
-
-	StInit();
-
-	StStartServer(true);
-
-	GetLine(NULL, 0);
-
-	StStopServer();
-
-	StFree();
-}
-
-#ifdef OS_WIN32
-void server_manager_test(UINT num, char **arg)
-{
-	SMExec();
-}
-
-void client_manager_test(UINT num, char **arg)
-{
-	CMExec();
-}
-
-void setup_test(UINT num, char **arg)
-{
-	char name[MAX_SIZE];
-	Print("SetupAPI test. Please enter the name of the NIC I should retrieve the status of.\n");
-	GetLine(name, sizeof(name));
-	Print("Status: %s\n", MsIsVLanEnabledWithoutLock(name) ? "enabled" : "disabled");
-}
-#endif
-
 void memory_leak_test(UINT num, char **arg)
 {
 	char *a = Malloc(1);
 
 	Print("Hello, I am the great dictator of this kingdom!\n");
 	Print("Just now I called Malloc(1) and never free! Ha ha ha !!\n");
+}
+
+// MS-CHAPv2 / NT-hash helpers test using the RFC 2759 section 9.2 test vectors
+void mschapv2_test(UINT num, char **arg)
+{
+	// RFC 2759 section 9.2 test vectors
+	char *username = "User";
+	char *password = "clientPass";
+	char *auth_challenge_hex = "5B5D7C7D7B3F2F3E3C2C602132262628";	// AuthenticatorChallenge (server)
+	char *peer_challenge_hex = "21402324255E262A28295F2B3A337C7E";	// PeerChallenge (client)
+	char *expect_challenge8 = "D02E4386BCE91226";
+	char *expect_pw_hash = "44EBBA8D5312B8D611474411F56989AE";
+	char *expect_pw_hash_hash = "41C00C584BD2D91C4017A2A12FA59F3F";
+	char *expect_nt_response = "82309ECD8D708B5EA08FAA3981CD83544233114A3D85D6DF";
+	char *expect_auth_response = "S=407A5589115FD0D6209F510FE9C04566932CDA56";
+
+	BUF *auth_challenge = StrToBin(auth_challenge_hex);
+	BUF *peer_challenge = StrToBin(peer_challenge_hex);
+
+	UCHAR nt_hash[16];
+	UCHAR nt_hash_hash[16];
+	UCHAR challenge8[8];
+	UCHAR nt_response[24];
+	UCHAR server_response_20[20];
+
+	char nt_hash_str[64];
+	char nt_hash_hash_str[64];
+	char challenge8_str[64];
+	char nt_response_str[128];
+	char server_response_hex[64];
+	char auth_response_str[128];
+
+	bool ok = true;
+
+	Print("MS-CHAPv2 / NT-hash helpers test (RFC 2759 section 9.2)\n");
+
+	// PasswordHash = NtPasswordHash(Password)
+	GenerateNtPasswordHash(nt_hash, password);
+	BinToStr(nt_hash_str, sizeof(nt_hash_str), nt_hash, sizeof(nt_hash));
+	if (StrCmpi(nt_hash_str, expect_pw_hash) == 0)
+	{
+		Print("  [PASS] PasswordHash = %s\n", nt_hash_str);
+	}
+	else
+	{
+		Print("  [FAIL] PasswordHash = %s (expected %s)\n", nt_hash_str, expect_pw_hash);
+		ok = false;
+	}
+
+	// PasswordHashHash = NtPasswordHash(PasswordHash)
+	GenerateNtPasswordHashHash(nt_hash_hash, nt_hash);
+	BinToStr(nt_hash_hash_str, sizeof(nt_hash_hash_str), nt_hash_hash, sizeof(nt_hash_hash));
+	if (StrCmpi(nt_hash_hash_str, expect_pw_hash_hash) == 0)
+	{
+		Print("  [PASS] PasswordHashHash = %s\n", nt_hash_hash_str);
+	}
+	else
+	{
+		Print("  [FAIL] PasswordHashHash = %s (expected %s)\n", nt_hash_hash_str, expect_pw_hash_hash);
+		ok = false;
+	}
+
+	// ChallengeHash = SHA1(PeerChallenge + AuthenticatorChallenge + UserName)[0..7]
+	MsChapV2_GenerateChallenge8(challenge8, peer_challenge->Buf, auth_challenge->Buf, username);
+	BinToStr(challenge8_str, sizeof(challenge8_str), challenge8, sizeof(challenge8));
+	if (StrCmpi(challenge8_str, expect_challenge8) == 0)
+	{
+		Print("  [PASS] Challenge = %s\n", challenge8_str);
+	}
+	else
+	{
+		Print("  [FAIL] Challenge = %s (expected %s)\n", challenge8_str, expect_challenge8);
+		ok = false;
+	}
+
+	// NT-Response = ChallengeResponse(Challenge, PasswordHash)
+	MsChapV2Client_GenerateResponse(nt_response, challenge8, nt_hash);
+	BinToStr(nt_response_str, sizeof(nt_response_str), nt_response, sizeof(nt_response));
+	if (StrCmpi(nt_response_str, expect_nt_response) == 0)
+	{
+		Print("  [PASS] NT-Response = %s\n", nt_response_str);
+	}
+	else
+	{
+		Print("  [FAIL] NT-Response = %s (expected %s)\n", nt_response_str, expect_nt_response);
+		ok = false;
+	}
+
+	// AuthenticatorResponse = "S=" + uppercase hex of the 20-byte server response
+	MsChapV2Server_GenerateResponse(server_response_20, nt_hash_hash, nt_response, challenge8);
+	BinToStr(server_response_hex, sizeof(server_response_hex), server_response_20, sizeof(server_response_20));
+	Format(auth_response_str, sizeof(auth_response_str), "S=%s", server_response_hex);
+	if (StrCmpi(auth_response_str, expect_auth_response) == 0)
+	{
+		Print("  [PASS] AuthenticatorResponse = %s\n", auth_response_str);
+	}
+	else
+	{
+		Print("  [FAIL] AuthenticatorResponse = %s (expected %s)\n", auth_response_str, expect_auth_response);
+		ok = false;
+	}
+
+	// Round-trip ParseAndExtractMsChapV2InfoFromPassword against an IPC MS-CHAPv2 password string
+	{
+		char pw[MAX_SIZE];
+		IPC_MSCHAP_V2_AUTHINFO d;
+
+		Format(pw, sizeof(pw), "%s%s:%s:%s:%s:%s", IPC_PASSWORD_MSCHAPV2_TAG, username,
+		       auth_challenge_hex, peer_challenge_hex, nt_response_str, "0000000000000000");
+
+		if (ParseAndExtractMsChapV2InfoFromPassword(&d, pw) &&
+		        StrCmp(d.MsChapV2_PPPUsername, username) == 0 &&
+		        Cmp(d.MsChapV2_ServerChallenge, auth_challenge->Buf, 16) == 0 &&
+		        Cmp(d.MsChapV2_ClientChallenge, peer_challenge->Buf, 16) == 0 &&
+		        Cmp(d.MsChapV2_ClientResponse, nt_response, 24) == 0)
+		{
+			Print("  [PASS] ParseAndExtractMsChapV2InfoFromPassword round-trip\n");
+		}
+		else
+		{
+			Print("  [FAIL] ParseAndExtractMsChapV2InfoFromPassword round-trip\n");
+			ok = false;
+		}
+	}
+
+	FreeBuf(auth_challenge);
+	FreeBuf(peer_challenge);
+
+	if (ok)
+	{
+		Print("MSCHAPV2 TEST OK\n");
+	}
+	else
+	{
+		Print("MSCHAPV2 TEST FAILED\n");
+	}
+}
+
+// Print the result of one STUN test case
+void stun_test_check(bool *ok, bool passed, char *name)
+{
+	if (passed)
+	{
+		Print("  [PASS] %s\n", name);
+	}
+	else
+	{
+		Print("  [FAIL] %s\n", name);
+		*ok = false;
+	}
+}
+
+// Parse a STUN response and compare the mapped address with the expected one
+bool stun_test_parse(UCHAR *buf, UINT size, UCHAR *transaction_id, IP *expect_ip, UINT expect_port)
+{
+	IP ip;
+	UINT port = 0;
+	char ip_str[MAX_SIZE];
+
+	Zero(&ip, sizeof(ip));
+
+	if (StunParseBindingResponse(buf, size, transaction_id, &ip, &port) == false)
+	{
+		Print("    parse failed\n");
+		return false;
+	}
+
+	IPToStr(ip_str, sizeof(ip_str), &ip);
+	Print("    mapped address: %s port %u\n", ip_str, port);
+
+	return (CmpIpAddr(&ip, expect_ip) == 0 && port == expect_port);
+}
+
+// STUN Binding Request / Response helpers test (RFC 5389, RFC 5769 sample messages, no network access)
+void stun_test(UINT num, char **arg)
+{
+	// Transaction ID of the RFC 5769 sample messages
+	UCHAR tid[STUN_TRANSACTION_ID_SIZE] =
+	{
+		0xb7, 0xe7, 0xa7, 0x01, 0xbc, 0x34, 0xd6, 0x86, 0xfa, 0x87, 0xdf, 0xae,
+	};
+
+	// RFC 5769 section 2.2: sample IPv4 response (192.0.2.1 port 32853)
+	UCHAR rfc5769_ipv4[] =
+	{
+		0x01, 0x01, 0x00, 0x3c,		// Response type and message length
+		0x21, 0x12, 0xa4, 0x42,		// Magic cookie
+		0xb7, 0xe7, 0xa7, 0x01,		// Transaction ID
+		0xbc, 0x34, 0xd6, 0x86,
+		0xfa, 0x87, 0xdf, 0xae,
+		0x80, 0x22, 0x00, 0x0b,		// SOFTWARE attribute header
+		0x74, 0x65, 0x73, 0x74,		// UTF-8 server name
+		0x20, 0x76, 0x65, 0x63,
+		0x74, 0x6f, 0x72, 0x20,
+		0x00, 0x20, 0x00, 0x08,		// XOR-MAPPED-ADDRESS attribute header
+		0x00, 0x01, 0xa1, 0x47,		// Address family (IPv4) and xor'd mapped port number
+		0xe1, 0x12, 0xa6, 0x43,		// Xor'd mapped IPv4 address
+		0x00, 0x08, 0x00, 0x14,		// MESSAGE-INTEGRITY attribute header
+		0x2b, 0x91, 0xf5, 0x99,		// HMAC-SHA1 fingerprint
+		0xfd, 0x9e, 0x90, 0xc3,
+		0x8c, 0x74, 0x89, 0xf9,
+		0x2a, 0xf9, 0xba, 0x53,
+		0xf0, 0x6b, 0xe7, 0xd7,
+		0x80, 0x28, 0x00, 0x04,		// FINGERPRINT attribute header
+		0xc0, 0x7d, 0x4c, 0x96,		// CRC32 fingerprint
+	};
+
+	// XOR-MAPPED-ADDRESS of the RFC 5769 section 2.3 sample (2001:db8:1234:5678:11:2233:4455:6677 port 32853)
+	UCHAR xor_mapped_ipv6[] =
+	{
+		0x01, 0x01, 0x00, 0x18,		// Binding Success Response, message length 24
+		0x21, 0x12, 0xa4, 0x42,		// Magic cookie
+		0xb7, 0xe7, 0xa7, 0x01,		// Transaction ID
+		0xbc, 0x34, 0xd6, 0x86,
+		0xfa, 0x87, 0xdf, 0xae,
+		0x00, 0x20, 0x00, 0x14,		// XOR-MAPPED-ADDRESS attribute header
+		0x00, 0x02, 0xa1, 0x47,		// Address family (IPv6) and xor'd mapped port number
+		0x01, 0x13, 0xa9, 0xfa,		// Xor'd mapped IPv6 address
+		0xa5, 0xd3, 0xf1, 0x79,
+		0xbc, 0x25, 0xf4, 0xb5,
+		0xbe, 0xd2, 0xb9, 0xd9,
+	};
+
+	// MAPPED-ADDRESS only (203.0.113.7 port 3478), after an unknown attribute that needs padding
+	UCHAR mapped_only[] =
+	{
+		0x01, 0x01, 0x00, 0x18,		// Binding Success Response, message length 24
+		0x21, 0x12, 0xa4, 0x42,		// Magic cookie
+		0xb7, 0xe7, 0xa7, 0x01,		// Transaction ID
+		0xbc, 0x34, 0xd6, 0x86,
+		0xfa, 0x87, 0xdf, 0xae,
+		0x80, 0x23, 0x00, 0x05,		// Unknown comprehension-optional attribute, length 5
+		0x41, 0x42, 0x43, 0x44,
+		0x45, 0x00, 0x00, 0x00,		// Last value byte and 3 bytes of padding
+		0x00, 0x01, 0x00, 0x08,		// MAPPED-ADDRESS attribute header
+		0x00, 0x01, 0x0d, 0x96,		// Address family (IPv4) and port number
+		0xcb, 0x00, 0x71, 0x07,		// IPv4 address
+	};
+
+	// MAPPED-ADDRESS (203.0.113.7 port 3478) followed by XOR-MAPPED-ADDRESS (192.0.2.1 port 32853)
+	UCHAR both_mapped[] =
+	{
+		0x01, 0x01, 0x00, 0x18,		// Binding Success Response, message length 24
+		0x21, 0x12, 0xa4, 0x42,		// Magic cookie
+		0xb7, 0xe7, 0xa7, 0x01,		// Transaction ID
+		0xbc, 0x34, 0xd6, 0x86,
+		0xfa, 0x87, 0xdf, 0xae,
+		0x00, 0x01, 0x00, 0x08,		// MAPPED-ADDRESS attribute header
+		0x00, 0x01, 0x0d, 0x96,		// Address family (IPv4) and port number
+		0xcb, 0x00, 0x71, 0x07,		// IPv4 address
+		0x00, 0x20, 0x00, 0x08,		// XOR-MAPPED-ADDRESS attribute header
+		0x00, 0x01, 0xa1, 0x47,		// Address family (IPv4) and xor'd mapped port number
+		0xe1, 0x12, 0xa6, 0x43,		// Xor'd mapped IPv4 address
+	};
+
+	// XOR-MAPPED-ADDRESS whose length (12) runs past the end of the message
+	UCHAR truncated_attr[] =
+	{
+		0x01, 0x01, 0x00, 0x0c,		// Binding Success Response, message length 12
+		0x21, 0x12, 0xa4, 0x42,		// Magic cookie
+		0xb7, 0xe7, 0xa7, 0x01,		// Transaction ID
+		0xbc, 0x34, 0xd6, 0x86,
+		0xfa, 0x87, 0xdf, 0xae,
+		0x00, 0x20, 0x00, 0x0c,		// XOR-MAPPED-ADDRESS attribute header, length 12
+		0x00, 0x01, 0xa1, 0x47,
+		0xe1, 0x12, 0xa6, 0x43,
+	};
+
+	UCHAR ipv6_addr[16] =
+	{
+		0x20, 0x01, 0x0d, 0xb8, 0x12, 0x34, 0x56, 0x78,
+		0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+	};
+
+	UCHAR expect_request_head[8] = {0x00, 0x01, 0x00, 0x00, 0x21, 0x12, 0xa4, 0x42};
+	UCHAR request[STUN_HEADER_SIZE + 4];
+	UCHAR wrong_tid[STUN_TRANSACTION_ID_SIZE];
+	UCHAR tmp[sizeof(rfc5769_ipv4)];
+	char host[MAX_HOST_NAME_LEN + 1];
+	IP expect_ipv4, expect_ipv6, expect_mapped;
+	IP ip;
+	UINT port;
+	UINT size;
+	bool ok = true;
+
+	Print("STUN Binding Request / Response helpers test (RFC 5389, RFC 5769)\n");
+
+	SetIP(&expect_ipv4, 192, 0, 2, 1);
+	SetIP6(&expect_ipv6, ipv6_addr);
+	SetIP(&expect_mapped, 203, 0, 113, 7);
+
+	// (1) Binding Request
+	Zero(request, sizeof(request));
+	size = StunBuildBindingRequest(request, sizeof(request), tid);
+	stun_test_check(&ok, size == STUN_HEADER_SIZE &&
+		Cmp(request, expect_request_head, sizeof(expect_request_head)) == 0 &&
+		Cmp(request + 8, tid, STUN_TRANSACTION_ID_SIZE) == 0,
+		"Binding Request: 20 bytes, type 0x0001, length 0, cookie 21 12 A4 42, transaction ID copied");
+
+	stun_test_check(&ok, StunBuildBindingRequest(request, STUN_HEADER_SIZE - 1, tid) == 0,
+		"Binding Request: too small buffer is rejected");
+
+	// (2) RFC 5769 section 2.2 sample IPv4 response (SOFTWARE, MESSAGE-INTEGRITY and FINGERPRINT are ignored)
+	stun_test_check(&ok, stun_test_parse(rfc5769_ipv4, sizeof(rfc5769_ipv4), tid, &expect_ipv4, 32853),
+		"RFC 5769 sample IPv4 response: XOR-MAPPED-ADDRESS 192.0.2.1 port 32853");
+
+	stun_test_check(&ok, stun_test_parse(xor_mapped_ipv6, sizeof(xor_mapped_ipv6), tid, &expect_ipv6, 32853),
+		"XOR-MAPPED-ADDRESS IPv6 2001:db8:1234:5678:11:2233:4455:6677 port 32853");
+
+	// (3) MAPPED-ADDRESS fallback and XOR-MAPPED-ADDRESS preference
+	stun_test_check(&ok, stun_test_parse(mapped_only, sizeof(mapped_only), tid, &expect_mapped, 3478),
+		"MAPPED-ADDRESS only response falls back to 203.0.113.7 port 3478");
+
+	stun_test_check(&ok, stun_test_parse(both_mapped, sizeof(both_mapped), tid, &expect_ipv4, 32853),
+		"XOR-MAPPED-ADDRESS is preferred over MAPPED-ADDRESS");
+
+	// (4) Rejected responses
+	Copy(wrong_tid, tid, sizeof(wrong_tid));
+	wrong_tid[STUN_TRANSACTION_ID_SIZE - 1] ^= 0x01;
+	stun_test_check(&ok, StunParseBindingResponse(rfc5769_ipv4, sizeof(rfc5769_ipv4), wrong_tid, &ip, &port) == false,
+		"Wrong transaction ID is rejected");
+
+	stun_test_check(&ok, StunParseBindingResponse(truncated_attr, sizeof(truncated_attr), tid, &ip, &port) == false,
+		"Truncated attribute is rejected");
+
+	stun_test_check(&ok, StunParseBindingResponse(rfc5769_ipv4, sizeof(rfc5769_ipv4) - 4, tid, &ip, &port) == false &&
+		StunParseBindingResponse(rfc5769_ipv4, STUN_HEADER_SIZE - 1, tid, &ip, &port) == false,
+		"Truncated message is rejected");
+
+	Copy(tmp, rfc5769_ipv4, sizeof(tmp));
+	tmp[7] ^= 0x01;
+	stun_test_check(&ok, StunParseBindingResponse(tmp, sizeof(tmp), tid, &ip, &port) == false,
+		"Wrong magic cookie is rejected");
+
+	Copy(tmp, rfc5769_ipv4, sizeof(tmp));
+	tmp[1] = 0x11;
+	stun_test_check(&ok, StunParseBindingResponse(tmp, sizeof(tmp), tid, &ip, &port) == false,
+		"Binding Error Response (0x0111) is rejected");
+
+	Copy(tmp, rfc5769_ipv4, sizeof(tmp));
+	tmp[1] = 0x01;
+	tmp[0] = 0x00;
+	stun_test_check(&ok, StunParseBindingResponse(tmp, sizeof(tmp), tid, &ip, &port) == false,
+		"Binding Request (0x0001) is rejected");
+
+	Copy(tmp, both_mapped, sizeof(both_mapped));
+	tmp[25] = 0x03;
+	stun_test_check(&ok, StunParseBindingResponse(tmp, sizeof(both_mapped), tid, &ip, &port) == false,
+		"Unknown address family (0x03) is rejected");
+
+	Copy(tmp, both_mapped, sizeof(both_mapped));
+	tmp[23] = 0x04;
+	stun_test_check(&ok, StunParseBindingResponse(tmp, sizeof(both_mapped), tid, &ip, &port) == false,
+		"MAPPED-ADDRESS too short for the IPv4 family (length 4) is rejected");
+
+	Copy(tmp, both_mapped, sizeof(both_mapped));
+	tmp[3] = 0x16;
+	stun_test_check(&ok, StunParseBindingResponse(tmp, sizeof(both_mapped), tid, &ip, &port) == false,
+		"Message length not a multiple of 4 (22) is rejected");
+
+	// (5) STUN server string
+	stun_test_check(&ok, StunParseServerStr("stun.example.com", host, sizeof(host), &port) &&
+		StrCmp(host, "stun.example.com") == 0 && port == STUN_DEFAULT_PORT,
+		"Server string: host name with the default port 3478");
+
+	stun_test_check(&ok, StunParseServerStr("192.0.2.1:19302", host, sizeof(host), &port) &&
+		StrCmp(host, "192.0.2.1") == 0 && port == 19302,
+		"Server string: host:port");
+
+	stun_test_check(&ok, StunParseServerStr("[2001:db8::1]:3479", host, sizeof(host), &port) &&
+		StrCmp(host, "2001:db8::1") == 0 && port == 3479,
+		"Server string: [IPv6 address]:port");
+
+	stun_test_check(&ok, StunParseServerStr("2001:db8::1", host, sizeof(host), &port) &&
+		StrCmp(host, "2001:db8::1") == 0 && port == STUN_DEFAULT_PORT,
+		"Server string: bare IPv6 address with the default port 3478");
+
+	stun_test_check(&ok, StunParseServerStr("", host, sizeof(host), &port) == false &&
+		StunParseServerStr("host:", host, sizeof(host), &port) == false &&
+		StunParseServerStr("host:0", host, sizeof(host), &port) == false &&
+		StunParseServerStr("host:65536", host, sizeof(host), &port) == false &&
+		StunParseServerStr("host:34a", host, sizeof(host), &port) == false &&
+		StunParseServerStr("[2001:db8::1", host, sizeof(host), &port) == false &&
+		StunParseServerStr("[2001:db8::1]3478", host, sizeof(host), &port) == false,
+		"Server string: invalid strings are rejected");
+
+	if (ok)
+	{
+		Print("STUN TEST OK\n");
+	}
+	else
+	{
+		Print("STUN TEST FAILED\n");
+	}
 }
 
 // The list of test functions
@@ -94,15 +445,10 @@ typedef struct TEST_LIST
 
 TEST_LIST test_list[] =
 {
-	{"c", client_test, "VPN Client in Test Mode, enter key to graceful stop."},
 	{"s", server_test, "VPN Server in Test Mode, enter key to graceful stop."},
-	{"b", bridge_test, "VPN Bridge in Test Mode, enter key to graceful stop."},
-#ifdef OS_WIN32
-	{"sm", server_manager_test, "VPN Server Manager UI in Test Mode."},
-	{"cm", client_manager_test, "VPN Client Manager UI in Test Mode."},
-	{"setupapi", setup_test, "SetupAPI test: tries to retrieve the specified NIC's status."},
-#endif
 	{"memory_leak", memory_leak_test, "Memory leak test: Try to leak one byte by malloc()."},
+	{"mschapv2", mschapv2_test, "MS-CHAPv2 / NT-hash helpers against RFC 2759 test vectors."},
+	{"stun", stun_test, "STUN Binding Request / Response helpers against RFC 5769 sample messages."},
 };
 
 // Test function
@@ -113,8 +459,8 @@ int TestMain(char *cmd)
 	bool exit_now = false;
 	int status = 0;
 
-	Print("SoftEther VPN Project\n");
-	Print("vpntest: VPN Server / VPN Client / VPN Bridge test program\n");
+	Print("Ranz VPN\n");
+	Print("vpntest: VPN Server test program\n");
 	Print("Usage: vpntest [/memcheck] [command]\n\n");
 	Print("Enter '?' or 'help' to show the command list.\n");
 	Print("Enter 'q' or 'exit' to exit the process.\n\n");

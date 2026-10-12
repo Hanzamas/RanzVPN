@@ -6,48 +6,21 @@
 // Ethernet Bridge Program (Local Bridge)
 
 #include "Bridge.h"
-#include "BridgeUnix.h"
 #include "BridgeWin32.h"
 
 #include "Connection.h"
 #include "Hub.h"
 #include "Session.h"
-#include "Virtual.h"
 
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
+#include "Mayaqua/TcpIp.h"
 
 // Hash the list of current Ethernet devices
 UINT GetEthDeviceHash()
 {
-#ifdef	OS_UNIX
-	// UNIX
-	UINT num = 0;
-	UINT i;
-	char tmp[4096];
-	UCHAR hash[SHA1_SIZE];
-	TOKEN_LIST *t = GetEthList();
-
-	tmp[0] = 0;
-
-	if (t != NULL)
-	{
-		num = t->NumTokens;
-		for (i = 0; i < t->NumTokens; i++)
-		{
-			StrCat(tmp, sizeof(tmp), t->Token[i]);
-		}
-		FreeToken(t);
-	}
-
-	Sha0(hash, tmp, StrLen(tmp));
-
-	Copy(&num, hash, sizeof(UINT));
-
-	return num;
-#else	// OS_UNIX
 	// Win32
 	UINT ret = 0;
 	MS_ADAPTER_LIST *a = MsCreateAdapterListEx(true);
@@ -71,31 +44,6 @@ UINT GetEthDeviceHash()
 	Copy(&num, hash, sizeof(UINT));
 
 	return num;
-#endif	// OS_UNIX
-}
-
-// Get whether WinPcap is needed
-bool IsNeedWinPcap()
-{
-	if (IsBridgeSupported() == false)
-	{
-		// Not in Windows
-		return false;
-	}
-	else
-	{
-		// Windows
-		if (IsEthSupported())
-		{
-			// Already success to access the Ethernet device
-			return false;
-		}
-		else
-		{
-			// Failed to access the Ethernet device
-			return true;
-		}
-	}
 }
 
 // Get whether the local-bridging is supported by current OS
@@ -254,7 +202,7 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 	UnlockList(c->HubList);
 
 	// Start the local-bridge immediately
-	if (h != NULL && br != NULL && h->Type != HUB_TYPE_FARM_DYNAMIC)
+	if (h != NULL && br != NULL)
 	{
 		Lock(h->lock_online);
 		{
@@ -446,15 +394,5 @@ BRIDGE *BrNewBridge(HUB *h, char *name, POLICY *p, bool local, bool monitor, boo
 	ReleaseThread(t);
 
 	return b;
-}
-
-// Raw IP bridge is supported only on Linux
-bool IsRawIpBridgeSupported()
-{
-#ifdef	UNIX_LINUX
-	return true;
-#else	// UNIX_LINUX
-	return false;
-#endif	// UNIX_LINUX
 }
 

@@ -11,11 +11,7 @@
 #include "Bridge.h"
 #include "Connection.h"
 #include "Link.h"
-#include "Nat.h"
-#include "NativeStack.h"
 #include "Protocol.h"
-#include "Radius.h"
-#include "SecureNAT.h"
 #include "Server.h"
 
 #include "Mayaqua/Cfg.h"
@@ -37,8 +33,6 @@
 	}
 
 static UCHAR broadcast[] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-static char vgs_ua_str[9] = {0};
-static bool g_vgs_emb_tag = false;
 
 // A list of administration options that are currently supported and its default values
 // These names must be shorter than 64 bytes
@@ -89,121 +83,6 @@ ADMIN_OPTION admin_options[] =
 
 UINT num_admin_options = sizeof(admin_options) / sizeof(ADMIN_OPTION);
 
-
-// Create an EAP client for the specified Virtual Hub
-EAP_CLIENT *HubNewEapClient(CEDAR *cedar, char *hubname, char *client_ip_str, char *username, char *vpn_protocol_state_str, bool proxy_only, 
-							PPP_LCP **response, UCHAR last_recv_eapid)
-{
-	HUB *hub = NULL;
-	EAP_CLIENT *ret = NULL;
-	char radius_servers[MAX_PATH] = {0};
-	UINT radius_port = 0;
-	UINT radius_retry_interval = 0;
-	UINT radius_retry_timeout = 0;
-	char radius_secret[MAX_PATH] = {0};
-	char radius_suffix_filter[MAX_PATH] = {0};
-	if (cedar == NULL || hubname == NULL || client_ip_str == NULL || username == NULL)
-	{
-		return NULL;
-	}
-
-	// Find the Virtual Hub
-	LockHubList(cedar);
-	{
-		hub = GetHub(cedar, hubname);
-	}
-	UnlockHubList(cedar);
-
-	if (hub != NULL)
-	{
-		if (GetRadiusServerEx3(hub, radius_servers, sizeof(radius_servers), &radius_port, radius_secret,
-			sizeof(radius_secret), &radius_retry_interval, &radius_retry_timeout, radius_suffix_filter, sizeof(radius_suffix_filter)))
-		{
-			bool use_peap = hub->RadiusUsePeapInsteadOfEap;
-
-			if (IsEmptyStr(radius_suffix_filter) || EndWith(username, radius_suffix_filter))
-			{
-				TOKEN_LIST *radius_servers_list = ParseToken(radius_servers, " ,;\t");
-
-				if (radius_servers_list != NULL && radius_servers_list->NumTokens >= 1)
-				{
-					// Try for each of RADIUS servers
-					UINT i;
-					bool finish = false;
-
-					for (i = 0;i < radius_servers_list->NumTokens;i++)
-					{
-						EAP_CLIENT *eap;
-						IP ip;
-
-						if (GetIP(&ip, radius_servers_list->Token[i]))
-						{
-							eap = NewEapClient(&ip, radius_port, radius_secret, radius_retry_interval,
-								RADIUS_INITIAL_EAP_TIMEOUT, client_ip_str, username, hubname, last_recv_eapid);
-
-							if (eap != NULL)
-							{
-								if (IsEmptyStr(vpn_protocol_state_str) == false)
-								{
-									StrCpy(eap->In_VpnProtocolState, sizeof(eap->In_VpnProtocolState), vpn_protocol_state_str);
-								}
-
-								if (proxy_only && response != NULL)
-								{
-									// EAP proxy for EAP-capable clients
-									PPP_LCP *lcp = EapClientSendEapIdentity(eap);
-									if (lcp != NULL)
-									{
-										*response = lcp;
-										eap->GiveupTimeout = RADIUS_RETRY_TIMEOUT;
-										ret = eap;
-										finish = true;
-									}
-								}
-								else if (use_peap == false)
-								{
-									// EAP
-									if (EapClientSendMsChapv2AuthRequest(eap))
-									{
-										eap->GiveupTimeout = RADIUS_RETRY_TIMEOUT;
-										ret = eap;
-										finish = true;
-									}
-								}
-								else
-								{
-									// PEAP
-									if (PeapClientSendMsChapv2AuthRequest(eap))
-									{
-										eap->GiveupTimeout = RADIUS_RETRY_TIMEOUT;
-										ret = eap;
-										finish = true;
-									}
-								}
-
-								if (finish == false)
-								{
-									ReleaseEapClient(eap);
-								}
-							}
-						}
-
-						if (finish)
-						{
-							break;
-						}
-					}
-				}
-
-				FreeToken(radius_servers_list);
-			}
-		}
-	}
-
-	ReleaseHub(hub);
-
-	return ret;
-}
 
 // Create a user list
 LIST *NewUserList()
@@ -604,15 +483,7 @@ void DataToHubOptionStruct(HUB_OPTION *o, RPC_ADMIN_OPTION *ao)
 	GetHubAdminOptionDataAndSet(ao, "DisableUdpFilterForLocalBridgeNic", o->DisableUdpFilterForLocalBridgeNic);
 	GetHubAdminOptionDataAndSet(ao, "ApplyIPv4AccessListOnArpPacket", o->ApplyIPv4AccessListOnArpPacket);
 	GetHubAdminOptionDataAndSet(ao, "RemoveDefGwOnDhcpForLocalhost", o->RemoveDefGwOnDhcpForLocalhost);
-	GetHubAdminOptionDataAndSet(ao, "SecureNAT_MaxTcpSessionsPerIp", o->SecureNAT_MaxTcpSessionsPerIp);
-	GetHubAdminOptionDataAndSet(ao, "SecureNAT_MaxTcpSynSentPerIp", o->SecureNAT_MaxTcpSynSentPerIp);
-	GetHubAdminOptionDataAndSet(ao, "SecureNAT_MaxUdpSessionsPerIp", o->SecureNAT_MaxUdpSessionsPerIp);
-	GetHubAdminOptionDataAndSet(ao, "SecureNAT_MaxDnsSessionsPerIp", o->SecureNAT_MaxDnsSessionsPerIp);
-	GetHubAdminOptionDataAndSet(ao, "SecureNAT_MaxIcmpSessionsPerIp", o->SecureNAT_MaxIcmpSessionsPerIp);
 	GetHubAdminOptionDataAndSet(ao, "AccessListIncludeFileCacheLifetime", o->AccessListIncludeFileCacheLifetime);
-	GetHubAdminOptionDataAndSet(ao, "DisableKernelModeSecureNAT", o->DisableKernelModeSecureNAT);
-	GetHubAdminOptionDataAndSet(ao, "DisableIpRawModeSecureNAT", o->DisableIpRawModeSecureNAT);
-	GetHubAdminOptionDataAndSet(ao, "DisableUserModeSecureNAT", o->DisableUserModeSecureNAT);
 	GetHubAdminOptionDataAndSet(ao, "DisableCheckMacOnLocalBridge", o->DisableCheckMacOnLocalBridge);
 	GetHubAdminOptionDataAndSet(ao, "DisableCorrectIpOffloadChecksum", o->DisableCorrectIpOffloadChecksum);
 	GetHubAdminOptionDataAndSet(ao, "BroadcastLimiterStrictMode", o->BroadcastLimiterStrictMode);
@@ -623,13 +494,9 @@ void DataToHubOptionStruct(HUB_OPTION *o, RPC_ADMIN_OPTION *ao)
 	GetHubAdminOptionDataAndSet(ao, "AllowSameUserInPrivacyFilterMode", o->AllowSameUserInPrivacyFilterMode);
 	GetHubAdminOptionDataAndSet(ao, "SuppressClientUpdateNotification", o->SuppressClientUpdateNotification);
 	GetHubAdminOptionDataAndSet(ao, "FloodingSendQueueBufferQuota", o->FloodingSendQueueBufferQuota);
-	GetHubAdminOptionDataAndSet(ao, "AssignVLanIdByRadiusAttribute", o->AssignVLanIdByRadiusAttribute);
-	GetHubAdminOptionDataAndSet(ao, "DenyAllRadiusLoginWithNoVlanAssign", o->DenyAllRadiusLoginWithNoVlanAssign);
-	GetHubAdminOptionDataAndSet(ao, "SecureNAT_RandomizeAssignIp", o->SecureNAT_RandomizeAssignIp);
 	GetHubAdminOptionDataAndSet(ao, "DetectDormantSessionInterval", o->DetectDormantSessionInterval);
 	GetHubAdminOptionDataAndSet(ao, "NoPhysicalIPOnPacketLog", o->NoPhysicalIPOnPacketLog);
 	GetHubAdminOptionDataAndSet(ao, "UseHubNameAsDhcpUserClassOption", o->UseHubNameAsDhcpUserClassOption);
-	GetHubAdminOptionDataAndSet(ao, "UseHubNameAsRadiusNasId", o->UseHubNameAsRadiusNasId);
 	GetHubAdminOptionDataAndSet(ao, "AllowEapMatchUserByCert", o->AllowEapMatchUserByCert);
 	GetHubAdminOptionDataAndSet(ao, "DhcpDiscoverTimeoutMs", o->DhcpDiscoverTimeoutMs);
 }
@@ -680,15 +547,7 @@ void HubOptionStructToData(RPC_ADMIN_OPTION *ao, HUB_OPTION *o, char *hub_name)
 	Add(aol, NewAdminOption("DisableUdpFilterForLocalBridgeNic", o->DisableUdpFilterForLocalBridgeNic));
 	Add(aol, NewAdminOption("ApplyIPv4AccessListOnArpPacket", o->ApplyIPv4AccessListOnArpPacket));
 	Add(aol, NewAdminOption("RemoveDefGwOnDhcpForLocalhost", o->RemoveDefGwOnDhcpForLocalhost));
-	Add(aol, NewAdminOption("SecureNAT_MaxTcpSessionsPerIp", o->SecureNAT_MaxTcpSessionsPerIp));
-	Add(aol, NewAdminOption("SecureNAT_MaxTcpSynSentPerIp", o->SecureNAT_MaxTcpSynSentPerIp));
-	Add(aol, NewAdminOption("SecureNAT_MaxUdpSessionsPerIp", o->SecureNAT_MaxUdpSessionsPerIp));
-	Add(aol, NewAdminOption("SecureNAT_MaxDnsSessionsPerIp", o->SecureNAT_MaxDnsSessionsPerIp));
-	Add(aol, NewAdminOption("SecureNAT_MaxIcmpSessionsPerIp", o->SecureNAT_MaxIcmpSessionsPerIp));
 	Add(aol, NewAdminOption("AccessListIncludeFileCacheLifetime", o->AccessListIncludeFileCacheLifetime));
-	Add(aol, NewAdminOption("DisableKernelModeSecureNAT", o->DisableKernelModeSecureNAT));
-	Add(aol, NewAdminOption("DisableIpRawModeSecureNAT", o->DisableIpRawModeSecureNAT));
-	Add(aol, NewAdminOption("DisableUserModeSecureNAT", o->DisableUserModeSecureNAT));
 	Add(aol, NewAdminOption("DisableCheckMacOnLocalBridge", o->DisableCheckMacOnLocalBridge));
 	Add(aol, NewAdminOption("DisableCorrectIpOffloadChecksum", o->DisableCorrectIpOffloadChecksum));
 	Add(aol, NewAdminOption("BroadcastLimiterStrictMode", o->BroadcastLimiterStrictMode));
@@ -699,13 +558,9 @@ void HubOptionStructToData(RPC_ADMIN_OPTION *ao, HUB_OPTION *o, char *hub_name)
 	Add(aol, NewAdminOption("AllowSameUserInPrivacyFilterMode", o->AllowSameUserInPrivacyFilterMode));
 	Add(aol, NewAdminOption("SuppressClientUpdateNotification", o->SuppressClientUpdateNotification));
 	Add(aol, NewAdminOption("FloodingSendQueueBufferQuota", o->FloodingSendQueueBufferQuota));
-	Add(aol, NewAdminOption("AssignVLanIdByRadiusAttribute", o->AssignVLanIdByRadiusAttribute));
-	Add(aol, NewAdminOption("DenyAllRadiusLoginWithNoVlanAssign", o->DenyAllRadiusLoginWithNoVlanAssign));
-	Add(aol, NewAdminOption("SecureNAT_RandomizeAssignIp", o->SecureNAT_RandomizeAssignIp));
 	Add(aol, NewAdminOption("DetectDormantSessionInterval", o->DetectDormantSessionInterval));
 	Add(aol, NewAdminOption("NoPhysicalIPOnPacketLog", o->NoPhysicalIPOnPacketLog));
 	Add(aol, NewAdminOption("UseHubNameAsDhcpUserClassOption", o->UseHubNameAsDhcpUserClassOption));
-	Add(aol, NewAdminOption("UseHubNameAsRadiusNasId", o->UseHubNameAsRadiusNasId));
 	Add(aol, NewAdminOption("AllowEapMatchUserByCert", o->AllowEapMatchUserByCert));
 	Add(aol, NewAdminOption("DhcpDiscoverTimeoutMs", o->DhcpDiscoverTimeoutMs));
 
@@ -1770,68 +1625,6 @@ void HubWatchDogThread(THREAD *t, void *param)
 	}
 ESCAPE:
 	return;
-}
-
-// Enable / disable the SecureNAT
-void EnableSecureNAT(HUB *h, bool enable)
-{
-	EnableSecureNATEx(h, enable, false);
-}
-void EnableSecureNATEx(HUB *h, bool enable, bool no_change)
-{
-	bool for_cluster = false;
-	// Validate arguments
-	if (h == NULL)
-	{
-		return;
-	}
-
-	if (h->Cedar->Server != NULL && h->Cedar->Server->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		if (h->Type == HUB_TYPE_FARM_DYNAMIC)
-		{
-			for_cluster = true;
-		}
-	}
-
-	Lock(h->lock_online);
-	{
-		if (no_change == false)
-		{
-			h->EnableSecureNAT = enable;
-		}
-
-		if (h->EnableSecureNAT == false)
-		{
-STOP:
-			// Stop if it's already started
-			if (h->SecureNAT != NULL)
-			{
-				SnFreeSecureNAT(h->SecureNAT);
-				h->SecureNAT = NULL;
-			}
-		}
-		else
-		{
-			if (for_cluster)
-			{
-				if ((h->SecureNAT != NULL && LIST_NUM(h->SessionList) <= 1) ||
-					(h->SecureNAT == NULL && LIST_NUM(h->SessionList) == 0))
-				{
-					// It is in a start mode, but stop when there is no other sessions
-					// in the case of dynamic Virtual HUB
-					goto STOP;
-				}
-			}
-
-			// Start if the HUB is online and not started
-			if (h->SecureNAT == NULL && h->Offline == false)
-			{
-				h->SecureNAT = SnNewSecureNAT(h, h->SecureNATOption);
-			}
-		}
-	}
-	Unlock(h->lock_online);
 }
 
 // Convert an access list to a string
@@ -3587,11 +3380,6 @@ bool HubPaPutPacket(SESSION *s, void *data, UINT size)
 			// If the link is established with UDP acceleration function, use optimum value of the UDP acceleration function
 			target_mss = MIN(target_mss, s->UdpAccelMss);
 		}
-		else if (s->IsRUDPSession && s->RUdpMss != 0)
-		{
-			// If the link with UDP acceleration is not established, use the optimum value for R-UDP in the case of using R-UDP connection
-			target_mss = MIN(target_mss, s->RUdpMss);
-		}
 
 		if (target_mss != INFINITE)
 		{
@@ -3694,31 +3482,6 @@ LABEL_TRY_AGAIN:
 		}
 	}
 
-
-	if (packet != NULL)
-	{
-		if (packet->TypeL7 == L7_DHCPV4)
-		{
-			if (packet->TypeL3 == L3_IPV4 && packet->TypeL4 == L4_UDP)
-			{
-				if (packet->L7.DHCPv4Header != NULL)
-				{
-					DHCPV4_HEADER *dhcp = packet->L7.DHCPv4Header;
-
-					if (dhcp->OpCode == 1)
-					{
-						if (NsIsMacAddressOnLocalhost(dhcp->ClientMacAddress))
-						{
-							// Filter DHCP requests sent from local kernel-mode virtual NAT
-							// not to re-enter it to the virtual HUB along the local bridge
-							FreePacket(packet);
-							packet = NULL;
-						}
-					}
-				}
-			}
-		}
-	}
 
 	if (no_parse_dhcp == false && packet != NULL)
 	{
@@ -4077,7 +3840,7 @@ DISCARD_PACKET:
 						}
 
 						// Register since it is not registered
-						if ((s->Policy->MaxMac != 0 || s->Policy->NoBridge) && (s->IsOpenVPNL3Session == false))
+						if (s->Policy->MaxMac != 0 || s->Policy->NoBridge)
 						{
 							UINT i, num_mac_for_me = 0;
 							UINT limited_count;
@@ -5148,7 +4911,7 @@ bool CheckMaxLoggedPacketsPerMinute(SESSION *s, UINT max_packets, UINT64 now)
 	}
 
 	if ((s->Policy != NULL && s->Policy->NoBroadcastLimiter) ||
-		s->SecureNATMode || s->BridgeMode || s->LinkModeServer || s->LinkModeClient ||
+		s->BridgeMode || s->LinkModeServer || s->LinkModeClient ||
 		s->L3SwitchMode)
 	{
 		return true;
@@ -5380,8 +5143,7 @@ void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *
 	if (src != NULL && dest->Session != NULL && src->Hub != NULL && src->Hub->Option != NULL)
 	{
 		if (dest->Session->AdjustMss != 0 ||
-			(dest->Session->UseUdpAcceleration && dest->Session->UdpAccelMss != 0) ||
-			(dest->Session->IsRUDPSession && dest->Session->RUdpMss != 0))
+			(dest->Session->UseUdpAcceleration && dest->Session->UdpAccelMss != 0))
 		{
 			if (src->Hub->Option->DisableAdjustTcpMss == false)
 			{
@@ -5395,10 +5157,6 @@ void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *
 				if (dest->Session->UseUdpAcceleration && dest->Session->UdpAccelMss != 0)
 				{
 					target_mss = MIN(target_mss, dest->Session->UdpAccelMss);
-				}
-				else if (dest->Session->IsRUDPSession && dest->Session->RUdpMss != 0)
-				{
-					target_mss = MIN(target_mss, dest->Session->RUdpMss);
 				}
 
 				// Processing of Adjust TCP MSS
@@ -6103,55 +5861,8 @@ void AddSession(HUB *h, SESSION *s)
 		Insert(h->SessionList, s);
 		AddRef(s->ref);
 		Debug("Session %s Inserted to %s.\n", s->Name, h->Name);
-
-		if (s->InProcMode)
-		{
-			s->UniqueId = GetNewUniqueId(h);
-		}
 	}
 	UnlockList(h->SessionList);
-}
-
-// Create a new unique ID of the HUB
-UINT GetNewUniqueId(HUB *h)
-{
-	UINT id;
-	// Validate arguments
-	if (h == NULL)
-	{
-		return 0;
-	}
-
-	for (id = 1;;id++)
-	{
-		if (SearchSessionByUniqueId(h, id) == NULL)
-		{
-			return id;
-		}
-	}
-}
-
-// Search for a session by the unique session ID
-SESSION *SearchSessionByUniqueId(HUB *h, UINT id)
-{
-	UINT i;
-	// Validate arguments
-	if (h == NULL)
-	{
-		return NULL;
-	}
-
-	for (i = 0;i < LIST_NUM(h->SessionList);i++)
-	{
-		SESSION *s = LIST_DATA(h->SessionList, i);
-
-		if (s->UniqueId == id)
-		{
-			return s;
-		}
-	}
-
-	return NULL;
 }
 
 // Stop the operation of the HUB
@@ -6182,19 +5893,10 @@ void StopHub(HUB *h)
 // Online the Virtual HUB
 void SetHubOnline(HUB *h)
 {
-	bool for_cluster = false;
 	// Validate arguments
 	if (h == NULL)
 	{
 		return;
-	}
-
-	if (h->Cedar->Server != NULL && h->Cedar->Server->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		if (h->Type == HUB_TYPE_FARM_DYNAMIC)
-		{
-			for_cluster = true;
-		}
 	}
 
 	Lock(h->lock_online);
@@ -6209,68 +5911,39 @@ void SetHubOnline(HUB *h)
 		// Start all links
 		StartAllLink(h);
 
-		// Start the SecureNAT
-		if (h->EnableSecureNAT)
-		{
-			if (h->SecureNAT == NULL)
-			{
-				if (for_cluster == false)
-				{
-					h->SecureNAT = SnNewSecureNAT(h, h->SecureNATOption);
-				}
-			}
-		}
-
 		// Start all of the local bridges that is associated with this HUB
-		if (h->Type != HUB_TYPE_FARM_DYNAMIC)
+		LockList(h->Cedar->LocalBridgeList);
 		{
-			LockList(h->Cedar->LocalBridgeList);
+			UINT i;
+			for (i = 0;i < LIST_NUM(h->Cedar->LocalBridgeList);i++)
 			{
-				UINT i;
-				for (i = 0;i < LIST_NUM(h->Cedar->LocalBridgeList);i++)
-				{
-					LOCALBRIDGE *br = LIST_DATA(h->Cedar->LocalBridgeList, i);
+				LOCALBRIDGE *br = LIST_DATA(h->Cedar->LocalBridgeList, i);
 
-					if (StrCmpi(br->HubName, h->Name) == 0)
+				if (StrCmpi(br->HubName, h->Name) == 0)
+				{
+					if (br->Bridge == NULL)
 					{
-						if (br->Bridge == NULL)
-						{
-							br->Bridge = BrNewBridge(h, br->DeviceName, NULL, br->Local, br->Monitor,
-								br->TapMode, br->TapMacAddress, br->LimitBroadcast, br);
-						}
+						br->Bridge = BrNewBridge(h, br->DeviceName, NULL, br->Local, br->Monitor,
+							br->TapMode, br->TapMacAddress, br->LimitBroadcast, br);
 					}
 				}
 			}
-			UnlockList(h->Cedar->LocalBridgeList);
 		}
+		UnlockList(h->Cedar->LocalBridgeList);
 
 		h->Offline = false;
 	}
 	Unlock(h->lock_online);
-
-	if (h->Cedar->Server != NULL)
-	{
-		SiHubOnlineProc(h);
-	}
 }
 
 // Offline the Virtual HUB
 void SetHubOffline(HUB *h)
 {
 	UINT i;
-	bool for_cluster = false;
 	// Validate arguments
 	if (h == NULL)
 	{
 		return;
-	}
-
-	if (h->Cedar->Server != NULL && h->Cedar->Server->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		if (h->Type == HUB_TYPE_FARM_DYNAMIC)
-		{
-			for_cluster = true;
-		}
 	}
 
 	h->BeingOffline = true;
@@ -6288,10 +5961,6 @@ void SetHubOffline(HUB *h)
 
 		// Stop all links
 		StopAllLink(h);
-
-		// Stop the SecureNAT
-		SnFreeSecureNAT(h->SecureNAT);
-		h->SecureNAT = NULL;
 
 		// Stop all the local bridges that is associated with this HUB
 		LockList(h->Cedar->LocalBridgeList);
@@ -6318,11 +5987,6 @@ void SetHubOffline(HUB *h)
 	Unlock(h->lock_online);
 
 	h->BeingOffline = false;
-
-	if (h->Cedar->Server != NULL)
-	{
-		SiHubOfflineProc(h);
-	}
 }
 
 // Get whether a HUB which have the specified name exists
@@ -6412,204 +6076,6 @@ void ReleaseHub(HUB *h)
 	}
 }
 
-// Get the Radius server information
-bool GetRadiusServer(HUB *hub, char *name, UINT size, UINT *port, char *secret, UINT secret_size)
-{
-	UINT interval;
-	
-	return GetRadiusServerEx(hub, name, size, port, secret, secret_size, &interval);
-}
-bool GetRadiusServerEx(HUB *hub, char *name, UINT size, UINT *port, char *secret, UINT secret_size, UINT *interval) {
-	UINT timeout;
-
-	return GetRadiusServerEx2(hub, name, size, port, secret, secret_size, interval, &timeout);
-}
-bool GetRadiusServerEx2(HUB *hub, char *name, UINT size, UINT *port, char *secret, UINT secret_size, UINT *interval, UINT *timeout)
-{
-	return GetRadiusServerEx3(hub, name, size, port, secret, secret_size, interval, timeout, NULL, 0);
-}
-bool GetRadiusServerEx3(HUB *hub, char *name, UINT size, UINT *port, char *secret, UINT secret_size, UINT *interval, UINT *timeout, char *suffix_filter, UINT suffix_filter_size)
-{
-	bool ret = false;
-	// Validate arguments
-	if (hub == NULL || name == NULL || port == NULL || secret == NULL || interval == NULL || timeout == NULL)
-	{
-		return false;
-	}
-
-	Lock(hub->RadiusOptionLock);
-	{
-		if (hub->RadiusServerName != NULL)
-		{
-			char *tmp;
-			UINT tmp_size;
-			StrCpy(name, size, hub->RadiusServerName);
-			*port = hub->RadiusServerPort;
-			*interval = hub->RadiusRetryInterval;
-			*timeout = hub->RadiusRetryTimeout;
-
-			tmp_size = hub->RadiusSecret->Size + 1;
-			tmp = ZeroMalloc(tmp_size);
-			Copy(tmp, hub->RadiusSecret->Buf, hub->RadiusSecret->Size);
-			StrCpy(secret, secret_size, tmp);
-			Free(tmp);
-
-			if (suffix_filter != NULL)
-			{
-				StrCpy(suffix_filter, suffix_filter_size, hub->RadiusSuffixFilter);
-			}
-
-			ret = true;
-		}
-	}
-	Unlock(hub->RadiusOptionLock);
-
-	return ret;
-}
-
-// Set the Radius server information
-void SetRadiusServer(HUB *hub, char *name, UINT port, char *secret)
-{
-	SetRadiusServerEx(hub, name, port, secret, RADIUS_RETRY_INTERVAL);
-}
-void SetRadiusServerEx(HUB *hub, char *name, UINT port, char *secret, UINT interval)
-{
-	SetRadiusServerEx2(hub, name, port, secret, interval, RADIUS_RETRY_TIMEOUT);
-}
-void SetRadiusServerEx2(HUB *hub, char *name, UINT port, char *secret, UINT interval, UINT timeout)
-{
-	// Validate arguments
-	if (hub == NULL)
-	{
-		return;
-	}
-
-	Lock(hub->RadiusOptionLock);
-	{
-		if (hub->RadiusServerName != NULL)
-		{
-			Free(hub->RadiusServerName);
-		}
-
-		if (name == NULL)
-		{
-			hub->RadiusServerName = NULL;
-			hub->RadiusServerPort = 0;
-			hub->RadiusRetryInterval = RADIUS_RETRY_INTERVAL;
-			hub->RadiusRetryTimeout = RADIUS_RETRY_TIMEOUT;
-
-			FreeBuf(hub->RadiusSecret);
-		}
-		else
-		{
-			hub->RadiusServerName = CopyStr(name);
-			hub->RadiusServerPort = port;
-
-			if (timeout == 0) {
-				timeout = RADIUS_RETRY_TIMEOUT;
-			}
-			hub->RadiusRetryTimeout = timeout;
-
-			if (interval == 0)
-			{
-				hub->RadiusRetryInterval = RADIUS_RETRY_INTERVAL; ///What happens here is that RADIUS_RETRY_TIMEOUT is not configurable, and RADIUS_RETRY_INTERVAL is set to the timeout if it's larger.
-			}
-			
-			if (interval > timeout)
-			{
-				hub->RadiusRetryInterval = timeout;
-			}
-			else
-			{
-				hub->RadiusRetryInterval = interval;
-			}
-			FreeBuf(hub->RadiusSecret);
-
-			if (secret == NULL)
-			{
-				hub->RadiusSecret = NewBuf();
-			}
-			else
-			{
-				hub->RadiusSecret = NewBuf();
-				WriteBuf(hub->RadiusSecret, secret, StrLen(secret));
-				SeekBuf(hub->RadiusSecret, 0, 0);
-			}
-		}
-	}
-	Unlock(hub->RadiusOptionLock);
-}
-
-// Add the traffic information for Virtual HUB
-void IncrementHubTraffic(HUB *h)
-{
-	TRAFFIC t;
-	// Validate arguments
-	if (h == NULL || h->FarmMember == false)
-	{
-		return;
-	}
-
-	Zero(&t, sizeof(t));
-
-	Lock(h->TrafficLock);
-	{
-		t.Send.BroadcastBytes =
-			h->Traffic->Send.BroadcastBytes - h->OldTraffic->Send.BroadcastBytes;
-		t.Send.BroadcastCount =
-			h->Traffic->Send.BroadcastCount - h->OldTraffic->Send.BroadcastCount;
-		t.Send.UnicastBytes =
-			h->Traffic->Send.UnicastBytes - h->OldTraffic->Send.UnicastBytes;
-		t.Send.UnicastCount =
-			h->Traffic->Send.UnicastCount - h->OldTraffic->Send.UnicastCount;
-		t.Recv.BroadcastBytes =
-			h->Traffic->Recv.BroadcastBytes - h->OldTraffic->Recv.BroadcastBytes;
-		t.Recv.BroadcastCount =
-			h->Traffic->Recv.BroadcastCount - h->OldTraffic->Recv.BroadcastCount;
-		t.Recv.UnicastBytes =
-			h->Traffic->Recv.UnicastBytes - h->OldTraffic->Recv.UnicastBytes;
-		t.Recv.UnicastCount =
-			h->Traffic->Recv.UnicastCount - h->OldTraffic->Recv.UnicastCount;
-		Copy(h->OldTraffic, h->Traffic, sizeof(TRAFFIC));
-	}
-	Unlock(h->TrafficLock);
-
-	if (IsZero(&t, sizeof(TRAFFIC)))
-	{
-		return;
-	}
-
-	AddTrafficDiff(h, h->Name, TRAFFIC_DIFF_HUB, &t);
-}
-
-// Adding Traffic information
-void AddTrafficDiff(HUB *h, char *name, UINT type, TRAFFIC *traffic)
-{
-	TRAFFIC_DIFF *d;
-	// Validate arguments
-	if (h == NULL || h->FarmMember == false || name == NULL || traffic == NULL)
-	{
-		return;
-	}
-
-	if (LIST_NUM(h->Cedar->TrafficDiffList) > MAX_TRAFFIC_DIFF)
-	{
-		return;
-	}
-
-	d = ZeroMallocFast(sizeof(TRAFFIC_DIFF));
-	d->HubName = CopyStr(h->Name);
-	d->Name = CopyStr(name);
-	d->Type = type;
-	Copy(&d->Traffic, traffic, sizeof(TRAFFIC));
-
-	LockList(h->Cedar->TrafficDiffList);
-	{
-		Insert(h->Cedar->TrafficDiffList, d);
-	}
-	UnlockList(h->Cedar->TrafficDiffList);
-}
-
 // Cleanup of HUB
 void CleanupHub(HUB *h)
 {
@@ -6630,11 +6096,6 @@ void CleanupHub(HUB *h)
 
 	FreeAccessList(h);
 
-	if (h->RadiusServerName != NULL)
-	{
-		Free(h->RadiusServerName);
-		FreeBuf(h->RadiusSecret);
-	}
 	ReleaseAllLink(h);
 	DeleteHubDb(h->HubDb);
 	ReleaseCedar(h->Cedar);
@@ -6651,21 +6112,9 @@ void CleanupHub(HUB *h)
 	DeleteCounter(h->NumSessionsBridge);
 	DeleteCounter(h->SessionCounter);
 	FreeTraffic(h->Traffic);
-	FreeTraffic(h->OldTraffic);
 	Free(h->Option);
 
-	Free(h->SecureNATOption);
-
 	DeleteLock(h->TrafficLock);
-
-	for (i = 0;i < LIST_NUM(h->TicketList);i++)
-	{
-		Free(LIST_DATA(h->TicketList, i));
-	}
-
-	ReleaseList(h->TicketList);
-
-	DeleteLock(h->RadiusOptionLock);
 
 	FreeLog(h->PacketLogger);
 	FreeLog(h->SecurityLogger);
@@ -6965,7 +6414,6 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 	h->ref = NewRef();
 	h->Cedar = cedar;
 	AddRef(h->Cedar->ref);
-	h->Type = HUB_TYPE_STANDALONE;
 
 	ConvertSafeFileName(safe_hub_name, sizeof(safe_hub_name), HubName);
 	h->Name = CopyStr(safe_hub_name);
@@ -6993,7 +6441,6 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 	h->LinkList = NewList(NULL);
 
 	h->Traffic = NewTraffic();
-	h->OldTraffic = NewTraffic();
 
 	h->Option = ZeroMalloc(sizeof(HUB_OPTION));
 	Copy(h->Option, option, sizeof(HUB_OPTION));
@@ -7009,17 +6456,6 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 
 	Rand(h->HubSignature, sizeof(h->HubSignature));
 
-	// SecureNAT related
-	h->EnableSecureNAT = false;
-	h->SecureNAT = NULL;
-	h->SecureNATOption = ZeroMalloc(sizeof(VH_OPTION));
-	NiSetDefaultVhOption(NULL, h->SecureNATOption);
-
-	if (h->Cedar != NULL && h->Cedar->Server != NULL && h->Cedar->Server->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-	{
-		NiClearUnsupportedVhOptionForDynamicHub(h->SecureNATOption, true);
-	}
-
 	// Generate a temporary MAC address for the HUB
 	GenerateMachineUniqueHash(hash);
 	GenHubMacAddress(h->HubMacAddr, h->Name);
@@ -7028,11 +6464,6 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 	// IPv6 address for the HUB
 	GenerateEui64LocalAddress(&ip6, h->HubMacAddr);
 	IPToIPv6Addr(&h->HubIpV6, &ip6);
-
-	h->RadiusOptionLock = NewLock();
-	h->RadiusServerPort = RADIUS_DEFAULT_PORT;
-
-	h->TicketList = NewList(NULL);
 
 	InitAccessList(h);
 
@@ -7056,11 +6487,6 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 	// Start the security logger
 	Format(tmp, sizeof(tmp), HUB_SECURITY_LOG_FILE_NAME, h->Name);
 	h->SecurityLogger = NewLog(tmp, HUB_SECURITY_LOG_PREFIX, h->LogSetting.SecurityLogSwitchType);
-
-	if (h->Cedar->Server != NULL && h->Cedar->Server->ServerType == SERVER_TYPE_FARM_MEMBER)
-	{
-		h->FarmMember = true;
-	}
 
 	// Start the HUB
 	SetHubOnline(h);

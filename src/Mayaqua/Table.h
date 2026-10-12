@@ -13,7 +13,6 @@
 #define	UNICODE_CACHE_FILE		L".unicode_cache_%s.dat"
 
 #define	LANGLIST_FILENAME		"|languages.txt"
-#define	LANGLIST_FILENAME_WINE	"|languages_wine.txt"
 
 #define	LANG_CONFIG_FILENAME	L"$lang.config"
 #define	LANG_CONFIG_TEMPLETE	"|lang.config"
@@ -89,7 +88,6 @@ void FreeLangList(LIST *o);
 
 LANGLIST *GetBestLangByName(LIST *o, char *name);
 LANGLIST *GetBestLangByLcid(LIST *o, UINT lcid);
-LANGLIST *GetBestLangByLangStr(LIST *o, char *str);
 LANGLIST *GetBestLangForCurrentEnvironment(LIST *o);
 LANGLIST *GetLangById(LIST *o, UINT id);
 

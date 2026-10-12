@@ -15,7 +15,6 @@
 #include "Str.h"
 #include "Tick64.h"
 #include "Tracking.h"
-#include "Unix.h"
 #include "Win32.h"
 
 #include <Hamcore.h>
@@ -588,8 +587,6 @@ bool GetDiskFree(char *path, UINT64 *free_size, UINT64 *used_size, UINT64 *total
 
 #ifdef	OS_WIN32
 	ret = Win32GetDiskFree(path, free_size, used_size, total_size);
-#else	// OS_WIN32
-	ret = UnixGetDiskFree(path, free_size, used_size, total_size);
 #endif	// OS_WIN32
 
 	return ret;
@@ -621,8 +618,6 @@ DIRLIST *EnumDirExW(wchar_t *dirname, COMPARE *compare)
 
 #ifdef	OS_WIN32
 	d = Win32EnumDirExW(dirname, compare);
-#else	// OS_WIN32
-	d = UnixEnumDirExW(dirname, compare);
 #endif	// OS_WIN32
 
 	return d;
@@ -914,56 +909,22 @@ void GetExeNameW(wchar_t *name, UINT size)
 
 void GetLogDir(char *name, UINT size)
 {
-#ifdef SE_LOGDIR
-	Format(name, size, SE_LOGDIR);
-#else
 	GetExeDir(name, size);
-#endif
 }
 
 void GetLogDirW(wchar_t *name, UINT size)
 {
-#ifdef SE_LOGDIR
-	UniFormat(name, size, L""SE_LOGDIR);
-#else
 	GetExeDirW(name, size);
-#endif
 }
 
 void GetDbDir(char *name, UINT size)
 {
-#ifdef SE_DBDIR
-	Format(name, size, SE_DBDIR);
-#else
 	GetExeDir(name, size);
-#endif
 }
 
 void GetDbDirW(wchar_t *name, UINT size)
 {
-#ifdef SE_DBDIR
-	UniFormat(name, size, L""SE_DBDIR);
-#else
 	GetExeDirW(name, size);
-#endif
-}
-
-void GetPidDir(char *name, UINT size)
-{
-#ifdef SE_PIDDIR
-	Format(name, size, SE_PIDDIR);
-#else
-	GetExeDir(name, size);
-#endif
-}
-
-void GetPidDirW(wchar_t *name, UINT size)
-{
-#ifdef SE_PIDDIR
-	UniFormat(name, size, L""SE_PIDDIR);
-#else
-	GetExeDirW(name, size);
-#endif
 }
 
 // Initialization of the acquisition of the EXE file name
@@ -980,73 +941,11 @@ void InitGetExeName(char *arg)
 
 #ifdef	OS_WIN32
 	Win32GetExeNameW(exe_file_name_w, sizeof(exe_file_name_w));
-#else	// OS_WIN32
-	UnixGetExeNameW(exe_file_name_w, sizeof(exe_file_name_w), arg_w);
 #endif	// OS_WIN32
 
 	UniToStr(exe_file_name, sizeof(exe_file_name), exe_file_name_w);
 
 	Free(arg_w);
-}
-
-// Get the full path of the executable binary file in Unix
-void UnixGetExeNameW(wchar_t *name, UINT size, wchar_t *arg)
-{
-	UNI_TOKEN_LIST *t;
-	char *path_str;
-	wchar_t *path_str_w;
-	bool ok = false;
-	// Validate arguments
-	if (name == NULL || arg == NULL)
-	{
-		return;
-	}
-
-	path_str = GetCurrentPathEnvStr();
-	path_str_w = CopyUtfToUni(path_str);
-
-	t = ParseSplitedPathW(path_str_w);
-
-	if (t != NULL)
-	{
-		UINT i;
-		for (i = 0;i < t->NumTokens;i++)
-		{
-			wchar_t *s = t->Token[i];
-			wchar_t tmp[MAX_SIZE];
-
-			ConbinePathW(tmp, sizeof(tmp), s, arg);
-
-			if (IsFileExistsInnerW(tmp))
-			{
-#ifdef	OS_UNIX
-				if (UnixCheckExecAccessW(tmp) == false)
-				{
-					continue;
-				}
-#endif	// OS_UNIX
-				ok = true;
-				UniStrCpy(name, size, tmp);
-				break;
-			}
-		}
-
-		UniFreeToken(t);
-	}
-
-	Free(path_str);
-	Free(path_str_w);
-
-	if (ok == false)
-	{
-		// In the case of failing to find the path
-#ifdef	OS_UNIX
-		UnixGetCurrentDirW(name, size);
-#else	// OS_UNIX
-		Win32GetCurrentDirW(name, size);
-#endif	// OS_UNIX
-		ConbinePathW(name, size, name, arg);
-	}
 }
 
 // Generate a secure file name
@@ -1362,16 +1261,12 @@ char *GetCurrentPathEnvStr()
 
 #ifdef	OS_WIN32
 	tag_name = "Path";
-#else	// OS_WIN32
-	tag_name = "PATH";
 #endif	// OS_WIN32
 
 	if (GetEnv(tag_name, tmp, sizeof(tmp)) == false)
 	{
 #ifdef	OS_WIN32
 		Win32GetCurrentDir(tmp, sizeof(tmp));
-#else	// OS_WIN32
-		UnixGetCurrentDir(tmp, sizeof(tmp));
 #endif	// OS_WIN32
 	}
 
@@ -1393,8 +1288,6 @@ UNI_TOKEN_LIST *ParseSplitedPathW(wchar_t *path)
 
 #ifdef	OS_WIN32
 	split_str = L";";
-#else	// OS_WIN32
-	split_str = L":";
 #endif	// OS_WIN32
 
 	ret = UniParseToken(tmp, split_str);
@@ -1449,8 +1342,6 @@ void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 
 #ifdef	OS_WIN32
 		Win32GetCurrentDirW(cd, sizeof(cd));
-#else	// OS_WIN32
-		UnixGetCurrentDirW(cd, sizeof(cd));
 #endif	// OS_WIN32
 
 		if (UniStartWith(tmp, L".."))

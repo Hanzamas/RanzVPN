@@ -1,6 +1,6 @@
-# How to build and install SoftEther VPN on Windows ARM64
+# How to build SoftEther VPN on Windows ARM64
 
-This document describes how to build SoftEther VPN for Windows ARM64 and how to install the VPN Client and Neo6 virtual network adapter on Windows on ARM devices.
+This document describes how to build SoftEther VPN for Windows ARM64.
 
 
 ## Requirements
@@ -21,32 +21,6 @@ This document describes how to build SoftEther VPN for Windows ARM64 and how to 
 1. Build ARM64 (Cross-Compiled): From the same build menu, select arm64-on-x64. 
 Build the ARM64 version of SoftEther VPN.
 
-1. Building the Neo6 Virtual Network Adapter (ARM64)
-
-    Open the following project in Visual Studio:
-    ```
-    .\src\Neo6\Neo6.vcxproj 
-    ```
-   
-    SoftEther VPN Client uses the Neo6 virtual network adapter.
-
-
-    Driver Output Files
-    The ARM64 driver package includes:
-    ```
-    Neo6_arm64_VPN.sys
-    Neo6_arm64_VPN.inf
-    ```
-    Driver Signing and Installation (Windows ARM64)
-    ```
-    Enable test-signing mode: bcdedit /set testsigning on
-    Reboot the system.
-    Testing signing:
-    Install the Neo6 ARM64 driver.
-    ```
 # Summary
 
 SoftEther VPN can be cross-compiled for Windows ARM64 on an x64 host
-VPN Client works natively on Windows on ARM
-Neo6 ARM64 driver requires Microsoft signing for production use
-Test-signing is suitable for local development only

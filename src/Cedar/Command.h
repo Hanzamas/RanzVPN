@@ -172,17 +172,6 @@ struct PS
 	CAPSLIST *CapsList;	// Caps list
 };
 
-// Client management context
-struct PC
-{
-	bool ConsoleForServer;	// Console for the server (always false)
-	CONSOLE *Console;	// Console
-	REMOTE_CLIENT *RemoteClient;	// Remote client
-	char *ServerName;	// Server name
-	UINT LastError;		// Last error
-	wchar_t *CmdLine;	// Command line
-};
-
 // A column of the table
 struct CTC
 {
@@ -225,19 +214,12 @@ wchar_t *CmdPromptPort(CONSOLE *c, void *param);
 wchar_t *CmdPromptChoosePassword(CONSOLE *c, void *param);
 bool CmdEvalPort(CONSOLE *c, wchar_t *str, void *param);
 void CmdInsertTrafficInfo(CT *ct, TRAFFIC *t);
-wchar_t *GetHubTypeStr(UINT type);
-wchar_t *GetServerTypeStr(UINT type);
 char *CmdPasswordPrompt(CONSOLE *c);
 bool CmdEvalIp(CONSOLE *c, wchar_t *str, void *param);
-wchar_t *PsClusterSettingMemberPromptIp(CONSOLE *c, void *param);
 bool CmdEvalHostAndPort(CONSOLE *c, wchar_t *str, void *param);
-LIST *StrToPortList(char *str, bool limit_range);
-bool CmdEvalPortList(CONSOLE *c, wchar_t *str, void *param);
-wchar_t *PsClusterSettingMemberPromptPorts(CONSOLE *c, void *param);
 K *CmdLoadKey(CONSOLE *c, wchar_t *filename);
 bool CmdLoadCertAndKey(CONSOLE *c, X **xx, K **kk, wchar_t *cert_filename, wchar_t *key_filename);
 bool CmdLoadCertChainAndKey(CONSOLE *c, X **xx, K **kk, LIST **cc, wchar_t *cert_filename, wchar_t *key_filename);
-bool CmdEvalTcpOrUdp(CONSOLE *c, wchar_t *str, void *param);
 wchar_t *GetConnectionTypeStr(UINT type);
 bool CmdEvalHostAndSubnetMask4(CONSOLE *c, wchar_t *str, void *param);
 bool CmdEvalNetworkAndSubnetMask4(CONSOLE *c, wchar_t *str, void *param);
@@ -265,9 +247,6 @@ wchar_t *GetAuthTypeStr(UINT id);
 UINT64 StrToDateTime64(char *str);
 bool CmdEvalDateTime(CONSOLE *c, wchar_t *str, void *param);
 void CmdPrintNodeInfo(CT *ct, NODE_INFO *info);
-wchar_t *GetProtocolName(UINT n);
-void CmdGenerateImportName(REMOTE_CLIENT *r, wchar_t *name, UINT size, wchar_t *old_name);
-bool CmdIsAccountName(REMOTE_CLIENT *r, wchar_t *name);
 wchar_t *GetSyslogSettingName(UINT n);
 
 
@@ -301,97 +280,17 @@ bool CheckNetwork();
 void InputToNull(void *p);
 UINT RetZero();
 
-void Win32CmdDebug(bool is_uac);
 
 
 UINT PtConnect(CONSOLE *c, wchar_t *cmdline);
 PT *NewPt(CONSOLE *c, wchar_t *cmdline);
 void FreePt(PT *pt);
 void PtMain(PT *pt);
-UINT PtGenX25519(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PtGetPublicX25519(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PtMakeCert(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PtMakeCert2048(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PtTrafficClient(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PtTrafficServer(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PtCheck(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-
-
-UINT PcConnect(CONSOLE *c, char *target, wchar_t *cmdline, char *password);
-PC *NewPc(CONSOLE *c, REMOTE_CLIENT *remote_client, char *servername, wchar_t *cmdline);
-void FreePc(PC *pc);
-void PcMain(PC *pc);
-UINT PcAbout(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcVersionGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcPasswordGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcCertList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcCertAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcCertDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcSecureList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcSecureSelect(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcSecureGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcNicCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcNicDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcNicUpgrade(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcNicGetSetting(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcNicSetSetting(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcNicEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcNicDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcNicList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-void SetRpcClientCreateAccountFromGetAccount(RPC_CLIENT_CREATE_ACCOUNT *c, RPC_CLIENT_GET_ACCOUNT *t);
-UINT PcAccountSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountUsernameSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountAnonymousSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountEncryptDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountEncryptEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountCompressEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountCompressDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountHttpHeaderAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountHttpHeaderDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountHttpHeaderGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountProxyNone(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountProxyHttp(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountProxySocks(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountProxySocks5(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountServerCertEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountServerCertDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountRetryOnServerCertEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountRetryOnServerCertDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountDefaultCAEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountDefaultCADisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountServerCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountServerCertDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountServerCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountDetailSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountRename(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountConnect(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountDisconnect(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountNicSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountStatusShow(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountStatusHide(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountSecureCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountOpensslEngineCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountRetrySet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountStartupSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountStartupRemove(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountExport(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcAccountImport(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcRemoteEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcRemoteDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcKeepEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcKeepDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcKeepSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PcKeepGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 
 
 PS *NewPs(CONSOLE *c, RPC *rpc, char *servername, UINT serverport, char *hubname, char *adminhub, wchar_t *cmdline);
@@ -406,19 +305,7 @@ UINT PsListenerDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsListenerList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsListenerEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsListenerDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsPortsUDPSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsPortsUDPGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsProtoOptionsSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsProtoOptionsGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsServerPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsClusterSettingGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsClusterSettingStandalone(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsClusterSettingController(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsClusterSettingMember(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsClusterMemberList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsClusterMemberInfoGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsClusterMemberCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsClusterConnectionStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsCrash(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsFlush(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsDebug(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
@@ -427,10 +314,6 @@ UINT PsServerKeyGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsServerCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsServerCipherGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsServerCipherSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsKeepEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsKeepDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsKeepSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsKeepGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsSyslogGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsSyslogDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsSyslogEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
@@ -458,28 +341,17 @@ UINT PsRouterTableAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsRouterTableDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsLogFileList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsLogFileGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsWgkAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsWgkDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsWgkEnum(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsHubCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsHubCreateDynamic(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsHubCreateStatic(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsHubDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsHubSetStatic(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsHubSetDynamic(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsHubList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsHub(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsOnline(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsOffline(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsSetStaticNetwork(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsSetMaxSession(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsSetHubPassword(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsSetEnumAllow(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsSetEnumDeny(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsOptionsGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsRadiusServerSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsRadiusServerDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsRadiusServerGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsLogGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsLogEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
@@ -544,7 +416,6 @@ UINT PsUserPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsUserCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsUserCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsUserSignedSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsUserRadiusSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsUserNTLMSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsUserPolicyRemove(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsUserPolicySet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
@@ -565,21 +436,6 @@ UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsMacDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsIpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsIpDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsSecureNatEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsSecureNatDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsSecureNatStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsSecureNatHostGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsSecureNatHostSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsNatGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsNatEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsNatDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsNatSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsNatTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsDhcpGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsDhcpEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsDhcpDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsDhcpSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsDhcpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsAdminOptionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsAdminOptionSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsExtOptionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
@@ -597,19 +453,7 @@ UINT PsLicenseAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsLicenseDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsLicenseList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsLicenseStatus(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsIPsecEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsIPsecGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsEtherIpClientAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsEtherIpClientDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsEtherIpClientList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsOpenVpnMakeConfig(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsServerCertRegenerate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsVpnOverIcmpDnsEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsVpnOverIcmpDnsGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsDynamicDnsGetStatus(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsDynamicDnsSetHostname(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsVpnAzureSetEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsVpnAzureGetStatus(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 
 
 #endif	// COMMAND_H

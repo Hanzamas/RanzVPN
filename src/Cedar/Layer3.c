@@ -11,7 +11,6 @@
 #include "Hub.h"
 #include "Server.h"
 #include "Session.h"
-#include "Virtual.h"
 
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Kernel.h"
@@ -1249,7 +1248,6 @@ void L3IfThread(THREAD *t, void *param)
 	CONNECTION *c;
 	SESSION *s;
 	POLICY *policy;
-	char tmp[MAX_SIZE];
 	char name[MAX_SIZE];
 	char username[MAX_SIZE];
 	// Validate arguments
@@ -1280,15 +1278,7 @@ void L3IfThread(THREAD *t, void *param)
 	ReleaseConnection(c);
 
 	// Determine the name of the session
-	GetMachineHostName(tmp, sizeof(tmp));
-	if (f->Switch->Cedar->Server->ServerType == SERVER_TYPE_STANDALONE)
-	{
-		Format(name, sizeof(name), "SID-L3-%s-%u", f->Switch->Name, Inc(f->Hub->SessionCounter));
-	}
-	else
-	{
-		Format(name, sizeof(name), "SID-L3-%s-%s-%u", tmp, f->Switch->Name, Inc(f->Hub->SessionCounter));
-	}
+	Format(name, sizeof(name), "SID-L3-%s-%u", f->Switch->Name, Inc(f->Hub->SessionCounter));
 	ConvertSafeFileName(name, sizeof(name), name);
 	StrUpper(name);
 
@@ -1421,7 +1411,7 @@ void L3SwThread(THREAD *t, void *param)
 
 						if (h != NULL)
 						{
-							if (h->Offline || h->Type == HUB_TYPE_FARM_DYNAMIC)
+							if (h->Offline)
 							{
 								all_exists = false;
 							}

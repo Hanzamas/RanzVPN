@@ -628,7 +628,6 @@ struct PKT
 #define	L7_UNKNOWN			0		// Unknown
 #define	L7_DHCPV4			1		// DHCPv4 packet
 #define	L7_IKECONN			2		// IKE connection request packet
-#define	L7_OPENVPNCONN		3		// OpenVPN connection request packet
 #define L7_DNS				4		// DNS packet
 
 
@@ -812,11 +811,12 @@ UCHAR GetNextByte(BUF *b);
 
 bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address);
 
-ICMP_RESULT *IcmpParseResult(IP *dest_ip, USHORT src_id, USHORT src_seqno, UCHAR *recv_buffer, UINT recv_buffer_size);
-void IcmpFreeResult(ICMP_RESULT *r);
-
 USHORT IpChecksum(void *buf, UINT size);
 bool IpCheckChecksum(IPV4_HEADER *ip);
+
+void GenMacAddress(UCHAR *mac);
+UINT GetBroadcastAddress(UINT addr, UINT mask);
+void GetBroadcastAddress4(IP *dst, IP *addr, IP *mask);
 
 LIST *BuildDhcpOption(DHCP_OPTION_LIST *opt);
 DHCP_OPTION *NewDhcpOption(UINT id, void *data, UINT size);
@@ -836,7 +836,6 @@ void DhcpParseClasslessRouteData(DHCP_CLASSLESS_ROUTE_TABLE *t, void *data, UINT
 BUF *DhcpBuildClasslessRouteData(DHCP_CLASSLESS_ROUTE_TABLE *t);
 bool ParseClasslessRouteStr(DHCP_CLASSLESS_ROUTE *r, char *str);
 bool ParseClasslessRouteTableStr(DHCP_CLASSLESS_ROUTE_TABLE *d, char *str);
-bool CheckClasslessRouteTableStr(char *str);
 void BuildClasslessRouteStr(char *str, UINT str_size, DHCP_CLASSLESS_ROUTE *r);
 void BuildClasslessRouteTableStr(char *str, UINT str_size, DHCP_CLASSLESS_ROUTE_TABLE *t);
 bool NormalizeClasslessRouteTableStr(char *dst, UINT dst_size, char *src);

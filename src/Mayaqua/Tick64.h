@@ -24,19 +24,13 @@ struct ADJUST_TIME
 struct TICK64
 {
 	THREAD *Thread;
-	UINT64 Tick;
-	UINT64 TickStart;
 	UINT64 Time64;
 	UINT64 Tick64WithTime64;
-	UINT LastTick;
-	UINT RoundCount;
-	LOCK *TickLock;
 	volatile bool Halt;
 	LIST *AdjustTime;
 };
 
 // Constant
-#define	TICK64_SPAN			10		// Measurement interval (Usually less than 10ms)
 #define	TICK64_SPAN_WIN32	1000	// Interval of measurement on Win32
 #define	TICK64_ADJUST_SPAN	5000	// Correct the clock if it shifts more than this value
 

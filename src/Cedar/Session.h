@@ -65,9 +65,6 @@ struct PACKET_ADAPTER
 	UINT Id;
 };
 
-// Packet Adapter IDs
-#define	PACKET_ADAPTER_ID_VLAN_WIN32		1
-
 
 // Session structure
 struct SESSION
@@ -80,12 +77,9 @@ struct SESSION
 	bool NormalClient;				// Connecting session from a regular client (not such as localbridge)
 	bool LinkModeClient;			// Link mode client
 	bool LinkModeServer;			// Link mode server
-	bool SecureNATMode;				// SecureNAT session
 	bool BridgeMode;				// Bridge session
 	bool BridgeIsEthLoopbackBlock;	// Loopback is disabled on the Ethernet level
-	bool VirtualHost;				// Virtual host mode
 	bool L3SwitchMode;				// Layer-3 switch mode
-	bool InProcMode;				// In-process mode
 	THREAD *Thread;					// Management thread
 	CONNECTION *Connection;			// Connection
 	char ClientIP[64];				// Client IP
@@ -112,10 +106,8 @@ struct SESSION
 	UINT Timeout;					// Time-out period
 	UINT64 NextConnectionTime;		// Time to put next additional connection
 	IP ServerIP;					// IP address of the server
-	bool ClientModeAndUseVLan;		// Use a virtual LAN card in client mode
 	LOCK *TrafficLock;				// Traffic data lock
 	LINK *Link;						// A reference to the link object
-	SNAT *SecureNAT;				// A reference to the SecureNAT object
 	BRIDGE *Bridge;					// A reference to the Bridge object
 	NODE_INFO NodeInfo;				// Node information
 	UINT64 LastIncrementTraffic;	// Last time that updated the traffic data of the user
@@ -125,9 +117,6 @@ struct SESSION
 	IP DefaultDns;					// IP address of the default DNS server
 	bool IPv6Session;				// IPv6 session (Physical communication is IPv6)
 	UINT VLanId;					// VLAN ID
-	UINT UniqueId;					// Unique ID
-	UCHAR IpcMacAddress[6];			// MAC address for IPC
-	UCHAR Padding[2];
 
 	IP ServerIP_CacheForNextConnect;	// Server IP, cached for next connect
 	IP LocalIP_CacheForNextConnect;		// Local  IP, cached for next connect (2nd and subsequent), assigned by first outgoing connection
@@ -155,8 +144,6 @@ struct SESSION
 	bool HalfConnection;			// Half connection mode
 	bool QoS;						// VoIP / QoS
 	bool NoSendSignature;			// Do not send a signature
-	bool IsOpenVPNL3Session;		// Whether OpenVPN L3 session
-	bool IsOpenVPNL2Session;		// Whether OpenVPN L2 session
 	UINT NumDisconnected;			// Number of socket disconnection
 	bool NoReconnectToSession;		// Disable to reconnect to the session
 	char UnderlayProtocol[64];		// Physical communication protocol
@@ -166,14 +153,6 @@ struct SESSION
 	UINT64 CurrentConnectionEstablishTime;	// Completion time of this connection
 	UINT NumConnectionsEstablished;	// Number of connections established so far
 	UINT AdjustMss;					// MSS adjustment value
-	bool IsVPNClientAndVLAN_Win32;	// Is the VPN Client session with a VLAN card (Win32)
-
-	bool IsRUDPSession;				// Whether R-UDP session
-	UINT RUdpMss;					// The value of the MSS should be applied while the R-UDP is used
-	bool EnableBulkOnRUDP;			// Allow the bulk transfer in the R-UDP session
-	UINT BulkOnRUDPVersion;			// RUDP Bulk version
-	bool EnableHMacOnBulkOfRUDP;	// Use the HMAC to sign the bulk transfer of R-UDP session
-	bool EnableUdpRecovery;			// Enable the R-UDP recovery
 
 	bool UseUdpAcceleration;		// Use of UDP acceleration mode
 	UINT UdpAccelerationVersion;	// UDP acceleration version
@@ -182,9 +161,6 @@ struct SESSION
 	bool IsUsingUdpAcceleration;	// Flag of whether the UDP acceleration is used
 	UINT UdpAccelMss;				// MSS value to be applied while the UDP acceleration is used
 	bool UdpAccelFastDisconnectDetect;	// Fast disconnection detection is enabled
-
-	bool IsAzureSession;			// Whether the session via VPN Azure
-	IP AzureRealServerGlobalIp;		// Real global IP of the server-side in the case of session via VPN Azure
 
 	ACCOUNT *Account;				// Client account
 	UINT VLanDeviceErrorCount;		// Number of times that the error occurred in the virtual LAN card
@@ -216,11 +192,6 @@ struct SESSION
 	char FirstTimeHttpRedirectUrl[128];	// URL for redirection only the first time
 	UINT FirstTimeHttpAccessCheckIp;	// IP address for access checking
 
-	UCHAR BulkSendKey[RUDP_BULK_KEY_SIZE_MAX];	// RUDP Bulk Send Key
-	UINT BulkSendKeySize;						// RUDP Bulk Send Key size
-	UCHAR BulkRecvKey[RUDP_BULK_KEY_SIZE_MAX];	// RUDP Bulk Recv Key
-	UINT BulkRecvKeySize;						// RUDP Bulk Recv Key size
-
 	// To examine the maximum number of allowed logging target packets per minute
 	UINT64 MaxLoggedPacketsPerMinuteStartTick;	// Inspection start time
 	UINT CurrentNumPackets;				// Current number of packets
@@ -228,80 +199,6 @@ struct SESSION
 	// Measures for D-Link bug
 	UINT64 LastDLinkSTPPacketSendTick;	// Last D-Link STP packet transmission time
 	UCHAR LastDLinkSTPPacketDataHash[MD5_SIZE];	// Last D-Link STP packet hash
-
-	SHARED_BUFFER *IpcSessionSharedBuffer;	// A shared buffer between IPC and Session
-	IPC_SESSION_SHARED_BUFFER_DATA *IpcSessionShared;	// Shared data between IPC and Session
-};
-
-// Password dialog
-struct UI_PASSWORD_DLG
-{
-	UINT Type;						// Type of password
-	char Username[MAX_USERNAME_LEN + 1];	// User name
-	char Password[MAX_PASSWORD_LEN + 1];	// Password
-	char ServerName[MAX_HOST_NAME_LEN + 1];	// Server name
-	UINT RetryIntervalSec;			// Time to retry
-	EVENT *CancelEvent;				// Event to cancel the dialog display
-	bool ProxyServer;				// The authentication by the proxy server
-	UINT64 StartTick;				// Start time
-	bool AdminMode;					// Administrative mode
-	bool ShowNoSavePassword;		// Whether to display a check box that does not save the password
-	bool NoSavePassword;			// Mode that not to save the password
-	SOCK *Sock;						// Socket
-};
-
-// Message dialog
-struct UI_MSG_DLG
-{
-	char ServerName[MAX_HOST_NAME_LEN + 1];	// Server name
-	char HubName[MAX_HUBNAME_LEN + 1];	// Virtual HUB name
-	wchar_t *Msg;					// Body
-	SOCK *Sock;						// Socket
-	bool Halt;						// Flag to close
-};
-
-// NIC information
-struct UI_NICINFO
-{
-	wchar_t AccountName[MAX_SIZE];	// Connection setting name
-	char NicName[MAX_SIZE];			// Virtual NIC name
-
-	SOCK *Sock;						// Socket
-	bool Halt;						// Flag to close
-	ROUTE_CHANGE *RouteChange;		// Routing table change notification
-	UINT CurrentIcon;				// Current icon
-	UINT64 CloseAfterTime;			// Close automatically
-};
-
-// Connection Error dialog
-struct UI_CONNECTERROR_DLG
-{
-	EVENT *CancelEvent;				// Event to cancel the dialog display
-	wchar_t AccountName[MAX_ACCOUNT_NAME_LEN + 1];	// Account name
-	char ServerName[MAX_HOST_NAME_LEN + 1];	// Server name
-	UINT Err;						// Error code
-	UINT CurrentRetryCount;			// Current retry count
-	UINT RetryLimit;				// Limit of the number of retries
-	UINT64 StartTick;				// Start time
-	UINT RetryIntervalSec;			// Time to retry
-	bool HideWindow;				// Hide the window
-	SOCK *Sock;						// Socket
-};
-
-// Server certificate checking dialog
-struct UI_CHECKCERT
-{
-	wchar_t AccountName[MAX_ACCOUNT_NAME_LEN + 1];	// Account name
-	char ServerName[MAX_HOST_NAME_LEN + 1];	// Server name
-	X *x;							// Server certificate
-	X *parent_x;					// Parent certificate
-	X *old_x;						// Certificate of previous
-	bool DiffWarning;				// Display a warning of certificate forgery
-	bool Ok;						// Connection permission flag
-	bool SaveServerCert;			// Save the server certificate
-	SESSION *Session;				// Session
-	volatile bool Halt;				// Halting flag
-	SOCK *Sock;						// Socket
 };
 
 
@@ -312,7 +209,6 @@ SESSION *NewRpcSession(CEDAR *cedar, CLIENT_OPTION *option);
 SESSION *NewRpcSessionEx(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *client_str);
 SESSION *NewRpcSessionEx2(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *client_str, void *hWnd);
 SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, POLICY *policy);
-SESSION *NewServerSessionEx(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, POLICY *policy, bool inproc_mode, UCHAR *ipc_mac_address);
 void ClientThread(THREAD *t, void *param);
 void ReleaseSession(SESSION *s);
 void CleanupSession(SESSION *s);
@@ -326,14 +222,12 @@ void FreePacketAdapter(PACKET_ADAPTER *pa);
 void SessionMain(SESSION *s);
 void NewSessionKey(CEDAR *cedar, UCHAR *session_key, UINT *session_key_32);
 SESSION *GetSessionFromKey(CEDAR *cedar, UCHAR *session_key);
-bool IsIpcMacAddress(UCHAR *mac);
 void ClientAdditionalConnectChance(SESSION *s);
 void SessionAdditionalConnect(SESSION *s);
 void ClientAdditionalThread(THREAD *t, void *param);
 void PrintSessionTotalDataSize(SESSION *s);
 void AddTrafficForSession(SESSION *s, TRAFFIC *t);
 void IncrementUserTraffic(HUB *hub, char *username, SESSION *s);
-void Notify(SESSION *s, UINT code);
 void PrintStatus(SESSION *s, wchar_t *str);
 LIST *NewCancelList();
 void ReleaseCancelList(LIST *o);
@@ -341,9 +235,6 @@ void AddCancelList(LIST *o, CANCEL *c);
 void CancelList(LIST *o);
 bool IsPriorityHighestPacketForQoS(void *data, UINT size);
 UINT GetNextDelayedPacketTickDiff(SESSION *s);
-
-UINT PrepareDHCPRequestForStaticIPv4(SESSION *s, BLOCK *b);
-void ClearDHCPLeaseRecordForIPv4(SESSION *s, UINT static_ip);
 
 #endif	// SESSION_H
 

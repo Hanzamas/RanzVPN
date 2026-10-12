@@ -45,50 +45,6 @@ void RpcFreeEx(RPC *rpc, bool no_disconnect)
 	Free(rpc);
 }
 
-// Get error
-UINT RpcGetError(PACK *p)
-{
-	// Validate arguments
-	if (p == NULL)
-	{
-		return ERR_DISCONNECTED;
-	}
-
-	return PackGetInt(p, "error_code");
-}
-
-// Error checking
-bool RpcIsOk(PACK *p)
-{
-	// Validate arguments
-	if (p == NULL)
-	{
-		return false;
-	}
-
-	if (PackGetInt(p, "error") == 0)
-	{
-		return true;
-	}
-	else
-	{
-		return false;
-	}
-}
-
-// Error code setting
-void RpcError(PACK *p, UINT err)
-{
-	// Validate arguments
-	if (p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "error", 1);
-	PackAddInt(p, "error_code", err);
-}
-
 // Start the RPC dispatcher
 PACK *CallRpcDispatcher(RPC *r, PACK *p)
 {

@@ -24,12 +24,6 @@
 
 #ifdef OS_WIN32
 #include <conio.h>
-#else
-#include <termios.h>
-#include <sys/ioctl.h>
-
-#include <readline/readline.h>
-#include <readline/history.h>
 #endif
 
 // Display the help for the command
@@ -1936,9 +1930,6 @@ bool PasswordPrompt(char *password, UINT size)
 
 #ifdef	OS_WIN32
 		c = _getch();
-#else	// OS_WIN32
-		c = getc(stdin);
-PROCESS_CH:
 #endif	// OS_WIN32
 
 		if (c >= 0x20 && c <= 0x7E)
@@ -1970,8 +1961,6 @@ PROCESS_CH:
 			// Read one more character
 #ifdef	OS_WIN32
 			c = _getch();
-#else	// OS_WIN32
-			c = getc(stdin);
 #endif	// OS_WIN32
 			if (c == 0x4B || c == 0x53)
 			{
@@ -1979,46 +1968,6 @@ PROCESS_CH:
 				goto BACKSPACE;
 			}
 		}
-#ifdef OS_UNIX	// OS_UNIX
-		else if (c == 0x1B)
-		{
-			c = getc(stdin);
-			if (c != 0x5B && c != 0x4F)
-			{
-				// ESC key
-				goto PROCESS_CH;
-			}
-
-			c = getc(stdin);
-			if (c == 0x44)
-			{
-				// Left arrow key
-				goto BACKSPACE;
-			}
-			else if (c == 0x33)
-			{
-				c = getc(stdin);
-				if (c == 0x7E)
-				{
-					// Delete key
-					goto BACKSPACE;
-				}
-			}
-
-			// Drain remaining sequence bytes (most are <= 6)
-			for (int i = 0; i < 6; i++)
-			{
-				if (c >= 0x40 && c <= 0x7E)
-				{
-					// End of sequence
-					break;
-				}
-				c = getc(stdin);
-			}
-
-			continue;
-		}
-#endif	// OS_UNIX
 		else if (c == 0x08 || c == 0x7F)
 		{
 BACKSPACE:
@@ -2076,27 +2025,6 @@ wchar_t *Prompt(wchar_t *prompt_str)
 		}
 	}
 	Free(tmp);
-#else	// OS_WIN32
-	{
-		char *prompt = CopyUniToStr(prompt_str);
-		char *s = readline(prompt);
-		Free(prompt);
-
-		if (s != NULL)
-		{
-			TrimCrlf(s);
-			Trim(s);
-
-			if (IsEmptyStr(s) == false)
-			{
-				add_history(s);
-			}
-
-			ret = CopyStrToUni(s);
-
-			free(s);
-		}
-	}
 #endif	// OS_WIN32
 
 	if (ret == NULL)
@@ -2126,55 +2054,16 @@ char *PromptA(wchar_t *prompt_str)
 // Set the console to raw mode
 void *SetConsoleRaw()
 {
-#ifdef	OS_UNIX
-	struct termios t, *ret;
-
-	Zero(&t, sizeof(t));
-	if (tcgetattr(0, &t) != 0)
-	{
-		// Failed
-		return NULL;
-	}
-
-	// Copy the current settings
-	ret = Clone(&t, sizeof(t));
-
-	// Change the settings
-	t.c_lflag &= (~ICANON);
-	t.c_lflag &= (~ECHO);
-	t.c_cc[VTIME] = 0;
-	t.c_cc[VMIN] = 1;
-	tcsetattr(0, TCSANOW, &t);
-
-	return ret;
-#else	// OS_UNIX
 	return Malloc(0);
-#endif	// OS_UNIX
 }
 
 // Restore the mode of the console
 void RestoreConsole(void *p)
 {
-#ifdef	OS_UNIX
-	struct termios *t;
-	// Validate arguments
-	if (p == NULL)
-	{
-		return;
-	}
-
-	t = (struct termios *)p;
-
-	// Restore the settings
-	tcsetattr(0, TCSANOW, t);
-
-	Free(t);
-#else	// OS_UNIX
 	if (p != NULL)
 	{
 		Free(p);
 	}
-#endif	// OS_UNIX
 }
 
 ////////////////////////////
@@ -2331,17 +2220,6 @@ UINT ConsoleLocalGetWidth(CONSOLE *c)
 
 #ifdef	OS_WIN32
 	ret = MsGetConsoleWidth();
-#else	// OS_WIN32
-	{
-		struct winsize t;
-
-		Zero(&t, sizeof(t));
-
-		if (ioctl(1, TIOCGWINSZ, &t) == 0)
-		{
-			ret = t.ws_col;
-		}
-	}
 #endif	// OS_WIN32
 
 	return ret;

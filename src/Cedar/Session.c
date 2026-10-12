@@ -7,24 +7,19 @@
 
 #include "Session.h"
 
-#include "BridgeUnix.h"
+#include "Account.h"
 #include "BridgeWin32.h"
-#include "Client.h"
 #include "Connection.h"
 #include "Hub.h"
 #include "Link.h"
-#include "Nat.h"
 #include "Protocol.h"
-#include "SecureNAT.h"
 #include "Server.h"
 #include "UdpAccel.h"
-#include "VLanUnix.h"
 
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Mayaqua.h"
 #include "Mayaqua/Memory.h"
-#include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
@@ -32,7 +27,6 @@
 #include "Mayaqua/Tick64.h"
 
 // TODO: Mayaqua should not depend on Cedar.
-#include "Cedar/WinUi.h"
 
 // Main routine of the session
 void SessionMain(SESSION *s)
@@ -52,15 +46,11 @@ void SessionMain(SESSION *s)
 	UINT err = ERR_SESSION_TIMEOUT;
 	UINT64 next_black_list_check = 0;
 	UINT64 next_update_hub_last_comm = 0;
-	UINT64 auto_disconnect_tick = 0;
 	bool block_all_packets = false;
 	UINT64 next_check_block_all_packets = 0;
 	TRAFFIC t;
-	SOCK *msgdlg_sock = NULL;
-	SOCK *nicinfo_sock = NULL;
 	bool is_server_session = false;
 	bool lock_receive_blocks_queue = false;
-	UINT static_ip = 0;
 
 	// Validate arguments
 	if (s == NULL)
@@ -69,8 +59,6 @@ void SessionMain(SESSION *s)
 	}
 
 	Debug("SessionMain: %s\n", s->Name);
-
-	Notify(s, CLIENT_NOTIFY_ACCOUNT_CHANGED);
 
 	// Generate a string from the session key
 	BinToStr(s->SessionKeyStr, sizeof(s->SessionKeyStr), s->SessionKey, sizeof(s->SessionKey));
@@ -85,19 +73,6 @@ void SessionMain(SESSION *s)
 	policy = s->Policy;
 
 	// Initialize the packet adapter
-#ifdef	OS_WIN32
-	if (s->IsVPNClientAndVLAN_Win32)
-	{
-		MsBeginVLanCard();
-
-		if (MsIsVLanCardShouldStop())
-		{
-			err = ERR_SUSPENDING;
-			goto CLEANUP;
-		}
-	}
-#endif	// OS_WIN32
-
 	pa = s->PacketAdapter;
 	if (pa->Init(s) == false)
 	{
@@ -142,26 +117,12 @@ void SessionMain(SESSION *s)
 		s->FirstConnectionEstablisiedTime = Tick64(); /* !!! Do not correct the spelling to keep the backward protocol compatibility !!!  */
 	}
 
-	if (s->ServerMode == false && s->Cedar->Client != NULL)
-	{
-		if (s->Policy != NULL)
-		{
-			if (s->Policy->AutoDisconnect)
-			{
-				auto_disconnect_tick = s->CurrentConnectionEstablishTime +
-					(UINT64)s->Policy->AutoDisconnect * 1000ULL;
-			}
-		}
-	}
-
 	s->LastIncrementTraffic = Tick64();
 
 	c->Err = ERR_SESSION_TIMEOUT;
 	s->VLanDeviceErrorCount = 0;
 
 	s->LastTryAddConnectTime = Tick64();
-
-	Notify(s, CLIENT_NOTIFY_ACCOUNT_CHANGED);
 
 	if (policy != NULL)
 	{
@@ -174,39 +135,6 @@ void SessionMain(SESSION *s)
 		if (policy->NoRouting == false || policy->NoBridge == false)
 		{
 			s->IsBridgeMode = true;
-		}
-	}
-
-	if (s->ServerMode == false && s->Cedar->Client != NULL)
-	{
-		if (IsEmptyUniStr(s->Client_Message) == false)
-		{
-			UI_MSG_DLG dlg;
-
-			Zero(&dlg, sizeof(dlg));
-			if (s->ClientOption != NULL)
-			{
-				StrCpy(dlg.HubName, sizeof(dlg.HubName), s->ClientOption->HubName);
-				StrCpy(dlg.ServerName, sizeof(dlg.ServerName), s->ClientOption->Hostname);
-			}
-
-			dlg.Msg = s->Client_Message;
-
-			msgdlg_sock = CncMsgDlg(&dlg);
-		}
-
-		if (s->Win32HideNicInfoWindow == false)
-		{
-			UI_NICINFO info;
-
-			Zero(&info, sizeof(info));
-			if (s->ClientOption != NULL)
-			{
-				StrCpy(info.NicName, sizeof(info.NicName), s->ClientOption->DeviceName);
-				UniStrCpy(info.AccountName, sizeof(info.AccountName), s->ClientOption->AccountName);
-			}
-
-			nicinfo_sock = CncNicInfo(&info);
 		}
 	}
 
@@ -242,7 +170,7 @@ void SessionMain(SESSION *s)
 		}
 
 
-		if (is_server_session && s->LinkModeServer == false && s->SecureNATMode == false && s->BridgeMode == false && s->L3SwitchMode == false)
+		if (is_server_session && s->LinkModeServer == false && s->BridgeMode == false && s->L3SwitchMode == false)
 		{
 			if (s->Hub != NULL && s->Hub->ForceDisableComm)
 			{
@@ -252,26 +180,6 @@ void SessionMain(SESSION *s)
 			}
 		}
 
-		if (s->InProcMode)
-		{
-			if (c->TubeSock == NULL || IsTubeConnected(c->TubeSock->SendTube) == false || IsTubeConnected(c->TubeSock->RecvTube) == false)
-			{
-				// Disconnection occurs in the in-process mode
-				err = ERR_DISCONNECTED;
-				pa_fail = true;
-			}
-		}
-
-		if (s->IsRUDPSession)
-		{
-			if (s->NumDisconnected >= 1 && s->EnableUdpRecovery == false)
-			{
-				// Disconnection occurs in the R-UDP session (UDP recovery is invalid)
-				err = ERR_DISCONNECTED;
-				pa_fail = true;
-			}
-		}
-		
 		// Chance of additional connection
 		if (is_server_session == false)
 		{
@@ -295,18 +203,6 @@ void SessionMain(SESSION *s)
 			pa_fail = true;
 		}
 
-#ifdef	OS_WIN32
-		if (s->IsVPNClientAndVLAN_Win32)
-		{
-			if (MsIsVLanCardShouldStop())
-			{
-				// System is suspending
-				err = ERR_SUSPENDING;
-				pa_fail = true;
-			}
-		}
-#endif	// OS_WIN32
-
 		// Pass the received block to the PacketAdapter
 		if (lock_receive_blocks_queue)
 		{
@@ -329,13 +225,6 @@ void SessionMain(SESSION *s)
 
 				if (b->Size >= 14)
 				{
-					UINT ip;
-					if( (ip = PrepareDHCPRequestForStaticIPv4( s, b )) != 0 )
-					{
-						// Remember the static IP address to remove it from the leased IP address list later
-						static_ip = ip;
-					}
-
 					if (b->Buf[0] & 0x01)
 					{
 						if (is_server_session == false)
@@ -510,14 +399,6 @@ void SessionMain(SESSION *s)
 		// Send a block
 		ConnectionSend(c, now);
 
-		// Determine the automatic disconnection
-		if (auto_disconnect_tick != 0 && auto_disconnect_tick <= now)
-		{
-			err = ERR_AUTO_DISCONNECTED;
-			s->CurrentRetryCount = INFINITE;
-			break;
-		}
-
 		// Stop determination
 		if (s->Halt)
 		{
@@ -548,28 +429,15 @@ void SessionMain(SESSION *s)
 
 		if (is_server_session)
 		{
-			HUB *hub;
-
 			// Update of traffic data of the user
 			if ((s->LastIncrementTraffic + INCREMENT_TRAFFIC_INTERVAL) <= now)
 			{
 				IncrementUserTraffic(s->Hub, s->UserNameReal, s);
 				s->LastIncrementTraffic = now;
 			}
-
-			hub = s->Hub;
-
-			if (hub != NULL)
-			{
-				if ((hub->LastIncrementTraffic + INCREMENT_TRAFFIC_INTERVAL) <= now)
-				{
-					hub->LastIncrementTraffic = now;
-					IncrementHubTraffic(s->Hub);
-				}
-			}
 		}
 
-		if (s->LinkModeServer == false && s->SecureNATMode == false && s->BridgeMode == false && s->L3SwitchMode == false && s->InProcMode == false)
+		if (s->LinkModeServer == false && s->BridgeMode == false && s->L3SwitchMode == false)
 		{
 			bool timeouted = false;
 
@@ -603,11 +471,8 @@ void SessionMain(SESSION *s)
 						(UINT64)(s->ClientOption->AdditionalConnectionInterval * 1000 * 2 + CONNECTING_TIMEOUT * 2))
 						<= Tick64())
 					{
-						if (s->IsRUDPSession == false ||  LIST_NUM(s->Connection->Tcp->TcpSockList) == 0)
-						{
-							timeouted = true;
-							WHERE;
-						}
+						timeouted = true;
+						WHERE;
 					}
 
 					// If all the specified number of tcp connections are not alive continuously, then terminate the session.
@@ -657,14 +522,10 @@ CLEANUP:
 		// Update the user information
 		IncrementUserTraffic(s->Hub, s->UserNameReal, s);
 
-		// Clear the DHCP lease record if assigned as a static client IP address
-		ClearDHCPLeaseRecordForIPv4(s, static_ip);
-
 		DelSession(s->Hub, s);
 	}
 
 	s->ConnectSucceed = false;
-	Notify(s, CLIENT_NOTIFY_ACCOUNT_CHANGED);
 
 	if (s->Connection)
 	{
@@ -683,13 +544,6 @@ CLEANUP:
 	{
 		pa->Free(s);
 	}
-
-#ifdef	OS_WIN32
-	if (s->IsVPNClientAndVLAN_Win32)
-	{
-		MsEndVLanCard();
-	}
-#endif	// OS_WIN32
 
 	if (s->ServerMode == false)
 	{
@@ -716,16 +570,6 @@ CLEANUP:
 
 	// Terminate the connection
 	EndTunnelingMode(c);
-
-	if (nicinfo_sock != NULL)
-	{
-		CncNicInfoFree(nicinfo_sock);
-	}
-
-	if (msgdlg_sock != NULL)
-	{
-		CndMsgDlgFree(msgdlg_sock);
-	}
 
 	c->Err = err;
 }
@@ -835,37 +679,28 @@ void IncrementUserTraffic(HUB *hub, char *username, SESSION *s)
 			s->Traffic->Recv.UnicastCount - s->OldTraffic->Recv.UnicastCount;
 		Copy(s->OldTraffic, s->Traffic, sizeof(TRAFFIC));
 
-		if (hub->FarmMember == false)
+		AcLock(hub);
 		{
-			// Update the user information in the local database if it is not a farm member
-			AcLock(hub);
+			USER *u = AcGetUser(hub, username);
+			if (u != NULL)
 			{
-				USER *u = AcGetUser(hub, username);
-				if (u != NULL)
+				Lock(u->lock);
 				{
-					Lock(u->lock);
-					{
-						AddTraffic(u->Traffic, &report_traffic);
-					}
-					Unlock(u->lock);
-					if (u->Group != NULL)
-					{
-						Lock(u->Group->lock);
-						{
-							AddTraffic(u->Group->Traffic, &report_traffic);
-						}
-						Unlock(u->Group->lock);
-					}
-					ReleaseUser(u);
+					AddTraffic(u->Traffic, &report_traffic);
 				}
+				Unlock(u->lock);
+				if (u->Group != NULL)
+				{
+					Lock(u->Group->lock);
+					{
+						AddTraffic(u->Group->Traffic, &report_traffic);
+					}
+					Unlock(u->Group->lock);
+				}
+				ReleaseUser(u);
 			}
-			AcUnlock(hub);
 		}
-		else
-		{
-			// Update the traffic difference report list in the case of farm member
-			AddTrafficDiff(hub, username, TRAFFIC_DIFF_USER, &report_traffic);
-		}
+		AcUnlock(hub);
 	}
 	Unlock(s->TrafficLock);
 }
@@ -925,18 +760,6 @@ void ClientAdditionalConnectChance(SESSION *s)
 		// Connect additionally only in the case of TCP protocol
 		return;
 	}
-	if (s->IsRUDPSession && s->EnableUdpRecovery == false)
-	{
-		// Do not connect additionally if the UDP recovery is disabled in the case of R-UDP session
-		return;
-	}
-
-	if (s->IsRUDPSession && (s->Connection->AdditionalConnectionFailedCounter > MAX_ADDITIONAL_CONNECTION_FAILED_COUNTER))
-	{
-		// Not to make a large amount of repeated connection retry within a certain time in the case of R-UDP session
-		return;
-	}
-
 	while (true)
 	{
 		if (s->Halt)
@@ -1134,36 +957,6 @@ bool SessionConnect(SESSION *s)
 
 	s->CancelConnect = false;
 
-	if (s->Cedar->Client != NULL)
-	{
-		if (s->Policy != NULL)
-		{
-			if (s->Policy->NoSavePassword)
-			{
-				s->Client_NoSavePassword = true;
-
-				if (s->Account != NULL)
-				{
-					Lock(s->Account->lock);
-					{
-						if (s->Account->ClientAuth != NULL)
-						{
-							if (s->Account->ClientAuth->AuthType == AUTHTYPE_PASSWORD ||
-								s->Account->ClientAuth->AuthType == AUTHTYPE_RADIUS)
-							{
-								Zero(s->Account->ClientAuth->HashedPassword, sizeof(s->Account->ClientAuth->HashedPassword));
-								Zero(s->Account->ClientAuth->PlainPassword, sizeof(s->Account->ClientAuth->PlainPassword));
-							}
-						}
-					}
-					Unlock(s->Account->lock);
-
-					CiSaveConfigurationFile(s->Cedar->Client);
-				}
-			}
-		}
-	}
-
 	if (c->ClientConnectError_NoSavePassword)
 	{
 		s->Client_NoSavePassword = true;
@@ -1268,9 +1061,6 @@ void CleanupSession(SESSION *s)
 	// Release the client connection options
 	if (s->ClientOption != NULL)
 	{
-#ifdef OS_UNIX
-		UnixVLanSetState(s->ClientOption->DeviceName, false);
-#endif
 		Free(s->ClientOption);
 	}
 
@@ -1353,8 +1143,6 @@ void CleanupSession(SESSION *s)
 
 	DeleteCounter(s->LoggingRecordCount);
 
-	ReleaseSharedBuffer(s->IpcSessionSharedBuffer);
-
 	Free(s);
 }
 
@@ -1402,11 +1190,7 @@ void PrintSessionTotalDataSize(SESSION *s)
 void ClientThread(THREAD *t, void *param)
 {
 	SESSION *s;
-	bool use_password_dlg;
-	bool no_save_password = false;
-	bool is_vpngate_connection = false;
 	CEDAR *cedar;
-	bool num_active_sessions_incremented = false;
 	// Validate arguments
 	if (t == NULL || param == NULL)
 	{
@@ -1420,12 +1204,6 @@ void ClientThread(THREAD *t, void *param)
 	s->Thread = t;
 	AddRef(t->ref);
 
-	if (s->LinkModeClient == false)
-	{
-		CiIncrementNumActiveSessions();
-		num_active_sessions_incremented = true;
-	}
-
 	NoticeThreadInit(t);
 
 	cedar = s->Cedar;
@@ -1433,13 +1211,6 @@ void ClientThread(THREAD *t, void *param)
 	s->ClientStatus = CLIENT_STATUS_CONNECTING;
 	s->RetryFlag = true;
 	s->CurrentRetryCount = 0;
-
-	Notify(s, CLIENT_NOTIFY_ACCOUNT_CHANGED);
-
-	if (s->Cedar->Client != NULL)
-	{
-		no_save_password = s->Cedar->Client->DontSavePassword;
-	}
 
 	s->Win32HideConnectWindow = s->ClientOption->HideStatusWindow;
 	s->Win32HideNicInfoWindow = s->ClientOption->HideNicInfoWindow;
@@ -1458,7 +1229,6 @@ void ClientThread(THREAD *t, void *param)
 			break;
 		}
 
-		CLog(s->Cedar->Client, "LC_CONNECT_1", s->ClientOption->AccountName, s->CurrentRetryCount + 1);
 		if (s->LinkModeClient && s->Link != NULL)
 		{
 			HLog(s->Link->Hub, "LH_CONNECT_1", s->ClientOption->AccountName, s->CurrentRetryCount + 1);
@@ -1484,11 +1254,6 @@ void ClientThread(THREAD *t, void *param)
 
 		PrintSessionTotalDataSize(s);
 
-		CLog(s->Cedar->Client, "LC_CONNECT_ERROR", s->ClientOption->AccountName,
-			GetUniErrorStr(s->Err), s->Err);
-#ifdef OS_UNIX
-		UnixVLanSetState(s->ClientOption->DeviceName, false);
-#endif
 		if (s->LinkModeClient && s->Link != NULL)
 		{
 			HLog(s->Link->Hub, "LH_CONNECT_ERROR", s->ClientOption->AccountName,
@@ -1505,274 +1270,41 @@ void ClientThread(THREAD *t, void *param)
 		if (s->Halt && (s->RetryFlag == false) || s->ForceStopFlag)
 		{
 			// Must be aborted
-			if (s->Err == ERR_DEVICE_DRIVER_ERROR)
-			{
-#ifdef	OS_WIN32
-				wchar_t tmp[MAX_SIZE];
-				if (s->Account != NULL && s->Cedar->Client != NULL)
-				{
-					UniFormat(tmp, sizeof(tmp), _UU("ERRDLG_DEVICE_ERROR"), s->ClientOption->DeviceName,
-						s->Err, _E(s->Err));
-					MsgBox(NULL, 0x10000 | 0x40000 | 0x200000 | 0x30, tmp);
-				}
-#endif	// OS_WIN32
-			}
 			break;
 		}
-		// Determine whether to display the password re-entry dialog
-		use_password_dlg = false;
-
-		if (s->Account != NULL && s->Cedar->Client != NULL)
-		{
-#ifdef	OS_WIN32
-			if (s->ClientAuth->AuthType == CLIENT_AUTHTYPE_PASSWORD || s->ClientAuth->AuthType == CLIENT_AUTHTYPE_PLAIN_PASSWORD)
-			{
-				if (s->Err == ERR_AUTH_FAILED || s->Err == ERR_PROXY_AUTH_FAILED)
-				{
-					use_password_dlg = true;
-				}
-			}
-#endif	// OS_WIN32
-		}
-
 		// Failed to connect or the connection is disconnected
 		// Wait for retry interval
-		if (use_password_dlg == false)
+		UINT retry_interval = s->RetryInterval;
+
+		if (s->LinkModeClient)
 		{
-			UINT retry_interval = s->RetryInterval;
+			UINT current_num_links = Count(s->Cedar->CurrentActiveLinks);
+			UINT max_retry_interval = MAX(1000 * current_num_links, retry_interval);
 
-			if (s->LinkModeClient)
+			retry_interval += retry_interval * MIN(s->CurrentRetryCount, 1000);
+			retry_interval = MIN(retry_interval, max_retry_interval);
+
+			// On the cascade client, adjust the retry_interval. (+/- 20%)
+			if (retry_interval >= 1000 && retry_interval <= (60 * 60 * 1000))
 			{
-				UINT current_num_links = Count(s->Cedar->CurrentActiveLinks);
-				UINT max_retry_interval = MAX(1000 * current_num_links, retry_interval);
-
-				retry_interval += retry_interval * MIN(s->CurrentRetryCount, 1000);
-				retry_interval = MIN(retry_interval, max_retry_interval);
-
-				// On the cascade client, adjust the retry_interval. (+/- 20%)
-				if (retry_interval >= 1000 && retry_interval <= (60 * 60 * 1000))
-				{
-					retry_interval = (retry_interval * 8 / 10) + (Rand32() % (retry_interval * 4 / 10));
-				}
+				retry_interval = (retry_interval * 8 / 10) + (Rand32() % (retry_interval * 4 / 10));
 			}
-
-			if (s->Err == ERR_HUB_IS_BUSY || s->Err == ERR_LICENSE_ERROR ||
-				s->Err == ERR_HUB_STOPPING || s->Err == ERR_TOO_MANY_USER_SESSION)
-			{
-				retry_interval = RETRY_INTERVAL_SPECIAL;
-			}
-
-			if (s->CurrentRetryCount >= s->ClientOption->NumRetry)
-			{
-				// Retry count excess
-
-#ifndef	OS_WIN32
-
-				break;
-
-#else	// OS_WIN32
-
-				if (s->Win32HideConnectWindow == false &&
-					s->Cedar->Client != NULL && s->Account != NULL)
-				{
-					// Show a reconnection dialog
-					UI_CONNECTERROR_DLG p;
-					Zero(&p, sizeof(p));
-					UniStrCpy(p.AccountName, sizeof(p.AccountName), s->ClientOption->AccountName);
-					StrCpy(p.ServerName, sizeof(p.ServerName), s->ClientOption->Hostname);
-					p.Err = s->Err;
-					p.CurrentRetryCount = s->CurrentRetryCount + 1;
-					s->Halt = false;
-					p.RetryLimit = 0;
-					p.RetryIntervalSec = 0;
-					p.CancelEvent = s->HaltEvent;
-					p.HideWindow = s->Win32HideConnectWindow;
-					if (CncConnectErrorDlg(s, &p) == false)
-					{
-						// Abort
-						break;
-					}
-					else
-					{
-						s->Win32HideConnectWindow = p.HideWindow;
-						goto SKIP;
-					}
-				}
-				else
-				{
-					break;
-				}
-
-#endif
-			}
-
-#ifndef	OS_WIN32
-
-			// Simple wait
-			Wait(s->HaltEvent, retry_interval);
-
-#else	// OS_WIN32
-
-			if (s->Win32HideConnectWindow == false &&
-				s->Cedar->Client != NULL && s->Account != NULL)
-			{
-				// Show a reconnection dialog
-				UI_CONNECTERROR_DLG p;
-				Zero(&p, sizeof(p));
-				UniStrCpy(p.AccountName, sizeof(p.AccountName), s->ClientOption->AccountName);
-				StrCpy(p.ServerName, sizeof(p.ServerName), s->ClientOption->Hostname);
-				p.Err = s->Err;
-				p.CurrentRetryCount = s->CurrentRetryCount + 1;
-				p.RetryLimit = s->ClientOption->NumRetry;
-				p.RetryIntervalSec = retry_interval;
-				p.CancelEvent = s->HaltEvent;
-				s->Halt = false;
-				p.HideWindow = s->Win32HideConnectWindow;
-				if (CncConnectErrorDlg(s, &p) == false)
-				{
-					// Abort
-					break;
-				}
-				s->Win32HideConnectWindow = p.HideWindow;
-			}
-			else
-			{
-				// Simple wait
-				Wait(s->HaltEvent, s->RetryInterval);
-			}
-
-#endif	// OS_WIN32
 		}
-		else
+
+		if (s->Err == ERR_HUB_IS_BUSY || s->Err == ERR_LICENSE_ERROR ||
+			s->Err == ERR_HUB_STOPPING || s->Err == ERR_TOO_MANY_USER_SESSION)
 		{
-#ifdef	OS_WIN32
-			// Wait for re-entry the password
-			UI_PASSWORD_DLG p;
-			Zero(&p, sizeof(p));
-			if (s->Client_NoSavePassword == false)
-			{
-				p.ShowNoSavePassword = true;
-			}
-			p.NoSavePassword = no_save_password;
-			p.CancelEvent = s->HaltEvent;
-			if (s->Err == ERR_PROXY_AUTH_FAILED)
-			{
-				p.ProxyServer = true;
-			}
-
-			if (p.ProxyServer)
-			{
-				StrCpy(p.Username, sizeof(p.Username), s->ClientOption->ProxyUsername);
-				StrCpy(p.Password, sizeof(p.Password), s->ClientOption->ProxyPassword);
-				StrCpy(p.ServerName, sizeof(p.ServerName), s->ClientOption->ProxyName);
-			}
-			else
-			{
-				bool empty = false;
-
-				StrCpy(p.Username, sizeof(p.Username), s->ClientAuth->Username);
-				if (s->ClientAuth->AuthType == AUTHTYPE_RADIUS)
-				{
-					if (StrLen(s->ClientAuth->PlainPassword) == 0)
-					{
-						empty = true;
-					}
-				}
-				else if (s->ClientAuth->AuthType == AUTHTYPE_PASSWORD)
-				{
-					if (IsZero(s->ClientAuth->HashedPassword, sizeof(s->ClientAuth->HashedPassword)))
-					{
-						empty = true;
-					}
-				}
-
-				StrCpy(p.Password, sizeof(p.Password), empty ? "" : HIDDEN_PASSWORD);
-				StrCpy(p.ServerName, sizeof(p.ServerName), s->ClientOption->Hostname);
-			}
-
-			p.RetryIntervalSec = s->RetryInterval / 1000;
-			p.Type = s->ClientAuth->AuthType;
-
-			// Display the password re-entry dialog
-			if (CncPasswordDlg(s, &p) == false)
-			{
-				// Abort the connection
-				break;
-			}
-			else
-			{
-				// Overwrite the user name
-				if (p.ProxyServer)
-				{
-					// User name of the proxy
-					StrCpy(s->ClientOption->ProxyUsername, sizeof(s->ClientOption->ProxyUsername), p.Username);
-				}
-				else
-				{
-					// The user name for connecting to the server
-					StrCpy(s->ClientAuth->Username, sizeof(s->ClientAuth->Username), p.Username);
-					s->ClientAuth->AuthType = p.Type;
-				}
-
-				if (StrCmp(p.Password, HIDDEN_PASSWORD) != 0)
-				{
-					// Password is re-entered
-					if (p.ProxyServer)
-					{
-						// Password for the proxy server
-						StrCpy(s->ClientOption->ProxyPassword, sizeof(s->ClientOption->ProxyPassword), p.Password);
-					}
-					else
-					{
-						if (s->ClientAuth->AuthType == CLIENT_AUTHTYPE_PLAIN_PASSWORD)
-						{
-							// Plaintext password authentication
-							StrCpy(s->ClientAuth->PlainPassword, sizeof(s->ClientAuth->PlainPassword), p.Password);
-						}
-						else
-						{
-							// Encrypted password authentication
-							HashPassword(s->ClientAuth->HashedPassword, s->ClientAuth->Username, p.Password);
-						}
-					}
-				}
-
-				no_save_password = p.NoSavePassword;
-
-				if (s->Account != NULL && s->Cedar->Client != NULL)
-				{
-					s->Cedar->Client->DontSavePassword = no_save_password;
-					if (p.NoSavePassword == false)
-					{
-						// Update the account database of the client
-						if (p.ProxyServer == false)
-						{
-							// Update the Server connection information
-							ACCOUNT *a = s->Account;
-							Lock(a->lock);
-							{
-								CiFreeClientAuth(a->ClientAuth);
-								a->ClientAuth = CopyClientAuth(s->ClientAuth);
-							}
-							Unlock(a->lock);
-							CiSaveConfigurationFile(s->Cedar->Client);
-						}
-						else
-						{
-							// Update the proxy connection information
-							ACCOUNT *a = s->Account;
-							Lock(a->lock);
-							{
-								Copy(a->ClientOption, s->ClientOption, sizeof(CLIENT_OPTION));
-							}
-							Unlock(a->lock);
-							CiSaveConfigurationFile(s->Cedar->Client);
-						}
-					}
-				}
-			}
-#endif	// OS_WIN32
+			retry_interval = RETRY_INTERVAL_SPECIAL;
 		}
+
+		if (s->CurrentRetryCount >= s->ClientOption->NumRetry)
+		{
+			// Retry count excess
+			break;
+		}
+
+		// Simple wait
+		Wait(s->HaltEvent, retry_interval);
 
 SKIP:
 		// Increase the number of retries
@@ -1798,15 +1330,7 @@ SKIP:
 		ReleaseSession(s);
 	}
 
-	Notify(s, CLIENT_NOTIFY_ACCOUNT_CHANGED);
-
-
 	ReleaseSession(s);
-
-	if (num_active_sessions_incremented)
-	{
-		CiDecrementNumActiveSessions();
-	}
 }
 
 // Create an RPC session
@@ -1901,8 +1425,7 @@ SESSION *NewClientSessionEx(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *au
 	SESSION *s;
 	THREAD *t;
 	// Validate arguments
-	if (cedar == NULL || option == NULL || auth == NULL || pa == NULL ||
-		(auth->AuthType == CLIENT_AUTHTYPE_SECURE && auth->SecureSignProc == NULL))
+	if (cedar == NULL || option == NULL || auth == NULL || pa == NULL)
 	{
 		return NULL;
 	}
@@ -1947,26 +1470,6 @@ SESSION *NewClientSessionEx(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *au
 
 	// Interval for additional connection creation is at least 1 second
 	s->ClientOption->AdditionalConnectionInterval = MAX(s->ClientOption->AdditionalConnectionInterval, 1);
-
-	// Hold whether the virtual LAN card is used in client mode
-	s->ClientModeAndUseVLan = (StrLen(s->ClientOption->DeviceName) == 0) ? false : true;
-
-	if (s->ClientOption->NoRoutingTracking)
-	{
-		s->ClientModeAndUseVLan = false;
-	}
-
-	if (pa->Id == PACKET_ADAPTER_ID_VLAN_WIN32)
-	{
-		s->IsVPNClientAndVLAN_Win32 = true;
-	}
-
-	if (StrLen(option->DeviceName) == 0)
-	{
-		// NAT mode
-		s->ClientModeAndUseVLan = false;
-		s->VirtualHost = true;
-	}
 
 	// Copy the client authentication data
 	s->ClientAuth = Malloc(sizeof(CLIENT_AUTH));
@@ -2028,34 +1531,13 @@ SESSION *NewClientSessionEx(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *au
 		}
 	}
 
-	if (StrCmpi(s->ClientOption->DeviceName, SNAT_DEVICE_NAME) == 0)
-	{
-		// SecureNAT mode
-		s->SecureNATMode = true;
-	}
-
 	if (StrCmpi(s->ClientOption->DeviceName, BRIDGE_DEVICE_NAME) == 0)
 	{
 		// Bridge mode
 		s->BridgeMode = true;
 	}
 
-	if (s->VirtualHost)
-	{
-		VH *v = (VH *)s->PacketAdapter->Param;
-
-		// Add the session object to VH
-		v->Session = s;
-		AddRef(s->ref);
-	}
-
 	s->Account = account;
-
-	if (s->ClientAuth->AuthType == CLIENT_AUTHTYPE_SECURE)
-	{
-		// Do not retry in the case of a smart card authentication
-		s->ClientOption->NumRetry = 0;
-	}
 
 	// Create a client thread
 	t = NewThread(ClientThread, (void *)s);
@@ -2138,10 +1620,6 @@ void if_free(SESSION *s);
 // Create a server session
 SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, POLICY *policy)
 {
-	return NewServerSessionEx(cedar, c, h, username, policy, false, NULL);
-}
-SESSION *NewServerSessionEx(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, POLICY *policy, bool inproc_mode, UCHAR *ipc_mac_address)
-{
 	SESSION *s;
 	char name[MAX_SIZE];
 	char hub_name_upper[MAX_SIZE];
@@ -2188,69 +1666,10 @@ SESSION *NewServerSessionEx(CEDAR *cedar, CONNECTION *c, HUB *h, char *username,
 	StrCpy(user_name_upper, sizeof(user_name_upper), username);
 	StrUpper(user_name_upper);
 
-	if ((StrCmpi(username, ADMINISTRATOR_USERNAME) != 0) && (StrCmpi(username, BRIDGE_USER_NAME) != 0) || (cedar->Server == NULL || cedar->Server->ServerType == SERVER_TYPE_STANDALONE))
-	{
-		if (IsEmptyStr(c->InProcPrefix))
-		{
-			Format(name, sizeof(name), "SID-%s-%u", user_name_upper, Inc(h->SessionCounter));
-		}
-		else
-		{
-			Format(name, sizeof(name), "SID-%s-[%s]-%u", user_name_upper, c->InProcPrefix, Inc(h->SessionCounter));
-		}
-
-		if (h->IsVgsHub || h->IsVgsSuperRelayHub)
-		{
-			UCHAR rand[5];
-			char tmp[32];
-
-			Rand(rand, sizeof(rand));
-
-			BinToStr(tmp, sizeof(tmp), rand, sizeof(rand));
-
-			StrCat(name, sizeof(name), "-");
-			StrCat(name, sizeof(name), tmp);
-		}
-	}
-	else
-	{
-		UCHAR rand[SHA1_SIZE];
-		char tmp[MAX_SIZE];
-		Rand(rand, sizeof(rand));
-		BinToStr(tmp, sizeof(tmp), rand, 3);
-
-		if (StrCmpi(username, BRIDGE_USER_NAME) != 0)
-		{
-			Format(name, sizeof(name), "SID-%s-%s", user_name_upper,
-				tmp);
-		}
-		else
-		{
-			char pc_name[MAX_SIZE];
-			TOKEN_LIST *t;
-
-			GetMachineName(tmp, sizeof(tmp));
-			t = ParseToken(tmp, ".");
-			if (t->NumTokens >= 1)
-			{
-				StrCpy(pc_name, sizeof(pc_name), t->Token[0]);
-			}
-			else
-			{
-				StrCpy(pc_name, sizeof(pc_name), "pc");
-			}
-			FreeToken(t);
-
-			StrUpper(pc_name);
-
-			Format(name, sizeof(name), "SID-%s-%s-%u", user_name_upper, pc_name,
-				Inc(h->SessionCounter));
-		}
-	}
+	Format(name, sizeof(name), "SID-%s-%u", user_name_upper, Inc(h->SessionCounter));
 
 	s->Name = CopyStr(name);
 	s->Policy = policy;
-	s->InProcMode = inproc_mode;
 
 	// Add a SESSION to the HUB
 	AddSession(h, s);
@@ -2258,66 +1677,14 @@ SESSION *NewServerSessionEx(CEDAR *cedar, CONNECTION *c, HUB *h, char *username,
 	// Create a key
 	NewSessionKey(cedar, s->SessionKey, &s->SessionKey32);
 
-	// Generate a MAC address for IPC
-	if (s->InProcMode)
-	{
-		if (ipc_mac_address != NULL)
-		{
-			Copy(s->IpcMacAddress, ipc_mac_address, 6);
-		}
-		else
-		{
-			char tmp[MAX_SIZE];
-			char machine[MAX_SIZE];
-			UCHAR hash[SHA1_SIZE];
-
-			GetMachineName(machine, sizeof(machine));
-
-			Format(tmp, sizeof(tmp), "%s@%s@%u", machine, h->Name, s->UniqueId);
-
-			StrUpper(tmp);
-			Trim(tmp);
-
-			Sha0(hash, tmp, StrLen(tmp));
-
-			s->IpcMacAddress[0] = 0xCA;
-			s->IpcMacAddress[1] = hash[1];
-			s->IpcMacAddress[2] = hash[2];
-			s->IpcMacAddress[3] = hash[3];
-			s->IpcMacAddress[4] = hash[4];
-			s->IpcMacAddress[5] = hash[5];
-
-			MacToStr(tmp, sizeof(tmp), s->IpcMacAddress);
-			Debug("MAC Address for IPC: %s\n", tmp);
-		}
-	}
-
 	return s;
-}
-
-// Check whether the specified MAC address is IPC address
-bool IsIpcMacAddress(UCHAR *mac)
-{
-	// Validate arguments
-	if (mac == NULL)
-	{
-		return false;
-	}
-
-	if (mac[0] == 0xCA)
-	{
-		return true;
-	}
-
-	return false;
 }
 
 // Display the status on the client
 void PrintStatus(SESSION *s, wchar_t *str)
 {
 	// Validate arguments
-	if (s == NULL || str == NULL || s->Account == NULL || s->Cedar->Client == NULL
-		|| s->Account->StatusPrinter == NULL)
+	if (s == NULL || str == NULL || s->Account == NULL || s->Account->StatusPrinter == NULL)
 	{
 		return;
 	}
@@ -2392,155 +1759,4 @@ void ReleaseCancelList(LIST *o)
 	}
 
 	ReleaseList(o);
-}
-
-// Notify to the client
-void Notify(SESSION *s, UINT code)
-{
-	// Validate arguments
-	if (s == NULL || s->Account == NULL || s->Cedar->Client == NULL)
-	{
-		return;
-	}
-
-	CiNotify(s->Cedar->Client);
-}
-
-
-UINT PrepareDHCPRequestForStaticIPv4(SESSION *s, BLOCK *b)
-{
-	PKT *pkt = NULL;
-	DHCPV4_HEADER *dhcp = NULL;
-	UCHAR *data = NULL;
-	UINT size = 0;
-	UINT dhcp_header_size = 0;
-	UINT dhcp_data_offset = 0;
-	UINT magic_cookie = Endian32(DHCP_MAGIC_COOKIE);
-	DHCP_OPTION_LIST *opt = NULL;
-	USER *user = NULL;
-	UINT ret_ip = 0;
-
-	if ((s->Username == NULL) || (StrLen(s->Username) == 0) || (StrCmpi(s->Username, SNAT_USER_NAME_PRINT) == 0) ||
-		(StrCmpi( s->Username, BRIDGE_USER_NAME_PRINT) == 0) || (StrCmpi(s->Username, LINK_USER_NAME_PRINT) == 0))
-	{
-		return ret_ip;
-	}
-
-	pkt = ParsePacket(b->Buf, b->Size);
-	if (pkt == NULL)
-	{
-		return ret_ip;
-	}
-
-	if (pkt->TypeL3 == L3_IPV4 && pkt->TypeL4 == L4_UDP && pkt->TypeL7 == L7_DHCPV4)
-	{
-		if (pkt->L7.DHCPv4Header->OpCode != 1)
-		{
-			goto CLEANUP_TP;
-		}
-
-		dhcp = pkt->L7.DHCPv4Header;
-		dhcp_header_size = sizeof(DHCPV4_HEADER);
-		dhcp_data_offset = (UINT)(((UCHAR *)pkt->L7.DHCPv4Header) - ((UCHAR *)pkt->MacHeader) + dhcp_header_size);
-		data = ((UCHAR *)dhcp) + dhcp_header_size;
-		size = pkt->PacketSize - dhcp_data_offset;
-
-		if (dhcp_header_size < 5)
-		{
-			goto CLEANUP_TP;
-		}
-
-		// Search for Magic Cookie
-		while (size >= 5)
-		{
-			if (Cmp(data, &magic_cookie, sizeof(magic_cookie)) == 0)
-			{
-				// Found
-				data += 4;
-				size -= 4;
-				opt = ParseDhcpOptionList(data, size);
-				break;
-			}
-
-			++data;
-			--size;
-		}
-
-		if (opt == NULL)
-		{
-			goto CLEANUP_TP;
-		}
-
-		if (opt->Opcode == DHCP_DISCOVER || opt->Opcode == DHCP_REQUEST)
-		{
-			if (s->Hub != NULL)
-			{
-				user = AcGetUser( s->Hub, s->Username );
-				if (user != NULL)
-				{
-					dhcp->ServerIP = GetUserIPv4AddressFromUserNote32(user->Note);
-					ReleaseUser(user);
-					if (s->Hub->SecureNAT != NULL && s->Hub->SecureNAT->Nat != NULL)
-					{
-						VH *v = s->Hub->SecureNAT->Nat->Virtual;
-						if (v != NULL && v->UseDhcp == true && v->DhcpLeaseList != NULL)
-						{
-							DHCP_LEASE *d = SearchDhcpLeaseByIp(v, dhcp->ServerIP);
-
-							// The given static IP address is not used - it's OK
-							if (d == NULL)
-							{
-								ret_ip = dhcp->ServerIP;
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-
-CLEANUP_TP:
-	if (opt != NULL)
-	{
-		Free(opt);
-	}
-
-	if (pkt != NULL)
-	{
-		FreePacket(pkt);
-	}
-
-	return ret_ip;
-}
-
-void ClearDHCPLeaseRecordForIPv4(SESSION *s, UINT static_ip)
-{
-	if (s == NULL || static_ip == 0)
-	{
-		return;
-	}
-
-	if (s->Hub == NULL || s->Hub->SecureNAT == NULL || s->Hub->SecureNAT->Nat == NULL)
-	{
-		return;
-	}
-
-	VH *v = s->Hub->SecureNAT->Nat->Virtual;
-	if (v == NULL || v->DhcpLeaseList == NULL)
-	{
-		return;
-	}
-
-	DHCP_LEASE *d = SearchDhcpLeaseByIp(v, static_ip);
-	if (d == NULL)
-	{
-		return;
-	}
-
-	LockList(v->DhcpLeaseList);
-	{
-		FreeDhcpLease(d);
-		Delete(v->DhcpLeaseList, d);
-	}
-	UnlockList( v->DhcpLeaseList);
 }

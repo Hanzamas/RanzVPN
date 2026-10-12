@@ -28,7 +28,7 @@
 #include <WinSock2.h>
 #include <ws2ipdef.h>
 #else
-#include <unistd.h>
+#error "Ranz VPN builds on Windows only."
 #endif
 
 // 
@@ -41,7 +41,7 @@
 #define	BUF_SIZE			512
 
 // Support Windows OS list
-#define	SUPPORTED_WINDOWS_LIST		"Windows 98 / 98 SE / ME / NT 4.0 SP6a / 2000 SP4 / XP SP2, SP3 / Vista SP1, SP2 / 7 SP1 / 8 / 8.1 / 10 / Server 2003 SP2 / Server 2008 SP1, SP2 / Hyper-V Server 2008 / Server 2008 R2 SP1 / Hyper-V Server 2008 R2 / Server 2012 / Hyper-V Server 2012 / Server 2012 R2 / Hyper-V Server 2012 R2 / Server 2016 / Server 2019"
+#define	SUPPORTED_WINDOWS_LIST		"Windows 10 / 11 / Server 2016 / Server 2019 / Server 2022"
 
 // Infinite
 #ifndef	INFINITE
@@ -160,59 +160,7 @@ typedef int (COMPARE)(void *p1, void *p2);
 // 
 typedef int64_t time_64t;
 
-#ifdef OS_WIN32
-typedef uint32_t PID;
-#else
-typedef int32_t  INT;
-typedef int64_t  INT64;
-
-typedef uint32_t UINT;
-typedef uint64_t UINT64;
-
-typedef uint8_t  BYTE;
-typedef uint8_t  UCHAR;
-typedef uint16_t USHORT;
-
-typedef int SOCKET;
-typedef pid_t PID;
-
-#define	__cdecl
-#define	__declspec(x)
-#endif
-
 // OS type
-#define	OSTYPE_WINDOWS_95						1100	// Windows 95
-#define	OSTYPE_WINDOWS_98						1200	// Windows 98
-#define	OSTYPE_WINDOWS_ME						1300	// Windows Me
-#define	OSTYPE_WINDOWS_UNKNOWN					1400	// Windows (unknown)
-#define	OSTYPE_WINDOWS_NT_4_WORKSTATION			2100	// Windows NT 4.0 Workstation
-#define	OSTYPE_WINDOWS_NT_4_SERVER				2110	// Windows NT 4.0 Server
-#define	OSTYPE_WINDOWS_NT_4_SERVER_ENTERPRISE	2111	// Windows NT 4.0 Server, Enterprise Edition
-#define	OSTYPE_WINDOWS_NT_4_TERMINAL_SERVER		2112	// Windows NT 4.0 Terminal Server
-#define	OSTYPE_WINDOWS_NT_4_BACKOFFICE			2113	// BackOffice Server 4.5
-#define	OSTYPE_WINDOWS_NT_4_SMS					2114	// Small Business Server 4.5
-#define	OSTYPE_WINDOWS_2000_PROFESSIONAL		2200	// Windows 2000 Professional
-#define	OSTYPE_WINDOWS_2000_SERVER				2211	// Windows 2000 Server
-#define	OSTYPE_WINDOWS_2000_ADVANCED_SERVER		2212	// Windows 2000 Advanced Server
-#define	OSTYPE_WINDOWS_2000_DATACENTER_SERVER	2213	// Windows 2000 Datacenter Server
-#define	OSTYPE_WINDOWS_2000_BACKOFFICE			2214	// BackOffice Server 2000
-#define	OSTYPE_WINDOWS_2000_SBS					2215	// Small Business Server 2000
-#define	OSTYPE_WINDOWS_XP_HOME					2300	// Windows XP Home Edition
-#define	OSTYPE_WINDOWS_XP_PROFESSIONAL			2301	// Windows XP Professional
-#define	OSTYPE_WINDOWS_2003_WEB					2410	// Windows Server 2003 Web Edition
-#define	OSTYPE_WINDOWS_2003_STANDARD			2411	// Windows Server 2003 Standard Edition
-#define	OSTYPE_WINDOWS_2003_ENTERPRISE			2412	// Windows Server 2003 Enterprise Edition
-#define	OSTYPE_WINDOWS_2003_DATACENTER			2413	// Windows Server 2003 DataCenter Edition
-#define	OSTYPE_WINDOWS_2003_BACKOFFICE			2414	// BackOffice Server 2003
-#define	OSTYPE_WINDOWS_2003_SBS					2415	// Small Business Server 2003
-#define	OSTYPE_WINDOWS_LONGHORN_PROFESSIONAL	2500	// Windows Vista
-#define	OSTYPE_WINDOWS_LONGHORN_SERVER			2510	// Windows Server 2008
-#define	OSTYPE_WINDOWS_7						2600	// Windows 7
-#define	OSTYPE_WINDOWS_SERVER_2008_R2			2610	// Windows Server 2008 R2
-#define	OSTYPE_WINDOWS_8						2700	// Windows 8
-#define	OSTYPE_WINDOWS_SERVER_8					2710	// Windows Server 2012
-#define	OSTYPE_WINDOWS_81						2701	// Windows 8.1
-#define	OSTYPE_WINDOWS_SERVER_81				2711	// Windows Server 2012 R2
 #define	OSTYPE_WINDOWS_10						2702	// Windows 10
 #define	OSTYPE_WINDOWS_SERVER_10				2712	// Windows Server 10
 #define	OSTYPE_WINDOWS_11						2800	// Windows 11 or later
@@ -245,21 +193,6 @@ typedef struct OS_INFO
 	char *KernelName;							// Kernel name
 	char *KernelVersion;						// Kernel version
 } OS_INFO;
-
-// Time type
-#ifndef	OS_WIN32
-typedef struct SYSTEMTIME
-{
-	USHORT wYear;
-	USHORT wMonth;
-	USHORT wDayOfWeek;
-	USHORT wDay;
-	USHORT wHour;
-	USHORT wMinute;
-	USHORT wSecond;
-	USHORT wMilliseconds;
-} SYSTEMTIME;
-#endif	// WINDOWS_H
 
 // Object.h
 typedef struct LOCK LOCK;
@@ -295,9 +228,6 @@ typedef struct PRAND PRAND;
 // Str.h
 typedef struct TOKEN_LIST TOKEN_LIST;
 typedef struct INI_ENTRY INI_ENTRY;
-typedef struct JSON_OBJECT JSON_OBJECT;
-typedef struct JSON_ARRAY  JSON_ARRAY;
-typedef struct JSON_VALUE  JSON_VALUE;
 
 // Internat.h
 typedef struct UNI_TOKEN_LIST UNI_TOKEN_LIST;
@@ -317,12 +247,6 @@ typedef struct AES_KEY_VALUE AES_KEY_VALUE;
 typedef struct CIPHER CIPHER;
 typedef struct MD MD;
 
-// Secure.h
-typedef struct SECURE_DEVICE SECURE_DEVICE;
-typedef struct SEC_INFO SEC_INFO;
-typedef struct SECURE SECURE;
-typedef struct SEC_OBJ SEC_OBJ;
-
 // Kernel.h
 typedef struct MEMINFO MEMINFO;
 typedef struct LOCALE LOCALE;
@@ -334,8 +258,6 @@ typedef struct INSTANCE INSTANCE;
 typedef struct VALUE VALUE;
 typedef struct ELEMENT ELEMENT;
 typedef struct PACK PACK;
-typedef struct JSONPACKHINT JSONPACKHINT;
-typedef struct JSONPACKHINT_ITEM JSONPACKHINT_ITEM;
 
 // Cfg.h
 typedef struct FOLDER FOLDER;
@@ -360,31 +282,17 @@ typedef struct ROUTE_CHANGE ROUTE_CHANGE;
 typedef struct ROUTE_CHANGE_DATA ROUTE_CHANGE_DATA;
 typedef struct WIN32_RELEASEADDRESS_THREAD_PARAM WIN32_RELEASEADDRESS_THREAD_PARAM;
 typedef struct IPV6_ADDR IPV6_ADDR;
-typedef struct TUBE TUBE;
-typedef struct TUBEDATA TUBEDATA;
 typedef struct PSEUDO PSEUDO;
-typedef struct TUBEPAIR_DATA TUBEPAIR_DATA;
-typedef struct UDPLISTENER UDPLISTENER;
-typedef struct UDPLISTENER_SOCK UDPLISTENER_SOCK;
 typedef struct UDPPACKET UDPPACKET;
-typedef struct TCP_RAW_DATA TCP_RAW_DATA;
 typedef struct INTERRUPT_MANAGER INTERRUPT_MANAGER;
-typedef struct TUBE_FLUSH_LIST TUBE_FLUSH_LIST;
 typedef struct ICMP_RESULT ICMP_RESULT;
 typedef struct SSL_PIPE SSL_PIPE;
 typedef struct SSL_BIO SSL_BIO;
-typedef struct RUDP_STACK RUDP_STACK;
-typedef struct RUDP_SOURCE_IP RUDP_SOURCE_IP;
-typedef struct RUDP_SESSION RUDP_SESSION;
-typedef struct RUDP_SEGMENT RUDP_SEGMENT;
 typedef struct CONNECT_SERIAL_PARAM CONNECT_SERIAL_PARAM;
-typedef struct CONNECT_TCP_RUDP_PARAM CONNECT_TCP_RUDP_PARAM;
 typedef struct SSL_VERIFY_OPTION SSL_VERIFY_OPTION;
-typedef struct TCP_PAIR_HEADER TCP_PAIR_HEADER;
 typedef struct NIC_ENTRY NIC_ENTRY;
 typedef struct HTTP_VALUE HTTP_VALUE;
 typedef struct HTTP_HEADER HTTP_HEADER;
-typedef struct QUERYIPTHREAD QUERYIPTHREAD;
 typedef struct IPBLOCK IPBLOCK;
 typedef struct SAFE_REQUEST SAFE_REQUEST;
 typedef struct SAFE_LIST SAFE_LIST;

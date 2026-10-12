@@ -8,8 +8,6 @@ endif()
 
 if(WIN32)
   add_library(cedar STATIC ${SOURCES_CEDAR} ${SOURCES_CEDAR_CPP} ${HEADERS_CEDAR})
-else()
-  add_library(cedar SHARED ${SOURCES_CEDAR} ${SOURCES_CEDAR_CPP} ${HEADERS_CEDAR})
 endif()
 
 if(MSVC)
@@ -30,38 +28,6 @@ set_target_properties(cedar
 
 target_link_libraries(cedar PUBLIC mayaqua)
 
-cmake_host_system_information(RESULT HAS_SSE2 QUERY HAS_SSE2)
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|arm64v8|ARM64")
-  message(STATUS "Target architecture is ARM64")
-  set(BLAKE2_SRC_PATH "${TOP_DIRECTORY}/3rdparty/BLAKE2/neon")
-  set(BLAKE2_SRC "${BLAKE2_SRC_PATH}/blake2s-neon.c")
-else()
-  set(BLAKE2_SRC_PATH $<IF:$<BOOL:${HAS_SSE2}>,${TOP_DIRECTORY}/3rdparty/BLAKE2/sse,${TOP_DIRECTORY}/3rdparty/BLAKE2/ref>)
-  set(BLAKE2_SRC $<IF:$<BOOL:${HAS_SSE2}>,${BLAKE2_SRC_PATH}/blake2s.c,${BLAKE2_SRC_PATH}/blake2s-ref.c>)
-  if(HAS_SSE2)
-    # If SSE2 is enabled, a build failure occurs with MSVC because it doesn't define "__SSE2__".
-    # The fix consists in defining "HAVE_SSE2" manually, effectively overriding the check.
-    set_property(SOURCE ${BLAKE2_SRC} PROPERTY COMPILE_DEFINITIONS "HAVE_SSE2")
-  endif()
-endif()
-target_include_directories(cedar PUBLIC ${BLAKE2_SRC_PATH})
-target_sources(cedar PRIVATE ${BLAKE2_SRC})
-
-if(VCPKG_TARGET_TRIPLET)
-  find_package(unofficial-sodium CONFIG REQUIRED)
-  target_link_libraries(cedar PUBLIC unofficial-sodium::sodium)
-else()
-  find_package(PkgConfig REQUIRED)
-  pkg_search_module(SODIUM libsodium REQUIRED)
-  target_include_directories(cedar PUBLIC ${SODIUM_INCLUDE_DIRS})
-  if(NOT ("$ENV{TRAVIS_CPU_ARCH}" STREQUAL ppc64le))
-    target_link_libraries(cedar PUBLIC $<IF:$<BOOL:SODIUM_LINK_LIBRARIES>,${SODIUM_LINK_LIBRARIES},${SODIUM_LIBRARIES}>)
-  else()
-    # TODO: investigate why on ppc64le the use of SODIUM_LINK_LIBRARIES causes undefined references to libsodium functions.
-    target_link_libraries(cedar PUBLIC ${SODIUM_LIBRARIES})
-  endif()
-endif()
-
 if(WIN32)
   set_target_properties(cedar
     PROPERTIES
@@ -69,28 +35,14 @@ if(WIN32)
     COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
   )
 
-  target_include_directories(cedar PRIVATE winpcap)
   target_link_libraries(cedar PRIVATE comctl32.lib urlmon.lib)
-endif()
-
-if(UNIX)
-  find_package(Curses REQUIRED)
-  find_library(LIB_READLINE readline)
-
-  target_link_libraries(cedar PRIVATE ${CURSES_LIBRARIES} ${LIB_READLINE})
-
-  if(${CMAKE_SYSTEM_NAME} STREQUAL "Darwin")
-    target_link_libraries(cedar PRIVATE mayaqua pcap)
-  endif()
 endif()
 
 # Version
 add_definitions(-DCEDAR_VERSION_MAJOR=${PROJECT_VERSION_MAJOR} -DCEDAR_VERSION_MINOR=${PROJECT_VERSION_MINOR} -DCEDAR_VERSION_BUILD=${PROJECT_VERSION_PATCH})
 
 # Builder
-if(UNIX)
-  add_definitions(-DBUILDER_NAME="$ENV{USER}")
-elseif(WIN32)
+if(WIN32)
   add_definitions(-DBUILDER_NAME="$ENV{USERNAME}")
 endif()
 
@@ -108,11 +60,3 @@ string(REGEX REPLACE "^0([^ ]*)" "\\1" BUILD_SECOND "${TIME_SECOND}")
 
 add_definitions(-DBUILD_DATE_D=${BUILD_DAY} -DBUILD_DATE_M=${BUILD_MONTH} -DBUILD_DATE_Y=${BUILD_YEAR})
 add_definitions(-DBUILD_DATE_HO=${BUILD_HOUR} -DBUILD_DATE_MI=${BUILD_MINUTE} -DBUILD_DATE_SE=${BUILD_SECOND})
-
-if(UNIX)
-  install(TARGETS cedar
-    COMPONENT "common"
-    DESTINATION "${CMAKE_INSTALL_LIBDIR}"
-    PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
-  )
-endif()

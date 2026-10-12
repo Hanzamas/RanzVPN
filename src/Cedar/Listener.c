@@ -22,13 +22,6 @@
 static bool disable_dos = false;
 static UINT max_connections_per_ip = DEFAULT_MAX_CONNECTIONS_PER_IP;
 static UINT max_unestablished_connections = DEFAULT_MAX_UNESTABLISHED_CONNECTIONS;
-static bool listener_proc_recv_rpc = false;
-
-// Set the flag of whether to response to the RPC of RUDP
-void ListenerSetProcRecvRpcEnable(bool b)
-{
-	listener_proc_recv_rpc = b;
-}
 
 // Get the number of allowed outstanding connections
 UINT GetMaxUnestablishedConnections()
@@ -182,11 +175,6 @@ void TCPAcceptedThread(THREAD *t, void *param)
 	ConnectionAccept(c);
 	flag1 = c->flag1;
 
-	if (c->JsonRpcAuthed)
-	{
-		RemoveDosEntry(r, s);
-	}
-
 	// Release
 	SLog(r->Cedar, "LS_CONNECTION_END_1", c->Name);
 	ReleaseListener(c->Listener);
@@ -228,7 +216,7 @@ void TCPAccepted(LISTENER *r, SOCK *s)
 	num_clients_from_this_ip = GetNumIpClient(&s->RemoteIP);
 
 #ifdef	USE_DOS_ATTACK_DETECTION
-	if (disable_dos == false && r->DisableDos == false && r->Protocol != LISTENER_INPROC)
+	if (disable_dos == false && r->DisableDos == false)
 	{
 		UINT max_uec, now_uec;
 		// DOS attack check
@@ -541,12 +529,6 @@ STOP:
 	}
 }
 
-// RPC reception procedure
-bool ListenerRUDPRpcRecvProc(RUDP_STACK *r, UDPPACKET *p)
-{
-	return false;
-}
-
 // TCP listener main loop
 void ListenerTCPMainLoop(LISTENER *r)
 {
@@ -604,27 +586,6 @@ void ListenerTCPMainLoop(LISTENER *r)
 						s = ListenEx63(r->Port, r->LocalOnly, false, &r->Cedar->Server->ListenIP);
 					}
 				}
-			}
-			else if (r->Protocol == LISTENER_INPROC)
-			{
-				s = ListenInProc();
-			}
-			else if (r->Protocol == LISTENER_RUDP)
-			{
-				s = ListenRUDPEx(VPN_RUDP_SVC_NAME, NULL, ListenerRUDPRpcRecvProc, NULL, 0, false, false, r->NatTGlobalUdpPort, r->RandPortId, &r->Cedar->Server->ListenIP);
-			}
-			else if (r->Protocol == LISTENER_ICMP)
-			{
-				s = ListenRUDPEx(VPN_RUDP_SVC_NAME, NULL, ListenerRUDPRpcRecvProc, NULL, MAKE_SPECIAL_PORT(IP_PROTO_ICMPV4),
-					true, false, NULL, 0, &r->Cedar->Server->ListenIP);
-			}
-			else if (r->Protocol == LISTENER_DNS)
-			{
-				s = ListenRUDPEx(VPN_RUDP_SVC_NAME, NULL, ListenerRUDPRpcRecvProc, NULL, 53, true, true, NULL, 0, &r->Cedar->Server->ListenIP);
-			}
-			else if (r->Protocol == LISTENER_REVERSE)
-			{
-				s = ListenReverse();
 			}
 
 			if (s != NULL)
@@ -763,11 +724,6 @@ void ListenerThread(THREAD *thread, void *param)
 	switch (r->Protocol)
 	{
 	case LISTENER_TCP:
-	case LISTENER_INPROC:
-	case LISTENER_RUDP:
-	case LISTENER_DNS:
-	case LISTENER_ICMP:
-	case LISTENER_REVERSE:
 		// TCP or other stream-based protocol
 		ListenerTCPMainLoop(r);
 		break;
@@ -980,16 +936,9 @@ LISTENER *NewListenerEx2(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc,
 }
 LISTENER *NewListenerEx3(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only, bool shadow_ipv6)
 {
-	return NewListenerEx4(cedar, proto, port, proc, thread_param, local_only, shadow_ipv6, NULL, 0);
+	return NewListenerEx5(cedar, proto, port, proc, thread_param, local_only, shadow_ipv6, false);
 }
-LISTENER *NewListenerEx4(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only, bool shadow_ipv6,
-						 volatile UINT *natt_global_udp_port, UCHAR rand_port_id)
-{
-	return NewListenerEx5(cedar, proto, port, proc, thread_param,
-		local_only, shadow_ipv6, natt_global_udp_port, rand_port_id, false);
-}
-LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only, bool shadow_ipv6,
-						 volatile UINT *natt_global_udp_port, UCHAR rand_port_id, bool enable_ca)
+LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only, bool shadow_ipv6, bool enable_ca)
 {
 	LISTENER *r;
 	THREAD *t;
@@ -999,9 +948,7 @@ LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc,
 		return NULL;
 	}
 	// Check the protocol number
-	if (proto != LISTENER_TCP && proto != LISTENER_INPROC &&
-		proto != LISTENER_RUDP && proto != LISTENER_ICMP && proto != LISTENER_DNS &&
-		proto != LISTENER_REVERSE)
+	if (proto != LISTENER_TCP)
 	{
 		return NULL;
 	}
@@ -1022,8 +969,6 @@ LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc,
 
 	r->LocalOnly = local_only;
 	r->ShadowIPv6 = shadow_ipv6;
-	r->NatTGlobalUdpPort = natt_global_udp_port;
-	r->RandPortId = rand_port_id;
 	r->EnableConditionalAccept = enable_ca;
 
 	if (r->ShadowIPv6 == false)
@@ -1150,97 +1095,4 @@ void CleanupUDPEntry(CEDAR *cedar)
 		return;
 	}
 }
-
-// Create a new dynamic listener
-DYNAMIC_LISTENER *NewDynamicListener(CEDAR *c, bool *enable_ptr, UINT protocol, UINT port)
-{
-	DYNAMIC_LISTENER *d;
-	// Validate arguments
-	if (c == NULL || enable_ptr == NULL)
-	{
-		return NULL;
-	}
-
-	d = ZeroMalloc(sizeof(DYNAMIC_LISTENER));
-
-	d->Cedar = c;
-	AddRef(d->Cedar->ref);
-
-	d->Lock = NewLock();
-
-	d->EnablePtr = enable_ptr;
-
-	d->Listener = NULL;
-
-	d->Protocol = protocol;
-	d->Port = port;
-
-	ApplyDynamicListener(d);
-
-	return d;
-}
-
-// Release the dynamic listener
-void FreeDynamicListener(DYNAMIC_LISTENER *d)
-{
-	// Validate arguments
-	if (d == NULL)
-	{
-		return;
-	}
-
-	Lock(d->Lock);
-	{
-		if (d->Listener != NULL)
-		{
-			StopListener(d->Listener);
-			ReleaseListener(d->Listener);
-			d->Listener = NULL;
-		}
-	}
-	Unlock(d->Lock);
-
-	ReleaseCedar(d->Cedar);
-
-	DeleteLock(d->Lock);
-
-	Free(d);
-}
-
-// Set the state to dynamic listener
-void ApplyDynamicListener(DYNAMIC_LISTENER *d)
-{
-	// Validate arguments
-	if (d == NULL)
-	{
-		return;
-	}
-
-	Lock(d->Lock);
-	{
-		// Change the state
-		if (*d->EnablePtr)
-		{
-			if (d->Listener == NULL)
-			{
-				// Create a listener
-				WHERE;
-				d->Listener = NewListener(d->Cedar, d->Protocol, d->Port);
-			}
-		}
-		else
-		{
-			// Stop the listener
-			if (d->Listener != NULL)
-			{
-				WHERE;
-				StopListener(d->Listener);
-				ReleaseListener(d->Listener);
-				d->Listener = NULL;
-			}
-		}
-	}
-	Unlock(d->Lock);
-}
-
 

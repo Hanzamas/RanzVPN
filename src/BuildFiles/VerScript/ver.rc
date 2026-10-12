@@ -1,8 +1,8 @@
 #pragma code_page(932)
 
 1 VERSIONINFO
- FILEVERSION ${PROJECT_VERSION_MAJOR},${PROJECT_VERSION_MINOR},0,${PROJECT_VERSION_PATCH}
- PRODUCTVERSION ${PROJECT_VERSION_MAJOR},${PROJECT_VERSION_MINOR},0,${PROJECT_VERSION_PATCH}
+ FILEVERSION ${PROJECT_VERSION_MAJOR},${PROJECT_VERSION_MINOR},${PROJECT_VERSION_PATCH},0
+ PRODUCTVERSION ${PROJECT_VERSION_MAJOR},${PROJECT_VERSION_MINOR},${PROJECT_VERSION_PATCH},0
  FILEFLAGSMASK 0x17L
  FILEOS 0x4L
  FILETYPE 0x1L
@@ -12,15 +12,15 @@ BEGIN
     BEGIN
         BLOCK "041104b0"
         BEGIN
-            VALUE "CompanyName", "SoftEther VPN Project at University of Tsukuba, Japan."
-            VALUE "FileDescription", "${PROJECT_NAME} ${COMPONENT_NAME} (Developer Edition)"
-            VALUE "FileVersion", "${PROJECT_VERSION_MAJOR}, ${PROJECT_VERSION_MINOR}, 0, ${PROJECT_VERSION_PATCH}"
+            VALUE "CompanyName", "Hanzcodes"
+            VALUE "FileDescription", "${PROJECT_NAME} ${COMPONENT_NAME}"
+            VALUE "FileVersion", "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}"
             VALUE "InternalName", "${COMPONENT_INTERNAL_NAME}"
-            VALUE "LegalCopyright", "Copyright (c) 2012-${DATE_YEAR} all contributors on SoftEther VPN project in GitHub. Copyright (C) 2004-${DATE_YEAR} Daiyuu Nobori, SoftEther Project at University of Tsukuba, and SoftEther Corporation. All Rights Reserved."
+            VALUE "LegalCopyright", "Ranz VPN modifications Copyright (c) 2026 Hanzcodes. Derived from SoftEther VPN: Copyright (c) 2012-${DATE_YEAR} all contributors on SoftEther VPN project in GitHub. Copyright (C) 2004-${DATE_YEAR} Daiyuu Nobori, SoftEther Project at University of Tsukuba, and SoftEther Corporation. All Rights Reserved."
             VALUE "LegalTrademarks", "SoftEther(R) is a registered trademark of SoftEther Corporation in Japan, United States and People's Republic of China. SoftEther Corporation is a company founded at University of Tsukuba, Japan."
             VALUE "OriginalFilename", "${COMPONENT_FILE_NAME}"
             VALUE "ProductName", "${PROJECT_NAME} ${COMPONENT_NAME}"
-            VALUE "ProductVersion", "${PROJECT_VERSION_MAJOR}, ${PROJECT_VERSION_MINOR}, 0, ${PROJECT_VERSION_PATCH}"
+            VALUE "ProductVersion", "${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}"
         END
     END
     BLOCK "VarFileInfo"

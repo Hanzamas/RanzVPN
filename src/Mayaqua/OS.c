@@ -18,69 +18,7 @@ char *OsTypeToStr(UINT type)
 	switch (type)
 	{
 	case 0:
-		return "Unsupported OS by SoftEther VPN\0\n";
-	case OSTYPE_WINDOWS_95:
-		return "Windows 95\0\n";
-	case OSTYPE_WINDOWS_98:
-		return "Windows 98\0\n";
-	case OSTYPE_WINDOWS_ME:
-		return "Windows Millennium Edition\0\n";
-	case OSTYPE_WINDOWS_UNKNOWN:
-		return "Windows 9x Unknown Version\0\n";
-	case OSTYPE_WINDOWS_NT_4_WORKSTATION:
-		return "Windows NT 4.0 Workstation\0\n";
-	case OSTYPE_WINDOWS_NT_4_SERVER:
-		return "Windows NT 4.0 Server\0\n";
-	case OSTYPE_WINDOWS_NT_4_SERVER_ENTERPRISE:
-		return "Windows NT 4.0 Server, Enterprise Edition\0\n";
-	case OSTYPE_WINDOWS_NT_4_BACKOFFICE:
-		return "BackOffice Server 4.5\0\n";
-	case OSTYPE_WINDOWS_NT_4_SMS:
-		return "Small Business Server 4.5\0\n";
-	case OSTYPE_WINDOWS_2000_PROFESSIONAL:
-		return "Windows 2000 Professional\0\n";
-	case OSTYPE_WINDOWS_2000_SERVER:
-		return "Windows 2000 Server\0\n";
-	case OSTYPE_WINDOWS_2000_ADVANCED_SERVER:
-		return "Windows 2000 Advanced Server\0\n";
-	case OSTYPE_WINDOWS_2000_DATACENTER_SERVER:
-		return "Windows 2000 Datacenter Server\0\n";
-	case OSTYPE_WINDOWS_2000_BACKOFFICE:
-		return "BackOffice Server 2000\0\n";
-	case OSTYPE_WINDOWS_2000_SBS:
-		return "Small Business Server 2000\0\n";
-	case OSTYPE_WINDOWS_XP_HOME:
-		return "Windows XP Home Edition\0\n";
-	case OSTYPE_WINDOWS_XP_PROFESSIONAL:
-		return "Windows XP Professional\0\n";
-	case OSTYPE_WINDOWS_2003_WEB:
-		return "Windows Server 2003 Web Edition\0\n";
-	case OSTYPE_WINDOWS_2003_STANDARD:
-		return "Windows Server 2003 Standard Edition\0\n";
-	case OSTYPE_WINDOWS_2003_ENTERPRISE:
-		return "Windows Server 2003 Enterprise Edition\0\n";
-	case OSTYPE_WINDOWS_2003_DATACENTER:
-		return "Windows Server 2003 Datacenter Edition\0\n";
-	case OSTYPE_WINDOWS_2003_BACKOFFICE:
-		return "BackOffice Server 2003\0\n";
-	case OSTYPE_WINDOWS_2003_SBS:
-		return "Small Business Server 2003\0\n";
-	case OSTYPE_WINDOWS_LONGHORN_PROFESSIONAL:
-		return "Windows Vista\0\n";
-	case OSTYPE_WINDOWS_LONGHORN_SERVER:
-		return "Windows Server 2008\0\n";
-	case OSTYPE_WINDOWS_7:
-		return "Windows 7\0\n";
-	case OSTYPE_WINDOWS_SERVER_2008_R2:
-		return "Windows Server 2008 R2\0\n";
-	case OSTYPE_WINDOWS_8:
-		return "Windows 8\0\n";
-	case OSTYPE_WINDOWS_SERVER_8:
-		return "Windows Server 2012\0\n";
-	case OSTYPE_WINDOWS_81:
-		return "Windows 8.1\0\n";
-	case OSTYPE_WINDOWS_SERVER_81:
-		return "Windows Server 2012 R2\0\n";
+		return "Unsupported OS by Ranz VPN\0\n";
 	case OSTYPE_WINDOWS_10:
 		return "Windows 10\0\n";
 	case OSTYPE_WINDOWS_SERVER_10:
@@ -112,8 +50,6 @@ void OSInit()
 	// Get the dispatch table
 #ifdef	OS_WIN32
 	os = Win32GetDispatchTable();
-#else	// OS_WIN32
-	os = UnixGetDispatchTable();
 #endif	// OS_WIN32
 
 	// Calling the OS-specific initialization function

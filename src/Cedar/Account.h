@@ -9,11 +9,9 @@
 #define	ACCOUNT_H
 
 #include "CedarType.h"
+#include "Session.h"
 
 #include "Mayaqua/Encrypt.h"
-
-#define	USER_MAC_STR_PREFIX		L"MAC:"
-#define	USER_IPV4_STR_PREFIX		L"IPv4:"
 
 // Policy item
 struct POLICY_ITEM
@@ -129,12 +127,6 @@ struct AUTHROOTCERT
 	wchar_t *CommonName;			// CommonName
 };
 
-// Radius authentication data
-struct AUTHRADIUS
-{
-	wchar_t *RadiusUsername;		// User name in the Radius
-};
-
 // Windows NT authentication data
 struct AUTHNT
 {
@@ -191,7 +183,6 @@ void *NewPasswordAuthData(char *username, char *password);
 void *NewPasswordAuthDataRaw(UCHAR *hashed_password, UCHAR *ntlm_secure_hash);
 void *NewUserCertAuthData(X *x);
 void *NewRootCertAuthData(X_SERIAL *serial, wchar_t *common_name);
-void *NewRadiusAuthData(wchar_t *username);
 void *NewNTAuthData(wchar_t *username);
 void HashPassword(void *dst, char *username, char *password);
 POLICY *GetDefaultPolicy();
@@ -211,7 +202,100 @@ char *PolicyIdToStr(UINT i);
 POLICY_ITEM *GetPolicyItem(UINT id);
 void GetPolicyValueRangeStr(wchar_t *str, UINT size, UINT id);
 void FormatPolicyValue(wchar_t *str, UINT size, UINT id, UINT value);
-bool GetUserMacAddressFromUserNote(UCHAR *mac, wchar_t *note);
-UINT GetUserIPv4AddressFromUserNote32(wchar_t *note);
+
+// ----------------------------------------------------------------------
+// Client-side account data (cascade connections)
+// ----------------------------------------------------------------------
+
+// Account
+struct ACCOUNT
+{
+	// Static data
+	CLIENT_OPTION *ClientOption;			// Client Option
+	CLIENT_AUTH *ClientAuth;				// Client authentication data
+	bool CheckServerCert;					// Check the server certificate
+	bool RetryOnServerCert;					// Retry on invalid server certificate
+	bool AddDefaultCA;						// Use default trust store
+	X *ServerCert;							// Server certificate
+	bool StartupAccount;					// Start-up account
+	UCHAR ShortcutKey[SHA1_SIZE];			// Key
+	UINT64 CreateDateTime;					// Creation date and time
+	UINT64 UpdateDateTime;					// Updating date
+	UINT64 LastConnectDateTime;				// Last connection date and time
+
+	// Dynamic data
+	LOCK *lock;								// Lock
+	SESSION *ClientSession;					// Client session
+	CLIENT_STATUS_PRINTER *StatusPrinter;	// Status indicator
+};
+
+// Get the Connection status
+struct RPC_CLIENT_GET_CONNECTION_STATUS
+{
+	wchar_t AccountName[MAX_ACCOUNT_NAME_LEN + 1];	// Account name
+	bool Active;							// Operation flag
+	bool Connected;							// Connected flag
+	UINT SessionStatus;						// Session status
+	char ServerName[MAX_HOST_NAME_LEN + 1];	// Server name
+	UINT ServerPort;						// Port number of the server
+	char ServerProductName[MAX_SIZE];		// Server product name
+	UINT ServerProductVer;					// Server product version
+	UINT ServerProductBuild;				// Server product build number
+	X *ServerX;								// Server certificate
+	X *ClientX;								// Client certificate
+	UINT64 StartTime;						// Connection start time
+	/* !!! Do not correct the spelling to keep the backward protocol compatibility !!!  */
+	UINT64 FirstConnectionEstablisiedTime;	// Connection completion time of the first connection
+	UINT64 CurrentConnectionEstablishTime;	// Connection completion time of this connection
+	UINT NumConnectionsEstablished;			// Number of connections have been established so far
+	bool HalfConnection;					// Half-connection
+	bool QoS;								// VoIP / QoS
+	UINT MaxTcpConnections;					// Maximum number of the TCP connections
+	UINT NumTcpConnections;					// Number of current TCP connections
+	UINT NumTcpConnectionsUpload;			// Number of inbound connections
+	UINT NumTcpConnectionsDownload;			// Number of outbound connections
+	bool UseEncrypt;						// Use of encryption
+	char CipherName[32];					// Cipher algorithm name
+	char ProtocolName[64];					// Protocol name
+	bool UseCompress;						// Use of compression
+	char UnderlayProtocol[64];				// Physical communication protocol
+	char ProtocolDetails[256];				// Protocol details
+	bool IsUdpAccelerationEnabled;			// The UDP acceleration is enabled
+	bool IsUsingUdpAcceleration;			// Using the UDP acceleration function
+	char SessionName[MAX_SESSION_NAME_LEN + 1];	// Session name
+	char ConnectionName[MAX_CONNECTION_NAME_LEN + 1];	// Connection name
+	UCHAR SessionKey[SHA1_SIZE];			// Session key
+	POLICY Policy;							// Policy
+	UINT64 TotalSendSize;					// Total transmitted data size
+	UINT64 TotalRecvSize;					// Total received data size
+	UINT64 TotalSendSizeReal;				// Total transmitted data size (no compression)
+	UINT64 TotalRecvSizeReal;				// Total received data size (no compression)
+	TRAFFIC Traffic;						// Traffic data
+	bool IsBridgeMode;						// Bridge Mode
+	bool IsMonitorMode;						// Monitor mode
+	UINT VLanId;							// VLAN ID
+};
+
+void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s);
+CLIENT_OPTION *CiLoadClientOption(FOLDER *f);
+CLIENT_AUTH *CiLoadClientAuth(FOLDER *f);
+void CiWriteClientOption(FOLDER *f, CLIENT_OPTION *o);
+void CiWriteClientAuth(FOLDER *f, CLIENT_AUTH *a);
+void CiFreeClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st);
+void CiFreeClientAuth(CLIENT_AUTH *auth);
+BUF *EncryptPassword(char *password);
+char *DecryptPassword(BUF *b);
+void InRpcClientOption(CLIENT_OPTION *c, PACK *p);
+void OutRpcClientOption(PACK *p, CLIENT_OPTION *c);
+void InRpcClientAuth(CLIENT_AUTH *c, PACK *p);
+void OutRpcClientAuth(PACK *p, CLIENT_AUTH *c);
+void InRpcPolicy(POLICY *o, PACK *p);
+void OutRpcPolicy(PACK *p, POLICY *o);
+void InRpcClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *s, PACK *p);
+void OutRpcClientGetConnectionStatus(PACK *p, RPC_CLIENT_GET_CONNECTION_STATUS *c);
+void InRpcTraffic(TRAFFIC *t, PACK *p);
+void OutRpcTraffic(PACK *p, TRAFFIC *t);
+void InRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i);
+void OutRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i, UINT num);
 
 #endif	// ACCOUNT_H

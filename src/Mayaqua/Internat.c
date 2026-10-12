@@ -18,15 +18,7 @@
 #include <stdlib.h>
 #include <wchar.h>
 
-#ifdef OS_UNIX
-#include <iconv.h>
-#endif
-
 extern LOCK *token_lock;
-static char charset[MAX_SIZE] = "EUCJP";
-static LOCK *iconv_lock = NULL;
-void *iconv_cache_wide_to_str = 0;
-void *iconv_cache_str_to_wide = 0;
 
 // Examine whether the string contains the specified character
 bool UniInChar(wchar_t *string, wchar_t c)
@@ -369,8 +361,6 @@ wchar_t *InternalFormatArgs(wchar_t *fmt, va_list args, bool ansi_mode)
 
 				#ifdef	OS_WIN32
 					ReplaceStrEx(tag, 0, tag, "ll", "I64", false);
-				#else	// OS_WIN32
-					ReplaceStrEx(tag, 0, tag, "I64", "ll", false);
 				#endif	// OS_WIN32
 
 				if ((UniStrLen(tmp) >= 5 && tmp[UniStrLen(tmp) - 4] == L'I' &&
@@ -382,16 +372,12 @@ wchar_t *InternalFormatArgs(wchar_t *fmt, va_list args, bool ansi_mode)
 				{
 					#ifdef	OS_WIN32
 						_snprintf(dst, sizeof(dst), tag, va_arg(args, UINT64));
-					#else	// OS_WIN32
-						snprintf(dst, sizeof(dst), tag, va_arg(args, UINT64));
 					#endif	// OS_WIN32
 				}
 				else
 				{
 					#ifdef	OS_WIN32
 						_snprintf(dst, sizeof(dst), tag, va_arg(args, int));
-					#else	// OS_WIN32
-						snprintf(dst, sizeof(dst), tag, va_arg(args, int));
 					#endif	// OS_WIN32
 				}
 
@@ -413,8 +399,6 @@ wchar_t *InternalFormatArgs(wchar_t *fmt, va_list args, bool ansi_mode)
 
 				#ifdef	OS_WIN32
 					_snprintf(dst, sizeof(dst), tag, va_arg(args, double));
-				#else	// OS_WIN32
-					snprintf(dst, sizeof(dst), tag, va_arg(args, double));
 				#endif	// OS_WIN32
 
 				Free(tag);
@@ -433,8 +417,6 @@ wchar_t *InternalFormatArgs(wchar_t *fmt, va_list args, bool ansi_mode)
 
 				#ifdef	OS_WIN32
 					_snprintf(dst, sizeof(dst), tag, va_arg(args, void *));
-				#else	// OS_WIN32
-					snprintf(dst, sizeof(dst), tag, va_arg(args, void *));
 				#endif	// OS_WIN32
 
 				Free(tag);
@@ -667,294 +649,6 @@ USHORT *WideToUtf16(wchar_t *str)
 
 	return ret;
 }
-
-// Initialization of the International Library
-void InitInternational()
-{
-#ifdef	OS_UNIX
-	void *d;
-
-	if (iconv_lock != NULL)
-	{
-		return;
-	}
-
-	GetCurrentCharSet(charset, sizeof(charset));
-	d = IconvWideToStrInternal();
-	if (d == (void *)-1)
-	{
-#if defined (UNIX_MACOS) || defined (UNIX_LINUX_MUSL)
-		StrCpy(charset, sizeof(charset), "utf-8");
-#else // defined (UNIX_MACOS) || defined (UNIX_LINUX_MUSL) 
-		StrCpy(charset, sizeof(charset), "EUCJP");
-#endif // defined (UNIX_MACOS) || defined (UNIX_LINUX_MUSL) 
-		d = IconvWideToStrInternal();
-		if (d == (void *)-1)
-		{
-			StrCpy(charset, sizeof(charset), "US");
-		}
-		else
-		{
-			IconvFreeInternal(d);
-		}
-	}
-	else
-	{
-		IconvFreeInternal(d);
-	}
-
-	iconv_lock = NewLockMain();
-
-	iconv_cache_wide_to_str = IconvWideToStrInternal();
-	iconv_cache_str_to_wide = IconvStrToWideInternal();
-#endif	// OS_UNIX
-}
-
-// Release of the International Library
-void FreeInternational()
-{
-#ifdef	OS_UNIX
-#endif	// OS_UNIX
-}
-
-#ifdef	OS_UNIX
-
-// Calculate the size when the string converted to Unicode
-UINT UnixCalcStrToUni(char *str)
-{
-	wchar_t *tmp;
-	UINT len, tmp_size;
-	UINT ret;
-	// Validate arguments
-	if (str == NULL)
-	{
-		return 0;
-	}
-
-	len = StrLen(str);
-	tmp_size = len * 5 + 10;
-	tmp = ZeroMalloc(tmp_size);
-	UnixStrToUni(tmp, tmp_size, str);
-	ret = UniStrLen(tmp);
-	Free(tmp);
-
-	return (ret + 1) * sizeof(wchar_t);
-}
-
-// Convert the strings to Unicode
-UINT UnixStrToUni(wchar_t *s, UINT size, char *str)
-{
-	void *d;
-	char *inbuf;
-	size_t insize;
-	char *outbuf;
-	char *outbuf_orig;
-	size_t outsize;
-	wchar_t *tmp;
-	// Validate arguments
-	if (s == NULL || str == NULL)
-	{
-		return 0;
-	}
-
-	d = IconvStrToWide();
-	if (d == (void *)-1)
-	{
-		UniStrCpy(s, size, L"");
-		return 0;
-	}
-
-	inbuf = (char *)str;
-	insize = StrLen(str) + 1;
-	outsize = insize * 5 + 10;
-	outbuf_orig = outbuf = ZeroMalloc(outsize);
-
-	if (iconv((iconv_t)d, (char **)&inbuf, (size_t *)&insize, (char **)&outbuf, (size_t *)&outsize) == (size_t)(-1))
-	{
-		Free(outbuf_orig);
-		UniStrCpy(s, size, L"");
-		IconvFree(d);
-		return 0;
-	}
-
-	tmp = Utf16ToWide((USHORT *)outbuf_orig);
-	Free(outbuf_orig);
-
-	UniStrCpy(s, size, tmp);
-	IconvFree(d);
-
-	Free(tmp);
-
-	return UniStrLen(s);
-}
-
-// Calculate the size when the Unicode converted to string
-UINT UnixCalcUniToStr(wchar_t *s)
-{
-	char *tmp;
-	UINT tmp_size;
-	UINT ret;
-	// Validate arguments
-	if (s == NULL)
-	{
-		return 0;
-	}
-
-	tmp_size = UniStrLen(s) * 5 + 10;
-	tmp = ZeroMalloc(tmp_size);
-	UnixUniToStr(tmp, tmp_size, s);
-
-	ret = StrSize(tmp);
-	Free(tmp);
-
-	return ret;
-}
-
-// Converted a Unicode string to a string
-UINT UnixUniToStr(char *str, UINT size, wchar_t *s)
-{
-	USHORT *tmp;
-	char *inbuf;
-	size_t insize;
-	char *outbuf;
-	char *outbuf_orig;
-	size_t outsize;
-	void *d;
-	// Validate arguments
-	if (str == NULL || s == NULL)
-	{
-		return 0;
-	}
-
-	// Convert a wchar_t string to sequence of 2-bytes first
-	tmp = WideToUtf16(s);
-	inbuf = (char *)tmp;
-	insize = (UniStrLen(s) + 1) * 2;
-	outsize = insize * 5 + 10;
-	outbuf_orig = outbuf = ZeroMalloc(outsize);
-
-	d = IconvWideToStr();
-	if (d == (void *)-1)
-	{
-		StrCpy(str, size, "");
-		Free(outbuf);
-		Free(tmp);
-		return 0;
-	}
-
-	if (iconv((iconv_t)d, (char **)&inbuf, (size_t *)&insize, (char **)&outbuf, (size_t *)&outsize) == (size_t)(-1))
-	{
-		Free(outbuf_orig);
-		IconvFree(d);
-		StrCpy(str, size, "");
-		Free(tmp);
-		return 0;
-	}
-
-	StrCpy(str, size, outbuf_orig);
-
-	Free(outbuf_orig);
-	IconvFree(d);
-	Free(tmp);
-
-	return StrLen(str);
-}
-
-// Converted the whcar_t to char
-void *IconvWideToStrInternal()
-{
-	return (void *)iconv_open(charset, IsBigEndian() ? "UTF-16BE" : "UTF-16LE");
-}
-
-// Convert the char to a wchar_t
-void *IconvStrToWideInternal()
-{
-	return (void *)iconv_open(IsBigEndian() ? "UTF-16BE" : "UTF-16LE", charset);
-}
-
-// Close the handle
-int IconvFreeInternal(void *d)
-{
-	iconv_close((iconv_t)d);
-	return 0;
-}
-
-void *IconvWideToStr()
-{
-	if (iconv_cache_wide_to_str == (void *)-1)
-	{
-		return (void *)-1;
-	}
-
-	Lock(iconv_lock);
-
-	return iconv_cache_wide_to_str;
-}
-
-void *IconvStrToWide()
-{
-	if (iconv_cache_str_to_wide == (void *)-1)
-	{
-		return (void *)-1;
-	}
-
-	Lock(iconv_lock);
-
-	return iconv_cache_str_to_wide;
-}
-
-int IconvFree(void *d)
-{
-	Unlock(iconv_lock);
-
-	return 0;
-}
-
-// Get the character set that is currently used from the environment variable
-void GetCurrentCharSet(char *name, UINT size)
-{
-	char tmp[MAX_SIZE];
-	TOKEN_LIST *t;
-	// Validate arguments
-	if (name == NULL)
-	{
-		return;
-	}
-
-	Zero(tmp, sizeof(tmp));
-	if (GetEnv("LANG", tmp, sizeof(tmp)) == false || IsEmptyStr(tmp))
-	{
-		Zero(tmp, sizeof(tmp));
-		if (GetEnv("LOCATION", tmp, sizeof(tmp)) == false || IsEmptyStr(tmp))
-		{
-			StrCpy(tmp, sizeof(tmp), "C");
-		}
-	}
-
-	Trim(tmp);
-
-	t = ParseToken(tmp, ".");
-	if (t->NumTokens >= 2)
-	{
-		StrCpy(name, size, t->Token[1]);
-	}
-	else
-	{
-		if (t->NumTokens == 1)
-		{
-			StrCpy(name, size, t->Token[0]);
-		}
-		else
-		{
-			StrCpy(name, size, "eucJP");
-		}
-	}
-	FreeToken(t);
-
-	StrUpper(name);
-}
-
-#endif	// OS_UNIX
 
 // Check whether the specified string is a space
 bool UniIsEmptyStr(wchar_t *str)
@@ -1433,8 +1127,6 @@ UINT UniToStr(char *str, UINT size, wchar_t *s)
 	Free(tmp);
 
 	return ret;
-#else	// OS_WIN32
-	return UnixUniToStr(str, size, s);
 #endif	// OS_WIN32
 }
 
@@ -1456,8 +1148,6 @@ UINT CalcUniToStr(wchar_t *s)
 	}
 
 	return ret + 1;
-#else	// OS_WIN32
-	return UnixCalcUniToStr(s);
 #endif	// OS_WIN32
 }
 
@@ -1491,8 +1181,6 @@ UINT StrToUni(wchar_t *s, UINT size, char *str)
 	Free(tmp);
 
 	return ret;
-#else	// OS_WIN32
-	return UnixStrToUni(s, size, str);
 #endif	// OS_WIN32
 }
 
@@ -1514,8 +1202,6 @@ UINT CalcStrToUni(char *str)
 	}
 
 	return (ret + 1) * sizeof(wchar_t);
-#else	// OS_WIN32
-	return UnixCalcStrToUni(str);
 #endif	// OS_WIN32
 }
 
@@ -2056,36 +1742,6 @@ void UniFreeToken(UNI_TOKEN_LIST *tokens)
 	Free(tokens);
 }
 
-// Parse token for UNIX
-UNI_TOKEN_LIST *UnixUniParseToken(wchar_t *src, wchar_t *separator)
-{
-	UNI_TOKEN_LIST *ret;
-	TOKEN_LIST *t;
-	char *src_s;
-	char *sep_s;
-
-	// Validate arguments
-	if (src == NULL || separator == NULL)
-	{
-		ret = ZeroMalloc(sizeof(UNI_TOKEN_LIST));
-		ret->Token = ZeroMalloc(0);
-		return ret;
-	}
-
-	src_s = CopyUniToStr(src);
-	sep_s = CopyUniToStr(separator);
-
-	t = ParseToken(src_s, sep_s);
-
-	ret = TokenListToUniTokenList(t);
-	FreeToken(t);
-
-	Free(src_s);
-	Free(sep_s);
-
-	return ret;
-}
-
 // Get a standard token delimiter
 wchar_t *UniDefaultTokenSplitChars()
 {
@@ -2258,52 +1914,7 @@ bool UniGetLine(wchar_t *str, UINT size)
 {
 #ifdef	OS_WIN32
 	return UniGetLineWin32(str, size);
-#else	// OS_WIN32
-	return UniGetLineUnix(str, size);
 #endif	// OS_WIN32
-}
-void AnsiGetLineUnix(char *str, UINT size)
-{
-	// Validate arguments
-	if (str == NULL)
-	{
-		char tmp[MAX_SIZE];
-		fgets(tmp, sizeof(tmp) - 1, stdin);
-		return;
-	}
-	if (size <= 1)
-	{
-		return;
-	}
-
-	// Read data from standard input
-	fgets(str, (int)(size - 1), stdin);
-
-	TrimCrlf(str);
-}
-bool UniGetLineUnix(wchar_t *str, UINT size)
-{
-	char *str_a;
-	UINT str_a_size = size;
-	if (str == NULL || size < sizeof(wchar_t))
-	{
-		return false;
-	}
-	if (str_a_size >= 0x7fffffff)
-	{
-		str_a_size = MAX_SIZE;
-	}
-	str_a_size *= 2;
-
-	str_a = ZeroMalloc(str_a_size);
-
-	AnsiGetLineUnix(str_a, str_a_size);
-
-	StrToUni(str, size, str_a);
-
-	Free(str_a);
-
-	return true;
 }
 bool UniGetLineWin32(wchar_t *str, UINT size)
 {
@@ -2588,25 +2199,7 @@ void UniPrintStr(wchar_t *string)
 		return;
 	}
 
-#ifdef	OS_UNIX
-	if (true)
-	{
-		char *str = CopyUniToStr(string);
-
-		if (str != NULL)
-		{
-			fputs(str, stdout);
-		}
-		else
-		{
-			fputs("", stdout);
-		}
-
-		Free(str);
-	}
-#else	// OS_UNIX
 	Win32PrintW(string);
-#endif	// OS_UNIX
 }
 
 // Display a string with arguments

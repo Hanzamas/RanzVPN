@@ -16,7 +16,6 @@
 #include "Network.h"
 #include "Object.h"
 #include "OS.h"
-#include "Secure.h"
 #include "Str.h"
 #include "Table.h"
 #include "Tick64.h"
@@ -35,7 +34,6 @@ bool kernel_status_inited = false;				// Kernel state initialization flag
 bool g_little_endian = true;
 char *cmdline = NULL;							// Command line
 wchar_t *uni_cmdline = NULL;					// Unicode command line
-bool g_foreground = false;					// Execute service in foreground mode
 
 // Static variable
 static char *exename = NULL;						// EXE file name (ANSI)
@@ -47,7 +45,6 @@ static bool dot_net_mode = false;
 static bool minimal_mode = false;
 static UINT last_time_check = 0;
 static UINT first_time_check = 0;
-static bool is_nt = false;
 static bool is_ham_mode = false;
 static UINT init_mayaqua_counter = 0;
 static bool use_probe = false;
@@ -372,12 +369,6 @@ bool MayaquaIsMinimalMode()
 	return minimal_mode;
 }
 
-// Whether in NT
-bool IsNt()
-{
-	return is_nt;
-}
-
 // Initialization of Mayaqua library
 void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 {
@@ -400,17 +391,6 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 		setbuf(stdout, NULL);
 	}
 
-#ifdef OS_UNIX
-	g_foreground = (argc >= 3 && StrCmpi(argv[2], UNIX_SVC_ARG_FOREGROUND) == 0);
-#else
-	g_foreground = false;
-#endif // OS_UNIX
-
-	// Acquisition whether NT
-#ifdef	OS_WIN32
-	is_nt = Win32IsNt();
-#endif	// OS_WIN32
-
 	// Check endian
 	CheckEndian();
 
@@ -426,8 +406,6 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 
 	// Initialize the random number
 	srand((UINT)SystemTime64());
-
-	tick_manual_lock = NewLock();
 
 	// Initialization of CRC32
 	InitCrc32();
@@ -475,9 +453,6 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 #ifdef	OS_WIN32
 	MsInit();	// Microsoft Win32
 #endif	// OS_WIN32
-
-	// Initialization of the security token module
-	InitSecure();
 
 	if (OSIsSupportedOs() == false)
 	{
@@ -550,9 +525,6 @@ void FreeMayaqua()
 	// Delete the table
 	FreeTable();
 
-	// Release of security token module
-	FreeSecure();
-
 	// Release of the operating system specific module
 #ifdef	OS_WIN32
 	MsFree();
@@ -605,9 +577,6 @@ void FreeMayaqua()
 
 	// Release of the kernel status
 	FreeKernelStatus();
-
-	DeleteLock(tick_manual_lock);
-	tick_manual_lock = NULL;
 
 	// Release of OS
 	OSFree();
@@ -769,13 +738,8 @@ void InitCommandLineStr(int argc, char **argv)
 {
 	if (argc >= 1)
 	{
-#ifdef	OS_UNIX
-		exename_w = CopyUtfToUni(argv[0]);
-		exename = CopyUniToStr(exename_w);
-#else	// OS_UNIX
 		exename = CopyStr(argv[0]);
 		exename_w = CopyStrToUni(exename);
-#endif	// OS_UNIX
 	}
 	if (argc < 2 || argv == NULL)
 	{

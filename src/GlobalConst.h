@@ -13,48 +13,43 @@
 
 //// Basic Variables
 
-#define	CEDAR_PRODUCT_STR			"SoftEther"
-#define	CEDAR_PRODUCT_STR_W			L"SoftEther"
-#define	CEDAR_SERVER_STR			"SoftEther VPN Server Developer Edition"
-#define	CEDAR_BRIDGE_STR			"SoftEther VPN Bridge Developer Edition"
-#define	CEDAR_BETA_SERVER			"SoftEther VPN Server Pre Release Developer Edition"
-#define	CEDAR_MANAGER_STR			"SoftEther VPN Server Manager Developer Edition"
-#define	CEDAR_CUI_STR				"SoftEther VPN Command-Line Admin Tool"
-#define CEDAR_ELOG					"SoftEther EtherLogger Developer Edition"
-#define	CEDAR_CLIENT_STR			"SoftEther VPN Client Developer Edition"
-#define CEDAR_CLIENT_MANAGER_STR	"SoftEther VPN Client Connection Manager Developer Edition"
-#define	CEDAR_ROUTER_STR			"SoftEther VPN User-mode Router Developer Edition"
-#define	CEDAR_SERVER_LINK_STR		"SoftEther VPN Server Developer Edition (Cascade Mode)"
-#define	CEDAR_BRIDGE_LINK_STR		"SoftEther VPN Bridge Developer Edition (Cascade Mode)"
-#define	CEDAR_SERVER_FARM_STR		"SoftEther VPN Server Developer Edition (Cluster RPC Mode)"
+#define	CEDAR_PRODUCT_STR			"Ranz"
+#define	CEDAR_PRODUCT_STR_W			L"Ranz"
+#define	CEDAR_SERVER_STR			"Ranz VPN Server"
+#define	CEDAR_BRIDGE_STR			"Ranz VPN Bridge"
+#define	CEDAR_BETA_SERVER			"Ranz VPN Server Pre Release"
+#define	CEDAR_MANAGER_STR			"Ranz VPN Server Manager"
+#define	CEDAR_CUI_STR				"Ranz VPN Command-Line Admin Tool"
+#define CEDAR_ELOG					"Ranz EtherLogger"
+#define	CEDAR_CLIENT_STR			"Ranz VPN Client"
+#define CEDAR_CLIENT_MANAGER_STR	"Ranz VPN Client Connection Manager"
+#define	CEDAR_SERVER_LINK_STR		"Ranz VPN Server (Cascade Mode)"
+#define	CEDAR_BRIDGE_LINK_STR		"Ranz VPN Bridge (Cascade Mode)"
 
 
 
 //// Default Port Number
 
 #define	GC_DEFAULT_PORT		5555
-#define	GC_CLIENT_CONFIG_PORT	9931
-#define	GC_CLIENT_NOTIFY_PORT	9984
 
 
 //// Software Name
 
 #define	GC_SVC_NAME_VPNSERVER		"SEVPNSERVERDEV"
-#define	GC_SVC_NAME_VPNCLIENT		"SEVPNCLIENTDEV"
-#define	GC_SVC_NAME_VPNBRIDGE		"SEVPNBRIDGEDEV"
 
 
 
 //// Registry
 
-#define	GC_REG_COMPANY_NAME			"SoftEther VPN Developer Edition"
+// Product key under Software\ (organisation\product): Software\Hanzcodes\Ranz VPN
+#define	GC_REG_COMPANY_NAME			"Hanzcodes\\Ranz VPN"
 
 
 
 
 //// Setup Wizard
 
-#define	GC_SW_UIHELPER_REGVALUE		"SoftEther VPN Client UI Helper Developer Edition"
+#define	GC_SW_UIHELPER_REGVALUE		"Ranz VPN Client UI Helper"
 #define	GC_SW_SOFTETHER_PREFIX		"sedev"
 #define	GC_SW_SOFTETHER_PREFIX_W	L"sedev"
 
@@ -62,6 +57,6 @@
 
 //// VPN UI Components
 
-#define	GC_UI_APPID_CM				L"SoftEther.SoftEther VPN Client Developer Edition"
+#define	GC_UI_APPID_CM				L"Hanzcodes.Ranz VPN Client"
 
 #endif	// GLOBAL_CONST_H

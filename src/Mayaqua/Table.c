@@ -291,69 +291,7 @@ LANGLIST *GetBestLangForCurrentEnvironment(LIST *o)
 
 #ifdef	OS_WIN32
 	ret = GetBestLangByLcid(o, MsGetUserLocaleId());
-#else	// OS_WIN32
-	if (true)
-	{
-		char lang[MAX_SIZE];
-
-		if (GetEnv("LANG", lang, sizeof(lang)))
-		{
-			ret = GetBestLangByLangStr(o, lang);
-		}
-		else
-		{
-			ret = GetBestLangByLangStr(o, "C");
-		}
-	}
 #endif	// OS_WIN32
-
-	return ret;
-}
-
-// Search for the best language from LANG string of UNIX
-LANGLIST *GetBestLangByLangStr(LIST *o, char *str)
-{
-	UINT i;
-	LANGLIST *ret;
-	// Validate arguments
-	if (o == NULL)
-	{
-		return NULL;
-	}
-
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		LANGLIST *e = LIST_DATA(o, i);
-		UINT j;
-
-		for (j = 0;j < LIST_NUM(e->LangList);j++)
-		{
-			char *v = LIST_DATA(e->LangList, j);
-
-			if (StrCmpi(v, str) == 0)
-			{
-				return e;
-			}
-		}
-	}
-
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		LANGLIST *e = LIST_DATA(o, i);
-		UINT j;
-
-		for (j = 0;j < LIST_NUM(e->LangList);j++)
-		{
-			char *v = LIST_DATA(e->LangList, j);
-
-			if (StartWith(str, v) || StartWith(v, str))
-			{
-				return e;
-			}
-		}
-	}
-
-	ret = GetBestLangByName(o, "en");
 
 	return ret;
 }
@@ -459,13 +397,6 @@ LIST *LoadLangList()
 	LIST *o = NewListFast(NULL);
 	char *filename = LANGLIST_FILENAME;
 	BUF *b;
-
-#ifdef	OS_WIN32
-	if (MsIsWine())
-	{
-		filename = LANGLIST_FILENAME_WINE;
-	}
-#endif	// OS_WIN32
 
 	b = ReadDump(filename);
 	if (b == NULL)
@@ -1091,11 +1022,7 @@ void GenerateUnicodeCacheFileName(wchar_t *name, UINT size, wchar_t *strfilename
 	UniFormat(tmp, sizeof(tmp), UNICODE_CACHE_FILE, hashstr);
 	UniStrLower(tmp);
 
-#ifndef	OS_WIN32
-	UniStrCpy(exe, sizeof(exe), L"/tmp");
-#else	// OS_WIN32
 	StrToUni(exe, sizeof(exe), MsGetTempDir());
-#endif	// OS_WIN32
 
 	UniFormat(name, size, L"%s/%s", exe, tmp);
 	NormalizePathW(name, size, name);
@@ -1123,14 +1050,10 @@ void SaveUnicodeCache(wchar_t *strfilename, UINT strfilesize, UCHAR *hash)
 	c.OsType = GetOsInfo()->OsType;
 	Copy(c.hash, hash, MD5_SIZE);
 
-#ifdef	OS_UNIX
-	GetCurrentCharSet(c.CharSet, sizeof(c.CharSet));
-#else	// OS_UNIX
 	{
 		UINT id = MsGetThreadLocale();
 		Copy(c.CharSet, &id, sizeof(id));
 	}
-#endif	// OS_UNIX
 
 	b = NewBuf();
 	WriteBuf(b, &c, sizeof(c));
@@ -1214,14 +1137,10 @@ bool LoadUnicodeCache(wchar_t *strfilename, UINT strfilesize, UCHAR *hash)
 	c.OsType = GetOsInfo()->OsType;
 	Copy(c.hash, hash, MD5_SIZE);
 
-#ifdef	OS_UNIX
-	GetCurrentCharSet(c.CharSet, sizeof(c.CharSet));
-#else	// OS_UNIX
 	{
 		UINT id = MsGetThreadLocale();
 		Copy(c.CharSet, &id, sizeof(id));
 	}
-#endif	// OS_UNIX
 
 	Zero(&t, sizeof(t));
 	ReadBuf(b, &t, sizeof(t));

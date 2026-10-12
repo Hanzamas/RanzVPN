@@ -7,7 +7,6 @@
 
 #include "Cedar/Cedar.h"
 #ifdef OS_WIN32
-#include "Cedar/CMInner.h"
 #endif
 #include "Cedar/Command.h"
 
@@ -26,9 +25,6 @@ int main(int argc, char *argv[])
 
 #ifdef	OS_WIN32
 	SetConsoleTitleA(CEDAR_PRODUCT_STR " VPN Command Line Utility");
-#else
-	// For *nix, disable output buffering to allow for interactive use
-	setbuf(stdout,NULL);
 #endif	// OS_WIN32
 
 #if defined(_DEBUG) || defined(DEBUG)	// In VC++ compilers, the macro is "_DEBUG", not "DEBUG".
@@ -40,10 +36,6 @@ int main(int argc, char *argv[])
 	InitMayaqua(false, false, argc, argv);
 #endif
 	InitCedar();
-
-#ifdef OS_WIN32
-	CmExecUiHelperMain();
-#endif
 
 	s = GetCommandLineUniStr();
 

@@ -11,131 +11,6 @@
 #include "Memory.h"
 #include "Str.h"
 
-// Release the memory for the ICMP response
-void IcmpFreeResult(ICMP_RESULT *r)
-{
-	// Validate arguments
-	if (r == NULL)
-	{
-		return;
-	}
-
-	IcmpApiFreeResult(r);
-}
-
-// Parse the ICMP reply packet received from the socket
-ICMP_RESULT *IcmpParseResult(IP *dest_ip, USHORT src_id, USHORT src_seqno, UCHAR *recv_buffer, UINT recv_buffer_size)
-{
-	ICMP_RESULT *ret = NULL;
-	UINT i;
-	// Validate arguments
-	if (dest_ip == NULL || IsIP4(dest_ip) == false || recv_buffer == NULL || recv_buffer_size == 0)
-	{
-		return NULL;
-	}
-
-	i = recv_buffer_size;
-
-	if (true)
-	{
-		UINT ip_header_size = GetIpHeaderSize(recv_buffer, i);
-		if (ip_header_size >= sizeof(IPV4_HEADER) && (ip_header_size <= i))
-		{
-			IPV4_HEADER *ipv4 = (IPV4_HEADER *)recv_buffer;
-			if ((IPV4_GET_VERSION(ipv4) == 4) && (ipv4->Protocol == IP_PROTO_ICMPV4))
-			{
-				UINT ip_total_len = (UINT)Endian16(ipv4->TotalLength);
-
-				if ((ip_total_len >= sizeof(IPV4_HEADER)) && (ip_total_len <= i) && (ip_total_len >= ip_header_size))
-				{
-					UINT icmp_packet_size = ip_total_len - ip_header_size;
-					ICMP_HEADER *icmp = (ICMP_HEADER *)(recv_buffer + ip_header_size);
-
-					if (icmp_packet_size >= sizeof(ICMP_HEADER))
-					{
-						USHORT chksum = icmp->Checksum;
-						USHORT chksum2;
-						icmp->Checksum = 0;
-
-						chksum2 = IpChecksum(icmp, icmp_packet_size);
-
-						if (chksum2 == chksum)
-						{
-							if (icmp->Type == ICMP_TYPE_ECHO_RESPONSE)
-							{
-								ICMP_ECHO *echo = (ICMP_ECHO *)(recv_buffer + ip_header_size + sizeof(ICMP_HEADER));
-								if (icmp_packet_size >= (sizeof(ICMP_HEADER) + sizeof(ICMP_ECHO)))
-								{
-									if (Endian16(echo->Identifier) == src_id && (src_seqno == 0 || Endian16(echo->SeqNo) == src_seqno))
-									{
-										IP ip;
-
-										UINTToIP(&ip, ipv4->SrcIP);
-
-										// Received the correct Echo response
-										ret = ZeroMalloc(sizeof(ICMP_RESULT));
-
-										ret->Ok = true;
-										ret->Ttl = ipv4->TimeToLive;
-										ret->DataSize = icmp_packet_size - (sizeof(ICMP_HEADER) + sizeof(ICMP_ECHO));
-										ret->Data = Clone(recv_buffer + ip_header_size + sizeof(ICMP_HEADER) + sizeof(ICMP_ECHO),
-										                  ret->DataSize);
-										Copy(&ret->IpAddress, &ip, sizeof(IP));
-									}
-								}
-							}
-							else if (icmp->Type == ICMP_TYPE_ECHO_REQUEST)
-							{
-								// Ignore because an Echo request should not arrive
-							}
-							else
-							{
-								// If an error is returned, compare to the copy of
-								// the ICMP packet last sent
-								IPV4_HEADER *orig_ipv4 = (IPV4_HEADER *)(recv_buffer + ip_header_size + 4 + sizeof(ICMP_HEADER));
-								if (icmp_packet_size >= (sizeof(ICMP_HEADER) + 4 + sizeof(IPV4_HEADER)))
-								{
-									UINT orig_ipv4_header_size = GetIpHeaderSize((UCHAR *)orig_ipv4, icmp_packet_size - 4 - sizeof(ICMP_HEADER));
-									if (orig_ipv4_header_size >= sizeof(IPV4_HEADER))
-									{
-										if ((IPV4_GET_VERSION(orig_ipv4) == 4) && (orig_ipv4->Protocol == IP_PROTO_ICMPV4))
-										{
-											if (icmp_packet_size >= (sizeof(ICMP_HEADER) + 4 + orig_ipv4_header_size + sizeof(ICMP_HEADER) + sizeof(ICMP_ECHO)))
-											{
-												ICMP_HEADER *orig_icmp = (ICMP_HEADER *)(recv_buffer + ip_header_size + sizeof(ICMP_HEADER) + 4 + orig_ipv4_header_size);
-												ICMP_ECHO *orig_echo = (ICMP_ECHO *)(recv_buffer + ip_header_size + sizeof(ICMP_HEADER) + 4 + orig_ipv4_header_size + sizeof(ICMP_HEADER));
-
-												if (orig_icmp->Type == ICMP_TYPE_ECHO_REQUEST && orig_echo->Identifier == Endian16(src_id) && (src_seqno == 0 || orig_echo->SeqNo == Endian16(src_seqno)))
-												{
-													IP ip;
-
-													UINTToIP(&ip, ipv4->SrcIP);
-
-													ret = ZeroMalloc(sizeof(ICMP_RESULT));
-
-													ret->Type = icmp->Type;
-													ret->Code = icmp->Code;
-													ret->Ttl = ipv4->TimeToLive;
-													ret->DataSize = icmp_packet_size - (sizeof(ICMP_HEADER) + sizeof(ICMP_ECHO));
-													ret->Data = Clone(recv_buffer + ip_header_size + sizeof(ICMP_HEADER) + sizeof(ICMP_ECHO),
-													                  ret->DataSize);
-													Copy(&ret->IpAddress, &ip, sizeof(IP));
-												}
-											}
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-
-	return ret;
-}
-
 // Get whether the packet is a DHCP packet associated with the specified MAC address
 bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address)
 {
@@ -3078,23 +2953,6 @@ bool ParseUDP(PKT *p, UCHAR *buf, UINT size)
 		}
 	}
 
-	// Determine whether it's an OpenVPN UDP packet
-	if (size == 14)
-	{
-		if (buf[0] == 0x38)
-		{
-			if (IsZero(buf + 9, 5))
-			{
-				if (IsZero(buf + 1, 8) == false)
-				{
-					// An OpenVPN connection request packet is found
-					p->TypeL7 = L7_OPENVPNCONN;
-					return true;
-				}
-			}
-		}
-	}
-
 	return true;
 }
 
@@ -3704,20 +3562,6 @@ void BuildClasslessRouteStr(char *str, UINT str_size, DHCP_CLASSLESS_ROUTE *r)
 	}
 
 	Format(str, str_size, "%r/%r/%r", &r->Network, &r->SubnetMask, &r->Gateway);
-}
-
-// Check the classless routing table string
-bool CheckClasslessRouteTableStr(char *str)
-{
-	DHCP_CLASSLESS_ROUTE_TABLE d;
-
-	// Validate arguments
-	if (str == NULL)
-	{
-		return false;
-	}
-
-	return ParseClasslessRouteTableStr(&d, str);
 }
 
 // Parse the classless routing table string
@@ -4330,4 +4174,59 @@ LABEL_CLEANUP:
 		FreeBuf(ret);
 		return NULL;
 	}
+}
+
+// Generate a random MAC address
+void GenMacAddress(UCHAR *mac)
+{
+	UCHAR rand_data[32];
+	UINT64 now;
+	BUF *b;
+	UCHAR hash[SHA1_SIZE];
+	// Validate arguments
+	if (mac == NULL)
+	{
+		return;
+	}
+
+	// Get the current time
+	now = SystemTime64();
+
+	// Generate a random number
+	Rand(rand_data, sizeof(rand_data));
+
+	// Add to the buffer
+	b = NewBuf();
+	WriteBuf(b, &now, sizeof(now));
+	WriteBuf(b, rand_data, sizeof(rand_data));
+
+	// Hash
+	Sha0(hash, b->Buf, b->Size);
+
+	// Generate a MAC address
+	mac[0] = 0x5E;
+	mac[1] = hash[0];
+	mac[2] = hash[1];
+	mac[3] = hash[2];
+	mac[4] = hash[3];
+	mac[5] = hash[4];
+
+	FreeBuf(b);
+}
+
+// Get the broadcast address
+UINT GetBroadcastAddress(UINT addr, UINT mask)
+{
+	return ((addr & mask) | (~mask));
+}
+void GetBroadcastAddress4(IP *dst, IP *addr, IP *mask)
+{
+	// Validate arguments
+	if (dst == NULL || IsIP4(addr) == false || IsIP4(mask) == false)
+	{
+		Zero(dst, sizeof(IP));
+		return;
+	}
+
+	UINTToIP(dst, GetBroadcastAddress(IPToUINT(addr), IPToUINT(mask)));
 }

@@ -8,13 +8,11 @@
 #include "EtherLog.h"
 
 #include "Admin.h"
-#include "BridgeUnix.h"
 #include "BridgeWin32.h"
 #include "Listener.h"
 #include "Remote.h"
 #include "Sam.h"
 #include "Server.h"
-#include "WinUi.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/Encrypt.h"
@@ -286,7 +284,6 @@ UINT EtGetBridgeSupport(EL *a, RPC_BRIDGE_SUPPORT *t)
 	Zero(t, sizeof(RPC_BRIDGE_SUPPORT));
 
 	t->IsBridgeSupportedOs = IsBridgeSupported();
-	t->IsWinPcapNeeded = IsNeedWinPcap();
 
 	return ERR_NO_ERROR;
 }
@@ -575,7 +572,6 @@ void OutRpcEnumDevice(PACK *p, RPC_ENUM_DEVICE *t)
 
 	PackAddInt(p, "NumItem", t->NumItem);
 
-	PackSetCurrentJsonGroupName(p, "DeviceList");
 	for (i = 0;i < t->NumItem;i++)
 	{
 		RPC_ENUM_DEVICE_ITEM *d = &t->Items[i];
@@ -583,7 +579,6 @@ void OutRpcEnumDevice(PACK *p, RPC_ENUM_DEVICE *t)
 		PackAddStrEx(p, "DeviceName", d->DeviceName, i, t->NumItem);
 		PackAddBoolEx(p, "Active", d->Active, i, t->NumItem);
 	}
-	PackSetCurrentJsonGroupName(p, NULL);
 
 	PackAddBool(p, "IsLicenseSupported", t->IsLicenseSupported);
 }

@@ -88,7 +88,6 @@ void Win32Yield();
 
 void Win32UnlockEx(LOCK *lock, bool inner);
 UINT Win32GetOsType();
-UINT Win32GetSpVer(char *str);
 UINT Win32GetOsSpVer();
 void Win32NukuEn(char *dst, UINT size, char *src);
 void Win32NukuEnW(wchar_t *dst, UINT size, wchar_t *src);
@@ -108,7 +107,6 @@ bool Win32SetFolderCompress(char *path, bool compressed);
 bool Win32SetFolderCompressW(wchar_t *path, bool compressed);
 UINT64 Win32FastTick64();
 void Win32InitNewThread();
-bool Win32IsNt();
 bool Win32InputW(wchar_t *str, UINT size);
 bool Win32InputFromFileW(wchar_t *str, UINT size);
 char *Win32InputFromFileLineA();

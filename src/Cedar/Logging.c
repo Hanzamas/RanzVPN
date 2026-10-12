@@ -8,13 +8,7 @@
 #include "Logging.h"
 
 #include "Admin.h"
-#include "Client.h"
-#include "Nat.h"
-#include "Proto_EtherIP.h"
-#include "Proto_IKE.h"
-#include "Proto_PPP.h"
 #include "Remote.h"
-#include "SecureNAT.h"
 #include "Server.h"
 
 #include "Mayaqua/DNS.h"
@@ -26,14 +20,14 @@
 #include "Mayaqua/Tick64.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
-#include "Mayaqua/Unix.h"
+#include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Win32.h"
 
 static char *delete_targets[] =
 {
 	"backup.vpn_bridge.config",
 	"backup.vpn_client.config",
-	"backup.vpn_server.config",
+	"backup.ranz_server.config",
 	"backup.vpn_gate_svc.config",
 	"backup.etherlogger.config",
 	HUB_PACKET_LOG_DIR,
@@ -50,8 +44,6 @@ static UINT eraser_check_interval = DISK_FREE_CHECK_INTERVAL_DEFAULT;
 static UINT64 logger_max_log_size = MAX_LOG_SIZE_DEFAULT;
 
 static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *log_date_changed, char *current_logfile_datename, char *current_file_name);
-static bool LogThreadWriteStdout(LOG *log_object, BUF *buffer, IO *io);
-static IO *GetIO4Stdout();
 
 // Send with syslog
 void SendSysLog(SLOG *g, wchar_t *str)
@@ -534,29 +526,6 @@ void SLog(CEDAR *c, char *name, ...)
 	va_end(args);
 }
 
-// Client log
-void CLog(CLIENT *c, char *name, ...)
-{
-	wchar_t buf[MAX_SIZE * 2];
-	va_list args;
-	// Validate arguments
-	if (name == NULL)
-	{
-		return;
-	}
-
-	if (c == NULL || c->NoSaveLog)
-	{
-		return;
-	}
-
-	va_start(args, name);
-	UniFormatArgs(buf, sizeof(buf), _UU(name), args);
-
-	WriteClientLog(c, buf);
-	va_end(args);
-}
-
 void ALog(ADMIN *a, HUB *h, char *name, ...)
 {
 	wchar_t buf[MAX_SIZE * 2];
@@ -611,143 +580,6 @@ void HLog(HUB *h, char *name, ...)
 	WriteHubLog(h, buf);
 	va_end(args);
 }
-void NLog(VH *v, char *name, ...)
-{
-	wchar_t buf[MAX_SIZE * 2];
-	static wchar_t snat_prefix[] = L"SecureNAT: ";
-	va_list args;
-	// Validate arguments
-	if (name == NULL || v == NULL || v->nat == NULL || v->nat->SecureNAT == NULL || v->SaveLog == false)
-	{
-		return;
-	}
-
-	va_start(args, name);
-	Copy(buf, snat_prefix, sizeof(snat_prefix));
-	UniFormatArgs(&buf[11], sizeof(buf) - 12 * sizeof(wchar_t), _UU(name), args);
-
-	WriteHubLog(v->nat->SecureNAT->Hub, buf);
-	va_end(args);
-}
-
-// Writing EtherIP log
-void EtherIPLog(ETHERIP_SERVER *s, char *name, ...)
-{
-	wchar_t prefix[MAX_SIZE * 2];
-	wchar_t buf2[MAX_SIZE * 2];
-	char server_ip[64];
-	char client_ip[64];
-	va_list args;
-	// Validate arguments
-	if (s == NULL)
-	{
-		return;
-	}
-
-	IPToStr(server_ip, sizeof(server_ip), &s->ServerIP);
-	IPToStr(client_ip, sizeof(client_ip), &s->ClientIP);
-
-	UniFormat(prefix, sizeof(prefix), _UU("LE_PREFIX"), s->Id,
-	          server_ip, s->ServerPort, client_ip, s->ClientPort);
-
-	va_start(args, name);
-	UniFormatArgs(buf2, sizeof(buf2), _UU(name), args);
-	va_end(args);
-
-	UniStrCat(prefix, sizeof(prefix), buf2);
-
-	WriteServerLog(s->Cedar, prefix);
-}
-
-// Write an IPsec log
-void IPsecLog(IKE_SERVER *ike, IKE_CLIENT *c, IKE_SA *ike_sa, IPSECSA *ipsec_sa, char *name, ...)
-{
-	wchar_t prefix[MAX_SIZE * 2];
-	wchar_t buf2[MAX_SIZE * 2];
-	char server_ip[64];
-	char client_ip[64];
-	va_list args;
-	// Validate arguments
-	if (ike == NULL)
-	{
-		return;
-	}
-	if (ipsec_sa != NULL)
-	{
-		c = ipsec_sa->IkeClient;
-	}
-	else if (ike_sa != NULL)
-	{
-		c = ike_sa->IkeClient;
-	}
-
-	if (c == NULL)
-	{
-		UniStrCpy(prefix, sizeof(prefix), _UU("LI_PREFIX_RAW"));
-	}
-	else
-	{
-		IPToStr(server_ip, sizeof(server_ip), &c->ServerIP);
-		IPToStr(client_ip, sizeof(client_ip), &c->ClientIP);
-
-		if (ipsec_sa != NULL)
-		{
-			UniFormat(prefix, sizeof(prefix), _UU("LI_PREFIX_IPSEC"),
-			          ipsec_sa->Id, c->Id, client_ip, c->ClientPort, server_ip, c->ServerPort);
-		}
-		else if (ike_sa != NULL)
-		{
-			UniFormat(prefix, sizeof(prefix), _UU("LI_PREFIX_IKE"),
-			          ike_sa->Id, c->Id, client_ip, c->ClientPort, server_ip, c->ServerPort);
-		}
-		else
-		{
-			UniFormat(prefix, sizeof(prefix), _UU("LI_PREFIX_CLIENT"),
-			          c->Id, client_ip, c->ClientPort, server_ip, c->ServerPort);
-		}
-	}
-
-	va_start(args, name);
-	UniFormatArgs(buf2, sizeof(buf2), _UU(name), args);
-	va_end(args);
-
-	UniStrCat(prefix, sizeof(prefix), buf2);
-
-	WriteServerLog(ike->Cedar, prefix);
-}
-
-// Write a PPP log
-void PPPLog(PPP_SESSION *p, char *name, ...)
-{
-	wchar_t buf[MAX_SIZE * 2];
-	wchar_t buf2[MAX_SIZE * 2];
-	char ipstr[128];
-	char *s1 = "", *s2 = "";
-	va_list args;
-	// Validate arguments
-	if (p == NULL)
-	{
-		return;
-	}
-
-	if (StrCmpi(p->Postfix, "PPP") != 0)
-	{
-		s1 = p->Postfix;
-		s2 = " ";
-	}
-
-	va_start(args, name);
-	UniFormatArgs(buf2, sizeof(buf2), _UU(name), args);
-	va_end(args);
-
-	IPToStr(ipstr, sizeof(ipstr), &p->ClientIP);
-
-	UniFormat(buf, sizeof(buf), _UU("LP_PREFIX"), s1, s2, ipstr, p->ClientPort);
-
-	UniStrCat(buf, sizeof(buf), buf2);
-
-	WriteServerLog(p->Cedar, buf);
-}
 
 // Save the security log of the HUB
 void WriteHubLog(HUB *h, wchar_t *str)
@@ -785,18 +617,6 @@ void WriteHubLog(HUB *h, wchar_t *str)
 	{
 		InsertUnicodeRecord(h->SecurityLogger, str);
 	}
-}
-
-// Save the client log
-void WriteClientLog(CLIENT *c, wchar_t *str)
-{
-	// Validate arguments
-	if (c == NULL)
-	{
-		return;
-	}
-
-	InsertUnicodeRecord(c->Logger, str);
 }
 
 // Save the security log of the server
@@ -902,10 +722,6 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 			no_log = true;
 		}
 
-		if (hub->IsVgsHub)
-		{
-			no_log = false;
-		}
 	}
 
 	syslog_setting = SiGetSysLogSaveStatus(s);
@@ -1074,11 +890,6 @@ UINT CalcPacketLoggingLevelEx(HUB_LOG *g, PKT *packet)
 				ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
 				break;
 
-			case L7_OPENVPNCONN:
-				// OpenVPN connection request
-				ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
-				break;
-
 			case L7_DNS:
 				// DNS request
 				ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
@@ -1123,11 +934,6 @@ UINT CalcPacketLoggingLevelEx(HUB_LOG *g, PKT *packet)
 			{
 			case L7_IKECONN:
 				// IKE connection request
-				ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
-				break;
-
-			case L7_OPENVPNCONN:
-				// OpenVPN connection request
 				ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
 				break;
 
@@ -1515,11 +1321,6 @@ char *PacketLogParseProc(RECORD *rec)
 
 					break;
 
-				case L7_OPENVPNCONN:
-					// OpenVPN connection request packet
-					t->Token[6] = CopyStr("OPENVPN_CONNECTv4");
-					break;
-
 				case L7_IKECONN:
 					// IKE connection request packet
 					t->Token[6] = CopyStr("IKE_CONNECTv4");
@@ -1794,11 +1595,6 @@ char *PacketLogParseProc(RECORD *rec)
 
 				switch (p->TypeL7)
 				{
-				case L7_OPENVPNCONN:
-					// OpenVPN connection request packet
-					t->Token[6] = CopyStr("OPENVPN_CONNECTv6");
-					break;
-
 				case L7_IKECONN:
 					// IKE connection request packet
 					t->Token[6] = CopyStr("IKE_CONNECTv6");
@@ -2380,7 +2176,7 @@ void LogThread(THREAD *thread, void *param)
 
 	g = (LOG *)param;
 
-	io = g_foreground ? GetIO4Stdout() : NULL;
+	io = NULL;
 	b = NewBuf();
 
 #ifdef	OS_WIN32
@@ -2398,19 +2194,9 @@ void LogThread(THREAD *thread, void *param)
 
 		while (true)
 		{
-			if (g_foreground)
+			if (! LogThreadWriteGeneral(g, b, &io, &log_date_changed, current_logfile_datename, current_file_name))
 			{
-				if (! LogThreadWriteStdout(g, b, io))
-				{
-					break;
-				}
-			}
-			else
-			{
-				if (! LogThreadWriteGeneral(g, b, &io, &log_date_changed, current_logfile_datename, current_file_name))
-				{
-					break;
-				}
+				break;
 			}
 		}
 
@@ -2445,7 +2231,7 @@ void LogThread(THREAD *thread, void *param)
 		}
 	}
 
-	if (io != NULL && !g_foreground)
+	if (io != NULL)
 	{
 		FileCloseEx(io, true);
 	}
@@ -2688,60 +2474,6 @@ static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *l
 	Free(rec);
 
 	return (*io != NULL);
-}
-
-static bool LogThreadWriteStdout(LOG *log_object, BUF *buffer, IO *io)
-{
-	RECORD *rec;
-
-	// Retrieve a record from the head of the queue
-	LockQueue(log_object->RecordQueue);
-	{
-		rec = GetNext(log_object->RecordQueue);
-	}
-	UnlockQueue(log_object->RecordQueue);
-
-	if (rec == NULL)
-	{
-		Set(log_object->FlushEvent);
-		return false;
-	}
-
-	ClearBuf(buffer);
-	WriteRecordToBuffer(buffer, rec);
-	if (!FileWrite(io, buffer->Buf, buffer->Size))
-	{
-		ClearBuf(buffer);
-	}
-	Free(rec);
-
-	return true;
-}
-
-static IO *GetIO4Stdout()
-{
-#ifndef UNIX
-	return NULL;
-#else // UNIX
-	static IO IO4Stdout =
-	{
-		.Name = {0},
-		.NameW = {0},
-		.pData = NULL,
-		.WriteMode = true,
-		.HamMode = false,
-		.HamBuf = NULL,
-	};
-
-	if (!g_foreground)
-	{
-		return NULL;
-	}
-
-	IO4Stdout.pData = GetUnixio4Stdout();
-
-	return &IO4Stdout;
-#endif // UNIX
 }
 
 // Write the contents of the log to the buffer

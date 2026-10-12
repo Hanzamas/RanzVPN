@@ -42,6 +42,13 @@
 #define	CEDAR_VERSION_BUILD		0
 #endif	// CEDAR_VERSION_BUILD
 
+// The version above (major.minor.build) is for display only. Peers receive
+// and compare these fixed values instead (hello/welcome packs, node info,
+// admin RPC, server caps), kept at the last SoftEther VPN 5.02 build 5187
+// so that existing peers keep gating features the same way.
+#define	CEDAR_WIRE_VER			502		// Major * 100 + minor
+#define	CEDAR_WIRE_BUILD		5187
+
 // Beta number
 //#define	BETA_NUMBER					3
 
@@ -136,8 +143,6 @@
 
 #define	SERVER_MAX_SESSIONS			4096	// Maximum number of sessions that the server supports
 #define SERVER_MAX_SESSIONS_FOR_CARRIER_EDITION	100000	// Maximum number of sessions that the server supports (Carrier Edition)
-#define	NAT_MAX_SESSIONS			4096	// Maximum number of sessions that are supported by NAT
-#define	NAT_MAX_SESSIONS_KERNEL		65536	// Maximum number of sessions that are supported by NAT (In the case of kernel-mode NAT)
 #define	MAX_HUBS					4096	// The maximum number of virtual HUB
 #define MAX_HUBS_FOR_CARRIER_EDITION	100000	// The maximum number of virtual HUB (Carrier Edition)
 #define	MAX_ACCESSLISTS				(4096 * 8)	// Maximum number of access list entries
@@ -178,7 +183,6 @@
 
 #define	MAX_SEND_SOCKET_QUEUE_NUM	VPN_GP(GP_MAX_SEND_SOCKET_QUEUE_NUM, 128)		// Maximum number of transmission queue items per processing
 #define	MAX_TCP_CONNECTION			32		// The maximum number of TCP connections
-#define	NUM_TCP_CONNECTION_FOR_UDP_RECOVERY	2	// Maximum number of connections when using UDP recovery
 #define	SELECT_TIME					VPN_GP(GP_SELECT_TIME, 256)
 #define	SELECT_TIME_FOR_NAT			VPN_GP(GP_SELECT_TIME_FOR_NAT, 30)
 #define	SELECT_TIME_FOR_DELAYED_PKT	1		// If there is a delayed packet
@@ -192,7 +196,6 @@
 #define	MAX_RETRY_INTERVAL			(300 * 1000)	// Maximum retry interval
 #define	RETRY_INTERVAL_SPECIAL		(60 * 1000)		// Reconnection interval of a special case
 
-#define	MAX_ADDITIONAL_CONNECTION_FAILED_COUNTER	16	// Allowable number that can be serially failed to additional connection
 #define	ADDITIONAL_CONNECTION_COUNTER_RESET_INTERVAL	(30 * 60 * 1000)	// Reset period of additional connection failure counter
 
 #define	MAC_MIN_LIMIT_COUNT			3		// Minimum number of MAC addresses
@@ -213,26 +216,15 @@
 #define	STORM_DISCARD_VALUE_START	VPN_GP(GP_STORM_DISCARD_VALUE_START, 3)		// Broadcast packet discard value start value
 #define	STORM_DISCARD_VALUE_END		VPN_GP(GP_STORM_DISCARD_VALUE_END, 1024)	// Broadcast packet discard value end value
 
-#define	KEEP_INTERVAL_MIN			5		// Packet transmission interval minimum value
-#define	KEEP_INTERVAL_DEFAULT		50		// Packet transmission interval default value
-#define	KEEP_INTERVAL_MAX			600		// Packet transmission interval maximum value
-#define KEEP_TCP_TIMEOUT			1000	// TCP time-out value
-
 #define	TICKET_EXPIRES				(60 * 1000)	// Expiration date of ticket
 
 #define	SEND_KILL_NUM_X				256			// Number of 'X' characters to send the Kill
 
 
-#define	FARM_BASE_POINT				100000		// Reference value of the cluster score
-#define	FARM_DEFAULT_WEIGHT			100			// Standard performance ratio
-
 #define DH_PARAM_BITS_DEFAULT		2048		// Bits of Diffie-Hellman Parameters
 
 
 #define	SE_UDP_SIGN			"SE2P"		// Not used (only old UDP mode)
-
-// R-UDP service name
-#define	VPN_RUDP_SVC_NAME		"SoftEther_VPN"
 
 // Traffic information update interval
 #define	INCREMENT_TRAFFIC_INTERVAL		(10 * 1000)
@@ -271,13 +263,6 @@
 // 
 //////////////////////////////////////////////////////////////////////
 
-// Internet connection maintenance function (KeepAlive)
-
-#define	KEEP_RETRY_INTERVAL		(60 * 1000)			// Reconnection interval on connection failure
-#define	KEEP_MIN_PACKET_SIZE	1					// Minimum packet size
-#define	KEEP_MAX_PACKET_SIZE	128					// Maximum packet size
-#define	KEEP_POLLING_INTERVAL	250					// KEEP polling interval
-
 // Constants
 #define	RECV_BUF_SIZE				65536			// Buffer size to be received at a time
 
@@ -297,18 +282,15 @@
 #define	CONNECTION_TYPE_INIT			1	// During initialization
 #define	CONNECTION_TYPE_LOGIN			2	// Login connection
 #define	CONNECTION_TYPE_ADDITIONAL		3	// Additional connection
-#define	CONNECTION_TYPE_FARM_RPC		4	// RPC for server farm
 #define	CONNECTION_TYPE_ADMIN_RPC		5	// RPC for Management
 #define	CONNECTION_TYPE_ENUM_HUB		6	// HUB enumeration
 #define	CONNECTION_TYPE_PASSWORD		7	// Password change
-#define	CONNECTION_TYPE_OTHER			0xffffffff	// E.g. Third-party protocol
 
 // Protocol
 #define	CONNECTION_TCP					0	// TCP protocol
 #define	CONNECTION_UDP					1	// UDP protocol
 #define	CONNECTION_HUB_LAYER3			6	// Layer-3 switch session
 #define	CONNECTION_HUB_BRIDGE			7	// Bridge session
-#define	CONNECTION_HUB_SECURE_NAT		8	// Secure NAT session
 #define	CONNECTION_HUB_LINK_SERVER		9	// HUB link session
 
 
@@ -333,16 +315,6 @@
 
 #define	SE_HUB_MAC_ADDR_SIGN				0xAE					// Sign virtual HUB MAC address
 
-// Traffic difference value
-#define	TRAFFIC_DIFF_USER		0		// User
-#define	TRAFFIC_DIFF_HUB		1		// Virtual HUB
-#define	MAX_TRAFFIC_DIFF		30000	// Maximum number of items
-
-// Type of HUB
-#define	HUB_TYPE_STANDALONE			0	// Stand-alone HUB
-#define	HUB_TYPE_FARM_STATIC		1	// Static HUB
-#define	HUB_TYPE_FARM_DYNAMIC		2	// Dynamic HUB
-
 // Related to delay, jitter, packet loss in the access list
 #define	HUB_ACCESSLIST_DELAY_MAX	10000		// Maximum delay
 #define	HUB_ACCESSLIST_JITTER_MAX	100			// Maximum jitter
@@ -364,19 +336,14 @@
 #define	AUTHTYPE_PASSWORD				1			// Password authentication
 #define	AUTHTYPE_USERCERT				2			// User certificate authentication
 #define	AUTHTYPE_ROOTCERT				3			// Root certificate which is issued by trusted Certificate Authority
-#define	AUTHTYPE_RADIUS					4			// Radius authentication
 #define	AUTHTYPE_NT						5			// Windows NT authentication
 #define AUTHTYPE_EXTERNAL				96			// External authentication (completed)
-#define	AUTHTYPE_WIREGUARD_KEY			97			// WireGuard public key authentication
-#define	AUTHTYPE_OPENVPN_CERT    		98			// TLS client certificate authentication
-#define	AUTHTYPE_TICKET					99			// Ticket authentication
 
 // Constant of the client side
 #define	CLIENT_AUTHTYPE_ANONYMOUS		0			// Anonymous authentication
 #define	CLIENT_AUTHTYPE_PASSWORD		1			// Password authentication
 #define	CLIENT_AUTHTYPE_PLAIN_PASSWORD	2			// Plain password authentication
 #define	CLIENT_AUTHTYPE_CERT			3			// Certificate authentication
-#define	CLIENT_AUTHTYPE_SECURE			4			// Secure device authentication
 #define	CLIENT_AUTHTYPE_OPENSSLENGINE			5			// Openssl engine authentication
 
 
@@ -401,11 +368,6 @@
 // Protocol to be used for the listener
 #define	LISTENER_TCP				0		// TCP/IP
 #define	LISTENER_UDP				1		// UDP/IP (not being used)
-#define	LISTENER_INPROC				2		// In-process communication
-#define	LISTENER_RUDP				3		// R-UDP with NAT-T
-#define	LISTENER_ICMP				4		// VPN over ICMP
-#define	LISTENER_DNS				5		// VPN over DNS
-#define	LISTENER_REVERSE			6		// Reverse socket
 
 // Status of the listener
 #define	LISTENER_STATUS_TRYING		0		// While attempting
@@ -452,14 +414,6 @@
 #define	HUB_PACKET_LOG_DIR_NAME		"@"HUB_PACKET_LOG_DIR
 #define	HUB_PACKET_LOG_FILE_NAME	HUB_PACKET_LOG_DIR_NAME"/%s"
 #define	HUB_PACKET_LOG_PREFIX		"pkt"
-
-#define	NAT_LOG_DIR				"secure_nat_log"
-#define	NAT_LOG_DIR_NAME			"@"NAT_LOG_DIR
-#define	NAT_LOG_FILE_NAME			NAT_LOG_DIR_NAME"/%s"
-#define	NAT_LOG_PREFIX				"snat"
-
-#define	CLIENT_LOG_DIR_NAME			"@client_log"
-#define	CLIENT_LOG_PREFIX			"client"
 
 // Packet log settings
 #define	NUM_PACKET_LOG				16
@@ -543,18 +497,6 @@
 
 //////////////////////////////////////////////////////////////////////
 // 
-// Constant related to SecureNAT connection
-// 
-//////////////////////////////////////////////////////////////////////
-
-#define	SNAT_DEVICE_NAME		"_SEHUBSECURENAT_"
-#define	SNAT_USER_NAME			"securenat"
-#define	SNAT_USER_NAME_PRINT	"SecureNAT"
-
-
-
-//////////////////////////////////////////////////////////////////////
-// 
 // Constant related to bridge connection
 // 
 //////////////////////////////////////////////////////////////////////
@@ -598,7 +540,7 @@
 
 //////////////////////////////////////////////////////////////////////
 // 
-// Constant related to User-mode Router
+// Constant related to the virtual IP stack
 // 
 //////////////////////////////////////////////////////////////////////
 
@@ -607,36 +549,9 @@
 #define	ARP_REQUEST_TIMEOUT			(1000)			// ARP request time-out period
 #define	ARP_REQUEST_GIVEUP			(5 * 1000)		// Time to give up sending the ARP request
 #define	IP_WAIT_FOR_ARP_TIMEOUT		(5 * 1000)		// Total time that an IP packet waiting for ARP table
-#define	IP_COMBINE_TIMEOUT			(10 * 1000)		// Time-out of IP packet combining
-#define	NAT_TCP_MAX_TIMEOUT			(2000000 * 1000)	// Maximum TCP session timeout in seconds
-#define	NAT_UDP_MAX_TIMEOUT			(2000000 * 1000)	// Maximum UDP session timeout in seconds
-#define	NAT_TCP_MIN_TIMEOUT			(1 * 60 * 1000)		// Minimum TCP session timeout in seconds
-#define	NAT_UDP_MIN_TIMEOUT			(10 * 1000)			// Minimum UDP session timeout in seconds
-#define	NAT_TCP_RECV_WINDOW_SIZE	64512				// TCP receive window size
-#define	NAT_TCP_SYNACK_SEND_TIMEOUT	250					// Sending TCP SYN+ACK interval
-#define	NAT_ICMP_TIMEOUT			(10 * 1000)			// ICMP timeout in seconds
-#define	NAT_ICMP_TIMEOUT_WITH_API	(3 * 1000)			// Timeout in seconds in the case of using the ICMP API
-#define	NAT_SEND_BUF_SIZE			(64 * 1024)			// TCP send buffer size
-#define	NAT_RECV_BUF_SIZE			(64 * 1024)			// TCP receive buffer size
-#define	NAT_TMPBUF_SIZE				(128 * 1024)		// TCP temporally memory area size
-#define	NAT_ACK_KEEPALIVE_SPAN		(5 * 1000)			// ACK transmission interval for TCP keep alive
-#define	NAT_INITIAL_RTT_VALUE		500					// Initial RTT value
-#define	NAT_FIN_SEND_INTERVAL		1000				// FIN transmission interval
-#define	NAT_FIN_SEND_MAX_COUNT		5					// Total number of FIN transmissions
-#define	NAT_DNS_PROXY_PORT			53					// DNS proxy port number
-#define	NAT_DNS_RESPONSE_TTL		(20 * 60)			// TTL of the DNS response
-#define	NAT_DHCP_SERVER_PORT		67					// DHCP server port number
-#define	NAT_DHCP_CLIENT_PORT		68					// DHCP client port number
-#define	DHCP_MIN_EXPIRE_TIMESPAN	(15 * 1000)			// DHCP minimum expiration date
-#define	DHCP_POLLING_INTERVAL		1000				// DHCP polling interval
-#define	X32							((UINT64)4294967296ULL)	// 32bit + 1
-#define	NAT_DNS_QUERY_TIMEOUT		(512)				// Time-out value of DNS queries
 
 // Beacon transmission interval
 #define	BEACON_SEND_INTERVAL		(5 * 1000)
-
-// Total size quota allowed in the queue for the combining the IP packet
-#define	IP_COMBINE_WAIT_QUEUE_SIZE_QUOTA	(50 * 1024 * 1024)
 
 // Header size constant
 #define	MAC_HEADER_SIZE				(sizeof(MAC_HEADER))
@@ -655,38 +570,6 @@
 // IP packet option constant
 #define	DEFAULT_IP_TOS				0				// TOS in the IP header
 #define	DEFAULT_IP_TTL				128				// TTL in the IP header
-
-// Type of NAT session
-#define	NAT_TCP						0		// TCP NAT
-#define	NAT_UDP						1		// UDP NAT
-#define	NAT_DNS						2		// DNS NAT
-#define	NAT_ICMP					3		// ICMP NAT
-
-// State of NAT session
-#define	NAT_TCP_CONNECTING			0		// Connecting
-#define	NAT_TCP_SEND_RESET			1		// Send the RST (Connection failure or disconnected)
-#define	NAT_TCP_CONNECTED			2		// Connection complete
-#define	NAT_TCP_ESTABLISHED			3		// Connection established
-#define	NAT_TCP_WAIT_DISCONNECT		4		// Wait for socket disconnection
-
-
-//////////////////////////////////////////////////////////////////////
-// 
-// For UNIX virtual LAN card related constant
-// 
-//////////////////////////////////////////////////////////////////////
-
-#define	UNIX_VLAN_CLIENT_IFACE_PREFIX		"vpn"			// Prefix of UNIX virtual LAN card interface (used for client)
-#define	UNIX_VLAN_BRIDGE_IFACE_PREFIX		"tap"			// Prefix of UNIX virtual LAN card interface (used for bridge destination)
-
-#ifndef	UNIX_BSD
-#define	TAP_FILENAME_1				"/dev/net/tun"
-#define	TAP_FILENAME_2				"/dev/tun"
-#else	// UNIX_BSD
-#define	TAP_NAME					"tap"
-#define	TAP_DIR						"/dev/"
-#define	TAP_MAX						(512)
-#endif	// UNIX_BSD
 
 
 #define	LICENSE_EDITION_VPN3_NO_LICENSE					0		// Without license
@@ -757,21 +640,10 @@
 #define	ERR_SECURE_NO_PRIVATE_KEY		27	// Specified private key is not stored
 #define	ERR_SECURE_CANT_WRITE			28	// Write failure
 #define	ERR_OBJECT_NOT_FOUND			29	// Specified object can not be found
-#define	ERR_VLAN_ALREADY_EXISTS			30	// Virtual LAN card with the specified name already exists
-#define	ERR_VLAN_INSTALL_ERROR			31	// Specified virtual LAN card cannot be created
-#define	ERR_VLAN_INVALID_NAME			32	// Specified name of the virtual LAN card is invalid
 #define	ERR_NOT_SUPPORTED				33	// Unsupported
-#define	ERR_ACCOUNT_ALREADY_EXISTS		34	// Account already exists
-#define	ERR_ACCOUNT_ACTIVE				35	// Account is operating
-#define	ERR_ACCOUNT_NOT_FOUND			36	// Specified account doesn't exist
-#define	ERR_ACCOUNT_INACTIVE			37	// Account is offline
 #define	ERR_INVALID_PARAMETER			38	// Parameter is invalid
 #define	ERR_SECURE_DEVICE_ERROR			39	// Error has occurred in the operation of the secure device
 #define	ERR_NO_SECURE_DEVICE_SPECIFIED	40	// Secure device is not specified
-#define	ERR_VLAN_IS_USED				41	// Virtual LAN card in use by account
-#define	ERR_VLAN_FOR_ACCOUNT_NOT_FOUND	42	// Virtual LAN card of the account can not be found
-#define	ERR_VLAN_FOR_ACCOUNT_USED		43	// Virtual LAN card of the account is already in use
-#define	ERR_VLAN_FOR_ACCOUNT_DISABLED	44	// Virtual LAN card of the account is disabled
 #define	ERR_INVALID_VALUE				45	// Value is invalid
 #define	ERR_NOT_FARM_CONTROLLER			46	// Not a farm controller
 #define	ERR_TRYING_TO_CONNECT			47	// Attempting to connect
@@ -802,9 +674,6 @@
 #define	ERR_ALREADY_ONLINE				75	// It is already online
 #define	ERR_OFFLINE						76	// It is offline
 #define	ERR_NOT_RSA_1024				77	// The certificate is not RSA 1024bit
-#define	ERR_SNAT_CANT_DISCONNECT		78	// SecureNAT session cannot be disconnected
-#define	ERR_SNAT_NEED_STANDALONE		79	// SecureNAT works only in stand-alone HUB
-#define	ERR_SNAT_NOT_RUNNING			80	// SecureNAT function is not working
 #define	ERR_SE_VPN_BLOCK				81	// Stopped by PacketiX VPN Block
 #define	ERR_BRIDGE_CANT_DISCONNECT		82	// Bridge session can not be disconnected
 #define	ERR_LOCAL_BRIDGE_STOPPING		83	// Bridge function is stopped
@@ -850,29 +719,13 @@
 #define ERR_BETA_EXPIRES				123	// Destination Beta VPN Server has expired
 #define ERR_BRANDED_C_TO_S				124 // Branding string of connection limit is different (Authentication on the server side)
 #define ERR_BRANDED_C_FROM_S			125	// Branding string of connection limit is different (Authentication for client-side)
-#define	ERR_AUTO_DISCONNECTED			126	// VPN session is disconnected for a certain period of time has elapsed
 #define	ERR_CLIENT_ID_REQUIRED			127	// Client ID does not match
 #define	ERR_TOO_MANY_USERS_CREATED		128	// Too many created users
 #define	ERR_SUBSCRIPTION_IS_OLDER		129	// Subscription expiration date Is earlier than the build date of the VPN Server
 #define	ERR_ILLEGAL_TRIAL_VERSION		130	// Many trial license is used continuously
-#define	ERR_NAT_T_TWO_OR_MORE			131	// There are multiple servers in the back of a global IP address in the NAT-T connection
-#define	ERR_DUPLICATE_DDNS_KEY			132	// DDNS host key duplicate
-#define	ERR_DDNS_HOSTNAME_EXISTS		133	// Specified DDNS host name already exists
-#define	ERR_DDNS_HOSTNAME_INVALID_CHAR	134	// Characters that can not be used for the host name is included
-#define	ERR_DDNS_HOSTNAME_TOO_LONG		135	// Host name is too long
-#define	ERR_DDNS_HOSTNAME_IS_EMPTY		136	// Host name is not specified
-#define	ERR_DDNS_HOSTNAME_TOO_SHORT		137	// Host name is too short
 #define	ERR_MSCHAP2_PASSWORD_NEED_RESET	138	// Necessary that password is changed
-#define	ERR_DDNS_DISCONNECTED			139	// Communication to the dynamic DNS server is disconnected
-#define	ERR_SPECIAL_LISTENER_ICMP_ERROR	140	// The ICMP socket can not be opened
-#define	ERR_SPECIAL_LISTENER_DNS_ERROR	141	// Socket for DNS port can not be opened
-#define	ERR_OPENVPN_IS_NOT_ENABLED		142	// OpenVPN server feature is not enabled
 #define	ERR_NOT_SUPPORTED_AUTH_ON_OPENSOURCE	143	// It is the type of user authentication that are not supported in the open source version
-#define	ERR_VPNGATE						144 // Operation on VPN Gate Server is not available
-#define	ERR_VPNGATE_CLIENT				145 // Operation on VPN Gate Client is not available
-#define	ERR_VPNGATE_INCLIENT_CANT_STOP	146	// Can not be stopped if operating within VPN Client mode
 #define	ERR_NOT_SUPPORTED_FUNCTION_ON_OPENSOURCE	147	// It is a feature that is not supported in the open source version
-#define	ERR_SUSPENDING					148	// System is suspending
 #define ERR_HOSTNAME_MISMATCH			149	// SSL hostname mismatch
 #define ERR_SSL_PROTOCOL_VERSION		150 // SSL version not supported
 #define ERR_SSL_SHARED_CIPHER			151 // Can't find common cipher
@@ -931,7 +784,6 @@ struct CEDAR
 	UINT Type;						// Type
 	LIST *ListenerList;				// Listener list
 	LIST *HubList;					// HUB list
-	LIST *WgkList;					// WireGuard key list
 	LIST *ConnectionList;			// Negotiating connection list
 	LIST *CaList;					// List of CA
 	volatile bool Halt;				// Halt flag
@@ -957,11 +809,9 @@ struct CEDAR
 	LIST *NetSvcList;				// Network service list
 	char *VerString;				// Version string
 	char *BuildInfo;				// Build Information
-	struct CLIENT *Client;			// Client
 	struct SERVER *Server;			// Server
 	UINT64 CreatedTick;				// Generation date and time
 	bool CheckExpires;				// Check the expiration date
-	LIST *TrafficDiffList;			// Traffic difference list
 	struct LOG *DebugLog;			// Debug log
 	UCHAR UniqueId[16];				// Unique ID
 	LIST *LocalBridgeList;			// Local bridge list
@@ -971,16 +821,12 @@ struct CEDAR
 	COUNTER *AssignedBridgeLicense;	// Number of assigned bridge licenses
 	UINT64 LicenseViolationTick;	// License violation occurs
 	LIST *NonSslList;				// Non-SSL connection list
-	struct WEBUI *WebUI;			// Data for WebUI service
 	UINT Beta;						// Beta number
 	LOCK *CedarSuperLock;			// Cedar super lock!
 	bool DisableIPv6Listener;		// Disable IPv6 listener
 	UINT ClientId;					// Client ID
 	UINT64 BuiltDate;				// Build Date
 	LIST *UdpPortList;				// UDP port list in use
-	char CurrentDDnsFqdn[MAX_SIZE];	// FQDN of the current DDNS
-	char OpenVPNPublicPorts[MAX_SIZE];	// OpenVPN public UDP port list
-	LOCK *OpenVPNPublicPortsLock;	// Lock of OpenVPN public UDP port list
 	LOCK *CurrentRegionLock;		// Current region lock
 	char CurrentRegion[128];		// Current region
 	LOCK *CurrentTcpQueueSizeLock;	// Current TCP send queue size lock
@@ -992,13 +838,12 @@ struct CEDAR
 	UINT FifoBudget;				// Fifo budget
 	SSL_ACCEPT_SETTINGS SslAcceptSettings;	// SSL Accept Settings
 	UINT DhParamBits;  // Bits of Diffie-Hellman parameters
+	char StunServer[MAX_HOST_NAME_LEN + 1];	// STUN server (host[:port]) for UDP acceleration, empty = STUN disabled
 };
 
 // Type of CEDAR
 #define	CEDAR_CLIENT				0	// Client
 #define	CEDAR_STANDALONE_SERVER		1	// Stand-alone server
-#define	CEDAR_FARM_CONTROLLER		2	// Server farm controller
-#define	CEDAR_FARM_MEMBER			3	// Server farm member
 
 ////////////////////////////
 // Function prototype
@@ -1007,6 +852,9 @@ TRAFFIC *NewTraffic();
 void FreeTraffic(TRAFFIC *t);
 CEDAR *NewCedar(X *server_x, K *server_k);
 void CedarForceLink();
+#ifdef	OS_WIN32
+void RegistWindowsFirewallAll();
+#endif	// OS_WIN32
 void SetCedarVpnBridge(CEDAR *c);
 void SetCedarCert(CEDAR *c, X *server_x, K *server_k);
 void SetCedarCertAndChain(CEDAR *c, X *server_x, K *server_k, LIST *server_chain);
@@ -1052,9 +900,10 @@ void FreeTinyLog(TINY_LOG *t);
 void WriteTinyLog(TINY_LOG *t, char *str);
 TINY_LOG *NewTinyLog();
 void GetWinVer(RPC_WINVER *v);
+#ifdef	OS_WIN32
+void Win32GetWinVer(RPC_WINVER *v);
+#endif	// OS_WIN32
 bool IsSupportedWinVer(RPC_WINVER *v);
-SOCK *GetInProcListeningSock(CEDAR *c);
-SOCK *GetReverseListeningSock(CEDAR *c);
 void GetCedarVersion(char *tmp, UINT size);
 UINT GetCedarVersionNumber();
 UINT64 GetCurrentBuildDate();
@@ -1066,7 +915,6 @@ UINT CedarGetQueueBudgetConsuming(CEDAR *c);
 UINT CedarGetFifoBudgetConsuming(CEDAR *c);
 UINT CedarGetQueueBudgetBalance(CEDAR *c);
 UINT CedarGetFifoBudgetBalance(CEDAR *c);
-bool CedarIsThereAnyEapEnabledRadiusConfig(CEDAR *c);
 
 
 

@@ -8,7 +8,6 @@
 #include "Link.h"
 
 #include "Account.h"
-#include "Client.h"
 #include "Connection.h"
 #include "Hub.h"
 #include "Logging.h"
@@ -656,7 +655,6 @@ LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, 
 
 	// Copy the authentication data
 	a = CopyClientAuth(auth);
-	a->SecureSignProc = NULL;
 	a->CheckCertProc = NULL;
 
 	// Link object

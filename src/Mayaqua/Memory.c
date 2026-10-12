@@ -23,10 +23,6 @@
 #include <string.h>
 #include <time.h>
 
-#ifdef OS_UNIX
-#include <sys/time.h>
-#endif
-
 #include <zlib.h>
 
 #define	MEMORY_SLEEP_TIME		150
@@ -75,12 +71,6 @@ void InitCanaryRand()
 	Win32GetSystemTime(&st);
 	memcpy(&t1, ((UCHAR *)&st) + 0, 8);
 	memcpy(&t2, ((UCHAR *)&st) + 8, 8);
-#else	// OS_WIN32
-	struct timeval tv = { 0 };
-	struct timezone tz = { 0 };
-	gettimeofday(&tv, &tz);
-	t1 = (UINT64)tv.tv_sec;
-	t2 = (UINT64)tv.tv_usec;
 #endif // OS_WIN32
 
 	{

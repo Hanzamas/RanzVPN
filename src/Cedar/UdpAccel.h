@@ -43,15 +43,10 @@
 #define	UDP_SERVER_PORT_LOWER				40000		// Minimum port
 #define	UDP_SERVER_PORT_HIGHER				44999		// Maximum port
 
-// NAT-T signatures to be embedded in the Keep Alive of the session
-#define	UDP_NAT_T_IP_SIGNATURE_IN_KEEP_ALIVE			"NATT_MY_IP"
-#define	UDP_NAT_T_PORT_SIGNATURE_IN_KEEP_ALIVE			"NATT_MY_PORT"
-
 // UDP Acceleration Mode
 struct UDP_ACCEL
 {
 	CEDAR *Cedar;										// Cedar
-	bool NoNatT;										// Not to communicate with the NAT-T server (To communicate with the query server instead)
 	bool ClientMode;									// Whether client mode
 	bool IsInCedarPortList;								// Whether included in the port list of the Cedar
 	UINT64 Now;											// Current time
@@ -61,17 +56,11 @@ struct UDP_ACCEL
 	UCHAR YourKey[UDP_ACCELERATION_COMMON_KEY_SIZE_V1];	// Receive-direction common key
 	SOCK *UdpSock;										// UDP socket
 	IP MyIp;											// My IP address
-	IP MyIpNatT;										// My IP address, found via the NAT-T server
 	USHORT MyPort;										// My port number
-	USHORT MyPortNatT;									// My port number, found via the NAT-T server
-	bool MyIpOrPortNatTChanged;							// NAT-T server reported a new IP or port for me
 	IP YourIp;											// IP address of the peer (current)
 	IP YourIpReported;									// IP address of the peer (reported)
-	IP YourIpNatT;										// IP address of the peer, found via the NAT-T server
 	USHORT YourPort;									// Port number of the peer (current)
 	USHORT YourPortReported;							// Port number of the peer (reported)
-	USHORT YourPortNatT;								// Port number of the peer, found via the NAT-T server
-	bool YourIpOrPortNatTChanged;						// NAT-T server reported a new IP or port for the peer
 	bool IsIPv6;										// Whether it's an IPv6
 	UCHAR TmpBuf[UDP_ACCELERATION_TMP_BUF_SIZE];		// Temporary buffer
 	UINT64 LastRecvYourTick;							// Opponent's tick value of the last reception
@@ -88,35 +77,22 @@ struct UDP_ACCEL
 	bool Inited;										// Initialized flag
 	UINT Mss;											// Optimal MSS
 	UINT MaxUdpPacketSize;								// Get the maximum transmittable UDP size
-	LOCK *NatT_Lock;									// Lock the IP address field of NAT-T server
-	IP NatT_IP;											// IP address of the NAT-T server
-	THREAD *NatT_GetIpThread;							// IP address acquisition thread of NAT-T server
-	bool NatT_Halt;										// Halting flag of IP address acquisition thread of NAT-T server
-	EVENT *NatT_HaltEvent;								// Halting event of IP address acquisition thread of NAT-T server
-	UINT64 NextPerformNatTTick;							// Time to communicate with NAT-T server next time
-	UINT CommToNatT_NumFail;							// Number of failures to communicate with NAT-T server
 	bool FatalError;									// A fatal error occurred
-	bool NatT_IP_Changed;								// IP address of the NAT-T server has changed
-	UINT64 NatT_TranId;									// Transaction ID to be exchanged with the NAT-T server
 	bool IsReachedOnce;									// It is true if it succeeds in mutual transmission and reception of packets at least once
 	UINT64 CreatedTick;									// Object creation time
 	bool FastDetect;									// Fast disconnection detection mode
 	UINT64 FirstStableReceiveTick;						// Start time of current stable continued receivable period
-	bool UseSuperRelayQuery;							// Use the super relay query
-	bool UseUdpIpQuery;									// Use the self IP address query by UDP
-	IP UdpIpQueryHost;									// Host for the self IP address query by UDP
-	UINT UdpIpQueryPort;								// Port number for self IP address for query by UDP
-	UCHAR UdpIpQueryPacketData[16];						// Query packet data (final transmission)
-	UINT UdpIpQueryPacketSize;							// Query packet data size (final transmission)
-	UCHAR UdpHostUniqueKey[SHA1_SIZE];					// Unique key for UDP self endpoint query
 	UINT Version;										// Version
 	UCHAR MyKey_V2[UDP_ACCELERATION_COMMON_KEY_SIZE_V2];	// Send-direction common key (version 2)
 	UCHAR NextIv_V2[UDP_ACCELERATION_PACKET_IV_SIZE_V2];	// IV to be used next (version 2)
 	bool ReadRawFlagMode;								// Read raw flag mode
+	bool UseStun;										// Whether the public endpoint was learned by STUN
+	IP StunIp;											// Public IP address learned by STUN
+	USHORT StunPort;									// Public port number learned by STUN
 };
 
 // Function prototype
-UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port, bool no_nat_t);
+UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port);
 void FreeUdpAccel(UDP_ACCEL *a);
 bool UdpAccelInitClient(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, IP *reported_ip, USHORT port, UINT cookie, UINT my_cookie);
 bool UdpAccelInitServer(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, IP *reported_ip, USHORT port);
@@ -128,6 +104,6 @@ bool UdpAccelIsSendReady(UDP_ACCEL *a, bool check_keepalive);
 void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT max_size, bool high_priority);
 void UdpAccelSendBlock(UDP_ACCEL *a, BLOCK *b);
 UINT UdpAccelCalcMss(UDP_ACCEL *a);
-void NatT_GetIpThread(THREAD *thread, void *param);
+void UdpAccelQueryStun(UDP_ACCEL *a, IP *peer_ip);
 
 #endif	// UDPACCEL_H

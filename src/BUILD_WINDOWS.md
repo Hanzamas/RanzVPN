@@ -112,7 +112,7 @@ into it. So that is what will be described below.
 
 1. Build number
 
-   You can change the build number in `CMakeSettings.json`. Use any integer no less than 5180.
+   You can change the build number in `CMakeSettings.json`. The build number becomes the third version component (0.1.N); CI uses the GitHub run number.
 
    Delete and regenerate CMake cache after the change.
 
@@ -131,13 +131,13 @@ into it. So that is what will be described below.
    
    If you install from Scoop, make sure to add the OpenSSL folder to the system's `PATH`.
    As Scoop already adds it to the user's `PATH`, just copy the same location into the system environment variable(s).
-   SoftEther Client Service starts from the System account and will fail to start if OpenSSL is not in the global `PATH`.
+   SoftEther Server Service starts from the System account and will fail to start if OpenSSL is not in the global `PATH`.
    
    Building should be straightforward. You can verify that the binaries are now linked against the locally installed OpenSSL
    with tools like `ldd` (available from Git Bash):
 
    ```bash
-   $ ldd /c/Program\ Files/SoftEther\ VPN\ Client\ Developer\ Edition/vpnclient.exe
+   $ ldd /c/Program\ Files/SoftEther\ VPN\ Server\ Developer\ Edition/vpnserver.exe
         ...
         libcrypto-3-x64.dll => /c/Scoop/apps/openssl/current/bin/libcrypto-3-x64.dll (0x7ff8beb70000)
         libssl-3-x64.dll => /c/Scoop/apps/openssl/current/bin/libssl-3-x64.dll (0x7ff8beaa0000)

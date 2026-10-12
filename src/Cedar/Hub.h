@@ -68,9 +68,6 @@ struct SE_TEST
 	LIST *TestHistory;					// Reception history
 };
 
-// Macro
-#define	NO_ACCOUNT_DB(h)		((h)->FarmMember)
-
 // Database in the case of a stand-alone or a farm master HUB
 struct HUBDB
 {
@@ -121,8 +118,6 @@ struct HUB_PA
 struct HUB_OPTION
 {
 	// Standard options
-	UINT DefaultGateway;				// Used in IPC when DHCP cannot be used (e.g. WireGuard sessions)
-	UINT DefaultSubnet;					// Used in IPC when DHCP cannot be used (e.g. WireGuard sessions)
 	UINT MaxSession;					// Maximum number of simultaneous connections
 	bool NoEnum;						// Excluded from the enumeration
 	// Advanced options
@@ -159,15 +154,7 @@ struct HUB_OPTION
 	bool DisableUdpFilterForLocalBridgeNic;	// Not to perform filtering DHCP packets associated with local bridge NIC
 	bool ApplyIPv4AccessListOnArpPacket;	// Apply an IPv4 access list to the ARP packet
 	bool RemoveDefGwOnDhcpForLocalhost;	// Remove the designation of the DHCP server from the DHCP response packet addressed to localhost
-	UINT SecureNAT_MaxTcpSessionsPerIp;		// Maximum number of TCP sessions per IP address
-	UINT SecureNAT_MaxTcpSynSentPerIp;		// Maximum number of TCP sessions of SYN_SENT state per IP address
-	UINT SecureNAT_MaxUdpSessionsPerIp;		// Maximum number of UDP sessions per IP address
-	UINT SecureNAT_MaxDnsSessionsPerIp;		// Maximum number of DNS sessions per IP address
-	UINT SecureNAT_MaxIcmpSessionsPerIp;	// Maximum number of ICMP sessions per IP address
 	UINT AccessListIncludeFileCacheLifetime;	// Expiration of the access list external file (in seconds)
-	bool DisableKernelModeSecureNAT;			// Disable the kernel mode NAT
-	bool DisableIpRawModeSecureNAT;			// Disable the IP Raw Mode NAT
-	bool DisableUserModeSecureNAT;			// Disable the user mode NAT
 	bool DisableCheckMacOnLocalBridge;	// Disable the MAC address verification in local bridge
 	bool DisableCorrectIpOffloadChecksum;	// Disable the correction of checksum that is IP-Offloaded
 	bool BroadcastLimiterStrictMode;	// Strictly broadcast packets limiting mode
@@ -178,13 +165,9 @@ struct HUB_OPTION
 	bool AllowSameUserInPrivacyFilterMode;	// Allow packets if both the source and destination session user are the same
 	bool SuppressClientUpdateNotification;	// Suppress the update notification function on the VPN Client
 	UINT FloodingSendQueueBufferQuota;	// The global quota of send queues of flooding packets
-	bool AssignVLanIdByRadiusAttribute;	// Assign the VLAN ID for the VPN session, by the attribute value of RADIUS
-	bool DenyAllRadiusLoginWithNoVlanAssign;	// Deny all RADIUS login with no VLAN ID assigned
-	bool SecureNAT_RandomizeAssignIp;	// Randomize the assignment IP address for new DHCP client
 	UINT DetectDormantSessionInterval;	// Interval (seconds) threshold to detect a dormant VPN session
 	bool NoPhysicalIPOnPacketLog;		// Disable saving physical IP address on the packet log
 	bool UseHubNameAsDhcpUserClassOption;	// Add HubName to DHCP request as User-Class option
-	bool UseHubNameAsRadiusNasId;		// Add HubName to Radius request as NAS-Identifier attrioption
 	bool AllowEapMatchUserByCert;		// Allow matching EAP Identity with user certificate CNs
 	UINT DhcpDiscoverTimeoutMs;			// Timeout to wait for DHCP server response on DISCOVER request
 };
@@ -271,27 +254,6 @@ struct ACCESS
 	UINT UniqueId;						// Unique ID
 };
 
-// Ticket
-struct TICKET
-{
-	UINT64 CreatedTick;						// Creation date and time
-	UCHAR Ticket[SHA1_SIZE];				// Ticket
-	char Username[MAX_USERNAME_LEN + 1];	// User name
-	char UsernameReal[MAX_USERNAME_LEN + 1];	// Real user name
-	char GroupName[MAX_USERNAME_LEN + 1];	// Group name
-	char SessionName[MAX_SESSION_NAME_LEN + 1];	// Session name
-	POLICY Policy;							// Policy
-};
-
-// Traffic difference
-struct TRAFFIC_DIFF
-{
-	UINT Type;							// Type
-	TRAFFIC Traffic;					// Traffic
-	char *HubName;						// HUB name
-	char *Name;							// Name
-};
-
 // Administration options
 struct ADMIN_OPTION
 {
@@ -334,26 +296,14 @@ struct HUB
 	LOCK *lock_online;					// Lock for Online
 	REF *ref;							// Reference counter
 	CEDAR *Cedar;						// Cedar
-	UINT Type;							// Type
 	HUBDB *HubDb;						// Database
 	char *Name;							// The name of the HUB
-	LOCK *RadiusOptionLock;				// Lock for Radius option
-	char *RadiusServerName;				// Radius server name
-	UINT RadiusServerPort;				// Radius server port number
-	UINT RadiusRetryInterval;			// Radius retry interval
-	UINT RadiusRetryTimeout;			// Radius timeout, it will no longer retry
-	BUF *RadiusSecret;					// Radius shared key
-	char RadiusSuffixFilter[MAX_SIZE];	// Radius suffix filter
-	char RadiusRealm[MAX_SIZE];			// Radius realm (optional)
-	bool RadiusConvertAllMsChapv2AuthRequestToEap;	// Convert all MS-CHAPv2 auth request to EAP
-	bool RadiusUsePeapInsteadOfEap;			// Use PEAP instead of EAP
 	volatile bool Halt;					// Halting flag
 	bool Offline;						// Offline
 	bool BeingOffline;					// Be Doing Offline
 	LIST *SessionList;					// Session list
 	COUNTER *SessionCounter;			// Session number generation counter
 	TRAFFIC *Traffic;					// Traffic information
-	TRAFFIC *OldTraffic;				// Old traffic information
 	LOCK *TrafficLock;					// Traffic lock
 	COUNTER *NumSessions;				// The current number of sessions
 	COUNTER *NumSessionsClient;			// The current number of sessions (client)
@@ -378,13 +328,7 @@ struct HUB
 	LOG *SecurityLogger;				// Security logger
 	UCHAR HashedPassword[SHA1_SIZE];	// Password
 	UCHAR SecurePassword[SHA1_SIZE];	// Secure password
-	LIST *TicketList;					// Ticket list
-	bool FarmMember;					// Farm member
-	UINT64 LastIncrementTraffic;		// Traffic reporting time
 	UINT64 LastSendArpTick;				// ARP transmission time of the last
-	SNAT *SecureNAT;					// SecureNAT
-	bool EnableSecureNAT;				// SecureNAT enable / disable flag
-	VH_OPTION *SecureNATOption;			// SecureNAT Option
 	THREAD *WatchDogThread;				// Watchdog thread
 	EVENT *WatchDogEvent;				// Watchdog event
 	bool WatchDogStarted;				// Whether the watchdog thread is used
@@ -395,15 +339,8 @@ struct HUB
 	UINT64 LastLoginTime;				// Last login date and time
 	UINT NumLogin;						// Number of logins
 	bool HubIsOnlineButHalting;			// Virtual HUB is really online, but it is in offline state to stop
-	UINT FarmMember_MaxSessionClient;	// Maximum client connection sessions for cluster members
-	UINT FarmMember_MaxSessionBridge;	// Maximum bridge connection sessions for cluster members
-	bool FarmMember_MaxSessionClientBridgeApply;	// Apply the FarmMember_MaxSession*
-	UINT CurrentVersion;				// The current version
-	UINT LastVersion;					// Version of when the update notification is issued at the last
 	wchar_t *Msg;						// Message to be displayed when the client is connected
 	LIST *UserList;						// Cache of the user list file
-	bool IsVgsHub;						// Whether it's a VGS Virtual HUB
-	bool IsVgsSuperRelayHub;			// Whether it's a VGS Super Relay Virtual HUB
 	UINT64 LastFlushTick;				// Last tick to flush the MAC address table
 	bool StopAllLinkFlag;				// Stop all link flag
 	bool ForceDisableComm;				// Disable the communication function
@@ -437,8 +374,6 @@ bool IsHub(CEDAR *cedar, char *name);
 void StopHub(HUB *h);
 void AddSession(HUB *h, SESSION *s);
 void DelSession(HUB *h, SESSION *s);
-SESSION *SearchSessionByUniqueId(HUB *h, UINT id);
-UINT GetNewUniqueId(HUB *h);
 void StopAllSession(HUB *h);
 bool HubPaInit(SESSION *s);
 void HubPaFree(SESSION *s);
@@ -481,23 +416,12 @@ bool ApplyAccessListToForwardPacket(HUB *hub, SESSION *src_session, SESSION *des
 bool IsPacketMaskedByAccessList(SESSION *s, PKT *p, ACCESS *a, UINT64 dest_username, UINT64 dest_groupname, SESSION *dest_session);
 void GetAccessListStr(char *str, UINT size, ACCESS *a);
 void DeleteOldIpTableEntry(LIST *o);
-void SetRadiusServer(HUB *hub, char *name, UINT port, char *secret);
-void SetRadiusServerEx(HUB *hub, char *name, UINT port, char *secret, UINT interval);
-void SetRadiusServerEx2(HUB *hub, char *name, UINT port, char *secret, UINT interval, UINT timeout);
-bool GetRadiusServer(HUB *hub, char *name, UINT size, UINT *port, char *secret, UINT secret_size);
-bool GetRadiusServerEx(HUB *hub, char *name, UINT size, UINT *port, char *secret, UINT secret_size, UINT *interval);
-bool GetRadiusServerEx2(HUB *hub, char *name, UINT size, UINT *port, char *secret, UINT secret_size, UINT *interval, UINT *timeout);
-bool GetRadiusServerEx3(HUB *hub, char *name, UINT size, UINT *port, char *secret, UINT secret_size, UINT *interval, UINT *timeout, char *suffix_filter, UINT suffix_filter_size);
 int CompareCert(void *p1, void *p2);
 void GetHubLogSetting(HUB *h, HUB_LOG *setting);
 void SetHubLogSetting(HUB *h, HUB_LOG *setting);
 void SetHubLogSettingEx(HUB *h, HUB_LOG *setting, bool no_change_switch_type);
 void DeleteExpiredIpTableEntry(LIST *o);
 void DeleteExpiredMacTableEntry(HASH_LIST *h);
-void AddTrafficDiff(HUB *h, char *name, UINT type, TRAFFIC *traffic);
-void IncrementHubTraffic(HUB *h);
-void EnableSecureNAT(HUB *h, bool enable);
-void EnableSecureNATEx(HUB *h, bool enable, bool no_change);
 void StartHubWatchDog(HUB *h);
 void StopHubWatchDog(HUB *h);
 void HubWatchDogThread(THREAD *t, void *param);
@@ -544,8 +468,6 @@ bool IsUserMatchInUserList(LIST *o, char *filename, UINT64 user_hash);
 bool IsUserMatchInUserListWithCacheExpires(LIST *o, char *filename, UINT64 user_hash, UINT64 lifetime);
 bool IsUserMatchInUserListWithCacheExpiresAcl(LIST *o, char *name_in_acl, UINT64 user_hash, UINT64 lifetime);
 bool CheckMaxLoggedPacketsPerMinute(SESSION *s, UINT max_packets, UINT64 now);
-EAP_CLIENT *HubNewEapClient(CEDAR *cedar, char *hubname, char *client_ip_str, char *username, char *vpn_protocol_state_str, bool proxy_only, 
-							PPP_LCP **response, UCHAR last_recv_eapid);
 
 #endif	// HUB_H
 

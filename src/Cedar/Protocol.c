@@ -7,26 +7,16 @@
 
 #include "Protocol.h"
 
+#include "Account.h"
 #include "Admin.h"
-#include "Client.h"
-#include "CM.h"
-#include "DDNS.h"
 #include "Hub.h"
-#include "IPC.h"
 #include "Link.h"
 #include "Logging.h"
-#include "Proto_IPsec.h"
-#include "Proto_OpenVPN.h"
-#include "Proto_PPP.h"
-#include "Proto_SSTP.h"
-#include "Radius.h"
+#include "MsChapV2.h"
 #include "Sam.h"
 #include "Server.h"
 #include "UdpAccel.h"
-#include "VLanUnix.h"
 #include "WaterMark.h"
-#include "WebUI.h"
-#include "WinUi.h"
 #include "Wpc.h"
 
 #include "Mayaqua/Cfg.h"
@@ -38,7 +28,6 @@
 #include "Mayaqua/Object.h"
 #include "Mayaqua/OS.h"
 #include "Mayaqua/Pack.h"
-#include "Mayaqua/Secure.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 #include "Mayaqua/Tick64.h"
@@ -499,272 +488,6 @@ void AddAllRootCertsToCertList(LIST *o)
 	Debug("AddAllRootCertsToCertList: ok=%u error=%u total_list_len=%u\n", num_ok, num_error, LIST_NUM(o));
 }
 
-// Convert the date of YYYYMMDD format to a number
-UINT64 ShortStrToDate64(char *str)
-{
-	UINT v;
-	SYSTEMTIME st;
-	// Validate arguments
-	if (str == NULL)
-	{
-		return 0;
-	}
-
-	v = ToInt(str);
-
-	Zero(&st, sizeof(st));
-
-	st.wYear = (v % 100000000) / 10000;
-	st.wMonth = (v % 10000) / 100;
-	st.wDay = v % 100;
-
-	return SystemToUINT64(&st);
-}
-
-// Handle the response that is returned from the server in the update client
-void UpdateClientThreadProcessResults(UPDATE_CLIENT *c, BUF *b)
-{
-	bool exit = false;
-	// Validate arguments
-	if (c == NULL || b == NULL)
-	{
-		return;
-	}
-
-	SeekBufToBegin(b);
-
-	while (true)
-	{
-		char *line = CfgReadNextLine(b);
-		if (line == NULL)
-		{
-			break;
-		}
-
-		Trim(line);
-
-		if (StartWith(line, "#") == false && IsEmptyStr(line) == false)
-		{
-			TOKEN_LIST *t = ParseTokenWithNullStr(line, " \t");
-
-			if (t != NULL)
-			{
-				if (t->NumTokens >= 5)
-				{
-					if (StrCmpi(t->Token[0], c->FamilyName) == 0)
-					{
-						// Match
-						UINT64 date = ShortStrToDate64(t->Token[1]);
-						if (date != 0)
-						{
-							UINT build = ToInt(t->Token[2]);
-							if (build != 0)
-							{
-								if (build > c->MyBuild && build > c->LatestBuild && build > c->Setting.LatestIgnoreBuild)
-								{
-									c->Callback(c, build, date, t->Token[3], t->Token[4], &c->HaltFlag, c->Param);
-
-									c->LatestBuild = build;
-
-									exit = true;
-								}
-							}
-						}
-					}
-				}
-
-				FreeToken(t);
-			}
-		}
-
-		Free(line);
-
-		if (exit)
-		{
-			break;
-		}
-	}
-}
-
-// Update client main process
-void UpdateClientThreadMain(UPDATE_CLIENT *c)
-{
-	char url[MAX_SIZE];
-	char id[MAX_SIZE];
-	URL_DATA data;
-	BUF *cert_hash;
-	UINT ret = 0;
-	BUF *recv;
-	// Validate arguments
-	if (c == NULL)
-	{
-		return;
-	}
-
-	// Generate the URL
-	Format(url, sizeof(url), IsUseAlternativeHostname() ? UPDATE_SERVER_URL_CHINA : UPDATE_SERVER_URL_GLOBAL, c->FamilyName, c->SoftwareName, c->MyBuild, c->MyLanguage);
-
-	if (IsEmptyStr(c->ClientId) == false)
-	{
-		Format(id, sizeof(id), "&id=%s", c->ClientId);
-		StrCat(url, sizeof(url), id);
-	}
-
-	// Get a text file at this URL
-	if (ParseUrl(&data, url, false, NULL) == false)
-	{
-		return;
-	}
-
-	cert_hash = StrToBin(UPDATE_SERVER_CERT_HASH);
-
-	StrCpy(data.SniString, sizeof(data.SniString), DDNS_SNI_VER_STRING);
-
-	recv = HttpRequestEx3(&data, NULL, UPDATE_CONNECT_TIMEOUT, UPDATE_COMM_TIMEOUT, &ret, false, NULL, NULL,
-		NULL, ((cert_hash != NULL && (cert_hash->Size % SHA1_SIZE) == 0) ? cert_hash->Buf : NULL),
-		(cert_hash != NULL ? (cert_hash->Size / SHA1_SIZE) : 0),
-		(bool *)&c->HaltFlag, 0, NULL, NULL);
-
-	FreeBuf(cert_hash);
-
-	if (recv != NULL)
-	{
-		UpdateClientThreadProcessResults(c, recv);
-
-		FreeBuf(recv);
-	}
-}
-
-// Update client main thread
-void UpdateClientThreadProc(THREAD *thread, void *param)
-{
-	UPDATE_CLIENT *c = (UPDATE_CLIENT *)param;
-	bool first_loop = true;
-	// Validate arguments
-	if (thread == NULL || param == NULL)
-	{
-		return;
-	}
-
-	while (true)
-	{
-		// Termination check
-		if (c->HaltFlag)
-		{
-			break;
-		}
-
-		if (first_loop == false)
-		{
-			// Wait for the foreground
-			if (c->IsForegroundCb != NULL)
-			{
-				while (true)
-				{
-					if (c->HaltFlag)
-					{
-						break;
-					}
-
-					if (c->IsForegroundCb(c, c->Param))
-					{
-						break;
-					}
-
-					Wait(c->HaltEvent, 1000);
-				}
-			}
-		}
-
-		first_loop = false;
-
-		if (c->HaltFlag)
-		{
-			break;
-		}
-
-		if (c->Setting.DisableCheck == false)
-		{
-			UpdateClientThreadMain(c);
-		}
-
-		// Wait until the next attempt
-		Wait(c->HaltEvent, GenRandInterval(UPDATE_CHECK_INTERVAL_MIN, UPDATE_CHECK_INTERVAL_MAX));
-	}
-}
-
-// Update the configuration of the update client
-void SetUpdateClientSetting(UPDATE_CLIENT *c, UPDATE_CLIENT_SETTING *s)
-{
-	// Validate arguments
-	if (c == NULL || s == NULL)
-	{
-		return;
-	}
-
-	Copy(&c->Setting, s, sizeof(UPDATE_CLIENT_SETTING));
-
-	Set(c->HaltEvent);
-}
-
-// Start the update client
-UPDATE_CLIENT *NewUpdateClient(UPDATE_NOTIFY_PROC *cb, UPDATE_ISFOREGROUND_PROC *isforeground_cb, void *param, char *family_name, char *software_name, wchar_t *software_title, UINT my_build, UINT64 my_date, char *my_lang, UPDATE_CLIENT_SETTING *current_setting, char *client_id)
-{
-	UPDATE_CLIENT *c;
-	// Validate arguments
-	if (family_name == NULL || software_title == NULL || software_name == NULL || my_build == 0 ||
-		my_lang == NULL || current_setting == NULL || cb == NULL)
-	{
-		return NULL;
-	}
-
-	c = ZeroMalloc(sizeof(UPDATE_CLIENT));
-
-	c->Callback = cb;
-	c->IsForegroundCb = isforeground_cb;
-
-	StrCpy(c->ClientId, sizeof(c->ClientId), client_id);
-	StrCpy(c->FamilyName, sizeof(c->FamilyName), family_name);
-	StrCpy(c->SoftwareName, sizeof(c->SoftwareName), software_name);
-	UniStrCpy(c->SoftwareTitle, sizeof(c->SoftwareTitle), software_title);
-	c->MyBuild = my_build;
-	c->MyDate = my_date;
-	StrCpy(c->MyLanguage, sizeof(c->MyLanguage), my_lang);
-
-	Copy(&c->Setting, current_setting, sizeof(c->Setting));
-
-	c->Param = param;
-
-	c->HaltEvent = NewEvent();
-
-	// Create a thread
-	c->Thread = NewThread(UpdateClientThreadProc, c);
-
-	return c;
-}
-
-// Terminate the update client
-void FreeUpdateClient(UPDATE_CLIENT *c)
-{
-	// Validate arguments
-	if (c == NULL)
-	{
-		return;
-	}
-
-	// Thread stop
-	c->HaltFlag = true;
-	Set(c->HaltEvent);
-
-	// Wait for thread termination
-	WaitThread(c->Thread, INFINITE);
-
-	ReleaseThread(c->Thread);
-	ReleaseEvent(c->HaltEvent);
-
-	Free(c);
-}
-
 // Generate unique IDs for each machine
 void GenerateMachineUniqueHash(void *data)
 {
@@ -1099,11 +822,8 @@ bool ServerAccept(CONNECTION *c)
 	char username[MAX_SIZE];
 	char groupname[MAX_SIZE];
 	UCHAR session_key[SHA1_SIZE];
-	UCHAR ticket[SHA1_SIZE];
 	UINT authtype;
 	POLICY *policy;
-	UINT assigned_vlan_id = 0;
-	UCHAR assigned_ipc_mac_address[6];
 	HUB *hub;
 	SESSION *s = NULL;
 	UINT64 user_expires = 0;
@@ -1114,8 +834,6 @@ bool ServerAccept(CONNECTION *c)
 	bool use_udp_acceleration_client;
 	UINT client_udp_acceleration_max_version = 1;
 	UINT udp_acceleration_version = 1;
-	UINT client_rudp_bulk_max_version = 1;
-	UINT rudp_bulk_version = 1;
 	bool support_hmac_on_udp_acceleration_client = false;
 	bool support_udp_accel_fast_disconnect_detect;
 	bool use_hmac_on_udp_acceleration = false;
@@ -1129,31 +847,19 @@ bool ServerAccept(CONNECTION *c)
 	UINT max_connection;
 	UINT timeout;
 	bool no_reconnect_to_session = false;
-	bool farm_controller = false;
-	bool farm_member = false;
-	bool farm_mode = false;
 	bool require_bridge_routing_mode;
 	bool require_monitor_mode;
-	bool support_bulk_on_rudp = false;
-	bool support_hmac_on_bulk_of_rudp = false;
-	bool support_udp_recovery = false;
-	bool enable_bulk_on_rudp = false;
-	bool enable_udp_recovery = false;
-	bool enable_hmac_on_bulk_of_rudp = false;
 	bool use_client_license = false, use_bridge_license = false;
 	bool local_host_session = false;
 	char sessionname[MAX_SESSION_NAME_LEN + 1];
 	bool is_server_or_bridge = false;
 	bool qos = false;
-	bool cluster_dynamic_secure_nat = false;
 	bool no_save_password = false;
 	NODE_INFO node;
 	wchar_t *msg = NULL;
 	bool suppress_client_update_notification = false;
 	USER *loggedin_user_object = NULL;
-	FARM_MEMBER *f = NULL;
 	SERVER *server = NULL;
-	POLICY ticketed_policy;
 	UCHAR unique[SHA1_SIZE], unique2[SHA1_SIZE];
 	CEDAR *cedar;
 	RPC_WINVER winver;
@@ -1165,7 +871,6 @@ bool ServerAccept(CONNECTION *c)
 	char *error_detail = NULL;
 	char *error_detail_2 = NULL;
 	char ctoken_hash_str[64];
-	EAP_CLIENT *release_me_eap_client = NULL;
 
 	// Validate arguments
 	if (c == NULL)
@@ -1176,8 +881,6 @@ bool ServerAccept(CONNECTION *c)
 	GenerateMachineUniqueHash(unique2);
 
 	Zero(ctoken_hash_str, sizeof(ctoken_hash_str));
-
-	Zero(assigned_ipc_mac_address, sizeof(assigned_ipc_mac_address));
 
 	Zero(mschap_v2_server_response_20, sizeof(mschap_v2_server_response_20));
 
@@ -1206,20 +909,7 @@ bool ServerAccept(CONNECTION *c)
 
 	if (c->Cedar->Server != NULL)
 	{
-		SERVER *s = c->Cedar->Server;
-		server = s;
-
-		if (s->ServerType == SERVER_TYPE_FARM_MEMBER)
-		{
-			farm_member = true;
-			farm_mode = true;
-		}
-
-		if (s->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-		{
-			farm_controller = true;
-			farm_mode = true;
-		}
+		server = c->Cedar->Server;
 	}
 
 	// Receive the signature
@@ -1339,7 +1029,7 @@ bool ServerAccept(CONNECTION *c)
 			StrCpy(c->ClientStr, sizeof(c->ClientStr), "Unknown");
 		}
 		c->ServerVer = GetCedarVersionNumber();
-		c->ServerBuild = CEDAR_VERSION_BUILD;
+		c->ServerBuild = CEDAR_WIRE_BUILD;
 
 		// Get the NODE_INFO
 		Zero(&node, sizeof(node));
@@ -1367,73 +1057,12 @@ bool ServerAccept(CONNECTION *c)
 
 		// Get authentication method and initiate login process
 		authtype = GetAuthTypeFromPack(p);
-		if (authtype == AUTHTYPE_WIREGUARD_KEY)
-		{
-			WGK *wgk, tmp;
-			bool ok = false;
-
-			if (PackGetStr(p, "key", tmp.Key, sizeof(tmp.Key)) == false)
-			{
-				FreePack(p);
-				c->Err = ERR_PROTOCOL_ERROR;
-				error_detail = "GetWireGuardKeyFromPack";
-				goto CLEANUP;
-			}
-
-			LockList(c->Cedar->WgkList);
-			{
-				wgk = Search(c->Cedar->WgkList, &tmp);
-				if (wgk != NULL)
-				{
-					ok = true;
-					StrCpy(hubname, sizeof(hubname), wgk->Hub);
-					StrCpy(username, sizeof(username), wgk->User);
-					StrCpy(node.HubName, sizeof(node.HubName), hubname);
-				}
-			}
-			UnlockList(c->Cedar->WgkList);
-
-			if (ok == false)
-			{
-				FreePack(p);
-				c->Err = ERR_AUTH_FAILED;
-				SLog(c->Cedar, "LS_WG_KEY_NOT_FOUND", c->Name, hubname);
-				error_detail = "ERR_AUTH_FAILED";
-				goto CLEANUP;
-			}
-		}
-		else if (GetHubnameAndUsernameFromPack(p, username, sizeof(username), hubname, sizeof(hubname)) == false)
+		if (GetHubnameAndUsernameFromPack(p, username, sizeof(username), hubname, sizeof(hubname)) == false)
 		{
 			FreePack(p);
 			c->Err = ERR_PROTOCOL_ERROR;
 			error_detail = "GetHubnameAndUsernameFromPack";
 			goto CLEANUP;
-		}
-
-		if (farm_member)
-		{
-			bool ok = false;
-
-			if (StrCmpi(username, ADMINISTRATOR_USERNAME) == 0 &&
-				authtype == AUTHTYPE_PASSWORD)
-			{
-				ok = true;
-			}
-
-			if (authtype == AUTHTYPE_TICKET)
-			{
-				ok = true;
-			}
-
-			if (ok == false)
-			{
-				// Logging on directly to server farm members by
-				// non-Administrators are prohibited
-				FreePack(p);
-				SLog(c->Cedar, "LS_FARMMEMBER_NOT_ADMIN", c->Name, hubname, ADMINISTRATOR_USERNAME, username);
-				c->Err = ERR_ACCESS_DENIED;
-				goto CLEANUP;
-			}
 		}
 
 		Debug("Username = %s, HubName = %s\n", username, hubname);
@@ -1492,7 +1121,6 @@ bool ServerAccept(CONNECTION *c)
 			USER *user;
 			USERGROUP *group;
 			char plain_password[MAX_PASSWORD_LEN + 1];
-			RADIUS_LOGIN_OPTION radius_login_opt;
 
 			if (hub->Halt || hub->Offline)
 			{
@@ -1502,18 +1130,6 @@ bool ServerAccept(CONNECTION *c)
 				ReleaseHub(hub);
 				c->Err = ERR_HUB_STOPPING;
 				goto CLEANUP;
-			}
-
-			Zero(&radius_login_opt, sizeof(radius_login_opt));
-
-			if (hub->Option != NULL)
-			{
-				radius_login_opt.In_CheckVLanId = hub->Option->AssignVLanIdByRadiusAttribute;
-				radius_login_opt.In_DenyNoVlanId = hub->Option->DenyAllRadiusLoginWithNoVlanAssign;
-				if (hub->Option->UseHubNameAsRadiusNasId)
-				{
-					StrCpy(radius_login_opt.NasId, sizeof(radius_login_opt.NasId), hubname);
-				}
 			}
 
 			// Get the various flags
@@ -1530,108 +1146,29 @@ bool ServerAccept(CONNECTION *c)
 			{
 				client_udp_acceleration_max_version = 1;
 			}
-			client_rudp_bulk_max_version = PackGetInt(p, "rudp_bulk_max_version");
-			if (client_rudp_bulk_max_version == 0)
-			{
-				client_rudp_bulk_max_version = 1;
-			}
 			support_hmac_on_udp_acceleration_client = PackGetBool(p, "support_hmac_on_udp_acceleration");
 			support_udp_accel_fast_disconnect_detect = PackGetBool(p, "support_udp_accel_fast_disconnect_detect");
-			support_bulk_on_rudp = PackGetBool(p, "support_bulk_on_rudp");
-			support_hmac_on_bulk_of_rudp = PackGetBool(p, "support_hmac_on_bulk_of_rudp");
-			support_udp_recovery = PackGetBool(p, "support_udp_recovery");
 
-			if (c->IsInProc)
+			if (c->CipherName != NULL)
 			{
-				char tmp[MAX_SIZE];
-				UINT64 ptr;
-
-				ptr = PackGetInt64(p, "release_me_eap_client");
-				if (ptr != 0)
-				{
-					release_me_eap_client = (EAP_CLIENT *)ptr;
-				}
-
-				PackGetStr(p, "inproc_postfix", c->InProcPrefix, sizeof(c->InProcPrefix));
-				Zero(tmp, sizeof(tmp));
-				PackGetStr(p, "inproc_cryptname", tmp, sizeof(tmp));
-				c->InProcLayer = PackGetInt(p, "inproc_layer");
-
-				if (c->FirstSock != NULL)
-				{
-					if (IsEmptyStr(c->InProcPrefix) == false)
-					{
-						Format(c->FirstSock->UnderlayProtocol, sizeof(c->FirstSock->UnderlayProtocol), SOCK_UNDERLAY_INPROC_EX, c->InProcPrefix);
-						AddProtocolDetailsStr(c->FirstSock->UnderlayProtocol, sizeof(c->FirstSock->UnderlayProtocol), c->InProcPrefix);
-					}
-				}
-
-				if (c->CipherName != NULL)
-				{
-					Free(c->CipherName);
-				}
-
-				c->CipherName = NULL;
-
-				if (c->SslVersion != NULL)
-				{
-					Free(c->SslVersion);
-				}
-				c->SslVersion = NULL;
-
-				if (IsEmptyStr(tmp) == false)
-				{
-					c->CipherName = CopyStr(tmp);
-					use_encrypt = true;
-				}
-
-				use_udp_acceleration_client = false;
-
-				Format(radius_login_opt.In_VpnProtocolState, sizeof(radius_login_opt.In_VpnProtocolState),
-					"L%u:%s", c->InProcLayer, c->InProcPrefix);
+				Free(c->CipherName);
 			}
-			else
+			c->CipherName = NULL;
+
+			if (c->SslVersion != NULL)
 			{
-				if (c->CipherName != NULL)
-				{
-					Free(c->CipherName);
-				}
-				c->CipherName = NULL;
+				Free(c->SslVersion);
+			}
+			c->SslVersion = NULL;
 
-				if (c->SslVersion != NULL)
-				{
-					Free(c->SslVersion);
-				}
-				c->SslVersion = NULL;
-
-				if (c->FirstSock != NULL && IsEmptyStr(c->FirstSock->CipherName) == false)
-				{
-					c->CipherName = CopyStr(c->FirstSock->CipherName);
-				}
-
-				if (c->FirstSock != NULL && IsEmptyStr(c->FirstSock->SslVersion) == false)
-				{
-					c->SslVersion = CopyStr(c->FirstSock->SslVersion);
-				}
-
-				Format(radius_login_opt.In_VpnProtocolState, sizeof(radius_login_opt.In_VpnProtocolState),
-					"L%u:%s", IPC_LAYER_2, "SEVPN");
+			if (c->FirstSock != NULL && IsEmptyStr(c->FirstSock->CipherName) == false)
+			{
+				c->CipherName = CopyStr(c->FirstSock->CipherName);
 			}
 
-			if (support_bulk_on_rudp && c->FirstSock != NULL && c->FirstSock->IsRUDPSocket &&
-				c->FirstSock->BulkRecvKey != NULL && c->FirstSock->BulkSendKey != NULL)
+			if (c->FirstSock != NULL && IsEmptyStr(c->FirstSock->SslVersion) == false)
 			{
-				// Allow UDP bulk transfer if the client side supports
-				// in the case of using R-UDP Socket
-				enable_bulk_on_rudp = true;
-
-				enable_hmac_on_bulk_of_rudp = support_hmac_on_bulk_of_rudp;
-			}
-
-			if (support_udp_recovery && c->FirstSock != NULL && c->FirstSock->IsRUDPSocket)
-			{
-				// Allow UDP recovery
-				enable_udp_recovery = true;
+				c->SslVersion = CopyStr(c->FirstSock->SslVersion);
 			}
 
 			if (use_udp_acceleration_client)
@@ -1705,15 +1242,6 @@ bool ServerAccept(CONNECTION *c)
 				case AUTHTYPE_EXTERNAL:
 					authtype_str = _UU("LH_AUTH_EXTERNAL");
 					break;
-				case AUTHTYPE_WIREGUARD_KEY:
-					authtype_str = _UU("LH_AUTH_WIREGUARD_KEY");
-					break;
-				case AUTHTYPE_OPENVPN_CERT:
-					authtype_str = _UU("LH_AUTH_OPENVPN_CERT");
-					break;
-				case AUTHTYPE_TICKET:
-					authtype_str = _UU("LH_AUTH_TICKET");
-					break;
 				}
 				IPToStr(ip1, sizeof(ip1), &c->FirstSock->RemoteIP);
 				IPToStr(ip2, sizeof(ip2), &c->FirstSock->LocalIP);
@@ -1728,99 +1256,7 @@ bool ServerAccept(CONNECTION *c)
 			auth_ret = SamAuthUserByAnonymous(hub, username);
 			if (auth_ret)
 			{
-				if (c->IsInProc)
-				{
-					IPC_MSCHAP_V2_AUTHINFO mschap;
-					char password_tmp[MAX_SIZE];
-
-					Zero(&mschap, sizeof(mschap));
-
-					Zero(password_tmp, sizeof(password_tmp));
-					PackGetStr(p, "plain_password", password_tmp, sizeof(password_tmp));
-
-					if (ParseAndExtractMsChapV2InfoFromPassword(&mschap, password_tmp))
-					{
-						// Because the server don't know the NTLM hashed password, the bet to the possibility of
-						// the same character to the user name and empty, search a password of different
-						// versions of the upper and lower case characters in the case of anonymous authentication.
-						// Returns the MS-CHAPv2 response by using the password if there is a match.
-						// Fail the authentication if no match is found.
-						// (Because, if return a false MS-CHAPv2 Response, PPP client cause an error)
-						LIST *o = NewListFast(NULL);
-						char tmp1[MAX_SIZE];
-						char tmp2[MAX_SIZE];
-						char tmp3[MAX_SIZE];
-						char tmp4[MAX_SIZE];
-						char *response_pw;
-						char psk[MAX_SIZE];
-
-						ParseNtUsername(mschap.MsChapV2_PPPUsername, tmp1, sizeof(tmp1), tmp2, sizeof(tmp2), false);
-						ParseNtUsername(mschap.MsChapV2_PPPUsername, tmp3, sizeof(tmp3), tmp4, sizeof(tmp4), true);
-
-						Add(o, "");
-						Add(o, "-");
-						Add(o, ".");
-						Add(o, "*");
-						Add(o, "?");
-						Add(o, " ");
-						Add(o, "p");
-						Add(o, "guest");
-						Add(o, "anony");
-						Add(o, "anonymous");
-						Add(o, "password");
-						Add(o, "passwd");
-						Add(o, "pass");
-						Add(o, "pw");
-						Add(o, mschap.MsChapV2_PPPUsername);
-						Add(o, tmp1);
-						Add(o, tmp2);
-						Add(o, tmp3);
-						Add(o, tmp4);
-
-						Zero(psk, sizeof(psk));
-
-						if (c->Cedar->Server != NULL)
-						{
-							SERVER *s = c->Cedar->Server;
-
-							if (s->IPsecServer != NULL)
-							{
-								StrCpy(psk, sizeof(psk), s->IPsecServer->Services.IPsec_Secret);
-
-								Add(o, psk);
-							}
-						}
-
-						response_pw = MsChapV2DoBruteForce(&mschap, o);
-
-						ReleaseList(o);
-
-						if (response_pw != NULL)
-						{
-							UCHAR challenge8[8];
-							UCHAR nt_hash[16];
-							UCHAR nt_hash_hash[16];
-
-							GenerateNtPasswordHash(nt_hash, response_pw);
-							GenerateNtPasswordHashHash(nt_hash_hash, nt_hash);
-							MsChapV2_GenerateChallenge8(challenge8, mschap.MsChapV2_ClientChallenge, mschap.MsChapV2_ServerChallenge,
-								mschap.MsChapV2_PPPUsername);
-							MsChapV2Server_GenerateResponse(mschap_v2_server_response_20, nt_hash_hash,
-								mschap.MsChapV2_ClientResponse, challenge8);
-
-							Free(response_pw);
-						}
-						else
-						{
-							auth_ret = false;
-						}
-					}
-				}
-
-				if (auth_ret)
-				{
-					is_empty_password = true;
-				}
+				is_empty_password = true;
 			}
 
 			if (auth_ret == false)
@@ -1835,17 +1271,6 @@ bool ServerAccept(CONNECTION *c)
 				case AUTHTYPE_EXTERNAL:
 					// External authentication already completed
 					auth_ret = true;
-					break;
-
-				case AUTHTYPE_TICKET:
-					// Ticket authentication
-					if (PackGetDataSize(p, "ticket") == SHA1_SIZE)
-					{
-						PackGetData(p, "ticket", ticket);
-
-						auth_ret = SiCheckTicket(hub, ticket, username, sizeof(username), username_real, sizeof(username_real),
-							&ticketed_policy, sessionname, sizeof(sessionname), groupname, sizeof(groupname));
-					}
 					break;
 
 				case CLIENT_AUTHTYPE_PASSWORD:
@@ -1888,9 +1313,9 @@ bool ServerAccept(CONNECTION *c)
 						// Plaintext password authentication
 						Zero(plain_password, sizeof(plain_password));
 						PackGetStr(p, "plain_password", plain_password, sizeof(plain_password));
-						if (c->IsInProc == false && StartWith(plain_password, IPC_PASSWORD_MSCHAPV2_TAG))
+						if (StartWith(plain_password, IPC_PASSWORD_MSCHAPV2_TAG))
 						{
-							// Do not allow the MS-CHAPv2 authentication other than IPC sessions
+							// Do not allow the MS-CHAPv2 authentication (it was only available to IPC sessions)
 							Zero(plain_password, sizeof(plain_password));
 						}
 
@@ -1931,7 +1356,7 @@ bool ServerAccept(CONNECTION *c)
 
 							if (fail_ext_user_auth == false)
 							{
-								auth_ret = SamAuthUserByPlainPassword(c, hub, username, plain_password, true, mschap_v2_server_response_20, &radius_login_opt);
+								auth_ret = SamAuthUserByPlainPassword(c, hub, username, plain_password, true);
 							}
 
 							if (auth_ret && pol == NULL)
@@ -2018,68 +1443,6 @@ bool ServerAccept(CONNECTION *c)
 					}
 					break;
 
-				case AUTHTYPE_WIREGUARD_KEY:
-					// We already retrieved the hubname and username associated with the key.
-					// Now we only have to verify that the user effectively exists.
-					if (c->IsInProc)
-					{
-						auth_ret = SamIsUser(hub, username);
-					}
-					else
-					{
-						// WireGuard public key authentication cannot be used directly by external clients.
-						Unlock(hub->lock);
-						ReleaseHub(hub);
-						FreePack(p);
-						c->Err = ERR_AUTHTYPE_NOT_SUPPORTED;
-						goto CLEANUP;
-					}
-					break;
-
-				case AUTHTYPE_OPENVPN_CERT:
-					// For OpenVPN; mostly same as CLIENT_AUTHTYPE_CERT, but without
-					// signature verification, because it was already performed during TLS handshake.
-					if (c->IsInProc)
-					{
-						// Certificate authentication
-						cert_size = PackGetDataSize(p, "cert");
-						if (cert_size >= 1 && cert_size <= 100000)
-						{
-							cert_buf = ZeroMalloc(cert_size);
-							if (PackGetData(p, "cert", cert_buf))
-							{
-								BUF *b = NewBuf();
-								X *x;
-								WriteBuf(b, cert_buf, cert_size);
-								x = BufToX(b, false);
-								if (x != NULL && x->is_compatible_bit)
-								{
-									Debug("Got to SamAuthUserByCert %s\n", username); // XXX
-									// Check whether the certificate is valid.
-									auth_ret = SamAuthUserByCert(hub, username, x);
-									if (auth_ret)
-									{
-										// Copy the certificate
-										c->ClientX = CloneX(x);
-									}
-								}
-								FreeX(x);
-								FreeBuf(b);
-							}
-							Free(cert_buf);
-						}
-					}
-					else
-					{
-						// OpenVPN certificate authentication cannot be used directly by external clients
-						Unlock(hub->lock);
-						ReleaseHub(hub);
-						FreePack(p);
-						c->Err = ERR_AUTHTYPE_NOT_SUPPORTED;
-						goto CLEANUP;
-					}
-					break;
-
 				default:
 					// Unknown authentication method
 					Unlock(hub->lock);
@@ -2138,127 +1501,71 @@ bool ServerAccept(CONNECTION *c)
 			// Authentication success
 			FreePack(p);
 
-			// Check the assigned VLAN ID
-			if (radius_login_opt.Out_IsRadiusLogin)
-			{
-				if (radius_login_opt.In_CheckVLanId)
-				{
-					if (radius_login_opt.Out_VLanId != 0)
-					{
-						assigned_vlan_id = radius_login_opt.Out_VLanId;
-					}
-
-					if (radius_login_opt.In_DenyNoVlanId && assigned_vlan_id == 0 || assigned_vlan_id >= 4096)
-					{
-						// Deny this session
-						Unlock(hub->lock);
-						ReleaseHub(hub);
-						c->Err = ERR_ACCESS_DENIED;
-						error_detail = "In_DenyNoVlanId";
-						goto CLEANUP;
-					}
-				}
-			}
-
-			// Check the assigned MAC Address
-			if (radius_login_opt.Out_IsRadiusLogin)
-			{
-				Copy(assigned_ipc_mac_address, radius_login_opt.Out_VirtualMacAddress, 6);
-			}
-
 			if (StrCmpi(username, ADMINISTRATOR_USERNAME) != 0)
 			{
 				// Get the policy
-				if (farm_member == false)
+				user = AcGetUser(hub, username);
+				if (user == NULL)
 				{
-					bool is_asterisk_user = false;
-
-					// In the case of not a farm member
-					user = AcGetUser(hub, username);
+					user = AcGetUser(hub, "*");
 					if (user == NULL)
 					{
-						user = AcGetUser(hub, "*");
-						if (user == NULL)
-						{
-							// User acquisition failure
-							Unlock(hub->lock);
-							ReleaseHub(hub);
-							c->Err = ERR_ACCESS_DENIED;
-							error_detail = "AcGetUser";
-							goto CLEANUP;
-						}
+						// User acquisition failure
+						Unlock(hub->lock);
+						ReleaseHub(hub);
+						c->Err = ERR_ACCESS_DENIED;
+						error_detail = "AcGetUser";
+						goto CLEANUP;
+					}
+				}
 
-						is_asterisk_user = true;
+				policy = NULL;
+
+				Lock(user->lock);
+				{
+					// Get the expiration date
+					user_expires = user->ExpireTime;
+
+					StrCpy(username_real, sizeof(username_real), user->Name);
+					group = user->Group;
+					if (group != NULL)
+					{
+						AddRef(group->ref);
+
+						Lock(group->lock);
+						{
+							// Get the group name
+							StrCpy(groupname, sizeof(groupname), group->Name);
+						}
+						Unlock(group->lock);
 					}
 
-					policy = NULL;
-
-					Lock(user->lock);
+					if (user->Policy != NULL)
 					{
-						if (is_asterisk_user == false)
+						policy = ClonePolicy(user->Policy);
+					}
+					else
+					{
+						if (group)
 						{
-							UCHAR associated_mac_address[6];
-
-							// Get the associated virtual MAC address
-							if (GetUserMacAddressFromUserNote(associated_mac_address, user->Note))
-							{
-								if (IsZero(assigned_ipc_mac_address, 6))
-								{
-									WHERE;
-									Copy(assigned_ipc_mac_address, associated_mac_address, 6);
-								}
-							}
-						}
-
-						// Get the expiration date
-						user_expires = user->ExpireTime;
-
-						StrCpy(username_real, sizeof(username_real), user->Name);
-						group = user->Group;
-						if (group != NULL)
-						{
-							AddRef(group->ref);
-
 							Lock(group->lock);
 							{
-								// Get the group name
-								StrCpy(groupname, sizeof(groupname), group->Name);
+								if (group->Policy != NULL)
+								{
+									policy = ClonePolicy(group->Policy);
+								}
 							}
 							Unlock(group->lock);
 						}
-
-						if (user->Policy != NULL)
-						{
-							policy = ClonePolicy(user->Policy);
-						}
-						else
-						{
-							if (group)
-							{
-								Lock(group->lock);
-								{
-									if (group->Policy != NULL)
-									{
-										policy = ClonePolicy(group->Policy);
-									}
-								}
-								Unlock(group->lock);
-							}
-						}
-
-						if (group != NULL)
-						{
-							ReleaseGroup(group);
-						}
 					}
-					Unlock(user->lock);
-					loggedin_user_object = user;
+
+					if (group != NULL)
+					{
+						ReleaseGroup(group);
+					}
 				}
-				else
-				{
-					// In the case of farm member
-					policy = ClonePolicy(&ticketed_policy);
-				}
+				Unlock(user->lock);
+				loggedin_user_object = user;
 			}
 			else
 			{
@@ -2343,12 +1650,6 @@ bool ServerAccept(CONNECTION *c)
 			if (GetHubAdminOption(hub, "deny_routing") != 0)
 			{
 				policy->NoRouting = true;
-			}
-
-			if (c->IsInProc)
-			{
-				policy->NoBridge = false;
-				policy->NoRouting = false;
 			}
 
 			if (hub->Option->ClientMinimumRequiredBuild > c->ClientBuild &&
@@ -2498,8 +1799,7 @@ bool ServerAccept(CONNECTION *c)
 			}
 
 
-			if (server != NULL && server->ServerType != SERVER_TYPE_FARM_MEMBER &&
-				policy != NULL)
+			if (server != NULL && policy != NULL)
 			{
 				if (GetServerCapsBool(hub->Cedar->Server, "b_support_limit_multilogin"))
 				{
@@ -2582,98 +1882,6 @@ bool ServerAccept(CONNECTION *c)
 			// Update the number of log-ins
 			hub->LastCommTime = hub->LastLoginTime = SystemTime64();
 
-			if (farm_controller)
-			{
-				wchar_t *msg = GetHubMsg(hub);
-
-				Unlock(hub->lock);
-
-				Lock(cedar->CedarSuperLock);
-
-				// In the case of farm controller, choose a farm members to host this HUB
-				LockList(server->FarmMemberList);
-				{
-					HLog(hub, "LH_FARM_SELECT_1", c->Name);
-					f = SiGetHubHostingMember(server, hub, admin_mode, c);
-
-					if (f == NULL)
-					{
-						// Failed in the selection
-						HLog(hub, "LH_FARM_SELECT_2", c->Name);
-						UnlockList(server->FarmMemberList);
-						Unlock(cedar->CedarSuperLock);
-						ReleaseHub(hub);
-						c->Err = ERR_COULD_NOT_HOST_HUB_ON_FARM;
-						Free(policy);
-						Free(msg);
-						goto CLEANUP;
-					}
-					else
-					{
-						if (f->Me == false)
-						{
-							UCHAR ticket[SHA1_SIZE];
-							PACK *p;
-							BUF *b;
-							UINT i;
-
-							SLog(c->Cedar, "LH_FARM_SELECT_4", c->Name, f->hostname);
-
-							// Create a session on the selected server farm member
-							Rand(ticket, sizeof(ticket));
-							SiCallCreateTicket(server, f, hub->Name,
-								username, username_real, policy, ticket, Inc(hub->SessionCounter), groupname);
-
-							p = NewPack();
-							PackAddInt(p, "Redirect", 1);
-							PackAddIp32(p, "Ip", f->Ip);
-							for (i = 0;i < f->NumPort;i++)
-							{
-								PackAddIntEx(p, "Port", f->Ports[i], i, f->NumPort);
-							}
-							PackAddData(p, "Ticket", ticket, sizeof(ticket));
-
-							if (true)
-							{
-								char *utf = CopyUniToUtf(msg);
-
-								PackAddData(p, "Msg", utf, StrLen(utf));
-
-								Free(utf);
-							}
-
-							b = XToBuf(f->ServerCert, false);
-							PackAddBuf(p, "Cert", b);
-							FreeBuf(b);
-
-							UnlockList(server->FarmMemberList);
-							Unlock(cedar->CedarSuperLock);
-							ReleaseHub(hub);
-
-							HttpServerSend(c->FirstSock, p);
-							FreePack(p);
-
-							c->Err = 0;
-							Free(policy);
-
-							FreePack(HttpServerRecv(c->FirstSock));
-							Free(msg);
-							goto CLEANUP;
-						}
-						else
-						{
-							HLog(hub, "LH_FARM_SELECT_3", c->Name);
-							// Continue the process because myself was selected
-							UnlockList(server->FarmMemberList);
-							Unlock(cedar->CedarSuperLock);
-							f->Point = SiGetPoint(server);
-							Lock(hub->lock);
-							Free(msg);
-						}
-					}
-				}
-			}
-
 			if (admin_mode == false)
 			{
 				// Check the maximum number of connections of the HUB
@@ -2691,12 +1899,6 @@ bool ServerAccept(CONNECTION *c)
 					error_detail = "ERR_HUB_IS_BUSY";
 					goto CLEANUP;
 				}
-			}
-
-			if (use_encrypt == false && c->FirstSock->IsReverseAcceptedSocket)
-			{
-				// On VPN Azure, SSL encryption is mandated.
-				use_encrypt = true;
 			}
 
 			if (use_client_license || use_bridge_license)
@@ -2726,12 +1928,8 @@ bool ServerAccept(CONNECTION *c)
 			{
 				// Examine whether not to conflict with the limit of simultaneous connections
 				// number of sessions(client) defined by the Virtual HUB management options
-				if (((GetHubAdminOption(hub, "max_sessions_client_bridge_apply") != 0
-					) &&
-					Count(hub->NumSessionsClient) >= GetHubAdminOption(hub, "max_sessions_client") && hub->Cedar->Server != NULL && hub->Cedar->Server->ServerType != SERVER_TYPE_FARM_MEMBER)
-					||
-					(hub->FarmMember_MaxSessionClientBridgeApply &&
-					Count(hub->NumSessionsClient) >= hub->FarmMember_MaxSessionClient))
+				if (GetHubAdminOption(hub, "max_sessions_client_bridge_apply") != 0 &&
+					Count(hub->NumSessionsClient) >= GetHubAdminOption(hub, "max_sessions_client") && hub->Cedar->Server != NULL)
 				{
 					// Can not connect any more
 					Unlock(hub->lock);
@@ -2749,12 +1947,8 @@ bool ServerAccept(CONNECTION *c)
 			{
 				// Examine whether not to conflict with the limit of simultaneous connections
 				// number of sessions(bridge) defined by the Virtual HUB management options
-				if (((GetHubAdminOption(hub, "max_sessions_client_bridge_apply") != 0
-					) &&
-					Count(hub->NumSessionsBridge) >= GetHubAdminOption(hub, "max_sessions_bridge") && hub->Cedar->Server != NULL && hub->Cedar->Server->ServerType != SERVER_TYPE_FARM_MEMBER)
-					||
-					(hub->FarmMember_MaxSessionClientBridgeApply &&
-					Count(hub->NumSessionsBridge) >= hub->FarmMember_MaxSessionBridge))
+				if (GetHubAdminOption(hub, "max_sessions_client_bridge_apply") != 0 &&
+					Count(hub->NumSessionsBridge) >= GetHubAdminOption(hub, "max_sessions_bridge") && hub->Cedar->Server != NULL)
 				{
 					// Can not connect any more
 					Unlock(hub->lock);
@@ -2808,28 +2002,6 @@ bool ServerAccept(CONNECTION *c)
 			max_connection = MIN(max_connection, MAX_TCP_CONNECTION);
 			max_connection = MAX(max_connection, 1);
 
-			if (c->FirstSock->IsRUDPSocket)
-			{
-				// In the case of TCP-over-UDP
-				half_connection = false;
-
-				// Disable the QoS
-				qos = false;
-
-				if (enable_udp_recovery == false)
-				{
-					// Disable the session reconnection feature
-					no_reconnect_to_session = true;
-					max_connection = 1;
-				}
-				else
-				{
-					// If the UDP recovery is enabled, permit the session re-connection feature (for 2)
-					no_reconnect_to_session = false;
-					max_connection = NUM_TCP_CONNECTION_FOR_UDP_RECOVERY;
-				}
-			}
-
 			if (half_connection)
 			{
 				// Number of connections should be more than 2 in the case of Half Connection
@@ -2851,43 +2023,14 @@ bool ServerAccept(CONNECTION *c)
 			// Remove the connection from Cedar
 			DelConnection(c->Cedar, c);
 
-			// VLAN ID
-			if (assigned_vlan_id != 0)
-			{
-				if (policy->VLanId == 0)
-				{
-					policy->VLanId = assigned_vlan_id;
-				}
-			}
-
 			// Create a Session
 			StrLower(username);
-			s = NewServerSessionEx(c->Cedar, c, hub, username, policy, c->IsInProc,
-				(c->IsInProc && IsZero(assigned_ipc_mac_address, 6) == false) ? assigned_ipc_mac_address : NULL);
+			s = NewServerSession(c->Cedar, c, hub, username, policy);
 
-			s->EnableUdpRecovery = enable_udp_recovery;
 			s->LocalHostSession = local_host_session;
 			s->NormalClient = true;
 
 			IPToStr(s->ClientIP, sizeof(s->ClientIP), &c->ClientIp);
-
-			if (c->FirstSock->IsRUDPSocket)
-			{
-				// R-UDP session
-				s->IsRUDPSession = true;
-				s->RUdpMss = c->FirstSock->RUDP_OptimizedMss;
-				Debug("ServerAccept(): Optimized MSS Value for R-UDP: %u\n", s->RUdpMss);
-				AddProtocolDetailsKeyValueInt(s->ProtocolDetails, sizeof(s->ProtocolDetails), "RUDP_MSS", s->RUdpMss);
-			}
-
-			if (enable_bulk_on_rudp)
-			{
-				// Allow bulk transfer on R-UDP
-				s->EnableBulkOnRUDP = true;
-				s->EnableHMacOnBulkOfRUDP = enable_hmac_on_bulk_of_rudp;
-			}
-
-			s->IsAzureSession = c->FirstSock->IsReverseAcceptedSocket;
 
 			StrCpy(s->UnderlayProtocol, sizeof(s->UnderlayProtocol), c->FirstSock->UnderlayProtocol);
 
@@ -2896,23 +2039,6 @@ bool ServerAccept(CONNECTION *c)
 			if (server != NULL)
 			{
 				s->NoSendSignature = server->NoSendSignature;
-			}
-
-			if (c->IsInProc)
-			{
-				s->NoSendSignature = true;
-			}
-
-			if (c->IsInProc && StrCmpi(c->InProcPrefix, OPENVPN_IPC_POSTFIX_L3) == 0)
-			{
-				// OpenVPN L3 session
-				s->IsOpenVPNL3Session = true;
-			}
-
-			if (c->IsInProc && StrCmpi(c->InProcPrefix, OPENVPN_IPC_POSTFIX_L2) == 0)
-			{
-				// OpenVPN L2 session
-				s->IsOpenVPNL2Session = true;
 			}
 
 			// Determine whether the use of UDP acceleration mode
@@ -2929,29 +2055,8 @@ bool ServerAccept(CONNECTION *c)
 				}
 			}
 
-			if (client_rudp_bulk_max_version >= 2)
-			{
-				rudp_bulk_version = 2;
-			}
-
-			s->BulkOnRUDPVersion = rudp_bulk_version;
-
-			if (s->EnableBulkOnRUDP)
-			{
-				AddProtocolDetailsKeyValueInt(s->ProtocolDetails, sizeof(s->ProtocolDetails), "RUDP_Bulk_Ver", s->BulkOnRUDPVersion);
-			}
-
 			if (hub->Option != NULL && hub->Option->DisableUdpAcceleration)
 			{
-				s->UseUdpAcceleration = false;
-			}
-
-			if (IsZeroIP(&c->FirstSock->Reverse_MyServerGlobalIp) == false &&
-				CmpIpAddr(&c->FirstSock->Reverse_MyServerGlobalIp, &c->FirstSock->RemoteIP) == 0)
-			{
-				// Disable forcibly the UDP acceleration mode if VPN Server and VPN Client
-				// are in same LAN in the case of using VPN Azure.
-				// (Or this may cause infinite loop of packet)
 				s->UseUdpAcceleration = false;
 			}
 
@@ -2966,11 +2071,8 @@ bool ServerAccept(CONNECTION *c)
 
 			if (s->UseUdpAcceleration)
 			{
-				bool no_nat_t = false;
-
-
 				// Initialize the UDP acceleration function
-				s->UdpAccel = NewUdpAccel(c->Cedar, (c->FirstSock->IsRUDPSocket ? NULL : &c->FirstSock->LocalIP), false, c->FirstSock->IsRUDPSocket, no_nat_t);
+				s->UdpAccel = NewUdpAccel(c->Cedar, &c->FirstSock->LocalIP, false, false);
 				if (s->UdpAccel == NULL)
 				{
 					s->UseUdpAcceleration = false;
@@ -3039,13 +2141,8 @@ bool ServerAccept(CONNECTION *c)
 			if (server != NULL)
 			{
 				// Update the total allocation of the number of licenses for Server structure
-				if (server->ServerType == SERVER_TYPE_STANDALONE)
-				{
-					// Update only stand-alone mode
-					// (Periodically poll in the cluster controller mode)
-					server->CurrentAssignedClientLicense = Count(s->Cedar->AssignedClientLicense);
-					server->CurrentAssignedBridgeLicense = Count(s->Cedar->AssignedBridgeLicense);
-				}
+				server->CurrentAssignedClientLicense = Count(s->Cedar->AssignedClientLicense);
+				server->CurrentAssignedBridgeLicense = Count(s->Cedar->AssignedBridgeLicense);
 			}
 
 			if (StrLen(sessionname) != 0)
@@ -3098,19 +2195,17 @@ bool ServerAccept(CONNECTION *c)
 		}
 		Unlock(hub->lock);
 
+		if (s->UseUdpAcceleration && s->UdpAccel != NULL)
+		{
+			// Learn the public endpoint of the UDP acceleration socket by STUN (only if configured and the peer is not local).
+			// This is done after releasing the hub lock because the query may block for a while.
+			UdpAccelQueryStun(s->UdpAccel, &c->FirstSock->RemoteIP);
+		}
+
 		// Send a Welcome packet to the client
 		p = PackWelcome(s);
 
 		PackAddBool(p, "suppress_client_update_notification", suppress_client_update_notification);
-
-		if (s != NULL && s->InProcMode)
-		{
-			if (IsZero(mschap_v2_server_response_20, sizeof(mschap_v2_server_response_20)) == false)
-			{
-				// MS-CHAPv2 Response
-				PackAddData(p, "IpcMsChapV2ServerResponse", mschap_v2_server_response_20, sizeof(mschap_v2_server_response_20));
-			}
-		}
 
 		if (true)
 		{
@@ -3169,40 +2264,6 @@ bool ServerAccept(CONNECTION *c)
 
 			if (IsURLMsg(msg, NULL, 0) == false)
 			{
-
-				if (s != NULL && s->IsRUDPSession && c != NULL)
-				{
-					// Show the warning message if the connection is made by NAT-T
-					wchar_t *tmp2;
-					UINT tmp2_size = 2400 * sizeof(wchar_t);
-					char local_name[128];
-					wchar_t local_name_2[128];
-					char local_name_3[128];
-
-					Zero(local_name, sizeof(local_name));
-					Zero(local_name_2, sizeof(local_name_2));
-					Zero(local_name_3, sizeof(local_name_3));
-
-					GetMachineName(local_name, sizeof(local_name));
-
-#ifdef	OS_WIN32
-					MsGetComputerNameFullEx(local_name_2, sizeof(local_name_2), true);
-
-					UniToStr(local_name_3, sizeof(local_name_3), local_name_2);
-
-					if (IsEmptyStr(local_name_3) == false)
-					{
-						StrCpy(local_name, sizeof(local_name), local_name_3);
-					}
-#endif	// OS_WIN32
-
-					tmp2 = ZeroMalloc(tmp2_size);
-					UniFormat(tmp2, tmp2_size, _UU("NATT_MSG"), local_name);
-
-					UniStrCat(tmp, tmpsize, tmp2);
-
-					Free(tmp2);
-				}
 
 				{
 					if (GetGlobalServerFlag(GSF_SHOW_OSS_MSG) != 0)
@@ -3267,17 +2328,6 @@ bool ServerAccept(CONNECTION *c)
 			ts->Direction = TCP_CLIENT_TO_SERVER;
 		}
 
-		if (s->Hub->Type == HUB_TYPE_FARM_DYNAMIC && s->Cedar->Server != NULL && s->Cedar->Server->ServerType == SERVER_TYPE_FARM_CONTROLLER)
-		{
-			if (s->Hub->BeingOffline == false)
-			{
-				// Start the SecureNAT on the dynamic Virtual HUB
-				EnableSecureNATEx(s->Hub, false, true);
-
-				cluster_dynamic_secure_nat = true;
-			}
-		}
-
 		if (s->LocalHostSession)
 		{
 			// Update the local MAC address list
@@ -3329,13 +2379,8 @@ bool ServerAccept(CONNECTION *c)
 			if (server != NULL)
 			{
 				// Update the total allocation of the number of licenses for Server structure
-				if (server->ServerType == SERVER_TYPE_STANDALONE)
-				{
-					// Update only stand-alone mode
-					// (Periodically polled in the cluster controller mode)
-					server->CurrentAssignedClientLicense = Count(s->Cedar->AssignedClientLicense);
-					server->CurrentAssignedBridgeLicense = Count(s->Cedar->AssignedBridgeLicense);
-				}
+				server->CurrentAssignedClientLicense = Count(s->Cedar->AssignedClientLicense);
+				server->CurrentAssignedBridgeLicense = Count(s->Cedar->AssignedBridgeLicense);
 			}
 		}
 		Unlock(s->Hub->lock);
@@ -3343,12 +2388,6 @@ bool ServerAccept(CONNECTION *c)
 		PrintSessionTotalDataSize(s);
 
 		HLog(s->Hub, "LH_END_SESSION", s->Name, s->TotalSendSizeReal, s->TotalRecvSizeReal);
-
-		if (cluster_dynamic_secure_nat && s->Hub->BeingOffline == false)
-		{
-			// Stop the SecureNAT on the dynamic Virtual HUB
-			EnableSecureNATEx(s->Hub, false, true);
-		}
 
 		if (s->UdpAccel != NULL)
 		{
@@ -3434,18 +2473,6 @@ bool ServerAccept(CONNECTION *c)
 
 		// Add the socket of this connection to the connection list of the session (TCP)
 		sock = c->FirstSock;
-
-		if (sock->IsRUDPSocket && sock->BulkRecvKey != NULL && sock->BulkSendKey != NULL)
-		{
-			if (s->BulkRecvKeySize != 0 && s->BulkSendKeySize != 0)
-			{
-				// Restore R-UDP bulk send/recv keys for additional connections
-				Copy(sock->BulkRecvKey->Data, s->BulkRecvKey, s->BulkRecvKeySize);
-				sock->BulkRecvKey->Size = s->BulkRecvKeySize;
-				Copy(sock->BulkSendKey->Data, s->BulkSendKey, s->BulkSendKeySize);
-				sock->BulkSendKey->Size = s->BulkSendKeySize;
-			}
-		}
 
 		ts = NewTcpSock(sock);
 		SetTimeout(sock, CONNECTING_TIMEOUT);
@@ -3560,110 +2587,6 @@ bool ServerAccept(CONNECTION *c)
 
 		goto CLEANUP;
 	}
-	else if (StrCmpi(method, "farm_connect") == 0)
-	{
-		// Server farm connection request
-		CEDAR *cedar = c->Cedar;
-		c->Type = CONNECTION_TYPE_FARM_RPC;
-		c->Err = 0;
-		if (c->Cedar->Server == NULL)
-		{
-			// Unsupported
-			c->Err = ERR_NOT_FARM_CONTROLLER;
-		}
-		else
-		{
-			SERVER *s = c->Cedar->Server;
-			if (s->ServerType != SERVER_TYPE_FARM_CONTROLLER || s->FarmControllerInited == false)
-			{
-				// Not a farm controller
-				SLog(c->Cedar, "LS_FARM_ACCEPT_1", c->Name);
-				c->Err = ERR_NOT_FARM_CONTROLLER;
-			}
-			else
-			{
-				UCHAR check_secure_password[SHA1_SIZE];
-				UCHAR secure_password[SHA1_SIZE];
-				// User authentication
-				SecurePassword(check_secure_password, s->HashedPassword, c->Random);
-				if (PackGetDataSize(p, "SecurePassword") == sizeof(secure_password))
-				{
-					PackGetData(p, "SecurePassword", secure_password);
-				}
-				else
-				{
-					Zero(secure_password, sizeof(secure_password));
-				}
-
-				if (Cmp(secure_password, check_secure_password, SHA1_SIZE) != 0)
-				{
-					// Password is different
-					SLog(c->Cedar, "LS_FARM_ACCEPT_2", c->Name);
-					c->Err = ERR_ACCESS_DENIED;
-				}
-				else
-				{
-					// Get the certificate
-					BUF *b;
-					X *server_x;
-
-					SLog(c->Cedar, "LS_FARM_ACCEPT_3", c->Name);
-					b = PackGetBuf(p, "ServerCert");
-					if (b == NULL)
-					{
-						c->Err = ERR_PROTOCOL_ERROR;
-					}
-					else
-					{
-						server_x = BufToX(b, false);
-						FreeBuf(b);
-						if (server_x == NULL)
-						{
-							c->Err = ERR_PROTOCOL_ERROR;
-						}
-						else
-						{
-							UINT ip;
-							UINT point;
-							char hostname[MAX_SIZE];
-
-#ifdef	OS_WIN32
-							MsSetThreadPriorityRealtime();
-#endif	// OS_WIN32
-
-							SetTimeout(c->FirstSock, SERVER_CONTROL_TCP_TIMEOUT);
-
-							ip = PackGetIp32(p, "PublicIp");
-							point = PackGetInt(p, "Point");
-							if (PackGetStr(p, "HostName", hostname, sizeof(hostname)))
-							{
-								UINT num_port = PackGetIndexCount(p, "PublicPort");
-								if (num_port >= 1 && num_port <= MAX_PUBLIC_PORT_NUM)
-								{
-									UINT *ports = ZeroMalloc(sizeof(UINT) * num_port);
-									UINT i;
-
-									for (i = 0;i < num_port;i++)
-									{
-										ports[i] = PackGetIntEx(p, "PublicPort", i);
-									}
-
-									SiFarmServ(s, c->FirstSock, server_x, ip, num_port, ports, hostname, point,
-										PackGetInt(p, "Weight"), PackGetInt(p, "MaxSessions"));
-
-									Free(ports);
-								}
-							}
-
-							FreeX(server_x);
-						}
-					}
-				}
-			}
-		}
-		FreePack(p);
-		goto CLEANUP;
-	}
 	else if (StrCmpi(method, "admin") == 0 && c->Cedar->Server != NULL)
 	{
 		UINT err;
@@ -3732,11 +2655,6 @@ CLEANUP:
 
 	SLog(c->Cedar, "LS_CONNECTION_ERROR", c->Name, GetUniErrorStr(c->Err), c->Err);
 
-	if (release_me_eap_client != NULL)
-	{
-		ReleaseEapClient(release_me_eap_client);
-	}
-
 	return ret;
 }
 
@@ -3785,9 +2703,6 @@ void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
 	Free(product_id);
 
 	// Client host name
-#ifndef	OS_WIN32
-	GetMachineName(info->ClientHostname, sizeof(info->ClientHostname));
-#else	// OS_WIN32
 	if (true)
 	{
 		wchar_t namew[256];
@@ -3807,7 +2722,6 @@ void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
 		StrCpy(info->ClientHostname, sizeof(info->ClientHostname), namea);
 
 	}
-#endif	// OS_WIN32
 	// Client IP address
 	if (IsIP6(&c->FirstSock->LocalIP) == false)
 	{
@@ -3946,76 +2860,6 @@ SOCK *ClientAdditionalConnectToServer(CONNECTION *c)
 	return s;
 }
 
-// Attempt to sign by the secure device
-UINT SecureSign(SECURE_SIGN *sign, UINT device_id, char *pin)
-{
-	SECURE *sec;
-	X *x;
-	// Validate arguments
-	if (sign == false || pin == NULL || device_id == 0)
-	{
-		return ERR_INTERNAL_ERROR;
-	}
-
-	// Open the device
-	sec = OpenSec(device_id);
-	if (sec == NULL)
-	{
-		return ERR_SECURE_DEVICE_OPEN_FAILED;
-	}
-
-	// Open the session
-	if (OpenSecSession(sec, 0) == false)
-	{
-		CloseSec(sec);
-		return ERR_SECURE_DEVICE_OPEN_FAILED;
-	}
-
-	// Login
-	if (LoginSec(sec, pin) == false)
-	{
-		CloseSecSession(sec);
-		CloseSec(sec);
-		return ERR_SECURE_PIN_LOGIN_FAILED;
-	}
-
-	// Read the certificate
-	x = ReadSecCert(sec, sign->SecurePublicCertName);
-	if (x == NULL)
-	{
-		LogoutSec(sec);
-		CloseSecSession(sec);
-		CloseSec(sec);
-		return ERR_SECURE_NO_CERT;
-	}
-
-	// Sign by the private key
-	if (SignSec(sec, sign->SecurePrivateKeyName, sign->Signature, sign->Random, SHA1_SIZE) == false)
-	{
-		// Signing failure
-		FreeX(x);
-		LogoutSec(sec);
-		CloseSecSession(sec);
-		CloseSec(sec);
-		return ERR_SECURE_NO_PRIVATE_KEY;
-	}
-
-	// Convert the certificate to buffer
-	sign->ClientCert = x;
-
-	// Log out
-	LogoutSec(sec);
-
-	// Close the session
-	CloseSecSession(sec);
-
-	// Close the device
-	CloseSec(sec);
-
-	// Success
-	return ERR_NO_ERROR;
-}
-
 // Client connects to the server additionally
 bool ClientAdditionalConnect(CONNECTION *c, THREAD *t)
 {
@@ -4105,19 +2949,6 @@ bool ClientAdditionalConnect(CONNECTION *c, THREAD *t)
 
 	Debug("Additional Connect Succeed!\n");
 
-	if (s->IsRUDPSocket && s->BulkRecvKey != NULL && s->BulkSendKey != NULL)
-	{
-		// Restore R-UDP bulk send/recv keys for additional connections
-		if (c->Session->BulkRecvKeySize != 0 && c->Session->BulkSendKeySize != 0)
-		{
-			Copy(s->BulkRecvKey->Data, c->Session->BulkRecvKey, c->Session->BulkRecvKeySize);
-			s->BulkRecvKey->Size = c->Session->BulkRecvKeySize;
-
-			Copy(s->BulkSendKey->Data, c->Session->BulkSendKey, c->Session->BulkSendKeySize);
-			s->BulkSendKey->Size = c->Session->BulkSendKeySize;
-		}
-	}
-
 	// Success the additional connection
 	// Add to the TcpSockList of the connection
 	ts = NewTcpSock(s);
@@ -4174,96 +3005,6 @@ CLEANUP:
 	UnlockList(c->ConnectingSocks);
 	ReleaseSock(s);
 	return false;
-}
-
-// Secure device signing thread
-void ClientSecureSignThread(THREAD *thread, void *param)
-{
-	SECURE_SIGN_THREAD_PROC *p = (SECURE_SIGN_THREAD_PROC *)param;
-	// Validate arguments
-	if (thread == NULL || param == NULL)
-	{
-		return;
-	}
-
-	NoticeThreadInit(thread);
-
-	p->Ok = p->SecureSignProc(p->Connection->Session, p->Connection, p->SecureSign);
-	p->UserFinished = true;
-}
-
-// Signing with the secure device
-bool ClientSecureSign(CONNECTION *c, UCHAR *sign, UCHAR *random, X **x)
-{
-	SECURE_SIGN_THREAD_PROC *p;
-	SECURE_SIGN *ss;
-	SESSION *s;
-	CLIENT_OPTION *o;
-	CLIENT_AUTH *a;
-	THREAD *thread;
-	UINT64 start;
-	bool ret;
-	// Validate arguments
-	if (c == NULL || sign == NULL || random == NULL || x == NULL)
-	{
-		return false;
-	}
-
-	s = c->Session;
-	o = s->ClientOption;
-	a = s->ClientAuth;
-
-	p = ZeroMalloc(sizeof(SECURE_SIGN_THREAD_PROC));
-	p->Connection = c;
-	ss = p->SecureSign = ZeroMallocEx(sizeof(SECURE_SIGN), true);
-	StrCpy(ss->SecurePrivateKeyName, sizeof(ss->SecurePrivateKeyName),
-		a->SecurePrivateKeyName);
-	StrCpy(ss->SecurePublicCertName, sizeof(ss->SecurePublicCertName),
-		a->SecurePublicCertName);
-	ss->UseSecureDeviceId = c->Cedar->Client->UseSecureDeviceId;
-	Copy(ss->Random, random, SHA1_SIZE);
-
-#ifdef	OS_WIN32
-	ss->BitmapId = CmGetSecureBitmapId(c->ServerName);
-#endif	// OS_WIN32
-
-	p->SecureSignProc = a->SecureSignProc;
-
-	// Create a thread
-	thread = NewThread(ClientSecureSignThread, p);
-	WaitThreadInit(thread);
-
-	// Poll every 0.5 seconds until signing is completed or canceled
-	start = Tick64();
-	while (true)
-	{
-		if ((Tick64() - start) > CONNECTING_POOLING_SPAN)
-		{
-			// Send a NOOP periodically for disconnection prevention
-			start = Tick64();
-			ClientUploadNoop(c);
-		}
-		if (p->UserFinished)
-		{
-			// User selected
-			break;
-		}
-		WaitThread(thread, 500);
-	}
-	ReleaseThread(thread);
-
-	ret = p->Ok;
-
-	if (ret)
-	{
-		Copy(sign, ss->Signature, sizeof(ss->Signature));
-		*x = ss->ClientCert;
-	}
-
-	Free(p->SecureSign);
-	Free(p);
-
-	return ret;
 }
 
 // Server certificate confirmation thread
@@ -4386,8 +3127,6 @@ bool ClientConnect(CONNECTION *c)
 	PrintStatus(sess, L"init");
 	PrintStatus(sess, _UU("STATUS_1"));
 
-REDIRECTED:
-
 	// [Connecting]
 	c->Status = CONNECTION_STATUS_CONNECTING;
 	c->Session->ClientStatus = CLIENT_STATUS_CONNECTING;
@@ -4425,13 +3164,6 @@ REDIRECTED:
 		goto CLEANUP;
 	}
 
-	// Check the certificate of the redirected VPN server
-	if (c->UseTicket && CompareX(s->RemoteX, c->ServerX) == false)
-	{
-		c->Err = ERR_CERT_NOT_TRUSTED;
-		goto CLEANUP;
-	}
-
 	Copy(&server_ip, &s->RemoteIP, sizeof(IP));
 
 	if (c->Halt)
@@ -4453,16 +3185,10 @@ REDIRECTED:
 			{
 				if (sess->UdpAccel == NULL)
 				{
-					bool no_nat_t = false;
+					sess->UdpAccel = NewUdpAccel(c->Cedar, &s->LocalIP, true, true);
 
-					if (sess->ClientOption->PortUDP != 0)
-					{
-						// There is no need for NAT-T treatment on my part if the UDP port on the other end is known beforehand
-						no_nat_t = true;
-					}
-
-
-					sess->UdpAccel = NewUdpAccel(c->Cedar, &s->LocalIP, true, true, no_nat_t);
+					// Learn the public endpoint of the UDP acceleration socket by STUN (only if configured and the peer is not local)
+					UdpAccelQueryStun(sess->UdpAccel, &s->RemoteIP);
 				}
 			}
 		}
@@ -4564,20 +3290,6 @@ REDIRECTED:
 		}
 	}
 
-	if (c->Cedar->Server == NULL)
-	{
-		// Suppress client notification flag
-		if (PackIsValueExists(p, "suppress_client_update_notification"))
-		{
-			bool suppress_client_update_notification = PackGetBool(p, "suppress_client_update_notification");
-
-#ifdef	OS_WIN32
-			MsRegWriteIntEx2(REG_LOCAL_MACHINE, PROTO_SUPPRESS_CLIENT_UPDATE_NOTIFICATION_REGKEY, PROTO_SUPPRESS_CLIENT_UPDATE_NOTIFICATION_REGVALUE,
-				(suppress_client_update_notification ? 1 : 0), false, true);
-#endif	// OS_WIN32
-		}
-	}
-
 	if (true)
 	{
 		// Message retrieval
@@ -4606,84 +3318,6 @@ REDIRECTED:
 		}
 
 		Free(utf);
-	}
-
-	if (PackGetInt(p, "Redirect") != 0)
-	{
-		UINT i;
-		UINT ip;
-		UINT num_port;
-		UINT *ports;
-		UINT use_port = 0;
-		UINT current_port = c->ServerPort;
-		UCHAR ticket[SHA1_SIZE];
-		X *server_cert = NULL;
-		BUF *b;
-
-		// Redirect mode
-		PrintStatus(sess, _UU("STATUS_8"));
-
-		ip = PackGetIp32(p, "Ip");
-		num_port = MAX(MIN(PackGetIndexCount(p, "Port"), MAX_PUBLIC_PORT_NUM), 1);
-		ports = ZeroMalloc(sizeof(UINT) * num_port);
-		for (i = 0;i < num_port;i++)
-		{
-			ports[i] = PackGetIntEx(p, "Port", i);
-		}
-
-		// Select a port number
-		for (i = 0;i < num_port;i++)
-		{
-			if (ports[i] == current_port)
-			{
-				use_port = current_port;
-			}
-		}
-		if (use_port == 0)
-		{
-			use_port = ports[0];
-		}
-
-		Free(ports);
-
-		if (PackGetDataSize(p, "Ticket") == SHA1_SIZE)
-		{
-			PackGetData(p, "Ticket", ticket);
-		}
-
-		b = PackGetBuf(p, "Cert");
-		if (b != NULL)
-		{
-			server_cert = BufToX(b, false);
-			FreeBuf(b);
-		}
-
-		if (c->ServerX != NULL)
-		{
-			FreeX(c->ServerX);
-		}
-		c->ServerX = server_cert;
-
-		IPToStr32(c->ServerName, sizeof(c->ServerName), ip);
-		c->ServerPort = use_port;
-
-		c->UseTicket = true;
-		Copy(c->Ticket, ticket, SHA1_SIZE);
-
-		FreePack(p);
-
-		p = NewPack();
-		HttpClientSend(s, p);
-		FreePack(p);
-
-		p = NULL;
-
-		c->FirstSock = NULL;
-		Disconnect(s);
-		ReleaseSock(s);
-		s = NULL;
-
-		goto REDIRECTED;
 	}
 
 	PrintStatus(sess, _UU("STATUS_7"));
@@ -4717,21 +3351,14 @@ REDIRECTED:
 	Lock(c->Session->lock);
 	{
 		// Deploy and update connection parameters
-		sess->EnableUdpRecovery = PackGetBool(p, "enable_udp_recovery");
 		c->Session->MaxConnection = PackGetInt(p, "max_connection");
-
-		if (sess->EnableUdpRecovery == false)
-		{
-			c->Session->MaxConnection = MIN(c->Session->MaxConnection, c->Session->ClientOption->MaxConnection);
-		}
-
+		c->Session->MaxConnection = MIN(c->Session->MaxConnection, c->Session->ClientOption->MaxConnection);
 		c->Session->MaxConnection = MIN(c->Session->MaxConnection, MAX_TCP_CONNECTION);
 		c->Session->MaxConnection = MAX(c->Session->MaxConnection, 1);
 		c->Session->UseCompress = PackGetInt(p, "use_compress") == 0 ? false : true;
 		c->Session->UseEncrypt = PackGetInt(p, "use_encrypt") == 0 ? false : true;
 		c->Session->NoSendSignature = PackGetBool(p, "no_send_signature");
 		c->Session->HalfConnection = PackGetInt(p, "half_connection") == 0 ? false : true;
-		c->Session->IsAzureSession = PackGetInt(p, "is_azure_session") == 0 ? false : true;
 		c->Session->Timeout = PackGetInt(p, "timeout");
 		c->Session->QoS = PackGetInt(p, "qos") == 0 ? false : true;
 		if (c->Session->QoS)
@@ -4740,47 +3367,10 @@ REDIRECTED:
 		}
 		c->Session->VLanId = PackGetInt(p, "vlan_id");
 
-		// R-UDP Session ?
-		c->Session->IsRUDPSession = s->IsRUDPSocket;
-
-		ZeroIP4(&c->Session->AzureRealServerGlobalIp);
-
-		if (c->Session->IsAzureSession)
-		{
-			// Disable the life parameter of the connection in the case of VPN Azure relayed session
-			c->Session->ClientOption->ConnectionDisconnectSpan = 0;
-
-			// Get the AzureRealServerGlobalIp the case of VPN Azure relayed
-			PackGetIp(p, "azure_real_server_global_ip", &c->Session->AzureRealServerGlobalIp);
-		}
-
-		if (c->Session->IsRUDPSession)
-		{
-			// Disable the life parameter of the connection in the case of R-UDP session
-			c->Session->ClientOption->ConnectionDisconnectSpan = 0;
-
-			// Disable QoS, etc. in the case of R-UDP session
-			c->Session->QoS = false;
-			c->Session->HalfConnection = false;
-
-			if (c->Session->EnableUdpRecovery == false)
-			{
-				// Set the number of connection to 1 if UDP recovery is not supported
-				c->Session->MaxConnection = 1;
-			}
-		}
-
 		// Physical communication protocol
 		StrCpy(c->Session->UnderlayProtocol, sizeof(c->Session->UnderlayProtocol), s->UnderlayProtocol);
 
 		AddProtocolDetailsStr(c->Session->ProtocolDetails, sizeof(c->Session->ProtocolDetails), s->ProtocolDetails);
-
-		if (c->Session->IsAzureSession)
-		{
-			StrCpy(c->Session->UnderlayProtocol, sizeof(c->Session->UnderlayProtocol), SOCK_UNDERLAY_AZURE);
-
-			AddProtocolDetailsStr(c->Session->ProtocolDetails, sizeof(c->Session->ProtocolDetails), "VPN Azure");
-		}
 
 		if (c->Protocol == CONNECTION_UDP)
 		{
@@ -4795,57 +3385,6 @@ REDIRECTED:
 				PackGetData(p, "udp_recv_key", c->Session->UdpRecvKey);
 			}
 		}
-
-		sess->EnableBulkOnRUDP = false;
-		sess->EnableHMacOnBulkOfRUDP = false;
-		if (s != NULL && s->IsRUDPSocket && s->BulkRecvKey != NULL && s->BulkSendKey != NULL)
-		{
-			// Bulk transfer on R-UDP
-			sess->EnableHMacOnBulkOfRUDP = PackGetBool(p, "enable_hmac_on_bulk_of_rudp");
-			sess->BulkOnRUDPVersion = PackGetInt(p, "rudp_bulk_version");
-
-			if (PackGetBool(p, "enable_bulk_on_rudp"))
-			{
-				// Receive the key
-				UCHAR key_send[RUDP_BULK_KEY_SIZE_MAX];
-				UCHAR key_recv[RUDP_BULK_KEY_SIZE_MAX];
-
-				UINT key_size = SHA1_SIZE;
-
-				if (sess->BulkOnRUDPVersion == 2)
-				{
-					key_size = RUDP_BULK_KEY_SIZE_V2;
-				}
-
-				if (PackGetData2(p, "bulk_on_rudp_send_key", key_send, key_size) &&
-					PackGetData2(p, "bulk_on_rudp_recv_key", key_recv, key_size))
-				{
-					sess->EnableBulkOnRUDP = true;
-
-					Copy(s->BulkSendKey->Data, key_send, key_size);
-					Copy(s->BulkRecvKey->Data, key_recv, key_size);
-
-					s->BulkSendKey->Size = key_size;
-					s->BulkRecvKey->Size = key_size;
-
-					// Backup R-UDP bulk send/recv keys for additional connections
-					Copy(sess->BulkSendKey, s->BulkSendKey->Data, s->BulkSendKey->Size);
-					sess->BulkSendKeySize = s->BulkSendKey->Size;
-
-					Copy(sess->BulkRecvKey, s->BulkRecvKey->Data, s->BulkRecvKey->Size);
-					sess->BulkRecvKeySize = s->BulkRecvKey->Size;
-
-					AddProtocolDetailsKeyValueInt(sess->ProtocolDetails, sizeof(sess->ProtocolDetails), "RUDP_Bulk_Ver", sess->BulkOnRUDPVersion);
-				}
-			}
-
-			sess->EnableHMacOnBulkOfRUDP = PackGetBool(p, "enable_hmac_on_bulk_of_rudp");
-		}
-
-		Debug("EnableBulkOnRUDP = %u\n", sess->EnableBulkOnRUDP);
-		Debug("EnableHMacOnBulkOfRUDP = %u\n", sess->EnableHMacOnBulkOfRUDP);
-		Debug("EnableUdpRecovery = %u\n", sess->EnableUdpRecovery);
-		Debug("BulkOnRUDPVersion = %u\n", sess->BulkOnRUDPVersion);
 
 		sess->UseUdpAcceleration = false;
 		sess->IsUsingUdpAcceleration = false;
@@ -4897,11 +3436,6 @@ REDIRECTED:
 							IP remote_ip;
 
 							Copy(&remote_ip, &s->RemoteIP, sizeof(IP));
-
-							if (IsZeroIp(&c->Session->AzureRealServerGlobalIp) == false)
-							{
-								Copy(&remote_ip, &c->Session->AzureRealServerGlobalIp, sizeof(IP));
-							}
 
 							sess->UdpAccel->Version = 1;
 							if (udp_acceleration_version == 2)
@@ -5008,9 +3542,6 @@ REDIRECTED:
 	}
 
 	PrintStatus(sess, _UU("STATUS_9"));
-#ifdef OS_UNIX
-	UnixVLanSetState(c->Session->ClientOption->DeviceName, true);
-#endif
 	// Shift the connection to the tunneling mode
 	StartTunnelingMode(c);
 	s = NULL;
@@ -5023,9 +3554,6 @@ REDIRECTED:
 	}
 
 	PrintStatus(sess, L"free");
-
-	CLog(c->Cedar->Client, "LC_CONNECT_2", c->Session->ClientOption->AccountName,
-		session_name);
 
 	if (c->Session->LinkModeClient && c->Session->Link != NULL)
 	{
@@ -5127,7 +3655,6 @@ PACK *PackWelcome(SESSION *s)
 	PackAddInt(p, "half_connection", s->HalfConnection == false ? 0 : 1);
 	PackAddInt(p, "timeout", s->Timeout);
 	PackAddInt(p, "qos", s->QoS ? 1 : 0);
-	PackAddInt(p, "is_azure_session", s->IsAzureSession);
 
 	// Session key
 	PackAddData(p, "session_key", s->SessionKey, SHA1_SIZE);
@@ -5156,30 +3683,22 @@ PACK *PackWelcome(SESSION *s)
 		PackAddBool(p, "no_send_signature", true);
 	}
 
-	if (s->InProcMode)
-	{
-		// MAC address for IPC
-		PackAddData(p, "IpcMacAddress", s->IpcMacAddress, 6);
-
-		// Virtual HUB name
-		PackAddStr(p, "IpcHubName", s->Hub->Name);
-
-		// Shared Buffer
-		s->IpcSessionSharedBuffer = NewSharedBuffer(NULL, sizeof(IPC_SESSION_SHARED_BUFFER_DATA));
-		AddRef(s->IpcSessionSharedBuffer->Ref);
-
-		s->IpcSessionShared = s->IpcSessionSharedBuffer->Data;
-
-		PackAddInt64(p, "IpcSessionSharedBuffer", (UINT64)s->IpcSessionSharedBuffer);
-	}
-
 	if (s->UdpAccel != NULL)
 	{
 		// UDP acceleration function
 		PackAddBool(p, "use_udp_acceleration", true);
 		PackAddInt(p, "udp_acceleration_version", s->UdpAccel->Version);
-		PackAddIp(p, "udp_acceleration_server_ip", &s->UdpAccel->MyIp);
-		PackAddInt(p, "udp_acceleration_server_port", s->UdpAccel->MyPort);
+		if (s->UdpAccel->UseStun)
+		{
+			// Public endpoint learned by STUN
+			PackAddIp(p, "udp_acceleration_server_ip", &s->UdpAccel->StunIp);
+			PackAddInt(p, "udp_acceleration_server_port", s->UdpAccel->StunPort);
+		}
+		else
+		{
+			PackAddIp(p, "udp_acceleration_server_ip", &s->UdpAccel->MyIp);
+			PackAddInt(p, "udp_acceleration_server_port", s->UdpAccel->MyPort);
+		}
 		PackAddData(p, "udp_acceleration_server_key", s->UdpAccel->MyKey, sizeof(s->UdpAccel->MyKey));
 		PackAddData(p, "udp_acceleration_server_key_v2", s->UdpAccel->MyKey_V2, sizeof(s->UdpAccel->MyKey_V2));
 		PackAddInt(p, "udp_acceleration_server_cookie", s->UdpAccel->MyCookie);
@@ -5188,54 +3707,6 @@ PACK *PackWelcome(SESSION *s)
 		PackAddBool(p, "use_hmac_on_udp_acceleration", s->UdpAccel->UseHMac);
 		PackAddBool(p, "udp_accel_fast_disconnect_detect", s->UdpAccelFastDisconnectDetect);
 	}
-
-	if (s->EnableBulkOnRUDP)
-	{
-		// Allow bulk transfer on R-UDP
-		PackAddBool(p, "enable_bulk_on_rudp", true);
-		PackAddBool(p, "enable_hmac_on_bulk_of_rudp", s->EnableHMacOnBulkOfRUDP);
-		PackAddInt(p, "rudp_bulk_version", s->BulkOnRUDPVersion);
-
-		if (s->BulkOnRUDPVersion == 2)
-		{
-			PackAddData(p, "bulk_on_rudp_send_key", s->Connection->FirstSock->BulkRecvKey->Data, RUDP_BULK_KEY_SIZE_V2);
-			s->Connection->FirstSock->BulkRecvKey->Size = RUDP_BULK_KEY_SIZE_V2;
-
-			PackAddData(p, "bulk_on_rudp_recv_key", s->Connection->FirstSock->BulkSendKey->Data, RUDP_BULK_KEY_SIZE_V2);
-			s->Connection->FirstSock->BulkSendKey->Size = RUDP_BULK_KEY_SIZE_V2;
-		}
-		else
-		{
-			PackAddData(p, "bulk_on_rudp_send_key", s->Connection->FirstSock->BulkRecvKey->Data, SHA1_SIZE);
-			s->Connection->FirstSock->BulkRecvKey->Size = SHA1_SIZE;
-
-			PackAddData(p, "bulk_on_rudp_recv_key", s->Connection->FirstSock->BulkSendKey->Data, SHA1_SIZE);
-			s->Connection->FirstSock->BulkSendKey->Size = SHA1_SIZE;
-		}
-
-		// Backup R-UDP bulk send/recv keys for additional connections
-		Copy(s->BulkSendKey, s->Connection->FirstSock->BulkSendKey->Data,
-			s->Connection->FirstSock->BulkSendKey->Size);
-
-		s->BulkSendKeySize = s->Connection->FirstSock->BulkSendKey->Size;
-
-		Copy(s->BulkRecvKey, s->Connection->FirstSock->BulkRecvKey->Data,
-			s->Connection->FirstSock->BulkRecvKey->Size);
-
-		s->BulkRecvKeySize = s->Connection->FirstSock->BulkRecvKey->Size;
-	}
-
-	if (s->IsAzureSession)
-	{
-		if (s->Connection != NULL && s->Connection->FirstSock != NULL)
-		{
-			SOCK *sock = s->Connection->FirstSock;
-
-			PackAddIp(p, "azure_real_server_global_ip", &sock->Reverse_MyServerGlobalIp);
-		}
-	}
-
-	PackAddBool(p, "enable_udp_recovery", s->EnableUdpRecovery);
 
 	return p;
 }
@@ -5478,7 +3949,6 @@ bool ClientUploadAuth(CONNECTION *c)
 	PACK *p = NULL;
 	CLIENT_AUTH *a;
 	CLIENT_OPTION *o;
-	X *x;
 	bool ret;
 	NODE_INFO info;
 	UCHAR secure_password[SHA1_SIZE];
@@ -5496,87 +3966,55 @@ bool ClientUploadAuth(CONNECTION *c)
 	a = c->Session->ClientAuth;
 	o = c->Session->ClientOption;
 
-	if (c->UseTicket == false)
+	switch (a->AuthType)
 	{
-		switch (a->AuthType)
+	case CLIENT_AUTHTYPE_ANONYMOUS:
+		// Anonymous authentication
+		p = PackLoginWithAnonymous(o->HubName, a->Username);
+		break;
+
+	case CLIENT_AUTHTYPE_PASSWORD:
+		// Password authentication
+		SecurePassword(secure_password, a->HashedPassword, c->Random);
+		p = PackLoginWithPassword(o->HubName, a->Username, secure_password);
+		break;
+
+	case CLIENT_AUTHTYPE_PLAIN_PASSWORD:
+		// Plaintext password authentication
+		p = PackLoginWithPlainPassword(o->HubName, a->Username, a->PlainPassword);
+		break;
+
+	case CLIENT_AUTHTYPE_CERT:
+		// Certificate authentication
+		if (a->ClientX != NULL && a->ClientX->is_compatible_bit &&
+			a->ClientX->bits != 0 && (a->ClientX->bits / 8) <= sizeof(sign))
 		{
-		case CLIENT_AUTHTYPE_ANONYMOUS:
-			// Anonymous authentication
-			p = PackLoginWithAnonymous(o->HubName, a->Username);
-			break;
-
-		case CLIENT_AUTHTYPE_PASSWORD:
-			// Password authentication
-			SecurePassword(secure_password, a->HashedPassword, c->Random);
-			p = PackLoginWithPassword(o->HubName, a->Username, secure_password);
-			break;
-
-		case CLIENT_AUTHTYPE_PLAIN_PASSWORD:
-			// Plaintext password authentication
-			p = PackLoginWithPlainPassword(o->HubName, a->Username, a->PlainPassword);
-			break;
-
-		case CLIENT_AUTHTYPE_CERT:
-			// Certificate authentication
-			if (a->ClientX != NULL && a->ClientX->is_compatible_bit &&
-				a->ClientX->bits != 0 && (a->ClientX->bits / 8) <= sizeof(sign))
+			if (RsaSignEx(sign, c->Random, SHA1_SIZE, a->ClientK, a->ClientX->bits))
 			{
-				if (RsaSignEx(sign, c->Random, SHA1_SIZE, a->ClientK, a->ClientX->bits))
-				{
-					p = PackLoginWithCert(o->HubName, a->Username, a->ClientX, sign, a->ClientX->bits / 8);
-					c->ClientX = CloneX(a->ClientX);
-				}
+				p = PackLoginWithCert(o->HubName, a->Username, a->ClientX, sign, a->ClientX->bits / 8);
+				c->ClientX = CloneX(a->ClientX);
 			}
-			break;
-
-		case CLIENT_AUTHTYPE_OPENSSLENGINE:
-			// Certificate authentication
-			if (a->ClientX != NULL && a->ClientX->is_compatible_bit &&
-				a->ClientX->bits != 0 && (a->ClientX->bits / 8) <= sizeof(sign))
-			{
-				if (RsaSignEx(sign, c->Random, SHA1_SIZE, a->ClientK, a->ClientX->bits))
-				{
-					p = PackLoginWithCert(o->HubName, a->Username, a->ClientX, sign, a->ClientX->bits / 8);
-					c->ClientX = CloneX(a->ClientX);
-				}
-			}
-			break;
-
-
-		case CLIENT_AUTHTYPE_SECURE:
-			// Authentication by secure device
-			if (ClientSecureSign(c, sign, c->Random, &x))
-			{
-				p = PackLoginWithCert(o->HubName, a->Username, x, sign, x->bits / 8);
-				c->ClientX = CloneX(x);
-				FreeX(x);
-			}
-			else
-			{
-				c->Err = ERR_SECURE_DEVICE_OPEN_FAILED;
-				c->Session->ForceStopFlag = true;
-			}
-			break;
 		}
-	}
-	else
-	{
-		// Ticket
-		p = NewPack();
-		PackAddStr(p, "method", "login");
-		PackAddStr(p, "hubname", o->HubName);
-		PackAddStr(p, "username", a->Username);
-		PackAddInt(p, "authtype", AUTHTYPE_TICKET);
-		PackAddData(p, "ticket", c->Ticket, SHA1_SIZE);
+		break;
+
+	case CLIENT_AUTHTYPE_OPENSSLENGINE:
+		// Certificate authentication
+		if (a->ClientX != NULL && a->ClientX->is_compatible_bit &&
+			a->ClientX->bits != 0 && (a->ClientX->bits / 8) <= sizeof(sign))
+		{
+			if (RsaSignEx(sign, c->Random, SHA1_SIZE, a->ClientK, a->ClientX->bits))
+			{
+				p = PackLoginWithCert(o->HubName, a->Username, a->ClientX, sign, a->ClientX->bits / 8);
+				c->ClientX = CloneX(a->ClientX);
+			}
+		}
+		break;
 	}
 
 	if (p == NULL)
 	{
 		// Error
-		if (c->Err != ERR_SECURE_DEVICE_OPEN_FAILED)
-		{
-			c->Err = ERR_PROTOCOL_ERROR;
-		}
+		c->Err = ERR_PROTOCOL_ERROR;
 		return false;
 	}
 
@@ -5609,13 +4047,6 @@ bool ClientUploadAuth(CONNECTION *c)
 	// VoIP / QoS flag
 	PackAddBool(p, "qos", o->DisableQoS ? false : true);
 
-	// Bulk transfer support
-	PackAddBool(p, "support_bulk_on_rudp", true);
-	PackAddBool(p, "support_hmac_on_bulk_of_rudp", true);
-
-	// UDP recovery support
-	PackAddBool(p, "support_udp_recovery", true);
-
 	// Unique ID
 	GenerateMachineUniqueHash(unique);
 	PackAddData(p, "unique_id", unique, SHA1_SIZE);
@@ -5628,7 +4059,14 @@ bool ClientUploadAuth(CONNECTION *c)
 		PackAddInt(p, "udp_acceleration_version", c->Session->UdpAccel->Version);
 
 		IP my_ip;
-		if (IsLocalHostIP(&c->Session->UdpAccel->MyIp) == false)
+		UINT my_port = c->Session->UdpAccel->MyPort;
+		if (c->Session->UdpAccel->UseStun)
+		{
+			// Public endpoint learned by STUN
+			Copy(&my_ip, &c->Session->UdpAccel->StunIp, sizeof(my_ip));
+			my_port = c->Session->UdpAccel->StunPort;
+		}
+		else if (IsLocalHostIP(&c->Session->UdpAccel->MyIp) == false)
 		{
 			Copy(&my_ip, &c->Session->UdpAccel->MyIp, sizeof(my_ip));
 		}
@@ -5638,15 +4076,13 @@ bool ClientUploadAuth(CONNECTION *c)
 		}
 
 		PackAddIp(p, "udp_acceleration_client_ip", &my_ip);
-		PackAddInt(p, "udp_acceleration_client_port", c->Session->UdpAccel->MyPort);
+		PackAddInt(p, "udp_acceleration_client_port", my_port);
 		PackAddData(p, "udp_acceleration_client_key", c->Session->UdpAccel->MyKey, UDP_ACCELERATION_COMMON_KEY_SIZE_V1);
 		PackAddData(p, "udp_acceleration_client_key_v2", c->Session->UdpAccel->MyKey_V2, UDP_ACCELERATION_COMMON_KEY_SIZE_V2);
 		PackAddBool(p, "support_hmac_on_udp_acceleration", true);
 		PackAddBool(p, "support_udp_accel_fast_disconnect_detect", true);
 		PackAddInt(p, "udp_acceleration_max_version", 2);
 	}
-
-	PackAddInt(p, "rudp_bulk_max_version", 2);
 
 	// Brand string for the connection limit
 	{
@@ -5787,10 +4223,6 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 		if (h == NULL)
 		{
 			c->Err = ERR_CLIENT_IS_NOT_VPN;
-			if (c->IsJsonRpc)
-			{
-				c->Err = ERR_DISCONNECTED;
-			}
 			return false;
 		}
 
@@ -5799,42 +4231,6 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 		{
 			// Receive the data since it's POST
 			data_size = GetContentLength(h);
-
-			if (server->DisableJsonRpcWebApi == false)
-			{
-				if (StrCmpi(h->Target, "/api") == 0 || StrCmpi(h->Target, "/api/") == 0)
-				{
-					c->IsJsonRpc = true;
-					c->Type = CONNECTION_TYPE_ADMIN_RPC;
-
-					JsonRpcProcPost(c, s, h, data_size);
-
-					FreeHttpHeader(h);
-
-					if (c->JsonRpcAuthed)
-					{
-						num = 0;
-					}
-
-					continue;
-				}
-				else if (StartWith(h->Target, "/admin"))
-				{
-					c->IsJsonRpc = true;
-					c->Type = CONNECTION_TYPE_ADMIN_RPC;
-
-					AdminWebProcPost(c, s, h, data_size, h->Target);
-
-					FreeHttpHeader(h);
-
-					if (c->JsonRpcAuthed)
-					{
-						num = 0;
-					}
-
-					continue;
-				}
-			}
 
 			if ((data_size > MAX_WATERMARK_SIZE || data_size < SizeOfWaterMark()) && (data_size != StrLen(HTTP_VPN_TARGET_POSTDATA)))
 			{
@@ -5883,62 +4279,6 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 			}
 			FreeHttpHeader(h);
 		}
-		else if (StrCmpi(h->Method, "OPTIONS") == 0)
-		{
-			if (server->DisableJsonRpcWebApi == false)
-			{
-				if (StrCmpi(h->Target, "/api") == 0 || StrCmpi(h->Target, "/api/") == 0 || StartWith(h->Target, "/admin"))
-				{
-					c->IsJsonRpc = true;
-					c->Type = CONNECTION_TYPE_ADMIN_RPC;
-
-					JsonRpcProcOptions(c, s, h, h->Target);
-
-					FreeHttpHeader(h);
-
-					num = 0;
-
-					continue;
-				}
-			}
-			FreeHttpHeader(h);
-		}
-		else if (StrCmpi(h->Method, "SSTP_DUPLEX_POST") == 0 && (ProtoEnabled(server->Proto, "SSTP") || s->IsReverseAcceptedSocket) && GetServerCapsBool(server, "b_support_sstp"))
-		{
-			// SSTP client is connected
-			c->WasSstp = true;
-
-			if (StrCmpi(h->Target, SSTP_URI) == 0)
-			{
-				bool sstp_ret;
-				// Accept the SSTP connection
-				c->Type = CONNECTION_TYPE_OTHER;
-
-				sstp_ret = ProtoHandleConnection(server->Proto, s, "SSTP");
-
-				c->Err = ERR_DISCONNECTED;
-				FreeHttpHeader(h);
-
-				if (sstp_ret)
-				{
-					*error_detail_str = "";
-				}
-				else
-				{
-					*error_detail_str = "SSTP_ABORT";
-				}
-
-				return false;
-			}
-			else
-			{
-				// URI is invalid
-				HttpSendNotFound(s, h->Target);
-				*error_detail_str = "SSTP_URL_WRONG";
-			}
-
-			FreeHttpHeader(h);
-		}
 		else
 		{
 			// This should not be a VPN client, but interpret a bit more
@@ -5954,51 +4294,13 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 				if (StrCmpi(h->Target, "/") == 0)
 				{
 					// Root directory
-					BUF *b = NULL;
 					*error_detail_str = "HTTP_ROOT";
 
-					if (server->DisableJsonRpcWebApi == false)
-					{
-						b = ReadDump("|wwwroot/index.html");
-					}
-
-					if (b != NULL)
-					{
-						FreeHttpHeader(h);
-						h = NewHttpHeader("HTTP/1.1", "202", "OK");
-						AddHttpValue(h, NewHttpValue("Content-Type", HTTP_CONTENT_TYPE4));
-						AddHttpValue(h, NewHttpValue("Connection", "Keep-Alive"));
-						AddHttpValue(h, NewHttpValue("Keep-Alive", HTTP_KEEP_ALIVE));
-
-						PostHttp(c->FirstSock, h, b->Buf, b->Size);
-
-						FreeBuf(b);
-					}
-					else
-					{
-						HttpSendForbidden(c->FirstSock, h->Target, "");
-					}
+					HttpSendForbidden(c->FirstSock, h->Target, "");
 				}
 				else
 				{
 					bool b = false;
-
-					// Show the WebUI if the configuration allow to use the WebUI
-					if (c->Cedar->Server != NULL && c->Cedar->Server->UseWebUI)
-					{
-						WU_WEBPAGE *page;
-
-						// Show the WebUI
-						page = WuGetPage(h->Target, c->Cedar->WebUI);
-
-						if (page != NULL)
-						{
-							PostHttp(s, page->header, page->data, page->size);
-							b = true;
-							WuFreeWebPage(page);
-						}
-
-					}
 
 					if (IsLocalHostIP(&c->FirstSock->RemoteIP))
 					{
@@ -6037,41 +4339,6 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 
 					if (b == false)
 					{
-						if (server->DisableJsonRpcWebApi == false)
-						{
-							if (StartWith(h->Target, "/api?") || StartWith(h->Target, "/api/") || StrCmpi(h->Target, "/api") == 0)
-							{
-								c->IsJsonRpc = true;
-								c->Type = CONNECTION_TYPE_ADMIN_RPC;
-
-								JsonRpcProcGet(c, s, h, h->Target);
-
-								if (c->JsonRpcAuthed)
-								{
-									num = 0;
-								}
-
-								FreeHttpHeader(h);
-
-								continue;
-							}
-							else if (StartWith(h->Target, "/admin"))
-							{
-								c->IsJsonRpc = true;
-								c->Type = CONNECTION_TYPE_ADMIN_RPC;
-
-								AdminWebProcGet(c, s, h, h->Target);
-
-								if (c->JsonRpcAuthed)
-								{
-									num = 0;
-								}
-
-								FreeHttpHeader(h);
-
-								continue;
-							}
-						}
 					}
 
 					if (b == false)
@@ -6204,8 +4471,6 @@ SOCK *ClientConnectToServer(CONNECTION *c)
 		return NULL;
 	}
 
-	CLog(c->Cedar->Client, "LC_SSL_CONNECTED", c->Session->ClientOption->AccountName,	s->SslVersion, s->CipherName);
-
 	return s;
 }
 
@@ -6267,13 +4532,10 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 
 	if (o->ProxyType == PROXY_DIRECT)
 	{
-		UINT ssl_err = 0;
-		UINT nat_t_err = 0;
 		wchar_t tmp[MAX_SIZE];
 		UniFormat(tmp, sizeof(tmp), _UU("STATUS_4"), hostname);
 		PrintStatus(sess, tmp);
 
-		if (o->PortUDP == 0)
 		{
 			IP		*localIP;
 			UINT	localport;
@@ -6313,54 +4575,16 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 			}
 			// Bottom of Bind outgoing connection
 
-			// If additional_connect == false, enable trying to NAT-T connection
-			// If additional_connect == true, follow the IsRUDPSession setting in this session
-			// In additional connect or redirect we do not need ssl verification as the certificate is always compared with a saved one
-			sock = BindTcpIpConnectEx2(localIP, localport, hostname, c->ServerPort,
-				(bool *)cancel_flag, c->hWndForUI, &nat_t_err, (additional_connect ? (!sess->IsRUDPSession) : false),
-				true, ((additional_connect || c->UseTicket) ? NULL : sess->SslOption), &ssl_err, o->HintStr, &resolved_ip);
-		}
-		else
-		{
-			// Mode to connect with R-UDP directly without using NAT-T server when using UDP
-			IP ip;
-			if (StrToIP(&ip, hostname))
-			{
-				sock = NewRUDPClientDirect(VPN_RUDP_SVC_NAME, &ip, o->PortUDP, &nat_t_err,
-					TIMEOUT_TCP_PORT_CHECK, (bool *)cancel_flag, NULL, NULL, 0, false);
-
-				if (sock != NULL)
-				{
-					StrCpy(sock->UnderlayProtocol, sizeof(sock->UnderlayProtocol), SOCK_UNDERLAY_NAT_T);
-				}
-			}
+			sock = BindTcpIpConnectEx(localIP, localport, hostname, c->ServerPort,
+				(bool *)cancel_flag, c->hWndForUI, &resolved_ip);
 		}
 
 		if (sock == NULL)
 		{
 			// Connection failure
-			if (nat_t_err != RUDP_ERROR_NAT_T_TWO_OR_MORE)
-			{
-				if (ssl_err != 0)
-				{
-					c->Err = ssl_err;
-				}
-				else
-				{
-					c->Err = ERR_CONNECT_FAILED;
-				}
-			}
-			else
-			{
-				c->Err = ERR_NAT_T_TWO_OR_MORE;
-			}
+			c->Err = ERR_CONNECT_FAILED;
 
 			return NULL;
-		}
-
-		if (ssl_err != 0)
-		{
-			c->Err = ssl_err;
 		}
 	}
 	else
@@ -6514,77 +4738,38 @@ UINT ProxyCodeToCedar(UINT code)
 }
 
 // TCP connection function
-SOCK *TcpConnectEx3(char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, bool no_nat_t, UINT *nat_t_error_code, bool try_start_ssl, IP *ret_ip)
+SOCK *TcpConnectEx3(char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, IP *ret_ip)
 {
-	return BindTcpConnectEx3(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, hostname, port, timeout, cancel_flag, hWnd, no_nat_t, nat_t_error_code, try_start_ssl, ret_ip);
-}
-
-SOCK *TcpConnectEx4(char * hostname, UINT port, UINT timeout, bool * cancel_flag, void *hWnd, bool no_nat_t, UINT *nat_t_error_code, bool try_start_ssl, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err, char *hint_str, IP *ret_ip)
-{
-	return BindTcpConnectEx4(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, hostname, port, timeout, cancel_flag, hWnd, no_nat_t, nat_t_error_code, try_start_ssl, ssl_option, ssl_err, hint_str, ret_ip);
+	return BindTcpConnectEx3(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, hostname, port, timeout, cancel_flag, hWnd, ret_ip);
 }
 
 // Connect with TCP/IP
-SOCK *TcpIpConnectEx(char *hostname, UINT port, bool *cancel_flag, void *hWnd, UINT *nat_t_error_code, bool no_nat_t, bool try_start_ssl, IP *ret_ip)
+SOCK *TcpIpConnectEx(char *hostname, UINT port, bool *cancel_flag, void *hWnd, IP *ret_ip)
 {
-	return BindTcpIpConnectEx(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, hostname, port, cancel_flag, hWnd, nat_t_error_code, no_nat_t, try_start_ssl, ret_ip);
-}
-
-SOCK *TcpIpConnectEx2(char * hostname, UINT port, bool * cancel_flag, void *hWnd, UINT *nat_t_error_code, bool no_nat_t, bool try_start_ssl, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err, char *hint_str, IP *ret_ip)
-{
-	return BindTcpIpConnectEx2(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, hostname, port, cancel_flag, hWnd, nat_t_error_code, no_nat_t, try_start_ssl, ssl_option, ssl_err, hint_str, ret_ip);
+	return BindTcpIpConnectEx(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, hostname, port, cancel_flag, hWnd, ret_ip);
 }
 
 // TCP connection function
-//SOCK* TcpConnectEx3(char* hostname, UINT port, UINT timeout, bool* cancel_flag, void* hWnd, bool no_nat_t, UINT* nat_t_error_code, bool try_start_ssl, IP* ret_ip)
-SOCK *BindTcpConnectEx3(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, bool no_nat_t, UINT *nat_t_error_code, bool try_start_ssl, IP *ret_ip)
+//SOCK* TcpConnectEx3(char* hostname, UINT port, UINT timeout, bool* cancel_flag, void* hWnd, IP* ret_ip)
+SOCK *BindTcpConnectEx3(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, IP *ret_ip)
 {
-//	return TcpConnectEx4(hostname, port, timeout, cancel_flag, hWnd, no_nat_t, nat_t_error_code, try_start_ssl, NULL, NULL, NULL, ret_ip);
-	return BindTcpConnectEx4(localIP, localport, hostname, port, timeout, cancel_flag, hWnd, no_nat_t, nat_t_error_code, try_start_ssl, NULL, NULL, NULL, ret_ip);
-}
-//SOCK *TcpConnectEx4(char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, bool no_nat_t, UINT *nat_t_error_code, bool try_start_ssl, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err, char *hint_str, IP *ret_ip)
-SOCK *BindTcpConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, bool no_nat_t, UINT *nat_t_error_code, bool try_start_ssl, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err, char *hint_str, IP *ret_ip)
-{
-#ifdef	OS_WIN32
-	if (hWnd == NULL)
-	{
-#endif	// OS_WIN32
-//		return ConnectEx5(hostname, port, timeout, cancel_flag, (no_nat_t ? NULL : VPN_RUDP_SVC_NAME), nat_t_error_code, try_start_ssl, true, ssl_option, ssl_err, hint_str, ret_ip);
-		return BindConnectEx5(localIP, localport, hostname, port, timeout, cancel_flag, (no_nat_t ? NULL : VPN_RUDP_SVC_NAME), nat_t_error_code, try_start_ssl, true, ssl_option, ssl_err, hint_str, ret_ip);
-#ifdef	OS_WIN32
-	}
-	else
-	{
-		return WinConnectEx4((HWND)hWnd, hostname, port, timeout, 0, NULL, NULL, nat_t_error_code, (no_nat_t ? NULL : VPN_RUDP_SVC_NAME), try_start_ssl, ssl_option, ssl_err, hint_str);
-	}
-#endif	// OS_WIN32
+//	return ConnectEx4(hostname, port, timeout, cancel_flag, true, ret_ip);
+	return BindConnectEx4(localIP, localport, hostname, port, timeout, cancel_flag, true, ret_ip);
 }
 
 // Connect with TCP/IP
-//SOCK *TcpIpConnectEx(char *hostname, UINT port, bool *cancel_flag, void *hWnd, UINT *nat_t_error_code, bool no_nat_t, bool try_start_ssl, IP *ret_ip)
-SOCK *BindTcpIpConnectEx(IP *localIP, UINT localport, char *hostname, UINT port, bool *cancel_flag, void *hWnd, UINT *nat_t_error_code, bool no_nat_t, bool try_start_ssl, IP *ret_ip)
-{
-//	return TcpIpConnectEx2(hostname, port, cancel_flag, hWnd, nat_t_error_code, no_nat_t, try_start_ssl, NULL, NULL, NULL, ret_ip);
-	return BindTcpIpConnectEx2(localIP, localport, hostname, port, cancel_flag, hWnd, nat_t_error_code, no_nat_t, try_start_ssl, NULL, NULL, NULL, ret_ip);
-}
-//SOCK *TcpIpConnectEx2(char *hostname, UINT port, bool *cancel_flag, void *hWnd, UINT *nat_t_error_code, bool no_nat_t, bool try_start_ssl, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err, char *hint_str, IP *ret_ip)
-SOCK *BindTcpIpConnectEx2(IP *localIP, UINT localport, char *hostname, UINT port, bool *cancel_flag, void *hWnd, UINT *nat_t_error_code, bool no_nat_t, bool try_start_ssl, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err, char *hint_str, IP *ret_ip)
+//SOCK *TcpIpConnectEx(char *hostname, UINT port, bool *cancel_flag, void *hWnd, IP *ret_ip)
+SOCK *BindTcpIpConnectEx(IP *localIP, UINT localport, char *hostname, UINT port, bool *cancel_flag, void *hWnd, IP *ret_ip)
 {
 	SOCK *s = NULL;
-	UINT dummy_int = 0;
 	// Validate arguments
-	if (nat_t_error_code == NULL)
-	{
-		nat_t_error_code = &dummy_int;
-	}
-	*nat_t_error_code = 0;
 	if (hostname == NULL || port == 0)
 	{
 		return NULL;
 	}
 
-//	s = TcpConnectEx4(hostname, port, 0, cancel_flag, hWnd, no_nat_t, nat_t_error_code, try_start_ssl, ssl_option, ssl_err, hint_str, ret_ip);
-	s = BindTcpConnectEx4(localIP, localport, hostname, port, 0, cancel_flag, hWnd, no_nat_t, nat_t_error_code, try_start_ssl, ssl_option, ssl_err, hint_str, ret_ip);
+//	s = TcpConnectEx3(hostname, port, 0, cancel_flag, hWnd, ret_ip);
+	s = BindTcpConnectEx3(localIP, localport, hostname, port, 0, cancel_flag, hWnd, ret_ip);
 	if (s == NULL)
 	{
 		return NULL;
@@ -6755,77 +4940,6 @@ PACK *PackLoginWithPlainPassword(char *hubname, char *username, void *plain_pass
 	PackAddStr(p, "username", username);
 	PackAddInt(p, "authtype", CLIENT_AUTHTYPE_PLAIN_PASSWORD);
 	PackAddStr(p, "plain_password", plain_password);
-
-	return p;
-}
-
-// Generate a packet of WireGuard key login
-PACK *PackLoginWithWireGuardKey(char *key)
-{
-	PACK *p;
-	// Validate arguments
-	if (key == NULL)
-	{
-		return NULL;
-	}
-
-	p = NewPack();
-	PackAddStr(p, "method", "login");
-	PackAddInt(p, "authtype", AUTHTYPE_WIREGUARD_KEY);
-	PackAddStr(p, "key", key);
-
-	return p;
-}
-
-// Generate a packet of OpenVPN certificate login
-PACK *PackLoginWithOpenVPNCertificate(char *hubname, char *username, X *x)
-{
-	PACK *p;
-	char cn_username[128];
-	BUF *cert_buf = NULL;
-	// Validate arguments
-	if (hubname == NULL || username == NULL || x == NULL)
-	{
-		return NULL;
-	}
-
-	p = NewPack();
-	PackAddStr(p, "method", "login");
-
-	if (IsEmptyStr(username))
-	{
-		if (x->subject_name == NULL)
-		{
-			FreePack(p);
-			return NULL;
-		}
-
-		UniToStr(cn_username, sizeof(cn_username), x->subject_name->CommonName);
-
-		if (strchr(cn_username, '@') != NULL)
-
-		{
-			PackAddStr(p, "username", strtok(cn_username, "@"));
-			PackAddStr(p, "hubname", strtok(NULL, ""));
-		}
-		else
-		{
-			PackAddStr(p, "username", cn_username);
-			PackAddStr(p, "hubname", hubname);
-		}
-
-	}
-	else
-	{
-		PackAddStr(p, "username", username);
-		PackAddStr(p, "hubname", hubname);
-	}
-
-	PackAddInt(p, "authtype", AUTHTYPE_OPENVPN_CERT);
-
-	cert_buf = XToBuf(x, false);
-	PackAddBuf(p, "cert", cert_buf);
-	FreeBuf(cert_buf);
 
 	return p;
 }

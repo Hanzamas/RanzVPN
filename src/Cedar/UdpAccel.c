@@ -9,11 +9,11 @@
 
 #include "Connection.h"
 
-#include "Mayaqua/DNS.h"
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
+#include "Mayaqua/Stun.h"
 #include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
 
@@ -22,7 +22,6 @@
 // Polling process
 void UdpAccelPoll(UDP_ACCEL *a)
 {
-	IP nat_t_ip;
 	UINT num_ignore_errors = 0;
 	UCHAR *tmp;
 	// Validate arguments
@@ -32,23 +31,6 @@ void UdpAccelPoll(UDP_ACCEL *a)
 	}
 
 	tmp = a->TmpBuf;
-
-	Lock(a->NatT_Lock);
-	{
-		Copy(&nat_t_ip, &a->NatT_IP, sizeof(IP));
-	}
-	Unlock(a->NatT_Lock);
-
-	if (IsZeroIp(&nat_t_ip) == false)
-	{
-		// Release the thread which gets the IP address of the NAT-T server because it is no longer needed
-		if (a->NatT_GetIpThread != NULL)
-		{
-			WaitThread(a->NatT_GetIpThread, INFINITE);
-			ReleaseThread(a->NatT_GetIpThread);
-			a->NatT_GetIpThread = NULL;
-		}
-	}
 
 	// Receive a new UDP packet
 	while (true)
@@ -61,90 +43,21 @@ void UdpAccelPoll(UDP_ACCEL *a)
 
 		if (ret != 0 && ret != SOCK_LATER)
 		{
-			if (a->UseUdpIpQuery && a->UdpIpQueryPacketSize >= 8 && CmpIpAddr(&a->UdpIpQueryHost, &src_ip) == 0 &&
-				src_port == a->UdpIpQueryPort)
+			BLOCK *b = UdpAccelProcessRecvPacket(a, tmp, ret, &src_ip, src_port);
+
+			//Debug("UDP Recv: %u %u %u\n", ret, (b == NULL ? 0 : b->Size), (b == NULL ? 0 : b->Compressed));
+
+			/*if (b != NULL)
 			{
-				/*
-				// Receive a response of the query for IP and port number
-				IP my_ip = {0};
-				UINT myport = 0;
-				BUF *b = MemToBuf(a->UdpIpQueryPacketData, a->UdpIpQueryPacketSize);
-				FreeBuf(b);
-				*/
-			}
-			else if (IsZeroIp(&nat_t_ip) == false && CmpIpAddr(&nat_t_ip, &src_ip) == 0 &&
-				src_port == UDP_NAT_T_PORT)
+				char tmp[MAX_SIZE * 10];
+				BinToStr(tmp, sizeof(tmp), b->Buf, b->Size);
+				Debug("Recv Pkt: %s\n", tmp);
+			}*/
+
+			if (b != NULL)
 			{
-				// Receive a response from the NAT-T server
-				IP ip;
-				UINT port;
-				if (RUDPParseIPAndPortStr(tmp, ret, &ip, &port))
-				{
-					if (a->MyPortNatT != port && port >= 1 && port <= 65535)
-					{
-						Debug("NAT-T: MyIP = %r, MyPort = %hu\n", &ip, port);
-
-						a->CommToNatT_NumFail = 0;
-						Copy(&a->MyIpNatT, &ip, sizeof(a->MyIpNatT));
-						a->MyPortNatT = port;
-						a->MyIpOrPortNatTChanged = true;
-					}
-				}
-/*
-				BUF *b = NewBuf();
-				PACK *p;
-
-				WriteBuf(b, tmp, ret);
-				SeekBufToBegin(b);
-
-				p = BufToPack(b);
-				if (p != NULL)
-				{
-					if (PackCmpStr(p, "opcode", "query_for_nat_traversal"))
-					{
-						if (PackGetBool(p, "ok"))
-						{
-							if (PackGetInt64(p, "tran_id") == a->NatT_TranId)
-							{
-								UINT myport = PackGetInt(p, "your_port");
-
-								if (myport >= 1 && myport <= 65535)
-								{
-									if (a->MyPortByNatTServer != myport)
-									{
-										a->MyPortByNatTServer = myport;
-										a->MyPortByNatTServerChanged = true;
-
-										Debug("NAT-T: MyPort = %u\n", myport);
-									}
-								}
-							}
-						}
-					}
-
-					FreePack(p);
-				}
-
-				FreeBuf(b);*/
-			}
-			else
-			{
-				BLOCK *b = UdpAccelProcessRecvPacket(a, tmp, ret, &src_ip, src_port);
-
-				//Debug("UDP Recv: %u %u %u\n", ret, (b == NULL ? 0 : b->Size), (b == NULL ? 0 : b->Compressed));
-
-				/*if (b != NULL)
-				{
-					char tmp[MAX_SIZE * 10];
-					BinToStr(tmp, sizeof(tmp), b->Buf, b->Size);
-					Debug("Recv Pkt: %s\n", tmp);
-				}*/
-
-				if (b != NULL)
-				{
-					// Receive a packet
-					InsertQueue(a->RecvBlockQueue, b);
-				}
+				// Receive a packet
+				InsertQueue(a->RecvBlockQueue, b);
 			}
 		}
 		else
@@ -173,10 +86,8 @@ void UdpAccelPoll(UDP_ACCEL *a)
 	}
 
 	// Send a Keep-Alive packet
-	if (a->NextSendKeepAlive == 0 || (a->NextSendKeepAlive <= a->Now) || a->YourIpOrPortNatTChanged)
+	if (a->NextSendKeepAlive == 0 || (a->NextSendKeepAlive <= a->Now))
 	{
-		a->YourIpOrPortNatTChanged = false;
-
 		if (UdpAccelIsSendReady(a, false))
 		{
 			UINT rand_interval;
@@ -195,60 +106,6 @@ void UdpAccelPoll(UDP_ACCEL *a)
 			//Debug("UDP KeepAlive\n");
 
 			UdpAccelSend(a, NULL, 0, false, 1000, false);
-		}
-	}
-
-	// Send a NAT-T request packet (Only if the connection by UDP has not be established yet)
-	if (a->NoNatT == false)
-	{
-		// In the usual case
-		if (IsZeroIp(&nat_t_ip) == false)
-		{
-			if (UdpAccelIsSendReady(a, true) == false)
-			{
-				if (a->NextPerformNatTTick == 0 || (a->NextPerformNatTTick <= a->Now))
-				{
-					UINT rand_interval;
-					UCHAR c = 'B';
-
-					a->CommToNatT_NumFail++;
-					
-					rand_interval = UDP_NAT_T_INTERVAL_INITIAL * MIN(a->CommToNatT_NumFail, UDP_NAT_T_INTERVAL_FAIL_MAX);
-					//PACK *p = NewPack();
-					//BUF *b;
-
-					if (a->MyPortNatT != 0)
-					{
-						rand_interval = GenRandInterval(UDP_NAT_T_INTERVAL_MIN, UDP_NAT_T_INTERVAL_MAX);
-					}
-
-					a->NextPerformNatTTick = a->Now + (UINT64)rand_interval;
-
-					// Generate the request packet
-					/*PackAddStr(p, "description", UDP_NAT_T_SIGNATURE);
-					PackAddStr(p, "opcode", "query_for_nat_traversal");
-					PackAddInt64(p, "tran_id", a->NatT_TranId);
-					b = PackToBuf(p);
-					FreePack(p);*/
-
-					// Send the request packet
-					SendTo(a->UdpSock, &nat_t_ip, UDP_NAT_T_PORT, &c, 1);
-
-					//FreeBuf(b);
-				}
-			}
-			else
-			{
-				a->NextPerformNatTTick = 0;
-				a->CommToNatT_NumFail = 0;
-			}
-		}
-	}
-	else
-	{
-		// NAT_T is disabled, but there is a reference host (such as VGC)
-		if (a->UseUdpIpQuery || a->UseSuperRelayQuery)
-		{
 		}
 	}
 }
@@ -476,15 +333,13 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 
 	Debug("UdpAccelSend(): Peer has not replied in a while, sending keep-alive packet to alt destinations...\n");
 
-	IP *ips[3];
+	IP *ips[2];
 	ips[0] = &a->YourIp;
 	ips[1] = CmpIpAddr(&a->YourIpReported, &a->YourIp) == 0 ? NULL : &a->YourIpReported;
-	ips[2] = CmpIpAddr(&a->YourIpNatT, &a->YourIp) == 0 || CmpIpAddr(&a->YourIpNatT, &a->YourIpReported) == 0 ? NULL : &a->YourIpNatT;
 
-	USHORT ports[3];
+	USHORT ports[2];
 	ports[0] = a->YourPort;
 	ports[1] = a->YourPortReported == a->YourPort ? 0 : a->YourPortReported;
-	ports[2] = a->YourPortNatT == a->YourPort || a->YourPortNatT == a->YourPortReported ? 0 : a->YourPortNatT;
 
 	for (BYTE i = 0; i < sizeof(ips) / sizeof(ips[0]); ++i)
 	{
@@ -906,8 +761,66 @@ bool UdpAccelInitClient(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, IP *reported_
 	return true;
 }
 
+// Learn the public endpoint of the UDP socket by STUN if a STUN server is configured.
+// On success the STUN-derived address and port are reported to the peer instead of
+// MyIp and MyPort. With no STUN server configured, nothing is sent. STUN is also
+// skipped when the peer (peer_ip) is on a private, loopback, IPv6 link-local or IPv6
+// unique local address, because such a peer does not reach this host through the
+// public endpoint.
+void UdpAccelQueryStun(UDP_ACCEL *a, IP *peer_ip)
+{
+	char server[MAX_HOST_NAME_LEN + 1];
+	IP ip;
+	UINT port;
+	// Validate arguments
+	if (a == NULL || a->UdpSock == NULL || peer_ip == NULL)
+	{
+		return;
+	}
+
+	Lock(a->Cedar->lock);
+	{
+		StrCpy(server, sizeof(server), a->Cedar->StunServer);
+	}
+	Unlock(a->Cedar->lock);
+
+	if (IsEmptyStr(server))
+	{
+		// STUN is disabled
+		return;
+	}
+
+	if (IsIPPrivate(peer_ip) || IsLocalHostIP(peer_ip) ||
+		(IsIP6(peer_ip) && ((GetIPAddrType6(peer_ip) & IPV6_ADDR_LOCAL_UNICAST) || (peer_ip->address[0] & 0xfe) == 0xfc)))
+	{
+		// The peer is on the local side of the NAT: report the local endpoint
+		return;
+	}
+
+	if (StunGetMappedAddress(a->UdpSock, server, &ip, &port) == false)
+	{
+		Debug("UdpAccelQueryStun(): STUN query to %s failed, reporting the local endpoint.\n", server);
+		return;
+	}
+
+	// The result must be a unicast address of the socket's family (not zero, loopback,
+	// multicast or broadcast), because STUN has no integrity protection here
+	if (IsIP6(&ip) != a->IsIPv6 || port == 0 || port > 65535 || IsLocalHostIP(&ip) ||
+		(IsIP6(&ip) ? IsValidUnicastIPAddress6(&ip) : IsValidUnicastIPAddress4(&ip)) == false)
+	{
+		Debug("UdpAccelQueryStun(): unusable STUN result: %r, port: %u\n", &ip, port);
+		return;
+	}
+
+	Copy(&a->StunIp, &ip, sizeof(a->StunIp));
+	a->StunPort = (USHORT)port;
+	a->UseStun = true;
+
+	Debug("UdpAccelQueryStun(): local port: %u, public endpoint: %r, port: %u\n", a->MyPort, &a->StunIp, a->StunPort);
+}
+
 // Create a new UDP acceleration function
-UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port, bool no_nat_t)
+UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port)
 {
 	UDP_ACCEL *a;
 	SOCK *s;
@@ -970,11 +883,7 @@ UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port,
 	a->Cedar = cedar;
 	AddRef(a->Cedar->ref);
 
-	a->NoNatT = no_nat_t;
-
 	a->Version = 1;
-
-	a->NatT_TranId = Rand64();
 
 	a->CreatedTick = Tick64();
 
@@ -992,11 +901,6 @@ UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port,
 	a->MyPort = s->LocalPort;
 
 	a->IsIPv6 = IsIP6(ip);
-
-	if (a->IsIPv6)
-	{
-		a->NoNatT = true;
-	}
 
 	a->RecvBlockQueue = NewQueue();
 
@@ -1036,74 +940,7 @@ UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port,
 
 	Debug("Udp Accel My Port = %u\n", a->MyPort);
 
-	// Initialize the NAT-T server IP address acquisition thread
-	a->NatT_Lock = NewLock();
-	a->NatT_HaltEvent = NewEvent();
-
-	if (a->NoNatT == false)
-	{
-		a->NatT_GetIpThread = NewThread(NatT_GetIpThread, a);
-	}
-
 	return a;
-}
-
-// NAT-T server IP address acquisition thread
-void NatT_GetIpThread(THREAD *thread, void *param)
-{
-	UDP_ACCEL *a;
-	char hostname[MAX_SIZE];
-	static IP dummy_ip = {0};
-	UINT num_retry = 0;
-	// Validate arguments
-	if (thread == NULL || param == NULL)
-	{
-		return;
-	}
-
-	a = (UDP_ACCEL *)param;
-
-	if (IsZeroIP(&dummy_ip))
-	{
-		SetIP(&dummy_ip, 11, Rand8(), Rand8(), Rand8());
-	}
-
-	RUDPGetRegisterHostNameByIP(hostname, sizeof(hostname), &dummy_ip);
-
-	while (a->NatT_Halt == false)
-	{
-		IP ip;
-		UINT wait_time = UDP_NAT_T_GET_IP_INTERVAL;
-
-		// Get the IP address
-		bool ret = GetIP4Ex(&ip, hostname, 0, &a->NatT_Halt);
-
-		if (ret && (IsZeroIp(&ip) == false))
-		{
-			char tmp[128];
-
-			// Success to get
-			Lock(a->NatT_Lock);
-			{
-				Copy(&a->NatT_IP, &ip, sizeof(IP));
-			}
-			Unlock(a->NatT_Lock);
-
-			IPToStr(tmp, sizeof(tmp), &ip);
-			Debug("NAT-T IP Address Resolved: %s = %s\n", hostname, tmp);
-
-			a->NatT_IP_Changed = true;
-
-			break;
-		}
-
-		// Fail to get
-		num_retry++;
-
-		wait_time = (UINT)(MIN((UINT64)UDP_NAT_T_GET_IP_INTERVAL * (UINT64)num_retry, (UINT64)UDP_NAT_T_GET_IP_INTERVAL_MAX));
-
-		Wait(a->NatT_HaltEvent, wait_time);
-	}
 }
 
 // Release the UDP acceleration function
@@ -1139,19 +976,6 @@ void FreeUdpAccel(UDP_ACCEL *a)
 		}
 		UnlockList(a->Cedar->UdpPortList);
 	}
-
-	// Release of NAT-T related
-	a->NatT_Halt = true;
-	Set(a->NatT_HaltEvent);
-
-	if (a->NatT_GetIpThread != NULL)
-	{
-		WaitThread(a->NatT_GetIpThread, INFINITE);
-		ReleaseThread(a->NatT_GetIpThread);
-	}
-
-	ReleaseEvent(a->NatT_HaltEvent);
-	DeleteLock(a->NatT_Lock);
 
 	ReleaseCedar(a->Cedar);
 

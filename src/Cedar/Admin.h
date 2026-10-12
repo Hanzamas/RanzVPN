@@ -10,9 +10,9 @@
 
 #include "Account.h"
 #include "Cedar.h"
-#include "Client.h"
 #include "Hub.h"
 #include "Logging.h"
+#include "Wpc.h"
 
 #include "Mayaqua/Kernel.h"
 
@@ -40,7 +40,6 @@ struct ADMIN
 	LIST *LogFileList;			// Accessible log file list
 	UINT ClientBuild;			// Build number of the client
 	RPC_WINVER ClientWinVer;	// Windows version of client
-	UINT MaxJsonRpcRecvSize;	// Max JSON-RPC Receive Size
 	char dummy1[MAX_HUBNAME_LEN + 1];	// hubname buffer (dummy)
 };
 
@@ -62,26 +61,19 @@ struct RPC_SERVER_INFO
 	UINT ServerVerInt;					// Server version integer value
 	UINT ServerBuildInt;				// Server build number integer value
 	char ServerHostName[MAX_HOST_NAME_LEN + 1];	// Server host name
-	UINT ServerType;					// Type of server
 	UINT64 ServerBuildDate;				// Build date and time of the server
-	char ServerFamilyName[128];			// Family name
 	OS_INFO OsInfo;						// OS information
 };
 
 // Server status
 struct RPC_SERVER_STATUS
 {
-	UINT ServerType;					// Type of server
 	UINT NumTcpConnections;				// Total number of TCP connections
 	UINT NumTcpConnectionsLocal;		// Number of Local TCP connections
-	UINT NumTcpConnectionsRemote;		// Number of remote TCP connections
 	UINT NumHubTotal;					// Total number of HUBs
 	UINT NumHubStandalone;				// Number of stand-alone HUB
-	UINT NumHubStatic;					// Number of static HUBs
-	UINT NumHubDynamic;					// Number of Dynamic HUBs
 	UINT NumSessionsTotal;				// Total number of sessions
 	UINT NumSessionsLocal;				// Number of Local sessions (only controller)
-	UINT NumSessionsRemote;				// The number of remote sessions (other than the controller)
 	UINT NumMacTables;					// Number of MAC table entries
 	UINT NumIpTables;					// Number of IP table entries
 	UINT NumUsers;						// Number of users
@@ -113,13 +105,6 @@ struct RPC_LISTENER_LIST
 	bool *Errors;						// An error occurred
 };
 
-// List of ports
-struct RPC_PORTS
-{
-	UINT Num;							// Number of ports
-	UINT *Ports;						// Ports
-};
-
 // String *
 struct RPC_STR
 {
@@ -132,98 +117,11 @@ struct RPC_INT
 	UINT IntValue;						// Integer
 };
 
-// Proto options
-struct RPC_PROTO_OPTIONS
-{
-	char *Protocol;						// Protocol name
-	UINT Num;							// Number of options
-	PROTO_OPTION *Options;				// Options
-};
-
 // Set Password
 struct RPC_SET_PASSWORD
 {
 	UCHAR HashedPassword[SHA1_SIZE];	// Hashed password (for traditional RPC)
 	char PlainTextPassword[MAX_SIZE];	// Plaintext password (for JSON-RPC)
-};
-
-// Server farm configuration *
-struct RPC_FARM
-{
-	UINT ServerType;					// Type of server
-	UINT NumPort;						// Number of public ports
-	UINT *Ports;						// Public port list
-	UINT PublicIp;						// Public IP
-	char ControllerName[MAX_HOST_NAME_LEN + 1];	// Controller name
-	UINT ControllerPort;				// Controller port
-	UCHAR MemberPassword[SHA1_SIZE];	// Member password
-	char MemberPasswordPlaintext[MAX_SIZE];	// Member password (plaintext)
-	UINT Weight;						// Performance ratio
-	bool ControllerOnly;				// Only controller function
-};
-
-// HUB item of each farm member
-struct RPC_FARM_HUB
-{
-	char HubName[MAX_HUBNAME_LEN + 1];	// HUB Name
-	bool DynamicHub;					// Dynamic HUB
-};
-
-// Server farm member information acquisition *
-struct RPC_FARM_INFO
-{
-	UINT Id;							// ID
-	bool Controller;					// Controller
-	UINT64 ConnectedTime;				// Connection time
-	UINT Ip;							// IP address
-	char Hostname[MAX_HOST_NAME_LEN + 1];	// Host name
-	UINT Point;							// Point
-	UINT NumPort;						// Number of ports
-	UINT *Ports;						// Port
-	X *ServerCert;						// Server certificate
-	UINT NumFarmHub;					// Number of farm HUB
-	RPC_FARM_HUB *FarmHubs;				// Farm HUB
-	UINT NumSessions;					// Number of sessions
-	UINT NumTcpConnections;				// Number of TCP connections
-	UINT Weight;						// Performance ratio
-};
-
-// Server farm members enumeration items
-struct RPC_ENUM_FARM_ITEM
-{
-	UINT Id;							// ID
-	bool Controller;					// Controller
-	UINT64 ConnectedTime;				// Connection time
-	UINT Ip;							// IP address
-	char Hostname[MAX_HOST_NAME_LEN + 1];	// Host name
-	UINT Point;							// Point
-	UINT NumSessions;					// Number of sessions
-	UINT NumTcpConnections;				// Number of TCP connections
-	UINT NumHubs;						// Number of HUBs
-	UINT AssignedClientLicense;			// Number of assigned client licenses
-	UINT AssignedBridgeLicense;			// Number of assigned bridge licenses
-};
-
-// Server farm member enumeration *
-struct RPC_ENUM_FARM
-{
-	UINT NumFarm;						// Number of farm members
-	RPC_ENUM_FARM_ITEM *Farms;			// Farm member list
-};
-
-// Connection state to the controller
-struct RPC_FARM_CONNECTION_STATUS
-{
-	UINT Ip;							// IP address
-	UINT Port;							// Port number
-	bool Online;						// Online state
-	UINT LastError;						// Last error
-	UINT64 StartedTime;					// Connection start time
-	UINT64 FirstConnectedTime;			// First connection time
-	UINT64 CurrentConnectedTime;		// Connection time of this time
-	UINT NumTry;						// Number of trials
-	UINT NumConnected;					// Number of connection count
-	UINT NumFailed;						// Connection failure count
 };
 
 // Key pair
@@ -235,31 +133,11 @@ struct RPC_KEY_PAIR
 	UINT Flag1;							// Flag1
 };
 
-// WireGuard keys
-struct RPC_WGK
-{
-	UINT Num;							// Number of keys
-	WGK *Wgks;							// Keys
-};
-
 // HUB option
 struct RPC_HUB_OPTION
 {
-	UINT DefaultGateway;				// Default gateway address
-	UINT DefaultSubnet;					// Default subnet mask
 	UINT MaxSession;					// Maximum number of sessions
 	bool NoEnum;						// Not listed
-};
-
-// Radius server options
-struct RPC_RADIUS
-{
-	char HubName[MAX_HUBNAME_LEN + 1];	// HUB Name
-	char RadiusServerName[MAX_HOST_NAME_LEN + 1];	// Radius server name
-	UINT RadiusPort;					// Radius port number
-	char RadiusSecret[MAX_PASSWORD_LEN + 1];	// Secret key
-	UINT RadiusRetryInterval;			// Radius retry interval
-	UINT RadiusRetryTimeout;			// Radius retry timeout
 };
 
 // Specify the HUB
@@ -277,7 +155,6 @@ struct RPC_CREATE_HUB
 	char AdminPasswordPlainText[MAX_SIZE];	// Password (plaintext)
 	bool Online;						// Online flag
 	RPC_HUB_OPTION HubOption;			// HUB options
-	UINT HubType;						// Type of HUB
 };
 
 // Enumeration items of HUB
@@ -285,7 +162,6 @@ struct RPC_ENUM_HUB_ITEM
 {
 	char HubName[MAX_HUBNAME_LEN + 1];	// HUB Name
 	bool Online;						// Online
-	UINT HubType;						// Type of HUB
 	UINT NumUsers;						// Number of users
 	UINT NumGroups;						// Number of groups
 	UINT NumSessions;					// Number of sessions
@@ -365,7 +241,6 @@ struct RPC_HUB_STATUS
 {
 	char HubName[MAX_HUBNAME_LEN + 1];	// HUB Name
 	bool Online;						// Online
-	UINT HubType;						// Type of HUB
 	UINT NumSessions;					// Number of sessions
 	UINT NumSessionsClient;				// Number of sessions (client)
 	UINT NumSessionsBridge;				// Number of sessions (bridge)
@@ -375,7 +250,6 @@ struct RPC_HUB_STATUS
 	UINT NumMacTables;					// Number of MAC table entries
 	UINT NumIpTables;					// Number of IP table entries
 	TRAFFIC Traffic;					// Traffic
-	bool SecureNATEnabled;				// Whether SecureNAT is enabled
 	UINT64 LastCommTime;				// Last communication date and time
 	UINT64 LastLoginTime;				// Last login date and time
 	UINT64 CreatedTime;					// Creation date and time
@@ -589,8 +463,6 @@ struct RPC_DELETE_USER
 struct RPC_ENUM_SESSION_ITEM
 {
 	char Name[MAX_SESSION_NAME_LEN + 1];			// Session name
-	bool RemoteSession;								// Remote session
-	char RemoteHostname[MAX_HOST_NAME_LEN + 1];		// Remote server name
 	char Username[MAX_USERNAME_LEN + 1];			// User name
 	UINT Ip;										// IP address (IPv4)
 	IP ClientIP;									// IP address (IPv4 / IPv6)
@@ -600,7 +472,6 @@ struct RPC_ENUM_SESSION_ITEM
 	UINT64 PacketSize;								// Packet size
 	UINT64 PacketNum;								// Number of packets
 	bool LinkMode;									// Link mode
-	bool SecureNATMode;								// SecureNAT mode
 	bool BridgeMode;								// Bridge mode
 	bool Layer3Mode;								// Layer 3 mode
 	bool Client_BridgeMode;							// Client is bridge mode
@@ -630,8 +501,6 @@ struct RPC_ENUM_MAC_TABLE_ITEM
 	UCHAR Padding[2];
 	UINT64 CreatedTime;								// Creation date and time
 	UINT64 UpdatedTime;								// Updating date
-	bool RemoteItem;								// Remote items
-	char RemoteHostname[MAX_HOST_NAME_LEN + 1];		// Remote host name
 	UINT VlanId;									// VLAN ID
 };
 
@@ -654,8 +523,6 @@ struct RPC_ENUM_IP_TABLE_ITEM
 	bool DhcpAllocated;								// Assigned by the DHCP
 	UINT64 CreatedTime;								// Creation date and time
 	UINT64 UpdatedTime;								// Updating date
-	bool RemoteItem;								// Remote items
-	char RemoteHostname[MAX_HOST_NAME_LEN + 1];		// Remote host name
 };
 
 // Enumeration of IP table
@@ -671,16 +538,6 @@ struct RPC_DELETE_TABLE
 {
 	char HubName[MAX_HUBNAME_LEN + 1];				// HUB Name
 	UINT Key;										// Key
-};
-
-// KEEP setting
-struct RPC_KEEP
-{
-	bool UseKeepConnect;					// Keep connected to the Internet
-	char KeepConnectHost[MAX_HOST_NAME_LEN + 1];	// Host name
-	UINT KeepConnectPort;					// Port number
-	UINT KeepConnectProtocol;				// Protocol
-	UINT KeepConnectInterval;				// Interval
 };
 
 // Ethernet enumeration item
@@ -718,7 +575,6 @@ struct RPC_ENUM_LOCALBRIDGE
 struct RPC_BRIDGE_SUPPORT
 {
 	bool IsBridgeSupportedOs;				// Whether the OS supports the bridge
-	bool IsWinPcapNeeded;					// Whether WinPcap is necessary
 };
 
 // Config operation
@@ -824,7 +680,6 @@ struct RPC_AC_LIST
 // Log file enumeration
 struct RPC_ENUM_LOG_FILE_ITEM
 {
-	char ServerName[MAX_HOST_NAME_LEN + 1];	// Server name
 	char FilePath[MAX_PATH];				// File Path
 	UINT FileSize;							// File size
 	UINT64 UpdatedTime;						// Updating date
@@ -838,7 +693,6 @@ struct RPC_ENUM_LOG_FILE
 // Read a Log file
 struct RPC_READ_LOG_FILE
 {
-	char ServerName[MAX_HOST_NAME_LEN + 1];	// Server name
 	char FilePath[MAX_PATH];				// File Path
 	UINT Offset;							// Offset
 	BUF *Buffer;							// Buffer
@@ -915,31 +769,6 @@ struct RPC_MSG
 	wchar_t *Msg;							// Message
 };
 
-// EtherIP setting list
-struct RPC_ENUM_ETHERIP_ID
-{
-	UINT NumItem;
-	ETHERIP_ID *IdList;
-};
-
-// Set the special listener
-struct RPC_SPECIAL_LISTENER
-{
-	bool VpnOverIcmpListener;				// VPN over ICMP
-	bool VpnOverDnsListener;				// VPN over DNS
-};
-
-// Get / Set the Azure state
-struct RPC_AZURE_STATUS
-{
-	bool IsEnabled;							// Whether enabled
-	bool IsConnected;						// Whether it's connected
-};
-
-// Constants
-#define ADMIN_RPC_MAX_POST_SIZE_BY_SERVER_ADMIN		MAX_PACK_SIZE
-#define ADMIN_RPC_MAX_POST_SIZE_BY_HUB_ADMIN		(8 * 1024 * 1024)
-
 
 // Function prototype
 UINT AdminAccept(CONNECTION *c, PACK *p);
@@ -960,30 +789,10 @@ UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t);
 void SiEnumLocalLogFileList(SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t);
 void SiReadLocalLogFile(SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FILE *t);
 typedef bool (DOWNLOAD_PROC)(DOWNLOAD_PROGRESS *progress);
-BUF *DownloadFileFromServer(RPC *r, char *server_name, char *filepath, UINT total_size, DOWNLOAD_PROC *proc, void *param);
+BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PROC *proc, void *param);
 bool CheckAdminSourceAddress(SOCK *sock, char *hubname);
 void SiEnumSessionMain(SERVER *s, RPC_ENUM_SESSION *t);
 bool SiIsEmptyPassword(void *hash_password);
-void JsonRpcProcPost(CONNECTION *c, SOCK *s, HTTP_HEADER *h, UINT post_data_size);
-void JsonRpcProcGet(CONNECTION *c, SOCK *s, HTTP_HEADER *h, char *url_target);
-void JsonRpcProcOptions(CONNECTION *c, SOCK *s, HTTP_HEADER *h, char *url_target);
-JSON_VALUE *JsonRpcProcRequestObject(ADMIN *admin, CONNECTION *c, SOCK *s, JSON_VALUE *json_req, char *method_name);
-JSON_VALUE *JsonRpcNewError(int code, wchar_t *message);
-JSON_VALUE *JsonRpcNewResponse(PACK *p);
-bool HttpParseBasicAuthHeader(HTTP_HEADER *h, char *username, UINT username_size, char *password, UINT password_size);
-ADMIN *JsonRpcAuthLogin(CEDAR *c, SOCK *sock, HTTP_HEADER *h);
-JSON_VALUE *QueryStringToJsonListValue(char *qs);
-JSON_VALUE *ConstructDummyJsonRpcRequest(char *method_name, JSON_VALUE *p);
-void AdminWebProcPost(CONNECTION *c, SOCK *s, HTTP_HEADER *h, UINT post_data_size, char *url_target);
-void AdminWebProcGet(CONNECTION *c, SOCK *s, HTTP_HEADER *h, char *url_target);
-bool AdminWebHandleFileRequest(ADMIN *a, CONNECTION *c, SOCK *s, HTTP_HEADER *h, char *url_src, char *query_string, char *virtual_root_dir, char *physical_root_dir);
-BUF *AdminWebProcessServerSideInclude(BUF *src_txt, char *filename, UINT depth);
-bool AdminWebSendBody(SOCK *s, UINT status_code, char *status_string, UCHAR *data, UINT data_size, char *content_type, char *add_header_name, char *add_header_value, HTTP_HEADER *request_headers);
-bool AdminWebSend404Error(SOCK *s, HTTP_HEADER *request_headers);
-bool AdminWebSend302Redirect(SOCK *s, char *url, char *query_string, HTTP_HEADER *request_headers);
-BUF *AdminWebTryFindAndReadFile(char *vroot, char *proot, char *url, char *ret_filename, UINT ret_filename_size, bool *is_index_html);
-BUF *AdminWebTryOneFile(char *filename, char *ret_filename, UINT ret_filename_size);
-bool AdminWebSendUnauthorized(SOCK *s, HTTP_HEADER *http_request_headers);
 
 UINT StTest(ADMIN *a, RPC_TEST *t);
 UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t);
@@ -992,31 +801,17 @@ UINT StCreateListener(ADMIN *a, RPC_LISTENER *t);
 UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t);
 UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t);
 UINT StEnableListener(ADMIN *a, RPC_LISTENER *t);
-UINT StSetPortsUDP(ADMIN *a, RPC_PORTS *t);
-UINT StGetPortsUDP(ADMIN *a, RPC_PORTS *t);
-UINT StGetProtoOptions(ADMIN *a, RPC_PROTO_OPTIONS *t);
-UINT StSetProtoOptions(ADMIN *a, RPC_PROTO_OPTIONS *t);
 UINT StSetServerPassword(ADMIN *a, RPC_SET_PASSWORD *t);
-UINT StSetFarmSetting(ADMIN *a, RPC_FARM *t);
-UINT StGetFarmSetting(ADMIN *a, RPC_FARM *t);
-UINT StGetFarmInfo(ADMIN *a, RPC_FARM_INFO *t);
-UINT StEnumFarmMember(ADMIN *a, RPC_ENUM_FARM *t);
-UINT StGetFarmConnectionStatus(ADMIN *a, RPC_FARM_CONNECTION_STATUS *t);
 UINT StSetServerCert(ADMIN *a, RPC_KEY_PAIR *t);
 UINT StGetServerCert(ADMIN *a, RPC_KEY_PAIR *t);
 UINT StGetServerCipherList(ADMIN *a, RPC_STR *t);
 UINT StGetServerCipher(ADMIN *a, RPC_STR *t);
 UINT StSetServerCipher(ADMIN *a, RPC_STR *t);
-UINT StAddWgk(ADMIN *a, RPC_WGK *t);
-UINT StDeleteWgk(ADMIN *a, RPC_WGK *t);
-UINT StEnumWgk(ADMIN *a, RPC_WGK *t);
 UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t);
 UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t);
 UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t);
 UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t);
 UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t);
-UINT StGetHubRadius(ADMIN *a, RPC_RADIUS *t);
-UINT StSetHubRadius(ADMIN *a, RPC_RADIUS *t);
 UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t);
 UINT StDisconnectConnection(ADMIN *a, RPC_DISCONNECT_CONNECTION *t);
 UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t);
@@ -1058,15 +853,6 @@ UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t);
 UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t);
 UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t);
 UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t);
-UINT StSetKeep(ADMIN *a, RPC_KEEP *t);
-UINT StGetKeep(ADMIN *a, RPC_KEEP *t);
-UINT StEnableSecureNAT(ADMIN *a, RPC_HUB *t);
-UINT StDisableSecureNAT(ADMIN *a, RPC_HUB *t);
-UINT StSetSecureNATOption(ADMIN *a, VH_OPTION *t);
-UINT StGetSecureNATOption(ADMIN *a, VH_OPTION *t);
-UINT StEnumNAT(ADMIN *a, RPC_ENUM_NAT *t);
-UINT StEnumDHCP(ADMIN *a, RPC_ENUM_DHCP *t);
-UINT StGetSecureNATStatus(ADMIN *a, RPC_NAT_STATUS *t);
 UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t);
 UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t);
 UINT StDeleteLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t);
@@ -1115,26 +901,7 @@ UINT StCrash(ADMIN *a, RPC_TEST *t);
 UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t);
 UINT StFlush(ADMIN *a, RPC_TEST *t);
 UINT StDebug(ADMIN *a, RPC_TEST *t);
-UINT StSetIPsecServices(ADMIN *a, IPSEC_SERVICES *t);
-UINT StGetIPsecServices(ADMIN *a, IPSEC_SERVICES *t);
-UINT StAddEtherIpId(ADMIN *a, ETHERIP_ID *t);
-UINT StGetEtherIpId(ADMIN *a, ETHERIP_ID *t);
-UINT StDeleteEtherIpId(ADMIN *a, ETHERIP_ID *t);
-UINT StEnumEtherIpId(ADMIN *a, RPC_ENUM_ETHERIP_ID *t);
-UINT StSetOpenVpnSstpConfig(ADMIN *a, OPENVPN_SSTP_CONFIG *t);
-UINT StGetOpenVpnSstpConfig(ADMIN *a, OPENVPN_SSTP_CONFIG *t);
-UINT StGetDDnsClientStatus(ADMIN *a, DDNS_CLIENT_STATUS *t);
-UINT StChangeDDnsClientHostname(ADMIN *a, RPC_TEST *t);
 UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t);
-UINT StMakeOpenVpnConfigFile(ADMIN *a, RPC_READ_LOG_FILE *t);
-UINT StSetSpecialListener(ADMIN *a, RPC_SPECIAL_LISTENER *t);
-UINT StGetSpecialListener(ADMIN *a, RPC_SPECIAL_LISTENER *t);
-UINT StGetAzureStatus(ADMIN *a, RPC_AZURE_STATUS *t);
-UINT StSetAzureStatus(ADMIN *a, RPC_AZURE_STATUS *t);
-UINT StGetDDnsInternetSetting(ADMIN *a, INTERNET_SETTING *t);
-UINT StSetDDnsInternetSetting(ADMIN *a, INTERNET_SETTING *t);
-UINT StSetVgsConfig(ADMIN *a, VGS_CONFIG *t);
-UINT StGetVgsConfig(ADMIN *a, VGS_CONFIG *t);
 
 UINT ScTest(RPC *r, RPC_TEST *t);
 UINT ScGetServerInfo(RPC *r, RPC_SERVER_INFO *t);
@@ -1143,31 +910,17 @@ UINT ScCreateListener(RPC *r, RPC_LISTENER *t);
 UINT ScEnumListener(RPC *r, RPC_LISTENER_LIST *t);
 UINT ScDeleteListener(RPC *r, RPC_LISTENER *t);
 UINT ScEnableListener(RPC *r, RPC_LISTENER *t);
-UINT ScSetPortsUDP(RPC *r, RPC_PORTS *t);
-UINT ScGetPortsUDP(RPC *r, RPC_PORTS *t);
-UINT ScSetProtoOptions(RPC *r, RPC_PROTO_OPTIONS *t);
-UINT ScGetProtoOptions(RPC *r, RPC_PROTO_OPTIONS *t);
 UINT ScSetServerPassword(RPC *r, RPC_SET_PASSWORD *t);
-UINT ScSetFarmSetting(RPC *r, RPC_FARM *t);
-UINT ScGetFarmSetting(RPC *r, RPC_FARM *t);
-UINT ScGetFarmInfo(RPC *r, RPC_FARM_INFO *t);
-UINT ScEnumFarmMember(RPC *r, RPC_ENUM_FARM *t);
-UINT ScGetFarmConnectionStatus(RPC *r, RPC_FARM_CONNECTION_STATUS *t);
 UINT ScSetServerCert(RPC *r, RPC_KEY_PAIR *t);
 UINT ScGetServerCert(RPC *r, RPC_KEY_PAIR *t);
 UINT ScGetServerCipherList(RPC *r, RPC_STR *t);
 UINT ScGetServerCipher(RPC *r, RPC_STR *t);
 UINT ScSetServerCipher(RPC *r, RPC_STR *t);
-UINT ScAddWgk(RPC *r, RPC_WGK *t);
-UINT ScDeleteWgk(RPC *r, RPC_WGK *t);
-UINT ScEnumWgk(RPC *r, RPC_WGK *t);
 UINT ScCreateHub(RPC *r, RPC_CREATE_HUB *t);
 UINT ScSetHub(RPC *r, RPC_CREATE_HUB *t);
 UINT ScGetHub(RPC *r, RPC_CREATE_HUB *t);
 UINT ScEnumHub(RPC *r, RPC_ENUM_HUB *t);
 UINT ScDeleteHub(RPC *r, RPC_DELETE_HUB *t);
-UINT ScGetHubRadius(RPC *r, RPC_RADIUS *t);
-UINT ScSetHubRadius(RPC *r, RPC_RADIUS *t);
 UINT ScEnumConnection(RPC *r, RPC_ENUM_CONNECTION *t);
 UINT ScDisconnectConnection(RPC *r, RPC_DISCONNECT_CONNECTION *t);
 UINT ScGetConnectionInfo(RPC *r, RPC_CONNECTION_INFO *t);
@@ -1209,15 +962,6 @@ UINT ScDeleteIpTable(RPC *r, RPC_DELETE_TABLE *t);
 UINT ScGetLink(RPC *a, RPC_CREATE_LINK *t);
 UINT ScSetLink(RPC *a, RPC_CREATE_LINK *t);
 UINT ScSetAccessList(RPC *r, RPC_ENUM_ACCESS_LIST *t);
-UINT ScSetKeep(RPC *r, RPC_KEEP *t);
-UINT ScGetKeep(RPC *r, RPC_KEEP *t);
-UINT ScEnableSecureNAT(RPC *r, RPC_HUB *t);
-UINT ScDisableSecureNAT(RPC *r, RPC_HUB *t);
-UINT ScSetSecureNATOption(RPC *r, VH_OPTION *t);
-UINT ScGetSecureNATOption(RPC *r, VH_OPTION *t);
-UINT ScEnumNAT(RPC *r, RPC_ENUM_NAT *t);
-UINT ScEnumDHCP(RPC *r, RPC_ENUM_DHCP *t);
-UINT ScGetSecureNATStatus(RPC *r, RPC_NAT_STATUS *t);
 UINT ScEnumEthernet(RPC *r, RPC_ENUM_ETH *t);
 UINT ScAddLocalBridge(RPC *r, RPC_LOCALBRIDGE *t);
 UINT ScDeleteLocalBridge(RPC *r, RPC_LOCALBRIDGE *t);
@@ -1266,26 +1010,7 @@ UINT ScCrash(RPC *r, RPC_TEST *t);
 UINT ScGetAdminMsg(RPC *r, RPC_MSG *t);
 UINT ScFlush(RPC *r, RPC_TEST *t);
 UINT ScDebug(RPC *r, RPC_TEST *t);
-UINT ScSetIPsecServices(RPC *r, IPSEC_SERVICES *t);
-UINT ScGetIPsecServices(RPC *r, IPSEC_SERVICES *t);
-UINT ScAddEtherIpId(RPC *r, ETHERIP_ID *t);
-UINT ScGetEtherIpId(RPC *r, ETHERIP_ID *t);
-UINT ScDeleteEtherIpId(RPC *r, ETHERIP_ID *t);
-UINT ScEnumEtherIpId(RPC *r, RPC_ENUM_ETHERIP_ID *t);
-UINT ScSetOpenVpnSstpConfig(RPC *r, OPENVPN_SSTP_CONFIG *t);
-UINT ScGetOpenVpnSstpConfig(RPC *r, OPENVPN_SSTP_CONFIG *t);
-UINT ScGetDDnsClientStatus(RPC *r, DDNS_CLIENT_STATUS *t);
-UINT ScChangeDDnsClientHostname(RPC *r, RPC_TEST *t);
 UINT ScRegenerateServerCert(RPC *r, RPC_TEST *t);
-UINT ScMakeOpenVpnConfigFile(RPC *r, RPC_READ_LOG_FILE *t);
-UINT ScSetSpecialListener(RPC *r, RPC_SPECIAL_LISTENER *t);
-UINT ScGetSpecialListener(RPC *r, RPC_SPECIAL_LISTENER *t);
-UINT ScGetAzureStatus(RPC *r, RPC_AZURE_STATUS *t);
-UINT ScSetAzureStatus(RPC *r, RPC_AZURE_STATUS *t);
-UINT ScGetDDnsInternetSetting(RPC *r, INTERNET_SETTING *t);
-UINT ScSetDDnsInternetSetting(RPC *r, INTERNET_SETTING *t);
-UINT ScSetVgsConfig(RPC *r, VGS_CONFIG *t);
-UINT ScGetVgsConfig(RPC *r, VGS_CONFIG *t);
 
 void InRpcTest(RPC_TEST *t, PACK *p);
 void OutRpcTest(PACK *p, RPC_TEST *t);
@@ -1300,34 +1025,13 @@ void OutRpcListener(PACK *p, RPC_LISTENER *t);
 void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p);
 void OutRpcListenerList(PACK *p, RPC_LISTENER_LIST *t);
 void FreeRpcListenerList(RPC_LISTENER_LIST *t);
-void InRpcPorts(RPC_PORTS *t, PACK *p);
-void OutRpcPorts(PACK *p, RPC_PORTS *t);
-void FreeRpcPorts(RPC_PORTS *t);
 void InRpcStr(RPC_STR *t, PACK *p);
 void OutRpcStr(PACK *p, RPC_STR *t);
 void FreeRpcStr(RPC_STR *t);
-void InRpcProtoOptions(RPC_PROTO_OPTIONS *t, PACK *p);
-void OutRpcProtoOptions(PACK *p, RPC_PROTO_OPTIONS *t);
-void FreeRpcProtoOptions(RPC_PROTO_OPTIONS *t);
 void InRpcSetPassword(RPC_SET_PASSWORD *t, PACK *p);
 void OutRpcSetPassword(PACK *p, RPC_SET_PASSWORD *t);
-void InRpcFarm(RPC_FARM *t, PACK *p);
-void OutRpcFarm(PACK *p, RPC_FARM *t);
-void FreeRpcFarm(RPC_FARM *t);
-void InRpcFarmHub(RPC_FARM_HUB *t, PACK *p);
-void OutRpcFarmHub(PACK *p, RPC_FARM_HUB *t);
-void InRpcFarmInfo(RPC_FARM_INFO *t, PACK *p);
-void OutRpcFarmInfo(PACK *p, RPC_FARM_INFO *t);
-void FreeRpcFarmInfo(RPC_FARM_INFO *t);
-void InRpcEnumFarm(RPC_ENUM_FARM *t, PACK *p);
-void OutRpcEnumFarm(PACK *p, RPC_ENUM_FARM *t);
-void FreeRpcEnumFarm(RPC_ENUM_FARM *t);
-void InRpcFarmConnectionStatus(RPC_FARM_CONNECTION_STATUS *t, PACK *p);
-void OutRpcFarmConnectionStatus(PACK *p, RPC_FARM_CONNECTION_STATUS *t);
 void InRpcHubOption(RPC_HUB_OPTION *t, PACK *p);
 void OutRpcHubOption(PACK *p, RPC_HUB_OPTION *t);
-void InRpcRadius(RPC_RADIUS *t, PACK *p);
-void OutRpcRadius(PACK *p, RPC_RADIUS *t);
 void InRpcHub(RPC_HUB *t, PACK *p);
 void OutRpcHub(PACK *p, RPC_HUB *t);
 void InRpcCreateHub(RPC_CREATE_HUB *t, PACK *p);
@@ -1418,19 +1122,11 @@ void OutRpcMemInfo(PACK *p, MEMINFO *t);
 void InRpcKeyPair(RPC_KEY_PAIR *t, PACK *p);
 void OutRpcKeyPair(PACK *p, RPC_KEY_PAIR *t);
 void FreeRpcKeyPair(RPC_KEY_PAIR *t);
-void InRpcWgk(RPC_WGK *t, PACK *p);
-void OutRpcWgk(PACK *p, RPC_WGK *t);
-void FreeRpcWgk(RPC_WGK *t);
 void InRpcAddAccess(RPC_ADD_ACCESS *t, PACK *p);
 void OutRpcAddAccess(PACK *p, RPC_ADD_ACCESS *t);
 void InRpcDeleteAccess(RPC_DELETE_ACCESS *t, PACK *p);
 void OutRpcDeleteAccess(PACK *p, RPC_DELETE_ACCESS *t);
 void FreeRpcSetGroup(RPC_SET_GROUP *t);
-void AdjoinRpcEnumSession(RPC_ENUM_SESSION *dest, RPC_ENUM_SESSION *src);
-void AdjoinRpcEnumMacTable(RPC_ENUM_MAC_TABLE *dest, RPC_ENUM_MAC_TABLE *src);
-void AdjoinRpcEnumIpTable(RPC_ENUM_IP_TABLE *dest, RPC_ENUM_IP_TABLE *src);
-void InRpcKeep(RPC_KEEP *t, PACK *p);
-void OutRpcKeep(PACK *p, RPC_KEEP *t);
 void InRpcOsInfo(OS_INFO *t, PACK *p);
 void OutRpcOsInfo(PACK *p, OS_INFO *t);
 void FreeRpcOsInfo(OS_INFO *t);
@@ -1479,7 +1175,6 @@ void FreeRpcAcList(RPC_AC_LIST *t);
 void InRpcEnumLogFile(RPC_ENUM_LOG_FILE *t, PACK *p);
 void OutRpcEnumLogFile(PACK *p, RPC_ENUM_LOG_FILE *t);
 void FreeRpcEnumLogFile(RPC_ENUM_LOG_FILE *t);
-void AdjoinRpcEnumLogFile(RPC_ENUM_LOG_FILE *t, RPC_ENUM_LOG_FILE *src);
 void InRpcReadLogFile(RPC_READ_LOG_FILE *t, PACK *p);
 void OutRpcReadLogFile(PACK *p, RPC_READ_LOG_FILE *t);
 void FreeRpcReadLogFile(RPC_READ_LOG_FILE *t);
@@ -1498,23 +1193,6 @@ void OutRpcMsg(PACK *p, RPC_MSG *t);
 void FreeRpcMsg(RPC_MSG *t);
 void InRpcWinVer(RPC_WINVER *t, PACK *p);
 void OutRpcWinVer(PACK *p, RPC_WINVER *t);
-void InIPsecServices(IPSEC_SERVICES *t, PACK *p);
-void OutIPsecServices(PACK *p, IPSEC_SERVICES *t);
-void InRpcEnumEtherIpId(RPC_ENUM_ETHERIP_ID *t, PACK *p);
-void OutRpcEnumEtherIpId(PACK *p, RPC_ENUM_ETHERIP_ID *t);
-void FreeRpcEnumEtherIpId(RPC_ENUM_ETHERIP_ID *t);
-void InEtherIpId(ETHERIP_ID *t, PACK *p);
-void OutEtherIpId(PACK *p, ETHERIP_ID *t);
-void InOpenVpnSstpConfig(OPENVPN_SSTP_CONFIG *t, PACK *p);
-void OutOpenVpnSstpConfig(PACK *p, OPENVPN_SSTP_CONFIG *t);
-void InDDnsClientStatus(DDNS_CLIENT_STATUS *t, PACK *p);
-void OutDDnsClientStatus(PACK *p, DDNS_CLIENT_STATUS *t);
-void InRpcSpecialListener(RPC_SPECIAL_LISTENER *t, PACK *p);
-void OutRpcSpecialListener(PACK *p, RPC_SPECIAL_LISTENER *t);
-void InRpcAzureStatus(RPC_AZURE_STATUS *t, PACK *p);
-void OutRpcAzureStatus(PACK *p, RPC_AZURE_STATUS *t);
-void InRpcInternetSetting(INTERNET_SETTING *t, PACK *p);
-void OutRpcInternetSetting(PACK *p, INTERNET_SETTING *t);
 
 #endif	// ADMIN_H
 
