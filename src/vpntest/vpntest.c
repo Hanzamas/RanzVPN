@@ -433,6 +433,9 @@ void stun_test(UINT num, char **arg)
 	}
 }
 
+// Mayaqua runtime stress test (stress.c)
+void stress_test(UINT num, char **arg);
+
 // The list of test functions
 // Test function definition list
 typedef void (TEST_PROC)(UINT num, char **arg);
@@ -452,6 +455,7 @@ TEST_LIST test_list[] =
 	{"stun", stun_test, "STUN Binding Request / Response helpers against RFC 5769 sample messages."},
 	{"harness", harness_test, "In-process server: hubs, cascade, frames, vpncmd golden outputs, config round-trip."},
 	{"bench", bench_test, "Cascade frame throughput and Pack encode/decode benchmark (informational)."},
+	{"stress", stress_test, "Mayaqua runtime stress test: stress [timing] [case ...]."},
 };
 
 // Test function
