@@ -1838,7 +1838,7 @@ bool ServerAccept(CONNECTION *c)
 						{
 							RPC_ENUM_SESSION_ITEM *e = &t.Sessions[i];
 
-							if (e->BridgeMode == false && e->Layer3Mode == false && e->LinkMode == false && e->CurrentNumTcp != 0)
+							if (e->BridgeMode == false && e->LinkMode == false && e->CurrentNumTcp != 0)
 							{
 								if (StrCmpi(e->Username, username) == 0 &&
 									(IsZero(e->UniqueId, 16) || Cmp(e->UniqueId, node.UniqueId, 16) != 0))
@@ -4232,7 +4232,7 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 			// Receive the data since it's POST
 			data_size = GetContentLength(h);
 
-			if ((data_size > MAX_WATERMARK_SIZE || data_size < SizeOfWaterMark()) && (data_size != StrLen(HTTP_VPN_TARGET_POSTDATA)))
+			if ((data_size > MAX_WATERMARK_SIZE || data_size < WaterMarkSize) && (data_size != StrLen(HTTP_VPN_TARGET_POSTDATA)))
 			{
 				// Data is too large
 				HttpSendForbidden(s, h->Target, NULL);
@@ -4263,7 +4263,7 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 			{
 				// Compare posted data with the WaterMark
 				if ((data_size == StrLen(HTTP_VPN_TARGET_POSTDATA) && (Cmp(data, HTTP_VPN_TARGET_POSTDATA, data_size) == 0))
-					|| ((data_size >= SizeOfWaterMark()) && Cmp(data, WaterMark, SizeOfWaterMark()) == 0))
+					|| ((data_size >= WaterMarkSize) && Cmp(data, WaterMark, WaterMarkSize) == 0))
 				{
 					// Check the WaterMark
 					Free(data);
@@ -4379,10 +4379,10 @@ bool ClientUploadSignature(SOCK *s)
 
 	// Generate a watermark
 	rand_size = Rand32() % (HTTP_PACK_RAND_SIZE_MAX * 2);
-	water_size = SizeOfWaterMark() + rand_size;
+	water_size = WaterMarkSize + rand_size;
 	water = Malloc(water_size);
-	Copy(water, WaterMark, SizeOfWaterMark());
-	Rand(&water[SizeOfWaterMark()], rand_size);
+	Copy(water, WaterMark, WaterMarkSize);
+	Rand(&water[WaterMarkSize], rand_size);
 
 	// Upload the watermark data
 	if (PostHttp(s, h, water, water_size) == false)

@@ -25,7 +25,7 @@ if (Test-Path "env:BUILD_BINARIESDIRECTORY") {
 }
 
 # Named self-tests: must print their OK marker and no leak
-('mschapv2', 'stun') | % {
+('mschapv2', 'stun', 'watermark') | % {
 
 	[String] $test = $_
 	Write-Host "testing: $test"

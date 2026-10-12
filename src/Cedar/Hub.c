@@ -2802,14 +2802,13 @@ bool ApplyAccessListToStoredPacket(HUB *hub, SESSION *s, PKT *p)
 	{
 		if (s->NormalClient)
 		{
-			// In the case of a normal VPN client (Not a local bridge, a SecureNAT, and not a virtual L3 switch),
+			// In the case of a normal VPN client (not a local bridge),
 			// process URL redirection and discard the packet
 			ForceRedirectToUrl(hub, s, p, redirect_url);
 		}
 		else
 		{
-			// Discard packets that is sent from the sessions such as local bridge,
-			// SecureNAT, virtual L3 switch
+			// Discard packets that is sent from the sessions such as local bridge
 		}
 
 		pass = false;
@@ -4911,8 +4910,7 @@ bool CheckMaxLoggedPacketsPerMinute(SESSION *s, UINT max_packets, UINT64 now)
 	}
 
 	if ((s->Policy != NULL && s->Policy->NoBroadcastLimiter) ||
-		s->BridgeMode || s->LinkModeServer || s->LinkModeClient ||
-		s->L3SwitchMode)
+		s->BridgeMode || s->LinkModeServer || s->LinkModeClient)
 	{
 		return true;
 	}

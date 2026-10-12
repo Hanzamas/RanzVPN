@@ -9,7 +9,6 @@
 
 #include "BridgeWin32.h"
 #include "Hub.h"
-#include "Layer3.h"
 #include "Link.h"
 #include "Listener.h"
 #include "Protocol.h"
@@ -795,26 +794,6 @@ SEND_START:
 			ReleaseSock(sock);
 		}
 	}
-	else if (c->Protocol == CONNECTION_HUB_LAYER3)
-	{
-		// Layer-3 session
-		L3IF *f = s->L3If;
-		BLOCK *block;
-		UINT num_packet = 0;
-
-		while (block = GetNext(c->SendBlocks))
-		{
-			num_packet++;
-			c->CurrentSendQueueSize -= block->Size;
-			L3PutPacket(f, block->Buf, block->Size);
-			Free(block);
-		}
-
-		if (num_packet != 0)
-		{
-			L3PutPacket(f, NULL, 0);
-		}
-	}
 	else if (c->Protocol == CONNECTION_HUB_LINK_SERVER)
 	{
 		// HUB Link
@@ -1544,64 +1523,6 @@ DISCONNECT_THIS_TCP:
 			else
 			{
 				YieldCpu();
-			}
-		}
-	}
-	else if (c->Protocol == CONNECTION_HUB_LAYER3)
-	{
-		// Layer-3 switch session
-		L3IF *f = s->L3If;
-		UINT size, num = 0;
-		void *data;
-
-		if (f->SendQueue->num_item == 0)
-		{
-			UINT time = SELECT_TIME_FOR_NAT;
-			UINT next_delay_packet_diff = 0;
-
-			if (f->ArpWaitTable != NULL)
-			{
-				LockList(f->ArpWaitTable);
-				{
-					if (LIST_NUM(f->ArpWaitTable) == 0)
-					{
-						time = SELECT_TIME;
-					}
-				}
-				UnlockList(f->ArpWaitTable);
-			}
-
-			next_delay_packet_diff = GetNextDelayedPacketTickDiff(s);
-			time = MIN(time, next_delay_packet_diff);
-			num_delayed = LIST_NUM(s->DelayedPacketList);
-
-			if (no_spinlock_for_delay || time >= 50 || num_delayed == false)
-			{
-				Select(NULL, (num_delayed == 0 ? time : (time > 100 ? (time - 100) : 1)), c1, c2);
-			}
-			else
-			{
-				YieldCpu();
-			}
-		}
-
-		// Get the next packet
-		while (size = L3GetNextPacket(f, &data))
-		{
-			BLOCK *block = NewBlock(data, size, 0);
-			if (block->Size > MAX_PACKET_SIZE)
-			{
-				FreeBlock(block);
-			}
-			else
-			{
-				InsertReceivedBlockToQueue(c, block, true);
-			}
-
-			num++;
-			if (num >= MAX_SEND_SOCKET_QUEUE_NUM)
-			{
-				break;
 			}
 		}
 	}

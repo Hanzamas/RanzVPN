@@ -289,7 +289,6 @@
 // Protocol
 #define	CONNECTION_TCP					0	// TCP protocol
 #define	CONNECTION_UDP					1	// UDP protocol
-#define	CONNECTION_HUB_LAYER3			6	// Layer-3 switch session
 #define	CONNECTION_HUB_BRIDGE			7	// Bridge session
 #define	CONNECTION_HUB_LINK_SERVER		9	// HUB link session
 
@@ -528,33 +527,12 @@
 
 //////////////////////////////////////////////////////////////////////
 // 
-// Layer-3 Switch related constants
-// 
-//////////////////////////////////////////////////////////////////////
-
-#define	MAX_NUM_L3_SWITCH		4096
-#define	MAX_NUM_L3_IF			4096
-#define	MAX_NUM_L3_TABLE		4096
-
-
-
-//////////////////////////////////////////////////////////////////////
-// 
 // Constant related to the virtual IP stack
 // 
 //////////////////////////////////////////////////////////////////////
 
-#define	ARP_ENTRY_EXPIRES			(30 * 1000)		// ARP table expiration date
-#define	ARP_ENTRY_POLLING_TIME		(1 * 1000)		// ARP table cleaning timer
-#define	ARP_REQUEST_TIMEOUT			(1000)			// ARP request time-out period
-#define	ARP_REQUEST_GIVEUP			(5 * 1000)		// Time to give up sending the ARP request
-#define	IP_WAIT_FOR_ARP_TIMEOUT		(5 * 1000)		// Total time that an IP packet waiting for ARP table
-
-// Beacon transmission interval
-#define	BEACON_SEND_INTERVAL		(5 * 1000)
 
 // Header size constant
-#define	MAC_HEADER_SIZE				(sizeof(MAC_HEADER))
 #define	ARP_HEADER_SIZE				(sizeof(ARP_HEADER))
 #define	IP_HEADER_SIZE				(sizeof(IPV4_HEADER))
 #define	TCP_HEADER_SIZE				(sizeof(TCP_HEADER))
@@ -566,10 +544,6 @@
 #define	MAX_TCP_DATA_SIZE			(MAX_IP_DATA_SIZE - TCP_HEADER_SIZE)
 #define	MAX_UDP_DATA_SIZE			(MAX_IP_DATA_SIZE - UDP_HEADER_SIZE)
 #define	MAX_IP_DATA_SIZE_TOTAL		(65535)
-
-// IP packet option constant
-#define	DEFAULT_IP_TOS				0				// TOS in the IP header
-#define	DEFAULT_IP_TTL				128				// TTL in the IP header
 
 
 #define	LICENSE_EDITION_VPN3_NO_LICENSE					0		// Without license
@@ -684,18 +658,8 @@
 #define	ERR_CAPTURE_DEVICE_ADD_ERROR	88	// Adding capture device failure
 #define	ERR_VPN_CODE_INVALID			89	// VPN code is different
 #define	ERR_CAPTURE_NOT_FOUND			90	// Capture device can not be found
-#define	ERR_LAYER3_CANT_DISCONNECT		91	// Layer-3 session cannot be disconnected
-#define	ERR_LAYER3_SW_EXISTS			92	// L3 switch of the same already exists
-#define	ERR_LAYER3_SW_NOT_FOUND			93	// Layer-3 switch can not be found
 #define	ERR_INVALID_NAME				94	// Name is invalid
-#define	ERR_LAYER3_IF_ADD_FAILED		95	// Failed to add interface
-#define	ERR_LAYER3_IF_DEL_FAILED		96	// Failed to delete the interface
-#define	ERR_LAYER3_IF_EXISTS			97	// Interface that you specified already exists
-#define	ERR_LAYER3_TABLE_ADD_FAILED		98	// Failed to add routing table
-#define	ERR_LAYER3_TABLE_DEL_FAILED		99	// Failed to delete the routing table
-#define	ERR_LAYER3_TABLE_EXISTS			100	// Routing table entry that you specified already exists
 #define	ERR_BAD_CLOCK					101	// Time is queer
-#define	ERR_LAYER3_CANT_START_SWITCH	102	// The Virtual Layer 3 Switch can not be started
 #define	ERR_CLIENT_LICENSE_NOT_ENOUGH	103	// Client connection licenses shortage
 #define	ERR_BRIDGE_LICENSE_NOT_ENOUGH	104 // Bridge connection licenses shortage
 #define	ERR_SERVER_CANT_ACCEPT			105	// Not Accept on the technical issues
@@ -816,7 +780,6 @@ struct CEDAR
 	UCHAR UniqueId[16];				// Unique ID
 	LIST *LocalBridgeList;			// Local bridge list
 	bool Bridge;					// Bridge version
-	LIST *L3SwList;					// Layer-3 switch list
 	COUNTER *AssignedClientLicense;	// Number of assigned client licenses
 	COUNTER *AssignedBridgeLicense;	// Number of assigned bridge licenses
 	UINT64 LicenseViolationTick;	// License violation occurs

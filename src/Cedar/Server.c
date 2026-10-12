@@ -10,7 +10,6 @@
 #include "Admin.h"
 #include "BridgeWin32.h"
 #include "Connection.h"
-#include "Layer3.h"
 #include "Link.h"
 #include "Listener.h"
 #include "Protocol.h"
@@ -362,11 +361,6 @@ void SiCheckDeadLockMain(SERVER *s, UINT timeout)
 		if (cedar->LocalBridgeList != NULL)
 		{
 			CheckDeadLock(cedar->LocalBridgeList->lock, timeout, "cedar->LocalBridgeList->lock");
-		}
-
-		if (cedar->L3SwList != NULL)
-		{
-			CheckDeadLock(cedar->L3SwList->lock, timeout, "cedar->L3SwList->lock");
 		}
 	}
 
@@ -1292,25 +1286,6 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 
 	// Flag of open-source version
 	AddCapsBool(t, "b_is_softether", true);
-
-	if (s->Cedar->Bridge == false)
-	{
-
-		// The virtual layer 3 switch function is available
-		AddCapsBool(t, "b_support_layer3", true);
-
-		AddCapsInt(t, "i_max_l3_sw", MAX_NUM_L3_SWITCH);
-		AddCapsInt(t, "i_max_l3_if", MAX_NUM_L3_IF);
-		AddCapsInt(t, "i_max_l3_table", MAX_NUM_L3_TABLE);
-	}
-	else
-	{
-		AddCapsBool(t, "b_support_layer3", false);
-
-		AddCapsInt(t, "i_max_l3_sw", 0);
-		AddCapsInt(t, "i_max_l3_if", 0);
-		AddCapsInt(t, "i_max_l3_table", 0);
-	}
 
 	if (s->Cedar->Bridge == false)
 	{
@@ -2267,7 +2242,7 @@ void SiInitConfiguration(SERVER *s)
 // Read the server settings from the CFG
 bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root)
 {
-	FOLDER *f1, *f2, *f3, *f4, *f5, *f6;
+	FOLDER *f1, *f2, *f3, *f4, *f6;
 	// Validate arguments
 	if (s == NULL || root == NULL)
 	{
@@ -2278,7 +2253,6 @@ bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root)
 	f2 = CfgGetFolder(root, "VirtualHUB");
 	f3 = CfgGetFolder(root, "ListenerList");
 	f4 = CfgGetFolder(root, "LocalBridgeList");
-	f5 = CfgGetFolder(root, "VirtualLayer3SwitchList");
 	f6 = CfgGetFolder(root, "LicenseManager");
 
 	if (f1 == NULL)
@@ -2326,11 +2300,6 @@ bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root)
 	if (f4 != NULL)
 	{
 		SiLoadLocalBridges(s, f4);
-	}
-
-	if (s->Cedar->Bridge == false && f5 != NULL)
-	{
-		SiLoadL3Switchs(s, f5);
 	}
 
 	return true;
@@ -2595,8 +2564,6 @@ FOLDER *SiWriteConfigurationToCfg(SERVER *s)
 
 	if (s->Cedar->Bridge == false)
 	{
-		SiWriteL3Switchs(CfgCreateFolder(root, "VirtualLayer3SwitchList"), s);
-
 		if (GetServerCapsBool(s, "b_support_license"))
 		{
 			SiWriteLicenseManager(CfgCreateFolder(root, "LicenseManager"), s);
@@ -4379,183 +4346,6 @@ void SiLoadHubCfg(SERVER *s, FOLDER *f, char *name)
 
 		ReleaseHub(h);
 	}
-}
-
-// Read the virtual layer 3 switch settings
-void SiLoadL3SwitchCfg(L3SW *sw, FOLDER *f)
-{
-	UINT i;
-	FOLDER *if_folder, *table_folder;
-	TOKEN_LIST *t;
-	bool active = false;
-	// Validate arguments
-	if (sw == NULL || f == NULL)
-	{
-		return;
-	}
-
-	active = CfgGetBool(f, "Active");
-
-	// Interface list
-	if_folder = CfgGetFolder(f, "InterfaceList");
-	if (if_folder != NULL)
-	{
-		t = CfgEnumFolderToTokenList(if_folder);
-		if (t != NULL)
-		{
-			for (i = 0;i < t->NumTokens;i++)
-			{
-				FOLDER *ff = CfgGetFolder(if_folder, t->Token[i]);
-				char name[MAX_HUBNAME_LEN + 1];
-				UINT ip, subnet;
-
-				CfgGetStr(ff, "HubName", name, sizeof(name));
-				ip = CfgGetIp32(ff, "IpAddress");
-				subnet = CfgGetIp32(ff, "SubnetMask");
-
-				{
-					L3AddIf(sw, name, ip, subnet);
-				}
-			}
-			FreeToken(t);
-		}
-	}
-
-	// Routing table
-	table_folder = CfgGetFolder(f, "RoutingTable");
-	if (table_folder != NULL)
-	{
-		t = CfgEnumFolderToTokenList(table_folder);
-		if (t != NULL)
-		{
-			for (i = 0;i < t->NumTokens;i++)
-			{
-				FOLDER *ff = CfgGetFolder(table_folder, t->Token[i]);
-				L3TABLE tbl;
-
-				Zero(&tbl, sizeof(tbl));
-				tbl.NetworkAddress = CfgGetIp32(ff, "NetworkAddress");
-				tbl.SubnetMask = CfgGetIp32(ff, "SubnetMask");
-				tbl.GatewayAddress = CfgGetIp32(ff, "GatewayAddress");
-				tbl.Metric = CfgGetInt(ff, "Metric");
-
-				L3AddTable(sw, &tbl);
-			}
-			FreeToken(t);
-		}
-	}
-
-	if (active)
-	{
-		L3SwStart(sw);
-	}
-}
-
-// Write the virtual layer 3 switch settings
-void SiWriteL3SwitchCfg(FOLDER *f, L3SW *sw)
-{
-	UINT i;
-	FOLDER *if_folder, *table_folder;
-	char tmp[MAX_SIZE];
-	// Validate arguments
-	if (f == NULL || sw == NULL)
-	{
-		return;
-	}
-
-	// Active flag
-	CfgAddBool(f, "Active", sw->Active);
-
-	// Interface list
-	if_folder = CfgCreateFolder(f, "InterfaceList");
-	for (i = 0;i < LIST_NUM(sw->IfList);i++)
-	{
-		L3IF *e = LIST_DATA(sw->IfList, i);
-		FOLDER *ff;
-
-		Format(tmp, sizeof(tmp), "Interface%u", i);
-		ff = CfgCreateFolder(if_folder, tmp);
-
-		CfgAddStr(ff, "HubName", e->HubName);
-		CfgAddIp32(ff, "IpAddress", e->IpAddress);
-		CfgAddIp32(ff, "SubnetMask", e->SubnetMask);
-	}
-
-	// Routing table
-	table_folder = CfgCreateFolder(f, "RoutingTable");
-	for (i = 0;i < LIST_NUM(sw->TableList);i++)
-	{
-		L3TABLE *e = LIST_DATA(sw->TableList, i);
-		FOLDER *ff;
-
-		Format(tmp, sizeof(tmp), "Entry%u", i);
-		ff = CfgCreateFolder(table_folder, tmp);
-
-		CfgAddIp32(ff, "NetworkAddress", e->NetworkAddress);
-		CfgAddIp32(ff, "SubnetMask", e->SubnetMask);
-		CfgAddIp32(ff, "GatewayAddress", e->GatewayAddress);
-		CfgAddInt(ff, "Metric", e->Metric);
-	}
-}
-
-// Read the Virtual Layer 3 switch list
-void SiLoadL3Switchs(SERVER *s, FOLDER *f)
-{
-	UINT i;
-	TOKEN_LIST *t;
-	CEDAR *c;
-	// Validate arguments
-	if (s == NULL || f == NULL)
-	{
-		return;
-	}
-	c = s->Cedar;
-
-	t = CfgEnumFolderToTokenList(f);
-	if (t != NULL)
-	{
-		for (i = 0;i < t->NumTokens;i++)
-		{
-			char *name = t->Token[i];
-			L3SW *sw = L3AddSw(c, name);
-
-			SiLoadL3SwitchCfg(sw, CfgGetFolder(f, name));
-
-			ReleaseL3Sw(sw);
-		}
-	}
-	FreeToken(t);
-}
-
-// Write the Virtual Layer 3 switch list
-void SiWriteL3Switchs(FOLDER *f, SERVER *s)
-{
-	UINT i;
-	FOLDER *folder;
-	CEDAR *c;
-	// Validate arguments
-	if (f == NULL || s == NULL)
-	{
-		return;
-	}
-	c = s->Cedar;
-
-	LockList(c->L3SwList);
-	{
-		for (i = 0;i < LIST_NUM(c->L3SwList);i++)
-		{
-			L3SW *sw = LIST_DATA(c->L3SwList, i);
-
-			Lock(sw->lock);
-			{
-				folder = CfgCreateFolder(f, sw->Name);
-
-				SiWriteL3SwitchCfg(folder, sw);
-			}
-			Unlock(sw->lock);
-		}
-	}
-	UnlockList(c->L3SwList);
 }
 
 // Write the license list

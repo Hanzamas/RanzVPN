@@ -10,13 +10,13 @@
 #include "Admin.h"
 #include "Bridge.h"
 #include "Connection.h"
-#include "Layer3.h"
 #include "Link.h"
 #include "Listener.h"
 #include "Protocol.h"
 #include "Sam.h"
 #include "Server.h"
 #include "Session.h"
+#include "WaterMark.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/Encrypt.h"
@@ -1118,8 +1118,6 @@ void StopCedar(CEDAR *c)
 	StopAllConnection(c);
 	// Stop all hubs
 	StopAllHub(c);
-	// Free all virtual L3 switch
-	L3FreeAllSw(c);
 }
 
 // Clean up Cedar
@@ -1131,8 +1129,6 @@ void CleanupCedar(CEDAR *c)
 	{
 		return;
 	}
-
-	FreeCedarLayer3(c);
 
 	for (i = 0;i < LIST_NUM(c->CaList);i++)
 	{
@@ -1554,8 +1550,6 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 
 	InitLocalBridgeList(c);
 
-	InitCedarLayer3(c);
-
 
 #ifdef	ALPHA_VERSION
 	beta_str = "Alpha";
@@ -1650,6 +1644,9 @@ void InitCedar()
 		return;
 	}
 
+	// Load the watermark from hamcore
+	InitWaterMark();
+
 	// Initialize protocol module
 	InitProtocol();
 }
@@ -1664,5 +1661,8 @@ void FreeCedar()
 
 	// Free protocol module
 	FreeProtocol();
+
+	// Free the watermark
+	FreeWaterMark();
 }
 
