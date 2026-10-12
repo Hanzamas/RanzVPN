@@ -6,7 +6,7 @@ Fork of SoftEther VPN (C, CMake). Main code lives in `src/Cedar` (VPN protocol, 
 
 ### Issue tracker
 
-Issues live in GitHub Issues for `Hanzamas/SoftEtherVPN`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues live in GitHub Issues for `Hanzamas/RanzVPN`, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
