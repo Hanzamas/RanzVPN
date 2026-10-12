@@ -20,7 +20,6 @@
 #define	CEDAR_BETA_SERVER			"Burrow VPN Server Pre Release"
 #define	CEDAR_MANAGER_STR			"Burrow VPN Server Manager"
 #define	CEDAR_CUI_STR				"Burrow VPN Command-Line Admin Tool"
-#define CEDAR_ELOG					"Burrow EtherLogger"
 #define	CEDAR_CLIENT_STR			"Burrow VPN Client"
 #define CEDAR_CLIENT_MANAGER_STR	"Burrow VPN Client Connection Manager"
 #define	CEDAR_SERVER_LINK_STR		"Burrow VPN Server (Cascade Mode)"

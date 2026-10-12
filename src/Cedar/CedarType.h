@@ -283,19 +283,6 @@ typedef struct TTS_SOCK TTS_SOCK;
 typedef struct TTC_SOCK TTC_SOCK;
 typedef struct PT PT;
 
-// ==============================================================
-//  EtherLogger
-// ==============================================================
-
-typedef struct EL EL;
-typedef struct EL_DEVICE EL_DEVICE;
-typedef struct EL_LICENSE_STATUS EL_LICENSE_STATUS;
-typedef struct RPC_ADD_DEVICE RPC_ADD_DEVICE;
-typedef struct RPC_DELETE_DEVICE RPC_DELETE_DEVICE;
-typedef struct RPC_ENUM_DEVICE_ITEM RPC_ENUM_DEVICE_ITEM;
-typedef struct RPC_ENUM_DEVICE RPC_ENUM_DEVICE;
-typedef struct RPC_EL_LICENSE_STATUS RPC_EL_LICENSE_STATUS;
-
 
 // ==============================================================
 //  Database

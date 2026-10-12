@@ -511,22 +511,6 @@
 
 //////////////////////////////////////////////////////////////////////
 // 
-// EtherLogger related constants
-// 
-//////////////////////////////////////////////////////////////////////
-
-#define	EL_ADMIN_PORT			22888
-#define	EL_CONFIG_FILENAME		"$etherlogger.config"
-#define	EL_PACKET_LOG_DIR	"etherlogger_log"
-#define	EL_PACKET_LOG_DIR_NAME	"@"EL_PACKET_LOG_DIR
-#define	EL_PACKET_LOG_FILE_NAME	EL_PACKET_LOG_DIR_NAME"/%s"
-#define	EL_PACKET_LOG_PREFIX	"pkt"
-#define	EL_LICENSE_CHECK_SPAN	(10 * 1000)
-
-
-
-//////////////////////////////////////////////////////////////////////
-// 
 // Constant related to the virtual IP stack
 // 
 //////////////////////////////////////////////////////////////////////
