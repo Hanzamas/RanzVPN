@@ -38,60 +38,6 @@ static BYTESTR bytestr[] =
 	{0, "Bytes"},
 };
 
-// Decode URL string
-char *UrlDecode(char *url_str)
-{
-	UINT i, len;
-	BUF *b;
-	char *ret;
-	if (url_str == NULL)
-	{
-		return NULL;
-	}
-
-	len = StrLen(url_str);
-
-	b = NewBuf();
-
-	for (i = 0;i < len;i++)
-	{
-		char c = url_str[i];
-
-		if (c == '%' && ((i + 2) < len))
-		{
-			char hex_str[8];
-			UINT value;
-
-			hex_str[0] = url_str[i + 1];
-			hex_str[1] = url_str[i + 2];
-			hex_str[2] = 0;
-
-			value = HexToInt(hex_str);
-
-			WriteBufChar(b, (UCHAR)value);
-
-			i += 2;
-			continue;
-		}
-		else
-		{
-			if (c == '+')
-			{
-				c = ' ';
-			}
-			WriteBufChar(b, c);
-		}
-	}
-
-	WriteBufChar(b, 0);
-
-	ret = CopyStr(b->Buf);
-
-	FreeBuf(b);
-
-	return ret;
-}
-
 // Change the case of the string by the bit array
 void SetStrCaseAccordingToBits(char *str, UINT bits)
 {
@@ -121,18 +67,6 @@ void SetStrCaseAccordingToBits(char *str, UINT bits)
 
 		bits = bits / 2;
 	}
-}
-
-// Normalize the integer list string
-void NormalizeIntListStr(char *dst, UINT dst_size, char *src, bool sorted, char *separate_str)
-{
-	LIST *o;
-
-	o = StrToIntList(src, sorted);
-
-	IntListToStr(dst, dst_size, o, separate_str);
-
-	ReleaseIntList(o);
 }
 
 // Convert the string to an integer list
@@ -422,42 +356,6 @@ TOKEN_LIST *ParseTokenWithNullStr(char *str, char *split_chars)
 	return t;
 }
 
-// Check whether the string contains at least one of the specified tokens
-bool InStrList(char *target_str, char *tokens, char *splitter, bool case_sensitive)
-{
-	TOKEN_LIST *t;
-	bool ret = false;
-	UINT i;
-	// Validate arguments
-	if (target_str == NULL || tokens == NULL || splitter == NULL)
-	{
-		return false;
-	}
-
-	t = ParseTokenWithoutNullStr(tokens, splitter);
-
-	if (t != NULL)
-	{
-		for (i = 0;i < t->NumTokens;i++)
-		{
-			if (InStrEx(target_str, t->Token[i], case_sensitive))
-			{
-				ret = true;
-//				printf("%s\n", t->Token[i]);
-			}
-
-			if (ret)
-			{
-				break;
-			}
-		}
-
-		FreeToken(t);
-	}
-
-	return ret;
-}
-
 // Cut out the token from string (Ignore blanks between delimiters)
 TOKEN_LIST *ParseTokenWithoutNullStr(char *str, char *split_chars)
 {
@@ -631,68 +529,6 @@ INI_ENTRY *GetIniEntry(LIST *o, char *key)
 	}
 
 	return NULL;
-}
-
-// Read an INI file
-LIST *ReadIni(BUF *b)
-{
-	LIST *o;
-	// Validate arguments
-	if (b == NULL)
-	{
-		return NULL;
-	}
-
-	o = NewListFast(NULL);
-
-	SeekBuf(b, 0, 0);
-
-	while (true)
-	{
-		char *line = CfgReadNextLine(b);
-
-		if (line == NULL)
-		{
-			break;
-		}
-
-		Trim(line);
-
-		if (IsEmptyStr(line) == false)
-		{
-			if (StartWith(line, "#") == false &&
-				StartWith(line, "//") == false &&
-				StartWith(line, ";") == false)
-			{
-				char *key, *value;
-				UINT size = StrLen(line) + 1;
-
-				key = ZeroMalloc(size);
-				value = ZeroMalloc(size);
-
-				if (GetKeyAndValue(line, key, size, value, size, NULL))
-				{
-					UINT uni_size;
-					INI_ENTRY *e = ZeroMalloc(sizeof(INI_ENTRY));
-					e->Key = CopyStr(key);
-					e->Value = CopyStr(value);
-
-					uni_size = CalcUtf8ToUni((BYTE *)value, StrLen(value));
-					e->UnicodeValue = ZeroMalloc(uni_size);
-					Utf8ToUni(e->UnicodeValue, uni_size, (BYTE *)value, StrLen(value));
-
-					Add(o, e);
-				}
-
-				Free(key);
-				Free(value);
-			}
-		}
-
-		Free(line);
-	}
-
-	return o;
 }
 
 // Check whether the specified character is a delimiter
@@ -1465,33 +1301,6 @@ UINT64 ToInt64(char *str)
 }
 
 
-// Trim EndWith
-bool TrimEndWith(char *dst, UINT dst_size, char *str, char *key)
-{
-	if (dst == NULL || str == NULL)
-	{
-		ClearStr(dst, dst_size);
-		return false;
-	}
-
-	StrCpy(dst, dst_size, str);
-
-	if (EndWith(str, key))
-	{
-		UINT src_len = StrLen(str);
-		UINT key_len = StrLen(key);
-
-		if (src_len >= key_len)
-		{
-			dst[src_len - key_len] = 0;
-		}
-
-		return true;
-	}
-
-	return false;
-}
-
 // Check whether the str ends with the key
 bool EndWith(char *str, char *key)
 {
@@ -1560,24 +1369,6 @@ bool StartWith(char *str, char *key)
 	Free(tmp);
 
 	return ret;
-}
-
-// Display the binary data
-void PrintBin(void *data, UINT size)
-{
-	char *tmp;
-	UINT i;
-	// Validate arguments
-	if (data == NULL)
-	{
-		return;
-	}
-
-	i = size * 3 + 1;
-	tmp = Malloc(i);
-	BinToStrEx(tmp, i, data, size);
-	Print("%s\n", tmp);
-	Free(tmp);
 }
 
 // Convert the string to a MAC address
@@ -1689,74 +1480,6 @@ void BinToStrEx(char *str, UINT str_size, void *data, UINT data_size)
 	// Memory release
 	Free(tmp);
 }
-void BinToStrEx2(char *str, UINT str_size, void *data, UINT data_size, char padding_char)
-{
-	char *tmp;
-	UCHAR *buf = (UCHAR *)data;
-	UINT size;
-	UINT i;
-	// Validate arguments
-	if (str == NULL || data == NULL)
-	{
-		return;
-	}
-
-	// Calculation of size
-	size = data_size * 3 + 1;
-	// Memory allocation
-	tmp = ZeroMalloc(size);
-	// Conversion
-	for (i = 0;i < data_size;i++)
-	{
-		Format(&tmp[i * 3], 0, "%02X%c", buf[i], padding_char);
-	}
-	if (StrLen(tmp) >= 1)
-	{
-		if (tmp[StrLen(tmp) - 1] == padding_char)
-		{
-			tmp[StrLen(tmp) - 1] = 0;
-		}
-	}
-	// Copy
-	StrCpy(str, str_size, tmp);
-	// Memory release
-	Free(tmp);
-}
-// Convert the binary data to a string, and copy it
-char *CopyBinToStrEx(void *data, UINT data_size)
-{
-	char *ret;
-	UINT size;
-	// Validate arguments
-	if (data == NULL)
-	{
-		return NULL;
-	}
-
-	size = data_size * 3 + 1;
-	ret = ZeroMalloc(size);
-
-	BinToStrEx(ret, size, data, data_size);
-
-	return ret;
-}
-char *CopyBinToStr(void *data, UINT data_size)
-{
-	char *ret;
-	UINT size;
-	// Validate arguments
-	if (data == NULL)
-	{
-		return NULL;
-	}
-
-	size = data_size * 2 + 1;
-	ret = ZeroMalloc(size);
-
-	BinToStr(ret, size, data, data_size);
-
-	return ret;
-}
 
 // Convert the binary data to a hexadecimal string
 void BinToStr(char *str, UINT str_size, void *data, UINT data_size)
@@ -1811,21 +1534,6 @@ void BinToStrW(wchar_t *str, UINT str_size, void *data, UINT data_size)
 	StrToUni(str, str_size, tmp);
 
 	Free(tmp);
-}
-
-// Convert a 160-bit sequence into a string
-void Bit160ToStr(char *str, UCHAR *data)
-{
-	// Validate arguments
-	if (str == NULL || data == NULL)
-	{
-		return;
-	}
-
-	Format(str, 0,
-		"%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X%02X",
-		data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8], data[9], 
-		data[10], data[11], data[12], data[13], data[14], data[15], data[16], data[17], data[18], data[19]);
 }
 
 // Copy a string
@@ -1934,75 +1642,6 @@ bool IsSafeChar(char c)
 		}
 	}
 	return false;
-}
-
-// Remove the specified character from a string
-void TruncateCharFromStr(char *str, char replace)
-{
-	char *src,*dst;
-
-	if (str == NULL)
-	{
-		return;
-	}
-
-	src = dst = str;
-
-	while(*src != '\0')
-	{
-		if(*src != replace)
-		{
-			*dst = *src;
-			dst++;
-		}
-		src++;
-	}
-	*dst = *src;
-
-	//BUF *b = NewBuf();
-	//UINT i, len;
-	//char zero = 0;
-
-	//len = StrLen(str);
-	//for (i = 0;i < len;i++)
-	//{
-	//	char c = str[i];
-
-	//	if (c != replace)
-	//	{
-	//		WriteBuf(b, &c, 1);
-	//	}
-	//}
-
-	//if (b->Size == 0)
-	//{
-	//	char c = '_';
-	//	WriteBuf(b, &c, 1);
-	//}
-
-	//WriteBuf(b, &zero, 1);
-
-	//StrCpy(str, 0, b->Buf);
-
-	//FreeBuf(b);
-}
-
-// Replace the unsafe characters
-void EnSafeStr(char *str, char replace)
-{
-	if (str == NULL)
-	{
-		return;
-	}
-
-	while(*str != '\0')
-	{
-		if(IsSafeChar(*str) == false)
-		{
-			*str = replace;
-		}
-		str++;
-	}
 }
 
 // Replace '\r' and '\n' with the specified character.
@@ -2289,27 +1928,6 @@ UINT SearchStrEx(char *string, char *keyword, UINT start, bool case_sensitive)
 	return i;
 }
 
-// Determine whether the specified character is in the token list
-bool IsInToken(TOKEN_LIST *t, char *str)
-{
-	UINT i;
-	// Validate arguments
-	if (t == NULL || str == NULL)
-	{
-		return false;
-	}
-
-	for (i = 0;i < t->NumTokens;i++)
-	{
-		if (StrCmpi(t->Token[i], str) == 0)
-		{
-			return true;
-		}
-	}
-
-	return false;
-}
-
 // Release of the token list
 void FreeToken(TOKEN_LIST *tokens)
 {
@@ -2380,33 +1998,6 @@ void TrimCrlf(char *str)
 	else if (str[len - 1] == '\r')
 	{
 		str[len - 1] = 0;
-	}
-}
-
-// Remove quotes at the beginning and at the end of the string
-void TrimQuotes(char *str)
-{
-	UINT len = 0;
-	// Validate arguments
-	if (str == NULL)
-	{
-		return;
-	}
-
-	len = StrLen(str);
-	if (len == 0)
-	{
-		return;
-	}
-
-	if (str[len - 1] == '\"')
-	{
-		str[len - 1] = 0;
-	}
-
-	if (str[0] == '\"')
-	{
-		Move(str, str + 1, len);
 	}
 }
 
@@ -2526,52 +2117,6 @@ int ToInti(char *str)
 	}
 
 	return (int)ToInt(str);
-}
-
-// Convert a string to a Boolean value
-bool ToBool(char *str)
-{
-	char tmp[MAX_SIZE];
-	// Validate arguments
-	if (str == NULL)
-	{
-		return false;
-	}
-
-	StrCpy(tmp, sizeof(tmp), str);
-	Trim(tmp);
-
-	if (IsEmptyStr(tmp))
-	{
-		return false;
-	}
-
-	if (ToInt(tmp) != 0)
-	{
-		return true;
-	}
-
-	if (StartWith("true", tmp))
-	{
-		return true;
-	}
-
-	if (StartWith("yes", tmp))
-	{
-		return true;
-	}
-
-	if (StartWith(tmp, "true"))
-	{
-		return true;
-	}
-
-	if (StartWith(tmp, "yes"))
-	{
-		return true;
-	}
-
-	return false;
 }
 
 // Convert a string to an integer

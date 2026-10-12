@@ -37,13 +37,6 @@ bool SuLoadDriversHive()
 	return MsRegLoadHive(REG_LOCAL_MACHINE, L"DRIVERS", filename);
 }
 
-// Unload the drivers hive
-bool SuUnloadDriversHive()
-{
-	// todo: always failed.
-	return MsRegUnloadHive(REG_LOCAL_MACHINE, L"DRIVERS");
-}
-
 // Delete garbage inf files
 void SuDeleteGarbageInfs()
 {
@@ -609,46 +602,6 @@ SU_ADAPTER *SuOpenAdapter(SU *u, char *adapter_id)
 	}
 
 	return a;
-}
-
-// Enumerate adapters
-TOKEN_LIST *SuEnumAdapters(SU *u)
-{
-	UINT i;
-	DWORD ret_size;
-	TOKEN_LIST *ret;
-	// Validate arguments
-	if (u == NULL)
-	{
-		return NullToken();
-	}
-
-	Zero(&u->AdapterInfoList, sizeof(u->AdapterInfoList));
-	if (ReadFile(u->hFile, &u->AdapterInfoList, sizeof(u->AdapterInfoList),
-		&ret_size, NULL) == false ||
-		u->AdapterInfoList.Signature != SL_SIGNATURE)
-	{
-		Debug("SuEnumAdapters: ReadFile error.\n");
-		return NullToken();
-	}
-
-	ret = ZeroMalloc(sizeof(TOKEN_LIST));
-
-	ret->NumTokens = u->AdapterInfoList.NumAdapters;
-	ret->Token = ZeroMalloc(sizeof(char *) * ret->NumTokens);
-	Debug("SuEnumAdapters: u->AdapterInfoList.NumAdapters = %u\n", u->AdapterInfoList.NumAdapters);
-
-	for (i = 0;i < ret->NumTokens;i++)
-	{
-		ret->Token[i] = CopyUniToStr(u->AdapterInfoList.Adapters[i].AdapterId);
-
-		UniPrint(L"%s %u %S\n",
-			u->AdapterInfoList.Adapters[i].AdapterId,
-			u->AdapterInfoList.Adapters[i].MtuSize,
-			u->AdapterInfoList.Adapters[i].FriendlyName);
-	}
-
-	return ret;
 }
 
 // Create an adapters list

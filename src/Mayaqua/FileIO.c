@@ -81,54 +81,6 @@ bool IsInLines(BUF *buf, char *str, bool instr)
 
 	return ret;
 }
-bool IsInLinesFile(wchar_t *filename, char *str, bool instr)
-{
-	bool ret = false;
-	BUF *b;
-	// Validate arguments
-	if (filename == NULL || str == NULL)
-	{
-		return false;
-	}
-
-	b = ReadDumpW(filename);
-	if (b == NULL)
-	{
-		return false;
-	}
-
-	ret = IsInLines(b, str, instr);
-
-	FreeBuf(b);
-
-	return ret;
-}
-
-// Check whether the file is write-locked
-bool IsFileWriteLockedW(wchar_t *name)
-{
-	IO *io;
-	// Validate arguments
-	if (name == NULL)
-	{
-		return false;
-	}
-
-	if (IsFileExistsW(name) == false)
-	{
-		return false;
-	}
-
-	io = FileOpenW(name, true);
-	if (io == NULL)
-	{
-		return true;
-	}
-
-	FileClose(io);
-
-	return false;
-}
 
 // Creating a ZIP packer
 ZIP_PACKER *NewZipPacker()
@@ -670,35 +622,6 @@ void FreeDir(DIRLIST *d)
 }
 
 
-// Make the file name safe
-void UniSafeFileName(wchar_t *name)
-{
-	UINT i, len, dlen;
-	static wchar_t *danger_str = L"\\/:*?\"<>|";
-	// Validate arguments
-	if (name == NULL)
-	{
-		return;
-	}
-
-	dlen = UniStrLen(danger_str);
-	len = UniStrLen(name);
-
-	for (i = 0;i < len;i++)
-	{
-		wchar_t c = name[i];
-		UINT j;
-		for (j = 0;j < dlen;j++)
-		{
-			if (c == danger_str[j])
-			{
-				c = L'_';
-			}
-		}
-		name[i] = c;
-	}
-}
-
 // Read HamCore file
 BUF *ReadHamcoreW(wchar_t *filename)
 {
@@ -917,11 +840,6 @@ void GetLogDirW(wchar_t *name, UINT size)
 	GetExeDirW(name, size);
 }
 
-void GetDbDir(char *name, UINT size)
-{
-	GetExeDir(name, size);
-}
-
 void GetDbDirW(wchar_t *name, UINT size)
 {
 	GetExeDirW(name, size);
@@ -948,62 +866,7 @@ void InitGetExeName(char *arg)
 	Free(arg_w);
 }
 
-// Generate a secure file name
-void MakeSafeFileName(char *dst, UINT size, char *src)
-{
-	char tmp[MAX_PATH];
-	// Validate arguments
-	if (dst == NULL || src == NULL)
-	{
-		return;
-	}
-
-	StrCpy(tmp, sizeof(tmp), src);
-	ReplaceStrEx(tmp, sizeof(tmp), tmp, "..", "__", false);
-	ReplaceStrEx(tmp, sizeof(tmp), tmp, "/", "_", false);
-	ReplaceStrEx(tmp, sizeof(tmp), tmp, "\\", "_", false);
-	ReplaceStrEx(tmp, sizeof(tmp), tmp, "@", "_", false);
-	ReplaceStrEx(tmp, sizeof(tmp), tmp, "|", "_", false);
-
-	StrCpy(dst, size, tmp);
-}
-
 // Get the file name from the file path
-void GetFileNameFromFilePathW(wchar_t *dst, UINT size, wchar_t *filepath)
-{
-	wchar_t tmp[MAX_SIZE];
-	UINT i, len, wp;
-	// Validate arguments
-	if (dst == NULL || filepath == NULL)
-	{
-		return;
-	}
-
-	len = MIN(UniStrLen(filepath), (MAX_SIZE - 2));
-	wp = 0;
-
-	for (i = 0;i < (len + 1);i++)
-	{
-		wchar_t c = filepath[i];
-
-		switch (c)
-		{
-		case L'\\':
-		case L'/':
-		case 0:
-			tmp[wp] = 0;
-			wp = 0;
-			break;
-
-		default:
-			tmp[wp] = c;
-			wp++;
-			break;
-		}
-	}
-
-	UniStrCpy(dst, size, tmp);
-}
 void GetFileNameFromFilePath(char *dst, UINT size, char *filepath)
 {
 	char tmp[MAX_SIZE];
@@ -1251,61 +1114,6 @@ bool IsFileExistsInnerW(wchar_t *name)
 	FileClose(o);
 
 	return true;
-}
-
-// Get the current contents of the PATH environment variable
-char *GetCurrentPathEnvStr()
-{
-	char tmp[1024];
-	char *tag_name;
-
-#ifdef	OS_WIN32
-	tag_name = "Path";
-#endif	// OS_WIN32
-
-	if (GetEnv(tag_name, tmp, sizeof(tmp)) == false)
-	{
-#ifdef	OS_WIN32
-		Win32GetCurrentDir(tmp, sizeof(tmp));
-#endif	// OS_WIN32
-	}
-
-	return CopyStr(tmp);
-}
-
-// Get multiple paths separated by colons
-UNI_TOKEN_LIST *ParseSplitedPathW(wchar_t *path)
-{
-	UNI_TOKEN_LIST *ret;
-	wchar_t *tmp = UniCopyStr(path);
-	wchar_t *split_str;
-	UINT i;
-
-	UniTrim(tmp);
-	UniTrimCrlf(tmp);
-	UniTrim(tmp);
-	UniTrimCrlf(tmp);
-
-#ifdef	OS_WIN32
-	split_str = L";";
-#endif	// OS_WIN32
-
-	ret = UniParseToken(tmp, split_str);
-
-	if (ret != NULL)
-	{
-		for (i = 0;i < ret->NumTokens;i++)
-		{
-			UniTrim(ret->Token[i]);
-			UniTrimCrlf(ret->Token[i]);
-			UniTrim(ret->Token[i]);
-			UniTrimCrlf(ret->Token[i]);
-		}
-	}
-
-	Free(tmp);
-
-	return ret;
 }
 
 // Normalize the file path

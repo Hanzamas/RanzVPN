@@ -145,35 +145,6 @@ DNS_CACHE *DnsCacheFind(const char *hostname)
 	return entry;
 }
 
-DNS_CACHE *DnsCacheUpdate(const char *hostname, const IP *ipv6, const IP *ipv4)
-{
-	if (DnsCacheIsEnabled() == false || IsEmptyStr(hostname))
-	{
-		return NULL;
-	}
-
-	LIST *iplist_v6 = NULL;
-	LIST *iplist_v4 = NULL;
-
-	if (ipv6 != NULL)
-	{
-		iplist_v6 = NewListFast(NULL);
-		AddHostIPAddressToList(iplist_v6, ipv6);
-	}
-
-	if (ipv4 != NULL)
-	{
-		iplist_v4 = NewListFast(NULL);
-		AddHostIPAddressToList(iplist_v4, ipv4);
-	}
-
-	DNS_CACHE *ret = DnsCacheUpdateEx(hostname, iplist_v6, iplist_v4);
-
-	FreeHostIPAddressList(iplist_v6);
-	FreeHostIPAddressList(iplist_v4);
-
-	return ret;
-}
 DNS_CACHE *DnsCacheUpdateEx(const char *hostname, const LIST *iplist_v6, const LIST *iplist_v4)
 {
 	if (DnsCacheIsEnabled() == false || IsEmptyStr(hostname))

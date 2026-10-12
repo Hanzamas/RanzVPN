@@ -35,23 +35,6 @@ static UINT init_cedar_counter = 0;
 static REF *cedar_log_ref = NULL;
 static LOG *cedar_log;
 
-// Get build date of current code
-UINT64 GetCurrentBuildDate()
-{
-	SYSTEMTIME st;
-
-	Zero(&st, sizeof(st));
-
-	st.wYear = BUILD_DATE_Y;
-	st.wMonth = BUILD_DATE_M;
-	st.wDay = BUILD_DATE_D;
-	st.wHour = BUILD_DATE_HO;
-	st.wMinute = BUILD_DATE_MI;
-	st.wSecond = BUILD_DATE_SE;
-
-	return SystemToUINT64(&st);
-}
-
 // Check current windows version is supported
 bool IsSupportedWinVer(RPC_WINVER *v)
 {
@@ -498,21 +481,6 @@ void FreeNoSslList(CEDAR *c)
 	c->NonSslList = NULL;
 }
 
-// Start Cedar log
-void StartCedarLog()
-{
-	if (cedar_log_ref == NULL)
-	{
-		cedar_log_ref = NewRef();
-	}
-	else
-	{
-		AddRef(cedar_log_ref);
-	}
-
-	cedar_log = NewLog("debug_log", "debug", LOG_SWITCH_DAY);
-}
-
 // Stop Cedar log
 void StopCedarLog()
 {
@@ -554,65 +522,6 @@ UINT64 GetTrafficPacketNum(TRAFFIC *t)
 
 	return t->Recv.BroadcastCount + t->Recv.UnicastCount +
 		t->Send.BroadcastCount + t->Send.UnicastCount;
-}
-
-// Check whether the certificate is signed by CA which is trusted by the hub 
-bool CheckSignatureByCaLinkMode(SESSION *s, X *x)
-{
-	LINK *k;
-	HUB *h;
-	bool ret = false;
-	// Validate arguments
-	if (s == NULL || x == NULL)
-	{
-		return false;
-	}
-
-	if (s->LinkModeClient == false || (k = s->Link) == NULL)
-	{
-		return false;
-	}
-
-	h = k->Hub;
-
-	if (h->HubDb != NULL)
-	{
-		LockList(h->HubDb->RootCertList);
-		{
-			X *root_cert;
-			root_cert = GetIssuerFromList(h->HubDb->RootCertList, x);
-			if (root_cert != NULL)
-			{
-				ret = true;
-			}
-		}
-		UnlockList(h->HubDb->RootCertList);
-	}
-
-	return ret;
-}
-
-// Check whether the certificate is signed by CA which is trusted by Cedar
-bool CheckSignatureByCa(CEDAR *cedar, X *x)
-{
-	X *ca;
-	// Validate arguments
-	if (cedar == NULL || x == NULL)
-	{
-		return false;
-	}
-
-	// Get the CA which signed the certificate
-	ca = FindCaSignedX(cedar->CaList, x);
-	if (ca == NULL)
-	{
-		// Not found
-		return false;
-	}
-
-	// Found
-	FreeX(ca);
-	return true;
 }
 
 // Get the CA which signed the certificate
@@ -1446,18 +1355,6 @@ void RegistWindowsFirewallAll()
 
 void CedarForceLink()
 {
-}
-
-// Get version of the Cedar
-void GetCedarVersion(char *tmp, UINT size)
-{
-	// Validate arguments
-	if (tmp == NULL)
-	{
-		return;
-	}
-
-	Format(tmp, size, "%u.%u.%u", CEDAR_VERSION_MAJOR, CEDAR_VERSION_MINOR, CEDAR_VERSION_BUILD);
 }
 
 // Get the version number sent to and compared by peers

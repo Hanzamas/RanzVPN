@@ -70,7 +70,6 @@ struct PACK
 // Function prototype
 PACK *NewPack();
 bool AddElement(PACK *p, ELEMENT *e);
-void DelElement(PACK *p, char *name);
 bool IsElement(PACK *p, char *name);
 ELEMENT *GetElement(PACK *p, char *name, UINT type);
 void FreePack(PACK *p);
@@ -97,7 +96,6 @@ PACK *BufToPack(BUF *b);
 bool ReadPack(BUF *b, PACK *p);
 ELEMENT *ReadElement(BUF *b);
 VALUE *ReadValue(BUF *b, UINT type);
-void Bit160ToStr(char *str, UCHAR *data);
 VALUE *NewInt64Value(UINT64 i);
 TOKEN_LIST *GetPackElementNames(PACK *p);
 
@@ -112,7 +110,6 @@ ELEMENT *PackAddStrEx(PACK *p, char *name, char *str, UINT index, UINT total);
 ELEMENT *PackAddUniStr(PACK *p, char *name, wchar_t *unistr);
 ELEMENT *PackAddUniStrEx(PACK *p, char *name, wchar_t *unistr, UINT index, UINT total);
 ELEMENT *PackAddInt(PACK *p, char *name, UINT i);
-ELEMENT *PackAddNum(PACK *p, char *name, UINT num);
 ELEMENT *PackAddIntEx(PACK *p, char *name, UINT i, UINT index, UINT total);
 ELEMENT *PackAddInt64(PACK *p, char *name, UINT64 i);
 ELEMENT *PackAddInt64Ex(PACK *p, char *name, UINT64 i, UINT index, UINT total);
@@ -122,16 +119,13 @@ ELEMENT *PackAddData(PACK *p, char *name, void *data, UINT size);
 ELEMENT *PackAddDataEx(PACK *p, char *name, void *data, UINT size, UINT index, UINT total);
 ELEMENT *PackAddBuf(PACK *p, char *name, BUF *b);
 ELEMENT *PackAddBufEx(PACK *p, char *name, BUF *b, UINT index, UINT total);
-UINT PackGetStrSize(PACK *p, char *name);
 UINT PackGetStrSizeEx(PACK *p, char *name, UINT index);
 bool PackGetStr(PACK *p, char *name, char *str, UINT size);
 bool PackGetStrEx(PACK *p, char *name, char *str, UINT size, UINT index);
 bool PackGetUniStr(PACK *p, char *name, wchar_t *unistr, UINT size);
 bool PackGetUniStrEx(PACK *p, char *name, wchar_t *unistr, UINT size, UINT index);
-bool PackCmpStr(PACK *p, char *name, char *str);
 UINT PackGetIndexCount(PACK *p, char *name);
 UINT PackGetInt(PACK *p, char *name);
-UINT PackGetNum(PACK *p, char *name);
 UINT PackGetIntEx(PACK *p, char *name, UINT index);
 UINT64 PackGetInt64(PACK *p, char *name);
 UINT64 PackGetInt64Ex(PACK *p, char *name, UINT index);
@@ -157,11 +151,7 @@ void PackAddIp32Ex(PACK *p, char *name, UINT ip32, UINT index, UINT total);
 void PackAddIp32Ex2(PACK *p, char *name, UINT ip32, UINT index, UINT total, bool is_single);
 ELEMENT *PackAddIp6AddrEx(PACK *p, char *name, IPV6_ADDR *addr, UINT index, UINT total);
 bool PackGetIp6AddrEx(PACK *p, char *name, IPV6_ADDR *addr, UINT index);
-ELEMENT *PackAddIp6Addr(PACK *p, char *name, IPV6_ADDR *addr);
-bool PackGetIp6Addr(PACK *p, char *name, IPV6_ADDR *addr);
 bool PackGetData2(PACK *p, char *name, void *data, UINT size);
 bool PackGetDataEx2(PACK *p, char *name, void *data, UINT size, UINT index);
-bool PackIsValueExists(PACK *p, char *name);
-ELEMENT *ElementNullSafe(ELEMENT *p);
 
 #endif	// PACK_H

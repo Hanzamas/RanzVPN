@@ -289,36 +289,6 @@ void TimeCheck()
 #endif	// OS_WIN32
 }
 
-// Whether this system is IA64
-bool IsIA64()
-{
-	if (Is64() == false)
-	{
-		return false;
-	}
-
-#ifndef	MAYAQUA_IA_64
-	return false;
-#else	// MAYAQUA_IA_64
-	return true;
-#endif	// MAYAQUA_IA_64
-}
-
-// Whether in x64
-bool IsX64()
-{
-	if (Is64() == false)
-	{
-		return false;
-	}
-
-#ifndef	MAYAQUA_IA_64
-	return true;
-#else	// MAYAQUA_IA_64
-	return false;
-#endif	// MAYAQUA_IA_64
-}
-
 // Whether 64bit
 bool Is64()
 {
@@ -327,12 +297,6 @@ bool Is64()
 #else	// CPU_64
 	return false;
 #endif	// CPU_64
-}
-
-// Whether 32bit
-bool Is32()
-{
-	return Is64() ? false : true;
 }
 
 // Acquisition whether in .NET mode
@@ -624,19 +588,6 @@ void AlertW(wchar_t *msg, wchar_t *caption)
 	OSAlertW(msg, caption);
 }
 
-// Get the OS type
-UINT GetOsType()
-{
-	OS_INFO *i = GetOsInfo();
-
-	if (i == NULL)
-	{
-		return 0;
-	}
-
-	return i->OsType;
-}
-
 // Getting OS information
 OS_INFO *GetOsInfo()
 {
@@ -673,19 +624,6 @@ void FreeOsInfo()
 	Free(os_info);
 
 	os_info = NULL;
-}
-
-// Get the Unicode command line tokens
-UNI_TOKEN_LIST *GetCommandLineUniToken()
-{
-	if (cmdline_uni_token == NULL)
-	{
-		return UniNullToken();
-	}
-	else
-	{
-		return UniCopyToken(cmdline_uni_token);
-	}
 }
 
 // Getting the command line tokens
@@ -811,19 +749,6 @@ wchar_t *GetCommandLineUniStr()
 	else
 	{
 		return UniCopyStr(uni_cmdline);
-	}
-}
-
-// Get the command line string
-char *GetCommandLineStr()
-{
-	if (cmdline == NULL)
-	{
-		return CopyStr("");
-	}
-	else
-	{
-		return CopyStr(cmdline);
 	}
 }
 

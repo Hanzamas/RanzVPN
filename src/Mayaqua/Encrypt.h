@@ -280,7 +280,6 @@ void FreeCrypt(CRYPT *c);
 void Encrypt(CRYPT *c, void *dst, void *src, UINT size);
 void InitCryptLibrary();
 void Rand(void *buf, UINT size);
-UINT HashToUINT(void *data, UINT size);
 UINT64 Rand64();
 UINT Rand32();
 USHORT Rand16();
@@ -311,9 +310,7 @@ bool IsEncryptedK(BUF *b, bool private_key);
 bool IsBase64(BUF *b);
 BIO *KToBio(K *k, bool text, char *password);
 BUF *KToBuf(K *k, bool text, char *password);
-X *FileToX(char *filename);
 X *FileToXW(wchar_t *filename);
-bool XToFile(X *x, char *filename, bool text);
 bool XToFileW(X *x, wchar_t *filename, bool text);
 K *FileToKW(wchar_t *filename, bool private_key, char *password);
 bool KToFileW(K *k, wchar_t *filename, bool text, char *password);
@@ -353,22 +350,16 @@ X_SERIAL *NewXSerial(void *data, UINT size);
 void FreeXSerial(X_SERIAL *serial);
 P12 *BioToP12(BIO *bio);
 P12 *PKCS12ToP12(PKCS12 *pkcs12);
-P12 *BufToP12(BUF *b);
 BIO *P12ToBio(P12 *p12);
 BUF *P12ToBuf(P12 *p12);
 void FreePKCS12(PKCS12 *pkcs12);
-void FreeP12(P12 *p12);
-bool P12ToFileW(P12 *p12, wchar_t *filename);
 bool ParseP12(P12 *p12, X **x, K **k, char *password);
 bool ParseP12Ex(P12 *p12, X **x, K **k, LIST **cc, char *password);
-bool IsEncryptedP12(P12 *p12);
-P12 *NewP12(X *x, K *k, char *password);
 X *CloneX(X *x);
 LIST *CloneXList(LIST *chain);
 K *CloneK(K *k);
 void FreeCryptLibrary();
 void GetPrintNameFromX(wchar_t *str, UINT size, X *x);
-void GetPrintNameFromXA(char *str, UINT size, X *x);
 void GetPrintNameFromName(wchar_t *str, UINT size, NAME *name);
 void GetAllNameFromX(wchar_t *str, UINT size, X *x);
 void GetAllNameFromName(wchar_t *str, UINT size, NAME *name);
@@ -392,17 +383,10 @@ bool RsaVerifyEx(void *data, UINT data_size, void *sign, K *k, UINT bits);
 UINT RsaPublicSize(K *k);
 BUF *RsaPublicToBuf(K *k);
 
-DES_KEY_VALUE *DesNewKeyValue(void *value);
-void DesFreeKeyValue(DES_KEY_VALUE *v);
-void Des3Encrypt2(void *dest, void *src, UINT size, DES_KEY_VALUE *k1, DES_KEY_VALUE *k2, DES_KEY_VALUE *k3, void *ivec);
-void Des3Decrypt2(void *dest, void *src, UINT size, DES_KEY_VALUE *k1, DES_KEY_VALUE *k2, DES_KEY_VALUE *k3, void *ivec);
 void Sha(UINT sha_type, void *dst, void *src, UINT size);
 
-void DesEncrypt(void *dest, void *src, UINT size, DES_KEY_VALUE *k, void *ivec);
-void DesDecrypt(void *dest, void *src, UINT size, DES_KEY_VALUE *k, void *ivec);
 void DesEcbEncrypt(void *dst, void *src, void *key_7bytes);
 
-bool DhCompute(DH_CTX *dh, void *dst_priv_key, void *src_pub_key, UINT key_size);
 DH_CTX *DhNewGroup1();
 DH_CTX *DhNewGroup2();
 DH_CTX *DhNewGroup5();
@@ -413,11 +397,6 @@ DH_CTX *DhNew4096();
 DH_CTX *DhNewFromBits(UINT bits);
 DH_CTX *DhNew(char *prime, UINT g);
 void DhFree(DH_CTX *dh);
-
-AES_KEY_VALUE *AesNewKey(void *data, UINT size);
-void AesFreeKey(AES_KEY_VALUE *k);
-void AesEncrypt(void *dest, void *src, UINT size, AES_KEY_VALUE *k, void *ivec);
-void AesDecrypt(void *dest, void *src, UINT size, AES_KEY_VALUE *k, void *ivec);
 
 bool IsAesNiSupported();
 
@@ -431,27 +410,19 @@ char *OpenSSL_Error();
 CIPHER *NewCipher(char *name);
 void FreeCipher(CIPHER *c);
 void SetCipherKey(CIPHER *c, void *key, bool enc);
-UINT CipherProcess(CIPHER *c, void *iv, void *dest, void *src, UINT size);
 UINT CipherProcessAead(CIPHER *c, void *iv, void *tag, UINT tag_size, void *dest, void *src, UINT src_size, void *aad, UINT aad_size);
 
 // Hashing
-MD *NewMd(char *name);
 MD *NewMdEx(char *name, bool hmac);
 bool SetMdKey(MD *md, void *key, UINT key_size);
 UINT MdProcess(MD *md, void *dest, void *src, UINT size);
 void FreeMd(MD *md);
 void HashMd4(void *dst, void *src, UINT size);
-void HashSha1(void *dst, void *src, UINT size);
 void Md5(void *dst, void *src, UINT size);
 void Sha(UINT sha_type, void *dst, void *src, UINT size);
 void Sha0(void *dst, void *src, UINT size);
 void Sha1(void *dst, void *src, UINT size);
 void Sha2_256(void *dst, void *src, UINT size);
-void Sha2_384(void *dst, void *src, UINT size);
-void Sha2_512(void *dst, void *src, UINT size);
-UINT HMacSha1(void *dst, void *key, UINT key_size, void *data, UINT data_size);
-UINT HMacMd5(void *dst, void *key, UINT key_size, void *data, UINT data_size);
-void Enc_tls1_PRF(unsigned char *label, int label_len, const unsigned char *sec, int slen, unsigned char *out1, int olen);
 
 int GetSslClientCertIndex();
 

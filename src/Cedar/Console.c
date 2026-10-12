@@ -156,21 +156,6 @@ bool CmdEvalIsFile(CONSOLE *c, wchar_t *str, void *param)
 	return true;
 }
 
-// Evaluation of integer
-bool CmdEvalInt1(CONSOLE *c, wchar_t *str, void *param)
-{
-	wchar_t *p = (param == NULL) ? _UU("CMD_EVAL_INT") : (wchar_t *)param;
-
-	if (UniToInt(str) == 0)
-	{
-		c->Write(c, p);
-
-		return false;
-	}
-
-	return true;
-}
-
 // Evaluation of the parameters that a blank cannot be specified to
 bool CmdEvalNotEmpty(CONSOLE *c, wchar_t *str, void *param)
 {
@@ -654,10 +639,6 @@ bool IsHelpStr(char *str)
 }
 
 // Execution of the command
-bool DispatchNextCmd(CONSOLE *c, char *prompt, CMD cmd[], UINT num_cmd, void *param)
-{
-	return DispatchNextCmdEx(c, NULL, prompt, cmd, num_cmd, param);
-}
 bool DispatchNextCmdEx(CONSOLE *c, wchar_t *exec_command, char *prompt, CMD cmd[], UINT num_cmd, void *param)
 {
 	wchar_t *str;
@@ -1866,41 +1847,6 @@ wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list)
 
 	return ret;
 }
-char *ParseCommandA(wchar_t *str, char *name)
-{
-	wchar_t *tmp1, *tmp2;
-	char *ret;
-	// Validate arguments
-	if (str == NULL)
-	{
-		return NULL;
-	}
-
-	if (name != NULL)
-	{
-		tmp1 = CopyStrToUni(name);
-	}
-	else
-	{
-		tmp1 = NULL;
-	}
-
-	tmp2 = ParseCommand(str, tmp1);
-
-	if (tmp2 == NULL)
-	{
-		ret = NULL;
-	}
-	else
-	{
-		ret = CopyUniToStr(tmp2);
-		Free(tmp2);
-	}
-
-	Free(tmp1);
-
-	return ret;
-}
 
 // Password prompt
 bool PasswordPrompt(char *password, UINT size)
@@ -2033,22 +1979,6 @@ wchar_t *Prompt(wchar_t *prompt_str)
 	}
 
 	return ret;
-}
-char *PromptA(wchar_t *prompt_str)
-{
-	wchar_t *str = Prompt(prompt_str);
-
-	if (str == NULL)
-	{
-		return NULL;
-	}
-	else
-	{
-		char *ret = CopyUniToStr(str);
-
-		Free(str);
-		return ret;
-	}
 }
 
 // Set the console to raw mode

@@ -602,22 +602,6 @@ ADMIN_OPTION *NewAdminOption(char *name, UINT value)
 	return a;
 }
 
-// Clone the AC list
-LIST *CloneAcList(LIST *o)
-{
-	LIST *ret;
-	// Validate arguments
-	if (o == NULL)
-	{
-		return NULL;
-	}
-
-	ret = NewAcList();
-	SetAcList(ret, o);
-
-	return ret;
-}
-
 // Set all the AC list
 void SetAcList(LIST *o, LIST *src)
 {
@@ -803,44 +787,6 @@ bool IsIpMaskedByAc(IP *ip, AC *ac)
 
 		return false;
 	}
-}
-
-// Set the AC
-void SetAc(LIST *o, UINT id, AC *ac)
-{
-	// Validate arguments
-	if (o == NULL || id == 0 || ac == NULL)
-	{
-		return;
-	}
-
-	if (DelAc(o, id))
-	{
-		AddAc(o, ac);
-	}
-}
-
-// Get the AC
-AC *GetAc(LIST *o, UINT id)
-{
-	UINT i;
-	// Validate arguments
-	if (o == NULL || id == 0)
-	{
-		return NULL;
-	}
-
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		AC *ac = LIST_DATA(o, i);
-
-		if (ac->Id == id)
-		{
-			return Clone(ac, sizeof(AC));
-		}
-	}
-
-	return NULL;
 }
 
 // Delete the AC

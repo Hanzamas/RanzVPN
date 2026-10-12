@@ -192,27 +192,6 @@ void SetDynListValue(char *name, UINT64 value)
 	UnlockList(g_dyn_value_list);
 }
 
-// Apply by extracting dynamic value list from the specified PACK
-void ExtractAndApplyDynList(PACK *p)
-{
-	BUF *b;
-	// Validate arguments
-	if (p == NULL)
-	{
-		return;
-	}
-
-	b = PackGetBuf(p, "DynList");
-	if (b == NULL)
-	{
-		return;
-	}
-
-	AddDynList(b);
-
-	FreeBuf(b);
-}
-
 // Insert the data to the dynamic value list
 void AddDynList(BUF *b)
 {
@@ -624,12 +603,6 @@ int SslCertVerifyCallback(int preverify_ok, X509_STORE_CTX *ctx)
 	return 1; /* allow the verification process to continue */
 }
 
-// Create a new SSL pipe
-SSL_PIPE *NewSslPipe(bool server_mode, X *x, K *k, DH_CTX *dh)
-{
-	return NewSslPipeEx(server_mode, x, k, dh, false, NULL);
-}
-
 // Create a new SSL pipe with extended options
 SSL_PIPE *NewSslPipeEx(bool server_mode, X *x, K *k, DH_CTX *dh, bool verify_peer, struct SslClientCertInfo *clientcert)
 {
@@ -770,66 +743,6 @@ SSL_PIPE *NewSslPipeEx3(bool server_mode, X *x, K *k, LIST *chain, DH_CTX *dh, b
 	return s;
 }
 
-// Synchronization of the SSL pipe
-bool SyncSslPipe(SSL_PIPE *s)
-{
-	UINT i;
-	SSL_SESSION* sess;
-
-	// Validate arguments
-	if (s == NULL || s->IsDisconnected)
-	{
-		return false;
-	}
-
-	for (i = 0; i < 2; i++)
-	{
-		if (SslBioSync(s->RawIn, true, false) == false)
-		{
-			s->IsDisconnected = true;
-			Debug("SyncSslPipe: s->RawIn error.\n");
-			return false;
-		}
-
-		if (SslBioSync(s->RawOut, false, true) == false)
-		{
-			s->IsDisconnected = true;
-			Debug("SyncSslPipe: s->RawOut error.\n");
-			return false;
-		}
-
-		if (SslBioSync(s->SslInOut, true, true) == false)
-		{
-			s->IsDisconnected = true;
-			Debug("SyncSslPipe: s->SslInOut error.\n");
-			return false;
-		}
-	}
-
-	s->SslVersion = SSL_version(s->ssl);
-
-	return true;
-}
-
-// Release of the SSL pipe
-void FreeSslPipe(SSL_PIPE *s)
-{
-	// Validate arguments
-	if (s == NULL)
-	{
-		return;
-	}
-
-	FreeSslBio(s->SslInOut);
-	FreeSslBio(s->RawIn);
-	FreeSslBio(s->RawOut);
-
-	SSL_free(s->ssl);
-	SSL_CTX_free(s->ssl_ctx);
-
-	Free(s);
-}
-
 // Release of the SSL BIO
 void FreeSslBio(SSL_BIO *b)
 {
@@ -967,161 +880,6 @@ bool SslBioSync(SSL_BIO *b, bool sync_send, bool sync_recv)
 	}
 
 	return true;
-}
-
-// Release the memory for the return value of the ICMP API
-void IcmpApiFreeResult(ICMP_RESULT *ret)
-{
-	// Validate arguments
-	if (ret == NULL)
-	{
-		return;
-	}
-
-	if (ret->Data != NULL)
-	{
-		Free(ret->Data);
-	}
-
-	Free(ret);
-}
-
-// Send an ICMP Echo using ICMP API
-ICMP_RESULT *IcmpApiEchoSend(IP *dest_ip, UCHAR ttl, UCHAR *data, UINT size, UINT timeout)
-{
-#ifdef OS_WIN32
-	// Validate arguments
-	if (dest_ip == NULL || IsIP4(dest_ip) == false || (size != 0 && data == NULL))
-	{
-		return NULL;
-	}
-	if (ttl == 0)
-	{
-		ttl = 127;
-	}
-
-	if (true)
-	{
-		HANDLE h;
-		DWORD dw;
-		IPAddr dest_addr;
-		UINT reply_size;
-		ICMP_ECHO_REPLY *reply;
-		ICMP_RESULT *ret = NULL;
-		IP_OPTION_INFORMATION opt;
-
-		h = IcmpCreateFile();
-
-		if (h == INVALID_HANDLE_VALUE)
-		{
-			return NULL;
-		}
-
-		Zero(&opt, sizeof(opt));
-		opt.Ttl = ttl;
-
-		IPToInAddr((struct in_addr *)&dest_addr, dest_ip);
-
-		reply_size = sizeof(*reply) + size + 64;
-		reply = ZeroMalloc(reply_size);
-
-		dw = IcmpSendEcho(h, dest_addr, data, size, &opt, reply, reply_size, timeout);
-
-		ret = ZeroMalloc(sizeof(ICMP_RESULT));
-
-		if (dw >= 1 && reply->Status == IP_SUCCESS)
-		{
-			ret->Ok = true;
-		}
-		else
-		{
-			switch (reply->Status)
-			{
-			case IP_DEST_NET_UNREACHABLE:
-				ret->Type = ICMP_TYPE_DESTINATION_UNREACHABLE;
-				ret->Code = ICMP_CODE_NET_UNREACHABLE;
-				break;
-
-			case IP_DEST_HOST_UNREACHABLE:
-				ret->Type = ICMP_TYPE_DESTINATION_UNREACHABLE;
-				ret->Code = ICMP_CODE_HOST_UNREACHABLE;
-				break;
-
-			case IP_DEST_PROT_UNREACHABLE:
-				ret->Type = ICMP_TYPE_DESTINATION_UNREACHABLE;
-				ret->Code = ICMP_CODE_PROTOCOL_UNREACHABLE;
-				break;
-
-			case IP_DEST_PORT_UNREACHABLE:
-				ret->Type = ICMP_TYPE_DESTINATION_UNREACHABLE;
-				ret->Code = ICMP_CODE_PORT_UNREACHABLE;
-				break;
-
-			case IP_TTL_EXPIRED_TRANSIT:
-				ret->Type = ICMP_TYPE_TIME_EXCEEDED;
-				ret->Code = ICMP_CODE_TTL_EXCEEDED_IN_TRANSIT;
-				break;
-
-			case IP_TTL_EXPIRED_REASSEM:
-				ret->Type = ICMP_TYPE_TIME_EXCEEDED;
-				ret->Code = ICMP_CODE_FRAGMENT_REASSEMBLY_TIME_EXCEEDED;
-				break;
-
-			default:
-				ret->Timeout = true;
-				break;
-			}
-		}
-
-		if (ret->Timeout == false)
-		{
-			ret->Ttl = reply->Options.Ttl;
-			ret->Rtt = reply->RoundTripTime;
-			InAddrToIP(&ret->IpAddress, (struct in_addr *)&reply->Address);
-
-			if (reply->DataSize >= 1 && reply->Data != NULL)
-			{
-				ret->DataSize = reply->DataSize;
-				ret->Data = Clone(reply->Data, reply->DataSize);
-			}
-		}
-
-		Free(reply);
-
-		IcmpCloseHandle(h);
-
-		return ret;
-	}
-	else
-	{
-		return NULL;
-	}
-
-#endif	// OS_WIN32
-}
-
-// Initialize the routing table change detector
-ROUTE_CHANGE *NewRouteChange()
-{
-#ifdef	OS_WIN32
-	return Win32NewRouteChange2(true, true, NULL);
-#endif	// OS_WIN32
-}
-
-// Release the routing table change detector
-void FreeRouteChange(ROUTE_CHANGE *r)
-{
-#ifdef	OS_WIN32
-	Win32FreeRouteChange2(r);
-#endif	// OS_WIN32
-}
-
-// Get whether the routing table has been changed
-bool IsRouteChanged(ROUTE_CHANGE *r)
-{
-#ifdef	OS_WIN32
-	return Win32IsRouteChanged2(r);
-#endif	// OS_WIN32
 }
 
 #ifdef	OS_WIN32
@@ -1330,19 +1088,6 @@ void SetLinuxArpFilter()
 	FileClose(o);
 }
 
-// Determine whether the string is a IPv6 mask
-bool IsIpMask6(char *str)
-{
-	IP mask;
-	// Validate arguments
-	if (str == NULL)
-	{
-		return false;
-	}
-
-	return StrToMask6(&mask, str);
-}
-
 // Determine whether the string is a IPv6 address
 bool IsStrIPv6Address(char *str)
 {
@@ -1493,27 +1238,6 @@ bool IsInSameNetwork(IP *a1, IP *a2, IP *subnet)
 	{
 		return IsInSameNetwork6(a1, a2, subnet);
 	}
-}
-bool IsInSameNetwork6ByStr(char *ip1, char *ip2, char *subnet)
-{
-	IP p1, p2, s;
-
-	if (StrToIP6(&p1, ip1) == false)
-	{
-		return false;
-	}
-
-	if (StrToIP6(&p2, ip2) == false)
-	{
-		return false;
-	}
-
-	if (StrToMask6(&s, subnet) == false)
-	{
-		return false;
-	}
-
-	return IsInSameNetwork6(&p1, &p2, &s);
 }
 bool IsInSameNetwork6(IP *a1, IP *a2, IP *subnet)
 {
@@ -2020,28 +1744,6 @@ bool StrToIP6(IP *ip, char *str)
 
 	return true;
 }
-bool StrToIP6Addr(IPV6_ADDR *ip, char *str)
-{
-	IP ip2;
-	// Validate arguments
-	if (ip == NULL || str == NULL)
-	{
-		Zero(ip, sizeof(IPV6_ADDR));
-		return false;
-	}
-
-	if (StrToIP6(&ip2, str) == false)
-	{
-		return false;
-	}
-
-	if (IPToIPv6Addr(ip, &ip2) == false)
-	{
-		return false;
-	}
-
-	return true;
-}
 
 // Convert an IP address character to the UCHAR type
 void IPItemStrToChars6(UCHAR *chars, char *str)
@@ -2348,14 +2050,6 @@ bool IsValidUnicastIPAddress4(IP *ip)
 
 	return false;
 }
-bool IsValidUnicastIPAddressUINT4(UINT ip)
-{
-	IP a;
-
-	UINTToIP(&a, ip);
-
-	return IsValidUnicastIPAddress4(&a);
-}
 
 bool IsValidUnicastIPAddress6(IP *ip)
 {
@@ -2454,33 +2148,6 @@ bool IsMacMulticast(UCHAR *mac)
 	}
 
 	return false;
-}
-
-// Check wether the MAC address is a unicast one
-bool IsMacUnicast(UCHAR *mac)
-{
-	// Validate arguments
-	if (mac == NULL)
-	{
-		return false;
-	}
-
-	if (IsMacInvalid(mac))
-	{
-		return false;
-	}
-
-	if (IsMacBroadcast(mac))
-	{
-		return false;
-	}
-
-	if (IsMacMulticast(mac))
-	{
-		return false;
-	}
-
-	return true;
 }
 
 // Get the number of clients connected from the specified IP address
@@ -2624,31 +2291,6 @@ int CompareIpClientList(void *p1, void *p2)
 	return CmpIpAddr(&c1->IpAddress, &c2->IpAddress);
 }
 
-// Normalization of the MAC address
-bool NormalizeMacAddress(char *dst, UINT size, char *src)
-{
-	BUF *b;
-	bool ret = false;
-	// Validate arguments
-	if (dst == NULL || src == NULL)
-	{
-		return false;
-	}
-
-	b = StrToBin(src);
-
-	if (b != NULL && b->Size == 6)
-	{
-		ret = true;
-
-		BinToStr(dst, size, b->Buf, b->Size);
-	}
-
-	FreeBuf(b);
-
-	return ret;
-}
-
 // Identify whether the IP address is empty
 bool IsZeroIP(IP *ip)
 {
@@ -2700,14 +2342,6 @@ bool IsHostIPAddress4(IP *ip)
 
 	return true;
 }
-bool IsHostIPAddress32(UINT ip)
-{
-	IP p;
-
-	UINTToIP(&p, ip);
-
-	return IsHostIPAddress4(&p);
-}
 
 // Check whether the specified IP address and subnet mask indicates a network correctly
 bool IsNetworkAddress4(IP *ip, IP *mask)
@@ -2738,15 +2372,6 @@ bool IsNetworkAddress4(IP *ip, IP *mask)
 	}
 
 	return false;
-}
-bool IsNetworkAddress32(UINT ip, UINT mask)
-{
-	IP a, b;
-
-	UINTToIP(&a, ip);
-	UINTToIP(&b, mask);
-
-	return IsNetworkAddress4(&a, &b);
 }
 
 // Convert the integer to a subnet mask
@@ -2951,14 +2576,6 @@ bool IsSubnetMask4(IP *ip)
 
 	return false;
 }
-bool IsSubnetMask32(UINT ip)
-{
-	IP p;
-
-	UINTToIP(&p, ip);
-
-	return IsSubnetMask4(&p);
-}
 
 #ifdef OS_WIN32		// Code for Windows
 
@@ -3104,14 +2721,6 @@ void Win32ReleaseAddressByGuidExThread(THREAD *t, void *param)
 
 	DelWaitThread(t);
 }
-bool Win32RenewAddressByGuidEx(char *guid, UINT timeout)
-{
-	return Win32ReleaseOrRenewAddressByGuidEx(guid, timeout, true);
-}
-bool Win32ReleaseAddressByGuidEx(char *guid, UINT timeout)
-{
-	return Win32ReleaseOrRenewAddressByGuidEx(guid, timeout, false);
-}
 bool Win32ReleaseOrRenewAddressByGuidEx(char *guid, UINT timeout, bool renew)
 {
 	THREAD *t;
@@ -3246,12 +2855,6 @@ bool Win32GetAdapterFromGuid(void *a, char *guid)
 	Free(info);
 
 	return ret;
-}
-
-// Clear the DNS cache on Win32
-void Win32FlushDnsCache()
-{
-	Run("ipconfig.exe", "/flushdns", true, false);
 }
 
 // Enumerate a list of virtual LAN cards that contains the specified string
@@ -4175,44 +3778,6 @@ void FreeWaitThread()
 	WaitThreadList = NULL;
 }
 
-// Get the domain name
-bool GetDomainName(char *name, UINT size)
-{
-	bool ret = false;
-	IP ip;
-	// Validate arguments
-	ClearStr(name, size);
-	if (name == NULL)
-	{
-		return false;
-	}
-
-#ifdef	OS_WIN32
-	ClearStr(name, size);
-	ret = Win32GetDefaultDns(&ip, name, size);
-
-	if (ret == false || IsEmptyStr(name))
-	{
-		ret = Win32GetDnsSuffix(name, size);
-	}
-#endif	// OS_WIN32
-
-	if (ret == false)
-	{
-		return false;
-	}
-
-	return (IsEmptyStr(name) ? false : true);
-}
-
-// Get the default DNS server
-bool GetDefaultDns(IP *ip)
-{
-#ifdef	OS_WIN32
-	return Win32GetDefaultDns(ip, NULL, 0);
-#endif	// OS_WIN32
-}
-
 // Creating a socket event
 SOCK_EVENT *NewSockEvent()
 {
@@ -4437,10 +4002,6 @@ void FreeRouteEntry(ROUTE_ENTRY *e)
 }
 
 // Get the best route entry by analyzing the current routing table
-ROUTE_ENTRY *GetBestRouteEntry(IP *ip)
-{
-	return GetBestRouteEntryEx(ip, 0);
-}
 ROUTE_ENTRY *GetBestRouteEntryEx(IP *ip, UINT exclude_if_id)
 {
 	ROUTE_TABLE *table;
@@ -4461,78 +4022,6 @@ ROUTE_ENTRY *GetBestRouteEntryEx(IP *ip, UINT exclude_if_id)
 	FreeRouteTable(table);
 
 	return e;
-}
-
-// Get the interface ID of the virtual LAN card
-UINT GetVLanInterfaceID(char *tag_name)
-{
-	UINT ret = 0;
-#ifdef	OS_WIN32
-	ret = Win32GetVLanInterfaceID(tag_name);
-#endif	// OS_WIN32
-	return ret;
-}
-
-// Release of enumeration variable of virtual LAN card
-void FreeEnumVLan(char **s)
-{
-	char *a;
-	UINT i;
-	// Validate arguments
-	if (s == NULL)
-	{
-		return;
-	}
-
-	i = 0;
-	while (true)
-	{
-		a = s[i++];
-		if (a == NULL)
-		{
-			break;
-		}
-		Free(a);
-	}
-
-	Free(s);
-}
-
-// Enumeration of virtual LAN cards
-char **EnumVLan(char *tag_name)
-{
-	char **ret = NULL;
-#ifdef	OS_WIN32
-	ret = Win32EnumVLan(tag_name);
-#endif	// OS_WIN32
-	return ret;
-}
-
-// Display the routing table
-void DebugPrintRouteTable(ROUTE_TABLE *r)
-{
-	UINT i;
-	// Validate arguments
-	if (r == NULL)
-	{
-		return;
-	}
-
-	if (IsDebug() == false)
-	{
-		return;
-	}
-
-	Debug("---- Routing Table (%u Entries) ----\n", r->NumEntry);
-
-	for (i = 0; i < r->NumEntry; i++)
-	{
-		Debug("   ");
-
-		DebugPrintRoute(r->Entry[i]);
-	}
-
-	Debug("------------------------------------\n");
 }
 
 // Display the routing table entry
@@ -4577,21 +4066,7 @@ void RouteToStr(char *str, UINT str_size, ROUTE_ENTRY *e)
 	       e->LocalRouting, e->PPPConnection);
 }
 
-// Delete the routing table
-void DeleteRouteEntry(ROUTE_ENTRY *e)
-{
-	Debug("DeleteRouteEntry();\n");
-#ifdef	OS_WIN32
-	Win32DeleteRouteEntry2(e);
-#endif
-}
-
 // Add to the routing table
-bool AddRouteEntry(ROUTE_ENTRY *e)
-{
-	bool dummy = false;
-	return AddRouteEntryEx(e, &dummy);
-}
 bool AddRouteEntryEx(ROUTE_ENTRY *e, bool *already_exists)
 {
 	bool ret = false;
@@ -4986,36 +4461,6 @@ UINT SendTo6Ex(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size,
 	return ret;
 }
 
-// Set the DF bit of the socket
-void ClearSockDfBit(SOCK *s)
-{
-#ifdef	IP_PMTUDISC_DONT
-#ifdef	IP_MTU_DISCOVER
-	UINT value = IP_PMTUDISC_DONT;
-	if (s == NULL)
-	{
-		return;
-	}
-
-	(void)setsockopt(s->socket, IPPROTO_IP, IP_MTU_DISCOVER, (char *)&value, sizeof(value));
-#endif	// IP_MTU_DISCOVER
-#endif	// IP_PMTUDISC_DONT
-}
-
-// Set the header-include option
-void SetRawSockHeaderIncludeOption(SOCK *s, bool enable)
-{
-	UINT value = BOOL_TO_INT(enable);
-	if (s == NULL || s->IsRawSocket == false)
-	{
-		return;
-	}
-
-	(void)setsockopt(s->socket, IPPROTO_IP, IP_HDRINCL, (char *)&value, sizeof(value));
-
-	s->RawIP_HeaderIncludeFlag = enable;
-}
-
 // Create and initialize the UDP socket
 // If port is specified as 0, system assigns a certain port.
 SOCK *NewUDP(UINT port)
@@ -5297,50 +4742,6 @@ void InitSockSet(SOCKSET *set)
 	}
 
 	Zero(set, sizeof(SOCKSET));
-}
-
-// Receive data and discard all of them
-bool RecvAllWithDiscard(SOCK *sock, UINT size, bool secure)
-{
-	static UCHAR buffer[4096];
-	UINT recv_size, sz, ret;
-	if (sock == NULL)
-	{
-		return false;
-	}
-	if (size == 0)
-	{
-		return true;
-	}
-	if (sock->AsyncMode)
-	{
-		return false;
-	}
-
-	recv_size = 0;
-
-	while (true)
-	{
-		sz = MIN(size - recv_size, sizeof(buffer));
-		ret = Recv(sock, buffer, sz, secure);
-		if (ret == 0)
-		{
-			return false;
-		}
-		if (ret == SOCK_LATER)
-		{
-			// I suppose that this is safe because the RecvAll() function is used only
-			// if the sock->AsyncMode == true. And the Recv() function may return
-			// SOCK_LATER only if the sock->AsyncMode == false. Therefore the call of
-			// Recv() function in the RecvAll() function never returns SOCK_LATER.
-			return false;
-		}
-		recv_size += ret;
-		if (recv_size >= size)
-		{
-			return true;
-		}
-	}
 }
 
 // Receive all by TCP
@@ -6152,18 +5553,6 @@ void SockWriteSslLog(SOCK *s, void *send_data, UINT send_size, void *recv_data, 
 }
 
 #endif	// ENABLE_SSL_LOGGING
-
-// Set the flag to indicate that the socket doesn't require reading
-void SetNoNeedToRead(SOCK *sock)
-{
-	// Validate arguments
-	if (sock == NULL)
-	{
-		return;
-	}
-
-	sock->NoNeedToRead = true;
-}
 
 // TCP-SSL receive
 UINT SecureRecv(SOCK *sock, void *data, UINT size)
@@ -7524,12 +6913,6 @@ int bind_sock(SOCKET sock, IP *ip, UINT port)
 }
 
 // Connect to the IPv4 host using a socket
-SOCKET ConnectTimeoutIPv4(IP* ip, UINT port, UINT timeout, bool* cancel_flag)
-{
-	return BindConnectTimeoutIPv4(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, ip, port, timeout, cancel_flag);
-}
-
-// Connect to the IPv4 host using a socket
 SOCKET BindConnectTimeoutIPv4(IP* localIP, UINT localport, IP* ip, UINT port, UINT timeout, bool* cancel_flag)
 {
 	SOCKET s;
@@ -7589,133 +6972,6 @@ SOCKET BindConnectTimeoutIPv4(IP* localIP, UINT localport, IP* ip, UINT port, UI
 	}
 
 	return s;
-}
-
-// Identify whether the HTTPS server to be connected is a SoftEther VPN
-bool DetectIsServerSoftEtherVPN(SOCK *s)
-{
-	HTTP_HEADER *h;
-	char ip_str[MAX_SIZE];
-	char *send_str;
-	UINT content_len;
-	BUF *recv_buf;
-	void *socket_buffer;
-	UINT socket_buffer_size = 32768;
-	bool ok = false;
-	// Validate arguments
-	if (s == NULL)
-	{
-		return false;
-	}
-
-	IPToStr(ip_str, sizeof(ip_str), &s->RemoteIP);
-
-	// Request generation
-	h = NewHttpHeaderEx("GET", "/", "HTTP/1.1", true);
-	AddHttpValue(h, NewHttpValue("X-VPN", "1"));
-	AddHttpValue(h, NewHttpValue("Host", ip_str));
-	AddHttpValue(h, NewHttpValue("Keep-Alive", HTTP_KEEP_ALIVE));
-	AddHttpValue(h, NewHttpValue("Connection", "Keep-Alive"));
-	AddHttpValue(h, NewHttpValue("Accept-Language", "ja"));
-	AddHttpValue(h, NewHttpValue("User-Agent", DEFAULT_USER_AGENT));
-	AddHttpValue(h, NewHttpValue("Pragma", "no-cache"));
-	AddHttpValue(h, NewHttpValue("Cache-Control", "no-cache"));
-
-
-
-	send_str = HttpHeaderToStr(h);
-	FreeHttpHeader(h);
-
-	// Transmission
-	if (SendAll(s, send_str, StrLen(send_str), true) == false)
-	{
-		Free(send_str);
-		return false;
-	}
-
-	Free(send_str);
-
-	// Receive
-	h = RecvHttpHeader(s);
-	if (h == NULL)
-	{
-		return false;
-	}
-
-	// Get the length of the content
-	content_len = GetContentLength(h);
-	FreeHttpHeader(h);
-
-	if (content_len == 0 || content_len >= (1024 * 1024))
-	{
-		return false;
-	}
-
-	// Receive contents
-	recv_buf = NewBuf();
-	socket_buffer = Malloc(socket_buffer_size);
-
-	while (true)
-	{
-		UINT recvsize = MIN(socket_buffer_size, content_len - recv_buf->Size);
-		UINT size;
-
-		if (recvsize == 0)
-		{
-			ok = true;
-			break;
-		}
-
-		size = Recv(s, socket_buffer, recvsize, true);
-		if (size == 0)
-		{
-			// Disconnected
-			break;
-		}
-
-		WriteBuf(recv_buf, socket_buffer, size);
-	}
-
-	SeekBuf(recv_buf, 0, 0);
-	Free(socket_buffer);
-
-	if (ok)
-	{
-		// Examine to confirm whether the incoming data is a SoftEther VPN protocol
-		char tmp[1024];
-
-		Zero(tmp, sizeof(tmp));
-
-		Copy(tmp, recv_buf->Buf, MIN(recv_buf->Size, (sizeof(tmp) - 1)));
-
-		ok = false;
-
-		if (StartWith(tmp, http_detect_server_startwith))
-		{
-			ok = true;
-		}
-		else if (InStr(tmp, http_detect_server_tag_future))
-		{
-			ok = true;
-		}
-	}
-
-	FreeBuf(recv_buf);
-
-	return ok;
-}
-
-// IPv4 connection thread (multiple protocols, multiple addresses)
-void ConnectThreadForIPv4(THREAD* thread, void* param)
-{
-	CONNECT_SERIAL_PARAM* p = (CONNECT_SERIAL_PARAM*)param;
-	if (thread == NULL || p == NULL)
-	{
-		return;
-	}
-	p->LocalIP = BIND_LOCALIP_NULL;
-	p->LocalPort = BIND_LOCALPORT_NULL;
-	return  BindConnectThreadForIPv4(thread, param);
 }
 
 // IPv4 connection thread (multiple protocols, multiple addresses)
@@ -7783,19 +7039,6 @@ void BindConnectThreadForIPv4(THREAD *thread, void *param)
 	p->Finished = true;
 
 	Set(p->FinishEvent);
-}
-
-// IPv6 connection thread (multiple addresses)
-void ConnectThreadForIPv6(THREAD* thread, void* param)
-{
-	CONNECT_SERIAL_PARAM* p = (CONNECT_SERIAL_PARAM*)param;
-	if (thread == NULL || p == NULL)
-	{
-		return;
-	}
-	p->LocalIP = BIND_LOCALIP_NULL;
-	p->LocalPort = BIND_LOCALPORT_NULL;
-	return  BindConnectThreadForIPv6(thread, param);
 }
 
 // IPv6 connection thread (multiple addresses)
@@ -8425,55 +7668,6 @@ void QuerySocketInformation(SOCK *sock)
 	Unlock(sock->lock);
 }
 
-// Setting the TTL value
-bool SetTtl(SOCK *sock, UINT ttl)
-{
-	UINT dw;
-	int size;
-	UINT opt_value = 0;
-	// Validate arguments
-	if (sock == NULL)
-	{
-		return false;
-	}
-
-	if (sock->IsTtlSupported == false)
-	{
-		return false;
-	}
-
-	if (sock->CurrentTtl == ttl)
-	{
-		return true;
-	}
-
-	dw = ttl;
-	size = sizeof(UINT);
-
-	if (sock->IPv6)
-	{
-#ifdef	IPV6_UNICAST_HOPS
-		opt_value = IPV6_UNICAST_HOPS;
-#endif	// IPV6_UNICAST_HOPS
-	}
-	else
-	{
-#ifdef	IP_TTL
-		opt_value = IP_TTL;
-#endif	// IP_TTL
-	}
-
-	if (opt_value == 0 ||
-	        setsockopt(sock->socket, (sock->IPv6 ? IPPROTO_IPV6 : IPPROTO_IP), opt_value, (char *)&dw, size) == false)
-	{
-		return false;
-	}
-
-	sock->CurrentTtl = ttl;
-
-	return true;
-}
-
 // Release of the socket
 void ReleaseSock(SOCK *s)
 {
@@ -8928,33 +8122,6 @@ void SetIP(IP *ip, UCHAR a1, UCHAR a2, UCHAR a3, UCHAR a4)
 	ip->address[13] = a2;
 	ip->address[14] = a3;
 	ip->address[15] = a4;
-}
-UINT SetIP32(UCHAR a1, UCHAR a2, UCHAR a3, UCHAR a4)
-{
-	IP ip;
-
-	Zero(&ip, sizeof(ip));
-	SetIP(&ip, a1, a2, a3, a4);
-
-	return IPToUINT(&ip);
-}
-
-// Convert the IP to a string
-void IPToUniStr(wchar_t *str, UINT size, IP *ip)
-{
-	char tmp[128];
-
-	IPToStr(tmp, sizeof(tmp), ip);
-	StrToUni(str, size, tmp);
-}
-
-// Convert the IP to a string (32bit UINT)
-void IPToUniStr32(wchar_t *str, UINT size, UINT ip)
-{
-	char tmp[128];
-
-	IPToStr32(tmp, sizeof(tmp), ip);
-	StrToUni(str, size, tmp);
 }
 
 // Convert the IP to a string (32bit UINT)
@@ -9600,119 +8767,6 @@ void FreePrivateIPFile()
 	g_use_privateip_file = false;
 }
 
-// Check whether the specified IP address is in the same network to this computer
-bool IsIPAddressInSameLocalNetwork(IP *a)
-{
-	bool ret = false;
-	LIST *o;
-	UINT i;
-	// Validate arguments
-	if (a == NULL)
-	{
-		return false;
-	}
-
-	o = GetHostIPAddressList();
-
-	if (o != NULL)
-	{
-		for (i = 0; i < LIST_NUM(o); i++)
-		{
-			IP *p = LIST_DATA(o, i);
-
-			if (IsIP4(p))
-			{
-				if (IsZeroIp(p) == false && IsLocalHostIP4(a) == false)
-				{
-					if (IsInSameNetwork4Standard(p, a))
-					{
-						ret = true;
-						break;
-					}
-				}
-			}
-		}
-
-		FreeHostIPAddressList(o);
-	}
-
-	return ret;
-}
-
-// Guess the IPv4, IPv6 global address from the IP address list of the current interface
-void GetCurrentGlobalIPGuess(IP *ip, bool ipv6)
-{
-	LIST *o;
-	UINT i;
-	// Validate arguments
-	if (ip == NULL)
-	{
-		return;
-	}
-
-	Zero(ip, sizeof(IP));
-
-	o = GetHostIPAddressList();
-
-	if (ipv6 == false)
-	{
-		// IPv4
-		for (i = 0; i < LIST_NUM(o); i++)
-		{
-			IP *p = LIST_DATA(o, i);
-
-			if (IsIP4(p))
-			{
-				if (IsZeroIp(p) == false && IsIPPrivate(p) == false && IsLocalHostIP4(p) == false)
-				{
-					Copy(ip, p, sizeof(IP));
-				}
-			}
-		}
-
-		if (IsZeroIp(ip))
-		{
-			for (i = 0; i < LIST_NUM(o); i++)
-			{
-				IP *p = LIST_DATA(o, i);
-
-				if (IsIP4(p))
-				{
-					if (IsZeroIp(p) == false && IsIPPrivate(p) && IsLocalHostIP4(p) == false)
-					{
-						Copy(ip, p, sizeof(IP));
-					}
-				}
-			}
-		}
-
-		if (IsZeroIp(ip))
-		{
-			SetIP(ip, 127, 0, 0, 1);
-		}
-	}
-	else
-	{
-		// IPv6
-		for (i = 0; i < LIST_NUM(o); i++)
-		{
-			IP *p = LIST_DATA(o, i);
-
-			if (IsIP6(p))
-			{
-				UINT type = GetIPAddrType6(p);
-
-				if ((type & IPV6_ADDR_GLOBAL_UNICAST) && ((type & IPV6_ADDR_ZERO) == 0) && ((type & IPV6_ADDR_LOOPBACK) == 0))
-				{
-					Copy(ip, p, sizeof(IP));
-				}
-			}
-		}
-	}
-
-	FreeHostIPAddressList(o);
-}
-
 // Record the current global IP address
 void SetCurrentGlobalIP(IP *ip, bool ipv6)
 {
@@ -9826,32 +8880,6 @@ void StopSockList(SOCKLIST *sl)
 	}
 
 	Free(ss);
-}
-
-// Delete the socket list
-void FreeSockList(SOCKLIST *sl)
-{
-	// Validate arguments
-	if (sl == NULL)
-	{
-		return;
-	}
-
-	StopSockList(sl);
-
-	ReleaseList(sl->SockList);
-
-	Free(sl);
-}
-
-// Creating a socket list
-SOCKLIST *NewSockList()
-{
-	SOCKLIST *sl = ZeroMallocFast(sizeof(SOCKLIST));
-
-	sl->SockList = NewList(NULL);
-
-	return sl;
 }
 
 // Parse the IP address and subnet mask
@@ -10027,41 +9055,6 @@ bool ParseIpAndMask6(char *src, IP *ip, IP *mask)
 }
 
 
-// Check whether the specification of the IPv4 address is correct
-bool IsIpStr4(char *str)
-{
-	// Validate arguments
-	if (str == NULL)
-	{
-		return false;
-	}
-
-	if (StrToIP32(str) == 0 && StrCmpi(str, "0.0.0.0") != 0)
-	{
-		return false;
-	}
-
-	return true;
-}
-
-// Check whether the specification of the IPv6 address is correct
-bool IsIpStr6(char *str)
-{
-	IP ip;
-	// Validate arguments
-	if (str == NULL)
-	{
-		return false;
-	}
-
-	if (StrToIP6(&ip, str) == false)
-	{
-		return false;
-	}
-
-	return true;
-}
-
 // Convert the string to an IPv6 mask
 bool StrToMask6(IP *mask, char *str)
 {
@@ -10101,22 +9094,6 @@ bool StrToMask6(IP *mask, char *str)
 			return IsIP6(mask);
 		}
 	}
-}
-bool StrToMask6Addr(IPV6_ADDR *mask, char *str)
-{
-	IP ip;
-
-	if (StrToMask6(&ip, str) == false)
-	{
-		return false;
-	}
-
-	if (IPToIPv6Addr(mask, &ip) == false)
-	{
-		return false;
-	}
-
-	return true;
 }
 
 // Convert the IPv4 / IPv6 mask to a string
@@ -10191,36 +9168,6 @@ void FreeHostIPAddressList(LIST *o)
 	}
 
 	ReleaseList(o);
-}
-
-// Get whether the specified IP address is held by this host
-bool IsMyIPAddress(IP *ip)
-{
-	LIST *o;
-	UINT i;
-	bool ret = false;
-	// Validate arguments
-	if (ip == NULL)
-	{
-		return false;
-	}
-
-	o = GetHostIPAddressList();
-
-	for (i = 0; i < LIST_NUM(o); i++)
-	{
-		IP *a = LIST_DATA(o, i);
-
-		if (CmpIpAddr(ip, a) == 0)
-		{
-			ret = true;
-			break;
-		}
-	}
-
-	FreeHostIPAddressList(o);
-
-	return ret;
 }
 
 // Add the IP address to the list
@@ -10545,43 +9492,6 @@ LIST *GetHostIPAddressListInternal()
 	return o;
 }
 
-// Release of the UDP packet
-void FreeUdpPacket(UDPPACKET *p)
-{
-	// Validate arguments
-	if (p == NULL)
-	{
-		return;
-	}
-
-	Free(p->Data);
-	Free(p);
-}
-
-// Create a new UDP packet
-UDPPACKET *NewUdpPacket(IP *src_ip, UINT src_port, IP *dst_ip, UINT dst_port, void *data, UINT size)
-{
-	UDPPACKET *p;
-	// Validate arguments
-	if (data == NULL || size == 0 || dst_ip == NULL || dst_port == 0)
-	{
-		return NULL;
-	}
-
-	p = ZeroMalloc(sizeof(UDPPACKET));
-
-	p->Data = data;
-	p->Size = size;
-
-	Copy(&p->SrcIP, src_ip, sizeof(IP));
-	p->SrcPort = src_port;
-
-	Copy(&p->DstIP, dst_ip, sizeof(IP));
-	p->DestPort = dst_port;
-
-	return p;
-}
-
 // Sort function of the interrupt management list
 int CmpInterruptManagerTickList(void *p1, void *p2)
 {
@@ -10610,123 +9520,6 @@ int CmpInterruptManagerTickList(void *p1, void *p2)
 	{
 		return 0;
 	}
-}
-
-// Initialization of the interrupt management
-INTERRUPT_MANAGER *NewInterruptManager()
-{
-	INTERRUPT_MANAGER *m = ZeroMalloc(sizeof(INTERRUPT_MANAGER));
-
-	m->TickList = NewList(CmpInterruptManagerTickList);
-
-	return m;
-}
-
-// Release of the interrupt management
-void FreeInterruptManager(INTERRUPT_MANAGER *m)
-{
-	UINT i;
-	// Validate arguments
-	if (m == NULL)
-	{
-		return;
-	}
-
-	for (i = 0; i < LIST_NUM(m->TickList); i++)
-	{
-		UINT64 *v = LIST_DATA(m->TickList, i);
-
-		Free(v);
-	}
-
-	ReleaseList(m->TickList);
-
-	Free(m);
-}
-
-// Add a number to the interrupt management
-void AddInterrupt(INTERRUPT_MANAGER *m, UINT64 tick)
-{
-	// Validate arguments
-	if (tick == 0)
-	{
-		return;
-	}
-
-	LockList(m->TickList);
-	{
-		if (Search(m->TickList, &tick) == NULL)
-		{
-			Insert(m->TickList, Clone(&tick, sizeof(UINT64)));
-		}
-	}
-	UnlockList(m->TickList);
-}
-
-// Get the interval to the next calling
-UINT GetNextIntervalForInterrupt(INTERRUPT_MANAGER *m)
-{
-	UINT ret = INFINITE;
-	UINT i;
-	LIST *o = NULL;
-	UINT64 now = Tick64();
-	// Validate arguments
-	if (m == NULL)
-	{
-		return 0;
-	}
-
-	LockList(m->TickList);
-	{
-		// Remove entries older than now already
-		for (i = 0; i < LIST_NUM(m->TickList); i++)
-		{
-			UINT64 *v = LIST_DATA(m->TickList, i);
-
-			if (now >= *v)
-			{
-				ret = 0;
-
-				if (o == NULL)
-				{
-					o = NewListFast(NULL);
-				}
-
-				Add(o, v);
-			}
-			else
-			{
-				break;
-			}
-		}
-
-		for (i = 0; i < LIST_NUM(o); i++)
-		{
-			UINT64 *v = LIST_DATA(o, i);
-
-			Free(v);
-
-			Delete(m->TickList, v);
-		}
-
-		if (o != NULL)
-		{
-			ReleaseList(o);
-		}
-
-		if (ret == INFINITE)
-		{
-			if (LIST_NUM(m->TickList) >= 1)
-			{
-				UINT64 *v = LIST_DATA(m->TickList, 0);
-
-				ret = (UINT)(*v - now);
-			}
-		}
-	}
-	UnlockList(m->TickList);
-
-	return ret;
 }
 
 // Store the error value into PACK
@@ -10821,145 +9614,6 @@ char *RecvLine(SOCK *s, UINT max_size)
 			}
 		}
 	}
-}
-
-// Receive a PACK
-PACK *RecvPack(SOCK *s)
-{
-	PACK *p;
-	BUF *b;
-	void *data;
-	UINT sz;
-	// Validate arguments
-	if (s == NULL || s->Type != SOCK_TCP)
-	{
-		return false;
-	}
-
-	if (RecvAll(s, &sz, sizeof(UINT), s->SecureMode) == false)
-	{
-		return false;
-	}
-	sz = Endian32(sz);
-	if (sz > MAX_PACK_SIZE)
-	{
-		return false;
-	}
-	data = MallocEx(sz, true);
-	if (RecvAll(s, data, sz, s->SecureMode) == false)
-	{
-		Free(data);
-		return false;
-	}
-
-	b = NewBuf();
-	WriteBuf(b, data, sz);
-	SeekBuf(b, 0, 0);
-	p = BufToPack(b);
-	FreeBuf(b);
-	Free(data);
-
-	return p;
-}
-
-// Receive a PACK (with checking the hash)
-PACK *RecvPackWithHash(SOCK *s)
-{
-	PACK *p;
-	BUF *b;
-	void *data;
-	UINT sz;
-	UCHAR hash1[SHA1_SIZE];
-	UCHAR hash2[SHA1_SIZE];
-	// Validate arguments
-	if (s == NULL || s->Type != SOCK_TCP)
-	{
-		return false;
-	}
-
-	if (RecvAll(s, &sz, sizeof(UINT), s->SecureMode) == false)
-	{
-		return false;
-	}
-	sz = Endian32(sz);
-	if (sz > MAX_PACK_SIZE)
-	{
-		return false;
-	}
-	data = MallocEx(sz, true);
-	if (RecvAll(s, data, sz, s->SecureMode) == false)
-	{
-		Free(data);
-		return false;
-	}
-
-	Sha1(hash1, data, sz);
-	if (RecvAll(s, hash2, sizeof(hash2), s->SecureMode) == false)
-	{
-		Free(data);
-		return false;
-	}
-
-	if (Cmp(hash1, hash2, SHA1_SIZE) != 0)
-	{
-		Free(data);
-		return false;
-	}
-
-	b = NewBuf();
-	WriteBuf(b, data, sz);
-	SeekBuf(b, 0, 0);
-	p = BufToPack(b);
-	FreeBuf(b);
-	Free(data);
-
-	return p;
-}
-
-// Send a PACK
-bool SendPack(SOCK *s, PACK *p)
-{
-	BUF *b;
-	UINT sz;
-	// Validate arguments
-	if (s == NULL || p == NULL || s->Type != SOCK_TCP)
-	{
-		return false;
-	}
-
-	b = PackToBuf(p);
-	sz = Endian32(b->Size);
-
-	SendAdd(s, &sz, sizeof(UINT));
-	SendAdd(s, b->Buf, b->Size);
-	FreeBuf(b);
-
-	return SendNow(s, s->SecureMode);
-}
-
-// Send a Pack (with adding a hash)
-bool SendPackWithHash(SOCK *s, PACK *p)
-{
-	BUF *b;
-	UINT sz;
-	UCHAR hash[SHA1_SIZE];
-	// Validate arguments
-	if (s == NULL || p == NULL || s->Type != SOCK_TCP)
-	{
-		return false;
-	}
-
-	b = PackToBuf(p);
-	sz = Endian32(b->Size);
-
-	SendAdd(s, &sz, sizeof(UINT));
-	SendAdd(s, b->Buf, b->Size);
-	Sha1(hash, b->Buf, b->Size);
-	SendAdd(s, hash, sizeof(hash));
-
-	FreeBuf(b);
-
-	return SendNow(s, s->SecureMode);
 }
 
 // Get SNI name from the SSL packet

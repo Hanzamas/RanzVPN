@@ -43,18 +43,6 @@ void GenerateNtPasswordHash(UCHAR *dst, char *password)
 	Free(tmp);
 }
 
-// Generate the MS-CHAPv2 client-side challenge
-void MsChapV2Client_GenerateChallenge(UCHAR *dst)
-{
-	// Validate arguments
-	if (dst == NULL)
-	{
-		return;
-	}
-
-	Rand(dst, 16);
-}
-
 // Generate a 8 bytes challenge
 void MsChapV2_GenerateChallenge8(UCHAR *dst, UCHAR *client_challenge, UCHAR *server_challenge, char *username)
 {
@@ -176,41 +164,6 @@ bool MsChapV2VerityPassword(IPC_MSCHAP_V2_AUTHINFO *d, char *password)
 	}
 
 	return true;
-}
-
-// Estimate the password in the brute force for the request packet of MS-CHAPv2
-char *MsChapV2DoBruteForce(IPC_MSCHAP_V2_AUTHINFO *d, LIST *password_list)
-{
-	UINT i;
-	// Validate arguments
-	if (d == NULL || password_list == NULL)
-	{
-		return NULL;
-	}
-
-	for (i = 0; i < LIST_NUM(password_list); i++)
-	{
-		char *s = LIST_DATA(password_list, i);
-		char tmp[MAX_SIZE];
-		UINT j, max;
-		UINT len;
-
-		StrCpy(tmp, sizeof(tmp), s);
-
-		len = StrLen(tmp);
-		max = Power(2, MIN(len, 9));
-
-		for (j = 0; j < max; j++)
-		{
-			SetStrCaseAccordingToBits(tmp, j);
-			if (MsChapV2VerityPassword(d, tmp))
-			{
-				return CopyStr(tmp);
-			}
-		}
-	}
-
-	return NULL;
 }
 
 // Extract the MS-CHAP v2 authentication information by parsing the password string

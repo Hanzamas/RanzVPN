@@ -191,40 +191,6 @@ void Win32InitNewThread()
 }
 
 // Set the compression flag of the folder
-bool Win32SetFolderCompressW(wchar_t *path, bool compressed)
-{
-	HANDLE h;
-	DWORD retsize = 0;
-	USHORT flag;
-	wchar_t tmp[MAX_PATH];
-	// Validate arguments
-	if (path == NULL)
-	{
-		return false;
-	}
-
-	InnerFilePathW(tmp, sizeof(tmp), path);
-
-	// Open the folder
-	h = CreateFileW(tmp, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
-
-	if (h == INVALID_HANDLE_VALUE)
-	{
-		return false;
-	}
-
-	flag = compressed ? COMPRESSION_FORMAT_DEFAULT : COMPRESSION_FORMAT_NONE;
-
-	if (DeviceIoControl(h, FSCTL_SET_COMPRESSION, &flag, sizeof(USHORT),
-		NULL, 0, &retsize, NULL) == false)
-	{
-		return false;
-	}
-
-	CloseHandle(h);
-
-	return true;
-}
 bool Win32SetFolderCompress(char *path, bool compressed)
 {
 	HANDLE h;
@@ -261,72 +227,6 @@ bool Win32SetFolderCompress(char *path, bool compressed)
 }
 
 // Get the free space of the disk
-bool Win32GetDiskFreeW(wchar_t *path, UINT64 *free_size, UINT64 *used_size, UINT64 *total_size)
-{
-	wchar_t tmp[MAX_SIZE];
-	UINT count = 0;
-	UINT i, n, len;
-	ULARGE_INTEGER v1, v2, v3;
-	bool ret = false;
-	// Validate arguments
-	if (path == NULL)
-	{
-		return false;
-	}
-
-	Zero(&v1, sizeof(v1));
-	Zero(&v2, sizeof(v2));
-	Zero(&v3, sizeof(v3));
-
-	NormalizePathW(tmp, sizeof(tmp), path);
-
-	// Get the directory name
-	if (UniStartWith(path, L"\\\\"))
-	{
-		count = 4;
-	}
-	else
-	{
-		count = 1;
-	}
-
-	len = UniStrLen(tmp);
-	n = 0;
-	for (i = 0;i < len;i++)
-	{
-		if (tmp[i] == L'\\')
-		{
-			n++;
-			if (n >= count)
-			{
-				tmp[i + 1] = 0;
-				break;
-			}
-		}
-	}
-
-	if (GetDiskFreeSpaceExW(tmp, &v1, &v2, &v3))
-	{
-		ret = true;
-	}
-
-	if (free_size != NULL)
-	{
-		*free_size = v1.QuadPart;
-	}
-
-	if (total_size != NULL)
-	{
-		*total_size = v2.QuadPart;
-	}
-
-	if (used_size != NULL)
-	{
-		*used_size = v2.QuadPart - v1.QuadPart;
-	}
-
-	return ret;
-}
 bool Win32GetDiskFree(char *path, UINT64 *free_size, UINT64 *used_size, UINT64 *total_size)
 {
 	char tmp[MAX_SIZE];
@@ -395,17 +295,6 @@ bool Win32GetDiskFree(char *path, UINT64 *free_size, UINT64 *used_size, UINT64 *
 }
 
 // Enumeration of directory
-DIRLIST *Win32EnumDirEx(char *dirname, COMPARE *compare)
-{
-	DIRLIST *ret;
-	wchar_t *dirname_w = CopyStrToUni(dirname);
-
-	ret = Win32EnumDirExW(dirname_w, compare);
-
-	Free(dirname_w);
-
-	return ret;
-}
 DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 {
 	WIN32_FIND_DATAW data_w;
@@ -537,18 +426,6 @@ void Win32GetExeNameW(wchar_t *name, UINT size)
 	UniStrCpy(name, size, L"");
 
 	GetModuleFileNameW(NULL, name, size);
-}
-void Win32GetExeName(char *name, UINT size)
-{
-	// Validate arguments
-	if (name == NULL)
-	{
-		return;
-	}
-
-	StrCpy(name, size, "");
-
-	GetModuleFileName(NULL, name, size);
 }
 
 // Get the current directory
@@ -1018,23 +895,6 @@ UINT Win32GetOsType()
 	}
 }
 
-// Kill the process
-bool Win32TerminateProcess(void *handle)
-{
-	HANDLE h;
-	// Validate arguments
-	if (handle == NULL)
-	{
-		return false;
-	}
-
-	h = (HANDLE)handle;
-
-	TerminateProcess(h, 0);
-
-	return true;
-}
-
 // Close the process
 void Win32CloseProcess(void *handle)
 {
@@ -1045,26 +905,6 @@ void Win32CloseProcess(void *handle)
 	}
 
 	CloseHandle((HANDLE)handle);
-}
-
-// Check whether the specified process is alive
-bool Win32IsProcessAlive(void *handle)
-{
-	HANDLE h;
-	// Validate arguments
-	if (handle == NULL)
-	{
-		return false;
-	}
-
-	h = (HANDLE)handle;
-
-	if (WaitForSingleObject(h, 0) == WAIT_OBJECT_0)
-	{
-		return false;
-	}
-
-	return true;
 }
 
 // Wait for the process termination
@@ -1186,10 +1026,6 @@ void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id,
 
 	CloseHandle(ret.hThread);
 	return ret.hProcess;
-}
-void *Win32RunEx(char *filename, char *arg, bool hide)
-{
-	return Win32RunEx2(filename, arg, hide, NULL);
 }
 void *Win32RunEx2(char *filename, char *arg, bool hide, UINT *process_id)
 {
@@ -1437,44 +1273,6 @@ bool Win32FileRename(char *old_name, char *new_name)
 	}
 
 	return true;
-}
-
-// Getting the name of the directory where the EXE file is in
-void Win32GetExeDirW(wchar_t *name, UINT size)
-{
-	wchar_t exe_path[MAX_SIZE];
-	wchar_t exe_dir[MAX_SIZE];
-	// Validate arguments
-	if (name == NULL)
-	{
-		return;
-	}
-
-	// Get the EXE file name
-	GetModuleFileNameW(NULL, exe_path, sizeof(exe_path));
-
-	// Get the directory name
-	Win32GetDirFromPathW(exe_dir, sizeof(exe_dir), exe_path);
-
-	UniStrCpy(name, size, exe_dir);
-}
-void Win32GetExeDir(char *name, UINT size)
-{
-	char exe_path[MAX_SIZE];
-	char exe_dir[MAX_SIZE];
-	// Validate arguments
-	if (name == NULL)
-	{
-		return;
-	}
-
-	// Get the EXE file name
-	GetModuleFileName(NULL, exe_path, sizeof(exe_path));
-
-	// Get the directory name
-	Win32GetDirFromPath(exe_dir, sizeof(exe_dir), exe_path);
-
-	StrCpy(name, size, exe_dir);
 }
 
 // Remove the '\' at the end

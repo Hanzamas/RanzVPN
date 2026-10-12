@@ -708,29 +708,6 @@ static const HTTP_MIME_TYPE http_mime_types[] =
 	{".zaz", "application/vnd.zzazz.deck+xml"},
 };
 
-// Detect HTTP MIME type from filename
-char *GetMimeTypeFromFileName(char *filename)
-{
-	UINT i;
-	const UINT num = sizeof(http_mime_types) / sizeof(HTTP_MIME_TYPE);
-	if (filename == NULL)
-	{
-		return NULL;
-	}
-
-	for (i = 0; i < num; ++i)
-	{
-		const HTTP_MIME_TYPE *a = &http_mime_types[i];
-
-		if (EndWith(filename, a->Extension))
-		{
-			return a->MimeType;
-		}
-	}
-
-	return NULL;
-}
-
 // Generate the date and time string for the HTTP header
 void GetHttpDateStr(char *str, UINT size, UINT64 t)
 {

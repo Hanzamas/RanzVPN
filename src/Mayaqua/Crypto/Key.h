@@ -25,10 +25,8 @@ UINT CryptoKeyTypeSize(const CRYPTO_KEY_TYPE type);
 CRYPTO_KEY_RAW *CryptoKeyRawNew(const void *data, const UINT size, const CRYPTO_KEY_TYPE type);
 void CryptoKeyRawFree(CRYPTO_KEY_RAW *key);
 
-CRYPTO_KEY_RAW *CryptoKeyRawPublic(const CRYPTO_KEY_RAW *private);
 void *CryptoKeyRawToOpaque(const CRYPTO_KEY_RAW *key, const bool public);
 
-void *CryptoKeyOpaqueNew(const CRYPTO_KEY_TYPE type);
 void CryptoKeyOpaqueFree(void *key);
 
 bool CryptoKeyOpaqueToRaw(const void *opaque, CRYPTO_KEY_RAW **private, CRYPTO_KEY_RAW **public);

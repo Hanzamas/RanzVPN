@@ -687,71 +687,6 @@ UINT ChangePasswordAccept(CONNECTION *c, PACK *p)
 	return ret;
 }
 
-// Change the password
-UINT ChangePassword(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, char *username, char *old_pass, char *new_pass)
-{
-	UINT ret = ERR_NO_ERROR;
-	UCHAR old_password[SHA1_SIZE];
-	UCHAR secure_old_password[SHA1_SIZE];
-	UCHAR new_password[SHA1_SIZE];
-	UCHAR new_password_ntlm[MD5_SIZE];
-	SOCK *sock;
-	SESSION *s;
-	// Validate arguments
-	if (cedar == NULL || o == NULL || hubname == NULL || username == NULL || old_pass == NULL || new_pass == NULL)
-	{
-		return ERR_INTERNAL_ERROR;
-	}
-
-
-	// Create a session
-	s = NewRpcSessionEx(cedar, o, &ret, NULL);
-
-	if (s != NULL)
-	{
-		PACK *p = NewPack();
-
-		sock = s->Connection->FirstSock;
-
-		HashPassword(old_password, username, old_pass);
-		SecurePassword(secure_old_password, old_password, s->Connection->Random);
-		HashPassword(new_password, username, new_pass);
-		GenerateNtPasswordHash(new_password_ntlm, new_pass);
-
-		PackAddClientVersion(p, s->Connection);
-
-		PackAddStr(p, "method", "password");
-		PackAddStr(p, "hubname", hubname);
-		PackAddStr(p, "username", username);
-		PackAddData(p, "secure_old_password", secure_old_password, SHA1_SIZE);
-		PackAddData(p, "new_password", new_password, SHA1_SIZE);
-		PackAddData(p, "new_password_ntlm", new_password_ntlm, MD5_SIZE);
-
-		if (HttpClientSend(sock, p))
-		{
-			PACK *p = HttpClientRecv(sock);
-			if (p == NULL)
-			{
-				ret = ERR_DISCONNECTED;
-			}
-			else
-			{
-				ret = GetErrorFromPack(p);
-			}
-			FreePack(p);
-		}
-		else
-		{
-			ret = ERR_DISCONNECTED;
-		}
-		FreePack(p);
-
-		ReleaseSession(s);
-	}
-
-	return ret;
-}
-
 // Enumerate HUBs
 TOKEN_LIST *EnumHub(SESSION *s)
 {
@@ -3889,46 +3824,6 @@ bool ClientUploadAuth2(CONNECTION *c, SOCK *s)
 	return true;
 }
 
-// Send a NOOP
-void ClientUploadNoop(CONNECTION *c)
-{
-	PACK *p;
-	// Validate arguments
-	if (c == NULL)
-	{
-		return;
-	}
-
-	p = PackError(0);
-	PackAddInt(p, "noop", NOOP);
-	(void)HttpClientSend(c->FirstSock, p);
-	FreePack(p);
-
-	p = HttpClientRecv(c->FirstSock);
-	if (p != NULL)
-	{
-		FreePack(p);
-	}
-}
-
-void ServerUploadNoop(CONNECTION *c)
-{
-	PACK *p;
-	// Validate arguments
-	if (c == NULL)
-	{
-		return;
-	}
-
-	p = PackError(0);
-	PackAddInt(p, "noop", NOOP_IGNORE);
-	(void)HttpServerSend(c->FirstSock, p);
-	FreePack(p);
-
-	// Client can't re-respond to an HTTP "response" 
-	// so we don't wait for it on the server side
-}
-
 // Add client version information to the PACK
 void PackAddClientVersion(PACK *p, CONNECTION *c)
 {
@@ -4699,12 +4594,6 @@ SOCK *TcpConnectEx3(char *hostname, UINT port, UINT timeout, bool *cancel_flag, 
 	return BindTcpConnectEx3(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, hostname, port, timeout, cancel_flag, hWnd, ret_ip);
 }
 
-// Connect with TCP/IP
-SOCK *TcpIpConnectEx(char *hostname, UINT port, bool *cancel_flag, void *hWnd, IP *ret_ip)
-{
-	return BindTcpIpConnectEx(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, hostname, port, cancel_flag, hWnd, ret_ip);
-}
-
 // TCP connection function
 //SOCK* TcpConnectEx3(char* hostname, UINT port, UINT timeout, bool* cancel_flag, void* hWnd, IP* ret_ip)
 SOCK *BindTcpConnectEx3(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, IP *ret_ip)
@@ -4935,25 +4824,6 @@ PACK *PackLoginWithAnonymous(char *hubname, char *username)
 	PackAddStr(p, "hubname", hubname);
 	PackAddStr(p, "username", username);
 	PackAddInt(p, "authtype", CLIENT_AUTHTYPE_ANONYMOUS);
-
-	return p;
-}
-
-// Create a packet for external login
-PACK *PackLoginWithExternal(char *hubname, char *username)
-{
-	PACK *p;
-	// Validate arguments
-	if (hubname == NULL || username == NULL)
-	{
-		return NULL;
-	}
-
-	p = NewPack();
-	PackAddStr(p, "method", "login");
-	PackAddStr(p, "hubname", hubname);
-	PackAddStr(p, "username", username);
-	PackAddInt(p, "authtype", AUTHTYPE_EXTERNAL);
 
 	return p;
 }

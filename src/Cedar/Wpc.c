@@ -18,51 +18,7 @@
 #include "Mayaqua/Proxy.h"
 #include "Mayaqua/Str.h"
 
-// Get whether the proxy server is specified by a private IP
-bool IsProxyPrivateIp(INTERNET_SETTING *s)
-{
-	IP ip;
-	// Validate arguments
-	if (s == NULL)
-	{
-		return false;
-	}
-
-	if (s->ProxyType == PROXY_DIRECT)
-	{
-		return false;
-	}
-
-	if (GetIP(&ip, s->ProxyHostName) == false)
-	{
-		return false;
-	}
-
-	if (IsIPPrivate(&ip))
-	{
-		return true;
-	}
-
-	if (IsIPMyHost(&ip))
-	{
-		return true;
-	}
-
-	if (IsLocalHostIP(&ip))
-	{
-		return true;
-	}
-
-	return false;
-}
-
 // Call
-PACK *WpcCall(char *url, INTERNET_SETTING *setting, UINT timeout_connect, UINT timeout_comm,
-			  char *function_name, PACK *pack, X *cert, K *key, void *sha1_cert_hash)
-{
-	return WpcCallEx(url, setting, timeout_connect, timeout_comm, function_name, pack, cert, key,
-		sha1_cert_hash, NULL, 0, NULL, NULL);
-}
 PACK *WpcCallEx(char *url, INTERNET_SETTING *setting, UINT timeout_connect, UINT timeout_comm,
 				char *function_name, PACK *pack, X *cert, K *key, void *sha1_cert_hash, bool *cancel, UINT max_recv_size,
 				char *additional_header_name, char *additional_header_value)
@@ -135,19 +91,6 @@ PACK *WpcCallEx2(char *url, INTERNET_SETTING *setting, UINT timeout_connect, UIN
 	FreeX(packet.Cert);
 
 	return packet.Pack;
-}
-
-// Release the packet
-void WpcFreePacket(WPC_PACKET *packet)
-{
-	// Validate arguments
-	if (packet == NULL)
-	{
-		return;
-	}
-
-	FreePack(packet->Pack);
-	FreeX(packet->Cert);
 }
 
 // Parse the packet
@@ -500,16 +443,6 @@ void WpcAddDataEntry(BUF *b, char *name, void *data, UINT size)
 	WriteBuf(b, data, size);
 }
 
-// Get the empty INTERNET_SETTING
-INTERNET_SETTING *GetNullInternetSetting()
-{
-	static INTERNET_SETTING ret;
-
-	Zero(&ret, sizeof(ret));
-
-	return &ret;
-}
-
 // Socket connection
 SOCK *WpcSockConnect(WPC_CONNECT *param, UINT *error_code, UINT timeout)
 {
@@ -585,41 +518,8 @@ SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool 
 		return out.Sock;
 	}
 }
-SOCK *WpcSockConnect2(char *hostname, UINT port, INTERNET_SETTING *t, UINT *error_code, UINT timeout)
-{
-	// Validate arguments
-	INTERNET_SETTING t2;
-	WPC_CONNECT c;
-	if (t == NULL)
-	{
-		Zero(&t2, sizeof(t2));
-
-		t = &t2;
-	}
-
-	Zero(&c, sizeof(c));
-	StrCpy(c.HostName, sizeof(c.HostName), hostname);
-	c.Port = port;
-	c.ProxyType = t->ProxyType;
-	StrCpy(c.ProxyHostName, sizeof(c.HostName), t->ProxyHostName);
-	c.ProxyPort = t->ProxyPort;
-	StrCpy(c.ProxyUsername, sizeof(c.ProxyUsername), t->ProxyUsername);
-	StrCpy(c.ProxyPassword, sizeof(c.ProxyPassword), t->ProxyPassword);
-	StrCpy(c.CustomHttpHeader, sizeof(c.CustomHttpHeader), t->CustomHttpHeader);
-
-	return WpcSockConnect(&c, error_code, timeout);
-}
 
 // Handle the HTTP request
-BUF *HttpRequest(URL_DATA *data, INTERNET_SETTING *setting,
-				 UINT timeout_connect, UINT timeout_comm,
-				 UINT *error_code, bool check_ssl_trust, char *post_data,
-				 WPC_RECV_CALLBACK *recv_callback, void *recv_callback_param, void *sha1_cert_hash)
-{
-	return HttpRequestEx(data, setting, timeout_connect, timeout_comm,
-		error_code, check_ssl_trust, post_data,
-		recv_callback, recv_callback_param, sha1_cert_hash, NULL, 0);
-}
 BUF *HttpRequestEx(URL_DATA *data, INTERNET_SETTING *setting,
 				   UINT timeout_connect, UINT timeout_comm,
 				   UINT *error_code, bool check_ssl_trust, char *post_data,
@@ -1037,79 +937,6 @@ bool GetProxyServerNameAndPortFromIeProxyRegStr(char *name, UINT name_size, UINT
 	FreeToken(t);
 
 	return ret;
-#endif	// OS_WIN32
-}
-
-// Get the internet connection settings of the system
-void GetSystemInternetSetting(INTERNET_SETTING *setting)
-{
-#ifdef	OS_WIN32
-	bool use_proxy;
-	// Validate arguments
-	if (setting == NULL)
-	{
-		return;
-	}
-
-	Zero(setting, sizeof(INTERNET_SETTING));
-
-	use_proxy = MsRegReadInt(REG_CURRENT_USER,
-		"Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings",
-		"ProxyEnable");
-
-	if (use_proxy)
-	{
-		char *str = MsRegReadStr(REG_CURRENT_USER,
-			"Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings",
-			"ProxyServer");
-		if (str != NULL)
-		{
-			char name[MAX_HOST_NAME_LEN + 1];
-			UINT port;
-
-			if (GetProxyServerNameAndPortFromIeProxyRegStr(name, sizeof(name),
-				&port, str, "https"))
-			{
-				setting->ProxyType = PROXY_HTTP;
-				StrCpy(setting->ProxyHostName, sizeof(setting->ProxyHostName), name);
-				setting->ProxyPort = port;
-			}
-			else if (GetProxyServerNameAndPortFromIeProxyRegStr(name, sizeof(name),
-				&port, str, "http"))
-			{
-				setting->ProxyType = PROXY_HTTP;
-				StrCpy(setting->ProxyHostName, sizeof(setting->ProxyHostName), name);
-				setting->ProxyPort = port;
-			}
-			else if (GetProxyServerNameAndPortFromIeProxyRegStr(name, sizeof(name),
-				&port, str, "socks"))
-			{
-				setting->ProxyType = PROXY_SOCKS;
-				StrCpy(setting->ProxyHostName, sizeof(setting->ProxyHostName), name);
-				setting->ProxyPort = port;
-			}
-			else
-			{
-				if (SearchStrEx(str, "=", 0, false) == INFINITE)
-				{
-					char *host;
-					UINT port;
-					if (ParseHostPort(str, &host, &port, 0))
-					{
-						if (port != 0)
-						{
-							setting->ProxyType = PROXY_HTTP;
-							StrCpy(setting->ProxyHostName, sizeof(setting->ProxyHostName), host);
-							setting->ProxyPort = port;
-						}
-						Free(host);
-					}
-				}
-			}
-
-			Free(str);
-		}
-	}
 #endif	// OS_WIN32
 }
 

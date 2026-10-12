@@ -389,9 +389,6 @@ bool IsAdminPackSupportedServerProduct(char *name);
 void SiInitHubCreateHistory(SERVER *s);
 void SiFreeHubCreateHistory(SERVER *s);
 void SiDeleteOldHubCreateHistory(SERVER *s);
-void SiAddHubCreateHistory(SERVER *s, char *name);
-void SiDelHubCreateHistory(SERVER *s, char *name);
-bool SiIsHubRegistedOnCreateHistory(SERVER *s, char *name);
 
 bool SiTooManyUserObjectsInServer(SERVER *s, bool oneMore);
 

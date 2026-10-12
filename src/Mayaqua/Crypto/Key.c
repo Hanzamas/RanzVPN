@@ -77,26 +77,6 @@ void CryptoKeyRawFree(CRYPTO_KEY_RAW *key)
 	Free(key);
 }
 
-CRYPTO_KEY_RAW *CryptoKeyRawPublic(const CRYPTO_KEY_RAW *private)
-{
-	if (private == NULL)
-	{
-		return NULL;
-	}
-
-	void *opaque = CryptoKeyRawToOpaque(private, false);
-	if (opaque == NULL)
-	{
-		return NULL;
-	}
-
-	CRYPTO_KEY_RAW *public = NULL;
-	CryptoKeyOpaqueToRaw(opaque, NULL, &public);
-	CryptoKeyOpaqueFree(opaque);
-
-	return public;
-}
-
 void *CryptoKeyRawToOpaque(const CRYPTO_KEY_RAW *key, const bool public)
 {
 	if (key == NULL)
@@ -114,34 +94,6 @@ void *CryptoKeyRawToOpaque(const CRYPTO_KEY_RAW *key, const bool public)
 	{
 		return EVP_PKEY_new_raw_private_key(id, NULL, key->Data, key->Size);
 	}
-}
-
-void *CryptoKeyOpaqueNew(const CRYPTO_KEY_TYPE type)
-{
-	EVP_PKEY_CTX *ctx = EVP_PKEY_CTX_new_id(CryptoKeyTypeToID(type), NULL);
-	if (ctx == NULL)
-	{
-		Debug("CryptoKeyOpaqueNew(): EVP_PKEY_CTX_new_id() returned NULL!\n");
-		return false;
-	}
-
-	EVP_PKEY *key = NULL;
-
-	int ret = EVP_PKEY_keygen_init(ctx);
-	if (ret != 1)
-	{
-		Debug("CryptoKeyOpaqueNew(): EVP_PKEY_keygen_init() returned %d!\n", ret);
-		goto FINAL;
-	}
-
-	ret = EVP_PKEY_keygen(ctx, &key);
-	if (ret != 1)
-	{
-		Debug("CryptoKeyOpaqueNew(): EVP_PKEY_keygen() returned %d!\n", ret);
-	}
-FINAL:
-	EVP_PKEY_CTX_free(ctx);
-	return key;
 }
 
 void CryptoKeyOpaqueFree(void *key)

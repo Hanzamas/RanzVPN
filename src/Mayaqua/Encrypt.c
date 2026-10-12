@@ -172,33 +172,6 @@ void Enc_tls1_P_hash(const EVP_MD *md, const unsigned char *sec, int sec_len,
 	Zero (A1, sizeof(A1));
 }
 
-void Enc_tls1_PRF(unsigned char *label, int label_len, const unsigned char *sec,
-				  int slen, unsigned char *out1, int olen)
-{
-	const EVP_MD *md5 = EVP_md5();
-	const EVP_MD *sha1 = EVP_sha1();
-	int len,i;
-	const unsigned char *S1,*S2;
-	unsigned char *out2;
-
-	out2 = (unsigned char *) Malloc (olen);
-
-	len=slen/2;
-	S1=sec;
-	S2= &(sec[len]);
-	len+=(slen&1); /* add for odd, make longer */
-
-
-	Enc_tls1_P_hash(md5 ,S1,len,label,label_len,out1,olen);
-	Enc_tls1_P_hash(sha1,S2,len,label,label_len,out2,olen);
-
-	for (i=0; i<olen; i++)
-		out1[i]^=out2[i];
-
-	memset (out2, 0, olen);
-	Free(out2);
-}
-
 // MD4 specific hash function
 void HashMd4(void *dst, void *src, UINT size)
 {
@@ -267,39 +240,6 @@ void Sha1(void *dst, void *src, UINT size)
 void Sha2_256(void *dst, void *src, UINT size)
 {
 	Sha(SHA2_256, dst, src, size);
-}
-
-void Sha2_384(void *dst, void *src, UINT size)
-{
-	Sha(SHA2_384, dst, src, size);
-}
-
-void Sha2_512(void *dst, void *src, UINT size)
-{
-	Sha(SHA2_512, dst, src, size);
-}
-
-void HashSha1(void *dst, void *src, UINT size)
-{
-	Sha1(dst, src, size);
-}
-
-// Calculation of HMAC (MD5)
-UINT HMacMd5(void *dst, void *key, UINT key_size, void *src, UINT src_size)
-{
-	return Internal_HMac(EVP_md5(), dst, key, key_size, src, src_size);
-}
-
-// Calculation of HMAC (SHA-1)
-UINT HMacSha1(void *dst, void *key, UINT key_size, void *src, UINT src_size)
-{
-	return Internal_HMac(EVP_sha1(), dst, key, key_size, src, src_size);
-}
-
-// Creating a message digest object
-MD *NewMd(char *name)
-{
-	return NewMdEx(name, true);
 }
 
 MD *NewMdEx(char *name, bool hmac)
@@ -528,43 +468,6 @@ void SetCipherKey(CIPHER *c, void *key, bool enc)
 	}
 
 	c->Encrypt = enc;
-}
-
-// Process encryption / decryption
-UINT CipherProcess(CIPHER *c, void *iv, void *dest, void *src, UINT size)
-{
-	int r = size;
-	int r2 = 0;
-	if (c != NULL && c->IsNullCipher)
-	{
-		if (dest != src)
-		{
-			Copy(dest, src, size);
-		}
-		return size;
-	}
-	// Validate arguments
-	if (c == NULL || iv == NULL || dest == NULL || src == NULL || size == 0)
-	{
-		return 0;
-	}
-
-	if (EVP_CipherInit(c->Ctx, NULL, NULL, iv, c->Encrypt) == 0)
-	{
-		return 0;
-	}
-
-	if (EVP_CipherUpdate(c->Ctx, dest, &r, src, size) == 0)
-	{
-		return 0;
-	}
-
-	if (EVP_CipherFinal(c->Ctx, ((UCHAR *)dest) + (UINT)r, &r2) == 0)
-	{
-		return 0;
-	}
-
-	return r + r2;
 }
 
 // Process encryption / decryption (AEAD)
@@ -879,19 +782,6 @@ void GetPrintNameFromX(wchar_t *str, UINT size, X *x)
 
 	GetPrintNameFromName(str, size, x->subject_name);
 }
-void GetPrintNameFromXA(char *str, UINT size, X *x)
-{
-	wchar_t tmp[MAX_SIZE];
-	// Validate arguments
-	if (str == NULL || x == NULL)
-	{
-		return;
-	}
-
-	GetPrintNameFromX(tmp, sizeof(tmp), x);
-
-	UniToStr(str, size, tmp);
-}
 
 // Get the display name from NAME
 void GetPrintNameFromName(wchar_t *str, UINT size, NAME *name)
@@ -1139,58 +1029,6 @@ LIST *CloneXList(LIST *chain)
 	return ret;
 }
 
-// Generate a P12
-P12 *NewP12(X *x, K *k, char *password)
-{
-	PKCS12 *pkcs12;
-	P12 *p12;
-	// Validate arguments
-	if (x == NULL || k == NULL)
-	{
-		return false;
-	}
-	if (password && StrLen(password) == 0)
-	{
-		password = NULL;
-	}
-
-	Lock(openssl_lock);
-	{
-		pkcs12 = PKCS12_create(password, NULL, k->pkey, x->x509, NULL, 0, 0, 0, 0, 0);
-		if (pkcs12 == NULL)
-		{
-			Unlock(openssl_lock);
-			return NULL;
-		}
-	}
-	Unlock(openssl_lock);
-
-	p12 = PKCS12ToP12(pkcs12);
-
-	return p12;
-}
-
-// Check whether the P12 is encrypted
-bool IsEncryptedP12(P12 *p12)
-{
-	X *x;
-	K *k;
-	// Validate arguments
-	if (p12 == NULL)
-	{
-		return false;
-	}
-
-	if (ParseP12(p12, &x, &k, NULL) == true)
-	{
-		FreeX(x);
-		FreeK(k);
-		return false;
-	}
-
-	return true;
-}
-
 // Extract the X and the K from the P12
 bool ParseP12(P12 *p12, X **x, K **k, char *password)
 {
@@ -1290,46 +1128,6 @@ bool ParseP12Ex(P12 *p12, X **x, K **k, LIST **cc, char *password)
 	return true;
 }
 
-// Write the P12 to a file
-bool P12ToFileW(P12 *p12, wchar_t *filename)
-{
-	BUF *b;
-	// Validate arguments
-	if (p12 == NULL || filename == NULL)
-	{
-		return false;
-	}
-
-	b = P12ToBuf(p12);
-	if (b == NULL)
-	{
-		return false;
-	}
-
-	if (DumpBufW(b, filename) == false)
-	{
-		FreeBuf(b);
-		return false;
-	}
-
-	FreeBuf(b);
-
-	return true;
-}
-
-// Release of P12
-void FreeP12(P12 *p12)
-{
-	// Validate arguments
-	if (p12 == NULL)
-	{
-		return;
-	}
-
-	FreePKCS12(p12->pkcs12);
-	Free(p12);
-}
-
 // Release of PKCS12
 void FreePKCS12(PKCS12 *pkcs12)
 {
@@ -1385,29 +1183,6 @@ BIO *P12ToBio(P12 *p12)
 	Unlock(openssl_lock);
 
 	return bio;
-}
-
-// Read the P12 from the BUF
-P12 *BufToP12(BUF *b)
-{
-	P12 *p12;
-	BIO *bio;
-	// Validate arguments
-	if (b == NULL)
-	{
-		return NULL;
-	}
-
-	bio = BufToBio(b);
-	if (bio == NULL)
-	{
-		return NULL;
-	}
-
-	p12 = BioToP12(bio);
-	FreeBio(bio);
-
-	return p12;
 }
 
 // Read the P12 from the BIO
@@ -2996,15 +2771,6 @@ bool CheckXandK(X *x, K *k)
 }
 
 // Read a X from the file
-X *FileToX(char *filename)
-{
-	wchar_t *filename_w = CopyStrToUni(filename);
-	X *ret = FileToXW(filename_w);
-
-	Free(filename_w);
-
-	return ret;
-}
 X *FileToXW(wchar_t *filename)
 {
 	bool text;
@@ -3026,15 +2792,6 @@ X *FileToXW(wchar_t *filename)
 }
 
 // Write the X to a file
-bool XToFile(X *x, char *filename, bool text)
-{
-	wchar_t *filename_w = CopyStrToUni(filename);
-	bool ret = XToFileW(x, filename_w, text);
-
-	Free(filename_w);
-
-	return ret;
-}
 bool XToFileW(X *x, wchar_t *filename, bool text)
 {
 	BUF *b;
@@ -4117,26 +3874,6 @@ void InitCryptLibrary()
 	openssl_inited = true;
 }
 
-// Hash with the SHA-1 and convert it to UINT
-UINT HashToUINT(void *data, UINT size)
-{
-	UCHAR hash[SHA1_SIZE];
-	UINT u;
-	// Validate arguments
-	if (data == NULL && size != 0)
-	{
-		return 0;
-	}
-
-	Sha1(hash, data, size);
-
-	Copy(&u, hash, sizeof(UINT));
-
-	u = Endian32(u);
-
-	return u;
-}
-
 // Creating a new CRYPT object
 CRYPT *NewCrypt(void *key, UINT size)
 {
@@ -4167,64 +3904,6 @@ void FreeCrypt(CRYPT *c)
 void Encrypt(CRYPT *c, void *dst, void *src, UINT size)
 {
 	RC4(c->Rc4Key, size, src, dst);
-}
-
-// 3DES encryption
-void Des3Encrypt2(void *dest, void *src, UINT size, DES_KEY_VALUE *k1, DES_KEY_VALUE *k2, DES_KEY_VALUE *k3, void *ivec)
-{
-	UCHAR ivec_copy[DES_IV_SIZE];
-	// Validate arguments
-	if (dest == NULL || src == NULL || size == 0 || k1 == NULL || k2 == NULL || k3 == NULL || ivec == NULL)
-	{
-		return;
-	}
-
-	Copy(ivec_copy, ivec, DES_IV_SIZE);
-
-	DES_ede3_cbc_encrypt(src, dest, size,
-		k1->KeySchedule,
-		k2->KeySchedule,
-		k3->KeySchedule,
-		(DES_cblock *)ivec_copy,
-		1);
-}
-
-// DES encryption
-void DesEncrypt(void *dest, void *src, UINT size, DES_KEY_VALUE *k, void *ivec)
-{
-	UCHAR ivec_copy[DES_IV_SIZE];
-	// Validate arguments
-	if (dest == NULL || src == NULL || size == 0 || k == NULL || ivec == NULL)
-	{
-		return;
-	}
-
-	Copy(ivec_copy, ivec, DES_IV_SIZE);
-
-	DES_cbc_encrypt(src, dest, size,
-		k->KeySchedule,
-		(DES_cblock *)ivec_copy,
-		1);
-}
-
-// 3DES decryption
-void Des3Decrypt2(void *dest, void *src, UINT size, DES_KEY_VALUE *k1, DES_KEY_VALUE *k2, DES_KEY_VALUE *k3, void *ivec)
-{
-	UCHAR ivec_copy[DES_IV_SIZE];
-	// Validate arguments
-	if (dest == NULL || src == NULL || size == 0 || k1 == NULL || k2 == NULL || k3 == NULL || ivec == NULL)
-	{
-		return;
-	}
-
-	Copy(ivec_copy, ivec, DES_IV_SIZE);
-
-	DES_ede3_cbc_encrypt(src, dest, size,
-		k1->KeySchedule,
-		k2->KeySchedule,
-		k3->KeySchedule,
-		(DES_cblock *)ivec_copy,
-		0);
 }
 
 // DES-ECB encryption
@@ -4259,247 +3938,6 @@ void DesEcbEncrypt(void *dst, void *src, void *key_7bytes)
 	DES_ecb_encrypt(src, dst, &ks, 1);
 }
 
-// DES decryption
-void DesDecrypt(void *dest, void *src, UINT size, DES_KEY_VALUE *k, void *ivec)
-{
-	UCHAR ivec_copy[DES_IV_SIZE];
-	// Validate arguments
-	if (dest == NULL || src == NULL || size == 0 || k == NULL || ivec == NULL)
-	{
-		return;
-	}
-
-	Copy(ivec_copy, ivec, DES_IV_SIZE);
-
-	DES_cbc_encrypt(src, dest, size,
-		k->KeySchedule,
-		(DES_cblock *)ivec_copy,
-		0);
-}
-
-// Create a new DES key element
-DES_KEY_VALUE *DesNewKeyValue(void *value)
-{
-	DES_KEY_VALUE *v;
-	// Validate arguments
-	if (value == NULL)
-	{
-		return NULL;
-	}
-
-	v = ZeroMalloc(sizeof(DES_KEY_VALUE));
-
-	Copy(v->KeyValue, value, DES_KEY_SIZE);
-
-	v->KeySchedule = ZeroMalloc(sizeof(DES_key_schedule));
-
-	DES_set_key_unchecked(value, v->KeySchedule);
-
-	return v;
-}
-
-// Release of DES key element
-void DesFreeKeyValue(DES_KEY_VALUE *v)
-{
-	// Validate arguments
-	if (v == NULL)
-	{
-		return;
-	}
-
-	Free(v->KeySchedule);
-	Free(v);
-}
-
-// Create a new AES key
-AES_KEY_VALUE *AesNewKey(void *data, UINT size)
-{
-	AES_KEY_VALUE *k;
-	// Validate arguments
-	if (data == NULL || (!(size == 16 || size == 24 || size == 32)))
-	{
-		return NULL;
-	}
-
-	k = ZeroMalloc(sizeof(AES_KEY_VALUE));
-
-	k->EncryptKey = ZeroMalloc(sizeof(AES_KEY));
-	k->DecryptKey = ZeroMalloc(sizeof(AES_KEY));
-
-	k->KeySize = size;
-	Copy(k->KeyValue, data, size);
-
-	AES_set_encrypt_key(data, size * 8, k->EncryptKey);
-	AES_set_decrypt_key(data, size * 8, k->DecryptKey);
-
-	return k;
-}
-
-// Release the AES key
-void AesFreeKey(AES_KEY_VALUE *k)
-{
-	// Validate arguments
-	if (k == NULL)
-	{
-		return;
-	}
-
-	Free(k->EncryptKey);
-	Free(k->DecryptKey);
-
-	Free(k);
-}
-
-// AES encryption
-void AesEncrypt(void *dest, void *src, UINT size, AES_KEY_VALUE *k, void *ivec)
-{
-	EVP_CIPHER_CTX *ctx = NULL;
-	int dest_len = 0;
-	int len = 0;
-	int ret = 0;
-
-	// Validate arguments
-	if (dest == NULL || src == NULL || size == 0 || k == NULL || ivec == NULL)
-	{
-		return;
-	}
-
-	// Create and initialize the context
-	ctx = EVP_CIPHER_CTX_new();
-
-	if (!ctx)
-	{
-		ERR_print_errors_fp(stderr);
-		return;
-	}
-
-	// Disable padding, as it's handled by IkeEncryptWithPadding()
-	EVP_CIPHER_CTX_set_padding(ctx, false);
-
-	// Initialize the encryption operation
-	switch (k->KeySize)
-	{
-	case 16:
-		ret = EVP_EncryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, k->KeyValue, ivec);
-		break;
-
-	case 24:
-		ret = EVP_EncryptInit_ex(ctx, EVP_aes_192_cbc(), NULL, k->KeyValue, ivec);
-		break;
-
-	case 32:
-		ret = EVP_EncryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, k->KeyValue, ivec);
-		break;
-	}
-
-	if (ret != 1)
-	{
-		ERR_print_errors_fp(stderr);
-		EVP_CIPHER_CTX_free(ctx);
-		return;
-	}
-
-	// Provide the message to be encrypted and obtain the cipher output
-	ret = EVP_EncryptUpdate(ctx, dest, &dest_len, src, size);
-
-	if (ret != 1)
-	{
-		ERR_print_errors_fp(stderr);
-		EVP_CIPHER_CTX_free(ctx);
-		return;
-	}
-
-	// Finalize the encryption
-	ret = EVP_EncryptFinal_ex(ctx, (unsigned char *) dest + dest_len, &len);
-
-	if (ret != 1)
-	{
-		ERR_print_errors_fp(stderr);
-		EVP_CIPHER_CTX_free(ctx);
-		return;
-	}
-
-	dest_len += len;
-
-	// Clean up
-	EVP_CIPHER_CTX_free(ctx);
-}
-
-// AES decryption
-void AesDecrypt(void *dest, void *src, UINT size, AES_KEY_VALUE *k, void *ivec)
-{
-	EVP_CIPHER_CTX *ctx = NULL;
-	int dest_len = 0;
-	int len = 0;
-	int ret = 0;
-
-	// Validate arguments
-	if (dest == NULL || src == NULL || size == 0 || k == NULL || ivec == NULL)
-	{
-		return;
-	}
-
-	// Create and initialize the context
-	ctx = EVP_CIPHER_CTX_new();
-
-	if (!ctx)
-	{
-		ERR_print_errors_fp(stderr);
-		return;
-	}
-
-	// Disable padding, as it's handled by IkeEncryptWithPadding()
-	EVP_CIPHER_CTX_set_padding(ctx, false);
-
-	// Initialize the decryption operation
-	switch (k->KeySize)
-	{
-	case 16:
-		ret = EVP_DecryptInit_ex(ctx, EVP_aes_128_cbc(), NULL, k->KeyValue, ivec);
-		break;
-
-	case 24:
-		ret = EVP_DecryptInit_ex(ctx, EVP_aes_192_cbc(), NULL, k->KeyValue, ivec);
-		break;
-
-	case 32:
-		ret = EVP_DecryptInit_ex(ctx, EVP_aes_256_cbc(), NULL, k->KeyValue, ivec);
-		break;
-	}
-
-	if (ret != 1)
-	{
-		ERR_print_errors_fp(stderr);
-		EVP_CIPHER_CTX_free(ctx);
-		return;
-	}
-
-	// Provide the message to be decrypted and obtain the plaintext output
-	ret = EVP_DecryptUpdate(ctx, dest, &dest_len, src, size);
-
-	if (ret != 1)
-	{
-		ERR_print_errors_fp(stderr);
-		EVP_CIPHER_CTX_free(ctx);
-		return;
-	}
-
-	// Finalize the decryption
-	ret = EVP_DecryptFinal_ex(ctx, (unsigned char *) dest + dest_len, &len);
-
-	if (ret != 1)
-	{
-		ERR_print_errors_fp(stderr);
-		EVP_CIPHER_CTX_free(ctx);
-		return;
-	}
-
-	dest_len += len;
-
-	// Clean up
-	EVP_CIPHER_CTX_free(ctx);
-}
-
 // Determine whether the AES-NI instruction set is supported by the CPU
 bool IsAesNiSupported()
 {
@@ -4532,46 +3970,6 @@ bool IsAesNiSupported()
 #endif // _MSC_VER
 
 	return supported;
-}
-
-// DH calculation
-bool DhCompute(DH_CTX *dh, void *dst_priv_key, void *src_pub_key, UINT key_size)
-{
-	int i;
-	BIGNUM *bn;
-	bool ret = false;
-	// Validate arguments
-	if (dh == NULL || dst_priv_key == NULL || src_pub_key == NULL)
-	{
-		return false;
-	}
-	if (key_size > dh->Size)
-	{
-		return false;
-	}
-
-	bn = BinToBigNum(src_pub_key, key_size);
-
-	i = DH_compute_key(dst_priv_key, bn, dh->dh);
-
-	if (i == dh->Size)
-	{
-		ret = true;
-	}
-	else if ((UINT)i < dh->Size)
-	{
-		UCHAR *dst2 = Clone(dst_priv_key, i);
-
-		Zero(dst_priv_key, dh->Size);
-
-		Copy(((UCHAR *)dst_priv_key) + (dh->Size - i), dst2, i);
-
-		ret = true;
-	}
-
-	BN_free(bn);
-
-	return ret;
 }
 
 // Creating a DH 2048bit

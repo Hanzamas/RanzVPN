@@ -18,7 +18,6 @@ extern "C"
 #endif
 
 	bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout);
-	bool UninstallNdisProtocolDriver(wchar_t *id, UINT lock_timeout);
 
 #if	defined(__cplusplus)
 }

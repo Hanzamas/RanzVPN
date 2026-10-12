@@ -145,21 +145,3 @@ bool LiStrToKeyBit(UCHAR *keybit, char *keystr)
 	return true;
 }
 
-// Determine whether the string is a license key
-bool LiIsLicenseKey(char *str)
-{
-	UCHAR keybit[23];
-	// Validate arguments
-	if (str == NULL)
-	{
-		return false;
-	}
-
-	if (LiStrToKeyBit(keybit, str) == false)
-	{
-		return false;
-	}
-
-	return true;
-}
-
