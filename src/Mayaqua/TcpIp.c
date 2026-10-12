@@ -3143,33 +3143,6 @@ void FreePacketDHCPv4(PKT *p)
 }
 
 
-// Confirm the checksum of the IP header
-bool IpCheckChecksum(IPV4_HEADER *ip)
-{
-	UINT header_size;
-	USHORT checksum_original, checksum_calc;
-	// Validate arguments
-	if (ip == NULL)
-	{
-		return false;
-	}
-
-	header_size = IPV4_GET_HEADER_LEN(ip) * 4;
-	checksum_original = ip->Checksum;
-	ip->Checksum = 0;
-	checksum_calc = IpChecksum(ip, header_size);
-	ip->Checksum = checksum_original;
-
-	if (checksum_original == checksum_calc)
-	{
-		return true;
-	}
-	else
-	{
-		return false;
-	}
-}
-
 // Calculate the checksum
 USHORT IpChecksum(void *buf, UINT size)
 {

@@ -9,7 +9,6 @@
 
 #include "Connection.h"
 #include "Hub.h"
-#include "Layer3.h"
 #include "MsChapV2.h"
 #include "Protocol.h"
 
@@ -279,11 +278,6 @@ bool IsUserName(char *name)
 	}
 
 	if (StrCmpi(name, LINK_USER_NAME) == 0)
-	{
-		return false;
-	}
-
-	if (StartWith(name, L3_USERNAME))
 	{
 		return false;
 	}

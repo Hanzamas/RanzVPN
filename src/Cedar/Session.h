@@ -79,7 +79,6 @@ struct SESSION
 	bool LinkModeServer;			// Link mode server
 	bool BridgeMode;				// Bridge session
 	bool BridgeIsEthLoopbackBlock;	// Loopback is disabled on the Ethernet level
-	bool L3SwitchMode;				// Layer-3 switch mode
 	THREAD *Thread;					// Management thread
 	CONNECTION *Connection;			// Connection
 	char ClientIP[64];				// Client IP
@@ -113,7 +112,6 @@ struct SESSION
 	UINT64 LastIncrementTraffic;	// Last time that updated the traffic data of the user
 	bool AdministratorMode;			// Administrator mode
 	LIST *CancelList;				// Cancellation list
-	L3IF *L3If;						// Layer-3 interface
 	IP DefaultDns;					// IP address of the default DNS server
 	bool IPv6Session;				// IPv6 session (Physical communication is IPv6)
 	UINT VLanId;					// VLAN ID

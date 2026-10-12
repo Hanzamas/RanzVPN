@@ -170,7 +170,7 @@ void SessionMain(SESSION *s)
 		}
 
 
-		if (is_server_session && s->LinkModeServer == false && s->BridgeMode == false && s->L3SwitchMode == false)
+		if (is_server_session && s->LinkModeServer == false && s->BridgeMode == false)
 		{
 			if (s->Hub != NULL && s->Hub->ForceDisableComm)
 			{
@@ -437,7 +437,7 @@ void SessionMain(SESSION *s)
 			}
 		}
 
-		if (s->LinkModeServer == false && s->BridgeMode == false && s->L3SwitchMode == false)
+		if (s->LinkModeServer == false && s->BridgeMode == false)
 		{
 			bool timeouted = false;
 

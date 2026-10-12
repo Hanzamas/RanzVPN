@@ -20,7 +20,6 @@
 #define	CEDAR_BETA_SERVER			"Ranz VPN Server Pre Release"
 #define	CEDAR_MANAGER_STR			"Ranz VPN Server Manager"
 #define	CEDAR_CUI_STR				"Ranz VPN Command-Line Admin Tool"
-#define CEDAR_ELOG					"Ranz EtherLogger"
 #define	CEDAR_CLIENT_STR			"Ranz VPN Client"
 #define CEDAR_CLIENT_MANAGER_STR	"Ranz VPN Client Connection Manager"
 #define	CEDAR_SERVER_LINK_STR		"Ranz VPN Server (Cascade Mode)"

@@ -79,10 +79,12 @@ jobs:
         dotnet run -- ../../src/bin/hamcore
         if ($LASTEXITCODE -ne 0) { throw "stbchecker reported differences between the string tables (exit code $LASTEXITCODE)" }
     - name: Test
+      timeout-minutes: 10
       shell: powershell
       run: |
         . .github/scripts/vpntest.ps1
     - name: Self-check
+      timeout-minutes: 10
       shell: pwsh
       run: |
         $out = & build\vpncmd.exe /TOOLS /CMD Check 2>&1 | Out-String

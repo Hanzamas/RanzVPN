@@ -473,7 +473,6 @@ struct RPC_ENUM_SESSION_ITEM
 	UINT64 PacketNum;								// Number of packets
 	bool LinkMode;									// Link mode
 	bool BridgeMode;								// Bridge mode
-	bool Layer3Mode;								// Layer 3 mode
 	bool Client_BridgeMode;							// Client is bridge mode
 	bool Client_MonitorMode;						// Client is monitoring mode
 	UINT VLanId;									// VLAN ID
@@ -590,62 +589,6 @@ struct RPC_ADMIN_OPTION
 	char HubName[MAX_HUBNAME_LEN + 1];		// Virtual HUB name
 	UINT NumItem;							// Count
 	ADMIN_OPTION *Items;					// Data
-};
-
-// Layer-3 switch
-struct RPC_L3SW
-{
-	char Name[MAX_HUBNAME_LEN + 1];			// L3 switch name
-};
-
-// Layer-3 switch enumeration
-struct RPC_ENUM_L3SW_ITEM
-{
-	char Name[MAX_HUBNAME_LEN + 1];			// Name
-	UINT NumInterfaces;						// Number of interfaces
-	UINT NumTables;							// Routing table number
-	bool Active;							// In operation
-	bool Online;							// Online
-};
-struct RPC_ENUM_L3SW
-{
-	UINT NumItem;
-	RPC_ENUM_L3SW_ITEM *Items;
-};
-
-// Layer-3 interface
-struct RPC_L3IF
-{
-	char Name[MAX_HUBNAME_LEN + 1];			// L3 switch name
-	char HubName[MAX_HUBNAME_LEN + 1];		// Virtual HUB name
-	UINT IpAddress;							// IP address
-	UINT SubnetMask;						// Subnet mask
-};
-
-// Layer-3 interface enumeration
-struct RPC_ENUM_L3IF
-{
-	char Name[MAX_HUBNAME_LEN + 1];			// L3 switch name
-	UINT NumItem;
-	RPC_L3IF *Items;
-};
-
-// Routing table
-struct RPC_L3TABLE
-{
-	char Name[MAX_HUBNAME_LEN + 1];			// L3 switch name
-	UINT NetworkAddress;					// Network address
-	UINT SubnetMask;						// Subnet mask
-	UINT GatewayAddress;					// Gateway address
-	UINT Metric;							// Metric
-};
-
-// Routing table enumeration
-struct RPC_ENUM_L3TABLE
-{
-	char Name[MAX_HUBNAME_LEN + 1];			// L3 switch name
-	UINT NumItem;
-	RPC_L3TABLE *Items;
 };
 
 // CRL entry
@@ -867,17 +810,6 @@ UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
 UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
 UINT StGetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
 UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
-UINT StAddL3Switch(ADMIN *a, RPC_L3SW *t);
-UINT StDelL3Switch(ADMIN *a, RPC_L3SW *t);
-UINT StEnumL3Switch(ADMIN *a, RPC_ENUM_L3SW *t);
-UINT StStartL3Switch(ADMIN *a, RPC_L3SW *t);
-UINT StStopL3Switch(ADMIN *a, RPC_L3SW *t);
-UINT StAddL3If(ADMIN *a, RPC_L3IF *t);
-UINT StDelL3If(ADMIN *a, RPC_L3IF *t);
-UINT StEnumL3If(ADMIN *a, RPC_ENUM_L3IF *t);
-UINT StAddL3Table(ADMIN *a, RPC_L3TABLE *t);
-UINT StDelL3Table(ADMIN *a, RPC_L3TABLE *t);
-UINT StEnumL3Table(ADMIN *a, RPC_ENUM_L3TABLE *t);
 UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t);
 UINT StAddCrl(ADMIN *a, RPC_CRL *t);
 UINT StDelCrl(ADMIN *a, RPC_CRL *t);
@@ -976,17 +908,6 @@ UINT ScGetHubAdminOptions(RPC *r, RPC_ADMIN_OPTION *t);
 UINT ScSetHubAdminOptions(RPC *r, RPC_ADMIN_OPTION *t);
 UINT ScGetHubExtOptions(RPC *r, RPC_ADMIN_OPTION *t);
 UINT ScSetHubExtOptions(RPC *r, RPC_ADMIN_OPTION *t);
-UINT ScAddL3Switch(RPC *r, RPC_L3SW *t);
-UINT ScDelL3Switch(RPC *r, RPC_L3SW *t);
-UINT ScEnumL3Switch(RPC *r, RPC_ENUM_L3SW *t);
-UINT ScStartL3Switch(RPC *r, RPC_L3SW *t);
-UINT ScStopL3Switch(RPC *r, RPC_L3SW *t);
-UINT ScAddL3If(RPC *r, RPC_L3IF *t);
-UINT ScDelL3If(RPC *r, RPC_L3IF *t);
-UINT ScEnumL3If(RPC *r, RPC_ENUM_L3IF *t);
-UINT ScAddL3Table(RPC *r, RPC_L3TABLE *t);
-UINT ScDelL3Table(RPC *r, RPC_L3TABLE *t);
-UINT ScEnumL3Table(RPC *r, RPC_ENUM_L3TABLE *t);
 UINT ScEnumCrl(RPC *r, RPC_ENUM_CRL *t);
 UINT ScAddCrl(RPC *r, RPC_CRL *t);
 UINT ScDelCrl(RPC *r, RPC_CRL *t);
@@ -1146,21 +1067,6 @@ void FreeRpcConfig(RPC_CONFIG *t);
 void InRpcAdminOption(RPC_ADMIN_OPTION *t, PACK *p);
 void OutRpcAdminOption(PACK *p, RPC_ADMIN_OPTION *t);
 void FreeRpcAdminOption(RPC_ADMIN_OPTION *t);
-void InRpcEnumL3Table(RPC_ENUM_L3TABLE *t, PACK *p);
-void OutRpcEnumL3Table(PACK *p, RPC_ENUM_L3TABLE *t);
-void FreeRpcEnumL3Table(RPC_ENUM_L3TABLE *t);
-void InRpcL3Table(RPC_L3TABLE *t, PACK *p);
-void OutRpcL3Table(PACK *p, RPC_L3TABLE *t);
-void InRpcEnumL3If(RPC_ENUM_L3IF *t, PACK *p);
-void OutRpcEnumL3If(PACK *p, RPC_ENUM_L3IF *t);
-void FreeRpcEnumL3If(RPC_ENUM_L3IF *t);
-void InRpcL3If(RPC_L3IF *t, PACK *p);
-void OutRpcL3If(PACK *p, RPC_L3IF *t);
-void InRpcL3Sw(RPC_L3SW *t, PACK *p);
-void OutRpcL3Sw(PACK *p, RPC_L3SW *t);
-void InRpcEnumL3Sw(RPC_ENUM_L3SW *t, PACK *p);
-void OutRpcEnumL3Sw(PACK *p, RPC_ENUM_L3SW *t);
-void FreeRpcEnumL3Sw(RPC_ENUM_L3SW *t);
 void InRpcCrl(RPC_CRL *t, PACK *p);
 void OutRpcCrl(PACK *p, RPC_CRL *t);
 void FreeRpcCrl(RPC_CRL *t);
