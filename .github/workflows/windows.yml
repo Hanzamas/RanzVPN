@@ -169,6 +169,18 @@ jobs:
         if errorlevel 1 exit /b 1
         cmake --build .
       shell: cmd
+    - name: ASan start-up diagnostics
+      shell: pwsh
+      timeout-minutes: 5
+      env:
+        ASAN_OPTIONS: windows_hook_rtl_allocators=1:verbosity=1
+      run: |
+        Get-ChildItem build -Filter *.dll | ForEach-Object { Write-Host "dll: $($_.Name)" }
+        Get-ChildItem build -Filter hamcore.se2 | ForEach-Object { Write-Host "hamcore: $($_.Length) bytes" }
+        $p = Start-Process -FilePath build\vpntest.exe -ArgumentList 'mschapv2' -NoNewWindow -Wait -PassThru -RedirectStandardOutput diag-out.txt -RedirectStandardError diag-err.txt
+        Write-Host "vpntest mschapv2 exit code: $($p.ExitCode) (0x$('{0:X8}' -f $p.ExitCode))"
+        Write-Host '--- stdout'; Get-Content diag-out.txt -ErrorAction SilentlyContinue | Select-Object -Last 40
+        Write-Host '--- stderr'; Get-Content diag-err.txt -ErrorAction SilentlyContinue | Select-Object -Last 60
     - name: vpntest smoke test under ASan
       shell: pwsh
       timeout-minutes: 10
