@@ -1,6 +1,6 @@
 # ADR-0012: Remove vpnclient from the slim fork, keep cascade
 
-**Status:** Accepted (2026-10-11). Tracked as ticket [Hanzamas/SoftEtherVPN#23](https://github.com/Hanzamas/SoftEtherVPN/issues/23); the spec in issue #1 is amended accordingly. (Earlier in the conversation this was Proposed, then briefly reported as withdrawn, then confirmed by Hilmi.)
+**Status:** Accepted (2026-10-11). Tracked as ticket [Hanzamas/RanzVPN#23](https://github.com/Hanzamas/RanzVPN/issues/23); the spec in issue #1 is amended accordingly. (Earlier in the conversation this was Proposed, then briefly reported as withdrawn, then confirmed by Hilmi.)
 
 ## Context
 
