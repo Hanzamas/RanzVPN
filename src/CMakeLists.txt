@@ -50,11 +50,21 @@ add_subdirectory(vpncmd)
 # vpntest
 add_subdirectory(vpntest)
 
+# libFuzzer targets (RANZ_FUZZ=ON only)
+if(RANZ_FUZZ)
+  add_subdirectory(fuzz)
+endif()
+
 # libhamcore
 add_subdirectory(libhamcore)
 
 # hamcorebuilder utility
 add_subdirectory(hamcorebuilder)
+
+# hamcorebuilder runs during the build: ASan builds need the ASan runtime DLL next to it
+if(RANZ_ASAN)
+  ranz_copy_asan_dll(hamcorebuilder)
+endif()
 
 # hamcore.se2 archive file
 add_custom_target(hamcore-archive-build

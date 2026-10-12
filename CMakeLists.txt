@@ -23,6 +23,9 @@ set(CMAKE_C_STANDARD 99)
 set(TOP_DIRECTORY ${CMAKE_SOURCE_DIR})
 set(BUILD_DIRECTORY ${CMAKE_BINARY_DIR})
 
+# AddressSanitizer and libFuzzer builds (RANZ_ASAN, RANZ_FUZZ; both OFF by default)
+include("${TOP_DIRECTORY}/cmake/RanzSanitizers.cmake")
+
 # We define a dedicated variable because CMAKE_BUILD_TYPE can have different
 # configurations than "Debug" and "Release", such as "RelWithDebInfo".
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")

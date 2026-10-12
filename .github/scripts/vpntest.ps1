@@ -24,8 +24,10 @@ if (Test-Path "env:BUILD_BINARIESDIRECTORY") {
 	}
 }
 
-# Named self-tests: must print their OK marker and no leak
-('mschapv2', 'stun', 'watermark') | % {
+# Named self-tests: must print their OK marker and no leak. RANZ_SMOKE_TESTS (comma list) overrides the list.
+$named = @('mschapv2', 'stun', 'watermark', 'stress', 'harness', 'bench')
+if ($env:RANZ_SMOKE_TESTS) { $named = $env:RANZ_SMOKE_TESTS -split ',' | % { $_.Trim() } | ? { $_ } }
+$named | % {
 
 	[String] $test = $_
 	Write-Host "testing: $test"

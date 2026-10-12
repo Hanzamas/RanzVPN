@@ -3,6 +3,7 @@
 
 #define VPN_EXE
 
+#include "harness.h"
 #include "Cedar/Command.h"
 #include "Cedar/MsChapV2.h"
 #include "Cedar/Server.h"
@@ -434,6 +435,9 @@ void stun_test(UINT num, char **arg)
 	}
 }
 
+// Mayaqua runtime stress test (stress.c)
+void stress_test(UINT num, char **arg);
+
 // Watermark test: the hamcore file must hold the bytes of the former WaterMark[] C array
 void watermark_test(UINT num, char **arg)
 {
@@ -519,6 +523,9 @@ TEST_LIST test_list[] =
 	{"memory_leak", memory_leak_test, "Memory leak test: Try to leak one byte by malloc()."},
 	{"mschapv2", mschapv2_test, "MS-CHAPv2 / NT-hash helpers against RFC 2759 test vectors."},
 	{"stun", stun_test, "STUN Binding Request / Response helpers against RFC 5769 sample messages."},
+	{"harness", harness_test, "In-process server: hubs, cascade, frames, vpncmd golden outputs, config round-trip."},
+	{"bench", bench_test, "Cascade frame throughput and Pack encode/decode benchmark (informational)."},
+	{"stress", stress_test, "Mayaqua runtime stress test: stress [timing] [case ...]."},
 	{"watermark", watermark_test, "Watermark: hamcore watermark.bin size and SHA-256 against the former C array."},
 };
 

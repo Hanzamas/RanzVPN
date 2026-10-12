@@ -1,0 +1,5 @@
+GET /vpnsvc/vpn.cgi HTTP/1.1
+Host: vpn.example.invalid
+User-Agent: Mozilla/5.0
+Accept: */*
+

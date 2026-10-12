@@ -1,0 +1,2 @@
+# Seed inputs are exact bytes (CRLF in the HTTP and configuration seeds included): no end-of-line conversion
+corpus/** binary

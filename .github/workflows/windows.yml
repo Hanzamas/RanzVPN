@@ -91,6 +91,13 @@ jobs:
         Write-Host $out
         if ($LASTEXITCODE -ne 0) { throw "vpncmd self-check exited with code $LASTEXITCODE" }
         if ($out -notmatch 'All checks passed') { throw "vpncmd self-check did not report 'All checks passed'" }
+    - name: Upload harness outputs (golden bootstrap and diffs)
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        if-no-files-found: ignore
+        name: harness-out-${{ matrix.platform.ARCHITECTURE }}
+        path: build/harness-out/
     - uses: actions/upload-artifact@v4
       with:
         if-no-files-found: error
@@ -99,3 +106,118 @@ jobs:
           build/*.exe
           build/*.pdb
           build/*.se2
+
+  # AddressSanitizer + libFuzzer (x64 only: Microsoft documents ASan on Windows for x86 and x64).
+  # Builds with -DRANZ_ASAN=ON -DRANZ_FUZZ=ON (cmake/RanzSanitizers.cmake), runs the vpntest
+  # smoke test script on that build, replays the seed corpora (deterministic), then runs every
+  # fuzz target of src/fuzz for a fixed time. Any of the three failing fails the job.
+  fuzz-asan:
+    runs-on: windows-latest
+    name: fuzz-asan
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Cache vcpkg
+      uses: actions/cache@v4
+      with:
+        path: 'build/vcpkg_installed/'
+        key: vcpkg-x64-windows-static
+    - name: Pick clang-cl with the one-DLL ASan runtime and libFuzzer
+      shell: pwsh
+      run: |
+        # Visual Studio's clang-cl first (the compiler of build_and_test), the runner's standalone
+        # LLVM second. A toolchain is taken only if its runtime directory holds the libraries
+        # cmake/RanzSanitizers.cmake links: the one-DLL ASan runtime of LLVM 20 and later
+        # (asan_dynamic, asan_static_runtime_thunk) and libFuzzer. The static /MT runtime of
+        # LLVM 19 and earlier never hooks HeapAlloc (Mayaqua's allocator), so it is not accepted.
+        $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+        $libs = @('asan_dynamic', 'asan_static_runtime_thunk', 'fuzzer')
+        foreach ($cc in @("$vs\VC\Tools\Llvm\x64\bin\clang-cl.exe", "$env:ProgramFiles\LLVM\bin\clang-cl.exe")) {
+          if (-not (Test-Path -LiteralPath $cc)) { continue }
+          # Official LLVM builds for Windows keep compiler-rt in <resource-dir>\lib\windows (one file per
+          # architecture), others in the per-target -print-runtime-dir; try both.
+          $dirs = @((& $cc -print-runtime-dir | Out-String).Trim(), (Join-Path (& $cc -print-resource-dir | Out-String).Trim() 'lib\windows'))
+          foreach ($rt in $dirs) {
+            if (-not (Test-Path -LiteralPath $rt)) { Write-Host "$cc -> $rt (does not exist)"; continue }
+            $missing = @($libs | Where-Object {
+              -not (Test-Path -LiteralPath "$rt\clang_rt.$_-x86_64.lib") -and -not (Test-Path -LiteralPath "$rt\clang_rt.$_.lib")
+            })
+            Write-Host "$cc -> $rt (missing: $($missing -join ', '))"
+            Get-ChildItem -LiteralPath $rt -Filter 'clang_rt.*' -ErrorAction SilentlyContinue | Select-Object -First 40 | ForEach-Object { Write-Host "    $($_.Name)" }
+            if ($missing.Count -eq 0) {
+              & $cc --version
+              "COMPILER_PATH=$cc" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+              "RANZ_RT_DIR=$rt" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+              exit 0
+            }
+          }
+        }
+        throw 'No clang-cl with the one-DLL ASan runtime (LLVM 20 or later) and libFuzzer found'
+    - name: Build (RANZ_ASAN=ON, RANZ_FUZZ=ON)
+      run: |
+        set BUILD_NUMBER=0
+        mkdir build
+        cd build
+
+        for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set "VSINSTALL=%%i"
+        if "%VSINSTALL%"=="" (
+          echo Visual Studio installation was not found.
+          exit /b 1
+        )
+
+        call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
+        cmake -G "Ninja" -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER="%COMPILER_PATH%" -DCMAKE_CXX_COMPILER="%COMPILER_PATH%" -DBUILD_NUMBER=%BUILD_NUMBER% -DRANZ_ASAN=ON -DRANZ_FUZZ=ON ..
+        if errorlevel 1 exit /b 1
+        cmake --build .
+      shell: cmd
+    - name: vpntest smoke test under ASan
+      shell: pwsh
+      timeout-minutes: 10
+      env:
+        # harness and bench have time budgets that AddressSanitizer would exceed; run them in build_and_test only.
+        RANZ_SMOKE_TESTS: mschapv2,stun,watermark,stress
+      run: |
+        # The smoke test script of build_and_test itself, so both jobs run the same test list:
+        # its new path (.github/scripts) first, its old one second. Its output and the vpntest
+        # stderr (AddressSanitizer reports) are captured, to also catch a report printed after
+        # "NO MEMORY LEAKS".
+        $script = @('.github/scripts/vpntest.ps1', '.ci/appveyor-vpntest.ps1') | Where-Object { Test-Path $_ } | Select-Object -First 1
+        if (-not $script) { throw 'vpntest smoke test script not found' }
+        $out = (cmd /c "powershell -NoProfile -ExecutionPolicy Bypass -File $script 2>&1") | Out-String
+        $code = $LASTEXITCODE
+        Write-Host $out
+        if ($code -ne 0) { throw "$script failed under AddressSanitizer (exit code $code)" }
+        if ($out -match 'ERROR: AddressSanitizer') { throw "AddressSanitizer reported an error while running $script" }
+    - name: Fuzz seed replay (deterministic)
+      shell: pwsh
+      timeout-minutes: 10
+      run: |
+        ./src/fuzz/run_fuzzers.ps1 -BuildDir build -Seconds 0
+    - name: Fuzz (60 s per target)
+      shell: pwsh
+      timeout-minutes: 30
+      run: |
+        ./src/fuzz/run_fuzzers.ps1 -BuildDir build -Seconds 60 -Seed 1
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: fuzz-asan-artifacts
+        if-no-files-found: ignore
+        path: |
+          build/fuzz-artifacts/
+          build/fuzz-logs/
+    # What a crash needs to be replayed elsewhere: the instrumented executables, their symbols,
+    # hamcore and the ASan runtime DLL
+    - uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: fuzz-asan-binaries
+        if-no-files-found: ignore
+        path: |
+          build/fuzz_*.exe
+          build/fuzz_*.pdb
+          build/vpntest.exe
+          build/vpntest.pdb
+          build/*.se2
+          build/clang_rt.asan_dynamic*.dll

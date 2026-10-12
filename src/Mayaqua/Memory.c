@@ -25,6 +25,22 @@
 
 #include <zlib.h>
 
+#ifdef	RANZ_ASAN
+// AddressSanitizer build only (RANZ_ASAN, cmake/RanzSanitizers.cmake): the slack after a
+// block (the rounding up to 8 bytes and MEMTAG2) is poisoned while the block is in use, so that
+// ASan reports any access past the size that was asked for. Manual poisoning interface:
+// https://learn.microsoft.com/en-us/cpp/sanitizers/asan-runtime
+// https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/compiler-rt/include/sanitizer/asan_interface.h
+#include <sanitizer/asan_interface.h>
+#define	MEMTAG_SLACK(tag1)			(((UCHAR *)MEMTAG1_TO_POINTER(tag1)) + (tag1)->Size)
+#define	MEMTAG_SLACK_SIZE(tag1)		(CALC_MALLOCSIZE((tag1)->Size) - sizeof(MEMTAG1) - (tag1)->Size)
+#define	MEMTAG_POISON(tag1)			__asan_poison_memory_region(MEMTAG_SLACK(tag1), MEMTAG_SLACK_SIZE(tag1))
+#define	MEMTAG_UNPOISON(tag1)		__asan_unpoison_memory_region(MEMTAG_SLACK(tag1), MEMTAG_SLACK_SIZE(tag1))
+#else	// RANZ_ASAN
+#define	MEMTAG_POISON(tag1)
+#define	MEMTAG_UNPOISON(tag1)
+#endif	// RANZ_ASAN
+
 #define	MEMORY_SLEEP_TIME		150
 #define	MEMORY_MAX_RETRY		30
 #define	INIT_BUF_SIZE			10240
@@ -3638,6 +3654,7 @@ void *MallocEx(UINT size, bool zero_clear_when_free)
 
 	tag2 = (MEMTAG2 *)(((UCHAR *)tag1) + CALC_MALLOCSIZE(tag1->Size) - sizeof(MEMTAG2));
 	tag2->Magic = canary_memtag_magic2 ^ ((UINT64)tag2 * GOLDEN_RATION_PRIME_U64);
+	MEMTAG_POISON(tag1);
 
 	return MEMTAG1_TO_POINTER(tag1);
 }
@@ -3689,6 +3706,7 @@ void *ReAlloc(void *addr, UINT size)
 
 	tag1 = POINTER_TO_MEMTAG1(addr);
 	CheckMemTag1(tag1);
+	MEMTAG_UNPOISON(tag1);
 
 	tag2 = (MEMTAG2 *)(((UCHAR *)tag1) + CALC_MALLOCSIZE(tag1->Size) - sizeof(MEMTAG2));
 	CheckMemTag2(tag2);
@@ -3698,6 +3716,7 @@ void *ReAlloc(void *addr, UINT size)
 	if (tag1->Size == size)
 	{
 		// No size change
+		MEMTAG_POISON(tag1);
 		return addr;
 	}
 	else
@@ -3740,6 +3759,7 @@ void *ReAlloc(void *addr, UINT size)
 
 			tag2_new = (MEMTAG2 *)(((UCHAR *)tag1_new) + CALC_MALLOCSIZE(size) - sizeof(MEMTAG2));
 			tag2_new->Magic = canary_memtag_magic2 ^ ((UINT64)tag2_new * GOLDEN_RATION_PRIME_U64);
+			MEMTAG_POISON(tag1_new);
 
 			return MEMTAG1_TO_POINTER(tag1_new);
 		}
@@ -3764,6 +3784,7 @@ void Free(void *addr)
 
 	tag1 = POINTER_TO_MEMTAG1(addr);
 	CheckMemTag1(tag1);
+	MEMTAG_UNPOISON(tag1);
 
 	tag2 = (MEMTAG2 *)(((UCHAR *)tag1) + CALC_MALLOCSIZE(tag1->Size) - sizeof(MEMTAG2));
 	CheckMemTag2(tag2);

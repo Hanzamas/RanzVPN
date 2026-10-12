@@ -1950,6 +1950,18 @@ void AbortExitEx(char *msg)
 		msg = "Unknown Error";
 	}
 
+#ifdef	RANZ_FUZZING
+	// libFuzzer build only (RANZ_FUZZ, cmake/RanzSanitizers.cmake): abort() instead of
+	// _exit(1), so that libFuzzer's SIGABRT handler prints the stack and saves the input as a
+	// crash artifact. No Windows Error Reporting when no SIGABRT handler is installed.
+	fputs("Fatal Error: ", stdout);
+	fputs(msg, stdout);
+	fputs("\r\n", stdout);
+	fflush(stdout);
+	_set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
+	abort();
+#endif	// RANZ_FUZZING
+
 	f = fopen("abort_error_log.txt", "w");
 	if (f != NULL)
 	{
