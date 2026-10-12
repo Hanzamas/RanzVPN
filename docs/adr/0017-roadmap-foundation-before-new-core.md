@@ -1,6 +1,6 @@
 # ADR-0017: Roadmap: clean and stabilise the foundation before building the new core
 
-**Status:** Accepted (2026-10-12). Hilmi: "core baru itu nanti ga sih fokus ini bersih bersih dan beres beres fondasi dl", and "gas" on the proposed order and seams.
+**Status:** Accepted (2026-10-12). Hilmi: "core baru itu nanti ga sih fokus ini bersih bersih dan beres beres fondasi dl", and "gas" on the proposed order and seams. Amended 2026-10-13: the harness moved before the safe sweep (Hilmi: "ya").
 
 ## Context
 
@@ -12,8 +12,8 @@ The existing code base is cleaned and given a test harness before any new-core w
 
 1. Merge the slim-down, PR #22 (tickets #2 to #23).
 2. Scope cuts that remove remaining unneeded features: the Layer 3 switch, and the WaterMark array moved from C source into hamcore.
-3. The safe cleanup sweep, spec #24, with the one-time reformat as its last pass (ADR-0003 item 14).
-4. The test harness in vpntest: in-process server driven through the admin RPC, vpncmd output against golden files, a cascade from the server to itself with frames passing between sessions, golden pack dumps per RPC structure, and lock/event/thread stress tests (ADR-0002 point 3).
+3. The test harness in vpntest: in-process server driven through the admin RPC, vpncmd output against golden files, a cascade from the server to itself with frames passing between sessions, golden pack dumps per RPC structure, and lock/event/thread stress tests (ADR-0002 point 3).
+4. The safe cleanup sweep, spec #24, with the one-time reformat as its last pass (ADR-0003 item 14). It runs with the harness goldens as its safety net in addition to the compiler (order swapped on 2026-10-13, Hilmi: "ya", because the harness was finished and green before the sweep started).
 5. Table-driven admin RPC and vpncmd marshalling (ADR-0002 as amended on 2026-10-12).
 6. Structural refactor (god-file splits as pure moves, per-module API headers, ADR-0003 items 3 and 4) and the Windows-native runtime migration of Mayaqua (ADR-0016); these two may run in parallel because they touch different layers.
 7. The new core, after its design has been stress-tested with a grilling session; it replaces the data path module by module (strangler), reusing Hub, Account, Sam, Logging and configuration.
@@ -28,7 +28,7 @@ Each step from 2 to 6 is its own spec; the harness is the single test seam for s
 
 The branch `main-oracle` keeps the upstream SoftEther source exactly as forked (commit 69c0aa69, all protocols included) and is never changed except for its CI workflow, which builds Windows x64 and arm64 and publishes pinned pre-releases named `oracle-<sha8>`. Tests always download a specific pinned oracle release, never a moving build. A performance spec, driven by the harness benchmark, follows step 6 and comes before the new core.
 
-Published specs (2026-10-12): step 2 scope cuts #26 (draft PR #25), step 3 safe sweep #24, step 4 harness #27, step 5 table-driven RPC/vpncmd #28, step 6 structural refactor #29 and Windows-native runtime #30, then performance #31.
+Published specs (2026-10-12): step 2 scope cuts #26 (draft PR #25), step 3 harness #27 (PR #32), step 4 safe sweep #24, step 5 table-driven RPC/vpncmd #28, step 6 structural refactor #29 and Windows-native runtime #30, then performance #31.
 
 ## Consequences
 
