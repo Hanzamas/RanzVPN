@@ -4300,54 +4300,10 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 				}
 				else
 				{
-					bool b = false;
+					// Not Found
+					HttpSendNotFound(s, h->Target);
 
-					if (IsLocalHostIP(&c->FirstSock->RemoteIP))
-					{
-						if (StrCmpi(h->Target, HTTP_SAITAMA) == 0)
-						{
-							// Saitama (joke)
-							FreeHttpHeader(h);
-							h = NewHttpHeader("HTTP/1.1", "202", "OK");
-							AddHttpValue(h, NewHttpValue("Content-Type", HTTP_CONTENT_TYPE3));
-							AddHttpValue(h, NewHttpValue("Connection", "Keep-Alive"));
-							AddHttpValue(h, NewHttpValue("Keep-Alive", HTTP_KEEP_ALIVE));
-							PostHttp(s, h, Saitama, SizeOfSaitama());
-							b = true;
-						}
-						else if (StartWith(h->Target, HTTP_PICTURES))
-						{
-							BUF *buf;
-
-							// Lots of photos
-							buf = ReadDump("|Pictures.mht");
-
-							if (buf != NULL)
-							{
-								FreeHttpHeader(h);
-								h = NewHttpHeader("HTTP/1.1", "202", "OK");
-								AddHttpValue(h, NewHttpValue("Content-Type", HTTP_CONTENT_TYPE5));
-								AddHttpValue(h, NewHttpValue("Connection", "Keep-Alive"));
-								AddHttpValue(h, NewHttpValue("Keep-Alive", HTTP_KEEP_ALIVE));
-								PostHttp(s, h, buf->Buf, buf->Size);
-								b = true;
-
-								FreeBuf(buf);
-							}
-						}
-					}
-
-					if (b == false)
-					{
-					}
-
-					if (b == false)
-					{
-						// Not Found
-						HttpSendNotFound(s, h->Target);
-
-						*error_detail_str = "HTTP_NOT_FOUND";
-					}
+					*error_detail_str = "HTTP_NOT_FOUND";
 				}
 			}
 			FreeHttpHeader(h);

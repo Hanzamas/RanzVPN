@@ -18,12 +18,10 @@
 // Digital watermark
 extern BYTE *WaterMark;
 extern UINT WaterMarkSize;
-extern BYTE Saitama[];
 
 BUF *LoadWaterMark();
 void InitWaterMark();
 void FreeWaterMark();
-UINT SizeOfSaitama();
 
 #define	MAX_WATERMARK_SIZE		(WaterMarkSize + HTTP_PACK_RAND_SIZE_MAX * 2)
 
