@@ -2681,23 +2681,6 @@ CMD_AccountDetailSet_Prompt_NOQOS	 Nonaktifkan Fungsi Kontrol QoS (yes/no):
 ###################################################
 
 
-# GenX25519 command
-CMD_GenX25519				Buat pasangan kunci X25519 baru
-CMD_GenX25519_Help			Gunakan ini untuk membuat pasangan kunci X25519 baru, yang dapat digunakan untuk WireGuard. \nKunci pribadi dan publik keduanya akan ditampilkan. \nKunci publik dapat dibagikan dan digunakan untuk mengidentifikasi pasangan. \nSelain itu, kunci publik selalu dapat diambil dari kunci pribadi menggunakan perintah GetPublicX25519. \nKunci pribadi harus disimpan di tempat yang aman dan tidak pernah dibagikan. \nKunci pribadi tidak dapat dipulihkan setelah hilang.
-CMD_GenX25519_ARGS			GenX25519
-CMD_GenX25519_PRIVATE_KEY	Kunci pribadi: 
-CMD_GenX25519_PUBLIC_KEY	Kunci publik: 
-
-
-# GetPublicX25519 command
-CMD_GetPublicX25519				Ambil kunci publik X25519 dari kunci pribadi
-CMD_GetPublicX25519_Help		Gunakan ini jika Anda memiliki kunci pribadi X25519 dan ingin mendapatkan kunci publik yang sesuai.
-CMD_GetPublicX25519_ARGS    	GetPublicX25519 [private]
-CMD_GetPublicX25519_[private]	Kunci pribadi X25519 yang ingin Anda ambil kunci publik yang sesuai.
-CMD_GetPublicX25519_PRIVATE_KEY	Kunci pribadi: 
-CMD_GetPublicX25519_PUBLIC_KEY	Kunci publik: 
-
-
 # MakeCert command
 CMD_MakeCert			Buat Sertifikat X.509 Baru dan Kunci Pribadi (1024 bit)
 CMD_MakeCert_Help		Gunakan ini untuk membuat sertifikat X.509 baru dan kunci pribadi dan menyimpannya sebagai file. \nAlgoritma yang digunakan untuk membuat kunci publik dan kunci pribadi dari sertifikat adalah RSA 1024 bit. \nAnda dapat memilih untuk membuat sertifikat root (sertifikat yang ditandatangani sendiri) atau sertifikat yang ditandatangani oleh sertifikat lain. Untuk membuat sertifikat yang ditandatangani oleh sertifikat lain, Anda memerlukan file kunci pribadi (encoded base64) yang kompatibel dengan sertifikat yang menggunakan tanda tangan tersebut (file format X.509). \n\nSaat membuat sertifikat, Anda dapat menentukan hal-hal berikut: Nama (CN), Organisasi (O), Unit Organisasi (OU), Negara (C), Negara Bagian (ST), Lokal (L), Nomor Seri, dan Tanggal Kedaluwarsa. \nSertifikat yang dibuat akan disimpan sebagai file format X.509 dan file kunci pribadi akan disimpan dalam format Base 64 encoded RSA 1024 bit. \n\nPerintah MakeCert adalah alat yang menyediakan fungsi paling dasar untuk membuat sertifikat. Jika Anda ingin membuat sertifikat yang lebih substansial, kami sarankan untuk menggunakan perangkat lunak gratis seperti OpenSSL, atau perangkat lunak CA (certificate authority) komersial. \n\nCatatan: Perintah ini dapat dipanggil dari Utilitas Manajemen Baris Perintah SoftEther VPN. Anda juga dapat mengeksekusi perintah ini saat terhubung ke VPN Server atau VPN Client saat dalam Mode Administrasi, tetapi yang sebenarnya melakukan komputasi RSA, menghasilkan data sertifikat, dan menyimpannya ke file adalah komputer tempat perintah tersebut dijalankan, dan semua ini dijalankan dalam konteks yang tidak ada hubungannya dengan komputer yang menjadi tujuan koneksi Mode Administrasi.
