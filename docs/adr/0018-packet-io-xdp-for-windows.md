@@ -1,6 +1,6 @@
 # ADR-0018: Packet I/O and XDP for Windows
 
-**Status:** Partly accepted (2026-10-13). Decisions 1, 3 and 4 are Accepted (Hilmi: "catat nih"; "mending ini KM TEST loopback"; the backend matrix and "y" to Npcap). Decision 2 is Proposed.
+**Status:** Partly accepted (2026-10-13). Decisions 1, 3 and 4 are Accepted (Hilmi: "catat nih"; "mending ini KM TEST loopback"; the backend matrix and "y" to Npcap; "gas QTIP"). Decision 2 is Proposed.
 
 ## Context
 
@@ -18,6 +18,7 @@ The new core's transport is QUIC via MsQuic with a TLS/TCP 443 fallback and a No
    Every XDP backend first passes a spike: foreign-MAC reception and transmission, coexistence with the host stack, and throughput measured against SeLow with the harness benchmark.
 4. **L2 adapter = Microsoft KM-TEST Loopback Adapter** (Accepted 2026-10-13, Hilmi: "mending ini KM TEST loopback", "coret aja driver L2 sendiri"). Every L2 attachment that needs a virtual Ethernet card in Windows uses the inbox loopback adapter; Hilmi already runs SoftEther Local Bridge on a loopback adapter in production. In the new core Ranz attaches to it with XDP only (decision 3). A Ranz-built L2 driver is **crossed out**. In the current SoftEther-based code the loopback adapter keeps working through SeLow until the new core replaces it.
 
+5. **QTIP for server-to-server links** (Accepted 2026-10-13, Hilmi: "gas QTIP"). MsQuic's QTIP sends QUIC packets with a TCP header instead of a UDP header over XDP; after the initial handshake it does not follow the TCP protocol. Ranz offers it as an opt-in mode, off by default, for links where both ends are Ranz server nodes running XDP (relay-to-relay, gateway-to-relay, cascades between servers), for networks and clouds that treat TCP better than UDP. It is not a replacement for the TLS/TCP 443 fallback of decision 1: stateful firewalls and DPI that check TCP behaviour may break it, and clients without XDP cannot use it. A QTIP-enabled listener reserves both the TCP and the UDP port of its address, and MsQuic does not allow a QTIP and a non-QTIP listener on the same port, so QTIP listeners get their own port.
 Fact corrections (2026-10-13, from the repository's CI and releases): XDP for Windows is tested in CI on Windows Server 2022 and 2025 (x64, and arm64 on 2025) and a Windows prerelease image; Windows 10/11 client editions are not in its CI; the official v1.4.0 runtime package on NuGet is x64 only; its threat model lists Windows Firewall, WFP, TCP/UDP/ICMP/IP/ARP among the bypassed components for redirected packets (frames injected on the receive path still traverse the stack). The loopback design therefore needs a spike on Windows 10/11 x64 before it ships, and arm64 nodes have no L2 virtual adapter until an official arm64 runtime is published.
 
 ## Consequences
