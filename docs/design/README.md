@@ -21,6 +21,7 @@ Architecture decision records live in `docs/adr/`; the reasoning behind them is 
 - [ADR-0015](../adr/0015-nat-traversal-p2p-and-relay.md) — NAT traversal, P2P and relay: libjuice ICE, libplum port mapping, Ranz's own relay role, relay-first with background upgrade (Accepted).
 - [ADR-0016](../adr/0016-windows-native-runtime-thin-inline-header.md) — Windows-native runtime for Mayaqua behind one thin inline header (`Lock(x)` stays readable), wrapper flip per primitive, semantics preserved, after the harness (Accepted).
 - [ADR-0017](../adr/0017-roadmap-foundation-before-new-core.md) — Roadmap: slim-down, scope cuts, safe sweep, harness, table-driven RPC/vpncmd, structural refactor and Windows-native runtime, and only then the new core (Accepted).
+- [ADR-0018](../adr/0018-packet-io-xdp-for-windows.md) — Packet I/O and XDP for Windows: TLS/TCP 443 fallback stays on the Windows TCP stack (Accepted); QUIC gets XDP only through MsQuic, and an AF_XDP Local Bridge backend after a spike (Proposed).
 
 ## Discussion log
 
