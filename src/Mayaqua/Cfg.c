@@ -1393,7 +1393,8 @@ char *CfgUnescape(char *str)
 				tmp2[0] = '0';
 				tmp2[1] = 'x';
 				tmp2[2] = str[i + 1];
-				tmp2[3] = str[i + 2];
+				// A '$' at the end of the string has no digits: do not read past its null
+				tmp2[3] = (tmp2[2] != 0) ? str[i + 2] : 0;
 				i += 2;
 				tmp2[4] = 0;
 				code = ToInt(tmp2);
