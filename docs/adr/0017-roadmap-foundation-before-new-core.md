@@ -18,7 +18,15 @@ The existing code base is cleaned and given a test harness before any new-core w
 6. Structural refactor (god-file splits as pure moves, per-module API headers, ADR-0003 items 3 and 4) and the Windows-native runtime migration of Mayaqua (ADR-0016); these two may run in parallel because they touch different layers.
 7. The new core, after its design has been stress-tested with a grilling session; it replaces the data path module by module (strangler), reusing Hub, Account, Sam, Logging and configuration.
 
-Each step from 2 to 6 is its own spec; the harness is the single test seam for steps 5 and 6. A performance spec, driven by the harness benchmark, follows step 6 and comes before the new core.
+Each step from 2 to 6 is its own spec; the harness is the single test seam for steps 5 and 6.
+
+**Old code is the oracle** (added 2026-10-13, Hilmi: "kode lama bisa dijadikan oracle", "bikin cabang main-oracle"). Every rewrite is checked against the code it replaces, by feeding both the same input and comparing the outputs:
+
+- refactors (steps 3 to 6) are compared with golden outputs recorded from the tree before the change (harness, spec #27);
+- the new core is tested for interoperability in both directions against the old server and cascade path (old client to new server, new client to old server), with identical frames and RPC results expected;
+- future protocol adapters (OpenVPN, SSTP, L2TP/IPsec, WireGuard and others, deferred) are compared against SoftEther's own implementations of those protocols.
+
+The branch `main-oracle` keeps the upstream SoftEther source exactly as forked (commit 69c0aa69, all protocols included) and is never changed except for its CI workflow, which builds Windows x64 and arm64 and publishes pinned pre-releases named `oracle-<sha8>`. Tests always download a specific pinned oracle release, never a moving build. A performance spec, driven by the harness benchmark, follows step 6 and comes before the new core.
 
 Published specs (2026-10-12): step 2 scope cuts #26 (draft PR #25), step 3 safe sweep #24, step 4 harness #27, step 5 table-driven RPC/vpncmd #28, step 6 structural refactor #29 and Windows-native runtime #30, then performance #31.
 
