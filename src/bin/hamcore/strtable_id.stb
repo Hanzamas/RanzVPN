@@ -1,4 +1,4 @@
-# SoftEther VPN String Table
+# Ranz VPN String Table
 # Copyright (c) all contributors on SoftEther VPN project in GitHub.
 # Copyright (c) Daiyuu Nobori, SoftEther Project at University of Tsukuba, and SoftEther Corporation.
 # 
@@ -44,7 +44,7 @@ ERR_1					Koneksi ke server gagal. Periksa koneksi jaringan dan pastikan alamat 
 ERR_2					Terjadi kesalahan protokol. Kesalahan dikembalikan dari server tujuan.
 ERR_3					Koneksi telah terputus.
 ERR_4					Terjadi kesalahan protokol.
-ERR_5					Klien yang bukan perangkat lunak SoftEther VPN telah terhubung ke port.
+ERR_5					Klien yang bukan perangkat lunak Ranz VPN telah terhubung ke port.
 ERR_6					Perintah telah dibatalkan oleh pengguna.
 ERR_7					Server menolak tipe otentikasi yang ditentukan.
 ERR_8					Virtual Hub yang ditentukan tidak ada di server.
@@ -116,7 +116,7 @@ ERR_73					Tidak dapat memutuskan sesi Koneksi Cascade. Untuk menghapus sesi ter
 ERR_74					Pengaturan Koneksi VPN untuk koneksi dengan VPN Server tidak lengkap. Anda harus melengkapi Pengaturan Koneksi VPN terlebih dahulu untuk koneksi dengan VPN Server.
 ERR_75					Koneksi VPN ke VPN Server telah dimulai.
 ERR_76					Tidak terhubung ke VPN Server.
-ERR_77					File sertifikat X509 yang ditentukan tidak mengandung kunci publik RSA 1024 bit atau 2048 bit. Perangkat lunak VPN SoftEther hanya mendukung sertifikat RSA 1024 bit atau 2048 bit.
+ERR_77					File sertifikat X509 yang ditentukan tidak mengandung kunci publik RSA 1024 bit atau 2048 bit. Perangkat lunak Ranz VPN hanya mendukung sertifikat RSA 1024 bit atau 2048 bit.
 ERR_78					Tidak dapat memutuskan sesi SecureNAT. Untuk menghapus sesi tersebut, hentikan fungsi SecureNAT.
 ERR_79					Tidak dapat mengaktifkan SecureNAT dalam lingkungan klaster.
 ERR_80					SecureNAT tidak beroperasi.
@@ -182,11 +182,11 @@ ERR_139					Koneksi ke server DNS Dinamis telah terputus.
 ERR_140					Gagal menginisialisasi protokol ICMP (Ping). Proses VPN Server mungkin dijalankan dengan hak akses pengguna biasa. Dalam hal ini, jalankan VPN Server sebagai layanan sistem. (di Linux / UNIX, jalankan dengan hak akses root.)
 ERR_141					Gagal membuka port DNS 53. Pastikan tidak ada program server DNS lain (misalnya, BIND atau Microsoft DNS Server) yang berjalan di komputer yang sama. Jika ada layanan yang bertentangan, hentikan mereka. Atau jalankan proses VPN Server dengan hak akses root di Linux / UNIX.
 ERR_142					Fungsi OpenVPN Server tidak diaktifkan.
-ERR_143					Fungsi Otentikasi Sertifikat dan Otentikasi Server Eksternal belum diimplementasikan di versi sumber terbuka SoftEther VPN. Pilih Otentikasi Anonim atau Otentikasi Kata Sandi sebagai gantinya.
+ERR_143					Fungsi Otentikasi Sertifikat dan Otentikasi Server Eksternal belum diimplementasikan di versi sumber terbuka Ranz VPN. Pilih Otentikasi Anonim atau Otentikasi Kata Sandi sebagai gantinya.
 ERR_144					Operasi yang tidak dapat diterima. Gunakan Panel Kontrol VPN Gate untuk mengubah pengaturan Server Relay VPN Gate.
 ERR_145					Operasi yang tidak dapat diterima. Gunakan VPN Gate Utility untuk memodifikasi pengaturan koneksi untuk Server VPN Relay Publik VPN Gate.
 ERR_146					Layanan VPN Gate sedang berjalan di dalam program VPN Client. Anda tidak dapat menghentikan Layanan VPN Gate di layar ini. Gunakan VPN Client Manager untuk mengaktifkan atau menonaktifkan Layanan VPN Gate.
-ERR_147					Fitur ini tidak didukung. Belum diimplementasikan di versi sumber terbuka SoftEther VPN.
+ERR_147					Fitur ini tidak didukung. Belum diimplementasikan di versi sumber terbuka Ranz VPN.
 ERR_148					Koneksi VPN terputus karena sistem sedang dihentikan sementara.
 ERR_149					Sertifikat VPN Server tujuan tidak cocok dengan nama host yang ditentukan.
 ERR_150					Gagal menemukan versi TLS yang didukung oleh kedua sisi. Ini biasanya berarti salah satu sisi mungkin menggunakan versi TLS yang sudah usang yang dinonaktifkan oleh sisi lainnya.
@@ -409,7 +409,7 @@ CT_b_support_redirect_url_acl	Pengalihan URL HTTP dalam Daftar Akses Didukung
 CT_b_is_in_vm			Berjalan di Mesin Virtual (VM)
 CT_b_support_aes_ni		Akselerasi CPU AES (AES-NI) Aktif
 CT_b_using_selow_driver	Driver Ethernet Kernel-mode SoftEther Ringan Aktif
-CT_b_is_softether		Versi Gratis atau Open-Source dari SoftEther VPN
+CT_b_is_softether		Versi Gratis atau Open-Source dari Ranz VPN
 
 # Concerning policies
 POL_INT_COUNT			%u
@@ -595,19 +595,19 @@ SVC_TEST_MUTEX			File eksekusi %s sudah dimulai.
 SVC_USERMODE_MUTEX		Proses lain dari %s sudah dimulai.
 
 
-# Service Definition (SoftEther VPN Server)
+# Service Definition (Ranz VPN Server)
 SVC_VPNSERVER_NAME		vpnserver
-SVC_VPNSERVER_TITLE		SoftEther VPN Server
-SVC_VPNSERVER_DESCRIPT	Layanan ini mengelola proses server dari SoftEther VPN Server. SoftEther VPN Server menyediakan fungsi server SoftEther VPN berkinerja tinggi melalui protokol TCP/IP. Ketika layanan ini dihentikan, SoftEther VPN Server di komputer ini akan berhenti dan SoftEther VPN Client tidak akan dapat membangun koneksi VPN dengan komputer ini.
+SVC_VPNSERVER_TITLE		Ranz VPN Server
+SVC_VPNSERVER_DESCRIPT	Layanan ini mengelola proses server dari Ranz VPN Server. Ranz VPN Server menyediakan fungsi server Ranz VPN berkinerja tinggi melalui protokol TCP/IP. Ketika layanan ini dihentikan, Ranz VPN Server di komputer ini akan berhenti dan Ranz VPN Client tidak akan dapat membangun koneksi VPN dengan komputer ini.
 
 
-# Service Definition (SoftEther VPN Server)
+# Service Definition (Ranz VPN Server)
 SVC_SEVPNSERVERDEV_NAME		sevpnserverdev
-SVC_SEVPNSERVERDEV_TITLE		SoftEther VPN Server Developer Edition
-SVC_SEVPNSERVERDEV_DESCRIPT	Layanan ini mengelola proses server dari SoftEther VPN Server. SoftEther VPN Server menyediakan fungsi-fungsi SoftEther VPN Server berperforma tinggi melalui protokol TCP/IP. Ketika layanan ini dihentikan, SoftEther VPN Server di komputer ini akan berhenti dan SoftEther VPN Client tidak akan dapat membangun koneksi VPN dengan komputer ini.
+SVC_SEVPNSERVERDEV_TITLE		Ranz VPN Server
+SVC_SEVPNSERVERDEV_DESCRIPT	Layanan ini mengelola proses server dari Ranz VPN Server. Ranz VPN Server menyediakan fungsi-fungsi Ranz VPN Server berperforma tinggi melalui protokol TCP/IP. Ketika layanan ini dihentikan, Ranz VPN Server di komputer ini akan berhenti dan Ranz VPN Client tidak akan dapat membangun koneksi VPN dengan komputer ini.
 
 
-# Concerning SoftEther VPN Server Manager
+# Concerning Ranz VPN Server Manager
 SM_HUB_COLUMN_1			Nama Virtual Hub
 SM_HUB_COLUMN_2			Status
 SM_HUB_COLUMN_4			Pengguna
@@ -880,10 +880,10 @@ L_LINE					------------------------------------------------------
 
 # (Server log)
 LS_START_UTF8			Pesan log ditulis dengan Format Enkode UTF-8.
-LS_START_1				SoftEther VPN Server telah dimulai.
+LS_START_1				Ranz VPN Server telah dimulai.
 LS_START_2				%S %S
 LS_START_3				%S
-LS_END_1				Engine SoftEther VPN Server telah berhasil dimatikan.
+LS_END_1				Engine Ranz VPN Server telah berhasil dimatikan.
 LS_END_2				Proses pematian Engine Server telah dimulai.
 LS_STOP_ALL_LISTENER	Semua pendengar TCP akan dihentikan.
 LS_STOP_ALL_LISTENER_2	Semua pendengar TCP telah dihentikan.
@@ -929,7 +929,7 @@ LH_AUTH_PASSWORD		Otentikasi kata sandi
 LH_AUTH_PLAIN_PASSWORD	Otentikasi server eksternal
 LH_AUTH_CERT			Otentikasi sertifikat
 LH_AUTH_EXTERNAL		Otentikasi server eksternal
-LH_AUTH_CERT_NOT_SUPPORT_ON_OPEN_SOURCE	Koneksi "%S": Metode otentikasi pengguna "%S" telah ditentukan sebagai Otentikasi Sertifikat. Namun, fungsi Otentikasi Sertifikat belum diimplementasikan pada versi Open-Source dari SoftEther VPN. Koneksi akan ditolak.
+LH_AUTH_CERT_NOT_SUPPORT_ON_OPEN_SOURCE	Koneksi "%S": Metode otentikasi pengguna "%S" telah ditentukan sebagai Otentikasi Sertifikat. Namun, fungsi Otentikasi Sertifikat belum diimplementasikan pada versi Open-Source dari Ranz VPN. Koneksi akan ditolak.
 LH_AUTH_OK				Koneksi "%S": Berhasil diautentikasi sebagai pengguna "%S".
 LH_AUTH_OK_CERT			Manajer Akun Keamanan Virtual Hub telah menerima sertifikat berikut dari VPN Client dan menerima isinya sebagai sertifikat untuk login pengguna "%S": %s
 LH_AUTH_NG_CERT			Meskipun Manajer Akun Keamanan Virtual Hub telah menerima sertifikat berikut, isinya ditolak sebagai sertifikat untuk login pengguna "%S" karena isi sertifikat ini cocok dengan yang terdaftar di daftar pencabutan sertifikat Virtual Hub: %s
@@ -1205,8 +1205,8 @@ CMD_DISCONNECTED_MSG	\n--- Kesalahan ---\n\nSesi komunikasi dengan host yang And
 
 
 # VPNCMD コマンド
-CMD_VPNCMD				Utilitas Manajemen Baris Perintah SoftEther VPN Edisi Pengembang
-CMD_VPNCMD_HELP			Program 'vpncmd' adalah utilitas yang memungkinkan Anda untuk mengelola perangkat lunak SoftEther VPN menggunakan baris perintah. Dengan menggunakan vpncmd, Anda dapat terhubung ke VPN Server atau VPN Bridge yang berjalan pada komputer lokal atau jarak jauh dan mengelola layanan ini. Selain itu, dengan menggunakan mode VPN Tools, Anda dapat memanggil Alat Uji Kecepatan Lalu Lintas Jaringan dan fungsi pembuatan sertifikat. Alat ini dapat digunakan meskipun tidak terhubung ke VPN Server. \nSaat menggunakan vpncmd, jika nama file ditentukan dengan menggunakan parameter /IN dan /OUT, perintah dapat dieksekusi dalam bentuk batch sesuai dengan file yang berisi perintah yang dapat dieksekusi dan hasil eksekusi dapat ditulis ke file. Biasanya, prompt perintah akan muncul setelah vpncmd diluncurkan, tetapi saat file input ditentukan dengan parameter /IN, program akan secara otomatis berhenti setelah eksekusi semua baris dalam file input selesai. Selain itu, ketika perintah untuk dieksekusi ditentukan dengan parameter /CMD, program akan secara otomatis berhenti setelah perintah tersebut selesai dieksekusi. Anda tidak dapat menentukan parameter /IN dan /CMD secara bersamaan. Kode terminasi dari program vpncmd akan menjadi kode kesalahan dari perintah yang terakhir dieksekusi (0 jika eksekusi berhasil). \nDi lingkungan Windows, ketika vpncmd diluncurkan satu kali atau lebih oleh pengguna dengan hak administratif, Anda dapat cukup memasukkan 'vpncmd' di prompt perintah Windows atau jendela [Run...] untuk meluncurkan vpncmd. Untuk mencapai hasil yang sama di sistem UNIX, Anda dapat mengatur secara manual, sesuai kebutuhan, variabel lingkungan PATH.
+CMD_VPNCMD				Utilitas Manajemen Baris Perintah Ranz VPN
+CMD_VPNCMD_HELP			Program 'vpncmd' adalah utilitas yang memungkinkan Anda untuk mengelola perangkat lunak Ranz VPN menggunakan baris perintah. Dengan menggunakan vpncmd, Anda dapat terhubung ke VPN Server atau VPN Bridge yang berjalan pada komputer lokal atau jarak jauh dan mengelola layanan ini. Selain itu, dengan menggunakan mode VPN Tools, Anda dapat memanggil Alat Uji Kecepatan Lalu Lintas Jaringan dan fungsi pembuatan sertifikat. Alat ini dapat digunakan meskipun tidak terhubung ke VPN Server. \nSaat menggunakan vpncmd, jika nama file ditentukan dengan menggunakan parameter /IN dan /OUT, perintah dapat dieksekusi dalam bentuk batch sesuai dengan file yang berisi perintah yang dapat dieksekusi dan hasil eksekusi dapat ditulis ke file. Biasanya, prompt perintah akan muncul setelah vpncmd diluncurkan, tetapi saat file input ditentukan dengan parameter /IN, program akan secara otomatis berhenti setelah eksekusi semua baris dalam file input selesai. Selain itu, ketika perintah untuk dieksekusi ditentukan dengan parameter /CMD, program akan secara otomatis berhenti setelah perintah tersebut selesai dieksekusi. Anda tidak dapat menentukan parameter /IN dan /CMD secara bersamaan. Kode terminasi dari program vpncmd akan menjadi kode kesalahan dari perintah yang terakhir dieksekusi (0 jika eksekusi berhasil). \nDi lingkungan Windows, ketika vpncmd diluncurkan satu kali atau lebih oleh pengguna dengan hak administratif, Anda dapat cukup memasukkan 'vpncmd' di prompt perintah Windows atau jendela [Run...] untuk meluncurkan vpncmd. Untuk mencapai hasil yang sama di sistem UNIX, Anda dapat mengatur secara manual, sesuai kebutuhan, variabel lingkungan PATH.
 CMD_VPNCMD_ARGS			vpncmd [host:port] [/SERVER|/TOOLS] [/HUB:hub] [/ADMINHUB:adminhub] [/PASSWORD:password] [/IN:infile] [/OUT:outfile] [/CMD perintah...]
 CMD_VPNCMD_[host:port]	Dengan menentukan parameter dalam format "nama host:nomor port", koneksi akan dibuat secara otomatis ke host tersebut. Jika ini tidak ditentukan, prompt akan muncul untuk memasukkan tujuan koneksi.
 CMD_VPNCMD_SERVER		Ini akan menghubungkan ke VPN Server atau VPN Bridge untuk melakukan manajemen.
@@ -1224,7 +1224,7 @@ CMD_VPNCMD_HOST_1		Tentukan nama host atau alamat IP komputer tempat VPN Server 
 CMD_VPNCMD_HOST_3		Nama Host atau Alamat IP Tujuan: 
 CMD_VPNCMD_HUB_1		Jika menghubungkan ke server melalui Mode Admin Hub Virtual, masukkan nama Virtual Hub. \nJika menghubungkan melalui mode admin server, tekan Enter tanpa memasukkan apa pun.
 CMD_VPNCMD_HUB_2		Tentukan Nama Virtual Hub: 
-CMD_VPNCMD_ABOUT		SoftEther VPN Command Line Management Utility (perintah vpncmd)\nEdisi Pengembang\n%S\n%S\nHak Cipta (c) semua kontributor pada proyek SoftEther VPN di GitHub.\nHak Cipta (c) Daiyuu Nobori, Proyek SoftEther di Universitas Tsukuba, dan SoftEther Corporation.\nSemua hak dilindungi undang-undang.\n
+CMD_VPNCMD_ABOUT		Ranz VPN Command Line Management Utility (perintah vpncmd)\n%S\n%S\nHak Cipta (c) semua kontributor pada proyek SoftEther VPN di GitHub.\nHak Cipta (c) Daiyuu Nobori, Proyek SoftEther di Universitas Tsukuba, dan SoftEther Corporation.\nSemua hak dilindungi undang-undang.\n
 CMD_VPNCMD_PASSWORD_1	Akses ditolak. Mungkin kata sandi salah, atau Anda menghubungkan dengan mode admin yang salah. Anda dapat mencoba memasukkan kata sandi lagi. Untuk membatalkan, tekan Ctrl+D.
 CMD_VPNCMD_PASSWORD_2	Kata Sandi: 
 CMD_VPNCMD_ERROR		Terjadi kesalahan. (Kode kesalahan: %u)\n%s
@@ -1331,7 +1331,7 @@ CMD_Crash_Aborted		Perintah Crash telah dibatalkan.
 
 # Flush command
 CMD_Flush				Simpan Semua Data Volatil VPN Server / Bridge ke File Konfigurasi
-CMD_Flush_Help			Normalnya, VPN Server / VPN Bridge menyimpan data konfigurasi volatil di memori. Data ini kemudian disalin ke disk sebagai vpn_server.config atau vpn_bridge.config secara berkala. Periode ini adalah 300 detik (5 menit) secara default. (Periode ini dapat diubah dengan memodifikasi item AutoSaveConfigSpan di file konfigurasi.) Data tersebut akan disimpan pada saat VPN Server / Bridge dimatikan secara normal.\nJalankan perintah Flush untuk membuat VPN Server / Bridge menyimpan pengaturan ke file segera. Data pengaturan akan disimpan di drive disk komputer server. Gunakan perintah Flush dalam situasi di mana Anda tidak memiliki cukup waktu untuk mematikan proses server secara normal.\nUntuk menjalankan perintah ini, Anda harus memiliki hak akses administrator VPN Server. 
+CMD_Flush_Help			Normalnya, VPN Server / VPN Bridge menyimpan data konfigurasi volatil di memori. Data ini kemudian disalin ke disk sebagai ranz_server.config atau vpn_bridge.config secara berkala. Periode ini adalah 300 detik (5 menit) secara default. (Periode ini dapat diubah dengan memodifikasi item AutoSaveConfigSpan di file konfigurasi.) Data tersebut akan disimpan pada saat VPN Server / Bridge dimatikan secara normal.\nJalankan perintah Flush untuk membuat VPN Server / Bridge menyimpan pengaturan ke file segera. Data pengaturan akan disimpan di drive disk komputer server. Gunakan perintah Flush dalam situasi di mana Anda tidak memiliki cukup waktu untuk mematikan proses server secara normal.\nUntuk menjalankan perintah ini, Anda harus memiliki hak akses administrator VPN Server. 
 CMD_Flush_Args			Flush
 CMD_Flush_Msg1			Menulis data volatil dari memori ke disk...\n
 CMD_Flush_Msg2			Penyimpanan selesai. Ukuran file adalah %S byte.\n
@@ -2629,7 +2629,7 @@ CMD_AcDel_Prompt_ID		ID Aturan untuk Dihapus:
 
 # LicenseAdd command
 CMD_LicenseAdd			Tambahkan Pendaftaran Kunci Lisensi
-CMD_LicenseAdd_Help		Gunakan perintah ini untuk mendaftar kunci lisensi baru pada SoftEther VPN Server.\nUntuk menggunakan SoftEther VPN Server, Anda harus memperoleh lisensi yang sah dan mendaftarkan kunci lisensi. Kunci lisensi terdiri dari 36 karakter alfanumerik ditambah dengan tanda hubung. Kunci ini adalah kode yang membuktikan kepemilikan lisensi.\nKetika sertifikat lisensi diterima bersama dengan perangkat lunak ini, kunci lisensi tercetak pada sertifikat lisensi tersebut. Jika lisensi untuk perangkat lunak ini dibeli secara online, kunci lisensi diberikan melalui email dan pada jendela situs web saat lisensi dibeli. Kunci lisensi juga dapat dicatat dengan cara lain. Jika Anda tidak tahu di mana kunci lisensi dicatat, tanyakan kepada vendor yang menjual lisensi kepada Anda.\n\nUntuk mendapatkan daftar lisensi yang terdaftar saat ini, gunakan perintah LicenseList.\nUntuk menampilkan status lisensi dari VPN Server saat ini, gunakan perintah LicenseStatus.\nUntuk menjalankan perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.\nPerintah ini tidak dapat dijalankan pada VPN Bridge.
+CMD_LicenseAdd_Help		Gunakan perintah ini untuk mendaftar kunci lisensi baru pada Ranz VPN Server.\nUntuk menggunakan Ranz VPN Server, Anda harus memperoleh lisensi yang sah dan mendaftarkan kunci lisensi. Kunci lisensi terdiri dari 36 karakter alfanumerik ditambah dengan tanda hubung. Kunci ini adalah kode yang membuktikan kepemilikan lisensi.\nKetika sertifikat lisensi diterima bersama dengan perangkat lunak ini, kunci lisensi tercetak pada sertifikat lisensi tersebut. Jika lisensi untuk perangkat lunak ini dibeli secara online, kunci lisensi diberikan melalui email dan pada jendela situs web saat lisensi dibeli. Kunci lisensi juga dapat dicatat dengan cara lain. Jika Anda tidak tahu di mana kunci lisensi dicatat, tanyakan kepada vendor yang menjual lisensi kepada Anda.\n\nUntuk mendapatkan daftar lisensi yang terdaftar saat ini, gunakan perintah LicenseList.\nUntuk menampilkan status lisensi dari VPN Server saat ini, gunakan perintah LicenseStatus.\nUntuk menjalankan perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.\nPerintah ini tidak dapat dijalankan pada VPN Bridge.
 CMD_LicenseAdd_Args		LicenseAdd [key]
 CMD_LicenseAdd_[key]	Tentukan kunci lisensi yang akan didaftarkan. Tentukan 36 digit karakter alfanumerik dan kelompokkan digit-digitnya dalam grup-grup yang dipisahkan dengan tanda hubung.
 CMD_LicenseAdd_Prompt_Key	Kunci Lisensi: 
@@ -2637,7 +2637,7 @@ CMD_LicenseAdd_Prompt_Key	Kunci Lisensi:
 
 # LicenseDel command
 CMD_LicenseDel			Hapus Lisensi Terdaftar
-CMD_LicenseDel_Help		Gunakan perintah ini untuk menghapus lisensi tertentu dari daftar lisensi yang terdaftar pada SoftEther VPN Server saat ini.\n\nUntuk mendapatkan daftar lisensi yang terdaftar saat ini, gunakan perintah LicenseList.\nUntuk menampilkan status lisensi dari VPN Server saat ini, gunakan perintah LicenseStatus.\nUntuk menjalankan perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.\nPerintah ini tidak dapat dijalankan pada VPN Bridge.
+CMD_LicenseDel_Help		Gunakan perintah ini untuk menghapus lisensi tertentu dari daftar lisensi yang terdaftar pada Ranz VPN Server saat ini.\n\nUntuk mendapatkan daftar lisensi yang terdaftar saat ini, gunakan perintah LicenseList.\nUntuk menampilkan status lisensi dari VPN Server saat ini, gunakan perintah LicenseStatus.\nUntuk menjalankan perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.\nPerintah ini tidak dapat dijalankan pada VPN Bridge.
 CMD_LicenseDel_Args		LicenseDel [id]
 CMD_LicenseDel_[id]		Tentukan nomor lisensi yang akan dihapus.
 CMD_LicenseDel_Prompt_ID	Nomor Lisensi yang Akan Dihapus: 
@@ -2645,13 +2645,13 @@ CMD_LicenseDel_Prompt_ID	Nomor Lisensi yang Akan Dihapus:
 
 # LicenseList command
 CMD_LicenseList			Tampilkan Daftar Lisensi Terdaftar
-CMD_LicenseList_Help	Gunakan perintah ini untuk menampilkan daftar informasi lisensi yang saat ini terdaftar pada SoftEther VPN Server, termasuk: kunci lisensi, nama jenis lisensi, status, tanggal kedaluwarsa, ID lisensi, ID jenis lisensi, ID server, dan ID serial.\n\nUntuk menampilkan status lisensi dari VPN Server saat ini, gunakan perintah LicenseStatus.\nUntuk menjalankan perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.\nPerintah ini tidak dapat dijalankan pada VPN Bridge.
+CMD_LicenseList_Help	Gunakan perintah ini untuk menampilkan daftar informasi lisensi yang saat ini terdaftar pada Ranz VPN Server, termasuk: kunci lisensi, nama jenis lisensi, status, tanggal kedaluwarsa, ID lisensi, ID jenis lisensi, ID server, dan ID serial.\n\nUntuk menampilkan status lisensi dari VPN Server saat ini, gunakan perintah LicenseStatus.\nUntuk menjalankan perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.\nPerintah ini tidak dapat dijalankan pada VPN Bridge.
 CMD_LicenseList_Args	LicenseList
 
 
 # LicenseStatus command
 CMD_LicenseStatus		Tampilkan Status Lisensi dari VPN Server Saat Ini
-CMD_LicenseStatus_Help	Gunakan perintah ini untuk mendapatkan dan menampilkan status lisensi dari SoftEther VPN Server saat ini. \nInformasi berikut tentang SoftEther VPN Server saat ini akan ditampilkan: edisi produk, ID server, tanggal kedaluwarsa lisensi produk, jumlah Lisensi Koneksi Klien yang dapat digunakan, dan jumlah Lisensi Koneksi Jembatan. \n\nUntuk menjalankan perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.\nPerintah ini tidak dapat dijalankan pada VPN Bridge.
+CMD_LicenseStatus_Help	Gunakan perintah ini untuk mendapatkan dan menampilkan status lisensi dari Ranz VPN Server saat ini. \nInformasi berikut tentang Ranz VPN Server saat ini akan ditampilkan: edisi produk, ID server, tanggal kedaluwarsa lisensi produk, jumlah Lisensi Koneksi Klien yang dapat digunakan, dan jumlah Lisensi Koneksi Jembatan. \n\nUntuk menjalankan perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.\nPerintah ini tidak dapat dijalankan pada VPN Bridge.
 CMD_LicenseStatus_Args	LicenseStatus
 
 
@@ -2683,7 +2683,7 @@ CMD_AccountDetailSet_Prompt_NOQOS	 Nonaktifkan Fungsi Kontrol QoS (yes/no):
 
 # MakeCert command
 CMD_MakeCert			Buat Sertifikat X.509 Baru dan Kunci Pribadi (1024 bit)
-CMD_MakeCert_Help		Gunakan ini untuk membuat sertifikat X.509 baru dan kunci pribadi dan menyimpannya sebagai file. \nAlgoritma yang digunakan untuk membuat kunci publik dan kunci pribadi dari sertifikat adalah RSA 1024 bit. \nAnda dapat memilih untuk membuat sertifikat root (sertifikat yang ditandatangani sendiri) atau sertifikat yang ditandatangani oleh sertifikat lain. Untuk membuat sertifikat yang ditandatangani oleh sertifikat lain, Anda memerlukan file kunci pribadi (encoded base64) yang kompatibel dengan sertifikat yang menggunakan tanda tangan tersebut (file format X.509). \n\nSaat membuat sertifikat, Anda dapat menentukan hal-hal berikut: Nama (CN), Organisasi (O), Unit Organisasi (OU), Negara (C), Negara Bagian (ST), Lokal (L), Nomor Seri, dan Tanggal Kedaluwarsa. \nSertifikat yang dibuat akan disimpan sebagai file format X.509 dan file kunci pribadi akan disimpan dalam format Base 64 encoded RSA 1024 bit. \n\nPerintah MakeCert adalah alat yang menyediakan fungsi paling dasar untuk membuat sertifikat. Jika Anda ingin membuat sertifikat yang lebih substansial, kami sarankan untuk menggunakan perangkat lunak gratis seperti OpenSSL, atau perangkat lunak CA (certificate authority) komersial. \n\nCatatan: Perintah ini dapat dipanggil dari Utilitas Manajemen Baris Perintah SoftEther VPN. Anda juga dapat mengeksekusi perintah ini saat terhubung ke VPN Server atau VPN Client saat dalam Mode Administrasi, tetapi yang sebenarnya melakukan komputasi RSA, menghasilkan data sertifikat, dan menyimpannya ke file adalah komputer tempat perintah tersebut dijalankan, dan semua ini dijalankan dalam konteks yang tidak ada hubungannya dengan komputer yang menjadi tujuan koneksi Mode Administrasi.
+CMD_MakeCert_Help		Gunakan ini untuk membuat sertifikat X.509 baru dan kunci pribadi dan menyimpannya sebagai file. \nAlgoritma yang digunakan untuk membuat kunci publik dan kunci pribadi dari sertifikat adalah RSA 1024 bit. \nAnda dapat memilih untuk membuat sertifikat root (sertifikat yang ditandatangani sendiri) atau sertifikat yang ditandatangani oleh sertifikat lain. Untuk membuat sertifikat yang ditandatangani oleh sertifikat lain, Anda memerlukan file kunci pribadi (encoded base64) yang kompatibel dengan sertifikat yang menggunakan tanda tangan tersebut (file format X.509). \n\nSaat membuat sertifikat, Anda dapat menentukan hal-hal berikut: Nama (CN), Organisasi (O), Unit Organisasi (OU), Negara (C), Negara Bagian (ST), Lokal (L), Nomor Seri, dan Tanggal Kedaluwarsa. \nSertifikat yang dibuat akan disimpan sebagai file format X.509 dan file kunci pribadi akan disimpan dalam format Base 64 encoded RSA 1024 bit. \n\nPerintah MakeCert adalah alat yang menyediakan fungsi paling dasar untuk membuat sertifikat. Jika Anda ingin membuat sertifikat yang lebih substansial, kami sarankan untuk menggunakan perangkat lunak gratis seperti OpenSSL, atau perangkat lunak CA (certificate authority) komersial. \n\nCatatan: Perintah ini dapat dipanggil dari Utilitas Manajemen Baris Perintah Ranz VPN. Anda juga dapat mengeksekusi perintah ini saat terhubung ke VPN Server atau VPN Client saat dalam Mode Administrasi, tetapi yang sebenarnya melakukan komputasi RSA, menghasilkan data sertifikat, dan menyimpannya ke file adalah komputer tempat perintah tersebut dijalankan, dan semua ini dijalankan dalam konteks yang tidak ada hubungannya dengan komputer yang menjadi tujuan koneksi Mode Administrasi.
 CMD_MakeCert_Args		MakeCert [/CN:cn] [/O:o] [/OU:ou] [/C:c] [/ST:st] [/L:l] [/SERIAL:serial] [/EXPIRES:expires] [/SIGNCERT:signcert] [/SIGNKEY:signkey] [/SAVECERT:savecert] [/SAVEKEY:savekey]
 CMD_MakeCert_CN			Tentukan Nama (CN) dari sertifikat yang akan dibuat. Anda dapat menentukan "none".
 CMD_MakeCert_O			Tentukan Organisasi (O) dari sertifikat yang akan dibuat. Anda dapat menentukan "none".
@@ -2714,7 +2714,7 @@ CMD_MakeCert_ERROR_GEN_FAILED	Pembuatan sertifikat dan kunci pribadi gagal.
 
 # MakeCert2048 command
 CMD_MakeCert2048			Buat Sertifikat X.509 Baru dan Kunci Pribadi (2048 bit)
-CMD_MakeCert2048_Help		Gunakan ini untuk membuat sertifikat X.509 baru dan kunci pribadi dan menyimpannya sebagai file. \nAlgoritma yang digunakan untuk membuat kunci publik dan kunci pribadi dari sertifikat adalah RSA 2048 bit. \nAnda dapat memilih untuk membuat sertifikat root (sertifikat yang ditandatangani sendiri) atau sertifikat yang ditandatangani oleh sertifikat lain. Untuk membuat sertifikat yang ditandatangani oleh sertifikat lain, Anda memerlukan file kunci pribadi (encoded base64) yang kompatibel dengan sertifikat yang menggunakan tanda tangan tersebut (file format X.509). \n\nSaat membuat sertifikat, Anda dapat menentukan hal-hal berikut: Nama (CN), Organisasi (O), Unit Organisasi (OU), Negara (C), Negara Bagian (ST), Lokal (L), Nomor Seri, dan Tanggal Kedaluwarsa. \nSertifikat yang dibuat akan disimpan sebagai file format X.509 dan file kunci pribadi akan disimpan dalam format Base 64 encoded RSA 2048 bit. \n\nPerintah MakeCert adalah alat yang menyediakan fungsi paling dasar untuk membuat sertifikat. Jika Anda ingin membuat sertifikat yang lebih substansial, kami sarankan untuk menggunakan perangkat lunak gratis seperti OpenSSL, atau perangkat lunak CA (certificate authority) komersial. \n\nCatatan: Perintah ini dapat dipanggil dari Utilitas Manajemen Baris Perintah SoftEther VPN. Anda juga dapat mengeksekusi perintah ini saat terhubung ke VPN Server atau VPN Client saat dalam Mode Administrasi, tetapi yang sebenarnya melakukan komputasi RSA, menghasilkan data sertifikat, dan menyimpannya ke file adalah komputer tempat perintah tersebut dijalankan, dan semua ini dijalankan dalam konteks yang tidak ada hubungannya dengan komputer yang menjadi tujuan koneksi Mode Administrasi.
+CMD_MakeCert2048_Help		Gunakan ini untuk membuat sertifikat X.509 baru dan kunci pribadi dan menyimpannya sebagai file. \nAlgoritma yang digunakan untuk membuat kunci publik dan kunci pribadi dari sertifikat adalah RSA 2048 bit. \nAnda dapat memilih untuk membuat sertifikat root (sertifikat yang ditandatangani sendiri) atau sertifikat yang ditandatangani oleh sertifikat lain. Untuk membuat sertifikat yang ditandatangani oleh sertifikat lain, Anda memerlukan file kunci pribadi (encoded base64) yang kompatibel dengan sertifikat yang menggunakan tanda tangan tersebut (file format X.509). \n\nSaat membuat sertifikat, Anda dapat menentukan hal-hal berikut: Nama (CN), Organisasi (O), Unit Organisasi (OU), Negara (C), Negara Bagian (ST), Lokal (L), Nomor Seri, dan Tanggal Kedaluwarsa. \nSertifikat yang dibuat akan disimpan sebagai file format X.509 dan file kunci pribadi akan disimpan dalam format Base 64 encoded RSA 2048 bit. \n\nPerintah MakeCert adalah alat yang menyediakan fungsi paling dasar untuk membuat sertifikat. Jika Anda ingin membuat sertifikat yang lebih substansial, kami sarankan untuk menggunakan perangkat lunak gratis seperti OpenSSL, atau perangkat lunak CA (certificate authority) komersial. \n\nCatatan: Perintah ini dapat dipanggil dari Utilitas Manajemen Baris Perintah Ranz VPN. Anda juga dapat mengeksekusi perintah ini saat terhubung ke VPN Server atau VPN Client saat dalam Mode Administrasi, tetapi yang sebenarnya melakukan komputasi RSA, menghasilkan data sertifikat, dan menyimpannya ke file adalah komputer tempat perintah tersebut dijalankan, dan semua ini dijalankan dalam konteks yang tidak ada hubungannya dengan komputer yang menjadi tujuan koneksi Mode Administrasi.
 CMD_MakeCert2048_Args		MakeCert2048 [/CN:cn] [/O:o] [/OU:ou] [/C:c] [/ST:st] [/L:l] [/SERIAL:serial] [/EXPIRES:expires] [/SIGNCERT:signcert] [/SIGNKEY:signkey] [/SAVECERT:savecert] [/SAVEKEY:savekey]
 CMD_MakeCert2048_CN			Tentukan Nama (CN) dari sertifikat yang akan dibuat. Anda dapat menentukan "none".
 CMD_MakeCert2048_O			Tentukan Organisasi (O) dari sertifikat yang akan dibuat. Anda dapat menentukan "none".
@@ -2732,7 +2732,7 @@ CMD_MakeCert2048_SAVEKEY	Tentukan nama file untuk menyimpan kunci pribadi yang k
 
 # TrafficClient command
 CMD_TrafficClient		Jalankan Alat Uji Kecepatan Lalu Lintas Jaringan dalam Mode Klien
-CMD_TrafficClient_Help	Gunakan ini untuk mengeksekusi program klien dari alat pengukuran throughput komunikasi. \nDua perintah, TrafficClient dan TrafficServer, digunakan untuk alat pengukuran throughput komunikasi untuk memungkinkan pengukuran throughput komunikasi yang dapat ditransfer antara dua komputer yang terhubung melalui jaringan IP. Perintah TrafficServer digunakan pertama kali di komputer lain untuk menempatkan alat pengukuran throughput komunikasi dalam kondisi mendengarkan. Kemudian perintah TrafficClient digunakan untuk menghubungkan ke server tersebut dengan menentukan nama host atau alamat IP dan nomor port, yang memungkinkan pengukuran kecepatan komunikasi. \nPengukuran kecepatan komunikasi dilakukan dengan secara bersamaan mendirikan beberapa koneksi TCP dan menghitung jumlah bit data yang dapat ditransfer dalam waktu yang ditentukan berdasarkan hasil masing-masing dalam mentransfer aliran data maksimum di setiap koneksi dan kemudian menggunakan itu untuk menghitung nilai rata-rata (bps) dari throughput komunikasi. Biasanya, ketika hanya ada satu koneksi TCP, komunikasi cenderung memiliki kecepatan lebih lambat daripada throughput jaringan sesungguhnya karena keterbatasan terkait algoritma TCP. Oleh karena itu, kami menyarankan untuk mendirikan beberapa koneksi TCP secara bersamaan ketika mengukur hasil komunikasi. Karena throughput yang diukur menggunakan metode pengukuran ini dihitung dari panjang bit data yang tiba di sisi penerima sebagai aliran oleh TCP, kehilangan paket yang terjadi selama transfer dan paket yang memiliki data rusak tidak dimasukkan dalam paket yang benar-benar tiba, yang berarti dapat dihitung nilai asli yang dekat dengan bandwidth komunikasi maksimum dari jaringan. \nDengan menggunakan hasil pengukuran, yaitu ukuran aliran yang ditransfer oleh TCP, nilai perkiraan volume data yang benar-benar lewat melalui jaringan dihitung dan dibagi dengan waktu untuk menghitung bits per detik (bps). Perhitungan mengasumsikan bahwa jenis jaringan fisik adalah Ethernet (IEEE802.3) dan ukuran payload frame MAC adalah 1.500 byte (TCP MSS adalah 1.460 byte). Dengan menentukan opsi /RAW, perhitungan tidak akan melakukan koreksi untuk volume data header TCP/IP dan MAC. \n\nCatatan: Perintah ini dapat dipanggil dari Utilitas Manajemen Baris Perintah SoftEther VPN. Anda juga dapat mengeksekusi perintah ini saat terhubung ke VPN Server atau VPN Client saat dalam Mode Administrasi, tetapi yang sebenarnya melakukan komunikasi dan mengukur throughput adalah komputer tempat perintah ini dijalankan, dan semua ini dijalankan dalam konteks yang tidak ada hubungannya dengan komputer yang menjadi tujuan koneksi Mode Administrasi.
+CMD_TrafficClient_Help	Gunakan ini untuk mengeksekusi program klien dari alat pengukuran throughput komunikasi. \nDua perintah, TrafficClient dan TrafficServer, digunakan untuk alat pengukuran throughput komunikasi untuk memungkinkan pengukuran throughput komunikasi yang dapat ditransfer antara dua komputer yang terhubung melalui jaringan IP. Perintah TrafficServer digunakan pertama kali di komputer lain untuk menempatkan alat pengukuran throughput komunikasi dalam kondisi mendengarkan. Kemudian perintah TrafficClient digunakan untuk menghubungkan ke server tersebut dengan menentukan nama host atau alamat IP dan nomor port, yang memungkinkan pengukuran kecepatan komunikasi. \nPengukuran kecepatan komunikasi dilakukan dengan secara bersamaan mendirikan beberapa koneksi TCP dan menghitung jumlah bit data yang dapat ditransfer dalam waktu yang ditentukan berdasarkan hasil masing-masing dalam mentransfer aliran data maksimum di setiap koneksi dan kemudian menggunakan itu untuk menghitung nilai rata-rata (bps) dari throughput komunikasi. Biasanya, ketika hanya ada satu koneksi TCP, komunikasi cenderung memiliki kecepatan lebih lambat daripada throughput jaringan sesungguhnya karena keterbatasan terkait algoritma TCP. Oleh karena itu, kami menyarankan untuk mendirikan beberapa koneksi TCP secara bersamaan ketika mengukur hasil komunikasi. Karena throughput yang diukur menggunakan metode pengukuran ini dihitung dari panjang bit data yang tiba di sisi penerima sebagai aliran oleh TCP, kehilangan paket yang terjadi selama transfer dan paket yang memiliki data rusak tidak dimasukkan dalam paket yang benar-benar tiba, yang berarti dapat dihitung nilai asli yang dekat dengan bandwidth komunikasi maksimum dari jaringan. \nDengan menggunakan hasil pengukuran, yaitu ukuran aliran yang ditransfer oleh TCP, nilai perkiraan volume data yang benar-benar lewat melalui jaringan dihitung dan dibagi dengan waktu untuk menghitung bits per detik (bps). Perhitungan mengasumsikan bahwa jenis jaringan fisik adalah Ethernet (IEEE802.3) dan ukuran payload frame MAC adalah 1.500 byte (TCP MSS adalah 1.460 byte). Dengan menentukan opsi /RAW, perhitungan tidak akan melakukan koreksi untuk volume data header TCP/IP dan MAC. \n\nCatatan: Perintah ini dapat dipanggil dari Utilitas Manajemen Baris Perintah Ranz VPN. Anda juga dapat mengeksekusi perintah ini saat terhubung ke VPN Server atau VPN Client saat dalam Mode Administrasi, tetapi yang sebenarnya melakukan komunikasi dan mengukur throughput adalah komputer tempat perintah ini dijalankan, dan semua ini dijalankan dalam konteks yang tidak ada hubungannya dengan komputer yang menjadi tujuan koneksi Mode Administrasi.
 CMD_TrafficClient_Args	TrafficClient [host:port] [/NUMTCP:numtcp] [/TYPE:download|upload|full] [/SPAN:span] [/DOUBLE:yes|no] [/RAW:yes|no]
 CMD_TrafficClient_[host:port]	Spesifikasikan nama host atau alamat IP dan nomor port yang digunakan oleh server alat pengukuran throughput komunikasi (TrafficServer) untuk mendengarkan. Jika nomor port tidak disebutkan, 9821 akan digunakan.
 CMD_TrafficClient_NUMTCP	Tentukan jumlah koneksi TCP yang akan didirikan secara bersamaan antara klien dan server untuk transfer data. Jika tidak disebutkan, 32 akan digunakan.
@@ -2748,7 +2748,7 @@ CMD_TrafficClient_ERROR_HOSTPORT	Nama host atau nomor port tidak ditentukan deng
 
 # TrafficServer command
 CMD_TrafficServer		Jalankan Alat Uji Kecepatan Lalu Lintas Jaringan dalam Mode Server
-CMD_TrafficServer_Help	Gunakan ini untuk mengeksekusi program server dari alat pengukuran throughput komunikasi. \nDua perintah, TrafficClient dan TrafficServer, digunakan untuk alat pengukuran throughput komunikasi untuk memungkinkan pengukuran throughput komunikasi yang dapat ditransfer antara dua komputer yang terhubung melalui jaringan IP. \nUntuk mengatur port TCP komputer ini ke status Mendengarkan untuk menunggu koneksi dari TrafficClient komputer lain, tentukan nomor port dan mulai program server menggunakan perintah TrafficServer. \nAnda dapat menampilkan informasi yang lebih rinci tentang alat pengukuran throughput komunikasi dengan memasukkan "TrafficClient ?". \n\nCatatan: Perintah ini dapat dipanggil dari Utilitas Manajemen Baris Perintah SoftEther VPN. Anda juga dapat mengeksekusi perintah ini saat terhubung ke VPN Server atau VPN Client saat dalam Mode Administrasi, tetapi yang sebenarnya melakukan komunikasi dan mengukur throughput adalah komputer tempat perintah ini dijalankan, dan semua ini dijalankan dalam konteks yang tidak ada hubungannya dengan komputer yang menjadi tujuan koneksi Mode Administrasi.
+CMD_TrafficServer_Help	Gunakan ini untuk mengeksekusi program server dari alat pengukuran throughput komunikasi. \nDua perintah, TrafficClient dan TrafficServer, digunakan untuk alat pengukuran throughput komunikasi untuk memungkinkan pengukuran throughput komunikasi yang dapat ditransfer antara dua komputer yang terhubung melalui jaringan IP. \nUntuk mengatur port TCP komputer ini ke status Mendengarkan untuk menunggu koneksi dari TrafficClient komputer lain, tentukan nomor port dan mulai program server menggunakan perintah TrafficServer. \nAnda dapat menampilkan informasi yang lebih rinci tentang alat pengukuran throughput komunikasi dengan memasukkan "TrafficClient ?". \n\nCatatan: Perintah ini dapat dipanggil dari Utilitas Manajemen Baris Perintah Ranz VPN. Anda juga dapat mengeksekusi perintah ini saat terhubung ke VPN Server atau VPN Client saat dalam Mode Administrasi, tetapi yang sebenarnya melakukan komunikasi dan mengukur throughput adalah komputer tempat perintah ini dijalankan, dan semua ini dijalankan dalam konteks yang tidak ada hubungannya dengan komputer yang menjadi tujuan koneksi Mode Administrasi.
 CMD_TrafficServer_Args	TrafficServer [port] [/NOHUP:yes|no]
 CMD_TrafficServer_[port]	Spesifikasikan, menggunakan bilangan bulat, nomor port yang akan digunakan untuk mendengarkan koneksi. Jika port yang ditentukan sudah digunakan oleh program lain, atau jika port tidak dapat dibuka, maka akan terjadi kesalahan.
 CMD_TrafficServer_NOHUP		Ketika "yes" ditentukan, proses server tidak akan berhenti terlepas dari input apapun dari konsol. Ini berguna ketika Anda ingin menjalankan TrafficServer tanpa henti.
@@ -2810,20 +2810,20 @@ TTC_RES_BPS_TOTAL		Total Throughput Rata-rata
 
 
 # Check command
-CMD_Check				Periksa apakah operasi SoftEther VPN mungkin
-CMD_Check_Help			Gunakan ini untuk memeriksa apakah komputer saat ini yang menjalankan vpncmd merupakan platform operasi yang cocok untuk SoftEther VPN Server / Bridge. \nJika pemeriksaan ini lulus pada suatu sistem, kemungkinan besar perangkat lunak SoftEther VPN akan beroperasi dengan benar pada sistem tersebut. \nJuga, jika pemeriksaan ini tidak lulus pada suatu sistem, maka ini menunjukkan bahwa beberapa masalah mungkin timbul jika perangkat lunak SoftEther VPN digunakan pada sistem tersebut.
+CMD_Check				Periksa apakah operasi Ranz VPN mungkin
+CMD_Check_Help			Gunakan ini untuk memeriksa apakah komputer saat ini yang menjalankan vpncmd merupakan platform operasi yang cocok untuk Ranz VPN Server / Bridge. \nJika pemeriksaan ini lulus pada suatu sistem, kemungkinan besar perangkat lunak Ranz VPN akan beroperasi dengan benar pada sistem tersebut. \nJuga, jika pemeriksaan ini tidak lulus pada suatu sistem, maka ini menunjukkan bahwa beberapa masalah mungkin timbul jika perangkat lunak Ranz VPN digunakan pada sistem tersebut.
 CMD_Check_Args			Periksa
 
 
 # Concerning System Checker
 # (This contains some strange character strings which are used to check character code conversion.)
-CHECK_TITLE				---------------------------------------------------\nSoftEther VPN Operation Environment Check Tool\nDeveloper Edition\n\nCopyright (c) SoftEther VPN Project.\nAll Rights Reserved.\n\n
-CHECK_NOTE				Jika alat pemeriksaan lingkungan operasi ini dijalankan di suatu sistem dan sistem tersebut lulus, kemungkinan besar perangkat lunak SoftEther VPN dapat beroperasi di sistem tersebut. Pemeriksaan ini mungkin memerlukan waktu. Harap tunggu...\n\n
+CHECK_TITLE				---------------------------------------------------\nRanz VPN Operation Environment Check Tool\n\nCopyright (c) SoftEther VPN Project.\nAll Rights Reserved.\n\n
+CHECK_NOTE				Jika alat pemeriksaan lingkungan operasi ini dijalankan di suatu sistem dan sistem tersebut lulus, kemungkinan besar perangkat lunak Ranz VPN dapat beroperasi di sistem tersebut. Pemeriksaan ini mungkin memerlukan waktu. Harap tunggu...\n\n
 CHECK_EXEC_TAG			Memeriksa '%s'... \n
 CHECK_PASS				Lulus
 CHECK_FAIL				Gagal
-CHECK_RESULT_1			Semua pemeriksaan lulus. Kemungkinan besar SoftEther VPN Server / Bridge dapat beroperasi dengan normal di sistem ini.
-CHECK_RESULT_2			Beberapa pemeriksaan gagal. Harap periksa lingkungan operasi sistem ini. Jika SoftEther VPN Server / Bridge dijalankan di sistem ini, masalah dapat terjadi.
+CHECK_RESULT_1			Semua pemeriksaan lulus. Kemungkinan besar Ranz VPN Server / Bridge dapat beroperasi dengan normal di sistem ini.
+CHECK_RESULT_2			Beberapa pemeriksaan gagal. Harap periksa lingkungan operasi sistem ini. Jika Ranz VPN Server / Bridge dijalankan di sistem ini, masalah dapat terjadi.
 CHECK_TEST_123456789	123456789
 
 
