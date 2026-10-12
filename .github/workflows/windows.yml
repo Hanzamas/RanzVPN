@@ -89,6 +89,13 @@ jobs:
         Write-Host $out
         if ($LASTEXITCODE -ne 0) { throw "vpncmd self-check exited with code $LASTEXITCODE" }
         if ($out -notmatch 'All checks passed') { throw "vpncmd self-check did not report 'All checks passed'" }
+    - name: Upload harness outputs (golden bootstrap and diffs)
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        if-no-files-found: ignore
+        name: harness-out-${{ matrix.platform.ARCHITECTURE }}
+        path: build/harness-out/
     - uses: actions/upload-artifact@v4
       with:
         if-no-files-found: error
@@ -164,6 +171,8 @@ jobs:
         # https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/compiler-rt/lib/asan/asan_flags.inc
         # https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/compiler-rt/lib/asan/asan_malloc_win.cpp
         ASAN_OPTIONS: windows_hook_rtl_allocators=1
+        # harness and bench have time budgets that AddressSanitizer would exceed; run them in build_and_test only.
+        RANZ_SMOKE_TESTS: mschapv2,stun,stress
       run: |
         # The smoke test script of build_and_test itself, so both jobs run the same test list:
         # its new path (.github/scripts) first, its old one second. Its output and the vpntest
