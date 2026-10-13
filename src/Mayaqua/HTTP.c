@@ -543,7 +543,6 @@ START:
 	// because it can't respond without a full new HTTP request
 	UINT noop = PackGetInt(p, "noop");
 	if (noop == NOOP_IGNORE) {
-		Debug("recv: noop ignore\n");
 		FreePack(p);
 
 		num_noop++;
@@ -666,7 +665,6 @@ START:
 	UINT noop = PackGetInt(p, "noop");
 	if (noop == NOOP)
 	{
-		Debug("recv: noop\n");
 		FreePack(p);
 
 		p = PackError(0);
@@ -688,7 +686,6 @@ START:
 
 		goto START;
 	} else if (noop == NOOP_IGNORE) {
-		Debug("recv: noop ignore\n");
 		FreePack(p);
 
 		goto START;

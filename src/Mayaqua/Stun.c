@@ -403,7 +403,6 @@ bool StunGetMappedAddress(SOCK *udp_sock, char *server_host_port, IP *mapped_ip,
 
 	if (StunParseServerStr(server_host_port, host, sizeof(host), &server_port) == false)
 	{
-		Debug("StunGetMappedAddress(): invalid STUN server: %s\n", server_host_port);
 		return false;
 	}
 
@@ -422,7 +421,6 @@ bool StunGetMappedAddress(SOCK *udp_sock, char *server_host_port, IP *mapped_ip,
 
 	if (resolved == false || IsZeroIP(&server_ip))
 	{
-		Debug("StunGetMappedAddress(): failed to resolve %s\n", host);
 		return false;
 	}
 
@@ -449,7 +447,6 @@ bool StunGetMappedAddress(SOCK *udp_sock, char *server_host_port, IP *mapped_ip,
 		{
 			if (udp_sock->IgnoreSendErr == false)
 			{
-				Debug("StunGetMappedAddress(): SendTo() failed. IP: %r, port: %u\n", &server_ip, server_port);
 				return false;
 			}
 		}
@@ -503,7 +500,6 @@ bool StunGetMappedAddress(SOCK *udp_sock, char *server_host_port, IP *mapped_ip,
 					if (udp_sock->IgnoreRecvErr == false || (num_ignore_errors++) >= MAX_NUM_IGNORE_ERRORS)
 					{
 						// Serious UDP reception error
-						Debug("StunGetMappedAddress(): RecvFrom() failed.\n");
 						return false;
 					}
 
@@ -521,20 +517,16 @@ bool StunGetMappedAddress(SOCK *udp_sock, char *server_host_port, IP *mapped_ip,
 					READ_UINT(recv_buf + 4) == STUN_MAGIC_COOKIE &&
 					Cmp(recv_buf + 8, transaction_id, STUN_TRANSACTION_ID_SIZE) == 0)
 				{
-					Debug("StunGetMappedAddress(): Binding Error Response from %s\n", host);
 					return false;
 				}
 
 				if (StunParseBindingResponse(recv_buf, ret, transaction_id, mapped_ip, mapped_port))
 				{
-					Debug("StunGetMappedAddress(): mapped address: %r, port: %u\n", mapped_ip, *mapped_port);
 					return true;
 				}
 			}
 		}
 	}
-
-	Debug("StunGetMappedAddress(): no response from %s\n", host);
 
 	return false;
 }

@@ -287,7 +287,6 @@ UINT BindProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 	if (ret == false)
 	{
 		FreeBuf(b);
-		Debug("ProxySocks5Connect(): [Phase 1] Failed to send initial data to the server.\n");
 		ret = PROXY_ERROR_DISCONNECTED;
 		goto FAILURE;
 	}
@@ -301,7 +300,6 @@ UINT BindProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 	if (RecvAll(s, recv_buf, sizeof(recv_buf), false) == false)
 	{
 		FreeBuf(b);
-		Debug("ProxySocks5Connect(): [Phase 1] Failed to receive initial data response from the server.\n");
 		ret = PROXY_ERROR_DISCONNECTED;
 		goto FAILURE;
 	}
@@ -309,7 +307,6 @@ UINT BindProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 	if (recv_buf[0] != 5)
 	{
 		FreeBuf(b);
-		Debug("ProxySocks5Connect(): [Phase 1] Unmatching version: %u.\n", recv_buf[0]);
 		ret = PROXY_ERROR_VERSION;
 		goto FAILURE;
 	}
@@ -340,7 +337,6 @@ UINT BindProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 
 		if (ret == false)
 		{
-			Debug("ProxySocks5Connect(): [Phase 1] Failed to send authentication data to the server.\n");
 			ret = PROXY_ERROR_DISCONNECTED;
 			goto FAILURE;
 		}
@@ -353,14 +349,12 @@ UINT BindProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 
 		if (RecvAll(s, recv_buf, sizeof(recv_buf), false) == false)
 		{
-			Debug("ProxySocks5Connect(): [Phase 1] Failed to receive authentication data response from the server.\n");
 			ret = PROXY_ERROR_DISCONNECTED;
 			goto FAILURE;
 		}
 
 		if (recv_buf[1] != 0)
 		{
-			Debug("ProxySocks5Connect(): [Phase 1] Authentication failure, error code sent by the server: %u.\n", recv_buf[1]);
 			ret = PROXY_ERROR_AUTHENTICATION;
 			goto FAILURE;
 		}
@@ -431,7 +425,6 @@ UINT BindProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 
 	if (ret == false)
 	{
-		Debug("ProxySocks5Connect(): [Phase 2] Failed to send data to the server.\n");
 		ret = PROXY_ERROR_DISCONNECTED;
 		goto FAILURE;
 	}
@@ -463,7 +456,6 @@ UINT BindProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 	if (RecvAll(s, recv_buf_final, 4, false) == false)
 	{
 		Free(recv_buf_final);
-		Debug("ProxySocks5Connect(): [Phase 2] Failed to receive response from the server.\n");
 		ret = PROXY_ERROR_DISCONNECTED;
 		goto FAILURE;
 	}
@@ -499,14 +491,12 @@ UINT BindProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 
 	if (ret == false)
 	{
-		Debug("ProxySocks5Connect(): [Phase 2] Malformed response received from the server.\n");
 		ret = PROXY_ERROR_DISCONNECTED;
 		goto FAILURE;
 	}
 
 	if (recv_buf[0] != 5)
 	{
-		Debug("ProxySocks5Connect(): [Phase 2] Unmatching version: %u.\n", recv_buf_final[0]);
 		ret = PROXY_ERROR_VERSION;
 		goto FAILURE;
 	}
@@ -521,11 +511,9 @@ UINT BindProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 	case 3:
 	case 4:
 	case 5:
-		Debug("ProxySocks5Connect(): [Phase 2] Connection to target failed with error: %u\n", recv_buf[1]);
 		ret = PROXY_ERROR_TARGET;
 		goto FAILURE;
 	default:
-		Debug("ProxySocks5Connect(): [Phase 2] Connection failed with error: %u\n", recv_buf[1]);
 		ret = PROXY_ERROR_GENERIC;
 		goto FAILURE;
 	}

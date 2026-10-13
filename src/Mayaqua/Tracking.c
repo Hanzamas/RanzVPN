@@ -394,7 +394,6 @@ void TrackDeleteObj(UINT64 addr)
 		if (o == NULL)
 		{
 			UnlockTrackingList();
-			Debug("TrackDeleteObj(): 0x%x not found in tracking list!\n", addr);
 			return;
 		}
 		DeleteTrackingList(o, true);

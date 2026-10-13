@@ -395,7 +395,6 @@ void InitHamcore()
 	hamcore_io = HamcoreOpen(HAMCORE_FILE_PATH);
 	if (hamcore_io != NULL)
 	{
-		Debug("InitHamcore(): Loaded from \"%s\".\n", HAMCORE_FILE_PATH);
 		return;
 	}
 #endif
@@ -406,7 +405,6 @@ void InitHamcore()
 	hamcore_io = HamcoreOpen(path);
 	if (hamcore_io != NULL)
 	{
-		Debug("InitHamcore(): Loaded from \"%s\".\n", path);
 	}
 }
 

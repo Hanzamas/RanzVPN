@@ -136,8 +136,6 @@ void Tick64Thread(THREAD *thread, void *param)
 					t->Tick = tick64;
 					t->Time = now;
 					Add(tk64->AdjustTime, t);
-					Debug("Adjust Time: Tick = %I64u, Time = %I64u\n",
-						t->Tick, t->Time);
 
 					// To prevent consuming memory infinite on a system that clock is skewd
 					if (LIST_NUM(tk64->AdjustTime) > MAX_ADJUST_TIME)
