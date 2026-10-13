@@ -1136,10 +1136,6 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 
 	c->CurrentRegionLock = NewLock();
 
-#ifdef	BETA_NUMBER
-	c->Beta = BETA_NUMBER;
-#endif
-
 	InitNoSslList(c);
 
 	c->AssignedBridgeLicense = NewCounter();
@@ -1200,15 +1196,7 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 
 	InitLocalBridgeList(c);
 
-#ifdef	ALPHA_VERSION
-	beta_str = "Alpha";
-#else
-#ifndef	RELEASE_CANDIDATE
-	beta_str = "Beta";
-#else
 	beta_str = "Release Candidate";
-#endif
-#endif
 
 	ToStr(tmp2, c->Beta);
 	Format(tmp2, sizeof(tmp2), " %s %s ", beta_str, tmp2);

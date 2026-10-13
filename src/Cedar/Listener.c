@@ -184,7 +184,6 @@ void TCPAccepted(LISTENER *r, SOCK *s)
 
 	num_clients_from_this_ip = GetNumIpClient(&s->RemoteIP);
 
-#ifdef	USE_DOS_ATTACK_DETECTION
 	if (disable_dos == false && r->DisableDos == false)
 	{
 		UINT max_uec, now_uec;
@@ -218,7 +217,6 @@ void TCPAccepted(LISTENER *r, SOCK *s)
 			return;
 		}
 	}
-#endif
 
 	IPToStr(tmp, sizeof(tmp), &s->RemoteIP);
 

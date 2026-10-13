@@ -106,8 +106,6 @@ UINT ThreadId();
 void GetDateTimeStr64(char *str, UINT size, UINT64 sec64);
 void GetDateTimeStr64Uni(wchar_t *str, UINT size, UINT64 sec64);
 void GetDateTimeStrMilli64(char *str, UINT size, UINT64 sec64);
-void GetDateTimeStrMilli64ForFileName(char *str, UINT size, UINT64 sec64);
-void GetDateTimeStrMilliForFileName(char *str, UINT size, SYSTEMTIME *tm);
 void GetDateStr64(char *str, UINT size, UINT64 sec64);
 void GetDateTimeStrEx64(wchar_t *str, UINT size, UINT64 sec64, LOCALE *locale);
 void GetDateStrEx64(wchar_t *str, UINT size, UINT64 sec64, LOCALE *locale);

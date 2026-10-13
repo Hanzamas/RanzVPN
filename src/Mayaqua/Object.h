@@ -41,7 +41,6 @@ struct EVENT
 struct DEADCHECK
 {
 	LOCK *Lock;
-	UINT Timeout;
 	bool Unlocked;
 };
 

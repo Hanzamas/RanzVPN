@@ -31,8 +31,6 @@ struct DYN_VALUE
 #define PQ_GROUP_LIST				"X25519MLKEM768:p521_kyber1024:x25519_kyber768:P-521:X25519:P-256"
 #endif
 
-#define	SSL_LOGGING_DIRNAME			"@ssl_log"
-
 #define	PRIVATE_IP_TXT_FILENAME		"$private_ip.txt"
 
 #define	MAKE_SPECIAL_PORT(p)		(UINT)((UINT)0x10000 | (UINT)(p))
@@ -145,13 +143,6 @@ struct SOCK
 	char ProtocolDetails[256];
 	UCHAR Ssl_Init_Async_SendAlert[2];
 	SSL_ACCEPT_SETTINGS SslAcceptSettings;
-
-#ifdef	ENABLE_SSL_LOGGING
-	bool IsSslLoggingEnabled;
-	IO *SslLogging_Recv;
-	IO *SslLogging_Send;
-	LOCK *SslLogging_Lock;
-#endif
 
 	void *hAcceptEvent;
 
@@ -389,12 +380,6 @@ int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool
 void AddProtocolDetailsStr(char *dst, UINT dst_size, char *str);
 void AddProtocolDetailsKeyValueStr(char *dst, UINT dst_size, char *key, char *value);
 void AddProtocolDetailsKeyValueInt(char *dst, UINT dst_size, char *key, UINT value);
-
-#ifdef	ENABLE_SSL_LOGGING
-void SockEnableSslLogging(SOCK *s);
-void SockWriteSslLog(SOCK *s, void *send_data, UINT send_size, void *recv_data, UINT recv_size);
-void SockCloseSslLogging(SOCK *s);
-#endif
 
 void CopyIP(IP *dst, IP *src);
 bool IsIP4(IP *ip);

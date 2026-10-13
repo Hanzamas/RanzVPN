@@ -400,17 +400,6 @@ void GetDateTimeStrMilli64(char *str, UINT size, UINT64 sec64)
 	UINT64ToSystem(&st, sec64);
 	GetDateTimeStrMilli(str, size, &st);
 }
-void GetDateTimeStrMilli64ForFileName(char *str, UINT size, UINT64 sec64)
-{
-	SYSTEMTIME st;
-	UINT64ToSystem(&st, sec64);
-	GetDateTimeStrMilliForFileName(str, size, &st);
-}
-void GetDateTimeStrMilliForFileName(char *str, UINT size, SYSTEMTIME *tm)
-{
-	Format(str, size, "%04u%02u%02u_%02u%02u%02u",
-		tm->wYear, tm->wMonth, tm->wDay, tm->wHour, tm->wMinute, tm->wSecond);
-}
 void GetDateStr64(char *str, UINT size, UINT64 sec64)
 {
 	SYSTEMTIME st;

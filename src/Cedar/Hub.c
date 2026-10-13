@@ -28,8 +28,6 @@
 		dest = value;                               \
 	}
 
-static UCHAR broadcast[] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-
 // These names must be shorter than 64 bytes
 ADMIN_OPTION admin_options[] =
 {
@@ -3440,7 +3438,6 @@ DISCARD_PACKET:
 					forward_now = false;
 					packet->Loss = packet->Jitter = packet->Delay = 0;
 					packet->DelayedForwardTick = TickHighres64() + (UINT64)delay_uint;
-					packet->DelayedSrcSession = s;
 
 					LockList(s->DelayedPacketList);
 					{

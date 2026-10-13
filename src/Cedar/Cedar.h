@@ -28,8 +28,6 @@
 #define	CEDAR_WIRE_VER			502		// Major * 100 + minor
 #define	CEDAR_WIRE_BUILD		5187
 
-#define	RELEASE_CANDIDATE
-
 #ifndef	BUILDER_NAME
 #define	BUILDER_NAME			"Unknown"
 #endif
@@ -62,8 +60,6 @@
 #define	BUILD_DATE_SE			0
 #endif
 
-
-#define	USE_DOS_ATTACK_DETECTION
 
 #define	DEFAULT_USERNAME_HUB_SEPARATOR	'@'
 

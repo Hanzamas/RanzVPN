@@ -497,8 +497,6 @@ DHCPV4_DATA *ParseDHCPv4Data(PKT *pkt)
 		d->ParsedOptionList->ServerAddress = d->Header->ServerIP;
 	}
 
-	d->ParsedOptionList->ClientAddress = d->Header->YourIP;
-
 	return d;
 
 LABEL_ERROR:
@@ -1240,8 +1238,6 @@ PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool b
 	vlan_type_id_16 = Endian16((USHORT)vlan_type_id);
 
 	p = ZeroMallocFast(sizeof(PKT));
-
-	p->VlanTypeID = vlan_type_id;
 
 	// Drop any garbage after the payload of IPv4 and IPv6 packets
 	if (size >= 24)
@@ -2100,7 +2096,6 @@ bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 	msg_size = size - sizeof(ICMP_HEADER);
 
 	icmp_info.Type = icmp->Type;
-	icmp_info.Code = icmp->Code;
 	icmp_info.Data = ((UCHAR *)buf) + sizeof(ICMP_HEADER);
 	icmp_info.DataSize = msg_size;
 
@@ -2338,8 +2333,6 @@ bool ParsePacketIPv4(PKT *p, UCHAR *buf, UINT size)
 	{
 		p->IPv4PayloadSize = 0;
 	}
-
-	p->IPv4PayloadData = buf;
 
 	if (IPV4_GET_OFFSET(p->L3.IPv4Header) != 0)
 	{

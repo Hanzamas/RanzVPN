@@ -337,7 +337,6 @@ struct ICMPV6_OPTION_MTU
 struct ICMPV6_HEADER_INFO
 {
 	UCHAR Type;
-	UCHAR Code;
 	USHORT DataSize;
 	void *Data;
 	ICMP_ECHO EchoHeader;
@@ -408,13 +407,11 @@ struct PKT
 	bool			BroadcastPacket;
 	bool			InvalidSourcePacket;
 	bool			AccessChecked;
-	UINT			VlanTypeID;		// TypeID of the tagged VLAN (usually 0x8100)
 	UINT			VlanId;
 	UINT			Delay;
 	UINT			Jitter;
 	UINT			Loss;
 	UINT64			DelayedForwardTick;
-	struct SESSION	*DelayedSrcSession;
 	UINT			TypeL3;
 	IPV6_HEADER_PACKET_INFO IPv6HeaderPacketInfo;	// Only for TypeL3 == L3_IPV6
 	ICMPV6_HEADER_INFO ICMPv6HeaderPacketInfo;		// Only for TypeL4 == L4_ICMPV6
@@ -430,7 +427,6 @@ struct PKT
 	} L3;
 	UINT			TypeL4;
 	UINT			IPv4PayloadSize;
-	void			*IPv4PayloadData;
 	union
 	{
 		UDP_HEADER	*UDPHeader;
@@ -528,20 +524,13 @@ struct DHCP_CLASSLESS_ROUTE_TABLE
 	DHCP_CLASSLESS_ROUTE Entries[MAX_DHCP_CLASSLESS_ROUTE_ENTRIES];
 };
 
-#define	MAX_USER_CLASS_LEN	255
-
 struct DHCP_OPTION_LIST
 {
 	UINT Opcode;
 
 	UINT RequestedIp;
 	char Hostname[MAX_HOST_NAME_LEN + 1];
-	char UserClass[MAX_USER_CLASS_LEN + 1];
-	// RFC 3003 makes User Class an array of text strings, but ISC DHCP
-	// and Microsoft DHCP Server treat it as one text string
-	// i.e. ISC DHCP and Microsoft DHCP Server, consider it a text string
 
-	UINT ClientAddress;
 	UINT ServerAddress;
 	UINT LeaseTime;
 	char DomainName[MAX_HOST_NAME_LEN + 1];

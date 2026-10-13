@@ -14,8 +14,6 @@
 #include <stdlib.h>
 #include <wchar.h>
 
-extern LOCK *token_lock;
-
 bool UniInChar(wchar_t *string, wchar_t c)
 {
 	UINT i, len;

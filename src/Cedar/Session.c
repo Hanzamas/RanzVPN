@@ -1143,7 +1143,6 @@ void ClientThread(THREAD *t, void *param)
 
 		Wait(s->HaltEvent, retry_interval);
 
-SKIP:
 		if (s->ConnectSucceed == false)
 		{
 			s->CurrentRetryCount++;

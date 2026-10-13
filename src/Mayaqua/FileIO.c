@@ -257,13 +257,6 @@ void InitHamcore()
 	}
 
 	hamcore = NewList(CompareHamcore);
-#ifdef HAMCORE_FILE_PATH
-	hamcore_io = HamcoreOpen(HAMCORE_FILE_PATH);
-	if (hamcore_io != NULL)
-	{
-		return;
-	}
-#endif
 	char path[MAX_PATH];
 	GetExeDir(path, sizeof(path));
 	Format(path, sizeof(path), "%s/%s", path, HAMCORE_FILE_NAME);

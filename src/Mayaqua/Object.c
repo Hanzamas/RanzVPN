@@ -46,7 +46,6 @@ void CheckDeadLock(LOCK *lock, UINT timeout, char *name)
 
 	Zero(&c, sizeof(c));
 	c.Lock = lock;
-	c.Timeout = timeout;
 	c.Unlocked = false;
 
 	t = NewThread(CheckDeadLockThread, &c);

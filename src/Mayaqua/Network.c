@@ -3268,112 +3268,8 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 
 	Unlock(sock->ssl_lock);
 
-#ifdef	ENABLE_SSL_LOGGING
-	if (sock->ServerMode)
-	{
-		SockEnableSslLogging(sock);
-	}
-#endif
-
 	return true;
 }
-
-
-#ifdef	ENABLE_SSL_LOGGING
-
-void SockEnableSslLogging(SOCK *s)
-{
-	char dirname[MAX_PATH];
-	char tmp[MAX_PATH];
-	char dtstr[MAX_PATH];
-	char fn1[MAX_PATH], fn2[MAX_PATH];
-	if (s == NULL)
-	{
-		return;
-	}
-
-	if (s->IsSslLoggingEnabled)
-	{
-		return;
-	}
-
-	s->IsSslLoggingEnabled = true;
-
-	GetDateTimeStrMilli64ForFileName(dtstr, sizeof(dtstr), LocalTime64());
-	Format(tmp, sizeof(tmp), "%s__%r_%u__%r_%u", dtstr,
-	       &s->LocalIP, s->LocalPort, &s->RemoteIP, s->RemotePort);
-
-	ConbinePath(dirname, sizeof(dirname), SSL_LOGGING_DIRNAME, tmp);
-
-	MakeDirEx(dirname);
-
-	ConbinePath(fn1, sizeof(fn1), dirname, "send.c");
-	ConbinePath(fn2, sizeof(fn2), dirname, "recv.c");
-
-	s->SslLogging_Send = FileCreate(fn1);
-	s->SslLogging_Recv = FileCreate(fn2);
-
-	s->SslLogging_Lock = NewLock();
-}
-
-void SockCloseSslLogging(SOCK *s)
-{
-	if (s == NULL)
-	{
-		return;
-	}
-
-	if (s->IsSslLoggingEnabled == false)
-	{
-		return;
-	}
-
-	s->IsSslLoggingEnabled = false;
-
-	FileClose(s->SslLogging_Recv);
-	s->SslLogging_Recv = NULL;
-
-	FileClose(s->SslLogging_Send);
-	s->SslLogging_Send = NULL;
-
-	DeleteLock(s->SslLogging_Lock);
-	s->SslLogging_Lock = NULL;
-}
-
-void SockWriteSslLog(SOCK *s, void *send_data, UINT send_size, void *recv_data, UINT recv_size)
-{
-	if (s == NULL)
-	{
-		return;
-	}
-
-	if (s->IsSslLoggingEnabled == false)
-	{
-		return;
-	}
-
-	Lock(s->SslLogging_Lock);
-	{
-		if (s->SslLogging_Send != NULL)
-		{
-			if (send_size >= 1 && send_data != NULL)
-			{
-				FileWrite(s->SslLogging_Send, send_data, send_size);
-			}
-		}
-
-		if (s->SslLogging_Recv != NULL)
-		{
-			if (recv_size >= 1 && recv_data != NULL)
-			{
-				FileWrite(s->SslLogging_Recv, recv_data, recv_size);
-			}
-		}
-	}
-	Unlock(s->SslLogging_Lock);
-}
-
-#endif
 
 UINT SecureRecv(SOCK *sock, void *data, UINT size)
 {
@@ -3456,13 +3352,6 @@ UINT SecureRecv(SOCK *sock, void *data, UINT size)
 	}
 	Unlock(sock->ssl_lock);
 
-#ifdef	ENABLE_SSL_LOGGING
-	if (ret > 0)
-	{
-		SockWriteSslLog(sock, NULL, 0, data, ret);
-	}
-#endif
-
 	if (ret > 0)
 	{
 		sock->RecvSize += (UINT64)ret;
@@ -3541,13 +3430,6 @@ UINT SecureSend(SOCK *sock, void *data, UINT size)
 		}
 	}
 	Unlock(sock->ssl_lock);
-
-#ifdef	ENABLE_SSL_LOGGING
-	if (ret > 0)
-	{
-		SockWriteSslLog(sock, data, ret, NULL, 0);
-	}
-#endif
 
 	if (ret > 0)
 	{
@@ -4139,10 +4021,6 @@ void Disconnect(SOCK *sock)
 	{
 		return;
 	}
-
-#ifdef	ENABLE_SSL_LOGGING
-	SockCloseSslLogging(sock);
-#endif
 
 	if (sock->Type == SOCK_TCP && sock->ListenMode)
 	{
