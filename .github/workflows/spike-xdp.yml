@@ -1,0 +1,68 @@
+# Spike only (ADR-0018 open risk): XDP for Windows on a KM-TEST Loopback Adapter.
+# Lives on spike/* branches; never merged to master.
+name: spike-xdp
+
+on:
+  push:
+    branches: ['spike/**']
+    paths: ['spikes/xdp-loopback/**', '.github/workflows/spike-xdp.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  XDP_VERSION: '1.4.0'
+
+jobs:
+  xdp:
+    strategy:
+      fail-fast: false
+      matrix:
+        # x64 only: nuget.org has no production-signed ARM64 runtime
+        # (ARM64 1.4 builds are test-signed GitHub pre-releases only).
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch XDP ${{ env.XDP_VERSION }} SDK and runtime from nuget.org
+        run: |
+          $pk = "$env:RUNNER_TEMP\xdp"
+          foreach ($p in 'Microsoft.XDP-for-Windows.Sdk', 'Microsoft.XDP-for-Windows.Runtime.x64') {
+            $z = "$pk\$p.$env:XDP_VERSION.zip"
+            New-Item -ItemType Directory -Force $pk | Out-Null
+            Invoke-WebRequest "https://www.nuget.org/api/v2/package/$p/$env:XDP_VERSION" -OutFile $z
+            "$p sha256=$((Get-FileHash $z -Algorithm SHA256).Hash)"
+            Expand-Archive $z "$pk\$p" -Force
+          }
+
+      - name: Build spike (CMake, MSVC x64)
+        run: |
+          cmake -S spikes/xdp-loopback -B build -A x64 -DXDP_SDK="$env:RUNNER_TEMP\xdp\Microsoft.XDP-for-Windows.Sdk"
+          cmake --build build --config Release
+
+      - name: Run spike
+        timeout-minutes: 10
+        run: |
+          ./spikes/xdp-loopback/run.ps1 -Bin build/Release -Runtime "$env:RUNNER_TEMP\xdp\Microsoft.XDP-for-Windows.Runtime.x64" -LogDir logs -Seconds 5
+
+      - name: Summary
+        if: always()
+        run: |
+          "### ${{ matrix.os }}" >> $env:GITHUB_STEP_SUMMARY
+          Get-Content logs/*.txt -ErrorAction SilentlyContinue | Select-String -Pattern '^(RESULT|PPS) ' | ForEach-Object { $_.Line } | Select-Object -Unique | ForEach-Object { "- ``$_``" } >> $env:GITHUB_STEP_SUMMARY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spike-xdp-${{ matrix.os }}
+          path: logs
