@@ -11,6 +11,8 @@ param(
 )
 $ErrorActionPreference = 'Continue'
 New-Item -ItemType Directory -Force $LogDir, $OutDir | Out-Null
+$LogDir = (Resolve-Path $LogDir).Path
+$OutDir = (Resolve-Path $OutDir).Path
 Start-Transcript -Path (Join-Path $LogDir 'build-bpf.txt') | Out-Null
 function Section($t) { Write-Host "`n===== $t =====" }
 
