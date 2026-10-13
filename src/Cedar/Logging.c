@@ -384,7 +384,7 @@ ERASER *NewEraser(LOG *log, UINT64 min_size)
 
 	e = ZeroMalloc(sizeof(ERASER));
 
-	GetLogDir(dir, sizeof(dir));
+	GetExeDir(dir, sizeof(dir));
 
 	e->Log = log;
 	e->MinFreeSpace = min_size;
@@ -1792,7 +1792,7 @@ void MakeLogFileNameStringFromTick(LOG *g, char *str, UINT size, UINT64 tick, UI
 		}
 	}
 
-	time = TickToTime(tick);
+	time = Tick64ToTime64(tick);
 	UINT64ToSystem(&st, SystemToLocal64(time));
 
 	switch (switch_type)
@@ -2249,7 +2249,7 @@ void WriteRecordToBuffer(BUF *b, RECORD *r)
 		return;
 	}
 
-	time = SystemToLocal64(TickToTime(r->Tick));
+	time = SystemToLocal64(Tick64ToTime64(r->Tick));
 
 	GetDateStr64(date_str, sizeof(date_str), time);
 	GetTimeStrMilli64(time_str, sizeof(time_str), time);

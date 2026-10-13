@@ -31,9 +31,7 @@ PACK *RpcCall(RPC *r, char *function_name, PACK *p);
 void RpcServer(RPC *r);
 bool RpcRecvNextCall(RPC *r);
 PACK *CallRpcDispatcher(RPC *r, PACK *p);
-void EndRpc(RPC *rpc);
 void RpcFree(RPC *rpc);
-void RpcFreeEx(RPC *rpc, bool no_disconnect);
 
 #endif	// REMOTE_H
 

@@ -37,14 +37,11 @@ static UNI_TOKEN_LIST *cmdline_uni_token = NULL;
 static OS_INFO *os_info = NULL;
 static bool dot_net_mode = false;
 static bool minimal_mode = false;
-static UINT last_time_check = 0;
-static UINT first_time_check = 0;
 static bool is_ham_mode = false;
 static UINT init_mayaqua_counter = 0;
 static BUF *probe_buf = NULL;
 static LOCK *probe_lock = NULL;
 static UINT64 probe_start = 0;
-static UINT64 probe_last = 0;
 static bool probe_enabled = false;
 
 // Call once, as early as possible after the process starts
@@ -59,126 +56,6 @@ void InitProcessCallOnce()
 
 		MsInitProcessCallOnce();
 	}
-}
-
-USHORT CalcChecksum16(void *buf, UINT size)
-{
-	int sum = 0;
-	USHORT *addr = (USHORT *)buf;
-	int len = (int)size;
-	USHORT *w = addr;
-	int nleft = len;
-	USHORT answer = 0;
-
-	while (nleft > 1)
-	{
-		USHORT ww = 0;
-		Copy(&ww, w++, sizeof(USHORT));
-		sum += ww;
-		nleft -= 2;
-	}
-
-	if (nleft == 1)
-	{
-		*(UCHAR *)(&answer) = *(UCHAR *)w;
-		sum += answer;
-	}
-
-	sum = (sum >> 16) + (sum & 0xffff);
-	sum += (sum >> 16);
-
-	answer = ~sum;
-
-	return answer;
-}
-
-void WriteProbeData(char *filename, UINT line, char *str, void *data, UINT size)
-{
-	char tmp[MAX_SIZE];
-	USHORT cs;
-
-	if (IsProbeEnabled() == false)
-	{
-		return;
-	}
-
-	if (size != 0)
-	{
-		cs = CalcChecksum16(data, size);
-	}
-	else
-	{
-		cs = 0;
-	}
-
-	snprintf(tmp, sizeof(tmp), "\"%s\" (Size=%5u, Crc=0x%04X)", str, size, cs);
-
-	WriteProbe(filename, line, tmp);
-}
-
-void WriteProbe(char *filename, UINT line, char *str)
-{
-	char *s;
-	char tmp[MAX_SIZE];
-	char tmp2[MAX_SIZE];
-	UINT64 now = 0;
-	UINT64 time;
-
-	if (IsProbeEnabled() == false)
-	{
-		return;
-	}
-
-	now = MsGetHiResCounter();
-
-	Lock(probe_lock);
-	{
-		UINT64 diff;
-		
-		time = MsGetHiResTimeSpanUSec(now - probe_start);
-
-		diff = time - probe_last;
-
-		if (time < probe_last)
-		{
-			diff = 0;
-		}
-
-		probe_last = time;
-
-		ToStr64(tmp, time);
-		MakeCharArray2(tmp2, ' ', (UINT)(MIN(12, (int)12 - (int)StrLen(tmp))));
-		WriteBuf(probe_buf, tmp2, StrLen(tmp2));
-		WriteBuf(probe_buf, tmp, StrLen(tmp));
-
-		s = " [+";
-		WriteBuf(probe_buf, s, StrLen(s));
-
-		ToStr64(tmp, diff);
-		MakeCharArray2(tmp2, ' ', (UINT)(MIN(12, (int)12 - (int)StrLen(tmp))));
-		WriteBuf(probe_buf, tmp2, StrLen(tmp2));
-		WriteBuf(probe_buf, tmp, StrLen(tmp));
-
-		s = "] - ";
-		WriteBuf(probe_buf, s, StrLen(s));
-
-		WriteBuf(probe_buf, filename, StrLen(filename));
-
-		s = "(";
-		WriteBuf(probe_buf, s, StrLen(s));
-
-		ToStr64(tmp, (UINT64)line);
-		WriteBuf(probe_buf, tmp, StrLen(tmp));
-
-		s = "): ";
-		WriteBuf(probe_buf, s, StrLen(s));
-
-		WriteBuf(probe_buf, str, StrLen(str));
-
-		s = "\r\n";
-		WriteBuf(probe_buf, s, StrLen(s));
-	}
-	Unlock(probe_lock);
 }
 
 void InitProbe()
@@ -218,15 +95,6 @@ void EnableProbe(bool enable)
 	probe_enabled = enable;
 }
 
-bool IsProbeEnabled()
-{
-#ifndef	USE_PROBE
-	return false;
-#else	// USE_PROBE
-	return probe_enabled;
-#endif	// USE_PROBE
-}
-
 void SetHamMode()
 {
 	is_ham_mode = true;
@@ -235,30 +103,6 @@ void SetHamMode()
 bool IsHamMode()
 {
 	return is_ham_mode;
-}
-
-void TimeCheck()
-{
-	UINT now, ret, total;
-	now = Win32GetTick();
-	if (last_time_check == 0)
-	{
-		ret = 0;
-	}
-	else
-	{
-		ret = now - last_time_check;
-	}
-	last_time_check = now;
-
-	if (first_time_check == 0)
-	{
-		first_time_check = now;
-	}
-
-	total = now - first_time_check;
-
-	printf(" -- %3.3f / %3.3f\n", (double)ret / 1000.0f, (double)total / 1000.0f);
 }
 
 bool MayaquaIsDotNetMode()
@@ -385,7 +229,7 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 			L"Please execute program with full path.\r\n",
 			tmp);
 
-		AlertW(tmp2, NULL);
+		OSAlertW(tmp2, NULL);
 		_exit(0);
 	}
 
@@ -485,10 +329,6 @@ void CheckUnixTempDir()
 void Alert(char *msg, char *caption)
 {
 	OSAlert(msg, caption);
-}
-void AlertW(wchar_t *msg, wchar_t *caption)
-{
-	OSAlertW(msg, caption);
 }
 
 OS_INFO *GetOsInfo()

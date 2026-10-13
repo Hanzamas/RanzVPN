@@ -1118,34 +1118,6 @@ bool LoadLocale(LOCALE *locale, wchar_t *str)
 	return true;
 }
 
-USHORT SystemToDosDate(SYSTEMTIME *st)
-{
-	return (USHORT)(
-		((UINT)(st->wYear - 1980) << 9) |
-		((UINT)st->wMonth<< 5) |
-		(UINT)st->wDay);
-}
-USHORT System64ToDosDate(UINT64 i)
-{
-	SYSTEMTIME st;
-	UINT64ToSystem(&st, i);
-	return SystemToDosDate(&st);
-}
-
-USHORT SystemToDosTime(SYSTEMTIME *st)
-{
-	return (USHORT)(
-		((UINT)st->wHour << 11) |
-		((UINT)st->wMinute << 5) |
-		((UINT)st->wSecond >> 1));
-}
-USHORT System64ToDosTime(UINT64 i)
-{
-	SYSTEMTIME st;
-	UINT64ToSystem(&st, i);
-	return SystemToDosTime(&st);
-}
-
 void TmToSystem(SYSTEMTIME *st, struct tm *t)
 {
 	struct tm tmp;

@@ -30,7 +30,7 @@ SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool 
 
 	if (param->ProxyType == PROXY_DIRECT)
 	{
-		sock = TcpConnectEx3(param->HostName, param->Port, timeout, cancel, NULL, NULL);
+		sock = BindConnectEx4(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, param->HostName, param->Port, timeout, cancel, true, NULL);
 		*error_code = (sock != NULL ? ERR_NO_ERROR : ERR_CONNECT_FAILED);
 		return sock;
 	}
@@ -177,7 +177,7 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 	}
 	else
 	{
-		s = TcpConnectEx3(con.ProxyHostName, con.ProxyPort, timeout_connect, cancel, NULL, NULL);
+		s = BindConnectEx4(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, con.ProxyHostName, con.ProxyPort, timeout_connect, cancel, true, NULL);
 		if (s == NULL)
 		{
 			*error_code = ERR_PROXY_CONNECT_FAILED;

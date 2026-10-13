@@ -35,12 +35,9 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str);
 bool ServerUploadHello(CONNECTION *c);
 bool ClientUploadAuth(CONNECTION *c);
 SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect);
-SOCK *TcpConnectEx3(char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, IP *ret_ip);
 
 UINT ProxyCodeToCedar(UINT code);
 
-void InitProtocol();
-void FreeProtocol();
 
 POLICY *PackGetPolicy(PACK *p);
 void PackAddPolicy(PACK *p, POLICY *y);

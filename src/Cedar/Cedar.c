@@ -652,29 +652,19 @@ void StopAllConnection(CEDAR *c)
 
 void DelHub(CEDAR *c, HUB *h)
 {
-	DelHubEx(c, h, false);
-}
-void DelHubEx(CEDAR *c, HUB *h, bool no_lock)
-{
 	if (c == NULL || h == NULL)
 	{
 		return;
 	}
 
-	if (no_lock == false)
-	{
-		LockHubList(c);
-	}
+	LockHubList(c);
 
 	if (Delete(c->HubList, h))
 	{
 		ReleaseHub(h);
 	}
 
-	if (no_lock == false)
-	{
-		UnlockHubList(c);
-	}
+	UnlockHubList(c);
 }
 
 void AddHub(CEDAR *c, HUB *h)
@@ -1125,10 +1115,6 @@ void FreeNetSvcList(CEDAR *cedar)
 	ReleaseList(cedar->NetSvcList);
 }
 
-void SetCedarCert(CEDAR *c, X *server_x, K *server_k)
-{
-	SetCedarCertAndChain(c, server_x, server_k, NULL);
-}
 void SetCedarCertAndChain(CEDAR *c, X *server_x, K *server_k, LIST *server_chain)
 {
 	if (server_x == NULL || server_k == NULL)
@@ -1366,8 +1352,6 @@ void InitCedar()
 	}
 
 	InitWaterMark();
-
-	InitProtocol();
 }
 
 void FreeCedar()
@@ -1376,8 +1360,6 @@ void FreeCedar()
 	{
 		return;
 	}
-
-	FreeProtocol();
 
 	FreeWaterMark();
 }

@@ -676,10 +676,6 @@ SU_ADAPTER_LIST *SuAdapterInfoToAdapterList(SL_ADAPTER_INFO *info)
 	return Clone(&t, sizeof(t));
 }
 
-SU *SuInit()
-{
-	return SuInitEx(0);
-}
 SU *SuInitEx(UINT wait_for_bind_complete_tick)
 {
 	void *h;

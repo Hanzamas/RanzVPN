@@ -88,8 +88,6 @@ ELEMENT *PackAddInt(PACK *p, char *name, UINT i);
 ELEMENT *PackAddIntEx(PACK *p, char *name, UINT i, UINT index, UINT total);
 ELEMENT *PackAddInt64(PACK *p, char *name, UINT64 i);
 ELEMENT *PackAddInt64Ex(PACK *p, char *name, UINT64 i, UINT index, UINT total);
-ELEMENT *PackAddTime64(PACK *p, char *name, UINT64 i);
-ELEMENT *PackAddTime64Ex(PACK *p, char *name, UINT64 i, UINT index, UINT total);
 ELEMENT *PackAddData(PACK *p, char *name, void *data, UINT size);
 ELEMENT *PackAddDataEx(PACK *p, char *name, void *data, UINT size, UINT index, UINT total);
 ELEMENT *PackAddBuf(PACK *p, char *name, BUF *b);

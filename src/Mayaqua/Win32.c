@@ -590,15 +590,6 @@ void Win32Alert(char *msg, char *caption)
 
 	MessageBox(NULL, msg, caption, MB_SETFOREGROUND | MB_TOPMOST | MB_SERVICE_NOTIFICATION | MB_OK | MB_ICONEXCLAMATION);
 }
-void Win32DebugAlert(char *msg)
-{
-	if (msg == NULL)
-	{
-		msg = "Alert";
-	}
-
-	MessageBox(NULL, msg, "Debug", MB_SETFOREGROUND | MB_TOPMOST | MB_SERVICE_NOTIFICATION | MB_OK | MB_ICONEXCLAMATION);
-}
 
 UINT Win32GetNumberOfCpuInner()
 {

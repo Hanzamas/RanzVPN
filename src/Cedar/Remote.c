@@ -10,26 +10,14 @@
 #include "Mayaqua/Pack.h"
 #include "Mayaqua/Str.h"
 
-void EndRpc(RPC *rpc)
-{
-	RpcFree(rpc);
-}
-
 void RpcFree(RPC *rpc)
-{
-	RpcFreeEx(rpc, false);
-}
-void RpcFreeEx(RPC *rpc, bool no_disconnect)
 {
 	if (rpc == NULL)
 	{
 		return;
 	}
 
-	if (no_disconnect == false)
-	{
-		Disconnect(rpc->Sock);
-	}
+	Disconnect(rpc->Sock);
 
 	ReleaseSock(rpc->Sock);
 

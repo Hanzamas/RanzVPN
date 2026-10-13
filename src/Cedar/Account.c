@@ -1501,9 +1501,9 @@ void OutRpcClientGetConnectionStatus(PACK *p, RPC_CLIENT_GET_CONNECTION_STATUS *
 	PackAddBool(p, "IsBridgeMode", c->IsBridgeMode);
 	PackAddBool(p, "IsMonitorMode", c->IsMonitorMode);
 
-	PackAddTime64(p, "StartTime", c->StartTime);
-	PackAddTime64(p, "FirstConnectionEstablisiedTime", c->FirstConnectionEstablisiedTime);
-	PackAddTime64(p, "CurrentConnectionEstablishTime", c->CurrentConnectionEstablishTime);
+	PackAddInt64(p, "StartTime", c->StartTime);
+	PackAddInt64(p, "FirstConnectionEstablisiedTime", c->FirstConnectionEstablisiedTime);
+	PackAddInt64(p, "CurrentConnectionEstablishTime", c->CurrentConnectionEstablishTime);
 	PackAddInt64(p, "TotalSendSize", c->TotalSendSize);
 	PackAddInt64(p, "TotalRecvSize", c->TotalRecvSize);
 	PackAddInt64(p, "TotalSendSizeReal", c->TotalSendSizeReal);
@@ -1555,7 +1555,7 @@ void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s)
 				st->ServerProductBuild = s->Connection->ServerBuild;
 				st->ServerX = CloneX(s->Connection->ServerX);
 				st->ClientX = CloneX(s->Connection->ClientX);
-				st->CurrentConnectionEstablishTime = TickToTime(s->CurrentConnectionEstablishTime);
+				st->CurrentConnectionEstablishTime = Tick64ToTime64(s->CurrentConnectionEstablishTime);
 				st->MaxTcpConnections = s->MaxConnection;
 				st->HalfConnection = s->HalfConnection;
 				st->VLanId = s->VLanId;
@@ -1627,9 +1627,9 @@ void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s)
 			}
 			Unlock(s->Connection->lock);
 		}
-		st->StartTime = TickToTime(s->CreatedTime);
+		st->StartTime = Tick64ToTime64(s->CreatedTime);
 		/* !!! Do not correct the spelling to keep the backward protocol compatibility !!!  */
-		st->FirstConnectionEstablisiedTime = TickToTime(s->FirstConnectionEstablisiedTime);
+		st->FirstConnectionEstablisiedTime = Tick64ToTime64(s->FirstConnectionEstablisiedTime);
 		st->NumConnectionsEstablished = s->NumConnectionsEstablished;
 	}
 	Unlock(s->lock);

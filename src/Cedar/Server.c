@@ -610,7 +610,7 @@ LIST *EnumLogFile(char *hubname)
 		hubname = NULL;
 	}
 
-	GetLogDir(exe_dir, sizeof(exe_dir));
+	GetExeDir(exe_dir, sizeof(exe_dir));
 
 	if (hubname == NULL)
 	{
@@ -697,7 +697,7 @@ void EnumLogFileDir(LIST *o, char *dirname)
 		return;
 	}
 
-	GetLogDir(exe_dir, sizeof(exe_dir));
+	GetExeDir(exe_dir, sizeof(exe_dir));
 	Format(dir_full_path, sizeof(dir_full_path), "%s/%s", exe_dir, dirname);
 
 	dir = EnumDir(dir_full_path);
@@ -1394,7 +1394,7 @@ void SiInitDefaultServerCert(SERVER *s)
 
 	SiGenerateDefaultCertEx(&x, &k, NULL);
 
-	SetCedarCert(s->Cedar, x, k);
+	SetCedarCertAndChain(s->Cedar, x, k, NULL);
 
 	FreeX(x);
 	FreeK(k);
@@ -1421,8 +1421,8 @@ void SiInitListenerList(SERVER *s)
 	{
 		{
 			// Default listeners: 443 and 5555
-			SiAddListener(s, SERVER_DEF_PORTS_1, true);
-			SiAddListener(s, SERVER_DEF_PORTS_4, true);
+			SiAddListenerEx(s, SERVER_DEF_PORTS_1, true, false);
+			SiAddListenerEx(s, SERVER_DEF_PORTS_4, true, false);
 		}
 	}
 	SiUnlockListenerList(s);
@@ -1564,10 +1564,6 @@ SERVER_LISTENER *SiGetListener(SERVER *s, UINT port)
 	return NULL;
 }
 
-bool SiAddListener(SERVER *s, UINT port, bool enabled)
-{
-	return SiAddListenerEx(s, port, enabled, false);
-}
 bool SiAddListenerEx(SERVER *s, UINT port, bool enabled, bool disable_dos)
 {
 	SERVER_LISTENER *e;
@@ -1673,7 +1669,7 @@ void SiInitDefaultHubList(SERVER *s)
 	SetHubOnline(h);
 
 	SiSetDefaultLogSetting(&g);
-	SetHubLogSetting(h, &g);
+	SetHubLogSettingEx(h, &g, false);
 
 	ReleaseHub(h);
 }
@@ -1828,11 +1824,11 @@ bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root)
 		return false;
 	}
 
-	f1 = CfgGetFolder(root, "ServerConfiguration");
-	f2 = CfgGetFolder(root, "VirtualHUB");
-	f3 = CfgGetFolder(root, "ListenerList");
-	f4 = CfgGetFolder(root, "LocalBridgeList");
-	f6 = CfgGetFolder(root, "LicenseManager");
+	f1 = CfgFindFolder(root, "ServerConfiguration");
+	f2 = CfgFindFolder(root, "VirtualHUB");
+	f3 = CfgFindFolder(root, "ListenerList");
+	f4 = CfgFindFolder(root, "LocalBridgeList");
+	f6 = CfgFindFolder(root, "LicenseManager");
 
 	if (f1 == NULL)
 	{
@@ -1926,7 +1922,7 @@ void SiLoadListeners(SERVER *s, FOLDER *f)
 	t = CfgEnumFolderToTokenList(f);
 	for (i = 0;i < t->NumTokens;i++)
 	{
-		FOLDER *ff = CfgGetFolder(f, t->Token[i]);
+		FOLDER *ff = CfgFindFolder(f, t->Token[i]);
 		if (ff != NULL)
 		{
 			SiLoadListenerCfg(s, ff);
@@ -2040,7 +2036,7 @@ void SiLoadLocalBridges(SERVER *s, FOLDER *f)
 	{
 		char *name = t->Token[i];
 
-		SiLoadLocalBridgeCfg(s, CfgGetFolder(f, name));
+		SiLoadLocalBridgeCfg(s, CfgFindFolder(f, name));
 	}
 
 	FreeToken(t);
@@ -2276,7 +2272,7 @@ void SiLoadHubLinkCfg(FOLDER *f, HUB *h)
 		return;
 	}
 
-	pf = CfgGetFolder(f, "Policy");
+	pf = CfgFindFolder(f, "Policy");
 	if (pf == NULL)
 	{
 		return;
@@ -2286,8 +2282,8 @@ void SiLoadHubLinkCfg(FOLDER *f, HUB *h)
 
 	online = CfgGetBool(f, "Online");
 
-	o = CiLoadClientOption(CfgGetFolder(f, "ClientOption"));
-	a = CiLoadClientAuth(CfgGetFolder(f, "ClientAuth"));
+	o = CiLoadClientOption(CfgFindFolder(f, "ClientOption"));
+	a = CiLoadClientAuth(CfgFindFolder(f, "ClientAuth"));
 	if (o == NULL || a == NULL)
 	{
 		Free(o);
@@ -2412,7 +2408,7 @@ void SiLoadHubLinks(HUB *h, FOLDER *f)
 	for (i = 0;i < t->NumTokens;i++)
 	{
 		char *name = t->Token[i];
-		SiLoadHubLinkCfg(CfgGetFolder(f, name), h);
+		SiLoadHubLinkCfg(CfgFindFolder(f, name), h);
 	}
 
 	FreeToken(t);
@@ -2576,7 +2572,7 @@ void SiLoadHubAccessCfg(HUB *h, FOLDER *f)
 
 	CfgGetStr(f, "RedirectUrl", a.RedirectUrl, sizeof(a.RedirectUrl));
 
-	AddAccessList(h, &a);
+	AddAccessListEx(h, &a, false, false);
 }
 
 void SiWriteHubAccessLists(FOLDER *f, HUB *h)
@@ -2614,7 +2610,7 @@ void SiLoadHubAccessLists(HUB *h, FOLDER *f)
 	for (i = 0;i < t->NumTokens;i++)
 	{
 		char *name = t->Token[i];
-		SiLoadHubAccessCfg(h, CfgGetFolder(f, name));
+		SiLoadHubAccessCfg(h, CfgFindFolder(f, name));
 	}
 
 	FreeToken(t);
@@ -2954,7 +2950,7 @@ void SiLoadUserCfg(HUB *h, FOLDER *f)
 	expire_time = CfgGetInt64(f, "ExpireTime");
 	last_login_time = CfgGetInt64(f, "LastLoginTime");
 	num_login = CfgGetInt(f, "NumLogin");
-	pf = CfgGetFolder(f, "Policy");
+	pf = CfgFindFolder(f, "Policy");
 	if (pf != NULL)
 	{
 		SiLoadPolicyCfg(&p, pf);
@@ -3100,7 +3096,7 @@ void SiLoadUserList(HUB *h, FOLDER *f)
 	{
 		FOLDER *ff;
 		name = t->Token[i];
-		ff = CfgGetFolder(f, name);
+		ff = CfgFindFolder(f, name);
 		SiLoadUserCfg(h, ff);
 	}
 
@@ -3146,7 +3142,7 @@ void SiLoadGroupCfg(HUB *h, FOLDER *f)
 	CfgGetUniStr(f, "RealName", realname, sizeof(realname));
 	CfgGetUniStr(f, "Note", note, sizeof(note));
 
-	pf = CfgGetFolder(f, "Policy");
+	pf = CfgFindFolder(f, "Policy");
 	if (pf != NULL)
 	{
 		SiLoadPolicyCfg(&p, pf);
@@ -3210,7 +3206,7 @@ void SiLoadGroupList(HUB *h, FOLDER *f)
 	for (i = 0;i < t->NumTokens;i++)
 	{
 		name = t->Token[i];
-		SiLoadGroupCfg(h, CfgGetFolder(f, name));
+		SiLoadGroupCfg(h, CfgFindFolder(f, name));
 	}
 
 	FreeToken(t);
@@ -3266,7 +3262,7 @@ void SiLoadAcList(LIST *o, FOLDER *f)
 
 			for (i = 0;i < t->NumTokens;i++)
 			{
-				FOLDER *ff = CfgGetFolder(f, t->Token[i]);
+				FOLDER *ff = CfgFindFolder(f, t->Token[i]);
 
 				if (ff != NULL)
 				{
@@ -3389,7 +3385,7 @@ void SiLoadCrlList(LIST *o, FOLDER *f)
 		for (i = 0;i < t->NumTokens;i++)
 		{
 			CRL *crl;
-			FOLDER *ff = CfgGetFolder(f, t->Token[i]);
+			FOLDER *ff = CfgFindFolder(f, t->Token[i]);
 			wchar_t cn[MAX_SIZE], org[MAX_SIZE], u[MAX_SIZE], c[MAX_SIZE],
 				st[MAX_SIZE], l[MAX_SIZE];
 			char tmp[MAX_SIZE];
@@ -3507,7 +3503,7 @@ void SiLoadCertList(LIST *o, FOLDER *f)
 
 		for (i = 0;i < t->NumTokens;i++)
 		{
-			FOLDER *ff = CfgGetFolder(f, t->Token[i]);
+			FOLDER *ff = CfgFindFolder(f, t->Token[i]);
 			BUF *b;
 
 			b = CfgGetBuf(ff, "X509");
@@ -3552,14 +3548,14 @@ void SiLoadHubDb(HUB *h, FOLDER *f)
 		return;
 	}
 
-	SiLoadGroupList(h, CfgGetFolder(f, "GroupList"));
-	SiLoadUserList(h, CfgGetFolder(f, "UserList"));
+	SiLoadGroupList(h, CfgFindFolder(f, "GroupList"));
+	SiLoadUserList(h, CfgFindFolder(f, "UserList"));
 
 	if (h->HubDb != NULL)
 	{
-		SiLoadCertList(h->HubDb->RootCertList, CfgGetFolder(f, "CertList"));
-		SiLoadCrlList(h->HubDb->CrlList, CfgGetFolder(f, "CrlList"));
-		SiLoadAcList(h->HubDb->AcList, CfgGetFolder(f, "IPAccessControlList"));
+		SiLoadCertList(h->HubDb->RootCertList, CfgFindFolder(f, "CertList"));
+		SiLoadCrlList(h->HubDb->CrlList, CfgFindFolder(f, "CrlList"));
+		SiLoadAcList(h->HubDb->AcList, CfgFindFolder(f, "IPAccessControlList"));
 	}
 }
 
@@ -3675,7 +3671,7 @@ void SiLoadHubCfg(SERVER *s, FOLDER *f, char *name)
 	c = s->Cedar;
 
 	Zero(&o, sizeof(o));
-	SiLoadHubOptionCfg(CfgGetFolder(f, "Option"), &o);
+	SiLoadHubOptionCfg(CfgFindFolder(f, "Option"), &o);
 
 	h = NewHub(c, name, &o);
 	if (h != NULL)
@@ -3691,8 +3687,8 @@ void SiLoadHubCfg(SERVER *s, FOLDER *f, char *name)
 		}
 
 		Zero(&g, sizeof(g));
-		SiLoadHubLogCfg(&g, CfgGetFolder(f, "LogSetting"));
-		SetHubLogSetting(h, &g);
+		SiLoadHubLogCfg(&g, CfgFindFolder(f, "LogSetting"));
+		SetHubLogSettingEx(h, &g, false);
 
 		if (h->Cedar->Bridge == false)
 		{
@@ -3705,10 +3701,10 @@ void SiLoadHubCfg(SERVER *s, FOLDER *f, char *name)
 
 		SiLoadTraffic(f, "Traffic", h->Traffic);
 
-		SiLoadHubAccessLists(h, CfgGetFolder(f, "AccessList"));
+		SiLoadHubAccessLists(h, CfgFindFolder(f, "AccessList"));
 
 		{
-			FOLDER *folder = CfgGetFolder(f, "Message");
+			FOLDER *folder = CfgFindFolder(f, "Message");
 			if (folder != NULL)
 			{
 				wchar_t *tmp = Malloc(sizeof(wchar_t) * (HUB_MAXMSG_LEN + 1));
@@ -3720,13 +3716,13 @@ void SiLoadHubCfg(SERVER *s, FOLDER *f, char *name)
 			}
 		}
 
-		SiLoadHubLinks(h, CfgGetFolder(f, "CascadeList"));
+		SiLoadHubLinks(h, CfgFindFolder(f, "CascadeList"));
 
-		SiLoadHubAdminOptions(h, CfgGetFolder(f, "AdminOption"));
+		SiLoadHubAdminOptions(h, CfgFindFolder(f, "AdminOption"));
 
 		if (h->Cedar->Bridge == false)
 		{
-			SiLoadHubDb(h, CfgGetFolder(f, "SecurityAccountDatabase"));
+			SiLoadHubDb(h, CfgFindFolder(f, "SecurityAccountDatabase"));
 		}
 
 		h->LastCommTime = CfgGetInt64(f, "LastCommTime");
@@ -3846,7 +3842,7 @@ void SiLoadHubs(SERVER *s, FOLDER *f)
 				continue;
 			}
 		}
-		hub_folder = CfgGetFolder(f, name);
+		hub_folder = CfgFindFolder(f, name);
 		if (hub_folder != NULL)
 		{
 			SiLoadHubCfg(s, hub_folder, name);
@@ -3917,7 +3913,7 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 
 	SetMaxLogSize(CfgGetInt64(f, "LoggerMaxLogSize"));
 
-	params_folder = CfgGetFolder(f, "GlobalParams");
+	params_folder = CfgFindFolder(f, "GlobalParams");
 	SiLoadGlobalParamsCfg(params_folder);
 
 	c = s->Cedar;
@@ -3925,7 +3921,7 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 	{
 		FOLDER *ff;
 
-		ff = CfgGetFolder(f, "SyslogSettings");
+		ff = CfgFindFolder(f, "SyslogSettings");
 		if (ff != NULL && GetServerCapsBool(s, "b_support_syslog"))
 		{
 			SYSLOG_SETTING set;
@@ -3987,7 +3983,7 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 			FreeBuf(b);
 		}
 
-		SiLoadCertList(chain, CfgGetFolder(f, "ServerChain"));
+		SiLoadCertList(chain, CfgFindFolder(f, "ServerChain"));
 
 		if (x == NULL || k == NULL || CheckXandK(x, k) == false)
 		{
@@ -3996,7 +3992,7 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 			FreeXList(chain);
 			SiGenerateDefaultCertEx(&x, &k, NULL);
 
-			SetCedarCert(c, x, k);
+			SetCedarCertAndChain(c, x, k, NULL);
 
 			FreeX(x);
 			FreeK(k);
@@ -4005,7 +4001,7 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 		{
 			if (LIST_NUM(chain) == 0)
 			{
-				SetCedarCert(c, x, k);
+				SetCedarCertAndChain(c, x, k, NULL);
 			}
 			else
 			{
@@ -4275,7 +4271,7 @@ void SiLoadTraffic(FOLDER *parent, char *name, TRAFFIC *t)
 		return;
 	}
 
-	f = CfgGetFolder(parent, name);
+	f = CfgFindFolder(parent, name);
 
 	if (f == NULL)
 	{
@@ -4297,7 +4293,7 @@ void SiLoadTrafficInner(FOLDER *parent, char *name, TRAFFIC_ENTRY *e)
 		return;
 	}
 
-	f = CfgGetFolder(parent, name);
+	f = CfgFindFolder(parent, name);
 	if (f == NULL)
 	{
 		return;
@@ -4481,10 +4477,6 @@ void SiRebootServerThread(THREAD *thread, void *param)
 	StStartServer((bool)param);
 }
 
-void SiRebootServer(bool bridge)
-{
-	SiRebootServerEx(bridge, false);
-}
 void SiRebootServerEx(bool bridge, bool reset_setting)
 {
 	THREAD *t;

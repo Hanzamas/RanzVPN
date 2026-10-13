@@ -852,7 +852,7 @@ bool SessionConnect(SESSION *s)
 
 	s->CancelConnect = false;
 
-	c = NewClientConnection(s);
+	c = NewClientConnectionEx(s, NULL, 0, 0);
 	s->Connection = c;
 
 	ret = ClientConnect(c);

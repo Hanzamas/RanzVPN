@@ -75,10 +75,6 @@ void FreeCfgRw(CFG_RW *rw)
 	Free(rw);
 }
 
-UINT SaveCfgRw(CFG_RW *rw, FOLDER *f)
-{
-	return SaveCfgRwEx(rw, f, INFINITE);
-}
 UINT SaveCfgRwEx(CFG_RW *rw, FOLDER *f, UINT revision_number)
 {
 	UINT ret = 0;
@@ -673,7 +669,7 @@ FOLDER *CfgBufTextToFolder(BUF *b)
 		}
 	}
 
-	f = CfgGetFolder(c, TAG_ROOT);
+	f = CfgFindFolder(c, TAG_ROOT);
 	if (f == NULL)
 	{
 		CfgDeleteFolder(c);
@@ -766,7 +762,7 @@ FOLDER *CfgBufBinToFolder(BUF *b)
 
 	CfgReadNextFolderBin(b, c);
 
-	f = CfgGetFolder(c, TAG_ROOT);
+	f = CfgFindFolder(c, TAG_ROOT);
 	if (f == NULL)
 	{
 		CfgDeleteFolder(c);
@@ -1480,11 +1476,6 @@ ITEM *CfgFindItem(FOLDER *parent, char *name)
 	Free(tt.Name);
 
 	return t;
-}
-
-FOLDER *CfgGetFolder(FOLDER *parent, char *name)
-{
-	return CfgFindFolder(parent, name);
 }
 
 FOLDER *CfgFindFolder(FOLDER *parent, char *name)

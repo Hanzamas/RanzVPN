@@ -83,7 +83,6 @@ ITEM *CfgAddByte(FOLDER *f, char *name, void *buf, UINT size);
 ITEM *CfgAddBuf(FOLDER *f, char *name, BUF *b);
 ITEM *CfgAddStr(FOLDER *f, char *name, char *str);
 ITEM *CfgAddUniStr(FOLDER *f, char *name, wchar_t *str);
-FOLDER *CfgGetFolder(FOLDER *parent, char *name);
 UINT CfgGetInt(FOLDER *f, char *name);
 bool CfgGetBool(FOLDER *f, char *name);
 UINT64 CfgGetInt64(FOLDER *f, char *name);
@@ -121,7 +120,6 @@ bool CfgSaveExW3(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size, bool 
 FOLDER *CfgReadW(wchar_t *name);
 CFG_RW *NewCfgRwEx2W(FOLDER **root, wchar_t *cfg_name, bool dont_backup, wchar_t *template_name);
 CFG_RW *NewCfgRwEx2A(FOLDER **root, char *cfg_name_a, bool dont_backup, char *template_name_a);
-UINT SaveCfgRw(CFG_RW *rw, FOLDER *f);
 UINT SaveCfgRwEx(CFG_RW *rw, FOLDER *f, UINT revision_number);
 void FreeCfgRw(CFG_RW *rw);
 ITEM *CfgAddIp32(FOLDER *f, char *name, UINT ip);

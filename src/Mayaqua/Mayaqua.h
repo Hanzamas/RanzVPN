@@ -197,7 +197,6 @@ TOKEN_LIST *GetCommandLineToken();
 void InitOsInfo();
 void FreeOsInfo();
 void Alert(char *msg, char *caption);
-void AlertW(wchar_t *msg, wchar_t *caption);
 OS_INFO *GetOsInfo();
 void CheckEndian();
 void CheckUnixTempDir();
@@ -206,9 +205,6 @@ bool IsHamMode();
 void InitProbe();
 void FreeProbe();
 void EnableProbe(bool enable);
-bool IsProbeEnabled();
-void WriteProbe(char *filename, UINT line, char *str);
-USHORT CalcChecksum16(void *buf, UINT size);
 
 
 #endif

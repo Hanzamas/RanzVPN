@@ -272,22 +272,6 @@ double MsGetHiResTimeSpan(UINT64 diff)
 
 	return (double)diff / (double)freq;
 }
-UINT64 MsGetHiResTimeSpanUSec(UINT64 diff)
-{
-	LARGE_INTEGER t;
-	UINT64 freq;
-
-	if (QueryPerformanceFrequency(&t) == false)
-	{
-		freq = 1000ULL;
-	}
-	else
-	{
-		Copy(&freq, &t, sizeof(UINT64));
-	}
-
-	return (UINT64)(diff) * 1000ULL * 1000ULL / (UINT64)freq;
-}
 
 UINT64 MsGetHiResCounter()
 {
@@ -602,23 +586,6 @@ bool MsDisableIme()
 	FreeLibrary(h);
 
 	return ret;
-}
-
-void MsPrintTick()
-{
-	UINT tick = timeGetTime();
-	static UINT tick_init = 0;
-	if (tick_init == 0)
-	{
-		tick_init = tick;
-		tick = 0;
-	}
-	else
-	{
-		tick -= tick_init;
-	}
-
-	printf("[%u]\n", tick);
 }
 
 void *MsLoadLibraryW(wchar_t *name)

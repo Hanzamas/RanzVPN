@@ -394,16 +394,6 @@ void GetExeNameW(wchar_t *name, UINT size)
 	UniStrCpy(name, size, exe_file_name_w);
 }
 
-void GetLogDir(char *name, UINT size)
-{
-	GetExeDir(name, size);
-}
-
-void GetDbDirW(wchar_t *name, UINT size)
-{
-	GetExeDirW(name, size);
-}
-
 void InitGetExeName(char *arg)
 {
 	wchar_t *arg_w = NULL;
@@ -609,10 +599,6 @@ void ConbinePathW(wchar_t *dst, UINT size, wchar_t *dirname, wchar_t *filename)
 	}
 
 	NormalizePathW(dst, size, tmp);
-}
-void CombinePath(char *dst, UINT size, char *dirname, char *filename)
-{
-	ConbinePath(dst, size, dirname, filename);
 }
 void CombinePathW(wchar_t *dst, UINT size, wchar_t *dirname, wchar_t *filename)
 {
@@ -898,7 +884,7 @@ void InnerFilePathW(wchar_t *dst, UINT size, wchar_t *src)
 	else if (src[0] == L'$')
 	{
 		wchar_t dir[MAX_SIZE];
-		GetDbDirW(dir, sizeof(dir));
+		GetExeDirW(dir, sizeof(dir));
 		ConbinePathW(dst, size, dir, &src[1]);
 	}
 	else

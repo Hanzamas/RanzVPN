@@ -70,7 +70,6 @@ typedef int (COMPARE)(void *p1, void *p2);
 #define	MAX(a, b)			((a) >= (b) ? (a) : (b))
 
 #define	INT_TO_BOOL(i)		(((i) == 0) ? false : true)
-#define	MAKEBOOL(i)			INT_TO_BOOL(i)
 
 #define	NEGATIVE_BOOL(i)	(((i) == false) ? true : false)
 

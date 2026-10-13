@@ -648,7 +648,7 @@ bool CheckKernel()
 		SleepThread(1000);
 
 		time2 = LocalTime64();
-		time1 = SystemToLocal64(TickToTime(tick1));
+		time1 = SystemToLocal64(Tick64ToTime64(tick1));
 
 		if (time2 > time1)
 		{
@@ -1926,8 +1926,8 @@ void TtcThread(THREAD *thread, void *param)
 			Set(w->StartEvent);
 		}
 
-		GetDateTimeStrEx64(tmp1, sizeof(tmp1), SystemToLocal64(TickToTime(start_tick)), NULL);
-		GetDateTimeStrEx64(tmp2, sizeof(tmp2), SystemToLocal64(TickToTime(end_tick)), NULL);
+		GetDateTimeStrEx64(tmp1, sizeof(tmp1), SystemToLocal64(Tick64ToTime64(start_tick)), NULL);
+		GetDateTimeStrEx64(tmp2, sizeof(tmp2), SystemToLocal64(Tick64ToTime64(end_tick)), NULL);
 		UniFormat(tmp, sizeof(tmp), _UU("TTC_COMM_START"), tmp1, tmp2);
 		TtPrint(ttc->Param, ttc->Print, tmp);
 
@@ -14437,8 +14437,8 @@ UINT CommandMain(wchar_t *command_line)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	infile = ParseCommand(command_line, L"in");
-	outfile = ParseCommand(command_line, L"out");
+	infile = ParseCommandEx(command_line, L"in", NULL);
+	outfile = ParseCommandEx(command_line, L"out", NULL);
 	if (UniIsEmptyStr(infile))
 	{
 		Free(infile);
@@ -14461,14 +14461,14 @@ UINT CommandMain(wchar_t *command_line)
 			{"vpncmd", VpnCmdProc},
 		};
 
-		csvmode = ParseCommand(command_line, L"csv");
+		csvmode = ParseCommandEx(command_line, L"csv", NULL);
 		if(csvmode != NULL)
 		{
 			Free(csvmode);
 			c->ConsoleType = CONSOLE_CSV;
 		}
 
-		programming_mode = ParseCommand(command_line, L"programming");
+		programming_mode = ParseCommandEx(command_line, L"programming", NULL);
 		if (programming_mode != NULL)
 		{
 			Free(programming_mode);

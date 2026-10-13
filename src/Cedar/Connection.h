@@ -179,7 +179,6 @@ struct CONNECTION
 };
 
 
-CONNECTION *NewClientConnection(SESSION *s);
 CONNECTION *NewClientConnectionEx(SESSION *s, char *client_str, UINT client_ver, UINT client_build);
 CONNECTION *NewServerConnection(CEDAR *cedar, SOCK *s, THREAD *t);
 void ReleaseConnection(CONNECTION *c);

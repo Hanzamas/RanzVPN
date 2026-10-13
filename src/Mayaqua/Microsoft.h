@@ -316,7 +316,6 @@ UINT ConvertMidStatusVistaToXp(UINT st);
 void *MsLoadLibrary(char *name);
 void *MsLoadLibraryW(wchar_t *name);
 
-void MsPrintTick();
 bool MsDisableIme();
 
 void MsSetTcpConfig(MS_TCP *tcp);
@@ -354,7 +353,6 @@ bool MsUniMakeDir(wchar_t *name);
 void MsUniMakeDirEx(wchar_t *name);
 UINT64 MsGetHiResCounter();
 double MsGetHiResTimeSpan(UINT64 diff);
-UINT64 MsGetHiResTimeSpanUSec(UINT64 diff);
 bool MsGetFileInformation(void *h, void *info);
 void MsSetEnableMinidump(bool enabled);
 void MsWriteMinidump(wchar_t *filename, void *ex);

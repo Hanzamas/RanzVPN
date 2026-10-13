@@ -46,7 +46,7 @@ bool IsBridgeSupported()
 
 	if (OS_IS_WINDOWS(type))
 	{
-		if (IsEthSupported())
+		if (Win32EthIsSuSupported())
 		{
 			return true;
 		}
@@ -61,7 +61,7 @@ bool IsBridgeSupported()
 	}
 	else
 	{
-		return IsEthSupported();
+		return Win32EthIsSuSupported();
 	}
 }
 

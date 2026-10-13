@@ -56,11 +56,6 @@ UINT64 Tick64ToTime64(UINT64 tick)
 	return ret;
 }
 
-UINT64 TickToTime(UINT64 tick)
-{
-	return Tick64ToTime64(tick);
-}
-
 UINT64 Tick64()
 {
 	return Win32FastTick64();

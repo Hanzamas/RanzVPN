@@ -42,7 +42,6 @@ struct ETH
 
 void InitEth();
 void FreeEth();
-bool IsEthSupported();
 TOKEN_LIST *GetEthList();
 TOKEN_LIST *GetEthListEx(UINT *total_num_including_hidden, bool enum_normal, bool enum_rawip);
 ETH *OpenEth(char *name, bool local, bool tapmode, char *tapaddr);

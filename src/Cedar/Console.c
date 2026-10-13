@@ -1119,7 +1119,7 @@ LIST *ParseCommandList(CONSOLE *c, char *cmd_name, wchar_t *command, PARAM param
 		}
 	}
 
-	tmp = ParseCommand(command, L"");
+	tmp = ParseCommandEx(command, L"", NULL);
 	if (tmp != NULL)
 	{
 		if (UniStrCmpi(tmp, L"?") == 0)
@@ -1215,7 +1215,7 @@ LIST *ParseCommandList(CONSOLE *c, char *cmd_name, wchar_t *command, PARAM param
 				tmp = CopyStrToUni(p->Name);
 			}
 
-			str = ParseCommand(command, tmp);
+			str = ParseCommandEx(command, tmp, NULL);
 			Free(tmp);
 			if (str != NULL)
 			{
@@ -1488,10 +1488,6 @@ TOKEN_LIST *GetCommandNameList(wchar_t *str)
 	return t;
 }
 
-wchar_t *ParseCommand(wchar_t *str, wchar_t *name)
-{
-	return ParseCommandEx(str, name, NULL);
-}
 wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list)
 {
 	UNI_TOKEN_LIST *t;

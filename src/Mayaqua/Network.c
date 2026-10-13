@@ -452,24 +452,6 @@ L_LOOP:
 }
 
 
-void SetLinuxArpFilter()
-{
-	char *filename = "/proc/sys/net/ipv4/conf/all/arp_filter";
-	char *data = "1\n";
-	IO *o;
-
-	o = FileCreate(filename);
-	if (o == NULL)
-	{
-		return;
-	}
-
-	FileWrite(o, data, StrLen(data));
-	FileFlush(o);
-
-	FileClose(o);
-}
-
 bool IsStrIPv6Address(char *str)
 {
 	IP ip;
@@ -2793,7 +2775,7 @@ void AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx)
 
 	o = NewListFast(NULL);
 
-	GetDbDirW(exedir, sizeof(exedir));
+	GetExeDirW(exedir, sizeof(exedir));
 
 	CombinePathW(dirname, sizeof(dirname), exedir, L"chain_certs");
 
@@ -3326,12 +3308,12 @@ void SockEnableSslLogging(SOCK *s)
 	Format(tmp, sizeof(tmp), "%s__%r_%u__%r_%u", dtstr,
 	       &s->LocalIP, s->LocalPort, &s->RemoteIP, s->RemotePort);
 
-	CombinePath(dirname, sizeof(dirname), SSL_LOGGING_DIRNAME, tmp);
+	ConbinePath(dirname, sizeof(dirname), SSL_LOGGING_DIRNAME, tmp);
 
 	MakeDirEx(dirname);
 
-	CombinePath(fn1, sizeof(fn1), dirname, "send.c");
-	CombinePath(fn2, sizeof(fn2), dirname, "recv.c");
+	ConbinePath(fn1, sizeof(fn1), dirname, "send.c");
+	ConbinePath(fn2, sizeof(fn2), dirname, "recv.c");
 
 	s->SslLogging_Send = FileCreate(fn1);
 	s->SslLogging_Recv = FileCreate(fn2);
@@ -5374,10 +5356,6 @@ void GetMachineHostName(char *name, UINT size)
 }
 
 void GetMachineName(char *name, UINT size)
-{
-	GetMachineNameEx(name, size, false);
-}
-void GetMachineNameEx(char *name, UINT size, bool no_load_hosts)
 {
 	static char name_cache[MAX_SIZE];
 	static bool name_cached = false;

@@ -2142,10 +2142,6 @@ CONNECTION *NewServerConnection(CEDAR *cedar, SOCK *s, THREAD *t)
 	return c;
 }
 
-CONNECTION *NewClientConnection(SESSION *s)
-{
-	return NewClientConnectionEx(s, NULL, 0, 0);
-}
 CONNECTION *NewClientConnectionEx(SESSION *s, char *client_str, UINT client_ver, UINT client_build)
 {
 	CONNECTION *c;

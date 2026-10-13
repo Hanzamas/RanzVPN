@@ -1320,15 +1320,6 @@ ELEMENT *PackAddIntEx(PACK *p, char *name, UINT i, UINT index, UINT total)
 	return e;
 }
 
-ELEMENT *PackAddTime64(PACK *p, char *name, UINT64 i)
-{
-	return PackAddInt64(p, name, i);
-}
-ELEMENT *PackAddTime64Ex(PACK *p, char *name, UINT64 i, UINT index, UINT total)
-{
-	return PackAddInt64Ex(p, name, i, index, total);
-}
-
 
 ELEMENT *PackAddInt64(PACK *p, char *name, UINT64 i)
 {

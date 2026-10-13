@@ -436,17 +436,6 @@ char *MakeCharArray(char c, UINT count)
 
 	return ret;
 }
-void MakeCharArray2(char *str, char c, UINT count)
-{
-	UINT i;
-
-	for (i = 0;i < count;i++)
-	{
-		str[i] = c;
-	}
-
-	str[count] = 0;
-}
 
 UINT StrWidth(char *str)
 {

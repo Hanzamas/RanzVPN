@@ -38,7 +38,7 @@ struct DYN_VALUE
 #define	PRIVATE_IP_TXT_FILENAME		"$private_ip.txt"
 
 #define	MAKE_SPECIAL_PORT(p)		(UINT)((UINT)0x10000 | (UINT)(p))
-#define	IS_SPECIAL_PORT(p)			(MAKEBOOL((p) & (UINT)0x10000))
+#define	IS_SPECIAL_PORT(p)			(INT_TO_BOOL((p) & (UINT)0x10000))
 #define	GET_SPECIAL_PORT(p)			(UINT)((UINT)(p) & (UINT)0xffff)
 
 #define	UDP_MAX_BUFFER_SIZE			11911168
@@ -299,7 +299,6 @@ void IPToStr32(char *str, UINT size, UINT ip);
 void IPToStr4or6(char *str, UINT size, UINT ip_4_uint, UCHAR *ip_6_bytes);
 bool GetHostName(char *hostname, UINT size, IP *ip);
 void GetMachineName(char *name, UINT size);
-void GetMachineNameEx(char *name, UINT size, bool no_load_hosts);
 void GetMachineHostName(char *name, UINT size);
 void UINTToIP(IP *ip, UINT value);
 UINT IPToUINT(IP *ip);
@@ -394,7 +393,6 @@ void AddIpClient(IP *ip);
 void DelIpClient(IP *ip);
 IP_CLIENT *SearchIpClient(IP *ip);
 UINT GetNumIpClient(IP *ip);
-void SetLinuxArpFilter();
 int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool *cancel_flag);
 void AddProtocolDetailsStr(char *dst, UINT dst_size, char *str);
 void AddProtocolDetailsKeyValueStr(char *dst, UINT dst_size, char *key, char *value);

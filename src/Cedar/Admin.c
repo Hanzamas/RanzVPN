@@ -519,7 +519,7 @@ UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t)
 
 	SiGenerateDefaultCertEx(&x, &k, t->StrValue);
 
-	SetCedarCert(c, x, k);
+	SetCedarCertAndChain(c, x, k, NULL);
 
 	ALog(a, NULL, "LA_REGENERATE_SERVER_CERT", t->StrValue);
 
@@ -787,7 +787,7 @@ UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t)
 	}
 	else
 	{
-		if (SetVLanEnableStatus(t->StrValue, MAKEBOOL(t->IntValue)) == false)
+		if (SetVLanEnableStatus(t->StrValue, INT_TO_BOOL(t->IntValue)) == false)
 		{
 			ret = ERR_INTERNAL_ERROR;
 		}
@@ -1024,7 +1024,7 @@ UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t)
 
 			LockList(db->AcList);
 			{
-				t->o = NewAcList();
+				t->o = NewList(CmpAc);
 
 				SetAcList(t->o, db->AcList);
 			}
@@ -1683,7 +1683,7 @@ UINT StSetConfig(ADMIN *a, RPC_CONFIG *t)
 
 	ALog(a, NULL, "LA_SET_CONFIG");
 
-	SiRebootServer(s->Cedar->Bridge);
+	SiRebootServerEx(s->Cedar->Bridge, false);
 
 	return ERR_NO_ERROR;
 }
@@ -1764,7 +1764,7 @@ UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 	SERVER_ADMIN_ONLY;
 
 
-	if (IsEthSupported() == false)
+	if (Win32EthIsSuSupported() == false)
 	{
 		return ERR_LOCAL_BRIDGE_UNSUPPORTED;
 	}
@@ -1816,7 +1816,7 @@ UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t)
 	UINT i;
 	CEDAR *c;
 
-	if (IsEthSupported() == false)
+	if (Win32EthIsSuSupported() == false)
 	{
 		return ERR_LOCAL_BRIDGE_UNSUPPORTED;
 	}
@@ -1998,8 +1998,8 @@ UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t)
 			Copy(&e->IpV6, &table->Ip, sizeof(IP));
 			Copy(&e->IpAddress, &table->Ip, sizeof(IP));
 			e->DhcpAllocated = table->DhcpAllocated;
-			e->CreatedTime = TickToTime(table->CreatedTime);
-			e->UpdatedTime = TickToTime(table->UpdatedTime);
+			e->CreatedTime = Tick64ToTime64(table->CreatedTime);
+			e->UpdatedTime = Tick64ToTime64(table->UpdatedTime);
 		}
 	}
 	UnlockList(h->IpTable);
@@ -2116,8 +2116,8 @@ UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t)
 			e->Key = POINTER_TO_KEY(mac);
 			StrCpy(e->SessionName, sizeof(e->SessionName), mac->Session->Name);
 			Copy(e->MacAddress, mac->MacAddress, sizeof(e->MacAddress));
-			e->CreatedTime = TickToTime(mac->CreatedTime);
-			e->UpdatedTime = TickToTime(mac->UpdatedTime);
+			e->CreatedTime = Tick64ToTime64(mac->CreatedTime);
+			e->UpdatedTime = Tick64ToTime64(mac->UpdatedTime);
 			e->VlanId = mac->VlanId;
 		}
 
@@ -3424,7 +3424,7 @@ UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t)
 		}
 	}
 
-	AddAccessList(h, &t->Access);
+	AddAccessListEx(h, &t->Access, false, false);
 
 	ReleaseHub(h);
 
@@ -3928,7 +3928,7 @@ UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t)
 				{
 					if (k->ClientSession != NULL)
 					{
-						e->ConnectedTime = TickToTime(k->ClientSession->CurrentConnectionEstablishTime);
+						e->ConnectedTime = Tick64ToTime64(k->ClientSession->CurrentConnectionEstablishTime);
 						e->Connected = (k->ClientSession->ClientStatus == CLIENT_STATUS_ESTABLISHED);
 						e->LastError = k->ClientSession->Err;
 					}
@@ -4644,7 +4644,7 @@ UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t)
 		}
 
 		StrCpy(t->Name, sizeof(t->Name), connection->Name);
-		t->ConnectedTime = TickToTime(connection->ConnectedTick);
+		t->ConnectedTime = Tick64ToTime64(connection->ConnectedTick);
 		t->Type = connection->Type;
 
 		StrCpy(t->ServerStr, sizeof(t->ServerStr), connection->ServerStr);
@@ -4735,7 +4735,7 @@ UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t)
 				}
 
 				StrCpy(e->Name, sizeof(e->Name), connection->Name);
-				e->ConnectedTime = TickToTime(connection->ConnectedTick);
+				e->ConnectedTime = Tick64ToTime64(connection->ConnectedTick);
 				e->Type = connection->Type;
 			}
 			Unlock(connection->lock);
@@ -5396,7 +5396,7 @@ UINT StCreateListener(ADMIN *a, RPC_LISTENER *t)
 
 	LockList(a->Server->ServerListenerList);
 	{
-		if (SiAddListener(a->Server, t->Port, t->Enable) == false)
+		if (SiAddListenerEx(a->Server, t->Port, t->Enable, false) == false)
 		{
 			ret = ERR_LISTENER_ALREADY_EXISTS;
 		}
@@ -5717,7 +5717,7 @@ void OutRpcEnumLogFile(PACK *p, RPC_ENUM_LOG_FILE *t)
 
 		PackAddStrEx(p, "FilePath", e->FilePath, i, t->NumItem);
 		PackAddIntEx(p, "FileSize", e->FileSize, i, t->NumItem);
-		PackAddTime64Ex(p, "UpdatedTime", e->UpdatedTime, i, t->NumItem);
+		PackAddInt64Ex(p, "UpdatedTime", e->UpdatedTime, i, t->NumItem);
 	}
 }
 void FreeRpcEnumLogFile(RPC_ENUM_LOG_FILE *t)
@@ -5781,7 +5781,7 @@ void InRpcAcList(RPC_AC_LIST *t, PACK *p)
 	}
 
 	Zero(t, sizeof(RPC_AC_LIST));
-	o = NewAcList();
+	o = NewList(CmpAc);
 
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	num = PackGetIndexCount(p, "IpAddress");
@@ -6249,7 +6249,7 @@ void SiReadLocalLogFile(SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FIL
 
 	Zero(t, sizeof(RPC_READ_LOG_FILE));
 
-	GetLogDir(exe_dir, sizeof(exe_dir));
+	GetExeDir(exe_dir, sizeof(exe_dir));
 	Format(full_path, sizeof(full_path), "%s/%s", exe_dir, filepath);
 
 	o = FileOpenEx(full_path, false, false);
@@ -6446,7 +6446,7 @@ void OutRpcEnumLicenseKey(PACK *p, RPC_ENUM_LICENSE_KEY *t)
 		PackAddStrEx(p, "LicenseKey", e->LicenseKey, i, t->NumItem);
 		PackAddStrEx(p, "LicenseId", e->LicenseId, i, t->NumItem);
 		PackAddStrEx(p, "LicenseName", e->LicenseName, i, t->NumItem);
-		PackAddTime64Ex(p, "Expires", e->Expires, i, t->NumItem);
+		PackAddInt64Ex(p, "Expires", e->Expires, i, t->NumItem);
 		PackAddIntEx(p, "Status", e->Status, i, t->NumItem);
 		PackAddIntEx(p, "ProductId", e->ProductId, i, t->NumItem);
 		PackAddInt64Ex(p, "SystemId", e->SystemId, i, t->NumItem);
@@ -6496,16 +6496,16 @@ void OutRpcLicenseStatus(PACK *p, RPC_LICENSE_STATUS *t)
 	PackAddInt(p, "EditionId", t->EditionId);
 	PackAddStr(p, "EditionStr", t->EditionStr);
 	PackAddInt64(p, "SystemId", t->SystemId);
-	PackAddTime64(p, "SystemExpires", t->SystemExpires);
+	PackAddInt64(p, "SystemExpires", t->SystemExpires);
 	PackAddInt(p, "NumClientConnectLicense", t->NumClientConnectLicense);
 	PackAddInt(p, "NumBridgeConnectLicense", t->NumBridgeConnectLicense);
 
 	PackAddBool(p, "NeedSubscription", t->NeedSubscription);
 	PackAddBool(p, "AllowEnterpriseFunction", t->AllowEnterpriseFunction);
-	PackAddTime64(p, "SubscriptionExpires", t->SubscriptionExpires);
+	PackAddInt64(p, "SubscriptionExpires", t->SubscriptionExpires);
 	PackAddBool(p, "IsSubscriptionExpired", t->IsSubscriptionExpired);
 	PackAddInt(p, "NumUserCreationLicense", t->NumUserCreationLicense);
-	PackAddTime64(p, "ReleaseDate", t->ReleaseDate);
+	PackAddInt64(p, "ReleaseDate", t->ReleaseDate);
 }
 
 void InRpcAdminOption(RPC_ADMIN_OPTION *t, PACK *p)
@@ -6695,7 +6695,7 @@ void OutRpcServerInfo(PACK *p, RPC_SERVER_INFO *t)
 	PackAddInt(p, "ServerVerInt", t->ServerVerInt);
 	PackAddInt(p, "ServerBuildInt", t->ServerBuildInt);
 	PackAddStr(p, "ServerHostName", t->ServerHostName);
-	PackAddTime64(p, "ServerBuildDate", t->ServerBuildDate);
+	PackAddInt64(p, "ServerBuildDate", t->ServerBuildDate);
 	OutRpcOsInfo(p, &t->OsInfo);
 }
 void FreeRpcServerInfo(RPC_SERVER_INFO *t)
@@ -6755,13 +6755,13 @@ void OutRpcServerStatus(PACK *p, RPC_SERVER_STATUS *t)
 	PackAddInt(p, "NumIpTables", t->NumIpTables);
 	PackAddInt(p, "NumUsers", t->NumUsers);
 	PackAddInt(p, "NumGroups", t->NumGroups);
-	PackAddTime64(p, "CurrentTime", t->CurrentTime);
+	PackAddInt64(p, "CurrentTime", t->CurrentTime);
 	PackAddInt64(p, "CurrentTick", t->CurrentTick);
 	PackAddInt(p, "AssignedBridgeLicenses", t->AssignedBridgeLicenses);
 	PackAddInt(p, "AssignedClientLicenses", t->AssignedClientLicenses);
 	PackAddInt(p, "AssignedBridgeLicensesTotal", t->AssignedBridgeLicensesTotal);
 	PackAddInt(p, "AssignedClientLicensesTotal", t->AssignedClientLicensesTotal);
-	PackAddTime64(p, "StartTime", t->StartTime);
+	PackAddInt64(p, "StartTime", t->StartTime);
 
 	OutRpcTraffic(p, &t->Traffic);
 
@@ -7001,9 +7001,9 @@ void OutRpcEnumHub(PACK *p, RPC_ENUM_HUB *t)
 		PackAddIntEx(p, "NumGroups", e->NumGroups, i, t->NumHub);
 		PackAddIntEx(p, "NumMacTables", e->NumMacTables, i, t->NumHub);
 		PackAddIntEx(p, "NumIpTables", e->NumIpTables, i, t->NumHub);
-		PackAddTime64Ex(p, "LastCommTime", e->LastCommTime, i, t->NumHub);
-		PackAddTime64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumHub);
-		PackAddTime64Ex(p, "LastLoginTime", e->LastLoginTime, i, t->NumHub);
+		PackAddInt64Ex(p, "LastCommTime", e->LastCommTime, i, t->NumHub);
+		PackAddInt64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumHub);
+		PackAddInt64Ex(p, "LastLoginTime", e->LastLoginTime, i, t->NumHub);
 		PackAddIntEx(p, "NumLogin", e->NumLogin, i, t->NumHub);
 		PackAddBoolEx(p, "IsTrafficFilled", e->IsTrafficFilled, i, t->NumHub);
 
@@ -7080,7 +7080,7 @@ void OutRpcEnumConnection(PACK *p, RPC_ENUM_CONNECTION *t)
 		PackAddIntEx(p, "Port", e->Port, i, t->NumConnection);
 		PackAddStrEx(p, "Name", e->Name, i, t->NumConnection);
 		PackAddStrEx(p, "Hostname", e->Hostname, i, t->NumConnection);
-		PackAddTime64Ex(p, "ConnectedTime", e->ConnectedTime, i, t->NumConnection);
+		PackAddInt64Ex(p, "ConnectedTime", e->ConnectedTime, i, t->NumConnection);
 		PackAddIntEx(p, "Type", e->Type, i, t->NumConnection);
 	}
 }
@@ -7145,7 +7145,7 @@ void OutRpcConnectionInfo(PACK *p, RPC_CONNECTION_INFO *t)
 	PackAddStr(p, "Name", t->Name);
 	PackAddIp32(p, "Ip", t->Ip);
 	PackAddInt(p, "Port", t->Port);
-	PackAddTime64(p, "ConnectedTime", t->ConnectedTime);
+	PackAddInt64(p, "ConnectedTime", t->ConnectedTime);
 	PackAddStr(p, "Hostname", t->Hostname);
 	PackAddStr(p, "ServerStr", t->ServerStr);
 	PackAddStr(p, "ClientStr", t->ClientStr);
@@ -7220,9 +7220,9 @@ void OutRpcHubStatus(PACK *p, RPC_HUB_STATUS *t)
 	PackAddInt(p, "NumMacTables", t->NumMacTables);
 	PackAddInt(p, "NumIpTables", t->NumIpTables);
 	OutRpcTraffic(p, &t->Traffic);
-	PackAddTime64(p, "LastCommTime", t->LastCommTime);
-	PackAddTime64(p, "CreatedTime", t->CreatedTime);
-	PackAddTime64(p, "LastLoginTime", t->LastLoginTime);
+	PackAddInt64(p, "LastCommTime", t->LastCommTime);
+	PackAddInt64(p, "CreatedTime", t->CreatedTime);
+	PackAddInt64(p, "LastLoginTime", t->LastLoginTime);
 	PackAddInt(p, "NumLogin", t->NumLogin);
 }
 
@@ -7334,7 +7334,7 @@ void OutRpcHubEnumCa(PACK *p, RPC_HUB_ENUM_CA *t)
 		PackAddIntEx(p, "Key", e->Key, i, t->NumCa);
 		PackAddUniStrEx(p, "SubjectName", e->SubjectName, i, t->NumCa);
 		PackAddUniStrEx(p, "IssuerName", e->IssuerName, i, t->NumCa);
-		PackAddTime64Ex(p, "Expires", e->Expires, i, t->NumCa);
+		PackAddInt64Ex(p, "Expires", e->Expires, i, t->NumCa);
 	}
 }
 void FreeRpcHubEnumCa(RPC_HUB_ENUM_CA *t)
@@ -7513,7 +7513,7 @@ void OutRpcEnumLink(PACK *p, RPC_ENUM_LINK *t)
 		PackAddStrEx(p, "ConnectedHubName", e->HubName, i, t->NumLink);
 		PackAddStrEx(p, "Hostname", e->Hostname, i, t->NumLink);
 		PackAddBoolEx(p, "Online", e->Online, i, t->NumLink);
-		PackAddTime64Ex(p, "ConnectedTime", e->ConnectedTime, i, t->NumLink);
+		PackAddInt64Ex(p, "ConnectedTime", e->ConnectedTime, i, t->NumLink);
 		PackAddBoolEx(p, "Connected", e->Connected, i, t->NumLink);
 		PackAddIntEx(p, "LastError", e->LastError, i, t->NumLink);
 		PackAddStrEx(p, "TargetHubName", e->HubName, i, t->NumLink);
@@ -7936,9 +7936,9 @@ void OutRpcSetUser(PACK *p, RPC_SET_USER *t)
 	PackAddStr(p, "GroupName", t->GroupName);
 	PackAddUniStr(p, "Realname", t->Realname);
 	PackAddUniStr(p, "Note", t->Note);
-	PackAddTime64(p, "CreatedTime", t->CreatedTime);
-	PackAddTime64(p, "UpdatedTime", t->UpdatedTime);
-	PackAddTime64(p, "ExpireTime", t->ExpireTime);
+	PackAddInt64(p, "CreatedTime", t->CreatedTime);
+	PackAddInt64(p, "UpdatedTime", t->UpdatedTime);
+	PackAddInt64(p, "ExpireTime", t->ExpireTime);
 	OutRpcAuthData(p, t->AuthData, t->AuthType);
 	PackAddInt(p, "NumLogin", t->NumLogin);
 	OutRpcTraffic(p, &t->Traffic);
@@ -8014,7 +8014,7 @@ void OutRpcEnumUser(PACK *p, RPC_ENUM_USER *t)
 		PackAddUniStrEx(p, "Realname", e->Realname, i, t->NumUser);
 		PackAddUniStrEx(p, "Note", e->Note, i, t->NumUser);
 		PackAddIntEx(p, "AuthType", e->AuthType, i, t->NumUser);
-		PackAddTime64Ex(p, "LastLoginTime", e->LastLoginTime, i, t->NumUser);
+		PackAddInt64Ex(p, "LastLoginTime", e->LastLoginTime, i, t->NumUser);
 		PackAddIntEx(p, "NumLogin", e->NumLogin, i, t->NumUser);
 		PackAddBoolEx(p, "DenyAccess", e->DenyAccess, i, t->NumUser);
 
@@ -8022,7 +8022,7 @@ void OutRpcEnumUser(PACK *p, RPC_ENUM_USER *t)
 		OutRpcTrafficEx(&e->Traffic, p, i, t->NumUser);
 
 		PackAddBoolEx(p, "IsExpiresFilled", e->IsExpiresFilled, i, t->NumUser);
-		PackAddTime64Ex(p, "Expires", e->Expires, i, t->NumUser);
+		PackAddInt64Ex(p, "Expires", e->Expires, i, t->NumUser);
 	}
 }
 void FreeRpcEnumUser(RPC_ENUM_USER *t)
@@ -8225,9 +8225,9 @@ void OutRpcEnumSession(PACK *p, RPC_ENUM_SESSION *t)
 		PackAddDataEx(p, "UniqueId", e->UniqueId, sizeof(e->UniqueId), i, t->NumSession);
 		PackAddBoolEx(p, "IsDormantEnabled", e->IsDormantEnabled, i, t->NumSession);
 		PackAddBoolEx(p, "IsDormant", e->IsDormant, i, t->NumSession);
-		PackAddTime64Ex(p, "LastCommDormant", e->LastCommDormant, i, t->NumSession);
-		PackAddTime64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumSession);
-		PackAddTime64Ex(p, "LastCommTime", e->LastCommTime, i, t->NumSession);
+		PackAddInt64Ex(p, "LastCommDormant", e->LastCommDormant, i, t->NumSession);
+		PackAddInt64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumSession);
+		PackAddInt64Ex(p, "LastCommTime", e->LastCommTime, i, t->NumSession);
 	}
 }
 void FreeRpcEnumSession(RPC_ENUM_SESSION *t)
@@ -8453,8 +8453,8 @@ void OutRpcEnumMacTable(PACK *p, RPC_ENUM_MAC_TABLE *t)
 		PackAddStrEx(p, "SessionName", e->SessionName, i, t->NumMacTable);
 		PackAddDataEx(p, "MacAddress", e->MacAddress, sizeof(e->MacAddress), i, t->NumMacTable);
 		PackAddIntEx(p, "VlanId", e->VlanId, i, t->NumMacTable);
-		PackAddTime64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumMacTable);
-		PackAddTime64Ex(p, "UpdatedTime", e->UpdatedTime, i, t->NumMacTable);
+		PackAddInt64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumMacTable);
+		PackAddInt64Ex(p, "UpdatedTime", e->UpdatedTime, i, t->NumMacTable);
 	}
 }
 void FreeRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t)
@@ -8517,8 +8517,8 @@ void OutRpcEnumIpTable(PACK *p, RPC_ENUM_IP_TABLE *t)
 		PackAddIpEx(p, "IpV6", &e->IpV6, i, t->NumIpTable);
 		PackAddIpEx(p, "IpAddress", &e->IpAddress, i, t->NumIpTable);
 		PackAddBoolEx(p, "DhcpAllocated", e->DhcpAllocated, i, t->NumIpTable);
-		PackAddTime64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumIpTable);
-		PackAddTime64Ex(p, "UpdatedTime", e->UpdatedTime, i, t->NumIpTable);
+		PackAddInt64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumIpTable);
+		PackAddInt64Ex(p, "UpdatedTime", e->UpdatedTime, i, t->NumIpTable);
 	}
 }
 void FreeRpcEnumIpTable(RPC_ENUM_IP_TABLE *t)
@@ -8912,7 +8912,7 @@ void AdminDisconnect(RPC *rpc)
 	s = (SESSION *)rpc->Param;
 	sock = rpc->Sock;
 
-	EndRpc(rpc);
+	RpcFree(rpc);
 
 	Disconnect(sock);
 	ReleaseSession(s);

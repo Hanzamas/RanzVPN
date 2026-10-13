@@ -295,8 +295,8 @@ void GetVLanSupportStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
 
 	wow = MsDisableWow64FileSystemRedirection();
 
-	CombinePath(filename, sizeof(filename), MsGetSystem32Dir(), "drivers");
-	CombinePath(filename, sizeof(filename), filename, e->DriverName);
+	ConbinePath(filename, sizeof(filename), MsGetSystem32Dir(), "drivers");
+	ConbinePath(filename, sizeof(filename), filename, e->DriverName);
 
 	b = ReadDump(filename);
 
@@ -436,7 +436,7 @@ bool EnumEthVLanWin32(RPC_ENUM_ETH_VLAN *t)
 
 	Zero(t, sizeof(RPC_ENUM_ETH_VLAN));
 
-	if (IsEthSupported() == false)
+	if (Win32EthIsSuSupported() == false)
 	{
 		return false;
 	}
@@ -759,7 +759,7 @@ ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
 	char name_with_id[MAX_SIZE];
 	SU *su = NULL;
 	SU_ADAPTER *su_adapter = NULL;
-	if (name == NULL || IsEthSupported() == false)
+	if (name == NULL || Win32EthIsSuSupported() == false)
 	{
 		return NULL;
 	}
@@ -781,7 +781,7 @@ ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
 		return NULL;
 	}
 
-	su = SuInit();
+	su = SuInitEx(0);
 	if (su == NULL)
 	{
 		Unlock(eth_list_lock);
@@ -930,7 +930,7 @@ TOKEN_LIST *GetEthListEx(UINT *total_num_including_hidden, bool enum_normal, boo
 	UINT dummy_int;
 	MS_ADAPTER_LIST *adapter_list;
 
-	if (IsEthSupported() == false)
+	if (Win32EthIsSuSupported() == false)
 	{
 		return NULL;
 	}
@@ -1070,7 +1070,7 @@ LIST *GetEthAdapterListInternal()
 
 	if (enable_selow)
 	{
-		su = SuInit();
+		su = SuInitEx(0);
 	}
 
 	o = NewListFast(CompareWpAdapter);
@@ -1242,7 +1242,7 @@ void FreeEthAdaptersList()
 bool Win32EthIsSuSupported()
 {
 	bool ret = false;
-	SU *su = SuInit();
+	SU *su = SuInitEx(0);
 
 	if (su != NULL)
 	{
@@ -1252,11 +1252,6 @@ bool Win32EthIsSuSupported()
 	SuFree(su);
 
 	return ret;
-}
-
-bool IsEthSupported()
-{
-	return Win32EthIsSuSupported();
 }
 
 void InitEth()
@@ -1290,7 +1285,7 @@ void GetEthNetworkConnectionName(wchar_t *dst, UINT size, char *device_name)
 
 	UniStrCpy(dst, size, L"");
 
-	if (device_name == NULL || IsEthSupported() == false)
+	if (device_name == NULL || Win32EthIsSuSupported() == false)
 	{
 		return;
 	}

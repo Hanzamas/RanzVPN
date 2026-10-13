@@ -774,11 +774,6 @@ void NormalizeAcList(LIST *o)
 	}
 }
 
-LIST *NewAcList()
-{
-	return NewList(CmpAc);
-}
-
 int CmpAc(void *p1, void *p2)
 {
 	AC *a1, *a2;
@@ -1151,9 +1146,9 @@ void DeleteAllHubAdminOption(HUB *h, bool lock)
 	}
 }
 
-UINT GetHubAdminOptionEx(HUB *h, char *name, UINT default_value)
+UINT GetHubAdminOption(HUB *h, char *name)
 {
-	UINT ret = default_value;
+	UINT ret = 0;
 	if (h == NULL || name == NULL)
 	{
 		return 0;
@@ -1177,10 +1172,6 @@ UINT GetHubAdminOptionEx(HUB *h, char *name, UINT default_value)
 	UnlockList(h->AdminOptionList);
 
 	return ret;
-}
-UINT GetHubAdminOption(HUB *h, char *name)
-{
-	return GetHubAdminOptionEx(h, name, 0);
 }
 
 int CompareAdminOption(void *p1, void *p2)
@@ -2103,7 +2094,7 @@ bool IsPacketMaskedByAccessList(SESSION *s, PKT *p, ACCESS *a, UINT64 dest_usern
 					est = false;
 				}
 
-				if((MAKEBOOL(a->Established) ^ MAKEBOOL(est)))
+				if((INT_TO_BOOL(a->Established) ^ INT_TO_BOOL(est)))
 				{
 					return false;
 				}
@@ -2596,10 +2587,6 @@ bool IsTcpPacketNcsiHttpAccess(PKT *p)
 	return false;
 }
 
-void AddAccessList(HUB *hub, ACCESS *a)
-{
-	AddAccessListEx(hub, a, false, false);
-}
 void AddAccessListEx(HUB *hub, ACCESS *a, bool no_sort, bool no_reassign_id)
 {
 	if (hub == NULL || a == NULL)
@@ -6004,10 +5991,6 @@ void SetHubLogSettingEx(HUB *h, HUB_LOG *setting, bool no_change_switch_type)
 	SetLogSwitchType(h->PacketLogger, setting->PacketLogSwitchType);
 	SetLogSwitchType(h->SecurityLogger, setting->SecurityLogSwitchType);
 }
-void SetHubLogSetting(HUB *h, HUB_LOG *setting)
-{
-	SetHubLogSettingEx(h, setting, false);
-}
 
 void AddRootCert(HUB *hub, X *x)
 {
@@ -6077,7 +6060,7 @@ HUBDB *NewHubDb()
 	d->UserList = NewList(CompareUserName);
 	d->RootCertList = NewList(CompareCert);
 	d->CrlList = NewList(NULL);
-	d->AcList = NewAcList();
+	d->AcList = NewList(CmpAc);
 
 	return d;
 }

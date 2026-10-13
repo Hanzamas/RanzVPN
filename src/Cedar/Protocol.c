@@ -72,7 +72,7 @@ bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x)
 		wchar_t dirname[MAX_SIZE];
 		wchar_t exedir[MAX_SIZE];
 
-		GetDbDirW(exedir, sizeof(exedir));
+		GetExeDirW(exedir, sizeof(exedir));
 		CombinePathW(dirname, sizeof(dirname), exedir, L"chain_certs");
 		MakeDirExW(dirname);
 
@@ -355,7 +355,7 @@ void AddAllChainCertsToCertList(LIST *o)
 		return;
 	}
 
-	GetDbDirW(exedir, sizeof(exedir));
+	GetExeDirW(exedir, sizeof(exedir));
 
 	CombinePathW(dirname, sizeof(dirname), exedir, L"chain_certs");
 
@@ -4138,11 +4138,6 @@ UINT ProxyCodeToCedar(UINT code)
 	}
 }
 
-SOCK *TcpConnectEx3(char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, IP *ret_ip)
-{
-	return BindConnectEx4(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, hostname, port, timeout, cancel_flag, true, ret_ip);
-}
-
 SOCK *BindTcpIpConnectEx(IP *localIP, UINT localport, char *hostname, UINT port, bool *cancel_flag, void *hWnd, IP *ret_ip)
 {
 	SOCK *s = NULL;
@@ -4158,14 +4153,6 @@ SOCK *BindTcpIpConnectEx(IP *localIP, UINT localport, char *hostname, UINT port,
 	}
 
 	return s;
-}
-
-void InitProtocol()
-{
-}
-
-void FreeProtocol()
-{
 }
 
 PACK *PackHello(void *random, UINT ver, UINT build, char *server_str)

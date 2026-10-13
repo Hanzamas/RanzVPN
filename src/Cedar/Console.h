@@ -77,7 +77,6 @@ bool PasswordPrompt(char *password, UINT size);
 void *SetConsoleRaw();
 void RestoreConsole(void *p);
 wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list);
-wchar_t *ParseCommand(wchar_t *str, wchar_t *name);
 TOKEN_LIST *GetCommandNameList(wchar_t *str);
 LIST *NewParamValueList();
 int CmpParamValue(void *p1, void *p2);

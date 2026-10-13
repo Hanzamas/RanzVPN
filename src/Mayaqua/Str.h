@@ -83,7 +83,6 @@ TOKEN_LIST *UniqueToken(TOKEN_LIST *t);
 bool IsAllUpperStr(char *str);
 UINT StrWidth(char *str);
 char *MakeCharArray(char c, UINT count);
-void MakeCharArray2(char *str, char c, UINT count);
 bool StrToMac(UCHAR *mac_address, char *str);
 bool IsSplitChar(char c, char *split_str);
 bool GetKeyAndValue(char *str, char *key, UINT key_size, char *value, UINT value_size, char *split_str);
