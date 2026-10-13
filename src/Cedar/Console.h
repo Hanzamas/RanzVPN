@@ -14,7 +14,6 @@
 
 // Constant
 #define	MAX_PROMPT_STRSIZE			65536
-#define	WIN32_DEFAULT_CONSOLE_WIDTH	100
 
 // Types of console
 #define	CONSOLE_LOCAL				0	// Local console

@@ -12,10 +12,6 @@
 
 #include "Mayaqua/Network.h"
 
-// Port number for HTTP monitoring
-#define	LOG_HTTP_PORT						80
-
-
 #define	MAX_LOG_SIZE_DEFAULT				1073741823ULL
 
 typedef char *(RECORD_PARSE_PROC)(RECORD *rec);
