@@ -12,7 +12,6 @@
 
 #include "OS.h"
 
-// Function prototype
 OS_DISPATCH_TABLE *Win32GetDispatchTable();
 
 void Win32Init();
@@ -103,8 +102,7 @@ UINT Win32GetNumberOfCpuInner();
 
 void Win32SetThreadName(UINT thread_id, char *name);
 
-#endif	// WIN32_H
+#endif
 
-#endif	// OS_WIN32
-
+#endif
 
