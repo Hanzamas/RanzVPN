@@ -5860,14 +5860,11 @@ void SetHubOffline(HUB *h)
 		return;
 	}
 
-	h->BeingOffline = true;
-
 	Lock(h->lock_online);
 	{
 		if (h->Offline || h->Halt)
 		{
 			Unlock(h->lock_online);
-			h->BeingOffline = false;
 			return;
 		}
 
@@ -5899,8 +5896,6 @@ void SetHubOffline(HUB *h)
 		StopAllSession(h);
 	}
 	Unlock(h->lock_online);
-
-	h->BeingOffline = false;
 }
 
 // Get whether a HUB which have the specified name exists

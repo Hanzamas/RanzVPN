@@ -33,41 +33,6 @@
 // Default DHCP Discover Timeout
 #define	DEFAULT_DHCP_DISCOVER_TIMEOUT				(5 * 1000)
 
-// SoftEther link control packet
-struct SE_LINK
-{
-	UCHAR DestMacAddress[6];			// Destination MAC address
-	UCHAR SrcMacAddress[6];				// Source MAC address
-	UCHAR SignatureS;					// 'S'
-	UCHAR SignatureE;					// 'E'
-	UCHAR Padding[2];					// Padding
-	UINT Type;							// Type
-	UCHAR HubSignature[16];				// HUB signature
-	UINT TransactionId;					// Transaction ID
-	UINT Data;							// Data
-	UCHAR Dummy[20];					// Dummy
-	UCHAR Checksum[SHA1_SIZE];			// Checksum
-};
-
-
-// Test packet reception record
-struct TEST_HISTORY
-{
-	SESSION *s1;
-	SESSION *s2;
-};
-
-// State machine for link test
-struct SE_TEST
-{
-	LOCK *lock;							// Lock
-	UINT64 LastTestPacketSentTime;		// Time that sent the test packet at the last
-	UINT NextTestPacketSendInterval;	// Next test packet transmission interval
-	bool CurrentTesting;				// Test by sending a test packet currently
-	UINT TransactionId;					// Transaction ID
-	LIST *TestHistory;					// Reception history
-};
-
 // Database in the case of a stand-alone or a farm master HUB
 struct HUBDB
 {
@@ -195,13 +160,6 @@ struct IP_TABLE_ENTRY
 	UCHAR MacAddress[6];				// MAC address
 };
 
-// Loop List
-struct LOOP_LIST
-{
-	UINT NumSessions;
-	SESSION **Session;
-};
-
 // Access list
 struct ACCESS
 {
@@ -300,7 +258,6 @@ struct HUB
 	char *Name;							// The name of the HUB
 	volatile bool Halt;					// Halting flag
 	bool Offline;						// Offline
-	bool BeingOffline;					// Be Doing Offline
 	LIST *SessionList;					// Session list
 	COUNTER *SessionCounter;			// Session number generation counter
 	TRAFFIC *Traffic;					// Traffic information
@@ -319,16 +276,12 @@ struct HUB
 	IPV6_ADDR HubIpV6;					// IP address of the HUB (IPv6)
 	UINT HubIP6Id;						// IPv6 packet ID of the HUB
 	UCHAR Padding[2];					// Padding
-	LOCK *LoopListLock;					// Lock for the loop list
-	UINT NumLoopList;					// Number of loop lists
-	LOOP_LIST **LoopLists;				// Loop List
 	LIST *AccessList;					// Access list
 	HUB_LOG LogSetting;					// Log Settings
 	LOG *PacketLogger;					// Packet logger
 	LOG *SecurityLogger;				// Security logger
 	UCHAR HashedPassword[SHA1_SIZE];	// Password
 	UCHAR SecurePassword[SHA1_SIZE];	// Secure password
-	UINT64 LastSendArpTick;				// ARP transmission time of the last
 	THREAD *WatchDogThread;				// Watchdog thread
 	EVENT *WatchDogEvent;				// Watchdog event
 	bool WatchDogStarted;				// Whether the watchdog thread is used
@@ -395,7 +348,6 @@ bool DeleteIPv6DefaultRouterInRA(PKT *p);
 bool StorePacketFilterByTrafficLimiter(SESSION *s, PKT *p);
 void IntoTrafficLimiter(TRAFFIC_LIMITER *tr, PKT *p);
 bool IsMostHighestPriorityPacket(SESSION *s, PKT *p);
-bool IsPriorityPacketForQoS(PKT *p);
 int CompareStormList(void *p1, void *p2);
 STORM *SearchStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, bool strict);
 STORM *AddStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, bool strict);
