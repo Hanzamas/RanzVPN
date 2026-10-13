@@ -163,7 +163,6 @@ CIPHER *NewCipher(char *name)
 	c->Cipher = EVP_get_cipherbyname(c->Name);
 	if (c->Cipher == NULL)
 	{
-		Debug("NewCipher(): Cipher %s not found by EVP_get_cipherbyname().\n", c->Name);
 		FreeCipher(c);
 		return NULL;
 	}
@@ -228,7 +227,6 @@ UINT CipherProcessAead(CIPHER *c, void *iv, void *tag, UINT tag_size, void *dest
 	{
 		if (EVP_CIPHER_CTX_ctrl(c->Ctx, EVP_CTRL_AEAD_SET_TAG, tag_size, tag) == false)
 		{
-			Debug("CipherProcessAead(): EVP_CIPHER_CTX_ctrl() failed to set the tag!\n");
 			return 0;
 		}
 	}
@@ -258,7 +256,6 @@ UINT CipherProcessAead(CIPHER *c, void *iv, void *tag, UINT tag_size, void *dest
 	{
 		if (EVP_CIPHER_CTX_ctrl(c->Ctx, EVP_CTRL_AEAD_GET_TAG, tag_size, tag) == false)
 		{
-			Debug("CipherProcessAead(): EVP_CIPHER_CTX_ctrl() failed to get the tag!\n");
 			return 0;
 		}
 	}
