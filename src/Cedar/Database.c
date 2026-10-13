@@ -13,7 +13,6 @@
 #include "Mayaqua/Table.h"
 #include "Mayaqua/Str.h"
 
-// Get the License status string
 wchar_t *LiGetLicenseStatusStr(UINT i)
 {
 	wchar_t *ret = _UU("LICENSE_STATUS_OTHERERROR");
@@ -55,6 +54,4 @@ wchar_t *LiGetLicenseStatusStr(UINT i)
 
 	return ret;
 }
-
-static char *li_keybit_chars = "ABCDEFGHJKLMNPQRSTUVWXYZ12345678";
 

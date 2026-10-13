@@ -10,16 +10,14 @@
 
 #include "Cedar.h"
 
-// Constants
 #define	IPC_PASSWORD_MSCHAPV2_TAG		"xH7DiNlurDhcYV4a:"
 
-// MS-CHAPv2 authentication information
 struct IPC_MSCHAP_V2_AUTHINFO
 {
-	char MsChapV2_PPPUsername[MAX_SIZE];	// MS-CHAPv2 Username
-	UCHAR MsChapV2_ServerChallenge[16];	// MS-CHAPv2 Server Challenge
-	UCHAR MsChapV2_ClientChallenge[16];	// MS-CHAPv2 Client Challenge
-	UCHAR MsChapV2_ClientResponse[24];	// MS-CHAPv2 Client Response
+	char MsChapV2_PPPUsername[MAX_SIZE];
+	UCHAR MsChapV2_ServerChallenge[16];
+	UCHAR MsChapV2_ClientChallenge[16];
+	UCHAR MsChapV2_ClientResponse[24];
 };
 
 void GenerateNtPasswordHash(UCHAR *dst, char *password);

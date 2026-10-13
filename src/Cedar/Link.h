@@ -14,28 +14,28 @@
 
 struct LINK
 {
-	bool Started;					// Running flag
-	volatile bool Halting;			// Halting flag
-	bool Offline;					// Offline
-	bool NoOnline;					// Do not set to online flag
-	REF *ref;						// Reference counter
-	LOCK *lock;						// Lock
-	CEDAR *Cedar;					// Cedar
-	HUB *Hub;						// HUB
-	SESSION *ClientSession;			// Client session
-	SESSION *ServerSession;			// Server session
-	CLIENT_OPTION *Option;			// Client Option
-	CLIENT_AUTH *Auth;				// Authentication data
-	POLICY *Policy;					// Policy
-	QUEUE *SendPacketQueue;			// Transmission packet queue
-	UINT CurrentSendPacketQueueSize;	// Current send packet queue size
-	UINT LastError;					// Last error
-	bool CheckServerCert;			// To check the server certificate
-	bool AddDefaultCA;				// Use default trust store
-	X *ServerCert;					// Server certificate
-	bool LockFlag;					// Lock flag
-	bool *StopAllLinkFlag;			// Stop all link flag
-	UINT LastServerConnectionReceivedBlocksNum;	// Last server connection recv queue num
+	bool Started;
+	volatile bool Halting;
+	bool Offline;
+	bool NoOnline;
+	REF *ref;
+	LOCK *lock;
+	CEDAR *Cedar;
+	HUB *Hub;
+	SESSION *ClientSession;
+	SESSION *ServerSession;
+	CLIENT_OPTION *Option;
+	CLIENT_AUTH *Auth;
+	POLICY *Policy;
+	QUEUE *SendPacketQueue;
+	UINT CurrentSendPacketQueueSize;
+	UINT LastError;
+	bool CheckServerCert;
+	bool AddDefaultCA;
+	X *ServerCert;
+	bool LockFlag;
+	bool *StopAllLinkFlag;
+	UINT LastServerConnectionReceivedBlocksNum;
 	UINT Flag1;
 };
 

@@ -5,7 +5,6 @@
 // Win32Com.h
 // Header of Win32Com.cpp
 
-#ifdef OS_WIN32
 
 #ifndef WIN32COM_H
 #define WIN32COM_H
@@ -25,4 +24,3 @@ extern "C"
 
 #endif // WIN32COM_H
 
-#endif // OS_WIN32

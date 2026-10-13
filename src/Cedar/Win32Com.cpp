@@ -5,7 +5,6 @@
 // Win32Com.c
 // Win32 COM module call
 
-#ifdef OS_WIN32
 
 #include "Win32Com.h"
 
@@ -22,7 +21,6 @@ extern "C"
 #include <netcfgn.h>
 #include <SetupAPI.h>
 
-// Install the NDIS protocol driver
 bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout)
 {
 	bool ret = false;
@@ -31,7 +29,6 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout
 	HINSTANCE hSetupApiDll = NULL;
 	BOOL (WINAPI *_SetupCopyOEMInfW)(PCWSTR, PCWSTR, DWORD, DWORD, PWSTR, DWORD, PDWORD, PWSTR *) = NULL;
 	BOOL (WINAPI *_SetupUninstallOEMInfW)(PCWSTR, DWORD, PVOID) = NULL;
-	// Validate arguments
 	if (inf_path == NULL || id == NULL)
 	{
 		return false;
@@ -108,7 +105,6 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout
 							else
 							{
 								WHERE;
-								Debug("0x%x\n", hr);
 							}
 
 							pSetup->Release();
@@ -168,4 +164,3 @@ LABEL_CLEANUP:
 	return ret;
 }
 
-#endif

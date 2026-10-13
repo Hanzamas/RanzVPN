@@ -18,67 +18,10 @@
 #include "Mayaqua/Proxy.h"
 #include "Mayaqua/Str.h"
 
-// Generate a entry name
-void WpcFillEntryName(char *dst, char *name)
-{
-	UINT i, len;
-	char tmp[MAX_SIZE];
-	// Validate arguments
-	if (dst == NULL || name == NULL)
-	{
-		return;
-	}
-
-	StrCpy(tmp, sizeof(tmp), name);
-	StrUpper(tmp);
-	len = StrLen(tmp);
-
-	for (i = 0;i < WPC_DATA_ENTRY_SIZE;i++)
-	{
-		dst[i] = ' ';
-	}
-
-	if (len <= WPC_DATA_ENTRY_SIZE)
-	{
-		Copy(dst, tmp, len);
-	}
-	else
-	{
-		Copy(dst, tmp, WPC_DATA_ENTRY_SIZE);
-	}
-}
-
-
-// Add the data entry
-void WpcAddDataEntry(BUF *b, char *name, void *data, UINT size)
-{
-	char entry_name[WPC_DATA_ENTRY_SIZE];
-	char size_str[11];
-	// Validate arguments
-	if (b == NULL || name == NULL || (data == NULL && size != 0))
-	{
-		return;
-	}
-
-	WpcFillEntryName(entry_name, name);
-	WriteBuf(b, entry_name, WPC_DATA_ENTRY_SIZE);
-
-	Format(size_str, sizeof(size_str), "%010u", size);
-	WriteBuf(b, size_str, 10);
-
-	WriteBuf(b, data, size);
-}
-
-// Socket connection
-SOCK *WpcSockConnect(WPC_CONNECT *param, UINT *error_code, UINT timeout)
-{
-	return WpcSockConnectEx(param, error_code, timeout, NULL);
-}
 SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool *cancel)
 {
 	SOCK *sock;
 	UINT ret;
-	// Validate arguments
 	if (param == NULL)
 	{
 		return NULL;
@@ -129,7 +72,6 @@ SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool 
 			break;
 		default:
 			*error_code = ERR_INTERNAL_ERROR;
-			Debug("WpcSockConnect(): Unknown proxy type: %u!\n", param->ProxyType);
 			return NULL;
 		}
 
@@ -137,7 +79,6 @@ SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool 
 
 		if (*error_code != ERR_NO_ERROR)
 		{
-			Debug("ClientConnectGetSocket(): Connection via proxy server failed with error %u\n", ret);
 			return NULL;
 		}
 
@@ -145,7 +86,6 @@ SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool 
 	}
 }
 
-// Handle the HTTP request
 BUF *HttpRequestEx(URL_DATA *data, INTERNET_SETTING *setting,
 				   UINT timeout_connect, UINT timeout_comm,
 				   UINT *error_code, bool check_ssl_trust, char *post_data,
@@ -187,7 +127,6 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 	UINT socket_buffer_size = WPC_RECV_BUF_SIZE;
 	UINT num_continue = 0;
 	INTERNET_SETTING wt_setting;
-	// Validate arguments
 	if (data == NULL)
 	{
 		return NULL;
@@ -215,7 +154,6 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 		sha1_cert_hash = NULL;
 	}
 
-	// Connection
 	Zero(&con, sizeof(con));
 	StrCpy(con.HostName, sizeof(con.HostName), data->HostName);
 	con.Port = data->Port;
@@ -239,12 +177,10 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 
 	if (use_http_proxy == false)
 	{
-		// If the connection is not via HTTP Proxy, or is a SSL connection even via HTTP Proxy
 		s = WpcSockConnectEx(&con, error_code, timeout_connect, cancel);
 	}
 	else
 	{
-		// If the connection is not SSL via HTTP Proxy
 		s = TcpConnectEx3(con.ProxyHostName, con.ProxyPort, timeout_connect, cancel, NULL, NULL);
 		if (s == NULL)
 		{
@@ -259,10 +195,8 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 
 	if (data->Secure)
 	{
-		// Start the SSL communication
 		if (StartSSLEx(s, NULL, NULL, 0, (IsEmptyStr(data->SniString) ? NULL : data->SniString)) == false)
 		{
-			// SSL connection failed
 			*error_code = ERR_PROTOCOL_ERROR;
 			Disconnect(s);
 			ReleaseSock(s);
@@ -292,7 +226,6 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 
 			if (ok == false)
 			{
-				// Destination certificate hash mismatch
 				*error_code = ERR_CERT_NOT_TRUSTED;
 				Disconnect(s);
 				ReleaseSock(s);
@@ -301,10 +234,8 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 		}
 	}
 
-	// Timeout setting
 	SetTimeout(s, timeout_comm);
 
-	// Generate a request
 	h = NewHttpHeader(data->Method, target, use_http_proxy ? "HTTP/1.0" : "HTTP/1.1");
 	AddHttpValue(h, NewHttpValue("Keep-Alive", HTTP_KEEP_ALIVE));
 	AddHttpValue(h, NewHttpValue("Connection", "Keep-Alive"));
@@ -360,13 +291,11 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 	WriteBuf(send_buf, send_str, StrLen(send_str));
 	Free(send_str);
 
-	// Append to the sending data in the case of POST
 	if (StrCmpi(data->Method, WPC_HTTP_POST_NAME) == 0)
 	{
 		WriteBuf(send_buf, post_data, StrLen(post_data));
 	}
 
-	// Send
 	if (SendAll(s, send_buf->Buf, send_buf->Size, s->SecureMode) == false)
 	{
 		Disconnect(s);
@@ -381,7 +310,6 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 	FreeBuf(send_buf);
 
 CONT:
-	// Receive
 	h = RecvHttpHeader(s);
 	if (h == NULL)
 	{
@@ -408,17 +336,14 @@ CONT:
 	{
 	case 401:
 	case 407:
-		// Proxy authentication error
 		*error_code = ERR_PROXY_AUTH_FAILED;
 		break;
 
 	case 404:
-		// 404 File Not Found
 		*error_code = ERR_OBJECT_NOT_FOUND;
 		break;
 
 	case 100:
-		// Continue
 		num_continue++;
 		if (num_continue >= 10)
 		{
@@ -428,11 +353,9 @@ CONT:
 		goto CONT;
 
 	case 200:
-		// Success
 		break;
 
 	default:
-		// Protocol error
 DEF:
 		*error_code = ERR_PROTOCOL_ERROR;
 		break;
@@ -440,14 +363,12 @@ DEF:
 
 	if (*error_code != ERR_NO_ERROR)
 	{
-		// An error has occured
 		Disconnect(s);
 		ReleaseSock(s);
 		FreeHttpHeader(h);
 		return NULL;
 	}
 
-	// Get the length of the content
 	content_len = GetContentLength(h);
 	if (max_recv_size != 0)
 	{
@@ -458,7 +379,6 @@ DEF:
 
 	socket_buffer = Malloc(socket_buffer_size);
 
-	// Receive the content
 	recv_buf = NewBuf();
 
 	while (true)
@@ -471,7 +391,6 @@ DEF:
 			if (recv_callback(recv_callback_param,
 				content_len, recv_buf->Size, recv_buf) == false)
 			{
-				// Cancel the reception
 				*error_code = ERR_USER_CANCEL;
 				goto RECV_CANCEL;
 			}
@@ -485,7 +404,6 @@ DEF:
 		size = Recv(s, socket_buffer, recvsize, s->SecureMode);
 		if (size == 0)
 		{
-			// Disconnected
 			*error_code = ERR_DISCONNECTED;
 
 RECV_CANCEL:
@@ -506,15 +424,12 @@ RECV_CANCEL:
 	Disconnect(s);
 	ReleaseSock(s);
 
-	// Transmission
 	return recv_buf;
 }
 
-// Generate the URL
 void CreateUrl(char *url, UINT url_size, URL_DATA *data)
 {
 	char *protocol;
-	// Validate arguments
 	if (url == NULL || data == NULL)
 	{
 		return;
@@ -533,7 +448,6 @@ void CreateUrl(char *url, UINT url_size, URL_DATA *data)
 }
 
 
-// Parse the URL
 bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer)
 {
 	char tmp[MAX_SIZE * 3];
@@ -542,7 +456,6 @@ bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer)
 	char *host;
 	UINT port;
 	UINT i;
-	// Validate arguments
 	if (data == NULL || str == NULL)
 	{
 		return false;
@@ -567,7 +480,6 @@ bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer)
 	StrCpy(tmp, sizeof(tmp), str);
 	Trim(tmp);
 
-	// Determine the protocol
 	if (StartWith(tmp, "http://"))
 	{
 		data->Secure = false;
@@ -588,7 +500,6 @@ bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer)
 		s = &tmp[0];
 	}
 
-	// Get the "server name:port number"
 	StrCpy(server_port, sizeof(server_port), s);
 	i = SearchStrEx(server_port, "/", 0, false);
 	if (i != INFINITE)
@@ -623,93 +534,4 @@ bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer)
 	}
 
 	return true;
-}
-
-// String replacement
-void Base64ToSafe64(char *str, const UINT size)
-{
-	if (str == NULL || size == 0)
-	{
-		return;
-	}
-
-	for (UINT i = 0; i < size; ++i)
-	{
-		switch (str[i])
-		{
-		case '=':
-			str[i] = '(';
-			break;
-
-		case '+':
-			str[i] = ')';
-			break;
-
-		case '/':
-			str[i] = '_';
-			break;
-		}
-	}
-}
-void Safe64ToBase64(char *str, const UINT size)
-{
-	if (str == NULL || size == 0)
-	{
-		return;
-	}
-
-	for (UINT i = 0; i < size; ++i)
-	{
-		switch (str[i])
-		{
-		case '(':
-			str[i] = '=';
-			break;
-
-		case ')':
-			str[i] = '+';
-			break;
-
-		case '_':
-			str[i] = '/';
-			break;
-		}
-	}
-}
-
-// Decode from escaped Base64
-UINT DecodeSafe64(void *dst, const char *src, UINT size)
-{
-	if (dst == NULL || src == NULL)
-	{
-		return 0;
-	}
-
-	if (size == 0)
-	{
-		size = StrLen(src);
-	}
-
-	char *tmp = Malloc(size + 1);
-	Copy(tmp, src, size);
-	tmp[size] = '\0';
-
-	Safe64ToBase64(tmp, size);
-	const UINT ret = Base64Decode(dst, tmp, size);
-	Free(tmp);
-
-	return ret;
-}
-
-// Encode to escaped Base64
-void EncodeSafe64(char *dst, const void *src, const UINT size)
-{
-	if (dst == NULL || src == NULL)
-	{
-		return;
-	}
-
-	const UINT ret = Base64Encode(dst, src, size);
-
-	Base64ToSafe64(dst, ret);
 }
