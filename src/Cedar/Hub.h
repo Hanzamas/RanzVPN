@@ -439,7 +439,6 @@ CRL *CopyCrl(CRL *crl);
 int CmpAc(void *p1, void *p2);
 LIST *NewAcList();
 void AddAc(LIST *o, AC *ac);
-bool DelAc(LIST *o, UINT id);
 void DelAllAc(LIST *o);
 void SetAcList(LIST *o, LIST *src);
 void NormalizeAcList(LIST *o);

@@ -70,7 +70,6 @@ struct PACK
 // Function prototype
 PACK *NewPack();
 bool AddElement(PACK *p, ELEMENT *e);
-bool IsElement(PACK *p, char *name);
 ELEMENT *GetElement(PACK *p, char *name, UINT type);
 void FreePack(PACK *p);
 ELEMENT *NewElement(char *name, UINT type, UINT num_value, VALUE **values);
@@ -119,7 +118,6 @@ ELEMENT *PackAddData(PACK *p, char *name, void *data, UINT size);
 ELEMENT *PackAddDataEx(PACK *p, char *name, void *data, UINT size, UINT index, UINT total);
 ELEMENT *PackAddBuf(PACK *p, char *name, BUF *b);
 ELEMENT *PackAddBufEx(PACK *p, char *name, BUF *b, UINT index, UINT total);
-UINT PackGetStrSizeEx(PACK *p, char *name, UINT index);
 bool PackGetStr(PACK *p, char *name, char *str, UINT size);
 bool PackGetStrEx(PACK *p, char *name, char *str, UINT size, UINT index);
 bool PackGetUniStr(PACK *p, char *name, wchar_t *unistr, UINT size);

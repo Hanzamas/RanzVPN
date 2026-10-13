@@ -90,7 +90,6 @@ UINT DecodeSafe64(void *dst, const char *src, UINT size);
 void EncodeSafe64(char *dst, const void *src, const UINT size);
 bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer);
 void CreateUrl(char *url, UINT url_size, URL_DATA *data);
-bool GetProxyServerNameAndPortFromIeProxyRegStr(char *name, UINT name_size, UINT *port, char *str, char *server_type);
 BUF *HttpRequestEx(URL_DATA *data, INTERNET_SETTING *setting,
 				   UINT timeout_connect, UINT timeout_comm,
 				   UINT *error_code, bool check_ssl_trust, char *post_data,
@@ -117,9 +116,6 @@ WPC_ENTRY *WpcFindDataEntry(LIST *o, char *name);
 BUF *WpcDataEntryToBuf(WPC_ENTRY *e);
 BUF *WpcGeneratePacket(PACK *pack, X *cert, K *key);
 bool WpcParsePacket(WPC_PACKET *packet, BUF *buf);
-PACK *WpcCallEx(char *url, INTERNET_SETTING *setting, UINT timeout_connect, UINT timeout_comm,
-			  char *function_name, PACK *pack, X *cert, K *key, void *sha1_cert_hash, bool *cancel, UINT max_recv_size,
-			  char *additional_header_name, char *additional_header_value);
 PACK *WpcCallEx2(char *url, INTERNET_SETTING *setting, UINT timeout_connect, UINT timeout_comm,
 				char *function_name, PACK *pack, X *cert, K *key, void *sha1_cert_hash, UINT num_hashes, bool *cancel, UINT max_recv_size,
 				char *additional_header_name, char *additional_header_value, char *sni_string);

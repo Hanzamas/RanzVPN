@@ -824,7 +824,6 @@ void InitCedar();
 void FreeCedar();
 void AddCa(CEDAR *cedar, X *x);
 bool DeleteCa(CEDAR *cedar, UINT ptr);
-X *FindCaSignedX(LIST *o, X *x);
 void InitNetSvcList(CEDAR *cedar);
 void FreeNetSvcList(CEDAR *cedar);
 int CompareNetSvc(void *p1, void *p2);

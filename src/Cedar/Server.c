@@ -436,46 +436,6 @@ void SiFreeDeadLockCheck(SERVER *s)
 	s->HaltDeadLockThread = false;
 }
 
-// Delete outdated Virtual HUB creation histories
-void SiDeleteOldHubCreateHistory(SERVER *s)
-{
-	UINT i;
-	LIST *o;
-	// Validate arguments
-	if (s == NULL)
-	{
-		return;
-	}
-
-	LockList(s->HubCreateHistoryList);
-	{
-		o = NewListFast(NULL);
-
-		for (i = 0;i < LIST_NUM(s->HubCreateHistoryList);i++)
-		{
-			SERVER_HUB_CREATE_HISTORY *h = LIST_DATA(s->HubCreateHistoryList, i);
-
-			if ((h->CreatedTime + ((UINT64)TICKET_EXPIRES)) <= Tick64())
-			{
-				// Expired
-				Add(o, h);
-			}
-		}
-
-		for (i = 0;i < LIST_NUM(o);i++)
-		{
-			SERVER_HUB_CREATE_HISTORY *h = LIST_DATA(o, i);
-
-			Delete(s->HubCreateHistoryList, h);
-
-			Free(h);
-		}
-
-		ReleaseList(o);
-	}
-	UnlockList(s->HubCreateHistoryList);
-}
-
 // Initialize the Virtual HUB creation history
 void SiInitHubCreateHistory(SERVER *s)
 {

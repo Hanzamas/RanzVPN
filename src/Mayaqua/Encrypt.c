@@ -101,7 +101,6 @@ LOCK **ssl_lock_obj = NULL;
 UINT ssl_lock_num;
 static bool openssl_inited = false;
 
-static UINT Internal_HMac(const EVP_MD *md, void *dest, void *key, UINT key_size, const void *src, const UINT src_size);
 static void Internal_Sha0(unsigned char *dest, const unsigned char *src, const UINT size);
 
 // For the callback function
@@ -109,68 +108,6 @@ typedef struct CB_PARAM
 {
 	char *password;
 } CB_PARAM;
-
-// Copied from t1_enc.c of OpenSSL
-void Enc_tls1_P_hash(const EVP_MD *md, const unsigned char *sec, int sec_len,
-				 const unsigned char *seed, int seed_len, unsigned char *out, int olen)
-{
-	int chunk,n;
-	unsigned int j;
-	HMAC_CTX *ctx;
-	HMAC_CTX *ctx_tmp;
-	unsigned char A1[EVP_MAX_MD_SIZE];
-	unsigned int A1_len;
-
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
-	ctx = HMAC_CTX_new();
-	ctx_tmp = HMAC_CTX_new();
-#else
-	HMAC_CTX ctx_;
-	HMAC_CTX ctx_tmp_;
-	ctx = &ctx_;
-	ctx_tmp = &ctx_tmp_;
-	Zero(ctx, sizeof(HMAC_CTX));
-	Zero(ctx_tmp, sizeof(HMAC_CTX));
-#endif
-	chunk=EVP_MD_size(md);
-
-	HMAC_Init_ex(ctx,sec,sec_len,md, NULL);
-	HMAC_Init_ex(ctx_tmp,sec,sec_len,md, NULL);
-	HMAC_Update(ctx,seed,seed_len);
-	HMAC_Final(ctx,A1,&A1_len);
-
-	n=0;
-	for (;;)
-	{
-		HMAC_Init_ex(ctx,NULL,0,NULL,NULL); /* re-init */
-		HMAC_Init_ex(ctx_tmp,NULL,0,NULL,NULL); /* re-init */
-		HMAC_Update(ctx,A1,A1_len);
-		HMAC_Update(ctx_tmp,A1,A1_len);
-		HMAC_Update(ctx,seed,seed_len);
-
-		if (olen > chunk)
-		{
-			HMAC_Final(ctx,out,&j);
-			out+=j;
-			olen-=j;
-			HMAC_Final(ctx_tmp,A1,&A1_len); /* calc the next A1 value */
-		}
-		else	/* last one */
-		{
-			HMAC_Final(ctx,A1,&A1_len);
-			memcpy(out,A1,olen);
-			break;
-		}
-	}
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
-	HMAC_CTX_free(ctx);
-	HMAC_CTX_free(ctx_tmp);
-#else
-	HMAC_CTX_cleanup(ctx);
-	HMAC_CTX_cleanup(ctx_tmp);
-#endif
-	Zero (A1, sizeof(A1));
-}
 
 // MD4 specific hash function
 void HashMd4(void *dst, void *src, UINT size)
@@ -240,70 +177,6 @@ void Sha1(void *dst, void *src, UINT size)
 void Sha2_256(void *dst, void *src, UINT size)
 {
 	Sha(SHA2_256, dst, src, size);
-}
-
-MD *NewMdEx(char *name, bool hmac)
-{
-	MD *m;
-
-	// Validate arguments
-	if (name == NULL)
-	{
-		return NULL;
-	}
-
-	m = ZeroMalloc(sizeof(MD));
-
-	StrCpy(m->Name, sizeof(m->Name), name);
-
-	if (StrCmpi(name, "[null-digest]") == 0 ||
-		StrCmpi(name, "NULL") == 0 ||
-		IsEmptyStr(name))
-	{
-		m->IsNullMd = true;
-		return m;
-	}
-
-	m->Md = EVP_get_digestbyname(name);
-	if (m->Md == NULL)
-	{
-		Debug("NewMdEx(): Algorithm %s not found by EVP_get_digestbyname().\n", m->Name);
-		FreeMd(m);
-		return NULL;
-	}
-
-	m->Size = EVP_MD_size(m->Md);
-	m->IsHMac = hmac;
-
-	if (hmac)
-	{
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
-		m->Ctx = HMAC_CTX_new();
-#else
-		m->Ctx = ZeroMalloc(sizeof(struct hmac_ctx_st));
-		HMAC_CTX_init(m->Ctx);
-#endif
-	}
-	else
-	{
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
-		m->Ctx = EVP_MD_CTX_new();
-#else
-		m->Ctx = EVP_MD_CTX_create();
-#endif
-		if (m->Ctx == NULL)
-		{
-			return NULL;
-		}
-
-		if (EVP_DigestInit_ex(m->Ctx, m->Md, NULL) == false)
-		{
-			Debug("NewMdEx(): EVP_DigestInit_ex() failed with error: %s\n", OpenSSL_Error());
-			FreeMd(m);
-		}
-	}
-
-	return m;
 }
 
 // Set the key to the message digest object
@@ -1029,11 +902,6 @@ LIST *CloneXList(LIST *chain)
 	return ret;
 }
 
-// Extract the X and the K from the P12
-bool ParseP12(P12 *p12, X **x, K **k, char *password)
-{
-	return ParseP12Ex(p12, x, k, NULL, password);
-}
 // Extract the X, the K and the chain from the P12
 bool ParseP12Ex(P12 *p12, X **x, K **k, LIST **cc, char *password)
 {
@@ -1128,43 +996,6 @@ bool ParseP12Ex(P12 *p12, X **x, K **k, LIST **cc, char *password)
 	return true;
 }
 
-// Release of PKCS12
-void FreePKCS12(PKCS12 *pkcs12)
-{
-	// Validate arguments
-	if (pkcs12 == NULL)
-	{
-		return;
-	}
-
-	PKCS12_free(pkcs12);
-}
-
-// Converted the P12 to a BUF
-BUF *P12ToBuf(P12 *p12)
-{
-	BIO *bio;
-	BUF *buf;
-	// Validate arguments
-	if (p12 == NULL)
-	{
-		return NULL;
-	}
-
-	bio = P12ToBio(p12);
-	if (bio == NULL)
-	{
-		return NULL;
-	}
-
-	buf = BioToBuf(bio);
-	FreeBio(bio);
-
-	SeekBuf(buf, 0, 0);
-
-	return buf;
-}
-
 // Converted the P12 to a BIO
 BIO *P12ToBio(P12 *p12)
 {
@@ -1183,31 +1014,6 @@ BIO *P12ToBio(P12 *p12)
 	Unlock(openssl_lock);
 
 	return bio;
-}
-
-// Read the P12 from the BIO
-P12 *BioToP12(BIO *bio)
-{
-	PKCS12 *pkcs12;
-	// Validate arguments
-	if (bio == NULL)
-	{
-		return NULL;
-	}
-
-	// Conversion
-	Lock(openssl_lock);
-	{
-		pkcs12 = d2i_PKCS12_bio(bio, NULL);
-	}
-	Unlock(openssl_lock);
-	if (pkcs12 == NULL)
-	{
-		// Failure
-		return NULL;
-	}
-
-	return PKCS12ToP12(pkcs12);
 }
 
 // Generate a P12 from a PKCS12
@@ -4110,45 +3916,6 @@ void DhFree(DH_CTX *dh)
 int GetSslClientCertIndex()
 {
 	return ssl_clientcert_index;
-}
-
-// Internal functions
-static UINT Internal_HMac(const EVP_MD *md, void *dest, void *key, UINT key_size, const void *src, const UINT src_size)
-{
-	MD *m;
-	UINT len = 0;
-
-	// Validate arguments
-	if (md == NULL || dest == NULL || key == NULL || key_size == 0 || (src == NULL && src_size != 0))
-	{
-		return 0;
-	}
-
-	m = ZeroMalloc(sizeof(MD));
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
-	m->Ctx = HMAC_CTX_new();
-#else
-	m->Ctx = ZeroMalloc(sizeof(HMAC_CTX));
-	HMAC_CTX_init(m->Ctx);
-#endif
-	m->Md = md;
-	m->IsHMac = true;
-
-	if (SetMdKey(m, key, key_size) == false)
-	{
-		Debug("Internal_HMac(): SetMdKey() failed!\n");
-		goto final;
-	}
-
-	len = MdProcess(m, dest, (void *)src, src_size);
-	if (len == 0)
-	{
-		Debug("Internal_HMac(): MdProcess() returned 0!\n");
-	}
-
-final:
-	FreeMd(m);
-	return len;
 }
 
 /////////////////////////

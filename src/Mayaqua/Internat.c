@@ -43,23 +43,6 @@ bool UniInChar(wchar_t *string, wchar_t c)
 	return false;
 }
 
-// Check whether the string is included
-bool UniInStrEx(wchar_t *str, wchar_t *keyword, bool case_sensitive)
-{
-	// Validate arguments
-	if (UniIsEmptyStr(str) || UniIsEmptyStr(keyword))
-	{
-		return false;
-	}
-
-	if (UniSearchStrEx(str, keyword, 0, case_sensitive) == INFINITE)
-	{
-		return false;
-	}
-
-	return true;
-}
-
 // Convert a string list to a token list
 UNI_TOKEN_LIST *UniListToTokenList(LIST *o)
 {
@@ -602,28 +585,6 @@ UNI_TOKEN_LIST *UniNullToken()
 wchar_t *UniCopyStr(wchar_t *str)
 {
 	return CopyUniStr(str);
-}
-
-// Copy the token list
-UNI_TOKEN_LIST *UniCopyToken(UNI_TOKEN_LIST *src)
-{
-	UNI_TOKEN_LIST *ret;
-	UINT i;
-	// Validate arguments
-	if (src == NULL)
-	{
-		return NULL;
-	}
-
-	ret = ZeroMalloc(sizeof(TOKEN_LIST));
-	ret->NumTokens = src->NumTokens;
-	ret->Token = ZeroMalloc(sizeof(wchar_t *) * ret->NumTokens);
-	for (i = 0;i < ret->NumTokens;i++)
-	{
-		ret->Token[i] = CopyUniStr(src->Token[i]);
-	}
-
-	return ret;
 }
 
 // Parse the command line string
@@ -1988,17 +1949,6 @@ void UniPrint(wchar_t *fmt, ...)
 	va_start(args, fmt);
 	UniPrintArgs(fmt, args);
 	va_end(args);
-}
-
-// Display debug string with arguments
-void UniDebugArgs(wchar_t *fmt, va_list args)
-{
-	if (g_debug == false)
-	{
-		return;
-	}
-
-	UniPrintArgs(fmt, args);
 }
 
 // Format a string (argument list)

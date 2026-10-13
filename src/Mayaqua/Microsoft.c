@@ -120,118 +120,6 @@ void MsInitProcessCallOnce()
 	}
 }
 
-// Collect the information of the VPN software
-bool MsCollectVpnInfo(BUF *bat, char *tmpdir, char *svc_name, wchar_t *config_name, wchar_t *logdir_name)
-{
-	wchar_t *inst_dir;
-	char subkey[MAX_PATH];
-	bool ret = false;
-	wchar_t tmpdir_w[MAX_PATH];
-	// Validate arguments
-	if (bat == NULL || tmpdir == NULL || svc_name == NULL || config_name == NULL || logdir_name == NULL)
-	{
-		return false;
-	}
-
-	StrToUni(tmpdir_w, sizeof(tmpdir_w), tmpdir);
-
-	Format(subkey, sizeof(subkey), "SOFTWARE\\" GC_REG_COMPANY_NAME "\\Setup Wizard Settings\\%s", svc_name);
-	inst_dir = MsRegReadStrEx2W(REG_LOCAL_MACHINE, subkey, "InstalledDir", false, true);
-	if (UniIsEmptyStr(inst_dir) == false)
-	{
-		wchar_t config_src[MAX_PATH];
-		wchar_t config_dst[MAX_PATH];
-		wchar_t log_dir[MAX_PATH];
-		DIRLIST *dir;
-		UINT64 max_dt_file = 0;
-
-		// config file
-		CombinePathW(config_src, sizeof(config_src), inst_dir, config_name);
-		UniFormat(config_dst, sizeof(config_dst), L"%s\\%S_%s", tmpdir_w, svc_name, config_name);
-		ret = FileCopyExW(config_src, config_dst, false);
-
-		// Log file
-		CombinePathW(log_dir, sizeof(log_dir), inst_dir, logdir_name);
-
-		dir = EnumDirW(log_dir);
-
-		if (dir != NULL)
-		{
-			UINT i;
-			DIRENT *latest_log = NULL;
-
-			for (i = 0;i < dir->NumFiles;i++)
-			{
-				DIRENT *e = dir->File[i];
-
-				// Get the most recent file
-				if (max_dt_file <= e->UpdateDate)
-				{
-					max_dt_file = e->UpdateDate;
-
-					latest_log = e;
-				}
-			}
-
-			if (latest_log != NULL)
-			{
-				wchar_t fullpath[MAX_SIZE];
-				IO *f;
-
-				// Open the log file
-				CombinePathW(fullpath, sizeof(fullpath), log_dir, latest_log->FileNameW);
-				f = FileOpenExW(fullpath, false, false);
-
-				if (f != NULL)
-				{
-					UINT size = FileSize(f);
-
-					if (size >= 1)
-					{
-						UINT copy_size = 1024 * 1024;
-						UINT seek_size = 0;
-						UCHAR *buf;
-
-						if (copy_size < size)
-						{
-							seek_size = size - copy_size;
-						}
-						else
-						{
-							copy_size = size;
-						}
-
-						FileSeek(f, 0, seek_size);
-
-						buf = Malloc(copy_size + 3);
-						buf[0] = 0xEF;
-						buf[1] = 0xBB;
-						buf[2] = 0xBF;
-						if (FileRead(f, buf + 3, copy_size))
-						{
-							char log_dst_filename[MAX_PATH];
-
-							Format(log_dst_filename, sizeof(log_dst_filename), "%s\\lastlog_%s_%s",
-								tmpdir, svc_name, latest_log->FileName);
-
-							SaveFile(log_dst_filename, buf, copy_size + 3);
-						}
-
-						Free(buf);
-					}
-
-					FileClose(f);
-				}
-			}
-
-			FreeDir(dir);
-		}
-	}
-	Free(inst_dir);
-
-	return ret;
-}
-
 // Determine whether this is running in a VM
 bool MsIsInVmMain()
 {
@@ -290,27 +178,6 @@ bool MsIsInVm()
 	}
 
 	return flag_is_vm;
-}
-
-// Get the current module handle
-void *MsGetCurrentModuleHandle()
-{
-	return ms->hInst;
-}
-
-// Resource enumeration procedure
-BOOL CALLBACK MsEnumResourcesInternalProc(HMODULE hModule, const char *type, char *name, LONG_PTR lParam)
-{
-	LIST *o = (LIST *)lParam;
-	// Validate arguments
-	if (type == NULL || name == NULL || o == NULL)
-	{
-		return true;
-	}
-
-	Add(o, CopyStr(name));
-
-	return true;
 }
 
 // Get the locale ID of the user
@@ -429,17 +296,6 @@ bool MsGetFileInformation(void *h, void *info)
 	return GetFileInformationByHandle(h, info);
 }
 
-// Restart of MMCSS
-void MsRestartMMCSS()
-{
-	MsStopService("CTAudSvcService");
-	MsStopService("audiosrv");
-	MsStopService("MMCSS");
-	MsStartService("MMCSS");
-	MsStartService("audiosrv");
-	MsStartService("CTAudSvcService");
-}
-
 typedef struct _ASTAT_
 {
 	ADAPTER_STATUS adapt;
@@ -494,74 +350,6 @@ UINT64 MsGetHiResCounter()
 	Copy(&ret, &t, sizeof(UINT64));
 
 	return ret;
-}
-
-// Execution of the file (to get process handle)
-bool MsExecuteEx2(char *exe, char *arg, void **process_handle, bool runas)
-{
-	SHELLEXECUTEINFO info;
-	HANDLE h;
-	// Validate arguments
-	if (exe == NULL || process_handle == NULL)
-	{
-		return false;
-	}
-
-	Zero(&info, sizeof(info));
-	info.cbSize = sizeof(info);
-	info.lpVerb = (runas ? "runas" : "open");
-	info.lpFile = exe;
-	info.fMask = SEE_MASK_NOCLOSEPROCESS;
-	info.lpParameters = arg;
-	info.nShow = SW_SHOWNORMAL;
-	if (ShellExecuteEx(&info) == false)
-	{
-		return false;
-	}
-
-	h = info.hProcess;
-
-	*process_handle = (void *)h;
-
-	return true;
-}
-
-// Execution of the file
-bool MsExecute2(char *exe, char *arg, bool runas)
-{
-	DWORD d;
-	// Validate arguments
-	if (exe == NULL)
-	{
-		return false;
-	}
-
-	d = (DWORD)ShellExecuteA(NULL, (runas ? "runas" : "open"), exe, arg, MsGetExeDirName(), SW_SHOWNORMAL);
-
-	if (d > 32)
-	{
-		return true;
-	}
-
-	return false;
-}
-bool MsExecute2W(wchar_t *exe, wchar_t *arg, bool runas)
-{
-	DWORD d;
-	// Validate arguments
-	if (exe == NULL)
-	{
-		return false;
-	}
-
-	d = (DWORD)ShellExecuteW(NULL, (runas ? L"runas" : L"open"), exe, arg, MsGetExeDirNameW(), SW_SHOWNORMAL);
-
-	if (d > 32)
-	{
-		return true;
-	}
-
-	return false;
 }
 
 // Recursive directory creation
@@ -660,115 +448,6 @@ void MsGetComputerName(char *name, UINT size)
 
 	sz = size;
 	GetComputerName(name, &sz);
-}
-
-// Start the process as a standard user privileges
-void *MsRunAsUserExInnerW(wchar_t *filename, wchar_t *arg, bool hide)
-{
-	STARTUPINFOW info;
-	PROCESS_INFORMATION ret;
-	wchar_t cmdline[MAX_SIZE];
-	wchar_t name[MAX_PATH];
-	HANDLE hToken;
-	// Validate arguments
-	if (filename == NULL)
-	{
-		return NULL;
-	}
-
-	UniStrCpy(name, sizeof(name), filename);
-	UniTrim(name);
-
-	if (UniSearchStr(name, L"\"", 0) == INFINITE)
-	{
-		if (arg == NULL)
-		{
-			UniFormat(cmdline, sizeof(cmdline), L"%s", name);
-		}
-		else
-		{
-			UniFormat(cmdline, sizeof(cmdline), L"%s %s", name, arg);
-		}
-	}
-	else
-	{
-		if (arg == NULL)
-		{
-			UniFormat(cmdline, sizeof(cmdline), L"\"%s\"", name);
-		}
-		else
-		{
-			UniFormat(cmdline, sizeof(cmdline), L"\"%s\" %s", name, arg);
-		}
-	}
-
-	Zero(&info, sizeof(info));
-	Zero(&ret, sizeof(ret));
-	info.cb = sizeof(info);
-	info.dwFlags = STARTF_USESHOWWINDOW;
-	info.wShowWindow = (hide == false ? SW_SHOWDEFAULT : SW_HIDE);
-
-	UniTrim(cmdline);
-
-	hToken = MsCreateUserToken();
-
-	if (hToken == NULL)
-	{
-		return NULL;
-	}
-
-	if (CreateProcessAsUserW(hToken, NULL, cmdline, NULL, NULL, FALSE,
-		(hide == false ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW | CREATE_NEW_CONSOLE) | NORMAL_PRIORITY_CLASS,
-		NULL, NULL, &info, &ret) == FALSE)
-	{
-		return NULL;
-	}
-
-	CloseHandle(hToken);
-
-	CloseHandle(ret.hThread);
-	return ret.hProcess;
-}
-
-// Get the SID from the account name
-SID *MsGetSidFromAccountName(char *name)
-{
-	SID *sid;
-	DWORD sid_size = 4096;
-	char *domain_name;
-	DWORD domain_name_size = 4096;
-	SID_NAME_USE use = SidTypeUser;
-	// Validate arguments
-	if (name == NULL)
-	{
-		return NULL;
-	}
-
-	sid = ZeroMalloc(sid_size);
-	domain_name = ZeroMalloc(domain_name_size);
-
-	if (LookupAccountNameA(NULL, name, sid, &sid_size, domain_name, &domain_name_size, &use) == false)
-	{
-		Free(sid);
-		Free(domain_name);
-		return NULL;
-	}
-
-	Free(domain_name);
-
-	return sid;
-}
-
-// Release the SID
-void MsFreeSid(SID *sid)
-{
-	// Validate arguments
-	if (sid == NULL)
-	{
-		return;
-	}
-
-	Free(sid);
 }
 
 // Create a token of standard user
@@ -1089,40 +768,6 @@ void MsPrintTick()
 	}
 
 	printf("[%u]\n", tick);
-}
-
-// LoadLibrary compatible for hamcore (Read as a data file)
-void *MsLoadLibraryAsDataFileW(wchar_t *name)
-{
-	BUF *b;
-	wchar_t tmp_dll_name[MAX_SIZE];
-	char hash_str[MAX_SIZE];
-	UCHAR hash[SHA1_SIZE];
-	// Validate arguments
-	if (name == NULL)
-	{
-		return NULL;
-	}
-
-	Sha0(hash, name, UniStrLen(name));
-
-	BinToStr(hash_str, sizeof(hash_str), hash, 4);
-
-	UniFormat(tmp_dll_name, sizeof(tmp_dll_name), L"%s\\%S.dll", MsGetMyTempDirW(), hash_str);
-
-	if (IsFileExistsW(tmp_dll_name) == false)
-	{
-		b = ReadDumpW(name);
-		if (b == NULL)
-		{
-			return NULL;
-		}
-
-		DumpBufW(b, tmp_dll_name);
-		FreeBuf(b);
-	}
-
-	return LoadLibraryExW(tmp_dll_name, NULL, LOAD_LIBRARY_AS_DATAFILE);
 }
 
 // LoadLibrary (compatible for Hamcore)
@@ -1627,47 +1272,6 @@ void MsFreeAdapter(MS_ADAPTER *a)
 	}
 
 	Free(a);
-}
-
-// Terminate all instances except the EXE itself
-void MsKillOtherInstanceEx(char *exclude_svcname)
-{
-	UINT me, i;
-	wchar_t me_path[MAX_PATH];
-	wchar_t me_path_short[MAX_PATH];
-	LIST *o = MsGetProcessList();
-	UINT e_procid = 0;
-	UINT e_procid2 = 0;
-
-	if (exclude_svcname != NULL)
-	{
-		e_procid = MsReadCallingServiceManagerProcessId(exclude_svcname, false);
-		e_procid2 = MsReadCallingServiceManagerProcessId(exclude_svcname, true);
-	}
-
-	me = MsGetProcessId();
-
-	MsGetCurrentProcessExeNameW(me_path, sizeof(me_path));
-	MsGetShortPathNameW(me_path, me_path_short, sizeof(me_path_short));
-
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		MS_PROCESS *p = LIST_DATA(o, i);
-		if (p->ProcessId != me)
-		{
-			if ((e_procid == 0 || (e_procid != p->ProcessId)) && (e_procid2 == 0 || (e_procid2 != p->ProcessId)))
-			{
-				wchar_t tmp[MAX_PATH];
-				MsGetShortPathNameW(p->ExeFilenameW, tmp, sizeof(tmp));
-				if (UniStrCmpi(me_path_short, tmp) == 0)
-				{
-					MsKillProcess(p->ProcessId);
-				}
-			}
-		}
-	}
-
-	MsFreeProcessList(o);
 }
 
 // Get the short file name
@@ -2820,64 +2424,6 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 	return 0;
 }
 
-// Get whether the specified terminal session is active
-bool MsIsTerminalSessionActive(UINT session_id)
-{
-	if (MsIsTerminalServiceInstalled() || MsIsUserSwitchingInstalled())
-	{
-		UINT *status = NULL;
-		DWORD size = sizeof(status);
-		bool active = true;
-
-		if (WTSQuerySessionInformationW(WTS_CURRENT_SERVER_HANDLE, session_id,
-			WTSConnectState, (LPWSTR *)&status, &size) == false)
-		{
-			return true;
-		}
-
-		switch (*status)
-		{
-		case WTSDisconnected:
-		case WTSShadow:
-		case WTSIdle:
-		case WTSDown:
-		case WTSReset:
-			active = false;
-			break;
-		}
-
-		WTSFreeMemory(status);
-
-		return active;
-	}
-
-	return true;
-}
-
-// Get the current terminal session ID
-UINT MsGetCurrentTerminalSessionId()
-{
-	if (MsIsTerminalServiceInstalled() || MsIsUserSwitchingInstalled())
-	{
-		UINT ret;
-		UINT *session_id = NULL;
-		DWORD size = sizeof(session_id);
-		if (WTSQuerySessionInformationW(WTS_CURRENT_SERVER_HANDLE, WTS_CURRENT_SESSION,
-			WTSSessionId, (LPWSTR *)&session_id, &size) == false)
-		{
-			return 0;
-		}
-
-		ret = *session_id;
-
-		WTSFreeMemory(session_id);
-
-		return ret;
-	}
-
-	return 0;
-}
-
 // Examine whether the user switching is installed
 bool MsIsUserSwitchingInstalled()
 {
@@ -3351,35 +2897,6 @@ bool MsLoadTcpConfigReg(MS_TCP *tcp)
 	tcp->SendWindowSize = MsRegReadIntEx(REG_LOCAL_MACHINE, MS_REG_TCP_SETTING_KEY, "SendWindowSize", true);
 
 	return true;
-}
-
-// Get the current TCP settings
-void MsGetTcpConfig(MS_TCP *tcp)
-{
-	// Validate arguments
-	if (tcp == NULL)
-	{
-		return;
-	}
-
-	Zero(tcp, sizeof(MS_TCP));
-
-	UINT v;
-	// Initialize the network setting
-	MsInitGlobalNetworkConfig();
-
-	// Read the value of TcpWindowSize or GlobalMaxTcpWindowSize if there is
-	v = MsRegReadInt(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", "TcpWindowSize");
-	tcp->RecvWindowSize = MAX(tcp->RecvWindowSize, v);
-
-	v = MsRegReadInt(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", "GlobalMaxTcpWindowSize");
-	tcp->RecvWindowSize = MAX(tcp->RecvWindowSize, v);
-
-	v = MsRegReadInt(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\AFD\\Parameters", "DefaultReceiveWindow");
-	tcp->RecvWindowSize = MAX(tcp->RecvWindowSize, v);
-
-	// Read the value of DefaultSendWindow if there is
-	tcp->SendWindowSize = MsRegReadInt(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\AFD\\Parameters", "DefaultSendWindow");
 }
 
 // Write the TCP settings
@@ -4348,18 +3865,6 @@ bool MsIsAdmin()
 	return ms->IsAdmin;
 }
 
-// Get whether Aero is enabled
-bool MsIsAeroEnabled()
-{
-	BOOL ret = false;
-	if (DwmIsCompositionEnabled(&ret) != S_OK)
-	{
-		return false;
-	}
-
-	return ret;
-}
-
 // Generate an access mask to force accessing to the 32 bit registry key for 64 bit application
 UINT MsRegAccessMaskFor64BitEx(bool force32bit, bool force64bit)
 {
@@ -4396,26 +3901,6 @@ bool MsRegLoadHive(UINT root, wchar_t *keyname, wchar_t *filename)
 		return false;
 	}
 	WHERE;
-
-	return true;
-}
-
-// Unload the hive
-bool MsRegUnloadHive(UINT root, wchar_t *keyname)
-{
-	LONG ret;
-	if (keyname == NULL)
-	{
-		return false;
-	}
-
-	ret = RegUnLoadKeyW(MsGetRootKeyFromInt(root), keyname);
-
-	if (ret != ERROR_SUCCESS)
-	{
-		Debug("RegUnLoadKeyW: %u\n", GetLastError());
-		return false;
-	}
 
 	return true;
 }
@@ -4484,10 +3969,6 @@ bool MsRegDeleteKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bi
 }
 
 // Enumeration of values
-TOKEN_LIST *MsRegEnumValueEx(UINT root, char *keyname, bool force32bit)
-{
-	return MsRegEnumValueEx2(root, keyname, force32bit, false);
-}
 TOKEN_LIST *MsRegEnumValueEx2(UINT root, char *keyname, bool force32bit, bool force64bit)
 {
 	HKEY h;
@@ -4621,10 +4102,6 @@ TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit, bool forc
 }
 
 // Set the binary data
-bool MsRegWriteBinEx(UINT root, char *keyname, char *valuename, void *data, UINT size, bool force32bit)
-{
-	return MsRegWriteBinEx2(root, keyname, valuename, data, size, force32bit, false);
-}
 bool MsRegWriteBinEx2(UINT root, char *keyname, char *valuename, void *data, UINT size, bool force32bit, bool force64bit)
 {
 	// Validate arguments
@@ -4663,10 +4140,6 @@ bool MsRegWriteIntEx2(UINT root, char *keyname, char *valuename, UINT value, boo
 }
 
 // Set the string
-bool MsRegWriteStrExpandExW(UINT root, char *keyname, char *valuename, wchar_t *str, bool force32bit)
-{
-	return MsRegWriteStrExpandEx2W(root, keyname, valuename, str, force32bit, false);
-}
 bool MsRegWriteStrExpandEx2W(UINT root, char *keyname, char *valuename, wchar_t *str, bool force32bit, bool force64bit)
 {
 	// Validate arguments
@@ -4695,10 +4168,6 @@ bool MsRegWriteStrEx2(UINT root, char *keyname, char *valuename, char *str, bool
 	}
 
 	return MsRegWriteValueEx2(root, keyname, valuename, REG_SZ, str, StrSize(str), force32bit, force64bit);
-}
-bool MsRegWriteStrExW(UINT root, char *keyname, char *valuename, wchar_t *str, bool force32bit)
-{
-	return MsRegWriteStrEx2W(root, keyname, valuename, str, force32bit, false);
 }
 bool MsRegWriteStrEx2W(UINT root, char *keyname, char *valuename, wchar_t *str, bool force32bit, bool force64bit)
 {
@@ -4779,10 +4248,6 @@ bool MsRegWriteValueEx2W(UINT root, char *keyname, char *valuename, UINT type, v
 }
 
 // Get the binary data
-BUF *MsRegReadBinEx(UINT root, char *keyname, char *valuename, bool force32bit)
-{
-	return MsRegReadBinEx2(root, keyname, valuename, force32bit, false);
-}
 BUF *MsRegReadBinEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit)
 {
 	char *ret;
@@ -5230,10 +4695,6 @@ bool MsRegNewKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit)
 }
 
 // Confirm the specified key exists on the registry
-bool MsRegIsKeyEx(UINT root, char *name, bool force32bit)
-{
-	return MsRegIsKeyEx2(root, name, force32bit, false);
-}
 bool MsRegIsKeyEx2(UINT root, char *name, bool force32bit, bool force64bit)
 {
 	HKEY h;
@@ -5953,10 +5414,6 @@ void MsFree()
 }
 
 // Directory acquisition related
-char *MsGetWindowsDir()
-{
-	return ms->WindowsDir;
-}
 wchar_t *MsGetWindowsDirW()
 {
 	return ms->WindowsDirW;
@@ -5968,10 +5425,6 @@ char *MsGetSystem32Dir()
 char *MsGetTempDir()
 {
 	return ms->TempDir;
-}
-char *MsGetProgramFilesDir()
-{
-	return ms->ProgramFilesDir;
 }
 char *MsGetMyTempDir()
 {

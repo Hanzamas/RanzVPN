@@ -524,55 +524,6 @@ UINT64 GetTrafficPacketNum(TRAFFIC *t)
 		t->Send.BroadcastCount + t->Send.UnicastCount;
 }
 
-// Get the CA which signed the certificate
-X *FindCaSignedX(LIST *o, X *x)
-{
-	X *ret;
-	// Validate arguments
-	if (o == NULL || x == NULL)
-	{
-		return NULL;
-	}
-
-	ret = NULL;
-
-	LockList(o);
-	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(o);i++)
-		{
-			X *ca = LIST_DATA(o, i);
-			if (CheckXDateNow(ca))
-			{
-				if (CompareName(ca->subject_name, x->issuer_name))
-				{
-					K *k = GetKFromX(ca);
-					if (k != NULL)
-					{
-						if (CheckSignature(x, k))
-						{
-							ret = CloneX(ca);
-						}
-						FreeK(k);
-					}
-				}
-				else if (CompareX(ca, x))
-				{
-					ret = CloneX(ca);
-				}
-			}
-
-			if (ret != NULL)
-			{
-				break;
-			}
-		}
-	}
-	UnlockList(o);
-
-	return ret;
-}
-
 // Delete trusted CA from Cedar
 bool DeleteCa(CEDAR *cedar, UINT ptr)
 {

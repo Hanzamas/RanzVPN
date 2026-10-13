@@ -142,30 +142,6 @@ void MsChapV2Server_GenerateResponse(UCHAR *dst, UCHAR *nt_password_hash_hash, U
 	FreeBuf(b);
 }
 
-// Verify whether the password matches one that is specified by the user in the MS-CHAPv2
-bool MsChapV2VerityPassword(IPC_MSCHAP_V2_AUTHINFO *d, char *password)
-{
-	UCHAR ntlm_hash[MD5_SIZE];
-	UCHAR challenge8[8];
-	UCHAR client_response[24];
-	// Validate arguments
-	if (d == NULL || password == NULL)
-	{
-		return false;
-	}
-
-	GenerateNtPasswordHash(ntlm_hash, password);
-	MsChapV2_GenerateChallenge8(challenge8, d->MsChapV2_ClientChallenge, d->MsChapV2_ServerChallenge, d->MsChapV2_PPPUsername);
-	MsChapV2Client_GenerateResponse(client_response, challenge8, ntlm_hash);
-
-	if (Cmp(client_response, d->MsChapV2_ClientResponse, 24) != 0)
-	{
-		return false;
-	}
-
-	return true;
-}
-
 // Extract the MS-CHAP v2 authentication information by parsing the password string
 bool ParseAndExtractMsChapV2InfoFromPassword(IPC_MSCHAP_V2_AUTHINFO *d, char *password)
 {

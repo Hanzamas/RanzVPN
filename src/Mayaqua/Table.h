@@ -98,8 +98,6 @@ bool SaveLangConfigCurrentDir(char *str);
 void GetCurrentLang(LANGLIST *e);
 UINT GetCurrentLangId();
 
-void GetCurrentOsLang(LANGLIST *e);
-
 #endif	// TABLE_H
 
 

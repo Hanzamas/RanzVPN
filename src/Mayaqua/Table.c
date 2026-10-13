@@ -85,18 +85,6 @@ LABEL_FATAL_ERROR:
 	FreeLangList(o);
 }
 
-// Get the language of the current OS
-void GetCurrentOsLang(LANGLIST *e)
-{
-	// Validate arguments
-	if (e == NULL)
-	{
-		return;
-	}
-
-	Copy(e, &current_os_lang, sizeof(LANGLIST));
-}
-
 // Get the current language
 void GetCurrentLang(LANGLIST *e)
 {

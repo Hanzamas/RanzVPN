@@ -102,9 +102,6 @@ bool StrToMac(UCHAR *mac_address, char *str);
 bool IsSplitChar(char c, char *split_str);
 bool GetKeyAndValue(char *str, char *key, UINT key_size, char *value, UINT value_size, char *split_str);
 INI_ENTRY *GetIniEntry(LIST *o, char *key);
-void FreeIni(LIST *o);
-UINT IniIntValue(LIST *o, char *key);
-char *IniStrValue(LIST *o, char *key);
 bool InStr(char *str, char *keyword);
 bool InStrEx(char *str, char *keyword, bool case_sensitive);
 TOKEN_LIST *ParseTokenWithoutNullStr(char *str, char *split_chars);
@@ -116,10 +113,7 @@ char FourBitToHex(UINT value);
 void ToHex(char *str, UINT value);
 UINT HexToInt(char *str);
 UINT SearchAsciiInBinary(void *data, UINT size, char *str, bool case_sensitive);
-void IntListToStr(char *str, UINT str_size, LIST *o, char *separate_str);
-LIST *StrToIntList(char *str, bool sorted);
 void ClearStr(char *str, UINT str_size);
-void SetStrCaseAccordingToBits(char *str, UINT bits);
 
 #endif	// STR_H
 

@@ -689,29 +689,6 @@ ELEMENT *GetElement(PACK *p, char *name, UINT type)
 	return e;
 }
 
-// Check whether the specified element exists
-bool IsElement(PACK *p, char *name)
-{
-	ELEMENT t;
-	ELEMENT *e;
-	// Validate arguments
-	if (p == NULL || name == NULL)
-	{
-		return false;
-	}
-
-	// Search
-	StrCpy(t.name, sizeof(t.name), name);
-	e = Search(p->elements, &t);
-
-	if (e == NULL)
-	{
-		return false;
-	}
-
-	return true;
-}
-
 // Add an ELEMENT to the PACK
 bool AddElement(PACK *p, ELEMENT *e)
 {
@@ -1355,24 +1332,6 @@ bool PackGetStrEx(PACK *p, char *name, char *str, UINT size, UINT index)
 
 	StrCpy(str, size, GetStrValue(e, index));
 	return true;
-}
-
-// Get the string size from the PACK
-UINT PackGetStrSizeEx(PACK *p, char *name, UINT index)
-{
-	ELEMENT *e;
-	// Validate arguments
-	if (p == NULL || name == NULL)
-	{
-		return 0;
-	}
-
-	e = GetElement(p, name, VALUE_STR);
-	if (e == NULL)
-	{
-		return 0;
-	}
-	return GetDataValueSize(e, index);
 }
 
 // Add the buffer to the PACK (array)

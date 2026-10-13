@@ -164,9 +164,6 @@ void UnlockHashList(HASH_LIST *h);
 bool IsInHashListKey(HASH_LIST *h, UINT key);
 void *HashListKeyToPointer(HASH_LIST *h, UINT key);
 
-void PRand(PRAND *p, void *data, UINT size);
-
-LIST *NewCandidateList();
 int CompareCandidate(void *p1, void *p2);
 
 void *Malloc(UINT size);
@@ -209,7 +206,6 @@ void ClearBuf(BUF *b);
 void WriteBuf(BUF *b, void *buf, UINT size);
 void WriteBufBuf(BUF *b, BUF *bb);
 UINT ReadBuf(BUF *b, void *buf, UINT size);
-BUF *ReadBufFromBuf(BUF *b, UINT size);
 void AdjustBufSize(BUF *b, UINT new_size);
 void SeekBuf(BUF *b, UINT offset, int mode);
 void SeekBufToEnd(BUF *b);
@@ -225,7 +221,6 @@ bool WriteBufInt64(BUF *b, UINT64 value);
 bool WriteBufChar(BUF *b, UCHAR uc);
 bool ReadBufStr(BUF *b, char *str, UINT size);
 bool WriteBufStr(BUF *b, char *str);
-void WriteBufLine(BUF *b, char *str);
 bool DumpBuf(BUF *b, char *filename);
 bool DumpBufW(BUF *b, wchar_t *filename);
 bool DumpBufWIfNecessary(BUF *b, wchar_t *filename);
@@ -274,7 +269,6 @@ bool InsertStr(LIST *o, char *str);
 bool IsInList(LIST *o, void *p);
 bool IsInListKey(LIST *o, UINT key);
 void *ListKeyToPointer(LIST *o, UINT key);
-bool IsInListStr(LIST *o, char *str);
 bool ReplaceListPointer(LIST *o, void *oldptr, void *newptr);
 void AddInt(LIST *o, UINT i);
 void AddInt64(LIST *o, UINT64 i);
@@ -322,8 +316,6 @@ bool IsZero(void *data, UINT size);
 UINT SearchBin(void *data, UINT data_start, UINT data_size, void *key, UINT key_size);
 void CrashNow();
 UINT Power(UINT a, UINT b);
-
-void CleanupSharedBuffer(SHARED_BUFFER *b);
 
 void AppendBufUtf8(BUF *b, wchar_t *str);
 void AppendBufStr(BUF *b, char *str);

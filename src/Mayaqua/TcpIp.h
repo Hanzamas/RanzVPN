@@ -810,7 +810,6 @@ bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address);
 USHORT IpChecksum(void *buf, UINT size);
 
 void GenMacAddress(UCHAR *mac);
-UINT GetBroadcastAddress(UINT addr, UINT mask);
 
 DHCP_OPTION *NewDhcpOption(UINT id, void *data, UINT size);
 DHCP_OPTION_LIST *ParseDhcpOptionList(void *data, UINT size);
@@ -825,11 +824,8 @@ BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size);
 BUF *DhcpModifyIPv4(DHCP_MODIFY_OPTION *m, void *data, UINT size);
 
 void DhcpParseClasslessRouteData(DHCP_CLASSLESS_ROUTE_TABLE *t, void *data, UINT size);
-BUF *DhcpBuildClasslessRouteData(DHCP_CLASSLESS_ROUTE_TABLE *t);
 bool ParseClasslessRouteStr(DHCP_CLASSLESS_ROUTE *r, char *str);
-bool ParseClasslessRouteTableStr(DHCP_CLASSLESS_ROUTE_TABLE *d, char *str);
 void BuildClasslessRouteStr(char *str, UINT str_size, DHCP_CLASSLESS_ROUTE *r);
-void BuildClasslessRouteTableStr(char *str, UINT str_size, DHCP_CLASSLESS_ROUTE_TABLE *t);
 
 
 

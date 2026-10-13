@@ -27,97 +27,6 @@ static HAMCORE *hamcore_io = NULL;
 #define	NUM_CRC32_TABLE	256
 static UINT crc32_table[NUM_CRC32_TABLE];
 
-// Confirm that the specified string exists as a line
-bool IsInLines(BUF *buf, char *str, bool instr)
-{
-	bool ret = false;
-	// Validate arguments
-	if (buf == NULL || str == NULL)
-	{
-		return false;
-	}
-
-	if (IsEmptyStr(str))
-	{
-		return false;
-	}
-
-	SeekBufToBegin(buf);
-
-	while (ret == false)
-	{
-		char *line = CfgReadNextLine(buf);
-
-		if (line == NULL)
-		{
-			break;
-		}
-
-		Trim(line);
-
-		if (IsEmptyStr(line) == false)
-		{
-			if (StrCmpi(line, str) == 0)
-			{
-				ret = true;
-			}
-
-			if (instr)
-			{
-				if (InStr(str, line))
-				{
-					ret = true;
-				}
-
-				if (InStr(line, str))
-				{
-					ret = true;
-				}
-			}
-		}
-
-		Free(line);
-	}
-
-	return ret;
-}
-
-// Creating a ZIP packer
-ZIP_PACKER *NewZipPacker()
-{
-	ZIP_PACKER *p = ZeroMalloc(sizeof(ZIP_PACKER));
-
-	p->Fifo = NewFifo();
-	p->FileList = NewList(NULL);
-	p->CurrentFile = NULL;
-
-	return p;
-}
-
-// Release of ZIP packer
-void FreeZipPacker(ZIP_PACKER *p)
-{
-	UINT i;
-	// Validate arguments
-	if (p == NULL)
-	{
-		return;
-	}
-
-	ReleaseFifo(p->Fifo);
-
-	for (i = 0;i < LIST_NUM(p->FileList);i++)
-	{
-		ZIP_FILE *f = LIST_DATA(p->FileList, i);
-
-		Free(f);
-	}
-
-	ReleaseList(p->FileList);
-
-	Free(p);
-}
-
 // Simply add the file
 void ZipAddFileSimple(ZIP_PACKER *p, char *name, UINT64 dt, UINT attribute, void *data, UINT size)
 {
@@ -150,19 +59,6 @@ bool ZipAddRealFileW(ZIP_PACKER *p, char *name, UINT64 dt, UINT attribute, wchar
 	FreeBuf(b);
 
 	return true;
-}
-bool ZipAddRealFile(ZIP_PACKER *p, char *name, UINT64 dt, UINT attribute, char *srcname)
-{
-	bool ret = false;
-	wchar_t *s;
-
-	s = CopyStrToUni(srcname);
-
-	ret = ZipAddRealFileW(p, name, dt, attribute, s);
-
-	Free(s);
-
-	return ret;
 }
 
 // Start adding a file
@@ -259,25 +155,6 @@ void ZipAddFileFooter(ZIP_PACKER *p)
 	WriteZipDataFooter(p->CurrentFile, &f);
 
 	WriteFifo(p->Fifo, &f, sizeof(f));
-}
-
-// Output the ZIP data to a file
-bool ZipWriteW(ZIP_PACKER *p, wchar_t *name)
-{
-	FIFO *f;
-	// Validate arguments
-	if (p == NULL || name == NULL)
-	{
-		return false;
-	}
-
-	f = ZipFinish(p);
-	if (f == NULL)
-	{
-		return false;
-	}
-
-	return FileWriteAllW(name, FifoPtr(f), FifoSize(f));
 }
 
 // Complete the creation of the ZIP data

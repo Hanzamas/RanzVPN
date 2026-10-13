@@ -150,16 +150,12 @@ UINT Crc32Next(void *buf, UINT pos, UINT len, UINT last_crc32);
 UINT Crc32Finish(UINT last_crc32);
 void WriteZipDataHeader(ZIP_FILE *f, ZIP_DATA_HEADER *h, bool write_sizes);
 void WriteZipDataFooter(ZIP_FILE *f, ZIP_DATA_FOOTER *h);
-ZIP_PACKER *NewZipPacker();
-void FreeZipPacker(ZIP_PACKER *p);
 void ZipAddFileSimple(ZIP_PACKER *p, char *name, UINT64 dt, UINT attribute, void *data, UINT size);
 bool ZipAddRealFileW(ZIP_PACKER *p, char *name, UINT64 dt, UINT attribute, wchar_t *srcname);
-bool ZipAddRealFile(ZIP_PACKER *p, char *name, UINT64 dt, UINT attribute, char *srcname);
 void ZipAddFileStart(ZIP_PACKER *p, char *name, UINT size, UINT64 dt, UINT attribute);
 UINT ZipAddFileData(ZIP_PACKER *p, void *data, UINT pos, UINT len);
 void ZipAddFileFooter(ZIP_PACKER *p);
 FIFO *ZipFinish(ZIP_PACKER *p);
-bool ZipWriteW(ZIP_PACKER *p, wchar_t *name);
 
 bool DeleteDirInnerW(wchar_t *name);
 bool DeleteDir(char *name);
@@ -232,6 +228,5 @@ bool IsFile(char *name);
 bool IsFileW(wchar_t *name);
 bool SaveFileW(wchar_t *name, void *data, UINT size);
 bool SaveFile(char *name, void *data, UINT size);
-bool IsInLines(BUF *buf, char *str, bool instr);
 
 #endif	// FILEIO_H

@@ -131,15 +131,6 @@ UINT SaveCfgRwEx(CFG_RW *rw, FOLDER *f, UINT revision_number)
 }
 
 // Creating a configuration file R/W
-CFG_RW *NewCfgRwEx(FOLDER **root, char *cfg_name, bool dont_backup)
-{
-	wchar_t *cfg_name_w = CopyStrToUni(cfg_name);
-	CFG_RW *ret = NewCfgRwExW(root, cfg_name_w, dont_backup);
-
-	Free(cfg_name_w);
-
-	return ret;
-}
 CFG_RW *NewCfgRwExW(FOLDER **root, wchar_t *cfg_name, bool dont_backup)
 {
 	return NewCfgRwEx2W(root, cfg_name, dont_backup, NULL);
@@ -301,15 +292,6 @@ bool FileCopyExWithEofW(wchar_t *src, wchar_t *dst, bool read_lock)
 void CfgSaveW(FOLDER *f, wchar_t *name)
 {
 	CfgSaveExW(NULL, f, name);
-}
-bool CfgSaveEx(CFG_RW *rw, FOLDER *f, char *name)
-{
-	wchar_t *name_w = CopyStrToUni(name);
-	bool ret = CfgSaveExW(rw, f, name_w);
-
-	Free(name_w);
-
-	return ret;
 }
 bool CfgSaveExW(CFG_RW *rw, FOLDER *f, wchar_t *name)
 {

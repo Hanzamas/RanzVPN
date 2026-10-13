@@ -789,36 +789,6 @@ bool IsIpMaskedByAc(IP *ip, AC *ac)
 	}
 }
 
-// Delete the AC
-bool DelAc(LIST *o, UINT id)
-{
-	UINT i;
-	// Validate arguments
-	if (o == NULL || id == 0)
-	{
-		return false;
-	}
-
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		AC *ac = LIST_DATA(o, i);
-
-		if (ac->Id == id)
-		{
-			if (Delete(o, ac))
-			{
-				Free(ac);
-
-				NormalizeAcList(o);
-
-				return true;
-			}
-		}
-	}
-
-	return false;
-}
-
 // Add an AC to the list
 void AddAc(LIST *o, AC *ac)
 {

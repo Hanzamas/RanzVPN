@@ -192,44 +192,6 @@ void SetDynListValue(char *name, UINT64 value)
 	UnlockList(g_dyn_value_list);
 }
 
-// Insert the data to the dynamic value list
-void AddDynList(BUF *b)
-{
-	PACK *p;
-	TOKEN_LIST *t;
-	// Validate arguments
-	if (b == NULL)
-	{
-		return;
-	}
-
-	SeekBufToBegin(b);
-
-	p = BufToPack(b);
-	if (p == NULL)
-	{
-		return;
-	}
-
-	t = GetPackElementNames(p);
-	if (t != NULL)
-	{
-		UINT i;
-
-		for (i = 0; i < t->NumTokens; i++)
-		{
-			char *name = t->Token[i];
-			UINT64 v = PackGetInt64(p, name);
-
-			SetDynListValue(name, v);
-		}
-
-		FreeToken(t);
-	}
-
-	FreePack(p);
-}
-
 // Initialization of the dynamic value list
 void InitDynList()
 {
@@ -603,12 +565,6 @@ int SslCertVerifyCallback(int preverify_ok, X509_STORE_CTX *ctx)
 	return 1; /* allow the verification process to continue */
 }
 
-// Create a new SSL pipe with extended options
-SSL_PIPE *NewSslPipeEx(bool server_mode, X *x, K *k, DH_CTX *dh, bool verify_peer, struct SslClientCertInfo *clientcert)
-{
-	return NewSslPipeEx2(server_mode, x, k, NULL, dh, verify_peer, clientcert);
-}
-
 SSL_PIPE* NewSslPipeEx2(bool server_mode, X* x, K* k, LIST* chain, DH_CTX* dh, bool verify_peer, struct SslClientCertInfo* clientcert)
 {
 	return NewSslPipeEx3(server_mode, x, k, chain, dh, verify_peer, clientcert, 2, false); // 2 TLS 1.3 tickets is an OpenSSL default hardcoded in the library
@@ -743,26 +699,6 @@ SSL_PIPE *NewSslPipeEx3(bool server_mode, X *x, K *k, LIST *chain, DH_CTX *dh, b
 	return s;
 }
 
-// Release of the SSL BIO
-void FreeSslBio(SSL_BIO *b)
-{
-	// Validate arguments
-	if (b == NULL)
-	{
-		return;
-	}
-
-	if (b->NoFree == false)
-	{
-		BIO_free(b->bio);
-	}
-
-	ReleaseFifo(b->RecvFifo);
-	ReleaseFifo(b->SendFifo);
-
-	Free(b);
-}
-
 // Create a new SSL BIO (SSL)
 SSL_BIO *NewSslBioSsl()
 {
@@ -789,185 +725,11 @@ SSL_BIO *NewSslBioMem()
 	return b;
 }
 
-// Synchronize memory contents of the SSL BIO with the FIFO
-bool SslBioSync(SSL_BIO *b, bool sync_send, bool sync_recv)
-{
-	// Validate arguments
-	if (b == NULL)
-	{
-		return false;
-	}
-
-	if (b->IsDisconnected)
-	{
-		return false;
-	}
-
-	// Write the contents of the SendFifo to the BIO
-	if (sync_send)
-	{
-		while (b->SendFifo->size >= 1)
-		{
-			int r = BIO_write(b->bio, GetFifoPointer(b->SendFifo), FifoSize(b->SendFifo));
-
-			if (r == 0)
-			{
-				b->IsDisconnected = true;
-				WHERE;
-				return false;
-			}
-			else
-			{
-				if (r < 0)
-				{
-					if (BIO_should_retry(b->bio))
-					{
-						break;
-					}
-					else
-					{
-						b->IsDisconnected = true;
-						WHERE;
-						return false;
-					}
-				}
-				else
-				{
-					ReadFifo(b->SendFifo, NULL, (UINT)r);
-				}
-			}
-		}
-	}
-
-	// Save to the RecvFifo by reading from the BIO
-	if (sync_recv)
-	{
-		while (true)
-		{
-			UCHAR tmp[4096];
-			int r;
-
-			r = BIO_read(b->bio, tmp, sizeof(tmp));
-
-			if (r == 0)
-			{
-				b->IsDisconnected = true;
-				WHERE;
-				return false;
-			}
-			else
-			{
-				if (r < 0)
-				{
-					if (BIO_should_retry(b->bio))
-					{
-						break;
-					}
-					else
-					{
-						b->IsDisconnected = true;
-						WHERE;
-						Debug("OpenSSL Error: %s\n", ERR_error_string(ERR_peek_last_error(), NULL));
-						return false;
-					}
-				}
-				else
-				{
-					WriteFifo(b->RecvFifo, tmp, (UINT)r);
-				}
-			}
-		}
-	}
-
-	return true;
-}
-
 #ifdef	OS_WIN32
 void WINAPI Win32RouteChangeCallback(void *context, MIB_IPFORWARD_ROW2 *row, MIB_NOTIFICATION_TYPE nt)
 {
 	ROUTE_CHANGE_DATA *data = context;
 	data->Changed = true;
-}
-
-// Routing table change detector function (For Vista and later)
-ROUTE_CHANGE *Win32NewRouteChange2(bool ipv4, bool ipv6, void *callback)
-{
-	ROUTE_CHANGE *r;
-	BOOL ret;
-	ADDRESS_FAMILY family;
-
-	r = ZeroMalloc(sizeof(ROUTE_CHANGE));
-
-	r->Data = ZeroMalloc(sizeof(ROUTE_CHANGE_DATA));
-
-	if (ipv4 && ipv6)
-	{
-		family = AF_UNSPEC;
-	}
-	else if (ipv6)
-	{
-		family = AF_INET6;
-	}
-	else
-	{
-		family = AF_INET;
-	}
-
-	if (callback != NULL)
-	{
-		ret = NotifyRouteChange2(family, (PIPFORWARD_CHANGE_CALLBACK)callback, r->Data, FALSE, &r->Data->Handle);
-	}
-	else
-	{
-		// Use default callback if not provided
-		ret = NotifyRouteChange2(family, (PIPFORWARD_CHANGE_CALLBACK)Win32RouteChangeCallback, r->Data, FALSE, &r->Data->Handle);
-	}
-
-	if (ret != NO_ERROR)
-	{
-		Free(r->Data);
-		Free(r);
-
-		return NULL;
-	}
-
-	return r;
-}
-
-void Win32FreeRouteChange2(ROUTE_CHANGE *r)
-{
-	// Validate arguments
-	if (r == NULL)
-	{
-		return;
-	}
-
-	CancelMibChangeNotify2(r->Data->Handle);
-
-	Free(r->Data);
-	Free(r);
-}
-
-bool Win32IsRouteChanged2(ROUTE_CHANGE *r)
-{
-	// Validate arguments
-	if (r == NULL)
-	{
-		return false;
-	}
-
-	if ((r->Data->NumCalled++) == 0)
-	{
-		return true;
-	}
-
-	if (r->Data->Changed)
-	{
-		r->Data->Changed = false;
-		return true;
-	}
-
-	return false;
 }
 
 typedef struct WIN32_ACCEPT_CHECK_DATA
@@ -1281,14 +1043,6 @@ bool IsInSameNetwork4(IP *a1, IP *a2, IP *subnet)
 	}
 
 	return false;
-}
-bool IsInSameNetwork4Standard(IP *a1, IP *a2)
-{
-	IP subnet;
-
-	SetIP(&subnet, 255, 255, 0, 0);
-
-	return IsInSameNetwork4(a1, a2, &subnet);
 }
 
 // Get the prefix address
@@ -2076,80 +1830,6 @@ bool IsValidUnicastIPAddress6(IP *ip)
 	return true;
 }
 
-// Check whether the MAC address is valid
-bool IsMacInvalid(UCHAR *mac)
-{
-	UINT i;
-	// Validate arguments
-	if (mac == NULL)
-	{
-		return false;
-	}
-
-	for (i = 0; i < 6; i++)
-	{
-		if (mac[i] != 0x00)
-		{
-			return false;
-		}
-	}
-	return true;
-}
-
-// Check whether the MAC address is a broadcast address
-bool IsMacBroadcast(UCHAR *mac)
-{
-	UINT i;
-	// Validate arguments
-	if (mac == NULL)
-	{
-		return false;
-	}
-
-	for (i = 0; i < 6; i++)
-	{
-		if (mac[i] != 0xff)
-		{
-			return false;
-		}
-	}
-	return true;
-}
-
-// Check wether the MAC address is an IPv4 multicast or an IPv6 multicast
-bool IsMacMulticast(UCHAR *mac)
-{
-	// Validate arguments
-	if (mac == NULL)
-	{
-		return false;
-	}
-
-	if (mac[0] == 0x01 &&
-	        mac[1] == 0x00 &&
-	        mac[2] == 0x5e)
-	{
-		// Multicast IPv4 and other IANA multicasts
-		return true;
-	}
-
-	if (mac[0] == 0x01)
-	{
-		// That's not a really reserved for multicast range, but it seems like anything with 0x01 is used as multicast anyway
-		// Remove or specify if it causes problems
-		return true;
-	}
-
-	if (mac[0] == 0x33 &&
-	        mac[1] == 0x33)
-	{
-		// Multicast IPv6
-		return true;
-	}
-
-	return false;
-}
-
 // Get the number of clients connected from the specified IP address
 UINT GetNumIpClient(IP *ip)
 {
@@ -2321,57 +2001,6 @@ bool IsZeroIP6Addr(IPV6_ADDR *addr)
 	}
 
 	return IsZero(addr, sizeof(IPV6_ADDR));
-}
-
-// Examine whether the specified IP address is meaningful as a host
-bool IsHostIPAddress4(IP *ip)
-{
-	UINT a;
-	// Validate arguments
-	if (ip == NULL)
-	{
-		return false;
-	}
-
-	a = IPToUINT(ip);
-
-	if (a == 0 || a == 0xffffffff)
-	{
-		return false;
-	}
-
-	return true;
-}
-
-// Check whether the specified IP address and subnet mask indicates a network correctly
-bool IsNetworkAddress4(IP *ip, IP *mask)
-{
-	UINT a, b;
-	// Validate arguments
-	if (ip == NULL || mask == NULL)
-	{
-		return false;
-	}
-
-	if (IsIP4(ip) == false || IsIP4(mask) == false)
-	{
-		return false;
-	}
-
-	if (IsSubnetMask4(mask) == false)
-	{
-		return false;
-	}
-
-	a = IPToUINT(ip);
-	b = IPToUINT(mask);
-
-	if ((a & b) == a)
-	{
-		return true;
-	}
-
-	return false;
 }
 
 // Convert the integer to a subnet mask
@@ -2721,65 +2350,6 @@ void Win32ReleaseAddressByGuidExThread(THREAD *t, void *param)
 
 	DelWaitThread(t);
 }
-bool Win32ReleaseOrRenewAddressByGuidEx(char *guid, UINT timeout, bool renew)
-{
-	THREAD *t;
-	WIN32_RELEASEADDRESS_THREAD_PARAM *p;
-	bool ret = false;
-	UINT64 start_tick = 0;
-	UINT64 end_tick = 0;
-	// Validate arguments
-	if (guid == NULL)
-	{
-		return false;
-	}
-	if (timeout == 0)
-	{
-		timeout = INFINITE;
-	}
-
-	p = ZeroMalloc(sizeof(WIN32_RELEASEADDRESS_THREAD_PARAM));
-	p->Ref = NewRef();
-	StrCpy(p->Guid, sizeof(p->Guid), guid);
-	p->Timeout = timeout;
-	p->Renew = renew;
-
-	t = NewThread(Win32ReleaseAddressByGuidExThread, p);
-	WaitThreadInit(t);
-	start_tick = Tick64();
-	end_tick = start_tick + (UINT64)timeout;
-
-	while (true)
-	{
-		UINT64 now = Tick64();
-		UINT64 remain;
-		UINT remain32;
-
-		if (now >= end_tick)
-		{
-			break;
-		}
-
-		remain = end_tick - now;
-		remain32 = MIN((UINT)remain, 100);
-
-		if (WaitThread(t, remain32))
-		{
-			break;
-		}
-	}
-
-	ReleaseThread(t);
-
-	if (p->Ok)
-	{
-		ret = true;
-	}
-
-	ReleaseWin32ReleaseAddressByGuidThreadParam(p);
-
-	return ret;
-}
 void ReleaseWin32ReleaseAddressByGuidThreadParam(WIN32_RELEASEADDRESS_THREAD_PARAM *p)
 {
 	// Validate arguments
@@ -2855,281 +2425,6 @@ bool Win32GetAdapterFromGuid(void *a, char *guid)
 	Free(info);
 
 	return ret;
-}
-
-// Enumerate a list of virtual LAN cards that contains the specified string
-char **Win32EnumVLan(char *tag_name)
-{
-	MIB_IFTABLE *p;
-	UINT ret;
-	ULONG size_needed;
-	UINT num_retry = 0;
-	UINT i;
-	LIST *o;
-	char **ss;
-	// Validate arguments
-	if (tag_name == 0)
-	{
-		return NULL;
-	}
-
-RETRY:
-	p = ZeroMallocFast(sizeof(MIB_IFTABLE));
-	size_needed = 0;
-
-	// Examine the needed size
-	ret = GetIfTable(p, &size_needed, 0);
-	if (ret == ERROR_INSUFFICIENT_BUFFER)
-	{
-		// Re-allocate the memory block of the needed size
-		Free(p);
-		p = ZeroMallocFast(size_needed);
-	}
-	else if (ret != NO_ERROR)
-	{
-		// Acquisition failure
-FAILED:
-		Free(p);
-		return NULL;
-	}
-
-	// Actually get
-	ret = GetIfTable(p, &size_needed, FALSE);
-	if (ret != NO_ERROR)
-	{
-		// Acquisition failure
-		if ((++num_retry) >= 5)
-		{
-			goto FAILED;
-		}
-		Free(p);
-		goto RETRY;
-	}
-
-	// Search
-	ret = 0;
-	o = NewListFast(CompareStr);
-	for (i = 0; i < p->dwNumEntries; i++)
-	{
-		MIB_IFROW *r = &p->table[i];
-		if (SearchStrEx(r->bDescr, tag_name, 0, false) != INFINITE)
-		{
-			char *s = CopyStr(r->bDescr);
-			Add(o, s);
-		}
-	}
-
-	Free(p);
-
-	// Sort
-	Sort(o);
-
-	// Convert to string
-	ss = ZeroMallocFast(sizeof(char *) * (LIST_NUM(o) + 1));
-	for (i = 0; i < LIST_NUM(o); i++)
-	{
-		ss[i] = LIST_DATA(o, i);
-	}
-	ss[LIST_NUM(o)] = NULL;
-
-	ReleaseList(o);
-
-	return ss;
-}
-
-// Get the ID of the virtual LAN card from the instance name of the virtual LAN card
-UINT Win32GetVLanInterfaceID(char *instance_name)
-{
-	MIB_IFTABLE *p;
-	BOOL ret;
-	ULONG size_needed;
-	UINT num_retry = 0;
-	UINT i;
-	char ps_miniport_str[MAX_SIZE];
-	char ps_miniport_str2[MAX_SIZE];
-	UINT min_len = 0x7FFFFFFF;
-	// Validate arguments
-	if (instance_name == 0)
-	{
-		return 0;
-	}
-
-RETRY:
-	p = ZeroMallocFast(sizeof(MIB_IFTABLE));
-	size_needed = 0;
-
-	// Examine the needed size
-	ret = GetIfTable(p, &size_needed, 0);
-	if (ret == ERROR_INSUFFICIENT_BUFFER)
-	{
-		// Re-allocate the memory block of the needed size
-		Free(p);
-		p = ZeroMallocFast(size_needed);
-	}
-	else if (ret != NO_ERROR)
-	{
-		// Acquisition failure
-FAILED:
-		Free(p);
-		Debug("******** GetIfTable Failed 1. Err = %u\n", ret);
-		return 0;
-	}
-
-	// Actually get
-	ret = GetIfTable(p, &size_needed, FALSE);
-	if (ret != NO_ERROR)
-	{
-		// Acquisition failure
-		if ((++num_retry) >= 5)
-		{
-			goto FAILED;
-		}
-		Free(p);
-		Debug("******** GetIfTable Failed 2. Err = %u\n", ret);
-		goto RETRY;
-	}
-
-	// "%s - Packet scheduler miniport"
-	Format(ps_miniport_str, sizeof(ps_miniport_str), "%s - ", instance_name);
-	Format(ps_miniport_str2, sizeof(ps_miniport_str2), "%s (Microsoft", instance_name);
-
-	// Search
-	ret = 0;
-	for (i = 0; i < p->dwNumEntries; i++)
-	{
-		MIB_IFROW *r = &p->table[i];
-		if (instance_name[0] != '@')
-		{
-			if (StrCmpi(r->bDescr, instance_name) == 0 || StartWith(r->bDescr, ps_miniport_str) || StartWith(r->bDescr, ps_miniport_str2))
-			{
-				UINT len = StrLen(r->bDescr);
-
-				if (len < min_len)
-				{
-					ret = r->dwIndex;
-
-					min_len = len;
-				}
-			}
-		}
-		else
-		{
-			if (SearchStrEx(r->bDescr, &instance_name[1], 0, false) != INFINITE)
-			{
-				ret = r->dwIndex;
-			}
-		}
-
-		//Debug("if[%u] (dwIndex=%u): %u, %s\n", i, r->dwIndex, r->dwType, r->bDescr);
-	}
-
-	Free(p);
-
-	return ret;
-}
-
-// Get the DNS suffix in another way
-bool Win32GetDnsSuffix(char *domain, UINT size)
-{
-	IP_ADAPTER_ADDRESSES_XP *info;
-	IP_ADAPTER_ADDRESSES_XP *cur;
-	ULONG info_size;
-	bool ret = false;
-	// Validate arguments
-	ClearStr(domain, size);
-	if (domain == NULL)
-	{
-		return false;
-	}
-
-	info_size = 0;
-	info = ZeroMalloc(sizeof(IP_ADAPTER_ADDRESSES_XP));
-	if (GetAdaptersAddresses(AF_INET, 0, NULL, (PIP_ADAPTER_ADDRESSES)info, &info_size) == ERROR_BUFFER_OVERFLOW)
-	{
-		Free(info);
-		info = ZeroMalloc(info_size);
-	}
-	if (GetAdaptersAddresses(AF_INET, 0, NULL, (PIP_ADAPTER_ADDRESSES)info, &info_size) != NO_ERROR)
-	{
-		Free(info);
-		return false;
-	}
-
-	cur = info;
-
-	while (cur != NULL)
-	{
-		if (UniIsEmptyStr(cur->DnsSuffix) == false)
-		{
-			UniToStr(domain, size, cur->DnsSuffix);
-			ret = true;
-			break;
-		}
-
-		cur = cur->Next;
-	}
-
-	Free(info);
-
-	return ret;
-}
-
-// Get the DNS server address of the default
-bool Win32GetDefaultDns(IP *ip, char *domain, UINT size)
-{
-	FIXED_INFO *info;
-	ULONG info_size;
-	char *dns_name;
-	// Validate arguments
-	ClearStr(domain, size);
-	if (ip == NULL)
-	{
-		return false;
-	}
-	Zero(ip, sizeof(IP));
-
-	info_size = 0;
-	info = ZeroMallocFast(sizeof(FIXED_INFO));
-	if (GetNetworkParams(info, &info_size) == ERROR_BUFFER_OVERFLOW)
-	{
-		Free(info);
-		info = ZeroMallocFast(info_size);
-	}
-	if (GetNetworkParams(info, &info_size) != NO_ERROR)
-	{
-		Free(info);
-		return false;
-	}
-
-	dns_name = info->DnsServerList.IpAddress.String;
-	StrToIP(ip, dns_name);
-
-	if (domain != NULL)
-	{
-		StrCpy(domain, size, info->DomainName);
-		Trim(domain);
-	}
-
-	Free(info);
-
-	return true;
-}
-
-// Remove a routing entry from the routing table (For Vista and later)
-void Win32DeleteRouteEntry2(ROUTE_ENTRY *e)
-{
-	MIB_IPFORWARD_ROW2 *p;
-	// Validate arguments
-	if (e == NULL)
-	{
-		return;
-	}
-
-	p = ZeroMallocFast(sizeof(MIB_IPFORWARD_ROW2));
-	Win32RouteEntryToIpForwardRow2(p, e);
-
-	DeleteIpForwardEntry2(p);
-	Free(p);
 }
 
 // Add a routing entry to the routing table (For Vista and later)
@@ -4001,49 +3296,6 @@ void FreeRouteEntry(ROUTE_ENTRY *e)
 	Free(e);
 }
 
-// Get the best route entry by analyzing the current routing table
-ROUTE_ENTRY *GetBestRouteEntryEx(IP *ip, UINT exclude_if_id)
-{
-	ROUTE_TABLE *table;
-	ROUTE_ENTRY *e = NULL;
-	// Validate arguments
-	if (ip == NULL)
-	{
-		return NULL;
-	}
-
-	table = GetRouteTable();
-	if (table == NULL)
-	{
-		return NULL;
-	}
-
-	e = GetBestRouteEntryFromRouteTableEx(table, ip, exclude_if_id);
-	FreeRouteTable(table);
-
-	return e;
-}
-
-// Display the routing table entry
-void DebugPrintRoute(ROUTE_ENTRY *e)
-{
-	char tmp[MAX_SIZE];
-	// Validate arguments
-	if (e == NULL)
-	{
-		return;
-	}
-
-	if (IsDebug() == false)
-	{
-		return;
-	}
-
-	RouteToStr(tmp, sizeof(tmp), e);
-
-	Debug("%s\n", tmp);
-}
-
 // Convert the routing table entry to string
 void RouteToStr(char *str, UINT str_size, ROUTE_ENTRY *e)
 {
@@ -4064,17 +3316,6 @@ void RouteToStr(char *str, UINT str_size, ROUTE_ENTRY *e)
 	       dest_ip, dest_mask, gateway_ip,
 	       e->Metric, e->IfMetric, e->InterfaceID,
 	       e->LocalRouting, e->PPPConnection);
-}
-
-// Add to the routing table
-bool AddRouteEntryEx(ROUTE_ENTRY *e, bool *already_exists)
-{
-	bool ret = false;
-	Debug("AddRouteEntryEx();\n");
-#ifdef	OS_WIN32
-	ret = Win32AddRouteEntry2(e, already_exists);
-#endif
-	return ret;
 }
 
 // Get the routing table
@@ -8251,17 +7492,6 @@ UINT StrToIP32(char *str)
 
 	return IPToUINT(&ip);
 }
-UINT UniStrToIP32(wchar_t *str)
-{
-	UINT ret;
-	char *tmp;
-
-	tmp = CopyUniToStr(str);
-	ret = StrToIP32(tmp);
-	Free(tmp);
-
-	return ret;
-}
 
 // Convert the IP to the in_addr
 void IPToInAddr(struct in_addr *addr, IP *ip)
@@ -8851,37 +8081,6 @@ void FreeNetwork()
 	FreeDynList();
 }
 
-// Stop all the sockets in the list and delete it
-void StopSockList(SOCKLIST *sl)
-{
-	SOCK **ss;
-	UINT num, i;
-	// Validate arguments
-	if (sl == NULL)
-	{
-		return;
-	}
-
-	LockList(sl->SockList);
-	{
-		num = LIST_NUM(sl->SockList);
-		ss = ToArray(sl->SockList);
-
-		DeleteAll(sl->SockList);
-	}
-	UnlockList(sl->SockList);
-
-	for (i = 0; i < num; i++)
-	{
-		SOCK *s = ss[i];
-
-		Disconnect(s);
-		ReleaseSock(s);
-	}
-
-	Free(ss);
-}
-
 // Parse the IP address and subnet mask
 bool ParseIpAndSubnetMask46(char *src, IP *ip, IP *mask)
 {
@@ -9054,47 +8253,6 @@ bool ParseIpAndMask6(char *src, IP *ip, IP *mask)
 	return true;
 }
 
-
-// Convert the string to an IPv6 mask
-bool StrToMask6(IP *mask, char *str)
-{
-	// Validate arguments
-	if (mask == NULL || str == NULL)
-	{
-		return false;
-	}
-
-	if (str[0] == '/')
-	{
-		str++;
-	}
-
-	if (IsNum(str))
-	{
-		UINT n = ToInt(str);
-
-		if (n <= 128)
-		{
-			IntToSubnetMask6(mask, n);
-			return true;
-		}
-		else
-		{
-			return false;
-		}
-	}
-	else
-	{
-		if (StrToIP(mask, str) == false)
-		{
-			return false;
-		}
-		else
-		{
-			return IsIP6(mask);
-		}
-	}
-}
 
 // Convert the IPv4 / IPv6 mask to a string
 void MaskToStr(char *str, UINT size, IP *mask)
@@ -9490,36 +8648,6 @@ LIST *GetHostIPAddressListInternal()
 	}
 
 	return o;
-}
-
-// Sort function of the interrupt management list
-int CmpInterruptManagerTickList(void *p1, void *p2)
-{
-	UINT64 *v1, *v2;
-	if (p1 == NULL || p2 == NULL)
-	{
-		return 0;
-	}
-
-	v1 = *(UINT64 **)p1;
-	v2 = *(UINT64 **)p2;
-	if (v1 == NULL || v2 == NULL)
-	{
-		return 0;
-	}
-
-	if (*v1 > *v2)
-	{
-		return 1;
-	}
-	else if (*v1 < *v2)
-	{
-		return -1;
-	}
-	else
-	{
-		return 0;
-	}
 }
 
 // Store the error value into PACK

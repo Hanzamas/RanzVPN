@@ -145,19 +145,6 @@ void InitCanaryRand()
 	}
 }
 
-// Generate PRand
-void PRand(PRAND *p, void *data, UINT size)
-{
-	if (p == NULL)
-	{
-		return;
-	}
-
-	Zero(data, size);
-
-	Encrypt(p->Rc4, data, data, size);
-}
-
 // Check whether the specified key item is in the hash list
 bool IsInHashListKey(HASH_LIST *h, UINT key)
 {
@@ -503,20 +490,6 @@ void AppendBufUtf8(BUF *b, wchar_t *str)
 	Free(data);
 }
 
-// Release of the shared buffer
-void CleanupSharedBuffer(SHARED_BUFFER *b)
-{
-	// Validate arguments
-	if (b == NULL)
-	{
-		return;
-	}
-
-	Free(b->Data);
-
-	Free(b);
-}
-
 // Calculation of a ^ b (a to the b-th power)
 UINT Power(UINT a, UINT b)
 {
@@ -601,12 +574,6 @@ int CompareCandidate(void *p1, void *p2)
 	{
 		return UniStrCmpi(c1->Str, c2->Str);
 	}
-}
-
-// Creating a new candidate list
-LIST *NewCandidateList()
-{
-	return NewList(CompareCandidate);
 }
 
 // Examine whether the specified address points all-zero area
@@ -1187,29 +1154,6 @@ bool ReplaceListPointer(LIST *o, void *oldptr, void *newptr)
 		if (p == oldptr)
 		{
 			o->p[i] = newptr;
-			return true;
-		}
-	}
-
-	return false;
-}
-
-// Examine whether a string items are present in the list
-bool IsInListStr(LIST *o, char *str)
-{
-	UINT i;
-	// Validate arguments
-	if (o == NULL || str == NULL)
-	{
-		return false;
-	}
-
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		char *s = LIST_DATA(o, i);
-
-		if (StrCmpi(s, str) == 0)
-		{
 			return true;
 		}
 	}
@@ -2341,20 +2285,6 @@ void WriteBuf(BUF *b, void *buf, UINT size)
 	KS_INC(KS_WRITE_BUF_COUNT);
 }
 
-// Write a line to the buffer
-void WriteBufLine(BUF *b, char *str)
-{
-	char *crlf = "\r\n";
-	// Validate arguments
-	if (b == NULL || str == NULL)
-	{
-		return;
-	}
-
-	WriteBuf(b, str, StrLen(str));
-	WriteBuf(b, crlf, StrLen(crlf));
-}
-
 // Write a string to a buffer
 bool WriteBufStr(BUF *b, char *str)
 {
@@ -2523,33 +2453,6 @@ void WriteBufBuf(BUF *b, BUF *bb)
 	}
 
 	WriteBuf(b, bb->Buf, bb->Size);
-}
-
-// Read into a buffer from the buffer
-BUF *ReadBufFromBuf(BUF *b, UINT size)
-{
-	BUF *ret;
-	UCHAR *data;
-	// Validate arguments
-	if (b == NULL)
-	{
-		return NULL;
-	}
-
-	data = Malloc(size);
-	if (ReadBuf(b, data, size) != size)
-	{
-		Free(data);
-		return NULL;
-	}
-
-	ret = NewBuf();
-	WriteBuf(ret, data, size);
-	SeekBuf(ret, 0, 0);
-
-	Free(data);
-
-	return ret;
 }
 
 // Read from the buffer
@@ -3301,21 +3204,4 @@ void Zero(void *addr, UINT size)
 	KS_INC(KS_ZERO_COUNT);
 
 	memset(addr, 0, size);
-}
-
-// Compare the string map entries
-int StrMapCmp(void *p1, void *p2)
-{
-	STRMAP_ENTRY *s1, *s2;
-	if (p1 == NULL || p2 == NULL)
-	{
-		return 0;
-	}
-	s1 = *(STRMAP_ENTRY **)p1;
-	s2 = *(STRMAP_ENTRY **)p2;
-	if (s1 == NULL || s2 == NULL)
-	{
-		return 0;
-	}
-	return StrCmpi(s1->Name, s2->Name);
 }

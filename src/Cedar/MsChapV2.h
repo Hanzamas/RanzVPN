@@ -27,7 +27,6 @@ void GenerateNtPasswordHashHash(UCHAR *dst_hash, UCHAR *src_hash);
 void MsChapV2_GenerateChallenge8(UCHAR *dst, UCHAR *client_challenge, UCHAR *server_challenge, char *username);
 void MsChapV2Client_GenerateResponse(UCHAR *dst, UCHAR *challenge8, UCHAR *nt_password_hash);
 void MsChapV2Server_GenerateResponse(UCHAR *dst, UCHAR *nt_password_hash_hash, UCHAR *client_response, UCHAR *challenge8);
-bool MsChapV2VerityPassword(IPC_MSCHAP_V2_AUTHINFO *d, char *password);
 bool ParseAndExtractMsChapV2InfoFromPassword(IPC_MSCHAP_V2_AUTHINFO *d, char *password);
 
 #endif	// MSCHAPV2_H

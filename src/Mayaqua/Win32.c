@@ -439,16 +439,6 @@ void Win32GetCurrentDirW(wchar_t *dir, UINT size)
 
 	GetCurrentDirectoryW(size, dir);
 }
-void Win32GetCurrentDir(char *dir, UINT size)
-{
-	// Validate arguments
-	if (dir == NULL)
-	{
-		return;
-	}
-
-	GetCurrentDirectory(size, dir);
-}
 
 // Yield
 void Win32Yield()
@@ -928,25 +918,7 @@ bool Win32WaitProcess(void *h, UINT timeout)
 	return true;
 }
 
-// Run the process and wait for terminate it
-bool Win32RunAndWaitProcess(wchar_t *filename, wchar_t *arg, bool hide, bool disableWow, UINT timeout)
-{
-	UINT process_id = 0;
-	void *p = Win32RunEx3W(filename, arg, hide, &process_id, disableWow);
-
-	if (p == NULL)
-	{
-		return false;
-	}
-
-	return Win32WaitProcess(p, timeout);
-}
-
 // Run the process (return the handle)
-void *Win32RunExW(wchar_t *filename, wchar_t *arg, bool hide)
-{
-	return Win32RunEx2W(filename, arg, hide, NULL);
-}
 void *Win32RunEx2W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id)
 {
 	return Win32RunEx3W(filename, arg, hide, process_id, false);
@@ -1026,10 +998,6 @@ void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id,
 
 	CloseHandle(ret.hThread);
 	return ret.hProcess;
-}
-void *Win32RunEx2(char *filename, char *arg, bool hide, UINT *process_id)
-{
-	return Win32RunEx3(filename, arg, hide, process_id, false);
 }
 void *Win32RunEx3(char *filename, char *arg, bool hide, UINT *process_id, bool disableWow)
 {

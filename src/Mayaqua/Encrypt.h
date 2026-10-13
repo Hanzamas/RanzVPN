@@ -348,12 +348,8 @@ UINT GetDaysUntil2038();
 UINT GetDaysUntil2038Ex();
 X_SERIAL *NewXSerial(void *data, UINT size);
 void FreeXSerial(X_SERIAL *serial);
-P12 *BioToP12(BIO *bio);
 P12 *PKCS12ToP12(PKCS12 *pkcs12);
 BIO *P12ToBio(P12 *p12);
-BUF *P12ToBuf(P12 *p12);
-void FreePKCS12(PKCS12 *pkcs12);
-bool ParseP12(P12 *p12, X **x, K **k, char *password);
 bool ParseP12Ex(P12 *p12, X **x, K **k, LIST **cc, char *password);
 X *CloneX(X *x);
 LIST *CloneXList(LIST *chain);
@@ -413,7 +409,6 @@ void SetCipherKey(CIPHER *c, void *key, bool enc);
 UINT CipherProcessAead(CIPHER *c, void *iv, void *tag, UINT tag_size, void *dest, void *src, UINT src_size, void *aad, UINT aad_size);
 
 // Hashing
-MD *NewMdEx(char *name, bool hmac);
 bool SetMdKey(MD *md, void *key, UINT key_size);
 UINT MdProcess(MD *md, void *dest, void *src, UINT size);
 void FreeMd(MD *md);
