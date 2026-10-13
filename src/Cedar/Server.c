@@ -527,8 +527,6 @@ void SiWriteSysLog(SERVER *s, char *typestr, char *hubname, wchar_t *message)
 			machinename, datetime, typestr, message);
 	}
 
-	Debug("Syslog send: %S\n",tmp);
-
 	SendSysLog(s->Syslog, tmp);
 }
 
@@ -4824,17 +4822,11 @@ UINT SiWriteConfigurationFile(SERVER *s)
 	{
 		FOLDER *f;
 
-		Debug("save: SiWriteConfigurationToCfg() start.\n");
 		f = SiWriteConfigurationToCfg(s);
-		Debug("save: SiWriteConfigurationToCfg() finished.\n");
 
-		Debug("save: SaveCfgRw() start.\n");
 		ret = SaveCfgRwEx(s->CfgRw, f, s->BackupConfigOnlyWhenModified ? s->ConfigRevision : INFINITE);
-		Debug("save: SaveCfgRw() finished.\n");
 
-		Debug("save: CfgDeleteFolder() start.\n");
 		CfgDeleteFolder(f);
-		Debug("save: CfgDeleteFolder() finished.\n");
 	}
 	Unlock(s->SaveCfgLock);
 
