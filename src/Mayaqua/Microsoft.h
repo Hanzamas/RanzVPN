@@ -232,24 +232,17 @@ UINT MsRegAccessMaskFor64BitEx(bool force32bit, bool force64bit);
 bool MsRegIsKeyEx2(UINT root, char *name, bool force32bit, bool force64bit);
 
 bool MsRegIsValue(UINT root, char *keyname, char *valuename);
-bool MsRegIsValueEx(UINT root, char *keyname, char *valuename, bool force32bit);
 bool MsRegIsValueEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
 
 bool MsRegReadValueEx2(UINT root, char *keyname, char *valuename, void **data, DWORD *type, DWORD *size, bool force32bit, bool force64bit);
 bool MsRegReadValueEx2W(UINT root, char *keyname, char *valuename, void **data, DWORD *type, DWORD *size, bool force32bit, bool force64bit);
 
 char *MsRegReadStr(UINT root, char *keyname, char *valuename);
-char *MsRegReadStrEx(UINT root, char *keyname, char *valuename, bool force32bit);
 char *MsRegReadStrEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
-wchar_t *MsRegReadStrW(UINT root, char *keyname, char *valuename);
-wchar_t *MsRegReadStrExW(UINT root, char *keyname, char *valuename, bool force32bit);
 wchar_t *MsRegReadStrEx2W(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
 
 UINT MsRegReadInt(UINT root, char *keyname, char *valuename);
-UINT MsRegReadIntEx(UINT root, char *keyname, char *valuename, bool force32bit);
 UINT MsRegReadIntEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
-LIST *MsRegReadStrList(UINT root, char *keyname, char *valuename);
-LIST *MsRegReadStrListEx(UINT root, char *keyname, char *valuename, bool force32bit);
 LIST *MsRegReadStrListEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
 
 bool MsRegNewKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit);
@@ -257,22 +250,16 @@ bool MsRegNewKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit);
 bool MsRegWriteValueEx2(UINT root, char *keyname, char *valuename, UINT type, void *data, UINT size, bool force32bit, bool force64bit);
 
 bool MsRegWriteStr(UINT root, char *keyname, char *valuename, char *str);
-bool MsRegWriteStrEx(UINT root, char *keyname, char *valuename, char *str, bool force32bit);
 bool MsRegWriteStrEx2(UINT root, char *keyname, char *valuename, char *str, bool force32bit, bool force64bit);
 
 bool MsRegWriteInt(UINT root, char *keyname, char *valuename, UINT value);
-bool MsRegWriteIntEx(UINT root, char *keyname, char *valuename, UINT value, bool force32bit);
 bool MsRegWriteIntEx2(UINT root, char *keyname, char *valuename, UINT value, bool force32bit, bool force64bit);
 
 TOKEN_LIST *MsRegEnumKey(UINT root, char *keyname);
-TOKEN_LIST *MsRegEnumKeyEx(UINT root, char *keyname, bool force32bit);
 TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit);
 
-bool MsRegDeleteKey(UINT root, char *keyname);
-bool MsRegDeleteKeyEx(UINT root, char *keyname, bool force32bit);
 bool MsRegDeleteKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit);
 bool MsRegDeleteValue(UINT root, char *keyname, char *valuename);
-bool MsRegDeleteValueEx(UINT root, char *keyname, char *valuename, bool force32bit);
 bool MsRegDeleteValueEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
 
 bool MsRegLoadHive(UINT root, wchar_t *keyname, wchar_t *filename);
@@ -309,7 +296,6 @@ wchar_t *MsGetMyTempDirW();
 wchar_t *MsGetUserNameW();
 bool MsIsServiceInstalled(char *name);
 bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar_t *path, UINT *error_code);
-bool MsInstallServiceW(char *name, wchar_t *title, wchar_t *description, wchar_t *path);
 bool MsUpdateServiceConfig(char *name);
 bool MsUninstallService(char *name);
 bool MsStartService(char *name);
@@ -332,8 +318,6 @@ void MsGenerateUserModeSvcGlobalPulseName(char *name, UINT size, char *svc_name)
 void *MsCreateUserModeSvcGlocalPulse(char *svc_name);
 void MsUserModeGlobalPulseRecvThread(THREAD *thread, void *param);
 
-MS_ADAPTER_LIST *MsCreateAdapterListInner();
-MS_ADAPTER_LIST *MsCreateAdapterListInnerEx(bool no_info);
 MS_ADAPTER_LIST *MsCreateAdapterListInnerExVista(bool no_info);
 void MsFreeAdapter(MS_ADAPTER *a);
 void MsFreeAdapterList(MS_ADAPTER_LIST *o);
@@ -356,7 +340,6 @@ bool MsDisableIme();
 
 void MsSetTcpConfig(MS_TCP *tcp);
 bool MsLoadTcpConfigReg(MS_TCP *tcp);
-bool MsIsTcpConfigSupported();
 void MsApplyTcpConfig();
 
 UINT MsGetConsoleWidth();
@@ -368,11 +351,9 @@ bool MsCloseWarningWindow(NO_WARNING *nw, UINT thread_id);
 LIST *MsEnumChildWindows(LIST *o, HWND hWnd);
 void MsAddWindowToList(LIST *o, HWND hWnd);
 UINT MsGetThreadLocale();
-LIST *NewWindowList();
 int CmpWindowList(void *p1, void *p2);
 void AddWindow(LIST *o, HWND hWnd);
 void FreeWindowList(LIST *o);
-LIST *EnumAllChildWindow(HWND hWnd);
 LIST *EnumAllChildWindowEx(HWND hWnd, bool no_recursion, bool include_ipcontrol, bool no_self);
 LIST *EnumAllTopWindow();
 
@@ -395,7 +376,6 @@ UINT64 MsGetHiResCounter();
 double MsGetHiResTimeSpan(UINT64 diff);
 UINT64 MsGetHiResTimeSpanUSec(UINT64 diff);
 bool MsGetFileInformation(void *h, void *info);
-void MsSetErrorModeToSilent();
 void MsSetEnableMinidump(bool enabled);
 void MsWriteMinidump(wchar_t *filename, void *ex);
 

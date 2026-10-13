@@ -266,12 +266,6 @@ void *MsOpenOrCreateGlobalPulse(char *name)
 }
 
 
-// Set the mode not to show the errors
-void MsSetErrorModeToSilent()
-{
-	SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
-}
-
 // Get the file information
 bool MsGetFileInformation(void *h, void *info)
 {
@@ -904,7 +898,7 @@ MS_ADAPTER_LIST *MsCreateAdapterListEx(bool no_info)
 
 	if (no_info)
 	{
-		ret = MsCreateAdapterListInnerEx(true);
+		ret = MsCreateAdapterListInnerExVista(true);
 
 		return ret;
 	}
@@ -915,7 +909,7 @@ MS_ADAPTER_LIST *MsCreateAdapterListEx(bool no_info)
 		UINT i;
 
 		// Fetch a new adapter list
-		ret = MsCreateAdapterListInner();
+		ret = MsCreateAdapterListInnerExVista(false);
 
 		if (ret == NULL)
 		{
@@ -963,7 +957,7 @@ void MsInitAdapterListModule()
 {
 	lock_adapter_list = NewLock(NULL);
 
-	last_adapter_list = MsCreateAdapterListInner();
+	last_adapter_list = MsCreateAdapterListInnerExVista(false);
 }
 
 // Release of the adapter module list
@@ -1017,16 +1011,6 @@ MS_ADAPTER *MsCloneAdapter(MS_ADAPTER *a)
 	Copy(ret, a, sizeof(MS_ADAPTER));
 
 	return ret;
-}
-
-// Creating an adapters list
-MS_ADAPTER_LIST *MsCreateAdapterListInner()
-{
-	return MsCreateAdapterListInnerEx(false);
-}
-MS_ADAPTER_LIST *MsCreateAdapterListInnerEx(bool no_info)
-{
-	return MsCreateAdapterListInnerExVista(no_info);
 }
 
 // Creating an adapters list (Windows Vista version)
@@ -1732,10 +1716,10 @@ void MsWriteCallingServiceManagerProcessId(char *svcname, UINT pid)
 	else
 	{
 		MsRegDeleteValue(REG_LOCAL_MACHINE, tmp, SVC_CALLING_SM_PROCESS_ID_VALUE);
-		MsRegDeleteKey(REG_LOCAL_MACHINE, tmp);
+		MsRegDeleteKeyEx2(REG_LOCAL_MACHINE, tmp, false, false);
 
 		MsRegDeleteValue(REG_CURRENT_USER, tmp, SVC_CALLING_SM_PROCESS_ID_VALUE);
-		MsRegDeleteKey(REG_CURRENT_USER, tmp);
+		MsRegDeleteKeyEx2(REG_CURRENT_USER, tmp, false, false);
 	}
 }
 
@@ -1803,7 +1787,7 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 			{NULL, NULL},
 		};
 
-		MsSetErrorModeToSilent();
+		SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
 
 		if (_StartServiceCtrlDispatcher(dispatch_table) == false)
 		{
@@ -1954,7 +1938,7 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 					}
 					MsUninstallService(service_name);
 				}
-				if (MsInstallServiceW(service_name, service_title, service_description, path) == false)
+				if (MsInstallServiceExW(service_name, service_title, service_description, path, NULL) == false)
 				{
 					ret = 1;
 				}
@@ -2031,7 +2015,7 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 				}
 
 				// Do the installation
-				if (MsInstallServiceW(service_name, service_title, service_description, path) == false)
+				if (MsInstallServiceExW(service_name, service_title, service_description, path, NULL) == false)
 				{
 					// Failed to install
 					if(silent == false)
@@ -2510,10 +2494,6 @@ bool MsUpdateServiceConfig(char *name)
 }
 
 // Install the service
-bool MsInstallServiceW(char *name, wchar_t *title, wchar_t *description, wchar_t *path)
-{
-	return MsInstallServiceExW(name, title, description, path, NULL);
-}
 bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar_t *path, UINT *error_code)
 {
 	SC_HANDLE sc, service;
@@ -2641,7 +2621,7 @@ void MsRestoreThreadPriority()
 // Apply the temporary settings data of registry to the TCP parameter of the Windows
 void MsApplyTcpConfig()
 {
-	if (MsIsTcpConfigSupported())
+	if (MsIsAdmin())
 	{
 		MS_TCP tcp;
 
@@ -2650,12 +2630,6 @@ void MsApplyTcpConfig()
 			MsSetTcpConfig(&tcp);
 		}
 	}
-}
-
-// Check whether the dynamic configuration of TCP is supported in current state
-bool MsIsTcpConfigSupported()
-{
-	return MsIsAdmin();
 }
 
 // Read the TCP settings from the registry setting
@@ -2669,14 +2643,14 @@ bool MsLoadTcpConfigReg(MS_TCP *tcp)
 
 	Zero(tcp, sizeof(MS_TCP));
 
-	if (MsRegIsValueEx(REG_LOCAL_MACHINE, MS_REG_TCP_SETTING_KEY, "RecvWindowSize", true) == false ||
-		MsRegIsValueEx(REG_LOCAL_MACHINE, MS_REG_TCP_SETTING_KEY, "SendWindowSize", true) == false)
+	if (MsRegIsValueEx2(REG_LOCAL_MACHINE, MS_REG_TCP_SETTING_KEY, "RecvWindowSize", true, false) == false ||
+		MsRegIsValueEx2(REG_LOCAL_MACHINE, MS_REG_TCP_SETTING_KEY, "SendWindowSize", true, false) == false)
 	{
 		return false;
 	}
 
-	tcp->RecvWindowSize = MsRegReadIntEx(REG_LOCAL_MACHINE, MS_REG_TCP_SETTING_KEY, "RecvWindowSize", true);
-	tcp->SendWindowSize = MsRegReadIntEx(REG_LOCAL_MACHINE, MS_REG_TCP_SETTING_KEY, "SendWindowSize", true);
+	tcp->RecvWindowSize = MsRegReadIntEx2(REG_LOCAL_MACHINE, MS_REG_TCP_SETTING_KEY, "RecvWindowSize", true, false);
+	tcp->SendWindowSize = MsRegReadIntEx2(REG_LOCAL_MACHINE, MS_REG_TCP_SETTING_KEY, "SendWindowSize", true, false);
 
 	return true;
 }
@@ -2916,7 +2890,7 @@ BOOL CALLBACK EnumChildWindowProc(HWND hWnd, LPARAM lParam)
 }
 LIST *EnumAllTopWindow()
 {
-	LIST *o = NewWindowList();
+	LIST *o = NewListFast(CmpWindowList);
 
 	EnumWindows(EnumTopWindowProc, (LPARAM)o);
 
@@ -2924,14 +2898,10 @@ LIST *EnumAllTopWindow()
 }
 
 // Enumerate the child windows of all that is in the specified window
-LIST *EnumAllChildWindow(HWND hWnd)
-{
-	return EnumAllChildWindowEx(hWnd, false, false, false);
-}
 LIST *EnumAllChildWindowEx(HWND hWnd, bool no_recursion, bool include_ipcontrol, bool no_self)
 {
 	ENUM_CHILD_WINDOW_PARAM p;
-	LIST *o = NewWindowList();
+	LIST *o = NewListFast(CmpWindowList);
 
 	Zero(&p, sizeof(p));
 	p.include_ipcontrol = include_ipcontrol;
@@ -3007,12 +2977,6 @@ int CmpWindowList(void *p1, void *p2)
 	}
 
 	return Cmp(h1, h2, sizeof(HWND));
-}
-
-// Creating a new window list
-LIST *NewWindowList()
-{
-	return NewListFast(CmpWindowList);
 }
 
 // Get the process path of the owner of the window
@@ -3114,7 +3078,7 @@ bool MsCloseWarningWindow(NO_WARNING *nw, UINT thread_id)
 							HWND h;
 							UINT i;
 
-							o = EnumAllChildWindow(hWnd);
+							o = EnumAllChildWindowEx(hWnd, false, false, false);
 
 							if (o != NULL)
 							{
@@ -3129,7 +3093,7 @@ bool MsCloseWarningWindow(NO_WARNING *nw, UINT thread_id)
 
 									if (StrCmpi(tmp, "DirectUIHWND") == 0)
 									{
-										LIST *o = EnumAllChildWindow(h);
+										LIST *o = EnumAllChildWindowEx(h, false, false, false);
 
 										if (o != NULL)
 										{
@@ -3557,7 +3521,7 @@ wchar_t *MsGetNetworkConnectionName(char *guid)
 
 	// Get the network connection name
 	Format(tmp, sizeof(tmp), "SYSTEM\\CurrentControlSet\\Control\\Network\\{4D36E972-E325-11CE-BFC1-08002BE10318}\\%s\\Connection", guid);
-	ncname = MsRegReadStrW(REG_LOCAL_MACHINE, tmp, "Name");
+	ncname = MsRegReadStrEx2W(REG_LOCAL_MACHINE, tmp, "Name", false, false);
 
 	return ncname;
 }
@@ -3687,11 +3651,7 @@ bool MsRegLoadHive(UINT root, wchar_t *keyname, wchar_t *filename)
 // Delete the value
 bool MsRegDeleteValue(UINT root, char *keyname, char *valuename)
 {
-	return MsRegDeleteValueEx(root, keyname, valuename, false);
-}
-bool MsRegDeleteValueEx(UINT root, char *keyname, char *valuename, bool force32bit)
-{
-	return MsRegDeleteValueEx2(root, keyname, valuename, force32bit, false);
+	return MsRegDeleteValueEx2(root, keyname, valuename, false, false);
 }
 bool MsRegDeleteValueEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit)
 {
@@ -3723,14 +3683,6 @@ bool MsRegDeleteValueEx2(UINT root, char *keyname, char *valuename, bool force32
 }
 
 // Delete the key
-bool MsRegDeleteKey(UINT root, char *keyname)
-{
-	return MsRegDeleteKeyEx(root, keyname, false);
-}
-bool MsRegDeleteKeyEx(UINT root, char *keyname, bool force32bit)
-{
-	return MsRegDeleteKeyEx2(root, keyname, force32bit, false);
-}
 bool MsRegDeleteKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit)
 {
 	// Validate arguments
@@ -3750,11 +3702,7 @@ bool MsRegDeleteKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bi
 // Enumeration of the keys
 TOKEN_LIST *MsRegEnumKey(UINT root, char *keyname)
 {
-	return MsRegEnumKeyEx(root, keyname, false);
-}
-TOKEN_LIST *MsRegEnumKeyEx(UINT root, char *keyname, bool force32bit)
-{
-	return MsRegEnumKeyEx2(root, keyname, force32bit, false);
+	return MsRegEnumKeyEx2(root, keyname, false, false);
 }
 TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit)
 {
@@ -3821,11 +3769,7 @@ TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit, bool forc
 // Set the integer value
 bool MsRegWriteInt(UINT root, char *keyname, char *valuename, UINT value)
 {
-	return MsRegWriteIntEx(root, keyname, valuename, value, false);
-}
-bool MsRegWriteIntEx(UINT root, char *keyname, char *valuename, UINT value, bool force32bit)
-{
-	return MsRegWriteIntEx2(root, keyname, valuename, value, force32bit, false);
+	return MsRegWriteIntEx2(root, keyname, valuename, value, false, false);
 }
 bool MsRegWriteIntEx2(UINT root, char *keyname, char *valuename, UINT value, bool force32bit, bool force64bit)
 {
@@ -3846,11 +3790,7 @@ bool MsRegWriteIntEx2(UINT root, char *keyname, char *valuename, UINT value, boo
 
 bool MsRegWriteStr(UINT root, char *keyname, char *valuename, char *str)
 {
-	return MsRegWriteStrEx(root, keyname, valuename, str, false);
-}
-bool MsRegWriteStrEx(UINT root, char *keyname, char *valuename, char *str, bool force32bit)
-{
-	return MsRegWriteStrEx2(root, keyname, valuename, str, force32bit, false);
+	return MsRegWriteStrEx2(root, keyname, valuename, str, false, false);
 }
 bool MsRegWriteStrEx2(UINT root, char *keyname, char *valuename, char *str, bool force32bit, bool force64bit)
 {
@@ -3898,11 +3838,7 @@ bool MsRegWriteValueEx2(UINT root, char *keyname, char *valuename, UINT type, vo
 // Get an integer value
 UINT MsRegReadInt(UINT root, char *keyname, char *valuename)
 {
-	return MsRegReadIntEx(root, keyname, valuename, false);
-}
-UINT MsRegReadIntEx(UINT root, char *keyname, char *valuename, bool force32bit)
-{
-	return MsRegReadIntEx2(root, keyname, valuename, force32bit, false);
+	return MsRegReadIntEx2(root, keyname, valuename, false, false);
 }
 UINT MsRegReadIntEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit)
 {
@@ -3964,14 +3900,6 @@ UINT MsRegReadIntEx2(UINT root, char *keyname, char *valuename, bool force32bit,
 }
 
 // Get a string list
-LIST *MsRegReadStrList(UINT root, char *keyname, char *valuename)
-{
-	return MsRegReadStrListEx(root, keyname, valuename, false);
-}
-LIST *MsRegReadStrListEx(UINT root, char *keyname, char *valuename, bool force32bit)
-{
-	return MsRegReadStrListEx2(root, keyname, valuename, force32bit, false);
-}
 LIST *MsRegReadStrListEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit)
 {
 	LIST *o;
@@ -4022,11 +3950,7 @@ LIST *MsRegReadStrListEx2(UINT root, char *keyname, char *valuename, bool force3
 // Get a string
 char *MsRegReadStr(UINT root, char *keyname, char *valuename)
 {
-	return MsRegReadStrEx(root, keyname, valuename, false);
-}
-char *MsRegReadStrEx(UINT root, char *keyname, char *valuename, bool force32bit)
-{
-	return MsRegReadStrEx2(root, keyname, valuename, force32bit, false);
+	return MsRegReadStrEx2(root, keyname, valuename, false, false);
 }
 char *MsRegReadStrEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit)
 {
@@ -4053,7 +3977,7 @@ char *MsRegReadStrEx2(UINT root, char *keyname, char *valuename, bool force32bit
 		if (type == REG_MULTI_SZ)
 		{
 			// It is a string list
-			LIST *o = MsRegReadStrList(root, keyname, valuename);
+			LIST *o = MsRegReadStrListEx2(root, keyname, valuename, false, false);
 			if (o != NULL)
 			{
 				if (LIST_NUM(o) >= 1)
@@ -4083,14 +4007,6 @@ char *MsRegReadStrEx2(UINT root, char *keyname, char *valuename, bool force32bit
 	}
 
 	return ret;
-}
-wchar_t *MsRegReadStrW(UINT root, char *keyname, char *valuename)
-{
-	return MsRegReadStrExW(root, keyname, valuename, false);
-}
-wchar_t *MsRegReadStrExW(UINT root, char *keyname, char *valuename, bool force32bit)
-{
-	return MsRegReadStrEx2W(root, keyname, valuename, force32bit, false);
 }
 wchar_t *MsRegReadStrEx2W(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit)
 {
@@ -4246,11 +4162,7 @@ bool MsRegReadValueEx2W(UINT root, char *keyname, char *valuename, void **data, 
 // Confirm that the specified value exists on the registry
 bool MsRegIsValue(UINT root, char *keyname, char *valuename)
 {
-	return MsRegIsValueEx(root, keyname, valuename, false);
-}
-bool MsRegIsValueEx(UINT root, char *keyname, char *valuename, bool force32bit)
-{
-	return MsRegIsValueEx2(root, keyname, valuename, force32bit, false);
+	return MsRegIsValueEx2(root, keyname, valuename, false, false);
 }
 bool MsRegIsValueEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit)
 {
