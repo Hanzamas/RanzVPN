@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code
-// Cedar Communication Module
-
-
 // Hub.h
 // Header of Hub.c
 

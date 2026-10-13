@@ -1,4 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
 // Global Constants Header
 
 #pragma warning(disable : 4819)

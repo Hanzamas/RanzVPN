@@ -1,6 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
 // Session.h
 // Header of Session.c
 

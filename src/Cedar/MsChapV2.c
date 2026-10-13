@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
-
 // MsChapV2.c
 // MS-CHAPv2 and NT-hash authentication helpers
 

@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Mayaqua Kernel
-
-
 // Microsoft.c
 // For Microsoft Windows code
 // (not compiled on non-Windows environments)

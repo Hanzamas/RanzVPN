@@ -1,6 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
 // UdpAccel.c
 // UDP acceleration function
 

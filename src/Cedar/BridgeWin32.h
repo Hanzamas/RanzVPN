@@ -1,6 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
 // BridgeWin32.h
 // Header of BridgeWin32.c
 

@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Mayaqua Kernel
-
-
 // MayaType.h
 // Mayaqua Kernel type declaration header file
 

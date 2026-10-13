@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Mayaqua Kernel
-
-
 // Stun.c
 // STUN client (RFC 5389 Binding Request / Response only, no TURN, no authentication, no ICE)
 

@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Mayaqua Kernel
-// © 2020 Nokia
-
 // Encrypt.h
 // Header of Encrypt.c
 

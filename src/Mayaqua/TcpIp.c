@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Mayaqua Kernel
-
-
 // TcpIp.c
 // Utility module for TCP/IP packet processing
 

@@ -1,4 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
 // SeLow: SoftEther Lightweight Network Protocol
 
 
