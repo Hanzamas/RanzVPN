@@ -1,0 +1,11 @@
+# RPC_MSG RPC_MSG syn
+[out]
+#0 HubName str[1] = ""
+#1 Msg data[1] = hex:52616e7a20c3a9e4b8ad
+bytes=56 sha1=087471cb18c02296c5ce8d98f2595670428a7dfb
+[in-out]
+#0 HubName str[1] = "HubName#0"
+#1 Msg data[1] = hex:4d7367233020c3a9e4b8ad
+bytes=66 sha1=b4e90784fd11af71f4d7a54358c6ae011730d484
+[in-out-in-out]
+same

@@ -13,6 +13,7 @@
 #include "Link.h"
 #include "Listener.h"
 #include "Protocol.h"
+#include "RpcField.h"
 #include "Sam.h"
 
 #include "Mayaqua/Cfg.h"
@@ -434,146 +435,6 @@ void SiFreeDeadLockCheck(SERVER *s)
 	s->DeadLockWaitEvent = NULL;
 
 	s->HaltDeadLockThread = false;
-}
-
-// Check whether the specified virtual HUB has been registered to creation history
-bool SiIsHubRegistedOnCreateHistory(SERVER *s, char *name)
-{
-	UINT i;
-	bool ret = false;
-	// Validate arguments
-	if (s == NULL || name == NULL)
-	{
-		return false;
-	}
-
-	SiDeleteOldHubCreateHistory(s);
-
-	LockList(s->HubCreateHistoryList);
-	{
-		for (i = 0;i < LIST_NUM(s->HubCreateHistoryList);i++)
-		{
-			SERVER_HUB_CREATE_HISTORY *h = LIST_DATA(s->HubCreateHistoryList, i);
-
-			if (StrCmpi(h->HubName, name) == 0)
-			{
-				ret = true;
-				break;
-			}
-		}
-	}
-	UnlockList(s->HubCreateHistoryList);
-
-	return ret;
-}
-
-// Delete the Virtual HUB creation history
-void SiDelHubCreateHistory(SERVER *s, char *name)
-{
-	UINT i;
-	// Validate arguments
-	if (s == NULL || name == NULL)
-	{
-		return;
-	}
-
-	LockList(s->HubCreateHistoryList);
-	{
-		SERVER_HUB_CREATE_HISTORY *hh = NULL;
-		for (i = 0;i < LIST_NUM(s->HubCreateHistoryList);i++)
-		{
-			SERVER_HUB_CREATE_HISTORY *h = LIST_DATA(s->HubCreateHistoryList, i);
-
-			if (StrCmpi(h->HubName, name) == 0)
-			{
-				Delete(s->HubCreateHistoryList, h);
-				Free(h);
-				break;
-			}
-		}
-	}
-	UnlockList(s->HubCreateHistoryList);
-
-	SiDeleteOldHubCreateHistory(s);
-}
-
-// Register to the Virtual HUB creation history
-void SiAddHubCreateHistory(SERVER *s, char *name)
-{
-	UINT i;
-	// Validate arguments
-	if (s == NULL || name == NULL)
-	{
-		return;
-	}
-
-	LockList(s->HubCreateHistoryList);
-	{
-		SERVER_HUB_CREATE_HISTORY *hh = NULL;
-		for (i = 0;i < LIST_NUM(s->HubCreateHistoryList);i++)
-		{
-			SERVER_HUB_CREATE_HISTORY *h = LIST_DATA(s->HubCreateHistoryList, i);
-
-			if (StrCmpi(h->HubName, name) == 0)
-			{
-				hh = h;
-				break;
-			}
-		}
-
-		if (hh == NULL)
-		{
-			hh = ZeroMalloc(sizeof(SERVER_HUB_CREATE_HISTORY));
-			StrCpy(hh->HubName, sizeof(hh->HubName), name);
-
-			Add(s->HubCreateHistoryList, hh);
-		}
-
-		hh->CreatedTime = Tick64();
-	}
-	UnlockList(s->HubCreateHistoryList);
-
-	SiDeleteOldHubCreateHistory(s);
-}
-
-// Delete outdated Virtual HUB creation histories
-void SiDeleteOldHubCreateHistory(SERVER *s)
-{
-	UINT i;
-	LIST *o;
-	// Validate arguments
-	if (s == NULL)
-	{
-		return;
-	}
-
-	LockList(s->HubCreateHistoryList);
-	{
-		o = NewListFast(NULL);
-
-		for (i = 0;i < LIST_NUM(s->HubCreateHistoryList);i++)
-		{
-			SERVER_HUB_CREATE_HISTORY *h = LIST_DATA(s->HubCreateHistoryList, i);
-
-			if ((h->CreatedTime + ((UINT64)TICKET_EXPIRES)) <= Tick64())
-			{
-				// Expired
-				Add(o, h);
-			}
-		}
-
-		for (i = 0;i < LIST_NUM(o);i++)
-		{
-			SERVER_HUB_CREATE_HISTORY *h = LIST_DATA(o, i);
-
-			Delete(s->HubCreateHistoryList, h);
-
-			Free(h);
-		}
-
-		ReleaseList(o);
-	}
-	UnlockList(s->HubCreateHistoryList);
 }
 
 // Initialize the Virtual HUB creation history
@@ -1385,30 +1246,22 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 }
 
 // SYSLOG_SETTING
+static const RPC_FIELD rpc_syslog_setting_fields[] =
+{
+	RPC_ROW_INT(SYSLOG_SETTING, SaveType, "SaveType"),
+	RPC_ROW_INT(SYSLOG_SETTING, Port, "Port"),
+	RPC_ROW_STR(SYSLOG_SETTING, Hostname, "Hostname"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_syslog_setting_table, SYSLOG_SETTING, rpc_syslog_setting_fields);
+
 void InRpcSysLogSetting(SYSLOG_SETTING *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(SYSLOG_SETTING));
-	t->SaveType = PackGetInt(p, "SaveType");
-	t->Port = PackGetInt(p, "Port");
-	PackGetStr(p, "Hostname", t->Hostname, sizeof(t->Hostname));
+	RpcFieldIn(&rpc_syslog_setting_table, t, p);
 }
 void OutRpcSysLogSetting(PACK *p, SYSLOG_SETTING *t)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "SaveType", t->SaveType);
-	PackAddInt(p, "Port", t->Port);
-	PackAddStr(p, "Hostname", t->Hostname);
+	RpcFieldOut(&rpc_syslog_setting_table, p, t);
 }
 
 // CAPSLIST

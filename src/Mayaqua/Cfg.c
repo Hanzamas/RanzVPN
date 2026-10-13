@@ -131,23 +131,6 @@ UINT SaveCfgRwEx(CFG_RW *rw, FOLDER *f, UINT revision_number)
 }
 
 // Creating a configuration file R/W
-CFG_RW *NewCfgRw(FOLDER **root, char *cfg_name)
-{
-	return NewCfgRwEx(root, cfg_name, false);
-}
-CFG_RW *NewCfgRwEx(FOLDER **root, char *cfg_name, bool dont_backup)
-{
-	wchar_t *cfg_name_w = CopyStrToUni(cfg_name);
-	CFG_RW *ret = NewCfgRwExW(root, cfg_name_w, dont_backup);
-
-	Free(cfg_name_w);
-
-	return ret;
-}
-CFG_RW *NewCfgRwExW(FOLDER **root, wchar_t *cfg_name, bool dont_backup)
-{
-	return NewCfgRwEx2W(root, cfg_name, dont_backup, NULL);
-}
 CFG_RW *NewCfgRwEx2A(FOLDER **root, char *cfg_name_a, bool dont_backup, char *template_name_a)
 {
 	CFG_RW *ret;
@@ -302,22 +285,9 @@ bool FileCopyExWithEofW(wchar_t *src, wchar_t *dst, bool read_lock)
 }
 
 // Save the settings to a file
-void CfgSave(FOLDER *f, char *name)
-{
-	CfgSaveEx(NULL, f, name);
-}
 void CfgSaveW(FOLDER *f, wchar_t *name)
 {
 	CfgSaveExW(NULL, f, name);
-}
-bool CfgSaveEx(CFG_RW *rw, FOLDER *f, char *name)
-{
-	wchar_t *name_w = CopyStrToUni(name);
-	bool ret = CfgSaveExW(rw, f, name_w);
-
-	Free(name_w);
-
-	return ret;
 }
 bool CfgSaveExW(CFG_RW *rw, FOLDER *f, wchar_t *name)
 {
@@ -423,15 +393,6 @@ bool CfgSaveExW3(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size, bool 
 }
 
 // Read the settings from the file
-FOLDER *CfgRead(char *name)
-{
-	wchar_t *name_w = CopyStrToUni(name);
-	FOLDER *ret = CfgReadW(name_w);
-
-	Free(name_w);
-
-	return ret;
-}
 FOLDER *CfgReadW(wchar_t *name)
 {
 	wchar_t tmp[MAX_SIZE];
@@ -2194,12 +2155,6 @@ void CfgDeleteFolder(FOLDER *f)
 
 	// Release of the memory of the body
 	Free(f);
-}
-
-// Creating a root
-FOLDER *CfgCreateRoot()
-{
-	return CfgCreateFolder(NULL, TAG_ROOT);
 }
 
 // Create a folder

@@ -90,12 +90,6 @@ UINT DecodeSafe64(void *dst, const char *src, UINT size);
 void EncodeSafe64(char *dst, const void *src, const UINT size);
 bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer);
 void CreateUrl(char *url, UINT url_size, URL_DATA *data);
-void GetSystemInternetSetting(INTERNET_SETTING *setting);
-bool GetProxyServerNameAndPortFromIeProxyRegStr(char *name, UINT name_size, UINT *port, char *str, char *server_type);
-BUF *HttpRequest(URL_DATA *data, INTERNET_SETTING *setting,
-				 UINT timeout_connect, UINT timeout_comm,
-				 UINT *error_code, bool check_ssl_trust, char *post_data,
-				 WPC_RECV_CALLBACK *recv_callback, void *recv_callback_param, void *sha1_cert_hash);
 BUF *HttpRequestEx(URL_DATA *data, INTERNET_SETTING *setting,
 				   UINT timeout_connect, UINT timeout_comm,
 				   UINT *error_code, bool check_ssl_trust, char *post_data,
@@ -113,27 +107,8 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 					bool *cancel, UINT max_recv_size, char *header_name, char *header_value);
 SOCK *WpcSockConnect(WPC_CONNECT *param, UINT *error_code, UINT timeout);
 SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool *cancel);
-SOCK *WpcSockConnect2(char *hostname, UINT port, INTERNET_SETTING *t, UINT *error_code, UINT timeout);
-INTERNET_SETTING *GetNullInternetSetting();
 void WpcAddDataEntry(BUF *b, char *name, void *data, UINT size);
-void WpcAddDataEntryBin(BUF *b, char *name, void *data, UINT size);
 void WpcFillEntryName(char *dst, char *name);
-LIST *WpcParseDataEntry(BUF *b);
-void WpcFreeDataEntryList(LIST *o);
-WPC_ENTRY *WpcFindDataEntry(LIST *o, char *name);
-BUF *WpcDataEntryToBuf(WPC_ENTRY *e);
-BUF *WpcGeneratePacket(PACK *pack, X *cert, K *key);
-bool WpcParsePacket(WPC_PACKET *packet, BUF *buf);
-void WpcFreePacket(WPC_PACKET *packet);
-PACK *WpcCall(char *url, INTERNET_SETTING *setting, UINT timeout_connect, UINT timeout_comm,
-			  char *function_name, PACK *pack, X *cert, K *key, void *sha1_cert_hash);
-PACK *WpcCallEx(char *url, INTERNET_SETTING *setting, UINT timeout_connect, UINT timeout_comm,
-			  char *function_name, PACK *pack, X *cert, K *key, void *sha1_cert_hash, bool *cancel, UINT max_recv_size,
-			  char *additional_header_name, char *additional_header_value);
-PACK *WpcCallEx2(char *url, INTERNET_SETTING *setting, UINT timeout_connect, UINT timeout_comm,
-				char *function_name, PACK *pack, X *cert, K *key, void *sha1_cert_hash, UINT num_hashes, bool *cancel, UINT max_recv_size,
-				char *additional_header_name, char *additional_header_value, char *sni_string);
-bool IsProxyPrivateIp(INTERNET_SETTING *s);
 
 #endif	// WPC_H
 

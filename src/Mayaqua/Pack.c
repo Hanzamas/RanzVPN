@@ -14,32 +14,6 @@
 #include "Network.h"
 #include "Str.h"
 
-// Get a list of the element names in the PACK
-TOKEN_LIST *GetPackElementNames(PACK *p)
-{
-	TOKEN_LIST *ret;
-	UINT i;
-	// Validate arguments
-	if (p == NULL)
-	{
-		return NULL;
-	}
-
-	ret = ZeroMalloc(sizeof(TOKEN_LIST));
-
-	ret->NumTokens = LIST_NUM(p->elements);
-	ret->Token = ZeroMalloc(sizeof(char *) * ret->NumTokens);
-
-	for (i = 0;i < ret->NumTokens;i++)
-	{
-		ELEMENT *e = LIST_DATA(p->elements, i);
-
-		ret->Token[i] = CopyStr(e->name);
-	}
-
-	return ret;
-}
-
 // Convert the BUF to a PACK
 PACK *BufToPack(BUF *b)
 {
@@ -689,48 +663,6 @@ ELEMENT *GetElement(PACK *p, char *name, UINT type)
 	return e;
 }
 
-// Check whether the specified element exists
-bool IsElement(PACK *p, char *name)
-{
-	ELEMENT t;
-	ELEMENT *e;
-	// Validate arguments
-	if (p == NULL || name == NULL)
-	{
-		return false;
-	}
-
-	// Search
-	StrCpy(t.name, sizeof(t.name), name);
-	e = Search(p->elements, &t);
-
-	if (e == NULL)
-	{
-		return false;
-	}
-
-	return true;
-}
-
-// Remove the ELEMENT from the PACK
-void DelElement(PACK *p, char *name)
-{
-	ELEMENT *e;
-	// Validate arguments
-	if (p == NULL || name == NULL)
-	{
-		return;
-	}
-
-	e = GetElement(p, name, INFINITE);
-	if (e != NULL)
-	{
-		Delete(p->elements, e);
-
-		FreeElement(e);
-	}
-}
-
 // Add an ELEMENT to the PACK
 bool AddElement(PACK *p, ELEMENT *e)
 {
@@ -1126,12 +1058,6 @@ UINT PackGetIndexCount(PACK *p, char *name)
 	return e->num_value;
 }
 
-// Get the number from the PACK
-UINT PackGetNum(PACK *p, char *name)
-{
-	return MIN(PackGetInt(p, name), 65536);
-}
-
 // Get a bool type from the PACK
 bool PackGetBool(PACK *p, char *name)
 {
@@ -1163,10 +1089,6 @@ ELEMENT *PackAddIp6AddrEx(PACK *p, char *name, IPV6_ADDR *addr, UINT index, UINT
 
 	return PackAddDataEx(p, name, addr, sizeof(IPV6_ADDR), index, total);
 }
-ELEMENT *PackAddIp6Addr(PACK *p, char *name, IPV6_ADDR *addr)
-{
-	return PackAddIp6AddrEx(p, name, addr, 0, 1);
-}
 
 // Get an IPV6_ADDR from the PACK
 bool PackGetIp6AddrEx(PACK *p, char *name, IPV6_ADDR *addr, UINT index)
@@ -1179,10 +1101,6 @@ bool PackGetIp6AddrEx(PACK *p, char *name, IPV6_ADDR *addr, UINT index)
 	}
 
 	return PackGetDataEx2(p, name, addr, sizeof(IPV6_ADDR), index);
-}
-bool PackGetIp6Addr(PACK *p, char *name, IPV6_ADDR *addr)
-{
-	return PackGetIp6AddrEx(p, name, addr, 0);
 }
 
 // Add the IP to the PACK
@@ -1317,18 +1235,6 @@ bool PackGetIp(PACK *p, char *name, IP *ip)
 	return PackGetIpEx(p, name, ip, 0);
 }
 
-// Check whether the specified value is existing on the Pack
-bool PackIsValueExists(PACK *p, char *name)
-{
-	// Validate arguments
-	if (p == NULL || name == NULL)
-	{
-		return false;
-	}
-
-	return IsElement(p, name);
-}
-
 // Get an integer from the PACK
 UINT PackGetInt(PACK *p, char *name)
 {
@@ -1376,24 +1282,6 @@ bool PackGetUniStrEx(PACK *p, char *name, wchar_t *unistr, UINT size, UINT index
 	return true;
 }
 
-// Compare strings in the PACK
-bool PackCmpStr(PACK *p, char *name, char *str)
-{
-	char tmp[MAX_SIZE];
-
-	if (PackGetStr(p, name, tmp, sizeof(tmp)) == false)
-	{
-		return false;
-	}
-
-	if (StrCmpi(tmp, str) == 0)
-	{
-		return true;
-	}
-
-	return false;
-}
-
 // Get a string from the PACK
 bool PackGetStr(PACK *p, char *name, char *str, UINT size)
 {
@@ -1418,28 +1306,6 @@ bool PackGetStrEx(PACK *p, char *name, char *str, UINT size, UINT index)
 
 	StrCpy(str, size, GetStrValue(e, index));
 	return true;
-}
-
-// Get the string size from the PACK
-UINT PackGetStrSize(PACK *p, char *name)
-{
-	return PackGetStrSizeEx(p, name, 0);
-}
-UINT PackGetStrSizeEx(PACK *p, char *name, UINT index)
-{
-	ELEMENT *e;
-	// Validate arguments
-	if (p == NULL || name == NULL)
-	{
-		return 0;
-	}
-
-	e = GetElement(p, name, VALUE_STR);
-	if (e == NULL)
-	{
-		return 0;
-	}
-	return GetDataValueSize(e, index);
 }
 
 // Add the buffer to the PACK (array)
@@ -1646,12 +1512,6 @@ ELEMENT *PackAddInt64(PACK *p, char *name, UINT64 i)
 	return e;
 }
 
-// Add the number of items to the PACK
-ELEMENT *PackAddNum(PACK *p, char *name, UINT num)
-{
-	return PackAddInt(p, name, num);
-}
-
 // Add an integer to the PACK
 ELEMENT *PackAddInt(PACK *p, char *name, UINT i)
 {
@@ -1794,16 +1654,5 @@ ELEMENT *PackAddStr(PACK *p, char *name, char *str)
 		return NULL;
 	}
 	return e;
-}
-
-ELEMENT *ElementNullSafe(ELEMENT *p)
-{
-	static ELEMENT dummy;
-	if (p == NULL)
-	{
-		Zero(&dummy, sizeof(dummy));
-		return &dummy;
-	}
-	return p;
 }
 

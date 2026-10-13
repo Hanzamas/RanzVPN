@@ -40,9 +40,8 @@ struct SEND_SIGNATURE_PARAM
 bool ServerAccept(CONNECTION *c);
 bool ClientConnect(CONNECTION *c);
 SOCK *ClientConnectToServer(CONNECTION *c);
-SOCK *TcpIpConnectEx(char *hostname, UINT port, bool *cancel_flag, void *hWnd, IP *ret_ip);
 
-// New function named with prefix "Bind" binds outgoing connection to a specific address. New one is wrapped in original one.
+// New function named with prefix "Bind" binds outgoing connection to a specific address.
 SOCK* BindTcpIpConnectEx(IP *localIP, UINT localport, char *hostname, UINT port, bool *cancel_flag, void *hWnd, IP *ret_ip);
 
 bool ClientUploadSignature(SOCK *s);
@@ -66,7 +65,6 @@ void PackAddPolicy(PACK *p, POLICY *y);
 PACK *PackWelcome(SESSION *s);
 PACK *PackHello(void *random, UINT ver, UINT build, char *server_str);
 bool GetHello(PACK *p, void *random, UINT *ver, UINT *build, char *server_str, UINT server_str_size);
-PACK *PackLoginWithExternal(char *hubname, char *username);
 PACK *PackLoginWithAnonymous(char *hubname, char *username);
 PACK *PackLoginWithPassword(char *hubname, char *username, void *secure_password);
 PACK *PackLoginWithPlainPassword(char *hubname, char *username, void *plain_password);
@@ -88,13 +86,10 @@ bool ClientUploadAuth2(CONNECTION *c, SOCK *s);
 bool GetSessionKeyFromPack(PACK *p, UCHAR *session_key, UINT *session_key_32);
 
 void CreateNodeInfo(NODE_INFO *info, CONNECTION *c);
-void ClientUploadNoop(CONNECTION *c);
-void ServerUploadNoop(CONNECTION *c);
 bool ClientCheckServerCert(CONNECTION *c, bool *expired);
 void ClientCheckServerCertThread(THREAD *thread, void *param);
 TOKEN_LIST *EnumHub(SESSION *s);
 UINT ChangePasswordAccept(CONNECTION *c, PACK *p);
-UINT ChangePassword(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, char *username, char *old_pass, char *new_pass);
 void PackAddClientVersion(PACK *p, CONNECTION *c);
 void NodeInfoToStr(wchar_t *str, UINT size, NODE_INFO *info);
 void GenerateMachineUniqueHash(void *data);

@@ -1,0 +1,31 @@
+# RPC_LICENSE_STATUS RPC_LICENSE_STATUS syn
+[out]
+#0 AllowEnterpriseFunction int[1] = 0
+#1 EditionId int[1] = 0
+#2 EditionStr str[1] = ""
+#3 IsSubscriptionExpired int[1] = 0
+#4 NeedSubscription int[1] = 0
+#5 NumBridgeConnectLicense int[1] = 0
+#6 NumClientConnectLicense int[1] = 0
+#7 NumUserCreationLicense int[1] = 0
+#8 SubscriptionExpires int64[1] = 0
+#9 SystemExpires int64[1] = 0
+#10 SystemId int64[1] = 0
+#11 ReleaseDate int64[1] = 0
+bytes=410 sha1=c1b15eee67eba8e8aaeb85be34124971af8372ab
+[in-out]
+#0 AllowEnterpriseFunction int[1] = 1
+#1 EditionId int[1] = 31762216
+#2 EditionStr str[1] = "EditionStr#0"
+#3 IsSubscriptionExpired int[1] = 0
+#4 NeedSubscription int[1] = 1
+#5 NumBridgeConnectLicense int[1] = 58192552
+#6 NumClientConnectLicense int[1] = 25377384
+#7 NumUserCreationLicense int[1] = 55553384
+#8 SubscriptionExpires int64[1] = 26224504984305665
+#9 SystemExpires int64[1] = 5843681902854145
+#10 SystemId int64[1] = 60964030952505345
+#11 ReleaseDate int64[1] = 27294629539872769
+bytes=422 sha1=91c43ec62d35c5b792b982d37008f87ee20ed6e1
+[in-out-in-out]
+same

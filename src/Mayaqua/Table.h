@@ -89,7 +89,6 @@ void FreeLangList(LIST *o);
 LANGLIST *GetBestLangByName(LIST *o, char *name);
 LANGLIST *GetBestLangByLcid(LIST *o, UINT lcid);
 LANGLIST *GetBestLangForCurrentEnvironment(LIST *o);
-LANGLIST *GetLangById(LIST *o, UINT id);
 
 bool LoadLangConfig(wchar_t *filename, char *str, UINT str_size);
 bool LoadLangConfigCurrentDir(char *str, UINT str_size);
@@ -98,9 +97,6 @@ bool SaveLangConfigCurrentDir(char *str);
 
 void GetCurrentLang(LANGLIST *e);
 UINT GetCurrentLangId();
-
-void GetCurrentOsLang(LANGLIST *e);
-UINT GetCurrentOsLangId();
 
 #endif	// TABLE_H
 

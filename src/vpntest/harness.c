@@ -16,10 +16,13 @@
 // - The [PASS]/[FAIL] lines carry no timing values: timings are on "TIME <name> <n> ms" and
 //   "BENCH <name> <value> <unit>" lines that a log diff can filter out.
 //   "HARNESS GOLDEN MODE update|compare" tells whether the golden files were compared.
+// - The admin RPC Pack goldens (golden family "pack", harness_pack.c) run right after the vpncmd
+//   goldens, while the sessions and the cascade are up. harness_int.h holds the shared types.
 // - Files left after a run: the server_log, security_log and packet_log folders (as in the "s"
 //   mode). The configuration file and its backup folder are deleted at the start and at the end.
 
 #include "harness.h"
+#include "harness_int.h"
 
 #include "Cedar/Account.h"
 #include "Cedar/Admin.h"
@@ -44,22 +47,6 @@
 #include "Mayaqua/Tick64.h"
 
 #include <stdio.h>
-
-// Fixed scenario
-#define	HARNESS_PORT				39555				// Test listener (never 443; below the dynamic port range)
-#define	HARNESS_HUB_A				"HARNESS_A"
-#define	HARNESS_HUB_B				"HARNESS_B"
-#define	HARNESS_LINK_NAME			L"HARNESS_CASCADE"
-#define	HARNESS_LINK_USER			"harness_cascade"
-#define	HARNESS_USER_A				"tester_a"
-#define	HARNESS_USER_B				"tester_b"
-#define	HARNESS_PASSWORD			"Harness-Pass-1"
-#define	HARNESS_CONFIG_FILE			"$vpn_harness.config"
-#define	HARNESS_CONFIG_BACKUP_DIR	L"$backup.vpn_harness.config"	// Named by BackupCfgWEx after HARNESS_CONFIG_FILE
-#define	HARNESS_VPNCMD_OUT			"@harness_vpncmd.tmp"
-#define	HARNESS_FRAME_SIZE			96
-#define	HARNESS_ETHERTYPE_HI		0x88				// EtherType 0x88B5 (IEEE local experimental)
-#define	HARNESS_ETHERTYPE_LO		0xB5
 
 // Time bounds (milliseconds)
 #define	HARNESS_LISTEN_TIMEOUT		5000				// Test listener bound (the listener retries every 2 s)
@@ -101,35 +88,6 @@ typedef struct HARNESS_FRAME
 	UCHAR *Data;
 	UINT Size;
 } HARNESS_FRAME;
-
-// Test packet adapter: injects queued frames into a hub and records the frames the hub delivers
-typedef struct HARNESS_PA
-{
-	char Name[64];
-	LOCK *Lock;
-	QUEUE *SendQueue;			// HARNESS_FRAME * waiting to be handed to the session
-	LIST *RecvList;				// HARNESS_FRAME * received from the hub (when Record is true)
-	EVENT *RecvEvent;			// Set after a batch of received frames
-	EVENT *SpaceEvent;			// Set when the send queue drains
-	bool Record;				// Keep received frames (false: count only)
-	bool Pending;				// Frames received since the last RecvEvent
-	volatile bool Ready;		// PA Init has been called: the session is established
-	UINT64 NumRecv;				// Received frames
-	UINT64 RecvBytes;			// Received bytes
-	SESSION *Session;			// Client session using this adapter
-} HARNESS_PA;
-
-// One harness run
-typedef struct HARNESS
-{
-	SERVER *Server;				// In-process server
-	CEDAR *ClientCedar;			// Cedar of the admin RPC and of the test sessions
-	RPC *Rpc;					// Admin RPC (same client API as vpncmd)
-	HARNESS_PA *PaA;			// Test session on HARNESS_A
-	HARNESS_PA *PaB;			// Test session on HARNESS_B
-	char *OldConfigName;		// SERVER_CONFIG_FILE_NAME before the run
-	UINT NumFail;				// Failed checks
-} HARNESS;
 
 // vpncmd command captured as a golden output
 typedef struct HARNESS_VPNCMD
@@ -270,15 +228,10 @@ static UCHAR harness_mac_a[6] = {0x02, 0x42, 0x55, 0x52, 0x00, 0x0A};
 static UCHAR harness_mac_b[6] = {0x02, 0x42, 0x55, 0x52, 0x00, 0x0B};
 static UCHAR harness_mac_broadcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
-static bool HarnessCheck(HARNESS *h, bool ok, char *what);
-static bool HarnessCheckErr(HARNESS *h, UINT err, char *what);
 static void HarnessStep(HARNESS *h, UINT err, char *what, bool check);
-static void HarnessSetPhase(char *phase, char *detail);
 static void HarnessWatchdogThread(THREAD *thread, void *param);
 static HARNESS_WATCHDOG *HarnessStartWatchdog(char *test_name, UINT limit);
 static void HarnessStopWatchdog(HARNESS_WATCHDOG *w);
-static char *HarnessUniToUtf8(wchar_t *s);
-static char *HarnessBufToStr(BUF *b);
 static char *HarnessSkipBom(char *s);
 static LIST *HarnessSplitLines(char *text);
 static void HarnessFreeLines(LIST *o);
@@ -311,7 +264,6 @@ static bool HarnessCreateHub(HARNESS *h, char *name);
 static bool HarnessCreateUser(HARNESS *h, char *hubname, char *username, wchar_t *realname);
 static bool HarnessCreateLink(HARNESS *h);
 static bool HarnessWaitLink(HARNESS *h, UINT timeout);
-static bool HarnessFindSession(HARNESS *h, char *hubname, char *username, bool link_mode, char *name, UINT name_size);
 static bool HarnessWaitSessionListed(HARNESS *h, char *hubname, char *username, bool link_mode, char *name, UINT name_size);
 static bool HarnessWaitSession(HARNESS *h, HARNESS_PA *p, UINT timeout);
 static bool HarnessSetup(HARNESS *h);
@@ -333,9 +285,7 @@ static bool HarnessHasRandomMac(char *s);
 static char *HarnessNormalizeCell(char *s);
 static char *HarnessNormalizeVpncmd(HARNESS_NORM *n, BUF *raw);
 static BUF *HarnessRunVpncmd(HARNESS *h, HARNESS_VPNCMD *v);
-static bool HarnessDirHasFiles(char *dir);
 static void HarnessGetDirs(char *out_dir, UINT out_size, char *golden_dir, UINT golden_size, bool *update);
-static void HarnessCompareGolden(HARNESS *h, char *out_dir, char *golden_dir, char *file_name, char *actual, bool update);
 static void HarnessCheckStaleGolden(HARNESS *h, char *golden_dir);
 static void HarnessGolden(HARNESS *h);
 static bool HarnessIsVolatileConfigName(char *name, bool is_uint64);
@@ -355,7 +305,7 @@ static void HarnessBenchPack(HARNESS *h);
 // Reporting and text helpers
 
 // Print a check result and count the failures
-static bool HarnessCheck(HARNESS *h, bool ok, char *what)
+bool HarnessCheck(HARNESS *h, bool ok, char *what)
 {
 	Print("  [%s] %s\n", ok ? "PASS" : "FAIL", what);
 
@@ -368,7 +318,7 @@ static bool HarnessCheck(HARNESS *h, bool ok, char *what)
 }
 
 // Check the result of an admin RPC call
-static bool HarnessCheckErr(HARNESS *h, UINT err, char *what)
+bool HarnessCheckErr(HARNESS *h, UINT err, char *what)
 {
 	char tmp[MAX_SIZE];
 
@@ -399,7 +349,7 @@ static void HarnessStep(HARNESS *h, UINT err, char *what, bool check)
 // Watchdog
 
 // Record the current phase for the watchdog message (phase and detail must be static strings)
-static void HarnessSetPhase(char *phase, char *detail)
+void HarnessSetPhase(char *phase, char *detail)
 {
 	harness_phase_detail = (detail != NULL ? detail : "");
 	harness_phase = phase;
@@ -466,7 +416,7 @@ static void HarnessStopWatchdog(HARNESS_WATCHDOG *w)
 }
 
 // Convert a Unicode string into a newly allocated UTF-8 string
-static char *HarnessUniToUtf8(wchar_t *s)
+char *HarnessUniToUtf8(wchar_t *s)
 {
 	UINT size;
 	char *ret;
@@ -484,7 +434,7 @@ static char *HarnessUniToUtf8(wchar_t *s)
 }
 
 // Copy a buffer into a newly allocated NUL-terminated string
-static char *HarnessBufToStr(BUF *b)
+char *HarnessBufToStr(BUF *b)
 {
 	char *ret;
 
@@ -1432,7 +1382,7 @@ static bool HarnessWaitLink(HARNESS *h, UINT timeout)
 }
 
 // Find a session through EnumSession: by user name, or the local cascade session (link_mode)
-static bool HarnessFindSession(HARNESS *h, char *hubname, char *username, bool link_mode, char *name, UINT name_size)
+bool HarnessFindSession(HARNESS *h, char *hubname, char *username, bool link_mode, char *name, UINT name_size)
 {
 	RPC_ENUM_SESSION t;
 	UINT i;
@@ -2321,7 +2271,7 @@ static BUF *HarnessRunVpncmd(HARNESS *h, HARNESS_VPNCMD *v)
 }
 
 // Whether a directory contains at least one file
-static bool HarnessDirHasFiles(char *dir)
+bool HarnessDirHasFiles(char *dir)
 {
 	DIRLIST *d = EnumDir(dir);
 	UINT i;
@@ -2388,8 +2338,53 @@ static void HarnessGetDirs(char *out_dir, UINT out_size, char *golden_dir, UINT 
 	}
 }
 
+// Output and golden directories of another golden family (for example "pack") and its update mode: the output
+// directory is <harness output directory>/<family>, the golden directory is the sibling <family> of the harness
+// golden directory (tests/golden/<family>). Update mode when that directory has no file or RANZ_UPDATE_GOLDEN=1.
+void HarnessGetFamilyDirs(char *family, char *out_dir, UINT out_size, char *golden_dir, UINT golden_size, bool *update)
+{
+	char exe_dir[MAX_SIZE];
+	char tmp[MAX_SIZE];
+	char path[MAX_SIZE];
+
+	GetExeDir(exe_dir, sizeof(exe_dir));
+
+	// RANZ_HARNESS_OUT overrides <exe dir>/harness-out, as for the harness family
+	if (GetEnv("RANZ_HARNESS_OUT", tmp, sizeof(tmp)) && IsEmptyStr(tmp) == false)
+	{
+		Format(out_dir, out_size, "%s/%s", tmp, family);
+	}
+	else
+	{
+		Format(out_dir, out_size, "%s/harness-out/%s", exe_dir, family);
+	}
+
+	// RANZ_GOLDEN_DIR names the harness family directory: the family directory is its sibling
+	if (GetEnv("RANZ_GOLDEN_DIR", tmp, sizeof(tmp)) && IsEmptyStr(tmp) == false)
+	{
+		Format(path, sizeof(path), "%s/../%s", tmp, family);
+	}
+	else
+	{
+		Format(path, sizeof(path), "%s/../tests/golden/%s", exe_dir, family);
+	}
+	NormalizePath(golden_dir, golden_size, path);
+
+	*update = false;
+
+	if (GetEnv("RANZ_UPDATE_GOLDEN", tmp, sizeof(tmp)) && StrCmp(tmp, "1") == 0)
+	{
+		*update = true;
+	}
+
+	if (HarnessDirHasFiles(golden_dir) == false)
+	{
+		*update = true;
+	}
+}
+
 // Write the actual output, then compare it with the golden file (or print it in update mode)
-static void HarnessCompareGolden(HARNESS *h, char *out_dir, char *golden_dir, char *file_name, char *actual, bool update)
+void HarnessCompareGolden(HARNESS *h, char *out_dir, char *golden_dir, char *file_name, char *actual, bool update)
 {
 	char path[MAX_SIZE];
 	char tmp[MAX_SIZE];
@@ -3113,6 +3108,8 @@ void harness_test(UINT num, char **arg)
 		HarnessSetPhase("frames", NULL);
 		HarnessFrames(h);
 		HarnessGolden(h);
+		HarnessSetPhase("pack", NULL);
+		HarnessPackGolden(h);
 		HarnessSetPhase("config", NULL);
 		HarnessConfigApiRoundTrip(h);
 	}
