@@ -254,8 +254,20 @@ function Resolve-Bins {
         $dir = Join-Path $WorkDir 'bin'
         if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
         New-Item -ItemType Directory -Force $dir | Out-Null
+        # 'gh run download -n <name>' without a run id takes the first artifact in the API listing,
+        # which is ordered by artifact id, not by time, and can be a stale one. Pick the newest by date.
+        $rid = $RunId
+        if (-not $rid) {
+            $raw = & $gh.Source api "repos/$Repo/actions/artifacts?name=$ArtifactName&per_page=100" 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                try {
+                    $best = @((($raw -join "`n") | ConvertFrom-Json).artifacts | Where-Object { -not $_.expired } | Sort-Object { [datetime]$_.created_at } -Descending) | Select-Object -First 1
+                    if ($best) { $rid = [string]$best.workflow_run.id; Say "newest artifact: id=$($best.id) run=$rid created=$($best.created_at) branch=$($best.workflow_run.head_branch)" }
+                } catch { Warn "could not read the artifact list: $($_.Exception.Message)" }
+            } else { Warn "gh api failed (exit $LASTEXITCODE); falling back to gh's own choice" }
+        }
         $a = @('run', 'download')
-        if ($RunId) { $a += $RunId }
+        if ($rid) { $a += $rid }
         $a += @('-R', $Repo, '-n', $ArtifactName, '-D', $dir)
         Say "gh $($a -join ' ')"
         $o = Invoke-Capture $gh.Source $a
