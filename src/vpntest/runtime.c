@@ -567,7 +567,9 @@ void dns_test(UINT num, char **arg)
 	RtDnsCheckImmediate(&ctx, RT_DNS_IP6_LITERAL, &lit6, NULL, NULL, "the IPv6 literal");
 
 	// The immediate answer comes before the cancel flag is read
+	RtDnsCheckImmediate(&ctx, "localhost", &local6, &local4, &cancel, "\"localhost\", cancel flag set");
 	RtDnsCheckImmediate(&ctx, RT_DNS_IP4_LITERAL, NULL, &lit4, &cancel, "the IPv4 literal, cancel flag set");
+	RtDnsCheckImmediate(&ctx, RT_DNS_IP6_LITERAL, &lit6, NULL, &cancel, "the IPv6 literal, cancel flag set");
 
 	// The single-address forms: GetIPEx prefers IPv6, GetIP4Ex and GetIP6Ex pick their family
 	ret = GetIPEx(&ip, "localhost", RT_DNS_IMMEDIATE_TIMEOUT, NULL);

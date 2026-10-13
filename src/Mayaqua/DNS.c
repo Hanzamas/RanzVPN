@@ -460,6 +460,7 @@ void DnsResolver(THREAD *t, void *param)
 
 	// getaddrinfo() took the name in the ANSI code page: convert it the same way
 	int ret = EAI_FAIL;
+	bool converted = false;
 	ADDRINFOW *results = NULL;
 	const int hostname_len = MultiByteToWideChar(CP_ACP, 0, resolver->Hostname, -1, NULL, 0);
 	if (hostname_len > 0)
@@ -467,12 +468,17 @@ void DnsResolver(THREAD *t, void *param)
 		wchar_t *hostname_w = Malloc(sizeof(wchar_t) * (UINT)hostname_len);
 		if (MultiByteToWideChar(CP_ACP, 0, resolver->Hostname, -1, hostname_w, hostname_len) == hostname_len)
 		{
+			converted = true;
 			ret = GetAddrInfoW(hostname_w, NULL, &hints, &results);
 		}
 		Free(hostname_w);
 	}
 
-	if (ret == 0)
+	if (converted == false)
+	{
+		Debug("DnsResolver(): MultiByteToWideChar() failed to convert the host name!\n");
+	}
+	else if (ret == 0)
 	{
 		bool ipv6_ok = false;
 		bool ipv4_ok = false;
@@ -630,18 +636,19 @@ void DnsResolverReverse(THREAD *t, void *param)
 
 	char tmp[NI_MAXHOST];
 	wchar_t tmp_w[NI_MAXHOST];
-	int ret = GetNameInfoW((struct sockaddr *)&in, sizeof(in), tmp_w, sizeof(tmp_w) / sizeof(tmp_w[0]), NULL, 0, NI_NAMEREQD);
-
-	// getnameinfo() returned the name in the ANSI code page: convert it the same way
-	if (ret == 0 && WideCharToMultiByte(CP_ACP, 0, tmp_w, -1, tmp, sizeof(tmp), NULL, NULL) == 0)
-	{
-		ret = EAI_FAIL;
-	}
-
+	const int ret = GetNameInfoW((struct sockaddr *)&in, sizeof(in), tmp_w, sizeof(tmp_w) / sizeof(tmp_w[0]), NULL, 0, NI_NAMEREQD);
 	if (ret == 0)
 	{
-		resolver->Hostname = CopyStr(tmp);
-		resolver->OK = true;
+		// getnameinfo() returned the name in the ANSI code page: convert it the same way
+		if (WideCharToMultiByte(CP_ACP, 0, tmp_w, -1, tmp, sizeof(tmp), NULL, NULL) != 0)
+		{
+			resolver->Hostname = CopyStr(tmp);
+			resolver->OK = true;
+		}
+		else
+		{
+			Debug("DnsResolverReverse(): WideCharToMultiByte() failed with error %u!\n", GetLastError());
+		}
 	}
 	else if (ret != EAI_NONAME)
 	{
