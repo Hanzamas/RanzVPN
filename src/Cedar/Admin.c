@@ -6022,57 +6022,34 @@ void FreeRpcAcList(RPC_AC_LIST *t)
 }
 
 // RPC_ENUM_CRL
+static const RPC_FIELD rpc_enum_crl_item_fields[] =
+{
+	RPC_ROW_INT(RPC_ENUM_CRL_ITEM, Key, "Key"),
+	RPC_ROW_UNISTR(RPC_ENUM_CRL_ITEM, CrlInfo, "CrlInfo"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_crl_item_table, RPC_ENUM_CRL_ITEM, rpc_enum_crl_item_fields);
+
+static const RPC_FIELD rpc_enum_crl_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_CRL, HubName, "HubName"),
+	RPC_ROW_COUNT(RPC_ENUM_CRL, NumItem),
+	RPC_ROW_ARRAY(RPC_ENUM_CRL, Items, NumItem, &rpc_enum_crl_item_table, "Key", RPC_FF_READ_NUMITEM),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_crl_table, RPC_ENUM_CRL, rpc_enum_crl_fields);
+
 void InRpcEnumCrl(RPC_ENUM_CRL *t, PACK *p)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_ENUM_CRL));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->NumItem = PackGetInt(p, "NumItem");
-
-	t->Items = ZeroMalloc(sizeof(RPC_ENUM_CRL_ITEM) * t->NumItem);
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_ENUM_CRL_ITEM *e = &t->Items[i];
-
-		e->Key = PackGetIntEx(p, "Key", i);
-		PackGetUniStrEx(p, "CrlInfo", e->CrlInfo, sizeof(e->CrlInfo), i);
-	}
+	RpcFieldIn(&rpc_enum_crl_table, t, p);
 }
 void OutRpcEnumCrl(PACK *p, RPC_ENUM_CRL *t)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddInt(p, "NumItem", t->NumItem);
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_ENUM_CRL_ITEM *e = &t->Items[i];
-
-		PackAddIntEx(p, "Key", e->Key, i, t->NumItem);
-		PackAddUniStrEx(p, "CrlInfo", e->CrlInfo, i, t->NumItem);
-	}
+	RpcFieldOut(&rpc_enum_crl_table, p, t);
 }
 void FreeRpcEnumCrl(RPC_ENUM_CRL *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Items);
+	RpcFieldFree(&rpc_enum_crl_table, t);
 }
 
 // RPC_CRL
@@ -6795,55 +6772,69 @@ void OutRpcBridgeSupport(PACK *p, RPC_BRIDGE_SUPPORT *t)
 }
 
 // RPC_ADD_ACCESS
+// ACCESS entry, written and read by the hand-written ACCESS functions: as
+// the single entry of a top-level row (index 0 of 1), or as an array item
+static void RpcAccessOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	ACCESS *a = (ACCESS *)(((UCHAR *)base) + f->Offset);
+
+	if (total == 0)
+	{
+		OutRpcAccess(p, a);
+	}
+	else
+	{
+		OutRpcAccessEx(p, a, index, total);
+	}
+}
+static void RpcAccessIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	ACCESS *a = (ACCESS *)(((UCHAR *)base) + f->Offset);
+
+	if (total == 0)
+	{
+		InRpcAccess(a, p);
+	}
+	else
+	{
+		InRpcAccessEx(a, p, index);
+	}
+}
+static const RPC_HOOK rpc_access_hook = { RpcAccessOut, RpcAccessIn, NULL };
+
+static const RPC_FIELD rpc_add_access_fields[] =
+{
+	RPC_ROW_STR(RPC_ADD_ACCESS, HubName, "HubName"),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_ADD_ACCESS, Access, NULL, 0, &rpc_access_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_add_access_table, RPC_ADD_ACCESS, rpc_add_access_fields);
+
 void InRpcAddAccess(RPC_ADD_ACCESS *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_ADD_ACCESS));
-
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	InRpcAccess(&t->Access, p);
+	RpcFieldIn(&rpc_add_access_table, t, p);
 }
 void OutRpcAddAccess(PACK *p, RPC_ADD_ACCESS *t)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	OutRpcAccess(p, &t->Access);
+	RpcFieldOut(&rpc_add_access_table, p, t);
 }
 
 // RPC_DELETE_ACCESS
+static const RPC_FIELD rpc_delete_access_fields[] =
+{
+	RPC_ROW_STR(RPC_DELETE_ACCESS, HubName, "HubName"),
+	RPC_ROW_INT(RPC_DELETE_ACCESS, Id, "Id"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_delete_access_table, RPC_DELETE_ACCESS, rpc_delete_access_fields);
+
 void InRpcDeleteAccess(RPC_DELETE_ACCESS *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_DELETE_ACCESS));
-
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->Id = PackGetInt(p, "Id");
+	RpcFieldIn(&rpc_delete_access_table, t, p);
 }
 void OutRpcDeleteAccess(PACK *p, RPC_DELETE_ACCESS *t)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddInt(p, "Id", t->Id);
+	RpcFieldOut(&rpc_delete_access_table, p, t);
 }
 
 
@@ -7398,156 +7389,113 @@ void OutRpcHubLog(PACK *p, RPC_HUB_LOG *t)
 }
 
 // RPC_HUB_ADD_CA
+// Certificate of a CA row: PackAddX, PackGetX, FreeX
+static void RpcHubCaCertOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	PackAddX(p, f->Key, *((X **)(((UCHAR *)base) + f->Offset)));
+}
+static void RpcHubCaCertIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	*((X **)(((UCHAR *)base) + f->Offset)) = PackGetX(p, f->Key);
+}
+static void RpcHubCaCertFree(const RPC_FIELD *f, void *base)
+{
+	FreeX(*((X **)(((UCHAR *)base) + f->Offset)));
+}
+static const RPC_HOOK rpc_hub_ca_cert_hook = { RpcHubCaCertOut, RpcHubCaCertIn, RpcHubCaCertFree };
+
+static const RPC_FIELD rpc_hub_add_ca_fields[] =
+{
+	RPC_ROW_STR(RPC_HUB_ADD_CA, HubName, "HubName"),
+	RPC_ROW_HOOK(RPC_FT_X, RPC_HUB_ADD_CA, Cert, "Cert", 0, &rpc_hub_ca_cert_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_hub_add_ca_table, RPC_HUB_ADD_CA, rpc_hub_add_ca_fields);
+
 void InRpcHubAddCa(RPC_HUB_ADD_CA *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_HUB_ADD_CA));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->Cert = PackGetX(p, "Cert");
+	RpcFieldIn(&rpc_hub_add_ca_table, t, p);
 }
 void OutRpcHubAddCa(PACK *p, RPC_HUB_ADD_CA *t)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddX(p, "Cert", t->Cert);
+	RpcFieldOut(&rpc_hub_add_ca_table, p, t);
 }
 void FreeRpcHubAddCa(RPC_HUB_ADD_CA *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	FreeX(t->Cert);
+	RpcFieldFree(&rpc_hub_add_ca_table, t);
 }
 
 // RPC_HUB_ENUM_CA
+static const RPC_FIELD rpc_hub_enum_ca_item_fields[] =
+{
+	RPC_ROW_INT(RPC_HUB_ENUM_CA_ITEM, Key, "Key"),
+	RPC_ROW_UNISTR(RPC_HUB_ENUM_CA_ITEM, SubjectName, "SubjectName"),
+	RPC_ROW_UNISTR(RPC_HUB_ENUM_CA_ITEM, IssuerName, "IssuerName"),
+	RPC_ROW_TIME64(RPC_HUB_ENUM_CA_ITEM, Expires, "Expires"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_hub_enum_ca_item_table, RPC_HUB_ENUM_CA_ITEM, rpc_hub_enum_ca_item_fields);
+
+static const RPC_FIELD rpc_hub_enum_ca_fields[] =
+{
+	RPC_ROW_STR(RPC_HUB_ENUM_CA, HubName, "HubName"),
+	RPC_ROW_ARRAY(RPC_HUB_ENUM_CA, Ca, NumCa, &rpc_hub_enum_ca_item_table, "Key", 0),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_hub_enum_ca_table, RPC_HUB_ENUM_CA, rpc_hub_enum_ca_fields);
+
 void InRpcHubEnumCa(RPC_HUB_ENUM_CA *t, PACK *p)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_HUB_ENUM_CA));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->NumCa = PackGetIndexCount(p, "Key");
-	t->Ca = ZeroMalloc(sizeof(RPC_HUB_ENUM_CA_ITEM) * t->NumCa);
-
-	for (i = 0;i < t->NumCa;i++)
-	{
-		RPC_HUB_ENUM_CA_ITEM *e = &t->Ca[i];
-
-		e->Key = PackGetIntEx(p, "Key", i);
-		PackGetUniStrEx(p, "SubjectName", e->SubjectName, sizeof(e->SubjectName), i);
-		PackGetUniStrEx(p, "IssuerName", e->IssuerName, sizeof(e->IssuerName), i);
-		e->Expires = PackGetInt64Ex(p, "Expires", i);
-	}
+	RpcFieldIn(&rpc_hub_enum_ca_table, t, p);
 }
 void OutRpcHubEnumCa(PACK *p, RPC_HUB_ENUM_CA *t)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-	PackAddStr(p, "HubName", t->HubName);
-
-	for (i = 0;i < t->NumCa;i++)
-	{
-		RPC_HUB_ENUM_CA_ITEM *e = &t->Ca[i];
-
-		PackAddIntEx(p, "Key", e->Key, i, t->NumCa);
-		PackAddUniStrEx(p, "SubjectName", e->SubjectName, i, t->NumCa);
-		PackAddUniStrEx(p, "IssuerName", e->IssuerName, i, t->NumCa);
-		PackAddTime64Ex(p, "Expires", e->Expires, i, t->NumCa);
-	}
+	RpcFieldOut(&rpc_hub_enum_ca_table, p, t);
 }
 void FreeRpcHubEnumCa(RPC_HUB_ENUM_CA *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Ca);
+	RpcFieldFree(&rpc_hub_enum_ca_table, t);
 }
 
 // RPC_HUB_GET_CA
+static const RPC_FIELD rpc_hub_get_ca_fields[] =
+{
+	RPC_ROW_STR(RPC_HUB_GET_CA, HubName, "HubName"),
+	RPC_ROW_INT(RPC_HUB_GET_CA, Key, "Key"),
+	RPC_ROW_HOOK(RPC_FT_X, RPC_HUB_GET_CA, Cert, "Cert", 0, &rpc_hub_ca_cert_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_hub_get_ca_table, RPC_HUB_GET_CA, rpc_hub_get_ca_fields);
+
 void InRpcHubGetCa(RPC_HUB_GET_CA *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_HUB_GET_CA));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->Key = PackGetInt(p, "Key");
-	t->Cert = PackGetX(p, "Cert");
+	RpcFieldIn(&rpc_hub_get_ca_table, t, p);
 }
 void OutRpcHubGetCa(PACK *p, RPC_HUB_GET_CA *t)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddInt(p, "Key", t->Key);
-	PackAddX(p, "Cert", t->Cert);
+	RpcFieldOut(&rpc_hub_get_ca_table, p, t);
 }
 void FreeRpcHubGetCa(RPC_HUB_GET_CA *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	FreeX(t->Cert);
+	RpcFieldFree(&rpc_hub_get_ca_table, t);
 }
 
 // RPC_HUB_DELETE_CA
+static const RPC_FIELD rpc_hub_delete_ca_fields[] =
+{
+	RPC_ROW_STR(RPC_HUB_DELETE_CA, HubName, "HubName"),
+	RPC_ROW_INT(RPC_HUB_DELETE_CA, Key, "Key"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_hub_delete_ca_table, RPC_HUB_DELETE_CA, rpc_hub_delete_ca_fields);
+
 void InRpcHubDeleteCa(RPC_HUB_DELETE_CA *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_HUB_DELETE_CA));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->Key = PackGetInt(p, "Key");
+	RpcFieldIn(&rpc_hub_delete_ca_table, t, p);
 }
 void OutRpcHubDeleteCa(PACK *p, RPC_HUB_DELETE_CA *t)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddInt(p, "Key", t->Key);
+	RpcFieldOut(&rpc_hub_delete_ca_table, p, t);
 }
 
 // RPC_CREATE_LINK
@@ -7925,53 +7873,32 @@ void OutRpcAccess(PACK *p, ACCESS *a)
 }
 
 // RPC_ENUM_ACCESS_LIST
+static const RPC_FIELD rpc_enum_access_list_item_fields[] =
+{
+	RPC_ROW_WHOLE(ACCESS, NULL, 0, &rpc_access_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_access_list_item_table, ACCESS, rpc_enum_access_list_item_fields);
+
+static const RPC_FIELD rpc_enum_access_list_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_ACCESS_LIST, HubName, "HubName"),
+	RPC_ROW_ARRAY(RPC_ENUM_ACCESS_LIST, Accesses, NumAccess, &rpc_enum_access_list_item_table, "Protocol", 0),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_access_list_table, RPC_ENUM_ACCESS_LIST, rpc_enum_access_list_fields);
+
 void InRpcEnumAccessList(RPC_ENUM_ACCESS_LIST *a, PACK *p)
 {
-	UINT i;
-	// Validate arguments
-	if (a == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(a, sizeof(RPC_ENUM_ACCESS_LIST));
-	PackGetStr(p, "HubName", a->HubName, sizeof(a->HubName));
-	a->NumAccess = PackGetIndexCount(p, "Protocol");
-	a->Accesses = ZeroMalloc(sizeof(ACCESS) * a->NumAccess);
-
-	for (i = 0;i < a->NumAccess;i++)
-	{
-		ACCESS *e = &a->Accesses[i];
-
-		InRpcAccessEx(e, p, i);
-	}
+	RpcFieldIn(&rpc_enum_access_list_table, a, p);
 }
 void OutRpcEnumAccessList(PACK *p, RPC_ENUM_ACCESS_LIST *a)
 {
-	UINT i;
-	// Validate arguments
-	if (a == NULL || p == NULL)
-	{
-		return;
-	}
-	PackAddStr(p, "HubName", a->HubName);
-
-	for (i = 0;i < a->NumAccess;i++)
-	{
-		ACCESS *e = &a->Accesses[i];
-
-		OutRpcAccessEx(p, e, i, a->NumAccess);
-	}
+	RpcFieldOut(&rpc_enum_access_list_table, p, a);
 }
 void FreeRpcEnumAccessList(RPC_ENUM_ACCESS_LIST *a)
 {
-	// Validate arguments
-	if (a == NULL)
-	{
-		return;
-	}
-
-	Free(a->Accesses);
+	RpcFieldFree(&rpc_enum_access_list_table, a);
 }
 
 // AUTHDATA
