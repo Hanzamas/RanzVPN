@@ -7729,227 +7729,237 @@ void OutRpcHubDeleteCa(PACK *p, RPC_HUB_DELETE_CA *t)
 }
 
 // RPC_CREATE_LINK
-void InRpcCreateLink(RPC_CREATE_LINK *t, PACK *p)
+static void RpcCreateLinkClientOptionOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
 {
-	BUF *b;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	OutRpcClientOption(p, *(CLIENT_OPTION **)((UCHAR *)base + f->Offset));
+}
+static void RpcCreateLinkClientOptionIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	CLIENT_OPTION **o = (CLIENT_OPTION **)((UCHAR *)base + f->Offset);
 
-	Zero(t, sizeof(RPC_CREATE_LINK));
-	PackGetStr(p, "HubName_Ex", t->HubName, sizeof(t->HubName));
-	t->Online = PackGetBool(p, "Online");
-	t->ClientOption = ZeroMalloc(sizeof(CLIENT_OPTION));
-	InRpcClientOption(t->ClientOption, p);
-	t->ClientAuth  = ZeroMalloc(sizeof(CLIENT_AUTH));
-	InRpcClientAuth(t->ClientAuth, p);
-	InRpcPolicy(&t->Policy, p);
+	*o = ZeroMalloc(sizeof(CLIENT_OPTION));
+	InRpcClientOption(*o, p);
+}
+static void RpcCreateLinkClientOptionFree(const RPC_FIELD *f, void *base)
+{
+	Free(*(CLIENT_OPTION **)((UCHAR *)base + f->Offset));
+}
+static const RPC_HOOK rpc_create_link_client_option_hook = {RpcCreateLinkClientOptionOut, RpcCreateLinkClientOptionIn, RpcCreateLinkClientOptionFree};
 
-	t->CheckServerCert = PackGetBool(p, "CheckServerCert");
-	t->AddDefaultCA = PackGetBool(p, "AddDefaultCA");
-	b = PackGetBuf(p, "ServerCert");
-	if (b != NULL)
+static void RpcCreateLinkClientAuthOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	OutRpcClientAuth(p, *(CLIENT_AUTH **)((UCHAR *)base + f->Offset));
+}
+static void RpcCreateLinkClientAuthIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	CLIENT_AUTH **a = (CLIENT_AUTH **)((UCHAR *)base + f->Offset);
+
+	*a = ZeroMalloc(sizeof(CLIENT_AUTH));
+	InRpcClientAuth(*a, p);
+}
+static void RpcCreateLinkClientAuthFree(const RPC_FIELD *f, void *base)
+{
+	CiFreeClientAuth(*(CLIENT_AUTH **)((UCHAR *)base + f->Offset));
+}
+static const RPC_HOOK rpc_create_link_client_auth_hook = {RpcCreateLinkClientAuthOut, RpcCreateLinkClientAuthIn, RpcCreateLinkClientAuthFree};
+
+static void RpcCreateLinkPolicyOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	OutRpcPolicy(p, (POLICY *)((UCHAR *)base + f->Offset));
+}
+static void RpcCreateLinkPolicyIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcPolicy((POLICY *)((UCHAR *)base + f->Offset), p);
+}
+static const RPC_HOOK rpc_create_link_policy_hook = {RpcCreateLinkPolicyOut, RpcCreateLinkPolicyIn, NULL};
+
+// Server certificate as DER data (read without the PEM fallback of PackGetX)
+static void RpcCreateLinkServerCertOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	X *x = *(X **)((UCHAR *)base + f->Offset);
+
+	if (x != NULL)
 	{
-		t->ServerCert = BufToX(b, false);
+		BUF *b = XToBuf(x, false);
+		PackAddBuf(p, f->Key, b);
 		FreeBuf(b);
 	}
+}
+static void RpcCreateLinkServerCertIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	BUF *b = PackGetBuf(p, f->Key);
+
+	if (b != NULL)
+	{
+		*(X **)((UCHAR *)base + f->Offset) = BufToX(b, false);
+		FreeBuf(b);
+	}
+}
+static void RpcCreateLinkServerCertFree(const RPC_FIELD *f, void *base)
+{
+	X *x = *(X **)((UCHAR *)base + f->Offset);
+
+	if (x != NULL)
+	{
+		FreeX(x);
+	}
+}
+static const RPC_HOOK rpc_create_link_server_cert_hook = {RpcCreateLinkServerCertOut, RpcCreateLinkServerCertIn, RpcCreateLinkServerCertFree};
+
+static const RPC_FIELD rpc_create_link_fields[] =
+{
+	RPC_ROW_STR(RPC_CREATE_LINK, HubName, "HubName_Ex"),
+	RPC_ROW_BOOL(RPC_CREATE_LINK, Online, "Online"),
+	RPC_ROW_HOOK(RPC_FT_STRUCTPTR, RPC_CREATE_LINK, ClientOption, NULL, 0, &rpc_create_link_client_option_hook),
+	RPC_ROW_HOOK(RPC_FT_STRUCTPTR, RPC_CREATE_LINK, ClientAuth, NULL, 0, &rpc_create_link_client_auth_hook),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_CREATE_LINK, Policy, NULL, 0, &rpc_create_link_policy_hook),
+	RPC_ROW_BOOL(RPC_CREATE_LINK, CheckServerCert, "CheckServerCert"),
+	RPC_ROW_BOOL(RPC_CREATE_LINK, AddDefaultCA, "AddDefaultCA"),
+	RPC_ROW_HOOK(RPC_FT_X, RPC_CREATE_LINK, ServerCert, "ServerCert", 0, &rpc_create_link_server_cert_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_create_link_table, RPC_CREATE_LINK, rpc_create_link_fields);
+
+void InRpcCreateLink(RPC_CREATE_LINK *t, PACK *p)
+{
+	RpcFieldIn(&rpc_create_link_table, t, p);
 }
 void OutRpcCreateLink(PACK *p, RPC_CREATE_LINK *t)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName_Ex",t->HubName);
-	PackAddBool(p, "Online", t->Online);
-	OutRpcClientOption(p, t->ClientOption);
-	OutRpcClientAuth(p, t->ClientAuth);
-	OutRpcPolicy(p, &t->Policy);
-
-	PackAddBool(p, "CheckServerCert", t->CheckServerCert);
-	PackAddBool(p, "AddDefaultCA", t->AddDefaultCA);
-	if (t->ServerCert != NULL)
-	{
-		BUF *b;
-		b = XToBuf(t->ServerCert, false);
-		PackAddBuf(p, "ServerCert", b);
-		FreeBuf(b);
-	}
+	RpcFieldOut(&rpc_create_link_table, p, t);
 }
 void FreeRpcCreateLink(RPC_CREATE_LINK *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	if (t->ServerCert != NULL)
-	{
-		FreeX(t->ServerCert);
-	}
-	Free(t->ClientOption);
-	CiFreeClientAuth(t->ClientAuth);
+	RpcFieldFree(&rpc_create_link_table, t);
 }
 
 // RPC_ENUM_LINK
+// Hub name: "ConnectedHubName", or "TargetHubName" when it is missing
+static void RpcEnumLinkHubNameIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	char *s = (char *)((UCHAR *)base + f->Offset);
+
+	if (PackGetStrEx(p, f->Key, s, f->Size, index) == false)
+	{
+		PackGetStrEx(p, "TargetHubName", s, f->Size, index);
+	}
+}
+static const RPC_HOOK rpc_enum_link_hub_name_hook = {NULL, RpcEnumLinkHubNameIn, NULL};
+
+// "TargetHubName" is written last and read only by the fallback above
+static void RpcEnumLinkTargetHubNameIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+}
+static const RPC_HOOK rpc_enum_link_target_hub_name_hook = {NULL, RpcEnumLinkTargetHubNameIn, NULL};
+
+static const RPC_FIELD rpc_enum_link_item_fields[] =
+{
+	RPC_ROW_UNISTR(RPC_ENUM_LINK_ITEM, AccountName, "AccountName"),
+	RPC_ROW_HOOK(RPC_FT_STR, RPC_ENUM_LINK_ITEM, HubName, "ConnectedHubName", 0, &rpc_enum_link_hub_name_hook),
+	RPC_ROW_STR(RPC_ENUM_LINK_ITEM, Hostname, "Hostname"),
+	RPC_ROW_BOOL(RPC_ENUM_LINK_ITEM, Online, "Online"),
+	RPC_ROW_TIME64(RPC_ENUM_LINK_ITEM, ConnectedTime, "ConnectedTime"),
+	RPC_ROW_BOOL(RPC_ENUM_LINK_ITEM, Connected, "Connected"),
+	RPC_ROW_INT(RPC_ENUM_LINK_ITEM, LastError, "LastError"),
+	RPC_ROW_HOOK(RPC_FT_STR, RPC_ENUM_LINK_ITEM, HubName, "TargetHubName", RPC_FF_ALIAS, &rpc_enum_link_target_hub_name_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_link_item_table, RPC_ENUM_LINK_ITEM, rpc_enum_link_item_fields);
+
+static const RPC_FIELD rpc_enum_link_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_LINK, HubName, "HubName"),
+	RPC_ROW_ARRAY(RPC_ENUM_LINK, Links, NumLink, &rpc_enum_link_item_table, "AccountName", 0),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_link_table, RPC_ENUM_LINK, rpc_enum_link_fields);
+
 void InRpcEnumLink(RPC_ENUM_LINK *t, PACK *p)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_ENUM_LINK));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->NumLink = PackGetIndexCount(p, "AccountName");
-	t->Links = ZeroMalloc(sizeof(RPC_ENUM_LINK_ITEM) * t->NumLink);
-
-	for (i = 0;i < t->NumLink;i++)
-	{
-		RPC_ENUM_LINK_ITEM *e = &t->Links[i];
-
-		PackGetUniStrEx(p, "AccountName", e->AccountName, sizeof(e->AccountName), i);
-		PackGetStrEx(p, "Hostname", e->Hostname, sizeof(e->Hostname), i);
-		if (PackGetStrEx(p, "ConnectedHubName", e->HubName, sizeof(e->HubName), i) == false)
-		{
-			PackGetStrEx(p, "TargetHubName", e->HubName, sizeof(e->HubName), i);
-		}
-		e->Online = PackGetBoolEx(p, "Online", i);
-		e->ConnectedTime = PackGetInt64Ex(p, "ConnectedTime", i);
-		e->Connected = PackGetBoolEx(p, "Connected", i);
-		e->LastError = PackGetIntEx(p, "LastError", i);
-	}
+	RpcFieldIn(&rpc_enum_link_table, t, p);
 }
 void OutRpcEnumLink(PACK *p, RPC_ENUM_LINK *t)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-
-	for (i = 0;i < t->NumLink;i++)
-	{
-		RPC_ENUM_LINK_ITEM *e = &t->Links[i];
-
-		PackAddUniStrEx(p, "AccountName", e->AccountName, i, t->NumLink);
-		PackAddStrEx(p, "ConnectedHubName", e->HubName, i, t->NumLink);
-		PackAddStrEx(p, "Hostname", e->Hostname, i, t->NumLink);
-		PackAddBoolEx(p, "Online", e->Online, i, t->NumLink);
-		PackAddTime64Ex(p, "ConnectedTime", e->ConnectedTime, i, t->NumLink);
-		PackAddBoolEx(p, "Connected", e->Connected, i, t->NumLink);
-		PackAddIntEx(p, "LastError", e->LastError, i, t->NumLink);
-		PackAddStrEx(p, "TargetHubName", e->HubName, i, t->NumLink);
-	}
+	RpcFieldOut(&rpc_enum_link_table, p, t);
 }
 void FreeRpcEnumLink(RPC_ENUM_LINK *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Links);
+	RpcFieldFree(&rpc_enum_link_table, t);
 }
 
 // RPC_LINK_STATUS
+static void RpcLinkStatusStatusOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	OutRpcClientGetConnectionStatus(p, (RPC_CLIENT_GET_CONNECTION_STATUS *)((UCHAR *)base + f->Offset));
+}
+static void RpcLinkStatusStatusIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcClientGetConnectionStatus((RPC_CLIENT_GET_CONNECTION_STATUS *)((UCHAR *)base + f->Offset), p);
+}
+static void RpcLinkStatusStatusFree(const RPC_FIELD *f, void *base)
+{
+	CiFreeClientGetConnectionStatus((RPC_CLIENT_GET_CONNECTION_STATUS *)((UCHAR *)base + f->Offset));
+}
+static const RPC_HOOK rpc_link_status_status_hook = {RpcLinkStatusStatusOut, RpcLinkStatusStatusIn, RpcLinkStatusStatusFree};
+
+static const RPC_FIELD rpc_link_status_fields[] =
+{
+	RPC_ROW_STR(RPC_LINK_STATUS, HubName, "HubName_Ex"),
+	RPC_ROW_UNISTR(RPC_LINK_STATUS, AccountName, "AccountName"),
+	// The connection status adds "AccountName" again: the row above is written first and wins
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_LINK_STATUS, Status, NULL, 0, &rpc_link_status_status_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_link_status_table, RPC_LINK_STATUS, rpc_link_status_fields);
+
 void InRpcLinkStatus(RPC_LINK_STATUS *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_LINK_STATUS));
-	PackGetStr(p, "HubName_Ex", t->HubName, sizeof(t->HubName));
-	PackGetUniStr(p, "AccountName", t->AccountName, sizeof(t->AccountName));
-	InRpcClientGetConnectionStatus(&t->Status, p);
+	RpcFieldIn(&rpc_link_status_table, t, p);
 }
 void OutRpcLinkStatus(PACK *p, RPC_LINK_STATUS *t)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName_Ex", t->HubName);
-	PackAddUniStr(p, "AccountName", t->AccountName);
-	OutRpcClientGetConnectionStatus(p, &t->Status);
+	RpcFieldOut(&rpc_link_status_table, p, t);
 }
 void FreeRpcLinkStatus(RPC_LINK_STATUS *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	CiFreeClientGetConnectionStatus(&t->Status);
+	RpcFieldFree(&rpc_link_status_table, t);
 }
 
 // RPC_LINK
+static const RPC_FIELD rpc_link_fields[] =
+{
+	RPC_ROW_STR(RPC_LINK, HubName, "HubName"),
+	RPC_ROW_UNISTR(RPC_LINK, AccountName, "AccountName"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_link_table, RPC_LINK, rpc_link_fields);
+
 void InRpcLink(RPC_LINK *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_LINK));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	PackGetUniStr(p, "AccountName", t->AccountName, sizeof(t->AccountName));
+	RpcFieldIn(&rpc_link_table, t, p);
 }
 void OutRpcLink(PACK *p, RPC_LINK *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddUniStr(p, "AccountName", t->AccountName);
+	RpcFieldOut(&rpc_link_table, p, t);
 }
 
 // RPC_RENAME_LINK
+static const RPC_FIELD rpc_rename_link_fields[] =
+{
+	RPC_ROW_STR(RPC_RENAME_LINK, HubName, "HubName"),
+	RPC_ROW_UNISTR(RPC_RENAME_LINK, OldAccountName, "OldAccountName"),
+	RPC_ROW_UNISTR(RPC_RENAME_LINK, NewAccountName, "NewAccountName"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_rename_link_table, RPC_RENAME_LINK, rpc_rename_link_fields);
+
 void InRpcRenameLink(RPC_RENAME_LINK *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_RENAME_LINK));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	PackGetUniStr(p, "OldAccountName", t->OldAccountName, sizeof(t->OldAccountName));
-	PackGetUniStr(p, "NewAccountName", t->NewAccountName, sizeof(t->NewAccountName));
+	RpcFieldIn(&rpc_rename_link_table, t, p);
 }
 void OutRpcRenameLink(PACK *p, RPC_RENAME_LINK *t)
 {
-	// Validate arguments
-	if (p == NULL || t == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddUniStr(p, "OldAccountName", t->OldAccountName);
-	PackAddUniStr(p, "NewAccountName", t->NewAccountName);
+	RpcFieldOut(&rpc_rename_link_table, p, t);
 }
 
 // ACCESS
