@@ -10,7 +10,7 @@
 
 #include "MayaType.h"
 
-// MallocFast (not implemented)
+// No separate fast allocator: plain aliases
 #define	MallocFast		Malloc
 #define	ZeroMallocFast	ZeroMalloc
 
@@ -25,12 +25,11 @@
 #define	IS_NULL_POINTER(p)					(((p) == NULL) || ((POINTER_TO_UINT64(p) == (UINT64)sizeof(MEMTAG1))))
 #define	PTR_TO_PTR(p)						((void **)(&p))
 
-// Golden Ratio Prime
+// Golden ratio prime, from
 // From https://github.com/torvalds/linux/blob/88c5083442454e5e8a505b11fa16f32d2879651e/include/linux/hash.h
 #define GOLDEN_RATION_PRIME_U64				((UINT64)7046029254386353131ULL) // 0x61C8864680B583EB
 
 
-// Memory tag 1
 struct MEMTAG1
 {
 	UINT64 Magic;
@@ -38,13 +37,11 @@ struct MEMTAG1
 	bool ZeroFree;
 };
 
-// Memory tag 2
 struct MEMTAG2
 {
 	UINT64 Magic;
 };
 
-// Buffer
 struct BUF
 {
 	void *Buf;
@@ -53,7 +50,6 @@ struct BUF
 	UINT Current;
 };
 
-// FIFO
 struct FIFO
 {
 	REF *ref;
@@ -65,7 +61,6 @@ struct FIFO
 	bool fixed;
 };
 
-// List
 struct LIST
 {
 	REF *ref;
@@ -77,7 +72,6 @@ struct LIST
 	UINT64 Param1;
 };
 
-// Queue
 struct QUEUE
 {
 	REF *ref;
@@ -86,7 +80,6 @@ struct QUEUE
 	LOCK *lock;
 };
 
-// Stack
 struct SK
 {
 	REF *ref;
@@ -96,15 +89,12 @@ struct SK
 	bool no_compact;
 };
 
-// Macro
 #define	LIST_DATA(o, i)		(((o) != NULL) ? ((o)->p[(i)]) : NULL)
 #define	LIST_NUM(o)			(((o) != NULL) ? (o)->num_item : 0)
 #define	HASH_LIST_NUM(o)	(((o) != NULL) ? (o)->NumItems : 0)
 
-// Function pointer type to get a hash function
 typedef UINT (GET_HASH)(void *p);
 
-// Hash list
 struct HASH_LIST
 {
 	UINT Size;
@@ -117,7 +107,6 @@ struct HASH_LIST
 	LIST *AllList;
 };
 
-// Function prototype
 HASH_LIST *NewHashList(GET_HASH *get_hash_proc, COMPARE *compare_proc, UINT bits, bool make_list);
 void ReleaseHashList(HASH_LIST *h);
 void CleanupHashList(HASH_LIST *h);
@@ -287,5 +276,5 @@ void AppendBufStr(BUF *b, char *str);
 void InitCanaryRand();
 UCHAR *GetCanaryRand(UINT id);
 
-#endif	// MEMORY_H
+#endif
 
