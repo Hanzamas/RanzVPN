@@ -129,7 +129,6 @@ SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool 
 			break;
 		default:
 			*error_code = ERR_INTERNAL_ERROR;
-			Debug("WpcSockConnect(): Unknown proxy type: %u!\n", param->ProxyType);
 			return NULL;
 		}
 
@@ -137,7 +136,6 @@ SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool 
 
 		if (*error_code != ERR_NO_ERROR)
 		{
-			Debug("ClientConnectGetSocket(): Connection via proxy server failed with error %u\n", ret);
 			return NULL;
 		}
 

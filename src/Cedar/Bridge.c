@@ -295,9 +295,7 @@ void BrBridgeThread(THREAD *thread, void *param)
 	NoticeThreadInit(thread);
 
 	// Main procedure of the session
-	Debug("Bridge %s Start.\n", b->Name);
 	SessionMain(s);
-	Debug("Bridge %s Stop.\n", b->Name);
 
 	HLog(h, "LH_STOP_BRIDGE", name);
 

@@ -107,7 +107,6 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout
 							else
 							{
 								WHERE;
-								Debug("0x%x\n", hr);
 							}
 
 							pSetup->Release();

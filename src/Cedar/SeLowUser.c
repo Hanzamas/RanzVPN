@@ -41,20 +41,12 @@ void SuDeleteGarbageInfs()
 {
 	void *wow;
 	bool load_hive = false;
-	Debug("SuDeleteGarbageInfs()\n");
 
 	wow = MsDisableWow64FileSystemRedirection();
 
 	load_hive = SuLoadDriversHive();
-	Debug("SuLoadDriversHive: %u\n", load_hive);
 
 	SuDeleteGarbageInfsInner();
-
-	/*
-	if (load_hive)
-	{
-		Debug("SuUnloadDriversHive: %u\n", SuUnloadDriversHive());
-	}*/
 
 	MsRestoreWow64FileSystemRedirection(wow);
 }
@@ -194,7 +186,6 @@ bool SuInstallDriverInner(bool force)
 	if (force == false && current_sl_ver >= SL_VER)
 	{
 		// Newer version has already been installed
-		Debug("Newer SeLow is Installed. %u >= %u\n", current_sl_ver, SL_VER);
 		return true;
 	}
 
@@ -232,12 +223,9 @@ bool SuInstallDriverInner(bool force)
 		// Call the installer
 		if (InstallNdisProtocolDriver(dst_inf, L"SeLow", SL_USER_INSTALL_LOCK_TIMEOUT) == false)
 		{
-			Debug("InstallNdisProtocolDriver Error.\n");
 		}
 		else
 		{
-			Debug("InstallNdisProtocolDriver Ok.\n");
-
 			// Copy manually because there are cases where .sys file is not copied successfully for some reason
 			Debug("SuCopySysFile from %S to %s: ret = %u\n", src_sys, sys_fullpath, SuCopySysFile(src_sys, sys_fullpath));
 
@@ -253,10 +241,6 @@ bool SuInstallDriverInner(bool force)
 		}
 
 		MsFreeNoWarning(nw);
-	}
-	else
-	{
-		Debug("Fail Copying Files.\n");
 	}
 
 	if (ret)
@@ -563,12 +547,7 @@ SU_ADAPTER *SuOpenAdapter(SU *u, char *adapter_id)
 
 	if (h == INVALID_HANDLE_VALUE)
 	{
-		Debug("Create File %s failed. %u\n", filename, GetLastError());
 		return NULL;
-	}
-	else
-	{
-		Debug("Create File %s ok.\n", filename);
 	}
 
 	a = ZeroMalloc(sizeof(SU_ADAPTER));
@@ -587,8 +566,6 @@ SU_ADAPTER *SuOpenAdapter(SU *u, char *adapter_id)
 		SuCloseAdapter(a);
 		return NULL;
 	}
-
-	Debug("Event Name: %s\n", t.EventNameWin32);
 
 	// Get the event
 	a->hEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, t.EventNameWin32);
@@ -787,15 +764,11 @@ LABEL_RETRY:
 
 	if (h == INVALID_HANDLE_VALUE)
 	{
-		Debug("CreateFileA(%s) Failed.\n", SL_BASIC_DEVICE_FILENAME_WIN32);
-
 		// Start the service if it fails to start the device driver
 		if (flag == false)
 		{
 			if (MsStartService(SL_PROTOCOL_NAME) == false)
 			{
-				Debug("MsStartService(%s) Failed.\n", SL_PROTOCOL_NAME);
-
 				if (flag2 == false)
 				{
 					flag2 = true;
@@ -808,7 +781,6 @@ LABEL_RETRY:
 			}
 			else
 			{
-				Debug("MsStartService(%s) Ok.\n", SL_PROTOCOL_NAME);
 				flag = true;
 
 				goto LABEL_RETRY;
@@ -828,7 +800,6 @@ LABEL_RETRY:
 			u->AdapterInfoList.Signature != SL_SIGNATURE)
 		{
 			// Signature reception failure
-			Debug("Bad Signature.\n");
 
 			Free(u);
 			CloseHandle(h);
@@ -845,7 +816,6 @@ LABEL_RETRY:
 				u->AdapterInfoList.Signature != SL_SIGNATURE)
 			{
 				// Signature reception failure
-				Debug("Bad Signature.\n");
 
 				Free(u);
 				CloseHandle(h);
@@ -856,13 +826,10 @@ LABEL_RETRY:
 			if (u->AdapterInfoList.EnumCompleted)
 			{
 				// Complete enumeration
-				Debug("Bind Completed! %u\n", u->AdapterInfoList.EnumCompleted);
 				break;
 			}
 
 			// Incomplete enumeration
-			Debug("Waiting for Bind Complete.\n");
-
 			SleepThread(25);
 		}
 	}
