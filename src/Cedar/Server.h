@@ -228,22 +228,11 @@ struct SERVER_HUB_CREATE_HISTORY
 
 // Function prototype declaration
 SERVER *SiNewServer(bool bridge);
-SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_server);
 void SiReleaseServer(SERVER *s);
-void SiCleanupServer(SERVER *s);
 void StStartServer(bool bridge);
 void StStopServer();
-void SiInitConfiguration(SERVER *s);
-void SiFreeConfiguration(SERVER *s);
 UINT SiWriteConfigurationFile(SERVER *s);
-void SiLoadInitialConfiguration(SERVER *s);
-bool SiLoadConfigurationFile(SERVER *s);
-bool SiLoadConfigurationFileMain(SERVER *s, FOLDER *root);
-void SiInitDefaultServerCert(SERVER *s);
-void SiInitCipherName(SERVER *s);
-void SiGenerateDefaultCert(X **server_x, K **server_k);
 void SiGenerateDefaultCertEx(X **server_x, K **server_k, char *common_name);
-void SiInitListenerList(SERVER *s);
 void SiLockListenerList(SERVER *s);
 void SiUnlockListenerList(SERVER *s);
 bool SiAddListener(SERVER *s, UINT port, bool enabled);
@@ -251,149 +240,51 @@ bool SiAddListenerEx(SERVER *s, UINT port, bool enabled, bool disable_dos);
 bool SiEnableListener(SERVER *s, UINT port);
 bool SiDisableListener(SERVER *s, UINT port);
 bool SiDeleteListener(SERVER *s, UINT port);
-SERVER_LISTENER *SiGetListener(SERVER *s, UINT port);
-int CompareServerListener(void *p1, void *p2);
-void SiStopAllListener(SERVER *s);
-void SiInitDefaultHubList(SERVER *s);
 void SiSetDefaultHubOption(HUB_OPTION *o);
 FOLDER *SiWriteConfigurationToCfg(SERVER *s);
-bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root);
-void SiWriteLocalBridges(FOLDER *f, SERVER *s);
-void SiLoadLocalBridges(SERVER *s, FOLDER *f);
-void SiWriteLocalBridgeCfg(FOLDER *f, LOCALBRIDGE *br);
-void SiLoadLocalBridgeCfg(SERVER *s, FOLDER *f);
-void SiWriteListeners(FOLDER *f, SERVER *s);
-void SiLoadListeners(SERVER *s, FOLDER *f);
-void SiWriteListenerCfg(FOLDER *f, SERVER_LISTENER *r);
-void SiLoadListenerCfg(SERVER *s, FOLDER *f);
-void SiWriteServerCfg(FOLDER *f, SERVER *s);
-void SiLoadServerCfg(SERVER *s, FOLDER *f);
-void SiWriteGlobalParamsCfg(FOLDER *f);
-void SiLoadGlobalParamsCfg(FOLDER *f);
-void SiLoadGlobalParamItem(UINT id, UINT value);
-void SiWriteTraffic(FOLDER *parent, char *name, TRAFFIC *t);
-void SiWriteTrafficInner(FOLDER *parent, char *name, TRAFFIC_ENTRY *e);
-void SiLoadTrafficInner(FOLDER *parent, char *name, TRAFFIC_ENTRY *e);
-void SiLoadTraffic(FOLDER *parent, char *name, TRAFFIC *t);
-void SiSaverThread(THREAD *thread, void *param);
-void SiLoadLicenseManager(SERVER *s, FOLDER *f);
-void SiWriteLicenseManager(FOLDER *f, SERVER *s);
-void SiWriteHubs(FOLDER *f, SERVER *s);
-void SiLoadHubs(SERVER *s, FOLDER *f);
-void SiWriteHubCfg(FOLDER *f, HUB *h);
-void SiLoadHubCfg(SERVER *s, FOLDER *f, char *name);
-void SiLoadHubLogCfg(HUB_LOG *g, FOLDER *f);
-void SiWriteHubOptionCfg(FOLDER *f, HUB_OPTION *o);
-void SiWriteHubLogCfg(FOLDER *f, HUB_LOG *g);
-void SiWriteHubLogCfgEx(FOLDER *f, HUB_LOG *g, bool el_mode);
-void SiLoadHubOptionCfg(FOLDER *f, HUB_OPTION *o);
-void SiWriteHubLinks(FOLDER *f, HUB *h);
-void SiLoadHubLinks(HUB *h, FOLDER *f);
-void SiWriteHubAdminOptions(FOLDER *f, HUB *h);
-void SiLoadHubAdminOptions(HUB *h, FOLDER *f);
-void SiWriteHubLinkCfg(FOLDER *f, LINK *k);
-void SiLoadHubLinkCfg(FOLDER *f, HUB *h);
-void SiWriteHubAccessLists(FOLDER *f, HUB *h);
-void SiLoadHubAccessLists(HUB *h, FOLDER *f);
-void SiWriteHubAccessCfg(FOLDER *f, ACCESS *a);
-void SiLoadHubAccessCfg(HUB *h, FOLDER *f);
-void SiWriteHubDb(FOLDER *f, HUBDB *db, bool no_save_ac_list);
-void SiLoadHubDb(HUB *h, FOLDER *f);
-void SiWriteUserList(FOLDER *f, LIST *o);
-void SiLoadUserList(HUB *h, FOLDER *f);
-void SiWriteUserCfg(FOLDER *f, USER *u);
-void SiLoadUserCfg(HUB *h, FOLDER *f);
-void SiWriteGroupList(FOLDER *f, LIST *o);
-void SiLoadGroupList(HUB *h, FOLDER *f);
-void SiWriteGroupCfg(FOLDER *f, USERGROUP *g);
-void SiLoadGroupCfg(HUB *h, FOLDER *f);
-void SiWriteCertList(FOLDER *f, LIST *o);
-void SiLoadCertList(LIST *o, FOLDER *f);
-void SiWriteCrlList(FOLDER *f, LIST *o);
-void SiLoadCrlList(LIST *o, FOLDER *f);
-void SiWriteAcList(FOLDER *f, LIST *o);
-void SiLoadAcList(LIST *o, FOLDER *f);
-void SiWritePolicyCfg(FOLDER *f, POLICY *p, bool cascade_mode);
-void SiLoadPolicyCfg(POLICY *p, FOLDER *f);
 void SiRebootServerEx(bool bridge, bool reset_setting);
 void SiRebootServer(bool bridge);
-void SiRebootServerThread(THREAD *thread, void *param);
 void StInit();
 void StFree();
 int CmpLogFile(void *p1, void *p2);
 LIST *EnumLogFile(char *hubname);
-void EnumLogFileDir(LIST *o, char *dirname);
 void FreeEnumLogFile(LIST *o);
 bool CheckLogFileNameFromEnumList(LIST *o, char *name);
 void IncrementServerConfigRevision(SERVER *s);
 void GetServerProductName(SERVER *s, char *name, UINT size);
-void GetServerProductNameInternal(SERVER *s, char *name, UINT size);
 
 
 void SiSetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting);
 void SiGetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting);
 void SiWriteSysLog(SERVER *s, char *typestr, char *hubname, wchar_t *message);
 UINT SiGetSysLogSaveStatus(SERVER *s);
-void SiInitDeadLockCheck(SERVER *s);
-void SiFreeDeadLockCheck(SERVER *s);
-void SiDeadLockCheckThread(THREAD *t, void *param);
-void SiCheckDeadLockMain(SERVER *s, UINT timeout);
 void SiDebugLog(SERVER *s, char *msg);
 UINT SiDebug(SERVER *s, RPC_TEST *ret, UINT i, char *str);
-UINT SiDebugProcHelloWorld(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcExit(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcDump(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcRestorePriority(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcSetHighPriority(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcGetExeFileName(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcCrash(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcGetCurrentTcpSendQueueLength(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcGetCurrentGetIPThreadCount(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
 
 typedef UINT (SI_DEBUG_PROC)(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
 
-CAPS *NewCaps(char *name, UINT value);
-void FreeCaps(CAPS *c);
 CAPSLIST *NewCapsList();
-int CompareCaps(void *p1, void *p2);
-void AddCaps(CAPSLIST *caps, CAPS *c);
 CAPS *GetCaps(CAPSLIST *caps, char *name);
 void FreeCapsList(CAPSLIST *caps);
 bool GetCapsBool(CAPSLIST *caps, char *name);
-UINT GetCapsInt(CAPSLIST *caps, char *name);
 void AddCapsBool(CAPSLIST *caps, char *name, bool b);
 void AddCapsInt(CAPSLIST *caps, char *name, UINT i);
 void InRpcCapsList(CAPSLIST *t, PACK *p);
 void OutRpcCapsList(PACK *p, CAPSLIST *t);
 void FreeRpcCapsList(CAPSLIST *t);
-void InitCapsList(CAPSLIST *t);
 void InRpcSysLogSetting(SYSLOG_SETTING *t, PACK *p);
 void OutRpcSysLogSetting(PACK *p, SYSLOG_SETTING *t);
 
-void GetServerCaps(SERVER *s, CAPSLIST *t);
-void FlushServerCaps(SERVER *s);
 bool GetServerCapsBool(SERVER *s, char *name);
 UINT GetServerCapsInt(SERVER *s, char *name);
 void GetServerCapsMain(SERVER *s, CAPSLIST *t);
-void InitServerCapsCache(SERVER *s);
-void FreeServerCapsCache(SERVER *s);
-void DestroyServerCapsCache(SERVER *s);
 
-void SetGlobalServerFlag(UINT index, UINT value);
 UINT GetGlobalServerFlag(UINT index);
-void UpdateGlobalServerFlags(SERVER *s, CAPSLIST *t);
 
 
 bool IsAdminPackSupportedServerProduct(char *name);
 
-void SiInitHubCreateHistory(SERVER *s);
-void SiFreeHubCreateHistory(SERVER *s);
-
 bool SiTooManyUserObjectsInServer(SERVER *s, bool oneMore);
-
-void SiUpdateCurrentRegion(CEDAR *c, char *region, bool force_update);
-void SiGetCurrentRegion(CEDAR *c, char *region, UINT region_size);
-bool SiIsEnterpriseFunctionsRestrictedOnOpenSource(CEDAR *c);
 
 #endif	// SERVER_H
 
