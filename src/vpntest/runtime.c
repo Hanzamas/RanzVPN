@@ -21,6 +21,8 @@
 
 #include <stdarg.h>
 
+#include <objbase.h>
+
 // Limits
 #define	RT_TICK_ORIGIN_MARGIN	10000		// Slack allowed above the process age (ms)
 
@@ -473,6 +475,240 @@ void fileio_test(UINT num, char **arg)
 		"FileDelete through @ removes the file", "file still there");
 	RtCheck(&ctx, FileDeleteW(L"$" RT_FILEIO_DB_NAME) && IsFileExistsW(db_path) == false,
 		"FileDelete through $ removes the file", "file still there");
+
+	RtEnd(&ctx);
+}
+
+// Constants of the threadpool test
+#define	RT_POOL_BOUND			5000	// Fail-safe bound of every wait in the threadpool test (ms)
+#define	RT_POOL_SETTLE			300		// Time given to an idle pool thread to (wrongly) end (ms)
+#define	RT_POOL_MAX_JOBS		32		// Held jobs started while looking for the idle pool thread
+#define	RT_POOL_WAITERS			4		// Threads that wait on one THREAD at the same time
+#define	RT_HOST_CYCLES			16		// Host threads created and ended by the handle check
+
+// What a job of the threadpool test saw on its thread
+typedef struct RT_POOL_JOB
+{
+	volatile bool *Go;				// Gate the job waits for before it ends, or NULL
+	volatile UINT OsThreadId;		// GetCurrentThreadId() inside the job
+	volatile UINT MayaThreadId;		// ThreadId() inside the job
+	volatile bool ComReady;			// COM was already initialised on the thread of the job
+	volatile bool Ran;				// The job ran
+} RT_POOL_JOB;
+
+// Threads that wait on one THREAD at the same time
+typedef struct RT_POOL_WAIT_DATA
+{
+	THREAD *Target;					// THREAD that every waiter waits on
+	volatile LONG Returned;			// Waiters whose WaitThread returned
+	volatile LONG Joined;			// Waiters whose WaitThread returned true
+} RT_POOL_WAIT_DATA;
+
+// Wait until a flag is set, at most bound ms
+static bool RtWaitFlag(volatile bool *flag, UINT bound)
+{
+	UINT64 end = Tick64() + bound;
+
+	while (*flag == false)
+	{
+		if (Tick64() >= end)
+		{
+			return false;
+		}
+
+		SleepThread(1);
+	}
+
+	return true;
+}
+
+// Job: record what it sees on its thread, then wait for its gate when it has one.
+// Used both as a pool job (NewThread) and as a host thread procedure (NewThreadInternal).
+static void RtPoolJobThread(THREAD *t, void *param)
+{
+	RT_POOL_JOB *j = (RT_POOL_JOB *)param;
+	HRESULT hr;
+
+	if (t == NULL || j == NULL)
+	{
+		return;
+	}
+
+	j->OsThreadId = GetCurrentThreadId();
+	j->MayaThreadId = ThreadId();
+
+	// S_FALSE: COM is already initialised on this thread, by the host thread procedure
+	hr = CoInitialize(NULL);
+	j->ComReady = (hr == S_FALSE);
+	if (SUCCEEDED(hr))
+	{
+		CoUninitialize();
+	}
+
+	j->Ran = true;
+
+	if (j->Go != NULL)
+	{
+		RtWaitFlag(j->Go, RT_POOL_BOUND);
+	}
+}
+
+// Waiter: wait on the target THREAD and count the result
+static void RtPoolWaiterThread(THREAD *t, void *param)
+{
+	RT_POOL_WAIT_DATA *d = (RT_POOL_WAIT_DATA *)param;
+
+	if (t == NULL || d == NULL)
+	{
+		return;
+	}
+
+	if (WaitThread(d->Target, RT_POOL_BOUND))
+	{
+		InterlockedIncrement(&d->Joined);
+	}
+
+	InterlockedIncrement(&d->Returned);
+}
+
+// threadpool: NewThread runs each job on a pooled host thread (open question 12 (a)).
+// NewThread returns only after a host thread took the job, the job sees the thread id and
+// the COM state of its host, an idle host thread stays alive and takes a later job, several
+// threads can wait on one THREAD, and a host thread (NewThreadInternal) ends with its
+// handle closed
+void threadpool_test(UINT num, char **arg)
+{
+	RT_CTX ctx;
+	RT_POOL_JOB first, host, target_job;
+	RT_POOL_JOB held[RT_POOL_MAX_JOBS];
+	THREAD *jobs[RT_POOL_MAX_JOBS];
+	THREAD *waiters[RT_POOL_WAITERS];
+	RT_POOL_WAIT_DATA wd;
+	volatile bool go;
+	THREAD *t;
+	HANDLE h;
+	UINT picked, i, num_jobs, joined, early, waited, ran, com_ready;
+	DWORD handles_before = 0, handles_after = 0;
+	bool ended, alive, found, counted;
+
+	RtBegin(&ctx, "THREADPOOL", "Thread pool test");
+
+	// A job runs on a pool thread, which has already taken the job when NewThread returns
+	Zero(&first, sizeof(first));
+	t = NewThread(RtPoolJobThread, &first);
+	picked = t->ThreadId;
+	RtCheck(&ctx, picked != 0, "NewThread returns after a pool thread took the job (ThreadId is set)", "ThreadId is 0");
+	ended = WaitThread(t, RT_POOL_BOUND);
+	RtCheck(&ctx, ended && first.Ran, "the job runs and WaitThread returns true", "WaitThread %s, job %s",
+		ended ? "true" : "false", first.Ran ? "ran" : "did not run");
+	RtCheck(&ctx, first.OsThreadId == picked && first.MayaThreadId == picked,
+		"the job runs on the thread named by ThreadId, and ThreadId() in the job agrees",
+		"THREAD ThreadId %u, GetCurrentThreadId %u, ThreadId() %u", picked, first.OsThreadId, first.MayaThreadId);
+	RtCheck(&ctx, first.ComReady, "COM is already initialised on the thread of the job", "CoInitialize did not return S_FALSE");
+	RtCheck(&ctx, WaitThreadInternal(NULL) == false && WaitThreadInternal(t) == false,
+		"WaitThreadInternal returns false for NULL and for a pool job, which has no thread handle", "returned true");
+	ReleaseThread(t);
+
+	// The pool thread stays alive while it is idle (until FreeThreading)
+	h = OpenThread(SYNCHRONIZE, FALSE, picked);
+	alive = (h != NULL && WaitForSingleObject(h, RT_POOL_SETTLE) == WAIT_TIMEOUT);
+	RtCheck(&ctx, alive, "the pool thread stays alive after its job ended", "the thread %s",
+		(h == NULL) ? "is gone" : "ended");
+	if (h != NULL)
+	{
+		CloseHandle(h);
+	}
+
+	// A later job runs on that idle pool thread. Every job is held at its gate, so each
+	// NewThread takes another idle pool thread, until one of them is that thread.
+	Zero(held, sizeof(held));
+	go = false;
+	found = false;
+	num_jobs = 0;
+	for (i = 0;i < RT_POOL_MAX_JOBS && found == false;i++)
+	{
+		held[i].Go = &go;
+		jobs[i] = NewThread(RtPoolJobThread, &held[i]);
+		num_jobs++;
+
+		if (jobs[i]->ThreadId == picked)
+		{
+			found = true;
+		}
+	}
+	go = true;
+	joined = 0;
+	for (i = 0;i < num_jobs;i++)
+	{
+		if (WaitThread(jobs[i], RT_POOL_BOUND))
+		{
+			joined++;
+		}
+		ReleaseThread(jobs[i]);
+	}
+	RtCheck(&ctx, found, "a later job runs on the same, idle pool thread", "not taken by any of %u jobs", num_jobs);
+	RtCheck(&ctx, joined == num_jobs, "every held job ends once its gate opens", "%u of %u ended", joined, num_jobs);
+
+	// Several threads wait on one THREAD at the same time, and every one of them sees it end
+	Zero(&target_job, sizeof(target_job));
+	Zero(&wd, sizeof(wd));
+	go = false;
+	target_job.Go = &go;
+	wd.Target = NewThread(RtPoolJobThread, &target_job);
+	for (i = 0;i < RT_POOL_WAITERS;i++)
+	{
+		waiters[i] = NewThread(RtPoolWaiterThread, &wd);
+	}
+	SleepThread(RT_POOL_SETTLE);
+	early = (UINT)wd.Returned;
+	go = true;
+	waited = 0;
+	for (i = 0;i < RT_POOL_WAITERS;i++)
+	{
+		if (WaitThread(waiters[i], RT_POOL_BOUND * 2))
+		{
+			waited++;
+		}
+		ReleaseThread(waiters[i]);
+	}
+	ended = WaitThread(wd.Target, RT_POOL_BOUND);
+	ReleaseThread(wd.Target);
+	RtCheck(&ctx, early == 0 && waited == RT_POOL_WAITERS && wd.Joined == RT_POOL_WAITERS && ended,
+		"several threads wait on one THREAD at the same time, and all of them see it end",
+		"%u returned before the end, %u of %u waiters ended, %u saw WaitThread return true",
+		early, waited, RT_POOL_WAITERS, (UINT)wd.Joined);
+
+	// Host threads (NewThreadInternal): the procedure runs with COM initialised,
+	// WaitThreadInternal returns true once the thread ended, and the end closes the handle
+	waited = ran = com_ready = 0;
+	counted = (GetProcessHandleCount(GetCurrentProcess(), &handles_before) != FALSE);
+	for (i = 0;i < RT_HOST_CYCLES;i++)
+	{
+		Zero(&host, sizeof(host));
+		t = NewThreadInternal(RtPoolJobThread, &host);
+		if (WaitThreadInternal(t))
+		{
+			waited++;
+		}
+		if (host.Ran)
+		{
+			ran++;
+		}
+		if (host.ComReady)
+		{
+			com_ready++;
+		}
+		ReleaseThreadInternal(t);
+	}
+	counted = counted && (GetProcessHandleCount(GetCurrentProcess(), &handles_after) != FALSE);
+	RtCheck(&ctx, waited == RT_HOST_CYCLES && ran == RT_HOST_CYCLES,
+		"WaitThreadInternal returns true once the procedure of a host thread ran",
+		"%u of %u waits returned true, %u procedures ran", waited, RT_HOST_CYCLES, ran);
+	RtCheck(&ctx, com_ready == RT_HOST_CYCLES, "COM is initialised on every host thread",
+		"%u of %u", com_ready, RT_HOST_CYCLES);
+	RtCheck(&ctx, counted && handles_after < handles_before + RT_HOST_CYCLES / 2,
+		"releasing an ended host thread closes its handle",
+		"%u handles before, %u after %u host threads", handles_before, handles_after, RT_HOST_CYCLES);
 
 	RtEnd(&ctx);
 }
