@@ -13,6 +13,10 @@ Proves that a commit (or the working tree) only moves top-level definitions betw
   * comments that belong to no item stay as they are in every file that existed before;
   * no other file changes.
 
+Line ends are compared as LF. With text=auto, git stores a new file with LF while a god file
+committed with CRLF keeps CRLF, so a block moved verbatim on disk differs in its line ends
+between the two commits.
+
 Usage (from the repository root):
     python tools/split/check_moves.py                 # HEAD against HEAD^
     python tools/split/check_moves.py --base REV --head REV
@@ -52,11 +56,11 @@ def changed_files(repo, base, head):
 def read_rev(repo, rev, path):
     if rev is None:
         p = os.path.join(repo, path)
-        return S.read_text(p) if os.path.isfile(p) else None
+        return S.read_text(p).replace("\r\n", "\n") if os.path.isfile(p) else None
     r = subprocess.run(["git", "-C", repo, "show", f"{rev}:{path}"], capture_output=True)
     if r.returncode != 0:
         return None
-    return r.stdout.decode("latin-1")
+    return r.stdout.decode("latin-1").replace("\r\n", "\n")
 
 
 class Fail(Exception):
