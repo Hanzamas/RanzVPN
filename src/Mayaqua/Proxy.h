@@ -4,23 +4,22 @@
 #include "HTTP.h"
 #include "Network.h"
 
-#define PROXY_CONNECTION_TIMEOUT	(4 * 1000)
+#define PROXY_CONNECTION_TIMEOUT (4 * 1000)
 
-#define PROXY_MAX_USERNAME_LEN		255
-#define PROXY_MAX_PASSWORD_LEN		255
+#define PROXY_MAX_USERNAME_LEN 255
+#define PROXY_MAX_PASSWORD_LEN 255
 
-#define PROXY_ERROR_SUCCESS			0
-#define PROXY_ERROR_GENERIC			1
-#define PROXY_ERROR_PARAMETER		2
-#define PROXY_ERROR_CANCELED		3
-#define PROXY_ERROR_CONNECTION		4
-#define PROXY_ERROR_DISCONNECTED	5
-#define PROXY_ERROR_VERSION			6
-#define PROXY_ERROR_AUTHENTICATION	7
-#define PROXY_ERROR_TARGET			8
+#define PROXY_ERROR_SUCCESS        0
+#define PROXY_ERROR_GENERIC        1
+#define PROXY_ERROR_PARAMETER      2
+#define PROXY_ERROR_CANCELED       3
+#define PROXY_ERROR_CONNECTION     4
+#define PROXY_ERROR_DISCONNECTED   5
+#define PROXY_ERROR_VERSION        6
+#define PROXY_ERROR_AUTHENTICATION 7
+#define PROXY_ERROR_TARGET         8
 
-struct PROXY_PARAM_IN
-{
+struct PROXY_PARAM_IN {
 	char Hostname[MAX_HOST_NAME_LEN + 1];
 	USHORT Port;
 	char TargetHostname[MAX_HOST_NAME_LEN + 1];
@@ -30,15 +29,14 @@ struct PROXY_PARAM_IN
 	UINT Timeout;
 	char HttpCustomHeader[HTTP_CUSTOM_HEADER_MAX_SIZE];
 	char HttpUserAgent[HTTP_HEADER_USER_AGENT_MAX_SIZE + 1];
-	IP   *BindLocalIP;											// Source IP address for outgoing connection
-	UINT BindLocalPort;					// UINT used not USHORT	// Source port number for outgoing connection
+	IP *BindLocalIP;    // Source IP address for outgoing connection
+	UINT BindLocalPort; // UINT used not USHORT	// Source port number for outgoing connection
 #ifdef OS_WIN32
 	void *Hwnd;
 #endif
 };
 
-struct PROXY_PARAM_OUT
-{
+struct PROXY_PARAM_OUT {
 	SOCK *Sock;
 	IP ResolvedIp;
 };

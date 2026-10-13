@@ -5,14 +5,13 @@
 // VLan.h
 // Header of VLan.c
 
-#ifndef	VLAN_H
-#define	VLAN_H
+#ifndef VLAN_H
+#define VLAN_H
 
 #include "Mayaqua/MayaType.h"
 
 // Parameters related to VLAN
-struct VLAN_PARAM
-{
+struct VLAN_PARAM {
 	UCHAR MacAddress[6];
 	UCHAR Padding[2];
 };

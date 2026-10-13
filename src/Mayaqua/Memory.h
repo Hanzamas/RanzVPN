@@ -5,52 +5,49 @@
 // Memory.h
 // Header of Memory.c
 
-#ifndef	MEMORY_H
-#define	MEMORY_H
+#ifndef MEMORY_H
+#define MEMORY_H
 
 #include "MayaType.h"
 
 // MallocFast (not implemented)
-#define	MallocFast		Malloc
-#define	ZeroMallocFast	ZeroMalloc
+#define MallocFast     Malloc
+#define ZeroMallocFast ZeroMalloc
 
-#define MAX_MALLOC_MEM_SIZE					(0xffffffff - 64)
+#define MAX_MALLOC_MEM_SIZE (0xffffffff - 64)
 
 // Memory size that can be passed to the kernel at a time
-#define	MAX_SEND_BUF_MEM_SIZE				(10 * 1024 * 1024)
+#define MAX_SEND_BUF_MEM_SIZE (10 * 1024 * 1024)
 
-#define	CALC_MALLOCSIZE(size)				(((MAX(size, 1) + 7) / 8) * 8 + sizeof(MEMTAG1) + sizeof(MEMTAG2))
-#define	MEMTAG1_TO_POINTER(p)				((void *)(((UCHAR *)(p)) + sizeof(MEMTAG1)))
-#define	POINTER_TO_MEMTAG1(p)				((MEMTAG1 *)(((UCHAR *)(p)) - sizeof(MEMTAG1)))
-#define	IS_NULL_POINTER(p)					(((p) == NULL) || ((POINTER_TO_UINT64(p) == (UINT64)sizeof(MEMTAG1))))
-#define	PTR_TO_PTR(p)						((void **)(&p))
+#define CALC_MALLOCSIZE(size) (((MAX(size, 1) + 7) / 8) * 8 + sizeof(MEMTAG1) + sizeof(MEMTAG2))
+#define MEMTAG1_TO_POINTER(p) ((void *)(((UCHAR *)(p)) + sizeof(MEMTAG1)))
+#define POINTER_TO_MEMTAG1(p) ((MEMTAG1 *)(((UCHAR *)(p)) - sizeof(MEMTAG1)))
+#define IS_NULL_POINTER(p)    (((p) == NULL) || ((POINTER_TO_UINT64(p) == (UINT64)sizeof(MEMTAG1))))
+#define PTR_TO_PTR(p)         ((void **)(&p))
 
 // Golden Ratio Prime
 // From https://github.com/torvalds/linux/blob/88c5083442454e5e8a505b11fa16f32d2879651e/include/linux/hash.h
-#define GOLDEN_RATION_PRIME_U32				((UINT32)0x61C88647)
-#define GOLDEN_RATION_PRIME_U64				((UINT64)7046029254386353131ULL) // 0x61C8864680B583EB
+#define GOLDEN_RATION_PRIME_U32 ((UINT32)0x61C88647)
+#define GOLDEN_RATION_PRIME_U64 ((UINT64)7046029254386353131ULL) // 0x61C8864680B583EB
 
 // Fixed size of a block of memory pool
-#define	MEMPOOL_MAX_SIZE					3000
+#define MEMPOOL_MAX_SIZE 3000
 
 
 // Memory tag 1
-struct MEMTAG1
-{
+struct MEMTAG1 {
 	UINT64 Magic;
 	UINT Size;
 	bool ZeroFree;
 };
 
 // Memory tag 2
-struct MEMTAG2
-{
+struct MEMTAG2 {
 	UINT64 Magic;
 };
 
 // Buffer
-struct BUF
-{
+struct BUF {
 	void *Buf;
 	UINT Size;
 	UINT SizeReserved;
@@ -58,8 +55,7 @@ struct BUF
 };
 
 // FIFO
-struct FIFO
-{
+struct FIFO {
 	REF *ref;
 	LOCK *lock;
 	void *p;
@@ -70,8 +66,7 @@ struct FIFO
 };
 
 // List
-struct LIST
-{
+struct LIST {
 	REF *ref;
 	UINT num_item, num_reserved;
 	void **p;
@@ -82,8 +77,7 @@ struct LIST
 };
 
 // Queue
-struct QUEUE
-{
+struct QUEUE {
 	REF *ref;
 	UINT num_item;
 	FIFO *fifo;
@@ -91,8 +85,7 @@ struct QUEUE
 };
 
 // Stack
-struct SK
-{
+struct SK {
 	REF *ref;
 	UINT num_item, num_reserved;
 	void **p;
@@ -101,37 +94,33 @@ struct SK
 };
 
 // Candidate list
-struct CANDIDATE
-{
-	wchar_t *Str;						// String
-	UINT64 LastSelectedTime;			// Date and time last selected
+struct CANDIDATE {
+	wchar_t *Str;            // String
+	UINT64 LastSelectedTime; // Date and time last selected
 };
 
-struct STRMAP_ENTRY
-{
+struct STRMAP_ENTRY {
 	char *Name;
 	void *Value;
 };
 
 // Shared buffer
-struct SHARED_BUFFER
-{
+struct SHARED_BUFFER {
 	REF *Ref;
 	void *Data;
 	UINT Size;
 };
 
 // Macro
-#define	LIST_DATA(o, i)		(((o) != NULL) ? ((o)->p[(i)]) : NULL)
-#define	LIST_NUM(o)			(((o) != NULL) ? (o)->num_item : 0)
-#define	HASH_LIST_NUM(o)	(((o) != NULL) ? (o)->NumItems : 0)
+#define LIST_DATA(o, i)  (((o) != NULL) ? ((o)->p[(i)]) : NULL)
+#define LIST_NUM(o)      (((o) != NULL) ? (o)->num_item : 0)
+#define HASH_LIST_NUM(o) (((o) != NULL) ? (o)->NumItems : 0)
 
 // Function pointer type to get a hash function
-typedef UINT (GET_HASH)(void *p);
+typedef UINT(GET_HASH)(void *p);
 
 // Hash list
-struct HASH_LIST
-{
+struct HASH_LIST {
 	UINT Bits;
 	UINT Size;
 	GET_HASH *GetHashProc;
@@ -144,8 +133,7 @@ struct HASH_LIST
 };
 
 // PRAND
-struct PRAND
-{
+struct PRAND {
 	UCHAR Key[20];
 	CRYPT *Rc4;
 };
@@ -314,14 +302,14 @@ UINT Power(UINT a, UINT b);
 void AppendBufUtf8(BUF *b, wchar_t *str);
 void AppendBufStr(BUF *b, char *str);
 
-#define NUM_CANARY_RAND					32
-#define CANARY_RAND_ID_MEMTAG_MAGIC		0
-#define CANARY_RAND_SIZE				20
+#define NUM_CANARY_RAND             32
+#define CANARY_RAND_ID_MEMTAG_MAGIC 0
+#define CANARY_RAND_SIZE            20
 
-#define CANARY_RAND_ID_PTR_KEY_HASH		1
+#define CANARY_RAND_ID_PTR_KEY_HASH 1
 
 void InitCanaryRand();
 UCHAR *GetCanaryRand(UINT id);
 
-#endif	// MEMORY_H
+#endif // MEMORY_H
 

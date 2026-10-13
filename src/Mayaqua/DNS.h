@@ -11,33 +11,30 @@
 #define DNS_THREAD_DEFAULT_NUM_MAX (64)
 #endif
 
-#define DNS_RESOLVE_DEFAULT_TIMEOUT (2300)
+#define DNS_RESOLVE_DEFAULT_TIMEOUT         (2300)
 #define DNS_RESOLVE_REVERSE_DEFAULT_TIMEOUT (500)
 
-#define GetIP(ip, hostname) (GetIPEx(ip, hostname, 0, NULL))
+#define GetIP(ip, hostname)  (GetIPEx(ip, hostname, 0, NULL))
 #define GetIP4(ip, hostname) (GetIP4Ex(ip, hostname, 0, NULL))
 #define GetIP6(ip, hostname) (GetIP6Ex(ip, hostname, 0, NULL))
 
 #define GetIP4Ex(ip, hostname, timeout, cancel_flag) (DnsResolve(NULL, ip, hostname, timeout, cancel_flag))
 #define GetIP6Ex(ip, hostname, timeout, cancel_flag) (DnsResolve(ip, NULL, hostname, timeout, cancel_flag))
 
-struct DNS_CACHE
-{
+struct DNS_CACHE {
 	const char *Hostname;
 	LIST *IPList_v4;
 	LIST *IPList_v6;
 	UINT64 Expiration;
 };
 
-struct DNS_CACHE_REVERSE
-{
+struct DNS_CACHE_REVERSE {
 	IP IP;
 	char *Hostname;
 	UINT64 Expiration;
 };
 
-struct DNS_RESOLVER
-{
+struct DNS_RESOLVER {
 	REF *Ref;
 	const char *Hostname;
 	LIST *IPList_v4;
@@ -45,8 +42,7 @@ struct DNS_RESOLVER
 	bool OK;
 };
 
-struct DNS_RESOLVER_REVERSE
-{
+struct DNS_RESOLVER_REVERSE {
 	REF *Ref;
 	IP IP;
 	char *Hostname;

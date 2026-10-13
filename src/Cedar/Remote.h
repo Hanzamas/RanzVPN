@@ -5,26 +5,25 @@
 // Remote.h
 // Header of Remote.c
 
-#ifndef	REMOTE_H
-#define	REMOTE_H
+#ifndef REMOTE_H
+#define REMOTE_H
 
 #include "Connection.h"
 
 // RPC execution function
-typedef PACK *(RPC_DISPATCHER)(RPC *r, char *function_name, PACK *p);
+typedef PACK *(RPC_DISPATCHER)(RPC * r, char *function_name, PACK *p);
 
 // RPC object
-struct RPC
-{
-	SOCK *Sock;						// Socket
-	bool ServerMode;				// Server mode
-	RPC_DISPATCHER *Dispatch;		// Execution routine
-	void *Param;					// Parameters
-	bool ServerAdminMode;			// Server management mode
-	char HubName[MAX_HUBNAME_LEN + 1];	// Managing HUB name
-	char Name[MAX_SIZE];			// RPC session name
-	LOCK *Lock;						// Lock
-	bool IsVpnServer;				// Whether VPN Server management RPC
+struct RPC {
+	SOCK *Sock;                        // Socket
+	bool ServerMode;                   // Server mode
+	RPC_DISPATCHER *Dispatch;          // Execution routine
+	void *Param;                       // Parameters
+	bool ServerAdminMode;              // Server management mode
+	char HubName[MAX_HUBNAME_LEN + 1]; // Managing HUB name
+	char Name[MAX_SIZE];               // RPC session name
+	LOCK *Lock;                        // Lock
+	bool IsVpnServer;                  // Whether VPN Server management RPC
 	CLIENT_OPTION VpnServerClientOption;
 	char VpnServerHubName[MAX_HUBNAME_LEN + 1];
 	UCHAR VpnServerHashedPassword[SHA1_SIZE];
@@ -43,5 +42,5 @@ void EndRpc(RPC *rpc);
 void RpcFree(RPC *rpc);
 void RpcFreeEx(RPC *rpc, bool no_disconnect);
 
-#endif	// REMOTE_H
+#endif // REMOTE_H
 

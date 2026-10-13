@@ -5,51 +5,46 @@
 // Object.h
 // Header of Object.c
 
-#ifndef	OBJECT_H
-#define	OBJECT_H
+#ifndef OBJECT_H
+#define OBJECT_H
 
 #include "MayaType.h"
 
 // Constants
-#define	OBJECT_ALLOC_FAIL_SLEEP_TIME		150
-#define	OBJECT_ALLOC__MAX_RETRY				30
+#define OBJECT_ALLOC_FAIL_SLEEP_TIME 150
+#define OBJECT_ALLOC__MAX_RETRY      30
 
 // Lock object
-struct LOCK
-{
+struct LOCK {
 	void *pData;
 	bool Ready;
-#ifdef	_DEBUG
+#ifdef _DEBUG
 	char *FileName;
 	UINT Line;
 	UINT ThreadId;
-#endif	// _DEBUG
+#endif // _DEBUG
 };
 
 // Counter object
-struct COUNTER
-{
+struct COUNTER {
 	LOCK *lock;
 	UINT c;
 	bool Ready;
 };
 
 // Reference counter
-struct REF
-{
+struct REF {
 	COUNTER *c;
 };
 
 // Event object
-struct EVENT
-{
+struct EVENT {
 	REF *ref;
 	void *pData;
 };
 
 // Deadlock detection
-struct DEADCHECK
-{
+struct DEADCHECK {
 	LOCK *Lock;
 	UINT Timeout;
 	bool Unlocked;
@@ -57,26 +52,34 @@ struct DEADCHECK
 
 
 // Lock function
-#ifndef	_DEBUG
+#ifndef _DEBUG
 
-#define	Lock(lock)		LockInner((lock))
-#define	Unlock(lock)	UnlockInner((lock))
+#define Lock(lock)   LockInner((lock))
+#define Unlock(lock) UnlockInner((lock))
 
-#else	// _DEBUG
+#else // _DEBUG
 
-#define	Lock(lock)			\
-	{						\
-		LockInner(lock);	\
-		if (lock != NULL) { lock->FileName = __FILE__; lock->Line = __LINE__; lock->ThreadId = ThreadId();}	\
+#define Lock(lock)                       \
+	{                                    \
+		LockInner(lock);                 \
+		if (lock != NULL) {              \
+			lock->FileName = __FILE__;   \
+			lock->Line = __LINE__;       \
+			lock->ThreadId = ThreadId(); \
+		}                                \
 	}
 
-#define	Unlock(lock)		\
-	{						\
-		if (lock != NULL) { lock->FileName = NULL; lock->Line = 0; lock->ThreadId = 0;}	\
-		UnlockInner(lock);	\
+#define Unlock(lock)               \
+	{                              \
+		if (lock != NULL) {        \
+			lock->FileName = NULL; \
+			lock->Line = 0;        \
+			lock->ThreadId = 0;    \
+		}                          \
+		UnlockInner(lock);         \
 	}
 
-#endif	// _DEBUG
+#endif // _DEBUG
 
 
 // Function prototype
@@ -102,5 +105,5 @@ bool WaitEx(EVENT *e, UINT timeout, volatile bool *cancel);
 void CheckDeadLock(LOCK *lock, UINT timeout, char *name);
 void CheckDeadLockThread(THREAD *t, void *param);
 
-#endif	// OBJECT_H
+#endif // OBJECT_H
 

@@ -21,16 +21,14 @@
 #include "Mayaqua/Str.h"
 
 // Link server thread
-void LinkServerSessionThread(THREAD *t, void *param)
-{
+void LinkServerSessionThread(THREAD *t, void *param) {
 	LINK *k = (LINK *)param;
 	CONNECTION *c;
 	SESSION *s;
 	POLICY *policy;
 	wchar_t name[MAX_SIZE];
 	// Validate arguments
-	if (t == NULL || param == NULL)
-	{
+	if (t == NULL || param == NULL) {
 		return;
 	}
 
@@ -70,18 +68,15 @@ void LinkServerSessionThread(THREAD *t, void *param)
 }
 
 // Initialize the packet adapter
-bool LinkPaInit(SESSION *s)
-{
+bool LinkPaInit(SESSION *s) {
 	LINK *k;
 	THREAD *t;
 	// Validate arguments
-	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
-	{
+	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL) {
 		return false;
 	}
 
-	if (k->Halting || (*k->StopAllLinkFlag))
-	{
+	if (k->Halting || (*k->StopAllLinkFlag)) {
 		return false;
 	}
 
@@ -101,12 +96,10 @@ bool LinkPaInit(SESSION *s)
 }
 
 // Get the cancel object
-CANCEL *LinkPaGetCancel(SESSION *s)
-{
+CANCEL *LinkPaGetCancel(SESSION *s) {
 	LINK *k;
 	// Validate arguments
-	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
-	{
+	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL) {
 		return NULL;
 	}
 
@@ -114,18 +107,15 @@ CANCEL *LinkPaGetCancel(SESSION *s)
 }
 
 // Get the next packet
-UINT LinkPaGetNextPacket(SESSION *s, void **data)
-{
+UINT LinkPaGetNextPacket(SESSION *s, void **data) {
 	LINK *k;
 	UINT ret = 0;
 	// Validate arguments
-	if (s == NULL || data == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
-	{
+	if (s == NULL || data == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL) {
 		return INFINITE;
 	}
 
-	if (k->Halting || (*k->StopAllLinkFlag))
-	{
+	if (k->Halting || (*k->StopAllLinkFlag)) {
 		return INFINITE;
 	}
 	// Examine whether there are packets in the queue
@@ -133,8 +123,7 @@ UINT LinkPaGetNextPacket(SESSION *s, void **data)
 	{
 		BLOCK *block = GetNext(k->SendPacketQueue);
 
-		if (block != NULL)
-		{
+		if (block != NULL) {
 			// There was a packet
 			*data = block->Buf;
 			ret = block->Size;
@@ -151,8 +140,7 @@ UINT LinkPaGetNextPacket(SESSION *s, void **data)
 }
 
 // Write the received packet
-bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
-{
+bool LinkPaPutPacket(SESSION *s, void *data, UINT size) {
 	LINK *k;
 	BLOCK *block = NULL;
 	SESSION *server_session;
@@ -160,8 +148,7 @@ bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 	bool ret = true;
 	bool halting = false;
 	// Validate arguments
-	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
-	{
+	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL) {
 		return false;
 	}
 
@@ -171,8 +158,7 @@ bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 	server_connection = server_session->Connection;
 
 	k->Flag1++;
-	if ((k->Flag1 % 32) == 0)
-	{
+	if ((k->Flag1 % 32) == 0) {
 		// Omit for performance
 		UINT current_num;
 		int diff;
@@ -188,15 +174,12 @@ bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 
 	// Since the packet arrives from the HUB of the link destination,
 	// deliver it to the ReceivedBlocks of the server session
-	if (data != NULL)
-	{
-		if (halting == false)
-		{
+	if (data != NULL) {
+		if (halting == false) {
 			block = NewBlock(data, size, 0);
 		}
 
-		if (k->LockFlag == false)
-		{
+		if (k->LockFlag == false) {
 			UINT current_num;
 			int diff;
 
@@ -212,20 +195,14 @@ bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 			CedarAddQueueBudget(k->Cedar, diff);
 		}
 
-		if (halting == false)
-		{
-			if (CedarGetFifoBudgetBalance(k->Cedar) == 0)
-			{
+		if (halting == false) {
+			if (CedarGetFifoBudgetBalance(k->Cedar) == 0) {
 				FreeBlock(block);
-			}
-			else
-			{
+			} else {
 				InsertReceivedBlockToQueue(server_connection, block, true);
 			}
 		}
-	}
-	else
-	{
+	} else {
 		UINT current_num;
 		int diff;
 
@@ -237,8 +214,7 @@ bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 
 		CedarAddQueueBudget(k->Cedar, diff);
 
-		if (k->LockFlag)
-		{
+		if (k->LockFlag) {
 			k->LockFlag = false;
 			UnlockQueue(server_connection->ReceivedBlocks);
 		}
@@ -246,14 +222,12 @@ bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 		// Issue the Cancel, since finished store all packets when the data == NULL
 		Cancel(server_session->Cancel1);
 
-		if (k->Hub != NULL && k->Hub->Option != NULL && k->Hub->Option->YieldAfterStorePacket)
-		{
+		if (k->Hub != NULL && k->Hub->Option != NULL && k->Hub->Option->YieldAfterStorePacket) {
 			YieldCpu();
 		}
 	}
 
-	if (halting)
-	{
+	if (halting) {
 		ret = false;
 	}
 
@@ -261,12 +235,10 @@ bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 }
 
 // Release the packet adapter
-void LinkPaFree(SESSION *s)
-{
+void LinkPaFree(SESSION *s) {
 	LINK *k;
 	// Validate arguments
-	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
-	{
+	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL) {
 		return;
 	}
 
@@ -281,8 +253,7 @@ void LinkPaFree(SESSION *s)
 	LockQueue(k->SendPacketQueue);
 	{
 		BLOCK *block;
-		while (block = GetNext(k->SendPacketQueue))
-		{
+		while (block = GetNext(k->SendPacketQueue)) {
 			FreeBlock(block);
 		}
 	}
@@ -294,20 +265,17 @@ void LinkPaFree(SESSION *s)
 }
 
 // Packet adapter
-PACKET_ADAPTER *LinkGetPacketAdapter()
-{
+PACKET_ADAPTER *LinkGetPacketAdapter() {
 	return NewPacketAdapter(LinkPaInit, LinkPaGetCancel, LinkPaGetNextPacket,
-		LinkPaPutPacket, LinkPaFree);
+	                        LinkPaPutPacket, LinkPaFree);
 }
 
 // Release all links
-void ReleaseAllLink(HUB *h)
-{
+void ReleaseAllLink(HUB *h) {
 	LINK **kk;
 	UINT num, i;
 	// Validate arguments
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return;
 	}
 
@@ -319,8 +287,7 @@ void ReleaseAllLink(HUB *h)
 	}
 	UnlockList(h->LinkList);
 
-	for (i = 0;i < num;i++)
-	{
+	for (i = 0; i < num; i++) {
 		LINK *k = kk[i];
 
 		ReleaseLink(k);
@@ -330,40 +297,33 @@ void ReleaseAllLink(HUB *h)
 }
 
 // Release the link
-void ReleaseLink(LINK *k)
-{
+void ReleaseLink(LINK *k) {
 	// Validate arguments
-	if (k == NULL)
-	{
+	if (k == NULL) {
 		return;
 	}
 
-	if (Release(k->ref) == 0)
-	{
+	if (Release(k->ref) == 0) {
 		CleanupLink(k);
 	}
 }
 
 // Clean-up the link
-void CleanupLink(LINK *k)
-{
+void CleanupLink(LINK *k) {
 	// Validate arguments
-	if (k == NULL)
-	{
+	if (k == NULL) {
 		return;
 	}
 
 	DeleteLock(k->lock);
-	if (k->ClientSession)
-	{
+	if (k->ClientSession) {
 		ReleaseSession(k->ClientSession);
 	}
 	Free(k->Option);
 	CiFreeClientAuth(k->Auth);
 	Free(k->Policy);
 
-	if (k->ServerCert != NULL)
-	{
+	if (k->ServerCert != NULL) {
 		FreeX(k->ServerCert);
 	}
 
@@ -371,21 +331,17 @@ void CleanupLink(LINK *k)
 }
 
 // Make the link on-line
-void SetLinkOnline(LINK *k)
-{
+void SetLinkOnline(LINK *k) {
 	// Validate arguments
-	if (k == NULL)
-	{
+	if (k == NULL) {
 		return;
 	}
 
-	if (k->NoOnline)
-	{
+	if (k->NoOnline) {
 		return;
 	}
 
-	if (k->Offline == false)
-	{
+	if (k->Offline == false) {
 		return;
 	}
 
@@ -394,16 +350,13 @@ void SetLinkOnline(LINK *k)
 }
 
 // Make the link off-line
-void SetLinkOffline(LINK *k)
-{
+void SetLinkOffline(LINK *k) {
 	// Validate arguments
-	if (k == NULL)
-	{
+	if (k == NULL) {
 		return;
 	}
 
-	if (k->Offline)
-	{
+	if (k->Offline) {
 		return;
 	}
 
@@ -412,18 +365,15 @@ void SetLinkOffline(LINK *k)
 }
 
 // Delete the link
-void DelLink(HUB *hub, LINK *k)
-{
+void DelLink(HUB *hub, LINK *k) {
 	// Validate arguments
-	if (hub == NULL || k == NULL)
-	{
+	if (hub == NULL || k == NULL) {
 		return;
 	}
 
 	LockList(hub->LinkList);
 	{
-		if (Delete(hub->LinkList, k))
-		{
+		if (Delete(hub->LinkList, k)) {
 			ReleaseLink(k);
 		}
 	}
@@ -431,23 +381,19 @@ void DelLink(HUB *hub, LINK *k)
 }
 
 // Start all links
-void StartAllLink(HUB *h)
-{
+void StartAllLink(HUB *h) {
 	// Validate arguments
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return;
 	}
 
 	LockList(h->LinkList);
 	{
 		UINT i;
-		for (i = 0;i < LIST_NUM(h->LinkList);i++)
-		{
+		for (i = 0; i < LIST_NUM(h->LinkList); i++) {
 			LINK *k = (LINK *)LIST_DATA(h->LinkList, i);
 
-			if (k->Offline == false)
-			{
+			if (k->Offline == false) {
 				StartLink(k);
 			}
 		}
@@ -456,14 +402,12 @@ void StartAllLink(HUB *h)
 }
 
 // Stop all links
-void StopAllLink(HUB *h)
-{
+void StopAllLink(HUB *h) {
 	LINK **link_list;
 	UINT num_link;
 	UINT i;
 	// Validate arguments
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return;
 	}
 
@@ -473,15 +417,13 @@ void StopAllLink(HUB *h)
 	{
 		link_list = ToArray(h->LinkList);
 		num_link = LIST_NUM(h->LinkList);
-		for (i = 0;i < num_link;i++)
-		{
+		for (i = 0; i < num_link; i++) {
 			AddRef(link_list[i]->ref);
 		}
 	}
 	UnlockList(h->LinkList);
 
-	for (i = 0;i < num_link;i++)
-	{
+	for (i = 0; i < num_link; i++) {
 		StopLink(link_list[i]);
 		ReleaseLink(link_list[i]);
 	}
@@ -492,19 +434,16 @@ void StopAllLink(HUB *h)
 }
 
 // Start the link
-void StartLink(LINK *k)
-{
+void StartLink(LINK *k) {
 	PACKET_ADAPTER *pa;
 	// Validate arguments
-	if (k == NULL)
-	{
+	if (k == NULL) {
 		return;
 	}
 
 	LockLink(k);
 	{
-		if (k->Started || k->Halting)
-		{
+		if (k->Started || k->Halting) {
 			UnlockLink(k);
 			return;
 		}
@@ -525,18 +464,15 @@ void StartLink(LINK *k)
 }
 
 // Stop the link
-void StopLink(LINK *k)
-{
+void StopLink(LINK *k) {
 	// Validate arguments
-	if (k == NULL)
-	{
+	if (k == NULL) {
 		return;
 	}
 
 	LockLink(k);
 	{
-		if (k->Started == false)
-		{
+		if (k->Started == false) {
 			UnlockLink(k);
 			return;
 		}
@@ -547,8 +483,7 @@ void StopLink(LINK *k)
 	}
 	UnlockLink(k);
 
-	if (k->ClientSession != NULL)
-	{
+	if (k->ClientSession != NULL) {
 		// Disconnect the client session
 		StopSession(k->ClientSession);
 
@@ -568,11 +503,9 @@ void StopLink(LINK *k)
 }
 
 // Lock the link
-void LockLink(LINK *k)
-{
+void LockLink(LINK *k) {
 	// Validate arguments
-	if (k == NULL)
-	{
+	if (k == NULL) {
 		return;
 	}
 
@@ -580,11 +513,9 @@ void LockLink(LINK *k)
 }
 
 // Unlock the link
-void UnlockLink(LINK *k)
-{
+void UnlockLink(LINK *k) {
 	// Validate arguments
-	if (k == NULL)
-	{
+	if (k == NULL) {
 		return;
 	}
 
@@ -592,11 +523,9 @@ void UnlockLink(LINK *k)
 }
 
 // Normalize the policy for the link
-void NormalizeLinkPolicy(POLICY *p)
-{
+void NormalizeLinkPolicy(POLICY *p) {
 	// Validate arguments
-	if (p == NULL)
-	{
+	if (p == NULL) {
 		return;
 	}
 
@@ -608,35 +537,29 @@ void NormalizeLinkPolicy(POLICY *p)
 }
 
 // Create a Link
-LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, POLICY *policy)
-{
+LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, POLICY *policy) {
 	CLIENT_OPTION *o;
 	LINK *k;
 	CLIENT_AUTH *a;
 	// Validate arguments
-	if (cedar == NULL || hub == NULL || option == NULL || auth == NULL || policy == NULL)
-	{
+	if (cedar == NULL || hub == NULL || option == NULL || auth == NULL || policy == NULL) {
 		return NULL;
 	}
-	if (hub->Halt)
-	{
-		return NULL;
-	}
-
-	if (LIST_NUM(hub->LinkList) >= MAX_HUB_LINKS)
-	{
+	if (hub->Halt) {
 		return NULL;
 	}
 
-	if (UniIsEmptyStr(option->AccountName))
-	{
+	if (LIST_NUM(hub->LinkList) >= MAX_HUB_LINKS) {
+		return NULL;
+	}
+
+	if (UniIsEmptyStr(option->AccountName)) {
 		return NULL;
 	}
 
 	// Limitation of authentication method
 	if (auth->AuthType != CLIENT_AUTHTYPE_ANONYMOUS && auth->AuthType != CLIENT_AUTHTYPE_PASSWORD &&
-		auth->AuthType != CLIENT_AUTHTYPE_PLAIN_PASSWORD && auth->AuthType != CLIENT_AUTHTYPE_CERT && auth->AuthType != CLIENT_AUTHTYPE_OPENSSLENGINE)
-	{
+	    auth->AuthType != CLIENT_AUTHTYPE_PLAIN_PASSWORD && auth->AuthType != CLIENT_AUTHTYPE_CERT && auth->AuthType != CLIENT_AUTHTYPE_OPENSSLENGINE) {
 		// Authentication method other than anonymous authentication, password authentication, plain password, certificate authentication cannot be used
 		return NULL;
 	}
@@ -646,12 +569,12 @@ LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, 
 	Copy(o, option, sizeof(CLIENT_OPTION));
 	StrCpy(o->DeviceName, sizeof(o->DeviceName), LINK_DEVICE_NAME);
 
-	o->RequireBridgeRoutingMode = true;	// Request the bridge mode
-	o->RequireMonitorMode = false;	// Not to require the monitor mode
+	o->RequireBridgeRoutingMode = true; // Request the bridge mode
+	o->RequireMonitorMode = false;      // Not to require the monitor mode
 
-	o->NumRetry = INFINITE;			// Retry the connection infinitely
-	o->RetryInterval = 10;			// Retry interval is 10 seconds
-	o->NoRoutingTracking = true;	// Stop the routing tracking
+	o->NumRetry = INFINITE;      // Retry the connection infinitely
+	o->RetryInterval = 10;       // Retry interval is 10 seconds
+	o->NoRoutingTracking = true; // Stop the routing tracking
 
 	// Copy the authentication data
 	a = CopyClientAuth(auth);

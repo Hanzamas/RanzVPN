@@ -15,14 +15,12 @@
 #include "Mayaqua/Str.h"
 
 // Generate the NT hash of the password
-void GenerateNtPasswordHash(UCHAR *dst, char *password)
-{
+void GenerateNtPasswordHash(UCHAR *dst, char *password) {
 	UCHAR *tmp;
 	UINT tmp_size;
 	UINT i, len;
 	// Validate arguments
-	if (dst == NULL || password == NULL)
-	{
+	if (dst == NULL || password == NULL) {
 		return;
 	}
 
@@ -32,8 +30,7 @@ void GenerateNtPasswordHash(UCHAR *dst, char *password)
 
 	tmp = ZeroMalloc(tmp_size);
 
-	for (i = 0; i < len; i++)
-	{
+	for (i = 0; i < len; i++) {
 		tmp[i * 2] = password[i];
 	}
 
@@ -44,15 +41,13 @@ void GenerateNtPasswordHash(UCHAR *dst, char *password)
 }
 
 // Generate a 8 bytes challenge
-void MsChapV2_GenerateChallenge8(UCHAR *dst, UCHAR *client_challenge, UCHAR *server_challenge, char *username)
-{
+void MsChapV2_GenerateChallenge8(UCHAR *dst, UCHAR *client_challenge, UCHAR *server_challenge, char *username) {
 	BUF *b;
 	UCHAR hash[SHA1_SIZE];
 	char username2[MAX_SIZE];
 	char domainname2[MAX_SIZE];
 	// Validate arguments
-	if (dst == NULL || client_challenge == NULL || server_challenge == NULL)
-	{
+	if (dst == NULL || client_challenge == NULL || server_challenge == NULL) {
 		return;
 	}
 
@@ -63,8 +58,7 @@ void MsChapV2_GenerateChallenge8(UCHAR *dst, UCHAR *client_challenge, UCHAR *ser
 
 	ParseNtUsername(username, username2, sizeof(username2), domainname2, sizeof(domainname2), true);
 
-	if (IsEmptyStr(username2) == false)
-	{
+	if (IsEmptyStr(username2) == false) {
 		WriteBuf(b, username2, StrLen(username2));
 	}
 
@@ -76,13 +70,11 @@ void MsChapV2_GenerateChallenge8(UCHAR *dst, UCHAR *client_challenge, UCHAR *ser
 }
 
 // Generate the MS-CHAPv2 client response
-void MsChapV2Client_GenerateResponse(UCHAR *dst, UCHAR *challenge8, UCHAR *nt_password_hash)
-{
+void MsChapV2Client_GenerateResponse(UCHAR *dst, UCHAR *challenge8, UCHAR *nt_password_hash) {
 	UCHAR password_hash_2[21];
 	UCHAR key1[8], key2[8], key3[8];
 	// Validate arguments
-	if (dst == NULL || challenge8 == NULL || nt_password_hash == NULL)
-	{
+	if (dst == NULL || challenge8 == NULL || nt_password_hash == NULL) {
 		return;
 	}
 
@@ -103,11 +95,9 @@ void MsChapV2Client_GenerateResponse(UCHAR *dst, UCHAR *challenge8, UCHAR *nt_pa
 }
 
 // Generate a hash of the hash of the NT password
-void GenerateNtPasswordHashHash(UCHAR *dst_hash, UCHAR *src_hash)
-{
+void GenerateNtPasswordHashHash(UCHAR *dst_hash, UCHAR *src_hash) {
 	// Validate arguments
-	if (dst_hash == NULL || src_hash == NULL)
-	{
+	if (dst_hash == NULL || src_hash == NULL) {
 		return;
 	}
 
@@ -115,15 +105,13 @@ void GenerateNtPasswordHashHash(UCHAR *dst_hash, UCHAR *src_hash)
 }
 
 // Generate the MS-CHAPv2 server response
-void MsChapV2Server_GenerateResponse(UCHAR *dst, UCHAR *nt_password_hash_hash, UCHAR *client_response, UCHAR *challenge8)
-{
+void MsChapV2Server_GenerateResponse(UCHAR *dst, UCHAR *nt_password_hash_hash, UCHAR *client_response, UCHAR *challenge8) {
 	UCHAR digest[SHA1_SIZE];
 	BUF *b;
 	char *magic1 = "Magic server to client signing constant";
 	char *magic2 = "Pad to make it do more than one iteration";
 	// Validate arguments
-	if (dst == NULL || nt_password_hash_hash == NULL || client_response == NULL || challenge8 == NULL)
-	{
+	if (dst == NULL || nt_password_hash_hash == NULL || client_response == NULL || challenge8 == NULL) {
 		return;
 	}
 
@@ -143,27 +131,23 @@ void MsChapV2Server_GenerateResponse(UCHAR *dst, UCHAR *nt_password_hash_hash, U
 }
 
 // Extract the MS-CHAP v2 authentication information by parsing the password string
-bool ParseAndExtractMsChapV2InfoFromPassword(IPC_MSCHAP_V2_AUTHINFO *d, char *password)
-{
+bool ParseAndExtractMsChapV2InfoFromPassword(IPC_MSCHAP_V2_AUTHINFO *d, char *password) {
 	TOKEN_LIST *t;
 	bool ret = false;
 	// Validate arguments
-	if (d == NULL || password == NULL)
-	{
+	if (d == NULL || password == NULL) {
 		return false;
 	}
 
 	Zero(d, sizeof(IPC_MSCHAP_V2_AUTHINFO));
 
-	if (StartWith(password, IPC_PASSWORD_MSCHAPV2_TAG) == false)
-	{
+	if (StartWith(password, IPC_PASSWORD_MSCHAPV2_TAG) == false) {
 		return false;
 	}
 
 	t = ParseTokenWithNullStr(password, ":");
 
-	if (t->NumTokens == 6)
-	{
+	if (t->NumTokens == 6) {
 		BUF *b1, *b2, *b3, *b4;
 
 		b1 = StrToBin(t->Token[2]);
@@ -171,9 +155,7 @@ bool ParseAndExtractMsChapV2InfoFromPassword(IPC_MSCHAP_V2_AUTHINFO *d, char *pa
 		b3 = StrToBin(t->Token[4]);
 		b4 = StrToBin(t->Token[5]);
 
-		if (IsEmptyStr(t->Token[1]) == false && b1->Size == 16 && b2->Size == 16 && b3->Size == 24
-		        && b4->Size == 8)
-		{
+		if (IsEmptyStr(t->Token[1]) == false && b1->Size == 16 && b2->Size == 16 && b3->Size == 24 && b4->Size == 8) {
 			StrCpy(d->MsChapV2_PPPUsername, sizeof(d->MsChapV2_PPPUsername), t->Token[1]);
 			Copy(d->MsChapV2_ServerChallenge, b1->Buf, 16);
 			Copy(d->MsChapV2_ClientChallenge, b2->Buf, 16);

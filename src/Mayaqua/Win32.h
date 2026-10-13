@@ -7,8 +7,8 @@
 
 #ifdef OS_WIN32
 
-#ifndef	WIN32_H
-#define	WIN32_H
+#ifndef WIN32_H
+#define WIN32_H
 
 #include "OS.h"
 
@@ -70,7 +70,7 @@ void Win32GetOsInfo(OS_INFO *info);
 void Win32Alert(char *msg, char *caption);
 void Win32AlertW(wchar_t *msg, wchar_t *caption);
 void Win32DebugAlert(char *msg);
-char* Win32GetProductId();
+char *Win32GetProductId();
 void Win32SetHighPriority();
 void Win32RestorePriority();
 void *Win32NewSingleInstance(char *instance_name);
@@ -104,8 +104,8 @@ UINT Win32GetNumberOfCpuInner();
 
 void Win32SetThreadName(UINT thread_id, char *name);
 
-#endif	// WIN32_H
+#endif // WIN32_H
 
-#endif	// OS_WIN32
+#endif // OS_WIN32
 
 

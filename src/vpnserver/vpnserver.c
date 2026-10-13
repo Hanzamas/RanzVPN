@@ -5,7 +5,7 @@
 // vpnserver.c
 // VPN Server service program
 
-#define	VPN_EXE
+#define VPN_EXE
 
 #include "Cedar/Server.h"
 
@@ -14,8 +14,7 @@
 #include "Mayaqua/Win32.h"
 
 // Process starting function
-void StartProcess()
-{
+void StartProcess() {
 	// Start the server
 	InitCedar();
 	StInit();
@@ -23,8 +22,7 @@ void StartProcess()
 }
 
 // Process termination function
-void StopProcess()
-{
+void StopProcess() {
 	// Stop the server
 	StStopServer();
 	StFree();
@@ -32,12 +30,11 @@ void StopProcess()
 }
 
 // WinMain function
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
 	InitProcessCallOnce();
 
-#ifdef	OS_WIN32
+#ifdef OS_WIN32
 	return MsService(GC_SVC_NAME_VPNSERVER, StartProcess, StopProcess, 0, argv[0]);
-#endif	// OS_WIN32
+#endif // OS_WIN32
 }
 

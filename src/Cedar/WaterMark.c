@@ -19,23 +19,20 @@ BYTE *WaterMark = NULL;
 UINT WaterMarkSize = 0;
 
 // Read the watermark file from hamcore and check its size and SHA-256
-BUF *LoadWaterMark()
-{
+BUF *LoadWaterMark() {
 	BUF *b;
 	UCHAR hash[SHA256_SIZE];
 	char hash_str[SHA256_SIZE * 2 + 1];
 
 	b = ReadDump(WATERMARK_FILENAME);
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return NULL;
 	}
 
 	Sha2_256(hash, b->Buf, b->Size);
 	BinToStr(hash_str, sizeof(hash_str), hash, sizeof(hash));
 
-	if (b->Size != WATERMARK_SIZE || StrCmpi(hash_str, WATERMARK_SHA256) != 0)
-	{
+	if (b->Size != WATERMARK_SIZE || StrCmpi(hash_str, WATERMARK_SHA256) != 0) {
 		FreeBuf(b);
 		return NULL;
 	}
@@ -44,12 +41,10 @@ BUF *LoadWaterMark()
 }
 
 // Load the watermark at startup (the program cannot run without it)
-void InitWaterMark()
-{
+void InitWaterMark() {
 	BUF *b = LoadWaterMark();
 
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		Alert("Error: Can't read the watermark data (watermark.bin is missing or corrupt).\r\nPlease check hamcore.se2.\r\n\r\n(First, reboot the computer. If this problem occurs again, please reinstall VPN software files.)", NULL);
 		exit(-1);
 	}
@@ -61,8 +56,7 @@ void InitWaterMark()
 }
 
 // Free the watermark
-void FreeWaterMark()
-{
+void FreeWaterMark() {
 	Free(WaterMark);
 	WaterMark = NULL;
 	WaterMarkSize = 0;

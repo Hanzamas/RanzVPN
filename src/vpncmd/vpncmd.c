@@ -16,18 +16,17 @@
 #include "Mayaqua/Str.h"
 
 // main function
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
 	wchar_t *s;
 	UINT ret = 0;
 
 	InitProcessCallOnce();
 
-#ifdef	OS_WIN32
+#ifdef OS_WIN32
 	SetConsoleTitleA(CEDAR_PRODUCT_STR " VPN Command Line Utility");
-#endif	// OS_WIN32
+#endif // OS_WIN32
 
-#if defined(_DEBUG) || defined(DEBUG)	// In VC++ compilers, the macro is "_DEBUG", not "DEBUG".
+#if defined(_DEBUG) || defined(DEBUG) // In VC++ compilers, the macro is "_DEBUG", not "DEBUG".
 	// If set memcheck = true, the program will be vitally slow since it will log all malloc() / realloc() / free() calls to find the cause of memory leak.
 	// For normal debug we set memcheck = false.
 	// Please set memcheck = true if you want to test the cause of memory leaks.
@@ -39,13 +38,11 @@ int main(int argc, char *argv[])
 
 	s = GetCommandLineUniStr();
 
-	if (s == NULL)
-	{
+	if (s == NULL) {
 		s = CopyUniStr(L"");
 	}
 
-	if (UniStrCmpi(s, L"exit") != 0)
-	{
+	if (UniStrCmpi(s, L"exit") != 0) {
 		UINT size = UniStrSize(s) + 64;
 		wchar_t *tmp;
 
@@ -56,18 +53,16 @@ int main(int argc, char *argv[])
 		Free(tmp);
 	}
 
-#ifdef	OS_WIN32
+#ifdef OS_WIN32
 	{
 		UINT i;
 		LIST *o = MsGetProcessList();
 		bool b = false;
 
-		for (i = 0;i < LIST_NUM(o);i++)
-		{
+		for (i = 0; i < LIST_NUM(o); i++) {
 			MS_PROCESS *p = LIST_DATA(o, i);
 
-			if (EndWith(p->ExeFilename, "\\cmd.exe") || EndWith(p->ExeFilename, "\\command.com"))
-			{
+			if (EndWith(p->ExeFilename, "\\cmd.exe") || EndWith(p->ExeFilename, "\\command.com")) {
 				b = true;
 				break;
 			}
@@ -75,15 +70,13 @@ int main(int argc, char *argv[])
 
 		MsFreeProcessList(o);
 
-		if (b == false)
-		{
-			if (ret != ERR_NO_ERROR)
-			{
+		if (b == false) {
+			if (ret != ERR_NO_ERROR) {
 				SleepThread(1000);
 			}
 		}
 	}
-#endif	// OS_WIN32
+#endif // OS_WIN32
 
 	Free(s);
 

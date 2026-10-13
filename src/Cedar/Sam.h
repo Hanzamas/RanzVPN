@@ -5,8 +5,8 @@
 // Sam.h
 // Header of Sam.c
 
-#ifndef	SAM_H
-#define	SAM_H
+#ifndef SAM_H
+#define SAM_H
 
 #include "CedarType.h"
 
@@ -22,5 +22,5 @@ POLICY *SamGetUserPolicy(HUB *h, char *username);
 void SecurePassword(void *secure_password, void *password, void *random);
 X *GetIssuerFromList(LIST *cert_list, X *cert);
 
-#endif	// SAM_H
+#endif // SAM_H
 

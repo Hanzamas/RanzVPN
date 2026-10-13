@@ -5,16 +5,15 @@
 // Internat.h
 // Header of Internat.c
 
-#ifndef	INTERNAT_H
-#define	INTERNAT_H
+#ifndef INTERNAT_H
+#define INTERNAT_H
 
 #include "MayaType.h"
 
 #include <stdarg.h>
 
 // String token
-struct UNI_TOKEN_LIST
-{
+struct UNI_TOKEN_LIST {
 	UINT NumTokens;
 	wchar_t **Token;
 };
@@ -88,7 +87,7 @@ wchar_t *UniDefaultTokenSplitChars();
 bool UniIsCharInStr(wchar_t *str, wchar_t c);
 UNI_TOKEN_LIST *UniParseTokenWithoutNullStr(wchar_t *str, wchar_t *split_chars);
 
-#endif	// INTERNAT_H
+#endif // INTERNAT_H
 
 
 

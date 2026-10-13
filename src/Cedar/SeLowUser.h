@@ -5,8 +5,8 @@
 // SeLowUser.h
 // Header for SeLowUser.c
 
-#ifndef	SELOWUSER_H
-#define	SELOWUSER_H
+#ifndef SELOWUSER_H
+#define SELOWUSER_H
 
 #include "CedarType.h"
 
@@ -15,38 +15,35 @@
 #include <SeLow/SeLowCommon.h>
 
 //// Macro
-#define	SL_USER_INSTALL_LOCK_TIMEOUT		60000		// Lock acquisition timeout
-#define	SL_USER_AUTO_PUSH_TIMER				60000		// Timer to start the installation automatically
+#define SL_USER_INSTALL_LOCK_TIMEOUT 60000 // Lock acquisition timeout
+#define SL_USER_AUTO_PUSH_TIMER      60000 // Timer to start the installation automatically
 
 //// Type
 
 // SU
-struct SU
-{
-	void *hFile;							// File handle
-	SL_ADAPTER_INFO_LIST AdapterInfoList;	// Adapter list cache
+struct SU {
+	void *hFile;                          // File handle
+	SL_ADAPTER_INFO_LIST AdapterInfoList; // Adapter list cache
 };
 
 // Adapter
-struct SU_ADAPTER
-{
-	char AdapterId[MAX_PATH];				// Adapter ID
-	char DeviceName[MAX_PATH];				// Device name
-	void *hFile;							// File handle
-	void *hEvent;							// Event handle
+struct SU_ADAPTER {
+	char AdapterId[MAX_PATH];  // Adapter ID
+	char DeviceName[MAX_PATH]; // Device name
+	void *hFile;               // File handle
+	void *hEvent;              // Event handle
 	bool Halt;
 	UINT CurrentPacketCount;
-	UCHAR GetBuffer[SL_EXCHANGE_BUFFER_SIZE];	// Read buffer
-	UCHAR PutBuffer[SL_EXCHANGE_BUFFER_SIZE];	// Write buffer
+	UCHAR GetBuffer[SL_EXCHANGE_BUFFER_SIZE]; // Read buffer
+	UCHAR PutBuffer[SL_EXCHANGE_BUFFER_SIZE]; // Write buffer
 };
 
 // Adapter list items
-struct SU_ADAPTER_LIST
-{
-	SL_ADAPTER_INFO Info;					// Adapter information
-	char Guid[128];							// GUID
-	char Name[MAX_SIZE];					// Name
-	char SortKey[MAX_SIZE];					// Sort key
+struct SU_ADAPTER_LIST {
+	SL_ADAPTER_INFO Info;   // Adapter information
+	char Guid[128];         // GUID
+	char Name[MAX_SIZE];    // Name
+	char SortKey[MAX_SIZE]; // Sort key
 };
 
 
@@ -76,7 +73,7 @@ void SuDeleteGarbageInfs();
 void SuDeleteGarbageInfsInner();
 bool SuLoadDriversHive();
 
-#endif	// SELOWUSER_H
+#endif // SELOWUSER_H
 
 
 

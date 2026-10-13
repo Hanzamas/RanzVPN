@@ -28,20 +28,17 @@
 static UINT ret_code = 0;
 
 // Get whether the system is a Windows NT
-bool IsWindowsNt()
-{
+bool IsWindowsNt() {
 	OSVERSIONINFO info;
 
 	ZeroMemory(&info, sizeof(info));
 	info.dwOSVersionInfoSize = sizeof(info);
 
-	if (GetVersionEx(&info) == false)
-	{
+	if (GetVersionEx(&info) == false) {
 		return false;
 	}
 
-	if (info.dwPlatformId == VER_PLATFORM_WIN32_NT)
-	{
+	if (info.dwPlatformId == VER_PLATFORM_WIN32_NT) {
 		return true;
 	}
 
@@ -49,8 +46,7 @@ bool IsWindowsNt()
 }
 
 // Execute a child process
-bool ExecProcess(char *exe_name, wchar_t *args_w)
-{
+bool ExecProcess(char *exe_name, wchar_t *args_w) {
 	bool ret;
 	wchar_t exe_name_w[MAX_SIZE];
 	char args[MAX_SIZE];
@@ -58,8 +54,7 @@ bool ExecProcess(char *exe_name, wchar_t *args_w)
 	STARTUPINFOW info_w;
 	PROCESS_INFORMATION proc;
 	// Validate arguments
-	if (exe_name == NULL || args_w == NULL)
-	{
+	if (exe_name == NULL || args_w == NULL) {
 		return false;
 	}
 
@@ -76,19 +71,15 @@ bool ExecProcess(char *exe_name, wchar_t *args_w)
 
 	ZeroMemory(&proc, sizeof(proc));
 
-	if (IsWindowsNt() == false)
-	{
+	if (IsWindowsNt() == false) {
 		ret = CreateProcess(exe_name, args, NULL, NULL, false, NORMAL_PRIORITY_CLASS,
-			NULL, NULL, &info, &proc);
-	}
-	else
-	{
+		                    NULL, NULL, &info, &proc);
+	} else {
 		ret = CreateProcessW(exe_name_w, args_w, NULL, NULL, false, NORMAL_PRIORITY_CLASS,
-			NULL, NULL, &info_w, &proc);
+		                     NULL, NULL, &info_w, &proc);
 	}
 
-	if (ret)
-	{
+	if (ret) {
 		WaitForSingleObject(proc.hProcess, INFINITE);
 
 		GetExitCodeProcess(proc.hProcess, &ret_code);
@@ -98,8 +89,7 @@ bool ExecProcess(char *exe_name, wchar_t *args_w)
 }
 
 // Entry point
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
 	HKEY hKey;
 	bool ok = false;
 	char error[MAX_SIZE];
@@ -114,17 +104,12 @@ int main(int argc, char *argv[])
 	current_args = GetCommandLineW();
 
 	// Remove the program name portion from the command line string
-	while (true)
-	{
-		switch (*current_args)
-		{
+	while (true) {
+		switch (*current_args) {
 		case L'\"':
-			if (flag == false)
-			{
+			if (flag == false) {
 				flag = true;
-			}
-			else
-			{
+			} else {
 				flag = false;
 			}
 			break;
@@ -132,27 +117,21 @@ int main(int argc, char *argv[])
 		case L' ':
 		case L'\t':
 		case 0:
-			if (flag == false)
-			{
+			if (flag == false) {
 				break_now = true;
 			}
 			break;
 		}
-		if (break_now)
-		{
+		if (break_now) {
 			break;
 		}
 		current_args++;
 	}
 
-	while (true)
-	{
-		if (*current_args == L' ' || *current_args == L'\t')
-		{
+	while (true) {
+		if (*current_args == L' ' || *current_args == L'\t') {
 			current_args++;
-		}
-		else
-		{
+		} else {
 			break;
 		}
 	}
@@ -160,23 +139,18 @@ int main(int argc, char *argv[])
 	strcpy(error, "VPN Command Line Tools is not Installed.\nPlease reinstall programs.");
 
 	// Get the path of the vpncmd.exe from the registry
-	if (RegOpenKey(HKEY_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, &hKey) == 0)
-	{
+	if (RegOpenKey(HKEY_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, &hKey) == 0) {
 		DWORD type = REG_SZ;
 		DWORD size = 4096;
 		char buf[4096];
 
-		if (RegQueryValueEx(hKey, VPNCMD_BOOTSTRAP_REG_VALUENAME_PATH, NULL, &type, (LPBYTE)buf, &size) == 0)
-		{
+		if (RegQueryValueEx(hKey, VPNCMD_BOOTSTRAP_REG_VALUENAME_PATH, NULL, &type, (LPBYTE)buf, &size) == 0) {
 			wchar_t args[MAX_SIZE];
 
 			swprintf(args, sizeof(args), L"\"%S\" %s", buf, current_args);
-			if (ExecProcess(buf, args) == false)
-			{
+			if (ExecProcess(buf, args) == false) {
 				//sprintf(error, "Failed to execute \"%S\".", buf);
-			}
-			else
-			{
+			} else {
 				ok = true;
 			}
 		}
@@ -184,8 +158,7 @@ int main(int argc, char *argv[])
 		RegCloseKey(hKey);
 	}
 
-	if (ok == false)
-	{
+	if (ok == false) {
 		printf("%s\n", error);
 	}
 

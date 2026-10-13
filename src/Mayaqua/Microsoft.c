@@ -8,7 +8,7 @@
 
 #ifdef OS_WIN32
 
-#define	MICROSOFT_C
+#define MICROSOFT_C
 
 #include "Microsoft.h"
 
@@ -52,11 +52,11 @@ static MS_ADAPTER_LIST *last_adapter_list = NULL;
 
 // Service related
 static SERVICE_STATUS_HANDLE ssh = NULL;
-static SERVICE_STATUS status = { 0 };
+static SERVICE_STATUS status = {0};
 static HANDLE service_stop_event = NULL;
-static BOOL (WINAPI *_StartServiceCtrlDispatcher)(CONST LPSERVICE_TABLE_ENTRY) = NULL;
-static SERVICE_STATUS_HANDLE (WINAPI *_RegisterServiceCtrlHandler)(LPCTSTR, LPHANDLER_FUNCTION) = NULL;
-static BOOL (WINAPI *_SetServiceStatus)(SERVICE_STATUS_HANDLE, LPSERVICE_STATUS) = NULL;
+static BOOL(WINAPI *_StartServiceCtrlDispatcher)(CONST LPSERVICE_TABLE_ENTRY) = NULL;
+static SERVICE_STATUS_HANDLE(WINAPI *_RegisterServiceCtrlHandler)(LPCTSTR, LPHANDLER_FUNCTION) = NULL;
+static BOOL(WINAPI *_SetServiceStatus)(SERVICE_STATUS_HANDLE, LPSERVICE_STATUS) = NULL;
 static char g_service_name[MAX_SIZE];
 static SERVICE_FUNCTION *g_start, *g_stop;
 static bool exiting = false;
@@ -69,13 +69,12 @@ static TOKEN_SOURCE lsa_token_source;
 
 // msi.dll
 static HINSTANCE hMsi = NULL;
-static UINT (WINAPI *_MsiGetProductInfoW)(LPCWSTR, LPCWSTR, LPWSTR, LPDWORD) = NULL;
-static UINT (WINAPI *_MsiConfigureProductW)(LPCWSTR, int, INSTALLSTATE) = NULL;
-static INSTALLUILEVEL (WINAPI *_MsiSetInternalUI)(INSTALLUILEVEL, HWND *) = NULL;
-static INSTALLSTATE (WINAPI *_MsiLocateComponentW)(LPCWSTR, LPWSTR, LPDWORD) = NULL;
+static UINT(WINAPI *_MsiGetProductInfoW)(LPCWSTR, LPCWSTR, LPWSTR, LPDWORD) = NULL;
+static UINT(WINAPI *_MsiConfigureProductW)(LPCWSTR, int, INSTALLSTATE) = NULL;
+static INSTALLUILEVEL(WINAPI *_MsiSetInternalUI)(INSTALLUILEVEL, HWND *) = NULL;
+static INSTALLSTATE(WINAPI *_MsiLocateComponentW)(LPCWSTR, LPWSTR, LPDWORD) = NULL;
 
-typedef struct MS_MSCHAPV2_PARAMS
-{
+typedef struct MS_MSCHAPV2_PARAMS {
 	wchar_t Username[MAX_SIZE];
 	wchar_t Workstation[MAX_SIZE];
 	wchar_t Domain[MAX_SIZE];
@@ -84,8 +83,7 @@ typedef struct MS_MSCHAPV2_PARAMS
 } MS_MSCHAPV2_PARAMS;
 
 // The function which should be called once as soon as possible after the process is started
-void MsInitProcessCallOnce()
-{
+void MsInitProcessCallOnce() {
 	// Mitigate the DLL injection attack
 	char system_dir[MAX_PATH];
 	char kernel32_path[MAX_PATH];
@@ -96,23 +94,20 @@ void MsInitProcessCallOnce()
 	memset(system_dir, 0, sizeof(system_dir));
 	GetSystemDirectory(system_dir, sizeof(system_dir));
 	len = lstrlenA(system_dir);
-	if (system_dir[len] == '\\')
-	{
+	if (system_dir[len] == '\\') {
 		system_dir[len] = 0;
 	}
 	wsprintfA(kernel32_path, "%s\\kernel32.dll", system_dir);
 
 	// Load kernel32.dll
 	hKernel32 = LoadLibraryA(kernel32_path);
-	if (hKernel32 != NULL)
-	{
-		BOOL (WINAPI *_SetDllDirectoryA)(LPCTSTR);
+	if (hKernel32 != NULL) {
+		BOOL(WINAPI * _SetDllDirectoryA)(LPCTSTR);
 
-		_SetDllDirectoryA = (BOOL (WINAPI *)(LPCTSTR))
-			GetProcAddress(hKernel32, "SetDllDirectoryA");
+		_SetDllDirectoryA = (BOOL(WINAPI *)(LPCTSTR))
+		    GetProcAddress(hKernel32, "SetDllDirectoryA");
 
-		if (_SetDllDirectoryA != NULL)
-		{
+		if (_SetDllDirectoryA != NULL) {
 			_SetDllDirectoryA("");
 		}
 
@@ -121,8 +116,7 @@ void MsInitProcessCallOnce()
 }
 
 // Determine whether this is running in a VM
-bool MsIsInVmMain()
-{
+bool MsIsInVmMain() {
 	char *bat_data = "On Error Resume Next\r\n\r\nDim str\r\n\r\nSet wmi_svc = GetObject(\"winmgmts:{impersonationLevel=impersonate}!\\\\.\\root\\cimv2\")\r\n\r\nSet items = wmi_svc.ExecQuery(\"Select * from Win32_BaseBoard\")\r\n\r\nFor Each item in items\r\n	str = str & item.Manufacturer\r\nNext\r\n\r\nSet items = Nothing\r\n\r\nSet items = wmi_svc.ExecQuery(\"Select * from Win32_ComputerSystem\")\r\n\r\nFor Each item in items\r\n	str = str & item.Manufacturer\r\nNext\r\n\r\nSet items = Nothing\r\n\r\nSet wmi_svc = Nothing\r\n\r\nstr = LCase(str)\r\n\r\nDim ret\r\n\r\nret = 0\r\n\r\nif InStr(str, \"microsoft corporation\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"vmware\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"virtualbox\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"virtualpc\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"xen\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"hvm\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"domu\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"kvm\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"oracle vm\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"qemu\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"parallels\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"xvm\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"virtual\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"bochs\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nwscript.quit ret\r\n\r\n";
 	wchar_t bat_filename[MAX_SIZE];
 	wchar_t cscript_exe[MAX_SIZE];
@@ -132,8 +126,7 @@ bool MsIsInVmMain()
 
 	CombinePathW(bat_filename, sizeof(bat_filename), MsGetMyTempDirW(), L"detectvm.vbs");
 
-	if (DumpDataW(bat_data, StrLen(bat_data), bat_filename) == false)
-	{
+	if (DumpDataW(bat_data, StrLen(bat_data), bat_filename) == false) {
 		return false;
 	}
 
@@ -143,19 +136,15 @@ bool MsIsInVmMain()
 
 	process = Win32RunEx3W(cscript_exe, tmp, true, NULL, true);
 
-	if (process == NULL)
-	{
+	if (process == NULL) {
 		return false;
 	}
 
-	if (Win32WaitProcess(process, 30000))
-	{
+	if (Win32WaitProcess(process, 30000)) {
 		DWORD exit_code = 0;
 
-		if (GetExitCodeProcess(process, &exit_code))
-		{
-			if (exit_code == 1)
-			{
+		if (GetExitCodeProcess(process, &exit_code)) {
+			if (exit_code == 1) {
 				ret = true;
 			}
 		}
@@ -165,13 +154,11 @@ bool MsIsInVmMain()
 
 	return ret;
 }
-bool MsIsInVm()
-{
+bool MsIsInVm() {
 	static bool flag_detected = false;
 	static bool flag_is_vm = false;
 
-	if (flag_detected == false)
-	{
+	if (flag_detected == false) {
 		flag_is_vm = MsIsInVmMain();
 
 		flag_detected = true;
@@ -181,12 +168,10 @@ bool MsIsInVm()
 }
 
 // Get the locale ID of the user
-UINT MsGetUserLocaleId()
-{
+UINT MsGetUserLocaleId() {
 	static UINT lcid_cache = 0;
 
-	if (lcid_cache == 0)
-	{
+	if (lcid_cache == 0) {
 		lcid_cache = (UINT)GetUserDefaultLCID();
 	}
 
@@ -194,12 +179,10 @@ UINT MsGetUserLocaleId()
 }
 
 // Send a pulse
-void MsSendGlobalPulse(void *p)
-{
+void MsSendGlobalPulse(void *p) {
 	HANDLE h;
 	// Validate arguments
-	if (p == NULL)
-	{
+	if (p == NULL) {
 		return;
 	}
 
@@ -209,12 +192,10 @@ void MsSendGlobalPulse(void *p)
 }
 
 // Release a pulse
-void MsCloseGlobalPulse(void *p)
-{
+void MsCloseGlobalPulse(void *p) {
 	HANDLE h;
 	// Validate arguments
-	if (p == NULL)
-	{
+	if (p == NULL) {
 		return;
 	}
 
@@ -224,17 +205,14 @@ void MsCloseGlobalPulse(void *p)
 }
 
 // Wait for arriving the pulse
-bool MsWaitForGlobalPulse(void *p, UINT timeout)
-{
+bool MsWaitForGlobalPulse(void *p, UINT timeout) {
 	HANDLE h;
 	UINT ret;
 	// Validate arguments
-	if (p == NULL)
-	{
+	if (p == NULL) {
 		return false;
 	}
-	if (timeout == TIMEOUT_INFINITE)
-	{
+	if (timeout == TIMEOUT_INFINITE) {
 		timeout = INFINITE;
 	}
 
@@ -242,8 +220,7 @@ bool MsWaitForGlobalPulse(void *p, UINT timeout)
 
 	ret = WaitForSingleObject(h, timeout);
 
-	if (ret == WAIT_OBJECT_0)
-	{
+	if (ret == WAIT_OBJECT_0) {
 		return true;
 	}
 
@@ -251,15 +228,13 @@ bool MsWaitForGlobalPulse(void *p, UINT timeout)
 }
 
 // Open or create a pulse
-void *MsOpenOrCreateGlobalPulse(char *name)
-{
+void *MsOpenOrCreateGlobalPulse(char *name) {
 	UCHAR hash[20];
 	char tmp[MAX_SIZE];
 	char tmp2[MAX_SIZE];
 	HANDLE h;
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return NULL;
 	}
 
@@ -279,57 +254,45 @@ void *MsOpenOrCreateGlobalPulse(char *name)
 
 
 // Set the mode not to show the errors
-void MsSetErrorModeToSilent()
-{
+void MsSetErrorModeToSilent() {
 	SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
 }
 
 // Get the file information
-bool MsGetFileInformation(void *h, void *info)
-{
+bool MsGetFileInformation(void *h, void *info) {
 	// Validate arguments
-	if (h == INVALID_HANDLE_VALUE || info == NULL)
-	{
+	if (h == INVALID_HANDLE_VALUE || info == NULL) {
 		return false;
 	}
 
 	return GetFileInformationByHandle(h, info);
 }
 
-typedef struct _ASTAT_
-{
+typedef struct _ASTAT_ {
 	ADAPTER_STATUS adapt;
-	NAME_BUFFER    NameBuff[30];
+	NAME_BUFFER NameBuff[30];
 } ASTAT, *PASTAT;
 
 // Get the precise time from the value of the high-resolution counter
-double MsGetHiResTimeSpan(UINT64 diff)
-{
+double MsGetHiResTimeSpan(UINT64 diff) {
 	LARGE_INTEGER t;
 	UINT64 freq;
 
-	if (QueryPerformanceFrequency(&t) == false)
-	{
+	if (QueryPerformanceFrequency(&t) == false) {
 		freq = 1000ULL;
-	}
-	else
-	{
+	} else {
 		Copy(&freq, &t, sizeof(UINT64));
 	}
 
 	return (double)diff / (double)freq;
 }
-UINT64 MsGetHiResTimeSpanUSec(UINT64 diff)
-{
+UINT64 MsGetHiResTimeSpanUSec(UINT64 diff) {
 	LARGE_INTEGER t;
 	UINT64 freq;
 
-	if (QueryPerformanceFrequency(&t) == false)
-	{
+	if (QueryPerformanceFrequency(&t) == false) {
 		freq = 1000ULL;
-	}
-	else
-	{
+	} else {
 		Copy(&freq, &t, sizeof(UINT64));
 	}
 
@@ -337,13 +300,11 @@ UINT64 MsGetHiResTimeSpanUSec(UINT64 diff)
 }
 
 // Get a high-resolution counter
-UINT64 MsGetHiResCounter()
-{
+UINT64 MsGetHiResCounter() {
 	LARGE_INTEGER t;
 	UINT64 ret;
 
-	if (QueryPerformanceCounter(&t) == false)
-	{
+	if (QueryPerformanceCounter(&t) == false) {
 		return Tick64();
 	}
 
@@ -353,28 +314,23 @@ UINT64 MsGetHiResCounter()
 }
 
 // Recursive directory creation
-void MsUniMakeDirEx(wchar_t *name)
-{
+void MsUniMakeDirEx(wchar_t *name) {
 	UINT wp;
 	wchar_t *tmp;
 	UINT i, len;
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return;
 	}
 
 	tmp = ZeroMalloc(UniStrSize(name) * 2);
 	wp = 0;
 	len = UniStrLen(name);
-	for (i = 0;i < len;i++)
-	{
+	for (i = 0; i < len; i++) {
 		wchar_t c = name[i];
 
-		if (c == '\\')
-		{
-			if (UniStrCmpi(tmp, L"\\\\") != 0 && UniStrCmpi(tmp, L"\\") != 0)
-			{
+		if (c == '\\') {
+			if (UniStrCmpi(tmp, L"\\\\") != 0 && UniStrCmpi(tmp, L"\\") != 0) {
 				MsUniMakeDir(tmp);
 			}
 		}
@@ -388,11 +344,9 @@ void MsUniMakeDirEx(wchar_t *name)
 }
 
 // Create a directory
-bool MsUniMakeDir(wchar_t *name)
-{
+bool MsUniMakeDir(wchar_t *name) {
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return false;
 	}
 
@@ -402,27 +356,22 @@ bool MsUniMakeDir(wchar_t *name)
 static wchar_t ms_computer_name_full_cache[MAX_SIZE] = {0};
 
 // Get the full name of the computer
-void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache)
-{
+void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache) {
 	DWORD size2 = size;
 	// Validate arguments
 	UniStrCpy(name, size, L"");
-	if (name == NULL || size == 0)
-	{
+	if (name == NULL || size == 0) {
 		return;
 	}
 
-	if (with_cache)
-	{
-		if (UniIsEmptyStr(ms_computer_name_full_cache) == false)
-		{
+	if (with_cache) {
+		if (UniIsEmptyStr(ms_computer_name_full_cache) == false) {
 			UniStrCpy(name, size, ms_computer_name_full_cache);
 			return;
 		}
 	}
 
-	if (GetComputerNameExW(ComputerNameDnsFullyQualified, name, &size2) == false)
-	{
+	if (GetComputerNameExW(ComputerNameDnsFullyQualified, name, &size2) == false) {
 		char tmp[MAX_SIZE];
 
 		MsGetComputerName(tmp, sizeof(tmp));
@@ -430,19 +379,16 @@ void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache)
 		StrToUni(name, size, tmp);
 	}
 
-	if (with_cache)
-	{
+	if (with_cache) {
 		UniStrCpy(ms_computer_name_full_cache, sizeof(ms_computer_name_full_cache), name);
 	}
 }
 
 // Get the computer name
-void MsGetComputerName(char *name, UINT size)
-{
+void MsGetComputerName(char *name, UINT size) {
 	DWORD sz;
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return;
 	}
 
@@ -451,21 +397,17 @@ void MsGetComputerName(char *name, UINT size)
 }
 
 // Disable the WoW64 redirection
-void *MsDisableWow64FileSystemRedirection()
-{
+void *MsDisableWow64FileSystemRedirection() {
 	void *p = NULL;
-	if (MsIs64BitWindows() == false)
-	{
+	if (MsIs64BitWindows() == false) {
 		return NULL;
 	}
 
-	if (Wow64DisableWow64FsRedirection(&p) == false)
-	{
+	if (Wow64DisableWow64FsRedirection(&p) == false) {
 		return NULL;
 	}
 
-	if (p == NULL)
-	{
+	if (p == NULL) {
 		p = (void *)0x12345678;
 	}
 
@@ -473,19 +415,15 @@ void *MsDisableWow64FileSystemRedirection()
 }
 
 // Restore the WoW64 redirection
-void MsRestoreWow64FileSystemRedirection(void *p)
-{
+void MsRestoreWow64FileSystemRedirection(void *p) {
 	// Validate arguments
-	if (p == NULL)
-	{
+	if (p == NULL) {
 		return;
 	}
-	if (p == (void *)0x12345678)
-	{
+	if (p == (void *)0x12345678) {
 		p = NULL;
 	}
-	if (MsIs64BitWindows() == false)
-	{
+	if (MsIs64BitWindows() == false) {
 		return;
 	}
 
@@ -493,20 +431,17 @@ void MsRestoreWow64FileSystemRedirection(void *p)
 }
 
 // Get whether the x64 version of Windows is currently running
-bool MsIsX64()
-{
+bool MsIsX64() {
 	SYSTEM_INFO info;
 
-	if (MsIs64BitWindows() == false)
-	{
+	if (MsIs64BitWindows() == false) {
 		return false;
 	}
 
 	Zero(&info, sizeof(info));
 	GetNativeSystemInfo(&info);
 
-	if (info.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64)
-	{
+	if (info.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64) {
 		return true;
 	}
 
@@ -514,16 +449,13 @@ bool MsIsX64()
 }
 
 // Acquisition whether it's a 64bit Windows
-bool MsIs64BitWindows()
-{
-	if (Is64())
-	{
+bool MsIs64BitWindows() {
+	if (Is64()) {
 		return true;
 	}
 
 	BOOL b = false;
-	if (IsWow64Process(GetCurrentProcess(), &b) == false)
-	{
+	if (IsWow64Process(GetCurrentProcess(), &b) == false) {
 		return false;
 	}
 
@@ -531,30 +463,25 @@ bool MsIs64BitWindows()
 }
 
 // Windows Firewall registration
-void MsRegistWindowsFirewallEx2(char *title, char *exe, char *dir)
-{
+void MsRegistWindowsFirewallEx2(char *title, char *exe, char *dir) {
 	char tmp[MAX_PATH];
 	// Validate arguments
-	if (title == NULL || exe == NULL)
-	{
+	if (title == NULL || exe == NULL) {
 		return;
 	}
-	if (dir == NULL || IsEmptyStr(dir))
-	{
+	if (dir == NULL || IsEmptyStr(dir)) {
 		dir = MsGetExeDirName();
 	}
 
 	ConbinePath(tmp, sizeof(tmp), dir, exe);
 
-	if (IsFileExists(tmp) == false)
-	{
+	if (IsFileExists(tmp) == false) {
 		return;
 	}
 
 	MsRegistWindowsFirewallEx(title, tmp);
 }
-void MsRegistWindowsFirewallEx(char *title, char *exe)
-{
+void MsRegistWindowsFirewallEx(char *title, char *exe) {
 	char *data;
 	char *tmp;
 	UINT tmp_size;
@@ -567,23 +494,21 @@ void MsRegistWindowsFirewallEx(char *title, char *exe)
 	UCHAR file_hash_bin[SHA1_SIZE];
 	char file_hash_str[MAX_SIZE];
 	// Validate arguments
-	if (title == NULL || exe == NULL)
-	{
+	if (title == NULL || exe == NULL) {
 		return;
 	}
 
-	if (MsIsAdmin() == false)
-	{
+	if (MsIsAdmin() == false) {
 		return;
 	}
 
 	data = "Option Explicit\r\n\r\nConst PROFILES_ALL = 7\r\nConst NET_FW_ACTION_ALLOWNET_FW_ACTION_ALLOW = 1\r\n"
-		"\r\nDim policy2\r\nDim rules\r\nDim new_rule\r\n\r\nOn Error Resume Next\r\n\r\n"
-		"Set policy2 = CreateObject(\"HNetCfg.FwPolicy2\")\r\nSet rules = policy2.Rules\r\n"
-		"Set new_rule = CreateObject(\"HNetCfg.FWRule\")\r\nnew_rule.Name = \"$TITLE$\"\r\n"
-		"new_rule.Description = \"$TITLE$\"\r\nnew_rule.ApplicationName = \"$PATH$\"\r\n"
-		"new_rule.Enabled = TRUE\r\nnew_rule.Profiles = PROFILES_ALL\r\nnew_rule.Action = "
-		"NET_FW_ACTION_ALLOWNET_FW_ACTION_ALLOW\r\nrules.Add new_rule\r\n\r\n";
+	       "\r\nDim policy2\r\nDim rules\r\nDim new_rule\r\n\r\nOn Error Resume Next\r\n\r\n"
+	       "Set policy2 = CreateObject(\"HNetCfg.FwPolicy2\")\r\nSet rules = policy2.Rules\r\n"
+	       "Set new_rule = CreateObject(\"HNetCfg.FWRule\")\r\nnew_rule.Name = \"$TITLE$\"\r\n"
+	       "new_rule.Description = \"$TITLE$\"\r\nnew_rule.ApplicationName = \"$PATH$\"\r\n"
+	       "new_rule.Enabled = TRUE\r\nnew_rule.Profiles = PROFILES_ALL\r\nnew_rule.Action = "
+	       "NET_FW_ACTION_ALLOWNET_FW_ACTION_ALLOW\r\nrules.Add new_rule\r\n\r\n";
 
 	tmp_size = StrLen(data) * 4;
 	tmp = ZeroMalloc(tmp_size);
@@ -597,8 +522,7 @@ void MsRegistWindowsFirewallEx(char *title, char *exe)
 	Sha1(file_hash_bin, tmp, StrLen(tmp));
 	BinToStr(file_hash_str, sizeof(file_hash_str), file_hash_bin, sizeof(file_hash_bin));
 
-	if (MsRegReadIntEx2(REG_LOCAL_MACHINE, SOFTETHER_FW_SCRIPT_HASH, file_hash_str, false, true) == 0)
-	{
+	if (MsRegReadIntEx2(REG_LOCAL_MACHINE, SOFTETHER_FW_SCRIPT_HASH, file_hash_str, false, true) == 0) {
 		Format(filename, sizeof(filename), "%s\\winfire_%s.vbs", MsGetMyTempDir(), hash);
 		o = FileCreate(filename);
 		FileWrite(o, tmp, StrLen(tmp));
@@ -607,8 +531,7 @@ void MsRegistWindowsFirewallEx(char *title, char *exe)
 		Format(cscript, sizeof(cscript), "%s\\cscript.exe", MsGetSystem32Dir());
 		Format(arg, sizeof(arg), "\"%s\"", filename);
 
-		if (Run(cscript, arg, true, false))
-		{
+		if (Run(cscript, arg, true, false)) {
 			MsRegWriteIntEx2(REG_LOCAL_MACHINE, SOFTETHER_FW_SCRIPT_HASH, file_hash_str, 1, false, true);
 		}
 
@@ -619,31 +542,26 @@ void MsRegistWindowsFirewallEx(char *title, char *exe)
 }
 
 // Get the locale of the current thread
-UINT MsGetThreadLocale()
-{
+UINT MsGetThreadLocale() {
 	return (UINT)GetThreadLocale();
 }
 
 // Set the width of the current console
-UINT MsSetConsoleWidth(UINT size)
-{
+UINT MsSetConsoleWidth(UINT size) {
 	HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
 	CONSOLE_SCREEN_BUFFER_INFO info;
 	COORD c;
 	UINT old_x, old_y;
 	// Validate arguments
-	if (size == 0)
-	{
+	if (size == 0) {
 		return 0;
 	}
-	if (h == INVALID_HANDLE_VALUE)
-	{
+	if (h == INVALID_HANDLE_VALUE) {
 		return 0;
 	}
 
 	Zero(&info, sizeof(info));
-	if (GetConsoleScreenBufferInfo(h, &info) == false)
-	{
+	if (GetConsoleScreenBufferInfo(h, &info) == false) {
 		return 0;
 	}
 
@@ -659,19 +577,16 @@ UINT MsSetConsoleWidth(UINT size)
 }
 
 // Get the width of the current console
-UINT MsGetConsoleWidth()
-{
+UINT MsGetConsoleWidth() {
 	HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
 	CONSOLE_SCREEN_BUFFER_INFO info;
 
-	if (h == INVALID_HANDLE_VALUE)
-	{
+	if (h == INVALID_HANDLE_VALUE) {
 		return 80;
 	}
 
 	Zero(&info, sizeof(info));
-	if (GetConsoleScreenBufferInfo(h, &info) == false)
-	{
+	if (GetConsoleScreenBufferInfo(h, &info) == false) {
 		return 80;
 	}
 
@@ -679,24 +594,21 @@ UINT MsGetConsoleWidth()
 }
 
 // Disable the MS-IME
-bool MsDisableIme()
-{
+bool MsDisableIme() {
 	HINSTANCE h;
 	bool ret = false;
 	char dll_name[MAX_PATH];
-	BOOL (WINAPI *_ImmDisableIME)(DWORD);
+	BOOL(WINAPI * _ImmDisableIME)(DWORD);
 
 	Format(dll_name, sizeof(dll_name), "%s\\imm32.dll", MsGetSystem32Dir());
 	h = MsLoadLibrary(dll_name);
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return false;
 	}
 
-	_ImmDisableIME = (BOOL (__stdcall *)(DWORD))GetProcAddress(h, "ImmDisableIME");
+	_ImmDisableIME = (BOOL(__stdcall *)(DWORD))GetProcAddress(h, "ImmDisableIME");
 
-	if (_ImmDisableIME != NULL)
-	{
+	if (_ImmDisableIME != NULL) {
 		ret = _ImmDisableIME(-1);
 	}
 
@@ -706,17 +618,13 @@ bool MsDisableIme()
 }
 
 // Display the current time
-void MsPrintTick()
-{
+void MsPrintTick() {
 	UINT tick = timeGetTime();
 	static UINT tick_init = 0;
-	if (tick_init == 0)
-	{
+	if (tick_init == 0) {
 		tick_init = tick;
 		tick = 0;
-	}
-	else
-	{
+	} else {
 		tick -= tick_init;
 	}
 
@@ -724,15 +632,13 @@ void MsPrintTick()
 }
 
 // LoadLibrary (compatible for Hamcore)
-void *MsLoadLibraryW(wchar_t *name)
-{
+void *MsLoadLibraryW(wchar_t *name) {
 	BUF *b;
 	wchar_t tmp_dll_name[MAX_SIZE];
 	char hash_str[MAX_SIZE];
 	UCHAR hash[SHA1_SIZE];
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return NULL;
 	}
 
@@ -742,11 +648,9 @@ void *MsLoadLibraryW(wchar_t *name)
 
 	UniFormat(tmp_dll_name, sizeof(tmp_dll_name), L"%s\\%S.dll", MsGetMyTempDirW(), hash_str);
 
-	if (IsFileExistsW(tmp_dll_name) == false)
-	{
+	if (IsFileExistsW(tmp_dll_name) == false) {
 		b = ReadDumpW(name);
-		if (b == NULL)
-		{
+		if (b == NULL) {
 			return NULL;
 		}
 
@@ -756,12 +660,10 @@ void *MsLoadLibraryW(wchar_t *name)
 
 	return LoadLibraryW(tmp_dll_name);
 }
-void *MsLoadLibrary(char *name)
-{
+void *MsLoadLibrary(char *name) {
 	wchar_t name_w[MAX_SIZE];
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return NULL;
 	}
 
@@ -771,19 +673,16 @@ void *MsLoadLibrary(char *name)
 }
 
 // Search for the adapter by GUID
-MS_ADAPTER *MsGetAdapterByGuid(char *guid)
-{
+MS_ADAPTER *MsGetAdapterByGuid(char *guid) {
 	MS_ADAPTER_LIST *o;
 	MS_ADAPTER *ret = NULL;
 	// Validate arguments
-	if (guid == NULL)
-	{
+	if (guid == NULL) {
 		return NULL;
 	}
 
 	o = MsCreateAdapterList();
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return NULL;
 	}
 
@@ -793,20 +692,16 @@ MS_ADAPTER *MsGetAdapterByGuid(char *guid)
 
 	return ret;
 }
-MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid)
-{
+MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid) {
 	MS_ADAPTER *ret = NULL;
 	UINT i;
 	// Validate arguments
-	if (o == NULL || guid == NULL)
-	{
+	if (o == NULL || guid == NULL) {
 		return NULL;
 	}
 
-	for (i = 0;i < o->Num;i++)
-	{
-		if (StrCmpi(o->Adapters[i]->Guid, guid) == 0)
-		{
+	for (i = 0; i < o->Num; i++) {
+		if (StrCmpi(o->Adapters[i]->Guid, guid) == 0) {
 			ret = MsCloneAdapter(o->Adapters[i]);
 			break;
 		}
@@ -816,23 +711,20 @@ MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid)
 }
 
 // 32-bit overflow checking
-#define	CHECK_32BIT_OVERFLOW(old_value, new_value)				\
-{																\
-	if ((old_value) > (new_value))								\
-	{															\
-		(new_value) += ((UINT64)4294967296ULL);					\
-	}															\
-}
+#define CHECK_32BIT_OVERFLOW(old_value, new_value)  \
+	{                                               \
+		if ((old_value) > (new_value)) {            \
+			(new_value) += ((UINT64)4294967296ULL); \
+		}                                           \
+	}
 
 // Get the TCP/IP information of the specified adapter
-void MsGetAdapterTcpIpInformation(MS_ADAPTER *a)
-{
+void MsGetAdapterTcpIpInformation(MS_ADAPTER *a) {
 	IP_ADAPTER_INFO *info, *info_top;
 	ULONG info_size;
 	ULONG ret;
 	// Validate arguments
-	if (a == NULL)
-	{
+	if (a == NULL) {
 		return;
 	}
 
@@ -840,20 +732,16 @@ void MsGetAdapterTcpIpInformation(MS_ADAPTER *a)
 	info_size = sizeof(IP_ADAPTER_INFO);
 
 	ret = GetAdaptersInfo(info_top, &info_size);
-	if (ret == ERROR_INSUFFICIENT_BUFFER || ret == ERROR_BUFFER_OVERFLOW)
-	{
+	if (ret == ERROR_INSUFFICIENT_BUFFER || ret == ERROR_BUFFER_OVERFLOW) {
 		Free(info_top);
 		info_size *= 2;
 		info_top = ZeroMalloc(info_size);
 
-		if (GetAdaptersInfo(info_top, &info_size) != NO_ERROR)
-		{
+		if (GetAdaptersInfo(info_top, &info_size) != NO_ERROR) {
 			Free(info_top);
 			return;
 		}
-	}
-	else if (ret != NO_ERROR)
-	{
+	} else if (ret != NO_ERROR) {
 		Free(info_top);
 		return;
 	}
@@ -861,19 +749,15 @@ void MsGetAdapterTcpIpInformation(MS_ADAPTER *a)
 	// Search for their own entry
 	info = info_top;
 
-	while (info != NULL)
-	{
-		if (info->Index == a->Index)
-		{
+	while (info != NULL) {
+		if (info->Index == a->Index) {
 			IP_ADDR_STRING *s;
 
 			// IP address
 			a->NumIpAddress = 0;
 			s = &info->IpAddressList;
-			while (s != NULL)
-			{
-				if (a->NumIpAddress < MAX_MS_ADAPTER_IP_ADDRESS)
-				{
+			while (s != NULL) {
+				if (a->NumIpAddress < MAX_MS_ADAPTER_IP_ADDRESS) {
 					StrToIP(&a->IpAddresses[a->NumIpAddress], s->IpAddress.String);
 					StrToIP(&a->SubnetMasks[a->NumIpAddress], s->IpMask.String);
 					a->NumIpAddress++;
@@ -884,10 +768,8 @@ void MsGetAdapterTcpIpInformation(MS_ADAPTER *a)
 			// Gateway
 			a->NumGateway = 0;
 			s = &info->GatewayList;
-			while (s != NULL)
-			{
-				if (a->NumGateway < MAX_MS_ADAPTER_IP_ADDRESS)
-				{
+			while (s != NULL) {
+				if (a->NumGateway < MAX_MS_ADAPTER_IP_ADDRESS) {
 					StrToIP(&a->Gateways[a->NumGateway], s->IpAddress.String);
 					a->NumGateway++;
 				}
@@ -896,8 +778,7 @@ void MsGetAdapterTcpIpInformation(MS_ADAPTER *a)
 
 			// DHCP Server
 			a->UseDhcp = (info->DhcpEnabled == 0 ? false : true);
-			if (a->UseDhcp)
-			{
+			if (a->UseDhcp) {
 				SYSTEMTIME st;
 
 				StrToIP(&a->DhcpServer, info->DhcpServer.IpAddress.String);
@@ -910,8 +791,7 @@ void MsGetAdapterTcpIpInformation(MS_ADAPTER *a)
 
 			// WINS server
 			a->UseWins = info->HaveWins;
-			if (a->UseWins)
-			{
+			if (a->UseWins) {
 				StrToIP(&a->PrimaryWinsServer, info->PrimaryWinsServer.IpAddress.String);
 				StrToIP(&a->SecondaryWinsServer, info->SecondaryWinsServer.IpAddress.String);
 			}
@@ -930,16 +810,13 @@ void MsGetAdapterTcpIpInformation(MS_ADAPTER *a)
 }
 
 // Generation of adapter list
-MS_ADAPTER_LIST *MsCreateAdapterList()
-{
+MS_ADAPTER_LIST *MsCreateAdapterList() {
 	return MsCreateAdapterListEx(false);
 }
-MS_ADAPTER_LIST *MsCreateAdapterListEx(bool no_info)
-{
+MS_ADAPTER_LIST *MsCreateAdapterListEx(bool no_info) {
 	MS_ADAPTER_LIST *ret;
 
-	if (no_info)
-	{
+	if (no_info) {
 		ret = MsCreateAdapterListInnerEx(true);
 
 		return ret;
@@ -953,24 +830,20 @@ MS_ADAPTER_LIST *MsCreateAdapterListEx(bool no_info)
 		// Fetch a new adapter list
 		ret = MsCreateAdapterListInner();
 
-		if (ret == NULL)
-		{
+		if (ret == NULL) {
 			Unlock(lock_adapter_list);
 			return NULL;
 		}
 
 		// Check whether the previously acquired item exists for each entry
 		// in the list of adapters have been taken
-		for (i = 0;i < ret->Num;i++)
-		{
+		for (i = 0; i < ret->Num; i++) {
 			UINT j;
-			for (j = 0;j < old->Num;j++)
-			{
+			for (j = 0; j < old->Num; j++) {
 				MS_ADAPTER *o = old->Adapters[j];
 				MS_ADAPTER *n = ret->Adapters[i];
 
-				if (StrCmpi(o->Title, n->Title) == 0)
-				{
+				if (StrCmpi(o->Title, n->Title) == 0) {
 					// If the value of older item is small, increment it
 					CHECK_32BIT_OVERFLOW(o->RecvBytes, n->RecvBytes);
 					CHECK_32BIT_OVERFLOW(o->RecvPacketsBroadcast, n->RecvPacketsBroadcast);
@@ -995,18 +868,15 @@ MS_ADAPTER_LIST *MsCreateAdapterListEx(bool no_info)
 }
 
 // Initialization of the adapter module list
-void MsInitAdapterListModule()
-{
+void MsInitAdapterListModule() {
 	lock_adapter_list = NewLock(NULL);
 
 	last_adapter_list = MsCreateAdapterListInner();
 }
 
 // Release of the adapter module list
-void MsFreeAdapterListModule()
-{
-	if (last_adapter_list != NULL)
-	{
+void MsFreeAdapterListModule() {
+	if (last_adapter_list != NULL) {
 		MsFreeAdapterList(last_adapter_list);
 		last_adapter_list = NULL;
 	}
@@ -1016,13 +886,11 @@ void MsFreeAdapterListModule()
 }
 
 // Clone the adapter list
-MS_ADAPTER_LIST *MsCloneAdapterList(MS_ADAPTER_LIST *o)
-{
+MS_ADAPTER_LIST *MsCloneAdapterList(MS_ADAPTER_LIST *o) {
 	MS_ADAPTER_LIST *ret;
 	UINT i;
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return NULL;
 	}
 
@@ -1030,8 +898,7 @@ MS_ADAPTER_LIST *MsCloneAdapterList(MS_ADAPTER_LIST *o)
 	ret->Num = o->Num;
 	ret->Adapters = ZeroMalloc(sizeof(MS_ADAPTER *) * ret->Num);
 
-	for (i = 0;i < ret->Num;i++)
-	{
+	for (i = 0; i < ret->Num; i++) {
 		ret->Adapters[i] = ZeroMalloc(sizeof(MS_ADAPTER));
 		Copy(ret->Adapters[i], o->Adapters[i], sizeof(MS_ADAPTER));
 	}
@@ -1040,12 +907,10 @@ MS_ADAPTER_LIST *MsCloneAdapterList(MS_ADAPTER_LIST *o)
 }
 
 // Clone the adapter
-MS_ADAPTER *MsCloneAdapter(MS_ADAPTER *a)
-{
+MS_ADAPTER *MsCloneAdapter(MS_ADAPTER *a) {
 	MS_ADAPTER *ret;
 	// Validate arguments
-	if (a == NULL)
-	{
+	if (a == NULL) {
 		return NULL;
 	}
 
@@ -1056,18 +921,15 @@ MS_ADAPTER *MsCloneAdapter(MS_ADAPTER *a)
 }
 
 // Creating an adapters list
-MS_ADAPTER_LIST *MsCreateAdapterListInner()
-{
+MS_ADAPTER_LIST *MsCreateAdapterListInner() {
 	return MsCreateAdapterListInnerEx(false);
 }
-MS_ADAPTER_LIST *MsCreateAdapterListInnerEx(bool no_info)
-{
+MS_ADAPTER_LIST *MsCreateAdapterListInnerEx(bool no_info) {
 	return MsCreateAdapterListInnerExVista(no_info);
 }
 
 // Creating an adapters list (Windows Vista version)
-MS_ADAPTER_LIST *MsCreateAdapterListInnerExVista(bool no_info)
-{
+MS_ADAPTER_LIST *MsCreateAdapterListInnerExVista(bool no_info) {
 	LIST *o;
 	UINT i;
 	UINT retcode;
@@ -1075,15 +937,13 @@ MS_ADAPTER_LIST *MsCreateAdapterListInnerExVista(bool no_info)
 	MS_ADAPTER_LIST *ret;
 
 	retcode = GetIfTable2(&table);
-	if (retcode != NO_ERROR || table == NULL)
-	{
+	if (retcode != NO_ERROR || table == NULL) {
 		return ZeroMalloc(sizeof(MS_ADAPTER_LIST));
 	}
 
 	o = NewListFast(NULL);
 
-	for (i = 0;i < table->NumEntries;i++)
-	{
+	for (i = 0; i < table->NumEntries; i++) {
 		MIB_IF_ROW2 *r = &table->Table[i];
 		wchar_t title[MAX_PATH];
 		MS_ADAPTER *a;
@@ -1093,34 +953,27 @@ MS_ADAPTER_LIST *MsCreateAdapterListInnerExVista(bool no_info)
 		{
 			//if (r->dwType & IF_TYPE_ETHERNET_CSMACD)
 			{
-				for (j = 1;;j++)
-				{
+				for (j = 1;; j++) {
 					UINT k;
 					bool exists;
-					if (j == 1)
-					{
+					if (j == 1) {
 						UniStrCpy(title, sizeof(title), r->Description);
-					}
-					else
-					{
+					} else {
 						UniFormat(title, sizeof(title), L"%s (%u)", r->Description, j);
 					}
 
 					exists = false;
 
-					for (k = 0;k < LIST_NUM(o);k++)
-					{
+					for (k = 0; k < LIST_NUM(o); k++) {
 						MS_ADAPTER *a = LIST_DATA(o, k);
 
-						if (UniStrCmpi(a->TitleW, title) == 0)
-						{
+						if (UniStrCmpi(a->TitleW, title) == 0) {
 							exists = true;
 							break;
 						}
 					}
 
-					if (exists == false)
-					{
+					if (exists == false) {
 						break;
 					}
 				}
@@ -1146,23 +999,20 @@ MS_ADAPTER_LIST *MsCreateAdapterListInnerExVista(bool no_info)
 				a->SendPacketsUnicast = r->OutUcastPkts;
 
 				if (r->MediaType == NdisMediumWirelessWan || r->PhysicalMediumType == NdisPhysicalMediumWirelessLan ||
-					r->PhysicalMediumType == NdisPhysicalMediumWirelessWan || r->PhysicalMediumType == NdisPhysicalMediumWiMax ||
-					r->Type == IF_TYPE_IEEE80211)
-				{
+				    r->PhysicalMediumType == NdisPhysicalMediumWirelessWan || r->PhysicalMediumType == NdisPhysicalMediumWiMax ||
+				    r->Type == IF_TYPE_IEEE80211) {
 					a->IsWireless = true;
 				}
 
 				if (a->IsWireless ||
-					r->Type != IF_TYPE_ETHERNET_CSMACD ||
-					r->MediaType != NdisMedium802_3 || 
-					(r->PhysicalMediumType != 0 && r->PhysicalMediumType != NdisPhysicalMedium802_3))
-				{
+				    r->Type != IF_TYPE_ETHERNET_CSMACD ||
+				    r->MediaType != NdisMedium802_3 ||
+				    (r->PhysicalMediumType != 0 && r->PhysicalMediumType != NdisPhysicalMedium802_3)) {
 					a->IsNotEthernetLan = true;
 				}
 
 				// TCP/IP information acquisition
-				if (no_info == false)
-				{
+				if (no_info == false) {
 					MsGetAdapterTcpIpInformation(a);
 				}
 
@@ -1182,10 +1032,8 @@ MS_ADAPTER_LIST *MsCreateAdapterListInnerExVista(bool no_info)
 }
 
 // Convert the MIB Operational Status from Vista format to XP format
-UINT ConvertMidStatusVistaToXp(UINT st)
-{
-	switch (st)
-	{
+UINT ConvertMidStatusVistaToXp(UINT st) {
+	switch (st) {
 	case IfOperStatusUp:
 		return MIB_IF_OPER_STATUS_CONNECTED;
 
@@ -1197,17 +1045,14 @@ UINT ConvertMidStatusVistaToXp(UINT st)
 }
 
 // Release the adapter list
-void MsFreeAdapterList(MS_ADAPTER_LIST *o)
-{
+void MsFreeAdapterList(MS_ADAPTER_LIST *o) {
 	UINT i;
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return;
 	}
 
-	for (i = 0;i < o->Num;i++)
-	{
+	for (i = 0; i < o->Num; i++) {
 		MsFreeAdapter(o->Adapters[i]);
 	}
 	Free(o->Adapters);
@@ -1216,11 +1061,9 @@ void MsFreeAdapterList(MS_ADAPTER_LIST *o)
 }
 
 // Release the adapter information
-void MsFreeAdapter(MS_ADAPTER *a)
-{
+void MsFreeAdapter(MS_ADAPTER *a) {
 	// Validate arguments
-	if (a == NULL)
-	{
+	if (a == NULL) {
 		return;
 	}
 
@@ -1228,12 +1071,10 @@ void MsFreeAdapter(MS_ADAPTER *a)
 }
 
 // Search the process by the process ID
-MS_PROCESS *MsSearchProcessById(LIST *o, UINT id)
-{
+MS_PROCESS *MsSearchProcessById(LIST *o, UINT id) {
 	MS_PROCESS *p, t;
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return NULL;
 	}
 
@@ -1246,46 +1087,35 @@ MS_PROCESS *MsSearchProcessById(LIST *o, UINT id)
 }
 
 // Compare the Process List items
-int MsCompareProcessList(void *p1, void *p2)
-{
+int MsCompareProcessList(void *p1, void *p2) {
 	MS_PROCESS *e1, *e2;
-	if (p1 == NULL || p2 == NULL)
-	{
+	if (p1 == NULL || p2 == NULL) {
 		return 0;
 	}
 	e1 = *(MS_PROCESS **)p1;
 	e2 = *(MS_PROCESS **)p2;
-	if (e1 == NULL || e2 == NULL)
-	{
+	if (e1 == NULL || e2 == NULL) {
 		return 0;
 	}
 
-	if (e1->ProcessId > e2->ProcessId)
-	{
+	if (e1->ProcessId > e2->ProcessId) {
 		return 1;
-	}
-	else if (e1->ProcessId < e2->ProcessId)
-	{
+	} else if (e1->ProcessId < e2->ProcessId) {
 		return -1;
-	}
-	else
-	{
+	} else {
 		return 0;
 	}
 }
 
 // Release of the process list
-void MsFreeProcessList(LIST *o)
-{
+void MsFreeProcessList(LIST *o) {
 	UINT i;
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
+	for (i = 0; i < LIST_NUM(o); i++) {
 		MS_PROCESS *p = LIST_DATA(o, i);
 		Free(p);
 	}
@@ -1294,8 +1124,7 @@ void MsFreeProcessList(LIST *o)
 }
 
 // Get the Process List (for WinNT)
-LIST *MsGetProcessListNt()
-{
+LIST *MsGetProcessListNt() {
 	LIST *o;
 	UINT max = 16384;
 	DWORD *processes;
@@ -1307,22 +1136,19 @@ LIST *MsGetProcessListNt()
 
 	processes = ZeroMalloc(sizeof(DWORD) * max);
 
-	if (EnumProcesses(processes, sizeof(DWORD) * max, &needed) == FALSE)
-	{
+	if (EnumProcesses(processes, sizeof(DWORD) * max, &needed) == FALSE) {
 		Free(processes);
 		return NULL;
 	}
 
 	num = needed / sizeof(DWORD);
 
-	for (i = 0;i < num;i++)
-	{
+	for (i = 0; i < num; i++) {
 		UINT id = processes[i];
 		HANDLE h = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,
-			false, id);
+		                       false, id);
 
-		if (h != NULL)
-		{
+		if (h != NULL) {
 			HINSTANCE hInst = NULL;
 			DWORD needed;
 			char exe[MAX_SIZE];
@@ -1333,24 +1159,19 @@ LIST *MsGetProcessListNt()
 			sz1 = sizeof(exe) - 1;
 			sz2 = sizeof(exe_w) / sizeof(wchar_t) - 1;
 
-			if (EnumProcessModules(h, &hInst, sizeof(hInst), &needed) == false)
-			{
+			if (EnumProcessModules(h, &hInst, sizeof(hInst), &needed) == false) {
 				hInst = NULL;
 			}
 
 			if (GetModuleFileNameExA(h, hInst, exe, sizeof(exe) - 1) &&
-				GetModuleFileNameExW(h, hInst, exe_w, sizeof(exe_w) / sizeof(wchar_t) - 1))
-			{
+			    GetModuleFileNameExW(h, hInst, exe_w, sizeof(exe_w) / sizeof(wchar_t) - 1)) {
 				ok = true;
-			}
-			else if (QueryFullProcessImageNameA(h, 0, exe, &sz1) &&
-				QueryFullProcessImageNameW(h, 0, exe_w, &sz2))
-			{
+			} else if (QueryFullProcessImageNameA(h, 0, exe, &sz1) &&
+			           QueryFullProcessImageNameW(h, 0, exe_w, &sz2)) {
 				ok = true;
 			}
 
-			if (ok)
-			{
+			if (ok) {
 				MS_PROCESS *p = ZeroMalloc(sizeof(MS_PROCESS));
 
 				StrCpy(p->ExeFilename, sizeof(p->ExeFilename), exe);
@@ -1372,26 +1193,21 @@ LIST *MsGetProcessListNt()
 }
 
 // Get the Process List
-LIST *MsGetProcessList()
-{
+LIST *MsGetProcessList() {
 	return MsGetProcessListNt();
 }
 
 // Window procedure for the user mode
-LRESULT CALLBACK MsUserModeWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
-{
+LRESULT CALLBACK MsUserModeWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 	// Validate arguments
-	if (hWnd == NULL)
-	{
+	if (hWnd == NULL) {
 		return 0;
 	}
 
-	switch (msg)
-	{
+	switch (msg) {
 	case WM_ENDSESSION:
 		// Resume
-		if (wParam == false)
-		{
+		if (wParam == false) {
 			break;
 		}
 	case WM_CREATE:
@@ -1400,8 +1216,7 @@ LRESULT CALLBACK MsUserModeWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		g_start();
 		break;
 	case WM_QUERYENDSESSION:
-		if (exiting == false)
-		{
+		if (exiting == false) {
 			exiting = true;
 			g_stop();
 			DestroyWindow(hWnd);
@@ -1409,8 +1224,7 @@ LRESULT CALLBACK MsUserModeWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 		return TRUE;
 	case WM_CLOSE:
 		// Stop
-		if (exiting == false)
-		{
+		if (exiting == false) {
 			exiting = true;
 			g_stop();
 			DestroyWindow(hWnd);
@@ -1424,18 +1238,15 @@ LRESULT CALLBACK MsUserModeWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
 }
 
 // Get whether this instance is in user mode
-bool MsIsUserMode()
-{
+bool MsIsUserMode() {
 	return is_usermode;
 }
 
 // Creating a global pulse for user-mode service
-void *MsCreateUserModeSvcGlocalPulse(char *svc_name)
-{
+void *MsCreateUserModeSvcGlocalPulse(char *svc_name) {
 	char name[MAX_SIZE];
 	// Validate arguments
-	if (svc_name == NULL)
-	{
+	if (svc_name == NULL) {
 		return NULL;
 	}
 
@@ -1445,13 +1256,11 @@ void *MsCreateUserModeSvcGlocalPulse(char *svc_name)
 }
 
 // Get the global pulse name for the user-mode service
-void MsGenerateUserModeSvcGlobalPulseName(char *name, UINT size, char *svc_name)
-{
+void MsGenerateUserModeSvcGlobalPulseName(char *name, UINT size, char *svc_name) {
 	wchar_t tmp[MAX_SIZE];
 	UCHAR hash[SHA1_SIZE];
 	// Validate arguments
-	if (name == NULL || svc_name == NULL)
-	{
+	if (name == NULL || svc_name == NULL) {
 		return;
 	}
 
@@ -1466,8 +1275,7 @@ void MsGenerateUserModeSvcGlobalPulseName(char *name, UINT size, char *svc_name)
 }
 
 // Start in user mode
-void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT icon)
-{
+void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT icon) {
 	WNDCLASS wc;
 	HWND hWnd;
 	MSG msg;
@@ -1477,8 +1285,7 @@ void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop
 	MS_USERMODE_SVC_PULSE_THREAD_PARAM p;
 	THREAD *recv_thread = NULL;
 	// Validate arguments
-	if (title == NULL || start == NULL || stop == NULL)
-	{
+	if (title == NULL || start == NULL || stop == NULL) {
 		return;
 	}
 
@@ -1489,8 +1296,7 @@ void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop
 	g_stop = stop;
 
 	inst = NewSingleInstance(NULL);
-	if (inst == NULL)
-	{
+	if (inst == NULL) {
 		UniFormat(msg_str, sizeof(msg_str), _UU("SVC_USERMODE_MUTEX"), ms->ExeFileNameW);
 		UniPrint(L"%s\n", msg_str);
 		return;
@@ -1499,21 +1305,19 @@ void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop
 	// Creating the main window (hidden; no icon and no task tray)
 	Zero(&wc, sizeof(wc));
 	wc.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);
-	wc.hCursor = LoadCursor(NULL,IDC_ARROW);
+	wc.hCursor = LoadCursor(NULL, IDC_ARROW);
 	wc.hInstance = ms->hInst;
 	wc.lpfnWndProc = MsUserModeWindowProc;
 	wc.lpszClassName = title_a;
-	if (RegisterClass(&wc) == 0)
-	{
+	if (RegisterClass(&wc) == 0) {
 		return;
 	}
 
 	hWnd = CreateWindow(title_a, title_a, WS_OVERLAPPEDWINDOW,
-		CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-		NULL, NULL, ms->hInst, NULL);
+	                    CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+	                    NULL, NULL, ms->hInst, NULL);
 
-	if (hWnd == NULL)
-	{
+	if (hWnd == NULL) {
 		return;
 	}
 
@@ -1521,8 +1325,7 @@ void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop
 	p.hWnd = hWnd;
 	p.GlobalPulse = MsCreateUserModeSvcGlocalPulse(g_service_name);
 
-	if (p.GlobalPulse != NULL)
-	{
+	if (p.GlobalPulse != NULL) {
 		// Start the global pulse monitoring thread for termination
 		p.Halt = false;
 
@@ -1533,8 +1336,7 @@ void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop
 
 	wnd_end = false;
 	// Window loop
-	while (wnd_end == false)
-	{
+	while (wnd_end == false) {
 		GetMessage(&msg, NULL, 0, 0);
 		TranslateMessage(&msg);
 		DispatchMessage(&msg);
@@ -1546,8 +1348,7 @@ void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop
 
 	hWndUsermode = NULL;
 
-	if (p.GlobalPulse != NULL)
-	{
+	if (p.GlobalPulse != NULL) {
 		// Terminate the monitoring thread of termination global pulse
 		p.Halt = true;
 		MsSendGlobalPulse(p.GlobalPulse);
@@ -1563,49 +1364,40 @@ void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop
 }
 
 // The thread that wait for global pulse to stop the user mode service
-void MsUserModeGlobalPulseRecvThread(THREAD *thread, void *param)
-{
+void MsUserModeGlobalPulseRecvThread(THREAD *thread, void *param) {
 	MS_USERMODE_SVC_PULSE_THREAD_PARAM *p = (MS_USERMODE_SVC_PULSE_THREAD_PARAM *)param;
 	// Validate arguments
-	if (thread == NULL || p == NULL)
-	{
+	if (thread == NULL || p == NULL) {
 		return;
 	}
 
-	while (p->Halt == false)
-	{
-		if (MsWaitForGlobalPulse(p->GlobalPulse, INFINITE))
-		{
+	while (p->Halt == false) {
+		if (MsWaitForGlobalPulse(p->GlobalPulse, INFINITE)) {
 			break;
 		}
 	}
 
-	if (p->hWnd != NULL)
-	{
+	if (p->hWnd != NULL) {
 		PostMessageA(p->hWnd, WM_CLOSE, 0, 0);
 	}
 }
 
 // Service stopping procedure main thread
-void MsServiceStoperMainThread(THREAD *t, void *p)
-{
+void MsServiceStoperMainThread(THREAD *t, void *p) {
 	// Stopping procedure
 	g_stop();
 }
 
 // Service stop procedure
-bool MsServiceStopProc()
-{
+bool MsServiceStopProc() {
 	THREAD *thread;
 	bool ret = true;
 	UINT64 selfkill_timeout = Tick64() + SVC_SELFKILL_TIMEOUT;
 
 	thread = NewThread(MsServiceStoperMainThread, NULL);
 
-	while (WaitThread(thread, 250) == false)
-	{
-		if (Tick64() >= selfkill_timeout)
-		{
+	while (WaitThread(thread, 250) == false) {
+		if (Tick64() >= selfkill_timeout) {
 			// Suicide when it freezes
 			ret = false;
 			break;
@@ -1625,13 +1417,10 @@ bool MsServiceStopProc()
 	status.dwCurrentState = SERVICE_STOPPED;
 	_SetServiceStatus(ssh, &status);
 
-	if (ret == false)
-	{
+	if (ret == false) {
 		// Force termination here if this has committed suicide
 		_exit(-1);
-	}
-	else
-	{
+	} else {
 		ReleaseThread(thread);
 	}
 
@@ -1639,10 +1428,8 @@ bool MsServiceStopProc()
 }
 
 // Service handler
-void CALLBACK MsServiceHandler(DWORD opcode)
-{
-	switch (opcode)
-	{
+void CALLBACK MsServiceHandler(DWORD opcode) {
+	switch (opcode) {
 	case SERVICE_CONTROL_SHUTDOWN:
 	case SERVICE_CONTROL_STOP:
 		// Stopping request
@@ -1652,8 +1439,7 @@ void CALLBACK MsServiceHandler(DWORD opcode)
 		status.dwCurrentState = SERVICE_STOP_PENDING;
 
 		// Set the stopping event
-		if (service_stop_event != NULL)
-		{
+		if (service_stop_event != NULL) {
 			SetEvent(service_stop_event);
 		}
 		break;
@@ -1663,8 +1449,7 @@ void CALLBACK MsServiceHandler(DWORD opcode)
 }
 
 // Dispatch function of the service
-void CALLBACK MsServiceDispatcher(DWORD argc, LPTSTR *argv)
-{
+void CALLBACK MsServiceDispatcher(DWORD argc, LPTSTR *argv) {
 	// Creating a stopping event
 	service_stop_event = CreateEventA(NULL, true, false, NULL);
 
@@ -1676,8 +1461,7 @@ void CALLBACK MsServiceDispatcher(DWORD argc, LPTSTR *argv)
 
 	ssh = _RegisterServiceCtrlHandler(g_service_name, MsServiceHandler);
 
-	if (ssh == NULL)
-	{
+	if (ssh == NULL) {
 		MessageBox(NULL, "RegisterServiceCtrlHandler() Failed.", "MsServiceDispatcher()", MB_SETFOREGROUND | MB_TOPMOST | MB_SERVICE_NOTIFICATION | MB_OK | MB_ICONEXCLAMATION);
 		return;
 	}
@@ -1696,7 +1480,7 @@ void CALLBACK MsServiceDispatcher(DWORD argc, LPTSTR *argv)
 
 	//// Initialization
 	// Start of the Mayaqua
-#if defined(_DEBUG) || defined(DEBUG)	// In VC++ compilers, the macro is "_DEBUG", not "DEBUG".
+#if defined(_DEBUG) || defined(DEBUG) // In VC++ compilers, the macro is "_DEBUG", not "DEBUG".
 	// If set memcheck = true, the program will be vitally slow since it will log all malloc() / realloc() / free() calls to find the cause of memory leak.
 	// For normal debug we set memcheck = false.
 	// Please set memcheck = true if you want to test the cause of memory leaks.
@@ -1720,21 +1504,18 @@ void CALLBACK MsServiceDispatcher(DWORD argc, LPTSTR *argv)
 }
 
 // Start as a test mode
-void MsTestModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop)
-{
+void MsTestModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop) {
 	INSTANCE *inst;
 	wchar_t msg[MAX_SIZE];
 	// Validate arguments
-	if (title == NULL || start == NULL || stop == NULL)
-	{
+	if (title == NULL || start == NULL || stop == NULL) {
 		return;
 	}
 
 	is_usermode = true;
 
 	inst = NewSingleInstance(NULL);
-	if (inst == NULL)
-	{
+	if (inst == NULL) {
 		// Already started
 		UniFormat(msg, sizeof(msg), _UU("SVC_TEST_MUTEX"), ms->ExeFileNameW);
 		UniPrint(L"%s\n", msg);
@@ -1756,19 +1537,15 @@ void MsTestModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop
 }
 
 // Write the process ID of the process which is calling the service manager
-void MsWriteCallingServiceManagerProcessId(char *svcname, UINT pid)
-{
+void MsWriteCallingServiceManagerProcessId(char *svcname, UINT pid) {
 	char tmp[MAX_PATH];
 
 	Format(tmp, sizeof(tmp), SVC_CALLING_SM_PROCESS_ID_KEY, svcname);
 
-	if (pid != 0)
-	{
+	if (pid != 0) {
 		MsRegWriteInt(REG_LOCAL_MACHINE, tmp, SVC_CALLING_SM_PROCESS_ID_VALUE, pid);
 		MsRegWriteInt(REG_CURRENT_USER, tmp, SVC_CALLING_SM_PROCESS_ID_VALUE, pid);
-	}
-	else
-	{
+	} else {
 		MsRegDeleteValue(REG_LOCAL_MACHINE, tmp, SVC_CALLING_SM_PROCESS_ID_VALUE);
 		MsRegDeleteKey(REG_LOCAL_MACHINE, tmp);
 
@@ -1778,8 +1555,7 @@ void MsWriteCallingServiceManagerProcessId(char *svcname, UINT pid)
 }
 
 // Service main function
-UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT icon, char *cmd_line)
-{
+UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT icon, char *cmd_line) {
 	UINT mode;
 	UINT ret = 0;
 	char *arg;
@@ -1793,8 +1569,7 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 	bool silent = false;
 	bool is_win32_service_mode = false;
 	// Validate arguments
-	if (name == NULL || start == NULL || stop == NULL)
-	{
+	if (name == NULL || start == NULL || stop == NULL) {
 		return ret;
 	}
 
@@ -1804,51 +1579,44 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 	StrLower(g_service_name);
 
 	// Determine whether it's in Win32 service mode
-	if (cmd_line != NULL && lstrcmpiA(cmd_line, SVC_ARG_SERVICE) == 0)
-	{
+	if (cmd_line != NULL && lstrcmpiA(cmd_line, SVC_ARG_SERVICE) == 0) {
 		HINSTANCE h_advapi32 = LoadLibraryA("advapi32.dll");
 
-		if (h_advapi32 != NULL)
-		{
+		if (h_advapi32 != NULL) {
 			// Check whether there is the SCM in the service mode
 			_StartServiceCtrlDispatcher =
-				(BOOL (__stdcall *)(const LPSERVICE_TABLE_ENTRY))
-				GetProcAddress(h_advapi32, "StartServiceCtrlDispatcherW");
+			    (BOOL(__stdcall *)(const LPSERVICE_TABLE_ENTRY))
+			        GetProcAddress(h_advapi32, "StartServiceCtrlDispatcherW");
 
 			_RegisterServiceCtrlHandler =
-				(SERVICE_STATUS_HANDLE (__stdcall *)(LPCTSTR,LPHANDLER_FUNCTION))
-				GetProcAddress(h_advapi32, "RegisterServiceCtrlHandlerW");
+			    (SERVICE_STATUS_HANDLE(__stdcall *)(LPCTSTR, LPHANDLER_FUNCTION))
+			        GetProcAddress(h_advapi32, "RegisterServiceCtrlHandlerW");
 
 			_SetServiceStatus =
-				(BOOL (__stdcall *)(SERVICE_STATUS_HANDLE,LPSERVICE_STATUS))
-				GetProcAddress(h_advapi32, "SetServiceStatus");
+			    (BOOL(__stdcall *)(SERVICE_STATUS_HANDLE, LPSERVICE_STATUS))
+			        GetProcAddress(h_advapi32, "SetServiceStatus");
 
 			if (_StartServiceCtrlDispatcher != NULL &&
-				_RegisterServiceCtrlHandler != NULL && 
-				_SetServiceStatus != NULL)
-			{
+			    _RegisterServiceCtrlHandler != NULL &&
+			    _SetServiceStatus != NULL) {
 				is_win32_service_mode = true;
 			}
 		}
 	}
 
 	// Run the service using the SCM in the case of Win32 service mode
-	if (is_win32_service_mode)
-	{
+	if (is_win32_service_mode) {
 		SERVICE_TABLE_ENTRY dispatch_table[] =
-		{
-			{"", MsServiceDispatcher},
-			{NULL, NULL},
-		};
+		    {
+		        {"", MsServiceDispatcher},
+		        {NULL, NULL},
+		    };
 
 		MsSetErrorModeToSilent();
 
-		if (_StartServiceCtrlDispatcher(dispatch_table) == false)
-		{
+		if (_StartServiceCtrlDispatcher(dispatch_table) == false) {
 			MessageBox(NULL, "StartServiceCtrlDispatcher() Failed.", "MsServiceMode()", MB_SETFOREGROUND | MB_TOPMOST | MB_SERVICE_NOTIFICATION | MB_OK | MB_ICONEXCLAMATION);
-		}
-		else
-		{
+		} else {
 			MsUpdateServiceConfig(g_service_name);
 		}
 
@@ -1858,7 +1626,7 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 	}
 
 	// Start of the Mayaqua
-#if defined(_DEBUG) || defined(DEBUG)	// In VC++ compilers, the macro is "_DEBUG", not "DEBUG".
+#if defined(_DEBUG) || defined(DEBUG) // In VC++ compilers, the macro is "_DEBUG", not "DEBUG".
 	// If set memcheck = true, the program will be vitally slow since it will log all malloc() / realloc() / free() calls to find the cause of memory leak.
 	// For normal debug we set memcheck = false.
 	// Please set memcheck = true if you want to test the cause of memory leaks.
@@ -1878,14 +1646,11 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 	Format(tmp, sizeof(tmp), SVC_DESCRIPT, name);
 	service_description = _UU(tmp);
 
-	if (StrLen(service_name) == 0 || UniStrLen(service_title) == 0)
-	{
+	if (StrLen(service_name) == 0 || UniStrLen(service_title) == 0) {
 		// The service information isn't found
 		UniFormat(msg, sizeof(msg), _UU("SVC_NOT_FOUND"), name);
 		UniPrint(L"%s\n", msg);
-	}
-	else
-	{
+	} else {
 		wchar_t path[MAX_SIZE];
 		// Check the argument
 		mode = SVC_MODE_NONE;
@@ -1893,64 +1658,49 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 		t = GetCommandLineToken();
 		arg = NULL;
 
-		if (t->NumTokens >= 1)
-		{
+		if (t->NumTokens >= 1) {
 			arg = t->Token[0];
 		}
-		if(t->NumTokens >= 2)
-		{
-			if(StrCmpi(t->Token[1], SVC_ARG_SILENT) == 0)
-			{
+		if (t->NumTokens >= 2) {
+			if (StrCmpi(t->Token[1], SVC_ARG_SILENT) == 0) {
 				silent = true;
 			}
 		}
 
-		if (arg != NULL)
-		{
-			if (StrCmpi(arg, SVC_ARG_INSTALL) == 0)
-			{
+		if (arg != NULL) {
+			if (StrCmpi(arg, SVC_ARG_INSTALL) == 0) {
 				mode = SVC_MODE_INSTALL;
 			}
-			if (StrCmpi(arg, SVC_ARG_UNINSTALL) == 0)
-			{
+			if (StrCmpi(arg, SVC_ARG_UNINSTALL) == 0) {
 				mode = SVC_MODE_UNINSTALL;
 			}
-			if (StrCmpi(arg, SVC_ARG_START) == 0)
-			{
+			if (StrCmpi(arg, SVC_ARG_START) == 0) {
 				mode = SVC_MODE_START;
 			}
-			if (StrCmpi(arg, SVC_ARG_STOP) == 0)
-			{
+			if (StrCmpi(arg, SVC_ARG_STOP) == 0) {
 				mode = SVC_MODE_STOP;
 			}
-			if (StrCmpi(arg, SVC_ARG_TEST) == 0)
-			{
+			if (StrCmpi(arg, SVC_ARG_TEST) == 0) {
 				mode = SVC_MODE_TEST;
 			}
-			if (StrCmpi(arg, SVC_ARG_USERMODE) == 0)
-			{
+			if (StrCmpi(arg, SVC_ARG_USERMODE) == 0) {
 				mode = SVC_MODE_USERMODE;
 			}
-			if (StrCmpi(arg, SVC_ARG_SETUP_INSTALL) == 0)
-			{
+			if (StrCmpi(arg, SVC_ARG_SETUP_INSTALL) == 0) {
 				mode = SVC_MODE_SETUP_INSTALL;
 			}
-			if (StrCmpi(arg, SVC_ARG_SETUP_UNINSTALL) == 0)
-			{
+			if (StrCmpi(arg, SVC_ARG_SETUP_UNINSTALL) == 0) {
 				mode = SVC_MODE_SETUP_UNINSTALL;
 			}
-			if (StrCmpi(arg, SVC_ARG_USERMODE_SHOWTRAY) == 0 || StrCmpi(arg, SVC_ARG_USERMODE_HIDETRAY) == 0)
-			{
+			if (StrCmpi(arg, SVC_ARG_USERMODE_SHOWTRAY) == 0 || StrCmpi(arg, SVC_ARG_USERMODE_HIDETRAY) == 0) {
 				// Legacy arguments: there is no task tray icon any more, so these are the same as /usermode
 				mode = SVC_MODE_USERMODE;
 			}
-			if (StrCmpi(arg, SVC_ARG_SERVICE) == 0)
-			{
+			if (StrCmpi(arg, SVC_ARG_SERVICE) == 0) {
 				mode = SVC_MODE_SERVICE;
 			}
 
-			if (mode != SVC_MODE_NONE)
-			{
+			if (mode != SVC_MODE_NONE) {
 				// Network Config
 				MsInitGlobalNetworkConfig();
 			}
@@ -1960,21 +1710,17 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 		UniFormat(path, sizeof(path), SVC_RUN_COMMANDLINE, ms->ExeFileNameW);
 
 		if ((mode == SVC_MODE_INSTALL || mode == SVC_MODE_UNINSTALL || mode == SVC_MODE_START ||
-			mode == SVC_MODE_STOP || mode == SVC_MODE_SERVICE) &&
-			(ms->IsAdmin == false))
-		{
+		     mode == SVC_MODE_STOP || mode == SVC_MODE_SERVICE) &&
+		    (ms->IsAdmin == false)) {
 			// Do not have Administrators privilege
 			UniPrint(L"%s\n", _UU("SVC_NOT_ADMIN"));
-		}
-		else
-		{
+		} else {
 			// Performs processing depend on mode
-			switch (mode)
-			{
+			switch (mode) {
 			case SVC_MODE_NONE:
 				// Exit by showing a guidance message
 				UniFormat(msg, sizeof(msg), _UU("SVC_HELP"),
-					service_title, service_name, service_title, service_title, service_name, service_title, service_name, service_title, service_name, service_title, service_name, service_title, service_title);
+				          service_title, service_name, service_title, service_title, service_name, service_title, service_name, service_title, service_name, service_title, service_name, service_title, service_title);
 				UniPrint(L"%s\n", msg);
 				break;
 
@@ -1984,16 +1730,13 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 				MsWriteCallingServiceManagerProcessId(service_name, MsGetCurrentProcessId());
 				restoreReg = true;
 
-				if (MsIsServiceInstalled(service_name))
-				{
-					if (MsIsServiceRunning(service_name))
-					{
+				if (MsIsServiceInstalled(service_name)) {
+					if (MsIsServiceRunning(service_name)) {
 						MsStopService(service_name);
 					}
 					MsUninstallService(service_name);
 				}
-				if (MsInstallServiceW(service_name, service_title, service_description, path) == false)
-				{
+				if (MsInstallServiceW(service_name, service_title, service_description, path) == false) {
 					ret = 1;
 				}
 				MsStartService(service_name);
@@ -2005,14 +1748,11 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 				MsWriteCallingServiceManagerProcessId(service_name, MsGetCurrentProcessId());
 				restoreReg = true;
 
-				if (MsIsServiceInstalled(service_name))
-				{
-					if (MsIsServiceRunning(service_name))
-					{
+				if (MsIsServiceInstalled(service_name)) {
+					if (MsIsServiceRunning(service_name)) {
 						MsStopService(service_name);
 					}
-					if (MsUninstallService(service_name) == false)
-					{
+					if (MsUninstallService(service_name) == false) {
 						ret = 1;
 					}
 				}
@@ -2024,44 +1764,37 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 				MsWriteCallingServiceManagerProcessId(service_name, MsGetCurrentProcessId());
 				restoreReg = true;
 
-				if (MsIsServiceInstalled(service_name))
-				{
+				if (MsIsServiceInstalled(service_name)) {
 					// Already installed
 					// Show a message asking if you want to uninstall
-					if(silent == true)
-					{
+					if (silent == true) {
 						// Always cancel the operation
 						break;
 					}
 					// The operator explicitly requested /install, so uninstall and then re-install
 					UniFormat(msg, sizeof(msg), _UU("SVC_ALREADY_INSTALLED"),
-						service_title, service_name);
+					          service_title, service_name);
 					UniPrint(L"%s\n", msg);
 
 					// Whether the existing service is working?
-					if (MsIsServiceRunning(service_name))
-					{
+					if (MsIsServiceRunning(service_name)) {
 						// Try to stop
-						if (MsStopService(service_name) == false)
-						{
+						if (MsStopService(service_name) == false) {
 							// Failed to stop
-							if(silent == false)
-							{
+							if (silent == false) {
 								UniFormat(msg, sizeof(msg), _UU("SVC_STOP_FAILED"),
-									service_title, service_name);
+								          service_title, service_name);
 								UniPrint(L"%s\n", msg);
 							}
 							break;
 						}
 					}
 					// Uninstall
-					if (MsUninstallService(service_name) == false)
-					{
+					if (MsUninstallService(service_name) == false) {
 						// Failed to uninstall
-						if(silent == false)
-						{
+						if (silent == false) {
 							UniFormat(msg, sizeof(msg), _UU("SVC_UNINSTALL_FAILED"),
-								service_title, service_name);
+							          service_title, service_name);
 							UniPrint(L"%s\n", msg);
 						}
 						break;
@@ -2069,36 +1802,31 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 				}
 
 				// Do the installation
-				if (MsInstallServiceW(service_name, service_title, service_description, path) == false)
-				{
+				if (MsInstallServiceW(service_name, service_title, service_description, path) == false) {
 					// Failed to install
-					if(silent == false)
-					{
+					if (silent == false) {
 						UniFormat(msg, sizeof(msg), _UU("SVC_INSTALL_FAILED"),
-							service_title, service_name);
+						          service_title, service_name);
 						UniPrint(L"%s\n", msg);
 					}
 					break;
 				}
 
 				// Start the service
-				if (MsStartService(service_name) == false)
-				{
+				if (MsStartService(service_name) == false) {
 					// Failed to start
-					if(silent == false)
-					{
+					if (silent == false) {
 						UniFormat(msg, sizeof(msg), _UU("SVC_INSTALL_FAILED_2"),
-							service_title, service_name, path);
+						          service_title, service_name, path);
 						UniPrint(L"%s\n", msg);
 					}
 					break;
 				}
 
 				// All successful
-				if(silent == false)
-				{
+				if (silent == false) {
 					UniFormat(msg, sizeof(msg), _UU("SVC_INSTALL_OK"),
-						service_title, service_name, path);
+					          service_title, service_name, path);
 					UniPrint(L"%s\n", msg);
 				}
 				break;
@@ -2109,28 +1837,23 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 				MsWriteCallingServiceManagerProcessId(service_name, MsGetCurrentProcessId());
 				restoreReg = true;
 
-				if (MsIsServiceInstalled(service_name) == false)
-				{
-					if(silent == false)
-					{
+				if (MsIsServiceInstalled(service_name) == false) {
+					if (silent == false) {
 						UniFormat(msg, sizeof(msg), _UU("SVC_NOT_INSTALLED"),
-							service_title, service_name, path);
+						          service_title, service_name, path);
 						UniPrint(L"%s\n", msg);
 					}
 					break;
 				}
 
 				// If the service is currently running, stop it
-				if (MsIsServiceRunning(service_name))
-				{
+				if (MsIsServiceRunning(service_name)) {
 					// Stop the service
-					if (MsStopService(service_name) == false)
-					{
+					if (MsStopService(service_name) == false) {
 						// Failed to stop
-						if(silent == false)
-						{
+						if (silent == false) {
 							UniFormat(msg, sizeof(msg), _UU("SVC_STOP_FAILED"),
-								service_title, service_name);
+							          service_title, service_name);
 							UniPrint(L"%s\n", msg);
 						}
 						break;
@@ -2138,22 +1861,19 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 				}
 
 				// Uninstall the service
-				if (MsUninstallService(service_name) == false)
-				{
-					if(silent == false)
-					{
+				if (MsUninstallService(service_name) == false) {
+					if (silent == false) {
 						UniFormat(msg, sizeof(msg), _UU("SVC_UNINSTALL_FAILED"),
-							service_title, service_name);
+						          service_title, service_name);
 						UniPrint(L"%s\n", msg);
 					}
 					break;
 				}
 
 				// All successful
-				if(silent == false)
-				{
+				if (silent == false) {
 					UniFormat(msg, sizeof(msg), _UU("SVC_UNINSTALL_OK"),
-						service_title, service_name);
+					          service_title, service_name);
 					UniPrint(L"%s\n", msg);
 				}
 				break;
@@ -2163,49 +1883,42 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 				MsWriteCallingServiceManagerProcessId(service_name, MsGetCurrentProcessId());
 				restoreReg = true;
 
-				if (MsIsServiceInstalled(service_name) == false)
-				{
+				if (MsIsServiceInstalled(service_name) == false) {
 					// Service is not installed
-					if(silent == false)
-					{
+					if (silent == false) {
 						UniFormat(msg, sizeof(msg), _UU("SVC_NOT_INSTALLED"),
-							service_title, service_name);
+						          service_title, service_name);
 						UniPrint(L"%s\n", msg);
 					}
 					break;
 				}
 
 				// Confirm whether the service is running
-				if (MsIsServiceRunning(service_name))
-				{
+				if (MsIsServiceRunning(service_name)) {
 					// Service is running
-					if(silent == false)
-					{
+					if (silent == false) {
 						UniFormat(msg, sizeof(msg), _UU("SVR_ALREADY_START"),
-							service_title, service_name);
+						          service_title, service_name);
 						UniPrint(L"%s\n", msg);
 					}
 					break;
 				}
 
 				// Start the service
-				if (MsStartService(service_name) == false)
-				{
+				if (MsStartService(service_name) == false) {
 					// Failed to start
-					if(silent == false)
-					{
+					if (silent == false) {
 						UniFormat(msg, sizeof(msg), _UU("SVC_START_FAILED"),
-							service_title, service_name);
+						          service_title, service_name);
 						UniPrint(L"%s\n", msg);
 					}
 					break;
 				}
 
 				// All successful
-				if(silent == false)
-				{
+				if (silent == false) {
 					UniFormat(msg, sizeof(msg), _UU("SVC_START_OK"),
-						service_title, service_name);
+					          service_title, service_name);
 					UniPrint(L"%s\n", msg);
 				}
 				break;
@@ -2215,48 +1928,41 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 				MsWriteCallingServiceManagerProcessId(service_name, MsGetCurrentProcessId());
 				restoreReg = true;
 
-				if (MsIsServiceInstalled(service_name) == false)
-				{
+				if (MsIsServiceInstalled(service_name) == false) {
 					// Service is not installed
-					if(silent == false)
-					{
+					if (silent == false) {
 						UniFormat(msg, sizeof(msg), _UU("SVC_NOT_INSTALLED"),
-							service_title, service_name);
+						          service_title, service_name);
 						UniPrint(L"%s\n", msg);
 					}
 					break;
 				}
 
 				// Confirm whether the service is running
-				if (MsIsServiceRunning(service_name) == false)
-				{
+				if (MsIsServiceRunning(service_name) == false) {
 					// The service is stopped
-					if(silent == false)
-					{
-					UniFormat(msg, sizeof(msg), _UU("SVC_ALREADY_STOP"),
-						service_title, service_name);
-					UniPrint(L"%s\n", msg);
+					if (silent == false) {
+						UniFormat(msg, sizeof(msg), _UU("SVC_ALREADY_STOP"),
+						          service_title, service_name);
+						UniPrint(L"%s\n", msg);
 					}
 					break;
 				}
 				// Stop the service
-				if (MsStopService(service_name) == false)
-				{
+				if (MsStopService(service_name) == false) {
 					// Failed to stop
-					if(silent == false)
-					{
+					if (silent == false) {
 						UniFormat(msg, sizeof(msg), _UU("SVC_STOP_FAILED"),
-							service_title, service_name);
+						          service_title, service_name);
 						UniPrint(L"%s\n", msg);
 					}
 					break;
 				}
 
 				// All successful
-				if(silent == false)
-				{
+				if (silent == false) {
 					UniFormat(msg, sizeof(msg), _UU("SVC_STOP_OK"),
-						service_title, service_name);
+					          service_title, service_name);
 					UniPrint(L"%s\n", msg);
 				}
 				break;
@@ -2275,12 +1981,10 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 				//MsServiceMode(start, stop);
 				break;
 			}
-
 		}
 		FreeToken(t);
 
-		if (restoreReg)
-		{
+		if (restoreReg) {
 			MsWriteCallingServiceManagerProcessId(service_name, 0);
 		}
 	}
@@ -2291,38 +1995,31 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 }
 
 // Stop the service
-bool MsStopService(char *name)
-{
+bool MsStopService(char *name) {
 	SC_HANDLE sc, service;
 	bool ret = false;
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return false;
 	}
 
 	sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
-	if (sc == NULL)
-	{
+	if (sc == NULL) {
 		return false;
 	}
 
 	service = OpenService(sc, name, SERVICE_ALL_ACCESS);
-	if (service != NULL)
-	{
+	if (service != NULL) {
 		SERVICE_STATUS st;
 		ret = ControlService(service, SERVICE_CONTROL_STOP, &st);
 
 		CloseServiceHandle(service);
 	}
 
-	if (ret)
-	{
+	if (ret) {
 		UINT64 end = Tick64() + 10000ULL;
-		while (Tick64() < end)
-		{
-			if (MsIsServiceRunning(name) == false)
-			{
+		while (Tick64() < end) {
+			if (MsIsServiceRunning(name) == false) {
 				break;
 			}
 
@@ -2335,54 +2032,43 @@ bool MsStopService(char *name)
 }
 
 // Start the service
-bool MsStartService(char *name)
-{
+bool MsStartService(char *name) {
 	return MsStartServiceEx(name, NULL);
 }
-bool MsStartServiceEx(char *name, UINT *error_code)
-{
+bool MsStartServiceEx(char *name, UINT *error_code) {
 	SC_HANDLE sc, service;
 	bool ret = false;
 	static UINT dummy = 0;
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return false;
 	}
 
-	if (error_code == NULL)
-	{
+	if (error_code == NULL) {
 		error_code = &dummy;
 	}
 
 	*error_code = 0;
 
 	sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
-	if (sc == NULL)
-	{
+	if (sc == NULL) {
 		*error_code = GetLastError();
 		return false;
 	}
 
 	service = OpenService(sc, name, SERVICE_ALL_ACCESS);
-	if (service != NULL)
-	{
+	if (service != NULL) {
 		ret = StartService(service, 0, NULL);
 
 		CloseServiceHandle(service);
-	}
-	else
-	{
+	} else {
 		*error_code = GetLastError();
 	}
 
-	if (ret)
-	{
+	if (ret) {
 		UINT64 end = Tick64() + 10000ULL;
-		while (Tick64() < end)
-		{
-			if (MsIsServiceRunning(name))
-			{
+		while (Tick64() < end) {
+			if (MsIsServiceRunning(name)) {
 				break;
 			}
 
@@ -2395,31 +2081,25 @@ bool MsStartServiceEx(char *name, UINT *error_code)
 }
 
 // Get whether the service is running
-bool MsIsServiceRunning(char *name)
-{
+bool MsIsServiceRunning(char *name) {
 	SC_HANDLE sc, service;
 	bool ret = false;
 	// Validate arguments
-	if (name == NULL || IsEmptyStr(name))
-	{
+	if (name == NULL || IsEmptyStr(name)) {
 		return false;
 	}
 
 	sc = OpenSCManager(NULL, NULL, GENERIC_READ);
-	if (sc == NULL)
-	{
+	if (sc == NULL) {
 		return false;
 	}
 
 	service = OpenService(sc, name, GENERIC_READ);
-	if (service != NULL)
-	{
+	if (service != NULL) {
 		SERVICE_STATUS st;
 		Zero(&st, sizeof(st));
-		if (QueryServiceStatus(service, &st))
-		{
-			switch (st.dwCurrentState)
-			{
+		if (QueryServiceStatus(service, &st)) {
+			switch (st.dwCurrentState) {
 			case SERVICE_CONTINUE_PENDING:
 			case SERVICE_PAUSE_PENDING:
 			case SERVICE_PAUSED:
@@ -2439,29 +2119,24 @@ bool MsIsServiceRunning(char *name)
 }
 
 // Uninstall the service
-bool MsUninstallService(char *name)
-{
+bool MsUninstallService(char *name) {
 	SC_HANDLE sc, service;
 	bool ret = false;
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return false;
 	}
 
 	MsStopService(name);
 
 	sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
-	if (sc == NULL)
-	{
+	if (sc == NULL) {
 		return false;
 	}
 
 	service = OpenService(sc, name, SERVICE_ALL_ACCESS);
-	if (service != NULL)
-	{
-		if (DeleteService(service))
-		{
+	if (service != NULL) {
+		if (DeleteService(service)) {
 			ret = true;
 		}
 		CloseServiceHandle(service);
@@ -2469,8 +2144,7 @@ bool MsUninstallService(char *name)
 
 	CloseServiceHandle(sc);
 
-	if (ret)
-	{
+	if (ret) {
 		SleepThread(2000);
 	}
 
@@ -2478,42 +2152,38 @@ bool MsUninstallService(char *name)
 }
 
 // Update the service setting
-bool MsUpdateServiceConfig(char *name)
-{
+bool MsUpdateServiceConfig(char *name) {
 	SC_HANDLE sc, service;
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return false;
 	}
 
 	// Whether just after Windows startup (deadlock prevention)
-	if (timeGetTime() <= (60 * 30 * 1000))
-	{
-		if (MsRegReadInt(REG_LOCAL_MACHINE, "Software\\" GC_REG_COMPANY_NAME "\\Update Service Config", name) != 0)
-		{
+	if (timeGetTime() <= (60 * 30 * 1000)) {
+		if (MsRegReadInt(REG_LOCAL_MACHINE, "Software\\" GC_REG_COMPANY_NAME "\\Update Service Config", name) != 0) {
 			return false;
 		}
 	}
 
 	sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
-	if (sc == NULL)
-	{
+	if (sc == NULL) {
 		return false;
 	}
 
 	service = OpenService(sc, name, SERVICE_ALL_ACCESS);
-	if (service != NULL)
-	{
-		if (GET_KETA(GetOsInfo()->OsType, 100) >= 2)
-		{
+	if (service != NULL) {
+		if (GET_KETA(GetOsInfo()->OsType, 100) >= 2) {
 			SERVICE_FAILURE_ACTIONS action;
 			SC_ACTION *e;
 			Zero(&action, sizeof(action));
 			e = ZeroMalloc(sizeof(SC_ACTION) * 3);
-			e[0].Delay = 10000; e[0].Type = SC_ACTION_RESTART;
-			e[1].Delay = 10000; e[1].Type = SC_ACTION_RESTART;
-			e[2].Delay = 10000; e[2].Type = SC_ACTION_RESTART;
+			e[0].Delay = 10000;
+			e[0].Type = SC_ACTION_RESTART;
+			e[1].Delay = 10000;
+			e[1].Type = SC_ACTION_RESTART;
+			e[2].Delay = 10000;
+			e[2].Type = SC_ACTION_RESTART;
 			action.cActions = 3;
 			action.lpsaActions = e;
 			action.dwResetPeriod = 1 * 60 * 60 * 24;
@@ -2522,9 +2192,8 @@ bool MsUpdateServiceConfig(char *name)
 			MsRegWriteInt(REG_LOCAL_MACHINE, "Software\\" GC_REG_COMPANY_NAME "\\Update Service Config", name, 1);
 		}
 
-		
-		if (GET_KETA(GetOsInfo()->OsType, 100) >= 2)
-		{
+
+		if (GET_KETA(GetOsInfo()->OsType, 100) >= 2) {
 			SERVICE_DESCRIPTIONW d;
 			wchar_t *description;
 			char dname[MAX_SIZE];
@@ -2533,8 +2202,7 @@ bool MsUpdateServiceConfig(char *name)
 
 			description = _UU(dname);
 
-			if (UniIsEmptyStr(description) == false)
-			{
+			if (UniIsEmptyStr(description) == false) {
 				Zero(&d, sizeof(d));
 				d.lpDescription = description;
 				ChangeServiceConfig2(service, SERVICE_CONFIG_DESCRIPTION, &d);
@@ -2550,24 +2218,20 @@ bool MsUpdateServiceConfig(char *name)
 }
 
 // Install the service
-bool MsInstallServiceW(char *name, wchar_t *title, wchar_t *description, wchar_t *path)
-{
+bool MsInstallServiceW(char *name, wchar_t *title, wchar_t *description, wchar_t *path) {
 	return MsInstallServiceExW(name, title, description, path, NULL);
 }
-bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar_t *path, UINT *error_code)
-{
+bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar_t *path, UINT *error_code) {
 	SC_HANDLE sc, service;
 	bool ret = false;
 	wchar_t name_w[MAX_SIZE];
 	static UINT temp_int = 0;
 	// Validate arguments
-	if (name == NULL || title == NULL || path == NULL)
-	{
+	if (name == NULL || title == NULL || path == NULL) {
 		return false;
 	}
 
-	if (error_code == NULL)
-	{
+	if (error_code == NULL) {
 		error_code = &temp_int;
 	}
 
@@ -2576,22 +2240,19 @@ bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar
 	StrToUni(name_w, sizeof(name_w), name);
 
 	sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
-	if (sc == NULL)
-	{
+	if (sc == NULL) {
 		*error_code = GetLastError();
 		return false;
 	}
 
 	service = CreateServiceW(sc, name_w, title, SERVICE_ALL_ACCESS,
-		SERVICE_WIN32_OWN_PROCESS, SERVICE_AUTO_START,
-		SERVICE_ERROR_NORMAL, path, NULL, NULL, NULL, NULL, NULL);
+	                         SERVICE_WIN32_OWN_PROCESS, SERVICE_AUTO_START,
+	                         SERVICE_ERROR_NORMAL, path, NULL, NULL, NULL, NULL, NULL);
 
-	if (service != NULL)
-	{
+	if (service != NULL) {
 		ret = true;
 
-		if (GET_KETA(GetOsInfo()->OsType, 100) >= 2)
-		{
+		if (GET_KETA(GetOsInfo()->OsType, 100) >= 2) {
 			SERVICE_DESCRIPTIONW d;
 			SERVICE_FAILURE_ACTIONS action;
 			SC_ACTION *e;
@@ -2600,9 +2261,12 @@ bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar
 			ChangeServiceConfig2(service, SERVICE_CONFIG_DESCRIPTION, &d);
 			Zero(&action, sizeof(action));
 			e = ZeroMalloc(sizeof(SC_ACTION) * 3);
-			e[0].Delay = 10000; e[0].Type = SC_ACTION_RESTART;
-			e[1].Delay = 10000; e[1].Type = SC_ACTION_RESTART;
-			e[2].Delay = 10000; e[2].Type = SC_ACTION_RESTART;
+			e[0].Delay = 10000;
+			e[0].Type = SC_ACTION_RESTART;
+			e[1].Delay = 10000;
+			e[1].Type = SC_ACTION_RESTART;
+			e[2].Delay = 10000;
+			e[2].Type = SC_ACTION_RESTART;
 			action.cActions = 3;
 			action.lpsaActions = e;
 			action.dwResetPeriod = 1 * 60 * 60 * 24;
@@ -2612,16 +2276,13 @@ bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar
 		}
 
 		CloseServiceHandle(service);
-	}
-	else
-	{
+	} else {
 		*error_code = GetLastError();
 	}
 
 	CloseServiceHandle(sc);
 
-	if (ret)
-	{
+	if (ret) {
 		SleepThread(2000);
 	}
 
@@ -2629,26 +2290,22 @@ bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar
 }
 
 // Check whether the specified service is installed
-bool MsIsServiceInstalled(char *name)
-{
+bool MsIsServiceInstalled(char *name) {
 	SC_HANDLE sc;
 	SC_HANDLE service;
 	bool ret = false;
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return false;
 	}
 
 	sc = OpenSCManager(NULL, NULL, GENERIC_READ);
-	if (sc == NULL)
-	{
+	if (sc == NULL) {
 		return false;
 	}
 
 	service = OpenService(sc, name, GENERIC_READ);
-	if (service != NULL)
-	{
+	if (service != NULL) {
 		ret = true;
 	}
 
@@ -2659,59 +2316,49 @@ bool MsIsServiceInstalled(char *name)
 }
 
 // Lower the priority of the thread to lowest
-void MsSetThreadPriorityIdle()
-{
+void MsSetThreadPriorityIdle() {
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_IDLE);
 }
 
 // Raise the priority of the thread to highest
-void MsSetThreadPriorityRealtime()
-{
+void MsSetThreadPriorityRealtime() {
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 }
 
 // Restore the priority of the thread
-void MsRestoreThreadPriority()
-{
+void MsRestoreThreadPriority() {
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL);
 }
 
 // Apply the temporary settings data of registry to the TCP parameter of the Windows
-void MsApplyTcpConfig()
-{
-	if (MsIsTcpConfigSupported())
-	{
+void MsApplyTcpConfig() {
+	if (MsIsTcpConfigSupported()) {
 		MS_TCP tcp;
 
-		if (MsLoadTcpConfigReg(&tcp))
-		{
+		if (MsLoadTcpConfigReg(&tcp)) {
 			MsSetTcpConfig(&tcp);
 		}
 	}
 }
 
 // Check whether the dynamic configuration of TCP is supported in current state
-bool MsIsTcpConfigSupported()
-{
+bool MsIsTcpConfigSupported() {
 	return MsIsAdmin();
 }
 
 // Read the TCP settings from the registry setting
-bool MsLoadTcpConfigReg(MS_TCP *tcp)
-{
+bool MsLoadTcpConfigReg(MS_TCP *tcp) {
 	// Validate arguments
-	if (tcp == NULL)
-	{
+	if (tcp == NULL) {
 		return false;
 	}
 
 	Zero(tcp, sizeof(MS_TCP));
 
 	if (MsRegIsValueEx(REG_LOCAL_MACHINE, MS_REG_TCP_SETTING_KEY, "RecvWindowSize", true) == false ||
-		MsRegIsValueEx(REG_LOCAL_MACHINE, MS_REG_TCP_SETTING_KEY, "SendWindowSize", true) == false)
-	{
+	    MsRegIsValueEx(REG_LOCAL_MACHINE, MS_REG_TCP_SETTING_KEY, "SendWindowSize", true) == false) {
 		return false;
 	}
 
@@ -2722,103 +2369,84 @@ bool MsLoadTcpConfigReg(MS_TCP *tcp)
 }
 
 // Write the TCP settings
-void MsSetTcpConfig(MS_TCP *tcp)
-{
+void MsSetTcpConfig(MS_TCP *tcp) {
 	// Validate arguments
-	if (tcp == NULL)
-	{
+	if (tcp == NULL) {
 		return;
 	}
 
-	if (MsIsAdmin())
-	{
+	if (MsIsAdmin()) {
 		bool window_scaling = false;
 		UINT tcp1323opts;
 
-		if (tcp->RecvWindowSize >= 65536 || tcp->SendWindowSize >= 65536)
-		{
+		if (tcp->RecvWindowSize >= 65536 || tcp->SendWindowSize >= 65536) {
 			window_scaling = true;
 		}
 
 		// Set the Tcp1323Opts
 		tcp1323opts = MsRegReadInt(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", "Tcp1323Opts");
-		if (window_scaling)
-		{
-			if (tcp1323opts == 0)
-			{
+		if (window_scaling) {
+			if (tcp1323opts == 0) {
 				tcp1323opts = 1;
 			}
-			if (tcp1323opts == 2)
-			{
+			if (tcp1323opts == 2) {
 				tcp1323opts = 3;
 			}
-		}
-		else
-		{
-			if (tcp1323opts == 1)
-			{
+		} else {
+			if (tcp1323opts == 1) {
 				tcp1323opts = 0;
 			}
-			if (tcp1323opts == 3)
-			{
+			if (tcp1323opts == 3) {
 				tcp1323opts = 2;
 			}
 		}
 		MsRegWriteInt(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", "Tcp1323Opts", tcp1323opts);
 
 		// Set the Receive Window
-		if (tcp->RecvWindowSize == 0)
-		{
+		if (tcp->RecvWindowSize == 0) {
 			MsRegDeleteValue(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\AFD\\Parameters",
-				"DefaultReceiveWindow");
+			                 "DefaultReceiveWindow");
 			MsRegDeleteValue(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters",
-				"TcpWindowSize");
+			                 "TcpWindowSize");
 			MsRegDeleteValue(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters",
-				"GlobalMaxTcpWindowSize");
-		}
-		else
-		{
+			                 "GlobalMaxTcpWindowSize");
+		} else {
 			MsRegWriteInt(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\AFD\\Parameters",
-				"DefaultReceiveWindow", tcp->RecvWindowSize);
+			              "DefaultReceiveWindow", tcp->RecvWindowSize);
 			MsRegWriteInt(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters",
-				"TcpWindowSize", tcp->RecvWindowSize);
+			              "TcpWindowSize", tcp->RecvWindowSize);
 			MsRegWriteInt(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters",
-				"GlobalMaxTcpWindowSize", tcp->RecvWindowSize);
+			              "GlobalMaxTcpWindowSize", tcp->RecvWindowSize);
 		}
 
 		// Setting the Send Window
-		if (tcp->SendWindowSize == 0)
-		{
+		if (tcp->SendWindowSize == 0) {
 			MsRegDeleteValue(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\AFD\\Parameters",
-				"DefaultSendWindow");
-		}
-		else
-		{
+			                 "DefaultSendWindow");
+		} else {
 			MsRegWriteInt(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\AFD\\Parameters",
-				"DefaultSendWindow", tcp->SendWindowSize);
+			              "DefaultSendWindow", tcp->SendWindowSize);
 		}
 	}
 }
 
 // Initialize the global network settings
-void MsInitGlobalNetworkConfig()
-{
+void MsInitGlobalNetworkConfig() {
 	UINT current_window_size = MsRegReadInt(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", "TcpWindowSize");
 
 	if (current_window_size == 65535 || current_window_size == 5980160 ||
-		current_window_size == 16777216 || current_window_size == 16777214)
-	{
+	    current_window_size == 16777216 || current_window_size == 16777214) {
 		// Remove the strange value which is written by older version of PacketiX VPN
 		MsRegDeleteValue(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\AFD\\Parameters",
-			"DefaultReceiveWindow");
+		                 "DefaultReceiveWindow");
 		MsRegDeleteValue(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\AFD\\Parameters",
-			"DefaultSendWindow");
+		                 "DefaultSendWindow");
 		MsRegDeleteValue(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters",
-			"Tcp1323Opts");
+		                 "Tcp1323Opts");
 		MsRegDeleteValue(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters",
-			"TcpWindowSize");
+		                 "TcpWindowSize");
 		MsRegDeleteValue(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters",
-			"GlobalMaxTcpWindowSize");
+		                 "GlobalMaxTcpWindowSize");
 
 		// Set vpn_no_change = true
 		MsRegWriteInt(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", "vpn_no_change", 1);
@@ -2829,12 +2457,10 @@ void MsInitGlobalNetworkConfig()
 }
 
 // Child window enumeration procedure
-BOOL CALLBACK MsEnumChildWindowProc(HWND hWnd, LPARAM lParam)
-{
+BOOL CALLBACK MsEnumChildWindowProc(HWND hWnd, LPARAM lParam) {
 	LIST *o = (LIST *)lParam;
 
-	if (o != NULL)
-	{
+	if (o != NULL) {
 		MsEnumChildWindows(o, hWnd);
 	}
 
@@ -2842,16 +2468,13 @@ BOOL CALLBACK MsEnumChildWindowProc(HWND hWnd, LPARAM lParam)
 }
 
 // Enumerate specified window and all the its child windows
-LIST *MsEnumChildWindows(LIST *o, HWND hWnd)
-{
+LIST *MsEnumChildWindows(LIST *o, HWND hWnd) {
 	// Validate arguments
-	if (hWnd == NULL)
-	{
+	if (hWnd == NULL) {
 		return NULL;
 	}
 
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		o = NewListFast(NULL);
 	}
 
@@ -2863,29 +2486,24 @@ LIST *MsEnumChildWindows(LIST *o, HWND hWnd)
 }
 
 // Add a window to the list
-void MsAddWindowToList(LIST *o, HWND hWnd)
-{
+void MsAddWindowToList(LIST *o, HWND hWnd) {
 	// Validate arguments
-	if (o == NULL || hWnd == NULL)
-	{
+	if (o == NULL || hWnd == NULL) {
 		return;
 	}
 
-	if (IsInList(o, hWnd) == false)
-	{
+	if (IsInList(o, hWnd) == false) {
 		Add(o, hWnd);
 	}
 }
 
 // Window enumeration procedure
-BOOL CALLBACK EnumTopWindowProc(HWND hWnd, LPARAM lParam)
-{
+BOOL CALLBACK EnumTopWindowProc(HWND hWnd, LPARAM lParam) {
 	LIST *o = (LIST *)lParam;
 	HWND hParent;
 	char c1[MAX_SIZE], c2[MAX_SIZE];
 	// Validate arguments
-	if (hWnd == NULL || o == NULL)
-	{
+	if (hWnd == NULL || o == NULL) {
 		return TRUE;
 	}
 
@@ -2896,13 +2514,11 @@ BOOL CALLBACK EnumTopWindowProc(HWND hWnd, LPARAM lParam)
 
 	GetClassName(hWnd, c1, sizeof(c1));
 
-	if (hParent != NULL)
-	{
+	if (hParent != NULL) {
 		GetClassName(hParent, c2, sizeof(c2));
 	}
 
-	if (StrCmpi(c1, "SysIPAddress32") != 0 && (IsEmptyStr(c2) || StrCmpi(c2, "SysIPAddress32") != 0))
-	{
+	if (StrCmpi(c1, "SysIPAddress32") != 0 && (IsEmptyStr(c2) || StrCmpi(c2, "SysIPAddress32") != 0)) {
 		AddWindow(o, hWnd);
 	}
 
@@ -2910,16 +2526,14 @@ BOOL CALLBACK EnumTopWindowProc(HWND hWnd, LPARAM lParam)
 }
 
 // Child window enumeration procedure
-BOOL CALLBACK EnumChildWindowProc(HWND hWnd, LPARAM lParam)
-{
+BOOL CALLBACK EnumChildWindowProc(HWND hWnd, LPARAM lParam) {
 	ENUM_CHILD_WINDOW_PARAM *p = (ENUM_CHILD_WINDOW_PARAM *)lParam;
 	LIST *o;
 	HWND hParent;
 	char c1[MAX_SIZE], c2[MAX_SIZE];
 	bool ok = false;
 	// Validate arguments
-	if (hWnd == NULL || p == NULL)
-	{
+	if (hWnd == NULL || p == NULL) {
 		return TRUE;
 	}
 
@@ -2932,30 +2546,25 @@ BOOL CALLBACK EnumChildWindowProc(HWND hWnd, LPARAM lParam)
 
 	GetClassName(hWnd, c1, sizeof(c1));
 
-	if (hParent != NULL)
-	{
+	if (hParent != NULL) {
 		GetClassName(hParent, c2, sizeof(c2));
 	}
 
-	if (p->include_ipcontrol || (StrCmpi(c1, "SysIPAddress32") != 0 && (IsEmptyStr(c2) || StrCmpi(c2, "SysIPAddress32") != 0)))
-	{
+	if (p->include_ipcontrol || (StrCmpi(c1, "SysIPAddress32") != 0 && (IsEmptyStr(c2) || StrCmpi(c2, "SysIPAddress32") != 0))) {
 		ok = true;
 	}
 
-	if (ok)
-	{
+	if (ok) {
 		AddWindow(o, hWnd);
 
-		if (p->no_recursion == false)
-		{
+		if (p->no_recursion == false) {
 			EnumChildWindows(hWnd, EnumChildWindowProc, (LPARAM)p);
 		}
 	}
 
 	return TRUE;
 }
-LIST *EnumAllTopWindow()
-{
+LIST *EnumAllTopWindow() {
 	LIST *o = NewWindowList();
 
 	EnumWindows(EnumTopWindowProc, (LPARAM)o);
@@ -2964,12 +2573,10 @@ LIST *EnumAllTopWindow()
 }
 
 // Enumerate the child windows of all that is in the specified window
-LIST *EnumAllChildWindow(HWND hWnd)
-{
+LIST *EnumAllChildWindow(HWND hWnd) {
 	return EnumAllChildWindowEx(hWnd, false, false, false);
 }
-LIST *EnumAllChildWindowEx(HWND hWnd, bool no_recursion, bool include_ipcontrol, bool no_self)
-{
+LIST *EnumAllChildWindowEx(HWND hWnd, bool no_recursion, bool include_ipcontrol, bool no_self) {
 	ENUM_CHILD_WINDOW_PARAM p;
 	LIST *o = NewWindowList();
 
@@ -2978,8 +2585,7 @@ LIST *EnumAllChildWindowEx(HWND hWnd, bool no_recursion, bool include_ipcontrol,
 	p.no_recursion = no_recursion;
 	p.o = o;
 
-	if (no_self == false)
-	{
+	if (no_self == false) {
 		AddWindow(o, hWnd);
 	}
 
@@ -2989,17 +2595,14 @@ LIST *EnumAllChildWindowEx(HWND hWnd, bool no_recursion, bool include_ipcontrol,
 }
 
 // Release of the window list
-void FreeWindowList(LIST *o)
-{
+void FreeWindowList(LIST *o) {
 	UINT i;
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
+	for (i = 0; i < LIST_NUM(o); i++) {
 		HWND *e = LIST_DATA(o, i);
 
 		Free(e);
@@ -3009,19 +2612,16 @@ void FreeWindowList(LIST *o)
 }
 
 // Add a window to the window list
-void AddWindow(LIST *o, HWND hWnd)
-{
+void AddWindow(LIST *o, HWND hWnd) {
 	HWND t, *e;
 	// Validate arguments
-	if (o == NULL || hWnd == NULL)
-	{
+	if (o == NULL || hWnd == NULL) {
 		return;
 	}
 
 	t = hWnd;
 
-	if (Search(o, &t) != NULL)
-	{
+	if (Search(o, &t) != NULL) {
 		return;
 	}
 
@@ -3032,17 +2632,14 @@ void AddWindow(LIST *o, HWND hWnd)
 }
 
 // Comparison of the window list items
-int CmpWindowList(void *p1, void *p2)
-{
+int CmpWindowList(void *p1, void *p2) {
 	HWND *h1, *h2;
-	if (p1 == NULL || p2 == NULL)
-	{
+	if (p1 == NULL || p2 == NULL) {
 		return 0;
 	}
 	h1 = *(HWND **)p1;
 	h2 = *(HWND **)p2;
-	if (h1 == NULL || h2 == NULL)
-	{
+	if (h1 == NULL || h2 == NULL) {
 		return 0;
 	}
 
@@ -3050,29 +2647,24 @@ int CmpWindowList(void *p1, void *p2)
 }
 
 // Creating a new window list
-LIST *NewWindowList()
-{
+LIST *NewWindowList() {
 	return NewListFast(CmpWindowList);
 }
 
 // Get the process path of the owner of the window
-bool MsGetWindowOwnerProcessExeName(char *path, UINT size, HWND hWnd)
-{
+bool MsGetWindowOwnerProcessExeName(char *path, UINT size, HWND hWnd) {
 	DWORD procId = 0;
 	// Validate arguments
-	if (path == NULL || hWnd == NULL)
-	{
+	if (path == NULL || hWnd == NULL) {
 		return false;
 	}
 
 	GetWindowThreadProcessId(hWnd, &procId);
-	if (procId == 0)
-	{
+	if (procId == 0) {
 		return false;
 	}
 
-	if (MsGetProcessExeName(path, size, procId) == false)
-	{
+	if (MsGetProcessExeName(path, size, procId) == false) {
 		return false;
 	}
 
@@ -3080,22 +2672,19 @@ bool MsGetWindowOwnerProcessExeName(char *path, UINT size, HWND hWnd)
 }
 
 // Get the process path from process ID
-bool MsGetProcessExeName(char *path, UINT size, UINT id)
-{
+bool MsGetProcessExeName(char *path, UINT size, UINT id) {
 	LIST *o;
 	MS_PROCESS *proc;
 	bool ret = false;
 	// Validate arguments
-	if (path == NULL)
-	{
+	if (path == NULL) {
 		return false;
 	}
 
 	o = MsGetProcessList();
 	proc = MsSearchProcessById(o, id);
 
-	if (proc != NULL)
-	{
+	if (proc != NULL) {
 		ret = true;
 		StrCpy(path, size, proc->ExeFilename);
 	}
@@ -3106,60 +2695,48 @@ bool MsGetProcessExeName(char *path, UINT size, UINT id)
 }
 
 // Close the alert dialog
-bool MsCloseWarningWindow(NO_WARNING *nw, UINT thread_id)
-{
+bool MsCloseWarningWindow(NO_WARNING *nw, UINT thread_id) {
 	UINT i;
 	LIST *o;
 	bool ret = false;
 	bool press = false;
 
-	if (nw->StartTimer == 0)
-	{
+	if (nw->StartTimer == 0) {
 		press = true;
 	}
 
-	if (nw->StartTick != 0 && nw->StartTick <= Tick64())
-	{
+	if (nw->StartTick != 0 && nw->StartTick <= Tick64()) {
 		press = true;
 	}
 
 	o = EnumAllTopWindow();
 
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
+	for (i = 0; i < LIST_NUM(o); i++) {
 		HWND hWnd;
 
-		if (nw->Halt)
-		{
+		if (nw->Halt) {
 			break;
 		}
-		
+
 		hWnd = *((HWND *)LIST_DATA(o, i));
 
-		if (hWnd != NULL)
-		{
-			if (true)
-			{
+		if (hWnd != NULL) {
+			if (true) {
 				// Get whether this window is a warning screen of driver
-				if (true)
-				{
+				if (true) {
 					// Windows Vista
 					char exe[MAX_PATH];
 
-					if (MsGetWindowOwnerProcessExeName(exe, sizeof(exe), hWnd))
-					{
-						if (EndWith(exe, "rundll32.exe"))
-						{
+					if (MsGetWindowOwnerProcessExeName(exe, sizeof(exe), hWnd)) {
+						if (EndWith(exe, "rundll32.exe")) {
 							LIST *o;
 							HWND h;
 							UINT i;
 
 							o = EnumAllChildWindow(hWnd);
 
-							if (o != NULL)
-							{
-								for (i = 0;i < LIST_NUM(o);i++)
-								{
+							if (o != NULL) {
+								for (i = 0; i < LIST_NUM(o); i++) {
 									char tmp[MAX_SIZE];
 
 									h = *((HWND *)LIST_DATA(o, i));
@@ -3167,20 +2744,17 @@ bool MsCloseWarningWindow(NO_WARNING *nw, UINT thread_id)
 									Zero(tmp, sizeof(tmp));
 									GetClassNameA(h, tmp, sizeof(tmp));
 
-									if (StrCmpi(tmp, "DirectUIHWND") == 0)
-									{
+									if (StrCmpi(tmp, "DirectUIHWND") == 0) {
 										LIST *o = EnumAllChildWindow(h);
 
-										if (o != NULL)
-										{
+										if (o != NULL) {
 											UINT j;
 											UINT numDirectUIHWND = 0;
 											UINT numButton = 0;
 											HWND hButton1 = NULL;
 											HWND hButton2 = NULL;
 
-											for (j = 0;j < LIST_NUM(o);j++)
-											{
+											for (j = 0; j < LIST_NUM(o); j++) {
 												HWND hh;
 												char tmp[MAX_SIZE];
 
@@ -3189,29 +2763,22 @@ bool MsCloseWarningWindow(NO_WARNING *nw, UINT thread_id)
 												Zero(tmp, sizeof(tmp));
 												GetClassNameA(hh, tmp, sizeof(tmp));
 
-												if (StrCmpi(tmp, "DirectUIHWND") == 0)
-												{
+												if (StrCmpi(tmp, "DirectUIHWND") == 0) {
 													numDirectUIHWND++;
 												}
 
-												if (StrCmpi(tmp, "button") == 0)
-												{
+												if (StrCmpi(tmp, "button") == 0) {
 													numButton++;
-													if (hButton1 == NULL)
-													{
+													if (hButton1 == NULL) {
 														hButton1 = hh;
-													}
-													else
-													{
+													} else {
 														hButton2 = hh;
 													}
 												}
 											}
 
-											if ((numDirectUIHWND == 1 || numDirectUIHWND == 2) && numButton == 2)
-											{
-												if (hButton1 != NULL && hButton2 != NULL)
-												{
+											if ((numDirectUIHWND == 1 || numDirectUIHWND == 2) && numButton == 2) {
+												if (hButton1 != NULL && hButton2 != NULL) {
 													HWND hButton;
 													HWND hParent;
 													RECT r1, r2;
@@ -3221,19 +2788,14 @@ bool MsCloseWarningWindow(NO_WARNING *nw, UINT thread_id)
 
 													hButton = hButton1;
 
-													if (numDirectUIHWND == 1)
-													{
+													if (numDirectUIHWND == 1) {
 														// Warning that there is no signature
-														if (r1.top < r2.top)
-														{
+														if (r1.top < r2.top) {
 															hButton = hButton2;
 														}
-													}
-													else
-													{
+													} else {
 														// Notification that there is signature
-														if (r1.left >= r2.left)
-														{
+														if (r1.left >= r2.left) {
 															hButton = hButton2;
 														}
 													}
@@ -3241,8 +2803,7 @@ bool MsCloseWarningWindow(NO_WARNING *nw, UINT thread_id)
 													hParent = GetParent(hButton);
 
 													// Press the OK button since it was found
-													if (press)
-													{
+													if (press) {
 														PostMessage(hParent, WM_COMMAND, 1, 0);
 													}
 
@@ -3266,14 +2827,11 @@ bool MsCloseWarningWindow(NO_WARNING *nw, UINT thread_id)
 
 	FreeWindowList(o);
 
-	if (press == false)
-	{
-		if (ret)
-		{
+	if (press == false) {
+		if (ret) {
 			ret = false;
 
-			if (nw->StartTick == 0)
-			{
+			if (nw->StartTick == 0) {
 				nw->StartTick = Tick64() + nw->StartTimer;
 			}
 		}
@@ -3283,15 +2841,13 @@ bool MsCloseWarningWindow(NO_WARNING *nw, UINT thread_id)
 }
 
 // Thread to suppress a warning message
-void MsNoWarningThreadProc(THREAD *thread, void *param)
-{
+void MsNoWarningThreadProc(THREAD *thread, void *param) {
 	NO_WARNING *nw;
 	UINT interval;
 	UINT i;
 	bool found0 = false;
 	// Validate arguments
-	if (thread == NULL)
-	{
+	if (thread == NULL) {
 		return;
 	}
 
@@ -3306,20 +2862,15 @@ void MsNoWarningThreadProc(THREAD *thread, void *param)
 
 	i = 0;
 
-	while (nw->Halt == false)
-	{
+	while (nw->Halt == false) {
 		bool found = false;
 
 		// Close the alert dialog
 		found = MsCloseWarningWindow(nw, nw->ThreadId);
-		if (i == 0)
-		{
+		if (i == 0) {
 			found0 = found;
-		}
-		else
-		{
-			if (found0 == false && found)
-			{
+		} else {
+			if (found0 == false && found) {
 				break;
 			}
 		}
@@ -3331,8 +2882,7 @@ void MsNoWarningThreadProc(THREAD *thread, void *param)
 }
 
 // The start of the procedure to suppress the warning
-NO_WARNING *MsInitNoWarningEx(UINT start_timer)
-{
+NO_WARNING *MsInitNoWarningEx(UINT start_timer) {
 	THREAD *thread;
 	NO_WARNING *nw = ZeroMalloc(sizeof(NO_WARNING));
 
@@ -3349,11 +2899,9 @@ NO_WARNING *MsInitNoWarningEx(UINT start_timer)
 }
 
 // End of the procedure to suppress the warning
-void MsFreeNoWarning(NO_WARNING *nw)
-{
+void MsFreeNoWarning(NO_WARNING *nw) {
 	// Validate arguments
-	if (nw == NULL)
-	{
+	if (nw == NULL) {
 		return;
 	}
 
@@ -3368,8 +2916,7 @@ void MsFreeNoWarning(NO_WARNING *nw)
 }
 
 // Delete VPN temporary directories that remain in the system but not used
-void MsDeleteTempDir()
-{
+void MsDeleteTempDir() {
 	HANDLE h;
 	wchar_t dir_mask[MAX_PATH];
 	WIN32_FIND_DATAW data_w;
@@ -3380,61 +2927,49 @@ void MsDeleteTempDir()
 
 	h = FindFirstFileW(dir_mask, &data_w);
 
-	if (h != INVALID_HANDLE_VALUE)
-	{
+	if (h != INVALID_HANDLE_VALUE) {
 		bool b = true;
 
-		do
-		{
+		do {
 			if (UniStrCmpi(data_w.cFileName, L".") != 0 &&
-				UniStrCmpi(data_w.cFileName, L"..") != 0)
-			{
-				if (data_w.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
-				{
-					if (UniStartWith(data_w.cFileName, L"VPN_") && UniStrLen(data_w.cFileName) == 8)
-					{
+			    UniStrCmpi(data_w.cFileName, L"..") != 0) {
+				if (data_w.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+					if (UniStartWith(data_w.cFileName, L"VPN_") && UniStrLen(data_w.cFileName) == 8) {
 						wchar_t lock_file_name[MAX_PATH];
 						wchar_t dir_name[MAX_PATH];
 						bool delete_now = false;
 						IO *io;
 
 						UniFormat(dir_name, sizeof(dir_name), L"%s\\%s",
-							ms->TempDirW, data_w.cFileName);
+						          ms->TempDirW, data_w.cFileName);
 						MsGenLockFile(lock_file_name, sizeof(lock_file_name), dir_name);
 
 						io = FileOpenExW(lock_file_name, false, false);
-						if (io != NULL)
-						{
+						if (io != NULL) {
 							// Mark to delete if the lock file is not locked
 							FileClose(io);
 							io = FileOpenW(lock_file_name, true);
-							if (io != NULL)
-							{
+							if (io != NULL) {
 								delete_now = true;
 								FileClose(io);
 							}
-						}
-						else
-						{
+						} else {
 							DIRLIST *d;
 
 							// Mark to delete if all files in this folder are not locked
 							delete_now = true;
 
 							d = EnumDirW(dir_name);
-							if (d != NULL)
-							{
+							if (d != NULL) {
 								UINT i;
 
-								for (i = 0;i < d->NumFiles;i++)
-								{
+								for (i = 0; i < d->NumFiles; i++) {
 									wchar_t full_path[MAX_PATH];
 
 									UniFormat(full_path, sizeof(full_path), L"%s\\%s", dir_name, d->File[i]->FileNameW);
 
 									io = FileOpenW(full_path, true);
-									if (io != NULL)
-									{
+									if (io != NULL) {
 										delete_now = true;
 										FileClose(io);
 									}
@@ -3442,8 +2977,7 @@ void MsDeleteTempDir()
 								FreeDir(d);
 							}
 						}
-						if (delete_now)
-						{
+						if (delete_now) {
 							MsDeleteAllFileW(dir_name);
 
 							Win32DeleteDirW(dir_name);
@@ -3456,59 +2990,48 @@ void MsDeleteTempDir()
 			Zero(&data_w, sizeof(data_w));
 
 			b = FindNextFileW(h, &data_w);
-		}
-		while (b);
+		} while (b);
 
 		FindClose(h);
 	}
 }
 
 // Delete all the files in the specified directory
-void MsDeleteAllFileW(wchar_t *dir)
-{
+void MsDeleteAllFileW(wchar_t *dir) {
 	HANDLE h;
 	wchar_t file_mask[MAX_PATH];
 	WIN32_FIND_DATAW data;
 	// Validate arguments
-	if (dir == NULL || UniIsEmptyStr(dir))
-	{
+	if (dir == NULL || UniIsEmptyStr(dir)) {
 		return;
 	}
 
 	UniFormat(file_mask, sizeof(file_mask), L"%s\\*.*", dir);
 
 	h = FindFirstFileW(file_mask, &data);
-	if (h != INVALID_HANDLE_VALUE)
-	{
-		do
-		{
+	if (h != INVALID_HANDLE_VALUE) {
+		do {
 			if (UniStrCmpi(data.cFileName, L".") != 0 &&
-				UniStrCmpi(data.cFileName, L"..") != 0)
-			{
+			    UniStrCmpi(data.cFileName, L"..") != 0) {
 				wchar_t fullpath[MAX_PATH];
 
 				UniFormat(fullpath, sizeof(fullpath), L"%s\\%s", dir, data.cFileName);
 
-				if ((data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == false)
-				{
+				if ((data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == false) {
 					DeleteFileW(fullpath);
-				}
-				else
-				{
+				} else {
 					MsDeleteAllFileW(fullpath);
 					RemoveDirectoryW(fullpath);
 				}
 			}
-		}
-		while (FindNextFileW(h, &data));
+		} while (FindNextFileW(h, &data));
 
 		FindClose(h);
 	}
 }
 
 // Initialize the temporary directory
-void MsInitTempDir()
-{
+void MsInitTempDir() {
 	wchar_t tmp[MAX_PATH];
 	wchar_t tmp2[16];
 	UCHAR random[2];
@@ -3519,8 +3042,7 @@ void MsInitTempDir()
 	MsDeleteTempDir();
 
 	// Determine the name of the temporary directory
-	while (true)
-	{
+	while (true) {
 		random[0] = rand() % 256;
 		random[1] = rand() % 256;
 		BinToStrW(tmp2, sizeof(tmp2), random, sizeof(random));
@@ -3528,19 +3050,17 @@ void MsInitTempDir()
 		UniFormat(tmp, sizeof(tmp), L"%s\\VPN_%s", ms->TempDirW, tmp2);
 
 		// Create Directory
-		if (MakeDirW(tmp))
-		{
+		if (MakeDirW(tmp)) {
 			break;
 		}
 
-		if ((num++) >= 100)
-		{
+		if ((num++) >= 100) {
 			// Failed many times
 			char msg[MAX_SIZE];
 			Format(msg, sizeof(msg),
-				"Couldn't create Temporary Directory: %s\r\n\r\n"
-				"Please contact your system administrator.",
-				tmp);
+			       "Couldn't create Temporary Directory: %s\r\n\r\n"
+			       "Please contact your system administrator.",
+			       tmp);
 			exit(0);
 		}
 	}
@@ -3554,8 +3074,7 @@ void MsInitTempDir()
 }
 
 // Release the temporary directory
-void MsFreeTempDir()
-{
+void MsFreeTempDir() {
 	wchar_t lock_file_name[MAX_SIZE];
 
 	// Delete the lock file
@@ -3573,11 +3092,9 @@ void MsFreeTempDir()
 }
 
 // Generation of the name of the lock file
-void MsGenLockFile(wchar_t *name, UINT size, wchar_t *temp_dir)
-{
+void MsGenLockFile(wchar_t *name, UINT size, wchar_t *temp_dir) {
 	// Validate arguments
-	if (name == NULL || temp_dir == NULL)
-	{
+	if (name == NULL || temp_dir == NULL) {
 		return;
 	}
 
@@ -3585,13 +3102,11 @@ void MsGenLockFile(wchar_t *name, UINT size, wchar_t *temp_dir)
 }
 
 // Get the network connection name
-wchar_t *MsGetNetworkConnectionName(char *guid)
-{
+wchar_t *MsGetNetworkConnectionName(char *guid) {
 	wchar_t *ncname = NULL;
 	char tmp[MAX_SIZE];
 	// Validate arguments
-	if (guid == NULL)
-	{
+	if (guid == NULL) {
 		return NULL;
 	}
 
@@ -3603,33 +3118,26 @@ wchar_t *MsGetNetworkConnectionName(char *guid)
 }
 
 // Attempt to logon to the domain
-bool MsCheckLogon(wchar_t *username, char *password)
-{
+bool MsCheckLogon(wchar_t *username, char *password) {
 	wchar_t password_unicode[MAX_SIZE];
 	HANDLE h;
 	// Validate arguments
-	if (username == NULL || password == NULL)
-	{
+	if (username == NULL || password == NULL) {
 		return false;
 	}
 
 	StrToUni(password_unicode, sizeof(password_unicode), password);
 
-	if (GET_KETA(GetOsInfo()->OsType, 100) >= 2)
-	{
-		if (LogonUserW(username, NULL, password_unicode, LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT, &h) == false)
-		{
+	if (GET_KETA(GetOsInfo()->OsType, 100) >= 2) {
+		if (LogonUserW(username, NULL, password_unicode, LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT, &h) == false) {
 			// Logon failure
 			return false;
 		}
-	}
-	else
-	{
+	} else {
 		char username_ansi[MAX_SIZE];
 		UniToStr(username_ansi, sizeof(username_ansi), username);
 
-		if (LogonUserA(username_ansi, NULL, password, LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT, &h) == false)
-		{
+		if (LogonUserA(username_ansi, NULL, password, LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT, &h) == false) {
 			// Logon failure
 			return false;
 		}
@@ -3641,27 +3149,23 @@ bool MsCheckLogon(wchar_t *username, char *password)
 }
 
 // Enable or disable the privilege
-bool MsEnablePrivilege(char *name, bool enable)
-{
+bool MsEnablePrivilege(char *name, bool enable) {
 	HANDLE hToken;
 	LUID luid;
 	TOKEN_PRIVILEGES *tp;
 	bool ret;
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return false;
 	}
 
 	// Open the process token
-	if (OpenProcessToken(ms->hCurrentProcess, TOKEN_ADJUST_PRIVILEGES, &hToken) == false)
-	{
+	if (OpenProcessToken(ms->hCurrentProcess, TOKEN_ADJUST_PRIVILEGES, &hToken) == false) {
 		return false;
 	}
 
 	// Get a local unique identifier
-	if (LookupPrivilegeValue(NULL, name, &luid) == FALSE)
-	{
+	if (LookupPrivilegeValue(NULL, name, &luid) == FALSE) {
 		CloseHandle(hToken);
 		return false;
 	}
@@ -3682,24 +3186,19 @@ bool MsEnablePrivilege(char *name, bool enable)
 }
 
 // Get whether the current user is an Admin
-bool MsIsAdmin()
-{
+bool MsIsAdmin() {
 	return ms->IsAdmin;
 }
 
 // Generate an access mask to force accessing to the 32 bit registry key for 64 bit application
-UINT MsRegAccessMaskFor64BitEx(bool force32bit, bool force64bit)
-{
-	if (MsIs64BitWindows() == false)
-	{
+UINT MsRegAccessMaskFor64BitEx(bool force32bit, bool force64bit) {
+	if (MsIs64BitWindows() == false) {
 		return 0;
 	}
-	if (force32bit)
-	{
+	if (force32bit) {
 		return KEY_WOW64_32KEY;
 	}
-	if (force64bit)
-	{
+	if (force64bit) {
 		return KEY_WOW64_64KEY;
 	}
 
@@ -3707,18 +3206,15 @@ UINT MsRegAccessMaskFor64BitEx(bool force32bit, bool force64bit)
 }
 
 // Load the hive
-bool MsRegLoadHive(UINT root, wchar_t *keyname, wchar_t *filename)
-{
+bool MsRegLoadHive(UINT root, wchar_t *keyname, wchar_t *filename) {
 	LONG ret;
-	if (keyname == NULL || filename == NULL)
-	{
+	if (keyname == NULL || filename == NULL) {
 		WHERE;
 		return false;
 	}
 	ret = RegLoadKeyW(MsGetRootKeyFromInt(root), keyname, filename);
 
-	if (ret != ERROR_SUCCESS)
-	{
+	if (ret != ERROR_SUCCESS) {
 		Debug("RegLoadKeyW: %S %S %u\n", keyname, filename, GetLastError());
 		return false;
 	}
@@ -3728,35 +3224,27 @@ bool MsRegLoadHive(UINT root, wchar_t *keyname, wchar_t *filename)
 }
 
 // Delete the value
-bool MsRegDeleteValue(UINT root, char *keyname, char *valuename)
-{
+bool MsRegDeleteValue(UINT root, char *keyname, char *valuename) {
 	return MsRegDeleteValueEx(root, keyname, valuename, false);
 }
-bool MsRegDeleteValueEx(UINT root, char *keyname, char *valuename, bool force32bit)
-{
+bool MsRegDeleteValueEx(UINT root, char *keyname, char *valuename, bool force32bit) {
 	return MsRegDeleteValueEx2(root, keyname, valuename, force32bit, false);
 }
-bool MsRegDeleteValueEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit)
-{
+bool MsRegDeleteValueEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit) {
 	HKEY h;
 	bool ret;
 	// Validate arguments
-	if (keyname == NULL)
-	{
+	if (keyname == NULL) {
 		return false;
 	}
 
-	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_ALL_ACCESS | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS)
-	{
+	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_ALL_ACCESS | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS) {
 		return false;
 	}
 
-	if (RegDeleteValue(h, valuename) != ERROR_SUCCESS)
-	{
+	if (RegDeleteValue(h, valuename) != ERROR_SUCCESS) {
 		ret = false;
-	}
-	else
-	{
+	} else {
 		ret = true;
 	}
 
@@ -3766,24 +3254,19 @@ bool MsRegDeleteValueEx2(UINT root, char *keyname, char *valuename, bool force32
 }
 
 // Delete the key
-bool MsRegDeleteKey(UINT root, char *keyname)
-{
+bool MsRegDeleteKey(UINT root, char *keyname) {
 	return MsRegDeleteKeyEx(root, keyname, false);
 }
-bool MsRegDeleteKeyEx(UINT root, char *keyname, bool force32bit)
-{
+bool MsRegDeleteKeyEx(UINT root, char *keyname, bool force32bit) {
 	return MsRegDeleteKeyEx2(root, keyname, force32bit, false);
 }
-bool MsRegDeleteKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit)
-{
+bool MsRegDeleteKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit) {
 	// Validate arguments
-	if (keyname == NULL)
-	{
+	if (keyname == NULL) {
 		return false;
 	}
 
-	if (RegDeleteKeyExA(MsGetRootKeyFromInt(root), keyname, MsRegAccessMaskFor64BitEx(force32bit, force64bit), 0) != ERROR_SUCCESS)
-	{
+	if (RegDeleteKeyExA(MsGetRootKeyFromInt(root), keyname, MsRegAccessMaskFor64BitEx(force32bit, force64bit), 0) != ERROR_SUCCESS) {
 		return false;
 	}
 
@@ -3791,37 +3274,29 @@ bool MsRegDeleteKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bi
 }
 
 // Enumeration of the keys
-TOKEN_LIST *MsRegEnumKey(UINT root, char *keyname)
-{
+TOKEN_LIST *MsRegEnumKey(UINT root, char *keyname) {
 	return MsRegEnumKeyEx(root, keyname, false);
 }
-TOKEN_LIST *MsRegEnumKeyEx(UINT root, char *keyname, bool force32bit)
-{
+TOKEN_LIST *MsRegEnumKeyEx(UINT root, char *keyname, bool force32bit) {
 	return MsRegEnumKeyEx2(root, keyname, force32bit, false);
 }
-TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit)
-{
+TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit) {
 	HKEY h;
 	UINT i;
 	TOKEN_LIST *t;
 	LIST *o;
 
-	if (keyname == NULL)
-	{
+	if (keyname == NULL) {
 		h = MsGetRootKeyFromInt(root);
-	}
-	else
-	{
-		if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_READ | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS)
-		{
+	} else {
+		if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_READ | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS) {
 			return NULL;
 		}
 	}
 
 	o = NewListFast(CompareStr);
 
-	for (i = 0;;i++)
-	{
+	for (i = 0;; i++) {
 		char tmp[MAX_SIZE];
 		UINT ret;
 		DWORD size = sizeof(tmp);
@@ -3829,12 +3304,9 @@ TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit, bool forc
 
 		Zero(tmp, sizeof(tmp));
 		ret = RegEnumKeyEx(h, i, tmp, &size, NULL, NULL, NULL, &ft);
-		if (ret == ERROR_NO_MORE_ITEMS)
-		{
+		if (ret == ERROR_NO_MORE_ITEMS) {
 			break;
-		}
-		else if (ret != ERROR_SUCCESS)
-		{
+		} else if (ret != ERROR_SUCCESS) {
 			break;
 		}
 
@@ -3846,15 +3318,13 @@ TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit, bool forc
 	t = ZeroMalloc(sizeof(TOKEN_LIST));
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
-	for (i = 0;i < t->NumTokens;i++)
-	{
+	for (i = 0; i < t->NumTokens; i++) {
 		t->Token[i] = LIST_DATA(o, i);
 	}
 
 	ReleaseList(o);
 
-	if (keyname != NULL)
-	{
+	if (keyname != NULL) {
 		RegCloseKey(h);
 	}
 
@@ -3862,44 +3332,35 @@ TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit, bool forc
 }
 
 // Set the integer value
-bool MsRegWriteInt(UINT root, char *keyname, char *valuename, UINT value)
-{
+bool MsRegWriteInt(UINT root, char *keyname, char *valuename, UINT value) {
 	return MsRegWriteIntEx(root, keyname, valuename, value, false);
 }
-bool MsRegWriteIntEx(UINT root, char *keyname, char *valuename, UINT value, bool force32bit)
-{
+bool MsRegWriteIntEx(UINT root, char *keyname, char *valuename, UINT value, bool force32bit) {
 	return MsRegWriteIntEx2(root, keyname, valuename, value, force32bit, false);
 }
-bool MsRegWriteIntEx2(UINT root, char *keyname, char *valuename, UINT value, bool force32bit, bool force64bit)
-{
+bool MsRegWriteIntEx2(UINT root, char *keyname, char *valuename, UINT value, bool force32bit, bool force64bit) {
 	// Validate arguments
-	if (keyname == NULL)
-	{
+	if (keyname == NULL) {
 		return false;
 	}
 
 	// Endian correction
-	if (IsBigEndian())
-	{
+	if (IsBigEndian()) {
 		value = Swap32(value);
 	}
 
 	return MsRegWriteValueEx2(root, keyname, valuename, REG_DWORD_LITTLE_ENDIAN, &value, sizeof(UINT), force32bit, force64bit);
 }
 
-bool MsRegWriteStr(UINT root, char *keyname, char *valuename, char *str)
-{
+bool MsRegWriteStr(UINT root, char *keyname, char *valuename, char *str) {
 	return MsRegWriteStrEx(root, keyname, valuename, str, false);
 }
-bool MsRegWriteStrEx(UINT root, char *keyname, char *valuename, char *str, bool force32bit)
-{
+bool MsRegWriteStrEx(UINT root, char *keyname, char *valuename, char *str, bool force32bit) {
 	return MsRegWriteStrEx2(root, keyname, valuename, str, force32bit, false);
 }
-bool MsRegWriteStrEx2(UINT root, char *keyname, char *valuename, char *str, bool force32bit, bool force64bit)
-{
+bool MsRegWriteStrEx2(UINT root, char *keyname, char *valuename, char *str, bool force32bit, bool force64bit) {
 	// Validate arguments
-	if (keyname == NULL || str == NULL)
-	{
+	if (keyname == NULL || str == NULL) {
 		return false;
 	}
 
@@ -3907,12 +3368,10 @@ bool MsRegWriteStrEx2(UINT root, char *keyname, char *valuename, char *str, bool
 }
 
 // Set the value
-bool MsRegWriteValueEx2(UINT root, char *keyname, char *valuename, UINT type, void *data, UINT size, bool force32bit, bool force64bit)
-{
+bool MsRegWriteValueEx2(UINT root, char *keyname, char *valuename, UINT type, void *data, UINT size, bool force32bit, bool force64bit) {
 	HKEY h;
 	// Validate arguments
-	if (keyname == NULL || (size != 0 && data == NULL))
-	{
+	if (keyname == NULL || (size != 0 && data == NULL)) {
 		return false;
 	}
 
@@ -3920,14 +3379,12 @@ bool MsRegWriteValueEx2(UINT root, char *keyname, char *valuename, UINT type, vo
 	MsRegNewKeyEx2(root, keyname, force32bit, force64bit);
 
 	// Open the key
-	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_ALL_ACCESS | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS)
-	{
+	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_ALL_ACCESS | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS) {
 		return false;
 	}
 
 	// Write the value
-	if (RegSetValueEx(h, valuename, 0, type, data, size) != ERROR_SUCCESS)
-	{
+	if (RegSetValueEx(h, valuename, 0, type, data, size) != ERROR_SUCCESS) {
 		RegCloseKey(h);
 		return false;
 	}
@@ -3939,42 +3396,35 @@ bool MsRegWriteValueEx2(UINT root, char *keyname, char *valuename, UINT type, vo
 }
 
 // Get an integer value
-UINT MsRegReadInt(UINT root, char *keyname, char *valuename)
-{
+UINT MsRegReadInt(UINT root, char *keyname, char *valuename) {
 	return MsRegReadIntEx(root, keyname, valuename, false);
 }
-UINT MsRegReadIntEx(UINT root, char *keyname, char *valuename, bool force32bit)
-{
+UINT MsRegReadIntEx(UINT root, char *keyname, char *valuename, bool force32bit) {
 	return MsRegReadIntEx2(root, keyname, valuename, force32bit, false);
 }
-UINT MsRegReadIntEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit)
-{
+UINT MsRegReadIntEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit) {
 	char *ret;
 	DWORD type, size;
 	UINT value;
 	// Validate arguments
-	if (keyname == NULL || valuename == NULL)
-	{
+	if (keyname == NULL || valuename == NULL) {
 		return 0;
 	}
 
 	// Read the value
-	if (MsRegReadValueEx2(root, keyname, valuename, (void **)&ret, &type, &size, force32bit, force64bit) == false)
-	{
+	if (MsRegReadValueEx2(root, keyname, valuename, (void **)&ret, &type, &size, force32bit, force64bit) == false) {
 		return 0;
 	}
 
 	// Check the type
-	if (type != REG_DWORD_LITTLE_ENDIAN && type != REG_DWORD_BIG_ENDIAN)
-	{
+	if (type != REG_DWORD_LITTLE_ENDIAN && type != REG_DWORD_BIG_ENDIAN) {
 		// It is not a DWORD
 		Free(ret);
 		return 0;
 	}
 
 	// Check the size
-	if (size != sizeof(UINT))
-	{
+	if (size != sizeof(UINT)) {
 		Free(ret);
 		return 0;
 	}
@@ -3984,71 +3434,58 @@ UINT MsRegReadIntEx2(UINT root, char *keyname, char *valuename, bool force32bit,
 	Free(ret);
 
 	// Endian conversion
-	if (IsLittleEndian())
-	{
-#ifdef	REG_DWORD_BIG_ENDIAN
-		if (type == REG_DWORD_BIG_ENDIAN)
-		{
+	if (IsLittleEndian()) {
+#ifdef REG_DWORD_BIG_ENDIAN
+		if (type == REG_DWORD_BIG_ENDIAN) {
 			value = Swap32(value);
 		}
-#endif	// REG_DWORD_BIG_ENDIAN
-	}
-	else
-	{
-#ifdef	REG_DWORD_LITTLE_ENDIAN_FLAG
-		if (type == REG_DWORD_LITTLE_ENDIAN_FLAG)
-		{
+#endif // REG_DWORD_BIG_ENDIAN
+	} else {
+#ifdef REG_DWORD_LITTLE_ENDIAN_FLAG
+		if (type == REG_DWORD_LITTLE_ENDIAN_FLAG) {
 			value = Swap32(value);
 		}
-#endif	// REG_DWORD_LITTLE_ENDIAN_FLAG
+#endif // REG_DWORD_LITTLE_ENDIAN_FLAG
 	}
 
 	return value;
 }
 
 // Get a string list
-LIST *MsRegReadStrList(UINT root, char *keyname, char *valuename)
-{
+LIST *MsRegReadStrList(UINT root, char *keyname, char *valuename) {
 	return MsRegReadStrListEx(root, keyname, valuename, false);
 }
-LIST *MsRegReadStrListEx(UINT root, char *keyname, char *valuename, bool force32bit)
-{
+LIST *MsRegReadStrListEx(UINT root, char *keyname, char *valuename, bool force32bit) {
 	return MsRegReadStrListEx2(root, keyname, valuename, force32bit, false);
 }
-LIST *MsRegReadStrListEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit)
-{
+LIST *MsRegReadStrListEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit) {
 	LIST *o;
 	char *ret;
 	DWORD type, size;
 	// Validate arguments
-	if (keyname == NULL || valuename == NULL)
-	{
+	if (keyname == NULL || valuename == NULL) {
 		return NULL;
 	}
 
 	// Read the value
-	if (MsRegReadValueEx2(root, keyname, valuename, (void **)&ret, &type, &size, force32bit, force64bit) == false)
-	{
+	if (MsRegReadValueEx2(root, keyname, valuename, (void **)&ret, &type, &size, force32bit, force64bit) == false) {
 		return NULL;
 	}
 
 	// Check the type
-	if (type != REG_MULTI_SZ)
-	{
+	if (type != REG_MULTI_SZ) {
 		// It is not a string list
 		Free(ret);
 		return NULL;
 	}
 
-	if (size < 2)
-	{
+	if (size < 2) {
 		// Invalid size
 		Free(ret);
 		return NULL;
 	}
 
-	if (ret[size - 1] != 0)
-	{
+	if (ret[size - 1] != 0) {
 		// Invalid data
 		Free(ret);
 		return NULL;
@@ -4063,44 +3500,35 @@ LIST *MsRegReadStrListEx2(UINT root, char *keyname, char *valuename, bool force3
 }
 
 // Get a string
-char *MsRegReadStr(UINT root, char *keyname, char *valuename)
-{
+char *MsRegReadStr(UINT root, char *keyname, char *valuename) {
 	return MsRegReadStrEx(root, keyname, valuename, false);
 }
-char *MsRegReadStrEx(UINT root, char *keyname, char *valuename, bool force32bit)
-{
+char *MsRegReadStrEx(UINT root, char *keyname, char *valuename, bool force32bit) {
 	return MsRegReadStrEx2(root, keyname, valuename, force32bit, false);
 }
-char *MsRegReadStrEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit)
-{
+char *MsRegReadStrEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit) {
 	char *ret;
 	DWORD type, size;
 	// Validate arguments
-	if (keyname == NULL || valuename == NULL)
-	{
+	if (keyname == NULL || valuename == NULL) {
 		return NULL;
 	}
 
 	// Read the value
-	if (MsRegReadValueEx2(root, keyname, valuename, (void **)&ret, &type, &size, force32bit, force64bit) == false)
-	{
+	if (MsRegReadValueEx2(root, keyname, valuename, (void **)&ret, &type, &size, force32bit, force64bit) == false) {
 		return NULL;
 	}
 
 	// Check the type
-	if (type != REG_SZ && type != REG_EXPAND_SZ && type != REG_MULTI_SZ)
-	{
+	if (type != REG_SZ && type != REG_EXPAND_SZ && type != REG_MULTI_SZ) {
 		// It is not a string
 		Free(ret);
 
-		if (type == REG_MULTI_SZ)
-		{
+		if (type == REG_MULTI_SZ) {
 			// It is a string list
 			LIST *o = MsRegReadStrList(root, keyname, valuename);
-			if (o != NULL)
-			{
-				if (LIST_NUM(o) >= 1)
-				{
+			if (o != NULL) {
+				if (LIST_NUM(o) >= 1) {
 					ret = CopyStr(LIST_DATA(o, 0));
 					FreeStrList(o);
 					return ret;
@@ -4110,16 +3538,14 @@ char *MsRegReadStrEx2(UINT root, char *keyname, char *valuename, bool force32bit
 		return NULL;
 	}
 
-	if (size == 0)
-	{
+	if (size == 0) {
 		// Invalid size
 		Free(ret);
 
 		return CopyStr("");
 	}
 
-	if (ret[size - 1] != 0)
-	{
+	if (ret[size - 1] != 0) {
 		// Invalid data
 		Free(ret);
 		return NULL;
@@ -4127,41 +3553,34 @@ char *MsRegReadStrEx2(UINT root, char *keyname, char *valuename, bool force32bit
 
 	return ret;
 }
-wchar_t *MsRegReadStrW(UINT root, char *keyname, char *valuename)
-{
+wchar_t *MsRegReadStrW(UINT root, char *keyname, char *valuename) {
 	return MsRegReadStrExW(root, keyname, valuename, false);
 }
-wchar_t *MsRegReadStrExW(UINT root, char *keyname, char *valuename, bool force32bit)
-{
+wchar_t *MsRegReadStrExW(UINT root, char *keyname, char *valuename, bool force32bit) {
 	return MsRegReadStrEx2W(root, keyname, valuename, force32bit, false);
 }
-wchar_t *MsRegReadStrEx2W(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit)
-{
+wchar_t *MsRegReadStrEx2W(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit) {
 	wchar_t *ret;
 	DWORD type, size;
 	// Validate arguments
-	if (keyname == NULL || valuename == NULL)
-	{
+	if (keyname == NULL || valuename == NULL) {
 		return NULL;
 	}
 
 	// Read the value
-	if (MsRegReadValueEx2W(root, keyname, valuename, (void **)&ret, &type, &size, force32bit, force64bit) == false)
-	{
+	if (MsRegReadValueEx2W(root, keyname, valuename, (void **)&ret, &type, &size, force32bit, force64bit) == false) {
 		return NULL;
 	}
 
 	// Check the type
-	if (type != REG_SZ && type != REG_EXPAND_SZ)
-	{
+	if (type != REG_SZ && type != REG_EXPAND_SZ) {
 		// It is not a string
 		Free(ret);
 
 		return NULL;
 	}
 
-	if (ret[size / sizeof(wchar_t) - 1] != 0)
-	{
+	if (ret[size / sizeof(wchar_t) - 1] != 0) {
 		// Invalid data
 		Free(ret);
 		return NULL;
@@ -4171,21 +3590,18 @@ wchar_t *MsRegReadStrEx2W(UINT root, char *keyname, char *valuename, bool force3
 }
 
 // Read the value
-bool MsRegReadValueEx2(UINT root, char *keyname, char *valuename, void **data, DWORD *type, DWORD *size, bool force32bit, bool force64bit)
-{
+bool MsRegReadValueEx2(UINT root, char *keyname, char *valuename, void **data, DWORD *type, DWORD *size, bool force32bit, bool force64bit) {
 	HKEY h;
 	UINT ret;
 	// Validate arguments
-	if (keyname == NULL || data == NULL || type == NULL || size == NULL)
-	{
+	if (keyname == NULL || data == NULL || type == NULL || size == NULL) {
 		return false;
 	}
 	*type = 0;
 	*size = 0;
 
 	// Open the key
-	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_READ | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS)
-	{
+	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_READ | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS) {
 		return false;
 	}
 
@@ -4193,15 +3609,13 @@ bool MsRegReadValueEx2(UINT root, char *keyname, char *valuename, void **data, D
 	*data = ZeroMalloc(*size);
 	ret = RegQueryValueEx(h, valuename, 0, type, *data, size);
 
-	if (ret == ERROR_SUCCESS)
-	{
+	if (ret == ERROR_SUCCESS) {
 		// Reading is complete
 		RegCloseKey(h);
 		return true;
 	}
 
-	if (ret != ERROR_MORE_DATA)
-	{
+	if (ret != ERROR_MORE_DATA) {
 		// Strange error occurs
 		Free(*data);
 		*data = NULL;
@@ -4212,8 +3626,7 @@ bool MsRegReadValueEx2(UINT root, char *keyname, char *valuename, void **data, D
 	// Get the data by re-allocating memory
 	*data = ReAlloc(*data, *size);
 	ret = RegQueryValueEx(h, valuename, 0, type, *data, size);
-	if (ret != ERROR_SUCCESS)
-	{
+	if (ret != ERROR_SUCCESS) {
 		// An error has occured
 		Free(*data);
 		*data = NULL;
@@ -4224,22 +3637,19 @@ bool MsRegReadValueEx2(UINT root, char *keyname, char *valuename, void **data, D
 
 	return true;
 }
-bool MsRegReadValueEx2W(UINT root, char *keyname, char *valuename, void **data, DWORD *type, DWORD *size, bool force32bit, bool force64bit)
-{
+bool MsRegReadValueEx2W(UINT root, char *keyname, char *valuename, void **data, DWORD *type, DWORD *size, bool force32bit, bool force64bit) {
 	HKEY h;
 	UINT ret;
 	wchar_t *valuename_w;
 	// Validate arguments
-	if (keyname == NULL || data == NULL || type == NULL || size == NULL)
-	{
+	if (keyname == NULL || data == NULL || type == NULL || size == NULL) {
 		return false;
 	}
 	*type = 0;
 	*size = 0;
 
 	// Open the key
-	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_READ | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS)
-	{
+	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_READ | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS) {
 		return false;
 	}
 
@@ -4249,16 +3659,14 @@ bool MsRegReadValueEx2W(UINT root, char *keyname, char *valuename, void **data, 
 	*data = ZeroMalloc(*size);
 	ret = RegQueryValueExW(h, valuename_w, 0, type, *data, size);
 
-	if (ret == ERROR_SUCCESS)
-	{
+	if (ret == ERROR_SUCCESS) {
 		// Reading is complete
 		RegCloseKey(h);
 		Free(valuename_w);
 		return true;
 	}
 
-	if (ret != ERROR_MORE_DATA)
-	{
+	if (ret != ERROR_MORE_DATA) {
 		// Strange error occurs
 		Free(*data);
 		*data = NULL;
@@ -4270,8 +3678,7 @@ bool MsRegReadValueEx2W(UINT root, char *keyname, char *valuename, void **data, 
 	// Get the data by re-allocating memory
 	*data = ReAlloc(*data, *size);
 	ret = RegQueryValueExW(h, valuename_w, 0, type, *data, size);
-	if (ret != ERROR_SUCCESS)
-	{
+	if (ret != ERROR_SUCCESS) {
 		// An error has occured
 		Free(*data);
 		*data = NULL;
@@ -4287,28 +3694,23 @@ bool MsRegReadValueEx2W(UINT root, char *keyname, char *valuename, void **data, 
 }
 
 // Confirm that the specified value exists on the registry
-bool MsRegIsValue(UINT root, char *keyname, char *valuename)
-{
+bool MsRegIsValue(UINT root, char *keyname, char *valuename) {
 	return MsRegIsValueEx(root, keyname, valuename, false);
 }
-bool MsRegIsValueEx(UINT root, char *keyname, char *valuename, bool force32bit)
-{
+bool MsRegIsValueEx(UINT root, char *keyname, char *valuename, bool force32bit) {
 	return MsRegIsValueEx2(root, keyname, valuename, force32bit, false);
 }
-bool MsRegIsValueEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit)
-{
+bool MsRegIsValueEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit) {
 	HKEY h;
 	DWORD type, size;
 	UINT ret;
 	// Validate arguments
-	if (keyname == NULL)
-	{
+	if (keyname == NULL) {
 		return false;
 	}
 
 	// Open the key
-	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_READ | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS)
-	{
+	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_READ | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS) {
 		return false;
 	}
 
@@ -4316,8 +3718,7 @@ bool MsRegIsValueEx2(UINT root, char *keyname, char *valuename, bool force32bit,
 	size = 0;
 	ret = RegQueryValueEx(h, valuename, 0, &type, NULL, &size);
 
-	if (ret == ERROR_SUCCESS || ret == ERROR_MORE_DATA)
-	{
+	if (ret == ERROR_SUCCESS || ret == ERROR_MORE_DATA) {
 		RegCloseKey(h);
 		return true;
 	}
@@ -4328,26 +3729,22 @@ bool MsRegIsValueEx2(UINT root, char *keyname, char *valuename, bool force32bit,
 }
 
 // Create a key in the registry
-bool MsRegNewKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit)
-{
+bool MsRegNewKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit) {
 	HKEY h;
 	// Validate arguments
-	if (keyname == NULL)
-	{
+	if (keyname == NULL) {
 		return false;
 	}
 
-	// Confirm whether there is the key  
-	if (MsRegIsKeyEx2(root, keyname, force32bit, force64bit))
-	{
+	// Confirm whether there is the key
+	if (MsRegIsKeyEx2(root, keyname, force32bit, force64bit)) {
 		// Already exists
 		return true;
 	}
 
 	// Create a key
 	if (RegCreateKeyEx(MsGetRootKeyFromInt(root), keyname, 0, NULL, REG_OPTION_NON_VOLATILE,
-		KEY_ALL_ACCESS | MsRegAccessMaskFor64BitEx(force32bit, force64bit), NULL, &h, NULL) != ERROR_SUCCESS)
-	{
+	                   KEY_ALL_ACCESS | MsRegAccessMaskFor64BitEx(force32bit, force64bit), NULL, &h, NULL) != ERROR_SUCCESS) {
 		// Failed
 		return false;
 	}
@@ -4358,17 +3755,14 @@ bool MsRegNewKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit)
 }
 
 // Confirm the specified key exists on the registry
-bool MsRegIsKeyEx2(UINT root, char *name, bool force32bit, bool force64bit)
-{
+bool MsRegIsKeyEx2(UINT root, char *name, bool force32bit, bool force64bit) {
 	HKEY h;
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return false;
 	}
 
-	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), name, 0, KEY_READ | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS)
-	{
+	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), name, 0, KEY_READ | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS) {
 		return false;
 	}
 
@@ -4378,10 +3772,8 @@ bool MsRegIsKeyEx2(UINT root, char *name, bool force32bit, bool force64bit)
 }
 
 // Getting root key handle
-HKEY MsGetRootKeyFromInt(UINT root)
-{
-	switch (root)
-	{
+HKEY MsGetRootKeyFromInt(UINT root) {
+	switch (root) {
 	case REG_CLASSES_ROOT:
 		return HKEY_CLASSES_ROOT;
 
@@ -4399,50 +3791,36 @@ HKEY MsGetRootKeyFromInt(UINT root)
 }
 
 // Cut the executable file name from the command line string (Unicode version)
-wchar_t *MsCutExeNameFromUniCommandLine(wchar_t *str)
-{
+wchar_t *MsCutExeNameFromUniCommandLine(wchar_t *str) {
 	// Validate arguments
-	if (str == NULL)
-	{
+	if (str == NULL) {
 		return NULL;
 	}
 
-	if (str[0] != L'\"')
-	{
+	if (str[0] != L'\"') {
 		UINT i = UniSearchStrEx(str, L" ", 0, true);
-		if (i == INFINITE)
-		{
+		if (i == INFINITE) {
 			return str + UniStrLen(str);
-		}
-		else
-		{
+		} else {
 			return str + i + 1;
 		}
-	}
-	else
-	{
+	} else {
 		str++;
-		while (true)
-		{
-			if ((*str) == 0)
-			{
+		while (true) {
+			if ((*str) == 0) {
 				return str + UniStrLen(str);
 			}
-			if ((*str) == L'\"')
-			{
+			if ((*str) == L'\"') {
 				break;
 			}
 			str++;
 		}
 
-		while (true)
-		{
-			if ((*str) == 0)
-			{
+		while (true) {
+			if ((*str) == 0) {
 				return str + UniStrLen(str);
 			}
-			if ((*str) == L' ')
-			{
+			if ((*str) == L' ') {
 				return str + 1;
 			}
 			str++;
@@ -4451,50 +3829,36 @@ wchar_t *MsCutExeNameFromUniCommandLine(wchar_t *str)
 }
 
 // Cut the executable file name from the command line string
-char *MsCutExeNameFromCommandLine(char *str)
-{
+char *MsCutExeNameFromCommandLine(char *str) {
 	// Validate arguments
-	if (str == NULL)
-	{
+	if (str == NULL) {
 		return NULL;
 	}
 
-	if (str[0] != '\"')
-	{
+	if (str[0] != '\"') {
 		UINT i = SearchStrEx(str, " ", 0, true);
-		if (i == INFINITE)
-		{
+		if (i == INFINITE) {
 			return str + StrLen(str);
-		}
-		else
-		{
+		} else {
 			return str + i + 1;
 		}
-	}
-	else
-	{
+	} else {
 		str++;
-		while (true)
-		{
-			if ((*str) == 0)
-			{
+		while (true) {
+			if ((*str) == 0) {
 				return str + StrLen(str);
 			}
-			if ((*str) == '\"')
-			{
+			if ((*str) == '\"') {
 				break;
 			}
 			str++;
 		}
 
-		while (true)
-		{
-			if ((*str) == 0)
-			{
+		while (true) {
+			if ((*str) == 0) {
 				return str + StrLen(str);
 			}
-			if ((*str) == ' ')
-			{
+			if ((*str) == ' ') {
 				return str + 1;
 			}
 			str++;
@@ -4503,30 +3867,25 @@ char *MsCutExeNameFromCommandLine(char *str)
 }
 
 // Get the Process ID
-UINT MsGetCurrentProcessId()
-{
+UINT MsGetCurrentProcessId() {
 	return ms->CurrentProcessId;
 }
 
 // Get the name of the directory where the EXE file is in
-char *MsGetExeDirName()
-{
+char *MsGetExeDirName() {
 	return ms->ExeFileDir;
 }
 
 // Get the special directory name
-char *MsGetSpecialDir(int id)
-{
+char *MsGetSpecialDir(int id) {
 	LPITEMIDLIST t = NULL;
 	char tmp[MAX_PATH];
 
-	if (SHGetSpecialFolderLocation(NULL, id, &t) != S_OK)
-	{
+	if (SHGetSpecialFolderLocation(NULL, id, &t) != S_OK) {
 		return CopyStr(ms->ExeFileDir);
 	}
 
-	if (SHGetPathFromIDList(t, tmp) == false)
-	{
+	if (SHGetPathFromIDList(t, tmp) == false) {
 		return CopyStr(ms->ExeFileDir);
 	}
 
@@ -4534,18 +3893,15 @@ char *MsGetSpecialDir(int id)
 
 	return CopyStr(tmp);
 }
-wchar_t *MsGetSpecialDirW(int id)
-{
+wchar_t *MsGetSpecialDirW(int id) {
 	LPITEMIDLIST t = NULL;
 	wchar_t tmp[MAX_PATH];
 
-	if (SHGetSpecialFolderLocation(NULL, id, &t) != S_OK)
-	{
+	if (SHGetSpecialFolderLocation(NULL, id, &t) != S_OK) {
 		return UniCopyStr(ms->ExeFileDirW);
 	}
 
-	if (SHGetPathFromIDListW(t, tmp) == false)
-	{
+	if (SHGetPathFromIDListW(t, tmp) == false) {
 		return UniCopyStr(ms->ExeFileDirW);
 	}
 
@@ -4555,8 +3911,7 @@ wchar_t *MsGetSpecialDirW(int id)
 }
 
 // Get all the special directory
-void MsGetSpecialDirs()
-{
+void MsGetSpecialDirs() {
 	char tmp[MAX_PATH];
 
 	// System32
@@ -4601,8 +3956,7 @@ void MsGetSpecialDirs()
 
 	// Program Files
 	ms->ProgramFilesDir = MsGetSpecialDir(CSIDL_PROGRAM_FILES);
-	if (StrCmpi(ms->ProgramFilesDir, ms->ExeFileDir) == 0)
-	{
+	if (StrCmpi(ms->ProgramFilesDir, ms->ExeFileDir) == 0) {
 		char tmp[MAX_PATH];
 		Format(tmp, sizeof(tmp), "%s\\Program Files", ms->WindowsDrive);
 
@@ -4611,8 +3965,7 @@ void MsGetSpecialDirs()
 	}
 
 	ms->ProgramFilesDirW = MsGetSpecialDirW(CSIDL_PROGRAM_FILES);
-	if (UniStrCmpi(ms->ProgramFilesDirW, ms->ExeFileDirW) == 0)
-	{
+	if (UniStrCmpi(ms->ProgramFilesDirW, ms->ExeFileDirW) == 0) {
 		wchar_t tmp[MAX_PATH];
 		UniFormat(tmp, sizeof(tmp), L"%s\\Program Files", ms->WindowsDriveW);
 
@@ -4622,51 +3975,39 @@ void MsGetSpecialDirs()
 
 	// Program Files (x86)
 	ms->ProgramFilesDirX86 = MsGetSpecialDir(CSIDL_PROGRAM_FILESX86);
-	if (StrCmpi(ms->ProgramFilesDirX86, ms->ExeFileDir) == 0)
-	{
-		if (MsIs64BitWindows())
-		{
+	if (StrCmpi(ms->ProgramFilesDirX86, ms->ExeFileDir) == 0) {
+		if (MsIs64BitWindows()) {
 			char tmp[MAX_PATH];
 			Format(tmp, sizeof(tmp), "%s\\Program Files (x86)", ms->WindowsDrive);
 
 			Free(ms->ProgramFilesDirX86);
 			ms->ProgramFilesDirX86 = CopyStr(tmp);
-		}
-		else
-		{
+		} else {
 			Free(ms->ProgramFilesDirX86);
 			ms->ProgramFilesDirX86 = CopyStr(ms->ProgramFilesDir);
 		}
 	}
 
 	ms->ProgramFilesDirX86W = MsGetSpecialDirW(CSIDL_PROGRAM_FILESX86);
-	if (UniStrCmpi(ms->ProgramFilesDirX86W, ms->ExeFileDirW) == 0)
-	{
-		if (MsIs64BitWindows())
-		{
+	if (UniStrCmpi(ms->ProgramFilesDirX86W, ms->ExeFileDirW) == 0) {
+		if (MsIs64BitWindows()) {
 			wchar_t tmp[MAX_PATH];
 			UniFormat(tmp, sizeof(tmp), L"%s\\Program Files (x86)", ms->WindowsDriveW);
 
 			Free(ms->ProgramFilesDirX86W);
 			ms->ProgramFilesDirX86W = UniCopyStr(tmp);
-		}
-		else
-		{
+		} else {
 			Free(ms->ProgramFilesDirX86W);
 			ms->ProgramFilesDirX86W = UniCopyStr(ms->ProgramFilesDirW);
 		}
 	}
 
 	// Program Files (x64)
-	if (MsIs64BitWindows())
-	{
-		if (Is64())
-		{
+	if (MsIs64BitWindows()) {
+		if (Is64()) {
 			ms->ProgramFilesDirX64 = CopyStr(ms->ProgramFilesDir);
 			ms->ProgramFilesDirX64W = CopyUniStr(ms->ProgramFilesDirW);
-		}
-		else
-		{
+		} else {
 			char tmpa[MAX_SIZE];
 			wchar_t tmpw[MAX_SIZE];
 
@@ -4676,9 +4017,7 @@ void MsGetSpecialDirs()
 			ms->ProgramFilesDirX64 = CopyStr(tmpa);
 			ms->ProgramFilesDirX64W = CopyUniStr(tmpw);
 		}
-	}
-	else
-	{
+	} else {
 		ms->ProgramFilesDirX64 = CopyStr(ms->ProgramFilesDir);
 		ms->ProgramFilesDirX64W = CopyUniStr(ms->ProgramFilesDirW);
 	}
@@ -4709,8 +4048,7 @@ void MsGetSpecialDirs()
 }
 
 // Check whether the current user is a Administrators
-bool MsCheckIsAdmin()
-{
+bool MsCheckIsAdmin() {
 	UCHAR test_bit[32];
 	UCHAR tmp[32];
 	UCHAR exe_hash[SHA1_SIZE];
@@ -4725,22 +4063,19 @@ bool MsCheckIsAdmin()
 
 	Rand(test_bit, sizeof(test_bit));
 
-	if (RegSetValueEx(HKEY_LOCAL_MACHINE, name, 0, REG_BINARY, test_bit, sizeof(test_bit)) != ERROR_SUCCESS)
-	{
+	if (RegSetValueEx(HKEY_LOCAL_MACHINE, name, 0, REG_BINARY, test_bit, sizeof(test_bit)) != ERROR_SUCCESS) {
 		return false;
 	}
 
 	size = sizeof(tmp);
-	if (RegQueryValueEx(HKEY_LOCAL_MACHINE, name, 0, &type, tmp, &size) != ERROR_SUCCESS)
-	{
+	if (RegQueryValueEx(HKEY_LOCAL_MACHINE, name, 0, &type, tmp, &size) != ERROR_SUCCESS) {
 		RegDeleteValue(HKEY_LOCAL_MACHINE, name);
 		return false;
 	}
 
 	RegDeleteValue(HKEY_LOCAL_MACHINE, name);
 
-	if (Cmp(test_bit, tmp, 32) != 0)
-	{
+	if (Cmp(test_bit, tmp, 32) != 0) {
 		return false;
 	}
 
@@ -4748,14 +4083,12 @@ bool MsCheckIsAdmin()
 }
 
 // Library initialization
-void MsInit()
-{
+void MsInit() {
 	char *str_ansi;
 	wchar_t *str_unicode;
 	char tmp[MAX_SIZE];
 	DWORD size;
-	if (ms != NULL)
-	{
+	if (ms != NULL) {
 		// Already initialized
 		return;
 	}
@@ -4824,23 +4157,19 @@ void MsInit()
 
 	// Get the full user name
 	size = sizeof(tmp);
-	if (GetUserNameExA(NameSamCompatible, tmp, &size))
-	{
+	if (GetUserNameExA(NameSamCompatible, tmp, &size)) {
 		ms->UserNameEx = CopyStr(tmp);
 	}
 
 	size = sizeof(tmp_w);
-	if (GetUserNameExW(NameSamCompatible, tmp_w, &size))
-	{
+	if (GetUserNameExW(NameSamCompatible, tmp_w, &size)) {
 		ms->UserNameExW = CopyUniStr(tmp_w);
 	}
 
-	if (ms->UserNameEx == NULL)
-	{
+	if (ms->UserNameEx == NULL) {
 		ms->UserNameEx = CopyStr(ms->UserName);
 	}
-	if (ms->UserNameExW == NULL)
-	{
+	if (ms->UserNameExW == NULL) {
 		ms->UserNameExW = CopyUniStr(ms->UserNameW);
 	}
 
@@ -4848,15 +4177,11 @@ void MsInit()
 	MsInitAdapterListModule();
 
 	// Initialization of minidump base file name
-	if (true)
-	{
+	if (true) {
 		wchar_t tmp[MAX_PATH];
-		if (MsIsAdmin())
-		{
+		if (MsIsAdmin()) {
 			CombinePathW(tmp, sizeof(tmp), ms->ExeFileDirW, L"vpn_debug\\dump");
-		}
-		else
-		{
+		} else {
 			CombinePathW(tmp, sizeof(tmp), ms->TempDirW, L"vpn_debug\\dump");
 		}
 		ms->MinidumpBaseFileNameW = CopyUniStr(tmp);
@@ -4874,8 +4199,7 @@ void MsInit()
 	HANDLE h = NULL;
 	NTSTATUS ret = LsaConnectUntrusted(&h);
 
-	if (ret == 0)
-	{
+	if (ret == 0) {
 		LSA_STRING pkg_name;
 		ULONG ul = 0;
 
@@ -4885,8 +4209,7 @@ void MsInit()
 
 		ret = LsaLookupAuthenticationPackage(h, &pkg_name, &ul);
 
-		if (ret == 0)
-		{
+		if (ret == 0) {
 			Zero(&lsa_token_source, sizeof(lsa_token_source));
 
 			AllocateLocallyUniqueId(&lsa_token_source.SourceIdentifier);
@@ -4894,61 +4217,52 @@ void MsInit()
 
 			lsa_package_id = ul;
 			hLsa = h;
-		}
-		else
-		{
+		} else {
 			LsaDeregisterLogonProcess(h);
 		}
 	}
 
 	// Read the msi.dll
-	if (hMsi == NULL)
-	{
+	if (hMsi == NULL) {
 		hMsi = LoadLibrary("msi.dll");
 
-		if (hMsi != NULL)
-		{
+		if (hMsi != NULL) {
 			_MsiConfigureProductW =
-				(UINT (__stdcall *)(LPCWSTR,int,INSTALLSTATE)) GetProcAddress(hMsi, "MsiConfigureProductW");
+			    (UINT(__stdcall *)(LPCWSTR, int, INSTALLSTATE))GetProcAddress(hMsi, "MsiConfigureProductW");
 			_MsiGetProductInfoW =
-				(UINT (__stdcall *)(LPCWSTR,LPCWSTR,LPWSTR,LPDWORD)) GetProcAddress(hMsi, "MsiGetProductInfoW");
+			    (UINT(__stdcall *)(LPCWSTR, LPCWSTR, LPWSTR, LPDWORD))GetProcAddress(hMsi, "MsiGetProductInfoW");
 			_MsiSetInternalUI =
-				(INSTALLUILEVEL (__stdcall *)(INSTALLUILEVEL,HWND *)) GetProcAddress(hMsi, "MsiSetInternalUI");
+			    (INSTALLUILEVEL(__stdcall *)(INSTALLUILEVEL, HWND *))GetProcAddress(hMsi, "MsiSetInternalUI");
 			_MsiLocateComponentW =
-				(INSTALLSTATE (__stdcall *)(LPCWSTR,LPWSTR,LPDWORD)) GetProcAddress(hMsi, "MsiLocateComponentW");
+			    (INSTALLSTATE(__stdcall *)(LPCWSTR, LPWSTR, LPDWORD))GetProcAddress(hMsi, "MsiLocateComponentW");
 		}
 	}
 }
 
 // Determine whether to create a minidump
-void MsSetEnableMinidump(bool enabled)
-{
+void MsSetEnableMinidump(bool enabled) {
 	ms->MiniDumpEnabled = enabled;
 }
 
 // Output the minidump
-void MsWriteMinidump(wchar_t *filename, void *ex)
-{
+void MsWriteMinidump(wchar_t *filename, void *ex) {
 	wchar_t tmp[MAX_PATH];
 	wchar_t dir[MAX_PATH];
 	HANDLE h;
 	MINIDUMP_EXCEPTION_INFORMATION info;
 	struct _EXCEPTION_POINTERS *exp = (struct _EXCEPTION_POINTERS *)ex;
 
-	if (filename != NULL)
-	{
+	if (filename != NULL) {
 		UniStrCpy(tmp, sizeof(tmp), filename);
-	}
-	else
-	{
+	} else {
 		SYSTEMTIME tm;
 
 		Zero(&tm, sizeof(tm));
 		GetLocalTime(&tm);
 
 		UniFormat(tmp, sizeof(tmp), L"%s_%04u%02u%02u_%02u%02u%02u.dmp",
-			ms->MinidumpBaseFileNameW,
-			tm.wYear, tm.wMonth, tm.wDay, tm.wHour, tm.wMinute, tm.wSecond);
+		          ms->MinidumpBaseFileNameW,
+		          tm.wYear, tm.wMonth, tm.wDay, tm.wHour, tm.wMinute, tm.wSecond);
 	}
 
 	GetDirNameFromFilePathW(dir, sizeof(dir), tmp);
@@ -4957,24 +4271,21 @@ void MsWriteMinidump(wchar_t *filename, void *ex)
 
 	Zero(&info, sizeof(info));
 
-	if (exp != NULL)
-	{
+	if (exp != NULL) {
 		info.ThreadId = GetCurrentThreadId();
 		info.ExceptionPointers = exp;
 		info.ClientPointers = true;
 	}
 
 	h = CreateFileW(tmp, GENERIC_READ | GENERIC_WRITE,
-		FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
-		NULL);
-	if (h != INVALID_HANDLE_VALUE)
-	{
+	                FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
+	                NULL);
+	if (h != INVALID_HANDLE_VALUE) {
 		MiniDumpWriteDump(ms->hCurrentProcess, ms->CurrentProcessId,
-			h,
-			MiniDumpNormal | MiniDumpWithFullMemory | MiniDumpWithDataSegs |
-			MiniDumpWithHandleData
-			,
-			info.ThreadId == 0 ? NULL : &info, NULL, NULL);
+		                  h,
+		                  MiniDumpNormal | MiniDumpWithFullMemory | MiniDumpWithDataSegs |
+		                      MiniDumpWithHandleData,
+		                  info.ThreadId == 0 ? NULL : &info, NULL, NULL);
 
 		FlushFileBuffers(h);
 		CloseHandle(h);
@@ -4982,10 +4293,8 @@ void MsWriteMinidump(wchar_t *filename, void *ex)
 }
 
 // Exception handler
-LONG CALLBACK MsExceptionHandler(struct _EXCEPTION_POINTERS *ExceptionInfo)
-{
-	if (ms->MiniDumpEnabled)
-	{
+LONG CALLBACK MsExceptionHandler(struct _EXCEPTION_POINTERS *ExceptionInfo) {
+	if (ms->MiniDumpEnabled) {
 		MsWriteMinidump(NULL, ExceptionInfo);
 	}
 
@@ -4993,17 +4302,14 @@ LONG CALLBACK MsExceptionHandler(struct _EXCEPTION_POINTERS *ExceptionInfo)
 }
 
 // Release of the library
-void MsFree()
-{
-	if (ms == NULL)
-	{
+void MsFree() {
+	if (ms == NULL) {
 		// Uninitialized
 		return;
 	}
 
 	// Release the LSA
-	if (hLsa != NULL)
-	{
+	if (hLsa != NULL) {
 		LsaDeregisterLogonProcess(hLsa);
 
 		hLsa = NULL;
@@ -5073,39 +4379,31 @@ void MsFree()
 }
 
 // Directory acquisition related
-wchar_t *MsGetWindowsDirW()
-{
+wchar_t *MsGetWindowsDirW() {
 	return ms->WindowsDirW;
 }
-char *MsGetSystem32Dir()
-{
+char *MsGetSystem32Dir() {
 	return ms->System32Dir;
 }
-char *MsGetTempDir()
-{
+char *MsGetTempDir() {
 	return ms->TempDir;
 }
-char *MsGetMyTempDir()
-{
+char *MsGetMyTempDir() {
 	return ms->MyTempDir;
 }
 
-wchar_t *MsGetExeFileNameW()
-{
+wchar_t *MsGetExeFileNameW() {
 	return ms == NULL ? L"Unknown" : ms->ExeFileNameW;
 }
-wchar_t *MsGetSystem32DirW()
-{
+wchar_t *MsGetSystem32DirW() {
 	return ms->System32DirW;
 }
-wchar_t *MsGetMyTempDirW()
-{
+wchar_t *MsGetMyTempDirW() {
 	return ms->MyTempDirW;
 }
-wchar_t *MsGetUserNameW()
-{
+wchar_t *MsGetUserNameW() {
 	return ms->UserNameW;
 }
 
-#endif	// WIN32
+#endif // WIN32
 

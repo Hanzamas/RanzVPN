@@ -5,66 +5,63 @@
 // Pack.h
 // Header of Pack.c
 
-#ifndef	PACK_H
-#define	PACK_H
+#ifndef PACK_H
+#define PACK_H
 
 #include "MayaType.h"
 
 // Constant
 #ifdef CPU_64
 
-#define	MAX_VALUE_SIZE			(384 * 1024 * 1024)	// Maximum Data size that can be stored in a single VALUE
-#define	MAX_VALUE_NUM			262144	// Maximum VALUE number that can be stored in a single ELEMENT
-#define	MAX_ELEMENT_NAME_LEN	63		// The length of the name that can be attached to the ELEMENT
-#define	MAX_ELEMENT_NUM			262144	// Maximum ELEMENT number that can be stored in a single PACK
-#define	MAX_PACK_SIZE			(512 * 1024 * 1024)	// Maximum size of a serialized PACK
+#define MAX_VALUE_SIZE       (384 * 1024 * 1024) // Maximum Data size that can be stored in a single VALUE
+#define MAX_VALUE_NUM        262144              // Maximum VALUE number that can be stored in a single ELEMENT
+#define MAX_ELEMENT_NAME_LEN 63                  // The length of the name that can be attached to the ELEMENT
+#define MAX_ELEMENT_NUM      262144              // Maximum ELEMENT number that can be stored in a single PACK
+#define MAX_PACK_SIZE        (512 * 1024 * 1024) // Maximum size of a serialized PACK
 
-#else	// CPU_64
+#else // CPU_64
 
-#define	MAX_VALUE_SIZE			(96 * 1024 * 1024)	// Maximum Data size that can be stored in a single VALUE
-#define	MAX_VALUE_NUM			65536	// Maximum VALUE number that can be stored in a single ELEMENT
-#define	MAX_ELEMENT_NAME_LEN	63		// The length of the name that can be attached to the ELEMENT
-#define	MAX_ELEMENT_NUM			131072	// Maximum ELEMENT number that can be stored in a single PACK
-#define	MAX_PACK_SIZE			(128 * 1024 * 1024)	// Maximum size of a serialized PACK
+#define MAX_VALUE_SIZE       (96 * 1024 * 1024)  // Maximum Data size that can be stored in a single VALUE
+#define MAX_VALUE_NUM        65536               // Maximum VALUE number that can be stored in a single ELEMENT
+#define MAX_ELEMENT_NAME_LEN 63                  // The length of the name that can be attached to the ELEMENT
+#define MAX_ELEMENT_NUM      131072              // Maximum ELEMENT number that can be stored in a single PACK
+#define MAX_PACK_SIZE        (128 * 1024 * 1024) // Maximum size of a serialized PACK
 
-#endif	// CPU_64
+#endif // CPU_64
 
 // Type of VALUE
-#define	VALUE_INT			0		// Integer type
-#define	VALUE_DATA			1		// Data type
-#define	VALUE_STR			2		// ANSI string type
-#define	VALUE_UNISTR		3		// Unicode string type
-#define	VALUE_INT64			4		// 64 bit integer type
+#define VALUE_INT    0 // Integer type
+#define VALUE_DATA   1 // Data type
+#define VALUE_STR    2 // ANSI string type
+#define VALUE_UNISTR 3 // Unicode string type
+#define VALUE_INT64  4 // 64 bit integer type
 
 // The number of allowable NOOP
-#define	MAX_NOOP_PER_SESSION	30
-#define NOOP 1
-#define NOOP_IGNORE 2 // A noop, but don't send a response noop
+#define MAX_NOOP_PER_SESSION 30
+#define NOOP                 1
+#define NOOP_IGNORE          2 // A noop, but don't send a response noop
 
 // VALUE object
-struct VALUE
-{
-	UINT Size;				// Size
-	UINT IntValue;			// Integer value
-	void *Data;				// Data
-	char *Str;				// ANSI string
-	wchar_t *UniStr;		// Unicode strings
-	UINT64 Int64Value;		// 64 bit integer type
+struct VALUE {
+	UINT Size;         // Size
+	UINT IntValue;     // Integer value
+	void *Data;        // Data
+	char *Str;         // ANSI string
+	wchar_t *UniStr;   // Unicode strings
+	UINT64 Int64Value; // 64 bit integer type
 };
 
 // ELEMENT object
-struct ELEMENT
-{
-	char name[MAX_ELEMENT_NAME_LEN + 1];	// Element name
-	UINT num_value;			// Number of values (>=1)
-	UINT type;				// Type
-	VALUE **values;			// List of pointers to the value
+struct ELEMENT {
+	char name[MAX_ELEMENT_NAME_LEN + 1]; // Element name
+	UINT num_value;                      // Number of values (>=1)
+	UINT type;                           // Type
+	VALUE **values;                      // List of pointers to the value
 };
 
 // PACK object
-struct PACK
-{
-	LIST *elements;			// Element list
+struct PACK {
+	LIST *elements; // Element list
 };
 
 // Function prototype
@@ -151,4 +148,4 @@ bool PackGetIp6AddrEx(PACK *p, char *name, IPV6_ADDR *addr, UINT index);
 bool PackGetData2(PACK *p, char *name, void *data, UINT size);
 bool PackGetDataEx2(PACK *p, char *name, void *data, UINT size, UINT index);
 
-#endif	// PACK_H
+#endif // PACK_H

@@ -5,18 +5,17 @@
 // FileIO.h
 // Header of FileIO.c
 
-#ifndef	FILEIO_H
-#define	FILEIO_H
+#ifndef FILEIO_H
+#define FILEIO_H
 
 #include "Mayaqua.h"
 
-#define	HAMCORE_DIR_NAME			"hamcore"
-#define	HAMCORE_FILE_NAME			"hamcore.se2"
-#define	HAMCORE_CACHE_EXPIRES		(5 * 60 * 1000)
+#define HAMCORE_DIR_NAME      "hamcore"
+#define HAMCORE_FILE_NAME     "hamcore.se2"
+#define HAMCORE_CACHE_EXPIRES (5 * 60 * 1000)
 
 // IO structure
-struct IO
-{
+struct IO {
 	char Name[MAX_SIZE];
 	wchar_t NameW[MAX_SIZE];
 	void *pData;
@@ -28,8 +27,7 @@ struct IO
 };
 
 // HC structure
-typedef struct HC
-{
+typedef struct HC {
 	char *Path;
 	void *Buffer;
 	size_t Size;
@@ -37,30 +35,27 @@ typedef struct HC
 } HC;
 
 // DIRENT structure
-struct DIRENT
-{
-	bool Folder;				// Folder
-	char *FileName;				// File name (ANSI)
-	wchar_t *FileNameW;			// File name (Unicode)
-	UINT64 FileSize;			// File size
-	UINT64 CreateDate;			// Creation Date
-	UINT64 UpdateDate;			// Updating date
+struct DIRENT {
+	bool Folder;        // Folder
+	char *FileName;     // File name (ANSI)
+	wchar_t *FileNameW; // File name (Unicode)
+	UINT64 FileSize;    // File size
+	UINT64 CreateDate;  // Creation Date
+	UINT64 UpdateDate;  // Updating date
 };
 
 // DIRLIST structure
-struct DIRLIST
-{
-	UINT NumFiles;				// Number of files
-	struct DIRENT **File;			// File array
+struct DIRLIST {
+	UINT NumFiles;        // Number of files
+	struct DIRENT **File; // File array
 };
 
 // ZIP related structure
-#ifdef	OS_WIN32
+#ifdef OS_WIN32
 #pragma pack(push, 1)
-#endif	// OS_WIN32
+#endif // OS_WIN32
 
-struct ZIP_DATA_HEADER
-{
+struct ZIP_DATA_HEADER {
 	UINT Signature;
 	USHORT NeedVer;
 	USHORT Option;
@@ -74,16 +69,14 @@ struct ZIP_DATA_HEADER
 	USHORT ExtraLen;
 } GCC_PACKED;
 
-struct ZIP_DATA_FOOTER
-{
+struct ZIP_DATA_FOOTER {
 	UINT Signature;
 	UINT Crc32;
 	UINT CompSize;
 	UINT UncompSize;
 } GCC_PACKED;
 
-struct ZIP_DIR_HEADER
-{
+struct ZIP_DIR_HEADER {
 	UINT Signature;
 	USHORT MadeVer;
 	USHORT NeedVer;
@@ -103,8 +96,7 @@ struct ZIP_DIR_HEADER
 	UINT HeaderPos;
 } GCC_PACKED;
 
-struct ZIP_END_HEADER
-{
+struct ZIP_END_HEADER {
 	UINT Signature;
 	USHORT DiskNum;
 	USHORT StartDiskNum;
@@ -115,17 +107,16 @@ struct ZIP_END_HEADER
 	USHORT CommentLen;
 } GCC_PACKED;
 
-#define	ZIP_SIGNATURE				0x04034B50
-#define	ZIP_SIGNATURE_END			0x06054B50
-#define	ZIP_VERSION					10
-#define	ZIP_VERSION_WITH_COMPRESS	20
+#define ZIP_SIGNATURE             0x04034B50
+#define ZIP_SIGNATURE_END         0x06054B50
+#define ZIP_VERSION               10
+#define ZIP_VERSION_WITH_COMPRESS 20
 
-#ifdef	OS_WIN32
+#ifdef OS_WIN32
 #pragma pack(pop)
-#endif	// OS_WIN32
+#endif // OS_WIN32
 
-struct ZIP_FILE
-{
+struct ZIP_FILE {
 	char Name[MAX_PATH];
 	UINT Size;
 	UINT64 DateTime;
@@ -136,8 +127,7 @@ struct ZIP_FILE
 	UINT HeaderPos;
 };
 
-struct ZIP_PACKER
-{
+struct ZIP_PACKER {
 	FIFO *Fifo;
 	LIST *FileList;
 	ZIP_FILE *CurrentFile;
@@ -221,4 +211,4 @@ void ConvertSafeFileName(char *dst, UINT size, char *src);
 bool IsFile(char *name);
 bool IsFileW(wchar_t *name);
 
-#endif	// FILEIO_H
+#endif // FILEIO_H

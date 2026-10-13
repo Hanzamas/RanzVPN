@@ -36,110 +36,88 @@ static REF *cedar_log_ref = NULL;
 static LOG *cedar_log;
 
 // Check current windows version is supported
-bool IsSupportedWinVer(RPC_WINVER *v)
-{
+bool IsSupportedWinVer(RPC_WINVER *v) {
 	// Validate arguments
-	if (v == NULL)
-	{
+	if (v == NULL) {
 		return false;
 	}
 
-	if (v->IsWindows == false)
-	{
+	if (v->IsWindows == false) {
 		return true;
 	}
 
-	if (v->IsNT == false)
-	{
+	if (v->IsNT == false) {
 		return true;
 	}
 
-	if (v->IsBeta)
-	{
+	if (v->IsBeta) {
 		return true;
 	}
 
-	if (v->VerMajor <= 4)
-	{
+	if (v->VerMajor <= 4) {
 		// Windows NT
 		return true;
 	}
 
-	if (v->VerMajor == 5 && v->VerMinor == 0)
-	{
+	if (v->VerMajor == 5 && v->VerMinor == 0) {
 		// Windows 2000
-		if (v->ServicePack <= 4)
-		{
+		if (v->ServicePack <= 4) {
 			// SP4 or earlier
 			return true;
 		}
 	}
 
-	if (v->VerMajor == 5 && v->VerMinor == 1)
-	{
+	if (v->VerMajor == 5 && v->VerMinor == 1) {
 		// Windows XP x86
-		if (v->ServicePack <= 3)
-		{
+		if (v->ServicePack <= 3) {
 			// SP3 or earlier
 			return true;
 		}
 	}
 
-	if (v->VerMajor == 5 && v->VerMinor == 2)
-	{
+	if (v->VerMajor == 5 && v->VerMinor == 2) {
 		// Windows XP x64, Windows Server 2003
-		if (v->ServicePack <= 2)
-		{
+		if (v->ServicePack <= 2) {
 			// SP2 or earlier
 			return true;
 		}
 	}
 
-	if (v->VerMajor == 6 && v->VerMinor == 0)
-	{
+	if (v->VerMajor == 6 && v->VerMinor == 0) {
 		// Windows Vista, Server 2008
-		if (v->ServicePack <= 2)
-		{
+		if (v->ServicePack <= 2) {
 			// SP2 or earlier
 			return true;
 		}
 	}
 
-	if (v->VerMajor == 6 && v->VerMinor == 1)
-	{
+	if (v->VerMajor == 6 && v->VerMinor == 1) {
 		// Windows 7, Server 2008 R2
-		if (v->ServicePack <= 1)
-		{
+		if (v->ServicePack <= 1) {
 			// SP1 or earlier
 			return true;
 		}
 	}
 
-	if (v->VerMajor == 6 && v->VerMinor == 2)
-	{
+	if (v->VerMajor == 6 && v->VerMinor == 2) {
 		// Windows 8, Server 2012
-		if (v->ServicePack <= 0)
-		{
+		if (v->ServicePack <= 0) {
 			// SP0 only
 			return true;
 		}
 	}
 
-	if (v->VerMajor == 6 && v->VerMinor == 3)
-	{
+	if (v->VerMajor == 6 && v->VerMinor == 3) {
 		// Windows 8.1, Server 2012 R2
-		if (v->ServicePack <= 0)
-		{
+		if (v->ServicePack <= 0) {
 			// SP0 only
 			return true;
 		}
 	}
 
-	if ((v->VerMajor == 6 && v->VerMinor == 4) || (v->VerMajor == 10 && v->VerMinor == 0))
-	{
+	if ((v->VerMajor == 6 && v->VerMinor == 4) || (v->VerMajor == 10 && v->VerMinor == 0)) {
 		// Windows 10 or Windows Server 2016
-		if (v->ServicePack <= 0)
-		{
+		if (v->ServicePack <= 0) {
 			// SP0 only
 			return true;
 		}
@@ -148,13 +126,11 @@ bool IsSupportedWinVer(RPC_WINVER *v)
 	return false;
 }
 
-#ifdef	OS_WIN32
+#ifdef OS_WIN32
 // Get the version information of Windows
-void Win32GetWinVer(RPC_WINVER *v)
-{
+void Win32GetWinVer(RPC_WINVER *v) {
 	// Validate arguments
-	if (v == NULL)
-	{
+	if (v == NULL) {
 		return;
 	}
 
@@ -162,8 +138,7 @@ void Win32GetWinVer(RPC_WINVER *v)
 
 	v->IsWindows = true;
 
-	if (true)
-	{
+	if (true) {
 		OSVERSIONINFOEX os;
 		Zero(&os, sizeof(os));
 		os.dwOSVersionInfoSize = sizeof(os);
@@ -173,54 +148,45 @@ void Win32GetWinVer(RPC_WINVER *v)
 		v->Build = os.dwBuildNumber;
 		v->ServicePack = os.wServicePackMajor;
 
-		if (os.wProductType != VER_NT_WORKSTATION)
-		{
+		if (os.wProductType != VER_NT_WORKSTATION) {
 			v->IsServer = true;
 		}
 		v->VerMajor = os.dwMajorVersion;
 		v->VerMinor = os.dwMinorVersion;
 
-		if (GetOsInfo()->OsServicePack == 0)
-		{
+		if (GetOsInfo()->OsServicePack == 0) {
 			StrCpy(v->Title, sizeof(v->Title), GetOsInfo()->OsProductName);
-		}
-		else
-		{
+		} else {
 			Format(v->Title, sizeof(v->Title), "%s Service Pack %u",
-				GetOsInfo()->OsProductName,
-				GetOsInfo()->OsServicePack);
+			       GetOsInfo()->OsProductName,
+			       GetOsInfo()->OsServicePack);
 		}
 		Trim(v->Title);
 
 		if (InStr(GetOsInfo()->OsVersion, "rc") ||
-			InStr(GetOsInfo()->OsVersion, "beta"))
-		{
+		    InStr(GetOsInfo()->OsVersion, "beta")) {
 			v->IsBeta = true;
 		}
 	}
 }
-#endif	// OS_WIN32
+#endif // OS_WIN32
 
 // Get version of Windows
-void GetWinVer(RPC_WINVER *v)
-{
+void GetWinVer(RPC_WINVER *v) {
 	// Validate arguments
-	if (v == NULL)
-	{
+	if (v == NULL) {
 		return;
 	}
 
-#ifdef	OS_WIN32
+#ifdef OS_WIN32
 	Win32GetWinVer(v);
-#endif	// OS_WIN32
+#endif // OS_WIN32
 }
 
 // Close tiny log
-void FreeTinyLog(TINY_LOG *t)
-{
+void FreeTinyLog(TINY_LOG *t) {
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return;
 	}
 
@@ -230,13 +196,11 @@ void FreeTinyLog(TINY_LOG *t)
 }
 
 // Write to tiny log
-void WriteTinyLog(TINY_LOG *t, char *str)
-{
+void WriteTinyLog(TINY_LOG *t, char *str) {
 	BUF *b;
 	char dt[MAX_PATH];
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return;
 	}
 
@@ -260,8 +224,7 @@ void WriteTinyLog(TINY_LOG *t, char *str)
 }
 
 // Initialize tiny log
-TINY_LOG *NewTinyLog()
-{
+TINY_LOG *NewTinyLog() {
 	char name[MAX_PATH];
 	SYSTEMTIME st;
 	TINY_LOG *t;
@@ -271,7 +234,7 @@ TINY_LOG *NewTinyLog()
 	MakeDir(TINY_LOG_DIRNAME);
 
 	Format(name, sizeof(name), TINY_LOG_FILENAME,
-		st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+	       st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
 
 	t = ZeroMalloc(sizeof(TINY_LOG));
 
@@ -283,28 +246,23 @@ TINY_LOG *NewTinyLog()
 }
 
 // Compare entries of No-SSL connection list
-int CompareNoSslList(void *p1, void *p2)
-{
+int CompareNoSslList(void *p1, void *p2) {
 	NON_SSL *n1, *n2;
-	if (p1 == NULL || p2 == NULL)
-	{
+	if (p1 == NULL || p2 == NULL) {
 		return 0;
 	}
 	n1 = *(NON_SSL **)p1;
 	n2 = *(NON_SSL **)p2;
-	if (n1 == NULL || n2 == NULL)
-	{
+	if (n1 == NULL || n2 == NULL) {
 		return 0;
 	}
 	return CmpIpAddr(&n1->IpAddress, &n2->IpAddress);
 }
 
-// Decrement connection count of Non-SSL connection list entry 
-void DecrementNoSsl(CEDAR *c, IP *ip, UINT num_dec)
-{
+// Decrement connection count of Non-SSL connection list entry
+void DecrementNoSsl(CEDAR *c, IP *ip, UINT num_dec) {
 	// Validate arguments
-	if (c == NULL || ip == NULL)
-	{
+	if (c == NULL || ip == NULL) {
 		return;
 	}
 
@@ -312,10 +270,8 @@ void DecrementNoSsl(CEDAR *c, IP *ip, UINT num_dec)
 	{
 		NON_SSL *n = SearchNoSslList(c, ip);
 
-		if (n != NULL)
-		{
-			if (n->Count >= num_dec)
-			{
+		if (n != NULL) {
+			if (n->Count >= num_dec) {
 				n->Count -= num_dec;
 			}
 		}
@@ -324,12 +280,10 @@ void DecrementNoSsl(CEDAR *c, IP *ip, UINT num_dec)
 }
 
 // Check whether the specified IP address is in Non-SSL connection list
-bool IsInNoSsl(CEDAR *c, IP *ip)
-{
+bool IsInNoSsl(CEDAR *c, IP *ip) {
 	bool ret = false;
 	// Validate arguments
-	if (c == NULL || ip == NULL)
-	{
+	if (c == NULL || ip == NULL) {
 		return false;
 	}
 
@@ -337,10 +291,8 @@ bool IsInNoSsl(CEDAR *c, IP *ip)
 	{
 		NON_SSL *n = SearchNoSslList(c, ip);
 
-		if (n != NULL)
-		{
-			if (n->EntryExpires > Tick64() && n->Count > NON_SSL_MIN_COUNT)
-			{
+		if (n != NULL) {
+			if (n->EntryExpires > Tick64() && n->Count > NON_SSL_MIN_COUNT) {
 				n->EntryExpires = Tick64() + (UINT64)NON_SSL_ENTRY_EXPIRES;
 				ret = true;
 			}
@@ -352,13 +304,11 @@ bool IsInNoSsl(CEDAR *c, IP *ip)
 }
 
 // Add new entry to Non-SSL connection list
-bool AddNoSsl(CEDAR *c, IP *ip)
-{
+bool AddNoSsl(CEDAR *c, IP *ip) {
 	NON_SSL *n;
 	bool ret = true;
 	// Validate arguments
-	if (c == NULL || ip == NULL)
-	{
+	if (c == NULL || ip == NULL) {
 		return true;
 	}
 
@@ -368,8 +318,7 @@ bool AddNoSsl(CEDAR *c, IP *ip)
 
 		n = SearchNoSslList(c, ip);
 
-		if (n == NULL)
-		{
+		if (n == NULL) {
 			n = ZeroMalloc(sizeof(NON_SSL));
 			Copy(&n->IpAddress, ip, sizeof(IP));
 			n->Count = 0;
@@ -381,8 +330,7 @@ bool AddNoSsl(CEDAR *c, IP *ip)
 
 		n->Count++;
 
-		if (n->Count > NON_SSL_MIN_COUNT)
-		{
+		if (n->Count > NON_SSL_MIN_COUNT) {
 			ret = false;
 		}
 	}
@@ -392,30 +340,25 @@ bool AddNoSsl(CEDAR *c, IP *ip)
 }
 
 // Delete old entries in Non-SSL connection list
-void DeleteOldNoSsl(CEDAR *c)
-{
+void DeleteOldNoSsl(CEDAR *c) {
 	UINT i;
 	LIST *o;
 	// Validate arguments
-	if (c == NULL)
-	{
+	if (c == NULL) {
 		return;
 	}
 
 	o = NewListFast(NULL);
 
-	for (i = 0;i < LIST_NUM(c->NonSslList);i++)
-	{
+	for (i = 0; i < LIST_NUM(c->NonSslList); i++) {
 		NON_SSL *n = LIST_DATA(c->NonSslList, i);
 
-		if (n->EntryExpires <= Tick64())
-		{
+		if (n->EntryExpires <= Tick64()) {
 			Add(o, n);
 		}
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
+	for (i = 0; i < LIST_NUM(o); i++) {
 		NON_SSL *n = LIST_DATA(o, i);
 
 		Delete(c->NonSslList, n);
@@ -426,12 +369,10 @@ void DeleteOldNoSsl(CEDAR *c)
 }
 
 // Search entry in Non-SSL connection list
-NON_SSL *SearchNoSslList(CEDAR *c, IP *ip)
-{
+NON_SSL *SearchNoSslList(CEDAR *c, IP *ip) {
 	NON_SSL *n, t;
 	// Validate arguments
-	if (c == NULL || ip == NULL)
-	{
+	if (c == NULL || ip == NULL) {
 		return NULL;
 	}
 
@@ -440,8 +381,7 @@ NON_SSL *SearchNoSslList(CEDAR *c, IP *ip)
 
 	n = Search(c->NonSslList, &t);
 
-	if (n == NULL)
-	{
+	if (n == NULL) {
 		return NULL;
 	}
 
@@ -449,11 +389,9 @@ NON_SSL *SearchNoSslList(CEDAR *c, IP *ip)
 }
 
 // Initialize Non-SSL connection list
-void InitNoSslList(CEDAR *c)
-{
+void InitNoSslList(CEDAR *c) {
 	// Validate arguments
-	if (c == NULL)
-	{
+	if (c == NULL) {
 		return;
 	}
 
@@ -461,17 +399,14 @@ void InitNoSslList(CEDAR *c)
 }
 
 // Free Non-SSL connection list
-void FreeNoSslList(CEDAR *c)
-{
+void FreeNoSslList(CEDAR *c) {
 	UINT i;
 	// Validate arguments
-	if (c == NULL)
-	{
+	if (c == NULL) {
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(c->NonSslList);i++)
-	{
+	for (i = 0; i < LIST_NUM(c->NonSslList); i++) {
 		NON_SSL *n = LIST_DATA(c->NonSslList, i);
 
 		Free(n);
@@ -482,15 +417,12 @@ void FreeNoSslList(CEDAR *c)
 }
 
 // Stop Cedar log
-void StopCedarLog()
-{
-	if (cedar_log_ref == NULL)
-	{
+void StopCedarLog() {
+	if (cedar_log_ref == NULL) {
 		return;
 	}
 
-	if (Release(cedar_log_ref) == 0)
-	{
+	if (Release(cedar_log_ref) == 0) {
 		FreeLog(cedar_log);
 		cedar_log = NULL;
 		cedar_log_ref = NULL;
@@ -499,38 +431,32 @@ void StopCedarLog()
 
 
 // Get sum of traffic data size
-UINT64 GetTrafficPacketSize(TRAFFIC *t)
-{
+UINT64 GetTrafficPacketSize(TRAFFIC *t) {
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return 0;
 	}
 
 	return t->Recv.BroadcastBytes + t->Recv.UnicastBytes +
-		t->Send.BroadcastBytes + t->Send.UnicastBytes;
+	       t->Send.BroadcastBytes + t->Send.UnicastBytes;
 }
 
 // Get sum of the number of packets in traffic
-UINT64 GetTrafficPacketNum(TRAFFIC *t)
-{
+UINT64 GetTrafficPacketNum(TRAFFIC *t) {
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return 0;
 	}
 
 	return t->Recv.BroadcastCount + t->Recv.UnicastCount +
-		t->Send.BroadcastCount + t->Send.UnicastCount;
+	       t->Send.BroadcastCount + t->Send.UnicastCount;
 }
 
 // Delete trusted CA from Cedar
-bool DeleteCa(CEDAR *cedar, UINT ptr)
-{
+bool DeleteCa(CEDAR *cedar, UINT ptr) {
 	bool b = false;
 	// Validate arguments
-	if (cedar == NULL || ptr == 0)
-	{
+	if (cedar == NULL || ptr == 0) {
 		return false;
 	}
 
@@ -538,12 +464,10 @@ bool DeleteCa(CEDAR *cedar, UINT ptr)
 	{
 		UINT i;
 
-		for (i = 0;i < LIST_NUM(cedar->CaList);i++)
-		{
+		for (i = 0; i < LIST_NUM(cedar->CaList); i++) {
 			X *x = LIST_DATA(cedar->CaList, i);
 
-			if (POINTER_TO_KEY(x) == ptr)
-			{
+			if (POINTER_TO_KEY(x) == ptr) {
 				Delete(cedar->CaList, x);
 				FreeX(x);
 
@@ -559,11 +483,9 @@ bool DeleteCa(CEDAR *cedar, UINT ptr)
 }
 
 // Add trusted CA to Cedar
-void AddCa(CEDAR *cedar, X *x)
-{
+void AddCa(CEDAR *cedar, X *x) {
 	// Validate arguments
-	if (cedar == NULL || x == NULL)
-	{
+	if (cedar == NULL || x == NULL) {
 		return;
 	}
 
@@ -572,18 +494,15 @@ void AddCa(CEDAR *cedar, X *x)
 		UINT i;
 		bool ok = true;
 
-		for (i = 0;i < LIST_NUM(cedar->CaList);i++)
-		{
+		for (i = 0; i < LIST_NUM(cedar->CaList); i++) {
 			X *exist_x = LIST_DATA(cedar->CaList, i);
-			if (CompareX(exist_x, x))
-			{
+			if (CompareX(exist_x, x)) {
 				ok = false;
 				break;
 			}
 		}
 
-		if (ok)
-		{
+		if (ok) {
 			Insert(cedar->CaList, CloneX(x));
 		}
 	}
@@ -591,19 +510,16 @@ void AddCa(CEDAR *cedar, X *x)
 }
 
 // Delete connection from Cedar
-void DelConnection(CEDAR *cedar, CONNECTION *c)
-{
+void DelConnection(CEDAR *cedar, CONNECTION *c) {
 	// Validate arguments
-	if (cedar == NULL || c == NULL)
-	{
+	if (cedar == NULL || c == NULL) {
 		return;
 	}
 
 	LockList(cedar->ConnectionList);
 	{
 		Debug("Connection %s Deleted from Cedar.\n", c->Name);
-		if (Delete(cedar->ConnectionList, c))
-		{
+		if (Delete(cedar->ConnectionList, c)) {
 			ReleaseConnection(c);
 		}
 	}
@@ -611,12 +527,10 @@ void DelConnection(CEDAR *cedar, CONNECTION *c)
 }
 
 // Get the number of unestablished connections
-UINT GetUnestablishedConnections(CEDAR *cedar)
-{
+UINT GetUnestablishedConnections(CEDAR *cedar) {
 	UINT i, ret;
 	// Validate arguments
-	if (cedar == NULL)
-	{
+	if (cedar == NULL) {
 		return 0;
 	}
 
@@ -624,18 +538,15 @@ UINT GetUnestablishedConnections(CEDAR *cedar)
 
 	LockList(cedar->ConnectionList);
 	{
-		for (i = 0;i < LIST_NUM(cedar->ConnectionList);i++)
-		{
+		for (i = 0; i < LIST_NUM(cedar->ConnectionList); i++) {
 			CONNECTION *c = LIST_DATA(cedar->ConnectionList, i);
 
-			switch (c->Type)
-			{
+			switch (c->Type) {
 			case CONNECTION_TYPE_CLIENT:
 			case CONNECTION_TYPE_INIT:
 			case CONNECTION_TYPE_LOGIN:
 			case CONNECTION_TYPE_ADDITIONAL:
-				switch (c->Status)
-				{
+				switch (c->Status) {
 				case CONNECTION_STATUS_ACCEPTED:
 				case CONNECTION_STATUS_NEGOTIATION:
 				case CONNECTION_STATUS_USERAUTH:
@@ -652,13 +563,11 @@ UINT GetUnestablishedConnections(CEDAR *cedar)
 }
 
 // Add connection to Cedar
-void AddConnection(CEDAR *cedar, CONNECTION *c)
-{
+void AddConnection(CEDAR *cedar, CONNECTION *c) {
 	char tmp[MAX_SIZE];
 	UINT i;
 	// Validate arguments
-	if (cedar == NULL || c == NULL)
-	{
+	if (cedar == NULL || c == NULL) {
 		return;
 	}
 
@@ -684,14 +593,12 @@ void AddConnection(CEDAR *cedar, CONNECTION *c)
 }
 
 // Stop all connections
-void StopAllConnection(CEDAR *c)
-{
+void StopAllConnection(CEDAR *c) {
 	UINT num;
 	UINT i;
 	CONNECTION **connections;
 	// Validate arguments
-	if (c == NULL)
-	{
+	if (c == NULL) {
 		return;
 	}
 
@@ -703,8 +610,7 @@ void StopAllConnection(CEDAR *c)
 	}
 	UnlockList(c->ConnectionList);
 
-	for (i = 0;i < num;i++)
-	{
+	for (i = 0; i < num; i++) {
 		StopConnection(connections[i], false);
 		ReleaseConnection(connections[i]);
 	}
@@ -712,46 +618,38 @@ void StopAllConnection(CEDAR *c)
 }
 
 // Delete a hub in Cedar
-void DelHub(CEDAR *c, HUB *h)
-{
+void DelHub(CEDAR *c, HUB *h) {
 	DelHubEx(c, h, false);
 }
-void DelHubEx(CEDAR *c, HUB *h, bool no_lock)
-{
+void DelHubEx(CEDAR *c, HUB *h, bool no_lock) {
 	// Validate arguments
-	if (c == NULL || h == NULL)
-	{
+	if (c == NULL || h == NULL) {
 		return;
 	}
 
-	if (no_lock == false)
-	{
+	if (no_lock == false) {
 		LockHubList(c);
 	}
 
-	if (Delete(c->HubList, h))
-	{
+	if (Delete(c->HubList, h)) {
 		ReleaseHub(h);
 	}
 
-	if (no_lock == false)
-	{
+	if (no_lock == false) {
 		UnlockHubList(c);
 	}
 }
 
 // Add a new hub to Cedar
-void AddHub(CEDAR *c, HUB *h)
-{
+void AddHub(CEDAR *c, HUB *h) {
 	// Validate arguments
-	if (c == NULL || h == NULL)
-	{
+	if (c == NULL || h == NULL) {
 		return;
 	}
 
 	LockHubList(c);
 	{
-#if	0
+#if 0
 		// We shall not check here the number of hub
 		if (LIST_NUM(c->HubList) >= MAX_HUBS)
 		{
@@ -762,8 +660,7 @@ void AddHub(CEDAR *c, HUB *h)
 #endif
 
 		// Confirm there is no hub which have same name
-		if (IsHub(c, h->Name))
-		{
+		if (IsHub(c, h->Name)) {
 			// exist
 			UnlockHubList(c);
 			return;
@@ -777,13 +674,11 @@ void AddHub(CEDAR *c, HUB *h)
 }
 
 // Stop all hubs in Cedar
-void StopAllHub(CEDAR *c)
-{
+void StopAllHub(CEDAR *c) {
 	HUB **hubs;
 	UINT i, num;
 	// Validate arguments
-	if (c == NULL)
-	{
+	if (c == NULL) {
 		return;
 	}
 
@@ -795,8 +690,7 @@ void StopAllHub(CEDAR *c)
 	}
 	UnlockHubList(c);
 
-	for (i = 0;i < num;i++)
-	{
+	for (i = 0; i < num; i++) {
 		StopHub(hubs[i]);
 		ReleaseHub(hubs[i]);
 	}
@@ -805,11 +699,9 @@ void StopAllHub(CEDAR *c)
 }
 
 // Add a new listener to Cedar
-void AddListener(CEDAR *c, LISTENER *r)
-{
+void AddListener(CEDAR *c, LISTENER *r) {
 	// Validate arguments
-	if (c == NULL || r == NULL)
-	{
+	if (c == NULL || r == NULL) {
 		return;
 	}
 
@@ -822,13 +714,11 @@ void AddListener(CEDAR *c, LISTENER *r)
 }
 
 // Stop all listener in Cedar
-void StopAllListener(CEDAR *c)
-{
+void StopAllListener(CEDAR *c) {
 	LISTENER **array;
 	UINT i, num;
 	// Validate arguments
-	if (c == NULL)
-	{
+	if (c == NULL) {
 		return;
 	}
 
@@ -840,8 +730,7 @@ void StopAllListener(CEDAR *c)
 	}
 	UnlockList(c->ListenerList);
 
-	for (i = 0;i < num;i++)
-	{
+	for (i = 0; i < num; i++) {
 		StopListener(array[i]);
 		ReleaseListener(array[i]);
 	}
@@ -849,11 +738,9 @@ void StopAllListener(CEDAR *c)
 }
 
 // Budget management functions
-void CedarAddQueueBudget(CEDAR *c, int diff)
-{
+void CedarAddQueueBudget(CEDAR *c, int diff) {
 	// Validate arguments
-	if (c == NULL || diff == 0)
-	{
+	if (c == NULL || diff == 0) {
 		return;
 	}
 
@@ -865,11 +752,9 @@ void CedarAddQueueBudget(CEDAR *c, int diff)
 	}
 	Unlock(c->QueueBudgetLock);
 }
-void CedarAddFifoBudget(CEDAR *c, int diff)
-{
+void CedarAddFifoBudget(CEDAR *c, int diff) {
 	// Validate arguments
-	if (c == NULL || diff == 0)
-	{
+	if (c == NULL || diff == 0) {
 		return;
 	}
 
@@ -881,61 +766,47 @@ void CedarAddFifoBudget(CEDAR *c, int diff)
 	}
 	Unlock(c->FifoBudgetLock);
 }
-UINT CedarGetQueueBudgetConsuming(CEDAR *c)
-{
+UINT CedarGetQueueBudgetConsuming(CEDAR *c) {
 	// Validate arguments
-	if (c == NULL)
-	{
+	if (c == NULL) {
 		return 0;
 	}
 
 	return c->QueueBudget;
 }
-UINT CedarGetFifoBudgetConsuming(CEDAR *c)
-{
+UINT CedarGetFifoBudgetConsuming(CEDAR *c) {
 	// Validate arguments
-	if (c == NULL)
-	{
+	if (c == NULL) {
 		return 0;
 	}
 
 	return c->FifoBudget;
 }
-UINT CedarGetQueueBudgetBalance(CEDAR *c)
-{
+UINT CedarGetQueueBudgetBalance(CEDAR *c) {
 	UINT current = CedarGetQueueBudgetConsuming(c);
 	UINT budget = QUEUE_BUDGET;
 
-	if (current <= budget)
-	{
+	if (current <= budget) {
 		return budget - current;
-	}
-	else
-	{
+	} else {
 		return 0;
 	}
 }
-UINT CedarGetFifoBudgetBalance(CEDAR *c)
-{
+UINT CedarGetFifoBudgetBalance(CEDAR *c) {
 	UINT current = CedarGetFifoBudgetConsuming(c);
 	UINT budget = FIFO_BUDGET;
 
-	if (current <= budget)
-	{
+	if (current <= budget) {
 		return budget - current;
-	}
-	else
-	{
+	} else {
 		return 0;
 	}
 }
 
 // Add the current TCP queue size
-void CedarAddCurrentTcpQueueSize(CEDAR *c, int diff)
-{
+void CedarAddCurrentTcpQueueSize(CEDAR *c, int diff) {
 	// Validate arguments
-	if (c == NULL || diff == 0)
-	{
+	if (c == NULL || diff == 0) {
 		return;
 	}
 
@@ -949,11 +820,9 @@ void CedarAddCurrentTcpQueueSize(CEDAR *c, int diff)
 }
 
 // Get the current TCP queue size
-UINT CedarGetCurrentTcpQueueSize(CEDAR *c)
-{
+UINT CedarGetCurrentTcpQueueSize(CEDAR *c) {
 	// Validate arguments
-	if (c == NULL)
-	{
+	if (c == NULL) {
 		return 0;
 	}
 
@@ -961,11 +830,9 @@ UINT CedarGetCurrentTcpQueueSize(CEDAR *c)
 }
 
 // Stop Cedar
-void StopCedar(CEDAR *c)
-{
+void StopCedar(CEDAR *c) {
 	// Validate arguments
-	if (c == NULL)
-	{
+	if (c == NULL) {
 		return;
 	}
 
@@ -981,17 +848,14 @@ void StopCedar(CEDAR *c)
 }
 
 // Clean up Cedar
-void CleanupCedar(CEDAR *c)
-{
+void CleanupCedar(CEDAR *c) {
 	UINT i;
 	// Validate arguments
-	if (c == NULL)
-	{
+	if (c == NULL) {
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(c->CaList);i++)
-	{
+	for (i = 0; i < LIST_NUM(c->CaList); i++) {
 		X *x = LIST_DATA(c->CaList, i);
 		FreeX(x);
 	}
@@ -1006,26 +870,21 @@ void CleanupCedar(CEDAR *c)
 	DeleteCounter(c->ConnectionIncrement);
 	DeleteCounter(c->CurrentSessions);
 
-	if (c->DebugLog != NULL)
-	{
+	if (c->DebugLog != NULL) {
 		FreeLog(c->DebugLog);
 	}
 
-	if (c->ServerX)
-	{
+	if (c->ServerX) {
 		FreeX(c->ServerX);
 	}
-	if (c->ServerK)
-	{
+	if (c->ServerK) {
 		FreeK(c->ServerK);
 	}
-	if (c->ServerChain)
-	{
+	if (c->ServerChain) {
 		FreeXList(c->ServerChain);
 	}
 
-	if (c->CipherList)
-	{
+	if (c->CipherList) {
 		Free(c->CipherList);
 	}
 
@@ -1071,113 +930,87 @@ void CleanupCedar(CEDAR *c)
 }
 
 // Release reference of the Cedar
-void ReleaseCedar(CEDAR *c)
-{
+void ReleaseCedar(CEDAR *c) {
 	// Validate arguments
-	if (c == NULL)
-	{
+	if (c == NULL) {
 		return;
 	}
 
-	if (Release(c->ref) == 0)
-	{
+	if (Release(c->ref) == 0) {
 		CleanupCedar(c);
 	}
 }
 
 // Set cipher list entry
-void SetCedarCipherList(CEDAR *cedar, char *name)
-{
+void SetCedarCipherList(CEDAR *cedar, char *name) {
 	// Validate arguments
-	if (cedar == NULL)
-	{
+	if (cedar == NULL) {
 		return;
 	}
 
-	if (cedar->CipherList != NULL)
-	{
+	if (cedar->CipherList != NULL) {
 		Free(cedar->CipherList);
 	}
-	if (name != NULL)
-	{
+	if (name != NULL) {
 		cedar->CipherList = CopyStr(name);
-	}
-	else
-	{
+	} else {
 		cedar->CipherList = NULL;
 	}
 }
 
 // Compare net service list entries
-int CompareNetSvc(void *p1, void *p2)
-{
+int CompareNetSvc(void *p1, void *p2) {
 	NETSVC *n1, *n2;
-	if (p1 == NULL || p2 == NULL)
-	{
+	if (p1 == NULL || p2 == NULL) {
 		return 0;
 	}
 	n1 = *(NETSVC **)p1;
 	n2 = *(NETSVC **)p2;
-	if (n1 == NULL || n2 == NULL)
-	{
+	if (n1 == NULL || n2 == NULL) {
 		return 0;
 	}
-	if (n1->Port > n2->Port)
-	{
+	if (n1->Port > n2->Port) {
 		return 1;
-	}
-	else if (n1->Port < n2->Port)
-	{
+	} else if (n1->Port < n2->Port) {
 		return -1;
-	}
-	else if (n1->Udp > n2->Udp)
-	{
+	} else if (n1->Udp > n2->Udp) {
 		return 1;
-	}
-	else if (n1->Udp < n2->Udp)
-	{
+	} else if (n1->Udp < n2->Udp) {
 		return -1;
 	}
 	return 0;
 }
 
 // Initialize net service list
-void InitNetSvcList(CEDAR *cedar)
-{
+void InitNetSvcList(CEDAR *cedar) {
 	char filename[MAX_PATH] = "/etc/services";
 	BUF *b;
 	// Validate arguments
-	if (cedar == NULL)
-	{
+	if (cedar == NULL) {
 		return;
 	}
 
-#ifdef	OS_WIN32
+#ifdef OS_WIN32
 	Format(filename, sizeof(filename), "%s\\drivers\\etc\\services", MsGetSystem32Dir());
 #endif
 
 	cedar->NetSvcList = NewList(CompareNetSvc);
 
 	b = ReadDump(filename);
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return;
 	}
 
-	while (true)
-	{
+	while (true) {
 		char *s = CfgReadNextLine(b);
-		if (s == NULL)
-		{
+		if (s == NULL) {
 			break;
 		}
 
 		Trim(s);
-		if (s[0] != '#')
-		{
+		if (s[0] != '#') {
 			TOKEN_LIST *t = ParseToken(s, " \t/");
-			if (t->NumTokens >= 3)
-			{
+			if (t->NumTokens >= 3) {
 				NETSVC *n = ZeroMalloc(sizeof(NETSVC));
 				n->Name = CopyStr(t->Token[0]);
 				n->Udp = (StrCmpi(t->Token[2], "udp") == 0 ? true : false);
@@ -1193,13 +1026,11 @@ void InitNetSvcList(CEDAR *cedar)
 }
 
 // Get net service name
-char *GetSvcName(CEDAR *cedar, bool udp, UINT port)
-{
+char *GetSvcName(CEDAR *cedar, bool udp, UINT port) {
 	char *ret = NULL;
 	NETSVC t;
 	// Validate arguments
-	if (cedar == NULL)
-	{
+	if (cedar == NULL) {
 		return NULL;
 	}
 
@@ -1209,8 +1040,7 @@ char *GetSvcName(CEDAR *cedar, bool udp, UINT port)
 	LockList(cedar->NetSvcList);
 	{
 		NETSVC *n = Search(cedar->NetSvcList, &t);
-		if (n != NULL)
-		{
+		if (n != NULL) {
 			ret = n->Name;
 		}
 	}
@@ -1220,17 +1050,14 @@ char *GetSvcName(CEDAR *cedar, bool udp, UINT port)
 }
 
 // Free net service list
-void FreeNetSvcList(CEDAR *cedar)
-{
+void FreeNetSvcList(CEDAR *cedar) {
 	UINT i;
 	// Validate arguments
-	if (cedar == NULL)
-	{
+	if (cedar == NULL) {
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(cedar->NetSvcList);i++)
-	{
+	for (i = 0; i < LIST_NUM(cedar->NetSvcList); i++) {
 		NETSVC *n = LIST_DATA(cedar->NetSvcList, i);
 		Free(n->Name);
 		Free(n);
@@ -1239,32 +1066,26 @@ void FreeNetSvcList(CEDAR *cedar)
 }
 
 // Change certificate of Cedar
-void SetCedarCert(CEDAR *c, X *server_x, K *server_k)
-{
+void SetCedarCert(CEDAR *c, X *server_x, K *server_k) {
 	SetCedarCertAndChain(c, server_x, server_k, NULL);
 }
-void SetCedarCertAndChain(CEDAR *c, X *server_x, K *server_k, LIST *server_chain)
-{
+void SetCedarCertAndChain(CEDAR *c, X *server_x, K *server_k, LIST *server_chain) {
 	// Validate arguments
-	if (server_x == NULL || server_k == NULL)
-	{
+	if (server_x == NULL || server_k == NULL) {
 		return;
 	}
 
 	Lock(c->lock);
 	{
-		if (c->ServerX != NULL)
-		{
+		if (c->ServerX != NULL) {
 			FreeX(c->ServerX);
 		}
 
-		if (c->ServerK != NULL)
-		{
+		if (c->ServerK != NULL) {
 			FreeK(c->ServerK);
 		}
 
-		if (c->ServerChain != NULL)
-		{
+		if (c->ServerChain != NULL) {
 			FreeXList(c->ServerChain);
 		}
 
@@ -1276,11 +1097,9 @@ void SetCedarCertAndChain(CEDAR *c, X *server_x, K *server_k, LIST *server_chain
 }
 
 // Set the Cedar into VPN Bridge mode
-void SetCedarVpnBridge(CEDAR *c)
-{
+void SetCedarVpnBridge(CEDAR *c) {
 	// Validate arguments
-	if (c == NULL)
-	{
+	if (c == NULL) {
 		return;
 	}
 
@@ -1290,10 +1109,9 @@ void SetCedarVpnBridge(CEDAR *c)
 	c->ServerStr = CopyStr(CEDAR_BRIDGE_STR);
 }
 
-#ifdef	OS_WIN32
+#ifdef OS_WIN32
 // Register the executables in the Windows Firewall exception list
-void RegistWindowsFirewallAll()
-{
+void RegistWindowsFirewallAll() {
 	char exedir[MAX_SIZE];
 
 	GetExeDir(exedir, sizeof(exedir));
@@ -1302,21 +1120,18 @@ void RegistWindowsFirewallAll()
 	MsRegistWindowsFirewallEx2(CEDAR_CUI_STR, "vpncmd.exe", exedir);
 	MsRegistWindowsFirewallEx2(CEDAR_PRODUCT_STR, "vpntest.exe", exedir);
 }
-#endif	// OS_WIN32
+#endif // OS_WIN32
 
-void CedarForceLink()
-{
+void CedarForceLink() {
 }
 
 // Get the version number sent to and compared by peers
-UINT GetCedarVersionNumber()
-{
+UINT GetCedarVersionNumber() {
 	return CEDAR_WIRE_VER;
 }
 
 // Create Cedar object
-CEDAR *NewCedar(X *server_x, K *server_k)
-{
+CEDAR *NewCedar(X *server_x, K *server_k) {
 	CEDAR *c;
 	char tmp[MAX_SIZE];
 	char tmp2[MAX_SIZE];
@@ -1334,9 +1149,9 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 
 	c->CurrentRegionLock = NewLock();
 
-#ifdef	BETA_NUMBER
+#ifdef BETA_NUMBER
 	c->Beta = BETA_NUMBER;
-#endif	// BETA_NUMBER
+#endif // BETA_NUMBER
 
 	InitNoSslList(c);
 
@@ -1364,8 +1179,7 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 	c->ConnectionIncrement = NewCounter();
 	c->CurrentSessions = NewCounter();
 
-	if (server_k && server_x)
-	{
+	if (server_k && server_x) {
 		c->ServerK = CloneK(server_k);
 		c->ServerX = CloneX(server_x);
 	}
@@ -1399,30 +1213,29 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 	InitLocalBridgeList(c);
 
 
-#ifdef	ALPHA_VERSION
+#ifdef ALPHA_VERSION
 	beta_str = "Alpha";
-#else	// ALPHA_VERSION
-#ifndef	RELEASE_CANDIDATE
+#else // ALPHA_VERSION
+#ifndef RELEASE_CANDIDATE
 	beta_str = "Beta";
-#else	// RELEASE_CANDIDATE
+#else  // RELEASE_CANDIDATE
 	beta_str = "Release Candidate";
-#endif	// RELEASE_CANDIDATE
-#endif	// ALPHA_VERSION
+#endif // RELEASE_CANDIDATE
+#endif // ALPHA_VERSION
 
 	ToStr(tmp2, c->Beta);
 	Format(tmp2, sizeof(tmp2), " %s %s ", beta_str, tmp2);
 
 	Format(tmp, sizeof(tmp),
-		"Version %u.%u.%u"
-		"%s"    // Alpha, Beta, Release Candidate or nothing
-		"(%s)", // Language
-		CEDAR_VERSION_MAJOR, CEDAR_VERSION_MINOR, CEDAR_VERSION_BUILD,
-		c->Beta == 0 ? " " : tmp2,
-		_SS("LANGSTR"));
+	       "Version %u.%u.%u"
+	       "%s"    // Alpha, Beta, Release Candidate or nothing
+	       "(%s)", // Language
+	       CEDAR_VERSION_MAJOR, CEDAR_VERSION_MINOR, CEDAR_VERSION_BUILD,
+	       c->Beta == 0 ? " " : tmp2,
+	       _SS("LANGSTR"));
 	Trim(tmp);
 
-	if (true)
-	{
+	if (true) {
 		SYSTEMTIME st;
 		Zero(&st, sizeof(st));
 
@@ -1436,7 +1249,7 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 	c->VerString = CopyStr(tmp);
 
 	Format(tmp, sizeof(tmp), "Compiled %04u/%02u/%02u %02u:%02u:%02u by %s at %s",
-		BUILD_DATE_Y, BUILD_DATE_M, BUILD_DATE_D, BUILD_DATE_HO, BUILD_DATE_MI, BUILD_DATE_SE, BUILDER_NAME, BUILD_PLACE);
+	       BUILD_DATE_Y, BUILD_DATE_M, BUILD_DATE_D, BUILD_DATE_HO, BUILD_DATE_MI, BUILD_DATE_SE, BUILDER_NAME, BUILD_PLACE);
 
 	c->BuildInfo = CopyStr(tmp);
 
@@ -1444,11 +1257,9 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 }
 
 // Cumulate traffic size
-void AddTraffic(TRAFFIC *dst, TRAFFIC *diff)
-{
+void AddTraffic(TRAFFIC *dst, TRAFFIC *diff) {
 	// Validate arguments
-	if (dst == NULL || diff == NULL)
-	{
+	if (dst == NULL || diff == NULL) {
 		return;
 	}
 
@@ -1464,8 +1275,7 @@ void AddTraffic(TRAFFIC *dst, TRAFFIC *diff)
 }
 
 // Create new traffic size object
-TRAFFIC *NewTraffic()
-{
+TRAFFIC *NewTraffic() {
 	TRAFFIC *t;
 
 	t = ZeroMalloc(sizeof(TRAFFIC));
@@ -1473,11 +1283,9 @@ TRAFFIC *NewTraffic()
 }
 
 // Free traffic size object
-void FreeTraffic(TRAFFIC *t)
-{
+void FreeTraffic(TRAFFIC *t) {
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return;
 	}
 
@@ -1485,10 +1293,8 @@ void FreeTraffic(TRAFFIC *t)
 }
 
 // Initialize Cedar communication module
-void InitCedar()
-{
-	if ((init_cedar_counter++) > 0)
-	{
+void InitCedar() {
+	if ((init_cedar_counter++) > 0) {
 		return;
 	}
 
@@ -1500,10 +1306,8 @@ void InitCedar()
 }
 
 // Free Cedar communication module
-void FreeCedar()
-{
-	if ((--init_cedar_counter) > 0)
-	{
+void FreeCedar() {
+	if ((--init_cedar_counter) > 0) {
 		return;
 	}
 

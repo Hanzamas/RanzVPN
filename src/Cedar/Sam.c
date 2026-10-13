@@ -24,12 +24,10 @@
 #include <string.h>
 
 // Password encryption
-void SecurePassword(void *secure_password, void *password, void *random)
-{
+void SecurePassword(void *secure_password, void *password, void *random) {
 	BUF *b;
 	// Validate arguments
-	if (secure_password == NULL || password == NULL || random == NULL)
-	{
+	if (secure_password == NULL || password == NULL || random == NULL) {
 		return;
 	}
 
@@ -42,24 +40,20 @@ void SecurePassword(void *secure_password, void *password, void *random)
 }
 
 // Anonymous authentication of user
-bool SamAuthUserByAnonymous(HUB *h, char *username)
-{
+bool SamAuthUserByAnonymous(HUB *h, char *username) {
 	bool b = false;
 	// Validate arguments
-	if (h == NULL || username == NULL)
-	{
+	if (h == NULL || username == NULL) {
 		return false;
 	}
 
 	AcLock(h);
 	{
 		USER *u = AcGetUser(h, username);
-		if (u)
-		{
+		if (u) {
 			Lock(u->lock);
 			{
-				if (u->AuthType == AUTHTYPE_ANONYMOUS)
-				{
+				if (u->AuthType == AUTHTYPE_ANONYMOUS) {
 					b = true;
 				}
 			}
@@ -73,21 +67,18 @@ bool SamAuthUserByAnonymous(HUB *h, char *username)
 }
 
 // Plaintext password authentication of user
-bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *password, bool ast)
-{
+bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *password, bool ast) {
 	bool b = false;
 	wchar_t *name = NULL;
 	wchar_t *groupname = NULL;
 	UINT timeout = 90;
 	HUB *h;
 	// Validate arguments
-	if (hub == NULL || c == NULL || username == NULL || password == NULL)
-	{
+	if (hub == NULL || c == NULL || username == NULL || password == NULL) {
 		return false;
 	}
 
-	if (GetGlobalServerFlag(GSF_DISABLE_RADIUS_AUTH) != 0)
-	{
+	if (GetGlobalServerFlag(GSF_DISABLE_RADIUS_AUTH) != 0) {
 		return false;
 	}
 
@@ -102,32 +93,25 @@ bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *p
 
 		// Find exact user first
 		u = AcGetUser(hub, username);
-		if (u == NULL && ast)
-		{
+		if (u == NULL && ast) {
 			u = AcGetUser(hub, "*");
 		}
 
-		if (u)
-		{
+		if (u) {
 			Lock(u->lock);
 			{
-				if (u->AuthType == AUTHTYPE_NT)
-				{
+				if (u->AuthType == AUTHTYPE_NT) {
 					// NT authentication
 					AUTHNT *auth = (AUTHNT *)u->AuthData;
-					if (auth->NtUsername == NULL || UniStrLen(auth->NtUsername) == 0)
-					{
+					if (auth->NtUsername == NULL || UniStrLen(auth->NtUsername) == 0) {
 						name = CopyStrToUni(username);
-					}
-					else
-					{
+					} else {
 						name = CopyUniStr(auth->NtUsername);
 					}
 
 					groupname = CopyStrToUni(u->GroupName);
-					
-					if (u->Policy)
-					{
+
+					if (u->Policy) {
 						timeout = u->Policy->TimeOut;
 					}
 				}
@@ -138,20 +122,19 @@ bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *p
 	}
 	AcUnlock(hub);
 
-	if (name != NULL)
-	{
+	if (name != NULL) {
 		// NT authentication
-#ifdef	OS_WIN32
+#ifdef OS_WIN32
 		Unlock(hub->lock);
 
 		// Plaintext password authentication
 		b = MsCheckLogon(name, password);
 
 		Lock(hub->lock);
-#endif	// OS_WIN32
+#endif // OS_WIN32
 
 		// Memory release
-		if( groupname != NULL )
+		if (groupname != NULL)
 			Free(groupname);
 		Free(name);
 	}
@@ -162,29 +145,24 @@ bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *p
 }
 
 // Certificate authentication of user
-bool SamAuthUserByCert(HUB *h, char *username, X *x)
-{
+bool SamAuthUserByCert(HUB *h, char *username, X *x) {
 	bool b = false;
 	// Validate arguments
-	if (h == NULL || username == NULL || x == NULL)
-	{
+	if (h == NULL || username == NULL || x == NULL) {
 		return false;
 	}
 
-	if (GetGlobalServerFlag(GSF_DISABLE_CERT_AUTH) != 0)
-	{
+	if (GetGlobalServerFlag(GSF_DISABLE_CERT_AUTH) != 0) {
 		return false;
 	}
 
 	// Check expiration date
-	if (CheckXDateNow(x) == false)
-	{
+	if (CheckXDateNow(x) == false) {
 		return false;
 	}
 
 	// Check the Certification Revocation List
-	if (IsValidCertInHub(h, x) == false)
-	{
+	if (IsValidCertInHub(h, x) == false) {
 		// Bad
 		wchar_t tmp[MAX_SIZE * 2];
 
@@ -199,45 +177,34 @@ bool SamAuthUserByCert(HUB *h, char *username, X *x)
 	{
 		USER *u;
 		u = AcGetUser(h, username);
-		if (u)
-		{
+		if (u) {
 			Lock(u->lock);
 			{
-				if (u->AuthType == AUTHTYPE_USERCERT)
-				{
+				if (u->AuthType == AUTHTYPE_USERCERT) {
 					// Check whether to matche with the registered certificate
 					AUTHUSERCERT *auth = (AUTHUSERCERT *)u->AuthData;
-					if (CompareX(auth->UserX, x))
-					{
+					if (CompareX(auth->UserX, x)) {
 						b = true;
 					}
-				}
-				else if (u->AuthType == AUTHTYPE_ROOTCERT)
-				{
+				} else if (u->AuthType == AUTHTYPE_ROOTCERT) {
 					// Check whether the certificate has been signed by the root certificate
 					AUTHROOTCERT *auth = (AUTHROOTCERT *)u->AuthData;
-					if (h->HubDb != NULL)
-					{
+					if (h->HubDb != NULL) {
 						LockList(h->HubDb->RootCertList);
 						{
 							X *root_cert;
 							root_cert = GetIssuerFromList(h->HubDb->RootCertList, x);
-							if (root_cert != NULL)
-							{
+							if (root_cert != NULL) {
 								b = true;
-								if (auth->CommonName != NULL && UniIsEmptyStr(auth->CommonName) == false)
-								{
+								if (auth->CommonName != NULL && UniIsEmptyStr(auth->CommonName) == false) {
 									// Compare the CN
-									if (UniStrCmpi(x->subject_name->CommonName, auth->CommonName) != 0)
-									{
+									if (UniStrCmpi(x->subject_name->CommonName, auth->CommonName) != 0) {
 										b = false;
 									}
 								}
-								if (auth->Serial != NULL && auth->Serial->size >= 1)
-								{
+								if (auth->Serial != NULL && auth->Serial->size >= 1) {
 									// Compare the serial number
-									if (CompareXSerial(x->serial, auth->Serial) == false)
-									{
+									if (CompareXSerial(x->serial, auth->Serial) == false) {
 										b = false;
 									}
 								}
@@ -253,8 +220,7 @@ bool SamAuthUserByCert(HUB *h, char *username, X *x)
 	}
 	AcUnlock(h);
 
-	if (b)
-	{
+	if (b) {
 		wchar_t tmp[MAX_SIZE * 2];
 
 		// Log the contents of the certificate
@@ -267,40 +233,32 @@ bool SamAuthUserByCert(HUB *h, char *username, X *x)
 }
 
 // Get the root certificate that signed the specified certificate from the list
-X *GetIssuerFromList(LIST *cert_list, X *cert)
-{
+X *GetIssuerFromList(LIST *cert_list, X *cert) {
 	UINT i;
 	X *ret = NULL;
 	// Validate arguments
-	if (cert_list == NULL || cert == NULL)
-	{
+	if (cert_list == NULL || cert == NULL) {
 		return NULL;
 	}
 
-	for (i = 0;i < LIST_NUM(cert_list);i++)
-	{
+	for (i = 0; i < LIST_NUM(cert_list); i++) {
 		X *x = LIST_DATA(cert_list, i);
 		// Name comparison
-		if (CheckXDateNow(x))
-		{
-			if (CompareName(x->subject_name, cert->issuer_name))
-			{
+		if (CheckXDateNow(x)) {
+			if (CompareName(x->subject_name, cert->issuer_name)) {
 				// Get the public key of the root certificate
 				K *k = GetKFromX(x);
 
-				if (k != NULL)
-				{
+				if (k != NULL) {
 					// Check the signature
-					if (CheckSignature(cert, k))
-					{
+					if (CheckSignature(cert, k)) {
 						ret = x;
 					}
 					FreeK(k);
 				}
 			}
 		}
-		if (CompareX(x, cert))
-		{
+		if (CompareX(x, cert)) {
 			// Complete identical
 			ret = x;
 		}
@@ -310,12 +268,10 @@ X *GetIssuerFromList(LIST *cert_list, X *cert)
 }
 
 // Get the policy to be applied for the user
-POLICY *SamGetUserPolicy(HUB *h, char *username)
-{
+POLICY *SamGetUserPolicy(HUB *h, char *username) {
 	POLICY *ret = NULL;
 	// Validate arguments
-	if (h == NULL || username == NULL)
-	{
+	if (h == NULL || username == NULL) {
 		return NULL;
 	}
 
@@ -323,20 +279,17 @@ POLICY *SamGetUserPolicy(HUB *h, char *username)
 	{
 		USER *u;
 		u = AcGetUser(h, username);
-		if (u)
-		{
+		if (u) {
 			USERGROUP *g = NULL;
 			Lock(u->lock);
 			{
-				if (u->Policy != NULL)
-				{
+				if (u->Policy != NULL) {
 					ret = ClonePolicy(u->Policy);
 				}
 
 				g = u->Group;
 
-				if (g != NULL)
-				{
+				if (g != NULL) {
 					AddRef(g->ref);
 				}
 			}
@@ -345,10 +298,8 @@ POLICY *SamGetUserPolicy(HUB *h, char *username)
 			ReleaseUser(u);
 			u = NULL;
 
-			if (ret == NULL)
-			{
-				if (g != NULL)
-				{
+			if (ret == NULL) {
+				if (g != NULL) {
 					Lock(g->lock);
 					{
 						ret = ClonePolicy(g->Policy);
@@ -357,8 +308,7 @@ POLICY *SamGetUserPolicy(HUB *h, char *username)
 				}
 			}
 
-			if (g != NULL)
-			{
+			if (g != NULL) {
 				ReleaseGroup(g);
 			}
 		}
@@ -369,20 +319,17 @@ POLICY *SamGetUserPolicy(HUB *h, char *username)
 }
 
 // Password authentication of user
-bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_password, char *mschap_v2_password, UCHAR *mschap_v2_server_response_20, UINT *err)
-{
+bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_password, char *mschap_v2_password, UCHAR *mschap_v2_server_response_20, UINT *err) {
 	bool b = false;
 	UCHAR secure_password_check[SHA1_SIZE];
 	bool is_mschap = false;
 	IPC_MSCHAP_V2_AUTHINFO mschap;
 	UINT dummy = 0;
 	// Validate arguments
-	if (h == NULL || username == NULL || secure_password == NULL)
-	{
+	if (h == NULL || username == NULL || secure_password == NULL) {
 		return false;
 	}
-	if (err == NULL)
-	{
+	if (err == NULL) {
 		err = &dummy;
 	}
 
@@ -392,16 +339,12 @@ bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_pa
 
 	is_mschap = ParseAndExtractMsChapV2InfoFromPassword(&mschap, mschap_v2_password);
 
-	if (StrCmpi(username, ADMINISTRATOR_USERNAME) == 0)
-	{
+	if (StrCmpi(username, ADMINISTRATOR_USERNAME) == 0) {
 		// Administrator mode
 		SecurePassword(secure_password_check, h->SecurePassword, random);
-		if (Cmp(secure_password_check, secure_password, SHA1_SIZE) == 0)
-		{
+		if (Cmp(secure_password_check, secure_password, SHA1_SIZE) == 0) {
 			return true;
-		}
-		else
-		{
+		} else {
 			return false;
 		}
 	}
@@ -410,54 +353,44 @@ bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_pa
 	{
 		USER *u;
 		u = AcGetUser(h, username);
-		if (u)
-		{
+		if (u) {
 			Lock(u->lock);
 			{
-				if (u->AuthType == AUTHTYPE_PASSWORD)
-				{
+				if (u->AuthType == AUTHTYPE_PASSWORD) {
 					AUTHPASSWORD *auth = (AUTHPASSWORD *)u->AuthData;
 
-					if (is_mschap == false)
-					{
+					if (is_mschap == false) {
 						// Normal password authentication
 						SecurePassword(secure_password_check, auth->HashedKey, random);
-						if (Cmp(secure_password_check, secure_password, SHA1_SIZE) == 0)
-						{
+						if (Cmp(secure_password_check, secure_password, SHA1_SIZE) == 0) {
 							b = true;
 						}
-					}
-					else
-					{
+					} else {
 						// MS-CHAP v2 authentication via PPP
 						UCHAR challenge8[8];
 						UCHAR client_response[24];
 
-						if (IsZero(auth->NtLmSecureHash, MD5_SIZE))
-						{
+						if (IsZero(auth->NtLmSecureHash, MD5_SIZE)) {
 							// NTLM hash is not registered in the user account
 							*err = ERR_MSCHAP2_PASSWORD_NEED_RESET;
-						}
-						else
-						{
+						} else {
 							UCHAR nt_pw_hash_hash[16];
 							Zero(challenge8, sizeof(challenge8));
 							Zero(client_response, sizeof(client_response));
 
 							MsChapV2_GenerateChallenge8(challenge8, mschap.MsChapV2_ClientChallenge, mschap.MsChapV2_ServerChallenge,
-								mschap.MsChapV2_PPPUsername);
+							                            mschap.MsChapV2_PPPUsername);
 
 							MsChapV2Client_GenerateResponse(client_response, challenge8, auth->NtLmSecureHash);
 
-							if (Cmp(client_response, mschap.MsChapV2_ClientResponse, 24) == 0)
-							{
+							if (Cmp(client_response, mschap.MsChapV2_ClientResponse, 24) == 0) {
 								// Hash matched
 								b = true;
 
 								// Calculate the response
 								GenerateNtPasswordHashHash(nt_pw_hash_hash, auth->NtLmSecureHash);
 								MsChapV2Server_GenerateResponse(mschap_v2_server_response_20, nt_pw_hash_hash,
-									client_response, challenge8);
+								                                client_response, challenge8);
 							}
 						}
 					}

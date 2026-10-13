@@ -5,8 +5,8 @@
 // Connection.h
 // Header of Connection.c
 
-#ifndef	CONNECTION_H
-#define	CONNECTION_H
+#ifndef CONNECTION_H
+#define CONNECTION_H
 
 #include "Cedar.h"
 
@@ -14,194 +14,189 @@
 #include "Mayaqua/Proxy.h"
 
 // Magic number indicating that the packet is compressed
-#define	CONNECTION_BULK_COMPRESS_SIGNATURE	0xDEADBEEFCAFEFACEULL
+#define CONNECTION_BULK_COMPRESS_SIGNATURE 0xDEADBEEFCAFEFACEULL
 
-#define	UPDATE_LAST_COMM_TIME(v, n)		{if ((v) <= (n)) { v = (n); } }
+#define UPDATE_LAST_COMM_TIME(v, n)  \
+	{                                \
+		if ((v) <= (n)) { v = (n); } \
+	}
 
 // Function type declaration
-typedef bool (CHECK_CERT_PROC)(SESSION *s, CONNECTION *c, X *server_x, bool *expired);
+typedef bool(CHECK_CERT_PROC)(SESSION *s, CONNECTION *c, X *server_x, bool *expired);
 
 // RC4 key pair
-struct RC4_KEY_PAIR
-{
+struct RC4_KEY_PAIR {
 	UCHAR ServerToClientKey[16];
 	UCHAR ClientToServerKey[16];
 };
-#define	TYPE_BINDLOCALIP	1	//  Enable HMI user to edit Source IP address & Source port number for outgoing connection
+#define TYPE_BINDLOCALIP 1 //  Enable HMI user to edit Source IP address & Source port number for outgoing connection
 
 // Client Options
 // Do not change item size or order and only add new items at the end!
 // See comments in struct SETTING (SMInner.h)
-struct CLIENT_OPTION
-{
-	wchar_t AccountName[MAX_ACCOUNT_NAME_LEN + 1];			// Connection setting name
-	char Hostname[MAX_HOST_NAME_LEN + 1];					// Host name
-	UINT Port;												// Port number
-	UINT PortUDP;											// UDP port number (0: Use only TCP)
-	UINT ProxyType;											// Type of proxy
-	char ProxyName[MAX_HOST_NAME_LEN + 1];					// Proxy server name
-	UINT ProxyPort;											// Port number of the proxy server
-	char ProxyUsername[PROXY_MAX_USERNAME_LEN + 1];			// Maximum user name length
-	char ProxyPassword[PROXY_MAX_PASSWORD_LEN + 1];			// Maximum password length
-	UINT NumRetry;											// Automatic retries
-	UINT RetryInterval;										// Retry interval
-	char HubName[MAX_HUBNAME_LEN + 1];						// HUB name
-	UINT MaxConnection;										// Maximum number of concurrent TCP connections
-	bool UseEncrypt;										// Use encrypted communication
+struct CLIENT_OPTION {
+	wchar_t AccountName[MAX_ACCOUNT_NAME_LEN + 1];  // Connection setting name
+	char Hostname[MAX_HOST_NAME_LEN + 1];           // Host name
+	UINT Port;                                      // Port number
+	UINT PortUDP;                                   // UDP port number (0: Use only TCP)
+	UINT ProxyType;                                 // Type of proxy
+	char ProxyName[MAX_HOST_NAME_LEN + 1];          // Proxy server name
+	UINT ProxyPort;                                 // Port number of the proxy server
+	char ProxyUsername[PROXY_MAX_USERNAME_LEN + 1]; // Maximum user name length
+	char ProxyPassword[PROXY_MAX_PASSWORD_LEN + 1]; // Maximum password length
+	UINT NumRetry;                                  // Automatic retries
+	UINT RetryInterval;                             // Retry interval
+	char HubName[MAX_HUBNAME_LEN + 1];              // HUB name
+	UINT MaxConnection;                             // Maximum number of concurrent TCP connections
+	bool UseEncrypt;                                // Use encrypted communication
 	char pad1[3];
-	bool UseCompress;										// Use data compression
+	bool UseCompress; // Use data compression
 	char pad2[3];
-	bool HalfConnection;									// Use half connection in TCP
+	bool HalfConnection; // Use half connection in TCP
 	char pad3[3];
-	bool NoRoutingTracking;									// Disable the routing tracking
+	bool NoRoutingTracking; // Disable the routing tracking
 	char pad4[3];
-	char DeviceName[MAX_DEVICE_NAME_LEN + 1];				// VLAN device name
-	UINT AdditionalConnectionInterval;						// Connection attempt interval when additional connection establish
-	UINT ConnectionDisconnectSpan;							// Disconnection interval
-	bool HideStatusWindow;									// Hide the status window
+	char DeviceName[MAX_DEVICE_NAME_LEN + 1]; // VLAN device name
+	UINT AdditionalConnectionInterval;        // Connection attempt interval when additional connection establish
+	UINT ConnectionDisconnectSpan;            // Disconnection interval
+	bool HideStatusWindow;                    // Hide the status window
 	char pad5[3];
-	bool HideNicInfoWindow;									// Hide the NIC status window
+	bool HideNicInfoWindow; // Hide the NIC status window
 	char pad6[3];
-	bool RequireMonitorMode;								// Monitor port mode
+	bool RequireMonitorMode; // Monitor port mode
 	char pad7[3];
-	bool RequireBridgeRoutingMode;							// Bridge or routing mode
+	bool RequireBridgeRoutingMode; // Bridge or routing mode
 	char pad8[3];
-	bool DisableQoS;										// Disable the VoIP / QoS function
+	bool DisableQoS; // Disable the VoIP / QoS function
 	char pad9[3];
-	bool FromAdminPack;										// For Administration Pack
+	bool FromAdminPack; // For Administration Pack
 	char pad10[3];
-	char pad11[4];											// Removed bool
-	bool NoUdpAcceleration;									// Do not use UDP acceleration mode
+	char pad11[4];          // Removed bool
+	bool NoUdpAcceleration; // Do not use UDP acceleration mode
 	char pad12[3];
-	UCHAR HostUniqueKey[SHA1_SIZE];							// Host unique key
-	char CustomHttpHeader[HTTP_CUSTOM_HEADER_MAX_SIZE];		// Custom HTTP proxy header
-	IP   BindLocalIP;										// Source IP address for outgoing connection
-	UINT BindLocalPort;										// Source port number for outgoing connection
+	UCHAR HostUniqueKey[SHA1_SIZE];                     // Host unique key
+	char CustomHttpHeader[HTTP_CUSTOM_HEADER_MAX_SIZE]; // Custom HTTP proxy header
+	IP BindLocalIP;                                     // Source IP address for outgoing connection
+	UINT BindLocalPort;                                 // Source port number for outgoing connection
 };
 
 // Client authentication data
-struct CLIENT_AUTH
-{
-	UINT AuthType;									// Authentication type
-	char Username[MAX_USERNAME_LEN + 1];			// User name
-	UCHAR HashedPassword[SHA1_SIZE];				// Hashed passwords
-	char PlainPassword[MAX_PASSWORD_LEN + 1];		// Password
-	X *ClientX;										// Client certificate
-	K *ClientK;										// Client private key
-	char OpensslEnginePrivateKeyName[MAX_SECURE_DEVICE_FILE_LEN + 1];	// Secure device secret key name
-	char OpensslEngineName[MAX_SECURE_DEVICE_FILE_LEN + 1];	// Secure device secret key name
-	CHECK_CERT_PROC *CheckCertProc;					// Server certificate confirmation procedure
+struct CLIENT_AUTH {
+	UINT AuthType;                                                    // Authentication type
+	char Username[MAX_USERNAME_LEN + 1];                              // User name
+	UCHAR HashedPassword[SHA1_SIZE];                                  // Hashed passwords
+	char PlainPassword[MAX_PASSWORD_LEN + 1];                         // Password
+	X *ClientX;                                                       // Client certificate
+	K *ClientK;                                                       // Client private key
+	char OpensslEnginePrivateKeyName[MAX_SECURE_DEVICE_FILE_LEN + 1]; // Secure device secret key name
+	char OpensslEngineName[MAX_SECURE_DEVICE_FILE_LEN + 1];           // Secure device secret key name
+	CHECK_CERT_PROC *CheckCertProc;                                   // Server certificate confirmation procedure
 };
 
 // TCP socket data structure
-struct TCPSOCK
-{
-	SOCK *Sock;						// Socket
-	FIFO *RecvFifo;					// Reception buffer
-	FIFO *SendFifo;					// Transmission buffer
-	UINT Mode;						// Read mode
-	UINT WantSize;					// Requested data size
-	UINT NextBlockNum;				// Total number of blocks that can be read next
-	UINT NextBlockSize;				// Block size that is planned to read next
-	UINT CurrentPacketNum;			// Current packet number
-	UINT64 LastCommTime;			// Last communicated time
-	UINT64 LastRecvTime;			// Time the last data received
-	UINT LateCount;					// The number of delay occurences
-	UINT Direction;					// Direction
-	UINT64 NextKeepAliveTime;		// Next time to send a KeepAlive packet
-	RC4_KEY_PAIR Rc4KeyPair;		// RC4 key pair
-	CRYPT *SendKey;					// Transmission key
-	CRYPT *RecvKey;					// Reception key
-	UINT64 DisconnectTick;			// Time to disconnect this connection
-	UINT64 EstablishedTick;			// Establishment time
+struct TCPSOCK {
+	SOCK *Sock;               // Socket
+	FIFO *RecvFifo;           // Reception buffer
+	FIFO *SendFifo;           // Transmission buffer
+	UINT Mode;                // Read mode
+	UINT WantSize;            // Requested data size
+	UINT NextBlockNum;        // Total number of blocks that can be read next
+	UINT NextBlockSize;       // Block size that is planned to read next
+	UINT CurrentPacketNum;    // Current packet number
+	UINT64 LastCommTime;      // Last communicated time
+	UINT64 LastRecvTime;      // Time the last data received
+	UINT LateCount;           // The number of delay occurences
+	UINT Direction;           // Direction
+	UINT64 NextKeepAliveTime; // Next time to send a KeepAlive packet
+	RC4_KEY_PAIR Rc4KeyPair;  // RC4 key pair
+	CRYPT *SendKey;           // Transmission key
+	CRYPT *RecvKey;           // Reception key
+	UINT64 DisconnectTick;    // Time to disconnect this connection
+	UINT64 EstablishedTick;   // Establishment time
 };
 
 // TCP communication data structure
-struct TCP
-{
-	LIST *TcpSockList;				// TCP socket list
+struct TCP {
+	LIST *TcpSockList; // TCP socket list
 };
 
 // UDP communication data structure
-struct UDP
-{
-	SOCK *s;						// UDP socket (for transmission)
-	IP ip;							// Destination IP address
-	UINT port;						// Destination port number
-	UINT64 NextKeepAliveTime;		// Next time to send a KeepAlive packet
-	UINT64 Seq;						// Packet sequence number
+struct UDP {
+	SOCK *s;                  // UDP socket (for transmission)
+	IP ip;                    // Destination IP address
+	UINT port;                // Destination port number
+	UINT64 NextKeepAliveTime; // Next time to send a KeepAlive packet
+	UINT64 Seq;               // Packet sequence number
 	UINT64 RecvSeq;
-	QUEUE *BufferQueue;				// Queue of buffer to be sent
+	QUEUE *BufferQueue; // Queue of buffer to be sent
 };
 
 // Data block
-struct BLOCK
-{
-	bool Compressed;				// Compression flag
-	UINT Size;						// Block size
-	UINT SizeofData;				// Data size
-	UCHAR *Buf;						// Buffer
-	bool PriorityQoS;				// Priority packet for VoIP / QoS function
-	UINT Param1;					// Parameter 1
-	bool IsFlooding;				// Is flooding packet
-	UCHAR RawFlagRetUdpAccel;		// Raw flag returned by UDP accel
+struct BLOCK {
+	bool Compressed;          // Compression flag
+	UINT Size;                // Block size
+	UINT SizeofData;          // Data size
+	UCHAR *Buf;               // Buffer
+	bool PriorityQoS;         // Priority packet for VoIP / QoS function
+	UINT Param1;              // Parameter 1
+	bool IsFlooding;          // Is flooding packet
+	UCHAR RawFlagRetUdpAccel; // Raw flag returned by UDP accel
 };
 
 // Connection structure
-struct CONNECTION
-{
-	LOCK *lock;						// Lock
-	REF *ref;						// Reference counter
-	CEDAR *Cedar;					// Cedar
-	struct SESSION *Session;		// Session
-	UINT Protocol;					// Protocol
-	SOCK *FirstSock;				// Socket for negotiation
-	TCP *Tcp;						// TCP communication data structure
-	UDP *Udp;						// UDP communication data structure
-	bool ServerMode;				// Server mode
-	UINT Status;					// Status
-	char *Name;						// Connection name
-	THREAD *Thread;					// Thread
-	volatile bool Halt;				// Stop flag
-	UCHAR Random[SHA1_SIZE];		// Random number for Authentication
-	UINT ServerVer;					// Server version
-	UINT ServerBuild;				// Server build number
-	UINT ClientVer;					// Client version
-	UINT ClientBuild;				// Client build number
-	char ServerStr[MAX_SERVER_STR_LEN + 1];	// Server string
-	char ClientStr[MAX_CLIENT_STR_LEN + 1];	// Client string
-	UINT Err;						// Error value
-	bool ClientConnectError_NoSavePassword;	// Don't save the password for the specified user name
-	QUEUE *ReceivedBlocks;			// Block queue that is received
-	QUEUE *SendBlocks;				// Block queue planned to be sent
-	QUEUE *SendBlocks2;				// Send queue (high priority)
-	COUNTER *CurrentNumConnection;	// Counter of the number of current connections
-	LIST *ConnectingThreads;		// List of connected threads
-	LIST *ConnectingSocks;			// List of the connected sockets
-	bool flag1;						// Flag 1
-	UCHAR *RecvBuf;					// Receive buffer
-	char ServerName[MAX_HOST_NAME_LEN + 1];	// Server name
-	UINT ServerPort;				// Port number
-	bool RestoreServerNameAndPort;	// Flag to restore the  server name and port number to original
-	UINT CurrentSendQueueSize;		// Total size of the transmission queue
-	X *ServerX;						// Server certificate
-	X *ClientX;						// Client certificate
-	char *CipherName;				// Encryption algorithm name
-	char *SslVersion;				// SSL protocol version
-	UINT64 ConnectedTick;			// Time it is connected
-	IP ClientIp;					// Client IP address
-	char ClientHostname[MAX_HOST_NAME_LEN + 1];	// Client host name
-	UINT Type;						// Type
-	void *hWndForUI;				// Parent window
-	UINT AdditionalConnectionFailedCounter;		// Additional connection failure counter
-	UINT64 LastCounterResetTick;	// Time the counter was reset finally
-	bool WasDatProxy;				// DAT proxy processed
-	UCHAR CToken_Hash[SHA1_SIZE];	// CTOKEN_HASH
-	UINT LastTcpQueueSize;			// The last queue size of TCP sockets
-	UINT LastPacketQueueSize;		// The last queue size of packets
-	UINT LastRecvFifoTotalSize;		// The last RecvFifo total size
-	UINT LastRecvBlocksNum;			// The last ReceivedBlocks num
-	LISTENER *Listener;				// Listener ref
+struct CONNECTION {
+	LOCK *lock;                                 // Lock
+	REF *ref;                                   // Reference counter
+	CEDAR *Cedar;                               // Cedar
+	struct SESSION *Session;                    // Session
+	UINT Protocol;                              // Protocol
+	SOCK *FirstSock;                            // Socket for negotiation
+	TCP *Tcp;                                   // TCP communication data structure
+	UDP *Udp;                                   // UDP communication data structure
+	bool ServerMode;                            // Server mode
+	UINT Status;                                // Status
+	char *Name;                                 // Connection name
+	THREAD *Thread;                             // Thread
+	volatile bool Halt;                         // Stop flag
+	UCHAR Random[SHA1_SIZE];                    // Random number for Authentication
+	UINT ServerVer;                             // Server version
+	UINT ServerBuild;                           // Server build number
+	UINT ClientVer;                             // Client version
+	UINT ClientBuild;                           // Client build number
+	char ServerStr[MAX_SERVER_STR_LEN + 1];     // Server string
+	char ClientStr[MAX_CLIENT_STR_LEN + 1];     // Client string
+	UINT Err;                                   // Error value
+	bool ClientConnectError_NoSavePassword;     // Don't save the password for the specified user name
+	QUEUE *ReceivedBlocks;                      // Block queue that is received
+	QUEUE *SendBlocks;                          // Block queue planned to be sent
+	QUEUE *SendBlocks2;                         // Send queue (high priority)
+	COUNTER *CurrentNumConnection;              // Counter of the number of current connections
+	LIST *ConnectingThreads;                    // List of connected threads
+	LIST *ConnectingSocks;                      // List of the connected sockets
+	bool flag1;                                 // Flag 1
+	UCHAR *RecvBuf;                             // Receive buffer
+	char ServerName[MAX_HOST_NAME_LEN + 1];     // Server name
+	UINT ServerPort;                            // Port number
+	bool RestoreServerNameAndPort;              // Flag to restore the  server name and port number to original
+	UINT CurrentSendQueueSize;                  // Total size of the transmission queue
+	X *ServerX;                                 // Server certificate
+	X *ClientX;                                 // Client certificate
+	char *CipherName;                           // Encryption algorithm name
+	char *SslVersion;                           // SSL protocol version
+	UINT64 ConnectedTick;                       // Time it is connected
+	IP ClientIp;                                // Client IP address
+	char ClientHostname[MAX_HOST_NAME_LEN + 1]; // Client host name
+	UINT Type;                                  // Type
+	void *hWndForUI;                            // Parent window
+	UINT AdditionalConnectionFailedCounter;     // Additional connection failure counter
+	UINT64 LastCounterResetTick;                // Time the counter was reset finally
+	bool WasDatProxy;                           // DAT proxy processed
+	UCHAR CToken_Hash[SHA1_SIZE];               // CTOKEN_HASH
+	UINT LastTcpQueueSize;                      // The last queue size of TCP sockets
+	UINT LastPacketQueueSize;                   // The last queue size of packets
+	UINT LastRecvFifoTotalSize;                 // The last RecvFifo total size
+	UINT LastRecvBlocksNum;                     // The last ReceivedBlocks num
+	LISTENER *Listener;                         // Listener ref
 };
 
 
@@ -242,4 +237,4 @@ UINT GetMachineRand();
 
 
 
-#endif	// CONNECTION_H
+#endif // CONNECTION_H

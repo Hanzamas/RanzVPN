@@ -5,23 +5,21 @@
 // Str.h
 // Header of Str.c
 
-#ifndef	STR_H
-#define	STR_H
+#ifndef STR_H
+#define STR_H
 
 #include "MayaType.h"
 
 #include <stdarg.h>
 
 // String token
-struct TOKEN_LIST
-{
+struct TOKEN_LIST {
 	UINT NumTokens;
 	char **Token;
 };
 
 // INI_ENTRY
-struct INI_ENTRY
-{
+struct INI_ENTRY {
 	char *Key;
 	char *Value;
 	wchar_t *UnicodeValue;
@@ -114,5 +112,5 @@ UINT HexToInt(char *str);
 UINT SearchAsciiInBinary(void *data, UINT size, char *str, bool case_sensitive);
 void ClearStr(char *str, UINT str_size);
 
-#endif	// STR_H
+#endif // STR_H
 

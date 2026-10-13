@@ -7,8 +7,8 @@
 
 #ifdef OS_WIN32
 
-#ifndef	BRIDGEWIN32_H
-#define	BRIDGEWIN32_H
+#ifndef BRIDGEWIN32_H
+#define BRIDGEWIN32_H
 
 #include "Bridge.h"
 
@@ -17,8 +17,7 @@
 // Header for Internal function (for BridgeWin32.c)
 
 // Adapter list
-typedef struct WP_ADAPTER
-{
+typedef struct WP_ADAPTER {
 	char Name[MAX_SIZE];
 	char Title[MAX_SIZE];
 	char Guid[MAX_SIZE];
@@ -32,23 +31,22 @@ int CompareWpAdapter(void *p1, void *p2);
 LIST *GetEthAdapterList();
 LIST *GetEthAdapterListInternal();
 
-#endif	// BRIDGE_C
+#endif // BRIDGE_C
 
 // ETH structure
-struct ETH
-{
-	char *Name;					// Adapter name
-	char *Title;				// Adapter title
-	CANCEL *Cancel;				// Cancel object
-	bool LoopbackBlock;			// Whether to block the loop back packet
-	UCHAR MacAddress[6];		// MAC address
-	bool HasFatalError;			// A fatal error occurred on the transmission side
+struct ETH {
+	char *Name;          // Adapter name
+	char *Title;         // Adapter title
+	CANCEL *Cancel;      // Cancel object
+	bool LoopbackBlock;  // Whether to block the loop back packet
+	UCHAR MacAddress[6]; // MAC address
+	bool HasFatalError;  // A fatal error occurred on the transmission side
 
-	SU *Su;						// SeLow handle
-	SU_ADAPTER *SuAdapter;		// SeLow adapter handle
+	SU *Su;                // SeLow handle
+	SU_ADAPTER *SuAdapter; // SeLow adapter handle
 
 	// Unused
-	bool IsRawIpMode;			// RAW IP mode
+	bool IsRawIpMode; // RAW IP mode
 	UCHAR RawIpMyMacAddr[6];
 	UCHAR RawIpYourMacAddr[6];
 	IP MyPhysicalIPForce;

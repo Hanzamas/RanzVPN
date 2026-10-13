@@ -24,16 +24,13 @@ static UINT max_connections_per_ip = DEFAULT_MAX_CONNECTIONS_PER_IP;
 static UINT max_unestablished_connections = DEFAULT_MAX_UNESTABLISHED_CONNECTIONS;
 
 // Get the number of allowed outstanding connections
-UINT GetMaxUnestablishedConnections()
-{
+UINT GetMaxUnestablishedConnections() {
 	return max_unestablished_connections;
 }
 
 // Set the number of allowed outstanding connections
-void SetMaxUnestablishedConnections(UINT num)
-{
-	if (num == 0)
-	{
+void SetMaxUnestablishedConnections(UINT num) {
+	if (num == 0) {
 		num = DEFAULT_MAX_UNESTABLISHED_CONNECTIONS;
 	}
 
@@ -41,48 +38,40 @@ void SetMaxUnestablishedConnections(UINT num)
 }
 
 // Get the maximum number of connections per IP address
-UINT GetMaxConnectionsPerIp()
-{
+UINT GetMaxConnectionsPerIp() {
 	return max_connections_per_ip;
 }
 
 // Set the maximum number of connections per IP address
-void SetMaxConnectionsPerIp(UINT num)
-{
-	if (num == 0)
-	{
+void SetMaxConnectionsPerIp(UINT num) {
+	if (num == 0) {
 		num = DEFAULT_MAX_CONNECTIONS_PER_IP;
 	}
 	max_connections_per_ip = MAX(num, MIN_MAX_CONNECTIONS_PER_IP);
 }
 
 // Enable the DoS defense
-void EnableDosProtect()
-{
+void EnableDosProtect() {
 	disable_dos = false;
 }
 
 // Disable the DoS defense
-void DisableDosProtect()
-{
+void DisableDosProtect() {
 	disable_dos = true;
 }
 
 // An UDP packet has been received
-void UDPReceivedPacket(CEDAR *cedar, SOCK *s, IP *ip, UINT port, void *data, UINT size)
-{
+void UDPReceivedPacket(CEDAR *cedar, SOCK *s, IP *ip, UINT port, void *data, UINT size) {
 	SESSION *session;
 	UINT *key32;
 	UCHAR *buf;
 	CONNECTION *c;
 	// Validate arguments
-	if (s == NULL || ip == NULL || data == NULL || size == 0 || cedar == NULL)
-	{
+	if (s == NULL || ip == NULL || data == NULL || size == 0 || cedar == NULL) {
 		return;
 	}
 
-	if (size < 16)
-	{
+	if (size < 16) {
 		// Ignore since the packet size is not enough
 		return;
 	}
@@ -92,8 +81,7 @@ void UDPReceivedPacket(CEDAR *cedar, SOCK *s, IP *ip, UINT port, void *data, UIN
 
 	// Get the session from the Key32 value
 	session = GetSessionFromUDPEntry(cedar, Endian32(*key32));
-	if (session == NULL)
-	{
+	if (session == NULL) {
 		Debug("Invalid UDP Session Key 32: 0x%X\n", *key32);
 		return;
 	}
@@ -106,12 +94,9 @@ void UDPReceivedPacket(CEDAR *cedar, SOCK *s, IP *ip, UINT port, void *data, UIN
 	// Rewrite the UDP socket associated with the connection
 	Lock(c->lock);
 	{
-		if (c->Protocol == CONNECTION_UDP)
-		{
-			if (c->Udp->s != s)
-			{
-				if (c->Udp->s != NULL)
-				{
+		if (c->Protocol == CONNECTION_UDP) {
+			if (c->Udp->s != s) {
+				if (c->Udp->s != NULL) {
 					ReleaseSock(c->Udp->s);
 				}
 				AddRef(s->ref);
@@ -131,8 +116,7 @@ void UDPReceivedPacket(CEDAR *cedar, SOCK *s, IP *ip, UINT port, void *data, UIN
 }
 
 // Thread that processes the accepted TCP connection
-void TCPAcceptedThread(THREAD *t, void *param)
-{
+void TCPAcceptedThread(THREAD *t, void *param) {
 	TCP_ACCEPTED_PARAM *data;
 	LISTENER *r;
 	SOCK *s;
@@ -140,8 +124,7 @@ void TCPAcceptedThread(THREAD *t, void *param)
 	bool flag1;
 	char tmp[128];
 	// Validate arguments
-	if (t == NULL || param == NULL)
-	{
+	if (t == NULL || param == NULL) {
 		return;
 	}
 
@@ -166,8 +149,7 @@ void TCPAcceptedThread(THREAD *t, void *param)
 	AcceptInit(s);
 	StrCpy(c->ClientHostname, sizeof(c->ClientHostname), s->RemoteHostname);
 	IPToStr(tmp, sizeof(tmp), &s->RemoteIP);
-	if (IS_SPECIAL_PORT(s->RemotePort) == false)
-	{
+	if (IS_SPECIAL_PORT(s->RemotePort) == false) {
 		SLog(r->Cedar, "LS_LISTENER_ACCEPT", r->Port, tmp, s->RemoteHostname, s->RemotePort);
 	}
 
@@ -182,13 +164,11 @@ void TCPAcceptedThread(THREAD *t, void *param)
 	ReleaseConnection(c);
 
 	// Release
-	if (flag1 == false)
-	{
+	if (flag1 == false) {
 		Debug("%s %u flag1 == false\n", __FILE__, __LINE__);
 		IPToStr(tmp, sizeof(tmp), &s->RemoteIP);
 
-		if (IS_SPECIAL_PORT(s->RemotePort) == false)
-		{
+		if (IS_SPECIAL_PORT(s->RemotePort) == false) {
 			SLog(r->Cedar, "LS_LISTENER_DISCONNECT", tmp, s->RemotePort);
 		}
 		Disconnect(s);
@@ -198,16 +178,14 @@ void TCPAcceptedThread(THREAD *t, void *param)
 }
 
 // Jump here if there is accepted connection in the TCP
-void TCPAccepted(LISTENER *r, SOCK *s)
-{
+void TCPAccepted(LISTENER *r, SOCK *s) {
 	TCP_ACCEPTED_PARAM *data;
 	THREAD *t;
 	char tmp[MAX_SIZE];
 	UINT num_clients_from_this_ip = 0;
 	CEDAR *cedar;
 	// Validate arguments
-	if (r == NULL || s == NULL)
-	{
+	if (r == NULL || s == NULL) {
 		return;
 	}
 
@@ -215,31 +193,26 @@ void TCPAccepted(LISTENER *r, SOCK *s)
 
 	num_clients_from_this_ip = GetNumIpClient(&s->RemoteIP);
 
-#ifdef	USE_DOS_ATTACK_DETECTION
-	if (disable_dos == false && r->DisableDos == false)
-	{
+#ifdef USE_DOS_ATTACK_DETECTION
+	if (disable_dos == false && r->DisableDos == false) {
 		UINT max_uec, now_uec;
 		// DOS attack check
-		if (CheckDosAttack(r, s) == false)
-		{
+		if (CheckDosAttack(r, s) == false) {
 			Debug("DOS Attack 1 !!\n");
 			IPToStr(tmp, sizeof(tmp), &s->RemoteIP);
 			SLog(r->Cedar, "LS_LISTENER_DOS", r->Port, tmp, s->RemotePort);
 			return;
 		}
 		if (StrCmpi(s->UnderlayProtocol, SOCK_UNDERLAY_NATIVE_V6) == 0 ||
-			StrCmpi(s->UnderlayProtocol, SOCK_UNDERLAY_NATIVE_V4) == 0)
-		{
-			if (IsInNoSsl(r->Cedar, &s->RemoteIP))
-			{
+		    StrCmpi(s->UnderlayProtocol, SOCK_UNDERLAY_NATIVE_V4) == 0) {
+			if (IsInNoSsl(r->Cedar, &s->RemoteIP)) {
 				Debug("DOS Attack 2 !!\n");
 				IPToStr(tmp, sizeof(tmp), &s->RemoteIP);
 				SLog(r->Cedar, "LS_LISTENER_DOS", r->Port, tmp, s->RemotePort);
 				return;
 			}
 		}
-		if (num_clients_from_this_ip > GetMaxConnectionsPerIp())
-		{
+		if (num_clients_from_this_ip > GetMaxConnectionsPerIp()) {
 			Debug("DOS Attack 3 !!\n");
 			IPToStr(tmp, sizeof(tmp), &s->RemoteIP);
 			SLog(r->Cedar, "LS_LISTENER_DOS", r->Port, tmp, s->RemotePort);
@@ -247,14 +220,13 @@ void TCPAccepted(LISTENER *r, SOCK *s)
 		}
 		max_uec = GetMaxUnestablishedConnections();
 		now_uec = GetUnestablishedConnections(cedar);
-		if (now_uec > max_uec)
-		{
+		if (now_uec > max_uec) {
 			Debug("DOS Attack 4 !!\n");
 			SLog(r->Cedar, "LS_LISTENER_MAXUEC", max_uec, now_uec);
 			return;
 		}
 	}
-#endif	// USE_DOS_ATTACK_DETECTION
+#endif // USE_DOS_ATTACK_DETECTION
 
 	IPToStr(tmp, sizeof(tmp), &s->RemoteIP);
 
@@ -262,8 +234,7 @@ void TCPAccepted(LISTENER *r, SOCK *s)
 	data->r = r;
 	data->s = s;
 
-	if (r->ThreadProc == TCPAcceptedThread)
-	{
+	if (r->ThreadProc == TCPAcceptedThread) {
 		Inc(cedar->AcceptingSockets);
 	}
 
@@ -274,13 +245,11 @@ void TCPAccepted(LISTENER *r, SOCK *s)
 }
 
 // Check whether this is a DOS attack
-bool CheckDosAttack(LISTENER *r, SOCK *s)
-{
+bool CheckDosAttack(LISTENER *r, SOCK *s) {
 	DOS *d;
 	bool ok = true;
 	// Validate arguments
-	if (r == NULL || s == NULL)
-	{
+	if (r == NULL || s == NULL) {
 		return false;
 	}
 
@@ -292,20 +261,16 @@ bool CheckDosAttack(LISTENER *r, SOCK *s)
 		// Search the table
 		d = SearchDosList(r, &s->RemoteIP);
 
-		if (d != NULL)
-		{
+		if (d != NULL) {
 			// There is a entry already
 			// This should mean being under a DOS attack
 			d->LastConnectedTick = Tick64();
 			d->CurrentExpireSpan = MIN(d->CurrentExpireSpan * (UINT64)2, DOS_TABLE_EXPIRES_MAX);
 			d->AccessCount++;
-			if (d->AccessCount > DOS_TABLE_MAX_LIMIT_PER_IP)
-			{
+			if (d->AccessCount > DOS_TABLE_MAX_LIMIT_PER_IP) {
 				ok = false;
 			}
-		}
-		else
-		{
+		} else {
 			// Create a new entry
 			d = ZeroMalloc(sizeof(DOS));
 			d->CurrentExpireSpan = (UINT64)DOS_TABLE_EXPIRES_FIRST;
@@ -322,34 +287,28 @@ bool CheckDosAttack(LISTENER *r, SOCK *s)
 }
 
 // Delete old entries from the DOS attack list
-void RefreshDosList(LISTENER *r)
-{
+void RefreshDosList(LISTENER *r) {
 	// Validate arguments
-	if (r == NULL)
-	{
+	if (r == NULL) {
 		return;
 	}
 
 	if (r->DosListLastRefreshTime == 0 ||
-		(r->DosListLastRefreshTime + (UINT64)DOS_TABLE_REFRESH_INTERVAL) <= Tick64())
-	{
+	    (r->DosListLastRefreshTime + (UINT64)DOS_TABLE_REFRESH_INTERVAL) <= Tick64()) {
 		UINT i;
 		LIST *o;
 		r->DosListLastRefreshTime = Tick64();
 
 		o = NewListFast(NULL);
-		for (i = 0;i < LIST_NUM(r->DosList);i++)
-		{
+		for (i = 0; i < LIST_NUM(r->DosList); i++) {
 			DOS *d = LIST_DATA(r->DosList, i);
 			if ((d->LastConnectedTick + d->CurrentExpireSpan) <= Tick64() ||
-				(d->DeleteEntryTick <= Tick64()))
-			{
+			    (d->DeleteEntryTick <= Tick64())) {
 				Add(o, d);
 			}
 		}
 
-		for (i = 0;i < LIST_NUM(o);i++)
-		{
+		for (i = 0; i < LIST_NUM(o); i++) {
 			DOS *d = LIST_DATA(o, i);
 			Delete(r->DosList, d);
 			Free(d);
@@ -360,12 +319,10 @@ void RefreshDosList(LISTENER *r)
 }
 
 // Search the DOS attack list by the IP address
-DOS *SearchDosList(LISTENER *r, IP *ip)
-{
+DOS *SearchDosList(LISTENER *r, IP *ip) {
 	DOS *d, t;
 	// Validate arguments
-	if (r == NULL || ip == NULL)
-	{
+	if (r == NULL || ip == NULL) {
 		return NULL;
 	}
 
@@ -373,11 +330,9 @@ DOS *SearchDosList(LISTENER *r, IP *ip)
 
 	d = Search(r->DosList, &t);
 
-	if (d != NULL)
-	{
+	if (d != NULL) {
 		if ((d->LastConnectedTick + d->CurrentExpireSpan) <= Tick64() ||
-			(d->DeleteEntryTick <= Tick64()))
-		{
+		    (d->DeleteEntryTick <= Tick64())) {
 			// Delete old entries
 			Delete(r->DosList, d);
 			Free(d);
@@ -389,17 +344,14 @@ DOS *SearchDosList(LISTENER *r, IP *ip)
 }
 
 // Comparison of DOS attack list entries
-int CompareDos(void *p1, void *p2)
-{
+int CompareDos(void *p1, void *p2) {
 	DOS *d1, *d2;
-	if (p1 == NULL || p2 == NULL)
-	{
+	if (p1 == NULL || p2 == NULL) {
 		return 0;
 	}
 	d1 = *(DOS **)p1;
 	d2 = *(DOS **)p2;
-	if (d1 == NULL || d2 == NULL)
-	{
+	if (d1 == NULL || d2 == NULL) {
 		return 0;
 	}
 
@@ -407,34 +359,28 @@ int CompareDos(void *p1, void *p2)
 }
 
 // UDP listener main loop
-void ListenerUDPMainLoop(LISTENER *r)
-{
+void ListenerUDPMainLoop(LISTENER *r) {
 	UCHAR *data;
 	// Validate arguments
-	if (r == NULL)
-	{
+	if (r == NULL) {
 		return;
 	}
 
 	Debug("ListenerUDPMainLoop Starts.\n");
 	r->Status = LISTENER_STATUS_TRYING;
 
-	while (true)
-	{
+	while (true) {
 		// Try to listen on the UDP port
-		while (true)
-		{
+		while (true) {
 			// Stop flag inspection
-			if (r->Halt)
-			{
+			if (r->Halt) {
 				// Stop
 				return;
 			}
 
 			Debug("NewUDP()\n");
 			r->Sock = NewUDPEx2(r->Port, false, &r->Cedar->Server->ListenIP);
-			if (r->Sock != NULL)
-			{
+			if (r->Sock != NULL) {
 				// Wait success
 				break;
 			}
@@ -444,8 +390,7 @@ void ListenerUDPMainLoop(LISTENER *r)
 			Wait(r->Event, LISTEN_RETRY_TIME);
 
 			// Stop flag inspection
-			if (r->Halt)
-			{
+			if (r->Halt) {
 				Debug("UDP Halt.\n");
 				return;
 			}
@@ -455,8 +400,7 @@ void ListenerUDPMainLoop(LISTENER *r)
 		Debug("Start Listening at UDP Port %u.\n", r->Sock->LocalPort);
 
 		// Stop flag inspection
-		if (r->Halt)
-		{
+		if (r->Halt) {
 			// Stop
 			goto STOP;
 		}
@@ -465,8 +409,7 @@ void ListenerUDPMainLoop(LISTENER *r)
 		data = Malloc(UDP_PACKET_SIZE);
 
 		// Read the next packet
-		while (true)
-		{
+		while (true) {
 			IP src_ip;
 			UINT src_port;
 			UINT size;
@@ -477,10 +420,9 @@ void ListenerUDPMainLoop(LISTENER *r)
 			Select(&set, SELECT_TIME, NULL, NULL);
 
 			size = RecvFrom(r->Sock, &src_ip, &src_port, data, UDP_PACKET_SIZE);
-			if (((size == 0) && (r->Sock->IgnoreRecvErr == false)) || r->Halt)
-			{
+			if (((size == 0) && (r->Sock->IgnoreRecvErr == false)) || r->Halt) {
 				// Error has occurred
-STOP:
+			STOP:
 				Disconnect(r->Sock);
 				ReleaseSock(r->Sock);
 				r->Sock = NULL;
@@ -490,8 +432,7 @@ STOP:
 			}
 
 			// Received an UDP packet
-			if (size != SOCK_LATER)
-			{
+			if (size != SOCK_LATER) {
 				UDPReceivedPacket(r->Cedar, r->Sock, &src_ip, src_port, data, size);
 			}
 		}
@@ -499,66 +440,50 @@ STOP:
 }
 
 // TCP listener main loop
-void ListenerTCPMainLoop(LISTENER *r)
-{
+void ListenerTCPMainLoop(LISTENER *r) {
 	SOCK *new_sock;
 	SOCK *s;
 	// Validate arguments
-	if (r == NULL)
-	{
+	if (r == NULL) {
 		return;
 	}
 
 	Debug("ListenerTCPMainLoop Starts.\n");
 	r->Status = LISTENER_STATUS_TRYING;
 
-	while (true)
-	{
+	while (true) {
 		bool first_failed = true;
 		Debug("Status = LISTENER_STATUS_TRYING\n");
 		r->Status = LISTENER_STATUS_TRYING;
 
 		// Try to Listen
-		while (true)
-		{
+		while (true) {
 			UINT interval;
 			// Stop flag inspection
-			if (r->Halt)
-			{
+			if (r->Halt) {
 				// Stop
 				return;
 			}
 
 			s = NULL;
 
-			if (r->Protocol == LISTENER_TCP)
-			{
-				if (r->ShadowIPv6 == false)
-				{
-					if (r->Cedar->Server == NULL)
-					{
+			if (r->Protocol == LISTENER_TCP) {
+				if (r->ShadowIPv6 == false) {
+					if (r->Cedar->Server == NULL) {
 						s = ListenEx2(r->Port, r->LocalOnly, r->EnableConditionalAccept, NULL);
-					}
-					else
-					{
+					} else {
 						s = ListenEx2(r->Port, r->LocalOnly, r->EnableConditionalAccept, &r->Cedar->Server->ListenIP);
 					}
-				}
-				else
-				{
-					if (r->Cedar->Server == NULL)
-					{
+				} else {
+					if (r->Cedar->Server == NULL) {
 						s = ListenEx6(r->Port, r->LocalOnly);
-					}
-					else
-					{
+					} else {
 						s = ListenEx63(r->Port, r->LocalOnly, false, &r->Cedar->Server->ListenIP);
 					}
 				}
 			}
 
-			if (s != NULL)
-			{
+			if (s != NULL) {
 				// Listen success
 				AddRef(s->ref);
 
@@ -568,29 +493,24 @@ void ListenerTCPMainLoop(LISTENER *r)
 				}
 				Unlock(r->lock);
 
-				if (r->ShadowIPv6 == false && r->Protocol == LISTENER_TCP)
-				{
+				if (r->ShadowIPv6 == false && r->Protocol == LISTENER_TCP) {
 					SLog(r->Cedar, "LS_LISTENER_START_2", r->Port);
 				}
 				break;
 			}
 
 			// Listen failure
-			if (first_failed)
-			{
+			if (first_failed) {
 				first_failed = false;
-				if (r->ShadowIPv6 == false && r->Protocol == LISTENER_TCP)
-				{
+				if (r->ShadowIPv6 == false && r->Protocol == LISTENER_TCP) {
 					SLog(r->Cedar, "LS_LISTENER_START_3", r->Port, LISTEN_RETRY_TIME / 1000);
 				}
 			}
 
 			interval = LISTEN_RETRY_TIME;
 
-			if (r->ShadowIPv6)
-			{
-				if (IsIPv6Supported() == false)
-				{
+			if (r->ShadowIPv6) {
+				if (IsIPv6Supported() == false) {
 					interval = LISTEN_RETRY_TIME_NOIPV6;
 
 					Debug("IPv6 is not supported.\n");
@@ -600,8 +520,7 @@ void ListenerTCPMainLoop(LISTENER *r)
 			Wait(r->Event, interval);
 
 			// Stop flag inspection
-			if (r->Halt)
-			{
+			if (r->Halt) {
 				// Stop
 				Debug("Listener Halt.\n");
 				return;
@@ -612,28 +531,23 @@ void ListenerTCPMainLoop(LISTENER *r)
 		Debug("Status = LISTENER_STATUS_LISTENING\n");
 
 		// Stop flag inspection
-		if (r->Halt)
-		{
+		if (r->Halt) {
 			// Stop
 			goto STOP;
 		}
 
 		// Accept loop
-		while (true)
-		{
+		while (true) {
 			// Accept
 			Debug("Accept()\n");
 			new_sock = Accept(s);
-			if (new_sock != NULL)
-			{
+			if (new_sock != NULL) {
 				// Accept success
 				Debug("Accepted.\n");
 				TCPAccepted(r, new_sock);
 				ReleaseSock(new_sock);
-			}
-			else
-			{
-STOP:
+			} else {
+			STOP:
 				Debug("Accept Canceled.\n");
 				// Failed to accept (socket is destroyed)
 				// Close the listening socket
@@ -643,16 +557,14 @@ STOP:
 
 				Lock(r->lock);
 				{
-					if (r->Sock != NULL)
-					{
+					if (r->Sock != NULL) {
 						s = r->Sock;
 						r->Sock = NULL;
 					}
 				}
 				Unlock(r->lock);
 
-				if (s != NULL)
-				{
+				if (s != NULL) {
 					ReleaseSock(s);
 				}
 
@@ -663,8 +575,7 @@ STOP:
 		}
 
 		// Stop flag inspection
-		if (r->Halt)
-		{
+		if (r->Halt) {
 			// Stop
 			Debug("Listener Halt.\n");
 			return;
@@ -673,12 +584,10 @@ STOP:
 }
 
 //  Listener Thread
-void ListenerThread(THREAD *thread, void *param)
-{
+void ListenerThread(THREAD *thread, void *param) {
 	LISTENER *r;
 	// Validate arguments
-	if (thread == NULL || param == NULL)
-	{
+	if (thread == NULL || param == NULL) {
 		return;
 	}
 
@@ -690,8 +599,7 @@ void ListenerThread(THREAD *thread, void *param)
 	NoticeThreadInit(thread);
 
 	// Main loop
-	switch (r->Protocol)
-	{
+	switch (r->Protocol) {
 	case LISTENER_TCP:
 		// TCP or other stream-based protocol
 		ListenerTCPMainLoop(r);
@@ -708,19 +616,16 @@ void ListenerThread(THREAD *thread, void *param)
 }
 
 // Shutdown the Listener
-void StopListener(LISTENER *r)
-{
+void StopListener(LISTENER *r) {
 	UINT port;
 	SOCK *s = NULL;
 	// Validate arguments
-	if (r == NULL)
-	{
+	if (r == NULL) {
 		return;
 	}
 
 	Lock(r->lock);
-	if (r->Halt)
-	{
+	if (r->Halt) {
 		Unlock(r->lock);
 		return;
 	}
@@ -728,8 +633,7 @@ void StopListener(LISTENER *r)
 	// Stop flag set
 	r->Halt = true;
 
-	if (r->Sock != NULL)
-	{
+	if (r->Sock != NULL) {
 		s = r->Sock;
 
 		AddRef(s->ref);
@@ -739,14 +643,12 @@ void StopListener(LISTENER *r)
 
 	port = r->Port;
 
-	if (r->ShadowIPv6 == false && r->Protocol == LISTENER_TCP)
-	{
+	if (r->ShadowIPv6 == false && r->Protocol == LISTENER_TCP) {
 		SLog(r->Cedar, "LS_LISTENER_STOP_1", port);
 	}
 
 	// Close the socket
-	if (s != NULL)
-	{
+	if (s != NULL) {
 		Disconnect(s);
 		ReleaseSock(s);
 		s = NULL;
@@ -759,10 +661,8 @@ void StopListener(LISTENER *r)
 	WaitThread(r->Thread, INFINITE);
 
 	// Stop the shadow listener
-	if (r->ShadowIPv6 == false)
-	{
-		if (r->ShadowListener != NULL)
-		{
+	if (r->ShadowIPv6 == false) {
+		if (r->ShadowListener != NULL) {
 			StopListener(r->ShadowListener);
 
 			ReleaseListener(r->ShadowListener);
@@ -771,32 +671,27 @@ void StopListener(LISTENER *r)
 		}
 	}
 
-	if (r->ShadowIPv6 == false && r->Protocol == LISTENER_TCP)
-	{
+	if (r->ShadowIPv6 == false && r->Protocol == LISTENER_TCP) {
 		SLog(r->Cedar, "LS_LISTENER_STOP_2", port);
 	}
 }
 
 // Cleanup the listener
-void CleanupListener(LISTENER *r)
-{
+void CleanupListener(LISTENER *r) {
 	UINT i = 0;
 	// Validate arguments
-	if (r == NULL)
-	{
+	if (r == NULL) {
 		return;
 	}
 
 	// Release the DOS attack list
-	for (i = 0;i < LIST_NUM(r->DosList);i++)
-	{
+	for (i = 0; i < LIST_NUM(r->DosList); i++) {
 		DOS *d = LIST_DATA(r->DosList, i);
 		Free(d);
 	}
 	ReleaseList(r->DosList);
 
-	if (r->Sock != NULL)
-	{
+	if (r->Sock != NULL) {
 		ReleaseSock(r->Sock);
 	}
 
@@ -810,115 +705,85 @@ void CleanupListener(LISTENER *r)
 }
 
 // Release the listener
-void ReleaseListener(LISTENER *r)
-{
+void ReleaseListener(LISTENER *r) {
 	// Validate arguments
-	if (r == NULL)
-	{
+	if (r == NULL) {
 		return;
 	}
 
-	if (Release(r->ref) == 0)
-	{
+	if (Release(r->ref) == 0) {
 		CleanupListener(r);
 	}
 }
 
 // Comparison function of UDP entry list
-int CompareUDPEntry(void *p1, void *p2)
-{
+int CompareUDPEntry(void *p1, void *p2) {
 	UDP_ENTRY *e1, *e2;
-	if (p1 == NULL || p2 == NULL)
-	{
+	if (p1 == NULL || p2 == NULL) {
 		return 0;
 	}
 	e1 = *(UDP_ENTRY **)p1;
 	e2 = *(UDP_ENTRY **)p2;
-	if (e1 == NULL || e2 == NULL)
-	{
+	if (e1 == NULL || e2 == NULL) {
 		return 0;
 	}
 
-	if (e1->SessionKey32 > e2->SessionKey32)
-	{
+	if (e1->SessionKey32 > e2->SessionKey32) {
 		return 1;
-	}
-	else if (e1->SessionKey32 == e2->SessionKey32)
-	{
+	} else if (e1->SessionKey32 == e2->SessionKey32) {
 		return 0;
-	}
-	else
-	{
+	} else {
 		return -1;
 	}
 }
 
 // Comparison function of the listener
-int CompareListener(void *p1, void *p2)
-{
+int CompareListener(void *p1, void *p2) {
 	LISTENER *r1, *r2;
-	if (p1 == NULL || p2 == NULL)
-	{
+	if (p1 == NULL || p2 == NULL) {
 		return 0;
 	}
 	r1 = *(LISTENER **)p1;
 	r2 = *(LISTENER **)p2;
-	if (r1 == NULL || r2 == NULL)
-	{
+	if (r1 == NULL || r2 == NULL) {
 		return 0;
 	}
 
-	if (r1->Protocol > r2->Protocol)
-	{
+	if (r1->Protocol > r2->Protocol) {
 		return 1;
-	}
-	else if (r1->Protocol < r2->Protocol)
-	{
+	} else if (r1->Protocol < r2->Protocol) {
 		return -1;
-	}
-	else if (r1->Port > r2->Port)
-	{
+	} else if (r1->Port > r2->Port) {
 		return 1;
-	}
-	else if (r1->Port < r2->Port)
-	{
+	} else if (r1->Port < r2->Port) {
 		return -1;
-	}
-	else
-	{
+	} else {
 		return 0;
 	}
 }
 
 // Create a New Listener
-LISTENER *NewListener(CEDAR *cedar, UINT proto, UINT port)
-{
+LISTENER *NewListener(CEDAR *cedar, UINT proto, UINT port) {
 	return NewListenerEx(cedar, proto, port, TCPAcceptedThread, NULL);
 }
-LISTENER *NewListenerEx(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param)
-{
+LISTENER *NewListenerEx(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param) {
 	return NewListenerEx2(cedar, proto, port, proc, thread_param, false);
 }
-LISTENER *NewListenerEx2(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only)
-{
+LISTENER *NewListenerEx2(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only) {
 	return NewListenerEx3(cedar, proto, port, proc, thread_param, local_only, false);
 }
-LISTENER *NewListenerEx3(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only, bool shadow_ipv6)
-{
+LISTENER *NewListenerEx3(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only, bool shadow_ipv6) {
 	return NewListenerEx5(cedar, proto, port, proc, thread_param, local_only, shadow_ipv6, false);
 }
-LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only, bool shadow_ipv6, bool enable_ca)
-{
+LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only, bool shadow_ipv6, bool enable_ca) {
 	LISTENER *r;
 	THREAD *t;
 	// Validate arguments
-	if ((proto == LISTENER_TCP && port == 0) || cedar == NULL)
-	{
+	if ((proto == LISTENER_TCP && port == 0) || cedar == NULL) {
 		return NULL;
 	}
 	// Check the protocol number
-	if (proto != LISTENER_TCP)
-	{
+	if (proto != LISTENER_TCP) {
 		return NULL;
 	}
 
@@ -940,10 +805,8 @@ LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc,
 	r->ShadowIPv6 = shadow_ipv6;
 	r->EnableConditionalAccept = enable_ca;
 
-	if (r->ShadowIPv6 == false)
-	{
-		if (proto == LISTENER_TCP)
-		{
+	if (r->ShadowIPv6 == false) {
+		if (proto == LISTENER_TCP) {
 			SLog(cedar, "LS_LISTENER_START_1", port);
 		}
 	}
@@ -953,18 +816,15 @@ LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc,
 	WaitThreadInit(t);
 	ReleaseThread(t);
 
-	if (r->ShadowIPv6 == false && proto == LISTENER_TCP)
-	{
-		if (r->Cedar->DisableIPv6Listener == false)
-		{
+	if (r->ShadowIPv6 == false && proto == LISTENER_TCP) {
+		if (r->Cedar->DisableIPv6Listener == false) {
 			// Add a shadow listener
 			r->ShadowListener = NewListenerEx3(cedar, proto, port, proc, thread_param,
-				local_only, true);
+			                                   local_only, true);
 		}
 	}
 
-	if (r->ShadowIPv6 == false)
-	{
+	if (r->ShadowIPv6 == false) {
 		// Add to the Cedar
 		AddListener(cedar, r);
 	}
@@ -973,13 +833,11 @@ LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc,
 }
 
 // Get the session from the session key
-SESSION *GetSessionFromUDPEntry(CEDAR *cedar, UINT key32)
-{
+SESSION *GetSessionFromUDPEntry(CEDAR *cedar, UINT key32) {
 	UDP_ENTRY *e, t;
 	SESSION *s;
 	// Validate arguments
-	if (cedar == NULL)
-	{
+	if (cedar == NULL) {
 		return NULL;
 	}
 
@@ -988,8 +846,7 @@ SESSION *GetSessionFromUDPEntry(CEDAR *cedar, UINT key32)
 	LockList(cedar->UDPEntryList);
 	{
 		e = Search(cedar->UDPEntryList, &t);
-		if (e == NULL)
-		{
+		if (e == NULL) {
 			UnlockList(cedar->UDPEntryList);
 			return NULL;
 		}
@@ -1002,23 +859,19 @@ SESSION *GetSessionFromUDPEntry(CEDAR *cedar, UINT key32)
 }
 
 // Delete the UDP session from the UDP entry
-void DelUDPEntry(CEDAR *cedar, SESSION *session)
-{
+void DelUDPEntry(CEDAR *cedar, SESSION *session) {
 	UINT num, i;
 	// Validate arguments
-	if (cedar == NULL || session == NULL)
-	{
+	if (cedar == NULL || session == NULL) {
 		return;
 	}
 
 	LockList(cedar->UDPEntryList);
 	{
 		num = LIST_NUM(cedar->UDPEntryList);
-		for (i = 0;i < num;i++)
-		{
+		for (i = 0; i < num; i++) {
 			UDP_ENTRY *e = LIST_DATA(cedar->UDPEntryList, i);
-			if (e->Session == session)
-			{
+			if (e->Session == session) {
 				ReleaseSession(e->Session);
 				Delete(cedar->UDPEntryList, e);
 				Free(e);
@@ -1032,12 +885,10 @@ void DelUDPEntry(CEDAR *cedar, SESSION *session)
 }
 
 // Add an UDP session to the UDP entry
-void AddUDPEntry(CEDAR *cedar, SESSION *session)
-{
+void AddUDPEntry(CEDAR *cedar, SESSION *session) {
 	UDP_ENTRY *e;
 	// Validate arguments
-	if (cedar == NULL || session == NULL)
-	{
+	if (cedar == NULL || session == NULL) {
 		return;
 	}
 

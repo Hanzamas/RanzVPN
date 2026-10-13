@@ -5,8 +5,8 @@
 // OS.h
 // Header of OS.c
 
-#ifndef	OS_H
-#define	OS_H
+#ifndef OS_H
+#define OS_H
 
 #include "MayaType.h"
 
@@ -53,7 +53,7 @@ bool OSIsSupportedOs();
 void OSGetOsInfo(OS_INFO *info);
 void OSAlert(char *msg, char *caption);
 void OSAlertW(wchar_t *msg, wchar_t *caption);
-char* OSGetProductId();
+char *OSGetProductId();
 void OSSetHighPriority();
 void OSRestorePriority();
 void *OSNewSingleInstance(char *instance_name);
@@ -62,8 +62,7 @@ void OSGetMemInfo(MEMINFO *info);
 void OSYield();
 
 // Dispatch table
-typedef struct OS_DISPATCH_TABLE
-{
+typedef struct OS_DISPATCH_TABLE {
 	void (*Init)();
 	void (*Free)();
 	void *(*MemoryAlloc)(UINT size);
@@ -123,9 +122,9 @@ typedef struct OS_DISPATCH_TABLE
 } OS_DISPATCH_TABLE;
 
 // Include the OS-specific header
-#ifdef	OS_WIN32
+#ifdef OS_WIN32
 #include <Mayaqua/Win32.h>
-#endif	// OS_WIN32
+#endif // OS_WIN32
 
-#endif	// OS_H
+#endif // OS_H
 

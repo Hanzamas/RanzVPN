@@ -25,61 +25,56 @@
 
 #include <zlib.h>
 
-#ifdef	RANZ_ASAN
+#ifdef RANZ_ASAN
 // AddressSanitizer build only (RANZ_ASAN, cmake/RanzSanitizers.cmake): the slack after a
 // block (the rounding up to 8 bytes and MEMTAG2) is poisoned while the block is in use, so that
 // ASan reports any access past the size that was asked for. Manual poisoning interface:
 // https://learn.microsoft.com/en-us/cpp/sanitizers/asan-runtime
 // https://github.com/llvm/llvm-project/blob/llvmorg-20.1.8/compiler-rt/include/sanitizer/asan_interface.h
 #include <sanitizer/asan_interface.h>
-#define	MEMTAG_SLACK(tag1)			(((UCHAR *)MEMTAG1_TO_POINTER(tag1)) + (tag1)->Size)
-#define	MEMTAG_SLACK_SIZE(tag1)		(CALC_MALLOCSIZE((tag1)->Size) - sizeof(MEMTAG1) - (tag1)->Size)
-#define	MEMTAG_POISON(tag1)			__asan_poison_memory_region(MEMTAG_SLACK(tag1), MEMTAG_SLACK_SIZE(tag1))
-#define	MEMTAG_UNPOISON(tag1)		__asan_unpoison_memory_region(MEMTAG_SLACK(tag1), MEMTAG_SLACK_SIZE(tag1))
-#else	// RANZ_ASAN
-#define	MEMTAG_POISON(tag1)
-#define	MEMTAG_UNPOISON(tag1)
-#endif	// RANZ_ASAN
+#define MEMTAG_SLACK(tag1)      (((UCHAR *)MEMTAG1_TO_POINTER(tag1)) + (tag1)->Size)
+#define MEMTAG_SLACK_SIZE(tag1) (CALC_MALLOCSIZE((tag1)->Size) - sizeof(MEMTAG1) - (tag1)->Size)
+#define MEMTAG_POISON(tag1)     __asan_poison_memory_region(MEMTAG_SLACK(tag1), MEMTAG_SLACK_SIZE(tag1))
+#define MEMTAG_UNPOISON(tag1)   __asan_unpoison_memory_region(MEMTAG_SLACK(tag1), MEMTAG_SLACK_SIZE(tag1))
+#else // RANZ_ASAN
+#define MEMTAG_POISON(tag1)
+#define MEMTAG_UNPOISON(tag1)
+#endif // RANZ_ASAN
 
-#define	MEMORY_SLEEP_TIME		150
-#define	MEMORY_MAX_RETRY		30
-#define	INIT_BUF_SIZE			10240
+#define MEMORY_SLEEP_TIME 150
+#define MEMORY_MAX_RETRY  30
+#define INIT_BUF_SIZE     10240
 
-#define	FIFO_INIT_MEM_SIZE		4096
-#define	FIFO_REALLOC_MEM_SIZE	(65536 * 10)	// Exquisite value
+#define FIFO_INIT_MEM_SIZE    4096
+#define FIFO_REALLOC_MEM_SIZE (65536 * 10) // Exquisite value
 
-#define	INIT_NUM_RESERVED		32
+#define INIT_NUM_RESERVED 32
 
 static UINT fifo_current_realloc_mem_size = FIFO_REALLOC_MEM_SIZE;
 
 static bool canary_inited = false;
-typedef struct CANARY_RAND_DATA
-{
+typedef struct CANARY_RAND_DATA {
 	UCHAR Data[CANARY_RAND_SIZE + 4];
 } CANARY_RAND_DATA;
 
-static CANARY_RAND_DATA canary_rand_data[NUM_CANARY_RAND] = { 0 };
+static CANARY_RAND_DATA canary_rand_data[NUM_CANARY_RAND] = {0};
 
 static UINT64 canary_memtag_magic1 = 0;
 static UINT64 canary_memtag_magic2 = 0;
 
-UCHAR *GetCanaryRand(UINT id)
-{
-	if (id >= NUM_CANARY_RAND)
-	{
+UCHAR *GetCanaryRand(UINT id) {
+	if (id >= NUM_CANARY_RAND) {
 		id = NUM_CANARY_RAND - 1;
 	}
 
 	return &((canary_rand_data[id].Data)[0]);
 }
 
-void InitCanaryRand()
-{
-	SYSTEMTIME st = { 0 };
-	char random_seed[1024] = { 0 };
+void InitCanaryRand() {
+	SYSTEMTIME st = {0};
+	char random_seed[1024] = {0};
 	UINT64 t1 = 0, t2 = 0;
-	if (canary_inited)
-	{
+	if (canary_inited) {
 		return;
 	}
 
@@ -99,38 +94,35 @@ void InitCanaryRand()
 		void *p1 = malloc(1);
 		void *p2 = malloc(1);
 
-		for (i = 0;i < NUM_CANARY_RAND;i++)
-		{
+		for (i = 0; i < NUM_CANARY_RAND; i++) {
 			// using sprintf() here is safe.
 			sprintf(random_seed,
-				"%u "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%u "
-				,
-				i,
-				(UINT64)InitCanaryRand,
-				(UINT64)&canary_inited,
-				(UINT64) & ((canary_rand_data[0].Data)[0]),
-				(UINT64)&random_seed[0],
-				tick1,
-				tick2,
-				dos_rand,
-				(UINT64)p1,
-				(UINT64)p2,
-				t1,
-				t2,
-				~i
-			);
+			        "%u "
+			        "%llu "
+			        "%llu "
+			        "%llu "
+			        "%llu "
+			        "%llu "
+			        "%llu "
+			        "%llu "
+			        "%llu "
+			        "%llu "
+			        "%llu "
+			        "%llu "
+			        "%u ",
+			        i,
+			        (UINT64)InitCanaryRand,
+			        (UINT64)&canary_inited,
+			        (UINT64) & ((canary_rand_data[0].Data)[0]),
+			        (UINT64)&random_seed[0],
+			        tick1,
+			        tick2,
+			        dos_rand,
+			        (UINT64)p1,
+			        (UINT64)p2,
+			        t1,
+			        t2,
+			        ~i);
 
 			Sha0(canary_rand_data[i].Data, random_seed, (UINT)strlen(random_seed));
 		}
@@ -146,16 +138,13 @@ void InitCanaryRand()
 }
 
 // Check whether the specified key item is in the hash list
-bool IsInHashListKey(HASH_LIST *h, UINT key)
-{
+bool IsInHashListKey(HASH_LIST *h, UINT key) {
 	// Validate arguments
-	if (h == NULL || key == 0)
-	{
+	if (h == NULL || key == 0) {
 		return false;
 	}
 
-	if (HashListKeyToPointer(h, key) == NULL)
-	{
+	if (HashListKeyToPointer(h, key) == NULL) {
 		return false;
 	}
 
@@ -163,29 +152,24 @@ bool IsInHashListKey(HASH_LIST *h, UINT key)
 }
 
 // Search the item in the hash list with the key
-void *HashListKeyToPointer(HASH_LIST *h, UINT key)
-{
+void *HashListKeyToPointer(HASH_LIST *h, UINT key) {
 	UINT num, i;
 	void **pp;
 	void *ret = NULL;
 	// Validate arguments
-	if (h == NULL || key == 0)
-	{
+	if (h == NULL || key == 0) {
 		return NULL;
 	}
 
 	pp = HashListToArray(h, &num);
-	if (pp == NULL)
-	{
+	if (pp == NULL) {
 		return NULL;
 	}
 
-	for (i = 0;i < num;i++)
-	{
+	for (i = 0; i < num; i++) {
 		void *p = pp[i];
 
-		if (POINTER_TO_KEY(p) == key)
-		{
+		if (POINTER_TO_KEY(p) == key) {
 			ret = p;
 		}
 	}
@@ -196,11 +180,9 @@ void *HashListKeyToPointer(HASH_LIST *h, UINT key)
 }
 
 // Lock the hash list
-void LockHashList(HASH_LIST *h)
-{
+void LockHashList(HASH_LIST *h) {
 	// Validate arguments
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return;
 	}
 
@@ -208,11 +190,9 @@ void LockHashList(HASH_LIST *h)
 }
 
 // Unlock the hash list
-void UnlockHashList(HASH_LIST *h)
-{
+void UnlockHashList(HASH_LIST *h) {
 	// Validate arguments
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return;
 	}
 
@@ -220,23 +200,19 @@ void UnlockHashList(HASH_LIST *h)
 }
 
 // Write the contents of the hash list to array
-void **HashListToArray(HASH_LIST *h, UINT *num)
-{
+void **HashListToArray(HASH_LIST *h, UINT *num) {
 	void **ret = NULL;
 	UINT i;
 	UINT n = 0;
 	// Validate arguments
-	if (h == NULL || num == NULL)
-	{
-		if (num != NULL)
-		{
+	if (h == NULL || num == NULL) {
+		if (num != NULL) {
 			*num = 0;
 		}
 		return NULL;
 	}
 
-	if (h->AllList != NULL)
-	{
+	if (h->AllList != NULL) {
 		*num = LIST_NUM(h->AllList);
 
 		return ToArray(h->AllList);
@@ -244,16 +220,13 @@ void **HashListToArray(HASH_LIST *h, UINT *num)
 
 	ret = ZeroMalloc(sizeof(void *) * h->NumItems);
 
-	for (i = 0;i < h->Size;i++)
-	{
+	for (i = 0; i < h->Size; i++) {
 		LIST *o = h->Entries[i];
 
-		if (o != NULL)
-		{
+		if (o != NULL) {
 			UINT j;
 
-			for (j = 0;j < LIST_NUM(o);j++)
-			{
+			for (j = 0; j < LIST_NUM(o); j++) {
 				void *p = LIST_DATA(o, j);
 
 				ret[n] = p;
@@ -268,25 +241,21 @@ void **HashListToArray(HASH_LIST *h, UINT *num)
 }
 
 // Search an item in the hash list
-void *SearchHash(HASH_LIST *h, void *t)
-{
+void *SearchHash(HASH_LIST *h, void *t) {
 	UINT r;
 	void *ret = NULL;
 	// Validate arguments
-	if (h == NULL || t == NULL)
-	{
+	if (h == NULL || t == NULL) {
 		return NULL;
 	}
 
 	r = CalcHashForHashList(h, t);
 
-	if (h->Entries[r] != NULL)
-	{
+	if (h->Entries[r] != NULL) {
 		LIST *o = h->Entries[r];
 		void *r = Search(o, t);
 
-		if (r != NULL)
-		{
+		if (r != NULL) {
 			ret = r;
 		}
 	}
@@ -295,37 +264,30 @@ void *SearchHash(HASH_LIST *h, void *t)
 }
 
 // Remove an item from the hash list
-bool DeleteHash(HASH_LIST *h, void *p)
-{
+bool DeleteHash(HASH_LIST *h, void *p) {
 	UINT r;
 	bool ret = false;
 	// Validate arguments
-	if (h == NULL || p == NULL)
-	{
+	if (h == NULL || p == NULL) {
 		return false;
 	}
 
 	r = CalcHashForHashList(h, p);
 
-	if (h->Entries[r] != NULL)
-	{
-		if (Delete(h->Entries[r], p))
-		{
+	if (h->Entries[r] != NULL) {
+		if (Delete(h->Entries[r], p)) {
 			ret = true;
 			h->NumItems--;
 		}
 
-		if (LIST_NUM(h->Entries[r]) == 0)
-		{
+		if (LIST_NUM(h->Entries[r]) == 0) {
 			ReleaseList(h->Entries[r]);
 			h->Entries[r] = NULL;
 		}
 	}
 
-	if (ret)
-	{
-		if (h->AllList != NULL)
-		{
+	if (ret) {
+		if (h->AllList != NULL) {
 			Delete(h->AllList, p);
 		}
 	}
@@ -334,26 +296,22 @@ bool DeleteHash(HASH_LIST *h, void *p)
 }
 
 // Add an item to the hash list
-void AddHash(HASH_LIST *h, void *p)
-{
+void AddHash(HASH_LIST *h, void *p) {
 	UINT r;
 	// Validate arguments
-	if (h == NULL || p == NULL)
-	{
+	if (h == NULL || p == NULL) {
 		return;
 	}
 
 	r = CalcHashForHashList(h, p);
 
-	if (h->Entries[r] == NULL)
-	{
+	if (h->Entries[r] == NULL) {
 		h->Entries[r] = NewListFast(h->CompareProc);
 	}
 
 	Insert(h->Entries[r], p);
 
-	if (h->AllList != NULL)
-	{
+	if (h->AllList != NULL) {
 		Add(h->AllList, p);
 	}
 
@@ -361,12 +319,10 @@ void AddHash(HASH_LIST *h, void *p)
 }
 
 // Calculation of the hash value of the object
-UINT CalcHashForHashList(HASH_LIST *h, void *p)
-{
+UINT CalcHashForHashList(HASH_LIST *h, void *p) {
 	UINT r;
 	// Validate arguments
-	if (h == NULL || p == NULL)
-	{
+	if (h == NULL || p == NULL) {
 		return 0;
 	}
 
@@ -376,16 +332,13 @@ UINT CalcHashForHashList(HASH_LIST *h, void *p)
 }
 
 // Creating a hash list
-HASH_LIST *NewHashList(GET_HASH *get_hash_proc, COMPARE *compare_proc, UINT bits, bool make_list)
-{
+HASH_LIST *NewHashList(GET_HASH *get_hash_proc, COMPARE *compare_proc, UINT bits, bool make_list) {
 	HASH_LIST *h;
 	// Validate arguments
-	if (get_hash_proc == NULL || compare_proc == NULL)
-	{
+	if (get_hash_proc == NULL || compare_proc == NULL) {
 		return NULL;
 	}
-	if (bits == 0)
-	{
+	if (bits == 0) {
 		bits = 16;
 	}
 
@@ -404,8 +357,7 @@ HASH_LIST *NewHashList(GET_HASH *get_hash_proc, COMPARE *compare_proc, UINT bits
 	h->GetHashProc = get_hash_proc;
 	h->CompareProc = compare_proc;
 
-	if (make_list)
-	{
+	if (make_list) {
 		h->AllList = NewListFast(NULL);
 	}
 
@@ -413,34 +365,27 @@ HASH_LIST *NewHashList(GET_HASH *get_hash_proc, COMPARE *compare_proc, UINT bits
 }
 
 // Release the hash list
-void ReleaseHashList(HASH_LIST *h)
-{
+void ReleaseHashList(HASH_LIST *h) {
 	// Validate arguments
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return;
 	}
 
-	if (Release(h->Ref) == 0)
-	{
+	if (Release(h->Ref) == 0) {
 		CleanupHashList(h);
 	}
 }
-void CleanupHashList(HASH_LIST *h)
-{
+void CleanupHashList(HASH_LIST *h) {
 	UINT i;
 	// Validate arguments
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return;
 	}
 
-	for (i = 0;i < h->Size;i++)
-	{
+	for (i = 0; i < h->Size; i++) {
 		LIST *o = h->Entries[i];
 
-		if (o != NULL)
-		{
+		if (o != NULL) {
 			ReleaseList(o);
 		}
 	}
@@ -449,8 +394,7 @@ void CleanupHashList(HASH_LIST *h)
 
 	DeleteLock(h->Lock);
 
-	if (h->AllList != NULL)
-	{
+	if (h->AllList != NULL) {
 		ReleaseList(h->AllList);
 	}
 
@@ -458,11 +402,9 @@ void CleanupHashList(HASH_LIST *h)
 }
 
 // Append a string to the buffer
-void AppendBufStr(BUF *b, char *str)
-{
+void AppendBufStr(BUF *b, char *str) {
 	// Validate arguments
-	if (b == NULL || str == NULL)
-	{
+	if (b == NULL || str == NULL) {
 		return;
 	}
 
@@ -470,13 +412,11 @@ void AppendBufStr(BUF *b, char *str)
 }
 
 // Add a UTF-8 string to the buffer
-void AppendBufUtf8(BUF *b, wchar_t *str)
-{
+void AppendBufUtf8(BUF *b, wchar_t *str) {
 	UINT size;
 	UCHAR *data;
 	// Validate arguments
-	if (b == NULL || str == NULL)
-	{
+	if (b == NULL || str == NULL) {
 		return;
 	}
 
@@ -491,21 +431,17 @@ void AppendBufUtf8(BUF *b, wchar_t *str)
 }
 
 // Calculation of a ^ b (a to the b-th power)
-UINT Power(UINT a, UINT b)
-{
+UINT Power(UINT a, UINT b) {
 	UINT ret, i;
-	if (a == 0)
-	{
+	if (a == 0) {
 		return 0;
 	}
-	if (b == 0)
-	{
+	if (b == 0) {
 		return 1;
 	}
 
 	ret = 1;
-	for (i = 0;i < b;i++)
-	{
+	for (i = 0; i < b; i++) {
 		ret *= a;
 	}
 
@@ -513,22 +449,18 @@ UINT Power(UINT a, UINT b)
 }
 
 // Search in the binary
-UINT SearchBin(void *data, UINT data_start, UINT data_size, void *key, UINT key_size)
-{
+UINT SearchBin(void *data, UINT data_start, UINT data_size, void *key, UINT key_size) {
 	UINT i;
 	// Validate arguments
 	if (data == NULL || key == NULL || key_size == 0 || data_size == 0 ||
-		(data_start >= data_size) || (data_start + key_size > data_size))
-	{
+	    (data_start >= data_size) || (data_start + key_size > data_size)) {
 		return INFINITE;
 	}
 
-	for (i = data_start;i < (data_size - key_size + 1);i++)
-	{
+	for (i = data_start; i < (data_size - key_size + 1); i++) {
 		UCHAR *p = ((UCHAR *)data) + i;
 
-		if (Cmp(p, key, key_size) == 0)
-		{
+		if (Cmp(p, key, key_size) == 0) {
 			return i;
 		}
 	}
@@ -537,10 +469,8 @@ UINT SearchBin(void *data, UINT data_start, UINT data_size, void *key, UINT key_
 }
 
 // Crash immediately
-void CrashNow()
-{
-	while (true)
-	{
+void CrashNow() {
+	while (true) {
 		UINT r = Rand32();
 		UCHAR *c = (UCHAR *)r;
 
@@ -549,20 +479,16 @@ void CrashNow()
 }
 
 // Examine whether the specified address points all-zero area
-bool IsZero(void *data, UINT size)
-{
+bool IsZero(void *data, UINT size) {
 	UINT i;
 	UCHAR *c = (UCHAR *)data;
 	// Validate arguments
-	if (data == NULL || size == 0)
-	{
+	if (data == NULL || size == 0) {
 		return true;
 	}
 
-	for (i = 0;i < size;i++)
-	{
-		if (c[i] != 0)
-		{
+	for (i = 0; i < size; i++) {
+		if (c[i] != 0) {
 			return false;
 		}
 	}
@@ -571,17 +497,14 @@ bool IsZero(void *data, UINT size)
 }
 
 // Expand the data
-UINT Uncompress(void *dst, UINT dst_size, void *src, UINT src_size)
-{
+UINT Uncompress(void *dst, UINT dst_size, void *src, UINT src_size) {
 	unsigned long dst_size_long = dst_size;
 	// Validate arguments
-	if (dst == NULL || dst_size_long == 0 || src == NULL)
-	{
+	if (dst == NULL || dst_size_long == 0 || src == NULL) {
 		return 0;
 	}
 
-	if (uncompress(dst, &dst_size_long, src, src_size) != Z_OK)
-	{
+	if (uncompress(dst, &dst_size_long, src, src_size) != Z_OK) {
 		return 0;
 	}
 
@@ -589,23 +512,19 @@ UINT Uncompress(void *dst, UINT dst_size, void *src, UINT src_size)
 }
 
 // Compress the data
-UINT Compress(void *dst, UINT dst_size, void *src, UINT src_size)
-{
+UINT Compress(void *dst, UINT dst_size, void *src, UINT src_size) {
 	return CompressEx(dst, dst_size, src, src_size, Z_DEFAULT_COMPRESSION);
 }
 
 // Compress the data with options
-UINT CompressEx(void *dst, UINT dst_size, void *src, UINT src_size, UINT level)
-{
+UINT CompressEx(void *dst, UINT dst_size, void *src, UINT src_size, UINT level) {
 	unsigned long dst_size_long = dst_size;
 	// Validate arguments
-	if (dst == NULL || dst_size_long == 0 || src == NULL)
-	{
+	if (dst == NULL || dst_size_long == 0 || src == NULL) {
 		return 0;
 	}
 
-	if (compress2(dst, &dst_size_long, src, src_size, (int)level) != Z_OK)
-	{
+	if (compress2(dst, &dst_size_long, src, src_size, (int)level) != Z_OK) {
 		return 0;
 	}
 
@@ -613,18 +532,15 @@ UINT CompressEx(void *dst, UINT dst_size, void *src, UINT src_size, UINT level)
 }
 
 // Get the maximum size of compressed data from data of src_size
-UINT CalcCompress(UINT src_size)
-{
+UINT CalcCompress(UINT src_size) {
 	return src_size * 2 + 256;
 }
 
 // Creating a Stack
-SK *NewSk()
-{
+SK *NewSk() {
 	return NewSkEx(false);
 }
-SK *NewSkEx(bool no_compact)
-{
+SK *NewSkEx(bool no_compact) {
 	SK *s;
 
 	s = Malloc(sizeof(SK));
@@ -642,26 +558,21 @@ SK *NewSkEx(bool no_compact)
 }
 
 // Release of the stack
-void ReleaseSk(SK *s)
-{
+void ReleaseSk(SK *s) {
 	// Validate arguments
-	if (s == NULL)
-	{
+	if (s == NULL) {
 		return;
 	}
 
-	if (Release(s->ref) == 0)
-	{
+	if (Release(s->ref) == 0) {
 		CleanupSk(s);
 	}
 }
 
 // Clean up the stack
-void CleanupSk(SK *s)
-{
+void CleanupSk(SK *s) {
 	// Validate arguments
-	if (s == NULL)
-	{
+	if (s == NULL) {
 		return;
 	}
 
@@ -675,11 +586,9 @@ void CleanupSk(SK *s)
 }
 
 // Lock of the stack
-void LockSk(SK *s)
-{
+void LockSk(SK *s) {
 	// Validate arguments
-	if (s == NULL)
-	{
+	if (s == NULL) {
 		return;
 	}
 
@@ -687,11 +596,9 @@ void LockSk(SK *s)
 }
 
 // Unlock the stack
-void UnlockSk(SK *s)
-{
+void UnlockSk(SK *s) {
 	// Validate arguments
-	if (s == NULL)
-	{
+	if (s == NULL) {
 		return;
 	}
 
@@ -699,12 +606,10 @@ void UnlockSk(SK *s)
 }
 
 // Push to the stack
-void Push(SK *s, void *p)
-{
+void Push(SK *s, void *p) {
 	UINT i;
 	// Validate arguments
-	if (s == NULL || p == NULL)
-	{
+	if (s == NULL || p == NULL) {
 		return;
 	}
 
@@ -712,8 +617,7 @@ void Push(SK *s, void *p)
 	s->num_item++;
 
 	// Size expansion
-	if (s->num_item > s->num_reserved)
-	{
+	if (s->num_item > s->num_reserved) {
 		s->num_reserved = s->num_reserved * 2;
 		s->p = ReAlloc(s->p, sizeof(void *) * s->num_reserved);
 	}
@@ -724,29 +628,23 @@ void Push(SK *s, void *p)
 }
 
 // Pop from the stack
-void *Pop(SK *s)
-{
+void *Pop(SK *s) {
 	void *ret;
 	// Validate arguments
-	if (s == NULL)
-	{
+	if (s == NULL) {
 		return NULL;
 	}
-	if (s->num_item == 0)
-	{
+	if (s->num_item == 0) {
 		return NULL;
 	}
 	ret = s->p[s->num_item - 1];
 	s->num_item--;
 
 	// Size reduction
-	if (s->no_compact == false)
-	{
+	if (s->no_compact == false) {
 		// Not to shrink when no_compact is true
-		if ((s->num_item * 2) <= s->num_reserved)
-		{
-			if (s->num_reserved >= (INIT_NUM_RESERVED * 2))
-			{
+		if ((s->num_item * 2) <= s->num_reserved) {
+			if (s->num_reserved >= (INIT_NUM_RESERVED * 2)) {
 				s->num_reserved = s->num_reserved / 2;
 				s->p = ReAlloc(s->p, sizeof(void *) * s->num_reserved);
 			}
@@ -760,11 +658,9 @@ void *Pop(SK *s)
 }
 
 // Get the number of queued items
-UINT GetQueueNum(QUEUE *q)
-{
+UINT GetQueueNum(QUEUE *q) {
 	// Validate arguments
-	if (q == NULL)
-	{
+	if (q == NULL) {
 		return 0;
 	}
 
@@ -772,17 +668,14 @@ UINT GetQueueNum(QUEUE *q)
 }
 
 // Get one
-void *GetNext(QUEUE *q)
-{
+void *GetNext(QUEUE *q) {
 	void *p = NULL;
 	// Validate arguments
-	if (q == NULL)
-	{
+	if (q == NULL) {
 		return NULL;
 	}
 
-	if (q->num_item == 0)
-	{
+	if (q->num_item == 0) {
 		// No items
 		return NULL;
 	}
@@ -798,12 +691,10 @@ void *GetNext(QUEUE *q)
 }
 
 // Insert the int type in the queue
-void InsertQueueInt(QUEUE *q, UINT value)
-{
+void InsertQueueInt(QUEUE *q, UINT value) {
 	UINT *p;
 	// Validate arguments
-	if (q == NULL)
-	{
+	if (q == NULL) {
 		return;
 	}
 
@@ -813,11 +704,9 @@ void InsertQueueInt(QUEUE *q, UINT value)
 }
 
 // Insert to the queue
-void InsertQueue(QUEUE *q, void *p)
-{
+void InsertQueue(QUEUE *q, void *p) {
 	// Validate arguments
-	if (q == NULL || p == NULL)
-	{
+	if (q == NULL || p == NULL) {
 		return;
 	}
 
@@ -846,11 +735,9 @@ void InsertQueue(QUEUE *q, void *p)
 }
 
 // Lock the queue
-void LockQueue(QUEUE *q)
-{
+void LockQueue(QUEUE *q) {
 	// Validate arguments
-	if (q == NULL)
-	{
+	if (q == NULL) {
 		return;
 	}
 
@@ -858,11 +745,9 @@ void LockQueue(QUEUE *q)
 }
 
 // Unlock the queue
-void UnlockQueue(QUEUE *q)
-{
+void UnlockQueue(QUEUE *q) {
 	// Validate arguments
-	if (q == NULL)
-	{
+	if (q == NULL) {
 		return;
 	}
 
@@ -870,26 +755,21 @@ void UnlockQueue(QUEUE *q)
 }
 
 // Release of the queue
-void ReleaseQueue(QUEUE *q)
-{
+void ReleaseQueue(QUEUE *q) {
 	// Validate arguments
-	if (q == NULL)
-	{
+	if (q == NULL) {
 		return;
 	}
 
-	if (q->ref == NULL || Release(q->ref) == 0)
-	{
+	if (q->ref == NULL || Release(q->ref) == 0) {
 		CleanupQueue(q);
 	}
 }
 
 // Clean-up the queue
-void CleanupQueue(QUEUE *q)
-{
+void CleanupQueue(QUEUE *q) {
 	// Validate arguments
-	if (q == NULL)
-	{
+	if (q == NULL) {
 		return;
 	}
 
@@ -903,8 +783,7 @@ void CleanupQueue(QUEUE *q)
 }
 
 // Creating a Queue
-QUEUE *NewQueue()
-{
+QUEUE *NewQueue() {
 	QUEUE *q;
 
 	q = ZeroMalloc(sizeof(QUEUE));
@@ -918,8 +797,7 @@ QUEUE *NewQueue()
 
 	return q;
 }
-QUEUE *NewQueueFast()
-{
+QUEUE *NewQueueFast() {
 	QUEUE *q;
 
 	q = ZeroMalloc(sizeof(QUEUE));
@@ -935,11 +813,9 @@ QUEUE *NewQueueFast()
 }
 
 // Copy the list to an array
-void CopyToArray(LIST *o, void *p)
-{
+void CopyToArray(LIST *o, void *p) {
 	// Validate arguments
-	if (o == NULL || p == NULL)
-	{
+	if (o == NULL || p == NULL) {
 		return;
 	}
 
@@ -950,26 +826,20 @@ void CopyToArray(LIST *o, void *p)
 }
 
 // Arrange the list to an array
-void *ToArray(LIST *o)
-{
+void *ToArray(LIST *o) {
 	return ToArrayEx(o, false);
 }
-void *ToArrayEx(LIST *o, bool fast)
-{
+void *ToArrayEx(LIST *o, bool fast) {
 	void *p;
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return NULL;
 	}
 
 	// Memory allocation
-	if (fast == false)
-	{
+	if (fast == false) {
 		p = Malloc(sizeof(void *) * LIST_NUM(o));
-	}
-	else
-	{
+	} else {
 		p = MallocFast(sizeof(void *) * LIST_NUM(o));
 	}
 	// Copy
@@ -979,64 +849,53 @@ void *ToArrayEx(LIST *o, bool fast)
 }
 
 // Search in the list
-void *Search(LIST *o, void *target)
-{
+void *Search(LIST *o, void *target) {
 	void **ret;
 	// Validate arguments
-	if (o == NULL || target == NULL)
-	{
+	if (o == NULL || target == NULL) {
 		return NULL;
 	}
-	if (o->cmp == NULL)
-	{
+	if (o->cmp == NULL) {
 		return NULL;
 	}
 
 	// Check the sort
-	if (o->sorted == false)
-	{
+	if (o->sorted == false) {
 		// Sort because it is not sorted
 		Sort(o);
 	}
 
 	ret = (void **)bsearch(&target, o->p, o->num_item, sizeof(void *),
-		(int(*)(const void *, const void *))o->cmp);
+	                       (int (*)(const void *, const void *))o->cmp);
 
 	// KS
 	KS_INC(KS_SEARCH_COUNT);
 
-	if (ret != NULL)
-	{
+	if (ret != NULL) {
 		return *ret;
-	}
-	else
-	{
+	} else {
 		return NULL;
 	}
 }
 
 // Insert an item to the list
-void Insert(LIST *o, void *p)
-{
+void Insert(LIST *o, void *p) {
 	int low, high, middle;
 	UINT pos;
 	int i;
 	// Validate arguments
-	if (o == NULL || p == NULL)
-	{
+	if (o == NULL || p == NULL) {
 		return;
 	}
 
-	if (o->cmp == NULL)
-	{
+	if (o->cmp == NULL) {
 		// adding simply if there is no sort function
 		Add(o, p);
 		return;
 	}
 
 	// Sort immediately if it is not sorted
-	if (o->sorted == false)
-	{
+	if (o->sorted == false) {
 		Sort(o);
 	}
 
@@ -1045,44 +904,34 @@ void Insert(LIST *o, void *p)
 
 	pos = INFINITE;
 
-	while (low <= high)
-	{
+	while (low <= high) {
 		int ret;
 
 		middle = (low + high) / 2;
 		ret = o->cmp(&(o->p[middle]), &p);
 
-		if (ret == 0)
-		{
+		if (ret == 0) {
 			pos = middle;
 			break;
-		}
-		else if (ret > 0)
-		{
+		} else if (ret > 0) {
 			high = middle - 1;
-		}
-		else
-		{
+		} else {
 			low = middle + 1;
 		}
 	}
 
-	if (pos == INFINITE)
-	{
+	if (pos == INFINITE) {
 		pos = low;
 	}
 
 	o->num_item++;
-	if (o->num_item > o->num_reserved)
-	{
+	if (o->num_item > o->num_reserved) {
 		o->num_reserved *= 2;
 		o->p = ReAlloc(o->p, sizeof(void *) * o->num_reserved);
 	}
 
-	if (LIST_NUM(o) >= 2)
-	{
-		for (i = (LIST_NUM(o) - 2);i >= (int)pos;i--)
-		{
+	if (LIST_NUM(o) >= 2) {
+		for (i = (LIST_NUM(o) - 2); i >= (int)pos; i--) {
 			o->p[i + 1] = o->p[i];
 		}
 	}
@@ -1094,15 +943,13 @@ void Insert(LIST *o, void *p)
 }
 
 // Sort the list
-void Sort(LIST *o)
-{
+void Sort(LIST *o) {
 	// Validate arguments
-	if (o == NULL || o->cmp == NULL)
-	{
+	if (o == NULL || o->cmp == NULL) {
 		return;
 	}
 
-	qsort(o->p, o->num_item, sizeof(void *), (int(*)(const void *, const void *))o->cmp);
+	qsort(o->p, o->num_item, sizeof(void *), (int (*)(const void *, const void *))o->cmp);
 	o->sorted = true;
 
 	// KS
@@ -1110,21 +957,17 @@ void Sort(LIST *o)
 }
 
 // Replace the pointer in the list
-bool ReplaceListPointer(LIST *o, void *oldptr, void *newptr)
-{
+bool ReplaceListPointer(LIST *o, void *oldptr, void *newptr) {
 	UINT i;
 	// Validate arguments
-	if (o == NULL || oldptr == NULL || newptr == NULL)
-	{
+	if (o == NULL || oldptr == NULL || newptr == NULL) {
 		return false;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
+	for (i = 0; i < LIST_NUM(o); i++) {
 		void *p = LIST_DATA(o, i);
 
-		if (p == oldptr)
-		{
+		if (p == oldptr) {
 			o->p[i] = newptr;
 			return true;
 		}
@@ -1134,21 +977,17 @@ bool ReplaceListPointer(LIST *o, void *oldptr, void *newptr)
 }
 
 // Get the pointer by scanning by UINT pointer in the list
-void *ListKeyToPointer(LIST *o, UINT key)
-{
+void *ListKeyToPointer(LIST *o, UINT key) {
 	UINT i;
 	// Validate arguments
-	if (o == NULL || key == 0)
-	{
+	if (o == NULL || key == 0) {
 		return NULL;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
+	for (i = 0; i < LIST_NUM(o); i++) {
 		void *p = LIST_DATA(o, i);
 
-		if (POINTER_TO_KEY(p) == key)
-		{
+		if (POINTER_TO_KEY(p) == key) {
 			return p;
 		}
 	}
@@ -1157,18 +996,15 @@ void *ListKeyToPointer(LIST *o, UINT key)
 }
 
 // Examine whether the key is present in the list
-bool IsInListKey(LIST *o, UINT key)
-{
+bool IsInListKey(LIST *o, UINT key) {
 	void *p;
 	// Validate arguments
-	if (o == NULL || key == 0)
-	{
+	if (o == NULL || key == 0) {
 		return false;
 	}
 
 	p = ListKeyToPointer(o, key);
-	if (p == NULL)
-	{
+	if (p == NULL) {
 		return false;
 	}
 
@@ -1176,20 +1012,16 @@ bool IsInListKey(LIST *o, UINT key)
 }
 
 // Examine whether the item exists in the list
-bool IsInList(LIST *o, void *p)
-{
+bool IsInList(LIST *o, void *p) {
 	UINT i;
 	// Validate arguments
-	if (o == NULL || p == NULL)
-	{
+	if (o == NULL || p == NULL) {
 		return false;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
+	for (i = 0; i < LIST_NUM(o); i++) {
 		void *q = LIST_DATA(o, i);
-		if (p == q)
-		{
+		if (p == q) {
 			return true;
 		}
 	}
@@ -1198,20 +1030,17 @@ bool IsInList(LIST *o, void *p)
 }
 
 // Add an element to the list
-void Add(LIST *o, void *p)
-{
+void Add(LIST *o, void *p) {
 	UINT i;
 	// Validate arguments
-	if (o == NULL || p == NULL)
-	{
+	if (o == NULL || p == NULL) {
 		return;
 	}
 
 	i = o->num_item;
 	o->num_item++;
 
-	if (o->num_item > o->num_reserved)
-	{
+	if (o->num_item > o->num_reserved) {
 		o->num_reserved = o->num_reserved * 2;
 		o->p = ReAlloc(o->p, sizeof(void *) * o->num_reserved);
 	}
@@ -1224,37 +1053,29 @@ void Add(LIST *o, void *p)
 }
 
 // Delete the element from the list
-bool Delete(LIST *o, void *p)
-{
+bool Delete(LIST *o, void *p) {
 	UINT i, n;
 	// Validate arguments
-	if (o == NULL || p == NULL)
-	{
+	if (o == NULL || p == NULL) {
 		return false;
 	}
 
-	for (i = 0;i < o->num_item;i++)
-	{
-		if (o->p[i] == p)
-		{
+	for (i = 0; i < o->num_item; i++) {
+		if (o->p[i] == p) {
 			break;
 		}
 	}
-	if (i == o->num_item)
-	{
+	if (i == o->num_item) {
 		return false;
 	}
 
 	n = i;
-	for (i = n;i < (o->num_item - 1);i++)
-	{
+	for (i = n; i < (o->num_item - 1); i++) {
 		o->p[i] = o->p[i + 1];
 	}
 	o->num_item--;
-	if ((o->num_item * 2) <= o->num_reserved)
-	{
-		if (o->num_reserved > (INIT_NUM_RESERVED * 2))
-		{
+	if ((o->num_item * 2) <= o->num_reserved) {
+		if (o->num_reserved > (INIT_NUM_RESERVED * 2)) {
 			o->num_reserved = o->num_reserved / 2;
 			o->p = ReAlloc(o->p, sizeof(void *) * o->num_reserved);
 		}
@@ -1267,11 +1088,9 @@ bool Delete(LIST *o, void *p)
 }
 
 // Delete all elements from the list
-void DeleteAll(LIST *o)
-{
+void DeleteAll(LIST *o) {
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return;
 	}
 
@@ -1281,11 +1100,9 @@ void DeleteAll(LIST *o)
 }
 
 // Lock the list
-void LockList(LIST *o)
-{
+void LockList(LIST *o) {
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return;
 	}
 
@@ -1293,11 +1110,9 @@ void LockList(LIST *o)
 }
 
 // Unlock the list
-void UnlockList(LIST *o)
-{
+void UnlockList(LIST *o) {
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return;
 	}
 
@@ -1305,32 +1120,26 @@ void UnlockList(LIST *o)
 }
 
 // Release the list
-void ReleaseList(LIST *o)
-{
+void ReleaseList(LIST *o) {
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return;
 	}
 
-	if (o->ref == NULL || Release(o->ref) == 0)
-	{
+	if (o->ref == NULL || Release(o->ref) == 0) {
 		CleanupList(o);
 	}
 }
 
 // Clean up the list
-void CleanupList(LIST *o)
-{
+void CleanupList(LIST *o) {
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return;
 	}
 
 	Free(o->p);
-	if (o->lock != NULL)
-	{
+	if (o->lock != NULL) {
 		DeleteLock(o->lock);
 	}
 	Free(o);
@@ -1340,42 +1149,34 @@ void CleanupList(LIST *o)
 }
 
 // Check whether the specified number is already in the list
-bool IsIntInList(LIST *o, UINT i)
-{
+bool IsIntInList(LIST *o, UINT i) {
 	UINT j;
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return false;
 	}
 
-	for (j = 0;j < LIST_NUM(o);j++)
-	{
+	for (j = 0; j < LIST_NUM(o); j++) {
 		UINT *p = LIST_DATA(o, j);
 
-		if (*p == i)
-		{
+		if (*p == i) {
 			return true;
 		}
 	}
 
 	return false;
 }
-bool IsInt64InList(LIST *o, UINT64 i)
-{
+bool IsInt64InList(LIST *o, UINT64 i) {
 	UINT j;
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return false;
 	}
 
-	for (j = 0;j < LIST_NUM(o);j++)
-	{
+	for (j = 0; j < LIST_NUM(o); j++) {
 		UINT64 *p = LIST_DATA(o, j);
 
-		if (*p == i)
-		{
+		if (*p == i) {
 			return true;
 		}
 	}
@@ -1384,17 +1185,14 @@ bool IsInt64InList(LIST *o, UINT64 i)
 }
 
 // Release the integer list
-void ReleaseIntList(LIST *o)
-{
+void ReleaseIntList(LIST *o) {
 	UINT i;
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
+	for (i = 0; i < LIST_NUM(o); i++) {
 		UINT *p = LIST_DATA(o, i);
 
 		Free(p);
@@ -1402,17 +1200,14 @@ void ReleaseIntList(LIST *o)
 
 	ReleaseList(o);
 }
-void ReleaseInt64List(LIST *o)
-{
+void ReleaseInt64List(LIST *o) {
 	UINT i;
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
+	for (i = 0; i < LIST_NUM(o); i++) {
 		UINT64 *p = LIST_DATA(o, i);
 
 		Free(p);
@@ -1422,32 +1217,26 @@ void ReleaseInt64List(LIST *o)
 }
 
 // Delete an integer from list
-void DelInt(LIST *o, UINT i)
-{
+void DelInt(LIST *o, UINT i) {
 	LIST *o2 = NULL;
 	UINT j;
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return;
 	}
 
-	for (j = 0;j < LIST_NUM(o);j++)
-	{
+	for (j = 0; j < LIST_NUM(o); j++) {
 		UINT *p = LIST_DATA(o, j);
 
-		if (*p == i)
-		{
-			if (o2 == NULL)
-			{
+		if (*p == i) {
+			if (o2 == NULL) {
 				o2 = NewListFast(NULL);
 			}
 			Add(o2, p);
 		}
 	}
 
-	for (j = 0;j < LIST_NUM(o2);j++)
-	{
+	for (j = 0; j < LIST_NUM(o2); j++) {
 		UINT *p = LIST_DATA(o2, j);
 
 		Delete(o, p);
@@ -1455,56 +1244,47 @@ void DelInt(LIST *o, UINT i)
 		Free(p);
 	}
 
-	if (o2 != NULL)
-	{
+	if (o2 != NULL) {
 		ReleaseList(o2);
 	}
 }
 
 // Create a new list of integers
-LIST *NewIntList(bool sorted)
-{
+LIST *NewIntList(bool sorted) {
 	LIST *o = NewList(sorted ? CompareInt : NULL);
 
 	return o;
 }
-LIST *NewInt64List(bool sorted)
-{
+LIST *NewInt64List(bool sorted) {
 	LIST *o = NewList(sorted ? CompareInt64 : NULL);
 
 	return o;
 }
 
 // Comparison of items in the list of integers
-int CompareInt(void *p1, void *p2)
-{
+int CompareInt(void *p1, void *p2) {
 	UINT *v1, *v2;
-	if (p1 == NULL || p2 == NULL)
-	{
+	if (p1 == NULL || p2 == NULL) {
 		return 0;
 	}
 
 	v1 = *((UINT **)p1);
 	v2 = *((UINT **)p2);
-	if (v1 == NULL || v2 == NULL)
-	{
+	if (v1 == NULL || v2 == NULL) {
 		return 0;
 	}
 
 	return COMPARE_RET(*v1, *v2);
 }
-int CompareInt64(void *p1, void *p2)
-{
+int CompareInt64(void *p1, void *p2) {
 	UINT64 *v1, *v2;
-	if (p1 == NULL || p2 == NULL)
-	{
+	if (p1 == NULL || p2 == NULL) {
 		return 0;
 	}
 
 	v1 = *((UINT64 **)p1);
 	v2 = *((UINT64 **)p2);
-	if (v1 == NULL || v2 == NULL)
-	{
+	if (v1 == NULL || v2 == NULL) {
 		return 0;
 	}
 
@@ -1512,21 +1292,17 @@ int CompareInt64(void *p1, void *p2)
 }
 
 // Add an integer to the list
-void AddInt(LIST *o, UINT i)
-{
+void AddInt(LIST *o, UINT i) {
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return;
 	}
 
 	Add(o, Clone(&i, sizeof(UINT)));
 }
-void AddInt64(LIST *o, UINT64 i)
-{
+void AddInt64(LIST *o, UINT64 i) {
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return;
 	}
 
@@ -1534,44 +1310,35 @@ void AddInt64(LIST *o, UINT64 i)
 }
 
 // Add an integer to the list (no duplicates)
-void AddIntDistinct(LIST *o, UINT i)
-{
+void AddIntDistinct(LIST *o, UINT i) {
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return;
 	}
 
-	if (IsIntInList(o, i) == false)
-	{
+	if (IsIntInList(o, i) == false) {
 		AddInt(o, i);
 	}
 }
-void AddInt64Distinct(LIST *o, UINT64 i)
-{
+void AddInt64Distinct(LIST *o, UINT64 i) {
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return;
 	}
 
-	if (IsInt64InList(o, i) == false)
-	{
+	if (IsInt64InList(o, i) == false) {
 		AddInt64(o, i);
 	}
 }
 
 // Insert the string to the list
-bool InsertStr(LIST *o, char *str)
-{
+bool InsertStr(LIST *o, char *str) {
 	// Validate arguments
-	if (o == NULL || str == NULL)
-	{
+	if (o == NULL || str == NULL) {
 		return false;
 	}
 
-	if (Search(o, str) == NULL)
-	{
+	if (Search(o, str) == NULL) {
 		Insert(o, str);
 
 		return true;
@@ -1581,11 +1348,9 @@ bool InsertStr(LIST *o, char *str)
 }
 
 // String comparison function
-int CompareStr(void *p1, void *p2)
-{
+int CompareStr(void *p1, void *p2) {
 	char *s1, *s2;
-	if (p1 == NULL || p2 == NULL)
-	{
+	if (p1 == NULL || p2 == NULL) {
 		return 0;
 	}
 	s1 = *(char **)p1;
@@ -1595,40 +1360,30 @@ int CompareStr(void *p1, void *p2)
 }
 
 // Creating a high-speed list (without lock)
-LIST *NewListFast(COMPARE *cmp)
-{
+LIST *NewListFast(COMPARE *cmp) {
 	return NewListEx(cmp, true);
 }
 
 // Creating a list
-LIST *NewList(COMPARE *cmp)
-{
+LIST *NewList(COMPARE *cmp) {
 	return NewListEx(cmp, false);
 }
-LIST *NewListEx(COMPARE *cmp, bool fast)
-{
+LIST *NewListEx(COMPARE *cmp, bool fast) {
 	return NewListEx2(cmp, fast, false);
 }
-LIST *NewListEx2(COMPARE *cmp, bool fast, bool fast_malloc)
-{
+LIST *NewListEx2(COMPARE *cmp, bool fast, bool fast_malloc) {
 	LIST *o;
 
-	if (fast_malloc == false)
-	{
+	if (fast_malloc == false) {
 		o = Malloc(sizeof(LIST));
-	}
-	else
-	{
+	} else {
 		o = MallocFast(sizeof(LIST));
 	}
 
-	if (fast == false)
-	{
+	if (fast == false) {
 		o->lock = NewLock();
 		o->ref = NewRef();
-	}
-	else
-	{
+	} else {
 		o->lock = NULL;
 		o->ref = NULL;
 	}
@@ -1636,12 +1391,9 @@ LIST *NewListEx2(COMPARE *cmp, bool fast, bool fast_malloc)
 	o->num_reserved = INIT_NUM_RESERVED;
 	o->Param1 = 0;
 
-	if (fast_malloc == false)
-	{
+	if (fast_malloc == false) {
 		o->p = Malloc(sizeof(void *) * o->num_reserved);
-	}
-	else
-	{
+	} else {
 		o->p = MallocFast(sizeof(void *) * o->num_reserved);
 	}
 
@@ -1655,22 +1407,18 @@ LIST *NewListEx2(COMPARE *cmp, bool fast, bool fast_malloc)
 }
 
 // Read from the FIFO
-UINT ReadFifo(FIFO *f, void *p, UINT size)
-{
+UINT ReadFifo(FIFO *f, void *p, UINT size) {
 	UINT read_size;
 	// Validate arguments
-	if (f == NULL || size == 0)
-	{
+	if (f == NULL || size == 0) {
 		return 0;
 	}
 
 	read_size = MIN(size, f->size);
-	if (read_size == 0)
-	{
+	if (read_size == 0) {
 		return 0;
 	}
-	if (p != NULL)
-	{
+	if (p != NULL) {
 		Copy(p, (UCHAR *)f->p + f->pos, read_size);
 	}
 	f->pos += read_size;
@@ -1678,10 +1426,8 @@ UINT ReadFifo(FIFO *f, void *p, UINT size)
 
 	f->total_read_size += (UINT64)read_size;
 
-	if (f->fixed == false)
-	{
-		if (f->size == 0)
-		{
+	if (f->fixed == false) {
+		if (f->size == 0) {
 			f->pos = 0;
 		}
 	}
@@ -1695,24 +1441,20 @@ UINT ReadFifo(FIFO *f, void *p, UINT size)
 }
 
 // Rearrange the memory
-void ShrinkFifoMemory(FIFO *f)
-{
+void ShrinkFifoMemory(FIFO *f) {
 	// Validate arguments
-	if (f == NULL)
-	{
+	if (f == NULL) {
 		return;
 	}
 
-	if (f->fixed)
-	{
+	if (f->fixed) {
 		return;
 	}
 
 	// Rearrange the memory
-	if (f->pos >= FIFO_INIT_MEM_SIZE && 
-		f->memsize >= fifo_current_realloc_mem_size &&
-		(f->memsize / 2) > f->size)
-	{
+	if (f->pos >= FIFO_INIT_MEM_SIZE &&
+	    f->memsize >= fifo_current_realloc_mem_size &&
+	    (f->memsize / 2) > f->size) {
 		void *new_p;
 		UINT new_size;
 
@@ -1729,13 +1471,11 @@ void ShrinkFifoMemory(FIFO *f)
 }
 
 // Write to the FIFO
-void WriteFifo(FIFO *f, void *p, UINT size)
-{
+void WriteFifo(FIFO *f, void *p, UINT size) {
 	UINT i, need_size;
 	bool realloc_flag;
 	// Validate arguments
-	if (f == NULL || size == 0)
-	{
+	if (f == NULL || size == 0) {
 		return;
 	}
 
@@ -1745,20 +1485,17 @@ void WriteFifo(FIFO *f, void *p, UINT size)
 	realloc_flag = false;
 
 	// Memory expansion
-	while (need_size > f->memsize)
-	{
+	while (need_size > f->memsize) {
 		f->memsize = MAX(f->memsize, FIFO_INIT_MEM_SIZE) * 3;
 		realloc_flag = true;
 	}
 
-	if (realloc_flag)
-	{
+	if (realloc_flag) {
 		f->p = ReAlloc(f->p, f->memsize);
 	}
 
 	// Write the data
-	if (p != NULL)
-	{
+	if (p != NULL) {
 		Copy((UCHAR *)f->p + f->pos + i, p, size);
 	}
 
@@ -1769,11 +1506,9 @@ void WriteFifo(FIFO *f, void *p, UINT size)
 }
 
 // Get the size of the FIFO
-UINT FifoSize(FIFO *f)
-{
+UINT FifoSize(FIFO *f) {
 	// Validate arguments
-	if (f == NULL)
-	{
+	if (f == NULL) {
 		return 0;
 	}
 
@@ -1781,26 +1516,21 @@ UINT FifoSize(FIFO *f)
 }
 
 // Release the FIFO
-void ReleaseFifo(FIFO *f)
-{
+void ReleaseFifo(FIFO *f) {
 	// Validate arguments
-	if (f == NULL)
-	{
+	if (f == NULL) {
 		return;
 	}
 
-	if (f->ref == NULL || Release(f->ref) == 0)
-	{
+	if (f->ref == NULL || Release(f->ref) == 0) {
 		CleanupFifo(f);
 	}
 }
 
 // Clean-up the FIFO
-void CleanupFifo(FIFO *f)
-{
+void CleanupFifo(FIFO *f) {
 	// Validate arguments
-	if (f == NULL)
-	{
+	if (f == NULL) {
 		return;
 	}
 
@@ -1813,38 +1543,30 @@ void CleanupFifo(FIFO *f)
 }
 
 // Initialize the FIFO system
-void InitFifo()
-{
+void InitFifo() {
 	fifo_current_realloc_mem_size = FIFO_REALLOC_MEM_SIZE;
 }
 
 // Create a FIFO
-FIFO *NewFifo()
-{
+FIFO *NewFifo() {
 	return NewFifoEx(false);
 }
-FIFO *NewFifoFast()
-{
+FIFO *NewFifoFast() {
 	return NewFifoEx(true);
 }
-FIFO *NewFifoEx(bool fast)
-{
+FIFO *NewFifoEx(bool fast) {
 	return NewFifoEx2(fast, false);
 }
-FIFO *NewFifoEx2(bool fast, bool fixed)
-{
+FIFO *NewFifoEx2(bool fast, bool fixed) {
 	FIFO *f;
 
 	// Memory allocation
 	f = ZeroMalloc(sizeof(FIFO));
 
-	if (fast == false)
-	{
+	if (fast == false) {
 		f->lock = NewLock();
 		f->ref = NewRef();
-	}
-	else
-	{
+	} else {
 		f->lock = NULL;
 		f->ref = NULL;
 	}
@@ -1861,10 +1583,8 @@ FIFO *NewFifoEx2(bool fast, bool fixed)
 }
 
 // Set the default memory reclaiming size of the FIFO
-void SetFifoCurrentReallocMemSize(UINT size)
-{
-	if (size == 0)
-	{
+void SetFifoCurrentReallocMemSize(UINT size) {
+	if (size == 0) {
 		size = FIFO_REALLOC_MEM_SIZE;
 	}
 
@@ -1872,41 +1592,35 @@ void SetFifoCurrentReallocMemSize(UINT size)
 }
 
 // Read a buffer from a file
-BUF *FileToBuf(IO *o)
-{
+BUF *FileToBuf(IO *o) {
 	UCHAR hash1[MD5_SIZE], hash2[MD5_SIZE];
 	UINT size;
 	void *buf;
 	BUF *b;
 
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return NULL;
 	}
 
 	// Read the size
-	if (FileRead(o, &size, sizeof(size)) == false)
-	{
+	if (FileRead(o, &size, sizeof(size)) == false) {
 		return NULL;
 	}
 	size = Endian32(size);
 
-	if (size > FileSize(o))
-	{
+	if (size > FileSize(o)) {
 		return NULL;
 	}
 
 	// Read a hash
-	if (FileRead(o, hash1, sizeof(hash1)) == false)
-	{
+	if (FileRead(o, hash1, sizeof(hash1)) == false) {
 		return NULL;
 	}
 
 	// Read from the buffer
 	buf = Malloc(size);
-	if (FileRead(o, buf, size) == false)
-	{
+	if (FileRead(o, buf, size) == false) {
 		Free(buf);
 		return NULL;
 	}
@@ -1915,8 +1629,7 @@ BUF *FileToBuf(IO *o)
 	Md5(hash2, buf, size);
 
 	// Compare the hashes
-	if (Cmp(hash1, hash2, sizeof(hash1)) != 0)
-	{
+	if (Cmp(hash1, hash2, sizeof(hash1)) != 0) {
 		// Hashes are different
 		Free(buf);
 		return NULL;
@@ -1932,34 +1645,28 @@ BUF *FileToBuf(IO *o)
 }
 
 // Read a dump file into a buffer
-BUF *ReadDump(char *filename)
-{
+BUF *ReadDump(char *filename) {
 	return ReadDumpWithMaxSize(filename, 0);
 }
-BUF *ReadDumpWithMaxSize(char *filename, UINT max_size)
-{
+BUF *ReadDumpWithMaxSize(char *filename, UINT max_size) {
 	IO *o;
 	BUF *b;
 	UINT size;
 	void *data;
 	// Validate arguments
-	if (filename == NULL)
-	{
+	if (filename == NULL) {
 		return NULL;
 	}
 
 	o = FileOpen(filename, false);
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return NULL;
 	}
 
 	size = FileSize(o);
 
-	if (max_size != 0)
-	{
-		if (size > max_size)
-		{
+	if (max_size != 0) {
+		if (size > max_size) {
 			size = max_size;
 		}
 	}
@@ -1975,25 +1682,21 @@ BUF *ReadDumpWithMaxSize(char *filename, UINT max_size)
 
 	return b;
 }
-BUF *ReadDumpW(wchar_t *filename)
-{
+BUF *ReadDumpW(wchar_t *filename) {
 	return ReadDumpExW(filename, true);
 }
-BUF *ReadDumpExW(wchar_t *filename, bool read_lock)
-{
+BUF *ReadDumpExW(wchar_t *filename, bool read_lock) {
 	IO *o;
 	BUF *b;
 	UINT size;
 	void *data;
 	// Validate arguments
-	if (filename == NULL)
-	{
+	if (filename == NULL) {
 		return NULL;
 	}
 
 	o = FileOpenExW(filename, false, read_lock);
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return NULL;
 	}
 
@@ -2011,18 +1714,15 @@ BUF *ReadDumpExW(wchar_t *filename, bool read_lock)
 }
 
 // Write down the data
-bool DumpDataW(void *data, UINT size, wchar_t *filename)
-{
+bool DumpDataW(void *data, UINT size, wchar_t *filename) {
 	IO *o;
 	// Validate arguments
-	if (filename == NULL || (size != 0 && data == NULL))
-	{
+	if (filename == NULL || (size != 0 && data == NULL)) {
 		return false;
 	}
 
 	o = FileCreateW(filename);
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return false;
 	}
 	FileWrite(o, data, size);
@@ -2032,18 +1732,15 @@ bool DumpDataW(void *data, UINT size, wchar_t *filename)
 }
 
 // Dump the contents of the buffer to the file
-bool DumpBuf(BUF *b, char *filename)
-{
+bool DumpBuf(BUF *b, char *filename) {
 	IO *o;
 	// Validate arguments
-	if (b == NULL || filename == NULL)
-	{
+	if (b == NULL || filename == NULL) {
 		return false;
 	}
 
 	o = FileCreate(filename);
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return false;
 	}
 	FileWrite(o, b->Buf, b->Size);
@@ -2051,18 +1748,15 @@ bool DumpBuf(BUF *b, char *filename)
 
 	return true;
 }
-bool DumpBufW(BUF *b, wchar_t *filename)
-{
+bool DumpBufW(BUF *b, wchar_t *filename) {
 	IO *o;
 	// Validate arguments
-	if (b == NULL || filename == NULL)
-	{
+	if (b == NULL || filename == NULL) {
 		return false;
 	}
 
 	o = FileCreateW(filename);
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return false;
 	}
 	FileWrite(o, b->Buf, b->Size);
@@ -2072,47 +1766,38 @@ bool DumpBufW(BUF *b, wchar_t *filename)
 }
 
 // Write to the file only if the contents of the file is different
-bool DumpBufWIfNecessary(BUF *b, wchar_t *filename)
-{
+bool DumpBufWIfNecessary(BUF *b, wchar_t *filename) {
 	BUF *now;
 	bool need = true;
 	// Validate arguments
-	if (b == NULL || filename == NULL)
-	{
+	if (b == NULL || filename == NULL) {
 		return false;
 	}
 
 	now = ReadDumpW(filename);
 
-	if (now != NULL)
-	{
-		if (CompareBuf(now, b))
-		{
+	if (now != NULL) {
+		if (CompareBuf(now, b)) {
 			need = false;
 		}
 
 		FreeBuf(now);
 	}
 
-	if (need == false)
-	{
+	if (need == false) {
 		return true;
-	}
-	else
-	{
+	} else {
 		return DumpBufW(b, filename);
 	}
 }
 
 // Write the buffer to a file
-bool BufToFile(IO *o, BUF *b)
-{
+bool BufToFile(IO *o, BUF *b) {
 	UCHAR hash[MD5_SIZE];
 	UINT size;
 
 	// Validate arguments
-	if (o == NULL || b == NULL)
-	{
+	if (o == NULL || b == NULL) {
 		return false;
 	}
 
@@ -2122,20 +1807,17 @@ bool BufToFile(IO *o, BUF *b)
 	size = Endian32(b->Size);
 
 	// Write the size
-	if (FileWrite(o, &size, sizeof(size)) == false)
-	{
+	if (FileWrite(o, &size, sizeof(size)) == false) {
 		return false;
 	}
 
 	// Write a hash
-	if (FileWrite(o, hash, sizeof(hash)) == false)
-	{
+	if (FileWrite(o, hash, sizeof(hash)) == false) {
 		return false;
 	}
 
 	// Write the data
-	if (FileWrite(o, b->Buf, b->Size) == false)
-	{
+	if (FileWrite(o, b->Buf, b->Size) == false) {
 		return false;
 	}
 
@@ -2143,12 +1825,10 @@ bool BufToFile(IO *o, BUF *b)
 }
 
 // Create a buffer from memory
-BUF *NewBufFromMemory(void *buf, UINT size)
-{
+BUF *NewBufFromMemory(void *buf, UINT size) {
 	BUF *b;
 	// Validate arguments
-	if (buf == NULL && size != 0)
-	{
+	if (buf == NULL && size != 0) {
 		return NULL;
 	}
 
@@ -2160,8 +1840,7 @@ BUF *NewBufFromMemory(void *buf, UINT size)
 }
 
 // Creating a buffer
-BUF *NewBuf()
-{
+BUF *NewBuf() {
 	BUF *b;
 
 	// Memory allocation
@@ -2179,11 +1858,9 @@ BUF *NewBuf()
 }
 
 // Clearing the buffer
-void ClearBuf(BUF *b)
-{
+void ClearBuf(BUF *b) {
 	// Validate arguments
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return;
 	}
 
@@ -2192,23 +1869,19 @@ void ClearBuf(BUF *b)
 }
 
 // Write to the buffer
-void WriteBuf(BUF *b, void *buf, UINT size)
-{
+void WriteBuf(BUF *b, void *buf, UINT size) {
 	UINT new_size;
 	// Validate arguments
-	if (b == NULL || buf == NULL || size == 0)
-	{
+	if (b == NULL || buf == NULL || size == 0) {
 		return;
 	}
 
 	new_size = b->Current + size;
-	if (new_size > b->Size)
-	{
+	if (new_size > b->Size) {
 		// Adjust the size
 		AdjustBufSize(b, new_size);
 	}
-	if (b->Buf != NULL)
-	{
+	if (b->Buf != NULL) {
 		Copy((UCHAR *)b->Buf + b->Current, buf, size);
 	}
 	b->Current += size;
@@ -2219,19 +1892,16 @@ void WriteBuf(BUF *b, void *buf, UINT size)
 }
 
 // Write a string to a buffer
-bool WriteBufStr(BUF *b, char *str)
-{
+bool WriteBufStr(BUF *b, char *str) {
 	UINT len;
 	// Validate arguments
-	if (b == NULL || str == NULL)
-	{
+	if (b == NULL || str == NULL) {
 		return false;
 	}
 
 	// String length
 	len = StrLen(str);
-	if (WriteBufInt(b, len + 1) == false)
-	{
+	if (WriteBufInt(b, len + 1) == false) {
 		return false;
 	}
 
@@ -2242,37 +1912,31 @@ bool WriteBufStr(BUF *b, char *str)
 }
 
 // Read a string from the buffer
-bool ReadBufStr(BUF *b, char *str, UINT size)
-{
+bool ReadBufStr(BUF *b, char *str, UINT size) {
 	UINT len;
 	UINT read_size;
 	// Validate arguments
-	if (b == NULL || str == NULL || size == 0)
-	{
+	if (b == NULL || str == NULL || size == 0) {
 		return false;
 	}
 
 	// Read the length of the string
 	len = ReadBufInt(b);
-	if (len == 0)
-	{
+	if (len == 0) {
 		return false;
 	}
 	len--;
-	if (len <= (size - 1))
-	{
+	if (len <= (size - 1)) {
 		size = len + 1;
 	}
 
 	read_size = MIN(len, (size - 1));
 
 	// Read the string body
-	if (ReadBuf(b, str, read_size) != read_size)
-	{
+	if (ReadBuf(b, str, read_size) != read_size) {
 		return false;
 	}
-	if (read_size < len)
-	{
+	if (read_size < len) {
 		ReadBuf(b, NULL, len - read_size);
 	}
 	str[read_size] = 0;
@@ -2281,11 +1945,9 @@ bool ReadBufStr(BUF *b, char *str, UINT size)
 }
 
 // Write a 64 bit integer to the buffer
-bool WriteBufInt64(BUF *b, UINT64 value)
-{
+bool WriteBufInt64(BUF *b, UINT64 value) {
 	// Validate arguments
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return false;
 	}
 
@@ -2296,11 +1958,9 @@ bool WriteBufInt64(BUF *b, UINT64 value)
 }
 
 // Write an integer in the the buffer
-bool WriteBufInt(BUF *b, UINT value)
-{
+bool WriteBufInt(BUF *b, UINT value) {
 	// Validate arguments
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return false;
 	}
 
@@ -2311,11 +1971,9 @@ bool WriteBufInt(BUF *b, UINT value)
 }
 
 // Write a UCHAR to the buffer
-bool WriteBufChar(BUF *b, UCHAR uc)
-{
+bool WriteBufChar(BUF *b, UCHAR uc) {
 	// Validate arguments
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return false;
 	}
 
@@ -2325,17 +1983,14 @@ bool WriteBufChar(BUF *b, UCHAR uc)
 }
 
 // Read a UCHAR from the buffer
-UCHAR ReadBufChar(BUF *b)
-{
+UCHAR ReadBufChar(BUF *b) {
 	UCHAR uc;
 	// Validate arguments
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return 0;
 	}
 
-	if (ReadBuf(b, &uc, 1) != 1)
-	{
+	if (ReadBuf(b, &uc, 1) != 1) {
 		return 0;
 	}
 
@@ -2343,45 +1998,37 @@ UCHAR ReadBufChar(BUF *b)
 }
 
 // Read a 64bit integer from the buffer
-UINT64 ReadBufInt64(BUF *b)
-{
+UINT64 ReadBufInt64(BUF *b) {
 	UINT64 value;
 	// Validate arguments
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return 0;
 	}
 
-	if (ReadBuf(b, &value, sizeof(UINT64)) != sizeof(UINT64))
-	{
+	if (ReadBuf(b, &value, sizeof(UINT64)) != sizeof(UINT64)) {
 		return 0;
 	}
 	return Endian64(value);
 }
 
 // Read an integer from the buffer
-UINT ReadBufInt(BUF *b)
-{
+UINT ReadBufInt(BUF *b) {
 	UINT value;
 	// Validate arguments
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return 0;
 	}
 
-	if (ReadBuf(b, &value, sizeof(UINT)) != sizeof(UINT))
-	{
+	if (ReadBuf(b, &value, sizeof(UINT)) != sizeof(UINT)) {
 		return 0;
 	}
 	return Endian32(value);
 }
 
 // Write the buffer to a buffer
-void WriteBufBuf(BUF *b, BUF *bb)
-{
+void WriteBufBuf(BUF *b, BUF *bb) {
 	// Validate arguments
-	if (b == NULL || bb == NULL)
-	{
+	if (b == NULL || bb == NULL) {
 		return;
 	}
 
@@ -2389,32 +2036,26 @@ void WriteBufBuf(BUF *b, BUF *bb)
 }
 
 // Read from the buffer
-UINT ReadBuf(BUF *b, void *buf, UINT size)
-{
+UINT ReadBuf(BUF *b, void *buf, UINT size) {
 	UINT size_read;
 	// Validate arguments
-	if (b == NULL || size == 0)
-	{
+	if (b == NULL || size == 0) {
 		return 0;
 	}
 
-	if (b->Buf == NULL)
-	{
+	if (b->Buf == NULL) {
 		Zero(buf, size);
 		return 0;
 	}
 	size_read = size;
-	if ((b->Current + size) >= b->Size)
-	{
+	if ((b->Current + size) >= b->Size) {
 		size_read = b->Size - b->Current;
-		if (buf != NULL)
-		{
+		if (buf != NULL) {
 			Zero((UCHAR *)buf + size_read, size - size_read);
 		}
 	}
 
-	if (buf != NULL)
-	{
+	if (buf != NULL) {
 		Copy(buf, (UCHAR *)b->Buf + b->Current, size_read);
 	}
 
@@ -2427,23 +2068,18 @@ UINT ReadBuf(BUF *b, void *buf, UINT size)
 }
 
 // Adjusting the buffer size
-void AdjustBufSize(BUF *b, UINT new_size)
-{
+void AdjustBufSize(BUF *b, UINT new_size) {
 	// Validate arguments
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return;
 	}
 
-	if (b->SizeReserved >= new_size)
-	{
+	if (b->SizeReserved >= new_size) {
 		return;
 	}
 
-	while (b->SizeReserved < new_size)
-	{
-		if (b->SizeReserved > 0x7FFFFFFF)
-		{
+	while (b->SizeReserved < new_size) {
+		if (b->SizeReserved > 0x7FFFFFFF) {
 			AbortExitEx("AdjustBufSize(): too large buffer size");
 		}
 		b->SizeReserved = b->SizeReserved * 2;
@@ -2455,11 +2091,9 @@ void AdjustBufSize(BUF *b, UINT new_size)
 }
 
 // Seek to the beginning of the buffer
-void SeekBufToBegin(BUF *b)
-{
+void SeekBufToBegin(BUF *b) {
 	// Validate arguments
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return;
 	}
 
@@ -2467,11 +2101,9 @@ void SeekBufToBegin(BUF *b)
 }
 
 // Seek to end of the buffer
-void SeekBufToEnd(BUF *b)
-{
+void SeekBufToEnd(BUF *b) {
 	// Validate arguments
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return;
 	}
 
@@ -2479,36 +2111,25 @@ void SeekBufToEnd(BUF *b)
 }
 
 // Seek of the buffer
-void SeekBuf(BUF *b, UINT offset, int mode)
-{
+void SeekBuf(BUF *b, UINT offset, int mode) {
 	UINT new_pos;
 	// Validate arguments
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return;
 	}
 
-	if (mode == 0)
-	{
+	if (mode == 0) {
 		// Absolute position
 		new_pos = offset;
-	}
-	else
-	{
-		if (mode > 0)
-		{
+	} else {
+		if (mode > 0) {
 			// Move Right
 			new_pos = b->Current + offset;
-		}
-		else
-		{
+		} else {
 			// Move Left
-			if (b->Current >= offset)
-			{
+			if (b->Current >= offset) {
 				new_pos = b->Current - offset;
-			}
-			else
-			{
+			} else {
 				new_pos = 0;
 			}
 		}
@@ -2519,11 +2140,9 @@ void SeekBuf(BUF *b, UINT offset, int mode)
 }
 
 // Free the buffer
-void FreeBuf(BUF *b)
-{
+void FreeBuf(BUF *b) {
 	// Validate arguments
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return;
 	}
 
@@ -2537,25 +2156,20 @@ void FreeBuf(BUF *b)
 }
 
 // Compare BUFs whether two are identical
-bool CompareBuf(BUF *b1, BUF *b2)
-{
+bool CompareBuf(BUF *b1, BUF *b2) {
 	// Validate arguments
-	if (b1 == NULL && b2 == NULL)
-	{
+	if (b1 == NULL && b2 == NULL) {
 		return true;
 	}
-	if (b1 == NULL || b2 == NULL)
-	{
+	if (b1 == NULL || b2 == NULL) {
 		return false;
 	}
 
-	if (b1->Size != b2->Size)
-	{
+	if (b1->Size != b2->Size) {
 		return false;
 	}
 
-	if (Cmp(b1->Buf, b2->Buf, b1->Size) != 0)
-	{
+	if (Cmp(b1->Buf, b2->Buf, b1->Size) != 0) {
 		return false;
 	}
 
@@ -2563,12 +2177,10 @@ bool CompareBuf(BUF *b1, BUF *b2)
 }
 
 // Create a buffer from the memory area
-BUF *MemToBuf(void *data, UINT size)
-{
+BUF *MemToBuf(void *data, UINT size) {
 	BUF *b;
 	// Validate arguments
-	if (data == NULL && size != 0)
-	{
+	if (data == NULL && size != 0) {
 		return NULL;
 	}
 
@@ -2580,81 +2192,61 @@ BUF *MemToBuf(void *data, UINT size)
 }
 
 // Endian conversion of Unicode string
-void EndianUnicode(wchar_t *str)
-{
+void EndianUnicode(wchar_t *str) {
 	UINT i, len;
 	// Validate arguments
-	if (str == NULL)
-	{
+	if (str == NULL) {
 		return;
 	}
 	len = UniStrLen(str);
 
-	for (i = 0;i < len;i++)
-	{
+	for (i = 0; i < len; i++) {
 		str[i] = Endian16(str[i]);
 	}
 }
 
 // Endian conversion 16bit
-USHORT Endian16(USHORT src)
-{
+USHORT Endian16(USHORT src) {
 	int x = 1;
-	if (*((char *)&x))
-	{
+	if (*((char *)&x)) {
 		return Swap16(src);
-	}
-	else
-	{
+	} else {
 		return src;
 	}
 }
 
 // Endian conversion 32bit
-UINT Endian32(UINT src)
-{
+UINT Endian32(UINT src) {
 	int x = 1;
-	if (*((char *)&x))
-	{
+	if (*((char *)&x)) {
 		return Swap32(src);
-	}
-	else
-	{
+	} else {
 		return src;
 	}
 }
 
 // Endian conversion 64bit
-UINT64 Endian64(UINT64 src)
-{
+UINT64 Endian64(UINT64 src) {
 	int x = 1;
-	if (*((char *)&x))
-	{
+	if (*((char *)&x)) {
 		return Swap64(src);
-	}
-	else
-	{
+	} else {
 		return src;
 	}
 }
 
 // Endian conversion 32bit
-UINT LittleEndian32(UINT src)
-{
+UINT LittleEndian32(UINT src) {
 	int x = 0x01000000;
-	if (*((char *)&x))
-	{
+	if (*((char *)&x)) {
 		return Swap32(src);
-	}
-	else
-	{
+	} else {
 		return src;
 	}
 }
 
 // 16bit swap
-USHORT Swap16(USHORT value)
-{
+USHORT Swap16(USHORT value) {
 	USHORT r;
 	((BYTE *)&r)[0] = ((BYTE *)&value)[1];
 	((BYTE *)&r)[1] = ((BYTE *)&value)[0];
@@ -2662,8 +2254,7 @@ USHORT Swap16(USHORT value)
 }
 
 // 32bit swap
-UINT Swap32(UINT value)
-{
+UINT Swap32(UINT value) {
 	UINT r;
 	((BYTE *)&r)[0] = ((BYTE *)&value)[3];
 	((BYTE *)&r)[1] = ((BYTE *)&value)[2];
@@ -2673,8 +2264,7 @@ UINT Swap32(UINT value)
 }
 
 // 64-bit swap
-UINT64 Swap64(UINT64 value)
-{
+UINT64 Swap64(UINT64 value) {
 	UINT64 r;
 	((BYTE *)&r)[0] = ((BYTE *)&value)[7];
 	((BYTE *)&r)[1] = ((BYTE *)&value)[6];
@@ -2687,58 +2277,48 @@ UINT64 Swap64(UINT64 value)
 	return r;
 }
 
-void *Base64ToBin(UINT *out_size, const void *src, const UINT size)
-{
-	if (src == NULL || size == 0)
-	{
+void *Base64ToBin(UINT *out_size, const void *src, const UINT size) {
+	if (src == NULL || size == 0) {
 		return NULL;
 	}
 
 	UINT bin_size = Base64Decode(NULL, src, size);
-	if (bin_size == 0)
-	{
+	if (bin_size == 0) {
 		return NULL;
 	}
 
 	void *bin = ZeroMalloc(bin_size + 1);
 	bin_size = Base64Decode(bin, src, size);
-	if (bin_size == 0)
-	{
+	if (bin_size == 0) {
 		Free(bin);
 		return NULL;
 	}
 
-	if (out_size != NULL)
-	{
+	if (out_size != NULL) {
 		*out_size = bin_size;
 	}
 
 	return bin;
 }
 
-void *Base64FromBin(UINT *out_size, const void *src, const UINT size)
-{
-	if (src == NULL || size == 0)
-	{
+void *Base64FromBin(UINT *out_size, const void *src, const UINT size) {
+	if (src == NULL || size == 0) {
 		return NULL;
 	}
 
 	UINT base64_size = Base64Encode(NULL, src, size);
-	if (base64_size == 0)
-	{
+	if (base64_size == 0) {
 		return NULL;
 	}
 
 	void *base64 = Malloc(base64_size);
 	base64_size = Base64Encode(base64, src, size);
-	if (base64_size == 0)
-	{
+	if (base64_size == 0) {
 		Free(base64);
 		return NULL;
 	}
 
-	if (out_size != NULL)
-	{
+	if (out_size != NULL) {
 		*out_size = base64_size;
 	}
 
@@ -2746,23 +2326,19 @@ void *Base64FromBin(UINT *out_size, const void *src, const UINT size)
 }
 
 // Malloc
-void *Malloc(UINT size)
-{
+void *Malloc(UINT size) {
 	return MallocEx(size, false);
 }
-void *MallocEx(UINT size, bool zero_clear_when_free)
-{
+void *MallocEx(UINT size, bool zero_clear_when_free) {
 	MEMTAG1 *tag1;
 	MEMTAG2 *tag2;
 	UINT real_size;
 
-	if (canary_inited == false)
-	{
+	if (canary_inited == false) {
 		InitCanaryRand();
 	}
 
-	if (size > MAX_MALLOC_MEM_SIZE)
-	{
+	if (size > MAX_MALLOC_MEM_SIZE) {
 		AbortExitEx("MallocEx() error: too large size");
 	}
 
@@ -2782,25 +2358,21 @@ void *MallocEx(UINT size, bool zero_clear_when_free)
 }
 
 // ReAlloc
-void *ReAlloc(void *addr, UINT size)
-{
+void *ReAlloc(void *addr, UINT size) {
 	MEMTAG1 *tag1;
 	MEMTAG2 *tag2;
 	bool zerofree;
 
-	if (canary_inited == false)
-	{
+	if (canary_inited == false) {
 		InitCanaryRand();
 	}
 
-	if (size > MAX_MALLOC_MEM_SIZE)
-	{
+	if (size > MAX_MALLOC_MEM_SIZE) {
 		AbortExitEx("ReAlloc() error: too large size");
 	}
 
 	// Validate arguments
-	if (IS_NULL_POINTER(addr))
-	{
+	if (IS_NULL_POINTER(addr)) {
 		return NULL;
 	}
 
@@ -2813,26 +2385,19 @@ void *ReAlloc(void *addr, UINT size)
 
 	zerofree = tag1->ZeroFree;
 
-	if (tag1->Size == size)
-	{
+	if (tag1->Size == size) {
 		// No size change
 		MEMTAG_POISON(tag1);
 		return addr;
-	}
-	else
-	{
-		if (zerofree)
-		{
+	} else {
+		if (zerofree) {
 			// Size changed (zero clearing required)
 			void *new_p = MallocEx(size, true);
 
-			if (tag1->Size <= size)
-			{
+			if (tag1->Size <= size) {
 				// Size expansion
 				Copy(new_p, addr, tag1->Size);
-			}
-			else
-			{
+			} else {
 				// Size reduction
 				Copy(new_p, addr, size);
 			}
@@ -2841,9 +2406,7 @@ void *ReAlloc(void *addr, UINT size)
 			Free(addr);
 
 			return new_p;
-		}
-		else
-		{
+		} else {
 			// Size changed
 			MEMTAG1 *tag1_new;
 			MEMTAG2 *tag2_new;
@@ -2867,18 +2430,15 @@ void *ReAlloc(void *addr, UINT size)
 }
 
 // Free
-void Free(void *addr)
-{
+void Free(void *addr) {
 	MEMTAG1 *tag1;
 	MEMTAG2 *tag2;
 	// Validate arguments
-	if (IS_NULL_POINTER(addr))
-	{
+	if (IS_NULL_POINTER(addr)) {
 		return;
 	}
 
-	if (canary_inited == false)
-	{
+	if (canary_inited == false) {
 		InitCanaryRand();
 	}
 
@@ -2889,8 +2449,7 @@ void Free(void *addr)
 	tag2 = (MEMTAG2 *)(((UCHAR *)tag1) + CALC_MALLOCSIZE(tag1->Size) - sizeof(MEMTAG2));
 	CheckMemTag2(tag2);
 
-	if (tag1->ZeroFree)
-	{
+	if (tag1->ZeroFree) {
 		// Zero clear
 		Zero(addr, tag1->Size);
 	}
@@ -2902,61 +2461,51 @@ void Free(void *addr)
 }
 
 // Free and set pointer's value to NULL
-void FreeSafe(void **addr)
-{
+void FreeSafe(void **addr) {
 	Free(*addr);
 	*addr = NULL;
 }
 
 // Check the memtag1
-void CheckMemTag1(MEMTAG1 *tag)
-{
+void CheckMemTag1(MEMTAG1 *tag) {
 	// Validate arguments
-	if (tag == NULL)
-	{
+	if (tag == NULL) {
 		AbortExitEx("CheckMemTag1: tag1 == NULL");
 		return;
 	}
 
-	if (tag->Magic != (canary_memtag_magic1 ^ ((UINT64)tag * GOLDEN_RATION_PRIME_U64)))
-	{
+	if (tag->Magic != (canary_memtag_magic1 ^ ((UINT64)tag * GOLDEN_RATION_PRIME_U64))) {
 		AbortExitEx("CheckMemTag1: tag1->Magic != canary_memtag_magic1");
 		return;
 	}
 }
 
 // Check the memtag2
-void CheckMemTag2(MEMTAG2 *tag)
-{
+void CheckMemTag2(MEMTAG2 *tag) {
 	// Validate arguments
-	if (tag == NULL)
-	{
+	if (tag == NULL) {
 		AbortExitEx("CheckMemTag2: tag2 == NULL");
 		return;
 	}
 
-	if (tag->Magic != (canary_memtag_magic2 ^ ((UINT64)tag * GOLDEN_RATION_PRIME_U64)))
-	{
+	if (tag->Magic != (canary_memtag_magic2 ^ ((UINT64)tag * GOLDEN_RATION_PRIME_U64))) {
 		AbortExitEx("CheckMemTag2: tag2->Magic != canary_memtag_magic2");
 		return;
 	}
 }
 
 // ZeroMalloc
-void *ZeroMalloc(UINT size)
-{
+void *ZeroMalloc(UINT size) {
 	return ZeroMallocEx(size, false);
 }
-void *ZeroMallocEx(UINT size, bool zero_clear_when_free)
-{
+void *ZeroMallocEx(UINT size, bool zero_clear_when_free) {
 	void *p = MallocEx(size, zero_clear_when_free);
 	Zero(p, size);
 	return p;
 }
 
 // Memory allocation
-void *InternalMalloc(UINT size)
-{
+void *InternalMalloc(UINT size) {
 	void *addr;
 	UINT retry = 0;
 	size = MORE(size, 1);
@@ -2968,15 +2517,12 @@ void *InternalMalloc(UINT size)
 	KS_INC(KS_CURRENT_MEM_COUNT);
 
 	// Attempt to allocate memory until success
-	while (true)
-	{
-		if ((retry++) > MEMORY_MAX_RETRY)
-		{
+	while (true) {
+		if ((retry++) > MEMORY_MAX_RETRY) {
 			AbortExitEx("InternalMalloc: error: malloc() failed.\n\n");
 		}
 		addr = OSMemoryAlloc(size);
-		if (addr != NULL)
-		{
+		if (addr != NULL) {
 			break;
 		}
 
@@ -2989,11 +2535,9 @@ void *InternalMalloc(UINT size)
 }
 
 // Memory release
-void InternalFree(void *addr)
-{
+void InternalFree(void *addr) {
 	// Validate arguments
-	if (addr == NULL)
-	{
+	if (addr == NULL) {
 		return;
 	}
 
@@ -3008,8 +2552,7 @@ void InternalFree(void *addr)
 }
 
 // Memory reallocation
-void *InternalReAlloc(void *addr, UINT size)
-{
+void *InternalReAlloc(void *addr, UINT size) {
 	void *new_addr;
 	UINT retry = 0;
 	size = MORE(size, 1);
@@ -3019,15 +2562,12 @@ void *InternalReAlloc(void *addr, UINT size)
 	KS_ADD(KS_TOTAL_MEM_SIZE, size);
 
 	// Attempt to allocate memory until success
-	while (true)
-	{
-		if ((retry++) > MEMORY_MAX_RETRY)
-		{
+	while (true) {
+		if ((retry++) > MEMORY_MAX_RETRY) {
 			AbortExitEx("InternalReAlloc: error: realloc() failed.\n\n");
 		}
 		new_addr = OSMemoryReAlloc(addr, size);
-		if (new_addr != NULL)
-		{
+		if (new_addr != NULL) {
 			break;
 		}
 
@@ -3040,12 +2580,10 @@ void *InternalReAlloc(void *addr, UINT size)
 }
 
 // Clone the memory area
-void *Clone(void *addr, UINT size)
-{
+void *Clone(void *addr, UINT size) {
 	void *ret;
 	// Validate arguments
-	if (addr == NULL)
-	{
+	if (addr == NULL) {
 		return NULL;
 	}
 
@@ -3056,11 +2594,9 @@ void *Clone(void *addr, UINT size)
 }
 
 // Memory copy
-void Copy(void *dst, void *src, UINT size)
-{
+void Copy(void *dst, void *src, UINT size) {
 	// Validate arguments
-	if (dst == NULL || src == NULL || size == 0 || dst == src)
-	{
+	if (dst == NULL || src == NULL || size == 0 || dst == src) {
 		return;
 	}
 
@@ -3071,11 +2607,9 @@ void Copy(void *dst, void *src, UINT size)
 }
 
 // Memory move
-void Move(void *dst, void *src, UINT size)
-{
+void Move(void *dst, void *src, UINT size) {
 	// Validate arguments
-	if (dst == NULL || src == NULL || size == 0 || dst == src)
-	{
+	if (dst == NULL || src == NULL || size == 0 || dst == src) {
 		return;
 	}
 
@@ -3086,11 +2620,9 @@ void Move(void *dst, void *src, UINT size)
 }
 
 // Memory comparison
-int Cmp(void *p1, void *p2, UINT size)
-{
+int Cmp(void *p1, void *p2, UINT size) {
 	// Validate arguments
-	if (p1 == NULL || p2 == NULL || size == 0)
-	{
+	if (p1 == NULL || p2 == NULL || size == 0) {
 		return 0;
 	}
 
@@ -3098,25 +2630,21 @@ int Cmp(void *p1, void *p2, UINT size)
 }
 
 // Memory comparison (case-insensitive)
-int CmpCaseIgnore(void *p1, void *p2, UINT size)
-{
+int CmpCaseIgnore(void *p1, void *p2, UINT size) {
 	UINT i;
 	// Validate arguments
-	if (p1 == NULL || p2 == NULL || size == 0)
-	{
+	if (p1 == NULL || p2 == NULL || size == 0) {
 		return 0;
 	}
 
-	for (i = 0;i < size;i++)
-	{
+	for (i = 0; i < size; i++) {
 		char c1 = (char)(*(((UCHAR *)p1) + i));
 		char c2 = (char)(*(((UCHAR *)p2) + i));
 
 		c1 = ToUpper(c1);
 		c2 = ToUpper(c2);
 
-		if (c1 != c2)
-		{
+		if (c1 != c2) {
 			return COMPARE_RET(c1, c2);
 		}
 	}
@@ -3125,11 +2653,9 @@ int CmpCaseIgnore(void *p1, void *p2, UINT size)
 }
 
 // Zero-clear of memory
-void Zero(void *addr, UINT size)
-{
+void Zero(void *addr, UINT size) {
 	// Validate arguments
-	if (addr == NULL || size == 0)
-	{
+	if (addr == NULL || size == 0) {
 		return;
 	}
 

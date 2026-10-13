@@ -12,47 +12,40 @@
 #include "Str.h"
 
 // Get whether the packet is a DHCP packet associated with the specified MAC address
-bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address)
-{
+bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address) {
 	USHORT *us;
 	IPV4_HEADER *ip;
 	UDP_HEADER *udp;
 	UINT ip_header_size;
 	bool is_send = false, is_recv = false;
 	// Validate arguments
-	if (data == NULL || mac_address == NULL || IsZero(mac_address, 6))
-	{
+	if (data == NULL || mac_address == NULL || IsZero(mac_address, 6)) {
 		return false;
 	}
 
 	// Whether the src or the dest matches
-	if (size < 14)
-	{
+	if (size < 14) {
 		return false;
 	}
 
 	// Destination MAC address
-	if (Cmp(data, mac_address, 6) == 0)
-	{
+	if (Cmp(data, mac_address, 6) == 0) {
 		is_recv = true;
 	}
 	size -= 6;
 	data += 6;
 
 	// Source MAC address
-	if (Cmp(data, mac_address, 6) == 0)
-	{
+	if (Cmp(data, mac_address, 6) == 0) {
 		is_send = true;
 	}
 	size -= 6;
 	data += 6;
 
-	if (is_send == false && is_recv == false)
-	{
+	if (is_send == false && is_recv == false) {
 		return false;
 	}
-	if (is_send && is_recv)
-	{
+	if (is_send && is_recv) {
 		return false;
 	}
 
@@ -61,16 +54,14 @@ bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address)
 	size -= 2;
 	data += 2;
 
-	if (READ_USHORT(us) != MAC_PROTO_IPV4)
-	{
+	if (READ_USHORT(us) != MAC_PROTO_IPV4) {
 		// Other than IPv4
 		return false;
 	}
 
 	// IP header
 	ip_header_size = GetIpHeaderSize(data, size);
-	if (ip_header_size == 0)
-	{
+	if (ip_header_size == 0) {
 		// IPv4 header analysis failure
 		return false;
 	}
@@ -79,35 +70,28 @@ bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address)
 	data += ip_header_size;
 	size -= ip_header_size;
 
-	if (ip->Protocol != IP_PROTO_UDP)
-	{
+	if (ip->Protocol != IP_PROTO_UDP) {
 		// Not an UDP packet
 		return false;
 	}
 
 	// UDP header
-	if (size < sizeof(UDP_HEADER))
-	{
+	if (size < sizeof(UDP_HEADER)) {
 		return false;
 	}
 	udp = (UDP_HEADER *)data;
 	data += sizeof(UDP_HEADER);
 	size -= sizeof(UDP_HEADER);
 
-	if (is_send)
-	{
+	if (is_send) {
 		// Detect whether it's a DHCP Request packet
-		if (Endian16(udp->DstPort) == 67)
-		{
+		if (Endian16(udp->DstPort) == 67) {
 			Debug("IsDhcpPacketForSpecificMac: DHCP Request Packet is Detected.\n");
 			return true;
 		}
-	}
-	else if (is_recv)
-	{
+	} else if (is_recv) {
 		// Detect whether it's a DHCP Response packet
-		if (Endian16(udp->SrcPort) == 67)
-		{
+		if (Endian16(udp->SrcPort) == 67) {
 			Debug("IsDhcpPacketForSpecificMac: DHCP Response Packet is Detected.\n");
 			return true;
 		}
@@ -117,22 +101,18 @@ bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address)
 }
 
 // Adjust the MSS of the TCP in the IP packet (L2)
-bool AdjustTcpMssL2(UCHAR *src, UINT src_size, UINT mss, USHORT tag_vlan_tpid)
-{
+bool AdjustTcpMssL2(UCHAR *src, UINT src_size, UINT mss, USHORT tag_vlan_tpid) {
 	MAC_HEADER *mac;
 	USHORT proto;
 	// Validate arguments
-	if (src == NULL || src_size == 0 || mss == 0)
-	{
+	if (src == NULL || src_size == 0 || mss == 0) {
 		return false;
 	}
-	if (tag_vlan_tpid == 0)
-	{
+	if (tag_vlan_tpid == 0) {
 		tag_vlan_tpid = MAC_PROTO_TAGVLAN;
 	}
 
-	if (src_size < sizeof(MAC_HEADER))
-	{
+	if (src_size < sizeof(MAC_HEADER)) {
 		return false;
 	}
 
@@ -143,16 +123,12 @@ bool AdjustTcpMssL2(UCHAR *src, UINT src_size, UINT mss, USHORT tag_vlan_tpid)
 
 	proto = Endian16(mac->Protocol);
 
-	if (proto == MAC_PROTO_IPV4 || proto == MAC_PROTO_IPV6)
-	{
+	if (proto == MAC_PROTO_IPV4 || proto == MAC_PROTO_IPV6) {
 		// Ordinary IPv4 / IPv6 packet
 		return AdjustTcpMssL3(src, src_size, mss);
-	}
-	else if (proto == tag_vlan_tpid)
-	{
+	} else if (proto == tag_vlan_tpid) {
 		// IPv4 / IPv6 packets in the VLAN tag
-		if (src_size < 4)
-		{
+		if (src_size < 4) {
 			return false;
 		}
 
@@ -161,10 +137,8 @@ bool AdjustTcpMssL2(UCHAR *src, UINT src_size, UINT mss, USHORT tag_vlan_tpid)
 
 		proto = READ_USHORT(src);
 
-		if (proto == MAC_PROTO_IPV4 || proto == MAC_PROTO_IPV6)
-		{
-			if (mss >= 5)
-			{
+		if (proto == MAC_PROTO_IPV4 || proto == MAC_PROTO_IPV6) {
+			if (mss >= 5) {
 				mss -= 4;
 
 				src += 2;
@@ -179,27 +153,23 @@ bool AdjustTcpMssL2(UCHAR *src, UINT src_size, UINT mss, USHORT tag_vlan_tpid)
 }
 
 // Get an IP header size
-UINT GetIpHeaderSize(UCHAR *src, UINT src_size)
-{
+UINT GetIpHeaderSize(UCHAR *src, UINT src_size) {
 	UCHAR ip_ver;
 	TCP_HEADER *tcp = NULL;
 	IPV4_HEADER *ip = NULL;
 	IPV6_HEADER *ip6 = NULL;
 	// Validate arguments
-	if (src == NULL || src_size == 0)
-	{
+	if (src == NULL || src_size == 0) {
 		return 0;
 	}
 
 	// Get the IP version number
 	ip_ver = (src[0] >> 4) & 0x0f;
 
-	if (ip_ver == 4)
-	{
+	if (ip_ver == 4) {
 		// IPv4
 		UINT ip_header_size;
-		if (src_size < sizeof(IPV4_HEADER))
-		{
+		if (src_size < sizeof(IPV4_HEADER)) {
 			// No IPv4 header
 			return 0;
 		}
@@ -207,55 +177,45 @@ UINT GetIpHeaderSize(UCHAR *src, UINT src_size)
 		ip = (IPV4_HEADER *)src;
 
 		ip_header_size = IPV4_GET_HEADER_LEN(ip) * 4;
-		if (ip_header_size < sizeof(IPV4_HEADER))
-		{
+		if (ip_header_size < sizeof(IPV4_HEADER)) {
 			// Header size is invalid
 			return 0;
 		}
 
-		if (src_size < ip_header_size)
-		{
+		if (src_size < ip_header_size) {
 			// No IPv4 header
 			return 0;
 		}
 
 		return ip_header_size;
-	}
-	else if (ip_ver == 6)
-	{
+	} else if (ip_ver == 6) {
 		// IPv6
 		IPV6_HEADER_PACKET_INFO v6;
 
-		if (ParsePacketIPv6Header(&v6, src, src_size) == false)
-		{
+		if (ParsePacketIPv6Header(&v6, src, src_size) == false) {
 			// IPv6 analysis failure
 			return 0;
 		}
 
 		ip6 = v6.IPv6Header;
-		if (ip6 == NULL)
-		{
+		if (ip6 == NULL) {
 			return 0;
 		}
 
-		if (src_size < v6.TotalHeaderSize)
-		{
+		if (src_size < v6.TotalHeaderSize) {
 			// No header data
 			return 0;
 		}
 
 		return v6.TotalHeaderSize;
-	}
-	else
-	{
+	} else {
 		// Invalid
 		return 0;
 	}
 }
 
 // Adjust the MSS of TCP in the IP packet (L3)
-bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss)
-{
+bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss) {
 	UCHAR ip_ver;
 	TCP_HEADER *tcp = NULL;
 	UINT tcp_size = 0;
@@ -265,68 +225,58 @@ bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss)
 	IPV4_HEADER *ip = NULL;
 	IPV6_HEADER *ip6 = NULL;
 	// Validate arguments
-	if (src == NULL || src_size == 0 || mss == 0)
-	{
+	if (src == NULL || src_size == 0 || mss == 0) {
 		return false;
 	}
 
 	// Get the IP version number
 	ip_ver = (src[0] >> 4) & 0x0f;
 
-	if (ip_ver == 4)
-	{
+	if (ip_ver == 4) {
 		UINT ip_header_size;
 		UINT ip_total_length;
 		// IPv4
-		if (src_size < sizeof(IPV4_HEADER))
-		{
+		if (src_size < sizeof(IPV4_HEADER)) {
 			// No IPv4 header
 			return false;
 		}
 
 		ip = (IPV4_HEADER *)src;
 
-		if (ip->Protocol != IP_PROTO_TCP)
-		{
+		if (ip->Protocol != IP_PROTO_TCP) {
 			// Non-TCP
 			return false;
 		}
 
-		if (IPV4_GET_OFFSET(ip) != 0)
-		{
+		if (IPV4_GET_OFFSET(ip) != 0) {
 			// It is the second or later packet of fragmented packet
 			return false;
 		}
 
-		if (IPV4_GET_FLAGS(ip) & 0x01)
-		{
+		if (IPV4_GET_FLAGS(ip) & 0x01) {
 			// Fragmented packet
 			return false;
 		}
 
 		ip_header_size = IPV4_GET_HEADER_LEN(ip) * 4;
-		if (ip_header_size < sizeof(IPV4_HEADER))
-		{
+		if (ip_header_size < sizeof(IPV4_HEADER)) {
 			// Header size is invalid
 			return false;
 		}
 
-		if (src_size < ip_header_size)
-		{
+		if (src_size < ip_header_size) {
 			// No IPv4 header
 			return false;
 		}
 
 		ip_total_length = READ_USHORT(&ip->TotalLength);
 
-		if (ip_total_length < ip_header_size)
-		{
+		if (ip_total_length < ip_header_size) {
 			// Invalid total length
 			return false;
 		}
 
-		if (src_size < ip_total_length)
-		{
+		if (src_size < ip_total_length) {
 			// No total length
 			return false;
 		}
@@ -334,48 +284,39 @@ bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss)
 		src += ip_header_size;
 		src_size = ip_total_length - ip_header_size;
 
-		if (src_size < sizeof(TCP_HEADER))
-		{
+		if (src_size < sizeof(TCP_HEADER)) {
 			// No TCP header
 			return false;
 		}
 
 		tcp = (TCP_HEADER *)src;
 		tcp_size = src_size;
-	}
-	else if (ip_ver == 6)
-	{
+	} else if (ip_ver == 6) {
 		// IPv6
 		IPV6_HEADER_PACKET_INFO v6;
 
-		if (ParsePacketIPv6Header(&v6, src, src_size) == false)
-		{
+		if (ParsePacketIPv6Header(&v6, src, src_size) == false) {
 			// IPv6 analysis failure
 			return false;
 		}
 
 		ip6 = v6.IPv6Header;
-		if (ip6 == NULL)
-		{
+		if (ip6 == NULL) {
 			return false;
 		}
 
-		if (v6.Protocol != IP_PROTO_TCP)
-		{
+		if (v6.Protocol != IP_PROTO_TCP) {
 			// Non-TCP
 			return false;
 		}
 
-		if (v6.IsFragment)
-		{
+		if (v6.IsFragment) {
 			// It is the second or later packet of fragmented packet
 			return false;
 		}
 
-		if (v6.FragmentHeader != NULL)
-		{
-			if (IPV6_GET_FLAGS(v6.FragmentHeader) & IPV6_FRAGMENT_HEADER_FLAG_MORE_FRAGMENTS)
-			{
+		if (v6.FragmentHeader != NULL) {
+			if (IPV6_GET_FLAGS(v6.FragmentHeader) & IPV6_FRAGMENT_HEADER_FLAG_MORE_FRAGMENTS) {
 				// Fragmented packet
 				return false;
 			}
@@ -383,37 +324,31 @@ bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss)
 
 		tcp = (TCP_HEADER *)v6.Payload;
 		tcp_size = v6.PayloadSize;
-	}
-	else
-	{
+	} else {
 		// This isn't either IPv4, IPv6
 		return false;
 	}
 
 	// Processing of the TCP header
-	if (tcp == NULL || tcp_size < sizeof(TCP_HEADER))
-	{
+	if (tcp == NULL || tcp_size < sizeof(TCP_HEADER)) {
 		return false;
 	}
 
 	tcp_header_size = TCP_GET_HEADER_SIZE(tcp) * 4;
-	if (tcp_header_size < sizeof(TCP_HEADER))
-	{
+	if (tcp_header_size < sizeof(TCP_HEADER)) {
 		// TCP header size is invalid
 		return false;
 	}
 
-	if (tcp_size < tcp_header_size)
-	{
+	if (tcp_size < tcp_header_size) {
 		// Packet length shortage
 		return false;
 	}
 
 	if (((tcp->Flag & TCP_SYN) == false) ||
-	        ((tcp->Flag & TCP_RST) ||
-	         (tcp->Flag & TCP_PSH) ||
-	         (tcp->Flag & TCP_URG)))
-	{
+	    ((tcp->Flag & TCP_RST) ||
+	     (tcp->Flag & TCP_PSH) ||
+	     (tcp->Flag & TCP_URG))) {
 		// Not a SYN packet
 		return false;
 	}
@@ -422,11 +357,9 @@ bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss)
 	options = ((UCHAR *)tcp) + sizeof(TCP_HEADER);
 	options_size = tcp_header_size - sizeof(TCP_HEADER);
 
-	if (ip6 != NULL)
-	{
+	if (ip6 != NULL) {
 		// Reduce MSS by 20 since an IP header for IPv6 is 20 bytes larger than IPv4
-		if (mss >= 20)
-		{
+		if (mss >= 20) {
 			mss -= 20;
 		}
 	}
@@ -434,31 +367,24 @@ bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss)
 	// MSS should be at least 64
 	mss = MAX(mss, 64);
 
-	if (options_size >= 4 && options[0] == 0x02 && options[1] == 0x04)
-	{
+	if (options_size >= 4 && options[0] == 0x02 && options[1] == 0x04) {
 		// MSS option of TCP is added
 		USHORT current_mss = READ_USHORT(((UCHAR *)options) + 2);
 
-		if (current_mss <= mss)
-		{
+		if (current_mss <= mss) {
 			// if the value of the MSS is smaller than the specified size
 			// from the beginning, it doesn't need to be rewritten
 			return false;
-		}
-		else
-		{
+		} else {
 			WRITE_USHORT(((UCHAR *)options) + 2, mss);
 
 			// Clear the checksum
 			tcp->Checksum = 0;
 
-			if (ip != NULL)
-			{
+			if (ip != NULL) {
 				// Calculate the TCPv4 checksum
 				tcp->Checksum = CalcChecksumForIPv4(ip->SrcIP, ip->DstIP, IP_PROTO_TCP, tcp, tcp_size, 0);
-			}
-			else
-			{
+			} else {
 				// Calculate the TCPv6 checksum
 				tcp->Checksum = CalcChecksumForIPv6(&ip6->SrcAddress, &ip6->DestAddress,
 				                                    IP_PROTO_TCP, tcp, tcp_size, 0);
@@ -466,9 +392,7 @@ bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss)
 
 			return true;
 		}
-	}
-	else
-	{
+	} else {
 		// MSS option of TCP is not added
 		return false;
 	}
@@ -476,8 +400,7 @@ bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss)
 
 
 // Parse the DHCPv4 packet
-DHCPV4_DATA *ParseDHCPv4Data(PKT *pkt)
-{
+DHCPV4_DATA *ParseDHCPv4Data(PKT *pkt) {
 	DHCPV4_DATA *d;
 	UCHAR *data;
 	UINT size;
@@ -485,12 +408,10 @@ DHCPV4_DATA *ParseDHCPv4Data(PKT *pkt)
 	bool ok = false;
 	DHCP_OPTION *o;
 	// Validate arguments
-	if (pkt == NULL)
-	{
+	if (pkt == NULL) {
 		return NULL;
 	}
-	if (pkt->TypeL3 != L3_IPV4 || pkt->TypeL4 != L4_UDP || pkt->TypeL7 != L7_DHCPV4)
-	{
+	if (pkt->TypeL3 != L3_IPV4 || pkt->TypeL4 != L4_UDP || pkt->TypeL7 != L7_DHCPV4) {
 		return NULL;
 	}
 
@@ -498,8 +419,7 @@ DHCPV4_DATA *ParseDHCPv4Data(PKT *pkt)
 	d->Size = (UINT)(pkt->PacketSize - (((UCHAR *)pkt->L7.PointerL7) - ((UCHAR *)pkt->PacketData)));
 	d->Data = Clone(pkt->L7.PointerL7, d->Size);
 
-	if (d->Size < sizeof(DHCPV4_HEADER))
-	{
+	if (d->Size < sizeof(DHCPV4_HEADER)) {
 		goto LABEL_ERROR;
 	}
 
@@ -511,10 +431,8 @@ DHCPV4_DATA *ParseDHCPv4Data(PKT *pkt)
 
 	// Search for the Magic Cookie
 	ok = false;
-	while (size >= 5)
-	{
-		if (Cmp(data, &magic_cookie, 4) == 0)
-		{
+	while (size >= 5) {
+		if (Cmp(data, &magic_cookie, 4) == 0) {
 			// Found
 			data += 4;
 			size -= 4;
@@ -526,8 +444,7 @@ DHCPV4_DATA *ParseDHCPv4Data(PKT *pkt)
 		size--;
 	}
 
-	if (ok == false)
-	{
+	if (ok == false) {
 		// Magic Cookie not found
 		goto LABEL_ERROR;
 	}
@@ -537,8 +454,7 @@ DHCPV4_DATA *ParseDHCPv4Data(PKT *pkt)
 	d->OptionSize = size;
 
 	d->OptionList = ParseDhcpOptions(data, size);
-	if (d->OptionList == NULL)
-	{
+	if (d->OptionList == NULL) {
 		// Parsing failure
 		goto LABEL_ERROR;
 	}
@@ -550,8 +466,7 @@ DHCPV4_DATA *ParseDHCPv4Data(PKT *pkt)
 	d->DestPort = Endian16(pkt->L4.UDPHeader->DstPort);
 
 	o = GetDhcpOption(d->OptionList, DHCP_ID_MESSAGE_TYPE);
-	if (o == NULL || o->Size != 1)
-	{
+	if (o == NULL || o->Size != 1) {
 		goto LABEL_ERROR;
 	}
 
@@ -559,13 +474,11 @@ DHCPV4_DATA *ParseDHCPv4Data(PKT *pkt)
 
 	d->ParsedOptionList = ParseDhcpOptionList(d->OptionData, d->OptionSize);
 
-	if (d->ParsedOptionList == NULL)
-	{
+	if (d->ParsedOptionList == NULL) {
 		goto LABEL_ERROR;
 	}
 
-	if (d->ParsedOptionList->ServerAddress == 0)
-	{
+	if (d->ParsedOptionList->ServerAddress == 0) {
 		d->ParsedOptionList->ServerAddress = d->Header->ServerIP;
 	}
 
@@ -579,11 +492,9 @@ LABEL_ERROR:
 }
 
 // Release the DHCPv4 packet
-void FreeDHCPv4Data(DHCPV4_DATA *d)
-{
+void FreeDHCPv4Data(DHCPV4_DATA *d) {
 	// Validate arguments
-	if (d == NULL)
-	{
+	if (d == NULL) {
 		return;
 	}
 
@@ -596,8 +507,7 @@ void FreeDHCPv4Data(DHCPV4_DATA *d)
 }
 
 // Embed a VLAN tag to the packet
-void VLanInsertTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vlan_tpid)
-{
+void VLanInsertTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vlan_tpid) {
 	UINT dest_size;
 	UCHAR *dest_data;
 	UINT src_size;
@@ -606,12 +516,10 @@ void VLanInsertTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vla
 	USHORT vlan_tpid_ushort;
 	// Validate arguments
 	if (packet_data == NULL || *packet_data == NULL || packet_size == NULL ||
-	        *packet_size < 14 || vlan_id == 0)
-	{
+	    *packet_size < 14 || vlan_id == 0) {
 		return;
 	}
-	if (vlan_tpid == 0)
-	{
+	if (vlan_tpid == 0) {
 		vlan_tpid = MAC_PROTO_TAGVLAN;
 	}
 
@@ -636,21 +544,18 @@ void VLanInsertTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vla
 }
 
 // Remove the VLAN tag from the packet
-bool VLanRemoveTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vlan_tpid)
-{
+bool VLanRemoveTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vlan_tpid) {
 	UCHAR *src_data;
 	UINT src_size;
 	USHORT vlan_tpid_ushort;
 	UCHAR *vlan_tpid_uchar;
 	// Validate arguments
 	if (packet_data == NULL || *packet_data == NULL || packet_size == NULL ||
-	        *packet_size < 14)
-	{
+	    *packet_size < 14) {
 		return false;
 	}
 
-	if (vlan_tpid == 0)
-	{
+	if (vlan_tpid == 0) {
 		vlan_tpid = MAC_PROTO_TAGVLAN;
 	}
 
@@ -660,22 +565,18 @@ bool VLanRemoveTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vla
 	src_data = (UCHAR *)(*packet_data);
 	src_size = *packet_size;
 
-	if (src_data[12] == vlan_tpid_uchar[0] && src_data[13] == vlan_tpid_uchar[1])
-	{
-		if (src_size >= 18)
-		{
+	if (src_data[12] == vlan_tpid_uchar[0] && src_data[13] == vlan_tpid_uchar[1]) {
+		if (src_size >= 18) {
 			USHORT vlan_ushort;
 
 			vlan_ushort = READ_USHORT(&src_data[14]);
 			vlan_ushort = vlan_ushort & 0xFFF;
 
-			if (vlan_id == 0 || (vlan_ushort == vlan_id))
-			{
+			if (vlan_id == 0 || (vlan_ushort == vlan_id)) {
 				UINT dest_size = src_size - 4;
 				UINT i;
 
-				for (i = 12; i < dest_size; i++)
-				{
+				for (i = 12; i < dest_size; i++) {
 					src_data[i] = src_data[i + 4];
 				}
 
@@ -690,14 +591,12 @@ bool VLanRemoveTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vla
 }
 
 // Sending of an ICMPv6 packet
-BUF *BuildICMPv6(IPV6_ADDR *src_ip, IPV6_ADDR *dest_ip, UCHAR hop_limit, UCHAR type, UCHAR code, void *data, UINT size, UINT id)
-{
+BUF *BuildICMPv6(IPV6_ADDR *src_ip, IPV6_ADDR *dest_ip, UCHAR hop_limit, UCHAR type, UCHAR code, void *data, UINT size, UINT id) {
 	ICMP_HEADER *icmp;
 	void *data_buf;
 	BUF *ret;
 	// Validate arguments
-	if (src_ip == NULL || dest_ip == NULL || data == NULL)
-	{
+	if (src_ip == NULL || dest_ip == NULL || data == NULL) {
 		return NULL;
 	}
 
@@ -720,8 +619,7 @@ BUF *BuildICMPv6(IPV6_ADDR *src_ip, IPV6_ADDR *dest_ip, UCHAR hop_limit, UCHAR t
 }
 
 // Build an ICMPv6 Neighbor Solicitation packet
-BUF *BuildICMPv6NeighborSoliciation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCHAR *my_mac_address, UINT id, bool use_multicast)
-{
+BUF *BuildICMPv6NeighborSoliciation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCHAR *my_mac_address, UINT id, bool use_multicast) {
 	ICMPV6_OPTION_LIST opt;
 	ICMPV6_OPTION_LINK_LAYER link;
 	ICMPV6_NEIGHBOR_SOLICIATION_HEADER header;
@@ -729,8 +627,7 @@ BUF *BuildICMPv6NeighborSoliciation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCH
 	BUF *b2;
 	BUF *ret;
 	// Validate arguments
-	if (src_ip == NULL || target_ip == NULL || my_mac_address == NULL)
-	{
+	if (src_ip == NULL || target_ip == NULL || my_mac_address == NULL) {
 		return NULL;
 	}
 
@@ -750,8 +647,7 @@ BUF *BuildICMPv6NeighborSoliciation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCH
 	WriteBuf(b2, &header, sizeof(header));
 	WriteBufBuf(b2, b);
 
-	if (use_multicast)
-	{
+	if (use_multicast) {
 		IPV6_ADDR solicitAddress;
 		Zero(&solicitAddress, sizeof(IPV6_ADDR));
 		solicitAddress.Value[0] = 0xFF;
@@ -761,12 +657,10 @@ BUF *BuildICMPv6NeighborSoliciation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCH
 		Copy(&solicitAddress.Value[13], &target_ip->Value[13], 3);
 
 		ret = BuildICMPv6(src_ip, &solicitAddress, 255,
-	                          ICMPV6_TYPE_NEIGHBOR_SOLICIATION, 0, b2->Buf, b2->Size, id);
-	}
-	else
-	{
+		                  ICMPV6_TYPE_NEIGHBOR_SOLICIATION, 0, b2->Buf, b2->Size, id);
+	} else {
 		ret = BuildICMPv6(src_ip, target_ip, 255,
-	                          ICMPV6_TYPE_NEIGHBOR_SOLICIATION, 0, b2->Buf, b2->Size, id);
+		                  ICMPV6_TYPE_NEIGHBOR_SOLICIATION, 0, b2->Buf, b2->Size, id);
 	}
 
 	FreeBuf(b);
@@ -776,19 +670,16 @@ BUF *BuildICMPv6NeighborSoliciation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCH
 }
 
 // Get the next header number from the queue
-UCHAR IPv6GetNextHeaderFromQueue(QUEUE *q)
-{
+UCHAR IPv6GetNextHeaderFromQueue(QUEUE *q) {
 	UINT *p;
 	UCHAR v = 0;
 	// Validate arguments
-	if (q == NULL)
-	{
+	if (q == NULL) {
 		return IPV6_HEADER_NONE;
 	}
 
 	p = (UINT *)GetNext(q);
-	if (p != NULL)
-	{
+	if (p != NULL) {
 		v = (UCHAR)(*p);
 		Free(p);
 	}
@@ -797,19 +688,16 @@ UCHAR IPv6GetNextHeaderFromQueue(QUEUE *q)
 }
 
 // Add an IPv6 extension header option (variable length)
-void BuildAndAddIPv6PacketOptionHeader(BUF *b, IPV6_OPTION_HEADER *opt, UCHAR next_header, UINT size)
-{
+void BuildAndAddIPv6PacketOptionHeader(BUF *b, IPV6_OPTION_HEADER *opt, UCHAR next_header, UINT size) {
 	IPV6_OPTION_HEADER *h;
 	UINT total_size;
 	// Validate arguments
-	if (b == NULL || opt == NULL)
-	{
+	if (b == NULL || opt == NULL) {
 		return;
 	}
 
 	total_size = size;
-	if ((total_size % 8) != 0)
-	{
+	if ((total_size % 8) != 0) {
 		total_size = ((total_size / 8) + 1) * 8;
 	}
 
@@ -825,19 +713,16 @@ void BuildAndAddIPv6PacketOptionHeader(BUF *b, IPV6_OPTION_HEADER *opt, UCHAR ne
 
 // Build an IPv6 packet
 BUF *BuildIPv6(IPV6_ADDR *dest_ip, IPV6_ADDR *src_ip, UINT id, UCHAR protocol, UCHAR hop_limit, void *data,
-               UINT size)
-{
+               UINT size) {
 	IPV6_HEADER_PACKET_INFO info;
 	IPV6_HEADER ip_header;
 	BUF *buf;
 	UINT size_for_headers;
 	// Validate arguments
-	if (dest_ip == NULL || src_ip == NULL || data == NULL)
-	{
+	if (dest_ip == NULL || src_ip == NULL || data == NULL) {
 		return NULL;
 	}
-	if (hop_limit == 0)
-	{
+	if (hop_limit == 0) {
 		hop_limit = 255;
 	}
 
@@ -856,8 +741,7 @@ BUF *BuildIPv6(IPV6_ADDR *dest_ip, IPV6_ADDR *src_ip, UINT id, UCHAR protocol, U
 	info.PayloadSize = size;
 
 	buf = BuildIPv6PacketHeader(&info, &size_for_headers);
-	if (buf == NULL)
-	{
+	if (buf == NULL) {
 		return NULL;
 	}
 
@@ -865,14 +749,12 @@ BUF *BuildIPv6(IPV6_ADDR *dest_ip, IPV6_ADDR *src_ip, UINT id, UCHAR protocol, U
 }
 
 // Build the IPv6 packet header section
-BUF *BuildIPv6PacketHeader(IPV6_HEADER_PACKET_INFO *info, UINT *bytes_before_payload)
-{
+BUF *BuildIPv6PacketHeader(IPV6_HEADER_PACKET_INFO *info, UINT *bytes_before_payload) {
 	BUF *b;
 	QUEUE *q;
 	UINT bbp = 0;
 	// Validate arguments
-	if (info == NULL)
-	{
+	if (info == NULL) {
 		return NULL;
 	}
 
@@ -880,20 +762,16 @@ BUF *BuildIPv6PacketHeader(IPV6_HEADER_PACKET_INFO *info, UINT *bytes_before_pay
 	q = NewQueueFast();
 
 	// Create the list of options headers
-	if (info->HopHeader != NULL)
-	{
+	if (info->HopHeader != NULL) {
 		InsertQueueInt(q, IPV6_HEADER_HOP);
 	}
-	if (info->EndPointHeader != NULL)
-	{
+	if (info->EndPointHeader != NULL) {
 		InsertQueueInt(q, IPV6_HEADER_ENDPOINT);
 	}
-	if (info->RoutingHeader != NULL)
-	{
+	if (info->RoutingHeader != NULL) {
 		InsertQueueInt(q, IPV6_HEADER_ROUTING);
 	}
-	if (info->FragmentHeader != NULL)
-	{
+	if (info->FragmentHeader != NULL) {
 		InsertQueueInt(q, IPV6_HEADER_FRAGMENT);
 	}
 	InsertQueueInt(q, info->Protocol);
@@ -903,42 +781,36 @@ BUF *BuildIPv6PacketHeader(IPV6_HEADER_PACKET_INFO *info, UINT *bytes_before_pay
 	WriteBuf(b, info->IPv6Header, sizeof(IPV6_HEADER));
 
 	// Hop-by-hop option header
-	if (info->HopHeader != NULL)
-	{
+	if (info->HopHeader != NULL) {
 		BuildAndAddIPv6PacketOptionHeader(b, info->HopHeader,
 		                                  IPv6GetNextHeaderFromQueue(q), info->HopHeaderSize);
 	}
 
 	// End point option header
-	if (info->EndPointHeader != NULL)
-	{
+	if (info->EndPointHeader != NULL) {
 		BuildAndAddIPv6PacketOptionHeader(b, info->EndPointHeader,
 		                                  IPv6GetNextHeaderFromQueue(q), info->EndPointHeaderSize);
 	}
 
 	// Routing header
-	if (info->RoutingHeader != NULL)
-	{
+	if (info->RoutingHeader != NULL) {
 		BuildAndAddIPv6PacketOptionHeader(b, info->RoutingHeader,
 		                                  IPv6GetNextHeaderFromQueue(q), info->RoutingHeaderSize);
 	}
 
 	// Fragment header
-	if (info->FragmentHeader != NULL)
-	{
+	if (info->FragmentHeader != NULL) {
 		info->FragmentHeader->NextHeader = IPv6GetNextHeaderFromQueue(q);
 		WriteBuf(b, info->FragmentHeader, sizeof(IPV6_FRAGMENT_HEADER));
 	}
 
 	bbp = b->Size;
-	if (info->FragmentHeader == NULL)
-	{
+	if (info->FragmentHeader == NULL) {
 		bbp += sizeof(IPV6_FRAGMENT_HEADER);
 	}
 
 	// Payload
-	if (info->Protocol != IPV6_HEADER_NONE)
-	{
+	if (info->Protocol != IPV6_HEADER_NONE) {
 		WriteBuf(b, info->Payload, info->PayloadSize);
 	}
 
@@ -949,8 +821,7 @@ BUF *BuildIPv6PacketHeader(IPV6_HEADER_PACKET_INFO *info, UINT *bytes_before_pay
 	// Payload length
 	((IPV6_HEADER *)b->Buf)->PayloadLength = Endian16(b->Size - (USHORT)sizeof(IPV6_HEADER));
 
-	if (bytes_before_payload != NULL)
-	{
+	if (bytes_before_payload != NULL) {
 		// Calculate the length just before the payload
 		// (by assuming fragment header is always included)
 		*bytes_before_payload = bbp;
@@ -960,14 +831,12 @@ BUF *BuildIPv6PacketHeader(IPV6_HEADER_PACKET_INFO *info, UINT *bytes_before_pay
 }
 
 // Build the option values of an ICMPv6 packet
-void BuildICMPv6OptionValue(BUF *b, UCHAR type, void *header_pointer, UINT total_size)
-{
+void BuildICMPv6OptionValue(BUF *b, UCHAR type, void *header_pointer, UINT total_size) {
 	UINT packet_size;
 	UCHAR *packet;
 	ICMPV6_OPTION *opt;
 	// Validate arguments
-	if (b == NULL || header_pointer == NULL)
-	{
+	if (b == NULL || header_pointer == NULL) {
 		return;
 	}
 
@@ -985,39 +854,30 @@ void BuildICMPv6OptionValue(BUF *b, UCHAR type, void *header_pointer, UINT total
 }
 
 // Build the options of the ICMPv6 packet
-BUF *BuildICMPv6Options(ICMPV6_OPTION_LIST *o)
-{
+BUF *BuildICMPv6Options(ICMPV6_OPTION_LIST *o) {
 	BUF *b;
 	UINT i;
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return NULL;
 	}
 
 	b = NewBuf();
 
-	if (o->SourceLinkLayer != NULL)
-	{
+	if (o->SourceLinkLayer != NULL) {
 		BuildICMPv6OptionValue(b, ICMPV6_OPTION_TYPE_SOURCE_LINK_LAYER, o->SourceLinkLayer, sizeof(ICMPV6_OPTION_LINK_LAYER));
 	}
-	if (o->TargetLinkLayer != NULL)
-	{
+	if (o->TargetLinkLayer != NULL) {
 		BuildICMPv6OptionValue(b, ICMPV6_OPTION_TYPE_TARGET_LINK_LAYER, o->TargetLinkLayer, sizeof(ICMPV6_OPTION_LINK_LAYER));
 	}
-	for (i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++)
-	{
-		if (o->Prefix[i] != NULL)
-		{
+	for (i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++) {
+		if (o->Prefix[i] != NULL) {
 			BuildICMPv6OptionValue(b, ICMPV6_OPTION_TYPE_PREFIX, o->Prefix[i], sizeof(ICMPV6_OPTION_PREFIX));
-		}
-		else
-		{
+		} else {
 			break;
 		}
 	}
-	if (o->Mtu != NULL)
-	{
+	if (o->Mtu != NULL) {
 		BuildICMPv6OptionValue(b, ICMPV6_OPTION_TYPE_MTU, o->Mtu, sizeof(ICMPV6_OPTION_MTU));
 	}
 
@@ -1027,8 +887,7 @@ BUF *BuildICMPv6Options(ICMPV6_OPTION_LIST *o)
 }
 
 // Checksum calculation (IPv4)
-USHORT CalcChecksumForIPv4(UINT src_ip, UINT dst_ip, UCHAR protocol, void *data, UINT size, UINT real_size)
-{
+USHORT CalcChecksumForIPv4(UINT src_ip, UINT dst_ip, UCHAR protocol, void *data, UINT size, UINT real_size) {
 	UCHAR *tmp;
 	UINT tmp_size;
 	IPV4_PSEUDO_HEADER *ph;
@@ -1036,31 +895,25 @@ USHORT CalcChecksumForIPv4(UINT src_ip, UINT dst_ip, UCHAR protocol, void *data,
 	bool use_free = false;
 	UCHAR tmp_buffer[1600];
 	// Validate arguments
-	if (data == NULL && size != 0)
-	{
+	if (data == NULL && size != 0) {
 		return 0;
 	}
 
-	if (real_size == 0)
-	{
+	if (real_size == 0) {
 		real_size = size;
 	}
 
-	if (real_size == INFINITE)
-	{
+	if (real_size == INFINITE) {
 		real_size = 0;
 	}
 
 	tmp_size = size + sizeof(IPV4_PSEUDO_HEADER);
 
-	if (tmp_size > sizeof(tmp_buffer))
-	{
+	if (tmp_size > sizeof(tmp_buffer)) {
 		tmp = Malloc(tmp_size);
 
 		use_free = true;
-	}
-	else
-	{
+	} else {
 		tmp = tmp_buffer;
 	}
 
@@ -1071,15 +924,13 @@ USHORT CalcChecksumForIPv4(UINT src_ip, UINT dst_ip, UCHAR protocol, void *data,
 	ph->Protocol = protocol;
 	ph->Reserved = 0;
 
-	if (size >= 1)
-	{
+	if (size >= 1) {
 		Copy(((UCHAR *)tmp) + sizeof(IPV4_PSEUDO_HEADER), data, size);
 	}
 
 	ret = IpChecksum(tmp, tmp_size);
 
-	if (use_free)
-	{
+	if (use_free) {
 		Free(tmp);
 	}
 
@@ -1087,8 +938,7 @@ USHORT CalcChecksumForIPv4(UINT src_ip, UINT dst_ip, UCHAR protocol, void *data,
 }
 
 // Checksum calculation (IPv6)
-USHORT CalcChecksumForIPv6(IPV6_ADDR *src_ip, IPV6_ADDR *dest_ip, UCHAR protocol, void *data, UINT size, UINT real_size)
-{
+USHORT CalcChecksumForIPv6(IPV6_ADDR *src_ip, IPV6_ADDR *dest_ip, UCHAR protocol, void *data, UINT size, UINT real_size) {
 	UCHAR *tmp;
 	UINT tmp_size;
 	IPV6_PSEUDO_HEADER *ph;
@@ -1096,31 +946,25 @@ USHORT CalcChecksumForIPv6(IPV6_ADDR *src_ip, IPV6_ADDR *dest_ip, UCHAR protocol
 	bool use_free = false;
 	UCHAR tmp_buffer[256];
 	// Validate arguments
-	if (data == NULL && size != 0)
-	{
+	if (data == NULL && size != 0) {
 		return 0;
 	}
 
-	if (real_size == 0)
-	{
+	if (real_size == 0) {
 		real_size = size;
 	}
 
-	if (real_size == INFINITE)
-	{
+	if (real_size == INFINITE) {
 		real_size = 0;
 	}
 
 	tmp_size = size + sizeof(IPV6_PSEUDO_HEADER);
 
-	if (tmp_size > sizeof(tmp_buffer))
-	{
+	if (tmp_size > sizeof(tmp_buffer)) {
 		tmp = Malloc(tmp_size);
 
 		use_free = true;
-	}
-	else
-	{
+	} else {
 		tmp = tmp_buffer;
 	}
 
@@ -1135,8 +979,7 @@ USHORT CalcChecksumForIPv6(IPV6_ADDR *src_ip, IPV6_ADDR *dest_ip, UCHAR protocol
 
 	ret = IpChecksum(tmp, tmp_size);
 
-	if (use_free)
-	{
+	if (use_free) {
 		Free(tmp);
 	}
 
@@ -1144,11 +987,9 @@ USHORT CalcChecksumForIPv6(IPV6_ADDR *src_ip, IPV6_ADDR *dest_ip, UCHAR protocol
 }
 
 // Release the cloned packet
-void FreeClonePacket(PKT *p)
-{
+void FreeClonePacket(PKT *p) {
 	// Validate arguments
-	if (p == NULL)
-	{
+	if (p == NULL) {
 		return;
 	}
 
@@ -1172,12 +1013,10 @@ void FreeClonePacket(PKT *p)
 }
 
 // Copy the packet header
-PKT *ClonePacket(PKT *p, bool copy_data)
-{
+PKT *ClonePacket(PKT *p, bool copy_data) {
 	PKT *ret;
 	// Validate arguments
-	if (p == NULL)
-	{
+	if (p == NULL) {
 		return NULL;
 	}
 
@@ -1198,8 +1037,7 @@ PKT *ClonePacket(PKT *p, bool copy_data)
 
 	// Layer 3
 	ret->TypeL3 = p->TypeL3;
-	switch (ret->TypeL3)
-	{
+	switch (ret->TypeL3) {
 	case L3_ARPV4:
 		// ARP packet
 		ret->L3.ARPv4Header = MallocFast(sizeof(ARPV4_HEADER));
@@ -1218,29 +1056,28 @@ PKT *ClonePacket(PKT *p, bool copy_data)
 		Copy(ret->L3.IPv6Header, p->L3.IPv6Header, sizeof(IPV6_HEADER));
 
 		ret->IPv6HeaderPacketInfo.IPv6Header = Clone(p->IPv6HeaderPacketInfo.IPv6Header,
-		                                       sizeof(IPV6_HEADER));
+		                                             sizeof(IPV6_HEADER));
 
 		ret->IPv6HeaderPacketInfo.HopHeader = Clone(p->IPv6HeaderPacketInfo.HopHeader,
-		                                      sizeof(IPV6_OPTION_HEADER));
+		                                            sizeof(IPV6_OPTION_HEADER));
 
 		ret->IPv6HeaderPacketInfo.EndPointHeader = Clone(p->IPv6HeaderPacketInfo.EndPointHeader,
-		        sizeof(IPV6_OPTION_HEADER));
+		                                                 sizeof(IPV6_OPTION_HEADER));
 
 		ret->IPv6HeaderPacketInfo.RoutingHeader = Clone(p->IPv6HeaderPacketInfo.RoutingHeader,
-		        sizeof(IPV6_OPTION_HEADER));
+		                                                sizeof(IPV6_OPTION_HEADER));
 
 		ret->IPv6HeaderPacketInfo.FragmentHeader = Clone(p->IPv6HeaderPacketInfo.FragmentHeader,
-		        sizeof(IPV6_FRAGMENT_HEADER));
+		                                                 sizeof(IPV6_FRAGMENT_HEADER));
 
 		ret->IPv6HeaderPacketInfo.Payload = Clone(p->IPv6HeaderPacketInfo.Payload,
-		                                    p->IPv6HeaderPacketInfo.PayloadSize);
+		                                          p->IPv6HeaderPacketInfo.PayloadSize);
 		break;
 	}
 
 	// Layer 4
 	ret->TypeL4 = p->TypeL4;
-	switch (ret->TypeL4)
-	{
+	switch (ret->TypeL4) {
 	case L4_ICMPV4:
 		// ICMPv4 packet
 		ret->L4.ICMPHeader = MallocFast(sizeof(ICMP_HEADER));
@@ -1253,13 +1090,12 @@ PKT *ClonePacket(PKT *p, bool copy_data)
 		Copy(ret->L4.ICMPHeader, p->L4.ICMPHeader, sizeof(ICMP_HEADER));
 
 		ret->ICMPv6HeaderPacketInfo.Data = Clone(p->ICMPv6HeaderPacketInfo.Data,
-		                                   p->ICMPv6HeaderPacketInfo.DataSize);
+		                                         p->ICMPv6HeaderPacketInfo.DataSize);
 
 		ret->ICMPv6HeaderPacketInfo.EchoData = Clone(p->ICMPv6HeaderPacketInfo.EchoData,
-		                                       p->ICMPv6HeaderPacketInfo.EchoDataSize);
+		                                             p->ICMPv6HeaderPacketInfo.EchoDataSize);
 
-		switch (ret->ICMPv6HeaderPacketInfo.Type)
-		{
+		switch (ret->ICMPv6HeaderPacketInfo.Type) {
 		case ICMPV6_TYPE_ECHO_REQUEST:
 		case ICMPV6_TYPE_ECHO_RESPONSE:
 			break;
@@ -1308,8 +1144,7 @@ PKT *ClonePacket(PKT *p, bool copy_data)
 
 	// Layer 7
 	ret->TypeL7 = p->TypeL7;
-	switch (ret->TypeL7)
-	{
+	switch (ret->TypeL7) {
 	case L7_DHCPV4:
 		// DHCP packet
 		ret->L7.DHCPv4Header = MallocFast(sizeof(DHCPV4_HEADER));
@@ -1331,15 +1166,13 @@ PKT *ClonePacket(PKT *p, bool copy_data)
 	ret->MacAddressSrc = ret->MacHeader->SrcAddress;
 	ret->MacAddressDest = ret->MacHeader->DestAddress;
 
-	if (copy_data)
-	{
+	if (copy_data) {
 		// Copy also the packet body
 		ret->PacketData = MallocFast(p->PacketSize);
 		Copy(ret->PacketData, p->PacketData, p->PacketSize);
 	}
 
-	if (p->HttpLog != NULL)
-	{
+	if (p->HttpLog != NULL) {
 		ret->HttpLog = Clone(p->HttpLog, sizeof(HTTPLOG));
 	}
 
@@ -1347,38 +1180,30 @@ PKT *ClonePacket(PKT *p, bool copy_data)
 }
 
 // Parse the contents of the packet
-PKT *ParsePacket(UCHAR *buf, UINT size)
-{
+PKT *ParsePacket(UCHAR *buf, UINT size) {
 	return ParsePacketEx(buf, size, false);
 }
-PKT *ParsePacketEx(UCHAR *buf, UINT size, bool no_l3)
-{
+PKT *ParsePacketEx(UCHAR *buf, UINT size, bool no_l3) {
 	return ParsePacketEx2(buf, size, no_l3, 0);
 }
-PKT *ParsePacketEx2(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id)
-{
+PKT *ParsePacketEx2(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id) {
 	return ParsePacketEx3(buf, size, no_l3, vlan_type_id, true);
 }
-PKT *ParsePacketEx3(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address)
-{
+PKT *ParsePacketEx3(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address) {
 	return ParsePacketEx4(buf, size, no_l3, vlan_type_id, bridge_id_as_mac_address, false, false);
 }
-PKT *ParsePacketEx4(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum)
-{
+PKT *ParsePacketEx4(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum) {
 	return ParsePacketEx5(buf, size, no_l3, vlan_type_id, bridge_id_as_mac_address, no_http, correct_checksum, false);
 }
-PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum, bool no_l3_l4_except_icmpv6)
-{
+PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum, bool no_l3_l4_except_icmpv6) {
 	PKT *p;
 	USHORT vlan_type_id_16;
 	// Validate arguments
-	if (buf == NULL || size == 0)
-	{
+	if (buf == NULL || size == 0) {
 		return NULL;
 	}
 
-	if (vlan_type_id == 0)
-	{
+	if (vlan_type_id == 0) {
 		vlan_type_id = MAC_PROTO_TAGVLAN;
 	}
 
@@ -1389,66 +1214,49 @@ PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool b
 	p->VlanTypeID = vlan_type_id;
 
 	// If there is garbage after the payload in IPv4 and IPv6 packets, eliminate it
-	if (size >= 24)
-	{
-		if (buf[12] == 0x08 && buf[13] == 0x00)
-		{
+	if (size >= 24) {
+		if (buf[12] == 0x08 && buf[13] == 0x00) {
 			USHORT ip_total_size2 = READ_USHORT(&buf[16]);
 			UINT mac_packet_size;
 
-			if (ip_total_size2 >= 1)
-			{
+			if (ip_total_size2 >= 1) {
 				mac_packet_size = (UINT)ip_total_size2 + 14;
 
-				if (size > mac_packet_size)
-				{
+				if (size > mac_packet_size) {
 					size = mac_packet_size;
 				}
 			}
-		}
-		else if (buf[12] == 0x86 && buf[13] == 0xdd)
-		{
+		} else if (buf[12] == 0x86 && buf[13] == 0xdd) {
 			USHORT ip_payload_size_2 = READ_USHORT(&buf[18]);
 			UINT mac_packet_size;
 
-			if (ip_payload_size_2 >= 1)
-			{
+			if (ip_payload_size_2 >= 1) {
 				mac_packet_size = (UINT)ip_payload_size_2 + 14 + 40;
 
-				if (size > mac_packet_size)
-				{
+				if (size > mac_packet_size) {
 					size = mac_packet_size;
 				}
 			}
-		}
-		else if (buf[12] == ((UCHAR *)&vlan_type_id_16)[0] && buf[13] == ((UCHAR *)&vlan_type_id_16)[1])
-		{
-			if (buf[16] == 0x08 && buf[17] == 0x00)
-			{
+		} else if (buf[12] == ((UCHAR *)&vlan_type_id_16)[0] && buf[13] == ((UCHAR *)&vlan_type_id_16)[1]) {
+			if (buf[16] == 0x08 && buf[17] == 0x00) {
 				USHORT ip_total_size2 = READ_USHORT(&buf[20]);
 				UINT mac_packet_size;
 
-				if (ip_total_size2 >= 1)
-				{
+				if (ip_total_size2 >= 1) {
 					mac_packet_size = (UINT)ip_total_size2 + 14 + 4;
 
-					if (size > mac_packet_size)
-					{
+					if (size > mac_packet_size) {
 						size = mac_packet_size;
 					}
 				}
-			}
-			else if (buf[16] == 0x86 && buf[17] == 0xdd)
-			{
+			} else if (buf[16] == 0x86 && buf[17] == 0xdd) {
 				USHORT ip_payload_size_2 = READ_USHORT(&buf[22]);
 				UINT mac_packet_size;
 
-				if (ip_payload_size_2 >= 1)
-				{
+				if (ip_payload_size_2 >= 1) {
 					mac_packet_size = (UINT)ip_payload_size_2 + 14 + 40 + 4;
 
-					if (size > mac_packet_size)
-					{
+					if (size > mac_packet_size) {
 						size = mac_packet_size;
 					}
 				}
@@ -1457,8 +1265,7 @@ PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool b
 	}
 
 	// Do parse
-	if (ParsePacketL2Ex(p, buf, size, no_l3, no_l3_l4_except_icmpv6) == false)
-	{
+	if (ParsePacketL2Ex(p, buf, size, no_l3, no_l3_l4_except_icmpv6) == false) {
 		// Parsing failure
 		FreePacket(p);
 		return NULL;
@@ -1470,62 +1277,50 @@ PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool b
 	p->MacAddressSrc = p->MacHeader->SrcAddress;
 	p->MacAddressDest = p->MacHeader->DestAddress;
 
-	if (bridge_id_as_mac_address)
-	{
-		if (p->TypeL3 == L3_BPDU)
-		{
-			if (p->L3.BpduHeader != NULL)
-			{
+	if (bridge_id_as_mac_address) {
+		if (p->TypeL3 == L3_BPDU) {
+			if (p->L3.BpduHeader != NULL) {
 				p->MacAddressSrc = p->L3.BpduHeader->BridgeMacAddress;
 			}
 		}
 	}
 
-	if (no_http == false)
-	{
+	if (no_http == false) {
 		USHORT port_raw = Endian16(80);
 		USHORT port_raw2 = Endian16(8080);
 		USHORT port_raw3 = Endian16(443);
 		USHORT port_raw4 = Endian16(3128);
 
 		// Analyze if the packet is a part of HTTP
-		if ((p->TypeL3 == L3_IPV4 || p->TypeL3 == L3_IPV6) && p->TypeL4 == L4_TCP)
-		{
+		if ((p->TypeL3 == L3_IPV4 || p->TypeL3 == L3_IPV6) && p->TypeL4 == L4_TCP) {
 			TCP_HEADER *tcp = p->L4.TCPHeader;
 			if (tcp != NULL && (tcp->DstPort == port_raw || tcp->DstPort == port_raw2 || tcp->DstPort == port_raw4) &&
-			        (!((tcp->Flag & TCP_SYN) || (tcp->Flag & TCP_RST) || (tcp->Flag & TCP_FIN))))
-			{
-				if (p->PayloadSize >= 1)
-				{
+			    (!((tcp->Flag & TCP_SYN) || (tcp->Flag & TCP_RST) || (tcp->Flag & TCP_FIN)))) {
+				if (p->PayloadSize >= 1) {
 					p->HttpLog = ParseHttpAccessLog(p);
 				}
 			}
 			if (tcp != NULL && tcp->DstPort == port_raw3 &&
-			        (!((tcp->Flag & TCP_SYN) || (tcp->Flag & TCP_RST) || (tcp->Flag & TCP_FIN))))
-			{
-				if (p->PayloadSize >= 1)
-				{
+			    (!((tcp->Flag & TCP_SYN) || (tcp->Flag & TCP_RST) || (tcp->Flag & TCP_FIN)))) {
+				if (p->PayloadSize >= 1) {
 					p->HttpLog = ParseHttpsAccessLog(p);
 				}
 			}
 		}
 	}
 
-	if (p->TypeL3 == L3_IPV4 && p->TypeL4 == L4_UDP && p->TypeL7 == L7_DHCPV4)
-	{
+	if (p->TypeL3 == L3_IPV4 && p->TypeL4 == L4_UDP && p->TypeL7 == L7_DHCPV4) {
 		// Get the DHCP opcode
 		DHCPV4_DATA *d = ParseDHCPv4Data(p);
 
-		if (d != NULL)
-		{
+		if (d != NULL) {
 			p->DhcpOpCode = d->OpCode;
 
 			FreeDHCPv4Data(d);
 		}
 	}
 
-	if (correct_checksum)
-	{
+	if (correct_checksum) {
 		// Correct the checksum of the UDP, IP and TCP
 		CorrectChecksum(p);
 	}
@@ -1535,40 +1330,31 @@ PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool b
 }
 
 // Correct the checksum (store the correct value in the header by recalculating the checksum which is by off-load processing)
-void CorrectChecksum(PKT *p)
-{
+void CorrectChecksum(PKT *p) {
 	// Validate arguments
-	if (p == NULL)
-	{
+	if (p == NULL) {
 		return;
 	}
 
-	if (p->TypeL3 == L3_IPV4)
-	{
+	if (p->TypeL3 == L3_IPV4) {
 		IPV4_HEADER *v4 = p->L3.IPv4Header;
 
-		if (v4 != NULL)
-		{
-			if (v4->Checksum == 0x0000)
-			{
+		if (v4 != NULL) {
+			if (v4->Checksum == 0x0000) {
 				v4->Checksum = IpChecksum(v4, IPV4_GET_HEADER_LEN(v4) * 4);
 			}
 
-			if (p->TypeL4 == L4_TCP)
-			{
+			if (p->TypeL4 == L4_TCP) {
 				// Recalculate the TCP checksum
-				if (IPV4_GET_OFFSET(v4) == 0 && (IPV4_GET_FLAGS(v4) & 0x01) == 0)
-				{
+				if (IPV4_GET_OFFSET(v4) == 0 && (IPV4_GET_FLAGS(v4) & 0x01) == 0) {
 					// TCP checksuming doesn't target fragmented IP packets
 					TCP_HEADER *tcp = p->L4.TCPHeader;
 
-					if (tcp != NULL)
-					{
+					if (tcp != NULL) {
 						USHORT tcp_offloading_checksum1 = CalcChecksumForIPv4(v4->SrcIP, v4->DstIP, IP_PROTO_TCP, NULL, 0, p->IPv4PayloadSize);
 						USHORT tcp_offloading_checksum2 = ~tcp_offloading_checksum1;
 
-						if (tcp->Checksum == 0 || tcp->Checksum == tcp_offloading_checksum1 || tcp->Checksum == tcp_offloading_checksum2)
-						{
+						if (tcp->Checksum == 0 || tcp->Checksum == tcp_offloading_checksum1 || tcp->Checksum == tcp_offloading_checksum2) {
 							tcp->Checksum = 0;
 							tcp->Checksum = CalcChecksumForIPv4(v4->SrcIP, v4->DstIP, IP_PROTO_TCP, tcp, p->IPv4PayloadSize, 0);
 						}
@@ -1576,31 +1362,24 @@ void CorrectChecksum(PKT *p)
 				}
 			}
 
-			if (p->TypeL4 == L4_UDP)
-			{
+			if (p->TypeL4 == L4_UDP) {
 				// Recalculation of the UDP checksum
-				if (IPV4_GET_OFFSET(v4) == 0 || (IPV4_GET_FLAGS(v4) & 0x01) == 0)
-				{
+				if (IPV4_GET_OFFSET(v4) == 0 || (IPV4_GET_FLAGS(v4) & 0x01) == 0) {
 					// If it is not divided, or it is divided but it is the first fragment of the UDP packet
 					UDP_HEADER *udp = p->L4.UDPHeader;
 
-					if (udp != NULL && udp->Checksum != 0)
-					{
+					if (udp != NULL && udp->Checksum != 0) {
 						USHORT udp_len = Endian16(udp->PacketLength);
 						USHORT udp_offloading_checksum1 = CalcChecksumForIPv4(v4->SrcIP, v4->DstIP, IP_PROTO_UDP, NULL, 0, udp_len);
 						USHORT udp_offloading_checksum2 = ~udp_offloading_checksum1;
 
-						if (udp->Checksum == udp_offloading_checksum1 || udp->Checksum == udp_offloading_checksum2)
-						{
+						if (udp->Checksum == udp_offloading_checksum1 || udp->Checksum == udp_offloading_checksum2) {
 							udp->Checksum = 0;
 
-							if ((IPV4_GET_FLAGS(v4) & 0x01) == 0 && (p->IPv4PayloadSize >= udp_len))
-							{
+							if ((IPV4_GET_FLAGS(v4) & 0x01) == 0 && (p->IPv4PayloadSize >= udp_len)) {
 								// Calculate the checksum correctly based on the data in case of a non-fragmented packet
 								udp->Checksum = CalcChecksumForIPv4(v4->SrcIP, v4->DstIP, IP_PROTO_UDP, udp, udp_len, 0);
-							}
-							else
-							{
+							} else {
 								// In case of the first fragment of the packet, set the checksum to 0
 								// because there isn't entire data of the packet
 								udp->Checksum = 0;
@@ -1610,62 +1389,46 @@ void CorrectChecksum(PKT *p)
 				}
 			}
 		}
-	}
-	else if (p->TypeL3 == L3_IPV6)
-	{
+	} else if (p->TypeL3 == L3_IPV6) {
 		IPV6_HEADER *v6 = p->L3.IPv6Header;
 		IPV6_HEADER_PACKET_INFO *v6info = &p->IPv6HeaderPacketInfo;
 
-		if (v6 != NULL)
-		{
-			if (p->TypeL4 == L4_TCP)
-			{
+		if (v6 != NULL) {
+			if (p->TypeL4 == L4_TCP) {
 				// Recalculate the TCP checksum
-				if (v6info->IsFragment == false)
-				{
-					if (v6info->FragmentHeader == NULL || ((IPV6_GET_FLAGS(v6info->FragmentHeader) & IPV6_FRAGMENT_HEADER_FLAG_MORE_FRAGMENTS) == 0))
-					{
+				if (v6info->IsFragment == false) {
+					if (v6info->FragmentHeader == NULL || ((IPV6_GET_FLAGS(v6info->FragmentHeader) & IPV6_FRAGMENT_HEADER_FLAG_MORE_FRAGMENTS) == 0)) {
 						// TCP checksuming doesn't target fragmented packets
 						TCP_HEADER *tcp = p->L4.TCPHeader;
 
-						if (tcp != NULL)
-						{
+						if (tcp != NULL) {
 							USHORT tcp_offloading_checksum1 = CalcChecksumForIPv6(&v6->SrcAddress, &v6->DestAddress, IP_PROTO_TCP, NULL, 0, v6info->PayloadSize);
 							USHORT tcp_offloading_checksum2 = ~tcp_offloading_checksum1;
 
-							if (tcp->Checksum == 0 || tcp->Checksum == tcp_offloading_checksum1 || tcp->Checksum == tcp_offloading_checksum2)
-							{
+							if (tcp->Checksum == 0 || tcp->Checksum == tcp_offloading_checksum1 || tcp->Checksum == tcp_offloading_checksum2) {
 								tcp->Checksum = 0;
 								tcp->Checksum = CalcChecksumForIPv6(&v6->SrcAddress, &v6->DestAddress, IP_PROTO_TCP, tcp, v6info->PayloadSize, 0);
 							}
 						}
 					}
 				}
-			}
-			else if (p->TypeL4 == L4_UDP)
-			{
+			} else if (p->TypeL4 == L4_UDP) {
 				// Recalculation of the UDP checksum
-				if (v6info->IsFragment == false)
-				{
+				if (v6info->IsFragment == false) {
 					UDP_HEADER *udp = p->L4.UDPHeader;
 
-					if (udp != NULL && udp->Checksum != 0)
-					{
+					if (udp != NULL && udp->Checksum != 0) {
 						USHORT udp_len = Endian16(udp->PacketLength);
 						USHORT udp_offloading_checksum1 = CalcChecksumForIPv6(&v6->SrcAddress, &v6->DestAddress, IP_PROTO_UDP, NULL, 0, udp_len);
 						USHORT udp_offloading_checksum2 = ~udp_offloading_checksum1;
 
-						if (udp->Checksum == udp_offloading_checksum1 || udp->Checksum == udp_offloading_checksum2)
-						{
+						if (udp->Checksum == udp_offloading_checksum1 || udp->Checksum == udp_offloading_checksum2) {
 							udp->Checksum = 0;
 
-							if ((v6info->FragmentHeader == NULL || ((IPV6_GET_FLAGS(v6info->FragmentHeader) & IPV6_FRAGMENT_HEADER_FLAG_MORE_FRAGMENTS) == 0)) && (v6info->PayloadSize >= udp_len))
-							{
+							if ((v6info->FragmentHeader == NULL || ((IPV6_GET_FLAGS(v6info->FragmentHeader) & IPV6_FRAGMENT_HEADER_FLAG_MORE_FRAGMENTS) == 0)) && (v6info->PayloadSize >= udp_len)) {
 								// If the packet is not fragmented, recalculate the checksum
 								udp->Checksum = CalcChecksumForIPv6(&v6->SrcAddress, &v6->DestAddress, IP_PROTO_UDP, udp, udp_len, 0);
-							}
-							else
-							{
+							} else {
 								// Don't do (can't do) anything in the case of fragmented packet
 							}
 						}
@@ -1678,18 +1441,15 @@ void CorrectChecksum(PKT *p)
 
 
 // Parse the HTTPS access log
-HTTPLOG *ParseHttpsAccessLog(PKT *pkt)
-{
+HTTPLOG *ParseHttpsAccessLog(PKT *pkt) {
 	HTTPLOG h;
 	char sni[MAX_PATH];
 	// Validate arguments
-	if (pkt == NULL)
-	{
+	if (pkt == NULL) {
 		return NULL;
 	}
 
-	if (GetSniNameFromSslPacket(pkt->Payload, pkt->PayloadSize, sni, sizeof(sni)) == false)
-	{
+	if (GetSniNameFromSslPacket(pkt->Payload, pkt->PayloadSize, sni, sizeof(sni)) == false) {
 		return NULL;
 	}
 
@@ -1705,8 +1465,7 @@ HTTPLOG *ParseHttpsAccessLog(PKT *pkt)
 }
 
 // Parse the HTTP access log
-HTTPLOG *ParseHttpAccessLog(PKT *pkt)
-{
+HTTPLOG *ParseHttpAccessLog(PKT *pkt) {
 	HTTPLOG h;
 	UCHAR *buf;
 	UINT size;
@@ -1714,24 +1473,21 @@ HTTPLOG *ParseHttpAccessLog(PKT *pkt)
 	char *line1;
 	bool ok = false;
 	// Validate arguments
-	if (pkt == NULL)
-	{
+	if (pkt == NULL) {
 		return NULL;
 	}
 
 	buf = pkt->Payload;
 	size = pkt->PayloadSize;
 
-	if (size <= 5)
-	{
+	if (size <= 5) {
 		return NULL;
 	}
 
 	// Check whether it starts with the HTTP-specific string
 	if (CmpCaseIgnore(buf, "GET ", 4) != 0 &&
-	        CmpCaseIgnore(buf, "HEAD ", 5) != 0 &&
-	        CmpCaseIgnore(buf, "POST ", 5) != 0)
-	{
+	    CmpCaseIgnore(buf, "HEAD ", 5) != 0 &&
+	    CmpCaseIgnore(buf, "POST ", 5) != 0) {
 		return NULL;
 	}
 
@@ -1745,13 +1501,10 @@ HTTPLOG *ParseHttpAccessLog(PKT *pkt)
 
 	line1 = CfgReadNextLine(b);
 
-	if (line1 != NULL)
-	{
+	if (line1 != NULL) {
 		TOKEN_LIST *tokens = ParseToken(line1, " \t");
-		if (tokens != NULL)
-		{
-			if (tokens->NumTokens == 3)
-			{
+		if (tokens != NULL) {
+			if (tokens->NumTokens == 3) {
 				StrCpy(h.Method, sizeof(h.Hostname), tokens->Token[0]);
 				Trim(h.Method);
 
@@ -1763,19 +1516,16 @@ HTTPLOG *ParseHttpAccessLog(PKT *pkt)
 
 				StrUpper(h.Method);
 
-				while (true)
-				{
+				while (true) {
 					char *line = CfgReadNextLine(b);
 					UINT i;
 
-					if (line == NULL)
-					{
+					if (line == NULL) {
 						break;
 					}
 
 					i = SearchStr(line, ":", 0);
-					if (i != INFINITE && i < (MAX_SIZE / 2))
-					{
+					if (i != INFINITE && i < (MAX_SIZE / 2)) {
 						char name[MAX_SIZE];
 						char value[MAX_SIZE];
 
@@ -1786,16 +1536,11 @@ HTTPLOG *ParseHttpAccessLog(PKT *pkt)
 						StrCpy(value, sizeof(value), line + i + 1);
 						Trim(value);
 
-						if (StrCmpi(name, "host") == 0)
-						{
+						if (StrCmpi(name, "host") == 0) {
 							StrCpy(h.Hostname, sizeof(h.Hostname), value);
-						}
-						else if (StrCmpi(name, "referer") == 0)
-						{
+						} else if (StrCmpi(name, "referer") == 0) {
 							StrCpy(h.Referer, sizeof(h.Referer), value);
-						}
-						else if (StrCmpi(name, "user-agent") == 0)
-						{
+						} else if (StrCmpi(name, "user-agent") == 0) {
 							StrCpy(h.UserAgent, sizeof(h.UserAgent), value);
 						}
 					}
@@ -1803,8 +1548,7 @@ HTTPLOG *ParseHttpAccessLog(PKT *pkt)
 					Free(line);
 				}
 
-				if (IsEmptyStr(h.Hostname) == false)
-				{
+				if (IsEmptyStr(h.Hostname) == false) {
 					ok = true;
 				}
 			}
@@ -1815,32 +1559,26 @@ HTTPLOG *ParseHttpAccessLog(PKT *pkt)
 	Free(line1);
 	FreeBuf(b);
 
-	if (ok)
-	{
+	if (ok) {
 		return Clone(&h, sizeof(h));
-	}
-	else
-	{
+	} else {
 		return NULL;
 	}
 }
 
 
 // Layer-2 parsing
-bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4_except_icmpv6)
-{
+bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4_except_icmpv6) {
 	UINT i;
 	bool b1, b2;
 	USHORT type_id_16;
 	// Validate arguments
-	if (p == NULL || buf == NULL)
-	{
+	if (p == NULL || buf == NULL) {
 		return false;
 	}
 
 	// Check the size
-	if (size < sizeof(MAC_HEADER))
-	{
+	if (size < sizeof(MAC_HEADER)) {
 		return false;
 	}
 
@@ -1854,61 +1592,46 @@ bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4_ex
 	p->BroadcastPacket = true;
 	b1 = true;
 	b2 = true;
-	for (i = 0; i < 6; i++)
-	{
-		if (p->MacHeader->DestAddress[i] != 0xff)
-		{
+	for (i = 0; i < 6; i++) {
+		if (p->MacHeader->DestAddress[i] != 0xff) {
 			p->BroadcastPacket = false;
 		}
-		if (p->MacHeader->SrcAddress[i] != 0xff)
-		{
+		if (p->MacHeader->SrcAddress[i] != 0xff) {
 			b1 = false;
 		}
-		if (p->MacHeader->SrcAddress[i] != 0x00)
-		{
+		if (p->MacHeader->SrcAddress[i] != 0x00) {
 			b2 = false;
 		}
 	}
-	if (b1 || b2 || (Cmp(p->MacHeader->SrcAddress, p->MacHeader->DestAddress, 6) == 0))
-	{
+	if (b1 || b2 || (Cmp(p->MacHeader->SrcAddress, p->MacHeader->DestAddress, 6) == 0)) {
 		p->InvalidSourcePacket = true;
-	}
-	else
-	{
+	} else {
 		p->InvalidSourcePacket = false;
 	}
 
-	if (p->MacHeader->DestAddress[0] & 0x01)
-	{
+	if (p->MacHeader->DestAddress[0] & 0x01) {
 		p->BroadcastPacket = true;
 	}
 
 	// Parse L3 packet
 	type_id_16 = Endian16(p->MacHeader->Protocol);
 
-	if (type_id_16 > 1500)
-	{
-		if (type_id_16 == MAC_PROTO_TAGVLAN)
-		{
+	if (type_id_16 > 1500) {
+		if (type_id_16 == MAC_PROTO_TAGVLAN) {
 			// Parse VLAN frame
 			return ParsePacketTAGVLAN(p, buf, size, no_l3, no_l3_l4_except_icmpv6);
-		}
-		else
-		{
+		} else {
 			// Parse Ordinary Ethernet frame
 			return ParsePacketL3(p, buf, size, type_id_16, no_l3, no_l3_l4_except_icmpv6);
 		}
-	}
-	else
-	{
+	} else {
 		// Old IEEE 802.3 frame (payload length of the packet is written in the header)
 		// (It has been used in the BPDU, etc.)
 		UINT length = (UINT)type_id_16;
 		LLC_HEADER *llc;
 
 		// Check whether the length is remaining
-		if (size < length || size < sizeof(LLC_HEADER))
-		{
+		if (size < length || size < sizeof(LLC_HEADER)) {
 			return true;
 		}
 
@@ -1918,66 +1641,55 @@ bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4_ex
 		size -= sizeof(LLC_HEADER);
 
 		// Determine the protocol by the value of DSAP and SSAP
-		if (llc->Dsap == LLC_DSAP_BPDU && llc->Ssap == LLC_SSAP_BPDU)
-		{
+		if (llc->Dsap == LLC_DSAP_BPDU && llc->Ssap == LLC_SSAP_BPDU) {
 			// This is a BPDU (Spanning Tree)
 			return ParsePacketBPDU(p, buf, size);
-		}
-		else
-		{
+		} else {
 			// Unknown protocol
 			return true;
 		}
 	}
 }
 
-bool ParsePacketL3(PKT *p, UCHAR *buf, UINT size, USHORT proto, bool no_l3, bool no_l3_l4_except_icmpv6)
-{
-	switch (proto)
-		{
-		case MAC_PROTO_ARPV4:	// ARPv4
-			if (no_l3 || no_l3_l4_except_icmpv6)
-			{
-				return true;
-			}
-
-			return ParsePacketARPv4(p, buf, size);
-
-		case MAC_PROTO_IPV4:	// IPv4
-			if (no_l3 || no_l3_l4_except_icmpv6)
-			{
-				return true;
-			}
-
-			return ParsePacketIPv4(p, buf, size);
-
-		case MAC_PROTO_IPV6:	// IPv6
-			if (no_l3)
-			{
-				return true;
-			}
-
-			return ParsePacketIPv6(p, buf, size, no_l3_l4_except_icmpv6);
-
-		default:				// Unknown
+bool ParsePacketL3(PKT *p, UCHAR *buf, UINT size, USHORT proto, bool no_l3, bool no_l3_l4_except_icmpv6) {
+	switch (proto) {
+	case MAC_PROTO_ARPV4: // ARPv4
+		if (no_l3 || no_l3_l4_except_icmpv6) {
 			return true;
 		}
+
+		return ParsePacketARPv4(p, buf, size);
+
+	case MAC_PROTO_IPV4: // IPv4
+		if (no_l3 || no_l3_l4_except_icmpv6) {
+			return true;
+		}
+
+		return ParsePacketIPv4(p, buf, size);
+
+	case MAC_PROTO_IPV6: // IPv6
+		if (no_l3) {
+			return true;
+		}
+
+		return ParsePacketIPv6(p, buf, size, no_l3_l4_except_icmpv6);
+
+	default: // Unknown
+		return true;
+	}
 }
 
 // TAG VLAN parsing
-bool ParsePacketTAGVLAN(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4_except_icmpv6)
-{
+bool ParsePacketTAGVLAN(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4_except_icmpv6) {
 	USHORT vlan_ushort;
 	USHORT proto_ushort;
 	// Validate arguments
-	if (p == NULL || buf == NULL)
-	{
+	if (p == NULL || buf == NULL) {
 		return false;
 	}
 
 	// Check the size
-	if (size < sizeof(TAGVLAN_HEADER))
-	{
+	if (size < sizeof(TAGVLAN_HEADER)) {
 		return false;
 	}
 
@@ -1996,23 +1708,20 @@ bool ParsePacketTAGVLAN(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4
 	proto_ushort = READ_USHORT(p->L3.TagVlanHeader->Protocol);
 	proto_ushort = proto_ushort & 0xFFFF;
 
-	
+
 	// Parse the L3 packet
 	return ParsePacketL3(p, buf, size, proto_ushort, no_l3, no_l3_l4_except_icmpv6);
 }
 
 // BPDU Parsing
-bool ParsePacketBPDU(PKT *p, UCHAR *buf, UINT size)
-{
+bool ParsePacketBPDU(PKT *p, UCHAR *buf, UINT size) {
 	// Validate arguments
-	if (p == NULL || buf == NULL)
-	{
+	if (p == NULL || buf == NULL) {
 		return false;
 	}
 
 	// Check the size
-	if (size < sizeof(BPDU_HEADER))
-	{
+	if (size < sizeof(BPDU_HEADER)) {
 		return true;
 	}
 
@@ -2027,17 +1736,14 @@ bool ParsePacketBPDU(PKT *p, UCHAR *buf, UINT size)
 }
 
 // ARPv4 Parsing
-bool ParsePacketARPv4(PKT *p, UCHAR *buf, UINT size)
-{
+bool ParsePacketARPv4(PKT *p, UCHAR *buf, UINT size) {
 	// Validate arguments
-	if (p == NULL || buf == NULL)
-	{
+	if (p == NULL || buf == NULL) {
 		return false;
 	}
 
 	// Check the size
-	if (size < sizeof(ARPV4_HEADER))
-	{
+	if (size < sizeof(ARPV4_HEADER)) {
 		return false;
 	}
 
@@ -2052,47 +1758,39 @@ bool ParsePacketARPv4(PKT *p, UCHAR *buf, UINT size)
 }
 
 // Analysis of the IPv6 extension header
-bool ParseIPv6ExtHeader(IPV6_HEADER_PACKET_INFO *info, UCHAR next_header, UCHAR *buf, UINT size)
-{
+bool ParseIPv6ExtHeader(IPV6_HEADER_PACKET_INFO *info, UCHAR next_header, UCHAR *buf, UINT size) {
 	bool ret = false;
 	IPV6_OPTION_HEADER *option_header;
 	UINT option_header_size;
 	UCHAR next_header_2 = IPV6_HEADER_NONE;
 	// Validate arguments
-	if (info == NULL || buf == NULL)
-	{
+	if (info == NULL || buf == NULL) {
 		return false;
 	}
 
 	info->IsFragment = false;
 
-	while (true)
-	{
-		if (size > 8)
-		{
+	while (true) {
+		if (size > 8) {
 			next_header_2 = *((UCHAR *)buf);
 		}
 
-		switch (next_header)
-		{
+		switch (next_header) {
 		case IPV6_HEADER_HOP:
 		case IPV6_HEADER_ENDPOINT:
 		case IPV6_HEADER_ROUTING:
 			// Variable-length header
-			if (size < 8)
-			{
+			if (size < 8) {
 				return false;
 			}
 
 			option_header = (IPV6_OPTION_HEADER *)buf;
 			option_header_size = (option_header->Size + 1) * 8;
-			if (size < option_header_size)
-			{
+			if (size < option_header_size) {
 				return false;
 			}
 
-			switch (next_header)
-			{
+			switch (next_header) {
 			case IPV6_HEADER_HOP:
 				info->HopHeader = (IPV6_OPTION_HEADER *)buf;
 				info->HopHeaderSize = option_header_size;
@@ -2115,15 +1813,13 @@ bool ParseIPv6ExtHeader(IPV6_HEADER_PACKET_INFO *info, UCHAR next_header, UCHAR 
 
 		case IPV6_HEADER_FRAGMENT:
 			// Fragment header (fixed length)
-			if (size < sizeof(IPV6_FRAGMENT_HEADER))
-			{
+			if (size < sizeof(IPV6_FRAGMENT_HEADER)) {
 				return false;
 			}
 
 			info->FragmentHeader = (IPV6_FRAGMENT_HEADER *)buf;
 
-			if (IPV6_GET_FRAGMENT_OFFSET(info->FragmentHeader) != 0)
-			{
+			if (IPV6_GET_FRAGMENT_OFFSET(info->FragmentHeader) != 0) {
 				info->IsFragment = true;
 			}
 
@@ -2133,13 +1829,10 @@ bool ParseIPv6ExtHeader(IPV6_HEADER_PACKET_INFO *info, UCHAR next_header, UCHAR 
 
 		default:
 			// Considered that the payload follows
-			if (next_header != IPV6_HEADER_NONE)
-			{
+			if (next_header != IPV6_HEADER_NONE) {
 				info->Payload = buf;
 				info->PayloadSize = size;
-			}
-			else
-			{
+			} else {
 				info->Payload = NULL;
 				info->PayloadSize = 0;
 			}
@@ -2152,11 +1845,9 @@ bool ParseIPv6ExtHeader(IPV6_HEADER_PACKET_INFO *info, UCHAR next_header, UCHAR 
 }
 
 // Analysis of the IPv6 header
-bool ParsePacketIPv6Header(IPV6_HEADER_PACKET_INFO *info, UCHAR *buf, UINT size)
-{
+bool ParsePacketIPv6Header(IPV6_HEADER_PACKET_INFO *info, UCHAR *buf, UINT size) {
 	// Validate arguments
-	if (info == NULL || buf == NULL)
-	{
+	if (info == NULL || buf == NULL) {
 		Zero(info, sizeof(IPV6_HEADER_PACKET_INFO));
 		return false;
 	}
@@ -2164,8 +1855,7 @@ bool ParsePacketIPv6Header(IPV6_HEADER_PACKET_INFO *info, UCHAR *buf, UINT size)
 	Zero(info, sizeof(IPV6_HEADER_PACKET_INFO));
 
 	// IPv6 header
-	if (size < sizeof(IPV6_HEADER))
-	{
+	if (size < sizeof(IPV6_HEADER)) {
 		// Invalid size
 		return false;
 	}
@@ -2174,21 +1864,18 @@ bool ParsePacketIPv6Header(IPV6_HEADER_PACKET_INFO *info, UCHAR *buf, UINT size)
 	buf += sizeof(IPV6_HEADER);
 	size -= sizeof(IPV6_HEADER);
 
-	if (IPV6_GET_VERSION(info->IPv6Header) != 6)
-	{
+	if (IPV6_GET_VERSION(info->IPv6Header) != 6) {
 		// Invalid version
 		return false;
 	}
 
 	// Analysis of the extension header
-	if (ParseIPv6ExtHeader(info, info->IPv6Header->NextHeader, buf, size) == false)
-	{
+	if (ParseIPv6ExtHeader(info, info->IPv6Header->NextHeader, buf, size) == false) {
 		return false;
 	}
 
 	// Record the header size
-	if (info->Payload != NULL)
-	{
+	if (info->Payload != NULL) {
 		info->TotalHeaderSize = (UINT)((UINT64)(info->Payload) - (UINT64)(info->IPv6Header));
 	}
 
@@ -2196,24 +1883,20 @@ bool ParsePacketIPv6Header(IPV6_HEADER_PACKET_INFO *info, UCHAR *buf, UINT size)
 }
 
 // Analyse the options of ICMPv6 packet
-bool ParseICMPv6Options(ICMPV6_OPTION_LIST *o, UCHAR *buf, UINT size)
-{
+bool ParseICMPv6Options(ICMPV6_OPTION_LIST *o, UCHAR *buf, UINT size) {
 	// Validate arguments
-	if (o == NULL || buf == NULL)
-	{
+	if (o == NULL || buf == NULL) {
 		return false;
 	}
 
 	Zero(o, sizeof(ICMPV6_OPTION_LIST));
 
 	// Read the header part
-	while (true)
-	{
+	while (true) {
 		ICMPV6_OPTION *option_header;
 		UINT header_total_size;
 		UCHAR *header_pointer;
-		if (size < sizeof(ICMPV6_OPTION))
-		{
+		if (size < sizeof(ICMPV6_OPTION)) {
 			// Size shortage
 			return true;
 		}
@@ -2221,13 +1904,11 @@ bool ParseICMPv6Options(ICMPV6_OPTION_LIST *o, UCHAR *buf, UINT size)
 		option_header = (ICMPV6_OPTION *)buf;
 		// Calculate the entire header size
 		header_total_size = option_header->Length * 8;
-		if (header_total_size == 0)
-		{
+		if (header_total_size == 0) {
 			// The size is zero
 			return true;
 		}
-		if (size < header_total_size)
-		{
+		if (size < header_total_size) {
 			// Size shortage
 			return true;
 		}
@@ -2236,24 +1917,17 @@ bool ParseICMPv6Options(ICMPV6_OPTION_LIST *o, UCHAR *buf, UINT size)
 		buf += header_total_size;
 		size -= header_total_size;
 
-		switch (option_header->Type)
-		{
+		switch (option_header->Type) {
 		case ICMPV6_OPTION_TYPE_SOURCE_LINK_LAYER:
 		case ICMPV6_OPTION_TYPE_TARGET_LINK_LAYER:
 			// Source or target link-layer option
-			if (header_total_size >= sizeof(ICMPV6_OPTION_LINK_LAYER))
-			{
-				if (option_header->Type == ICMPV6_OPTION_TYPE_SOURCE_LINK_LAYER)
-				{
+			if (header_total_size >= sizeof(ICMPV6_OPTION_LINK_LAYER)) {
+				if (option_header->Type == ICMPV6_OPTION_TYPE_SOURCE_LINK_LAYER) {
 					o->SourceLinkLayer = (ICMPV6_OPTION_LINK_LAYER *)header_pointer;
-				}
-				else
-				{
+				} else {
 					o->TargetLinkLayer = (ICMPV6_OPTION_LINK_LAYER *)header_pointer;
 				}
-			}
-			else
-			{
+			} else {
 				// ICMPv6 packet corruption?
 				return false;
 			}
@@ -2261,32 +1935,24 @@ bool ParseICMPv6Options(ICMPV6_OPTION_LIST *o, UCHAR *buf, UINT size)
 
 		case ICMPV6_OPTION_TYPE_PREFIX:
 			// Prefix Information
-			if (header_total_size >= sizeof(ICMPV6_OPTION_PREFIX))
-			{
+			if (header_total_size >= sizeof(ICMPV6_OPTION_PREFIX)) {
 				UINT i;
-				for (i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++)
-				{
-					if (o->Prefix[i] == NULL)
-					{
+				for (i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++) {
+					if (o->Prefix[i] == NULL) {
 						o->Prefix[i] = (ICMPV6_OPTION_PREFIX *)header_pointer;
 						break;
 					}
 				}
-			}
-			else
-			{
+			} else {
 				// ICMPv6 packet corruption?
 			}
 			break;
 
 		case ICMPV6_OPTION_TYPE_MTU:
 			// MTU
-			if (header_total_size >= sizeof(ICMPV6_OPTION_MTU))
-			{
+			if (header_total_size >= sizeof(ICMPV6_OPTION_MTU)) {
 				o->Mtu = (ICMPV6_OPTION_MTU *)header_pointer;
-			}
-			else
-			{
+			} else {
 				// ICMPv6 packet corruption?
 			}
 			break;
@@ -2295,22 +1961,19 @@ bool ParseICMPv6Options(ICMPV6_OPTION_LIST *o, UCHAR *buf, UINT size)
 }
 
 // ICMPv6 parsing
-bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
-{
+bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size) {
 	ICMPV6_HEADER_INFO icmp_info;
 	ICMP_HEADER *icmp;
 	ICMP_ECHO *echo;
 	UINT msg_size;
 	// Validate arguments
-	if (p == NULL || buf == NULL)
-	{
+	if (p == NULL || buf == NULL) {
 		return false;
 	}
 
 	Zero(&icmp_info, sizeof(icmp_info));
 
-	if (size < sizeof(ICMP_HEADER))
-	{
+	if (size < sizeof(ICMP_HEADER)) {
 		return false;
 	}
 
@@ -2324,13 +1987,11 @@ bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 	icmp_info.Data = ((UCHAR *)buf) + sizeof(ICMP_HEADER);
 	icmp_info.DataSize = msg_size;
 
-	switch (icmp_info.Type)
-	{
+	switch (icmp_info.Type) {
 	case ICMPV6_TYPE_ECHO_REQUEST:
 	case ICMPV6_TYPE_ECHO_RESPONSE:
 		// ICMP Echo Request / Response
-		if (icmp_info.DataSize < sizeof(ICMP_ECHO))
-		{
+		if (icmp_info.DataSize < sizeof(ICMP_ECHO)) {
 			return false;
 		}
 
@@ -2345,8 +2006,7 @@ bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 
 	case ICMPV6_TYPE_ROUTER_SOLICIATION:
 		// Router Solicitation
-		if (icmp_info.DataSize < sizeof(ICMPV6_ROUTER_SOLICIATION_HEADER))
-		{
+		if (icmp_info.DataSize < sizeof(ICMPV6_ROUTER_SOLICIATION_HEADER)) {
 			return false;
 		}
 
@@ -2354,8 +2014,7 @@ bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 		    (ICMPV6_ROUTER_SOLICIATION_HEADER *)(((UCHAR *)icmp_info.Data));
 
 		if (ParseICMPv6Options(&icmp_info.OptionList, ((UCHAR *)icmp_info.Headers.HeaderPointer) + sizeof(ICMPV6_ROUTER_SOLICIATION_HEADER),
-		                       icmp_info.DataSize - sizeof(ICMPV6_ROUTER_SOLICIATION_HEADER)) == false)
-		{
+		                       icmp_info.DataSize - sizeof(ICMPV6_ROUTER_SOLICIATION_HEADER)) == false) {
 			return false;
 		}
 
@@ -2363,8 +2022,7 @@ bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 
 	case ICMPV6_TYPE_ROUTER_ADVERTISEMENT:
 		// Router Advertisement
-		if (icmp_info.DataSize < sizeof(ICMPV6_ROUTER_ADVERTISEMENT_HEADER))
-		{
+		if (icmp_info.DataSize < sizeof(ICMPV6_ROUTER_ADVERTISEMENT_HEADER)) {
 			return false;
 		}
 
@@ -2372,8 +2030,7 @@ bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 		    (ICMPV6_ROUTER_ADVERTISEMENT_HEADER *)(((UCHAR *)icmp_info.Data));
 
 		if (ParseICMPv6Options(&icmp_info.OptionList, ((UCHAR *)icmp_info.Headers.HeaderPointer) + sizeof(ICMPV6_ROUTER_ADVERTISEMENT_HEADER),
-		                       icmp_info.DataSize - sizeof(ICMPV6_ROUTER_ADVERTISEMENT_HEADER)) == false)
-		{
+		                       icmp_info.DataSize - sizeof(ICMPV6_ROUTER_ADVERTISEMENT_HEADER)) == false) {
 			return false;
 		}
 
@@ -2381,8 +2038,7 @@ bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 
 	case ICMPV6_TYPE_NEIGHBOR_SOLICIATION:
 		// Neighbor Solicitation
-		if (icmp_info.DataSize < sizeof(ICMPV6_NEIGHBOR_SOLICIATION_HEADER))
-		{
+		if (icmp_info.DataSize < sizeof(ICMPV6_NEIGHBOR_SOLICIATION_HEADER)) {
 			return false;
 		}
 
@@ -2390,8 +2046,7 @@ bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 		    (ICMPV6_NEIGHBOR_SOLICIATION_HEADER *)(((UCHAR *)icmp_info.Data));
 
 		if (ParseICMPv6Options(&icmp_info.OptionList, ((UCHAR *)icmp_info.Headers.HeaderPointer) + sizeof(ICMPV6_NEIGHBOR_SOLICIATION_HEADER),
-		                       icmp_info.DataSize - sizeof(ICMPV6_NEIGHBOR_SOLICIATION_HEADER)) == false)
-		{
+		                       icmp_info.DataSize - sizeof(ICMPV6_NEIGHBOR_SOLICIATION_HEADER)) == false) {
 			return false;
 		}
 
@@ -2399,8 +2054,7 @@ bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 
 	case ICMPV6_TYPE_NEIGHBOR_ADVERTISEMENT:
 		// Neighbor Advertisement
-		if (icmp_info.DataSize < sizeof(ICMPV6_NEIGHBOR_ADVERTISEMENT_HEADER))
-		{
+		if (icmp_info.DataSize < sizeof(ICMPV6_NEIGHBOR_ADVERTISEMENT_HEADER)) {
 			return false;
 		}
 
@@ -2408,8 +2062,7 @@ bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 		    (ICMPV6_NEIGHBOR_ADVERTISEMENT_HEADER *)(((UCHAR *)icmp_info.Data));
 
 		if (ParseICMPv6Options(&icmp_info.OptionList, ((UCHAR *)icmp_info.Headers.HeaderPointer) + sizeof(ICMPV6_NEIGHBOR_ADVERTISEMENT_HEADER),
-		                       icmp_info.DataSize - sizeof(ICMPV6_NEIGHBOR_ADVERTISEMENT_HEADER)) == false)
-		{
+		                       icmp_info.DataSize - sizeof(ICMPV6_NEIGHBOR_ADVERTISEMENT_HEADER)) == false) {
 			return false;
 		}
 
@@ -2423,20 +2076,17 @@ bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 }
 
 // Release of the ICMPv6 options
-void FreeCloneICMPv6Options(ICMPV6_OPTION_LIST *o)
-{
+void FreeCloneICMPv6Options(ICMPV6_OPTION_LIST *o) {
 	UINT i;
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return;
 	}
 
 	Free(o->SourceLinkLayer);
 	Free(o->TargetLinkLayer);
 
-	for (i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++)
-	{
+	for (i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++) {
 		Free(o->Prefix[i]);
 		o->Prefix[i] = NULL;
 	}
@@ -2444,12 +2094,10 @@ void FreeCloneICMPv6Options(ICMPV6_OPTION_LIST *o)
 }
 
 // Clone of the ICMPv6 options
-void CloneICMPv6Options(ICMPV6_OPTION_LIST *dst, ICMPV6_OPTION_LIST *src)
-{
+void CloneICMPv6Options(ICMPV6_OPTION_LIST *dst, ICMPV6_OPTION_LIST *src) {
 	UINT i;
 	// Validate arguments
-	if (dst == NULL || src == NULL)
-	{
+	if (dst == NULL || src == NULL) {
 		return;
 	}
 
@@ -2457,14 +2105,10 @@ void CloneICMPv6Options(ICMPV6_OPTION_LIST *dst, ICMPV6_OPTION_LIST *src)
 
 	dst->SourceLinkLayer = Clone(src->SourceLinkLayer, sizeof(ICMPV6_OPTION_LINK_LAYER));
 	dst->TargetLinkLayer = Clone(src->TargetLinkLayer, sizeof(ICMPV6_OPTION_LINK_LAYER));
-	for (i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++)
-	{
-		if (src->Prefix[i] != NULL)
-		{
+	for (i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++) {
+		if (src->Prefix[i] != NULL) {
 			dst->Prefix[i] = Clone(src->Prefix[i], sizeof(ICMPV6_OPTION_PREFIX));
-		}
-		else
-		{
+		} else {
 			break;
 		}
 	}
@@ -2472,24 +2116,20 @@ void CloneICMPv6Options(ICMPV6_OPTION_LIST *dst, ICMPV6_OPTION_LIST *src)
 }
 
 // IPv6 parsing
-bool ParsePacketIPv6(PKT *p, UCHAR *buf, UINT size, bool no_l3_l4_except_icmpv6)
-{
+bool ParsePacketIPv6(PKT *p, UCHAR *buf, UINT size, bool no_l3_l4_except_icmpv6) {
 	// Validate arguments
-	if (p == NULL || buf == NULL)
-	{
+	if (p == NULL || buf == NULL) {
 		return false;
 	}
 
-	if (ParsePacketIPv6Header(&p->IPv6HeaderPacketInfo, buf, size) == false)
-	{
+	if (ParsePacketIPv6Header(&p->IPv6HeaderPacketInfo, buf, size) == false) {
 		return false;
 	}
 
 	p->TypeL3 = L3_IPV6;
 	p->L3.IPv6Header = p->IPv6HeaderPacketInfo.IPv6Header;
 
-	if (p->IPv6HeaderPacketInfo.Payload == NULL)
-	{
+	if (p->IPv6HeaderPacketInfo.Payload == NULL) {
 		// No payload
 		return true;
 	}
@@ -2497,42 +2137,35 @@ bool ParsePacketIPv6(PKT *p, UCHAR *buf, UINT size, bool no_l3_l4_except_icmpv6)
 	buf = p->IPv6HeaderPacketInfo.Payload;
 	size = p->IPv6HeaderPacketInfo.PayloadSize;
 
-	if (p->IPv6HeaderPacketInfo.IsFragment)
-	{
+	if (p->IPv6HeaderPacketInfo.IsFragment) {
 		// This is a fragmented packet. Quit interpreting
 		p->TypeL4 = L4_FRAGMENT;
 		return true;
 	}
 
 	// Parse a L4 packet
-	switch (p->IPv6HeaderPacketInfo.Protocol)
-	{
-	case IP_PROTO_ICMPV6:	// ICMPv6
-		if (ParseICMPv6(p, buf, size) == false)
-		{
+	switch (p->IPv6HeaderPacketInfo.Protocol) {
+	case IP_PROTO_ICMPV6: // ICMPv6
+		if (ParseICMPv6(p, buf, size) == false) {
 			// Returns true also if it fails to parse ICMPv6
 			return true;
-		}
-		else
-		{
+		} else {
 			return true;
 		}
 
-	case IP_PROTO_TCP:		// TCP
-		if (no_l3_l4_except_icmpv6)
-		{
+	case IP_PROTO_TCP: // TCP
+		if (no_l3_l4_except_icmpv6) {
 			return true;
 		}
 		return ParseTCP(p, buf, size);
 
-	case IP_PROTO_UDP:		// UDP
-		if (no_l3_l4_except_icmpv6)
-		{
+	case IP_PROTO_UDP: // UDP
+		if (no_l3_l4_except_icmpv6) {
 			return true;
 		}
 		return ParseUDP(p, buf, size);
 
-	default:				// Unknown
+	default: // Unknown
 		return true;
 	}
 
@@ -2540,18 +2173,15 @@ bool ParsePacketIPv6(PKT *p, UCHAR *buf, UINT size, bool no_l3_l4_except_icmpv6)
 }
 
 // IPv4 parsing
-bool ParsePacketIPv4(PKT *p, UCHAR *buf, UINT size)
-{
+bool ParsePacketIPv4(PKT *p, UCHAR *buf, UINT size) {
 	UINT header_size;
 	// Validate arguments
-	if (p == NULL || buf == NULL)
-	{
+	if (p == NULL || buf == NULL) {
 		return false;
 	}
 
 	// Check the size
-	if (size < sizeof(IPV4_HEADER))
-	{
+	if (size < sizeof(IPV4_HEADER)) {
 		return false;
 	}
 
@@ -2561,11 +2191,10 @@ bool ParsePacketIPv4(PKT *p, UCHAR *buf, UINT size)
 
 	// Check the header
 	header_size = IPV4_GET_HEADER_LEN(p->L3.IPv4Header) * 4;
-	if (header_size < sizeof(IPV4_HEADER) || size < header_size)
-	{
+	if (header_size < sizeof(IPV4_HEADER) || size < header_size) {
 		// Header size is invalid
 		p->L3.IPv4Header = NULL;
-		p->TypeL3= L3_UNKNOWN;
+		p->TypeL3 = L3_UNKNOWN;
 		return true;
 	}
 
@@ -2573,15 +2202,13 @@ bool ParsePacketIPv4(PKT *p, UCHAR *buf, UINT size)
 	size -= header_size;
 
 	p->IPv4PayloadSize = MIN(size, Endian16(p->L3.IPv4Header->TotalLength) - header_size);
-	if (Endian16(p->L3.IPv4Header->TotalLength) < header_size)
-	{
+	if (Endian16(p->L3.IPv4Header->TotalLength) < header_size) {
 		p->IPv4PayloadSize = 0;
 	}
 
 	p->IPv4PayloadData = buf;
 
-	if (IPV4_GET_OFFSET(p->L3.IPv4Header) != 0)
-	{
+	if (IPV4_GET_OFFSET(p->L3.IPv4Header) != 0) {
 		// Quit analysing since this is fragmented
 		p->TypeL4 = L4_FRAGMENT;
 
@@ -2589,34 +2216,30 @@ bool ParsePacketIPv4(PKT *p, UCHAR *buf, UINT size)
 	}
 
 	// Parse a L4 packet
-	switch (p->L3.IPv4Header->Protocol)
-	{
-	case IP_PROTO_ICMPV4:	// ICMPv4
+	switch (p->L3.IPv4Header->Protocol) {
+	case IP_PROTO_ICMPV4: // ICMPv4
 		return ParseICMPv4(p, buf, size);
 
-	case IP_PROTO_UDP:		// UDP
+	case IP_PROTO_UDP: // UDP
 		return ParseUDP(p, buf, size);
 
-	case IP_PROTO_TCP:		// TCP
+	case IP_PROTO_TCP: // TCP
 		return ParseTCP(p, buf, size);
 
-	default:				// Unknown
+	default: // Unknown
 		return true;
 	}
 }
 
 // ICMPv4 parsing
-bool ParseICMPv4(PKT *p, UCHAR *buf, UINT size)
-{
+bool ParseICMPv4(PKT *p, UCHAR *buf, UINT size) {
 	// Validate arguments
-	if (p == NULL || buf == NULL)
-	{
+	if (p == NULL || buf == NULL) {
 		return false;
 	}
 
 	// Check the size
-	if (size < sizeof(ICMP_HEADER))
-	{
+	if (size < sizeof(ICMP_HEADER)) {
 		// Size is invalid
 		return false;
 	}
@@ -2632,18 +2255,15 @@ bool ParseICMPv4(PKT *p, UCHAR *buf, UINT size)
 }
 
 // TCP parsing
-bool ParseTCP(PKT *p, UCHAR *buf, UINT size)
-{
+bool ParseTCP(PKT *p, UCHAR *buf, UINT size) {
 	UINT header_size;
 	// Validate arguments
-	if (p == NULL || buf == NULL)
-	{
+	if (p == NULL || buf == NULL) {
 		return false;
 	}
 
 	// Check the size
-	if (size < sizeof(TCP_HEADER))
-	{
+	if (size < sizeof(TCP_HEADER)) {
 		// Size is invalid
 		return false;
 	}
@@ -2654,8 +2274,7 @@ bool ParseTCP(PKT *p, UCHAR *buf, UINT size)
 
 	// Check the header size
 	header_size = TCP_GET_HEADER_SIZE(p->L4.TCPHeader) * 4;
-	if (header_size < sizeof(TCP_HEADER) || size < header_size)
-	{
+	if (header_size < sizeof(TCP_HEADER) || size < header_size) {
 		// Header size is invalid
 		p->L4.TCPHeader = NULL;
 		p->TypeL4 = L4_UNKNOWN;
@@ -2672,17 +2291,14 @@ bool ParseTCP(PKT *p, UCHAR *buf, UINT size)
 }
 
 // Get the next byte
-UCHAR GetNextByte(BUF *b)
-{
+UCHAR GetNextByte(BUF *b) {
 	UCHAR c = 0;
 	// Validate arguments
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return 0;
 	}
 
-	if (ReadBuf(b, &c, 1) != 1)
-	{
+	if (ReadBuf(b, &c, 1) != 1) {
 		return 0;
 	}
 
@@ -2690,15 +2306,13 @@ UCHAR GetNextByte(BUF *b)
 }
 
 // Interpret the DNS query
-bool ParseDnsQuery(char *name, UINT name_size, void *data, UINT data_size)
-{
+bool ParseDnsQuery(char *name, UINT name_size, void *data, UINT data_size) {
 	BUF *b;
 	char tmp[257];
 	bool ok = true;
 	USHORT val;
 	// Validate arguments
-	if (name == NULL || data == NULL || data_size == 0)
-	{
+	if (name == NULL || data == NULL || data_size == 0) {
 		return false;
 	}
 	StrCpy(name, name_size, "");
@@ -2707,94 +2321,72 @@ bool ParseDnsQuery(char *name, UINT name_size, void *data, UINT data_size)
 	WriteBuf(b, data, data_size);
 	SeekBuf(b, 0, 0);
 
-	while (true)
-	{
+	while (true) {
 		UINT next_len = (UINT)GetNextByte(b);
-		if (next_len > 0)
-		{
+		if (next_len > 0) {
 			// Read only the specified length
 			Zero(tmp, sizeof(tmp));
-			if (ReadBuf(b, tmp, next_len) != next_len)
-			{
+			if (ReadBuf(b, tmp, next_len) != next_len) {
 				ok = false;
 				break;
 			}
 			// Append
-			if (StrLen(name) != 0)
-			{
+			if (StrLen(name) != 0) {
 				StrCat(name, name_size, ".");
 			}
 			StrCat(name, name_size, tmp);
-		}
-		else
-		{
+		} else {
 			// Read all
 			break;
 		}
 	}
 
-	if (ReadBuf(b, &val, sizeof(val)) != sizeof(val))
-	{
+	if (ReadBuf(b, &val, sizeof(val)) != sizeof(val)) {
 		ok = false;
-	}
-	else
-	{
-		if (Endian16(val) != 0x01 && Endian16(val) != 0x0c)
-		{
+	} else {
+		if (Endian16(val) != 0x01 && Endian16(val) != 0x0c) {
 			ok = false;
 		}
 	}
 
-	if (ReadBuf(b, &val, sizeof(val)) != sizeof(val))
-	{
+	if (ReadBuf(b, &val, sizeof(val)) != sizeof(val)) {
 		ok = false;
-	}
-	else
-	{
-		if (Endian16(val) != 0x01)
-		{
+	} else {
+		if (Endian16(val) != 0x01) {
 			ok = false;
 		}
 	}
 
 	FreeBuf(b);
 
-	if (ok == false || StrLen(name) == 0)
-	{
+	if (ok == false || StrLen(name) == 0) {
 		return false;
-	}
-	else
-	{
+	} else {
 		return true;
 	}
 }
 
 // DNS parsing
-void ParseDNS(PKT *p, UCHAR *buf, UINT size)
-{
+void ParseDNS(PKT *p, UCHAR *buf, UINT size) {
 	UCHAR *query_data;
 	UINT query_data_size;
 	DNSV4_HEADER *dns;
 	char hostname[MAX_SIZE];
-	if (p == NULL|| buf == NULL)
-	{
+	if (p == NULL || buf == NULL) {
 		return;
 	}
 
-	if (size < sizeof(DNSV4_HEADER))
-	{
+	if (size < sizeof(DNSV4_HEADER)) {
 		return;
 	}
 
 	dns = (DNSV4_HEADER *)buf;
 
-	if ((dns->Flag1 & 78) != 0 || (dns->Flag1 & 0x80) != 0)
-	{
+	if ((dns->Flag1 & 78) != 0 || (dns->Flag1 & 0x80) != 0) {
 		// Illegal opcode
 		return;
 	}
-	if (Endian16(dns->NumQuery) != 1)
-	{
+	if (Endian16(dns->NumQuery) != 1) {
 		// Number of queries is invalid
 		return;
 	}
@@ -2803,8 +2395,7 @@ void ParseDNS(PKT *p, UCHAR *buf, UINT size)
 	query_data_size = size - sizeof(DNSV4_HEADER);
 
 	// Interpret the query
-	if (ParseDnsQuery(hostname, sizeof(hostname), query_data, query_data_size) == false)
-	{
+	if (ParseDnsQuery(hostname, sizeof(hostname), query_data, query_data_size) == false) {
 		// Interpretation fails
 		return;
 	}
@@ -2814,18 +2405,15 @@ void ParseDNS(PKT *p, UCHAR *buf, UINT size)
 }
 
 // UDP parsing
-bool ParseUDP(PKT *p, UCHAR *buf, UINT size)
-{
+bool ParseUDP(PKT *p, UCHAR *buf, UINT size) {
 	USHORT src_port, dst_port;
 	// Validate arguments
-	if (p == NULL || buf == NULL)
-	{
+	if (p == NULL || buf == NULL) {
 		return false;
 	}
 
 	// Check the size
-	if (size < sizeof(UDP_HEADER))
-	{
+	if (size < sizeof(UDP_HEADER)) {
 		// Size is invalid
 		return false;
 	}
@@ -2845,10 +2433,8 @@ bool ParseUDP(PKT *p, UCHAR *buf, UINT size)
 	dst_port = Endian16(p->L4.UDPHeader->DstPort);
 
 	if ((src_port == 67 && dst_port == 68) ||
-	        (src_port == 68 && dst_port == 67))
-	{
-		if (p->TypeL3 == L3_IPV4)
-		{
+	    (src_port == 68 && dst_port == 67)) {
+		if (p->TypeL3 == L3_IPV4) {
 			// A DHCP packet is found
 			ParseDHCPv4(p, buf, size);
 
@@ -2856,23 +2442,19 @@ bool ParseUDP(PKT *p, UCHAR *buf, UINT size)
 		}
 	}
 
-	if (dst_port == 53)
-	{
+	if (dst_port == 53) {
 		ParseDNS(p, buf, size);
 		return true;
 	}
 
 
-	if (src_port == 500 || dst_port == 500 || src_port == 4500 || dst_port == 4500)
-	{
-		if (p->PayloadSize >= sizeof(IKE_HEADER))
-		{
+	if (src_port == 500 || dst_port == 500 || src_port == 4500 || dst_port == 4500) {
+		if (p->PayloadSize >= sizeof(IKE_HEADER)) {
 			IKE_HEADER *ike_header = (IKE_HEADER *)p->Payload;
 
 			if (ike_header->InitiatorCookie != 0 && ike_header->ResponderCookie == 0 &&
-			        (ike_header->ExchangeType == IKE_EXCHANGE_TYPE_MAIN ||
-			         ike_header->ExchangeType == IKE_EXCHANGE_TYPE_AGGRESSIVE))
-			{
+			    (ike_header->ExchangeType == IKE_EXCHANGE_TYPE_MAIN ||
+			     ike_header->ExchangeType == IKE_EXCHANGE_TYPE_AGGRESSIVE)) {
 				// the IKE connection request packet is found
 				p->TypeL7 = L7_IKECONN;
 				p->L7.IkeHeader = ike_header;
@@ -2885,17 +2467,14 @@ bool ParseUDP(PKT *p, UCHAR *buf, UINT size)
 }
 
 // DHCPv4 parsing
-void ParseDHCPv4(PKT *p, UCHAR *buf, UINT size)
-{
+void ParseDHCPv4(PKT *p, UCHAR *buf, UINT size) {
 	// Validate arguments
-	if (p == NULL || buf == NULL)
-	{
+	if (p == NULL || buf == NULL) {
 		return;
 	}
 
 	// Check the size
-	if (size < sizeof(DHCPV4_HEADER))
-	{
+	if (size < sizeof(DHCPV4_HEADER)) {
 		// Size is invalid
 		return;
 	}
@@ -2906,18 +2485,14 @@ void ParseDHCPv4(PKT *p, UCHAR *buf, UINT size)
 }
 
 // Release the memory of the packet
-void FreePacket(PKT *p)
-{
+void FreePacket(PKT *p) {
 	// Validate arguments
-	if (p == NULL)
-	{
+	if (p == NULL) {
 		return;
 	}
 
-	if (p->MacHeader != NULL)
-	{
-		switch (p->TypeL3)
-		{
+	if (p->MacHeader != NULL) {
+		switch (p->TypeL3) {
 		case L3_IPV4:
 			FreePacketIPv4(p);
 			break;
@@ -2932,8 +2507,7 @@ void FreePacket(PKT *p)
 		}
 	}
 
-	if (p->HttpLog != NULL)
-	{
+	if (p->HttpLog != NULL) {
 		Free(p->HttpLog);
 	}
 
@@ -2941,16 +2515,13 @@ void FreePacket(PKT *p)
 }
 
 // Release the memory for the IPv4 packet
-void FreePacketIPv4(PKT *p)
-{
+void FreePacketIPv4(PKT *p) {
 	// Validate arguments
-	if (p == NULL)
-	{
+	if (p == NULL) {
 		return;
 	}
 
-	switch (p->TypeL4)
-	{
+	switch (p->TypeL4) {
 	case L4_ICMPV4:
 		FreePacketICMPv4(p);
 		break;
@@ -2969,11 +2540,9 @@ void FreePacketIPv4(PKT *p)
 }
 
 // Release the memory for the tagged VLAN packet
-void FreePacketTagVlan(PKT *p)
-{
+void FreePacketTagVlan(PKT *p) {
 	// Validate arguments
-	if (p == NULL)
-	{
+	if (p == NULL) {
 		return;
 	}
 
@@ -2982,11 +2551,9 @@ void FreePacketTagVlan(PKT *p)
 }
 
 // Release the memory for the ARPv4 packet
-void FreePacketARPv4(PKT *p)
-{
+void FreePacketARPv4(PKT *p) {
 	// Validate arguments
-	if (p == NULL)
-	{
+	if (p == NULL) {
 		return;
 	}
 
@@ -2995,16 +2562,13 @@ void FreePacketARPv4(PKT *p)
 }
 
 // Release the memory of the UDPv4 packet
-void FreePacketUDPv4(PKT *p)
-{
+void FreePacketUDPv4(PKT *p) {
 	// Validate arguments
-	if (p == NULL)
-	{
+	if (p == NULL) {
 		return;
 	}
 
-	switch (p->TypeL7)
-	{
+	switch (p->TypeL7) {
 	case L7_DHCPV4:
 		FreePacketDHCPv4(p);
 		break;
@@ -3015,11 +2579,9 @@ void FreePacketUDPv4(PKT *p)
 }
 
 // Release the memory for the TCPv4 packet
-void FreePacketTCPv4(PKT *p)
-{
+void FreePacketTCPv4(PKT *p) {
 	// Validate arguments
-	if (p == NULL)
-	{
+	if (p == NULL) {
 		return;
 	}
 
@@ -3028,11 +2590,9 @@ void FreePacketTCPv4(PKT *p)
 }
 
 // Release the memory for the ICMPv4 packet
-void FreePacketICMPv4(PKT *p)
-{
+void FreePacketICMPv4(PKT *p) {
 	// Validate arguments
-	if (p == NULL)
-	{
+	if (p == NULL) {
 		return;
 	}
 
@@ -3041,11 +2601,9 @@ void FreePacketICMPv4(PKT *p)
 }
 
 // Release the memory for the DHCPv4 packet
-void FreePacketDHCPv4(PKT *p)
-{
+void FreePacketDHCPv4(PKT *p) {
 	// Validate arguments
-	if (p == NULL)
-	{
+	if (p == NULL) {
 		return;
 	}
 
@@ -3055,8 +2613,7 @@ void FreePacketDHCPv4(PKT *p)
 
 
 // Calculate the checksum
-USHORT IpChecksum(void *buf, UINT size)
-{
+USHORT IpChecksum(void *buf, UINT size) {
 	int sum = 0;
 	USHORT *addr = (USHORT *)buf;
 	int len = (int)size;
@@ -3064,16 +2621,14 @@ USHORT IpChecksum(void *buf, UINT size)
 	int nleft = len;
 	USHORT answer = 0;
 
-	while (nleft > 1)
-	{
+	while (nleft > 1) {
 		USHORT ww = 0;
 		Copy(&ww, w++, sizeof(USHORT));
 		sum += ww;
 		nleft -= 2;
 	}
 
-	if (nleft == 1)
-	{
+	if (nleft == 1) {
 		*(UCHAR *)(&answer) = *(UCHAR *)w;
 		sum += answer;
 	}
@@ -3087,32 +2642,26 @@ USHORT IpChecksum(void *buf, UINT size)
 }
 
 // Convert a DHCP option list into a buffer
-BUF *BuildDhcpOptionsBuf(LIST *o)
-{
+BUF *BuildDhcpOptionsBuf(LIST *o) {
 	BUF *b;
 	UINT i;
 	UCHAR id;
 	UCHAR sz;
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return NULL;
 	}
 
 	b = NewBuf();
-	for (i = 0; i < LIST_NUM(o); i++)
-	{
+	for (i = 0; i < LIST_NUM(o); i++) {
 		DHCP_OPTION *d = LIST_DATA(o, i);
 		UINT current_size = d->Size;
 		UINT current_pos = 0;
 
 		id = (UCHAR)d->Id;
-		if (d->Size <= 255)
-		{
+		if (d->Size <= 255) {
 			sz = (UCHAR)d->Size;
-		}
-		else
-		{
+		} else {
 			sz = 0xFF;
 		}
 		WriteBuf(b, &id, 1);
@@ -3122,15 +2671,11 @@ BUF *BuildDhcpOptionsBuf(LIST *o)
 		current_size -= sz;
 		current_pos += sz;
 
-		while (current_size != 0)
-		{
+		while (current_size != 0) {
 			id = DHCP_ID_PRIVATE;
-			if (current_size <= 255)
-			{
+			if (current_size <= 255) {
 				sz = (UCHAR)current_size;
-			}
-			else
-			{
+			} else {
 				sz = 0xFF;
 			}
 			WriteBuf(b, &id, 1);
@@ -3140,7 +2685,6 @@ BUF *BuildDhcpOptionsBuf(LIST *o)
 			current_size -= sz;
 			current_pos += sz;
 		}
-
 	}
 
 	id = 0xff;
@@ -3150,11 +2694,9 @@ BUF *BuildDhcpOptionsBuf(LIST *o)
 }
 
 // Create a new DHCP option item
-DHCP_OPTION *NewDhcpOption(UINT id, void *data, UINT size)
-{
+DHCP_OPTION *NewDhcpOption(UINT id, void *data, UINT size) {
 	DHCP_OPTION *ret;
-	if (size != 0 && data == NULL)
-	{
+	if (size != 0 && data == NULL) {
 		return NULL;
 	}
 
@@ -3168,21 +2710,18 @@ DHCP_OPTION *NewDhcpOption(UINT id, void *data, UINT size)
 }
 
 // Parse a DHCP options list
-DHCP_OPTION_LIST *ParseDhcpOptionList(void *data, UINT size)
-{
+DHCP_OPTION_LIST *ParseDhcpOptionList(void *data, UINT size) {
 	DHCP_OPTION_LIST *ret;
 	LIST *o;
 	DHCP_OPTION *a;
 	// Validate arguments
-	if (data == NULL)
-	{
+	if (data == NULL) {
 		return NULL;
 	}
 
 	// Parse the list
 	o = ParseDhcpOptions(data, size);
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return NULL;
 	}
 
@@ -3190,31 +2729,25 @@ DHCP_OPTION_LIST *ParseDhcpOptionList(void *data, UINT size)
 
 	// Get the opcode
 	a = GetDhcpOption(o, DHCP_ID_MESSAGE_TYPE);
-	if (a != NULL)
-	{
-		if (a->Size == 1)
-		{
+	if (a != NULL) {
+		if (a->Size == 1) {
 			ret->Opcode = *((UCHAR *)a->Data);
 		}
 	}
 
-	switch (ret->Opcode)
-	{
+	switch (ret->Opcode) {
 	case DHCP_DISCOVER:
 	case DHCP_REQUEST:
 		// Parse this more finely because this is client requests
 		// Requested IP address
 		a = GetDhcpOption(o, DHCP_ID_REQUEST_IP_ADDRESS);
-		if (a != NULL && a->Size == 4)
-		{
+		if (a != NULL && a->Size == 4) {
 			Copy(&ret->RequestedIp, a->Data, 4);
 		}
 		// Host name
 		a = GetDhcpOption(o, DHCP_ID_HOST_NAME);
-		if (a != NULL)
-		{
-			if (a->Size > 1)
-			{
+		if (a != NULL) {
+			if (a->Size > 1) {
 				Copy(ret->Hostname, a->Data, MIN(a->Size, sizeof(ret->Hostname) - 1));
 			}
 		}
@@ -3224,60 +2757,51 @@ DHCP_OPTION_LIST *ParseDhcpOptionList(void *data, UINT size)
 	case DHCP_ACK:
 		// Subnet mask
 		a = GetDhcpOption(o, DHCP_ID_SUBNET_MASK);
-		if (a != NULL && a->Size >= 4)
-		{
+		if (a != NULL && a->Size >= 4) {
 			Copy(&ret->SubnetMask, a->Data, 4);
 		}
 
 		// Lease time
 		a = GetDhcpOption(o, DHCP_ID_LEASE_TIME);
-		if (a != NULL && a->Size == 4)
-		{
+		if (a != NULL && a->Size == 4) {
 			ret->LeaseTime = READ_UINT(a->Data);
 		}
 
 		// Server IP address
 		a = GetDhcpOption(o, DHCP_ID_SERVER_ADDRESS);
-		if (a != NULL && a->Size >= 4)
-		{
+		if (a != NULL && a->Size >= 4) {
 			Copy(&ret->ServerAddress, a->Data, 4);
 		}
 
 		// Domain name
 		a = GetDhcpOption(o, DHCP_ID_DOMAIN_NAME);
-		if (a != NULL && a->Size >= 1)
-		{
+		if (a != NULL && a->Size >= 1) {
 			Zero(ret->DomainName, sizeof(ret->DomainName));
 			Copy(ret->DomainName, a->Data, MIN(a->Size, sizeof(ret->DomainName) - 1));
 		}
 
 		// Gateway
 		a = GetDhcpOption(o, DHCP_ID_GATEWAY_ADDR);
-		if (a != NULL && a->Size >= 4)
-		{
+		if (a != NULL && a->Size >= 4) {
 			Copy(&ret->Gateway, a->Data, 4);
 		}
 
 		// DNS server
 		a = GetDhcpOption(o, DHCP_ID_DNS_ADDR);
-		if (a != NULL && a->Size >= 4)
-		{
+		if (a != NULL && a->Size >= 4) {
 			Copy(&ret->DnsServer, a->Data, 4);
 
-			if (a->Size >= 8)
-			{
+			if (a->Size >= 8) {
 				Copy(&ret->DnsServer2, ((UCHAR *)a->Data) + 4, 4);
 			}
 		}
 
 		// WINS server
 		a = GetDhcpOption(o, DHCP_ID_WINS_ADDR);
-		if (a != NULL && a->Size >= 4)
-		{
+		if (a != NULL && a->Size >= 4) {
 			Copy(&ret->WinsServer, a->Data, 4);
 
-			if (a->Size >= 8)
-			{
+			if (a->Size >= 8) {
 				Copy(&ret->WinsServer2, ((UCHAR *)a->Data) + 4, 4);
 			}
 		}
@@ -3285,14 +2809,12 @@ DHCP_OPTION_LIST *ParseDhcpOptionList(void *data, UINT size)
 		// Classless static routing table entries
 		// RFC 3442
 		a = GetDhcpOption(o, DHCP_ID_CLASSLESS_ROUTE);
-		if (a != NULL)
-		{
+		if (a != NULL) {
 			DhcpParseClasslessRouteData(&ret->ClasslessRoute, a->Data, a->Size);
 		}
 		// Microsoft Extension
 		a = GetDhcpOption(o, DHCP_ID_MS_CLASSLESS_ROUTE);
-		if (a != NULL)
-		{
+		if (a != NULL) {
 			DhcpParseClasslessRouteData(&ret->ClasslessRoute, a->Data, a->Size);
 		}
 
@@ -3306,19 +2828,16 @@ DHCP_OPTION_LIST *ParseDhcpOptionList(void *data, UINT size)
 }
 
 // Parse a classless static routing table entries from the DHCP message
-void DhcpParseClasslessRouteData(DHCP_CLASSLESS_ROUTE_TABLE *t, void *data, UINT size)
-{
+void DhcpParseClasslessRouteData(DHCP_CLASSLESS_ROUTE_TABLE *t, void *data, UINT size) {
 	BUF *b;
 	// Validate arguments
-	if (t == NULL || data == NULL || size == 0)
-	{
+	if (t == NULL || data == NULL || size == 0) {
 		return;
 	}
 
 	b = MemToBuf(data, size);
 
-	while (b->Current < b->Size)
-	{
+	while (b->Current < b->Size) {
 		UCHAR c;
 		UINT subnet_mask_len;
 		UINT data_len;
@@ -3334,8 +2853,7 @@ void DhcpParseClasslessRouteData(DHCP_CLASSLESS_ROUTE_TABLE *t, void *data, UINT
 		// Subnet mask length
 		c = ReadBufChar(b);
 		subnet_mask_len = c;
-		if (subnet_mask_len > 32)
-		{
+		if (subnet_mask_len > 32) {
 			// Invalid data
 			break;
 		}
@@ -3343,8 +2861,7 @@ void DhcpParseClasslessRouteData(DHCP_CLASSLESS_ROUTE_TABLE *t, void *data, UINT
 		data_len = (subnet_mask_len + 7) / 8;
 
 		Zero(tmp, sizeof(tmp));
-		if (ReadBuf(b, tmp, data_len) != data_len)
-		{
+		if (ReadBuf(b, tmp, data_len) != data_len) {
 			// Invalid data
 			break;
 		}
@@ -3358,8 +2875,7 @@ void DhcpParseClasslessRouteData(DHCP_CLASSLESS_ROUTE_TABLE *t, void *data, UINT
 
 		// Gateway address
 		Zero(&gateway, sizeof(gateway));
-		if (ReadBuf(b, &ip32, sizeof(UINT)) != sizeof(UINT))
-		{
+		if (ReadBuf(b, &ip32, sizeof(UINT)) != sizeof(UINT)) {
 			// Invalid data
 			break;
 		}
@@ -3372,19 +2888,15 @@ void DhcpParseClasslessRouteData(DHCP_CLASSLESS_ROUTE_TABLE *t, void *data, UINT
 		Copy(&r.SubnetMask, &mask, sizeof(IP));
 		r.SubnetMaskLen = subnet_mask_len;
 
-		for (i = 0; i < MAX_DHCP_CLASSLESS_ROUTE_ENTRIES; i++)
-		{
-			if (Cmp(&t->Entries[i], &r, sizeof(DHCP_CLASSLESS_ROUTE)) == 0)
-			{
+		for (i = 0; i < MAX_DHCP_CLASSLESS_ROUTE_ENTRIES; i++) {
+			if (Cmp(&t->Entries[i], &r, sizeof(DHCP_CLASSLESS_ROUTE)) == 0) {
 				exists = true;
 				break;
 			}
 		}
 
-		if (exists == false)
-		{
-			if (t->NumExistingRoutes >= MAX_DHCP_CLASSLESS_ROUTE_ENTRIES)
-			{
+		if (exists == false) {
+			if (t->NumExistingRoutes >= MAX_DHCP_CLASSLESS_ROUTE_ENTRIES) {
 				// Overflow
 				break;
 			}
@@ -3398,21 +2910,17 @@ void DhcpParseClasslessRouteData(DHCP_CLASSLESS_ROUTE_TABLE *t, void *data, UINT
 }
 
 // Finding a DHCP option
-DHCP_OPTION *GetDhcpOption(LIST *o, UINT id)
-{
+DHCP_OPTION *GetDhcpOption(LIST *o, UINT id) {
 	UINT i;
 	DHCP_OPTION *ret = NULL;
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return NULL;
 	}
 
-	for (i = 0; i < LIST_NUM(o); i++)
-	{
+	for (i = 0; i < LIST_NUM(o); i++) {
 		DHCP_OPTION *opt = LIST_DATA(o, i);
-		if (opt->Id == id)
-		{
+		if (opt->Id == id) {
 			ret = opt;
 		}
 	}
@@ -3421,17 +2929,14 @@ DHCP_OPTION *GetDhcpOption(LIST *o, UINT id)
 }
 
 // Release the DHCP option
-void FreeDhcpOptions(LIST *o)
-{
+void FreeDhcpOptions(LIST *o) {
 	UINT i;
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return;
 	}
 
-	for (i = 0; i < LIST_NUM(o); i++)
-	{
+	for (i = 0; i < LIST_NUM(o); i++) {
 		DHCP_OPTION *opt = LIST_DATA(o, i);
 		Free(opt->Data);
 		Free(opt);
@@ -3441,14 +2946,12 @@ void FreeDhcpOptions(LIST *o)
 }
 
 // Parse the DHCP Options
-LIST *ParseDhcpOptions(void *data, UINT size)
-{
+LIST *ParseDhcpOptions(void *data, UINT size) {
 	BUF *b;
 	LIST *o;
 	DHCP_OPTION *last_opt;
 	// Validate arguments
-	if (data == NULL)
-	{
+	if (data == NULL) {
 		return NULL;
 	}
 
@@ -3460,26 +2963,21 @@ LIST *ParseDhcpOptions(void *data, UINT size)
 
 	last_opt = NULL;
 
-	while (true)
-	{
+	while (true) {
 		UCHAR c = 0;
 		UCHAR sz = 0;
 		DHCP_OPTION *opt;
-		if (ReadBuf(b, &c, 1) != 1)
-		{
+		if (ReadBuf(b, &c, 1) != 1) {
 			break;
 		}
-		if (c == 0xff)
-		{
+		if (c == 0xff) {
 			break;
 		}
-		if (ReadBuf(b, &sz, 1) != 1)
-		{
+		if (ReadBuf(b, &sz, 1) != 1) {
 			break;
 		}
 
-		if (c == DHCP_ID_PRIVATE && last_opt != NULL)
-		{
+		if (c == DHCP_ID_PRIVATE && last_opt != NULL) {
 			UINT new_size = last_opt->Size + (UINT)sz;
 			UCHAR *new_buf = ZeroMalloc(new_size);
 			Copy(new_buf, last_opt->Data, last_opt->Size);
@@ -3487,9 +2985,7 @@ LIST *ParseDhcpOptions(void *data, UINT size)
 			Free(last_opt->Data);
 			last_opt->Data = new_buf;
 			last_opt->Size = new_size;
-		}
-		else
-		{
+		} else {
 			opt = ZeroMalloc(sizeof(DHCP_OPTION));
 			opt->Id = (UINT)c;
 			opt->Size = (UINT)sz;
@@ -3507,24 +3003,20 @@ LIST *ParseDhcpOptions(void *data, UINT size)
 }
 
 // Rewrite the DHCP message data in the requested IPv4 packet appropriately
-BUF *DhcpModifyIPv4(DHCP_MODIFY_OPTION *m, void *data, UINT size)
-{
+BUF *DhcpModifyIPv4(DHCP_MODIFY_OPTION *m, void *data, UINT size) {
 	PKT *p;
 	BUF *ret = NULL;
 	// Validate arguments
-	if (m == NULL || data == NULL || size == 0)
-	{
+	if (m == NULL || data == NULL || size == 0) {
 		return NULL;
 	}
 
 	p = ParsePacketEx4(data, size, false, 0, false, false, false);
 
-	if (p != NULL && p->TypeL3 == L3_IPV4 && p->TypeL4 == L4_UDP && p->TypeL7 == L7_DHCPV4)
-	{
+	if (p != NULL && p->TypeL3 == L3_IPV4 && p->TypeL4 == L4_UDP && p->TypeL7 == L7_DHCPV4) {
 		BUF *new_buf = DhcpModify(m, p->Payload, p->PayloadSize);
 
-		if (new_buf != NULL)
-		{
+		if (new_buf != NULL) {
 			ret = NewBuf();
 
 			WriteBuf(ret, p->PacketData, p->PacketSize - p->PayloadSize);
@@ -3536,15 +3028,12 @@ BUF *DhcpModifyIPv4(DHCP_MODIFY_OPTION *m, void *data, UINT size)
 
 	FreePacket(p);
 
-	if (ret != NULL)
-	{
+	if (ret != NULL) {
 		PKT *p = ParsePacketEx4(ret->Buf, ret->Size, false, 0, false, false, false);
 
-		if (p != NULL)
-		{
+		if (p != NULL) {
 			// Recalculation of the UDP checksum
-			if (p->TypeL3 == L3_IPV4 && p->TypeL4 == L4_UDP)
-			{
+			if (p->TypeL3 == L3_IPV4 && p->TypeL4 == L4_UDP) {
 				UDP_HEADER *udp = p->L4.UDPHeader;
 
 				udp->Checksum = 0;
@@ -3563,8 +3052,7 @@ BUF *DhcpModifyIPv4(DHCP_MODIFY_OPTION *m, void *data, UINT size)
 }
 
 // Rewrite the DHCP packet appropriately
-BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size)
-{
+BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size) {
 	DHCPV4_HEADER *dhcp_header;
 	UCHAR *data_ptr;
 	bool ret_ok = false;
@@ -3579,15 +3067,13 @@ BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size)
 	UINT i;
 	UINT dhcp_min_size;
 	// Validate arguments
-	if (m == NULL || data == NULL || size == 0)
-	{
+	if (m == NULL || data == NULL || size == 0) {
 		return NULL;
 	}
 
 	data_ptr = (UCHAR *)data;
 
-	if (size < sizeof(DHCPV4_HEADER))
-	{
+	if (size < sizeof(DHCPV4_HEADER)) {
 		goto LABEL_CLEANUP;
 	}
 
@@ -3595,10 +3081,8 @@ BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size)
 	data_ptr += sizeof(DHCPV4_HEADER);
 
 	// Search for a Magic Cookie
-	while (size >= 5)
-	{
-		if (Cmp(data_ptr, &magic_cookie, sizeof(UINT)) == 0)
-		{
+	while (size >= 5) {
+		if (Cmp(data_ptr, &magic_cookie, sizeof(UINT)) == 0) {
 			// Found
 			data_ptr += sizeof(UINT);
 			size -= sizeof(UINT);
@@ -3610,8 +3094,7 @@ BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size)
 		size--;
 	}
 
-	if (ok == false)
-	{
+	if (ok == false) {
 		// The packet is invalid
 		goto LABEL_CLEANUP;
 	}
@@ -3621,15 +3104,13 @@ BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size)
 
 	// Parse the DHCP options list
 	opt = ParseDhcpOptionList(data_ptr, size);
-	if (opt == NULL)
-	{
+	if (opt == NULL) {
 		// The packet is invalid
 		goto LABEL_CLEANUP;
 	}
 
 	opt_list = ParseDhcpOptions(data_ptr, size);
-	if (opt_list == NULL)
-	{
+	if (opt_list == NULL) {
 		// The packet is invalid
 		goto LABEL_CLEANUP;
 	}
@@ -3637,53 +3118,42 @@ BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size)
 	// Rebuilding the options list
 	opt_list2 = NewListFast(NULL);
 
-	for (i = 0; i < LIST_NUM(opt_list); i++)
-	{
+	for (i = 0; i < LIST_NUM(opt_list); i++) {
 		DHCP_OPTION *o = LIST_DATA(opt_list, i);
 		DHCP_OPTION *o2 = NULL;
 		bool ok = true;
 
-		if (m->RemoveDefaultGatewayOnReply)
-		{
-			if (opt->Opcode == DHCP_OFFER || opt->Opcode == DHCP_ACK)
-			{
+		if (m->RemoveDefaultGatewayOnReply) {
+			if (opt->Opcode == DHCP_OFFER || opt->Opcode == DHCP_ACK) {
 				// Remove the default gateway from the DHCP Reply
-				if (o->Id == DHCP_ID_GATEWAY_ADDR)
-				{
+				if (o->Id == DHCP_ID_GATEWAY_ADDR) {
 					ok = false;
 				}
-				if (o->Id == DHCP_ID_DNS_ADDR || o->Id == DHCP_ID_WINS_ADDR || o->Id == DHCP_ID_DOMAIN_NAME)
-				{
+				if (o->Id == DHCP_ID_DNS_ADDR || o->Id == DHCP_ID_WINS_ADDR || o->Id == DHCP_ID_DOMAIN_NAME) {
 					ok = false;
 				}
 			}
 		}
 
-		if (ok)
-		{
+		if (ok) {
 			o2 = NewDhcpOption(o->Id, o->Data, o->Size);
-			if (o2 != NULL)
-			{
+			if (o2 != NULL) {
 				Add(opt_list2, o2);
 			}
-
 		}
-
 	}
 
 	opt_buf = BuildDhcpOptionsBuf(opt_list2);
 
 	WriteBuf(ret, opt_buf->Buf, opt_buf->Size);
 
-	if (src_size != ret->Size || Cmp(data, ret->Buf, ret->Size) != 0)
-	{
+	if (src_size != ret->Size || Cmp(data, ret->Buf, ret->Size) != 0) {
 		// Rewrite if anything changes. Do not rewrite if there is no change
 		ret_ok = true;
 
 		// If src_size is greater than DHCP_MIN_SIZE, then use the src_size as minimum size of DHCP.
 		dhcp_min_size = MAX(src_size, DHCP_MIN_SIZE);
-		if (ret->Size < dhcp_min_size)
-		{
+		if (ret->Size < dhcp_min_size) {
 			// Padding
 			UCHAR *pad_buf;
 			UINT pad_size = dhcp_min_size - ret->Size;
@@ -3698,48 +3168,39 @@ BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size)
 
 LABEL_CLEANUP:
 	// Memory release
-	if (opt_buf != NULL)
-	{
+	if (opt_buf != NULL) {
 		FreeBuf(opt_buf);
 	}
 
-	if (opt != NULL)
-	{
+	if (opt != NULL) {
 		Free(opt);
 	}
 
-	if (opt_list != NULL)
-	{
+	if (opt_list != NULL) {
 		FreeDhcpOptions(opt_list);
 	}
 
-	if (opt_list2 != NULL)
-	{
+	if (opt_list2 != NULL) {
 		FreeDhcpOptions(opt_list2);
 	}
 
 	// Return a value
-	if (ret_ok)
-	{
+	if (ret_ok) {
 		return ret;
-	}
-	else
-	{
+	} else {
 		FreeBuf(ret);
 		return NULL;
 	}
 }
 
 // Generate a random MAC address
-void GenMacAddress(UCHAR *mac)
-{
+void GenMacAddress(UCHAR *mac) {
 	UCHAR rand_data[32];
 	UINT64 now;
 	BUF *b;
 	UCHAR hash[SHA1_SIZE];
 	// Validate arguments
-	if (mac == NULL)
-	{
+	if (mac == NULL) {
 		return;
 	}
 

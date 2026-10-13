@@ -5,75 +5,71 @@
 // Cfg.h
 // Header of Cfg.c
 
-#ifndef	CFG_H
-#define	CFG_H
+#ifndef CFG_H
+#define CFG_H
 
 #include "Encrypt.h"
 
 // Macro
 //#define	CHECK_CFG_NAME_EXISTS			// Check duplication of the existing name
 
-#define	SAVE_BINARY_FILE_NAME_SWITCH	L"$save_binary"
+#define SAVE_BINARY_FILE_NAME_SWITCH L"$save_binary"
 
 // Constants
-#define	TAG_DECLARE			"declare"
-#define	TAG_STRING			"string"
-#define	TAG_INT				"uint"
-#define	TAG_INT64			"uint64"
-#define	TAG_BOOL			"bool"
-#define	TAG_BYTE			"byte"
-#define	TAG_TRUE			"true"
-#define	TAG_FALSE			"false"
-#define	TAG_END				"end"
-#define	TAG_ROOT			"root"
+#define TAG_DECLARE "declare"
+#define TAG_STRING  "string"
+#define TAG_INT     "uint"
+#define TAG_INT64   "uint64"
+#define TAG_BOOL    "bool"
+#define TAG_BYTE    "byte"
+#define TAG_TRUE    "true"
+#define TAG_FALSE   "false"
+#define TAG_END     "end"
+#define TAG_ROOT    "root"
 
-#define	TAG_CPYRIGHT		"\xef\xbb\xbf# Software Configuration File\r\n# ---------------------------\r\n# \r\n# You may edit this file when the VPN Server / Client / Bridge program is not running.\r\n# \r\n# In prior to edit this file manually by your text editor,\r\n# shutdown the VPN Server / Client / Bridge background service.\r\n# Otherwise, all changes will be lost.\r\n# \r\n"
-#define	TAG_BINARY			"SEVPN_DB"
+#define TAG_CPYRIGHT "\xef\xbb\xbf# Software Configuration File\r\n# ---------------------------\r\n# \r\n# You may edit this file when the VPN Server / Client / Bridge program is not running.\r\n# \r\n# In prior to edit this file manually by your text editor,\r\n# shutdown the VPN Server / Client / Bridge background service.\r\n# Otherwise, all changes will be lost.\r\n# \r\n"
+#define TAG_BINARY   "SEVPN_DB"
 
 // Data type
-#define	ITEM_TYPE_INT		1		// int
-#define	ITEM_TYPE_INT64		2		// int64
-#define	ITEM_TYPE_BYTE		3		// byte
-#define	ITEM_TYPE_STRING	4		// string
-#define	ITEM_TYPE_BOOL		5		// bool
+#define ITEM_TYPE_INT    1 // int
+#define ITEM_TYPE_INT64  2 // int64
+#define ITEM_TYPE_BYTE   3 // byte
+#define ITEM_TYPE_STRING 4 // string
+#define ITEM_TYPE_BOOL   5 // bool
 
 // Folder
-struct FOLDER
-{
-	char *Name;				// Folder name
-	LIST *Items;			// List of items
-	LIST *Folders;			// Subfolder
-	struct FOLDER *Parent;	// Parent Folder
+struct FOLDER {
+	char *Name;            // Folder name
+	LIST *Items;           // List of items
+	LIST *Folders;         // Subfolder
+	struct FOLDER *Parent; // Parent Folder
 };
 
 // Item
-struct ITEM
-{
-	char *Name;				// Item Name
-	UINT Type;				// Data type
-	void *Buf;				// Data
-	UINT size;				// Data size
-	FOLDER *Parent;			// Parent Folder
+struct ITEM {
+	char *Name;     // Item Name
+	UINT Type;      // Data type
+	void *Buf;      // Data
+	UINT size;      // Data size
+	FOLDER *Parent; // Parent Folder
 };
 
 // Configuration file reader and writer
-struct CFG_RW
-{
-	LOCK *lock;				// Lock
-	char *FileName;			// File name (ANSI)
-	wchar_t *FileNameW;		// File name (Unicode)
-	IO *Io;					// IO
-	UCHAR LashHash[SHA1_SIZE];	// Hash value which is written last
-	bool DontBackup;		// Do not use the backup
-	wchar_t LastSavedDateStr[MAX_SIZE];	// Date and time string that last saved
+struct CFG_RW {
+	LOCK *lock;                         // Lock
+	char *FileName;                     // File name (ANSI)
+	wchar_t *FileNameW;                 // File name (Unicode)
+	IO *Io;                             // IO
+	UCHAR LashHash[SHA1_SIZE];          // Hash value which is written last
+	bool DontBackup;                    // Do not use the backup
+	wchar_t LastSavedDateStr[MAX_SIZE]; // Date and time string that last saved
 };
 
 typedef bool (*ENUM_FOLDER)(FOLDER *f, void *param);
 typedef bool (*ENUM_ITEM)(ITEM *t, void *param);
 
 // Parameters for the enumeration
-struct CFG_ENUM_PARAM
-{
+struct CFG_ENUM_PARAM {
 	BUF *b;
 	FOLDER *f;
 	UINT depth;
@@ -152,7 +148,7 @@ void BackupCfgWEx(CFG_RW *rw, FOLDER *f, wchar_t *original, UINT revision_number
 bool CfgGetIp(FOLDER *f, char *name, struct IP *ip);
 ITEM *CfgAddIp(FOLDER *f, char *name, struct IP *ip);
 
-#endif	// CFG_H
+#endif // CFG_H
 
 
 

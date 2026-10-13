@@ -5,53 +5,53 @@
 // Encrypt.h
 // Header of Encrypt.c
 
-#ifndef	ENCRYPT_H
-#define	ENCRYPT_H
+#ifndef ENCRYPT_H
+#define ENCRYPT_H
 
 #include "MayaType.h"
 
 #include <openssl/opensslv.h>
 
 // Constant
-#define	MIN_SIGN_HASH_SIZE		(15 + SHA1_SIZE)
-#define	SIGN_HASH_SIZE			(MIN_SIGN_HASH_SIZE)
+#define MIN_SIGN_HASH_SIZE (15 + SHA1_SIZE)
+#define SIGN_HASH_SIZE     (MIN_SIGN_HASH_SIZE)
 
-#define DES_KEY_SIZE				8			// DES key size
-#define	DES_IV_SIZE					8			// DES IV size
-#define DES_BLOCK_SIZE				8			// DES block size
-#define DES3_KEY_SIZE				(8 * 3)		// 3DES key size
-#define RSA_KEY_SIZE				1024		// RSA key size
-#define DH_KEY_SIZE					128			// DH key size
-#define	RSA_MIN_SIGN_HASH_SIZE		(15 + SHA1_HASH_SIZE)	// Minimum RSA hash size
-#define	RSA_SIGN_HASH_SIZE			(RSA_MIN_SIGN_HASH_SIZE)	// RSA hash size
-#define MD5_HASH_SIZE				16			// MD5 hash size
-#define SHA1_HASH_SIZE				20			// SHA-1 hash size
-#define SHA1_BLOCK_SIZE				64			// SHA-1 block size
-#define HMAC_SHA1_96_KEY_SIZE		20			// HMAC-SHA-1-96 key size
-#define HMAC_SHA1_96_HASH_SIZE		12			// HMAC-SHA-1-96 hash size
-#define HMAC_SHA1_SIZE				(SHA1_HASH_SIZE)	// HMAC-SHA-1 hash size
-#define	AES_IV_SIZE					16			// AES IV size
-#define	AES_MAX_KEY_SIZE			32			// Maximum AES key size
+#define DES_KEY_SIZE           8                        // DES key size
+#define DES_IV_SIZE            8                        // DES IV size
+#define DES_BLOCK_SIZE         8                        // DES block size
+#define DES3_KEY_SIZE          (8 * 3)                  // 3DES key size
+#define RSA_KEY_SIZE           1024                     // RSA key size
+#define DH_KEY_SIZE            128                      // DH key size
+#define RSA_MIN_SIGN_HASH_SIZE (15 + SHA1_HASH_SIZE)    // Minimum RSA hash size
+#define RSA_SIGN_HASH_SIZE     (RSA_MIN_SIGN_HASH_SIZE) // RSA hash size
+#define MD5_HASH_SIZE          16                       // MD5 hash size
+#define SHA1_HASH_SIZE         20                       // SHA-1 hash size
+#define SHA1_BLOCK_SIZE        64                       // SHA-1 block size
+#define HMAC_SHA1_96_KEY_SIZE  20                       // HMAC-SHA-1-96 key size
+#define HMAC_SHA1_96_HASH_SIZE 12                       // HMAC-SHA-1-96 hash size
+#define HMAC_SHA1_SIZE         (SHA1_HASH_SIZE)         // HMAC-SHA-1 hash size
+#define AES_IV_SIZE            16                       // AES IV size
+#define AES_MAX_KEY_SIZE       32                       // Maximum AES key size
 
 // IANA definitions taken from IKEv1 Phase 1
-#define SHA1_160						2
-#define SHA2_256						4
-#define SHA2_384						5
-#define SHA2_512						6
+#define SHA1_160 2
+#define SHA2_256 4
+#define SHA2_384 5
+#define SHA2_512 6
 
 // HMAC block size
-#define	HMAC_BLOCK_SIZE					64
+#define HMAC_BLOCK_SIZE 64
 // The block size for sha-384 and sha-512 as defined by rfc4868
-#define HMAC_BLOCK_SIZE_1024					128
-#define HMAC_BLOCK_SIZE_MAX					512
+#define HMAC_BLOCK_SIZE_1024 128
+#define HMAC_BLOCK_SIZE_MAX  512
 
-#define DH_GROUP1_PRIME_768 \
+#define DH_GROUP1_PRIME_768                            \
 	"FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD1" \
 	"29024E088A67CC74020BBEA63B139B22514A08798E3404DD" \
 	"EF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245" \
 	"E485B576625E7EC6F44C42E9A63A3620FFFFFFFFFFFFFFFF"
 
-#define DH_GROUP2_PRIME_1024 \
+#define DH_GROUP2_PRIME_1024                           \
 	"FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD1" \
 	"29024E088A67CC74020BBEA63B139B22514A08798E3404DD" \
 	"EF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245" \
@@ -59,7 +59,7 @@
 	"EE386BFB5A899FA5AE9F24117C4B1FE649286651ECE65381" \
 	"FFFFFFFFFFFFFFFF"
 
-#define DH_GROUP5_PRIME_1536 \
+#define DH_GROUP5_PRIME_1536                           \
 	"FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD1" \
 	"29024E088A67CC74020BBEA63B139B22514A08798E3404DD" \
 	"EF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245" \
@@ -69,9 +69,9 @@
 	"83655D23DCA3AD961C62F356208552BB9ED529077096966D" \
 	"670C354E4ABC9804F1746C08CA237327FFFFFFFFFFFFFFFF"
 
-#define	DH_SIMPLE_160	"AEE7561459353C95DDA966AE1FD25D95CD46E935"
+#define DH_SIMPLE_160 "AEE7561459353C95DDA966AE1FD25D95CD46E935"
 
-#define	DH_SET_2048 \
+#define DH_SET_2048                                    \
 	"FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD1" \
 	"29024E088A67CC74020BBEA63B139B22514A08798E3404DD" \
 	"EF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245" \
@@ -84,25 +84,25 @@
 	"DE2BCBF6955817183995497CEA956AE515D2261898FA0510" \
 	"15728E5A8AACAA68FFFFFFFFFFFFFFFF"
 
-#define	DH_SET_3072	\
-	"FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD1"\
-	"29024E088A67CC74020BBEA63B139B22514A08798E3404DD"\
-	"EF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245"\
-	"E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7ED"\
-	"EE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3D"\
-	"C2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F"\
-	"83655D23DCA3AD961C62F356208552BB9ED529077096966D"\
-	"670C354E4ABC9804F1746C08CA18217C32905E462E36CE3B"\
-	"E39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9"\
-	"DE2BCBF6955817183995497CEA956AE515D2261898FA0510"\
-	"15728E5A8AAAC42DAD33170D04507A33A85521ABDF1CBA64"\
-	"ECFB850458DBEF0A8AEA71575D060C7DB3970F85A6E1E4C7"\
-	"ABF5AE8CDB0933D71E8C94E04A25619DCEE3D2261AD2EE6B"\
-	"F12FFA06D98A0864D87602733EC86A64521F2B18177B200C"\
-	"BBE117577A615D6C770988C0BAD946E208E24FA074E5AB31"\
+#define DH_SET_3072                                    \
+	"FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD1" \
+	"29024E088A67CC74020BBEA63B139B22514A08798E3404DD" \
+	"EF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245" \
+	"E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7ED" \
+	"EE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3D" \
+	"C2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F" \
+	"83655D23DCA3AD961C62F356208552BB9ED529077096966D" \
+	"670C354E4ABC9804F1746C08CA18217C32905E462E36CE3B" \
+	"E39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9" \
+	"DE2BCBF6955817183995497CEA956AE515D2261898FA0510" \
+	"15728E5A8AAAC42DAD33170D04507A33A85521ABDF1CBA64" \
+	"ECFB850458DBEF0A8AEA71575D060C7DB3970F85A6E1E4C7" \
+	"ABF5AE8CDB0933D71E8C94E04A25619DCEE3D2261AD2EE6B" \
+	"F12FFA06D98A0864D87602733EC86A64521F2B18177B200C" \
+	"BBE117577A615D6C770988C0BAD946E208E24FA074E5AB31" \
 	"43DB5BFCE0FD108E4B82D120A93AD2CAFFFFFFFFFFFFFFFF"
 
-#define	DH_SET_4096 \
+#define DH_SET_4096                                    \
 	"FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD1" \
 	"29024E088A67CC74020BBEA63B139B22514A08798E3404DD" \
 	"EF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245" \
@@ -127,7 +127,7 @@
 	"FFFFFFFFFFFFFFFF"
 
 // Macro
-#define	HASHED_DATA(p)			(((UCHAR *)p) + 15)
+#define HASHED_DATA(p) (((UCHAR *)p) + 15)
 
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || LIBRESSL_VERSION_NUMBER >= 0x3080100L
 typedef struct PKCS12_st PKCS12;
@@ -151,32 +151,28 @@ typedef struct x509_st X509;
 typedef struct X509_crl_st X509_CRL;
 
 // Crypt context
-struct CRYPT
-{
+struct CRYPT {
 	RC4_KEY *Rc4Key;
 };
 
 // Name in the certificate
-struct NAME
-{
-	wchar_t *CommonName;		// CN
-	wchar_t *Organization;		// O
-	wchar_t *Unit;				// OU
-	wchar_t *Country;			// C
-	wchar_t *State;				// ST
-	wchar_t *Local;				// L
+struct NAME {
+	wchar_t *CommonName;   // CN
+	wchar_t *Organization; // O
+	wchar_t *Unit;         // OU
+	wchar_t *Country;      // C
+	wchar_t *State;        // ST
+	wchar_t *Local;        // L
 };
 
 // Serial number
-struct X_SERIAL
-{
+struct X_SERIAL {
 	UINT size;
 	UCHAR *data;
 };
 
 // Certificate
-struct X
-{
+struct X {
 	X509 *x509;
 	NAME *issuer_name;
 	NAME *subject_name;
@@ -192,47 +188,41 @@ struct X
 };
 
 // Key
-struct K
-{
+struct K {
 	EVP_PKEY *pkey;
 	bool private_key;
 };
 
 // PKCS#12
-struct P12
-{
+struct P12 {
 	PKCS12 *pkcs12;
 };
 
 // CEL
-struct X_CRL
-{
+struct X_CRL {
 	X509_CRL *Crl;
 };
 
 // Constant
-#define	MD5_SIZE	16
-#define	SHA1_SIZE	20
-#define	SHA256_SIZE	32
-#define	SHA384_SIZE	48
-#define	SHA512_SIZE	64
+#define MD5_SIZE    16
+#define SHA1_SIZE   20
+#define SHA256_SIZE 32
+#define SHA384_SIZE 48
+#define SHA512_SIZE 64
 
 // Key element of DES
-struct DES_KEY_VALUE
-{
+struct DES_KEY_VALUE {
 	DES_key_schedule *KeySchedule;
 	UCHAR KeyValue[DES_KEY_SIZE];
 };
 
 // DES key
-struct DES_KEY
-{
+struct DES_KEY {
 	DES_KEY_VALUE *k1, *k2, *k3;
 };
 
 // AES key
-struct AES_KEY_VALUE
-{
+struct AES_KEY_VALUE {
 	AES_KEY *EncryptKey;
 	AES_KEY *DecryptKey;
 	UCHAR KeyValue[AES_MAX_KEY_SIZE];
@@ -240,8 +230,7 @@ struct AES_KEY_VALUE
 };
 
 // DH
-struct DH_CTX
-{
+struct DH_CTX {
 	DH *dh;
 	BUF *MyPublicKey;
 	BUF *MyPrivateKey;
@@ -249,8 +238,7 @@ struct DH_CTX
 };
 
 // Cipher object
-struct CIPHER
-{
+struct CIPHER {
 	char Name[MAX_PATH];
 	bool IsNullCipher, IsAeadCipher;
 	const EVP_CIPHER *Cipher;
@@ -260,8 +248,7 @@ struct CIPHER
 };
 
 // Message digest object
-struct MD
-{
+struct MD {
 	char Name[MAX_PATH];
 	bool IsNullMd;
 	bool IsHMac;
@@ -336,7 +323,7 @@ void LoadXDates(X *x);
 bool CheckXDate(X *x, UINT64 current_system_time);
 bool CheckXDateNow(X *x);
 NAME *NewName(wchar_t *common_name, wchar_t *organization, wchar_t *unit,
-			  wchar_t *country, wchar_t *state, wchar_t *local);
+              wchar_t *country, wchar_t *state, wchar_t *local);
 void *NameToX509Name(NAME *nm);
 void FreeX509Name(void *xn);
 bool AddX509Name(void *xn, int nid, wchar_t *str);
@@ -413,4 +400,4 @@ void Sha2_256(void *dst, void *src, UINT size);
 
 int GetSslClientCertIndex();
 
-#endif	// ENCRYPT_H
+#endif // ENCRYPT_H

@@ -24,20 +24,20 @@
 #include "Mayaqua/Win32.h"
 
 static char *delete_targets[] =
-{
-	"backup.vpn_bridge.config",
-	"backup.vpn_client.config",
-	"backup.ranz_server.config",
-	"backup.vpn_gate_svc.config",
-	"backup.etherlogger.config",
-	HUB_PACKET_LOG_DIR,
-	"etherlogger_log",
-	"secure_nat_log",
-	HUB_SECURITY_LOG_DIR,
-	SERVER_LOG_DIR,
-	"bridge_log",
-	"packet_log_archive",
-	"azure_log",
+    {
+        "backup.vpn_bridge.config",
+        "backup.vpn_client.config",
+        "backup.ranz_server.config",
+        "backup.vpn_gate_svc.config",
+        "backup.etherlogger.config",
+        HUB_PACKET_LOG_DIR,
+        "etherlogger_log",
+        "secure_nat_log",
+        HUB_SECURITY_LOG_DIR,
+        SERVER_LOG_DIR,
+        "bridge_log",
+        "packet_log_archive",
+        "azure_log",
 };
 
 static UINT eraser_check_interval = DISK_FREE_CHECK_INTERVAL_DEFAULT;
@@ -46,13 +46,11 @@ static UINT64 logger_max_log_size = MAX_LOG_SIZE_DEFAULT;
 static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *log_date_changed, char *current_logfile_datename, char *current_file_name);
 
 // Send with syslog
-void SendSysLog(SLOG *g, wchar_t *str)
-{
+void SendSysLog(SLOG *g, wchar_t *str) {
 	UCHAR *buf;
 	UINT buf_size;
 	// Validate arguments
-	if (g == NULL || str == NULL)
-	{
+	if (g == NULL || str == NULL) {
 		return;
 	}
 
@@ -60,30 +58,24 @@ void SendSysLog(SLOG *g, wchar_t *str)
 	buf = ZeroMalloc(buf_size);
 	UniToUtf8(buf, buf_size, str);
 
-	if (buf_size >= 1024)
-	{
+	if (buf_size >= 1024) {
 		buf_size = 1023;
 	}
 
 	Lock(g->lock);
 	{
-		if (Tick64() >= g->NextPollIp)
-		{
+		if (Tick64() >= g->NextPollIp) {
 			IP ip;
 
-			if (GetIP(&ip, g->HostName))
-			{
+			if (GetIP(&ip, g->HostName)) {
 				g->NextPollIp = Tick64() + SYSLOG_POLL_IP_INTERVAL;
 				Copy(&g->DestIp, &ip, sizeof(IP));
-			}
-			else
-			{
+			} else {
 				g->NextPollIp = Tick64() + SYSLOG_POLL_IP_INTERVAL_NG;
 			}
 		}
 
-		if (g->DestPort != 0 && IsZeroIp(&g->DestIp) == false)
-		{
+		if (g->DestPort != 0 && IsZeroIp(&g->DestIp) == false) {
 			SendTo(g->Udp, &g->DestIp, g->DestPort, buf, buf_size);
 		}
 	}
@@ -93,11 +85,9 @@ void SendSysLog(SLOG *g, wchar_t *str)
 }
 
 // Release the syslog client
-void FreeSysLog(SLOG *g)
-{
+void FreeSysLog(SLOG *g) {
 	// Validate arguments
-	if (g == NULL)
-	{
+	if (g == NULL) {
 		return;
 	}
 
@@ -107,21 +97,17 @@ void FreeSysLog(SLOG *g)
 }
 
 // Configure the syslog client
-void SetSysLog(SLOG *g, char *hostname, UINT port)
-{
+void SetSysLog(SLOG *g, char *hostname, UINT port) {
 	IP ip;
 	// Validate arguments
-	if (g == NULL)
-	{
+	if (g == NULL) {
 		return;
 	}
-	if (port == 0)
-	{
+	if (port == 0) {
 		port = SYSLOG_PORT;
 	}
 
-	if (hostname == NULL)
-	{
+	if (hostname == NULL) {
 		hostname = "";
 	}
 
@@ -139,8 +125,7 @@ void SetSysLog(SLOG *g, char *hostname, UINT port)
 }
 
 // Create a syslog client
-SLOG *NewSysLog(char *hostname, UINT port, IP *ip)
-{
+SLOG *NewSysLog(char *hostname, UINT port, IP *ip) {
 	// Validate arguments
 	SLOG *g = ZeroMalloc(sizeof(SLOG));
 
@@ -153,24 +138,20 @@ SLOG *NewSysLog(char *hostname, UINT port, IP *ip)
 }
 
 // Check if there is enough free space on the disk
-bool CheckEraserDiskFreeSpace(ERASER *e)
-{
+bool CheckEraserDiskFreeSpace(ERASER *e) {
 	UINT64 s;
 	// Validate arguments
-	if (e == NULL)
-	{
+	if (e == NULL) {
 		return true;
 	}
 
 	// Get the free disk space
-	if (GetDiskFree(e->DirName, &s, NULL, NULL) == false)
-	{
+	if (GetDiskFree(e->DirName, &s, NULL, NULL) == false) {
 		// Acquisition failure
 		return true;
 	}
 
-	if (e->MinFreeSpace > s)
-	{
+	if (e->MinFreeSpace > s) {
 		// The free space is smaller than specified bytes
 		return false;
 	}
@@ -180,17 +161,14 @@ bool CheckEraserDiskFreeSpace(ERASER *e)
 }
 
 // Release the deleting file list
-void FreeEraseFileList(LIST *o)
-{
+void FreeEraseFileList(LIST *o) {
 	UINT i;
 	// Validate arguments
-	if (o == NULL)
-	{
+	if (o == NULL) {
 		return;
 	}
 
-	for (i = 0; i < LIST_NUM(o); i++)
-	{
+	for (i = 0; i < LIST_NUM(o); i++) {
 		ERASE_FILE *f = LIST_DATA(o, i);
 		Free(f->FullPath);
 		Free(f);
@@ -200,33 +178,28 @@ void FreeEraseFileList(LIST *o)
 }
 
 // Generate a deleting file list of the specified directory
-void EnumEraseFile(LIST *o, char *dirname)
-{
+void EnumEraseFile(LIST *o, char *dirname) {
 	DIRLIST *dir;
 	UINT i;
 	char tmp[MAX_PATH];
 	// Validate arguments
-	if (o == NULL || dirname == NULL)
-	{
+	if (o == NULL || dirname == NULL) {
 		return;
 	}
 
 	// Enumeration
 	dir = EnumDir(dirname);
 
-	for (i = 0; i < dir->NumFiles; i++)
-	{
+	for (i = 0; i < dir->NumFiles; i++) {
 		DIRENT *e = dir->File[i];
 		Format(tmp, sizeof(tmp), "%s/%s", dirname, e->FileName);
 		NormalizePath(tmp, sizeof(tmp), tmp);
 
-		if (e->Folder == false)
-		{
+		if (e->Folder == false) {
 			// File
 			ERASE_FILE *f;
 
-			if (EndWith(tmp, ".log") || EndWith(tmp, ".config") || EndWith(tmp, ".old"))
-			{
+			if (EndWith(tmp, ".log") || EndWith(tmp, ".config") || EndWith(tmp, ".old")) {
 				// Target only .config files and .log files
 				f = ZeroMalloc(sizeof(ERASE_FILE));
 				f->FullPath = CopyStr(tmp);
@@ -234,9 +207,7 @@ void EnumEraseFile(LIST *o, char *dirname)
 
 				Add(o, f);
 			}
-		}
-		else
-		{
+		} else {
 			// Folder
 			EnumEraseFile(o, tmp);
 		}
@@ -246,21 +217,18 @@ void EnumEraseFile(LIST *o, char *dirname)
 }
 
 // Generate a deleting file list
-LIST *GenerateEraseFileList(ERASER *e)
-{
+LIST *GenerateEraseFileList(ERASER *e) {
 	LIST *o;
 	UINT i;
 	// Validate arguments
-	if (e == NULL)
-	{
+	if (e == NULL) {
 		return NULL;
 	}
 
 	o = NewListFast(CompareEraseFile);
 
 	// Scan for each directory
-	for (i = 0; i < sizeof(delete_targets) / sizeof(delete_targets[0]); i++)
-	{
+	for (i = 0; i < sizeof(delete_targets) / sizeof(delete_targets[0]); i++) {
 		char dirname[MAX_PATH];
 		Format(dirname, sizeof(dirname), "%s/%s", e->DirName, delete_targets[i]);
 
@@ -274,21 +242,18 @@ LIST *GenerateEraseFileList(ERASER *e)
 }
 
 // Process of erasing unnecessary files
-void EraserMain(ERASER *e)
-{
+void EraserMain(ERASER *e) {
 	LIST *o;
 	UINT i;
 	bool ok = false;
 	char bs[64];
 	// Validate arguments
-	if (e == NULL)
-	{
+	if (e == NULL) {
 		return;
 	}
 
 	// Check the free space first
-	if (CheckEraserDiskFreeSpace(e))
-	{
+	if (CheckEraserDiskFreeSpace(e)) {
 		// Vacant enough
 		return;
 	}
@@ -299,19 +264,16 @@ void EraserMain(ERASER *e)
 	o = GenerateEraseFileList(e);
 
 	// Try to delete one by one in order from oldest file
-	for (i = 0; i < LIST_NUM(o); i++)
-	{
+	for (i = 0; i < LIST_NUM(o); i++) {
 		ERASE_FILE *f = LIST_DATA(o, i);
 
 		// Delete the file
-		if (FileDelete(f->FullPath))
-		{
+		if (FileDelete(f->FullPath)) {
 			ELog(e, "LE_DELETE", bs, f->FullPath);
 		}
 
 		// Check the free space after the deleted
-		if (CheckEraserDiskFreeSpace(e))
-		{
+		if (CheckEraserDiskFreeSpace(e)) {
 			// Free space has been restored
 			ok = true;
 			break;
@@ -321,8 +283,7 @@ void EraserMain(ERASER *e)
 	// Release the file list
 	FreeEraseFileList(o);
 
-	if (e->LastFailed == false && ok == false)
-	{
+	if (e->LastFailed == false && ok == false) {
 		// Free space is not enough, but can not delete the file any more
 		ELog(e, "LE_NOT_ENOUGH_FREE", bs);
 	}
@@ -331,41 +292,31 @@ void EraserMain(ERASER *e)
 }
 
 // Comparison of the deleting file entries
-int CompareEraseFile(void *p1, void *p2)
-{
+int CompareEraseFile(void *p1, void *p2) {
 	ERASE_FILE *f1, *f2;
-	if (p1 == NULL || p2 == NULL)
-	{
+	if (p1 == NULL || p2 == NULL) {
 		return 0;
 	}
 	f1 = *(ERASE_FILE **)p1;
 	f2 = *(ERASE_FILE **)p2;
-	if (f1 == NULL || f2 == NULL)
-	{
+	if (f1 == NULL || f2 == NULL) {
 		return 0;
 	}
-	if (f1->UpdateTime > f2->UpdateTime)
-	{
+	if (f1->UpdateTime > f2->UpdateTime) {
 		return 1;
-	}
-	else if (f1->UpdateTime == f2->UpdateTime)
-	{
+	} else if (f1->UpdateTime == f2->UpdateTime) {
 		return 0;
-	}
-	else
-	{
+	} else {
 		return -1;
 	}
 }
 
 // Eraser thread
-void EraserThread(THREAD *t, void *p)
-{
+void EraserThread(THREAD *t, void *p) {
 	ERASER *e = (ERASER *)p;
 	char bs[64];
 	// Validate arguments
-	if (t == NULL || e == NULL)
-	{
+	if (t == NULL || e == NULL) {
 		return;
 	}
 
@@ -373,8 +324,7 @@ void EraserThread(THREAD *t, void *p)
 	ToStrByte(bs, sizeof(bs), e->MinFreeSpace);
 	ELog(e, "LE_START", e->DirName, bs);
 
-	while (e->Halt == false)
-	{
+	while (e->Halt == false) {
 		// Check the amount of free space on the disk periodically
 		EraserMain(e);
 
@@ -383,25 +333,19 @@ void EraserThread(THREAD *t, void *p)
 }
 
 // Set the interval for disk free space check
-void SetEraserCheckInterval(UINT interval)
-{
-	if (interval == 0)
-	{
+void SetEraserCheckInterval(UINT interval) {
+	if (interval == 0) {
 		eraser_check_interval = DISK_FREE_CHECK_INTERVAL_DEFAULT;
-	}
-	else
-	{
+	} else {
 		eraser_check_interval = interval * 1000;
 	}
 }
 
 // Get the interval for disk free space check
-UINT GetEraserCheckInterval()
-{
+UINT GetEraserCheckInterval() {
 	UINT ret = eraser_check_interval / 1000;
 
-	if (ret == 0)
-	{
+	if (ret == 0) {
 		ret = 1;
 	}
 
@@ -409,25 +353,19 @@ UINT GetEraserCheckInterval()
 }
 
 // Create a new eraser
-ERASER *NewEraser(LOG *log, UINT64 min_size)
-{
+ERASER *NewEraser(LOG *log, UINT64 min_size) {
 	ERASER *e;
 	char dir[MAX_PATH];
 
-	if (min_size == 0)
-	{
-		if (OS_IS_WINDOWS(GetOsInfo()->OsType))
-		{
+	if (min_size == 0) {
+		if (OS_IS_WINDOWS(GetOsInfo()->OsType)) {
 			min_size = DISK_FREE_SPACE_DEFAULT_WINDOWS;
-		}
-		else
-		{
+		} else {
 			min_size = DISK_FREE_SPACE_DEFAULT;
 		}
 	}
 
-	if (min_size < DISK_FREE_SPACE_MIN)
-	{
+	if (min_size < DISK_FREE_SPACE_MIN) {
 		min_size = DISK_FREE_SPACE_MIN;
 	}
 
@@ -446,11 +384,9 @@ ERASER *NewEraser(LOG *log, UINT64 min_size)
 }
 
 // Release the eraser
-void FreeEraser(ERASER *e)
-{
+void FreeEraser(ERASER *e) {
 	// Validate arguments
-	if (e == NULL)
-	{
+	if (e == NULL) {
 		return;
 	}
 
@@ -465,17 +401,14 @@ void FreeEraser(ERASER *e)
 }
 
 // Take the debug log (variable-length argument)
-void DebugLog(CEDAR *c, char *fmt, ...)
-{
+void DebugLog(CEDAR *c, char *fmt, ...) {
 	char buf[MAX_SIZE * 2];
 	va_list args;
 	// Validate arguments
-	if (fmt == NULL)
-	{
+	if (fmt == NULL) {
 		return;
 	}
-	if (c->DebugLog == NULL)
-	{
+	if (c->DebugLog == NULL) {
 		return;
 	}
 
@@ -487,13 +420,11 @@ void DebugLog(CEDAR *c, char *fmt, ...)
 }
 
 // Take the log of eraser
-void ELog(ERASER *e, char *name, ...)
-{
+void ELog(ERASER *e, char *name, ...) {
 	wchar_t buf[MAX_SIZE * 2];
 	va_list args;
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return;
 	}
 
@@ -502,20 +433,17 @@ void ELog(ERASER *e, char *name, ...)
 
 	InsertUnicodeRecord(e->Log, buf);
 
-	if (IsDebug())
-	{
+	if (IsDebug()) {
 		UniPrint(L"LOG: %s\n", buf);
 	}
 	va_end(args);
 }
 
-void SLog(CEDAR *c, char *name, ...)
-{
+void SLog(CEDAR *c, char *name, ...) {
 	wchar_t buf[MAX_SIZE * 2];
 	va_list args;
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return;
 	}
 
@@ -526,15 +454,13 @@ void SLog(CEDAR *c, char *name, ...)
 	va_end(args);
 }
 
-void ALog(ADMIN *a, HUB *h, char *name, ...)
-{
+void ALog(ADMIN *a, HUB *h, char *name, ...) {
 	wchar_t buf[MAX_SIZE * 2];
 	wchar_t tmp[MAX_SIZE * 2];
 	va_list args;
 	RPC *r;
 	// Validate arguments
-	if (a == NULL || name == NULL)
-	{
+	if (a == NULL || name == NULL) {
 		return;
 	}
 
@@ -543,34 +469,26 @@ void ALog(ADMIN *a, HUB *h, char *name, ...)
 	va_start(args, name);
 	UniFormatArgs(buf, sizeof(buf), _UU(name), args);
 
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		UniFormat(tmp, sizeof(tmp), _UU("LA_TAG_1"), r->Name);
-	}
-	else
-	{
+	} else {
 		UniFormat(tmp, sizeof(tmp), _UU("LA_TAG_2"), r->Name, h->Name);
 	}
 
 	UniStrCat(tmp, sizeof(tmp), buf);
 
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		WriteServerLog(((ADMIN *)r->Param)->Server->Cedar, tmp);
-	}
-	else
-	{
+	} else {
 		WriteHubLog(h, tmp);
 	}
 	va_end(args);
 }
-void HLog(HUB *h, char *name, ...)
-{
+void HLog(HUB *h, char *name, ...) {
 	wchar_t buf[MAX_SIZE * 2];
 	va_list args;
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return;
 	}
 
@@ -582,14 +500,12 @@ void HLog(HUB *h, char *name, ...)
 }
 
 // Save the security log of the HUB
-void WriteHubLog(HUB *h, wchar_t *str)
-{
+void WriteHubLog(HUB *h, wchar_t *str) {
 	wchar_t buf[MAX_SIZE * 2];
 	UINT syslog_status;
 	SERVER *s;
 	// Validate arguments
-	if (h == NULL || str == NULL)
-	{
+	if (h == NULL || str == NULL) {
 		return;
 	}
 
@@ -598,61 +514,47 @@ void WriteHubLog(HUB *h, wchar_t *str)
 
 	UniFormat(buf, sizeof(buf), L"[HUB \"%S\"] %s", h->Name, str);
 
-	if (syslog_status == SYSLOG_NONE)
-	{
+	if (syslog_status == SYSLOG_NONE) {
 		WriteServerLog(h->Cedar, buf);
 	}
 
-	if (h->LogSetting.SaveSecurityLog == false)
-	{
+	if (h->LogSetting.SaveSecurityLog == false) {
 		return;
 	}
 
-	if (syslog_status == SYSLOG_SERVER_AND_HUB_SECURITY_LOG
-	        || syslog_status == SYSLOG_SERVER_AND_HUB_ALL_LOG)
-	{
+	if (syslog_status == SYSLOG_SERVER_AND_HUB_SECURITY_LOG || syslog_status == SYSLOG_SERVER_AND_HUB_ALL_LOG) {
 		SiWriteSysLog(s, "SECURITY_LOG", h->Name, str);
-	}
-	else
-	{
+	} else {
 		InsertUnicodeRecord(h->SecurityLogger, str);
 	}
 }
 
 // Save the security log of the server
-void WriteServerLog(CEDAR *c, wchar_t *str)
-{
+void WriteServerLog(CEDAR *c, wchar_t *str) {
 	SERVER *s;
 	// Validate arguments
-	if (c == NULL || str == NULL)
-	{
+	if (c == NULL || str == NULL) {
 		return;
 	}
 
 	s = c->Server;
-	if (s == NULL)
-	{
+	if (s == NULL) {
 		return;
 	}
 
-	if (IsDebug())
-	{
+	if (IsDebug()) {
 		UniPrint(L"LOG: %s\n", str);
 	}
 
-	if (SiGetSysLogSaveStatus(s) != SYSLOG_NONE)
-	{
+	if (SiGetSysLogSaveStatus(s) != SYSLOG_NONE) {
 		SiWriteSysLog(s, "SERVER_LOG", NULL, str);
-	}
-	else
-	{
+	} else {
 		InsertUnicodeRecord(s->Logger, str);
 	}
 }
 
 // Take a packet log
-bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packet, UINT64 now)
-{
+bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packet, UINT64 now) {
 	UINT level;
 	PKT *p;
 	PACKET_LOG *pl;
@@ -661,22 +563,19 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 	bool no_log = false;
 	HUB_OPTION *opt = NULL;
 	// Validate arguments
-	if (hub == NULL || src_session == NULL || packet == NULL)
-	{
+	if (hub == NULL || src_session == NULL || packet == NULL) {
 		return true;
 	}
 
 	s = hub->Cedar->Server;
 
-	if (hub->LogSetting.SavePacketLog == false)
-	{
+	if (hub->LogSetting.SavePacketLog == false) {
 		// Do not take the packet log
 		return true;
 	}
 
 	if (Cmp(hub->HubMacAddr, packet->MacAddressSrc, 6) == 0 ||
-		Cmp(hub->HubMacAddr, packet->MacAddressDest, 6) == 0)
-	{
+	    Cmp(hub->HubMacAddr, packet->MacAddressDest, 6) == 0) {
 		return true;
 	}
 
@@ -684,44 +583,35 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 
 	// Determine the logging level
 	level = CalcPacketLoggingLevel(hub, packet);
-	if (level == PACKET_LOG_NONE)
-	{
+	if (level == PACKET_LOG_NONE) {
 		// Not save
 		return true;
 	}
 
-	if (hub->Option != NULL)
-	{
-		if (hub->Option->NoIPv4PacketLog && (packet->TypeL3 == L3_IPV4 || packet->TypeL3 == L3_ARPV4))
-		{
+	if (hub->Option != NULL) {
+		if (hub->Option->NoIPv4PacketLog && (packet->TypeL3 == L3_IPV4 || packet->TypeL3 == L3_ARPV4)) {
 			// Do not save any IPv4 packet log
 			return true;
 		}
 
-		if (hub->Option->NoIPv6PacketLog && packet->TypeL3 == L3_IPV6)
-		{
+		if (hub->Option->NoIPv6PacketLog && packet->TypeL3 == L3_IPV6) {
 			// Do not save any IPv6 packet log
 			return true;
 		}
 	}
 
-	if (hub->Option != NULL && hub->Option->MaxLoggedPacketsPerMinute != 0)
-	{
+	if (hub->Option != NULL && hub->Option->MaxLoggedPacketsPerMinute != 0) {
 		// Examine the maximum number of logging target packets per minute
-		if (CheckMaxLoggedPacketsPerMinute(src_session, hub->Option->MaxLoggedPacketsPerMinute, now) == false)
-		{
+		if (CheckMaxLoggedPacketsPerMinute(src_session, hub->Option->MaxLoggedPacketsPerMinute, now) == false) {
 			// Indicate the packet discarding without taking the packet log if exceed
 			return false;
 		}
 	}
 
-	if (true)
-	{
-		if (GetGlobalServerFlag(GSF_DISABLE_DEEP_LOGGING) != 0)
-		{
+	if (true) {
+		if (GetGlobalServerFlag(GSF_DISABLE_DEEP_LOGGING) != 0) {
 			no_log = true;
 		}
-
 	}
 
 	syslog_setting = SiGetSysLogSaveStatus(s);
@@ -736,39 +626,30 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 	pl->Packet = p;
 	pl->NoLog = no_log;
 	pl->SrcSessionName = CopyStr(src_session->Name);
-	if (dest_session != NULL)
-	{
+	if (dest_session != NULL) {
 		pl->DestSessionName = CopyStr(dest_session->Name);
-	}
-	else
-	{
+	} else {
 		pl->DestSessionName = CopyStr("");
 	}
 
-	if (opt == NULL || opt->NoPhysicalIPOnPacketLog == false)
-	{
-		if (src_session->NormalClient)
-		{
+	if (opt == NULL || opt->NoPhysicalIPOnPacketLog == false) {
+		if (src_session->NormalClient) {
 			StrCpy(pl->SrcPhysicalIP, sizeof(pl->SrcPhysicalIP), src_session->ClientIP);
 		}
 
-		if (dest_session != NULL && dest_session->NormalClient)
-		{
+		if (dest_session != NULL && dest_session->NormalClient) {
 			StrCpy(pl->DestPhysicalIP, sizeof(pl->DestPhysicalIP), dest_session->ClientIP);
 		}
 
 		pl->WritePhysicalIP = true;
 	}
 
-	if (src_session->LoggingRecordCount != NULL)
-	{
+	if (src_session->LoggingRecordCount != NULL) {
 		UINT n = 0;
-		while (src_session->LoggingRecordCount->c >= 30000)
-		{
+		while (src_session->LoggingRecordCount->c >= 30000) {
 			SleepThread(50);
 			n++;
-			if (n >= 5)
-			{
+			if (n >= 5) {
 				break;
 			}
 		}
@@ -779,25 +660,19 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 
 	Inc(src_session->LoggingRecordCount);
 
-	if (syslog_setting == SYSLOG_SERVER_AND_HUB_ALL_LOG)
-	{
+	if (syslog_setting == SYSLOG_SERVER_AND_HUB_ALL_LOG) {
 		RECORD rec;
 		char *buf;
 		wchar_t tmp[1024];
 		bool self_syslog_packet = false;
 
-		if (packet->TypeL3 == L3_IPV4 && packet->TypeL4 == L4_UDP)
-		{
-			if (s->Syslog != NULL)
-			{
+		if (packet->TypeL3 == L3_IPV4 && packet->TypeL4 == L4_UDP) {
+			if (s->Syslog != NULL) {
 				Lock(s->Syslog->lock);
 				{
-					if (IsZeroIp(&s->Syslog->DestIp) == false && s->Syslog->DestPort != 0)
-					{
-						if (IPToUINT(&s->Syslog->DestIp) == packet->L3.IPv4Header->DstIP)
-						{
-							if (Endian32(packet->L4.UDPHeader->DstPort) == s->Syslog->DestPort)
-							{
+					if (IsZeroIp(&s->Syslog->DestIp) == false && s->Syslog->DestPort != 0) {
+						if (IPToUINT(&s->Syslog->DestIp) == packet->L3.IPv4Header->DstIP) {
+							if (Endian32(packet->L4.UDPHeader->DstPort) == s->Syslog->DestPort) {
 								self_syslog_packet = true;
 							}
 						}
@@ -813,15 +688,12 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 		buf = PacketLogParseProc(&rec);
 		StrToUni(tmp, sizeof(tmp), buf);
 
-		if (self_syslog_packet == false)
-		{
+		if (self_syslog_packet == false) {
 			SiWriteSysLog(s, "PACKET_LOG", hub->Name, tmp);
 		}
 
 		Free(buf);
-	}
-	else
-	{
+	} else {
 		// Insertion of packet log
 		InsertRecord(hub->PacketLogger, pl, PacketLogParseProc);
 	}
@@ -830,20 +702,17 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 }
 
 // Calculate the logging level of the specified packet
-UINT CalcPacketLoggingLevelEx(HUB_LOG *g, PKT *packet)
-{
+UINT CalcPacketLoggingLevelEx(HUB_LOG *g, PKT *packet) {
 	UINT ret = 0;
 	// Validate arguments
-	if (g == NULL || packet == NULL)
-	{
+	if (g == NULL || packet == NULL) {
 		return PACKET_LOG_NONE;
 	}
 
 	// Ethernet log
 	ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_ETHERNET]);
 
-	switch (packet->TypeL3)
-	{
+	switch (packet->TypeL3) {
 	case L3_ARPV4:
 		// ARP
 		ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_ARP]);
@@ -853,8 +722,7 @@ UINT CalcPacketLoggingLevelEx(HUB_LOG *g, PKT *packet)
 		// IPv4
 		ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_IP]);
 
-		switch (packet->TypeL4)
-		{
+		switch (packet->TypeL4) {
 		case L4_ICMPV4:
 			// ICMPv4
 			ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_ICMP]);
@@ -865,9 +733,8 @@ UINT CalcPacketLoggingLevelEx(HUB_LOG *g, PKT *packet)
 			ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP]);
 
 			if (packet->L4.TCPHeader->Flag & TCP_SYN ||
-			        packet->L4.TCPHeader->Flag & TCP_RST ||
-			        packet->L4.TCPHeader->Flag & TCP_FIN)
-			{
+			    packet->L4.TCPHeader->Flag & TCP_RST ||
+			    packet->L4.TCPHeader->Flag & TCP_FIN) {
 				// TCP SYN LOG
 				ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
 			}
@@ -878,8 +745,7 @@ UINT CalcPacketLoggingLevelEx(HUB_LOG *g, PKT *packet)
 			// UDPv4
 			ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_UDP]);
 
-			switch (packet->TypeL7)
-			{
+			switch (packet->TypeL7) {
 			case L7_DHCPV4:
 				// DHCPv4
 				ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_DHCP]);
@@ -905,8 +771,7 @@ UINT CalcPacketLoggingLevelEx(HUB_LOG *g, PKT *packet)
 		// IPv6
 		ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_IP]);
 
-		switch (packet->TypeL4)
-		{
+		switch (packet->TypeL4) {
 		case L4_ICMPV6:
 			// ICMPv6
 			ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_ICMP]);
@@ -917,9 +782,8 @@ UINT CalcPacketLoggingLevelEx(HUB_LOG *g, PKT *packet)
 			ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP]);
 
 			if (packet->L4.TCPHeader->Flag & TCP_SYN ||
-			        packet->L4.TCPHeader->Flag & TCP_RST ||
-			        packet->L4.TCPHeader->Flag & TCP_FIN)
-			{
+			    packet->L4.TCPHeader->Flag & TCP_RST ||
+			    packet->L4.TCPHeader->Flag & TCP_FIN) {
 				// TCP SYN LOG
 				ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
 			}
@@ -930,8 +794,7 @@ UINT CalcPacketLoggingLevelEx(HUB_LOG *g, PKT *packet)
 			// UDPv6
 			ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_UDP]);
 
-			switch (packet->TypeL7)
-			{
+			switch (packet->TypeL7) {
 			case L7_IKECONN:
 				// IKE connection request
 				ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
@@ -949,19 +812,16 @@ UINT CalcPacketLoggingLevelEx(HUB_LOG *g, PKT *packet)
 		break;
 	}
 
-	if (packet->HttpLog != NULL)
-	{
+	if (packet->HttpLog != NULL) {
 		// HTTP Connect Log
 		ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
 	}
 
 	return ret;
 }
-UINT CalcPacketLoggingLevel(HUB *hub, PKT *packet)
-{
+UINT CalcPacketLoggingLevel(HUB *hub, PKT *packet) {
 	// Validate arguments
-	if (hub == NULL || packet == NULL)
-	{
+	if (hub == NULL || packet == NULL) {
 		return PACKET_LOG_NONE;
 	}
 
@@ -969,49 +829,35 @@ UINT CalcPacketLoggingLevel(HUB *hub, PKT *packet)
 }
 
 // Generate a string to be stored as an HTTP log
-char *BuildHttpLogStr(HTTPLOG *h)
-{
+char *BuildHttpLogStr(HTTPLOG *h) {
 	BUF *b;
 	char url[MAX_SIZE];
 	char nullchar = 0;
 	char *ret;
 	// Validate arguments
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return CopyStr("");
 	}
 
 	b = NewBuf();
 
-	if (StartWith(h->Path, "http://") || StartWith(h->Path, "https://"))
-	{
+	if (StartWith(h->Path, "http://") || StartWith(h->Path, "https://")) {
 		StrCpy(url, sizeof(url), h->Path);
-	}
-	else
-	{
+	} else {
 		// URL generation
-		if (h->IsSsl == false)
-		{
-			if (h->Port == 80)
-			{
+		if (h->IsSsl == false) {
+			if (h->Port == 80) {
 				Format(url, sizeof(url), "http://%s%s",
 				       h->Hostname, h->Path);
-			}
-			else
-			{
+			} else {
 				Format(url, sizeof(url), "http://%s:%u%s",
 				       h->Hostname, h->Port, h->Path);
 			}
-		}
-		else
-		{
-			if (h->Port == 443)
-			{
+		} else {
+			if (h->Port == 443) {
 				Format(url, sizeof(url), "https://%s/",
 				       h->Hostname);
-			}
-			else
-			{
+			} else {
 				Format(url, sizeof(url), "https://%s:%u/",
 				       h->Hostname, h->Port);
 			}
@@ -1034,25 +880,21 @@ char *BuildHttpLogStr(HTTPLOG *h)
 }
 
 // Append an item to the log buffer
-void AddLogBufToStr(BUF *b, char *name, char *value)
-{
+void AddLogBufToStr(BUF *b, char *name, char *value) {
 	char tmp[MAX_SIZE * 2];
 	char *p = NULL;
 	// Validate arguments
-	if (b == NULL || value == NULL)
-	{
+	if (b == NULL || value == NULL) {
 		return;
 	}
 
-	if (IsEmptyStr(value))
-	{
+	if (IsEmptyStr(value)) {
 		return;
 	}
 
 	tmp[0] = 0;
 
-	if (IsEmptyStr(name) == false)
-	{
+	if (IsEmptyStr(name) == false) {
 		p = &tmp[StrLen(tmp)];
 		StrCat(tmp, sizeof(tmp), name);
 		MakeSafeLogStr(p);
@@ -1068,35 +910,27 @@ void AddLogBufToStr(BUF *b, char *name, char *value)
 }
 
 // Secure the log string
-void MakeSafeLogStr(char *str)
-{
+void MakeSafeLogStr(char *str) {
 	UINT i, len;
 	bool is_http = false;
 	// Validate arguments
-	if (str == NULL)
-	{
+	if (str == NULL) {
 		return;
 	}
 
 	if (str[0] == 'h' && str[1] == 't' && str[2] == 't' && str[3] == 'p' &&
-	        ((str[4] == 's' && str[5] == ':') || (str[4] == ':')))
-	{
+	    ((str[4] == 's' && str[5] == ':') || (str[4] == ':'))) {
 		is_http = true;
 	}
 
 	EnPrintableAsciiStr(str, '?');
 
 	len = StrLen(str);
-	for (i = 0; i < len; i++)
-	{
-		if (str[i] == ',')
-		{
+	for (i = 0; i < len; i++) {
+		if (str[i] == ',') {
 			str[i] = '.';
-		}
-		else if (str[i] == ' ')
-		{
-			if (is_http == false)
-			{
+		} else if (str[i] == ' ') {
+			if (is_http == false) {
 				str[i] = '_';
 			}
 		}
@@ -1104,8 +938,7 @@ void MakeSafeLogStr(char *str)
 }
 
 // Procedure for converting a packet log entry to a string
-char *PacketLogParseProc(RECORD *rec)
-{
+char *PacketLogParseProc(RECORD *rec) {
 	PACKET_LOG *pl;
 	PKT *p;
 	char *s;
@@ -1114,8 +947,7 @@ char *PacketLogParseProc(RECORD *rec)
 	bool tcp_conn;
 	UINT i;
 	// Validate arguments
-	if (rec == NULL)
-	{
+	if (rec == NULL) {
 		return NULL;
 	}
 
@@ -1125,8 +957,7 @@ char *PacketLogParseProc(RECORD *rec)
 	// Generate each part
 	t = ZeroMalloc(sizeof(TOKEN_LIST));
 	t->NumTokens = 16;
-	if (pl->WritePhysicalIP)
-	{
+	if (pl->WritePhysicalIP) {
 		t->NumTokens += 2;
 	}
 	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
@@ -1154,25 +985,21 @@ char *PacketLogParseProc(RECORD *rec)
 	ToStr(tmp, p->PacketSize);
 	t->Token[5] = CopyStr(tmp);
 
-	if (pl->NoLog == false)
-	{
+	if (pl->NoLog == false) {
 		// Type of packet
-		switch (p->TypeL3)
-		{
+		switch (p->TypeL3) {
 		case L3_ARPV4:
 			// ARP packets
 			t->Token[6] = CopyStr("ARPv4");
 
-			switch (Endian16(p->L3.ARPv4Header->Operation))
-			{
+			switch (Endian16(p->L3.ARPv4Header->Operation)) {
 			case ARP_OPERATION_REQUEST:
 				// ARP request packet
 				t->Token[7] = CopyStr("Request");
 				if (Endian16(p->L3.ARPv4Header->HardwareType) == ARP_HARDWARE_TYPE_ETHERNET &&
-				        p->L3.ARPv4Header->HardwareSize == 6 &&
-				        Endian16(p->L3.ARPv4Header->ProtocolType) == MAC_PROTO_IPV4 &&
-				        p->L3.ARPv4Header->ProtocolSize == 4)
-				{
+				    p->L3.ARPv4Header->HardwareSize == 6 &&
+				    Endian16(p->L3.ARPv4Header->ProtocolType) == MAC_PROTO_IPV4 &&
+				    p->L3.ARPv4Header->ProtocolSize == 4) {
 					char src_mac[16];
 					char src_ip[16];
 					IP src_ip_st;
@@ -1193,10 +1020,9 @@ char *PacketLogParseProc(RECORD *rec)
 				// ARP response packet
 				t->Token[7] = CopyStr("Response");
 				if (Endian16(p->L3.ARPv4Header->HardwareType) == ARP_HARDWARE_TYPE_ETHERNET &&
-				        p->L3.ARPv4Header->HardwareSize == 6 &&
-				        Endian16(p->L3.ARPv4Header->ProtocolType) == MAC_PROTO_IPV4 &&
-				        p->L3.ARPv4Header->ProtocolSize == 4)
-				{
+				    p->L3.ARPv4Header->HardwareSize == 6 &&
+				    Endian16(p->L3.ARPv4Header->ProtocolType) == MAC_PROTO_IPV4 &&
+				    p->L3.ARPv4Header->ProtocolSize == 4) {
 					char src_mac[16];
 					char src_ip[16];
 					IP src_ip_st;
@@ -1217,14 +1043,12 @@ char *PacketLogParseProc(RECORD *rec)
 
 		case L3_IPV4:
 			// IPv4 packet
-			switch (p->TypeL4)
-			{
+			switch (p->TypeL4) {
 			case L4_ICMPV4:
 				// ICMPv4 packet
 				t->Token[6] = CopyStr("ICMPv4");
 
-				switch (p->L4.ICMPHeader->Type)
-				{
+				switch (p->L4.ICMPHeader->Type) {
 				case ICMP_TYPE_ECHO_REQUEST:
 					// Echo request
 					t->Token[7] = CopyStr("Echo Request");
@@ -1240,8 +1064,7 @@ char *PacketLogParseProc(RECORD *rec)
 			case L4_TCP:
 				// TCP packet
 				tcp_conn = false;
-				if (p->L4.TCPHeader->Flag & TCP_SYN || p->L4.TCPHeader->Flag & TCP_RST || p->L4.TCPHeader->Flag & TCP_FIN)
-				{
+				if (p->L4.TCPHeader->Flag & TCP_SYN || p->L4.TCPHeader->Flag & TCP_RST || p->L4.TCPHeader->Flag & TCP_FIN) {
 					tcp_conn = true;
 				}
 				t->Token[6] = CopyStr(tcp_conn ? "TCP_CONNECTv4" : "TCP_DATAv4");
@@ -1258,8 +1081,7 @@ char *PacketLogParseProc(RECORD *rec)
 
 				snprintf(tmp, sizeof(tmp), "WindowSize=%u", Endian16(p->L4.TCPHeader->WindowSize));
 
-				if (p->HttpLog != NULL)
-				{
+				if (p->HttpLog != NULL) {
 					char *tmp2;
 					UINT tmp2_size;
 					char *http_str = BuildHttpLogStr(p->HttpLog);
@@ -1269,8 +1091,7 @@ char *PacketLogParseProc(RECORD *rec)
 
 					StrCpy(tmp2, tmp2_size, tmp);
 
-					if (IsEmptyStr(http_str) == false)
-					{
+					if (IsEmptyStr(http_str) == false) {
 						StrCat(tmp2, tmp2_size, " ");
 						StrCat(tmp2, tmp2_size, http_str);
 					}
@@ -1278,9 +1099,7 @@ char *PacketLogParseProc(RECORD *rec)
 					Free(http_str);
 
 					t->Token[14] = tmp2;
-				}
-				else
-				{
+				} else {
 					t->Token[14] = CopyStr(tmp);
 				}
 				break;
@@ -1290,17 +1109,13 @@ char *PacketLogParseProc(RECORD *rec)
 				t->Token[9] = PortStr(pl->Cedar, Endian16(p->L4.UDPHeader->SrcPort), true);
 				t->Token[11] = PortStr(pl->Cedar, Endian16(p->L4.UDPHeader->DstPort), true);
 
-				switch (p->TypeL7)
-				{
+				switch (p->TypeL7) {
 				case L7_DHCPV4:
 					// DHCP packet
 					t->Token[6] = CopyStr("DHCPv4");
-					if (p->L7.DHCPv4Header->OpCode == 1)
-					{
+					if (p->L7.DHCPv4Header->OpCode == 1) {
 						t->Token[7] = CopyStr("Request");
-					}
-					else
-					{
+					} else {
 						t->Token[7] = CopyStr("Response");
 					}
 
@@ -1325,20 +1140,16 @@ char *PacketLogParseProc(RECORD *rec)
 					// IKE connection request packet
 					t->Token[6] = CopyStr("IKE_CONNECTv4");
 
-					if (p->L7.IkeHeader != NULL)
-					{
-						if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_MAIN)
-						{
+					if (p->L7.IkeHeader != NULL) {
+						if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_MAIN) {
 							t->Token[7] = CopyStr("MainMode");
-						}
-						else if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_AGGRESSIVE)
-						{
+						} else if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_AGGRESSIVE) {
 							t->Token[7] = CopyStr("AggressiveMode");
 						}
 
 						{
 							Format(tmp, sizeof(tmp), "InitiatorCookie=%I64u ResponderCookie=%I64u "
-							       "Version=0x%x ExchangeType=0x%x Flag=0x%x MessageId=%u MessageSize=%u",
+							                         "Version=0x%x ExchangeType=0x%x Flag=0x%x MessageId=%u MessageSize=%u",
 							       Endian64(p->L7.IkeHeader->InitiatorCookie),
 							       Endian64(p->L7.IkeHeader->ResponderCookie),
 							       p->L7.IkeHeader->Version,
@@ -1391,10 +1202,8 @@ char *PacketLogParseProc(RECORD *rec)
 
 		case L3_IPV6:
 			// IPv6 packet
-			switch (p->TypeL4)
-			{
-			case L4_ICMPV6:
-			{
+			switch (p->TypeL4) {
+			case L4_ICMPV6: {
 				char info[MAX_SIZE];
 				ICMPV6_HEADER_INFO *icmp = &p->ICMPv6HeaderPacketInfo;
 				ICMPV6_OPTION_LIST *ol = &icmp->OptionList;
@@ -1404,8 +1213,7 @@ char *PacketLogParseProc(RECORD *rec)
 				// ICMPv6 packet
 				t->Token[6] = CopyStr("ICMPv6");
 
-				switch (icmp->Type)
-				{
+				switch (icmp->Type) {
 				case ICMPV6_TYPE_ECHO_REQUEST:
 					// Echo request
 					t->Token[7] = CopyStr("Echo Request");
@@ -1420,43 +1228,35 @@ char *PacketLogParseProc(RECORD *rec)
 					StrCat(info, sizeof(info), tmp);
 					break;
 
-				case ICMPV6_TYPE_ROUTER_SOLICIATION:
-				{
+				case ICMPV6_TYPE_ROUTER_SOLICIATION: {
 					ICMPV6_ROUTER_SOLICIATION_HEADER *h = icmp->Headers.RouterSoliciationHeader;
 					// Router Solicitation
 					t->Token[7] = CopyStr("Router Soliciation");
 
-					if (h != NULL)
-					{
+					if (h != NULL) {
 						// No additional information
 					}
-				}
-				break;
+				} break;
 
-				case ICMPV6_TYPE_ROUTER_ADVERTISEMENT:
-				{
+				case ICMPV6_TYPE_ROUTER_ADVERTISEMENT: {
 					ICMPV6_ROUTER_ADVERTISEMENT_HEADER *h = icmp->Headers.RouterAdvertisementHeader;
 					// Router Advertisement
 					t->Token[7] = CopyStr("Router Advertisement");
 
-					if (h != NULL)
-					{
+					if (h != NULL) {
 						snprintf(tmp, sizeof(tmp), "CurHopLimit=%u "
-						         "Flags=0x%02X Lifetime=%u ",
+						                           "Flags=0x%02X Lifetime=%u ",
 						         h->CurHopLimit, h->Flags, Endian16(h->Lifetime));
 						StrCat(info, sizeof(info), tmp);
 					}
-				}
-				break;
+				} break;
 
-				case ICMPV6_TYPE_NEIGHBOR_SOLICIATION:
-				{
+				case ICMPV6_TYPE_NEIGHBOR_SOLICIATION: {
 					ICMPV6_NEIGHBOR_SOLICIATION_HEADER *h = icmp->Headers.NeighborSoliciationHeader;
 					// Neighbor Solicitation
 					t->Token[7] = CopyStr("Neighbor Soliciation");
 
-					if (h != NULL)
-					{
+					if (h != NULL) {
 						char tmp2[MAX_SIZE];
 
 						IP6AddrToStr(tmp2, sizeof(tmp2), &h->TargetAddress);
@@ -1465,17 +1265,14 @@ char *PacketLogParseProc(RECORD *rec)
 						         tmp2);
 						StrCat(info, sizeof(info), tmp);
 					}
-				}
-				break;
+				} break;
 
-				case ICMPV6_TYPE_NEIGHBOR_ADVERTISEMENT:
-				{
+				case ICMPV6_TYPE_NEIGHBOR_ADVERTISEMENT: {
 					ICMPV6_NEIGHBOR_ADVERTISEMENT_HEADER *h = icmp->Headers.NeighborAdvertisementHeader;
 					// Neighbor Advertisement
 					t->Token[7] = CopyStr("Neighbor Advertisement");
 
-					if (h != NULL)
-					{
+					if (h != NULL) {
 						char tmp2[MAX_SIZE];
 
 						IP6AddrToStr(tmp2, sizeof(tmp2), &h->TargetAddress);
@@ -1484,67 +1281,54 @@ char *PacketLogParseProc(RECORD *rec)
 						         tmp2, h->Flags);
 						StrCat(info, sizeof(info), tmp);
 					}
-				}
-				break;
+				} break;
 
-				default:
-				{
+				default: {
 					snprintf(tmp, sizeof(tmp), "Type=%u", icmp->Type);
 					t->Token[7] = CopyStr(tmp);
-				}
-				break;
+				} break;
 				}
 
 				// Option data
-				if (ol->SourceLinkLayer != NULL)
-				{
+				if (ol->SourceLinkLayer != NULL) {
 					char tmp2[MAX_SIZE];
 					BinToStr(tmp2, sizeof(tmp2), ol->SourceLinkLayer->Address, 6);
 					snprintf(tmp, sizeof(tmp), "SourceLinkLayer=%s ", tmp2);
 					StrCat(info, sizeof(info), tmp);
 				}
-				if (ol->TargetLinkLayer != NULL)
-				{
+				if (ol->TargetLinkLayer != NULL) {
 					char tmp2[MAX_SIZE];
 					BinToStr(tmp2, sizeof(tmp2), ol->TargetLinkLayer->Address, 6);
 					snprintf(tmp, sizeof(tmp), "TargetLinkLayer=%s ", tmp2);
 					StrCat(info, sizeof(info), tmp);
 				}
-				for (i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++)
-				{
-					if (ol->Prefix[i] != NULL)
-					{
+				for (i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++) {
+					if (ol->Prefix[i] != NULL) {
 						char tmp2[MAX_SIZE];
 						IP6AddrToStr(tmp2, sizeof(tmp2), &ol->Prefix[i]->Prefix);
 						snprintf(tmp, sizeof(tmp), "Prefix=%s/%u PrefixFlag=0x%02X ", tmp2,
 						         ol->Prefix[i]->SubnetLength, ol->Prefix[i]->Flags);
 						StrCat(info, sizeof(info), tmp);
-					}
-					else
-					{
+					} else {
 						break;
 					}
 				}
-				if (ol->Mtu != NULL)
-				{
+				if (ol->Mtu != NULL) {
 					snprintf(tmp, sizeof(tmp), "Mtu=%u ", Endian32(ol->Mtu->Mtu));
 					StrCat(info, sizeof(info), tmp);
 				}
 
 				Trim(info);
 
-				if (IsEmptyStr(info) == false)
-				{
+				if (IsEmptyStr(info) == false) {
 					t->Token[14] = CopyStr(info);
 				}
-			}
-			break;
+			} break;
 
 			case L4_TCP:
 				// TCP packet
 				tcp_conn = false;
-				if (p->L4.TCPHeader->Flag & TCP_SYN || p->L4.TCPHeader->Flag & TCP_RST || p->L4.TCPHeader->Flag & TCP_FIN)
-				{
+				if (p->L4.TCPHeader->Flag & TCP_SYN || p->L4.TCPHeader->Flag & TCP_RST || p->L4.TCPHeader->Flag & TCP_FIN) {
 					tcp_conn = true;
 				}
 				t->Token[6] = CopyStr(tcp_conn ? "TCP_CONNECTv6" : "TCP_DATAv6");
@@ -1561,8 +1345,7 @@ char *PacketLogParseProc(RECORD *rec)
 
 				snprintf(tmp, sizeof(tmp), "WindowSize=%u", Endian16(p->L4.TCPHeader->WindowSize));
 
-				if (p->HttpLog != NULL)
-				{
+				if (p->HttpLog != NULL) {
 					char *tmp2;
 					UINT tmp2_size;
 					char *http_str = BuildHttpLogStr(p->HttpLog);
@@ -1572,8 +1355,7 @@ char *PacketLogParseProc(RECORD *rec)
 
 					StrCpy(tmp2, tmp2_size, tmp);
 
-					if (IsEmptyStr(http_str) == false)
-					{
+					if (IsEmptyStr(http_str) == false) {
 						StrCat(tmp2, tmp2_size, " ");
 						StrCat(tmp2, tmp2_size, http_str);
 					}
@@ -1581,9 +1363,7 @@ char *PacketLogParseProc(RECORD *rec)
 					Free(http_str);
 
 					t->Token[14] = tmp2;
-				}
-				else
-				{
+				} else {
 					t->Token[14] = CopyStr(tmp);
 				}
 				break;
@@ -1593,26 +1373,21 @@ char *PacketLogParseProc(RECORD *rec)
 				t->Token[9] = PortStr(pl->Cedar, Endian16(p->L4.UDPHeader->SrcPort), true);
 				t->Token[11] = PortStr(pl->Cedar, Endian16(p->L4.UDPHeader->DstPort), true);
 
-				switch (p->TypeL7)
-				{
+				switch (p->TypeL7) {
 				case L7_IKECONN:
 					// IKE connection request packet
 					t->Token[6] = CopyStr("IKE_CONNECTv6");
 
-					if (p->L7.IkeHeader != NULL)
-					{
-						if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_MAIN)
-						{
+					if (p->L7.IkeHeader != NULL) {
+						if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_MAIN) {
 							t->Token[7] = CopyStr("MainMode");
-						}
-						else if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_AGGRESSIVE)
-						{
+						} else if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_AGGRESSIVE) {
 							t->Token[7] = CopyStr("AggressiveMode");
 						}
 
 						{
 							Format(tmp, sizeof(tmp), "InitiatorCookie=%I64u ResponderCookie=%I64u "
-							       "Version=0x%x ExchangeType=0x%x Flag=0x%x MessageId=%u MessageSize=%u",
+							                         "Version=0x%x ExchangeType=0x%x Flag=0x%x MessageId=%u MessageSize=%u",
 							       Endian64(p->L7.IkeHeader->InitiatorCookie),
 							       Endian64(p->L7.IkeHeader->ResponderCookie),
 							       p->L7.IkeHeader->Version,
@@ -1669,25 +1444,20 @@ char *PacketLogParseProc(RECORD *rec)
 			break;
 		}
 
-		if (p->PacketData != NULL && (pl->PurePacket == false || pl->PurePacketNoPayload == false))
-		{
+		if (p->PacketData != NULL && (pl->PurePacket == false || pl->PurePacketNoPayload == false)) {
 			char *data = Malloc(p->PacketSize * 2 + 1);
 			BinToStr(data, p->PacketSize * 2 + 1, p->PacketData, p->PacketSize);
 			t->Token[15] = data;
 		}
 
 		// Physical IP addresses
-		if (StrLen(pl->SrcPhysicalIP) != 0)
-		{
+		if (StrLen(pl->SrcPhysicalIP) != 0) {
 			t->Token[16] = CopyStr(pl->SrcPhysicalIP);
 		}
-		if (StrLen(pl->DestPhysicalIP) != 0)
-		{
+		if (StrLen(pl->DestPhysicalIP) != 0) {
 			t->Token[17] = CopyStr(pl->DestPhysicalIP);
 		}
-	}
-	else
-	{
+	} else {
 		t->Token[6] = CopyUniToUtf(_UU("LH_PACKET_LOG_NO_LOG_OSS"));
 	}
 
@@ -1695,19 +1465,15 @@ char *PacketLogParseProc(RECORD *rec)
 	FreeToken(t);
 
 	// Discard the packet data
-	if (pl->PurePacket == false)
-	{
+	if (pl->PurePacket == false) {
 		FreeClonePacket(p);
-	}
-	else
-	{
+	} else {
 		Free(p->PacketData);
 		FreePacket(p);
 	}
 
 	// Release the session
-	if (pl->SrcSession != NULL)
-	{
+	if (pl->SrcSession != NULL) {
 		Dec(pl->SrcSession->LoggingRecordCount);
 		ReleaseSession(pl->SrcSession);
 	}
@@ -1717,45 +1483,36 @@ char *PacketLogParseProc(RECORD *rec)
 }
 
 // Convert TCP flags to a string
-char *TcpFlagStr(UCHAR flag)
-{
+char *TcpFlagStr(UCHAR flag) {
 	char tmp[MAX_SIZE];
 	StrCpy(tmp, sizeof(tmp), "");
 
-	if (flag & TCP_FIN)
-	{
+	if (flag & TCP_FIN) {
 		StrCat(tmp, sizeof(tmp), "FIN+");
 	}
 
-	if (flag & TCP_SYN)
-	{
+	if (flag & TCP_SYN) {
 		StrCat(tmp, sizeof(tmp), "SYN+");
 	}
 
-	if (flag & TCP_RST)
-	{
+	if (flag & TCP_RST) {
 		StrCat(tmp, sizeof(tmp), "RST+");
 	}
 
-	if (flag & TCP_PSH)
-	{
+	if (flag & TCP_PSH) {
 		StrCat(tmp, sizeof(tmp), "PSH+");
 	}
 
-	if (flag & TCP_ACK)
-	{
+	if (flag & TCP_ACK) {
 		StrCat(tmp, sizeof(tmp), "ACK+");
 	}
 
-	if (flag & TCP_URG)
-	{
+	if (flag & TCP_URG) {
 		StrCat(tmp, sizeof(tmp), "URG+");
 	}
 
-	if (StrLen(tmp) >= 1)
-	{
-		if (tmp[StrLen(tmp) - 1] == '+')
-		{
+	if (StrLen(tmp) >= 1) {
+		if (tmp[StrLen(tmp) - 1] == '+') {
 			tmp[StrLen(tmp) - 1] = 0;
 		}
 	}
@@ -1764,24 +1521,19 @@ char *TcpFlagStr(UCHAR flag)
 }
 
 // Generate a port string
-char *PortStr(CEDAR *cedar, UINT port, bool udp)
-{
+char *PortStr(CEDAR *cedar, UINT port, bool udp) {
 	char tmp[MAX_SIZE];
 	char *name;
 	// Validate arguments
-	if (cedar == NULL)
-	{
+	if (cedar == NULL) {
 		return NULL;
 	}
 
 	name = GetSvcName(cedar, udp, port);
 
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		snprintf(tmp, sizeof(tmp), "%u", port);
-	}
-	else
-	{
+	} else {
 		snprintf(tmp, sizeof(tmp), "%s(%u)", name, port);
 	}
 
@@ -1789,38 +1541,28 @@ char *PortStr(CEDAR *cedar, UINT port, bool udp)
 }
 
 // Generate a comma-separated string
-char *GenCsvLine(TOKEN_LIST *t)
-{
+char *GenCsvLine(TOKEN_LIST *t) {
 	UINT i;
 	BUF *b;
 	char *ret;
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return NULL;
 	}
 
 	b = NewBuf();
-	for (i = 0; i < t->NumTokens; i++)
-	{
-		if (t->Token[i] != NULL)
-		{
+	for (i = 0; i < t->NumTokens; i++) {
+		if (t->Token[i] != NULL) {
 			ReplaceForCsv(t->Token[i]);
-			if (StrLen(t->Token[i]) == 0)
-			{
+			if (StrLen(t->Token[i]) == 0) {
 				WriteBuf(b, "-", 1);
-			}
-			else
-			{
+			} else {
 				WriteBuf(b, t->Token[i], StrLen(t->Token[i]));
 			}
-		}
-		else
-		{
+		} else {
 			WriteBuf(b, "-", 1);
 		}
-		if (i != (t->NumTokens - 1))
-		{
+		if (i != (t->NumTokens - 1)) {
 			WriteBuf(b, ",", 1);
 		}
 	}
@@ -1834,33 +1576,27 @@ char *GenCsvLine(TOKEN_LIST *t)
 }
 
 // Replace the strings in the CSV correctly
-void ReplaceForCsv(char *str)
-{
+void ReplaceForCsv(char *str) {
 	UINT i, len;
 	// Validate arguments
-	if (str == NULL)
-	{
+	if (str == NULL) {
 		return;
 	}
 
 	len = StrLen(str);
 
-	for (i = 0; i < len; i++)
-	{
+	for (i = 0; i < len; i++) {
 		// Convert the comma to underscore
-		if (str[i] == ',')
-		{
+		if (str[i] == ',') {
 			str[i] = '_';
 		}
 	}
 }
 
 // Set the switch type of log
-void SetLogSwitchType(LOG *g, UINT switch_type)
-{
+void SetLogSwitchType(LOG *g, UINT switch_type) {
 	// Validate arguments
-	if (g == NULL)
-	{
+	if (g == NULL) {
 		return;
 	}
 
@@ -1872,11 +1608,9 @@ void SetLogSwitchType(LOG *g, UINT switch_type)
 }
 
 // Parse the string record
-char *StringRecordParseProc(RECORD *rec)
-{
+char *StringRecordParseProc(RECORD *rec) {
 	// Validate arguments
-	if (rec == NULL)
-	{
+	if (rec == NULL) {
 		return NULL;
 	}
 
@@ -1884,13 +1618,11 @@ char *StringRecordParseProc(RECORD *rec)
 }
 
 // Add an Unicode string record in the log
-void InsertUnicodeRecord(LOG *g, wchar_t *unistr)
-{
+void InsertUnicodeRecord(LOG *g, wchar_t *unistr) {
 	char *str;
 	UINT size;
 	// Validate arguments
-	if (g == NULL || unistr == NULL)
-	{
+	if (g == NULL || unistr == NULL) {
 		return;
 	}
 
@@ -1903,12 +1635,10 @@ void InsertUnicodeRecord(LOG *g, wchar_t *unistr)
 }
 
 // Add a string record to the log
-void InsertStringRecord(LOG *g, char *str)
-{
+void InsertStringRecord(LOG *g, char *str) {
 	char *str_copy;
 	// Validate arguments
-	if (g == NULL || str == NULL)
-	{
+	if (g == NULL || str == NULL) {
 		return;
 	}
 
@@ -1918,12 +1648,10 @@ void InsertStringRecord(LOG *g, char *str)
 }
 
 // Add a record to the log
-void InsertRecord(LOG *g, void *data, RECORD_PARSE_PROC *proc)
-{
+void InsertRecord(LOG *g, void *data, RECORD_PARSE_PROC *proc) {
 	RECORD *rec;
 	// Validate arguments
-	if (g == NULL || data == NULL || proc == NULL)
-	{
+	if (g == NULL || data == NULL || proc == NULL) {
 		return;
 	}
 
@@ -1942,11 +1670,9 @@ void InsertRecord(LOG *g, void *data, RECORD_PARSE_PROC *proc)
 }
 
 // Lock the log
-void LockLog(LOG *g)
-{
+void LockLog(LOG *g) {
 	// Validate arguments
-	if (g == NULL)
-	{
+	if (g == NULL) {
 		return;
 	}
 
@@ -1954,11 +1680,9 @@ void LockLog(LOG *g)
 }
 
 // Unlock the log
-void UnlockLog(LOG *g)
-{
+void UnlockLog(LOG *g) {
 	// Validate arguments
-	if (g == NULL)
-	{
+	if (g == NULL) {
 		return;
 	}
 
@@ -1966,22 +1690,18 @@ void UnlockLog(LOG *g)
 }
 
 // Generate the string portion of the log file name from the time and the switching rule
-void MakeLogFileNameStringFromTick(LOG *g, char *str, UINT size, UINT64 tick, UINT switch_type)
-{
+void MakeLogFileNameStringFromTick(LOG *g, char *str, UINT size, UINT64 tick, UINT switch_type) {
 	UINT64 time;
 	SYSTEMTIME st;
 
 	// Validate arguments
-	if (str == NULL || g == NULL)
-	{
+	if (str == NULL || g == NULL) {
 		return;
 	}
 
-	if (g->CacheFlag)
-	{
+	if (g->CacheFlag) {
 		if (g->LastTick == tick &&
-		        g->LastSwitchType == switch_type)
-		{
+		    g->LastSwitchType == switch_type) {
 			StrCpy(str, size, g->LastStr);
 			return;
 		}
@@ -1990,31 +1710,30 @@ void MakeLogFileNameStringFromTick(LOG *g, char *str, UINT size, UINT64 tick, UI
 	time = TickToTime(tick);
 	UINT64ToSystem(&st, SystemToLocal64(time));
 
-	switch (switch_type)
-	{
-	case LOG_SWITCH_SECOND:	// Secondly basis
+	switch (switch_type) {
+	case LOG_SWITCH_SECOND: // Secondly basis
 		snprintf(str, size, "_%04u%02u%02u_%02u%02u%02u",
 		         st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
 		break;
 
-	case LOG_SWITCH_MINUTE:	// Minutely basis
+	case LOG_SWITCH_MINUTE: // Minutely basis
 		snprintf(str, size, "_%04u%02u%02u_%02u%02u",
 		         st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute);
 		break;
 
-	case LOG_SWITCH_HOUR:	// Hourly basis
+	case LOG_SWITCH_HOUR: // Hourly basis
 		snprintf(str, size, "_%04u%02u%02u_%02u", st.wYear, st.wMonth, st.wDay, st.wHour);
 		break;
 
-	case LOG_SWITCH_DAY:	// Daily basis
+	case LOG_SWITCH_DAY: // Daily basis
 		snprintf(str, size, "_%04u%02u%02u", st.wYear, st.wMonth, st.wDay);
 		break;
 
-	case LOG_SWITCH_MONTH:	// Monthly basis
+	case LOG_SWITCH_MONTH: // Monthly basis
 		snprintf(str, size, "_%04u%02u", st.wYear, st.wMonth);
 		break;
 
-	default:				// Without switching
+	default: // Without switching
 		StrCpy(str, size, "");
 		break;
 	}
@@ -2026,60 +1745,39 @@ void MakeLogFileNameStringFromTick(LOG *g, char *str, UINT size, UINT64 tick, UI
 }
 
 // Create a log file name
-bool MakeLogFileName(LOG *g, char *name, UINT size, char *dir, char *prefix, UINT64 tick, UINT switch_type, UINT num, char *old_datestr)
-{
+bool MakeLogFileName(LOG *g, char *name, UINT size, char *dir, char *prefix, UINT64 tick, UINT switch_type, UINT num, char *old_datestr) {
 	char tmp[MAX_SIZE];
 	char tmp2[64];
 	bool ret = false;
 	// Validate arguments
-	if (g == NULL || name == NULL || prefix == NULL || old_datestr == NULL)
-	{
+	if (g == NULL || name == NULL || prefix == NULL || old_datestr == NULL) {
 		return false;
 	}
 
 	MakeLogFileNameStringFromTick(g, tmp, sizeof(tmp), tick, switch_type);
 
-	if (num == 0)
-	{
+	if (num == 0) {
 		tmp2[0] = 0;
-	}
-	else
-	{
+	} else {
 		UINT64 max_log_size = GetMaxLogSize();
-		if (max_log_size == MAX_LOG_SIZE_DEFAULT)
-		{
+		if (max_log_size == MAX_LOG_SIZE_DEFAULT) {
 			snprintf(tmp2, sizeof(tmp2), "~%02u", num);
-		}
-		else
-		{
+		} else {
 			char tag[32];
 			char c = '2';
-			if (max_log_size >= 1000000000ULL)
-			{
+			if (max_log_size >= 1000000000ULL) {
 				c = '3';
-			}
-			else if (max_log_size >= 100000000ULL)
-			{
+			} else if (max_log_size >= 100000000ULL) {
 				c = '4';
-			}
-			else if (max_log_size >= 10000000ULL)
-			{
+			} else if (max_log_size >= 10000000ULL) {
 				c = '5';
-			}
-			else if (max_log_size >= 1000000ULL)
-			{
+			} else if (max_log_size >= 1000000ULL) {
 				c = '6';
-			}
-			else if (max_log_size >= 100000ULL)
-			{
+			} else if (max_log_size >= 100000ULL) {
 				c = '7';
-			}
-			else if (max_log_size >= 10000ULL)
-			{
+			} else if (max_log_size >= 10000ULL) {
 				c = '8';
-			}
-			else if (max_log_size >= 1000ULL)
-			{
+			} else if (max_log_size >= 1000ULL) {
 				c = '9';
 			}
 
@@ -2090,31 +1788,26 @@ bool MakeLogFileName(LOG *g, char *name, UINT size, char *dir, char *prefix, UIN
 		}
 	}
 
-	if (StrCmp(old_datestr, tmp) != 0)
-	{
+	if (StrCmp(old_datestr, tmp) != 0) {
 		ret = true;
 		StrCpy(old_datestr, MAX_SIZE, tmp);
 	}
 
 	snprintf(name, size, "%s%s%s%s%s.log", dir,
 	         StrLen(dir) == 0 ? "" : "/",
-	         prefix, tmp, tmp2
-	        );
+	         prefix, tmp, tmp2);
 
 	return ret;
 }
 
 // Wait until the log have been flushed
-void WaitLogFlush(LOG *g)
-{
+void WaitLogFlush(LOG *g) {
 	// Validate arguments
-	if (g == NULL)
-	{
+	if (g == NULL) {
 		return;
 	}
 
-	while (true)
-	{
+	while (true) {
 		UINT num;
 		LockQueue(g->RecordQueue);
 		{
@@ -2122,8 +1815,7 @@ void WaitLogFlush(LOG *g)
 		}
 		UnlockQueue(g->RecordQueue);
 
-		if (num == 0)
-		{
+		if (num == 0) {
 			break;
 		}
 
@@ -2132,10 +1824,8 @@ void WaitLogFlush(LOG *g)
 }
 
 // Set the max log size
-void SetMaxLogSize(UINT64 size)
-{
-	if (size == 0)
-	{
+void SetMaxLogSize(UINT64 size) {
+	if (size == 0) {
 		size = MAX_LOG_SIZE_DEFAULT;
 	}
 
@@ -2143,12 +1833,10 @@ void SetMaxLogSize(UINT64 size)
 }
 
 // Get the max log size
-UINT64 GetMaxLogSize()
-{
+UINT64 GetMaxLogSize() {
 	UINT64 ret = logger_max_log_size;
 
-	if (ret == 0)
-	{
+	if (ret == 0) {
 		ret = MAX_LOG_SIZE_DEFAULT;
 	}
 
@@ -2156,8 +1844,7 @@ UINT64 GetMaxLogSize()
 }
 
 // Logging thread
-void LogThread(THREAD *thread, void *param)
-{
+void LogThread(THREAD *thread, void *param) {
 	LOG *g;
 	IO *io;
 	BUF *b;
@@ -2166,8 +1853,7 @@ void LogThread(THREAD *thread, void *param)
 	char current_logfile_datename[MAX_SIZE];
 	bool log_date_changed = false;
 	// Validate arguments
-	if (thread == NULL || param == NULL)
-	{
+	if (thread == NULL || param == NULL) {
 		return;
 	}
 
@@ -2179,38 +1865,33 @@ void LogThread(THREAD *thread, void *param)
 	io = NULL;
 	b = NewBuf();
 
-#ifdef	OS_WIN32
+#ifdef OS_WIN32
 
 	// Lower priority to bottom
 	MsSetThreadPriorityIdle();
 
-#endif	// OS_WIN32
+#endif // OS_WIN32
 
 	NoticeThreadInit(thread);
 
-	while (true)
-	{
+	while (true) {
 		UINT64 s = Tick64();
 
-		while (true)
-		{
-			if (! LogThreadWriteGeneral(g, b, &io, &log_date_changed, current_logfile_datename, current_file_name))
-			{
+		while (true) {
+			if (!LogThreadWriteGeneral(g, b, &io, &log_date_changed, current_logfile_datename, current_file_name)) {
 				break;
 			}
 		}
 
-		if (g->Halt)
-		{
+		if (g->Halt) {
 			// Break after finishing to save all records
 			// when the stop flag stood
 			UINT num;
 
-			if (flag == false)
-			{
-#ifdef	OS_WIN32
+			if (flag == false) {
+#ifdef OS_WIN32
 				MsSetThreadPriorityRealtime();
-#endif	// OS_WIN32
+#endif // OS_WIN32
 				flag = true;
 			}
 
@@ -2220,27 +1901,22 @@ void LogThread(THREAD *thread, void *param)
 			}
 			UnlockQueue(g->RecordQueue);
 
-			if (num == 0 || io == NULL)
-			{
+			if (num == 0 || io == NULL) {
 				break;
 			}
-		}
-		else
-		{
+		} else {
 			Wait(g->Event, 9821);
 		}
 	}
 
-	if (io != NULL)
-	{
+	if (io != NULL) {
 		FileCloseEx(io, true);
 	}
 
 	FreeBuf(b);
 }
 
-static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *log_date_changed, char *current_logfile_datename, char *current_file_name)
-{
+static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *log_date_changed, char *current_logfile_datename, char *current_file_name) {
 	RECORD *rec;
 	char file_name[MAX_SIZE];
 	UINT num;
@@ -2253,53 +1929,41 @@ static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *l
 	}
 	UnlockQueue(log_object->RecordQueue);
 
-#ifdef	OS_WIN32
-	if (num >= LOG_ENGINE_SAVE_START_CACHE_COUNT)
-	{
+#ifdef OS_WIN32
+	if (num >= LOG_ENGINE_SAVE_START_CACHE_COUNT) {
 		// Raise the priority
 		Debug("LOG_THREAD: MsSetThreadPriorityRealtime\n");
 		MsSetThreadPriorityRealtime();
 	}
 
-	if (num < (LOG_ENGINE_SAVE_START_CACHE_COUNT / 2))
-	{
+	if (num < (LOG_ENGINE_SAVE_START_CACHE_COUNT / 2)) {
 		// Restore the priority
 		Debug("LOG_THREAD: MsSetThreadPriorityIdle\n");
 		MsSetThreadPriorityIdle();
 	}
-#endif	// OS_WIN32
+#endif // OS_WIN32
 
-	if (buffer->Size > GetMaxLogSize())
-	{
+	if (buffer->Size > GetMaxLogSize()) {
 		// Erase if the size of the buffer is larger than the maximum log file size
 		ClearBuf(buffer);
 	}
 
-	if (buffer->Size >= LOG_ENGINE_BUFFER_CACHE_SIZE_MAX)
-	{
+	if (buffer->Size >= LOG_ENGINE_BUFFER_CACHE_SIZE_MAX) {
 		// Write the contents of the buffer to the file
-		if (*io != NULL)
-		{
-			if ((log_object->CurrentFilePointer + (UINT64)buffer->Size) > GetMaxLogSize())
-			{
-				if (log_object->log_number_incremented == false)
-				{
+		if (*io != NULL) {
+			if ((log_object->CurrentFilePointer + (UINT64)buffer->Size) > GetMaxLogSize()) {
+				if (log_object->log_number_incremented == false) {
 					log_object->CurrentLogNumber++;
 					log_object->log_number_incremented = true;
 				}
-			}
-			else
-			{
-				if (FileWrite(*io, buffer->Buf, buffer->Size) == false)
-				{
+			} else {
+				if (FileWrite(*io, buffer->Buf, buffer->Size) == false) {
 					FileCloseEx(*io, true);
 					// If it fails to write to the file,
 					// erase the buffer and give up
 					ClearBuf(buffer);
 					*io = NULL;
-				}
-				else
-				{
+				} else {
 					log_object->CurrentFilePointer += (UINT64)buffer->Size;
 					ClearBuf(buffer);
 				}
@@ -2307,33 +1971,23 @@ static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *l
 		}
 	}
 
-	if (rec == NULL)
-	{
-		if (buffer->Size != 0)
-		{
+	if (rec == NULL) {
+		if (buffer->Size != 0) {
 			// Write the contents of the buffer to the file
-			if (*io != NULL)
-			{
-				if ((log_object->CurrentFilePointer + (UINT64)buffer->Size) > GetMaxLogSize())
-				{
-					if (log_object->log_number_incremented == false)
-					{
+			if (*io != NULL) {
+				if ((log_object->CurrentFilePointer + (UINT64)buffer->Size) > GetMaxLogSize()) {
+					if (log_object->log_number_incremented == false) {
 						log_object->CurrentLogNumber++;
 						log_object->log_number_incremented = true;
 					}
-				}
-				else
-				{
-					if (FileWrite(*io, buffer->Buf, buffer->Size) == false)
-					{
+				} else {
+					if (FileWrite(*io, buffer->Buf, buffer->Size) == false) {
 						FileCloseEx(*io, true);
 						// If it fails to write to the file,
 						// erase the buffer and give up
 						ClearBuf(buffer);
 						*io = NULL;
-					}
-					else
-					{
+					} else {
 						log_object->CurrentFilePointer += (UINT64)buffer->Size;
 						ClearBuf(buffer);
 					}
@@ -2351,21 +2005,18 @@ static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *l
 		*log_date_changed = MakeLogFileName(log_object, file_name, sizeof(file_name),
 		                                    log_object->DirName, log_object->Prefix, rec->Tick, log_object->SwitchType, log_object->CurrentLogNumber, current_logfile_datename);
 
-		if (*log_date_changed)
-		{
+		if (*log_date_changed) {
 			UINT i;
 
 			log_object->CurrentLogNumber = 0;
 			MakeLogFileName(log_object, file_name, sizeof(file_name),
 			                log_object->DirName, log_object->Prefix, rec->Tick, log_object->SwitchType, 0, current_logfile_datename);
-			for (i = 0;; i++)
-			{
+			for (i = 0;; i++) {
 				char tmp[MAX_SIZE];
 				MakeLogFileName(log_object, tmp, sizeof(tmp),
 				                log_object->DirName, log_object->Prefix, rec->Tick, log_object->SwitchType, i, current_logfile_datename);
 
-				if (IsFileExists(tmp) == false)
-				{
+				if (IsFileExists(tmp) == false) {
 					break;
 				}
 				StrCpy(file_name, sizeof(file_name), tmp);
@@ -2375,27 +2026,19 @@ static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *l
 	}
 	UnlockLog(log_object);
 
-	if (*io != NULL)
-	{
-		if (StrCmp(current_file_name, file_name) != 0)
-		{
+	if (*io != NULL) {
+		if (StrCmp(current_file_name, file_name) != 0) {
 			// If a log file is currently opened and writing to another log
 			// file is needed for this time, write the contents of the
 			//buffer and close the log file. Write the contents of the buffer
-			if (*io != NULL)
-			{
-				if (*log_date_changed)
-				{
-					if ((log_object->CurrentFilePointer + (UINT64)buffer->Size) <= GetMaxLogSize())
-					{
-						if (FileWrite(*io, buffer->Buf, buffer->Size) == false)
-						{
+			if (*io != NULL) {
+				if (*log_date_changed) {
+					if ((log_object->CurrentFilePointer + (UINT64)buffer->Size) <= GetMaxLogSize()) {
+						if (FileWrite(*io, buffer->Buf, buffer->Size) == false) {
 							FileCloseEx(*io, true);
 							ClearBuf(buffer);
 							*io = NULL;
-						}
-						else
-						{
+						} else {
 							log_object->CurrentFilePointer += (UINT64)buffer->Size;
 							ClearBuf(buffer);
 						}
@@ -2410,55 +2053,46 @@ static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *l
 			// Open or create a new log file
 			StrCpy(current_file_name, sizeof(current_file_name), file_name);
 			*io = FileOpen(file_name, true);
-			if (*io == NULL)
-			{
+			if (*io == NULL) {
 				// Create a log file
 				LockLog(log_object);
 				{
 					MakeDir(log_object->DirName);
 
-#ifdef	OS_WIN32
+#ifdef OS_WIN32
 					Win32SetFolderCompress(log_object->DirName, true);
-#endif	// OS_WIN32
+#endif // OS_WIN32
 				}
 				UnlockLog(log_object);
 				*io = FileCreate(file_name);
 				log_object->CurrentFilePointer = 0;
-			}
-			else
-			{
+			} else {
 				// Seek to the end of the log file
 				log_object->CurrentFilePointer = FileSize64(*io);
 				FileSeek(*io, SEEK_END, 0);
 			}
 		}
-	}
-	else
-	{
+	} else {
 		// Open or create a new log file
 		StrCpy(current_file_name, sizeof(current_file_name), file_name);
 		*io = FileOpen(file_name, true);
-		if (*io == NULL)
-		{
+		if (*io == NULL) {
 			// Create a log file
 			LockLog(log_object);
 			{
 				MakeDir(log_object->DirName);
-#ifdef	OS_WIN32
+#ifdef OS_WIN32
 				Win32SetFolderCompress(log_object->DirName, true);
-#endif	// OS_WIN32
+#endif // OS_WIN32
 			}
 			UnlockLog(log_object);
 			*io = FileCreate(file_name);
 			log_object->CurrentFilePointer = 0;
-			if (*io == NULL)
-			{
+			if (*io == NULL) {
 				//Debug("Logging.c: SleepThread(30);\n");
 				SleepThread(30);
 			}
-		}
-		else
-		{
+		} else {
 			// Seek to the end of the log file
 			log_object->CurrentFilePointer = FileSize64(*io);
 			FileSeek(*io, SEEK_END, 0);
@@ -2477,15 +2111,13 @@ static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *l
 }
 
 // Write the contents of the log to the buffer
-void WriteRecordToBuffer(BUF *b, RECORD *r)
-{
+void WriteRecordToBuffer(BUF *b, RECORD *r) {
 	UINT64 time;
 	char time_str[MAX_SIZE];
 	char date_str[MAX_SIZE];
 	char *s;
 	// Validate arguments
-	if (b == NULL || r == NULL)
-	{
+	if (b == NULL || r == NULL) {
 		return;
 	}
 
@@ -2496,16 +2128,13 @@ void WriteRecordToBuffer(BUF *b, RECORD *r)
 	GetDateStr64(date_str, sizeof(date_str), time);
 	GetTimeStrMilli64(time_str, sizeof(time_str), time);
 
-	if (r->ParseProc != PacketLogParseProc)
-	{
+	if (r->ParseProc != PacketLogParseProc) {
 		// Other than packet log
 		WriteBuf(b, date_str, StrLen(date_str));
 		WriteBuf(b, " ", 1);
 		WriteBuf(b, time_str, StrLen(time_str));
 		WriteBuf(b, " ", 1);
-	}
-	else
-	{
+	} else {
 		// Packet log
 		WriteBuf(b, date_str, StrLen(date_str));
 		WriteBuf(b, ",", 1);
@@ -2522,12 +2151,10 @@ void WriteRecordToBuffer(BUF *b, RECORD *r)
 }
 
 // End of logging
-void FreeLog(LOG *g)
-{
+void FreeLog(LOG *g) {
 	RECORD *rec;
 	// Validate arguments
-	if (g == NULL)
-	{
+	if (g == NULL) {
 		return;
 	}
 
@@ -2544,8 +2171,7 @@ void FreeLog(LOG *g)
 
 	// Release the unprocessed record if it remains
 	// (It should not remain here)
-	while (rec = GetNext(g->RecordQueue))
-	{
+	while (rec = GetNext(g->RecordQueue)) {
 		char *s = rec->ParseProc(rec);
 		Free(s);
 		Free(rec);
@@ -2559,8 +2185,7 @@ void FreeLog(LOG *g)
 }
 
 // Start a new logging
-LOG *NewLog(char *dir, char *prefix, UINT switch_type)
-{
+LOG *NewLog(char *dir, char *prefix, UINT switch_type) {
 	LOG *g;
 
 	g = ZeroMalloc(sizeof(LOG));

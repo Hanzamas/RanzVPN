@@ -5,14 +5,13 @@
 // Protocol.h
 // Header of Protocol.c
 
-#ifndef	PROTOCOL_H
-#define	PROTOCOL_H
+#ifndef PROTOCOL_H
+#define PROTOCOL_H
 
 #include "Connection.h"
 
 // The parameters that will be passed to the certificate confirmation thread
-struct CHECK_CERT_THREAD_PROC
-{
+struct CHECK_CERT_THREAD_PROC {
 	CONNECTION *Connection;
 	X *ServerX;
 	CHECK_CERT_PROC *CheckCertProc;
@@ -22,19 +21,18 @@ struct CHECK_CERT_THREAD_PROC
 };
 
 // Signature sending thread parameters
-struct SEND_SIGNATURE_PARAM
-{
-	char Hostname[MAX_PATH];		// Host name
-	UINT Port;						// Port number
-	BUF *Buffer;					// Packet contents
+struct SEND_SIGNATURE_PARAM {
+	char Hostname[MAX_PATH]; // Host name
+	UINT Port;               // Port number
+	BUF *Buffer;             // Packet contents
 };
 
 // Dynamic root cert fetch function
-#define	CERT_HTTP_DOWNLOAD_MAXSIZE	65536
-#define	CERT_HTTP_DOWNLOAD_TIMEOUT	(10 * 1000)
-#define	ROOT_CERTS_FILENAME			"|root_certs.dat"
-#define	AUTO_DOWNLOAD_CERTS_PREFIX	L".autodownload_"
-#define	FIND_CERT_CHAIN_MAX_DEPTH	16
+#define CERT_HTTP_DOWNLOAD_MAXSIZE 65536
+#define CERT_HTTP_DOWNLOAD_TIMEOUT (10 * 1000)
+#define ROOT_CERTS_FILENAME        "|root_certs.dat"
+#define AUTO_DOWNLOAD_CERTS_PREFIX L".autodownload_"
+#define FIND_CERT_CHAIN_MAX_DEPTH  16
 
 // Function prototype
 bool ServerAccept(CONNECTION *c);
@@ -42,7 +40,7 @@ bool ClientConnect(CONNECTION *c);
 SOCK *ClientConnectToServer(CONNECTION *c);
 
 // New function named with prefix "Bind" binds outgoing connection to a specific address.
-SOCK* BindTcpIpConnectEx(IP *localIP, UINT localport, char *hostname, UINT port, bool *cancel_flag, void *hWnd, IP *ret_ip);
+SOCK *BindTcpIpConnectEx(IP *localIP, UINT localport, char *hostname, UINT port, bool *cancel_flag, void *hWnd, IP *ret_ip);
 
 bool ClientUploadSignature(SOCK *s);
 bool ClientDownloadHello(CONNECTION *c, SOCK *s);
@@ -53,7 +51,7 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect);
 SOCK *TcpConnectEx3(char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, IP *ret_ip);
 
 // New function named with prefix "Bind" binds outgoing connection to a specific address. New one is wrapped in original one.
-SOCK* BindTcpConnectEx3(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, IP *ret_ip);
+SOCK *BindTcpConnectEx3(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, IP *ret_ip);
 
 UINT ProxyCodeToCedar(UINT code);
 
@@ -71,13 +69,13 @@ PACK *PackLoginWithPlainPassword(char *hubname, char *username, void *plain_pass
 PACK *PackLoginWithCert(char *hubname, char *username, X *x, void *sign, UINT sign_size);
 bool GetMethodFromPack(PACK *p, char *method, UINT size);
 bool GetHubnameAndUsernameFromPack(PACK *p, char *username, UINT username_size,
-								   char *hubname, UINT hubname_size);
+                                   char *hubname, UINT hubname_size);
 PACK *PackAdditionalConnect(UCHAR *session_key);
 UINT GetAuthTypeFromPack(PACK *p);
 UINT GetProtocolFromPack(PACK *p);
 bool ParseWelcomeFromPack(PACK *p, char *session_name, UINT session_name_size,
-						  char *connection_name, UINT connection_name_size,
-						  POLICY **policy);
+                          char *connection_name, UINT connection_name_size,
+                          POLICY **policy);
 
 
 bool ClientAdditionalConnect(CONNECTION *c, THREAD *t);
@@ -106,4 +104,4 @@ bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x);
 bool TryGetParentCertFromCertList(LIST *o, X *x, LIST *found_chain);
 bool DownloadAndSaveIntermediateCertificatesIfNecessary(X *x);
 
-#endif	// PROTOCOL_H
+#endif // PROTOCOL_H

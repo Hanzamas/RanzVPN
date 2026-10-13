@@ -5,8 +5,8 @@
 // Listener.h
 // Header of Listener.c
 
-#ifndef	LISTENER_H
-#define	LISTENER_H
+#ifndef LISTENER_H
+#define LISTENER_H
 
 #include "CedarType.h"
 
@@ -15,58 +15,54 @@
 #include "Mayaqua/Network.h"
 
 // Function to call when receiving a new connection
-typedef void (NEW_CONNECTION_PROC)(CONNECTION *c);
+typedef void(NEW_CONNECTION_PROC)(CONNECTION *c);
 
 
 // DOS attack list
-struct DOS
-{
-	IP IpAddress;					// IP address
-	UINT64 FirstConnectedTick;		// Time which a client connects at the first time
-	UINT64 LastConnectedTick;		// Time which a client connected at the last time
-	UINT64 CurrentExpireSpan;		// Current time-out period of this record
-	UINT64 DeleteEntryTick;			// Time planned to delete this entry
-	UINT AccessCount;				// The number of accesses
+struct DOS {
+	IP IpAddress;              // IP address
+	UINT64 FirstConnectedTick; // Time which a client connects at the first time
+	UINT64 LastConnectedTick;  // Time which a client connected at the last time
+	UINT64 CurrentExpireSpan;  // Current time-out period of this record
+	UINT64 DeleteEntryTick;    // Time planned to delete this entry
+	UINT AccessCount;          // The number of accesses
 };
 
 // Listener structure
-struct LISTENER
-{
-	LOCK *lock;						// Lock
-	REF *ref;						// Reference counter
-	CEDAR *Cedar;					// Cedar
-	UINT Protocol;					// Protocol
-	UINT Port;						// Port number
-	THREAD *Thread;					// Operating thread
-	SOCK *Sock;						// Socket
-	EVENT *Event;					// Event
-	volatile bool Halt;				// Halting flag
-	UINT Status;					// State
+struct LISTENER {
+	LOCK *lock;         // Lock
+	REF *ref;           // Reference counter
+	CEDAR *Cedar;       // Cedar
+	UINT Protocol;      // Protocol
+	UINT Port;          // Port number
+	THREAD *Thread;     // Operating thread
+	SOCK *Sock;         // Socket
+	EVENT *Event;       // Event
+	volatile bool Halt; // Halting flag
+	UINT Status;        // State
 
-	LIST *DosList;					// DOS attack list
-	UINT64 DosListLastRefreshTime;	// Time that the DOS list is refreshed at the last
+	LIST *DosList;                 // DOS attack list
+	UINT64 DosListLastRefreshTime; // Time that the DOS list is refreshed at the last
 
-	THREAD_PROC *ThreadProc;		// Thread procedure
-	void *ThreadParam;				// Thread parameters
-	bool LocalOnly;					// Can be connected only from localhost
-	bool ShadowIPv6;				// Flag indicating that the shadow IPv6 listener
-	LISTENER *ShadowListener;		// Reference to managing shadow IPv6 listener
-	bool DisableDos;				// Disable the DoS attack detection
-	bool EnableConditionalAccept;	// The flag of whether to enable the Conditional Accept
+	THREAD_PROC *ThreadProc;      // Thread procedure
+	void *ThreadParam;            // Thread parameters
+	bool LocalOnly;               // Can be connected only from localhost
+	bool ShadowIPv6;              // Flag indicating that the shadow IPv6 listener
+	LISTENER *ShadowListener;     // Reference to managing shadow IPv6 listener
+	bool DisableDos;              // Disable the DoS attack detection
+	bool EnableConditionalAccept; // The flag of whether to enable the Conditional Accept
 };
 
 // Parameters of TCPAcceptedThread
-struct TCP_ACCEPTED_PARAM
-{
+struct TCP_ACCEPTED_PARAM {
 	LISTENER *r;
 	SOCK *s;
 };
 
 // UDP entry
-struct UDP_ENTRY
-{
-	UINT SessionKey32;				// 32bit session key
-	SESSION *Session;				// Reference to the session
+struct UDP_ENTRY {
+	UINT SessionKey32; // 32bit session key
+	SESSION *Session;  // Reference to the session
 };
 
 
@@ -102,6 +98,6 @@ DOS *SearchDosList(LISTENER *r, IP *ip);
 void RefreshDosList(LISTENER *r);
 bool CheckDosAttack(LISTENER *r, SOCK *s);
 
-#endif	// LISTENER_H
+#endif // LISTENER_H
 
 

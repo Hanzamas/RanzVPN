@@ -23,40 +23,39 @@
 #include <time.h>
 
 #ifndef TM_YEAR_MAX
-#define TM_YEAR_MAX         2106
+#define TM_YEAR_MAX 2106
 #endif
 #ifndef TM_MON_MAX
-#define TM_MON_MAX          1
+#define TM_MON_MAX 1
 #endif
 #ifndef TM_MDAY_MAX
-#define TM_MDAY_MAX         7
+#define TM_MDAY_MAX 7
 #endif
 #ifndef TM_HOUR_MAX
-#define TM_HOUR_MAX         6
+#define TM_HOUR_MAX 6
 #endif
 #ifndef TM_MIN_MAX
-#define TM_MIN_MAX          28
+#define TM_MIN_MAX 28
 #endif
 #ifndef TM_SEC_MAX
-#define TM_SEC_MAX          14
+#define TM_SEC_MAX 14
 #endif
 
-#define ADJUST_TM(tm_member, tm_carry, modulus) \
-	if ((tm_member) < 0){ \
-	tm_carry -= (1 - ((tm_member)+1) / (modulus)); \
-	tm_member = (modulus-1) + (((tm_member)+1) % (modulus)); \
-	} else if ((tm_member) >= (modulus)) { \
-	tm_carry += (tm_member) / (modulus); \
-	tm_member = (tm_member) % (modulus); \
+#define ADJUST_TM(tm_member, tm_carry, modulus)                      \
+	if ((tm_member) < 0) {                                           \
+		tm_carry -= (1 - ((tm_member) + 1) / (modulus));             \
+		tm_member = (modulus - 1) + (((tm_member) + 1) % (modulus)); \
+	} else if ((tm_member) >= (modulus)) {                           \
+		tm_carry += (tm_member) / (modulus);                         \
+		tm_member = (tm_member) % (modulus);                         \
 	}
-#define leap(y) (((y) % 4 == 0 && (y) % 100 != 0) || (y) % 400 == 0)
-#define nleap(y) (((y) - 1969) / 4 - ((y) - 1901) / 100 + ((y) - 1601) / 400)
-#define leapday(m, y) ((m) == 1 && leap (y))
-#define monthlen(m, y) (ydays[(m)+1] - ydays[m] + leapday (m, y))
+#define leap(y)        (((y) % 4 == 0 && (y) % 100 != 0) || (y) % 400 == 0)
+#define nleap(y)       (((y) - 1969) / 4 - ((y) - 1901) / 100 + ((y) - 1601) / 400)
+#define leapday(m, y)  ((m) == 1 && leap(y))
+#define monthlen(m, y) (ydays[(m) + 1] - ydays[m] + leapday(m, y))
 static int ydays[] =
-{
-	0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365
-};
+    {
+        0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365};
 
 static COUNTER *current_num_thread = NULL;
 static UINT cached_number_of_cpus = 0;
@@ -64,41 +63,39 @@ static UINT cached_number_of_cpus = 0;
 
 
 static wchar_t *default_locale_str =
-L"- - $ : : $ Sun Mon Tue Wed Thu Fri Sat : : : $ (None)";
+    L"- - $ : : $ Sun Mon Tue Wed Thu Fri Sat : : : $ (None)";
 
 
 static LOCALE current_locale;
 
-#define MONSPERYEAR 12
+#define MONSPERYEAR  12
 #define DAYSPERNYEAR 365
 #define DAYSPERLYEAR 366
-#define SECSPERMIN 60
-#define SECSPERHOUR (60*60)
-#define SECSPERDAY (24*60*60)
-#define DAYSPERWEEK 7
-#define TM_SUNDAY	0
-#define TM_MONDAY	1
-#define TM_TUESDAY	2
-#define TM_WEDNESDAY	3
-#define TM_THURSDAY	4
-#define TM_FRIDAY	5
-#define TM_SATURDAY	6
+#define SECSPERMIN   60
+#define SECSPERHOUR  (60 * 60)
+#define SECSPERDAY   (24 * 60 * 60)
+#define DAYSPERWEEK  7
+#define TM_SUNDAY    0
+#define TM_MONDAY    1
+#define TM_TUESDAY   2
+#define TM_WEDNESDAY 3
+#define TM_THURSDAY  4
+#define TM_FRIDAY    5
+#define TM_SATURDAY  6
 
-#define TM_YEAR_BASE	1900
+#define TM_YEAR_BASE 1900
 
-#define EPOCH_YEAR	1970
-#define EPOCH_WDAY	TM_THURSDAY
+#define EPOCH_YEAR 1970
+#define EPOCH_WDAY TM_THURSDAY
 
 #define isleap(y) (((y) % 4) == 0 && (((y) % 100) != 0 || ((y) % 400) == 0))
 
-static const int	mon_lengths[2][MONSPERYEAR] = {
-	{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 },
-	{ 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
-};
+static const int mon_lengths[2][MONSPERYEAR] = {
+    {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31},
+    {31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}};
 
-static const int	year_lengths[2] = {
-	DAYSPERNYEAR, DAYSPERLYEAR
-};
+static const int year_lengths[2] = {
+    DAYSPERNYEAR, DAYSPERLYEAR};
 
 
 /*
@@ -108,16 +105,16 @@ static const int	year_lengths[2] = {
  * adapted to be replacement gmtime_r.
  */
 static void
-c_timesub(timep, offset, tmp)
-const time_64t * const			timep;
-const long				offset;
-struct tm * const		tmp;
+    c_timesub(timep, offset, tmp)
+        const time_64t *const timep;
+const long offset;
+struct tm *const tmp;
 {
-	INT64			days;
-	INT64			rem;
-	INT64			y;
-	int			yleap;
-	const int *		ip;
+	INT64 days;
+	INT64 rem;
+	INT64 y;
+	int yleap;
+	const int *ip;
 
 	days = *timep / SECSPERDAY;
 	rem = *timep % SECSPERDAY;
@@ -130,63 +127,59 @@ struct tm * const		tmp;
 		rem -= SECSPERDAY;
 		++days;
 	}
-	tmp->tm_hour = (int) (rem / SECSPERHOUR);
+	tmp->tm_hour = (int)(rem / SECSPERHOUR);
 	rem = rem % SECSPERHOUR;
-	tmp->tm_min = (int) (rem / SECSPERMIN);
+	tmp->tm_min = (int)(rem / SECSPERMIN);
 	/*
 	** A positive leap second requires a special
 	** representation.  This uses "... ??:59:60" et seq.
 	*/
-	tmp->tm_sec = (int) (rem % SECSPERMIN) ;
-	tmp->tm_wday = (int) ((EPOCH_WDAY + days) % DAYSPERWEEK);
+	tmp->tm_sec = (int)(rem % SECSPERMIN);
+	tmp->tm_wday = (int)((EPOCH_WDAY + days) % DAYSPERWEEK);
 	if (tmp->tm_wday < 0)
 		tmp->tm_wday += DAYSPERWEEK;
 	y = EPOCH_YEAR;
-#define LEAPS_THRU_END_OF(y)	((y) / 4 - (y) / 100 + (y) / 400)
-	while (days < 0 || days >= (long) year_lengths[yleap = isleap(y)]) {
-		INT64	newy;
+#define LEAPS_THRU_END_OF(y) ((y) / 4 - (y) / 100 + (y) / 400)
+	while (days < 0 || days >= (long)year_lengths[yleap = isleap(y)]) {
+		INT64 newy;
 
 		newy = y + days / DAYSPERNYEAR;
 		if (days < 0)
 			--newy;
 		days -= (newy - y) * DAYSPERNYEAR +
-			LEAPS_THRU_END_OF(newy - 1) -
-			LEAPS_THRU_END_OF(y - 1);
+		        LEAPS_THRU_END_OF(newy - 1) -
+		        LEAPS_THRU_END_OF(y - 1);
 		y = newy;
 	}
 	tmp->tm_year = (int)(y - TM_YEAR_BASE);
-	tmp->tm_yday = (int) days;
+	tmp->tm_yday = (int)days;
 	ip = mon_lengths[yleap];
-	for (tmp->tm_mon = 0; days >= (INT64) ip[tmp->tm_mon]; ++(tmp->tm_mon))
-		days = days - (INT64) ip[tmp->tm_mon];
-	tmp->tm_mday = (int) (days + 1);
+	for (tmp->tm_mon = 0; days >= (INT64)ip[tmp->tm_mon]; ++(tmp->tm_mon))
+		days = days - (INT64)ip[tmp->tm_mon];
+	tmp->tm_mday = (int)(days + 1);
 	tmp->tm_isdst = 0;
 }
 
 /*
 * Re-entrant version of gmtime.
 */
-struct tm * c_gmtime_r(const time_64t* timep, struct tm *tm)
-{
+struct tm *c_gmtime_r(const time_64t *timep, struct tm *tm) {
 	c_timesub(timep, 0L, tm);
 	return tm;
 }
 
 // Get the number of CPUs
-UINT GetNumberOfCpu()
-{
+UINT GetNumberOfCpu() {
 	UINT ret = 0;
 
-	if (cached_number_of_cpus == 0)
-	{
+	if (cached_number_of_cpus == 0) {
 		UINT i = 0;
 
-#ifdef	OS_WIN32
+#ifdef OS_WIN32
 		i = Win32GetNumberOfCpuInner();
-#endif	// OS_WIN32
+#endif // OS_WIN32
 
-		if (i == 0)
-		{
+		if (i == 0) {
 			i = 8;
 		}
 
@@ -195,12 +188,10 @@ UINT GetNumberOfCpu()
 
 	ret = cached_number_of_cpus;
 
-	if (ret == 0)
-	{
+	if (ret == 0) {
 		ret = 1;
 	}
-	if (ret > 128)
-	{
+	if (ret > 128) {
 		ret = 128;
 	}
 
@@ -208,47 +199,38 @@ UINT GetNumberOfCpu()
 }
 
 // Get the home directory
-void GetHomeDirW(wchar_t *path, UINT size)
-{
+void GetHomeDirW(wchar_t *path, UINT size) {
 	// Validate arguments
-	if (path == NULL)
-	{
+	if (path == NULL) {
 		return;
 	}
 
-	if (GetEnvW(L"HOME", path, size) == false)
-	{
+	if (GetEnvW(L"HOME", path, size) == false) {
 		wchar_t drive[MAX_SIZE];
 		wchar_t hpath[MAX_SIZE];
 		if (GetEnvW(L"HOMEDRIVE", drive, sizeof(drive)) &&
-			GetEnvW(L"HOMEPATH", hpath, sizeof(hpath)))
-		{
+		    GetEnvW(L"HOMEPATH", hpath, sizeof(hpath))) {
 			UniFormat(path, size, L"%s%s", drive, hpath);
-		}
-		else
-		{
-#ifdef	OS_WIN32
+		} else {
+#ifdef OS_WIN32
 			Win32GetCurrentDirW(path, size);
-#endif	// OS_WIN32
+#endif // OS_WIN32
 		}
 	}
 }
 
 // Get the environment variable string
-bool GetEnv(char *name, char *data, UINT size)
-{
+bool GetEnv(char *name, char *data, UINT size) {
 	char *ret;
 	// Validate arguments
-	if (name == NULL || data == NULL)
-	{
+	if (name == NULL || data == NULL) {
 		return false;
 	}
 
 	StrCpy(data, size, "");
 
 	ret = getenv(name);
-	if (ret == NULL)
-	{
+	if (ret == NULL) {
 		return false;
 	}
 
@@ -256,28 +238,24 @@ bool GetEnv(char *name, char *data, UINT size)
 
 	return true;
 }
-bool GetEnvW(wchar_t *name, wchar_t *data, UINT size)
-{
-#ifdef	OS_WIN32
+bool GetEnvW(wchar_t *name, wchar_t *data, UINT size) {
+#ifdef OS_WIN32
 	return GetEnvW_ForWin32(name, data, size);
-#endif	// OS_WIN32
+#endif // OS_WIN32
 }
 
-#ifdef	OS_WIN32
-bool GetEnvW_ForWin32(wchar_t *name, wchar_t *data, UINT size)
-{
+#ifdef OS_WIN32
+bool GetEnvW_ForWin32(wchar_t *name, wchar_t *data, UINT size) {
 	wchar_t *ret;
 	// Validate arguments
-	if (name == NULL || data == NULL)
-	{
+	if (name == NULL || data == NULL) {
 		return false;
 	}
 
 	UniStrCpy(data, size, L"");
 
 	ret = _wgetenv(name);
-	if (ret == NULL)
-	{
+	if (ret == NULL) {
 		return false;
 	}
 
@@ -286,51 +264,40 @@ bool GetEnvW_ForWin32(wchar_t *name, wchar_t *data, UINT size)
 	return true;
 }
 
-#endif	// OS_WIN32
+#endif // OS_WIN32
 
 // Get the memory information
-void GetMemInfo(MEMINFO *info)
-{
+void GetMemInfo(MEMINFO *info) {
 	OSGetMemInfo(info);
 }
 
 // Start the single-instance
-INSTANCE *NewSingleInstance(char *instance_name)
-{
+INSTANCE *NewSingleInstance(char *instance_name) {
 	return NewSingleInstanceEx(instance_name, false);
 }
-INSTANCE *NewSingleInstanceEx(char *instance_name, bool user_local)
-{
+INSTANCE *NewSingleInstanceEx(char *instance_name, bool user_local) {
 	char name[MAX_SIZE];
 	INSTANCE *ret;
 	void *data;
 
-	if (instance_name != NULL)
-	{
-		if (user_local == false)
-		{
+	if (instance_name != NULL) {
+		if (user_local == false) {
 			HashInstanceName(name, sizeof(name), instance_name);
-		}
-		else
-		{
+		} else {
 			HashInstanceNameLocal(name, sizeof(name), instance_name);
 		}
 
 		data = OSNewSingleInstance(name);
-	}
-	else
-	{
+	} else {
 		data = OSNewSingleInstance(NULL);
 	}
 
-	if (data == NULL)
-	{
+	if (data == NULL) {
 		return NULL;
 	}
 
 	ret = ZeroMalloc(sizeof(INSTANCE));
-	if (instance_name != NULL)
-	{
+	if (instance_name != NULL) {
 		ret->Name = CopyStr(instance_name);
 	}
 
@@ -340,32 +307,27 @@ INSTANCE *NewSingleInstanceEx(char *instance_name, bool user_local)
 }
 
 // Release of single instance
-void FreeSingleInstance(INSTANCE *inst)
-{
+void FreeSingleInstance(INSTANCE *inst) {
 	// Validate arguments
-	if (inst == NULL)
-	{
+	if (inst == NULL) {
 		return;
 	}
 
 	OSFreeSingleInstance(inst->pData);
 
-	if (inst->Name != NULL)
-	{
+	if (inst->Name != NULL) {
 		Free(inst->Name);
 	}
 	Free(inst);
 }
 
 // Hashing the instance name
-void HashInstanceName(char *name, UINT size, char *instance_name)
-{
+void HashInstanceName(char *name, UINT size, char *instance_name) {
 	char tmp[MAX_SIZE];
 	UCHAR hash[SHA1_SIZE];
 	char key[11];
 	// Validate arguments
-	if (name == NULL || instance_name == NULL)
-	{
+	if (name == NULL || instance_name == NULL) {
 		return;
 	}
 
@@ -382,14 +344,12 @@ void HashInstanceName(char *name, UINT size, char *instance_name)
 	StrCpy(tmp, sizeof(tmp), name);
 	Format(name, size, "Global\\%s", tmp);
 }
-void HashInstanceNameLocal(char *name, UINT size, char *instance_name)
-{
+void HashInstanceNameLocal(char *name, UINT size, char *instance_name) {
 	char tmp[MAX_SIZE];
 	UCHAR hash[SHA1_SIZE];
 	char key[11];
 	// Validate arguments
-	if (name == NULL || instance_name == NULL)
-	{
+	if (name == NULL || instance_name == NULL) {
 		return;
 	}
 
@@ -408,21 +368,17 @@ void HashInstanceNameLocal(char *name, UINT size, char *instance_name)
 }
 
 // Run the process
-bool Run(char *filename, char *arg, bool hide, bool wait)
-{
+bool Run(char *filename, char *arg, bool hide, bool wait) {
 	// Validate arguments
-	if (filename == NULL)
-	{
+	if (filename == NULL) {
 		return false;
 	}
 
 	return OSRun(filename, arg, hide, wait);
 }
-bool RunW(wchar_t *filename, wchar_t *arg, bool hide, bool wait)
-{
+bool RunW(wchar_t *filename, wchar_t *arg, bool hide, bool wait) {
 	// Validate arguments
-	if (filename == NULL)
-	{
+	if (filename == NULL) {
 		return false;
 	}
 
@@ -430,86 +386,70 @@ bool RunW(wchar_t *filename, wchar_t *arg, bool hide, bool wait)
 }
 
 // Date and time related functions
-void GetDateTimeStr64Uni(wchar_t *str, UINT size, UINT64 sec64)
-{
+void GetDateTimeStr64Uni(wchar_t *str, UINT size, UINT64 sec64) {
 	char tmp[MAX_SIZE];
-	if (str == NULL)
-	{
+	if (str == NULL) {
 		return;
 	}
 
 	GetDateTimeStr64(tmp, sizeof(tmp), sec64);
 	StrToUni(str, size, tmp);
 }
-void GetDateTimeStr64(char *str, UINT size, UINT64 sec64)
-{
+void GetDateTimeStr64(char *str, UINT size, UINT64 sec64) {
 	SYSTEMTIME st;
 	UINT64ToSystem(&st, sec64);
 	GetDateTimeStr(str, size, &st);
 }
-void GetDateTimeStrMilli64(char *str, UINT size, UINT64 sec64)
-{
+void GetDateTimeStrMilli64(char *str, UINT size, UINT64 sec64) {
 	SYSTEMTIME st;
 	UINT64ToSystem(&st, sec64);
 	GetDateTimeStrMilli(str, size, &st);
 }
-void GetDateTimeStrMilli64ForFileName(char *str, UINT size, UINT64 sec64)
-{
+void GetDateTimeStrMilli64ForFileName(char *str, UINT size, UINT64 sec64) {
 	SYSTEMTIME st;
 	UINT64ToSystem(&st, sec64);
 	GetDateTimeStrMilliForFileName(str, size, &st);
 }
-void GetDateTimeStrMilliForFileName(char *str, UINT size, SYSTEMTIME *tm)
-{
+void GetDateTimeStrMilliForFileName(char *str, UINT size, SYSTEMTIME *tm) {
 	Format(str, size, "%04u%02u%02u_%02u%02u%02u",
-		tm->wYear, tm->wMonth, tm->wDay, tm->wHour, tm->wMinute, tm->wSecond);
+	       tm->wYear, tm->wMonth, tm->wDay, tm->wHour, tm->wMinute, tm->wSecond);
 }
-void GetDateStr64(char *str, UINT size, UINT64 sec64)
-{
+void GetDateStr64(char *str, UINT size, UINT64 sec64) {
 	SYSTEMTIME st;
-	if (sec64 == 0)
-	{
+	if (sec64 == 0) {
 		StrCpy(str, size, "(Unknown)");
 		return;
 	}
 	UINT64ToSystem(&st, sec64);
 	GetDateStr(str, size, &st);
 }
-void GetDateTimeStrEx64(wchar_t *str, UINT size, UINT64 sec64, LOCALE *locale)
-{
+void GetDateTimeStrEx64(wchar_t *str, UINT size, UINT64 sec64, LOCALE *locale) {
 	SYSTEMTIME st;
-	if (locale == NULL)
-	{
+	if (locale == NULL) {
 		locale = &current_locale;
 	}
-	if (sec64 == 0 || SystemToLocal64(sec64) == 0 || LocalToSystem64(sec64) == 0)
-	{
+	if (sec64 == 0 || SystemToLocal64(sec64) == 0 || LocalToSystem64(sec64) == 0) {
 		UniStrCpy(str, size, locale->Unknown);
 		return;
 	}
 	UINT64ToSystem(&st, sec64);
 	GetDateTimeStrEx(str, size, &st, locale);
 }
-void GetDateStrEx64(wchar_t *str, UINT size, UINT64 sec64, LOCALE *locale)
-{
+void GetDateStrEx64(wchar_t *str, UINT size, UINT64 sec64, LOCALE *locale) {
 	SYSTEMTIME st;
-	if (locale == NULL)
-	{
+	if (locale == NULL) {
 		locale = &current_locale;
 	}
-	if (sec64 == 0 || SystemToLocal64(sec64) == 0 || LocalToSystem64(sec64) == 0)
-	{
+	if (sec64 == 0 || SystemToLocal64(sec64) == 0 || LocalToSystem64(sec64) == 0) {
 		UniStrCpy(str, size, locale->Unknown);
 		return;
 	}
 	UINT64ToSystem(&st, sec64);
 	GetDateStrEx(str, size, &st, locale);
 }
-void GetTimeStrMilli64(char *str, UINT size, UINT64 sec64)
-{
+void GetTimeStrMilli64(char *str, UINT size, UINT64 sec64) {
 	SYSTEMTIME st;
-	if (sec64 == 0 || SystemToLocal64(sec64) == 0 || LocalToSystem64(sec64) == 0)
-	{
+	if (sec64 == 0 || SystemToLocal64(sec64) == 0 || LocalToSystem64(sec64) == 0) {
 		StrCpy(str, size, "(Unknown)");
 		return;
 	}
@@ -518,8 +458,7 @@ void GetTimeStrMilli64(char *str, UINT size, UINT64 sec64)
 }
 
 // Convert to a time to be used safely in the current POSIX implementation
-UINT64 SafeTime64(UINT64 sec64)
-{
+UINT64 SafeTime64(UINT64 sec64) {
 	return MAKESURE(sec64, 0, 4102243323123ULL);
 }
 
@@ -528,33 +467,27 @@ static SK *thread_pool = NULL;
 static COUNTER *thread_count = NULL;
 
 // Initialization of thread pool
-void InitThreading()
-{
+void InitThreading() {
 	thread_pool = NewSk();
 	thread_count = NewCounter();
 	current_num_thread = NewCounter();
 }
 
 // Release of thread pool
-void FreeThreading()
-{
-	while (true)
-	{
-		if (Count(thread_count) == 0)
-		{
+void FreeThreading() {
+	while (true) {
+		if (Count(thread_count) == 0) {
 			break;
 		}
 
 		SleepThread(25);
 	}
 
-	while (true)
-	{
+	while (true) {
 		THREAD_POOL_DATA *pd;
 		THREAD *t = Pop(thread_pool);
 
-		if (t == NULL)
-		{
+		if (t == NULL) {
 			break;
 		}
 
@@ -584,12 +517,10 @@ void FreeThreading()
 }
 
 // Thread pool procedure
-void ThreadPoolProc(THREAD *t, void *param)
-{
+void ThreadPoolProc(THREAD *t, void *param) {
 	THREAD_POOL_DATA *pd;
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return;
 	}
 
@@ -597,8 +528,7 @@ void ThreadPoolProc(THREAD *t, void *param)
 
 	NoticeThreadInitInternal(t);
 
-	while (true)
-	{
+	while (true) {
 		THREAD *thread;
 		UINT i, num;
 		EVENT **ee;
@@ -606,8 +536,7 @@ void ThreadPoolProc(THREAD *t, void *param)
 		// Wait for the next job
 		Wait(pd->Event, INFINITE);
 
-		if (pd->ThreadProc == NULL)
-		{
+		if (pd->ThreadProc == NULL) {
 			// Stop the pool thread
 			break;
 		}
@@ -619,12 +548,9 @@ void ThreadPoolProc(THREAD *t, void *param)
 		Set(pd->InitFinishEvent);
 
 		// Set the thread name
-		if (thread->Name != NULL)
-		{
+		if (thread->Name != NULL) {
 			SetThreadName(thread->ThreadId, thread->Name, thread->param);
-		}
-		else
-		{
+		} else {
 			SetThreadName(thread->ThreadId, "Unknown", 0);
 		}
 
@@ -648,8 +574,7 @@ void ThreadPoolProc(THREAD *t, void *param)
 		}
 		UnlockList(thread->PoolWaitList);
 
-		for (i = 0;i < num;i++)
-		{
+		for (i = 0; i < num; i++) {
 			EVENT *e = ee[i];
 
 			Set(e);
@@ -658,10 +583,8 @@ void ThreadPoolProc(THREAD *t, void *param)
 
 		Free(ee);
 
-		while (true)
-		{
-			if (Count(thread->ref->c) <= 1)
-			{
+		while (true) {
+			if (Count(thread->ref->c) <= 1) {
 				break;
 			}
 
@@ -670,10 +593,10 @@ void ThreadPoolProc(THREAD *t, void *param)
 
 		ReleaseThread(thread);
 
-#ifdef	OS_WIN32
+#ifdef OS_WIN32
 		// For Win32: Recover the priority of the thread
 		MsRestoreThreadPriority();
-#endif	// OS_WIN32
+#endif // OS_WIN32
 
 		// Register the thread itself to the thread pool
 		LockSk(thread_pool);
@@ -687,36 +610,29 @@ void ThreadPoolProc(THREAD *t, void *param)
 }
 
 // Set the thread name
-void SetThreadName(UINT thread_id, char *name, void *param)
-{
-#ifdef	OS_WIN32
-	if (IsDebug())
-	{
+void SetThreadName(UINT thread_id, char *name, void *param) {
+#ifdef OS_WIN32
+	if (IsDebug()) {
 		char tmp[MAX_SIZE];
 
-		if (name == NULL)
-		{
+		if (name == NULL) {
 			strcpy(tmp, "idle");
-		}
-		else
-		{
+		} else {
 			sprintf(tmp, "%s (0x%x)", name, (UINT)param);
 		}
 
 		Win32SetThreadName(thread_id, tmp);
 	}
-#endif	// OS_WIN32
+#endif // OS_WIN32
 }
 
 // Thread creation (pool)
-THREAD *NewThreadNamed(THREAD_PROC *thread_proc, void *param, char *name)
-{
+THREAD *NewThreadNamed(THREAD_PROC *thread_proc, void *param, char *name) {
 	THREAD *host = NULL;
 	THREAD_POOL_DATA *pd = NULL;
 	THREAD *ret;
 	// Validate arguments
-	if (thread_proc == NULL)
-	{
+	if (thread_proc == NULL) {
 		return NULL;
 	}
 
@@ -729,17 +645,14 @@ THREAD *NewThreadNamed(THREAD_PROC *thread_proc, void *param, char *name)
 	}
 	UnlockSk(thread_pool);
 
-	if (host == NULL)
-	{
+	if (host == NULL) {
 		// Create a new thread because a vacant thread is not found
 		pd = ZeroMalloc(sizeof(THREAD_POOL_DATA));
 		pd->Event = NewEvent();
 		pd->InitFinishEvent = NewEvent();
 		host = NewThreadInternal(ThreadPoolProc, pd);
 		WaitThreadInitInternal(host);
-	}
-	else
-	{
+	} else {
 		pd = (THREAD_POOL_DATA *)host->param;
 	}
 
@@ -755,8 +668,7 @@ THREAD *NewThreadNamed(THREAD_PROC *thread_proc, void *param, char *name)
 	ret->PoolHostThread = host;
 	ret->release_event = NewEvent();
 
-	if (IsEmptyStr(name) == false)
-	{
+	if (IsEmptyStr(name) == false) {
 		ret->Name = CopyStr(name);
 	}
 
@@ -771,17 +683,15 @@ THREAD *NewThreadNamed(THREAD_PROC *thread_proc, void *param, char *name)
 
 	Inc(current_num_thread);
 
-//	Debug("current_num_thread = %u\n", Count(current_num_thread));
+	//	Debug("current_num_thread = %u\n", Count(current_num_thread));
 
 	return ret;
 }
 
 // Clean up of thread (pool)
-void CleanupThread(THREAD *t)
-{
+void CleanupThread(THREAD *t) {
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return;
 	}
 
@@ -789,8 +699,7 @@ void CleanupThread(THREAD *t)
 	ReleaseEvent(t->release_event);
 	ReleaseList(t->PoolWaitList);
 
-	if (t->Name != NULL)
-	{
+	if (t->Name != NULL) {
 		Free(t->Name);
 	}
 
@@ -801,19 +710,16 @@ void CleanupThread(THREAD *t)
 }
 
 // Release thread (pool)
-void ReleaseThread(THREAD *t)
-{
+void ReleaseThread(THREAD *t) {
 	UINT ret;
 	EVENT *e;
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return;
 	}
 
 	e = t->release_event;
-	if (e != NULL)
-	{
+	if (e != NULL) {
 		AddRef(e->ref);
 	}
 
@@ -822,18 +728,15 @@ void ReleaseThread(THREAD *t)
 
 	ReleaseEvent(e);
 
-	if (ret == 0)
-	{
+	if (ret == 0) {
 		CleanupThread(t);
 	}
 }
 
 // Notify the completion of the thread initialization (pool)
-void NoticeThreadInit(THREAD *t)
-{
+void NoticeThreadInit(THREAD *t) {
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return;
 	}
 
@@ -842,11 +745,9 @@ void NoticeThreadInit(THREAD *t)
 }
 
 // Wait the completion of the thread initialization (pool)
-void WaitThreadInit(THREAD *t)
-{
+void WaitThreadInit(THREAD *t) {
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return;
 	}
 
@@ -858,25 +759,20 @@ void WaitThreadInit(THREAD *t)
 }
 
 // Wait for the termination of the thread (pool)
-bool WaitThread(THREAD *t, UINT timeout)
-{
+bool WaitThread(THREAD *t, UINT timeout) {
 	bool ret = false;
 	EVENT *e = NULL;
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return false;
 	}
 
 	LockList(t->PoolWaitList);
 	{
-		if (t->PoolHalting)
-		{
+		if (t->PoolHalting) {
 			// Has already been stopped
 			ret = true;
-		}
-		else
-		{
+		} else {
 			// Register the completion notifying event to the list
 			e = NewEvent();
 			AddRef(e->ref);
@@ -885,15 +781,13 @@ bool WaitThread(THREAD *t, UINT timeout)
 	}
 	UnlockList(t->PoolWaitList);
 
-	if (e != NULL)
-	{
+	if (e != NULL) {
 		// Wait Event
 		ret = Wait(e, timeout);
 
 		LockList(t->PoolWaitList);
 		{
-			if (Delete(t->PoolWaitList, e))
-			{
+			if (Delete(t->PoolWaitList, e)) {
 				ReleaseEvent(e);
 			}
 		}
@@ -906,19 +800,16 @@ bool WaitThread(THREAD *t, UINT timeout)
 }
 
 // Get Thread ID
-UINT ThreadId()
-{
+UINT ThreadId() {
 	return OSThreadId();
 }
 
 // Creating a thread
-THREAD *NewThreadInternal(THREAD_PROC *thread_proc, void *param)
-{
+THREAD *NewThreadInternal(THREAD_PROC *thread_proc, void *param) {
 	THREAD *t;
 	UINT retry = 0;
 	// Validate arguments
-	if (thread_proc == NULL)
-	{
+	if (thread_proc == NULL) {
 		return NULL;
 	}
 
@@ -931,15 +822,12 @@ THREAD *NewThreadInternal(THREAD_PROC *thread_proc, void *param)
 	t->thread_proc = thread_proc;
 
 	// Wait until the OS to initialize the thread
-	while (true)
-	{
-		if ((retry++) > 60)
-		{
+	while (true) {
+		if ((retry++) > 60) {
 			printf("\n\n*** error: new thread create failed.\n\n");
 			AbortExit();
 		}
-		if (OSInitThread(t))
-		{
+		if (OSInitThread(t)) {
 			break;
 		}
 		SleepThread(500);
@@ -952,26 +840,21 @@ THREAD *NewThreadInternal(THREAD_PROC *thread_proc, void *param)
 }
 
 // Release of thread
-void ReleaseThreadInternal(THREAD *t)
-{
+void ReleaseThreadInternal(THREAD *t) {
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return;
 	}
 
-	if (Release(t->ref) == 0)
-	{
+	if (Release(t->ref) == 0) {
 		CleanupThreadInternal(t);
 	}
 }
 
 // Clean up of the thread
-void CleanupThreadInternal(THREAD *t)
-{
+void CleanupThreadInternal(THREAD *t) {
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return;
 	}
 
@@ -988,11 +871,9 @@ void CleanupThreadInternal(THREAD *t)
 }
 
 // Wait for the termination of the thread
-bool WaitThreadInternal(THREAD *t)
-{
+bool WaitThreadInternal(THREAD *t) {
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return false;
 	}
 
@@ -1000,11 +881,9 @@ bool WaitThreadInternal(THREAD *t)
 }
 
 // Notify that the thread initialization is complete
-void NoticeThreadInitInternal(THREAD *t)
-{
+void NoticeThreadInitInternal(THREAD *t) {
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return;
 	}
 
@@ -1013,11 +892,9 @@ void NoticeThreadInitInternal(THREAD *t)
 }
 
 // Wait for completion of thread initialization
-void WaitThreadInitInternal(THREAD *t)
-{
+void WaitThreadInitInternal(THREAD *t) {
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return;
 	}
 
@@ -1029,13 +906,11 @@ void WaitThreadInitInternal(THREAD *t)
 }
 
 // Get the date and time string by using the locale information
-void GetDateTimeStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale)
-{
+void GetDateTimeStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale) {
 	wchar_t tmp1[MAX_SIZE];
 	wchar_t tmp2[MAX_SIZE];
 	// Validate arguments
-	if (str == NULL || st == NULL)
-	{
+	if (str == NULL || st == NULL) {
 		return;
 	}
 
@@ -1045,175 +920,151 @@ void GetDateTimeStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale)
 }
 
 // Get the time string by using the locale information
-void GetTimeStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale)
-{
+void GetTimeStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale) {
 	wchar_t *tag = L"%02u%s%02u%s%02u%s";
 	// Validate arguments
-	if (str == NULL || st == NULL)
-	{
+	if (str == NULL || st == NULL) {
 		return;
 	}
 
-	if (_GETLANG() == SE_LANG_JAPANESE || _GETLANG() == SE_LANG_CHINESE_ZH)
-	{
+	if (_GETLANG() == SE_LANG_JAPANESE || _GETLANG() == SE_LANG_CHINESE_ZH) {
 		tag = L"%2u%s%2u%s%2u%s";
 	}
 
 	locale = (locale != NULL ? locale : &current_locale);
 	UniFormat(str, size,
-		tag,
-		st->wHour, locale->HourStr,
-		st->wMinute, locale->MinuteStr,
-		st->wSecond, locale->SecondStr);
+	          tag,
+	          st->wHour, locale->HourStr,
+	          st->wMinute, locale->MinuteStr,
+	          st->wSecond, locale->SecondStr);
 }
 
 // Get a date string by using the locale information
-void GetDateStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale)
-{
+void GetDateStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale) {
 	wchar_t *tag = L"%04u%s%02u%s%02u%s (%s)";
 	// Validate arguments
-	if (str == NULL || st == NULL)
-	{
+	if (str == NULL || st == NULL) {
 		return;
 	}
 
-	if (_GETLANG() == SE_LANG_JAPANESE || _GETLANG() == SE_LANG_CHINESE_ZH)
-	{
+	if (_GETLANG() == SE_LANG_JAPANESE || _GETLANG() == SE_LANG_CHINESE_ZH) {
 		tag = L"%4u%s%2u%s%2u%s(%s)";
 	}
 
 	locale = (locale != NULL ? locale : &current_locale);
 	UniFormat(str, size,
-		tag,
-		st->wYear, locale->YearStr,
-		st->wMonth, locale->MonthStr,
-		st->wDay, locale->DayStr,
-		locale->DayOfWeek[st->wDayOfWeek]);
+	          tag,
+	          st->wYear, locale->YearStr,
+	          st->wMonth, locale->MonthStr,
+	          st->wDay, locale->DayStr,
+	          locale->DayOfWeek[st->wDayOfWeek]);
 }
 
 // Get the time string to milliseconds (for example, 12:34:56.789)
-void GetTimeStrMilli(char *str, UINT size, SYSTEMTIME *st)
-{
+void GetTimeStrMilli(char *str, UINT size, SYSTEMTIME *st) {
 	// Validate arguments
-	if (st == NULL || str == NULL)
-	{
+	if (st == NULL || str == NULL) {
 		return;
 	}
 
 	Format(str, size, "%02u:%02u:%02u.%03u",
-		st->wHour, st->wMinute, st->wSecond, st->wMilliseconds);
+	       st->wHour, st->wMinute, st->wSecond, st->wMilliseconds);
 }
 
 // Get the date string (example: 2004/07/23)
-void GetDateStr(char *str, UINT size, SYSTEMTIME *st)
-{
+void GetDateStr(char *str, UINT size, SYSTEMTIME *st) {
 	// Validate arguments
-	if (str == NULL || st == NULL)
-	{
+	if (str == NULL || st == NULL) {
 		return;
 	}
 
 	Format(str, size, "%04u-%02u-%02u",
-		st->wYear, st->wMonth, st->wDay);
+	       st->wYear, st->wMonth, st->wDay);
 }
 
 // Get the date and time string (example: 2004/07/23 12:34:56)
-void GetDateTimeStr(char *str, UINT size, SYSTEMTIME *st)
-{
+void GetDateTimeStr(char *str, UINT size, SYSTEMTIME *st) {
 	// Validate arguments
-	if (str == NULL || st == NULL)
-	{
+	if (str == NULL || st == NULL) {
 		return;
 	}
 
 	Format(str, size, "%04u-%02u-%02u %02u:%02u:%02u",
-		st->wYear, st->wMonth, st->wDay,
-		st->wHour, st->wMinute, st->wSecond);
+	       st->wYear, st->wMonth, st->wDay,
+	       st->wHour, st->wMinute, st->wSecond);
 }
 
 // Get the date and time string in milliseconds (example: 2004/07/23 12:34:56.789)
-void GetDateTimeStrMilli(char *str, UINT size, SYSTEMTIME *st)
-{
+void GetDateTimeStrMilli(char *str, UINT size, SYSTEMTIME *st) {
 	// Validate arguments
-	if (str == NULL || st == NULL)
-	{
+	if (str == NULL || st == NULL) {
 		return;
 	}
 
 	Format(str, size, "%04u-%02u-%02u %02u:%02u:%02u.%03u",
-		st->wYear, st->wMonth, st->wDay,
-		st->wHour, st->wMinute, st->wSecond,
-		st->wMilliseconds);
+	       st->wYear, st->wMonth, st->wDay,
+	       st->wHour, st->wMinute, st->wSecond,
+	       st->wMilliseconds);
 }
 
 
 // Get the date and time string in RFC3339 format (example: 2017-09-27T18:25:55.434-9:00)
-void GetDateTimeStrRFC3339(char *str, UINT size, SYSTEMTIME *st, int timezone_min){
+void GetDateTimeStrRFC3339(char *str, UINT size, SYSTEMTIME *st, int timezone_min) {
 	// Validate arguments
-	if (str == NULL || st == NULL)
-	{
+	if (str == NULL || st == NULL) {
 		ClearStr(str, size);
 		return;
 	}
 
-	if(timezone_min == 0){
+	if (timezone_min == 0) {
 		Format(str, size, "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ",
-		st->wYear, st->wMonth, st->wDay,
-		st->wHour, st->wMinute, st->wSecond,
-		st->wMilliseconds);
-	}else{
+		       st->wYear, st->wMonth, st->wDay,
+		       st->wHour, st->wMinute, st->wSecond,
+		       st->wMilliseconds);
+	} else {
 		Format(str, size, "%04u-%02u-%02uT%02u:%02u:%02u.%03u%+02d:%02d",
-		st->wYear, st->wMonth, st->wDay,
-		st->wHour, st->wMinute, st->wSecond,
-		st->wMilliseconds, timezone_min/60, timezone_min%60);
+		       st->wYear, st->wMonth, st->wDay,
+		       st->wHour, st->wMinute, st->wSecond,
+		       st->wMilliseconds, timezone_min / 60, timezone_min % 60);
 	}
 }
 
 // Get the time string (in milliseconds)
-void GetSpanStrMilli(char *str, UINT size, UINT64 sec64)
-{
+void GetSpanStrMilli(char *str, UINT size, UINT64 sec64) {
 	char tmp[MAX_SIZE];
 	// Validate arguments
-	if (str == NULL)
-	{
+	if (str == NULL) {
 		return;
 	}
 
 	StrCpy(tmp, sizeof(tmp), "");
-	if (sec64 >= (UINT64)(1000 * 3600 * 24))
-	{
+	if (sec64 >= (UINT64)(1000 * 3600 * 24)) {
 		Format(tmp, sizeof(tmp), "%u:", (UINT)(sec64 / (UINT64)(1000 * 3600 * 24)));
 	}
 
 	Format(tmp, sizeof(tmp), "%s%02u:%02u:%02u.%03u", tmp,
-		(UINT)(sec64 % (UINT64)(1000 * 60 * 60 * 24)) / (1000 * 60 * 60),
-		(UINT)(sec64 % (UINT64)(1000 * 60 * 60)) / (1000 * 60),
-		(UINT)(sec64 % (UINT64)(1000 * 60)) / 1000,
-		(UINT)(sec64 % (UINT64)(1000)));
+	       (UINT)(sec64 % (UINT64)(1000 * 60 * 60 * 24)) / (1000 * 60 * 60),
+	       (UINT)(sec64 % (UINT64)(1000 * 60 * 60)) / (1000 * 60),
+	       (UINT)(sec64 % (UINT64)(1000 * 60)) / 1000,
+	       (UINT)(sec64 % (UINT64)(1000)));
 
 	Trim(tmp);
 	StrCpy(str, size, tmp);
 }
 
 // Set the locale information
-void SetLocale(wchar_t *str)
-{
+void SetLocale(wchar_t *str) {
 	wchar_t *set_locale_str;
 	LOCALE tmp;
 
-	if (str != NULL)
-	{
+	if (str != NULL) {
 		set_locale_str = str;
-	}
-	else
-	{
+	} else {
 		set_locale_str = default_locale_str;
 	}
 
-	if (LoadLocale(&tmp, set_locale_str) == false)
-	{
-		if (LoadLocale(&tmp, default_locale_str) == false)
-		{
+	if (LoadLocale(&tmp, set_locale_str) == false) {
+		if (LoadLocale(&tmp, default_locale_str) == false) {
 			return;
 		}
 	}
@@ -1221,23 +1072,20 @@ void SetLocale(wchar_t *str)
 	Copy(&current_locale, &tmp, sizeof(LOCALE));
 }
 
-#define	COPY_LOCALE_STR(dest, size, src)	UniStrCpy(dest, size, UniStrCmp(src, L"$") == 0 ? L"" : src)
+#define COPY_LOCALE_STR(dest, size, src) UniStrCpy(dest, size, UniStrCmp(src, L"$") == 0 ? L"" : src)
 
 // Read the locale information
-bool LoadLocale(LOCALE *locale, wchar_t *str)
-{
+bool LoadLocale(LOCALE *locale, wchar_t *str) {
 	UNI_TOKEN_LIST *tokens;
 	UINT i;
 	// Validate arguments
-	if (locale == NULL || str == NULL)
-	{
+	if (locale == NULL || str == NULL) {
 		return false;
 	}
 
 	// Analysis of the token
 	tokens = UniParseToken(str, L" ");
-	if (tokens->NumTokens != 18)
-	{
+	if (tokens->NumTokens != 18) {
 		UniFreeToken(tokens);
 		return false;
 	}
@@ -1251,10 +1099,9 @@ bool LoadLocale(LOCALE *locale, wchar_t *str)
 	COPY_LOCALE_STR(locale->MinuteStr, sizeof(locale->MinuteStr), tokens->Token[4]);
 	COPY_LOCALE_STR(locale->SecondStr, sizeof(locale->SecondStr), tokens->Token[5]);
 
-	for (i = 0;i < 7;i++)
-	{
+	for (i = 0; i < 7; i++) {
 		COPY_LOCALE_STR(locale->DayOfWeek[i], sizeof(locale->DayOfWeek[i]),
-			tokens->Token[6 + i]);
+		                tokens->Token[6 + i]);
 	}
 
 	COPY_LOCALE_STR(locale->SpanDay, sizeof(locale->SpanDay), tokens->Token[13]);
@@ -1269,42 +1116,34 @@ bool LoadLocale(LOCALE *locale, wchar_t *str)
 }
 
 // Convert SYSTEMTIME into DOS date
-USHORT SystemToDosDate(SYSTEMTIME *st)
-{
-	return (USHORT)(
-		((UINT)(st->wYear - 1980) << 9) |
-		((UINT)st->wMonth<< 5) |
-		(UINT)st->wDay);
+USHORT SystemToDosDate(SYSTEMTIME *st) {
+	return (USHORT)(((UINT)(st->wYear - 1980) << 9) |
+	                ((UINT)st->wMonth << 5) |
+	                (UINT)st->wDay);
 }
-USHORT System64ToDosDate(UINT64 i)
-{
+USHORT System64ToDosDate(UINT64 i) {
 	SYSTEMTIME st;
 	UINT64ToSystem(&st, i);
 	return SystemToDosDate(&st);
 }
 
 // Convert SYSTEMTIME into DOS time
-USHORT SystemToDosTime(SYSTEMTIME *st)
-{
-	return (USHORT)(
-		((UINT)st->wHour << 11) |
-		((UINT)st->wMinute << 5) |
-		((UINT)st->wSecond >> 1));
+USHORT SystemToDosTime(SYSTEMTIME *st) {
+	return (USHORT)(((UINT)st->wHour << 11) |
+	                ((UINT)st->wMinute << 5) |
+	                ((UINT)st->wSecond >> 1));
 }
-USHORT System64ToDosTime(UINT64 i)
-{
+USHORT System64ToDosTime(UINT64 i) {
 	SYSTEMTIME st;
 	UINT64ToSystem(&st, i);
 	return SystemToDosTime(&st);
 }
 
 // Convert the tm to the SYSTEMTIME
-void TmToSystem(SYSTEMTIME *st, struct tm *t)
-{
+void TmToSystem(SYSTEMTIME *st, struct tm *t) {
 	struct tm tmp;
 	// Validate arguments
-	if (st == NULL || t == NULL)
-	{
+	if (st == NULL || t == NULL) {
 		return;
 	}
 
@@ -1323,11 +1162,9 @@ void TmToSystem(SYSTEMTIME *st, struct tm *t)
 }
 
 // Convert the SYSTEMTIME to tm
-void SystemToTm(struct tm *t, SYSTEMTIME *st)
-{
+void SystemToTm(struct tm *t, SYSTEMTIME *st) {
 	// Validate arguments
-	if (t == NULL || st == NULL)
-	{
+	if (t == NULL || st == NULL) {
 		return;
 	}
 
@@ -1344,12 +1181,10 @@ void SystemToTm(struct tm *t, SYSTEMTIME *st)
 }
 
 // Convert the time_t to SYSTEMTIME
-void TimeToSystem(SYSTEMTIME *st, time_64t t)
-{
+void TimeToSystem(SYSTEMTIME *st, time_64t t) {
 	struct tm tmp;
 	// Validate arguments
-	if (st == NULL)
-	{
+	if (st == NULL) {
 		return;
 	}
 
@@ -1358,12 +1193,10 @@ void TimeToSystem(SYSTEMTIME *st, time_64t t)
 }
 
 // Convert the SYSTEMTIME to time_t
-time_64t SystemToTime(SYSTEMTIME *st)
-{
+time_64t SystemToTime(SYSTEMTIME *st) {
 	struct tm t;
 	// Validate arguments
-	if (st == NULL)
-	{
+	if (st == NULL) {
 		return 0;
 	}
 
@@ -1372,29 +1205,24 @@ time_64t SystemToTime(SYSTEMTIME *st)
 }
 
 // Convert the tm to time_t
-time_64t TmToTime(struct tm *t)
-{
+time_64t TmToTime(struct tm *t) {
 	time_64t tmp;
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return 0;
 	}
 
 	tmp = c_mkgmtime(t);
-	if (tmp == (time_64t)-1)
-	{
+	if (tmp == (time_64t)-1) {
 		return 0;
 	}
 	return tmp;
 }
 
 // Convert time_t to tm
-void TimeToTm(struct tm *t, time_64t time)
-{
+void TimeToTm(struct tm *t, time_64t time) {
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return;
 	}
 
@@ -1403,18 +1231,15 @@ void TimeToTm(struct tm *t, time_64t time)
 }
 
 // Normalize the tm
-void NormalizeTm(struct tm *t)
-{
+void NormalizeTm(struct tm *t) {
 	time_64t tmp;
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return;
 	}
 
 	tmp = c_mkgmtime(t);
-	if (tmp == (time_64t)-1)
-	{
+	if (tmp == (time_64t)-1) {
 		return;
 	}
 
@@ -1422,12 +1247,10 @@ void NormalizeTm(struct tm *t)
 }
 
 // Normalize the SYSTEMTIME
-void NormalizeSystem(SYSTEMTIME *st)
-{
+void NormalizeSystem(SYSTEMTIME *st) {
 	UINT64 sec64;
 	// Validate arguments
-	if (st == NULL)
-	{
+	if (st == NULL) {
 		return;
 	}
 
@@ -1436,8 +1259,7 @@ void NormalizeSystem(SYSTEMTIME *st)
 }
 
 // Convert a 64-bit local time to a system time
-UINT64 LocalToSystem64(UINT64 t)
-{
+UINT64 LocalToSystem64(UINT64 t) {
 	SYSTEMTIME st;
 	UINT64ToSystem(&st, t);
 	LocalToSystem(&st, &st);
@@ -1445,8 +1267,7 @@ UINT64 LocalToSystem64(UINT64 t)
 }
 
 // Convert the 64bit system time to local time
-UINT64 SystemToLocal64(UINT64 t)
-{
+UINT64 SystemToLocal64(UINT64 t) {
 	SYSTEMTIME st;
 	UINT64ToSystem(&st, t);
 	SystemToLocal(&st, &st);
@@ -1454,12 +1275,10 @@ UINT64 SystemToLocal64(UINT64 t)
 }
 
 // Convert local time to system time
-void LocalToSystem(SYSTEMTIME *system, SYSTEMTIME *local)
-{
+void LocalToSystem(SYSTEMTIME *system, SYSTEMTIME *local) {
 	UINT64 sec64;
 	// Validate arguments
-	if (local == NULL || system == NULL)
-	{
+	if (local == NULL || system == NULL) {
 		return;
 	}
 
@@ -1468,12 +1287,10 @@ void LocalToSystem(SYSTEMTIME *system, SYSTEMTIME *local)
 }
 
 // Convert the system time to local time
-void SystemToLocal(SYSTEMTIME *local, SYSTEMTIME *system)
-{
+void SystemToLocal(SYSTEMTIME *local, SYSTEMTIME *system) {
 	UINT64 sec64;
 	// Validate arguments
-	if (local == NULL || system == NULL)
-	{
+	if (local == NULL || system == NULL) {
 		return;
 	}
 
@@ -1482,8 +1299,7 @@ void SystemToLocal(SYSTEMTIME *local, SYSTEMTIME *system)
 }
 
 // Get the time difference between the local time and the system time based on the specified time
-INT64 GetTimeDiffEx(SYSTEMTIME *basetime, bool local_time)
-{
+INT64 GetTimeDiffEx(SYSTEMTIME *basetime, bool local_time) {
 	time_t tmp;
 	struct tm t1, t2;
 	SYSTEMTIME snow;
@@ -1493,27 +1309,21 @@ INT64 GetTimeDiffEx(SYSTEMTIME *basetime, bool local_time)
 
 	Copy(&snow, basetime, sizeof(SYSTEMTIME));
 
-	if (sizeof(time_t) == 4)
-	{
-		if (snow.wYear >= 2038)
-		{
+	if (sizeof(time_t) == 4) {
+		if (snow.wYear >= 2038) {
 			// For old systems: avoid the 2038-year problem
 			snow.wYear = 2037;
 		}
 	}
 
 	SystemToTm(&now, &snow);
-	if (local_time == false)
-	{
+	if (local_time == false) {
 		tmp = (time_t)c_mkgmtime(&now);
-	}
-	else
-	{
+	} else {
 		tmp = mktime(&now);
 	}
 
-	if (tmp == (time_t)-1)
-	{
+	if (tmp == (time_t)-1) {
 		return 0;
 	}
 
@@ -1529,14 +1339,12 @@ INT64 GetTimeDiffEx(SYSTEMTIME *basetime, bool local_time)
 }
 
 // Convert UINT64 to the SYSTEMTIME
-void UINT64ToSystem(SYSTEMTIME *st, UINT64 sec64)
-{
+void UINT64ToSystem(SYSTEMTIME *st, UINT64 sec64) {
 	UINT64 tmp64;
 	UINT sec, millisec;
 	time_64t time;
 	// Validate arguments
-	if (st == NULL)
-	{
+	if (st == NULL) {
 		return;
 	}
 
@@ -1550,13 +1358,11 @@ void UINT64ToSystem(SYSTEMTIME *st, UINT64 sec64)
 }
 
 // Convert the SYSTEMTIME to UINT64
-UINT64 SystemToUINT64(SYSTEMTIME *st)
-{
+UINT64 SystemToUINT64(SYSTEMTIME *st) {
 	UINT64 sec64;
 	time_64t time;
 	// Validate arguments
-	if (st == NULL)
-	{
+	if (st == NULL) {
 		return 0;
 	}
 
@@ -1568,7 +1374,7 @@ UINT64 SystemToUINT64(SYSTEMTIME *st)
 	//and returning a time far in the future.
 	//For some reason we subtract 9 hours below, so
 	//account for that here.
-	if( time < 32400000LL ) return 0;
+	if (time < 32400000LL) return 0;
 
 	sec64 = (UINT64)time * (UINT64)1000;
 	sec64 += st->wMilliseconds;
@@ -1577,28 +1383,24 @@ UINT64 SystemToUINT64(SYSTEMTIME *st)
 }
 
 // Get local time in UINT64
-UINT64 LocalTime64()
-{
+UINT64 LocalTime64() {
 	SYSTEMTIME s;
 	LocalTime(&s);
 	return SystemToUINT64(&s);
 }
 
 // Get the system time in UINT64
-UINT64 SystemTime64()
-{
+UINT64 SystemTime64() {
 	SYSTEMTIME s;
 	SystemTime(&s);
 	return SystemToUINT64(&s);
 }
 
 // Get local time
-void LocalTime(SYSTEMTIME *st)
-{
+void LocalTime(SYSTEMTIME *st) {
 	SYSTEMTIME tmp;
 	// Validate arguments
-	if (st == NULL)
-	{
+	if (st == NULL) {
 		return;
 	}
 
@@ -1607,11 +1409,9 @@ void LocalTime(SYSTEMTIME *st)
 }
 
 // Get the System Time
-void SystemTime(SYSTEMTIME *st)
-{
+void SystemTime(SYSTEMTIME *st) {
 	// Validate arguments
-	if (st == NULL)
-	{
+	if (st == NULL) {
 		return;
 	}
 
@@ -1621,16 +1421,15 @@ void SystemTime(SYSTEMTIME *st)
 	KS_INC(KS_GETTIME_COUNT);
 }
 
-time_64t c_mkgmtime(struct tm *tm)
-{
+time_64t c_mkgmtime(struct tm *tm) {
 	int years, months, days, hours, minutes, seconds;
 
-	years = tm->tm_year + 1900;   /* year - 1900 -> year */
-	months = tm->tm_mon;          /* 0..11 */
-	days = tm->tm_mday - 1;       /* 1..31 -> 0..30 */
-	hours = tm->tm_hour;          /* 0..23 */
-	minutes = tm->tm_min;         /* 0..59 */
-	seconds = tm->tm_sec;         /* 0..61 in ANSI C. */
+	years = tm->tm_year + 1900; /* year - 1900 -> year */
+	months = tm->tm_mon;        /* 0..11 */
+	days = tm->tm_mday - 1;     /* 1..31 -> 0..30 */
+	hours = tm->tm_hour;        /* 0..23 */
+	minutes = tm->tm_min;       /* 0..59 */
+	seconds = tm->tm_sec;       /* 0..61 in ANSI C. */
 
 	ADJUST_TM(seconds, minutes, 60);
 	ADJUST_TM(minutes, hours, 60);
@@ -1653,59 +1452,57 @@ time_64t c_mkgmtime(struct tm *tm)
 			}
 		}
 
-		/* Restore adjusted values in tm structure */
-		tm->tm_year = years - 1900;
-		tm->tm_mon = months;
-		tm->tm_mday = days + 1;
-		tm->tm_hour = hours;
-		tm->tm_min = minutes;
-		tm->tm_sec = seconds;
+	/* Restore adjusted values in tm structure */
+	tm->tm_year = years - 1900;
+	tm->tm_mon = months;
+	tm->tm_mday = days + 1;
+	tm->tm_hour = hours;
+	tm->tm_min = minutes;
+	tm->tm_sec = seconds;
 
-		/* Set `days' to the number of days into the year. */
-		days += ydays[months] + (months > 1 && leap (years));
-		tm->tm_yday = days;
+	/* Set `days' to the number of days into the year. */
+	days += ydays[months] + (months > 1 && leap(years));
+	tm->tm_yday = days;
 
-		/* Now calculate `days' to the number of days since Jan 1, 1970. */
-		days = (unsigned)days + 365 * (unsigned)(years - 1970) +
-			(unsigned)(nleap (years));
-		tm->tm_wday = ((unsigned)days + 4) % 7; /* Jan 1, 1970 was Thursday. */
-		tm->tm_isdst = 0;
+	/* Now calculate `days' to the number of days since Jan 1, 1970. */
+	days = (unsigned)days + 365 * (unsigned)(years - 1970) +
+	       (unsigned)(nleap(years));
+	tm->tm_wday = ((unsigned)days + 4) % 7; /* Jan 1, 1970 was Thursday. */
+	tm->tm_isdst = 0;
 
-		if (years < 1970)
-			return (time_64t)-1;
+	if (years < 1970)
+		return (time_64t)-1;
 
 #if (defined(TM_YEAR_MAX) && defined(TM_MON_MAX) && defined(TM_MDAY_MAX))
 #if (defined(TM_HOUR_MAX) && defined(TM_MIN_MAX) && defined(TM_SEC_MAX))
-		if (years > TM_YEAR_MAX ||
-			(years == TM_YEAR_MAX &&
-			(tm->tm_yday > ydays[TM_MON_MAX] + (TM_MDAY_MAX - 1) +
-			(TM_MON_MAX > 1 && leap (TM_YEAR_MAX)) ||
-			(tm->tm_yday == ydays[TM_MON_MAX] + (TM_MDAY_MAX - 1) +
-			(TM_MON_MAX > 1 && leap (TM_YEAR_MAX)) &&
-			(hours > TM_HOUR_MAX ||
-			(hours == TM_HOUR_MAX &&
-			(minutes > TM_MIN_MAX ||
-			(minutes == TM_MIN_MAX && seconds > TM_SEC_MAX) )))))))
-			return (time_64t)-1;
+	if (years > TM_YEAR_MAX ||
+	    (years == TM_YEAR_MAX &&
+	     (tm->tm_yday > ydays[TM_MON_MAX] + (TM_MDAY_MAX - 1) +
+	                        (TM_MON_MAX > 1 && leap(TM_YEAR_MAX)) ||
+	      (tm->tm_yday == ydays[TM_MON_MAX] + (TM_MDAY_MAX - 1) +
+	                          (TM_MON_MAX > 1 && leap(TM_YEAR_MAX)) &&
+	       (hours > TM_HOUR_MAX ||
+	        (hours == TM_HOUR_MAX &&
+	         (minutes > TM_MIN_MAX ||
+	          (minutes == TM_MIN_MAX && seconds > TM_SEC_MAX))))))))
+		return (time_64t)-1;
 #endif
 #endif
 
-		return (time_64t)(86400L * (unsigned long)(unsigned)days +
-			3600L * (unsigned long)hours +
-			(unsigned long)(60 * minutes + seconds));
+	return (time_64t)(86400L * (unsigned long)(unsigned)days +
+	                  3600L * (unsigned long)hours +
+	                  (unsigned long)(60 * minutes + seconds));
 }
 
 // Get the system timer
-UINT Tick()
-{
+UINT Tick() {
 	// KS
 	KS_INC(KS_GETTICK_COUNT);
 	return OSGetTick();
 }
 
 // Sleep thread
-void SleepThread(UINT time)
-{
+void SleepThread(UINT time) {
 	// KS
 	KS_INC(KS_SLEEPTHREAD_COUNT);
 
@@ -1713,30 +1510,26 @@ void SleepThread(UINT time)
 }
 
 // Yield
-void YieldCpu()
-{
+void YieldCpu() {
 	OSYield();
 }
 
 // Stop system (abnormal termination)
-void AbortExit()
-{
-#ifdef	OS_WIN32
+void AbortExit() {
+#ifdef OS_WIN32
 	_exit(1);
-#endif	// OS_WIN32
+#endif // OS_WIN32
 }
 
 
-void AbortExitEx(char *msg)
-{
+void AbortExitEx(char *msg) {
 	FILE *f;
 	// Validate arguments
-	if (msg == NULL)
-	{
+	if (msg == NULL) {
 		msg = "Unknown Error";
 	}
 
-#ifdef	RANZ_FUZZING
+#ifdef RANZ_FUZZING
 	// libFuzzer build only (RANZ_FUZZ, cmake/RanzSanitizers.cmake): abort() instead of
 	// _exit(1), so that libFuzzer's SIGABRT handler prints the stack and saves the input as a
 	// crash artifact. No Windows Error Reporting when no SIGABRT handler is installed.
@@ -1746,21 +1539,20 @@ void AbortExitEx(char *msg)
 	fflush(stdout);
 	_set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
 	abort();
-#endif	// RANZ_FUZZING
+#endif // RANZ_FUZZING
 
 	f = fopen("abort_error_log.txt", "w");
-	if (f != NULL)
-	{
-		SYSTEMTIME time = { 0 };
-		char time_str[128] = { 0 };
+	if (f != NULL) {
+		SYSTEMTIME time = {0};
+		char time_str[128] = {0};
 		char *crlf = "\r\n";
 		char *tag = "---------";
 
 		LocalTime(&time);
 
 		sprintf(time_str, "%04u-%02u-%02u %02u:%02u:%02u",
-			time.wYear, time.wMonth, time.wDay,
-			time.wHour, time.wMinute, time.wSecond);
+		        time.wYear, time.wMonth, time.wDay,
+		        time.wHour, time.wMinute, time.wSecond);
 
 		fwrite(tag, 1, strlen(tag), f);
 
@@ -1783,8 +1575,8 @@ void AbortExitEx(char *msg)
 	fputs(msg, stdout);
 	fputs("\r\n", stdout);
 
-#ifdef	OS_WIN32
+#ifdef OS_WIN32
 	_exit(1);
-#endif	// OS_WIN32
+#endif // OS_WIN32
 }
 

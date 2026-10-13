@@ -5,8 +5,8 @@
 // MayaType.h
 // Mayaqua Kernel type declaration header file
 
-#ifndef	MAYATYPE_H
-#define	MAYATYPE_H
+#ifndef MAYATYPE_H
+#define MAYATYPE_H
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -18,7 +18,7 @@
 #endif
 
 #ifndef NTDDI_VERSION
-#define	NTDDI_VERSION NTDDI_VISTA
+#define NTDDI_VERSION NTDDI_VISTA
 #endif
 
 #ifndef _WIN32_WINNT
@@ -31,167 +31,180 @@
 #error "Ranz VPN builds on Windows only."
 #endif
 
-// 
+//
 // Constant
-// 
+//
 
 // Standard buffer size
-#define	STD_SIZE			512
-#define	MAX_SIZE			512
-#define	BUF_SIZE			512
+#define STD_SIZE 512
+#define MAX_SIZE 512
+#define BUF_SIZE 512
 
 // Support Windows OS list
-#define	SUPPORTED_WINDOWS_LIST		"Windows 10 / 11 / Server 2016 / Server 2019 / Server 2022"
+#define SUPPORTED_WINDOWS_LIST "Windows 10 / 11 / Server 2016 / Server 2019 / Server 2022"
 
 // Infinite
-#ifndef	INFINITE
-#define	INFINITE			(0xFFFFFFFF)
+#ifndef INFINITE
+#define INFINITE (0xFFFFFFFF)
 #endif
 
 
-#define	SRC_NAME			__FILE__	// File name of the source code
-#define	SRC_LINE			__LINE__	// Line number in the source code
+#define SRC_NAME __FILE__ // File name of the source code
+#define SRC_LINE __LINE__ // Line number in the source code
 
 // Maximum path size
-#ifndef	MAX_PATH
-#define	MAX_PATH			260
-#endif	// WINDOWS_H
+#ifndef MAX_PATH
+#define MAX_PATH 260
+#endif // WINDOWS_H
 
 // Types of seek
-#ifndef	FILE_BEGIN
-#define	FILE_BEGIN	SEEK_SET
-#endif	// FILE_BEGIN
-#ifndef	FILE_END
-#define	FILE_END	SEEK_END
-#endif	// FILE_END
-#ifndef	FILE_CURRENT
-#define	FILE_CURRENT	SEEK_CUR
-#endif	// FILE_CURRENT
+#ifndef FILE_BEGIN
+#define FILE_BEGIN SEEK_SET
+#endif // FILE_BEGIN
+#ifndef FILE_END
+#define FILE_END SEEK_END
+#endif // FILE_END
+#ifndef FILE_CURRENT
+#define FILE_CURRENT SEEK_CUR
+#endif // FILE_CURRENT
 
-#ifndef	INVALID_SOCKET
-#define	INVALID_SOCKET		(-1)
-#endif	// INVALID_SOCKET
+#ifndef INVALID_SOCKET
+#define INVALID_SOCKET (-1)
+#endif // INVALID_SOCKET
 
-#ifndef	SOCKET_ERROR
-#define	SOCKET_ERROR		(-1)
-#endif	//SOCKET_ERROR
+#ifndef SOCKET_ERROR
+#define SOCKET_ERROR (-1)
+#endif //SOCKET_ERROR
 
 // Comparison function
-typedef int (COMPARE)(void *p1, void *p2);
+typedef int(COMPARE)(void *p1, void *p2);
 
 
-// 
+//
 // Macro
 
 
-#ifdef	MAX
-#undef	MAX
-#endif	// MAX
+#ifdef MAX
+#undef MAX
+#endif // MAX
 
-#ifdef	MIN
-#undef	MIN
-#endif	// MIN
+#ifdef MIN
+#undef MIN
+#endif // MIN
 
 // Minimum value of a and b
-#define	MIN(a, b)			((a) >= (b) ? (b) : (a))
+#define MIN(a, b) ((a) >= (b) ? (b) : (a))
 // Maximum value of a and b
-#define	MAX(a, b)			((a) >= (b) ? (a) : (b))
+#define MAX(a, b) ((a) >= (b) ? (a) : (b))
 
 // Convert an int value to bool
-#define	INT_TO_BOOL(i)		(((i) == 0) ? false : true)
-#define	MAKEBOOL(i)			INT_TO_BOOL(i)
-#define	BOOL_TO_INT(i)		(((i) == false) ? 0 : 1)
+#define INT_TO_BOOL(i) (((i) == 0) ? false : true)
+#define MAKEBOOL(i)    INT_TO_BOOL(i)
+#define BOOL_TO_INT(i) (((i) == false) ? 0 : 1)
 
 // Invert the bool type value
-#define	NEGATIVE_BOOL(i)	(((i) == false) ? true : false)
+#define NEGATIVE_BOOL(i) (((i) == false) ? true : false)
 
 // Return 'a' less than max_value
-#define	LESS(a, max_value)	((a) <= (max_value) ? (a) : (max_value))
+#define LESS(a, max_value) ((a) <= (max_value) ? (a) : (max_value))
 // Return 'a' greater than min_value
-#define	MORE(a, min_value)	((a) >= (min_value) ? (a) : (min_value))
+#define MORE(a, min_value) ((a) >= (min_value) ? (a) : (min_value))
 // Examine whether the value a is between the b and c
-#define	INNER(a, b, c)		(((b) <= (c) && (a) >= (b) && (a) <= (c)) || ((b) >= (c) && (a) >= (c) && (a) <= (b)))
+#define INNER(a, b, c) (((b) <= (c) && (a) >= (b) && (a) <= (c)) || ((b) >= (c) && (a) >= (c) && (a) <= (b)))
 // Examine whether the value a is outbound of b and c
-#define	OUTER(a, b, c)		(!INNER((a), (b), (c)))
+#define OUTER(a, b, c) (!INNER((a), (b), (c)))
 // Adjust value 'a' to be between b and c
-#define	MAKESURE(a, b, c)		(((b) <= (c)) ? (MORE(LESS((a), (c)), (b))) : (MORE(LESS((a), (b)), (c))))
+#define MAKESURE(a, b, c) (((b) <= (c)) ? (MORE(LESS((a), (c)), (b))) : (MORE(LESS((a), (b)), (c))))
 // Compare a and b
-#define COMPARE_RET(a, b)	(((a) == (b)) ? 0 : (((a) > (b)) ? 1 : -1))
+#define COMPARE_RET(a, b) (((a) == (b)) ? 0 : (((a) > (b)) ? 1 : -1))
 // Compare bool type values
-#define	EQUAL_BOOL(a, b)	(((a) && (b)) || ((!(a)) && (!(b))))
+#define EQUAL_BOOL(a, b) (((a) && (b)) || ((!(a)) && (!(b))))
 // Get the absolute value
-#define	GET_ABS(a)			((a) >= 0 ? (a) : -(a))
+#define GET_ABS(a) ((a) >= 0 ? (a) : -(a))
 
 // Convert the pointer to UINT
-#define	POINTER_TO_KEY(p)		(HashPtrToUINT(p))
+#define POINTER_TO_KEY(p) (HashPtrToUINT(p))
 
 // Compare the pointer and UINT
-#define	COMPARE_POINTER_AND_KEY(p, i)	(POINTER_TO_KEY(p) == (i))
+#define COMPARE_POINTER_AND_KEY(p, i) (POINTER_TO_KEY(p) == (i))
 
 // Convert the pointer to UINT64
-#ifdef	CPU_64
-#define	POINTER_TO_UINT64(p)	(UINT64)(p)
+#ifdef CPU_64
+#define POINTER_TO_UINT64(p) (UINT64)(p)
 #else
-#define	POINTER_TO_UINT64(p)	(UINT64)((UINT)(p))
+#define POINTER_TO_UINT64(p) (UINT64)((UINT)(p))
 #endif
 
 // Convert a UINT64 to pointer
-#ifdef	CPU_64
-#define	UINT64_TO_POINTER(i)	(void *)(i)
+#ifdef CPU_64
+#define UINT64_TO_POINTER(i) (void *)(i)
 #else
-#define	UINT64_TO_POINTER(i)	(void *)((UINT)(i))
+#define UINT64_TO_POINTER(i) (void *)((UINT)(i))
 #endif
 
 // Add the value
-#define	UINT_ADD(i, j)		((i == INFINITE || i == 0x7fffffff) ? (i) : (i += j))
+#define UINT_ADD(i, j) ((i == INFINITE || i == 0x7fffffff) ? (i) : (i += j))
 
 // Reading data that is not dependent on the boundary or the endian
-#define	READ_USHORT(buf)		(USHORT)((((USHORT)((UCHAR *)(buf))[0]) << 8) | (((USHORT)((UCHAR *)(buf))[1])))
-#define	READ_UINT(buf)			(UINT)((((UINT)((UCHAR *)(buf))[0]) << 24) | (((UINT)((UCHAR *)(buf))[1]) << 16) | (((UINT)((UCHAR *)(buf))[2]) << 8) | (((UINT)((UCHAR *)(buf))[3])))
-#define	READ_UINT64(buf)		(UINT64)((((UINT64)((UCHAR *)(buf))[0]) << 56) | (((UINT64)((UCHAR *)(buf))[1]) << 48) | (((UINT64)((UCHAR *)(buf))[2]) << 40) | (((UINT64)((UCHAR *)(buf))[3]) << 32) | (((UINT64)((UCHAR *)(buf))[4]) << 24) | (((UINT64)((UCHAR *)(buf))[5]) << 16) | (((UINT64)((UCHAR *)(buf))[6]) << 8) | (((UINT64)((UCHAR *)(buf))[7])))
+#define READ_USHORT(buf) (USHORT)((((USHORT)((UCHAR *)(buf))[0]) << 8) | (((USHORT)((UCHAR *)(buf))[1])))
+#define READ_UINT(buf)   (UINT)((((UINT)((UCHAR *)(buf))[0]) << 24) | (((UINT)((UCHAR *)(buf))[1]) << 16) | (((UINT)((UCHAR *)(buf))[2]) << 8) | (((UINT)((UCHAR *)(buf))[3])))
+#define READ_UINT64(buf) (UINT64)((((UINT64)((UCHAR *)(buf))[0]) << 56) | (((UINT64)((UCHAR *)(buf))[1]) << 48) | (((UINT64)((UCHAR *)(buf))[2]) << 40) | (((UINT64)((UCHAR *)(buf))[3]) << 32) | (((UINT64)((UCHAR *)(buf))[4]) << 24) | (((UINT64)((UCHAR *)(buf))[5]) << 16) | (((UINT64)((UCHAR *)(buf))[6]) << 8) | (((UINT64)((UCHAR *)(buf))[7])))
 
 // Writing data that is not dependent on the boundary or endian
-#define	WRITE_USHORT(buf, i)	(((UCHAR *)(buf))[0]) = ((((USHORT)(i)) >> 8) & 0xFF); (((UCHAR *)(buf))[1]) = ((((USHORT)(i))) & 0xFF)
-#define	WRITE_UINT(buf, i)		(((UCHAR *)(buf))[0]) = ((((UINT)(i)) >> 24) & 0xFF); (((UCHAR *)(buf))[1]) = ((((UINT)(i)) >> 16) & 0xFF); (((UCHAR *)(buf))[2]) = ((((UINT)(i)) >> 8) & 0xFF); (((UCHAR *)(buf))[3]) = ((((UINT)(i))) & 0xFF)
-#define	WRITE_UINT64(buf, i)	(((UCHAR *)(buf))[0]) = ((((UINT64)(i)) >> 56) & 0xFF); (((UCHAR *)(buf))[1]) = ((((UINT64)(i)) >> 48) & 0xFF); (((UCHAR *)(buf))[2]) = ((((UINT64)(i)) >> 40) & 0xFF); (((UCHAR *)(buf))[3]) = ((((UINT64)(i)) >> 32) & 0xFF); (((UCHAR *)(buf))[4]) = ((((UINT64)(i)) >> 24) & 0xFF); (((UCHAR *)(buf))[5]) = ((((UINT64)(i)) >> 16) & 0xFF); (((UCHAR *)(buf))[6]) = ((((UINT64)(i)) >> 8) & 0xFF); (((UCHAR *)(buf))[7]) = ((((UINT64)(i))) & 0xFF)
+#define WRITE_USHORT(buf, i)                               \
+	(((UCHAR *)(buf))[0]) = ((((USHORT)(i)) >> 8) & 0xFF); \
+	(((UCHAR *)(buf))[1]) = ((((USHORT)(i))) & 0xFF)
+#define WRITE_UINT(buf, i)                                \
+	(((UCHAR *)(buf))[0]) = ((((UINT)(i)) >> 24) & 0xFF); \
+	(((UCHAR *)(buf))[1]) = ((((UINT)(i)) >> 16) & 0xFF); \
+	(((UCHAR *)(buf))[2]) = ((((UINT)(i)) >> 8) & 0xFF);  \
+	(((UCHAR *)(buf))[3]) = ((((UINT)(i))) & 0xFF)
+#define WRITE_UINT64(buf, i)                                \
+	(((UCHAR *)(buf))[0]) = ((((UINT64)(i)) >> 56) & 0xFF); \
+	(((UCHAR *)(buf))[1]) = ((((UINT64)(i)) >> 48) & 0xFF); \
+	(((UCHAR *)(buf))[2]) = ((((UINT64)(i)) >> 40) & 0xFF); \
+	(((UCHAR *)(buf))[3]) = ((((UINT64)(i)) >> 32) & 0xFF); \
+	(((UCHAR *)(buf))[4]) = ((((UINT64)(i)) >> 24) & 0xFF); \
+	(((UCHAR *)(buf))[5]) = ((((UINT64)(i)) >> 16) & 0xFF); \
+	(((UCHAR *)(buf))[6]) = ((((UINT64)(i)) >> 8) & 0xFF);  \
+	(((UCHAR *)(buf))[7]) = ((((UINT64)(i))) & 0xFF)
 
-// 
+//
 // Type declaration
-// 
+//
 typedef int64_t time_64t;
 
 // OS type
-#define	OSTYPE_WINDOWS_10						2702	// Windows 10
-#define	OSTYPE_WINDOWS_SERVER_10				2712	// Windows Server 10
-#define	OSTYPE_WINDOWS_11						2800	// Windows 11 or later
-#define	OSTYPE_WINDOWS_SERVER_11				2810	// Windows Server 11 or later
-#define	OSTYPE_UNIX_UNKNOWN						3000	// Unknown UNIX
-#define	OSTYPE_LINUX							3100	// Linux
-#define	OSTYPE_SOLARIS							3200	// Solaris
-#define	OSTYPE_CYGWIN							3300	// Cygwin
-#define	OSTYPE_BSD								3400	// BSD
-#define	OSTYPE_MACOS_X							3500	// MacOS X
+#define OSTYPE_WINDOWS_10        2702 // Windows 10
+#define OSTYPE_WINDOWS_SERVER_10 2712 // Windows Server 10
+#define OSTYPE_WINDOWS_11        2800 // Windows 11 or later
+#define OSTYPE_WINDOWS_SERVER_11 2810 // Windows Server 11 or later
+#define OSTYPE_UNIX_UNKNOWN      3000 // Unknown UNIX
+#define OSTYPE_LINUX             3100 // Linux
+#define OSTYPE_SOLARIS           3200 // Solaris
+#define OSTYPE_CYGWIN            3300 // Cygwin
+#define OSTYPE_BSD               3400 // BSD
+#define OSTYPE_MACOS_X           3500 // MacOS X
 
 
 // OS discrimination macro
-#define	GET_KETA(t, i)			(((t) % (i * 10)) / i)
-#define	OS_IS_WINDOWS(t)		((GET_KETA(t, 1000) == 1) || (GET_KETA(t, 1000) == 2))
-#define	OS_IS_SERVER(t)			(OS_IS_WINDOWS(t) && GET_KETA(t, 10))
-#define	OS_IS_WORKSTATION(t)	(OS_IS_WINDOWS(t) && !(GET_KETA(t, 10))
-#define	OS_IS_UNIX(t)			(GET_KETA(t, 1000) == 3)
+#define GET_KETA(t, i)   (((t) % (i * 10)) / i)
+#define OS_IS_WINDOWS(t) ((GET_KETA(t, 1000) == 1) || (GET_KETA(t, 1000) == 2))
+#define OS_IS_SERVER(t)  (OS_IS_WINDOWS(t) && GET_KETA(t, 10))
+#define OS_IS_WORKSTATION(t)	(OS_IS_WINDOWS(t) && !(GET_KETA(t, 10))
+#define OS_IS_UNIX(t) (GET_KETA(t, 1000) == 3)
 
 
 // OS information
-typedef struct OS_INFO
-{
-	UINT OsType;								// OS type
-	UINT OsServicePack;							// Service pack number
-	char *OsSystemName;							// OS system name
-	char *OsProductName;						// OS product name
-	char *OsVendorName;							// OS vendor name
-	char *OsVersion;							// OS version
-	char *KernelName;							// Kernel name
-	char *KernelVersion;						// Kernel version
+typedef struct OS_INFO {
+	UINT OsType;         // OS type
+	UINT OsServicePack;  // Service pack number
+	char *OsSystemName;  // OS system name
+	char *OsProductName; // OS product name
+	char *OsVendorName;  // OS vendor name
+	char *OsVersion;     // OS version
+	char *KernelName;    // Kernel name
+	char *KernelVersion; // Kernel version
 } OS_INFO;
 
 // Object.h
@@ -375,4 +388,4 @@ typedef struct DNS_RESOLVER_REVERSE DNS_RESOLVER_REVERSE;
 
 #include "Crypto/Types.h"
 
-#endif	// MAYATYPE_H
+#endif // MAYATYPE_H

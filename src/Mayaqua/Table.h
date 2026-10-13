@@ -5,60 +5,57 @@
 // Table.h
 // Header of Table.c
 
-#ifndef	TABLE_H
-#define	TABLE_H
+#ifndef TABLE_H
+#define TABLE_H
 
 #include "Encrypt.h"
 
-#define	UNICODE_CACHE_FILE		L".unicode_cache_%s.dat"
+#define UNICODE_CACHE_FILE L".unicode_cache_%s.dat"
 
-#define	LANGLIST_FILENAME		"|languages.txt"
+#define LANGLIST_FILENAME "|languages.txt"
 
-#define	LANG_CONFIG_FILENAME	L"$lang.config"
-#define	LANG_CONFIG_TEMPLETE	"|lang.config"
+#define LANG_CONFIG_FILENAME L"$lang.config"
+#define LANG_CONFIG_TEMPLETE "|lang.config"
 
 // Language constant
-#define SE_LANG_JAPANESE			0	// Japanese
-#define SE_LANG_ENGLISH				1	// English
-#define SE_LANG_CHINESE_ZH			2	// Simplified Chinese
+#define SE_LANG_JAPANESE   0 // Japanese
+#define SE_LANG_ENGLISH    1 // English
+#define SE_LANG_CHINESE_ZH 2 // Simplified Chinese
 
 
 // String table
-struct TABLE
-{
+struct TABLE {
 	char *name;
 	char *str;
 	wchar_t *unistr;
 };
 
 // Unicode cache structure
-typedef struct UNICODE_CACHE
-{
-	char StrFileName[256];	// String file name
-	UINT StrFileSize;		// String file size
-	char MachineName[256];	// Machine name
-	UINT OsType;			// OS type
-	UCHAR hash[MD5_SIZE];	// Hash
-	UCHAR CharSet[64];		// Type of character code
+typedef struct UNICODE_CACHE {
+	char StrFileName[256]; // String file name
+	UINT StrFileSize;      // String file size
+	char MachineName[256]; // Machine name
+	UINT OsType;           // OS type
+	UCHAR hash[MD5_SIZE];  // Hash
+	UCHAR CharSet[64];     // Type of character code
 } UNICODE_CACHE;
 
 // Macro
-#define	_SS(name)		(GetTableStr((char *)(name)))
-#define	_UU(name)		(GetTableUniStr((char *)(name)))
-#define	_II(name)		(GetTableInt((char *)(name)))
-#define	_E(name)		(GetUniErrorStr((UINT)(name)))
-#define	_EA(name)		(GetErrorStr((UINT)(name)))
-#define _GETLANG()		(_II("LANG"))
+#define _SS(name)  (GetTableStr((char *)(name)))
+#define _UU(name)  (GetTableUniStr((char *)(name)))
+#define _II(name)  (GetTableInt((char *)(name)))
+#define _E(name)   (GetUniErrorStr((UINT)(name)))
+#define _EA(name)  (GetErrorStr((UINT)(name)))
+#define _GETLANG() (_II("LANG"))
 
 // Language list
-struct LANGLIST
-{
-	UINT Id;						// Number
-	char Name[32];					// Identifier
-	wchar_t TitleEnglish[128];		// English notation
-	wchar_t TitleLocal[128];		// Local notation
-	LIST *LcidList;					// Windows LCID list
-	LIST *LangList;					// UNIX LANG environment variable list
+struct LANGLIST {
+	UINT Id;                   // Number
+	char Name[32];             // Identifier
+	wchar_t TitleEnglish[128]; // English notation
+	wchar_t TitleLocal[128];   // Local notation
+	LIST *LcidList;            // Windows LCID list
+	LIST *LangList;            // UNIX LANG environment variable list
 };
 
 
@@ -98,7 +95,7 @@ bool SaveLangConfigCurrentDir(char *str);
 void GetCurrentLang(LANGLIST *e);
 UINT GetCurrentLangId();
 
-#endif	// TABLE_H
+#endif // TABLE_H
 
 
 

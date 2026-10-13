@@ -19,8 +19,7 @@
 #include "Mayaqua/TcpIp.h"
 
 // Hash the list of current Ethernet devices
-UINT GetEthDeviceHash()
-{
+UINT GetEthDeviceHash() {
 	// Win32
 	UINT ret = 0;
 	MS_ADAPTER_LIST *a = MsCreateAdapterListEx(true);
@@ -30,10 +29,8 @@ UINT GetEthDeviceHash()
 	UCHAR hash[SHA1_SIZE];
 
 	tmp[0] = 0;
-	if (a != NULL)
-	{
-		for (i = 0;i < a->Num;i++)
-		{
+	if (a != NULL) {
+		for (i = 0; i < a->Num; i++) {
 			StrCat(tmp, sizeof(tmp), a->Adapters[i]->Title);
 		}
 	}
@@ -47,40 +44,31 @@ UINT GetEthDeviceHash()
 }
 
 // Get whether the local-bridging is supported by current OS
-bool IsBridgeSupported()
-{
+bool IsBridgeSupported() {
 	UINT type = GetOsInfo()->OsType;
 
-	if (OS_IS_WINDOWS(type))
-	{
-		if (IsEthSupported())
-		{
+	if (OS_IS_WINDOWS(type)) {
+		if (IsEthSupported()) {
 			return true;
-		}
-		else
-		{
+		} else {
 			bool ret = false;
 
-#ifdef	OS_WIN32
+#ifdef OS_WIN32
 			ret = MsIsAdmin();
-#endif	// OS_WIN32
+#endif // OS_WIN32
 
 			return ret;
 		}
-	}
-	else
-	{
+	} else {
 		return IsEthSupported();
 	}
 }
 
 // Delete a local-bridge
-bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename)
-{
+bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename) {
 	bool ret = false;
 	// Validate arguments
-	if (c == NULL || hubname == NULL || devicename == NULL)
-	{
+	if (c == NULL || hubname == NULL || devicename == NULL) {
 		return false;
 	}
 
@@ -90,16 +78,12 @@ bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename)
 		{
 			UINT i;
 
-			for (i = 0;i < LIST_NUM(c->LocalBridgeList);i++)
-			{
+			for (i = 0; i < LIST_NUM(c->LocalBridgeList); i++) {
 				LOCALBRIDGE *br = LIST_DATA(c->LocalBridgeList, i);
 
-				if (StrCmpi(br->HubName, hubname) == 0)
-				{
-					if (StrCmpi(br->DeviceName, devicename) == 0)
-					{
-						if (br->Bridge != NULL)
-						{
+				if (StrCmpi(br->HubName, hubname) == 0) {
+					if (StrCmpi(br->DeviceName, devicename) == 0) {
+						if (br->Bridge != NULL) {
 							BrFreeBridge(br->Bridge);
 							br->Bridge = NULL;
 						}
@@ -121,19 +105,16 @@ bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename)
 }
 
 // Add a local-bridge
-void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool monitor, bool tapmode, char *tapaddr, bool limit_broadcast)
-{
+void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool monitor, bool tapmode, char *tapaddr, bool limit_broadcast) {
 	UINT i;
 	HUB *h = NULL;
 	LOCALBRIDGE *br = NULL;
 	// Validate arguments
-	if (c == NULL || hubname == NULL || devicename == NULL)
-	{
+	if (c == NULL || hubname == NULL || devicename == NULL) {
 		return;
 	}
 
-	if (OS_IS_UNIX(GetOsInfo()->OsType) == false)
-	{
+	if (OS_IS_UNIX(GetOsInfo()->OsType) == false) {
 		tapmode = false;
 	}
 
@@ -143,24 +124,19 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 		{
 			bool exists = false;
 
-			// Ensure that the same configuration local-bridge doesn't exist already 
-			for (i = 0;i < LIST_NUM(c->LocalBridgeList);i++)
-			{
+			// Ensure that the same configuration local-bridge doesn't exist already
+			for (i = 0; i < LIST_NUM(c->LocalBridgeList); i++) {
 				LOCALBRIDGE *br = LIST_DATA(c->LocalBridgeList, i);
-				if (StrCmpi(br->DeviceName, devicename) == 0)
-				{
-					if (StrCmpi(br->HubName, hubname) == 0)
-					{
-						if (br->TapMode == tapmode)
-						{
+				if (StrCmpi(br->DeviceName, devicename) == 0) {
+					if (StrCmpi(br->HubName, hubname) == 0) {
+						if (br->TapMode == tapmode) {
 							exists = true;
 						}
 					}
 				}
 			}
 
-			if (exists == false)
-			{
+			if (exists == false) {
 				// Add configuration
 				br = ZeroMalloc(sizeof(LOCALBRIDGE));
 				StrCpy(br->HubName, sizeof(br->HubName), hubname);
@@ -170,14 +146,10 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 				br->TapMode = tapmode;
 				br->LimitBroadcast = limit_broadcast;
 				br->Monitor = monitor;
-				if (br->TapMode)
-				{
-					if (tapaddr != NULL && IsZero(tapaddr, 6) == false)
-					{
+				if (br->TapMode) {
+					if (tapaddr != NULL && IsZero(tapaddr, 6) == false) {
 						Copy(br->TapMacAddress, tapaddr, 6);
-					}
-					else
-					{
+					} else {
 						GenMacAddress(br->TapMacAddress);
 					}
 				}
@@ -185,11 +157,9 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 				Add(c->LocalBridgeList, br);
 
 				// Find the hub
-				for (i = 0;i < LIST_NUM(c->HubList);i++)
-				{
+				for (i = 0; i < LIST_NUM(c->HubList); i++) {
 					HUB *hub = LIST_DATA(c->HubList, i);
-					if (StrCmpi(hub->Name, br->HubName) == 0)
-					{
+					if (StrCmpi(hub->Name, br->HubName) == 0) {
 						h = hub;
 						AddRef(h->ref);
 						break;
@@ -202,18 +172,14 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 	UnlockList(c->HubList);
 
 	// Start the local-bridge immediately
-	if (h != NULL && br != NULL)
-	{
+	if (h != NULL && br != NULL) {
 		Lock(h->lock_online);
 		{
-			if (h->Offline == false)
-			{
+			if (h->Offline == false) {
 				LockList(c->LocalBridgeList);
 				{
-					if (IsInList(c->LocalBridgeList, br))
-					{
-						if (br->Bridge == NULL)
-						{
+					if (IsInList(c->LocalBridgeList, br)) {
+						if (br->Bridge == NULL) {
 							br->Bridge = BrNewBridge(h, br->DeviceName, NULL, br->Local, br->Monitor, br->TapMode, br->TapMacAddress, br->LimitBroadcast, br);
 						}
 					}
@@ -228,11 +194,9 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 }
 
 // Initialize the local-bridge list
-void InitLocalBridgeList(CEDAR *c)
-{
+void InitLocalBridgeList(CEDAR *c) {
 	// Validate arguments
-	if (c == NULL)
-	{
+	if (c == NULL) {
 		return;
 	}
 
@@ -240,17 +204,14 @@ void InitLocalBridgeList(CEDAR *c)
 }
 
 // Free the local-bridge list
-void FreeLocalBridgeList(CEDAR *c)
-{
+void FreeLocalBridgeList(CEDAR *c) {
 	UINT i;
 	// Validate arguments
-	if (c == NULL)
-	{
+	if (c == NULL) {
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(c->LocalBridgeList);i++)
-	{
+	for (i = 0; i < LIST_NUM(c->LocalBridgeList); i++) {
 		LOCALBRIDGE *br = LIST_DATA(c->LocalBridgeList, i);
 		Free(br);
 	}
@@ -260,16 +221,14 @@ void FreeLocalBridgeList(CEDAR *c)
 }
 
 // Bridging thread
-void BrBridgeThread(THREAD *thread, void *param)
-{
+void BrBridgeThread(THREAD *thread, void *param) {
 	BRIDGE *b;
 	CONNECTION *c;
 	SESSION *s;
 	HUB *h;
 	char name[MAX_SIZE];
 	// Validate arguments
-	if (thread == NULL || param == NULL)
-	{
+	if (thread == NULL || param == NULL) {
 		return;
 	}
 
@@ -312,16 +271,13 @@ void BrBridgeThread(THREAD *thread, void *param)
 }
 
 // Free the local-bridge object
-void BrFreeBridge(BRIDGE *b)
-{
+void BrFreeBridge(BRIDGE *b) {
 	// Validate arguments
-	if (b == NULL)
-	{
+	if (b == NULL) {
 		return;
 	}
 
-	if (b->ParentLocalBridge != NULL)
-	{
+	if (b->ParentLocalBridge != NULL) {
 		b->ParentLocalBridge = NULL;
 	}
 
@@ -333,23 +289,18 @@ void BrFreeBridge(BRIDGE *b)
 }
 
 // Create new local-bridge
-BRIDGE *BrNewBridge(HUB *h, char *name, POLICY *p, bool local, bool monitor, bool tapmode, char *tapaddr, bool limit_broadcast, LOCALBRIDGE *parent_local_bridge)
-{
+BRIDGE *BrNewBridge(HUB *h, char *name, POLICY *p, bool local, bool monitor, bool tapmode, char *tapaddr, bool limit_broadcast, LOCALBRIDGE *parent_local_bridge) {
 	BRIDGE *b;
 	POLICY *policy;
 	THREAD *t;
 	// Validate arguments
-	if (h == NULL || name == NULL || parent_local_bridge == NULL)
-	{
+	if (h == NULL || name == NULL || parent_local_bridge == NULL) {
 		return NULL;
 	}
 
-	if (p == NULL)
-	{
+	if (p == NULL) {
 		policy = ClonePolicy(GetDefaultPolicy());
-	}
-	else
-	{
+	} else {
 		policy = ClonePolicy(p);
 	}
 
@@ -364,26 +315,20 @@ BRIDGE *BrNewBridge(HUB *h, char *name, POLICY *p, bool local, bool monitor, boo
 	b->LimitBroadcast = limit_broadcast;
 	b->ParentLocalBridge = parent_local_bridge;
 
-	if (b->TapMode)
-	{
-		if (tapaddr != NULL && IsZero(tapaddr, 6) == false)
-		{
+	if (b->TapMode) {
+		if (tapaddr != NULL && IsZero(tapaddr, 6) == false) {
 			Copy(b->TapMacAddress, tapaddr, 6);
-		}
-		else
-		{
+		} else {
 			GenMacAddress(b->TapMacAddress);
 		}
 	}
 
-	if (monitor)
-	{
+	if (monitor) {
 		// Enabling monitoring mode
 		policy->MonitorPort = true;
 	}
 
-	if (b->LimitBroadcast == false)
-	{
+	if (b->LimitBroadcast == false) {
 		// Disable broadcast limiter
 		policy->NoBroadcastLimiter = true;
 	}

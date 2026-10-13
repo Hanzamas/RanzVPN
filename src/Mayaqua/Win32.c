@@ -30,15 +30,13 @@ static HANDLE hstdout = INVALID_HANDLE_VALUE;
 static HANDLE hstdin = INVALID_HANDLE_VALUE;
 
 // Thread data for Win32
-typedef struct WIN32THREAD
-{
+typedef struct WIN32THREAD {
 	HANDLE hThread;
 	DWORD thread_id;
 } WIN32THREAD;
 
 // Thread startup information for Win32
-typedef struct WIN32THREADSTARTUPINFO
-{
+typedef struct WIN32THREADSTARTUPINFO {
 	THREAD_PROC *thread_proc;
 	void *param;
 	THREAD *thread;
@@ -54,103 +52,97 @@ static UINT64 start_tick = 0;
 static bool use_heap_api = false;
 
 // File I/O data for Win32
-typedef struct WIN32IO
-{
+typedef struct WIN32IO {
 	HANDLE hFile;
 	bool WriteMode;
 } WIN32IO;
 
 // Mutex data for Win32
-typedef struct WIN32MUTEX
-{
+typedef struct WIN32MUTEX {
 	HANDLE hMutex;
 } WIN32MUTEX;
 
 // Set the Thread name
-#pragma pack(push,8)
-typedef struct tagTHREADNAME_INFO
-{
-	DWORD dwType; // Must be 0x1000.
-	LPCSTR szName; // Pointer to name (in user addr space).
+#pragma pack(push, 8)
+typedef struct tagTHREADNAME_INFO {
+	DWORD dwType;     // Must be 0x1000.
+	LPCSTR szName;    // Pointer to name (in user addr space).
 	DWORD dwThreadID; // Thread ID (-1=caller thread).
-	DWORD dwFlags; // Reserved for future use, must be zero.
+	DWORD dwFlags;    // Reserved for future use, must be zero.
 } THREADNAME_INFO;
 #pragma pack(pop)
 
 // Create a dispatch table
-OS_DISPATCH_TABLE *Win32GetDispatchTable()
-{
+OS_DISPATCH_TABLE *Win32GetDispatchTable() {
 	static OS_DISPATCH_TABLE t =
-	{
-		Win32Init,
-		Win32Free,
-		Win32MemoryAlloc,
-		Win32MemoryReAlloc,
-		Win32MemoryFree,
-		Win32GetTick,
-		Win32GetSystemTime,
-		Win32Inc32,
-		Win32Dec32,
-		Win32Sleep,
-		Win32NewLock,
-		Win32Lock,
-		Win32Unlock,
-		Win32DeleteLock,
-		Win32InitEvent,
-		Win32SetEvent,
-		Win32ResetEvent,
-		Win32WaitEvent,
-		Win32FreeEvent,
-		Win32WaitThread,
-		Win32FreeThread,
-		Win32InitThread,
-		Win32ThreadId,
-		Win32FileOpen,
-		Win32FileOpenW,
-		Win32FileCreate,
-		Win32FileCreateW,
-		Win32FileWrite,
-		Win32FileRead,
-		Win32FileClose,
-		Win32FileFlush,
-		Win32FileSize,
-		Win32FileSeek,
-		Win32FileDelete,
-		Win32FileDeleteW,
-		Win32MakeDir,
-		Win32MakeDirW,
-		Win32DeleteDir,
-		Win32DeleteDirW,
-		Win32GetCallStack,
-		Win32GetCallStackSymbolInfo,
-		Win32FileRename,
-		Win32FileRenameW,
-		Win32Run,
-		Win32RunW,
-		Win32IsSupportedOs,
-		Win32GetOsInfo,
-		Win32Alert,
-		Win32AlertW,
-		Win32GetProductId,
-		Win32SetHighPriority,
-		Win32RestorePriority,
-		Win32NewSingleInstance,
-		Win32FreeSingleInstance,
-		Win32GetMemInfo,
-		Win32Yield,
-	};
+	    {
+	        Win32Init,
+	        Win32Free,
+	        Win32MemoryAlloc,
+	        Win32MemoryReAlloc,
+	        Win32MemoryFree,
+	        Win32GetTick,
+	        Win32GetSystemTime,
+	        Win32Inc32,
+	        Win32Dec32,
+	        Win32Sleep,
+	        Win32NewLock,
+	        Win32Lock,
+	        Win32Unlock,
+	        Win32DeleteLock,
+	        Win32InitEvent,
+	        Win32SetEvent,
+	        Win32ResetEvent,
+	        Win32WaitEvent,
+	        Win32FreeEvent,
+	        Win32WaitThread,
+	        Win32FreeThread,
+	        Win32InitThread,
+	        Win32ThreadId,
+	        Win32FileOpen,
+	        Win32FileOpenW,
+	        Win32FileCreate,
+	        Win32FileCreateW,
+	        Win32FileWrite,
+	        Win32FileRead,
+	        Win32FileClose,
+	        Win32FileFlush,
+	        Win32FileSize,
+	        Win32FileSeek,
+	        Win32FileDelete,
+	        Win32FileDeleteW,
+	        Win32MakeDir,
+	        Win32MakeDirW,
+	        Win32DeleteDir,
+	        Win32DeleteDirW,
+	        Win32GetCallStack,
+	        Win32GetCallStackSymbolInfo,
+	        Win32FileRename,
+	        Win32FileRenameW,
+	        Win32Run,
+	        Win32RunW,
+	        Win32IsSupportedOs,
+	        Win32GetOsInfo,
+	        Win32Alert,
+	        Win32AlertW,
+	        Win32GetProductId,
+	        Win32SetHighPriority,
+	        Win32RestorePriority,
+	        Win32NewSingleInstance,
+	        Win32FreeSingleInstance,
+	        Win32GetMemInfo,
+	        Win32Yield,
+	    };
 
 	return &t;
 }
 
 // Set the thread name
-void Win32SetThreadName(UINT thread_id, char *name)
-{
+void Win32SetThreadName(UINT thread_id, char *name) {
 	DWORD ms_vc_exception = 0x406D1388;
 	THREADNAME_INFO t;
 	// Validate arguments
-	if (thread_id == 0 || name == NULL)
-	{
+	if (thread_id == 0 || name == NULL) {
 		return;
 	}
 
@@ -160,46 +152,38 @@ void Win32SetThreadName(UINT thread_id, char *name)
 	t.dwThreadID = thread_id;
 	t.dwFlags = 0;
 
-	__try
-	{
+	__try {
 		RaiseException(ms_vc_exception, 0, sizeof(t) / sizeof(ULONG_PTR), (ULONG_PTR *)&t);
-	}
-	__except (EXCEPTION_EXECUTE_HANDLER)
-	{
+	} __except (EXCEPTION_EXECUTE_HANDLER) {
 	}
 }
 
 // Initialization function of the new thread
-void Win32InitNewThread()
-{
+void Win32InitNewThread() {
 	static HINSTANCE hDll = NULL;
-	static bool (WINAPI *_SetThreadLocale)(LCID) = NULL;
+	static bool(WINAPI * _SetThreadLocale)(LCID) = NULL;
 
-	if (hDll == NULL)
-	{
+	if (hDll == NULL) {
 		hDll = LoadLibrary("kernel32.dll");
 
 		_SetThreadLocale =
-			(bool (__stdcall *)(LCID))
-			GetProcAddress(hDll, "SetThreadLocale");
+		    (bool(__stdcall *)(LCID))
+		        GetProcAddress(hDll, "SetThreadLocale");
 	}
 
-	if (_SetThreadLocale != NULL)
-	{
+	if (_SetThreadLocale != NULL) {
 		_SetThreadLocale(LOCALE_USER_DEFAULT);
 	}
 }
 
 // Set the compression flag of the folder
-bool Win32SetFolderCompress(char *path, bool compressed)
-{
+bool Win32SetFolderCompress(char *path, bool compressed) {
 	HANDLE h;
 	DWORD retsize = 0;
 	USHORT flag;
 	char tmp[MAX_PATH];
 	// Validate arguments
-	if (path == NULL)
-	{
+	if (path == NULL) {
 		return false;
 	}
 
@@ -208,16 +192,14 @@ bool Win32SetFolderCompress(char *path, bool compressed)
 	// Open the folder
 	h = CreateFile(tmp, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
 
-	if (h == INVALID_HANDLE_VALUE)
-	{
+	if (h == INVALID_HANDLE_VALUE) {
 		return false;
 	}
 
 	flag = compressed ? COMPRESSION_FORMAT_DEFAULT : COMPRESSION_FORMAT_NONE;
 
 	if (DeviceIoControl(h, FSCTL_SET_COMPRESSION, &flag, sizeof(USHORT),
-		NULL, 0, &retsize, NULL) == false)
-	{
+	                    NULL, 0, &retsize, NULL) == false) {
 		return false;
 	}
 
@@ -227,16 +209,14 @@ bool Win32SetFolderCompress(char *path, bool compressed)
 }
 
 // Get the free space of the disk
-bool Win32GetDiskFree(char *path, UINT64 *free_size, UINT64 *used_size, UINT64 *total_size)
-{
+bool Win32GetDiskFree(char *path, UINT64 *free_size, UINT64 *used_size, UINT64 *total_size) {
 	char tmp[MAX_SIZE];
 	UINT count = 0;
 	UINT i, n, len;
 	ULARGE_INTEGER v1, v2, v3;
 	bool ret = false;
 	// Validate arguments
-	if (path == NULL)
-	{
+	if (path == NULL) {
 		return false;
 	}
 
@@ -247,47 +227,37 @@ bool Win32GetDiskFree(char *path, UINT64 *free_size, UINT64 *used_size, UINT64 *
 	NormalizePath(tmp, sizeof(tmp), path);
 
 	// Get the directory name
-	if (StartWith(path, "\\\\"))
-	{
+	if (StartWith(path, "\\\\")) {
 		count = 4;
-	}
-	else
-	{
+	} else {
 		count = 1;
 	}
 
 	len = StrLen(tmp);
 	n = 0;
-	for (i = 0;i < len;i++)
-	{
-		if (tmp[i] == '\\')
-		{
+	for (i = 0; i < len; i++) {
+		if (tmp[i] == '\\') {
 			n++;
-			if (n >= count)
-			{
+			if (n >= count) {
 				tmp[i + 1] = 0;
 				break;
 			}
 		}
 	}
 
-	if (GetDiskFreeSpaceEx(tmp, &v1, &v2, &v3))
-	{
+	if (GetDiskFreeSpaceEx(tmp, &v1, &v2, &v3)) {
 		ret = true;
 	}
 
-	if (free_size != NULL)
-	{
+	if (free_size != NULL) {
 		*free_size = v1.QuadPart;
 	}
 
-	if (total_size != NULL)
-	{
+	if (total_size != NULL) {
 		*total_size = v2.QuadPart;
 	}
 
-	if (used_size != NULL)
-	{
+	if (used_size != NULL) {
 		*used_size = v2.QuadPart - v1.QuadPart;
 	}
 
@@ -295,8 +265,7 @@ bool Win32GetDiskFree(char *path, UINT64 *free_size, UINT64 *used_size, UINT64 *
 }
 
 // Enumeration of directory
-DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
-{
+DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare) {
 	WIN32_FIND_DATAW data_w;
 	HANDLE h;
 	wchar_t tmp[MAX_PATH];
@@ -307,8 +276,7 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 
 	UniStrCpy(tmp2, sizeof(tmp2), dirname);
 
-	if (UniStrLen(tmp2) >= 1 && tmp2[UniStrLen(tmp2) - 1] == L'\\')
-	{
+	if (UniStrLen(tmp2) >= 1 && tmp2[UniStrLen(tmp2) - 1] == L'\\') {
 		tmp2[UniStrLen(tmp2) - 1] = 0;
 	}
 
@@ -322,15 +290,12 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 
 	h = FindFirstFileW(tmp, &data_w);
 
-	if (h != INVALID_HANDLE_VALUE)
-	{
+	if (h != INVALID_HANDLE_VALUE) {
 		bool b = true;
 
-		do
-		{
+		do {
 			if (UniStrCmpi(data_w.cFileName, L"..") != 0 &&
-				UniStrCmpi(data_w.cFileName, L".") != 0)
-			{
+			    UniStrCmpi(data_w.cFileName, L".") != 0) {
 				DIRENT *f = ZeroMalloc(sizeof(DIRENT));
 				SYSTEMTIME t1, t2;
 				wchar_t fullpath[MAX_SIZE];
@@ -343,20 +308,17 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 				CombinePathW(fullpath, sizeof(fullpath), dirname2, f->FileNameW);
 
 				// Attempt to get the file information
-				if (true)
-				{
+				if (true) {
 					HANDLE h = CreateFileW(fullpath, 0,
-						FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
-						NULL, OPEN_EXISTING, 0, NULL);
+					                       FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
+					                       NULL, OPEN_EXISTING, 0, NULL);
 
-					if (h != INVALID_HANDLE_VALUE)
-					{
+					if (h != INVALID_HANDLE_VALUE) {
 						BY_HANDLE_FILE_INFORMATION info;
 
 						Zero(&info, sizeof(info));
 
-						if (MsGetFileInformation(h, &info))
-						{
+						if (MsGetFileInformation(h, &info)) {
 							Zero(&t1, sizeof(t1));
 							Zero(&t2, sizeof(t2));
 							FileTimeToSystemTime(&info.ftCreationTime, &t1);
@@ -364,8 +326,7 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 							f->CreateDate = SystemToUINT64(&t1);
 							f->UpdateDate = SystemToUINT64(&t2);
 
-							if (f->Folder == false)
-							{
+							if (f->Folder == false) {
 								f->FileSize = ((UINT64)info.nFileSizeHigh * (UINT64)((UINT64)MAXDWORD + (UINT64)1)) + (UINT64)info.nFileSizeLow;
 							}
 
@@ -376,8 +337,7 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 					}
 				}
 
-				if (ok == false)
-				{
+				if (ok == false) {
 					Zero(&t1, sizeof(t1));
 					Zero(&t2, sizeof(t2));
 					FileTimeToSystemTime(&data_w.ftCreationTime, &t1);
@@ -385,8 +345,7 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 					f->CreateDate = SystemToUINT64(&t1);
 					f->UpdateDate = SystemToUINT64(&t2);
 
-					if (f->Folder == false)
-					{
+					if (f->Folder == false) {
 						f->FileSize = ((UINT64)data_w.nFileSizeHigh * (UINT64)((UINT64)MAXDWORD + (UINT64)1)) + (UINT64)data_w.nFileSizeLow;
 					}
 				}
@@ -397,8 +356,7 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 			Zero(&data_w, sizeof(data_w));
 
 			b = FindNextFileW(h, &data_w);
-		}
-		while (b);
+		} while (b);
 
 		FindClose(h);
 	}
@@ -415,11 +373,9 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 }
 
 // Get the EXE file name
-void Win32GetExeNameW(wchar_t *name, UINT size)
-{
+void Win32GetExeNameW(wchar_t *name, UINT size) {
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return;
 	}
 
@@ -429,11 +385,9 @@ void Win32GetExeNameW(wchar_t *name, UINT size)
 }
 
 // Get the current directory
-void Win32GetCurrentDirW(wchar_t *dir, UINT size)
-{
+void Win32GetCurrentDirW(wchar_t *dir, UINT size) {
 	// Validate arguments
-	if (dir == NULL)
-	{
+	if (dir == NULL) {
 		return;
 	}
 
@@ -441,40 +395,33 @@ void Win32GetCurrentDirW(wchar_t *dir, UINT size)
 }
 
 // Yield
-void Win32Yield()
-{
+void Win32Yield() {
 	Sleep(0);
 }
 
 // Get the memory information
-void Win32GetMemInfo(MEMINFO *info)
-{
+void Win32GetMemInfo(MEMINFO *info) {
 	static HINSTANCE hDll = NULL;
-	static bool (WINAPI *_GlobalMemoryStatusEx)(LPMEMORYSTATUSEX) = NULL;
+	static bool(WINAPI * _GlobalMemoryStatusEx)(LPMEMORYSTATUSEX) = NULL;
 	// Validate arguments
-	if (info == NULL)
-	{
+	if (info == NULL) {
 		return;
 	}
 
 	Zero(info, sizeof(MEMINFO));
 
-	if (hDll == NULL)
-	{
+	if (hDll == NULL) {
 		hDll = LoadLibrary("kernel32.dll");
 	}
-	if (hDll != NULL)
-	{
-		if (_GlobalMemoryStatusEx == NULL)
-		{
+	if (hDll != NULL) {
+		if (_GlobalMemoryStatusEx == NULL) {
 			_GlobalMemoryStatusEx =
-				(bool (__stdcall *)(LPMEMORYSTATUSEX))GetProcAddress(hDll, "GlobalMemoryStatusEx");
+			    (bool(__stdcall *)(LPMEMORYSTATUSEX))GetProcAddress(hDll, "GlobalMemoryStatusEx");
 		}
 	}
 
 
-	if (_GlobalMemoryStatusEx == NULL)
-	{
+	if (_GlobalMemoryStatusEx == NULL) {
 		// Old API
 		MEMORYSTATUS st;
 		Zero(&st, sizeof(st));
@@ -491,9 +438,7 @@ void Win32GetMemInfo(MEMINFO *info)
 		info->TotalPhys = (UINT64)st.dwTotalPhys;
 		info->FreePhys = (UINT64)st.dwAvailPhys;
 		info->UsedPhys = info->TotalPhys - info->FreePhys;
-	}
-	else
-	{
+	} else {
 		// New API
 		MEMORYSTATUSEX st;
 		Zero(&st, sizeof(st));
@@ -514,14 +459,12 @@ void Win32GetMemInfo(MEMINFO *info)
 }
 
 // Creating a single instance
-void *Win32NewSingleInstance(char *instance_name)
-{
+void *Win32NewSingleInstance(char *instance_name) {
 	WIN32MUTEX *ret;
 	char tmp[MAX_SIZE];
 	HANDLE hMutex;
 	// Validate arguments
-	if (instance_name == NULL)
-	{
+	if (instance_name == NULL) {
 		char exe_path[MAX_PATH];
 		GetModuleFileName(NULL, exe_path, sizeof(exe_path));
 		HashInstanceName(tmp, sizeof(tmp), exe_path);
@@ -529,15 +472,13 @@ void *Win32NewSingleInstance(char *instance_name)
 	}
 
 	hMutex = OpenMutex(MUTEX_ALL_ACCESS, FALSE, instance_name);
-	if (hMutex != NULL)
-	{
+	if (hMutex != NULL) {
 		CloseHandle(hMutex);
 		return NULL;
 	}
 
 	hMutex = CreateMutex(NULL, FALSE, instance_name);
-	if (hMutex == NULL)
-	{
+	if (hMutex == NULL) {
 		CloseHandle(hMutex);
 		return NULL;
 	}
@@ -549,12 +490,10 @@ void *Win32NewSingleInstance(char *instance_name)
 }
 
 // Release the single instance
-void Win32FreeSingleInstance(void *data)
-{
+void Win32FreeSingleInstance(void *data) {
 	WIN32MUTEX *m;
 	// Validate arguments
-	if (data == NULL)
-	{
+	if (data == NULL) {
 		return;
 	}
 
@@ -566,28 +505,24 @@ void Win32FreeSingleInstance(void *data)
 }
 
 // Raise the priority
-void Win32SetHighPriority()
-{
+void Win32SetHighPriority() {
 	SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
 }
 
 // Restore the priority
-void Win32RestorePriority()
-{
+void Win32RestorePriority() {
 	SetPriorityClass(GetCurrentProcess(), NORMAL_PRIORITY_CLASS);
 }
 
 // Get the node information
-char* Win32GetProductId()
-{
+char *Win32GetProductId() {
 	char *product_id;
 
 	return CopyStr("--");
 
 	// Product ID
 	product_id = MsRegReadStr(REG_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", "ProductId");
-	if (product_id == NULL)
-	{
+	if (product_id == NULL) {
 		product_id = MsRegReadStr(REG_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion", "ProductId");
 	}
 
@@ -595,14 +530,12 @@ char* Win32GetProductId()
 }
 
 // Acquisition whether the OS is currently supported
-bool Win32IsSupportedOs()
-{
-	if (Win32GetOsType() == 0)
-	{
+bool Win32IsSupportedOs() {
+	if (Win32GetOsType() == 0) {
 		Win32Alert(
-			CEDAR_PRODUCT_STR " VPN doesn't support this Windows Operating System.\n"
-			CEDAR_PRODUCT_STR " VPN requires " SUPPORTED_WINDOWS_LIST ".\n\n"
-			"Please contact your system administrator.", NULL);
+		    CEDAR_PRODUCT_STR " VPN doesn't support this Windows Operating System.\n" CEDAR_PRODUCT_STR " VPN requires " SUPPORTED_WINDOWS_LIST ".\n\n"
+		                      "Please contact your system administrator.",
+		    NULL);
 		return false;
 	}
 
@@ -610,39 +543,31 @@ bool Win32IsSupportedOs()
 }
 
 // Show an alert
-void Win32AlertW(wchar_t *msg, wchar_t *caption)
-{
+void Win32AlertW(wchar_t *msg, wchar_t *caption) {
 	// Validate arguments
-	if (msg == NULL)
-	{
+	if (msg == NULL) {
 		msg = L"Alert";
 	}
-	if (caption == NULL)
-	{
+	if (caption == NULL) {
 		caption = CEDAR_PRODUCT_STR_W L" VPN Kernel";
 	}
 
 	MessageBoxW(NULL, msg, caption, MB_SETFOREGROUND | MB_TOPMOST | MB_SERVICE_NOTIFICATION | MB_OK | MB_ICONEXCLAMATION);
 }
-void Win32Alert(char *msg, char *caption)
-{
+void Win32Alert(char *msg, char *caption) {
 	// Validate arguments
-	if (msg == NULL)
-	{
+	if (msg == NULL) {
 		msg = "Alert";
 	}
-	if (caption == NULL)
-	{
+	if (caption == NULL) {
 		caption = CEDAR_PRODUCT_STR " VPN Kernel";
 	}
 
 	MessageBox(NULL, msg, caption, MB_SETFOREGROUND | MB_TOPMOST | MB_SERVICE_NOTIFICATION | MB_OK | MB_ICONEXCLAMATION);
 }
-void Win32DebugAlert(char *msg)
-{
+void Win32DebugAlert(char *msg) {
 	// Validate arguments
-	if (msg == NULL)
-	{
+	if (msg == NULL) {
 		msg = "Alert";
 	}
 
@@ -650,8 +575,7 @@ void Win32DebugAlert(char *msg)
 }
 
 // Get the number of CPUs
-UINT Win32GetNumberOfCpuInner()
-{
+UINT Win32GetNumberOfCpuInner() {
 	UINT ret = 0;
 	SYSTEM_INFO info;
 
@@ -659,8 +583,7 @@ UINT Win32GetNumberOfCpuInner()
 
 	GetSystemInfo(&info);
 
-	if (info.dwNumberOfProcessors >= 1 && info.dwNumberOfProcessors <= 128)
-	{
+	if (info.dwNumberOfProcessors >= 1 && info.dwNumberOfProcessors <= 128) {
 		ret = info.dwNumberOfProcessors;
 	}
 
@@ -668,14 +591,12 @@ UINT Win32GetNumberOfCpuInner()
 }
 
 // Get the OS information
-void Win32GetOsInfo(OS_INFO *info)
-{
+void Win32GetOsInfo(OS_INFO *info) {
 	UINT type = Win32GetOsType();
 	OSVERSIONINFOEX os;
 	char tmp[MAX_SIZE];
 	// Validate arguments
-	if (info == NULL)
-	{
+	if (info == NULL) {
 		return;
 	}
 
@@ -685,27 +606,23 @@ void Win32GetOsInfo(OS_INFO *info)
 
 	info->OsType = Win32GetOsType();
 	info->OsServicePack = os.wServicePackMajor;
-	if (true)
-	{
+	if (true) {
 		char *s;
 		char *keyname = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
 		info->OsSystemName = CopyStr("Windows NT");
 		Format(tmp, sizeof(tmp), "Build %u", os.dwBuildNumber);
-		if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "CurrentType"))
-		{
+		if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "CurrentType")) {
 			char str[MAX_SIZE];
 			Format(str, sizeof(str), ", %s", s);
 			StrCat(tmp, sizeof(tmp), str);
 			Free(s);
 		}
-		if (os.wServicePackMajor != 0)
-		{
+		if (os.wServicePackMajor != 0) {
 			char str[MAX_SIZE];
 			Format(str, sizeof(str), ", Service Pack %u", os.wServicePackMajor);
 			StrCat(tmp, sizeof(tmp), str);
 		}
-		if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "BuildLab"))
-		{
+		if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "BuildLab")) {
 			char str[MAX_SIZE];
 			Format(str, sizeof(str), " (%s)", s);
 			StrCat(tmp, sizeof(tmp), str);
@@ -714,8 +631,7 @@ void Win32GetOsInfo(OS_INFO *info)
 		info->OsVersion = CopyStr(tmp);
 		info->KernelName = CopyStr("NTOS Kernel");
 		Format(tmp, sizeof(tmp), "Build %u", os.dwBuildNumber);
-		if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "CurrentType"))
-		{
+		if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "CurrentType")) {
 			char str[MAX_SIZE];
 			Format(str, sizeof(str), " %s", s);
 			StrCat(tmp, sizeof(tmp), str);
@@ -729,25 +645,20 @@ void Win32GetOsInfo(OS_INFO *info)
 }
 
 // GetVersionEx API (Ignore the tricky features that have been added to the Windows 8.2 or later)
-bool Win32GetVersionExInternal(void *info)
-{
+bool Win32GetVersionExInternal(void *info) {
 	OSVERSIONINFOA os;
 	// Validate arguments
-	if (info == NULL)
-	{
+	if (info == NULL) {
 		return false;
 	}
 
 	Zero(&os, sizeof(os));
 	os.dwOSVersionInfoSize = sizeof(os);
 
-	if (GetVersionExA(&os))
-	{
-		if (os.dwPlatformId == VER_PLATFORM_WIN32_NT)
-		{
+	if (GetVersionExA(&os)) {
+		if (os.dwPlatformId == VER_PLATFORM_WIN32_NT) {
 			if ((os.dwMajorVersion == 6 && os.dwMinorVersion >= 2) ||
-				(os.dwMajorVersion >= 7))
-			{
+			    (os.dwMajorVersion >= 7)) {
 				// Windows 8 later
 				return Win32GetVersionExInternalForWindows81orLater(info);
 			}
@@ -758,42 +669,36 @@ bool Win32GetVersionExInternal(void *info)
 }
 
 // GetVersionEx for Windows 8.1 and later
-bool Win32GetVersionExInternalForWindows81orLater(void *info)
-{
+bool Win32GetVersionExInternalForWindows81orLater(void *info) {
 	OSVERSIONINFOEXA *ex = (OSVERSIONINFOEXA *)info;
 	char *str;
 	UINT major1 = 0, major2 = 0;
 	UINT minor1 = 0, minor2 = 0;
 	UINT major = 0, minor = 0;
 	// Validate arguments
-	if (info == NULL)
-	{
+	if (info == NULL) {
 		return false;
 	}
 
 	if (ex->dwOSVersionInfoSize != sizeof(OSVERSIONINFOEXA) &&
-		ex->dwOSVersionInfoSize != sizeof(OSVERSIONINFOA))
-	{
+	    ex->dwOSVersionInfoSize != sizeof(OSVERSIONINFOA)) {
 		return GetVersionExA(info);
 	}
 
-	if (GetVersionExA(info) == false)
-	{
+	if (GetVersionExA(info) == false) {
 		return false;
 	}
 
 	str = MsRegReadStrEx2(REG_LOCAL_MACHINE,
-		"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
-		"CurrentVersion",
-		false, true);
+	                      "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+	                      "CurrentVersion",
+	                      false, true);
 
-	if (IsEmptyStr(str) == false)
-	{
+	if (IsEmptyStr(str) == false) {
 		// Is the version string formed as x.y?
 		TOKEN_LIST *t = ParseToken(str, ".");
 
-		if (t != NULL && t->NumTokens == 2)
-		{
+		if (t != NULL && t->NumTokens == 2) {
 			major1 = ToInt(t->Token[0]);
 			minor1 = ToInt(t->Token[1]);
 		}
@@ -804,26 +709,22 @@ bool Win32GetVersionExInternalForWindows81orLater(void *info)
 	Free(str);
 
 	major2 = MsRegReadIntEx2(REG_LOCAL_MACHINE,
-		"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
-		"CurrentMajorVersionNumber", false, true);
+	                         "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+	                         "CurrentMajorVersionNumber", false, true);
 
 	minor2 = MsRegReadIntEx2(REG_LOCAL_MACHINE,
-		"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
-		"CurrentMinorVersionNumber", false, true);
+	                         "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
+	                         "CurrentMinorVersionNumber", false, true);
 
-	if ((major1 * 10000 + minor1) > (major2 * 10000 + minor2))
-	{
+	if ((major1 * 10000 + minor1) > (major2 * 10000 + minor2)) {
 		major = major1;
 		minor = minor1;
-	}
-	else
-	{
+	} else {
 		major = major2;
 		minor = minor2;
 	}
 
-	if (major >= 6)
-	{
+	if (major >= 6) {
 		// Version number acquisition success
 		ex->dwMajorVersion = major;
 		ex->dwMinorVersion = minor;
@@ -833,52 +734,39 @@ bool Win32GetVersionExInternalForWindows81orLater(void *info)
 }
 
 // Get the OS type
-UINT Win32GetOsType()
-{
+UINT Win32GetOsType() {
 	OSVERSIONINFOEX os;
 	Zero(&os, sizeof(os));
 	os.dwOSVersionInfoSize = sizeof(os);
 
-	if (Win32GetVersionExInternal((LPOSVERSIONINFOA)&os) == FALSE)
-	{
+	if (Win32GetVersionExInternal((LPOSVERSIONINFOA)&os) == FALSE) {
 		// Failure?
 		return 0;
 	}
 
-	if (os.dwPlatformId != VER_PLATFORM_WIN32_NT)
-	{
+	if (os.dwPlatformId != VER_PLATFORM_WIN32_NT) {
 		// Can not be determined
 		return 0;
 	}
 
-	if (os.dwMajorVersion < 6 || (os.dwMajorVersion == 6 && os.dwMinorVersion < 4))
-	{
+	if (os.dwMajorVersion < 6 || (os.dwMajorVersion == 6 && os.dwMinorVersion < 4)) {
 		// Windows 8.1 or earlier
 		return 0;
 	}
 
-	if ((os.dwMajorVersion == 6 && os.dwMinorVersion == 4) || (os.dwMajorVersion == 10 && os.dwMinorVersion == 0))
-	{
-		if (os.wProductType == VER_NT_WORKSTATION)
-		{
+	if ((os.dwMajorVersion == 6 && os.dwMinorVersion == 4) || (os.dwMajorVersion == 10 && os.dwMinorVersion == 0)) {
+		if (os.wProductType == VER_NT_WORKSTATION) {
 			// Windows 10
 			return OSTYPE_WINDOWS_10;
-		}
-		else
-		{
+		} else {
 			// Windows Server 10
 			return OSTYPE_WINDOWS_SERVER_10;
 		}
-	}
-	else
-	{
-		if (os.wProductType == VER_NT_WORKSTATION)
-		{
+	} else {
+		if (os.wProductType == VER_NT_WORKSTATION) {
 			// Windows 11 or later
 			return OSTYPE_WINDOWS_11;
-		}
-		else
-		{
+		} else {
 			// Windows Server 11 or later
 			return OSTYPE_WINDOWS_SERVER_11;
 		}
@@ -886,11 +774,9 @@ UINT Win32GetOsType()
 }
 
 // Close the process
-void Win32CloseProcess(void *handle)
-{
+void Win32CloseProcess(void *handle) {
 	// Validate arguments
-	if (handle == NULL)
-	{
+	if (handle == NULL) {
 		return;
 	}
 
@@ -898,20 +784,16 @@ void Win32CloseProcess(void *handle)
 }
 
 // Wait for the process termination
-bool Win32WaitProcess(void *h, UINT timeout)
-{
+bool Win32WaitProcess(void *h, UINT timeout) {
 	// Validate arguments
-	if (h == NULL)
-	{
+	if (h == NULL) {
 		return false;
 	}
-	if (timeout == 0)
-	{
+	if (timeout == 0) {
 		timeout = INFINITE;
 	}
 
-	if (WaitForSingleObject((HANDLE)h, timeout) == WAIT_TIMEOUT)
-	{
+	if (WaitForSingleObject((HANDLE)h, timeout) == WAIT_TIMEOUT) {
 		return false;
 	}
 
@@ -919,41 +801,30 @@ bool Win32WaitProcess(void *h, UINT timeout)
 }
 
 // Run the process (return the handle)
-void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id, bool disableWow)
-{
+void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id, bool disableWow) {
 	STARTUPINFOW info;
 	PROCESS_INFORMATION ret;
 	wchar_t cmdline[MAX_SIZE];
 	wchar_t name[MAX_PATH];
 	void *p;
 	// Validate arguments
-	if (filename == NULL)
-	{
+	if (filename == NULL) {
 		return NULL;
 	}
 
 	UniStrCpy(name, sizeof(name), filename);
 	UniTrim(name);
 
-	if (UniSearchStr(name, L"\"", 0) == INFINITE)
-	{
-		if (arg == NULL)
-		{
+	if (UniSearchStr(name, L"\"", 0) == INFINITE) {
+		if (arg == NULL) {
 			UniFormat(cmdline, sizeof(cmdline), L"%s", name);
-		}
-		else
-		{
+		} else {
 			UniFormat(cmdline, sizeof(cmdline), L"%s %s", name, arg);
 		}
-	}
-	else
-	{
-		if (arg == NULL)
-		{
+	} else {
+		if (arg == NULL) {
 			UniFormat(cmdline, sizeof(cmdline), L"\"%s\"", name);
-		}
-		else
-		{
+		} else {
 			UniFormat(cmdline, sizeof(cmdline), L"\"%s\" %s", name, arg);
 		}
 	}
@@ -966,29 +837,24 @@ void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id,
 
 	UniTrim(cmdline);
 
-	if (disableWow)
-	{
+	if (disableWow) {
 		p = MsDisableWow64FileSystemRedirection();
 	}
 
 	if (CreateProcessW(NULL, cmdline, NULL, NULL, FALSE,
-		(hide == false ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW | CREATE_NEW_CONSOLE) | NORMAL_PRIORITY_CLASS,
-		NULL, NULL, &info, &ret) == FALSE)
-	{
-		if (disableWow)
-		{
+	                   (hide == false ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW | CREATE_NEW_CONSOLE) | NORMAL_PRIORITY_CLASS,
+	                   NULL, NULL, &info, &ret) == FALSE) {
+		if (disableWow) {
 			MsRestoreWow64FileSystemRedirection(p);
 		}
 		return NULL;
 	}
 
-	if (disableWow)
-	{
+	if (disableWow) {
 		MsRestoreWow64FileSystemRedirection(p);
 	}
 
-	if (process_id != NULL)
-	{
+	if (process_id != NULL) {
 		*process_id = ret.dwProcessId;
 	}
 
@@ -997,40 +863,29 @@ void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id,
 }
 
 // Start the process
-bool Win32RunW(wchar_t *filename, wchar_t *arg, bool hide, bool wait)
-{
+bool Win32RunW(wchar_t *filename, wchar_t *arg, bool hide, bool wait) {
 	STARTUPINFOW info;
 	PROCESS_INFORMATION ret;
 	wchar_t cmdline[MAX_SIZE];
 	wchar_t name[MAX_PATH];
 	// Validate arguments
-	if (filename == NULL)
-	{
+	if (filename == NULL) {
 		return false;
 	}
 
 	UniStrCpy(name, sizeof(name), filename);
 	UniTrim(name);
 
-	if (UniSearchStr(name, L"\"", 0) == INFINITE)
-	{
-		if (arg == NULL)
-		{
+	if (UniSearchStr(name, L"\"", 0) == INFINITE) {
+		if (arg == NULL) {
 			UniFormat(cmdline, sizeof(cmdline), L"%s", name);
-		}
-		else
-		{
+		} else {
 			UniFormat(cmdline, sizeof(cmdline), L"%s %s", name, arg);
 		}
-	}
-	else
-	{
-		if (arg == NULL)
-		{
+	} else {
+		if (arg == NULL) {
 			UniFormat(cmdline, sizeof(cmdline), L"\"%s\"", name);
-		}
-		else
-		{
+		} else {
 			UniFormat(cmdline, sizeof(cmdline), L"\"%s\" %s", name, arg);
 		}
 	}
@@ -1044,14 +899,12 @@ bool Win32RunW(wchar_t *filename, wchar_t *arg, bool hide, bool wait)
 	UniTrim(cmdline);
 
 	if (CreateProcessW(NULL, cmdline, NULL, NULL, FALSE,
-		(hide == false ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW | CREATE_NEW_CONSOLE) | NORMAL_PRIORITY_CLASS,
-		NULL, NULL, &info, &ret) == FALSE)
-	{
+	                   (hide == false ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW | CREATE_NEW_CONSOLE) | NORMAL_PRIORITY_CLASS,
+	                   NULL, NULL, &info, &ret) == FALSE) {
 		return false;
 	}
 
-	if (wait)
-	{
+	if (wait) {
 		WaitForSingleObject(ret.hProcess, INFINITE);
 	}
 
@@ -1060,40 +913,29 @@ bool Win32RunW(wchar_t *filename, wchar_t *arg, bool hide, bool wait)
 
 	return true;
 }
-bool Win32Run(char *filename, char *arg, bool hide, bool wait)
-{
+bool Win32Run(char *filename, char *arg, bool hide, bool wait) {
 	STARTUPINFO info;
 	PROCESS_INFORMATION ret;
 	char cmdline[MAX_SIZE];
 	char name[MAX_PATH];
 	// Validate arguments
-	if (filename == NULL)
-	{
+	if (filename == NULL) {
 		return false;
 	}
 
 	StrCpy(name, sizeof(name), filename);
 	Trim(name);
 
-	if (SearchStr(name, "\"", 0) == INFINITE)
-	{
-		if (arg == NULL)
-		{
+	if (SearchStr(name, "\"", 0) == INFINITE) {
+		if (arg == NULL) {
 			Format(cmdline, sizeof(cmdline), "%s", name);
-		}
-		else
-		{
+		} else {
 			Format(cmdline, sizeof(cmdline), "%s %s", name, arg);
 		}
-	}
-	else
-	{
-		if (arg == NULL)
-		{
+	} else {
+		if (arg == NULL) {
 			Format(cmdline, sizeof(cmdline), "\"%s\"", name);
-		}
-		else
-		{
+		} else {
 			Format(cmdline, sizeof(cmdline), "\"%s\" %s", name, arg);
 		}
 	}
@@ -1107,14 +949,12 @@ bool Win32Run(char *filename, char *arg, bool hide, bool wait)
 	Trim(cmdline);
 
 	if (CreateProcess(NULL, cmdline, NULL, NULL, FALSE,
-		(hide == false ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW | CREATE_NEW_CONSOLE) | NORMAL_PRIORITY_CLASS,
-		NULL, NULL, &info, &ret) == FALSE)
-	{
+	                  (hide == false ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW | CREATE_NEW_CONSOLE) | NORMAL_PRIORITY_CLASS,
+	                  NULL, NULL, &info, &ret) == FALSE) {
 		return false;
 	}
 
-	if (wait)
-	{
+	if (wait) {
 		WaitForSingleObject(ret.hProcess, INFINITE);
 	}
 
@@ -1125,39 +965,32 @@ bool Win32Run(char *filename, char *arg, bool hide, bool wait)
 }
 
 // Get the Thread ID
-UINT Win32ThreadId()
-{
+UINT Win32ThreadId() {
 	return GetCurrentThreadId();
 }
 
 // Rename the file
-bool Win32FileRenameW(wchar_t *old_name, wchar_t *new_name)
-{
+bool Win32FileRenameW(wchar_t *old_name, wchar_t *new_name) {
 	// Validate arguments
-	if (old_name == NULL || new_name == NULL)
-	{
+	if (old_name == NULL || new_name == NULL) {
 		return false;
 	}
 
 	// Rename
-	if (MoveFileW(old_name, new_name) == FALSE)
-	{
+	if (MoveFileW(old_name, new_name) == FALSE) {
 		return false;
 	}
 
 	return true;
 }
-bool Win32FileRename(char *old_name, char *new_name)
-{
+bool Win32FileRename(char *old_name, char *new_name) {
 	// Validate arguments
-	if (old_name == NULL || new_name == NULL)
-	{
+	if (old_name == NULL || new_name == NULL) {
 		return false;
 	}
 
 	// Rename
-	if (MoveFile(old_name, new_name) == FALSE)
-	{
+	if (MoveFile(old_name, new_name) == FALSE) {
 		return false;
 	}
 
@@ -1165,70 +998,54 @@ bool Win32FileRename(char *old_name, char *new_name)
 }
 
 // Remove the '\' at the end
-void Win32NukuEnW(wchar_t *dst, UINT size, wchar_t *src)
-{
+void Win32NukuEnW(wchar_t *dst, UINT size, wchar_t *src) {
 	wchar_t str[MAX_SIZE];
 	int i;
-	if (src)
-	{
+	if (src) {
 		UniStrCpy(str, sizeof(str), src);
-	}
-	else
-	{
+	} else {
 		UniStrCpy(str, sizeof(str), dst);
 	}
 	i = UniStrLen(str);
-	if (str[i - 1] == L'\\')
-	{
+	if (str[i - 1] == L'\\') {
 		str[i - 1] = 0;
 	}
 	UniStrCpy(dst, size, str);
 }
-void Win32NukuEn(char *dst, UINT size, char *src)
-{
+void Win32NukuEn(char *dst, UINT size, char *src) {
 	char str[MAX_SIZE];
 	int i;
-	if (src)
-	{
+	if (src) {
 		StrCpy(str, sizeof(str), src);
-	}
-	else
-	{
+	} else {
 		StrCpy(str, sizeof(str), dst);
 	}
 	i = StrLen(str);
-	if (str[i - 1] == '\\')
-	{
+	if (str[i - 1] == '\\') {
 		str[i - 1] = 0;
 	}
 	StrCpy(dst, size, str);
 }
 
 // Get the directory name from path
-void Win32GetDirFromPathW(wchar_t *dst, UINT size, wchar_t *src)
-{
+void Win32GetDirFromPathW(wchar_t *dst, UINT size, wchar_t *src) {
 	wchar_t str[MAX_SIZE];
-	int i,len;
+	int i, len;
 	wchar_t c;
 	wchar_t tmp[MAX_SIZE];
 	int wp;
-	if (src)
-	{
+	if (src) {
 		UniStrCpy(str, sizeof(str), src);
-	}
-	else
-	{
+	} else {
 		UniStrCpy(str, sizeof(str), dst);
 	}
 	Win32NukuEnW(str, sizeof(str), NULL);
 	wp = 0;
 	len = UniStrLen(str);
 	dst[0] = 0;
-	for (i = 0;i < len;i++)
-	{
+	for (i = 0; i < len; i++) {
 		c = str[i];
-		switch (c)
-		{
+		switch (c) {
 		case L'\\':
 			tmp[wp] = 0;
 			wp = 0;
@@ -1243,30 +1060,24 @@ void Win32GetDirFromPathW(wchar_t *dst, UINT size, wchar_t *src)
 	}
 	Win32NukuEnW(dst, size, NULL);
 }
-void Win32GetDirFromPath(char *dst, UINT size, char *src)
-{
+void Win32GetDirFromPath(char *dst, UINT size, char *src) {
 	char str[MAX_SIZE];
-	int i,len;
+	int i, len;
 	char c;
 	char tmp[MAX_SIZE];
 	int wp;
-	if (src)
-	{
+	if (src) {
 		StrCpy(str, sizeof(str), src);
-	}
-	else
-	{
+	} else {
 		StrCpy(str, sizeof(str), dst);
 	}
 	Win32NukuEn(str, sizeof(str), NULL);
 	wp = 0;
 	len = StrLen(str);
 	dst[0] = 0;
-	for (i = 0;i < len;i++)
-	{
+	for (i = 0; i < len; i++) {
 		c = str[i];
-		switch (c)
-		{
+		switch (c) {
 		case '\\':
 			tmp[wp] = 0;
 			wp = 0;
@@ -1283,61 +1094,49 @@ void Win32GetDirFromPath(char *dst, UINT size, char *src)
 }
 
 // Delete the directory
-bool Win32DeleteDirW(wchar_t *name)
-{
+bool Win32DeleteDirW(wchar_t *name) {
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return false;
 	}
 
-	if (RemoveDirectoryW(name) == FALSE)
-	{
+	if (RemoveDirectoryW(name) == FALSE) {
 		return false;
 	}
 	return true;
 }
-bool Win32DeleteDir(char *name)
-{
+bool Win32DeleteDir(char *name) {
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return false;
 	}
 
-	if (RemoveDirectory(name) == FALSE)
-	{
+	if (RemoveDirectory(name) == FALSE) {
 		return false;
 	}
 	return true;
 }
 
 // Create a directory
-bool Win32MakeDirW(wchar_t *name)
-{
+bool Win32MakeDirW(wchar_t *name) {
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return false;
 	}
 
-	if (CreateDirectoryW(name, NULL) == FALSE)
-	{
+	if (CreateDirectoryW(name, NULL) == FALSE) {
 		return false;
 	}
 
 	return true;
 }
-bool Win32MakeDir(char *name)
-{
+bool Win32MakeDir(char *name) {
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return false;
 	}
 
-	if (CreateDirectory(name, NULL) == FALSE)
-	{
+	if (CreateDirectory(name, NULL) == FALSE) {
 		return false;
 	}
 
@@ -1345,81 +1144,67 @@ bool Win32MakeDir(char *name)
 }
 
 // Delete the file
-bool Win32FileDeleteW(wchar_t *name)
-{
+bool Win32FileDeleteW(wchar_t *name) {
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return false;
 	}
 
-	if (DeleteFileW(name) == FALSE)
-	{
+	if (DeleteFileW(name) == FALSE) {
 		return false;
 	}
 	return true;
 }
-bool Win32FileDelete(char *name)
-{
+bool Win32FileDelete(char *name) {
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return false;
 	}
 
-	if (DeleteFile(name) == FALSE)
-	{
+	if (DeleteFile(name) == FALSE) {
 		return false;
 	}
 	return true;
 }
 
 // Seek in the file
-bool Win32FileSeek(void *pData, UINT mode, int offset)
-{
+bool Win32FileSeek(void *pData, UINT mode, int offset) {
 	WIN32IO *p;
 	DWORD ret;
 	// Validate arguments
-	if (pData == NULL)
-	{
+	if (pData == NULL) {
 		return false;
 	}
-	if (mode != FILE_BEGIN && mode != FILE_END && mode != FILE_CURRENT)
-	{
+	if (mode != FILE_BEGIN && mode != FILE_END && mode != FILE_CURRENT) {
 		return false;
 	}
 
 	p = (WIN32IO *)pData;
 	ret = SetFilePointer(p->hFile, (LONG)offset, NULL, mode);
-	if (ret == INVALID_SET_FILE_POINTER || ret == ERROR_NEGATIVE_SEEK)
-	{
+	if (ret == INVALID_SET_FILE_POINTER || ret == ERROR_NEGATIVE_SEEK) {
 		return false;
 	}
 	return true;
 }
 
 // Get the file size
-UINT64 Win32FileSize(void *pData)
-{
+UINT64 Win32FileSize(void *pData) {
 	WIN32IO *p;
 	UINT64 ret;
 	DWORD tmp;
 	// Validate arguments
-	if (pData == NULL)
-	{
+	if (pData == NULL) {
 		return 0;
 	}
 
 	p = (WIN32IO *)pData;
 	tmp = 0;
 	ret = GetFileSize(p->hFile, &tmp);
-	if (ret == (DWORD)-1)
-	{
+	if (ret == (DWORD)-1) {
 		return 0;
 	}
 
-	if (tmp != 0)
-	{
+	if (tmp != 0) {
 		ret += (UINT64)tmp * 4294967296ULL;
 	}
 
@@ -1427,24 +1212,20 @@ UINT64 Win32FileSize(void *pData)
 }
 
 // Write to the file
-bool Win32FileWrite(void *pData, void *buf, UINT size)
-{
+bool Win32FileWrite(void *pData, void *buf, UINT size) {
 	WIN32IO *p;
 	DWORD write_size;
 	// Validate arguments
-	if (pData == NULL || buf == NULL || size == 0)
-	{
+	if (pData == NULL || buf == NULL || size == 0) {
 		return false;
 	}
 
 	p = (WIN32IO *)pData;
-	if (WriteFile(p->hFile, buf, size, &write_size, NULL) == FALSE)
-	{
+	if (WriteFile(p->hFile, buf, size, &write_size, NULL) == FALSE) {
 		return false;
 	}
 
-	if (write_size != size)
-	{
+	if (write_size != size) {
 		return false;
 	}
 
@@ -1452,43 +1233,37 @@ bool Win32FileWrite(void *pData, void *buf, UINT size)
 }
 
 // Read from a file
-bool Win32FileRead(void *pData, void *buf, UINT size)
-{
+bool Win32FileRead(void *pData, void *buf, UINT size) {
 	WIN32IO *p;
 	DWORD read_size;
 	// Validate arguments
-	if (pData == NULL || buf == NULL || size == 0)
-	{
+	if (pData == NULL || buf == NULL || size == 0) {
 		return false;
 	}
 
 	p = (WIN32IO *)pData;
-	if (ReadFile(p->hFile, buf, size, &read_size, NULL) == FALSE)
-	{
+	if (ReadFile(p->hFile, buf, size, &read_size, NULL) == FALSE) {
 		return false;
 	}
 
-	if (read_size != size)
-	{
+	if (read_size != size) {
 		return false;
 	}
-	
-	return true;;
+
+	return true;
+	;
 }
 
 // Close the file
-void Win32FileClose(void *pData, bool no_flush)
-{
+void Win32FileClose(void *pData, bool no_flush) {
 	WIN32IO *p;
 	// Validate arguments
-	if (pData == NULL)
-	{
+	if (pData == NULL) {
 		return;
 	}
 
 	p = (WIN32IO *)pData;
-	if (p->WriteMode && no_flush == false)
-	{
+	if (p->WriteMode && no_flush == false) {
 		FlushFileBuffers(p->hFile);
 	}
 	CloseHandle(p->hFile);
@@ -1499,14 +1274,12 @@ void Win32FileClose(void *pData, bool no_flush)
 }
 
 // Get the date of the file
-bool Win32FileGetDate(void *pData, UINT64 *created_time, UINT64 *updated_time, UINT64 *accessed_date)
-{
+bool Win32FileGetDate(void *pData, UINT64 *created_time, UINT64 *updated_time, UINT64 *accessed_date) {
 	WIN32IO *p;
 	BY_HANDLE_FILE_INFORMATION info;
 	SYSTEMTIME st_create, st_update, st_access;
 	// Validate arguments
-	if (pData == NULL)
-	{
+	if (pData == NULL) {
 		return false;
 	}
 
@@ -1514,8 +1287,7 @@ bool Win32FileGetDate(void *pData, UINT64 *created_time, UINT64 *updated_time, U
 
 	Zero(&info, sizeof(info));
 
-	if (GetFileInformationByHandle(p->hFile, &info) == false)
-	{
+	if (GetFileInformationByHandle(p->hFile, &info) == false) {
 		return false;
 	}
 
@@ -1527,18 +1299,15 @@ bool Win32FileGetDate(void *pData, UINT64 *created_time, UINT64 *updated_time, U
 	FileTimeToSystemTime(&info.ftLastWriteTime, &st_update);
 	FileTimeToSystemTime(&info.ftLastAccessTime, &st_access);
 
-	if (created_time != NULL)
-	{
+	if (created_time != NULL) {
 		*created_time = SystemToUINT64(&st_create);
 	}
 
-	if (updated_time != NULL)
-	{
+	if (updated_time != NULL) {
 		*updated_time = SystemToUINT64(&st_update);
 	}
 
-	if (accessed_date != NULL)
-	{
+	if (accessed_date != NULL) {
 		*accessed_date = SystemToUINT64(&st_access);
 	}
 
@@ -1546,15 +1315,13 @@ bool Win32FileGetDate(void *pData, UINT64 *created_time, UINT64 *updated_time, U
 }
 
 // Set the date of the file
-bool Win32FileSetDate(void *pData, UINT64 created_time, UINT64 updated_time)
-{
+bool Win32FileSetDate(void *pData, UINT64 created_time, UINT64 updated_time) {
 	WIN32IO *p;
 	SYSTEMTIME st_created_time, st_updated_time;
 	FILETIME ft_created_time, ft_updated_time;
 	FILETIME *p_created_time = NULL, *p_updated_time = NULL;
 	// Validate arguments
-	if (pData == NULL || (created_time == 0 && updated_time == 0))
-	{
+	if (pData == NULL || (created_time == 0 && updated_time == 0)) {
 		return false;
 	}
 
@@ -1563,8 +1330,7 @@ bool Win32FileSetDate(void *pData, UINT64 created_time, UINT64 updated_time)
 	Zero(&st_created_time, sizeof(st_created_time));
 	Zero(&st_updated_time, sizeof(st_updated_time));
 
-	if (created_time != 0)
-	{
+	if (created_time != 0) {
 		UINT64ToSystem(&st_created_time, created_time);
 
 		SystemTimeToFileTime(&st_created_time, &ft_created_time);
@@ -1572,8 +1338,7 @@ bool Win32FileSetDate(void *pData, UINT64 created_time, UINT64 updated_time)
 		p_created_time = &ft_created_time;
 	}
 
-	if (updated_time != 0)
-	{
+	if (updated_time != 0) {
 		UINT64ToSystem(&st_updated_time, updated_time);
 
 		SystemTimeToFileTime(&st_updated_time, &ft_updated_time);
@@ -1585,57 +1350,45 @@ bool Win32FileSetDate(void *pData, UINT64 created_time, UINT64 updated_time)
 }
 
 // Flush to the file
-void Win32FileFlush(void *pData)
-{
+void Win32FileFlush(void *pData) {
 	WIN32IO *p;
 	// Validate arguments
-	if (pData == NULL)
-	{
+	if (pData == NULL) {
 		return;
 	}
 
 	p = (WIN32IO *)pData;
-	if (p->WriteMode)
-	{
+	if (p->WriteMode) {
 		FlushFileBuffers(p->hFile);
 	}
 }
 
 // Open the file
-void *Win32FileOpenW(wchar_t *name, bool write_mode, bool read_lock)
-{
+void *Win32FileOpenW(wchar_t *name, bool write_mode, bool read_lock) {
 	WIN32IO *p;
 	HANDLE h;
 	DWORD lock_mode;
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return NULL;
 	}
 
-	if (write_mode)
-	{
+	if (write_mode) {
 		lock_mode = FILE_SHARE_READ;
-	}
-	else
-	{
-		if (read_lock == false)
-		{
+	} else {
+		if (read_lock == false) {
 			lock_mode = FILE_SHARE_READ | FILE_SHARE_WRITE;
-		}
-		else
-		{
+		} else {
 			lock_mode = FILE_SHARE_READ;
 		}
 	}
 
 	// Open the file
 	h = CreateFileW(name,
-		(write_mode ? GENERIC_READ | GENERIC_WRITE : GENERIC_READ),
-		lock_mode,
-		NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-	if (h == INVALID_HANDLE_VALUE)
-	{
+	                (write_mode ? GENERIC_READ | GENERIC_WRITE : GENERIC_READ),
+	                lock_mode,
+	                NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	if (h == INVALID_HANDLE_VALUE) {
 		UINT ret = GetLastError();
 		// Failure
 		return NULL;
@@ -1650,40 +1403,31 @@ void *Win32FileOpenW(wchar_t *name, bool write_mode, bool read_lock)
 
 	return (void *)p;
 }
-void *Win32FileOpen(char *name, bool write_mode, bool read_lock)
-{
+void *Win32FileOpen(char *name, bool write_mode, bool read_lock) {
 	WIN32IO *p;
 	HANDLE h;
 	DWORD lock_mode;
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return NULL;
 	}
 
-	if (write_mode)
-	{
+	if (write_mode) {
 		lock_mode = FILE_SHARE_READ;
-	}
-	else
-	{
-		if (read_lock == false)
-		{
+	} else {
+		if (read_lock == false) {
 			lock_mode = FILE_SHARE_READ | FILE_SHARE_WRITE;
-		}
-		else
-		{
+		} else {
 			lock_mode = FILE_SHARE_READ;
 		}
 	}
 
 	// Open the file
 	h = CreateFile(name,
-		(write_mode ? GENERIC_READ | GENERIC_WRITE : GENERIC_READ),
-		lock_mode,
-		NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-	if (h == INVALID_HANDLE_VALUE)
-	{
+	               (write_mode ? GENERIC_READ | GENERIC_WRITE : GENERIC_READ),
+	               lock_mode,
+	               NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	if (h == INVALID_HANDLE_VALUE) {
 		UINT ret = GetLastError();
 		// Failure
 		return NULL;
@@ -1700,27 +1444,23 @@ void *Win32FileOpen(char *name, bool write_mode, bool read_lock)
 }
 
 // Create a file
-void *Win32FileCreateW(wchar_t *name)
-{
+void *Win32FileCreateW(wchar_t *name) {
 	WIN32IO *p;
 	HANDLE h;
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return NULL;
 	}
 
 	// Create a file
 	h = CreateFileW(name, GENERIC_READ | GENERIC_WRITE,
-		FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
-		NULL);
-	if (h == INVALID_HANDLE_VALUE)
-	{
+	                FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
+	                NULL);
+	if (h == INVALID_HANDLE_VALUE) {
 		h = CreateFileW(name, GENERIC_READ | GENERIC_WRITE,
-			FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_HIDDEN,
-			NULL);
-		if (h == INVALID_HANDLE_VALUE)
-		{
+		                FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_HIDDEN,
+		                NULL);
+		if (h == INVALID_HANDLE_VALUE) {
 			return NULL;
 		}
 	}
@@ -1734,27 +1474,23 @@ void *Win32FileCreateW(wchar_t *name)
 
 	return (void *)p;
 }
-void *Win32FileCreate(char *name)
-{
+void *Win32FileCreate(char *name) {
 	WIN32IO *p;
 	HANDLE h;
 	// Validate arguments
-	if (name == NULL)
-	{
+	if (name == NULL) {
 		return NULL;
 	}
 
 	// Create a file
 	h = CreateFile(name, GENERIC_READ | GENERIC_WRITE,
-		FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
-		NULL);
-	if (h == INVALID_HANDLE_VALUE)
-	{
+	               FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
+	               NULL);
+	if (h == INVALID_HANDLE_VALUE) {
 		h = CreateFile(name, GENERIC_READ | GENERIC_WRITE,
-			FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_HIDDEN,
-			NULL);
-		if (h == INVALID_HANDLE_VALUE)
-		{
+		               FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_HIDDEN,
+		               NULL);
+		if (h == INVALID_HANDLE_VALUE) {
 			return NULL;
 		}
 	}
@@ -1769,99 +1505,93 @@ void *Win32FileCreate(char *name)
 	return (void *)p;
 }
 
-#define	SIZE_OF_CALLSTACK_SYM	10000
-#define	CALLSTACK_DEPTH			12
+#define SIZE_OF_CALLSTACK_SYM 10000
+#define CALLSTACK_DEPTH       12
 
 // Get the call stack
-CALLSTACK_DATA *Win32GetCallStack()
-{
-#ifndef	WIN32_NO_DEBUG_HELP_DLL
+CALLSTACK_DATA *Win32GetCallStack() {
+#ifndef WIN32_NO_DEBUG_HELP_DLL
 	DWORD current_eip32 = 0, current_esp32 = 0, current_ebp32 = 0;
 	UINT64 current_eip = 0, current_esp = 0, current_ebp = 0;
 	STACKFRAME64 sf;
 	CALLSTACK_DATA *cs = NULL, *s;
 
-#ifdef	CPU_64
+#ifdef CPU_64
 	CONTEXT context;
-#endif	// CPU_64
+#endif // CPU_64
 
 	bool ret;
 	UINT depth = 0;
 
-#ifndef	CPU_64
+#ifndef CPU_64
 	// Register acquisition (32 bit)
 	__asm
-	{
+	    {
 		mov current_esp32, esp
 		mov current_ebp32, ebp
-	};
+	    }
+	;
 
 	current_eip32 = (DWORD)Win32GetCallStack;
 
 	current_eip = (UINT64)current_eip32;
 	current_esp = (UINT64)current_esp32;
 	current_ebp = (UINT64)current_ebp32;
-#else	// CPU_64
+#else  // CPU_64
 	// Register acquisition (64 bit)
 	Zero(&context, sizeof(context));
 	context.ContextFlags = CONTEXT_FULL;
 	RtlCaptureContext(&context);
-#endif	// CPU_64
+#endif // CPU_64
 
 	Zero(&sf, sizeof(sf));
 
-#ifndef	CPU_64
+#ifndef CPU_64
 	sf.AddrPC.Offset = current_eip;
 	sf.AddrStack.Offset = current_esp;
 	sf.AddrFrame.Offset = current_ebp;
-#else	// CPU_64
+#else  // CPU_64
 	sf.AddrPC.Offset = context.Rip;
 	sf.AddrStack.Offset = context.Rsp;
 	sf.AddrFrame.Offset = context.Rsp;
-#endif	// CPU_64
+#endif // CPU_64
 
 	sf.AddrPC.Mode = AddrModeFlat;
 	sf.AddrStack.Mode = AddrModeFlat;
 	sf.AddrFrame.Mode = AddrModeFlat;
 
-	while (true)
-	{
+	while (true) {
 		DWORD type = IMAGE_FILE_MACHINE_I386;
 
-#ifdef	CPU_64
+#ifdef CPU_64
 		type = IMAGE_FILE_MACHINE_AMD64;
-#endif	// CPU_64
+#endif // CPU_64
 
-		if ((depth++) >= CALLSTACK_DEPTH)
-		{
+		if ((depth++) >= CALLSTACK_DEPTH) {
 			break;
 		}
 
-#ifndef	CPU_64
+#ifndef CPU_64
 		ret = StackWalk64(type,
-			hCurrentProcessHandle,
-			GetCurrentThread(),
-			&sf,
-			NULL, NULL, SymFunctionTableAccess64, SymGetModuleBase64, NULL);
-#else	// CPU_64
+		                  hCurrentProcessHandle,
+		                  GetCurrentThread(),
+		                  &sf,
+		                  NULL, NULL, SymFunctionTableAccess64, SymGetModuleBase64, NULL);
+#else  // CPU_64
 		ret = StackWalk64(type,
-			hCurrentProcessHandle,
-			GetCurrentThread(),
-			&sf,
-			&context, NULL, SymFunctionTableAccess64, SymGetModuleBase64, NULL);
-#endif	// CPU_64
-		if (ret == false || sf.AddrFrame.Offset == 0)
-		{
+		                  hCurrentProcessHandle,
+		                  GetCurrentThread(),
+		                  &sf,
+		                  &context, NULL, SymFunctionTableAccess64, SymGetModuleBase64, NULL);
+#endif // CPU_64
+		if (ret == false || sf.AddrFrame.Offset == 0) {
 			break;
 		}
 
-		if (cs == NULL)
-		{
+		if (cs == NULL) {
 			cs = OSMemoryAlloc(sizeof(CALLSTACK_DATA));
 			s = cs;
-		}
-		else
-		{
+		} else {
 			s->next = OSMemoryAlloc(sizeof(CALLSTACK_DATA));
 			s = s->next;
 		}
@@ -1875,30 +1605,27 @@ CALLSTACK_DATA *Win32GetCallStack()
 	}
 
 	return cs;
-#else	// WIN32_NO_DEBUG_HELP_DLL
+#else  // WIN32_NO_DEBUG_HELP_DLL
 	return NULL;
-#endif	// WIN32_NO_DEBUG_HELP_DLL
+#endif // WIN32_NO_DEBUG_HELP_DLL
 }
 
 // Get the symbol information from the call stack
-bool Win32GetCallStackSymbolInfo(CALLSTACK_DATA *s)
-{
-#ifdef	WIN32_NO_DEBUG_HELP_DLL
+bool Win32GetCallStackSymbolInfo(CALLSTACK_DATA *s) {
+#ifdef WIN32_NO_DEBUG_HELP_DLL
 	return false;
-#else	// WIN32_NO_DEBUG_HELP_DLL
+#else  // WIN32_NO_DEBUG_HELP_DLL
 	UINT64 disp;
 	UINT disp32, len;
 	IMAGEHLP_SYMBOL64 *sym;
 	IMAGEHLP_LINE64 line;
 	char tmp[MAX_PATH];
 	// Validate arguments
-	if (s == NULL)
-	{
+	if (s == NULL) {
 		return false;
 	}
 
-	if (s->symbol_cache)
-	{
+	if (s->symbol_cache) {
 		return true;
 	}
 
@@ -1906,22 +1633,18 @@ bool Win32GetCallStackSymbolInfo(CALLSTACK_DATA *s)
 	sym->SizeOfStruct = SIZE_OF_CALLSTACK_SYM;
 	sym->MaxNameLength = SIZE_OF_CALLSTACK_SYM - sizeof(IMAGEHLP_SYMBOL64);
 
-	if (SymGetSymFromAddr64(hCurrentProcessHandle, s->offset, &disp, sym))
-	{
+	if (SymGetSymFromAddr64(hCurrentProcessHandle, s->offset, &disp, sym)) {
 		s->disp = disp;
 		s->name = OSMemoryAlloc((UINT)strlen(sym->Name) + 1);
 		lstrcpy(s->name, sym->Name);
-	}
-	else
-	{
+	} else {
 		s->disp = 0;
 		s->name = NULL;
 	}
 
 	Zero(&line, sizeof(line));
 	line.SizeOfStruct = sizeof(line);
-	if (SymGetLineFromAddr64(hCurrentProcessHandle, s->offset, &disp32, &line))
-	{
+	if (SymGetLineFromAddr64(hCurrentProcessHandle, s->offset, &disp32, &line)) {
 		disp = (UINT64)disp32;
 		s->line = line.LineNumber;
 		lstrcpy(s->filename, line.FileName);
@@ -1929,9 +1652,7 @@ bool Win32GetCallStackSymbolInfo(CALLSTACK_DATA *s)
 		len = lstrlen(tmp);
 		lstrcpy(tmp, &s->filename[len + 1]);
 		lstrcpy(s->filename, tmp);
-	}
-	else
-	{
+	} else {
 		s->line = 0;
 		s->filename[0] = 0;
 	}
@@ -1941,16 +1662,14 @@ bool Win32GetCallStackSymbolInfo(CALLSTACK_DATA *s)
 	s->symbol_cache = true;
 
 	return true;
-#endif	// WIN32_NO_DEBUG_HELP_DLL
+#endif // WIN32_NO_DEBUG_HELP_DLL
 }
 
 // Default Win32 thread
-DWORD CALLBACK Win32DefaultThreadProc(void *param)
-{
+DWORD CALLBACK Win32DefaultThreadProc(void *param) {
 	WIN32THREADSTARTUPINFO *info = (WIN32THREADSTARTUPINFO *)param;
 	// Validate arguments
-	if (info == NULL)
-	{
+	if (info == NULL) {
 		return 0;
 	}
 
@@ -1975,23 +1694,19 @@ DWORD CALLBACK Win32DefaultThreadProc(void *param)
 }
 
 // Wait for the termination of the thread
-bool Win32WaitThread(THREAD *t)
-{
+bool Win32WaitThread(THREAD *t) {
 	WIN32THREAD *w;
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return false;
 	}
 	w = (WIN32THREAD *)t->pData;
-	if (w == NULL)
-	{
+	if (w == NULL) {
 		return false;
 	}
 
 	// Wait for the thread event
-	if (WaitForSingleObject(w->hThread, INFINITE) == WAIT_OBJECT_0)
-	{
+	if (WaitForSingleObject(w->hThread, INFINITE) == WAIT_OBJECT_0) {
 		// The thread was signaled
 		return true;
 	}
@@ -2001,17 +1716,14 @@ bool Win32WaitThread(THREAD *t)
 }
 
 // Release the thread
-void Win32FreeThread(THREAD *t)
-{
+void Win32FreeThread(THREAD *t) {
 	WIN32THREAD *w;
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return;
 	}
 	w = (WIN32THREAD *)t->pData;
-	if (w == NULL)
-	{
+	if (w == NULL) {
 		return;
 	}
 
@@ -2024,19 +1736,16 @@ void Win32FreeThread(THREAD *t)
 }
 
 // Thread initialization
-bool Win32InitThread(THREAD *t)
-{
+bool Win32InitThread(THREAD *t) {
 	WIN32THREAD *w;
 	HANDLE hThread;
 	UINT thread_id;
 	WIN32THREADSTARTUPINFO *info;
 	// Validate arguments
-	if (t == NULL)
-	{
+	if (t == NULL) {
 		return false;
 	}
-	if (t->thread_proc == NULL)
-	{
+	if (t->thread_proc == NULL) {
 		return false;
 	}
 
@@ -2052,12 +1761,11 @@ bool Win32InitThread(THREAD *t)
 
 	// Thread creation
 	t->pData = w;
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wincompatible-function-pointer-types"
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wincompatible-function-pointer-types"
 	hThread = (HANDLE)_beginthreadex(NULL, 0, Win32DefaultThreadProc, info, 0, &thread_id);
-    #pragma clang diagnostic pop
-	if (hThread == NULL)
-	{
+#pragma clang diagnostic pop
+	if (hThread == NULL) {
 		// Thread creation failure
 		t->pData = NULL;
 		Release(t->ref);
@@ -2074,19 +1782,16 @@ bool Win32InitThread(THREAD *t)
 }
 
 // Initialize the library for Win32
-void Win32Init()
-{
+void Win32Init() {
 	INITCOMMONCONTROLSEX c;
 
 	// Open the stdout
-	if (hstdout == INVALID_HANDLE_VALUE)
-	{
+	if (hstdout == INVALID_HANDLE_VALUE) {
 		hstdout = GetStdHandle(STD_OUTPUT_HANDLE);
 	}
 
 	// Open the stdin
-	if (hstdin == INVALID_HANDLE_VALUE)
-	{
+	if (hstdin == INVALID_HANDLE_VALUE) {
 		hstdin = GetStdHandle(STD_INPUT_HANDLE);
 	}
 
@@ -2096,20 +1801,18 @@ void Win32Init()
 
 	InitializeCriticalSection(&fasttick_lock);
 
-#ifdef	WIN32_USE_HEAP_API_FOR_MEMORY
+#ifdef WIN32_USE_HEAP_API_FOR_MEMORY
 	use_heap_api = true;
-#else	// WIN32_USE_HEAP_API_FOR_MEMORY
+#else  // WIN32_USE_HEAP_API_FOR_MEMORY
 	use_heap_api = false;
-#endif	// WIN32_USE_HEAP_API_FOR_MEMORY
+#endif // WIN32_USE_HEAP_API_FOR_MEMORY
 
-	if (MayaquaIsDotNetMode())
-	{
+	if (MayaquaIsDotNetMode()) {
 		// If an heap API is called from .NET API, it might crush
 		use_heap_api = false;
 	}
 
-	if (use_heap_api)
-	{
+	if (use_heap_api) {
 		heap_handle = HeapCreate(0, 0, 0);
 	}
 
@@ -2120,38 +1823,34 @@ void Win32Init()
 	// Win32InitCurrentDir(); /* Don't do */
 
 	// Initialization of the symbol handler
-	if (IsMemCheck())
-	{
-#ifndef	WIN32_NO_DEBUG_HELP_DLL
+	if (IsMemCheck()) {
+#ifndef WIN32_NO_DEBUG_HELP_DLL
 		SymInitialize(hCurrentProcessHandle, NULL, TRUE);
-#endif	// WIN32_NO_DEBUG_HELP_DLL
+#endif // WIN32_NO_DEBUG_HELP_DLL
 	}
 
 	// Initialization of the Common Control
 	Zero(&c, sizeof(INITCOMMONCONTROLSEX));
 	c.dwSize = sizeof(INITCOMMONCONTROLSEX);
 	c.dwICC = ICC_ANIMATE_CLASS | ICC_BAR_CLASSES | ICC_COOL_CLASSES |
-		ICC_DATE_CLASSES | ICC_HOTKEY_CLASS | ICC_INTERNET_CLASSES |
-		ICC_LISTVIEW_CLASSES | ICC_NATIVEFNTCTL_CLASS |
-		ICC_PAGESCROLLER_CLASS | ICC_PROGRESS_CLASS |
-		ICC_TAB_CLASSES | ICC_TREEVIEW_CLASSES | ICC_UPDOWN_CLASS | ICC_USEREX_CLASSES |
-		ICC_WIN95_CLASSES;
+	          ICC_DATE_CLASSES | ICC_HOTKEY_CLASS | ICC_INTERNET_CLASSES |
+	          ICC_LISTVIEW_CLASSES | ICC_NATIVEFNTCTL_CLASS |
+	          ICC_PAGESCROLLER_CLASS | ICC_PROGRESS_CLASS |
+	          ICC_TAB_CLASSES | ICC_TREEVIEW_CLASSES | ICC_UPDOWN_CLASS | ICC_USEREX_CLASSES |
+	          ICC_WIN95_CLASSES;
 	InitCommonControlsEx(&c);
 }
 
 // Release the library for Win32
-void Win32Free()
-{
+void Win32Free() {
 	// Close the symbol handler
-	if (IsMemCheck())
-	{
-#ifndef	WIN32_NO_DEBUG_HELP_DLL
+	if (IsMemCheck()) {
+#ifndef WIN32_NO_DEBUG_HELP_DLL
 		SymCleanup(hCurrentProcessHandle);
-#endif	// WIN32_NO_DEBUG_HELP_DLL
+#endif // WIN32_NO_DEBUG_HELP_DLL
 	}
 
-	if (use_heap_api)
-	{
+	if (use_heap_api) {
 		HeapDestroy(heap_handle);
 		heap_handle = NULL;
 	}
@@ -2162,86 +1861,67 @@ void Win32Free()
 }
 
 // Memory allocation
-void *Win32MemoryAlloc(UINT size)
-{
-	if (use_heap_api)
-	{
+void *Win32MemoryAlloc(UINT size) {
+	if (use_heap_api) {
 		return HeapAlloc(heap_handle, 0, size);
-	}
-	else
-	{
+	} else {
 		return malloc(size);
 	}
 }
 
 // Memory reallocation
-void *Win32MemoryReAlloc(void *addr, UINT size)
-{
-	if (use_heap_api)
-	{
+void *Win32MemoryReAlloc(void *addr, UINT size) {
+	if (use_heap_api) {
 		return HeapReAlloc(heap_handle, 0, addr, size);
-	}
-	else
-	{
+	} else {
 		return realloc(addr, size);
 	}
 }
 
 // Memory allocation
-void Win32MemoryFree(void *addr)
-{
-	if (use_heap_api)
-	{
+void Win32MemoryFree(void *addr) {
+	if (use_heap_api) {
 		HeapFree(heap_handle, 0, addr);
-	}
-	else
-	{
+	} else {
 		free(addr);
 	}
 }
 
 // Get the system timer
-UINT Win32GetTick()
-{
+UINT Win32GetTick() {
 	return (UINT)timeGetTime();
 }
 
 // Get the System Time
-void Win32GetSystemTime(SYSTEMTIME *system_time)
-{
+void Win32GetSystemTime(SYSTEMTIME *system_time) {
 	// Get the System Time
 	GetSystemTime(system_time);
 }
 
 // Increment of 32bit integer
-void Win32Inc32(UINT *value)
-{
+void Win32Inc32(UINT *value) {
 	InterlockedIncrement((volatile LONG *)value);
 }
 
 // Decrement of 32bit integer
-void Win32Dec32(UINT *value)
-{
+void Win32Dec32(UINT *value) {
 	InterlockedDecrement((volatile LONG *)value);
 }
 
 // Sleep the thread
-void Win32Sleep(UINT time)
-{
+void Win32Sleep(UINT time) {
 	Sleep(time);
 }
 
 // Creating a lock
-LOCK *Win32NewLock()
-{
+LOCK *Win32NewLock() {
 	// Memory allocation
 	LOCK *lock = Win32MemoryAlloc(sizeof(LOCK));
 
 	// Allocate a critical section
 	CRITICAL_SECTION *critical_section = Win32MemoryAlloc(sizeof(CRITICAL_SECTION));
 
-	if (lock == NULL || critical_section == NULL)
-	{
+	if (lock == NULL || critical_section == NULL) {
 		Win32MemoryFree(lock);
 		Win32MemoryFree(critical_section);
 		return NULL;
@@ -2257,11 +1937,9 @@ LOCK *Win32NewLock()
 }
 
 // Lock
-bool Win32Lock(LOCK *lock)
-{
+bool Win32Lock(LOCK *lock) {
 	CRITICAL_SECTION *critical_section;
-	if (lock->Ready == false)
-	{
+	if (lock->Ready == false) {
 		// State is invalid
 		return false;
 	}
@@ -2274,15 +1952,12 @@ bool Win32Lock(LOCK *lock)
 }
 
 // Unlock
-void Win32Unlock(LOCK *lock)
-{
+void Win32Unlock(LOCK *lock) {
 	Win32UnlockEx(lock, false);
 }
-void Win32UnlockEx(LOCK *lock, bool inner)
-{
+void Win32UnlockEx(LOCK *lock, bool inner) {
 	CRITICAL_SECTION *critical_section;
-	if (lock->Ready == false && inner == false)
-	{
+	if (lock->Ready == false && inner == false) {
 		// State is invalid
 		return;
 	}
@@ -2293,8 +1968,7 @@ void Win32UnlockEx(LOCK *lock, bool inner)
 }
 
 // Delete the lock
-void Win32DeleteLock(LOCK *lock)
-{
+void Win32DeleteLock(LOCK *lock) {
 	CRITICAL_SECTION *critical_section;
 	// Reset the Ready flag safely
 	Win32Lock(lock);
@@ -2311,8 +1985,7 @@ void Win32DeleteLock(LOCK *lock)
 }
 
 // Initialization of the event
-void Win32InitEvent(EVENT *event)
-{
+void Win32InitEvent(EVENT *event) {
 	// Creating an auto-reset event
 	HANDLE hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
@@ -2320,11 +1993,9 @@ void Win32InitEvent(EVENT *event)
 }
 
 // Set the event
-void Win32SetEvent(EVENT *event)
-{
+void Win32SetEvent(EVENT *event) {
 	HANDLE hEvent = (HANDLE)event->pData;
-	if (hEvent == NULL)
-	{
+	if (hEvent == NULL) {
 		return;
 	}
 
@@ -2332,11 +2003,9 @@ void Win32SetEvent(EVENT *event)
 }
 
 // Reset the event
-void Win32ResetEvent(EVENT *event)
-{
+void Win32ResetEvent(EVENT *event) {
 	HANDLE hEvent = (HANDLE)event->pData;
-	if (hEvent == NULL)
-	{
+	if (hEvent == NULL) {
 		return;
 	}
 
@@ -2344,35 +2013,28 @@ void Win32ResetEvent(EVENT *event)
 }
 
 // Wait for the event
-bool Win32WaitEvent(EVENT *event, UINT timeout)
-{
+bool Win32WaitEvent(EVENT *event, UINT timeout) {
 	HANDLE hEvent = (HANDLE)event->pData;
 	UINT ret;
-	if (hEvent == NULL)
-	{
+	if (hEvent == NULL) {
 		return false;
 	}
 
 	// Wait for an object
 	ret = WaitForSingleObject(hEvent, timeout);
-	if (ret == WAIT_TIMEOUT)
-	{
+	if (ret == WAIT_TIMEOUT) {
 		// Time-out
 		return false;
-	}
-	else
-	{
+	} else {
 		// Signaled state
 		return true;
 	}
 }
 
 // Release of the event
-void Win32FreeEvent(EVENT *event)
-{
+void Win32FreeEvent(EVENT *event) {
 	HANDLE hEvent = (HANDLE)event->pData;
-	if (hEvent == NULL)
-	{
+	if (hEvent == NULL) {
 		return;
 	}
 
@@ -2380,8 +2042,7 @@ void Win32FreeEvent(EVENT *event)
 }
 
 // Fast getting 64 bit Tick functions for only Win32
-UINT64 Win32FastTick64()
-{
+UINT64 Win32FastTick64() {
 	static UINT last_tick = 0;
 	static UINT counter = 0;
 	UINT64 ret;
@@ -2392,8 +2053,7 @@ UINT64 Win32FastTick64()
 	// Get the current tick value
 	tick = Win32GetTick();
 
-	if (last_tick > tick)
-	{
+	if (last_tick > tick) {
 		// When the previously acquired tick value is larger than acquired this time,
 		// it can be considered that the counter have gone one around
 
@@ -2406,13 +2066,10 @@ UINT64 Win32FastTick64()
 
 	LeaveCriticalSection(&fasttick_lock);
 
-	if (start_tick == 0)
-	{
+	if (start_tick == 0) {
 		start_tick = ret;
 		ret = 0;
-	}
-	else
-	{
+	} else {
 		ret -= start_tick;
 	}
 
@@ -2420,59 +2077,48 @@ UINT64 Win32FastTick64()
 }
 
 // Read a string from the console
-bool Win32InputW(wchar_t *str, UINT size)
-{
+bool Win32InputW(wchar_t *str, UINT size) {
 	bool ret = false;
 	DWORD read_size = 0;
 	// Validate arguments
-	if (str == NULL)
-	{
+	if (str == NULL) {
 		return false;
 	}
-	if (size == 0)
-	{
+	if (size == 0) {
 		size = 0x7fffffff;
 	}
 
-	if (str == NULL || size <= sizeof(wchar_t))
-	{
-		if (str != NULL)
-		{
+	if (str == NULL || size <= sizeof(wchar_t)) {
+		if (str != NULL) {
 			Zero(str, size);
 		}
 
 		return Win32InputFromFileW(NULL, 0);
 	}
 
-	if (ReadConsoleW(hstdin, str, (size / sizeof(wchar_t)) - 1, &read_size, NULL))
-	{
+	if (ReadConsoleW(hstdin, str, (size / sizeof(wchar_t)) - 1, &read_size, NULL)) {
 		str[read_size] = 0;
 
 		UniTrimCrlf(str);
 
 		ret = true;
-	}
-	else
-	{
+	} else {
 		ret = Win32InputFromFileW(str, size);
 	}
 
 	return ret;
 }
 // Get a line from standard input
-bool Win32InputFromFileW(wchar_t *str, UINT size)
-{
+bool Win32InputFromFileW(wchar_t *str, UINT size) {
 	char *a;
-	if (str == NULL)
-	{
+	if (str == NULL) {
 		wchar_t tmp[MAX_SIZE];
 		Win32InputFromFileW(tmp, sizeof(tmp));
 		return false;
 	}
 
 	a = Win32InputFromFileLineA();
-	if (a == NULL)
-	{
+	if (a == NULL) {
 		UniStrCpy(str, size, L"");
 		return false;
 	}
@@ -2485,41 +2131,35 @@ bool Win32InputFromFileW(wchar_t *str, UINT size)
 
 	return true;
 }
-char *Win32InputFromFileLineA()
-{
+char *Win32InputFromFileLineA() {
 	BUF *b = NewBuf();
 	char zero = 0;
 	char *ret = NULL;
 	bool ok = true;
 
-	while (true)
-	{
+	while (true) {
 		char c;
 		DWORD read_size = 0;
 
-		if (ReadFile(hstdin, &c, 1, &read_size, NULL) == false)
-		{
+		if (ReadFile(hstdin, &c, 1, &read_size, NULL) == false) {
 			ok = false;
 			break;
 		}
-		if (read_size != 1)
-		{
+		if (read_size != 1) {
 			ok = false;
 			break;
 		}
 
 		WriteBuf(b, &c, 1);
 
-		if (c == 10)
-		{
+		if (c == 10) {
 			break;
 		}
 	}
 
 	WriteBuf(b, &zero, 1);
 
-	if (ok)
-	{
+	if (ok) {
 		ret = CopyStr(b->Buf);
 	}
 
@@ -2529,27 +2169,22 @@ char *Win32InputFromFileLineA()
 }
 
 // Print the string to the console
-void Win32PrintW(wchar_t *str)
-{
+void Win32PrintW(wchar_t *str) {
 	DWORD write_size = 0;
 	// Validate arguments
-	if (str == NULL)
-	{
+	if (str == NULL) {
 		return;
 	}
 
-	if (WriteConsoleW(hstdout, str, UniStrLen(str), &write_size, NULL) == false)
-	{
+	if (WriteConsoleW(hstdout, str, UniStrLen(str), &write_size, NULL) == false) {
 		Win32PrintToFileW(str);
 	}
 }
-void Win32PrintToFileW(wchar_t *str)
-{
+void Win32PrintToFileW(wchar_t *str) {
 	char *utf;
 	DWORD size = 0;
 	// Validate arguments
-	if (str == NULL)
-	{
+	if (str == NULL) {
 		return;
 	}
 
@@ -2561,6 +2196,6 @@ void Win32PrintToFileW(wchar_t *str)
 }
 
 
-#endif	// WIN32
+#endif // WIN32
 
 

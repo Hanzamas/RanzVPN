@@ -2,14 +2,13 @@
 // Mayaqua Kernel
 
 
-#ifndef	KERNEL_H
-#define	KERNEL_H
+#ifndef KERNEL_H
+#define KERNEL_H
 
 #include "MayaType.h"
 
 // Memory usage information
-struct MEMINFO
-{
+struct MEMINFO {
 	UINT64 TotalMemory;
 	UINT64 UsedMemory;
 	UINT64 FreeMemory;
@@ -19,8 +18,7 @@ struct MEMINFO
 };
 
 // Locale information
-struct LOCALE
-{
+struct LOCALE {
 	wchar_t YearStr[16], MonthStr[16], DayStr[16];
 	wchar_t HourStr[16], MinuteStr[16], SecondStr[16];
 	wchar_t DayOfWeek[7][16];
@@ -30,11 +28,10 @@ struct LOCALE
 
 
 // Thread procedure
-typedef void (THREAD_PROC)(THREAD *thread, void *param);
+typedef void(THREAD_PROC)(THREAD *thread, void *param);
 
 // Thread
-struct THREAD
-{
+struct THREAD {
 	REF *ref;
 	THREAD_PROC *thread_proc;
 	void *param;
@@ -45,31 +42,29 @@ struct THREAD
 	UINT ThreadId;
 	bool PoolThread;
 	THREAD *PoolHostThread;
-	LIST *PoolWaitList;						// Thread termination waiting list
-	volatile bool PoolHalting;				// Thread stopped
+	LIST *PoolWaitList;        // Thread termination waiting list
+	volatile bool PoolHalting; // Thread stopped
 	EVENT *release_event;
-	bool Stopped;							// Indicates that the operation is Stopped
-	char *Name;								// Thread name
+	bool Stopped; // Indicates that the operation is Stopped
+	char *Name;   // Thread name
 };
 
 // Thread pool data
-struct THREAD_POOL_DATA
-{
-	EVENT *Event;						// Waiting Event
-	EVENT *InitFinishEvent;				// Initialization is completed event
-	THREAD *Thread;						// Threads that are currently assigned
-	THREAD_PROC *ThreadProc;			// Thread procedure that is currently assigned
+struct THREAD_POOL_DATA {
+	EVENT *Event;            // Waiting Event
+	EVENT *InitFinishEvent;  // Initialization is completed event
+	THREAD *Thread;          // Threads that are currently assigned
+	THREAD_PROC *ThreadProc; // Thread procedure that is currently assigned
 };
 
 // Instance
-struct INSTANCE
-{
-	char *Name;							// Name
-	void *pData;						// Data
+struct INSTANCE {
+	char *Name;  // Name
+	void *pData; // Data
 };
 
 // Create a new thread
-#define	NewThread(thread_proc, param) NewThreadNamed((thread_proc), (param), (#thread_proc))
+#define NewThread(thread_proc, param) NewThreadNamed((thread_proc), (param), (#thread_proc))
 
 // Function prototype
 void SleepThread(UINT time);
@@ -90,7 +85,7 @@ void FreeThreading();
 void ThreadPoolProc(THREAD *t, void *param);
 void SetThreadName(UINT thread_id, char *name, void *param);
 
-struct tm * c_gmtime_r(const time_64t* timep, struct tm *tm);
+struct tm *c_gmtime_r(const time_64t *timep, struct tm *tm);
 time_64t c_mkgmtime(struct tm *tm);
 void TmToSystem(SYSTEMTIME *st, struct tm *t);
 void SystemToTm(struct tm *t, SYSTEMTIME *st);
@@ -155,5 +150,5 @@ void AbortExitEx(char *msg);
 void YieldCpu();
 UINT GetNumberOfCpu();
 
-#endif	// KERNEL_H
+#endif // KERNEL_H
 

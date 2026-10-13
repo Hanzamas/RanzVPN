@@ -5,24 +5,23 @@
 // Logging.h
 // Header of Logging.c
 
-#ifndef	LOGGING_H
-#define	LOGGING_H
+#ifndef LOGGING_H
+#define LOGGING_H
 
 #include "Cedar.h"
 
 #include "Mayaqua/Network.h"
 
 // Port number for HTTP monitoring
-#define	LOG_HTTP_PORT						80
+#define LOG_HTTP_PORT 80
 
 
-#define	MAX_LOG_SIZE_DEFAULT				1073741823ULL
+#define MAX_LOG_SIZE_DEFAULT 1073741823ULL
 
-typedef char *(RECORD_PARSE_PROC)(RECORD *rec);
+typedef char *(RECORD_PARSE_PROC)(RECORD * rec);
 
 // Packet log structure
-struct PACKET_LOG
-{
+struct PACKET_LOG {
 	CEDAR *Cedar;
 	struct PKT *Packet;
 	char *SrcSessionName;
@@ -30,80 +29,74 @@ struct PACKET_LOG
 	bool WritePhysicalIP;
 	char SrcPhysicalIP[64];
 	char DestPhysicalIP[64];
-	bool PurePacket;						// Packet not cloned
-	bool PurePacketNoPayload;				// Packet not cloned (without payload)
+	bool PurePacket;          // Packet not cloned
+	bool PurePacketNoPayload; // Packet not cloned (without payload)
 	SESSION *SrcSession;
-	bool NoLog;								// Not to write a log
+	bool NoLog; // Not to write a log
 };
 
 // Log save options of the HUB
-struct HUB_LOG
-{
-	bool SaveSecurityLog;					// To save the security log
-	UINT SecurityLogSwitchType;				// Switching type of security log
-	bool SavePacketLog;						// To save the packet log
-	UINT PacketLogSwitchType;				// Switching type of packet log
-	UINT PacketLogConfig[NUM_PACKET_LOG];	// Packet log settings
+struct HUB_LOG {
+	bool SaveSecurityLog;                 // To save the security log
+	UINT SecurityLogSwitchType;           // Switching type of security log
+	bool SavePacketLog;                   // To save the packet log
+	UINT PacketLogSwitchType;             // Switching type of packet log
+	UINT PacketLogConfig[NUM_PACKET_LOG]; // Packet log settings
 };
 
 // Record
-struct RECORD
-{
-	UINT64 Tick;							// Time
-	RECORD_PARSE_PROC *ParseProc;			// Parsing procedure
-	void *Data;								// Data
+struct RECORD {
+	UINT64 Tick;                  // Time
+	RECORD_PARSE_PROC *ParseProc; // Parsing procedure
+	void *Data;                   // Data
 };
 
 // LOG object
-struct LOG
-{
-	LOCK *lock;								// Lock
-	THREAD *Thread;							// Thread
-	char *DirName;							// Destination directory name
-	char *Prefix;							// File name
-	UINT SwitchType;						// Switching type of log file
-	QUEUE *RecordQueue;						// Record queue
-	volatile bool Halt;						// Halting flag
-	EVENT *Event;							// Event for Log
-	EVENT *FlushEvent;						// Flash completion event
+struct LOG {
+	LOCK *lock;         // Lock
+	THREAD *Thread;     // Thread
+	char *DirName;      // Destination directory name
+	char *Prefix;       // File name
+	UINT SwitchType;    // Switching type of log file
+	QUEUE *RecordQueue; // Record queue
+	volatile bool Halt; // Halting flag
+	EVENT *Event;       // Event for Log
+	EVENT *FlushEvent;  // Flash completion event
 	bool CacheFlag;
 	UINT64 LastTick;
 	UINT LastSwitchType;
 	char LastStr[MAX_SIZE];
-	UINT64 CurrentFilePointer;				// The current file pointer
-	UINT CurrentLogNumber;					// Log file number of the current
+	UINT64 CurrentFilePointer; // The current file pointer
+	UINT CurrentLogNumber;     // Log file number of the current
 	bool log_number_incremented;
 };
 
 
 // ERASER object
-struct ERASER
-{
-	LOG *Log;								// Logger
-	UINT64 MinFreeSpace;					// Disk space to start deleting files
-	char *DirName;							// Directory name
-	volatile bool Halt;						// Halting flag
-	THREAD *Thread;							// Thread
-	bool LastFailed;						// Whether deletion of the file failed at the end
-	EVENT *HaltEvent;						// Halting event
+struct ERASER {
+	LOG *Log;            // Logger
+	UINT64 MinFreeSpace; // Disk space to start deleting files
+	char *DirName;       // Directory name
+	volatile bool Halt;  // Halting flag
+	THREAD *Thread;      // Thread
+	bool LastFailed;     // Whether deletion of the file failed at the end
+	EVENT *HaltEvent;    // Halting event
 };
 
 // List of files that can be deleted
-typedef struct ERASE_FILE
-{
-	char *FullPath;							// Full path
-	UINT64 UpdateTime;						// Updating date
+typedef struct ERASE_FILE {
+	char *FullPath;    // Full path
+	UINT64 UpdateTime; // Updating date
 } ERASE_FILE;
 
 // SYSLOG object
-struct SLOG
-{
-	LOCK *lock;								// Lock
-	SOCK *Udp;								// UDP socket
-	IP DestIp;								// Destination IP address
-	UINT DestPort;							// Destination port number
-	char HostName[MAX_HOST_NAME_LEN + 1];	// Host name
-	UINT64 NextPollIp;						// Time of examination of the IP address at the end
+struct SLOG {
+	LOCK *lock;                           // Lock
+	SOCK *Udp;                            // UDP socket
+	IP DestIp;                            // Destination IP address
+	UINT DestPort;                        // Destination port number
+	char HostName[MAX_HOST_NAME_LEN + 1]; // Host name
+	UINT64 NextPollIp;                    // Time of examination of the IP address at the end
 };
 
 // Function prototype
@@ -158,5 +151,5 @@ UINT GetEraserCheckInterval();
 void SetMaxLogSize(UINT64 size);
 UINT64 GetMaxLogSize();
 
-#endif	// LOGGING_G
+#endif // LOGGING_G
 
