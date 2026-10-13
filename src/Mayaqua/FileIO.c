@@ -27,67 +27,6 @@ static HAMCORE *hamcore_io = NULL;
 #define	NUM_CRC32_TABLE	256
 static UINT crc32_table[NUM_CRC32_TABLE];
 
-// Append a file footer
-void ZipAddFileFooter(ZIP_PACKER *p)
-{
-	ZIP_DATA_FOOTER f;
-	// Validate arguments
-	if (p == NULL)
-	{
-		return;
-	}
-
-	Zero(&f, sizeof(f));
-	WriteZipDataFooter(p->CurrentFile, &f);
-
-	WriteFifo(p->Fifo, &f, sizeof(f));
-}
-
-// Creating a ZIP data header
-void WriteZipDataHeader(ZIP_FILE *f, ZIP_DATA_HEADER *h, bool write_sizes)
-{
-	// Validate arguments
-	if (f == NULL || h ==NULL)
-	{
-		return;
-	}
-
-	h->Signature = Endian32(Swap32(ZIP_SIGNATURE));
-	h->NeedVer = Endian16(Swap16(ZIP_VERSION));
-	h->CompType = 0;
-	h->FileDate = Endian16(Swap16(System64ToDosDate(f->DateTime)));
-	h->FileTime = Endian16(Swap16(System64ToDosTime(f->DateTime)));
-	h->Option = Endian16(Swap16(8)); // bit3: Set the file-size and the CRC in local header to 0
-
-	if (write_sizes == false)
-	{
-		h->CompSize = h->UncompSize = 0;
-		h->Crc32 = 0;
-	}
-	else
-	{
-		h->CompSize = h->UncompSize = Endian32(Swap32(f->Size));
-		h->Crc32 = Endian32(Swap32(f->Crc32));
-	}
-
-	h->FileNameLen = Endian16(Swap16(StrLen(f->Name)));
-	h->ExtraLen = 0;
-}
-
-// Creating a ZIP data footer
-void WriteZipDataFooter(ZIP_FILE *f, ZIP_DATA_FOOTER *h)
-{
-	// Validate arguments
-	if (f == NULL || h ==NULL)
-	{
-		return;
-	}
-
-	h->Signature = Endian32(Swap32(0x08074B50));
-	h->CompSize = h->UncompSize = Endian32(Swap32(f->Size));
-	h->Crc32 = Endian32(Swap32(f->Crc32));
-}
-
 // Initialize the common table of CRC32
 void InitCrc32()
 {

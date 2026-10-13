@@ -139,9 +139,6 @@ void InitCrc32();
 UINT Crc32(void *buf, UINT pos, UINT len);
 UINT Crc32Next(void *buf, UINT pos, UINT len, UINT last_crc32);
 UINT Crc32Finish(UINT last_crc32);
-void WriteZipDataHeader(ZIP_FILE *f, ZIP_DATA_HEADER *h, bool write_sizes);
-void WriteZipDataFooter(ZIP_FILE *f, ZIP_DATA_FOOTER *h);
-void ZipAddFileFooter(ZIP_PACKER *p);
 
 bool DeleteDirInnerW(wchar_t *name);
 bool DeleteDir(char *name);
