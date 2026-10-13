@@ -420,11 +420,6 @@ void OpenSSL_FreeLock()
 {
 }
 
-// Lock function for OpenSSL
-void OpenSSL_Lock(int mode, int n, const char *file, int line)
-{
-}
-
 // Get the display name of the certificate
 void GetPrintNameFromX(wchar_t *str, UINT size, X *x)
 {
@@ -3340,11 +3335,6 @@ void DhFree(DH_CTX *dh)
 	FreeBuf(dh->MyPublicKey);
 
 	Free(dh);
-}
-
-int GetSslClientCertIndex()
-{
-	return ssl_clientcert_index;
 }
 
 /////////////////////////

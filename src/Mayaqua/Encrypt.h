@@ -307,7 +307,6 @@ bool IsAesNiSupported();
 
 void OpenSSL_InitLock();
 void OpenSSL_FreeLock();
-void OpenSSL_Lock(int mode, int n, const char *file, int line);
 void FreeOpenSSLThreadState();
 
 // Encryption/Decryption
@@ -323,7 +322,5 @@ void Sha(UINT sha_type, void *dst, void *src, UINT size);
 void Sha0(void *dst, void *src, UINT size);
 void Sha1(void *dst, void *src, UINT size);
 void Sha2_256(void *dst, void *src, UINT size);
-
-int GetSslClientCertIndex();
 
 #endif	// ENCRYPT_H
