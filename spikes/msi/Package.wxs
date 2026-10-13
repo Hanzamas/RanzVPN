@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Spike: MSI for Ranz VPN Server (WiX Toolset v5). Not a release decision.
+  Build: wix build Package.wxs -arch x64|arm64 -d Version=0.1.N -d BuildDir=<cmake build dir> -o out.msi
+
+  Payload: vpnserver.exe and hamcore.se2 (static CRT, no DLLs). vpnserver finds hamcore.se2
+  next to its exe (InitHamcore, GetExeDir) and writes ranz_server.config, backups and logs
+  in the same directory (GetDbDir = exe dir), so those files are not MSI-owned and stay
+  after an uninstall.
+
+  Service: same values as "vpnserver /install" (MsService + MsInstallServiceExW, string
+  table SVC_SEVPNSERVERDEV_*): name sevpnserverdev, own process, auto start, LocalSystem,
+  command line "<exe>" /service, failure action restart x3 after 10 s, reset after 1 day.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Ranz VPN Server"
+           Manufacturer="Hanzcodes"
+           Version="$(var.Version)"
+           UpgradeCode="A670DB74-2C69-4A09-A841-D240248F4D29"
+           Language="1033"
+           Scope="perMachine">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Ranz VPN" />
+    </StandardDirectory>
+
+    <ComponentGroup Id="ServerFiles" Directory="INSTALLFOLDER">
+      <Component Id="VpnServerExe">
+        <File Id="vpnserver.exe" Source="$(var.BuildDir)\vpnserver.exe" KeyPath="yes" />
+        <ServiceInstall Id="VpnServerService"
+                        Name="sevpnserverdev"
+                        DisplayName="Ranz VPN Server"
+                        Description="This manages the server processes of Ranz VPN Server. Ranz VPN Server provides high-performance Ranz VPN Server functions via TCP/IP protocol. When this service is stopped, Ranz VPN Server on this computer will stop and Ranz VPN Client will be unable to establish a VPN connection with this computer."
+                        Type="ownProcess"
+                        Start="auto"
+                        ErrorControl="normal"
+                        Arguments="/service"
+                        Vital="yes">
+          <ServiceConfigFailureActions OnInstall="yes" OnReinstall="yes" ResetPeriod="86400">
+            <Failure Action="restartService" Delay="10000" />
+            <Failure Action="restartService" Delay="10000" />
+            <Failure Action="restartService" Delay="10000" />
+          </ServiceConfigFailureActions>
+        </ServiceInstall>
+        <ServiceControl Id="VpnServerServiceControl"
+                        Name="sevpnserverdev"
+                        Start="install"
+                        Stop="both"
+                        Remove="uninstall"
+                        Wait="yes" />
+      </Component>
+      <Component Id="Hamcore">
+        <File Id="hamcore.se2" Source="$(var.BuildDir)\hamcore.se2" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Server" Title="Ranz VPN Server">
+      <ComponentGroupRef Id="ServerFiles" />
+    </Feature>
+  </Package>
+</Wix>
