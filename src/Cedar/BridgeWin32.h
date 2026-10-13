@@ -47,11 +47,6 @@ struct ETH
 	SU *Su;						// SeLow handle
 	SU_ADAPTER *SuAdapter;		// SeLow adapter handle
 
-	// Unused
-	bool IsRawIpMode;			// RAW IP mode
-	UCHAR RawIpMyMacAddr[6];
-	UCHAR RawIpYourMacAddr[6];
-	IP MyPhysicalIPForce;
 };
 
 // Function prototype

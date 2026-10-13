@@ -957,11 +957,6 @@ bool SessionConnect(SESSION *s)
 
 	s->CancelConnect = false;
 
-	if (c->ClientConnectError_NoSavePassword)
-	{
-		s->Client_NoSavePassword = true;
-	}
-
 	// Release the client connection
 	s->Connection = NULL;
 	ReleaseConnection(c);
@@ -1212,8 +1207,6 @@ void ClientThread(THREAD *t, void *param)
 	s->RetryFlag = true;
 	s->CurrentRetryCount = 0;
 
-	s->Win32HideConnectWindow = s->ClientOption->HideStatusWindow;
-	s->Win32HideNicInfoWindow = s->ClientOption->HideNicInfoWindow;
 
 
 	while (true)
@@ -1601,13 +1594,6 @@ void NewSessionKey(CEDAR *cedar, UCHAR *session_key, UINT *session_key_32)
 	Rand(session_key, SHA1_SIZE);
 	*session_key_32 = Rand32();
 }
-
-bool if_init(SESSION *s);
-CANCEL *if_getcancel(SESSION *s);
-UINT if_getnext(SESSION *s, void **data);
-bool if_putpacket(SESSION *s, void *data, UINT size);
-void if_free(SESSION *s);
-
 
 // Create a server session
 SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, POLICY *policy)

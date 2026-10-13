@@ -634,8 +634,6 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 		{
 			a->LastRecvTick = a->Now;
 
-			a->IsReachedOnce = true;
-
 			if (a->FirstStableReceiveTick == 0)
 			{
 				a->FirstStableReceiveTick = a->Now;
@@ -888,8 +886,6 @@ UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port)
 	a->CreatedTick = Tick64();
 
 	a->IsInCedarPortList = is_in_cedar_port_list;
-
-	a->ClientMode = client_mode;
 
 	a->Now = Tick64();
 	a->UdpSock = s;

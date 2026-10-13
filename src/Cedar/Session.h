@@ -112,7 +112,6 @@ struct SESSION
 	UINT64 LastIncrementTraffic;	// Last time that updated the traffic data of the user
 	bool AdministratorMode;			// Administrator mode
 	LIST *CancelList;				// Cancellation list
-	IP DefaultDns;					// IP address of the default DNS server
 	bool IPv6Session;				// IPv6 session (Physical communication is IPv6)
 	UINT VLanId;					// VLAN ID
 
@@ -162,8 +161,6 @@ struct SESSION
 
 	ACCOUNT *Account;				// Client account
 	UINT VLanDeviceErrorCount;		// Number of times that the error occurred in the virtual LAN card
-	bool Win32HideConnectWindow;	// Hide the status window
-	bool Win32HideNicInfoWindow;	// Hide the NIC information window
 	bool UserCanceled;				// Canceled by the user
 	UINT64 LastTryAddConnectTime;	// Last time that attempted to add a connection
 
@@ -174,9 +171,7 @@ struct SESSION
 
 	COUNTER *LoggingRecordCount;	// Counter for the number of logging records
 
-	bool FreeInfoShowed;			// Whether a warning about Free Edition has already displayed
 
-	bool Client_NoSavePassword;		// Prohibit the password saving
 	wchar_t *Client_Message;		// Message that has been sent from the server
 
 	LIST *DelayedPacketList;		// Delayed packet list

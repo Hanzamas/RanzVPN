@@ -47,7 +47,6 @@ struct LISTENER
 	UINT64 DosListLastRefreshTime;	// Time that the DOS list is refreshed at the last
 
 	THREAD_PROC *ThreadProc;		// Thread procedure
-	void *ThreadParam;				// Thread parameters
 	bool LocalOnly;					// Can be connected only from localhost
 	bool ShadowIPv6;				// Flag indicating that the shadow IPv6 listener
 	LISTENER *ShadowListener;		// Reference to managing shadow IPv6 listener

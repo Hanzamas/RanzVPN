@@ -24,7 +24,6 @@
 #define	UDP_ACCELERATION_TMP_BUF_SIZE		2048		// Temporary buffer size
 #define	UDP_ACCELERATION_WINDOW_SIZE_MSEC	(30 * 1000)	// Receive window size (in milliseconds)
 
-#define	UDP_ACCELERATION_SUPPORTED_MAX_PAYLOAD_SIZE	1600	// Maximum supported payload size
 #define	UDP_ACCELERATION_MAX_PADDING_SIZE	32			// Maximum padding size
 
 #define	UDP_ACCELERATION_REQUIRE_CONTINUOUS	(10 * 1000)	// Not to use if stable communication is not continued at least for this time
@@ -47,7 +46,6 @@
 struct UDP_ACCEL
 {
 	CEDAR *Cedar;										// Cedar
-	bool ClientMode;									// Whether client mode
 	bool IsInCedarPortList;								// Whether included in the port list of the Cedar
 	UINT64 Now;											// Current time
 	CIPHER *CipherEncrypt;								// Encryption context
@@ -75,10 +73,8 @@ struct UDP_ACCEL
 	UINT MyCookie;										// My cookie
 	UINT YourCookie;									// Cookie of the other party
 	bool Inited;										// Initialized flag
-	UINT Mss;											// Optimal MSS
 	UINT MaxUdpPacketSize;								// Get the maximum transmittable UDP size
 	bool FatalError;									// A fatal error occurred
-	bool IsReachedOnce;									// It is true if it succeeds in mutual transmission and reception of packets at least once
 	UINT64 CreatedTick;									// Object creation time
 	bool FastDetect;									// Fast disconnection detection mode
 	UINT64 FirstStableReceiveTick;						// Start time of current stable continued receivable period

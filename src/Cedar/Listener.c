@@ -925,7 +925,6 @@ LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc,
 	r = ZeroMalloc(sizeof(LISTENER));
 
 	r->ThreadProc = proc;
-	r->ThreadParam = thread_param;
 	r->Cedar = cedar;
 	AddRef(r->Cedar->ref);
 	r->lock = NewLock();
