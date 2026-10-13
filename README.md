@@ -41,11 +41,3 @@ cmake --build .
 ## License
 
 Ranz VPN is proprietary software. Copyright (c) 2026 Hanzcodes. All rights reserved. See [LICENSE](LICENSE) for the terms.
-
-Ranz VPN is derived from [SoftEther VPN](https://github.com/SoftEtherVPN/SoftEtherVPN).
-Copyright (c) all contributors on SoftEther VPN project in GitHub.
-Copyright (c) Daiyuu Nobori, SoftEther Project at University of Tsukuba, and SoftEther Corporation.
-
-Third-party software included in Ranz VPN is licensed under its own terms; see [src/THIRD_PARTY.TXT](src/THIRD_PARTY.TXT).
-
-SoftEther is a registered trademark of SoftEther Corporation. Ranz VPN is not affiliated with or endorsed by SoftEther Corporation or the SoftEther VPN Project.
