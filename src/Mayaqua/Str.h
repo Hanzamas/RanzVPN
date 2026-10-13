@@ -12,14 +12,12 @@
 
 #include <stdarg.h>
 
-// String token
 struct TOKEN_LIST
 {
 	UINT NumTokens;
 	char **Token;
 };
 
-// Function prototype
 UINT StrLen(char *str);
 UINT StrSize(char *str);
 bool StrCheckLen(char *str, UINT len);
@@ -106,5 +104,5 @@ UINT HexToInt(char *str);
 UINT SearchAsciiInBinary(void *data, UINT size, char *str, bool case_sensitive);
 void ClearStr(char *str, UINT str_size);
 
-#endif	// STR_H
+#endif
 

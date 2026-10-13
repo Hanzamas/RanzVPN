@@ -12,7 +12,6 @@
 
 #include <stdarg.h>
 
-// String token
 struct UNI_TOKEN_LIST
 {
 	UINT NumTokens;
@@ -87,7 +86,5 @@ wchar_t *UniDefaultTokenSplitChars();
 bool UniIsCharInStr(wchar_t *str, wchar_t c);
 UNI_TOKEN_LIST *UniParseTokenWithoutNullStr(wchar_t *str, wchar_t *split_chars);
 
-#endif	// INTERNAT_H
-
-
+#endif
 

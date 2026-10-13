@@ -12,11 +12,10 @@
 
 #include <openssl/opensslv.h>
 
-// Constant
 #define	MIN_SIGN_HASH_SIZE		(15 + SHA1_SIZE)
 #define	SIGN_HASH_SIZE			(MIN_SIGN_HASH_SIZE)
 
-#define RSA_KEY_SIZE				1024		// RSA key size
+#define RSA_KEY_SIZE				1024
 
 // IANA definitions taken from IKEv1 Phase 1
 #define SHA1_160						2
@@ -105,7 +104,6 @@
 	"93B4EA988D8FDDC186FFB7DC90A6C08F4DF435C934063199" \
 	"FFFFFFFFFFFFFFFF"
 
-// Macro
 #define	HASHED_DATA(p)			(((UCHAR *)p) + 15)
 
 typedef struct bignum_st BIGNUM;
@@ -119,31 +117,27 @@ typedef struct rc4_key_st RC4_KEY;
 typedef struct ssl_st SSL;
 typedef struct x509_st X509;
 
-// Crypt context
 struct CRYPT
 {
 	RC4_KEY *Rc4Key;
 };
 
-// Name in the certificate
 struct NAME
 {
-	wchar_t *CommonName;		// CN
-	wchar_t *Organization;		// O
-	wchar_t *Unit;				// OU
-	wchar_t *Country;			// C
-	wchar_t *State;				// ST
-	wchar_t *Local;				// L
+	wchar_t *CommonName;
+	wchar_t *Organization;
+	wchar_t *Unit;
+	wchar_t *Country;
+	wchar_t *State;
+	wchar_t *Local;
 };
 
-// Serial number
 struct X_SERIAL
 {
 	UINT size;
 	UCHAR *data;
 };
 
-// Certificate
 struct X
 {
 	X509 *x509;
@@ -160,19 +154,16 @@ struct X
 	char issuer_url[256];
 };
 
-// Key
 struct K
 {
 	EVP_PKEY *pkey;
 	bool private_key;
 };
 
-// Constant
 #define	MD5_SIZE	16
 #define	SHA1_SIZE	20
 #define	SHA256_SIZE	32
 
-// DH
 struct DH_CTX
 {
 	DH *dh;
@@ -181,7 +172,6 @@ struct DH_CTX
 	UINT Size;
 };
 
-// Cipher object
 struct CIPHER
 {
 	char Name[MAX_PATH];
@@ -193,10 +183,8 @@ struct CIPHER
 };
 
 
-// Lock of the OpenSSL
 extern LOCK **ssl_lock_obj;
 
-// Function prototype
 CRYPT *NewCrypt(void *key, UINT size);
 void FreeCrypt(CRYPT *c);
 void Encrypt(CRYPT *c, void *dst, void *src, UINT size);
@@ -309,13 +297,11 @@ void OpenSSL_InitLock();
 void OpenSSL_FreeLock();
 void FreeOpenSSLThreadState();
 
-// Encryption/Decryption
 CIPHER *NewCipher(char *name);
 void FreeCipher(CIPHER *c);
 void SetCipherKey(CIPHER *c, void *key, bool enc);
 UINT CipherProcessAead(CIPHER *c, void *iv, void *tag, UINT tag_size, void *dest, void *src, UINT src_size, void *aad, UINT aad_size);
 
-// Hashing
 void HashMd4(void *dst, void *src, UINT size);
 void Md5(void *dst, void *src, UINT size);
 void Sha(UINT sha_type, void *dst, void *src, UINT size);
@@ -323,4 +309,4 @@ void Sha0(void *dst, void *src, UINT size);
 void Sha1(void *dst, void *src, UINT size);
 void Sha2_256(void *dst, void *src, UINT size);
 
-#endif	// ENCRYPT_H
+#endif
