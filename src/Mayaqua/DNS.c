@@ -6,17 +6,7 @@
 #include "Str.h"
 #include "Tick64.h"
 
-#ifdef OS_WIN32
 #include <WS2tcpip.h>
-#endif
-
-#ifndef AI_ALL
-#define AI_ALL 0
-#endif
-
-#ifndef AI_V4MAPPED
-#define AI_V4MAPPED 0
-#endif
 
 static bool cache_enabled;
 
