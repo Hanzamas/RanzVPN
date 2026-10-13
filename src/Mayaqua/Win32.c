@@ -1776,49 +1776,24 @@ void *Win32FileCreate(char *name)
 CALLSTACK_DATA *Win32GetCallStack()
 {
 #ifndef	WIN32_NO_DEBUG_HELP_DLL
-	DWORD current_eip32 = 0, current_esp32 = 0, current_ebp32 = 0;
-	UINT64 current_eip = 0, current_esp = 0, current_ebp = 0;
 	STACKFRAME64 sf;
 	CALLSTACK_DATA *cs = NULL, *s;
 
-#ifdef	CPU_64
 	CONTEXT context;
-#endif	// CPU_64
 
 	bool ret;
 	UINT depth = 0;
 
-#ifndef	CPU_64
-	// Register acquisition (32 bit)
-	__asm
-	{
-		mov current_esp32, esp
-		mov current_ebp32, ebp
-	};
-
-	current_eip32 = (DWORD)Win32GetCallStack;
-
-	current_eip = (UINT64)current_eip32;
-	current_esp = (UINT64)current_esp32;
-	current_ebp = (UINT64)current_ebp32;
-#else	// CPU_64
 	// Register acquisition (64 bit)
 	Zero(&context, sizeof(context));
 	context.ContextFlags = CONTEXT_FULL;
 	RtlCaptureContext(&context);
-#endif	// CPU_64
 
 	Zero(&sf, sizeof(sf));
 
-#ifndef	CPU_64
-	sf.AddrPC.Offset = current_eip;
-	sf.AddrStack.Offset = current_esp;
-	sf.AddrFrame.Offset = current_ebp;
-#else	// CPU_64
 	sf.AddrPC.Offset = context.Rip;
 	sf.AddrStack.Offset = context.Rsp;
 	sf.AddrFrame.Offset = context.Rsp;
-#endif	// CPU_64
 
 	sf.AddrPC.Mode = AddrModeFlat;
 	sf.AddrStack.Mode = AddrModeFlat;
@@ -1828,28 +1803,18 @@ CALLSTACK_DATA *Win32GetCallStack()
 	{
 		DWORD type = IMAGE_FILE_MACHINE_I386;
 
-#ifdef	CPU_64
 		type = IMAGE_FILE_MACHINE_AMD64;
-#endif	// CPU_64
 
 		if ((depth++) >= CALLSTACK_DEPTH)
 		{
 			break;
 		}
 
-#ifndef	CPU_64
-		ret = StackWalk64(type,
-			hCurrentProcessHandle,
-			GetCurrentThread(),
-			&sf,
-			NULL, NULL, SymFunctionTableAccess64, SymGetModuleBase64, NULL);
-#else	// CPU_64
 		ret = StackWalk64(type,
 			hCurrentProcessHandle,
 			GetCurrentThread(),
 			&sf,
 			&context, NULL, SymFunctionTableAccess64, SymGetModuleBase64, NULL);
-#endif	// CPU_64
 		if (ret == false || sf.AddrFrame.Offset == 0)
 		{
 			break;
@@ -2117,7 +2082,6 @@ void Win32Init()
 	hCurrentProcessHandle = GetCurrentProcess();
 
 	// Initialization of the current directory
-	// Win32InitCurrentDir(); /* Don't do */
 
 	// Initialization of the symbol handler
 	if (IsMemCheck())

@@ -1095,7 +1095,6 @@ void CfgOutputFolderText(BUF *b, FOLDER *f, UINT depth)
 	depth--;
 	CfgAddEnd(b, depth);
 
-	//WriteBuf(b, "\r\n", 2);
 }
 
 // Output contents of the item
@@ -1250,7 +1249,6 @@ void CfgAddEnd(BUF *b, UINT depth)
 	}
 
 	CfgAddLine(b, "}", depth);
-//	CfgAddLine(b, TAG_END, depth);
 }
 
 // Outputs the Declare lines
@@ -2038,9 +2036,6 @@ ITEM *CfgCreateItem(FOLDER *parent, char *name, UINT type, void *buf, UINT size)
 {
 	UINT name_size;
 	ITEM *t;
-#ifdef	CHECK_CFG_NAME_EXISTS
-	ITEM tt;
-#endif	// CHECK_CFG_NAME_EXISTS
 	// Validate arguments
 	if (parent == NULL || name == NULL || type == 0 || buf == NULL)
 	{
@@ -2048,21 +2043,6 @@ ITEM *CfgCreateItem(FOLDER *parent, char *name, UINT type, void *buf, UINT size)
 	}
 
 	name_size = StrLen(name) + 1;
-
-#ifdef	CHECK_CFG_NAME_EXISTS
-
-	// Check whether there are any items with the same name already
-	tt.Name = ZeroMalloc(name_size);
-	StrCpy(tt.Name, 0, name);
-	t = Search(parent->Items, &tt);
-	Free(tt.Name);
-	if (t != NULL)
-	{
-		// Duplicated
-		return NULL;
-	}
-
-#endif	// CHECK_CFG_NAME_EXISTS
 
 	t = ZeroMalloc(sizeof(ITEM));
 	t->Buf = Malloc(size);
@@ -2168,25 +2148,6 @@ FOLDER *CfgCreateFolder(FOLDER *parent, char *name)
 	}
 
 	size = StrLen(name) + 1;
-
-#ifdef	CHECK_CFG_NAME_EXISTS
-
-	// Check the name in the parent list
-	if (parent != NULL)
-	{
-		FOLDER ff;
-		ff.Name = ZeroMalloc(size);
-		StrCpy(ff.Name, 0, name);
-		f = Search(parent->Folders, &ff);
-		Free(ff.Name);
-		if (f != NULL)
-		{
-			// Folder with the same name already exists
-			return NULL;
-		}
-	}
-
-#endif	// CHECK_CFG_NAME_EXISTS
 
 	f = ZeroMalloc(sizeof(FOLDER));
 	f->Items = NewListFast(CmpItemName);

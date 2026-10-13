@@ -11,7 +11,6 @@
 #include "Encrypt.h"
 
 // Macro
-//#define	CHECK_CFG_NAME_EXISTS			// Check duplication of the existing name
 
 #define	SAVE_BINARY_FILE_NAME_SWITCH	L"$save_binary"
 

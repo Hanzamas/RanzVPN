@@ -11,23 +11,12 @@
 #include "MayaType.h"
 
 // Constant
-#ifdef CPU_64
-
 #define	MAX_VALUE_SIZE			(384 * 1024 * 1024)	// Maximum Data size that can be stored in a single VALUE
 #define	MAX_VALUE_NUM			262144	// Maximum VALUE number that can be stored in a single ELEMENT
 #define	MAX_ELEMENT_NAME_LEN	63		// The length of the name that can be attached to the ELEMENT
 #define	MAX_ELEMENT_NUM			262144	// Maximum ELEMENT number that can be stored in a single PACK
 #define	MAX_PACK_SIZE			(512 * 1024 * 1024)	// Maximum size of a serialized PACK
 
-#else	// CPU_64
-
-#define	MAX_VALUE_SIZE			(96 * 1024 * 1024)	// Maximum Data size that can be stored in a single VALUE
-#define	MAX_VALUE_NUM			65536	// Maximum VALUE number that can be stored in a single ELEMENT
-#define	MAX_ELEMENT_NAME_LEN	63		// The length of the name that can be attached to the ELEMENT
-#define	MAX_ELEMENT_NUM			131072	// Maximum ELEMENT number that can be stored in a single PACK
-#define	MAX_PACK_SIZE			(128 * 1024 * 1024)	// Maximum size of a serialized PACK
-
-#endif	// CPU_64
 
 // Type of VALUE
 #define	VALUE_INT			0		// Integer type

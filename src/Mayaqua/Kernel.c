@@ -175,9 +175,7 @@ UINT GetNumberOfCpu()
 	{
 		UINT i = 0;
 
-#ifdef	OS_WIN32
 		i = Win32GetNumberOfCpuInner();
-#endif	// OS_WIN32
 
 		if (i == 0)
 		{
@@ -221,9 +219,7 @@ void GetHomeDirW(wchar_t *path, UINT size)
 		}
 		else
 		{
-#ifdef	OS_WIN32
 			Win32GetCurrentDirW(path, size);
-#endif	// OS_WIN32
 		}
 	}
 }
@@ -252,12 +248,9 @@ bool GetEnv(char *name, char *data, UINT size)
 }
 bool GetEnvW(wchar_t *name, wchar_t *data, UINT size)
 {
-#ifdef	OS_WIN32
 	return GetEnvW_ForWin32(name, data, size);
-#endif	// OS_WIN32
 }
 
-#ifdef	OS_WIN32
 bool GetEnvW_ForWin32(wchar_t *name, wchar_t *data, UINT size)
 {
 	wchar_t *ret;
@@ -280,7 +273,6 @@ bool GetEnvW_ForWin32(wchar_t *name, wchar_t *data, UINT size)
 	return true;
 }
 
-#endif	// OS_WIN32
 
 // Get the memory information
 void GetMemInfo(MEMINFO *info)
@@ -662,10 +654,8 @@ void ThreadPoolProc(THREAD *t, void *param)
 
 		ReleaseThread(thread);
 
-#ifdef	OS_WIN32
 		// For Win32: Recover the priority of the thread
 		MsRestoreThreadPriority();
-#endif	// OS_WIN32
 
 		// Register the thread itself to the thread pool
 		LockSk(thread_pool);
@@ -681,7 +671,6 @@ void ThreadPoolProc(THREAD *t, void *param)
 // Set the thread name
 void SetThreadName(UINT thread_id, char *name, void *param)
 {
-#ifdef	OS_WIN32
 	if (IsDebug())
 	{
 		char tmp[MAX_SIZE];
@@ -697,7 +686,6 @@ void SetThreadName(UINT thread_id, char *name, void *param)
 
 		Win32SetThreadName(thread_id, tmp);
 	}
-#endif	// OS_WIN32
 }
 
 // Thread creation (pool)
@@ -761,7 +749,6 @@ THREAD *NewThreadNamed(THREAD_PROC *thread_proc, void *param, char *name)
 
 	Inc(current_num_thread);
 
-//	Debug("current_num_thread = %u\n", Count(current_num_thread));
 
 	return ret;
 }
@@ -787,7 +774,6 @@ void CleanupThread(THREAD *t)
 	Free(t);
 
 	Dec(current_num_thread);
-	//Debug("current_num_thread = %u\n", Count(current_num_thread));
 }
 
 // Release thread (pool)
@@ -1664,8 +1650,6 @@ time_64t c_mkgmtime(struct tm *tm)
 		if (years < 1970)
 			return (time_64t)-1;
 
-#if (defined(TM_YEAR_MAX) && defined(TM_MON_MAX) && defined(TM_MDAY_MAX))
-#if (defined(TM_HOUR_MAX) && defined(TM_MIN_MAX) && defined(TM_SEC_MAX))
 		if (years > TM_YEAR_MAX ||
 			(years == TM_YEAR_MAX &&
 			(tm->tm_yday > ydays[TM_MON_MAX] + (TM_MDAY_MAX - 1) +
@@ -1677,8 +1661,6 @@ time_64t c_mkgmtime(struct tm *tm)
 			(minutes > TM_MIN_MAX ||
 			(minutes == TM_MIN_MAX && seconds > TM_SEC_MAX) )))))))
 			return (time_64t)-1;
-#endif
-#endif
 
 		return (time_64t)(86400L * (unsigned long)(unsigned)days +
 			3600L * (unsigned long)hours +
@@ -1711,9 +1693,7 @@ void YieldCpu()
 // Stop system (abnormal termination)
 void AbortExit()
 {
-#ifdef	OS_WIN32
 	_exit(1);
-#endif	// OS_WIN32
 }
 
 
@@ -1773,8 +1753,6 @@ void AbortExitEx(char *msg)
 	fputs(msg, stdout);
 	fputs("\r\n", stdout);
 
-#ifdef	OS_WIN32
 	_exit(1);
-#endif	// OS_WIN32
 }
 
