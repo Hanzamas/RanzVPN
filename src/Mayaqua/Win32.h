@@ -12,7 +12,6 @@
 
 #include "OS.h"
 
-// Function prototype
 OS_DISPATCH_TABLE *Win32GetDispatchTable();
 
 void Win32Init();
@@ -80,7 +79,6 @@ void Win32Yield();
 
 void Win32UnlockEx(LOCK *lock, bool inner);
 UINT Win32GetOsType();
-UINT Win32GetOsSpVer();
 void Win32NukuEn(char *dst, UINT size, char *src);
 void Win32NukuEnW(wchar_t *dst, UINT size, wchar_t *src);
 void Win32GetDirFromPath(char *dst, UINT size, char *src);
@@ -104,8 +102,7 @@ UINT Win32GetNumberOfCpuInner();
 
 void Win32SetThreadName(UINT thread_id, char *name);
 
-#endif	// WIN32_H
+#endif
 
-#endif	// OS_WIN32
-
+#endif
 

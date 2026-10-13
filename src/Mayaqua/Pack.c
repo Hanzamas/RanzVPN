@@ -14,11 +14,9 @@
 #include "Network.h"
 #include "Str.h"
 
-// Convert the BUF to a PACK
 PACK *BufToPack(BUF *b)
 {
 	PACK *p;
-	// Validate arguments
 	if (b == NULL)
 	{
 		return NULL;
@@ -34,11 +32,9 @@ PACK *BufToPack(BUF *b)
 	return p;
 }
 
-// Convert the PACK to the BUF
 BUF *PackToBuf(PACK *p)
 {
 	BUF *b;
-	// Validate arguments
 	if (p == NULL)
 	{
 		return NULL;
@@ -50,32 +46,26 @@ BUF *PackToBuf(PACK *p)
 	return b;
 }
 
-// Read the PACK
 bool ReadPack(BUF *b, PACK *p)
 {
 	UINT i, num;
-	// Validate arguments
 	if (b == NULL || p == NULL)
 	{
 		return false;
 	}
 
-	// The number of ELEMENTs
 	num = ReadBufInt(b);
 	if (num > MAX_ELEMENT_NUM)
 	{
-		// Number exceeds
 		return false;
 	}
 
-	// Read the ELEMENT
 	for (i = 0;i < num;i++)
 	{
 		ELEMENT *e;
 		e = ReadElement(b);
 		if (AddElement(p, e) == false)
 		{
-			// Adding error
 			return false;
 		}
 	}
@@ -83,20 +73,16 @@ bool ReadPack(BUF *b, PACK *p)
 	return true;
 }
 
-// Write down the PACK
 void WritePack(BUF *b, PACK *p)
 {
 	UINT i;
-	// Validate arguments
 	if (b == NULL || p == NULL)
 	{
 		return;
 	}
 
-	// The number of ELEMENTs
 	WriteBufInt(b, LIST_NUM(p->elements));
 
-	// Write the ELEMENT
 	for (i = 0;i < LIST_NUM(p->elements);i++)
 	{
 		ELEMENT *e = LIST_DATA(p->elements, i);
@@ -104,7 +90,6 @@ void WritePack(BUF *b, PACK *p)
 	}
 }
 
-// Read the ELEMENT
 ELEMENT *ReadElement(BUF *b)
 {
 	UINT i;
@@ -112,37 +97,30 @@ ELEMENT *ReadElement(BUF *b)
 	UINT type, num_value;
 	VALUE **values;
 	ELEMENT *e;
-	// Validate arguments
 	if (b == NULL)
 	{
 		return NULL;
 	}
 
-	// Name
 	if (ReadBufStr(b, name, sizeof(name)) == false)
 	{
 		return NULL;
 	}
 
-	// Type of item
 	type = ReadBufInt(b);
 
-	// Number of items
 	num_value = ReadBufInt(b);
 	if (num_value > MAX_VALUE_NUM)
 	{
-		// Number exceeds
 		return NULL;
 	}
 
-	// VALUE
 	values = (VALUE **)Malloc(sizeof(VALUE *) * num_value);
 	for (i = 0;i < num_value;i++)
 	{
 		values[i] = ReadValue(b, type);
 	}
 
-	// Create a ELEMENT
 	e = NewElement(name, type, num_value, values);
 
 	Free(values);
@@ -150,23 +128,17 @@ ELEMENT *ReadElement(BUF *b)
 	return e;
 }
 
-// Write the ELEMENT
 void WriteElement(BUF *b, ELEMENT *e)
 {
 	UINT i;
-	// Validate arguments
 	if (b == NULL || e == NULL)
 	{
 		return;
 	}
 
-	// Name
 	WriteBufStr(b, e->name);
-	// Type of item
 	WriteBufInt(b, e->type);
-	// Number of items
 	WriteBufInt(b, e->num_value);
-	// VALUE
 	for (i = 0;i < e->num_value;i++)
 	{
 		VALUE *v = e->values[i];
@@ -174,7 +146,6 @@ void WriteElement(BUF *b, ELEMENT *e)
 	}
 }
 
-// Read the VALUE
 VALUE *ReadValue(BUF *b, UINT type)
 {
 	UINT len;
@@ -186,50 +157,43 @@ VALUE *ReadValue(BUF *b, UINT type)
 	UINT size;
 	UINT u_size;
 	VALUE *v = NULL;
-	// Validate arguments
 	if (b == NULL)
 	{
 		return NULL;
 	}
 
-	// Data item
 	switch (type)
 	{
-	case VALUE_INT:			// Integer
+	case VALUE_INT:
 		v = NewIntValue(ReadBufInt(b));
 		break;
 	case VALUE_INT64:
 		v = NewInt64Value(ReadBufInt64(b));
 		break;
-	case VALUE_DATA:		// Data
+	case VALUE_DATA:
 		size = ReadBufInt(b);
 		if (size > MAX_VALUE_SIZE)
 		{
-			// Size over
 			break;
 		}
 		data = Malloc(size);
 		if (ReadBuf(b, data, size) != size)
 		{
-			// Read failure
 			Free(data);
 			break;
 		}
 		v = NewDataValue(data, size);
 		Free(data);
 		break;
-	case VALUE_STR:			// ANSI string
+	case VALUE_STR:
 		len = ReadBufInt(b);
 		if (len > (MAX_VALUE_SIZE - 1))
 		{
-			// Size over
 			break;
 		}
 		str = Malloc(len + 1);
-		// String body
 		if (ReadBuf(b, str, len) != len)
 		{
-			// Read failure
 			Free(str);
 			break;
 		}
@@ -237,22 +201,18 @@ VALUE *ReadValue(BUF *b, UINT type)
 		v = NewStrValue(str);
 		Free(str);
 		break;
-	case VALUE_UNISTR:		// Unicode string
+	case VALUE_UNISTR:
 		u_size = ReadBufInt(b);
 		if (u_size > MAX_VALUE_SIZE)
 		{
-			// Size over
 			break;
 		}
-		// Reading an UTF-8 string
 		u = ZeroMalloc(u_size + 1);
 		if (ReadBuf(b, u, u_size) != u_size)
 		{
-			// Read failure
 			Free(u);
 			break;
 		}
-		// Convert to a Unicode string
 		unistr_size = CalcUtf8ToUni(u, u_size);
 		if (unistr_size == 0)
 		{
@@ -270,58 +230,46 @@ VALUE *ReadValue(BUF *b, UINT type)
 	return v;
 }
 
-// Write the VALUE
 void WriteValue(BUF *b, VALUE *v, UINT type)
 {
 	UINT len;
 	BYTE *u;
 	UINT u_size;
-	// Validate arguments
 	if (b == NULL || v == NULL)
 	{
 		return;
 	}
 
-	// Data item
 	switch (type)
 	{
-	case VALUE_INT:			// Integer
+	case VALUE_INT:
 		WriteBufInt(b, v->IntValue);
 		break;
-	case VALUE_INT64:		// 64 bit integer
+	case VALUE_INT64:
 		WriteBufInt64(b, v->Int64Value);
 		break;
-	case VALUE_DATA:		// Data
-		// Size
+	case VALUE_DATA:
 		WriteBufInt(b, v->Size);
-		// Body
 		WriteBuf(b, v->Data, v->Size);
 		break;
-	case VALUE_STR:			// ANSI string
+	case VALUE_STR:
 		len = StrLen(v->Str);
-		// Length
 		WriteBufInt(b, len);
-		// String body
 		WriteBuf(b, v->Str, len);
 		break;
-	case VALUE_UNISTR:		// Unicode string
-		// Convert to UTF-8
+	case VALUE_UNISTR:
 		u_size = CalcUniToUtf8(v->UniStr) + 1;
 		u = ZeroMalloc(u_size);
 		UniToUtf8(u, u_size, v->UniStr);
-		// Size
 		WriteBufInt(b, u_size);
-		// UTF-8 string body
 		WriteBuf(b, u, u_size);
 		Free(u);
 		break;
 	}
 }
 
-// Get data size
 UINT GetDataValueSize(ELEMENT *e, UINT index)
 {
-	// Validate arguments
 	if (e == NULL)
 	{
 		return 0;
@@ -342,10 +290,8 @@ UINT GetDataValueSize(ELEMENT *e, UINT index)
 	return e->values[index]->Size;
 }
 
-// Get the data
 void *GetDataValue(ELEMENT *e, UINT index)
 {
-	// Validate arguments
 	if (e == NULL)
 	{
 		return NULL;
@@ -366,10 +312,8 @@ void *GetDataValue(ELEMENT *e, UINT index)
 	return e->values[index]->Data;
 }
 
-// Get the Unicode string type
 wchar_t *GetUniStrValue(ELEMENT *e, UINT index)
 {
-	// Validate arguments
 	if (e == NULL)
 	{
 		return 0;
@@ -386,10 +330,8 @@ wchar_t *GetUniStrValue(ELEMENT *e, UINT index)
 	return e->values[index]->UniStr;
 }
 
-// Get the ANSI string type
 char *GetStrValue(ELEMENT *e, UINT index)
 {
-	// Validate arguments
 	if (e == NULL)
 	{
 		return 0;
@@ -406,10 +348,8 @@ char *GetStrValue(ELEMENT *e, UINT index)
 	return e->values[index]->Str;
 }
 
-// Get the 64 bit integer value
 UINT64 GetInt64Value(ELEMENT *e, UINT index)
 {
-	// Validate arguments
 	if (e == NULL)
 	{
 		return 0;
@@ -426,10 +366,8 @@ UINT64 GetInt64Value(ELEMENT *e, UINT index)
 	return e->values[index]->Int64Value;
 }
 
-// Get the integer value
 UINT GetIntValue(ELEMENT *e, UINT index)
 {
-	// Validate arguments
 	if (e == NULL)
 	{
 		return 0;
@@ -446,7 +384,6 @@ UINT GetIntValue(ELEMENT *e, UINT index)
 	return e->values[index]->IntValue;
 }
 
-// Function of sort for PACK
 int ComparePackName(void *p1, void *p2)
 {
 	ELEMENT *o1, *o2;
@@ -464,10 +401,8 @@ int ComparePackName(void *p1, void *p2)
 	return StrCmpi(o1->name, o2->name);
 }
 
-// Delete the VALUE
 void FreeValue(VALUE *v, UINT type)
 {
-	// Validate arguments
 	if (v == NULL)
 	{
 		return;
@@ -489,24 +424,19 @@ void FreeValue(VALUE *v, UINT type)
 		break;
 	}
 
-	// Memory release
 	Free(v);
 }
 
-// Create a VALUE of Unicode String type
 VALUE *NewUniStrValue(wchar_t *str)
 {
 	VALUE *v;
-	// Validate arguments
 	if (str == NULL)
 	{
 		return NULL;
 	}
 
-	// Memory allocation
 	v = Malloc(sizeof(VALUE));
 
-	// String copy
 	v->Size = UniStrSize(str);
 	v->UniStr = Malloc(v->Size);
 	UniStrCpy(v->UniStr, v->Size, str);
@@ -516,20 +446,16 @@ VALUE *NewUniStrValue(wchar_t *str)
 	return v;
 }
 
-// Creation of the VALUE of ANSI string type
 VALUE *NewStrValue(char *str)
 {
 	VALUE *v;
-	// Validate arguments
 	if (str == NULL)
 	{
 		return NULL;
 	}
 
-	// Memory allocation
 	v = Malloc(sizeof(VALUE));
 
-	// String copy
 	v->Size = StrLen(str) + 1;
 	v->Str = Malloc(v->Size);
 	StrCpy(v->Str, v->Size, str);
@@ -539,20 +465,16 @@ VALUE *NewStrValue(char *str)
 	return v;
 }
 
-// Create the VALUE of the data type
 VALUE *NewDataValue(void *data, UINT size)
 {
 	VALUE *v;
-	// Validate arguments
 	if (data == NULL)
 	{
 		return NULL;
 	}
 
-	// Memory allocation
 	v = Malloc(sizeof(VALUE));
 
-	// Data copy
 	v->Size = size;
 	v->Data = Malloc(v->Size);
 	Copy(v->Data, data, size);
@@ -560,7 +482,6 @@ VALUE *NewDataValue(void *data, UINT size)
 	return v;
 }
 
-// Create the VALUE of 64 bit integer type
 VALUE *NewInt64Value(UINT64 i)
 {
 	VALUE *v;
@@ -572,12 +493,10 @@ VALUE *NewInt64Value(UINT64 i)
 	return v;
 }
 
-// Create the VALUE of integer type
 VALUE *NewIntValue(UINT i)
 {
 	VALUE *v;
 
-	// Memory allocation
 	v = Malloc(sizeof(VALUE));
 	v->IntValue = i;
 	v->Size = sizeof(UINT);
@@ -585,11 +504,9 @@ VALUE *NewIntValue(UINT i)
 	return v;
 }
 
-// Delete the ELEMENT
 void FreeElement(ELEMENT *e)
 {
 	UINT i;
-	// Validate arguments
 	if (e == NULL)
 	{
 		return;
@@ -604,24 +521,20 @@ void FreeElement(ELEMENT *e)
 	Free(e);
 }
 
-// Create a ELEMENT
 ELEMENT *NewElement(char *name, UINT type, UINT num_value, VALUE **values)
 {
 	ELEMENT *e;
 	UINT i;
-	// Validate arguments
 	if (name == NULL || num_value == 0 || values == NULL)
 	{
 		return NULL;
 	}
 
-	// Memory allocation
 	e = ZeroMalloc(sizeof(ELEMENT));
 	StrCpy(e->name, sizeof(e->name), name);
 	e->num_value = num_value;
 	e->type = type;
 
-	// Copy of the pointer list to the element
 	e->values = (VALUE **)ZeroMalloc(sizeof(VALUE *) * num_value);
 	for (i = 0;i < e->num_value;i++)
 	{
@@ -631,18 +544,15 @@ ELEMENT *NewElement(char *name, UINT type, UINT num_value, VALUE **values)
 	return e;
 }
 
-// Search and retrieve a ELEMENT from the PACK
 ELEMENT *GetElement(PACK *p, char *name, UINT type)
 {
 	ELEMENT t;
 	ELEMENT *e;
-	// Validate arguments
 	if (p == NULL || name == NULL)
 	{
 		return NULL;
 	}
 
-	// Search
 	StrCpy(t.name, sizeof(t.name), name);
 	e = Search(p->elements, &t);
 
@@ -651,7 +561,6 @@ ELEMENT *GetElement(PACK *p, char *name, UINT type)
 		return NULL;
 	}
 
-	// Type checking
 	if (type != INFINITE)
 	{
 		if (e->type != type)
@@ -663,49 +572,39 @@ ELEMENT *GetElement(PACK *p, char *name, UINT type)
 	return e;
 }
 
-// Add an ELEMENT to the PACK
 bool AddElement(PACK *p, ELEMENT *e)
 {
-	// Validate arguments
 	if (p == NULL || e == NULL)
 	{
 		return false;
 	}
 
-	// Size Check
 	if (LIST_NUM(p->elements) >= MAX_ELEMENT_NUM)
 	{
-		// Can not add any more
 		FreeElement(e);
 		return false;
 	}
 
-	// Check whether there is another item which have same name
 	if (GetElement(p, e->name, INFINITE))
 	{
-		// Exists
 		FreeElement(e);
 		return false;
 	}
 
 	if (e->num_value == 0)
 	{
-		// VALUE without any items can not be added
 		FreeElement(e);
 		return false;
 	}
 
-	// Adding
 	Add(p->elements, e);
 	return true;
 }
 
-// Release of the PACK object
 void FreePack(PACK *p)
 {
 	UINT i;
 	ELEMENT **elements;
-	// Validate arguments
 	if (p == NULL)
 	{
 		return;
@@ -722,26 +621,21 @@ void FreePack(PACK *p)
 	Free(p);
 }
 
-// Create a PACK object
 PACK *NewPack()
 {
 	PACK *p;
 
-	// Memory allocation
 	p = ZeroMallocEx(sizeof(PACK), true);
 
-	// Creating a List
 	p->elements = NewListFast(ComparePackName);
 
 	return p;
 }
 
-// Get the K from the PACK
 K *PackGetK(PACK *p, char *name)
 {
 	K *k;
 	BUF *b;
-	// Validate arguments
 	if (p == NULL || name == NULL)
 	{
 		return NULL;
@@ -765,12 +659,10 @@ K *PackGetK(PACK *p, char *name)
 	return k;
 }
 
-// Get the X from the PACK
 X *PackGetX(PACK *p, char *name)
 {
 	X *x;
 	BUF *b;
-	// Validate arguments
 	if (p == NULL || name == NULL)
 	{
 		return NULL;
@@ -794,14 +686,12 @@ X *PackGetX(PACK *p, char *name)
 	return x;
 }
 
-// Get the X chain from the PACK
 LIST *PackGetXList(PACK *p, char *name)
 {
 	X *x;
 	BUF *b;
 	LIST *chain;
 	UINT i;
-	// Validate arguments
 	if (p == NULL || name == NULL)
 	{
 		return NULL;
@@ -838,12 +728,10 @@ LIST *PackGetXList(PACK *p, char *name)
 	return chain;
 }
 
-// Add the K to the PACK
 ELEMENT *PackAddK(PACK *p, char *name, K *k)
 {
 	BUF *b;
 	ELEMENT *e = NULL;
-	// Validate arguments
 	if (p == NULL || name == NULL || k == NULL)
 	{
 		return NULL;
@@ -861,12 +749,10 @@ ELEMENT *PackAddK(PACK *p, char *name, K *k)
 	return e;
 }
 
-// Add an X into the PACK
 ELEMENT *PackAddX(PACK *p, char *name, X *x)
 {
 	BUF *b;
 	ELEMENT *e = NULL;
-	// Validate arguments
 	if (p == NULL || name == NULL || x == NULL)
 	{
 		return NULL;
@@ -884,13 +770,11 @@ ELEMENT *PackAddX(PACK *p, char *name, X *x)
 	return e;
 }
 
-// Add an X chain into the PACK
 ELEMENT *PackAddXList(PACK *p, char *name, LIST *chain)
 {
 	BUF *b;
 	X *x;
 	ELEMENT *e = NULL;
-	// Validate arguments
 	if (p == NULL || name == NULL || chain == NULL)
 	{
 		return NULL;
@@ -914,7 +798,6 @@ ELEMENT *PackAddXList(PACK *p, char *name, LIST *chain)
 	return e;
 }
 
-// Get a buffer from the PACK
 BUF *PackGetBuf(PACK *p, char *name)
 {
 	return PackGetBufEx(p, name, 0);
@@ -924,7 +807,6 @@ BUF *PackGetBufEx(PACK *p, char *name, UINT index)
 	UINT size;
 	void *tmp;
 	BUF *b;
-	// Validate arguments
 	if (p == NULL || name == NULL)
 	{
 		return NULL;
@@ -947,7 +829,6 @@ BUF *PackGetBufEx(PACK *p, char *name, UINT index)
 	return b;
 }
 
-// Get the data from the PACK
 bool PackGetData(PACK *p, char *name, void *data)
 {
 	return PackGetDataEx(p, name, data, 0);
@@ -955,7 +836,6 @@ bool PackGetData(PACK *p, char *name, void *data)
 bool PackGetDataEx(PACK *p, char *name, void *data, UINT index)
 {
 	ELEMENT *e;
-	// Validate arguments
 	if (p == NULL || name == NULL)
 	{
 		return false;
@@ -976,7 +856,6 @@ bool PackGetData2(PACK *p, char *name, void *data, UINT size)
 bool PackGetDataEx2(PACK *p, char *name, void *data, UINT size, UINT index)
 {
 	ELEMENT *e;
-	// Validate arguments
 	if (p == NULL || name == NULL)
 	{
 		return false;
@@ -995,7 +874,6 @@ bool PackGetDataEx2(PACK *p, char *name, void *data, UINT size, UINT index)
 	return true;
 }
 
-// Get the data size from the PACK
 UINT PackGetDataSize(PACK *p, char *name)
 {
 	return PackGetDataSizeEx(p, name, 0);
@@ -1003,7 +881,6 @@ UINT PackGetDataSize(PACK *p, char *name)
 UINT PackGetDataSizeEx(PACK *p, char *name, UINT index)
 {
 	ELEMENT *e;
-	// Validate arguments
 	if (p == NULL || name == NULL)
 	{
 		return 0;
@@ -1017,7 +894,6 @@ UINT PackGetDataSizeEx(PACK *p, char *name, UINT index)
 	return GetDataValueSize(e, index);
 }
 
-// Get an integer from the PACK
 UINT64 PackGetInt64(PACK *p, char *name)
 {
 	return PackGetInt64Ex(p, name, 0);
@@ -1025,7 +901,6 @@ UINT64 PackGetInt64(PACK *p, char *name)
 UINT64 PackGetInt64Ex(PACK *p, char *name, UINT index)
 {
 	ELEMENT *e;
-	// Validate arguments
 	if (p == NULL || name == NULL)
 	{
 		return 0;
@@ -1039,11 +914,9 @@ UINT64 PackGetInt64Ex(PACK *p, char *name, UINT index)
 	return GetInt64Value(e, index);
 }
 
-// Get the index number from the PACK
 UINT PackGetIndexCount(PACK *p, char *name)
 {
 	ELEMENT *e;
-	// Validate arguments
 	if (p == NULL || name == NULL)
 	{
 		return 0;
@@ -1058,7 +931,6 @@ UINT PackGetIndexCount(PACK *p, char *name)
 	return e->num_value;
 }
 
-// Get a bool type from the PACK
 bool PackGetBool(PACK *p, char *name)
 {
 	return PackGetInt(p, name) == 0 ? false : true;
@@ -1068,7 +940,6 @@ bool PackGetBoolEx(PACK *p, char *name, UINT index)
 	return PackGetIntEx(p, name, index) == 0 ? false : true;
 }
 
-// Add a bool type into the PACK
 ELEMENT *PackAddBool(PACK *p, char *name, bool b)
 {
 	return PackAddInt(p, name, b ? 1 : 0);
@@ -1078,10 +949,8 @@ ELEMENT *PackAddBoolEx(PACK *p, char *name, bool b, UINT index, UINT total)
 	return PackAddIntEx(p, name, b ? 1 : 0, index, total);
 }
 
-// Add the IPV6_ADDR to the PACK
 ELEMENT *PackAddIp6AddrEx(PACK *p, char *name, IPV6_ADDR *addr, UINT index, UINT total)
 {
-	// Validate arguments
 	if (p == NULL || name == NULL || addr == NULL)
 	{
 		return NULL;
@@ -1090,10 +959,8 @@ ELEMENT *PackAddIp6AddrEx(PACK *p, char *name, IPV6_ADDR *addr, UINT index, UINT
 	return PackAddDataEx(p, name, addr, sizeof(IPV6_ADDR), index, total);
 }
 
-// Get an IPV6_ADDR from the PACK
 bool PackGetIp6AddrEx(PACK *p, char *name, IPV6_ADDR *addr, UINT index)
 {
-	// Validate arguments
 	if (p == NULL || name == NULL || addr == NULL)
 	{
 		Zero(addr, sizeof(IPV6_ADDR));
@@ -1103,7 +970,6 @@ bool PackGetIp6AddrEx(PACK *p, char *name, IPV6_ADDR *addr, UINT index)
 	return PackGetDataEx2(p, name, addr, sizeof(IPV6_ADDR), index);
 }
 
-// Add the IP to the PACK
 void PackAddIp32Ex(PACK *p, char *name, UINT ip32, UINT index, UINT total)
 {
 	PackAddIp32Ex2(p, name, ip32, index, total, false);
@@ -1111,7 +977,6 @@ void PackAddIp32Ex(PACK *p, char *name, UINT ip32, UINT index, UINT total)
 void PackAddIp32Ex2(PACK *p, char *name, UINT ip32, UINT index, UINT total, bool is_single)
 {
 	IP ip;
-	// Validate arguments
 	if (p == NULL || name == NULL)
 	{
 		return;
@@ -1133,7 +998,6 @@ void PackAddIpEx2(PACK *p, char *name, IP *ip, UINT index, UINT total, bool is_s
 {
 	UINT i;
 	char tmp[MAX_PATH];
-	// Validate arguments
 	if (p == NULL || name == NULL || ip == NULL)
 	{
 		return;
@@ -1162,11 +1026,9 @@ void PackAddIp(PACK *p, char *name, IP *ip)
 	PackAddIpEx2(p, name, ip, 0, 1, true);
 }
 
-// Get an IP from the PACK
 UINT PackGetIp32Ex(PACK *p, char *name, UINT index)
 {
 	IP ip;
-	// Validate arguments
 	if (p == NULL || name == NULL)
 	{
 		return 0;
@@ -1187,7 +1049,6 @@ bool PackGetIpEx(PACK *p, char *name, IP *ip, UINT index)
 {
 	UINT i;
 	char tmp[MAX_PATH];
-	// Validate arguments
 	if (p == NULL || ip == NULL || name == NULL)
 	{
 		return false;
@@ -1235,7 +1096,6 @@ bool PackGetIp(PACK *p, char *name, IP *ip)
 	return PackGetIpEx(p, name, ip, 0);
 }
 
-// Get an integer from the PACK
 UINT PackGetInt(PACK *p, char *name)
 {
 	return PackGetIntEx(p, name, 0);
@@ -1243,7 +1103,6 @@ UINT PackGetInt(PACK *p, char *name)
 UINT PackGetIntEx(PACK *p, char *name, UINT index)
 {
 	ELEMENT *e;
-	// Validate arguments
 	if (p == NULL || name == NULL)
 	{
 		return 0;
@@ -1257,7 +1116,6 @@ UINT PackGetIntEx(PACK *p, char *name, UINT index)
 	return GetIntValue(e, index);
 }
 
-// Get an Unicode string from the PACK
 bool PackGetUniStr(PACK *p, char *name, wchar_t *unistr, UINT size)
 {
 	return PackGetUniStrEx(p, name, unistr, size, 0);
@@ -1265,7 +1123,6 @@ bool PackGetUniStr(PACK *p, char *name, wchar_t *unistr, UINT size)
 bool PackGetUniStrEx(PACK *p, char *name, wchar_t *unistr, UINT size, UINT index)
 {
 	ELEMENT *e;
-	// Validate arguments
 	if (p == NULL || name == NULL || unistr == NULL || size == 0)
 	{
 		return false;
@@ -1282,7 +1139,6 @@ bool PackGetUniStrEx(PACK *p, char *name, wchar_t *unistr, UINT size, UINT index
 	return true;
 }
 
-// Get a string from the PACK
 bool PackGetStr(PACK *p, char *name, char *str, UINT size)
 {
 	return PackGetStrEx(p, name, str, size, 0);
@@ -1290,7 +1146,6 @@ bool PackGetStr(PACK *p, char *name, char *str, UINT size)
 bool PackGetStrEx(PACK *p, char *name, char *str, UINT size, UINT index)
 {
 	ELEMENT *e;
-	// Validate arguments
 	if (p == NULL || name == NULL || str == NULL || size == 0)
 	{
 		return false;
@@ -1308,10 +1163,8 @@ bool PackGetStrEx(PACK *p, char *name, char *str, UINT size, UINT index)
 	return true;
 }
 
-// Add the buffer to the PACK (array)
 ELEMENT *PackAddBufEx(PACK *p, char *name, BUF *b, UINT index, UINT total)
 {
-	// Validate arguments
 	if (p == NULL || name == NULL || b == NULL || total == 0)
 	{
 		return NULL;
@@ -1320,12 +1173,10 @@ ELEMENT *PackAddBufEx(PACK *p, char *name, BUF *b, UINT index, UINT total)
 	return PackAddDataEx(p, name, b->Buf, b->Size, index, total);
 }
 
-// Add the data to the PACK (array)
 ELEMENT *PackAddDataEx(PACK *p, char *name, void *data, UINT size, UINT index, UINT total)
 {
 	VALUE *v;
 	ELEMENT *e;
-	// Validate arguments
 	if (p == NULL || data == NULL || name == NULL || total == 0)
 	{
 		return NULL;
@@ -1362,10 +1213,8 @@ ELEMENT *PackAddDataEx(PACK *p, char *name, void *data, UINT size, UINT index, U
 	return e;
 }
 
-// Add the buffer to the PACK
 ELEMENT *PackAddBuf(PACK *p, char *name, BUF *b)
 {
-	// Validate arguments
 	if (p == NULL || name == NULL || b == NULL)
 	{
 		return NULL;
@@ -1374,12 +1223,10 @@ ELEMENT *PackAddBuf(PACK *p, char *name, BUF *b)
 	return PackAddData(p, name, b->Buf, b->Size);
 }
 
-// Add the data to the PACK
 ELEMENT *PackAddData(PACK *p, char *name, void *data, UINT size)
 {
 	VALUE *v;
 	ELEMENT *e;
-	// Validate arguments
 	if (p == NULL || data == NULL || name == NULL)
 	{
 		return NULL;
@@ -1395,12 +1242,10 @@ ELEMENT *PackAddData(PACK *p, char *name, void *data, UINT size)
 	return e;
 }
 
-// Add a 64 bit integer (array) to the PACK
 ELEMENT *PackAddInt64Ex(PACK *p, char *name, UINT64 i, UINT index, UINT total)
 {
 	VALUE *v;
 	ELEMENT *e;
-	// Validate arguments
 	if (p == NULL || name == NULL || total == 0)
 	{
 		return NULL;
@@ -1438,12 +1283,10 @@ ELEMENT *PackAddInt64Ex(PACK *p, char *name, UINT64 i, UINT index, UINT total)
 	return e;
 }
 
-// Add an integer to the PACK (array)
 ELEMENT *PackAddIntEx(PACK *p, char *name, UINT i, UINT index, UINT total)
 {
 	VALUE *v;
 	ELEMENT *e;
-	// Validate arguments
 	if (p == NULL || name == NULL || total == 0)
 	{
 		return NULL;
@@ -1481,7 +1324,6 @@ ELEMENT *PackAddIntEx(PACK *p, char *name, UINT i, UINT index, UINT total)
 	return e;
 }
 
-// Add 64 bit integer time value to the PACK
 ELEMENT *PackAddTime64(PACK *p, char *name, UINT64 i)
 {
 	return PackAddInt64(p, name, i);
@@ -1492,12 +1334,10 @@ ELEMENT *PackAddTime64Ex(PACK *p, char *name, UINT64 i, UINT index, UINT total)
 }
 
 
-// Add a 64 bit integer to the PACK
 ELEMENT *PackAddInt64(PACK *p, char *name, UINT64 i)
 {
 	VALUE *v;
 	ELEMENT *e;
-	// Validate arguments
 	if (p == NULL || name == NULL)
 	{
 		return NULL;
@@ -1512,12 +1352,10 @@ ELEMENT *PackAddInt64(PACK *p, char *name, UINT64 i)
 	return e;
 }
 
-// Add an integer to the PACK
 ELEMENT *PackAddInt(PACK *p, char *name, UINT i)
 {
 	VALUE *v;
 	ELEMENT *e = NULL;
-	// Validate arguments
 	if (p == NULL || name == NULL)
 	{
 		return NULL;
@@ -1532,12 +1370,10 @@ ELEMENT *PackAddInt(PACK *p, char *name, UINT i)
 	return e;
 }
 
-// Add a Unicode string (array) to the PACK
 ELEMENT *PackAddUniStrEx(PACK *p, char *name, wchar_t *unistr, UINT index, UINT total)
 {
 	VALUE *v;
 	ELEMENT *e;
-	// Validate arguments
 	if (p == NULL || name == NULL || unistr == NULL || total == 0)
 	{
 		return NULL;
@@ -1574,12 +1410,10 @@ ELEMENT *PackAddUniStrEx(PACK *p, char *name, wchar_t *unistr, UINT index, UINT 
 	return e;
 }
 
-// Add a Unicode string to the PACK
 ELEMENT *PackAddUniStr(PACK *p, char *name, wchar_t *unistr)
 {
 	VALUE *v;
 	ELEMENT *e = NULL;
-	// Validate arguments
 	if (p == NULL || name == NULL || unistr == NULL)
 	{
 		return NULL;
@@ -1594,12 +1428,10 @@ ELEMENT *PackAddUniStr(PACK *p, char *name, wchar_t *unistr)
 	return e;
 }
 
-// Add a string to the PACK (array)
 ELEMENT *PackAddStrEx(PACK *p, char *name, char *str, UINT index, UINT total)
 {
 	VALUE *v;
 	ELEMENT *e;
-	// Validate arguments
 	if (p == NULL || name == NULL || str == NULL || total == 0)
 	{
 		return NULL;
@@ -1636,12 +1468,10 @@ ELEMENT *PackAddStrEx(PACK *p, char *name, char *str, UINT index, UINT total)
 	return e;
 }
 
-// Add a string to the PACK
 ELEMENT *PackAddStr(PACK *p, char *name, char *str)
 {
 	VALUE *v;
 	ELEMENT *e = NULL;
-	// Validate arguments
 	if (p == NULL || name == NULL || str == NULL)
 	{
 		return NULL;

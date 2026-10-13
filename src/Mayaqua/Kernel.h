@@ -7,7 +7,6 @@
 
 #include "MayaType.h"
 
-// Memory usage information
 struct MEMINFO
 {
 	UINT64 TotalMemory;
@@ -18,7 +17,6 @@ struct MEMINFO
 	UINT64 FreePhys;
 };
 
-// Locale information
 struct LOCALE
 {
 	wchar_t YearStr[16], MonthStr[16], DayStr[16];
@@ -29,10 +27,8 @@ struct LOCALE
 };
 
 
-// Thread procedure
 typedef void (THREAD_PROC)(THREAD *thread, void *param);
 
-// Thread
 struct THREAD
 {
 	REF *ref;
@@ -43,41 +39,33 @@ struct THREAD
 	void *AppData1, *AppData2, *AppData3;
 	UINT AppInt1, AppInt2, AppInt3;
 	UINT ThreadId;
-	bool PoolThread;
-	THREAD *PoolHostThread;
-	LIST *PoolWaitList;						// Thread termination waiting list
-	volatile bool PoolHalting;				// Thread stopped
+	LIST *PoolWaitList;
+	volatile bool PoolHalting;
 	EVENT *release_event;
-	bool Stopped;							// Indicates that the operation is Stopped
-	char *Name;								// Thread name
+	char *Name;
 };
 
-// Thread pool data
 struct THREAD_POOL_DATA
 {
-	EVENT *Event;						// Waiting Event
-	EVENT *InitFinishEvent;				// Initialization is completed event
-	THREAD *Thread;						// Threads that are currently assigned
-	THREAD_PROC *ThreadProc;			// Thread procedure that is currently assigned
+	EVENT *Event;
+	EVENT *InitFinishEvent;
+	THREAD *Thread;
+	THREAD_PROC *ThreadProc;
 };
 
-// Instance
 struct INSTANCE
 {
-	char *Name;							// Name
-	void *pData;						// Data
+	char *Name;
+	void *pData;
 };
 
-// Create a new thread
 #define	NewThread(thread_proc, param) NewThreadNamed((thread_proc), (param), (#thread_proc))
 
-// Function prototype
 void SleepThread(UINT time);
 THREAD *NewThreadInternal(THREAD_PROC *thread_proc, void *param);
 void ReleaseThreadInternal(THREAD *t);
 void CleanupThreadInternal(THREAD *t);
 void NoticeThreadInitInternal(THREAD *t);
-void WaitThreadInitInternal(THREAD *t);
 bool WaitThreadInternal(THREAD *t);
 THREAD *NewThreadNamed(THREAD_PROC *thread_proc, void *param, char *name);
 void ReleaseThread(THREAD *t);
@@ -148,12 +136,11 @@ void GetSpanStrMilli(char *str, UINT size, UINT64 sec64);
 void GetMemInfo(MEMINFO *info);
 bool GetEnv(char *name, char *data, UINT size);
 bool GetEnvW(wchar_t *name, wchar_t *data, UINT size);
-bool GetEnvW_ForWin32(wchar_t *name, wchar_t *data, UINT size);
 void GetHomeDirW(wchar_t *path, UINT size);
 void AbortExit();
 void AbortExitEx(char *msg);
 void YieldCpu();
 UINT GetNumberOfCpu();
 
-#endif	// KERNEL_H
+#endif
 

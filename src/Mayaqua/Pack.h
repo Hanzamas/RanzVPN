@@ -10,64 +10,46 @@
 
 #include "MayaType.h"
 
-// Constant
-#ifdef CPU_64
-
 #define	MAX_VALUE_SIZE			(384 * 1024 * 1024)	// Maximum Data size that can be stored in a single VALUE
 #define	MAX_VALUE_NUM			262144	// Maximum VALUE number that can be stored in a single ELEMENT
 #define	MAX_ELEMENT_NAME_LEN	63		// The length of the name that can be attached to the ELEMENT
 #define	MAX_ELEMENT_NUM			262144	// Maximum ELEMENT number that can be stored in a single PACK
 #define	MAX_PACK_SIZE			(512 * 1024 * 1024)	// Maximum size of a serialized PACK
 
-#else	// CPU_64
 
-#define	MAX_VALUE_SIZE			(96 * 1024 * 1024)	// Maximum Data size that can be stored in a single VALUE
-#define	MAX_VALUE_NUM			65536	// Maximum VALUE number that can be stored in a single ELEMENT
-#define	MAX_ELEMENT_NAME_LEN	63		// The length of the name that can be attached to the ELEMENT
-#define	MAX_ELEMENT_NUM			131072	// Maximum ELEMENT number that can be stored in a single PACK
-#define	MAX_PACK_SIZE			(128 * 1024 * 1024)	// Maximum size of a serialized PACK
+#define	VALUE_INT			0
+#define	VALUE_DATA			1
+#define	VALUE_STR			2
+#define	VALUE_UNISTR		3
+#define	VALUE_INT64			4
 
-#endif	// CPU_64
-
-// Type of VALUE
-#define	VALUE_INT			0		// Integer type
-#define	VALUE_DATA			1		// Data type
-#define	VALUE_STR			2		// ANSI string type
-#define	VALUE_UNISTR		3		// Unicode string type
-#define	VALUE_INT64			4		// 64 bit integer type
-
-// The number of allowable NOOP
 #define	MAX_NOOP_PER_SESSION	30
 #define NOOP 1
 #define NOOP_IGNORE 2 // A noop, but don't send a response noop
 
-// VALUE object
 struct VALUE
 {
-	UINT Size;				// Size
-	UINT IntValue;			// Integer value
-	void *Data;				// Data
-	char *Str;				// ANSI string
-	wchar_t *UniStr;		// Unicode strings
-	UINT64 Int64Value;		// 64 bit integer type
+	UINT Size;
+	UINT IntValue;
+	void *Data;
+	char *Str;
+	wchar_t *UniStr;
+	UINT64 Int64Value;
 };
 
-// ELEMENT object
 struct ELEMENT
 {
-	char name[MAX_ELEMENT_NAME_LEN + 1];	// Element name
-	UINT num_value;			// Number of values (>=1)
-	UINT type;				// Type
-	VALUE **values;			// List of pointers to the value
+	char name[MAX_ELEMENT_NAME_LEN + 1];
+	UINT num_value;
+	UINT type;
+	VALUE **values;
 };
 
-// PACK object
 struct PACK
 {
-	LIST *elements;			// Element list
+	LIST *elements;
 };
 
-// Function prototype
 PACK *NewPack();
 bool AddElement(PACK *p, ELEMENT *e);
 ELEMENT *GetElement(PACK *p, char *name, UINT type);
@@ -80,7 +62,6 @@ VALUE *NewUniStrValue(wchar_t *str);
 void FreeValue(VALUE *v, UINT type);
 int ComparePackName(void *p1, void *p2);
 void FreeElement(ELEMENT *e);
-UINT GetValueNum(ELEMENT *e);
 UINT GetIntValue(ELEMENT *e, UINT index);
 UINT64 GetInt64Value(ELEMENT *e, UINT index);
 char *GetStrValue(ELEMENT *e, UINT index);
@@ -151,4 +132,4 @@ bool PackGetIp6AddrEx(PACK *p, char *name, IPV6_ADDR *addr, UINT index);
 bool PackGetData2(PACK *p, char *name, void *data, UINT size);
 bool PackGetDataEx2(PACK *p, char *name, void *data, UINT size, UINT index);
 
-#endif	// PACK_H
+#endif
