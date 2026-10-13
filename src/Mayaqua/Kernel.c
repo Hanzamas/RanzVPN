@@ -248,11 +248,6 @@ bool GetEnv(char *name, char *data, UINT size)
 }
 bool GetEnvW(wchar_t *name, wchar_t *data, UINT size)
 {
-	return GetEnvW_ForWin32(name, data, size);
-}
-
-bool GetEnvW_ForWin32(wchar_t *name, wchar_t *data, UINT size)
-{
 	wchar_t *ret;
 	// Validate arguments
 	if (name == NULL || data == NULL)
@@ -716,7 +711,7 @@ THREAD *NewThreadNamed(THREAD_PROC *thread_proc, void *param, char *name)
 		pd->Event = NewEvent();
 		pd->InitFinishEvent = NewEvent();
 		host = NewThreadInternal(ThreadPoolProc, pd);
-		WaitThreadInitInternal(host);
+		WaitThreadInit(host);
 	}
 	else
 	{
@@ -986,22 +981,6 @@ void NoticeThreadInitInternal(THREAD *t)
 
 	// Notify
 	Set(t->init_finished_event);
-}
-
-// Wait for completion of thread initialization
-void WaitThreadInitInternal(THREAD *t)
-{
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	// KS
-	KS_INC(KS_WAITFORTHREAD_COUNT);
-
-	// Wait
-	Wait(t->init_finished_event, INFINITE);
 }
 
 // Get the date and time string by using the locale information
