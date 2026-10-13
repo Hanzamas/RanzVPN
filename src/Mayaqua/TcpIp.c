@@ -1221,9 +1221,9 @@ PKT *ParsePacket(UCHAR *buf, UINT size)
 }
 PKT *ParsePacketEx4(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum)
 {
-	return ParsePacketEx5(buf, size, no_l3, vlan_type_id, bridge_id_as_mac_address, no_http, correct_checksum, false);
+	return ParsePacketEx5(buf, size, no_l3, vlan_type_id, bridge_id_as_mac_address, no_http, correct_checksum, false, false);
 }
-PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum, bool no_l3_l4_except_icmpv6)
+PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum, bool no_l3_l4_except_icmpv6, bool no_dns)
 {
 	PKT *p;
 	USHORT vlan_type_id_16;
@@ -1361,6 +1361,13 @@ PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool b
 				}
 			}
 		}
+	}
+
+	// DNS query name of a query to UDP port 53. It is parsed here and not in ParseUDP so that a caller can
+	// skip it (no_dns): only packet logging reads it
+	if (no_dns == false && p->TypeL4 == L4_UDP && p->L4.UDPHeader != NULL && Endian16(p->L4.UDPHeader->DstPort) == 53)
+	{
+		ParseDNS(p, p->Payload, p->PayloadSize);
 	}
 
 	if (p->TypeL3 == L3_IPV4 && p->TypeL4 == L4_UDP && p->TypeL7 == L7_DHCPV4)
@@ -2586,7 +2593,7 @@ bool ParseUDP(PKT *p, UCHAR *buf, UINT size)
 
 	if (dst_port == 53)
 	{
-		ParseDNS(p, buf, size);
+		// ParsePacketEx5 parses the DNS query, unless its caller skips it
 		return true;
 	}
 

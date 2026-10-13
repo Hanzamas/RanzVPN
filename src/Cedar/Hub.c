@@ -3047,6 +3047,7 @@ bool HubPaPutPacket(SESSION *s, void *data, UINT size)
 	bool no_look_bpdu_bridge_id = false;
 	bool no_parse_dhcp = false;
 	bool no_correct_checksum = false;
+	bool no_l7 = false;
 
 	hub = s->Hub;
 
@@ -3141,13 +3142,20 @@ bool HubPaPutPacket(SESSION *s, void *data, UINT size)
 		no_correct_checksum = hub->Option->DisableCorrectIpOffloadChecksum;
 	}
 
+	if (hub != NULL && hub->LogSetting.SavePacketLog == false)
+	{
+		// Only PacketLog reads the HTTP, TLS SNI and DNS results, and it returns at once while the hub packet
+		// log is off, so that parsing is skipped. The DHCP opcode is still parsed: IP learning reads it
+		no_l7 = true;
+	}
+
 	if (s->VLanId != 0)
 	{
 		VLanInsertTag(&data, &size, s->VLanId, vlan_type_id);
 	}
 
 LABEL_TRY_AGAIN:
-	packet = ParsePacketEx4(data, size, no_l3, vlan_type_id, !no_look_bpdu_bridge_id, no_http, !no_correct_checksum);
+	packet = ParsePacketEx5(data, size, no_l3, vlan_type_id, !no_look_bpdu_bridge_id, no_http || no_l7, !no_correct_checksum, false, no_l7);
 
 	if (packet != NULL)
 	{
