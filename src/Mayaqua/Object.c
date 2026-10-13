@@ -404,18 +404,6 @@ void CleanupEvent(EVENT *e)
 	KS_INC(KS_FREEEVENT_COUNT);
 }
 
-// Set event
-void Set(EVENT *e)
-{
-	// Validate arguments
-	if (e == NULL || e->pData == NULL)
-	{
-		return;
-	}
-
-	SetEvent((HANDLE)e->pData);
-}
-
 // Wait for event
 bool Wait(EVENT *e, UINT timeout)
 {
