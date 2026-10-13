@@ -39,30 +39,6 @@ struct REF
 bool LockInner(LOCK *lock);
 void UnlockInner(LOCK *lock);
 
-// Lock / Unlock: function-like macros, not inline functions. The Windows SDK
-// header NTSecAPI.h declares Unlock; a function-like macro expands only on
-// Unlock(...), so it does not collide, whereas an inline function named Unlock does.
-#ifndef	_DEBUG
-
-#define	Lock(lock)		LockInner((lock))
-#define	Unlock(lock)	UnlockInner((lock))
-
-#else	// _DEBUG
-
-#define	Lock(lock)			\
-	{						\
-		LockInner(lock);	\
-		if (lock != NULL) { lock->FileName = __FILE__; lock->Line = __LINE__; lock->ThreadId = ThreadId();}	\
-	}
-
-#define	Unlock(lock)		\
-	{						\
-		if (lock != NULL) { lock->FileName = NULL; lock->Line = 0; lock->ThreadId = 0;}	\
-		UnlockInner(lock);	\
-	}
-
-#endif	// _DEBUG
-
 // Get the count value: 0 for NULL, otherwise an atomic read with a full barrier
 static inline UINT Count(COUNTER *c)
 {

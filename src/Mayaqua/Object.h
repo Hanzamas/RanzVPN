@@ -24,6 +24,34 @@ struct DEADCHECK
 };
 
 
+// Lock / Unlock: function-like macros, not inline functions. The Windows SDK
+// header NTSecAPI.h declares a global Unlock and COM interfaces (objidl.h) have
+// Lock/Unlock methods; a function-like macro expands only on Lock(...)/Unlock(...)
+// at call sites that include this header, while an inline function named Unlock
+// collides with the SDK. These macros live here (Object.h), not in the leaf
+// Native.h that Kernel.h pulls into every unit, so they never reach the Windows
+// COM/security headers of units that do not include Object.h (e.g. Win32Com.cpp).
+#ifndef	_DEBUG
+
+#define	Lock(lock)		LockInner((lock))
+#define	Unlock(lock)	UnlockInner((lock))
+
+#else	// _DEBUG
+
+#define	Lock(lock)			\
+	{						\
+		LockInner(lock);	\
+		if (lock != NULL) { lock->FileName = __FILE__; lock->Line = __LINE__; lock->ThreadId = ThreadId();}	\
+	}
+
+#define	Unlock(lock)		\
+	{						\
+		if (lock != NULL) { lock->FileName = NULL; lock->Line = 0; lock->ThreadId = 0;}	\
+		UnlockInner(lock);	\
+	}
+
+#endif	// _DEBUG
+
 // Function prototype
 LOCK *NewLock();
 LOCK *NewLockMain();
