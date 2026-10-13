@@ -2597,7 +2597,6 @@ UINT SendToEx(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size, 
 		else
 		{
 			UINT e = WSAGetLastError();
-			Debug("SendTo Error; %u\n", e);
 		}
 		return 0;
 	}
@@ -3250,7 +3249,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 	// Validate arguments
 	if (sock == NULL)
 	{
-		Debug("StartSSL Error: #0\n");
 		return false;
 	}
 	if (ssl_err == NULL)
@@ -3260,12 +3258,10 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 	if (sock->Connected == false || sock->socket == INVALID_SOCKET ||
 	        sock->ListenMode != false)
 	{
-		Debug("StartSSL Error: #1\n");
 		return false;
 	}
 	if (x != NULL && priv == NULL)
 	{
-		Debug("StartSSL Error: #2\n");
 		return false;
 	}
 	if (ssl_timeout == 0)
@@ -3494,7 +3490,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 			Unlock(openssl_lock);
 
 			Unlock(sock->ssl_lock);
-			Debug("StartSSL Error: #5\n");
 			FreeSSLCtx(ssl_ctx);
 			return false;
 		}
@@ -3552,7 +3547,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 			Unlock(openssl_lock);
 
 			Unlock(sock->ssl_lock);
-			Debug("StartSSL Error: #5\n");
 			SetTimeout(sock, prev_timeout);
 			FreeSSLCtx(ssl_ctx);
 			return false;
@@ -3595,7 +3589,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 			}
 			else
 			{
-				Debug("StartSSL: SSL verification error %d\n", ssl_verify_err);
 				switch (ssl_verify_err)
 				{
 				case X509_V_ERR_CERT_HAS_EXPIRED:
@@ -3798,7 +3791,6 @@ UINT SecureRecv(SOCK *sock, void *data, UINT size)
 			if (sock->Connected == false)
 			{
 				Unlock(sock->ssl_lock);
-				Debug("%s %u SecureRecv() Disconnect\n", __FILE__, __LINE__);
 				return 0;
 			}
 			ERR_clear_error();
@@ -3814,7 +3806,6 @@ UINT SecureRecv(SOCK *sock, void *data, UINT size)
 		{
 			// The communication have been disconnected
 			Disconnect(sock);
-			Debug("%s %u SecureRecv() Disconnect\n", __FILE__, __LINE__);
 			return 0;
 		}
 #endif
@@ -3853,7 +3844,6 @@ UINT SecureRecv(SOCK *sock, void *data, UINT size)
 		if (sock->Connected == false)
 		{
 			Unlock(sock->ssl_lock);
-			Debug("%s %u SecureRecv() Disconnect\n", __FILE__, __LINE__);
 			return 0;
 		}
 
@@ -3927,7 +3917,6 @@ UINT SecureRecv(SOCK *sock, void *data, UINT size)
 			return SOCK_LATER;
 		}
 	}
-	Debug("%s %u e=%u SecureRecv() Disconnect\n", __FILE__, __LINE__, e);
 	Disconnect(sock);
 	return 0;
 }
@@ -3951,7 +3940,6 @@ UINT SecureSend(SOCK *sock, void *data, UINT size)
 		if (sock->Connected == false)
 		{
 			Unlock(sock->ssl_lock);
-			Debug("%s %u SecureSend() Disconnect\n", __FILE__, __LINE__);
 			return 0;
 		}
 
@@ -3987,7 +3975,6 @@ UINT SecureSend(SOCK *sock, void *data, UINT size)
 	if (ret == 0)
 	{
 		// Disconnect
-		Debug("%s %u SecureSend() Disconnect\n", __FILE__, __LINE__);
 		Disconnect(sock);
 		return 0;
 	}
@@ -4012,7 +3999,6 @@ UINT SecureSend(SOCK *sock, void *data, UINT size)
 			return SOCK_LATER;
 		}
 	}
-	Debug("%s %u e=%u SecureSend() Disconnect\n", __FILE__, __LINE__, e);
 	Disconnect(sock);
 	return 0;
 }
@@ -6375,14 +6361,6 @@ DH *TmpDhCallback(SSL *ssl, int is_export, int keylength)
 	return ret;
 }
 
-// Log SSL keys
-void keylog_cb_func(const SSL* ssl, const char* line)
-{
-	Debug("SSL_KEYLOG_BEGIN\n");
-	Debug(line);
-	Debug("\nSSL_KEYLOG_END\n");
-}
-
 // Create the SSL_CTX
 struct ssl_ctx_st *NewSSLCtx(bool server_mode)
 {
@@ -6421,8 +6399,6 @@ struct ssl_ctx_st *NewSSLCtx(bool server_mode)
 #ifdef	SSL_CTX_set_ecdh_auto
 	SSL_CTX_set_ecdh_auto(ctx, 1);
 #endif	// SSL_CTX_set_ecdh_auto
-
-	SSL_CTX_set_keylog_callback(ctx, &keylog_cb_func);
 
 	return ctx;
 }
