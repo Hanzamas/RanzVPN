@@ -13,10 +13,12 @@
 #   braces    BEFORE AFTER   the only allowed difference is the deletion of balanced { } pairs that
 #                            enclose exactly one statement. A deleted pair must be the body of an
 #                            if, else, for, while or do; the statement inside must parse as one
-#                            statement with no preprocessor directive in it; deleting the braces
-#                            must not let a following 'else' bind to a different 'if'; and the
-#                            statement must not use a macro whose expansion is more than one
-#                            statement (a ';' or an 'if' outside parentheses and braces).
+#                            statement whichever #if arm is taken (directives only inside a
+#                            nested bracket group, each arm keeping the brackets balanced);
+#                            deleting the braces must not let a following 'else' bind to a
+#                            different 'if'; and outside nested { } the statement must not use
+#                            a macro whose expansion is more than one statement (a ';' or an
+#                            'if' outside parentheses and braces).
 #   files                    print the files the reformat applies to, one per line.
 #   count ROOT               print line counts of those files per directory as JSON.
 #   table NAME=JSON ...      print a markdown table of several 'count' outputs.
@@ -193,14 +195,26 @@ _OPEN = {'(': ')', '[': ']', '{': '}'}
 _CLOSE = {')', ']', '}'}
 
 
+def _skip_directive(v, i):
+    """v[i] is the '#' of a directive; return the index after its '<EOL>'."""
+    while i < len(v) and v[i] != '<EOL>':
+        i += 1
+    return i + 1
+
+
 def _skip_group(v, k):
-    """v[k] is an opening bracket; return the index after its matching closing bracket."""
+    """v[k] is an opening bracket; return the index after its matching closing bracket.
+    Directives inside the group are skipped here; conditional_arms_balanced() decides whether
+    they are acceptable."""
     stack = []
     i = k
     while i < len(v):
         t = v[i]
-        if t in ('#', '<EOL>'):
-            raise NotAStatement('preprocessor directive inside')
+        if t == '#':
+            i = _skip_directive(v, i)
+            continue
+        if t == '<EOL>':
+            raise NotAStatement('stray end of directive')
         if t in _OPEN:
             stack.append(_OPEN[t])
         elif t in _CLOSE:
@@ -263,6 +277,58 @@ def parse_statement(v, k):
             raise NotAStatement('unexpected %r' % t)
         i += 1
     raise NotAStatement('missing ;')
+
+
+def conditional_arms_balanced(v):
+    """Every #if group in v starts and ends in v, and each of its arms closes exactly the
+    brackets it opens: at every #elif, #else and #endif the open brackets are the very ones
+    that were open at the #if. Then the statement structure around the group is the same
+    whichever arm the compiler takes."""
+    open_brackets = []
+    starts = []
+    i = 0
+    while i < len(v):
+        t = v[i]
+        if t == '#':
+            name = v[i + 1] if i + 1 < len(v) else ''
+            if name in ('if', 'ifdef', 'ifndef'):
+                starts.append(tuple(open_brackets))
+            elif name in ('elif', 'else', 'elifdef', 'elifndef'):
+                if not starts or starts[-1] != tuple(open_brackets):
+                    return False
+            elif name == 'endif':
+                if not starts or starts.pop() != tuple(open_brackets):
+                    return False
+            i = _skip_directive(v, i)
+            continue
+        if t in _OPEN:
+            open_brackets.append(i)
+        elif t in _CLOSE:
+            if not open_brackets:
+                return False
+            open_brackets.pop()
+        i += 1
+    return not starts
+
+
+def top_level_tokens(v):
+    """Tokens of v outside nested { } groups and outside directives."""
+    out = []
+    depth = 0
+    i = 0
+    while i < len(v):
+        t = v[i]
+        if t == '#':
+            i = _skip_directive(v, i)
+            continue
+        if t == '{':
+            depth += 1
+        elif t == '}':
+            depth -= 1
+        elif depth == 0:
+            out.append(t)
+        i += 1
+    return out
 
 
 def one_statement(v):
@@ -367,22 +433,34 @@ def check_braces(a, b, macros):
         return None, (i, j, 'extra tokens after the end of the original')
 
     def next_kept(k):
+        """The next token after k that stays and is not part of a directive: an 'else' behind
+        an #if line binds to the same 'if' as one right after k."""
         k += 1
-        while k < len(a) and k in deleted:
-            k += 1
+        while k < len(a):
+            if k in deleted:
+                k += 1
+            elif a[k] == '#':
+                k = _skip_directive(a, k)
+            else:
+                break
         return a[k] if k < len(a) else None
 
     def pair_error(o, c):
         if not _brace_position_ok(a, match, o):
             return 'the braces are not the body of if, else, for, while or do'
+        content = a[o + 1:c]
+        kept = [a[k] for k in range(o + 1, c) if k not in deleted]
         try:
-            one_statement(a[o + 1:c])
-            open_if = one_statement([a[k] for k in range(o + 1, c) if k not in deleted])
+            one_statement(content)
+            open_if = one_statement(kept)
         except NotAStatement as e:
             return 'the braces do not enclose exactly one statement (%s)' % e
+        if '#' in content and not conditional_arms_balanced(content):
+            return 'a preprocessor conditional inside does not keep the brackets balanced'
         if open_if and next_kept(c) == 'else':
             return 'a following else would bind to a different if'
-        used = macros.intersection(a[o + 1:c])
+        # a macro inside a nested { } that stays is harmless; one outside it is not
+        used = macros.intersection(top_level_tokens(kept))
         if used:
             return 'the statement uses a multi-statement macro: %s' % ', '.join(sorted(used))
         return None

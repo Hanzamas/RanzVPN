@@ -156,6 +156,11 @@ class BracesTest(unittest.TestCase):
                                        'if (p) while (q) if (b) x(); else w();'))
         self.ok('if (p) { while (q) { if (b) x(); } } else w();',
                 'if (p) { while (q) if (b) x(); } else w();', 1)
+        # an else behind a directive line still binds to the inner if
+        self.assertIn('else', self.bad('if (a) { if (b) x(); }\n#ifdef W\nelse y();\n#endif\n',
+                                       'if (a) if (b) x();\n#ifdef W\nelse y();\n#endif\n'))
+        self.ok('if (a) { if (b) x(); }\n#ifdef W\nz();\n#endif\n',
+                'if (a) if (b) x();\n#ifdef W\nz();\n#endif\n', 1)
 
     def test_position(self):
         self.assertIn('body', self.bad('int a[] = { 1 };', 'int a[] = 1 ;'))
@@ -165,6 +170,30 @@ class BracesTest(unittest.TestCase):
 
     def test_preprocessor_inside(self):
         self.bad('if (a) {\n#ifdef X\nf();\n#endif\n}', 'if (a)\n#ifdef X\nf();\n#endif\n')
+
+    def test_else_if_merge_with_directive_in_nested_block(self):
+        self.ok('if (a) { x(); } else {\n\tif (b) {\n#ifdef W\n\t\ty();\n#endif\n\t\tz();\n\t}\n}\n',
+                'if (a) { x(); } else if (b) {\n#ifdef W\n\ty();\n#endif\n\tz();\n}\n', 1)
+
+    def test_directive_arms_must_keep_brackets_balanced(self):
+        before = ('if (a) { x(); } else {\n\tif (b) {\n#ifdef W\n\t\tx();\n\t} else {\n#endif\n'
+                  '\t\ty();\n\t}\n}\n')
+        after = ('if (a) { x(); } else if (b) {\n#ifdef W\n\tx();\n} else {\n#endif\n'
+                 '\ty();\n}\n')
+        self.assertIn('balanced', self.bad(before, after))
+        # two statements in the full stream are rejected before that
+        self.bad('if (a) { x(); } else {\n\tif (b) {\n#ifdef W\n\t}\n\tif (c) {\n#endif\n'
+                 '\t\tz();\n\t}\n}\n',
+                 'if (a) { x(); } else if (b) {\n#ifdef W\n}\nif (c) {\n#endif\n\tz();\n}\n')
+
+    def test_directive_at_top_level_of_body(self):
+        self.bad('if (a) {\n#ifdef W\n\tif (b) x();\n#endif\n}\n', 'if (a)\n#ifdef W\n\tif (b) x();\n#endif\n')
+
+    def test_macro_inside_nested_block_is_harmless(self):
+        macros = {'TWO'}
+        self.ok('if (a) { x(); } else { if (b) { TWO; } else { y(); } }',
+                'if (a) { x(); } else if (b) { TWO; } else { y(); }', 1, macros)
+        self.assertIn('macro', self.bad('if (a) { if (b) TWO; }', 'if (a) if (b) TWO;', macros))
 
     def test_labels_and_cases(self):
         self.bad('if (a) { l: f(); }', 'if (a) l: f();')
