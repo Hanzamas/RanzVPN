@@ -680,9 +680,7 @@ UINT StCrash(ADMIN *a, RPC_TEST *t)
 
 	SERVER_ADMIN_ONLY;
 
-#ifdef	OS_WIN32
 	MsSetEnableMinidump(false);
-#endif	// OS_WIN32
 
 	CrashNow();
 
@@ -778,7 +776,6 @@ UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t)
 
 	SERVER_ADMIN_ONLY;
 
-#ifdef	OS_WIN32
 	if (GetServerCapsBool(s, "b_support_eth_vlan") == false)
 	{
 		ret = ERR_NOT_SUPPORTED;
@@ -793,7 +790,6 @@ UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t)
 			ret = ERR_INTERNAL_ERROR;
 		}
 	}
-#endif	// OS_WIN32
 
 	return ret;
 }
@@ -807,7 +803,6 @@ UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t)
 
 	SERVER_ADMIN_ONLY;
 
-#ifdef	OS_WIN32
 	if (GetServerCapsBool(s, "b_support_eth_vlan") == false)
 	{
 		ret = ERR_NOT_SUPPORTED;
@@ -823,7 +818,6 @@ UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t)
 			ret = ERR_INTERNAL_ERROR;
 		}
 	}
-#endif	// OS_WIN32
 
 	return ret;
 }
@@ -1824,9 +1818,7 @@ UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t)
 
 		StrCpy(tmp, sizeof(tmp), e->DeviceName);
 
-#ifdef OS_WIN32
 		GetEthNetworkConnectionName(e->NetworkConnectionName, sizeof(e->NetworkConnectionName), e->DeviceName);
-#endif
 	}
 
 	FreeToken(o);
@@ -1850,7 +1842,6 @@ UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 		return ERR_LOCAL_BRIDGE_UNSUPPORTED;
 	}
 
-#ifdef	OS_WIN32
 	if (true)
 	{
 		char tmp[MAX_SIZE];
@@ -1862,7 +1853,6 @@ UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 			return ERR_OBJECT_NOT_FOUND;
 		}
 	}
-#endif	// OS_WIN32
 
 	ALog(a, NULL, "LA_ADD_BRIDGE", t->HubName, t->DeviceName);
 
@@ -7998,9 +7988,7 @@ void InRpcAccessEx(ACCESS *a, PACK *p, UINT index)
 	a->SrcPortEnd = PackGetIntEx(p, "SrcPortEnd", index);
 	a->DestPortStart = PackGetIntEx(p, "DestPortStart", index);
 	a->DestPortEnd = PackGetIntEx(p, "DestPortEnd", index);
-	//a->SrcUsernameHash = PackGetIntEx(p, "SrcUsernameHash", index);
 	PackGetStrEx(p, "SrcUsername", a->SrcUsername, sizeof(a->SrcUsername), index);
-	//a->DestUsernameHash = PackGetIntEx(p, "DestUsernameHash", index);
 	PackGetStrEx(p, "DestUsername", a->DestUsername, sizeof(a->DestUsername), index);
 	a->CheckSrcMac = PackGetBoolEx(p, "CheckSrcMac", index);
 	PackGetDataEx2(p, "SrcMacAddress", a->SrcMacAddress, sizeof(a->SrcMacAddress), index);
@@ -8066,9 +8054,7 @@ void OutRpcAccessEx(PACK *p, ACCESS *a, UINT index, UINT total)
 	PackAddIntEx(p, "SrcPortEnd", a->SrcPortEnd, index, total);
 	PackAddIntEx(p, "DestPortStart", a->DestPortStart, index, total);
 	PackAddIntEx(p, "DestPortEnd", a->DestPortEnd, index, total);
-	//PackAddIntEx(p, "SrcUsernameHash", a->SrcUsernameHash, index, total);
 	PackAddStrEx(p, "SrcUsername", a->SrcUsername, index, total);
-	//PackAddIntEx(p, "DestUsernameHash", a->DestUsernameHash, index, total);
 	PackAddStrEx(p, "DestUsername", a->DestUsername, index, total);
 	PackAddBoolEx(p, "CheckSrcMac", a->CheckSrcMac, index, total);
 	PackAddDataEx(p, "SrcMacAddress", a->SrcMacAddress, sizeof(a->SrcMacAddress), index, total);
@@ -9026,7 +9012,6 @@ PACK *AdminCall(RPC *rpc, char *function_name, PACK *p)
 		p = NewPack();
 	}
 
-//	Debug("Admin RPC Call: %s\n", function_name);
 
 	return RpcCall(rpc, function_name, p);
 }
