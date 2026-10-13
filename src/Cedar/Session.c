@@ -301,7 +301,6 @@ void SessionMain(SESSION *s)
 				if ((c->CurrentSendQueueSize > MAX_BUFFERING_PACKET_SIZE) ||
 					block_all_packets)
 				{
-//					WHERE;
 					// Discard because it exceeded the buffer size limit
 					Free(packet);
 				}
@@ -489,8 +488,6 @@ void SessionMain(SESSION *s)
 							WHERE;
 						}
 					}
-					//Debug("SessionMain(): The number of TCP connections short... Num_Tcp_Conn=%d Max_Conn=%d Curr_Conn_Time=%llu Tick64=%llu\n"
-					//	, num_tcp_conn, max_conn, s->CurrentConnectionEstablishTime, Tick64());
 
 				}
 			}
@@ -910,7 +907,6 @@ void SessionAdditionalConnect(SESSION *s)
 		return;
 	}
 
-	// s->LastTryAddConnectTime = Tick64();
 
 	AddRef(s->ref);
 	t = NewThread(ClientAdditionalThread, (void *)s);
@@ -1231,8 +1227,6 @@ void ClientThread(THREAD *t, void *param)
 			s->ClientOption->NumRetry);
 
 		// Initialize
-//		s->TotalRecvSize = s->TotalRecvSizeReal = 
-//			s->TotalSendSize = s->TotalSendSizeReal = 0;
 		s->NextConnectionTime = 0;
 
 		// Connect

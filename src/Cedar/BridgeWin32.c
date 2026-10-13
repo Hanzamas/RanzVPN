@@ -1170,12 +1170,10 @@ LIST *GetEthAdapterListInternal()
 			// Fail to enumerate
 			SuFree(su);
 			su = NULL;
-			//WHERE;
 			is_using_selow = false;
 		}
 		else
 		{
-			//WHERE;
 			is_using_selow = true;
 		}
 	}

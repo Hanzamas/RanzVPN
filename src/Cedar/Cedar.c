@@ -252,7 +252,6 @@ void WriteTinyLog(TINY_LOG *t, char *str)
 	Lock(t->Lock);
 	{
 		FileWrite(t->io, b->Buf, b->Size);
-		//FileFlush(t->io);
 	}
 	Unlock(t->Lock);
 
@@ -751,15 +750,6 @@ void AddHub(CEDAR *c, HUB *h)
 
 	LockHubList(c);
 	{
-#if	0
-		// We shall not check here the number of hub
-		if (LIST_NUM(c->HubList) >= MAX_HUBS)
-		{
-			// over limit
-			UnlockHubList(c);
-			return;
-		}
-#endif
 
 		// Confirm there is no hub which have same name
 		if (IsHub(c, h->Name))
@@ -1000,7 +990,6 @@ void CleanupCedar(CEDAR *c)
 	ReleaseList(c->ListenerList);
 	ReleaseList(c->HubList);
 	ReleaseList(c->ConnectionList);
-	//CleanupUDPEntry(c);
 	ReleaseList(c->UDPEntryList);
 	DeleteLock(c->lock);
 	DeleteCounter(c->ConnectionIncrement);

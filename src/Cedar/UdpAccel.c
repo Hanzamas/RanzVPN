@@ -45,7 +45,6 @@ void UdpAccelPoll(UDP_ACCEL *a)
 		{
 			BLOCK *b = UdpAccelProcessRecvPacket(a, tmp, ret, &src_ip, src_port);
 
-			//Debug("UDP Recv: %u %u %u\n", ret, (b == NULL ? 0 : b->Size), (b == NULL ? 0 : b->Compressed));
 
 			/*if (b != NULL)
 			{
@@ -103,7 +102,6 @@ void UdpAccelPoll(UDP_ACCEL *a)
 
 			a->NextSendKeepAlive = a->Now + (UINT64)rand_interval;
 
-			//Debug("UDP KeepAlive\n");
 
 			UdpAccelSend(a, NULL, 0, false, 1000, false);
 		}
