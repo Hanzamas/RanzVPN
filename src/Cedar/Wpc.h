@@ -65,10 +65,6 @@ struct URL_DATA
 typedef bool (WPC_RECV_CALLBACK)(void *param, UINT total_size, UINT current_size, BUF *recv_buf);
 
 // Function prototype
-void Base64ToSafe64(char *str, const UINT size);
-void Safe64ToBase64(char *str, const UINT size);
-UINT DecodeSafe64(void *dst, const char *src, UINT size);
-void EncodeSafe64(char *dst, const void *src, const UINT size);
 bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer);
 void CreateUrl(char *url, UINT url_size, URL_DATA *data);
 BUF *HttpRequestEx(URL_DATA *data, INTERNET_SETTING *setting,
@@ -87,8 +83,6 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 					WPC_RECV_CALLBACK *recv_callback, void *recv_callback_param, void *sha1_cert_hash, UINT num_hashes,
 					bool *cancel, UINT max_recv_size, char *header_name, char *header_value);
 SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool *cancel);
-void WpcAddDataEntry(BUF *b, char *name, void *data, UINT size);
-void WpcFillEntryName(char *dst, char *name);
 
 #endif	// WPC_H
 
