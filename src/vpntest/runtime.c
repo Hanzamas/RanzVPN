@@ -519,8 +519,13 @@ static void RtFileioHidden(RT_CTX *ctx, wchar_t *aux_path, UCHAR *data)
 {
 	DWORD attr;
 	IO *io;
+	BOOL marked;
+	UINT err;
 
-	RtCheck(ctx, SetFileAttributesW(aux_path, FILE_ATTRIBUTE_HIDDEN) != FALSE, "Mark the aux file hidden", "error %u", GetLastError());
+	// Read the error right after the call: argument evaluation order is unspecified in C
+	marked = SetFileAttributesW(aux_path, FILE_ATTRIBUTE_HIDDEN);
+	err = (marked == FALSE) ? GetLastError() : 0;
+	RtCheck(ctx, marked != FALSE, "Mark the aux file hidden", "error %u", err);
 
 	io = FileCreateW(L"@" RT_FILEIO_AUX_NAME);
 	if (RtCheck(ctx, io != NULL, "FileCreate replaces a hidden file", "returned NULL"))

@@ -9,8 +9,6 @@
 
 #include "Native.h"
 
-#undef Yield
-
 // Convert OS type to a string
 char *OsTypeToStr(UINT type)
 {
