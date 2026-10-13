@@ -4,7 +4,7 @@
 
 ## Context
 
-SeLow is SoftEther's NDIS lightweight filter driver. The server uses it through `SeLowUser.c` and `BridgeWin32.c` to capture and inject Ethernet frames on a physical NIC for Local Bridge, which is the function that connects a virtual Ethernet segment to a real LAN segment. On Windows 10 it is the only bridging path the fork has (the WinPcap path goes away with Windows 7 support, ticket #18). The driver binary is signed by SoftEther and cannot be modified.
+SeLow is an NDIS **protocol** driver (Class `NetTrans`; it calls `NdisRegisterProtocolDriver`), not a lightweight filter. The server uses it through `SeLowUser.c` and `BridgeWin32.c` to capture and inject Ethernet frames on a physical NIC for Local Bridge, which is the function that connects a virtual Ethernet segment to a real LAN segment. On Windows 10 it is the only bridging path the fork has (the WinPcap path goes away with Windows 7 support, ticket #18). The shipped driver binary is **Microsoft-WHQL-signed** (not SoftEther-signed) and cannot be modified without breaking that signature (corrected in the 2026-10-13 amendment).
 
 Hilmi asked whether SeLow is really no longer used. Under the earlier L3-only recommendation (ADR-0004, now superseded) it would not have been needed by the new core; under ADR-0014 it is.
 
@@ -16,5 +16,13 @@ Hilmi asked whether SeLow is really no longer used. Under the earlier L3-only re
 ## Consequences
 
 - `SeLowUser.c`, `BridgeWin32.c`, `Bridge.c` and the `SeLow_Win10` driver packages remain in the fork and are the reference for the L2 backend; `See/` and `SeeDll/` (WinPcap era) are removed by ticket #18 as planned.
-- The SeLow protocol driver keeps its SoftEther name, as accepted in the spec.
-- The new product therefore does depend on one SoftEther-signed binary unless the Windows Network Bridge path is chosen for every L2 deployment; this is recorded, not resolved.
+- The SeLow protocol driver keeps its SoftEther display strings, which it must to keep Microsoft's catalog signature valid.
+- The new product therefore does depend on one third-party-signed binary (the Microsoft-WHQL-signed SeLow package) unless the Windows Network Bridge path is chosen for every L2 deployment; this is recorded, not resolved.
+
+## Amendment 2026-10-13: SeLow driver type and signer corrected
+
+From the 2026-10-13 grilling (`facts-signing.md` section 6, `prep-release.md` Q22), checked by local inspection of `src/bin/hamcore/DriverPackages/SeLow_Win10/x64/`. This ADR's original Context contained two factual errors, now fixed above:
+
+- **Type.** SeLow is an NDIS **protocol** driver, not a lightweight filter: INF `Class = NetTrans`, `LowerRange "ndis5,ndis4"`, and `NdisRegisterProtocolDriver` in `src/SeLow/SeLow.c`.
+- **Signer.** The shipped `SeLow_x64.sys` and `SeLow_Win10_x64.cat` are signed by **"Microsoft Windows Hardware Compatibility Publisher"** (an HLK/WHQL dashboard signature: EKU `1.3.6.1.4.1.311.10.3.5`, no `.5.1`), with a Microsoft Time-Stamp countersignature, x64 only. Only the pre-fork v4.19-era builds were SoftEther/GlobalSign-signed.
+- **The decision stands; the dependency is on a Microsoft-signed binary, not a SoftEther-signed one.** It still cannot be rebuilt or extended (e.g. to arm64) without a driver-signing pipeline of our own, which is why XDP on the loopback adapter is the path away from it in the new core (ADR-0018). Open: the 2018 build's HVCI status is untested.

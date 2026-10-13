@@ -30,7 +30,7 @@ Facts that shape the migration, read from the tree at 46550173:
    |---|---|
    | Kernel/Object: `LOCK`, `COUNTER`, `REF`, `EVENT`, `THREAD` | `CRITICAL_SECTION` (embedded), `Interlocked*`, kernel event, `_beginthreadex` |
    | `Tick64` and time helpers | `GetTickCount64` / `QueryPerformanceCounter`, `GetSystemTimeAsFileTime` |
-   | Memory tracker and `NO MEMORY LEAKS` | CRT debug heap (`_CrtSetDbgFlag`, `_CrtDumpMemoryLeaks`); the CI marker moves with it |
+   | Memory tracker and `NO MEMORY LEAKS` | **kept as-is** (Mayaqua's `KS_*` counters and the marker stay; corrected in the 2026-10-13 amendment) — a separate test branch only trials the CRT debug heap against it |
    | `FileIO`, `OS` dispatch table, `Win32.c` backend | direct `CreateFileW` family; the dispatch table disappears once it has a single backend |
    | DNS in `Network.c` | `GetAddrInfoW` / `GetAddrInfoExW` |
    | `Encrypt.c` on OpenSSL | CNG (`BCrypt*`, `NCrypt*`) and CryptoAPI for X.509, per ADR-0007 |
@@ -48,3 +48,12 @@ Facts that shape the migration, read from the tree at 46550173:
 - OpenSSL leaves the dependency list at the `Encrypt` and TLS steps, which also removes the largest vcpkg build item from CI.
 - The per-primitive semantic audit (re-entrancy of each `LOCK`, reset mode and waiters of each `EVENT`, ownership of each `THREAD`) is the first task of every migration ticket; it is not done in advance here.
 - Risk is concentrated in silent semantic changes (deadlock from a non-recursive lock, lost wake-up from a reset-mode change, tick wrap or jump). Those are exactly what the harness stress case must catch, which is why the harness is a hard prerequisite.
+
+## Amendment 2026-10-13: #30 scope, the memory tracker, and CNG/Schannel deferred to the new core
+
+The 2026-10-13 grilling fixed the scope of the Windows-native runtime migration (ticket #30) within the slim fork. The direction, header shape and wrapper-flip method of the original decision are unchanged; the step boundaries and three details are:
+
+- **#30 stops at step 7 (DNS → `GetAddrInfoW`) and step 9 (HTTP client → WinHTTP).** Completed on branch `winnative` (PR #40): step 0/1 (`Tick64` plus `Native.h` setup), step 2 (`LOCK`/`COUNTER`/`REF`), step 3 (`EVENT`), step 4 (`THREAD`) and step 6 (`FileIO` plus the `OS` dispatch-table collapse); step 7 (DNS) and step 9 (HTTP) raced in parallel.
+- **Step 5 (memory tracker) is not migrated.** Mayaqua's `KS_*` counters and the `NO MEMORY LEAKS` marker are **kept** (this reverses the original Map row, which moved the marker to the CRT debug heap). In addition, a **separate test branch** carries a Debug CI job that trials the CRT debug heap (`_CrtSetDbgFlag` / `_CrtDumpMemoryLeaks`); acceptance is that the debug-heap leak check agrees with the `KS_*` marker. The extra CI minutes are noted; the repo is private.
+- **Steps 8 (`Encrypt` → CNG) and 10 (TLS → Schannel) move to the new core (ADR-0022); they are not dropped.** The new core is CNG and Schannel only.
+- **Step 8, the part that is useful inside the slim fork while OpenSSL stays for TLS:** move only SHA-1, MD5, MD4, RC4, DES and the RNG to CNG, each with known-answer tests. X.509, RSA and DH stay on OpenSSL until TLS moves (step 10). The OpenSSL-engine client auth for cascades is dropped as a scope-cut ticket with its own golden diff. The legacy SE-VPN listener stays on OpenSSL until the slim fork retires.
