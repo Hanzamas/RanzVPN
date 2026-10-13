@@ -825,21 +825,6 @@ void InsertQueue(QUEUE *q, void *p)
 
 	q->num_item++;
 
-	/*{
-		static UINT max_num_item;
-		static UINT64 next_tick = 0;
-		UINT64 now = Tick64();
-
-		max_num_item = MAX(q->num_item, max_num_item);
-
-		if (next_tick == 0 || next_tick <= now)
-		{
-			next_tick = now + (UINT64)1000;
-
-			printf("max_queue = %u\n", max_num_item);
-		}
-	}*/
-
 	// KS
 	KS_INC(KS_INSERT_QUEUE_COUNT);
 }
