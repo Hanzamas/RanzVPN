@@ -1,0 +1,425 @@
+{
+  "comment": "Split map for issue #29, read by tools/split/apply_split.py. For each god file: the new files and the top-level definitions they receive (exact names first, then the first matching pattern), plus names that stay in the god file on purpose (remainder). A definition that no entry names stays where it is and is reported. Static helpers, file-scope data, prototypes, macros and types written in the god file are not listed: they follow the code that uses them.",
+  "macro_defines": {
+    "DECLARE_SC": 2,
+    "DECLARE_SC_EX": 2,
+    "DECLARE_RPC": 2,
+    "DECLARE_RPC_EX": 2
+  },
+  "modules": [
+    {
+      "source": "src/Cedar/Server.c",
+      "files": [
+        {
+          "file": "ServerConfig.c",
+          "description": "VPN Server configuration: load and write of the configuration file, including the Virtual Hub sub-configuration, and the reboot that can reset it (they share server_reset_setting)",
+          "names": [
+            "SiRebootServer", "SiRebootServerEx",
+            "SERVER_CONFIG_FILE_NAME", "SERVER_CONFIG_FILE_NAME_IN_CLIENT", "SERVER_CONFIG_FILE_NAME_IN_CLIENT_RELAY",
+            "BRIDGE_CONFIG_FILE_NAME", "SERVER_CONFIG_TEMPLATE_NAME", "BRIDGE_CONFIG_TEMPLATE_NAME", "vpn_global_parameters",
+            "SiSetDefaultHubOption", "SiInitDefaultHubList", "SiSetDefaultLogSetting",
+            "SiInitConfiguration", "SiFreeConfiguration", "IncrementServerConfigRevision",
+            "SiSaverThread", "SiWriteConfigurationFile", "SiWriteConfigurationToCfg"
+          ],
+          "patterns": ["^SiLoad", "^SiWrite(?!SysLog$)"]
+        },
+        {
+          "file": "ServerListener.c",
+          "description": "VPN Server listener list: add, delete, enable, disable and stop the TCP listeners",
+          "names": [
+            "SiInitListenerList", "SiDeleteListener", "CompareServerListener", "SiDisableListener", "SiEnableListener",
+            "SiGetListener", "SiAddListener", "SiAddListenerEx", "SiLockListenerList", "SiUnlockListenerList", "SiStopAllListener"
+          ]
+        },
+        {
+          "file": "ServerCaps.c",
+          "description": "VPN Server capabilities: the caps list, the server caps cache and the global server flags",
+          "names": [
+            "GetServerCapsInt", "GetServerCapsBool", "InitServerCapsCache", "FreeServerCapsCache", "DestroyServerCapsCache",
+            "FlushServerCaps", "GetServerCaps", "UpdateGlobalServerFlags", "SetGlobalServerFlag", "GetGlobalServerFlag",
+            "GetServerCapsMain", "InitCapsList", "InRpcCapsList", "OutRpcCapsList", "FreeRpcCapsList", "AddCapsBool",
+            "AddCapsInt", "GetCapsInt", "GetCapsBool", "FreeCapsList", "GetCaps", "AddCaps", "CompareCaps", "NewCapsList",
+            "FreeCaps", "NewCaps", "global_server_flags"
+          ]
+        }
+      ],
+      "remainder": {
+        "description": "process lifecycle (SiNewServer, SiCleanupServer, reboot, StStartServer), debug commands, dead-lock check, syslog, log-file enumeration, default certificate, region",
+        "names": ["SiWriteSysLog"],
+        "patterns": [
+          "^SiDebug", "^SiCheckDeadLock", "^SiDeadLockCheck", "^Si(Init|Free)DeadLockCheck", "^Si(Init|Free)HubCreateHistory",
+          "SysLog", "LogFile", "^St(Init|Free|StartServer|StopServer)$", "^SiRebootServerThread$", "^Si(New|Release|Cleanup)Server",
+          "^SiGenerateDefaultCert", "^SiInitDefaultServerCert", "^SiInitCipherName", "Region", "^SiIsEnterprise",
+          "^GetServerProductName", "^IsAdminPackSupportedServerProduct$", "^SiTooManyUserObjectsInServer$"
+        ]
+      }
+    },
+    {
+      "source": "src/Cedar/Protocol.c",
+      "files": [
+        {
+          "file": "ProtocolClient.c",
+          "description": "SE-VPN protocol, client-connect side: ClientConnect, additional connections, hello, authentication and signature upload, socket and proxy connect (used by cascade connections)",
+          "names": [
+            "EnumHub", "CreateNodeInfo", "ClientAdditionalConnectToServer", "ClientAdditionalConnect",
+            "ClientCheckServerCertThread", "ClientCheckServerCert", "ClientConnect", "ParseWelcomeFromPack", "PackGetPolicy",
+            "ClientUploadAuth2", "PackAddClientVersion", "ClientUploadAuth", "ClientDownloadHello", "ClientUploadSignature",
+            "ClientConnectToServer", "ClientConnectGetSocket", "ProxyCodeToCedar", "TcpConnectEx3", "BindTcpConnectEx3",
+            "BindTcpIpConnectEx", "GetHello", "PackLoginWithCert", "PackLoginWithPlainPassword", "PackLoginWithPassword",
+            "PackLoginWithAnonymous", "PackAdditionalConnect"
+          ]
+        },
+        {
+          "file": "ProtocolServer.c",
+          "description": "SE-VPN protocol, server-accept side: ServerAccept, ChangePasswordAccept, the server hello, signature check and welcome",
+          "names": [
+            "NodeInfoToStr", "ChangePasswordAccept", "ServerAccept", "PackWelcome", "PackAddPolicy", "ServerUploadHello",
+            "ServerDownloadSignature", "PackHello", "GetAuthTypeFromPack", "GetHubnameAndUsernameFromPack",
+            "GetProtocolFromPack", "GetMethodFromPack"
+          ]
+        }
+      ],
+      "remainder": {
+        "description": "what both sides use: certificate chain download, machine hash, session key, protocol init",
+        "names": [
+          "DownloadAndSaveIntermediateCertificatesIfNecessary", "TryGetRootCertChain", "TryGetParentCertFromCertList",
+          "FindCertIssuerFromCertList", "DownloadCert", "NewCertList", "FreeCertList", "IsXInCertList", "AddXToCertList",
+          "AddAllChainCertsToCertList", "AddAllRootCertsToCertList", "GenerateMachineUniqueHash", "GetSessionKeyFromPack",
+          "InitProtocol", "FreeProtocol"
+        ]
+      }
+    },
+    {
+      "source": "src/Cedar/Admin.c",
+      "files": [
+        {
+          "file": "AdminLog.c",
+          "description": "Admin RPC area: log files (enumerate and read the server log files)",
+          "names": ["StReadLogFile", "StEnumLogFile", "SiReadLocalLogFile", "SiEnumLocalLogFileList"]
+        },
+        {
+          "file": "AdminAc.c",
+          "description": "Admin RPC area: IP access control list of a Virtual Hub",
+          "names": ["StGetAcList", "StSetAcList"]
+        },
+        {
+          "file": "AdminCrl.c",
+          "description": "Admin RPC area: certificate revocation list of a Virtual Hub",
+          "names": ["StSetCrl", "StGetCrl", "StDelCrl", "StAddCrl", "StEnumCrl"]
+        },
+        {
+          "file": "AdminHubOption.c",
+          "description": "Admin RPC area: Virtual Hub options and the server configuration file",
+          "names": [
+            "StSetHubExtOptions", "StGetHubExtOptions", "StSetHubAdminOptions", "StGetHubAdminOptions",
+            "StGetDefaultHubAdminOptions", "StGetConfig", "StSetConfig", "StGetCaps"
+          ]
+        },
+        {
+          "file": "AdminBridge.c",
+          "description": "Admin RPC area: Local Bridge",
+          "names": ["StGetBridgeSupport", "StEnumEthernet", "StAddLocalBridge", "StDeleteLocalBridge", "StEnumLocalBridge"]
+        },
+        {
+          "file": "AdminSyslog.c",
+          "description": "Admin RPC area: syslog settings",
+          "names": ["StSetSysLog", "StGetSysLog"]
+        },
+        {
+          "file": "AdminSession.c",
+          "description": "Admin RPC area: IP and MAC tables and sessions of a Virtual Hub",
+          "names": [
+            "StDeleteIpTable", "SiEnumIpTable", "StEnumIpTable", "StDeleteMacTable", "SiEnumMacTable", "StEnumMacTable",
+            "StDeleteSession", "StGetSessionStatus", "SiEnumSessionMain", "StEnumSession", "SiEnumLocalSession"
+          ]
+        },
+        {
+          "file": "AdminGroup.c",
+          "description": "Admin RPC area: groups",
+          "names": ["StEnumGroup", "StDeleteGroup", "StGetGroup", "StSetGroup", "StCreateGroup"]
+        },
+        {
+          "file": "AdminUser.c",
+          "description": "Admin RPC area: users",
+          "names": ["StEnumUser", "StDeleteUser", "StGetUser", "StSetUser", "StCreateUser"]
+        },
+        {
+          "file": "AdminAccess.c",
+          "description": "Admin RPC area: access lists",
+          "names": ["StEnumAccess", "StDeleteAccess", "StSetAccessList", "StAddAccess"]
+        },
+        {
+          "file": "AdminLink.c",
+          "description": "Admin RPC area: cascade connections",
+          "names": [
+            "StRenameLink", "StDeleteLink", "StSetLinkOffline", "StSetLinkOnline", "StGetLinkStatus", "StEnumLink",
+            "StGetLink", "StSetLink", "StCreateLink"
+          ]
+        },
+        {
+          "file": "AdminCa.c",
+          "description": "Admin RPC area: trusted CA certificates of a Virtual Hub",
+          "names": ["StDeleteCa", "StGetCa", "StEnumCa", "StAddCa"]
+        },
+        {
+          "file": "AdminHub.c",
+          "description": "Admin RPC area: Virtual Hubs (create, set, enumerate, delete, status, log settings) and server connections",
+          "names": [
+            "StGetHubLog", "StSetHubLog", "StGetHubStatus", "StSetHubOnline", "StGetConnectionInfo", "StDisconnectConnection",
+            "StEnumConnection", "StDeleteHub", "StEnumHub", "StGetHub", "StSetHub", "StCreateHub"
+          ]
+        },
+        {
+          "file": "AdminServer.c",
+          "description": "Admin RPC area: server information and status, cipher, certificate, password and listeners",
+          "names": [
+            "StSetServerCipher", "StGetServerCipher", "StGetServerCipherList", "StGetServerCert", "StSetServerCert",
+            "StSetServerPassword", "StEnableListener", "StDeleteListener", "StEnumListener", "StCreateListener",
+            "StGetServerStatus", "StGetServerInfo", "CopyOsInfo"
+          ]
+        },
+        {
+          "file": "AdminMessage.c",
+          "description": "Admin RPC area: hub and admin messages, maintenance (test, debug, flush, crash, reboot, certificate regeneration), Ethernet VLAN and license",
+          "names": [
+            "StRegenerateServerCert", "StSetHubMsg", "StGetHubMsg", "StDebug", "StFlush", "StCrash", "StGetAdminMsg",
+            "StEnumEthVLan", "StSetEnableEthVLan", "StGetLicenseStatus", "StEnumLicenseKey", "StAddLicenseKey",
+            "StDelLicenseKey", "StRebootServer", "StTest"
+          ]
+        }
+      ],
+      "remainder": {
+        "description": "admin RPC dispatch and connection (AdminDispatch, AdminAccept, AdminCall, AdminConnect*), the client stubs (Sc*), marshalling (InRpc*, OutRpc*, FreeRpc*) and the vpncmd-only client code",
+        "names": [
+          "ScGetCapsEx", "AdminDispatch", "DownloadFileFromServer", "AdminCall", "CheckAdminSourceAddress", "AdminAccept",
+          "AdminCheckPassword", "HashAdminPassword", "AdminDisconnect", "AdminConnectMain", "AdminConnectEx",
+          "AdminConnectEx2", "AdminReconnect", "SiIsEmptyPassword"
+        ],
+        "patterns": ["^Sc[A-Z]", "^(In|Out|Free)Rpc"]
+      }
+    },
+    {
+      "source": "src/Cedar/Command.c",
+      "files": [
+        {
+          "file": "CommandCheck.c",
+          "description": "vpncmd system check (Check*): network, threads, file system, strings, memory and kernel self-tests",
+          "names": ["checker_procs", "SystemCheck", "InputToNull", "RetZero"],
+          "patterns": ["^Check[A-Z]"]
+        },
+        {
+          "file": "CommandTools.c",
+          "description": "vpncmd tools commands (Pt*): system check command and certificate creation",
+          "names": ["PtCheck", "PtMakeCert", "PtMakeCert2048"]
+        },
+        {
+          "file": "CommandTrafficTest.c",
+          "description": "vpncmd traffic test (Tt*): the traffic test server and client and their result output",
+          "names": ["GetTtcTypeStr", "NewTtc", "NewTtcEx", "FreeTtc", "NewTts", "FreeTts", "PtTrafficPrintProc", "PtTrafficServer", "PtTrafficClient"],
+          "patterns": ["^Tt"]
+        },
+        {
+          "file": "CommandServer.c",
+          "description": "vpncmd server administration commands (Ps*) and the argument parsers and printers they use",
+          "names": [
+            "GetSyslogSettingName", "GetConnectionTypeStr", "GetLogSwitchStr", "GetPacketLogNameStr", "StrToLogSwitchType",
+            "StrToPacketLogSaveInfoType", "StrToPacketLogType", "GetProxyTypeStr", "GetClientAuthTypeStr", "PrintPolicy",
+            "PrintPolicyList", "EditPolicy", "StrToPassOrDiscard", "StrToProtocol", "ParsePortRange",
+            "ParseMacAddressAndMask", "ParseTcpState", "GetAuthTypeStr", "StrToDateTime64"
+          ],
+          "patterns": ["^Ps[A-Z]", "^Cmd(?!PrintError$|PrintAbout$)"]
+        },
+        {
+          "file": "CommandTable.c",
+          "description": "vpncmd console table output (Ct*): standard and CSV table printing",
+          "patterns": ["^Ct[A-Z]"]
+        }
+      ],
+      "remainder": {
+        "description": "vpncmd entry and dispatch: VpnCmdProc, CommandMain, PsConnect, PtConnect, PsMain, PtMain and their helpers",
+        "names": [
+          "PsMain", "NewPs", "FreePs", "PsConnect", "PtMain", "NewPt", "FreePt", "PtConnect", "VpnCmdInitBootPath",
+          "CmdPrintError", "CmdPrintAbout", "ParseHostPortAtmark", "ParseHostPort", "VpnCmdProc", "CommandMain"
+        ]
+      }
+    },
+    {
+      "source": "src/Cedar/Hub.c",
+      "files": [
+        {
+          "file": "HubPacket.c",
+          "description": "Virtual Hub packet forwarding: StorePacket with its policy, access list and traffic-limiter filters, the broadcast storm list and the hub packet adapter",
+          "names": [
+            "IsPacketMaskedByAccessList", "ApplyAccessListToForwardPacket", "BuildRedirectToUrlPayload", "ForceRedirectToUrl",
+            "ApplyAccessListToStoredPacket", "IsTcpPacketNcsiHttpAccess", "CompareStormList", "CheckBroadcastStorm",
+            "StorePacket", "CheckMaxLoggedPacketsPerMinute", "IsIPManagementTargetForHUB", "AddStormList", "SearchStormList",
+            "StorePacketToHubPa", "DeleteIPv6DefaultRouterInRA", "StorePacketFilterByPolicy", "IsMostHighestPriorityPacket",
+            "IntoTrafficLimiter", "StorePacketFilterByTrafficLimiter", "StorePacketFilter", "GetHubPacketAdapter"
+          ],
+          "patterns": ["^HubPa"]
+        },
+        {
+          "file": "HubTable.c",
+          "description": "Virtual Hub tables: user list cache, IP access control list, CRL, access list, trusted certificates, MAC and IP tables",
+          "names": [
+            "NewUserList", "IsUserMatchInUserListWithCacheExpires", "IsUserMatchInUserListWithCacheExpiresAcl",
+            "IsUserMatchInUserList", "LoadUserList", "FreeUserListEntry", "FindUserList", "CompareUserList",
+            "DeleteAllUserListCache", "FreeUserList", "SetAcList", "DelAllAc", "FreeAcList", "GenerateAcStr",
+            "IsIpDeniedByAcList", "IsIpMaskedByAc", "AddAc", "NormalizeAcList", "NewAcList", "CmpAc", "CopyCrl", "FreeCrl",
+            "IsValidCertInHub", "IsCertMatchCrlList", "GenerateCrlStr", "IsCertMatchCrl", "GetAccessListStr",
+            "AddAccessList", "AddAccessListEx", "InitAccessList", "FreeAccessList", "CmpAccessList",
+            "DeleteOldIpTableEntry", "DeleteExpiredMacTableEntry", "DeleteExpiredIpTableEntry", "CompareIpTable",
+            "GetHashOfMacTable", "CompareMacTable", "AddRootCert", "CompareCert"
+          ]
+        },
+        {
+          "file": "HubOption.c",
+          "description": "Virtual Hub options: admin options (the exported admin_options array), hub message and log settings",
+          "names": [
+            "admin_options", "num_admin_options", "IsURLMsg", "GetHubAdminOptionData", "DataToHubOptionStruct",
+            "HubOptionStructToData", "NewAdminOption", "GetHubAdminOptionHelpString", "AddHubAdminOptionsDefaults",
+            "DeleteAllHubAdminOption", "GetHubAdminOptionEx", "GetHubAdminOption", "CompareAdminOption", "GetHubMsg",
+            "SetHubMsg", "GetHubLogSetting", "SetHubLogSettingEx", "SetHubLogSetting"
+          ]
+        }
+      ],
+      "remainder": {
+        "description": "Virtual Hub lifecycle: create, online and offline, sessions, watchdog, hub list, hub addresses and the hub database",
+        "names": [
+          "broadcast", "StartHubWatchDog", "StopHubWatchDog", "HubWatchDogThread", "MakeSimpleUsernameRemoveNtDomain",
+          "UsernameToInt64", "GetSessionByName", "StopAllSession", "DelSession", "AddSession", "StopHub", "SetHubOnline",
+          "SetHubOffline", "IsHub", "GetHub", "LockHubList", "UnlockHubList", "ReleaseHub", "CleanupHub", "CompareHub",
+          "IsHubMacAddress", "IsHubIpAddress32", "IsHubIpAddress", "IsHubIpAddress64", "GenHubIpAddress", "GenHubMacAddress",
+          "NewHub", "DeleteHubDb", "NewHubDb"
+        ]
+      }
+    },
+    {
+      "source": "src/Mayaqua/Network.c",
+      "files": [
+        {
+          "file": "NetworkSocket.c",
+          "description": "Sockets: TCP connect, bind, listen and accept, send and receive, UDP, socket events and cancel objects, socket information, lifetime and timeouts",
+          "names": [
+            "Win32InitSocketLibrary", "Win32Accept", "NewSockEvent", "SetSockEvent", "CleanupSockEvent", "WaitSockEvent",
+            "ReleaseSockEvent", "JoinSockToSockEvent", "NewCancelSpecial", "NewCancel", "ReleaseCancel", "CleanupCancel",
+            "Cancel", "RecvFrom", "RecvFrom6", "SendTo", "SendToEx", "SendTo6Ex", "NewUDP", "NewUDPEx", "NewUDPEx2",
+            "NewUDPEx3", "NewUDP4", "NewUDP6", "Select", "AddSockSet", "InitSockSet", "RecvAll", "SendNow", "SendAdd",
+            "SendAll", "Peek", "Recv", "Send", "GetTimeout", "SetTimeout", "DisableGetHostNameWhenAcceptInit",
+            "AcceptInit", "AcceptInitEx", "Accept", "Accept6", "ListenEx6", "ListenEx62", "ListenEx63", "Listen",
+            "ListenEx", "ListenEx2", "Disconnect", "CheckTCPPortEx", "CheckTCPPort", "connect_timeout", "SetSockTos",
+            "SetSockHighPriority", "bind_sock", "BindConnectTimeoutIPv4", "BindConnectThreadForIPv4",
+            "BindConnectThreadForIPv6", "CreateTCPSock", "Connect", "ConnectEx", "ConnectEx2", "ConnectEx3", "ConnectEx4",
+            "BindConnectEx4", "AddProtocolDetailsStr", "AddProtocolDetailsKeyValueStr", "AddProtocolDetailsKeyValueInt",
+            "SetSocketBufferSize", "SetSocketBufferSizeWithBestEffort", "InitUdpSocketBufferSize", "QuerySocketInformation",
+            "ReleaseSock", "CleanupSock", "NewSock", "GetNumTcpConnectionsCounter", "RecvLine", "PrintError"
+          ]
+        },
+        {
+          "file": "NetworkTls.c",
+          "description": "TLS: SSL context, cipher list, the TLS handshake (StartSSL) and secure send and receive",
+          "names": [
+            "SetWantToUseCipher", "AddChainSslCertOnDirectory", "AddChainSslCert", "StartSSL", "StartSSLEx", "StartSSLEx2",
+            "StartSSLEx3", "SockEnableSslLogging", "SecureRecv", "SecureSend", "TmpDhCallback", "keylog_cb_func",
+            "NewSSLCtx", "FreeSSLCtx", "GetOSSecurityLevel", "GetCipherList", "GetSniNameFromSslPacket", "SetDhParam"
+          ]
+        },
+        {
+          "file": "NetworkDns.c",
+          "description": "DNS wrappers and wait threads: host and NetBIOS names, the machine name, and the wait-thread list",
+          "names": [
+            "AddWaitThread", "DelWaitThread", "InitWaitThread", "FreeWaitThread", "GetMachineHostName",
+            "GetMachineNameFromHosts", "GetMachineName", "GetMachineNameEx", "GetHostName", "GetNetBiosName"
+          ]
+        }
+      ],
+      "remainder": {
+        "description": "network init and free, IP address utilities, NIC and local address lists, private IP file, dynamic values",
+        "patterns": ["."]
+      }
+    },
+    {
+      "source": "src/Mayaqua/Microsoft.c",
+      "files": [
+        {
+          "file": "MicrosoftReg.c",
+          "description": "Windows registry (MsReg*)",
+          "patterns": ["^MsReg", "^MsGetRootKeyFromInt$"]
+        },
+        {
+          "file": "MicrosoftService.c",
+          "description": "Windows services: service host, user mode, SCM install, start and stop, global pulse",
+          "names": [
+            "MsSendGlobalPulse", "MsCloseGlobalPulse", "MsWaitForGlobalPulse", "MsOpenOrCreateGlobalPulse",
+            "MsUserModeWindowProc", "MsIsUserMode", "MsCreateUserModeSvcGlocalPulse", "MsGenerateUserModeSvcGlobalPulseName",
+            "MsUserModeW", "MsUserModeGlobalPulseRecvThread", "MsServiceStoperMainThread", "MsServiceStopProc",
+            "MsServiceHandler", "MsServiceDispatcher", "MsTestModeW", "MsWriteCallingServiceManagerProcessId", "MsService",
+            "MsStopService", "MsStartService", "MsStartServiceEx", "MsIsServiceRunning", "MsUninstallService",
+            "MsUpdateServiceConfig", "MsInstallServiceW", "MsInstallServiceExW", "MsIsServiceInstalled"
+          ]
+        },
+        {
+          "file": "MicrosoftAdapter.c",
+          "description": "Windows network adapters and network configuration: adapter list, TCP configuration, firewall registration",
+          "names": [
+            "MsRegistWindowsFirewallEx2", "MsRegistWindowsFirewallEx", "MsGetAdapterByGuid", "MsGetAdapterByGuidFromList",
+            "MsGetAdapterTcpIpInformation", "MsCreateAdapterList", "MsCreateAdapterListEx", "MsInitAdapterListModule",
+            "MsFreeAdapterListModule", "MsCloneAdapterList", "MsCloneAdapter", "MsCreateAdapterListInner",
+            "MsCreateAdapterListInnerEx", "MsCreateAdapterListInnerExVista", "ConvertMidStatusVistaToXp", "MsFreeAdapterList",
+            "MsFreeAdapter", "MsApplyTcpConfig", "MsIsTcpConfigSupported", "MsLoadTcpConfigReg", "MsSetTcpConfig",
+            "MsInitGlobalNetworkConfig", "MsGetNetworkConnectionName"
+          ]
+        },
+        {
+          "file": "MicrosoftProcess.c",
+          "description": "Windows processes, windows, tokens and privileges",
+          "names": [
+            "MsSearchProcessById", "MsCompareProcessList", "MsFreeProcessList", "MsGetProcessListNt", "MsGetProcessList",
+            "MsSetThreadPriorityIdle", "MsSetThreadPriorityRealtime", "MsRestoreThreadPriority", "MsEnumChildWindowProc",
+            "MsEnumChildWindows", "MsAddWindowToList", "EnumTopWindowProc", "EnumChildWindowProc", "EnumAllTopWindow",
+            "EnumAllChildWindow", "EnumAllChildWindowEx", "FreeWindowList", "AddWindow", "CmpWindowList", "NewWindowList",
+            "MsGetWindowOwnerProcessExeName", "MsGetProcessExeName", "MsCloseWarningWindow", "MsNoWarningThreadProc",
+            "MsInitNoWarningEx", "MsFreeNoWarning", "MsCheckLogon", "MsEnablePrivilege", "MsIsAdmin", "MsCheckIsAdmin",
+            "MsGetCurrentProcessId"
+          ]
+        },
+        {
+          "file": "MicrosoftSystem.c",
+          "description": "Windows system information and directories: VM detection, timers, computer name, WOW64, console, DLL loading, special and temporary directories",
+          "names": [
+            "MsIsInVmMain", "MsIsInVm", "MsGetUserLocaleId", "MsSetErrorModeToSilent", "MsGetFileInformation",
+            "MsGetHiResTimeSpan", "MsGetHiResTimeSpanUSec", "MsGetHiResCounter", "MsUniMakeDirEx", "MsUniMakeDir",
+            "MsGetComputerNameFullEx", "MsGetComputerName", "MsDisableWow64FileSystemRedirection",
+            "MsRestoreWow64FileSystemRedirection", "MsIsX64", "MsIs64BitWindows", "MsGetThreadLocale", "MsSetConsoleWidth",
+            "MsGetConsoleWidth", "MsDisableIme", "MsPrintTick", "MsLoadLibraryW", "MsLoadLibrary", "MsDeleteTempDir",
+            "MsDeleteAllFileW", "MsInitTempDir", "MsFreeTempDir", "MsGenLockFile", "MsCutExeNameFromUniCommandLine",
+            "MsCutExeNameFromCommandLine", "MsGetExeDirName", "MsGetSpecialDir", "MsGetSpecialDirW", "MsGetSpecialDirs",
+            "MsGetWindowsDirW", "MsGetSystem32Dir", "MsGetTempDir", "MsGetMyTempDir", "MsGetExeFileNameW",
+            "MsGetSystem32DirW", "MsGetMyTempDirW", "MsGetUserNameW"
+          ]
+        }
+      ],
+      "remainder": {
+        "description": "module init and free (MsInit, MsFree), process-wide setup, minidump and exception handler",
+        "patterns": ["."]
+      }
+    },
+    {
+      "source": "src/Mayaqua/Memory.c",
+      "files": [
+        {
+          "file": "MemoryAlloc.c",
+          "description": "Memory allocation: Malloc, ReAlloc, Free, memory tags, the internal allocator and the canary",
+          "names": [
+            "GetCanaryRand", "InitCanaryRand", "Malloc", "MallocEx", "ReAlloc", "Free", "FreeSafe", "CheckMemTag1",
+            "CheckMemTag2", "ZeroMalloc", "ZeroMallocEx", "InternalMalloc", "InternalFree", "InternalReAlloc"
+          ]
+        }
+      ],
+      "remainder": {
+        "description": "containers (hash list, stack, queue, list, int lists, FIFO, BUF) and memory utilities",
+        "patterns": ["."]
+      }
+    }
+  ]
+}
