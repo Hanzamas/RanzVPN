@@ -349,6 +349,12 @@ void nullsafe_test(UINT num, char **arg)
 #define	RT_FILEIO_LOG_NAME		L"vpntest_fileio_log.tmp"	// Written through the "@" prefix (log directory)
 #define	RT_FILEIO_DB_NAME		L"vpntest_fileio_db.tmp"	// Written through the "$" prefix (database directory)
 #define	RT_FILEIO_DATA_SIZE		64							// Bytes written to each test file
+#define	RT_FILEIO_AUX_NAME		L"vpntest_fileio_aux.tmp"	// Replaced, sought, dated, hidden and renamed through "@"
+#define	RT_FILEIO_REN_NAME		L"vpntest_fileio_ren.tmp"	// Rename target through "@"
+#define	RT_FILEIO_DIR_NAME		L"vpntest_fileio_dir.tmp"	// Directory made and deleted through "@"
+#define	RT_FILEIO_SHORT_SIZE	8							// Bytes written when FileCreate replaces the aux file
+#define	RT_FILEIO_CREATE_TIME	(RT_TIME_2024 - 86400000ULL)	// Creation date written on close: one day before RT_TIME_2024
+#define	RT_FILEIO_DATE_SLACK	600000ULL					// Slack between the update date read on open and SystemTime64 (ms)
 
 // Size and SHA-256 of the watermark, shared with watermark_test (vpntest.c)
 extern UINT watermark_expect_size;
@@ -383,14 +389,241 @@ static void RtFileioCreate(RT_CTX *ctx, wchar_t *name, wchar_t *expect_path, UCH
 	RtCheck(ctx, IsFileExistsW(expect_path), what, "not found");
 }
 
-// fileio: the "@", "$" and "|" prefixes, the path separator, the sharing modes and the
-// all-or-nothing reads of FileIO
+// FileCreate empties an existing file; write mode opens read-write; a read-only file refuses
+// writes. Leaves the aux file holding data[0..7] followed by data[0..63] (72 bytes).
+static void RtFileioReplace(RT_CTX *ctx, wchar_t *aux_path, UCHAR *data)
+{
+	UCHAR buf[RT_FILEIO_DATA_SIZE];
+	UINT64 size;
+	IO *io;
+
+	io = FileCreateW(L"@" RT_FILEIO_AUX_NAME);
+	if (RtCheck(ctx, io != NULL, "FileCreate of the aux file", "returned NULL") == false)
+	{
+		return;
+	}
+	RtCheck(ctx, FileWrite(io, data, RT_FILEIO_DATA_SIZE), "FileWrite of the aux file", "failed");
+	FileClose(io);
+
+	io = FileCreateW(L"@" RT_FILEIO_AUX_NAME);
+	if (RtCheck(ctx, io != NULL, "FileCreate of an existing file", "returned NULL") == false)
+	{
+		return;
+	}
+	size = FileSize64(io);
+	RtCheck(ctx, size == 0, "FileCreate of an existing file empties it", "%I64u bytes", size);
+	RtCheck(ctx, FileWrite(io, data, RT_FILEIO_SHORT_SIZE), "FileWrite of the short content", "failed");
+	FileClose(io);
+
+	// Write mode opens read-write: read the content back through the writer, then append
+	io = FileOpenW(aux_path, true);
+	if (RtCheck(ctx, io != NULL, "FileOpen of the aux file for writing", "returned NULL") == false)
+	{
+		return;
+	}
+	size = FileSize64(io);
+	RtCheck(ctx, size == RT_FILEIO_SHORT_SIZE, "The replaced file holds only the new bytes",
+		"%I64u bytes, expected %u", size, RT_FILEIO_SHORT_SIZE);
+	RtCheck(ctx, FileRead(io, buf, RT_FILEIO_SHORT_SIZE) && Cmp(buf, data, RT_FILEIO_SHORT_SIZE) == 0,
+		"A file opened for writing can be read", "read failed or the bytes differ");
+	RtCheck(ctx, FileWrite(io, data, RT_FILEIO_DATA_SIZE), "FileWrite appends at the current position", "failed");
+	size = FileSize64(io);
+	RtCheck(ctx, size == RT_FILEIO_SHORT_SIZE + RT_FILEIO_DATA_SIZE, "FileSize64 of an open writer counts the appended bytes",
+		"%I64u bytes, expected %u", size, RT_FILEIO_SHORT_SIZE + RT_FILEIO_DATA_SIZE);
+	FileFlush(io);
+	FileClose(io);
+
+	io = FileOpenW(aux_path, false);
+	if (RtCheck(ctx, io != NULL, "FileOpen of the aux file read-only", "returned NULL") == false)
+	{
+		return;
+	}
+	RtCheck(ctx, FileWrite(io, data, 1) == false, "FileWrite on a read-only file fails", "returned true");
+	RtCheck(ctx, FileRead(io, buf, 0), "FileRead of 0 bytes succeeds", "returned false");
+	FileClose(io);
+}
+
+// FileSeek: the three origins, an unknown origin, a position before the start, and the
+// position that equals ERROR_NEGATIVE_SEEK (131). Kept as is: the backend compares the new
+// position returned by SetFilePointer with that error code, so this seek reports failure.
+static void RtFileioSeek(RT_CTX *ctx, wchar_t *aux_path, UCHAR *data)
+{
+	UCHAR buf[RT_FILEIO_SHORT_SIZE];
+	IO *io;
+
+	io = FileOpenW(aux_path, false);
+	if (RtCheck(ctx, io != NULL, "FileOpen of the aux file for seeking", "returned NULL") == false)
+	{
+		return;
+	}
+
+	// The last 8 bytes are data[56..63]
+	RtCheck(ctx, FileSeek(io, FILE_END, -RT_FILEIO_SHORT_SIZE) && FileRead(io, buf, RT_FILEIO_SHORT_SIZE) &&
+		Cmp(buf, data + RT_FILEIO_DATA_SIZE - RT_FILEIO_SHORT_SIZE, RT_FILEIO_SHORT_SIZE) == 0,
+		"FileSeek from the end", "seek or read failed, or the bytes differ");
+
+	// Back 16 from the end lands on data[48..55]
+	RtCheck(ctx, FileSeek(io, FILE_CURRENT, -2 * RT_FILEIO_SHORT_SIZE) && FileRead(io, buf, RT_FILEIO_SHORT_SIZE) &&
+		Cmp(buf, data + RT_FILEIO_DATA_SIZE - 2 * RT_FILEIO_SHORT_SIZE, RT_FILEIO_SHORT_SIZE) == 0,
+		"FileSeek from the current position", "seek or read failed, or the bytes differ");
+
+	// Offset 8 is data[0..7]
+	RtCheck(ctx, FileSeek(io, FILE_BEGIN, RT_FILEIO_SHORT_SIZE) && FileRead(io, buf, RT_FILEIO_SHORT_SIZE) &&
+		Cmp(buf, data, RT_FILEIO_SHORT_SIZE) == 0,
+		"FileSeek from the beginning", "seek or read failed, or the bytes differ");
+
+	RtCheck(ctx, FileSeek(io, 3, 0) == false, "FileSeek with an unknown origin fails", "returned true");
+	RtCheck(ctx, FileSeek(io, FILE_BEGIN, -1) == false, "FileSeek before the beginning fails", "returned true");
+	RtCheck(ctx, FileSeek(io, FILE_BEGIN, ERROR_NEGATIVE_SEEK) == false,
+		"FileSeek to offset 131 reports failure (kept as is)", "returned true");
+
+	FileClose(io);
+}
+
+// File dates: FileOpen reads them; FileClose of a writer writes the dates set in the IO
+static void RtFileioDates(RT_CTX *ctx, wchar_t *aux_path)
+{
+	UINT64 now;
+	IO *io;
+
+	io = FileOpenW(aux_path, true);
+	if (RtCheck(ctx, io != NULL, "FileOpen of the aux file for the dates", "returned NULL") == false)
+	{
+		return;
+	}
+	now = SystemTime64();
+	RtCheck(ctx, io->GetUpdateTime != 0 && RtDiff64(io->GetUpdateTime, now) <= RT_FILEIO_DATE_SLACK,
+		"FileOpen reads the update date", "update date %I64u, SystemTime64 %I64u", io->GetUpdateTime, now);
+	RtCheck(ctx, io->GetCreateTime != 0 && io->GetAccessTime != 0, "FileOpen reads the creation and access dates",
+		"creation %I64u, access %I64u", io->GetCreateTime, io->GetAccessTime);
+
+	io->SetCreateTime = RT_FILEIO_CREATE_TIME;
+	io->SetUpdateTime = RT_TIME_2024;
+	FileClose(io);
+
+	io = FileOpenW(aux_path, false);
+	if (RtCheck(ctx, io != NULL, "FileOpen of the aux file after the dates", "returned NULL") == false)
+	{
+		return;
+	}
+	RtCheck(ctx, io->GetUpdateTime == RT_TIME_2024, "FileClose of a writer writes the update date",
+		"got %I64u, expected %I64u", io->GetUpdateTime, RT_TIME_2024);
+	RtCheck(ctx, io->GetCreateTime == RT_FILEIO_CREATE_TIME, "FileClose of a writer writes the creation date",
+		"got %I64u, expected %I64u", io->GetCreateTime, RT_FILEIO_CREATE_TIME);
+	FileClose(io);
+}
+
+// FileCreate of a hidden file: CreateFileW with FILE_ATTRIBUTE_NORMAL is denied on it, and the
+// retry with FILE_ATTRIBUTE_HIDDEN replaces it, so the file stays hidden
+static void RtFileioHidden(RT_CTX *ctx, wchar_t *aux_path, UCHAR *data)
+{
+	DWORD attr;
+	IO *io;
+
+	RtCheck(ctx, SetFileAttributesW(aux_path, FILE_ATTRIBUTE_HIDDEN) != FALSE, "Mark the aux file hidden", "error %u", GetLastError());
+
+	io = FileCreateW(L"@" RT_FILEIO_AUX_NAME);
+	if (RtCheck(ctx, io != NULL, "FileCreate replaces a hidden file", "returned NULL"))
+	{
+		RtCheck(ctx, FileWrite(io, data, RT_FILEIO_SHORT_SIZE), "FileWrite of the replaced hidden file", "failed");
+		FileClose(io);
+	}
+
+	attr = GetFileAttributesW(aux_path);
+	RtCheck(ctx, attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_HIDDEN) != 0, "The replaced file stays hidden",
+		"attributes %u", attr);
+
+	SetFileAttributesW(aux_path, FILE_ATTRIBUTE_NORMAL);
+}
+
+// More sharing: read-locked readers coexist and lock out a writer; a reader without the read
+// lock lets a writer in; FileCreate shares read like a writer
+static void RtFileioShare(RT_CTX *ctx, wchar_t *aux_path)
+{
+	IO *io, *io2;
+
+	io = FileOpenW(aux_path, false);
+	if (RtCheck(ctx, io != NULL, "FileOpen read-only", "returned NULL"))
+	{
+		io2 = FileOpenW(aux_path, false);
+		RtCheck(ctx, io2 != NULL, "While it is open read-only, a second read-only FileOpen succeeds", "returned NULL");
+		FileClose(io2);
+
+		io2 = FileOpenW(aux_path, true);
+		RtCheck(ctx, io2 == NULL, "While it is open read-only with the read lock, FileOpen for writing fails", "succeeded");
+		FileClose(io2);
+
+		FileClose(io);
+	}
+
+	io = FileOpenExW(aux_path, false, false);
+	if (RtCheck(ctx, io != NULL, "FileOpenEx read-only without the read lock", "returned NULL"))
+	{
+		io2 = FileOpenW(aux_path, true);
+		RtCheck(ctx, io2 != NULL, "While it is open without the read lock, FileOpen for writing succeeds", "returned NULL");
+		FileClose(io2);
+
+		FileClose(io);
+	}
+
+	io = FileCreateW(L"@" RT_FILEIO_AUX_NAME);
+	if (RtCheck(ctx, io != NULL, "FileCreate of the aux file for sharing", "returned NULL"))
+	{
+		io2 = FileOpenExW(aux_path, false, false);
+		RtCheck(ctx, io2 != NULL, "While FileCreate holds it, a read-only FileOpenEx without the read lock succeeds", "returned NULL");
+		FileClose(io2);
+
+		io2 = FileOpenW(aux_path, false);
+		RtCheck(ctx, io2 == NULL, "While FileCreate holds it, a read-only FileOpen fails", "succeeded");
+		FileClose(io2);
+
+		FileClose(io);
+	}
+}
+
+// FileRename moves a file and does not replace an existing target
+static void RtFileioRename(RT_CTX *ctx, wchar_t *aux_path, wchar_t *ren_path)
+{
+	RtCheck(ctx, FileRenameW(L"@" RT_FILEIO_AUX_NAME, L"@" RT_FILEIO_REN_NAME), "FileRename through @", "failed");
+	RtCheck(ctx, IsFileExistsW(ren_path) && IsFileExistsW(aux_path) == false, "FileRename moves the file",
+		"source %s, target %s", IsFileExistsW(aux_path) ? "still there" : "gone", IsFileExistsW(ren_path) ? "there" : "missing");
+
+	FileClose(FileCreateW(L"@" RT_FILEIO_AUX_NAME));
+	RtCheck(ctx, FileRenameW(L"@" RT_FILEIO_AUX_NAME, L"@" RT_FILEIO_REN_NAME) == false, "FileRename onto an existing file fails",
+		"returned true");
+	RtCheck(ctx, IsFileExistsW(aux_path), "The source of the refused FileRename stays", "gone");
+
+	RtCheck(ctx, FileDeleteW(L"@" RT_FILEIO_REN_NAME) && IsFileExistsW(ren_path) == false, "FileDelete of the rename target",
+		"file still there");
+}
+
+// MakeDir and DeleteDir: each fails when there is nothing to do
+static void RtFileioDir(RT_CTX *ctx, wchar_t *dir_path)
+{
+	DWORD attr;
+
+	RtCheck(ctx, MakeDirW(L"@" RT_FILEIO_DIR_NAME), "MakeDir through @", "failed");
+	attr = GetFileAttributesW(dir_path);
+	RtCheck(ctx, attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY) != 0, "MakeDir creates the directory",
+		"attributes %u", attr);
+	RtCheck(ctx, MakeDirW(L"@" RT_FILEIO_DIR_NAME) == false, "MakeDir of an existing directory fails", "returned true");
+
+	RtCheck(ctx, DeleteDirW(L"@" RT_FILEIO_DIR_NAME), "DeleteDir through @", "failed");
+	RtCheck(ctx, GetFileAttributesW(dir_path) == INVALID_FILE_ATTRIBUTES, "DeleteDir removes the directory", "still there");
+	RtCheck(ctx, DeleteDirW(L"@" RT_FILEIO_DIR_NAME) == false, "DeleteDir of a missing directory fails", "returned true");
+}
+
+// fileio: the "@", "$" and "|" prefixes, the path separator, the sharing modes, the
+// all-or-nothing reads, and the create, seek, date, rename and directory semantics of FileIO
 void fileio_test(UINT num, char **arg)
 {
 	RT_CTX ctx;
 	wchar_t dir[MAX_SIZE];
 	wchar_t log_path[MAX_SIZE];
 	wchar_t db_path[MAX_SIZE];
+	wchar_t aux_path[MAX_SIZE];
+	wchar_t ren_path[MAX_SIZE];
+	wchar_t dir_path[MAX_SIZE];
 	wchar_t slash_path[MAX_SIZE];
 	UCHAR data[RT_FILEIO_DATA_SIZE];
 	UCHAR buf[RT_FILEIO_DATA_SIZE];
@@ -410,6 +643,9 @@ void fileio_test(UINT num, char **arg)
 
 	GetLogDirW(dir, sizeof(dir));
 	ConbinePathW(log_path, sizeof(log_path), dir, RT_FILEIO_LOG_NAME);
+	ConbinePathW(aux_path, sizeof(aux_path), dir, RT_FILEIO_AUX_NAME);
+	ConbinePathW(ren_path, sizeof(ren_path), dir, RT_FILEIO_REN_NAME);
+	ConbinePathW(dir_path, sizeof(dir_path), dir, RT_FILEIO_DIR_NAME);
 	GetDbDirW(dir, sizeof(dir));
 	ConbinePathW(db_path, sizeof(db_path), dir, RT_FILEIO_DB_NAME);
 
@@ -491,11 +727,27 @@ void fileio_test(UINT num, char **arg)
 		FileClose(io);
 	}
 
-	// Delete both files
+	// Create, seek, dates, hidden retry, sharing, rename and directories on the aux file.
+	// First remove what an earlier failed run may have left (a hidden file deletes too).
+	FileDeleteW(aux_path);
+	FileDeleteW(ren_path);
+	DeleteDirW(dir_path);
+	RtFileioReplace(&ctx, aux_path, data);
+	RtFileioSeek(&ctx, aux_path, data);
+	RtFileioDates(&ctx, aux_path);
+	RtFileioHidden(&ctx, aux_path, data);
+	RtFileioShare(&ctx, aux_path);
+	RtFileioRename(&ctx, aux_path, ren_path);
+	RtFileioDir(&ctx, dir_path);
+
+	// Delete the files
 	RtCheck(&ctx, FileDeleteW(L"@" RT_FILEIO_LOG_NAME) && IsFileExistsW(log_path) == false,
 		"FileDelete through @ removes the file", "file still there");
 	RtCheck(&ctx, FileDeleteW(L"$" RT_FILEIO_DB_NAME) && IsFileExistsW(db_path) == false,
 		"FileDelete through $ removes the file", "file still there");
+	RtCheck(&ctx, FileDeleteW(L"@" RT_FILEIO_AUX_NAME) && IsFileExistsW(aux_path) == false,
+		"FileDelete of the aux file", "file still there");
+	RtCheck(&ctx, FileDeleteW(L"@" RT_FILEIO_AUX_NAME) == false, "FileDelete of a missing file fails", "returned true");
 
 	RtEnd(&ctx);
 }

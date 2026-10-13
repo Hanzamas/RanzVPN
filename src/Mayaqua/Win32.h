@@ -13,8 +13,6 @@
 #include "OS.h"
 
 // Function prototype
-OS_DISPATCH_TABLE *Win32GetDispatchTable();
-
 void Win32Init();
 void Win32Free();
 void *Win32MemoryAlloc(UINT size);
@@ -22,33 +20,11 @@ void *Win32MemoryReAlloc(void *addr, UINT size);
 void Win32MemoryFree(void *addr);
 UINT Win32GetTick();
 void Win32GetSystemTime(SYSTEMTIME *system_time);
-void Win32Inc32(UINT *value);
-void Win32Dec32(UINT *value);
 void Win32Sleep(UINT time);
-void Win32ResetEvent(EVENT *event);
 UINT Win32ThreadId();
-void *Win32FileOpen(char *name, bool write_mode, bool read_lock);
-void *Win32FileOpenW(wchar_t *name, bool write_mode, bool read_lock);
-void *Win32FileCreate(char *name);
-void *Win32FileCreateW(wchar_t *name);
-bool Win32FileWrite(void *pData, void *buf, UINT size);
-bool Win32FileRead(void *pData, void *buf, UINT size);
-bool Win32FileSetDate(void *pData, UINT64 created_time, UINT64 updated_time);
-bool Win32FileGetDate(void *pData, UINT64 *created_time, UINT64 *updated_time, UINT64 *accessed_date);
-void Win32FileClose(void *pData, bool no_flush);
-void Win32FileFlush(void *pData);
-UINT64 Win32FileSize(void *pData);
-bool Win32FileSeek(void *pData, UINT mode, int offset);
-bool Win32FileDelete(char *name);
-bool Win32FileDeleteW(wchar_t *name);
-bool Win32MakeDir(char *name);
-bool Win32MakeDirW(wchar_t *name);
-bool Win32DeleteDir(char *name);
 bool Win32DeleteDirW(wchar_t *name);
 CALLSTACK_DATA *Win32GetCallStack();
 bool Win32GetCallStackSymbolInfo(CALLSTACK_DATA *s);
-bool Win32FileRename(char *old_name, char *new_name);
-bool Win32FileRenameW(wchar_t *old_name, wchar_t *new_name);
 bool Win32Run(char *filename, char *arg, bool hide, bool wait);
 bool Win32RunW(wchar_t *filename, wchar_t *arg, bool hide, bool wait);
 void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id, bool disableWow);
