@@ -1398,7 +1398,7 @@ SESSION *NewClientSessionEx(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *au
 	s->TrafficLock = NewLock();
 	s->OldTraffic = NewTraffic();
 	s->Cancel1 = NewCancel();
-	s->CancelList = NewCancelList();
+	s->CancelList = NewList(NULL);
 
 	// Copy the client connection options
 	s->ClientOption = Malloc(sizeof(CLIENT_OPTION));
@@ -1586,7 +1586,7 @@ SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, P
 	s->Traffic = NewTraffic();
 	s->HaltEvent = NewEvent();
 	s->Cancel1 = NewCancel();
-	s->CancelList = NewCancelList();
+	s->CancelList = NewList(NULL);
 	s->Thread = c->Thread;
 	s->TrafficLock = NewLock();
 	s->OldTraffic = NewTraffic();
@@ -1635,12 +1635,6 @@ void PrintStatus(SESSION *s, wchar_t *str)
 
 	// Inform the status to the callback function
 	s->Account->StatusPrinter(s, str);
-}
-
-// Create a cancellation list
-LIST *NewCancelList()
-{
-	return NewList(NULL);
 }
 
 // Add a Cancel to the cancellation list

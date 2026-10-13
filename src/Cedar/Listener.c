@@ -872,19 +872,7 @@ int CompareListener(void *p1, void *p2)
 // Create a New Listener
 LISTENER *NewListener(CEDAR *cedar, UINT proto, UINT port)
 {
-	return NewListenerEx(cedar, proto, port, TCPAcceptedThread, NULL);
-}
-LISTENER *NewListenerEx(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param)
-{
-	return NewListenerEx2(cedar, proto, port, proc, thread_param, false);
-}
-LISTENER *NewListenerEx2(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only)
-{
-	return NewListenerEx3(cedar, proto, port, proc, thread_param, local_only, false);
-}
-LISTENER *NewListenerEx3(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only, bool shadow_ipv6)
-{
-	return NewListenerEx5(cedar, proto, port, proc, thread_param, local_only, shadow_ipv6, false);
+	return NewListenerEx5(cedar, proto, port, TCPAcceptedThread, NULL, false, false, false);
 }
 LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only, bool shadow_ipv6, bool enable_ca)
 {
@@ -936,8 +924,8 @@ LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc,
 		if (r->Cedar->DisableIPv6Listener == false)
 		{
 			// Add a shadow listener
-			r->ShadowListener = NewListenerEx3(cedar, proto, port, proc, thread_param,
-				local_only, true);
+			r->ShadowListener = NewListenerEx5(cedar, proto, port, proc, thread_param,
+				local_only, true, false);
 		}
 	}
 

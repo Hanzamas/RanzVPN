@@ -71,9 +71,6 @@ struct UDP_ENTRY
 
 // Function prototype
 LISTENER *NewListener(CEDAR *cedar, UINT proto, UINT port);
-LISTENER *NewListenerEx(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param);
-LISTENER *NewListenerEx2(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only);
-LISTENER *NewListenerEx3(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only, bool shadow_ipv6);
 LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only, bool shadow_ipv6, bool enable_ca);
 void ReleaseListener(LISTENER *r);
 void CleanupListener(LISTENER *r);

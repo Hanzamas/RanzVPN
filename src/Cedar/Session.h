@@ -220,7 +220,6 @@ void PrintSessionTotalDataSize(SESSION *s);
 void AddTrafficForSession(SESSION *s, TRAFFIC *t);
 void IncrementUserTraffic(HUB *hub, char *username, SESSION *s);
 void PrintStatus(SESSION *s, wchar_t *str);
-LIST *NewCancelList();
 void ReleaseCancelList(LIST *o);
 void AddCancelList(LIST *o, CANCEL *c);
 void CancelList(LIST *o);
