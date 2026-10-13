@@ -33,7 +33,6 @@ struct ADMIN
 	RPC *Rpc;
 	LIST *LogFileList;
 	RPC_WINVER ClientWinVer;
-	char dummy1[MAX_HUBNAME_LEN + 1];
 };
 
 struct RPC_TEST
@@ -434,7 +433,6 @@ struct RPC_ENUM_MAC_TABLE_ITEM
 	UINT Key;
 	char SessionName[MAX_SESSION_NAME_LEN + 1];
 	UCHAR MacAddress[6];
-	UCHAR Padding[2];
 	UINT64 CreatedTime;
 	UINT64 UpdatedTime;
 	UINT VlanId;

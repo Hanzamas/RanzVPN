@@ -12,7 +12,6 @@
 struct DYN_VALUE
 {
 	char Name[256];
-	UINT64 Value;
 };
 
 #define	MAX_HOST_NAME_LEN			255

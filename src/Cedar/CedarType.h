@@ -74,9 +74,6 @@ typedef struct INTERNET_SETTING INTERNET_SETTING;
 typedef struct URL_DATA URL_DATA;
 typedef struct WPC_CONNECT WPC_CONNECT;
 
-typedef struct VLAN VLAN;
-typedef struct VLAN_PARAM VLAN_PARAM;
-
 typedef struct ETH ETH;
 typedef struct BRIDGE BRIDGE;
 typedef struct LOCALBRIDGE LOCALBRIDGE;
@@ -189,9 +186,6 @@ typedef struct TT_RESULT TT_RESULT;
 typedef struct TTS_SOCK TTS_SOCK;
 typedef struct TTC_SOCK TTC_SOCK;
 typedef struct PT PT;
-
-
-typedef struct LICENSE LICENSE;
 
 
 typedef struct IPC_MSCHAP_V2_AUTHINFO IPC_MSCHAP_V2_AUTHINFO;

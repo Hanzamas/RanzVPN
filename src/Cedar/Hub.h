@@ -40,7 +40,6 @@ struct TRAFFIC_LIMITER
 struct STORM
 {
 	UCHAR MacAddress[6];
-	UCHAR Padding[2];
 	IP SrcIp;
 	IP DestIp;
 	UINT64 CheckStartTick;
@@ -122,7 +121,6 @@ struct HUB_OPTION
 struct MAC_TABLE_ENTRY
 {
 	UCHAR MacAddress[6];
-	UCHAR Padding[2];
 	UINT VlanId;
 	SESSION *Session;
 	HUB_PA *HubPa;
@@ -244,7 +242,6 @@ struct HUB
 	IP HubIp;
 	IPV6_ADDR HubIpV6;
 	UINT HubIP6Id;
-	UCHAR Padding[2];
 	LIST *AccessList;
 	HUB_LOG LogSetting;
 	LOG *PacketLogger;
