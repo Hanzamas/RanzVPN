@@ -39,27 +39,6 @@ void ZipAddFileSimple(ZIP_PACKER *p, char *name, UINT64 dt, UINT attribute, void
 	ZipAddFileStart(p, name, size, dt, attribute);
 	ZipAddFileData(p, data, 0, size);
 }
-bool ZipAddRealFileW(ZIP_PACKER *p, char *name, UINT64 dt, UINT attribute, wchar_t *srcname)
-{
-	BUF *b;
-	// Validate arguments
-	if (p == NULL || IsEmptyStr(name) || srcname == NULL)
-	{
-		return false;
-	}
-
-	b = ReadDumpW(srcname);
-	if (b == NULL)
-	{
-		return false;
-	}
-
-	ZipAddFileSimple(p, name, dt, attribute, b->Buf, b->Size);
-
-	FreeBuf(b);
-
-	return true;
-}
 
 // Start adding a file
 void ZipAddFileStart(ZIP_PACKER *p, char *name, UINT size, UINT64 dt, UINT attribute)
@@ -155,70 +134,6 @@ void ZipAddFileFooter(ZIP_PACKER *p)
 	WriteZipDataFooter(p->CurrentFile, &f);
 
 	WriteFifo(p->Fifo, &f, sizeof(f));
-}
-
-// Complete the creation of the ZIP data
-FIFO *ZipFinish(ZIP_PACKER *p)
-{
-	UINT i;
-	UINT pos_start;
-	UINT pos_end;
-	ZIP_END_HEADER e;
-	// Validate arguments
-	if (p == NULL)
-	{
-		return NULL;
-	}
-
-	pos_start = (UINT)p->Fifo->total_write_size;
-
-	for (i = 0;i < LIST_NUM(p->FileList);i++)
-	{
-		ZIP_FILE *f = LIST_DATA(p->FileList, i);
-		ZIP_DIR_HEADER d;
-		ZIP_DATA_HEADER dh;
-
-		Zero(&d, sizeof(d));
-		Zero(&dh, sizeof(dh));
-
-		d.Signature = Endian32(Swap32(0x02014B50));
-		d.MadeVer = Endian16(Swap16(ZIP_VERSION));
-
-		WriteZipDataHeader(f, &dh, true);
-
-		d.NeedVer = dh.NeedVer;
-		d.Option = dh.Option;
-		d.CompType = dh.CompType;
-		d.FileTime = dh.FileTime;
-		d.FileDate = dh.FileDate;
-		d.Crc32 = dh.Crc32;
-		d.CompSize = dh.CompSize;
-		d.UncompSize = dh.UncompSize;
-		d.FileNameLen = dh.FileNameLen;
-		d.ExtraLen = dh.ExtraLen;
-		d.CommentLen = 0;
-		d.DiskNum = 0;
-		d.InAttr = 0;
-		d.OutAttr = Endian32(Swap32((USHORT)f->Attributes));
-		d.HeaderPos = Endian32(Swap32(f->HeaderPos));
-
-		WriteFifo(p->Fifo, &d, sizeof(d));
-		WriteFifo(p->Fifo, f->Name, StrLen(f->Name));
-	}
-
-	pos_end = (UINT)p->Fifo->total_write_size;
-
-	Zero(&e, sizeof(e));
-	e.Signature = Endian32(Swap32(ZIP_SIGNATURE_END));
-	e.DiskNum = e.StartDiskNum = 0;
-	e.DiskDirEntry = e.DirEntry = Endian16(Swap16((USHORT)LIST_NUM(p->FileList)));
-	e.DirSize = Endian32(Swap32((UINT)(pos_end - pos_start)));
-	e.StartPos = Endian32(Swap32(pos_start));
-	e.CommentLen = 0;
-
-	WriteFifo(p->Fifo, &e, sizeof(e));
-
-	return p->Fifo;
 }
 
 // Creating a ZIP data header
@@ -343,15 +258,6 @@ bool SaveFileW(wchar_t *name, void *data, UINT size)
 	FileClose(io);
 
 	return true;
-}
-bool SaveFile(char *name, void *data, UINT size)
-{
-	wchar_t *name_w = CopyStrToUni(name);
-	bool ret = SaveFileW(name_w, data, size);
-
-	Free(name_w);
-
-	return ret;
 }
 
 // Check whether the file exists
@@ -1621,30 +1527,6 @@ IO *FileCreateW(wchar_t *name)
 	InnerFilePathW(tmp, sizeof(tmp), name);
 
 	return FileCreateInnerW(tmp);
-}
-
-// Write all the data to the file
-bool FileWriteAllW(wchar_t *name, void *data, UINT size)
-{
-	IO *io;
-	// Validate arguments
-	if (name == NULL || (data == NULL && size != 0))
-	{
-		return false;
-	}
-
-	io = FileCreateW(name);
-
-	if (io == NULL)
-	{
-		return false;
-	}
-
-	FileWrite(io, data, size);
-
-	FileClose(io);
-
-	return true;
 }
 
 // Open the file

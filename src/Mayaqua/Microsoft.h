@@ -300,8 +300,6 @@ LIST *MsRegReadStrList(UINT root, char *keyname, char *valuename);
 LIST *MsRegReadStrListEx(UINT root, char *keyname, char *valuename, bool force32bit);
 LIST *MsRegReadStrListEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
 
-BUF *MsRegReadBinEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
-
 bool MsRegNewKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit);
 
 bool MsRegWriteValueEx2(UINT root, char *keyname, char *valuename, UINT type, void *data, UINT size, bool force32bit, bool force64bit);
@@ -310,18 +308,14 @@ bool MsRegWriteValueEx2W(UINT root, char *keyname, char *valuename, UINT type, v
 bool MsRegWriteStr(UINT root, char *keyname, char *valuename, char *str);
 bool MsRegWriteStrEx(UINT root, char *keyname, char *valuename, char *str, bool force32bit);
 bool MsRegWriteStrEx2(UINT root, char *keyname, char *valuename, char *str, bool force32bit, bool force64bit);
-bool MsRegWriteStrEx2W(UINT root, char *keyname, char *valuename, wchar_t *str, bool force32bit, bool force64bit);
-bool MsRegWriteStrExpandEx2W(UINT root, char *keyname, char *valuename, wchar_t *str, bool force32bit, bool force64bit);
 
 bool MsRegWriteInt(UINT root, char *keyname, char *valuename, UINT value);
 bool MsRegWriteIntEx(UINT root, char *keyname, char *valuename, UINT value, bool force32bit);
 bool MsRegWriteIntEx2(UINT root, char *keyname, char *valuename, UINT value, bool force32bit, bool force64bit);
-bool MsRegWriteBinEx2(UINT root, char *keyname, char *valuename, void *data, UINT size, bool force32bit, bool force64bit);
 
 TOKEN_LIST *MsRegEnumKey(UINT root, char *keyname);
 TOKEN_LIST *MsRegEnumKeyEx(UINT root, char *keyname, bool force32bit);
 TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit);
-TOKEN_LIST *MsRegEnumValueEx2(UINT root, char *keyname, bool force32bit, bool force64bit);
 
 bool MsRegDeleteKey(UINT root, char *keyname);
 bool MsRegDeleteKeyEx(UINT root, char *keyname, bool force32bit);
@@ -336,7 +330,6 @@ bool MsIsAdmin();
 bool MsEnablePrivilege(char *name, bool enable);
 UINT MsGetCurrentProcessId();
 char *MsGetExeDirName();
-wchar_t *MsGetExeDirNameW();
 
 void MsStartIsLockedThread();
 void MsStopIsLockedThread();
@@ -367,7 +360,6 @@ wchar_t *MsGetSystem32DirW();
 wchar_t *MsGetMyTempDirW();
 wchar_t *MsGetUserNameW();
 struct SAFE_TABLE *MsGetSafeTable();
-UINT MsGetProcessId();
 bool MsIsServiceInstalled(char *name);
 bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar_t *path, UINT *error_code);
 bool MsInstallServiceW(char *name, wchar_t *title, wchar_t *description, wchar_t *path);
@@ -377,8 +369,6 @@ bool MsStartService(char *name);
 bool MsStartServiceEx(char *name, UINT *error_code);
 bool MsStopService(char *name);
 bool MsIsServiceRunning(char *name);
-bool MsIsTerminalServiceInstalled();
-bool MsIsUserSwitchingInstalled();
 UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT icon, char *cmd_line);
 void MsTestModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop);
 void MsServiceMode(SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop);
@@ -390,11 +380,7 @@ LIST *MsGetProcessListNt();
 void MsFreeProcessList(LIST *o);
 int MsCompareProcessList(void *p1, void *p2);
 MS_PROCESS *MsSearchProcessById(LIST *o, UINT id);
-void MsGetCurrentProcessExeNameW(wchar_t *name, UINT size);
-bool MsKillProcess(UINT id);
-bool MsGetShortPathNameW(wchar_t *long_path, wchar_t *short_path, UINT short_path_size);
 void MsWriteCallingServiceManagerProcessId(char *svcname, UINT pid);
-UINT MsReadCallingServiceManagerProcessId(char *svcname, bool current_user);
 
 void MsGenerateUserModeSvcGlobalPulseName(char *name, UINT size, char *svc_name);
 void *MsCreateUserModeSvcGlocalPulse(char *svc_name);
@@ -493,7 +479,6 @@ void MsServiceStarterMainThread(THREAD *t, void *p);
 LRESULT CALLBACK MsUserModeWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 BOOL CALLBACK MsEnumChildWindowProc(HWND hWnd, LPARAM lParam);
 BOOL CALLBACK EnumTopWindowProc(HWND hWnd, LPARAM lParam);
-HANDLE MsCreateUserToken();
 #endif // MICROSOFT_C
 
 #endif // MICROSOFT_H

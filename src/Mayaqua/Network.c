@@ -149,49 +149,6 @@ UINT64 GetDynValue(char *name)
 	return ret;
 }
 
-// Set the value to the dynamic value list
-void SetDynListValue(char *name, UINT64 value)
-{
-	// Validate arguments
-	if (name == NULL)
-	{
-		return;
-	}
-
-	if (g_dyn_value_list == NULL)
-	{
-		return;
-	}
-
-	LockList(g_dyn_value_list);
-	{
-		UINT i;
-		DYN_VALUE *v = NULL;
-
-		for (i = 0; i < LIST_NUM(g_dyn_value_list); i++)
-		{
-			DYN_VALUE *vv = LIST_DATA(g_dyn_value_list, i);
-
-			if (StrCmpi(vv->Name, name) == 0)
-			{
-				v = vv;
-				break;
-			}
-		}
-
-		if (v == NULL)
-		{
-			v = ZeroMalloc(sizeof(DYN_VALUE));
-			StrCpy(v->Name, sizeof(v->Name), name);
-
-			Add(g_dyn_value_list, v);
-		}
-
-		v->Value = value;
-	}
-	UnlockList(g_dyn_value_list);
-}
-
 // Initialization of the dynamic value list
 void InitDynList()
 {
@@ -565,11 +522,6 @@ int SslCertVerifyCallback(int preverify_ok, X509_STORE_CTX *ctx)
 	return 1; /* allow the verification process to continue */
 }
 
-SSL_PIPE* NewSslPipeEx2(bool server_mode, X* x, K* k, LIST* chain, DH_CTX* dh, bool verify_peer, struct SslClientCertInfo* clientcert)
-{
-	return NewSslPipeEx3(server_mode, x, k, chain, dh, verify_peer, clientcert, 2, false); // 2 TLS 1.3 tickets is an OpenSSL default hardcoded in the library
-}
-
 SSL_PIPE *NewSslPipeEx3(bool server_mode, X *x, K *k, LIST *chain, DH_CTX *dh, bool verify_peer, struct SslClientCertInfo *clientcert, int tls13ticketscnt, bool disableTls13)
 {
 	SSL_PIPE *s;
@@ -726,11 +678,6 @@ SSL_BIO *NewSslBioMem()
 }
 
 #ifdef	OS_WIN32
-void WINAPI Win32RouteChangeCallback(void *context, MIB_IPFORWARD_ROW2 *row, MIB_NOTIFICATION_TYPE nt)
-{
-	ROUTE_CHANGE_DATA *data = context;
-	data->Changed = true;
-}
 
 typedef struct WIN32_ACCEPT_CHECK_DATA
 {
@@ -2320,36 +2267,6 @@ bool Win32ReleaseAddressByGuid(char *guid)
 
 	return Win32ReleaseAddress(&a);
 }
-void Win32ReleaseAddressByGuidExThread(THREAD *t, void *param)
-{
-	WIN32_RELEASEADDRESS_THREAD_PARAM *p;
-	// Validate arguments
-	if (t == NULL || param == NULL)
-	{
-		return;
-	}
-
-	p = (WIN32_RELEASEADDRESS_THREAD_PARAM *)param;
-
-	AddRef(p->Ref);
-
-	NoticeThreadInit(t);
-
-	AddWaitThread(t);
-
-	if (p->Renew == false)
-	{
-		p->Ok = Win32ReleaseAddressByGuid(p->Guid);
-	}
-	else
-	{
-		p->Ok = Win32RenewAddressByGuid(p->Guid);
-	}
-
-	ReleaseWin32ReleaseAddressByGuidThreadParam(p);
-
-	DelWaitThread(t);
-}
 void ReleaseWin32ReleaseAddressByGuidThreadParam(WIN32_RELEASEADDRESS_THREAD_PARAM *p)
 {
 	// Validate arguments
@@ -2423,53 +2340,6 @@ bool Win32GetAdapterFromGuid(void *a, char *guid)
 	ReleaseList(o);
 
 	Free(info);
-
-	return ret;
-}
-
-// Add a routing entry to the routing table (For Vista and later)
-bool Win32AddRouteEntry2(ROUTE_ENTRY *e, bool *already_exists)
-{
-	bool ret = false;
-	bool dummy = false;
-	MIB_IPFORWARD_ROW2 *p;
-	UINT err = 0;
-	// Validate arguments
-	if (e == NULL)
-	{
-		return false;
-	}
-	if (already_exists == NULL)
-	{
-		already_exists = &dummy;
-	}
-
-	*already_exists = false;
-
-	p = ZeroMallocFast(sizeof(MIB_IPFORWARD_ROW2));
-	Win32RouteEntryToIpForwardRow2(p, e);
-
-	err = CreateIpForwardEntry2(p);
-	if (err != 0)
-	{
-		if (err == ERROR_OBJECT_ALREADY_EXISTS)
-		{
-			Debug("CreateIpForwardEntry2: Already Exists\n");
-			*already_exists = true;
-			ret = true;
-		}
-		else
-		{
-			Debug("CreateIpForwardEntry2 Error: %u\n", err);
-			ret = false;
-		}
-	}
-	else
-	{
-		ret = true;
-	}
-
-	Free(p);
 
 	return ret;
 }
@@ -3198,92 +3068,6 @@ void Cancel(CANCEL *c)
 #endif
 }
 
-// Calculate the optimal route from the specified routing table
-ROUTE_ENTRY *GetBestRouteEntryFromRouteTableEx(ROUTE_TABLE *table, IP *ip, UINT exclude_if_id)
-{
-	UINT i;
-	ROUTE_ENTRY *ret = NULL;
-	ROUTE_ENTRY *tmp = NULL;
-	UINT64 min_score = 0;
-	// Validate arguments
-	if (ip == NULL || table == NULL)
-	{
-		return NULL;
-	}
-
-	// Select routing table entry by following rule
-	// 1. Largest subnet mask
-	// 2. Smallest metric value
-	for (i = 0; i < table->NumEntry; i++)
-	{
-		ROUTE_ENTRY *e = table->Entry[i];
-
-		if (exclude_if_id != 0)
-		{
-			if (e->InterfaceID == exclude_if_id)
-			{
-				continue;
-			}
-		}
-
-		// Mask test
-		if (IsInSameNetwork(ip, &e->DestIP, &e->DestMask))
-		{
-			// Calculate the score
-			UINT score_high32 = SubnetMaskToInt(&e->DestMask);
-			UINT score_low32 = 0xFFFFFFFF - e->Metric;
-			UINT64 score64 = (UINT64)score_high32 * (UINT64)0x80000000 * (UINT64)2 + (UINT64)score_low32;
-			if (score64 == 0)
-			{
-				score64 = 1;
-			}
-
-			e->InnerScore = score64;
-		}
-	}
-
-	tmp = NULL;
-
-	// Search for the item with maximum score
-	for (i = 0; i < table->NumEntry; i++)
-	{
-		ROUTE_ENTRY *e = table->Entry[i];
-
-		if (e->InnerScore != 0)
-		{
-			if (e->InnerScore >= min_score)
-			{
-				tmp = e;
-				min_score = e->InnerScore;
-			}
-		}
-	}
-
-	if (tmp != NULL)
-	{
-		// Generate an entry
-		ret = ZeroMallocFast(sizeof(ROUTE_ENTRY));
-
-		Copy(&ret->DestIP, ip, sizeof(IP));
-		if (IsIP4(ip))
-		{
-			IntToSubnetMask4(&ret->DestMask, 32);
-		}
-		else
-		{
-			IntToSubnetMask6(&ret->DestMask, 128);
-		}
-		Copy(&ret->GatewayIP, &tmp->GatewayIP, sizeof(IP));
-		ret->InterfaceID = tmp->InterfaceID;
-		ret->LocalRouting = tmp->LocalRouting;
-		ret->Metric = tmp->Metric;
-		ret->IfMetric = tmp->IfMetric;
-		ret->PPPConnection = tmp->PPPConnection;
-	}
-
-	return ret;
-}
-
 // Release the routing entry
 void FreeRouteEntry(ROUTE_ENTRY *e)
 {
@@ -3294,76 +3078,6 @@ void FreeRouteEntry(ROUTE_ENTRY *e)
 	}
 
 	Free(e);
-}
-
-// Convert the routing table entry to string
-void RouteToStr(char *str, UINT str_size, ROUTE_ENTRY *e)
-{
-	char dest_ip[MAX_PATH];
-	char dest_mask[MAX_PATH];
-	char gateway_ip[MAX_PATH];
-	// Validate arguments
-	if (str == NULL || e == NULL)
-	{
-		return;
-	}
-
-	IPToStr(dest_ip, sizeof(dest_ip), &e->DestIP);
-	IPToStr(dest_mask, sizeof(dest_mask), &e->DestMask);
-	IPToStr(gateway_ip, sizeof(gateway_ip), &e->GatewayIP);
-
-	Format(str, str_size, "%s/%s %s m=%u ifm=%u if=%u lo=%u p=%u",
-	       dest_ip, dest_mask, gateway_ip,
-	       e->Metric, e->IfMetric, e->InterfaceID,
-	       e->LocalRouting, e->PPPConnection);
-}
-
-// Get the routing table
-ROUTE_TABLE *GetRouteTable()
-{
-	ROUTE_TABLE *t = NULL;
-	UINT i;
-	BUF *buf = NewBuf();
-	UCHAR hash[MD5_SIZE];
-
-#ifdef	OS_WIN32
-	t = Win32GetRouteTable2(true, true);
-#endif	// OS_WIN32
-
-	WriteBuf(buf, &t->NumEntry, sizeof(t->NumEntry));
-
-	for (i = 0; i < t->NumEntry; i++)
-	{
-		ROUTE_ENTRY *e = t->Entry[i];
-
-		WriteBuf(buf, e, sizeof(ROUTE_ENTRY));
-	}
-
-	Md5(hash, buf->Buf, buf->Size);
-
-	FreeBuf(buf);
-
-	Copy(&t->HashedValue, hash, sizeof(t->HashedValue));
-
-	return t;
-}
-
-// Release of the routing table
-void FreeRouteTable(ROUTE_TABLE *t)
-{
-	UINT i;
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	for (i = 0; i < t->NumEntry; i++)
-	{
-		Free(t->Entry[i]);
-	}
-	Free(t->Entry);
-	Free(t);
 }
 
 // UDP receiving
@@ -7475,22 +7189,6 @@ bool StrToIP(IP *ip, char *str)
 	FreeToken(token);
 
 	return true;
-}
-UINT StrToIP32(char *str)
-{
-	IP ip;
-	// Validate arguments
-	if (str == NULL)
-	{
-		return 0;
-	}
-
-	if (StrToIP(&ip, str) == false)
-	{
-		return 0;
-	}
-
-	return IPToUINT(&ip);
 }
 
 // Convert the IP to the in_addr

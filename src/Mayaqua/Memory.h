@@ -164,8 +164,6 @@ void UnlockHashList(HASH_LIST *h);
 bool IsInHashListKey(HASH_LIST *h, UINT key);
 void *HashListKeyToPointer(HASH_LIST *h, UINT key);
 
-int CompareCandidate(void *p1, void *p2);
-
 void *Malloc(UINT size);
 void *MallocEx(UINT size, bool zero_clear_when_free);
 void *ZeroMalloc(UINT size);
@@ -235,7 +233,6 @@ bool CompareBuf(BUF *b1, BUF *b2);
 UINT ReadFifo(FIFO *f, void *p, UINT size);
 void ShrinkFifoMemory(FIFO *f);
 UCHAR *GetFifoPointer(FIFO *f);
-UCHAR *FifoPtr(FIFO *f);
 void WriteFifo(FIFO *f, void *p, UINT size);
 UINT FifoSize(FIFO *f);
 void ReleaseFifo(FIFO *f);
@@ -284,7 +281,6 @@ LIST *NewInt64List(bool sorted);
 int CompareInt(void *p1, void *p2);
 int CompareInt64(void *p1, void *p2);
 void InsertInt(LIST *o, UINT i);
-void InsertIntDistinct(LIST *o, UINT i);
 
 void *GetNext(QUEUE *q);
 void InsertQueue(QUEUE *q, void *p);

@@ -468,7 +468,6 @@ void Win32IpForwardRow2ToRouteEntry(ROUTE_ENTRY *entry, void *ip_forward_row);
 void Win32RouteEntryToIpForwardRow2(void *ip_forward_row, ROUTE_ENTRY *entry);
 int Win32CompareRouteEntryByMetric(void *p1, void *p2);
 ROUTE_TABLE *Win32GetRouteTable2(bool ipv4, bool ipv6);
-bool Win32AddRouteEntry2(ROUTE_ENTRY *e, bool *already_exists);
 void Win32Cancel(CANCEL *c);
 void Win32CleanupCancel(CANCEL *c);
 CANCEL *Win32NewCancel();
@@ -482,7 +481,6 @@ SOCKET Win32Accept(SOCK *sock, SOCKET s, struct sockaddr *addr, int *addrlen, bo
 
 bool Win32ReleaseAddress(void *a);
 bool Win32ReleaseAddressByGuid(char *guid);
-void Win32ReleaseAddressByGuidExThread(THREAD *t, void *param);
 void ReleaseWin32ReleaseAddressByGuidThreadParam(WIN32_RELEASEADDRESS_THREAD_PARAM *p);
 bool Win32RenewAddress(void *a);
 bool Win32RenewAddressByGuid(char *guid);
@@ -498,7 +496,6 @@ void InAddrToIP6(IP *ip, struct in6_addr *addr);
 void IPToInAddr(struct in_addr *addr, IP *ip);
 void IPToInAddr6(struct in6_addr *addr, IP *ip);
 bool StrToIP(IP *ip, char *str);
-UINT StrToIP32(char *str);
 void IPToStr(char *str, UINT size, IP *ip);
 void IPToStr32(char *str, UINT size, UINT ip);
 void IPToStr4or6(char *str, UINT size, UINT ip_4_uint, UCHAR *ip_6_bytes);
@@ -577,9 +574,6 @@ void SetTimeout(SOCK *sock, UINT timeout);
 UINT GetTimeout(SOCK *sock);
 bool CheckTCPPort(char *hostname, UINT port);
 bool CheckTCPPortEx(char *hostname, UINT port, UINT timeout);
-ROUTE_TABLE *GetRouteTable();
-void FreeRouteTable(ROUTE_TABLE *t);
-ROUTE_ENTRY *GetBestRouteEntryFromRouteTableEx(ROUTE_TABLE *table, IP *ip, UINT exclude_if_id);
 void FreeRouteEntry(ROUTE_ENTRY *e);
 void JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event);
 SOCK_EVENT *NewSockEvent();
@@ -617,7 +611,6 @@ IP_CLIENT *SearchIpClient(IP *ip);
 UINT GetNumIpClient(IP *ip);
 void SetLinuxArpFilter();
 int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool *cancel_flag);
-void RouteToStr(char *str, UINT str_size, ROUTE_ENTRY *e);
 void AddProtocolDetailsStr(char *dst, UINT dst_size, char *str);
 void AddProtocolDetailsKeyValueStr(char *dst, UINT dst_size, char *key, char *value);
 void AddProtocolDetailsKeyValueInt(char *dst, UINT dst_size, char *key, UINT value);
@@ -698,7 +691,6 @@ struct SslClientCertInfo {
 	X *X;
 };
 
-SSL_PIPE *NewSslPipeEx2(bool server_mode, X *x, K *k, LIST *chain, DH_CTX *dh, bool verify_peer, struct SslClientCertInfo *clientcert);
 SSL_PIPE* NewSslPipeEx3(bool server_mode, X* x, K* k, LIST* chain, DH_CTX* dh, bool verify_peer, struct SslClientCertInfo* clientcert, int tls13ticketscnt, bool disableTls13);
 
 SSL_BIO *NewSslBioMem();
@@ -730,7 +722,6 @@ LIST *Win32GetNicList();
 
 void InitDynList();
 void FreeDynList();
-void SetDynListValue(char *name, UINT64 value);
 UINT64 GetDynValue(char *name);
 UINT64 GetDynValueOrDefault(char *name, UINT64 default_value, UINT64 min_value, UINT64 max_value);
 UINT64 GetDynValueOrDefaultSafe(char *name, UINT64 default_value);

@@ -919,10 +919,6 @@ bool Win32WaitProcess(void *h, UINT timeout)
 }
 
 // Run the process (return the handle)
-void *Win32RunEx2W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id)
-{
-	return Win32RunEx3W(filename, arg, hide, process_id, false);
-}
 void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id, bool disableWow)
 {
 	STARTUPINFOW info;
@@ -986,81 +982,6 @@ void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id,
 		return NULL;
 	}
 
-	if (disableWow)
-	{
-		MsRestoreWow64FileSystemRedirection(p);
-	}
-
-	if (process_id != NULL)
-	{
-		*process_id = ret.dwProcessId;
-	}
-
-	CloseHandle(ret.hThread);
-	return ret.hProcess;
-}
-void *Win32RunEx3(char *filename, char *arg, bool hide, UINT *process_id, bool disableWow)
-{
-	STARTUPINFO info;
-	PROCESS_INFORMATION ret;
-	char cmdline[MAX_SIZE];
-	char name[MAX_PATH];
-	void *p = NULL;
-	// Validate arguments
-	if (filename == NULL)
-	{
-		return NULL;
-	}
-
-	StrCpy(name, sizeof(name), filename);
-	Trim(name);
-
-	if (SearchStr(name, "\"", 0) == INFINITE)
-	{
-		if (arg == NULL)
-		{
-			Format(cmdline, sizeof(cmdline), "%s", name);
-		}
-		else
-		{
-			Format(cmdline, sizeof(cmdline), "%s %s", name, arg);
-		}
-	}
-	else
-	{
-		if (arg == NULL)
-		{
-			Format(cmdline, sizeof(cmdline), "\"%s\"", name);
-		}
-		else
-		{
-			Format(cmdline, sizeof(cmdline), "\"%s\" %s", name, arg);
-		}
-	}
-
-	Zero(&info, sizeof(info));
-	Zero(&ret, sizeof(ret));
-	info.cb = sizeof(info);
-	info.dwFlags = STARTF_USESHOWWINDOW;
-	info.wShowWindow = (hide == false ? SW_SHOWDEFAULT : SW_HIDE);
-
-	Trim(cmdline);
-
-	if (disableWow)
-	{
-		p = MsDisableWow64FileSystemRedirection();
-	}
-
-	if (CreateProcess(NULL, cmdline, NULL, NULL, FALSE,
-		(hide == false ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW | CREATE_NEW_CONSOLE) | NORMAL_PRIORITY_CLASS,
-		NULL, NULL, &info, &ret) == FALSE)
-	{
-		if (disableWow)
-		{
-			MsRestoreWow64FileSystemRedirection(p);
-		}
-		return NULL;
-	}
 	if (disableWow)
 	{
 		MsRestoreWow64FileSystemRedirection(p);

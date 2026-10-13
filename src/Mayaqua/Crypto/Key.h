@@ -22,7 +22,4 @@ struct CRYPTO_KEY_RAW
 
 UINT CryptoKeyTypeSize(const CRYPTO_KEY_TYPE type);
 
-CRYPTO_KEY_RAW *CryptoKeyRawNew(const void *data, const UINT size, const CRYPTO_KEY_TYPE type);
-void CryptoKeyRawFree(CRYPTO_KEY_RAW *key);
-
 #endif

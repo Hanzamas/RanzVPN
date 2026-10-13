@@ -62,8 +62,6 @@ bool Win32FileRename(char *old_name, char *new_name);
 bool Win32FileRenameW(wchar_t *old_name, wchar_t *new_name);
 bool Win32Run(char *filename, char *arg, bool hide, bool wait);
 bool Win32RunW(wchar_t *filename, wchar_t *arg, bool hide, bool wait);
-void *Win32RunEx3(char *filename, char *arg, bool hide, UINT *process_id, bool disableWow);
-void *Win32RunEx2W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id);
 void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id, bool disableWow);
 bool Win32WaitProcess(void *h, UINT timeout);
 void Win32CloseProcess(void *handle);

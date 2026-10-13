@@ -96,7 +96,6 @@ bool ReadPack(BUF *b, PACK *p);
 ELEMENT *ReadElement(BUF *b);
 VALUE *ReadValue(BUF *b, UINT type);
 VALUE *NewInt64Value(UINT64 i);
-TOKEN_LIST *GetPackElementNames(PACK *p);
 
 X *PackGetX(PACK *p, char *name);
 LIST *PackGetXList(PACK *p, char *name);

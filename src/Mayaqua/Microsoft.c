@@ -450,53 +450,6 @@ void MsGetComputerName(char *name, UINT size)
 	GetComputerName(name, &sz);
 }
 
-// Create a token of standard user
-HANDLE MsCreateUserToken()
-{
-	const char *medium_sid = "S-1-16-8192";
-	PSID sid = NULL;
-	TOKEN_MANDATORY_LABEL til;
-	HANDLE hCurrentToken, hNewToken;
-
-	Zero(&til, sizeof(til));
-
-	if (ConvertStringSidToSidA(medium_sid, &sid) == false)
-	{
-		return NULL;
-	}
-
-	til.Label.Attributes = SE_GROUP_INTEGRITY;
-	til.Label.Sid = sid;
-
-	if (OpenProcessToken(GetCurrentProcess(), MAXIMUM_ALLOWED, &hCurrentToken) == false)
-	{
-		LocalFree(sid);
-		return NULL;
-	}
-
-	if (DuplicateTokenEx(hCurrentToken, MAXIMUM_ALLOWED, NULL,
-		SecurityImpersonation, TokenPrimary, &hNewToken) == false)
-	{
-		CloseHandle(hCurrentToken);
-		LocalFree(sid);
-		return NULL;
-	}
-
-	if (SetTokenInformation(hNewToken, TokenIntegrityLevel, &til,
-		sizeof(TOKEN_MANDATORY_LABEL) + GetLengthSid(sid)) == false)
-	{
-		CloseHandle(hNewToken);
-		CloseHandle(hCurrentToken);
-		LocalFree(sid);
-		return NULL;
-	}
-
-	CloseHandle(hCurrentToken);
-	LocalFree(sid);
-
-	return hNewToken;
-}
-
 // Disable the WoW64 redirection
 void *MsDisableWow64FileSystemRedirection()
 {
@@ -1274,78 +1227,6 @@ void MsFreeAdapter(MS_ADAPTER *a)
 	Free(a);
 }
 
-// Get the short file name
-bool MsGetShortPathNameW(wchar_t *long_path, wchar_t *short_path, UINT short_path_size)
-{
-	// Validate arguments
-	if (long_path == NULL || short_path == NULL)
-	{
-		return false;
-	}
-
-	if (GetShortPathNameW(long_path, short_path, short_path_size) == 0)
-	{
-		UniStrCpy(short_path, short_path_size, long_path);
-		return false;
-	}
-
-	return true;
-}
-
-// Kill the specified process
-bool MsKillProcess(UINT id)
-{
-	HANDLE h;
-	// Validate arguments
-	if (id == 0)
-	{
-		return false;
-	}
-
-	h = OpenProcess(PROCESS_TERMINATE, FALSE, id);
-	if (h == NULL)
-	{
-		return false;
-	}
-
-	if (TerminateProcess(h, 0) == FALSE)
-	{
-		CloseHandle(h);
-		return false;
-	}
-
-	CloseHandle(h);
-
-	return true;
-}
-
-// Get the current EXE file name
-void MsGetCurrentProcessExeNameW(wchar_t *name, UINT size)
-{
-	UINT id;
-	LIST *o;
-	MS_PROCESS *p;
-	// Validate arguments
-	if (name == NULL)
-	{
-		return;
-	}
-
-	id = MsGetCurrentProcessId();
-	o = MsGetProcessList();
-	p = MsSearchProcessById(o, id);
-	if (p != NULL)
-	{
-		p = MsSearchProcessById(o, id);
-		UniStrCpy(name, size, p->ExeFilenameW);
-	}
-	else
-	{
-		UniStrCpy(name, size, MsGetExeFileNameW());
-	}
-	MsFreeProcessList(o);
-}
-
 // Search the process by the process ID
 MS_PROCESS *MsSearchProcessById(LIST *o, UINT id)
 {
@@ -1896,21 +1777,6 @@ void MsWriteCallingServiceManagerProcessId(char *svcname, UINT pid)
 	}
 }
 
-// Get the process ID of the process which is calling the service manager
-UINT MsReadCallingServiceManagerProcessId(char *svcname, bool current_user)
-{
-	char tmp[MAX_PATH];
-	// Validate arguments
-	if (svcname == NULL)
-	{
-		return 0;
-	}
-
-	Format(tmp, sizeof(tmp), SVC_CALLING_SM_PROCESS_ID_KEY, svcname);
-
-	return MsRegReadInt(current_user ? REG_CURRENT_USER : REG_LOCAL_MACHINE, tmp, SVC_CALLING_SM_PROCESS_ID_VALUE);
-}
-
 // Service main function
 UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT icon, char *cmd_line)
 {
@@ -2424,44 +2290,6 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 	return 0;
 }
 
-// Examine whether the user switching is installed
-bool MsIsUserSwitchingInstalled()
-{
-	OSVERSIONINFOEX i;
-	Zero(&i, sizeof(i));
-	i.dwOSVersionInfoSize = sizeof(i);
-	if (GetVersionEx((OSVERSIONINFO *)&i) == false)
-	{
-		return false;
-	}
-
-	if (i.wSuiteMask & VER_SUITE_SINGLEUSERTS)
-	{
-		return true;
-	}
-
-	return false;
-}
-
-// Examine whether the Terminal Services is installed
-bool MsIsTerminalServiceInstalled()
-{
-	OSVERSIONINFOEX i;
-	Zero(&i, sizeof(i));
-	i.dwOSVersionInfoSize = sizeof(i);
-	if (GetVersionEx((OSVERSIONINFO *)&i) == false)
-	{
-		return false;
-	}
-
-	if (i.wSuiteMask & VER_SUITE_TERMINAL || i.wSuiteMask & VER_SUITE_SINGLEUSERTS)
-	{
-		return true;
-	}
-
-	return false;
-}
-
 // Stop the service
 bool MsStopService(char *name)
 {
@@ -2828,12 +2656,6 @@ bool MsIsServiceInstalled(char *name)
 	CloseServiceHandle(sc);
 
 	return ret;
-}
-
-// Get the Process ID
-UINT MsGetProcessId()
-{
-	return GetCurrentProcessId();
 }
 
 // Lower the priority of the thread to lowest
@@ -3968,68 +3790,6 @@ bool MsRegDeleteKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bi
 	return true;
 }
 
-// Enumeration of values
-TOKEN_LIST *MsRegEnumValueEx2(UINT root, char *keyname, bool force32bit, bool force64bit)
-{
-	HKEY h;
-	UINT i;
-	TOKEN_LIST *t;
-	LIST *o;
-
-	if (keyname == NULL)
-	{
-		h = MsGetRootKeyFromInt(root);
-	}
-	else
-	{
-		if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_READ | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS)
-		{
-			return NULL;
-		}
-	}
-
-	o = NewListFast(CompareStr);
-
-	for (i = 0;;i++)
-	{
-		char tmp[MAX_SIZE];
-		UINT ret;
-		DWORD size = sizeof(tmp);
-
-		Zero(tmp, sizeof(tmp));
-		ret = RegEnumValue(h, i, tmp, &size, NULL, NULL, NULL, NULL);
-		if (ret == ERROR_NO_MORE_ITEMS)
-		{
-			break;
-		}
-		else if (ret != ERROR_SUCCESS)
-		{
-			break;
-		}
-
-		Add(o, CopyStr(tmp));
-	}
-
-	Sort(o);
-
-	t = ZeroMalloc(sizeof(TOKEN_LIST));
-	t->NumTokens = LIST_NUM(o);
-	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
-	for (i = 0;i < t->NumTokens;i++)
-	{
-		t->Token[i] = LIST_DATA(o, i);
-	}
-
-	ReleaseList(o);
-
-	if (keyname != NULL)
-	{
-		RegCloseKey(h);
-	}
-
-	return t;
-}
-
 // Enumeration of the keys
 TOKEN_LIST *MsRegEnumKey(UINT root, char *keyname)
 {
@@ -4101,18 +3861,6 @@ TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit, bool forc
 	return t;
 }
 
-// Set the binary data
-bool MsRegWriteBinEx2(UINT root, char *keyname, char *valuename, void *data, UINT size, bool force32bit, bool force64bit)
-{
-	// Validate arguments
-	if (keyname == NULL || (size != 0 && data == NULL))
-	{
-		return false;
-	}
-
-	return MsRegWriteValueEx2(root, keyname, valuename, REG_BINARY, data, size, force32bit, force64bit);
-}
-
 // Set the integer value
 bool MsRegWriteInt(UINT root, char *keyname, char *valuename, UINT value)
 {
@@ -4139,18 +3887,6 @@ bool MsRegWriteIntEx2(UINT root, char *keyname, char *valuename, UINT value, boo
 	return MsRegWriteValueEx2(root, keyname, valuename, REG_DWORD_LITTLE_ENDIAN, &value, sizeof(UINT), force32bit, force64bit);
 }
 
-// Set the string
-bool MsRegWriteStrExpandEx2W(UINT root, char *keyname, char *valuename, wchar_t *str, bool force32bit, bool force64bit)
-{
-	// Validate arguments
-	if (keyname == NULL || str == NULL)
-	{
-		return false;
-	}
-
-	return MsRegWriteValueEx2W(root, keyname, valuename, REG_EXPAND_SZ, str, UniStrSize(str), force32bit, force64bit);
-}
-
 bool MsRegWriteStr(UINT root, char *keyname, char *valuename, char *str)
 {
 	return MsRegWriteStrEx(root, keyname, valuename, str, false);
@@ -4168,16 +3904,6 @@ bool MsRegWriteStrEx2(UINT root, char *keyname, char *valuename, char *str, bool
 	}
 
 	return MsRegWriteValueEx2(root, keyname, valuename, REG_SZ, str, StrSize(str), force32bit, force64bit);
-}
-bool MsRegWriteStrEx2W(UINT root, char *keyname, char *valuename, wchar_t *str, bool force32bit, bool force64bit)
-{
-	// Validate arguments
-	if (keyname == NULL || str == NULL)
-	{
-		return false;
-	}
-
-	return MsRegWriteValueEx2W(root, keyname, valuename, REG_SZ, str, UniStrSize(str), force32bit, force64bit);
 }
 
 // Set the value
@@ -4245,34 +3971,6 @@ bool MsRegWriteValueEx2W(UINT root, char *keyname, char *valuename, UINT type, v
 	Free(valuename_w);
 
 	return true;
-}
-
-// Get the binary data
-BUF *MsRegReadBinEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit)
-{
-	char *ret;
-	DWORD type, size;
-	BUF *b;
-	// Validate arguments
-	if (keyname == NULL || valuename == NULL)
-	{
-		return 0;
-	}
-
-	// Read the value
-	if (MsRegReadValueEx2(root, keyname, valuename, (void **)&ret, &type, &size, force32bit, force64bit) == false)
-	{
-		return 0;
-	}
-
-	b = NewBuf();
-
-	WriteBuf(b, ret, size);
-	SeekBuf(b, 0, 0);
-
-	Free(ret);
-
-	return b;
 }
 
 // Get an integer value
@@ -4849,10 +4547,6 @@ UINT MsGetCurrentProcessId()
 char *MsGetExeDirName()
 {
 	return ms->ExeFileDir;
-}
-wchar_t *MsGetExeDirNameW()
-{
-	return ms->ExeFileDirW;
 }
 
 // Get the special directory name

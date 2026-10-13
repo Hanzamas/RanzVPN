@@ -135,7 +135,6 @@ bool CfgSaveExW3(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size, bool 
 FOLDER *CfgReadW(wchar_t *name);
 void CfgTest();
 void CfgTest2(FOLDER *f, UINT n);
-CFG_RW *NewCfgRwExW(FOLDER **root, wchar_t *cfg_name, bool dont_backup);
 CFG_RW *NewCfgRwEx2W(FOLDER **root, wchar_t *cfg_name, bool dont_backup, wchar_t *template_name);
 CFG_RW *NewCfgRwEx2A(FOLDER **root, char *cfg_name_a, bool dont_backup, char *template_name_a);
 UINT SaveCfgRw(CFG_RW *rw, FOLDER *f);

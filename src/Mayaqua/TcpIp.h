@@ -824,8 +824,6 @@ BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size);
 BUF *DhcpModifyIPv4(DHCP_MODIFY_OPTION *m, void *data, UINT size);
 
 void DhcpParseClasslessRouteData(DHCP_CLASSLESS_ROUTE_TABLE *t, void *data, UINT size);
-bool ParseClasslessRouteStr(DHCP_CLASSLESS_ROUTE *r, char *str);
-void BuildClasslessRouteStr(char *str, UINT str_size, DHCP_CLASSLESS_ROUTE *r);
 
 
 

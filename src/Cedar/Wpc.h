@@ -116,9 +116,6 @@ WPC_ENTRY *WpcFindDataEntry(LIST *o, char *name);
 BUF *WpcDataEntryToBuf(WPC_ENTRY *e);
 BUF *WpcGeneratePacket(PACK *pack, X *cert, K *key);
 bool WpcParsePacket(WPC_PACKET *packet, BUF *buf);
-PACK *WpcCallEx2(char *url, INTERNET_SETTING *setting, UINT timeout_connect, UINT timeout_comm,
-				char *function_name, PACK *pack, X *cert, K *key, void *sha1_cert_hash, UINT num_hashes, bool *cancel, UINT max_recv_size,
-				char *additional_header_name, char *additional_header_value, char *sni_string);
 
 #endif	// WPC_H
 

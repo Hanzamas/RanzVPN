@@ -548,34 +548,6 @@ void CrashNow()
 	}
 }
 
-// Comparison of candidates
-int CompareCandidate(void *p1, void *p2)
-{
-	CANDIDATE *c1, *c2;
-	if (p1 == NULL || p2 == NULL)
-	{
-		return 0;
-	}
-	c1 = *(CANDIDATE **)p1;
-	c2 = *(CANDIDATE **)p2;
-	if (c1 == NULL || c2 == NULL)
-	{
-		return 0;
-	}
-	if (c1->LastSelectedTime > c2->LastSelectedTime)
-	{
-		return -1;
-	}
-	else if (c1->LastSelectedTime < c2->LastSelectedTime)
-	{
-		return 1;
-	}
-	else
-	{
-		return UniStrCmpi(c1->Str, c2->Str);
-	}
-}
-
 // Examine whether the specified address points all-zero area
 bool IsZero(void *data, UINT size)
 {
@@ -1598,19 +1570,6 @@ void AddInt64Distinct(LIST *o, UINT64 i)
 		AddInt64(o, i);
 	}
 }
-void InsertIntDistinct(LIST *o, UINT i)
-{
-	// Validate arguments
-	if (o == NULL)
-	{
-		return;
-	}
-
-	if (IsIntInList(o, i) == false)
-	{
-		InsertInt(o, i);
-	}
-}
 
 // Insert the string to the list
 bool InsertStr(LIST *o, char *str)
@@ -1829,10 +1788,6 @@ UCHAR *GetFifoPointer(FIFO *f)
 	}
 
 	return ((UCHAR *)f->p) + f->pos;
-}
-UCHAR *FifoPtr(FIFO *f)
-{
-	return GetFifoPointer(f);
 }
 
 // Get the size of the FIFO

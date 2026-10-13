@@ -131,10 +131,6 @@ UINT SaveCfgRwEx(CFG_RW *rw, FOLDER *f, UINT revision_number)
 }
 
 // Creating a configuration file R/W
-CFG_RW *NewCfgRwExW(FOLDER **root, wchar_t *cfg_name, bool dont_backup)
-{
-	return NewCfgRwEx2W(root, cfg_name, dont_backup, NULL);
-}
 CFG_RW *NewCfgRwEx2A(FOLDER **root, char *cfg_name_a, bool dont_backup, char *template_name_a)
 {
 	CFG_RW *ret;

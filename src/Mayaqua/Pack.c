@@ -14,32 +14,6 @@
 #include "Network.h"
 #include "Str.h"
 
-// Get a list of the element names in the PACK
-TOKEN_LIST *GetPackElementNames(PACK *p)
-{
-	TOKEN_LIST *ret;
-	UINT i;
-	// Validate arguments
-	if (p == NULL)
-	{
-		return NULL;
-	}
-
-	ret = ZeroMalloc(sizeof(TOKEN_LIST));
-
-	ret->NumTokens = LIST_NUM(p->elements);
-	ret->Token = ZeroMalloc(sizeof(char *) * ret->NumTokens);
-
-	for (i = 0;i < ret->NumTokens;i++)
-	{
-		ELEMENT *e = LIST_DATA(p->elements, i);
-
-		ret->Token[i] = CopyStr(e->name);
-	}
-
-	return ret;
-}
-
 // Convert the BUF to a PACK
 PACK *BufToPack(BUF *b)
 {

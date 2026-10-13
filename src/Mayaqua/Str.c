@@ -353,29 +353,6 @@ bool InStrEx(char *str, char *keyword, bool case_sensitive)
 	return true;
 }
 
-// Get an entry in the INI file
-INI_ENTRY *GetIniEntry(LIST *o, char *key)
-{
-	UINT i;
-	// Validate arguments
-	if (o == NULL || key == NULL)
-	{
-		return NULL;
-	}
-
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		INI_ENTRY *e = LIST_DATA(o, i);
-
-		if (StrCmpi(e->Key, key) == 0)
-		{
-			return e;
-		}
-	}
-
-	return NULL;
-}
-
 // Check whether the specified character is a delimiter
 bool IsSplitChar(char c, char *split_str)
 {

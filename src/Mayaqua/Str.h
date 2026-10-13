@@ -101,7 +101,6 @@ void MakeCharArray2(char *str, char c, UINT count);
 bool StrToMac(UCHAR *mac_address, char *str);
 bool IsSplitChar(char c, char *split_str);
 bool GetKeyAndValue(char *str, char *key, UINT key_size, char *value, UINT value_size, char *split_str);
-INI_ENTRY *GetIniEntry(LIST *o, char *key);
 bool InStr(char *str, char *keyword);
 bool InStrEx(char *str, char *keyword, bool case_sensitive);
 TOKEN_LIST *ParseTokenWithoutNullStr(char *str, char *split_chars);
