@@ -234,7 +234,6 @@ void AlertW(wchar_t *msg, wchar_t *caption);
 OS_INFO *GetOsInfo();
 void CheckEndian();
 void CheckUnixTempDir();
-void TimeCheck();
 void SetHamMode();
 bool IsHamMode();
 void InitProbe();
@@ -242,7 +241,6 @@ void FreeProbe();
 void EnableProbe(bool enable);
 bool IsProbeEnabled();
 void WriteProbe(char *filename, UINT line, char *str);
-void WriteProbeData(char *filename, UINT line, char *str, void *data, UINT size);
 USHORT CalcChecksum16(void *buf, UINT size);
 
 
