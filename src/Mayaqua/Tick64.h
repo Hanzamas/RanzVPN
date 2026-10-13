@@ -32,7 +32,6 @@ struct TICK64
 
 // Constant
 #define	TICK64_SPAN_WIN32	1000	// Interval of measurement on Win32
-#define	TICK64_ADJUST_SPAN	5000	// Correct the clock if it shifts more than this value
 
 // Function prototype
 void InitTick64();

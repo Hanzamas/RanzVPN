@@ -47,7 +47,6 @@ static UINT last_time_check = 0;
 static UINT first_time_check = 0;
 static bool is_ham_mode = false;
 static UINT init_mayaqua_counter = 0;
-static bool use_probe = false;
 static BUF *probe_buf = NULL;
 static LOCK *probe_lock = NULL;
 static UINT64 probe_start = 0;

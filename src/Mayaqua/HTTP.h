@@ -9,14 +9,10 @@
 #define	HTTP_CONTENT_TYPE	"text/html; charset=iso-8859-1"
 #define	HTTP_CONTENT_TYPE2	"application/octet-stream"
 #define	HTTP_CONTENT_TYPE3	"image/jpeg"
-#define	HTTP_CONTENT_TYPE4	"text/html"
-#define	HTTP_CONTENT_TYPE5	"message/rfc822"
 #define	HTTP_KEEP_ALIVE		"timeout=15; max=19"
 #define	HTTP_VPN_TARGET		"/vpnsvc/vpn.cgi"
 #define	HTTP_VPN_TARGET2	"/vpnsvc/connect.cgi"
 #define HTTP_VPN_TARGET_POSTDATA	"VPNCONNECT"
-#define	HTTP_SAITAMA		"/saitama.jpg"
-#define	HTTP_PICTURES		"/picture"
 // Maximum size of the custom HTTP header
 #define	HTTP_CUSTOM_HEADER_MAX_SIZE		1024
 // Maximum size of a single line in the HTTP header

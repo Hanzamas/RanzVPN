@@ -116,9 +116,7 @@ struct ZIP_END_HEADER
 } GCC_PACKED;
 
 #define	ZIP_SIGNATURE				0x04034B50
-#define	ZIP_SIGNATURE_END			0x06054B50
 #define	ZIP_VERSION					10
-#define	ZIP_VERSION_WITH_COMPRESS	20
 
 #ifdef	OS_WIN32
 #pragma pack(pop)
@@ -131,9 +129,7 @@ struct ZIP_FILE
 	UINT64 DateTime;
 	UINT Attributes;
 	UINT CurrentSize;
-	UINT CompressSize;
 	UINT Crc32;
-	UINT HeaderPos;
 };
 
 struct ZIP_PACKER
@@ -209,7 +205,6 @@ void InitHamcore();
 void FreeHamcore();
 BUF *ReadHamcore(char *name);
 BUF *ReadHamcoreW(wchar_t *filename);
-void SafeFileName(char *name);
 DIRLIST *EnumDir(char *dirname);
 DIRLIST *EnumDirW(wchar_t *dirname);
 DIRLIST *EnumDirEx(char *dirname, COMPARE *compare);

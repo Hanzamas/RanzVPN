@@ -19,7 +19,6 @@
 
 // Language constant
 #define SE_LANG_JAPANESE			0	// Japanese
-#define SE_LANG_ENGLISH				1	// English
 #define SE_LANG_CHINESE_ZH			2	// Simplified Chinese
 
 
