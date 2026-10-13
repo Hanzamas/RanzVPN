@@ -179,21 +179,18 @@ UINT GetNumberOfCpu() {
 		i = Win32GetNumberOfCpuInner();
 #endif // OS_WIN32
 
-		if (i == 0) {
+		if (i == 0)
 			i = 8;
-		}
 
 		cached_number_of_cpus = i;
 	}
 
 	ret = cached_number_of_cpus;
 
-	if (ret == 0) {
+	if (ret == 0)
 		ret = 1;
-	}
-	if (ret > 128) {
+	if (ret > 128)
 		ret = 128;
-	}
 
 	return ret;
 }
@@ -201,9 +198,8 @@ UINT GetNumberOfCpu() {
 // Get the home directory
 void GetHomeDirW(wchar_t *path, UINT size) {
 	// Validate arguments
-	if (path == NULL) {
+	if (path == NULL)
 		return;
-	}
 
 	if (GetEnvW(L"HOME", path, size) == false) {
 		wchar_t drive[MAX_SIZE];
@@ -223,16 +219,14 @@ void GetHomeDirW(wchar_t *path, UINT size) {
 bool GetEnv(char *name, char *data, UINT size) {
 	char *ret;
 	// Validate arguments
-	if (name == NULL || data == NULL) {
+	if (name == NULL || data == NULL)
 		return false;
-	}
 
 	StrCpy(data, size, "");
 
 	ret = getenv(name);
-	if (ret == NULL) {
+	if (ret == NULL)
 		return false;
-	}
 
 	StrCpy(data, size, ret);
 
@@ -248,16 +242,14 @@ bool GetEnvW(wchar_t *name, wchar_t *data, UINT size) {
 bool GetEnvW_ForWin32(wchar_t *name, wchar_t *data, UINT size) {
 	wchar_t *ret;
 	// Validate arguments
-	if (name == NULL || data == NULL) {
+	if (name == NULL || data == NULL)
 		return false;
-	}
 
 	UniStrCpy(data, size, L"");
 
 	ret = _wgetenv(name);
-	if (ret == NULL) {
+	if (ret == NULL)
 		return false;
-	}
 
 	UniStrCpy(data, size, ret);
 
@@ -281,25 +273,22 @@ INSTANCE *NewSingleInstanceEx(char *instance_name, bool user_local) {
 	void *data;
 
 	if (instance_name != NULL) {
-		if (user_local == false) {
+		if (user_local == false)
 			HashInstanceName(name, sizeof(name), instance_name);
-		} else {
+		else
 			HashInstanceNameLocal(name, sizeof(name), instance_name);
-		}
 
 		data = OSNewSingleInstance(name);
 	} else {
 		data = OSNewSingleInstance(NULL);
 	}
 
-	if (data == NULL) {
+	if (data == NULL)
 		return NULL;
-	}
 
 	ret = ZeroMalloc(sizeof(INSTANCE));
-	if (instance_name != NULL) {
+	if (instance_name != NULL)
 		ret->Name = CopyStr(instance_name);
-	}
 
 	ret->pData = data;
 
@@ -309,15 +298,13 @@ INSTANCE *NewSingleInstanceEx(char *instance_name, bool user_local) {
 // Release of single instance
 void FreeSingleInstance(INSTANCE *inst) {
 	// Validate arguments
-	if (inst == NULL) {
+	if (inst == NULL)
 		return;
-	}
 
 	OSFreeSingleInstance(inst->pData);
 
-	if (inst->Name != NULL) {
+	if (inst->Name != NULL)
 		Free(inst->Name);
-	}
 	Free(inst);
 }
 
@@ -327,9 +314,8 @@ void HashInstanceName(char *name, UINT size, char *instance_name) {
 	UCHAR hash[SHA1_SIZE];
 	char key[11];
 	// Validate arguments
-	if (name == NULL || instance_name == NULL) {
+	if (name == NULL || instance_name == NULL)
 		return;
-	}
 
 	StrCpy(tmp, sizeof(tmp), instance_name);
 	Trim(tmp);
@@ -349,9 +335,8 @@ void HashInstanceNameLocal(char *name, UINT size, char *instance_name) {
 	UCHAR hash[SHA1_SIZE];
 	char key[11];
 	// Validate arguments
-	if (name == NULL || instance_name == NULL) {
+	if (name == NULL || instance_name == NULL)
 		return;
-	}
 
 	StrCpy(tmp, sizeof(tmp), instance_name);
 	Trim(tmp);
@@ -370,17 +355,15 @@ void HashInstanceNameLocal(char *name, UINT size, char *instance_name) {
 // Run the process
 bool Run(char *filename, char *arg, bool hide, bool wait) {
 	// Validate arguments
-	if (filename == NULL) {
+	if (filename == NULL)
 		return false;
-	}
 
 	return OSRun(filename, arg, hide, wait);
 }
 bool RunW(wchar_t *filename, wchar_t *arg, bool hide, bool wait) {
 	// Validate arguments
-	if (filename == NULL) {
+	if (filename == NULL)
 		return false;
-	}
 
 	return OSRunW(filename, arg, hide, wait);
 }
@@ -388,9 +371,8 @@ bool RunW(wchar_t *filename, wchar_t *arg, bool hide, bool wait) {
 // Date and time related functions
 void GetDateTimeStr64Uni(wchar_t *str, UINT size, UINT64 sec64) {
 	char tmp[MAX_SIZE];
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	GetDateTimeStr64(tmp, sizeof(tmp), sec64);
 	StrToUni(str, size, tmp);
@@ -425,9 +407,8 @@ void GetDateStr64(char *str, UINT size, UINT64 sec64) {
 }
 void GetDateTimeStrEx64(wchar_t *str, UINT size, UINT64 sec64, LOCALE *locale) {
 	SYSTEMTIME st;
-	if (locale == NULL) {
+	if (locale == NULL)
 		locale = &current_locale;
-	}
 	if (sec64 == 0 || SystemToLocal64(sec64) == 0 || LocalToSystem64(sec64) == 0) {
 		UniStrCpy(str, size, locale->Unknown);
 		return;
@@ -437,9 +418,8 @@ void GetDateTimeStrEx64(wchar_t *str, UINT size, UINT64 sec64, LOCALE *locale) {
 }
 void GetDateStrEx64(wchar_t *str, UINT size, UINT64 sec64, LOCALE *locale) {
 	SYSTEMTIME st;
-	if (locale == NULL) {
+	if (locale == NULL)
 		locale = &current_locale;
-	}
 	if (sec64 == 0 || SystemToLocal64(sec64) == 0 || LocalToSystem64(sec64) == 0) {
 		UniStrCpy(str, size, locale->Unknown);
 		return;
@@ -476,9 +456,8 @@ void InitThreading() {
 // Release of thread pool
 void FreeThreading() {
 	while (true) {
-		if (Count(thread_count) == 0) {
+		if (Count(thread_count) == 0)
 			break;
-		}
 
 		SleepThread(25);
 	}
@@ -487,9 +466,8 @@ void FreeThreading() {
 		THREAD_POOL_DATA *pd;
 		THREAD *t = Pop(thread_pool);
 
-		if (t == NULL) {
+		if (t == NULL)
 			break;
-		}
 
 		pd = (THREAD_POOL_DATA *)t->param;
 
@@ -520,9 +498,8 @@ void FreeThreading() {
 void ThreadPoolProc(THREAD *t, void *param) {
 	THREAD_POOL_DATA *pd;
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	pd = (THREAD_POOL_DATA *)param;
 
@@ -548,11 +525,10 @@ void ThreadPoolProc(THREAD *t, void *param) {
 		Set(pd->InitFinishEvent);
 
 		// Set the thread name
-		if (thread->Name != NULL) {
+		if (thread->Name != NULL)
 			SetThreadName(thread->ThreadId, thread->Name, thread->param);
-		} else {
+		else
 			SetThreadName(thread->ThreadId, "Unknown", 0);
-		}
 
 		// Run the thread procedure
 		pd->ThreadProc(pd->Thread, thread->param);
@@ -584,9 +560,8 @@ void ThreadPoolProc(THREAD *t, void *param) {
 		Free(ee);
 
 		while (true) {
-			if (Count(thread->ref->c) <= 1) {
+			if (Count(thread->ref->c) <= 1)
 				break;
-			}
 
 			Wait(thread->release_event, 256);
 		}
@@ -615,11 +590,10 @@ void SetThreadName(UINT thread_id, char *name, void *param) {
 	if (IsDebug()) {
 		char tmp[MAX_SIZE];
 
-		if (name == NULL) {
+		if (name == NULL)
 			strcpy(tmp, "idle");
-		} else {
+		else
 			sprintf(tmp, "%s (0x%x)", name, (UINT)param);
-		}
 
 		Win32SetThreadName(thread_id, tmp);
 	}
@@ -632,9 +606,8 @@ THREAD *NewThreadNamed(THREAD_PROC *thread_proc, void *param, char *name) {
 	THREAD_POOL_DATA *pd = NULL;
 	THREAD *ret;
 	// Validate arguments
-	if (thread_proc == NULL) {
+	if (thread_proc == NULL)
 		return NULL;
-	}
 
 	Inc(thread_count);
 
@@ -668,9 +641,8 @@ THREAD *NewThreadNamed(THREAD_PROC *thread_proc, void *param, char *name) {
 	ret->PoolHostThread = host;
 	ret->release_event = NewEvent();
 
-	if (IsEmptyStr(name) == false) {
+	if (IsEmptyStr(name) == false)
 		ret->Name = CopyStr(name);
-	}
 
 	// Run
 	pd->ThreadProc = thread_proc;
@@ -691,17 +663,15 @@ THREAD *NewThreadNamed(THREAD_PROC *thread_proc, void *param, char *name) {
 // Clean up of thread (pool)
 void CleanupThread(THREAD *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	ReleaseEvent(t->init_finished_event);
 	ReleaseEvent(t->release_event);
 	ReleaseList(t->PoolWaitList);
 
-	if (t->Name != NULL) {
+	if (t->Name != NULL)
 		Free(t->Name);
-	}
 
 	Free(t);
 
@@ -714,31 +684,27 @@ void ReleaseThread(THREAD *t) {
 	UINT ret;
 	EVENT *e;
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	e = t->release_event;
-	if (e != NULL) {
+	if (e != NULL)
 		AddRef(e->ref);
-	}
 
 	ret = Release(t->ref);
 	Set(e);
 
 	ReleaseEvent(e);
 
-	if (ret == 0) {
+	if (ret == 0)
 		CleanupThread(t);
-	}
 }
 
 // Notify the completion of the thread initialization (pool)
 void NoticeThreadInit(THREAD *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	// Notification
 	Set(t->init_finished_event);
@@ -747,9 +713,8 @@ void NoticeThreadInit(THREAD *t) {
 // Wait the completion of the thread initialization (pool)
 void WaitThreadInit(THREAD *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	// KS
 	KS_INC(KS_WAITFORTHREAD_COUNT);
@@ -763,9 +728,8 @@ bool WaitThread(THREAD *t, UINT timeout) {
 	bool ret = false;
 	EVENT *e = NULL;
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return false;
-	}
 
 	LockList(t->PoolWaitList);
 	{
@@ -787,9 +751,8 @@ bool WaitThread(THREAD *t, UINT timeout) {
 
 		LockList(t->PoolWaitList);
 		{
-			if (Delete(t->PoolWaitList, e)) {
+			if (Delete(t->PoolWaitList, e))
 				ReleaseEvent(e);
-			}
 		}
 		UnlockList(t->PoolWaitList);
 
@@ -809,9 +772,8 @@ THREAD *NewThreadInternal(THREAD_PROC *thread_proc, void *param) {
 	THREAD *t;
 	UINT retry = 0;
 	// Validate arguments
-	if (thread_proc == NULL) {
+	if (thread_proc == NULL)
 		return NULL;
-	}
 
 	// Initialize Thread object
 	t = ZeroMalloc(sizeof(THREAD));
@@ -827,9 +789,8 @@ THREAD *NewThreadInternal(THREAD_PROC *thread_proc, void *param) {
 			printf("\n\n*** error: new thread create failed.\n\n");
 			AbortExit();
 		}
-		if (OSInitThread(t)) {
+		if (OSInitThread(t))
 			break;
-		}
 		SleepThread(500);
 	}
 
@@ -842,21 +803,18 @@ THREAD *NewThreadInternal(THREAD_PROC *thread_proc, void *param) {
 // Release of thread
 void ReleaseThreadInternal(THREAD *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
-	if (Release(t->ref) == 0) {
+	if (Release(t->ref) == 0)
 		CleanupThreadInternal(t);
-	}
 }
 
 // Clean up of the thread
 void CleanupThreadInternal(THREAD *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	// Release of the thread
 	OSFreeThread(t);
@@ -873,9 +831,8 @@ void CleanupThreadInternal(THREAD *t) {
 // Wait for the termination of the thread
 bool WaitThreadInternal(THREAD *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return false;
-	}
 
 	return OSWaitThread(t);
 }
@@ -883,9 +840,8 @@ bool WaitThreadInternal(THREAD *t) {
 // Notify that the thread initialization is complete
 void NoticeThreadInitInternal(THREAD *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	// Notify
 	Set(t->init_finished_event);
@@ -894,9 +850,8 @@ void NoticeThreadInitInternal(THREAD *t) {
 // Wait for completion of thread initialization
 void WaitThreadInitInternal(THREAD *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	// KS
 	KS_INC(KS_WAITFORTHREAD_COUNT);
@@ -910,9 +865,8 @@ void GetDateTimeStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale) {
 	wchar_t tmp1[MAX_SIZE];
 	wchar_t tmp2[MAX_SIZE];
 	// Validate arguments
-	if (str == NULL || st == NULL) {
+	if (str == NULL || st == NULL)
 		return;
-	}
 
 	GetDateStrEx(tmp1, sizeof(tmp1), st, locale);
 	GetTimeStrEx(tmp2, sizeof(tmp2), st, locale);
@@ -923,13 +877,11 @@ void GetDateTimeStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale) {
 void GetTimeStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale) {
 	wchar_t *tag = L"%02u%s%02u%s%02u%s";
 	// Validate arguments
-	if (str == NULL || st == NULL) {
+	if (str == NULL || st == NULL)
 		return;
-	}
 
-	if (_GETLANG() == SE_LANG_JAPANESE || _GETLANG() == SE_LANG_CHINESE_ZH) {
+	if (_GETLANG() == SE_LANG_JAPANESE || _GETLANG() == SE_LANG_CHINESE_ZH)
 		tag = L"%2u%s%2u%s%2u%s";
-	}
 
 	locale = (locale != NULL ? locale : &current_locale);
 	UniFormat(str, size,
@@ -943,13 +895,11 @@ void GetTimeStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale) {
 void GetDateStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale) {
 	wchar_t *tag = L"%04u%s%02u%s%02u%s (%s)";
 	// Validate arguments
-	if (str == NULL || st == NULL) {
+	if (str == NULL || st == NULL)
 		return;
-	}
 
-	if (_GETLANG() == SE_LANG_JAPANESE || _GETLANG() == SE_LANG_CHINESE_ZH) {
+	if (_GETLANG() == SE_LANG_JAPANESE || _GETLANG() == SE_LANG_CHINESE_ZH)
 		tag = L"%4u%s%2u%s%2u%s(%s)";
-	}
 
 	locale = (locale != NULL ? locale : &current_locale);
 	UniFormat(str, size,
@@ -963,9 +913,8 @@ void GetDateStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale) {
 // Get the time string to milliseconds (for example, 12:34:56.789)
 void GetTimeStrMilli(char *str, UINT size, SYSTEMTIME *st) {
 	// Validate arguments
-	if (st == NULL || str == NULL) {
+	if (st == NULL || str == NULL)
 		return;
-	}
 
 	Format(str, size, "%02u:%02u:%02u.%03u",
 	       st->wHour, st->wMinute, st->wSecond, st->wMilliseconds);
@@ -974,9 +923,8 @@ void GetTimeStrMilli(char *str, UINT size, SYSTEMTIME *st) {
 // Get the date string (example: 2004/07/23)
 void GetDateStr(char *str, UINT size, SYSTEMTIME *st) {
 	// Validate arguments
-	if (str == NULL || st == NULL) {
+	if (str == NULL || st == NULL)
 		return;
-	}
 
 	Format(str, size, "%04u-%02u-%02u",
 	       st->wYear, st->wMonth, st->wDay);
@@ -985,9 +933,8 @@ void GetDateStr(char *str, UINT size, SYSTEMTIME *st) {
 // Get the date and time string (example: 2004/07/23 12:34:56)
 void GetDateTimeStr(char *str, UINT size, SYSTEMTIME *st) {
 	// Validate arguments
-	if (str == NULL || st == NULL) {
+	if (str == NULL || st == NULL)
 		return;
-	}
 
 	Format(str, size, "%04u-%02u-%02u %02u:%02u:%02u",
 	       st->wYear, st->wMonth, st->wDay,
@@ -997,9 +944,8 @@ void GetDateTimeStr(char *str, UINT size, SYSTEMTIME *st) {
 // Get the date and time string in milliseconds (example: 2004/07/23 12:34:56.789)
 void GetDateTimeStrMilli(char *str, UINT size, SYSTEMTIME *st) {
 	// Validate arguments
-	if (str == NULL || st == NULL) {
+	if (str == NULL || st == NULL)
 		return;
-	}
 
 	Format(str, size, "%04u-%02u-%02u %02u:%02u:%02u.%03u",
 	       st->wYear, st->wMonth, st->wDay,
@@ -1016,31 +962,28 @@ void GetDateTimeStrRFC3339(char *str, UINT size, SYSTEMTIME *st, int timezone_mi
 		return;
 	}
 
-	if (timezone_min == 0) {
+	if (timezone_min == 0)
 		Format(str, size, "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ",
 		       st->wYear, st->wMonth, st->wDay,
 		       st->wHour, st->wMinute, st->wSecond,
 		       st->wMilliseconds);
-	} else {
+	else
 		Format(str, size, "%04u-%02u-%02uT%02u:%02u:%02u.%03u%+02d:%02d",
 		       st->wYear, st->wMonth, st->wDay,
 		       st->wHour, st->wMinute, st->wSecond,
 		       st->wMilliseconds, timezone_min / 60, timezone_min % 60);
-	}
 }
 
 // Get the time string (in milliseconds)
 void GetSpanStrMilli(char *str, UINT size, UINT64 sec64) {
 	char tmp[MAX_SIZE];
 	// Validate arguments
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	StrCpy(tmp, sizeof(tmp), "");
-	if (sec64 >= (UINT64)(1000 * 3600 * 24)) {
+	if (sec64 >= (UINT64)(1000 * 3600 * 24))
 		Format(tmp, sizeof(tmp), "%u:", (UINT)(sec64 / (UINT64)(1000 * 3600 * 24)));
-	}
 
 	Format(tmp, sizeof(tmp), "%s%02u:%02u:%02u.%03u", tmp,
 	       (UINT)(sec64 % (UINT64)(1000 * 60 * 60 * 24)) / (1000 * 60 * 60),
@@ -1057,16 +1000,14 @@ void SetLocale(wchar_t *str) {
 	wchar_t *set_locale_str;
 	LOCALE tmp;
 
-	if (str != NULL) {
+	if (str != NULL)
 		set_locale_str = str;
-	} else {
+	else
 		set_locale_str = default_locale_str;
-	}
 
 	if (LoadLocale(&tmp, set_locale_str) == false) {
-		if (LoadLocale(&tmp, default_locale_str) == false) {
+		if (LoadLocale(&tmp, default_locale_str) == false)
 			return;
-		}
 	}
 
 	Copy(&current_locale, &tmp, sizeof(LOCALE));
@@ -1079,9 +1020,8 @@ bool LoadLocale(LOCALE *locale, wchar_t *str) {
 	UNI_TOKEN_LIST *tokens;
 	UINT i;
 	// Validate arguments
-	if (locale == NULL || str == NULL) {
+	if (locale == NULL || str == NULL)
 		return false;
-	}
 
 	// Analysis of the token
 	tokens = UniParseToken(str, L" ");
@@ -1099,10 +1039,9 @@ bool LoadLocale(LOCALE *locale, wchar_t *str) {
 	COPY_LOCALE_STR(locale->MinuteStr, sizeof(locale->MinuteStr), tokens->Token[4]);
 	COPY_LOCALE_STR(locale->SecondStr, sizeof(locale->SecondStr), tokens->Token[5]);
 
-	for (i = 0; i < 7; i++) {
+	for (i = 0; i < 7; i++)
 		COPY_LOCALE_STR(locale->DayOfWeek[i], sizeof(locale->DayOfWeek[i]),
 		                tokens->Token[6 + i]);
-	}
 
 	COPY_LOCALE_STR(locale->SpanDay, sizeof(locale->SpanDay), tokens->Token[13]);
 	COPY_LOCALE_STR(locale->SpanHour, sizeof(locale->SpanHour), tokens->Token[14]);
@@ -1143,9 +1082,8 @@ USHORT System64ToDosTime(UINT64 i) {
 void TmToSystem(SYSTEMTIME *st, struct tm *t) {
 	struct tm tmp;
 	// Validate arguments
-	if (st == NULL || t == NULL) {
+	if (st == NULL || t == NULL)
 		return;
-	}
 
 	Copy(&tmp, t, sizeof(struct tm));
 	NormalizeTm(&tmp);
@@ -1164,9 +1102,8 @@ void TmToSystem(SYSTEMTIME *st, struct tm *t) {
 // Convert the SYSTEMTIME to tm
 void SystemToTm(struct tm *t, SYSTEMTIME *st) {
 	// Validate arguments
-	if (t == NULL || st == NULL) {
+	if (t == NULL || st == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(struct tm));
 	t->tm_year = MAKESURE(st->wYear, 1970, 2099) - 1900;
@@ -1184,9 +1121,8 @@ void SystemToTm(struct tm *t, SYSTEMTIME *st) {
 void TimeToSystem(SYSTEMTIME *st, time_64t t) {
 	struct tm tmp;
 	// Validate arguments
-	if (st == NULL) {
+	if (st == NULL)
 		return;
-	}
 
 	TimeToTm(&tmp, t);
 	TmToSystem(st, &tmp);
@@ -1196,9 +1132,8 @@ void TimeToSystem(SYSTEMTIME *st, time_64t t) {
 time_64t SystemToTime(SYSTEMTIME *st) {
 	struct tm t;
 	// Validate arguments
-	if (st == NULL) {
+	if (st == NULL)
 		return 0;
-	}
 
 	SystemToTm(&t, st);
 	return TmToTime(&t);
@@ -1208,23 +1143,20 @@ time_64t SystemToTime(SYSTEMTIME *st) {
 time_64t TmToTime(struct tm *t) {
 	time_64t tmp;
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return 0;
-	}
 
 	tmp = c_mkgmtime(t);
-	if (tmp == (time_64t)-1) {
+	if (tmp == (time_64t)-1)
 		return 0;
-	}
 	return tmp;
 }
 
 // Convert time_t to tm
 void TimeToTm(struct tm *t, time_64t time) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(struct tm));
 	c_gmtime_r(&time, t);
@@ -1234,14 +1166,12 @@ void TimeToTm(struct tm *t, time_64t time) {
 void NormalizeTm(struct tm *t) {
 	time_64t tmp;
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	tmp = c_mkgmtime(t);
-	if (tmp == (time_64t)-1) {
+	if (tmp == (time_64t)-1)
 		return;
-	}
 
 	c_gmtime_r(&tmp, t);
 }
@@ -1250,9 +1180,8 @@ void NormalizeTm(struct tm *t) {
 void NormalizeSystem(SYSTEMTIME *st) {
 	UINT64 sec64;
 	// Validate arguments
-	if (st == NULL) {
+	if (st == NULL)
 		return;
-	}
 
 	sec64 = SystemToUINT64(st);
 	UINT64ToSystem(st, sec64);
@@ -1278,9 +1207,8 @@ UINT64 SystemToLocal64(UINT64 t) {
 void LocalToSystem(SYSTEMTIME *system, SYSTEMTIME *local) {
 	UINT64 sec64;
 	// Validate arguments
-	if (local == NULL || system == NULL) {
+	if (local == NULL || system == NULL)
 		return;
-	}
 
 	sec64 = (UINT64)((INT64)SystemToUINT64(local) - GetTimeDiffEx(local, true));
 	UINT64ToSystem(system, sec64);
@@ -1290,9 +1218,8 @@ void LocalToSystem(SYSTEMTIME *system, SYSTEMTIME *local) {
 void SystemToLocal(SYSTEMTIME *local, SYSTEMTIME *system) {
 	UINT64 sec64;
 	// Validate arguments
-	if (local == NULL || system == NULL) {
+	if (local == NULL || system == NULL)
 		return;
-	}
 
 	sec64 = (UINT64)((INT64)SystemToUINT64(system) + GetTimeDiffEx(system, false));
 	UINT64ToSystem(local, sec64);
@@ -1317,15 +1244,13 @@ INT64 GetTimeDiffEx(SYSTEMTIME *basetime, bool local_time) {
 	}
 
 	SystemToTm(&now, &snow);
-	if (local_time == false) {
+	if (local_time == false)
 		tmp = (time_t)c_mkgmtime(&now);
-	} else {
+	else
 		tmp = mktime(&now);
-	}
 
-	if (tmp == (time_t)-1) {
+	if (tmp == (time_t)-1)
 		return 0;
-	}
 
 	Copy(&t1, localtime(&tmp), sizeof(struct tm));
 	Copy(&t2, gmtime(&tmp), sizeof(struct tm));
@@ -1344,9 +1269,8 @@ void UINT64ToSystem(SYSTEMTIME *st, UINT64 sec64) {
 	UINT sec, millisec;
 	time_64t time;
 	// Validate arguments
-	if (st == NULL) {
+	if (st == NULL)
 		return;
-	}
 
 	sec64 = SafeTime64(sec64 + 32400000ULL);
 	tmp64 = sec64 / (UINT64)1000;
@@ -1362,9 +1286,8 @@ UINT64 SystemToUINT64(SYSTEMTIME *st) {
 	UINT64 sec64;
 	time_64t time;
 	// Validate arguments
-	if (st == NULL) {
+	if (st == NULL)
 		return 0;
-	}
 
 	time = SystemToTime(st);
 
@@ -1400,9 +1323,8 @@ UINT64 SystemTime64() {
 void LocalTime(SYSTEMTIME *st) {
 	SYSTEMTIME tmp;
 	// Validate arguments
-	if (st == NULL) {
+	if (st == NULL)
 		return;
-	}
 
 	SystemTime(&tmp);
 	SystemToLocal(st, &tmp);
@@ -1411,9 +1333,8 @@ void LocalTime(SYSTEMTIME *st) {
 // Get the System Time
 void SystemTime(SYSTEMTIME *st) {
 	// Validate arguments
-	if (st == NULL) {
+	if (st == NULL)
 		return;
-	}
 
 	OSGetSystemTime(st);
 
@@ -1525,9 +1446,8 @@ void AbortExit() {
 void AbortExitEx(char *msg) {
 	FILE *f;
 	// Validate arguments
-	if (msg == NULL) {
+	if (msg == NULL)
 		msg = "Unknown Error";
-	}
 
 #ifdef RANZ_FUZZING
 	// libFuzzer build only (RANZ_FUZZ, cmake/RanzSanitizers.cmake): abort() instead of

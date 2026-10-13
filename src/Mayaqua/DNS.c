@@ -27,9 +27,8 @@ static COUNTER *threads_counter;
 static UINT threads_max;
 
 int DnsCacheCompare(void *p1, void *p2) {
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return (p1 == NULL && p2 == NULL ? 0 : (p1 == NULL ? -1 : 1));
-	}
 
 	const DNS_CACHE *c1 = *(DNS_CACHE **)p1;
 	const DNS_CACHE *c2 = *(DNS_CACHE **)p2;
@@ -38,9 +37,8 @@ int DnsCacheCompare(void *p1, void *p2) {
 }
 
 int DnsCacheReverseCompare(void *p1, void *p2) {
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return (p1 == NULL && p2 == NULL ? 0 : (p1 == NULL ? -1 : 1));
-	}
 
 	const DNS_CACHE_REVERSE *c1 = *(DNS_CACHE_REVERSE **)p1;
 	const DNS_CACHE_REVERSE *c2 = *(DNS_CACHE_REVERSE **)p2;
@@ -113,9 +111,8 @@ void DnsCacheToggle(const bool enabled) {
 }
 
 DNS_CACHE *DnsCacheFind(const char *hostname) {
-	if (DnsCacheIsEnabled() == false || IsEmptyStr(hostname)) {
+	if (DnsCacheIsEnabled() == false || IsEmptyStr(hostname))
 		return NULL;
-	}
 
 	DNS_CACHE *entry;
 
@@ -131,9 +128,8 @@ DNS_CACHE *DnsCacheFind(const char *hostname) {
 }
 
 DNS_CACHE *DnsCacheUpdateEx(const char *hostname, const LIST *iplist_v6, const LIST *iplist_v4) {
-	if (DnsCacheIsEnabled() == false || IsEmptyStr(hostname)) {
+	if (DnsCacheIsEnabled() == false || IsEmptyStr(hostname))
 		return NULL;
-	}
 
 	DNS_CACHE *entry;
 
@@ -165,17 +161,15 @@ DNS_CACHE *DnsCacheUpdateEx(const char *hostname, const LIST *iplist_v6, const L
 			FreeHostIPAddressList(entry->IPList_v6);
 			FreeHostIPAddressList(entry->IPList_v4);
 
-			if (iplist_v6 != NULL) {
+			if (iplist_v6 != NULL)
 				entry->IPList_v6 = CloneIPAddressList(iplist_v6);
-			} else {
+			else
 				entry->IPList_v6 = NULL;
-			}
 
-			if (iplist_v4 != NULL) {
+			if (iplist_v4 != NULL)
 				entry->IPList_v4 = CloneIPAddressList(iplist_v4);
-			} else {
+			else
 				entry->IPList_v4 = NULL;
-			}
 		}
 	}
 	UnlockList(cache);
@@ -184,9 +178,8 @@ DNS_CACHE *DnsCacheUpdateEx(const char *hostname, const LIST *iplist_v6, const L
 }
 
 DNS_CACHE_REVERSE *DnsCacheReverseFind(const IP *ip) {
-	if (DnsCacheIsEnabled() == false || ip == NULL) {
+	if (DnsCacheIsEnabled() == false || ip == NULL)
 		return NULL;
-	}
 
 	DNS_CACHE_REVERSE *entry;
 
@@ -202,9 +195,8 @@ DNS_CACHE_REVERSE *DnsCacheReverseFind(const IP *ip) {
 }
 
 DNS_CACHE_REVERSE *DnsCacheReverseUpdate(const IP *ip, const char *hostname) {
-	if (DnsCacheIsEnabled() == false || IsZeroIP(ip)) {
+	if (DnsCacheIsEnabled() == false || IsZeroIP(ip))
 		return NULL;
-	}
 
 	DNS_CACHE_REVERSE *entry;
 
@@ -242,9 +234,8 @@ DNS_CACHE_REVERSE *DnsCacheReverseUpdate(const IP *ip, const char *hostname) {
 }
 
 bool DnsResolve(IP *ipv6, IP *ipv4, const char *hostname, UINT timeout, volatile const bool *cancel_flag) {
-	if ((ipv6 == NULL && ipv4 == NULL) || IsEmptyStr(hostname)) {
+	if ((ipv6 == NULL && ipv4 == NULL) || IsEmptyStr(hostname))
 		return false;
-	}
 
 	LIST *iplist_v6 = NULL;
 	LIST *iplist_v4 = NULL;
@@ -271,9 +262,8 @@ bool DnsResolve(IP *ipv6, IP *ipv4, const char *hostname, UINT timeout, volatile
 	return ret;
 }
 bool DnsResolveEx(LIST **iplist_v6, LIST **iplist_v4, const char *hostname, UINT timeout, volatile const bool *cancel_flag) {
-	if (iplist_v6 == NULL || iplist_v4 == NULL || IsEmptyStr(hostname)) {
+	if (iplist_v6 == NULL || iplist_v4 == NULL || IsEmptyStr(hostname))
 		return false;
-	}
 
 	if (StrCmpi(hostname, "localhost") == 0) {
 		IP ipv6, ipv4;
@@ -308,13 +298,11 @@ bool DnsResolveEx(LIST **iplist_v6, LIST **iplist_v4, const char *hostname, UINT
 		goto CACHE;
 	}
 
-	if (cancel_flag != NULL && *cancel_flag) {
+	if (cancel_flag != NULL && *cancel_flag)
 		return false;
-	}
 
-	if (timeout == 0) {
+	if (timeout == 0)
 		timeout = DNS_RESOLVE_DEFAULT_TIMEOUT;
-	}
 
 	Inc(threads_counter);
 
@@ -335,14 +323,12 @@ bool DnsResolveEx(LIST **iplist_v6, LIST **iplist_v4, const char *hostname, UINT
 
 		while (*cancel_flag == false) {
 			const UINT64 now = Tick64();
-			if (now >= end) {
+			if (now >= end)
 				break;
-			}
 
 			BYTE next = MIN(end - now, 100);
-			if (WaitThread(worker, next)) {
+			if (WaitThread(worker, next))
 				break;
-			}
 		}
 	}
 
@@ -367,9 +353,8 @@ CACHE:
 	Debug("DnsResolve(): Could not resolve \"%s\". Searching for it in the cache...\n", hostname);
 
 	const DNS_CACHE *cached = DnsCacheFind(hostname);
-	if (cached == NULL || cached->Expiration <= Tick64()) {
+	if (cached == NULL || cached->Expiration <= Tick64())
 		return false;
-	}
 
 	*iplist_v6 = CloneIPAddressList(cached->IPList_v6);
 	*iplist_v4 = CloneIPAddressList(cached->IPList_v4);
@@ -378,9 +363,8 @@ CACHE:
 }
 
 void DnsResolver(THREAD *t, void *param) {
-	if (t == NULL || param == NULL) {
+	if (t == NULL || param == NULL)
 		return;
-	}
 
 	DNS_RESOLVER *resolver = param;
 
@@ -440,9 +424,8 @@ void DnsResolver(THREAD *t, void *param) {
 }
 
 bool DnsResolveReverse(char *dst, const UINT size, const IP *ip, UINT timeout, volatile const bool *cancel_flag) {
-	if (dst == NULL || size == 0 || IsZeroIP(ip)) {
+	if (dst == NULL || size == 0 || IsZeroIP(ip))
 		return false;
-	}
 
 	if (DnsThreadNum() > DnsThreadNumMax()) {
 		Debug("DnsResolveReverse(): Too many threads! Current: %u, Maximum: %u\n",
@@ -451,13 +434,11 @@ bool DnsResolveReverse(char *dst, const UINT size, const IP *ip, UINT timeout, v
 		goto CACHE;
 	}
 
-	if (cancel_flag != NULL && *cancel_flag) {
+	if (cancel_flag != NULL && *cancel_flag)
 		return false;
-	}
 
-	if (timeout == 0) {
+	if (timeout == 0)
 		timeout = DNS_RESOLVE_REVERSE_DEFAULT_TIMEOUT;
-	}
 
 	Inc(threads_counter);
 
@@ -476,14 +457,12 @@ bool DnsResolveReverse(char *dst, const UINT size, const IP *ip, UINT timeout, v
 
 		while (*cancel_flag == false) {
 			const UINT64 now = Tick64();
-			if (now >= end) {
+			if (now >= end)
 				break;
-			}
 
 			BYTE next = MIN(end - now, 100);
-			if (WaitThread(worker, next)) {
+			if (WaitThread(worker, next))
 				break;
-			}
 		}
 	}
 
@@ -505,9 +484,8 @@ CACHE:
 	Debug("DnsResolveReverse(): Could not resolve \"%r\". Searching for it in the cache...\n", ip);
 
 	const DNS_CACHE_REVERSE *cached = DnsCacheReverseFind(ip);
-	if (cached == NULL || cached->Expiration <= Tick64()) {
+	if (cached == NULL || cached->Expiration <= Tick64())
 		return false;
-	}
 
 	StrCpy(dst, size, cached->Hostname);
 
@@ -515,9 +493,8 @@ CACHE:
 }
 
 void DnsResolverReverse(THREAD *t, void *param) {
-	if (t == NULL || param == NULL) {
+	if (t == NULL || param == NULL)
 		return;
-	}
 
 	DNS_RESOLVER_REVERSE *resolver = param;
 
@@ -546,14 +523,12 @@ void DnsResolverReverse(THREAD *t, void *param) {
 }
 
 bool GetIPEx(IP *ip, const char *hostname, UINT timeout, volatile const bool *cancel_flag) {
-	if (ip == NULL || IsEmptyStr(hostname)) {
+	if (ip == NULL || IsEmptyStr(hostname))
 		return false;
-	}
 
 	IP ipv6, ipv4;
-	if (DnsResolve(&ipv6, &ipv4, hostname, timeout, cancel_flag) == false) {
+	if (DnsResolve(&ipv6, &ipv4, hostname, timeout, cancel_flag) == false)
 		return false;
-	}
 
 	if (IsZeroIP(&ipv6) == false) {
 		Copy(ip, &ipv6, sizeof(IP));
@@ -569,9 +544,8 @@ bool GetIPEx(IP *ip, const char *hostname, UINT timeout, volatile const bool *ca
 // Release of the parameters of the DNS Resolver thread
 void ReleaseDnsResolver(DNS_RESOLVER *p) {
 	// Validate arguments
-	if (p == NULL) {
+	if (p == NULL)
 		return;
-	}
 
 	if (Release(p->Ref) == 0) {
 		FreeHostIPAddressList(p->IPList_v6);
@@ -584,9 +558,8 @@ void ReleaseDnsResolver(DNS_RESOLVER *p) {
 // Release of the parameters of the DNS Resolver Reverse thread
 void ReleaseDnsResolverReverse(DNS_RESOLVER_REVERSE *p) {
 	// Validate arguments
-	if (p == NULL) {
+	if (p == NULL)
 		return;
-	}
 
 	if (Release(p->Ref) == 0) {
 		Free(p->Hostname);

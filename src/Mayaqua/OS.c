@@ -61,9 +61,8 @@ void OSFree() {
 // Get the memory information
 void OSGetMemInfo(MEMINFO *info) {
 	// Validate arguments
-	if (info == NULL) {
+	if (info == NULL)
 		return;
-	}
 
 	os->GetMemInfo(info);
 }

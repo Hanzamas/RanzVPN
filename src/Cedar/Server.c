@@ -75,9 +75,8 @@ UINT SiDebug(SERVER *s, RPC_TEST *ret, UINT i, char *str) {
 	UINT j;
 	UINT ret_value = ERR_NO_ERROR;
 	// Validate arguments
-	if (s == NULL || ret == NULL) {
+	if (s == NULL || ret == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	if (i == 0) {
 		char tmp[MAX_SIZE];
@@ -89,15 +88,14 @@ UINT SiDebug(SERVER *s, RPC_TEST *ret, UINT i, char *str) {
 		for (j = 0; j < num_proc_list; j++) {
 			SI_DEBUG_PROC_LIST *p = &proc_list[j];
 
-			if (IsEmptyStr(p->Args) == false) {
+			if (IsEmptyStr(p->Args) == false)
 				Format(tmp, sizeof(tmp),
 				       " %u: %s - Usage: %u /ARG:\"%s\"\n",
 				       p->Id, p->Description, p->Id, p->Args);
-			} else {
+			else
 				Format(tmp, sizeof(tmp),
 				       " %u: %s - Usage: %u\n",
 				       p->Id, p->Description, p->Id);
-			}
 
 			StrCat(ret->StrValue, sizeof(ret->StrValue), tmp);
 		}
@@ -110,9 +108,8 @@ UINT SiDebug(SERVER *s, RPC_TEST *ret, UINT i, char *str) {
 			if (p->Id == i) {
 				ret_value = p->Proc(s, str, ret->StrValue, sizeof(ret->StrValue));
 
-				if (ret_value == ERR_NO_ERROR && IsEmptyStr(ret->StrValue)) {
+				if (ret_value == ERR_NO_ERROR && IsEmptyStr(ret->StrValue))
 					StrCpy(ret->StrValue, sizeof(ret->StrValue), "Ok.");
-				}
 				break;
 			}
 		}
@@ -122,9 +119,8 @@ UINT SiDebug(SERVER *s, RPC_TEST *ret, UINT i, char *str) {
 }
 UINT SiDebugProcHelloWorld(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size) {
 	// Validate arguments
-	if (s == NULL || in_str == NULL || ret_str == NULL) {
+	if (s == NULL || in_str == NULL || ret_str == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	Format(ret_str, ret_str_size, "Hello World %s\n", in_str);
 
@@ -132,9 +128,8 @@ UINT SiDebugProcHelloWorld(SERVER *s, char *in_str, char *ret_str, UINT ret_str_
 }
 UINT SiDebugProcExit(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size) {
 	// Validate arguments
-	if (s == NULL || in_str == NULL || ret_str == NULL) {
+	if (s == NULL || in_str == NULL || ret_str == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	_exit(1);
 
@@ -142,9 +137,8 @@ UINT SiDebugProcExit(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size) 
 }
 UINT SiDebugProcDump(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size) {
 	// Validate arguments
-	if (s == NULL || in_str == NULL || ret_str == NULL) {
+	if (s == NULL || in_str == NULL || ret_str == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 #ifdef OS_WIN32
 	MsWriteMinidump(NULL, NULL);
@@ -154,9 +148,8 @@ UINT SiDebugProcDump(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size) 
 }
 UINT SiDebugProcRestorePriority(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size) {
 	// Validate arguments
-	if (s == NULL || in_str == NULL || ret_str == NULL) {
+	if (s == NULL || in_str == NULL || ret_str == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	OSRestorePriority();
 
@@ -164,9 +157,8 @@ UINT SiDebugProcRestorePriority(SERVER *s, char *in_str, char *ret_str, UINT ret
 }
 UINT SiDebugProcSetHighPriority(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size) {
 	// Validate arguments
-	if (s == NULL || in_str == NULL || ret_str == NULL) {
+	if (s == NULL || in_str == NULL || ret_str == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	OSSetHighPriority();
 
@@ -174,9 +166,8 @@ UINT SiDebugProcSetHighPriority(SERVER *s, char *in_str, char *ret_str, UINT ret
 }
 UINT SiDebugProcGetExeFileName(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size) {
 	// Validate arguments
-	if (s == NULL || in_str == NULL || ret_str == NULL) {
+	if (s == NULL || in_str == NULL || ret_str == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	GetExeName(ret_str, ret_str_size);
 
@@ -184,9 +175,8 @@ UINT SiDebugProcGetExeFileName(SERVER *s, char *in_str, char *ret_str, UINT ret_
 }
 UINT SiDebugProcCrash(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size) {
 	// Validate arguments
-	if (s == NULL || in_str == NULL || ret_str == NULL) {
+	if (s == NULL || in_str == NULL || ret_str == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	CrashNow();
 
@@ -195,9 +185,8 @@ UINT SiDebugProcCrash(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size)
 UINT SiDebugProcGetCurrentTcpSendQueueLength(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size) {
 	char tmp1[64], tmp2[64], tmp3[64];
 	// Validate arguments
-	if (s == NULL || in_str == NULL || ret_str == NULL) {
+	if (s == NULL || in_str == NULL || ret_str == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	ToStr3(tmp1, 0, CedarGetCurrentTcpQueueSize(s->Cedar));
 	ToStr3(tmp2, 0, CedarGetQueueBudgetConsuming(s->Cedar));
@@ -214,9 +203,8 @@ UINT SiDebugProcGetCurrentTcpSendQueueLength(SERVER *s, char *in_str, char *ret_
 UINT SiDebugProcGetCurrentGetIPThreadCount(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size) {
 	char tmp1[64], tmp2[64];
 	// Validate arguments
-	if (s == NULL || in_str == NULL || ret_str == NULL) {
+	if (s == NULL || in_str == NULL || ret_str == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	ToStr3(tmp1, 0, DnsThreadNum());
 	ToStr3(tmp2, 0, DnsThreadNumMax());
@@ -232,44 +220,38 @@ UINT SiDebugProcGetCurrentGetIPThreadCount(SERVER *s, char *in_str, char *ret_st
 // Write the debug log
 void SiDebugLog(SERVER *s, char *msg) {
 	// Validate arguments
-	if (s == NULL || msg == NULL) {
+	if (s == NULL || msg == NULL)
 		return;
-	}
 
-	if (s->DebugLog != NULL) {
+	if (s->DebugLog != NULL)
 		WriteTinyLog(s->DebugLog, msg);
-	}
 }
 
 // Deadlock inspection main
 void SiCheckDeadLockMain(SERVER *s, UINT timeout) {
 	CEDAR *cedar;
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	//Debug("SiCheckDeadLockMain Start.\n");
 
 
 	cedar = s->Cedar;
 
-	if (s->ServerListenerList != NULL) {
+	if (s->ServerListenerList != NULL)
 		CheckDeadLock(s->ServerListenerList->lock, timeout, "s->ServerListenerList->lock");
-	}
 
 	CheckDeadLock(s->lock, timeout, "s->lock");
 
-	if (s->HubCreateHistoryList != NULL) {
+	if (s->HubCreateHistoryList != NULL)
 		CheckDeadLock(s->HubCreateHistoryList->lock, timeout, "s->HubCreateHistoryList->lock");
-	}
 
 	CheckDeadLock(s->CapsCacheLock, timeout, "s->CapsCacheLock");
 
 	if (cedar != NULL) {
-		if (cedar->HubList != NULL) {
+		if (cedar->HubList != NULL)
 			CheckDeadLock(cedar->HubList->lock, timeout, "cedar->HubList->lock");
-		}
 
 		if (cedar->ListenerList != NULL) {
 			UINT i;
@@ -299,21 +281,17 @@ void SiCheckDeadLockMain(SERVER *s, UINT timeout) {
 			ReleaseList(o);
 		}
 
-		if (cedar->ConnectionList != NULL) {
+		if (cedar->ConnectionList != NULL)
 			CheckDeadLock(cedar->ConnectionList->lock, timeout, "cedar->ConnectionList->lock");
-		}
 
-		if (cedar->CaList != NULL) {
+		if (cedar->CaList != NULL)
 			CheckDeadLock(cedar->CaList->lock, timeout, "cedar->CaList->lock");
-		}
 
-		if (cedar->TrafficLock != NULL) {
+		if (cedar->TrafficLock != NULL)
 			CheckDeadLock(cedar->TrafficLock, timeout, "cedar->TrafficLock");
-		}
 
-		if (cedar->LocalBridgeList != NULL) {
+		if (cedar->LocalBridgeList != NULL)
 			CheckDeadLock(cedar->LocalBridgeList->lock, timeout, "cedar->LocalBridgeList->lock");
-		}
 	}
 
 	//Debug("SiCheckDeadLockMain Finish.\n");
@@ -323,16 +301,14 @@ void SiCheckDeadLockMain(SERVER *s, UINT timeout) {
 void SiDeadLockCheckThread(THREAD *t, void *param) {
 	SERVER *s = (SERVER *)param;
 	// Validate arguments
-	if (s == NULL || t == NULL) {
+	if (s == NULL || t == NULL)
 		return;
-	}
 
 	while (true) {
 		Wait(s->DeadLockWaitEvent, SERVER_DEADLOCK_CHECK_SPAN);
 
-		if (s->HaltDeadLockThread) {
+		if (s->HaltDeadLockThread)
 			break;
-		}
 
 		SiCheckDeadLockMain(s, SERVER_DEADLOCK_CHECK_TIMEOUT);
 	}
@@ -341,12 +317,10 @@ void SiDeadLockCheckThread(THREAD *t, void *param) {
 // Initialize the deadlock check
 void SiInitDeadLockCheck(SERVER *s) {
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
-	if (s->DisableDeadLockCheck) {
+	if (s->DisableDeadLockCheck)
 		return;
-	}
 
 	s->HaltDeadLockThread = false;
 	s->DeadLockWaitEvent = NewEvent();
@@ -356,13 +330,11 @@ void SiInitDeadLockCheck(SERVER *s) {
 // Release the deadlock check
 void SiFreeDeadLockCheck(SERVER *s) {
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
-	if (s->DeadLockCheckThread == NULL) {
+	if (s->DeadLockCheckThread == NULL)
 		return;
-	}
 
 	s->HaltDeadLockThread = true;
 	Set(s->DeadLockWaitEvent);
@@ -381,9 +353,8 @@ void SiFreeDeadLockCheck(SERVER *s) {
 // Initialize the Virtual HUB creation history
 void SiInitHubCreateHistory(SERVER *s) {
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	s->HubCreateHistoryList = NewList(NULL);
 }
@@ -392,9 +363,8 @@ void SiInitHubCreateHistory(SERVER *s) {
 void SiFreeHubCreateHistory(SERVER *s) {
 	UINT i;
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	for (i = 0; i < LIST_NUM(s->HubCreateHistoryList); i++) {
 		SERVER_HUB_CREATE_HISTORY *h = LIST_DATA(s->HubCreateHistoryList, i);
@@ -418,9 +388,8 @@ bool IsAdminPackSupportedServerProduct(char *name) {
 UINT SiGetSysLogSaveStatus(SERVER *s) {
 	SYSLOG_SETTING set;
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return SYSLOG_NONE;
-	}
 
 	SiGetSysLogSetting(s, &set);
 
@@ -434,32 +403,28 @@ void SiWriteSysLog(SERVER *s, char *typestr, char *hubname, wchar_t *message) {
 	char datetime[MAX_PATH];
 	SYSTEMTIME st;
 	// Validate arguments
-	if (s == NULL || typestr == NULL || message == NULL) {
+	if (s == NULL || typestr == NULL || message == NULL)
 		return;
-	}
 
-	if (GetGlobalServerFlag(GSF_DISABLE_SYSLOG) != 0) {
+	if (GetGlobalServerFlag(GSF_DISABLE_SYSLOG) != 0)
 		return;
-	}
 
 	// Host name
 	GetMachineName(machinename, sizeof(machinename));
 
 	// Date and time
 	LocalTime(&st);
-	if (s->StrictSyslogDatetimeFormat) {
+	if (s->StrictSyslogDatetimeFormat)
 		GetDateTimeStrRFC3339(datetime, sizeof(datetime), &st, GetCurrentTimezone());
-	} else {
+	else
 		GetDateTimeStrMilli(datetime, sizeof(datetime), &st);
-	}
 
-	if (IsEmptyStr(hubname) == false) {
+	if (IsEmptyStr(hubname) == false)
 		UniFormat(tmp, sizeof(tmp), L"[%S/VPN/%S] (%S) <%S>: %s",
 		          machinename, hubname, datetime, typestr, message);
-	} else {
+	else
 		UniFormat(tmp, sizeof(tmp), L"[%S/VPN] (%S) <%S>: %s",
 		          machinename, datetime, typestr, message);
-	}
 
 	Debug("Syslog send: %S\n", tmp);
 
@@ -470,16 +435,14 @@ void SiWriteSysLog(SERVER *s, char *typestr, char *hubname, wchar_t *message) {
 void SiSetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting) {
 	SYSLOG_SETTING set;
 	// Validate arguments
-	if (s == NULL || setting == NULL) {
+	if (s == NULL || setting == NULL)
 		return;
-	}
 
 	Zero(&set, sizeof(set));
 	Copy(&set, setting, sizeof(SYSLOG_SETTING));
 
-	if (IsEmptyStr(set.Hostname) || set.Port == 0) {
+	if (IsEmptyStr(set.Hostname) || set.Port == 0)
 		set.SaveType = SYSLOG_NONE;
-	}
 
 	Lock(s->SyslogLock);
 	{
@@ -493,9 +456,8 @@ void SiSetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting) {
 // Read the syslog configuration
 void SiGetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting) {
 	// Validate arguments
-	if (s == NULL || setting == NULL) {
+	if (s == NULL || setting == NULL)
 		return;
-	}
 
 	//Lock(s->SyslogLock);
 	{
@@ -509,9 +471,8 @@ void SiGetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting) {
 void GetServerProductName(SERVER *s, char *name, UINT size) {
 	char *cpu;
 	// Validate arguments
-	if (s == NULL || name == NULL) {
+	if (s == NULL || name == NULL)
 		return;
-	}
 
 	GetServerProductNameInternal(s, name, size);
 
@@ -525,23 +486,20 @@ void GetServerProductName(SERVER *s, char *name, UINT size) {
 }
 void GetServerProductNameInternal(SERVER *s, char *name, UINT size) {
 	// Validate arguments
-	if (s == NULL || name == NULL) {
+	if (s == NULL || name == NULL)
 		return;
-	}
 
 #ifdef BETA_NUMBER
-	if (s->Cedar->Bridge) {
+	if (s->Cedar->Bridge)
 		StrCpy(name, size, CEDAR_BRIDGE_STR);
-	} else {
+	else
 		StrCpy(name, size, CEDAR_BETA_SERVER);
-	}
 	return;
 #else  // BETA_NUMBER
-	if (s->Cedar->Bridge) {
+	if (s->Cedar->Bridge)
 		StrCpy(name, size, CEDAR_BRIDGE_STR);
-	} else {
+	else
 		StrCpy(name, size, CEDAR_SERVER_STR);
-	}
 #endif // BETA_NUMBER
 }
 
@@ -549,16 +507,14 @@ void GetServerProductNameInternal(SERVER *s, char *name, UINT size) {
 bool CheckLogFileNameFromEnumList(LIST *o, char *name) {
 	LOG_FILE t;
 	// Validate arguments
-	if (o == NULL || name == NULL) {
+	if (o == NULL || name == NULL)
 		return false;
-	}
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.Path, sizeof(t.Path), name);
 
-	if (Search(o, &t) == NULL) {
+	if (Search(o, &t) == NULL)
 		return false;
-	}
 
 	return true;
 }
@@ -567,9 +523,8 @@ bool CheckLogFileNameFromEnumList(LIST *o, char *name) {
 void FreeEnumLogFile(LIST *o) {
 	UINT i;
 	// Validate arguments
-	if (o == NULL) {
+	if (o == NULL)
 		return;
-	}
 
 	for (i = 0; i < LIST_NUM(o); i++) {
 		LOG_FILE *f = LIST_DATA(o, i);
@@ -587,16 +542,14 @@ LIST *EnumLogFile(char *hubname) {
 	LIST *o = NewListFast(CmpLogFile);
 	DIRLIST *dir;
 
-	if (StrLen(hubname) == 0) {
+	if (StrLen(hubname) == 0)
 		hubname = NULL;
-	}
 
 	GetLogDir(exe_dir, sizeof(exe_dir));
 
 	// Enumerate in the server_log
-	if (hubname == NULL) {
+	if (hubname == NULL)
 		EnumLogFileDir(o, SERVER_LOG_DIR);
-	}
 
 	// Enumerate in the packet_log
 	Format(tmp, sizeof(tmp), "%s/" HUB_PACKET_LOG_DIR, exe_dir);
@@ -664,17 +617,15 @@ void EnumLogFileDir(LIST *o, char *dirname) {
 	char dir_full_path[MAX_PATH];
 	DIRLIST *dir;
 	// Validate arguments
-	if (o == NULL || dirname == NULL) {
+	if (o == NULL || dirname == NULL)
 		return;
-	}
 
 	GetLogDir(exe_dir, sizeof(exe_dir));
 	Format(dir_full_path, sizeof(dir_full_path), "%s/%s", exe_dir, dirname);
 
 	dir = EnumDir(dir_full_path);
-	if (dir == NULL) {
+	if (dir == NULL)
 		return;
-	}
 
 	for (i = 0; i < dir->NumFiles; i++) {
 		DIRENT *e = dir->File[i];
@@ -704,14 +655,12 @@ void EnumLogFileDir(LIST *o, char *dirname) {
 // Log file list entry comparison
 int CmpLogFile(void *p1, void *p2) {
 	LOG_FILE *f1, *f2;
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	f1 = *(LOG_FILE **)p1;
 	f2 = *(LOG_FILE **)p2;
-	if (f1 == NULL || f2 == NULL) {
+	if (f1 == NULL || f2 == NULL)
 		return 0;
-	}
 
 	return StrCmpi(f1->Path, f2->Path);
 }
@@ -721,9 +670,8 @@ UINT GetServerCapsInt(SERVER *s, char *name) {
 	CAPSLIST t;
 	UINT ret;
 	// Validate arguments
-	if (s == NULL || name == NULL) {
+	if (s == NULL || name == NULL)
 		return 0;
-	}
 
 
 	Lock(s->CapsCacheLock);
@@ -744,9 +692,8 @@ bool GetServerCapsBool(SERVER *s, char *name) {
 // Initialize the Caps cache of the server
 void InitServerCapsCache(SERVER *s) {
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	s->CapsCacheLock = NewLock();
 	s->CapsListCache = NULL;
@@ -755,9 +702,8 @@ void InitServerCapsCache(SERVER *s) {
 // Release the Caps cache of the server
 void FreeServerCapsCache(SERVER *s) {
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	if (s->CapsListCache != NULL) {
 		FreeCapsList(s->CapsListCache);
@@ -769,9 +715,8 @@ void FreeServerCapsCache(SERVER *s) {
 // Dispose the Caps cache of the server
 void DestroyServerCapsCache(SERVER *s) {
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	Lock(s->CapsCacheLock);
 	{
@@ -787,9 +732,8 @@ void DestroyServerCapsCache(SERVER *s) {
 void FlushServerCaps(SERVER *s) {
 	CAPSLIST t;
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	Lock(s->CapsCacheLock);
 	{
@@ -804,9 +748,8 @@ void FlushServerCaps(SERVER *s) {
 // Get the Caps list for this server
 void GetServerCaps(SERVER *s, CAPSLIST *t) {
 	// Validate arguments
-	if (s == NULL || t == NULL) {
+	if (s == NULL || t == NULL)
 		return;
-	}
 
 	Lock(s->CapsCacheLock);
 	{
@@ -825,9 +768,8 @@ void GetServerCaps(SERVER *s, CAPSLIST *t) {
 void UpdateGlobalServerFlags(SERVER *s, CAPSLIST *t) {
 	bool is_restricted = false;
 	// Validate arguments
-	if (s == NULL || t == NULL) {
+	if (s == NULL || t == NULL)
 		return;
-	}
 
 	is_restricted = SiIsEnterpriseFunctionsRestrictedOnOpenSource(s->Cedar);
 
@@ -841,9 +783,8 @@ void UpdateGlobalServerFlags(SERVER *s, CAPSLIST *t) {
 // Set a global server flag
 void SetGlobalServerFlag(UINT index, UINT value) {
 	// Validate arguments
-	if (index >= NUM_GLOBAL_SERVER_FLAGS) {
+	if (index >= NUM_GLOBAL_SERVER_FLAGS)
 		return;
-	}
 
 	global_server_flags[index] = value;
 }
@@ -851,9 +792,8 @@ void SetGlobalServerFlag(UINT index, UINT value) {
 // Get a global server flag
 UINT GetGlobalServerFlag(UINT index) {
 	// Validate arguments
-	if (index >= NUM_GLOBAL_SERVER_FLAGS) {
+	if (index >= NUM_GLOBAL_SERVER_FLAGS)
 		return 0;
-	}
 
 	return global_server_flags[index];
 }
@@ -861,9 +801,8 @@ UINT GetGlobalServerFlag(UINT index) {
 // Main of the acquisition of Caps of the server
 void GetServerCapsMain(SERVER *s, CAPSLIST *t) {
 	// Validate arguments
-	if (s == NULL || t == NULL) {
+	if (s == NULL || t == NULL)
 		return;
-	}
 
 	// Initialize
 	InitCapsList(t);
@@ -1024,9 +963,8 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t) {
 
 	// Support for display name of the network connection for the local bridge
 #ifdef OS_WIN32
-	if (IsBridgeSupported()) {
+	if (IsBridgeSupported())
 		AddCapsBool(t, "b_support_network_connection_name", true);
-	}
 #endif // OS_WIN32
 
 	// Support for MAC address filtering
@@ -1039,11 +977,10 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t) {
 	AddCapsBool(t, "b_support_vlan", true);
 
 	// Support for Virtual HUB extended options
-	if (s->Cedar->Bridge == false) {
+	if (s->Cedar->Bridge == false)
 		AddCapsBool(t, "b_support_hub_ext_options", true);
-	} else {
+	else
 		AddCapsBool(t, "b_support_hub_ext_options", false);
-	}
 
 	// Support for Security Policy version 3.0
 	AddCapsBool(t, "b_support_policy_ver_3", true);
@@ -1093,9 +1030,8 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t) {
 // SYSLOG_SETTING
 void InRpcSysLogSetting(SYSLOG_SETTING *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(SYSLOG_SETTING));
 	t->SaveType = PackGetInt(p, "SaveType");
@@ -1104,9 +1040,8 @@ void InRpcSysLogSetting(SYSLOG_SETTING *t, PACK *p) {
 }
 void OutRpcSysLogSetting(PACK *p, SYSLOG_SETTING *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddInt(p, "SaveType", t->SaveType);
 	PackAddInt(p, "Port", t->Port);
@@ -1116,9 +1051,8 @@ void OutRpcSysLogSetting(PACK *p, SYSLOG_SETTING *t) {
 // CAPSLIST
 void InitCapsList(CAPSLIST *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(CAPSLIST));
 	t->CapsList = NewListFast(NULL);
@@ -1126,9 +1060,8 @@ void InitCapsList(CAPSLIST *t) {
 void InRpcCapsList(CAPSLIST *t, PACK *p) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(CAPSLIST));
 	t->CapsList = NewListFast(CompareCaps);
@@ -1145,9 +1078,8 @@ void InRpcCapsList(CAPSLIST *t, PACK *p) {
 void OutRpcCapsList(PACK *p, CAPSLIST *t) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	for (i = 0; i < LIST_NUM(t->CapsList); i++) {
 		char tmp[MAX_SIZE];
@@ -1162,11 +1094,10 @@ void OutRpcCapsList(PACK *p, CAPSLIST *t) {
 
 		Zero(ct_description, sizeof(ct_description));
 		w = _UU(ct_key);
-		if (UniIsEmptyStr(w) == false) {
+		if (UniIsEmptyStr(w) == false)
 			UniStrCpy(ct_description, sizeof(ct_description), w);
-		} else {
+		else
 			StrToUni(ct_description, sizeof(ct_description), c->Name);
-		}
 
 		PackAddInt(p, tmp, c->Value);
 
@@ -1178,9 +1109,8 @@ void OutRpcCapsList(PACK *p, CAPSLIST *t) {
 void FreeRpcCapsList(CAPSLIST *t) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	for (i = 0; i < LIST_NUM(t->CapsList); i++) {
 		CAPS *c = LIST_DATA(t->CapsList, i);
@@ -1195,9 +1125,8 @@ void FreeRpcCapsList(CAPSLIST *t) {
 void AddCapsBool(CAPSLIST *caps, char *name, bool b) {
 	CAPS *c;
 	// Validate arguments
-	if (caps == NULL || name == NULL) {
+	if (caps == NULL || name == NULL)
 		return;
-	}
 
 	c = NewCaps(name, b == false ? 0 : 1);
 	AddCaps(caps, c);
@@ -1207,9 +1136,8 @@ void AddCapsBool(CAPSLIST *caps, char *name, bool b) {
 void AddCapsInt(CAPSLIST *caps, char *name, UINT i) {
 	CAPS *c;
 	// Validate arguments
-	if (caps == NULL || name == NULL) {
+	if (caps == NULL || name == NULL)
 		return;
-	}
 
 	c = NewCaps(name, i);
 	AddCaps(caps, c);
@@ -1219,14 +1147,12 @@ void AddCapsInt(CAPSLIST *caps, char *name, UINT i) {
 UINT GetCapsInt(CAPSLIST *caps, char *name) {
 	CAPS *c;
 	// Validate arguments
-	if (caps == NULL || name == NULL) {
+	if (caps == NULL || name == NULL)
 		return 0;
-	}
 
 	c = GetCaps(caps, name);
-	if (c == NULL) {
+	if (c == NULL)
 		return 0;
-	}
 
 	return c->Value;
 }
@@ -1235,14 +1161,12 @@ UINT GetCapsInt(CAPSLIST *caps, char *name) {
 bool GetCapsBool(CAPSLIST *caps, char *name) {
 	CAPS *c;
 	// Validate arguments
-	if (caps == NULL || name == NULL) {
+	if (caps == NULL || name == NULL)
 		return false;
-	}
 
 	c = GetCaps(caps, name);
-	if (c == NULL) {
+	if (c == NULL)
 		return false;
-	}
 
 	return c->Value == 0 ? false : true;
 }
@@ -1251,9 +1175,8 @@ bool GetCapsBool(CAPSLIST *caps, char *name) {
 void FreeCapsList(CAPSLIST *caps) {
 	UINT i;
 	// Validate arguments
-	if (caps == NULL) {
+	if (caps == NULL)
 		return;
-	}
 
 	for (i = 0; i < LIST_NUM(caps->CapsList); i++) {
 		CAPS *c = LIST_DATA(caps->CapsList, i);
@@ -1269,16 +1192,14 @@ void FreeCapsList(CAPSLIST *caps) {
 CAPS *GetCaps(CAPSLIST *caps, char *name) {
 	UINT i;
 	// Validate arguments
-	if (caps == NULL || name == NULL) {
+	if (caps == NULL || name == NULL)
 		return NULL;
-	}
 
 	for (i = 0; i < LIST_NUM(caps->CapsList); i++) {
 		CAPS *c = LIST_DATA(caps->CapsList, i);
 
-		if (StrCmpi(c->Name, name) == 0) {
+		if (StrCmpi(c->Name, name) == 0)
 			return c;
-		}
 	}
 
 	return NULL;
@@ -1287,9 +1208,8 @@ CAPS *GetCaps(CAPSLIST *caps, char *name) {
 // Add to the Caps
 void AddCaps(CAPSLIST *caps, CAPS *c) {
 	// Validate arguments
-	if (caps == NULL || c == NULL) {
+	if (caps == NULL || c == NULL)
 		return;
-	}
 
 	Insert(caps->CapsList, c);
 }
@@ -1297,14 +1217,12 @@ void AddCaps(CAPSLIST *caps, CAPS *c) {
 // Comparison of Caps
 int CompareCaps(void *p1, void *p2) {
 	CAPS *c1, *c2;
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	c1 = *(CAPS **)p1;
 	c2 = *(CAPS **)p2;
-	if (c1 == NULL || c2 == NULL) {
+	if (c1 == NULL || c2 == NULL)
 		return 0;
-	}
 
 	return StrCmpi(c1->Name, c2->Name);
 }
@@ -1321,9 +1239,8 @@ CAPSLIST *NewCapsList() {
 // Release the Caps
 void FreeCaps(CAPS *c) {
 	// Validate arguments
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	Free(c->Name);
 	Free(c);
@@ -1333,9 +1250,8 @@ void FreeCaps(CAPS *c) {
 CAPS *NewCaps(char *name, UINT value) {
 	CAPS *c;
 	// Validate arguments
-	if (name == NULL) {
+	if (name == NULL)
 		return NULL;
-	}
 
 	c = ZeroMalloc(sizeof(CAPS));
 	c->Name = CopyStr(name);
@@ -1355,9 +1271,8 @@ void SiGenerateDefaultCertEx(X **server_x, K **server_k, char *common_name) {
 	char tmp[MAX_SIZE];
 	wchar_t cn[MAX_SIZE];
 	// Validate arguments
-	if (server_x == NULL || server_k == NULL) {
+	if (server_x == NULL || server_k == NULL)
 		return;
-	}
 
 	// Create a key pair
 	RsaGen(&private_key, &public_key, 2048);
@@ -1388,9 +1303,8 @@ void SiInitDefaultServerCert(SERVER *s) {
 	X *x = NULL;
 	K *k = NULL;
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	// Generate a server certificate and private key
 	SiGenerateDefaultCert(&x, &k);
@@ -1405,9 +1319,8 @@ void SiInitDefaultServerCert(SERVER *s) {
 // Set the encryption algorithm name to default
 void SiInitCipherName(SERVER *s) {
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	SetCedarCipherList(s->Cedar, SERVER_DEFAULT_CIPHER_NAME);
 }
@@ -1415,9 +1328,8 @@ void SiInitCipherName(SERVER *s) {
 // Initialize the listener list
 void SiInitListenerList(SERVER *s) {
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	SiLockListenerList(s);
 	{
@@ -1434,21 +1346,18 @@ void SiInitListenerList(SERVER *s) {
 bool SiDeleteListener(SERVER *s, UINT port) {
 	SERVER_LISTENER *e;
 	// Validate arguments
-	if (s == NULL || port == 0) {
+	if (s == NULL || port == 0)
 		return false;
-	}
 
 	e = SiGetListener(s, port);
-	if (e == NULL) {
+	if (e == NULL)
 		return false;
-	}
 
 	// Stop if still alive
 	SiDisableListener(s, port);
 
-	if (e->Listener != NULL) {
+	if (e->Listener != NULL)
 		ReleaseListener(e->Listener);
-	}
 
 	Delete(s->ServerListenerList, e);
 	Free(e);
@@ -1459,37 +1368,32 @@ bool SiDeleteListener(SERVER *s, UINT port) {
 // Compare the SERVER_LISTENER
 int CompareServerListener(void *p1, void *p2) {
 	SERVER_LISTENER *s1, *s2;
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	s1 = *(SERVER_LISTENER **)p1;
 	s2 = *(SERVER_LISTENER **)p2;
-	if (s1 == NULL || s2 == NULL) {
+	if (s1 == NULL || s2 == NULL)
 		return 0;
-	}
 
-	if (s1->Port > s2->Port) {
+	if (s1->Port > s2->Port)
 		return 1;
-	} else if (s1->Port < s2->Port) {
+	else if (s1->Port < s2->Port)
 		return -1;
-	} else {
+	else
 		return 0;
-	}
 }
 
 // Stop the listener
 bool SiDisableListener(SERVER *s, UINT port) {
 	SERVER_LISTENER *e;
 	// Validate arguments
-	if (s == NULL || port == 0) {
+	if (s == NULL || port == 0)
 		return false;
-	}
 
 	// Get the listener
 	e = SiGetListener(s, port);
-	if (e == NULL) {
+	if (e == NULL)
 		return false;
-	}
 
 	if (e->Enabled == false || e->Listener == NULL) {
 		// Already stopped
@@ -1512,15 +1416,13 @@ bool SiDisableListener(SERVER *s, UINT port) {
 bool SiEnableListener(SERVER *s, UINT port) {
 	SERVER_LISTENER *e;
 	// Validate arguments
-	if (s == NULL || port == 0) {
+	if (s == NULL || port == 0)
 		return false;
-	}
 
 	// Get the listener
 	e = SiGetListener(s, port);
-	if (e == NULL) {
+	if (e == NULL)
 		return false;
-	}
 
 	if (e->Enabled) {
 		// It has already started
@@ -1545,15 +1447,13 @@ bool SiEnableListener(SERVER *s, UINT port) {
 SERVER_LISTENER *SiGetListener(SERVER *s, UINT port) {
 	UINT i;
 	// Validate arguments
-	if (s == NULL || port == 0) {
+	if (s == NULL || port == 0)
 		return NULL;
-	}
 
 	for (i = 0; i < LIST_NUM(s->ServerListenerList); i++) {
 		SERVER_LISTENER *e = LIST_DATA(s->ServerListenerList, i);
-		if (e->Port == port) {
+		if (e->Port == port)
 			return e;
-		}
 	}
 
 	return NULL;
@@ -1567,9 +1467,8 @@ bool SiAddListenerEx(SERVER *s, UINT port, bool enabled, bool disable_dos) {
 	SERVER_LISTENER *e;
 	UINT i;
 	// Validate arguments
-	if (s == NULL || port == 0) {
+	if (s == NULL || port == 0)
 		return false;
-	}
 
 	// Check whether the listener exists already
 	for (i = 0; i < LIST_NUM(s->ServerListenerList); i++) {
@@ -1589,9 +1488,8 @@ bool SiAddListenerEx(SERVER *s, UINT port, bool enabled, bool disable_dos) {
 	if (e->Enabled) {
 		// Create a listener
 		e->Listener = NewListener(s->Cedar, LISTENER_TCP, e->Port);
-		if (e->Listener != NULL) {
+		if (e->Listener != NULL)
 			e->Listener->DisableDos = e->DisableDos;
-		}
 	}
 
 	Insert(s->ServerListenerList, e);
@@ -1602,9 +1500,8 @@ bool SiAddListenerEx(SERVER *s, UINT port, bool enabled, bool disable_dos) {
 // Lock the listener list
 void SiLockListenerList(SERVER *s) {
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	LockList(s->ServerListenerList);
 }
@@ -1612,9 +1509,8 @@ void SiLockListenerList(SERVER *s) {
 // Unlock the listener list
 void SiUnlockListenerList(SERVER *s) {
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	UnlockList(s->ServerListenerList);
 }
@@ -1622,9 +1518,8 @@ void SiUnlockListenerList(SERVER *s) {
 // Set the default value of the Virtual HUB options
 void SiSetDefaultHubOption(HUB_OPTION *o) {
 	// Validate arguments
-	if (o == NULL) {
+	if (o == NULL)
 		return;
-	}
 
 	o->MaxSession = 0;
 	o->VlanTypeId = MAC_PROTO_TAGVLAN;
@@ -1645,9 +1540,8 @@ void SiInitDefaultHubList(SERVER *s) {
 	HUB_OPTION o;
 	HUB_LOG g;
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	Zero(&o, sizeof(o));
 
@@ -1677,9 +1571,8 @@ void SiInitDefaultHubList(SERVER *s) {
 // Set the log settings to default
 void SiSetDefaultLogSetting(HUB_LOG *g) {
 	// Validate arguments
-	if (g == NULL) {
+	if (g == NULL)
 		return;
-	}
 
 	Zero(g, sizeof(HUB_LOG));
 	g->SaveSecurityLog = true;
@@ -1693,9 +1586,8 @@ void SiSetDefaultLogSetting(HUB_LOG *g) {
 // Set the initial configuration
 void SiLoadInitialConfiguration(SERVER *s) {
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	// Auto saving interval related
 	s->AutoSaveConfigSpan = SERVER_FILE_SAVE_INTERVAL_DEFAULT;
@@ -1731,9 +1623,8 @@ void SiLoadInitialConfiguration(SERVER *s) {
 // Read the configuration file (main)
 bool SiLoadConfigurationFileMain(SERVER *s, FOLDER *root) {
 	// Validate arguments
-	if (s == NULL || root == NULL) {
+	if (s == NULL || root == NULL)
 		return false;
-	}
 
 	return SiLoadConfigurationCfg(s, root);
 }
@@ -1744,9 +1635,8 @@ bool SiLoadConfigurationFile(SERVER *s) {
 	bool ret = false;
 	FOLDER *root;
 	char *server_config_filename = SERVER_CONFIG_FILE_NAME;
-	if (s == NULL) {
+	if (s == NULL)
 		return false;
-	}
 
 
 	s->CfgRw = NewCfgRwEx2A(&root,
@@ -1759,9 +1649,8 @@ bool SiLoadConfigurationFile(SERVER *s) {
 		server_reset_setting = false;
 	}
 
-	if (root == NULL) {
+	if (root == NULL)
 		return false;
-	}
 
 	ret = SiLoadConfigurationFileMain(s, root);
 
@@ -1773,9 +1662,8 @@ bool SiLoadConfigurationFile(SERVER *s) {
 // Initialize the configuration
 void SiInitConfiguration(SERVER *s) {
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	s->AutoSaveConfigSpan = SERVER_FILE_SAVE_INTERVAL_DEFAULT;
 	s->BackupConfigOnlyWhenModified = true;
@@ -1799,24 +1687,21 @@ void SiInitConfiguration(SERVER *s) {
 
 	// The arp_filter in Linux
 	if (GetOsInfo()->OsType == OSTYPE_LINUX) {
-		if (s->NoLinuxArpFilter == false) {
+		if (s->NoLinuxArpFilter == false)
 			SetLinuxArpFilter();
-		}
 	}
 
-	if (s->DisableDosProtection) {
+	if (s->DisableDosProtection)
 		DisableDosProtect();
-	} else {
+	else
 		EnableDosProtect();
-	}
 
 	s->AutoSaveConfigSpanSaved = s->AutoSaveConfigSpan;
 
 	// Reduce the storage interval in the case of user mode
 #ifdef OS_WIN32
-	if (MsIsUserMode()) {
+	if (MsIsUserMode())
 		s->AutoSaveConfigSpan = MIN(s->AutoSaveConfigSpan, SERVER_FILE_SAVE_INTERVAL_USERMODE);
-	}
 #endif //OS_WIN32
 
 	// Create a saving thread
@@ -1829,9 +1714,8 @@ void SiInitConfiguration(SERVER *s) {
 bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root) {
 	FOLDER *f1, *f2, *f3, *f4, *f6;
 	// Validate arguments
-	if (s == NULL || root == NULL) {
+	if (s == NULL || root == NULL)
 		return false;
-	}
 
 	f1 = CfgGetFolder(root, "ServerConfiguration");
 	f2 = CfgGetFolder(root, "VirtualHUB");
@@ -1849,9 +1733,8 @@ bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root) {
 		// Read the flag of using the SeLow driver
 		bool b = true;
 
-		if (CfgIsItem(f4, "EnableSoftEtherKernelModeDriver")) {
+		if (CfgIsItem(f4, "EnableSoftEtherKernelModeDriver"))
 			b = CfgGetBool(f4, "EnableSoftEtherKernelModeDriver");
-		}
 
 		Win32SetEnableSeLow(b);
 	}
@@ -1863,9 +1746,8 @@ bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root) {
 	s->ConfigRevision = CfgGetInt(root, "ConfigRevision");
 
 	if (s->Cedar->Bridge == false && f6 != NULL) {
-		if (GetServerCapsBool(s, "b_support_license")) {
+		if (GetServerCapsBool(s, "b_support_license"))
 			SiLoadLicenseManager(s, f6);
-		}
 	}
 
 	DestroyServerCapsCache(s);
@@ -1876,9 +1758,8 @@ bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root) {
 
 	SiLoadListeners(s, f3);
 
-	if (f4 != NULL) {
+	if (f4 != NULL)
 		SiLoadLocalBridges(s, f4);
-	}
 
 	return true;
 }
@@ -1886,9 +1767,8 @@ bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root) {
 // Write the listener configuration
 void SiWriteListenerCfg(FOLDER *f, SERVER_LISTENER *r) {
 	// Validate arguments
-	if (f == NULL || r == NULL) {
+	if (f == NULL || r == NULL)
 		return;
-	}
 
 	CfgAddBool(f, "Enabled", r->Enabled);
 	CfgAddInt(f, "Port", r->Port);
@@ -1901,17 +1781,15 @@ void SiLoadListenerCfg(SERVER *s, FOLDER *f) {
 	UINT port;
 	bool disable_dos;
 	// Validate arguments
-	if (s == NULL || f == NULL) {
+	if (s == NULL || f == NULL)
 		return;
-	}
 
 	enable = CfgGetBool(f, "Enabled");
 	port = CfgGetInt(f, "Port");
 	disable_dos = CfgGetBool(f, "DisableDos");
 
-	if (port == 0) {
+	if (port == 0)
 		return;
-	}
 
 	SiAddListenerEx(s, port, enable, disable_dos);
 }
@@ -1921,16 +1799,14 @@ void SiLoadListeners(SERVER *s, FOLDER *f) {
 	TOKEN_LIST *t;
 	UINT i;
 	// Validate arguments
-	if (s == NULL || f == NULL) {
+	if (s == NULL || f == NULL)
 		return;
-	}
 
 	t = CfgEnumFolderToTokenList(f);
 	for (i = 0; i < t->NumTokens; i++) {
 		FOLDER *ff = CfgGetFolder(f, t->Token[i]);
-		if (ff != NULL) {
+		if (ff != NULL)
 			SiLoadListenerCfg(s, ff);
-		}
 	}
 	FreeToken(t);
 }
@@ -1938,9 +1814,8 @@ void SiLoadListeners(SERVER *s, FOLDER *f) {
 // Write the listener list
 void SiWriteListeners(FOLDER *f, SERVER *s) {
 	// Validate arguments
-	if (f == NULL || s == NULL) {
+	if (f == NULL || s == NULL)
 		return;
-	}
 
 	LockList(s->ServerListenerList);
 	{
@@ -1958,9 +1833,8 @@ void SiWriteListeners(FOLDER *f, SERVER *s) {
 // Write the bridge
 void SiWriteLocalBridgeCfg(FOLDER *f, LOCALBRIDGE *br) {
 	// Validate arguments
-	if (f == NULL || br == NULL) {
+	if (f == NULL || br == NULL)
 		return;
-	}
 
 	CfgAddStr(f, "DeviceName", br->DeviceName);
 	CfgAddStr(f, "HubName", br->HubName);
@@ -1982,9 +1856,8 @@ void SiWriteLocalBridgeCfg(FOLDER *f, LOCALBRIDGE *br) {
 // Write the bridge list
 void SiWriteLocalBridges(FOLDER *f, SERVER *s) {
 	// Validate arguments
-	if (s == NULL || f == NULL) {
+	if (s == NULL || f == NULL)
 		return;
-	}
 
 #ifdef OS_WIN32
 	CfgAddBool(f, "ShowAllInterfaces", Win32EthGetShowAllIf());
@@ -2013,9 +1886,8 @@ void SiLoadLocalBridgeCfg(SERVER *s, FOLDER *f) {
 	bool tapmode = false;
 	UCHAR tapaddr[6];
 	// Validate arguments
-	if (s == NULL || f == NULL) {
+	if (s == NULL || f == NULL)
 		return;
-	}
 
 	Zero(hub, sizeof(hub));
 	Zero(nic, sizeof(nic));
@@ -2023,9 +1895,8 @@ void SiLoadLocalBridgeCfg(SERVER *s, FOLDER *f) {
 	CfgGetStr(f, "HubName", hub, sizeof(hub));
 	CfgGetStr(f, "DeviceName", nic, sizeof(nic));
 
-	if (IsEmptyStr(hub) || IsEmptyStr(nic)) {
+	if (IsEmptyStr(hub) || IsEmptyStr(nic))
 		return;
-	}
 
 	if (OS_IS_UNIX(GetOsInfo()->OsType)) {
 		if (CfgGetBool(f, "TapMode")) {
@@ -2035,9 +1906,8 @@ void SiLoadLocalBridgeCfg(SERVER *s, FOLDER *f) {
 			if (CfgGetStr(f, "TapMacAddress", tmp, sizeof(tmp))) {
 				BUF *b;
 				b = StrToBin(tmp);
-				if (b != NULL && b->Size == 6) {
+				if (b != NULL && b->Size == 6)
 					Copy(tapaddr, b->Buf, sizeof(tapaddr));
-				}
 				FreeBuf(b);
 			}
 		}
@@ -2052,9 +1922,8 @@ void SiLoadLocalBridges(SERVER *s, FOLDER *f) {
 	TOKEN_LIST *t;
 	UINT i;
 	// Validate arguments
-	if (s == NULL || f == NULL) {
+	if (s == NULL || f == NULL)
 		return;
-	}
 
 #ifdef OS_WIN32
 	Win32EthSetShowAllIf(CfgGetBool(f, "ShowAllInterfaces"));
@@ -2074,9 +1943,8 @@ void SiLoadLocalBridges(SERVER *s, FOLDER *f) {
 // Increment the configuration revision of the server
 void IncrementServerConfigRevision(SERVER *s) {
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	s->ConfigRevision++;
 }
@@ -2086,9 +1954,8 @@ FOLDER *SiWriteConfigurationToCfg(SERVER *s) {
 	FOLDER *root;
 	char region[128];
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return NULL;
-	}
 
 	root = CfgCreateFolder(NULL, TAG_ROOT);
 
@@ -2107,9 +1974,8 @@ FOLDER *SiWriteConfigurationToCfg(SERVER *s) {
 	SiWriteHubs(CfgCreateFolder(root, "VirtualHUB"), s);
 
 	if (s->Cedar->Bridge == false) {
-		if (GetServerCapsBool(s, "b_support_license")) {
+		if (GetServerCapsBool(s, "b_support_license"))
 			SiWriteLicenseManager(CfgCreateFolder(root, "LicenseManager"), s);
-		}
 	}
 
 	if (s->Led) {
@@ -2124,9 +1990,8 @@ FOLDER *SiWriteConfigurationToCfg(SERVER *s) {
 // Read the policy
 void SiLoadPolicyCfg(POLICY *p, FOLDER *f) {
 	// Validate arguments
-	if (f == NULL || p == NULL) {
+	if (f == NULL || p == NULL)
 		return;
-	}
 
 	Zero(p, sizeof(POLICY));
 
@@ -2176,14 +2041,12 @@ void SiLoadPolicyCfg(POLICY *p, FOLDER *f) {
 // Write the policy
 void SiWritePolicyCfg(FOLDER *f, POLICY *p, bool cascade_mode) {
 	// Validate arguments
-	if (f == NULL || p == NULL) {
+	if (f == NULL || p == NULL)
 		return;
-	}
 
 	// Ver 2.0
-	if (cascade_mode == false) {
+	if (cascade_mode == false)
 		CfgAddBool(f, "Access", p->Access);
-	}
 
 	CfgAddBool(f, "DHCPFilter", p->DHCPFilter);
 	CfgAddBool(f, "DHCPNoServer", p->DHCPNoServer);
@@ -2198,9 +2061,8 @@ void SiWritePolicyCfg(FOLDER *f, POLICY *p, bool cascade_mode) {
 	CfgAddBool(f, "CheckIP", p->CheckIP);
 	CfgAddBool(f, "ArpDhcpOnly", p->ArpDhcpOnly);
 
-	if (cascade_mode == false) {
+	if (cascade_mode == false)
 		CfgAddBool(f, "PrivacyFilter", p->PrivacyFilter);
-	}
 
 	CfgAddBool(f, "NoServer", p->NoServer);
 	CfgAddBool(f, "NoBroadcastLimiter", p->NoBroadcastLimiter);
@@ -2228,9 +2090,8 @@ void SiWritePolicyCfg(FOLDER *f, POLICY *p, bool cascade_mode) {
 	CfgAddBool(f, "DHCPv6Filter", p->DHCPv6Filter);
 	CfgAddBool(f, "DHCPv6NoServer", p->DHCPv6NoServer);
 
-	if (cascade_mode == false) {
+	if (cascade_mode == false)
 		CfgAddBool(f, "NoRoutingV6", p->NoRoutingV6);
-	}
 
 	CfgAddBool(f, "CheckIPv6", p->CheckIPv6);
 	CfgAddBool(f, "NoServerV6", p->NoServerV6);
@@ -2252,9 +2113,8 @@ void SiWritePolicyCfg(FOLDER *f, POLICY *p, bool cascade_mode) {
 // Write the link information of the Virtual HUB
 void SiWriteHubLinkCfg(FOLDER *f, LINK *k) {
 	// Validate arguments
-	if (f == NULL || k == NULL) {
+	if (f == NULL || k == NULL)
 		return;
-	}
 
 	Lock(k->lock);
 	{
@@ -2268,9 +2128,8 @@ void SiWriteHubLinkCfg(FOLDER *f, LINK *k) {
 		CiWriteClientAuth(CfgCreateFolder(f, "ClientAuth"), k->Auth);
 
 		// Policy
-		if (k->Policy != NULL) {
+		if (k->Policy != NULL)
 			SiWritePolicyCfg(CfgCreateFolder(f, "Policy"), k->Policy, true);
-		}
 
 		CfgAddBool(f, "CheckServerCert", k->CheckServerCert);
 		CfgAddBool(f, "AddDefaultCA", k->AddDefaultCA);
@@ -2293,14 +2152,12 @@ void SiLoadHubLinkCfg(FOLDER *f, HUB *h) {
 	POLICY p;
 	LINK *k;
 	// Validate arguments
-	if (f == NULL || h == NULL) {
+	if (f == NULL || h == NULL)
 		return;
-	}
 
 	pf = CfgGetFolder(f, "Policy");
-	if (pf == NULL) {
+	if (pf == NULL)
 		return;
-	}
 
 	SiLoadPolicyCfg(&p, pf);
 
@@ -2338,9 +2195,8 @@ void SiLoadHubLinkCfg(FOLDER *f, HUB *h) {
 void SiLoadHubAdminOptions(HUB *h, FOLDER *f) {
 	TOKEN_LIST *t;
 	// Validate arguments
-	if (h == NULL || f == NULL) {
+	if (h == NULL || f == NULL)
 		return;
-	}
 
 	t = CfgEnumItemToTokenList(f);
 	if (t != NULL) {
@@ -2376,9 +2232,8 @@ void SiLoadHubAdminOptions(HUB *h, FOLDER *f) {
 // Write the administration options for the virtual HUB
 void SiWriteHubAdminOptions(FOLDER *f, HUB *h) {
 	// Validate arguments
-	if (f == NULL || h == NULL) {
+	if (f == NULL || h == NULL)
 		return;
-	}
 
 	LockList(h->AdminOptionList);
 	{
@@ -2395,9 +2250,8 @@ void SiWriteHubAdminOptions(FOLDER *f, HUB *h) {
 // Write the link list of the Virtual HUB
 void SiWriteHubLinks(FOLDER *f, HUB *h) {
 	// Validate arguments
-	if (f == NULL || h == NULL) {
+	if (f == NULL || h == NULL)
 		return;
-	}
 
 	LockList(h->LinkList);
 	{
@@ -2417,9 +2271,8 @@ void SiLoadHubLinks(HUB *h, FOLDER *f) {
 	TOKEN_LIST *t;
 	UINT i;
 	// Validate arguments
-	if (h == NULL || f == NULL) {
+	if (h == NULL || f == NULL)
 		return;
-	}
 
 	t = CfgEnumFolderToTokenList(f);
 
@@ -2434,9 +2287,8 @@ void SiLoadHubLinks(HUB *h, FOLDER *f) {
 // Write an item of the access list
 void SiWriteHubAccessCfg(FOLDER *f, ACCESS *a) {
 	// Validate arguments
-	if (f == NULL || a == NULL) {
+	if (f == NULL || a == NULL)
 		return;
-	}
 
 	CfgAddUniStr(f, "Note", a->Note);
 	CfgAddBool(f, "Active", a->Active);
@@ -2502,9 +2354,8 @@ void SiLoadHubAccessCfg(HUB *h, FOLDER *f) {
 	ACCESS a;
 	char tmp[MAX_PATH];
 	// Validate arguments
-	if (h == NULL || f == NULL) {
+	if (h == NULL || f == NULL)
 		return;
-	}
 
 	Zero(&a, sizeof(a));
 
@@ -2537,32 +2388,28 @@ void SiLoadHubAccessCfg(HUB *h, FOLDER *f) {
 
 	if (CfgGetByte(f, "SrcMacAddress", a.SrcMacAddress, sizeof(a.SrcMacAddress)) == 0) {
 		CfgGetStr(f, "SrcMacAddress", tmp, sizeof(tmp));
-		if (StrToMac(a.SrcMacAddress, tmp) == false) {
+		if (StrToMac(a.SrcMacAddress, tmp) == false)
 			a.CheckSrcMac = false;
-		}
 	}
 
 	if (CfgGetByte(f, "SrcMacMask", a.SrcMacMask, sizeof(a.SrcMacMask)) == 0) {
 		CfgGetStr(f, "SrcMacMask", tmp, sizeof(tmp));
-		if (StrToMac(a.SrcMacMask, tmp) == false) {
+		if (StrToMac(a.SrcMacMask, tmp) == false)
 			a.CheckSrcMac = false;
-		}
 	}
 
 	a.CheckDstMac = CfgGetBool(f, "CheckDstMac");
 
 	if (CfgGetByte(f, "DstMacAddress", a.DstMacAddress, sizeof(a.DstMacAddress)) == 0) {
 		CfgGetStr(f, "DstMacAddress", tmp, sizeof(tmp));
-		if (StrToMac(a.DstMacAddress, tmp) == false) {
+		if (StrToMac(a.DstMacAddress, tmp) == false)
 			a.CheckDstMac = false;
-		}
 	}
 
 	if (CfgGetByte(f, "DstMacMask", a.DstMacMask, sizeof(a.DstMacMask)) == 0) {
 		CfgGetStr(f, "DstMacMask", tmp, sizeof(tmp));
-		if (StrToMac(a.DstMacMask, tmp) == false) {
+		if (StrToMac(a.DstMacMask, tmp) == false)
 			a.CheckDstMac = false;
-		}
 	}
 
 	a.CheckTcpState = CfgGetBool(f, "CheckTcpState");
@@ -2579,9 +2426,8 @@ void SiLoadHubAccessCfg(HUB *h, FOLDER *f) {
 // Write the access list
 void SiWriteHubAccessLists(FOLDER *f, HUB *h) {
 	// Validate arguments
-	if (f == NULL || h == NULL) {
+	if (f == NULL || h == NULL)
 		return;
-	}
 
 	LockList(h->AccessList);
 	{
@@ -2601,9 +2447,8 @@ void SiLoadHubAccessLists(HUB *h, FOLDER *f) {
 	TOKEN_LIST *t;
 	UINT i;
 	// Validate arguments
-	if (f == NULL || h == NULL) {
+	if (f == NULL || h == NULL)
 		return;
-	}
 
 	t = CfgEnumFolderToTokenList(f);
 
@@ -2619,9 +2464,8 @@ void SiLoadHubAccessLists(HUB *h, FOLDER *f) {
 void SiLoadHubOptionCfg(FOLDER *f, HUB_OPTION *o) {
 	char tmp[MAX_SIZE];
 	// Validate arguments
-	if (f == NULL || o == NULL) {
+	if (f == NULL || o == NULL)
 		return;
-	}
 
 	o->MaxSession = CfgGetInt(f, "MaxSession");
 	o->NoArpPolling = CfgGetBool(f, "NoArpPolling");
@@ -2645,63 +2489,54 @@ void SiLoadHubOptionCfg(FOLDER *f, HUB_OPTION *o) {
 	o->RequiredClientId = CfgGetInt(f, "RequiredClientId");
 	o->NoManageVlanId = CfgGetBool(f, "NoManageVlanId");
 	o->VlanTypeId = 0;
-	if (CfgGetStr(f, "VlanTypeId", tmp, sizeof(tmp))) {
+	if (CfgGetStr(f, "VlanTypeId", tmp, sizeof(tmp)))
 		o->VlanTypeId = HexToInt(tmp);
-	}
-	if (o->VlanTypeId == 0) {
+	if (o->VlanTypeId == 0)
 		o->VlanTypeId = MAC_PROTO_TAGVLAN;
-	}
 	o->FixForDLinkBPDU = CfgGetBool(f, "FixForDLinkBPDU");
 	o->BroadcastLimiterStrictMode = CfgGetBool(f, "BroadcastLimiterStrictMode");
 	o->MaxLoggedPacketsPerMinute = CfgGetInt(f, "MaxLoggedPacketsPerMinute");
-	if (CfgIsItem(f, "FloodingSendQueueBufferQuota")) {
+	if (CfgIsItem(f, "FloodingSendQueueBufferQuota"))
 		o->FloodingSendQueueBufferQuota = CfgGetInt(f, "FloodingSendQueueBufferQuota");
-	} else {
+	else
 		o->FloodingSendQueueBufferQuota = DEFAULT_FLOODING_QUEUE_LENGTH;
-	}
 	o->DoNotSaveHeavySecurityLogs = CfgGetBool(f, "DoNotSaveHeavySecurityLogs");
 
-	if (CfgIsItem(f, "DropBroadcastsInPrivacyFilterMode")) {
+	if (CfgIsItem(f, "DropBroadcastsInPrivacyFilterMode"))
 		o->DropBroadcastsInPrivacyFilterMode = CfgGetBool(f, "DropBroadcastsInPrivacyFilterMode");
-	} else {
+	else
 		o->DropBroadcastsInPrivacyFilterMode = true;
-	}
 
-	if (CfgIsItem(f, "DropArpInPrivacyFilterMode")) {
+	if (CfgIsItem(f, "DropArpInPrivacyFilterMode"))
 		o->DropArpInPrivacyFilterMode = CfgGetBool(f, "DropArpInPrivacyFilterMode");
-	} else {
+	else
 		o->DropArpInPrivacyFilterMode = true;
-	}
 
-	if (CfgIsItem(f, "AllowSameUserInPrivacyFilterMode")) {
+	if (CfgIsItem(f, "AllowSameUserInPrivacyFilterMode"))
 		o->AllowSameUserInPrivacyFilterMode = CfgGetBool(f, "AllowSameUserInPrivacyFilterMode");
-	} else {
+	else
 		o->AllowSameUserInPrivacyFilterMode = false;
-	}
 
 
 	o->NoLookBPDUBridgeId = CfgGetBool(f, "NoLookBPDUBridgeId");
 	o->AdjustTcpMssValue = CfgGetInt(f, "AdjustTcpMssValue");
 	o->DisableAdjustTcpMss = CfgGetBool(f, "DisableAdjustTcpMss");
-	if (CfgIsItem(f, "NoDhcpPacketLogOutsideHub")) {
+	if (CfgIsItem(f, "NoDhcpPacketLogOutsideHub"))
 		o->NoDhcpPacketLogOutsideHub = CfgGetBool(f, "NoDhcpPacketLogOutsideHub");
-	} else {
+	else
 		o->NoDhcpPacketLogOutsideHub = true;
-	}
 	o->DisableHttpParsing = CfgGetBool(f, "DisableHttpParsing");
 	o->DisableUdpAcceleration = CfgGetBool(f, "DisableUdpAcceleration");
 	o->DisableUdpFilterForLocalBridgeNic = CfgGetBool(f, "DisableUdpFilterForLocalBridgeNic");
 	o->ApplyIPv4AccessListOnArpPacket = CfgGetBool(f, "ApplyIPv4AccessListOnArpPacket");
-	if (CfgIsItem(f, "RemoveDefGwOnDhcpForLocalhost")) {
+	if (CfgIsItem(f, "RemoveDefGwOnDhcpForLocalhost"))
 		o->RemoveDefGwOnDhcpForLocalhost = CfgGetBool(f, "RemoveDefGwOnDhcpForLocalhost");
-	} else {
+	else
 		o->RemoveDefGwOnDhcpForLocalhost = true;
-	}
 	o->AccessListIncludeFileCacheLifetime = CfgGetInt(f, "AccessListIncludeFileCacheLifetime");
 
-	if (o->AccessListIncludeFileCacheLifetime == 0) {
+	if (o->AccessListIncludeFileCacheLifetime == 0)
 		o->AccessListIncludeFileCacheLifetime = ACCESS_LIST_INCLUDE_FILE_CACHE_LIFETIME;
-	}
 
 	o->DisableCheckMacOnLocalBridge = CfgGetBool(f, "DisableCheckMacOnLocalBridge");
 	o->DisableCorrectIpOffloadChecksum = CfgGetBool(f, "DisableCorrectIpOffloadChecksum");
@@ -2711,35 +2546,30 @@ void SiLoadHubOptionCfg(FOLDER *f, HUB_OPTION *o) {
 	o->UseHubNameAsDhcpUserClassOption = CfgGetBool(f, "UseHubNameAsDhcpUserClassOption");
 	o->AllowEapMatchUserByCert = CfgGetBool(f, "AllowEapMatchUserByCert");
 	o->DhcpDiscoverTimeoutMs = CfgGetInt(f, "DhcpDiscoverTimeoutMs");
-	if (o->DhcpDiscoverTimeoutMs == 0) {
+	if (o->DhcpDiscoverTimeoutMs == 0)
 		o->DhcpDiscoverTimeoutMs = DEFAULT_DHCP_DISCOVER_TIMEOUT;
-	}
 
 	// Enabled by default
-	if (CfgIsItem(f, "ManageOnlyPrivateIP")) {
+	if (CfgIsItem(f, "ManageOnlyPrivateIP"))
 		o->ManageOnlyPrivateIP = CfgGetBool(f, "ManageOnlyPrivateIP");
-	} else {
+	else
 		o->ManageOnlyPrivateIP = true;
-	}
-	if (CfgIsItem(f, "ManageOnlyLocalUnicastIPv6")) {
+	if (CfgIsItem(f, "ManageOnlyLocalUnicastIPv6"))
 		o->ManageOnlyLocalUnicastIPv6 = CfgGetBool(f, "ManageOnlyLocalUnicastIPv6");
-	} else {
+	else
 		o->ManageOnlyLocalUnicastIPv6 = true;
-	}
-	if (CfgIsItem(f, "NoMacAddressLog")) {
+	if (CfgIsItem(f, "NoMacAddressLog"))
 		o->NoMacAddressLog = CfgGetBool(f, "NoMacAddressLog");
-	} else {
+	else
 		o->NoMacAddressLog = true;
-	}
 }
 
 // Write the HUB_OPTION
 void SiWriteHubOptionCfg(FOLDER *f, HUB_OPTION *o) {
 	char tmp[MAX_SIZE];
 	// Validate arguments
-	if (f == NULL || o == NULL) {
+	if (f == NULL || o == NULL)
 		return;
-	}
 
 	CfgAddInt(f, "MaxSession", o->MaxSession);
 	CfgAddBool(f, "NoArpPolling", o->NoArpPolling);
@@ -2767,9 +2597,8 @@ void SiWriteHubOptionCfg(FOLDER *f, HUB_OPTION *o) {
 	CfgAddBool(f, "NoManageVlanId", o->NoManageVlanId);
 	Format(tmp, sizeof(tmp), "0x%x", o->VlanTypeId);
 	CfgAddStr(f, "VlanTypeId", tmp);
-	if (o->FixForDLinkBPDU) {
+	if (o->FixForDLinkBPDU)
 		CfgAddBool(f, "FixForDLinkBPDU", o->FixForDLinkBPDU);
-	}
 	CfgAddBool(f, "BroadcastLimiterStrictMode", o->BroadcastLimiterStrictMode);
 	CfgAddInt(f, "MaxLoggedPacketsPerMinute", o->MaxLoggedPacketsPerMinute);
 	CfgAddInt(f, "FloodingSendQueueBufferQuota", o->FloodingSendQueueBufferQuota);
@@ -2805,25 +2634,22 @@ void SiWriteUserCfg(FOLDER *f, USER *u) {
 	AUTHUSERCERT *usercert;
 	AUTHROOTCERT *rootcert;
 	// Validate arguments
-	if (f == NULL || u == NULL) {
+	if (f == NULL || u == NULL)
 		return;
-	}
 
 	Lock(u->lock);
 	{
 		CfgAddUniStr(f, "RealName", u->RealName);
 		CfgAddUniStr(f, "Note", u->Note);
-		if (u->Group != NULL) {
+		if (u->Group != NULL)
 			CfgAddStr(f, "GroupName", u->GroupName);
-		}
 		CfgAddInt64(f, "CreatedTime", u->CreatedTime);
 		CfgAddInt64(f, "UpdatedTime", u->UpdatedTime);
 		CfgAddInt64(f, "ExpireTime", u->ExpireTime);
 		CfgAddInt64(f, "LastLoginTime", u->LastLoginTime);
 		CfgAddInt(f, "NumLogin", u->NumLogin);
-		if (u->Policy != NULL) {
+		if (u->Policy != NULL)
 			SiWritePolicyCfg(CfgCreateFolder(f, "Policy"), u->Policy, false);
-		}
 		SiWriteTraffic(f, "Traffic", u->Traffic);
 
 		CfgAddInt(f, "AuthType", u->AuthType);
@@ -2836,9 +2662,8 @@ void SiWriteUserCfg(FOLDER *f, USER *u) {
 				password = (AUTHPASSWORD *)u->AuthData;
 				CfgAddByte(f, "AuthPassword", password->HashedKey, sizeof(password->HashedKey));
 
-				if (IsZero(password->NtLmSecureHash, sizeof(password->NtLmSecureHash)) == false) {
+				if (IsZero(password->NtLmSecureHash, sizeof(password->NtLmSecureHash)) == false)
 					CfgAddByte(f, "AuthNtLmSecureHash", password->NtLmSecureHash, sizeof(password->NtLmSecureHash));
-				}
 				break;
 
 			case AUTHTYPE_NT:
@@ -2857,12 +2682,10 @@ void SiWriteUserCfg(FOLDER *f, USER *u) {
 
 			case AUTHTYPE_ROOTCERT:
 				rootcert = (AUTHROOTCERT *)u->AuthData;
-				if (rootcert->Serial != NULL && rootcert->Serial->size >= 1) {
+				if (rootcert->Serial != NULL && rootcert->Serial->size >= 1)
 					CfgAddByte(f, "AuthSerial", rootcert->Serial->data, rootcert->Serial->size);
-				}
-				if (rootcert->CommonName != NULL && UniIsEmptyStr(rootcert->CommonName) == false) {
+				if (rootcert->CommonName != NULL && UniIsEmptyStr(rootcert->CommonName) == false)
 					CfgAddUniStr(f, "AuthCommonName", rootcert->CommonName);
-				}
 				break;
 			}
 		}
@@ -2895,9 +2718,8 @@ void SiLoadUserCfg(HUB *h, FOLDER *f) {
 	USER *u;
 	USERGROUP *g;
 	// Validate arguments
-	if (h == NULL || f == NULL) {
+	if (h == NULL || f == NULL)
 		return;
-	}
 
 	username = f->Name;
 	CfgGetUniStr(f, "RealName", realname, sizeof(realname));
@@ -2910,9 +2732,8 @@ void SiLoadUserCfg(HUB *h, FOLDER *f) {
 	last_login_time = CfgGetInt64(f, "LastLoginTime");
 	num_login = CfgGetInt(f, "NumLogin");
 	pf = CfgGetFolder(f, "Policy");
-	if (pf != NULL) {
+	if (pf != NULL)
 		SiLoadPolicyCfg(&p, pf);
-	}
 	SiLoadTraffic(f, "Traffic", &t);
 
 	authtype = CfgGetInt(f, "AuthType");
@@ -2928,11 +2749,10 @@ void SiLoadUserCfg(HUB *h, FOLDER *f) {
 		break;
 
 	case AUTHTYPE_NT:
-		if (CfgGetUniStr(f, "AuthNtUserName", tmp, sizeof(tmp))) {
+		if (CfgGetUniStr(f, "AuthNtUserName", tmp, sizeof(tmp)))
 			authdata = NewNTAuthData(tmp);
-		} else {
+		else
 			authdata = NewNTAuthData(NULL);
-		}
 		break;
 
 	case AUTHTYPE_USERCERT:
@@ -2961,23 +2781,20 @@ void SiLoadUserCfg(HUB *h, FOLDER *f) {
 	// Add an user
 	AcLock(h);
 	{
-		if (StrLen(groupname) > 0) {
+		if (StrLen(groupname) > 0)
 			g = AcGetGroup(h, groupname);
-		} else {
+		else
 			g = NULL;
-		}
 
 		u = NewUser(username, realname, note, authtype, authdata);
 		if (u != NULL) {
-			if (g != NULL) {
+			if (g != NULL)
 				JoinUserToGroup(u, g);
-			}
 
 			SetUserTraffic(u, &t);
 
-			if (pf != NULL) {
+			if (pf != NULL)
 				SetUserPolicy(u, &p);
-			}
 
 			Lock(u->lock);
 			{
@@ -2994,23 +2811,20 @@ void SiLoadUserCfg(HUB *h, FOLDER *f) {
 			ReleaseUser(u);
 		}
 
-		if (g != NULL) {
+		if (g != NULL)
 			ReleaseGroup(g);
-		}
 	}
 	AcUnlock(h);
 
-	if (serial != NULL) {
+	if (serial != NULL)
 		FreeXSerial(serial);
-	}
 }
 
 // Write the user list
 void SiWriteUserList(FOLDER *f, LIST *o) {
 	// Validate arguments
-	if (f == NULL || o == NULL) {
+	if (f == NULL || o == NULL)
 		return;
-	}
 
 	LockList(o);
 	{
@@ -3029,9 +2843,8 @@ void SiLoadUserList(HUB *h, FOLDER *f) {
 	UINT i;
 	char *name;
 	// Validate arguments
-	if (f == NULL || h == NULL) {
+	if (f == NULL || h == NULL)
 		return;
-	}
 
 	t = CfgEnumFolderToTokenList(f);
 
@@ -3048,17 +2861,15 @@ void SiLoadUserList(HUB *h, FOLDER *f) {
 // Write the group information
 void SiWriteGroupCfg(FOLDER *f, USERGROUP *g) {
 	// Validate arguments
-	if (f == NULL || g == NULL) {
+	if (f == NULL || g == NULL)
 		return;
-	}
 
 	Lock(g->lock);
 	{
 		CfgAddUniStr(f, "RealName", g->RealName);
 		CfgAddUniStr(f, "Note", g->Note);
-		if (g->Policy != NULL) {
+		if (g->Policy != NULL)
 			SiWritePolicyCfg(CfgCreateFolder(f, "Policy"), g->Policy, false);
-		}
 		SiWriteTraffic(f, "Traffic", g->Traffic);
 	}
 	Unlock(g->lock);
@@ -3074,9 +2885,8 @@ void SiLoadGroupCfg(HUB *h, FOLDER *f) {
 	TRAFFIC t;
 	USERGROUP *g;
 	// Validate arguments
-	if (h == NULL || f == NULL) {
+	if (h == NULL || f == NULL)
 		return;
-	}
 
 	name = f->Name;
 
@@ -3084,20 +2894,17 @@ void SiLoadGroupCfg(HUB *h, FOLDER *f) {
 	CfgGetUniStr(f, "Note", note, sizeof(note));
 
 	pf = CfgGetFolder(f, "Policy");
-	if (pf != NULL) {
+	if (pf != NULL)
 		SiLoadPolicyCfg(&p, pf);
-	}
 
 	SiLoadTraffic(f, "Traffic", &t);
 
 	g = NewGroup(name, realname, note);
-	if (g == NULL) {
+	if (g == NULL)
 		return;
-	}
 
-	if (pf != NULL) {
+	if (pf != NULL)
 		SetGroupPolicy(g, &p);
-	}
 
 	SetGroupTraffic(g, &t);
 
@@ -3113,9 +2920,8 @@ void SiLoadGroupCfg(HUB *h, FOLDER *f) {
 // Write the group list
 void SiWriteGroupList(FOLDER *f, LIST *o) {
 	// Validate arguments
-	if (f == NULL || o == NULL) {
+	if (f == NULL || o == NULL)
 		return;
-	}
 
 	LockList(o);
 	{
@@ -3134,9 +2940,8 @@ void SiLoadGroupList(HUB *h, FOLDER *f) {
 	UINT i;
 	char *name;
 	// Validate arguments
-	if (f == NULL || h == NULL) {
+	if (f == NULL || h == NULL)
 		return;
-	}
 
 	t = CfgEnumFolderToTokenList(f);
 
@@ -3151,9 +2956,8 @@ void SiLoadGroupList(HUB *h, FOLDER *f) {
 // Write the AC list
 void SiWriteAcList(FOLDER *f, LIST *o) {
 	// Validate arguments
-	if (f == NULL || o == NULL) {
+	if (f == NULL || o == NULL)
 		return;
-	}
 
 	LockList(o);
 	{
@@ -3171,9 +2975,8 @@ void SiWriteAcList(FOLDER *f, LIST *o) {
 			CfgAddInt(ff, "Priority", ac->Priority);
 			CfgAddIp(ff, "IpAddress", &ac->IpAddress);
 
-			if (ac->Masked) {
+			if (ac->Masked)
 				CfgAddIp(ff, "NetMask", &ac->SubnetMask);
-			}
 		}
 	}
 	UnlockList(o);
@@ -3182,9 +2985,8 @@ void SiWriteAcList(FOLDER *f, LIST *o) {
 // Read the AC list
 void SiLoadAcList(LIST *o, FOLDER *f) {
 	// Validate arguments
-	if (o == NULL || f == NULL) {
+	if (o == NULL || f == NULL)
 		return;
-	}
 
 	LockList(o);
 	{
@@ -3204,9 +3006,8 @@ void SiLoadAcList(LIST *o, FOLDER *f) {
 					ac.Priority = CfgGetInt(ff, "Priority");
 					CfgGetIp(ff, "IpAddress", &ac.IpAddress);
 
-					if (CfgGetIp(ff, "NetMask", &ac.SubnetMask)) {
+					if (CfgGetIp(ff, "NetMask", &ac.SubnetMask))
 						ac.Masked = true;
-					}
 
 					AddAc(o, &ac);
 				}
@@ -3221,9 +3022,8 @@ void SiLoadAcList(LIST *o, FOLDER *f) {
 // Write the certificate revocation list
 void SiWriteCrlList(FOLDER *f, LIST *o) {
 	// Validate arguments
-	if (f == NULL || o == NULL) {
+	if (f == NULL || o == NULL)
 		return;
-	}
 
 	LockList(o);
 	{
@@ -3239,29 +3039,23 @@ void SiWriteCrlList(FOLDER *f, LIST *o) {
 			ff = CfgCreateFolder(f, name);
 			n = crl->Name;
 
-			if (UniIsEmptyStr(n->CommonName) == false) {
+			if (UniIsEmptyStr(n->CommonName) == false)
 				CfgAddUniStr(ff, "CommonName", n->CommonName);
-			}
 
-			if (UniIsEmptyStr(n->Organization) == false) {
+			if (UniIsEmptyStr(n->Organization) == false)
 				CfgAddUniStr(ff, "Organization", n->Organization);
-			}
 
-			if (UniIsEmptyStr(n->Unit) == false) {
+			if (UniIsEmptyStr(n->Unit) == false)
 				CfgAddUniStr(ff, "Unit", n->Unit);
-			}
 
-			if (UniIsEmptyStr(n->Country) == false) {
+			if (UniIsEmptyStr(n->Country) == false)
 				CfgAddUniStr(ff, "Country", n->Country);
-			}
 
-			if (UniIsEmptyStr(n->State) == false) {
+			if (UniIsEmptyStr(n->State) == false)
 				CfgAddUniStr(ff, "State", n->State);
-			}
 
-			if (UniIsEmptyStr(n->Local) == false) {
+			if (UniIsEmptyStr(n->Local) == false)
 				CfgAddUniStr(ff, "Local", n->Local);
-			}
 
 			if (IsZero(crl->DigestMD5, MD5_SIZE) == false) {
 				char tmp[MAX_SIZE];
@@ -3291,9 +3085,8 @@ void SiWriteCrlList(FOLDER *f, LIST *o) {
 // Read the certificate revocation list
 void SiLoadCrlList(LIST *o, FOLDER *f) {
 	// Validate arguments
-	if (o == NULL || f == NULL) {
+	if (o == NULL || f == NULL)
 		return;
-	}
 
 	LockList(o);
 	{
@@ -3327,9 +3120,8 @@ void SiLoadCrlList(LIST *o, FOLDER *f) {
 					b = StrToBin(tmp);
 
 					if (b != NULL) {
-						if (b->Size >= 1) {
+						if (b->Size >= 1)
 							crl->Serial = NewXSerial(b->Buf, b->Size);
-						}
 
 						FreeBuf(b);
 					}
@@ -3339,9 +3131,8 @@ void SiLoadCrlList(LIST *o, FOLDER *f) {
 					b = StrToBin(tmp);
 
 					if (b != NULL) {
-						if (b->Size == MD5_SIZE) {
+						if (b->Size == MD5_SIZE)
 							Copy(crl->DigestMD5, b->Buf, MD5_SIZE);
-						}
 
 						FreeBuf(b);
 					}
@@ -3351,9 +3142,8 @@ void SiLoadCrlList(LIST *o, FOLDER *f) {
 					b = StrToBin(tmp);
 
 					if (b != NULL) {
-						if (b->Size == SHA1_SIZE) {
+						if (b->Size == SHA1_SIZE)
 							Copy(crl->DigestSHA1, b->Buf, SHA1_SIZE);
-						}
 
 						FreeBuf(b);
 					}
@@ -3371,9 +3161,8 @@ void SiLoadCrlList(LIST *o, FOLDER *f) {
 // Write the certificates list
 void SiWriteCertList(FOLDER *f, LIST *o) {
 	// Validate arguments
-	if (f == NULL || o == NULL) {
+	if (f == NULL || o == NULL)
 		return;
-	}
 
 	LockList(o);
 	{
@@ -3397,9 +3186,8 @@ void SiWriteCertList(FOLDER *f, LIST *o) {
 // Read the certificates list
 void SiLoadCertList(LIST *o, FOLDER *f) {
 	// Validate arguments
-	if (o == NULL || f == NULL) {
+	if (o == NULL || f == NULL)
 		return;
-	}
 
 	LockList(o);
 	{
@@ -3415,9 +3203,8 @@ void SiLoadCertList(LIST *o, FOLDER *f) {
 			b = CfgGetBuf(ff, "X509");
 			if (b != NULL) {
 				X *x = BufToX(b, false);
-				if (x != NULL) {
+				if (x != NULL)
 					Insert(o, x);
-				}
 				FreeBuf(b);
 			}
 		}
@@ -3430,26 +3217,23 @@ void SiLoadCertList(LIST *o, FOLDER *f) {
 // Write the database
 void SiWriteHubDb(FOLDER *f, HUBDB *db, bool no_save_ac_list) {
 	// Validate arguments
-	if (f == NULL || db == NULL) {
+	if (f == NULL || db == NULL)
 		return;
-	}
 
 	SiWriteUserList(CfgCreateFolder(f, "UserList"), db->UserList);
 	SiWriteGroupList(CfgCreateFolder(f, "GroupList"), db->GroupList);
 	SiWriteCertList(CfgCreateFolder(f, "CertList"), db->RootCertList);
 	SiWriteCrlList(CfgCreateFolder(f, "CrlList"), db->CrlList);
 
-	if (no_save_ac_list == false) {
+	if (no_save_ac_list == false)
 		SiWriteAcList(CfgCreateFolder(f, "IPAccessControlList"), db->AcList);
-	}
 }
 
 // Read the database
 void SiLoadHubDb(HUB *h, FOLDER *f) {
 	// Validate arguments
-	if (f == NULL || h == NULL) {
+	if (f == NULL || h == NULL)
 		return;
-	}
 
 	SiLoadGroupList(h, CfgGetFolder(f, "GroupList"));
 	SiLoadUserList(h, CfgGetFolder(f, "UserList"));
@@ -3464,18 +3248,16 @@ void SiLoadHubDb(HUB *h, FOLDER *f) {
 // Write the Virtual HUB setting
 void SiWriteHubCfg(FOLDER *f, HUB *h) {
 	// Validate arguments
-	if (f == NULL || h == NULL) {
+	if (f == NULL || h == NULL)
 		return;
-	}
 
 	// Password
 	CfgAddByte(f, "HashedPassword", h->HashedPassword, sizeof(h->HashedPassword));
 	CfgAddByte(f, "SecurePassword", h->SecurePassword, sizeof(h->SecurePassword));
 
 	// Online / Offline flag
-	if (h->Cedar->Bridge == false) {
+	if (h->Cedar->Bridge == false)
 		CfgAddBool(f, "Online", (h->Offline && (h->HubIsOnlineButHalting == false)) ? false : true);
-	}
 
 	// Traffic information
 	SiWriteTraffic(f, "Traffic", h->Traffic);
@@ -3487,9 +3269,8 @@ void SiWriteHubCfg(FOLDER *f, HUB *h) {
 	{
 		FOLDER *folder = CfgCreateFolder(f, "Message");
 
-		if (IsEmptyUniStr(h->Msg) == false) {
+		if (IsEmptyUniStr(h->Msg) == false)
 			CfgAddUniStr(folder, "MessageText", h->Msg);
-		}
 	}
 
 	// HUB_LOG
@@ -3505,10 +3286,9 @@ void SiWriteHubCfg(FOLDER *f, HUB *h) {
 	SiWriteHubAdminOptions(CfgCreateFolder(f, "AdminOption"), h);
 
 	// Database
-	if (h->Cedar->Bridge == false) {
+	if (h->Cedar->Bridge == false)
 		SiWriteHubDb(CfgCreateFolder(f, "SecurityAccountDatabase"), h->HubDb,
 		             false);
-	}
 
 	// Usage status
 	CfgAddInt64(f, "LastCommTime", h->LastCommTime);
@@ -3520,9 +3300,8 @@ void SiWriteHubCfg(FOLDER *f, HUB *h) {
 // Read the logging options
 void SiLoadHubLogCfg(HUB_LOG *g, FOLDER *f) {
 	// Validate arguments
-	if (f == NULL || g == NULL) {
+	if (f == NULL || g == NULL)
 		return;
-	}
 
 	Zero(g, sizeof(HUB_LOG));
 	g->SaveSecurityLog = CfgGetBool(f, "SaveSecurityLog");
@@ -3546,9 +3325,8 @@ void SiWriteHubLogCfg(FOLDER *f, HUB_LOG *g) {
 }
 void SiWriteHubLogCfgEx(FOLDER *f, HUB_LOG *g, bool el_mode) {
 	// Validate arguments
-	if (f == NULL || g == NULL) {
+	if (f == NULL || g == NULL)
 		return;
-	}
 
 	if (el_mode == false) {
 		CfgAddBool(f, "SaveSecurityLog", g->SaveSecurityLog);
@@ -3575,9 +3353,8 @@ void SiLoadHubCfg(SERVER *s, FOLDER *f, char *name) {
 	HUB_OPTION o;
 	bool online;
 	// Validate arguments
-	if (s == NULL || f == NULL || name == NULL) {
+	if (s == NULL || f == NULL || name == NULL)
 		return;
-	}
 
 	c = s->Cedar;
 
@@ -3590,12 +3367,10 @@ void SiLoadHubCfg(SERVER *s, FOLDER *f, char *name) {
 	if (h != NULL) {
 		HUB_LOG g;
 		// Password
-		if (CfgGetByte(f, "HashedPassword", h->HashedPassword, sizeof(h->HashedPassword)) != sizeof(h->HashedPassword)) {
+		if (CfgGetByte(f, "HashedPassword", h->HashedPassword, sizeof(h->HashedPassword)) != sizeof(h->HashedPassword))
 			Sha0(h->HashedPassword, "", 0);
-		}
-		if (CfgGetByte(f, "SecurePassword", h->SecurePassword, sizeof(h->SecurePassword)) != sizeof(h->SecurePassword)) {
+		if (CfgGetByte(f, "SecurePassword", h->SecurePassword, sizeof(h->SecurePassword)) != sizeof(h->SecurePassword))
 			HashPassword(h->SecurePassword, ADMINISTRATOR_USERNAME, "");
-		}
 
 		// Log Settings
 		Zero(&g, sizeof(g));
@@ -3603,11 +3378,10 @@ void SiLoadHubCfg(SERVER *s, FOLDER *f, char *name) {
 		SetHubLogSetting(h, &g);
 
 		// Online / Offline flag
-		if (h->Cedar->Bridge == false) {
+		if (h->Cedar->Bridge == false)
 			online = CfgGetBool(f, "Online");
-		} else {
+		else
 			online = true;
-		}
 
 		// Traffic information
 		SiLoadTraffic(f, "Traffic", h->Traffic);
@@ -3620,9 +3394,8 @@ void SiLoadHubCfg(SERVER *s, FOLDER *f, char *name) {
 			FOLDER *folder = CfgGetFolder(f, "Message");
 			if (folder != NULL) {
 				wchar_t *tmp = Malloc(sizeof(wchar_t) * (HUB_MAXMSG_LEN + 1));
-				if (CfgGetUniStr(folder, "MessageText", tmp, sizeof(wchar_t) * (HUB_MAXMSG_LEN + 1))) {
+				if (CfgGetUniStr(folder, "MessageText", tmp, sizeof(wchar_t) * (HUB_MAXMSG_LEN + 1)))
 					SetHubMsg(h, tmp);
-				}
 				Free(tmp);
 			}
 		}
@@ -3634,19 +3407,16 @@ void SiLoadHubCfg(SERVER *s, FOLDER *f, char *name) {
 		SiLoadHubAdminOptions(h, CfgGetFolder(f, "AdminOption"));
 
 		// Database
-		if (h->Cedar->Bridge == false) {
+		if (h->Cedar->Bridge == false)
 			SiLoadHubDb(h, CfgGetFolder(f, "SecurityAccountDatabase"));
-		}
 
 		// Usage status
 		h->LastCommTime = CfgGetInt64(f, "LastCommTime");
-		if (h->LastCommTime == 0) {
+		if (h->LastCommTime == 0)
 			h->LastCommTime = SystemTime64();
-		}
 		h->LastLoginTime = CfgGetInt64(f, "LastLoginTime");
-		if (h->LastLoginTime == 0) {
+		if (h->LastLoginTime == 0)
 			h->LastLoginTime = SystemTime64();
-		}
 		h->CreatedTime = CfgGetInt64(f, "CreatedTime");
 		h->NumLogin = CfgGetInt(f, "NumLogin");
 
@@ -3684,9 +3454,8 @@ void SiWriteHubs(FOLDER *f, SERVER *s) {
 	UINT num;
 	HUB **hubs;
 	// Validate arguments
-	if (f == NULL || s == NULL) {
+	if (f == NULL || s == NULL)
 		return;
-	}
 	c = s->Cedar;
 
 	LockList(c->HubList);
@@ -3694,9 +3463,8 @@ void SiWriteHubs(FOLDER *f, SERVER *s) {
 		hubs = ToArray(c->HubList);
 		num = LIST_NUM(c->HubList);
 
-		for (i = 0; i < num; i++) {
+		for (i = 0; i < num; i++)
 			AddRef(hubs[i]->ref);
-		}
 	}
 	UnlockList(c->HubList);
 
@@ -3712,9 +3480,8 @@ void SiWriteHubs(FOLDER *f, SERVER *s) {
 
 		ReleaseHub(h);
 
-		if ((i % 30) == 1) {
+		if ((i % 30) == 1)
 			YieldCpu();
-		}
 	}
 
 	Free(hubs);
@@ -3727,9 +3494,8 @@ void SiLoadHubs(SERVER *s, FOLDER *f) {
 	TOKEN_LIST *t;
 	bool b = false;
 	// Validate arguments
-	if (f == NULL || s == NULL) {
+	if (f == NULL || s == NULL)
 		return;
-	}
 
 	t = CfgEnumFolderToTokenList(f);
 	for (i = 0; i < t->NumTokens; i++) {
@@ -3746,9 +3512,8 @@ void SiLoadHubs(SERVER *s, FOLDER *f) {
 			}
 		}
 		hub_folder = CfgGetFolder(f, name);
-		if (hub_folder != NULL) {
+		if (hub_folder != NULL)
 			SiLoadHubCfg(s, hub_folder, name);
-		}
 	}
 	FreeToken(t);
 
@@ -3769,34 +3534,30 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f) {
 	FOLDER *params_folder;
 	UINT i;
 	// Validate arguments
-	if (s == NULL || f == NULL) {
+	if (s == NULL || f == NULL)
 		return;
-	}
 
 	// Save interval related
 	s->AutoSaveConfigSpan = CfgGetInt(f, "AutoSaveConfigSpan") * 1000;
-	if (s->AutoSaveConfigSpan == 0) {
+	if (s->AutoSaveConfigSpan == 0)
 		s->AutoSaveConfigSpan = SERVER_FILE_SAVE_INTERVAL_DEFAULT;
-	} else {
+	else
 		s->AutoSaveConfigSpan = MAKESURE(s->AutoSaveConfigSpan, SERVER_FILE_SAVE_INTERVAL_MIN, SERVER_FILE_SAVE_INTERVAL_MAX);
-	}
 
 	i = CfgGetInt(f, "MaxConcurrentDnsClientThreads");
-	if (i != 0) {
+	if (i != 0)
 		DnsThreadNumMaxSet(i);
-	} else {
+	else
 		DnsThreadNumMaxSet(DNS_THREAD_DEFAULT_NUM_MAX);
-	}
 
 	s->DontBackupConfig = CfgGetBool(f, "DontBackupConfig");
 
 	CfgGetIp(f, "ListenIP", &s->ListenIP);
 
-	if (CfgIsItem(f, "BackupConfigOnlyWhenModified")) {
+	if (CfgIsItem(f, "BackupConfigOnlyWhenModified"))
 		s->BackupConfigOnlyWhenModified = CfgGetBool(f, "BackupConfigOnlyWhenModified");
-	} else {
+	else
 		s->BackupConfigOnlyWhenModified = true;
-	}
 
 	// Server log switch type
 	if (CfgIsItem(f, "ServerLogSwitchType")) {
@@ -3868,9 +3629,8 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f) {
 
 		// Debug log
 		s->SaveDebugLog = CfgGetBool(f, "SaveDebugLog");
-		if (s->SaveDebugLog) {
+		if (s->SaveDebugLog)
 			s->DebugLog = NewTinyLog();
-		}
 
 		// Let the client not to send a signature
 		s->NoSendSignature = CfgGetBool(f, "NoSendSignature");
@@ -3903,11 +3663,10 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f) {
 			FreeX(x);
 			FreeK(k);
 		} else {
-			if (LIST_NUM(chain) == 0) {
+			if (LIST_NUM(chain) == 0)
 				SetCedarCert(c, x, k);
-			} else {
+			else
 				SetCedarCertAndChain(c, x, k, chain);
-			}
 
 			FreeX(x);
 			FreeK(k);
@@ -3915,9 +3674,8 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f) {
 		}
 
 		// Character which separates the username from the hub name
-		if (CfgGetStr(f, "UsernameHubSeparator", tmp, sizeof(tmp))) {
+		if (CfgGetStr(f, "UsernameHubSeparator", tmp, sizeof(tmp)))
 			c->UsernameHubSeparator = IsPrintableAsciiChar(tmp[0]) ? tmp[0] : DEFAULT_USERNAME_HUB_SEPARATOR;
-		}
 
 		// Cipher Name
 		if (CfgGetStr(f, "CipherName", tmp, sizeof(tmp))) {
@@ -3933,16 +3691,14 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f) {
 		Unlock(c->TrafficLock);
 
 		// Password
-		if (CfgGetByte(f, "HashedPassword", s->HashedPassword, sizeof(s->HashedPassword)) != sizeof(s->HashedPassword)) {
+		if (CfgGetByte(f, "HashedPassword", s->HashedPassword, sizeof(s->HashedPassword)) != sizeof(s->HashedPassword))
 			Sha0(s->HashedPassword, "", 0);
-		}
 
 		// Disable GetHostName when accepting TCP
 		s->DisableGetHostNameWhenAcceptTcp = CfgGetBool(f, "DisableGetHostNameWhenAcceptTcp");
 
-		if (s->DisableGetHostNameWhenAcceptTcp) {
+		if (s->DisableGetHostNameWhenAcceptTcp)
 			DisableGetHostNameWhenAcceptInit();
-		}
 
 		// Disable core dump on UNIX
 		s->DisableCoreDumpOnUnix = CfgGetBool(f, "DisableCoreDumpOnUnix");
@@ -3967,9 +3723,8 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f) {
 
 		// Bits of Diffie-Hellman parameters
 		c->DhParamBits = CfgGetInt(f, "DhParamBits");
-		if (c->DhParamBits == 0) {
+		if (c->DhParamBits == 0)
 			c->DhParamBits = DH_PARAM_BITS_DEFAULT;
-		}
 
 		SetDhParam(DhNewFromBits(c->DhParamBits));
 	}
@@ -4005,9 +3760,8 @@ void SiLoadGlobalParamsCfg(FOLDER *f) {
 // Load global param itesm
 void SiLoadGlobalParamItem(UINT id, UINT value) {
 	// Validate arguments
-	if (id == 0) {
+	if (id == 0)
 		return;
-	}
 
 	vpn_global_parameters[id] = value;
 }
@@ -4015,9 +3769,8 @@ void SiLoadGlobalParamItem(UINT id, UINT value) {
 // Write global params
 void SiWriteGlobalParamsCfg(FOLDER *f) {
 	// Validate arguments
-	if (f == NULL) {
+	if (f == NULL)
 		return;
-	}
 
 	CfgAddInt(f, "MAX_SEND_SOCKET_QUEUE_SIZE", MAX_SEND_SOCKET_QUEUE_SIZE);
 	CfgAddInt(f, "MIN_SEND_SOCKET_QUEUE_SIZE", MIN_SEND_SOCKET_QUEUE_SIZE);
@@ -4047,9 +3800,8 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s) {
 	CEDAR *c;
 	FOLDER *params_folder;
 	// Validate arguments
-	if (f == NULL || s == NULL) {
+	if (f == NULL || s == NULL)
 		return;
-	}
 
 	CfgAddInt(f, "MaxConcurrentDnsClientThreads", DnsThreadNumMax());
 
@@ -4062,17 +3814,15 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s) {
 
 	CfgAddIp(f, "ListenIP", &s->ListenIP);
 
-	if (s->Logger != NULL) {
+	if (s->Logger != NULL)
 		CfgAddInt(f, "ServerLogSwitchType", s->Logger->SwitchType);
-	}
 
 	CfgAddInt64(f, "LoggerMaxLogSize", GetMaxLogSize());
 
 	params_folder = CfgCreateFolder(f, "GlobalParams");
 
-	if (params_folder != NULL) {
+	if (params_folder != NULL)
 		SiWriteGlobalParamsCfg(params_folder);
-	}
 
 	c = s->Cedar;
 
@@ -4113,9 +3863,8 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s) {
 
 
 		// NoLinuxArpFilter
-		if (GetOsInfo()->OsType == OSTYPE_LINUX) {
+		if (GetOsInfo()->OsType == OSTYPE_LINUX)
 			CfgAddBool(f, "NoLinuxArpFilter", s->NoLinuxArpFilter);
-		}
 
 		// NoHighPriorityProcess
 		CfgAddBool(f, "NoHighPriorityProcess", s->NoHighPriorityProcess);
@@ -4194,18 +3943,15 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s) {
 void SiLoadTraffic(FOLDER *parent, char *name, TRAFFIC *t) {
 	FOLDER *f;
 	// Validate arguments
-	if (t != NULL) {
+	if (t != NULL)
 		Zero(t, sizeof(TRAFFIC));
-	}
-	if (parent == NULL || name == NULL || t == NULL) {
+	if (parent == NULL || name == NULL || t == NULL)
 		return;
-	}
 
 	f = CfgGetFolder(parent, name);
 
-	if (f == NULL) {
+	if (f == NULL)
 		return;
-	}
 
 	SiLoadTrafficInner(f, "SendTraffic", &t->Send);
 	SiLoadTrafficInner(f, "RecvTraffic", &t->Recv);
@@ -4213,17 +3959,14 @@ void SiLoadTraffic(FOLDER *parent, char *name, TRAFFIC *t) {
 void SiLoadTrafficInner(FOLDER *parent, char *name, TRAFFIC_ENTRY *e) {
 	FOLDER *f;
 	// Validate arguments
-	if (e != NULL) {
+	if (e != NULL)
 		Zero(e, sizeof(TRAFFIC_ENTRY));
-	}
-	if (parent == NULL || name == NULL || e == NULL) {
+	if (parent == NULL || name == NULL || e == NULL)
 		return;
-	}
 
 	f = CfgGetFolder(parent, name);
-	if (f == NULL) {
+	if (f == NULL)
 		return;
-	}
 
 	e->BroadcastCount = CfgGetInt64(f, "BroadcastCount");
 	e->BroadcastBytes = CfgGetInt64(f, "BroadcastBytes");
@@ -4235,9 +3978,8 @@ void SiLoadTrafficInner(FOLDER *parent, char *name, TRAFFIC_ENTRY *e) {
 void SiWriteTraffic(FOLDER *parent, char *name, TRAFFIC *t) {
 	FOLDER *f;
 	// Validate arguments
-	if (parent == NULL || name == NULL || t == NULL) {
+	if (parent == NULL || name == NULL || t == NULL)
 		return;
-	}
 
 	f = CfgCreateFolder(parent, name);
 
@@ -4247,9 +3989,8 @@ void SiWriteTraffic(FOLDER *parent, char *name, TRAFFIC *t) {
 void SiWriteTrafficInner(FOLDER *parent, char *name, TRAFFIC_ENTRY *e) {
 	FOLDER *f;
 	// Validate arguments
-	if (parent == NULL || name == NULL || e == NULL) {
+	if (parent == NULL || name == NULL || e == NULL)
 		return;
-	}
 
 	f = CfgCreateFolder(parent, name);
 	CfgAddInt64(f, "BroadcastCount", e->BroadcastCount);
@@ -4262,15 +4003,13 @@ void SiWriteTrafficInner(FOLDER *parent, char *name, TRAFFIC_ENTRY *e) {
 void SiSaverThread(THREAD *thread, void *param) {
 	SERVER *s = (SERVER *)param;
 	// Validate arguments
-	if (thread == NULL || param == NULL) {
+	if (thread == NULL || param == NULL)
 		return;
-	}
 
 	while (s->Halt == false) {
 		// Save to the configuration file
-		if (s->NoMoreSave == false) {
+		if (s->NoMoreSave == false)
 			SiWriteConfigurationFile(s);
-		}
 
 		Wait(s->SaveHaltEvent, s->AutoSaveConfigSpan);
 	}
@@ -4280,17 +4019,14 @@ void SiSaverThread(THREAD *thread, void *param) {
 UINT SiWriteConfigurationFile(SERVER *s) {
 	UINT ret;
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return 0;
-	}
 
-	if (s->CfgRw == NULL) {
+	if (s->CfgRw == NULL)
 		return 0;
-	}
 
-	if (s->NoMoreSave) {
+	if (s->NoMoreSave)
 		return 0;
-	}
 
 	Lock(s->SaveCfgLock);
 	{
@@ -4316,9 +4052,8 @@ UINT SiWriteConfigurationFile(SERVER *s) {
 // Release the configuration
 void SiFreeConfiguration(SERVER *s) {
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	// Write to the configuration file
 	SiWriteConfigurationFile(s);
@@ -4344,9 +4079,8 @@ void SiFreeConfiguration(SERVER *s) {
 
 // Initialize the StXxx related function
 void StInit() {
-	if (server_lock != NULL) {
+	if (server_lock != NULL)
 		return;
-	}
 
 	server_lock = NewLock();
 }
@@ -4397,13 +4131,11 @@ void StStopServer() {
 // Thread to restart the server
 void SiRebootServerThread(THREAD *thread, void *param) {
 	// Validate arguments
-	if (thread == NULL) {
+	if (thread == NULL)
 		return;
-	}
 
-	if (server == NULL) {
+	if (server == NULL)
 		return;
-	}
 
 	// Stop the server
 	StStopServer();
@@ -4428,9 +4160,8 @@ void SiRebootServerEx(bool bridge, bool reset_setting) {
 // Stop all listeners
 void SiStopAllListener(SERVER *s) {
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	SiLockListenerList(s);
 	{
@@ -4462,9 +4193,8 @@ void SiCleanupServer(SERVER *s) {
 	HUB **hub_list;
 	UINT num_hub;
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
 	SiFreeDeadLockCheck(s);
 
@@ -4481,9 +4211,8 @@ void SiCleanupServer(SERVER *s) {
 	{
 		listener_list = ToArray(c->ListenerList);
 		num_listener = LIST_NUM(c->ListenerList);
-		for (i = 0; i < num_listener; i++) {
+		for (i = 0; i < num_listener; i++)
 			AddRef(listener_list[i]->ref);
-		}
 	}
 	UnlockList(c->ListenerList);
 
@@ -4500,9 +4229,8 @@ void SiCleanupServer(SERVER *s) {
 	{
 		hub_list = ToArray(c->HubList);
 		num_hub = LIST_NUM(c->HubList);
-		for (i = 0; i < num_hub; i++) {
+		for (i = 0; i < num_hub; i++)
 			AddRef(hub_list[i]->ref);
-		}
 	}
 	UnlockList(c->HubList);
 
@@ -4553,22 +4281,19 @@ void SiCleanupServer(SERVER *s) {
 // Release the server
 void SiReleaseServer(SERVER *s) {
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return;
-	}
 
-	if (Release(s->ref) == 0) {
+	if (Release(s->ref) == 0)
 		SiCleanupServer(s);
-	}
 }
 
 // Get the current version
 void SiGetCurrentRegion(CEDAR *c, char *region, UINT region_size) {
 	ClearStr(region, region_size);
 	// Validate arguments
-	if (c == NULL || region == NULL) {
+	if (c == NULL || region == NULL)
 		return;
-	}
 
 	Lock(c->CurrentRegionLock);
 	{
@@ -4577,11 +4302,10 @@ void SiGetCurrentRegion(CEDAR *c, char *region, UINT region_size) {
 	Unlock(c->CurrentRegionLock);
 
 	if (IsEmptyStr(region)) {
-		if (GetCurrentLangId() == SE_LANG_JAPANESE) {
+		if (GetCurrentLangId() == SE_LANG_JAPANESE)
 			StrCpy(region, region_size, "JP");
-		} else if (GetCurrentLangId() == SE_LANG_CHINESE_ZH) {
+		else if (GetCurrentLangId() == SE_LANG_CHINESE_ZH)
 			StrCpy(region, region_size, "CN");
-		}
 	}
 }
 
@@ -4621,16 +4345,14 @@ bool SiIsEnterpriseFunctionsRestrictedOnOpenSource(CEDAR *c) {
 	char region[128];
 	bool ret = false;
 	// Validate arguments
-	if (c == NULL) {
+	if (c == NULL)
 		return false;
-	}
 
 
 	SiGetCurrentRegion(c, region, sizeof(region));
 
-	if (StrCmpi(region, "JP") == 0 || StrCmpi(region, "CN") == 0) {
+	if (StrCmpi(region, "JP") == 0 || StrCmpi(region, "CN") == 0)
 		ret = true;
-	}
 
 	return ret;
 }
@@ -4639,9 +4361,8 @@ bool SiIsEnterpriseFunctionsRestrictedOnOpenSource(CEDAR *c) {
 void SiUpdateCurrentRegion(CEDAR *c, char *region, bool force_update) {
 	bool changed = false;
 	// Validate arguments
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	if (IsEmptyStr(region) == false) {
 		Lock(c->CurrentRegionLock);
@@ -4654,13 +4375,11 @@ void SiUpdateCurrentRegion(CEDAR *c, char *region, bool force_update) {
 		Unlock(c->CurrentRegionLock);
 	}
 
-	if (force_update) {
+	if (force_update)
 		changed = true;
-	}
 
-	if (changed) {
+	if (changed)
 		FlushServerCaps(c->Server);
-	}
 }
 
 // Create a server
@@ -4699,14 +4418,12 @@ SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_serve
 	s->ServerListenerList = NewList(CompareServerListener);
 	s->StartTime = SystemTime64();
 
-	if (bridge) {
+	if (bridge)
 		SetCedarVpnBridge(s->Cedar);
-	}
 
 #ifdef OS_WIN32
-	if (IsHamMode() == false) {
+	if (IsHamMode() == false)
 		RegistWindowsFirewallAll();
-	}
 #endif
 
 	// Log related
@@ -4731,9 +4448,8 @@ SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_serve
 
 
 	// Raise the priority
-	if (s->NoHighPriorityProcess == false) {
+	if (s->NoHighPriorityProcess == false)
 		OSSetHighPriority();
-	}
 
 	SiInitDeadLockCheck(s);
 

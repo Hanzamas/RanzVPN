@@ -112,9 +112,8 @@ CAPSLIST *ScGetCapsEx(RPC *rpc) {
 	CAPSLIST *t;
 	bool is_bridge = false;
 	// Validate arguments
-	if (rpc == NULL) {
+	if (rpc == NULL)
 		return NULL;
-	}
 
 	Zero(&info, sizeof(info));
 	ScGetServerInfo(rpc, &info);
@@ -153,11 +152,10 @@ CAPSLIST *ScGetCapsEx(RPC *rpc) {
 		AddCapsInt(t, "i_max_mac_tables", 10000);
 		AddCapsInt(t, "i_max_ip_tables", 10000);
 
-		if (is_bridge) {
+		if (is_bridge)
 			AddCapsBool(t, "b_bridge", true);
-		} else {
+		else
 			AddCapsBool(t, "b_standalone", true);
-		}
 
 		AddCapsBool(t, "b_support_config_hub", is_bridge == false);
 
@@ -166,11 +164,10 @@ CAPSLIST *ScGetCapsEx(RPC *rpc) {
 		if (build >= 3600) {
 			RPC_BRIDGE_SUPPORT b;
 			Zero(&b, sizeof(b));
-			if (ScGetBridgeSupport(rpc, &b) == ERR_NO_ERROR) {
+			if (ScGetBridgeSupport(rpc, &b) == ERR_NO_ERROR)
 				AddCapsBool(t, "b_local_bridge", b.IsBridgeSupportedOs);
-			} else {
+			else
 				AddCapsBool(t, "b_local_bridge", false);
-			}
 		} else {
 			AddCapsBool(t, "b_local_bridge", false);
 		}
@@ -194,9 +191,8 @@ CAPSLIST *ScGetCapsEx(RPC *rpc) {
 			for (i = 0; i < names->NumTokens; i++) {
 				char *name = names->Token[i] + 3;
 
-				if (GetCaps(t, name) == NULL) {
+				if (GetCaps(t, name) == NULL)
 					AddCapsBool(t, name, false);
-				}
 			}
 
 			FreeToken(names);
@@ -217,9 +213,8 @@ PACK *AdminDispatch(RPC *rpc, char *name, PACK *p) {
 	CEDAR *cedar = NULL;
 	bool ok = false;
 	// Validate arguments
-	if (rpc == NULL || name == NULL || p == NULL) {
+	if (rpc == NULL || name == NULL || p == NULL)
 		return NULL;
-	}
 
 	ret = NewPack();
 	err = ERR_NO_ERROR;
@@ -233,9 +228,8 @@ PACK *AdminDispatch(RPC *rpc, char *name, PACK *p) {
 
 	server = a->Server;
 
-	if (server == NULL) {
+	if (server == NULL)
 		return NULL;
-	}
 
 	cedar = server->Cedar;
 	Lock(cedar->CedarSuperLock);
@@ -361,13 +355,11 @@ PACK *AdminDispatch(RPC *rpc, char *name, PACK *p) {
 	// RPC function declaration: till here
 
 
-	if (ok == false) {
+	if (ok == false)
 		err = ERR_NOT_SUPPORTED;
-	}
 
-	if (err != ERR_NO_ERROR) {
+	if (err != ERR_NO_ERROR)
 		PackAddInt(ret, "error", err);
-	}
 
 	if (true) {
 		char tmp[MAX_PATH];
@@ -518,9 +510,8 @@ UINT StSetHubMsg(ADMIN *a, RPC_MSG *t) {
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	if (UniStrLen(t->Msg) > HUB_MAXMSG_LEN) {
+	if (UniStrLen(t->Msg) > HUB_MAXMSG_LEN)
 		return ERR_MEMORY_NOT_ENOUGH;
-	}
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
@@ -529,11 +520,10 @@ UINT StSetHubMsg(ADMIN *a, RPC_MSG *t) {
 	if (h == NULL) {
 		ret = ERR_HUB_NOT_FOUND;
 	} else {
-		if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_msg") != 0) {
+		if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_msg") != 0)
 			ret = ERR_NOT_ENOUGH_RIGHT;
-		} else {
+		else
 			SetHubMsg(h, t->Msg);
-		}
 
 		ReleaseHub(h);
 	}
@@ -553,9 +543,8 @@ UINT StGetHubMsg(ADMIN *a, RPC_MSG *t) {
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	if (UniStrLen(t->Msg) > HUB_MAXMSG_LEN) {
+	if (UniStrLen(t->Msg) > HUB_MAXMSG_LEN)
 		return ERR_MEMORY_NOT_ENOUGH;
-	}
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
@@ -588,11 +577,10 @@ UINT StDebug(ADMIN *a, RPC_TEST *t) {
 
 	ret = SiDebug(s, &t2, t->IntValue, t->StrValue);
 
-	if (ret == ERR_NO_ERROR) {
+	if (ret == ERR_NO_ERROR)
 		Copy(t, &t2, sizeof(RPC_TEST));
-	} else {
+	else
 		Zero(t, sizeof(RPC_TEST));
-	}
 
 	return ret;
 }
@@ -692,9 +680,8 @@ UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t) {
 
 	if (
 	    c->Bridge == false) {
-		if (GetGlobalServerFlag(GSF_SHOW_OSS_MSG) != 0) {
+		if (GetGlobalServerFlag(GSF_SHOW_OSS_MSG) != 0)
 			UniStrCat(tmp, tmpsize, _UU("OSS_MSG"));
-		}
 	}
 
 	UniStrCat(tmp, tmpsize, winver_msg_client);
@@ -720,9 +707,8 @@ UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t) {
 		FreeRpcEnumEthVLan(t);
 		Zero(t, sizeof(RPC_ENUM_ETH_VLAN));
 
-		if (EnumEthVLanWin32(t) == false) {
+		if (EnumEthVLanWin32(t) == false)
 			ret = ERR_INTERNAL_ERROR;
-		}
 	}
 #endif // OS_WIN32
 
@@ -738,15 +724,12 @@ UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t) {
 	SERVER_ADMIN_ONLY;
 
 #ifdef OS_WIN32
-	if (GetServerCapsBool(s, "b_support_eth_vlan") == false) {
+	if (GetServerCapsBool(s, "b_support_eth_vlan") == false)
 		ret = ERR_NOT_SUPPORTED;
-	} else if (MsIsAdmin() == false) {
+	else if (MsIsAdmin() == false)
 		ret = ERR_NOT_ENOUGH_RIGHT;
-	} else {
-		if (SetVLanEnableStatus(t->StrValue, MAKEBOOL(t->IntValue)) == false) {
-			ret = ERR_INTERNAL_ERROR;
-		}
-	}
+	else if (SetVLanEnableStatus(t->StrValue, MAKEBOOL(t->IntValue)) == false)
+		ret = ERR_INTERNAL_ERROR;
 #endif // OS_WIN32
 
 	return ret;
@@ -777,9 +760,8 @@ BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PR
 	UINT offset;
 	BUF *buf;
 	// Validate arguments
-	if (r == NULL || filepath == NULL) {
+	if (r == NULL || filepath == NULL)
 		return NULL;
-	}
 
 	offset = 0;
 
@@ -846,9 +828,8 @@ UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t) {
 	char servername[MAX_HOST_NAME_LEN + 1];
 	UINT offset;
 
-	if (IsEmptyStr(t->FilePath)) {
+	if (IsEmptyStr(t->FilePath))
 		return ERR_INVALID_PARAMETER;
-	}
 
 	StrCpy(logfilename, sizeof(logfilename), t->FilePath);
 	offset = t->Offset;
@@ -867,9 +848,8 @@ UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t) {
 
 		FreeRpcEnumLogFile(&elf);
 
-		if (elf_ret != ERR_NO_ERROR) {
+		if (elf_ret != ERR_NO_ERROR)
 			return elf_ret;
-		}
 	}
 	if (CheckLogFileNameFromEnumList(a->LogFileList, logfilename) == false) {
 		// There is no such file in the log file list
@@ -882,9 +862,8 @@ UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t) {
 	// Read a local file
 	SiReadLocalLogFile(s, logfilename, offset, t);
 
-	if (offset == 0) {
+	if (offset == 0)
 		ALog(a, NULL, "LA_READ_LOG_FILE", servername, logfilename);
-	}
 
 	StrCpy(t->FilePath, sizeof(t->FilePath), logfilename);
 	t->Offset = offset;
@@ -904,16 +883,14 @@ UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t) {
 	if (a->ServerAdmin == false) {
 		h = GetHub(c, a->HubName);
 
-		if (a->ServerAdmin == false && GetHubAdminOption(h, "no_read_log_file") != 0) {
+		if (a->ServerAdmin == false && GetHubAdminOption(h, "no_read_log_file") != 0)
 			no_access = true;
-		}
 
 		ReleaseHub(h);
 	}
 
-	if (no_access) {
+	if (no_access)
 		return ERR_NOT_ENOUGH_RIGHT;
-	}
 
 	FreeRpcEnumLogFile(t);
 	Zero(t, sizeof(RPC_ENUM_LOG_FILE));
@@ -922,9 +899,8 @@ UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t) {
 	SiEnumLocalLogFileList(s, a->ServerAdmin ? NULL : a->HubName, t);
 
 	// Cache the last list of log files on RPC session
-	if (a->LogFileList != NULL) {
+	if (a->LogFileList != NULL)
 		FreeEnumLogFile(a->LogFileList);
-	}
 
 	a->LogFileList = NewListFast(CmpLogFile);
 
@@ -993,13 +969,11 @@ UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t) {
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 
-	if (c->Bridge) {
+	if (c->Bridge)
 		return ERR_NOT_SUPPORTED;
-	}
 
-	if (GetGlobalServerFlag(GSF_DISABLE_AC) != 0 && LIST_NUM(t->o) >= 1) {
+	if (GetGlobalServerFlag(GSF_DISABLE_AC) != 0 && LIST_NUM(t->o) >= 1)
 		return ERR_NOT_SUPPORTED_FUNCTION_ON_OPENSOURCE;
-	}
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
@@ -1012,24 +986,22 @@ UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t) {
 	} else {
 		if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_access_control_list") != 0) {
 			ret = ERR_NOT_ENOUGH_RIGHT;
+		} else if (h->HubDb == NULL) {
+			ret = ERR_NOT_SUPPORTED;
 		} else {
-			if (h->HubDb == NULL) {
-				ret = ERR_NOT_SUPPORTED;
-			} else {
-				HUBDB *db = h->HubDb;
+			HUBDB *db = h->HubDb;
 
-				LockList(db->AcList);
+			LockList(db->AcList);
+			{
+				SetAcList(db->AcList, t->o);
+
 				{
-					SetAcList(db->AcList, t->o);
+					ALog(a, h, "LA_SET_AC_LIST", LIST_NUM(t->o));
 
-					{
-						ALog(a, h, "LA_SET_AC_LIST", LIST_NUM(t->o));
-
-						IncrementServerConfigRevision(s);
-					}
+					IncrementServerConfigRevision(s);
 				}
-				UnlockList(db->AcList);
 			}
+			UnlockList(db->AcList);
 		}
 		ReleaseHub(h);
 	}
@@ -1058,28 +1030,26 @@ UINT StSetCrl(ADMIN *a, RPC_CRL *t) {
 	} else {
 		if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_crl_list") != 0) {
 			ret = ERR_NOT_ENOUGH_RIGHT;
+		} else if (h->HubDb == NULL) {
+			ret = ERR_NOT_SUPPORTED;
 		} else {
-			if (h->HubDb == NULL) {
-				ret = ERR_NOT_SUPPORTED;
-			} else {
-				LockList(h->HubDb->CrlList);
-				{
-					CRL *crl = ListKeyToPointer(h->HubDb->CrlList, t->Key);
+			LockList(h->HubDb->CrlList);
+			{
+				CRL *crl = ListKeyToPointer(h->HubDb->CrlList, t->Key);
 
-					if (crl == NULL) {
-						ret = ERR_OBJECT_NOT_FOUND;
-					} else {
-						CRL *new_crl = CopyCrl(t->Crl);
-						if (ReplaceListPointer(h->HubDb->CrlList, crl, new_crl)) {
-							ALog(a, h, "LA_ADD_CRL");
-							FreeCrl(crl);
+				if (crl == NULL) {
+					ret = ERR_OBJECT_NOT_FOUND;
+				} else {
+					CRL *new_crl = CopyCrl(t->Crl);
+					if (ReplaceListPointer(h->HubDb->CrlList, crl, new_crl)) {
+						ALog(a, h, "LA_ADD_CRL");
+						FreeCrl(crl);
 
-							IncrementServerConfigRevision(s);
-						}
+						IncrementServerConfigRevision(s);
 					}
 				}
-				UnlockList(h->HubDb->CrlList);
 			}
+			UnlockList(h->HubDb->CrlList);
 		}
 
 		ReleaseHub(h);
@@ -1119,11 +1089,10 @@ UINT StGetCrl(ADMIN *a, RPC_CRL *t) {
 			{
 				CRL *crl = ListKeyToPointer(h->HubDb->CrlList, t->Key);
 
-				if (crl == NULL) {
+				if (crl == NULL)
 					ret = ERR_OBJECT_NOT_FOUND;
-				} else {
+				else
 					t->Crl = CopyCrl(crl);
-				}
 			}
 			UnlockList(h->HubDb->CrlList);
 		}
@@ -1153,24 +1122,22 @@ UINT StDelCrl(ADMIN *a, RPC_CRL *t) {
 	} else {
 		if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_crl_list") != 0) {
 			ret = ERR_NOT_ENOUGH_RIGHT;
+		} else if (h->HubDb == NULL) {
+			ret = ERR_NOT_SUPPORTED;
 		} else {
-			if (h->HubDb == NULL) {
-				ret = ERR_NOT_SUPPORTED;
-			} else {
-				LockList(h->HubDb->CrlList);
-				{
-					CRL *crl = ListKeyToPointer(h->HubDb->CrlList, t->Key);
+			LockList(h->HubDb->CrlList);
+			{
+				CRL *crl = ListKeyToPointer(h->HubDb->CrlList, t->Key);
 
-					if (crl == NULL) {
-						ret = ERR_OBJECT_NOT_FOUND;
-					} else {
-						ALog(a, h, "LA_DEL_CRL");
-						FreeCrl(crl);
-						Delete(h->HubDb->CrlList, crl);
-					}
+				if (crl == NULL) {
+					ret = ERR_OBJECT_NOT_FOUND;
+				} else {
+					ALog(a, h, "LA_DEL_CRL");
+					FreeCrl(crl);
+					Delete(h->HubDb->CrlList, crl);
 				}
-				UnlockList(h->HubDb->CrlList);
 			}
+			UnlockList(h->HubDb->CrlList);
 		}
 
 		ReleaseHub(h);
@@ -1187,9 +1154,8 @@ UINT StAddCrl(ADMIN *a, RPC_CRL *t) {
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
-	if (c->Bridge) {
+	if (c->Bridge)
 		return ERR_NOT_SUPPORTED;
-	}
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
@@ -1202,24 +1168,22 @@ UINT StAddCrl(ADMIN *a, RPC_CRL *t) {
 	} else {
 		if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_crl_list") != 0) {
 			ret = ERR_NOT_ENOUGH_RIGHT;
+		} else if (h->HubDb == NULL) {
+			ret = ERR_NOT_SUPPORTED;
 		} else {
-			if (h->HubDb == NULL) {
-				ret = ERR_NOT_SUPPORTED;
-			} else {
-				LockList(h->HubDb->CrlList);
-				{
-					if (LIST_NUM(h->HubDb->CrlList) < MAX_HUB_CRLS) {
-						CRL *crl = CopyCrl(t->Crl);
+			LockList(h->HubDb->CrlList);
+			{
+				if (LIST_NUM(h->HubDb->CrlList) < MAX_HUB_CRLS) {
+					CRL *crl = CopyCrl(t->Crl);
 
-						Insert(h->HubDb->CrlList, crl);
+					Insert(h->HubDb->CrlList, crl);
 
-						ALog(a, h, "LA_SET_CRL");
+					ALog(a, h, "LA_SET_CRL");
 
-						IncrementServerConfigRevision(s);
-					}
+					IncrementServerConfigRevision(s);
 				}
-				UnlockList(h->HubDb->CrlList);
 			}
+			UnlockList(h->HubDb->CrlList);
 		}
 
 		ReleaseHub(h);
@@ -1286,16 +1250,14 @@ UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t) {
 
 	bool not_server_admin = false;
 
-	if (t->NumItem > MAX_HUB_ADMIN_OPTIONS) {
+	if (t->NumItem > MAX_HUB_ADMIN_OPTIONS)
 		return ERR_TOO_MANT_ITEMS;
-	}
 
 
 	CHECK_RIGHT;
 
-	if (a->ServerAdmin == false) {
+	if (a->ServerAdmin == false)
 		not_server_admin = true;
-	}
 
 	LockHubList(c);
 	{
@@ -1303,9 +1265,8 @@ UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (GetHubAdminOption(h, "deny_hub_admin_change_ext_option") && not_server_admin) {
 		// Insufficient permission
@@ -1344,9 +1305,8 @@ UINT StGetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	FreeRpcAdminOption(t);
 	Zero(t, sizeof(RPC_ADMIN_OPTION));
@@ -1375,16 +1335,14 @@ UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t) {
 	bool not_server_admin = false;
 
 
-	if (t->NumItem > MAX_HUB_ADMIN_OPTIONS) {
+	if (t->NumItem > MAX_HUB_ADMIN_OPTIONS)
 		return ERR_TOO_MANT_ITEMS;
-	}
 
 	NO_SUPPORT_FOR_BRIDGE;
 	CHECK_RIGHT;
 
-	if (a->ServerAdmin == false) {
+	if (a->ServerAdmin == false)
 		not_server_admin = true;
-	}
 
 	LockHubList(c);
 	{
@@ -1392,9 +1350,8 @@ UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (GetHubAdminOption(h, "allow_hub_admin_change_option") == false && not_server_admin) {
 		// Insufficient permission
@@ -1446,9 +1403,8 @@ UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	FreeRpcAdminOption(t);
 	Zero(t, sizeof(RPC_ADMIN_OPTION));
@@ -1538,9 +1494,8 @@ UINT StSetConfig(ADMIN *a, RPC_CONFIG *t) {
 	SERVER_ADMIN_ONLY;
 
 	s = a->Server;
-	if (s->CfgRw == NULL) {
+	if (s->CfgRw == NULL)
 		return ERR_INTERNAL_ERROR;
-	}
 
 	// Write new configuration file
 	Format(filename, sizeof(filename), "%s.new", s->CfgRw->FileName);
@@ -1600,9 +1555,8 @@ UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t) {
 	SERVER_ADMIN_ONLY;
 
 	o = GetEthList();
-	if (o == NULL) {
+	if (o == NULL)
 		return ERR_NOT_SUPPORTED;
-	}
 
 	FreeRpcEnumEth(t);
 	Zero(t, sizeof(RPC_ENUM_ETH));
@@ -1629,16 +1583,14 @@ UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t) {
 
 // Add a new local bridge
 UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t) {
-	if (IsEmptyStr(t->DeviceName) || IsEmptyStr(t->HubName)) {
+	if (IsEmptyStr(t->DeviceName) || IsEmptyStr(t->HubName))
 		return ERR_INVALID_PARAMETER;
-	}
 
 	SERVER_ADMIN_ONLY;
 
 
-	if (IsEthSupported() == false) {
+	if (IsEthSupported() == false)
 		return ERR_LOCAL_BRIDGE_UNSUPPORTED;
-	}
 
 #ifdef OS_WIN32
 	if (true) {
@@ -1663,17 +1615,15 @@ UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t) {
 
 // Delete a local bridge
 UINT StDeleteLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t) {
-	if (IsEmptyStr(t->DeviceName) || IsEmptyStr(t->HubName)) {
+	if (IsEmptyStr(t->DeviceName) || IsEmptyStr(t->HubName))
 		return ERR_INVALID_PARAMETER;
-	}
 
 	SERVER_ADMIN_ONLY;
 
 	ALog(a, NULL, "LA_DELETE_BRIDGE", t->HubName, t->DeviceName);
 
-	if (DeleteLocalBridge(a->Server->Cedar, t->HubName, t->DeviceName) == false) {
+	if (DeleteLocalBridge(a->Server->Cedar, t->HubName, t->DeviceName) == false)
 		return ERR_OBJECT_NOT_FOUND;
-	}
 
 	IncrementServerConfigRevision(a->Server);
 
@@ -1685,9 +1635,8 @@ UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t) {
 	UINT i;
 	CEDAR *c;
 
-	if (IsEthSupported() == false) {
+	if (IsEthSupported() == false)
 		return ERR_LOCAL_BRIDGE_UNSUPPORTED;
-	}
 
 	FreeRpcEnumLocalBridge(t);
 	Zero(t, sizeof(RPC_ENUM_LOCALBRIDGE));
@@ -1707,11 +1656,10 @@ UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t) {
 				e->Online = e->Active = false;
 			} else {
 				e->Online = true;
-				if (br->Bridge->Active) {
+				if (br->Bridge->Active)
 					e->Active = true;
-				} else {
+				else
 					e->Active = false;
-				}
 			}
 			StrCpy(e->DeviceName, sizeof(e->DeviceName), br->DeviceName);
 			StrCpy(e->HubName, sizeof(e->HubName), br->HubName);
@@ -1730,13 +1678,11 @@ UINT StSetSysLog(ADMIN *a, SYSLOG_SETTING *t) {
 
 	SERVER_ADMIN_ONLY;
 
-	if (GetGlobalServerFlag(GSF_DISABLE_SYSLOG) != 0 && t->SaveType != SYSLOG_NONE) {
+	if (GetGlobalServerFlag(GSF_DISABLE_SYSLOG) != 0 && t->SaveType != SYSLOG_NONE)
 		return ERR_NOT_SUPPORTED_FUNCTION_ON_OPENSOURCE;
-	}
 
-	if (GetServerCapsBool(s, "b_support_syslog") == false) {
+	if (GetServerCapsBool(s, "b_support_syslog") == false)
 		return ERR_NOT_SUPPORTED;
-	}
 
 	SiSetSysLogSetting(s, t);
 
@@ -1781,9 +1727,8 @@ UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_delete_iptable") != 0) {
 		ReleaseHub(h);
@@ -1813,9 +1758,8 @@ UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t) {
 	UINT i;
 	HUB *h = NULL;
 	// Validate arguments
-	if (s == NULL || hubname == NULL || t == NULL) {
+	if (s == NULL || hubname == NULL || t == NULL)
 		return ERR_INTERNAL_ERROR;
-	}
 
 	c = s->Cedar;
 
@@ -1825,9 +1769,8 @@ UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 
@@ -1873,9 +1816,8 @@ UINT StEnumIpTable(ADMIN *a, RPC_ENUM_IP_TABLE *t) {
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 
 	ret = SiEnumIpTable(s, hubname, t);
-	if (ret != ERR_NO_ERROR) {
+	if (ret != ERR_NO_ERROR)
 		return ret;
-	}
 
 	return ret;
 }
@@ -1895,9 +1837,8 @@ UINT StDeleteMacTable(ADMIN *a, RPC_DELETE_TABLE *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_delete_mactable") != 0) {
 		ReleaseHub(h);
@@ -1927,9 +1868,8 @@ UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t) {
 	UINT i;
 	HUB *h = NULL;
 	// Validate arguments
-	if (s == NULL || hubname == NULL || t == NULL) {
+	if (s == NULL || hubname == NULL || t == NULL)
 		return ERR_INTERNAL_ERROR;
-	}
 
 	c = s->Cedar;
 
@@ -1939,9 +1879,8 @@ UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 
@@ -1987,9 +1926,8 @@ UINT StEnumMacTable(ADMIN *a, RPC_ENUM_MAC_TABLE *t) {
 	Zero(t, sizeof(RPC_ENUM_MAC_TABLE));
 
 	ret = SiEnumMacTable(s, hubname, t);
-	if (ret != ERR_NO_ERROR) {
+	if (ret != ERR_NO_ERROR)
 		return ret;
-	}
 
 	return ret;
 }
@@ -2004,9 +1942,8 @@ UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t) {
 	char name[MAX_SESSION_NAME_LEN + 1];
 	SESSION *sess;
 
-	if (IsEmptyStr(t->Name)) {
+	if (IsEmptyStr(t->Name))
 		return ERR_INVALID_PARAMETER;
-	}
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 	StrCpy(name, sizeof(name), t->Name);
@@ -2019,9 +1956,8 @@ UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_disconnect_session") != 0) {
 		ReleaseHub(h);
@@ -2033,19 +1969,17 @@ UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t) {
 	if (sess == NULL) {
 		ret = ERR_OBJECT_NOT_FOUND;
 	} else {
-		if (sess->LinkModeServer) {
+		if (sess->LinkModeServer)
 			ret = ERR_LINK_CANT_DISCONNECT;
-		} else if (sess->BridgeMode) {
+		else if (sess->BridgeMode)
 			ret = ERR_BRIDGE_CANT_DISCONNECT;
-		} else {
+		else
 			StopSession(sess);
-		}
 		ReleaseSession(sess);
 	}
 
-	if (ret != ERR_NO_ERROR) {
+	if (ret != ERR_NO_ERROR)
 		ALog(a, h, "LA_DELETE_SESSION", t->Name);
-	}
 
 	ReleaseHub(h);
 
@@ -2065,9 +1999,8 @@ UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t) {
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 	StrCpy(name, sizeof(name), t->Name);
 
-	if (IsEmptyStr(t->Name)) {
+	if (IsEmptyStr(t->Name))
 		return ERR_INVALID_PARAMETER;
-	}
 
 	CHECK_RIGHT;
 
@@ -2077,9 +2010,8 @@ UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_query_session") != 0) {
 		ReleaseHub(h);
@@ -2108,9 +2040,8 @@ UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t) {
 
 			if (s->Connection != NULL) {
 				t->ClientIp = IPToUINT(&s->Connection->ClientIp);
-				if (IsIP6(&s->Connection->ClientIp)) {
+				if (IsIP6(&s->Connection->ClientIp))
 					Copy(&t->ClientIp6, &s->Connection->ClientIp.address, sizeof(t->ClientIp6));
-				}
 
 				CopyIP(&t->ClientIpAddress, &s->Connection->ClientIp);
 
@@ -2135,9 +2066,8 @@ void SiEnumSessionMain(SERVER *s, RPC_ENUM_SESSION *t) {
 	UINT ret = ERR_NO_ERROR;
 	UINT num;
 	// Validate arguments
-	if (s == NULL || t == NULL) {
+	if (s == NULL || t == NULL)
 		return;
-	}
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
@@ -2165,9 +2095,8 @@ UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_enum_session") != 0) {
 		ReleaseHub(h);
@@ -2201,9 +2130,8 @@ UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	AcLock(h);
 	{
@@ -2226,9 +2154,8 @@ UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t) {
 				UniStrCpy(e->Realname, sizeof(e->Realname), g->RealName);
 				UniStrCpy(e->Note, sizeof(e->Note), g->Note);
 				if (g->Policy != NULL) {
-					if (g->Policy->Access == false) {
+					if (g->Policy->Access == false)
 						e->DenyAccess = true;
-					}
 				}
 			}
 			Unlock(g->lock);
@@ -2243,9 +2170,8 @@ UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t) {
 
 					Lock(u->lock);
 					{
-						if (u->Group == g) {
+						if (u->Group == g)
 							e->NumUsers++;
-						}
 					}
 					Unlock(u->lock);
 				}
@@ -2267,9 +2193,8 @@ UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t) {
 	HUB *h = NULL;
 	UINT ret = ERR_NO_ERROR;
 
-	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false) {
+	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	CHECK_RIGHT;
 
@@ -2280,9 +2205,8 @@ UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_groups") != 0) {
 		ReleaseHub(h);
@@ -2291,15 +2215,13 @@ UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t) {
 
 	AcLock(h);
 	{
-		if (AcDeleteGroup(h, t->Name) == false) {
+		if (AcDeleteGroup(h, t->Name) == false)
 			ret = ERR_OBJECT_NOT_FOUND;
-		}
 	}
 	AcUnlock(h);
 
-	if (ret == ERR_NO_ERROR) {
+	if (ret == ERR_NO_ERROR)
 		ALog(a, h, "LA_DELETE_GROUP", t->Name);
-	}
 
 	ReleaseHub(h);
 
@@ -2316,9 +2238,8 @@ UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t) {
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
-	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false) {
+	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
@@ -2330,9 +2251,8 @@ UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	AcLock(h);
 	{
@@ -2374,9 +2294,8 @@ UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t) {
 	HUB *h = NULL;
 	UINT ret = ERR_NO_ERROR;
 
-	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false) {
+	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
@@ -2386,9 +2305,8 @@ UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_groups") != 0) {
 		ReleaseHub(h);
@@ -2433,9 +2351,8 @@ UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t) {
 	HUB *h = NULL;
 	UINT ret = ERR_NO_ERROR;
 
-	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false) {
+	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	CHECK_RIGHT;
 
@@ -2446,9 +2363,8 @@ UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_groups") != 0) {
 		ReleaseHub(h);
@@ -2464,11 +2380,10 @@ UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t) {
 			SetGroupPolicy(g, t->Policy);
 
 			if ((LIST_NUM(h->HubDb->GroupList) >= GetServerCapsInt(a->Server, "i_max_users_per_hub")) ||
-			    ((GetHubAdminOption(h, "max_groups") != 0) && (LIST_NUM(h->HubDb->GroupList) >= GetHubAdminOption(h, "max_groups")))) {
+			    ((GetHubAdminOption(h, "max_groups") != 0) && (LIST_NUM(h->HubDb->GroupList) >= GetHubAdminOption(h, "max_groups"))))
 				ret = ERR_TOO_MANY_GROUP;
-			} else {
+			else
 				AcAddGroup(h, g);
-			}
 
 			ReleaseGroup(g);
 
@@ -2501,9 +2416,8 @@ UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	FreeRpcEnumUser(t);
 
@@ -2534,9 +2448,8 @@ UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t) {
 				e->LastLoginTime = u->LastLoginTime;
 				e->NumLogin = u->NumLogin;
 
-				if (u->Policy != NULL) {
+				if (u->Policy != NULL)
 					e->DenyAccess = u->Policy->Access ? false : true;
-				}
 
 				Copy(&e->Traffic, u->Traffic, sizeof(TRAFFIC));
 				e->IsTrafficFilled = true;
@@ -2564,9 +2477,8 @@ UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t) {
 	UINT ret = ERR_NO_ERROR;
 
 
-	if (IsEmptyStr(t->Name) || IsUserName(t->Name) == false) {
+	if (IsEmptyStr(t->Name) || IsUserName(t->Name) == false)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
@@ -2576,9 +2488,8 @@ UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_users") != 0) {
 		ReleaseHub(h);
@@ -2589,9 +2500,8 @@ UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t) {
 
 	AcLock(h);
 	{
-		if (AcDeleteUser(h, t->Name) == false) {
+		if (AcDeleteUser(h, t->Name) == false)
 			ret = ERR_OBJECT_NOT_FOUND;
-		}
 	}
 	AcUnlock(h);
 
@@ -2615,9 +2525,8 @@ UINT StGetUser(ADMIN *a, RPC_SET_USER *t) {
 	StrCpy(name, sizeof(name), t->Name);
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
-	if (IsEmptyStr(t->Name) || IsUserName(t->Name) == false) {
+	if (IsEmptyStr(t->Name) || IsUserName(t->Name) == false)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
@@ -2632,9 +2541,8 @@ UINT StGetUser(ADMIN *a, RPC_SET_USER *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	AcLock(h);
 	{
@@ -2655,9 +2563,8 @@ UINT StGetUser(ADMIN *a, RPC_SET_USER *t) {
 				t->AuthData = CopyAuthData(u->AuthData, t->AuthType);
 				t->NumLogin = u->NumLogin;
 				Copy(&t->Traffic, u->Traffic, sizeof(TRAFFIC));
-				if (u->Policy != NULL) {
+				if (u->Policy != NULL)
 					t->Policy = ClonePolicy(u->Policy);
-				}
 			}
 			Unlock(u->lock);
 
@@ -2681,34 +2588,29 @@ UINT StSetUser(ADMIN *a, RPC_SET_USER *t) {
 	USERGROUP *g = NULL;
 
 
-	if (IsEmptyStr(t->Name) || IsUserName(t->Name) == false) {
+	if (IsEmptyStr(t->Name) || IsUserName(t->Name) == false)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	NO_SUPPORT_FOR_BRIDGE;
 	CHECK_RIGHT;
 
 	if (GetGlobalServerFlag(GSF_DISABLE_RADIUS_AUTH) != 0) {
-		if (t->AuthType == AUTHTYPE_USERCERT || t->AuthType == AUTHTYPE_ROOTCERT || t->AuthType == AUTHTYPE_NT) {
+		if (t->AuthType == AUTHTYPE_USERCERT || t->AuthType == AUTHTYPE_ROOTCERT || t->AuthType == AUTHTYPE_NT)
 			return ERR_NOT_SUPPORTED_AUTH_ON_OPENSOURCE;
-		}
 	}
 
 	if (StrCmpi(t->Name, "*") == 0) {
-		if (t->AuthType != AUTHTYPE_NT) {
+		if (t->AuthType != AUTHTYPE_NT)
 			return ERR_INVALID_PARAMETER;
-		}
 	}
 
 	if (t->AuthType == AUTHTYPE_USERCERT) {
 		AUTHUSERCERT *c = t->AuthData;
 		if (c != NULL && c->UserX != NULL &&
-		    c->UserX->is_compatible_bit == false) {
+		    c->UserX->is_compatible_bit == false)
 			return ERR_NOT_RSA_1024;
-		}
-		if (c == NULL || c->UserX == NULL) {
+		if (c == NULL || c->UserX == NULL)
 			return ERR_INVALID_PARAMETER;
-		}
 	}
 
 	LockHubList(c);
@@ -2717,9 +2619,8 @@ UINT StSetUser(ADMIN *a, RPC_SET_USER *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_users") != 0) {
 		ReleaseHub(h);
@@ -2768,9 +2669,8 @@ UINT StSetUser(ADMIN *a, RPC_SET_USER *t) {
 	}
 	AcUnlock(h);
 
-	if (ret == ERR_NO_ERROR) {
+	if (ret == ERR_NO_ERROR)
 		ALog(a, h, "LA_SET_USER", t->Name);
-	}
 
 	ReleaseHub(h);
 
@@ -2787,38 +2687,32 @@ UINT StCreateUser(ADMIN *a, RPC_SET_USER *t) {
 	USERGROUP *g = NULL;
 
 
-	if (IsEmptyStr(t->Name) || IsUserName(t->Name) == false) {
+	if (IsEmptyStr(t->Name) || IsUserName(t->Name) == false)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	NO_SUPPORT_FOR_BRIDGE;
 	CHECK_RIGHT;
 
 	if (GetGlobalServerFlag(GSF_DISABLE_RADIUS_AUTH) != 0) {
-		if (t->AuthType == AUTHTYPE_USERCERT || t->AuthType == AUTHTYPE_ROOTCERT || t->AuthType == AUTHTYPE_NT) {
+		if (t->AuthType == AUTHTYPE_USERCERT || t->AuthType == AUTHTYPE_ROOTCERT || t->AuthType == AUTHTYPE_NT)
 			return ERR_NOT_SUPPORTED_AUTH_ON_OPENSOURCE;
-		}
 	}
 
 	if (t->AuthType == AUTHTYPE_USERCERT) {
 		AUTHUSERCERT *c = t->AuthData;
 		if (c != NULL && c->UserX != NULL &&
-		    c->UserX->is_compatible_bit == false) {
+		    c->UserX->is_compatible_bit == false)
 			return ERR_NOT_RSA_1024;
-		}
-		if (c == NULL || c->UserX == NULL) {
+		if (c == NULL || c->UserX == NULL)
 			return ERR_INVALID_PARAMETER;
-		}
 	}
 
-	if (IsUserName(t->Name) == false) {
+	if (IsUserName(t->Name) == false)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	if (StrCmpi(t->Name, "*") == 0) {
-		if (t->AuthType != AUTHTYPE_NT) {
+		if (t->AuthType != AUTHTYPE_NT)
 			return ERR_INVALID_PARAMETER;
-		}
 	}
 
 	LockHubList(c);
@@ -2827,9 +2721,8 @@ UINT StCreateUser(ADMIN *a, RPC_SET_USER *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_users") != 0) {
 		ReleaseHub(h);
@@ -2859,9 +2752,8 @@ UINT StCreateUser(ADMIN *a, RPC_SET_USER *t) {
 		} else {
 			if (StrLen(t->GroupName) != 0) {
 				g = AcGetGroup(h, t->GroupName);
-				if (g == NULL) {
+				if (g == NULL)
 					ret = ERR_GROUP_NOT_FOUND;
-				}
 			}
 
 			if (ret != ERR_GROUP_NOT_FOUND) {
@@ -2902,9 +2794,8 @@ UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 	FreeRpcEnumAccessList(t);
@@ -2947,9 +2838,8 @@ UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_access_list") != 0) {
 		ReleaseHub(h);
@@ -3001,9 +2891,8 @@ UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t) {
 	NO_SUPPORT_FOR_BRIDGE;
 	CHECK_RIGHT;
 
-	if (t->NumAccess > GetServerCapsInt(a->Server, "i_max_access_lists")) {
+	if (t->NumAccess > GetServerCapsInt(a->Server, "i_max_access_lists"))
 		return ERR_TOO_MANY_ACCESS_LIST;
-	}
 
 	LockHubList(c);
 	{
@@ -3011,9 +2900,8 @@ UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	no_jitter = GetHubAdminOption(h, "no_delay_jitter_packet_loss");
 	no_include = GetHubAdminOption(h, "no_access_list_include_file");
@@ -3045,25 +2933,21 @@ UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t) {
 		for (i = 0; i < t->NumAccess; ++i) {
 			ACCESS *a = &t->Accesses[i];
 
-			if (no_jitter) {
+			if (no_jitter)
 				a->Jitter = a->Loss = a->Delay = 0;
-			}
 
 			if (no_include) {
 				if (StartWith(a->SrcUsername, ACCESS_LIST_INCLUDED_PREFIX) ||
-				    StartWith(a->SrcUsername, ACCESS_LIST_EXCLUDED_PREFIX)) {
+				    StartWith(a->SrcUsername, ACCESS_LIST_EXCLUDED_PREFIX))
 					ClearStr(a->SrcUsername, sizeof(a->SrcUsername));
-				}
 
 				if (StartWith(a->DestUsername, ACCESS_LIST_INCLUDED_PREFIX) ||
-				    StartWith(a->DestUsername, ACCESS_LIST_EXCLUDED_PREFIX)) {
+				    StartWith(a->DestUsername, ACCESS_LIST_EXCLUDED_PREFIX))
 					ClearStr(a->DestUsername, sizeof(a->DestUsername));
-				}
 			}
 
-			if (i == (t->NumAccess - 1)) {
+			if (i == (t->NumAccess - 1))
 				Sort(h->AccessList);
-			}
 
 			AddAccessListEx(h, a, ((i != (t->NumAccess - 1)) ? true : false), ((i != (t->NumAccess - 1)) ? true : false));
 		}
@@ -3096,9 +2980,8 @@ UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	no_jitter = GetHubAdminOption(h, "no_delay_jitter_packet_loss");
 	no_include = GetHubAdminOption(h, "no_access_list_include_file");
@@ -3116,20 +2999,17 @@ UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t) {
 
 	ALog(a, h, "LA_ADD_ACCESS");
 
-	if (no_jitter) {
+	if (no_jitter)
 		t->Access.Jitter = t->Access.Delay = t->Access.Loss = 0;
-	}
 
 	if (no_include) {
 		if (StartWith(t->Access.SrcUsername, ACCESS_LIST_INCLUDED_PREFIX) ||
-		    StartWith(t->Access.SrcUsername, ACCESS_LIST_EXCLUDED_PREFIX)) {
+		    StartWith(t->Access.SrcUsername, ACCESS_LIST_EXCLUDED_PREFIX))
 			ClearStr(t->Access.SrcUsername, sizeof(t->Access.SrcUsername));
-		}
 
 		if (StartWith(t->Access.DestUsername, ACCESS_LIST_INCLUDED_PREFIX) ||
-		    StartWith(t->Access.DestUsername, ACCESS_LIST_EXCLUDED_PREFIX)) {
+		    StartWith(t->Access.DestUsername, ACCESS_LIST_EXCLUDED_PREFIX))
 			ClearStr(t->Access.DestUsername, sizeof(t->Access.DestUsername));
-		}
 	}
 
 	AddAccessList(h, &t->Access);
@@ -3151,9 +3031,8 @@ UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t) {
 	LINK *k;
 	bool exists = false;
 
-	if (UniIsEmptyStr(t->OldAccountName) || UniIsEmptyStr(t->NewAccountName)) {
+	if (UniIsEmptyStr(t->OldAccountName) || UniIsEmptyStr(t->NewAccountName))
 		return ERR_INVALID_PARAMETER;
-	}
 
 	CHECK_RIGHT;
 
@@ -3164,9 +3043,8 @@ UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t) {
 
 	h = GetHub(c, t->HubName);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_cascade") != 0) {
 		ReleaseHub(h);
@@ -3189,9 +3067,8 @@ UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t) {
 			}
 			Unlock(kk->lock);
 
-			if (k != NULL) {
+			if (k != NULL)
 				break;
-			}
 		}
 
 		exists = false;
@@ -3249,9 +3126,8 @@ UINT StDeleteLink(ADMIN *a, RPC_LINK *t) {
 	wchar_t accountname[MAX_ACCOUNT_NAME_LEN + 1];
 	LINK *k;
 
-	if (UniIsEmptyStr(t->AccountName)) {
+	if (UniIsEmptyStr(t->AccountName))
 		return ERR_INVALID_PARAMETER;
-	}
 
 	CHECK_RIGHT;
 
@@ -3261,9 +3137,8 @@ UINT StDeleteLink(ADMIN *a, RPC_LINK *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_cascade") != 0) {
 		ReleaseHub(h);
@@ -3288,9 +3163,8 @@ UINT StDeleteLink(ADMIN *a, RPC_LINK *t) {
 			}
 			Unlock(kk->lock);
 
-			if (k != NULL) {
+			if (k != NULL)
 				break;
-			}
 		}
 	}
 	UnlockList(h->LinkList);
@@ -3330,9 +3204,8 @@ UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t) {
 	LINK *k;
 
 
-	if (UniIsEmptyStr(t->AccountName)) {
+	if (UniIsEmptyStr(t->AccountName))
 		return ERR_INVALID_PARAMETER;
-	}
 
 	CHECK_RIGHT;
 
@@ -3342,9 +3215,8 @@ UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_cascade") != 0) {
 		ReleaseHub(h);
@@ -3369,9 +3241,8 @@ UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t) {
 			}
 			Unlock(kk->lock);
 
-			if (k != NULL) {
+			if (k != NULL)
 				break;
-			}
 		}
 	}
 	UnlockList(h->LinkList);
@@ -3407,9 +3278,8 @@ UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t) {
 	LINK *k;
 
 
-	if (UniIsEmptyStr(t->AccountName)) {
+	if (UniIsEmptyStr(t->AccountName))
 		return ERR_INVALID_PARAMETER;
-	}
 
 	CHECK_RIGHT;
 
@@ -3419,9 +3289,8 @@ UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_cascade") != 0) {
 		ReleaseHub(h);
@@ -3446,9 +3315,8 @@ UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t) {
 			}
 			Unlock(kk->lock);
 
-			if (k != NULL) {
+			if (k != NULL)
 				break;
-			}
 		}
 	}
 	UnlockList(h->LinkList);
@@ -3484,9 +3352,8 @@ UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t) {
 	LINK *k;
 	SESSION *sess;
 
-	if (UniIsEmptyStr(t->AccountName)) {
+	if (UniIsEmptyStr(t->AccountName))
 		return ERR_INVALID_PARAMETER;
-	}
 
 	CHECK_RIGHT;
 
@@ -3496,9 +3363,8 @@ UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 	UniStrCpy(accountname, sizeof(accountname), t->AccountName);
@@ -3523,9 +3389,8 @@ UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t) {
 			}
 			Unlock(kk->lock);
 
-			if (k != NULL) {
+			if (k != NULL)
 				break;
-			}
 		}
 	}
 	UnlockList(h->LinkList);
@@ -3541,17 +3406,15 @@ UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t) {
 	Lock(k->lock);
 	{
 		sess = k->ClientSession;
-		if (sess != NULL) {
+		if (sess != NULL)
 			AddRef(sess->ref);
-		}
 	}
 	Unlock(k->lock);
 
-	if (sess != NULL && k->Offline == false) {
+	if (sess != NULL && k->Offline == false)
 		CiGetSessionStatus(&t->Status, sess);
-	} else {
+	else
 		ret = ERR_LINK_IS_OFFLINE;
-	}
 	ReleaseSession(sess);
 
 	ReleaseLink(k);
@@ -3576,9 +3439,8 @@ UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 	FreeRpcEnumLink(t);
@@ -3637,9 +3499,8 @@ UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	k = NULL;
 
@@ -3657,9 +3518,8 @@ UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t) {
 			}
 			Unlock(kk->lock);
 
-			if (k != NULL) {
+			if (k != NULL)
 				break;
-			}
 		}
 	}
 	UnlockList(h->LinkList);
@@ -3714,9 +3574,8 @@ UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_cascade") != 0) {
 		ReleaseHub(h);
@@ -3739,9 +3598,8 @@ UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t) {
 			}
 			Unlock(kk->lock);
 
-			if (k != NULL) {
+			if (k != NULL)
 				break;
-			}
 		}
 	}
 	UnlockList(h->LinkList);
@@ -3770,11 +3628,10 @@ UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t) {
 		CiFreeClientAuth(k->Auth);
 		k->Auth = CopyClientAuth(t->ClientAuth);
 
-		if (t->Policy.Ver3 == false) {
+		if (t->Policy.Ver3 == false)
 			Copy(k->Policy, &t->Policy, policy_item[NUM_POLICY_ITEM_FOR_VER2].Offset);
-		} else {
+		else
 			Copy(k->Policy, &t->Policy, sizeof(POLICY));
-		}
 
 		k->Option->RequireBridgeRoutingMode = true; // Enable Bridge / Routing mode
 		k->Option->RequireMonitorMode = false;      // Disable monitor mode
@@ -3811,9 +3668,8 @@ UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_cascade") != 0) {
 		ReleaseHub(h);
@@ -3836,9 +3692,8 @@ UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t) {
 			}
 			Unlock(kk->lock);
 
-			if (k != NULL) {
+			if (k != NULL)
 				break;
-			}
 		}
 	}
 	UnlockList(h->LinkList);
@@ -3894,9 +3749,8 @@ UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_cert_list") != 0) {
 		ReleaseHub(h);
@@ -3951,9 +3805,8 @@ UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	LockList(h->HubDb->RootCertList);
 	{
@@ -3996,9 +3849,8 @@ UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	Zero(t, sizeof(RPC_HUB_ENUM_CA));
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
@@ -4033,13 +3885,11 @@ UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t) {
 	CEDAR *c = s->Cedar;
 	HUB *h;
 
-	if (c->Bridge) {
+	if (c->Bridge)
 		return ERR_NOT_SUPPORTED;
-	}
 
-	if (t->Cert == NULL) {
+	if (t->Cert == NULL)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	CHECK_RIGHT;
 
@@ -4049,9 +3899,8 @@ UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_cert_list") != 0) {
 		ReleaseHub(h);
@@ -4083,9 +3932,8 @@ UINT StGetHubLog(ADMIN *a, RPC_HUB_LOG *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	GetHubLogSetting(h, &t->LogSetting);
 
@@ -4109,9 +3957,8 @@ UINT StSetHubLog(ADMIN *a, RPC_HUB_LOG *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_log_config") != 0) {
 		ReleaseHub(h);
@@ -4144,9 +3991,8 @@ UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	Zero(t, sizeof(RPC_HUB_STATUS));
 
@@ -4202,9 +4048,8 @@ UINT StSetHubOnline(ADMIN *a, RPC_SET_HUB_ONLINE *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	if (a->ServerAdmin == false && t->Online && GetHubAdminOption(h, "no_online") != 0) {
 		ReleaseHub(h);
@@ -4238,9 +4083,8 @@ UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t) {
 	CONNECTION *connection;
 	char name[MAX_CONNECTION_NAME_LEN + 1];
 
-	if (IsEmptyStr(t->Name)) {
+	if (IsEmptyStr(t->Name))
 		return ERR_INVALID_PARAMETER;
-	}
 
 	SERVER_ADMIN_ONLY;
 
@@ -4253,15 +4097,13 @@ UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t) {
 
 		connection = Search(c->ConnectionList, &tt);
 
-		if (connection != NULL) {
+		if (connection != NULL)
 			AddRef(connection->ref);
-		}
 	}
 	UnlockList(c->ConnectionList);
 
-	if (connection == NULL) {
+	if (connection == NULL)
 		return ERR_OBJECT_NOT_FOUND;
-	}
 
 	Zero(t, sizeof(RPC_CONNECTION_INFO));
 	StrCpy(t->Name, sizeof(t->Name), name);
@@ -4300,9 +4142,8 @@ UINT StDisconnectConnection(ADMIN *a, RPC_DISCONNECT_CONNECTION *t) {
 	CEDAR *c = s->Cedar;
 	CONNECTION *connection;
 
-	if (IsEmptyStr(t->Name)) {
+	if (IsEmptyStr(t->Name))
 		return ERR_INVALID_PARAMETER;
-	}
 
 	SERVER_ADMIN_ONLY;
 
@@ -4313,15 +4154,13 @@ UINT StDisconnectConnection(ADMIN *a, RPC_DISCONNECT_CONNECTION *t) {
 		tt.Name = t->Name;
 
 		connection = Search(c->ConnectionList, &tt);
-		if (connection != NULL) {
+		if (connection != NULL)
 			AddRef(connection->ref);
-		}
 	}
 	UnlockList(c->ConnectionList);
 
-	if (connection == NULL) {
+	if (connection == NULL)
 		return ERR_OBJECT_NOT_FOUND;
-	}
 
 	StopConnection(connection, true);
 
@@ -4381,9 +4220,8 @@ UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t) {
 	HUB *h = NULL;
 
 
-	if (IsEmptyStr(t->HubName) || IsSafeStr(t->HubName) == false) {
+	if (IsEmptyStr(t->HubName) || IsSafeStr(t->HubName) == false)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	NO_SUPPORT_FOR_BRIDGE;
 
@@ -4395,9 +4233,8 @@ UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	StopHub(h);
 
@@ -4518,9 +4355,8 @@ UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t) {
 	UINT ret = ERR_NO_ERROR;
 	HUB *h;
 
-	if (IsEmptyStr(t->HubName) || IsSafeStr(t->HubName) == false) {
+	if (IsEmptyStr(t->HubName) || IsSafeStr(t->HubName) == false)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	NO_SUPPORT_FOR_BRIDGE;
 	CHECK_RIGHT;
@@ -4533,9 +4369,8 @@ UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t) {
 
 	Zero(t, sizeof(RPC_CREATE_HUB));
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	Lock(h->lock);
 	{
@@ -4558,9 +4393,8 @@ UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t) {
 	HUB *h;
 	UINT ret = ERR_NO_ERROR;
 
-	if (IsEmptyStr(t->HubName) || IsSafeStr(t->HubName) == false) {
+	if (IsEmptyStr(t->HubName) || IsSafeStr(t->HubName) == false)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
@@ -4571,9 +4405,8 @@ UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t) {
 	}
 	UnlockHubList(c);
 
-	if (h == NULL) {
+	if (h == NULL)
 		return ERR_HUB_NOT_FOUND;
-	}
 
 	// For JSON-RPC
 	if (StrLen(t->AdminPasswordPlainText) != 0) {
@@ -4618,13 +4451,11 @@ UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t) {
 	Unlock(h->lock);
 
 	if (t->Online) {
-		if (a->ServerAdmin || GetHubAdminOption(h, "no_online") == 0) {
+		if (a->ServerAdmin || GetHubAdminOption(h, "no_online") == 0)
 			SetHubOnline(h);
-		}
 	} else {
-		if (a->ServerAdmin || GetHubAdminOption(h, "no_offline") == 0) {
+		if (a->ServerAdmin || GetHubAdminOption(h, "no_offline") == 0)
 			SetHubOffline(h);
-		}
 	}
 
 	IncrementServerConfigRevision(s);
@@ -4645,21 +4476,18 @@ UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t) {
 	UINT current_hub_num;
 	bool b;
 
-	if (IsEmptyStr(t->HubName) || IsSafeStr(t->HubName) == false) {
+	if (IsEmptyStr(t->HubName) || IsSafeStr(t->HubName) == false)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	NO_SUPPORT_FOR_BRIDGE;
 
 	SERVER_ADMIN_ONLY;
 
 	Trim(t->HubName);
-	if (StrLen(t->HubName) == 0) {
+	if (StrLen(t->HubName) == 0)
 		return ERR_INVALID_PARAMETER;
-	}
-	if (StartWith(t->HubName, ".") || EndWith(t->HubName, ".")) {
+	if (StartWith(t->HubName, ".") || EndWith(t->HubName, "."))
 		return ERR_INVALID_PARAMETER;
-	}
 
 	// Create a hub object
 	Zero(&o, sizeof(o));
@@ -4675,9 +4503,8 @@ UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t) {
 	}
 	UnlockList(c->HubList);
 
-	if (current_hub_num > GetServerCapsInt(a->Server, "i_max_hubs")) {
+	if (current_hub_num > GetServerCapsInt(a->Server, "i_max_hubs"))
 		return ERR_TOO_MANY_HUBS;
-	}
 
 	LockList(c->HubList);
 	{
@@ -4685,9 +4512,8 @@ UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t) {
 	}
 	UnlockList(c->HubList);
 
-	if (b) {
+	if (b)
 		return ERR_HUB_ALREADY_EXISTS;
-	}
 
 	ALog(a, NULL, "LA_CREATE_HUB", t->HubName);
 
@@ -4727,9 +4553,8 @@ UINT StSetServerCipher(ADMIN *a, RPC_STR *t) {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 
-	if (IsEmptyStr(t->String)) {
+	if (IsEmptyStr(t->String))
 		return ERR_INVALID_PARAMETER;
-	}
 
 	SERVER_ADMIN_ONLY;
 
@@ -4814,9 +4639,8 @@ UINT StGetServerCert(ADMIN *a, RPC_KEY_PAIR *t) {
 	{
 
 		t->Cert = CloneX(c->ServerX);
-		if (admin) {
+		if (admin)
 			t->Key = CloneK(c->ServerK);
-		}
 	}
 	Unlock(c->lock);
 
@@ -4830,19 +4654,16 @@ UINT StSetServerCert(ADMIN *a, RPC_KEY_PAIR *t) {
 
 	SERVER_ADMIN_ONLY;
 
-	if (t->Cert == NULL || t->Key == NULL) {
+	if (t->Cert == NULL || t->Key == NULL)
 		return ERR_PROTOCOL_ERROR;
-	}
 
-	if (CheckXandK(t->Cert, t->Key) == false) {
+	if (CheckXandK(t->Cert, t->Key) == false)
 		return ERR_PROTOCOL_ERROR;
-	}
 
 	t->Flag1 = 1;
 	if (t->Cert->root_cert == false) {
-		if (DownloadAndSaveIntermediateCertificatesIfNecessary(t->Cert) == false) {
+		if (DownloadAndSaveIntermediateCertificatesIfNecessary(t->Cert) == false)
 			t->Flag1 = 0;
-		}
 	}
 
 	SetCedarCertAndChain(c, t->Cert, t->Key, t->Chain);
@@ -4881,19 +4702,15 @@ UINT StEnableListener(ADMIN *a, RPC_LISTENER *t) {
 
 	LockList(a->Server->ServerListenerList);
 	{
-		if (t->Enable) {
-			if (SiEnableListener(a->Server, t->Port) == false) {
+		if (t->Enable)
+			if (SiEnableListener(a->Server, t->Port) == false)
 				ret = ERR_LISTENER_NOT_FOUND;
-			} else {
+			else
 				ALog(a, NULL, "LA_ENABLE_LISTENER", t->Port);
-			}
-		} else {
-			if (SiDisableListener(a->Server, t->Port) == false) {
-				ret = ERR_LISTENER_NOT_FOUND;
-			} else {
-				ALog(a, NULL, "LA_DISABLE_LISTENER", t->Port);
-			}
-		}
+		else if (SiDisableListener(a->Server, t->Port) == false)
+			ret = ERR_LISTENER_NOT_FOUND;
+		else
+			ALog(a, NULL, "LA_DISABLE_LISTENER", t->Port);
 	}
 	UnlockList(a->Server->ServerListenerList);
 
@@ -4947,9 +4764,8 @@ UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t) {
 			t->Ports[i] = o->Port;
 			t->Enables[i] = o->Enabled;
 			if (t->Enables[i]) {
-				if (o->Listener->Status == LISTENER_STATUS_TRYING) {
+				if (o->Listener->Status == LISTENER_STATUS_TRYING)
 					t->Errors[i] = true;
-				}
 			}
 		}
 	}
@@ -4963,9 +4779,8 @@ UINT StCreateListener(ADMIN *a, RPC_LISTENER *t) {
 	UINT ret = ERR_NO_ERROR;
 	CEDAR *c = a->Server->Cedar;
 
-	if (t->Port == 0 || t->Port > 65535) {
+	if (t->Port == 0 || t->Port > 65535)
 		return ERR_INVALID_PARAMETER;
-	}
 
 	SERVER_ADMIN_ONLY;
 
@@ -5062,9 +4877,8 @@ UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t) {
 	OS_INFO *info;
 	SYSTEMTIME st;
 	// Validate arguments
-	if (a == NULL || t == NULL) {
+	if (a == NULL || t == NULL)
 		return ERR_INTERNAL_ERROR;
-	}
 
 	FreeRpcServerInfo(t);
 	Zero(t, sizeof(RPC_SERVER_INFO));
@@ -5090,9 +4904,8 @@ UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t) {
 	t->ServerBuildDate = SystemToUINT64(&st);
 
 	info = GetOsInfo();
-	if (info != NULL) {
+	if (info != NULL)
 		CopyOsInfo(&t->OsInfo, info);
-	}
 
 	return ERR_NO_ERROR;
 }
@@ -5100,9 +4913,8 @@ UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t) {
 // Copy OS_INFO
 void CopyOsInfo(OS_INFO *dst, OS_INFO *info) {
 	// Validate arguments
-	if (info == NULL || dst == NULL) {
+	if (info == NULL || dst == NULL)
 		return;
-	}
 
 	dst->OsType = info->OsType;
 	dst->OsServicePack = info->OsServicePack;
@@ -5117,9 +4929,8 @@ void CopyOsInfo(OS_INFO *dst, OS_INFO *info) {
 // RPC_WINVER
 void InRpcWinVer(RPC_WINVER *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_WINVER));
 
@@ -5135,9 +4946,8 @@ void InRpcWinVer(RPC_WINVER *t, PACK *p) {
 }
 void OutRpcWinVer(PACK *p, RPC_WINVER *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddBool(p, "V_IsWindows", t->IsWindows);
 	PackAddBool(p, "V_IsNT", t->IsNT);
@@ -5155,9 +4965,8 @@ void InRpcMsg(RPC_MSG *t, PACK *p) {
 	UINT size;
 	char *utf8;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_MSG));
 
@@ -5172,9 +4981,8 @@ void OutRpcMsg(PACK *p, RPC_MSG *t) {
 	UINT size;
 	char *utf8;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 	utf8 = CopyUniToUtf(t->Msg);
@@ -5184,9 +4992,8 @@ void OutRpcMsg(PACK *p, RPC_MSG *t) {
 }
 void FreeRpcMsg(RPC_MSG *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->Msg);
 }
@@ -5195,9 +5002,8 @@ void FreeRpcMsg(RPC_MSG *t) {
 void InRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t, PACK *p) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_ENUM_ETH_VLAN));
 
@@ -5219,9 +5025,8 @@ void InRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t, PACK *p) {
 void OutRpcEnumEthVLan(PACK *p, RPC_ENUM_ETH_VLAN *t) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	for (i = 0; i < t->NumItem; i++) {
 		RPC_ENUM_ETH_VLAN_ITEM *e = &t->Items[i];
@@ -5237,9 +5042,8 @@ void OutRpcEnumEthVLan(PACK *p, RPC_ENUM_ETH_VLAN *t) {
 }
 void FreeRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->Items);
 }
@@ -5248,9 +5052,8 @@ void FreeRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t) {
 void InRpcEnumLogFile(RPC_ENUM_LOG_FILE *t, PACK *p) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_ENUM_LOG_FILE));
 	t->NumItem = PackGetInt(p, "NumItem");
@@ -5267,9 +5070,8 @@ void InRpcEnumLogFile(RPC_ENUM_LOG_FILE *t, PACK *p) {
 void OutRpcEnumLogFile(PACK *p, RPC_ENUM_LOG_FILE *t) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddInt(p, "NumItem", t->NumItem);
 
@@ -5283,18 +5085,16 @@ void OutRpcEnumLogFile(PACK *p, RPC_ENUM_LOG_FILE *t) {
 }
 void FreeRpcEnumLogFile(RPC_ENUM_LOG_FILE *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->Items);
 }
 // RPC_READ_LOG_FILE
 void InRpcReadLogFile(RPC_READ_LOG_FILE *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_READ_LOG_FILE));
 	PackGetStr(p, "FilePath", t->FilePath, sizeof(t->FilePath));
@@ -5304,26 +5104,22 @@ void InRpcReadLogFile(RPC_READ_LOG_FILE *t, PACK *p) {
 }
 void OutRpcReadLogFile(PACK *p, RPC_READ_LOG_FILE *t) {
 	// Validate arguments
-	if (p == NULL || t == NULL) {
+	if (p == NULL || t == NULL)
 		return;
-	}
 
 	PackAddStr(p, "FilePath", t->FilePath);
 	PackAddInt(p, "Offset", t->Offset);
 
-	if (t->Buffer != NULL) {
+	if (t->Buffer != NULL)
 		PackAddBuf(p, "Buffer", t->Buffer);
-	}
 }
 void FreeRpcReadLogFile(RPC_READ_LOG_FILE *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
-	if (t->Buffer != NULL) {
+	if (t->Buffer != NULL)
 		FreeBuf(t->Buffer);
-	}
 }
 
 // RPC_AC_LIST
@@ -5332,9 +5128,8 @@ void InRpcAcList(RPC_AC_LIST *t, PACK *p) {
 	LIST *o;
 	UINT num;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_AC_LIST));
 	o = NewAcList();
@@ -5350,9 +5145,8 @@ void InRpcAcList(RPC_AC_LIST *t, PACK *p) {
 		PackGetIpEx(p, "IpAddress", &ac->IpAddress, i);
 		ac->Masked = PackGetBoolEx(p, "Masked", i);
 
-		if (ac->Masked) {
+		if (ac->Masked)
 			PackGetIpEx(p, "SubnetMask", &ac->SubnetMask, i);
-		}
 
 		ac->Priority = PackGetIntEx(p, "Priority", i);
 
@@ -5367,9 +5161,8 @@ void OutRpcAcList(PACK *p, RPC_AC_LIST *t) {
 	UINT i, num;
 	LIST *o;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	o = t->o;
 	num = LIST_NUM(o);
@@ -5393,9 +5186,8 @@ void OutRpcAcList(PACK *p, RPC_AC_LIST *t) {
 }
 void FreeRpcAcList(RPC_AC_LIST *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	FreeAcList(t->o);
 }
@@ -5404,9 +5196,8 @@ void FreeRpcAcList(RPC_AC_LIST *t) {
 void InRpcEnumCrl(RPC_ENUM_CRL *t, PACK *p) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_ENUM_CRL));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -5423,9 +5214,8 @@ void InRpcEnumCrl(RPC_ENUM_CRL *t, PACK *p) {
 void OutRpcEnumCrl(PACK *p, RPC_ENUM_CRL *t) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddInt(p, "NumItem", t->NumItem);
@@ -5439,9 +5229,8 @@ void OutRpcEnumCrl(PACK *p, RPC_ENUM_CRL *t) {
 }
 void FreeRpcEnumCrl(RPC_ENUM_CRL *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->Items);
 }
@@ -5452,9 +5241,8 @@ void InRpcCrl(RPC_CRL *t, PACK *p) {
 	NAME *n;
 	wchar_t tmp[MAX_SIZE];
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_CRL));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -5467,79 +5255,59 @@ void InRpcCrl(RPC_CRL *t, PACK *p) {
 	}
 	t->Crl->Name = ZeroMalloc(sizeof(NAME));
 	n = t->Crl->Name;
-	if (PackGetUniStr(p, "CommonName", tmp, sizeof(tmp))) {
+	if (PackGetUniStr(p, "CommonName", tmp, sizeof(tmp)))
 		n->CommonName = CopyUniStr(tmp);
-	}
-	if (PackGetUniStr(p, "Organization", tmp, sizeof(tmp))) {
+	if (PackGetUniStr(p, "Organization", tmp, sizeof(tmp)))
 		n->Organization = CopyUniStr(tmp);
-	}
-	if (PackGetUniStr(p, "Unit", tmp, sizeof(tmp))) {
+	if (PackGetUniStr(p, "Unit", tmp, sizeof(tmp)))
 		n->Unit = CopyUniStr(tmp);
-	}
-	if (PackGetUniStr(p, "Country", tmp, sizeof(tmp))) {
+	if (PackGetUniStr(p, "Country", tmp, sizeof(tmp)))
 		n->Country = CopyUniStr(tmp);
-	}
-	if (PackGetUniStr(p, "State", tmp, sizeof(tmp))) {
+	if (PackGetUniStr(p, "State", tmp, sizeof(tmp)))
 		n->State = CopyUniStr(tmp);
-	}
-	if (PackGetUniStr(p, "Local", tmp, sizeof(tmp))) {
+	if (PackGetUniStr(p, "Local", tmp, sizeof(tmp)))
 		n->Local = CopyUniStr(tmp);
-	}
-	if (PackGetDataSize(p, "DigestMD5") == MD5_SIZE) {
+	if (PackGetDataSize(p, "DigestMD5") == MD5_SIZE)
 		PackGetData(p, "DigestMD5", t->Crl->DigestMD5);
-	}
-	if (PackGetDataSize(p, "DigestSHA1") == SHA1_SIZE) {
+	if (PackGetDataSize(p, "DigestSHA1") == SHA1_SIZE)
 		PackGetData(p, "DigestSHA1", t->Crl->DigestSHA1);
-	}
 }
 void OutRpcCrl(PACK *p, RPC_CRL *t) {
 	NAME *n;
 	// Validate arguments
-	if (p == NULL || t == NULL) {
+	if (p == NULL || t == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddInt(p, "Key", t->Key);
 
-	if (t->Crl == NULL) {
+	if (t->Crl == NULL)
 		return;
-	}
 
-	if (t->Crl->Serial != NULL) {
+	if (t->Crl->Serial != NULL)
 		PackAddData(p, "Serial", t->Crl->Serial->data, t->Crl->Serial->size);
-	}
 	n = t->Crl->Name;
-	if (n->CommonName != NULL) {
+	if (n->CommonName != NULL)
 		PackAddUniStr(p, "CommonName", n->CommonName);
-	}
-	if (n->Organization != NULL) {
+	if (n->Organization != NULL)
 		PackAddUniStr(p, "Organization", n->Organization);
-	}
-	if (n->Unit != NULL) {
+	if (n->Unit != NULL)
 		PackAddUniStr(p, "Unit", n->Unit);
-	}
-	if (n->Country != NULL) {
+	if (n->Country != NULL)
 		PackAddUniStr(p, "Country", n->Country);
-	}
-	if (n->State != NULL) {
+	if (n->State != NULL)
 		PackAddUniStr(p, "State", n->State);
-	}
-	if (n->Local != NULL) {
+	if (n->Local != NULL)
 		PackAddUniStr(p, "Local", n->Local);
-	}
-	if (IsZero(t->Crl->DigestMD5, MD5_SIZE) == false) {
+	if (IsZero(t->Crl->DigestMD5, MD5_SIZE) == false)
 		PackAddData(p, "DigestMD5", t->Crl->DigestMD5, MD5_SIZE);
-	}
-	if (IsZero(t->Crl->DigestSHA1, SHA1_SIZE) == false) {
+	if (IsZero(t->Crl->DigestSHA1, SHA1_SIZE) == false)
 		PackAddData(p, "DigestSHA1", t->Crl->DigestSHA1, SHA1_SIZE);
-	}
 }
 void FreeRpcCrl(RPC_CRL *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	FreeCrl(t->Crl);
 }
@@ -5548,9 +5316,8 @@ void FreeRpcCrl(RPC_CRL *t) {
 void InRpcEnumEth(RPC_ENUM_ETH *t, PACK *p) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_ENUM_ETH));
 	t->NumItem = PackGetInt(p, "NumItem");
@@ -5565,9 +5332,8 @@ void InRpcEnumEth(RPC_ENUM_ETH *t, PACK *p) {
 void OutRpcEnumEth(PACK *p, RPC_ENUM_ETH *t) {
 	UINT i;
 	// Validate arguments
-	if (p == NULL || t == NULL) {
+	if (p == NULL || t == NULL)
 		return;
-	}
 
 	PackAddInt(p, "NumItem", t->NumItem);
 
@@ -5579,9 +5345,8 @@ void OutRpcEnumEth(PACK *p, RPC_ENUM_ETH *t) {
 }
 void FreeRpcEnumEth(RPC_ENUM_ETH *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->Items);
 }
@@ -5589,9 +5354,8 @@ void FreeRpcEnumEth(RPC_ENUM_ETH *t) {
 // RPC_LOCALBRIDGE
 void InRpcLocalBridge(RPC_LOCALBRIDGE *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_LOCALBRIDGE));
 	PackGetStr(p, "DeviceName", t->DeviceName, sizeof(t->DeviceName));
@@ -5600,9 +5364,8 @@ void InRpcLocalBridge(RPC_LOCALBRIDGE *t, PACK *p) {
 }
 void OutRpcLocalBridge(PACK *p, RPC_LOCALBRIDGE *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "DeviceName", t->DeviceName);
 	PackAddStr(p, "HubNameLB", t->HubName);
@@ -5613,9 +5376,8 @@ void OutRpcLocalBridge(PACK *p, RPC_LOCALBRIDGE *t) {
 void InRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t, PACK *p) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_ENUM_LOCALBRIDGE));
 	t->NumItem = PackGetInt(p, "NumItem");
@@ -5634,9 +5396,8 @@ void InRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t, PACK *p) {
 void OutRpcEnumLocalBridge(PACK *p, RPC_ENUM_LOCALBRIDGE *t) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddInt(p, "NumItem", t->NumItem);
 
@@ -5652,18 +5413,16 @@ void OutRpcEnumLocalBridge(PACK *p, RPC_ENUM_LOCALBRIDGE *t) {
 }
 void FreeRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 	Free(t->Items);
 }
 
 // MEMINFO
 void InRpcMemInfo(MEMINFO *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(MEMINFO));
 	t->TotalMemory = PackGetInt64(p, "TotalMemory");
@@ -5675,9 +5434,8 @@ void InRpcMemInfo(MEMINFO *t, PACK *p) {
 }
 void OutRpcMemInfo(PACK *p, MEMINFO *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddInt64(p, "TotalMemory", t->TotalMemory);
 	PackAddInt64(p, "UsedMemory", t->UsedMemory);
@@ -5691,37 +5449,29 @@ void OutRpcMemInfo(PACK *p, MEMINFO *t) {
 void InRpcOsInfo(OS_INFO *t, PACK *p) {
 	char tmp[MAX_SIZE];
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(OS_INFO));
 	t->OsType = PackGetInt(p, "OsType");
 	t->OsServicePack = PackGetInt(p, "OsServicePack");
-	if (PackGetStr(p, "OsSystemName", tmp, sizeof(tmp))) {
+	if (PackGetStr(p, "OsSystemName", tmp, sizeof(tmp)))
 		t->OsSystemName = CopyStr(tmp);
-	}
-	if (PackGetStr(p, "OsProductName", tmp, sizeof(tmp))) {
+	if (PackGetStr(p, "OsProductName", tmp, sizeof(tmp)))
 		t->OsProductName = CopyStr(tmp);
-	}
-	if (PackGetStr(p, "OsVendorName", tmp, sizeof(tmp))) {
+	if (PackGetStr(p, "OsVendorName", tmp, sizeof(tmp)))
 		t->OsVendorName = CopyStr(tmp);
-	}
-	if (PackGetStr(p, "OsVersion", tmp, sizeof(tmp))) {
+	if (PackGetStr(p, "OsVersion", tmp, sizeof(tmp)))
 		t->OsVersion = CopyStr(tmp);
-	}
-	if (PackGetStr(p, "KernelName", tmp, sizeof(tmp))) {
+	if (PackGetStr(p, "KernelName", tmp, sizeof(tmp)))
 		t->KernelName = CopyStr(tmp);
-	}
-	if (PackGetStr(p, "KernelVersion", tmp, sizeof(tmp))) {
+	if (PackGetStr(p, "KernelVersion", tmp, sizeof(tmp)))
 		t->KernelVersion = CopyStr(tmp);
-	}
 }
 void OutRpcOsInfo(PACK *p, OS_INFO *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddInt(p, "OsType", t->OsType);
 	PackAddInt(p, "OsServicePack", t->OsServicePack);
@@ -5734,9 +5484,8 @@ void OutRpcOsInfo(PACK *p, OS_INFO *t) {
 }
 void FreeRpcOsInfo(OS_INFO *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->OsSystemName);
 	Free(t->OsProductName);
@@ -5751,9 +5500,8 @@ void SiReadLocalLogFile(SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FIL
 	char exe_dir[MAX_PATH], full_path[MAX_PATH];
 	IO *o;
 	// Validate arguments
-	if (s == NULL || t == NULL || filepath == NULL) {
+	if (s == NULL || t == NULL || filepath == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_READ_LOG_FILE));
 
@@ -5786,9 +5534,8 @@ void SiEnumLocalLogFileList(SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t) {
 	LIST *o;
 	UINT i;
 	// Validate arguments
-	if (s == NULL || t == NULL) {
+	if (s == NULL || t == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_ENUM_LOG_FILE));
 
@@ -5815,9 +5562,8 @@ void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t) {
 	UINT64 now = Tick64();
 	UINT64 dormant_interval = 0;
 	// Validate arguments
-	if (s == NULL || hubname == NULL || t == NULL) {
+	if (s == NULL || hubname == NULL || t == NULL)
 		return;
-	}
 
 	LockHubList(s->Cedar);
 	h = GetHub(s->Cedar, hubname);
@@ -5829,9 +5575,8 @@ void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t) {
 		return;
 	}
 
-	if (h->Option != NULL) {
+	if (h->Option != NULL)
 		dormant_interval = h->Option->DetectDormantSessionInterval * (UINT64)1000;
-	}
 
 	LockList(h->SessionList);
 	{
@@ -5873,18 +5618,14 @@ void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t) {
 				if (s->NormalClient) {
 					e->IsDormantEnabled = (dormant_interval == 0 ? false : true);
 					if (e->IsDormantEnabled) {
-						if (s->LastCommTimeForDormant == 0) {
+						if (s->LastCommTimeForDormant == 0)
 							e->LastCommDormant = (UINT64)0x7FFFFFFF;
-						} else {
+						else
 							e->LastCommDormant = now - s->LastCommTimeForDormant;
-						}
-						if (s->LastCommTimeForDormant == 0) {
+						if (s->LastCommTimeForDormant == 0)
 							e->IsDormant = true;
-						} else {
-							if ((s->LastCommTimeForDormant + dormant_interval) < now) {
-								e->IsDormant = true;
-							}
-						}
+						else if ((s->LastCommTimeForDormant + dormant_interval) < now)
+							e->IsDormant = true;
 					}
 				}
 			}
@@ -5900,9 +5641,8 @@ void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t) {
 void InRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t, PACK *p) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_ENUM_LICENSE_KEY));
 	t->NumItem = PackGetInt(p, "NumItem");
@@ -5924,9 +5664,8 @@ void InRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t, PACK *p) {
 void OutRpcEnumLicenseKey(PACK *p, RPC_ENUM_LICENSE_KEY *t) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddInt(p, "NumItem", t->NumItem);
 
@@ -5946,9 +5685,8 @@ void OutRpcEnumLicenseKey(PACK *p, RPC_ENUM_LICENSE_KEY *t) {
 }
 void FreeRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->Items);
 }
@@ -5956,9 +5694,8 @@ void FreeRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t) {
 // RPC_LICENSE_STATUS
 void InRpcLicenseStatus(RPC_LICENSE_STATUS *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_LICENSE_STATUS));
 
@@ -5979,9 +5716,8 @@ void InRpcLicenseStatus(RPC_LICENSE_STATUS *t, PACK *p) {
 }
 void OutRpcLicenseStatus(PACK *p, RPC_LICENSE_STATUS *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddInt(p, "EditionId", t->EditionId);
 	PackAddStr(p, "EditionStr", t->EditionStr);
@@ -6003,9 +5739,8 @@ void OutRpcLicenseStatus(PACK *p, RPC_LICENSE_STATUS *t) {
 void InRpcAdminOption(RPC_ADMIN_OPTION *t, PACK *p) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_ADMIN_OPTION));
 	t->NumItem = PackGetIndexCount(p, "Name");
@@ -6024,9 +5759,8 @@ void InRpcAdminOption(RPC_ADMIN_OPTION *t, PACK *p) {
 void OutRpcAdminOption(PACK *p, RPC_ADMIN_OPTION *t) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddInt(p, "NumItem", t->NumItem);
 
@@ -6042,9 +5776,8 @@ void OutRpcAdminOption(PACK *p, RPC_ADMIN_OPTION *t) {
 }
 void FreeRpcAdminOption(RPC_ADMIN_OPTION *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->Items);
 }
@@ -6053,9 +5786,8 @@ void FreeRpcAdminOption(RPC_ADMIN_OPTION *t) {
 void InRpcConfig(RPC_CONFIG *t, PACK *p) {
 	UINT size;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_CONFIG));
 	PackGetStr(p, "FileName", t->FileName, sizeof(t->FileName));
@@ -6065,18 +5797,16 @@ void InRpcConfig(RPC_CONFIG *t, PACK *p) {
 }
 void OutRpcConfig(PACK *p, RPC_CONFIG *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "FileName", t->FileName);
 	PackAddData(p, "FileData", t->FileData, StrLen(t->FileData));
 }
 void FreeRpcConfig(RPC_CONFIG *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->FileData);
 }
@@ -6084,9 +5814,8 @@ void FreeRpcConfig(RPC_CONFIG *t) {
 // RPC_BRIDGE_SUPPORT
 void InRpcBridgeSupport(RPC_BRIDGE_SUPPORT *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_BRIDGE_SUPPORT));
 
@@ -6094,9 +5823,8 @@ void InRpcBridgeSupport(RPC_BRIDGE_SUPPORT *t, PACK *p) {
 }
 void OutRpcBridgeSupport(PACK *p, RPC_BRIDGE_SUPPORT *t) {
 	// Validate arguments
-	if (p == NULL || t == NULL) {
+	if (p == NULL || t == NULL)
 		return;
-	}
 
 	PackAddBool(p, "IsBridgeSupportedOs", t->IsBridgeSupportedOs);
 }
@@ -6104,9 +5832,8 @@ void OutRpcBridgeSupport(PACK *p, RPC_BRIDGE_SUPPORT *t) {
 // RPC_ADD_ACCESS
 void InRpcAddAccess(RPC_ADD_ACCESS *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_ADD_ACCESS));
 
@@ -6115,9 +5842,8 @@ void InRpcAddAccess(RPC_ADD_ACCESS *t, PACK *p) {
 }
 void OutRpcAddAccess(PACK *p, RPC_ADD_ACCESS *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 	OutRpcAccess(p, &t->Access);
@@ -6126,9 +5852,8 @@ void OutRpcAddAccess(PACK *p, RPC_ADD_ACCESS *t) {
 // RPC_DELETE_ACCESS
 void InRpcDeleteAccess(RPC_DELETE_ACCESS *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_DELETE_ACCESS));
 
@@ -6137,9 +5862,8 @@ void InRpcDeleteAccess(RPC_DELETE_ACCESS *t, PACK *p) {
 }
 void OutRpcDeleteAccess(PACK *p, RPC_DELETE_ACCESS *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddInt(p, "Id", t->Id);
@@ -6149,9 +5873,8 @@ void OutRpcDeleteAccess(PACK *p, RPC_DELETE_ACCESS *t) {
 // RPC_SERVER_INFO
 void InRpcServerInfo(RPC_SERVER_INFO *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_SERVER_INFO));
 
@@ -6166,9 +5889,8 @@ void InRpcServerInfo(RPC_SERVER_INFO *t, PACK *p) {
 }
 void OutRpcServerInfo(PACK *p, RPC_SERVER_INFO *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "ServerProductName", t->ServerProductName);
 	PackAddStr(p, "ServerVersionString", t->ServerVersionString);
@@ -6181,9 +5903,8 @@ void OutRpcServerInfo(PACK *p, RPC_SERVER_INFO *t) {
 }
 void FreeRpcServerInfo(RPC_SERVER_INFO *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	FreeRpcOsInfo(&t->OsInfo);
 }
@@ -6191,9 +5912,8 @@ void FreeRpcServerInfo(RPC_SERVER_INFO *t) {
 // RPC_SERVER_STATUS
 void InRpcServerStatus(RPC_SERVER_STATUS *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_SERVER_STATUS));
 	t->NumTcpConnections = PackGetInt(p, "NumTcpConnections");
@@ -6220,9 +5940,8 @@ void InRpcServerStatus(RPC_SERVER_STATUS *t, PACK *p) {
 }
 void OutRpcServerStatus(PACK *p, RPC_SERVER_STATUS *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddInt(p, "NumHubTotal", t->NumHubTotal);
 	PackAddInt(p, "NumHubStandalone", t->NumHubStandalone);
@@ -6250,9 +5969,8 @@ void OutRpcServerStatus(PACK *p, RPC_SERVER_STATUS *t) {
 // RPC_LISTENER
 void InRpcListener(RPC_LISTENER *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_LISTENER));
 	t->Port = PackGetInt(p, "Port");
@@ -6260,9 +5978,8 @@ void InRpcListener(RPC_LISTENER *t, PACK *p) {
 }
 void OutRpcListener(PACK *p, RPC_LISTENER *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddInt(p, "Port", t->Port);
 	PackAddBool(p, "Enable", t->Enable);
@@ -6272,9 +5989,8 @@ void OutRpcListener(PACK *p, RPC_LISTENER *t) {
 void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_LISTENER_LIST));
 	t->NumPort = PackGetIndexCount(p, "Ports");
@@ -6290,9 +6006,8 @@ void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p) {
 void OutRpcListenerList(PACK *p, RPC_LISTENER_LIST *t) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	for (i = 0; i < t->NumPort; i++) {
 		PackAddIntEx(p, "Ports", t->Ports[i], i, t->NumPort);
@@ -6302,9 +6017,8 @@ void OutRpcListenerList(PACK *p, RPC_LISTENER_LIST *t) {
 }
 void FreeRpcListenerList(RPC_LISTENER_LIST *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->Ports);
 	Free(t->Enables);
@@ -6316,31 +6030,27 @@ void InRpcStr(RPC_STR *t, PACK *p) {
 	UINT size = 65536;
 	char *tmp = Malloc(size);
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_STR));
-	if (PackGetStr(p, "String", tmp, size) == false) {
+	if (PackGetStr(p, "String", tmp, size) == false)
 		t->String = CopyStr("");
-	} else {
+	else
 		t->String = CopyStr(tmp);
-	}
 	Free(tmp);
 }
 void OutRpcStr(PACK *p, RPC_STR *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "String", t->String);
 }
 void FreeRpcStr(RPC_STR *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->String);
 }
@@ -6348,9 +6058,8 @@ void FreeRpcStr(RPC_STR *t) {
 // RPC_SET_PASSWORD
 void InRpcSetPassword(RPC_SET_PASSWORD *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_SET_PASSWORD));
 	PackGetData2(p, "HashedPassword", t->HashedPassword, sizeof(t->HashedPassword));
@@ -6358,9 +6067,8 @@ void InRpcSetPassword(RPC_SET_PASSWORD *t, PACK *p) {
 }
 void OutRpcSetPassword(PACK *p, RPC_SET_PASSWORD *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddData(p, "HashedPassword", t->HashedPassword, sizeof(t->HashedPassword));
 	PackAddStr(p, "PlainTextPassword", t->PlainTextPassword);
@@ -6369,9 +6077,8 @@ void OutRpcSetPassword(PACK *p, RPC_SET_PASSWORD *t) {
 // RPC_HUB_OPTION
 void InRpcHubOption(RPC_HUB_OPTION *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_HUB_OPTION));
 	t->MaxSession = PackGetInt(p, "MaxSession");
@@ -6379,9 +6086,8 @@ void InRpcHubOption(RPC_HUB_OPTION *t, PACK *p) {
 }
 void OutRpcHubOption(PACK *p, RPC_HUB_OPTION *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddInt(p, "MaxSession", t->MaxSession);
 	PackAddBool(p, "NoEnum", t->NoEnum);
@@ -6390,9 +6096,8 @@ void OutRpcHubOption(PACK *p, RPC_HUB_OPTION *t) {
 // RPC_CREATE_HUB
 void InRpcCreateHub(RPC_CREATE_HUB *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_CREATE_HUB));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -6404,9 +6109,8 @@ void InRpcCreateHub(RPC_CREATE_HUB *t, PACK *p) {
 }
 void OutRpcCreateHub(PACK *p, RPC_CREATE_HUB *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddData(p, "HashedPassword", t->HashedPassword, sizeof(t->HashedPassword));
@@ -6420,9 +6124,8 @@ void OutRpcCreateHub(PACK *p, RPC_CREATE_HUB *t) {
 void InRpcEnumHub(RPC_ENUM_HUB *t, PACK *p) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_ENUM_HUB));
 	t->NumHub = PackGetIndexCount(p, "HubName");
@@ -6450,9 +6153,8 @@ void InRpcEnumHub(RPC_ENUM_HUB *t, PACK *p) {
 void OutRpcEnumHub(PACK *p, RPC_ENUM_HUB *t) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	for (i = 0; i < t->NumHub; i++) {
 		RPC_ENUM_HUB_ITEM *e = &t->Hubs[i];
@@ -6475,9 +6177,8 @@ void OutRpcEnumHub(PACK *p, RPC_ENUM_HUB *t) {
 }
 void FreeRpcEnumHub(RPC_ENUM_HUB *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->Hubs);
 }
@@ -6485,18 +6186,16 @@ void FreeRpcEnumHub(RPC_ENUM_HUB *t) {
 // RPC_DELETE_HUB
 void InRpcDeleteHub(RPC_DELETE_HUB *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_DELETE_HUB));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 }
 void OutRpcDeleteHub(PACK *p, RPC_DELETE_HUB *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 }
@@ -6505,9 +6204,8 @@ void OutRpcDeleteHub(PACK *p, RPC_DELETE_HUB *t) {
 void InRpcEnumConnection(RPC_ENUM_CONNECTION *t, PACK *p) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_ENUM_CONNECTION));
 	t->NumConnection = PackGetIndexCount(p, "Name");
@@ -6527,9 +6225,8 @@ void InRpcEnumConnection(RPC_ENUM_CONNECTION *t, PACK *p) {
 void OutRpcEnumConnection(PACK *p, RPC_ENUM_CONNECTION *t) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	for (i = 0; i < t->NumConnection; i++) {
 		RPC_ENUM_CONNECTION_ITEM *e = &t->Connections[i];
@@ -6544,9 +6241,8 @@ void OutRpcEnumConnection(PACK *p, RPC_ENUM_CONNECTION *t) {
 }
 void FreeRpcEnumConnection(RPC_ENUM_CONNECTION *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->Connections);
 }
@@ -6554,18 +6250,16 @@ void FreeRpcEnumConnection(RPC_ENUM_CONNECTION *t) {
 // RPC_DISCONNECT_CONNECTION
 void InRpcDisconnectConnection(RPC_DISCONNECT_CONNECTION *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_DISCONNECT_CONNECTION));
 	PackGetStr(p, "Name", t->Name, sizeof(t->Name));
 }
 void OutRpcDisconnectConnection(PACK *p, RPC_DISCONNECT_CONNECTION *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "Name", t->Name);
 }
@@ -6573,9 +6267,8 @@ void OutRpcDisconnectConnection(PACK *p, RPC_DISCONNECT_CONNECTION *t) {
 // RPC_CONNECTION_INFO
 void InRpcConnectionInfo(RPC_CONNECTION_INFO *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_CONNECTION_INFO));
 	PackGetStr(p, "Name", t->Name, sizeof(t->Name));
@@ -6593,9 +6286,8 @@ void InRpcConnectionInfo(RPC_CONNECTION_INFO *t, PACK *p) {
 }
 void OutRpcConnectionInfo(PACK *p, RPC_CONNECTION_INFO *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "Name", t->Name);
 	PackAddIp32(p, "Ip", t->Ip);
@@ -6614,9 +6306,8 @@ void OutRpcConnectionInfo(PACK *p, RPC_CONNECTION_INFO *t) {
 // RPC_SET_HUB_ONLINE
 void InRpcSetHubOnline(RPC_SET_HUB_ONLINE *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_SET_HUB_ONLINE));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -6624,9 +6315,8 @@ void InRpcSetHubOnline(RPC_SET_HUB_ONLINE *t, PACK *p) {
 }
 void OutRpcSetHubOnline(PACK *p, RPC_SET_HUB_ONLINE *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddBool(p, "Online", t->Online);
@@ -6636,9 +6326,8 @@ void OutRpcSetHubOnline(PACK *p, RPC_SET_HUB_ONLINE *t) {
 void InRpcHubStatus(RPC_HUB_STATUS *t, PACK *p) {
 	Zero(t, sizeof(RPC_HUB_STATUS));
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	t->Online = PackGetBool(p, "Online");
@@ -6658,9 +6347,8 @@ void InRpcHubStatus(RPC_HUB_STATUS *t, PACK *p) {
 }
 void OutRpcHubStatus(PACK *p, RPC_HUB_STATUS *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddBool(p, "Online", t->Online);
@@ -6683,9 +6371,8 @@ void OutRpcHubStatus(PACK *p, RPC_HUB_STATUS *t) {
 void InRpcHubLog(RPC_HUB_LOG *t, PACK *p) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_HUB_LOG));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -6693,33 +6380,29 @@ void InRpcHubLog(RPC_HUB_LOG *t, PACK *p) {
 	t->LogSetting.SecurityLogSwitchType = PackGetInt(p, "SecurityLogSwitchType");
 	t->LogSetting.SavePacketLog = PackGetBool(p, "SavePacketLog");
 	t->LogSetting.PacketLogSwitchType = PackGetInt(p, "PacketLogSwitchType");
-	for (i = 0; i < NUM_PACKET_LOG; i++) {
+	for (i = 0; i < NUM_PACKET_LOG; i++)
 		t->LogSetting.PacketLogConfig[i] = PackGetIntEx(p, "PacketLogConfig", i);
-	}
 }
 void OutRpcHubLog(PACK *p, RPC_HUB_LOG *t) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddBool(p, "SaveSecurityLog", t->LogSetting.SaveSecurityLog);
 	PackAddInt(p, "SecurityLogSwitchType", t->LogSetting.SecurityLogSwitchType);
 	PackAddBool(p, "SavePacketLog", t->LogSetting.SavePacketLog);
 	PackAddInt(p, "PacketLogSwitchType", t->LogSetting.PacketLogSwitchType);
-	for (i = 0; i < NUM_PACKET_LOG; i++) {
+	for (i = 0; i < NUM_PACKET_LOG; i++)
 		PackAddIntEx(p, "PacketLogConfig", t->LogSetting.PacketLogConfig[i], i, NUM_PACKET_LOG);
-	}
 }
 
 // RPC_HUB_ADD_CA
 void InRpcHubAddCa(RPC_HUB_ADD_CA *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_HUB_ADD_CA));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -6727,18 +6410,16 @@ void InRpcHubAddCa(RPC_HUB_ADD_CA *t, PACK *p) {
 }
 void OutRpcHubAddCa(PACK *p, RPC_HUB_ADD_CA *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddX(p, "Cert", t->Cert);
 }
 void FreeRpcHubAddCa(RPC_HUB_ADD_CA *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	FreeX(t->Cert);
 }
@@ -6747,9 +6428,8 @@ void FreeRpcHubAddCa(RPC_HUB_ADD_CA *t) {
 void InRpcHubEnumCa(RPC_HUB_ENUM_CA *t, PACK *p) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_HUB_ENUM_CA));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -6768,9 +6448,8 @@ void InRpcHubEnumCa(RPC_HUB_ENUM_CA *t, PACK *p) {
 void OutRpcHubEnumCa(PACK *p, RPC_HUB_ENUM_CA *t) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 	PackAddStr(p, "HubName", t->HubName);
 
 	for (i = 0; i < t->NumCa; i++) {
@@ -6784,9 +6463,8 @@ void OutRpcHubEnumCa(PACK *p, RPC_HUB_ENUM_CA *t) {
 }
 void FreeRpcHubEnumCa(RPC_HUB_ENUM_CA *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->Ca);
 }
@@ -6794,9 +6472,8 @@ void FreeRpcHubEnumCa(RPC_HUB_ENUM_CA *t) {
 // RPC_HUB_GET_CA
 void InRpcHubGetCa(RPC_HUB_GET_CA *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_HUB_GET_CA));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -6805,9 +6482,8 @@ void InRpcHubGetCa(RPC_HUB_GET_CA *t, PACK *p) {
 }
 void OutRpcHubGetCa(PACK *p, RPC_HUB_GET_CA *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddInt(p, "Key", t->Key);
@@ -6815,9 +6491,8 @@ void OutRpcHubGetCa(PACK *p, RPC_HUB_GET_CA *t) {
 }
 void FreeRpcHubGetCa(RPC_HUB_GET_CA *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	FreeX(t->Cert);
 }
@@ -6825,9 +6500,8 @@ void FreeRpcHubGetCa(RPC_HUB_GET_CA *t) {
 // RPC_HUB_DELETE_CA
 void InRpcHubDeleteCa(RPC_HUB_DELETE_CA *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_HUB_DELETE_CA));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -6835,9 +6509,8 @@ void InRpcHubDeleteCa(RPC_HUB_DELETE_CA *t, PACK *p) {
 }
 void OutRpcHubDeleteCa(PACK *p, RPC_HUB_DELETE_CA *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddInt(p, "Key", t->Key);
@@ -6847,9 +6520,8 @@ void OutRpcHubDeleteCa(PACK *p, RPC_HUB_DELETE_CA *t) {
 void InRpcCreateLink(RPC_CREATE_LINK *t, PACK *p) {
 	BUF *b;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_CREATE_LINK));
 	PackGetStr(p, "HubName_Ex", t->HubName, sizeof(t->HubName));
@@ -6870,9 +6542,8 @@ void InRpcCreateLink(RPC_CREATE_LINK *t, PACK *p) {
 }
 void OutRpcCreateLink(PACK *p, RPC_CREATE_LINK *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName_Ex", t->HubName);
 	PackAddBool(p, "Online", t->Online);
@@ -6891,13 +6562,11 @@ void OutRpcCreateLink(PACK *p, RPC_CREATE_LINK *t) {
 }
 void FreeRpcCreateLink(RPC_CREATE_LINK *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
-	if (t->ServerCert != NULL) {
+	if (t->ServerCert != NULL)
 		FreeX(t->ServerCert);
-	}
 	Free(t->ClientOption);
 	CiFreeClientAuth(t->ClientAuth);
 }
@@ -6906,9 +6575,8 @@ void FreeRpcCreateLink(RPC_CREATE_LINK *t) {
 void InRpcEnumLink(RPC_ENUM_LINK *t, PACK *p) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_ENUM_LINK));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -6920,9 +6588,8 @@ void InRpcEnumLink(RPC_ENUM_LINK *t, PACK *p) {
 
 		PackGetUniStrEx(p, "AccountName", e->AccountName, sizeof(e->AccountName), i);
 		PackGetStrEx(p, "Hostname", e->Hostname, sizeof(e->Hostname), i);
-		if (PackGetStrEx(p, "ConnectedHubName", e->HubName, sizeof(e->HubName), i) == false) {
+		if (PackGetStrEx(p, "ConnectedHubName", e->HubName, sizeof(e->HubName), i) == false)
 			PackGetStrEx(p, "TargetHubName", e->HubName, sizeof(e->HubName), i);
-		}
 		e->Online = PackGetBoolEx(p, "Online", i);
 		e->ConnectedTime = PackGetInt64Ex(p, "ConnectedTime", i);
 		e->Connected = PackGetBoolEx(p, "Connected", i);
@@ -6932,9 +6599,8 @@ void InRpcEnumLink(RPC_ENUM_LINK *t, PACK *p) {
 void OutRpcEnumLink(PACK *p, RPC_ENUM_LINK *t) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 
@@ -6953,9 +6619,8 @@ void OutRpcEnumLink(PACK *p, RPC_ENUM_LINK *t) {
 }
 void FreeRpcEnumLink(RPC_ENUM_LINK *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->Links);
 }
@@ -6963,9 +6628,8 @@ void FreeRpcEnumLink(RPC_ENUM_LINK *t) {
 // RPC_LINK_STATUS
 void InRpcLinkStatus(RPC_LINK_STATUS *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_LINK_STATUS));
 	PackGetStr(p, "HubName_Ex", t->HubName, sizeof(t->HubName));
@@ -6974,9 +6638,8 @@ void InRpcLinkStatus(RPC_LINK_STATUS *t, PACK *p) {
 }
 void OutRpcLinkStatus(PACK *p, RPC_LINK_STATUS *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName_Ex", t->HubName);
 	PackAddUniStr(p, "AccountName", t->AccountName);
@@ -6984,9 +6647,8 @@ void OutRpcLinkStatus(PACK *p, RPC_LINK_STATUS *t) {
 }
 void FreeRpcLinkStatus(RPC_LINK_STATUS *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	CiFreeClientGetConnectionStatus(&t->Status);
 }
@@ -6994,9 +6656,8 @@ void FreeRpcLinkStatus(RPC_LINK_STATUS *t) {
 // RPC_LINK
 void InRpcLink(RPC_LINK *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_LINK));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -7004,9 +6665,8 @@ void InRpcLink(RPC_LINK *t, PACK *p) {
 }
 void OutRpcLink(PACK *p, RPC_LINK *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddUniStr(p, "AccountName", t->AccountName);
@@ -7015,9 +6675,8 @@ void OutRpcLink(PACK *p, RPC_LINK *t) {
 // RPC_RENAME_LINK
 void InRpcRenameLink(RPC_RENAME_LINK *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_RENAME_LINK));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -7026,9 +6685,8 @@ void InRpcRenameLink(RPC_RENAME_LINK *t, PACK *p) {
 }
 void OutRpcRenameLink(PACK *p, RPC_RENAME_LINK *t) {
 	// Validate arguments
-	if (p == NULL || t == NULL) {
+	if (p == NULL || t == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddUniStr(p, "OldAccountName", t->OldAccountName);
@@ -7038,9 +6696,8 @@ void OutRpcRenameLink(PACK *p, RPC_RENAME_LINK *t) {
 // ACCESS
 void InRpcAccessEx(ACCESS *a, PACK *p, UINT index) {
 	// Validate arguments
-	if (a == NULL || p == NULL) {
+	if (a == NULL || p == NULL)
 		return;
-	}
 
 	Zero(a, sizeof(ACCESS));
 	a->Id = PackGetIntEx(p, "Id", index);
@@ -7084,17 +6741,15 @@ void InRpcAccessEx(ACCESS *a, PACK *p, UINT index) {
 }
 void InRpcAccess(ACCESS *a, PACK *p) {
 	// Validate arguments
-	if (a == NULL || p == NULL) {
+	if (a == NULL || p == NULL)
 		return;
-	}
 
 	InRpcAccessEx(a, p, 0);
 }
 void OutRpcAccessEx(PACK *p, ACCESS *a, UINT index, UINT total) {
 	// Validate arguments
-	if (a == NULL || p == NULL) {
+	if (a == NULL || p == NULL)
 		return;
-	}
 
 	PackAddIntEx(p, "Id", a->Id, index, total);
 	PackAddUniStrEx(p, "Note", a->Note, index, total);
@@ -7153,9 +6808,8 @@ void OutRpcAccessEx(PACK *p, ACCESS *a, UINT index, UINT total) {
 }
 void OutRpcAccess(PACK *p, ACCESS *a) {
 	// Validate arguments
-	if (a == NULL || p == NULL) {
+	if (a == NULL || p == NULL)
 		return;
-	}
 
 	OutRpcAccessEx(p, a, 0, 1);
 }
@@ -7164,9 +6818,8 @@ void OutRpcAccess(PACK *p, ACCESS *a) {
 void InRpcEnumAccessList(RPC_ENUM_ACCESS_LIST *a, PACK *p) {
 	UINT i;
 	// Validate arguments
-	if (a == NULL || p == NULL) {
+	if (a == NULL || p == NULL)
 		return;
-	}
 
 	Zero(a, sizeof(RPC_ENUM_ACCESS_LIST));
 	PackGetStr(p, "HubName", a->HubName, sizeof(a->HubName));
@@ -7182,9 +6835,8 @@ void InRpcEnumAccessList(RPC_ENUM_ACCESS_LIST *a, PACK *p) {
 void OutRpcEnumAccessList(PACK *p, RPC_ENUM_ACCESS_LIST *a) {
 	UINT i;
 	// Validate arguments
-	if (a == NULL || p == NULL) {
+	if (a == NULL || p == NULL)
 		return;
-	}
 	PackAddStr(p, "HubName", a->HubName);
 
 	for (i = 0; i < a->NumAccess; i++) {
@@ -7195,9 +6847,8 @@ void OutRpcEnumAccessList(PACK *p, RPC_ENUM_ACCESS_LIST *a) {
 }
 void FreeRpcEnumAccessList(RPC_ENUM_ACCESS_LIST *a) {
 	// Validate arguments
-	if (a == NULL) {
+	if (a == NULL)
 		return;
-	}
 
 	Free(a->Accesses);
 }
@@ -7212,12 +6863,10 @@ void *InRpcAuthData(PACK *p, UINT *authtype, char *username) {
 	BUF *b;
 	char plain_pw[MAX_SIZE];
 	// Validate arguments
-	if (p == NULL) {
+	if (p == NULL)
 		return NULL;
-	}
-	if (authtype == NULL) {
+	if (authtype == NULL)
 		return NULL;
-	}
 
 	*authtype = PackGetInt(p, "AuthType");
 
@@ -7247,18 +6896,16 @@ void *InRpcAuthData(PACK *p, UINT *authtype, char *username) {
 			rootcert->Serial = NewXSerial(b->Buf, b->Size);
 			FreeBuf(b);
 		}
-		if (PackGetUniStr(p, "CommonName", tmp, sizeof(tmp))) {
+		if (PackGetUniStr(p, "CommonName", tmp, sizeof(tmp)))
 			rootcert->CommonName = CopyUniStr(tmp);
-		}
 		return rootcert;
 
 	case AUTHTYPE_NT:
 		nt = ZeroMalloc(sizeof(AUTHNT));
-		if (PackGetUniStr(p, "NtUsername", tmp, sizeof(tmp))) {
+		if (PackGetUniStr(p, "NtUsername", tmp, sizeof(tmp)))
 			nt->NtUsername = CopyUniStr(tmp);
-		} else {
+		else
 			nt->NtUsername = CopyUniStr(L"");
-		}
 		return nt;
 	}
 
@@ -7270,9 +6917,8 @@ void OutRpcAuthData(PACK *p, void *authdata, UINT authtype) {
 	AUTHROOTCERT *rootcert = authdata;
 	AUTHNT *nt = authdata;
 	// Validate arguments
-	if (p == NULL) {
+	if (p == NULL)
 		return;
-	}
 
 	PackAddInt(p, "AuthType", authtype);
 
@@ -7287,12 +6933,10 @@ void OutRpcAuthData(PACK *p, void *authdata, UINT authtype) {
 		break;
 
 	case AUTHTYPE_ROOTCERT:
-		if (rootcert->Serial != NULL) {
+		if (rootcert->Serial != NULL)
 			PackAddData(p, "Serial", rootcert->Serial->data, rootcert->Serial->size);
-		}
-		if (rootcert->CommonName != NULL) {
+		if (rootcert->CommonName != NULL)
 			PackAddUniStr(p, "CommonName", rootcert->CommonName);
-		}
 		break;
 
 	case AUTHTYPE_NT:
@@ -7307,9 +6951,8 @@ void FreeRpcAuthData(void *authdata, UINT authtype) {
 // RPC_SET_USER
 void InRpcSetUser(RPC_SET_USER *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_SET_USER));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -7332,9 +6975,8 @@ void InRpcSetUser(RPC_SET_USER *t, PACK *p) {
 
 void OutRpcSetUser(PACK *p, RPC_SET_USER *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddStr(p, "Name", t->Name);
@@ -7355,23 +6997,20 @@ void OutRpcSetUser(PACK *p, RPC_SET_USER *t) {
 }
 void FreeRpcSetUser(RPC_SET_USER *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	FreeRpcAuthData(t->AuthData, t->AuthType);
-	if (t->Policy) {
+	if (t->Policy)
 		Free(t->Policy);
-	}
 }
 
 // RPC_ENUM_USER
 void InRpcEnumUser(RPC_ENUM_USER *t, PACK *p) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_ENUM_USER));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -7400,9 +7039,8 @@ void InRpcEnumUser(RPC_ENUM_USER *t, PACK *p) {
 void OutRpcEnumUser(PACK *p, RPC_ENUM_USER *t) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 	PackAddStr(p, "HubName", t->HubName);
 
 	for (i = 0; i < t->NumUser; i++) {
@@ -7426,9 +7064,8 @@ void OutRpcEnumUser(PACK *p, RPC_ENUM_USER *t) {
 }
 void FreeRpcEnumUser(RPC_ENUM_USER *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->Users);
 }
@@ -7436,9 +7073,8 @@ void FreeRpcEnumUser(RPC_ENUM_USER *t) {
 // RPC_SET_GROUP
 void InRpcSetGroup(RPC_SET_GROUP *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_SET_GROUP));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -7454,9 +7090,8 @@ void InRpcSetGroup(RPC_SET_GROUP *t, PACK *p) {
 }
 void OutRpcSetGroup(PACK *p, RPC_SET_GROUP *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddStr(p, "Name", t->Name);
@@ -7477,9 +7112,8 @@ void FreeRpcSetGroup(RPC_SET_GROUP *t) {
 void InRpcEnumGroup(RPC_ENUM_GROUP *t, PACK *p) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_ENUM_GROUP));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -7499,9 +7133,8 @@ void InRpcEnumGroup(RPC_ENUM_GROUP *t, PACK *p) {
 void OutRpcEnumGroup(PACK *p, RPC_ENUM_GROUP *t) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 
@@ -7517,9 +7150,8 @@ void OutRpcEnumGroup(PACK *p, RPC_ENUM_GROUP *t) {
 }
 void FreeRpcEnumGroup(RPC_ENUM_GROUP *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->Groups);
 }
@@ -7527,9 +7159,8 @@ void FreeRpcEnumGroup(RPC_ENUM_GROUP *t) {
 // RPC_DELETE_USER
 void InRpcDeleteUser(RPC_DELETE_USER *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_DELETE_USER));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -7537,9 +7168,8 @@ void InRpcDeleteUser(RPC_DELETE_USER *t, PACK *p) {
 }
 void OutRpcDeleteUser(PACK *p, RPC_DELETE_USER *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddStr(p, "Name", t->Name);
@@ -7549,9 +7179,8 @@ void OutRpcDeleteUser(PACK *p, RPC_DELETE_USER *t) {
 void InRpcEnumSession(RPC_ENUM_SESSION *t, PACK *p) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_ENUM_SESSION));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -7586,9 +7215,8 @@ void InRpcEnumSession(RPC_ENUM_SESSION *t, PACK *p) {
 void OutRpcEnumSession(PACK *p, RPC_ENUM_SESSION *t) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 	PackAddStr(p, "HubName", t->HubName);
 
 	for (i = 0; i < t->NumSession; i++) {
@@ -7618,9 +7246,8 @@ void OutRpcEnumSession(PACK *p, RPC_ENUM_SESSION *t) {
 }
 void FreeRpcEnumSession(RPC_ENUM_SESSION *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->Sessions);
 }
@@ -7628,9 +7255,8 @@ void FreeRpcEnumSession(RPC_ENUM_SESSION *t) {
 // RPC_KEY_PAIR
 void InRpcKeyPair(RPC_KEY_PAIR *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	t->Cert = PackGetX(p, "Cert");
 	t->Chain = PackGetXList(p, "Chain");
@@ -7639,9 +7265,8 @@ void InRpcKeyPair(RPC_KEY_PAIR *t, PACK *p) {
 }
 void OutRpcKeyPair(PACK *p, RPC_KEY_PAIR *t) {
 	// Validate arguments
-	if (p == NULL || t == NULL) {
+	if (p == NULL || t == NULL)
 		return;
-	}
 
 	PackAddX(p, "Cert", t->Cert);
 	PackAddXList(p, "Chain", t->Chain);
@@ -7657,9 +7282,8 @@ void FreeRpcKeyPair(RPC_KEY_PAIR *t) {
 // NODE_INFO
 void InRpcNodeInfo(NODE_INFO *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(NODE_INFO));
 	PackGetStr(p, "ClientProductName", t->ClientProductName, sizeof(t->ClientProductName));
@@ -7689,9 +7313,8 @@ void InRpcNodeInfo(NODE_INFO *t, PACK *p) {
 }
 void OutRpcNodeInfo(PACK *p, NODE_INFO *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "ClientProductName", t->ClientProductName);
 	PackAddStr(p, "ServerProductName", t->ServerProductName);
@@ -7722,9 +7345,8 @@ void OutRpcNodeInfo(PACK *p, NODE_INFO *t) {
 // RPC_SESSION_STATUS
 void InRpcSessionStatus(RPC_SESSION_STATUS *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_SESSION_STATUS));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -7742,9 +7364,8 @@ void InRpcSessionStatus(RPC_SESSION_STATUS *t, PACK *p) {
 }
 void OutRpcSessionStatus(PACK *p, RPC_SESSION_STATUS *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddStr(p, "Name", t->Name);
@@ -7761,9 +7382,8 @@ void OutRpcSessionStatus(PACK *p, RPC_SESSION_STATUS *t) {
 }
 void FreeRpcSessionStatus(RPC_SESSION_STATUS *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	CiFreeClientGetConnectionStatus(&t->Status);
 }
@@ -7771,9 +7391,8 @@ void FreeRpcSessionStatus(RPC_SESSION_STATUS *t) {
 // RPC_DELETE_SESSION
 void InRpcDeleteSession(RPC_DELETE_SESSION *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_DELETE_SESSION));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -7781,9 +7400,8 @@ void InRpcDeleteSession(RPC_DELETE_SESSION *t, PACK *p) {
 }
 void OutRpcDeleteSession(PACK *p, RPC_DELETE_SESSION *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddStr(p, "Name", t->Name);
@@ -7793,9 +7411,8 @@ void OutRpcDeleteSession(PACK *p, RPC_DELETE_SESSION *t) {
 void InRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t, PACK *p) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_ENUM_MAC_TABLE));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -7816,9 +7433,8 @@ void InRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t, PACK *p) {
 void OutRpcEnumMacTable(PACK *p, RPC_ENUM_MAC_TABLE *t) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 
@@ -7835,9 +7451,8 @@ void OutRpcEnumMacTable(PACK *p, RPC_ENUM_MAC_TABLE *t) {
 }
 void FreeRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->MacTables);
 }
@@ -7846,9 +7461,8 @@ void FreeRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t) {
 void InRpcEnumIpTable(RPC_ENUM_IP_TABLE *t, PACK *p) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_ENUM_IP_TABLE));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -7861,9 +7475,8 @@ void InRpcEnumIpTable(RPC_ENUM_IP_TABLE *t, PACK *p) {
 		e->Key = PackGetIntEx(p, "Key", i);
 		PackGetStrEx(p, "SessionName", e->SessionName, sizeof(e->SessionName), i);
 		e->Ip = PackGetIp32Ex(p, "Ip", i);
-		if (PackGetIpEx(p, "IpV6", &e->IpV6, i) == false) {
+		if (PackGetIpEx(p, "IpV6", &e->IpV6, i) == false)
 			UINTToIP(&e->IpV6, e->Ip);
-		}
 		PackGetIp(p, "IpAddress", &e->IpAddress);
 		e->DhcpAllocated = PackGetBoolEx(p, "DhcpAllocated", i);
 		e->CreatedTime = PackGetInt64Ex(p, "CreatedTime", i);
@@ -7873,9 +7486,8 @@ void InRpcEnumIpTable(RPC_ENUM_IP_TABLE *t, PACK *p) {
 void OutRpcEnumIpTable(PACK *p, RPC_ENUM_IP_TABLE *t) {
 	UINT i;
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 
@@ -7894,9 +7506,8 @@ void OutRpcEnumIpTable(PACK *p, RPC_ENUM_IP_TABLE *t) {
 }
 void FreeRpcEnumIpTable(RPC_ENUM_IP_TABLE *t) {
 	// Validate arguments
-	if (t == NULL) {
+	if (t == NULL)
 		return;
-	}
 
 	Free(t->IpTables);
 }
@@ -7904,9 +7515,8 @@ void FreeRpcEnumIpTable(RPC_ENUM_IP_TABLE *t) {
 // RPC_DELETE_TABLE
 void InRpcDeleteTable(RPC_DELETE_TABLE *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(RPC_DELETE_TABLE));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
@@ -7914,9 +7524,8 @@ void InRpcDeleteTable(RPC_DELETE_TABLE *t, PACK *p) {
 }
 void OutRpcDeleteTable(PACK *p, RPC_DELETE_TABLE *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddInt(p, "Key", t->Key);
@@ -7949,12 +7558,10 @@ void FreeRpcTest(RPC_TEST *t) {
 // Admin RPC call
 PACK *AdminCall(RPC *rpc, char *function_name, PACK *p) {
 	// Validate arguments
-	if (rpc == NULL || function_name == NULL) {
+	if (rpc == NULL || function_name == NULL)
 		return NULL;
-	}
-	if (p == NULL) {
+	if (p == NULL)
 		p = NewPack();
-	}
 
 	//	Debug("Admin RPC Call: %s\n", function_name);
 
@@ -7967,14 +7574,12 @@ bool CheckAdminSourceAddress(SOCK *sock, char *hubname) {
 	char *s;
 	bool ok = false;
 	// Validate arguments
-	if (sock == NULL) {
+	if (sock == NULL)
 		return false;
-	}
 
 	b = ReadDump(ADMINIP_TXT);
-	if (b == NULL) {
+	if (b == NULL)
 		return true;
-	}
 
 	while (true) {
 		UINT i;
@@ -7985,21 +7590,18 @@ bool CheckAdminSourceAddress(SOCK *sock, char *hubname) {
 		IP ip2;
 		s = CfgReadNextLine(b);
 
-		if (s == NULL) {
+		if (s == NULL)
 			break;
-		}
 
 		Trim(s);
 
 		i = SearchStrEx(s, "//", 0, false);
-		if (i != INFINITE) {
+		if (i != INFINITE)
 			s[i] = 0;
-		}
 
 		i = SearchStrEx(s, "#", 0, false);
-		if (i != INFINITE) {
+		if (i != INFINITE)
 			s[i] = 0;
-		}
 
 		Trim(s);
 
@@ -8012,26 +7614,22 @@ bool CheckAdminSourceAddress(SOCK *sock, char *hubname) {
 							IPAnd4(&ip1, &sock->RemoteIP, &mask);
 							IPAnd4(&ip2, &ip, &mask);
 
-							if (CmpIpAddr(&ip1, &ip2) == 0) {
+							if (CmpIpAddr(&ip1, &ip2) == 0)
 								ok = true;
-							}
 						} else if (IsIP6(&sock->RemoteIP) && IsIP6(&ip)) {
 							IPAnd6(&ip1, &sock->RemoteIP, &mask);
 							IPAnd6(&ip2, &ip, &mask);
 
-							if (CmpIpAddr(&ip1, &ip2) == 0) {
+							if (CmpIpAddr(&ip1, &ip2) == 0)
 								ok = true;
-							}
 						}
 					} else if (StrToIP(&ip, t->Token[0])) {
-						if (CmpIpAddr(&sock->RemoteIP, &ip) == 0) {
+						if (CmpIpAddr(&sock->RemoteIP, &ip) == 0)
 							ok = true;
-						}
 					}
 
-					if (StrCmpi(t->Token[0], "*") == 0) {
+					if (StrCmpi(t->Token[0], "*") == 0)
 						ok = true;
-					}
 				}
 			}
 
@@ -8062,16 +7660,14 @@ UINT AdminAccept(CONNECTION *c, PACK *p) {
 	bool accept_empty_password;
 	bool is_empty_password = false;
 	// Validate arguments
-	if (c == NULL || p == NULL) {
+	if (c == NULL || p == NULL)
 		return ERR_INTERNAL_ERROR;
-	}
 
 	cedar = c->Cedar;
 	sock = c->FirstSock;
 
-	if (cedar != NULL) {
+	if (cedar != NULL)
 		server = cedar->Server;
-	}
 
 	accept_empty_password = PackGetBool(p, "accept_empty_password");
 
@@ -8123,18 +7719,16 @@ UINT AdminAccept(CONNECTION *c, PACK *p) {
 	if (Cmp(secure_null_password, secure_password, SHA1_SIZE) == 0) {
 		if (IsLocalHostIP(&sock->RemoteIP) == false) {
 			// The client tried to use blank password for hub admin mode from remote
-			if (StrLen(hubname) != 0) {
+			if (StrLen(hubname) != 0)
 				return ERR_NULL_PASSWORD_LOCAL_ONLY;
-			}
 		}
 	}
 
 
 	// Reply success result
 	p = NewPack();
-	if (accept_empty_password && is_empty_password) {
+	if (accept_empty_password && is_empty_password)
 		PackAddBool(p, "empty_password", true);
-	}
 	HttpServerSend(sock, p);
 	FreePack(p);
 
@@ -8177,12 +7771,10 @@ UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hub
 	UCHAR check[SHA1_SIZE];
 	bool b_dummy;
 	// Validate arguments
-	if (c == NULL || random == NULL || secure_password == NULL) {
+	if (c == NULL || random == NULL || secure_password == NULL)
 		return ERR_INTERNAL_ERROR;
-	}
-	if (is_password_empty == NULL) {
+	if (is_password_empty == NULL)
 		is_password_empty = &b_dummy;
-	}
 
 	*is_password_empty = false;
 
@@ -8243,9 +7835,8 @@ UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hub
 // Hash admin password
 void HashAdminPassword(void *hash, char *password) {
 	// Validate arguments
-	if (hash == NULL || password == NULL) {
+	if (hash == NULL || password == NULL)
 		return;
-	}
 
 	Sha0(hash, password, StrLen(password));
 }
@@ -8255,9 +7846,8 @@ void AdminDisconnect(RPC *rpc) {
 	SESSION *s;
 	SOCK *sock;
 	// Validate arguments
-	if (rpc == NULL) {
+	if (rpc == NULL)
 		return;
-	}
 
 	s = (SESSION *)rpc->Param;
 	sock = rpc->Sock;
@@ -8277,9 +7867,8 @@ SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *h
 	RPC_WINVER ver;
 	// connect
 	s = NewRpcSessionEx2(cedar, o, err, client_name, hWnd);
-	if (s == NULL) {
+	if (s == NULL)
 		return NULL;
-	}
 
 	// Get socket
 	sock = s->Connection->FirstSock;
@@ -8302,9 +7891,8 @@ SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *h
 	PackAddData(p, "secure_password", secure_password, sizeof(secure_password));
 
 	// HUB name
-	if (hubname != NULL) {
+	if (hubname != NULL)
 		PackAddStr(p, "hubname", hubname);
-	}
 
 	if (HttpClientSend(sock, p) == false) {
 		// disconnect
@@ -8332,9 +7920,8 @@ SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *h
 		return NULL;
 	}
 
-	if (empty_password != NULL) {
+	if (empty_password != NULL)
 		*empty_password = PackGetBool(p, "empty_password");
-	}
 
 	FreePack(p);
 
@@ -8352,21 +7939,18 @@ RPC *AdminConnectEx2(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed
 	UCHAR hashed_password_2[SHA1_SIZE];
 	bool empty_password = false;
 	// Validate arguments
-	if (cedar == NULL || o == NULL || hashed_password == NULL || err == NULL) {
+	if (cedar == NULL || o == NULL || hashed_password == NULL || err == NULL)
 		return NULL;
-	}
 
-	if (client_name == NULL) {
+	if (client_name == NULL)
 		client_name = CEDAR_MANAGER_STR;
-	}
 
 	Copy(hashed_password_2, hashed_password, SHA1_SIZE);
 
 	s = AdminConnectMain(cedar, o, hubname, hashed_password_2, err, client_name, hWnd, &empty_password);
 
-	if (s == NULL) {
+	if (s == NULL)
 		return NULL;
-	}
 
 	sock = s->Connection->FirstSock;
 
@@ -8378,11 +7962,10 @@ RPC *AdminConnectEx2(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed
 	StrCpy(rpc->VpnServerHubName, sizeof(rpc->VpnServerHubName), hubname);
 	StrCpy(rpc->VpnServerClientName, sizeof(rpc->VpnServerClientName), client_name);
 
-	if (empty_password == false) {
+	if (empty_password == false)
 		Copy(rpc->VpnServerHashedPassword, hashed_password_2, SHA1_SIZE);
-	} else {
+	else
 		HashAdminPassword(rpc->VpnServerHashedPassword, "");
-	}
 
 	// timeout setting
 	SetTimeout(sock, INFINITE);
@@ -8398,9 +7981,8 @@ UINT AdminReconnect(RPC *rpc) {
 	UINT err;
 	bool empty_password = false;
 	// Validate arguments
-	if (rpc == NULL || rpc->IsVpnServer == false) {
+	if (rpc == NULL || rpc->IsVpnServer == false)
 		return ERR_INTERNAL_ERROR;
-	}
 
 	s = (SESSION *)rpc->Param;
 	cedar = s->Cedar;
@@ -8422,13 +8004,11 @@ UINT AdminReconnect(RPC *rpc) {
 
 	ReleaseCedar(cedar);
 
-	if (s == NULL) {
+	if (s == NULL)
 		return err;
-	}
 
-	if (empty_password) {
+	if (empty_password)
 		HashAdminPassword(rpc->VpnServerHashedPassword, "");
-	}
 
 	rpc->Param = s;
 	rpc->Sock = s->Connection->FirstSock;
@@ -8441,15 +8021,13 @@ UINT AdminReconnect(RPC *rpc) {
 bool SiIsEmptyPassword(void *hash_password) {
 	UCHAR hash[SHA1_SIZE];
 	// Validate arguments
-	if (hash_password == NULL) {
+	if (hash_password == NULL)
 		return false;
-	}
 
 	Sha0(hash, "", 0);
 
-	if (Cmp(hash_password, hash, SHA1_SIZE) == 0) {
+	if (Cmp(hash_password, hash, SHA1_SIZE) == 0)
 		return true;
-	}
 
 	return false;
 }

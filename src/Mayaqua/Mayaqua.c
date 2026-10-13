@@ -102,16 +102,14 @@ void WriteProbeData(char *filename, UINT line, char *str, void *data, UINT size)
 	char tmp[MAX_SIZE];
 	USHORT cs;
 
-	if (IsProbeEnabled() == false) {
+	if (IsProbeEnabled() == false)
 		return;
-	}
 
 	// Take a checksum of the data
-	if (size != 0) {
+	if (size != 0)
 		cs = CalcChecksum16(data, size);
-	} else {
+	else
 		cs = 0;
-	}
 
 	// Generating a String
 	snprintf(tmp, sizeof(tmp), "\"%s\" (Size=%5u, Crc=0x%04X)", str, size, cs);
@@ -128,9 +126,8 @@ void WriteProbe(char *filename, UINT line, char *str) {
 	UINT64 now = 0;
 	UINT64 time;
 
-	if (IsProbeEnabled() == false) {
+	if (IsProbeEnabled() == false)
 		return;
-	}
 
 	now = MsGetHiResCounter();
 
@@ -142,9 +139,8 @@ void WriteProbe(char *filename, UINT line, char *str) {
 
 		diff = time - probe_last;
 
-		if (time < probe_last) {
+		if (time < probe_last)
 			diff = 0;
-		}
 
 		probe_last = time;
 
@@ -247,16 +243,14 @@ void TimeCheck() {
 #ifdef OS_WIN32
 	UINT now, ret, total;
 	now = Win32GetTick();
-	if (last_time_check == 0) {
+	if (last_time_check == 0)
 		ret = 0;
-	} else {
+	else
 		ret = now - last_time_check;
-	}
 	last_time_check = now;
 
-	if (first_time_check == 0) {
+	if (first_time_check == 0)
 		first_time_check = now;
-	}
 
 	total = now - first_time_check;
 
@@ -285,11 +279,10 @@ void CheckEndian() {
 
 	test = 0x1234;
 	buf = (UCHAR *)&test;
-	if (buf[0] == 0x12) {
+	if (buf[0] == 0x12)
 		g_little_endian = false;
-	} else {
+	else
 		g_little_endian = true;
-	}
 }
 
 // Minimize mode
@@ -305,9 +298,8 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv) {
 	wchar_t tmp[MAX_PATH];
 	UCHAR hash[SHA1_SIZE];
 
-	if ((init_mayaqua_counter++) > 0) {
+	if ((init_mayaqua_counter++) > 0)
 		return;
-	}
 
 	InitProcessCallOnce();
 
@@ -433,9 +425,8 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv) {
 
 // Release of Mayaqua library
 void FreeMayaqua() {
-	if ((--init_mayaqua_counter) > 0) {
+	if ((--init_mayaqua_counter) > 0)
 		return;
-	}
 
 	// Release of Private IP File
 	FreePrivateIPFile();
@@ -480,14 +471,12 @@ void FreeMayaqua() {
 
 	if (IsTrackingEnabled()) {
 		// Show the kernel status
-		if (g_debug) {
+		if (g_debug)
 			PrintKernelStatus();
-		}
 
 		// Display the debug information
-		if (g_memcheck) {
+		if (g_memcheck)
 			PrintDebugInformation();
-		}
 
 		// Release the tracking
 		FreeTracking();
@@ -543,9 +532,8 @@ OS_INFO *GetOsInfo() {
 
 // Initialization of OS information
 void InitOsInfo() {
-	if (os_info != NULL) {
+	if (os_info != NULL)
 		return;
-	}
 
 	os_info = ZeroMalloc(sizeof(OS_INFO));
 
@@ -554,9 +542,8 @@ void InitOsInfo() {
 
 // Release of OS information
 void FreeOsInfo() {
-	if (os_info == NULL) {
+	if (os_info == NULL)
 		return;
-	}
 
 	Free(os_info->OsSystemName);
 	Free(os_info->OsProductName);
@@ -571,36 +558,31 @@ void FreeOsInfo() {
 
 // Getting the command line tokens
 TOKEN_LIST *GetCommandLineToken() {
-	if (cmdline_token == NULL) {
+	if (cmdline_token == NULL)
 		return NullToken();
-	} else {
+	else
 		return CopyToken(cmdline_token);
-	}
 }
 
 // Convert the command line string into tokens
 void ParseCommandLineTokens() {
-	if (cmdline_token != NULL) {
+	if (cmdline_token != NULL)
 		FreeToken(cmdline_token);
-	}
 	cmdline_token = ParseCmdLine(cmdline);
 
-	if (cmdline_uni_token != NULL) {
+	if (cmdline_uni_token != NULL)
 		UniFreeToken(cmdline_uni_token);
-	}
 	cmdline_uni_token = UniParseCmdLine(uni_cmdline);
 }
 
 // Release command line tokens
 void FreeCommandLineTokens() {
-	if (cmdline_token != NULL) {
+	if (cmdline_token != NULL)
 		FreeToken(cmdline_token);
-	}
 	cmdline_token = NULL;
 
-	if (cmdline_uni_token != NULL) {
+	if (cmdline_uni_token != NULL)
 		UniFreeToken(cmdline_uni_token);
-	}
 	cmdline_uni_token = NULL;
 }
 
@@ -618,9 +600,8 @@ void InitCommandLineStr(int argc, char **argv) {
 		int i, total_len = 1;
 		char *tmp;
 
-		for (i = 1; i < argc; i++) {
+		for (i = 1; i < argc; i++)
 			total_len += StrLen(argv[i]) * 2 + 32;
-		}
 		tmp = ZeroMalloc(total_len);
 
 		for (i = 1; i < argc; i++) {
@@ -628,13 +609,11 @@ void InitCommandLineStr(int argc, char **argv) {
 			char *s = ZeroMalloc(s_size);
 			bool dq = (SearchStrEx(argv[i], " ", 0, true) != INFINITE);
 			ReplaceStrEx(s, s_size, argv[i], "\"", "\"\"", true);
-			if (dq) {
+			if (dq)
 				StrCat(tmp, total_len, "\"");
-			}
 			StrCat(tmp, total_len, s);
-			if (dq) {
+			if (dq)
 				StrCat(tmp, total_len, "\"");
-			}
 			StrCat(tmp, total_len, " ");
 			Free(s);
 		}
@@ -662,23 +641,20 @@ void FreeCommandLineStr() {
 
 // Get the Unicode command line string
 wchar_t *GetCommandLineUniStr() {
-	if (uni_cmdline == NULL) {
+	if (uni_cmdline == NULL)
 		return UniCopyStr(L"");
-	} else {
+	else
 		return UniCopyStr(uni_cmdline);
-	}
 }
 
 // Set the Unicode command line string
 void SetCommandLineUniStr(wchar_t *str) {
-	if (uni_cmdline != NULL) {
+	if (uni_cmdline != NULL)
 		Free(uni_cmdline);
-	}
-	if (str == NULL) {
+	if (str == NULL)
 		uni_cmdline = NULL;
-	} else {
+	else
 		uni_cmdline = CopyUniStr(str);
-	}
 
 	ParseCommandLineTokens();
 }
@@ -687,14 +663,12 @@ void SetCommandLineUniStr(wchar_t *str) {
 void SetCommandLineStr(char *str) {
 	// Validate arguments
 	if (str == NULL) {
-		if (cmdline != NULL) {
+		if (cmdline != NULL)
 			Free(cmdline);
-		}
 		cmdline = NULL;
 	} else {
-		if (cmdline != NULL) {
+		if (cmdline != NULL)
 			Free(cmdline);
-		}
 		cmdline = CopyStr(str);
 	}
 
@@ -704,9 +678,8 @@ void SetCommandLineStr(char *str) {
 			uni_cmdline = NULL;
 		}
 	} else {
-		if (uni_cmdline != NULL) {
+		if (uni_cmdline != NULL)
 			Free(uni_cmdline);
-		}
 		uni_cmdline = CopyStrToUni(cmdline);
 	}
 
@@ -771,9 +744,8 @@ void PrintKernelStatus() {
 
 	if (KS_GET(KS_CURRENT_MEM_COUNT) != 0 || KS_GET(KS_CURRENT_LOCK_COUNT) != 0 ||
 	    KS_GET(KS_MEMPOOL_CURRENT_NUM) != 0 ||
-	    KS_GET(KS_CURRENT_LOCKED_COUNT) != 0 || KS_GET(KS_CURRENT_REF_COUNT) != 0) {
+	    KS_GET(KS_CURRENT_LOCKED_COUNT) != 0 || KS_GET(KS_CURRENT_REF_COUNT) != 0)
 		leaked = true;
-	}
 
 	if (leaked) {
 		Print("      !!! MEMORY LEAKS DETECTED !!!\n\n");
@@ -798,9 +770,8 @@ void InitKernelStatus() {
 	Zero(kernel_status_max, sizeof(kernel_status_max));
 
 	// Lock initialization
-	for (i = 0; i < NUM_KERNEL_STATUS; i++) {
+	for (i = 0; i < NUM_KERNEL_STATUS; i++)
 		kernel_status_lock[i] = OSNewLock();
-	}
 
 	kernel_status_inited = true;
 }
@@ -812,17 +783,15 @@ void FreeKernelStatus() {
 	kernel_status_inited = false;
 
 	// Lock release
-	for (i = 0; i < NUM_KERNEL_STATUS; i++) {
+	for (i = 0; i < NUM_KERNEL_STATUS; i++)
 		OSDeleteLock(kernel_status_lock[i]);
-	}
 }
 
 // Lock the kernel status
 void LockKernelStatus(UINT id) {
 	// Validate arguments
-	if (id >= NUM_KERNEL_STATUS) {
+	if (id >= NUM_KERNEL_STATUS)
 		return;
-	}
 
 	OSLock(kernel_status_lock[id]);
 }
@@ -830,9 +799,8 @@ void LockKernelStatus(UINT id) {
 // Unlock the kernel status
 void UnlockKernelStatus(UINT id) {
 	// Validate arguments
-	if (id >= NUM_KERNEL_STATUS) {
+	if (id >= NUM_KERNEL_STATUS)
 		return;
-	}
 
 	OSUnlock(kernel_status_lock[id]);
 }

@@ -47,19 +47,16 @@ void InitTable() {
 	}
 
 	// Read the lang.config
-	if (LoadLangConfigCurrentDir(tmp, sizeof(tmp))) {
+	if (LoadLangConfigCurrentDir(tmp, sizeof(tmp)))
 		e = GetBestLangByName(o, tmp);
-	}
 
 	os_lang = GetBestLangForCurrentEnvironment(o);
 
-	if (e == NULL) {
+	if (e == NULL)
 		e = os_lang;
-	}
 
-	if (e == NULL) {
+	if (e == NULL)
 		goto LABEL_FATAL_ERROR;
-	}
 
 	SaveLangConfigCurrentDir(e->Name);
 
@@ -71,9 +68,8 @@ void InitTable() {
 
 	// Read the corresponding string table
 	Format(table_name, sizeof(table_name), "|strtable_%s.stb", current_lang.Name);
-	if (LoadTable(table_name) == false) {
+	if (LoadTable(table_name) == false)
 		goto LABEL_FATAL_ERROR;
-	}
 
 	FreeLangList(o);
 }
@@ -81,9 +77,8 @@ void InitTable() {
 // Get the current language
 void GetCurrentLang(LANGLIST *e) {
 	// Validate arguments
-	if (e == NULL) {
+	if (e == NULL)
 		return;
-	}
 
 	Copy(e, &current_lang, sizeof(LANGLIST));
 }
@@ -102,9 +97,8 @@ UINT GetCurrentLangId() {
 // Write to the lang.config file in the current directory
 bool SaveLangConfigCurrentDir(char *str) {
 	// Validate arguments
-	if (str == NULL) {
+	if (str == NULL)
 		return false;
-	}
 
 	return SaveLangConfig(LANG_CONFIG_FILENAME, str);
 }
@@ -116,15 +110,13 @@ bool SaveLangConfig(wchar_t *filename, char *str) {
 	UINT i;
 	bool ret;
 	// Validate arguments
-	if (filename == NULL) {
+	if (filename == NULL)
 		return false;
-	}
 
 	// Read the template
 	b = ReadDump(LANG_CONFIG_TEMPLETE);
-	if (b == NULL) {
+	if (b == NULL)
 		return false;
-	}
 
 	SeekBuf(b, b->Size, 0);
 
@@ -160,9 +152,8 @@ bool SaveLangConfig(wchar_t *filename, char *str) {
 // Read the lang.config file in the current directory
 bool LoadLangConfigCurrentDir(char *str, UINT str_size) {
 	// Validate arguments
-	if (str == NULL) {
+	if (str == NULL)
 		return false;
-	}
 
 	return LoadLangConfig(LANG_CONFIG_FILENAME, str, str_size);
 }
@@ -172,21 +163,18 @@ bool LoadLangConfig(wchar_t *filename, char *str, UINT str_size) {
 	BUF *b;
 	bool ret = false;
 	// Validate arguments
-	if (filename == NULL || str == NULL) {
+	if (filename == NULL || str == NULL)
 		return false;
-	}
 
 	b = ReadDumpW(filename);
-	if (b == NULL) {
+	if (b == NULL)
 		return false;
-	}
 
 	while (true) {
 		char *line = CfgReadNextLine(b);
 
-		if (line == NULL) {
+		if (line == NULL)
 			break;
-		}
 
 		Trim(line);
 
@@ -210,9 +198,8 @@ bool LoadLangConfig(wchar_t *filename, char *str, UINT str_size) {
 LANGLIST *GetBestLangForCurrentEnvironment(LIST *o) {
 	LANGLIST *ret = NULL;
 	// Validate arguments
-	if (o == NULL) {
+	if (o == NULL)
 		return NULL;
-	}
 
 #ifdef OS_WIN32
 	ret = GetBestLangByLcid(o, MsGetUserLocaleId());
@@ -226,16 +213,14 @@ LANGLIST *GetBestLangByLcid(LIST *o, UINT lcid) {
 	LANGLIST *ret;
 	UINT i;
 	// Validate arguments
-	if (o == NULL) {
+	if (o == NULL)
 		return NULL;
-	}
 
 	for (i = 0; i < LIST_NUM(o); i++) {
 		LANGLIST *e = LIST_DATA(o, i);
 
-		if (IsIntInList(e->LcidList, lcid)) {
+		if (IsIntInList(e->LcidList, lcid))
 			return e;
-		}
 	}
 
 	ret = GetBestLangByName(o, "en");
@@ -248,9 +233,8 @@ LANGLIST *GetBestLangByName(LIST *o, char *name) {
 	UINT i;
 	LANGLIST *ret = NULL;
 	// Validate arguments
-	if (o == NULL) {
+	if (o == NULL)
 		return NULL;
-	}
 
 	for (i = 0; i < LIST_NUM(o); i++) {
 		LANGLIST *e = LIST_DATA(o, i);
@@ -261,9 +245,8 @@ LANGLIST *GetBestLangByName(LIST *o, char *name) {
 		}
 	}
 
-	if (ret != NULL) {
+	if (ret != NULL)
 		return ret;
-	}
 
 	for (i = 0; i < LIST_NUM(o); i++) {
 		LANGLIST *e = LIST_DATA(o, i);
@@ -274,9 +257,8 @@ LANGLIST *GetBestLangByName(LIST *o, char *name) {
 		}
 	}
 
-	if (ret != NULL) {
+	if (ret != NULL)
 		return ret;
-	}
 
 	return ret;
 }
@@ -285,9 +267,8 @@ LANGLIST *GetBestLangByName(LIST *o, char *name) {
 void FreeLangList(LIST *o) {
 	UINT i;
 	// Validate arguments
-	if (o == NULL) {
+	if (o == NULL)
 		return;
-	}
 
 	for (i = 0; i < LIST_NUM(o); i++) {
 		LANGLIST *e = LIST_DATA(o, i);
@@ -316,9 +297,8 @@ LIST *LoadLangList() {
 	while (true) {
 		char *line = CfgReadNextLine(b);
 
-		if (line == NULL) {
+		if (line == NULL)
 			break;
-		}
 
 		Trim(line);
 
@@ -361,9 +341,8 @@ LIST *LoadLangList() {
 					if (t2 != NULL) {
 						UINT i;
 
-						for (i = 0; i < t2->NumTokens; i++) {
+						for (i = 0; i < t2->NumTokens; i++)
 							Add(e->LangList, CopyStr(t2->Token[i]));
-						}
 
 						FreeToken(t2);
 					}
@@ -390,11 +369,10 @@ wchar_t *GetUniErrorStr(UINT err) {
 	Format(name, sizeof(name), "ERR_%u", err);
 
 	ret = GetTableUniStr(name);
-	if (UniStrLen(ret) != 0) {
+	if (UniStrLen(ret) != 0)
 		return ret;
-	} else {
+	else
 		return _UU("ERR_UNKNOWN");
-	}
 }
 
 // Get an error string
@@ -404,20 +382,18 @@ char *GetErrorStr(UINT err) {
 	Format(name, sizeof(name), "ERR_%u", err);
 
 	ret = GetTableStr(name);
-	if (StrLen(ret) != 0) {
+	if (StrLen(ret) != 0)
 		return ret;
-	} else {
+	else
 		return _SS("ERR_UNKNOWN");
-	}
 }
 
 // Load the integer value from the table
 UINT GetTableInt(char *name) {
 	char *str;
 	// Validate arguments
-	if (name == NULL) {
+	if (name == NULL)
 		return 0;
-	}
 
 	str = GetTableStr(name);
 	return ToInt(str);
@@ -446,9 +422,8 @@ wchar_t *GetTableUniStr(char *name) {
 char *GetTableStr(char *name) {
 	TABLE *t;
 	// Validate arguments
-	if (name == NULL) {
+	if (name == NULL)
 		return "";
-	}
 
 	// Search
 	t = FindTable(name);
@@ -468,9 +443,8 @@ TOKEN_LIST *GetTableNameStartWith(char *str) {
 	TOKEN_LIST *t;
 	char tmp[MAX_SIZE];
 	// Validate arguments
-	if (str == NULL) {
+	if (str == NULL)
 		return NullToken();
-	}
 
 	StrCpy(tmp, sizeof(tmp), str);
 	StrUpper(tmp);
@@ -484,9 +458,8 @@ TOKEN_LIST *GetTableNameStartWith(char *str) {
 		UINT len2 = StrLen(t->name);
 
 		if (len2 >= len) {
-			if (Cmp(t->name, tmp, len) == 0) {
+			if (Cmp(t->name, tmp, len) == 0)
 				Insert(o, CopyStr(t->name));
-			}
 		}
 	}
 
@@ -494,9 +467,8 @@ TOKEN_LIST *GetTableNameStartWith(char *str) {
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
 
-	for (i = 0; i < t->NumTokens; i++) {
+	for (i = 0; i < t->NumTokens; i++)
 		t->Token[i] = LIST_DATA(o, i);
-	}
 
 	ReleaseList(o);
 
@@ -507,9 +479,8 @@ TOKEN_LIST *GetTableNameStartWith(char *str) {
 TABLE *FindTable(char *name) {
 	TABLE *t, tt;
 	// Validate arguments
-	if (name == NULL || TableList == NULL) {
+	if (name == NULL || TableList == NULL)
 		return NULL;
-	}
 
 	tt.name = CopyStr(name);
 	t = Search(TableList, &tt);
@@ -521,14 +492,12 @@ TABLE *FindTable(char *name) {
 // A function that compares the table name
 int CmpTableName(void *p1, void *p2) {
 	TABLE *t1, *t2;
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	t1 = *(TABLE **)p1;
 	t2 = *(TABLE **)p2;
-	if (t1 == NULL || t2 == NULL) {
+	if (t1 == NULL || t2 == NULL)
 		return 0;
-	}
 
 	return StrCmpi(t1->name, t2->name);
 }
@@ -546,21 +515,18 @@ TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *replace_
 	UINT unistr_size, str_size;
 	TABLE *t;
 	// Validate arguments
-	if (line == NULL || prefix == NULL) {
+	if (line == NULL || prefix == NULL)
 		return NULL;
-	}
 	TrimLeft(line);
 
 	// No line
 	len = StrLen(line);
-	if (len == 0) {
+	if (len == 0)
 		return NULL;
-	}
 
 	// Comment
-	if (line[0] == '#' || (line[0] == '/' && line[1] == '/')) {
+	if (line[0] == '#' || (line[0] == '/' && line[1] == '/'))
 		return NULL;
-	}
 
 	// Search to the end position of the name
 	len_name = 0;
@@ -569,9 +535,8 @@ TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *replace_
 			// There is only one token
 			return NULL;
 		}
-		if (line[i] == ' ' || line[i] == '\t') {
+		if (line[i] == ' ' || line[i] == '\t')
 			break;
-		}
 		len_name++;
 	}
 
@@ -580,9 +545,8 @@ TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *replace_
 
 	string_start = len_name;
 	for (i = len_name; i < len; i++) {
-		if (line[i] != ' ' && line[i] != '\t') {
+		if (line[i] != ' ' && line[i] != '\t')
 			break;
-		}
 		string_start++;
 	}
 	if (i == len) {
@@ -641,9 +605,8 @@ TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *replace_
 		StrCpy(prefix, prefix_size, str);
 		Trim(prefix);
 
-		if (StrCmpi(prefix, "$") == 0 || StrCmpi(prefix, "NULL") == 0) {
+		if (StrCmpi(prefix, "$") == 0 || StrCmpi(prefix, "NULL") == 0)
 			prefix[0] = 0;
-		}
 
 		Free(name);
 		Free(str);
@@ -679,9 +642,8 @@ void UnescapeStr(char *src) {
 	UINT i, len, wp;
 	char *tmp;
 	// Validate arguments
-	if (src == NULL) {
+	if (src == NULL)
 		return;
-	}
 
 	len = StrLen(src);
 	tmp = Malloc(len + 1);
@@ -725,9 +687,8 @@ FINISH:
 void FreeTable() {
 	UINT i, num;
 	TABLE **tables;
-	if (TableList == NULL) {
+	if (TableList == NULL)
 		return;
-	}
 
 	num = LIST_NUM(TableList);
 	tables = ToArray(TableList);
@@ -752,9 +713,8 @@ bool LoadTableFromBuf(BUF *b) {
 	LIST *replace_list = NULL;
 	UINT i;
 	// Validate arguments
-	if (b == NULL) {
+	if (b == NULL)
 		return false;
-	}
 
 	// If the table already exists, delete it
 	FreeTable();
@@ -772,9 +732,8 @@ bool LoadTableFromBuf(BUF *b) {
 		bool ok = true;
 
 		tmp = CfgReadNextLine(b);
-		if (tmp == NULL) {
+		if (tmp == NULL)
 			break;
-		}
 
 		if (tmp[0] == '$') {
 			char key[128];
@@ -837,9 +796,8 @@ void GenerateUnicodeCacheFileName(wchar_t *name, UINT size, wchar_t *strfilename
 	wchar_t exe[MAX_SIZE];
 	UCHAR hash[SHA1_SIZE];
 	// Validate arguments
-	if (name == NULL || strfilename == NULL || filehash == NULL) {
+	if (name == NULL || strfilename == NULL || filehash == NULL)
 		return;
-	}
 
 	GetExeDirW(exe, sizeof(exe));
 	UniStrCpy(hashtemp, sizeof(hashtemp), strfilename);
@@ -868,9 +826,8 @@ void SaveUnicodeCache(wchar_t *strfilename, UINT strfilesize, UCHAR *hash) {
 	wchar_t name[MAX_PATH];
 	UCHAR binhash[MD5_SIZE];
 	// Validate arguments
-	if (strfilename == NULL || hash == NULL) {
+	if (strfilename == NULL || hash == NULL)
 		return;
-	}
 
 	Zero(&c, sizeof(c));
 	UniToStr(c.StrFileName, sizeof(c.StrFileName), strfilename);
@@ -923,16 +880,14 @@ bool LoadUnicodeCache(wchar_t *strfilename, UINT strfilesize, UCHAR *hash) {
 	UCHAR binhash[MD5_SIZE];
 	UCHAR binhash_2[MD5_SIZE];
 	// Validate arguments
-	if (strfilename == NULL || hash == NULL) {
+	if (strfilename == NULL || hash == NULL)
 		return false;
-	}
 
 	GenerateUnicodeCacheFileName(name, sizeof(name), strfilename, strfilesize, hash);
 
 	io = FileOpenW(name, false);
-	if (io == NULL) {
+	if (io == NULL)
 		return false;
-	}
 
 	b = FileToBuf(io);
 	if (b == NULL) {
@@ -1009,13 +964,11 @@ bool LoadTableMain(wchar_t *filename) {
 	UINT64 t1, t2;
 	UCHAR hash[MD5_SIZE];
 	// Validate arguments
-	if (filename == NULL) {
+	if (filename == NULL)
 		return false;
-	}
 
-	if (MayaquaIsMinimalMode()) {
+	if (MayaquaIsMinimalMode())
 		return true;
-	}
 
 	if (UniStrCmpi(old_table_name, filename) == 0) {
 		// Already loaded

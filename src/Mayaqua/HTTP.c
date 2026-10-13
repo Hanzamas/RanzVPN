@@ -737,9 +737,8 @@ void GetHttpDateStr(char *str, UINT size, UINT64 t) {
 	        "Dec",
 	    };
 	// Validate arguments
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 	UINT64ToSystem(&s, t);
 
 	Format(str, size, "%s, %02u %s %04u %02u:%02u:%02u GMT",
@@ -750,12 +749,11 @@ void GetHttpDateStr(char *str, UINT size, UINT64 t) {
 // Replace unsafe characters in target
 void ReplaceUnsafeCharInHttpTarget(char *target) {
 	UINT i;
-	for (i = 0; target[i]; i++) {
+	for (i = 0; target[i]; i++)
 		if (target[i] == '<')
 			target[i] = '(';
 		else if (target[i] == '>')
 			target[i] = ')';
-	}
 }
 
 // Create an HTTP header
@@ -765,9 +763,8 @@ HTTP_HEADER *NewHttpHeader(char *method, char *target, char *version) {
 HTTP_HEADER *NewHttpHeaderEx(char *method, char *target, char *version, bool no_sort) {
 	HTTP_HEADER *header;
 	// Validate arguments
-	if (method == NULL || target == NULL || version == NULL) {
+	if (method == NULL || target == NULL || version == NULL)
 		return NULL;
-	}
 
 	header = ZeroMalloc(sizeof(HTTP_HEADER));
 
@@ -784,18 +781,16 @@ void FreeHttpHeader(HTTP_HEADER *header) {
 	UINT i;
 	HTTP_VALUE **values;
 	// Validate arguments
-	if (header == NULL) {
+	if (header == NULL)
 		return;
-	}
 
 	Free(header->Method);
 	Free(header->Target);
 	Free(header->Version);
 
 	values = ToArray(header->ValueList);
-	for (i = 0; i < LIST_NUM(header->ValueList); i++) {
+	for (i = 0; i < LIST_NUM(header->ValueList); i++)
 		FreeHttpValue(values[i]);
-	}
 	Free(values);
 
 	ReleaseList(header->ValueList);
@@ -807,9 +802,8 @@ void FreeHttpHeader(HTTP_HEADER *header) {
 HTTP_VALUE *NewHttpValue(char *name, char *data) {
 	HTTP_VALUE *v;
 	// Validate arguments
-	if (name == NULL || data == NULL) {
+	if (name == NULL || data == NULL)
 		return NULL;
-	}
 
 	v = ZeroMalloc(sizeof(HTTP_VALUE));
 
@@ -825,9 +819,8 @@ HTTP_VALUE *NewHttpValue(char *name, char *data) {
 // Release the HTTP value
 void FreeHttpValue(HTTP_VALUE *value) {
 	// Validate arguments
-	if (value == NULL) {
+	if (value == NULL)
 		return;
-	}
 
 	Free(value->Data);
 	Free(value->Name);
@@ -838,14 +831,12 @@ void FreeHttpValue(HTTP_VALUE *value) {
 // Comparison function of the HTTP value
 int CompareHttpValue(void *p1, void *p2) {
 	HTTP_VALUE *v1, *v2;
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	v1 = *(HTTP_VALUE **)p1;
 	v2 = *(HTTP_VALUE **)p2;
-	if (v1 == NULL || v2 == NULL) {
+	if (v1 == NULL || v2 == NULL)
 		return 0;
-	}
 	return StrCmpi(v1->Name, v2->Name);
 }
 
@@ -853,15 +844,13 @@ int CompareHttpValue(void *p1, void *p2) {
 HTTP_VALUE *GetHttpValue(HTTP_HEADER *header, char *name) {
 	HTTP_VALUE *v, t;
 	// Validate arguments
-	if (header == NULL || name == NULL) {
+	if (header == NULL || name == NULL)
 		return NULL;
-	}
 
 	t.Name = name;
 	v = Search(header->ValueList, &t);
-	if (v == NULL) {
+	if (v == NULL)
 		return NULL;
-	}
 
 	return v;
 }
@@ -869,15 +858,13 @@ HTTP_VALUE *GetHttpValue(HTTP_HEADER *header, char *name) {
 // Add an HTTP value to the HTTP header
 void AddHttpValue(HTTP_HEADER *header, HTTP_VALUE *value) {
 	// Validate arguments
-	if (header == NULL || value == NULL) {
+	if (header == NULL || value == NULL)
 		return;
-	}
 
-	if (LIST_NUM(header->ValueList) < HTTP_HEADER_MAX_LINES) {
+	if (LIST_NUM(header->ValueList) < HTTP_HEADER_MAX_LINES)
 		Insert(header->ValueList, value);
-	} else {
+	else
 		FreeHttpValue(value);
-	}
 }
 
 // Adds the HTTP value contained in the string to the HTTP header
@@ -888,9 +875,8 @@ bool AddHttpValueStr(HTTP_HEADER *header, char *string) {
 	char *value_data = NULL;
 
 	// Validate arguments
-	if (header == NULL || IsEmptyStr(string)) {
+	if (header == NULL || IsEmptyStr(string))
 		return false;
-	}
 
 	// Sanitize string
 	EnSafeHttpHeaderValueStr(string, ' ');
@@ -931,14 +917,12 @@ UINT GetContentLength(HTTP_HEADER *header) {
 	UINT ret;
 	HTTP_VALUE *v;
 	// Validate arguments
-	if (header == NULL) {
+	if (header == NULL)
 		return 0;
-	}
 
 	v = GetHttpValue(header, "Content-Length");
-	if (v == NULL) {
+	if (v == NULL)
 		return 0;
-	}
 
 	ret = ToInt(v->Data);
 
@@ -951,9 +935,8 @@ bool PostHttp(SOCK *s, HTTP_HEADER *header, void *post_data, UINT post_size) {
 	BUF *b;
 	bool ret;
 	// Validate arguments
-	if (s == NULL || header == NULL || (post_size != 0 && post_data == NULL)) {
+	if (s == NULL || header == NULL || (post_size != 0 && post_data == NULL))
 		return false;
-	}
 
 	// Check whether the Content-Length exists?
 	if (GetHttpValue(header, "Content-Length") == NULL) {
@@ -965,9 +948,8 @@ bool PostHttp(SOCK *s, HTTP_HEADER *header, void *post_data, UINT post_size) {
 
 	// Convert the header to string
 	header_str = HttpHeaderToStr(header);
-	if (header_str == NULL) {
+	if (header_str == NULL)
 		return false;
-	}
 	b = NewBuf();
 	WriteBuf(b, header_str, StrLen(header_str));
 	Free(header_str);
@@ -990,9 +972,8 @@ char *HttpHeaderToStr(HTTP_HEADER *header) {
 	UINT i;
 	char *s;
 	// Validate arguments
-	if (header == NULL) {
+	if (header == NULL)
 		return NULL;
-	}
 
 	tmp = Malloc(HTTP_HEADER_LINE_MAX_SIZE);
 	b = NewBuf();
@@ -1027,9 +1008,8 @@ bool SendHttpHeader(SOCK *s, HTTP_HEADER *header) {
 	char *str;
 	bool ret;
 	// Validate arguments
-	if (s == NULL || header == NULL) {
+	if (s == NULL || header == NULL)
 		return false;
-	}
 
 	// Convert to string
 	str = HttpHeaderToStr(header);
@@ -1049,15 +1029,13 @@ HTTP_HEADER *RecvHttpHeader(SOCK *s) {
 	char *str = NULL;
 	HTTP_HEADER *header = NULL;
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return NULL;
-	}
 
 	// Get the first line
 	str = RecvLine(s, HTTP_HEADER_LINE_MAX_SIZE);
-	if (str == NULL) {
+	if (str == NULL)
 		return NULL;
-	}
 
 	// Split into tokens
 	token = ParseToken(str, " ");
@@ -1110,18 +1088,16 @@ bool HttpClientSend(SOCK *s, PACK *p) {
 	char ip_str[MAX_SIZE];
 
 	// Validate arguments
-	if (s == NULL || p == NULL) {
+	if (s == NULL || p == NULL)
 		return false;
-	}
 
 	IPToStr(ip_str, sizeof(ip_str), &s->RemoteIP);
 
 	CreateDummyValue(p);
 
 	b = PackToBuf(p);
-	if (b == NULL) {
+	if (b == NULL)
 		return false;
-	}
 
 	h = NewHttpHeader("POST", HTTP_VPN_TARGET, "HTTP/1.1");
 
@@ -1150,15 +1126,13 @@ PACK *HttpClientRecv(SOCK *s) {
 	HTTP_VALUE *v;
 	UINT num_noop = 0;
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return NULL;
-	}
 
 START:
 	h = RecvHttpHeader(s);
-	if (h == NULL) {
+	if (h == NULL)
 		return NULL;
-	}
 
 	if (StrCmpi(h->Method, "HTTP/1.1") != 0 ||
 	    StrCmpi(h->Target, "200") != 0) {
@@ -1203,9 +1177,8 @@ START:
 
 		num_noop++;
 
-		if (num_noop > MAX_NOOP_PER_SESSION) {
+		if (num_noop > MAX_NOOP_PER_SESSION)
 			return NULL;
-		}
 
 		goto START;
 	}
@@ -1219,16 +1192,14 @@ bool HttpServerSend(SOCK *s, PACK *p) {
 	HTTP_HEADER *h;
 	char date_str[MAX_SIZE];
 	// Validate arguments
-	if (s == NULL || p == NULL) {
+	if (s == NULL || p == NULL)
 		return false;
-	}
 
 	CreateDummyValue(p);
 
 	b = PackToBuf(p);
-	if (b == NULL) {
+	if (b == NULL)
 		return false;
-	}
 
 	h = NewHttpHeader("HTTP/1.1", "200", "OK");
 
@@ -1260,15 +1231,13 @@ PACK *HttpServerRecvEx(SOCK *s, UINT max_data_size) {
 	UINT num_noop = 0;
 	if (max_data_size == 0) max_data_size = HTTP_PACK_MAX_SIZE;
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return NULL;
-	}
 
 START:
 	h = RecvHttpHeader(s);
-	if (h == NULL) {
+	if (h == NULL)
 		goto BAD_REQUEST;
-	}
 
 	if (StrCmpi(h->Method, "POST") != 0 ||
 	    StrCmpi(h->Target, HTTP_VPN_TARGET) != 0 ||
@@ -1322,9 +1291,8 @@ START:
 
 		num_noop++;
 
-		if (num_noop > MAX_NOOP_PER_SESSION) {
+		if (num_noop > MAX_NOOP_PER_SESSION)
 			return NULL;
-		}
 
 		goto START;
 	} else if (noop == NOOP_IGNORE) {
@@ -1352,9 +1320,8 @@ bool HttpSendForbidden(SOCK *s, char *target, char *server_id) {
 	char host[MAX_SIZE];
 	UINT port;
 	// Validate arguments
-	if (s == NULL || target == NULL) {
+	if (s == NULL || target == NULL)
 		return false;
-	}
 
 	// Get the host name
 	//GetMachineName(host, MAX_SIZE);
@@ -1409,9 +1376,8 @@ bool HttpSendNotFound(SOCK *s, char *target) {
 	char host[MAX_SIZE];
 	UINT port;
 	// Validate arguments
-	if (s == NULL || target == NULL) {
+	if (s == NULL || target == NULL)
 		return false;
-	}
 
 	// Get the host name
 	//GetMachineName(host, MAX_SIZE);
@@ -1466,9 +1432,8 @@ bool HttpSendNotImplemented(SOCK *s, char *method, char *target, char *version) 
 	char host[MAX_SIZE];
 	UINT port;
 	// Validate arguments
-	if (s == NULL || target == NULL) {
+	if (s == NULL || target == NULL)
 		return false;
-	}
 
 	// Get the host name
 	//GetMachineName(host, MAX_SIZE);

@@ -24,9 +24,8 @@ void UdpAccelPoll(UDP_ACCEL *a) {
 	UINT num_ignore_errors = 0;
 	UCHAR *tmp;
 	// Validate arguments
-	if (a == NULL) {
+	if (a == NULL)
 		return;
-	}
 
 	tmp = a->TmpBuf;
 
@@ -54,22 +53,20 @@ void UdpAccelPoll(UDP_ACCEL *a) {
 				// Receive a packet
 				InsertQueue(a->RecvBlockQueue, b);
 			}
-		} else {
-			if (ret == 0) {
-				if (a->UdpSock->IgnoreRecvErr == false) {
-					// Serious UDP reception error occurs
-					a->FatalError = true;
-					break;
-				}
-
-				if ((num_ignore_errors++) >= MAX_NUM_IGNORE_ERRORS) {
-					a->FatalError = true;
-					break;
-				}
-			} else {
-				// SOCK_LATER
+		} else if (ret == 0) {
+			if (a->UdpSock->IgnoreRecvErr == false) {
+				// Serious UDP reception error occurs
+				a->FatalError = true;
 				break;
 			}
+
+			if ((num_ignore_errors++) >= MAX_NUM_IGNORE_ERRORS) {
+				a->FatalError = true;
+				break;
+			}
+		} else {
+			// SOCK_LATER
+			break;
 		}
 	}
 
@@ -78,11 +75,10 @@ void UdpAccelPoll(UDP_ACCEL *a) {
 		if (UdpAccelIsSendReady(a, false)) {
 			UINT rand_interval;
 
-			if (a->FastDetect == false) {
+			if (a->FastDetect == false)
 				rand_interval = rand() % (UDP_ACCELERATION_KEEPALIVE_INTERVAL_MAX - UDP_ACCELERATION_KEEPALIVE_INTERVAL_MIN) + UDP_ACCELERATION_KEEPALIVE_INTERVAL_MIN;
-			} else {
+			else
 				rand_interval = rand() % (UDP_ACCELERATION_KEEPALIVE_INTERVAL_MAX_FAST - UDP_ACCELERATION_KEEPALIVE_INTERVAL_MIN_FAST) + UDP_ACCELERATION_KEEPALIVE_INTERVAL_MIN_FAST;
-			}
 
 			a->NextSendKeepAlive = a->Now + (UINT64)rand_interval;
 
@@ -96,9 +92,8 @@ void UdpAccelPoll(UDP_ACCEL *a) {
 // Send a packet block
 void UdpAccelSendBlock(UDP_ACCEL *a, BLOCK *b) {
 	// Validate arguments
-	if (a == NULL || b == NULL) {
+	if (a == NULL || b == NULL)
 		return;
-	}
 
 	UdpAccelSend(a, b->Buf, b->Size, b->Compressed ? 1 : 0, a->MaxUdpPacketSize, b->PriorityQoS);
 }
@@ -108,18 +103,16 @@ UINT UdpAccelCalcMss(UDP_ACCEL *a) {
 	UINT ret;
 
 	// Validate arguments
-	if (a == NULL) {
+	if (a == NULL)
 		return 0;
-	}
 
 	ret = MTU_FOR_PPPOE;
 
 	// IPv4
-	if (a->IsIPv6) {
+	if (a->IsIPv6)
 		ret -= 40;
-	} else {
+	else
 		ret -= 20;
-	}
 
 	// UDP
 	ret -= 8;
@@ -171,12 +164,10 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 	UINT u32;
 	USHORT u16;
 	// Validate arguments
-	if (a == NULL || (data_size != 0 && data == NULL)) {
+	if (a == NULL || (data_size != 0 && data == NULL))
 		return;
-	}
-	if (max_size == 0) {
+	if (max_size == 0)
 		max_size = INFINITE;
-	}
 
 	if (a->PlainTextMode == false) {
 		if (a->Version > 1) {
@@ -285,9 +276,8 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 		}
 	}
 
-	if (data_size > 0 || UdpAccelIsSendReady(a, true)) {
+	if (data_size > 0 || UdpAccelIsSendReady(a, true))
 		return;
-	}
 
 	Debug("UdpAccelSend(): Peer has not replied in a while, sending keep-alive packet to alt destinations...\n");
 
@@ -300,18 +290,15 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 	ports[1] = a->YourPortReported == a->YourPort ? 0 : a->YourPortReported;
 
 	for (BYTE i = 0; i < sizeof(ips) / sizeof(ips[0]); ++i) {
-		if (IsZeroIP(ips[i])) {
+		if (IsZeroIP(ips[i]))
 			continue;
-		}
 
 		for (BYTE j = 0; j < sizeof(ports) / sizeof(ports[0]); ++j) {
-			if (ports[j] == 0) {
+			if (ports[j] == 0)
 				continue;
-			}
 
-			if (CmpIpAddr(ips[i], &a->YourIp) == 0 && ports[j] == a->YourPort) {
+			if (CmpIpAddr(ips[i], &a->YourIp) == 0 && ports[j] == a->YourPort)
 				continue;
-			}
 
 			if (SendTo(a->UdpSock, ips[i], ports[j], buffer, size) == 0) {
 				Debug("UdpAccelSend(): SendTo() failed! IP: %r, port: %u, size: %u\n", ips[i], ports[j], size);
@@ -321,9 +308,8 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 				}
 			}
 
-			if (UdpAccelIsSendReady(a, true)) {
+			if (UdpAccelIsSendReady(a, true))
 				break;
-			}
 		}
 	}
 }
@@ -332,38 +318,32 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 bool UdpAccelIsSendReady(UDP_ACCEL *a, bool check_keepalive) {
 	UINT64 timeout_value;
 	// Validate arguments
-	if (a == NULL) {
+	if (a == NULL)
 		return false;
-	}
 
-	if (a->Inited == false) {
+	if (a->Inited == false)
 		return false;
-	}
 
-	if (a->YourPort == 0) {
+	if (a->YourPort == 0)
 		return false;
-	}
 
-	if (IsZeroIp(&a->YourIp)) {
+	if (IsZeroIp(&a->YourIp))
 		return false;
-	}
 
 	timeout_value = UDP_ACCELERATION_KEEPALIVE_TIMEOUT;
 
-	if (a->FastDetect) {
+	if (a->FastDetect)
 		timeout_value = UDP_ACCELERATION_KEEPALIVE_TIMEOUT_FAST;
-	}
 
 	if (check_keepalive) {
 		if (a->LastRecvTick == 0 || ((a->LastRecvTick + timeout_value) < a->Now)) {
 			a->FirstStableReceiveTick = 0;
 			return false;
 		} else {
-			if ((a->FirstStableReceiveTick + (UINT64)UDP_ACCELERATION_REQUIRE_CONTINUOUS) <= a->Now) {
+			if ((a->FirstStableReceiveTick + (UINT64)UDP_ACCELERATION_REQUIRE_CONTINUOUS) <= a->Now)
 				return true;
-			} else {
+			else
 				return false;
-			}
 		}
 	}
 
@@ -380,9 +360,8 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 	BLOCK *b = NULL;
 	UINT cookie;
 	// Validate arguments
-	if (a == NULL || buf == NULL || size == 0 || src_ip == NULL) {
+	if (a == NULL || buf == NULL || size == 0 || src_ip == NULL)
 		return NULL;
-	}
 
 	if (a->PlainTextMode == false) {
 		UCHAR *iv = buf;
@@ -390,16 +369,14 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 		if (a->Version > 1) {
 			UINT data_size;
 
-			if (size < UDP_ACCELERATION_PACKET_IV_SIZE_V2) {
+			if (size < UDP_ACCELERATION_PACKET_IV_SIZE_V2)
 				return NULL;
-			}
 
 			buf += UDP_ACCELERATION_PACKET_IV_SIZE_V2;
 			size -= UDP_ACCELERATION_PACKET_IV_SIZE_V2;
 
-			if (size < UDP_ACCELERATION_PACKET_MAC_SIZE_V2) {
+			if (size < UDP_ACCELERATION_PACKET_MAC_SIZE_V2)
 				return NULL;
-			}
 
 			data_size = size - UDP_ACCELERATION_PACKET_MAC_SIZE_V2;
 
@@ -413,9 +390,8 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 			UCHAR key[UDP_ACCELERATION_PACKET_KEY_SIZE_V1];
 			CRYPT *c;
 
-			if (size < UDP_ACCELERATION_PACKET_IV_SIZE_V1) {
+			if (size < UDP_ACCELERATION_PACKET_IV_SIZE_V1)
 				return NULL;
-			}
 
 			buf += UDP_ACCELERATION_PACKET_IV_SIZE_V1;
 			size -= UDP_ACCELERATION_PACKET_IV_SIZE_V1;
@@ -429,57 +405,49 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 	}
 
 	// Cookie
-	if (size < sizeof(UINT)) {
+	if (size < sizeof(UINT))
 		return NULL;
-	}
 	cookie = READ_UINT(buf);
 	buf += sizeof(UINT);
 	size -= sizeof(UINT);
 
-	if (cookie != a->MyCookie) {
+	if (cookie != a->MyCookie)
 		return NULL;
-	}
 
 	// My tick
-	if (size < sizeof(UINT64)) {
+	if (size < sizeof(UINT64))
 		return NULL;
-	}
 	my_tick = READ_UINT64(buf);
 	buf += sizeof(UINT64);
 	size -= sizeof(UINT64);
 
 	// Your tick
-	if (size < sizeof(UINT64)) {
+	if (size < sizeof(UINT64))
 		return NULL;
-	}
 	your_tick = READ_UINT64(buf);
 	buf += sizeof(UINT64);
 	size -= sizeof(UINT64);
 
 	// Inner data size
-	if (size < sizeof(USHORT)) {
+	if (size < sizeof(USHORT))
 		return NULL;
-	}
 	inner_size = READ_USHORT(buf);
 	buf += sizeof(USHORT);
 	size -= sizeof(USHORT);
 
 	// Flag
-	if (size < sizeof(UCHAR)) {
+	if (size < sizeof(UCHAR))
 		return NULL;
-	}
-	if (a->ReadRawFlagMode == false) {
+	if (a->ReadRawFlagMode == false)
 		compress_flag = *((UCHAR *)buf);
-	} else {
+	else
 		raw_flag = *((UCHAR *)buf);
-	}
 
 	buf += sizeof(UCHAR);
 	size -= sizeof(UCHAR);
 
-	if (size < inner_size) {
+	if (size < inner_size)
 		return NULL;
-	}
 
 	// Inner_data
 	if (inner_size >= 1) {
@@ -493,28 +461,24 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 		if (a->Version == 1) {
 			UINT pad_size;
 
-			if (size < UDP_ACCELERATION_PACKET_IV_SIZE_V1) {
+			if (size < UDP_ACCELERATION_PACKET_IV_SIZE_V1)
 				return false;
-			}
 
 			pad_size = size - UDP_ACCELERATION_PACKET_IV_SIZE_V1;
 			buf += pad_size;
 			size -= pad_size;
 
-			if (size != UDP_ACCELERATION_PACKET_IV_SIZE_V1) {
+			if (size != UDP_ACCELERATION_PACKET_IV_SIZE_V1)
 				return NULL;
-			}
 
-			if (IsZero(buf, UDP_ACCELERATION_PACKET_IV_SIZE_V1) == false) {
+			if (IsZero(buf, UDP_ACCELERATION_PACKET_IV_SIZE_V1) == false)
 				return NULL;
-			}
 		}
 	}
 
 	if (my_tick < a->LastRecvYourTick) {
-		if ((a->LastRecvYourTick - my_tick) >= ((UINT64)UDP_ACCELERATION_WINDOW_SIZE_MSEC)) {
+		if ((a->LastRecvYourTick - my_tick) >= ((UINT64)UDP_ACCELERATION_WINDOW_SIZE_MSEC))
 			return NULL;
-		}
 	}
 
 	a->LastRecvMyTick = MAX(a->LastRecvMyTick, your_tick);
@@ -522,9 +486,8 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 
 	if (inner_size >= 1) {
 		b = NewBlock(Clone(inner_data, inner_size), inner_size, a->ReadRawFlagMode == false ? (compress_flag ? -1 : 0) : 0);
-		if (a->ReadRawFlagMode) {
+		if (a->ReadRawFlagMode)
 			b->RawFlagRetUdpAccel = raw_flag;
-		}
 	}
 
 	if (a->LastSetSrcIpAndPortTick < a->LastRecvYourTick) {
@@ -540,9 +503,8 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 
 			a->IsReachedOnce = true;
 
-			if (a->FirstStableReceiveTick == 0) {
+			if (a->FirstStableReceiveTick == 0)
 				a->FirstStableReceiveTick = a->Now;
-			}
 		}
 	}
 
@@ -553,9 +515,8 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 void UdpAccelCalcKeyV1(UCHAR *key, UCHAR *common_key, UCHAR *iv) {
 	UCHAR tmp[UDP_ACCELERATION_COMMON_KEY_SIZE_V1 + UDP_ACCELERATION_PACKET_IV_SIZE_V1];
 	// Validate arguments
-	if (key == NULL || common_key == NULL || iv == NULL) {
+	if (key == NULL || common_key == NULL || iv == NULL)
 		return;
-	}
 
 	Copy(tmp, common_key, UDP_ACCELERATION_COMMON_KEY_SIZE_V1);
 	Copy(tmp + UDP_ACCELERATION_COMMON_KEY_SIZE_V1, iv, UDP_ACCELERATION_PACKET_IV_SIZE_V1);
@@ -566,9 +527,8 @@ void UdpAccelCalcKeyV1(UCHAR *key, UCHAR *common_key, UCHAR *iv) {
 // Set the current time
 void UdpAccelSetTick(UDP_ACCEL *a, UINT64 tick64) {
 	// Validate arguments
-	if (a == NULL) {
+	if (a == NULL)
 		return;
-	}
 
 	a->Now = tick64;
 }
@@ -576,16 +536,14 @@ void UdpAccelSetTick(UDP_ACCEL *a, UINT64 tick64) {
 // Initialize the server-side
 bool UdpAccelInitServer(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, IP *reported_ip, USHORT port) {
 	// Validate arguments
-	if (a == NULL || key == NULL || detected_ip == NULL || port == 0) {
+	if (a == NULL || key == NULL || detected_ip == NULL || port == 0)
 		return false;
-	}
 
 	Debug("UdpAccelInitServer(): Version: %u, detected_ip: %r, reported_ip: %r, port: %hu, YourCookie: %u, MyCookie: %u\n",
 	      a->Version, detected_ip, reported_ip, port, a->YourCookie, a->MyCookie);
 
-	if (IsIP6(detected_ip) != a->IsIPv6) {
+	if (IsIP6(detected_ip) != a->IsIPv6)
 		return false;
-	}
 
 	if (a->Version > 1) {
 		a->CipherEncrypt = NewCipher("ChaCha20-Poly1305");
@@ -612,16 +570,14 @@ bool UdpAccelInitServer(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, IP *reported_
 // Initialize the client-side
 bool UdpAccelInitClient(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, IP *reported_ip, USHORT port, UINT cookie, UINT my_cookie) {
 	// Validate arguments
-	if (a == NULL || key == NULL || detected_ip == NULL || port == 0) {
+	if (a == NULL || key == NULL || detected_ip == NULL || port == 0)
 		return false;
-	}
 
 	Debug("UdpAccelInitClient(): Version: %u, detected_ip: %s, reported_ip: %s, port: %hu, cookie: %u, my_cookie: %u\n",
 	      a->Version, detected_ip, reported_ip, port, cookie, my_cookie);
 
-	if (IsIP6(detected_ip) != a->IsIPv6) {
+	if (IsIP6(detected_ip) != a->IsIPv6)
 		return false;
-	}
 
 	if (a->Version > 1) {
 		a->CipherEncrypt = NewCipher("ChaCha20-Poly1305");
@@ -659,9 +615,8 @@ void UdpAccelQueryStun(UDP_ACCEL *a, IP *peer_ip) {
 	IP ip;
 	UINT port;
 	// Validate arguments
-	if (a == NULL || a->UdpSock == NULL || peer_ip == NULL) {
+	if (a == NULL || a->UdpSock == NULL || peer_ip == NULL)
 		return;
-	}
 
 	Lock(a->Cedar->lock);
 	{
@@ -707,9 +662,8 @@ UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port)
 	UINT max_udp_size;
 	bool is_in_cedar_port_list = false;
 
-	if (IsZeroIP(ip)) {
+	if (IsZeroIP(ip))
 		ip = NULL;
-	}
 
 	if (client_mode || random_port) {
 		// Use a appropriate vacant port number in the case of using random port or client mode
@@ -737,16 +691,14 @@ UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port)
 				s = NewUDPEx3(0, ip);
 			}
 
-			if (s != NULL && is_in_cedar_port_list) {
+			if (s != NULL && is_in_cedar_port_list)
 				AddIntDistinct(cedar->UdpPortList, i);
-			}
 		}
 		UnlockList(cedar->UdpPortList);
 	}
 
-	if (s == NULL) {
+	if (s == NULL)
 		return NULL;
-	}
 
 	a = ZeroMalloc(sizeof(UDP_ACCEL));
 
@@ -809,16 +761,14 @@ UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port)
 // Release the UDP acceleration function
 void FreeUdpAccel(UDP_ACCEL *a) {
 	// Validate arguments
-	if (a == NULL) {
+	if (a == NULL)
 		return;
-	}
 
 	while (true) {
 		BLOCK *b = GetNext(a->RecvBlockQueue);
 
-		if (b == NULL) {
+		if (b == NULL)
 			break;
-		}
 
 		FreeBlock(b);
 	}

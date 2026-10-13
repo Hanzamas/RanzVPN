@@ -72,26 +72,23 @@ POLICY_ITEM policy_item[] =
 void FormatPolicyValue(wchar_t *str, UINT size, UINT id, UINT value) {
 	POLICY_ITEM *p;
 	// Validate arguments
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	p = GetPolicyItem(id);
 
 	if (p->TypeInt == false) {
 		// bool type
-		if (value == 0) {
+		if (value == 0)
 			UniStrCpy(str, size, L"No");
-		} else {
+		else
 			UniStrCpy(str, size, L"Yes");
-		}
 	} else {
 		// int type
-		if (value == 0 && p->AllowZero) {
+		if (value == 0 && p->AllowZero)
 			UniStrCpy(str, size, _UU("CMD_NO_SETTINGS"));
-		} else {
+		else
 			UniFormat(str, size, _UU(p->FormatStr), value);
-		}
 	}
 }
 
@@ -99,9 +96,8 @@ void FormatPolicyValue(wchar_t *str, UINT size, UINT id, UINT value) {
 void GetPolicyValueRangeStr(wchar_t *str, UINT size, UINT id) {
 	POLICY_ITEM *p;
 	// Validate arguments
-	if (str == NULL) {
+	if (str == NULL)
 		return;
-	}
 
 	p = GetPolicyItem(id);
 
@@ -113,11 +109,10 @@ void GetPolicyValueRangeStr(wchar_t *str, UINT size, UINT id) {
 		wchar_t tmp1[256], tmp2[256];
 
 		// int type
-		if (p->AllowZero) {
+		if (p->AllowZero)
 			tag = _UU("CMD_PolicyList_Range_Int_2");
-		} else {
+		else
 			tag = _UU("CMD_PolicyList_Range_Int_1");
-		}
 
 		UniFormat(tmp1, sizeof(tmp1), _UU(p->FormatStr), p->MinValue);
 		UniFormat(tmp2, sizeof(tmp2), _UU(p->FormatStr), p->MaxValue);
@@ -195,15 +190,12 @@ char *PolicyIdToStr(UINT i) {
 UINT PolicyStrToId(char *name) {
 	UINT i;
 	// Validate arguments
-	if (name == NULL) {
+	if (name == NULL)
 		return INFINITE;
-	}
 
-	for (i = 0; i < NUM_POLICY_ITEM; i++) {
-		if (StartWith(PolicyIdToStr(i), name)) {
+	for (i = 0; i < NUM_POLICY_ITEM; i++)
+		if (StartWith(PolicyIdToStr(i), name))
 			return i;
-		}
-	}
 
 	return INFINITE;
 }
@@ -218,9 +210,8 @@ bool IsUserName(char *name) {
 	UINT i, len;
 	char tmp[MAX_SIZE];
 	// Validate arguments
-	if (name == NULL) {
+	if (name == NULL)
 		return false;
-	}
 
 	StrCpy(tmp, sizeof(tmp), name);
 	name = tmp;
@@ -228,39 +219,30 @@ bool IsUserName(char *name) {
 	Trim(name);
 
 	len = StrLen(name);
-	if (len == 0) {
+	if (len == 0)
 		return false;
-	}
 
-	if (StrCmpi(name, "*") == 0) {
+	if (StrCmpi(name, "*") == 0)
 		return true;
-	}
 
-	for (i = 0; i < len; i++) {
-		if (IsSafeChar(name[i]) == false && name[i] != '@') {
+	for (i = 0; i < len; i++)
+		if (IsSafeChar(name[i]) == false && name[i] != '@')
 			return false;
-		}
-	}
 
-	if (StrCmpi(name, LINK_USER_NAME) == 0) {
+	if (StrCmpi(name, LINK_USER_NAME) == 0)
 		return false;
-	}
 
-	if (StrCmpi(name, LINK_USER_NAME_PRINT) == 0) {
+	if (StrCmpi(name, LINK_USER_NAME_PRINT) == 0)
 		return false;
-	}
 
-	if (StrCmpi(name, BRIDGE_USER_NAME) == 0) {
+	if (StrCmpi(name, BRIDGE_USER_NAME) == 0)
 		return false;
-	}
 
-	if (StrCmpi(name, BRIDGE_USER_NAME_PRINT) == 0) {
+	if (StrCmpi(name, BRIDGE_USER_NAME_PRINT) == 0)
 		return false;
-	}
 
-	if (StrCmpi(name, ADMINISTRATOR_USERNAME) == 0) {
+	if (StrCmpi(name, ADMINISTRATOR_USERNAME) == 0)
 		return false;
-	}
 
 	return true;
 }
@@ -269,9 +251,8 @@ bool IsUserName(char *name) {
 POLICY *ClonePolicy(POLICY *policy) {
 	POLICY *ret;
 	// Validate arguments
-	if (policy == NULL) {
+	if (policy == NULL)
 		return NULL;
-	}
 
 	ret = ZeroMalloc(sizeof(POLICY));
 	Copy(ret, policy, sizeof(POLICY));
@@ -282,9 +263,8 @@ POLICY *ClonePolicy(POLICY *policy) {
 // Overwrite policy value (If old version data overwrites new version, leave new version value as it is.)
 void OverwritePolicy(POLICY **target, POLICY *p) {
 	// Validate arguments
-	if (target == NULL) {
+	if (target == NULL)
 		return;
-	}
 
 	if (p == NULL) {
 		// Erase policy
@@ -292,32 +272,28 @@ void OverwritePolicy(POLICY **target, POLICY *p) {
 			Free(*target);
 			*target = NULL;
 		}
-	} else {
-		if (p->Ver3) {
-			// Ver 3
-			if (*target != NULL) {
-				Free(*target);
-				*target = NULL;
-			}
-
-			*target = ClonePolicy(p);
-		} else {
-			// Ver 2
-			if (*target == NULL) {
-				*target = ClonePolicy(p);
-			} else {
-				Copy(*target, p, policy_item[NUM_POLICY_ITEM_FOR_VER2].Offset);
-			}
+	} else if (p->Ver3) {
+		// Ver 3
+		if (*target != NULL) {
+			Free(*target);
+			*target = NULL;
 		}
+
+		*target = ClonePolicy(p);
+	} else {
+		// Ver 2
+		if (*target == NULL)
+			*target = ClonePolicy(p);
+		else
+			Copy(*target, p, policy_item[NUM_POLICY_ITEM_FOR_VER2].Offset);
 	}
 }
 
 // Set user policy
 void SetUserPolicy(USER *u, POLICY *policy) {
 	// Validate arguments
-	if (u == NULL) {
+	if (u == NULL)
 		return;
-	}
 
 	Lock(u->lock);
 	{
@@ -329,9 +305,8 @@ void SetUserPolicy(USER *u, POLICY *policy) {
 // Set group policy
 void SetGroupPolicy(USERGROUP *g, POLICY *policy) {
 	// Validate arguments
-	if (g == NULL) {
+	if (g == NULL)
 		return;
-	}
 
 	Lock(g->lock);
 	{
@@ -344,17 +319,15 @@ void SetGroupPolicy(USERGROUP *g, POLICY *policy) {
 POLICY *GetGroupPolicy(USERGROUP *g) {
 	POLICY *ret;
 	// Validate arguments
-	if (g == NULL) {
+	if (g == NULL)
 		return NULL;
-	}
 
 	Lock(g->lock);
 	{
-		if (g->Policy == NULL) {
+		if (g->Policy == NULL)
 			ret = NULL;
-		} else {
+		else
 			ret = ClonePolicy(g->Policy);
-		}
 	}
 	Unlock(g->lock);
 
@@ -422,12 +395,10 @@ void *NewRootCertAuthData(X_SERIAL *serial, wchar_t *common_name) {
 	AUTHROOTCERT *a;
 
 	a = ZeroMallocEx(sizeof(AUTHROOTCERT), true);
-	if (common_name != NULL && UniIsEmptyStr(common_name) == false) {
+	if (common_name != NULL && UniIsEmptyStr(common_name) == false)
 		a->CommonName = CopyUniStr(common_name);
-	}
-	if (serial != NULL && serial->size >= 1) {
+	if (serial != NULL && serial->size >= 1)
 		a->Serial = CloneXSerial(serial);
-	}
 
 	return a;
 }
@@ -447,9 +418,8 @@ void HashPassword(void *dst, char *username, char *password) {
 	BUF *b;
 	char *username_upper;
 	// Validate arguments
-	if (dst == NULL || username == NULL || password == NULL) {
+	if (dst == NULL || username == NULL || password == NULL)
 		return;
-	}
 
 	b = NewBuf();
 	username_upper = CopyStr(username);
@@ -466,9 +436,8 @@ void HashPassword(void *dst, char *username, char *password) {
 void *NewPasswordAuthData(char *username, char *password) {
 	AUTHPASSWORD *pw;
 	// Validate arguments
-	if (username == NULL || password == NULL) {
+	if (username == NULL || password == NULL)
 		return NULL;
-	}
 
 	pw = ZeroMalloc(sizeof(AUTHPASSWORD));
 	HashPassword(pw->HashedKey, username, password);
@@ -481,16 +450,14 @@ void *NewPasswordAuthData(char *username, char *password) {
 void *NewPasswordAuthDataRaw(UCHAR *hashed_password, UCHAR *ntlm_secure_hash) {
 	AUTHPASSWORD *pw;
 	// Validate arguments
-	if (hashed_password == NULL) {
+	if (hashed_password == NULL)
 		return NULL;
-	}
 
 	pw = ZeroMalloc(sizeof(AUTHPASSWORD));
 	Copy(pw->HashedKey, hashed_password, SHA1_SIZE);
 
-	if (ntlm_secure_hash != NULL) {
+	if (ntlm_secure_hash != NULL)
 		Copy(pw->NtLmSecureHash, ntlm_secure_hash, MD5_SIZE);
-	}
 
 	return pw;
 }
@@ -502,9 +469,8 @@ void *CopyAuthData(void *authdata, UINT authtype) {
 	AUTHROOTCERT *rootcert = (AUTHROOTCERT *)authdata;
 	AUTHNT *nt = (AUTHNT *)authdata;
 	// Validate arguments
-	if (authdata == NULL || authtype == AUTHTYPE_ANONYMOUS) {
+	if (authdata == NULL || authtype == AUTHTYPE_ANONYMOUS)
 		return NULL;
-	}
 
 	switch (authtype) {
 	case AUTHTYPE_PASSWORD: {
@@ -539,12 +505,10 @@ void *CopyAuthData(void *authdata, UINT authtype) {
 // Set authentication data to the user
 void SetUserAuthData(USER *u, UINT authtype, void *authdata) {
 	// Validate arguments
-	if (u == NULL) {
+	if (u == NULL)
 		return;
-	}
-	if (authtype != AUTHTYPE_ANONYMOUS && authdata == NULL) {
+	if (authtype != AUTHTYPE_ANONYMOUS && authdata == NULL)
 		return;
-	}
 
 	Lock(u->lock);
 	{
@@ -557,9 +521,8 @@ void SetUserAuthData(USER *u, UINT authtype, void *authdata) {
 				// and management tool don't send NTLM hash.
 
 				if (Cmp(pw_old->HashedKey, pw_new->HashedKey, SHA1_SIZE) == 0) {
-					if (IsZero(pw_new->NtLmSecureHash, MD5_SIZE)) {
+					if (IsZero(pw_new->NtLmSecureHash, MD5_SIZE))
 						Copy(pw_new->NtLmSecureHash, pw_old->NtLmSecureHash, MD5_SIZE);
-					}
 				}
 			}
 
@@ -576,17 +539,15 @@ void SetUserAuthData(USER *u, UINT authtype, void *authdata) {
 // Set traffic data for group
 void SetGroupTraffic(USERGROUP *g, TRAFFIC *t) {
 	// Validate arguments
-	if (g == NULL) {
+	if (g == NULL)
 		return;
-	}
 
 	Lock(g->lock);
 	{
-		if (t != NULL) {
+		if (t != NULL)
 			Copy(g->Traffic, t, sizeof(TRAFFIC));
-		} else {
+		else
 			Zero(g->Traffic, sizeof(TRAFFIC));
-		}
 	}
 	Unlock(g->lock);
 }
@@ -594,17 +555,15 @@ void SetGroupTraffic(USERGROUP *g, TRAFFIC *t) {
 // Set traffic data for user
 void SetUserTraffic(USER *u, TRAFFIC *t) {
 	// Validate arguments
-	if (u == NULL) {
+	if (u == NULL)
 		return;
-	}
 
 	Lock(u->lock);
 	{
-		if (t != NULL) {
+		if (t != NULL)
 			Copy(u->Traffic, t, sizeof(TRAFFIC));
-		} else {
+		else
 			Zero(u->Traffic, sizeof(TRAFFIC));
-		}
 	}
 	Unlock(u->lock);
 }
@@ -612,9 +571,8 @@ void SetUserTraffic(USER *u, TRAFFIC *t) {
 // Join the user to the group
 void JoinUserToGroup(USER *u, USERGROUP *g) {
 	// Validate arguments
-	if (u == NULL) {
+	if (u == NULL)
 		return;
-	}
 
 	if (g != NULL) {
 		// Join
@@ -658,14 +616,12 @@ void JoinUserToGroup(USER *u, USERGROUP *g) {
 bool AcIsGroup(HUB *h, char *name) {
 	USERGROUP *g;
 	// Validate arguments
-	if (h == NULL || name == NULL) {
+	if (h == NULL || name == NULL)
 		return false;
-	}
 
 	g = AcGetGroup(h, name);
-	if (g == NULL) {
+	if (g == NULL)
 		return false;
-	}
 	ReleaseGroup(g);
 
 	return true;
@@ -675,14 +631,12 @@ bool AcIsGroup(HUB *h, char *name) {
 bool AcIsUser(HUB *h, char *name) {
 	USER *u;
 	// Validate arguments
-	if (h == NULL || name == NULL) {
+	if (h == NULL || name == NULL)
 		return false;
-	}
 
 	u = AcGetUser(h, name);
-	if (u == NULL) {
+	if (u == NULL)
 		return false;
-	}
 	ReleaseUser(u);
 
 	return true;
@@ -692,15 +646,13 @@ bool AcIsUser(HUB *h, char *name) {
 USERGROUP *AcGetGroup(HUB *h, char *name) {
 	USERGROUP *g, t;
 	// Validate arguments
-	if (h == NULL || name == NULL) {
+	if (h == NULL || name == NULL)
 		return NULL;
-	}
 
 	t.Name = name;
 	g = Search(h->HubDb->GroupList, &t);
-	if (g == NULL) {
+	if (g == NULL)
 		return NULL;
-	}
 	AddRef(g->ref);
 
 	return g;
@@ -710,15 +662,13 @@ USERGROUP *AcGetGroup(HUB *h, char *name) {
 USER *AcGetUser(HUB *h, char *name) {
 	USER *u, t;
 	// Validate arguments
-	if (h == NULL || name == NULL) {
+	if (h == NULL || name == NULL)
 		return NULL;
-	}
 
 	t.Name = name;
 	u = Search(h->HubDb->UserList, &t);
-	if (u == NULL) {
+	if (u == NULL)
 		return NULL;
-	}
 	AddRef(u->ref);
 
 	return u;
@@ -728,18 +678,15 @@ USER *AcGetUser(HUB *h, char *name) {
 bool AcDeleteUser(HUB *h, char *name) {
 	USER *u;
 	// Validate arguments
-	if (h == NULL || name == NULL) {
+	if (h == NULL || name == NULL)
 		return false;
-	}
 
 	u = AcGetUser(h, name);
-	if (u == NULL) {
+	if (u == NULL)
 		return false;
-	}
 
-	if (Delete(h->HubDb->UserList, u)) {
+	if (Delete(h->HubDb->UserList, u))
 		ReleaseUser(u);
-	}
 
 	ReleaseUser(u);
 
@@ -751,26 +698,22 @@ bool AcDeleteGroup(HUB *h, char *name) {
 	USERGROUP *g;
 	UINT i;
 	// Validate arguments
-	if (h == NULL || name == NULL) {
+	if (h == NULL || name == NULL)
 		return false;
-	}
 
 	g = AcGetGroup(h, name);
-	if (g == NULL) {
+	if (g == NULL)
 		return false;
-	}
 
-	if (Delete(h->HubDb->GroupList, g)) {
+	if (Delete(h->HubDb->GroupList, g))
 		ReleaseGroup(g);
-	}
 
 	for (i = 0; i < LIST_NUM(h->HubDb->UserList); i++) {
 		USER *u = LIST_DATA(h->HubDb->UserList, i);
 		Lock(u->lock);
 		{
-			if (u->Group == g) {
+			if (u->Group == g)
 				JoinUserToGroup(u, NULL);
-			}
 		}
 		Unlock(u->lock);
 	}
@@ -783,17 +726,14 @@ bool AcDeleteGroup(HUB *h, char *name) {
 // Add new group to the hub
 bool AcAddGroup(HUB *h, USERGROUP *g) {
 	// Validate arguments
-	if (h == NULL || g == NULL) {
+	if (h == NULL || g == NULL)
 		return false;
-	}
 
-	if (LIST_NUM(h->HubDb->GroupList) >= MAX_GROUPS) {
+	if (LIST_NUM(h->HubDb->GroupList) >= MAX_GROUPS)
 		return false;
-	}
 
-	if (AcIsGroup(h, g->Name) != false) {
+	if (AcIsGroup(h, g->Name) != false)
 		return false;
-	}
 
 	Insert(h->HubDb->GroupList, g);
 	AddRef(g->ref);
@@ -804,17 +744,14 @@ bool AcAddGroup(HUB *h, USERGROUP *g) {
 // Add new user in the hub
 bool AcAddUser(HUB *h, USER *u) {
 	// Validate arguments
-	if (h == NULL || u == NULL) {
+	if (h == NULL || u == NULL)
 		return false;
-	}
 
-	if (LIST_NUM(h->HubDb->UserList) >= MAX_USERS) {
+	if (LIST_NUM(h->HubDb->UserList) >= MAX_USERS)
 		return false;
-	}
 
-	if (AcIsUser(h, u->Name) != false) {
+	if (AcIsUser(h, u->Name) != false)
 		return false;
-	}
 
 	Insert(h->HubDb->UserList, u);
 	AddRef(u->ref);
@@ -825,30 +762,26 @@ bool AcAddUser(HUB *h, USER *u) {
 // Release user object (decrease reference counter)
 void ReleaseUser(USER *u) {
 	// Validate arguments
-	if (u == NULL) {
+	if (u == NULL)
 		return;
-	}
 
-	if (Release(u->ref) == 0) {
+	if (Release(u->ref) == 0)
 		CleanupUser(u);
-	}
 }
 
 // Cleanup the user object
 void CleanupUser(USER *u) {
 	// Validate arguments
-	if (u == NULL) {
+	if (u == NULL)
 		return;
-	}
 
 	DeleteLock(u->lock);
 	Free(u->Name);
 	Free(u->RealName);
 	Free(u->Note);
 	Free(u->GroupName);
-	if (u->Group != NULL) {
+	if (u->Group != NULL)
 		ReleaseGroup(u->Group);
-	}
 
 	// Free authentication data
 	FreeAuthData(u->AuthType, u->AuthData);
@@ -870,9 +803,8 @@ void FreeAuthData(UINT authtype, void *authdata) {
 	AUTHROOTCERT *rc = (AUTHROOTCERT *)authdata;
 	AUTHNT *nt = (AUTHNT *)authdata;
 	// Validate arguments
-	if (authtype == AUTHTYPE_ANONYMOUS || authdata == NULL) {
+	if (authtype == AUTHTYPE_ANONYMOUS || authdata == NULL)
 		return;
-	}
 
 	switch (authtype) {
 	case AUTHTYPE_PASSWORD:
@@ -887,12 +819,10 @@ void FreeAuthData(UINT authtype, void *authdata) {
 
 	case AUTHTYPE_ROOTCERT:
 		// Root certification
-		if (rc->Serial != NULL) {
+		if (rc->Serial != NULL)
 			FreeXSerial(rc->Serial);
-		}
-		if (rc->CommonName != NULL) {
+		if (rc->CommonName != NULL)
 			Free(rc->CommonName);
-		}
 		break;
 
 	case AUTHTYPE_NT:
@@ -908,12 +838,10 @@ void FreeAuthData(UINT authtype, void *authdata) {
 USER *NewUser(char *name, wchar_t *realname, wchar_t *note, UINT authtype, void *authdata) {
 	USER *u;
 	// Validate arguments
-	if (name == NULL || realname == NULL || note == NULL) {
+	if (name == NULL || realname == NULL || note == NULL)
 		return NULL;
-	}
-	if (authtype != AUTHTYPE_ANONYMOUS && authdata == NULL) {
+	if (authtype != AUTHTYPE_ANONYMOUS && authdata == NULL)
 		return NULL;
-	}
 
 	u = ZeroMalloc(sizeof(USER));
 	u->lock = NewLock();
@@ -937,21 +865,18 @@ USER *NewUser(char *name, wchar_t *realname, wchar_t *note, UINT authtype, void 
 // Release group object (decrease reference counter)
 void ReleaseGroup(USERGROUP *g) {
 	// Validate arguments
-	if (g == NULL) {
+	if (g == NULL)
 		return;
-	}
 
-	if (Release(g->ref) == 0) {
+	if (Release(g->ref) == 0)
 		CleanupGroup(g);
-	}
 }
 
 // Cleanup the group object
 void CleanupGroup(USERGROUP *g) {
 	// Validate arguments
-	if (g == NULL) {
+	if (g == NULL)
 		return;
-	}
 
 	Free(g->Name);
 	Free(g->RealName);
@@ -973,9 +898,8 @@ void CleanupGroup(USERGROUP *g) {
 USERGROUP *NewGroup(char *name, wchar_t *realname, wchar_t *note) {
 	USERGROUP *g;
 	// Validate arguments
-	if (name == NULL || realname == NULL || note == NULL) {
+	if (name == NULL || realname == NULL || note == NULL)
 		return NULL;
-	}
 
 	g = ZeroMalloc(sizeof(USERGROUP));
 	g->lock = NewLock();
@@ -992,9 +916,8 @@ USERGROUP *NewGroup(char *name, wchar_t *realname, wchar_t *note) {
 // Lock the account database for the hub
 void AcLock(HUB *h) {
 	// Validate arguments
-	if (h == NULL) {
+	if (h == NULL)
 		return;
-	}
 	// Lock group list and user list
 	LockList(h->HubDb->GroupList);
 	LockList(h->HubDb->UserList);
@@ -1003,9 +926,8 @@ void AcLock(HUB *h) {
 // Unlock the account database for the hub
 void AcUnlock(HUB *h) {
 	// Validate arguments
-	if (h == NULL) {
+	if (h == NULL)
 		return;
-	}
 	// Unlock group list and user list
 	UnlockList(h->HubDb->UserList);
 	UnlockList(h->HubDb->GroupList);
@@ -1015,14 +937,12 @@ void AcUnlock(HUB *h) {
 int CompareGroupName(void *p1, void *p2) {
 	USERGROUP *g1, *g2;
 	// Validate arguments
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	g1 = *(USERGROUP **)p1;
 	g2 = *(USERGROUP **)p2;
-	if (g1 == NULL || g2 == NULL) {
+	if (g1 == NULL || g2 == NULL)
 		return 0;
-	}
 
 	return StrCmpi(g1->Name, g2->Name);
 }
@@ -1031,14 +951,12 @@ int CompareGroupName(void *p1, void *p2) {
 int CompareUserName(void *p1, void *p2) {
 	USER *u1, *u2;
 	// Validate arguments
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	u1 = *(USER **)p1;
 	u2 = *(USER **)p2;
-	if (u1 == NULL || u2 == NULL) {
+	if (u1 == NULL || u2 == NULL)
 		return 0;
-	}
 
 	return StrCmpi(u1->Name, u2->Name);
 }
@@ -1053,9 +971,8 @@ int CompareUserName(void *p1, void *p2) {
 // TRAFFIC_EX
 void InRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(TRAFFIC));
 	t->Recv.BroadcastBytes = PackGetInt64Ex(p, "Ex.Recv.BroadcastBytes", i);
@@ -1069,9 +986,8 @@ void InRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i) {
 }
 void OutRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i, UINT num) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddInt64Ex(p, "Ex.Recv.BroadcastBytes", t->Recv.BroadcastBytes, i, num);
 	PackAddInt64Ex(p, "Ex.Recv.BroadcastCount", t->Recv.BroadcastCount, i, num);
@@ -1086,9 +1002,8 @@ void OutRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i, UINT num) {
 // TRAFFIC
 void InRpcTraffic(TRAFFIC *t, PACK *p) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	Zero(t, sizeof(TRAFFIC));
 	t->Recv.BroadcastBytes = PackGetInt64(p, "Recv.BroadcastBytes");
@@ -1102,9 +1017,8 @@ void InRpcTraffic(TRAFFIC *t, PACK *p) {
 }
 void OutRpcTraffic(PACK *p, TRAFFIC *t) {
 	// Validate arguments
-	if (t == NULL || p == NULL) {
+	if (t == NULL || p == NULL)
 		return;
-	}
 
 	PackAddInt64(p, "Recv.BroadcastBytes", t->Recv.BroadcastBytes);
 	PackAddInt64(p, "Recv.BroadcastCount", t->Recv.BroadcastCount);
@@ -1119,9 +1033,8 @@ void OutRpcTraffic(PACK *p, TRAFFIC *t) {
 // CLIENT_OPTION
 void InRpcClientOption(CLIENT_OPTION *c, PACK *p) {
 	// Validate arguments
-	if (c == NULL || p == NULL) {
+	if (c == NULL || p == NULL)
 		return;
-	}
 
 	Zero(c, sizeof(CLIENT_OPTION));
 
@@ -1160,9 +1073,8 @@ void InRpcClientOption(CLIENT_OPTION *c, PACK *p) {
 }
 void OutRpcClientOption(PACK *p, CLIENT_OPTION *c) {
 	// Validate arguments
-	if (c == NULL || p == NULL) {
+	if (c == NULL || p == NULL)
 		return;
-	}
 
 	PackAddUniStr(p, "AccountName", c->AccountName);
 	PackAddStr(p, "Hostname", c->Hostname);
@@ -1201,9 +1113,8 @@ void OutRpcClientOption(PACK *p, CLIENT_OPTION *c) {
 void InRpcClientAuth(CLIENT_AUTH *c, PACK *p) {
 	BUF *b;
 	// Validate arguments
-	if (c == NULL || p == NULL) {
+	if (c == NULL || p == NULL)
 		return;
-	}
 
 	Zero(c, sizeof(CLIENT_AUTH));
 	c->AuthType = PackGetInt(p, "AuthType");
@@ -1214,9 +1125,8 @@ void InRpcClientAuth(CLIENT_AUTH *c, PACK *p) {
 		break;
 
 	case CLIENT_AUTHTYPE_PASSWORD:
-		if (PackGetDataSize(p, "HashedPassword") == SHA1_SIZE) {
+		if (PackGetDataSize(p, "HashedPassword") == SHA1_SIZE)
 			PackGetData(p, "HashedPassword", c->HashedPassword);
-		}
 		break;
 
 	case CLIENT_AUTHTYPE_PLAIN_PASSWORD:
@@ -1250,9 +1160,8 @@ void InRpcClientAuth(CLIENT_AUTH *c, PACK *p) {
 void OutRpcClientAuth(PACK *p, CLIENT_AUTH *c) {
 	BUF *b;
 	// Validate arguments
-	if (c == NULL || p == NULL) {
+	if (c == NULL || p == NULL)
 		return;
-	}
 
 	PackAddInt(p, "AuthType", c->AuthType);
 	PackAddStr(p, "Username", c->Username);
@@ -1298,9 +1207,8 @@ void OutRpcClientAuth(PACK *p, CLIENT_AUTH *c) {
 void InRpcPolicy(POLICY *o, PACK *p) {
 	POLICY *pol;
 	// Validate arguments
-	if (o == NULL || p == NULL) {
+	if (o == NULL || p == NULL)
 		return;
-	}
 
 	pol = PackGetPolicy(p);
 	Copy(o, pol, sizeof(POLICY));
@@ -1308,9 +1216,8 @@ void InRpcPolicy(POLICY *o, PACK *p) {
 }
 void OutRpcPolicy(PACK *p, POLICY *o) {
 	// Validate arguments
-	if (o == NULL || p == NULL) {
+	if (o == NULL || p == NULL)
 		return;
-	}
 
 	PackAddPolicy(p, o);
 }
@@ -1319,9 +1226,8 @@ void OutRpcPolicy(PACK *p, POLICY *o) {
 void InRpcClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *s, PACK *p) {
 	BUF *b;
 	// Validate arguments
-	if (s == NULL || p == NULL) {
+	if (s == NULL || p == NULL)
 		return;
-	}
 
 	Zero(s, sizeof(RPC_CLIENT_GET_CONNECTION_STATUS));
 
@@ -1334,9 +1240,8 @@ void InRpcClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *s, PACK *p
 	PackGetStr(p, "SessionName", s->SessionName, sizeof(s->SessionName));
 	PackGetStr(p, "ConnectionName", s->ConnectionName, sizeof(s->ConnectionName));
 
-	if (PackGetDataSize(p, "SessionKey") == SHA1_SIZE) {
+	if (PackGetDataSize(p, "SessionKey") == SHA1_SIZE)
 		PackGetData(p, "SessionKey", s->SessionKey);
-	}
 
 	s->SessionStatus = PackGetInt(p, "SessionStatus");
 	s->ServerPort = PackGetInt(p, "ServerPort");
@@ -1392,9 +1297,8 @@ void InRpcClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *s, PACK *p
 void OutRpcClientGetConnectionStatus(PACK *p, RPC_CLIENT_GET_CONNECTION_STATUS *c) {
 	BUF *b;
 	// Validate arguments
-	if (p == NULL || c == NULL) {
+	if (p == NULL || c == NULL)
 		return;
-	}
 
 	PackAddUniStr(p, "AccountName", c->AccountName);
 
@@ -1460,9 +1364,8 @@ void OutRpcClientGetConnectionStatus(PACK *p, RPC_CLIENT_GET_CONNECTION_STATUS *
 // Get a RPC_CLIENT_GET_CONNECTION_STATUS from the session
 void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s) {
 	// Validate arguments
-	if (st == NULL || s == NULL) {
+	if (st == NULL || s == NULL)
 		return;
-	}
 
 	Lock(s->lock);
 	{
@@ -1509,11 +1412,10 @@ void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s) {
 						if (st->HalfConnection) {
 							for (i = 0; i < st->NumTcpConnections; i++) {
 								TCPSOCK *ts = LIST_DATA(s->Connection->Tcp->TcpSockList, i);
-								if (ts->Direction & TCP_SERVER_TO_CLIENT) {
+								if (ts->Direction & TCP_SERVER_TO_CLIENT)
 									st->NumTcpConnectionsDownload++;
-								} else {
+								else
 									st->NumTcpConnectionsUpload++;
-								}
 							}
 						}
 					}
@@ -1585,32 +1487,26 @@ void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s) {
 // Release the connection status
 void CiFreeClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st) {
 	// Validate arguments
-	if (st == NULL) {
+	if (st == NULL)
 		return;
-	}
 
-	if (st->ServerX != NULL) {
+	if (st->ServerX != NULL)
 		FreeX(st->ServerX);
-	}
 
-	if (st->ClientX != NULL) {
+	if (st->ClientX != NULL)
 		FreeX(st->ClientX);
-	}
 }
 
 // Release the client authentication data
 void CiFreeClientAuth(CLIENT_AUTH *auth) {
 	// Validate arguments
-	if (auth == NULL) {
+	if (auth == NULL)
 		return;
-	}
 
-	if (auth->ClientX != NULL) {
+	if (auth->ClientX != NULL)
 		FreeX(auth->ClientX);
-	}
-	if (auth->ClientK != NULL) {
+	if (auth->ClientK != NULL)
 		FreeK(auth->ClientK);
-	}
 
 	Free(auth);
 }
@@ -1621,9 +1517,8 @@ CLIENT_AUTH *CiLoadClientAuth(FOLDER *f) {
 	char *s;
 	BUF *b;
 	// Validate arguments
-	if (f == NULL) {
+	if (f == NULL)
 		return NULL;
-	}
 
 	a = ZeroMalloc(sizeof(CLIENT_AUTH));
 
@@ -1650,26 +1545,22 @@ CLIENT_AUTH *CiLoadClientAuth(FOLDER *f) {
 
 	case CLIENT_AUTHTYPE_CERT:
 		b = CfgGetBuf(f, "ClientCert");
-		if (b != NULL) {
+		if (b != NULL)
 			a->ClientX = BufToX(b, false);
-		}
 		FreeBuf(b);
 		b = CfgGetBuf(f, "ClientKey");
-		if (b != NULL) {
+		if (b != NULL)
 			a->ClientK = BufToK(b, true, false, NULL);
-		}
 		FreeBuf(b);
 		break;
 
 	case CLIENT_AUTHTYPE_OPENSSLENGINE:
 		b = CfgGetBuf(f, "ClientCert");
-		if (b != NULL) {
+		if (b != NULL)
 			a->ClientX = BufToX(b, false);
-		}
 		FreeBuf(b);
-		if (CfgGetStr(f, "OpensslEnginePrivateKeyName", a->OpensslEnginePrivateKeyName, sizeof(a->OpensslEnginePrivateKeyName))) {
+		if (CfgGetStr(f, "OpensslEnginePrivateKeyName", a->OpensslEnginePrivateKeyName, sizeof(a->OpensslEnginePrivateKeyName)))
 			a->ClientK = OpensslEngineToK(a->OpensslEnginePrivateKeyName, a->OpensslEngineName);
-		}
 		CfgGetStr(f, "OpensslEngineName", a->OpensslEngineName, sizeof(a->OpensslEngineName));
 		break;
 	}
@@ -1683,9 +1574,8 @@ CLIENT_OPTION *CiLoadClientOption(FOLDER *f) {
 	char *s;
 	BUF *b;
 	// Validate arguments
-	if (f == NULL) {
+	if (f == NULL)
 		return NULL;
-	}
 
 	o = ZeroMalloc(sizeof(CLIENT_OPTION));
 
@@ -1726,9 +1616,8 @@ CLIENT_OPTION *CiLoadClientOption(FOLDER *f) {
 
 	b = CfgGetBuf(f, "HostUniqueKey");
 	if (b != NULL) {
-		if (b->Size == SHA1_SIZE) {
+		if (b->Size == SHA1_SIZE)
 			Copy(o->HostUniqueKey, b->Buf, SHA1_SIZE);
-		}
 
 		FreeBuf(b);
 	}
@@ -1740,9 +1629,8 @@ CLIENT_OPTION *CiLoadClientOption(FOLDER *f) {
 void CiWriteClientAuth(FOLDER *f, CLIENT_AUTH *a) {
 	BUF *b;
 	// Validate arguments
-	if (f == NULL || a == NULL) {
+	if (f == NULL || a == NULL)
 		return;
-	}
 
 	CfgAddInt(f, "AuthType", a->AuthType);
 	CfgAddStr(f, "Username", a->Username);
@@ -1789,9 +1677,8 @@ void CiWriteClientAuth(FOLDER *f, CLIENT_AUTH *a) {
 void CiWriteClientOption(FOLDER *f, CLIENT_OPTION *o) {
 	BUF *b;
 	// Validate arguments
-	if (f == NULL || o == NULL) {
+	if (f == NULL || o == NULL)
 		return;
-	}
 
 	CfgAddUniStr(f, "AccountName", o->AccountName);
 	CfgAddStr(f, "Hostname", o->Hostname);
@@ -1825,9 +1712,8 @@ void CiWriteClientOption(FOLDER *f, CLIENT_OPTION *o) {
 	CfgAddIp(f, "BindLocalIP", &o->BindLocalIP);     // Source IP address for outgoing connection
 	CfgAddInt(f, "BindLocalPort", o->BindLocalPort); // Source port number for outgoing connection
 
-	if (o->FromAdminPack) {
+	if (o->FromAdminPack)
 		CfgAddBool(f, "FromAdminPack", o->FromAdminPack);
-	}
 
 	if (IsZero(o->HostUniqueKey, SHA1_SIZE) == false) {
 		BUF *b = MemToBuf(o->HostUniqueKey, SHA1_SIZE);
@@ -1842,9 +1728,8 @@ char *DecryptPassword(BUF *b) {
 	char *key = "EncryptPassword";
 	CRYPT *c;
 	// Validate arguments
-	if (b == NULL) {
+	if (b == NULL)
 		return CopyStr("");
-	}
 
 	str = ZeroMalloc(b->Size + 1);
 	c = NewCrypt(key, sizeof(key)); // NOTE by Daiyuu Nobori 2018-09-28: This is not a bug! Do not try to fix it!!
@@ -1864,9 +1749,8 @@ BUF *EncryptPassword(char *password) {
 	CRYPT *c;
 	BUF *b;
 	// Validate arguments
-	if (password == NULL) {
+	if (password == NULL)
 		password = "";
-	}
 
 	size = StrLen(password) + 1;
 	tmp = ZeroMalloc(size);

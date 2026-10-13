@@ -19,9 +19,8 @@
 void CheckDeadLockThread(THREAD *t, void *param) {
 	DEADCHECK *c = (DEADCHECK *)param;
 
-	if (t == NULL || c == NULL) {
+	if (t == NULL || c == NULL)
 		return;
-	}
 
 	NoticeThreadInit(t);
 
@@ -36,12 +35,10 @@ void CheckDeadLock(LOCK *lock, UINT timeout, char *name) {
 	THREAD *t;
 	char msg[MAX_PATH];
 
-	if (lock == NULL) {
+	if (lock == NULL)
 		return;
-	}
-	if (name == NULL) {
+	if (name == NULL)
 		name = "Unknown";
-	}
 
 	Format(msg, sizeof(msg), "error: CheckDeadLock() Failed: %s\n", name);
 
@@ -70,13 +67,11 @@ LOCK *NewLockMain() {
 	UINT retry = 0;
 
 	while (true) {
-		if ((retry++) > OBJECT_ALLOC__MAX_RETRY) {
+		if ((retry++) > OBJECT_ALLOC__MAX_RETRY)
 			AbortExitEx("error: OSNewLock() failed.\n\n");
-		}
 		lock = OSNewLock();
-		if (lock != NULL) {
+		if (lock != NULL)
 			break;
-		}
 		SleepThread(OBJECT_ALLOC_FAIL_SLEEP_TIME);
 	}
 
@@ -95,9 +90,8 @@ LOCK *NewLock() {
 // Delete the lock object
 void DeleteLock(LOCK *lock) {
 	// Validate arguments
-	if (lock == NULL) {
+	if (lock == NULL)
 		return;
-	}
 
 	// KS
 	KS_INC(KS_DELETELOCK_COUNT);
@@ -109,9 +103,8 @@ void DeleteLock(LOCK *lock) {
 // Lock
 bool LockInner(LOCK *lock) {
 	// Validate arguments
-	if (lock == NULL) {
+	if (lock == NULL)
 		return false;
-	}
 
 	// KS
 	KS_INC(KS_LOCK_COUNT);
@@ -123,9 +116,8 @@ bool LockInner(LOCK *lock) {
 // Unlock
 void UnlockInner(LOCK *lock) {
 	// Validate arguments
-	if (lock == NULL) {
+	if (lock == NULL)
 		return;
-	}
 
 	// KS
 	KS_INC(KS_UNLOCK_COUNT);
@@ -157,9 +149,8 @@ COUNTER *NewCounter() {
 // Delete the counter
 void DeleteCounter(COUNTER *c) {
 	// Validate arguments
-	if (c == NULL) {
+	if (c == NULL)
 		return;
-	}
 
 	// KS
 	KS_INC(KS_DELETE_COUNTER_COUNT);
@@ -173,12 +164,10 @@ void DeleteCounter(COUNTER *c) {
 UINT Count(COUNTER *c) {
 	UINT ret;
 	// Validate arguments
-	if (c == NULL) {
+	if (c == NULL)
 		return 0;
-	}
-	if (c->Ready == false) {
+	if (c->Ready == false)
 		return 0;
-	}
 
 	Lock(c->lock);
 	{
@@ -193,12 +182,10 @@ UINT Count(COUNTER *c) {
 UINT Inc(COUNTER *c) {
 	UINT ret;
 	// Validate arguments
-	if (c == NULL) {
+	if (c == NULL)
 		return 0;
-	}
-	if (c->Ready == false) {
+	if (c->Ready == false)
 		return 0;
-	}
 
 	Lock(c->lock);
 	{
@@ -218,12 +205,10 @@ UINT Inc(COUNTER *c) {
 UINT Dec(COUNTER *c) {
 	UINT ret;
 	// Validate arguments
-	if (c == NULL) {
+	if (c == NULL)
 		return 0;
-	}
-	if (c->Ready == false) {
+	if (c->Ready == false)
 		return 0;
-	}
 
 	Lock(c->lock);
 	{
@@ -248,9 +233,8 @@ UINT Dec(COUNTER *c) {
 UINT Release(REF *ref) {
 	UINT c;
 	// Validate arguments
-	if (ref == NULL) {
+	if (ref == NULL)
 		return 0;
-	}
 
 	// KS
 	KS_INC(KS_RELEASE_COUNT);
@@ -273,9 +257,8 @@ UINT Release(REF *ref) {
 UINT AddRef(REF *ref) {
 	UINT c;
 	// Validate arguments
-	if (ref == NULL) {
+	if (ref == NULL)
 		return 0;
-	}
 
 	c = Inc(ref->c);
 
@@ -328,21 +311,18 @@ EVENT *NewEvent() {
 // Release of the event
 void ReleaseEvent(EVENT *e) {
 	// Validate arguments
-	if (e == NULL) {
+	if (e == NULL)
 		return;
-	}
 
-	if (Release(e->ref) == 0) {
+	if (Release(e->ref) == 0)
 		CleanupEvent(e);
-	}
 }
 
 // Delete the event
 void CleanupEvent(EVENT *e) {
 	// Validate arguments
-	if (e == NULL) {
+	if (e == NULL)
 		return;
-	}
 
 	// Release event
 	OSFreeEvent(e);
@@ -357,9 +337,8 @@ void CleanupEvent(EVENT *e) {
 // Set event
 void Set(EVENT *e) {
 	// Validate arguments
-	if (e == NULL) {
+	if (e == NULL)
 		return;
-	}
 
 	OSSetEvent(e);
 }
@@ -367,9 +346,8 @@ void Set(EVENT *e) {
 // Wait for event
 bool Wait(EVENT *e, UINT timeout) {
 	// Validate arguments
-	if (e == NULL) {
+	if (e == NULL)
 		return false;
-	}
 
 	// KS
 	KS_INC(KS_WAIT_COUNT);
@@ -382,28 +360,24 @@ bool WaitEx(EVENT *e, UINT timeout, volatile bool *cancel) {
 	bool dummy_bool = false;
 	UINT64 start, giveup;
 	// Validate arguments
-	if (cancel == NULL) {
+	if (cancel == NULL)
 		cancel = &dummy_bool;
-	}
 
 	start = Tick64();
 
-	if (timeout == INFINITE || timeout == 0x7FFFFFFF) {
+	if (timeout == INFINITE || timeout == 0x7FFFFFFF)
 		giveup = 0;
-	} else {
+	else
 		giveup = start + (UINT64)timeout;
-	}
 
 	while (true) {
 		UINT64 now = Tick64();
 		UINT interval_to_giveup = (UINT)(giveup - now);
 		if (giveup == 0) {
 			interval_to_giveup = INFINITE;
-		} else {
-			if (now >= giveup) {
-				// Time-out occurs
-				return false;
-			}
+		} else if (now >= giveup) {
+			// Time-out occurs
+			return false;
 		}
 
 		interval_to_giveup = MIN(interval_to_giveup, 25);

@@ -42,9 +42,8 @@ UINT64 TickHighresNano64(bool raw) {
 // Convert the Tick value to time
 UINT64 Tick64ToTime64(UINT64 tick) {
 	UINT64 ret = 0;
-	if (tick == 0) {
+	if (tick == 0)
 		return 0;
-	}
 	LockList(tk64->AdjustTime);
 	{
 		INT i;
@@ -57,9 +56,8 @@ UINT64 Tick64ToTime64(UINT64 tick) {
 		}
 	}
 	UnlockList(tk64->AdjustTime);
-	if (ret == 0) {
+	if (ret == 0)
 		ret++;
-	}
 	return ret;
 }
 
@@ -82,9 +80,8 @@ void Tick64Thread(THREAD *thread, void *param) {
 	bool create_first_entry = true;
 	UINT tick_span;
 	// Validate arguments
-	if (thread == NULL) {
+	if (thread == NULL)
 		return;
-	}
 
 #ifdef OS_WIN32
 
@@ -151,9 +148,8 @@ void Tick64Thread(THREAD *thread, void *param) {
 			n = 0;
 		}
 
-		if (tk64->Halt) {
+		if (tk64->Halt)
 			break;
-		}
 
 #ifdef OS_WIN32
 		Wait(halt_tick_event, tick_span);
@@ -163,11 +159,10 @@ void Tick64Thread(THREAD *thread, void *param) {
 
 // Get the absolute value of the difference between the two 64 bit integers
 UINT64 Diff64(UINT64 a, UINT64 b) {
-	if (a > b) {
+	if (a > b)
 		return a - b;
-	} else {
+	else
 		return b - a;
-	}
 }
 
 // Initialization of the Tick64

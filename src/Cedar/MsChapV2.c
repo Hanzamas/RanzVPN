@@ -20,9 +20,8 @@ void GenerateNtPasswordHash(UCHAR *dst, char *password) {
 	UINT tmp_size;
 	UINT i, len;
 	// Validate arguments
-	if (dst == NULL || password == NULL) {
+	if (dst == NULL || password == NULL)
 		return;
-	}
 
 	// Generate a Unicode password
 	len = StrLen(password);
@@ -30,9 +29,8 @@ void GenerateNtPasswordHash(UCHAR *dst, char *password) {
 
 	tmp = ZeroMalloc(tmp_size);
 
-	for (i = 0; i < len; i++) {
+	for (i = 0; i < len; i++)
 		tmp[i * 2] = password[i];
-	}
 
 	// Hashing
 	HashMd4(dst, tmp, tmp_size);
@@ -47,9 +45,8 @@ void MsChapV2_GenerateChallenge8(UCHAR *dst, UCHAR *client_challenge, UCHAR *ser
 	char username2[MAX_SIZE];
 	char domainname2[MAX_SIZE];
 	// Validate arguments
-	if (dst == NULL || client_challenge == NULL || server_challenge == NULL) {
+	if (dst == NULL || client_challenge == NULL || server_challenge == NULL)
 		return;
-	}
 
 	b = NewBuf();
 
@@ -58,9 +55,8 @@ void MsChapV2_GenerateChallenge8(UCHAR *dst, UCHAR *client_challenge, UCHAR *ser
 
 	ParseNtUsername(username, username2, sizeof(username2), domainname2, sizeof(domainname2), true);
 
-	if (IsEmptyStr(username2) == false) {
+	if (IsEmptyStr(username2) == false)
 		WriteBuf(b, username2, StrLen(username2));
-	}
 
 	Sha1(hash, b->Buf, b->Size);
 
@@ -74,9 +70,8 @@ void MsChapV2Client_GenerateResponse(UCHAR *dst, UCHAR *challenge8, UCHAR *nt_pa
 	UCHAR password_hash_2[21];
 	UCHAR key1[8], key2[8], key3[8];
 	// Validate arguments
-	if (dst == NULL || challenge8 == NULL || nt_password_hash == NULL) {
+	if (dst == NULL || challenge8 == NULL || nt_password_hash == NULL)
 		return;
-	}
 
 	Zero(password_hash_2, sizeof(password_hash_2));
 	Copy(password_hash_2, nt_password_hash, 16);
@@ -97,9 +92,8 @@ void MsChapV2Client_GenerateResponse(UCHAR *dst, UCHAR *challenge8, UCHAR *nt_pa
 // Generate a hash of the hash of the NT password
 void GenerateNtPasswordHashHash(UCHAR *dst_hash, UCHAR *src_hash) {
 	// Validate arguments
-	if (dst_hash == NULL || src_hash == NULL) {
+	if (dst_hash == NULL || src_hash == NULL)
 		return;
-	}
 
 	HashMd4(dst_hash, src_hash, 16);
 }
@@ -111,9 +105,8 @@ void MsChapV2Server_GenerateResponse(UCHAR *dst, UCHAR *nt_password_hash_hash, U
 	char *magic1 = "Magic server to client signing constant";
 	char *magic2 = "Pad to make it do more than one iteration";
 	// Validate arguments
-	if (dst == NULL || nt_password_hash_hash == NULL || client_response == NULL || challenge8 == NULL) {
+	if (dst == NULL || nt_password_hash_hash == NULL || client_response == NULL || challenge8 == NULL)
 		return;
-	}
 
 	b = NewBuf();
 	WriteBuf(b, nt_password_hash_hash, 16);
@@ -135,15 +128,13 @@ bool ParseAndExtractMsChapV2InfoFromPassword(IPC_MSCHAP_V2_AUTHINFO *d, char *pa
 	TOKEN_LIST *t;
 	bool ret = false;
 	// Validate arguments
-	if (d == NULL || password == NULL) {
+	if (d == NULL || password == NULL)
 		return false;
-	}
 
 	Zero(d, sizeof(IPC_MSCHAP_V2_AUTHINFO));
 
-	if (StartWith(password, IPC_PASSWORD_MSCHAPV2_TAG) == false) {
+	if (StartWith(password, IPC_PASSWORD_MSCHAPV2_TAG) == false)
 		return false;
-	}
 
 	t = ParseTokenWithNullStr(password, ":");
 

@@ -12,9 +12,8 @@ SOCK *Internal_ProxyTcpConnect(PROXY_PARAM_IN *param, volatile bool *cancel_flag
 // Connect to an HTTP proxy
 UINT ProxyHttpConnect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag) {
 	// Validate arguments
-	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname)) {
+	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname))
 		return PROXY_ERROR_PARAMETER;
-	}
 	in->BindLocalIP = BIND_LOCALIP_NULL;
 	in->BindLocalPort = BIND_LOCALPORT_NULL;
 	return BindProxyHttpConnect(out, in, cancel_flag);
@@ -29,38 +28,32 @@ UINT BindProxyHttpConnect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile boo
 	UINT i, ret;
 	SOCK *s;
 	// Validate arguments
-	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname)) {
+	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname))
 		return PROXY_ERROR_PARAMETER;
-	}
 
-	if (cancel_flag == NULL) {
+	if (cancel_flag == NULL)
 		cancel_flag = &dummy_cancel_flag;
-	} else if (*cancel_flag) {
+	else if (*cancel_flag)
 		return PROXY_ERROR_CANCELED;
-	}
 
 	Zero(out, sizeof(PROXY_PARAM_OUT));
 
 	// Open TCP connection to the proxy server
 	s = Internal_ProxyTcpConnect(in, cancel_flag, &out->ResolvedIp);
-	if (s == NULL) {
+	if (s == NULL)
 		return PROXY_ERROR_CONNECTION;
-	}
 
 	SetTimeout(s, MIN(PROXY_CONNECTION_TIMEOUT, (in->Timeout == 0 ? INFINITE : in->Timeout)));
 
-	if ((IsEmptyStr(in->Username) || IsEmptyStr(in->Password)) == false) {
+	if ((IsEmptyStr(in->Username) || IsEmptyStr(in->Password)) == false)
 		use_auth = true;
-	}
 
 	Zero(target_hostname, sizeof(target_hostname));
 	StrCpy(target_hostname, sizeof(target_hostname), in->TargetHostname);
 
-	for (i = 0; i < StrLen(target_hostname); ++i) {
-		if (target_hostname[i] == '/') {
+	for (i = 0; i < StrLen(target_hostname); ++i)
+		if (target_hostname[i] == '/')
 			target_hostname[i] = 0;
-		}
-	}
 
 	// Generate HTTP header
 	if (IsStrIPv6Address(target_hostname)) {
@@ -80,33 +73,27 @@ UINT BindProxyHttpConnect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile boo
 	if (IsEmptyStr(in->HttpCustomHeader) == false) {
 		TOKEN_LIST *tokens = ParseToken(in->HttpCustomHeader, "\r\n");
 		if (tokens != NULL) {
-			for (i = 0; i < tokens->NumTokens; i++) {
+			for (i = 0; i < tokens->NumTokens; i++)
 				AddHttpValueStr(h, tokens->Token[i]);
-			}
 
 			FreeToken(tokens);
 		}
 	}
 
-	if (GetHttpValue(h, "User-Agent") == NULL) {
+	if (GetHttpValue(h, "User-Agent") == NULL)
 		AddHttpValue(h, NewHttpValue("User-Agent", IsEmptyStr(in->HttpUserAgent) ? DEFAULT_USER_AGENT : in->HttpUserAgent));
-	}
 
-	if (GetHttpValue(h, "Host") == NULL) {
+	if (GetHttpValue(h, "Host") == NULL)
 		AddHttpValue(h, NewHttpValue("Host", target_hostname));
-	}
 
-	if (GetHttpValue(h, "Content-Length") == NULL) {
+	if (GetHttpValue(h, "Content-Length") == NULL)
 		AddHttpValue(h, NewHttpValue("Content-Length", "0"));
-	}
 
-	if (GetHttpValue(h, "Proxy-Connection") == NULL) {
+	if (GetHttpValue(h, "Proxy-Connection") == NULL)
 		AddHttpValue(h, NewHttpValue("Proxy-Connection", "Keep-Alive"));
-	}
 
-	if (GetHttpValue(h, "Pragma") == NULL) {
+	if (GetHttpValue(h, "Pragma") == NULL)
 		AddHttpValue(h, NewHttpValue("Pragma", "no-cache"));
-	}
 
 	if (use_auth && GetHttpValue(h, "Proxy-Authorization") == NULL) {
 		char auth_str[MAX_SIZE * 2];
@@ -144,9 +131,8 @@ UINT BindProxyHttpConnect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile boo
 
 	ret = 0;
 	if (StrLen(h->Method) == 8) {
-		if (Cmp(h->Method, "HTTP/1.", 7) == 0) {
+		if (Cmp(h->Method, "HTTP/1.", 7) == 0)
 			ret = ToInt(h->Target);
-		}
 	}
 	FreeHttpHeader(h);
 
@@ -180,9 +166,8 @@ FAILURE:
 // Connect to a SOCKS5 proxy (RFC1928, RFC1929 defines username/password authentication)
 UINT ProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag) {
 	// Validate arguments
-	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname)) {
+	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname))
 		return PROXY_ERROR_PARAMETER;
-	}
 	in->BindLocalIP = BIND_LOCALIP_NULL;
 	in->BindLocalPort = BIND_LOCALPORT_NULL;
 	return BindProxySocks5Connect(out, in, cancel_flag);
@@ -198,23 +183,20 @@ UINT BindProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 	SOCK *s;
 	BUF *b;
 	// Validate arguments
-	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname)) {
+	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname))
 		return PROXY_ERROR_PARAMETER;
-	}
 
-	if (cancel_flag == NULL) {
+	if (cancel_flag == NULL)
 		cancel_flag = &dummy_cancel_flag;
-	} else if (*cancel_flag) {
+	else if (*cancel_flag)
 		return PROXY_ERROR_CANCELED;
-	}
 
 	Zero(out, sizeof(PROXY_PARAM_OUT));
 
 	// Open TCP connection to the proxy server
 	s = Internal_ProxyTcpConnect(in, cancel_flag, &out->ResolvedIp);
-	if (s == NULL) {
+	if (s == NULL)
 		return PROXY_ERROR_CONNECTION;
-	}
 
 	SetTimeout(s, MIN(PROXY_CONNECTION_TIMEOUT, (in->Timeout == 0 ? INFINITE : in->Timeout)));
 
@@ -355,16 +337,14 @@ UINT BindProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 		WriteBuf(b, &tmp, sizeof(tmp));                 // Destination type (hostname)
 		WriteBuf(b, &dest_length, sizeof(dest_length)); // Destination hostname length
 		WriteBuf(b, in->TargetHostname, dest_length);   // Destination hostname
+	} else if (IsIP6(&target_ip)) {
+		tmp = 4;
+		WriteBuf(b, &tmp, sizeof(tmp));                            // Destination type (IPv6)
+		WriteBuf(b, target_ip.address, sizeof(target_ip.address)); // Destination IPv6 address
 	} else {
-		if (IsIP6(&target_ip)) {
-			tmp = 4;
-			WriteBuf(b, &tmp, sizeof(tmp));                            // Destination type (IPv6)
-			WriteBuf(b, target_ip.address, sizeof(target_ip.address)); // Destination IPv6 address
-		} else {
-			tmp = 1;
-			WriteBuf(b, &tmp, sizeof(tmp));                  // Destination type (IPv4)
-			WriteBuf(b, IPV4(target_ip.address), IPV4_SIZE); // Destination IPv4 address
-		}
+		tmp = 1;
+		WriteBuf(b, &tmp, sizeof(tmp));                  // Destination type (IPv4)
+		WriteBuf(b, IPV4(target_ip.address), IPV4_SIZE); // Destination IPv4 address
 	}
 
 	// Convert the port in network octet order
@@ -478,9 +458,8 @@ FAILURE:
 // Connect to a SOCKS4 proxy
 UINT ProxySocks4Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag) {
 	// Validate arguments
-	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname)) {
+	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname))
 		return PROXY_ERROR_PARAMETER;
-	}
 	in->BindLocalIP = BIND_LOCALIP_NULL;
 	in->BindLocalPort = BIND_LOCALPORT_NULL;
 	return BindProxySocks4Connect(out, in, cancel_flag);
@@ -496,28 +475,24 @@ UINT BindProxySocks4Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 	SOCK *s;
 	BUF *b;
 	// Validate arguments
-	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname)) {
+	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname))
 		return PROXY_ERROR_PARAMETER;
-	}
 
-	if (cancel_flag == NULL) {
+	if (cancel_flag == NULL)
 		cancel_flag = &dummy_cancel_flag;
-	} else if (*cancel_flag) {
+	else if (*cancel_flag)
 		return PROXY_ERROR_CANCELED;
-	}
 
 	Zero(out, sizeof(PROXY_PARAM_OUT));
 
 	// Get the IPv4 address of the destination server (SOCKS4 does not support IPv6).
-	if (GetIP4(&target_ip, in->TargetHostname) == false) {
+	if (GetIP4(&target_ip, in->TargetHostname) == false)
 		return PROXY_ERROR_CONNECTION;
-	}
 
 	// Open TCP connection to the proxy server
 	s = Internal_ProxyTcpConnect(in, cancel_flag, &out->ResolvedIp);
-	if (s == NULL) {
+	if (s == NULL)
 		return PROXY_ERROR_CONNECTION;
-	}
 
 	SetTimeout(s, MIN(PROXY_CONNECTION_TIMEOUT, (in->Timeout == 0 ? INFINITE : in->Timeout)));
 

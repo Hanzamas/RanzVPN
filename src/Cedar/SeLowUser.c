@@ -64,9 +64,8 @@ void SuDeleteGarbageInfsInner() {
 	BOOL(WINAPI * _SetupUninstallOEMInfA)(PCSTR, DWORD, PVOID) = NULL;
 
 	hSetupApiDll = LoadLibraryA("setupapi.dll");
-	if (hSetupApiDll == NULL) {
+	if (hSetupApiDll == NULL)
 		return;
-	}
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wincompatible-function-pointer-types"
@@ -94,11 +93,10 @@ void SuDeleteGarbageInfsInner() {
 				if (IsEmptyStr(oem_name) == false && IsEmptyStr(inf_name) == false) {
 					if (StartWith(oem_name, "oem")) {
 						if (StartWith(inf_name, "selow")) {
-							if (InStr(provider, "softether")) {
+							if (InStr(provider, "softether"))
 								Debug("Delete OEM INF %s (%s): %u\n",
 								      oem_name, inf_name,
 								      _SetupUninstallOEMInfA(oem_name, 0x00000001, NULL));
-							}
 						}
 					}
 				}
@@ -112,9 +110,8 @@ void SuDeleteGarbageInfsInner() {
 		}
 	}
 
-	if (hSetupApiDll != NULL) {
+	if (hSetupApiDll != NULL)
 		FreeLibrary(hSetupApiDll);
-	}
 }
 
 // Install the driver
@@ -168,9 +165,8 @@ bool SuInstallDriverInner(bool force) {
 
 		path = MsRegReadStrEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "ImagePath", false, true);
 
-		if (IsEmptyStr(path) || IsFileExists(path) == false || MsIsServiceInstalled(SL_PROTOCOL_NAME) == false) {
+		if (IsEmptyStr(path) || IsFileExists(path) == false || MsIsServiceInstalled(SL_PROTOCOL_NAME) == false)
 			current_sl_ver = 0;
-		}
 
 		Free(path);
 	}
@@ -247,9 +243,8 @@ bool SuInstallDriverInner(bool force) {
 bool SuCopySysFile(wchar_t *src, wchar_t *dst) {
 	wchar_t dst_rename[MAX_PATH];
 	UINT i;
-	if (src == NULL || dst == NULL) {
+	if (src == NULL || dst == NULL)
 		return false;
-	}
 	if (FileCopyW(src, dst)) {
 		for (i = 1; i <= 100; i++) {
 			UniFormat(dst_rename, sizeof(dst_rename), L"%s.old%u", dst, i);
@@ -263,18 +258,15 @@ bool SuCopySysFile(wchar_t *src, wchar_t *dst) {
 	for (i = 1;; i++) {
 		UniFormat(dst_rename, sizeof(dst_rename), L"%s.old%u", dst, i);
 
-		if (IsFileExistsW(dst_rename) == false) {
+		if (IsFileExistsW(dst_rename) == false)
 			break;
-		}
 
-		if (i >= 100) {
+		if (i >= 100)
 			return false;
-		}
 	}
 
-	if (MoveFileW(dst, dst_rename) == false) {
+	if (MoveFileW(dst, dst_rename) == false)
 		return false;
-	}
 
 	if (FileCopyW(src, dst)) {
 		for (i = 1; i <= 100; i++) {
@@ -310,23 +302,19 @@ bool SuIsSupportedOs(bool on_install) {
 // Write the next packet to the driver
 bool SuPutPacket(SU_ADAPTER *a, void *buf, UINT size) {
 	// Validate arguments
-	if (a == NULL) {
+	if (a == NULL)
 		return false;
-	}
-	if (a->Halt) {
+	if (a->Halt)
 		return false;
-	}
-	if (size > MAX_PACKET_SIZE) {
+	if (size > MAX_PACKET_SIZE)
 		return false;
-	}
 
 	// First, examine whether the current buffer is full
 	if ((SL_NUM_PACKET(a->PutBuffer) >= SL_MAX_PACKET_EXCHANGE) ||
 	    (buf == NULL && SL_NUM_PACKET(a->PutBuffer) != 0)) {
 		// Write all current packets to the driver
-		if (SuPutPacketsToDriver(a) == false) {
+		if (SuPutPacketsToDriver(a) == false)
 			return false;
-		}
 
 		SL_NUM_PACKET(a->PutBuffer) = 0;
 	}
@@ -350,12 +338,10 @@ bool SuPutPacket(SU_ADAPTER *a, void *buf, UINT size) {
 bool SuPutPacketsToDriver(SU_ADAPTER *a) {
 	DWORD write_size;
 	// Validate arguments
-	if (a == NULL) {
+	if (a == NULL)
 		return false;
-	}
-	if (a->Halt) {
+	if (a->Halt)
 		return false;
-	}
 
 	if (WriteFile(a->hFile, a->PutBuffer, SL_EXCHANGE_BUFFER_SIZE, &write_size, NULL) == false) {
 		a->Halt = true;
@@ -375,13 +361,11 @@ bool SuPutPacketsToDriver(SU_ADAPTER *a) {
 // Read the next packet from the driver
 bool SuGetNextPacket(SU_ADAPTER *a, void **buf, UINT *size) {
 	// Validate arguments
-	if (a == NULL || buf == NULL || size == NULL) {
+	if (a == NULL || buf == NULL || size == NULL)
 		return false;
-	}
 
-	if (a->Halt) {
+	if (a->Halt)
 		return false;
-	}
 
 	while (true) {
 		if (a->CurrentPacketCount < SL_NUM_PACKET(a->GetBuffer)) {
@@ -396,9 +380,8 @@ bool SuGetNextPacket(SU_ADAPTER *a, void **buf, UINT *size) {
 			return true;
 		} else {
 			// Read the next packet from the driver
-			if (SuGetPacketsFromDriver(a) == false) {
+			if (SuGetPacketsFromDriver(a) == false)
 				return false;
-			}
 
 			if (SL_NUM_PACKET(a->GetBuffer) == 0) {
 				// Packet is not received yet
@@ -416,13 +399,11 @@ bool SuGetNextPacket(SU_ADAPTER *a, void **buf, UINT *size) {
 bool SuGetPacketsFromDriver(SU_ADAPTER *a) {
 	DWORD read_size;
 	// Validate arguments
-	if (a == NULL) {
+	if (a == NULL)
 		return false;
-	}
 
-	if (a->Halt) {
+	if (a->Halt)
 		return false;
-	}
 
 	if (ReadFile(a->hFile, a->GetBuffer, SL_EXCHANGE_BUFFER_SIZE, &read_size, NULL) == false) {
 		a->Halt = true;
@@ -442,13 +423,11 @@ bool SuGetPacketsFromDriver(SU_ADAPTER *a) {
 // Close the adapter
 void SuCloseAdapter(SU_ADAPTER *a) {
 	// Validate arguments
-	if (a == NULL) {
+	if (a == NULL)
 		return;
-	}
 
-	if (a->hEvent != NULL) {
+	if (a->hEvent != NULL)
 		CloseHandle(a->hEvent);
-	}
 
 	if (a->hFile != INVALID_HANDLE_VALUE) {
 		CloseHandle(a->hFile);
@@ -462,9 +441,8 @@ void SuCloseAdapter(SU_ADAPTER *a) {
 void SuCloseAdapterHandleInner(SU_ADAPTER *a) {
 	return; //////////// ****************
 	// Validate arguments
-	if (a == NULL) {
+	if (a == NULL)
 		return;
-	}
 
 	if (a->hFile != INVALID_HANDLE_VALUE) {
 		CloseHandle(a->hFile);
@@ -480,9 +458,8 @@ SU_ADAPTER *SuOpenAdapter(SU *u, char *adapter_id) {
 	SL_IOCTL_EVENT_NAME t;
 	DWORD read_size;
 	// Validate arguments
-	if (u == NULL || adapter_id == NULL) {
+	if (u == NULL || adapter_id == NULL)
 		return NULL;
-	}
 
 	Format(filename, sizeof(filename), SL_ADAPTER_DEVICE_FILENAME_WIN32, adapter_id);
 
@@ -532,9 +509,8 @@ LIST *SuGetAdapterList(SU *u) {
 	DWORD read_size;
 	UINT i;
 	// Validate arguments
-	if (u == NULL) {
+	if (u == NULL)
 		return NULL;
-	}
 
 	ret = NewList(SuCmpAdapterList);
 
@@ -595,19 +571,16 @@ LIST *SuGetAdapterList(SU *u) {
 int SuCmpAdapterList(void *p1, void *p2) {
 	int r;
 	SU_ADAPTER_LIST *a1, *a2;
-	if (p1 == NULL || p2 == NULL) {
+	if (p1 == NULL || p2 == NULL)
 		return 0;
-	}
 	a1 = *(SU_ADAPTER_LIST **)p1;
 	a2 = *(SU_ADAPTER_LIST **)p2;
-	if (a1 == NULL || a2 == NULL) {
+	if (a1 == NULL || a2 == NULL)
 		return 0;
-	}
 
 	r = StrCmpi(a1->SortKey, a2->SortKey);
-	if (r != 0) {
+	if (r != 0)
 		return 0;
-	}
 
 	return StrCmpi(a1->Guid, a2->Guid);
 }
@@ -616,9 +589,8 @@ int SuCmpAdapterList(void *p1, void *p2) {
 void SuFreeAdapterList(LIST *o) {
 	UINT i;
 	// Validate arguments
-	if (o == NULL) {
+	if (o == NULL)
 		return;
-	}
 
 	for (i = 0; i < LIST_NUM(o); i++) {
 		SU_ADAPTER_LIST *a = LIST_DATA(o, i);
@@ -634,9 +606,8 @@ SU_ADAPTER_LIST *SuAdapterInfoToAdapterList(SL_ADAPTER_INFO *info) {
 	SU_ADAPTER_LIST t;
 	char tmp[MAX_SIZE];
 	// Validate arguments
-	if (info == NULL) {
+	if (info == NULL)
 		return NULL;
-	}
 
 	Zero(&t, sizeof(t));
 	Copy(&t.Info, info, sizeof(SL_ADAPTER_INFO));
@@ -697,9 +668,8 @@ LABEL_RETRY:
 				if (flag2 == false) {
 					flag2 = true;
 
-					if (SuInstallDriver(true)) {
+					if (SuInstallDriver(true))
 						goto LABEL_RETRY;
-					}
 				}
 			} else {
 				Debug("MsStartService(%s) Ok.\n", SL_PROTOCOL_NAME);
@@ -763,9 +733,8 @@ LABEL_RETRY:
 // Release the driver
 void SuFree(SU *u) {
 	// Validate arguments
-	if (u == NULL) {
+	if (u == NULL)
 		return;
-	}
 
 	CloseHandle(u->hFile);
 

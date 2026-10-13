@@ -23,23 +23,20 @@ void WpcFillEntryName(char *dst, char *name) {
 	UINT i, len;
 	char tmp[MAX_SIZE];
 	// Validate arguments
-	if (dst == NULL || name == NULL) {
+	if (dst == NULL || name == NULL)
 		return;
-	}
 
 	StrCpy(tmp, sizeof(tmp), name);
 	StrUpper(tmp);
 	len = StrLen(tmp);
 
-	for (i = 0; i < WPC_DATA_ENTRY_SIZE; i++) {
+	for (i = 0; i < WPC_DATA_ENTRY_SIZE; i++)
 		dst[i] = ' ';
-	}
 
-	if (len <= WPC_DATA_ENTRY_SIZE) {
+	if (len <= WPC_DATA_ENTRY_SIZE)
 		Copy(dst, tmp, len);
-	} else {
+	else
 		Copy(dst, tmp, WPC_DATA_ENTRY_SIZE);
-	}
 }
 
 
@@ -48,9 +45,8 @@ void WpcAddDataEntry(BUF *b, char *name, void *data, UINT size) {
 	char entry_name[WPC_DATA_ENTRY_SIZE];
 	char size_str[11];
 	// Validate arguments
-	if (b == NULL || name == NULL || (data == NULL && size != 0)) {
+	if (b == NULL || name == NULL || (data == NULL && size != 0))
 		return;
-	}
 
 	WpcFillEntryName(entry_name, name);
 	WriteBuf(b, entry_name, WPC_DATA_ENTRY_SIZE);
@@ -69,13 +65,11 @@ SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool 
 	SOCK *sock;
 	UINT ret;
 	// Validate arguments
-	if (param == NULL) {
+	if (param == NULL)
 		return NULL;
-	}
 
-	if (error_code == NULL) {
+	if (error_code == NULL)
 		error_code = &ret;
-	}
 
 	if (param->ProxyType == PROXY_DIRECT) {
 		sock = TcpConnectEx3(param->HostName, param->Port, timeout, cancel, NULL, NULL);
@@ -168,9 +162,8 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 	UINT num_continue = 0;
 	INTERNET_SETTING wt_setting;
 	// Validate arguments
-	if (data == NULL) {
+	if (data == NULL)
 		return NULL;
-	}
 	if (setting == NULL) {
 		Zero(&wt_setting, sizeof(wt_setting));
 		setting = &wt_setting;
@@ -179,15 +172,12 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 		static UINT ret = 0;
 		error_code = &ret;
 	}
-	if (timeout_comm == 0) {
+	if (timeout_comm == 0)
 		timeout_comm = WPC_TIMEOUT;
-	}
-	if (sha1_cert_hash == NULL) {
+	if (sha1_cert_hash == NULL)
 		num_hashes = 0;
-	}
-	if (num_hashes == 0) {
+	if (num_hashes == 0)
 		sha1_cert_hash = NULL;
-	}
 
 	// Connection
 	Zero(&con, sizeof(con));
@@ -214,14 +204,12 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 	} else {
 		// If the connection is not SSL via HTTP Proxy
 		s = TcpConnectEx3(con.ProxyHostName, con.ProxyPort, timeout_connect, cancel, NULL, NULL);
-		if (s == NULL) {
+		if (s == NULL)
 			*error_code = ERR_PROXY_CONNECT_FAILED;
-		}
 	}
 
-	if (s == NULL) {
+	if (s == NULL)
 		return NULL;
-	}
 
 	if (data->Secure) {
 		// Start the SSL communication
@@ -274,13 +262,11 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 	AddHttpValue(h, NewHttpValue("Cache-Control", "no-cache"));
 	AddHttpValue(h, NewHttpValue("Host", data->HeaderHostName));
 
-	if (IsEmptyStr(header_name) == false && IsEmptyStr(header_value) == false) {
+	if (IsEmptyStr(header_name) == false && IsEmptyStr(header_value) == false)
 		AddHttpValue(h, NewHttpValue(header_name, header_value));
-	}
 
-	if (IsEmptyStr(data->Referer) == false) {
+	if (IsEmptyStr(data->Referer) == false)
 		AddHttpValue(h, NewHttpValue("Referer", data->Referer));
-	}
 
 	if (StrCmpi(data->Method, WPC_HTTP_POST_NAME) == 0) {
 		ToStr(len_str, StrLen(post_data));
@@ -288,9 +274,8 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 		AddHttpValue(h, NewHttpValue("Content-Length", len_str));
 	}
 
-	if (IsEmptyStr(data->AdditionalHeaderName) == false && IsEmptyStr(data->AdditionalHeaderValue) == false) {
+	if (IsEmptyStr(data->AdditionalHeaderName) == false && IsEmptyStr(data->AdditionalHeaderValue) == false)
 		AddHttpValue(h, NewHttpValue(data->AdditionalHeaderName, data->AdditionalHeaderValue));
-	}
 
 	if (use_http_proxy) {
 		AddHttpValue(h, NewHttpValue("Proxy-Connection", "Keep-Alive"));
@@ -315,9 +300,8 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 	Free(send_str);
 
 	// Append to the sending data in the case of POST
-	if (StrCmpi(data->Method, WPC_HTTP_POST_NAME) == 0) {
+	if (StrCmpi(data->Method, WPC_HTTP_POST_NAME) == 0)
 		WriteBuf(send_buf, post_data, StrLen(post_data));
-	}
 
 	// Send
 	if (SendAll(s, send_buf->Buf, send_buf->Size, s->SecureMode) == false) {
@@ -346,9 +330,8 @@ CONT:
 
 	http_error_code = 0;
 	if (StrLen(h->Method) == 8) {
-		if (Cmp(h->Method, "HTTP/1.", 7) == 0) {
+		if (Cmp(h->Method, "HTTP/1.", 7) == 0)
 			http_error_code = ToInt(h->Target);
-		}
 	}
 
 	*error_code = ERR_NO_ERROR;
@@ -368,9 +351,8 @@ CONT:
 	case 100:
 		// Continue
 		num_continue++;
-		if (num_continue >= 10) {
+		if (num_continue >= 10)
 			goto DEF;
-		}
 		FreeHttpHeader(h);
 		goto CONT;
 
@@ -395,9 +377,8 @@ CONT:
 
 	// Get the length of the content
 	content_len = GetContentLength(h);
-	if (max_recv_size != 0) {
+	if (max_recv_size != 0)
 		content_len = MIN(content_len, max_recv_size);
-	}
 
 	FreeHttpHeader(h);
 
@@ -419,9 +400,8 @@ CONT:
 			}
 		}
 
-		if (recvsize == 0) {
+		if (recvsize == 0)
 			break;
-		}
 
 		size = Recv(s, socket_buffer, recvsize, s->SecureMode);
 		if (size == 0) {
@@ -454,15 +434,13 @@ CONT:
 void CreateUrl(char *url, UINT url_size, URL_DATA *data) {
 	char *protocol;
 	// Validate arguments
-	if (url == NULL || data == NULL) {
+	if (url == NULL || data == NULL)
 		return;
-	}
 
-	if (data->Secure == false) {
+	if (data->Secure == false)
 		protocol = "http://";
-	} else {
+	else
 		protocol = "https://";
-	}
 
 	Format(url, url_size, "%s%s%s", protocol, data->HeaderHostName, data->Target);
 }
@@ -477,21 +455,18 @@ bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer) {
 	UINT port;
 	UINT i;
 	// Validate arguments
-	if (data == NULL || str == NULL) {
+	if (data == NULL || str == NULL)
 		return false;
-	}
 
 	Zero(data, sizeof(URL_DATA));
 
-	if (is_post) {
+	if (is_post)
 		StrCpy(data->Method, sizeof(data->Method), WPC_HTTP_POST_NAME);
-	} else {
+	else
 		StrCpy(data->Method, sizeof(data->Method), WPC_HTTP_GET_NAME);
-	}
 
-	if (referrer != NULL) {
+	if (referrer != NULL)
 		StrCpy(data->Referer, sizeof(data->Referer), referrer);
-	}
 
 	StrCpy(tmp, sizeof(tmp), str);
 	Trim(tmp);
@@ -504,9 +479,8 @@ bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer) {
 		data->Secure = true;
 		s = &tmp[8];
 	} else {
-		if (SearchStrEx(tmp, "://", 0, false) != INFINITE) {
+		if (SearchStrEx(tmp, "://", 0, false) != INFINITE)
 			return false;
-		}
 		data->Secure = false;
 		s = &tmp[0];
 	}
@@ -522,30 +496,27 @@ bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer) {
 		StrCpy(data->Target, sizeof(data->Target), "/");
 	}
 
-	if (ParseHostPort(server_port, &host, &port, data->Secure ? 443 : 80) == false) {
+	if (ParseHostPort(server_port, &host, &port, data->Secure ? 443 : 80) == false)
 		return false;
-	}
 
 	StrCpy(data->HostName, sizeof(data->HostName), host);
 	data->Port = port;
 
 	Free(host);
 
-	if ((data->Secure && data->Port == 443) || (data->Secure == false && data->Port == 80)) {
+	if ((data->Secure && data->Port == 443) || (data->Secure == false && data->Port == 80))
 		StrCpy(data->HeaderHostName, sizeof(data->HeaderHostName), data->HostName);
-	} else {
+	else
 		Format(data->HeaderHostName, sizeof(data->HeaderHostName),
 		       "%s:%u", data->HostName, data->Port);
-	}
 
 	return true;
 }
 
 // String replacement
 void Base64ToSafe64(char *str, const UINT size) {
-	if (str == NULL || size == 0) {
+	if (str == NULL || size == 0)
 		return;
-	}
 
 	for (UINT i = 0; i < size; ++i) {
 		switch (str[i]) {
@@ -564,9 +535,8 @@ void Base64ToSafe64(char *str, const UINT size) {
 	}
 }
 void Safe64ToBase64(char *str, const UINT size) {
-	if (str == NULL || size == 0) {
+	if (str == NULL || size == 0)
 		return;
-	}
 
 	for (UINT i = 0; i < size; ++i) {
 		switch (str[i]) {
@@ -587,13 +557,11 @@ void Safe64ToBase64(char *str, const UINT size) {
 
 // Decode from escaped Base64
 UINT DecodeSafe64(void *dst, const char *src, UINT size) {
-	if (dst == NULL || src == NULL) {
+	if (dst == NULL || src == NULL)
 		return 0;
-	}
 
-	if (size == 0) {
+	if (size == 0)
 		size = StrLen(src);
-	}
 
 	char *tmp = Malloc(size + 1);
 	Copy(tmp, src, size);
@@ -608,9 +576,8 @@ UINT DecodeSafe64(void *dst, const char *src, UINT size) {
 
 // Encode to escaped Base64
 void EncodeSafe64(char *dst, const void *src, const UINT size) {
-	if (dst == NULL || src == NULL) {
+	if (dst == NULL || src == NULL)
 		return;
-	}
 
 	const UINT ret = Base64Encode(dst, src, size);
 

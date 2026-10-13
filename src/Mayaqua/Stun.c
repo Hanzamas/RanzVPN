@@ -23,27 +23,23 @@ static bool StunParseAddressAttr(UCHAR *value, UINT value_size, bool xor_mapped,
 	UCHAR xor_key[16];
 	UINT i;
 	// Validate arguments
-	if (value == NULL || transaction_id == NULL || ip == NULL || port == NULL) {
+	if (value == NULL || transaction_id == NULL || ip == NULL || port == NULL)
 		return false;
-	}
 
 	// Reserved (1 byte), family (1 byte) and port (2 bytes)
-	if (value_size < 4) {
+	if (value_size < 4)
 		return false;
-	}
 
 	family = value[1];
-	if (family == STUN_ADDRESS_FAMILY_IPV4) {
+	if (family == STUN_ADDRESS_FAMILY_IPV4)
 		addr_size = 4;
-	} else if (family == STUN_ADDRESS_FAMILY_IPV6) {
+	else if (family == STUN_ADDRESS_FAMILY_IPV6)
 		addr_size = 16;
-	} else {
+	else
 		return false;
-	}
 
-	if (value_size < (4 + addr_size)) {
+	if (value_size < (4 + addr_size))
 		return false;
-	}
 
 	port_value = READ_USHORT(value + 2);
 	Copy(addr, value + 4, addr_size);
@@ -57,20 +53,17 @@ static bool StunParseAddressAttr(UCHAR *value, UINT value_size, bool xor_mapped,
 
 		port_value ^= (STUN_MAGIC_COOKIE >> 16);
 
-		for (i = 0; i < addr_size; i++) {
+		for (i = 0; i < addr_size; i++)
 			addr[i] ^= xor_key[i];
-		}
 	}
 
-	if (port_value == 0) {
+	if (port_value == 0)
 		return false;
-	}
 
-	if (family == STUN_ADDRESS_FAMILY_IPV4) {
+	if (family == STUN_ADDRESS_FAMILY_IPV4)
 		SetIP(ip, addr[0], addr[1], addr[2], addr[3]);
-	} else {
+	else
 		SetIP6(ip, addr);
-	}
 
 	*port = port_value;
 
@@ -80,13 +73,11 @@ static bool StunParseAddressAttr(UCHAR *value, UINT value_size, bool xor_mapped,
 // Build a Binding Request (header only) and return its size, or 0 if the buffer is too small
 UINT StunBuildBindingRequest(UCHAR *buf, UINT buf_size, UCHAR *transaction_id) {
 	// Validate arguments
-	if (buf == NULL || transaction_id == NULL) {
+	if (buf == NULL || transaction_id == NULL)
 		return 0;
-	}
 
-	if (buf_size < STUN_HEADER_SIZE) {
+	if (buf_size < STUN_HEADER_SIZE)
 		return 0;
-	}
 
 	// Message type and message length (no attributes)
 	WRITE_USHORT(buf, STUN_BINDING_REQUEST);
@@ -115,41 +106,34 @@ bool StunParseBindingResponse(UCHAR *buf, UINT size, UCHAR *transaction_id, IP *
 	IP xor_mapped_ip, plain_mapped_ip;
 	UINT xor_mapped_port = 0, plain_mapped_port = 0;
 	// Validate arguments
-	if (buf == NULL || transaction_id == NULL || mapped_ip == NULL || mapped_port == NULL) {
+	if (buf == NULL || transaction_id == NULL || mapped_ip == NULL || mapped_port == NULL)
 		return false;
-	}
 
 	Zero(&xor_mapped_ip, sizeof(xor_mapped_ip));
 	Zero(&plain_mapped_ip, sizeof(plain_mapped_ip));
 
 	// Header
-	if (size < STUN_HEADER_SIZE) {
+	if (size < STUN_HEADER_SIZE)
 		return false;
-	}
 
 	msg_type = READ_USHORT(buf);
 	msg_len = READ_USHORT(buf + 2);
 
-	if (msg_type != STUN_BINDING_SUCCESS_RESPONSE) {
+	if (msg_type != STUN_BINDING_SUCCESS_RESPONSE)
 		return false;
-	}
 
-	if (READ_UINT(buf + 4) != STUN_MAGIC_COOKIE) {
+	if (READ_UINT(buf + 4) != STUN_MAGIC_COOKIE)
 		return false;
-	}
 
-	if (Cmp(buf + 8, transaction_id, STUN_TRANSACTION_ID_SIZE) != 0) {
+	if (Cmp(buf + 8, transaction_id, STUN_TRANSACTION_ID_SIZE) != 0)
 		return false;
-	}
 
 	// The message length is a multiple of 4 and must fit in the received data
-	if ((msg_len % 4) != 0) {
+	if ((msg_len % 4) != 0)
 		return false;
-	}
 
-	if (msg_len > (size - STUN_HEADER_SIZE)) {
+	if (msg_len > (size - STUN_HEADER_SIZE))
 		return false;
-	}
 
 	pos = STUN_HEADER_SIZE;
 	end = STUN_HEADER_SIZE + msg_len;
@@ -161,9 +145,8 @@ bool StunParseBindingResponse(UCHAR *buf, UINT size, UCHAR *transaction_id, IP *
 		UINT padded_len;
 		UCHAR *value;
 
-		if ((end - pos) < STUN_ATTR_HEADER_SIZE) {
+		if ((end - pos) < STUN_ATTR_HEADER_SIZE)
 			return false;
-		}
 
 		attr_type = READ_USHORT(buf + pos);
 		attr_len = READ_USHORT(buf + pos + 2);
@@ -171,22 +154,19 @@ bool StunParseBindingResponse(UCHAR *buf, UINT size, UCHAR *transaction_id, IP *
 
 		// The value is padded to a multiple of 4 bytes
 		padded_len = (attr_len + 3) & ~((UINT)3);
-		if (padded_len > (end - pos)) {
+		if (padded_len > (end - pos))
 			return false;
-		}
 
 		value = buf + pos;
 
 		if (attr_type == STUN_ATTR_XOR_MAPPED_ADDRESS && has_xor_mapped == false) {
-			if (StunParseAddressAttr(value, attr_len, true, transaction_id, &xor_mapped_ip, &xor_mapped_port) == false) {
+			if (StunParseAddressAttr(value, attr_len, true, transaction_id, &xor_mapped_ip, &xor_mapped_port) == false)
 				return false;
-			}
 
 			has_xor_mapped = true;
 		} else if (attr_type == STUN_ATTR_MAPPED_ADDRESS && has_mapped == false) {
-			if (StunParseAddressAttr(value, attr_len, false, transaction_id, &plain_mapped_ip, &plain_mapped_port) == false) {
+			if (StunParseAddressAttr(value, attr_len, false, transaction_id, &plain_mapped_ip, &plain_mapped_port) == false)
 				return false;
-			}
 
 			has_mapped = true;
 		}
@@ -220,17 +200,15 @@ bool StunParseServerStr(char *src, char *host, UINT host_size, UINT *port) {
 	UINT port_value = STUN_DEFAULT_PORT;
 	UINT len, i;
 	// Validate arguments
-	if (src == NULL || host == NULL || host_size == 0 || port == NULL) {
+	if (src == NULL || host == NULL || host_size == 0 || port == NULL)
 		return false;
-	}
 
 	StrCpy(tmp, sizeof(tmp), src);
 	Trim(tmp);
 
 	len = StrLen(tmp);
-	if (len == 0) {
+	if (len == 0)
 		return false;
-	}
 
 	if (tmp[0] == '[') {
 		// "[IPv6 address]" or "[IPv6 address]:port"
@@ -243,17 +221,15 @@ bool StunParseServerStr(char *src, char *host, UINT host_size, UINT *port) {
 			}
 		}
 
-		if (close == NULL) {
+		if (close == NULL)
 			return false;
-		}
 
 		*close = 0;
 		host_part = &tmp[1];
 
 		if (close[1] != 0) {
-			if (close[1] != ':') {
+			if (close[1] != ':')
 				return false;
-			}
 
 			port_part = &close[2];
 		}
@@ -282,30 +258,26 @@ bool StunParseServerStr(char *src, char *host, UINT host_size, UINT *port) {
 	if (port_part != NULL) {
 		UINT port_len = StrLen(port_part);
 
-		if (port_len == 0 || port_len > 5) {
+		if (port_len == 0 || port_len > 5)
 			return false;
-		}
 
 		port_value = 0;
 
 		for (i = 0; i < port_len; i++) {
-			if (port_part[i] < '0' || port_part[i] > '9') {
+			if (port_part[i] < '0' || port_part[i] > '9')
 				return false;
-			}
 
 			port_value = port_value * 10 + (UINT)(port_part[i] - '0');
 		}
 
-		if (port_value == 0 || port_value > 65535) {
+		if (port_value == 0 || port_value > 65535)
 			return false;
-		}
 	}
 
 	Trim(host_part);
 
-	if (StrLen(host_part) == 0 || StrLen(host_part) >= host_size) {
+	if (StrLen(host_part) == 0 || StrLen(host_part) >= host_size)
 		return false;
-	}
 
 	StrCpy(host, host_size, host_part);
 	*port = port_value;
@@ -334,13 +306,11 @@ bool StunGetMappedAddress(SOCK *udp_sock, char *server_host_port, IP *mapped_ip,
 	UINT i;
 	UINT64 limit;
 	// Validate arguments
-	if (udp_sock == NULL || server_host_port == NULL || mapped_ip == NULL || mapped_port == NULL) {
+	if (udp_sock == NULL || server_host_port == NULL || mapped_ip == NULL || mapped_port == NULL)
 		return false;
-	}
 
-	if (udp_sock->Type != SOCK_UDP) {
+	if (udp_sock->Type != SOCK_UDP)
 		return false;
-	}
 
 	if (StunParseServerStr(server_host_port, host, sizeof(host), &server_port) == false) {
 		Debug("StunGetMappedAddress(): invalid STUN server: %s\n", server_host_port);
@@ -351,11 +321,10 @@ bool StunGetMappedAddress(SOCK *udp_sock, char *server_host_port, IP *mapped_ip,
 	limit = Tick64() + (UINT64)STUN_TOTAL_TIMEOUT;
 
 	// Resolve the server in the address family of the socket
-	if (udp_sock->IPv6) {
+	if (udp_sock->IPv6)
 		resolved = GetIP6Ex(&server_ip, host, STUN_DNS_RESOLVE_TIMEOUT, NULL);
-	} else {
+	else
 		resolved = GetIP4Ex(&server_ip, host, STUN_DNS_RESOLVE_TIMEOUT, NULL);
-	}
 
 	if (resolved == false || IsZeroIP(&server_ip)) {
 		Debug("StunGetMappedAddress(): failed to resolve %s\n", host);
@@ -365,9 +334,8 @@ bool StunGetMappedAddress(SOCK *udp_sock, char *server_host_port, IP *mapped_ip,
 	Rand(transaction_id, sizeof(transaction_id));
 
 	request_size = StunBuildBindingRequest(request, sizeof(request), transaction_id);
-	if (request_size == 0) {
+	if (request_size == 0)
 		return false;
-	}
 
 	for (i = 0; i < (sizeof(wait_list) / sizeof(wait_list[0])); i++) {
 		UINT64 deadline;
@@ -386,18 +354,16 @@ bool StunGetMappedAddress(SOCK *udp_sock, char *server_host_port, IP *mapped_ip,
 		}
 
 		deadline = Tick64() + (UINT64)wait_list[i];
-		if (deadline > limit) {
+		if (deadline > limit)
 			deadline = limit;
-		}
 
 		while (true) {
 			UINT64 now = Tick64();
 			UINT num_ignore_errors = 0;
 			SOCKSET set;
 
-			if (now >= deadline) {
+			if (now >= deadline)
 				break;
-			}
 
 			// Wait for a datagram. Select() puts the socket into the asynchronous
 			// (non-blocking) mode that the UDP acceleration polling loop puts it in
@@ -413,15 +379,13 @@ bool StunGetMappedAddress(SOCK *udp_sock, char *server_host_port, IP *mapped_ip,
 				UINT src_port;
 				UINT ret;
 
-				if (Tick64() >= deadline) {
+				if (Tick64() >= deadline)
 					break;
-				}
 
 				ret = RecvFrom(udp_sock, &src_ip, &src_port, recv_buf, sizeof(recv_buf));
 
-				if (ret == SOCK_LATER) {
+				if (ret == SOCK_LATER)
 					break;
-				}
 
 				if (ret == 0) {
 					if (udp_sock->IgnoreRecvErr == false || (num_ignore_errors++) >= MAX_NUM_IGNORE_ERRORS) {
@@ -434,9 +398,8 @@ bool StunGetMappedAddress(SOCK *udp_sock, char *server_host_port, IP *mapped_ip,
 				}
 
 				// Ignore datagrams from other sources
-				if (CmpIpAddr(&src_ip, &server_ip) != 0 || src_port != server_port) {
+				if (CmpIpAddr(&src_ip, &server_ip) != 0 || src_port != server_port)
 					continue;
-				}
 
 				// The server rejected this request: stop instead of waiting for the timeout
 				if (ret >= STUN_HEADER_SIZE && READ_USHORT(recv_buf) == STUN_BINDING_ERROR_RESPONSE &&

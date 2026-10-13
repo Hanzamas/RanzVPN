@@ -30,9 +30,8 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout
 	BOOL(WINAPI * _SetupCopyOEMInfW)(PCWSTR, PCWSTR, DWORD, DWORD, PWSTR, DWORD, PDWORD, PWSTR *) = NULL;
 	BOOL(WINAPI * _SetupUninstallOEMInfW)(PCWSTR, DWORD, PVOID) = NULL;
 	// Validate arguments
-	if (inf_path == NULL || id == NULL) {
+	if (inf_path == NULL || id == NULL)
 		return false;
-	}
 
 	hSetupApiDll = LoadLibraryA("setupapi.dll");
 	if (hSetupApiDll == NULL) {
@@ -108,9 +107,8 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout
 
 							if (_SetupCopyOEMInfW(inf_path, inf_dir, SPOST_PATH, SP_COPY_REPLACEONLY,
 							                      dst_inf_name, dst_inf_name_size, &dst_inf_name_size, NULL) == false &&
-							    GetLastError() == ERROR_FILE_EXISTS) {
+							    GetLastError() == ERROR_FILE_EXISTS)
 								_SetupUninstallOEMInfW(dst_inf_name, 0, NULL);
-							}
 						}
 					} else {
 						WHERE;
@@ -134,9 +132,8 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout
 
 LABEL_CLEANUP:
 
-	if (hSetupApiDll != NULL) {
+	if (hSetupApiDll != NULL)
 		FreeLibrary(hSetupApiDll);
-	}
 
 	return ret;
 }

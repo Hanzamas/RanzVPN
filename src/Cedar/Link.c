@@ -28,9 +28,8 @@ void LinkServerSessionThread(THREAD *t, void *param) {
 	POLICY *policy;
 	wchar_t name[MAX_SIZE];
 	// Validate arguments
-	if (t == NULL || param == NULL) {
+	if (t == NULL || param == NULL)
 		return;
-	}
 
 	// Create a server connection
 	c = NewServerConnection(k->Cedar, NULL, t);
@@ -72,13 +71,11 @@ bool LinkPaInit(SESSION *s) {
 	LINK *k;
 	THREAD *t;
 	// Validate arguments
-	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL) {
+	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
 		return false;
-	}
 
-	if (k->Halting || (*k->StopAllLinkFlag)) {
+	if (k->Halting || (*k->StopAllLinkFlag))
 		return false;
-	}
 
 	// Create a transmission packet queue
 	k->SendPacketQueue = NewQueue();
@@ -99,9 +96,8 @@ bool LinkPaInit(SESSION *s) {
 CANCEL *LinkPaGetCancel(SESSION *s) {
 	LINK *k;
 	// Validate arguments
-	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL) {
+	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
 		return NULL;
-	}
 
 	return NULL;
 }
@@ -111,13 +107,11 @@ UINT LinkPaGetNextPacket(SESSION *s, void **data) {
 	LINK *k;
 	UINT ret = 0;
 	// Validate arguments
-	if (s == NULL || data == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL) {
+	if (s == NULL || data == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
 		return INFINITE;
-	}
 
-	if (k->Halting || (*k->StopAllLinkFlag)) {
+	if (k->Halting || (*k->StopAllLinkFlag))
 		return INFINITE;
-	}
 	// Examine whether there are packets in the queue
 	LockQueue(k->SendPacketQueue);
 	{
@@ -148,9 +142,8 @@ bool LinkPaPutPacket(SESSION *s, void *data, UINT size) {
 	bool ret = true;
 	bool halting = false;
 	// Validate arguments
-	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL) {
+	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
 		return false;
-	}
 
 	halting = (k->Halting || (*k->StopAllLinkFlag));
 
@@ -175,9 +168,8 @@ bool LinkPaPutPacket(SESSION *s, void *data, UINT size) {
 	// Since the packet arrives from the HUB of the link destination,
 	// deliver it to the ReceivedBlocks of the server session
 	if (data != NULL) {
-		if (halting == false) {
+		if (halting == false)
 			block = NewBlock(data, size, 0);
-		}
 
 		if (k->LockFlag == false) {
 			UINT current_num;
@@ -196,11 +188,10 @@ bool LinkPaPutPacket(SESSION *s, void *data, UINT size) {
 		}
 
 		if (halting == false) {
-			if (CedarGetFifoBudgetBalance(k->Cedar) == 0) {
+			if (CedarGetFifoBudgetBalance(k->Cedar) == 0)
 				FreeBlock(block);
-			} else {
+			else
 				InsertReceivedBlockToQueue(server_connection, block, true);
-			}
 		}
 	} else {
 		UINT current_num;
@@ -222,14 +213,12 @@ bool LinkPaPutPacket(SESSION *s, void *data, UINT size) {
 		// Issue the Cancel, since finished store all packets when the data == NULL
 		Cancel(server_session->Cancel1);
 
-		if (k->Hub != NULL && k->Hub->Option != NULL && k->Hub->Option->YieldAfterStorePacket) {
+		if (k->Hub != NULL && k->Hub->Option != NULL && k->Hub->Option->YieldAfterStorePacket)
 			YieldCpu();
-		}
 	}
 
-	if (halting) {
+	if (halting)
 		ret = false;
-	}
 
 	return ret;
 }
@@ -238,9 +227,8 @@ bool LinkPaPutPacket(SESSION *s, void *data, UINT size) {
 void LinkPaFree(SESSION *s) {
 	LINK *k;
 	// Validate arguments
-	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL) {
+	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
 		return;
-	}
 
 	CedarAddQueueBudget(k->Cedar, -((int)k->LastServerConnectionReceivedBlocksNum));
 	k->LastServerConnectionReceivedBlocksNum = 0;
@@ -253,9 +241,8 @@ void LinkPaFree(SESSION *s) {
 	LockQueue(k->SendPacketQueue);
 	{
 		BLOCK *block;
-		while (block = GetNext(k->SendPacketQueue)) {
+		while (block = GetNext(k->SendPacketQueue))
 			FreeBlock(block);
-		}
 	}
 	UnlockQueue(k->SendPacketQueue);
 
@@ -275,9 +262,8 @@ void ReleaseAllLink(HUB *h) {
 	LINK **kk;
 	UINT num, i;
 	// Validate arguments
-	if (h == NULL) {
+	if (h == NULL)
 		return;
-	}
 
 	LockList(h->LinkList);
 	{
@@ -299,33 +285,28 @@ void ReleaseAllLink(HUB *h) {
 // Release the link
 void ReleaseLink(LINK *k) {
 	// Validate arguments
-	if (k == NULL) {
+	if (k == NULL)
 		return;
-	}
 
-	if (Release(k->ref) == 0) {
+	if (Release(k->ref) == 0)
 		CleanupLink(k);
-	}
 }
 
 // Clean-up the link
 void CleanupLink(LINK *k) {
 	// Validate arguments
-	if (k == NULL) {
+	if (k == NULL)
 		return;
-	}
 
 	DeleteLock(k->lock);
-	if (k->ClientSession) {
+	if (k->ClientSession)
 		ReleaseSession(k->ClientSession);
-	}
 	Free(k->Option);
 	CiFreeClientAuth(k->Auth);
 	Free(k->Policy);
 
-	if (k->ServerCert != NULL) {
+	if (k->ServerCert != NULL)
 		FreeX(k->ServerCert);
-	}
 
 	Free(k);
 }
@@ -333,17 +314,14 @@ void CleanupLink(LINK *k) {
 // Make the link on-line
 void SetLinkOnline(LINK *k) {
 	// Validate arguments
-	if (k == NULL) {
+	if (k == NULL)
 		return;
-	}
 
-	if (k->NoOnline) {
+	if (k->NoOnline)
 		return;
-	}
 
-	if (k->Offline == false) {
+	if (k->Offline == false)
 		return;
-	}
 
 	k->Offline = false;
 	StartLink(k);
@@ -352,13 +330,11 @@ void SetLinkOnline(LINK *k) {
 // Make the link off-line
 void SetLinkOffline(LINK *k) {
 	// Validate arguments
-	if (k == NULL) {
+	if (k == NULL)
 		return;
-	}
 
-	if (k->Offline) {
+	if (k->Offline)
 		return;
-	}
 
 	StopLink(k);
 	k->Offline = true;
@@ -367,15 +343,13 @@ void SetLinkOffline(LINK *k) {
 // Delete the link
 void DelLink(HUB *hub, LINK *k) {
 	// Validate arguments
-	if (hub == NULL || k == NULL) {
+	if (hub == NULL || k == NULL)
 		return;
-	}
 
 	LockList(hub->LinkList);
 	{
-		if (Delete(hub->LinkList, k)) {
+		if (Delete(hub->LinkList, k))
 			ReleaseLink(k);
-		}
 	}
 	UnlockList(hub->LinkList);
 }
@@ -383,9 +357,8 @@ void DelLink(HUB *hub, LINK *k) {
 // Start all links
 void StartAllLink(HUB *h) {
 	// Validate arguments
-	if (h == NULL) {
+	if (h == NULL)
 		return;
-	}
 
 	LockList(h->LinkList);
 	{
@@ -393,9 +366,8 @@ void StartAllLink(HUB *h) {
 		for (i = 0; i < LIST_NUM(h->LinkList); i++) {
 			LINK *k = (LINK *)LIST_DATA(h->LinkList, i);
 
-			if (k->Offline == false) {
+			if (k->Offline == false)
 				StartLink(k);
-			}
 		}
 	}
 	UnlockList(h->LinkList);
@@ -407,9 +379,8 @@ void StopAllLink(HUB *h) {
 	UINT num_link;
 	UINT i;
 	// Validate arguments
-	if (h == NULL) {
+	if (h == NULL)
 		return;
-	}
 
 	h->StopAllLinkFlag = true;
 
@@ -417,9 +388,8 @@ void StopAllLink(HUB *h) {
 	{
 		link_list = ToArray(h->LinkList);
 		num_link = LIST_NUM(h->LinkList);
-		for (i = 0; i < num_link; i++) {
+		for (i = 0; i < num_link; i++)
 			AddRef(link_list[i]->ref);
-		}
 	}
 	UnlockList(h->LinkList);
 
@@ -437,9 +407,8 @@ void StopAllLink(HUB *h) {
 void StartLink(LINK *k) {
 	PACKET_ADAPTER *pa;
 	// Validate arguments
-	if (k == NULL) {
+	if (k == NULL)
 		return;
-	}
 
 	LockLink(k);
 	{
@@ -466,9 +435,8 @@ void StartLink(LINK *k) {
 // Stop the link
 void StopLink(LINK *k) {
 	// Validate arguments
-	if (k == NULL) {
+	if (k == NULL)
 		return;
-	}
 
 	LockLink(k);
 	{
@@ -505,9 +473,8 @@ void StopLink(LINK *k) {
 // Lock the link
 void LockLink(LINK *k) {
 	// Validate arguments
-	if (k == NULL) {
+	if (k == NULL)
 		return;
-	}
 
 	Lock(k->lock);
 }
@@ -515,9 +482,8 @@ void LockLink(LINK *k) {
 // Unlock the link
 void UnlockLink(LINK *k) {
 	// Validate arguments
-	if (k == NULL) {
+	if (k == NULL)
 		return;
-	}
 
 	Unlock(k->lock);
 }
@@ -525,9 +491,8 @@ void UnlockLink(LINK *k) {
 // Normalize the policy for the link
 void NormalizeLinkPolicy(POLICY *p) {
 	// Validate arguments
-	if (p == NULL) {
+	if (p == NULL)
 		return;
-	}
 
 	p->Access = true;
 	p->NoBridge = p->NoRouting = p->MonitorPort = false;
@@ -542,20 +507,16 @@ LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, 
 	LINK *k;
 	CLIENT_AUTH *a;
 	// Validate arguments
-	if (cedar == NULL || hub == NULL || option == NULL || auth == NULL || policy == NULL) {
+	if (cedar == NULL || hub == NULL || option == NULL || auth == NULL || policy == NULL)
 		return NULL;
-	}
-	if (hub->Halt) {
+	if (hub->Halt)
 		return NULL;
-	}
 
-	if (LIST_NUM(hub->LinkList) >= MAX_HUB_LINKS) {
+	if (LIST_NUM(hub->LinkList) >= MAX_HUB_LINKS)
 		return NULL;
-	}
 
-	if (UniIsEmptyStr(option->AccountName)) {
+	if (UniIsEmptyStr(option->AccountName))
 		return NULL;
-	}
 
 	// Limitation of authentication method
 	if (auth->AuthType != CLIENT_AUTHTYPE_ANONYMOUS && auth->AuthType != CLIENT_AUTHTYPE_PASSWORD &&

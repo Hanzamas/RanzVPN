@@ -25,13 +25,11 @@ void RpcFree(RPC *rpc) {
 }
 void RpcFreeEx(RPC *rpc, bool no_disconnect) {
 	// Validate arguments
-	if (rpc == NULL) {
+	if (rpc == NULL)
 		return;
-	}
 
-	if (no_disconnect == false) {
+	if (no_disconnect == false)
 		Disconnect(rpc->Sock);
-	}
 
 	ReleaseSock(rpc->Sock);
 
@@ -44,13 +42,11 @@ void RpcFreeEx(RPC *rpc, bool no_disconnect) {
 PACK *CallRpcDispatcher(RPC *r, PACK *p) {
 	char func_name[MAX_SIZE];
 	// Validate arguments
-	if (r == NULL || p == NULL) {
+	if (r == NULL || p == NULL)
 		return NULL;
-	}
 
-	if (PackGetStr(p, "function_name", func_name, sizeof(func_name)) == false) {
+	if (PackGetStr(p, "function_name", func_name, sizeof(func_name)) == false)
 		return NULL;
-	}
 
 	return r->Dispatch(r, func_name, p);
 }
@@ -64,21 +60,18 @@ bool RpcRecvNextCall(RPC *r) {
 	PACK *p;
 	PACK *ret;
 	// Validate arguments
-	if (r == NULL) {
+	if (r == NULL)
 		return false;
-	}
 
 	s = r->Sock;
 
-	if (RecvAll(s, &size, sizeof(UINT), s->SecureMode) == false) {
+	if (RecvAll(s, &size, sizeof(UINT), s->SecureMode) == false)
 		return false;
-	}
 
 	size = Endian32(size);
 
-	if (size > MAX_PACK_SIZE) {
+	if (size > MAX_PACK_SIZE)
 		return false;
-	}
 
 	tmp = MallocEx(size, true);
 
@@ -95,16 +88,14 @@ bool RpcRecvNextCall(RPC *r) {
 	p = BufToPack(b);
 	FreeBuf(b);
 
-	if (p == NULL) {
+	if (p == NULL)
 		return false;
-	}
 
 	ret = CallRpcDispatcher(r, p);
 	FreePack(p);
 
-	if (ret == NULL) {
+	if (ret == NULL)
 		ret = PackError(ERR_NOT_SUPPORTED);
-	}
 
 	b = PackToBuf(ret);
 	FreePack(ret);
@@ -127,9 +118,8 @@ bool RpcRecvNextCall(RPC *r) {
 void RpcServer(RPC *r) {
 	SOCK *s;
 	// Validate arguments
-	if (r == NULL) {
+	if (r == NULL)
 		return;
-	}
 
 	s = r->Sock;
 
@@ -148,17 +138,15 @@ PACK *RpcCall(RPC *r, char *function_name, PACK *p) {
 	UINT num_retry = 0;
 	UINT err = 0;
 	// Validate arguments
-	if (r == NULL || function_name == NULL) {
+	if (r == NULL || function_name == NULL)
 		return NULL;
-	}
 
 	//	Debug("RpcCall: %s\n", function_name);
 
 	Lock(r->Lock);
 	{
-		if (p == NULL) {
+		if (p == NULL)
 			p = NewPack();
-		}
 
 		PackAddStr(p, "function_name", function_name);
 
@@ -174,9 +162,8 @@ PACK *RpcCall(RPC *r, char *function_name, PACK *p) {
 					// Attempt to reconnect the RPC to the VPN Server
 					err = AdminReconnect(r);
 
-					if (err == ERR_NO_ERROR) {
+					if (err == ERR_NO_ERROR)
 						goto RETRY;
-					}
 				}
 			}
 		}
@@ -184,9 +171,8 @@ PACK *RpcCall(RPC *r, char *function_name, PACK *p) {
 		FreePack(p);
 
 		if (ret == NULL) {
-			if (err == 0) {
+			if (err == 0)
 				err = ERR_DISCONNECTED;
-			}
 
 			ret = PackError(err);
 			PackAddInt(ret, "error_code", err);
@@ -204,13 +190,11 @@ PACK *RpcCallInternal(RPC *r, PACK *p) {
 	PACK *ret;
 	void *tmp;
 	// Validate arguments
-	if (r == NULL || p == NULL) {
+	if (r == NULL || p == NULL)
 		return NULL;
-	}
 
-	if (r->Sock == NULL) {
+	if (r->Sock == NULL)
 		return NULL;
-	}
 
 	b = PackToBuf(p);
 
@@ -219,18 +203,15 @@ PACK *RpcCallInternal(RPC *r, PACK *p) {
 	SendAdd(r->Sock, b->Buf, b->Size);
 	FreeBuf(b);
 
-	if (SendNow(r->Sock, r->Sock->SecureMode) == false) {
+	if (SendNow(r->Sock, r->Sock->SecureMode) == false)
 		return NULL;
-	}
 
-	if (RecvAll(r->Sock, &size, sizeof(UINT), r->Sock->SecureMode) == false) {
+	if (RecvAll(r->Sock, &size, sizeof(UINT), r->Sock->SecureMode) == false)
 		return NULL;
-	}
 
 	size = Endian32(size);
-	if (size > MAX_PACK_SIZE) {
+	if (size > MAX_PACK_SIZE)
 		return NULL;
-	}
 
 	tmp = MallocEx(size, true);
 	if (RecvAll(r->Sock, tmp, size, r->Sock->SecureMode) == false) {
@@ -258,9 +239,8 @@ PACK *RpcCallInternal(RPC *r, PACK *p) {
 RPC *StartRpcServer(SOCK *s, RPC_DISPATCHER *dispatch, void *param) {
 	RPC *r;
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return NULL;
-	}
 
 	r = ZeroMallocEx(sizeof(RPC), true);
 	r->Sock = s;
@@ -281,9 +261,8 @@ RPC *StartRpcServer(SOCK *s, RPC_DISPATCHER *dispatch, void *param) {
 RPC *StartRpcClient(SOCK *s, void *param) {
 	RPC *r;
 	// Validate arguments
-	if (s == NULL) {
+	if (s == NULL)
 		return NULL;
-	}
 
 	r = ZeroMalloc(sizeof(RPC));
 	r->Sock = s;

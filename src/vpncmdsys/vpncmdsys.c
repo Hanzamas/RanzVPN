@@ -34,13 +34,11 @@ bool IsWindowsNt() {
 	ZeroMemory(&info, sizeof(info));
 	info.dwOSVersionInfoSize = sizeof(info);
 
-	if (GetVersionEx(&info) == false) {
+	if (GetVersionEx(&info) == false)
 		return false;
-	}
 
-	if (info.dwPlatformId == VER_PLATFORM_WIN32_NT) {
+	if (info.dwPlatformId == VER_PLATFORM_WIN32_NT)
 		return true;
-	}
 
 	return false;
 }
@@ -54,9 +52,8 @@ bool ExecProcess(char *exe_name, wchar_t *args_w) {
 	STARTUPINFOW info_w;
 	PROCESS_INFORMATION proc;
 	// Validate arguments
-	if (exe_name == NULL || args_w == NULL) {
+	if (exe_name == NULL || args_w == NULL)
 		return false;
-	}
 
 	ZeroMemory(exe_name_w, sizeof(exe_name_w));
 	ZeroMemory(args, sizeof(args));
@@ -71,13 +68,12 @@ bool ExecProcess(char *exe_name, wchar_t *args_w) {
 
 	ZeroMemory(&proc, sizeof(proc));
 
-	if (IsWindowsNt() == false) {
+	if (IsWindowsNt() == false)
 		ret = CreateProcess(exe_name, args, NULL, NULL, false, NORMAL_PRIORITY_CLASS,
 		                    NULL, NULL, &info, &proc);
-	} else {
+	else
 		ret = CreateProcessW(exe_name_w, args_w, NULL, NULL, false, NORMAL_PRIORITY_CLASS,
 		                     NULL, NULL, &info_w, &proc);
-	}
 
 	if (ret) {
 		WaitForSingleObject(proc.hProcess, INFINITE);
@@ -107,34 +103,29 @@ int main(int argc, char *argv[]) {
 	while (true) {
 		switch (*current_args) {
 		case L'\"':
-			if (flag == false) {
+			if (flag == false)
 				flag = true;
-			} else {
+			else
 				flag = false;
-			}
 			break;
 
 		case L' ':
 		case L'\t':
 		case 0:
-			if (flag == false) {
+			if (flag == false)
 				break_now = true;
-			}
 			break;
 		}
-		if (break_now) {
+		if (break_now)
 			break;
-		}
 		current_args++;
 	}
 
-	while (true) {
-		if (*current_args == L' ' || *current_args == L'\t') {
+	while (true)
+		if (*current_args == L' ' || *current_args == L'\t')
 			current_args++;
-		} else {
+		else
 			break;
-		}
-	}
 
 	strcpy(error, "VPN Command Line Tools is not Installed.\nPlease reinstall programs.");
 
@@ -158,9 +149,8 @@ int main(int argc, char *argv[]) {
 		RegCloseKey(hKey);
 	}
 
-	if (ok == false) {
+	if (ok == false)
 		printf("%s\n", error);
-	}
 
 	return ret_code;
 }

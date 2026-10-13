@@ -18,19 +18,16 @@ UINT Base64Decode(void *dst, const void *src, const UINT size) {
 
 	// We don't use EVP_DecodeBlock() because it adds padding if the output is not divisible by 3.
 	EVP_ENCODE_CTX *ctx = EVP_ENCODE_CTX_new();
-	if (ctx == NULL) {
+	if (ctx == NULL)
 		return 0;
-	}
 
 	int ret = 0;
-	if (EVP_DecodeUpdate(ctx, dst, &ret, src, size) < 0) {
+	if (EVP_DecodeUpdate(ctx, dst, &ret, src, size) < 0)
 		goto FINAL;
-	}
 
 	int dummy;
-	if (EVP_DecodeFinal(ctx, dst, &dummy) < 0) {
+	if (EVP_DecodeFinal(ctx, dst, &dummy) < 0)
 		ret = 0;
-	}
 FINAL:
 	EVP_ENCODE_CTX_free(ctx);
 	return ret;

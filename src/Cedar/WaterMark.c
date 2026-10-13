@@ -25,9 +25,8 @@ BUF *LoadWaterMark() {
 	char hash_str[SHA256_SIZE * 2 + 1];
 
 	b = ReadDump(WATERMARK_FILENAME);
-	if (b == NULL) {
+	if (b == NULL)
 		return NULL;
-	}
 
 	Sha2_256(hash, b->Buf, b->Size);
 	BinToStr(hash_str, sizeof(hash_str), hash, sizeof(hash));

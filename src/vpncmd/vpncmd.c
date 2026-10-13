@@ -38,9 +38,8 @@ int main(int argc, char *argv[]) {
 
 	s = GetCommandLineUniStr();
 
-	if (s == NULL) {
+	if (s == NULL)
 		s = CopyUniStr(L"");
-	}
 
 	if (UniStrCmpi(s, L"exit") != 0) {
 		UINT size = UniStrSize(s) + 64;
@@ -71,9 +70,8 @@ int main(int argc, char *argv[]) {
 		MsFreeProcessList(o);
 
 		if (b == false) {
-			if (ret != ERR_NO_ERROR) {
+			if (ret != ERR_NO_ERROR)
 				SleepThread(1000);
-			}
 		}
 	}
 #endif // OS_WIN32
