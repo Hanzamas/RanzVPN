@@ -12,23 +12,6 @@
 
 #include "Network.h"
 
-// Constant for Event log
-#define	MS_EVENTLOG_TYPE_INFORMATION		0
-#define	MS_EVENTLOG_TYPE_WARNING			1
-#define	MS_EVENTLOG_TYPE_ERROR				2
-
-#define	MS_RC_EVENTLOG_TYPE_INFORMATION		0x40000001L
-#define	MS_RC_EVENTLOG_TYPE_WARNING			0x80000002L
-#define	MS_RC_EVENTLOG_TYPE_ERROR			0xC0000003L
-
-
-// TCP/IP registry value
-#define	TCP_MAX_NUM_CONNECTIONS				16777214
-
-#define	DEFAULT_TCP_MAX_WINDOW_SIZE_RECV	5955584
-#define	DEFAULT_TCP_MAX_WINDOW_SIZE_SEND	131072
-#define	DEFAULT_TCP_MAX_NUM_CONNECTIONS		16777214
-
 // Constant
 #define	SVC_ARG_INSTALL				"/install"
 #define	SVC_ARG_UNINSTALL			"/uninstall"
@@ -61,9 +44,6 @@
 #define	SVC_MODE_SETUP_INSTALL		8
 #define	SVC_MODE_SETUP_UNINSTALL	9
 
-#define	VISTA_MMCSS_KEYNAME			"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile\\Tasks"
-#define	VISTA_MMCSS_FILENAME		"mmcss_backup.dat"
-
 #define	SVC_NAME					"SVC_%s_NAME"
 #define	SVC_TITLE					"SVC_%s_TITLE"
 #define	SVC_DESCRIPT				"SVC_%s_DESCRIPT"
@@ -72,8 +52,6 @@
 #define SVC_CALLING_SM_PROCESS_ID_VALUE	"ProcessId"
 
 #define	SOFTETHER_FW_SCRIPT_HASH	"Software\\" GC_REG_COMPANY_NAME "\\PacketiX VPN\\FW ScriptHash"
-
-#define	MMCSS_PROFILE_KEYNAME		"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile"
 
 // Other constants
 #define	MS_REG_TCP_SETTING_KEY		"Software\\" GC_REG_COMPANY_NAME "\\Network Settings"
@@ -144,11 +122,6 @@ typedef struct MS
 	IO *LockFile;
 } MS;
 
-typedef struct MS_EVENTLOG
-{
-	HANDLE hEventLog;
-} MS_EVENTLOG;
-
 typedef struct MS_USERMODE_SVC_PULSE_THREAD_PARAM
 {
 	void *hWnd;
@@ -165,7 +138,6 @@ typedef struct NO_WARNING
 	THREAD *NoWarningThread;
 	EVENT *HaltEvent;
 	volatile bool Halt;
-	wchar_t *SoundFileName;
 	UINT64 StartTimer;
 	UINT64 StartTick;
 } NO_WARNING;
@@ -233,32 +205,12 @@ typedef struct MS_ADAPTER_LIST
 	MS_ADAPTER **Adapters;			// Content
 } MS_ADAPTER_LIST;
 
-typedef struct MS_ISLOCKED
-{
-	HWND hWnd;
-	THREAD *Thread;
-	volatile bool IsLockedFlag;
-} MS_ISLOCKED;
-
 // TCP setting
 typedef struct MS_TCP
 {
 	UINT RecvWindowSize;			// Receive window size
 	UINT SendWindowSize;			// Send window size
 } MS_TCP;
-
-// Sleep prevention
-typedef struct MS_NOSLEEP
-{
-	THREAD *Thread;					// Thread
-	EVENT *HaltEvent;				// Halting event
-	volatile bool Halt;				// Halting flag
-	bool NoScreenSaver;				// Prevent Screensaver
-
-	// Following is for Windows Vista
-	wchar_t ScreenSaveActive[MAX_PATH];
-	wchar_t SCRNSAVE_EXE[MAX_PATH];
-} MS_NOSLEEP;
 
 // Child window enumeration
 typedef struct ENUM_CHILD_WINDOW_PARAM
@@ -330,9 +282,6 @@ bool MsEnablePrivilege(char *name, bool enable);
 UINT MsGetCurrentProcessId();
 char *MsGetExeDirName();
 
-void MsStartIsLockedThread();
-void MsStopIsLockedThread();
-
 bool MsCheckLogon(wchar_t *username, char *password);
 wchar_t *MsGetNetworkConnectionName(char *guid);
 
@@ -358,7 +307,6 @@ wchar_t *MsGetExeFileNameW();
 wchar_t *MsGetSystem32DirW();
 wchar_t *MsGetMyTempDirW();
 wchar_t *MsGetUserNameW();
-struct SAFE_TABLE *MsGetSafeTable();
 bool MsIsServiceInstalled(char *name);
 bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar_t *path, UINT *error_code);
 bool MsInstallServiceW(char *name, wchar_t *title, wchar_t *description, wchar_t *path);
@@ -374,7 +322,6 @@ void MsServiceMode(SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop);
 void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT icon);
 bool MsIsUserMode();
 LIST *MsGetProcessList();
-LIST *MsGetProcessList9x();
 LIST *MsGetProcessListNt();
 void MsFreeProcessList(LIST *o);
 int MsCompareProcessList(void *p1, void *p2);
@@ -441,7 +388,6 @@ bool MsGetWindowOwnerProcessExeName(char *path, UINT size, HWND hWnd);
 
 void MsGetComputerName(char *name, UINT size);
 void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache);
-UINT64 MsGetScreenSaverTimeout();
 
 bool MsUniMakeDir(wchar_t *name);
 void MsUniMakeDirEx(wchar_t *name);
@@ -474,7 +420,6 @@ void CALLBACK MsServiceDispatcher(DWORD argc, LPTSTR *argv);
 void CALLBACK MsServiceHandler(DWORD opcode);
 bool MsServiceStopProc();
 void MsServiceStoperMainThread(THREAD *t, void *p);
-void MsServiceStarterMainThread(THREAD *t, void *p);
 LRESULT CALLBACK MsUserModeWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 BOOL CALLBACK MsEnumChildWindowProc(HWND hWnd, LPARAM lParam);
 BOOL CALLBACK EnumTopWindowProc(HWND hWnd, LPARAM lParam);

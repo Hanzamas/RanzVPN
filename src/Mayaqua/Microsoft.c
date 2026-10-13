@@ -43,9 +43,6 @@
 
 static MS *ms = NULL;
 
-// Global variable
-UINT64 ms_uint64_1 = 0;
-
 // Adapter list related
 static LOCK *lock_adapter_list = NULL;
 static MS_ADAPTER_LIST *last_adapter_list = NULL;
@@ -73,15 +70,6 @@ static UINT (WINAPI *_MsiGetProductInfoW)(LPCWSTR, LPCWSTR, LPWSTR, LPDWORD) = N
 static UINT (WINAPI *_MsiConfigureProductW)(LPCWSTR, int, INSTALLSTATE) = NULL;
 static INSTALLUILEVEL (WINAPI *_MsiSetInternalUI)(INSTALLUILEVEL, HWND *) = NULL;
 static INSTALLSTATE (WINAPI *_MsiLocateComponentW)(LPCWSTR, LPWSTR, LPDWORD) = NULL;
-
-typedef struct MS_MSCHAPV2_PARAMS
-{
-	wchar_t Username[MAX_SIZE];
-	wchar_t Workstation[MAX_SIZE];
-	wchar_t Domain[MAX_SIZE];
-	UCHAR ClientResponse24[24];
-	UCHAR ResponseBuffer[MAX_SIZE];
-} MS_MSCHAPV2_PARAMS;
 
 // The function which should be called once as soon as possible after the process is started
 void MsInitProcessCallOnce()
@@ -295,12 +283,6 @@ bool MsGetFileInformation(void *h, void *info)
 
 	return GetFileInformationByHandle(h, info);
 }
-
-typedef struct _ASTAT_
-{
-	ADAPTER_STATUS adapt;
-	NAME_BUFFER    NameBuff[30];
-} ASTAT, *PASTAT;
 
 // Get the precise time from the value of the high-resolution counter
 double MsGetHiResTimeSpan(UINT64 diff)
