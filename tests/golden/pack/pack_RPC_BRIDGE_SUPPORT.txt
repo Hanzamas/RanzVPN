@@ -1,0 +1,9 @@
+# RPC_BRIDGE_SUPPORT RPC_BRIDGE_SUPPORT syn
+[out]
+#0 IsBridgeSupportedOs int[1] = 0
+bytes=39 sha1=08835707049a85d565b281b4629a00091b3c95c9
+[in-out]
+#0 IsBridgeSupportedOs int[1] = 0
+bytes=39 sha1=08835707049a85d565b281b4629a00091b3c95c9
+[in-out-in-out]
+same
