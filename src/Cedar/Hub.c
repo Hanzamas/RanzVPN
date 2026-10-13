@@ -5116,32 +5116,33 @@ void DeleteExpiredMacTableEntry(HASH_LIST *h)
 
 void DeleteExpiredIpTableEntry(LIST *o)
 {
-	LIST *o2;
-	UINT i;
+	UINT i, num_kept = 0;
+	UINT64 now;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	o2 = NewListFast(NULL);
+	// This runs on every new IP entry, under the hub-wide MacHashTable lock. Read the clock once (Tick64 takes
+	// a global lock) and compact the array in one pass: a Delete per expired entry searched and shifted the
+	// whole array each time, O(n * expired). The kept entries keep their order, so a sorted table stays sorted
+	// and DeleteOldIpTableEntry still evicts the same entry.
+	now = Tick64();
 
 	for (i = 0;i < LIST_NUM(o);i++)
 	{
 		IP_TABLE_ENTRY *e = LIST_DATA(o, i);
-		if ((e->UpdatedTime + (UINT64)(e->DhcpAllocated ? IP_TABLE_EXPIRE_TIME_DHCP : IP_TABLE_EXPIRE_TIME)) <= Tick64())
+		if ((e->UpdatedTime + (UINT64)(e->DhcpAllocated ? IP_TABLE_EXPIRE_TIME_DHCP : IP_TABLE_EXPIRE_TIME)) <= now)
 		{
-			Add(o2, e);
+			Free(e);
+		}
+		else
+		{
+			o->p[num_kept++] = e;
 		}
 	}
 
-	for (i = 0;i < LIST_NUM(o2);i++)
-	{
-		IP_TABLE_ENTRY *e = LIST_DATA(o2, i);
-		Delete(o, e);
-		Free(e);
-	}
-
-	ReleaseList(o2);
+	o->num_item = num_kept;
 }
 
 bool IsMostHighestPriorityPacket(SESSION *s, PKT *p)
