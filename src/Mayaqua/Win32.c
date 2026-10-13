@@ -142,7 +142,7 @@ void Win32SetThreadName(UINT thread_id, char *name)
 	}
 }
 
-void Win32InitNewThread()
+static void Win32InitNewThread()
 {
 	static HINSTANCE hDll = NULL;
 	static bool (WINAPI *_SetThreadLocale)(LCID) = NULL;
@@ -1772,7 +1772,7 @@ void Win32MemoryFree(void *addr)
 	}
 }
 
-UINT Win32GetTick()
+static UINT Win32GetTick()
 {
 	return (UINT)timeGetTime();
 }

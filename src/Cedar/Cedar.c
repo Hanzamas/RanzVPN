@@ -27,6 +27,10 @@
 #include "Mayaqua/Tick64.h"
 #include "Mayaqua/Win32.h"
 
+static void DeleteOldNoSsl(CEDAR *c);
+static NON_SSL *SearchNoSslList(CEDAR *c, IP *ip);
+static void FreeNetSvcList(CEDAR *cedar);
+
 static UINT init_cedar_counter = 0;
 static REF *cedar_log_ref = NULL;
 static LOG *cedar_log;
@@ -360,7 +364,7 @@ bool AddNoSsl(CEDAR *c, IP *ip)
 	return ret;
 }
 
-void DeleteOldNoSsl(CEDAR *c)
+static void DeleteOldNoSsl(CEDAR *c)
 {
 	UINT i;
 	LIST *o;
@@ -392,7 +396,7 @@ void DeleteOldNoSsl(CEDAR *c)
 	ReleaseList(o);
 }
 
-NON_SSL *SearchNoSslList(CEDAR *c, IP *ip)
+static NON_SSL *SearchNoSslList(CEDAR *c, IP *ip)
 {
 	NON_SSL *n, t;
 	if (c == NULL || ip == NULL)
@@ -1034,7 +1038,7 @@ char *GetSvcName(CEDAR *cedar, bool udp, UINT port)
 	return ret;
 }
 
-void FreeNetSvcList(CEDAR *cedar)
+static void FreeNetSvcList(CEDAR *cedar)
 {
 	UINT i;
 	if (cedar == NULL)

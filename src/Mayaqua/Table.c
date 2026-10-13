@@ -76,7 +76,7 @@ LABEL_FATAL_ERROR:
 	FreeLangList(o);
 }
 
-void GetCurrentLang(LANGLIST *e)
+static void GetCurrentLang(LANGLIST *e)
 {
 	if (e == NULL)
 	{
@@ -530,7 +530,7 @@ TABLE *FindTable(char *name)
 	return t;
 }
 
-int CmpTableName(void *p1, void *p2)
+static int CmpTableName(void *p1, void *p2)
 {
 	TABLE *t1, *t2;
 	if (p1 == NULL || p2 == NULL)
@@ -547,7 +547,7 @@ int CmpTableName(void *p1, void *p2)
 	return StrCmpi(t1->name, t2->name);
 }
 
-TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *replace_list)
+static TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *replace_list)
 {
 	UINT i, len;
 	UINT len_name;
@@ -773,7 +773,7 @@ void FreeTable()
 	Zero(old_table_name, sizeof(old_table_name));
 }
 
-bool LoadTableFromBuf(BUF *b)
+static bool LoadTableFromBuf(BUF *b)
 {
 	char *tmp;
 	char prefix[MAX_SIZE];
@@ -860,7 +860,7 @@ bool LoadTableFromBuf(BUF *b)
 	return true;
 }
 
-void GenerateUnicodeCacheFileName(wchar_t *name, UINT size, wchar_t *strfilename, UINT strfilesize, UCHAR *filehash)
+static void GenerateUnicodeCacheFileName(wchar_t *name, UINT size, wchar_t *strfilename, UINT strfilesize, UCHAR *filehash)
 {
 	wchar_t tmp[MAX_SIZE];
 	wchar_t hashstr[64];
@@ -890,7 +890,7 @@ void GenerateUnicodeCacheFileName(wchar_t *name, UINT size, wchar_t *strfilename
 	NormalizePathW(name, size, name);
 }
 
-void SaveUnicodeCache(wchar_t *strfilename, UINT strfilesize, UCHAR *hash)
+static void SaveUnicodeCache(wchar_t *strfilename, UINT strfilesize, UCHAR *hash)
 {
 	UNICODE_CACHE c;
 	BUF *b;
@@ -946,7 +946,7 @@ void SaveUnicodeCache(wchar_t *strfilename, UINT strfilesize, UCHAR *hash)
 	FreeBuf(b);
 }
 
-bool LoadUnicodeCache(wchar_t *strfilename, UINT strfilesize, UCHAR *hash)
+static bool LoadUnicodeCache(wchar_t *strfilename, UINT strfilesize, UCHAR *hash)
 {
 	UNICODE_CACHE c, t;
 	BUF *b;
@@ -1041,7 +1041,7 @@ bool LoadUnicodeCache(wchar_t *strfilename, UINT strfilesize, UCHAR *hash)
 	return true;
 }
 
-bool LoadTableMain(wchar_t *filename)
+static bool LoadTableMain(wchar_t *filename)
 {
 	BUF *b;
 	UINT64 t1, t2;

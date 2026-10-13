@@ -51,21 +51,14 @@ struct LANGLIST
 
 bool LoadTable(char *filename);
 bool LoadTableW(wchar_t *filename);
-bool LoadTableMain(wchar_t *filename);
-bool LoadTableFromBuf(BUF *b);
 void FreeTable();
-TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *replace_list);
 void UnescapeStr(char *src);
-int CmpTableName(void *p1, void *p2);
 TABLE *FindTable(char *name);
 TOKEN_LIST *GetTableNameStartWith(char *str);
 char *GetTableStr(char *name);
 wchar_t *GetTableUniStr(char *name);
 wchar_t *GetUniErrorStr(UINT err);
 UINT GetTableInt(char *name);
-void GenerateUnicodeCacheFileName(wchar_t *name, UINT size, wchar_t *strfilename, UINT strfilesize, UCHAR *filehash);
-void SaveUnicodeCache(wchar_t *strfilename, UINT strfilesize, UCHAR *hash);
-bool LoadUnicodeCache(wchar_t *strfilename, UINT strfilesize, UCHAR *hash);
 void InitTable();
 
 LIST *LoadLangList();
@@ -80,7 +73,6 @@ bool LoadLangConfigCurrentDir(char *str, UINT str_size);
 bool SaveLangConfig(wchar_t *filename, char *str);
 bool SaveLangConfigCurrentDir(char *str);
 
-void GetCurrentLang(LANGLIST *e);
 UINT GetCurrentLangId();
 
 #endif	// TABLE_H

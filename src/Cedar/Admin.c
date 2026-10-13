@@ -28,6 +28,224 @@
 #include "Mayaqua/Table.h"
 #include "Mayaqua/Tick64.h"
 
+static UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t);
+static UINT StSetHubMsg(ADMIN *a, RPC_MSG *t);
+static UINT StGetHubMsg(ADMIN *a, RPC_MSG *t);
+static UINT StDebug(ADMIN *a, RPC_TEST *t);
+static UINT StFlush(ADMIN *a, RPC_TEST *t);
+static UINT StCrash(ADMIN *a, RPC_TEST *t);
+static UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t);
+static UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t);
+static UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t);
+static UINT StGetLicenseStatus(ADMIN *a, RPC_LICENSE_STATUS *t);
+static UINT StEnumLicenseKey(ADMIN *a, RPC_ENUM_LICENSE_KEY *t);
+static UINT StAddLicenseKey(ADMIN *a, RPC_TEST *t);
+static UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t);
+static UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t);
+static UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t);
+static UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t);
+static UINT StSetCrl(ADMIN *a, RPC_CRL *t);
+static UINT StGetCrl(ADMIN *a, RPC_CRL *t);
+static UINT StDelCrl(ADMIN *a, RPC_CRL *t);
+static UINT StAddCrl(ADMIN *a, RPC_CRL *t);
+static UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t);
+static UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
+static UINT StGetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
+static UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
+static UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
+static UINT StGetDefaultHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
+static UINT StGetConfig(ADMIN *a, RPC_CONFIG *t);
+static UINT StSetConfig(ADMIN *a, RPC_CONFIG *t);
+static UINT StGetCaps(ADMIN *a, CAPSLIST *t);
+static UINT StRebootServer(ADMIN *a, RPC_TEST *t);
+static UINT StGetBridgeSupport(ADMIN *a, RPC_BRIDGE_SUPPORT *t);
+static UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t);
+static UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t);
+static UINT StDeleteLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t);
+static UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t);
+static UINT StSetSysLog(ADMIN *a, SYSLOG_SETTING *t);
+static UINT StGetSysLog(ADMIN *a, SYSLOG_SETTING *t);
+static UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t);
+static UINT StEnumIpTable(ADMIN *a, RPC_ENUM_IP_TABLE *t);
+static UINT StDeleteMacTable(ADMIN *a, RPC_DELETE_TABLE *t);
+static UINT StEnumMacTable(ADMIN *a, RPC_ENUM_MAC_TABLE *t);
+static UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t);
+static UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t);
+static UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t);
+static UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t);
+static UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t);
+static UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t);
+static UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t);
+static UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t);
+static UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t);
+static UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t);
+static UINT StGetUser(ADMIN *a, RPC_SET_USER *t);
+static UINT StSetUser(ADMIN *a, RPC_SET_USER *t);
+static UINT StCreateUser(ADMIN *a, RPC_SET_USER *t);
+static UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t);
+static UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t);
+static UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t);
+static UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t);
+static UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t);
+static UINT StDeleteLink(ADMIN *a, RPC_LINK *t);
+static UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t);
+static UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t);
+static UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t);
+static UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t);
+static UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t);
+static UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t);
+static UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t);
+static UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t);
+static UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t);
+static UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t);
+static UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t);
+static UINT StGetHubLog(ADMIN *a, RPC_HUB_LOG *t);
+static UINT StSetHubLog(ADMIN *a, RPC_HUB_LOG *t);
+static UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t);
+static UINT StSetHubOnline(ADMIN *a, RPC_SET_HUB_ONLINE *t);
+static UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t);
+static UINT StDisconnectConnection(ADMIN *a, RPC_DISCONNECT_CONNECTION *t);
+static UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t);
+static UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t);
+static UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t);
+static UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t);
+static UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t);
+static UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t);
+static UINT StSetServerCipher(ADMIN *a, RPC_STR *t);
+static UINT StGetServerCipher(ADMIN *a, RPC_STR *t);
+static UINT StGetServerCipherList(ADMIN *a, RPC_STR *t);
+static UINT StGetServerCert(ADMIN *a, RPC_KEY_PAIR *t);
+static UINT StSetServerCert(ADMIN *a, RPC_KEY_PAIR *t);
+static UINT StSetServerPassword(ADMIN *a, RPC_SET_PASSWORD *t);
+static UINT StEnableListener(ADMIN *a, RPC_LISTENER *t);
+static UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t);
+static UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t);
+static UINT StCreateListener(ADMIN *a, RPC_LISTENER *t);
+static UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t);
+static UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t);
+static void CopyOsInfo(OS_INFO *dst, OS_INFO *info);
+static void InRpcMsg(RPC_MSG *t, PACK *p);
+static void OutRpcMsg(PACK *p, RPC_MSG *t);
+static void FreeRpcMsg(RPC_MSG *t);
+static void InRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t, PACK *p);
+static void OutRpcEnumEthVLan(PACK *p, RPC_ENUM_ETH_VLAN *t);
+static void InRpcEnumLogFile(RPC_ENUM_LOG_FILE *t, PACK *p);
+static void OutRpcEnumLogFile(PACK *p, RPC_ENUM_LOG_FILE *t);
+static void InRpcReadLogFile(RPC_READ_LOG_FILE *t, PACK *p);
+static void OutRpcReadLogFile(PACK *p, RPC_READ_LOG_FILE *t);
+static void FreeRpcReadLogFile(RPC_READ_LOG_FILE *t);
+static void InRpcAcList(RPC_AC_LIST *t, PACK *p);
+static void OutRpcAcList(PACK *p, RPC_AC_LIST *t);
+static void InRpcEnumCrl(RPC_ENUM_CRL *t, PACK *p);
+static void OutRpcEnumCrl(PACK *p, RPC_ENUM_CRL *t);
+static void InRpcCrl(RPC_CRL *t, PACK *p);
+static void OutRpcCrl(PACK *p, RPC_CRL *t);
+static void InRpcEnumEth(RPC_ENUM_ETH *t, PACK *p);
+static void OutRpcEnumEth(PACK *p, RPC_ENUM_ETH *t);
+static void InRpcLocalBridge(RPC_LOCALBRIDGE *t, PACK *p);
+static void OutRpcLocalBridge(PACK *p, RPC_LOCALBRIDGE *t);
+static void InRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t, PACK *p);
+static void OutRpcEnumLocalBridge(PACK *p, RPC_ENUM_LOCALBRIDGE *t);
+static void SiReadLocalLogFile(SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FILE *t);
+static void SiEnumLocalLogFileList(SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t);
+static void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t);
+static void InRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t, PACK *p);
+static void OutRpcEnumLicenseKey(PACK *p, RPC_ENUM_LICENSE_KEY *t);
+static void InRpcLicenseStatus(RPC_LICENSE_STATUS *t, PACK *p);
+static void OutRpcLicenseStatus(PACK *p, RPC_LICENSE_STATUS *t);
+static void InRpcAdminOption(RPC_ADMIN_OPTION *t, PACK *p);
+static void OutRpcAdminOption(PACK *p, RPC_ADMIN_OPTION *t);
+static void InRpcConfig(RPC_CONFIG *t, PACK *p);
+static void OutRpcConfig(PACK *p, RPC_CONFIG *t);
+static void InRpcBridgeSupport(RPC_BRIDGE_SUPPORT *t, PACK *p);
+static void OutRpcBridgeSupport(PACK *p, RPC_BRIDGE_SUPPORT *t);
+static void InRpcAddAccess(RPC_ADD_ACCESS *t, PACK *p);
+static void OutRpcAddAccess(PACK *p, RPC_ADD_ACCESS *t);
+static void InRpcDeleteAccess(RPC_DELETE_ACCESS *t, PACK *p);
+static void OutRpcDeleteAccess(PACK *p, RPC_DELETE_ACCESS *t);
+static void InRpcServerInfo(RPC_SERVER_INFO *t, PACK *p);
+static void OutRpcServerInfo(PACK *p, RPC_SERVER_INFO *t);
+static void InRpcServerStatus(RPC_SERVER_STATUS *t, PACK *p);
+static void OutRpcServerStatus(PACK *p, RPC_SERVER_STATUS *t);
+static void InRpcListener(RPC_LISTENER *t, PACK *p);
+static void OutRpcListener(PACK *p, RPC_LISTENER *t);
+static void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p);
+static void OutRpcListenerList(PACK *p, RPC_LISTENER_LIST *t);
+static void InRpcStr(RPC_STR *t, PACK *p);
+static void OutRpcStr(PACK *p, RPC_STR *t);
+static void InRpcSetPassword(RPC_SET_PASSWORD *t, PACK *p);
+static void OutRpcSetPassword(PACK *p, RPC_SET_PASSWORD *t);
+static void InRpcCreateHub(RPC_CREATE_HUB *t, PACK *p);
+static void OutRpcCreateHub(PACK *p, RPC_CREATE_HUB *t);
+static void InRpcEnumHub(RPC_ENUM_HUB *t, PACK *p);
+static void OutRpcEnumHub(PACK *p, RPC_ENUM_HUB *t);
+static void InRpcDeleteHub(RPC_DELETE_HUB *t, PACK *p);
+static void OutRpcDeleteHub(PACK *p, RPC_DELETE_HUB *t);
+static void InRpcEnumConnection(RPC_ENUM_CONNECTION *t, PACK *p);
+static void OutRpcEnumConnection(PACK *p, RPC_ENUM_CONNECTION *t);
+static void InRpcDisconnectConnection(RPC_DISCONNECT_CONNECTION *t, PACK *p);
+static void OutRpcDisconnectConnection(PACK *p, RPC_DISCONNECT_CONNECTION *t);
+static void InRpcConnectionInfo(RPC_CONNECTION_INFO *t, PACK *p);
+static void OutRpcConnectionInfo(PACK *p, RPC_CONNECTION_INFO *t);
+static void InRpcSetHubOnline(RPC_SET_HUB_ONLINE *t, PACK *p);
+static void OutRpcSetHubOnline(PACK *p, RPC_SET_HUB_ONLINE *t);
+static void InRpcHubStatus(RPC_HUB_STATUS *t, PACK *p);
+static void OutRpcHubStatus(PACK *p, RPC_HUB_STATUS *t);
+static void InRpcHubLog(RPC_HUB_LOG *t, PACK *p);
+static void OutRpcHubLog(PACK *p, RPC_HUB_LOG *t);
+static void InRpcHubAddCa(RPC_HUB_ADD_CA *t, PACK *p);
+static void OutRpcHubAddCa(PACK *p, RPC_HUB_ADD_CA *t);
+static void InRpcHubEnumCa(RPC_HUB_ENUM_CA *t, PACK *p);
+static void OutRpcHubEnumCa(PACK *p, RPC_HUB_ENUM_CA *t);
+static void InRpcHubGetCa(RPC_HUB_GET_CA *t, PACK *p);
+static void OutRpcHubGetCa(PACK *p, RPC_HUB_GET_CA *t);
+static void InRpcHubDeleteCa(RPC_HUB_DELETE_CA *t, PACK *p);
+static void OutRpcHubDeleteCa(PACK *p, RPC_HUB_DELETE_CA *t);
+static void InRpcCreateLink(RPC_CREATE_LINK *t, PACK *p);
+static void OutRpcCreateLink(PACK *p, RPC_CREATE_LINK *t);
+static void InRpcEnumLink(RPC_ENUM_LINK *t, PACK *p);
+static void OutRpcEnumLink(PACK *p, RPC_ENUM_LINK *t);
+static void InRpcLinkStatus(RPC_LINK_STATUS *t, PACK *p);
+static void OutRpcLinkStatus(PACK *p, RPC_LINK_STATUS *t);
+static void InRpcLink(RPC_LINK *t, PACK *p);
+static void OutRpcLink(PACK *p, RPC_LINK *t);
+static void InRpcRenameLink(RPC_RENAME_LINK *t, PACK *p);
+static void OutRpcRenameLink(PACK *p, RPC_RENAME_LINK *t);
+static void InRpcAccess(ACCESS *a, PACK *p);
+static void OutRpcAccess(PACK *p, ACCESS *a);
+static void InRpcEnumAccessList(RPC_ENUM_ACCESS_LIST *a, PACK *p);
+static void OutRpcEnumAccessList(PACK *p, RPC_ENUM_ACCESS_LIST *a);
+static void InRpcSetUser(RPC_SET_USER *t, PACK *p);
+static void OutRpcSetUser(PACK *p, RPC_SET_USER *t);
+static void InRpcEnumUser(RPC_ENUM_USER *t, PACK *p);
+static void OutRpcEnumUser(PACK *p, RPC_ENUM_USER *t);
+static void InRpcSetGroup(RPC_SET_GROUP *t, PACK *p);
+static void OutRpcSetGroup(PACK *p, RPC_SET_GROUP *t);
+static void InRpcEnumGroup(RPC_ENUM_GROUP *t, PACK *p);
+static void OutRpcEnumGroup(PACK *p, RPC_ENUM_GROUP *t);
+static void InRpcDeleteUser(RPC_DELETE_USER *t, PACK *p);
+static void OutRpcDeleteUser(PACK *p, RPC_DELETE_USER *t);
+static void InRpcKeyPair(RPC_KEY_PAIR *t, PACK *p);
+static void OutRpcKeyPair(PACK *p, RPC_KEY_PAIR *t);
+static void InRpcSessionStatus(RPC_SESSION_STATUS *t, PACK *p);
+static void OutRpcSessionStatus(PACK *p, RPC_SESSION_STATUS *t);
+static void InRpcDeleteSession(RPC_DELETE_SESSION *t, PACK *p);
+static void OutRpcDeleteSession(PACK *p, RPC_DELETE_SESSION *t);
+static void InRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t, PACK *p);
+static void OutRpcEnumMacTable(PACK *p, RPC_ENUM_MAC_TABLE *t);
+static void InRpcEnumIpTable(RPC_ENUM_IP_TABLE *t, PACK *p);
+static void OutRpcEnumIpTable(PACK *p, RPC_ENUM_IP_TABLE *t);
+static void InRpcDeleteTable(RPC_DELETE_TABLE *t, PACK *p);
+static void OutRpcDeleteTable(PACK *p, RPC_DELETE_TABLE *t);
+static UINT StTest(ADMIN *a, RPC_TEST *t);
+static void InRpcTest(RPC_TEST *t, PACK *p);
+static void OutRpcTest(PACK *p, RPC_TEST *t);
+static PACK *AdminCall(RPC *rpc, char *function_name, PACK *p);
+static UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hubname, bool accept_empty_password, bool *is_password_empty);
+static void HashAdminPassword(void *hash, char *password);
+static RPC *AdminConnectEx2(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name, void *hWnd);
+static bool SiIsEmptyPassword(void *hash_password);
+
 #define	DECLARE_RPC_EX(rpc_name, data_type, function, in_rpc, out_rpc, free_rpc)		\
 	else if (StrCmpi(name, rpc_name) == 0)								\
 	{																	\
@@ -507,7 +725,7 @@ DECLARE_SC("Flush", RPC_TEST, ScFlush, InRpcTest, OutRpcTest)
 DECLARE_SC("Debug", RPC_TEST, ScDebug, InRpcTest, OutRpcTest)
 DECLARE_SC("RegenerateServerCert", RPC_TEST, ScRegenerateServerCert, InRpcTest, OutRpcTest)
 
-UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t)
+static UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -531,7 +749,7 @@ UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StSetHubMsg(ADMIN *a, RPC_MSG *t)
+static UINT StSetHubMsg(ADMIN *a, RPC_MSG *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -573,7 +791,7 @@ UINT StSetHubMsg(ADMIN *a, RPC_MSG *t)
 	return ret;
 }
 
-UINT StGetHubMsg(ADMIN *a, RPC_MSG *t)
+static UINT StGetHubMsg(ADMIN *a, RPC_MSG *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -609,7 +827,7 @@ UINT StGetHubMsg(ADMIN *a, RPC_MSG *t)
 	return ret;
 }
 
-UINT StDebug(ADMIN *a, RPC_TEST *t)
+static UINT StDebug(ADMIN *a, RPC_TEST *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -634,7 +852,7 @@ UINT StDebug(ADMIN *a, RPC_TEST *t)
 	return ret;
 }
 
-UINT StFlush(ADMIN *a, RPC_TEST *t)
+static UINT StFlush(ADMIN *a, RPC_TEST *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -650,7 +868,7 @@ UINT StFlush(ADMIN *a, RPC_TEST *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StCrash(ADMIN *a, RPC_TEST *t)
+static UINT StCrash(ADMIN *a, RPC_TEST *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -665,7 +883,7 @@ UINT StCrash(ADMIN *a, RPC_TEST *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t)
+static UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -743,7 +961,7 @@ UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t)
+static UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -769,7 +987,7 @@ UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t)
 	return ret;
 }
 
-UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t)
+static UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -796,17 +1014,17 @@ UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t)
 	return ret;
 }
 
-UINT StGetLicenseStatus(ADMIN *a, RPC_LICENSE_STATUS *t)
+static UINT StGetLicenseStatus(ADMIN *a, RPC_LICENSE_STATUS *t)
 {
 	return ERR_NOT_SUPPORTED;
 }
 
-UINT StEnumLicenseKey(ADMIN *a, RPC_ENUM_LICENSE_KEY *t)
+static UINT StEnumLicenseKey(ADMIN *a, RPC_ENUM_LICENSE_KEY *t)
 {
 	return ERR_NOT_SUPPORTED;
 }
 
-UINT StAddLicenseKey(ADMIN *a, RPC_TEST *t)
+static UINT StAddLicenseKey(ADMIN *a, RPC_TEST *t)
 {
 	return ERR_NOT_SUPPORTED;
 }
@@ -877,7 +1095,7 @@ BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PR
 	return buf;
 }
 
-UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
+static UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -933,7 +1151,7 @@ UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t)
+static UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -988,7 +1206,7 @@ UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t)
 }
 
 
-UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t)
+static UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -1035,7 +1253,7 @@ UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t)
 	return ret;
 }
 
-UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t)
+static UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -1099,7 +1317,7 @@ UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t)
 	return ret;
 }
 
-UINT StSetCrl(ADMIN *a, RPC_CRL *t)
+static UINT StSetCrl(ADMIN *a, RPC_CRL *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -1163,7 +1381,7 @@ UINT StSetCrl(ADMIN *a, RPC_CRL *t)
 	return ret;
 }
 
-UINT StGetCrl(ADMIN *a, RPC_CRL *t)
+static UINT StGetCrl(ADMIN *a, RPC_CRL *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -1218,7 +1436,7 @@ UINT StGetCrl(ADMIN *a, RPC_CRL *t)
 	return ret;
 }
 
-UINT StDelCrl(ADMIN *a, RPC_CRL *t)
+static UINT StDelCrl(ADMIN *a, RPC_CRL *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -1275,7 +1493,7 @@ UINT StDelCrl(ADMIN *a, RPC_CRL *t)
 	return ret;
 }
 
-UINT StAddCrl(ADMIN *a, RPC_CRL *t)
+static UINT StAddCrl(ADMIN *a, RPC_CRL *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -1335,7 +1553,7 @@ UINT StAddCrl(ADMIN *a, RPC_CRL *t)
 	return ret;
 }
 
-UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t)
+static UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -1392,7 +1610,7 @@ UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t)
 	return ret;
 }
 
-UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
+static UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -1446,7 +1664,7 @@ UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
+static UINT StGetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -1481,7 +1699,7 @@ UINT StGetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
+static UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
 	UINT i;
 	SERVER *s = a->Server;
@@ -1551,7 +1769,7 @@ UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
+static UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
 	UINT i;
 	SERVER *s = a->Server;
@@ -1599,7 +1817,7 @@ UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetDefaultHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
+static UINT StGetDefaultHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
 	UINT i;
 
@@ -1622,7 +1840,7 @@ UINT StGetDefaultHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetConfig(ADMIN *a, RPC_CONFIG *t)
+static UINT StGetConfig(ADMIN *a, RPC_CONFIG *t)
 {
 	SERVER *s;
 
@@ -1656,7 +1874,7 @@ UINT StGetConfig(ADMIN *a, RPC_CONFIG *t)
 	}
 }
 
-UINT StSetConfig(ADMIN *a, RPC_CONFIG *t)
+static UINT StSetConfig(ADMIN *a, RPC_CONFIG *t)
 {
 	SERVER *s;
 	IO *o;
@@ -1687,7 +1905,7 @@ UINT StSetConfig(ADMIN *a, RPC_CONFIG *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetCaps(ADMIN *a, CAPSLIST *t)
+static UINT StGetCaps(ADMIN *a, CAPSLIST *t)
 {
 	FreeRpcCapsList(t);
 	Zero(t, sizeof(CAPSLIST));
@@ -1697,7 +1915,7 @@ UINT StGetCaps(ADMIN *a, CAPSLIST *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StRebootServer(ADMIN *a, RPC_TEST *t)
+static UINT StRebootServer(ADMIN *a, RPC_TEST *t)
 {
 	SERVER_ADMIN_ONLY;
 
@@ -1708,7 +1926,7 @@ UINT StRebootServer(ADMIN *a, RPC_TEST *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetBridgeSupport(ADMIN *a, RPC_BRIDGE_SUPPORT *t)
+static UINT StGetBridgeSupport(ADMIN *a, RPC_BRIDGE_SUPPORT *t)
 {
 	Zero(t, sizeof(RPC_BRIDGE_SUPPORT));
 
@@ -1717,7 +1935,7 @@ UINT StGetBridgeSupport(ADMIN *a, RPC_BRIDGE_SUPPORT *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t)
+static UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t)
 {
 	TOKEN_LIST *o;
 	UINT i;
@@ -1753,7 +1971,7 @@ UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
+static UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 {
 	if (IsEmptyStr(t->DeviceName) || IsEmptyStr(t->HubName))
 	{
@@ -1789,7 +2007,7 @@ UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StDeleteLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
+static UINT StDeleteLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 {
 	if (IsEmptyStr(t->DeviceName) || IsEmptyStr(t->HubName))
 	{
@@ -1810,7 +2028,7 @@ UINT StDeleteLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t)
+static UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t)
 {
 	UINT i;
 	CEDAR *c;
@@ -1862,7 +2080,7 @@ UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StSetSysLog(ADMIN *a, SYSLOG_SETTING *t)
+static UINT StSetSysLog(ADMIN *a, SYSLOG_SETTING *t)
 {
 	SERVER *s = a->Server;
 
@@ -1886,7 +2104,7 @@ UINT StSetSysLog(ADMIN *a, SYSLOG_SETTING *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetSysLog(ADMIN *a, SYSLOG_SETTING *t)
+static UINT StGetSysLog(ADMIN *a, SYSLOG_SETTING *t)
 {
 	SERVER *s = a->Server;
 
@@ -1910,7 +2128,7 @@ UINT StGetSysLog(ADMIN *a, SYSLOG_SETTING *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t)
+static UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2008,7 +2226,7 @@ static UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StEnumIpTable(ADMIN *a, RPC_ENUM_IP_TABLE *t)
+static UINT StEnumIpTable(ADMIN *a, RPC_ENUM_IP_TABLE *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2031,7 +2249,7 @@ UINT StEnumIpTable(ADMIN *a, RPC_ENUM_IP_TABLE *t)
 	return ret;
 }
 
-UINT StDeleteMacTable(ADMIN *a, RPC_DELETE_TABLE *t)
+static UINT StDeleteMacTable(ADMIN *a, RPC_DELETE_TABLE *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2129,7 +2347,7 @@ static UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StEnumMacTable(ADMIN *a, RPC_ENUM_MAC_TABLE *t)
+static UINT StEnumMacTable(ADMIN *a, RPC_ENUM_MAC_TABLE *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2152,7 +2370,7 @@ UINT StEnumMacTable(ADMIN *a, RPC_ENUM_MAC_TABLE *t)
 	return ret;
 }
 
-UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t)
+static UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2222,7 +2440,7 @@ UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t)
 	return ret;
 }
 
-UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
+static UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2327,7 +2545,7 @@ void SiEnumSessionMain(SERVER *s, RPC_ENUM_SESSION *t)
 
 }
 
-UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t)
+static UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2360,7 +2578,7 @@ UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t)
 	return ret;
 }
 
-UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
+static UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2445,7 +2663,7 @@ UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t)
+static UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2498,7 +2716,7 @@ UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t)
 	return ret;
 }
 
-UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t)
+static UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2562,7 +2780,7 @@ UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t)
 	return ret;
 }
 
-UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t)
+static UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2627,7 +2845,7 @@ UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t)
 	return ret;
 }
 
-UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t)
+static UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2694,7 +2912,7 @@ UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t)
 	return ret;
 }
 
-UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
+static UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2769,7 +2987,7 @@ UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t)
+static UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2819,7 +3037,7 @@ UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t)
 	return ret;
 }
 
-UINT StGetUser(ADMIN *a, RPC_SET_USER *t)
+static UINT StGetUser(ADMIN *a, RPC_SET_USER *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2894,7 +3112,7 @@ UINT StGetUser(ADMIN *a, RPC_SET_USER *t)
 	return ret;
 }
 
-UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
+static UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3021,7 +3239,7 @@ UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
 	return ret;
 }
 
-UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
+static UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3153,7 +3371,7 @@ UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
 	return ret;
 }
 
-UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
+static UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3198,7 +3416,7 @@ UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t)
+static UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3263,7 +3481,7 @@ UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
+static UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3362,7 +3580,7 @@ UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t)
+static UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3432,7 +3650,7 @@ UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
+static UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
 {
 	UINT i;
 	SERVER *s = a->Server;
@@ -3536,7 +3754,7 @@ UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
 	return ret;
 }
 
-UINT StDeleteLink(ADMIN *a, RPC_LINK *t)
+static UINT StDeleteLink(ADMIN *a, RPC_LINK *t)
 {
 	UINT i;
 	SERVER *s = a->Server;
@@ -3621,7 +3839,7 @@ UINT StDeleteLink(ADMIN *a, RPC_LINK *t)
 	return ret;
 }
 
-UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t)
+static UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t)
 {
 	UINT i;
 	SERVER *s = a->Server;
@@ -3703,7 +3921,7 @@ UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t)
 	return ret;
 }
 
-UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t)
+static UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t)
 {
 	UINT i;
 	SERVER *s = a->Server;
@@ -3785,7 +4003,7 @@ UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t)
 	return ret;
 }
 
-UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t)
+static UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t)
 {
 	UINT i;
 	SERVER *s = a->Server;
@@ -3880,7 +4098,7 @@ UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t)
 	return ret;
 }
 
-UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t)
+static UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3943,7 +4161,7 @@ UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t)
+static UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4022,7 +4240,7 @@ UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t)
 	return ret;
 }
 
-UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
+static UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4126,7 +4344,7 @@ UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 	return ret;
 }
 
-UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t)
+static UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4213,7 +4431,7 @@ UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t)
 	return ret;
 }
 
-UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t)
+static UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4264,7 +4482,7 @@ UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t)
 	return ret;
 }
 
-UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t)
+static UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4316,7 +4534,7 @@ UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t)
 	return ret;
 }
 
-UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
+static UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4374,7 +4592,7 @@ UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t)
+static UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4420,7 +4638,7 @@ UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetHubLog(ADMIN *a, RPC_HUB_LOG *t)
+static UINT StGetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4446,7 +4664,7 @@ UINT StGetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StSetHubLog(ADMIN *a, RPC_HUB_LOG *t)
+static UINT StSetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4484,7 +4702,7 @@ UINT StSetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
+static UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4541,7 +4759,7 @@ UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StSetHubOnline(ADMIN *a, RPC_SET_HUB_ONLINE *t)
+static UINT StSetHubOnline(ADMIN *a, RPC_SET_HUB_ONLINE *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4593,7 +4811,7 @@ UINT StSetHubOnline(ADMIN *a, RPC_SET_HUB_ONLINE *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t)
+static UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4660,7 +4878,7 @@ UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StDisconnectConnection(ADMIN *a, RPC_DISCONNECT_CONNECTION *t)
+static UINT StDisconnectConnection(ADMIN *a, RPC_DISCONNECT_CONNECTION *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4701,7 +4919,7 @@ UINT StDisconnectConnection(ADMIN *a, RPC_DISCONNECT_CONNECTION *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t)
+static UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4745,7 +4963,7 @@ UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t)
+static UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4784,7 +5002,7 @@ UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
+static UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4889,7 +5107,7 @@ UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t)
+static UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4931,7 +5149,7 @@ UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t)
 	return ret;
 }
 
-UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
+static UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -5028,7 +5246,7 @@ UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 	return ret;
 }
 
-UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
+static UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -5121,7 +5339,7 @@ UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StSetServerCipher(ADMIN *a, RPC_STR *t)
+static UINT StSetServerCipher(ADMIN *a, RPC_STR *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -5148,7 +5366,7 @@ UINT StSetServerCipher(ADMIN *a, RPC_STR *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetServerCipher(ADMIN *a, RPC_STR *t)
+static UINT StGetServerCipher(ADMIN *a, RPC_STR *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -5165,7 +5383,7 @@ UINT StGetServerCipher(ADMIN *a, RPC_STR *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetServerCipherList(ADMIN *a, RPC_STR *t)
+static UINT StGetServerCipherList(ADMIN *a, RPC_STR *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -5201,7 +5419,7 @@ UINT StGetServerCipherList(ADMIN *a, RPC_STR *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
+static UINT StGetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
 {
 	bool admin;
 	SERVER *s = a->Server;
@@ -5226,7 +5444,7 @@ UINT StGetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StSetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
+static UINT StSetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -5261,7 +5479,7 @@ UINT StSetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StSetServerPassword(ADMIN *a, RPC_SET_PASSWORD *t)
+static UINT StSetServerPassword(ADMIN *a, RPC_SET_PASSWORD *t)
 {
 	SERVER_ADMIN_ONLY;
 
@@ -5280,7 +5498,7 @@ UINT StSetServerPassword(ADMIN *a, RPC_SET_PASSWORD *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StEnableListener(ADMIN *a, RPC_LISTENER *t)
+static UINT StEnableListener(ADMIN *a, RPC_LISTENER *t)
 {
 	UINT ret = ERR_NO_ERROR;
 
@@ -5321,7 +5539,7 @@ UINT StEnableListener(ADMIN *a, RPC_LISTENER *t)
 	return ret;
 }
 
-UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t)
+static UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t)
 {
 	UINT ret = ERR_NO_ERROR;
 
@@ -5346,7 +5564,7 @@ UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t)
 	return ret;
 }
 
-UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t)
+static UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t)
 {
 	CEDAR *c = a->Server->Cedar;
 	UINT i;
@@ -5381,7 +5599,7 @@ UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StCreateListener(ADMIN *a, RPC_LISTENER *t)
+static UINT StCreateListener(ADMIN *a, RPC_LISTENER *t)
 {
 	UINT ret = ERR_NO_ERROR;
 	CEDAR *c = a->Server->Cedar;
@@ -5413,7 +5631,7 @@ UINT StCreateListener(ADMIN *a, RPC_LISTENER *t)
 	return ret;
 }
 
-UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
+static UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 {
 	CEDAR *c;
 	UINT i;
@@ -5483,7 +5701,7 @@ UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 	return ERR_NO_ERROR;
 }
 
-UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t)
+static UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t)
 {
 	CEDAR *c;
 	OS_INFO *info;
@@ -5525,7 +5743,7 @@ UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t)
 	return ERR_NO_ERROR;
 }
 
-void CopyOsInfo(OS_INFO *dst, OS_INFO *info)
+static void CopyOsInfo(OS_INFO *dst, OS_INFO *info)
 {
 	if (info == NULL || dst == NULL)
 	{
@@ -5579,7 +5797,7 @@ void OutRpcWinVer(PACK *p, RPC_WINVER *t)
 	PackAddStr(p, "V_Title", t->Title);
 }
 
-void InRpcMsg(RPC_MSG *t, PACK *p)
+static void InRpcMsg(RPC_MSG *t, PACK *p)
 {
 	UINT size;
 	char *utf8;
@@ -5597,7 +5815,7 @@ void InRpcMsg(RPC_MSG *t, PACK *p)
 	t->Msg = CopyUtfToUni(utf8);
 	Free(utf8);
 }
-void OutRpcMsg(PACK *p, RPC_MSG *t)
+static void OutRpcMsg(PACK *p, RPC_MSG *t)
 {
 	UINT size;
 	char *utf8;
@@ -5612,7 +5830,7 @@ void OutRpcMsg(PACK *p, RPC_MSG *t)
 	PackAddData(p, "Msg", utf8, size);
 	Free(utf8);
 }
-void FreeRpcMsg(RPC_MSG *t)
+static void FreeRpcMsg(RPC_MSG *t)
 {
 	if (t == NULL)
 	{
@@ -5622,7 +5840,7 @@ void FreeRpcMsg(RPC_MSG *t)
 	Free(t->Msg);
 }
 
-void InRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t, PACK *p)
+static void InRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t, PACK *p)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -5647,7 +5865,7 @@ void InRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t, PACK *p)
 		e->Enabled = PackGetBoolEx(p, "Enabled", i);
 	}
 }
-void OutRpcEnumEthVLan(PACK *p, RPC_ENUM_ETH_VLAN *t)
+static void OutRpcEnumEthVLan(PACK *p, RPC_ENUM_ETH_VLAN *t)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -5678,7 +5896,7 @@ void FreeRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t)
 	Free(t->Items);
 }
 
-void InRpcEnumLogFile(RPC_ENUM_LOG_FILE *t, PACK *p)
+static void InRpcEnumLogFile(RPC_ENUM_LOG_FILE *t, PACK *p)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -5699,7 +5917,7 @@ void InRpcEnumLogFile(RPC_ENUM_LOG_FILE *t, PACK *p)
 		e->UpdatedTime = PackGetInt64Ex(p, "UpdatedTime", i);
 	}
 }
-void OutRpcEnumLogFile(PACK *p, RPC_ENUM_LOG_FILE *t)
+static void OutRpcEnumLogFile(PACK *p, RPC_ENUM_LOG_FILE *t)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -5727,7 +5945,7 @@ void FreeRpcEnumLogFile(RPC_ENUM_LOG_FILE *t)
 
 	Free(t->Items);
 }
-void InRpcReadLogFile(RPC_READ_LOG_FILE *t, PACK *p)
+static void InRpcReadLogFile(RPC_READ_LOG_FILE *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -5740,7 +5958,7 @@ void InRpcReadLogFile(RPC_READ_LOG_FILE *t, PACK *p)
 
 	t->Buffer = PackGetBuf(p, "Buffer");
 }
-void OutRpcReadLogFile(PACK *p, RPC_READ_LOG_FILE *t)
+static void OutRpcReadLogFile(PACK *p, RPC_READ_LOG_FILE *t)
 {
 	if (p == NULL || t == NULL)
 	{
@@ -5755,7 +5973,7 @@ void OutRpcReadLogFile(PACK *p, RPC_READ_LOG_FILE *t)
 		PackAddBuf(p, "Buffer", t->Buffer);
 	}
 }
-void FreeRpcReadLogFile(RPC_READ_LOG_FILE *t)
+static void FreeRpcReadLogFile(RPC_READ_LOG_FILE *t)
 {
 	if (t == NULL)
 	{
@@ -5768,7 +5986,7 @@ void FreeRpcReadLogFile(RPC_READ_LOG_FILE *t)
 	}
 }
 
-void InRpcAcList(RPC_AC_LIST *t, PACK *p)
+static void InRpcAcList(RPC_AC_LIST *t, PACK *p)
 {
 	UINT i;
 	LIST *o;
@@ -5807,7 +6025,7 @@ void InRpcAcList(RPC_AC_LIST *t, PACK *p)
 
 	t->o = o;
 }
-void OutRpcAcList(PACK *p, RPC_AC_LIST *t)
+static void OutRpcAcList(PACK *p, RPC_AC_LIST *t)
 {
 	UINT i, num;
 	LIST *o;
@@ -5847,7 +6065,7 @@ void FreeRpcAcList(RPC_AC_LIST *t)
 	FreeAcList(t->o);
 }
 
-void InRpcEnumCrl(RPC_ENUM_CRL *t, PACK *p)
+static void InRpcEnumCrl(RPC_ENUM_CRL *t, PACK *p)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -5868,7 +6086,7 @@ void InRpcEnumCrl(RPC_ENUM_CRL *t, PACK *p)
 		PackGetUniStrEx(p, "CrlInfo", e->CrlInfo, sizeof(e->CrlInfo), i);
 	}
 }
-void OutRpcEnumCrl(PACK *p, RPC_ENUM_CRL *t)
+static void OutRpcEnumCrl(PACK *p, RPC_ENUM_CRL *t)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -5897,7 +6115,7 @@ void FreeRpcEnumCrl(RPC_ENUM_CRL *t)
 	Free(t->Items);
 }
 
-void InRpcCrl(RPC_CRL *t, PACK *p)
+static void InRpcCrl(RPC_CRL *t, PACK *p)
 {
 	BUF *b;
 	NAME *n;
@@ -5952,7 +6170,7 @@ void InRpcCrl(RPC_CRL *t, PACK *p)
 		PackGetData(p, "DigestSHA1", t->Crl->DigestSHA1);
 	}
 }
-void OutRpcCrl(PACK *p, RPC_CRL *t)
+static void OutRpcCrl(PACK *p, RPC_CRL *t)
 {
 	NAME *n;
 	if (p == NULL || t == NULL)
@@ -6016,7 +6234,7 @@ void FreeRpcCrl(RPC_CRL *t)
 	FreeCrl(t->Crl);
 }
 
-void InRpcEnumEth(RPC_ENUM_ETH *t, PACK *p)
+static void InRpcEnumEth(RPC_ENUM_ETH *t, PACK *p)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -6034,7 +6252,7 @@ void InRpcEnumEth(RPC_ENUM_ETH *t, PACK *p)
 		PackGetStrEx(p, "DeviceName", e->DeviceName, sizeof(e->DeviceName), i);
 	}
 }
-void OutRpcEnumEth(PACK *p, RPC_ENUM_ETH *t)
+static void OutRpcEnumEth(PACK *p, RPC_ENUM_ETH *t)
 {
 	UINT i;
 	if (p == NULL || t == NULL)
@@ -6061,7 +6279,7 @@ void FreeRpcEnumEth(RPC_ENUM_ETH *t)
 	Free(t->Items);
 }
 
-void InRpcLocalBridge(RPC_LOCALBRIDGE *t, PACK *p)
+static void InRpcLocalBridge(RPC_LOCALBRIDGE *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6073,7 +6291,7 @@ void InRpcLocalBridge(RPC_LOCALBRIDGE *t, PACK *p)
 	PackGetStr(p, "HubNameLB", t->HubName, sizeof(t->HubName));
 	t->TapMode = PackGetBool(p, "TapMode");
 }
-void OutRpcLocalBridge(PACK *p, RPC_LOCALBRIDGE *t)
+static void OutRpcLocalBridge(PACK *p, RPC_LOCALBRIDGE *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6085,7 +6303,7 @@ void OutRpcLocalBridge(PACK *p, RPC_LOCALBRIDGE *t)
 	PackAddBool(p, "TapMode", t->TapMode);
 }
 
-void InRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t, PACK *p)
+static void InRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t, PACK *p)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -6108,7 +6326,7 @@ void InRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t, PACK *p)
 		e->TapMode = PackGetBoolEx(p, "TapMode", i);
 	}
 }
-void OutRpcEnumLocalBridge(PACK *p, RPC_ENUM_LOCALBRIDGE *t)
+static void OutRpcEnumLocalBridge(PACK *p, RPC_ENUM_LOCALBRIDGE *t)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -6235,7 +6453,7 @@ static void FreeRpcOsInfo(OS_INFO *t)
 	Free(t->KernelVersion);
 }
 
-void SiReadLocalLogFile(SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FILE *t)
+static void SiReadLocalLogFile(SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FILE *t)
 {
 	char exe_dir[MAX_PATH], full_path[MAX_PATH];
 	IO *o;
@@ -6271,7 +6489,7 @@ void SiReadLocalLogFile(SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FIL
 	}
 }
 
-void SiEnumLocalLogFileList(SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t)
+static void SiEnumLocalLogFileList(SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t)
 {
 	LIST *o;
 	UINT i;
@@ -6300,7 +6518,7 @@ void SiEnumLocalLogFileList(SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t)
 	FreeEnumLogFile(o);
 }
 
-void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t)
+static void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t)
 {
 	HUB *h;
 	UINT64 now = Tick64();
@@ -6399,7 +6617,7 @@ void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t)
 	ReleaseHub(h);
 }
 
-void InRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t, PACK *p)
+static void InRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t, PACK *p)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -6425,7 +6643,7 @@ void InRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t, PACK *p)
 		e->SerialId = PackGetIntEx(p, "SerialId", i);
 	}
 }
-void OutRpcEnumLicenseKey(PACK *p, RPC_ENUM_LICENSE_KEY *t)
+static void OutRpcEnumLicenseKey(PACK *p, RPC_ENUM_LICENSE_KEY *t)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -6460,7 +6678,7 @@ void FreeRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t)
 	Free(t->Items);
 }
 
-void InRpcLicenseStatus(RPC_LICENSE_STATUS *t, PACK *p)
+static void InRpcLicenseStatus(RPC_LICENSE_STATUS *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6482,7 +6700,7 @@ void InRpcLicenseStatus(RPC_LICENSE_STATUS *t, PACK *p)
 	t->IsSubscriptionExpired = PackGetBool(p, "IsSubscriptionExpired");
 	t->ReleaseDate = PackGetInt64(p, "ReleaseDate");
 }
-void OutRpcLicenseStatus(PACK *p, RPC_LICENSE_STATUS *t)
+static void OutRpcLicenseStatus(PACK *p, RPC_LICENSE_STATUS *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6504,7 +6722,7 @@ void OutRpcLicenseStatus(PACK *p, RPC_LICENSE_STATUS *t)
 	PackAddInt64(p, "ReleaseDate", t->ReleaseDate);
 }
 
-void InRpcAdminOption(RPC_ADMIN_OPTION *t, PACK *p)
+static void InRpcAdminOption(RPC_ADMIN_OPTION *t, PACK *p)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -6527,7 +6745,7 @@ void InRpcAdminOption(RPC_ADMIN_OPTION *t, PACK *p)
 		PackGetUniStrEx(p, "Descrption", o->Descrption, sizeof(o->Descrption), i);
 	}
 }
-void OutRpcAdminOption(PACK *p, RPC_ADMIN_OPTION *t)
+static void OutRpcAdminOption(PACK *p, RPC_ADMIN_OPTION *t)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -6558,7 +6776,7 @@ void FreeRpcAdminOption(RPC_ADMIN_OPTION *t)
 	Free(t->Items);
 }
 
-void InRpcConfig(RPC_CONFIG *t, PACK *p)
+static void InRpcConfig(RPC_CONFIG *t, PACK *p)
 {
 	UINT size;
 	if (t == NULL || p == NULL)
@@ -6572,7 +6790,7 @@ void InRpcConfig(RPC_CONFIG *t, PACK *p)
 	t->FileData = ZeroMalloc(size + 1);
 	PackGetData(p, "FileData", t->FileData);
 }
-void OutRpcConfig(PACK *p, RPC_CONFIG *t)
+static void OutRpcConfig(PACK *p, RPC_CONFIG *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6592,7 +6810,7 @@ void FreeRpcConfig(RPC_CONFIG *t)
 	Free(t->FileData);
 }
 
-void InRpcBridgeSupport(RPC_BRIDGE_SUPPORT *t, PACK *p)
+static void InRpcBridgeSupport(RPC_BRIDGE_SUPPORT *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6603,7 +6821,7 @@ void InRpcBridgeSupport(RPC_BRIDGE_SUPPORT *t, PACK *p)
 
 	t->IsBridgeSupportedOs = PackGetBool(p, "IsBridgeSupportedOs");
 }
-void OutRpcBridgeSupport(PACK *p, RPC_BRIDGE_SUPPORT *t)
+static void OutRpcBridgeSupport(PACK *p, RPC_BRIDGE_SUPPORT *t)
 {
 	if (p == NULL || t == NULL)
 	{
@@ -6613,7 +6831,7 @@ void OutRpcBridgeSupport(PACK *p, RPC_BRIDGE_SUPPORT *t)
 	PackAddBool(p, "IsBridgeSupportedOs", t->IsBridgeSupportedOs);
 }
 
-void InRpcAddAccess(RPC_ADD_ACCESS *t, PACK *p)
+static void InRpcAddAccess(RPC_ADD_ACCESS *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6625,7 +6843,7 @@ void InRpcAddAccess(RPC_ADD_ACCESS *t, PACK *p)
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	InRpcAccess(&t->Access, p);
 }
-void OutRpcAddAccess(PACK *p, RPC_ADD_ACCESS *t)
+static void OutRpcAddAccess(PACK *p, RPC_ADD_ACCESS *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6636,7 +6854,7 @@ void OutRpcAddAccess(PACK *p, RPC_ADD_ACCESS *t)
 	OutRpcAccess(p, &t->Access);
 }
 
-void InRpcDeleteAccess(RPC_DELETE_ACCESS *t, PACK *p)
+static void InRpcDeleteAccess(RPC_DELETE_ACCESS *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6648,7 +6866,7 @@ void InRpcDeleteAccess(RPC_DELETE_ACCESS *t, PACK *p)
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	t->Id = PackGetInt(p, "Id");
 }
-void OutRpcDeleteAccess(PACK *p, RPC_DELETE_ACCESS *t)
+static void OutRpcDeleteAccess(PACK *p, RPC_DELETE_ACCESS *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6660,7 +6878,7 @@ void OutRpcDeleteAccess(PACK *p, RPC_DELETE_ACCESS *t)
 }
 
 
-void InRpcServerInfo(RPC_SERVER_INFO *t, PACK *p)
+static void InRpcServerInfo(RPC_SERVER_INFO *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6676,7 +6894,7 @@ void InRpcServerInfo(RPC_SERVER_INFO *t, PACK *p)
 	PackGetStr(p, "ServerHostName", t->ServerHostName, sizeof(t->ServerHostName));
 	InRpcOsInfo(&t->OsInfo, p);
 }
-void OutRpcServerInfo(PACK *p, RPC_SERVER_INFO *t)
+static void OutRpcServerInfo(PACK *p, RPC_SERVER_INFO *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6702,7 +6920,7 @@ void FreeRpcServerInfo(RPC_SERVER_INFO *t)
 	FreeRpcOsInfo(&t->OsInfo);
 }
 
-void InRpcServerStatus(RPC_SERVER_STATUS *t, PACK *p)
+static void InRpcServerStatus(RPC_SERVER_STATUS *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6729,7 +6947,7 @@ void InRpcServerStatus(RPC_SERVER_STATUS *t, PACK *p)
 
 	InRpcMemInfo(&t->MemInfo, p);
 }
-void OutRpcServerStatus(PACK *p, RPC_SERVER_STATUS *t)
+static void OutRpcServerStatus(PACK *p, RPC_SERVER_STATUS *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6759,7 +6977,7 @@ void OutRpcServerStatus(PACK *p, RPC_SERVER_STATUS *t)
 	OutRpcMemInfo(p, &t->MemInfo);
 }
 
-void InRpcListener(RPC_LISTENER *t, PACK *p)
+static void InRpcListener(RPC_LISTENER *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6770,7 +6988,7 @@ void InRpcListener(RPC_LISTENER *t, PACK *p)
 	t->Port = PackGetInt(p, "Port");
 	t->Enable = PackGetBool(p, "Enable");
 }
-void OutRpcListener(PACK *p, RPC_LISTENER *t)
+static void OutRpcListener(PACK *p, RPC_LISTENER *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6781,7 +6999,7 @@ void OutRpcListener(PACK *p, RPC_LISTENER *t)
 	PackAddBool(p, "Enable", t->Enable);
 }
 
-void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p)
+static void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -6801,7 +7019,7 @@ void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p)
 		t->Errors[i] = PackGetBoolEx(p, "Errors", i);
 	}
 }
-void OutRpcListenerList(PACK *p, RPC_LISTENER_LIST *t)
+static void OutRpcListenerList(PACK *p, RPC_LISTENER_LIST *t)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -6828,7 +7046,7 @@ void FreeRpcListenerList(RPC_LISTENER_LIST *t)
 	Free(t->Errors);
 }
 
-void InRpcStr(RPC_STR *t, PACK *p)
+static void InRpcStr(RPC_STR *t, PACK *p)
 {
 	UINT size = 65536;
 	char *tmp = Malloc(size);
@@ -6848,7 +7066,7 @@ void InRpcStr(RPC_STR *t, PACK *p)
 	}
 	Free(tmp);
 }
-void OutRpcStr(PACK *p, RPC_STR *t)
+static void OutRpcStr(PACK *p, RPC_STR *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6867,7 +7085,7 @@ void FreeRpcStr(RPC_STR *t)
 	Free(t->String);
 }
 
-void InRpcSetPassword(RPC_SET_PASSWORD *t, PACK *p)
+static void InRpcSetPassword(RPC_SET_PASSWORD *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6878,7 +7096,7 @@ void InRpcSetPassword(RPC_SET_PASSWORD *t, PACK *p)
 	PackGetData2(p, "HashedPassword", t->HashedPassword, sizeof(t->HashedPassword));
 	PackGetStr(p, "PlainTextPassword", t->PlainTextPassword, sizeof(t->PlainTextPassword));
 }
-void OutRpcSetPassword(PACK *p, RPC_SET_PASSWORD *t)
+static void OutRpcSetPassword(PACK *p, RPC_SET_PASSWORD *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6911,7 +7129,7 @@ static void OutRpcHubOption(PACK *p, RPC_HUB_OPTION *t)
 	PackAddBool(p, "NoEnum", t->NoEnum);
 }
 
-void InRpcCreateHub(RPC_CREATE_HUB *t, PACK *p)
+static void InRpcCreateHub(RPC_CREATE_HUB *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6926,7 +7144,7 @@ void InRpcCreateHub(RPC_CREATE_HUB *t, PACK *p)
 	t->Online = PackGetBool(p, "Online");
 	InRpcHubOption(&t->HubOption, p);
 }
-void OutRpcCreateHub(PACK *p, RPC_CREATE_HUB *t)
+static void OutRpcCreateHub(PACK *p, RPC_CREATE_HUB *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6941,7 +7159,7 @@ void OutRpcCreateHub(PACK *p, RPC_CREATE_HUB *t)
 	OutRpcHubOption(p, &t->HubOption);
 }
 
-void InRpcEnumHub(RPC_ENUM_HUB *t, PACK *p)
+static void InRpcEnumHub(RPC_ENUM_HUB *t, PACK *p)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -6973,7 +7191,7 @@ void InRpcEnumHub(RPC_ENUM_HUB *t, PACK *p)
 		InRpcTrafficEx(&e->Traffic, p, i);
 	}
 }
-void OutRpcEnumHub(PACK *p, RPC_ENUM_HUB *t)
+static void OutRpcEnumHub(PACK *p, RPC_ENUM_HUB *t)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -7011,7 +7229,7 @@ void FreeRpcEnumHub(RPC_ENUM_HUB *t)
 	Free(t->Hubs);
 }
 
-void InRpcDeleteHub(RPC_DELETE_HUB *t, PACK *p)
+static void InRpcDeleteHub(RPC_DELETE_HUB *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7021,7 +7239,7 @@ void InRpcDeleteHub(RPC_DELETE_HUB *t, PACK *p)
 	Zero(t, sizeof(RPC_DELETE_HUB));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 }
-void OutRpcDeleteHub(PACK *p, RPC_DELETE_HUB *t)
+static void OutRpcDeleteHub(PACK *p, RPC_DELETE_HUB *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7031,7 +7249,7 @@ void OutRpcDeleteHub(PACK *p, RPC_DELETE_HUB *t)
 	PackAddStr(p, "HubName", t->HubName);
 }
 
-void InRpcEnumConnection(RPC_ENUM_CONNECTION *t, PACK *p)
+static void InRpcEnumConnection(RPC_ENUM_CONNECTION *t, PACK *p)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -7055,7 +7273,7 @@ void InRpcEnumConnection(RPC_ENUM_CONNECTION *t, PACK *p)
 		e->Type = PackGetIntEx(p, "Type", i);
 	}
 }
-void OutRpcEnumConnection(PACK *p, RPC_ENUM_CONNECTION *t)
+static void OutRpcEnumConnection(PACK *p, RPC_ENUM_CONNECTION *t)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -7085,7 +7303,7 @@ void FreeRpcEnumConnection(RPC_ENUM_CONNECTION *t)
 	Free(t->Connections);
 }
 
-void InRpcDisconnectConnection(RPC_DISCONNECT_CONNECTION *t, PACK *p)
+static void InRpcDisconnectConnection(RPC_DISCONNECT_CONNECTION *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7095,7 +7313,7 @@ void InRpcDisconnectConnection(RPC_DISCONNECT_CONNECTION *t, PACK *p)
 	Zero(t, sizeof(RPC_DISCONNECT_CONNECTION));
 	PackGetStr(p, "Name", t->Name, sizeof(t->Name));
 }
-void OutRpcDisconnectConnection(PACK *p, RPC_DISCONNECT_CONNECTION *t)
+static void OutRpcDisconnectConnection(PACK *p, RPC_DISCONNECT_CONNECTION *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7105,7 +7323,7 @@ void OutRpcDisconnectConnection(PACK *p, RPC_DISCONNECT_CONNECTION *t)
 	PackAddStr(p, "Name", t->Name);
 }
 
-void InRpcConnectionInfo(RPC_CONNECTION_INFO *t, PACK *p)
+static void InRpcConnectionInfo(RPC_CONNECTION_INFO *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7126,7 +7344,7 @@ void InRpcConnectionInfo(RPC_CONNECTION_INFO *t, PACK *p)
 	t->ClientBuild = PackGetInt(p, "ClientBuild");
 	t->Type = PackGetInt(p, "Type");
 }
-void OutRpcConnectionInfo(PACK *p, RPC_CONNECTION_INFO *t)
+static void OutRpcConnectionInfo(PACK *p, RPC_CONNECTION_INFO *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7147,7 +7365,7 @@ void OutRpcConnectionInfo(PACK *p, RPC_CONNECTION_INFO *t)
 	PackAddInt(p, "Type", t->Type);
 }
 
-void InRpcSetHubOnline(RPC_SET_HUB_ONLINE *t, PACK *p)
+static void InRpcSetHubOnline(RPC_SET_HUB_ONLINE *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7158,7 +7376,7 @@ void InRpcSetHubOnline(RPC_SET_HUB_ONLINE *t, PACK *p)
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	t->Online = PackGetBool(p, "Online");
 }
-void OutRpcSetHubOnline(PACK *p, RPC_SET_HUB_ONLINE *t)
+static void OutRpcSetHubOnline(PACK *p, RPC_SET_HUB_ONLINE *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7169,7 +7387,7 @@ void OutRpcSetHubOnline(PACK *p, RPC_SET_HUB_ONLINE *t)
 	PackAddBool(p, "Online", t->Online);
 }
 
-void InRpcHubStatus(RPC_HUB_STATUS *t, PACK *p)
+static void InRpcHubStatus(RPC_HUB_STATUS *t, PACK *p)
 {
 	Zero(t, sizeof(RPC_HUB_STATUS));
 	if (t == NULL || p == NULL)
@@ -7193,7 +7411,7 @@ void InRpcHubStatus(RPC_HUB_STATUS *t, PACK *p)
 	t->LastLoginTime = PackGetInt64(p, "LastLoginTime");
 	t->NumLogin = PackGetInt(p, "NumLogin");
 }
-void OutRpcHubStatus(PACK *p, RPC_HUB_STATUS *t)
+static void OutRpcHubStatus(PACK *p, RPC_HUB_STATUS *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7217,7 +7435,7 @@ void OutRpcHubStatus(PACK *p, RPC_HUB_STATUS *t)
 	PackAddInt(p, "NumLogin", t->NumLogin);
 }
 
-void InRpcHubLog(RPC_HUB_LOG *t, PACK *p)
+static void InRpcHubLog(RPC_HUB_LOG *t, PACK *p)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -7236,7 +7454,7 @@ void InRpcHubLog(RPC_HUB_LOG *t, PACK *p)
 		t->LogSetting.PacketLogConfig[i] = PackGetIntEx(p, "PacketLogConfig", i);
 	}
 }
-void OutRpcHubLog(PACK *p, RPC_HUB_LOG *t)
+static void OutRpcHubLog(PACK *p, RPC_HUB_LOG *t)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -7255,7 +7473,7 @@ void OutRpcHubLog(PACK *p, RPC_HUB_LOG *t)
 	}
 }
 
-void InRpcHubAddCa(RPC_HUB_ADD_CA *t, PACK *p)
+static void InRpcHubAddCa(RPC_HUB_ADD_CA *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7266,7 +7484,7 @@ void InRpcHubAddCa(RPC_HUB_ADD_CA *t, PACK *p)
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	t->Cert = PackGetX(p, "Cert");
 }
-void OutRpcHubAddCa(PACK *p, RPC_HUB_ADD_CA *t)
+static void OutRpcHubAddCa(PACK *p, RPC_HUB_ADD_CA *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7286,7 +7504,7 @@ void FreeRpcHubAddCa(RPC_HUB_ADD_CA *t)
 	FreeX(t->Cert);
 }
 
-void InRpcHubEnumCa(RPC_HUB_ENUM_CA *t, PACK *p)
+static void InRpcHubEnumCa(RPC_HUB_ENUM_CA *t, PACK *p)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -7309,7 +7527,7 @@ void InRpcHubEnumCa(RPC_HUB_ENUM_CA *t, PACK *p)
 		e->Expires = PackGetInt64Ex(p, "Expires", i);
 	}
 }
-void OutRpcHubEnumCa(PACK *p, RPC_HUB_ENUM_CA *t)
+static void OutRpcHubEnumCa(PACK *p, RPC_HUB_ENUM_CA *t)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -7338,7 +7556,7 @@ void FreeRpcHubEnumCa(RPC_HUB_ENUM_CA *t)
 	Free(t->Ca);
 }
 
-void InRpcHubGetCa(RPC_HUB_GET_CA *t, PACK *p)
+static void InRpcHubGetCa(RPC_HUB_GET_CA *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7350,7 +7568,7 @@ void InRpcHubGetCa(RPC_HUB_GET_CA *t, PACK *p)
 	t->Key = PackGetInt(p, "Key");
 	t->Cert = PackGetX(p, "Cert");
 }
-void OutRpcHubGetCa(PACK *p, RPC_HUB_GET_CA *t)
+static void OutRpcHubGetCa(PACK *p, RPC_HUB_GET_CA *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7371,7 +7589,7 @@ void FreeRpcHubGetCa(RPC_HUB_GET_CA *t)
 	FreeX(t->Cert);
 }
 
-void InRpcHubDeleteCa(RPC_HUB_DELETE_CA *t, PACK *p)
+static void InRpcHubDeleteCa(RPC_HUB_DELETE_CA *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7382,7 +7600,7 @@ void InRpcHubDeleteCa(RPC_HUB_DELETE_CA *t, PACK *p)
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	t->Key = PackGetInt(p, "Key");
 }
-void OutRpcHubDeleteCa(PACK *p, RPC_HUB_DELETE_CA *t)
+static void OutRpcHubDeleteCa(PACK *p, RPC_HUB_DELETE_CA *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7393,7 +7611,7 @@ void OutRpcHubDeleteCa(PACK *p, RPC_HUB_DELETE_CA *t)
 	PackAddInt(p, "Key", t->Key);
 }
 
-void InRpcCreateLink(RPC_CREATE_LINK *t, PACK *p)
+static void InRpcCreateLink(RPC_CREATE_LINK *t, PACK *p)
 {
 	BUF *b;
 	if (t == NULL || p == NULL)
@@ -7419,7 +7637,7 @@ void InRpcCreateLink(RPC_CREATE_LINK *t, PACK *p)
 		FreeBuf(b);
 	}
 }
-void OutRpcCreateLink(PACK *p, RPC_CREATE_LINK *t)
+static void OutRpcCreateLink(PACK *p, RPC_CREATE_LINK *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7457,7 +7675,7 @@ void FreeRpcCreateLink(RPC_CREATE_LINK *t)
 	CiFreeClientAuth(t->ClientAuth);
 }
 
-void InRpcEnumLink(RPC_ENUM_LINK *t, PACK *p)
+static void InRpcEnumLink(RPC_ENUM_LINK *t, PACK *p)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -7486,7 +7704,7 @@ void InRpcEnumLink(RPC_ENUM_LINK *t, PACK *p)
 		e->LastError = PackGetIntEx(p, "LastError", i);
 	}
 }
-void OutRpcEnumLink(PACK *p, RPC_ENUM_LINK *t)
+static void OutRpcEnumLink(PACK *p, RPC_ENUM_LINK *t)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -7520,7 +7738,7 @@ void FreeRpcEnumLink(RPC_ENUM_LINK *t)
 	Free(t->Links);
 }
 
-void InRpcLinkStatus(RPC_LINK_STATUS *t, PACK *p)
+static void InRpcLinkStatus(RPC_LINK_STATUS *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7532,7 +7750,7 @@ void InRpcLinkStatus(RPC_LINK_STATUS *t, PACK *p)
 	PackGetUniStr(p, "AccountName", t->AccountName, sizeof(t->AccountName));
 	InRpcClientGetConnectionStatus(&t->Status, p);
 }
-void OutRpcLinkStatus(PACK *p, RPC_LINK_STATUS *t)
+static void OutRpcLinkStatus(PACK *p, RPC_LINK_STATUS *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7553,7 +7771,7 @@ void FreeRpcLinkStatus(RPC_LINK_STATUS *t)
 	CiFreeClientGetConnectionStatus(&t->Status);
 }
 
-void InRpcLink(RPC_LINK *t, PACK *p)
+static void InRpcLink(RPC_LINK *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7564,7 +7782,7 @@ void InRpcLink(RPC_LINK *t, PACK *p)
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	PackGetUniStr(p, "AccountName", t->AccountName, sizeof(t->AccountName));
 }
-void OutRpcLink(PACK *p, RPC_LINK *t)
+static void OutRpcLink(PACK *p, RPC_LINK *t)
 {
 	if (t == NULL)
 	{
@@ -7575,7 +7793,7 @@ void OutRpcLink(PACK *p, RPC_LINK *t)
 	PackAddUniStr(p, "AccountName", t->AccountName);
 }
 
-void InRpcRenameLink(RPC_RENAME_LINK *t, PACK *p)
+static void InRpcRenameLink(RPC_RENAME_LINK *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7587,7 +7805,7 @@ void InRpcRenameLink(RPC_RENAME_LINK *t, PACK *p)
 	PackGetUniStr(p, "OldAccountName", t->OldAccountName, sizeof(t->OldAccountName));
 	PackGetUniStr(p, "NewAccountName", t->NewAccountName, sizeof(t->NewAccountName));
 }
-void OutRpcRenameLink(PACK *p, RPC_RENAME_LINK *t)
+static void OutRpcRenameLink(PACK *p, RPC_RENAME_LINK *t)
 {
 	if (p == NULL || t == NULL)
 	{
@@ -7645,7 +7863,7 @@ static void InRpcAccessEx(ACCESS *a, PACK *p, UINT index)
 		PackGetIp6AddrEx(p, "DestSubnetMask6", &a->DestSubnetMask6, index);
 	}
 }
-void InRpcAccess(ACCESS *a, PACK *p)
+static void InRpcAccess(ACCESS *a, PACK *p)
 {
 	if (a == NULL || p == NULL)
 	{
@@ -7720,7 +7938,7 @@ static void OutRpcAccessEx(PACK *p, ACCESS *a, UINT index, UINT total)
 		PackAddIp6AddrEx(p, "DestSubnetMask6", &zero, index, total);
 	}
 }
-void OutRpcAccess(PACK *p, ACCESS *a)
+static void OutRpcAccess(PACK *p, ACCESS *a)
 {
 	if (a == NULL || p == NULL)
 	{
@@ -7730,7 +7948,7 @@ void OutRpcAccess(PACK *p, ACCESS *a)
 	OutRpcAccessEx(p, a, 0, 1);
 }
 
-void InRpcEnumAccessList(RPC_ENUM_ACCESS_LIST *a, PACK *p)
+static void InRpcEnumAccessList(RPC_ENUM_ACCESS_LIST *a, PACK *p)
 {
 	UINT i;
 	if (a == NULL || p == NULL)
@@ -7750,7 +7968,7 @@ void InRpcEnumAccessList(RPC_ENUM_ACCESS_LIST *a, PACK *p)
 		InRpcAccessEx(e, p, i);
 	}
 }
-void OutRpcEnumAccessList(PACK *p, RPC_ENUM_ACCESS_LIST *a)
+static void OutRpcEnumAccessList(PACK *p, RPC_ENUM_ACCESS_LIST *a)
 {
 	UINT i;
 	if (a == NULL || p == NULL)
@@ -7888,7 +8106,7 @@ static void OutRpcAuthData(PACK *p, void *authdata, UINT authtype)
 	}
 }
 
-void InRpcSetUser(RPC_SET_USER *t, PACK *p)
+static void InRpcSetUser(RPC_SET_USER *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7915,7 +8133,7 @@ void InRpcSetUser(RPC_SET_USER *t, PACK *p)
 	}
 }
 
-void OutRpcSetUser(PACK *p, RPC_SET_USER *t)
+static void OutRpcSetUser(PACK *p, RPC_SET_USER *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7954,7 +8172,7 @@ void FreeRpcSetUser(RPC_SET_USER *t)
 	}
 }
 
-void InRpcEnumUser(RPC_ENUM_USER *t, PACK *p)
+static void InRpcEnumUser(RPC_ENUM_USER *t, PACK *p)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -7986,7 +8204,7 @@ void InRpcEnumUser(RPC_ENUM_USER *t, PACK *p)
 		e->Expires = PackGetInt64Ex(p, "Expires", i);
 	}
 }
-void OutRpcEnumUser(PACK *p, RPC_ENUM_USER *t)
+static void OutRpcEnumUser(PACK *p, RPC_ENUM_USER *t)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -8025,7 +8243,7 @@ void FreeRpcEnumUser(RPC_ENUM_USER *t)
 	Free(t->Users);
 }
 
-void InRpcSetGroup(RPC_SET_GROUP *t, PACK *p)
+static void InRpcSetGroup(RPC_SET_GROUP *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -8045,7 +8263,7 @@ void InRpcSetGroup(RPC_SET_GROUP *t, PACK *p)
 		InRpcPolicy(t->Policy, p);
 	}
 }
-void OutRpcSetGroup(PACK *p, RPC_SET_GROUP *t)
+static void OutRpcSetGroup(PACK *p, RPC_SET_GROUP *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -8069,7 +8287,7 @@ void FreeRpcSetGroup(RPC_SET_GROUP *t)
 	Free(t->Policy);
 }
 
-void InRpcEnumGroup(RPC_ENUM_GROUP *t, PACK *p)
+static void InRpcEnumGroup(RPC_ENUM_GROUP *t, PACK *p)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -8092,7 +8310,7 @@ void InRpcEnumGroup(RPC_ENUM_GROUP *t, PACK *p)
 		e->NumUsers = PackGetIntEx(p, "NumUsers", i);
 	}
 }
-void OutRpcEnumGroup(PACK *p, RPC_ENUM_GROUP *t)
+static void OutRpcEnumGroup(PACK *p, RPC_ENUM_GROUP *t)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -8123,7 +8341,7 @@ void FreeRpcEnumGroup(RPC_ENUM_GROUP *t)
 	Free(t->Groups);
 }
 
-void InRpcDeleteUser(RPC_DELETE_USER *t, PACK *p)
+static void InRpcDeleteUser(RPC_DELETE_USER *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -8134,7 +8352,7 @@ void InRpcDeleteUser(RPC_DELETE_USER *t, PACK *p)
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	PackGetStr(p, "Name", t->Name, sizeof(t->Name));
 }
-void OutRpcDeleteUser(PACK *p, RPC_DELETE_USER *t)
+static void OutRpcDeleteUser(PACK *p, RPC_DELETE_USER *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -8225,7 +8443,7 @@ void FreeRpcEnumSession(RPC_ENUM_SESSION *t)
 	Free(t->Sessions);
 }
 
-void InRpcKeyPair(RPC_KEY_PAIR *t, PACK *p)
+static void InRpcKeyPair(RPC_KEY_PAIR *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -8237,7 +8455,7 @@ void InRpcKeyPair(RPC_KEY_PAIR *t, PACK *p)
 	t->Key = PackGetK(p, "Key");
 	t->Flag1 = PackGetInt(p, "Flag1");
 }
-void OutRpcKeyPair(PACK *p, RPC_KEY_PAIR *t)
+static void OutRpcKeyPair(PACK *p, RPC_KEY_PAIR *t)
 {
 	if (p == NULL || t == NULL)
 	{
@@ -8322,7 +8540,7 @@ void OutRpcNodeInfo(PACK *p, NODE_INFO *t)
 	PackAddInt(p, "ProxyPort", LittleEndian32(t->ProxyPort));
 }
 
-void InRpcSessionStatus(RPC_SESSION_STATUS *t, PACK *p)
+static void InRpcSessionStatus(RPC_SESSION_STATUS *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -8343,7 +8561,7 @@ void InRpcSessionStatus(RPC_SESSION_STATUS *t, PACK *p)
 	InRpcClientGetConnectionStatus(&t->Status, p);
 	InRpcNodeInfo(&t->NodeInfo, p);
 }
-void OutRpcSessionStatus(PACK *p, RPC_SESSION_STATUS *t)
+static void OutRpcSessionStatus(PACK *p, RPC_SESSION_STATUS *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -8373,7 +8591,7 @@ void FreeRpcSessionStatus(RPC_SESSION_STATUS *t)
 	CiFreeClientGetConnectionStatus(&t->Status);
 }
 
-void InRpcDeleteSession(RPC_DELETE_SESSION *t, PACK *p)
+static void InRpcDeleteSession(RPC_DELETE_SESSION *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -8384,7 +8602,7 @@ void InRpcDeleteSession(RPC_DELETE_SESSION *t, PACK *p)
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	PackGetStr(p, "Name", t->Name, sizeof(t->Name));
 }
-void OutRpcDeleteSession(PACK *p, RPC_DELETE_SESSION *t)
+static void OutRpcDeleteSession(PACK *p, RPC_DELETE_SESSION *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -8395,7 +8613,7 @@ void OutRpcDeleteSession(PACK *p, RPC_DELETE_SESSION *t)
 	PackAddStr(p, "Name", t->Name);
 }
 
-void InRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t, PACK *p)
+static void InRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t, PACK *p)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -8420,7 +8638,7 @@ void InRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t, PACK *p)
 		e->UpdatedTime = PackGetInt64Ex(p, "UpdatedTime", i);
 	}
 }
-void OutRpcEnumMacTable(PACK *p, RPC_ENUM_MAC_TABLE *t)
+static void OutRpcEnumMacTable(PACK *p, RPC_ENUM_MAC_TABLE *t)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -8452,7 +8670,7 @@ void FreeRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t)
 	Free(t->MacTables);
 }
 
-void InRpcEnumIpTable(RPC_ENUM_IP_TABLE *t, PACK *p)
+static void InRpcEnumIpTable(RPC_ENUM_IP_TABLE *t, PACK *p)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -8482,7 +8700,7 @@ void InRpcEnumIpTable(RPC_ENUM_IP_TABLE *t, PACK *p)
 		e->UpdatedTime = PackGetInt64Ex(p, "UpdatedTime", i);
 	}
 }
-void OutRpcEnumIpTable(PACK *p, RPC_ENUM_IP_TABLE *t)
+static void OutRpcEnumIpTable(PACK *p, RPC_ENUM_IP_TABLE *t)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -8516,7 +8734,7 @@ void FreeRpcEnumIpTable(RPC_ENUM_IP_TABLE *t)
 	Free(t->IpTables);
 }
 
-void InRpcDeleteTable(RPC_DELETE_TABLE *t, PACK *p)
+static void InRpcDeleteTable(RPC_DELETE_TABLE *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -8527,7 +8745,7 @@ void InRpcDeleteTable(RPC_DELETE_TABLE *t, PACK *p)
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	t->Key = PackGetInt(p, "Key");
 }
-void OutRpcDeleteTable(PACK *p, RPC_DELETE_TABLE *t)
+static void OutRpcDeleteTable(PACK *p, RPC_DELETE_TABLE *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -8538,14 +8756,14 @@ void OutRpcDeleteTable(PACK *p, RPC_DELETE_TABLE *t)
 	PackAddInt(p, "Key", t->Key);
 }
 
-UINT StTest(ADMIN *a, RPC_TEST *t)
+static UINT StTest(ADMIN *a, RPC_TEST *t)
 {
 	Format(t->StrValue, sizeof(t->StrValue), "%u", t->IntValue);
 
 	return ERR_NO_ERROR;
 }
 
-void InRpcTest(RPC_TEST *t, PACK *p)
+static void InRpcTest(RPC_TEST *t, PACK *p)
 {
 	Zero(t, sizeof(RPC_TEST));
 	t->IntValue = PackGetInt(p, "IntValue");
@@ -8553,7 +8771,7 @@ void InRpcTest(RPC_TEST *t, PACK *p)
 	PackGetStr(p, "StrValue", t->StrValue, sizeof(t->StrValue));
 	PackGetUniStr(p, "UniStrValue", t->UniStrValue, sizeof(t->UniStrValue));
 }
-void OutRpcTest(PACK *p, RPC_TEST *t)
+static void OutRpcTest(PACK *p, RPC_TEST *t)
 {
 	PackAddInt(p, "IntValue", t->IntValue);
 	PackAddInt64(p, "Int64Value", t->Int64Value);
@@ -8564,7 +8782,7 @@ void FreeRpcTest(RPC_TEST *t)
 {
 }
 
-PACK *AdminCall(RPC *rpc, char *function_name, PACK *p)
+static PACK *AdminCall(RPC *rpc, char *function_name, PACK *p)
 {
 	if (rpc == NULL || function_name == NULL)
 	{
@@ -8803,7 +9021,7 @@ UINT AdminAccept(CONNECTION *c, PACK *p)
 	return ERR_NO_ERROR;
 }
 
-UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hubname,
+static UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hubname,
 						bool accept_empty_password, bool *is_password_empty)
 {
 	UCHAR check[SHA1_SIZE];
@@ -8874,7 +9092,7 @@ UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hub
 	return ERR_NO_ERROR;
 }
 
-void HashAdminPassword(void *hash, char *password)
+static void HashAdminPassword(void *hash, char *password)
 {
 	if (hash == NULL || password == NULL)
 	{
@@ -8976,7 +9194,7 @@ RPC *AdminConnectEx(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_
 {
 	return AdminConnectEx2(cedar, o, hubname, hashed_password, err, client_name, NULL);
 }
-RPC *AdminConnectEx2(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name, void *hWnd)
+static RPC *AdminConnectEx2(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name, void *hWnd)
 {
 	SESSION *s;
 	SOCK *sock;
@@ -9074,7 +9292,7 @@ UINT AdminReconnect(RPC *rpc)
 	return ERR_NO_ERROR;
 }
 
-bool SiIsEmptyPassword(void *hash_password)
+static bool SiIsEmptyPassword(void *hash_password)
 {
 	UCHAR hash[SHA1_SIZE];
 	if (hash_password == NULL)

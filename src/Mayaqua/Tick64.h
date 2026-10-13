@@ -27,7 +27,6 @@ struct TICK64
 
 void InitTick64();
 void FreeTick64();
-void Tick64Thread(THREAD *thread, void *param);
 UINT64 Tick64();
 UINT64 Diff64(UINT64 a, UINT64 b);
 UINT64 Tick64ToTime64(UINT64 tick);

@@ -25,6 +25,96 @@
 
 #include <stdlib.h>
 
+static bool CheckNetwork();
+static bool CheckThread();
+static bool CheckFileSystem();
+static bool CheckStrings();
+static bool CheckMemory();
+static void InputToNull(void *p);
+static UINT RetZero();
+static bool CheckKernel();
+static void TtsAcceptProc(TTS *tts, SOCK *listen_socket);
+static UINT PtTrafficServer(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PtTrafficClient(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PtMakeCert(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PtMakeCert2048(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsServerCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsServerKeyGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static K *CmdLoadKey(CONSOLE *c, wchar_t *filename);
+static UINT PsServerCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsServerCipherGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsServerCipherSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsSyslogEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsSyslogDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsSyslogGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static wchar_t *GetSyslogSettingName(UINT n);
+static UINT PsConnectionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsConnectionGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsConnectionDisconnect(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsBridgeDeviceList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsBridgeList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsBridgeCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsBridgeDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCaps(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsReboot(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsConfigGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsConfigSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsLogFileList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsLogFileGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsHubCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsHubDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsHubList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsHub(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsOnline(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsOffline(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsSetMaxSession(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsSetHubPassword(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsSetEnumAllow(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsSetEnumDeny(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsOptionsGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsLogGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsLogEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsLogDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsLogSwitchSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsLogPacketSaveType(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCAList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCAAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCADelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCAGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeUsernameSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeAnonymousSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadePasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeEncryptEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeEncryptDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeCompressEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeCompressDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeHttpHeaderAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeHttpHeaderDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeHttpHeaderGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeProxyNone(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeProxyHttp(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeProxySocks(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeProxySocks5(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeServerCertEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeServerCertDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeDefaultCAEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeDefaultCADisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeServerCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeServerCertDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeServerCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadeDetailSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static void PrintPolicy(CONSOLE *c, POLICY *pol, bool cascade_mode);
+static UINT PsPolicyList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+static UINT PsCascadePolicySet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
+
 typedef bool (CHECKER_PROC_DEF)();
 typedef struct CHECKER_PROC
 {
@@ -160,7 +250,7 @@ static void CheckNetworkListenThread(THREAD *thread, void *param)
 	ReleaseList(o);
 }
 
-bool CheckNetwork()
+static bool CheckNetwork()
 {
 	CHECK_NETWORK_1 c;
 	THREAD *t;
@@ -324,7 +414,7 @@ static void CheckThread3(THREAD *thread, void *param)
 	ReleaseThread(t);
 }
 
-bool CheckThread()
+static bool CheckThread()
 {
 	bool ok = true;
 	CHECK_THREAD_1 ct1;
@@ -395,7 +485,7 @@ bool CheckThread()
 	return ok;
 }
 
-bool CheckFileSystem()
+static bool CheckFileSystem()
 {
 	bool ok = false;
 	char exe[MAX_PATH];
@@ -489,7 +579,7 @@ bool CheckFileSystem()
 	return ok;
 }
 
-bool CheckStrings()
+static bool CheckStrings()
 {
 	wchar_t *numstr = _UU("CHECK_TEST_123456789");
 	char tmp[MAX_SIZE];
@@ -543,7 +633,7 @@ bool CheckStrings()
 	return true;
 }
 
-bool CheckMemory()
+static bool CheckMemory()
 {
 	UINT i, num, size, j;
 	void **pp;
@@ -588,7 +678,7 @@ bool CheckMemory()
 	return ok;
 }
 
-void InputToNull(void *p)
+static void InputToNull(void *p)
 {
 	if (RetZero() == 1)
 	{
@@ -597,7 +687,7 @@ void InputToNull(void *p)
 	}
 }
 
-UINT RetZero()
+static UINT RetZero()
 {
 	if (g_debug == 0x123455)
 	{
@@ -610,7 +700,7 @@ UINT RetZero()
 }
 
 
-bool CheckKernel()
+static bool CheckKernel()
 {
 	UINT num = 10, i;
 	UINT64 s = Tick64();
@@ -1217,7 +1307,7 @@ static void TtsIPv6AcceptThread(THREAD *thread, void *param)
 	TtsAcceptProc(tts, tts->ListenSocketV6);
 }
 
-void TtsAcceptProc(TTS *tts, SOCK *listen_socket)
+static void TtsAcceptProc(TTS *tts, SOCK *listen_socket)
 {
 	wchar_t tmp[MAX_SIZE];
 	UINT seed = 0;
@@ -2193,7 +2283,7 @@ static void TtcPrintResult(CONSOLE *c, TT_RESULT *res)
 	CtFree(ct, c);
 }
 
-UINT PtTrafficServer(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PtTrafficServer(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	UINT ret = ERR_NO_ERROR;
@@ -2248,7 +2338,7 @@ UINT PtTrafficServer(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return ret;
 }
 
-UINT PtTrafficClient(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PtTrafficClient(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	TTC *ttc;
 	LIST *o;
@@ -2367,7 +2457,7 @@ UINT PtTrafficClient(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return ret;
 }
 
-UINT PtMakeCert(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PtMakeCert(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	UINT ret = ERR_NO_ERROR;
@@ -2488,7 +2578,7 @@ UINT PtMakeCert(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return ret;
 }
 
-UINT PtMakeCert2048(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PtMakeCert2048(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	UINT ret = ERR_NO_ERROR;
@@ -2907,7 +2997,7 @@ static bool CmdEvalHostAndPort(CONSOLE *c, wchar_t *str, void *param)
 	return ret;
 }
 
-UINT PsServerCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsServerCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -2947,7 +3037,7 @@ UINT PsServerCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsServerKeyGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsServerKeyGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -3069,7 +3159,7 @@ static bool CmdLoadCertChainAndKey(CONSOLE *c, X **xx, K **kk, LIST **cc, wchar_
 	return true;
 }
 
-K *CmdLoadKey(CONSOLE *c, wchar_t *filename)
+static K *CmdLoadKey(CONSOLE *c, wchar_t *filename)
 {
 	BUF *b;
 	if (c == NULL || filename == NULL)
@@ -3122,7 +3212,7 @@ K *CmdLoadKey(CONSOLE *c, wchar_t *filename)
 	}
 }
 
-UINT PsServerCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsServerCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -3174,7 +3264,7 @@ UINT PsServerCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return ret;
 }
 
-UINT PsServerCipherGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsServerCipherGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -3233,7 +3323,7 @@ UINT PsServerCipherGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsServerCipherSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsServerCipherSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -3269,7 +3359,7 @@ UINT PsServerCipherSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsSyslogEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsSyslogEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -3316,7 +3406,7 @@ UINT PsSyslogEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsSyslogDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsSyslogDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -3356,7 +3446,7 @@ UINT PsSyslogDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsSyslogGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsSyslogGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -3403,7 +3493,7 @@ UINT PsSyslogGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-wchar_t *GetSyslogSettingName(UINT n)
+static wchar_t *GetSyslogSettingName(UINT n)
 {
 	char tmp[MAX_PATH];
 
@@ -3420,7 +3510,7 @@ static wchar_t *GetConnectionTypeStr(UINT type)
 	return _UU(tmp);
 }
 
-UINT PsConnectionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsConnectionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -3476,7 +3566,7 @@ UINT PsConnectionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsConnectionGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsConnectionGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -3554,7 +3644,7 @@ UINT PsConnectionGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsConnectionDisconnect(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsConnectionDisconnect(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -3589,7 +3679,7 @@ UINT PsConnectionDisconnect(CONSOLE *c, char *cmd_name, wchar_t *str, void *para
 	return 0;
 }
 
-UINT PsBridgeDeviceList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsBridgeDeviceList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -3630,7 +3720,7 @@ UINT PsBridgeDeviceList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsBridgeList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsBridgeList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -3692,7 +3782,7 @@ UINT PsBridgeList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsBridgeCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsBridgeCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -3746,7 +3836,7 @@ UINT PsBridgeCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsBridgeDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsBridgeDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -3783,7 +3873,7 @@ UINT PsBridgeDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCaps(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCaps(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -3838,7 +3928,7 @@ UINT PsCaps(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsReboot(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsReboot(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -3875,7 +3965,7 @@ UINT PsReboot(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsConfigGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsConfigGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -3965,7 +4055,7 @@ UINT PsConfigGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return ret;
 }
 
-UINT PsConfigSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsConfigSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -4055,7 +4145,7 @@ static bool CmdEvalIpAndMask6(CONSOLE *c, wchar_t *str, void *param)
 	return true;
 }
 
-UINT PsLogFileList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsLogFileList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -4122,7 +4212,7 @@ UINT PsLogFileList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsLogFileGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsLogFileGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -4198,7 +4288,7 @@ UINT PsLogFileGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return ret;
 }
 
-UINT PsHubCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsHubCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -4244,7 +4334,7 @@ UINT PsHubCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsHubDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsHubDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -4279,7 +4369,7 @@ UINT PsHubDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsHubList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsHubList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -4388,7 +4478,7 @@ UINT PsHubList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsHub(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsHub(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -4445,7 +4535,7 @@ UINT PsHub(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsOnline(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsOnline(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -4483,7 +4573,7 @@ UINT PsOnline(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsOffline(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsOffline(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -4521,7 +4611,7 @@ UINT PsOffline(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsSetMaxSession(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsSetMaxSession(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -4569,7 +4659,7 @@ UINT PsSetMaxSession(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsSetHubPassword(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsSetHubPassword(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -4620,7 +4710,7 @@ UINT PsSetHubPassword(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsSetEnumAllow(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsSetEnumAllow(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -4664,7 +4754,7 @@ UINT PsSetEnumAllow(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsSetEnumDeny(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsSetEnumDeny(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -4708,7 +4798,7 @@ UINT PsSetEnumDeny(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsOptionsGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsOptionsGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -4772,7 +4862,7 @@ UINT PsOptionsGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -4901,7 +4991,7 @@ static wchar_t *GetPacketLogNameStr(UINT i)
 	return _UU(tmp);
 }
 
-UINT PsLogGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsLogGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -4985,7 +5075,7 @@ UINT PsLogGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsLogEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsLogEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -5057,7 +5147,7 @@ UINT PsLogEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsLogDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsLogDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -5165,7 +5255,7 @@ static UINT StrToLogSwitchType(char *str)
 	return ret;
 }
 
-UINT PsLogSwitchSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsLogSwitchSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -5316,7 +5406,7 @@ static UINT StrToPacketLogType(char *str)
 	return ret;
 }
 
-UINT PsLogPacketSaveType(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsLogPacketSaveType(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -5379,7 +5469,7 @@ UINT PsLogPacketSaveType(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCAList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCAList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -5446,7 +5536,7 @@ UINT PsCAList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCAAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCAAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -5499,7 +5589,7 @@ UINT PsCAAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCADelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCADelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -5540,7 +5630,7 @@ UINT PsCADelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCAGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCAGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -5595,7 +5685,7 @@ UINT PsCAGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return ret;
 }
 
-UINT PsCascadeList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -5684,7 +5774,7 @@ UINT PsCascadeList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCascadeCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -5755,7 +5845,7 @@ UINT PsCascadeCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCascadeSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -5849,7 +5939,7 @@ static wchar_t *GetClientAuthTypeStr(UINT i)
 	return _UU(tmp);
 }
 
-UINT PsCascadeGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -6000,7 +6090,7 @@ UINT PsCascadeGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCascadeDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -6041,7 +6131,7 @@ UINT PsCascadeDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCascadeUsernameSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeUsernameSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -6104,7 +6194,7 @@ UINT PsCascadeUsernameSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCascadeAnonymousSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeAnonymousSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -6160,7 +6250,7 @@ UINT PsCascadeAnonymousSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param
 	return 0;
 }
 
-UINT PsCascadePasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadePasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -6241,7 +6331,7 @@ UINT PsCascadePasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCascadeCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -6319,7 +6409,7 @@ UINT PsCascadeCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCascadeCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -6380,7 +6470,7 @@ UINT PsCascadeCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return ret;
 }
 
-UINT PsCascadeEncryptEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeEncryptEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -6436,7 +6526,7 @@ UINT PsCascadeEncryptEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *para
 	return 0;
 }
 
-UINT PsCascadeEncryptDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeEncryptDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -6492,7 +6582,7 @@ UINT PsCascadeEncryptDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *par
 	return 0;
 }
 
-UINT PsCascadeCompressEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeCompressEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -6548,7 +6638,7 @@ UINT PsCascadeCompressEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *par
 	return 0;
 }
 
-UINT PsCascadeCompressDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeCompressDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -6604,7 +6694,7 @@ UINT PsCascadeCompressDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *pa
 	return 0;
 }
 
-UINT PsCascadeHttpHeaderAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeHttpHeaderAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -6689,7 +6779,7 @@ UINT PsCascadeHttpHeaderAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *para
 	return ret;
 }
 
-UINT PsCascadeHttpHeaderDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeHttpHeaderDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -6753,7 +6843,7 @@ UINT PsCascadeHttpHeaderDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *p
 	return ret;
 }
 
-UINT PsCascadeHttpHeaderGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeHttpHeaderGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -6813,7 +6903,7 @@ UINT PsCascadeHttpHeaderGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *para
 	return ret;
 }
 
-UINT PsCascadeProxyNone(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeProxyNone(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -6869,7 +6959,7 @@ UINT PsCascadeProxyNone(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCascadeProxyHttp(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeProxyHttp(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -6939,7 +7029,7 @@ UINT PsCascadeProxyHttp(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCascadeProxySocks(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeProxySocks(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -7009,7 +7099,7 @@ UINT PsCascadeProxySocks(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCascadeProxySocks5(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeProxySocks5(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -7079,7 +7169,7 @@ UINT PsCascadeProxySocks5(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT PsCascadeServerCertEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeServerCertEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -7135,7 +7225,7 @@ UINT PsCascadeServerCertEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *p
 	return 0;
 }
 
-UINT PsCascadeServerCertDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeServerCertDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -7191,7 +7281,7 @@ UINT PsCascadeServerCertDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *
 	return 0;
 }
 
-UINT PsCascadeDefaultCAEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeDefaultCAEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -7247,7 +7337,7 @@ UINT PsCascadeDefaultCAEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *pa
 	return 0;
 }
 
-UINT PsCascadeDefaultCADisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeDefaultCADisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -7303,7 +7393,7 @@ UINT PsCascadeDefaultCADisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *p
 	return 0;
 }
 
-UINT PsCascadeServerCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeServerCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -7374,7 +7464,7 @@ UINT PsCascadeServerCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *para
 	return 0;
 }
 
-UINT PsCascadeServerCertDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeServerCertDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -7434,7 +7524,7 @@ UINT PsCascadeServerCertDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *p
 	return 0;
 }
 
-UINT PsCascadeServerCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeServerCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -7495,7 +7585,7 @@ UINT PsCascadeServerCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *para
 	return ret;
 }
 
-UINT PsCascadeDetailSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadeDetailSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;
@@ -7568,7 +7658,7 @@ UINT PsCascadeDetailSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-void PrintPolicy(CONSOLE *c, POLICY *pol, bool cascade_mode)
+static void PrintPolicy(CONSOLE *c, POLICY *pol, bool cascade_mode)
 {
 	UINT i;
 	CT *ct;
@@ -7787,7 +7877,7 @@ static bool EditPolicy(CONSOLE *c, POLICY *pol, char *name, char *value, bool ca
 	return true;
 }
 
-UINT PsPolicyList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsPolicyList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PARAM args[] =
@@ -7808,7 +7898,7 @@ UINT PsPolicyList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return ERR_NO_ERROR;
 }
 
-UINT PsCascadePolicySet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PsCascadePolicySet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	PS *ps = (PS *)param;

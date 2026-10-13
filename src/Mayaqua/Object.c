@@ -11,7 +11,7 @@
 #include "Tick64.h"
 #include "Tracking.h"
 
-void CheckDeadLockThread(THREAD *t, void *param)
+static void CheckDeadLockThread(THREAD *t, void *param)
 {
 	DEADCHECK *c = (DEADCHECK *)param;
 
@@ -65,7 +65,7 @@ void CheckDeadLock(LOCK *lock, UINT timeout, char *name)
 	ReleaseThread(t);
 }
 
-LOCK *NewLockMain()
+static LOCK *NewLockMain()
 {
 	LOCK *lock;
 	UINT retry = 0;

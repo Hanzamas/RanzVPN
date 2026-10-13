@@ -1682,7 +1682,7 @@ static void Win32CleanupCancel(CANCEL *c)
 	Free(c);
 }
 
-CANCEL *Win32NewCancel()
+static CANCEL *Win32NewCancel()
 {
 	CANCEL *c = ZeroMallocFast(sizeof(CANCEL));
 	c->ref = NewRef();
@@ -1692,7 +1692,7 @@ CANCEL *Win32NewCancel()
 	return c;
 }
 
-bool Win32WaitSockEvent(SOCK_EVENT *event, UINT timeout)
+static bool Win32WaitSockEvent(SOCK_EVENT *event, UINT timeout)
 {
 	if (event == NULL || timeout == 0)
 	{
@@ -1709,7 +1709,7 @@ bool Win32WaitSockEvent(SOCK_EVENT *event, UINT timeout)
 	}
 }
 
-void Win32CleanupSockEvent(SOCK_EVENT *event)
+static void Win32CleanupSockEvent(SOCK_EVENT *event)
 {
 	if (event == NULL)
 	{
@@ -1721,7 +1721,7 @@ void Win32CleanupSockEvent(SOCK_EVENT *event)
 	Free(event);
 }
 
-void Win32SetSockEvent(SOCK_EVENT *event)
+static void Win32SetSockEvent(SOCK_EVENT *event)
 {
 	if (event == NULL)
 	{
@@ -1731,7 +1731,7 @@ void Win32SetSockEvent(SOCK_EVENT *event)
 	SetEvent((HANDLE)event->hEvent);
 }
 
-SOCK_EVENT *Win32NewSockEvent()
+static SOCK_EVENT *Win32NewSockEvent()
 {
 	SOCK_EVENT *e = ZeroMallocFast(sizeof(SOCK_EVENT));
 
@@ -1741,7 +1741,7 @@ SOCK_EVENT *Win32NewSockEvent()
 	return e;
 }
 
-void Win32JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event)
+static void Win32JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event)
 {
 	HANDLE hEvent;
 	if (sock == NULL || event == NULL || sock->AsyncMode)
@@ -1763,7 +1763,7 @@ void Win32JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event)
 	sock->SockEvent = event;
 }
 
-void Win32InitAsyncSocket(SOCK *sock)
+static void Win32InitAsyncSocket(SOCK *sock)
 {
 	if (sock == NULL)
 	{
@@ -1785,7 +1785,7 @@ void Win32InitAsyncSocket(SOCK *sock)
 	WSAEventSelect(sock->socket, sock->hEvent, FD_READ | FD_WRITE | FD_CLOSE);
 }
 
-void Win32FreeAsyncSocket(SOCK *sock)
+static void Win32FreeAsyncSocket(SOCK *sock)
 {
 	if (sock == NULL)
 	{
@@ -1806,7 +1806,7 @@ void Win32FreeAsyncSocket(SOCK *sock)
 	}
 }
 
-void Win32Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2)
+static void Win32Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2)
 {
 	HANDLE array[MAXIMUM_WAIT_OBJECTS];
 	UINT n, i;
@@ -1940,12 +1940,12 @@ void DelWaitThread(THREAD *t)
 	UnlockList(WaitThreadList);
 }
 
-void InitWaitThread()
+static void InitWaitThread()
 {
 	WaitThreadList = NewList(NULL);
 }
 
-void FreeWaitThread()
+static void FreeWaitThread()
 {
 	UINT i, num;
 	THREAD **threads;
@@ -2754,7 +2754,7 @@ void SetWantToUseCipher(SOCK *sock, char *name)
 	sock->WaitToUseCipher = CopyStr(name);
 }
 
-void AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx)
+static void AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx)
 {
 	wchar_t dirname[MAX_SIZE];
 	wchar_t exedir[MAX_SIZE];
@@ -3271,7 +3271,7 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 	return true;
 }
 
-UINT SecureRecv(SOCK *sock, void *data, UINT size)
+static UINT SecureRecv(SOCK *sock, void *data, UINT size)
 {
 	int ret, e = SSL_ERROR_NONE;
 	SSL *ssl;
@@ -3399,7 +3399,7 @@ UINT SecureRecv(SOCK *sock, void *data, UINT size)
 	return 0;
 }
 
-UINT SecureSend(SOCK *sock, void *data, UINT size)
+static UINT SecureSend(SOCK *sock, void *data, UINT size)
 {
 	int ret, e = SSL_ERROR_NONE;
 	SSL *ssl;
@@ -4182,7 +4182,7 @@ bool CheckTCPPortEx(char *hostname, UINT port, UINT timeout)
 	}
 }
 
-char *PrintError(int ErrorCode)
+static char *PrintError(int ErrorCode)
 {
 	char *Message;
 	switch (ErrorCode) {
@@ -4229,7 +4229,7 @@ char *PrintError(int ErrorCode)
 	return Message;
 }
 
-int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool *cancel_flag)
+static int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool *cancel_flag)
 {
 	UINT64 start_time;
 	bool ok = false;
@@ -4313,7 +4313,7 @@ int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool
 	}
 }
 
-void SetSockTos(SOCK *s, int tos)
+static void SetSockTos(SOCK *s, int tos)
 {
 	if (s == NULL)
 	{
@@ -4342,7 +4342,7 @@ void SetSockHighPriority(SOCK *s, bool flag)
 	SetSockTos(s, (flag ? 16 : 0));
 }
 
-int bind_sock(SOCKET sock, IP *ip, UINT port)
+static int bind_sock(SOCKET sock, IP *ip, UINT port)
 {
 
 	if (IsIP4(ip))
@@ -4378,7 +4378,7 @@ int bind_sock(SOCKET sock, IP *ip, UINT port)
 	}
 }
 
-SOCKET BindConnectTimeoutIPv4(IP* localIP, UINT localport, IP* ip, UINT port, UINT timeout, bool* cancel_flag)
+static SOCKET BindConnectTimeoutIPv4(IP* localIP, UINT localport, IP* ip, UINT port, UINT timeout, bool* cancel_flag)
 {
 	SOCKET s;
 	struct sockaddr_in sockaddr4;
@@ -4430,7 +4430,7 @@ SOCKET BindConnectTimeoutIPv4(IP* localIP, UINT localport, IP* ip, UINT port, UI
 	return s;
 }
 
-void BindConnectThreadForIPv4(THREAD *thread, void *param)
+static void BindConnectThreadForIPv4(THREAD *thread, void *param)
 {
 	SOCKET s = INVALID_SOCKET;
 	IP current_ip;
@@ -4490,7 +4490,7 @@ void BindConnectThreadForIPv4(THREAD *thread, void *param)
 	Set(p->FinishEvent);
 }
 
-void BindConnectThreadForIPv6(THREAD* thread, void* param)
+static void BindConnectThreadForIPv6(THREAD* thread, void* param)
 {
 	SOCKET s = INVALID_SOCKET;
 	IP current_ip;
@@ -4884,7 +4884,7 @@ void AddProtocolDetailsStr(char *dst, UINT dst_size, char *str)
 	FreeToken(t2);
 }
 
-void AddProtocolDetailsKeyValueStr(char *dst, UINT dst_size, char *key, char *value)
+static void AddProtocolDetailsKeyValueStr(char *dst, UINT dst_size, char *key, char *value)
 {
 	char tmp[128];
 	StrCpy(tmp, sizeof(tmp), key);
@@ -4901,7 +4901,7 @@ void AddProtocolDetailsKeyValueInt(char *dst, UINT dst_size, char *key, UINT val
 }
 
 
-bool SetSocketBufferSize(SOCKET s, bool send, UINT size)
+static bool SetSocketBufferSize(SOCKET s, bool send, UINT size)
 {
 	int value = (int)size;
 	if (s == INVALID_SOCKET)
@@ -4916,7 +4916,7 @@ bool SetSocketBufferSize(SOCKET s, bool send, UINT size)
 
 	return true;
 }
-UINT SetSocketBufferSizeWithBestEffort(SOCKET s, bool send, UINT size)
+static UINT SetSocketBufferSizeWithBestEffort(SOCKET s, bool send, UINT size)
 {
 	if (s == INVALID_SOCKET)
 	{
@@ -5570,7 +5570,7 @@ void InAddrToIP6(IP *ip, struct in6_addr *addr)
 	}
 }
 
-DH *TmpDhCallback(SSL *ssl, int is_export, int keylength)
+static DH *TmpDhCallback(SSL *ssl, int is_export, int keylength)
 {
 	DH *ret = NULL;
 
@@ -6037,7 +6037,7 @@ void FreeNetwork()
 	FreeDynList();
 }
 
-bool ParseIpAndSubnetMask46(char *src, IP *ip, IP *mask)
+static bool ParseIpAndSubnetMask46(char *src, IP *ip, IP *mask)
 {
 	if (src == NULL || ip == NULL || mask == NULL)
 	{
@@ -6233,7 +6233,7 @@ void MaskToStr32Ex(char *str, UINT size, UINT mask, bool always_full_address)
 
 	MaskToStrEx(str, size, &ip, always_full_address);
 }
-void Mask6AddrToStrEx(char *str, UINT size, IPV6_ADDR *mask, bool always_full_address)
+static void Mask6AddrToStrEx(char *str, UINT size, IPV6_ADDR *mask, bool always_full_address)
 {
 	IP ip;
 
@@ -6305,7 +6305,7 @@ void AddHostIPAddressToList(LIST *o, IP *ip)
 	Insert(o, Clone(ip, sizeof(IP)));
 }
 
-int CmpIpAddressList(void *p1, void *p2)
+static int CmpIpAddressList(void *p1, void *p2)
 {
 	IP *ip1, *ip2;
 	UINT r;

@@ -18,6 +18,11 @@
 #include "Mayaqua/Table.h"
 #include "Mayaqua/Tick64.h"
 
+static void CleanupUser(USER *u);
+static void CleanupGroup(USERGROUP *g);
+static char *DecryptPassword(BUF *b);
+static BUF *EncryptPassword(char *password);
+
 POLICY_ITEM policy_item[] =
 {
 //  ID,     Value,  Omittable, Min, Max, Default, Unit name, Offset
@@ -893,7 +898,7 @@ void ReleaseUser(USER *u)
 	}
 }
 
-void CleanupUser(USER *u)
+static void CleanupUser(USER *u)
 {
 	if (u == NULL)
 	{
@@ -1005,7 +1010,7 @@ void ReleaseGroup(USERGROUP *g)
 	}
 }
 
-void CleanupGroup(USERGROUP *g)
+static void CleanupGroup(USERGROUP *g)
 {
 	if (g == NULL)
 	{
@@ -1905,7 +1910,7 @@ void CiWriteClientOption(FOLDER *f, CLIENT_OPTION *o)
 	}
 }
 
-char *DecryptPassword(BUF *b)
+static char *DecryptPassword(BUF *b)
 {
 	char *str;
 	char *key = "EncryptPassword";
@@ -1925,7 +1930,7 @@ char *DecryptPassword(BUF *b)
 	return str;
 }
 
-BUF *EncryptPassword(char *password)
+static BUF *EncryptPassword(char *password)
 {
 	UCHAR *tmp;
 	UINT size;

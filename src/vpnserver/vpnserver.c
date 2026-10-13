@@ -8,14 +8,14 @@
 #include "Mayaqua/Mayaqua.h"
 #include "Mayaqua/Microsoft.h"
 
-void StartProcess()
+static void StartProcess()
 {
 	InitCedar();
 	StInit();
 	StStartServer(false);
 }
 
-void StopProcess()
+static void StopProcess()
 {
 	StStopServer();
 	StFree();

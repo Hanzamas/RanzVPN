@@ -22,6 +22,15 @@
 
 #include <Ws2tcpip.h>
 
+static RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, char *name);
+static ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr);
+static void Win32EthMakeCombinedName(char *dst, UINT dst_size, char *nicname, char *guid);
+static UINT Win32EthGenIdFromGuid(char *guid);
+static TOKEN_LIST *GetEthListEx(UINT *total_num_including_hidden, bool enum_normal, bool enum_rawip);
+static LIST *GetEthAdapterListInternal();
+static void InitEthAdaptersList();
+static void FreeEthAdaptersList();
+
 static LIST *eth_list = NULL;
 
 static LOCK *eth_list_lock = NULL;
@@ -190,7 +199,7 @@ bool SetVLanEnableStatus(char *title, bool enable)
 	return ret;
 }
 
-RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, char *name)
+static RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, char *name)
 {
 	UINT i;
 	if (t == NULL || name == NULL)
@@ -748,7 +757,7 @@ ETH *OpenEth(char *name, bool local, bool tapmode, char *tapaddr)
 
 	return ret;
 }
-ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
+static ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
 {
 	WP_ADAPTER *t;
 	ETH *e;
@@ -828,7 +837,7 @@ ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
 	return e;
 }
 
-void Win32EthMakeCombinedName(char *dst, UINT dst_size, char *nicname, char *guid)
+static void Win32EthMakeCombinedName(char *dst, UINT dst_size, char *nicname, char *guid)
 {
 	if (dst == NULL || nicname == NULL || guid == NULL)
 	{
@@ -887,7 +896,7 @@ UINT Win32EthGetNameAndIdFromCombinedName(char *name, UINT name_size, char *str)
 	return ret;
 }
 
-UINT Win32EthGenIdFromGuid(char *guid)
+static UINT Win32EthGenIdFromGuid(char *guid)
 {
 	char tmp[MAX_SIZE];
 	UCHAR hash[SHA1_SIZE];
@@ -921,7 +930,7 @@ TOKEN_LIST *GetEthList()
 
 	return GetEthListEx(&v, true, false);
 }
-TOKEN_LIST *GetEthListEx(UINT *total_num_including_hidden, bool enum_normal, bool enum_rawip)
+static TOKEN_LIST *GetEthListEx(UINT *total_num_including_hidden, bool enum_normal, bool enum_rawip)
 {
 	TOKEN_LIST *ret;
 	UINT i;
@@ -1058,7 +1067,7 @@ static LIST *GetEthAdapterList()
 
 	return o;
 }
-LIST *GetEthAdapterListInternal()
+static LIST *GetEthAdapterListInternal()
 {
 	LIST *o;
 	LIST *ret;
@@ -1212,7 +1221,7 @@ LIST *GetEthAdapterListInternal()
 	return ret;
 }
 
-void InitEthAdaptersList()
+static void InitEthAdaptersList()
 {
 	if (eth_list != NULL)
 	{
@@ -1222,7 +1231,7 @@ void InitEthAdaptersList()
 	eth_list = GetEthAdapterList();
 }
 
-void FreeEthAdaptersList()
+static void FreeEthAdaptersList()
 {
 	UINT i;
 	if (eth_list == NULL)

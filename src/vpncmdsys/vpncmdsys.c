@@ -21,7 +21,7 @@
 
 static UINT ret_code = 0;
 
-bool IsWindowsNt()
+static bool IsWindowsNt()
 {
 	OSVERSIONINFO info;
 
@@ -41,7 +41,7 @@ bool IsWindowsNt()
 	return false;
 }
 
-bool ExecProcess(char *exe_name, wchar_t *args_w)
+static bool ExecProcess(char *exe_name, wchar_t *args_w)
 {
 	bool ret;
 	wchar_t exe_name_w[MAX_SIZE];

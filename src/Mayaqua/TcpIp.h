@@ -567,11 +567,9 @@ bool ParsePacketIPv4(PKT *p, UCHAR *buf, UINT size);
 bool ParsePacketBPDU(PKT *p, UCHAR *buf, UINT size);
 bool ParsePacketTAGVLAN(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4_except_icmpv6);
 bool ParseICMPv4(PKT *p, UCHAR *buf, UINT size);
-bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size);
 bool ParseTCP(PKT *p, UCHAR *buf, UINT size);
 bool ParseUDP(PKT *p, UCHAR *buf, UINT size);
 void ParseDHCPv4(PKT *p, UCHAR *buf, UINT size);
-void ParseDNS(PKT *p, UCHAR *buf, UINT size);
 PKT *ClonePacket(PKT *p, bool copy_data);
 void FreeClonePacket(PKT *p);
 
@@ -579,33 +577,24 @@ void CorrectChecksum(PKT *p);
 
 bool ParsePacketIPv6(PKT *p, UCHAR *buf, UINT size, bool no_l3_l4_except_icmpv6);
 bool ParsePacketIPv6Header(IPV6_HEADER_PACKET_INFO *info, UCHAR *buf, UINT size);
-bool ParseIPv6ExtHeader(IPV6_HEADER_PACKET_INFO *info, UCHAR next_header, UCHAR *buf, UINT size);
-bool ParseICMPv6Options(ICMPV6_OPTION_LIST *o, UCHAR *buf, UINT size);
 void CloneICMPv6Options(ICMPV6_OPTION_LIST *dst, ICMPV6_OPTION_LIST *src);
 void FreeCloneICMPv6Options(ICMPV6_OPTION_LIST *o);
 USHORT CalcChecksumForIPv4(UINT src_ip, UINT dst_ip, UCHAR protocol, void *data, UINT size, UINT real_size);
 USHORT CalcChecksumForIPv6(IPV6_ADDR *src_ip, IPV6_ADDR *dest_ip, UCHAR protocol, void *data, UINT size, UINT real_size);
 BUF *BuildICMPv6Options(ICMPV6_OPTION_LIST *o);
-void BuildICMPv6OptionValue(BUF *b, UCHAR type, void *header_pointer, UINT total_size);
 BUF *BuildIPv6(IPV6_ADDR *dest_ip, IPV6_ADDR *src_ip, UINT id, UCHAR protocol, UCHAR hop_limit, void *data,
                UINT size);
 BUF *BuildIPv6PacketHeader(IPV6_HEADER_PACKET_INFO *info, UINT *bytes_before_payload);
-UCHAR IPv6GetNextHeaderFromQueue(QUEUE *q);
-void BuildAndAddIPv6PacketOptionHeader(BUF *b, IPV6_OPTION_HEADER *opt, UCHAR next_header, UINT size);
 BUF *BuildICMPv6NeighborSoliciation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCHAR *my_mac_address, UINT id, bool use_multicast);
-BUF *BuildICMPv6(IPV6_ADDR *src_ip, IPV6_ADDR *dest_ip, UCHAR hop_limit, UCHAR type, UCHAR code, void *data, UINT size, UINT id);
 
 bool VLanRemoveTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vlan_tpid);
 void VLanInsertTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vlan_tpid);
 
-DHCPV4_DATA *ParseDHCPv4Data(PKT *pkt);
 void FreeDHCPv4Data(DHCPV4_DATA *d);
 
 bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss);
 bool AdjustTcpMssL2(UCHAR *src, UINT src_size, UINT mss, USHORT tag_vlan_tpid);
 UINT GetIpHeaderSize(UCHAR *src, UINT src_size);
-bool ParseDnsQuery(char *name, UINT name_size, void *data, UINT data_size);
-UCHAR GetNextByte(BUF *b);
 
 bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address);
 
@@ -613,12 +602,10 @@ USHORT IpChecksum(void *buf, UINT size);
 
 void GenMacAddress(UCHAR *mac);
 
-DHCP_OPTION *NewDhcpOption(UINT id, void *data, UINT size);
 DHCP_OPTION_LIST *ParseDhcpOptionList(void *data, UINT size);
 DHCP_OPTION *GetDhcpOption(LIST *o, UINT id);
 void FreeDhcpOptions(LIST *o);
 LIST *ParseDhcpOptions(void *data, UINT size);
-BUF *BuildDhcpOptionsBuf(LIST *o);
 HTTPLOG *ParseHttpAccessLog(PKT *pkt);
 HTTPLOG *ParseHttpsAccessLog(PKT *pkt);
 

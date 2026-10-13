@@ -61,7 +61,7 @@ UINT64 Tick64()
 	return Win32FastTick64();
 }
 
-void Tick64Thread(THREAD *thread, void *param)
+static void Tick64Thread(THREAD *thread, void *param)
 {
 	UINT n = 0;
 	bool first = false;

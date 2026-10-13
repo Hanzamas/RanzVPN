@@ -155,12 +155,12 @@ UINT HexTo4Bit(char c)
 	}
 }
 
-char *DefaultTokenSplitChars()
+static char *DefaultTokenSplitChars()
 {
 	return " ,\t\r\n";
 }
 
-bool IsCharInStr(char *str, char c)
+static bool IsCharInStr(char *str, char c)
 {
 	UINT i, len;
 	if (str == NULL)
@@ -327,7 +327,7 @@ bool InStrEx(char *str, char *keyword, bool case_sensitive)
 	return true;
 }
 
-bool IsSplitChar(char c, char *split_str)
+static bool IsSplitChar(char c, char *split_str)
 {
 	UINT i, len;
 	char c_upper = ToUpper(c);
@@ -1395,7 +1395,7 @@ void EnSafeHttpHeaderValueStr(char *str, char replace)
 	}
 }
 
-bool CheckStringLibrary()
+static bool CheckStringLibrary()
 {
 	wchar_t *compare_str = L"TEST_TEST_123_123456789012345";
 	char *teststr = "TEST";
@@ -1795,7 +1795,7 @@ UINT ToInt(char *str)
 	return (UINT)strtoul(str, NULL, 0);
 }
 
-void PrintStr(char *str)
+static void PrintStr(char *str)
 {
 	wchar_t *unistr = NULL;
 	if (str == NULL)
@@ -1808,7 +1808,7 @@ void PrintStr(char *str)
 	Free(unistr);
 }
 
-void PrintArgs(char *fmt, va_list args)
+static void PrintArgs(char *fmt, va_list args)
 {
 	wchar_t *ret;
 	wchar_t *fmt_wchar;
@@ -1842,7 +1842,7 @@ void Print(char *fmt, ...)
 	va_end(args);
 }
 
-void DebugArgs(char *fmt, va_list args)
+static void DebugArgs(char *fmt, va_list args)
 {
 	if (fmt == NULL)
 	{

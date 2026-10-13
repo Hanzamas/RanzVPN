@@ -411,7 +411,7 @@ bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss)
 }
 
 
-DHCPV4_DATA *ParseDHCPv4Data(PKT *pkt)
+static DHCPV4_DATA *ParseDHCPv4Data(PKT *pkt)
 {
 	DHCPV4_DATA *d;
 	UCHAR *data;
@@ -609,7 +609,7 @@ bool VLanRemoveTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vla
 	return false;
 }
 
-BUF *BuildICMPv6(IPV6_ADDR *src_ip, IPV6_ADDR *dest_ip, UCHAR hop_limit, UCHAR type, UCHAR code, void *data, UINT size, UINT id)
+static BUF *BuildICMPv6(IPV6_ADDR *src_ip, IPV6_ADDR *dest_ip, UCHAR hop_limit, UCHAR type, UCHAR code, void *data, UINT size, UINT id)
 {
 	ICMP_HEADER *icmp;
 	void *data_buf;
@@ -690,7 +690,7 @@ BUF *BuildICMPv6NeighborSoliciation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCH
 	return ret;
 }
 
-UCHAR IPv6GetNextHeaderFromQueue(QUEUE *q)
+static UCHAR IPv6GetNextHeaderFromQueue(QUEUE *q)
 {
 	UINT *p;
 	UCHAR v = 0;
@@ -709,7 +709,7 @@ UCHAR IPv6GetNextHeaderFromQueue(QUEUE *q)
 	return v;
 }
 
-void BuildAndAddIPv6PacketOptionHeader(BUF *b, IPV6_OPTION_HEADER *opt, UCHAR next_header, UINT size)
+static void BuildAndAddIPv6PacketOptionHeader(BUF *b, IPV6_OPTION_HEADER *opt, UCHAR next_header, UINT size)
 {
 	IPV6_OPTION_HEADER *h;
 	UINT total_size;
@@ -855,7 +855,7 @@ BUF *BuildIPv6PacketHeader(IPV6_HEADER_PACKET_INFO *info, UINT *bytes_before_pay
 	return b;
 }
 
-void BuildICMPv6OptionValue(BUF *b, UCHAR type, void *header_pointer, UINT total_size)
+static void BuildICMPv6OptionValue(BUF *b, UCHAR type, void *header_pointer, UINT total_size)
 {
 	UINT packet_size;
 	UCHAR *packet;
@@ -1854,7 +1854,7 @@ bool ParsePacketARPv4(PKT *p, UCHAR *buf, UINT size)
 	return true;
 }
 
-bool ParseIPv6ExtHeader(IPV6_HEADER_PACKET_INFO *info, UCHAR next_header, UCHAR *buf, UINT size)
+static bool ParseIPv6ExtHeader(IPV6_HEADER_PACKET_INFO *info, UCHAR next_header, UCHAR *buf, UINT size)
 {
 	bool ret = false;
 	IPV6_OPTION_HEADER *option_header;
@@ -1986,7 +1986,7 @@ bool ParsePacketIPv6Header(IPV6_HEADER_PACKET_INFO *info, UCHAR *buf, UINT size)
 	return true;
 }
 
-bool ParseICMPv6Options(ICMPV6_OPTION_LIST *o, UCHAR *buf, UINT size)
+static bool ParseICMPv6Options(ICMPV6_OPTION_LIST *o, UCHAR *buf, UINT size)
 {
 	if (o == NULL || buf == NULL)
 	{
@@ -2072,7 +2072,7 @@ bool ParseICMPv6Options(ICMPV6_OPTION_LIST *o, UCHAR *buf, UINT size)
 	}
 }
 
-bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
+static bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 {
 	ICMPV6_HEADER_INFO icmp_info;
 	ICMP_HEADER *icmp;
@@ -2411,7 +2411,7 @@ bool ParseTCP(PKT *p, UCHAR *buf, UINT size)
 	return true;
 }
 
-UCHAR GetNextByte(BUF *b)
+static UCHAR GetNextByte(BUF *b)
 {
 	UCHAR c = 0;
 	if (b == NULL)
@@ -2427,7 +2427,7 @@ UCHAR GetNextByte(BUF *b)
 	return c;
 }
 
-bool ParseDnsQuery(char *name, UINT name_size, void *data, UINT data_size)
+static bool ParseDnsQuery(char *name, UINT name_size, void *data, UINT data_size)
 {
 	BUF *b;
 	char tmp[257];
@@ -2502,7 +2502,7 @@ bool ParseDnsQuery(char *name, UINT name_size, void *data, UINT data_size)
 	}
 }
 
-void ParseDNS(PKT *p, UCHAR *buf, UINT size)
+static void ParseDNS(PKT *p, UCHAR *buf, UINT size)
 {
 	UCHAR *query_data;
 	UINT query_data_size;
@@ -2784,7 +2784,7 @@ USHORT IpChecksum(void *buf, UINT size)
 	return answer;
 }
 
-BUF *BuildDhcpOptionsBuf(LIST *o)
+static BUF *BuildDhcpOptionsBuf(LIST *o)
 {
 	BUF *b;
 	UINT i;
@@ -2845,7 +2845,7 @@ BUF *BuildDhcpOptionsBuf(LIST *o)
 	return b;
 }
 
-DHCP_OPTION *NewDhcpOption(UINT id, void *data, UINT size)
+static DHCP_OPTION *NewDhcpOption(UINT id, void *data, UINT size)
 {
 	DHCP_OPTION *ret;
 	if (size != 0 && data == NULL)

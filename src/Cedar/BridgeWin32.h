@@ -18,10 +18,6 @@ typedef struct WP_ADAPTER
 	UINT Id;
 } WP_ADAPTER;
 
-void InitEthAdaptersList();
-void FreeEthAdaptersList();
-LIST *GetEthAdapterListInternal();
-
 #endif
 
 struct ETH
@@ -40,9 +36,7 @@ struct ETH
 void InitEth();
 void FreeEth();
 TOKEN_LIST *GetEthList();
-TOKEN_LIST *GetEthListEx(UINT *total_num_including_hidden, bool enum_normal, bool enum_rawip);
 ETH *OpenEth(char *name, bool local, bool tapmode, char *tapaddr);
-ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr);
 void CloseEth(ETH *e);
 CANCEL *EthGetCancel(ETH *e);
 UINT EthGetPacket(ETH *e, void **data);
@@ -60,9 +54,6 @@ bool Win32EthGetShowAllIf();
 bool EnumEthVLanWin32(RPC_ENUM_ETH_VLAN *t);
 bool GetClassRegKeyWin32(char *key, UINT key_size, char *short_key, UINT short_key_size, char *guid);
 bool SetVLanEnableStatus(char *title, bool enable);
-RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, char *name);
-void Win32EthMakeCombinedName(char *dst, UINT dst_size, char *nicname, char *guid);
-UINT Win32EthGenIdFromGuid(char *guid);
 UINT Win32EthGetNameAndIdFromCombinedName(char *name, UINT name_size, char *str);
 
 bool Win32IsUsingSeLow();

@@ -66,7 +66,6 @@ struct DEADCHECK
 #endif	// _DEBUG
 
 LOCK *NewLock();
-LOCK *NewLockMain();
 void DeleteLock(LOCK *lock);
 COUNTER *NewCounter();
 void UnlockInner(LOCK *lock);
@@ -85,7 +84,6 @@ void Set(EVENT *e);
 bool Wait(EVENT *e, UINT timeout);
 bool WaitEx(EVENT *e, UINT timeout, volatile bool *cancel);
 void CheckDeadLock(LOCK *lock, UINT timeout, char *name);
-void CheckDeadLockThread(THREAD *t, void *param);
 
 #endif	// OBJECT_H
 

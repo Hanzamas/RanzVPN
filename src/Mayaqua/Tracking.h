@@ -63,11 +63,8 @@ void TrackChangeObjSize(UINT64 addr, UINT size, UINT64 new_addr);
 
 void GetMemoryStatus(MEMORY_STATUS *status);
 void MemoryDebugMenu();
-int SortObjectView(void *p1, void *p2);
 void DebugPrintAllObjects();
 void DebugPrintCommandList();
-void PrintObjectList(TRACKING_OBJECT *o);
-void PrintObjectInfo(TRACKING_OBJECT *o);
 void DebugPrintObjectInfo(UINT id);
 
 bool IsTrackingEnabled();

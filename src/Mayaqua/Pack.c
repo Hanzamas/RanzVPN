@@ -264,7 +264,7 @@ void WriteValue(BUF *b, VALUE *v, UINT type)
 	}
 }
 
-UINT GetDataValueSize(ELEMENT *e, UINT index)
+static UINT GetDataValueSize(ELEMENT *e, UINT index)
 {
 	if (e == NULL)
 	{
@@ -286,7 +286,7 @@ UINT GetDataValueSize(ELEMENT *e, UINT index)
 	return e->values[index]->Size;
 }
 
-void *GetDataValue(ELEMENT *e, UINT index)
+static void *GetDataValue(ELEMENT *e, UINT index)
 {
 	if (e == NULL)
 	{
@@ -308,7 +308,7 @@ void *GetDataValue(ELEMENT *e, UINT index)
 	return e->values[index]->Data;
 }
 
-wchar_t *GetUniStrValue(ELEMENT *e, UINT index)
+static wchar_t *GetUniStrValue(ELEMENT *e, UINT index)
 {
 	if (e == NULL)
 	{
@@ -326,7 +326,7 @@ wchar_t *GetUniStrValue(ELEMENT *e, UINT index)
 	return e->values[index]->UniStr;
 }
 
-char *GetStrValue(ELEMENT *e, UINT index)
+static char *GetStrValue(ELEMENT *e, UINT index)
 {
 	if (e == NULL)
 	{
@@ -344,7 +344,7 @@ char *GetStrValue(ELEMENT *e, UINT index)
 	return e->values[index]->Str;
 }
 
-UINT64 GetInt64Value(ELEMENT *e, UINT index)
+static UINT64 GetInt64Value(ELEMENT *e, UINT index)
 {
 	if (e == NULL)
 	{
@@ -362,7 +362,7 @@ UINT64 GetInt64Value(ELEMENT *e, UINT index)
 	return e->values[index]->Int64Value;
 }
 
-UINT GetIntValue(ELEMENT *e, UINT index)
+static UINT GetIntValue(ELEMENT *e, UINT index)
 {
 	if (e == NULL)
 	{
@@ -380,7 +380,7 @@ UINT GetIntValue(ELEMENT *e, UINT index)
 	return e->values[index]->IntValue;
 }
 
-int ComparePackName(void *p1, void *p2)
+static int ComparePackName(void *p1, void *p2)
 {
 	ELEMENT *o1, *o2;
 	if (p1 == NULL || p2 == NULL)
@@ -397,7 +397,7 @@ int ComparePackName(void *p1, void *p2)
 	return StrCmpi(o1->name, o2->name);
 }
 
-void FreeValue(VALUE *v, UINT type)
+static void FreeValue(VALUE *v, UINT type)
 {
 	if (v == NULL)
 	{
@@ -500,7 +500,7 @@ VALUE *NewIntValue(UINT i)
 	return v;
 }
 
-void FreeElement(ELEMENT *e)
+static void FreeElement(ELEMENT *e)
 {
 	UINT i;
 	if (e == NULL)

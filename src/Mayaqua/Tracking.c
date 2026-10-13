@@ -79,7 +79,7 @@ void MemoryDebugMenu()
 	g_memcheck = true;
 }
 
-int SortObjectView(void *p1, void *p2)
+static int SortObjectView(void *p1, void *p2)
 {
 	TRACKING_OBJECT *o1, *o2;
 	if (p1 == NULL || p2 == NULL)
@@ -104,7 +104,7 @@ int SortObjectView(void *p1, void *p2)
 	return -1;
 }
 
-void PrintObjectInfo(TRACKING_OBJECT *o)
+static void PrintObjectInfo(TRACKING_OBJECT *o)
 {
 	SYSTEMTIME t;
 	char tmp[MAX_SIZE];
@@ -175,7 +175,7 @@ void DebugPrintObjectInfo(UINT id)
 	Print("\n");
 }
 
-void PrintObjectList(TRACKING_OBJECT *o)
+static void PrintObjectList(TRACKING_OBJECT *o)
 {
 	char tmp[MAX_SIZE];
 	SYSTEMTIME t;
