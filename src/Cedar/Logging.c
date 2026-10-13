@@ -2179,12 +2179,10 @@ void LogThread(THREAD *thread, void *param)
 	io = NULL;
 	b = NewBuf();
 
-#ifdef	OS_WIN32
 
 	// Lower priority to bottom
 	MsSetThreadPriorityIdle();
 
-#endif	// OS_WIN32
 
 	NoticeThreadInit(thread);
 
@@ -2208,9 +2206,7 @@ void LogThread(THREAD *thread, void *param)
 
 			if (flag == false)
 			{
-#ifdef	OS_WIN32
 				MsSetThreadPriorityRealtime();
-#endif	// OS_WIN32
 				flag = true;
 			}
 
@@ -2253,7 +2249,6 @@ static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *l
 	}
 	UnlockQueue(log_object->RecordQueue);
 
-#ifdef	OS_WIN32
 	if (num >= LOG_ENGINE_SAVE_START_CACHE_COUNT)
 	{
 		// Raise the priority
@@ -2267,7 +2262,6 @@ static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *l
 		Debug("LOG_THREAD: MsSetThreadPriorityIdle\n");
 		MsSetThreadPriorityIdle();
 	}
-#endif	// OS_WIN32
 
 	if (buffer->Size > GetMaxLogSize())
 	{
@@ -2417,9 +2411,7 @@ static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *l
 				{
 					MakeDir(log_object->DirName);
 
-#ifdef	OS_WIN32
 					Win32SetFolderCompress(log_object->DirName, true);
-#endif	// OS_WIN32
 				}
 				UnlockLog(log_object);
 				*io = FileCreate(file_name);
@@ -2444,16 +2436,13 @@ static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *l
 			LockLog(log_object);
 			{
 				MakeDir(log_object->DirName);
-#ifdef	OS_WIN32
 				Win32SetFolderCompress(log_object->DirName, true);
-#endif	// OS_WIN32
 			}
 			UnlockLog(log_object);
 			*io = FileCreate(file_name);
 			log_object->CurrentFilePointer = 0;
 			if (*io == NULL)
 			{
-				//Debug("Logging.c: SleepThread(30);\n");
 				SleepThread(30);
 			}
 		}

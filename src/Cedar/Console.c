@@ -22,9 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#ifdef OS_WIN32
 #include <conio.h>
-#endif
 
 // Display the help for the command
 void PrintCmdHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *param_list)
@@ -886,7 +884,6 @@ RETRY:
 
 	if (no_end_crlf == false)
 	{
-		//c->Write(c, L"");
 	}
 
 	if (b_exit)
@@ -1874,9 +1871,7 @@ bool PasswordPrompt(char *password, UINT size)
 	{
 		int c;
 
-#ifdef	OS_WIN32
 		c = _getch();
-#endif	// OS_WIN32
 
 		if (c >= 0x20 && c <= 0x7E)
 		{
@@ -1905,9 +1900,7 @@ bool PasswordPrompt(char *password, UINT size)
 		else if (c == 0xE0)
 		{
 			// Read one more character
-#ifdef	OS_WIN32
 			c = _getch();
-#endif	// OS_WIN32
 			if (c == 0x4B || c == 0x53)
 			{
 				// Backspace
@@ -1945,7 +1938,6 @@ wchar_t *Prompt(wchar_t *prompt_str)
 		prompt_str = L"";
 	}
 
-#ifdef	OS_WIN32
 	UniPrint(L"%s", prompt_str);
 	tmp = Malloc(MAX_PROMPT_STRSIZE);
 	if (fgetws(tmp, MAX_PROMPT_STRSIZE - 1, stdin) != NULL)
@@ -1971,7 +1963,6 @@ wchar_t *Prompt(wchar_t *prompt_str)
 		}
 	}
 	Free(tmp);
-#endif	// OS_WIN32
 
 	if (ret == NULL)
 	{
@@ -2007,12 +1998,9 @@ CONSOLE *NewLocalConsole(wchar_t *infile, wchar_t *outfile)
 	LOCAL_CONSOLE_PARAM *p;
 	UINT old_size = 0;
 
-#ifdef	OS_WIN32
 	if (MsGetConsoleWidth() == 80)
 	{
-		//old_size = MsSetConsoleWidth(WIN32_DEFAULT_CONSOLE_WIDTH);
 	}
-#endif	// OS_WIN32
 
 	c->ConsoleType = CONSOLE_LOCAL;
 	c->Free = ConsoleLocalFree;
@@ -2109,12 +2097,10 @@ void ConsoleLocalFree(CONSOLE *c)
 
 	p = (LOCAL_CONSOLE_PARAM *)c->Param;
 
-#ifdef	OS_WIN32
 	if (p->Win32_OldConsoleWidth != 0)
 	{
 		MsSetConsoleWidth(p->Win32_OldConsoleWidth);
 	}
-#endif	// OS_WIN32
 
 	if (p != NULL)
 	{
@@ -2148,9 +2134,7 @@ UINT ConsoleLocalGetWidth(CONSOLE *c)
 		return 0;
 	}
 
-#ifdef	OS_WIN32
 	ret = MsGetConsoleWidth();
-#endif	// OS_WIN32
 
 	return ret;
 }
