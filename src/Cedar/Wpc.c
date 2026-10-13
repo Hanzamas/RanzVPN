@@ -70,10 +70,6 @@ void WpcAddDataEntry(BUF *b, char *name, void *data, UINT size)
 }
 
 // Socket connection
-SOCK *WpcSockConnect(WPC_CONNECT *param, UINT *error_code, UINT timeout)
-{
-	return WpcSockConnectEx(param, error_code, timeout, NULL);
-}
 SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool *cancel)
 {
 	SOCK *sock;
