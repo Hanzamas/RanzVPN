@@ -150,8 +150,6 @@ UINT Crc32Next(void *buf, UINT pos, UINT len, UINT last_crc32);
 UINT Crc32Finish(UINT last_crc32);
 void WriteZipDataHeader(ZIP_FILE *f, ZIP_DATA_HEADER *h, bool write_sizes);
 void WriteZipDataFooter(ZIP_FILE *f, ZIP_DATA_FOOTER *h);
-void ZipAddFileStart(ZIP_PACKER *p, char *name, UINT size, UINT64 dt, UINT attribute);
-UINT ZipAddFileData(ZIP_PACKER *p, void *data, UINT pos, UINT len);
 void ZipAddFileFooter(ZIP_PACKER *p);
 
 bool DeleteDirInnerW(wchar_t *name);

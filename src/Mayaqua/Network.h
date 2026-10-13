@@ -464,8 +464,6 @@ void Win32Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2);
 void Win32InitAsyncSocket(SOCK *sock);
 void Win32JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event);
 void Win32FreeAsyncSocket(SOCK *sock);
-void Win32IpForwardRow2ToRouteEntry(ROUTE_ENTRY *entry, void *ip_forward_row);
-int Win32CompareRouteEntryByMetric(void *p1, void *p2);
 void Win32Cancel(CANCEL *c);
 void Win32CleanupCancel(CANCEL *c);
 CANCEL *Win32NewCancel();
@@ -474,11 +472,7 @@ void Win32SetSockEvent(SOCK_EVENT *event);
 void Win32CleanupSockEvent(SOCK_EVENT *event);
 bool Win32WaitSockEvent(SOCK_EVENT *event, UINT timeout);
 int CompareIpAdapterIndexMap(void *p1, void *p2);
-bool Win32GetAdapterFromGuid(void *a, char *guid);
 SOCKET Win32Accept(SOCK *sock, SOCKET s, struct sockaddr *addr, int *addrlen, bool ipv6);
-
-bool Win32ReleaseAddress(void *a);
-bool Win32RenewAddress(void *a);
 
 #endif	// OS_WIN32
 
@@ -569,7 +563,6 @@ void SetTimeout(SOCK *sock, UINT timeout);
 UINT GetTimeout(SOCK *sock);
 bool CheckTCPPort(char *hostname, UINT port);
 bool CheckTCPPortEx(char *hostname, UINT port, UINT timeout);
-void FreeRouteEntry(ROUTE_ENTRY *e);
 void JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event);
 SOCK_EVENT *NewSockEvent();
 void SetSockEvent(SOCK_EVENT *event);
@@ -642,7 +635,6 @@ void GetLoopbackAddress6(IP *ip);
 UINT GetIPAddrType6(IP *ip);
 UINT GetIPv6AddrType(IPV6_ADDR *addr);
 void GetPrefixAddress6(IP *dst, IP *ip, IP *subnet);
-bool IsInSameNetwork6(IP *a1, IP *a2, IP *subnet);
 void GenerateEui64Address6(UCHAR *dst, UCHAR *mac);
 void GenerateEui64LocalAddress(IP *a, UCHAR *mac);
 bool IsSubnetMask6(IP *a);
@@ -651,7 +643,6 @@ UINT SubnetMaskToInt6(IP *a);
 UINT SubnetMaskToInt4(IP *a);
 bool IsStrIPv6Address(char *str);
 void IPAnd4(IP *dst, IP *a, IP *b);
-bool IsInSameNetwork4(IP *a1, IP *a2, IP *subnet);
 
 // Utility functions about IP and MAC address types
 bool IsValidUnicastIPAddress4(IP *ip);
@@ -684,9 +675,6 @@ struct SslClientCertInfo {
 	char PreverifyErrMessage[PREVERIFY_ERR_MESSAGE_SIZE];
 	X *X;
 };
-
-SSL_BIO *NewSslBioMem();
-SSL_BIO *NewSslBioSsl();
 
 void SetCurrentGlobalIP(IP *ip, bool ipv6);
 bool GetCurrentGlobalIP(IP *ip, bool ipv6);

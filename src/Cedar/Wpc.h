@@ -108,12 +108,7 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 SOCK *WpcSockConnect(WPC_CONNECT *param, UINT *error_code, UINT timeout);
 SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool *cancel);
 void WpcAddDataEntry(BUF *b, char *name, void *data, UINT size);
-void WpcAddDataEntryBin(BUF *b, char *name, void *data, UINT size);
 void WpcFillEntryName(char *dst, char *name);
-LIST *WpcParseDataEntry(BUF *b);
-void WpcFreeDataEntryList(LIST *o);
-WPC_ENTRY *WpcFindDataEntry(LIST *o, char *name);
-BUF *WpcDataEntryToBuf(WPC_ENTRY *e);
 
 #endif	// WPC_H
 

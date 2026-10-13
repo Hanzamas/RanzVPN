@@ -1729,12 +1729,6 @@ bool StrToSystem(SYSTEMTIME *s, char *str)
 	return true;
 }
 
-// Verify the RSA signature
-bool RsaVerify(void *data, UINT data_size, void *sign, K *k)
-{
-	return RsaVerifyEx(data, data_size, sign, k, 0);
-}
-
 bool RsaVerifyEx(void *data, UINT data_size, void *sign, K *k, UINT bits)
 {
 	UCHAR hash_data[SIGN_HASH_SIZE];
@@ -1787,10 +1781,6 @@ bool RsaVerifyEx(void *data, UINT data_size, void *sign, K *k, UINT bits)
 }
 
 // RSA signature
-bool RsaSign(void *dst, void *src, UINT size, K *k)
-{
-	return RsaSignEx(dst, src, size, k, 0);
-}
 bool RsaSignEx(void *dst, void *src, UINT size, K *k, UINT bits)
 {
 	UCHAR hash[SIGN_HASH_SIZE];
