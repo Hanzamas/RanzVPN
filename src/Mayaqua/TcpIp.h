@@ -107,7 +107,6 @@ struct IPV4_HEADER
 } GCC_PACKED;
 
 // Macro for IPv4 header operation
-#define	IPV4_GET_VERSION(h)			(((h)->VersionAndHeaderLength >> 4 & 0x0f))
 #define	IPV4_SET_VERSION(h, v)		((h)->VersionAndHeaderLength |= (((v) & 0x0f) << 4))
 #define	IPV4_GET_HEADER_LEN(h)		((h)->VersionAndHeaderLength & 0x0f)
 #define	IPV4_SET_HEADER_LEN(h, v)	((h)->VersionAndHeaderLength |= ((v) & 0x0f))
@@ -116,14 +115,10 @@ struct IPV4_HEADER
 #define	IPV4_GET_FLAGS(h)			(((h)->FlagsAndFragmentOffset[0] >> 5) & 0x07)
 #define	IPV4_SET_FLAGS(h, v)		((h)->FlagsAndFragmentOffset[0] |= (((v) & 0x07) << 5))
 #define	IPV4_GET_OFFSET(h)			(((h)->FlagsAndFragmentOffset[0] & 0x1f) * 256 + ((h)->FlagsAndFragmentOffset[1]))
-#define	IPV4_SET_OFFSET(h, v)		{(h)->FlagsAndFragmentOffset[0] |= (UCHAR)((v) / 256); (h)->FlagsAndFragmentOffset[1] = (UCHAR)((v) % 256);}
 
 // IPv4 / IPv6 common protocol
 #define	IP_PROTO_TCP		0x06	// TCP protocol
 #define	IP_PROTO_UDP		0x11	// UDP protocol
-#define	IP_PROTO_ESP		50		// ESP protocol
-#define	IP_PROTO_ETHERIP	97		// EtherIP protocol
-#define	IP_PROTO_L2TPV3		115		// L2TPv3 protocol
 
 
 // UDP header
@@ -203,23 +198,6 @@ struct ICMP_ECHO
 // ICMP message type
 #define	ICMP_TYPE_ECHO_REQUEST						8
 #define	ICMP_TYPE_ECHO_RESPONSE						0
-#define	ICMP_TYPE_DESTINATION_UNREACHABLE			3
-#define	ICMP_TYPE_TIME_EXCEEDED						11
-#define	ICMP_TYPE_INFORMATION_REQUEST				15
-#define	ICMP_TYPE_INFORMATION_REPLY					16
-
-// ICMP message code
-// In case of ICMP_TYPE_DESTINATION_UNREACHABLE
-#define	ICMP_CODE_NET_UNREACHABLE					0
-#define	ICMP_CODE_HOST_UNREACHABLE					1
-#define	ICMP_CODE_PROTOCOL_UNREACHABLE				2
-#define	ICMP_CODE_PORT_UNREACHABLE					3
-#define	ICMP_CODE_FRAGMENTATION_NEEDED_DF_SET		4
-#define	ICMP_CODE_SOURCE_ROUTE_FAILED				5
-
-// In case of TIME_EXCEEDED
-#define	ICMP_CODE_TTL_EXCEEDED_IN_TRANSIT			0
-#define	ICMP_CODE_FRAGMENT_REASSEMBLY_TIME_EXCEEDED	1
 
 // DHCPv4 Header
 struct DHCPV4_HEADER
@@ -301,21 +279,7 @@ struct IPV6_HEADER
 // Macro for IPv6 header operation
 #define IPV6_GET_VERSION(h)			(((h)->VersionAndTrafficClass1 >> 4) & 0x0f)
 #define IPV6_SET_VERSION(h, v)		((h)->VersionAndTrafficClass1 = ((h)->VersionAndTrafficClass1 & 0x0f) | ((v) << 4) & 0xf0)
-#define IPV6_GET_TRAFFIC_CLASS(h)	((((h)->VersionAndTrafficClass1 << 4) & 0xf0) | ((h)->TrafficClass2AndFlowLabel1 >> 4) & 0x0f)
-#define	IPV6_SET_TRAFFIC_CLASS(h, v)	((h)->VersionAndTrafficClass1 = ((h)->VersionAndTrafficClass1 & 0xf0) | (((v) >> 4) & 0x0f),\
-	(h)->TrafficClass2AndFlowLabel1 = (h)->TrafficClass2AndFlowLabel1 & 0x0f | ((v) << 4) & 0xf0)
-#define	IPV6_GET_FLOW_LABEL(h)		((((h)->TrafficClass2AndFlowLabel1 << 16) & 0xf0000) | (((h)->FlowLabel2 << 8) & 0xff00) |\
-	(((h)->FlowLabel3) & 0xff))
-#define IPV6_SET_FLOW_LABEL(h, v)	((h)->TrafficClass2AndFlowLabel1 = ((h)->TrafficClass2AndFlowLabel1 & 0xf0 | ((v) >> 16) & 0x0f),\
-	(h)->FlowLabel2 = ((v) >> 8) & 0xff,\
-	(h)->FlowLabel3 = (v) & 0xff)
 
-
-// Maximum hops of IPv6 (not routing)
-#define IPV6_HOP_MAX					255
-
-// Standard hops of IPv6
-#define IPV6_HOP_DEFAULT				127
 
 // IPv6 header number
 #define IPV6_HEADER_HOP					0	// Hop-by-hop option header
@@ -346,10 +310,7 @@ struct IPV6_FRAGMENT_HEADER
 
 // Macro for IPv6 fragment header operation
 #define IPV6_GET_FRAGMENT_OFFSET(h)		(((((h)->FragmentOffset1) << 5) & 0x1fe0) | (((h)->FragmentOffset2AndFlags >> 3) & 0x1f))
-#define IPV6_SET_FRAGMENT_OFFSET(h, v)	((h)->FragmentOffset1 = (v / 32) & 0xff,	\
-	((h)->FragmentOffset2AndFlags = ((v % 256) << 3) & 0xf8) | ((h)->FragmentOffset2AndFlags & 0x07))
 #define IPV6_GET_FLAGS(h)				((h)->FragmentOffset2AndFlags & 0x0f)
-#define IPV6_SET_FLAGS(h, v)				((h)->FragmentOffset2AndFlags = (((h)->FragmentOffset2AndFlags & 0xf8) | (v & 0x07)))
 
 // Flag
 #define IPV6_FRAGMENT_HEADER_FLAG_MORE_FRAGMENTS		0x01	// There are more fragments
@@ -399,10 +360,6 @@ struct ICMPV6_NEIGHBOR_ADVERTISEMENT_HEADER
 	// + Option (target link-layer address)
 } GCC_PACKED;
 
-#define ICMPV6_NEIGHBOR_ADVERTISEMENT_FLAG_ROUTER		0x80	// Router
-#define ICMPV6_NEIGHBOR_ADVERTISEMENT_FLAG_SOLICITED	0x40	// Solicited flag
-#define ICMPV6_NEIGHBOR_ADVERTISEMENT_FLAG_OVERWRITE	0x20	// Overwrite flag
-
 #define ICMPV6_OPTION_PREFIXES_MAX_COUNT				10
 
 // ICMPv6 option list
@@ -444,9 +401,6 @@ struct ICMPV6_OPTION_PREFIX
 	UINT Reserved;							// Reserved
 	IPV6_ADDR Prefix;						// Prefix address
 } GCC_PACKED;
-
-#define ICMPV6_OPTION_PREFIX_FLAG_ONLINK		0x80	// On link
-#define ICMPV6_OPTION_PREFIX_FLAG_AUTO			0x40	// Automatic
 
 // ICMPv6 MTU option
 struct ICMPV6_OPTION_MTU
@@ -520,10 +474,6 @@ struct ICMPV6_HEADER_INFO
 #define	DHCP_ID_GATEWAY_ADDR		0x03
 #define	DHCP_ID_DNS_ADDR			0x06
 #define	DHCP_ID_WINS_ADDR			0x2C
-#define	DHCP_ID_CLIENT_ID			0x3d
-#define	DHCP_ID_VENDOR_ID			0x3c
-#define	DHCP_ID_REQ_PARAM_LIST		0x37
-#define	DHCP_ID_USER_CLASS			0x4d
 #define	DHCP_ID_CLASSLESS_ROUTE		0x79
 #define	DHCP_ID_MS_CLASSLESS_ROUTE	0xF9
 #define	DHCP_ID_PRIVATE				0xFA
@@ -532,14 +482,10 @@ struct ICMPV6_HEADER_INFO
 // DHCP client action
 #define	DHCP_DISCOVER		1
 #define	DHCP_REQUEST		3
-#define	DHCP_RELEASE		7
-#define	DHCP_INFORM			8
 
 // DHCP server action
 #define	DHCP_OFFER			2
-#define	DHCP_DECLINE		4
 #define	DHCP_ACK			5
-#define	DHCP_NACK			6
 
 // HTTPLOG data structure
 struct HTTPLOG
@@ -647,8 +593,6 @@ struct IKE_HEADER
 // IKE exchange type
 #define	IKE_EXCHANGE_TYPE_MAIN				2	// Main mode
 #define IKE_EXCHANGE_TYPE_AGGRESSIVE		4	// Aggressive mode
-#define IKE_EXCHANGE_TYPE_INFORMATION		5	// Information exchange
-#define IKE_EXCHANGE_TYPE_QUICK				32	// Quick mode
 
 // DHCPv4 data
 struct DHCPV4_DATA
@@ -688,7 +632,6 @@ struct DHCP_CLASSLESS_ROUTE
 };
 
 #define	MAX_DHCP_CLASSLESS_ROUTE_ENTRIES	64
-#define	MAX_DHCP_CLASSLESS_ROUTE_TABLE_STR_SIZE	3200
 
 // DHCP classless static route table
 struct DHCP_CLASSLESS_ROUTE_TABLE
@@ -732,16 +675,6 @@ struct DHCP_MODIFY_OPTION
 {
 	bool RemoveDefaultGatewayOnReply;			// Remove the default gateway from the DHCP Reply
 };
-
-// Special IP address
-#define	SPECIAL_IPV4_ADDR_LLMNR_DEST		0xE00000FC	// 224.0.0.252
-
-// Special port
-#define	SPECIAL_UDP_PORT_LLMNR				5355	// LLMNR
-#define	SPECIAL_UDP_PORT_NBTNS				137		// NetBIOS Name Service
-#define	SPECIAL_UDP_PORT_NBTDGM				138		// NetBIOS Datagram
-#define	SPECIAL_UDP_PORT_WSD				3702	// WS-Discovery
-#define	SPECIAL_UDP_PORT_SSDP				1900	// SSDP
 
 
 PKT *ParsePacket(UCHAR *buf, UINT size);

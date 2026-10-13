@@ -27,11 +27,7 @@
 
 // Golden Ratio Prime
 // From https://github.com/torvalds/linux/blob/88c5083442454e5e8a505b11fa16f32d2879651e/include/linux/hash.h
-#define GOLDEN_RATION_PRIME_U32				((UINT32)0x61C88647)
 #define GOLDEN_RATION_PRIME_U64				((UINT64)7046029254386353131ULL) // 0x61C8864680B583EB
-
-// Fixed size of a block of memory pool
-#define	MEMPOOL_MAX_SIZE					3000
 
 
 // Memory tag 1
@@ -100,27 +96,6 @@ struct SK
 	bool no_compact;
 };
 
-// Candidate list
-struct CANDIDATE
-{
-	wchar_t *Str;						// String
-	UINT64 LastSelectedTime;			// Date and time last selected
-};
-
-struct STRMAP_ENTRY
-{
-	char *Name;
-	void *Value;
-};
-
-// Shared buffer
-struct SHARED_BUFFER
-{
-	REF *Ref;
-	void *Data;
-	UINT Size;
-};
-
 // Macro
 #define	LIST_DATA(o, i)		(((o) != NULL) ? ((o)->p[(i)]) : NULL)
 #define	LIST_NUM(o)			(((o) != NULL) ? (o)->num_item : 0)
@@ -132,7 +107,6 @@ typedef UINT (GET_HASH)(void *p);
 // Hash list
 struct HASH_LIST
 {
-	UINT Bits;
 	UINT Size;
 	GET_HASH *GetHashProc;
 	COMPARE *CompareProc;
@@ -141,13 +115,6 @@ struct HASH_LIST
 	LIST **Entries;
 	UINT NumItems;
 	LIST *AllList;
-};
-
-// PRAND
-struct PRAND
-{
-	UCHAR Key[20];
-	CRYPT *Rc4;
 };
 
 // Function prototype
@@ -182,7 +149,6 @@ void Copy(void *dst, void *src, UINT size);
 void Move(void *dst, void *src, UINT size);
 int Cmp(void *p1, void *p2, UINT size);
 int CmpCaseIgnore(void *p1, void *p2, UINT size);
-void ZeroMem(void *addr, UINT size);
 void Zero(void *addr, UINT size);
 void *Clone(void *addr, UINT size);
 
