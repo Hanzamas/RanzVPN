@@ -11,19 +11,6 @@ SOCK *Internal_ProxyTcpConnect(PROXY_PARAM_IN *param, volatile bool *cancel_flag
 }
 
 // Connect to an HTTP proxy
-UINT ProxyHttpConnect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag)
-{
-	// Validate arguments
-	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname))
-	{
-		return PROXY_ERROR_PARAMETER;
-	}
-	in->BindLocalIP = BIND_LOCALIP_NULL;
-	in->BindLocalPort = BIND_LOCALPORT_NULL;
-	return BindProxyHttpConnect(out, in, cancel_flag);
-}
-
-// Connect to an HTTP proxy
 UINT BindProxyHttpConnect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag)
 {
 	bool dummy_cancel_flag = false, use_auth = false;
@@ -208,19 +195,6 @@ FAILURE:
 	Disconnect(s);
 	ReleaseSock(s);
 	return ret;
-}
-
-// Connect to a SOCKS5 proxy (RFC1928, RFC1929 defines username/password authentication)
-UINT ProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag)
-{
-	// Validate arguments
-	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname))
-	{
-		return PROXY_ERROR_PARAMETER;
-	}
-	in->BindLocalIP = BIND_LOCALIP_NULL;
-	in->BindLocalPort = BIND_LOCALPORT_NULL;
-	return BindProxySocks5Connect(out, in, cancel_flag);
 }
 
 // Connect to a SOCKS5 proxy (RFC1928, RFC1929 defines username/password authentication)
@@ -534,19 +508,6 @@ FAILURE:
 	Disconnect(s);
 	ReleaseSock(s);
 	return ret;
-}
-
-// Connect to a SOCKS4 proxy
-UINT ProxySocks4Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag)
-{
-	// Validate arguments
-	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname))
-	{
-		return PROXY_ERROR_PARAMETER;
-	}
-	in->BindLocalIP = BIND_LOCALIP_NULL;
-	in->BindLocalPort = BIND_LOCALPORT_NULL;
-	return BindProxySocks4Connect(out, in, cancel_flag);
 }
 
 // Connect to a SOCKS4 proxy

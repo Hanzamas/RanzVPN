@@ -544,6 +544,7 @@ TEST_LIST test_list[] =
 	{"fileio", fileio_test, "FileIO: @, $ and | prefixes, path separator, sharing modes, reads past the end."},
 	{"threadpool", threadpool_test, "Thread pool: job pickup, host thread id and COM, idle reuse, many waiters, host handles."},
 	{"dns", dns_test, "DNS: localhost and IP literals answered at once, the computer name through the resolver thread."},
+	{"certdl", certdl_test, "SetServerCert downloads the issuer certificate from a loopback listener (DownloadCert)."},
 };
 
 // Test function

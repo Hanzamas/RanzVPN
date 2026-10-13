@@ -22,21 +22,6 @@
 #define WPC_DATA_ENTRY_SIZE			4			// Data entry size
 #define WPC_MAX_HTTP_DATASIZE		(134217728)	// Maximum HTTP data size
 
-// Connection parameters
-struct WPC_CONNECT
-{
-	char HostName[MAX_HOST_NAME_LEN + 1];					// Host name
-	UINT Port;												// Port number
-	UINT ProxyType;											// Type of proxy server
-	char ProxyHostName[MAX_HOST_NAME_LEN + 1];				// Proxy server host name
-	UINT ProxyPort;											// Proxy server port number
-	char ProxyUsername[MAX_USERNAME_LEN + 1];				// Proxy server user name
-	char ProxyPassword[MAX_USERNAME_LEN + 1];				// Proxy server password
-	char CustomHttpHeader[HTTP_CUSTOM_HEADER_MAX_SIZE];		// Custom HTTP header
-	bool UseCompress;										// Use of compression
-	bool DontCheckCert;										// Do not check the certificate
-};
-
 // Internet connection settings
 struct INTERNET_SETTING
 {
@@ -89,7 +74,6 @@ void Safe64ToBase64(char *str, const UINT size);
 UINT DecodeSafe64(void *dst, const char *src, UINT size);
 void EncodeSafe64(char *dst, const void *src, const UINT size);
 bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer);
-void CreateUrl(char *url, UINT url_size, URL_DATA *data);
 BUF *HttpRequestEx(URL_DATA *data, INTERNET_SETTING *setting,
 				   UINT timeout_connect, UINT timeout_comm,
 				   UINT *error_code, bool check_ssl_trust, char *post_data,
@@ -105,8 +89,6 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 					UINT *error_code, bool check_ssl_trust, char *post_data,
 					WPC_RECV_CALLBACK *recv_callback, void *recv_callback_param, void *sha1_cert_hash, UINT num_hashes,
 					bool *cancel, UINT max_recv_size, char *header_name, char *header_value);
-SOCK *WpcSockConnect(WPC_CONNECT *param, UINT *error_code, UINT timeout);
-SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool *cancel);
 void WpcAddDataEntry(BUF *b, char *name, void *data, UINT size);
 void WpcFillEntryName(char *dst, char *name);
 
