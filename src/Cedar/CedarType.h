@@ -126,7 +126,6 @@ typedef struct INTERNET_SETTING INTERNET_SETTING;
 typedef struct URL_DATA URL_DATA;
 typedef struct WPC_ENTRY WPC_ENTRY;
 typedef struct WPC_PACKET WPC_PACKET;
-typedef struct WPC_CONNECT WPC_CONNECT;
 
 // ==============================================================
 //   VLAN

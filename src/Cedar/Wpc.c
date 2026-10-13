@@ -8,7 +8,6 @@
 #include "Wpc.h"
 
 #include "Command.h"
-#include "Protocol.h"
 
 #include "Mayaqua/DNS.h"
 #include "Mayaqua/Encoding.h"
@@ -16,7 +15,6 @@
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Pack.h"
-#include "Mayaqua/Proxy.h"
 #include "Mayaqua/Str.h"
 
 #include <winhttp.h>
@@ -72,89 +70,13 @@ void WpcAddDataEntry(BUF *b, char *name, void *data, UINT size)
 	WriteBuf(b, data, size);
 }
 
-// Socket connection
-SOCK *WpcSockConnect(WPC_CONNECT *param, UINT *error_code, UINT timeout)
-{
-	return WpcSockConnectEx(param, error_code, timeout, NULL);
-}
-SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool *cancel)
-{
-	SOCK *sock;
-	UINT ret;
-	// Validate arguments
-	if (param == NULL)
-	{
-		return NULL;
-	}
-
-	if (error_code == NULL)
-	{
-		error_code = &ret;
-	}
-
-	if (param->ProxyType == PROXY_DIRECT)
-	{
-		sock = TcpConnectEx3(param->HostName, param->Port, timeout, cancel, NULL, NULL);
-		*error_code = (sock != NULL ? ERR_NO_ERROR : ERR_CONNECT_FAILED);
-		return sock;
-	}
-	else
-	{
-		PROXY_PARAM_OUT out;
-		PROXY_PARAM_IN in;
-		UINT ret;
-
-		Zero(&in, sizeof(in));
-
-		in.Timeout = timeout;
-
-		StrCpy(in.TargetHostname, sizeof(in.TargetHostname), param->HostName);
-		in.TargetPort = param->Port;
-
-		StrCpy(in.Hostname, sizeof(in.Hostname), param->ProxyHostName);
-		in.Port = param->ProxyPort;
-
-		StrCpy(in.Username, sizeof(in.Username), param->ProxyUsername);
-		StrCpy(in.Password, sizeof(in.Password), param->ProxyPassword);
-
-		StrCpy(in.HttpCustomHeader, sizeof(in.HttpCustomHeader), param->CustomHttpHeader);
-
-		switch (param->ProxyType)
-		{
-		case PROXY_HTTP:
-			ret = ProxyHttpConnect(&out, &in, cancel);
-			break;
-		case PROXY_SOCKS:
-			ret = ProxySocks4Connect(&out, &in, cancel);
-			break;
-		case PROXY_SOCKS5:
-			ret = ProxySocks5Connect(&out, &in, cancel);
-			break;
-		default:
-			*error_code = ERR_INTERNAL_ERROR;
-			Debug("WpcSockConnect(): Unknown proxy type: %u!\n", param->ProxyType);
-			return NULL;
-		}
-
-		*error_code = ProxyCodeToCedar(ret);
-
-		if (*error_code != ERR_NO_ERROR)
-		{
-			Debug("ClientConnectGetSocket(): Connection via proxy server failed with error %u\n", ret);
-			return NULL;
-		}
-
-		return out.Sock;
-	}
-}
-
 // Set a DWORD option of a WinHTTP handle
 static bool WpcWinHttpSetDword(HINTERNET h, DWORD option, DWORD value)
 {
 	return (WinHttpSetOption(h, option, &value, sizeof(value)) != FALSE);
 }
 
-// Error code of a failed WinHttpSendRequest: the code the socket client gave for the same failure
+// Error code of a failed WinHttpSendRequest
 static UINT WpcWinHttpSendError(DWORD err)
 {
 	switch (err)
@@ -175,7 +97,7 @@ static UINT WpcWinHttpSendError(DWORD err)
 	}
 }
 
-// Send a GET request on a WinHTTP request handle and receive the body, as the socket client did
+// Send a GET request on a WinHTTP request handle and receive the body
 static BUF *WpcWinHttpGet(HINTERNET request, bool secure, UINT timeout_connect, UINT timeout_comm, UINT *error_code,
 						  UINT max_recv_size)
 {
@@ -198,7 +120,7 @@ static BUF *WpcWinHttpGet(HINTERNET request, bool secure, UINT timeout_connect, 
 
 	if (ok && secure)
 	{
-		// No check of the server certificate and no client certificate, as StartSSLEx(s, NULL, NULL, 0, NULL)
+		// No check of the server certificate, and no client certificate
 		ok = WpcWinHttpSetDword(request, WINHTTP_OPTION_SECURITY_FLAGS,
 			SECURITY_FLAG_IGNORE_UNKNOWN_CA | SECURITY_FLAG_IGNORE_CERT_DATE_INVALID |
 			SECURITY_FLAG_IGNORE_CERT_CN_INVALID | SECURITY_FLAG_IGNORE_CERT_WRONG_USAGE) &&
@@ -207,8 +129,7 @@ static BUF *WpcWinHttpGet(HINTERNET request, bool secure, UINT timeout_connect, 
 
 	if (ok)
 	{
-		// Request headers of the socket client that WinHTTP does not add itself (it sends Host, User-Agent and
-		// Connection: Keep-Alive)
+		// Request headers that WinHTTP does not add itself (it sends Host, User-Agent and Connection: Keep-Alive)
 		Format(str, sizeof(str), "Keep-Alive: %s\r\nAccept-Language: ja\r\nPragma: no-cache\r\nCache-Control: no-cache",
 			HTTP_KEEP_ALIVE);
 		headers = CopyStrToUni(str);
@@ -229,8 +150,8 @@ static BUF *WpcWinHttpGet(HINTERNET request, bool secure, UINT timeout_connect, 
 		return NULL;
 	}
 
-	// From here on timeout_comm applies to each send and receive, as SetTimeout set it on the socket. Should
-	// WinHTTP refuse the change, an https request keeps the TLS handshake timeout.
+	// From here on timeout_comm applies to each send and receive. Should WinHTTP refuse the change, an https
+	// request keeps the TLS handshake timeout.
 	WinHttpSetTimeouts(request, (int)DNS_RESOLVE_DEFAULT_TIMEOUT, (int)timeout_connect, (int)timeout_comm,
 		(int)timeout_comm);
 
@@ -406,7 +327,7 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 		return NULL;
 	}
 
-	// TcpConnectEx3 refused a port outside 1 to 65535; INTERNET_PORT would truncate it
+	// A port outside 1 to 65535 cannot connect; INTERNET_PORT would truncate it
 	if (data->Port == 0 || data->Port >= 65536)
 	{
 		*error_code = ERR_CONNECT_FAILED;
@@ -424,8 +345,8 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 		return NULL;
 	}
 
-	// Timeouts of the socket client until the request is sent: the DnsResolveEx default, the TCP connect timeout,
-	// and on each send and receive the TLS handshake timeout of StartSSLEx for https
+	// Timeouts until the request is sent: the DnsResolveEx default, the TCP connect timeout, and on each send
+	// and receive the TLS handshake timeout (TIMEOUT_SSL_CONNECT) for https
 	io_timeout = (data->Secure ? TIMEOUT_SSL_CONNECT : timeout_comm);
 
 	if (WinHttpSetTimeouts(session, (int)DNS_RESOLVE_DEFAULT_TIMEOUT, (int)timeout_connect, (int)io_timeout,
@@ -438,7 +359,7 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 
 	if (connect != NULL)
 	{
-		// The target goes out as written in the URL, unescaped like the socket client sent it
+		// The target goes out as written in the URL, unescaped
 		str = CopyStrToUni(data->Target);
 		request = WinHttpOpenRequest(connect, L"GET", str, L"HTTP/1.1", WINHTTP_NO_REFERER,
 			WINHTTP_DEFAULT_ACCEPT_TYPES,
@@ -465,29 +386,6 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 	// Transmission
 	return recv_buf;
 }
-
-// Generate the URL
-void CreateUrl(char *url, UINT url_size, URL_DATA *data)
-{
-	char *protocol;
-	// Validate arguments
-	if (url == NULL || data == NULL)
-	{
-		return;
-	}
-
-	if (data->Secure == false)
-	{
-		protocol = "http://";
-	}
-	else
-	{
-		protocol = "https://";
-	}
-
-	Format(url, url_size, "%s%s%s", protocol, data->HeaderHostName, data->Target);
-}
-
 
 // Parse the URL
 bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer)
