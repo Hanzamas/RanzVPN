@@ -110,20 +110,6 @@ void WriteRecvFifo(SESSION *s, TCPSOCK *ts, void *data, UINT size)
 	WriteFifo(ts->RecvFifo, data, size);
 }
 
-// TCP socket receive
-UINT TcpSockRecv(SESSION *s, TCPSOCK *ts, void *data, UINT size)
-{
-	// Receive
-	return Recv(ts->Sock, data, size, s->UseEncrypt);
-}
-
-// TCP socket send
-UINT TcpSockSend(SESSION *s, TCPSOCK *ts, void *data, UINT size)
-{
-	// Transmission
-	return Send(ts->Sock, data, size, s->UseEncrypt);
-}
-
 // Send the data as UDP packet
 void SendDataWithUDP(SOCK *s, CONNECTION *c)
 {
@@ -685,7 +671,7 @@ SEND_START:
 				buf = (UCHAR *)ts->SendFifo->p + ts->SendFifo->pos;
 				want_send_size = ts->SendFifo->size;
 
-				size = TcpSockSend(s, ts, buf, want_send_size);
+				size = Send(ts->Sock, buf, want_send_size, s->UseEncrypt);
 
 				if (size == 0)
 				{
@@ -1098,7 +1084,7 @@ RECV_START:
 
 				recv_buf_size = MIN(recv_buf_size, RECV_BUF_SIZE);
 
-				size = TcpSockRecv(s, ts, buf, recv_buf_size);
+				size = Recv(ts->Sock, buf, recv_buf_size, s->UseEncrypt);
 			}
 			else
 			{

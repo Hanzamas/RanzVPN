@@ -44,9 +44,6 @@ bool ClientUploadAuth(CONNECTION *c);
 SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect);
 SOCK *TcpConnectEx3(char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, IP *ret_ip);
 
-// New function named with prefix "Bind" binds outgoing connection to a specific address. New one is wrapped in original one.
-SOCK* BindTcpConnectEx3(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, IP *ret_ip);
-
 UINT ProxyCodeToCedar(UINT code);
 
 void InitProtocol();
