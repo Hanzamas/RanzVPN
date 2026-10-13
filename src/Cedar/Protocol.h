@@ -21,14 +21,6 @@ struct CHECK_CERT_THREAD_PROC
 	bool Ok;
 };
 
-// Signature sending thread parameters
-struct SEND_SIGNATURE_PARAM
-{
-	char Hostname[MAX_PATH];		// Host name
-	UINT Port;						// Port number
-	BUF *Buffer;					// Packet contents
-};
-
 // Dynamic root cert fetch function
 #define	CERT_HTTP_DOWNLOAD_MAXSIZE	65536
 #define	CERT_HTTP_DOWNLOAD_TIMEOUT	(10 * 1000)

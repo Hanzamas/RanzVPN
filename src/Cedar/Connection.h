@@ -13,21 +13,10 @@
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/Proxy.h"
 
-// Magic number indicating that the packet is compressed
-#define	CONNECTION_BULK_COMPRESS_SIGNATURE	0xDEADBEEFCAFEFACEULL
-
 #define	UPDATE_LAST_COMM_TIME(v, n)		{if ((v) <= (n)) { v = (n); } }
 
 // Function type declaration
 typedef bool (CHECK_CERT_PROC)(SESSION *s, CONNECTION *c, X *server_x, bool *expired);
-
-// RC4 key pair
-struct RC4_KEY_PAIR
-{
-	UCHAR ServerToClientKey[16];
-	UCHAR ClientToServerKey[16];
-};
-#define	TYPE_BINDLOCALIP	1	//  Enable HMI user to edit Source IP address & Source port number for outgoing connection
 
 // Client Options
 // Do not change item size or order and only add new items at the end!
@@ -109,7 +98,6 @@ struct TCPSOCK
 	UINT LateCount;					// The number of delay occurences
 	UINT Direction;					// Direction
 	UINT64 NextKeepAliveTime;		// Next time to send a KeepAlive packet
-	RC4_KEY_PAIR Rc4KeyPair;		// RC4 key pair
 	CRYPT *SendKey;					// Transmission key
 	CRYPT *RecvKey;					// Reception key
 	UINT64 DisconnectTick;			// Time to disconnect this connection
@@ -195,7 +183,6 @@ struct CONNECTION
 	void *hWndForUI;				// Parent window
 	UINT AdditionalConnectionFailedCounter;		// Additional connection failure counter
 	UINT64 LastCounterResetTick;	// Time the counter was reset finally
-	bool WasDatProxy;				// DAT proxy processed
 	UCHAR CToken_Hash[SHA1_SIZE];	// CTOKEN_HASH
 	UINT LastTcpQueueSize;			// The last queue size of TCP sockets
 	UINT LastPacketQueueSize;		// The last queue size of packets
