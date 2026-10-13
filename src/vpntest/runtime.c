@@ -758,6 +758,10 @@ void fileio_test(UINT num, char **arg)
 #define	RT_POOL_MAX_JOBS		32		// Held jobs started while looking for the idle pool thread
 #define	RT_POOL_WAITERS			4		// Threads that wait on one THREAD at the same time
 #define	RT_HOST_CYCLES			16		// Host threads created and ended by the handle check
+#define	RT_POOL_MARK			0x5A17C0DE	// Per-thread mark the first job leaves on its pool thread
+
+// Per-thread state of the pool thread: a later job on the same thread must see it
+static __declspec(thread) UINT rt_pool_mark = 0;
 
 // What a job of the threadpool test saw on its thread
 typedef struct RT_POOL_JOB
@@ -767,6 +771,8 @@ typedef struct RT_POOL_JOB
 	volatile UINT MayaThreadId;		// ThreadId() inside the job
 	volatile bool ComReady;			// COM was already initialised on the thread of the job
 	volatile bool Ran;				// The job ran
+	UINT MarkSet;					// Per-thread mark the job leaves on its thread, or 0
+	volatile UINT MarkSeen;			// Per-thread mark the job found on its thread
 } RT_POOL_JOB;
 
 // Threads that wait on one THREAD at the same time
@@ -818,6 +824,13 @@ static void RtPoolJobThread(THREAD *t, void *param)
 		CoUninitialize();
 	}
 
+	// Per-thread state left by an earlier job on this thread
+	j->MarkSeen = rt_pool_mark;
+	if (j->MarkSet != 0)
+	{
+		rt_pool_mark = j->MarkSet;
+	}
+
 	j->Ran = true;
 
 	if (j->Go != NULL)
@@ -860,7 +873,7 @@ void threadpool_test(UINT num, char **arg)
 	volatile bool go;
 	THREAD *t;
 	HANDLE h;
-	UINT picked, i, num_jobs, joined, early, waited, ran, com_ready;
+	UINT picked, i, num_jobs, joined, early, waited, ran, com_ready, found_index = 0;
 	DWORD handles_before = 0, handles_after = 0;
 	bool ended, alive, found, counted;
 
@@ -868,6 +881,7 @@ void threadpool_test(UINT num, char **arg)
 
 	// A job runs on a pool thread, which has already taken the job when NewThread returns
 	Zero(&first, sizeof(first));
+	first.MarkSet = RT_POOL_MARK;
 	t = NewThread(RtPoolJobThread, &first);
 	picked = t->ThreadId;
 	RtCheck(&ctx, picked != 0, "NewThread returns after a pool thread took the job (ThreadId is set)", "ThreadId is 0");
@@ -907,6 +921,7 @@ void threadpool_test(UINT num, char **arg)
 		if (jobs[i]->ThreadId == picked)
 		{
 			found = true;
+			found_index = i;
 		}
 	}
 	go = true;
@@ -920,6 +935,9 @@ void threadpool_test(UINT num, char **arg)
 		ReleaseThread(jobs[i]);
 	}
 	RtCheck(&ctx, found, "a later job runs on the same, idle pool thread", "not taken by any of %u jobs", num_jobs);
+	RtCheck(&ctx, found && held[found_index].MarkSeen == RT_POOL_MARK,
+		"per-thread state survives from one job to the next on the same pool thread",
+		"mark 0x%X, expected 0x%X", found ? (UINT)held[found_index].MarkSeen : 0, (UINT)RT_POOL_MARK);
 	RtCheck(&ctx, joined == num_jobs, "every held job ends once its gate opens", "%u of %u ended", joined, num_jobs);
 
 	// Several threads wait on one THREAD at the same time, and every one of them sees it end
@@ -981,7 +999,7 @@ void threadpool_test(UINT num, char **arg)
 		"%u of %u", com_ready, RT_HOST_CYCLES);
 	RtCheck(&ctx, counted && handles_after < handles_before + RT_HOST_CYCLES / 2,
 		"releasing an ended host thread closes its handle",
-		"%u handles before, %u after %u host threads", handles_before, handles_after, RT_HOST_CYCLES);
+		"%u handles before, %u after %u host threads", (UINT)handles_before, (UINT)handles_after, RT_HOST_CYCLES);
 
 	RtEnd(&ctx);
 }
