@@ -442,13 +442,17 @@ void stress_test(UINT num, char **arg);
 void tickorigin_test(UINT num, char **arg);
 void timeenc_test(UINT num, char **arg);
 void nullsafe_test(UINT num, char **arg);
+void fileio_test(UINT num, char **arg);
+
+// Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
+UINT watermark_expect_size = 1411;
+char *watermark_expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
 
 // Watermark test: the hamcore file must hold the bytes of the former WaterMark[] C array
 void watermark_test(UINT num, char **arg)
 {
-	// Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c
-	UINT expect_size = 1411;
-	char *expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
+	UINT expect_size = watermark_expect_size;
+	char *expect_sha256 = watermark_expect_sha256;
 
 	UCHAR hash[SHA256_SIZE];
 	char hash_str[SHA256_SIZE * 2 + 1];
@@ -535,6 +539,7 @@ TEST_LIST test_list[] =
 	{"tickorigin", tickorigin_test, "Tick64 origin: the first value is at least 1 and at most the process age."},
 	{"timeenc", timeenc_test, "Time encoding: SystemTime64/LocalTime64 against the OS clock, fixed-input conversions."},
 	{"nullsafe", nullsafe_test, "NULL safety of the LOCK, LIST, COUNTER, REF and EVENT functions."},
+	{"fileio", fileio_test, "FileIO: @, $ and | prefixes, path separator, sharing modes, reads past the end."},
 };
 
 // Test function

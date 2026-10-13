@@ -10,6 +10,9 @@
 // check passes, and frees everything it allocates, so that the run still ends with
 // "NO MEMORY LEAKS". The [PASS] lines carry no measured values; the [FAIL] details do.
 
+#include "Mayaqua/Encrypt.h"
+#include "Mayaqua/FileIO.h"
+#include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Object.h"
@@ -315,6 +318,161 @@ void nullsafe_test(UINT num, char **arg)
 	ReleaseEvent(e);
 	CleanupEvent(e);
 	RtCheck(&ctx, true, "ReleaseEvent(NULL) and CleanupEvent(NULL) return", "");
+
+	RtEnd(&ctx);
+}
+
+// Constants of the fileio test
+#define	RT_FILEIO_LOG_NAME		L"vpntest_fileio_log.tmp"	// Written through the "@" prefix (log directory)
+#define	RT_FILEIO_DB_NAME		L"vpntest_fileio_db.tmp"	// Written through the "$" prefix (database directory)
+#define	RT_FILEIO_DATA_SIZE		64							// Bytes written to each test file
+
+// Size and SHA-256 of the watermark, shared with watermark_test (vpntest.c)
+extern UINT watermark_expect_size;
+extern char *watermark_expect_sha256;
+
+// Create a file through a prefixed name ("@" or "$"), write the test bytes, and check that
+// the file is at the expected path
+static void RtFileioCreate(RT_CTX *ctx, wchar_t *name, wchar_t *expect_path, UCHAR *data, char *label)
+{
+	IO *io;
+	char what[MAX_SIZE];
+
+	// A file left by an earlier failed run
+	FileDeleteW(expect_path);
+
+	Format(what, sizeof(what), "FileCreate through %s returns a file", label);
+	io = FileCreateW(name);
+	if (RtCheck(ctx, io != NULL, what, "returned NULL") == false)
+	{
+		return;
+	}
+
+	Format(what, sizeof(what), "FileWrite through %s writes the test bytes", label);
+	RtCheck(ctx, FileWrite(io, data, RT_FILEIO_DATA_SIZE), what, "failed");
+
+	Format(what, sizeof(what), "The file of %s is in its directory", label);
+	RtCheck(ctx, UniStrCmpi(io->NameW, expect_path) == 0, what, "created as %S, expected %S", io->NameW, expect_path);
+
+	FileClose(io);
+
+	Format(what, sizeof(what), "The file of %s exists after FileClose", label);
+	RtCheck(ctx, IsFileExistsW(expect_path), what, "not found");
+}
+
+// fileio: the "@", "$" and "|" prefixes, the path separator, the sharing modes and the
+// all-or-nothing reads of FileIO
+void fileio_test(UINT num, char **arg)
+{
+	RT_CTX ctx;
+	wchar_t dir[MAX_SIZE];
+	wchar_t log_path[MAX_SIZE];
+	wchar_t db_path[MAX_SIZE];
+	wchar_t slash_path[MAX_SIZE];
+	UCHAR data[RT_FILEIO_DATA_SIZE];
+	UCHAR buf[RT_FILEIO_DATA_SIZE];
+	UCHAR hash[SHA256_SIZE];
+	char hash_str[SHA256_SIZE * 2 + 1];
+	IO *io, *io2;
+	UINT i, size;
+	void *ham;
+	bool ok;
+
+	RtBegin(&ctx, "FILEIO", "FileIO test");
+
+	for (i = 0;i < RT_FILEIO_DATA_SIZE;i++)
+	{
+		data[i] = (UCHAR)(i * 7 + 1);
+	}
+
+	GetLogDirW(dir, sizeof(dir));
+	ConbinePathW(log_path, sizeof(log_path), dir, RT_FILEIO_LOG_NAME);
+	GetDbDirW(dir, sizeof(dir));
+	ConbinePathW(db_path, sizeof(db_path), dir, RT_FILEIO_DB_NAME);
+
+	// "@" resolves under the log directory, "$" under the database directory
+	RtFileioCreate(&ctx, L"@" RT_FILEIO_LOG_NAME, log_path, data, "@ (log directory)");
+	RtFileioCreate(&ctx, L"$" RT_FILEIO_DB_NAME, db_path, data, "$ (database directory)");
+
+	// "/" becomes "\": open the "@" file through its path written with forward slashes
+	UniStrCpy(slash_path, sizeof(slash_path), log_path);
+	for (i = 0;slash_path[i] != 0;i++)
+	{
+		if (slash_path[i] == L'\\')
+		{
+			slash_path[i] = L'/';
+		}
+	}
+	io = FileOpenW(slash_path, false);
+	if (RtCheck(&ctx, io != NULL, "FileOpen of the path written with forward slashes", "returned NULL"))
+	{
+		ok = true;
+		for (i = 0;io->NameW[i] != 0;i++)
+		{
+			if (io->NameW[i] == L'/')
+			{
+				ok = false;
+			}
+		}
+		RtCheck(&ctx, ok && UniStrCmpi(io->NameW, log_path) == 0, "Forward slashes become backslashes",
+			"opened as %S, expected %S", io->NameW, log_path);
+
+		// Reads are all or nothing: a read past the end fails instead of returning a short read
+		RtCheck(&ctx, FileRead(io, buf, RT_FILEIO_DATA_SIZE) && Cmp(buf, data, RT_FILEIO_DATA_SIZE) == 0,
+			"FileRead returns the written bytes", "read failed or the bytes differ");
+		RtCheck(&ctx, FileRead(io, buf, 1) == false, "FileRead at the end fails", "returned true");
+		RtCheck(&ctx, FileSeek(io, FILE_BEGIN, RT_FILEIO_DATA_SIZE / 2), "FileSeek on a disk file succeeds", "failed");
+		RtCheck(&ctx, FileRead(io, buf, RT_FILEIO_DATA_SIZE) == false, "FileRead across the end fails", "returned true");
+
+		FileClose(io);
+	}
+
+	// Sharing: while the file is open for writing, a read-only open without the read lock
+	// succeeds, a read-only FileOpen (which takes the read lock) fails, and a second writer fails
+	io = FileOpenW(log_path, true);
+	if (RtCheck(&ctx, io != NULL, "FileOpen for writing", "returned NULL"))
+	{
+		io2 = FileOpenExW(log_path, false, false);
+		RtCheck(&ctx, io2 != NULL, "While it is open for writing, a read-only FileOpenEx without the read lock succeeds", "returned NULL");
+		FileClose(io2);
+
+		io2 = FileOpenW(log_path, false);
+		RtCheck(&ctx, io2 == NULL, "While it is open for writing, a read-only FileOpen fails", "succeeded");
+		FileClose(io2);
+
+		io2 = FileOpenW(log_path, true);
+		RtCheck(&ctx, io2 == NULL, "While it is open for writing, a second FileOpen for writing fails", "succeeded");
+		FileClose(io2);
+
+		FileClose(io);
+	}
+
+	// "|" reads a hamcore file into memory: the watermark, which cannot seek
+	io = FileOpen("|watermark.bin", false);
+	if (RtCheck(&ctx, io != NULL, "FileOpen of |watermark.bin", "returned NULL"))
+	{
+		size = FileSize(io);
+		RtCheck(&ctx, size == watermark_expect_size, "FileSize of |watermark.bin is the watermark size",
+			"%u bytes, expected %u", size, watermark_expect_size);
+
+		ham = ZeroMalloc(size + 1);
+		ok = FileRead(io, ham, size);
+		Sha2_256(hash, ham, size);
+		BinToStr(hash_str, sizeof(hash_str), hash, sizeof(hash));
+		RtCheck(&ctx, ok && StrCmpi(hash_str, watermark_expect_sha256) == 0, "FileRead of |watermark.bin returns the watermark bytes (SHA-256)",
+			"read %s, SHA-256 = %s", ok ? "ok" : "failed", hash_str);
+		Free(ham);
+
+		RtCheck(&ctx, FileSeek(io, FILE_BEGIN, 0) == false, "FileSeek on a hamcore file fails", "succeeded");
+
+		FileClose(io);
+	}
+
+	// Delete both files
+	RtCheck(&ctx, FileDeleteW(L"@" RT_FILEIO_LOG_NAME) && IsFileExistsW(log_path) == false,
+		"FileDelete through @ removes the file", "file still there");
+	RtCheck(&ctx, FileDeleteW(L"$" RT_FILEIO_DB_NAME) && IsFileExistsW(db_path) == false,
+		"FileDelete through $ removes the file", "file still there");
 
 	RtEnd(&ctx);
 }
