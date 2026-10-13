@@ -187,19 +187,6 @@ void DeleteCounter(COUNTER *c)
 	Free(c);
 }
 
-// Get the count value
-UINT Count(COUNTER *c)
-{
-	// Validate arguments
-	if (c == NULL)
-	{
-		return 0;
-	}
-
-	// Atomic read with a full barrier
-	return (UINT)InterlockedCompareExchange((volatile LONG *)&c->c, 0, 0);
-}
-
 // Increment; returns the new value
 UINT Inc(COUNTER *c)
 {

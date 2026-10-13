@@ -265,7 +265,7 @@ void timeenc_test(UINT num, char **arg)
 void nullsafe_test(UINT num, char **arg)
 {
 	RT_CTX ctx;
-	LOCK *lock = NULL;				// A variable, not the NULL literal: the _DEBUG form of Lock() dereferences it
+	LOCK *lock = NULL;				// A variable, not the NULL literal: the old _DEBUG macro form of Lock() dereferenced it
 	COUNTER *counter = NULL;
 	REF *ref = NULL;
 	EVENT *e = NULL;
@@ -279,6 +279,7 @@ void nullsafe_test(UINT num, char **arg)
 	Lock(lock);
 	Unlock(lock);
 	RtCheck(&ctx, true, "Lock(NULL) and Unlock(NULL) return", "");
+	RtCheck(&ctx, Lock(lock) == false, "Lock(NULL) returns false", "returned true");
 	RtCheck(&ctx, LockInner(lock) == false, "LockInner(NULL) returns false", "returned true");
 	UnlockInner(lock);
 	DeleteLock(lock);

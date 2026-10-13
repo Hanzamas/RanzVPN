@@ -7,7 +7,7 @@
 
 #include "OS.h"
 
-#include "Object.h"
+#include "Native.h"
 
 #undef Yield
 
