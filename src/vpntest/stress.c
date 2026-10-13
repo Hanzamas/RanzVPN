@@ -818,6 +818,72 @@ static void StressEventHelperThread(THREAD *t, void *param)
 	}
 }
 
+// Raw thread: take the mutex and end without releasing it, which abandons the mutex
+static DWORD WINAPI StressAbandonMutexThread(LPVOID param)
+{
+	WaitForSingleObject((HANDLE)param, INFINITE);
+
+	return 0;
+}
+
+// One Wait on an EVENT whose handle is swapped for a raw handle; the EVENT gets its own handle back
+static bool StressWaitOnHandle(EVENT *e, HANDLE h)
+{
+	void *own = e->pData;
+	bool ret;
+
+	e->pData = h;
+	ret = Wait(e, STRESS_WAIT_BOUND);
+	e->pData = own;
+
+	return ret;
+}
+
+// Wait gives false only on a time-out or when the EVENT has no handle (spec #30 keeps this):
+// a failed wait (WAIT_FAILED) and an abandoned wait (WAIT_ABANDONED) give true
+static void StressEventWaitResult(STRESS_CTX *ctx)
+{
+	EVENT *e = NewEvent();
+	HANDLE h = NULL;
+	HANDLE mutex;
+	bool failed = false, abandoned = false;
+	bool ran_failed = false, ran_abandoned = false;
+
+	// Failed wait: a duplicate of the event handle without SYNCHRONIZE access cannot be waited on
+	if (DuplicateHandle(GetCurrentProcess(), (HANDLE)e->pData, GetCurrentProcess(), &h, EVENT_MODIFY_STATE, FALSE, 0))
+	{
+		ran_failed = true;
+		failed = StressWaitOnHandle(e, h);
+		CloseHandle(h);
+	}
+
+	// Abandoned wait: a raw thread takes a mutex and ends without releasing it. A Mayaqua
+	// THREAD cannot abandon it, because its pool host thread outlives the job
+	mutex = CreateMutexW(NULL, FALSE, NULL);
+	if (mutex != NULL)
+	{
+		h = CreateThread(NULL, 0, StressAbandonMutexThread, mutex, 0, NULL);
+		if (h != NULL)
+		{
+			if (WaitForSingleObject(h, STRESS_WAIT_BOUND) == WAIT_OBJECT_0)
+			{
+				ran_abandoned = true;
+				abandoned = StressWaitOnHandle(e, mutex);
+				ReleaseMutex(mutex);
+			}
+			CloseHandle(h);
+		}
+		CloseHandle(mutex);
+	}
+
+	ReleaseEvent(e);
+
+	StressCheck(ctx, failed && abandoned, "Wait returns true for a failed wait (WAIT_FAILED) and an abandoned wait (WAIT_ABANDONED)",
+		"failed wait %s, abandoned wait %s",
+		ran_failed ? (failed ? "true" : "false") : "not run",
+		ran_abandoned ? (abandoned ? "true" : "false") : "not run");
+}
+
 // EVENT case
 static void StressCaseEvent(STRESS_CTX *ctx)
 {
@@ -958,6 +1024,9 @@ static void StressCaseEvent(STRESS_CTX *ctx)
 	ReleaseEvent(e2);
 	StressCheck(ctx, refs == 2 && r1 && r2 == false, "an EVENT stays usable while a reference added with AddRef remains",
 		"AddRef returned %u, Wait after Set %s, second Wait %s", refs, r1 ? "true" : "false", r2 ? "true" : "false");
+
+	StressStep("event: Wait result of a failed and an abandoned wait");
+	StressEventWaitResult(ctx);
 
 	ReleaseEvent(d.Event);
 	ReleaseEvent(d.Ping);

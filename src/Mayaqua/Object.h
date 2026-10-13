@@ -15,13 +15,6 @@
 #define	OBJECT_ALLOC_FAIL_SLEEP_TIME		150
 #define	OBJECT_ALLOC__MAX_RETRY				30
 
-// Event object
-struct EVENT
-{
-	REF *ref;
-	void *pData;
-};
-
 // Deadlock detection
 struct DEADCHECK
 {
@@ -45,7 +38,6 @@ REF *NewRef();
 EVENT *NewEvent();
 void ReleaseEvent(EVENT *e);
 void CleanupEvent(EVENT *e);
-void Set(EVENT *e);
 bool Wait(EVENT *e, UINT timeout);
 bool WaitEx(EVENT *e, UINT timeout, volatile bool *cancel);
 void CheckDeadLock(LOCK *lock, UINT timeout, char *name);

@@ -261,6 +261,9 @@ void timeenc_test(UINT num, char **arg)
 	RtEnd(&ctx);
 }
 
+// Constants of the nullsafe test
+#define	RT_EVENT_NO_HANDLE_WAIT	1000		// Timeout given to Wait on an EVENT without a handle (ms)
+
 // nullsafe: the LOCK, LIST, COUNTER, REF and EVENT functions accept NULL and do nothing
 void nullsafe_test(UINT num, char **arg)
 {
@@ -272,6 +275,8 @@ void nullsafe_test(UINT num, char **arg)
 	LIST *o;
 	UINT item = 1;
 	UINT ret;
+	UINT64 start, elapsed;
+	bool waited;
 
 	RtBegin(&ctx, "NULLSAFE", "NULL safety test");
 
@@ -319,6 +324,21 @@ void nullsafe_test(UINT num, char **arg)
 	ReleaseEvent(e);
 	CleanupEvent(e);
 	RtCheck(&ctx, true, "ReleaseEvent(NULL) and CleanupEvent(NULL) return", "");
+
+	// An EVENT without a kernel event, as an unchecked failed CreateEvent leaves it: Set does
+	// nothing, Wait returns false without waiting, and ReleaseEvent still frees the EVENT.
+	// WaitForSingleObject on the NULL handle would fail at once and give true (WAIT_FAILED)
+	e = NewEvent();
+	CloseHandle((HANDLE)e->pData);
+	e->pData = NULL;
+	Set(e);
+	start = Tick64();
+	waited = Wait(e, RT_EVENT_NO_HANDLE_WAIT);
+	elapsed = Tick64() - start;
+	RtCheck(&ctx, waited == false && elapsed < RT_EVENT_NO_HANDLE_WAIT, "Wait on an EVENT without a handle returns false at once",
+		"returned %s after %I64u ms", waited ? "true" : "false", elapsed);
+	ReleaseEvent(e);
+	RtCheck(&ctx, true, "Set and ReleaseEvent on an EVENT without a handle return", "");
 
 	RtEnd(&ctx);
 }

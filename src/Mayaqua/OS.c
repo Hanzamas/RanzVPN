@@ -337,27 +337,3 @@ void OSDeleteLock(LOCK *lock)
 	Win32MemoryFree(lock);
 }
 
-// Event initialization
-void OSInitEvent(EVENT *event)
-{
-	os->InitEvent(event);
-}
-
-// Set event
-void OSSetEvent(EVENT *event)
-{
-	os->SetEvent(event);
-}
-
-// Wait for event
-bool OSWaitEvent(EVENT *event, UINT timeout)
-{
-	return os->WaitEvent(event, timeout);
-}
-
-// Release of the event
-void OSFreeEvent(EVENT *event)
-{
-	os->FreeEvent(event);
-}
-
