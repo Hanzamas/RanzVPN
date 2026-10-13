@@ -863,7 +863,6 @@ UINT PtConnect(CONSOLE *c, wchar_t *cmdline)
 // Initialize the execution path information of vpncmd command
 void VpnCmdInitBootPath()
 {
-#ifdef	OS_WIN32
 	char exe_path[MAX_PATH];
 	char tmp[MAX_PATH];
 	GetExeName(exe_path, sizeof(exe_path));
@@ -887,47 +886,19 @@ void VpnCmdInitBootPath()
 			// Copy the vpncmdsys.exe to system32
 			Format(tmp, sizeof(tmp), "%s\\vpncmd.exe", MsGetSystem32Dir());
 
-			if (MsIs64BitWindows() == false || Is64())
+			if (IsFile(tmp) == false || (CEDAR_VERSION_BUILD > current_ver) || MsRegIsValue(REG_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, VPNCMD_BOOTSTRAP_REG_VALUENAME_PATH) == false)
 			{
-				if (IsFile(tmp) == false || (CEDAR_VERSION_BUILD > current_ver) || MsRegIsValue(REG_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, VPNCMD_BOOTSTRAP_REG_VALUENAME_PATH) == false)
-				{
-					b = FileCopy(VPNCMD_BOOTSTRAP_FILENAME, tmp);
-				}
-			}
-			else
-			{
-				void *wow = MsDisableWow64FileSystemRedirection();
-
-				if (IsFile(tmp) == false || (CEDAR_VERSION_BUILD > current_ver) || MsRegIsValue(REG_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, VPNCMD_BOOTSTRAP_REG_VALUENAME_PATH) == false)
-				{
-					b = FileCopy(VPNCMD_BOOTSTRAP_FILENAME, tmp);
-				}
-
-				MsRestoreWow64FileSystemRedirection(wow);
-
-				if (IsFile(tmp) == false || (CEDAR_VERSION_BUILD > current_ver) || MsRegIsValue(REG_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, VPNCMD_BOOTSTRAP_REG_VALUENAME_PATH) == false)
-				{
-					b = FileCopy(VPNCMD_BOOTSTRAP_FILENAME, tmp);
-				}
+				b = FileCopy(VPNCMD_BOOTSTRAP_FILENAME, tmp);
 			}
 
 			// Because the currently running prompt is newer version, overwrite the registry
-			if (MsIs64BitWindows() == false)
-			{
-				MsRegWriteStr(REG_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, VPNCMD_BOOTSTRAP_REG_VALUENAME_PATH, exe_path);
-				MsRegWriteInt(REG_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, VPNCMD_BOOTSTRAP_REG_VALUENAME_VER, CEDAR_VERSION_BUILD);
-			}
-			else
-			{
-				MsRegWriteStrEx2(REG_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, VPNCMD_BOOTSTRAP_REG_VALUENAME_PATH, exe_path, true, false);
-				MsRegWriteIntEx2(REG_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, VPNCMD_BOOTSTRAP_REG_VALUENAME_VER, CEDAR_VERSION_BUILD, true, false);
+			MsRegWriteStrEx2(REG_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, VPNCMD_BOOTSTRAP_REG_VALUENAME_PATH, exe_path, true, false);
+			MsRegWriteIntEx2(REG_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, VPNCMD_BOOTSTRAP_REG_VALUENAME_VER, CEDAR_VERSION_BUILD, true, false);
 
-				MsRegWriteStrEx2(REG_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, VPNCMD_BOOTSTRAP_REG_VALUENAME_PATH, exe_path, false, true);
-				MsRegWriteIntEx2(REG_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, VPNCMD_BOOTSTRAP_REG_VALUENAME_VER, CEDAR_VERSION_BUILD, false, true);
-			}
+			MsRegWriteStrEx2(REG_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, VPNCMD_BOOTSTRAP_REG_VALUENAME_PATH, exe_path, false, true);
+			MsRegWriteIntEx2(REG_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, VPNCMD_BOOTSTRAP_REG_VALUENAME_VER, CEDAR_VERSION_BUILD, false, true);
 		}
 	}
-#endif	// OS_WIN32
 }
 
 // Show the string
@@ -2548,9 +2519,6 @@ UINT PtTrafficClient(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			{
 				if (c->Param != NULL && (((LOCAL_CONSOLE_PARAM *)c->Param)->InBuf == NULL))
 				{
-//					c->Write(c, _UU("TTC_ENTER_TO_EXIT"));
-//					GetLine(NULL, 0);
-//					StopTtc(ttc);
 				}
 			}
 
@@ -9224,9 +9192,6 @@ bool ParseMacAddressAndMask(char *src, bool *check_mac, UCHAR *mac_bin, UCHAR *m
 	{
 		return false;
 	}
-
-	//Zero(mac, sizeof(mac));
-	//Zero(mask, sizeof(mask));
 
 	if(check_mac != NULL && mac_bin != NULL && mask_bin != NULL)
 	{
