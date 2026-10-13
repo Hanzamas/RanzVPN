@@ -19,15 +19,6 @@
 // 
 //////////////////////////////////////////////////////////////////////
 
-// Replace the function name
-#ifdef	VPN_SPEED
-
-#define	DecryptSecurePacket	__dsp
-#define	CreateSecurePacket	__csp
-#define	GetSecureRandomSize	__gsrs
-
-#endif	// VPN_SPEED
-
 // Version number
 #ifndef	CEDAR_VERSION_MAJOR
 #define	CEDAR_VERSION_MAJOR		0
@@ -90,25 +81,10 @@
 #define	BUILD_DATE_SE			0
 #endif	// BUILD_DATE_SE
 
-// Tolerable time difference
-#define	ALLOW_TIMESTAMP_DIFF		(UINT64)(3 * 24 * 60 * 60 * 1000)
-
 
 // Configuration of communication related control switch
 #define	USE_DOS_ATTACK_DETECTION		// Enable the DOS attack detection
 //#define	USE_SECURE_PACKET				// Enable the scrambled packet
-
-// Designate the IDS detection signatures
-#define	CEDAR_SIGNATURE_STR			"SE-VPN4-PROTOCOL"
-
-// Default RSA certificate name of the smart card
-#define	SECURE_DEFAULT_CERT_NAME	"VPN_RSA_CERT"
-
-// Default RSA private key name of the smart card
-#define	SECURE_DEFAULT_KEY_NAME		"VPN_RSA_KEY"
-
-// Hidden password string of 8 characters
-#define	HIDDEN_PASSWORD				"********"
 
 // Default separator character for the hub name in the username
 #define	DEFAULT_USERNAME_HUB_SEPARATOR	'@'
@@ -141,10 +117,8 @@
 // 
 //////////////////////////////////////////////////////////////////////
 
-#define	SERVER_MAX_SESSIONS			4096	// Maximum number of sessions that the server supports
 #define SERVER_MAX_SESSIONS_FOR_CARRIER_EDITION	100000	// Maximum number of sessions that the server supports (Carrier Edition)
 #define	MAX_HUBS					4096	// The maximum number of virtual HUB
-#define MAX_HUBS_FOR_CARRIER_EDITION	100000	// The maximum number of virtual HUB (Carrier Edition)
 #define	MAX_ACCESSLISTS				(4096 * 8)	// Maximum number of access list entries
 #define	MAX_USERS					10000	// The maximum number of users
 #define	MAX_GROUPS					10000	// Maximum number of groups
@@ -185,7 +159,6 @@
 #define	MAX_TCP_CONNECTION			32		// The maximum number of TCP connections
 #define	SELECT_TIME					VPN_GP(GP_SELECT_TIME, 256)
 #define	SELECT_TIME_FOR_NAT			VPN_GP(GP_SELECT_TIME_FOR_NAT, 30)
-#define	SELECT_TIME_FOR_DELAYED_PKT	1		// If there is a delayed packet
 
 #define	TIMEOUT_MIN					(5 * 1000)	// Minimum timeout in seconds
 #define	TIMEOUT_MAX					(60 * 1000)	// Maximum timeout in seconds
@@ -216,9 +189,7 @@
 #define	STORM_DISCARD_VALUE_START	VPN_GP(GP_STORM_DISCARD_VALUE_START, 3)		// Broadcast packet discard value start value
 #define	STORM_DISCARD_VALUE_END		VPN_GP(GP_STORM_DISCARD_VALUE_END, 1024)	// Broadcast packet discard value end value
 
-#define	TICKET_EXPIRES				(60 * 1000)	// Expiration date of ticket
 
-#define	SEND_KILL_NUM_X				256			// Number of 'X' characters to send the Kill
 
 
 #define DH_PARAM_BITS_DEFAULT		2048		// Bits of Diffie-Hellman Parameters
@@ -237,19 +208,11 @@
 #define	CLIENT_STATUS_RETRY			4		// Wait to retry
 #define	CLIENT_STATUS_IDLE			5		// Idle state
 
-// Expiration date of the black list
-#define	BLACK_LIST_EXPIRES			(30 * 10000)
-
-// Number Blacklist entries
-#define	MAX_BLACK_LIST				4096
-#define	BLACK_LIST_CHECK_SPAN		1000
-
 // Blocks to be transmitted at one during the file transfer
 #define	FTP_BLOCK_SIZE				(640 * 1024)
 
 // Syslog configuration
 #define SYSLOG_NONE							0		// Do not use syslog
-#define SYSLOG_SERVER_LOG					1		// Only server log
 #define SYSLOG_SERVER_AND_HUB_SECURITY_LOG	2		// Server and Virtual HUB security log
 #define SYSLOG_SERVER_AND_HUB_ALL_LOG		3		// Server, Virtual HUB security, and packet log
 
@@ -381,7 +344,6 @@
 
 // Allowed number of outstanding connections
 #define	DEFAULT_MAX_UNESTABLISHED_CONNECTIONS	1000
-#define	MIN_MAX_UNESTABLISHED_CONNECTIONS	30	// Minimum value
 
 
 //////////////////////////////////////////////////////////////////////
@@ -452,30 +414,12 @@
 
 //////////////////////////////////////////////////////////////////////
 // 
-// Constant related to Carrier Edition
-// 
-//////////////////////////////////////////////////////////////////////
-
-#define CE_SNAPSHOT_INTERVAL		((UINT64)(3600 * 1000))
-//#define CE_SNAPSHOT_INTERVAL		((UINT64)(3000))
-#define CE_SNAPSHOT_POLLING_INTERVAL	(1 * 1000)
-#define CE_SNAPSHOT_POLLING_INTERVAL_LICENSE	(30 * 1000)
-#define CE_SNAPSHOT_DIR_NAME		"@carrier_log"
-#define CE_SNAPSHOT_PREFIX			"carrier"
-
-
-//////////////////////////////////////////////////////////////////////
-// 
 // Communication protocol related constant
 // 
 //////////////////////////////////////////////////////////////////////
 
 // Administrator Username
 #define	ADMINISTRATOR_USERNAME		"administrator"
-// Maximum value of random size
-#define	RAND_SIZE_MAX				4096
-// Expiration date of random size cache
-#define	RAND_SIZE_CACHE_EXPIRE		(24 * 60 * 60 * 1000)
 // Management allowed IP address list file name
 #define	ADMINIP_TXT					"$adminip.txt"
 
@@ -505,7 +449,6 @@
 #define	BRIDGE_USER_NAME_PRINT			"Local Bridge"
 #define	BRIDGE_TRY_SPAN					1000
 #define	BRIDGE_NUM_DEVICE_CHECK_SPAN	(5 * 60 * 1000)
-#define BRIDGE_NETWORK_CONNECTION_STR	L"%s [%S]"
 
 
 
@@ -516,36 +459,10 @@
 //////////////////////////////////////////////////////////////////////
 
 
-// Header size constant
-#define	ARP_HEADER_SIZE				(sizeof(ARP_HEADER))
-#define	IP_HEADER_SIZE				(sizeof(IPV4_HEADER))
-#define	TCP_HEADER_SIZE				(sizeof(TCP_HEADER))
-#define	UDP_HEADER_SIZE				(sizeof(UDP_HEADER))
-
-// Data maximum size constant
-#define	MAX_L3_DATA_SIZE			(1500)
-#define	MAX_IP_DATA_SIZE			(MAX_L3_DATA_SIZE - IP_HEADER_SIZE)
-#define	MAX_TCP_DATA_SIZE			(MAX_IP_DATA_SIZE - TCP_HEADER_SIZE)
-#define	MAX_UDP_DATA_SIZE			(MAX_IP_DATA_SIZE - UDP_HEADER_SIZE)
-#define	MAX_IP_DATA_SIZE_TOTAL		(65535)
-
 
 #define	LICENSE_EDITION_VPN3_NO_LICENSE					0		// Without license
 
 #define	LICENSE_MAX_PRODUCT_NAME_LEN	255				// Maximum length of license product name
-#define	LICENSE_NUM_SHA					10000			// Number of times to hash with SHA
-#define	LICENSE_SYSTEM_KEY_NUM			2048			// Key number for system
-#define	LICENSE_SYSTEM_KEYSIZE_BIT		144				// Number of key bits for system
-#define	LICENSE_PRODUCT_KEY_NUM			16384			// Number of keys for product
-#define	LICENSE_PRODUCT_KEYSIZE_BIT		56				// Number of key bits for product
-#define	LICENSE_PRODUCT_COMMON_KEYSIZE_BIT	48			// Number of common key bits for product
-#define	LICENSE_MASTER_KEYSIZE_BIT		1024			// Number of master key bits
-#define	LICENSE_SYSTEM_ID_MIN			0ULL			// System ID minimum value
-#define	LICENSE_SYSTEM_ID_MAX			549755813887ULL	// System ID maximum value
-#define	LICENSE_SERIAL_ID_MIN			0				// Serial ID minimum value
-#define	LICENSE_SERIAL_ID_MAX			65535			// Serial ID maximum value
-#define	LICENSE_EXPIRES_MIN				0				// Expiration date minimum
-#define	LICENSE_EXPIRES_MAX				16383			// Expiration date maximum
 #define	LICENSE_KEYSTR_LEN				41				// Length of the license key
 #define	LICENSE_LICENSEID_STR_LEN		33				// Length of the license ID
 
@@ -558,8 +475,6 @@
 #define	LICENSE_STATUS_NONSENSE			6		// Invalid (meaningless in the current edition)
 #define	LICENSE_STATUS_CPU				7		// Invalid (CPU type mismatch)
 
-#define	BIT_TO_BYTE(x)					(((x) + 7) / 8)
-#define	BYTE_TO_BIT(x)					((x) * 8)
 
 
 //////////////////////////////////////////////////////////////////////
@@ -592,32 +507,16 @@
 #define	ERR_LICENSE_ERROR				21	// License error
 #define	ERR_DEVICE_DRIVER_ERROR			22	// Device driver error
 #define	ERR_INTERNAL_ERROR				23	// Internal error
-#define	ERR_SECURE_DEVICE_OPEN_FAILED	24	// The secure device cannot be opened
-#define	ERR_SECURE_PIN_LOGIN_FAILED		25	// PIN code is incorrect
-#define	ERR_SECURE_NO_CERT				26	// Specified certificate is not stored
-#define	ERR_SECURE_NO_PRIVATE_KEY		27	// Specified private key is not stored
-#define	ERR_SECURE_CANT_WRITE			28	// Write failure
 #define	ERR_OBJECT_NOT_FOUND			29	// Specified object can not be found
 #define	ERR_NOT_SUPPORTED				33	// Unsupported
 #define	ERR_INVALID_PARAMETER			38	// Parameter is invalid
-#define	ERR_SECURE_DEVICE_ERROR			39	// Error has occurred in the operation of the secure device
-#define	ERR_NO_SECURE_DEVICE_SPECIFIED	40	// Secure device is not specified
-#define	ERR_INVALID_VALUE				45	// Value is invalid
-#define	ERR_NOT_FARM_CONTROLLER			46	// Not a farm controller
-#define	ERR_TRYING_TO_CONNECT			47	// Attempting to connect
-#define	ERR_CONNECT_TO_FARM_CONTROLLER	48	// Failed to connect to the farm controller
-#define	ERR_COULD_NOT_HOST_HUB_ON_FARM	49	// A virtual HUB on farm could not be created
-#define	ERR_FARM_MEMBER_HUB_ADMIN		50	// HUB cannot be managed on a farm member
 #define	ERR_NULL_PASSWORD_LOCAL_ONLY	51	// Accepting only local connections for an empty password
 #define	ERR_NOT_ENOUGH_RIGHT			52	// Right is insufficient
 #define	ERR_LISTENER_NOT_FOUND			53	// Listener can not be found
 #define	ERR_LISTENER_ALREADY_EXISTS		54	// Listener already exists
-#define	ERR_NOT_FARM_MEMBER				55	// Not a farm member
-#define	ERR_CIPHER_NOT_SUPPORTED		56	// Encryption algorithm is not supported
 #define	ERR_HUB_ALREADY_EXISTS			57	// HUB already exists
 #define	ERR_TOO_MANY_HUBS				58	// Too many HUBs
 #define	ERR_LINK_ALREADY_EXISTS			59	// Link already exists
-#define	ERR_LINK_CANT_CREATE_ON_FARM	60	// The link can not be created on the server farm
 #define	ERR_LINK_IS_OFFLINE				61	// Link is off-line
 #define	ERR_TOO_MANY_ACCESS_LIST		62	// Too many access list
 #define	ERR_TOO_MANY_USER				63	// Too many users
@@ -628,24 +527,11 @@
 #define	ERR_USER_AUTHTYPE_NOT_PASSWORD	68	// Authentication method of the user is not a password authentication
 #define	ERR_OLD_PASSWORD_WRONG			69	// The user does not exist or the old password is wrong
 #define	ERR_LINK_CANT_DISCONNECT		73	// Cascade session cannot be disconnected
-#define	ERR_ACCOUNT_NOT_PRESENT			74	// Not completed configure the connection to the VPN server
-#define	ERR_ALREADY_ONLINE				75	// It is already online
-#define	ERR_OFFLINE						76	// It is offline
 #define	ERR_NOT_RSA_1024				77	// The certificate is not RSA 1024bit
-#define	ERR_SE_VPN_BLOCK				81	// Stopped by PacketiX VPN Block
 #define	ERR_BRIDGE_CANT_DISCONNECT		82	// Bridge session can not be disconnected
-#define	ERR_LOCAL_BRIDGE_STOPPING		83	// Bridge function is stopped
 #define	ERR_LOCAL_BRIDGE_UNSUPPORTED	84	// Bridge feature is not supported
 #define	ERR_CERT_NOT_TRUSTED			85	// Certificate of the destination server can not be trusted
-#define	ERR_PRODUCT_CODE_INVALID		86	// Product code is different
 #define	ERR_VERSION_INVALID				87	// Version is different
-#define	ERR_CAPTURE_DEVICE_ADD_ERROR	88	// Adding capture device failure
-#define	ERR_VPN_CODE_INVALID			89	// VPN code is different
-#define	ERR_CAPTURE_NOT_FOUND			90	// Capture device can not be found
-#define	ERR_INVALID_NAME				94	// Name is invalid
-#define	ERR_BAD_CLOCK					101	// Time is queer
-#define	ERR_CLIENT_LICENSE_NOT_ENOUGH	103	// Client connection licenses shortage
-#define	ERR_BRIDGE_LICENSE_NOT_ENOUGH	104 // Bridge connection licenses shortage
 #define	ERR_SERVER_CANT_ACCEPT			105	// Not Accept on the technical issues
 #define	ERR_SERVER_CERT_EXPIRES			106	// Destination VPN server has expired
 #define	ERR_MONITOR_MODE_DENIED			107	// Monitor port mode was rejected
@@ -654,23 +540,12 @@
 #define	ERR_TOO_MANT_ITEMS				110	// Too many items
 #define	ERR_MEMORY_NOT_ENOUGH			111	// Out of memory
 #define	ERR_OBJECT_EXISTS				112	// Object already exists
-#define	ERR_FATAL						113	// A fatal error occurred
-#define	ERR_SERVER_LICENSE_FAILED		114	// License violation has occurred on the server side
-#define	ERR_SERVER_INTERNET_FAILED		115	// Server side is not connected to the Internet
-#define	ERR_CLIENT_LICENSE_FAILED		116	// License violation occurs on the client side
 #define	ERR_BAD_COMMAND_OR_PARAM		117	// Command or parameter is invalid
-#define	ERR_INVALID_LICENSE_KEY			118	// License key is invalid
-#define	ERR_NO_VPN_SERVER_LICENSE		119	// There is no valid license for the VPN Server
-#define	ERR_NO_VPN_CLUSTER_LICENSE		120	// There is no cluster license
 #define ERR_NOT_ADMINPACK_SERVER		121	// Not trying to connect to a server with the Administrator Pack license
-#define ERR_NOT_ADMINPACK_SERVER_NET	122	// Not trying to connect to a server with the Administrator Pack license (for .NET)
-#define ERR_BETA_EXPIRES				123	// Destination Beta VPN Server has expired
 #define ERR_BRANDED_C_TO_S				124 // Branding string of connection limit is different (Authentication on the server side)
 #define ERR_BRANDED_C_FROM_S			125	// Branding string of connection limit is different (Authentication for client-side)
 #define	ERR_CLIENT_ID_REQUIRED			127	// Client ID does not match
 #define	ERR_TOO_MANY_USERS_CREATED		128	// Too many created users
-#define	ERR_SUBSCRIPTION_IS_OLDER		129	// Subscription expiration date Is earlier than the build date of the VPN Server
-#define	ERR_ILLEGAL_TRIAL_VERSION		130	// Many trial license is used continuously
 #define	ERR_MSCHAP2_PASSWORD_NEED_RESET	138	// Necessary that password is changed
 #define	ERR_NOT_SUPPORTED_AUTH_ON_OPENSOURCE	143	// It is the type of user authentication that are not supported in the open source version
 #define	ERR_NOT_SUPPORTED_FUNCTION_ON_OPENSOURCE	147	// It is a feature that is not supported in the open source version
@@ -766,7 +641,6 @@ struct CEDAR
 	bool Bridge;					// Bridge version
 	COUNTER *AssignedClientLicense;	// Number of assigned client licenses
 	COUNTER *AssignedBridgeLicense;	// Number of assigned bridge licenses
-	UINT64 LicenseViolationTick;	// License violation occurs
 	LIST *NonSslList;				// Non-SSL connection list
 	UINT Beta;						// Beta number
 	LOCK *CedarSuperLock;			// Cedar super lock!
@@ -787,10 +661,6 @@ struct CEDAR
 	UINT DhParamBits;  // Bits of Diffie-Hellman parameters
 	char StunServer[MAX_HOST_NAME_LEN + 1];	// STUN server (host[:port]) for UDP acceleration, empty = STUN disabled
 };
-
-// Type of CEDAR
-#define	CEDAR_CLIENT				0	// Client
-#define	CEDAR_STANDALONE_SERVER		1	// Stand-alone server
 
 ////////////////////////////
 // Function prototype

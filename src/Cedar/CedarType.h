@@ -106,8 +106,6 @@ typedef struct USERLIST USERLIST;
 // ==============================================================
 
 typedef struct CHECK_CERT_THREAD_PROC CHECK_CERT_THREAD_PROC;
-typedef struct RAND_CACHE RAND_CACHE;
-typedef struct BLACK BLACK;
 typedef struct SEND_SIGNATURE_PARAM SEND_SIGNATURE_PARAM;
 
 
@@ -164,8 +162,6 @@ typedef struct CAPS CAPS;
 typedef struct CAPSLIST CAPSLIST;
 typedef struct LOG_FILE LOG_FILE;
 typedef struct SYSLOG_SETTING SYSLOG_SETTING;
-typedef struct HUB_SNAPSHOT HUB_SNAPSHOT;
-typedef struct SERVER_SNAPSHOT SERVER_SNAPSHOT;
 typedef struct SERVER_HUB_CREATE_HISTORY SERVER_HUB_CREATE_HISTORY;
 
 // ==============================================================
@@ -288,14 +284,7 @@ typedef struct PT PT;
 //  Database
 // ==============================================================
 
-typedef struct LICENSE_PRODUCT LICENSE_PRODUCT;
-typedef struct LICENSE_SYSTEM LICENSE_SYSTEM;
-typedef struct LICENSE_DATA LICENSE_DATA;
 typedef struct LICENSE LICENSE;
-typedef struct LICENSE_STATUS LICENSE_STATUS;
-typedef struct SECURE_PACK_FOLDER SECURE_PACK_FOLDER;
-typedef struct WIDE_MACHINE_ID WIDE_MACHINE_ID;
-typedef struct TRIAL_INFO TRIAL_INFO;
 
 
 // ==============================================================

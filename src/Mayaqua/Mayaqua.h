@@ -21,7 +21,6 @@
 #define	WIN32_USE_HEAP_API_FOR_MEMORY	// Use the heap API to allocate memory
 #endif	// RANZ_ASAN
 #define	WIN32_NO_DEBUG_HELP_DLL			// Do not call the DLL for debugging
-#define	DONT_ALLOW_RUN_ON_DEBUGGER		// Do not allow running on the debugger
 
 #endif	// VPN_SPEED
 
@@ -41,19 +40,12 @@ int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 #endif	// VPN_EXE
 
 // Constant
-#define	DEFAULT_TABLE_FILE_NAME		"|strtable.stb"		// Default string table
-//#define	DEFAULT_TABLE_FILE_NAME		"@hamcore_zh/strtable.stb"		// Test for Chinese
 
 #define	STRTABLE_ID					"SE_VPN_20121007"	// String table identifier
 
 // Directory separator
 #ifdef	OS_WIN32
 #define	PATH_BACKSLASH	// Backslash (\)
-#endif	// WIN32
-
-// Character code
-#ifdef	OS_WIN32
-#define	CODE_SHIFTJIS	// Shift_JIS code
 #endif	// WIN32
 
 // Endian
@@ -71,27 +63,18 @@ int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 
 // Macro that displays the current file name and line number
 #define	WHERE			if (IsDebug()){printf("%s: %u\n", __FILE__, __LINE__); SleepThread(10);}
-#define	WHERE32			if (IsDebug()){	\
-	char tmp[128]; sprintf(tmp, "%s: %u", __FILE__, __LINE__); Win32DebugAlert(tmp);	\
-	}
-#define TIMECHECK		if (IsDebug()){printf("%-12s:%5u", __FILE__, __LINE__);TimeCheck();}
 
 // Probe related
 #ifdef	USE_PROBE
-#define	PROBE_WHERE						WriteProbe(__FILE__, __LINE__, "");
 #define	PROBE_STR(str)					WriteProbe(__FILE__, __LINE__, (str));
 #define	PROBE_DATA2(str, data, size)	WriteProbeData(__FILE__, __LINE__, (str), (data), (size));
-#define	PROBE_DATA(data, size)			WriteProbeData(__FILE__, __LINE__, "", (data), (size));
 #else	// USE_PROBE
-#define	PROBE_WHERE
 #define	PROBE_STR(str)
 #define	PROBE_DATA2(str, data, size)
-#define	PROBE_DATA(data, size)
 #endif	// USE_PROBE
 
 // Determine the performance / memory strategy
 #if	(defined(CPU_X86) || defined(CPU_X64) || defined(CPU_X86_X64) || defined(CPU_SPARC) || defined(CPU_SPARC64) || defined(OS_WIN32) || defined(__amd64__) || defined(__amd64) || defined(__x86_64__) || defined(__x86_64) || defined(i386) || defined(__i386) || defined(__i386__) || defined(__ia64__) || defined(__IA64__) || defined(_IA64))
-#define	USE_STRATEGY_PERFORMACE
 #else
 #define	USE_STRATEGY_LOW_MEMORY
 #endif
@@ -240,7 +223,6 @@ if (IsTrackingEnabled()) {													\
 #define	KS_IO_TOTAL_WRITE_SIZE	71		// The total number of bytes written to the file
 // Memory pool related
 #define	KS_MEMPOOL_MALLOC_COUNT	75		// Number of times to allocate the memory pool
-#define	KS_MEMPOOL_FREE_COUNT	73		// Number of times you release the memory pool
 #define	KS_MEMPOOL_CURRENT_NUM	74		// Current number of the memory pool
 #define	KS_MEMPOOL_REALLOC_COUNT	76	// Number of times you have realloc the memory pool
 

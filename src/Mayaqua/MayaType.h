@@ -38,7 +38,6 @@
 // Standard buffer size
 #define	STD_SIZE			512
 #define	MAX_SIZE			512
-#define	BUF_SIZE			512
 
 // Support Windows OS list
 #define	SUPPORTED_WINDOWS_LIST		"Windows 10 / 11 / Server 2016 / Server 2019 / Server 2022"
@@ -48,9 +47,6 @@
 #define	INFINITE			(0xFFFFFFFF)
 #endif
 
-
-#define	SRC_NAME			__FILE__	// File name of the source code
-#define	SRC_LINE			__LINE__	// Line number in the source code
 
 // Maximum path size
 #ifndef	MAX_PATH
@@ -100,7 +96,6 @@ typedef int (COMPARE)(void *p1, void *p2);
 // Convert an int value to bool
 #define	INT_TO_BOOL(i)		(((i) == 0) ? false : true)
 #define	MAKEBOOL(i)			INT_TO_BOOL(i)
-#define	BOOL_TO_INT(i)		(((i) == false) ? 0 : 1)
 
 // Invert the bool type value
 #define	NEGATIVE_BOOL(i)	(((i) == false) ? true : false)
@@ -119,14 +114,9 @@ typedef int (COMPARE)(void *p1, void *p2);
 #define COMPARE_RET(a, b)	(((a) == (b)) ? 0 : (((a) > (b)) ? 1 : -1))
 // Compare bool type values
 #define	EQUAL_BOOL(a, b)	(((a) && (b)) || ((!(a)) && (!(b))))
-// Get the absolute value
-#define	GET_ABS(a)			((a) >= 0 ? (a) : -(a))
 
 // Convert the pointer to UINT
 #define	POINTER_TO_KEY(p)		(HashPtrToUINT(p))
-
-// Compare the pointer and UINT
-#define	COMPARE_POINTER_AND_KEY(p, i)	(POINTER_TO_KEY(p) == (i))
 
 // Convert the pointer to UINT64
 #ifdef	CPU_64
@@ -141,9 +131,6 @@ typedef int (COMPARE)(void *p1, void *p2);
 #else
 #define	UINT64_TO_POINTER(i)	(void *)((UINT)(i))
 #endif
-
-// Add the value
-#define	UINT_ADD(i, j)		((i == INFINITE || i == 0x7fffffff) ? (i) : (i += j))
 
 // Reading data that is not dependent on the boundary or the endian
 #define	READ_USHORT(buf)		(USHORT)((((USHORT)((UCHAR *)(buf))[0]) << 8) | (((USHORT)((UCHAR *)(buf))[1])))
@@ -176,8 +163,6 @@ typedef int64_t time_64t;
 // OS discrimination macro
 #define	GET_KETA(t, i)			(((t) % (i * 10)) / i)
 #define	OS_IS_WINDOWS(t)		((GET_KETA(t, 1000) == 1) || (GET_KETA(t, 1000) == 2))
-#define	OS_IS_SERVER(t)			(OS_IS_WINDOWS(t) && GET_KETA(t, 10))
-#define	OS_IS_WORKSTATION(t)	(OS_IS_WINDOWS(t) && !(GET_KETA(t, 10))
 #define	OS_IS_UNIX(t)			(GET_KETA(t, 1000) == 3)
 
 
@@ -222,7 +207,6 @@ typedef struct CANDIDATE CANDIDATE;
 typedef struct STRMAP_ENTRY STRMAP_ENTRY;
 typedef struct SHARED_BUFFER SHARED_BUFFER;
 typedef struct HASH_LIST HASH_LIST;
-typedef struct HASH_ENTRY HASH_ENTRY;
 typedef struct PRAND PRAND;
 
 // Str.h
@@ -282,7 +266,6 @@ typedef struct ROUTE_CHANGE ROUTE_CHANGE;
 typedef struct ROUTE_CHANGE_DATA ROUTE_CHANGE_DATA;
 typedef struct WIN32_RELEASEADDRESS_THREAD_PARAM WIN32_RELEASEADDRESS_THREAD_PARAM;
 typedef struct IPV6_ADDR IPV6_ADDR;
-typedef struct PSEUDO PSEUDO;
 typedef struct UDPPACKET UDPPACKET;
 typedef struct INTERRUPT_MANAGER INTERRUPT_MANAGER;
 typedef struct ICMP_RESULT ICMP_RESULT;
@@ -294,14 +277,7 @@ typedef struct NIC_ENTRY NIC_ENTRY;
 typedef struct HTTP_VALUE HTTP_VALUE;
 typedef struct HTTP_HEADER HTTP_HEADER;
 typedef struct IPBLOCK IPBLOCK;
-typedef struct SAFE_REQUEST SAFE_REQUEST;
-typedef struct SAFE_LIST SAFE_LIST;
-typedef struct SAFE_QUOTA SAFE_QUOTA;
-typedef struct SAFE_QUOTA2 SAFE_QUOTA2;
-typedef struct SAFE_BLOCK SAFE_BLOCK;
-typedef struct SAFE_REQUEST_LOG SAFE_REQUEST_LOG;
 typedef struct DYN_VALUE DYN_VALUE;
-typedef struct RELAY_PARAMETER RELAY_PARAMETER;
 typedef struct SSL_ACCEPT_SETTINGS SSL_ACCEPT_SETTINGS;
 
 // Tick64.h
