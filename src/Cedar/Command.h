@@ -160,7 +160,6 @@ struct PT
 // Server management context
 struct PS
 {
-	bool ConsoleForServer;	// Console for the server (always true)
 	CONSOLE *Console;	// Console
 	RPC *Rpc;			// RPC
 	char *ServerName;	// Server name
@@ -234,7 +233,6 @@ void PrintPolicy(CONSOLE *c, POLICY *pol, bool cascade_mode);
 bool EditPolicy(CONSOLE *c, POLICY *pol, char *name, char *value, bool cascade_mode);
 void CmdPrintStatusToListView(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s);
 void CmdPrintStatusToListViewEx(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s, bool server_mode);
-bool CmdEvalPassOrDiscard(CONSOLE *c, wchar_t *str, void *param);
 bool StrToPassOrDiscard(char *str);
 bool CmdEvalProtocol(CONSOLE *c, wchar_t *str, void *param);
 UINT StrToProtocol(char *str);
@@ -376,7 +374,6 @@ UINT PsCascadeServerCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *para
 UINT PsCascadeServerCertDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsCascadeServerCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsCascadeDetailSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsCascadePolicyRemove(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsCascadePolicySet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsPolicyList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsCascadeStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
@@ -432,7 +429,6 @@ UINT PsCrlGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsAcList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsAcAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsAcAdd6(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsAcGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsAcDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsLicenseAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsLicenseDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);

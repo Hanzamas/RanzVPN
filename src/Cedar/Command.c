@@ -15154,7 +15154,6 @@ PS *NewPs(CONSOLE *c, RPC *rpc, char *servername, UINT serverport, char *hubname
 	}
 
 	ps = ZeroMalloc(sizeof(PS));
-	ps->ConsoleForServer = true;
 	ps->ServerPort = serverport;
 	ps->ServerName = CopyStr(servername);
 	ps->Console = c;
