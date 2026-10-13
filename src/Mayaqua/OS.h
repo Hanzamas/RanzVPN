@@ -18,8 +18,6 @@ void OSFree();
 void *OSMemoryAlloc(UINT size);
 void *OSMemoryReAlloc(void *addr, UINT size);
 void OSMemoryFree(void *addr);
-UINT OSGetTick();
-void OSGetSystemTime(SYSTEMTIME *system_time);
 void OSSleep(UINT time);
 LOCK *OSNewLock();
 bool OSLock(LOCK *lock);
@@ -69,8 +67,6 @@ typedef struct OS_DISPATCH_TABLE
 	void *(*MemoryAlloc)(UINT size);
 	void *(*MemoryReAlloc)(void *addr, UINT size);
 	void (*MemoryFree)(void *addr);
-	UINT (*GetTick)();
-	void (*GetSystemTime)(SYSTEMTIME *system_time);
 	void (*Inc32)(UINT *value);
 	void (*Dec32)(UINT *value);
 	void (*Sleep)(UINT time);

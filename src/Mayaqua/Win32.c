@@ -49,8 +49,6 @@ DWORD CALLBACK Win32DefaultThreadProc(void *param);
 
 // Current process handle
 static HANDLE hCurrentProcessHandle = NULL;
-static CRITICAL_SECTION fasttick_lock;
-static UINT64 start_tick = 0;
 static bool use_heap_api = false;
 
 // File I/O data for Win32
@@ -87,8 +85,6 @@ OS_DISPATCH_TABLE *Win32GetDispatchTable()
 		Win32MemoryAlloc,
 		Win32MemoryReAlloc,
 		Win32MemoryFree,
-		Win32GetTick,
-		Win32GetSystemTime,
 		Win32Inc32,
 		Win32Dec32,
 		Win32Sleep,
@@ -2094,8 +2090,6 @@ void Win32Init()
 
 	CoInitialize(NULL);
 
-	InitializeCriticalSection(&fasttick_lock);
-
 #ifdef	WIN32_USE_HEAP_API_FOR_MEMORY
 	use_heap_api = true;
 #else	// WIN32_USE_HEAP_API_FOR_MEMORY
@@ -2157,8 +2151,6 @@ void Win32Free()
 	}
 
 	CoUninitialize();
-
-	DeleteCriticalSection(&fasttick_lock);
 }
 
 // Memory allocation
@@ -2377,46 +2369,6 @@ void Win32FreeEvent(EVENT *event)
 	}
 
 	CloseHandle(hEvent);
-}
-
-// Fast getting 64 bit Tick functions for only Win32
-UINT64 Win32FastTick64()
-{
-	static UINT last_tick = 0;
-	static UINT counter = 0;
-	UINT64 ret;
-	UINT tick;
-
-	EnterCriticalSection(&fasttick_lock);
-
-	// Get the current tick value
-	tick = Win32GetTick();
-
-	if (last_tick > tick)
-	{
-		// When the previously acquired tick value is larger than acquired this time,
-		// it can be considered that the counter have gone one around
-
-		counter++;
-	}
-
-	last_tick = tick;
-
-	ret = (UINT64)tick + (UINT64)counter * 4294967296ULL;
-
-	LeaveCriticalSection(&fasttick_lock);
-
-	if (start_tick == 0)
-	{
-		start_tick = ret;
-		ret = 0;
-	}
-	else
-	{
-		ret -= start_tick;
-	}
-
-	return ret + 1;
 }
 
 // Read a string from the console

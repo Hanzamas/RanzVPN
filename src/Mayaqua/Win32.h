@@ -90,7 +90,6 @@ void Win32GetExeNameW(wchar_t *name, UINT size);
 DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare);
 bool Win32GetDiskFree(char *path, UINT64 *free_size, UINT64 *used_size, UINT64 *total_size);
 bool Win32SetFolderCompress(char *path, bool compressed);
-UINT64 Win32FastTick64();
 void Win32InitNewThread();
 bool Win32InputW(wchar_t *str, UINT size);
 bool Win32InputFromFileW(wchar_t *str, UINT size);

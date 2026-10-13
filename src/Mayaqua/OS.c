@@ -267,18 +267,6 @@ void OSMemoryFree(void *addr)
 	os->MemoryFree(addr);
 }
 
-// Get the system timer
-UINT OSGetTick()
-{
-	return os->GetTick();
-}
-
-// Get the System Time
-void OSGetSystemTime(SYSTEMTIME *system_time)
-{
-	os->GetSystemTime(system_time);
-}
-
 // Sleep the thread
 void OSSleep(UINT time)
 {

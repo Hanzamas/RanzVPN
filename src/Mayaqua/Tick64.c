@@ -12,7 +12,6 @@
 #include "Microsoft.h"
 #include "Object.h"
 #include "Str.h"
-#include "Win32.h"
 
 static TICK64 *tk64 = NULL;
 static EVENT *halt_tick_event = NULL;

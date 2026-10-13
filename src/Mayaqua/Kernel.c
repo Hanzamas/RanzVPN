@@ -1695,14 +1695,6 @@ time_64t c_mkgmtime(struct tm *tm)
 			(unsigned long)(60 * minutes + seconds));
 }
 
-// Get the system timer
-UINT Tick()
-{
-	// KS
-	KS_INC(KS_GETTICK_COUNT);
-	return OSGetTick();
-}
-
 // Sleep thread
 void SleepThread(UINT time)
 {

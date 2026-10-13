@@ -123,7 +123,6 @@ void GetDateTimeStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale);
 void GetTimeStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale);
 void GetDateStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale);
 void GetTimeStrMilli(char *str, UINT size, SYSTEMTIME *st);
-UINT Tick();
 UINT64 SystemToLocal64(UINT64 t);
 UINT64 LocalToSystem64(UINT64 t);
 UINT ThreadId();
