@@ -97,3 +97,11 @@ Each step is interop-tested against the oracle (ADR-0017).
 - arm64 nodes run L3 only until Microsoft ships a production-signed arm64 XDP runtime, so an arm64 deployment that needs L2 has no virtual adapter yet.
 - The control plane's own design (route advertisement, approval, health checks, ECMP, controller failover) still needs its own spec beyond this ADR; nanopb schemas and the named-pipe sidecar protocol are fixed here.
 - The estimated size of the new core is 15k–25k lines of new code rather than ~150k, because the data path is the only hand-written part; everything the OS provides is called, not reimplemented (ADR-0008).
+
+## Amendment 2026-10-14: native-first rule for the new core
+
+Maintainer decision (Hilmi: "ya se rekomend mu lah ... fondasi 100% total"). The slim fork stays as it is after #30 steps 7 and 9; porting more of it to Windows APIs would be wasted work because the new core replaces it. The new core uses the Windows-native API from the start wherever one exists, a third-party library only where none exists, and own code only where neither exists:
+
+- Native from the start: Windows Thread Pool API and timer queues (no own thread pool), resources embedded as PE resources via FindResource/LoadResource (no hamcore archive format), strsafe plus MultiByteToWideChar/WideCharToMultiByte for strings and charsets (no own string library or code-page tables), ETW TraceLogging for debug tracing and the Windows Event Log for service events, CNG, Schannel, IOCP, winsqlite3.
+- Own code, because Windows has no equivalent: the small containers (list, queue, FIFO, buffer), the packet parser the policy engine needs, the legacy SHA-0 password verifier (only for accounts imported from ranz_server.config; new accounts use PBKDF2 via CNG). The Pack wire format is replaced by nanopb messages on the control stream.
+- Dropped: payload compression (zlib), R-UDP, the own thread pool, the own string-table format.
