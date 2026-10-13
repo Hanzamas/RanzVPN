@@ -61,9 +61,6 @@ int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 #define	PROBE_STR(str)
 #define	PROBE_DATA2(str, data, size)
 
-// Macro that displays the current time
-#define	WHEN			if (IsDebug()){WHERE; MsPrintTick();}
-
 // Global variables
 extern bool g_memcheck;
 extern bool g_debug;
