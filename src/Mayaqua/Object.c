@@ -358,8 +358,8 @@ EVENT *NewEvent()
 	// Reference counter
 	e->ref = NewRef();
 
-	// Event initialization
-	OSInitEvent(e);
+	// Creating an unnamed auto-reset event; a failed create leaves a NULL handle
+	e->pData = CreateEvent(NULL, FALSE, FALSE, NULL);
 
 	// KS
 	KS_INC(KS_NEWEVENT_COUNT);
@@ -392,7 +392,10 @@ void CleanupEvent(EVENT *e)
 	}
 
 	// Release event
-	OSFreeEvent(e);
+	if (e->pData != NULL)
+	{
+		CloseHandle((HANDLE)e->pData);
+	}
 
 	// Memory release
 	Free(e);
@@ -405,12 +408,12 @@ void CleanupEvent(EVENT *e)
 void Set(EVENT *e)
 {
 	// Validate arguments
-	if (e == NULL)
+	if (e == NULL || e->pData == NULL)
 	{
 		return;
 	}
 
-	OSSetEvent(e);
+	SetEvent((HANDLE)e->pData);
 }
 
 // Wait for event
@@ -425,7 +428,13 @@ bool Wait(EVENT *e, UINT timeout)
 	// KS
 	KS_INC(KS_WAIT_COUNT);
 
-	return OSWaitEvent(e, timeout);
+	if (e->pData == NULL)
+	{
+		return false;
+	}
+
+	// Only a time-out gives false: WAIT_FAILED and WAIT_ABANDONED give true
+	return (WaitForSingleObject((HANDLE)e->pData, timeout) != WAIT_TIMEOUT);
 }
 
 // Wait for a event until the cancel flag becomes true
