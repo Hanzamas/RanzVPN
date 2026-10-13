@@ -562,6 +562,7 @@ typedef struct STRESS_FLOOR_DATA
 	LOCK *StatLock;					// Protects the statistics below
 	UINT NumNonZero;				// Inc/Dec calls that returned a value other than 0
 	UINT64 Sum;						// Sum of the values that Inc/Dec returned
+	volatile bool Go;				// Opens the gate once the phase created every worker
 } STRESS_FLOOR_DATA;
 
 // Worker: call Inc STRESS_COUNTER_LOOPS times, or Dec twice as often, and sum up the return values
@@ -577,6 +578,9 @@ static void StressFloorWorkerThread(THREAD *t, void *param)
 	}
 
 	num = d->DecPhase ? (STRESS_COUNTER_LOOPS * 2) : STRESS_COUNTER_LOOPS;
+
+	// Start together with the other workers, so the Inc/Dec calls contend
+	StressWaitFlag(&d->Go, STRESS_GATE_BOUND);
 
 	for (i = 0;i < num;i++)
 	{
@@ -606,11 +610,16 @@ static void StressFloorPhase(STRESS_FLOOR_DATA *d, bool dec_phase)
 	d->DecPhase = dec_phase;
 	d->NumNonZero = 0;
 	d->Sum = 0;
+	d->Go = false;
 
 	for (i = 0;i < STRESS_NUM_THREADS;i++)
 	{
 		workers[i] = NewThread(StressFloorWorkerThread, d);
 	}
+
+	// Open the gate only after every worker exists
+	d->Go = true;
+
 	for (i = 0;i < STRESS_NUM_THREADS;i++)
 	{
 		StressJoin(workers[i], INFINITE);
