@@ -501,8 +501,7 @@ struct CEDAR
 	LIST *UdpPortList;
 	LOCK *CurrentRegionLock;
 	char CurrentRegion[128];
-	LOCK *CurrentTcpQueueSizeLock;
-	UINT CurrentTcpQueueSize;
+	UINT CurrentTcpQueueSize;						// Changed only with InterlockedExchangeAdd
 	COUNTER *CurrentActiveLinks;
 	LOCK *QueueBudgetLock;
 	UINT QueueBudget;
