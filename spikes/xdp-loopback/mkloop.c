@@ -36,7 +36,7 @@ static int Install(void)
     SP_DEVINFO_DATA Dev = {sizeof(Dev)};
     BOOL Reboot = FALSE;
 
-    ExpandEnvironmentStringsW(L"%windir%\inf\netloop.inf", Inf, MAX_PATH);
+    ExpandEnvironmentStringsW(L"%windir%\\inf\\netloop.inf", Inf, MAX_PATH);
     if (!SetupDiGetINFClassW(Inf, &ClassGuid, ClassName, MAX_CLASS_NAME_LEN, NULL)) {
         printf("mkloop: SetupDiGetINFClass(%ls) failed: %lu\n", Inf, GetLastError());
         return 1;
@@ -88,7 +88,7 @@ static int Remove(const WCHAR *InstanceId)
     DWORD Type = 0;
     BOOL Reboot = FALSE;
 
-    ExpandEnvironmentStringsW(L"%windir%\inf\netloop.inf", Inf, MAX_PATH);
+    ExpandEnvironmentStringsW(L"%windir%\\inf\\netloop.inf", Inf, MAX_PATH);
     if (!SetupDiGetINFClassW(Inf, &ClassGuid, ClassName, MAX_CLASS_NAME_LEN, NULL)) {
         printf("mkloop: SetupDiGetINFClass(%ls) failed: %lu\n", Inf, GetLastError());
         return 1;
