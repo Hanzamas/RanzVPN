@@ -62,6 +62,8 @@ extern UINT64 kernel_status_max[NUM_KERNEL_STATUS];
 extern LOCK *kernel_status_lock[NUM_KERNEL_STATUS];
 extern bool kernel_status_inited;
 
+#define	KS_LOCK(id)		LockKernelStatus(id)
+#define	KS_UNLOCK(id)	UnlockKernelStatus(id)
 #define	KS_GET64(id)	(kernel_status[id])
 #define	KS_GET(id)		((UINT)KS_GET64(id))
 #define	KS_GETMAX64(id)	(kernel_status_max[id])
@@ -69,31 +71,31 @@ extern bool kernel_status_inited;
 
 #define	KS_INC(id)															\
 if (IsTrackingEnabled()) {													\
-	LockKernelStatus(id);															\
+	KS_LOCK(id);															\
 	kernel_status[id]++;													\
 	kernel_status_max[id] = MAX(kernel_status_max[id], kernel_status[id]);	\
-	UnlockKernelStatus(id);															\
+	KS_UNLOCK(id);															\
 }
 #define	KS_DEC(id)															\
 if (IsTrackingEnabled()) {													\
-	LockKernelStatus(id);															\
+	KS_LOCK(id);															\
 	kernel_status[id]--;													\
 	kernel_status_max[id] = MAX(kernel_status_max[id], kernel_status[id]);	\
-	UnlockKernelStatus(id);															\
+	KS_UNLOCK(id);															\
 }
 #define	KS_ADD(id, n)														\
 if (IsTrackingEnabled()) {													\
-	LockKernelStatus(id);															\
+	KS_LOCK(id);															\
 	kernel_status[id] += n;													\
 	kernel_status_max[id] = MAX(kernel_status_max[id], kernel_status[id]);	\
-	UnlockKernelStatus(id);															\
+	KS_UNLOCK(id);															\
 }
 #define	KS_SUB(id, n)														\
 if (IsTrackingEnabled()) {													\
-	LockKernelStatus(id);															\
+	KS_LOCK(id);															\
 	kernel_status[id] -= n;													\
 	kernel_status_max[id] = MAX(kernel_status_max[id], kernel_status[id]);	\
-	UnlockKernelStatus(id);															\
+	KS_UNLOCK(id);															\
 }
 
 #define	KS_STRCPY_COUNT			0
@@ -169,6 +171,7 @@ if (IsTrackingEnabled()) {													\
 #define	KS_IO_TOTAL_READ_SIZE	70
 #define	KS_IO_TOTAL_WRITE_SIZE	71
 #define	KS_MEMPOOL_MALLOC_COUNT	75
+#define	KS_MEMPOOL_FREE_COUNT	73		// Number of times you release the memory pool
 #define	KS_MEMPOOL_CURRENT_NUM	74
 #define	KS_MEMPOOL_REALLOC_COUNT	76
 
