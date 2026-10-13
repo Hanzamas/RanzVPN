@@ -111,12 +111,6 @@ struct RPC_STR
 	char *String;						// String
 };
 
-// Integer
-struct RPC_INT
-{
-	UINT IntValue;						// Integer
-};
-
 // Set Password
 struct RPC_SET_PASSWORD
 {
@@ -138,12 +132,6 @@ struct RPC_HUB_OPTION
 {
 	UINT MaxSession;					// Maximum number of sessions
 	bool NoEnum;						// Not listed
-};
-
-// Specify the HUB
-struct RPC_HUB
-{
-	char HubName[MAX_HUBNAME_LEN + 1];	// HUB Name
 };
 
 // Create a HUB
@@ -617,7 +605,6 @@ struct RPC_AC_LIST
 {
 	char HubName[MAX_HUBNAME_LEN + 1];		// HUB Name
 	LIST *o;								// List body
-	bool InternalFlag1;
 };
 
 // Log file enumeration
