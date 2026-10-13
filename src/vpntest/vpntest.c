@@ -440,6 +440,7 @@ void stress_test(UINT num, char **arg);
 
 // Named runtime tests of the Windows-native runtime, spec #30 (runtime.c)
 void tickorigin_test(UINT num, char **arg);
+void timeenc_test(UINT num, char **arg);
 
 // Watermark test: the hamcore file must hold the bytes of the former WaterMark[] C array
 void watermark_test(UINT num, char **arg)
@@ -531,6 +532,7 @@ TEST_LIST test_list[] =
 	{"stress", stress_test, "Mayaqua runtime stress test: stress [timing] [case ...]."},
 	{"watermark", watermark_test, "Watermark: hamcore watermark.bin size and SHA-256 against the former C array."},
 	{"tickorigin", tickorigin_test, "Tick64 origin: the first value is at least 1 and at most the process age."},
+	{"timeenc", timeenc_test, "Time encoding: SystemTime64/LocalTime64 against the OS clock, fixed-input conversions."},
 };
 
 // Test function
