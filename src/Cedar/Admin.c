@@ -5894,48 +5894,51 @@ void FreeRpcEnumLogFile(RPC_ENUM_LOG_FILE *t)
 	RpcFieldFree(&rpc_enum_log_file_table, t);
 }
 // RPC_READ_LOG_FILE
+static void RpcReadLogFileBufferOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	BUF *b = *((BUF **)(((UCHAR *)base) + f->Offset));
+
+	// Written only when there is a buffer
+	if (b != NULL)
+	{
+		PackAddBuf(p, f->Key, b);
+	}
+}
+static void RpcReadLogFileBufferIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	*((BUF **)(((UCHAR *)base) + f->Offset)) = PackGetBuf(p, f->Key);
+}
+static void RpcReadLogFileBufferFree(const RPC_FIELD *f, void *base)
+{
+	BUF *b = *((BUF **)(((UCHAR *)base) + f->Offset));
+
+	if (b != NULL)
+	{
+		FreeBuf(b);
+	}
+}
+static const RPC_HOOK rpc_read_log_file_buffer_hook = {RpcReadLogFileBufferOut, RpcReadLogFileBufferIn, RpcReadLogFileBufferFree};
+
+static const RPC_FIELD rpc_read_log_file_fields[] =
+{
+	RPC_ROW_STR(RPC_READ_LOG_FILE, FilePath, "FilePath"),
+	RPC_ROW_INT(RPC_READ_LOG_FILE, Offset, "Offset"),
+	RPC_ROW_HOOK(RPC_FT_BUF, RPC_READ_LOG_FILE, Buffer, "Buffer", 0, &rpc_read_log_file_buffer_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_read_log_file_table, RPC_READ_LOG_FILE, rpc_read_log_file_fields);
+
 void InRpcReadLogFile(RPC_READ_LOG_FILE *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_READ_LOG_FILE));
-	PackGetStr(p, "FilePath", t->FilePath, sizeof(t->FilePath));
-	t->Offset = PackGetInt(p, "Offset");
-
-	t->Buffer = PackGetBuf(p, "Buffer");
+	RpcFieldIn(&rpc_read_log_file_table, t, p);
 }
 void OutRpcReadLogFile(PACK *p, RPC_READ_LOG_FILE *t)
 {
-	// Validate arguments
-	if (p == NULL || t == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "FilePath", t->FilePath);
-	PackAddInt(p, "Offset", t->Offset);
-
-	if (t->Buffer != NULL)
-	{
-		PackAddBuf(p, "Buffer", t->Buffer);
-	}
+	RpcFieldOut(&rpc_read_log_file_table, p, t);
 }
 void FreeRpcReadLogFile(RPC_READ_LOG_FILE *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	if (t->Buffer != NULL)
-	{
-		FreeBuf(t->Buffer);
-	}
+	RpcFieldFree(&rpc_read_log_file_table, t);
 }
 
 // RPC_AC_LIST
@@ -6176,137 +6179,87 @@ void FreeRpcCrl(RPC_CRL *t)
 }
 
 // RPC_ENUM_ETH
+static const RPC_FIELD rpc_enum_eth_item_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_ETH_ITEM, DeviceName, "DeviceName"),
+	RPC_ROW_UNISTR(RPC_ENUM_ETH_ITEM, NetworkConnectionName, "NetworkConnectionName"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_eth_item_table, RPC_ENUM_ETH_ITEM, rpc_enum_eth_item_fields);
+
+static const RPC_FIELD rpc_enum_eth_fields[] =
+{
+	RPC_ROW_COUNT(RPC_ENUM_ETH, NumItem),
+	RPC_ROW_ARRAY(RPC_ENUM_ETH, Items, NumItem, &rpc_enum_eth_item_table, "DeviceName", RPC_FF_READ_NUMITEM),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_eth_table, RPC_ENUM_ETH, rpc_enum_eth_fields);
+
 void InRpcEnumEth(RPC_ENUM_ETH *t, PACK *p)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_ENUM_ETH));
-	t->NumItem = PackGetInt(p, "NumItem");
-	t->Items = ZeroMalloc(sizeof(RPC_ENUM_ETH_ITEM) * t->NumItem);
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_ENUM_ETH_ITEM *e = &t->Items[i];
-		PackGetStrEx(p, "DeviceName", e->DeviceName, sizeof(e->DeviceName), i);
-		PackGetUniStrEx(p, "NetworkConnectionName", e->NetworkConnectionName, sizeof(e->NetworkConnectionName), i);
-	}
+	RpcFieldIn(&rpc_enum_eth_table, t, p);
 }
 void OutRpcEnumEth(PACK *p, RPC_ENUM_ETH *t)
 {
-	UINT i;
-	// Validate arguments
-	if (p == NULL || t == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "NumItem", t->NumItem);
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_ENUM_ETH_ITEM *e = &t->Items[i];
-		PackAddStrEx(p, "DeviceName", e->DeviceName, i, t->NumItem);
-		PackAddUniStrEx(p, "NetworkConnectionName", e->NetworkConnectionName, i, t->NumItem);
-	}
+	RpcFieldOut(&rpc_enum_eth_table, p, t);
 }
 void FreeRpcEnumEth(RPC_ENUM_ETH *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Items);
+	RpcFieldFree(&rpc_enum_eth_table, t);
 }
 
 // RPC_LOCALBRIDGE
+static const RPC_FIELD rpc_localbridge_fields[] =
+{
+	RPC_ROW_STR(RPC_LOCALBRIDGE, DeviceName, "DeviceName"),
+	RPC_ROW_STR(RPC_LOCALBRIDGE, HubName, "HubNameLB"),
+	RPC_ROW_BOOL(RPC_LOCALBRIDGE, TapMode, "TapMode"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_localbridge_table, RPC_LOCALBRIDGE, rpc_localbridge_fields);
+
 void InRpcLocalBridge(RPC_LOCALBRIDGE *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_LOCALBRIDGE));
-	PackGetStr(p, "DeviceName", t->DeviceName, sizeof(t->DeviceName));
-	PackGetStr(p, "HubNameLB", t->HubName, sizeof(t->HubName));
-	t->TapMode = PackGetBool(p, "TapMode");
+	RpcFieldIn(&rpc_localbridge_table, t, p);
 }
 void OutRpcLocalBridge(PACK *p, RPC_LOCALBRIDGE *t)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "DeviceName", t->DeviceName);
-	PackAddStr(p, "HubNameLB", t->HubName);
-	PackAddBool(p, "TapMode", t->TapMode);
+	RpcFieldOut(&rpc_localbridge_table, p, t);
 }
 
 // RPC_ENUM_LOCALBRIDGE
+// The item is an RPC_LOCALBRIDGE with Online and Active, which the
+// top-level RPC_LOCALBRIDGE table does not carry
+static const RPC_FIELD rpc_enum_localbridge_item_fields[] =
+{
+	RPC_ROW_STR(RPC_LOCALBRIDGE, DeviceName, "DeviceName"),
+	RPC_ROW_STR(RPC_LOCALBRIDGE, HubName, "HubNameLB"),
+	RPC_ROW_BOOL(RPC_LOCALBRIDGE, Online, "Online"),
+	RPC_ROW_BOOL(RPC_LOCALBRIDGE, Active, "Active"),
+	RPC_ROW_BOOL(RPC_LOCALBRIDGE, TapMode, "TapMode"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_localbridge_item_table, RPC_LOCALBRIDGE, rpc_enum_localbridge_item_fields);
+
+static const RPC_FIELD rpc_enum_localbridge_fields[] =
+{
+	RPC_ROW_COUNT(RPC_ENUM_LOCALBRIDGE, NumItem),
+	RPC_ROW_ARRAY(RPC_ENUM_LOCALBRIDGE, Items, NumItem, &rpc_enum_localbridge_item_table, "DeviceName", RPC_FF_READ_NUMITEM),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_localbridge_table, RPC_ENUM_LOCALBRIDGE, rpc_enum_localbridge_fields);
+
 void InRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t, PACK *p)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_ENUM_LOCALBRIDGE));
-	t->NumItem = PackGetInt(p, "NumItem");
-	t->Items = ZeroMalloc(sizeof(RPC_LOCALBRIDGE) * t->NumItem);
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_LOCALBRIDGE *e = &t->Items[i];
-
-		PackGetStrEx(p, "DeviceName", e->DeviceName, sizeof(e->DeviceName), i);
-		PackGetStrEx(p, "HubNameLB", e->HubName, sizeof(e->HubName), i);
-		e->Online = PackGetBoolEx(p, "Online", i);
-		e->Active = PackGetBoolEx(p, "Active", i);
-		e->TapMode = PackGetBoolEx(p, "TapMode", i);
-	}
+	RpcFieldIn(&rpc_enum_localbridge_table, t, p);
 }
 void OutRpcEnumLocalBridge(PACK *p, RPC_ENUM_LOCALBRIDGE *t)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "NumItem", t->NumItem);
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_LOCALBRIDGE *e = &t->Items[i];
-
-		PackAddStrEx(p, "DeviceName", e->DeviceName, i, t->NumItem);
-		PackAddStrEx(p, "HubNameLB", e->HubName, i, t->NumItem);
-		PackAddBoolEx(p, "Online", e->Online, i, t->NumItem);
-		PackAddBoolEx(p, "Active", e->Active, i, t->NumItem);
-		PackAddBoolEx(p, "TapMode", e->TapMode, i, t->NumItem);
-	}
+	RpcFieldOut(&rpc_enum_localbridge_table, p, t);
 }
 void FreeRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-	Free(t->Items);
+	RpcFieldFree(&rpc_enum_localbridge_table, t);
 }
 
 // MEMINFO
@@ -6641,61 +6594,36 @@ void OutRpcLicenseStatus(PACK *p, RPC_LICENSE_STATUS *t)
 }
 
 // RPC_ADMIN_OPTION
+static const RPC_FIELD rpc_admin_option_item_fields[] =
+{
+	RPC_ROW_STR(ADMIN_OPTION, Name, "Name"),
+	RPC_ROW_INT(ADMIN_OPTION, Value, "Value"),
+	RPC_ROW_UNISTR(ADMIN_OPTION, Descrption, "Descrption"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_admin_option_item_table, ADMIN_OPTION, rpc_admin_option_item_fields);
+
+// NumItem is written before HubName; the count is read from "Name"
+static const RPC_FIELD rpc_admin_option_fields[] =
+{
+	RPC_ROW_COUNT(RPC_ADMIN_OPTION, NumItem),
+	RPC_ROW_STR(RPC_ADMIN_OPTION, HubName, "HubName"),
+	RPC_ROW_ARRAY(RPC_ADMIN_OPTION, Items, NumItem, &rpc_admin_option_item_table, "Name", 0),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_admin_option_table, RPC_ADMIN_OPTION, rpc_admin_option_fields);
+
 void InRpcAdminOption(RPC_ADMIN_OPTION *t, PACK *p)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_ADMIN_OPTION));
-	t->NumItem = PackGetIndexCount(p, "Name");
-	t->Items = ZeroMalloc(sizeof(ADMIN_OPTION) * t->NumItem);
-
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		ADMIN_OPTION *o = &t->Items[i];
-
-		PackGetStrEx(p, "Name", o->Name, sizeof(o->Name), i);
-		o->Value = PackGetIntEx(p, "Value", i);
-		PackGetUniStrEx(p, "Descrption", o->Descrption, sizeof(o->Descrption), i);
-	}
+	RpcFieldIn(&rpc_admin_option_table, t, p);
 }
 void OutRpcAdminOption(PACK *p, RPC_ADMIN_OPTION *t)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "NumItem", t->NumItem);
-
-	PackAddStr(p, "HubName", t->HubName);
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		ADMIN_OPTION *o = &t->Items[i];
-
-		PackAddStrEx(p, "Name", o->Name, i, t->NumItem);
-		PackAddIntEx(p, "Value", o->Value, i, t->NumItem);
-		PackAddUniStrEx(p, "Descrption", o->Descrption, i, t->NumItem);
-	}
+	RpcFieldOut(&rpc_admin_option_table, p, t);
 }
 void FreeRpcAdminOption(RPC_ADMIN_OPTION *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Items);
+	RpcFieldFree(&rpc_admin_option_table, t);
 }
 
 // RPC_CONFIG
@@ -6737,27 +6665,20 @@ void FreeRpcConfig(RPC_CONFIG *t)
 }
 
 // RPC_BRIDGE_SUPPORT
+static const RPC_FIELD rpc_bridge_support_fields[] =
+{
+	RPC_ROW_BOOL(RPC_BRIDGE_SUPPORT, IsBridgeSupportedOs, "IsBridgeSupportedOs"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_bridge_support_table, RPC_BRIDGE_SUPPORT, rpc_bridge_support_fields);
+
 void InRpcBridgeSupport(RPC_BRIDGE_SUPPORT *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_BRIDGE_SUPPORT));
-
-	t->IsBridgeSupportedOs = PackGetBool(p, "IsBridgeSupportedOs");
+	RpcFieldIn(&rpc_bridge_support_table, t, p);
 }
 void OutRpcBridgeSupport(PACK *p, RPC_BRIDGE_SUPPORT *t)
 {
-	// Validate arguments
-	if (p == NULL || t == NULL)
-	{
-		return;
-	}
-
-	PackAddBool(p, "IsBridgeSupportedOs", t->IsBridgeSupportedOs);
+	RpcFieldOut(&rpc_bridge_support_table, p, t);
 }
 
 // RPC_ADD_ACCESS
@@ -7309,44 +7230,47 @@ void OutRpcHubStatus(PACK *p, RPC_HUB_STATUS *t)
 }
 
 // RPC_HUB_LOG
+static void RpcHubLogPacketLogConfigOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	UINT *c = (UINT *)(((UCHAR *)base) + f->Offset);
+	UINT i, num = f->Size / sizeof(UINT);
+
+	for (i = 0;i < num;i++)
+	{
+		PackAddIntEx(p, f->Key, c[i], i, num);
+	}
+}
+static void RpcHubLogPacketLogConfigIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	UINT *c = (UINT *)(((UCHAR *)base) + f->Offset);
+	UINT i, num = f->Size / sizeof(UINT);
+
+	for (i = 0;i < num;i++)
+	{
+		c[i] = PackGetIntEx(p, f->Key, i);
+	}
+}
+static const RPC_HOOK rpc_hub_log_packet_log_config_hook = {RpcHubLogPacketLogConfigOut, RpcHubLogPacketLogConfigIn, NULL};
+
+static const RPC_FIELD rpc_hub_log_fields[] =
+{
+	RPC_ROW_STR(RPC_HUB_LOG, HubName, "HubName"),
+	RPC_ROW_BOOL(RPC_HUB_LOG, LogSetting.SaveSecurityLog, "SaveSecurityLog"),
+	RPC_ROW_INT(RPC_HUB_LOG, LogSetting.SecurityLogSwitchType, "SecurityLogSwitchType"),
+	RPC_ROW_BOOL(RPC_HUB_LOG, LogSetting.SavePacketLog, "SavePacketLog"),
+	RPC_ROW_INT(RPC_HUB_LOG, LogSetting.PacketLogSwitchType, "PacketLogSwitchType"),
+	RPC_ROW_HOOK(RPC_FT_INTARRAY, RPC_HUB_LOG, LogSetting.PacketLogConfig, "PacketLogConfig", 0, &rpc_hub_log_packet_log_config_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_hub_log_table, RPC_HUB_LOG, rpc_hub_log_fields);
+
 void InRpcHubLog(RPC_HUB_LOG *t, PACK *p)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_HUB_LOG));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->LogSetting.SaveSecurityLog = PackGetBool(p, "SaveSecurityLog");
-	t->LogSetting.SecurityLogSwitchType = PackGetInt(p, "SecurityLogSwitchType");
-	t->LogSetting.SavePacketLog = PackGetBool(p, "SavePacketLog");
-	t->LogSetting.PacketLogSwitchType = PackGetInt(p, "PacketLogSwitchType");
-	for (i = 0;i < NUM_PACKET_LOG;i++)
-	{
-		t->LogSetting.PacketLogConfig[i] = PackGetIntEx(p, "PacketLogConfig", i);
-	}
+	RpcFieldIn(&rpc_hub_log_table, t, p);
 }
 void OutRpcHubLog(PACK *p, RPC_HUB_LOG *t)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddBool(p, "SaveSecurityLog", t->LogSetting.SaveSecurityLog);
-	PackAddInt(p, "SecurityLogSwitchType", t->LogSetting.SecurityLogSwitchType);
-	PackAddBool(p, "SavePacketLog", t->LogSetting.SavePacketLog);
-	PackAddInt(p, "PacketLogSwitchType", t->LogSetting.PacketLogSwitchType);
-	for (i = 0;i < NUM_PACKET_LOG;i++)
-	{
-		PackAddIntEx(p, "PacketLogConfig", t->LogSetting.PacketLogConfig[i], i, NUM_PACKET_LOG);
-	}
+	RpcFieldOut(&rpc_hub_log_table, p, t);
 }
 
 // RPC_HUB_ADD_CA
