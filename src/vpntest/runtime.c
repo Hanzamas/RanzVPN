@@ -10,11 +10,13 @@
 // check passes, and frees everything it allocates, so that the run still ends with
 // "NO MEMORY LEAKS". The [PASS] lines carry no measured values; the [FAIL] details do.
 
+#include "Mayaqua/DNS.h"
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
+#include "Mayaqua/Network.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Tick64.h"
@@ -473,6 +475,143 @@ void fileio_test(UINT num, char **arg)
 		"FileDelete through @ removes the file", "file still there");
 	RtCheck(&ctx, FileDeleteW(L"$" RT_FILEIO_DB_NAME) && IsFileExistsW(db_path) == false,
 		"FileDelete through $ removes the file", "file still there");
+
+	RtEnd(&ctx);
+}
+
+// Constants of the dns test
+#define	RT_DNS_IMMEDIATE_TIMEOUT	1				// Timeout that only the immediate answer meets reliably (ms)
+#define	RT_DNS_RESOLVER_TIMEOUT		10000			// Timeout of the lookup through the resolver thread (ms)
+#define	RT_DNS_IP4_LITERAL			"192.0.2.1"		// IPv4 documentation address (RFC 5737)
+#define	RT_DNS_IP6_LITERAL			"2001:db8::1"	// IPv6 documentation address (RFC 3849)
+
+// Check that an address list from DnsResolveEx holds exactly the expected address
+static void RtDnsCheckList(RT_CTX *ctx, LIST *o, IP *expect, char *what)
+{
+	char str[MAX_SIZE];
+
+	StrCpy(str, sizeof(str), "none");
+	if (LIST_NUM(o) >= 1)
+	{
+		IPToStr(str, sizeof(str), LIST_DATA(o, 0));
+	}
+
+	RtCheck(ctx, LIST_NUM(o) == 1 && CmpIpAddr((IP *)LIST_DATA(o, 0), expect) == 0, what,
+		"%u addresses, first %s", LIST_NUM(o), str);
+}
+
+// Check one immediate answer of DnsResolveEx: the call succeeds within the 1 ms timeout and
+// fills only the lists it should (expect6 or expect4 NULL: that list stays unset)
+static void RtDnsCheckImmediate(RT_CTX *ctx, char *hostname, IP *expect6, IP *expect4, volatile bool *cancel_flag, char *label)
+{
+	LIST *v6 = NULL;
+	LIST *v4 = NULL;
+	char what[MAX_SIZE];
+	bool ret;
+
+	ret = DnsResolveEx(&v6, &v4, hostname, RT_DNS_IMMEDIATE_TIMEOUT, cancel_flag);
+
+	Format(what, sizeof(what), "DnsResolveEx(%s) succeeds with a timeout of 1 ms", label);
+	RtCheck(ctx, ret, what, "returned false");
+
+	if (expect6 != NULL)
+	{
+		Format(what, sizeof(what), "DnsResolveEx(%s) gives one IPv6 address, the expected one", label);
+		RtDnsCheckList(ctx, v6, expect6, what);
+	}
+	else
+	{
+		Format(what, sizeof(what), "DnsResolveEx(%s) leaves the IPv6 list unset", label);
+		RtCheck(ctx, v6 == NULL, what, "%u addresses", LIST_NUM(v6));
+	}
+
+	if (expect4 != NULL)
+	{
+		Format(what, sizeof(what), "DnsResolveEx(%s) gives one IPv4 address, the expected one", label);
+		RtDnsCheckList(ctx, v4, expect4, what);
+	}
+	else
+	{
+		Format(what, sizeof(what), "DnsResolveEx(%s) leaves the IPv4 list unset", label);
+		RtCheck(ctx, v4 == NULL, what, "%u addresses", LIST_NUM(v4));
+	}
+
+	FreeHostIPAddressList(v6);
+	FreeHostIPAddressList(v4);
+}
+
+// dns: "localhost" and IP literals are answered at once, without a resolver thread, so they
+// resolve even with a timeout of 1 ms; the computer name resolves through the resolver thread
+void dns_test(UINT num, char **arg)
+{
+	RT_CTX ctx;
+	LIST *v6, *v4;
+	IP ip, local6, local4, lit6, lit4;
+	char name[MAX_SIZE];
+	char str[MAX_SIZE];
+	volatile bool cancel = true;
+	UINT threads, i;
+	bool ret, ok;
+
+	RtBegin(&ctx, "DNS", "DNS test");
+
+	GetLocalHostIP6(&local6);
+	GetLocalHostIP4(&local4);
+	RtCheck(&ctx, StrToIP(&lit4, RT_DNS_IP4_LITERAL) && IsIP4(&lit4), "StrToIP parses the IPv4 literal", "failed");
+	RtCheck(&ctx, StrToIP(&lit6, RT_DNS_IP6_LITERAL) && IsIP6(&lit6), "StrToIP parses the IPv6 literal", "failed");
+
+	// "localhost" in any case gives ::1 and 127.0.0.1; a literal gives itself in its family
+	RtDnsCheckImmediate(&ctx, "localhost", &local6, &local4, NULL, "\"localhost\"");
+	RtDnsCheckImmediate(&ctx, "LocalHost", &local6, &local4, NULL, "\"LocalHost\"");
+	RtDnsCheckImmediate(&ctx, RT_DNS_IP4_LITERAL, NULL, &lit4, NULL, "the IPv4 literal");
+	RtDnsCheckImmediate(&ctx, RT_DNS_IP6_LITERAL, &lit6, NULL, NULL, "the IPv6 literal");
+
+	// The immediate answer comes before the cancel flag is read
+	RtDnsCheckImmediate(&ctx, RT_DNS_IP4_LITERAL, NULL, &lit4, &cancel, "the IPv4 literal, cancel flag set");
+
+	// The single-address forms: GetIPEx prefers IPv6, GetIP4Ex and GetIP6Ex pick their family
+	ret = GetIPEx(&ip, "localhost", RT_DNS_IMMEDIATE_TIMEOUT, NULL);
+	RtCheck(&ctx, ret && CmpIpAddr(&ip, &local6) == 0, "GetIPEx(\"localhost\") gives ::1", "returned %s", ret ? "another address" : "false");
+	ret = GetIP4Ex(&ip, "localhost", RT_DNS_IMMEDIATE_TIMEOUT, NULL);
+	RtCheck(&ctx, ret && CmpIpAddr(&ip, &local4) == 0, "GetIP4Ex(\"localhost\") gives 127.0.0.1", "returned %s", ret ? "another address" : "false");
+	ret = GetIP4Ex(&ip, RT_DNS_IP4_LITERAL, RT_DNS_IMMEDIATE_TIMEOUT, NULL);
+	RtCheck(&ctx, ret && CmpIpAddr(&ip, &lit4) == 0, "GetIP4Ex of the IPv4 literal gives it back", "returned %s", ret ? "another address" : "false");
+	ret = GetIP6Ex(&ip, RT_DNS_IP6_LITERAL, RT_DNS_IMMEDIATE_TIMEOUT, NULL);
+	RtCheck(&ctx, ret && CmpIpAddr(&ip, &lit6) == 0, "GetIP6Ex of the IPv6 literal gives it back", "returned %s", ret ? "another address" : "false");
+
+	// The computer name resolves through the resolver thread to at least one address, each in
+	// the list of its family; the thread count is back to its value afterwards
+	GetMachineName(name, sizeof(name));
+	threads = DnsThreadNum();
+	v6 = v4 = NULL;
+	ret = DnsResolveEx(&v6, &v4, name, RT_DNS_RESOLVER_TIMEOUT, NULL);
+	RtCheck(&ctx, ret && (LIST_NUM(v6) + LIST_NUM(v4)) >= 1, "DnsResolveEx of the computer name gives at least one address",
+		"name %s, returned %s, %u IPv6 and %u IPv4 addresses", name, ret ? "true" : "false", LIST_NUM(v6), LIST_NUM(v4));
+
+	ok = true;
+	StrCpy(str, sizeof(str), "none");
+	for (i = 0;i < LIST_NUM(v6);i++)
+	{
+		if (IsIP6((IP *)LIST_DATA(v6, i)) == false)
+		{
+			IPToStr(str, sizeof(str), LIST_DATA(v6, i));
+			ok = false;
+		}
+	}
+	for (i = 0;i < LIST_NUM(v4);i++)
+	{
+		if (IsIP4((IP *)LIST_DATA(v4, i)) == false)
+		{
+			IPToStr(str, sizeof(str), LIST_DATA(v4, i));
+			ok = false;
+		}
+	}
+	RtCheck(&ctx, ok, "Each address of the computer name is in the list of its family", "misplaced %s", str);
+	RtCheck(&ctx, DnsThreadNum() == threads, "DnsThreadNum is back to its value from before the lookup",
+		"%u before, %u after", threads, DnsThreadNum());
+
+	FreeHostIPAddressList(v6);
+	FreeHostIPAddressList(v4);
 
 	RtEnd(&ctx);
 }
