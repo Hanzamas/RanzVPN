@@ -58,7 +58,6 @@ void SessionMain(SESSION *s)
 		return;
 	}
 
-	Debug("SessionMain: %s\n", s->Name);
 
 	// Generate a string from the session key
 	BinToStr(s->SessionKeyStr, sizeof(s->SessionKeyStr), s->SessionKey, sizeof(s->SessionKey));
@@ -260,7 +259,6 @@ void SessionMain(SESSION *s)
 					pa_fail = true;
 					err = ERR_DEVICE_DRIVER_ERROR;
 					Free(b->Buf);
-					Debug("  Error: pa->PutPacket(Packet) Failed.\n");
 				}
 				Free(b);
 			}
@@ -270,7 +268,6 @@ void SessionMain(SESSION *s)
 				PROBE_DATA2("pa->PutPacket", NULL, 0);
 				if (pa->PutPacket(s, NULL, 0) == false)
 				{
-					Debug("  Error: pa->PutPacket(NULL) Failed.\n");
 					pa_fail = true;
 					err = ERR_DEVICE_DRIVER_ERROR;
 				}
@@ -292,7 +289,6 @@ void SessionMain(SESSION *s)
 				{
 					err = ERR_DEVICE_DRIVER_ERROR;
 					pa_fail = true;
-					Debug("  Error: pa->GetNextPacket() Failed.\n");
 					break;
 				}
 
@@ -495,7 +491,6 @@ void SessionMain(SESSION *s)
 			if (timeouted)
 			{
 				// Timeout occurs
-				Debug("** Session Timeouted.\n");
 				s->SessionTimeOuted = true;
 				err = ERR_SESSION_TIMEOUT;
 			}
@@ -511,7 +506,6 @@ void SessionMain(SESSION *s)
 	}
 
 CLEANUP:
-	Debug("Session %s Finishing...\n", s->Name);
 
 	// Remove from the session list of the HUB
 	if (s->ServerMode)
@@ -927,7 +921,6 @@ bool SessionConnect(SESSION *s)
 
 	s->ClientStatus = CLIENT_STATUS_CONNECTING;
 
-	Debug("SessionConnect() Started.\n");
 
 	// Initialize the session
 	Lock(s->lock);
@@ -988,7 +981,6 @@ void StopSessionEx(SESSION *s, bool no_wait)
 	s->CancelConnect = true;
 	s->Halt = true;
 
-	Debug("Stop Session %s\n", s->Name);
 
 	// Cancel
 	Cancel(s->Cancel1);
@@ -1160,21 +1152,6 @@ void PrintSessionTotalDataSize(SESSION *s)
 	{
 		return;
 	}
-
-	Debug(
-		"-- SESSION TOTAL PKT INFORMATION --\n\n"
-		"      TotalSendSize: %I64u\n"
-		"  TotalSendSizeReal: %I64u\n"
-		"      TotalRecvSize: %I64u\n"
-		"  TotalRecvSizeReal: %I64u\n"
-		"   Compression Rate: %.2f%% (Send)\n"
-		"                     %.2f%% (Recv)\n",
-		s->TotalSendSize, s->TotalSendSizeReal,
-		s->TotalRecvSize, s->TotalRecvSizeReal,
-		(float)((double)s->TotalSendSizeReal / (double)s->TotalSendSize * 100.0f),
-		(float)((double)s->TotalRecvSizeReal / (double)s->TotalRecvSize * 100.0f)
-		);
-
 }
 
 // Client thread
@@ -1188,7 +1165,6 @@ void ClientThread(THREAD *t, void *param)
 		return;
 	}
 
-	Debug("ClientThread 0x%x Started.\n", t);
 
 	s = (SESSION *)param;
 	AddRef(s->ref);
@@ -1223,8 +1199,6 @@ void ClientThread(THREAD *t, void *param)
 			HLog(s->Link->Hub, "LH_CONNECT_1", s->ClientOption->AccountName, s->CurrentRetryCount + 1);
 		}
 
-		Debug("Trying to Connect to Server... (%u / %u)\n", s->CurrentRetryCount + 0,
-			s->ClientOption->NumRetry);
 
 		// Initialize
 		s->NextConnectionTime = 0;
@@ -1237,7 +1211,6 @@ void ClientThread(THREAD *t, void *param)
 		{
 			s->Err = ERR_USER_CANCEL;
 		}
-		Debug("Disconnected. Err = %u : %S\n", s->Err, _E(s->Err));
 
 		PrintSessionTotalDataSize(s);
 
@@ -1306,7 +1279,6 @@ SKIP:
 		}
 	}
 
-	Debug("Session Halt.\n");
 
 	s->ClientStatus = CLIENT_STATUS_IDLE;
 

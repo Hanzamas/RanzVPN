@@ -45,14 +45,6 @@ void UdpAccelPoll(UDP_ACCEL *a)
 		{
 			BLOCK *b = UdpAccelProcessRecvPacket(a, tmp, ret, &src_ip, src_port);
 
-
-			/*if (b != NULL)
-			{
-				char tmp[MAX_SIZE * 10];
-				BinToStr(tmp, sizeof(tmp), b->Buf, b->Size);
-				Debug("Recv Pkt: %s\n", tmp);
-			}*/
-
 			if (b != NULL)
 			{
 				// Receive a packet
@@ -280,7 +272,6 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 			ret = CipherProcessAead(a->CipherEncrypt, a->NextIv_V2, inner + inner_size, UDP_ACCELERATION_PACKET_MAC_SIZE_V2, inner, inner, inner_size, NULL, 0);
 			if (ret == 0)
 			{
-				Debug("UdpAccelSend(): CipherProcessAead() failed!\n");
 				return;
 			}
 
@@ -316,7 +307,6 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 
 	if (SendTo(a->UdpSock, &a->YourIp, a->YourPort, buffer, size) == 0)
 	{
-		Debug("UdpAccelSend(): SendTo() failed! IP: %r, port: %u, size: %u\n", &a->YourIp, a->YourPort, size);
 		if (a->UdpSock->IgnoreSendErr == false)
 		{
 			a->FatalError = true;
@@ -329,7 +319,6 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 		return;
 	}
 
-	Debug("UdpAccelSend(): Peer has not replied in a while, sending keep-alive packet to alt destinations...\n");
 
 	IP *ips[2];
 	ips[0] = &a->YourIp;
@@ -360,7 +349,6 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 
 			if (SendTo(a->UdpSock, ips[i], ports[j], buffer, size) == 0)
 			{
-				Debug("UdpAccelSend(): SendTo() failed! IP: %r, port: %u, size: %u\n", ips[i], ports[j], size);
 				if (a->UdpSock->IgnoreSendErr == false)
 				{
 					a->FatalError = true;
@@ -472,7 +460,6 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 
 			if (CipherProcessAead(a->CipherDecrypt, iv, buf + data_size, UDP_ACCELERATION_PACKET_MAC_SIZE_V2, buf, buf, data_size, NULL, 0) == 0)
 			{
-				Debug("UdpAccelProcessRecvPacket(): CipherProcessAead() failed!\n");
 				return NULL;
 			}
 
@@ -679,8 +666,6 @@ bool UdpAccelInitServer(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, IP *reported_
 		return false;
 	}
 
-	Debug("UdpAccelInitServer(): Version: %u, detected_ip: %r, reported_ip: %r, port: %hu, YourCookie: %u, MyCookie: %u\n",
-		  a->Version, detected_ip, reported_ip, port, a->YourCookie, a->MyCookie);
 
 	if (IsIP6(detected_ip) != a->IsIPv6)
 	{
@@ -721,8 +706,6 @@ bool UdpAccelInitClient(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, IP *reported_
 		return false;
 	}
 
-	Debug("UdpAccelInitClient(): Version: %u, detected_ip: %s, reported_ip: %s, port: %hu, cookie: %u, my_cookie: %u\n",
-		  a->Version, detected_ip, reported_ip, port, cookie, my_cookie);
 
 	if (IsIP6(detected_ip) != a->IsIPv6)
 	{
@@ -795,7 +778,6 @@ void UdpAccelQueryStun(UDP_ACCEL *a, IP *peer_ip)
 
 	if (StunGetMappedAddress(a->UdpSock, server, &ip, &port) == false)
 	{
-		Debug("UdpAccelQueryStun(): STUN query to %s failed, reporting the local endpoint.\n", server);
 		return;
 	}
 
@@ -804,7 +786,6 @@ void UdpAccelQueryStun(UDP_ACCEL *a, IP *peer_ip)
 	if (IsIP6(&ip) != a->IsIPv6 || port == 0 || port > 65535 || IsLocalHostIP(&ip) ||
 		(IsIP6(&ip) ? IsValidUnicastIPAddress6(&ip) : IsValidUnicastIPAddress4(&ip)) == false)
 	{
-		Debug("UdpAccelQueryStun(): unusable STUN result: %r, port: %u\n", &ip, port);
 		return;
 	}
 
@@ -812,7 +793,6 @@ void UdpAccelQueryStun(UDP_ACCEL *a, IP *peer_ip)
 	a->StunPort = (USHORT)port;
 	a->UseStun = true;
 
-	Debug("UdpAccelQueryStun(): local port: %u, public endpoint: %r, port: %u\n", a->MyPort, &a->StunIp, a->StunPort);
 }
 
 // Create a new UDP acceleration function
@@ -932,7 +912,6 @@ UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port)
 
 	a->MaxUdpPacketSize = max_udp_size;
 
-	Debug("Udp Accel My Port = %u\n", a->MyPort);
 
 	return a;
 }

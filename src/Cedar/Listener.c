@@ -94,7 +94,6 @@ void UDPReceivedPacket(CEDAR *cedar, SOCK *s, IP *ip, UINT port, void *data, UIN
 	session = GetSessionFromUDPEntry(cedar, Endian32(*key32));
 	if (session == NULL)
 	{
-		Debug("Invalid UDP Session Key 32: 0x%X\n", *key32);
 		return;
 	}
 
@@ -184,7 +183,6 @@ void TCPAcceptedThread(THREAD *t, void *param)
 	// Release
 	if (flag1 == false)
 	{
-		Debug("%s %u flag1 == false\n", __FILE__, __LINE__);
 		IPToStr(tmp, sizeof(tmp), &s->RemoteIP);
 
 		if (IS_SPECIAL_PORT(s->RemotePort) == false)
@@ -222,7 +220,6 @@ void TCPAccepted(LISTENER *r, SOCK *s)
 		// DOS attack check
 		if (CheckDosAttack(r, s) == false)
 		{
-			Debug("DOS Attack 1 !!\n");
 			IPToStr(tmp, sizeof(tmp), &s->RemoteIP);
 			SLog(r->Cedar, "LS_LISTENER_DOS", r->Port, tmp, s->RemotePort);
 			return;
@@ -232,7 +229,6 @@ void TCPAccepted(LISTENER *r, SOCK *s)
 		{
 			if (IsInNoSsl(r->Cedar, &s->RemoteIP))
 			{
-				Debug("DOS Attack 2 !!\n");
 				IPToStr(tmp, sizeof(tmp), &s->RemoteIP);
 				SLog(r->Cedar, "LS_LISTENER_DOS", r->Port, tmp, s->RemotePort);
 				return;
@@ -240,7 +236,6 @@ void TCPAccepted(LISTENER *r, SOCK *s)
 		}
 		if (num_clients_from_this_ip > GetMaxConnectionsPerIp())
 		{
-			Debug("DOS Attack 3 !!\n");
 			IPToStr(tmp, sizeof(tmp), &s->RemoteIP);
 			SLog(r->Cedar, "LS_LISTENER_DOS", r->Port, tmp, s->RemotePort);
 			return;
@@ -249,7 +244,6 @@ void TCPAccepted(LISTENER *r, SOCK *s)
 		now_uec = GetUnestablishedConnections(cedar);
 		if (now_uec > max_uec)
 		{
-			Debug("DOS Attack 4 !!\n");
 			SLog(r->Cedar, "LS_LISTENER_MAXUEC", max_uec, now_uec);
 			return;
 		}
@@ -416,7 +410,6 @@ void ListenerUDPMainLoop(LISTENER *r)
 		return;
 	}
 
-	Debug("ListenerUDPMainLoop Starts.\n");
 	r->Status = LISTENER_STATUS_TRYING;
 
 	while (true)
@@ -431,7 +424,6 @@ void ListenerUDPMainLoop(LISTENER *r)
 				return;
 			}
 
-			Debug("NewUDP()\n");
 			r->Sock = NewUDPEx2(r->Port, false, &r->Cedar->Server->ListenIP);
 			if (r->Sock != NULL)
 			{
@@ -440,19 +432,16 @@ void ListenerUDPMainLoop(LISTENER *r)
 			}
 
 			// Wait failure
-			Debug("Failed to NewUDP.\n");
 			Wait(r->Event, LISTEN_RETRY_TIME);
 
 			// Stop flag inspection
 			if (r->Halt)
 			{
-				Debug("UDP Halt.\n");
 				return;
 			}
 		}
 
 		r->Status = LISTENER_STATUS_LISTENING;
-		Debug("Start Listening at UDP Port %u.\n", r->Sock->LocalPort);
 
 		// Stop flag inspection
 		if (r->Halt)
@@ -484,7 +473,6 @@ STOP:
 				Disconnect(r->Sock);
 				ReleaseSock(r->Sock);
 				r->Sock = NULL;
-				Debug("UDP Listen Stopped.\n");
 				Free(data);
 				break;
 			}
@@ -509,13 +497,11 @@ void ListenerTCPMainLoop(LISTENER *r)
 		return;
 	}
 
-	Debug("ListenerTCPMainLoop Starts.\n");
 	r->Status = LISTENER_STATUS_TRYING;
 
 	while (true)
 	{
 		bool first_failed = true;
-		Debug("Status = LISTENER_STATUS_TRYING\n");
 		r->Status = LISTENER_STATUS_TRYING;
 
 		// Try to Listen
@@ -593,7 +579,6 @@ void ListenerTCPMainLoop(LISTENER *r)
 				{
 					interval = LISTEN_RETRY_TIME_NOIPV6;
 
-					Debug("IPv6 is not supported.\n");
 				}
 			}
 
@@ -603,13 +588,11 @@ void ListenerTCPMainLoop(LISTENER *r)
 			if (r->Halt)
 			{
 				// Stop
-				Debug("Listener Halt.\n");
 				return;
 			}
 		}
 
 		r->Status = LISTENER_STATUS_LISTENING;
-		Debug("Status = LISTENER_STATUS_LISTENING\n");
 
 		// Stop flag inspection
 		if (r->Halt)
@@ -622,19 +605,16 @@ void ListenerTCPMainLoop(LISTENER *r)
 		while (true)
 		{
 			// Accept
-			Debug("Accept()\n");
 			new_sock = Accept(s);
 			if (new_sock != NULL)
 			{
 				// Accept success
-				Debug("Accepted.\n");
 				TCPAccepted(r, new_sock);
 				ReleaseSock(new_sock);
 			}
 			else
 			{
 STOP:
-				Debug("Accept Canceled.\n");
 				// Failed to accept (socket is destroyed)
 				// Close the listening socket
 				Disconnect(s);
@@ -666,7 +646,6 @@ STOP:
 		if (r->Halt)
 		{
 			// Stop
-			Debug("Listener Halt.\n");
 			return;
 		}
 	}
@@ -1022,7 +1001,6 @@ void DelUDPEntry(CEDAR *cedar, SESSION *session)
 				Delete(cedar->UDPEntryList, e);
 				Free(e);
 				UnlockList(cedar->UDPEntryList);
-				Debug("UDP_Entry Deleted.\n");
 				return;
 			}
 		}
@@ -1051,6 +1029,5 @@ void AddUDPEntry(CEDAR *cedar, SESSION *session)
 	}
 	UnlockList(cedar->UDPEntryList);
 
-	Debug("UDP_Entry Added.\n");
 }
 

@@ -600,7 +600,6 @@ void DelConnection(CEDAR *cedar, CONNECTION *c)
 
 	LockList(cedar->ConnectionList);
 	{
-		Debug("Connection %s Deleted from Cedar.\n", c->Name);
 		if (Delete(cedar->ConnectionList, c))
 		{
 			ReleaseConnection(c);
@@ -677,7 +676,6 @@ void AddConnection(CEDAR *cedar, CONNECTION *c)
 	{
 		Add(cedar->ConnectionList, c);
 		AddRef(c->ref);
-		Debug("Connection %s Inserted to Cedar.\n", c->Name);
 	}
 	UnlockList(cedar->ConnectionList);
 }

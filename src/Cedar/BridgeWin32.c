@@ -835,7 +835,6 @@ ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
 		return NULL;
 	}
 
-	Debug("OpenEthInternal: %s\n", t->Name);
 
 	// Open with SU
 	su = SuInit();
@@ -1086,11 +1085,7 @@ TOKEN_LIST *GetEthListEx(UINT *total_num_including_hidden, bool enum_normal, boo
 		if (show)
 		{
 			ret->Token[j++] = CopyStr(tmp);
-
-			Debug("%s - %s\n", a->Guid, a->Title);
 		}
-		// Make sure that "FriendlyName" does not cosist a NULL character.
-		Debug("%s,- s=%d, t=%s, %s,\n", a->Guid, show, tmp, a->Title[0] == 0 ? "check=NG FriendlyName(Title) is NULL !" : "check=OK");
 	}
 
 	*total_num_including_hidden = ret->NumTokens;
