@@ -25,25 +25,11 @@
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
-#ifdef OS_WIN32
 #include <iphlpapi.h>
 #include <WS2tcpip.h>
 #include <wincrypt.h>
 #include <IcmpAPI.h>
 
-struct ROUTE_CHANGE_DATA
-{
-	HANDLE Handle;
-	UINT NumCalled;
-	bool Changed;
-};
-#endif
-
-// HTTP constant
-static char http_detect_server_startwith[] = "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\r\n<HTML><HEAD>\r\n<TITLE>403 Forbidden</TITLE>\r\n</HEAD><BODY>\r\n<H1>Forbidden</H1>\r\nYou don't have permission to access ";
-static char http_detect_server_tag_future[] = "9C37197CA7C2428388C2E6E59B829B30";
-
-// Lock related
 static LOCK *machine_name_lock = NULL;
 static LOCK *disconnect_function_lock = NULL;
 extern LOCK *openssl_lock;
@@ -82,80 +68,11 @@ static LIST *g_private_ip_list = NULL;
 static LIST *g_dyn_value_list = NULL;
 
 
-
-
-// Get a value from a dynamic value list (Returns a default value if the value is not found)
-UINT64 GetDynValueOrDefault(char *name, UINT64 default_value, UINT64 min_value, UINT64 max_value)
-{
-	UINT64 ret = GetDynValue(name);
-
-	if (ret == 0)
-	{
-		return default_value;
-	}
-
-	if (ret < min_value)
-	{
-		ret = min_value;
-	}
-
-	if (ret > max_value)
-	{
-		ret = max_value;
-	}
-
-	return ret;
-}
-
-// Get a value from a dynamic value list (Returns a default value if the value is not found)
-// The value is limited to 1/5 to 50 times of the default value for safety
-UINT64 GetDynValueOrDefaultSafe(char *name, UINT64 default_value)
-{
-	return GetDynValueOrDefault(name, default_value, default_value / (UINT64)5, default_value * (UINT64)50);
-}
-
-// Get a value from a dynamic value list
-UINT64 GetDynValue(char *name)
-{
-	UINT64 ret = 0;
-	// Validate arguments
-	if (name == NULL)
-	{
-		return 0;
-	}
-
-	if (g_dyn_value_list == NULL)
-	{
-		return 0;
-	}
-
-	LockList(g_dyn_value_list);
-	{
-		UINT i;
-
-		for (i = 0; i < LIST_NUM(g_dyn_value_list); i++)
-		{
-			DYN_VALUE *vv = LIST_DATA(g_dyn_value_list, i);
-
-			if (StrCmpi(vv->Name, name) == 0)
-			{
-				ret = vv->Value;
-				break;
-			}
-		}
-	}
-	UnlockList(g_dyn_value_list);
-
-	return ret;
-}
-
-// Initialization of the dynamic value list
 void InitDynList()
 {
 	g_dyn_value_list = NewList(NULL);
 }
 
-// Solution of dynamic value list
 void FreeDynList()
 {
 	UINT i;
@@ -176,20 +93,15 @@ void FreeDynList()
 	g_dyn_value_list = NULL;
 }
 
-// Get the current time zone
 int GetCurrentTimezone()
 {
 	int ret = 0;
 
-#ifdef	OS_WIN32
 	ret = GetCurrentTimezoneWin32();
-#endif	// OS_WIN32
 
 	return ret;
 }
 
-#ifdef	OS_WIN32
-// Get the current time zone (Win32)
 int GetCurrentTimezoneWin32()
 {
 	TIME_ZONE_INFORMATION info;
@@ -202,13 +114,10 @@ int GetCurrentTimezoneWin32()
 
 	return info.Bias;
 }
-#endif	// OS_WIN32
 
-// Check whether the specified MAC address exists on the local host (high speed)
 bool IsMacAddressLocalFast(void *addr)
 {
 	bool ret = false;
-	// Validate arguments
 	if (addr == NULL)
 	{
 		return false;
@@ -218,7 +127,6 @@ bool IsMacAddressLocalFast(void *addr)
 	{
 		if (local_mac_list == NULL)
 		{
-			// First enumeration
 			RefreshLocalMacAddressList();
 		}
 
@@ -229,7 +137,6 @@ bool IsMacAddressLocalFast(void *addr)
 	return ret;
 }
 
-// Update the local MAC address list
 void RefreshLocalMacAddressList()
 {
 	Lock(local_mac_list_lock);
@@ -244,12 +151,10 @@ void RefreshLocalMacAddressList()
 	Unlock(local_mac_list_lock);
 }
 
-// Check whether the specified MAC address exists on the local host
 bool IsMacAddressLocalInner(LIST *o, void *addr)
 {
 	bool ret = false;
 	UINT i;
-	// Validate arguments
 	if (o == NULL || addr == NULL)
 	{
 		return false;
@@ -269,12 +174,10 @@ bool IsMacAddressLocalInner(LIST *o, void *addr)
 	return ret;
 }
 
-// Get a list of the NICs on the computer
 LIST *GetNicList()
 {
 	LIST *o = NULL;
 
-#ifdef	OS_WIN32
 	o = Win32GetNicList();
 
 	if (o != NULL)
@@ -282,12 +185,10 @@ LIST *GetNicList()
 		return o;
 	}
 
-#endif	// OS_WIN32
 
 	return NewListFast(NULL);
 }
 
-#ifdef	OS_WIN32
 LIST *Win32GetNicList()
 {
 	UINT i;
@@ -305,8 +206,7 @@ LIST *Win32GetNicList()
 
 		if (a->Type == 6 && a->AddressSize == 6)
 		{
-			// If the connection state of the interface is unknown, then exclude it.
-			// Unknown means that the device is not plugged into the local host.
+			// Skip interfaces whose state is unknown: the device is not plugged in.
 			if (a->MediaConnectState == MediaConnectStateUnknown)
 			{
 				continue;
@@ -325,13 +225,10 @@ LIST *Win32GetNicList()
 
 	return o;
 }
-#endif	// OS_WIN32
 
-// Release the NIC list
 void FreeNicList(LIST *o)
 {
 	UINT i;
-	// Validate arguments
 	if (o == NULL)
 	{
 		return;
@@ -347,7 +244,6 @@ void FreeNicList(LIST *o)
 	ReleaseList(o);
 }
 
-// Parse the user name of the NT
 void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_size, char *dst_domain, UINT dst_domain_size, bool do_not_parse_atmark)
 {
 	char tmp_username[MAX_SIZE];
@@ -360,7 +256,6 @@ void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_s
 	}
 
 	ClearStr(dst_domain, dst_domain_size);
-	// Validate arguments
 	if (src_username == NULL || dst_username == NULL || dst_domain == NULL)
 	{
 		return;
@@ -369,7 +264,6 @@ void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_s
 	StrCpy(tmp_username, sizeof(tmp_username), src_username);
 	ClearStr(tmp_domain, sizeof(tmp_domain));
 
-	// Analysis of username@domain.name format
 	if (do_not_parse_atmark == false)
 	{
 		t = ParseTokenWithNullStr(tmp_username, "@");
@@ -384,7 +278,6 @@ void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_s
 		FreeToken(t);
 	}
 
-	// If the username part is in "domain\username" format, split it
 	t = ParseTokenWithNullStr(tmp_username, "\\");
 	if (t->NumTokens >= 2)
 	{
@@ -401,10 +294,8 @@ void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_s
 	StrCpy(dst_domain, dst_domain_size, tmp_domain);
 }
 
-// Generate a hash from the current computer name and the process name
 void GetCurrentMachineIpProcessHash(void *hash)
 {
-	// Validate arguments
 	if (hash == NULL)
 	{
 		return;
@@ -428,19 +319,16 @@ void GetCurrentMachineIpProcessHashInternal(void *hash)
 	char machine_name[MAX_SIZE];
 	wchar_t exe_path[MAX_PATH];
 	char *product_id = NULL;
-	// Validate arguments
 	if (hash == NULL)
 	{
 		return;
 	}
 
-#ifdef	OS_WIN32
 	product_id = MsRegReadStr(REG_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", "ProductId");
 	if (product_id == NULL)
 	{
 		product_id = MsRegReadStr(REG_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion", "ProductId");
 	}
-#endif	// OS_WIN32
 
 	b = NewBuf();
 
@@ -476,7 +364,6 @@ void GetCurrentMachineIpProcessHashInternal(void *hash)
 	Free(product_id);
 }
 
-#ifdef	OS_WIN32
 
 typedef struct WIN32_ACCEPT_CHECK_DATA
 {
@@ -491,7 +378,6 @@ int CALLBACK Win32AcceptCheckCallback(LPWSABUF lpCallerId, LPWSABUF lpCallerData
 	return CF_ACCEPT;
 }
 
-// Accept function for Win32
 SOCKET Win32Accept(SOCK *sock, SOCKET s, struct sockaddr *addr, int *addrlen, bool ipv6)
 {
 	SOCKET ret;
@@ -502,7 +388,6 @@ SOCKET Win32Accept(SOCK *sock, SOCKET s, struct sockaddr *addr, int *addrlen, bo
 	UINT zero = 0;
 	UINT tmp = 0;
 	DWORD ret_size = 0;
-	// Validate arguments
 	if (sock == NULL || s == INVALID_SOCKET)
 	{
 		return INVALID_SOCKET;
@@ -536,7 +421,6 @@ L_LOOP:
 
 		if (err == WSAEWOULDBLOCK)
 		{
-			//Debug("!!! WSAAccept: WSAEWOULDBLOCK\n");
 			UINT wait_ret = WaitForSingleObject(sock->hAcceptEvent, 1234);
 
 			if (wait_ret == WAIT_OBJECT_0 || wait_ret == WAIT_TIMEOUT)
@@ -563,21 +447,15 @@ L_LOOP:
 	}
 	else
 	{
-		// Remove a new socket from the event
 		WSAEventSelect(ret, sock->hAcceptEvent, 0);
 
-		// Restore the new socket to synchronized
 		WSAIoctl(ret, FIONBIO, &zero, sizeof(zero), &tmp, sizeof(tmp), &ret_size, NULL, NULL);
 	}
 
 	return ret;
 }
 
-#endif	// OS_WIN32
 
-#define	USE_OLD_GETIP
-
-// Set the arp_filter in Linux
 void SetLinuxArpFilter()
 {
 	char *filename = "/proc/sys/net/ipv4/conf/all/arp_filter";
@@ -596,11 +474,9 @@ void SetLinuxArpFilter()
 	FileClose(o);
 }
 
-// Determine whether the string is a IPv6 address
 bool IsStrIPv6Address(char *str)
 {
 	IP ip;
-	// Validate arguments
 	if (str == NULL)
 	{
 		return false;
@@ -614,11 +490,9 @@ bool IsStrIPv6Address(char *str)
 	return true;
 }
 
-// Convert the subnet mask to an integer
 UINT SubnetMaskToInt6(IP *a)
 {
 	UINT i;
-	// Validate arguments
 	if (IsIP6(a) == false)
 	{
 		return 0;
@@ -641,7 +515,6 @@ UINT SubnetMaskToInt6(IP *a)
 UINT SubnetMaskToInt4(IP *a)
 {
 	UINT i;
-	// Validate arguments
 	if (IsIP4(a) == false)
 	{
 		return 0;
@@ -673,11 +546,9 @@ UINT SubnetMaskToInt(IP *a)
 	}
 }
 
-// Determine whether the specified IP address is a subnet mask
 bool IsSubnetMask6(IP *a)
 {
 	UINT i;
-	// Validate arguments
 	if (IsIP6(a) == false)
 	{
 		return false;
@@ -698,10 +569,8 @@ bool IsSubnetMask6(IP *a)
 	return false;
 }
 
-// Generate a local address from the MAC address
 void GenerateEui64LocalAddress(IP *a, UCHAR *mac)
 {
-	// Validate arguments
 	if (a == NULL || mac == NULL)
 	{
 		return;
@@ -718,10 +587,8 @@ void GenerateEui64LocalAddress(IP *a, UCHAR *mac)
 	Copy(&a->address[8], tmp, sizeof(tmp));
 }
 
-// Generate the EUI-64 address from the MAC address
 void GenerateEui64Address6(UCHAR *dst, UCHAR *mac)
 {
-	// Validate arguments
 	if (dst == NULL || mac == NULL)
 	{
 		return;
@@ -735,25 +602,9 @@ void GenerateEui64Address6(UCHAR *dst, UCHAR *mac)
 	dst[0] = ((~(dst[0] & 0x02)) & 0x02) | (dst[0] & 0xfd);
 }
 
-// Get the prefix address
-void GetPrefixAddress6(IP *dst, IP *ip, IP *subnet)
-{
-	// Validate arguments
-	if (dst == NULL || ip == NULL || subnet == NULL)
-	{
-		return;
-	}
-
-	IPAnd6(dst, ip, subnet);
-
-	dst->ipv6_scope_id = ip->ipv6_scope_id;
-}
-
-// Get the type of the IPv6 address
 UINT GetIPv6AddrType(IPV6_ADDR *addr)
 {
 	IP ip;
-	// Validate arguments
 	if (addr == NULL)
 	{
 		return 0;
@@ -766,7 +617,6 @@ UINT GetIPv6AddrType(IPV6_ADDR *addr)
 UINT GetIPAddrType6(IP *ip)
 {
 	UINT ret = 0;
-	// Validate arguments
 	if (IsIP6(ip) == false)
 	{
 		return 0;
@@ -834,10 +684,8 @@ UINT GetIPAddrType6(IP *ip)
 	return ret;
 }
 
-// Loopback address
 void GetLoopbackAddress6(IP *ip)
 {
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return;
@@ -848,10 +696,8 @@ void GetLoopbackAddress6(IP *ip)
 	ip->address[15] = 0x01;
 }
 
-// All-nodes multicast address
 void GetAllNodeMulticaseAddress6(IP *ip)
 {
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return;
@@ -864,10 +710,8 @@ void GetAllNodeMulticaseAddress6(IP *ip)
 	ip->address[15] = 0x01;
 }
 
-// All-routers multicast address
 void GetAllRouterMulticastAddress6(IP *ip)
 {
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return;
@@ -880,10 +724,8 @@ void GetAllRouterMulticastAddress6(IP *ip)
 	ip->address[15] = 0x02;
 }
 
-// Logical operation of the IPv4 address
 void IPAnd4(IP *dst, IP *a, IP *b)
 {
-	// Validate arguments
 	if (dst == NULL || a == NULL || b == NULL || IsIP4(a) == false || IsIP4(b) == false)
 	{
 		ZeroIP4(dst);
@@ -893,12 +735,10 @@ void IPAnd4(IP *dst, IP *a, IP *b)
 	UINTToIP(dst, IPToUINT(a) & IPToUINT(b));
 }
 
-// Logical operation of the IPv6 address
 void IPAnd6(IP *dst, IP *a, IP *b)
 {
 	Zero(dst, sizeof(IP));
 
-	// Validate arguments
 	if (dst == NULL || IsIP6(a) == false || IsIP6(b) == false)
 	{
 		return;
@@ -910,7 +750,6 @@ void IPAnd6(IP *dst, IP *a, IP *b)
 	}
 }
 
-// Creating a subnet mask
 void IntToSubnetMask6(IP *ip, UINT i)
 {
 	UINT j = i / 8;
@@ -935,10 +774,8 @@ void IntToSubnetMask6(IP *ip, UINT i)
 	Copy(ip, &a, sizeof(IP));
 }
 
-// Convert the IP address to a string
 void IP6AddrToStr(char *str, UINT size, IPV6_ADDR *addr)
 {
-	// Validate arguments
 	if (str == NULL || addr == NULL)
 	{
 		return;
@@ -949,7 +786,6 @@ void IP6AddrToStr(char *str, UINT size, IPV6_ADDR *addr)
 void IPToStr6Array(char *str, UINT size, UCHAR *bytes)
 {
 	IP ip;
-	// Validate arguments
 	if (str == NULL || bytes == NULL)
 	{
 		return;
@@ -975,7 +811,6 @@ void IPToStr6Inner(char *str, IP *ip)
 	UINT max_zero_len;
 	UINT max_zero_start;
 	IP a;
-	// Validate arguments
 	if (str == NULL || ip == NULL)
 	{
 		return;
@@ -989,7 +824,6 @@ void IPToStr6Inner(char *str, IP *ip)
 		values[i] = Endian16(values[i]);
 	}
 
-	// Search for omittable part
 	zero_started_index = INFINITE;
 	max_zero_len = 0;
 	max_zero_start = INFINITE;
@@ -1025,7 +859,6 @@ void IPToStr6Inner(char *str, IP *ip)
 		}
 	}
 
-	// Format a string
 	StrCpy(str, 0, "");
 	for (i = 0; i < 8; i++)
 	{
@@ -1056,7 +889,6 @@ void IPToStr6Inner(char *str, IP *ip)
 		}
 	}
 
-	// Scope ID
 	if (ip->ipv6_scope_id != 0)
 	{
 		char tmp[64];
@@ -1068,7 +900,6 @@ void IPToStr6Inner(char *str, IP *ip)
 	}
 }
 
-// Convert the string to an IP address
 bool StrToIP6(IP *ip, char *str)
 {
 	TOKEN_LIST *t;
@@ -1076,7 +907,6 @@ bool StrToIP6(IP *ip, char *str)
 	IP a;
 	UINT i;
 	UINT scope_id = 0;
-	// Validate arguments
 	if (str == NULL || ip == NULL)
 	{
 		return false;
@@ -1089,7 +919,6 @@ bool StrToIP6(IP *ip, char *str)
 
 	if (StartWith(tmp, "[") && EndWith(tmp, "]"))
 	{
-		// If the string is enclosed in square brackets, remove brackets
 		StrCpyAllowOverlap(tmp, sizeof(tmp), &tmp[1]);
 
 		if (StrLen(tmp) >= 1)
@@ -1098,7 +927,6 @@ bool StrToIP6(IP *ip, char *str)
 		}
 	}
 
-	// Remove the scope ID by analyzing if there is it
 	i = SearchStrEx(tmp, "%", 0, false);
 	if (i != INFINITE)
 	{
@@ -1115,7 +943,6 @@ bool StrToIP6(IP *ip, char *str)
 		scope_id = ToInt(ss);
 	}
 
-	// Tokenize
 	t = ParseTokenWithNullStr(tmp, ":");
 	if (t->NumTokens >= 3 && t->NumTokens <= 8)
 	{
@@ -1189,13 +1016,11 @@ bool StrToIP6(IP *ip, char *str)
 	return true;
 }
 
-// Convert an IP address character to the UCHAR type
 void IPItemStrToChars6(UCHAR *chars, char *str)
 {
 	char tmp[5];
 	BUF *b;
 	UINT len;
-	// Validate arguments
 	if (chars == NULL)
 	{
 		return;
@@ -1244,11 +1069,9 @@ void IPItemStrToChars6(UCHAR *chars, char *str)
 	FreeBuf(b);
 }
 
-// Check whether invalid characters are included in the element string of the IP address
 bool CheckIPItemStr6(char *str)
 {
 	UINT i, len;
-	// Validate arguments
 	if (str == NULL)
 	{
 		return false;
@@ -1257,7 +1080,6 @@ bool CheckIPItemStr6(char *str)
 	len = StrLen(str);
 	if (len >= 5)
 	{
-		// Invalid length
 		return false;
 	}
 
@@ -1279,10 +1101,8 @@ bool CheckIPItemStr6(char *str)
 	return true;
 }
 
-// Create an IPv4 address of all zero
 void ZeroIP4(IP *ip)
 {
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return;
@@ -1294,10 +1114,8 @@ void ZeroIP4(IP *ip)
 	ip->address[11] = 0xff;
 }
 
-// Get the IP address of the localhost
 void GetLocalHostIP6(IP *ip)
 {
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return;
@@ -1309,7 +1127,6 @@ void GetLocalHostIP6(IP *ip)
 }
 void GetLocalHostIP4(IP *ip)
 {
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return;
@@ -1318,11 +1135,9 @@ void GetLocalHostIP4(IP *ip)
 	SetIP(ip, 127, 0, 0, 1);
 }
 
-// Check whether the specified address is a localhost
 bool IsLocalHostIP6(IP *ip)
 {
 	IP local;
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return false;
@@ -1343,7 +1158,6 @@ bool IsLocalHostIP6(IP *ip)
 }
 bool IsLocalHostIP4(IP *ip)
 {
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return false;
@@ -1362,7 +1176,6 @@ bool IsLocalHostIP4(IP *ip)
 }
 bool IsLocalHostIP(IP *ip)
 {
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return false;
@@ -1378,10 +1191,8 @@ bool IsLocalHostIP(IP *ip)
 	}
 }
 
-// Convert the IPV6_ADDR to an IP
 void IPv6AddrToIP(IP *ip, IPV6_ADDR *addr)
 {
-	// Validate arguments
 	if (ip == NULL || addr == NULL)
 	{
 		return;
@@ -1390,11 +1201,9 @@ void IPv6AddrToIP(IP *ip, IPV6_ADDR *addr)
 	SetIP6(ip, addr->Value);
 }
 
-// Convert the IP to an IPV6_ADDR
 bool IPToIPv6Addr(IPV6_ADDR *addr, IP *ip)
 {
 	UINT i;
-	// Validate arguments
 	if (addr == NULL || ip == NULL)
 	{
 		Zero(addr, sizeof(IPV6_ADDR));
@@ -1415,10 +1224,8 @@ bool IPToIPv6Addr(IPV6_ADDR *addr, IP *ip)
 	return true;
 }
 
-// Set an IPv6 address
 void SetIP6(IP *ip, UCHAR *value)
 {
-	// Validate arguments
 	if (ip == NULL || value == NULL)
 	{
 		return;
@@ -1432,10 +1239,8 @@ void SetIP6(IP *ip, UCHAR *value)
 	}
 }
 
-// Check whether the specified address is IPv4
 bool IsIP4(IP *ip)
 {
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return false;
@@ -1454,17 +1259,13 @@ bool IsIP4(IP *ip)
 	return true;
 }
 
-// Copy the IP address
 void CopyIP(IP *dst, IP *src)
 {
 	Copy(dst, src, sizeof(IP));
 }
 
-// Utility functions about IP and MAC address types
-// Identify whether the IP address is a normal unicast address
 bool IsValidUnicastIPAddress4(IP *ip)
 {
-	// Validate arguments
 	if (IsIP4(ip) == false)
 	{
 		return false;
@@ -1479,11 +1280,10 @@ bool IsValidUnicastIPAddress4(IP *ip)
 
 	if (ipv4[0] >= 224 && ipv4[0] <= 239)
 	{
-		// IPv4 Multicast
 		return false;
 	}
 
-	/// TODO: this is kinda incorrect, but for the correct parsing we need the netmask anyway
+	// Not exact: correct parsing needs the netmask.
 	for (BYTE i = 0; i < IPV4_SIZE; ++i)
 	{
 		if (ipv4[i] != 255)
@@ -1520,12 +1320,10 @@ bool IsValidUnicastIPAddress6(IP *ip)
 	return true;
 }
 
-// Get the number of clients connected from the specified IP address
 UINT GetNumIpClient(IP *ip)
 {
 	IP_CLIENT *c;
 	UINT ret = 0;
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return 0;
@@ -1545,11 +1343,9 @@ UINT GetNumIpClient(IP *ip)
 	return ret;
 }
 
-// Add to the IP client entry
 void AddIpClient(IP *ip)
 {
 	IP_CLIENT *c;
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return;
@@ -1572,14 +1368,11 @@ void AddIpClient(IP *ip)
 	}
 	UnlockList(ip_clients);
 
-	//Debug("AddIpClient: %r\n", ip);
 }
 
-// Remove from the IP client list
 void DelIpClient(IP *ip)
 {
 	IP_CLIENT *c;
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return;
@@ -1602,14 +1395,11 @@ void DelIpClient(IP *ip)
 	}
 	UnlockList(ip_clients);
 
-	//Debug("DelIpClient: %r\n", ip);
 }
 
-// Search for the IP client entry
 IP_CLIENT *SearchIpClient(IP *ip)
 {
 	IP_CLIENT t;
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return NULL;
@@ -1621,13 +1411,11 @@ IP_CLIENT *SearchIpClient(IP *ip)
 	return Search(ip_clients, &t);
 }
 
-// Initialization of the client list
 void InitIpClientList()
 {
 	ip_clients = NewList(CompareIpClientList);
 }
 
-// Release of the client list
 void FreeIpClientList()
 {
 	UINT i;
@@ -1643,7 +1431,6 @@ void FreeIpClientList()
 	ip_clients = NULL;
 }
 
-// Comparison of the client list entries
 int CompareIpClientList(void *p1, void *p2)
 {
 	IP_CLIENT *c1, *c2;
@@ -1661,10 +1448,8 @@ int CompareIpClientList(void *p1, void *p2)
 	return CmpIpAddr(&c1->IpAddress, &c2->IpAddress);
 }
 
-// Identify whether the IP address is empty
 bool IsZeroIP(IP *ip)
 {
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return true;
@@ -1684,7 +1469,6 @@ bool IsZeroIP(IP *ip)
 }
 bool IsZeroIP6Addr(IPV6_ADDR *addr)
 {
-	// Validate arguments
 	if (addr == NULL)
 	{
 		return true;
@@ -1693,7 +1477,6 @@ bool IsZeroIP6Addr(IPV6_ADDR *addr)
 	return IsZero(addr, sizeof(IPV6_ADDR));
 }
 
-// Convert the integer to a subnet mask
 UINT IntToSubnetMask32(UINT i)
 {
 	UINT ret = 0xFFFFFFFF;
@@ -1811,7 +1594,6 @@ UINT IntToSubnetMask32(UINT i)
 void IntToSubnetMask4(IP *ip, UINT i)
 {
 	UINT m;
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return;
@@ -1822,7 +1604,6 @@ void IntToSubnetMask4(IP *ip, UINT i)
 	UINTToIP(ip, m);
 }
 
-// Examine whether the specified IP address is a subnet mask
 bool IsSubnetMask(IP *ip)
 {
 	if (IsIP6(ip))
@@ -1837,7 +1618,6 @@ bool IsSubnetMask(IP *ip)
 bool IsSubnetMask4(IP *ip)
 {
 	UINT i;
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return false;
@@ -1896,38 +1676,7 @@ bool IsSubnetMask4(IP *ip)
 	return false;
 }
 
-#ifdef OS_WIN32		// Code for Windows
 
-// Comparison of IP_ADAPTER_INDEX_MAP
-int CompareIpAdapterIndexMap(void *p1, void *p2)
-{
-	IP_ADAPTER_INDEX_MAP *a1, *a2;
-	if (p1 == NULL || p2 == NULL)
-	{
-		return 0;
-	}
-	a1 = *(IP_ADAPTER_INDEX_MAP **)p1;
-	a2 = *(IP_ADAPTER_INDEX_MAP **)p2;
-	if (a1 == NULL || a2 == NULL)
-	{
-		return 0;
-	}
-
-	if (a1->Index > a2->Index)
-	{
-		return 1;
-	}
-	else if (a1->Index < a2->Index)
-	{
-		return -1;
-	}
-	else
-	{
-		return 0;
-	}
-}
-
-// Initializing the socket library
 void Win32InitSocketLibrary()
 {
 	WSADATA data;
@@ -1935,16 +1684,8 @@ void Win32InitSocketLibrary()
 	WSAStartup(MAKEWORD(2, 2), &data);
 }
 
-// Release of the socket library
-void Win32FreeSocketLibrary()
-{
-	WSACleanup();
-}
-
-// Cancel
 void Win32Cancel(CANCEL *c)
 {
-	// Validate arguments
 	if (c == NULL)
 	{
 		return;
@@ -1953,10 +1694,8 @@ void Win32Cancel(CANCEL *c)
 	SetEvent((HANDLE)c->hEvent);
 }
 
-// Cleanup of the cancel object
 void Win32CleanupCancel(CANCEL *c)
 {
-	// Validate arguments
 	if (c == NULL)
 	{
 		return;
@@ -1970,7 +1709,6 @@ void Win32CleanupCancel(CANCEL *c)
 	Free(c);
 }
 
-// New cancel object
 CANCEL *Win32NewCancel()
 {
 	CANCEL *c = ZeroMallocFast(sizeof(CANCEL));
@@ -1981,10 +1719,8 @@ CANCEL *Win32NewCancel()
 	return c;
 }
 
-// Waiting for a socket event
 bool Win32WaitSockEvent(SOCK_EVENT *event, UINT timeout)
 {
-	// Validate arguments
 	if (event == NULL || timeout == 0)
 	{
 		return false;
@@ -2000,10 +1736,8 @@ bool Win32WaitSockEvent(SOCK_EVENT *event, UINT timeout)
 	}
 }
 
-// Clean-up of the socket event
 void Win32CleanupSockEvent(SOCK_EVENT *event)
 {
-	// Validate arguments
 	if (event == NULL)
 	{
 		return;
@@ -2014,10 +1748,8 @@ void Win32CleanupSockEvent(SOCK_EVENT *event)
 	Free(event);
 }
 
-// Set of the socket event
 void Win32SetSockEvent(SOCK_EVENT *event)
 {
-	// Validate arguments
 	if (event == NULL)
 	{
 		return;
@@ -2026,7 +1758,6 @@ void Win32SetSockEvent(SOCK_EVENT *event)
 	SetEvent((HANDLE)event->hEvent);
 }
 
-// Creating a socket event
 SOCK_EVENT *Win32NewSockEvent()
 {
 	SOCK_EVENT *e = ZeroMallocFast(sizeof(SOCK_EVENT));
@@ -2037,11 +1768,9 @@ SOCK_EVENT *Win32NewSockEvent()
 	return e;
 }
 
-// Associate the socket with socket event and set it to asynchronous mode
 void Win32JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event)
 {
 	HANDLE hEvent;
-	// Validate arguments
 	if (sock == NULL || event == NULL || sock->AsyncMode)
 	{
 		return;
@@ -2055,25 +1784,20 @@ void Win32JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event)
 
 	hEvent = event->hEvent;
 
-	// Association
 	WSAEventSelect(sock->socket, hEvent, FD_READ | FD_WRITE | FD_CLOSE);
 
-	// Increase the reference count of the SOCK_EVENT
 	AddRef(event->ref);
 	sock->SockEvent = event;
 }
 
-// Set the socket to asynchronous mode
 void Win32InitAsyncSocket(SOCK *sock)
 {
-	// Validate arguments
 	if (sock == NULL)
 	{
 		return;
 	}
 	if (sock->AsyncMode)
 	{
-		// This socket is already in asynchronous mode
 		return;
 	}
 	if (sock->ListenMode || (sock->Type == SOCK_TCP && sock->Connected == false))
@@ -2083,23 +1807,18 @@ void Win32InitAsyncSocket(SOCK *sock)
 
 	sock->AsyncMode = true;
 
-	// Creating an Event
 	sock->hEvent = (void *)CreateEvent(NULL, FALSE, FALSE, NULL);
 
-	// Association
 	WSAEventSelect(sock->socket, sock->hEvent, FD_READ | FD_WRITE | FD_CLOSE);
 }
 
-// Release the asynchronous socket
 void Win32FreeAsyncSocket(SOCK *sock)
 {
-	// Validate arguments
 	if (sock == NULL)
 	{
 		return;
 	}
 
-	// Asynchronous socket
 	if (sock->hEvent != NULL)
 	{
 		CloseHandle((HANDLE)sock->hEvent);
@@ -2107,7 +1826,6 @@ void Win32FreeAsyncSocket(SOCK *sock)
 	sock->hEvent = NULL;
 	sock->AsyncMode = false;
 
-	// Socket event
 	if (sock->SockEvent != NULL)
 	{
 		ReleaseSockEvent(sock->SockEvent);
@@ -2115,17 +1833,14 @@ void Win32FreeAsyncSocket(SOCK *sock)
 	}
 }
 
-// Select function for Win32
 void Win32Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2)
 {
 	HANDLE array[MAXIMUM_WAIT_OBJECTS];
 	UINT n, i;
 	SOCK *s;
-	// Initialization of array
 	Zero(array, sizeof(array));
 	n = 0;
 
-	// Setting the event array
 	if (set != NULL)
 	{
 		for (i = 0; i < set->NumSocket; i++)
@@ -2157,33 +1872,24 @@ void Win32Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2)
 
 	if (n == 0)
 	{
-		// Call normal waiting function if no events to wait are registered
 		SleepThread(timeout);
 	}
 	else
 	{
-		// Wait for the event if events are registered at least one
 		if (n == 1)
 		{
-			// Calling a lightweight version If the event is only one
 			WaitForSingleObject(array[0], timeout);
 		}
 		else
 		{
-			// In case of multiple events
 			WaitForMultipleObjects(n, array, false, timeout);
 		}
 	}
 }
 
-#endif	// OS_WIN32
 
-// Check whether the IPv6 is supported
 bool IsIPv6Supported()
 {
-#ifdef	NO_IPV6
-	return false;
-#else	// NO_IPV6
 	SOCKET s;
 
 	s = socket(AF_INET6, SOCK_STREAM, 0);
@@ -2195,10 +1901,8 @@ bool IsIPv6Supported()
 	closesocket(s);
 
 	return true;
-#endif	// NO_IPV6
 }
 
-// Check whether an IPv6 address is configured on any interface
 bool HasIPv6Address()
 {
 	LIST *o;
@@ -2230,10 +1934,8 @@ bool HasIPv6Address()
 	return ret;
 }
 
-// Add the thread to the thread waiting list
 void AddWaitThread(THREAD *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -2248,10 +1950,8 @@ void AddWaitThread(THREAD *t)
 	UnlockList(WaitThreadList);
 }
 
-// Remove the thread from the waiting list
 void DelWaitThread(THREAD *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -2267,13 +1967,11 @@ void DelWaitThread(THREAD *t)
 	UnlockList(WaitThreadList);
 }
 
-// Creating a thread waiting list
 void InitWaitThread()
 {
 	WaitThreadList = NewList(NULL);
 }
 
-// Release of the thread waiting list
 void FreeWaitThread()
 {
 	UINT i, num;
@@ -2300,44 +1998,25 @@ void FreeWaitThread()
 	WaitThreadList = NULL;
 }
 
-// Creating a socket event
 SOCK_EVENT *NewSockEvent()
 {
-#ifdef	OS_WIN32
 	return Win32NewSockEvent();
-#endif	// OS_WIN32
 }
 
-// Set of the socket event
 void SetSockEvent(SOCK_EVENT *event)
 {
-#ifdef	OS_WIN32
 	Win32SetSockEvent(event);
-#endif	// OS_WIN32
 }
 
-// Clean-up of the socket event
-void CleanupSockEvent(SOCK_EVENT *event)
-{
-#ifdef	OS_WIN32
-	Win32CleanupSockEvent(event);
-#endif	// OS_WIN32
-}
-
-// Waiting for the socket event
 bool WaitSockEvent(SOCK_EVENT *event, UINT timeout)
 {
 	bool ret = false;
-#ifdef	OS_WIN32
 	ret = Win32WaitSockEvent(event, timeout);
-#endif	// OS_WIN32
 	return ret;
 }
 
-// Release of the socket event
 void ReleaseSockEvent(SOCK_EVENT *event)
 {
-	// Validate arguments
 	if (event == NULL)
 	{
 		return;
@@ -2345,29 +2024,23 @@ void ReleaseSockEvent(SOCK_EVENT *event)
 
 	if (Release(event->ref) == 0)
 	{
-		CleanupSockEvent(event);
+		Win32CleanupSockEvent(event);
 	}
 }
 
-// Let belonging the socket to the socket event
 void JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event)
 {
-	// Validate arguments
 	if (sock == NULL || event == NULL)
 	{
 		return;
 	}
 
-#ifdef	OS_WIN32
 	Win32JoinSockToSockEvent(sock, event);
-#endif	// OS_WIN32
 }
 
-// New special cancel object
 CANCEL *NewCancelSpecial(void *hEvent)
 {
 	CANCEL *c;
-	// Validate arguments
 	if (hEvent == NULL)
 	{
 		return NULL;
@@ -2377,27 +2050,20 @@ CANCEL *NewCancelSpecial(void *hEvent)
 	c->ref = NewRef();
 	c->SpecialFlag = true;
 
-#ifdef	OS_WIN32
 	c->hEvent = (HANDLE)hEvent;
-#endif	// OS_WIN32
 
 	return c;
 }
 
-// Creating a cancel object
 CANCEL *NewCancel()
 {
 	CANCEL *c = NULL;
-#ifdef	OS_WIN32
 	c = Win32NewCancel();
-#endif	// OS_WIN32
 	return c;
 }
 
-// Release of the cancel object
 void ReleaseCancel(CANCEL *c)
 {
-	// Validate arguments
 	if (c == NULL)
 	{
 		return;
@@ -2405,36 +2071,21 @@ void ReleaseCancel(CANCEL *c)
 
 	if (Release(c->ref) == 0)
 	{
-		CleanupCancel(c);
+		Win32CleanupCancel(c);
 	}
 }
 
-// Clean up of the cancel object
-void CleanupCancel(CANCEL *c)
-{
-#ifdef	OS_WIN32
-	Win32CleanupCancel(c);
-#endif
-}
-
-// Cancellation triggered
 void Cancel(CANCEL *c)
 {
-#ifdef	OS_WIN32
 	Win32Cancel(c);
-#endif
 }
 
-// UDP receiving
 UINT RecvFrom(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 {
 	struct sockaddr_in addr;
 	int ret = 0;
-#ifdef	OS_WIN32
 	int socklen = sizeof(addr);
-#endif
 
-	// Validate arguments
 	if (sock != NULL)
 	{
 		if (sock->IPv6)
@@ -2484,7 +2135,6 @@ UINT RecvFrom(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 	}
 	else
 	{
-#ifdef	OS_WIN32
 		if (WSAGetLastError() == WSAECONNRESET || WSAGetLastError() == WSAENETRESET || WSAGetLastError() == WSAEMSGSIZE || WSAGetLastError() == WSAENETUNREACH ||
 		        WSAGetLastError() == WSAENOBUFS || WSAGetLastError() == WSAEHOSTUNREACH || WSAGetLastError() == WSAEUSERS || WSAGetLastError() == WSAEADDRNOTAVAIL || WSAGetLastError() == WSAEADDRNOTAVAIL)
 		{
@@ -2498,7 +2148,6 @@ UINT RecvFrom(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 		{
 			Debug("RecvFrom(): recvfrom() failed with error: %u\n", WSAGetLastError());
 		}
-#endif
 		return 0;
 	}
 }
@@ -2506,11 +2155,8 @@ UINT RecvFrom6(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 {
 	struct sockaddr_in6 addr;
 	int ret = 0;
-#ifdef	OS_WIN32
 	int socklen = sizeof(addr);
-#endif
 
-	// Validate arguments
 	if (sock != NULL)
 	{
 		sock->IgnoreRecvErr = false;
@@ -2557,7 +2203,6 @@ UINT RecvFrom6(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 	}
 	else
 	{
-#ifdef	OS_WIN32
 		if (WSAGetLastError() == WSAECONNRESET || WSAGetLastError() == WSAENETRESET || WSAGetLastError() == WSAEMSGSIZE || WSAGetLastError() == WSAENETUNREACH ||
 		        WSAGetLastError() == WSAENOBUFS || WSAGetLastError() == WSAEHOSTUNREACH || WSAGetLastError() == WSAEUSERS || WSAGetLastError() == WSAEADDRNOTAVAIL || WSAGetLastError() == WSAEADDRNOTAVAIL)
 		{
@@ -2571,12 +2216,10 @@ UINT RecvFrom6(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 		{
 			Debug("RecvFrom(): recvfrom() failed with error: %u\n", WSAGetLastError());
 		}
-#endif
 		return 0;
 	}
 }
 
-// UDP transmission
 UINT SendTo(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size)
 {
 	return SendToEx(sock, dest_addr, dest_port, data, size, false);
@@ -2586,7 +2229,6 @@ UINT SendToEx(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size, 
 	SOCKET s;
 	int ret;
 	struct sockaddr_in addr;
-	// Validate arguments
 	if (sock != NULL)
 	{
 		sock->IgnoreSendErr = false;
@@ -2647,7 +2289,6 @@ UINT SendToEx(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size, 
 	{
 		sock->IgnoreSendErr = false;
 
-#ifdef	OS_WIN32
 		if (WSAGetLastError() == WSAECONNRESET || WSAGetLastError() == WSAENETRESET || WSAGetLastError() == WSAEMSGSIZE || WSAGetLastError() == WSAENETUNREACH ||
 		        WSAGetLastError() == WSAENOBUFS || WSAGetLastError() == WSAEHOSTUNREACH || WSAGetLastError() == WSAEUSERS || WSAGetLastError() == WSAEINVAL || WSAGetLastError() == WSAEADDRNOTAVAIL)
 		{
@@ -2660,9 +2301,7 @@ UINT SendToEx(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size, 
 		else
 		{
 			UINT e = WSAGetLastError();
-			Debug("SendTo Error; %u\n", e);
 		}
-#endif	// OS_WIN32
 		return 0;
 	}
 
@@ -2681,7 +2320,6 @@ UINT SendTo6Ex(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size,
 	int ret;
 	struct sockaddr_in6 addr;
 	UINT type;
-	// Validate arguments
 	if (sock != NULL)
 	{
 		sock->IgnoreSendErr = false;
@@ -2737,7 +2375,6 @@ UINT SendTo6Ex(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size,
 	{
 		sock->IgnoreSendErr = false;
 
-#ifdef	OS_WIN32
 		if (WSAGetLastError() == WSAECONNRESET || WSAGetLastError() == WSAENETRESET || WSAGetLastError() == WSAEMSGSIZE || WSAGetLastError() == WSAENETUNREACH ||
 		        WSAGetLastError() == WSAENOBUFS || WSAGetLastError() == WSAEHOSTUNREACH || WSAGetLastError() == WSAEUSERS || WSAGetLastError() == WSAEINVAL || WSAGetLastError() == WSAEADDRNOTAVAIL)
 		{
@@ -2747,7 +2384,6 @@ UINT SendTo6Ex(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size,
 		{
 			return SOCK_LATER;
 		}
-#endif	// OS_WIN32
 		return 0;
 	}
 
@@ -2761,15 +2397,9 @@ UINT SendTo6Ex(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size,
 	return ret;
 }
 
-// Create and initialize the UDP socket
-// If port is specified as 0, system assigns a certain port.
 SOCK *NewUDP(UINT port)
 {
-	return NewUDPEx(port, false);
-}
-SOCK *NewUDPEx(UINT port, bool ipv6)
-{
-	return NewUDPEx2(port, ipv6, NULL);
+	return NewUDPEx2(port, false, NULL);
 }
 SOCK *NewUDPEx2(UINT port, bool ipv6, IP *ip)
 {
@@ -2784,7 +2414,6 @@ SOCK *NewUDPEx2(UINT port, bool ipv6, IP *ip)
 }
 SOCK *NewUDPEx3(UINT port, IP *ip)
 {
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return NewUDPEx2(port, false, NULL);
@@ -2804,7 +2433,6 @@ SOCK *NewUDP4(UINT port, IP *ip)
 	SOCK *sock;
 	SOCKET s;
 	struct sockaddr_in addr;
-	// Validate arguments
 	if (ip != NULL && IsIP4(ip) == false)
 	{
 		return NULL;
@@ -2846,7 +2474,6 @@ SOCK *NewUDP4(UINT port, IP *ip)
 
 	if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
 	{
-		// Failure
 		if (port != 0)
 		{
 			UINT true_flag = 1;
@@ -2857,7 +2484,7 @@ SOCK *NewUDP4(UINT port, IP *ip)
 				(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&false_flag, sizeof(false_flag));
 #ifdef	SO_EXCLUSIVEADDRUSE
 				(void)setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (char *)&true_flag, sizeof(true_flag));
-#endif	// SO_EXCLUSIVEADDRUSE
+#endif
 				if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
 				{
 					closesocket(s);
@@ -2905,7 +2532,6 @@ SOCK *NewUDP6(UINT port, IP *ip)
 	SOCK *sock;
 	SOCKET s;
 	struct sockaddr_in6 addr;
-	// Validate arguments
 	if (ip != NULL && IsIP6(ip) == false)
 	{
 		return NULL;
@@ -2946,7 +2572,6 @@ SOCK *NewUDP6(UINT port, IP *ip)
 
 	if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
 	{
-		// Failure
 		if (port != 0)
 		{
 			(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&true_flag, sizeof(true_flag));
@@ -2955,7 +2580,7 @@ SOCK *NewUDP6(UINT port, IP *ip)
 				(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&false_flag, sizeof(false_flag));
 #ifdef	SO_EXCLUSIVEADDRUSE
 				(void)setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (char *)&true_flag, sizeof(true_flag));
-#endif	// SO_EXCLUSIVEADDRUSE
+#endif
 				if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
 				{
 					closesocket(s);
@@ -2991,7 +2616,7 @@ SOCK *NewUDP6(UINT port, IP *ip)
 		UINT no = 0;
 #ifdef	IPV6_HDRINCL
 		(void)setsockopt(sock->socket, IPPROTO_IP, IPV6_HDRINCL, (char *)&no, sizeof(no));
-#endif	// IPV6_HDRINCL
+#endif
 		(void)setsockopt(sock->socket, IPPROTO_IP, IP_HDRINCL, (char *)&no, sizeof(no));
 
 		sock->IsRawSocket = true;
@@ -3003,18 +2628,13 @@ SOCK *NewUDP6(UINT port, IP *ip)
 	return sock;
 }
 
-// Select function
 void Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2)
 {
-#ifdef	OS_WIN32
 	Win32Select(set, timeout, c1, c2);
-#endif	// OS_WIN32
 }
 
-// Add a socket to the socket set
 void AddSockSet(SOCKSET *set, SOCK *sock)
 {
-	// Validate arguments
 	if (set == NULL || sock == NULL)
 	{
 		return;
@@ -3026,16 +2646,13 @@ void AddSockSet(SOCKSET *set, SOCK *sock)
 
 	if (set->NumSocket >= MAX_SOCKSET_NUM)
 	{
-		// Upper limit
 		return;
 	}
 	set->Sock[set->NumSocket++] = sock;
 }
 
-// Initializing the socket set
 void InitSockSet(SOCKSET *set)
 {
-	// Validate arguments
 	if (set == NULL)
 	{
 		return;
@@ -3044,11 +2661,9 @@ void InitSockSet(SOCKSET *set)
 	Zero(set, sizeof(SOCKSET));
 }
 
-// Receive all by TCP
 bool RecvAll(SOCK *sock, void *data, UINT size, bool secure)
 {
 	UINT recv_size, sz, ret;
-	// Validate arguments
 	if (sock == NULL || data == NULL)
 	{
 		return false;
@@ -3074,10 +2689,8 @@ bool RecvAll(SOCK *sock, void *data, UINT size, bool secure)
 		}
 		if (ret == SOCK_LATER)
 		{
-			// I suppose that this is safe because the RecvAll() function is used only
-			// if the sock->AsyncMode == true. And the Recv() function may return
-			// SOCK_LATER only if the sock->AsyncMode == false. Therefore the call of
-			// Recv() function in the RecvAll() function never returns SOCK_LATER.
+			// Safe: RecvAll() runs only when AsyncMode is true, and Recv() returns
+			// SOCK_LATER only when AsyncMode is false.
 			return false;
 		}
 		recv_size += ret;
@@ -3088,11 +2701,9 @@ bool RecvAll(SOCK *sock, void *data, UINT size, bool secure)
 	}
 }
 
-// Send the TCP send buffer
 bool SendNow(SOCK *sock, int secure)
 {
 	bool ret;
-	// Validate arguments
 	if (sock == NULL || sock->AsyncMode != false)
 	{
 		return false;
@@ -3108,10 +2719,8 @@ bool SendNow(SOCK *sock, int secure)
 	return ret;
 }
 
-// Append to the TCP send buffer
 void SendAdd(SOCK *sock, void *data, UINT size)
 {
-	// Validate arguments
 	if (sock == NULL || data == NULL || size == 0 || sock->AsyncMode != false)
 	{
 		return;
@@ -3120,13 +2729,11 @@ void SendAdd(SOCK *sock, void *data, UINT size)
 	WriteBuf(sock->SendBuf, data, size);
 }
 
-// Send all by TCP
 bool SendAll(SOCK *sock, void *data, UINT size, bool secure)
 {
 	UCHAR *buf;
 	UINT sent_size;
 	UINT ret;
-	// Validate arguments
 	if (sock == NULL || data == NULL)
 	{
 		return false;
@@ -3159,10 +2766,8 @@ bool SendAll(SOCK *sock, void *data, UINT size, bool secure)
 	}
 }
 
-// Set the cipher algorithm name to want to use
 void SetWantToUseCipher(SOCK *sock, char *name)
 {
-	// Validate arguments
 	if (sock == NULL || name == NULL)
 	{
 		return;
@@ -3176,7 +2781,6 @@ void SetWantToUseCipher(SOCK *sock, char *name)
 	sock->WaitToUseCipher = CopyStr(name);
 }
 
-// Add all the chain certificates in the chain_certs directory
 void AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx)
 {
 	wchar_t dirname[MAX_SIZE];
@@ -3186,7 +2790,6 @@ void AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx)
 	LIST *o;
 	UINT i;
 
-	// Validate arguments
 	if (ctx == NULL)
 	{
 		return;
@@ -3267,12 +2870,10 @@ void AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx)
 	ReleaseList(o);
 }
 
-// Add the chain certificate
 bool AddChainSslCert(struct ssl_ctx_st *ctx, X *x)
 {
 	bool ret = false;
 	X *x_copy;
-	// Validate arguments
 	if (ctx == NULL || x == NULL)
 	{
 		return ret;
@@ -3293,18 +2894,13 @@ bool AddChainSslCert(struct ssl_ctx_st *ctx, X *x)
 	return ret;
 }
 
-// Start a TCP-SSL communication
 bool StartSSL(SOCK *sock, X *x, K *priv)
 {
 	return StartSSLEx(sock, x, priv, 0, NULL);
 }
 bool StartSSLEx(SOCK *sock, X *x, K *priv, UINT ssl_timeout, char *sni_hostname)
 {
-	return StartSSLEx2(sock, x, priv, NULL, ssl_timeout, sni_hostname);
-}
-bool StartSSLEx2(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char *sni_hostname)
-{
-	return StartSSLEx3(sock, x, priv, chain, ssl_timeout, sni_hostname, NULL, NULL);
+	return StartSSLEx3(sock, x, priv, NULL, ssl_timeout, sni_hostname, NULL, NULL);
 }
 bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err)
 {
@@ -3315,10 +2911,8 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 	UINT dummy_err = 0;
 	long ssl_verify_err;
 
-	// Validate arguments
 	if (sock == NULL)
 	{
-		Debug("StartSSL Error: #0\n");
 		return false;
 	}
 	if (ssl_err == NULL)
@@ -3328,12 +2922,10 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 	if (sock->Connected == false || sock->socket == INVALID_SOCKET ||
 	        sock->ListenMode != false)
 	{
-		Debug("StartSSL Error: #1\n");
 		return false;
 	}
 	if (x != NULL && priv == NULL)
 	{
-		Debug("StartSSL Error: #2\n");
 		return false;
 	}
 	if (ssl_timeout == 0)
@@ -3343,16 +2935,12 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 
 	if (sock->SecureMode)
 	{
-		//Debug("StartSSL Error: #3\n");
-		// SSL communication has already started
 		return true;
 	}
 
 	Lock(sock->ssl_lock);
 	if (sock->SecureMode)
 	{
-		//Debug("StartSSL Error: #4\n");
-		// SSL communication has already started
 		Unlock(sock->ssl_lock);
 		return true;
 	}
@@ -3372,28 +2960,28 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 			{
 				SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1);
 			}
-#endif	// SSL_OP_NO_TLSv1
+#endif
 
 #ifdef	SSL_OP_NO_TLSv1_1
 			if (sock->SslAcceptSettings.Tls_Disable1_1)
 			{
 				SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_1);
 			}
-#endif	// SSL_OP_NO_TLSv1_1
+#endif
 
 #ifdef	SSL_OP_NO_TLSv1_2
 			if (sock->SslAcceptSettings.Tls_Disable1_2)
 			{
 				SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_2);
 			}
-#endif	// SSL_OP_NO_TLSv1_2
+#endif
 
 #ifdef	SSL_OP_NO_TLSv1_3
 			if (sock->SslAcceptSettings.Tls_Disable1_3)
 			{
 				SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_3);
 			}
-#endif	// SSL_OP_NO_TLSv1_3
+#endif
 
 			Unlock(openssl_lock);
 			if (chain == NULL)
@@ -3418,14 +3006,11 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 		}
 		else
 		{
-			// Client mode
 			if (ssl_option != NULL && ssl_option->VerifyPeer)
 			{
-				// Add default trust store
 				X509_STORE* store = SSL_CTX_get_cert_store(ssl_ctx);
 				if (ssl_option->AddDefaultCA)
 				{
-#ifdef	OS_WIN32
 					HCERTSTORE hStore = CertOpenSystemStore(0, "ROOT");
 					if (hStore != NULL)
 					{
@@ -3441,10 +3026,8 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 						}
 						CertCloseStore(hStore, 0);
 					}
-#endif
 				}
 
-				// Add trust CA specified by user
 				UINT i;
 				for (i = 0; i < LIST_NUM(ssl_option->CaList); ++i)
 				{
@@ -3452,7 +3035,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 					X509_STORE_add_cert(store, ca->x509);
 				}
 
-				// Allow intermediate CA to be trusted
 				X509_VERIFY_PARAM *vpm = SSL_CTX_get0_param(ssl_ctx);
 				X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_PARTIAL_CHAIN);
 
@@ -3485,21 +3067,18 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 		{
 			if (IsEmptyStr(sni_hostname) == false)
 			{
-				// Set the SNI host name
 				SSL_set_tlsext_host_name(sock->ssl, sni_hostname);
 			}
 		}
-#endif	// SSL_CTRL_SET_TLSEXT_HOSTNAME
+#endif
 
 	}
 	Unlock(openssl_lock);
 
 	if (x != NULL)
 	{
-		// Check the certificate and the private key
 		if (CheckXandK(x, priv))
 		{
-			// Use the certificate
 			x509 = x->x509;
 			key = priv->pkey;
 
@@ -3514,7 +3093,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 
 	if (sock->WaitToUseCipher != NULL)
 	{
-		// Set the cipher algorithm name to want to use
 		Lock(openssl_lock);
 		{
 			if (SSL_set_cipher_list(sock->ssl, sock->WaitToUseCipher) == 0)
@@ -3529,14 +3107,10 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 	
 	if (sock->ServerMode)
 	{
-//		Lock(ssl_connect_lock);
 
-		// Server mode
 		if (SSL_accept(sock->ssl) <= 0)
 		{
 
-			//			Unlock(ssl_connect_lock);
-			// SSL-Accept failure
 			Lock(openssl_lock);
 			{
 				unsigned long err;
@@ -3552,13 +3126,13 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 #if defined(SSL_R_VERSION_TOO_HIGH)
 						case SSL_R_VERSION_TOO_HIGH:
 #endif
-							*ssl_err = 150;	// ERR_SSL_PROTOCOL_VERSION
+							*ssl_err = 150;
 							break;
 						case SSL_R_NO_SHARED_CIPHER:
-							*ssl_err = 151; // ERR_SSL_SHARED_CIPHER
+							*ssl_err = 151;
 							break;
 						default:
-							*ssl_err = 152; // ERR_SSL_HANDSHAKE
+							*ssl_err = 152;
 						}
 					}
 				}
@@ -3568,7 +3142,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 			Unlock(openssl_lock);
 
 			Unlock(sock->ssl_lock);
-			Debug("StartSSL Error: #5\n");
 			FreeSSLCtx(ssl_ctx);
 			return false;
 		}
@@ -3577,7 +3150,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 #ifdef	TLSEXT_NAMETYPE_host_name
 		if (true)
 		{
-			// Get the SNI host name
 			const char *sni_recv_hostname = SSL_get_servername(sock->ssl, TLSEXT_NAMETYPE_host_name);
 
 			if (IsEmptyStr((char *)sni_recv_hostname) == false)
@@ -3585,19 +3157,16 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 				StrCpy(sock->SniHostname, sizeof(sock->SniHostname), (char *)sni_recv_hostname);
 			}
 		}
-#endif	// TLSEXT_NAMETYPE_host_name
-#endif	// SSL_CTRL_SET_TLSEXT_HOSTNAME
+#endif
+#endif
 
-		//		Unlock(ssl_connect_lock);
 	}
 	else
 	{	
 		prev_timeout = GetTimeout(sock);
 		SetTimeout(sock, ssl_timeout);
-		// Client mode
 		if (SSL_connect(sock->ssl) <= 0)
 		{
-			// SSL-connect failure
 			Lock(openssl_lock);
 			{
 				unsigned long err;
@@ -3614,10 +3183,10 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 						case SSL_R_VERSION_TOO_HIGH:
 #endif
 						case SSL_R_TLSV1_ALERT_PROTOCOL_VERSION:
-							*ssl_err = 150;	// ERR_SSL_PROTOCOL_VERSION
+							*ssl_err = 150;
 							break;
 						default:
-							*ssl_err = 152; // ERR_SSL_HANDSHAKE
+							*ssl_err = 152;
 						}
 					}
 				}
@@ -3627,7 +3196,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 			Unlock(openssl_lock);
 
 			Unlock(sock->ssl_lock);
-			Debug("StartSSL Error: #5\n");
 			SetTimeout(sock, prev_timeout);
 			FreeSSLCtx(ssl_ctx);
 			return false;
@@ -3635,10 +3203,8 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 		SetTimeout(sock, prev_timeout);
 	}
 
-	// SSL communication is initiated
 	sock->SecureMode = true;
 
-	// Get the certificate of the remote host
 	Lock(openssl_lock);
 	{
 		x509 = SSL_get_peer_certificate(sock->ssl);
@@ -3649,16 +3215,13 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 
 	if (x509 == NULL)
 	{
-		// The certificate does not exist on the remote host
 		sock->RemoteX = NULL;
 	}
 	else
 	{
-		// Got a certificate
 		sock->RemoteX = X509ToX(x509);
 	}
 
-	// Check verification error
 	if (ssl_option != NULL && ssl_option->VerifyPeer)
 	{
 		if (ssl_verify_err != X509_V_OK)
@@ -3670,22 +3233,20 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 			}
 			else
 			{
-				Debug("StartSSL: SSL verification error %d\n", ssl_verify_err);
 				switch (ssl_verify_err)
 				{
 				case X509_V_ERR_CERT_HAS_EXPIRED:
-					*ssl_err = 106;	// ERR_SERVER_CERT_EXPIRES
+					*ssl_err = 106;
 					break;
 				case X509_V_ERR_HOSTNAME_MISMATCH:
-					*ssl_err = 149;	// ERR_HOSTNAME_MISMATCH
+					*ssl_err = 149;
 					break;
 				default:
-					*ssl_err = 85;	// ERR_CERT_NOT_TRUSTED
+					*ssl_err = 85;
 				}
 
 				if (ssl_option->PromptOnVerifyFail == false)
 				{
-					// SSL verify failure
 					Lock(openssl_lock);
 					{
 						SSL_free(sock->ssl);
@@ -3701,7 +3262,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 		}
 	}
 
-	// Get the certificate of local host
 	Lock(openssl_lock);
 	{
 		x509 = SSL_get_certificate(sock->ssl);
@@ -3710,28 +3270,23 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 
 	if (x509 == NULL)
 	{
-		// The certificate does not exist on the remote host
 		sock->LocalX = NULL;
 	}
 	else
 	{
 		X *local_x;
-		// Got a certificate
 		local_x = X509ToX(x509);
 		local_x->do_not_free = true;
 		sock->LocalX = CloneX(local_x);
 		FreeX(local_x);
 	}
 
-	// Automatic retry mode
 	SSL_set_mode(sock->ssl, SSL_MODE_AUTO_RETRY);
 
-	// Strange flag
 	SSL_set_mode(sock->ssl, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
 
 	sock->ssl_ctx = ssl_ctx;
 
-	// Get the algorithm name used to encrypt
 	Lock(openssl_lock);
 	{
 		sock->CipherName = CopyStr((char *)SSL_get_cipher(sock->ssl));
@@ -3745,23 +3300,20 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 	{
 		SockEnableSslLogging(sock);
 	}
-#endif	// ENABLE_SSL_LOGGING
+#endif
 
 	return true;
 }
 
 
-
 #ifdef	ENABLE_SSL_LOGGING
 
-// Enable SSL logging
 void SockEnableSslLogging(SOCK *s)
 {
 	char dirname[MAX_PATH];
 	char tmp[MAX_PATH];
 	char dtstr[MAX_PATH];
 	char fn1[MAX_PATH], fn2[MAX_PATH];
-	// Validate arguments
 	if (s == NULL)
 	{
 		return;
@@ -3791,10 +3343,8 @@ void SockEnableSslLogging(SOCK *s)
 	s->SslLogging_Lock = NewLock();
 }
 
-// Close SSL logging
 void SockCloseSslLogging(SOCK *s)
 {
-	// Validate arguments
 	if (s == NULL)
 	{
 		return;
@@ -3817,10 +3367,8 @@ void SockCloseSslLogging(SOCK *s)
 	s->SslLogging_Lock = NULL;
 }
 
-// Write SSL log
 void SockWriteSslLog(SOCK *s, void *send_data, UINT send_size, void *recv_data, UINT recv_size)
 {
-	// Validate arguments
 	if (s == NULL)
 	{
 		return;
@@ -3852,9 +3400,8 @@ void SockWriteSslLog(SOCK *s, void *send_data, UINT send_size, void *recv_data, 
 	Unlock(s->SslLogging_Lock);
 }
 
-#endif	// ENABLE_SSL_LOGGING
+#endif
 
-// TCP-SSL receive
 UINT SecureRecv(SOCK *sock, void *data, UINT size)
 {
 	int ret, e = SSL_ERROR_NONE;
@@ -3864,16 +3411,13 @@ UINT SecureRecv(SOCK *sock, void *data, UINT size)
 
 	if (sock->AsyncMode)
 	{
-		// Confirm whether the data is readable even 1 byte in the case of asynchronous mode.
-		// To read data results blocking, if there is no readable data.
-		// We must avoid blocking.
+		// In async mode, check that at least 1 byte is readable: SSL_read would block otherwise.
 		char c;
 		Lock(sock->ssl_lock);
 		{
 			if (sock->Connected == false)
 			{
 				Unlock(sock->ssl_lock);
-				Debug("%s %u SecureRecv() Disconnect\n", __FILE__, __LINE__);
 				return 0;
 			}
 			ERR_clear_error();
@@ -3881,21 +3425,16 @@ UINT SecureRecv(SOCK *sock, void *data, UINT size)
 		}
 		Unlock(sock->ssl_lock);
 #if OPENSSL_VERSION_NUMBER < 0x30000000L
-		// 2021/09/10: After OpenSSL 3.x.x, both 0 and negative values might mean retryable.
+		// OpenSSL 3: both 0 and negative values may be retryable; use SSL_get_error().
 		// See: https://github.com/openssl/openssl/blob/435981cbadad2c58c35bacd30ca5d8b4c9bea72f/doc/man3/SSL_read.pod
-		// > Old documentation indicated a difference between 0 and -1, and that -1 was retryable.
-		// > You should instead call SSL_get_error() to find out if it's retryable.
 		if (ret == 0)
 		{
-			// The communication have been disconnected
 			Disconnect(sock);
-			Debug("%s %u SecureRecv() Disconnect\n", __FILE__, __LINE__);
 			return 0;
 		}
 #endif
 		if (ret <= 0)
 		{
-			// An error has occurred
 			e = SSL_get_error(ssl, ret);
 			if (e == SSL_ERROR_WANT_READ || e == SSL_ERROR_WANT_WRITE || e == SSL_ERROR_SSL)
 			{
@@ -3916,19 +3455,16 @@ UINT SecureRecv(SOCK *sock, void *data, UINT size)
 					Disconnect(sock);
 					return 0;
 				}
-				// Packet has not arrived yet, that is not to be read
 				return SOCK_LATER;
 			}
 		}
 	}
 
-	// Receive
 	Lock(sock->ssl_lock);
 	{
 		if (sock->Connected == false)
 		{
 			Unlock(sock->ssl_lock);
-			Debug("%s %u SecureRecv() Disconnect\n", __FILE__, __LINE__);
 			return 0;
 		}
 
@@ -3936,9 +3472,9 @@ UINT SecureRecv(SOCK *sock, void *data, UINT size)
 		ret = SSL_read(ssl, data, size);
 
 #if OPENSSL_VERSION_NUMBER < 0x30000000L
-		if (ret < 0) // OpenSSL version < 3.0.0
+		if (ret < 0)
 #else
-		if (ret <= 0) // OpenSSL version >= 3.0.0
+		if (ret <= 0)
 #endif
 		{
 			e = SSL_get_error(ssl, ret);
@@ -3952,11 +3488,10 @@ UINT SecureRecv(SOCK *sock, void *data, UINT size)
 	{
 		SockWriteSslLog(sock, NULL, 0, data, ret);
 	}
-#endif	// ENABLE_SSL_LOGGING
+#endif
 
 	if (ret > 0)
 	{
-		// Successful reception
 		sock->RecvSize += (UINT64)ret;
 		sock->RecvNum++;
 
@@ -3964,15 +3499,11 @@ UINT SecureRecv(SOCK *sock, void *data, UINT size)
 	}
 
 #if OPENSSL_VERSION_NUMBER < 0x30000000L
-	// 2021/09/10: After OpenSSL 3.x.x, both 0 and negative values might mean retryable.
+	// OpenSSL 3: both 0 and negative values may be retryable; use SSL_get_error().
 	// See: https://github.com/openssl/openssl/blob/435981cbadad2c58c35bacd30ca5d8b4c9bea72f/doc/man3/SSL_read.pod
-	// > Old documentation indicated a difference between 0 and -1, and that -1 was retryable.
-	// > You should instead call SSL_get_error() to find out if it's retryable.
 	if (ret == 0)
 	{
-		// Disconnect the communication
 		Disconnect(sock);
-		//Debug("%s %u SecureRecv() Disconnect\n", __FILE__, __LINE__);
 		return 0;
 	}
 #endif
@@ -3999,16 +3530,13 @@ UINT SecureRecv(SOCK *sock, void *data, UINT size)
 				return 0;
 			}
 
-			// Packet has not yet arrived
 			return SOCK_LATER;
 		}
 	}
-	Debug("%s %u e=%u SecureRecv() Disconnect\n", __FILE__, __LINE__, e);
 	Disconnect(sock);
 	return 0;
 }
 
-// TCP-SSL transmission
 UINT SecureSend(SOCK *sock, void *data, UINT size)
 {
 	int ret, e = SSL_ERROR_NONE;
@@ -4017,26 +3545,23 @@ UINT SecureSend(SOCK *sock, void *data, UINT size)
 
 	if (sock->AsyncMode)
 	{
-		// Asynchronous mode
 		SSL_set_mode(ssl, SSL_MODE_ENABLE_PARTIAL_WRITE);
 	}
 
-	// Transmission
 	Lock(sock->ssl_lock);
 	{
 		if (sock->Connected == false)
 		{
 			Unlock(sock->ssl_lock);
-			Debug("%s %u SecureSend() Disconnect\n", __FILE__, __LINE__);
 			return 0;
 		}
 
 		ERR_clear_error();
 		ret = SSL_write(ssl, data, size);
 #if OPENSSL_VERSION_NUMBER < 0x30000000L
-		if (ret < 0) // OpenSSL version < 3.0.0
+		if (ret < 0)
 #else
-		if (ret <= 0) // OpenSSL version >= 3.0.0
+		if (ret <= 0)
 #endif
 		{
 			e = SSL_get_error(ssl, ret);
@@ -4049,22 +3574,18 @@ UINT SecureSend(SOCK *sock, void *data, UINT size)
 	{
 		SockWriteSslLog(sock, data, ret, NULL, 0);
 	}
-#endif	// ENABLE_SSL_LOGGING
+#endif
 
 	if (ret > 0)
 	{
-		// Successful transmission
 		sock->SendSize += (UINT64)ret;
 		sock->SendNum++;
-		sock->WriteBlocked = false;
 		return (UINT)ret;
 	}
 
 #if OPENSSL_VERSION_NUMBER < 0x30000000L
 	if (ret == 0)
 	{
-		// Disconnect
-		Debug("%s %u SecureSend() Disconnect\n", __FILE__, __LINE__);
 		Disconnect(sock);
 		return 0;
 	}
@@ -4072,7 +3593,6 @@ UINT SecureSend(SOCK *sock, void *data, UINT size)
 
 	if (sock->AsyncMode)
 	{
-		// Confirmation of the error value
 		if (e == SSL_ERROR_WANT_READ || e == SSL_ERROR_WANT_WRITE || e == SSL_ERROR_SSL)
 		{
 			if (e == SSL_ERROR_SSL)
@@ -4086,22 +3606,18 @@ UINT SecureSend(SOCK *sock, void *data, UINT size)
 				return 0;
 			}
 
-			sock->WriteBlocked = true;
 			return SOCK_LATER;
 		}
 	}
-	Debug("%s %u e=%u SecureSend() Disconnect\n", __FILE__, __LINE__, e);
 	Disconnect(sock);
 	return 0;
 }
 
-// Peep the TCP
 UINT Peek(SOCK *sock, void *data, UINT size)
 {
 	SOCKET s;
 	int ret;
 
-	// Validate arguments
 	if (sock == NULL || data == NULL || size == 0)
 	{
 		return 0;
@@ -4116,12 +3632,10 @@ UINT Peek(SOCK *sock, void *data, UINT size)
 		return 0;
 	}
 
-	// Receive
 	s = sock->socket;
 
 	ret = recv(s, data, size, MSG_PEEK);
 
-	//Debug("Peek: %u\n", ret);
 
 	if (ret > 0)
 	{
@@ -4131,19 +3645,15 @@ UINT Peek(SOCK *sock, void *data, UINT size)
 	return 0;
 }
 
-// TCP receive
 UINT Recv(SOCK *sock, void *data, UINT size, bool secure)
 {
 	SOCKET s;
 	int ret;
 
-	// Validate arguments
 	if (sock == NULL || data == NULL || size == 0)
 	{
 		return 0;
 	}
-
-	sock->NoNeedToRead = false;
 
 	if (sock->Type != SOCK_TCP || sock->Connected == false || sock->ListenMode != false ||
 	        sock->socket == INVALID_SOCKET)
@@ -4160,14 +3670,12 @@ UINT Recv(SOCK *sock, void *data, UINT size, bool secure)
 		return SecureRecv(sock, data, size);
 	}
 
-	// Receive
 	s = sock->socket;
 
 	ret = recv(s, data, size, 0);
 
 	if (ret > 0)
 	{
-		// Successful reception
 		Lock(sock->lock);
 		{
 			sock->RecvSize += (UINT64)ret;
@@ -4177,37 +3685,28 @@ UINT Recv(SOCK *sock, void *data, UINT size, bool secure)
 		return (UINT)ret;
 	}
 
-	// Transmission failure
 	if (sock->AsyncMode)
 	{
-		// In asynchronous mode, examine the error
 		if (ret == SOCKET_ERROR)
 		{
-#ifdef	OS_WIN32
 			if (WSAGetLastError() == WSAEWOULDBLOCK)
 			{
-				// In blocking
 				return SOCK_LATER;
 			}
 			else
 			{
-				//Debug("Socket Error: %u\n", WSAGetLastError());
 			}
-#endif	// OS_WIN32
 		}
 	}
 
-	// Disconnected
 	Disconnect(sock);
 	return 0;
 }
 
-// TCP transmission
 UINT Send(SOCK *sock, void *data, UINT size, bool secure)
 {
 	SOCKET s;
 	int ret;
-	// Validate arguments
 	if (sock == NULL || data == NULL || size == 0)
 	{
 		return 0;
@@ -4228,52 +3727,39 @@ UINT Send(SOCK *sock, void *data, UINT size, bool secure)
 		return SecureSend(sock, data, size);
 	}
 
-	// Transmission
 	s = sock->socket;
 	ret = send(s, data, size, 0);
 	if (ret > 0)
 	{
-		// Successful transmission
 		Lock(sock->lock);
 		{
 			sock->SendSize += (UINT64)ret;
 			sock->SendNum++;
 		}
 		Unlock(sock->lock);
-		sock->WriteBlocked = false;
 		return (UINT)ret;
 	}
 
-	// Transmission failure
 	if (sock->AsyncMode)
 	{
-		// In asynchronous mode, examine the error
 		if (ret == SOCKET_ERROR)
 		{
-#ifdef	OS_WIN32
 			if (WSAGetLastError() == WSAEWOULDBLOCK)
 			{
-				// In blocking
-				sock->WriteBlocked = true;
 				return SOCK_LATER;
 			}
 			else
 			{
-				//Debug("Socket Error: %u\n", WSAGetLastError());
 			}
-#endif	// OS_WIN32
 		}
 	}
 
-	// Disconnected
 	Disconnect(sock);
 	return 0;
 }
 
-// Get the time-out value (in milliseconds)
 UINT GetTimeout(SOCK *sock)
 {
-	// Validate arguments
 	if (sock == NULL)
 	{
 		return INFINITE;
@@ -4286,10 +3772,8 @@ UINT GetTimeout(SOCK *sock)
 	return sock->TimeOut;
 }
 
-// Setting the time-out value (in milliseconds)
 void SetTimeout(SOCK *sock, UINT timeout)
 {
-	// Validate arguments
 	if (sock == NULL)
 	{
 		return;
@@ -4306,22 +3790,17 @@ void SetTimeout(SOCK *sock, UINT timeout)
 
 	sock->TimeOut = timeout;
 
-//	Debug("SetTimeout(%u)\n",timeout);
 
-#ifdef OS_WIN32
 	setsockopt(sock->socket, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(UINT));
 	setsockopt(sock->socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(UINT));
-#endif
 
 }
 
-// Disable GetHostName call by accepting new TCP connection
 void DisableGetHostNameWhenAcceptInit()
 {
 	disable_gethostname_by_accept = true;
 }
 
-// Initialize the connection acceptance
 void AcceptInit(SOCK *s)
 {
 	AcceptInitEx(s, false);
@@ -4329,7 +3808,6 @@ void AcceptInit(SOCK *s)
 void AcceptInitEx(SOCK *s, bool no_lookup_hostname)
 {
 	char tmp[MAX_SIZE];
-	// Validate arguments
 	if (s == NULL)
 	{
 		return;
@@ -4358,7 +3836,6 @@ void AcceptInitEx(SOCK *s, bool no_lookup_hostname)
 	s->RemoteHostname = CopyStr(tmp);
 }
 
-// TCP connection acceptance (IPv4)
 SOCK *Accept(SOCK *sock)
 {
 	SOCK *ret;
@@ -4366,7 +3843,6 @@ SOCK *Accept(SOCK *sock)
 	int size;
 	struct sockaddr_in addr;
 	UINT true_flag = 1;
-	// Validate arguments
 	if (sock == NULL)
 	{
 		return NULL;
@@ -4392,7 +3868,6 @@ SOCK *Accept(SOCK *sock)
 	Zero(&addr, sizeof(addr));
 	size = sizeof(addr);
 
-#ifdef	OS_WIN32
 	if (sock->EnableConditionalAccept)
 	{
 		new_socket = Win32Accept(sock, s, (struct sockaddr *)&addr,(int *)&size, false);
@@ -4401,7 +3876,6 @@ SOCK *Accept(SOCK *sock)
 	{
 		new_socket = accept(s, (struct sockaddr *)&addr,(int *)&size);
 	}
-#endif	// OS_WIN32
 
 	if (new_socket == INVALID_SOCKET)
 	{
@@ -4426,13 +3900,10 @@ SOCK *Accept(SOCK *sock)
 	ret->ServerMode = true;
 	ret->SecureMode = false;
 
-	// Configuring the TCP options
 	(void)setsockopt(ret->socket, IPPROTO_TCP, TCP_NODELAY, (char *)&true_flag, sizeof(true_flag));
 
-	// Initialization of the time-out value
 	SetTimeout(ret, TIMEOUT_INFINITE);
 
-	// Socket information
 	QuerySocketInformation(ret);
 
 	if (IsLocalHostIP(&ret->RemoteIP) == false)
@@ -4458,14 +3929,12 @@ SOCK *Accept(SOCK *sock)
 	return ret;
 }
 
-// TCP connection acceptance (IPv6)
 SOCK *Accept6(SOCK *sock)
 {
 	SOCK *ret;
 	SOCKET s, new_socket;
 	int size;
 	struct sockaddr_in6 addr;
-	// Validate arguments
 	if (sock == NULL)
 	{
 		return NULL;
@@ -4491,7 +3960,6 @@ SOCK *Accept6(SOCK *sock)
 	Zero(&addr, sizeof(addr));
 	size = sizeof(addr);
 
-#ifdef	OS_WIN32
 	if (sock->EnableConditionalAccept)
 	{
 		new_socket = Win32Accept(sock, s, (struct sockaddr *)&addr,(int *)&size, true);
@@ -4500,7 +3968,6 @@ SOCK *Accept6(SOCK *sock)
 	{
 		new_socket = accept(s, (struct sockaddr *)&addr,(int *)&size);
 	}
-#endif	// OS_WIN32
 
 	if (new_socket == INVALID_SOCKET)
 	{
@@ -4525,14 +3992,11 @@ SOCK *Accept6(SOCK *sock)
 	ret->ServerMode = true;
 	ret->SecureMode = false;
 
-	// Configuring the TCP options
 	UINT true_flag = 1;
 	(void)setsockopt(ret->socket, IPPROTO_TCP, TCP_NODELAY, (char *)&true_flag, sizeof(true_flag));
 
-	// Initialize the time-out value
 	SetTimeout(ret, TIMEOUT_INFINITE);
 
-	// Socket information
 	QuerySocketInformation(ret);
 
 	if (IsLocalHostIP(&ret->RemoteIP) == false)
@@ -4557,14 +4021,9 @@ SOCK *Accept6(SOCK *sock)
 	return ret;
 }
 
-// Standby for TCP (IPv6)
 SOCK *ListenEx6(UINT port, bool local_only)
 {
-	return ListenEx62(port, local_only, false);
-}
-SOCK *ListenEx62(UINT port, bool local_only, bool enable_ca)
-{
-	return ListenEx63(port, local_only, enable_ca, NULL);
+	return ListenEx63(port, local_only, false, NULL);
 }
 SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 {
@@ -4574,13 +4033,11 @@ SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 	struct in6_addr in;
 	IP localhost;
 	UINT backlog = SOMAXCONN;
-	// Validate arguments
 	if (port == 0 || port >= 65536)
 	{
 		return NULL;
 	}
 
-	// Initialization
 	Zero(&addr, sizeof(addr));
 	Zero(&in, sizeof(in));
 	GetLocalHostIP6(&localhost);
@@ -4607,7 +4064,6 @@ SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 		enable_ca = false;
 	}
 
-	// Creating a socket
 	s = socket(AF_INET6, SOCK_STREAM, 0);
 	if (s == INVALID_SOCKET)
 	{
@@ -4618,26 +4074,21 @@ SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 
 	if (bind(s, (struct sockaddr *)&addr, sizeof(struct sockaddr_in6)) != 0)
 	{
-		// Bind failure
 		closesocket(s);
 		return NULL;
 	}
 
-#ifdef OS_WIN32
 	if (enable_ca)
 	{
 		backlog = 1;
 	}
-#endif
 
 	if (listen(s, backlog))
 	{
-		// Listen failure
 		closesocket(s);
 		return NULL;
 	}
 
-	// Success
 	sock = NewSock();
 	sock->Connected = false;
 	sock->AsyncMode = false;
@@ -4654,7 +4105,6 @@ SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 	return sock;
 }
 
-// Standby for the TCP
 SOCK *Listen(UINT port)
 {
 	return ListenEx(port, false);
@@ -4671,13 +4121,11 @@ SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 	struct in_addr in;
 	IP localhost;
 	UINT backlog = SOMAXCONN;
-	// Validate arguments
 	if (port == 0 || port >= 65536)
 	{
 		return NULL;
 	}
 
-	// Initialization
 	Zero(&addr, sizeof(addr));
 	Zero(&in, sizeof(in));
 	SetIP(&localhost, 127, 0, 0, 1);
@@ -4704,7 +4152,6 @@ SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 		enable_ca = false;
 	}
 
-	// Creating a socket
 	s = socket(AF_INET, SOCK_STREAM, 0);
 	if (s == INVALID_SOCKET)
 	{
@@ -4715,27 +4162,22 @@ SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 
 	if (bind(s, (struct sockaddr *)&addr, sizeof(struct sockaddr_in)) != 0)
 	{
-		// Bind failure
 		closesocket(s);
 		return NULL;
 	}
 
-#ifdef	OS_WIN32
 	if (enable_ca)
 	{
 		setsockopt(s, SOL_SOCKET, SO_CONDITIONAL_ACCEPT, (char *)&true_flag, sizeof(true_flag));
 		backlog = 1;
 	}
-#endif	// OS_WIN32
 
 	if (listen(s, backlog))
 	{
-		// Listen failure
 		closesocket(s);
 		return NULL;
 	}
 
-	// Success
 	sock = NewSock();
 	sock->Connected = false;
 	sock->AsyncMode = false;
@@ -4751,37 +4193,30 @@ SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 	return sock;
 }
 
-// TCP disconnect
 void Disconnect(SOCK *sock)
 {
 	SOCKET s;
-	// Validate arguments
 	if (sock == NULL)
 	{
 		return;
 	}
 
-	sock->Disconnecting = true;
-
 #ifdef	ENABLE_SSL_LOGGING
 	SockCloseSslLogging(sock);
-#endif	// ENABLE_SSL_LOGGING
+#endif
 
 	if (sock->Type == SOCK_TCP && sock->ListenMode)
 	{
 		bool no_tcp_check_port = false;
 
-		// Connect to localhost if the socket is in listening
 		sock->CancelAccept = true;
 
-#ifdef	OS_WIN32
 		if (sock->hAcceptEvent != NULL)
 		{
 			SetEvent(sock->hAcceptEvent);
 
 			no_tcp_check_port = true;
 		}
-#endif	// OS_WIN32
 
 		if (sock->AcceptCanceled == false)
 		{
@@ -4789,11 +4224,11 @@ void Disconnect(SOCK *sock)
 			{
 				if (sock->IPv6 == false)
 				{
-					CheckTCPPort("127.0.0.1", sock->LocalPort);
+					CheckTCPPortEx("127.0.0.1", sock->LocalPort, TIMEOUT_TCP_PORT_CHECK);
 				}
 				else
 				{
-					CheckTCPPort("::1", sock->LocalPort);
+					CheckTCPPortEx("::1", sock->LocalPort, TIMEOUT_TCP_PORT_CHECK);
 				}
 			}
 		}
@@ -4807,18 +4242,15 @@ void Disconnect(SOCK *sock)
 	{
 		if (sock->socket != INVALID_SOCKET)
 		{
-			// Forced disconnection flag
 #ifdef	SO_DONTLINGER
 			UINT true_flag = 1;
 			(void)setsockopt(sock->socket, SOL_SOCKET, SO_DONTLINGER, (char *)&true_flag, sizeof(true_flag));
-#else	// SO_DONTLINGER
+#else
 			UINT false_flag = 0;
 			(void)setsockopt(sock->socket, SOL_SOCKET, SO_LINGER, (char *)&false_flag, sizeof(false_flag));
-#endif	// SO_DONTLINGER
-//			setsockopt(sock->socket, SOL_SOCKET, SO_REUSEADDR, (char *)&true_flag, sizeof(true_flag));
+#endif
 		}
 
-		// TCP socket
 		Lock(sock->lock);
 		{
 			if (sock->socket == INVALID_SOCKET)
@@ -4836,25 +4268,11 @@ void Disconnect(SOCK *sock)
 				Zero(&ling, sizeof(ling));
 
 
-#if	0
-				// SSL disconnect
-				Lock(sock->ssl_lock);
-				{
-					if (sock->SecureMode)
-					{
-						SSL_shutdown(sock->ssl);
-					}
-				}
-				Unlock(sock->ssl_lock);
-#endif
-				// Disconnect
 				shutdown(s, 2);
 			}
 
-			// Close the socket
 			closesocket(s);
 
-			// Release the SSL
 			Lock(sock->ssl_lock);
 			{
 				if (sock->SecureMode)
@@ -4876,7 +4294,6 @@ void Disconnect(SOCK *sock)
 			}
 			Unlock(sock->ssl_lock);
 
-			// Initialization
 			sock->socket = INVALID_SOCKET;
 			sock->Type = 0;
 			sock->AsyncMode = false;
@@ -4894,7 +4311,6 @@ void Disconnect(SOCK *sock)
 	}
 	else if (sock->Type == SOCK_UDP)
 	{
-		// UDP socket
 		Lock(sock->lock);
 		{
 			if (sock->socket == INVALID_SOCKET)
@@ -4907,10 +4323,8 @@ void Disconnect(SOCK *sock)
 
 			s = sock->socket;
 
-			// Close the socket
 			closesocket(s);
 
-			// Initialization
 			sock->socket = INVALID_SOCKET;
 			sock->Type = 0;
 			sock->AsyncMode = false;
@@ -4925,19 +4339,9 @@ void Disconnect(SOCK *sock)
 	Unlock(disconnect_function_lock);
 }
 
-typedef struct TCP_PORT_CHECK
-{
-	REF *ref;
-	char hostname[MAX_SIZE];
-	UINT port;
-	bool ok;
-} TCP_PORT_CHECK;
-
-// Check whether the TCP port can be connected
 bool CheckTCPPortEx(char *hostname, UINT port, UINT timeout)
 {
 	SOCK *s;
-	// Validate arguments
 	if (hostname == NULL || port == 0 || port >= 65536)
 	{
 		return false;
@@ -4948,7 +4352,7 @@ bool CheckTCPPortEx(char *hostname, UINT port, UINT timeout)
 		timeout = TIMEOUT_TCP_PORT_CHECK;
 	}
 
-	s = ConnectEx(hostname, port, timeout);
+	s = ConnectEx4(hostname, port, timeout, NULL, true, NULL);
 	if (s == NULL)
 	{
 		return false;
@@ -4960,27 +4364,7 @@ bool CheckTCPPortEx(char *hostname, UINT port, UINT timeout)
 		return true;
 	}
 }
-bool CheckTCPPort(char *hostname, UINT port)
-{
-	return CheckTCPPortEx(hostname, port, TIMEOUT_TCP_PORT_CHECK);
-}
 
-#if 0
-LPSTR PrintError(int ErrorCode)
-{
-	static char Message[1024];
-
-	// If this program was multithreaded, we'd want to use
-	// FORMAT_MESSAGE_ALLOCATE_BUFFER instead of a static buffer here.
-	// (And of course, free the buffer when we were done with it)
-
-	FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS |
-		FORMAT_MESSAGE_MAX_WIDTH_MASK, NULL, ErrorCode,
-		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-		(LPSTR)Message, 1024, NULL);
-	return Message;
-}
-#else
 char *PrintError(int ErrorCode)
 {
 	char *Message;
@@ -5014,11 +4398,11 @@ char *PrintError(int ErrorCode)
 		break;
 
 	case WSAEISCONN:
-		Message = "Socket is already connected.";	// Added on AUG.10, 2023
+		Message = "Socket is already connected.";
 		break;
 
 	case WSAEINVAL:
-		Message = "Invalid argument.";	// Added on AUG.10, 2023
+		Message = "Invalid argument.";
 		break;
 
 	default:
@@ -5027,9 +4411,7 @@ char *PrintError(int ErrorCode)
 	}
 	return Message;
 }
-#endif
 
-// Connection with timeout (Win32 version)
 int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool *cancel_flag)
 {
 	UINT64 start_time;
@@ -5039,7 +4421,6 @@ int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool
 	UINT zero = 0;
 	UINT tmp = 0;
 	DWORD ret_size = 0;
-	// Validate arguments
 	if (s == INVALID_SOCKET || addr == NULL)
 	{
 		return -1;
@@ -5049,10 +4430,8 @@ int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool
 		timeout = TIMEOUT_TCP_PORT_CHECK;
 	}
 
-	// Create an event
 	hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
-	// Associate the socket with the event
 	WSAEventSelect(s, hEvent, FD_CONNECT);
 
 	start_time = Tick64();
@@ -5071,17 +4450,13 @@ int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool
 		else
 		{
 			int err = WSAGetLastError();
-			//Debug("err=%u\n", err);
-			//Debug("cancel_flag=%u\n", *cancel_flag);
 			if (timeouted && err == WSAEALREADY)
 			{
-				// Time-out
 				ok = false;
 				break;
 			}
 			if (*cancel_flag)
 			{
-				// Cancel
 				ok = false;
 				break;
 			}
@@ -5092,13 +4467,11 @@ int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool
 			}
 			if (((start_time + (UINT64)timeout) <= Tick64()) || (err != WSAEWOULDBLOCK && err != WSAEALREADY))
 			{
-				// Failure (timeout)
 				break;
 			}
 			else
 			{
 				SleepThread(10);
-				// Connecting
 				if (WaitForSingleObject(hEvent, 100) == WAIT_OBJECT_0)
 				{
 					timeouted = true;
@@ -5107,13 +4480,10 @@ int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool
 		}
 	}
 
-	// Remove the socket from the event
 	WSAEventSelect(s, hEvent, 0);
 
-	// Restore to synchronized socket
 	WSAIoctl(s, FIONBIO, &zero, sizeof(zero), &tmp, sizeof(tmp), &ret_size, NULL, NULL);
 
-	// Close the event
 	CloseHandle(hEvent);
 
 	if (ok)
@@ -5126,10 +4496,8 @@ int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool
 	}
 }
 
-// Set the TOS value of the socket
 void SetSockTos(SOCK *s, int tos)
 {
-	// Validate arguments
 	if (s == NULL)
 	{
 		return;
@@ -5142,15 +4510,13 @@ void SetSockTos(SOCK *s, int tos)
 
 #ifdef	IP_TOS
 	(void)setsockopt(s->socket, IPPROTO_IP, IP_TOS, (char *)&tos, sizeof(int));
-#endif	// IP_TOS
+#endif
 
 	s->CurrentTos = tos;
 }
 
-// Set the priority of the socket
 void SetSockHighPriority(SOCK *s, bool flag)
 {
-	// Validate arguments
 	if (s == NULL)
 	{
 		return;
@@ -5159,60 +4525,42 @@ void SetSockHighPriority(SOCK *s, bool flag)
 	SetSockTos(s, (flag ? 16 : 0));
 }
 
-// Bind the socket to IPv4 or IPV6 address
 int bind_sock(SOCKET sock, IP *ip, UINT port)
 {
-	//char tmp[MAX_HOST_NAME_LEN + 1];
-	//memset(tmp, 0, sizeof(tmp));
-	//IPToStr(tmp, sizeof(tmp), ip);
-	//Debug("bind_sock(): Binding... IP address %s:%d\n", tmp, port);
 
 	if (IsIP4(ip))
 	{
-		// Declare variables
 		struct sockaddr_in sockaddr_in;
 
 		Zero(&sockaddr_in, sizeof(sockaddr_in));
 
-		// Set up the sockaddr structure
 		sockaddr_in.sin_family = AF_INET;
 		IPToInAddr(&sockaddr_in.sin_addr, ip);
 		sockaddr_in.sin_port = htons((USHORT)port);
-		//inet_pton(AF_INET, tmp, &addr_in.sin_addr.s_addr);
 
 		UINT true_flag = 1;
-		// This only have enabled for UNIX system since there is a bug
-		// in the implementation of REUSEADDR in Windows OS
 		(void)setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char*)&true_flag, sizeof(true_flag));
 
-		// Bind the socket using the information in the sockaddr structure
 		return (bind(sock, (struct sockaddr *)&sockaddr_in, sizeof(sockaddr_in)));
 	}
 	else
 	{
-		// Declare variables
 		struct sockaddr_in6 sockaddr_in;
 
 		Zero(&sockaddr_in, sizeof(sockaddr_in));
 
-		// Set up the sockaddr structure
 		sockaddr_in.sin6_family = AF_INET6;
 		IPToInAddr6(&sockaddr_in.sin6_addr, ip);
 		sockaddr_in.sin6_scope_id = ip->ipv6_scope_id;
 		sockaddr_in.sin6_port = htons((USHORT)port);
-		//inet_pton(AF_INET6, tmp, &sockaddr_in.sin6_addr.s6_bytes);
 
 		UINT true_flag = 1;
-		// This only have enabled for UNIX system since there is a bug
-		// in the implementation of REUSEADDR in Windows OS
 		(void)setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char*)&true_flag, sizeof(true_flag));
 
-		// Bind the socket using the information in the sockaddr structure
 		return (bind(sock, (struct sockaddr *)&sockaddr_in, sizeof(sockaddr_in)));
 	}
 }
 
-// Connect to the IPv4 host using a socket
 SOCKET BindConnectTimeoutIPv4(IP* localIP, UINT localport, IP* ip, UINT port, UINT timeout, bool* cancel_flag)
 {
 	SOCKET s;
@@ -5222,16 +4570,13 @@ SOCKET BindConnectTimeoutIPv4(IP* localIP, UINT localport, IP* ip, UINT port, UI
 	Zero(&sockaddr4, sizeof(sockaddr4));
 	Zero(&addr4, sizeof(addr4));
 
-	// Generate a sockaddr_in
 	IPToInAddr(&addr4, ip);
 	sockaddr4.sin_port = htons((USHORT)port);
 	sockaddr4.sin_family = AF_INET;
 	sockaddr4.sin_addr.s_addr = addr4.s_addr;
 
-	// Socket creation
 	s = socket(AF_INET, SOCK_STREAM, 0);
 
-	// Top of Bind outgoing connection
 	if (s != INVALID_SOCKET) {
 		int ier;
 		IP tmpIP;
@@ -5247,25 +4592,19 @@ SOCKET BindConnectTimeoutIPv4(IP* localIP, UINT localport, IP* ip, UINT port, UI
 
 		if ((IsZeroIP(tmpIP2) == false) || (localport != 0)) {
 
-			// Bind the socket
 			if (bind_sock(s, tmpIP2, localport) != 0) {
-#ifdef	OS_WIN32
 				ier = WSAGetLastError();
 				Debug("IPv4 bind() failed with error: %d %s\n", ier, PrintError(ier));
-#endif
 				closesocket(s);
 				s = INVALID_SOCKET;
 			}
 		}
 	}
-	// Bottom of Bind outgoing connection
 
 	if (s != INVALID_SOCKET)
 	{
-		// Connection
 		if (connect_timeout(s, (struct sockaddr *)&sockaddr4, sizeof(struct sockaddr_in), timeout, cancel_flag) != 0)
 		{
-			// Connection failure
 			closesocket(s);
 			s = INVALID_SOCKET;
 		}
@@ -5274,8 +4613,6 @@ SOCKET BindConnectTimeoutIPv4(IP* localIP, UINT localport, IP* ip, UINT port, UI
 	return s;
 }
 
-// IPv4 connection thread (multiple protocols, multiple addresses)
-//void ConnectThreadForIPv4(THREAD* thread, void* param)
 void BindConnectThreadForIPv4(THREAD *thread, void *param)
 {
 	SOCKET s = INVALID_SOCKET;
@@ -5287,7 +4624,6 @@ void BindConnectThreadForIPv4(THREAD *thread, void *param)
 		return;
 	}
 
-	// Delay before start
 	if (p->Delay >= 1)
 	{
 		WaitEx(NULL, p->Delay, p->NoDelayFlag);
@@ -5304,7 +4640,6 @@ void BindConnectThreadForIPv4(THREAD *thread, void *param)
 			continue;
 		}
 
-		// Delay before retry
 		if (i > 0 && p->RetryDelay >= 1)
 		{
 			WaitEx(NULL, p->RetryDelay, p->CancelFlag);
@@ -5312,12 +4647,9 @@ void BindConnectThreadForIPv4(THREAD *thread, void *param)
 
 		if (*p->CancelFlag)
 		{
-			// Cancel by the user
 			break;
 		}
 
-		// Normal connection
-//			s = ConnectTimeoutIPv4(ip, p->Port, p->Timeout, p->CancelFlag);
 		s = BindConnectTimeoutIPv4(p->LocalIP, p->LocalPort, ip, p->Port, p->Timeout, p->CancelFlag);
 
 		if (s != INVALID_SOCKET)
@@ -5341,8 +4673,6 @@ void BindConnectThreadForIPv4(THREAD *thread, void *param)
 	Set(p->FinishEvent);
 }
 
-// IPv6 connection thread (multiple addresses)
-//void ConnectThreadForIPv6(THREAD *thread, void *param)
 void BindConnectThreadForIPv6(THREAD* thread, void* param)
 {
 	SOCKET s = INVALID_SOCKET;
@@ -5354,7 +4684,6 @@ void BindConnectThreadForIPv6(THREAD* thread, void* param)
 		return;
 	}
 
-	// Delay before start
 	if (p->Delay >= 1)
 	{
 		WaitEx(NULL, p->Delay, p->NoDelayFlag);
@@ -5371,7 +4700,6 @@ void BindConnectThreadForIPv6(THREAD* thread, void* param)
 			continue;
 		}
 
-		// Delay before retry
 		if (i > 0 && p->RetryDelay >= 1)
 		{
 			WaitEx(NULL, p->RetryDelay, p->CancelFlag);
@@ -5379,7 +4707,6 @@ void BindConnectThreadForIPv6(THREAD* thread, void* param)
 
 		if (*p->CancelFlag)
 		{
-			// Cancel by the user
 			break;
 		}
 
@@ -5389,17 +4716,14 @@ void BindConnectThreadForIPv6(THREAD* thread, void* param)
 		Zero(&sockaddr6, sizeof(sockaddr6));
 		Zero(&addr6, sizeof(addr6));
 
-		// Generation of the sockaddr_in6
 		IPToInAddr6(&addr6, ip);
 		sockaddr6.sin6_port = htons((USHORT)p->Port);
 		sockaddr6.sin6_family = AF_INET6;
 		sockaddr6.sin6_scope_id = ip->ipv6_scope_id;
 		Copy(&sockaddr6.sin6_addr, &addr6, sizeof(addr6));
 
-		// Socket creation
 		s = socket(AF_INET6, SOCK_STREAM, 0);
 
-		// Top of Bind outgoing connection
 		if (s != INVALID_SOCKET){
 			int ier;
 			IP tmpIP;
@@ -5415,25 +4739,19 @@ void BindConnectThreadForIPv6(THREAD* thread, void* param)
 
 			if ((IsZeroIP(tmpIP2) == false) || (p->LocalPort != 0)){
 
-				// Bind the socket
 				if (bind_sock(s, tmpIP2, p->LocalPort) != 0) {
-#ifdef	OS_WIN32
 					ier = WSAGetLastError();
 					Debug("IPv6 bind() failed with error: %d %s\n", ier, PrintError(ier));
-#endif
 					closesocket(s);
 					s = INVALID_SOCKET;
 				}
 			}
 		}
-		// Bottom of Bind outgoing connection
 
 		if (s != INVALID_SOCKET)
 		{
-			// Connection
 			if (connect_timeout(s, (struct sockaddr *)&sockaddr6, sizeof(struct sockaddr_in6), p->Timeout, p->CancelFlag) != 0)
 			{
-				// Connection failure
 				closesocket(s);
 				s = INVALID_SOCKET;
 			}
@@ -5459,7 +4777,6 @@ void BindConnectThreadForIPv6(THREAD* thread, void* param)
 	Set(p->FinishEvent);
 }
 
-// Creating a TCP SOCK from a SOCKET
 SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname, char *hostname_original)
 {
 	struct linger ling;
@@ -5471,7 +4788,6 @@ SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname
 		return NULL;
 	}
 
-	// Creating a SOCK
 	sock = NewSock();
 	sock->socket = s;
 	sock->Type = SOCK_TCP;
@@ -5480,37 +4796,29 @@ SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname
 	StrCpy(sock->UnderlayProtocol, sizeof(sock->UnderlayProtocol), is_ipv6 ? SOCK_UNDERLAY_NATIVE_V6 : SOCK_UNDERLAY_NATIVE_V4);
 	AddProtocolDetailsStr(sock->ProtocolDetails, sizeof(sock->ProtocolDetails), is_ipv6 ? "IPv6" : "IPv4");
 
-	// Host name resolution
 	if (no_get_hostname || (GetHostName(tmp, sizeof(tmp), current_ip) == false))
 	{
 		StrCpy(tmp, sizeof(tmp), hostname_original);
 	}
 
-	//Debug("PTR: %s\n", tmp);
 
 	sock->RemoteHostname = CopyStr(tmp);
 
-//	Debug("new socket: %u\n", s);
 
 	Zero(&ling, sizeof(ling));
 
 	UINT true_flag = 1;
-	// Forced disconnection flag
 #ifdef	SO_DONTLINGER
 	(void)setsockopt(sock->socket, SOL_SOCKET, SO_DONTLINGER, (char *)&true_flag, sizeof(true_flag));
-#else	// SO_DONTLINGER
+#else
 	UINT false_flag = 0;
 	(void)setsockopt(sock->socket, SOL_SOCKET, SO_LINGER, (char *)&false_flag, sizeof(false_flag));
-#endif	// SO_DONTLINGER
-//	setsockopt(sock->socket, SOL_SOCKET, SO_REUSEADDR, (char *)&true_flag, sizeof(true_flag));
+#endif
 
-	// Configuring TCP options
 	(void)setsockopt(sock->socket, IPPROTO_TCP, TCP_NODELAY, (char *)&true_flag, sizeof(true_flag));
 
-	// Initialization of the time-out value
 	SetTimeout(sock, TIMEOUT_INFINITE);
 
-	// Get the socket information
 	QuerySocketInformation(sock);
 
 	if (IsZeroIp(&sock->LocalIP) == false && IsLocalHostIP(&sock->LocalIP) == false)
@@ -5531,34 +4839,19 @@ SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname
 	return sock;
 }
 
-// TCP connection
 SOCK *Connect(char *hostname, UINT port)
 {
-	return ConnectEx(hostname, port, 0);
-}
-SOCK *ConnectEx(char *hostname, UINT port, UINT timeout)
-{
-	return ConnectEx2(hostname, port, timeout, NULL);
-}
-SOCK *ConnectEx2(char *hostname, UINT port, UINT timeout, bool *cancel_flag)
-{
-	return ConnectEx3(hostname, port, timeout, cancel_flag, true);
-}
-SOCK *ConnectEx3(char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname)
-{
-	return ConnectEx4(hostname, port, timeout, cancel_flag, no_get_hostname, NULL);
+	return ConnectEx4(hostname, port, 0, NULL, true, NULL);
 }
 SOCK *ConnectEx4(char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname, IP *ret_ip)
 {
 	return BindConnectEx4(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, hostname, port, timeout, cancel_flag, no_get_hostname, ret_ip);
 }
 
-//SOCK* ConnectEx4(char* hostname, UINT port, UINT timeout, bool* cancel_flag, bool no_get_hostname, IP* ret_ip)
 SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname, IP *ret_ip)
 {
 	bool dummy = false;
 	IP dummy_ret_ip;
-	// Validate arguments
 	if (hostname == NULL || port == 0 || port >= 65536 || IsEmptyStr(hostname))
 	{
 		return NULL;
@@ -5583,7 +4876,6 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 
 	if (IsZeroIp(ret_ip) == false)
 	{
-		// Skip name resolution
 		if (IsIP6(ret_ip))
 		{
 			iplist_v6 = NewListFast(NULL);
@@ -5595,11 +4887,9 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 			AddHostIPAddressToList(iplist_v4, ret_ip);
 		}
 
-		//Debug("Using cached IP address: %s = %r\n", hostname_original, ret_ip);
 	}
 	else
 	{
-		// Forward resolution
 		if (DnsResolveEx(&iplist_v6, &iplist_v4, hostname, 0, cancel_flag) == false)
 		{
 			return NULL;
@@ -5619,13 +4909,12 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 	Zero(&p4, sizeof(p4));
 	Zero(&p6, sizeof(p6));
 
-	// IPv6 connection thread
 	if (LIST_NUM(iplist_v6) > 0)
 	{
 		p6.IpList = iplist_v6;
 
 		if (localIP == BIND_LOCALIP_NULL) {
-			p6.LocalIP = BIND_LOCALIP_NULL;	// Make the NULL address passing through
+			p6.LocalIP = BIND_LOCALIP_NULL;
 		}
 		else {
 			CopyIP(&p6.LocalIP_Cache, localIP);
@@ -5643,17 +4932,15 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 		p6.Ret_Ip = &ret_ip6;
 		p6.RetryDelay = 250;
 		p6.Delay = 0;
-//		t6 = NewThread(ConnectThreadForIPv6, &p6);
-		t6 = NewThread(BindConnectThreadForIPv6, &p6);	// For binding a socket
+		t6 = NewThread(BindConnectThreadForIPv6, &p6);
 	}
 
-	// IPv4 connection thread
 	if (LIST_NUM(iplist_v4) > 0)
 	{
 		p4.IpList = iplist_v4;
 
 		if (localIP == BIND_LOCALIP_NULL) {
-			p4.LocalIP = BIND_LOCALIP_NULL;	// Make the NULL address passing through
+			p4.LocalIP = BIND_LOCALIP_NULL;
 		}
 		else {
 			CopyIP(&p4.LocalIP_Cache, localIP);
@@ -5671,13 +4958,11 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 		p4.Ret_Ip = &ret_ip4;
 		p4.RetryDelay = 250;
 		p4.Delay = 250;		// Delay by 250ms to prioritize IPv6 (RFC 6555 recommends 150-250ms, Chrome uses 300ms)
-//		t4 = NewThread(ConnectThreadForIPv4, &p4);
-		t4 = NewThread(BindConnectThreadForIPv4, &p4);	// For binding a socket
+		t4 = NewThread(BindConnectThreadForIPv4, &p4);
 	}
 
 	if (t6 == NULL || t4 == NULL)
 	{
-		// No need to delay if there is only one thread
 		no_delay_flag = true;
 	}
 
@@ -5720,7 +5005,6 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 
 	if (*cancel_flag)
 	{
-		// Abandon all the results because the user canceled
 		Disconnect(p6.Sock);
 		ReleaseSock(p6.Sock);
 		Disconnect(p4.Sock);
@@ -5748,7 +5032,6 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 	return NULL;
 }
 
-// Add a protocol details strings
 void AddProtocolDetailsStr(char *dst, UINT dst_size, char *str)
 {
 	TOKEN_LIST *t1, *t2;
@@ -5801,11 +5084,9 @@ void AddProtocolDetailsKeyValueInt(char *dst, UINT dst_size, char *key, UINT val
 }
 
 
-// Setting the buffer size of the socket
 bool SetSocketBufferSize(SOCKET s, bool send, UINT size)
 {
 	int value = (int)size;
-	// Validate arguments
 	if (s == INVALID_SOCKET)
 	{
 		return false;
@@ -5820,7 +5101,6 @@ bool SetSocketBufferSize(SOCKET s, bool send, UINT size)
 }
 UINT SetSocketBufferSizeWithBestEffort(SOCKET s, bool send, UINT size)
 {
-	// Validate arguments
 	if (s == INVALID_SOCKET)
 	{
 		return 0;
@@ -5842,17 +5122,14 @@ UINT SetSocketBufferSizeWithBestEffort(SOCKET s, bool send, UINT size)
 	}
 }
 
-// Initialize the buffer size of the UDP socket
 void InitUdpSocketBufferSize(SOCKET s)
 {
 	SetSocketBufferSizeWithBestEffort(s, true, UDP_MAX_BUFFER_SIZE);
 	SetSocketBufferSizeWithBestEffort(s, false, UDP_MAX_BUFFER_SIZE);
 }
 
-// Get the socket information
 void QuerySocketInformation(SOCK *sock)
 {
-	// Validate arguments
 	if (sock == NULL)
 	{
 		return;
@@ -5868,7 +5145,6 @@ void QuerySocketInformation(SOCK *sock)
 
 		if (sock->Type == SOCK_TCP)
 		{
-			// Get the information of the remote host
 			size = sizeof(sockaddr6);
 			if (getpeername(sock->socket, (struct sockaddr *)&sockaddr6, (int *)&size) == 0)
 			{
@@ -5892,7 +5168,6 @@ void QuerySocketInformation(SOCK *sock)
 			}
 		}
 
-		// Get the local host information
 		size = sizeof(sockaddr6);
 		if (getsockname(sock->socket, (struct sockaddr *)&sockaddr6, (int *)&size) == 0)
 		{
@@ -5924,10 +5199,8 @@ void QuerySocketInformation(SOCK *sock)
 		{
 			sock->UdpMaxMsgSize = UDP_MAX_MSG_SIZE_DEFAULT;
 
-#ifdef	OS_WIN32
 			if (true)
 			{
-				// Get the buffer size that can be transmitted and received at once
 				UINT max_value = 0;
 				int len = sizeof(UINT);
 
@@ -5936,23 +5209,21 @@ void QuerySocketInformation(SOCK *sock)
 					sock->UdpMaxMsgSize = max_value;
 				}
 			}
-#endif	// OS_WIN32
 		}
 
 		if (sock->IPv6)
 		{
 #ifdef	IPV6_UNICAST_HOPS
 			opt_value = IPV6_UNICAST_HOPS;
-#endif	// IPV6_UNICAST_HOPS
+#endif
 		}
 		else
 		{
 #ifdef	IP_TTL
 			opt_value = IP_TTL;
-#endif	// IP_TTL
+#endif
 		}
 
-		// Support of the TTL value
 		size = sizeof(UINT);
 		if (opt_value == 0 ||
 		        getsockopt(sock->socket, (sock->IPv6 ? IPPROTO_IPV6 : IPPROTO_IP), opt_value, (char *)&dw, &size) != 0)
@@ -5968,10 +5239,8 @@ void QuerySocketInformation(SOCK *sock)
 	Unlock(sock->lock);
 }
 
-// Release of the socket
 void ReleaseSock(SOCK *s)
 {
-	// Validate arguments
 	if (s == NULL)
 	{
 		return;
@@ -5987,39 +5256,29 @@ void ReleaseSock(SOCK *s)
 	}
 }
 
-// Clean-up of the socket
 void CleanupSock(SOCK *s)
 {
-	// Validate arguments
 	if (s == NULL)
 	{
 		return;
 	}
 
-//	{Debug("CleanupSock: Disconnect() Called: %s %u\n", __FILE__, __LINE__);Disconnect(s);}
 	Disconnect(s);
 
-#ifdef	OS_WIN32
 	Win32FreeAsyncSocket(s);
-#endif	// OS_WIN32
 
 	FreeBuf(s->SendBuf);
 	if (s->socket != INVALID_SOCKET)
 	{
-#ifdef	OS_WIN32
 		closesocket(s->socket);
-#endif	// OS_WIN32
 	}
 	Free(s->RemoteHostname);
 
-#ifdef	OS_WIN32
 	if (s->hAcceptEvent != NULL)
 	{
 		CloseHandle(s->hAcceptEvent);
 	}
-#endif	// OS_WIN32
 
-	// Release the certificate
 	if (s->RemoteX != NULL)
 	{
 		FreeX(s->RemoteX);
@@ -6031,7 +5290,6 @@ void CleanupSock(SOCK *s)
 		s->LocalX = NULL;
 	}
 
-	// Cipher algorithm name
 	if (s->CipherName != NULL)
 	{
 		Free(s->CipherName);
@@ -6048,7 +5306,6 @@ void CleanupSock(SOCK *s)
 	Free(s);
 }
 
-// Creating a new socket
 SOCK *NewSock()
 {
 	SOCK *s = ZeroMallocFast(sizeof(SOCK));
@@ -6065,10 +5322,8 @@ SOCK *NewSock()
 	return s;
 }
 
-// Convert the IP to UINT
 UINT IPToUINT(IP *ip)
 {
-	// Validate arguments
 	if (ip == NULL || IsIP6(ip))
 	{
 		return 0;
@@ -6084,10 +5339,8 @@ UINT IPToUINT(IP *ip)
 	return value;
 }
 
-// Convert UINT to IP
 void UINTToIP(IP *ip, UINT value)
 {
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return;
@@ -6101,12 +5354,10 @@ void UINTToIP(IP *ip, UINT value)
 	}
 }
 
-// Get the host name of the computer
 void GetMachineHostName(char *name, UINT size)
 {
 	char tmp[MAX_SIZE];
 	UINT i, len;
-	// Validate arguments
 	if (name == NULL)
 	{
 		return;
@@ -6126,66 +5377,6 @@ void GetMachineHostName(char *name, UINT size)
 	ConvertSafeFileName(name, size, tmp);
 }
 
-// Get the computer name from 'hosts'
-bool GetMachineNameFromHosts(char *name, UINT size)
-{
-	bool ret = false;
-	char *s;
-	BUF *b;
-	// Validate arguments
-	if (name == NULL)
-	{
-		return false;
-	}
-
-	b = ReadDump("/etc/hosts");
-	if (b == NULL)
-	{
-		return false;
-	}
-
-	while (true)
-	{
-		s = CfgReadNextLine(b);
-		if (s == NULL)
-		{
-			break;
-		}
-		else
-		{
-			TOKEN_LIST *t = ParseToken(s, " \t");
-
-			if (t != NULL)
-			{
-				if (t->NumTokens >= 2)
-				{
-					if (StrCmpi(t->Token[0], "127.0.0.1") == 0)
-					{
-						UINT i;
-
-						for (i = 1; i < t->NumTokens; i++)
-						{
-							if (StartWith(t->Token[i], "localhost") == false)
-							{
-								StrCpy(name, size, t->Token[i]);
-								ret = true;
-							}
-						}
-					}
-				}
-			}
-			FreeToken(t);
-		}
-
-		Free(s);
-	}
-
-	FreeBuf(b);
-
-	return ret;
-}
-
-// Get the computer name of this computer
 void GetMachineName(char *name, UINT size)
 {
 	GetMachineNameEx(name, size, false);
@@ -6195,8 +5386,6 @@ void GetMachineNameEx(char *name, UINT size, bool no_load_hosts)
 	static char name_cache[MAX_SIZE];
 	static bool name_cached = false;
 	char tmp[MAX_SIZE];
-	char tmp2[MAX_SIZE];
-	// Validate arguments
 	if (name == NULL)
 	{
 		return;
@@ -6221,29 +5410,15 @@ void GetMachineNameEx(char *name, UINT size, bool no_load_hosts)
 		StrCpy(name, size, tmp);
 		if (IsEmptyStr(name) || StartWith(name, "localhost"))
 		{
-#ifdef	OS_WIN32
 			ClearStr(name, size);
 			MsGetComputerName(name, size);
-#endif	// OS_WIN32
 		}
-		if (IsEmptyStr(name) || StartWith(name, "localhost"))
-		{
-			if (no_load_hosts == false && OS_IS_UNIX(GetOsInfo()->OsType))
-			{
-				if (GetMachineNameFromHosts(tmp2, sizeof(tmp2)))
-				{
-					StrCpy(name, size, tmp2);
-				}
-			}
-		}
-
 		StrCpy(name_cache, sizeof(name_cache), name);
 		name_cached = true;
 	}
 	Unlock(machine_name_lock);
 }
 
-// Get the host name
 bool GetHostName(char *hostname, UINT size, IP *ip)
 {
 	if (hostname == NULL || size == 0 || ip == NULL)
@@ -6267,7 +5442,6 @@ bool GetHostName(char *hostname, UINT size, IP *ip)
 
 #define	NUM_NBT_QUERYS_SEND			3
 
-// Get the NetBIOS name of the machine from the IP address
 bool GetNetBiosName(char *name, UINT size, IP *ip)
 {
 	SOCK *s;
@@ -6278,7 +5452,6 @@ bool GetNetBiosName(char *name, UINT size, IP *ip)
 	UCHAR buf[1024];
 	USHORT tran_id[NUM_NBT_QUERYS_SEND];
 	UINT64 timeout_tick;
-	// Validate arguments
 	if (name == NULL || ip == NULL)
 	{
 		return false;
@@ -6407,10 +5580,8 @@ bool GetNetBiosName(char *name, UINT size, IP *ip)
 	return ok;
 }
 
-// Set the IP address
 void SetIP(IP *ip, UCHAR a1, UCHAR a2, UCHAR a3, UCHAR a4)
 {
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return;
@@ -6424,11 +5595,9 @@ void SetIP(IP *ip, UCHAR a1, UCHAR a2, UCHAR a3, UCHAR a4)
 	ip->address[15] = a4;
 }
 
-// Convert the IP to a string (32bit UINT)
 void IPToStr32(char *str, UINT size, UINT ip)
 {
 	IP ip_st;
-	// Validate arguments
 	if (str == NULL)
 	{
 		return;
@@ -6438,13 +5607,11 @@ void IPToStr32(char *str, UINT size, UINT ip)
 	IPToStr(str, size, &ip_st);
 }
 
-// Convert IPv4 or IPv6 to a string
 void IPToStr4or6(char *str, UINT size, UINT ip_4_uint, UCHAR *ip_6_bytes)
 {
 	IP ip4;
 	IP ip6;
 	IP ip;
-	// Validate arguments
 	if (str == NULL)
 	{
 		return;
@@ -6467,10 +5634,8 @@ void IPToStr4or6(char *str, UINT size, UINT ip_4_uint, UCHAR *ip_6_bytes)
 	IPToStr(str, size, &ip);
 }
 
-// Convert the IP to a string
 void IPToStr(char *str, UINT size, IP *ip)
 {
-	// Validate arguments
 	if (str == NULL || ip == NULL)
 	{
 		return;
@@ -6487,12 +5652,10 @@ void IPToStr(char *str, UINT size, IP *ip)
 	}
 }
 
-// Convert the string to an IP
 bool StrToIP(IP *ip, char *str)
 {
 	TOKEN_LIST *token;
 	char *tmp;
-	// Validate arguments
 	if (ip == NULL || str == NULL)
 	{
 		return false;
@@ -6536,11 +5699,9 @@ bool StrToIP(IP *ip, char *str)
 	return true;
 }
 
-// Convert the IP to the in_addr
 void IPToInAddr(struct in_addr *addr, IP *ip)
 {
 	UINT i;
-	// Validate arguments
 	if (addr == NULL || IsIP4(ip) == false)
 	{
 		return;
@@ -6555,10 +5716,8 @@ void IPToInAddr(struct in_addr *addr, IP *ip)
 	}
 }
 
-// Convert the IP to the in6_addr
 void IPToInAddr6(struct in6_addr *addr, IP *ip)
 {
-	// Validate arguments
 	if (addr == NULL || ip == NULL)
 	{
 		return;
@@ -6572,7 +5731,6 @@ void IPToInAddr6(struct in6_addr *addr, IP *ip)
 	}
 }
 
-// Convert the in_addr to the IP
 void InAddrToIP(IP *ip, struct in_addr *addr)
 {
 	if (ip == NULL || addr == NULL)
@@ -6590,10 +5748,8 @@ void InAddrToIP(IP *ip, struct in_addr *addr)
 	}
 }
 
-// Convert the in6_addr to the IP
 void InAddrToIP6(IP *ip, struct in6_addr *addr)
 {
-	// Validate arguments
 	if (ip == NULL || addr == NULL)
 	{
 		return;
@@ -6607,7 +5763,6 @@ void InAddrToIP6(IP *ip, struct in6_addr *addr)
 	}
 }
 
-// DH temp key callback
 DH *TmpDhCallback(SSL *ssl, int is_export, int keylength)
 {
 	DH *ret = NULL;
@@ -6620,15 +5775,6 @@ DH *TmpDhCallback(SSL *ssl, int is_export, int keylength)
 	return ret;
 }
 
-// Log SSL keys
-void keylog_cb_func(const SSL* ssl, const char* line)
-{
-	Debug("SSL_KEYLOG_BEGIN\n");
-	Debug(line);
-	Debug("\nSSL_KEYLOG_END\n");
-}
-
-// Create the SSL_CTX
 struct ssl_ctx_st *NewSSLCtx(bool server_mode)
 {
 	struct ssl_ctx_st *ctx = SSL_CTX_new(SSLv23_method());
@@ -6636,7 +5782,6 @@ struct ssl_ctx_st *NewSSLCtx(bool server_mode)
 	{
 		return NULL;
 	}
-	// It resets some parameters.
 	if (server_mode)
 	{
 		SSL_CTX_set_ssl_version(ctx, SSLv23_server_method());
@@ -6648,34 +5793,30 @@ struct ssl_ctx_st *NewSSLCtx(bool server_mode)
 
 #ifdef	SSL_OP_NO_SSLv3
 	SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv3);
-#endif	// SSL_OP_NO_SSLv3
+#endif
 
 #ifdef	SSL_OP_NO_TICKET
 	SSL_CTX_set_options(ctx, SSL_OP_NO_TICKET);
-#endif	// SSL_OP_NO_TICKET
+#endif
 
 #ifdef	SSL_OP_CIPHER_SERVER_PREFERENCE
 	if (server_mode)
 	{
 		SSL_CTX_set_options(ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
 	}
-#endif	// SSL_OP_CIPHER_SERVER_PREFERENCE
+#endif
 
 	SSL_CTX_set_tmp_dh_callback(ctx, TmpDhCallback);
 
 #ifdef	SSL_CTX_set_ecdh_auto
 	SSL_CTX_set_ecdh_auto(ctx, 1);
-#endif	// SSL_CTX_set_ecdh_auto
-
-	SSL_CTX_set_keylog_callback(ctx, &keylog_cb_func);
+#endif
 
 	return ctx;
 }
 
-// Release of the SSL_CTX
 void FreeSSLCtx(struct ssl_ctx_st *ctx)
 {
-	// Validate arguments
 	if (ctx == NULL)
 	{
 		return;
@@ -6684,7 +5825,6 @@ void FreeSSLCtx(struct ssl_ctx_st *ctx)
 	SSL_CTX_free(ctx);
 }
 
-// Get OS (maximum) Security Level
 UINT GetOSSecurityLevel()
 {
 	UINT security_level_new = 0, security_level_set_ssl_version = 0;
@@ -6712,7 +5852,6 @@ UINT GetOSSecurityLevel()
 	return security_level_set_ssl_version;
 }
 
-// Initialize the network communication module
 void InitNetwork()
 {
 	disable_gethostname_by_accept = false;
@@ -6726,20 +5865,14 @@ void InitNetwork()
 
 	num_tcp_connections = NewCounter();
 
-	// Initialization of client list
 	InitIpClientList();
 
-	// Thread related initialization
 	InitWaitThread();
 
-#ifdef	OS_WIN32
-	// Initializing the socket library
 	Win32InitSocketLibrary();
-#endif	// OS_WIN32
 
 	DnsInit();
 
-	// Locking initialization
 	machine_name_lock = NewLock();
 	disconnect_function_lock = NewLock();
 	machine_ip_process_hash_lock = NewLock();
@@ -6749,7 +5882,6 @@ void InitNetwork()
 	current_global_ip_set = false;
 }
 
-// Get the cipher algorithm list
 TOKEN_LIST *GetCipherList()
 {
 	UINT i;
@@ -6809,17 +5941,14 @@ TOKEN_LIST *GetCipherList()
 	return ciphers;
 }
 
-// Get the TCP connections counter
 COUNTER *GetNumTcpConnectionsCounter()
 {
 	return num_tcp_connections;
 }
 
-// Get the current global IP address
 bool GetCurrentGlobalIP(IP *ip, bool ipv6)
 {
 	bool ret = false;
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return false;
@@ -6845,13 +5974,11 @@ bool GetCurrentGlobalIP(IP *ip, bool ipv6)
 	return ret;
 }
 
-// Check whether the specified IP address is assigned to the local host
 bool IsIPMyHost(IP *ip)
 {
 	LIST *o;
 	UINT i;
 	bool ret = false;
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return false;
@@ -6862,7 +5989,6 @@ bool IsIPMyHost(IP *ip)
 		return false;
 	}
 
-	// Search to check whether it matches to any of the IP of the local host
 	o = GetHostIPAddressList();
 
 	for (i = 0; i < LIST_NUM(o); i++)
@@ -6871,7 +5997,6 @@ bool IsIPMyHost(IP *ip)
 
 		if (CmpIpAddr(p, ip) == 0)
 		{
-			// Matched
 			ret = true;
 			break;
 		}
@@ -6883,7 +6008,6 @@ bool IsIPMyHost(IP *ip)
 	{
 		if (IsLocalHostIP(ip))
 		{
-			// localhost IP addresses
 			ret = true;
 		}
 	}
@@ -6891,10 +6015,8 @@ bool IsIPMyHost(IP *ip)
 	return ret;
 }
 
-// Check whether the specified IP address is a private IP address
 bool IsIPPrivate(IP *ip)
 {
-	// Validate arguments
 	if (IsIP4(ip) == false)
 	{
 		return false;
@@ -6946,7 +6068,6 @@ bool IsIPPrivate(IP *ip)
 	return false;
 }
 
-// Read a private IP list file
 void LoadPrivateIPFile()
 {
 	BUF *b = ReadDump(PRIVATE_IP_TXT_FILENAME);
@@ -6993,7 +6114,6 @@ void LoadPrivateIPFile()
 	FreeBuf(b);
 }
 
-// Examine whether the specified IP address is in the private IP file
 bool IsOnPrivateIPFile(UINT ip)
 {
 	bool ret = false;
@@ -7017,7 +6137,6 @@ bool IsOnPrivateIPFile(UINT ip)
 	return ret;
 }
 
-// Free the private IP file
 void FreePrivateIPFile()
 {
 	if (g_private_ip_list != NULL)
@@ -7040,10 +6159,8 @@ void FreePrivateIPFile()
 	g_use_privateip_file = false;
 }
 
-// Record the current global IP address
 void SetCurrentGlobalIP(IP *ip, bool ipv6)
 {
-	// Validate arguments
 	if (ip == NULL)
 	{
 		return;
@@ -7070,7 +6187,6 @@ void SetCurrentGlobalIP(IP *ip, bool ipv6)
 	Unlock(current_global_ip_lock);
 }
 
-// Release of the network communication module
 void FreeNetwork()
 {
 
@@ -7080,10 +6196,8 @@ void FreeNetwork()
 		dh_param = NULL;
 	}
 
-	// Release of thread-related
 	FreeWaitThread();
 
-	// Release the locks
 	DeleteLock(machine_name_lock);
 	DeleteLock(disconnect_function_lock);
 	DeleteLock(machine_ip_process_hash_lock);
@@ -7091,21 +6205,16 @@ void FreeNetwork()
 
 	DnsFree();
 
-#ifdef	OS_WIN32
-	// Release of the socket library
-	Win32FreeSocketLibrary();
-#endif	// OS_WIN32
+	WSACleanup();
 
 	DeleteCounter(num_tcp_connections);
 	num_tcp_connections = NULL;
 
-	// Release of client list
 	FreeIpClientList();
 
 	DeleteLock(current_global_ip_lock);
 	current_global_ip_lock = NULL;
 
-	// Release of the local MAC list
 	if (local_mac_list != NULL)
 	{
 		FreeNicList(local_mac_list);
@@ -7124,10 +6233,8 @@ void FreeNetwork()
 	FreeDynList();
 }
 
-// Parse the IP address and subnet mask
 bool ParseIpAndSubnetMask46(char *src, IP *ip, IP *mask)
 {
-	// Validate arguments
 	if (src == NULL || ip == NULL || mask == NULL)
 	{
 		return false;
@@ -7150,7 +6257,6 @@ bool ParseIpAndSubnetMask46(char *src, IP *ip, IP *mask)
 bool ParseIpAndSubnetMask4(char *src, UINT *ip, UINT *mask)
 {
 	IP ip2, mask2;
-	// Validate arguments
 	if (src == NULL)
 	{
 		return false;
@@ -7180,7 +6286,6 @@ bool ParseIpAndSubnetMask4(char *src, UINT *ip, UINT *mask)
 }
 
 
-// Parse the IP address and the mask
 bool ParseIpAndMask46(char *src, IP *ip, IP *mask)
 {
 	TOKEN_LIST *t;
@@ -7189,7 +6294,6 @@ bool ParseIpAndMask46(char *src, IP *ip, IP *mask)
 	bool ret = false;
 	IP ip2;
 	IP mask2;
-	// Validate arguments
 	if (src == NULL || ip == NULL || mask == NULL)
 	{
 		return false;
@@ -7214,17 +6318,14 @@ bool ParseIpAndMask46(char *src, IP *ip, IP *mask)
 	{
 		if (StrToIP(&mask2, subnetstr))
 		{
-			// Compare the kind of the mask part and the IP address part to confirm same
 			if (IsIP6(&ip2) && IsIP6(&mask2))
 			{
-				// Both are IPv6
 				ret = true;
 				Copy(ip, &ip2, sizeof(IP));
 				Copy(mask, &mask2, sizeof(IP));
 			}
 			else if (IsIP4(&ip2) && IsIP4(&mask2))
 			{
-				// Both are IPv4
 				ret = true;
 				Copy(ip, &ip2, sizeof(IP));
 				Copy(mask, &mask2, sizeof(IP));
@@ -7235,7 +6336,6 @@ bool ParseIpAndMask46(char *src, IP *ip, IP *mask)
 			if (IsNum(subnetstr))
 			{
 				UINT i = ToInt(subnetstr);
-				// Mask part is a number
 				if (IsIP6(&ip2) && i <= 128)
 				{
 					ret = true;
@@ -7297,14 +6397,12 @@ bool ParseIpAndMask6(char *src, IP *ip, IP *mask)
 }
 
 
-// Convert the IPv4 / IPv6 mask to a string
 void MaskToStr(char *str, UINT size, IP *mask)
 {
 	MaskToStrEx(str, size, mask, false);
 }
 void MaskToStrEx(char *str, UINT size, IP *mask, bool always_full_address)
 {
-	// Validate arguments
 	if (str == NULL || mask == NULL)
 	{
 		return;
@@ -7335,7 +6433,6 @@ void Mask6AddrToStrEx(char *str, UINT size, IPV6_ADDR *mask, bool always_full_ad
 {
 	IP ip;
 
-	// Validate arguments
 	if (str == NULL || mask == NULL)
 	{
 		StrCpy(str, size, "");
@@ -7351,11 +6448,9 @@ void Mask6AddrToStr(char *str, UINT size, IPV6_ADDR *mask)
 	Mask6AddrToStrEx(str, size, mask, false);
 }
 
-// Release of the IP address list of the host
 void FreeHostIPAddressList(LIST *o)
 {
 	UINT i;
-	// Validate arguments
 	if (o == NULL)
 	{
 		return;
@@ -7371,11 +6466,9 @@ void FreeHostIPAddressList(LIST *o)
 	ReleaseList(o);
 }
 
-// Add the IP address to the list
 void AddHostIPAddressToList(LIST *o, IP *ip)
 {
 	IP *r = NULL;
-	// Validate arguments
 	if (o == NULL || ip == NULL)
 	{
 		return;
@@ -7408,12 +6501,10 @@ void AddHostIPAddressToList(LIST *o, IP *ip)
 	Insert(o, Clone(ip, sizeof(IP)));
 }
 
-// Comparison of the IP address list items
 int CmpIpAddressList(void *p1, void *p2)
 {
 	IP *ip1, *ip2;
 	UINT r;
-	// Validate arguments
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
@@ -7452,14 +6543,12 @@ int CmpIpAddressList(void *p1, void *p2)
 		return -1;
 	}
 
-	// ip address
 	r = CmpIpAddr(ip1, ip2);
 	if (r != 0)
 	{
 		return r;
 	}
 
-	// interface index
 	if (IsIP6(ip1))
 	{
 		r = COMPARE_RET(ip1->ipv6_scope_id, ip2->ipv6_scope_id);
@@ -7472,7 +6561,6 @@ int CmpIpAddressList(void *p1, void *p2)
 	return r;
 }
 
-// Get the IP address list hash of the host
 UINT64 GetHostIPAddressListHash()
 {
 	UINT i;
@@ -7512,7 +6600,6 @@ UINT64 GetHostIPAddressListHash()
 	return ret;
 }
 
-// Get the IP address list of the host (using cache)
 LIST *GetHostIPAddressList()
 {
 	LIST *o = NULL;
@@ -7551,12 +6638,10 @@ LIST *GetHostIPAddressList()
 	return o;
 }
 
-// Copy of the IP address list
 LIST *CloneIPAddressList(LIST *o)
 {
 	LIST *ret;
 	UINT i;
-	// Validate arguments
 	if (o == NULL)
 	{
 		return NULL;
@@ -7579,7 +6664,6 @@ LIST *CloneIPAddressList(LIST *o)
 	return ret;
 }
 
-// Get an IP address list of the host
 LIST *GetHostIPAddressListInternal()
 {
 	char hostname[MAX_SIZE];
@@ -7600,21 +6684,18 @@ LIST *GetHostIPAddressListInternal()
 
 	o = NewListFast(CmpIpAddressList);
 
-	// any
 	AddHostIPAddressToList(o, &any4);
 	if (is_v6_supported)
 	{
 		AddHostIPAddressToList(o, &any6);
 	}
 
-	// localhost
 	AddHostIPAddressToList(o, &local4);
 	if (is_v6_supported)
 	{
 		AddHostIPAddressToList(o, &local6);
 	}
 
-	// IPv4
 	if (true)
 	{
 		struct sockaddr_in in;
@@ -7651,7 +6732,6 @@ LIST *GetHostIPAddressListInternal()
 		}
 	}
 
-	// IPv6
 	if (is_v6_supported)
 	{
 		struct sockaddr_in6 in;
@@ -7693,7 +6773,6 @@ LIST *GetHostIPAddressListInternal()
 	return o;
 }
 
-// Store the error value into PACK
 PACK *PackError(UINT error)
 {
 	PACK *p;
@@ -7704,10 +6783,8 @@ PACK *PackError(UINT error)
 	return p;
 }
 
-// Get the error value from PACK
 UINT GetErrorFromPack(PACK *p)
 {
-	// Validate arguments
 	if (p == NULL)
 	{
 		return 0;
@@ -7716,12 +6793,10 @@ UINT GetErrorFromPack(PACK *p)
 	return PackGetInt(p, "error");
 }
 
-// Create an entry to PACK for the dummy
 void CreateDummyValue(PACK *p)
 {
 	UINT size;
 	UCHAR *buf;
-	// Validate arguments
 	if (p == NULL)
 	{
 		return;
@@ -7736,13 +6811,11 @@ void CreateDummyValue(PACK *p)
 	Free(buf);
 }
 
-// Receive a line
 char *RecvLine(SOCK *s, UINT max_size)
 {
 	BUF *b;
 	char c;
 	char *str;
-	// Validate arguments
 	if (s == NULL || max_size == 0)
 	{
 		return NULL;
@@ -7787,7 +6860,6 @@ char *RecvLine(SOCK *s, UINT max_size)
 	}
 }
 
-// Get SNI name from the SSL packet
 bool GetSniNameFromSslPacket(UCHAR *packet_buf, UINT packet_size, char *sni, UINT sni_size)
 {
 	BUF *buf;
@@ -7796,7 +6868,6 @@ bool GetSniNameFromSslPacket(UCHAR *packet_buf, UINT packet_size, char *sni, UIN
 	USHORT version;
 	USHORT handshake_length;
 
-	// Validate arguments
 	if (packet_buf == NULL || packet_size <= 11)
 	{
 		return false;
