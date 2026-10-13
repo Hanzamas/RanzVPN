@@ -25,12 +25,10 @@
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
-#ifdef OS_WIN32
 #include <iphlpapi.h>
 #include <WS2tcpip.h>
 #include <wincrypt.h>
 #include <IcmpAPI.h>
-#endif
 
 // Lock related
 static LOCK *machine_name_lock = NULL;
@@ -170,14 +168,11 @@ int GetCurrentTimezone()
 {
 	int ret = 0;
 
-#ifdef	OS_WIN32
 	ret = GetCurrentTimezoneWin32();
-#endif	// OS_WIN32
 
 	return ret;
 }
 
-#ifdef	OS_WIN32
 // Get the current time zone (Win32)
 int GetCurrentTimezoneWin32()
 {
@@ -191,7 +186,6 @@ int GetCurrentTimezoneWin32()
 
 	return info.Bias;
 }
-#endif	// OS_WIN32
 
 // Check whether the specified MAC address exists on the local host (high speed)
 bool IsMacAddressLocalFast(void *addr)
@@ -263,7 +257,6 @@ LIST *GetNicList()
 {
 	LIST *o = NULL;
 
-#ifdef	OS_WIN32
 	o = Win32GetNicList();
 
 	if (o != NULL)
@@ -271,12 +264,10 @@ LIST *GetNicList()
 		return o;
 	}
 
-#endif	// OS_WIN32
 
 	return NewListFast(NULL);
 }
 
-#ifdef	OS_WIN32
 LIST *Win32GetNicList()
 {
 	UINT i;
@@ -314,7 +305,6 @@ LIST *Win32GetNicList()
 
 	return o;
 }
-#endif	// OS_WIN32
 
 // Release the NIC list
 void FreeNicList(LIST *o)
@@ -423,13 +413,11 @@ void GetCurrentMachineIpProcessHashInternal(void *hash)
 		return;
 	}
 
-#ifdef	OS_WIN32
 	product_id = MsRegReadStr(REG_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", "ProductId");
 	if (product_id == NULL)
 	{
 		product_id = MsRegReadStr(REG_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion", "ProductId");
 	}
-#endif	// OS_WIN32
 
 	b = NewBuf();
 
@@ -465,7 +453,6 @@ void GetCurrentMachineIpProcessHashInternal(void *hash)
 	Free(product_id);
 }
 
-#ifdef	OS_WIN32
 
 typedef struct WIN32_ACCEPT_CHECK_DATA
 {
@@ -525,7 +512,6 @@ L_LOOP:
 
 		if (err == WSAEWOULDBLOCK)
 		{
-			//Debug("!!! WSAAccept: WSAEWOULDBLOCK\n");
 			UINT wait_ret = WaitForSingleObject(sock->hAcceptEvent, 1234);
 
 			if (wait_ret == WAIT_OBJECT_0 || wait_ret == WAIT_TIMEOUT)
@@ -562,7 +548,6 @@ L_LOOP:
 	return ret;
 }
 
-#endif	// OS_WIN32
 
 // Set the arp_filter in Linux
 void SetLinuxArpFilter()
@@ -1559,7 +1544,6 @@ void AddIpClient(IP *ip)
 	}
 	UnlockList(ip_clients);
 
-	//Debug("AddIpClient: %r\n", ip);
 }
 
 // Remove from the IP client list
@@ -1589,7 +1573,6 @@ void DelIpClient(IP *ip)
 	}
 	UnlockList(ip_clients);
 
-	//Debug("DelIpClient: %r\n", ip);
 }
 
 // Search for the IP client entry
@@ -1883,7 +1866,6 @@ bool IsSubnetMask4(IP *ip)
 	return false;
 }
 
-#ifdef OS_WIN32		// Code for Windows
 
 // Comparison of IP_ADAPTER_INDEX_MAP
 int CompareIpAdapterIndexMap(void *p1, void *p2)
@@ -2163,14 +2145,10 @@ void Win32Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2)
 	}
 }
 
-#endif	// OS_WIN32
 
 // Check whether the IPv6 is supported
 bool IsIPv6Supported()
 {
-#ifdef	NO_IPV6
-	return false;
-#else	// NO_IPV6
 	SOCKET s;
 
 	s = socket(AF_INET6, SOCK_STREAM, 0);
@@ -2182,7 +2160,6 @@ bool IsIPv6Supported()
 	closesocket(s);
 
 	return true;
-#endif	// NO_IPV6
 }
 
 // Check whether an IPv6 address is configured on any interface
@@ -2290,34 +2267,26 @@ void FreeWaitThread()
 // Creating a socket event
 SOCK_EVENT *NewSockEvent()
 {
-#ifdef	OS_WIN32
 	return Win32NewSockEvent();
-#endif	// OS_WIN32
 }
 
 // Set of the socket event
 void SetSockEvent(SOCK_EVENT *event)
 {
-#ifdef	OS_WIN32
 	Win32SetSockEvent(event);
-#endif	// OS_WIN32
 }
 
 // Clean-up of the socket event
 void CleanupSockEvent(SOCK_EVENT *event)
 {
-#ifdef	OS_WIN32
 	Win32CleanupSockEvent(event);
-#endif	// OS_WIN32
 }
 
 // Waiting for the socket event
 bool WaitSockEvent(SOCK_EVENT *event, UINT timeout)
 {
 	bool ret = false;
-#ifdef	OS_WIN32
 	ret = Win32WaitSockEvent(event, timeout);
-#endif	// OS_WIN32
 	return ret;
 }
 
@@ -2345,9 +2314,7 @@ void JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event)
 		return;
 	}
 
-#ifdef	OS_WIN32
 	Win32JoinSockToSockEvent(sock, event);
-#endif	// OS_WIN32
 }
 
 // New special cancel object
@@ -2364,9 +2331,7 @@ CANCEL *NewCancelSpecial(void *hEvent)
 	c->ref = NewRef();
 	c->SpecialFlag = true;
 
-#ifdef	OS_WIN32
 	c->hEvent = (HANDLE)hEvent;
-#endif	// OS_WIN32
 
 	return c;
 }
@@ -2375,9 +2340,7 @@ CANCEL *NewCancelSpecial(void *hEvent)
 CANCEL *NewCancel()
 {
 	CANCEL *c = NULL;
-#ifdef	OS_WIN32
 	c = Win32NewCancel();
-#endif	// OS_WIN32
 	return c;
 }
 
@@ -2399,17 +2362,13 @@ void ReleaseCancel(CANCEL *c)
 // Clean up of the cancel object
 void CleanupCancel(CANCEL *c)
 {
-#ifdef	OS_WIN32
 	Win32CleanupCancel(c);
-#endif
 }
 
 // Cancellation triggered
 void Cancel(CANCEL *c)
 {
-#ifdef	OS_WIN32
 	Win32Cancel(c);
-#endif
 }
 
 // UDP receiving
@@ -2417,9 +2376,7 @@ UINT RecvFrom(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 {
 	struct sockaddr_in addr;
 	int ret = 0;
-#ifdef	OS_WIN32
 	int socklen = sizeof(addr);
-#endif
 
 	// Validate arguments
 	if (sock != NULL)
@@ -2471,7 +2428,6 @@ UINT RecvFrom(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 	}
 	else
 	{
-#ifdef	OS_WIN32
 		if (WSAGetLastError() == WSAECONNRESET || WSAGetLastError() == WSAENETRESET || WSAGetLastError() == WSAEMSGSIZE || WSAGetLastError() == WSAENETUNREACH ||
 		        WSAGetLastError() == WSAENOBUFS || WSAGetLastError() == WSAEHOSTUNREACH || WSAGetLastError() == WSAEUSERS || WSAGetLastError() == WSAEADDRNOTAVAIL || WSAGetLastError() == WSAEADDRNOTAVAIL)
 		{
@@ -2485,7 +2441,6 @@ UINT RecvFrom(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 		{
 			Debug("RecvFrom(): recvfrom() failed with error: %u\n", WSAGetLastError());
 		}
-#endif
 		return 0;
 	}
 }
@@ -2493,9 +2448,7 @@ UINT RecvFrom6(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 {
 	struct sockaddr_in6 addr;
 	int ret = 0;
-#ifdef	OS_WIN32
 	int socklen = sizeof(addr);
-#endif
 
 	// Validate arguments
 	if (sock != NULL)
@@ -2544,7 +2497,6 @@ UINT RecvFrom6(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 	}
 	else
 	{
-#ifdef	OS_WIN32
 		if (WSAGetLastError() == WSAECONNRESET || WSAGetLastError() == WSAENETRESET || WSAGetLastError() == WSAEMSGSIZE || WSAGetLastError() == WSAENETUNREACH ||
 		        WSAGetLastError() == WSAENOBUFS || WSAGetLastError() == WSAEHOSTUNREACH || WSAGetLastError() == WSAEUSERS || WSAGetLastError() == WSAEADDRNOTAVAIL || WSAGetLastError() == WSAEADDRNOTAVAIL)
 		{
@@ -2558,7 +2510,6 @@ UINT RecvFrom6(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 		{
 			Debug("RecvFrom(): recvfrom() failed with error: %u\n", WSAGetLastError());
 		}
-#endif
 		return 0;
 	}
 }
@@ -2634,7 +2585,6 @@ UINT SendToEx(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size, 
 	{
 		sock->IgnoreSendErr = false;
 
-#ifdef	OS_WIN32
 		if (WSAGetLastError() == WSAECONNRESET || WSAGetLastError() == WSAENETRESET || WSAGetLastError() == WSAEMSGSIZE || WSAGetLastError() == WSAENETUNREACH ||
 		        WSAGetLastError() == WSAENOBUFS || WSAGetLastError() == WSAEHOSTUNREACH || WSAGetLastError() == WSAEUSERS || WSAGetLastError() == WSAEINVAL || WSAGetLastError() == WSAEADDRNOTAVAIL)
 		{
@@ -2649,7 +2599,6 @@ UINT SendToEx(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size, 
 			UINT e = WSAGetLastError();
 			Debug("SendTo Error; %u\n", e);
 		}
-#endif	// OS_WIN32
 		return 0;
 	}
 
@@ -2724,7 +2673,6 @@ UINT SendTo6Ex(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size,
 	{
 		sock->IgnoreSendErr = false;
 
-#ifdef	OS_WIN32
 		if (WSAGetLastError() == WSAECONNRESET || WSAGetLastError() == WSAENETRESET || WSAGetLastError() == WSAEMSGSIZE || WSAGetLastError() == WSAENETUNREACH ||
 		        WSAGetLastError() == WSAENOBUFS || WSAGetLastError() == WSAEHOSTUNREACH || WSAGetLastError() == WSAEUSERS || WSAGetLastError() == WSAEINVAL || WSAGetLastError() == WSAEADDRNOTAVAIL)
 		{
@@ -2734,7 +2682,6 @@ UINT SendTo6Ex(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size,
 		{
 			return SOCK_LATER;
 		}
-#endif	// OS_WIN32
 		return 0;
 	}
 
@@ -2993,9 +2940,7 @@ SOCK *NewUDP6(UINT port, IP *ip)
 // Select function
 void Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2)
 {
-#ifdef	OS_WIN32
 	Win32Select(set, timeout, c1, c2);
-#endif	// OS_WIN32
 }
 
 // Add a socket to the socket set
@@ -3330,7 +3275,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 
 	if (sock->SecureMode)
 	{
-		//Debug("StartSSL Error: #3\n");
 		// SSL communication has already started
 		return true;
 	}
@@ -3338,7 +3282,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 	Lock(sock->ssl_lock);
 	if (sock->SecureMode)
 	{
-		//Debug("StartSSL Error: #4\n");
 		// SSL communication has already started
 		Unlock(sock->ssl_lock);
 		return true;
@@ -3412,7 +3355,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 				X509_STORE* store = SSL_CTX_get_cert_store(ssl_ctx);
 				if (ssl_option->AddDefaultCA)
 				{
-#ifdef	OS_WIN32
 					HCERTSTORE hStore = CertOpenSystemStore(0, "ROOT");
 					if (hStore != NULL)
 					{
@@ -3428,7 +3370,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 						}
 						CertCloseStore(hStore, 0);
 					}
-#endif
 				}
 
 				// Add trust CA specified by user
@@ -3516,13 +3457,11 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 	
 	if (sock->ServerMode)
 	{
-//		Lock(ssl_connect_lock);
 
 		// Server mode
 		if (SSL_accept(sock->ssl) <= 0)
 		{
 
-			//			Unlock(ssl_connect_lock);
 			// SSL-Accept failure
 			Lock(openssl_lock);
 			{
@@ -3575,7 +3514,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 #endif	// TLSEXT_NAMETYPE_host_name
 #endif	// SSL_CTRL_SET_TLSEXT_HOSTNAME
 
-		//		Unlock(ssl_connect_lock);
 	}
 	else
 	{	
@@ -3959,7 +3897,6 @@ UINT SecureRecv(SOCK *sock, void *data, UINT size)
 	{
 		// Disconnect the communication
 		Disconnect(sock);
-		//Debug("%s %u SecureRecv() Disconnect\n", __FILE__, __LINE__);
 		return 0;
 	}
 #endif
@@ -4106,7 +4043,6 @@ UINT Peek(SOCK *sock, void *data, UINT size)
 
 	ret = recv(s, data, size, MSG_PEEK);
 
-	//Debug("Peek: %u\n", ret);
 
 	if (ret > 0)
 	{
@@ -4166,7 +4102,6 @@ UINT Recv(SOCK *sock, void *data, UINT size, bool secure)
 		// In asynchronous mode, examine the error
 		if (ret == SOCKET_ERROR)
 		{
-#ifdef	OS_WIN32
 			if (WSAGetLastError() == WSAEWOULDBLOCK)
 			{
 				// In blocking
@@ -4174,9 +4109,7 @@ UINT Recv(SOCK *sock, void *data, UINT size, bool secure)
 			}
 			else
 			{
-				//Debug("Socket Error: %u\n", WSAGetLastError());
 			}
-#endif	// OS_WIN32
 		}
 	}
 
@@ -4232,7 +4165,6 @@ UINT Send(SOCK *sock, void *data, UINT size, bool secure)
 		// In asynchronous mode, examine the error
 		if (ret == SOCKET_ERROR)
 		{
-#ifdef	OS_WIN32
 			if (WSAGetLastError() == WSAEWOULDBLOCK)
 			{
 				// In blocking
@@ -4240,9 +4172,7 @@ UINT Send(SOCK *sock, void *data, UINT size, bool secure)
 			}
 			else
 			{
-				//Debug("Socket Error: %u\n", WSAGetLastError());
 			}
-#endif	// OS_WIN32
 		}
 	}
 
@@ -4287,12 +4217,9 @@ void SetTimeout(SOCK *sock, UINT timeout)
 
 	sock->TimeOut = timeout;
 
-//	Debug("SetTimeout(%u)\n",timeout);
 
-#ifdef OS_WIN32
 	setsockopt(sock->socket, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(UINT));
 	setsockopt(sock->socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(UINT));
-#endif
 
 }
 
@@ -4373,7 +4300,6 @@ SOCK *Accept(SOCK *sock)
 	Zero(&addr, sizeof(addr));
 	size = sizeof(addr);
 
-#ifdef	OS_WIN32
 	if (sock->EnableConditionalAccept)
 	{
 		new_socket = Win32Accept(sock, s, (struct sockaddr *)&addr,(int *)&size, false);
@@ -4382,7 +4308,6 @@ SOCK *Accept(SOCK *sock)
 	{
 		new_socket = accept(s, (struct sockaddr *)&addr,(int *)&size);
 	}
-#endif	// OS_WIN32
 
 	if (new_socket == INVALID_SOCKET)
 	{
@@ -4472,7 +4397,6 @@ SOCK *Accept6(SOCK *sock)
 	Zero(&addr, sizeof(addr));
 	size = sizeof(addr);
 
-#ifdef	OS_WIN32
 	if (sock->EnableConditionalAccept)
 	{
 		new_socket = Win32Accept(sock, s, (struct sockaddr *)&addr,(int *)&size, true);
@@ -4481,7 +4405,6 @@ SOCK *Accept6(SOCK *sock)
 	{
 		new_socket = accept(s, (struct sockaddr *)&addr,(int *)&size);
 	}
-#endif	// OS_WIN32
 
 	if (new_socket == INVALID_SOCKET)
 	{
@@ -4604,12 +4527,10 @@ SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 		return NULL;
 	}
 
-#ifdef OS_WIN32
 	if (enable_ca)
 	{
 		backlog = 1;
 	}
-#endif
 
 	if (listen(s, backlog))
 	{
@@ -4701,13 +4622,11 @@ SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 		return NULL;
 	}
 
-#ifdef	OS_WIN32
 	if (enable_ca)
 	{
 		setsockopt(s, SOL_SOCKET, SO_CONDITIONAL_ACCEPT, (char *)&true_flag, sizeof(true_flag));
 		backlog = 1;
 	}
-#endif	// OS_WIN32
 
 	if (listen(s, backlog))
 	{
@@ -4753,14 +4672,12 @@ void Disconnect(SOCK *sock)
 		// Connect to localhost if the socket is in listening
 		sock->CancelAccept = true;
 
-#ifdef	OS_WIN32
 		if (sock->hAcceptEvent != NULL)
 		{
 			SetEvent(sock->hAcceptEvent);
 
 			no_tcp_check_port = true;
 		}
-#endif	// OS_WIN32
 
 		if (sock->AcceptCanceled == false)
 		{
@@ -4794,7 +4711,6 @@ void Disconnect(SOCK *sock)
 			UINT false_flag = 0;
 			(void)setsockopt(sock->socket, SOL_SOCKET, SO_LINGER, (char *)&false_flag, sizeof(false_flag));
 #endif	// SO_DONTLINGER
-//			setsockopt(sock->socket, SOL_SOCKET, SO_REUSEADDR, (char *)&true_flag, sizeof(true_flag));
 		}
 
 		// TCP socket
@@ -4815,17 +4731,6 @@ void Disconnect(SOCK *sock)
 				Zero(&ling, sizeof(ling));
 
 
-#if	0
-				// SSL disconnect
-				Lock(sock->ssl_lock);
-				{
-					if (sock->SecureMode)
-					{
-						SSL_shutdown(sock->ssl);
-					}
-				}
-				Unlock(sock->ssl_lock);
-#endif
 				// Disconnect
 				shutdown(s, 2);
 			}
@@ -4936,22 +4841,6 @@ bool CheckTCPPort(char *hostname, UINT port)
 	return CheckTCPPortEx(hostname, port, TIMEOUT_TCP_PORT_CHECK);
 }
 
-#if 0
-LPSTR PrintError(int ErrorCode)
-{
-	static char Message[1024];
-
-	// If this program was multithreaded, we'd want to use
-	// FORMAT_MESSAGE_ALLOCATE_BUFFER instead of a static buffer here.
-	// (And of course, free the buffer when we were done with it)
-
-	FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS |
-		FORMAT_MESSAGE_MAX_WIDTH_MASK, NULL, ErrorCode,
-		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-		(LPSTR)Message, 1024, NULL);
-	return Message;
-}
-#else
 char *PrintError(int ErrorCode)
 {
 	char *Message;
@@ -4998,7 +4887,6 @@ char *PrintError(int ErrorCode)
 	}
 	return Message;
 }
-#endif
 
 // Connection with timeout (Win32 version)
 int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool *cancel_flag)
@@ -5042,8 +4930,6 @@ int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool
 		else
 		{
 			int err = WSAGetLastError();
-			//Debug("err=%u\n", err);
-			//Debug("cancel_flag=%u\n", *cancel_flag);
 			if (timeouted && err == WSAEALREADY)
 			{
 				// Time-out
@@ -5133,10 +5019,6 @@ void SetSockHighPriority(SOCK *s, bool flag)
 // Bind the socket to IPv4 or IPV6 address
 int bind_sock(SOCKET sock, IP *ip, UINT port)
 {
-	//char tmp[MAX_HOST_NAME_LEN + 1];
-	//memset(tmp, 0, sizeof(tmp));
-	//IPToStr(tmp, sizeof(tmp), ip);
-	//Debug("bind_sock(): Binding... IP address %s:%d\n", tmp, port);
 
 	if (IsIP4(ip))
 	{
@@ -5149,7 +5031,6 @@ int bind_sock(SOCKET sock, IP *ip, UINT port)
 		sockaddr_in.sin_family = AF_INET;
 		IPToInAddr(&sockaddr_in.sin_addr, ip);
 		sockaddr_in.sin_port = htons((USHORT)port);
-		//inet_pton(AF_INET, tmp, &addr_in.sin_addr.s_addr);
 
 		UINT true_flag = 1;
 		// This only have enabled for UNIX system since there is a bug
@@ -5171,7 +5052,6 @@ int bind_sock(SOCKET sock, IP *ip, UINT port)
 		IPToInAddr6(&sockaddr_in.sin6_addr, ip);
 		sockaddr_in.sin6_scope_id = ip->ipv6_scope_id;
 		sockaddr_in.sin6_port = htons((USHORT)port);
-		//inet_pton(AF_INET6, tmp, &sockaddr_in.sin6_addr.s6_bytes);
 
 		UINT true_flag = 1;
 		// This only have enabled for UNIX system since there is a bug
@@ -5220,10 +5100,8 @@ SOCKET BindConnectTimeoutIPv4(IP* localIP, UINT localport, IP* ip, UINT port, UI
 
 			// Bind the socket
 			if (bind_sock(s, tmpIP2, localport) != 0) {
-#ifdef	OS_WIN32
 				ier = WSAGetLastError();
 				Debug("IPv4 bind() failed with error: %d %s\n", ier, PrintError(ier));
-#endif
 				closesocket(s);
 				s = INVALID_SOCKET;
 			}
@@ -5246,7 +5124,6 @@ SOCKET BindConnectTimeoutIPv4(IP* localIP, UINT localport, IP* ip, UINT port, UI
 }
 
 // IPv4 connection thread (multiple protocols, multiple addresses)
-//void ConnectThreadForIPv4(THREAD* thread, void* param)
 void BindConnectThreadForIPv4(THREAD *thread, void *param)
 {
 	SOCKET s = INVALID_SOCKET;
@@ -5288,7 +5165,6 @@ void BindConnectThreadForIPv4(THREAD *thread, void *param)
 		}
 
 		// Normal connection
-//			s = ConnectTimeoutIPv4(ip, p->Port, p->Timeout, p->CancelFlag);
 		s = BindConnectTimeoutIPv4(p->LocalIP, p->LocalPort, ip, p->Port, p->Timeout, p->CancelFlag);
 
 		if (s != INVALID_SOCKET)
@@ -5313,7 +5189,6 @@ void BindConnectThreadForIPv4(THREAD *thread, void *param)
 }
 
 // IPv6 connection thread (multiple addresses)
-//void ConnectThreadForIPv6(THREAD *thread, void *param)
 void BindConnectThreadForIPv6(THREAD* thread, void* param)
 {
 	SOCKET s = INVALID_SOCKET;
@@ -5388,10 +5263,8 @@ void BindConnectThreadForIPv6(THREAD* thread, void* param)
 
 				// Bind the socket
 				if (bind_sock(s, tmpIP2, p->LocalPort) != 0) {
-#ifdef	OS_WIN32
 					ier = WSAGetLastError();
 					Debug("IPv6 bind() failed with error: %d %s\n", ier, PrintError(ier));
-#endif
 					closesocket(s);
 					s = INVALID_SOCKET;
 				}
@@ -5457,11 +5330,9 @@ SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname
 		StrCpy(tmp, sizeof(tmp), hostname_original);
 	}
 
-	//Debug("PTR: %s\n", tmp);
 
 	sock->RemoteHostname = CopyStr(tmp);
 
-//	Debug("new socket: %u\n", s);
 
 	Zero(&ling, sizeof(ling));
 
@@ -5473,7 +5344,6 @@ SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname
 	UINT false_flag = 0;
 	(void)setsockopt(sock->socket, SOL_SOCKET, SO_LINGER, (char *)&false_flag, sizeof(false_flag));
 #endif	// SO_DONTLINGER
-//	setsockopt(sock->socket, SOL_SOCKET, SO_REUSEADDR, (char *)&true_flag, sizeof(true_flag));
 
 	// Configuring TCP options
 	(void)setsockopt(sock->socket, IPPROTO_TCP, TCP_NODELAY, (char *)&true_flag, sizeof(true_flag));
@@ -5524,7 +5394,6 @@ SOCK *ConnectEx4(char *hostname, UINT port, UINT timeout, bool *cancel_flag, boo
 	return BindConnectEx4(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, hostname, port, timeout, cancel_flag, no_get_hostname, ret_ip);
 }
 
-//SOCK* ConnectEx4(char* hostname, UINT port, UINT timeout, bool* cancel_flag, bool no_get_hostname, IP* ret_ip)
 SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname, IP *ret_ip)
 {
 	bool dummy = false;
@@ -5566,7 +5435,6 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 			AddHostIPAddressToList(iplist_v4, ret_ip);
 		}
 
-		//Debug("Using cached IP address: %s = %r\n", hostname_original, ret_ip);
 	}
 	else
 	{
@@ -5614,7 +5482,6 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 		p6.Ret_Ip = &ret_ip6;
 		p6.RetryDelay = 250;
 		p6.Delay = 0;
-//		t6 = NewThread(ConnectThreadForIPv6, &p6);
 		t6 = NewThread(BindConnectThreadForIPv6, &p6);	// For binding a socket
 	}
 
@@ -5642,7 +5509,6 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 		p4.Ret_Ip = &ret_ip4;
 		p4.RetryDelay = 250;
 		p4.Delay = 250;		// Delay by 250ms to prioritize IPv6 (RFC 6555 recommends 150-250ms, Chrome uses 300ms)
-//		t4 = NewThread(ConnectThreadForIPv4, &p4);
 		t4 = NewThread(BindConnectThreadForIPv4, &p4);	// For binding a socket
 	}
 
@@ -5895,7 +5761,6 @@ void QuerySocketInformation(SOCK *sock)
 		{
 			sock->UdpMaxMsgSize = UDP_MAX_MSG_SIZE_DEFAULT;
 
-#ifdef	OS_WIN32
 			if (true)
 			{
 				// Get the buffer size that can be transmitted and received at once
@@ -5907,7 +5772,6 @@ void QuerySocketInformation(SOCK *sock)
 					sock->UdpMaxMsgSize = max_value;
 				}
 			}
-#endif	// OS_WIN32
 		}
 
 		if (sock->IPv6)
@@ -5967,28 +5831,21 @@ void CleanupSock(SOCK *s)
 		return;
 	}
 
-//	{Debug("CleanupSock: Disconnect() Called: %s %u\n", __FILE__, __LINE__);Disconnect(s);}
 	Disconnect(s);
 
-#ifdef	OS_WIN32
 	Win32FreeAsyncSocket(s);
-#endif	// OS_WIN32
 
 	FreeBuf(s->SendBuf);
 	if (s->socket != INVALID_SOCKET)
 	{
-#ifdef	OS_WIN32
 		closesocket(s->socket);
-#endif	// OS_WIN32
 	}
 	Free(s->RemoteHostname);
 
-#ifdef	OS_WIN32
 	if (s->hAcceptEvent != NULL)
 	{
 		CloseHandle(s->hAcceptEvent);
 	}
-#endif	// OS_WIN32
 
 	// Release the certificate
 	if (s->RemoteX != NULL)
@@ -6097,65 +5954,6 @@ void GetMachineHostName(char *name, UINT size)
 	ConvertSafeFileName(name, size, tmp);
 }
 
-// Get the computer name from 'hosts'
-bool GetMachineNameFromHosts(char *name, UINT size)
-{
-	bool ret = false;
-	char *s;
-	BUF *b;
-	// Validate arguments
-	if (name == NULL)
-	{
-		return false;
-	}
-
-	b = ReadDump("/etc/hosts");
-	if (b == NULL)
-	{
-		return false;
-	}
-
-	while (true)
-	{
-		s = CfgReadNextLine(b);
-		if (s == NULL)
-		{
-			break;
-		}
-		else
-		{
-			TOKEN_LIST *t = ParseToken(s, " \t");
-
-			if (t != NULL)
-			{
-				if (t->NumTokens >= 2)
-				{
-					if (StrCmpi(t->Token[0], "127.0.0.1") == 0)
-					{
-						UINT i;
-
-						for (i = 1; i < t->NumTokens; i++)
-						{
-							if (StartWith(t->Token[i], "localhost") == false)
-							{
-								StrCpy(name, size, t->Token[i]);
-								ret = true;
-							}
-						}
-					}
-				}
-			}
-			FreeToken(t);
-		}
-
-		Free(s);
-	}
-
-	FreeBuf(b);
-
-	return ret;
-}
-
 // Get the computer name of this computer
 void GetMachineName(char *name, UINT size)
 {
@@ -6166,7 +5964,6 @@ void GetMachineNameEx(char *name, UINT size, bool no_load_hosts)
 	static char name_cache[MAX_SIZE];
 	static bool name_cached = false;
 	char tmp[MAX_SIZE];
-	char tmp2[MAX_SIZE];
 	// Validate arguments
 	if (name == NULL)
 	{
@@ -6192,22 +5989,9 @@ void GetMachineNameEx(char *name, UINT size, bool no_load_hosts)
 		StrCpy(name, size, tmp);
 		if (IsEmptyStr(name) || StartWith(name, "localhost"))
 		{
-#ifdef	OS_WIN32
 			ClearStr(name, size);
 			MsGetComputerName(name, size);
-#endif	// OS_WIN32
 		}
-		if (IsEmptyStr(name) || StartWith(name, "localhost"))
-		{
-			if (no_load_hosts == false && OS_IS_UNIX(GetOsInfo()->OsType))
-			{
-				if (GetMachineNameFromHosts(tmp2, sizeof(tmp2)))
-				{
-					StrCpy(name, size, tmp2);
-				}
-			}
-		}
-
 		StrCpy(name_cache, sizeof(name_cache), name);
 		name_cached = true;
 	}
@@ -6703,10 +6487,8 @@ void InitNetwork()
 	// Thread related initialization
 	InitWaitThread();
 
-#ifdef	OS_WIN32
 	// Initializing the socket library
 	Win32InitSocketLibrary();
-#endif	// OS_WIN32
 
 	DnsInit();
 
@@ -7062,10 +6844,8 @@ void FreeNetwork()
 
 	DnsFree();
 
-#ifdef	OS_WIN32
 	// Release of the socket library
 	Win32FreeSocketLibrary();
-#endif	// OS_WIN32
 
 	DeleteCounter(num_tcp_connections);
 	num_tcp_connections = NULL;
