@@ -7,6 +7,8 @@
 
 #include "OS.h"
 
+#include "Object.h"
+
 #undef Yield
 
 // Dispatch table
@@ -273,28 +275,66 @@ void OSSleep(UINT time)
 	os->Sleep(time);
 }
 
-// Create a Lock
+// Create a Lock. This is the raw LOCK: it never touches the KS_ counters, because
+// KS_INC itself takes such a lock. One heap block from the raw OS allocator.
 LOCK *OSNewLock()
 {
-	return os->NewLock();
+	// Memory allocation
+	LOCK *lock = Win32MemoryAlloc(sizeof(LOCK));
+
+	if (lock == NULL)
+	{
+		return NULL;
+	}
+
+	// Initialize the critical section
+	InitializeCriticalSection(&lock->CriticalSection);
+	lock->Ready = true;
+
+	return lock;
 }
 
 // Lock
 bool OSLock(LOCK *lock)
 {
-	return os->Lock(lock);
+	if (lock->Ready == false)
+	{
+		// State is invalid
+		return false;
+	}
+
+	// Enter the critical section
+	EnterCriticalSection(&lock->CriticalSection);
+
+	return true;
 }
 
 // Unlock
 void OSUnlock(LOCK *lock)
 {
-	os->Unlock(lock);
+	if (lock->Ready == false)
+	{
+		// State is invalid
+		return;
+	}
+
+	// Leave the critical section
+	LeaveCriticalSection(&lock->CriticalSection);
 }
 
 // Delete the lock
 void OSDeleteLock(LOCK *lock)
 {
-	os->DeleteLock(lock);
+	// Reset the Ready flag safely
+	EnterCriticalSection(&lock->CriticalSection);
+	lock->Ready = false;
+	LeaveCriticalSection(&lock->CriticalSection);
+
+	// Delete the critical section
+	DeleteCriticalSection(&lock->CriticalSection);
+
+	// Memory release
+	Win32MemoryFree(lock);
 }
 
 // Event initialization

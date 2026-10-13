@@ -660,7 +660,7 @@ void ThreadPoolProc(THREAD *t, void *param)
 
 		while (true)
 		{
-			if (Count(thread->ref->c) <= 1)
+			if (Count(&thread->ref->c) <= 1)
 			{
 				break;
 			}

@@ -14,11 +14,12 @@
 #define	OBJECT_ALLOC_FAIL_SLEEP_TIME		150
 #define	OBJECT_ALLOC__MAX_RETRY				30
 
-// Lock object
+// Lock object: a recursive critical section embedded in the struct, one heap block
 struct LOCK
 {
-	void *pData;
-	bool Ready;
+	CRITICAL_SECTION CriticalSection;	// Recursive lock
+	bool Ready;							// false once DeleteLock has started
+	void *pData;						// Read only by the old Win32 lock backend, which nothing calls any more
 #ifdef	_DEBUG
 	char *FileName;
 	UINT Line;
@@ -29,15 +30,13 @@ struct LOCK
 // Counter object
 struct COUNTER
 {
-	LOCK *lock;
-	UINT c;
-	bool Ready;
+	volatile UINT c;					// Changed only through the Interlocked functions
 };
 
-// Reference counter
+// Reference counter: the counter is embedded, so a REF is one heap block
 struct REF
 {
-	COUNTER *c;
+	COUNTER c;
 };
 
 // Event object

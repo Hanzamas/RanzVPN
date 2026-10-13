@@ -163,11 +163,7 @@ COUNTER *NewCounter()
 	c = Malloc(sizeof(COUNTER));
 
 	// Initialization
-	c->Ready = true;
 	c->c = 0;
-
-	// Lock created
-	c->lock = NewLock();
 
 	// KS
 	KS_INC(KS_NEW_COUNTER_COUNT);
@@ -188,34 +184,23 @@ void DeleteCounter(COUNTER *c)
 	KS_INC(KS_DELETE_COUNTER_COUNT);
 	KS_SUB(KS_CURRENT_COUNT, c->c);
 
-	DeleteLock(c->lock);
 	Free(c);
 }
 
 // Get the count value
 UINT Count(COUNTER *c)
 {
-	UINT ret;
 	// Validate arguments
 	if (c == NULL)
 	{
 		return 0;
 	}
-	if (c->Ready == false)
-	{
-		return 0;
-	}
 
-	Lock(c->lock);
-	{
-		ret = c->c;
-	}
-	Unlock(c->lock);
-
-	return ret;
+	// Atomic read with a full barrier
+	return (UINT)InterlockedCompareExchange((volatile LONG *)&c->c, 0, 0);
 }
 
-// Increment
+// Increment; returns the new value
 UINT Inc(COUNTER *c)
 {
 	UINT ret;
@@ -224,17 +209,8 @@ UINT Inc(COUNTER *c)
 	{
 		return 0;
 	}
-	if (c->Ready == false)
-	{
-		return 0;
-	}
 
-	Lock(c->lock);
-	{
-		c->c++;
-		ret = c->c;
-	}
-	Unlock(c->lock);
+	ret = (UINT)InterlockedIncrement((volatile LONG *)&c->c);
 
 	// KS
 	KS_INC(KS_INC_COUNT);
@@ -243,33 +219,32 @@ UINT Inc(COUNTER *c)
 	return ret;
 }
 
-// Decrement
+// Decrement; returns the new value. A COUNTER at 0 stays at 0 and returns 0.
 UINT Dec(COUNTER *c)
 {
-	UINT ret;
+	UINT old_value, ret;
 	// Validate arguments
 	if (c == NULL)
 	{
 		return 0;
 	}
-	if (c->Ready == false)
-	{
-		return 0;
-	}
 
-	Lock(c->lock);
+	// Compare-exchange loop, so that the floor at 0 holds under contention
+	while (true)
 	{
-		if (c->c != 0)
-		{
-			c->c--;
-			ret = c->c;
-		}
-		else
+		old_value = c->c;
+		if (old_value == 0)
 		{
 			ret = 0;
+			break;
+		}
+
+		ret = old_value - 1;
+		if ((UINT)InterlockedCompareExchange((volatile LONG *)&c->c, (LONG)ret, (LONG)old_value) == old_value)
+		{
+			break;
 		}
 	}
-	Unlock(c->lock);
 
 	// KS
 	KS_INC(KS_DEC_COUNT);
@@ -293,15 +268,13 @@ UINT Release(REF *ref)
 	KS_INC(KS_RELEASE_COUNT);
 	KS_DEC(KS_CURRENT_REFED_COUNT);
 
-	c = Dec(ref->c);
+	c = Dec(&ref->c);
 	if (c == 0)
 	{
 		// KS
 		KS_DEC(KS_CURRENT_REF_COUNT);
 		KS_INC(KS_FREEREF_COUNT);
 
-		DeleteCounter(ref->c);
-		ref->c = 0;
 		Free(ref);
 	}
 	return c;
@@ -317,7 +290,7 @@ UINT AddRef(REF *ref)
 		return 0;
 	}
 
-	c = Inc(ref->c);
+	c = Inc(&ref->c);
 
 	// KS
 	KS_INC(KS_ADDREF_COUNT);
@@ -331,14 +304,14 @@ REF *NewRef()
 {
 	REF *ref;
 
-	// Memory allocation
+	// Memory allocation: the counter is embedded, so this is the only heap block
 	ref = Malloc(sizeof(REF));
 
-	// Create a Counter
-	ref->c = NewCounter();
+	// Initialization
+	ref->c.c = 0;
 
 	// Increment only once
-	Inc(ref->c);
+	Inc(&ref->c);
 
 	// KS
 	KS_INC(KS_NEWREF_COUNT);
