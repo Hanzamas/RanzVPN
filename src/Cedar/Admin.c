@@ -6310,36 +6310,25 @@ void FreeRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t)
 }
 
 // MEMINFO
+static const RPC_FIELD rpc_meminfo_fields[] =
+{
+	RPC_ROW_INT64(MEMINFO, TotalMemory, "TotalMemory"),
+	RPC_ROW_INT64(MEMINFO, UsedMemory, "UsedMemory"),
+	RPC_ROW_INT64(MEMINFO, FreeMemory, "FreeMemory"),
+	RPC_ROW_INT64(MEMINFO, TotalPhys, "TotalPhys"),
+	RPC_ROW_INT64(MEMINFO, UsedPhys, "UsedPhys"),
+	RPC_ROW_INT64(MEMINFO, FreePhys, "FreePhys"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_meminfo_table, MEMINFO, rpc_meminfo_fields);
+
 void InRpcMemInfo(MEMINFO *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(MEMINFO));
-	t->TotalMemory = PackGetInt64(p, "TotalMemory");
-	t->UsedMemory = PackGetInt64(p, "UsedMemory");
-	t->FreeMemory = PackGetInt64(p, "FreeMemory");
-	t->TotalPhys = PackGetInt64(p, "TotalPhys");
-	t->UsedPhys = PackGetInt64(p, "UsedPhys");
-	t->FreePhys = PackGetInt64(p, "FreePhys");
+	RpcFieldIn(&rpc_meminfo_table, t, p);
 }
 void OutRpcMemInfo(PACK *p, MEMINFO *t)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt64(p, "TotalMemory", t->TotalMemory);
-	PackAddInt64(p, "UsedMemory", t->UsedMemory);
-	PackAddInt64(p, "FreeMemory", t->FreeMemory);
-	PackAddInt64(p, "TotalPhys", t->TotalPhys);
-	PackAddInt64(p, "UsedPhys", t->UsedPhys);
-	PackAddInt64(p, "FreePhys", t->FreePhys);
+	RpcFieldOut(&rpc_meminfo_table, p, t);
 }
 
 // OS_INFO
@@ -6839,139 +6828,118 @@ void OutRpcDeleteAccess(PACK *p, RPC_DELETE_ACCESS *t)
 
 
 // RPC_SERVER_INFO
+static void RpcServerInfoOsInfoOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	OutRpcOsInfo(p, (OS_INFO *)(((UCHAR *)base) + f->Offset));
+}
+static void RpcServerInfoOsInfoIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcOsInfo((OS_INFO *)(((UCHAR *)base) + f->Offset), p);
+}
+static void RpcServerInfoOsInfoFree(const RPC_FIELD *f, void *base)
+{
+	FreeRpcOsInfo((OS_INFO *)(((UCHAR *)base) + f->Offset));
+}
+static const RPC_HOOK rpc_server_info_os_info_hook = {RpcServerInfoOsInfoOut, RpcServerInfoOsInfoIn, RpcServerInfoOsInfoFree};
+
+static const RPC_FIELD rpc_server_info_fields[] =
+{
+	RPC_ROW_STR(RPC_SERVER_INFO, ServerProductName, "ServerProductName"),
+	RPC_ROW_STR(RPC_SERVER_INFO, ServerVersionString, "ServerVersionString"),
+	RPC_ROW_STR(RPC_SERVER_INFO, ServerBuildInfoString, "ServerBuildInfoString"),
+	RPC_ROW_INT(RPC_SERVER_INFO, ServerVerInt, "ServerVerInt"),
+	RPC_ROW_INT(RPC_SERVER_INFO, ServerBuildInt, "ServerBuildInt"),
+	RPC_ROW_STR(RPC_SERVER_INFO, ServerHostName, "ServerHostName"),
+	RPC_ROW_TIME64(RPC_SERVER_INFO, ServerBuildDate, "ServerBuildDate"),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_SERVER_INFO, OsInfo, NULL, 0, &rpc_server_info_os_info_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_server_info_table, RPC_SERVER_INFO, rpc_server_info_fields);
+
 void InRpcServerInfo(RPC_SERVER_INFO *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_SERVER_INFO));
-
-	PackGetStr(p, "ServerProductName", t->ServerProductName, sizeof(t->ServerProductName));
-	PackGetStr(p, "ServerVersionString", t->ServerVersionString, sizeof(t->ServerVersionString));
-	PackGetStr(p, "ServerBuildInfoString", t->ServerBuildInfoString, sizeof(t->ServerBuildInfoString));
-	t->ServerVerInt = PackGetInt(p, "ServerVerInt");
-	t->ServerBuildInt = PackGetInt(p, "ServerBuildInt");
-	PackGetStr(p, "ServerHostName", t->ServerHostName, sizeof(t->ServerHostName));
-	t->ServerBuildDate = PackGetInt64(p, "ServerBuildDate");
-	InRpcOsInfo(&t->OsInfo, p);
+	RpcFieldIn(&rpc_server_info_table, t, p);
 }
 void OutRpcServerInfo(PACK *p, RPC_SERVER_INFO *t)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "ServerProductName", t->ServerProductName);
-	PackAddStr(p, "ServerVersionString", t->ServerVersionString);
-	PackAddStr(p, "ServerBuildInfoString", t->ServerBuildInfoString);
-	PackAddInt(p, "ServerVerInt", t->ServerVerInt);
-	PackAddInt(p, "ServerBuildInt", t->ServerBuildInt);
-	PackAddStr(p, "ServerHostName", t->ServerHostName);
-	PackAddTime64(p, "ServerBuildDate", t->ServerBuildDate);
-	OutRpcOsInfo(p, &t->OsInfo);
+	RpcFieldOut(&rpc_server_info_table, p, t);
 }
 void FreeRpcServerInfo(RPC_SERVER_INFO *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	FreeRpcOsInfo(&t->OsInfo);
+	RpcFieldFree(&rpc_server_info_table, t);
 }
 
 // RPC_SERVER_STATUS
+static void RpcServerStatusTrafficOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	OutRpcTraffic(p, (TRAFFIC *)(((UCHAR *)base) + f->Offset));
+}
+static void RpcServerStatusTrafficIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcTraffic((TRAFFIC *)(((UCHAR *)base) + f->Offset), p);
+}
+static const RPC_HOOK rpc_server_status_traffic_hook = {RpcServerStatusTrafficOut, RpcServerStatusTrafficIn, NULL};
+
+static void RpcServerStatusMemInfoOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	OutRpcMemInfo(p, (MEMINFO *)(((UCHAR *)base) + f->Offset));
+}
+static void RpcServerStatusMemInfoIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcMemInfo((MEMINFO *)(((UCHAR *)base) + f->Offset), p);
+}
+static const RPC_HOOK rpc_server_status_mem_info_hook = {RpcServerStatusMemInfoOut, RpcServerStatusMemInfoIn, NULL};
+
+static const RPC_FIELD rpc_server_status_fields[] =
+{
+	RPC_ROW_INT(RPC_SERVER_STATUS, NumHubTotal, "NumHubTotal"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, NumHubStandalone, "NumHubStandalone"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, NumSessionsTotal, "NumSessionsTotal"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, NumSessionsLocal, "NumSessionsLocal"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, NumTcpConnections, "NumTcpConnections"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, NumTcpConnectionsLocal, "NumTcpConnectionsLocal"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, NumMacTables, "NumMacTables"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, NumIpTables, "NumIpTables"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, NumUsers, "NumUsers"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, NumGroups, "NumGroups"),
+	RPC_ROW_TIME64(RPC_SERVER_STATUS, CurrentTime, "CurrentTime"),
+	RPC_ROW_INT64(RPC_SERVER_STATUS, CurrentTick, "CurrentTick"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, AssignedBridgeLicenses, "AssignedBridgeLicenses"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, AssignedClientLicenses, "AssignedClientLicenses"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, AssignedBridgeLicensesTotal, "AssignedBridgeLicensesTotal"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, AssignedClientLicensesTotal, "AssignedClientLicensesTotal"),
+	RPC_ROW_TIME64(RPC_SERVER_STATUS, StartTime, "StartTime"),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_SERVER_STATUS, Traffic, NULL, 0, &rpc_server_status_traffic_hook),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_SERVER_STATUS, MemInfo, NULL, 0, &rpc_server_status_mem_info_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_server_status_table, RPC_SERVER_STATUS, rpc_server_status_fields);
+
 void InRpcServerStatus(RPC_SERVER_STATUS *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_SERVER_STATUS));
-	t->NumTcpConnections = PackGetInt(p, "NumTcpConnections");
-	t->NumTcpConnectionsLocal = PackGetInt(p, "NumTcpConnectionsLocal");
-	t->NumHubTotal = PackGetInt(p, "NumHubTotal");
-	t->NumHubStandalone = PackGetInt(p, "NumHubStandalone");
-	t->NumSessionsTotal = PackGetInt(p, "NumSessionsTotal");
-	t->NumSessionsLocal = PackGetInt(p, "NumSessionsLocal");
-	t->NumMacTables = PackGetInt(p, "NumMacTables");
-	t->NumIpTables = PackGetInt(p, "NumIpTables");
-	t->NumUsers = PackGetInt(p, "NumUsers");
-	t->NumGroups = PackGetInt(p, "NumGroups");
-	t->CurrentTime = PackGetInt64(p, "CurrentTime");
-	t->CurrentTick = PackGetInt64(p, "CurrentTick");
-	t->AssignedBridgeLicenses = PackGetInt(p, "AssignedBridgeLicenses");
-	t->AssignedClientLicenses = PackGetInt(p, "AssignedClientLicenses");
-	t->AssignedBridgeLicensesTotal = PackGetInt(p, "AssignedBridgeLicensesTotal");
-	t->AssignedClientLicensesTotal = PackGetInt(p, "AssignedClientLicensesTotal");
-	t->StartTime = PackGetInt64(p, "StartTime");
-
-	InRpcTraffic(&t->Traffic, p);
-
-	InRpcMemInfo(&t->MemInfo, p);
+	RpcFieldIn(&rpc_server_status_table, t, p);
 }
 void OutRpcServerStatus(PACK *p, RPC_SERVER_STATUS *t)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "NumHubTotal", t->NumHubTotal);
-	PackAddInt(p, "NumHubStandalone", t->NumHubStandalone);
-	PackAddInt(p, "NumSessionsTotal", t->NumSessionsTotal);
-	PackAddInt(p, "NumSessionsLocal", t->NumSessionsLocal);
-	PackAddInt(p, "NumTcpConnections", t->NumTcpConnections);
-	PackAddInt(p, "NumTcpConnectionsLocal", t->NumTcpConnectionsLocal);
-	PackAddInt(p, "NumMacTables", t->NumMacTables);
-	PackAddInt(p, "NumIpTables", t->NumIpTables);
-	PackAddInt(p, "NumUsers", t->NumUsers);
-	PackAddInt(p, "NumGroups", t->NumGroups);
-	PackAddTime64(p, "CurrentTime", t->CurrentTime);
-	PackAddInt64(p, "CurrentTick", t->CurrentTick);
-	PackAddInt(p, "AssignedBridgeLicenses", t->AssignedBridgeLicenses);
-	PackAddInt(p, "AssignedClientLicenses", t->AssignedClientLicenses);
-	PackAddInt(p, "AssignedBridgeLicensesTotal", t->AssignedBridgeLicensesTotal);
-	PackAddInt(p, "AssignedClientLicensesTotal", t->AssignedClientLicensesTotal);
-	PackAddTime64(p, "StartTime", t->StartTime);
-
-	OutRpcTraffic(p, &t->Traffic);
-
-	OutRpcMemInfo(p, &t->MemInfo);
+	RpcFieldOut(&rpc_server_status_table, p, t);
 }
 
 // RPC_LISTENER
+static const RPC_FIELD rpc_listener_fields[] =
+{
+	RPC_ROW_INT(RPC_LISTENER, Port, "Port"),
+	RPC_ROW_BOOL(RPC_LISTENER, Enable, "Enable"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_listener_table, RPC_LISTENER, rpc_listener_fields);
+
 void InRpcListener(RPC_LISTENER *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_LISTENER));
-	t->Port = PackGetInt(p, "Port");
-	t->Enable = PackGetBool(p, "Enable");
+	RpcFieldIn(&rpc_listener_table, t, p);
 }
 void OutRpcListener(PACK *p, RPC_LISTENER *t)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "Port", t->Port);
-	PackAddBool(p, "Enable", t->Enable);
+	RpcFieldOut(&rpc_listener_table, p, t);
 }
 
 // RPC_LISTENER_LIST
@@ -7069,28 +7037,21 @@ void FreeRpcStr(RPC_STR *t)
 }
 
 // RPC_SET_PASSWORD
+static const RPC_FIELD rpc_set_password_fields[] =
+{
+	RPC_ROW_DATA(RPC_SET_PASSWORD, HashedPassword, "HashedPassword"),
+	RPC_ROW_STR(RPC_SET_PASSWORD, PlainTextPassword, "PlainTextPassword"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_set_password_table, RPC_SET_PASSWORD, rpc_set_password_fields);
+
 void InRpcSetPassword(RPC_SET_PASSWORD *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_SET_PASSWORD));
-	PackGetData2(p, "HashedPassword", t->HashedPassword, sizeof(t->HashedPassword));
-	PackGetStr(p, "PlainTextPassword", t->PlainTextPassword, sizeof(t->PlainTextPassword));
+	RpcFieldIn(&rpc_set_password_table, t, p);
 }
 void OutRpcSetPassword(PACK *p, RPC_SET_PASSWORD *t)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddData(p, "HashedPassword", t->HashedPassword, sizeof(t->HashedPassword));
-	PackAddStr(p, "PlainTextPassword", t->PlainTextPassword);
+	RpcFieldOut(&rpc_set_password_table, p, t);
 }
 
 // RPC_HUB_OPTION
