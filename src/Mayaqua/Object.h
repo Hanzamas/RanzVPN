@@ -9,36 +9,11 @@
 #define	OBJECT_H
 
 #include "MayaType.h"
+#include "Native.h"
 
 // Constants
 #define	OBJECT_ALLOC_FAIL_SLEEP_TIME		150
 #define	OBJECT_ALLOC__MAX_RETRY				30
-
-// Lock object
-struct LOCK
-{
-	void *pData;
-	bool Ready;
-#ifdef	_DEBUG
-	char *FileName;
-	UINT Line;
-	UINT ThreadId;
-#endif	// _DEBUG
-};
-
-// Counter object
-struct COUNTER
-{
-	LOCK *lock;
-	UINT c;
-	bool Ready;
-};
-
-// Reference counter
-struct REF
-{
-	COUNTER *c;
-};
 
 // Event object
 struct EVENT
@@ -56,38 +31,12 @@ struct DEADCHECK
 };
 
 
-// Lock function
-#ifndef	_DEBUG
-
-#define	Lock(lock)		LockInner((lock))
-#define	Unlock(lock)	UnlockInner((lock))
-
-#else	// _DEBUG
-
-#define	Lock(lock)			\
-	{						\
-		LockInner(lock);	\
-		if (lock != NULL) { lock->FileName = __FILE__; lock->Line = __LINE__; lock->ThreadId = ThreadId();}	\
-	}
-
-#define	Unlock(lock)		\
-	{						\
-		if (lock != NULL) { lock->FileName = NULL; lock->Line = 0; lock->ThreadId = 0;}	\
-		UnlockInner(lock);	\
-	}
-
-#endif	// _DEBUG
-
-
 // Function prototype
 LOCK *NewLock();
 LOCK *NewLockMain();
 void DeleteLock(LOCK *lock);
 COUNTER *NewCounter();
-void UnlockInner(LOCK *lock);
-bool LockInner(LOCK *lock);
 void DeleteCounter(COUNTER *c);
-UINT Count(COUNTER *c);
 UINT Inc(COUNTER *c);
 UINT Dec(COUNTER *c);
 UINT Release(REF *ref);

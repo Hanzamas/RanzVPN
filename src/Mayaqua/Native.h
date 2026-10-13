@@ -11,4 +11,45 @@
 
 #include "MayaType.h"
 
+// Lock object: a recursive critical section embedded in the struct, one heap block
+struct LOCK
+{
+	CRITICAL_SECTION CriticalSection;	// Recursive lock
+	bool Ready;							// false once DeleteLock has started
+};
+
+// Counter object
+struct COUNTER
+{
+	volatile UINT c;					// Changed only through the Interlocked functions
+};
+
+// Reference counter: the counter is embedded, so a REF is one heap block
+struct REF
+{
+	COUNTER c;
+};
+
+// Out-of-line helpers called below (Object.c)
+bool LockInner(LOCK *lock);
+void UnlockInner(LOCK *lock);
+
+// Lock
+static inline bool Lock(LOCK *lock)
+{
+	return LockInner(lock);
+}
+
+// Unlock
+static inline void Unlock(LOCK *lock)
+{
+	UnlockInner(lock);
+}
+
+// Get the count value: 0 for NULL, otherwise an atomic read with a full barrier
+static inline UINT Count(COUNTER *c)
+{
+	return (c == NULL) ? 0 : (UINT)InterlockedCompareExchange((volatile LONG *)&c->c, 0, 0);
+}
+
 #endif	// NATIVE_H
