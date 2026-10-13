@@ -12,7 +12,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#ifdef OS_WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -27,9 +26,6 @@
 
 #include <WinSock2.h>
 #include <ws2ipdef.h>
-#else
-#error "Ranz VPN builds on Windows only."
-#endif
 
 // 
 // Constant
@@ -119,18 +115,10 @@ typedef int (COMPARE)(void *p1, void *p2);
 #define	POINTER_TO_KEY(p)		(HashPtrToUINT(p))
 
 // Convert the pointer to UINT64
-#ifdef	CPU_64
 #define	POINTER_TO_UINT64(p)	(UINT64)(p)
-#else
-#define	POINTER_TO_UINT64(p)	(UINT64)((UINT)(p))
-#endif
 
 // Convert a UINT64 to pointer
-#ifdef	CPU_64
 #define	UINT64_TO_POINTER(i)	(void *)(i)
-#else
-#define	UINT64_TO_POINTER(i)	(void *)((UINT)(i))
-#endif
 
 // Reading data that is not dependent on the boundary or the endian
 #define	READ_USHORT(buf)		(USHORT)((((USHORT)((UCHAR *)(buf))[0]) << 8) | (((USHORT)((UCHAR *)(buf))[1])))

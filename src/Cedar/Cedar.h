@@ -40,9 +40,6 @@
 #define	CEDAR_WIRE_VER			502		// Major * 100 + minor
 #define	CEDAR_WIRE_BUILD		5187
 
-// Beta number
-//#define	BETA_NUMBER					3
-
 // RC or not
 #define	RELEASE_CANDIDATE
 
@@ -84,7 +81,6 @@
 
 // Configuration of communication related control switch
 #define	USE_DOS_ATTACK_DETECTION		// Enable the DOS attack detection
-//#define	USE_SECURE_PACKET				// Enable the scrambled packet
 
 // Default separator character for the hub name in the username
 #define	DEFAULT_USERNAME_HUB_SEPARATOR	'@'
@@ -130,30 +126,17 @@
 #define	MAX_HUB_LINKS				VPN_GP(GP_MAX_HUB_LINKS, 1024)	// Maximum number of Cascade that can be registered
 #define	MAX_HUB_ADMIN_OPTIONS		4096	// Maximum number of Virtual HUB management options that can be registered
 
-#ifndef	USE_STRATEGY_LOW_MEMORY
 #define	MEM_FIFO_REALLOC_MEM_SIZE	VPN_GP(GP_MEM_FIFO_REALLOC_MEM_SIZE, (65536 * 10))
 #define	QUEUE_BUDGET				VPN_GP(GP_QUEUE_BUDGET, 2048)
 #define	FIFO_BUDGET					VPN_GP(GP_FIFO_BUDGET, 1600 * 1600 * 4)
-#else	// USE_STRATEGY_LOW_MEMORY
-#define	MEM_FIFO_REALLOC_MEM_SIZE	VPN_GP(GP_MEM_FIFO_REALLOC_MEM_SIZE, (65536))
-#define	QUEUE_BUDGET				VPN_GP(GP_QUEUE_BUDGET, 1024)
-#define	FIFO_BUDGET					VPN_GP(GP_FIFO_BUDGET, 1000000)
-#endif	// USE_STRATEGY_LOW_MEMORY
 
 #define	MAX_PACKET_SIZE				1600	// Maximum packet size
 #define	UDP_BUF_SIZE				(32 * 1024) // Aim of the UDP packet size
 
-#ifndef	USE_STRATEGY_LOW_MEMORY
 #define	MAX_SEND_SOCKET_QUEUE_SIZE	VPN_GP(GP_MAX_SEND_SOCKET_QUEUE_SIZE, (1600 * 1600 * 1))	// Maximum transmit queue size
 #define	MIN_SEND_SOCKET_QUEUE_SIZE	VPN_GP(GP_MIN_SEND_SOCKET_QUEUE_SIZE, (1600 * 200 * 1))	// Minimum transmit queue size
 #define	MAX_STORED_QUEUE_NUM		VPN_GP(GP_MAX_STORED_QUEUE_NUM, 1024)		// The number of queues that can be stored in each session
 #define	MAX_BUFFERING_PACKET_SIZE	VPN_GP(GP_MAX_BUFFERING_PACKET_SIZE, (1600 * 1600))	// Maximum packet size can be buffered
-#else	// USE_STRATEGY_LOW_MEMORY
-#define	MAX_SEND_SOCKET_QUEUE_SIZE	VPN_GP(GP_MAX_SEND_SOCKET_QUEUE_SIZE, (1600 * 200 * 1))	// Maximum transmit queue size
-#define	MIN_SEND_SOCKET_QUEUE_SIZE	VPN_GP(GP_MIN_SEND_SOCKET_QUEUE_SIZE, (1600 * 50 * 1))	// Minimum transmit queue size
-#define	MAX_STORED_QUEUE_NUM		VPN_GP(GP_MAX_STORED_QUEUE_NUM, 384)		// The number of queues that can be stored in each session
-#define	MAX_BUFFERING_PACKET_SIZE	VPN_GP(GP_MAX_BUFFERING_PACKET_SIZE, (1600 * 300 * 1))	// Maximum packet size can be buffered
-#endif	// USE_STRATEGY_LOW_MEMORY
 
 #define	MAX_SEND_SOCKET_QUEUE_NUM	VPN_GP(GP_MAX_SEND_SOCKET_QUEUE_NUM, 128)		// Maximum number of transmission queue items per processing
 #define	MAX_TCP_CONNECTION			32		// The maximum number of TCP connections
@@ -669,9 +652,7 @@ TRAFFIC *NewTraffic();
 void FreeTraffic(TRAFFIC *t);
 CEDAR *NewCedar(X *server_x, K *server_k);
 void CedarForceLink();
-#ifdef	OS_WIN32
 void RegistWindowsFirewallAll();
-#endif	// OS_WIN32
 void SetCedarVpnBridge(CEDAR *c);
 void SetCedarCert(CEDAR *c, X *server_x, K *server_k);
 void SetCedarCertAndChain(CEDAR *c, X *server_x, K *server_k, LIST *server_chain);
@@ -713,9 +694,7 @@ void FreeTinyLog(TINY_LOG *t);
 void WriteTinyLog(TINY_LOG *t, char *str);
 TINY_LOG *NewTinyLog();
 void GetWinVer(RPC_WINVER *v);
-#ifdef	OS_WIN32
 void Win32GetWinVer(RPC_WINVER *v);
-#endif	// OS_WIN32
 bool IsSupportedWinVer(RPC_WINVER *v);
 UINT GetCedarVersionNumber();
 void CedarAddCurrentTcpQueueSize(CEDAR *c, int diff);

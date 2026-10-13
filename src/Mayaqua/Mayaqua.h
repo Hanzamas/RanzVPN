@@ -12,7 +12,6 @@
 
 #include <stdio.h>
 
-//#define	USE_PROBE						// Use Probe
 
 // Macro for the release flag
 #ifdef	VPN_SPEED
@@ -28,7 +27,6 @@ void InitProcessCallOnce();
 
 #ifdef VPN_EXE
 // To build the executable file
-#ifdef OS_WIN32
 int main(int argc, char *argv[]);
 int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 {
@@ -36,7 +34,6 @@ int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 	InitProcessCallOnce();
 	return main(1, argv);
 }
-#endif	// WIN32
 #endif	// VPN_EXE
 
 // Constant
@@ -44,18 +41,14 @@ int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 #define	STRTABLE_ID					"SE_VPN_20121007"	// String table identifier
 
 // Directory separator
-#ifdef	OS_WIN32
 #define	PATH_BACKSLASH	// Backslash (\)
-#endif	// WIN32
 
 // Endian
 #define	IsBigEndian()		(g_little_endian ? false : true)
 #define	IsLittleEndian()	(g_little_endian)
 
-#ifdef	OS_WIN32
 // Replace the snprintf function
 #define	snprintf	_snprintf
-#endif	// OS_WIN32
 
 // Compiler dependent
 // VC++ compiler
@@ -65,24 +58,11 @@ int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 #define	WHERE			if (IsDebug()){printf("%s: %u\n", __FILE__, __LINE__); SleepThread(10);}
 
 // Probe related
-#ifdef	USE_PROBE
-#define	PROBE_STR(str)					WriteProbe(__FILE__, __LINE__, (str));
-#define	PROBE_DATA2(str, data, size)	WriteProbeData(__FILE__, __LINE__, (str), (data), (size));
-#else	// USE_PROBE
 #define	PROBE_STR(str)
 #define	PROBE_DATA2(str, data, size)
-#endif	// USE_PROBE
-
-// Determine the performance / memory strategy
-#if	(defined(CPU_X86) || defined(CPU_X64) || defined(CPU_X86_X64) || defined(CPU_SPARC) || defined(CPU_SPARC64) || defined(OS_WIN32) || defined(__amd64__) || defined(__amd64) || defined(__x86_64__) || defined(__x86_64) || defined(i386) || defined(__i386) || defined(__i386__) || defined(__ia64__) || defined(__IA64__) || defined(_IA64))
-#else
-#define	USE_STRATEGY_LOW_MEMORY
-#endif
 
 // Macro that displays the current time
-#ifdef	WIN32
 #define	WHEN			if (IsDebug()){WHERE; MsPrintTick();}
-#endif	// WIN32
 
 // Global variables
 extern bool g_memcheck;
@@ -269,11 +249,6 @@ bool IsProbeEnabled();
 void WriteProbe(char *filename, UINT line, char *str);
 void WriteProbeData(char *filename, UINT line, char *str, void *data, UINT size);
 USHORT CalcChecksum16(void *buf, UINT size);
-
-// For Debugging
-#ifndef	ENCRYPT_C
-//#define	Disconnect(s)		{Debug("Disconnect() Called: %s %u\n", __FILE__, __LINE__);Disconnect(s);}
-#endif
 
 
 #endif	// MAYAQUA_H
