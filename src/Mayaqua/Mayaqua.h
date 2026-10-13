@@ -76,8 +76,6 @@ extern LOCK *kernel_status_lock[NUM_KERNEL_STATUS];
 extern bool kernel_status_inited;
 
 // Kernel state operation macro
-#define	KS_LOCK(id)		LockKernelStatus(id)
-#define	KS_UNLOCK(id)	UnlockKernelStatus(id)
 #define	KS_GET64(id)	(kernel_status[id])
 #define	KS_GET(id)		((UINT)KS_GET64(id))
 #define	KS_GETMAX64(id)	(kernel_status_max[id])
@@ -86,31 +84,31 @@ extern bool kernel_status_inited;
 // Operations of the kernel status
 #define	KS_INC(id)															\
 if (IsTrackingEnabled()) {													\
-	KS_LOCK(id);															\
+	LockKernelStatus(id);															\
 	kernel_status[id]++;													\
 	kernel_status_max[id] = MAX(kernel_status_max[id], kernel_status[id]);	\
-	KS_UNLOCK(id);															\
+	UnlockKernelStatus(id);															\
 }
 #define	KS_DEC(id)															\
 if (IsTrackingEnabled()) {													\
-	KS_LOCK(id);															\
+	LockKernelStatus(id);															\
 	kernel_status[id]--;													\
 	kernel_status_max[id] = MAX(kernel_status_max[id], kernel_status[id]);	\
-	KS_UNLOCK(id);															\
+	UnlockKernelStatus(id);															\
 }
 #define	KS_ADD(id, n)														\
 if (IsTrackingEnabled()) {													\
-	KS_LOCK(id);															\
+	LockKernelStatus(id);															\
 	kernel_status[id] += n;													\
 	kernel_status_max[id] = MAX(kernel_status_max[id], kernel_status[id]);	\
-	KS_UNLOCK(id);															\
+	UnlockKernelStatus(id);															\
 }
 #define	KS_SUB(id, n)														\
 if (IsTrackingEnabled()) {													\
-	KS_LOCK(id);															\
+	LockKernelStatus(id);															\
 	kernel_status[id] -= n;													\
 	kernel_status_max[id] = MAX(kernel_status_max[id], kernel_status[id]);	\
-	KS_UNLOCK(id);															\
+	UnlockKernelStatus(id);															\
 }
 
 // Kernel status
