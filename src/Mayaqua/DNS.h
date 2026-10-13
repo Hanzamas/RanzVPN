@@ -3,8 +3,6 @@
 
 #include "Network.h"
 
-#define DNS_CACHE_EXPIRATION (10 * 60 * 1000)
-
 #ifndef USE_STRATEGY_LOW_MEMORY
 #define DNS_THREAD_DEFAULT_NUM_MAX (512)
 #else

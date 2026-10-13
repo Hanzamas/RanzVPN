@@ -6,9 +6,7 @@
 #include "Str.h"
 #include "Tick64.h"
 
-#ifdef OS_WIN32
 #include <WS2tcpip.h>
-#endif
 
 #ifndef AI_ALL
 #define AI_ALL 0
@@ -511,7 +509,6 @@ void DnsResolver(THREAD *t, void *param)
 	}
 	else if (ret != EAI_NONAME)
 	{
-		Debug("DnsResolver(): getaddrinfo() failed with error %d!\n", ret);
 	}
 
 	ReleaseDnsResolver(resolver);
@@ -635,7 +632,6 @@ void DnsResolverReverse(THREAD *t, void *param)
 	}
 	else if (ret != EAI_NONAME)
 	{
-		Debug("DnsResolverReverse(): getnameinfo() failed with error %d!\n", ret);
 	}
 
 	ReleaseDnsResolverReverse(resolver);
@@ -670,10 +666,8 @@ bool GetIPEx(IP *ip, const char *hostname, UINT timeout, volatile const bool *ca
 	return false;
 }
 
-// Release of the parameters of the DNS Resolver thread
 void ReleaseDnsResolver(DNS_RESOLVER *p)
 {
-	// Validate arguments
 	if (p == NULL)
 	{
 		return;
@@ -688,10 +682,8 @@ void ReleaseDnsResolver(DNS_RESOLVER *p)
 	}
 }
 
-// Release of the parameters of the DNS Resolver Reverse thread
 void ReleaseDnsResolverReverse(DNS_RESOLVER_REVERSE *p)
 {
-	// Validate arguments
 	if (p == NULL)
 	{
 		return;

@@ -14,7 +14,6 @@
 #define	HAMCORE_FILE_NAME			"hamcore.se2"
 #define	HAMCORE_CACHE_EXPIRES		(5 * 60 * 1000)
 
-// IO structure
 struct IO
 {
 	char Name[MAX_SIZE];
@@ -27,7 +26,6 @@ struct IO
 	UINT64 GetUpdateTime, GetCreateTime, GetAccessTime;
 };
 
-// HC structure
 typedef struct HC
 {
 	char *Path;
@@ -36,28 +34,23 @@ typedef struct HC
 	UINT64 LastAccess;
 } HC;
 
-// DIRENT structure
 struct DIRENT
 {
-	bool Folder;				// Folder
-	char *FileName;				// File name (ANSI)
-	wchar_t *FileNameW;			// File name (Unicode)
-	UINT64 FileSize;			// File size
-	UINT64 CreateDate;			// Creation Date
-	UINT64 UpdateDate;			// Updating date
+	bool Folder;
+	char *FileName;
+	wchar_t *FileNameW;
+	UINT64 FileSize;
+	UINT64 CreateDate;
+	UINT64 UpdateDate;
 };
 
-// DIRLIST structure
 struct DIRLIST
 {
-	UINT NumFiles;				// Number of files
-	struct DIRENT **File;			// File array
+	UINT NumFiles;
+	struct DIRENT **File;
 };
 
-// ZIP related structure
-#ifdef	OS_WIN32
 #pragma pack(push, 1)
-#endif	// OS_WIN32
 
 struct ZIP_DATA_HEADER
 {
@@ -116,13 +109,9 @@ struct ZIP_END_HEADER
 } GCC_PACKED;
 
 #define	ZIP_SIGNATURE				0x04034B50
-#define	ZIP_SIGNATURE_END			0x06054B50
 #define	ZIP_VERSION					10
-#define	ZIP_VERSION_WITH_COMPRESS	20
 
-#ifdef	OS_WIN32
 #pragma pack(pop)
-#endif	// OS_WIN32
 
 struct ZIP_FILE
 {
@@ -131,9 +120,7 @@ struct ZIP_FILE
 	UINT64 DateTime;
 	UINT Attributes;
 	UINT CurrentSize;
-	UINT CompressSize;
 	UINT Crc32;
-	UINT HeaderPos;
 };
 
 struct ZIP_PACKER
@@ -145,12 +132,8 @@ struct ZIP_PACKER
 
 void InitCrc32();
 UINT Crc32(void *buf, UINT pos, UINT len);
-UINT Crc32First(void *buf, UINT pos, UINT len);
 UINT Crc32Next(void *buf, UINT pos, UINT len, UINT last_crc32);
 UINT Crc32Finish(UINT last_crc32);
-void WriteZipDataHeader(ZIP_FILE *f, ZIP_DATA_HEADER *h, bool write_sizes);
-void WriteZipDataFooter(ZIP_FILE *f, ZIP_DATA_FOOTER *h);
-void ZipAddFileFooter(ZIP_PACKER *p);
 
 bool DeleteDirInnerW(wchar_t *name);
 bool DeleteDir(char *name);
@@ -202,14 +185,12 @@ void GetExeNameW(wchar_t *name, UINT size);
 void GetExeDir(char *name, UINT size);
 void GetExeDirW(wchar_t *name, UINT size);
 void GetLogDir(char *name, UINT size);
-void GetLogDirW(wchar_t *name, UINT size);
 void GetDbDirW(wchar_t *name, UINT size);
 int CompareHamcore(void *p1, void *p2);
 void InitHamcore();
 void FreeHamcore();
 BUF *ReadHamcore(char *name);
 BUF *ReadHamcoreW(wchar_t *filename);
-void SafeFileName(char *name);
 DIRLIST *EnumDir(char *dirname);
 DIRLIST *EnumDirW(wchar_t *dirname);
 DIRLIST *EnumDirEx(char *dirname, COMPARE *compare);
