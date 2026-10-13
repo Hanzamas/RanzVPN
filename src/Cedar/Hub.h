@@ -11,348 +11,272 @@
 #include "Account.h"
 #include "Logging.h"
 
-// Prefix in the access list for investigating whether the user name which is contained in a particular file 
-#define	ACCESS_LIST_INCLUDED_PREFIX		"include:"		// Included
-#define	ACCESS_LIST_EXCLUDED_PREFIX		"exclude:"		// Not included
+#define	ACCESS_LIST_INCLUDED_PREFIX		"include:"
+#define	ACCESS_LIST_EXCLUDED_PREFIX		"exclude:"
 
-// The default value for the cache expiration of the user name reference file of the access list (in seconds)
 #define	ACCESS_LIST_INCLUDE_FILE_CACHE_LIFETIME		30
 
-// The maximum length of the include file in the access list
 #define	ACCESS_LIST_INCLUDE_FILE_MAX_SIZE			(1024 * 1024)
 
-// <INFO> tags of the URL in the access list
 #define	ACCESS_LIST_URL_INFO_TAG					"<INFO>"
 
-// Old MAC address entry flush interval
 #define	OLD_MAC_ADDRESS_ENTRY_FLUSH_INTERVAL		1000
 
-// Default flooding queue length
 #define	DEFAULT_FLOODING_QUEUE_LENGTH				(32 * 1024 * 1024)
 
-// Default DHCP Discover Timeout
 #define	DEFAULT_DHCP_DISCOVER_TIMEOUT				(5 * 1000)
 
-// SoftEther link control packet
-struct SE_LINK
-{
-	UCHAR DestMacAddress[6];			// Destination MAC address
-	UCHAR SrcMacAddress[6];				// Source MAC address
-	UCHAR SignatureS;					// 'S'
-	UCHAR SignatureE;					// 'E'
-	UCHAR Padding[2];					// Padding
-	UINT Type;							// Type
-	UCHAR HubSignature[16];				// HUB signature
-	UINT TransactionId;					// Transaction ID
-	UINT Data;							// Data
-	UCHAR Dummy[20];					// Dummy
-	UCHAR Checksum[SHA1_SIZE];			// Checksum
-};
-
-
-// Test packet reception record
-struct TEST_HISTORY
-{
-	SESSION *s1;
-	SESSION *s2;
-};
-
-// State machine for link test
-struct SE_TEST
-{
-	LOCK *lock;							// Lock
-	UINT64 LastTestPacketSentTime;		// Time that sent the test packet at the last
-	UINT NextTestPacketSendInterval;	// Next test packet transmission interval
-	bool CurrentTesting;				// Test by sending a test packet currently
-	UINT TransactionId;					// Transaction ID
-	LIST *TestHistory;					// Reception history
-};
-
-// Database in the case of a stand-alone or a farm master HUB
 struct HUBDB
 {
-	LIST *UserList;						// User List
-	LIST *GroupList;					// Group List
-	LIST *RootCertList;					// Certificate list to trust
-	LIST *CrlList;						// CRL list
-	LIST *AcList;						// AC List
+	LIST *UserList;
+	LIST *GroupList;
+	LIST *RootCertList;
+	LIST *CrlList;
+	LIST *AcList;
 };
 
-// Traffic limiter
 struct TRAFFIC_LIMITER
 {
-	UINT64 LastTime;					// Time of last measured
-	UINT64 Value;						// The current value
+	UINT64 LastTime;
+	UINT64 Value;
 };
 
-// Record the number of broadcast of each endpoint
 struct STORM
 {
-	UCHAR MacAddress[6];				// MAC address
-	UCHAR Padding[2];					// Padding
-	IP SrcIp;							// Source IP address
-	IP DestIp;							// Destination IP address
-	UINT64 CheckStartTick;				// Time that checking is started
-	UINT CurrentBroadcastNum;			// The current number of broadcasts
-	UINT DiscardValue;					// Ratio to discard the broadcast packet
-	bool StrictMode;					// Strict mode
+	UCHAR MacAddress[6];
+	UCHAR Padding[2];
+	IP SrcIp;
+	IP DestIp;
+	UINT64 CheckStartTick;
+	UINT CurrentBroadcastNum;
+	UINT DiscardValue;
+	bool StrictMode;
 };
 
-// Packet adapter information structure for HUB
 struct HUB_PA
 {
-	CANCEL *Cancel;						// Cancel object
-	QUEUE *PacketQueue;					// Packet queue
-	bool MonitorPort;					// Monitor port
-	UINT64 Now;							// Current time
-	TRAFFIC_LIMITER UploadLimiter;		// Upload bandwidth limit
-	TRAFFIC_LIMITER DownloadLimiter;	// Download bandwidth limitation
-	SESSION *Session;					// Session
-	LIST *StormList;					// Broadcast storm recording list
-	UINT64 UsernameHash;				// User name hash
-	UINT64 UsernameHashSimple;			// User name hash (simple)
-	UINT64 GroupnameHash;				// Group name hash
+	CANCEL *Cancel;
+	QUEUE *PacketQueue;
+	bool MonitorPort;
+	UINT64 Now;
+	TRAFFIC_LIMITER UploadLimiter;
+	TRAFFIC_LIMITER DownloadLimiter;
+	SESSION *Session;
+	LIST *StormList;
+	UINT64 UsernameHash;
+	UINT64 UsernameHashSimple;
+	UINT64 GroupnameHash;
 };
 
-// HUB options
 struct HUB_OPTION
 {
-	// Standard options
-	UINT MaxSession;					// Maximum number of simultaneous connections
-	bool NoEnum;						// Excluded from the enumeration
-	// Advanced options
-	bool NoArpPolling;					// No ARP polling
-	bool NoIPv6AddrPolling;				// No IPv6 address polling
-	bool NoIpTable;						// Do not generate an IP address table
-	bool NoMacAddressLog;				// Not to write the registration log of the MAC address
-	bool ManageOnlyPrivateIP;			// Manage only private IP
-	bool ManageOnlyLocalUnicastIPv6;	// Manage only local unicast IPv6 addresses
-	bool DisableIPParsing;				// Disable the IP interpretation
-	bool YieldAfterStorePacket;			// Yield after the packet is stored
-	bool NoSpinLockForPacketDelay;		// Do not use the spin lock
-	UINT BroadcastStormDetectionThreshold;	// Broadcast number limit threshold
-	bool FilterPPPoE;					// Filtering the PPPoE (0x8863, 0x8864)
-	bool FilterOSPF;					// Filtering the OSPF (ip_proto = 89)
-	bool FilterIPv4;					// Filter IPv4 packets
-	bool FilterIPv6;					// Filter IPv6 packets
-	bool FilterNonIP;					// Filter all non-IP packets
-	bool FilterBPDU;					// Filter the BPDU packets
-	UINT ClientMinimumRequiredBuild;	// If the build number of the client is lower than a certain value, deny it
-	bool NoIPv6DefaultRouterInRAWhenIPv6;	// Delete the default router specification from the IPv6 router advertisement (only in the case of IPv6 physical connection)
-	bool NoIPv4PacketLog;				// Do not save the packet log for the IPv4 packet
-	bool NoIPv6PacketLog;				// Do not save the packet log of IPv6 packets
-	bool NoLookBPDUBridgeId;			// Don't look the BPDU bridge ID for switching
-	bool NoManageVlanId;				// Don't manage the VLAN ID
-	UINT VlanTypeId;					// Type ID of VLAN packets (usually 0x8100)
-	bool FixForDLinkBPDU;				// Apply the fix for the BPDU of the strange behavior of the D-Link
-	UINT RequiredClientId;				// Client ID
-	UINT AdjustTcpMssValue;				// TCP MSS adjustment value
-	bool DisableAdjustTcpMss;			// Completely disable the TCP MSS adjustment function
-	bool NoDhcpPacketLogOutsideHub;		// Suppress DHCP unrelated log
-	bool DisableHttpParsing;			// Prohibit the HTTP interpretation
-	bool DisableUdpAcceleration;		// Prohibit the UDP acceleration function
-	bool DisableUdpFilterForLocalBridgeNic;	// Not to perform filtering DHCP packets associated with local bridge NIC
-	bool ApplyIPv4AccessListOnArpPacket;	// Apply an IPv4 access list to the ARP packet
-	bool RemoveDefGwOnDhcpForLocalhost;	// Remove the designation of the DHCP server from the DHCP response packet addressed to localhost
-	UINT AccessListIncludeFileCacheLifetime;	// Expiration of the access list external file (in seconds)
-	bool DisableCheckMacOnLocalBridge;	// Disable the MAC address verification in local bridge
-	bool DisableCorrectIpOffloadChecksum;	// Disable the correction of checksum that is IP-Offloaded
-	bool BroadcastLimiterStrictMode;	// Strictly broadcast packets limiting mode
-	UINT MaxLoggedPacketsPerMinute;		// Maximum number of logging target packets per minute
-	bool DoNotSaveHeavySecurityLogs;	// Do not take heavy security log
-	bool DropBroadcastsInPrivacyFilterMode;	// Drop broadcasting packets if the both source and destination session is PrivacyFilter mode
-	bool DropArpInPrivacyFilterMode;	// Drop ARP packets if the both source and destination session is PrivacyFilter mode
-	bool AllowSameUserInPrivacyFilterMode;	// Allow packets if both the source and destination session user are the same
-	bool SuppressClientUpdateNotification;	// Suppress the update notification function on the VPN Client
-	UINT FloodingSendQueueBufferQuota;	// The global quota of send queues of flooding packets
-	UINT DetectDormantSessionInterval;	// Interval (seconds) threshold to detect a dormant VPN session
-	bool NoPhysicalIPOnPacketLog;		// Disable saving physical IP address on the packet log
-	bool UseHubNameAsDhcpUserClassOption;	// Add HubName to DHCP request as User-Class option
-	bool AllowEapMatchUserByCert;		// Allow matching EAP Identity with user certificate CNs
-	UINT DhcpDiscoverTimeoutMs;			// Timeout to wait for DHCP server response on DISCOVER request
+	UINT MaxSession;
+	bool NoEnum;
+	bool NoArpPolling;
+	bool NoIPv6AddrPolling;
+	bool NoIpTable;
+	bool NoMacAddressLog;
+	bool ManageOnlyPrivateIP;
+	bool ManageOnlyLocalUnicastIPv6;
+	bool DisableIPParsing;
+	bool YieldAfterStorePacket;
+	bool NoSpinLockForPacketDelay;
+	UINT BroadcastStormDetectionThreshold;
+	bool FilterPPPoE;
+	bool FilterOSPF;
+	bool FilterIPv4;
+	bool FilterIPv6;
+	bool FilterNonIP;
+	bool FilterBPDU;
+	UINT ClientMinimumRequiredBuild;
+	bool NoIPv6DefaultRouterInRAWhenIPv6;
+	bool NoIPv4PacketLog;
+	bool NoIPv6PacketLog;
+	bool NoLookBPDUBridgeId;
+	bool NoManageVlanId;
+	UINT VlanTypeId;
+	bool FixForDLinkBPDU;
+	UINT RequiredClientId;
+	UINT AdjustTcpMssValue;
+	bool DisableAdjustTcpMss;
+	bool NoDhcpPacketLogOutsideHub;
+	bool DisableHttpParsing;
+	bool DisableUdpAcceleration;
+	bool DisableUdpFilterForLocalBridgeNic;
+	bool ApplyIPv4AccessListOnArpPacket;
+	bool RemoveDefGwOnDhcpForLocalhost;
+	UINT AccessListIncludeFileCacheLifetime;
+	bool DisableCheckMacOnLocalBridge;
+	bool DisableCorrectIpOffloadChecksum;
+	bool BroadcastLimiterStrictMode;
+	UINT MaxLoggedPacketsPerMinute;
+	bool DoNotSaveHeavySecurityLogs;
+	bool DropBroadcastsInPrivacyFilterMode;
+	bool DropArpInPrivacyFilterMode;
+	bool AllowSameUserInPrivacyFilterMode;
+	bool SuppressClientUpdateNotification;
+	UINT FloodingSendQueueBufferQuota;
+	UINT DetectDormantSessionInterval;
+	bool NoPhysicalIPOnPacketLog;
+	bool UseHubNameAsDhcpUserClassOption;
+	bool AllowEapMatchUserByCert;
+	UINT DhcpDiscoverTimeoutMs;
 };
 
-// MAC table entry
 struct MAC_TABLE_ENTRY
 {
-	UCHAR MacAddress[6];				// MAC address
+	UCHAR MacAddress[6];
 	UCHAR Padding[2];
-	UINT VlanId;						// VLAN ID
-	SESSION *Session;					// Session
-	HUB_PA *HubPa;						// HUB packet adapter
-	UINT64 CreatedTime;					// Creation date and time
-	UINT64 UpdatedTime;					// Updating date
+	UINT VlanId;
+	SESSION *Session;
+	HUB_PA *HubPa;
+	UINT64 CreatedTime;
+	UINT64 UpdatedTime;
 };
 
-// IP table entry
 struct IP_TABLE_ENTRY
 {
-	IP Ip;								// IP address
-	SESSION *Session;					// Session
-	bool DhcpAllocated;					// Assigned by DHCP
-	UINT64 CreatedTime;					// Creation date and time
-	UINT64 UpdatedTime;					// Updating date
-	UCHAR MacAddress[6];				// MAC address
+	IP Ip;
+	SESSION *Session;
+	bool DhcpAllocated;
+	UINT64 CreatedTime;
+	UINT64 UpdatedTime;
+	UCHAR MacAddress[6];
 };
 
-// Loop List
-struct LOOP_LIST
-{
-	UINT NumSessions;
-	SESSION **Session;
-};
-
-// Access list
 struct ACCESS
 {
-	// IPv4
-	UINT Id;							// ID
-	wchar_t Note[MAX_ACCESSLIST_NOTE_LEN + 1];	// Note
+	UINT Id;
+	wchar_t Note[MAX_ACCESSLIST_NOTE_LEN + 1];
 
-	// --- Please add items to the bottom of here for enhancements ---
-	bool Active;						// Enable flag
-	UINT Priority;						// Priority
-	bool Discard;						// Discard flag
-	UINT SrcIpAddress;					// Source IP address
-	UINT SrcSubnetMask;					// Source subnet mask
-	UINT DestIpAddress;					// Destination IP address
-	UINT DestSubnetMask;				// Destination subnet mask
-	UINT Protocol;						// Protocol
-	UINT SrcPortStart;					// Source port number starting point
-	UINT SrcPortEnd;					// Source port number end point
-	UINT DestPortStart;					// Destination port number starting point
-	UINT DestPortEnd;					// Destination port number end point
-	UINT64 SrcUsernameHash;				// Source user name hash
-	bool IsSrcUsernameIncludeOrExclude;	// The source user name is formed as the "include:" or "exclude:"
+	bool Active;
+	UINT Priority;
+	bool Discard;
+	UINT SrcIpAddress;
+	UINT SrcSubnetMask;
+	UINT DestIpAddress;
+	UINT DestSubnetMask;
+	UINT Protocol;
+	UINT SrcPortStart;
+	UINT SrcPortEnd;
+	UINT DestPortStart;
+	UINT DestPortEnd;
+	UINT64 SrcUsernameHash;
+	bool IsSrcUsernameIncludeOrExclude;
 	char SrcUsername[MAX_USERNAME_LEN + 1];
-	bool IsDestUsernameIncludeOrExclude;	// The destination user name is formed as "include:" or "exclude:"
-	UINT64 DestUsernameHash;			// Destination user name hash
+	bool IsDestUsernameIncludeOrExclude;
+	UINT64 DestUsernameHash;
 	char DestUsername[MAX_USERNAME_LEN + 1];
-	bool CheckSrcMac;					// Presence of a source MAC address setting
-	UCHAR SrcMacAddress[6];				// Source MAC address
-	UCHAR SrcMacMask[6];				// Source MAC address mask
-	bool CheckDstMac;					// Whether the setting of the destination MAC address exists
-	UCHAR DstMacAddress[6];				// Destination MAC address
-	UCHAR DstMacMask[6];				// Destination MAC address mask
-	bool CheckTcpState;					// The state of the TCP connection
-	bool Established;					// Established(TCP)
-	UINT Delay;							// Delay
-	UINT Jitter;						// Jitter
-	UINT Loss;							// Packet loss
-	char RedirectUrl[MAX_REDIRECT_URL_LEN + 1];	// URL to redirect to
+	bool CheckSrcMac;
+	UCHAR SrcMacAddress[6];
+	UCHAR SrcMacMask[6];
+	bool CheckDstMac;
+	UCHAR DstMacAddress[6];
+	UCHAR DstMacMask[6];
+	bool CheckTcpState;
+	bool Established;
+	UINT Delay;
+	UINT Jitter;
+	UINT Loss;
+	char RedirectUrl[MAX_REDIRECT_URL_LEN + 1];
 
-	// IPv6
-	bool IsIPv6;						// Whether it's an IPv6
-	IPV6_ADDR SrcIpAddress6;			// The source IP address (IPv6)
-	IPV6_ADDR SrcSubnetMask6;			// Source subnet mask (IPv6)
-	IPV6_ADDR DestIpAddress6;			// Destination IP address (IPv6)
-	IPV6_ADDR DestSubnetMask6;			// Destination subnet mask (IPv6)
+	bool IsIPv6;
+	IPV6_ADDR SrcIpAddress6;
+	IPV6_ADDR SrcSubnetMask6;
+	IPV6_ADDR DestIpAddress6;
+	IPV6_ADDR DestSubnetMask6;
 
-	// --- Please add items to the above of here for enhancements ---
 
-	// For management
-	UINT UniqueId;						// Unique ID
+	UINT UniqueId;
 };
 
-// Administration options
 struct ADMIN_OPTION
 {
-	char Name[MAX_ADMIN_OPTION_NAME_LEN + 1];	// Name
-	UINT Value;									// Data
-	wchar_t Descrption[MAX_SIZE];				// Descrption
+	char Name[MAX_ADMIN_OPTION_NAME_LEN + 1];
+	UINT Value;
+	wchar_t Descrption[MAX_SIZE];
 };
 
-// Certificate Revocation List entry
 struct CRL
 {
-	X_SERIAL *Serial;					// Serial number
-	NAME *Name;							// Name information
-	UCHAR DigestMD5[MD5_SIZE];			// MD5 hash
-	UCHAR DigestSHA1[SHA1_SIZE];		// SHA-1 hash
+	X_SERIAL *Serial;
+	NAME *Name;
+	UCHAR DigestMD5[MD5_SIZE];
+	UCHAR DigestSHA1[SHA1_SIZE];
 };
 
-// Access control
 struct AC
 {
-	UINT Id;							// ID
-	UINT Priority;						// Priority
-	bool Deny;							// Deny access
-	bool Masked;						// Is masked
-	IP IpAddress;						// IP address
-	IP SubnetMask;						// Subnet mask
+	UINT Id;
+	UINT Priority;
+	bool Deny;
+	bool Masked;
+	IP IpAddress;
+	IP SubnetMask;
 };
 
-// User List
 struct USERLIST
 {
-	char Filename[MAX_PATH];			// File name
-	LIST *UserHashList;					// Hash list of user names
+	char Filename[MAX_PATH];
+	LIST *UserHashList;
 };
 
-// HUB structure
 struct HUB
 {
-	LOCK *lock;							// Lock
-	LOCK *lock_online;					// Lock for Online
-	REF *ref;							// Reference counter
-	CEDAR *Cedar;						// Cedar
-	HUBDB *HubDb;						// Database
-	char *Name;							// The name of the HUB
-	volatile bool Halt;					// Halting flag
-	bool Offline;						// Offline
-	bool BeingOffline;					// Be Doing Offline
-	LIST *SessionList;					// Session list
-	COUNTER *SessionCounter;			// Session number generation counter
-	TRAFFIC *Traffic;					// Traffic information
-	LOCK *TrafficLock;					// Traffic lock
-	COUNTER *NumSessions;				// The current number of sessions
-	COUNTER *NumSessionsClient;			// The current number of sessions (client)
-	COUNTER *NumSessionsBridge;			// The current number of sessions (bridge)
-	HUB_OPTION *Option;					// HUB options
-	HASH_LIST *MacHashTable;			// MAC address hash table
-	LIST *IpTable;						// IP address table
-	LIST *MonitorList;					// Monitor port session list
-	LIST *LinkList;						// Linked list
-	UCHAR HubSignature[16];				// HUB signature
-	UCHAR HubMacAddr[6];				// MAC address of the HUB
-	IP HubIp;							// IP address of the HUB (IPv4)
-	IPV6_ADDR HubIpV6;					// IP address of the HUB (IPv6)
-	UINT HubIP6Id;						// IPv6 packet ID of the HUB
-	UCHAR Padding[2];					// Padding
-	LOCK *LoopListLock;					// Lock for the loop list
-	UINT NumLoopList;					// Number of loop lists
-	LOOP_LIST **LoopLists;				// Loop List
-	LIST *AccessList;					// Access list
-	HUB_LOG LogSetting;					// Log Settings
-	LOG *PacketLogger;					// Packet logger
-	LOG *SecurityLogger;				// Security logger
-	UCHAR HashedPassword[SHA1_SIZE];	// Password
-	UCHAR SecurePassword[SHA1_SIZE];	// Secure password
-	UINT64 LastSendArpTick;				// ARP transmission time of the last
-	THREAD *WatchDogThread;				// Watchdog thread
-	EVENT *WatchDogEvent;				// Watchdog event
-	bool WatchDogStarted;				// Whether the watchdog thread is used
-	volatile bool HaltWatchDog;			// Stop the watchdog thread
-	LIST *AdminOptionList;				// Administration options list
-	UINT64 CreatedTime;					// Creation date and time
-	UINT64 LastCommTime;				// Last communication date and time
-	UINT64 LastLoginTime;				// Last login date and time
-	UINT NumLogin;						// Number of logins
-	bool HubIsOnlineButHalting;			// Virtual HUB is really online, but it is in offline state to stop
-	wchar_t *Msg;						// Message to be displayed when the client is connected
-	LIST *UserList;						// Cache of the user list file
-	UINT64 LastFlushTick;				// Last tick to flush the MAC address table
-	bool StopAllLinkFlag;				// Stop all link flag
-	bool ForceDisableComm;				// Disable the communication function
+	LOCK *lock;
+	LOCK *lock_online;
+	REF *ref;
+	CEDAR *Cedar;
+	HUBDB *HubDb;
+	char *Name;
+	volatile bool Halt;
+	bool Offline;
+	LIST *SessionList;
+	COUNTER *SessionCounter;
+	TRAFFIC *Traffic;
+	LOCK *TrafficLock;
+	COUNTER *NumSessions;
+	COUNTER *NumSessionsClient;
+	COUNTER *NumSessionsBridge;
+	HUB_OPTION *Option;
+	HASH_LIST *MacHashTable;
+	LIST *IpTable;
+	LIST *MonitorList;
+	LIST *LinkList;
+	UCHAR HubSignature[16];
+	UCHAR HubMacAddr[6];
+	IP HubIp;
+	IPV6_ADDR HubIpV6;
+	UINT HubIP6Id;
+	UCHAR Padding[2];
+	LIST *AccessList;
+	HUB_LOG LogSetting;
+	LOG *PacketLogger;
+	LOG *SecurityLogger;
+	UCHAR HashedPassword[SHA1_SIZE];
+	UCHAR SecurePassword[SHA1_SIZE];
+	THREAD *WatchDogThread;
+	EVENT *WatchDogEvent;
+	bool WatchDogStarted;
+	volatile bool HaltWatchDog;
+	LIST *AdminOptionList;
+	UINT64 CreatedTime;
+	UINT64 LastCommTime;
+	UINT64 LastLoginTime;
+	UINT NumLogin;
+	bool HubIsOnlineButHalting;
+	wchar_t *Msg;
+	LIST *UserList;
+	UINT64 LastFlushTick;
+	bool StopAllLinkFlag;
+	bool ForceDisableComm;
 };
 
 
-// Global variable
 extern ADMIN_OPTION admin_options[];
 extern UINT num_admin_options;
 
 
-// Function prototype
 HUBDB *NewHubDb();
 void DeleteHubDb(HUBDB *d);
 HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option);
@@ -395,7 +319,6 @@ bool DeleteIPv6DefaultRouterInRA(PKT *p);
 bool StorePacketFilterByTrafficLimiter(SESSION *s, PKT *p);
 void IntoTrafficLimiter(TRAFFIC_LIMITER *tr, PKT *p);
 bool IsMostHighestPriorityPacket(SESSION *s, PKT *p);
-bool IsPriorityPacketForQoS(PKT *p);
 int CompareStormList(void *p1, void *p2);
 STORM *SearchStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, bool strict);
 STORM *AddStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, bool strict);
@@ -465,6 +388,6 @@ bool IsUserMatchInUserListWithCacheExpires(LIST *o, char *filename, UINT64 user_
 bool IsUserMatchInUserListWithCacheExpiresAcl(LIST *o, char *name_in_acl, UINT64 user_hash, UINT64 lifetime);
 bool CheckMaxLoggedPacketsPerMinute(SESSION *s, UINT max_packets, UINT64 now);
 
-#endif	// HUB_H
+#endif
 
 
