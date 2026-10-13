@@ -16,7 +16,6 @@ struct LOCK
 {
 	CRITICAL_SECTION CriticalSection;	// Recursive lock
 	bool Ready;							// false once DeleteLock has started
-	void *pData;						// Read only by the old Win32 lock backend, which nothing calls any more
 };
 
 // Counter object

@@ -25,10 +25,6 @@ void Win32GetSystemTime(SYSTEMTIME *system_time);
 void Win32Inc32(UINT *value);
 void Win32Dec32(UINT *value);
 void Win32Sleep(UINT time);
-LOCK *Win32NewLock();
-bool Win32Lock(LOCK *lock);
-void Win32Unlock(LOCK *lock);
-void Win32DeleteLock(LOCK *lock);
 void Win32InitEvent(EVENT *event);
 void Win32SetEvent(EVENT *event);
 void Win32ResetEvent(EVENT *event);
@@ -78,7 +74,6 @@ void Win32FreeSingleInstance(void *data);
 void Win32GetMemInfo(MEMINFO *info);
 void Win32Yield();
 
-void Win32UnlockEx(LOCK *lock, bool inner);
 UINT Win32GetOsType();
 UINT Win32GetOsSpVer();
 void Win32NukuEn(char *dst, UINT size, char *src);

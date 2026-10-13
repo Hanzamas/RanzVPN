@@ -88,10 +88,6 @@ OS_DISPATCH_TABLE *Win32GetDispatchTable()
 		Win32Inc32,
 		Win32Dec32,
 		Win32Sleep,
-		Win32NewLock,
-		Win32Lock,
-		Win32Unlock,
-		Win32DeleteLock,
 		Win32InitEvent,
 		Win32SetEvent,
 		Win32ResetEvent,
@@ -2221,85 +2217,6 @@ void Win32Dec32(UINT *value)
 void Win32Sleep(UINT time)
 {
 	Sleep(time);
-}
-
-// Creating a lock
-LOCK *Win32NewLock()
-{
-	// Memory allocation
-	LOCK *lock = Win32MemoryAlloc(sizeof(LOCK));
-
-	// Allocate a critical section
-	CRITICAL_SECTION *critical_section = Win32MemoryAlloc(sizeof(CRITICAL_SECTION));
-
-	if (lock == NULL || critical_section == NULL)
-	{
-		Win32MemoryFree(lock);
-		Win32MemoryFree(critical_section);
-		return NULL;
-	}
-
-	// Initialize the critical section
-	InitializeCriticalSection(critical_section);
-
-	lock->pData = (void *)critical_section;
-	lock->Ready = true;
-
-	return lock;
-}
-
-// Lock
-bool Win32Lock(LOCK *lock)
-{
-	CRITICAL_SECTION *critical_section;
-	if (lock->Ready == false)
-	{
-		// State is invalid
-		return false;
-	}
-
-	// Enter the critical section
-	critical_section = (CRITICAL_SECTION *)lock->pData;
-	EnterCriticalSection(critical_section);
-
-	return true;
-}
-
-// Unlock
-void Win32Unlock(LOCK *lock)
-{
-	Win32UnlockEx(lock, false);
-}
-void Win32UnlockEx(LOCK *lock, bool inner)
-{
-	CRITICAL_SECTION *critical_section;
-	if (lock->Ready == false && inner == false)
-	{
-		// State is invalid
-		return;
-	}
-
-	// Leave the critical section
-	critical_section = (CRITICAL_SECTION *)lock->pData;
-	LeaveCriticalSection(critical_section);
-}
-
-// Delete the lock
-void Win32DeleteLock(LOCK *lock)
-{
-	CRITICAL_SECTION *critical_section;
-	// Reset the Ready flag safely
-	Win32Lock(lock);
-	lock->Ready = false;
-	Win32UnlockEx(lock, true);
-
-	// Delete the critical section
-	critical_section = (CRITICAL_SECTION *)lock->pData;
-	DeleteCriticalSection(critical_section);
-
-	// Memory release
-	Win32MemoryFree(critical_section);
-	Win32MemoryFree(lock);
 }
 
 // Initialization of the event

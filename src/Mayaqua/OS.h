@@ -70,10 +70,6 @@ typedef struct OS_DISPATCH_TABLE
 	void (*Inc32)(UINT *value);
 	void (*Dec32)(UINT *value);
 	void (*Sleep)(UINT time);
-	LOCK *(*NewLock)();
-	bool (*Lock)(LOCK *lock);
-	void (*Unlock)(LOCK *lock);
-	void (*DeleteLock)(LOCK *lock);
 	void (*InitEvent)(EVENT *event);
 	void (*SetEvent)(EVENT *event);
 	void (*ResetEvent)(EVENT *event);
