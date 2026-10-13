@@ -35,14 +35,28 @@ struct
     __uint(max_entries, 4);
 } stats SEC(".maps");
 
-#define BUMP(K)                                               \
+//
+// Frames seen per ingress interface (index = IfIndex & 63), so the host-NIC
+// control in xdpebpf.c can tell which attachment ran the program.
+//
+struct
+{
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __type(key, uint32_t);
+    __type(value, uint64_t);
+    __uint(max_entries, 64);
+} ifstats SEC(".maps");
+
+#define BUMP_MAP(M, K)                                        \
     do {                                                      \
         uint32_t Key_ = (K);                                  \
-        uint64_t *Val_ = bpf_map_lookup_elem(&stats, &Key_);  \
+        uint64_t *Val_ = bpf_map_lookup_elem(&M, &Key_);      \
         if (Val_) {                                           \
             *Val_ += 1;                                       \
         }                                                     \
     } while (0)
+
+#define BUMP(K) BUMP_MAP(stats, K)
 
 SEC("xdp/ranz_xsk")
 int
@@ -52,6 +66,7 @@ ranz_xsk(xdp_md_t *ctx)
     unsigned char *end = (unsigned char *)ctx->data_end;
 
     BUMP(0);
+    BUMP_MAP(ifstats, ctx->ingress_ifindex & 63);
 
     //
     // Only IHL 5 is parsed; the spike's own frames never carry IP options.

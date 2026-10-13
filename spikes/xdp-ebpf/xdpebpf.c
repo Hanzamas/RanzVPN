@@ -4,6 +4,9 @@
 // XDP_RULE program for TX inspect on a Microsoft KM-TEST Loopback Adapter?
 //
 //   1. EBPF_LOAD         load ranz_xsk.sys (native eBPF), find xsk_map/stats.
+//   1b. EBPF_TEST_RUN    bpf_prog_test_run_opts: the program executes in the
+//                        kernel and bpf_redirect_map finds an XSK in xsk_map;
+//                        also the program's own cost per frame.
 //   2. EBPF_TX_INSPECT   AF_XDP RX socket on {L2, TX, INSPECT} in xsk_map,
 //                        program attached with bpf_xdp_attach(); does the
 //                        socket get the frames the OS sends?
@@ -12,6 +15,9 @@
 //                        or frames injected with {L2, RX, INJECT}?
 //   4. RULE_TX_INSPECT   deprecated XDP_RULE redirect on {L2, TX, INSPECT}
 //                        while the eBPF program stays attached (coexistence).
+//   4b. EBPF_HOOK_CONTROL positive control: the same program attached to the
+//                        runner's own NIC (xsk_map empty, so every frame
+//                        falls back to XDP_PASS) must count real RX frames.
 //   5. RX_INJECT         AF_XDP TX socket on {L2, RX, INJECT}, no program,
 //                        eBPF detached (as in spikes/xdp-loopback).
 //
@@ -61,6 +67,7 @@ static struct bpf_object *Obj;
 static int ProgFd = -1;
 static int XskMapFd = -1;
 static int StatsFd = -1;
+static int IfStatsFd = -1;
 static BOOL Attached;
 
 typedef struct _XSKC {
@@ -269,7 +276,8 @@ static int TestEbpfLoad(const char *Path)
     ProgFd = Prog ? bpf_program__fd(Prog) : -1;
     XskMapFd = bpf_object__find_map_fd_by_name(Obj, "xsk_map");
     StatsFd = bpf_object__find_map_fd_by_name(Obj, "stats");
-    Log("prog_fd=%d xsk_map_fd=%d stats_fd=%d\n", ProgFd, XskMapFd, StatsFd);
+    IfStatsFd = bpf_object__find_map_fd_by_name(Obj, "ifstats");
+    Log("prog_fd=%d xsk_map_fd=%d stats_fd=%d ifstats_fd=%d\n", ProgFd, XskMapFd, StatsFd, IfStatsFd);
     if (ProgFd < 0 || XskMapFd < 0 || StatsFd < 0) {
         Log("RESULT EBPF_LOAD FAIL reason=missing-prog-or-map\n");
         return 1;
@@ -796,10 +804,169 @@ static int TestRuleTxInspect(const char *Tag)
     return C1.Udp > 0 ? 0 : 1;
 }
 
+static UINT64 ReadIfStat(UINT32 Index)
+{
+    UINT32 K = Index & 63;
+    UINT64 V = 0;
+    if (IfStatsFd >= 0 && bpf_map_lookup_elem(IfStatsFd, &K, &V) == 0) {
+        return V;
+    }
+    return 0;
+}
+
+//
+// bpf_prog_test_run_opts runs the program in the kernel on a given frame. In
+// a test run XDP skips the XSK state check, so with an XSK in xsk_map[0] the
+// program must return XDP_REDIRECT (4); with the map empty, XDP_PASS (1).
+// A long repeat gives the program's own cost per frame (no NIC, no XSK).
+//
+static int TestEbpfTestRun(void)
+{
+    static UCHAR In[CHUNK], Out[CHUNK];
+    UINT32 Len = BuildFrame(In);
+    struct bpf_test_run_opts Opts = {0};
+    XSKC X = {0};
+    XDP_HOOK_ID Hook = {XDP_HOOK_L2, XDP_HOOK_RX, XDP_HOOK_INSPECT};
+    UINT64 S0[4], S1[4];
+    UINT32 PassRet, RedirRet = 0;
+    int Rc, Rc2 = -1;
+    BOOL Ok;
+
+    Log("== EBPF_TEST_RUN: bpf_prog_test_run_opts on a %u byte IPv4/UDP frame to port %d\n", Len, RX_PORT);
+
+    ReadStats(S0);
+    Opts.data_in = In;
+    Opts.data_size_in = Len;
+    Opts.data_out = Out;
+    Opts.data_size_out = sizeof(Out);
+    Opts.repeat = 1;
+    Rc = bpf_prog_test_run_opts(ProgFd, &Opts);
+    PassRet = Opts.retval;
+    ReadStats(S1);
+    Log("test_run(xsk_map empty) rc=%d errno=%d retval=%u (XDP_PASS=1) data_size_out=%u\n",
+        Rc, Rc ? errno : 0, PassRet, Opts.data_size_out);
+    LogStatsDelta("EBPF_TEST_RUN(empty)", S0, S1);
+
+    if (SUCCEEDED(XskOpen(&X, TRUE, Hook)) && MapPut(X.Sock) == 0) {
+        memset(&Opts, 0, sizeof(Opts));
+        Opts.data_in = In;
+        Opts.data_size_in = Len;
+        Opts.data_out = Out;
+        Opts.data_size_out = sizeof(Out);
+        Opts.repeat = 1;
+        Rc2 = bpf_prog_test_run_opts(ProgFd, &Opts);
+        RedirRet = Opts.retval;
+        Log("test_run(xsk_map[0]=XSK) rc=%d errno=%d retval=%u (XDP_REDIRECT=4)\n",
+            Rc2, Rc2 ? errno : 0, RedirRet);
+        MapDel();
+    } else {
+        Log("ERR test_run: could not open an XSK or put it in xsk_map\n");
+    }
+    XskClose(&X);
+
+    memset(&Opts, 0, sizeof(Opts));
+    Opts.data_in = In;
+    Opts.data_size_in = Len;
+    Opts.data_out = Out;
+    Opts.data_size_out = sizeof(Out);
+    Opts.repeat = 1000000;
+    if (bpf_prog_test_run_opts(ProgFd, &Opts) == 0 && Opts.duration > 0) {
+        Log("PPS EBPF_TEST_RUN program_only ns_per_frame=%u (~%.1f Mpps on one core, no NIC, no XSK)\n",
+            Opts.duration, 1000.0 / Opts.duration);
+    } else {
+        Log("PPS EBPF_TEST_RUN program_only n/a errno=%d duration=%u\n", errno, Opts.duration);
+    }
+
+    Ok = Rc == 0 && PassRet == 1 && (S1[2] - S0[2]) == 1 && Rc2 == 0 && RedirRet == 4;
+    Log("RESULT EBPF_TEST_RUN %s pass_ret=%u redirect_ret=%u hook_seen_udp%d=%llu\n",
+        Ok ? "PASS" : "FAIL", PassRet, RedirRet, RX_PORT, S1[2] - S0[2]);
+    return Ok ? 0 : 1;
+}
+
+//
+// Positive control for the eBPF hook itself: KM-TEST receives nothing, so
+// attach the same program to the runner's own NIC with xsk_map empty (every
+// frame falls back to XDP_PASS, nothing is stolen from the host) and check
+// that real RX frames run it. DNS replies and TCP handshakes provide them.
+//
+static int TestEbpfHookControl(void)
+{
+    IN_ADDR Dst;
+    DWORD Best = 0, Err;
+    UINT64 S0[4], S1[4], I0, I1, K0, K1;
+    ULONG N = 0, Resolved = 0, Connected = 0;
+    double End;
+    int Rc;
+
+    inet_pton(AF_INET, "8.8.8.8", &Dst);
+    Err = GetBestInterface(Dst.S_un.S_addr, &Best);
+    if (Err != NO_ERROR || Best == 0 || Best == IfIndex) {
+        Log("RESULT EBPF_HOOK_CONTROL FAIL reason=no-host-nic err=%lu best=%lu\n", Err, Best);
+        return 1;
+    }
+    Log("== EBPF_HOOK_CONTROL: same program on host NIC IfIndex=%lu, xsk_map empty (fallback XDP_PASS)\n", Best);
+
+    ReadStats(S0);
+    I0 = ReadIfStat(Best);
+    K0 = ReadIfStat(IfIndex);
+    Rc = bpf_xdp_attach((int)Best, ProgFd, 0, NULL);
+    Log("bpf_xdp_attach(IfIndex=%lu) rc=%d errno=%d\n", Best, Rc, Rc ? errno : 0);
+    if (Rc != 0) {
+        Log("RESULT EBPF_HOOK_CONTROL FAIL reason=attach errno=%d\n", errno);
+        return 1;
+    }
+
+    End = Now() + 3.0;
+    while (Now() < End) {
+        char Name[96];
+        ADDRINFOA Hints = {0};
+        ADDRINFOA *Ai = NULL;
+        Hints.ai_family = AF_INET;
+        Hints.ai_socktype = SOCK_STREAM;
+        if ((N % 10) == 0) {
+            if (getaddrinfo("github.com", "443", &Hints, &Ai) == 0) {
+                SOCKET S = socket(Ai->ai_family, SOCK_STREAM, IPPROTO_TCP);
+                if (S != INVALID_SOCKET) {
+                    if (connect(S, Ai->ai_addr, (int)Ai->ai_addrlen) == 0) {
+                        Connected++;
+                    }
+                    closesocket(S);
+                }
+                freeaddrinfo(Ai);
+            }
+        } else {
+            // A unique name each time, so the DNS cache cannot answer it.
+            sprintf(Name, "ranz-xdp-%lu-%lu.example.com", GetCurrentProcessId(), N);
+            if (getaddrinfo(Name, NULL, &Hints, &Ai) == 0) {
+                Resolved++;
+                freeaddrinfo(Ai);
+            }
+        }
+        N++;
+        Sleep(20);
+    }
+
+    ReadStats(S1);
+    I1 = ReadIfStat(Best);
+    K1 = ReadIfStat(IfIndex);
+    Rc = bpf_xdp_detach((int)Best, 0, NULL);
+    Log("bpf_xdp_detach(IfIndex=%lu) rc=%d errno=%d\n", Best, Rc, Rc ? errno : 0);
+    Log("EBPF_HOOK_CONTROL traffic: lookups=%lu resolved=%lu tcp_connects=%lu\n", N, Resolved, Connected);
+    LogStatsDelta("EBPF_HOOK_CONTROL", S0, S1);
+    Log("EBPF_HOOK_CONTROL ifstats: host_nic(%lu)=%llu km_test(%u)=%llu\n", Best, I1 - I0, IfIndex, K1 - K0);
+    if (I1 - I0 > 0) {
+        Log("RESULT EBPF_HOOK_CONTROL PASS host_nic_rx_frames=%llu (the eBPF hook runs on real RX traffic)\n", I1 - I0);
+        return 0;
+    }
+    Log("RESULT EBPF_HOOK_CONTROL FAIL reason=no-frames-on-host-nic all=%llu\n", S1[0] - S0[0]);
+    return 1;
+}
+
 int __cdecl main(int argc, char **argv)
 {
     WSADATA Wsa;
     int Rc = 0;
+    int TxRc = 1, CtlRc = 1, RunRc = 1, RuleRc = 1, AttRc = 1, InjRc;
     LONG64 Dummy;
 
     if (argc < 6) {
@@ -823,17 +990,30 @@ int __cdecl main(int argc, char **argv)
         argv[2], argv[3], Seconds);
 
     if (TestEbpfLoad(argv[5]) == 0) {
-        Rc |= TestEbpfTxInspect();
+        RunRc = TestEbpfTestRun();
+        TxRc = TestEbpfTxInspect();
+        AttRc = Attached ? 0 : 1;
         if (Attached) {
-            Rc |= TestEbpfRxInspect() << 1;
-            Rc |= TestRuleTxInspect("RULE_TX_INSPECT_WITH_EBPF") << 2;
+            TestEbpfRxInspect();
+            RuleRc = TestRuleTxInspect("RULE_TX_INSPECT_WITH_EBPF");
         }
+        CtlRc = TestEbpfHookControl();
         EbpfDetach();
     } else {
-        Rc |= 1;
-        Rc |= TestRuleTxInspect("RULE_TX_INSPECT") << 2;
+        RuleRc = TestRuleTxInspect("RULE_TX_INSPECT");
     }
-    Rc |= RxInject("RX_INJECT", TRUE, NULL, &Dummy) << 3;
+    InjRc = RxInject("RX_INJECT", TRUE, NULL, &Dummy);
+
+    //
+    // The spike is conclusive when everything around the question worked:
+    // the program loaded, ran (test run and on a real NIC), attached to
+    // KM-TEST, and the rule-based TX inspect and RX inject still worked.
+    // Then EBPF_TX_INSPECT FAIL is an answer, not a broken setup.
+    //
+    Rc = (RunRc != 0 || AttRc != 0 || CtlRc != 0 || RuleRc != 0 || InjRc != 0) ? 1 : 0;
+    Log("RESULT VERDICT ebpf_tx_inspect=%s conclusive=%s (test_run=%d attach=%d hook_control=%d rule_tx=%d rx_inject=%d)\n",
+        TxRc == 0 ? "PASS" : "FAIL", Rc == 0 ? "yes" : "no",
+        RunRc, AttRc, CtlRc, RuleRc, InjRc);
 
     if (Obj != NULL) {
         bpf_object__close(Obj);
