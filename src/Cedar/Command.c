@@ -1104,7 +1104,6 @@ void TtsWorkerThread(THREAD *thread, void *param)
 							{
 								// Notice the size information from the server to the client
 								ts->State = 3;
-								Debug("!");
 							}
 						}
 						break;
