@@ -20,7 +20,6 @@ struct RPC
 	bool ServerMode;				// Server mode
 	RPC_DISPATCHER *Dispatch;		// Execution routine
 	void *Param;					// Parameters
-	bool ServerAdminMode;			// Server management mode
 	char HubName[MAX_HUBNAME_LEN + 1];	// Managing HUB name
 	char Name[MAX_SIZE];			// RPC session name
 	LOCK *Lock;						// Lock

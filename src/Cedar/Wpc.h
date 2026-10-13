@@ -20,7 +20,6 @@
 #define WPC_TIMEOUT					(15 * 1000)	// Time-out
 #define WPC_RECV_BUF_SIZE			64000		// Receive buffer size
 #define WPC_DATA_ENTRY_SIZE			4			// Data entry size
-#define WPC_MAX_HTTP_DATASIZE		(134217728)	// Maximum HTTP data size
 
 // Connection parameters
 struct WPC_CONNECT
@@ -34,7 +33,6 @@ struct WPC_CONNECT
 	char ProxyPassword[MAX_USERNAME_LEN + 1];				// Proxy server password
 	char CustomHttpHeader[HTTP_CUSTOM_HEADER_MAX_SIZE];		// Custom HTTP header
 	bool UseCompress;										// Use of compression
-	bool DontCheckCert;										// Do not check the certificate
 };
 
 // Internet connection settings
@@ -61,23 +59,6 @@ struct URL_DATA
 	char AdditionalHeaderName[128];			// Additional header name
 	char AdditionalHeaderValue[MAX_SIZE];	// Additional header value
 	char SniString[MAX_SIZE];				// SNI String
-};
-
-// WPC entry
-struct WPC_ENTRY
-{
-	char EntryName[WPC_DATA_ENTRY_SIZE];		// Entry name
-	void *Data;									// Data
-	UINT Size;									// Data size
-};
-
-// WPC packet
-struct WPC_PACKET
-{
-	PACK *Pack;								// Pack (data body)
-	UCHAR Hash[SHA1_SIZE];					// Data hash
-	X *Cert;								// Certificate
-	UCHAR Sign[128];						// Digital signature
 };
 
 // Reception callback

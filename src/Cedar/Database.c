@@ -56,5 +56,3 @@ wchar_t *LiGetLicenseStatusStr(UINT i)
 	return ret;
 }
 
-static char *li_keybit_chars = "ABCDEFGHJKLMNPQRSTUVWXYZ12345678";
-
