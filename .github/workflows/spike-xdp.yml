@@ -50,6 +50,33 @@ jobs:
           cmake -S spikes/xdp-loopback -B build -A x64 -DXDP_SDK="$env:RUNNER_TEMP\xdp\Microsoft.XDP-for-Windows.Sdk"
           cmake --build build --config Release
 
+      - name: Check binaries need no VC++ redistributable
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+          $db = Get-ChildItem "$vs\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe -ErrorAction SilentlyContinue | Where-Object FullName -match 'Hostx64\x64' | Select-Object -First 1
+          if (-not $db) { Write-Warning 'dumpbin.exe not found, skipping the check'; exit 0 }
+          foreach ($e in 'xdpspike', 'mkloop') {
+            $d = & $db.FullName /dependents "build/Release/$e.exe" | Out-String
+            $d
+            if ($d -match '(?i)vcruntime|msvcp|api-ms-win-crt|ucrtbase') { throw "$e.exe depends on the dynamic CRT" }
+          }
+
+      - name: Package spike binaries
+        run: |
+          New-Item -ItemType Directory -Force pkg | Out-Null
+          Copy-Item build/Release/xdpspike.exe, build/Release/mkloop.exe pkg/
+          Get-ChildItem pkg -Filter *.exe | ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash)  $($_.Name)" } | Set-Content pkg/SHA256SUMS.txt -Encoding ascii
+          @("commit=$env:GITHUB_SHA", "run=$env:GITHUB_RUN_ID", "built-on=${{ matrix.os }}", "xdp-sdk=$env:XDP_VERSION", "crt=static (/MT)") | Set-Content pkg/BUILD.txt -Encoding ascii
+          Get-Content pkg/SHA256SUMS.txt, pkg/BUILD.txt
+
+      # Consumed by spikes/xdp-loopback/run-win10.ps1 (gh run download -n xdpspike-bin-x64).
+      - uses: actions/upload-artifact@v4
+        if: matrix.os == 'windows-2022'
+        with:
+          name: xdpspike-bin-x64
+          path: pkg
+          if-no-files-found: error
+
       - name: Run spike
         timeout-minutes: 10
         run: |
@@ -65,4 +92,69 @@ jobs:
         if: always()
         with:
           name: spike-xdp-${{ matrix.os }}
+          path: logs
+
+  # The Windows 10 test kit (run-win10.ps1), run for real on the hosted images under Windows
+  # PowerShell 5.1, which is what Windows 10 ships. Covers install, test, cleanup and crash
+  # recovery (-NoCleanup, then -CleanupOnly).
+  kit:
+    needs: xdp
+    if: ${{ !cancelled() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: xdpspike-bin-x64
+          path: bin
+
+      - name: Kit run 1, binaries fetched with gh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $PSVersionTable.PSVersion.ToString()
+          .\spikes\xdp-loopback\run-win10.ps1 -Yes -Seconds 5 -LogDir logs\run1
+          exit $LASTEXITCODE
+
+      - name: Kit run 2, -BinDir, left installed (-NoCleanup)
+        run: |
+          .\spikes\xdp-loopback\run-win10.ps1 -Yes -Seconds 5 -BinDir bin -NoCleanup -LogDir logs\run2
+          exit $LASTEXITCODE
+
+      - name: Kit run 3, crash recovery (-CleanupOnly)
+        run: |
+          .\spikes\xdp-loopback\run-win10.ps1 -CleanupOnly -LogDir logs\run3
+          exit $LASTEXITCODE
+
+      - name: Machine is clean afterwards
+        if: always()
+        run: |
+          Get-NetAdapter -IncludeHidden | Where-Object InterfaceDescription -like '*KM-TEST*' | Format-Table Name, InterfaceDescription, Status
+          Get-Service xdp -ErrorAction SilentlyContinue | Format-Table Name, Status
+          Get-NetAdapterBinding -ComponentID ms_xdp -ErrorAction SilentlyContinue | Format-Table Name, Enabled
+          Get-NetFirewallRule -Name RanzXdpKit-* -ErrorAction SilentlyContinue | Format-Table Name, Enabled
+          "xdp.sys on disk: $(Test-Path "$env:WINDIR\System32\drivers\xdp.sys")"
+
+      - name: Summary
+        if: always()
+        run: |
+          "### kit ${{ matrix.os }}" >> $env:GITHUB_STEP_SUMMARY
+          Get-Content logs/*/kit.txt -ErrorAction SilentlyContinue | Select-String -Pattern '^(RESULT|CLEANUP|TX inspect|RX inject)' | ForEach-Object { "- ``$($_.Line)``" } >> $env:GITHUB_STEP_SUMMARY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kit-${{ matrix.os }}
           path: logs
