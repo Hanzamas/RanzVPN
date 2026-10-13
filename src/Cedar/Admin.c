@@ -5642,7 +5642,6 @@ void InRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t, PACK *p)
 
 		PackGetStrEx(p, "DeviceName", e->DeviceName, sizeof(e->DeviceName), i);
 		PackGetStrEx(p, "Guid", e->Guid, sizeof(e->Guid), i);
-		PackGetStrEx(p, "DeviceInstanceId", e->DeviceInstanceId, sizeof(e->DeviceInstanceId), i);
 		PackGetStrEx(p, "DriverName", e->DriverName, sizeof(e->DriverName), i);
 		PackGetStrEx(p, "DriverType", e->DriverType, sizeof(e->DriverType), i);
 		e->Support = PackGetBoolEx(p, "Support", i);
@@ -6034,7 +6033,6 @@ void InRpcEnumEth(RPC_ENUM_ETH *t, PACK *p)
 	{
 		RPC_ENUM_ETH_ITEM *e = &t->Items[i];
 		PackGetStrEx(p, "DeviceName", e->DeviceName, sizeof(e->DeviceName), i);
-		PackGetUniStrEx(p, "NetworkConnectionName", e->NetworkConnectionName, sizeof(e->NetworkConnectionName), i);
 	}
 }
 void OutRpcEnumEth(PACK *p, RPC_ENUM_ETH *t)
@@ -6483,7 +6481,6 @@ void InRpcLicenseStatus(RPC_LICENSE_STATUS *t, PACK *p)
 	t->AllowEnterpriseFunction = PackGetBool(p, "AllowEnterpriseFunction");
 	t->SubscriptionExpires = PackGetInt64(p, "SubscriptionExpires");
 	t->IsSubscriptionExpired = PackGetBool(p, "IsSubscriptionExpired");
-	t->NumUserCreationLicense = PackGetInt(p, "NumUserCreationLicense");
 	t->ReleaseDate = PackGetInt64(p, "ReleaseDate");
 }
 void OutRpcLicenseStatus(PACK *p, RPC_LICENSE_STATUS *t)
@@ -6676,10 +6673,8 @@ void InRpcServerInfo(RPC_SERVER_INFO *t, PACK *p)
 	PackGetStr(p, "ServerProductName", t->ServerProductName, sizeof(t->ServerProductName));
 	PackGetStr(p, "ServerVersionString", t->ServerVersionString, sizeof(t->ServerVersionString));
 	PackGetStr(p, "ServerBuildInfoString", t->ServerBuildInfoString, sizeof(t->ServerBuildInfoString));
-	t->ServerVerInt = PackGetInt(p, "ServerVerInt");
 	t->ServerBuildInt = PackGetInt(p, "ServerBuildInt");
 	PackGetStr(p, "ServerHostName", t->ServerHostName, sizeof(t->ServerHostName));
-	t->ServerBuildDate = PackGetInt64(p, "ServerBuildDate");
 	InRpcOsInfo(&t->OsInfo, p);
 }
 void OutRpcServerInfo(PACK *p, RPC_SERVER_INFO *t)
@@ -6719,7 +6714,6 @@ void InRpcServerStatus(RPC_SERVER_STATUS *t, PACK *p)
 	t->NumTcpConnections = PackGetInt(p, "NumTcpConnections");
 	t->NumTcpConnectionsLocal = PackGetInt(p, "NumTcpConnectionsLocal");
 	t->NumHubTotal = PackGetInt(p, "NumHubTotal");
-	t->NumHubStandalone = PackGetInt(p, "NumHubStandalone");
 	t->NumSessionsTotal = PackGetInt(p, "NumSessionsTotal");
 	t->NumSessionsLocal = PackGetInt(p, "NumSessionsLocal");
 	t->NumMacTables = PackGetInt(p, "NumMacTables");
@@ -6730,8 +6724,6 @@ void InRpcServerStatus(RPC_SERVER_STATUS *t, PACK *p)
 	t->CurrentTick = PackGetInt64(p, "CurrentTick");
 	t->AssignedBridgeLicenses = PackGetInt(p, "AssignedBridgeLicenses");
 	t->AssignedClientLicenses = PackGetInt(p, "AssignedClientLicenses");
-	t->AssignedBridgeLicensesTotal = PackGetInt(p, "AssignedBridgeLicensesTotal");
-	t->AssignedClientLicensesTotal = PackGetInt(p, "AssignedClientLicensesTotal");
 	t->StartTime = PackGetInt64(p, "StartTime");
 
 	InRpcTraffic(&t->Traffic, p);
@@ -7987,7 +7979,6 @@ void InRpcEnumUser(RPC_ENUM_USER *t, PACK *p)
 		e->AuthType = PackGetIntEx(p, "AuthType", i);
 		e->LastLoginTime = PackGetInt64Ex(p, "LastLoginTime", i);
 		e->NumLogin = PackGetIntEx(p, "NumLogin", i);
-		e->DenyAccess = PackGetBoolEx(p, "DenyAccess", i);
 
 		e->IsTrafficFilled = PackGetBoolEx(p, "IsTrafficFilled", i);
 		InRpcTrafficEx(&e->Traffic, p, i);
@@ -8100,7 +8091,6 @@ void InRpcEnumGroup(RPC_ENUM_GROUP *t, PACK *p)
 		PackGetUniStrEx(p, "Realname", e->Realname, sizeof(e->Realname), i);
 		PackGetUniStrEx(p, "Note", e->Note, sizeof(e->Note), i);
 		e->NumUsers = PackGetIntEx(p, "NumUsers", i);
-		e->DenyAccess = PackGetBoolEx(p, "DenyAccess", i);
 	}
 }
 void OutRpcEnumGroup(PACK *p, RPC_ENUM_GROUP *t)
@@ -8184,13 +8174,9 @@ void InRpcEnumSession(RPC_ENUM_SESSION *t, PACK *p)
 		e->PacketNum = PackGetInt64Ex(p, "PacketNum", i);
 		e->LinkMode = PackGetBoolEx(p, "LinkMode", i);
 		e->BridgeMode = PackGetBoolEx(p, "BridgeMode", i);
-		e->Client_BridgeMode = PackGetBoolEx(p, "Client_BridgeMode", i);
-		e->Client_MonitorMode = PackGetBoolEx(p, "Client_MonitorMode", i);
 		e->VLanId = PackGetIntEx(p, "VLanId", i);
 		PackGetDataEx2(p, "UniqueId", e->UniqueId, sizeof(e->UniqueId), i);
 		e->IsDormantEnabled = PackGetBoolEx(p, "IsDormantEnabled", i);
-		e->IsDormant = PackGetBoolEx(p, "IsDormant", i);
-		e->LastCommDormant = PackGetInt64Ex(p, "LastCommDormant", i);
 		e->CreatedTime = PackGetInt64Ex(p, "CreatedTime", i);
 		e->LastCommTime = PackGetInt64Ex(p, "LastCommTime", i);
 	}

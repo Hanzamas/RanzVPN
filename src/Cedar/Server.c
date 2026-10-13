@@ -3951,8 +3951,6 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 
 		s->UseWebTimePage = CfgGetBool(f, "UseWebTimePage");
 
-		s->NoLinuxArpFilter = CfgGetBool(f, "NoLinuxArpFilter");
-
 		s->NoHighPriorityProcess = CfgGetBool(f, "NoHighPriorityProcess");
 
 		s->NoDebugDump = CfgGetBool(f, "NoDebugDump");
