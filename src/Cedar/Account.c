@@ -1227,77 +1227,51 @@ int CompareUserName(void *p1, void *p2)
 // ----------------------------------------------------------------------
 
 // TRAFFIC_EX
+static const RPC_FIELD rpc_traffic_ex_fields[] =
+{
+	RPC_ROW_INT64(TRAFFIC, Recv.BroadcastBytes, "Ex.Recv.BroadcastBytes"),
+	RPC_ROW_INT64(TRAFFIC, Recv.BroadcastCount, "Ex.Recv.BroadcastCount"),
+	RPC_ROW_INT64(TRAFFIC, Recv.UnicastBytes, "Ex.Recv.UnicastBytes"),
+	RPC_ROW_INT64(TRAFFIC, Recv.UnicastCount, "Ex.Recv.UnicastCount"),
+	RPC_ROW_INT64(TRAFFIC, Send.BroadcastBytes, "Ex.Send.BroadcastBytes"),
+	RPC_ROW_INT64(TRAFFIC, Send.BroadcastCount, "Ex.Send.BroadcastCount"),
+	RPC_ROW_INT64(TRAFFIC, Send.UnicastBytes, "Ex.Send.UnicastBytes"),
+	RPC_ROW_INT64(TRAFFIC, Send.UnicastCount, "Ex.Send.UnicastCount"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_traffic_ex_table, TRAFFIC, rpc_traffic_ex_fields);
+
 void InRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(TRAFFIC));
-	t->Recv.BroadcastBytes = PackGetInt64Ex(p, "Ex.Recv.BroadcastBytes", i);
-	t->Recv.BroadcastCount = PackGetInt64Ex(p, "Ex.Recv.BroadcastCount", i);
-	t->Recv.UnicastBytes = PackGetInt64Ex(p, "Ex.Recv.UnicastBytes", i);
-	t->Recv.UnicastCount = PackGetInt64Ex(p, "Ex.Recv.UnicastCount", i);
-	t->Send.BroadcastBytes = PackGetInt64Ex(p, "Ex.Send.BroadcastBytes", i);
-	t->Send.BroadcastCount = PackGetInt64Ex(p, "Ex.Send.BroadcastCount", i);
-	t->Send.UnicastBytes = PackGetInt64Ex(p, "Ex.Send.UnicastBytes", i);
-	t->Send.UnicastCount = PackGetInt64Ex(p, "Ex.Send.UnicastCount", i);
+	RpcFieldInItem(&rpc_traffic_ex_table, t, p, i);
 }
 void OutRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i, UINT num)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt64Ex(p, "Ex.Recv.BroadcastBytes", t->Recv.BroadcastBytes, i, num);
-	PackAddInt64Ex(p, "Ex.Recv.BroadcastCount", t->Recv.BroadcastCount, i, num);
-	PackAddInt64Ex(p, "Ex.Recv.UnicastBytes", t->Recv.UnicastBytes, i, num);
-	PackAddInt64Ex(p, "Ex.Recv.UnicastCount", t->Recv.UnicastCount, i, num);
-	PackAddInt64Ex(p, "Ex.Send.BroadcastBytes", t->Send.BroadcastBytes, i, num);
-	PackAddInt64Ex(p, "Ex.Send.BroadcastCount", t->Send.BroadcastCount, i, num);
-	PackAddInt64Ex(p, "Ex.Send.UnicastBytes", t->Send.UnicastBytes, i, num);
-	PackAddInt64Ex(p, "Ex.Send.UnicastCount", t->Send.UnicastCount, i, num);
+	RpcFieldOutItem(&rpc_traffic_ex_table, p, t, i, num);
 }
 
 // TRAFFIC
+static const RPC_FIELD rpc_traffic_fields[] =
+{
+	RPC_ROW_INT64(TRAFFIC, Recv.BroadcastBytes, "Recv.BroadcastBytes"),
+	RPC_ROW_INT64(TRAFFIC, Recv.BroadcastCount, "Recv.BroadcastCount"),
+	RPC_ROW_INT64(TRAFFIC, Recv.UnicastBytes, "Recv.UnicastBytes"),
+	RPC_ROW_INT64(TRAFFIC, Recv.UnicastCount, "Recv.UnicastCount"),
+	RPC_ROW_INT64(TRAFFIC, Send.BroadcastBytes, "Send.BroadcastBytes"),
+	RPC_ROW_INT64(TRAFFIC, Send.BroadcastCount, "Send.BroadcastCount"),
+	RPC_ROW_INT64(TRAFFIC, Send.UnicastBytes, "Send.UnicastBytes"),
+	RPC_ROW_INT64(TRAFFIC, Send.UnicastCount, "Send.UnicastCount"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_traffic_table, TRAFFIC, rpc_traffic_fields);
+
 void InRpcTraffic(TRAFFIC *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(TRAFFIC));
-	t->Recv.BroadcastBytes = PackGetInt64(p, "Recv.BroadcastBytes");
-	t->Recv.BroadcastCount = PackGetInt64(p, "Recv.BroadcastCount");
-	t->Recv.UnicastBytes = PackGetInt64(p, "Recv.UnicastBytes");
-	t->Recv.UnicastCount = PackGetInt64(p, "Recv.UnicastCount");
-	t->Send.BroadcastBytes = PackGetInt64(p, "Send.BroadcastBytes");
-	t->Send.BroadcastCount = PackGetInt64(p, "Send.BroadcastCount");
-	t->Send.UnicastBytes = PackGetInt64(p, "Send.UnicastBytes");
-	t->Send.UnicastCount = PackGetInt64(p, "Send.UnicastCount");
+	RpcFieldIn(&rpc_traffic_table, t, p);
 }
 void OutRpcTraffic(PACK *p, TRAFFIC *t)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt64(p, "Recv.BroadcastBytes", t->Recv.BroadcastBytes);
-	PackAddInt64(p, "Recv.BroadcastCount", t->Recv.BroadcastCount);
-	PackAddInt64(p, "Recv.UnicastBytes", t->Recv.UnicastBytes);
-	PackAddInt64(p, "Recv.UnicastCount", t->Recv.UnicastCount);
-	PackAddInt64(p, "Send.BroadcastBytes", t->Send.BroadcastBytes);
-	PackAddInt64(p, "Send.BroadcastCount", t->Send.BroadcastCount);
-	PackAddInt64(p, "Send.UnicastBytes", t->Send.UnicastBytes);
-	PackAddInt64(p, "Send.UnicastCount", t->Send.UnicastCount);
+	RpcFieldOut(&rpc_traffic_table, p, t);
 }
 
 // CLIENT_OPTION
