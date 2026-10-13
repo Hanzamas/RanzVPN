@@ -71,64 +71,6 @@ static LIST *g_dyn_value_list = NULL;
 
 
 
-// Get a value from a dynamic value list (Returns a default value if the value is not found)
-UINT64 GetDynValueOrDefault(char *name, UINT64 default_value, UINT64 min_value, UINT64 max_value)
-{
-	UINT64 ret = GetDynValue(name);
-
-	if (ret == 0)
-	{
-		return default_value;
-	}
-
-	if (ret < min_value)
-	{
-		ret = min_value;
-	}
-
-	if (ret > max_value)
-	{
-		ret = max_value;
-	}
-
-	return ret;
-}
-
-// Get a value from a dynamic value list
-UINT64 GetDynValue(char *name)
-{
-	UINT64 ret = 0;
-	// Validate arguments
-	if (name == NULL)
-	{
-		return 0;
-	}
-
-	if (g_dyn_value_list == NULL)
-	{
-		return 0;
-	}
-
-	LockList(g_dyn_value_list);
-	{
-		UINT i;
-
-		for (i = 0; i < LIST_NUM(g_dyn_value_list); i++)
-		{
-			DYN_VALUE *vv = LIST_DATA(g_dyn_value_list, i);
-
-			if (StrCmpi(vv->Name, name) == 0)
-			{
-				ret = vv->Value;
-				break;
-			}
-		}
-	}
-	UnlockList(g_dyn_value_list);
-
-	return ret;
-}
-
 // Initialization of the dynamic value list
 void InitDynList()
 {
@@ -698,20 +640,6 @@ void GenerateEui64Address6(UCHAR *dst, UCHAR *mac)
 	dst[3] = 0xff;
 	dst[4] = 0xfe;
 	dst[0] = ((~(dst[0] & 0x02)) & 0x02) | (dst[0] & 0xfd);
-}
-
-// Get the prefix address
-void GetPrefixAddress6(IP *dst, IP *ip, IP *subnet)
-{
-	// Validate arguments
-	if (dst == NULL || ip == NULL || subnet == NULL)
-	{
-		return;
-	}
-
-	IPAnd6(dst, ip, subnet);
-
-	dst->ipv6_scope_id = ip->ipv6_scope_id;
 }
 
 // Get the type of the IPv6 address
@@ -1859,35 +1787,6 @@ bool IsSubnetMask4(IP *ip)
 	return false;
 }
 
-
-// Comparison of IP_ADAPTER_INDEX_MAP
-int CompareIpAdapterIndexMap(void *p1, void *p2)
-{
-	IP_ADAPTER_INDEX_MAP *a1, *a2;
-	if (p1 == NULL || p2 == NULL)
-	{
-		return 0;
-	}
-	a1 = *(IP_ADAPTER_INDEX_MAP **)p1;
-	a2 = *(IP_ADAPTER_INDEX_MAP **)p2;
-	if (a1 == NULL || a2 == NULL)
-	{
-		return 0;
-	}
-
-	if (a1->Index > a2->Index)
-	{
-		return 1;
-	}
-	else if (a1->Index < a2->Index)
-	{
-		return -1;
-	}
-	else
-	{
-		return 0;
-	}
-}
 
 // Initializing the socket library
 void Win32InitSocketLibrary()

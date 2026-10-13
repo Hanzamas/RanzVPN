@@ -314,7 +314,6 @@ SOCK_EVENT *Win32NewSockEvent();
 void Win32SetSockEvent(SOCK_EVENT *event);
 void Win32CleanupSockEvent(SOCK_EVENT *event);
 bool Win32WaitSockEvent(SOCK_EVENT *event, UINT timeout);
-int CompareIpAdapterIndexMap(void *p1, void *p2);
 SOCKET Win32Accept(SOCK *sock, SOCKET s, struct sockaddr *addr, int *addrlen, bool ipv6);
 
 
@@ -465,7 +464,6 @@ void GetAllNodeMulticaseAddress6(IP *ip);
 void GetLoopbackAddress6(IP *ip);
 UINT GetIPAddrType6(IP *ip);
 UINT GetIPv6AddrType(IPV6_ADDR *addr);
-void GetPrefixAddress6(IP *dst, IP *ip, IP *subnet);
 void GenerateEui64Address6(UCHAR *dst, UCHAR *mac);
 void GenerateEui64LocalAddress(IP *a, UCHAR *mac);
 bool IsSubnetMask6(IP *a);
@@ -528,8 +526,6 @@ LIST *Win32GetNicList();
 
 void InitDynList();
 void FreeDynList();
-UINT64 GetDynValue(char *name);
-UINT64 GetDynValueOrDefault(char *name, UINT64 default_value, UINT64 min_value, UINT64 max_value);
 
 
 #endif	// NETWORK_H
