@@ -1515,10 +1515,6 @@ CAPS *NewCaps(char *name, UINT value)
 }
 
 // Generate the default certificate
-void SiGenerateDefaultCert(X **server_x, K **server_k)
-{
-	SiGenerateDefaultCertEx(server_x, server_k, NULL);
-}
 void SiGenerateDefaultCertEx(X **server_x, K **server_k, char *common_name)
 {
 	X *x;
@@ -1571,7 +1567,7 @@ void SiInitDefaultServerCert(SERVER *s)
 	}
 
 	// Generate a server certificate and private key
-	SiGenerateDefaultCert(&x, &k);
+	SiGenerateDefaultCertEx(&x, &k, NULL);
 
 	// Configure
 	SetCedarCert(s->Cedar, x, k);
@@ -3930,7 +3926,7 @@ void SiWriteHubCfg(FOLDER *f, HUB *h)
 	}
 
 	// HUB_LOG
-	SiWriteHubLogCfg(CfgCreateFolder(f, "LogSetting"), &h->LogSetting);
+	SiWriteHubLogCfgEx(CfgCreateFolder(f, "LogSetting"), &h->LogSetting, false);
 
 	// Link list
 	SiWriteHubLinks(CfgCreateFolder(f, "CascadeList"), h);
@@ -3982,10 +3978,6 @@ void SiLoadHubLogCfg(HUB_LOG *g, FOLDER *f)
 }
 
 // Write the logging options
-void SiWriteHubLogCfg(FOLDER *f, HUB_LOG *g)
-{
-	SiWriteHubLogCfgEx(f, g, false);
-}
 void SiWriteHubLogCfgEx(FOLDER *f, HUB_LOG *g, bool el_mode)
 {
 	// Validate arguments
@@ -4389,7 +4381,7 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 			FreeX(x);
 			FreeK(k);
 			FreeXList(chain);
-			SiGenerateDefaultCert(&x, &k);
+			SiGenerateDefaultCertEx(&x, &k, NULL);
 
 			SetCedarCert(c, x, k);
 
