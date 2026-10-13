@@ -12,8 +12,9 @@
 #   identical BEFORE AFTER   every file must have the same token stream before and after.
 #   braces    BEFORE AFTER   the only allowed difference is the deletion of balanced { } pairs that
 #                            enclose exactly one statement. A deleted pair must be the body of an
-#                            if, else, for, while or do; the statement inside must parse as one
-#                            statement whichever #if arm is taken (directives only inside a
+#                            if, else, for, while or do, and not part of a directive (a #define
+#                            body); the statement inside must parse as one statement, not a
+#                            declaration, whichever #if arm is taken (directives only inside a
 #                            nested bracket group, each arm keeping the brackets balanced);
 #                            deleting the braces must not let a following 'else' bind to a
 #                            different 'if'; and outside nested { } the statement must not use
@@ -193,6 +194,22 @@ _COMPOUND_KEYWORDS = {'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'def
 _JUMP_KEYWORDS = {'return', 'goto', 'break', 'continue'}
 _OPEN = {'(': ')', '[': ']', '{': '}'}
 _CLOSE = {')', ']', '}'}
+_IDENT_RE = re.compile(r'[A-Za-z_$\x80-\xff][A-Za-z0-9_$\x80-\xff]*$')
+
+# A declaration is not a statement in C, so braces around one must stay. Its first token is one
+# of these, or it has the shape 'name name' / 'name * name' (see _looks_like_declaration).
+_QUALIFIERS = {'const', 'volatile', 'restrict', '__restrict', '_Atomic'}
+_DECLARATION_KEYWORDS = _QUALIFIERS | {
+    'auto', 'register', 'static', 'extern', 'typedef', '_Thread_local', 'thread_local',
+    'inline', '__inline', '__forceinline', 'constexpr', 'struct', 'union', 'enum', 'class',
+    'void', 'char', 'short', 'int', 'long', 'float', 'double', 'signed', 'unsigned', '_Bool',
+    'bool', '_Complex', 'wchar_t', '__int8', '__int16', '__int32', '__int64', 'typeof',
+    '__typeof__', '_Alignas', 'alignas', '__declspec', '__attribute__', '_Static_assert',
+    'static_assert', 'using', 'namespace', 'template', 'typename'}
+# Keywords that start an expression or a statement and are followed by a name.
+_NOT_A_TYPE = _COMPOUND_KEYWORDS | _JUMP_KEYWORDS | {
+    'sizeof', '_Alignof', 'alignof', 'defined', 'new', 'delete', 'throw'}
+_DECLARATOR_FOLLOWERS = {'=', ';', '[', ',', '('}
 
 
 def _skip_directive(v, i):
@@ -231,6 +248,23 @@ def _expect(v, k, tok):
         raise NotAStatement('expected %r' % tok)
 
 
+def _looks_like_declaration(v, k):
+    """v[k:] starts like a declaration: a storage class, qualifier, struct/union/enum or type
+    keyword, or a name followed by '*'s and qualifiers, then a second name and one of
+    = ; [ , ( ('UINT x = 1;', 'UCHAR *p;', 'BOOL f(void);'). No expression starts with two
+    names, and 'a * b;' or 'a * f(x);' do nothing as statements, so this is conservative."""
+    t = v[k]
+    if t in _DECLARATION_KEYWORDS:
+        return True
+    if not _IDENT_RE.match(t) or t in _NOT_A_TYPE:
+        return False
+    i = k + 1
+    while i < len(v) and (v[i] in ('*', '&') or v[i] in _QUALIFIERS):
+        i += 1
+    return (i + 1 < len(v) and _IDENT_RE.match(v[i]) is not None and v[i] not in _NOT_A_TYPE
+            and v[i + 1] in _DECLARATOR_FOLLOWERS)
+
+
 def parse_statement(v, k):
     """Parse one statement of v starting at k. Returns (end, open_if): the index after the
     statement and whether it ends in an 'if' without 'else' (a following 'else' would bind to
@@ -262,6 +296,8 @@ def parse_statement(v, k):
         raise NotAStatement('unsupported statement start %r' % t)
     if k + 1 < len(v) and v[k + 1] == ':' and re.match(r'[A-Za-z_]\w*$', t):
         raise NotAStatement('labelled statement')
+    if _looks_like_declaration(v, k):
+        raise NotAStatement('a declaration')
     # Expression statement or a jump statement: everything up to ';' outside brackets.
     i = k
     while i < len(v):
@@ -309,6 +345,20 @@ def conditional_arms_balanced(v):
             open_brackets.pop()
         i += 1
     return not starts
+
+
+def directive_indices(v):
+    """Indices of the tokens of v that belong to a preprocessor directive, '#' to '<EOL>'."""
+    out = set()
+    i = 0
+    while i < len(v):
+        if v[i] == '#':
+            end = _skip_directive(v, i)
+            out.update(range(i, end))
+            i = end
+        else:
+            i += 1
+    return out
 
 
 def top_level_tokens(v):
@@ -445,7 +495,13 @@ def check_braces(a, b, macros):
                 break
         return a[k] if k < len(a) else None
 
+    in_directive = directive_indices(a)
+
     def pair_error(o, c):
+        # a pair in a #define body would have to hold at every use site of the macro, which
+        # this check does not see (an 'else' after the use could bind to a different 'if')
+        if o in in_directive or c in in_directive:
+            return 'the braces are inside a preprocessor directive'
         if not _brace_position_ok(a, match, o):
             return 'the braces are not the body of if, else, for, while or do'
         content = a[o + 1:c]

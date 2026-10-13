@@ -232,10 +232,45 @@ class BracesTest(unittest.TestCase):
     def test_initializer_and_compound_literal_inside(self):
         self.ok('if (a) { p = (POINT){1, 2}; }', 'if (a) p = (POINT){1, 2};', 1)
 
-    def test_declaration_text_is_one_statement(self):
-        # A declaration as the only statement is a compile error in C once the braces go,
-        # so the checker does not need to tell it from an expression.
+    def test_declaration_is_not_a_statement(self):
+        # In C a declaration is not a statement: 'if (a) int x = g();' does not compile.
+        for decl in ('int x = g();', 'UINT x = g();', 'UINT x;', 'UCHAR *p = NULL;',
+                     'char **pp;', 'UINT a[4];', 'UINT x, y;', 'BOOL f(void);', 'const UINT x = 1;',
+                     'static int n;', 'struct S s;', 'enum E e = E1;', 'UINT const *p;',
+                     'typedef int T;', 'unsigned x = 0;'):
+            self.assertIn('declaration', self.bad('if (a) { %s }' % decl, 'if (a) %s' % decl),
+                          decl)
+        self.assertIn('declaration', self.bad('for (;;) { int x = g(); }', 'for (;;) int x = g();'))
+        self.assertIn('declaration', self.bad('if (a) { { UINT x; } }', 'if (a) UINT x;'))
+        # declarations inside a nested { } that stays are fine
+        self.ok('if (a) { if (b) { UINT x = g(); h(x); } }',
+                'if (a) if (b) { UINT x = g(); h(x); }', 1)
+
+    def test_expression_statements_are_not_declarations(self):
         self.ok('if (a) { x = y; }', 'if (a) x = y;', 1)
+        self.ok('if (a) { return x; }', 'if (a) return x;', 1)
+        self.ok('if (a) { return *p; }', 'if (a) return *p;', 1)
+        self.ok('if (a) { goto out; }', 'if (a) goto out;', 1)
+        self.ok('if (a) { *p = x; }', 'if (a) *p = x;', 1)
+        self.ok('if (a) { x = a * b; }', 'if (a) x = a * b;', 1)
+        self.ok('if (a) { ok && f(x); }', 'if (a) ok && f(x);', 1)
+        self.ok('if (a) { (void)f(x); }', 'if (a) (void)f(x);', 1)
+        self.ok('if (a) { p->x = sizeof(UINT); }', 'if (a) p->x = sizeof(UINT);', 1)
+        self.ok('while (a) { i++; }', 'while (a) i++;', 1)
+
+    def test_braces_in_directive_rejected(self):
+        # The pair would have to hold at every use of the macro: after 'M(a) else w();' the else
+        # binds to the inner if once the braces go.
+        before = '#define M(x) if (x) { if (y) z(); }\nvoid f(void) { M(a) else w(); }\n'
+        after = '#define M(x) if (x) if (y) z();\nvoid f(void) { M(a) else w(); }\n'
+        self.assertIn('directive', self.bad(before, after))
+        self.assertIn('directive', self.bad('#define N(x) while (x) { f(); }\n',
+                                            '#define N(x) while (x) f();\n'))
+        self.assertIn('directive', self.bad('#define D do { f(); } while (0)\n',
+                                            '#define D do f(); while (0)\n'))
+        # the same pair outside a directive is fine, and a directive after it does not matter
+        self.ok('if (x) { f(); }\n#define M(x) if (x) { g(); }\n',
+                'if (x) f();\n#define M(x) if (x) { g(); }\n', 1)
 
 
 if __name__ == '__main__':
