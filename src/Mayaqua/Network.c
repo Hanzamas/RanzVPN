@@ -94,13 +94,6 @@ UINT64 GetDynValueOrDefault(char *name, UINT64 default_value, UINT64 min_value, 
 	return ret;
 }
 
-// Get a value from a dynamic value list (Returns a default value if the value is not found)
-// The value is limited to 1/5 to 50 times of the default value for safety
-UINT64 GetDynValueOrDefaultSafe(char *name, UINT64 default_value)
-{
-	return GetDynValueOrDefault(name, default_value, default_value / (UINT64)5, default_value * (UINT64)50);
-}
-
 // Get a value from a dynamic value list
 UINT64 GetDynValue(char *name)
 {
@@ -1904,12 +1897,6 @@ void Win32InitSocketLibrary()
 	WSAStartup(MAKEWORD(2, 2), &data);
 }
 
-// Release of the socket library
-void Win32FreeSocketLibrary()
-{
-	WSACleanup();
-}
-
 // Cancel
 void Win32Cancel(CANCEL *c)
 {
@@ -2276,12 +2263,6 @@ void SetSockEvent(SOCK_EVENT *event)
 	Win32SetSockEvent(event);
 }
 
-// Clean-up of the socket event
-void CleanupSockEvent(SOCK_EVENT *event)
-{
-	Win32CleanupSockEvent(event);
-}
-
 // Waiting for the socket event
 bool WaitSockEvent(SOCK_EVENT *event, UINT timeout)
 {
@@ -2301,7 +2282,7 @@ void ReleaseSockEvent(SOCK_EVENT *event)
 
 	if (Release(event->ref) == 0)
 	{
-		CleanupSockEvent(event);
+		Win32CleanupSockEvent(event);
 	}
 }
 
@@ -2355,14 +2336,8 @@ void ReleaseCancel(CANCEL *c)
 
 	if (Release(c->ref) == 0)
 	{
-		CleanupCancel(c);
+		Win32CleanupCancel(c);
 	}
-}
-
-// Clean up of the cancel object
-void CleanupCancel(CANCEL *c)
-{
-	Win32CleanupCancel(c);
 }
 
 // Cancellation triggered
@@ -2698,11 +2673,7 @@ UINT SendTo6Ex(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size,
 // If port is specified as 0, system assigns a certain port.
 SOCK *NewUDP(UINT port)
 {
-	return NewUDPEx(port, false);
-}
-SOCK *NewUDPEx(UINT port, bool ipv6)
-{
-	return NewUDPEx2(port, ipv6, NULL);
+	return NewUDPEx2(port, false, NULL);
 }
 SOCK *NewUDPEx2(UINT port, bool ipv6, IP *ip)
 {
@@ -3231,11 +3202,7 @@ bool StartSSL(SOCK *sock, X *x, K *priv)
 }
 bool StartSSLEx(SOCK *sock, X *x, K *priv, UINT ssl_timeout, char *sni_hostname)
 {
-	return StartSSLEx2(sock, x, priv, NULL, ssl_timeout, sni_hostname);
-}
-bool StartSSLEx2(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char *sni_hostname)
-{
-	return StartSSLEx3(sock, x, priv, chain, ssl_timeout, sni_hostname, NULL, NULL);
+	return StartSSLEx3(sock, x, priv, NULL, ssl_timeout, sni_hostname, NULL, NULL);
 }
 bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err)
 {
@@ -4450,11 +4417,7 @@ SOCK *Accept6(SOCK *sock)
 // Standby for TCP (IPv6)
 SOCK *ListenEx6(UINT port, bool local_only)
 {
-	return ListenEx62(port, local_only, false);
-}
-SOCK *ListenEx62(UINT port, bool local_only, bool enable_ca)
-{
-	return ListenEx63(port, local_only, enable_ca, NULL);
+	return ListenEx63(port, local_only, false, NULL);
 }
 SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 {
@@ -4671,11 +4634,11 @@ void Disconnect(SOCK *sock)
 			{
 				if (sock->IPv6 == false)
 				{
-					CheckTCPPort("127.0.0.1", sock->LocalPort);
+					CheckTCPPortEx("127.0.0.1", sock->LocalPort, TIMEOUT_TCP_PORT_CHECK);
 				}
 				else
 				{
-					CheckTCPPort("::1", sock->LocalPort);
+					CheckTCPPortEx("::1", sock->LocalPort, TIMEOUT_TCP_PORT_CHECK);
 				}
 			}
 		}
@@ -4810,7 +4773,7 @@ bool CheckTCPPortEx(char *hostname, UINT port, UINT timeout)
 		timeout = TIMEOUT_TCP_PORT_CHECK;
 	}
 
-	s = ConnectEx(hostname, port, timeout);
+	s = ConnectEx4(hostname, port, timeout, NULL, true, NULL);
 	if (s == NULL)
 	{
 		return false;
@@ -4821,10 +4784,6 @@ bool CheckTCPPortEx(char *hostname, UINT port, UINT timeout)
 		ReleaseSock(s);
 		return true;
 	}
-}
-bool CheckTCPPort(char *hostname, UINT port)
-{
-	return CheckTCPPortEx(hostname, port, TIMEOUT_TCP_PORT_CHECK);
 }
 
 char *PrintError(int ErrorCode)
@@ -5361,19 +5320,7 @@ SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname
 // TCP connection
 SOCK *Connect(char *hostname, UINT port)
 {
-	return ConnectEx(hostname, port, 0);
-}
-SOCK *ConnectEx(char *hostname, UINT port, UINT timeout)
-{
-	return ConnectEx2(hostname, port, timeout, NULL);
-}
-SOCK *ConnectEx2(char *hostname, UINT port, UINT timeout, bool *cancel_flag)
-{
-	return ConnectEx3(hostname, port, timeout, cancel_flag, true);
-}
-SOCK *ConnectEx3(char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname)
-{
-	return ConnectEx4(hostname, port, timeout, cancel_flag, no_get_hostname, NULL);
+	return ConnectEx4(hostname, port, 0, NULL, true, NULL);
 }
 SOCK *ConnectEx4(char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname, IP *ret_ip)
 {
@@ -6821,7 +6768,7 @@ void FreeNetwork()
 	DnsFree();
 
 	// Release of the socket library
-	Win32FreeSocketLibrary();
+	WSACleanup();
 
 	DeleteCounter(num_tcp_connections);
 	num_tcp_connections = NULL;

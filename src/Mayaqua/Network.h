@@ -303,7 +303,6 @@ void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_s
 
 // Function prototype for Win32
 void Win32InitSocketLibrary();
-void Win32FreeSocketLibrary();
 void Win32Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2);
 void Win32InitAsyncSocket(SOCK *sock);
 void Win32JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event);
@@ -341,9 +340,6 @@ SOCK *NewSock();
 void ReleaseSock(SOCK *s);
 void CleanupSock(SOCK *s);
 SOCK *Connect(char *hostname, UINT port);
-SOCK *ConnectEx(char *hostname, UINT port, UINT timeout);
-SOCK *ConnectEx2(char *hostname, UINT port, UINT timeout, bool *cancel_flag);
-SOCK *ConnectEx3(char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname);
 SOCK *ConnectEx4(char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname, IP *ret_ip);
 
 // New function named with prefix "Bind" binds outgoing connection to a specific address. New one is wrapped in original one.
@@ -361,7 +357,6 @@ SOCK *Listen(UINT port);
 SOCK *ListenEx(UINT port, bool local_only);
 SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip);
 SOCK *ListenEx6(UINT port, bool local_only);
-SOCK *ListenEx62(UINT port, bool local_only, bool enable_ca);
 SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip);
 SOCK *Accept(SOCK *sock);
 SOCK *Accept6(SOCK *sock);
@@ -372,7 +367,6 @@ UINT SecureSend(SOCK *sock, void *data, UINT size);
 UINT SecureRecv(SOCK *sock, void *data, UINT size);
 bool StartSSL(SOCK *sock, X *x, K *priv);
 bool StartSSLEx(SOCK *sock, X *x, K *priv, UINT ssl_timeout, char *sni_hostname);
-bool StartSSLEx2(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char *sni_hostname);
 bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err);
 bool AddChainSslCert(struct ssl_ctx_st *ctx, X *x);
 void AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx);
@@ -385,12 +379,10 @@ void AddSockSet(SOCKSET *set, SOCK *sock);
 CANCEL *NewCancel();
 CANCEL *NewCancelSpecial(void *hEvent);
 void ReleaseCancel(CANCEL *c);
-void CleanupCancel(CANCEL *c);
 void Cancel(CANCEL *c);
 void Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2);
 void SetWantToUseCipher(SOCK *sock, char *name);
 SOCK *NewUDP(UINT port);
-SOCK *NewUDPEx(UINT port, bool ipv6);
 SOCK *NewUDPEx2(UINT port, bool ipv6, IP *ip);
 SOCK *NewUDPEx3(UINT port, IP *ip);
 SOCK *NewUDP4(UINT port, IP *ip);
@@ -402,12 +394,10 @@ UINT RecvFrom(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size);
 UINT RecvFrom6(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size);
 void SetTimeout(SOCK *sock, UINT timeout);
 UINT GetTimeout(SOCK *sock);
-bool CheckTCPPort(char *hostname, UINT port);
 bool CheckTCPPortEx(char *hostname, UINT port, UINT timeout);
 void JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event);
 SOCK_EVENT *NewSockEvent();
 void SetSockEvent(SOCK_EVENT *event);
-void CleanupSockEvent(SOCK_EVENT *event);
 bool WaitSockEvent(SOCK_EVENT *event, UINT timeout);
 void ReleaseSockEvent(SOCK_EVENT *event);
 void SetIP(IP *ip, UCHAR a1, UCHAR a2, UCHAR a3, UCHAR a4);
@@ -540,7 +530,6 @@ void InitDynList();
 void FreeDynList();
 UINT64 GetDynValue(char *name);
 UINT64 GetDynValueOrDefault(char *name, UINT64 default_value, UINT64 min_value, UINT64 max_value);
-UINT64 GetDynValueOrDefaultSafe(char *name, UINT64 default_value);
 
 
 #endif	// NETWORK_H
