@@ -12,6 +12,7 @@
 
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
+#include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Tick64.h"
 
@@ -253,6 +254,67 @@ void timeenc_test(UINT num, char **arg)
 	RtCheck(&ctx, value == 0, "SystemToLocal64(0) is 0", "got %I64u", value);
 	value = LocalToSystem64(0);
 	RtCheck(&ctx, value == 0, "LocalToSystem64(0) is 0", "got %I64u", value);
+
+	RtEnd(&ctx);
+}
+
+// nullsafe: the LOCK, LIST, COUNTER, REF and EVENT functions accept NULL and do nothing
+void nullsafe_test(UINT num, char **arg)
+{
+	RT_CTX ctx;
+	LOCK *lock = NULL;				// A variable, not the NULL literal: the _DEBUG form of Lock() dereferences it
+	COUNTER *counter = NULL;
+	REF *ref = NULL;
+	EVENT *e = NULL;
+	LIST *o;
+	UINT item = 1;
+	UINT ret;
+
+	RtBegin(&ctx, "NULLSAFE", "NULL safety test");
+
+	// LOCK
+	Lock(lock);
+	Unlock(lock);
+	RtCheck(&ctx, true, "Lock(NULL) and Unlock(NULL) return", "");
+	RtCheck(&ctx, LockInner(lock) == false, "LockInner(NULL) returns false", "returned true");
+	UnlockInner(lock);
+	DeleteLock(lock);
+	RtCheck(&ctx, true, "UnlockInner(NULL) and DeleteLock(NULL) return", "");
+
+	// LockList/UnlockList on a list from NewListFast, which has no lock
+	o = NewListFast(NULL);
+	RtCheck(&ctx, o != NULL && o->lock == NULL, "NewListFast creates a list without a lock", "list %s", (o == NULL) ? "missing" : "has a lock");
+	LockList(o);
+	{
+		Add(o, &item);
+	}
+	UnlockList(o);
+	RtCheck(&ctx, LIST_NUM(o) == 1 && LIST_DATA(o, 0) == &item, "LockList and UnlockList work on that list", "%u items", LIST_NUM(o));
+	ReleaseList(o);
+	LockList(NULL);
+	UnlockList(NULL);
+	RtCheck(&ctx, true, "LockList(NULL) and UnlockList(NULL) return", "");
+
+	// COUNTER and REF
+	ret = Count(counter);
+	RtCheck(&ctx, ret == 0, "Count(NULL) returns 0", "returned %u", ret);
+	ret = Inc(counter);
+	RtCheck(&ctx, ret == 0, "Inc(NULL) returns 0", "returned %u", ret);
+	ret = Dec(counter);
+	RtCheck(&ctx, ret == 0, "Dec(NULL) returns 0", "returned %u", ret);
+	DeleteCounter(counter);
+	ret = AddRef(ref);
+	RtCheck(&ctx, ret == 0, "AddRef(NULL) returns 0", "returned %u", ret);
+	ret = Release(ref);
+	RtCheck(&ctx, ret == 0, "Release(NULL) returns 0", "returned %u", ret);
+
+	// EVENT
+	Set(e);
+	RtCheck(&ctx, true, "Set(NULL) returns", "");
+	RtCheck(&ctx, Wait(e, 0) == false, "Wait(NULL, 0) returns false", "returned true");
+	ReleaseEvent(e);
+	CleanupEvent(e);
+	RtCheck(&ctx, true, "ReleaseEvent(NULL) and CleanupEvent(NULL) return", "");
 
 	RtEnd(&ctx);
 }
