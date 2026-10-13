@@ -20,9 +20,11 @@
 #                            different 'if', on any path through the #if groups after the
 #                            pair (the first token of every arm, the token after the group
 #                            when an arm is empty or there is no #else, and the token after
-#                            the #endif when the pair ends an arm); and outside nested { }
-#                            the statement must not use a macro whose expansion is more than
-#                            one statement (a ';' or an 'if' outside parentheses and braces).
+#                            the #endif when the pair ends an arm). A macro whose expansion is
+#                            more than one statement (a ';', an 'if' or an 'else' outside
+#                            parentheses and braces, or another such macro there) counts as
+#                            such an 'else' in those places, and outside nested { } the
+#                            statement must not use one.
 #   files                    print the files the reformat applies to, one per line.
 #   count ROOT               print line counts of those files per directory as JSON.
 #   table NAME=JSON ...      print a markdown table of several 'count' outputs.
@@ -507,10 +509,11 @@ def match_brackets(toks):
 def unsafe_macros(token_lists):
     """Names of macros whose expansion is more than one statement or starts an 'if': a ';', an
     'if' or an 'else' outside parentheses, brackets and braces, unless the whole body is
-    do { ... } while (0). A '(' right after the name is read as the parameter list; for an
-    object-like macro whose body starts with '(' that skips a group where nothing is flagged
-    anyway."""
-    names = set()
+    do { ... } while (0). A macro whose body uses such a macro outside parentheses, brackets and
+    braces is one too, since its expansion holds the same tokens. A '(' right after the name is
+    read as the parameter list; for an object-like macro whose body starts with '(' that skips
+    a group where nothing is flagged anyway."""
+    bodies = []
     for toks in token_lists:
         i = 0
         while i + 2 < len(toks):
@@ -529,14 +532,23 @@ def unsafe_macros(token_lists):
             if len(body) >= 6 and body[0] == 'do' and body[-4:] == ['while', '(', '0', ')']:
                 continue
             depth = 0
+            top = set()
             for t in body:
                 if t in _OPEN:
                     depth += 1
                 elif t in _CLOSE:
                     depth -= 1
-                elif depth == 0 and t in (';', 'if', 'else'):
-                    names.add(name)
-                    break
+                elif depth == 0:
+                    top.add(t)
+            bodies.append((name, top))
+    names = set()
+    changed = True
+    while changed:
+        changed = False
+        for name, top in bodies:
+            if name not in names and (top & {';', 'if', 'else'} or top & names):
+                names.add(name)
+                changed = True
     return names
 
 
@@ -596,9 +608,16 @@ def check_braces(a, b, macros):
         if '#' in content and not conditional_arms_balanced(content):
             return 'a preprocessor conditional inside does not keep the brackets balanced'
         # an 'else' that can follow the pair, in any #if arm or after one, binds to the inner
-        # 'if' once the braces go
-        if open_if and 'else' in following_tokens(a, c, deleted):
-            return 'a following else would bind to a different if'
+        # 'if' once the braces go; so may a macro there that expands to more than one
+        # statement, as its expansion can start with 'else'
+        if open_if:
+            following = following_tokens(a, c, deleted)
+            if 'else' in following:
+                return 'a following else would bind to a different if'
+            used = macros.intersection(following)
+            if used:
+                return 'a following macro may expand to an else that would bind to a ' \
+                       'different if: %s' % ', '.join(sorted(used))
         # a macro inside a nested { } that stays is harmless; one outside it is not
         used = macros.intersection(top_level_tokens(kept))
         if used:

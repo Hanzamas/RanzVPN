@@ -255,6 +255,32 @@ class BracesTest(unittest.TestCase):
         self.ok('if (a) { ONE(1); }', 'if (a) ONE(1);', 1, macros)
         self.ok('if (a) { WRAP(1); }', 'if (a) WRAP(1);', 1, macros)
 
+    def test_macro_using_a_multi_statement_macro(self):
+        # TWO2 and IFB expand to TWO and IFB2, so they are multi-statement too; ONE2 uses TWO
+        # inside parentheses only
+        macros = fc.unsafe_macros([toks('#define TWO2 TWO\n#define TWO a(); b()\n'
+                                        '#define IFB(x) IFB2(x)\n#define IFB2(x) if (x)\n'
+                                        '#define ONE2 f(TWO)\n')])
+        self.assertEqual(macros, {'TWO', 'TWO2', 'IFB', 'IFB2'})
+        self.assertIn('macro', self.bad('if (a) { TWO2; }', 'if (a) TWO2;', macros))
+        self.assertIn('macro', self.bad('if (a) { IFB(b) g(); } else y();',
+                                        'if (a) IFB(b) g(); else y();', macros))
+
+    def test_dangling_else_from_a_following_macro(self):
+        # EL expands to 'else', which binds to 'if (b)' once the braces go
+        for defs in ('#define EL else\n', '#define EL(s) else s\n',
+                     '#define EL EL2\n#define EL2 else\n'):
+            macros = fc.unsafe_macros([toks(defs)])
+            self.assertIn('EL', macros)
+            self.assertIn('else', self.bad(defs + 'if (a) { if (b) g(); } EL y();\n',
+                                           defs + 'if (a) if (b) g(); EL y();\n', macros))
+            self.assertIn('else', self.bad(
+                defs + 'if (a) { if (b) g(); }\n#ifdef X\nx();\n#else\nEL y();\n#endif\n',
+                defs + 'if (a) if (b) g();\n#ifdef X\nx();\n#else\nEL y();\n#endif\n', macros))
+        # without an open 'if' inside, a following macro is harmless
+        macros = fc.unsafe_macros([toks('#define EL else\n')])
+        self.ok('if (a) { g(); } EL y();', 'if (a) g(); EL y();', 1, macros)
+
     def test_other_changes_rejected(self):
         self.bad('if (a) { x(); }', 'if (a) y();')
         self.bad('if (a) { x(); }', 'if (a) { x(); } ;')
