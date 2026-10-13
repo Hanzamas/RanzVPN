@@ -67,6 +67,10 @@ $qf = (sc.exe qfailure $svc | Out-String)
 Write-Host $qf
 Note "install: failure actions set by vpnserver at start: $(if ($qf -match 'RESTART') { 'yes (RESTART)' } else { 'NO' })"
 
+# Windows Firewall rule: not in the MSI, added by vpnserver at start (MsRegistWindowsFirewallEx, cscript)
+function Get-FwRules { @(Get-NetFirewallRule -DisplayName 'Ranz VPN Server' -ErrorAction SilentlyContinue) }
+Note "install: firewall rules named 'Ranz VPN Server': $((Get-FwRules).Count)"
+
 Note "install: files in $dir after the first start:"
 Get-ChildItem -LiteralPath $dir -Recurse -Force | ForEach-Object { Note "  $($_.FullName.Substring($dir.Length + 1))$(if ($_.PSIsContainer) { '\' })" }
 
@@ -103,6 +107,10 @@ if (Test-Path -LiteralPath $reg) {
 	Note "uninstall: registry key $reg absent"
 }
 
+Note "uninstall: firewall rules named 'Ranz VPN Server' left: $((Get-FwRules).Count)"
+
 Note 'RESULT: install/uninstall test passed'
 $report | Set-Content -LiteralPath "$LogDir\result.txt" -Encoding utf8
 if ($env:GITHUB_STEP_SUMMARY) { ("``````" + "`n" + ($report -join "`n") + "`n" + "``````") | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append }
+# The last native command (sc.exe query, 1060) must not become the step's exit code
+exit 0
