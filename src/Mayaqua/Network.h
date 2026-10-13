@@ -13,14 +13,13 @@
 
 #include <openssl/ssl.h> // This is needed only for the SSL/TLS version defines
 
-// Dynamic Value
 struct DYN_VALUE
 {
-	char Name[256];								// Name
-	UINT64 Value;								// Value
+	char Name[256];
+	UINT64 Value;
 };
 
-#define	MAX_HOST_NAME_LEN			255		// Maximum length of the host name
+#define	MAX_HOST_NAME_LEN			255
 
 #define	TIMEOUT_INFINITE			(0x7fffffff)
 #define	TIMEOUT_TCP_PORT_CHECK		(10 * 1000)
@@ -38,32 +37,24 @@ struct DYN_VALUE
 #define PQ_GROUP_LIST				"X25519MLKEM768:p521_kyber1024:x25519_kyber768:P-521:X25519:P-256"
 #endif
 
-// SSL logging function
-//#define	ENABLE_SSL_LOGGING
 #define	SSL_LOGGING_DIRNAME			"@ssl_log"
 
-// Private IP list file
 #define	PRIVATE_IP_TXT_FILENAME		"$private_ip.txt"
 
-// Special Port
 #define	MAKE_SPECIAL_PORT(p)		(UINT)((UINT)0x10000 | (UINT)(p))
 #define	IS_SPECIAL_PORT(p)			(MAKEBOOL((p) & (UINT)0x10000))
 #define	GET_SPECIAL_PORT(p)			(UINT)((UINT)(p) & (UINT)0xffff)
 
-// UDP buffer size
 #define	UDP_MAX_BUFFER_SIZE			11911168
 
-// Expiration of the cache acquired from the IP address list of the host
 #define	HOST_IP_ADDRESS_LIST_CACHE	(5 * 1000)
 
-// IP address
 struct IP
 {
 	BYTE address[16];   // IP address (RFC 3493 format used for IPv4)
-	UINT ipv6_scope_id; // IPv6 scope ID
+	UINT ipv6_scope_id;
 };
 
-// Pointer to the beginning of the IPv4 address
 #define	IPV4(address)				(&address[12])
 #define	IPV4_SIZE					(4)
 
@@ -72,42 +63,36 @@ struct IP
 #define	IsIP6(ip)					(ip && IsIP4(ip) == false)
 #define	IsZeroIp(ip)				(IsZeroIP(ip))
 
-// IPv6 address (different format)
 struct IPV6_ADDR
 {
-	UCHAR Value[16];				// Value
+	UCHAR Value[16];
 } GCC_PACKED;
 
-// IPv6 Address Types
-#define IPV6_ADDR_UNICAST						1	// Unicast
-#define IPV6_ADDR_LOCAL_UNICAST					2	// Local unicast
-#define IPV6_ADDR_GLOBAL_UNICAST				4	// Global Unicast
-#define IPV6_ADDR_MULTICAST						8	// Multicast
-#define IPV6_ADDR_ALL_NODE_MULTICAST			16	// All-nodes multicast
-#define IPV6_ADDR_ALL_ROUTER_MULTICAST			32	// All routers multicast
-#define IPV6_ADDR_SOLICIATION_MULTICAST			64	// Solicited-node multicast
-#define	IPV6_ADDR_ZERO							128	// All zeros
-#define	IPV6_ADDR_LOOPBACK						256	// Loop-back
+#define IPV6_ADDR_UNICAST						1
+#define IPV6_ADDR_LOCAL_UNICAST					2
+#define IPV6_ADDR_GLOBAL_UNICAST				4
+#define IPV6_ADDR_MULTICAST						8
+#define IPV6_ADDR_ALL_NODE_MULTICAST			16
+#define IPV6_ADDR_ALL_ROUTER_MULTICAST			32
+#define IPV6_ADDR_SOLICIATION_MULTICAST			64
+#define	IPV6_ADDR_ZERO							128
+#define	IPV6_ADDR_LOOPBACK						256
 
-// Client list
 struct IP_CLIENT
 {
-	IP IpAddress;					// IP address
-	UINT NumConnections;			// The number of connections
+	IP IpAddress;
+	UINT NumConnections;
 };
 
-// Socket event
 struct SOCK_EVENT
 {
-	REF *ref;						// Reference counter
-	void *hEvent;					// Pointer to a Win32 event handle
+	REF *ref;
+	void *hEvent;
 };
 
-// Type of socket
 #define	SOCK_TCP				1
 #define	SOCK_UDP				2
 
-// SSL Accept Settings
 struct SSL_ACCEPT_SETTINGS
 {
 	bool Tls_Disable1_0;
@@ -118,98 +103,91 @@ struct SSL_ACCEPT_SETTINGS
 	UINT Override_Security_Level_Value;
 };
 
-// Socket
 struct SOCK
 {
-	REF *ref;					// Reference counter
-	LOCK *lock;					// Lock
-	LOCK *ssl_lock;				// Lock related to the SSL
-	LOCK *disconnect_lock;		// Disconnection lock
-	SOCKET socket;				// Socket number
-	SSL *ssl;					// SSL object
-	struct ssl_ctx_st *ssl_ctx;	// SSL_CTX
-	char SniHostname[256];		// SNI host name
-	UINT Type;					// Type of socket
-	bool Connected;				// Connecting flag
-	bool ServerMode;			// Server mode
-	bool AsyncMode;				// Asynchronous mode
-	bool SecureMode;			// SSL communication mode
-	bool ListenMode;			// In listening
-	BUF *SendBuf;				// Transmission buffer
-	bool IpClientAdded;			// Whether it has been added to the list IP_CLIENT
-	bool LocalOnly;				// Only local
-	bool EnableConditionalAccept;	// Conditional Accept is Enabled
-	IP RemoteIP;				// IP address of the remote host
-	IP LocalIP;					// IP address of the local host
-	char *RemoteHostname;		// Remote host name
-	UINT RemotePort;			// Port number of the remote side
-	UINT LocalPort;				// Port number of the local side
-	UINT64 SendSize;			// Total size of the sent data
-	UINT64 RecvSize;			// Total size of received data
-	UINT64 SendNum;				// Number of sent data blocks
-	UINT64 RecvNum;				// Number of received data blocks
-	X *RemoteX;					// Certificate of the remote host
-	X *LocalX;					// Certificate of the local host
-	char *CipherName;			// Cipher algorithm name
-	char *WaitToUseCipher;		// Set the algorithm name to want to use
-	bool IgnoreRecvErr;			// Whether the RecvFrom error is ignorable
-	bool IgnoreSendErr;			// Whether the SendTo error is ignorable
-	UINT TimeOut;				// Time-out value
-	SOCK_EVENT *SockEvent;		// Associated socket-event
-	bool CancelAccept;			// Cancel flag of the Accept
-	bool AcceptCanceled;		// Flag which shows canceling of the Accept
-	bool UdpBroadcast;			// UDP broadcast mode
-	void *Param;				// Any parameters
-	bool IPv6;					// IPv6
-	bool IsRawSocket;			// Whether it is a raw socket
-	const char *SslVersion;		// SSL version
-	UINT RawSocketIPProtocol;	// IP protocol number if it's a raw socket
-	UINT UdpMaxMsgSize;			// Maximum transmitting and receiving size at a time on UDP
-	int CurrentTos;				// Current ToS value
-	bool IsTtlSupported;		// Whether the TTL value is supported
-	UINT CurrentTtl;			// Current TTL value
-	char UnderlayProtocol[64];	// Underlying protocol
-	char ProtocolDetails[256];	// Protocol details
-	UCHAR Ssl_Init_Async_SendAlert[2];	// Initial state of SSL send_alert
-	SSL_ACCEPT_SETTINGS SslAcceptSettings;	// SSL Accept Settings
+	REF *ref;
+	LOCK *lock;
+	LOCK *ssl_lock;
+	LOCK *disconnect_lock;
+	SOCKET socket;
+	SSL *ssl;
+	struct ssl_ctx_st *ssl_ctx;
+	char SniHostname[256];
+	UINT Type;
+	bool Connected;
+	bool ServerMode;
+	bool AsyncMode;
+	bool SecureMode;
+	bool ListenMode;
+	BUF *SendBuf;
+	bool IpClientAdded;
+	bool LocalOnly;
+	bool EnableConditionalAccept;
+	IP RemoteIP;
+	IP LocalIP;
+	char *RemoteHostname;
+	UINT RemotePort;
+	UINT LocalPort;
+	UINT64 SendSize;
+	UINT64 RecvSize;
+	UINT64 SendNum;
+	UINT64 RecvNum;
+	X *RemoteX;
+	X *LocalX;
+	char *CipherName;
+	char *WaitToUseCipher;
+	bool IgnoreRecvErr;
+	bool IgnoreSendErr;
+	UINT TimeOut;
+	SOCK_EVENT *SockEvent;
+	bool CancelAccept;
+	bool AcceptCanceled;
+	bool UdpBroadcast;
+	void *Param;
+	bool IPv6;
+	bool IsRawSocket;
+	const char *SslVersion;
+	UINT RawSocketIPProtocol;
+	UINT UdpMaxMsgSize;
+	int CurrentTos;
+	bool IsTtlSupported;
+	UINT CurrentTtl;
+	char UnderlayProtocol[64];
+	char ProtocolDetails[256];
+	UCHAR Ssl_Init_Async_SendAlert[2];
+	SSL_ACCEPT_SETTINGS SslAcceptSettings;
 
 #ifdef	ENABLE_SSL_LOGGING
-	// SSL Logging (for debug)
-	bool IsSslLoggingEnabled;	// Flag
-	IO *SslLogging_Recv;		// for Recv
-	IO *SslLogging_Send;		// for Send
-	LOCK *SslLogging_Lock;		// Locking
-#endif	// ENABLE_SSL_LOGGING
+	bool IsSslLoggingEnabled;
+	IO *SslLogging_Recv;
+	IO *SslLogging_Send;
+	LOCK *SslLogging_Lock;
+#endif
 
-	void *hAcceptEvent;			// Event for Accept
+	void *hAcceptEvent;
 
-	void *hEvent;				// Event for asynchronous mode
+	void *hEvent;
 };
 
-// Underlying protocol description string of socket
 #define	SOCK_UNDERLAY_NATIVE_V6		"Standard TCP/IP (IPv6)"
 #define	SOCK_UNDERLAY_NATIVE_V4		"Standard TCP/IP (IPv4)"
 
-// Constant of the return value
-#define	SOCK_LATER	(0xffffffff)	// In blocking
+#define	SOCK_LATER	(0xffffffff)
 
-// Socket Set
-#define	MAX_SOCKSET_NUM		60		// Number of sockets that can be stored in a socket set
+#define	MAX_SOCKSET_NUM		60
 struct SOCKSET
 {
-	UINT NumSocket;					// The number of sockets
-	SOCK *Sock[MAX_SOCKSET_NUM];	// Array of pointers to the socket
+	UINT NumSocket;
+	SOCK *Sock[MAX_SOCKSET_NUM];
 };
 
-// Cancel object
 struct CANCEL
 {
-	REF *ref;						// Reference counter
+	REF *ref;
 	bool SpecialFlag;				// Special flag (associated to the event which is generated by Win32 driver)
-	void *hEvent;					// Pointer to a Win32 event handle
+	void *hEvent;
 };
 
-// NETBIOS name requests
 typedef struct NBTREQUEST
 {
 	USHORT TransactionId;
@@ -221,7 +199,6 @@ typedef struct NBTREQUEST
 	UCHAR Query[38];
 } NBTREQUEST;
 
-// NETBIOS name response
 typedef struct NBTRESPONSE
 {
 	USHORT TransactionId;
@@ -233,17 +210,15 @@ typedef struct NBTRESPONSE
 	UCHAR Response[61];
 } NBTRESPONSE;
 
-// ICMP protocol number
-#define	IP_PROTO_ICMPV4		0x01	// ICMPv4 protocol
-#define	IP_PROTO_ICMPV6		0x3a	// ICMPv6 protocol
+#define	IP_PROTO_ICMPV4		0x01
+#define	IP_PROTO_ICMPV6		0x3a
 
-// Data for the thread for serial connection attempts to a list of addresses
 struct CONNECT_SERIAL_PARAM
 {
 	LIST *IpList;
-	UINT LocalPort;						// Local port number to bind
+	UINT LocalPort;
 	IP   *LocalIP;						// Local IP address to bind. NULL address allowed to use.
-	IP   LocalIP_Cache;					// Local IP address to bind
+	IP   LocalIP_Cache;
 	UINT Port;
 	UINT Timeout;
 	char Hostname[MAX_SIZE];
@@ -262,15 +237,14 @@ struct CONNECT_SERIAL_PARAM
 
 struct SSL_VERIFY_OPTION
 {
-	bool VerifyPeer;				// Whether to verify SSL peer
+	bool VerifyPeer;
 	bool PromptOnVerifyFail;		// Prompt on verification failure (Windows)
-	bool AddDefaultCA;				// Use default trust store
-	bool VerifyHostname;			// Verify server hostname
-	LIST *CaList;					// Trusted CA list
-	X *SavedCert;					// Saved server certificate
+	bool AddDefaultCA;
+	bool VerifyHostname;
+	LIST *CaList;
+	X *SavedCert;
 };
 
-// NIC adapter entry
 struct NIC_ENTRY
 {
 	char IfName[MAX_SIZE];
@@ -301,7 +275,6 @@ void GetCurrentMachineIpProcessHashInternal(void *hash);
 void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_size, char *dst_domain, UINT dst_domain_size, bool do_not_parse_atmark);
 
 
-// Function prototype for Win32
 void Win32InitSocketLibrary();
 void Win32Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2);
 void Win32InitAsyncSocket(SOCK *sock);
@@ -317,7 +290,6 @@ bool Win32WaitSockEvent(SOCK_EVENT *event, UINT timeout);
 SOCKET Win32Accept(SOCK *sock, SOCKET s, struct sockaddr *addr, int *addrlen, bool ipv6);
 
 
-// Function prototype
 void InitNetwork();
 void FreeNetwork();
 
@@ -341,7 +313,6 @@ void CleanupSock(SOCK *s);
 SOCK *Connect(char *hostname, UINT port);
 SOCK *ConnectEx4(char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname, IP *ret_ip);
 
-// New function named with prefix "Bind" binds outgoing connection to a specific address. New one is wrapped in original one.
 #define	BIND_LOCALIP_NULL			NULL		// NULL IP address specifies no binding
 #define	BIND_LOCALPORT_NULL			0			// NULL port number specifies no binding
 SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname, IP *ret_ip);
@@ -437,7 +408,7 @@ void AddProtocolDetailsKeyValueInt(char *dst, UINT dst_size, char *key, UINT val
 void SockEnableSslLogging(SOCK *s);
 void SockWriteSslLog(SOCK *s, void *send_data, UINT send_size, void *recv_data, UINT recv_size);
 void SockCloseSslLogging(SOCK *s);
-#endif	// ENABLE_SSL_LOGGING
+#endif
 
 void CopyIP(IP *dst, IP *src);
 bool IsIP4(IP *ip);
@@ -473,7 +444,6 @@ UINT SubnetMaskToInt4(IP *a);
 bool IsStrIPv6Address(char *str);
 void IPAnd4(IP *dst, IP *a, IP *b);
 
-// Utility functions about IP and MAC address types
 bool IsValidUnicastIPAddress4(IP *ip);
 bool IsValidUnicastIPAddress6(IP *ip);
 
@@ -497,7 +467,6 @@ void AddHostIPAddressToList(LIST *o, IP *ip);
 int CmpIpAddressList(void *p1, void *p2);
 UINT64 GetHostIPAddressListHash();
 
-// Info on client certificate collected during TLS handshake
 struct SslClientCertInfo {
 	X *X;
 };
@@ -528,5 +497,5 @@ void InitDynList();
 void FreeDynList();
 
 
-#endif	// NETWORK_H
+#endif
 
