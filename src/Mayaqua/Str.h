@@ -19,14 +19,6 @@ struct TOKEN_LIST
 	char **Token;
 };
 
-// INI_ENTRY
-struct INI_ENTRY
-{
-	char *Key;
-	char *Value;
-	wchar_t *UnicodeValue;
-};
-
 // Function prototype
 UINT StrLen(char *str);
 UINT StrSize(char *str);

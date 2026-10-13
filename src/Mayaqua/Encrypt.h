@@ -16,34 +16,13 @@
 #define	MIN_SIGN_HASH_SIZE		(15 + SHA1_SIZE)
 #define	SIGN_HASH_SIZE			(MIN_SIGN_HASH_SIZE)
 
-#define DES_KEY_SIZE				8			// DES key size
-#define	DES_IV_SIZE					8			// DES IV size
-#define DES_BLOCK_SIZE				8			// DES block size
-#define DES3_KEY_SIZE				(8 * 3)		// 3DES key size
 #define RSA_KEY_SIZE				1024		// RSA key size
-#define DH_KEY_SIZE					128			// DH key size
-#define	RSA_MIN_SIGN_HASH_SIZE		(15 + SHA1_HASH_SIZE)	// Minimum RSA hash size
-#define	RSA_SIGN_HASH_SIZE			(RSA_MIN_SIGN_HASH_SIZE)	// RSA hash size
-#define MD5_HASH_SIZE				16			// MD5 hash size
-#define SHA1_HASH_SIZE				20			// SHA-1 hash size
-#define SHA1_BLOCK_SIZE				64			// SHA-1 block size
-#define HMAC_SHA1_96_KEY_SIZE		20			// HMAC-SHA-1-96 key size
-#define HMAC_SHA1_96_HASH_SIZE		12			// HMAC-SHA-1-96 hash size
-#define HMAC_SHA1_SIZE				(SHA1_HASH_SIZE)	// HMAC-SHA-1 hash size
-#define	AES_IV_SIZE					16			// AES IV size
-#define	AES_MAX_KEY_SIZE			32			// Maximum AES key size
 
 // IANA definitions taken from IKEv1 Phase 1
 #define SHA1_160						2
 #define SHA2_256						4
 #define SHA2_384						5
 #define SHA2_512						6
-
-// HMAC block size
-#define	HMAC_BLOCK_SIZE					64
-// The block size for sha-384 and sha-512 as defined by rfc4868
-#define HMAC_BLOCK_SIZE_1024					128
-#define HMAC_BLOCK_SIZE_MAX					512
 
 #define DH_GROUP1_PRIME_768 \
 	"FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD1" \
@@ -130,14 +109,10 @@
 #define	HASHED_DATA(p)			(((UCHAR *)p) + 15)
 
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || LIBRESSL_VERSION_NUMBER >= 0x3080100L
-typedef struct PKCS12_st PKCS12;
-typedef struct evp_md_st EVP_MD;
 #else
 #include <openssl/pkcs12.h>
-typedef struct env_md_st EVP_MD;
 #endif
 
-typedef struct aes_key_st AES_KEY;
 typedef struct bignum_st BIGNUM;
 typedef struct bio_st BIO;
 typedef struct DES_ks DES_key_schedule;
@@ -148,7 +123,6 @@ typedef struct evp_pkey_st EVP_PKEY;
 typedef struct rc4_key_st RC4_KEY;
 typedef struct ssl_st SSL;
 typedef struct x509_st X509;
-typedef struct X509_crl_st X509_CRL;
 
 // Crypt context
 struct CRYPT
@@ -198,46 +172,10 @@ struct K
 	bool private_key;
 };
 
-// PKCS#12
-struct P12
-{
-	PKCS12 *pkcs12;
-};
-
-// CEL
-struct X_CRL
-{
-	X509_CRL *Crl;
-};
-
 // Constant
 #define	MD5_SIZE	16
 #define	SHA1_SIZE	20
 #define	SHA256_SIZE	32
-#define	SHA384_SIZE	48
-#define	SHA512_SIZE	64
-
-// Key element of DES
-struct DES_KEY_VALUE
-{
-	DES_key_schedule *KeySchedule;
-	UCHAR KeyValue[DES_KEY_SIZE];
-};
-
-// DES key
-struct DES_KEY
-{
-	DES_KEY_VALUE *k1, *k2, *k3;
-};
-
-// AES key
-struct AES_KEY_VALUE
-{
-	AES_KEY *EncryptKey;
-	AES_KEY *DecryptKey;
-	UCHAR KeyValue[AES_MAX_KEY_SIZE];
-	UINT KeySize;
-};
 
 // DH
 struct DH_CTX
@@ -257,17 +195,6 @@ struct CIPHER
 	EVP_CIPHER_CTX *Ctx;
 	bool Encrypt;
 	UINT BlockSize, IvSize, KeySize;
-};
-
-// Message digest object
-struct MD
-{
-	char Name[MAX_PATH];
-	bool IsNullMd;
-	bool IsHMac;
-	const EVP_MD *Md;
-	void *Ctx;
-	UINT Size;
 };
 
 
