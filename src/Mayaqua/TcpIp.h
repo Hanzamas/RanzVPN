@@ -678,9 +678,6 @@ struct DHCP_MODIFY_OPTION
 
 
 PKT *ParsePacket(UCHAR *buf, UINT size);
-PKT *ParsePacketEx(UCHAR *buf, UINT size, bool no_l3);
-PKT *ParsePacketEx2(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id);
-PKT *ParsePacketEx3(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address);
 PKT *ParsePacketEx4(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum);
 PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum, bool no_l3_l4_except_icmpv6);
 void FreePacket(PKT *p);

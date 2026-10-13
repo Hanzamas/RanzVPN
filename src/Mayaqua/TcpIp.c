@@ -1347,19 +1347,7 @@ PKT *ClonePacket(PKT *p, bool copy_data)
 // Parse the contents of the packet
 PKT *ParsePacket(UCHAR *buf, UINT size)
 {
-	return ParsePacketEx(buf, size, false);
-}
-PKT *ParsePacketEx(UCHAR *buf, UINT size, bool no_l3)
-{
-	return ParsePacketEx2(buf, size, no_l3, 0);
-}
-PKT *ParsePacketEx2(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id)
-{
-	return ParsePacketEx3(buf, size, no_l3, vlan_type_id, true);
-}
-PKT *ParsePacketEx3(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address)
-{
-	return ParsePacketEx4(buf, size, no_l3, vlan_type_id, bridge_id_as_mac_address, false, false);
+	return ParsePacketEx4(buf, size, false, 0, true, false, false);
 }
 PKT *ParsePacketEx4(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum)
 {

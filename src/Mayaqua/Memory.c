@@ -1581,17 +1581,13 @@ int CompareStr(void *p1, void *p2)
 // Creating a high-speed list (without lock)
 LIST *NewListFast(COMPARE *cmp)
 {
-	return NewListEx(cmp, true);
+	return NewListEx2(cmp, true, false);
 }
 
 // Creating a list
 LIST *NewList(COMPARE *cmp)
 {
-	return NewListEx(cmp, false);
-}
-LIST *NewListEx(COMPARE *cmp, bool fast)
-{
-	return NewListEx2(cmp, fast, false);
+	return NewListEx2(cmp, false, false);
 }
 LIST *NewListEx2(COMPARE *cmp, bool fast, bool fast_malloc)
 {
@@ -1805,15 +1801,11 @@ void InitFifo()
 // Create a FIFO
 FIFO *NewFifo()
 {
-	return NewFifoEx(false);
+	return NewFifoEx2(false, false);
 }
 FIFO *NewFifoFast()
 {
-	return NewFifoEx(true);
-}
-FIFO *NewFifoEx(bool fast)
-{
-	return NewFifoEx2(fast, false);
+	return NewFifoEx2(true, false);
 }
 FIFO *NewFifoEx2(bool fast, bool fixed)
 {
