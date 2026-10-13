@@ -42,7 +42,6 @@ void UniTrim(wchar_t *str);
 void UniTrimLeft(wchar_t *str);
 void UniTrimRight(wchar_t *str);
 void UniTrimCrlf(wchar_t *str);
-bool UniGetLine(wchar_t *str, UINT size);
 bool UniGetLineWin32(wchar_t *str, UINT size);
 void UniFreeToken(UNI_TOKEN_LIST *tokens);
 UNI_TOKEN_LIST *UniParseToken(wchar_t *src, wchar_t *separator);

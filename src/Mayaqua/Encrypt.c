@@ -219,7 +219,7 @@ UINT CipherProcessAead(CIPHER *c, void *iv, void *tag, UINT tag_size, void *dest
 
 	if (EVP_CipherInit_ex(c->Ctx, NULL, NULL, NULL, iv, c->Encrypt) == false)
 	{
-		Debug("CipherProcessAead(): EVP_CipherInit_ex() failed with error: %s\n", OpenSSL_Error());
+		Debug("CipherProcessAead(): EVP_CipherInit_ex() failed with error: %s\n", ERR_error_string(ERR_get_error(), NULL));
 		return 0;
 	}
 
@@ -235,20 +235,20 @@ UINT CipherProcessAead(CIPHER *c, void *iv, void *tag, UINT tag_size, void *dest
 	{
 		if (EVP_CipherUpdate(c->Ctx, NULL, &r, aad, aad_size) == false)
 		{
-			Debug("CipherProcessAead(): EVP_CipherUpdate() failed with error: %s\n", OpenSSL_Error());
+			Debug("CipherProcessAead(): EVP_CipherUpdate() failed with error: %s\n", ERR_error_string(ERR_get_error(), NULL));
 			return 0;
 		}
 	}
 
 	if (EVP_CipherUpdate(c->Ctx, dest, &r, src, src_size) == false)
 	{
-		Debug("CipherProcessAead(): EVP_CipherUpdate() failed with error: %s\n", OpenSSL_Error());
+		Debug("CipherProcessAead(): EVP_CipherUpdate() failed with error: %s\n", ERR_error_string(ERR_get_error(), NULL));
 		return 0;
 	}
 
 	if (EVP_CipherFinal_ex(c->Ctx, ((UCHAR *)dest) + (UINT)r, &r2) == false)
 	{
-		Debug("CipherProcessAead(): EVP_CipherFinal_ex() failed with error: %s\n", OpenSSL_Error());
+		Debug("CipherProcessAead(): EVP_CipherFinal_ex() failed with error: %s\n", ERR_error_string(ERR_get_error(), NULL));
 		return 0;
 	}
 
@@ -423,11 +423,6 @@ void OpenSSL_FreeLock()
 // Lock function for OpenSSL
 void OpenSSL_Lock(int mode, int n, const char *file, int line)
 {
-}
-
-char *OpenSSL_Error()
-{
-	return ERR_error_string(ERR_get_error(), NULL);
 }
 
 // Get the display name of the certificate
@@ -1706,7 +1701,7 @@ bool RsaCheck()
 	}
 
 	// Secret key
-	bio = NewBio();
+	bio = BIO_new(BIO_s_mem());
 	Lock(openssl_lock);
 	{
 		i2d_RSAPrivateKey_bio(bio, rsa);
@@ -1717,7 +1712,7 @@ bool RsaCheck()
 	FreeBio(bio);
 
 	// Public key
-	bio = NewBio();
+	bio = BIO_new(BIO_s_mem());
 	Lock(openssl_lock);
 	{
 		i2d_RSA_PUBKEY_bio(bio, rsa);
@@ -1789,7 +1784,7 @@ bool RsaGen(K **priv, K **pub, UINT bit)
 	}
 
 	// Secret key
-	bio = NewBio();
+	bio = BIO_new(BIO_s_mem());
 	Lock(openssl_lock);
 	{
 		i2d_RSAPrivateKey_bio(bio, rsa);
@@ -1800,7 +1795,7 @@ bool RsaGen(K **priv, K **pub, UINT bit)
 	FreeBio(bio);
 
 	// Public key
-	bio = NewBio();
+	bio = BIO_new(BIO_s_mem());
 	Lock(openssl_lock);
 	{
 		i2d_RSA_PUBKEY_bio(bio, rsa);
@@ -2283,7 +2278,7 @@ BIO *KToBio(K *k, bool text, char *password)
 		return NULL;
 	}
 
-	bio = NewBio();
+	bio = BIO_new(BIO_s_mem());
 
 	if (k->private_key)
 	{
@@ -2632,7 +2627,7 @@ BIO *XToBio(X *x, bool text)
 		return NULL;
 	}
 
-	bio = NewBio();
+	bio = BIO_new(BIO_s_mem());
 
 	Lock(openssl_lock);
 	{
@@ -3016,12 +3011,6 @@ X *X509ToX(X509 *x509)
 	return x;
 }
 
-// Create a BIO
-BIO *NewBio()
-{
-	return BIO_new(BIO_s_mem());
-}
-
 // Release the BIO
 void FreeBio(BIO *bio)
 {
@@ -3272,67 +3261,26 @@ bool IsAesNiSupported()
 	return supported;
 }
 
-// Creating a DH 2048bit
-DH_CTX *DhNew2048()
-{
-	return DhNew(DH_SET_2048, 2);
-}
-// Creating a DH 3072bit
-DH_CTX *DhNew3072()
-{
-	return DhNew(DH_SET_3072, 2);
-}
-// Creating a DH 4096bit
-DH_CTX *DhNew4096()
-{
-	return DhNew(DH_SET_4096, 2);
-}
-
-// Creating a DH GROUP1
-DH_CTX *DhNewGroup1()
-{
-	return DhNew(DH_GROUP1_PRIME_768, 2);
-}
-
-// Creating a DH GROUP2
-DH_CTX *DhNewGroup2()
-{
-	return DhNew(DH_GROUP2_PRIME_1024, 2);
-}
-
-// Creating a DH GROUP5
-DH_CTX *DhNewGroup5()
-{
-	return DhNew(DH_GROUP5_PRIME_1536, 2);
-}
-
-
-// Creating a DH SIMPLE 160bits
-DH_CTX *DhNewSimple160()
-{
-	return DhNew(DH_SIMPLE_160, 2);
-}
-
 DH_CTX *DhNewFromBits(UINT bits)
 {
 	switch (bits)
 	{
 	case 160:
-		return DhNewSimple160();
+		return DhNew(DH_SIMPLE_160, 2);
 	case 768:
-		return DhNewGroup1();
+		return DhNew(DH_GROUP1_PRIME_768, 2);
 	case 1024:
-		return DhNewGroup2();
+		return DhNew(DH_GROUP2_PRIME_1024, 2);
 	case 1536:
-		return DhNewGroup5();
+		return DhNew(DH_GROUP5_PRIME_1536, 2);
 	case 2048:
-		return DhNew2048();
+		return DhNew(DH_SET_2048, 2);
 	case 3072:
-		return DhNew3072();
+		return DhNew(DH_SET_3072, 2);
 	case 4096:
-		return DhNew4096();
+		return DhNew(DH_SET_4096, 2);
 	default:
-		return DhNew2048();
+		return DhNew(DH_SET_2048, 2);
 	}
 }
 

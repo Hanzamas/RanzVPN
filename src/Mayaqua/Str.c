@@ -1783,7 +1783,7 @@ bool GetLine(char *str, UINT size)
 
 	unistr = Malloc(unistr_size);
 
-	ret = UniGetLine(unistr, unistr_size);
+	ret = UniGetLineWin32(unistr, unistr_size);
 
 	UniToStr(str, size, unistr);
 

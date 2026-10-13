@@ -1615,10 +1615,6 @@ UNI_TOKEN_LIST *UniParseToken(wchar_t *src, wchar_t *separator)
 }
 
 // Get a line from standard input
-bool UniGetLine(wchar_t *str, UINT size)
-{
-	return UniGetLineWin32(str, size);
-}
 bool UniGetLineWin32(wchar_t *str, UINT size)
 {
 	bool ret = false;

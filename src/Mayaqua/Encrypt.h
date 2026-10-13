@@ -211,7 +211,6 @@ UINT HashPtrToUINT(void *p);
 
 BIO *BufToBio(BUF *b);
 BUF *BioToBuf(BIO *bio);
-BIO *NewBio();
 void FreeBio(BIO *bio);
 X *BioToX(BIO *bio, bool text);
 LIST *BioToXList(BIO *bio, bool text);
@@ -300,13 +299,6 @@ void Sha(UINT sha_type, void *dst, void *src, UINT size);
 
 void DesEcbEncrypt(void *dst, void *src, void *key_7bytes);
 
-DH_CTX *DhNewGroup1();
-DH_CTX *DhNewGroup2();
-DH_CTX *DhNewGroup5();
-DH_CTX *DhNewSimple160();
-DH_CTX *DhNew2048();
-DH_CTX *DhNew3072();
-DH_CTX *DhNew4096();
 DH_CTX *DhNewFromBits(UINT bits);
 DH_CTX *DhNew(char *prime, UINT g);
 void DhFree(DH_CTX *dh);
@@ -317,7 +309,6 @@ void OpenSSL_InitLock();
 void OpenSSL_FreeLock();
 void OpenSSL_Lock(int mode, int n, const char *file, int line);
 void FreeOpenSSLThreadState();
-char *OpenSSL_Error();
 
 // Encryption/Decryption
 CIPHER *NewCipher(char *name);
