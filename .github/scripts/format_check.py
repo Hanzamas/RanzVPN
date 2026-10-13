@@ -1,0 +1,541 @@
+# Token-stream checker for the one-time reformat (spec #24, pass 11).
+#
+# The reformat is proven safe by comparing the C token stream of every file before and after
+# clang-format. Comments and whitespace are not tokens; everything else is: identifiers,
+# keywords, numbers, string and character literals (byte for byte), punctuators, a UTF-8 byte
+# order mark, the boundaries of preprocessor directives ('#' at the start of a line opens one,
+# '<EOL>' closes it) and the '(' that makes a #define function-like ('<params(>'), since a space
+# before it would change the macro. Line continuations are spliced before tokenizing, as the
+# compiler does.
+#
+# Modes:
+#   identical BEFORE AFTER   every file must have the same token stream before and after.
+#   braces    BEFORE AFTER   the only allowed difference is the deletion of balanced { } pairs that
+#                            enclose exactly one statement. A deleted pair must be the body of an
+#                            if, else, for, while or do; the statement inside must parse as one
+#                            statement with no preprocessor directive in it; deleting the braces
+#                            must not let a following 'else' bind to a different 'if'; and the
+#                            statement must not use a macro whose expansion is more than one
+#                            statement (a ';' or an 'if' outside parentheses and braces).
+#   files                    print the files the reformat applies to, one per line.
+#   count ROOT               print line counts of those files per directory as JSON.
+#   table NAME=JSON ...      print a markdown table of several 'count' outputs.
+#
+# Exit status is 0 when every file passes, 1 otherwise. Standard library only.
+
+import argparse
+import bisect
+import json
+import os
+import re
+import subprocess
+import sys
+
+# The reformat scope: Cedar, Mayaqua and the program entry sources. Third-party code, driver
+# sources that CI does not compile (src/SeLow) and generated files are excluded.
+SCOPE_DIRS = ['src/Cedar', 'src/Mayaqua', 'src/vpnserver', 'src/vpncmd', 'src/vpncmdsys']
+SCOPE_EXTS = ('.c', '.h', '.cpp')
+EXCLUDED_PREFIXES = ['src/Mayaqua/3rdparty/']
+EXCLUDED_FILES = {
+    # MIDL output ("this ALWAYS GENERATED file")
+    'src/Cedar/netcfgn.h',
+    'src/Cedar/netcfgx.h',
+    # Visual C++ resource editor output ("Microsoft Visual C++ generated include file")
+    'src/vpncmd/resource.h',
+    'src/vpncmdsys/resource.h',
+    'src/vpnserver/resource.h',
+}
+
+BOM = '\xef\xbb\xbf'  # UTF-8 byte order mark, as decoded with latin-1
+
+_TOKEN_RE = re.compile(r'''
+  (?P<nl>\n)
+| (?P<ws>[ \t\f\v\r]+)
+| (?P<lc>//[^\n]*)
+| (?P<bc>/\*.*?\*/)
+| (?P<bcu>/\*.*)
+| (?P<raw>(?:u8|[uUL])?R"(?P<delim>[^ ()\\\t\v\f\n"]{0,16})\(.*?\)(?P=delim)")
+| (?P<str>(?:u8|[uUL])?"(?:[^"\\\n]|\\.)*(?:"|(?=\n)|\Z))
+| (?P<chr>(?:u8|[uUL])?'(?:[^'\\\n]|\\.)*(?:'|(?=\n)|\Z))
+| (?P<num>\.?[0-9](?:[eEpP][+-]|[0-9A-Za-z_.]|'(?=[0-9A-Za-z]))*)
+| (?P<id>[A-Za-z_$\x80-\xff][A-Za-z0-9_$\x80-\xff]*)
+| (?P<punct>\.\.\.|<<=|>>=|->\*|->|\+\+|--|<<|>>|<=|>=|==|!=|&&|\|\||\*=|/=|%=|\+=|-=|&=|\^=|\|=|\#\#|::|\.\*|.)
+''', re.S | re.X)
+
+_HEADER_NAME_RE = re.compile(r'[ \t]*(<[^>\n]*>)')
+_DIRECTIVE_NAME_RE = re.compile(r'[ \t]*(?:/\*.*?\*/[ \t]*)*([A-Za-z_]+)', re.S)
+_MACRO_NAME_RE = re.compile(r'[ \t]*(?:/\*.*?\*/[ \t]*)*([A-Za-z_$][A-Za-z0-9_$]*)(\()?', re.S)
+_INCLUDE_WORDS = {'include', 'include_next', 'import'}
+
+
+class Tokens:
+    """Token list of one file, with the 1-based source line of each token."""
+
+    def __init__(self, toks, lines):
+        self.toks = toks
+        self.lines = lines
+
+    def __len__(self):
+        return len(self.toks)
+
+
+def _splice(text):
+    """Remove backslash-newline pairs. Returns the spliced text and, for error messages, the
+    spliced offsets where a splice was removed."""
+    parts = text.split('\\\n')
+    if len(parts) == 1:
+        return text, []
+    offsets = []
+    pos = 0
+    for part in parts[:-1]:
+        pos += len(part)
+        offsets.append(pos)
+    return ''.join(parts), offsets
+
+
+def tokenize(data):
+    """Tokenize C or C++ source bytes. Comments and whitespace are dropped."""
+    text = data.decode('latin-1')
+    toks = []
+    lines = []
+    if text.startswith(BOM):
+        toks.append('<BOM>')
+        lines.append(1)
+        text = text[len(BOM):]
+    text = text.replace('\r\n', '\n')
+    text, splices = _splice(text)
+    newlines = [m.start() for m in re.finditer('\n', text)]
+
+    def line_of(pos):
+        return bisect.bisect_left(newlines, pos) + bisect.bisect_right(splices, pos) + 1
+
+    pos = 0
+    n = len(text)
+    bol = True          # only whitespace and comments so far on this line
+    directive = False   # inside a preprocessor directive
+    want_header = False  # right after '#include'
+    while pos < n:
+        if want_header:
+            want_header = False
+            m = _HEADER_NAME_RE.match(text, pos)
+            if m:
+                toks.append(m.group(1))
+                lines.append(line_of(m.start(1)))
+                pos = m.end()
+                continue
+        m = _TOKEN_RE.match(text, pos)
+        kind = m.lastgroup
+        if kind == 'delim':
+            kind = 'raw'
+        start = pos
+        pos = m.end()
+        if kind == 'nl':
+            if directive:
+                toks.append('<EOL>')
+                lines.append(line_of(start))
+                directive = False
+            bol = True
+            continue
+        if kind in ('ws', 'lc', 'bc'):
+            continue
+        if kind == 'bcu':
+            toks.append('<UNTERMINATED-COMMENT>')
+            lines.append(line_of(start))
+            continue
+        tok = m.group(0)
+        if tok == '#' and bol and not directive:
+            directive = True
+            toks.append('#')
+            lines.append(line_of(start))
+            bol = False
+            m2 = _DIRECTIVE_NAME_RE.match(text, pos)
+            if m2 and m2.group(1) in _INCLUDE_WORDS:
+                # '#include <...>' takes a header name, which is not tokenized further
+                toks.append(m2.group(1))
+                lines.append(line_of(m2.start(1)))
+                pos = m2.end()
+                want_header = True
+            elif m2 and m2.group(1) == 'define':
+                # a '(' right after the macro name makes it function-like; a space there would
+                # make it object-like, so that '(' is a token of its own kind
+                toks.append('define')
+                lines.append(line_of(m2.start(1)))
+                pos = m2.end()
+                m3 = _MACRO_NAME_RE.match(text, pos)
+                if m3:
+                    toks.append(m3.group(1))
+                    lines.append(line_of(m3.start(1)))
+                    pos = m3.end()
+                    if m3.group(2):
+                        toks.append('<params(>')
+                        lines.append(line_of(m3.start(2)))
+            continue
+        bol = False
+        toks.append(tok)
+        lines.append(line_of(start))
+    if directive:
+        toks.append('<EOL>')
+        lines.append(line_of(n))
+    return Tokens(toks, lines)
+
+
+# ---------------------------------------------------------------------------------------------
+# Statement parser for the braces mode. It works on a list of token strings and accepts a
+# conservative subset of C: anything it does not understand is "not one statement".
+
+class NotAStatement(Exception):
+    pass
+
+
+_COMPOUND_KEYWORDS = {'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'default'}
+_JUMP_KEYWORDS = {'return', 'goto', 'break', 'continue'}
+_OPEN = {'(': ')', '[': ']', '{': '}'}
+_CLOSE = {')', ']', '}'}
+
+
+def _skip_group(v, k):
+    """v[k] is an opening bracket; return the index after its matching closing bracket."""
+    stack = []
+    i = k
+    while i < len(v):
+        t = v[i]
+        if t in ('#', '<EOL>'):
+            raise NotAStatement('preprocessor directive inside')
+        if t in _OPEN:
+            stack.append(_OPEN[t])
+        elif t in _CLOSE:
+            if not stack or stack.pop() != t:
+                raise NotAStatement('unbalanced brackets')
+            if not stack:
+                return i + 1
+        i += 1
+    raise NotAStatement('unterminated bracket')
+
+
+def _expect(v, k, tok):
+    if k >= len(v) or v[k] != tok:
+        raise NotAStatement('expected %r' % tok)
+
+
+def parse_statement(v, k):
+    """Parse one statement of v starting at k. Returns (end, open_if): the index after the
+    statement and whether it ends in an 'if' without 'else' (a following 'else' would bind to
+    it)."""
+    if k >= len(v):
+        raise NotAStatement('no statement')
+    t = v[k]
+    if t == '{':
+        return _skip_group(v, k), False
+    if t == ';':
+        return k + 1, False
+    if t == 'if':
+        _expect(v, k + 1, '(')
+        end, open_if = parse_statement(v, _skip_group(v, k + 1))
+        if end < len(v) and v[end] == 'else':
+            return parse_statement(v, end + 1)
+        return end, True
+    if t in ('while', 'for'):
+        _expect(v, k + 1, '(')
+        return parse_statement(v, _skip_group(v, k + 1))
+    if t == 'do':
+        end, _ = parse_statement(v, k + 1)
+        _expect(v, end, 'while')
+        _expect(v, end + 1, '(')
+        end = _skip_group(v, end + 1)
+        _expect(v, end, ';')
+        return end + 1, False
+    if t in ('else', 'switch', 'case', 'default', '#', '<EOL>') or t in _CLOSE:
+        raise NotAStatement('unsupported statement start %r' % t)
+    if k + 1 < len(v) and v[k + 1] == ':' and re.match(r'[A-Za-z_]\w*$', t):
+        raise NotAStatement('labelled statement')
+    # Expression statement or a jump statement: everything up to ';' outside brackets.
+    i = k
+    while i < len(v):
+        t = v[i]
+        if t == ';':
+            return i + 1, False
+        if t in _OPEN:
+            i = _skip_group(v, i)
+            continue
+        if t in _CLOSE or t in ('#', '<EOL>') or t in _COMPOUND_KEYWORDS:
+            raise NotAStatement('unexpected %r' % t)
+        if t in _JUMP_KEYWORDS and i != k:
+            raise NotAStatement('unexpected %r' % t)
+        i += 1
+    raise NotAStatement('missing ;')
+
+
+def one_statement(v):
+    """Return open_if when v is exactly one statement, else raise NotAStatement."""
+    end, open_if = parse_statement(v, 0)
+    if end != len(v):
+        raise NotAStatement('more than one statement')
+    return open_if
+
+
+def match_brackets(toks):
+    """Map each bracket index to its partner, for (), [] and {} separately nested. Brackets
+    left unmatched (for example by #if branches) have no entry."""
+    match = {}
+    stacks = {'(': [], '[': [], '{': []}
+    closers = {')': '(', ']': '[', '}': '{'}
+    for i, t in enumerate(toks):
+        if t == '<params(>':
+            t = '('
+        if t in stacks:
+            stacks[t].append(i)
+        elif t in closers:
+            s = stacks[closers[t]]
+            if s:
+                j = s.pop()
+                match[i] = j
+                match[j] = i
+    return match
+
+
+def unsafe_macros(token_lists):
+    """Names of macros whose expansion is more than one statement or starts an 'if': a ';', an
+    'if' or an 'else' outside parentheses, brackets and braces, unless the whole body is
+    do { ... } while (0). A '(' right after the name is read as the parameter list; for an
+    object-like macro whose body starts with '(' that skips a group where nothing is flagged
+    anyway."""
+    names = set()
+    for toks in token_lists:
+        i = 0
+        while i + 2 < len(toks):
+            if toks[i] != '#' or toks[i + 1] != 'define':
+                i += 1
+                continue
+            name = toks[i + 2]
+            end = toks.index('<EOL>', i)
+            k = i + 3
+            if k < end and toks[k] == '<params(>':
+                while k < end and toks[k] != ')':
+                    k += 1
+                k += 1
+            body = toks[k:end]
+            i = end + 1
+            if len(body) >= 6 and body[0] == 'do' and body[-4:] == ['while', '(', '0', ')']:
+                continue
+            depth = 0
+            for t in body:
+                if t in _OPEN:
+                    depth += 1
+                elif t in _CLOSE:
+                    depth -= 1
+                elif depth == 0 and t in (';', 'if', 'else'):
+                    names.add(name)
+                    break
+    return names
+
+
+def _brace_position_ok(a, match, o):
+    """The '{' at a[o] opens the body of an if, else, for, while or do."""
+    if o == 0:
+        return False
+    p = a[o - 1]
+    if p in ('else', 'do'):
+        return True
+    if p == ')' and (o - 1) in match:
+        q = match[o - 1]
+        return q > 0 and a[q - 1] in ('if', 'for', 'while')
+    return False
+
+
+def check_braces(a, b, macros):
+    """Return (removed_pairs, error). a and b are token lists."""
+    match = match_brackets(a)
+    deleted = set()
+    pending = set()
+    i = j = 0
+    while i < len(a):
+        if i in pending:
+            deleted.add(i)
+            i += 1
+            continue
+        if j < len(b) and a[i] == b[j]:
+            i += 1
+            j += 1
+            continue
+        if a[i] == '{' and i in match:
+            deleted.add(i)
+            pending.add(match[i])
+            i += 1
+            continue
+        return None, (i, j, 'token differs and is not a deletable "{"')
+    if j != len(b):
+        return None, (i, j, 'extra tokens after the end of the original')
+
+    def next_kept(k):
+        k += 1
+        while k < len(a) and k in deleted:
+            k += 1
+        return a[k] if k < len(a) else None
+
+    def pair_error(o, c):
+        if not _brace_position_ok(a, match, o):
+            return 'the braces are not the body of if, else, for, while or do'
+        try:
+            one_statement(a[o + 1:c])
+            open_if = one_statement([a[k] for k in range(o + 1, c) if k not in deleted])
+        except NotAStatement as e:
+            return 'the braces do not enclose exactly one statement (%s)' % e
+        if open_if and next_kept(c) == 'else':
+            return 'a following else would bind to a different if'
+        used = macros.intersection(a[o + 1:c])
+        if used:
+            return 'the statement uses a multi-statement macro: %s' % ', '.join(sorted(used))
+        return None
+
+    pairs = sorted((o, match[o]) for o in deleted if a[o] == '{')
+    for o, c in pairs:
+        err = pair_error(o, c)
+        # Equivalent reading: deleting the inner of two directly nested pairs leaves the same
+        # tokens as deleting the outer one, so try the enclosing pairs before failing.
+        oo, cc = o, c
+        while err is not None and oo > 0 and a[oo - 1] == '{' and match.get(oo - 1) == cc + 1 \
+                and (oo - 1) not in deleted and (cc + 1) not in deleted:
+            deleted.difference_update((oo, cc))
+            oo, cc = oo - 1, cc + 1
+            deleted.update((oo, cc))
+            err = pair_error(oo, cc)
+        if err is not None:
+            return None, (o, None, err)
+    return len(pairs), None
+
+
+# ---------------------------------------------------------------------------------------------
+
+def scoped_files(root):
+    out = subprocess.run(['git', 'ls-files', '-z', '--'] + SCOPE_DIRS, cwd=root,
+                         stdout=subprocess.PIPE, check=True).stdout
+    files = []
+    for name in out.decode('utf-8').split('\0'):
+        if not name or not name.endswith(SCOPE_EXTS):
+            continue
+        if name in EXCLUDED_FILES or any(name.startswith(p) for p in EXCLUDED_PREFIXES):
+            continue
+        files.append(name)
+    return sorted(files)
+
+
+def _read(path):
+    with open(path, 'rb') as f:
+        return f.read()
+
+
+def _context(tokens, k, width=8):
+    lo = max(0, k - width)
+    return ' '.join(tokens.toks[lo:k]) + ' >>> ' + ' '.join(tokens.toks[k:k + width])
+
+
+def _line(tokens, k):
+    if k is None:
+        return '?'
+    if k < len(tokens.lines):
+        return tokens.lines[k]
+    return 'EOF'
+
+
+def run_compare(mode, before, after, files):
+    macros = set()
+    if mode == 'braces':
+        macros = unsafe_macros(tokenize(_read(os.path.join(before, f))).toks for f in files)
+        print('macros treated as multi-statement: %d' % len(macros))
+    failed = 0
+    removed_total = 0
+    for f in files:
+        ta = tokenize(_read(os.path.join(before, f)))
+        tb = tokenize(_read(os.path.join(after, f)))
+        if mode == 'identical':
+            if ta.toks == tb.toks:
+                continue
+            k = 0
+            while k < min(len(ta), len(tb)) and ta.toks[k] == tb.toks[k]:
+                k += 1
+            failed += 1
+            print('FAIL %s: token %d differs (before line %s, after line %s)'
+                  % (f, k, _line(ta, k), _line(tb, k)))
+            print('  before: ' + _context(ta, k))
+            print('  after:  ' + _context(tb, k))
+        else:
+            removed, err = check_braces(ta.toks, tb.toks, macros)
+            if err is None:
+                removed_total += removed
+                if removed:
+                    print('ok   %s: %d brace pairs removed' % (f, removed))
+                continue
+            i, j, why = err
+            failed += 1
+            print('FAIL %s: %s (before line %s, after line %s)'
+                  % (f, why, _line(ta, i), _line(tb, j)))
+            print('  before: ' + _context(ta, i))
+            if j is not None:
+                print('  after:  ' + _context(tb, j))
+    print('%s: %d files checked, %d failed%s'
+          % (mode, len(files), failed,
+             ', %d brace pairs removed' % removed_total if mode == 'braces' else ''))
+    return 1 if failed else 0
+
+
+def count_lines(root, files):
+    counts = {}
+    for f in files:
+        data = _read(os.path.join(root, f))
+        n = data.count(b'\n') + (1 if data and not data.endswith(b'\n') else 0)
+        d = next(s for s in SCOPE_DIRS if f.startswith(s + '/'))
+        counts[d] = counts.get(d, 0) + n
+    counts['total'] = sum(counts.values())
+    return counts
+
+
+def table(columns):
+    names = [n for n, _ in columns]
+    data = [c for _, c in columns]
+    keys = [d for d in SCOPE_DIRS if any(d in c for c in data)] + ['total']
+    out = ['| directory | ' + ' | '.join(names) + ' | change |',
+           '|---|' + '---:|' * (len(names) + 1)]
+    for k in keys:
+        vals = [c.get(k, 0) for c in data]
+        out.append('| %s | %s | %+d |' % (k, ' | '.join('{:,}'.format(v) for v in vals),
+                                          vals[-1] - vals[0]))
+    return '\n'.join(out)
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(description='Token-stream checker for the reformat (spec #24).')
+    sub = ap.add_subparsers(dest='cmd', required=True)
+    for mode in ('identical', 'braces'):
+        p = sub.add_parser(mode)
+        p.add_argument('before')
+        p.add_argument('after')
+        p.add_argument('--files-from', help='file list (default: the reformat scope of AFTER)')
+    sub.add_parser('files').add_argument('root', nargs='?', default='.')
+    sub.add_parser('count').add_argument('root', nargs='?', default='.')
+    sub.add_parser('table').add_argument('columns', nargs='+', help='NAME=count.json')
+    args = ap.parse_args(argv)
+
+    if args.cmd == 'files':
+        print('\n'.join(scoped_files(args.root)))
+        return 0
+    if args.cmd == 'count':
+        print(json.dumps(count_lines(args.root, scoped_files(args.root)), indent=1))
+        return 0
+    if args.cmd == 'table':
+        cols = []
+        for c in args.columns:
+            name, path = c.split('=', 1)
+            with open(path) as f:
+                cols.append((name, json.load(f)))
+        print(table(cols))
+        return 0
+    if args.files_from:
+        with open(args.files_from) as f:
+            files = [x.strip() for x in f if x.strip()]
+    else:
+        files = scoped_files(args.after)
+    return run_compare(args.cmd, args.before, args.after, files)
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

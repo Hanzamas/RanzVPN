@@ -1,0 +1,58 @@
+# Layout of the Ranz VPN sources (spec #24, pass 11). Pinned formatter: clang-format 22.1.8
+# (.github/workflows/format.yml). Scope: src/Cedar, src/Mayaqua (not 3rdparty), src/vpnserver,
+# src/vpncmd, src/vpncmdsys; .github/scripts/format_check.py lists the files and the exclusions.
+#
+# The aim is attached braces and nothing else: no rewrapping, no include sorting, comments and
+# blank lines left as they are. Every option that could change a token is pinned off, so the
+# token stream of a file is identical before and after (format_check.py identical).
+# The one-time brace removal runs this file with RemoveBracesLLVM switched to true
+# (format_check.py braces proves that only braces around single statements went).
+---
+Language: Cpp
+BasedOnStyle: LLVM
+
+# Braces and indentation
+BreakBeforeBraces: Attach
+UseTab: ForIndentation
+IndentWidth: 4
+TabWidth: 4
+ContinuationIndentWidth: 4
+IndentCaseLabels: false
+IndentPPDirectives: None
+
+# No rewrapping: keep the line breaks of the input
+ColumnLimit: 0
+BreakStringLiterals: false
+ReflowComments: Never
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortEnumsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# Comments and blank lines as they are
+AlignTrailingComments:
+  Kind: Leave
+SpacesInLineCommentPrefix:
+  Minimum: 0
+  Maximum: -1
+MaxEmptyLinesToKeep: 4
+KeepEmptyLines:
+  AtEndOfFile: true
+  AtStartOfBlock: true
+  AtStartOfFile: true
+
+# Include order is significant for the Windows headers
+SortIncludes: Never
+IncludeBlocks: Preserve
+
+# Options that would change tokens stay off
+InsertBraces: false
+RemoveBracesLLVM: false
+RemoveParentheses: Leave
+RemoveSemicolon: false
+QualifierAlignment: Leave
+SortUsingDeclarations: Never
+InsertNewlineAtEOF: false
+LineEnding: DeriveLF

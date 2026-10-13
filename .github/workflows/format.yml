@@ -1,0 +1,115 @@
+# One-time reformat (spec #24, pass 11). On a push to a format/** branch this job formats the
+# scoped sources and pushes two commits back to the same branch:
+#   1. "reformat: layout only (token-identical)"  .clang-format as committed;
+#      format_check.py identical proves every token stream unchanged.
+#   2. "reformat: drop braces around single statements (brace-only)"  the same file with
+#      RemoveBracesLLVM: true; format_check.py braces proves that only { } pairs around exactly
+#      one statement went.
+# Nothing is pushed unless both checks pass. The commits are pushed with GITHUB_TOKEN, which does
+# not start workflow runs, and the job also skips a head commit of its own, so it never loops.
+name: format
+
+on:
+  push:
+    branches: ['format/**']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: format-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CLANG_FORMAT_VERSION: '22.1.8'
+
+jobs:
+  reformat:
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      !startsWith(github.event.head_commit.message, 'reformat:')
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ github.ref }}
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Install clang-format
+      run: |
+        python -m pip install --disable-pip-version-check "clang-format==${CLANG_FORMAT_VERSION}"
+        clang-format --version
+    - name: Checker unit tests
+      run: python -m unittest discover -s .github/scripts -p "test_format_check.py" -v
+    - name: Scope and snapshot
+      run: |
+        python .github/scripts/format_check.py files . > "$RUNNER_TEMP/files.txt"
+        echo "$(wc -l < "$RUNNER_TEMP/files.txt") files in scope"
+        mkdir -p "$RUNNER_TEMP/before"
+        xargs -a "$RUNNER_TEMP/files.txt" cp --parents -t "$RUNNER_TEMP/before"
+        python .github/scripts/format_check.py count . > "$RUNNER_TEMP/count-before.json"
+        git config user.name 'github-actions[bot]'
+        git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+    - name: Layout pass
+      run: |
+        xargs -a "$RUNNER_TEMP/files.txt" clang-format -i --style=file:.clang-format
+        python .github/scripts/format_check.py identical "$RUNNER_TEMP/before" . --files-from "$RUNNER_TEMP/files.txt"
+        python .github/scripts/format_check.py count . > "$RUNNER_TEMP/count-layout.json"
+        git diff --stat | tail -1
+        xargs -a "$RUNNER_TEMP/files.txt" git add --
+        if git diff --cached --quiet; then
+          echo "layout pass changed nothing"
+        else
+          git commit -q -m "reformat: layout only (token-identical)"
+        fi
+    - name: Layout pass is stable
+      run: |
+        # a second run must change nothing, or a later drift check cannot pass
+        xargs -a "$RUNNER_TEMP/files.txt" clang-format --dry-run --style=file:.clang-format 2> "$RUNNER_TEMP/unstable.txt" || true
+        if [ -s "$RUNNER_TEMP/unstable.txt" ]; then
+          echo "::warning::second layout run is not a no-op in $(grep -c 'warning:' "$RUNNER_TEMP/unstable.txt") places"
+          grep 'warning:' "$RUNNER_TEMP/unstable.txt" | cut -d: -f1 | sort | uniq -c
+        else
+          echo "second layout run changes nothing"
+        fi
+    - name: Brace pass
+      run: |
+        mkdir -p "$RUNNER_TEMP/layout"
+        xargs -a "$RUNNER_TEMP/files.txt" cp --parents -t "$RUNNER_TEMP/layout"
+        sed 's/^RemoveBracesLLVM: false$/RemoveBracesLLVM: true/' .clang-format > "$RUNNER_TEMP/braces.clang-format"
+        grep -q '^RemoveBracesLLVM: true$' "$RUNNER_TEMP/braces.clang-format"
+        xargs -a "$RUNNER_TEMP/files.txt" clang-format -i --style="file:$RUNNER_TEMP/braces.clang-format"
+        python .github/scripts/format_check.py braces "$RUNNER_TEMP/layout" . --files-from "$RUNNER_TEMP/files.txt"
+        python .github/scripts/format_check.py count . > "$RUNNER_TEMP/count-braces.json"
+        git diff --stat | tail -1
+        xargs -a "$RUNNER_TEMP/files.txt" git add --
+        if git diff --cached --quiet; then
+          echo "brace pass changed nothing"
+        else
+          git commit -q -m "reformat: drop braces around single statements (brace-only)"
+        fi
+    - name: Push
+      run: |
+        git log --oneline -3
+        git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"
+    - name: Line counts
+      if: ${{ !cancelled() }}
+      run: |
+        cols="before=$RUNNER_TEMP/count-before.json"
+        [ -f "$RUNNER_TEMP/count-layout.json" ] && cols="$cols layout=$RUNNER_TEMP/count-layout.json"
+        [ -f "$RUNNER_TEMP/count-braces.json" ] && cols="$cols braces=$RUNNER_TEMP/count-braces.json"
+        python .github/scripts/format_check.py table $cols | tee -a "$GITHUB_STEP_SUMMARY"
+        echo "clang-format ${CLANG_FORMAT_VERSION}" >> "$GITHUB_STEP_SUMMARY"
+    - name: Diff for inspection
+      if: ${{ failure() }}
+      run: |
+        mkdir -p format-out
+        git diff > format-out/uncommitted.diff || true
+        git format-patch -o format-out "${GITHUB_SHA}..HEAD" || true
+        cp "$RUNNER_TEMP"/*.json "$RUNNER_TEMP"/unstable.txt format-out/ 2>/dev/null || true
+    - uses: actions/upload-artifact@v4
+      if: ${{ failure() }}
+      with:
+        name: format-out
+        path: format-out/
