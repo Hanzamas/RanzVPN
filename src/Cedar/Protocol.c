@@ -121,7 +121,6 @@ bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x)
 
 			GetAllNameFromName(tmp, sizeof(tmp), xx->subject_name);
 
-			Debug("depth = %u, subject = %S\n", i, tmp);
 
 			if (auto_save && CompareX(x, xx) == false && IsXInCertList(current_chain_dir, xx) == false)
 			{
@@ -268,11 +267,9 @@ X *DownloadCert(char *url)
 		return NULL;
 	}
 
-	Debug("Trying to download a cert from %s ...\n", url);
 
 	if (ParseUrl(&url_data, url, false, NULL) == false)
 	{
-		Debug("Download failed.\n");
 		return NULL;
 	}
 
@@ -281,7 +278,6 @@ X *DownloadCert(char *url)
 
 	if (b == NULL)
 	{
-		Debug("Download failed.\n");
 		return NULL;
 	}
 
@@ -289,7 +285,6 @@ X *DownloadCert(char *url)
 
 	FreeBuf(b);
 
-	Debug("Download ok.\n");
 	return ret;
 }
 
@@ -485,7 +480,6 @@ void AddAllRootCertsToCertList(LIST *o)
 
 	FreeBuf(buf);
 
-	Debug("AddAllRootCertsToCertList: ok=%u error=%u total_list_len=%u\n", num_ok, num_error, LIST_NUM(o));
 }
 
 // Generate unique IDs for each machine
@@ -848,7 +842,6 @@ bool ServerAccept(CONNECTION *c)
 	}
 
 	// Receive the signature
-	Debug("Downloading Signature...\n");
 	error_detail_2 = NULL;
 	if (ServerDownloadSignature(c, &error_detail_2) == false)
 	{
@@ -872,7 +865,6 @@ bool ServerAccept(CONNECTION *c)
 	}
 
 	// Send a Hello packet
-	Debug("Uploading Hello...\n");
 	if (ServerUploadHello(c) == false)
 	{
 		error_detail = "ServerUploadHello";
@@ -880,7 +872,6 @@ bool ServerAccept(CONNECTION *c)
 	}
 
 	// Receive the authentication data
-	Debug("Auth...\n");
 
 	p = HttpServerRecv(c->FirstSock);
 	if (p == NULL)
@@ -944,7 +935,6 @@ bool ServerAccept(CONNECTION *c)
 	{
 		bool auth_ret = false;
 
-		Debug("Login...\n");
 		c->Status = CONNECTION_STATUS_USERAUTH;
 
 		c->Type = CONNECTION_TYPE_LOGIN;
@@ -1000,7 +990,6 @@ bool ServerAccept(CONNECTION *c)
 			goto CLEANUP;
 		}
 
-		Debug("Username = %s, HubName = %s\n", username, hubname);
 		LockHubList(c->Cedar);
 		{
 			hub = GetHub(c->Cedar, hubname);
@@ -1132,8 +1121,6 @@ bool ServerAccept(CONNECTION *c)
 				use_hmac_on_udp_acceleration = support_hmac_on_udp_acceleration_client;
 			}
 
-			Debug("use_udp_acceleration_client = %u\n", use_udp_acceleration_client);
-			Debug("use_hmac_on_udp_acceleration = %u\n", use_hmac_on_udp_acceleration);
 
 			// Request mode
 			require_bridge_routing_mode = PackGetBool(p, "require_bridge_routing_mode");
@@ -2000,9 +1987,6 @@ bool ServerAccept(CONNECTION *c)
 				s->UseHMacOnUdpAcceleration = use_hmac_on_udp_acceleration;
 			}
 
-			Debug("UseUdpAcceleration = %u\n", s->UseUdpAcceleration);
-			Debug("UseHMacOnUdpAcceleration = %u\n", s->UseHMacOnUdpAcceleration);
-			Debug("UdpAccelerationVersion = %u\n", s->UdpAccelerationVersion);
 
 			if (s->UseUdpAcceleration)
 			{
@@ -2011,7 +1995,6 @@ bool ServerAccept(CONNECTION *c)
 				if (s->UdpAccel == NULL)
 				{
 					s->UseUdpAcceleration = false;
-					Debug("NewUdpAccel Failed.\n");
 				}
 				else
 				{
@@ -2021,7 +2004,6 @@ bool ServerAccept(CONNECTION *c)
 						s->UdpAccel->Version == 2 ? udp_acceleration_client_key_v2 : udp_acceleration_client_key,
 						&c->FirstSock->RemoteIP, &udp_acceleration_client_ip, udp_acceleration_client_port) == false)
 					{
-						Debug("UdpAccelInitServer Failed.\n");
 						s->UseUdpAcceleration = false;
 					}
 
@@ -2048,7 +2030,6 @@ bool ServerAccept(CONNECTION *c)
 			s->AdjustMss = adjust_mss;
 			if (s->AdjustMss != 0)
 			{
-				Debug("AdjustMSS: %u\n", s->AdjustMss);
 				AddProtocolDetailsKeyValueInt(s->ProtocolDetails, sizeof(s->ProtocolDetails), "AdjustMSS", s->AdjustMss);
 			}
 
@@ -2274,7 +2255,6 @@ bool ServerAccept(CONNECTION *c)
 
 
 		// Main routine of the session
-		Debug("SessionMain()\n");
 		s->NumLoginIncrementUserObject = loggedin_user_object;
 		s->NumLoginIncrementHubObject = s->Hub;
 		s->NumLoginIncrementTick = Tick64() + (UINT64)NUM_LOGIN_INCREMENT_INTERVAL;
@@ -2364,13 +2344,11 @@ bool ServerAccept(CONNECTION *c)
 		if (s == NULL || s->Halt || s->NoReconnectToSession)
 		{
 			// Session can not be found, or re-connection is prohibited
-			Debug("Session Not Found.\n");
 			c->Err = ERR_SESSION_TIMEOUT;
 			goto CLEANUP;
 		}
 
 		// Session is found
-		Debug("Session Found: %s\n", s->Name);
 		// Check the protocol of session
 		c->Err = 0;
 		Lock(s->lock);
@@ -2395,12 +2373,9 @@ bool ServerAccept(CONNECTION *c)
 			Unlock(s->Connection->lock);
 			if (c->Err == ERR_TOO_MANY_CONNECTION)
 			{
-				Debug("Session TOO MANY CONNECTIONS !!: %u\n",
-					Count(s->Connection->CurrentNumConnection));
 			}
 			else
 			{
-				Debug("Session Invalid Protocol.\n");
 			}
 			ReleaseSession(s);
 			goto CLEANUP;
@@ -2440,7 +2415,6 @@ bool ServerAccept(CONNECTION *c)
 				{
 					direction = TCP_SERVER_TO_CLIENT;
 				}
-				Debug("%u/%u\n", s2c, c2s);
 				ts->Direction = direction;
 			}
 		}
@@ -2463,7 +2437,6 @@ bool ServerAccept(CONNECTION *c)
 
 		// Increment the number of connections
 		Inc(s->Connection->CurrentNumConnection);
-		Debug("TCP Connection Incremented: %u\n", Count(s->Connection->CurrentNumConnection));
 
 		// Issue the Cancel of session
 		Cancel(s->Cancel1);
@@ -2824,7 +2797,6 @@ bool ClientAdditionalConnect(CONNECTION *c, THREAD *t)
 	}
 
 	// Send a signature
-	Debug("Uploading Signature...\n");
 	if (ClientUploadSignature(s) == false)
 	{
 		goto CLEANUP;
@@ -2837,7 +2809,6 @@ bool ClientAdditionalConnect(CONNECTION *c, THREAD *t)
 	}
 
 	// Receive a Hello packet
-	Debug("Downloading Hello...\n");
 	if (ClientDownloadHello(c, s) == false)
 	{
 		goto CLEANUP;
@@ -2873,7 +2844,6 @@ bool ClientAdditionalConnect(CONNECTION *c, THREAD *t)
 	if (err != 0)
 	{
 		// Error has occurred
-		Debug("Additional Connect Error: %u\n", err);
 		if (err == ERR_SESSION_TIMEOUT || err == ERR_INVALID_PROTOCOL)
 		{
 			// We shall re-connection because it is a fatal error
@@ -2882,7 +2852,6 @@ bool ClientAdditionalConnect(CONNECTION *c, THREAD *t)
 		goto CLEANUP;
 	}
 
-	Debug("Additional Connect Succeed!\n");
 
 	// Success the additional connection
 	// Add to the TcpSockList of the connection
@@ -2902,13 +2871,9 @@ bool ClientAdditionalConnect(CONNECTION *c, THREAD *t)
 		Add(c->Tcp->TcpSockList, ts);
 	}
 	UnlockList(c->Tcp->TcpSockList);
-	Debug("TCP Connection Incremented: %u\n", Count(c->CurrentNumConnection));
 
 	if (c->Session->HalfConnection)
 	{
-		Debug("New Half Connection: %s\n",
-			direction == TCP_SERVER_TO_CLIENT ? "TCP_SERVER_TO_CLIENT" : "TCP_CLIENT_TO_SERVER"
-			);
 	}
 
 	// Issue the Cancel to the session
@@ -3129,7 +3094,6 @@ bool ClientConnect(CONNECTION *c)
 	}
 
 	// Send a signature
-	Debug("Uploading Signature...\n");
 	if (ClientUploadSignature(s) == false)
 	{
 		c->Err = ERR_DISCONNECTED;
@@ -3144,7 +3108,6 @@ bool ClientConnect(CONNECTION *c)
 	}
 
 	// Receive a Hello packet
-	Debug("Downloading Hello...\n");
 	if (ClientDownloadHello(c, s) == false)
 	{
 		goto CLEANUP;
@@ -3166,14 +3129,6 @@ bool ClientConnect(CONNECTION *c)
 		goto CLEANUP;
 	}
 
-	Debug("Server Version : %u\n"
-		"Server String  : %s\n"
-		"Server Build   : %u\n"
-		"Client Version : %u\n"
-		"Client String  : %s\n"
-		"Client Build   : %u\n",
-		c->ServerVer, c->ServerStr, c->ServerBuild,
-		c->ClientVer, c->ClientStr, c->ClientBuild);
 
 	// During user authentication
 	c->Session->ClientStatus = CLIENT_STATUS_AUTH;
@@ -3279,8 +3234,6 @@ bool ClientConnect(CONNECTION *c)
 	c->Session->SessionKey32 = session_key_32;
 
 	// Save the contents of the Welcome packet
-	Debug("session_name: %s, connection_name: %s\n",
-		session_name, connection_name);
 
 	Lock(c->Session->lock);
 	{
@@ -3382,7 +3335,6 @@ bool ClientConnect(CONNECTION *c)
 								&remote_ip, &udp_acceleration_server_ip, udp_acceleration_server_port,
 								server_cookie, client_cookie) == false)
 							{
-								Debug("UdpAccelInitClient failed.\n");
 							}
 							else
 							{
@@ -3413,7 +3365,6 @@ bool ClientConnect(CONNECTION *c)
 	}
 	Unlock(c->Session->lock);
 
-	Debug("UseUdpAcceleration = %u\n", sess->UseUdpAcceleration);
 
 	if (sess->UseUdpAcceleration == false)
 	{
@@ -3521,7 +3472,6 @@ CLEANUP:
 	Disconnect(s);
 	ReleaseSock(s);
 
-	Debug("Error: %u\n", c->Err);
 
 	if (ok == false)
 	{
@@ -4365,7 +4315,6 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 	if (additional_connect && IsZeroIP(&sess->ServerIP_CacheForNextConnect) == false)
 	{
 		IPToStr(hostname, sizeof(hostname), &sess->ServerIP_CacheForNextConnect);
-		Debug("ClientConnectGetSocket(): Using cached IP address %s\n", hostname);
 	}
 	else
 	{
@@ -4406,8 +4355,6 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 					else {
 						localIP = &sess->ClientOption->BindLocalIP;
 					}
-					Debug("ClientConnectGetSocket(): Source IP address %r and source port number %d for binding\n"
-						, &sess->ClientOption->BindLocalIP, sess->ClientOption->BindLocalPort);
 				}
 			}
 			// In the case of second and subsequent TCP/IP connections
@@ -4421,7 +4368,6 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 			}
 			else {
 				localport = sess->ClientOption->BindLocalPort + Count(sess->Connection->CurrentNumConnection) - 1;
-				Debug("ClientConnectGetSocket(): Additional source port number %u\n", localport);
 			}
 			// Bottom of Bind outgoing connection
 
@@ -4505,7 +4451,6 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 			break;
 		default:
 			c->Err = ERR_INTERNAL_ERROR;
-			Debug("ClientConnectGetSocket(): Unknown proxy type: %u!\n", o->ProxyType);
 			return NULL;
 		}
 
@@ -4513,7 +4458,6 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 
 		if (c->Err != ERR_NO_ERROR)
 		{
-			Debug("ClientConnectGetSocket(): Connection via proxy server failed with error %u\n", ret);
 			return NULL;
 		}
 
@@ -4533,7 +4477,6 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 	if (save_resolved_ip && IsZeroIP(&resolved_ip) == false)
 	{
 		Copy(&c->Session->ServerIP_CacheForNextConnect, &resolved_ip, sizeof(c->Session->ServerIP_CacheForNextConnect));
-		Debug("ClientConnectGetSocket(): Saved %s IP address %r for future connections.\n", hostname, &resolved_ip);
 	}
 
 	// Top of Bind outgoing connection
@@ -4542,15 +4485,12 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 	// In the case of first TCP/IP connection, save the local IP address
 	if (additional_connect == false) {
 		c->Session->LocalIP_CacheForNextConnect = sock->LocalIP;
-		Debug("ClientConnectGetSocket(): Saved local IP address %r for future connections.\n", &sock->LocalIP);
 	}
 	// In the case of second and subsequent TCP/IP connections, check to see whether or not the local IP address is same as the first one
 	else {
 		if (memcmp(sock->LocalIP.address, c->Session->LocalIP_CacheForNextConnect.address, sizeof(sock->LocalIP.address)) == 0) {
-			Debug("ClientConnectGetSocket(): Binded local IP address %s OK\n", localaddr);
 		}
 		else {
-			Debug("ClientConnectGetSocket(): Binded local IP address %s NG\n", localaddr);
 		}
 	}
 	// Bottom of Bind outgoing connection

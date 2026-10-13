@@ -209,14 +209,12 @@ void SendDataWithUDP(SOCK *s, CONNECTION *c)
 		if (ret == SOCK_LATER)
 		{
 			// Blocking
-			Debug(".");
 		}
 		if (ret != b->Size)
 		{
 			if (s->IgnoreSendErr == false)
 			{
 				// Error
-				Debug("******* SendTo Error !!!\n");
 			}
 		}
 
@@ -311,7 +309,6 @@ void PutUDPPacketData(CONNECTION *c, void *data, UINT size)
 		}
 		else
 		{
-			Debug("Invalid SessionKey: 0x%X\n", key32);
 		}
 	}
 
@@ -609,7 +606,6 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 							bool update_keepalive_timer = false;
 							// Number of data
 							num_data = Endian32(q->num_item);
-							PROBE_DATA2("WriteSendFifo num", &num_data, sizeof(UINT));
 							WriteSendFifo(s, tss, &num_data, sizeof(UINT));
 
 							s->TotalSendSize += sizeof(UINT);
@@ -620,7 +616,6 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 								// Size data
 								UINT size_data;
 								size_data = Endian32(b->Size);
-								PROBE_DATA2("WriteSendFifo size", &size_data, sizeof(UINT));
 								WriteSendFifo(s, tss, &size_data, sizeof(UINT));
 
 								c->CurrentSendQueueSize -= b->Size;
@@ -629,7 +624,6 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 								s->TotalSendSizeReal += sizeof(UINT);
 
 								// Data body
-								PROBE_DATA2("WriteSendFifo data", b->Buf, b->Size);
 								WriteSendFifo(s, tss, b->Buf, b->Size);
 
 								s->TotalSendSize += b->SizeofData;
@@ -675,8 +669,6 @@ SEND_START:
 					FreeTcpSock(ts);
 					// Decrement the count
 					Dec(c->CurrentNumConnection);
-					Debug("--- TCP Connection Decremented: %u (%s Line %u)\n", Count(c->CurrentNumConnection), __FILE__, __LINE__);
-					Debug("LIST_NUM(tcp->TcpSockList): %u\n", LIST_NUM(tcp->TcpSockList));
 				}
 				UnlockList(tcp->TcpSockList);
 
@@ -693,7 +685,6 @@ SEND_START:
 				buf = (UCHAR *)ts->SendFifo->p + ts->SendFifo->pos;
 				want_send_size = ts->SendFifo->size;
 
-				PROBE_DATA2("TcpSockSend", buf, want_send_size);
 				size = TcpSockSend(s, ts, buf, want_send_size);
 
 				if (size == 0)
@@ -705,7 +696,6 @@ SEND_START:
 				{
 					// Packet is jammed
 					ts->LateCount++; // Increment of the delay counter
-					PROBE_STR("ts->LateCount++;");
 				}
 				else
 				{
@@ -715,16 +705,6 @@ SEND_START:
 					if (size < want_send_size)
 					{
 						// Fail to transmit all of the data that has been scheduled
-#ifdef	USE_PROBE
-						{
-							char tmp[MAX_SIZE];
-
-							snprintf(tmp, sizeof(tmp), "size < want_send_size: %u < %u",
-								size, want_send_size);
-
-							PROBE_STR(tmp);
-						}
-#endif	// USE_PROBE
 					}
 					else
 					{
@@ -732,7 +712,6 @@ SEND_START:
 						// (The queue is exhausted), reset the delay counter
 						ts->LateCount = 0;
 
-						PROBE_STR("TcpSockSend All Completed");
 					}
 					// Updated the last communication date and time
 					UPDATE_LAST_COMM_TIME(c->Session->LastCommTime, now);
@@ -894,7 +873,6 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 		return;
 	}
 
-	PROBE_STR("ConnectionReceive");
 
 	s = c->Session;
 
@@ -937,7 +915,6 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 						if (ts->DisconnectTick != 0 &&
 							ts->DisconnectTick <= now)
 						{
-							Debug("ts->DisconnectTick <= now\n");
 							Disconnect(ts->Sock);
 						}
 					}
@@ -976,7 +953,6 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 					{
 						// Disconnect the last socket
 						Disconnect(ts->Sock);
-						Debug("Disconnect (s2c=%u, c2s=%u)\n", s2c, c2s);
 					}
 				}
 			}
@@ -1011,7 +987,6 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 		time = MIN(time, next_delay_packet_diff);
 		num_delayed = LIST_NUM(s->DelayedPacketList);
 
-		PROBE_STR("ConnectionReceive: Select 0");
 
 		if (s->Flag1 != set.NumSocket)
 		{
@@ -1033,7 +1008,6 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 
 		now = Tick64();
 
-		PROBE_STR("ConnectionReceive: Select 1");
 
 		if (s->UseUdpAcceleration && s->UdpAccel != NULL)
 		{
@@ -1093,7 +1067,6 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 
 			if (s->IsUsingUdpAcceleration != new_status)
 			{
-				Debug("UDP Status Changed: %u\n", new_status);
 			}
 
 			s->IsUsingUdpAcceleration = new_status;
@@ -1160,8 +1133,6 @@ DISCONNECT_THIS_TCP:
 					FreeTcpSock(ts);
 					// Decrement
 					Dec(c->CurrentNumConnection);
-					Debug("--- TCP Connection Decremented: %u (%s Line %u)\n", Count(c->CurrentNumConnection), __FILE__, __LINE__);
-					Debug("LIST_NUM(tcp->TcpSockList): %u\n", LIST_NUM(tcp->TcpSockList));
 				}
 				UnlockList(tcp->TcpSockList);
 
@@ -1175,7 +1146,6 @@ DISCONNECT_THIS_TCP:
 					if ((now > ts->LastCommTime) && ((now - ts->LastCommTime) >= ((UINT64)s->Timeout)))
 					{
 						// The connection has timed out
-						Debug("Connection %u Timeouted.\n", i);
 						goto DISCONNECT_THIS_TCP;
 					}
 				}
@@ -1198,7 +1168,6 @@ DISCONNECT_THIS_TCP:
 				recv_fifo_size_middle_update += (int)size;
 
 				// Write the received data into the FIFO
-				PROBE_DATA2("WriteRecvFifo", buf, size);
 				WriteRecvFifo(s, ts, buf, size);
 
 				// Stop receiving  when the receive buffer is full
@@ -1227,7 +1196,6 @@ DISCONNECT_THIS_TCP:
 					// The number of Data blocks
 					ts->WantSize = sizeof(UINT);
 					Copy(&sz, buf, sizeof(UINT));
-					PROBE_DATA2("ReadFifo 0", buf, sizeof(UINT));
 					sz = Endian32(sz);
 					ts->NextBlockNum = sz;
 					ReadFifo(ts->RecvFifo, NULL, sizeof(UINT));
@@ -1253,12 +1221,10 @@ DISCONNECT_THIS_TCP:
 					// Data block size
 					Copy(&sz, buf, sizeof(UINT));
 					sz = Endian32(sz);
-					PROBE_DATA2("ReadFifo 1", buf, sizeof(UINT));
 					if (sz > (MAX_PACKET_SIZE * 2))
 					{
 						// received a strange data size
 						// TCP/IP Error?
-						Debug("%s %u sz > (MAX_PACKET_SIZE * 2)\n", __FILE__, __LINE__);
 						Disconnect(ts->Sock);
 					}
 					ts->NextBlockSize = MIN(sz, MAX_PACKET_SIZE * 2);
@@ -1290,7 +1256,6 @@ DISCONNECT_THIS_TCP:
 					ts->CurrentPacketNum++;
 					data = MallocFast(ts->NextBlockSize);
 					Copy(data, buf, ts->NextBlockSize);
-					PROBE_DATA2("ReadFifo 2", buf, ts->NextBlockSize);
 					ReadFifo(ts->RecvFifo, NULL, ts->NextBlockSize);
 					block = NewBlock(data, ts->NextBlockSize, s->UseCompress ? -1 : 0);
 
@@ -1343,13 +1308,11 @@ DISCONNECT_THIS_TCP:
 					// Keep-Alive packet size
 					ts->Mode = 4;
 					Copy(&sz, buf, sizeof(UINT));
-					PROBE_DATA2("ReadFifo 3", buf, sizeof(UINT));
 					sz = Endian32(sz);
 					if (sz > MAX_KEEPALIVE_SIZE)
 					{
 						// received a strange data size
 						// TCP/IP Error?
-						Debug("%s %u sz > MAX_KEEPALIVE_SIZE\n", __FILE__, __LINE__);
 						Disconnect(ts->Sock);
 					}
 					ts->NextBlockSize = MIN(sz, MAX_KEEPALIVE_SIZE);
@@ -1369,7 +1332,6 @@ DISCONNECT_THIS_TCP:
 					ts->Mode = 0;
 					sz = ts->NextBlockSize;
 
-					PROBE_DATA2("ReadFifo 4", NULL, 0);
 					ReadFifo(ts->RecvFifo, NULL, sz);
 
 					UPDATE_LAST_COMM_TIME(c->Session->LastCommTime, now);
@@ -1452,7 +1414,6 @@ DISCONNECT_THIS_TCP:
 					size = RecvFrom(sock, &ip, &port, buf, RECV_BUF_SIZE);
 					if (size == 0 && sock->IgnoreRecvErr == false)
 					{
-						Debug("UDP Socket Disconnected.\n");
 						Lock(c->lock);
 						{
 							ReleaseSock(udp->s);
@@ -1575,7 +1536,6 @@ DISCONNECT_THIS_TCP:
 					s->Cancel2 = NULL;
 
 					HLog(s->Hub, "LH_BRIDGE_2", s->Name, b->Name);
-					Debug("Bridge Device Error.\n");
 
 					break;
 				}
@@ -1597,7 +1557,6 @@ DISCONNECT_THIS_TCP:
 						// Add the packet to queue
 						BLOCK *block = NewBlock(data, ret, 0);
 
-						PROBE_DATA2("ConnectionReceive: NewBlock", data, ret);
 
 						if (ret > 1514)
 						{
@@ -1653,7 +1612,6 @@ DISCONNECT_THIS_TCP:
 						}
 					}
 
-					Debug("Bridge Open Succeed.\n");
 
 					HLog(c->Session->Hub, "LH_BRIDGE_1", c->Session->Name, b->Name);
 
@@ -1993,7 +1951,6 @@ void ConnectionAccept(CONNECTION *c)
 	{
 		// Failed
 		AddNoSsl(c->Cedar, &s->RemoteIP);
-		Debug("ConnectionAccept(): StartSSL() failed\n");
 		if (ssl_err != 0)
 		{
 			SLog(c->Cedar, "LS_SSL_START_ERROR", c->Name, GetUniErrorStr(ssl_err), ssl_err);
@@ -2017,13 +1974,11 @@ void ConnectionAccept(CONNECTION *c)
 	if (ServerAccept(c) == false)
 	{
 		// Failed
-		Debug("ConnectionAccept(): ServerAccept() failed with error %u\n", c->Err);
 	}
 
 FINAL:
 	if (c->flag1 == false)
 	{
-		Debug("%s %u c->flag1 == false\n", __FILE__, __LINE__);
 		Disconnect(s);
 	}
 
@@ -2062,7 +2017,6 @@ void StopAllAdditionalConnectThread(CONNECTION *c)
 	LockList(c->ConnectingThreads);
 	{
 		num = LIST_NUM(c->ConnectingThreads);
-		Debug("c->ConnectingThreads: %u\n", num);
 		threads = ToArray(c->ConnectingThreads);
 		DeleteAll(c->ConnectingThreads);
 	}
@@ -2084,7 +2038,6 @@ void StopConnection(CONNECTION *c, bool no_wait)
 		return;
 	}
 
-	Debug("Stop Connection: %s\n", c->Name);
 
 	// Stop flag
 	c->Halt = true;
@@ -2172,11 +2125,9 @@ void DisconnectTcpSockets(CONNECTION *c)
 
 	if (num != 0)
 	{
-		Debug("--- SOCKET STATUS ---\n");
 		for (i = 0;i < num;i++)
 		{
 			TCPSOCK *ts = tcpsocks[i];
-			Debug(" SOCK %2u: %u\n", i, ts->Sock->SendSize);
 			FreeTcpSock(ts);
 		}
 	}
