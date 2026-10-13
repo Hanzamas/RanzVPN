@@ -16,6 +16,7 @@
 
 static TICK64 *tk64 = NULL;
 static EVENT *halt_tick_event = NULL;
+static volatile LONG64 tick64_origin = 0;
 
 // Get the high-resolution time
 UINT64 TickHighres64()
@@ -80,9 +81,15 @@ UINT64 TickToTime(UINT64 tick)
 // Get the Tick value
 UINT64 Tick64()
 {
-#ifdef	OS_WIN32
-	return Win32FastTick64();
-#endif	// OS_WIN32
+	if (tick64_origin == 0)
+	{
+		if (InterlockedCompareExchange64(&tick64_origin, (LONG64)GetTickCount64(), 0) == 0)
+		{
+			return 1;
+		}
+	}
+
+	return GetTickCount64() - (UINT64)tick64_origin + 1;
 }
 
 // Real-time clock measuring thread
@@ -112,7 +119,7 @@ void Tick64Thread(THREAD *thread, void *param)
 		UINT tick;
 		UINT64 tick64;
 
-		tick64 = Win32FastTick64();
+		tick64 = Tick64();
 		tick = (UINT)tick64;
 
 		if (create_first_entry)

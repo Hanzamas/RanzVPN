@@ -1615,7 +1615,7 @@ void SystemTime(SYSTEMTIME *st)
 		return;
 	}
 
-	OSGetSystemTime(st);
+	GetSystemTime(st);
 
 	// KS
 	KS_INC(KS_GETTIME_COUNT);
