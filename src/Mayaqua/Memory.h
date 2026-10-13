@@ -106,11 +106,9 @@ struct HASH_LIST
 
 HASH_LIST *NewHashList(GET_HASH *get_hash_proc, COMPARE *compare_proc, UINT bits, bool make_list);
 void ReleaseHashList(HASH_LIST *h);
-void CleanupHashList(HASH_LIST *h);
 void AddHash(HASH_LIST *h, void *p);
 bool DeleteHash(HASH_LIST *h, void *p);
 void *SearchHash(HASH_LIST *h, void *t);
-UINT CalcHashForHashList(HASH_LIST *h, void *p);
 void **HashListToArray(HASH_LIST *h, UINT *num);
 void LockHashList(HASH_LIST *h);
 void UnlockHashList(HASH_LIST *h);
@@ -124,12 +122,6 @@ void *ZeroMallocEx(UINT size, bool zero_clear_when_free);
 void *ReAlloc(void *addr, UINT size);
 void Free(void *addr);
 void FreeSafe(void **addr);
-void CheckMemTag1(MEMTAG1 *tag);
-void CheckMemTag2(MEMTAG2 *tag);
-
-void *InternalMalloc(UINT size);
-void *InternalReAlloc(void *addr, UINT size);
-void InternalFree(void *addr);
 
 void Copy(void *dst, void *src, UINT size);
 void Move(void *dst, void *src, UINT size);
@@ -141,9 +133,7 @@ void *Clone(void *addr, UINT size);
 void *Base64FromBin(UINT *out_size, const void *src, const UINT size);
 void *Base64ToBin(UINT *out_size, const void *src, const UINT size);
 
-USHORT Swap16(USHORT value);
 UINT Swap32(UINT value);
-UINT64 Swap64(UINT64 value);
 USHORT Endian16(USHORT src);
 UINT Endian32(UINT src);
 UINT64 Endian64(UINT64 src);
@@ -156,7 +146,6 @@ void ClearBuf(BUF *b);
 void WriteBuf(BUF *b, void *buf, UINT size);
 void WriteBufBuf(BUF *b, BUF *bb);
 UINT ReadBuf(BUF *b, void *buf, UINT size);
-void AdjustBufSize(BUF *b, UINT new_size);
 void SeekBuf(BUF *b, UINT offset, int mode);
 void SeekBufToEnd(BUF *b);
 void SeekBufToBegin(BUF *b);
@@ -180,17 +169,13 @@ BUF *ReadDumpWithMaxSize(char *filename, UINT max_size);
 BUF *ReadDumpW(wchar_t *filename);
 BUF *ReadDumpExW(wchar_t *filename, bool read_lock);
 BUF *MemToBuf(void *data, UINT size);
-bool CompareBuf(BUF *b1, BUF *b2);
 
 UINT ReadFifo(FIFO *f, void *p, UINT size);
 void ShrinkFifoMemory(FIFO *f);
 void WriteFifo(FIFO *f, void *p, UINT size);
 UINT FifoSize(FIFO *f);
 void ReleaseFifo(FIFO *f);
-void CleanupFifo(FIFO *f);
 FIFO *NewFifo();
-FIFO *NewFifoFast();
-FIFO *NewFifoEx2(bool fast, bool fixed);
 void InitFifo();
 void SetFifoCurrentReallocMemSize(UINT size);
 
@@ -203,11 +188,8 @@ void DeleteAll(LIST *o);
 void LockList(LIST *o);
 void UnlockList(LIST *o);
 void ReleaseList(LIST *o);
-void CleanupList(LIST *o);
 LIST *NewList(COMPARE *cmp);
 LIST *NewListFast(COMPARE *cmp);
-LIST *NewListEx2(COMPARE *cmp, bool fast, bool fast_malloc);
-void CopyToArray(LIST *o, void *p);
 void *ToArray(LIST *o);
 void *ToArrayEx(LIST *o, bool fast);
 int CompareStr(void *p1, void *p2);
@@ -216,8 +198,6 @@ bool IsInList(LIST *o, void *p);
 bool IsInListKey(LIST *o, UINT key);
 void *ListKeyToPointer(LIST *o, UINT key);
 bool ReplaceListPointer(LIST *o, void *oldptr, void *newptr);
-void AddInt(LIST *o, UINT i);
-void AddInt64(LIST *o, UINT64 i);
 void AddIntDistinct(LIST *o, UINT i);
 void AddInt64Distinct(LIST *o, UINT64 i);
 void DelInt(LIST *o, UINT i);
@@ -227,8 +207,6 @@ bool IsIntInList(LIST *o, UINT i);
 bool IsInt64InList(LIST *o, UINT64 i);
 LIST *NewIntList(bool sorted);
 LIST *NewInt64List(bool sorted);
-int CompareInt(void *p1, void *p2);
-int CompareInt64(void *p1, void *p2);
 
 void *GetNext(QUEUE *q);
 void InsertQueue(QUEUE *q, void *p);
@@ -236,15 +214,12 @@ void InsertQueueInt(QUEUE *q, UINT value);
 void LockQueue(QUEUE *q);
 void UnlockQueue(QUEUE *q);
 void ReleaseQueue(QUEUE *q);
-void CleanupQueue(QUEUE *q);
 QUEUE *NewQueue();
 QUEUE *NewQueueFast();
 UINT GetQueueNum(QUEUE *q);
 
 SK *NewSk();
-SK *NewSkEx(bool no_compact);
 void ReleaseSk(SK *s);
-void CleanupSk(SK *s);
 void LockSk(SK *s);
 void UnlockSk(SK *s);
 void Push(SK *s, void *p);
@@ -252,14 +227,12 @@ void *Pop(SK *s);
 
 UINT Uncompress(void *dst, UINT dst_size, void *src, UINT src_size);
 UINT Compress(void *dst, UINT dst_size, void *src, UINT src_size);
-UINT CompressEx(void *dst, UINT dst_size, void *src, UINT src_size, UINT level);
 UINT CalcCompress(UINT src_size);
 
 bool IsZero(void *data, UINT size);
 
 UINT SearchBin(void *data, UINT data_start, UINT data_size, void *key, UINT key_size);
 void CrashNow();
-UINT Power(UINT a, UINT b);
 
 void AppendBufUtf8(BUF *b, wchar_t *str);
 void AppendBufStr(BUF *b, char *str);

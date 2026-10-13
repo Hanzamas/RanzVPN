@@ -253,8 +253,6 @@ bool GetSniNameFromSslPacket(UCHAR *packet_buf, UINT packet_size, char *sni, UIN
 
 void SetDhParam(DH_CTX *dh);
 
-int GetCurrentTimezoneWin32();
-
 UINT GetErrorFromPack(PACK *p);
 PACK *PackError(UINT error);
 
@@ -262,28 +260,9 @@ void CreateDummyValue(PACK *p);
 
 char *RecvLine(SOCK *s, UINT max_size);
 
-void BindConnectThreadForIPv4(THREAD *thread, void *param);
-void BindConnectThreadForIPv6(THREAD *thread, void *param);
-
-SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname, char *hostname_original);
 void GetCurrentMachineIpProcessHash(void *hash);
-void GetCurrentMachineIpProcessHashInternal(void *hash);
 void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_size, char *dst_domain, UINT dst_domain_size, bool do_not_parse_atmark);
 
-
-void Win32InitSocketLibrary();
-void Win32Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2);
-void Win32InitAsyncSocket(SOCK *sock);
-void Win32JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event);
-void Win32FreeAsyncSocket(SOCK *sock);
-void Win32Cancel(CANCEL *c);
-void Win32CleanupCancel(CANCEL *c);
-CANCEL *Win32NewCancel();
-SOCK_EVENT *Win32NewSockEvent();
-void Win32SetSockEvent(SOCK_EVENT *event);
-void Win32CleanupSockEvent(SOCK_EVENT *event);
-bool Win32WaitSockEvent(SOCK_EVENT *event, UINT timeout);
-SOCKET Win32Accept(SOCK *sock, SOCKET s, struct sockaddr *addr, int *addrlen, bool ipv6);
 
 
 void InitNetwork();
@@ -291,32 +270,22 @@ void FreeNetwork();
 
 void InAddrToIP(IP *ip, struct in_addr *addr);
 void InAddrToIP6(IP *ip, struct in6_addr *addr);
-void IPToInAddr(struct in_addr *addr, IP *ip);
 void IPToInAddr6(struct in6_addr *addr, IP *ip);
 bool StrToIP(IP *ip, char *str);
 void IPToStr(char *str, UINT size, IP *ip);
 void IPToStr32(char *str, UINT size, UINT ip);
 void IPToStr4or6(char *str, UINT size, UINT ip_4_uint, UCHAR *ip_6_bytes);
-bool GetHostName(char *hostname, UINT size, IP *ip);
 void GetMachineName(char *name, UINT size);
-void GetMachineHostName(char *name, UINT size);
 void UINTToIP(IP *ip, UINT value);
 UINT IPToUINT(IP *ip);
-SOCK *NewSock();
 void ReleaseSock(SOCK *s);
-void CleanupSock(SOCK *s);
 SOCK *Connect(char *hostname, UINT port);
 SOCK *ConnectEx4(char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname, IP *ret_ip);
 
 #define	BIND_LOCALIP_NULL			NULL		// NULL IP address specifies no binding
 #define	BIND_LOCALPORT_NULL			0			// NULL port number specifies no binding
 SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname, IP *ret_ip);
-SOCKET BindConnectTimeoutIPv4(IP *localIP, UINT localport, IP *ip, UINT port, UINT timeout, bool *cancel_flag);
 
-bool SetSocketBufferSize(SOCKET s, bool send, UINT size);
-UINT SetSocketBufferSizeWithBestEffort(SOCKET s, bool send, UINT size);
-void InitUdpSocketBufferSize(SOCKET s);
-void QuerySocketInformation(SOCK *sock);
 void Disconnect(SOCK *sock);
 SOCK *Listen(UINT port);
 SOCK *ListenEx(UINT port, bool local_only);
@@ -324,17 +293,11 @@ SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip);
 SOCK *ListenEx6(UINT port, bool local_only);
 SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip);
 SOCK *Accept(SOCK *sock);
-SOCK *Accept6(SOCK *sock);
 UINT Send(SOCK *sock, void *data, UINT size, bool secure);
 UINT Recv(SOCK *sock, void *data, UINT size, bool secure);
-UINT Peek(SOCK *sock, void *data, UINT size);
-UINT SecureSend(SOCK *sock, void *data, UINT size);
-UINT SecureRecv(SOCK *sock, void *data, UINT size);
 bool StartSSL(SOCK *sock, X *x, K *priv);
 bool StartSSLEx(SOCK *sock, X *x, K *priv, UINT ssl_timeout, char *sni_hostname);
 bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err);
-bool AddChainSslCert(struct ssl_ctx_st *ctx, X *x);
-void AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx);
 bool SendAll(SOCK *sock, void *data, UINT size, bool secure);
 void SendAdd(SOCK *sock, void *data, UINT size);
 bool SendNow(SOCK *sock, int secure);
@@ -350,16 +313,9 @@ void SetWantToUseCipher(SOCK *sock, char *name);
 SOCK *NewUDP(UINT port);
 SOCK *NewUDPEx2(UINT port, bool ipv6, IP *ip);
 SOCK *NewUDPEx3(UINT port, IP *ip);
-SOCK *NewUDP4(UINT port, IP *ip);
-SOCK *NewUDP6(UINT port, IP *ip);
 UINT SendTo(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size);
-UINT SendToEx(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size, bool broadcast);
-UINT SendTo6Ex(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size, bool broadcast);
 UINT RecvFrom(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size);
-UINT RecvFrom6(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size);
 void SetTimeout(SOCK *sock, UINT timeout);
-UINT GetTimeout(SOCK *sock);
-bool CheckTCPPortEx(char *hostname, UINT port, UINT timeout);
 void JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event);
 SOCK_EVENT *NewSockEvent();
 void SetSockEvent(SOCK_EVENT *event);
@@ -371,31 +327,16 @@ void AcceptInitEx(SOCK *s, bool no_lookup_hostname);
 void DisableGetHostNameWhenAcceptInit();
 TOKEN_LIST *GetCipherList();
 COUNTER *GetNumTcpConnectionsCounter();
-void InitWaitThread();
-void FreeWaitThread();
 void AddWaitThread(THREAD *t);
 void DelWaitThread(THREAD *t);
-bool IsSubnetMask(IP *ip);
-bool IsSubnetMask4(IP *ip);
 bool IsZeroIP(IP *ip);
 bool IsZeroIP6Addr(IPV6_ADDR *addr);
-UINT IntToSubnetMask32(UINT i);
 void IntToSubnetMask4(IP *ip, UINT i);
-bool GetNetBiosName(char *name, UINT size, IP *ip);
 bool IsIPv6Supported();
 bool HasIPv6Address();
-void SetSockTos(SOCK *s, int tos);
 void SetSockHighPriority(SOCK *s, bool flag);
-void InitIpClientList();
-void FreeIpClientList();
-int CompareIpClientList(void *p1, void *p2);
-void AddIpClient(IP *ip);
-void DelIpClient(IP *ip);
-IP_CLIENT *SearchIpClient(IP *ip);
 UINT GetNumIpClient(IP *ip);
-int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool *cancel_flag);
 void AddProtocolDetailsStr(char *dst, UINT dst_size, char *str);
-void AddProtocolDetailsKeyValueStr(char *dst, UINT dst_size, char *key, char *value);
 void AddProtocolDetailsKeyValueInt(char *dst, UINT dst_size, char *key, UINT value);
 
 #ifdef	ENABLE_SSL_LOGGING
@@ -411,84 +352,46 @@ bool IPToIPv6Addr(IPV6_ADDR *addr, IP *ip);
 void SetIP6(IP *ip, UCHAR *value);
 void GetLocalHostIP6(IP *ip);
 void GetLocalHostIP4(IP *ip);
-bool IsLocalHostIP6(IP *ip);
-bool IsLocalHostIP4(IP *ip);
 bool IsLocalHostIP(IP *ip);
 void ZeroIP4(IP *ip);
-bool CheckIPItemStr6(char *str);
-void IPItemStrToChars6(UCHAR *chars, char *str);
-bool StrToIP6(IP *ip, char *str);
-void IPToStr6(char *str, UINT size, IP *ip);
 void IP6AddrToStr(char *str, UINT size, IPV6_ADDR *addr);
-void IPToStr6Array(char *str, UINT size, UCHAR *bytes);
-void IPToStr6Inner(char *str, IP *ip);
-void IntToSubnetMask6(IP *ip, UINT i);
 void IPAnd6(IP *dst, IP *a, IP *b);
-void GetAllRouterMulticastAddress6(IP *ip);
-void GetAllNodeMulticaseAddress6(IP *ip);
-void GetLoopbackAddress6(IP *ip);
 UINT GetIPAddrType6(IP *ip);
 UINT GetIPv6AddrType(IPV6_ADDR *addr);
-void GenerateEui64Address6(UCHAR *dst, UCHAR *mac);
 void GenerateEui64LocalAddress(IP *a, UCHAR *mac);
-bool IsSubnetMask6(IP *a);
-UINT SubnetMaskToInt(IP *a);
 UINT SubnetMaskToInt6(IP *a);
-UINT SubnetMaskToInt4(IP *a);
 bool IsStrIPv6Address(char *str);
 void IPAnd4(IP *dst, IP *a, IP *b);
 
 bool IsValidUnicastIPAddress4(IP *ip);
 bool IsValidUnicastIPAddress6(IP *ip);
 
-bool ParseIpAndSubnetMask4(char *src, UINT *ip, UINT *mask);
-bool ParseIpAndSubnetMask46(char *src, IP *ip, IP *mask);
 bool ParseIpAndMask4(char *src, UINT *ip, UINT *mask);
 bool ParseIpAndMask6(char *src, IP *ip, IP *mask);
 bool ParseIpAndMask46(char *src, IP *ip, IP *mask);
 void MaskToStr(char *str, UINT size, IP *mask);
-void Mask6AddrToStrEx(char *str, UINT size, IPV6_ADDR *mask, bool always_full_address);
 void Mask6AddrToStr(char *str, UINT size, IPV6_ADDR *mask);
 void MaskToStr32(char *str, UINT size, UINT mask);
-void MaskToStr32Ex(char *str, UINT size, UINT mask, bool always_full_address);
-void MaskToStrEx(char *str, UINT size, IP *mask, bool always_full_address);
 
-LIST *GetHostIPAddressListInternal();
-LIST *GetHostIPAddressList();
 LIST *CloneIPAddressList(LIST *o);
 void FreeHostIPAddressList(LIST *o);
 void AddHostIPAddressToList(LIST *o, IP *ip);
-int CmpIpAddressList(void *p1, void *p2);
 UINT64 GetHostIPAddressListHash();
 
 struct SslClientCertInfo {
 	X *X;
 };
 
-void SetCurrentGlobalIP(IP *ip, bool ipv6);
-bool GetCurrentGlobalIP(IP *ip, bool ipv6);
-
 bool IsIPPrivate(IP *ip);
 bool IsIPMyHost(IP *ip);
 void LoadPrivateIPFile();
-bool IsOnPrivateIPFile(UINT ip);
 void FreePrivateIPFile();
 
-LIST *GetNicList();
-void FreeNicList(LIST *o);
-bool IsMacAddressLocalInner(LIST *o, void *addr);
 bool IsMacAddressLocalFast(void *addr);
 void RefreshLocalMacAddressList();
 
-struct ssl_ctx_st *NewSSLCtx(bool server_mode);
-void FreeSSLCtx(struct ssl_ctx_st *ctx);
 UINT GetOSSecurityLevel();
 
-LIST *Win32GetNicList();
-
-
-void InitDynList();
-void FreeDynList();
 
 
 #endif
