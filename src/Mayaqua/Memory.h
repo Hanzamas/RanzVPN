@@ -97,6 +97,7 @@ typedef UINT (GET_HASH)(void *p);
 
 struct HASH_LIST
 {
+	UINT Bits;
 	UINT Size;
 	GET_HASH *GetHashProc;
 	COMPARE *CompareProc;
