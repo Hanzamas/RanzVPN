@@ -20,9 +20,6 @@ struct DYN_VALUE
 	UINT64 Value;								// Value
 };
 
-#define	DYN64(id, default_value)	( (UINT64)GetDynValueOrDefaultSafe ( #id , (UINT64)( default_value )))
-#define	DYN32(id, default_value)	(UINT)DYN64(id, (UINT)default_value)
-
 #define	MAX_HOST_NAME_LEN			255		// Maximum length of the host name
 
 #define	TIMEOUT_INFINITE			(0x7fffffff)
@@ -30,8 +27,6 @@ struct DYN_VALUE
 #define	TIMEOUT_SSL_CONNECT			(15 * 1000)
 
 #define	TIMEOUT_NETBIOS_HOSTNAME	(100)
-
-#define	SOCKET_BUFFER_SIZE			0x10000000
 
 #define	UDP_MAX_MSG_SIZE_DEFAULT	65507
 
@@ -49,11 +44,6 @@ struct DYN_VALUE
 
 // Private IP list file
 #define	PRIVATE_IP_TXT_FILENAME		"$private_ip.txt"
-
-// Start range of the random UDP port
-#define	RAND_UDP_PORT_START			5000
-#define	RAND_UDP_PORT_END			65530
-#define	RAND_UDP_PORT_DEFAULT_NUM_RETRY	64
 
 // Special Port
 #define	MAKE_SPECIAL_PORT(p)		(UINT)((UINT)0x10000 | (UINT)(p))
@@ -170,9 +160,6 @@ struct SOCK
 	SOCK_EVENT *SockEvent;		// Associated socket-event
 	bool CancelAccept;			// Cancel flag of the Accept
 	bool AcceptCanceled;		// Flag which shows canceling of the Accept
-	bool WriteBlocked;			// Previous write is blocked
-	bool NoNeedToRead;			// Is not required to read
-	bool Disconnecting;			// Disconnecting
 	bool UdpBroadcast;			// UDP broadcast mode
 	void *Param;				// Any parameters
 	bool IPv6;					// IPv6
@@ -187,7 +174,6 @@ struct SOCK
 	char ProtocolDetails[256];	// Protocol details
 	UCHAR Ssl_Init_Async_SendAlert[2];	// Initial state of SSL send_alert
 	SSL_ACCEPT_SETTINGS SslAcceptSettings;	// SSL Accept Settings
-	bool RawIP_HeaderIncludeFlag;
 
 #ifdef	ENABLE_SSL_LOGGING
 	// SSL Logging (for debug)
@@ -229,43 +215,6 @@ struct CANCEL
 #endif	// OS_WIN32
 };
 
-// Routing table entry
-struct ROUTE_ENTRY
-{
-	IP DestIP;
-	IP DestMask;
-	IP GatewayIP;
-	bool LocalRouting;
-	bool PPPConnection;
-	UINT Metric;
-	UINT IfMetric;
-	UINT InterfaceID;
-	UINT64 InnerScore;
-	bool Active;
-};
-
-// Routing table
-struct ROUTE_TABLE
-{
-	UINT NumEntry;
-	UINT HashedValue;
-	ROUTE_ENTRY **Entry;
-};
-
-// ICMP response result
-struct ICMP_RESULT
-{
-	bool Ok;										// Whether a correct response returned
-	bool Timeout;									// Whether a time-out is occurred
-	UCHAR Type;										// Message type
-	UCHAR Code;										// Message code
-	UCHAR Ttl;										// TTL
-	UCHAR *Data;									// Data body
-	UINT DataSize;									// Data size
-	UINT Rtt;										// Round Trip Time
-	IP IpAddress;									// IP address
-};
-
 // NETBIOS name requests
 typedef struct NBTREQUEST
 {
@@ -289,102 +238,6 @@ typedef struct NBTRESPONSE
 	USHORT AdditionalRRs;
 	UCHAR Response[61];
 } NBTRESPONSE;
-
-// Socket list
-typedef struct SOCKLIST
-{
-	LIST *SockList;
-} SOCKLIST;
-
-
-// Parameters for the IP address release thread
-struct WIN32_RELEASEADDRESS_THREAD_PARAM
-{
-	REF *Ref;
-	char Guid[MAX_SIZE];
-	UINT Timeout;
-	bool Ok;
-	bool Renew;
-};
-
-// TCP table entry
-typedef struct TCPTABLE
-{
-	UINT Status;
-	IP LocalIP;
-	UINT LocalPort;
-	IP RemoteIP;
-	UINT RemotePort;
-	UINT ProcessId;
-} TCPTABLE;
-
-// State of TCP
-#define	TCP_STATE_CLOSED				1
-#define	TCP_STATE_LISTEN				2
-#define	TCP_STATE_SYN_SENT				3
-#define	TCP_STATE_SYN_RCVD				4
-#define	TCP_STATE_ESTAB					5
-#define	TCP_STATE_FIN_WAIT1				6
-#define	TCP_STATE_FIN_WAIT2				7
-#define	TCP_STATE_CLOSE_WAIT			8
-#define	TCP_STATE_CLOSING				9
-#define	TCP_STATE_LAST_ACK				10
-#define	TCP_STATE_TIME_WAIT				11
-#define	TCP_STATE_DELETE_TCB			12
-
-// Routing table changing notification
-struct ROUTE_CHANGE
-{
-	ROUTE_CHANGE_DATA *Data;
-};
-
-// UDP packet
-struct UDPPACKET
-{
-	IP SrcIP;							// Source IP address
-	IP DstIP;							// Destination IP address
-	UINT SrcPort;						// Source port
-	UINT DestPort;						// Destination port
-	UINT Size;							// Data size
-	void *Data;							// Data body
-	UINT Type;							// Type
-};
-
-// Interrupt management
-struct INTERRUPT_MANAGER
-{
-	LIST *TickList;						// Time list
-};
-
-// SSL BIO
-struct SSL_BIO
-{
-	BIO *bio;							// BIO
-	FIFO *SendFifo;						// Transmission FIFO
-	FIFO *RecvFifo;						// Reception FIFO
-	bool IsDisconnected;				// Disconnected
-	bool NoFree;						// Not to release the BIO
-};
-
-// SSL pipe
-struct SSL_PIPE
-{
-	bool ServerMode;					// Whether it's in the server mode
-	bool IsDisconnected;				// Disconnected
-	int SslVersion;
-	SSL *ssl;							// SSL object
-	struct ssl_ctx_st *ssl_ctx;			// SSL_CTX
-	SSL_BIO *SslInOut;					// I/O BIO for the data in the SSL tunnel
-	SSL_BIO *RawIn, *RawOut;			// Input and output BIO of the data flowing through the physical network
-};
-
-// IP address block list
-struct IPBLOCK
-{
-	IP Ip;							// IP address
-	IP Mask;						// Subnet mask
-};
-
 
 // ICMP protocol number
 #define	IP_PROTO_ICMPV4		0x01	// ICMPv4 protocol
@@ -538,7 +391,6 @@ bool SendAll(SOCK *sock, void *data, UINT size, bool secure);
 void SendAdd(SOCK *sock, void *data, UINT size);
 bool SendNow(SOCK *sock, int secure);
 bool RecvAll(SOCK *sock, void *data, UINT size, bool secure);
-bool RecvAllEx(SOCK *sock, void **data_new_ptr, UINT size, bool secure);
 void InitSockSet(SOCKSET *set);
 void AddSockSet(SOCKSET *set, SOCK *sock);
 CANCEL *NewCancel();
@@ -668,11 +520,8 @@ void AddHostIPAddressToList(LIST *o, IP *ip);
 int CmpIpAddressList(void *p1, void *p2);
 UINT64 GetHostIPAddressListHash();
 
-#define PREVERIFY_ERR_MESSAGE_SIZE 100
 // Info on client certificate collected during TLS handshake
 struct SslClientCertInfo {
-	int PreverifyErr;
-	char PreverifyErrMessage[PREVERIFY_ERR_MESSAGE_SIZE];
 	X *X;
 };
 

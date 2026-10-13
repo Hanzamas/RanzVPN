@@ -30,18 +30,7 @@
 #include <WS2tcpip.h>
 #include <wincrypt.h>
 #include <IcmpAPI.h>
-
-struct ROUTE_CHANGE_DATA
-{
-	HANDLE Handle;
-	UINT NumCalled;
-	bool Changed;
-};
 #endif
-
-// HTTP constant
-static char http_detect_server_startwith[] = "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\r\n<HTML><HEAD>\r\n<TITLE>403 Forbidden</TITLE>\r\n</HEAD><BODY>\r\n<H1>Forbidden</H1>\r\nYou don't have permission to access ";
-static char http_detect_server_tag_future[] = "9C37197CA7C2428388C2E6E59B829B30";
 
 // Lock related
 static LOCK *machine_name_lock = NULL;
@@ -574,8 +563,6 @@ L_LOOP:
 }
 
 #endif	// OS_WIN32
-
-#define	USE_OLD_GETIP
 
 // Set the arp_filter in Linux
 void SetLinuxArpFilter()
@@ -4056,7 +4043,6 @@ UINT SecureSend(SOCK *sock, void *data, UINT size)
 		// Successful transmission
 		sock->SendSize += (UINT64)ret;
 		sock->SendNum++;
-		sock->WriteBlocked = false;
 		return (UINT)ret;
 	}
 
@@ -4086,7 +4072,6 @@ UINT SecureSend(SOCK *sock, void *data, UINT size)
 				return 0;
 			}
 
-			sock->WriteBlocked = true;
 			return SOCK_LATER;
 		}
 	}
@@ -4142,8 +4127,6 @@ UINT Recv(SOCK *sock, void *data, UINT size, bool secure)
 	{
 		return 0;
 	}
-
-	sock->NoNeedToRead = false;
 
 	if (sock->Type != SOCK_TCP || sock->Connected == false || sock->ListenMode != false ||
 	        sock->socket == INVALID_SOCKET)
@@ -4240,7 +4223,6 @@ UINT Send(SOCK *sock, void *data, UINT size, bool secure)
 			sock->SendNum++;
 		}
 		Unlock(sock->lock);
-		sock->WriteBlocked = false;
 		return (UINT)ret;
 	}
 
@@ -4254,7 +4236,6 @@ UINT Send(SOCK *sock, void *data, UINT size, bool secure)
 			if (WSAGetLastError() == WSAEWOULDBLOCK)
 			{
 				// In blocking
-				sock->WriteBlocked = true;
 				return SOCK_LATER;
 			}
 			else
@@ -4761,8 +4742,6 @@ void Disconnect(SOCK *sock)
 		return;
 	}
 
-	sock->Disconnecting = true;
-
 #ifdef	ENABLE_SSL_LOGGING
 	SockCloseSslLogging(sock);
 #endif	// ENABLE_SSL_LOGGING
@@ -4924,14 +4903,6 @@ void Disconnect(SOCK *sock)
 
 	Unlock(disconnect_function_lock);
 }
-
-typedef struct TCP_PORT_CHECK
-{
-	REF *ref;
-	char hostname[MAX_SIZE];
-	UINT port;
-	bool ok;
-} TCP_PORT_CHECK;
 
 // Check whether the TCP port can be connected
 bool CheckTCPPortEx(char *hostname, UINT port, UINT timeout)
