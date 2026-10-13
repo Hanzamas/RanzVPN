@@ -441,6 +441,11 @@ bool MsIsX64()
 {
 	SYSTEM_INFO info;
 
+	if (MsIs64BitWindows() == false)
+	{
+		return false;
+	}
+
 	Zero(&info, sizeof(info));
 	GetNativeSystemInfo(&info);
 
