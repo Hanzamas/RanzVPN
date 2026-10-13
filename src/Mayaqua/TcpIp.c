@@ -99,7 +99,6 @@ bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address)
 		// Detect whether it's a DHCP Request packet
 		if (Endian16(udp->DstPort) == 67)
 		{
-			Debug("IsDhcpPacketForSpecificMac: DHCP Request Packet is Detected.\n");
 			return true;
 		}
 	}
@@ -108,7 +107,6 @@ bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address)
 		// Detect whether it's a DHCP Response packet
 		if (Endian16(udp->SrcPort) == 67)
 		{
-			Debug("IsDhcpPacketForSpecificMac: DHCP Response Packet is Detected.\n");
 			return true;
 		}
 	}
