@@ -18,10 +18,8 @@
 #include "Mayaqua/Str.h"
 #include "Mayaqua/TcpIp.h"
 
-// Hash the list of current Ethernet devices
 UINT GetEthDeviceHash()
 {
-	// Win32
 	UINT ret = 0;
 	MS_ADAPTER_LIST *a = MsCreateAdapterListEx(true);
 	UINT num;
@@ -46,7 +44,6 @@ UINT GetEthDeviceHash()
 	return num;
 }
 
-// Get whether the local-bridging is supported by current OS
 bool IsBridgeSupported()
 {
 	UINT type = GetOsInfo()->OsType;
@@ -72,11 +69,9 @@ bool IsBridgeSupported()
 	}
 }
 
-// Delete a local-bridge
 bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename)
 {
 	bool ret = false;
-	// Validate arguments
 	if (c == NULL || hubname == NULL || devicename == NULL)
 	{
 		return false;
@@ -118,13 +113,11 @@ bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename)
 	return ret;
 }
 
-// Add a local-bridge
 void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool monitor, bool tapmode, char *tapaddr, bool limit_broadcast)
 {
 	UINT i;
 	HUB *h = NULL;
 	LOCALBRIDGE *br = NULL;
-	// Validate arguments
 	if (c == NULL || hubname == NULL || devicename == NULL)
 	{
 		return;
@@ -138,7 +131,6 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 		{
 			bool exists = false;
 
-			// Ensure that the same configuration local-bridge doesn't exist already 
 			for (i = 0;i < LIST_NUM(c->LocalBridgeList);i++)
 			{
 				LOCALBRIDGE *br = LIST_DATA(c->LocalBridgeList, i);
@@ -156,7 +148,6 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 
 			if (exists == false)
 			{
-				// Add configuration
 				br = ZeroMalloc(sizeof(LOCALBRIDGE));
 				StrCpy(br->HubName, sizeof(br->HubName), hubname);
 				StrCpy(br->DeviceName, sizeof(br->DeviceName), devicename);
@@ -179,7 +170,6 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 
 				Add(c->LocalBridgeList, br);
 
-				// Find the hub
 				for (i = 0;i < LIST_NUM(c->HubList);i++)
 				{
 					HUB *hub = LIST_DATA(c->HubList, i);
@@ -196,7 +186,6 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 	}
 	UnlockList(c->HubList);
 
-	// Start the local-bridge immediately
 	if (h != NULL && br != NULL)
 	{
 		Lock(h->lock_online);
@@ -222,10 +211,8 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 	ReleaseHub(h);
 }
 
-// Initialize the local-bridge list
 void InitLocalBridgeList(CEDAR *c)
 {
-	// Validate arguments
 	if (c == NULL)
 	{
 		return;
@@ -234,11 +221,9 @@ void InitLocalBridgeList(CEDAR *c)
 	c->LocalBridgeList = NewList(NULL);
 }
 
-// Free the local-bridge list
 void FreeLocalBridgeList(CEDAR *c)
 {
 	UINT i;
-	// Validate arguments
 	if (c == NULL)
 	{
 		return;
@@ -254,7 +239,6 @@ void FreeLocalBridgeList(CEDAR *c)
 	c->LocalBridgeList = NULL;
 }
 
-// Bridging thread
 void BrBridgeThread(THREAD *thread, void *param)
 {
 	BRIDGE *b;
@@ -262,7 +246,6 @@ void BrBridgeThread(THREAD *thread, void *param)
 	SESSION *s;
 	HUB *h;
 	char name[MAX_SIZE];
-	// Validate arguments
 	if (thread == NULL || param == NULL)
 	{
 		return;
@@ -270,11 +253,9 @@ void BrBridgeThread(THREAD *thread, void *param)
 
 	b = (BRIDGE *)param;
 
-	// Create a connection object
 	c = NewServerConnection(b->Cedar, NULL, thread);
 	c->Protocol = CONNECTION_HUB_BRIDGE;
 
-	// Create a session object
 	s = NewServerSession(b->Cedar, c, b->Hub, BRIDGE_USER_NAME, b->Policy);
 	HLog(b->Hub, "LH_START_BRIDGE", b->Name, s->Name);
 	StrCpy(name, sizeof(name), b->Name);
@@ -285,16 +266,13 @@ void BrBridgeThread(THREAD *thread, void *param)
 	c->Session = s;
 	ReleaseConnection(c);
 
-	// Dummy user name for local-bridge
 	s->Username = CopyStr(BRIDGE_USER_NAME_PRINT);
 
 	b->Session = s;
 	AddRef(s->ref);
 
-	// Notify completion
 	NoticeThreadInit(thread);
 
-	// Main procedure of the session
 	SessionMain(s);
 
 	HLog(h, "LH_STOP_BRIDGE", name);
@@ -304,10 +282,8 @@ void BrBridgeThread(THREAD *thread, void *param)
 	ReleaseSession(s);
 }
 
-// Free the local-bridge object
 void BrFreeBridge(BRIDGE *b)
 {
-	// Validate arguments
 	if (b == NULL)
 	{
 		return;
@@ -318,20 +294,17 @@ void BrFreeBridge(BRIDGE *b)
 		b->ParentLocalBridge = NULL;
 	}
 
-	// Stop session thread
 	StopSession(b->Session);
 	ReleaseSession(b->Session);
 
 	Free(b);
 }
 
-// Create new local-bridge
 BRIDGE *BrNewBridge(HUB *h, char *name, POLICY *p, bool local, bool monitor, bool tapmode, char *tapaddr, bool limit_broadcast, LOCALBRIDGE *parent_local_bridge)
 {
 	BRIDGE *b;
 	POLICY *policy;
 	THREAD *t;
-	// Validate arguments
 	if (h == NULL || name == NULL || parent_local_bridge == NULL)
 	{
 		return NULL;
@@ -371,17 +344,14 @@ BRIDGE *BrNewBridge(HUB *h, char *name, POLICY *p, bool local, bool monitor, boo
 
 	if (monitor)
 	{
-		// Enabling monitoring mode
 		policy->MonitorPort = true;
 	}
 
 	if (b->LimitBroadcast == false)
 	{
-		// Disable broadcast limiter
 		policy->NoBroadcastLimiter = true;
 	}
 
-	// Start thread
 	t = NewThread(BrBridgeThread, b);
 	WaitThreadInit(t);
 	ReleaseThread(t);

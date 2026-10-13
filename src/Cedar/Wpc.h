@@ -13,58 +13,52 @@
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/HTTP.h"
 
-// Constant
-#define WPC_HTTP_POST_NAME			"POST"		// POST
-#define WPC_HTTP_GET_NAME			"GET"		// GET
-#define WPC_USER_AGENT				DEFAULT_USER_AGENT	// User Agent
-#define WPC_TIMEOUT					(15 * 1000)	// Time-out
-#define WPC_RECV_BUF_SIZE			64000		// Receive buffer size
-#define WPC_DATA_ENTRY_SIZE			4			// Data entry size
+#define WPC_HTTP_POST_NAME			"POST"
+#define WPC_HTTP_GET_NAME			"GET"
+#define WPC_USER_AGENT				DEFAULT_USER_AGENT
+#define WPC_TIMEOUT					(15 * 1000)
+#define WPC_RECV_BUF_SIZE			64000
+#define WPC_DATA_ENTRY_SIZE			4
 
-// Connection parameters
 struct WPC_CONNECT
 {
-	char HostName[MAX_HOST_NAME_LEN + 1];					// Host name
-	UINT Port;												// Port number
-	UINT ProxyType;											// Type of proxy server
-	char ProxyHostName[MAX_HOST_NAME_LEN + 1];				// Proxy server host name
-	UINT ProxyPort;											// Proxy server port number
-	char ProxyUsername[MAX_USERNAME_LEN + 1];				// Proxy server user name
-	char ProxyPassword[MAX_USERNAME_LEN + 1];				// Proxy server password
-	char CustomHttpHeader[HTTP_CUSTOM_HEADER_MAX_SIZE];		// Custom HTTP header
-	bool UseCompress;										// Use of compression
+	char HostName[MAX_HOST_NAME_LEN + 1];
+	UINT Port;
+	UINT ProxyType;
+	char ProxyHostName[MAX_HOST_NAME_LEN + 1];
+	UINT ProxyPort;
+	char ProxyUsername[MAX_USERNAME_LEN + 1];
+	char ProxyPassword[MAX_USERNAME_LEN + 1];
+	char CustomHttpHeader[HTTP_CUSTOM_HEADER_MAX_SIZE];
+	bool UseCompress;
 };
 
-// Internet connection settings
 struct INTERNET_SETTING
 {
-	UINT ProxyType;											// Type of proxy server
-	char ProxyHostName[MAX_HOST_NAME_LEN + 1];				// Proxy server host name
-	UINT ProxyPort;											// Proxy server port number
-	char ProxyUsername[MAX_USERNAME_LEN + 1];				// Proxy server user name
-	char ProxyPassword[MAX_USERNAME_LEN + 1];				// Proxy server password
-	char CustomHttpHeader[HTTP_CUSTOM_HEADER_MAX_SIZE];		// Custom HTTP header
+	UINT ProxyType;
+	char ProxyHostName[MAX_HOST_NAME_LEN + 1];
+	UINT ProxyPort;
+	char ProxyUsername[MAX_USERNAME_LEN + 1];
+	char ProxyPassword[MAX_USERNAME_LEN + 1];
+	char CustomHttpHeader[HTTP_CUSTOM_HEADER_MAX_SIZE];
 };
 
-// URL
 struct URL_DATA
 {
-	bool Secure;							// Whether HTTPS
-	char HostName[MAX_HOST_NAME_LEN + 1];	// Host name
-	UINT Port;								// Port number
-	char HeaderHostName[MAX_HOST_NAME_LEN + 16];	// Host name on the header
-	char Method[32];						// Method
-	char Target[MAX_SIZE * 3];				// Target
-	char Referer[MAX_SIZE * 3];				// Referer
-	char AdditionalHeaderName[128];			// Additional header name
-	char AdditionalHeaderValue[MAX_SIZE];	// Additional header value
-	char SniString[MAX_SIZE];				// SNI String
+	bool Secure;
+	char HostName[MAX_HOST_NAME_LEN + 1];
+	UINT Port;
+	char HeaderHostName[MAX_HOST_NAME_LEN + 16];
+	char Method[32];
+	char Target[MAX_SIZE * 3];
+	char Referer[MAX_SIZE * 3];
+	char AdditionalHeaderName[128];
+	char AdditionalHeaderValue[MAX_SIZE];
+	char SniString[MAX_SIZE];
 };
 
-// Reception callback
 typedef bool (WPC_RECV_CALLBACK)(void *param, UINT total_size, UINT current_size, BUF *recv_buf);
 
-// Function prototype
 bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer);
 void CreateUrl(char *url, UINT url_size, URL_DATA *data);
 BUF *HttpRequestEx(URL_DATA *data, INTERNET_SETTING *setting,

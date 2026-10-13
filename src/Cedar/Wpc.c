@@ -18,12 +18,10 @@
 #include "Mayaqua/Proxy.h"
 #include "Mayaqua/Str.h"
 
-// Socket connection
 SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool *cancel)
 {
 	SOCK *sock;
 	UINT ret;
-	// Validate arguments
 	if (param == NULL)
 	{
 		return NULL;
@@ -88,7 +86,6 @@ SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool 
 	}
 }
 
-// Handle the HTTP request
 BUF *HttpRequestEx(URL_DATA *data, INTERNET_SETTING *setting,
 				   UINT timeout_connect, UINT timeout_comm,
 				   UINT *error_code, bool check_ssl_trust, char *post_data,
@@ -130,7 +127,6 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 	UINT socket_buffer_size = WPC_RECV_BUF_SIZE;
 	UINT num_continue = 0;
 	INTERNET_SETTING wt_setting;
-	// Validate arguments
 	if (data == NULL)
 	{
 		return NULL;
@@ -158,7 +154,6 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 		sha1_cert_hash = NULL;
 	}
 
-	// Connection
 	Zero(&con, sizeof(con));
 	StrCpy(con.HostName, sizeof(con.HostName), data->HostName);
 	con.Port = data->Port;
@@ -182,12 +177,10 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 
 	if (use_http_proxy == false)
 	{
-		// If the connection is not via HTTP Proxy, or is a SSL connection even via HTTP Proxy
 		s = WpcSockConnectEx(&con, error_code, timeout_connect, cancel);
 	}
 	else
 	{
-		// If the connection is not SSL via HTTP Proxy
 		s = TcpConnectEx3(con.ProxyHostName, con.ProxyPort, timeout_connect, cancel, NULL, NULL);
 		if (s == NULL)
 		{
@@ -202,10 +195,8 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 
 	if (data->Secure)
 	{
-		// Start the SSL communication
 		if (StartSSLEx(s, NULL, NULL, 0, (IsEmptyStr(data->SniString) ? NULL : data->SniString)) == false)
 		{
-			// SSL connection failed
 			*error_code = ERR_PROTOCOL_ERROR;
 			Disconnect(s);
 			ReleaseSock(s);
@@ -235,7 +226,6 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 
 			if (ok == false)
 			{
-				// Destination certificate hash mismatch
 				*error_code = ERR_CERT_NOT_TRUSTED;
 				Disconnect(s);
 				ReleaseSock(s);
@@ -244,10 +234,8 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 		}
 	}
 
-	// Timeout setting
 	SetTimeout(s, timeout_comm);
 
-	// Generate a request
 	h = NewHttpHeader(data->Method, target, use_http_proxy ? "HTTP/1.0" : "HTTP/1.1");
 	AddHttpValue(h, NewHttpValue("Keep-Alive", HTTP_KEEP_ALIVE));
 	AddHttpValue(h, NewHttpValue("Connection", "Keep-Alive"));
@@ -303,13 +291,11 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 	WriteBuf(send_buf, send_str, StrLen(send_str));
 	Free(send_str);
 
-	// Append to the sending data in the case of POST
 	if (StrCmpi(data->Method, WPC_HTTP_POST_NAME) == 0)
 	{
 		WriteBuf(send_buf, post_data, StrLen(post_data));
 	}
 
-	// Send
 	if (SendAll(s, send_buf->Buf, send_buf->Size, s->SecureMode) == false)
 	{
 		Disconnect(s);
@@ -324,7 +310,6 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 	FreeBuf(send_buf);
 
 CONT:
-	// Receive
 	h = RecvHttpHeader(s);
 	if (h == NULL)
 	{
@@ -351,17 +336,14 @@ CONT:
 	{
 	case 401:
 	case 407:
-		// Proxy authentication error
 		*error_code = ERR_PROXY_AUTH_FAILED;
 		break;
 
 	case 404:
-		// 404 File Not Found
 		*error_code = ERR_OBJECT_NOT_FOUND;
 		break;
 
 	case 100:
-		// Continue
 		num_continue++;
 		if (num_continue >= 10)
 		{
@@ -371,11 +353,9 @@ CONT:
 		goto CONT;
 
 	case 200:
-		// Success
 		break;
 
 	default:
-		// Protocol error
 DEF:
 		*error_code = ERR_PROTOCOL_ERROR;
 		break;
@@ -383,14 +363,12 @@ DEF:
 
 	if (*error_code != ERR_NO_ERROR)
 	{
-		// An error has occured
 		Disconnect(s);
 		ReleaseSock(s);
 		FreeHttpHeader(h);
 		return NULL;
 	}
 
-	// Get the length of the content
 	content_len = GetContentLength(h);
 	if (max_recv_size != 0)
 	{
@@ -401,7 +379,6 @@ DEF:
 
 	socket_buffer = Malloc(socket_buffer_size);
 
-	// Receive the content
 	recv_buf = NewBuf();
 
 	while (true)
@@ -414,7 +391,6 @@ DEF:
 			if (recv_callback(recv_callback_param,
 				content_len, recv_buf->Size, recv_buf) == false)
 			{
-				// Cancel the reception
 				*error_code = ERR_USER_CANCEL;
 				goto RECV_CANCEL;
 			}
@@ -428,7 +404,6 @@ DEF:
 		size = Recv(s, socket_buffer, recvsize, s->SecureMode);
 		if (size == 0)
 		{
-			// Disconnected
 			*error_code = ERR_DISCONNECTED;
 
 RECV_CANCEL:
@@ -449,15 +424,12 @@ RECV_CANCEL:
 	Disconnect(s);
 	ReleaseSock(s);
 
-	// Transmission
 	return recv_buf;
 }
 
-// Generate the URL
 void CreateUrl(char *url, UINT url_size, URL_DATA *data)
 {
 	char *protocol;
-	// Validate arguments
 	if (url == NULL || data == NULL)
 	{
 		return;
@@ -476,7 +448,6 @@ void CreateUrl(char *url, UINT url_size, URL_DATA *data)
 }
 
 
-// Parse the URL
 bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer)
 {
 	char tmp[MAX_SIZE * 3];
@@ -485,7 +456,6 @@ bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer)
 	char *host;
 	UINT port;
 	UINT i;
-	// Validate arguments
 	if (data == NULL || str == NULL)
 	{
 		return false;
@@ -510,7 +480,6 @@ bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer)
 	StrCpy(tmp, sizeof(tmp), str);
 	Trim(tmp);
 
-	// Determine the protocol
 	if (StartWith(tmp, "http://"))
 	{
 		data->Secure = false;
@@ -531,7 +500,6 @@ bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer)
 		s = &tmp[0];
 	}
 
-	// Get the "server name:port number"
 	StrCpy(server_port, sizeof(server_port), s);
 	i = SearchStrEx(server_port, "/", 0, false);
 	if (i != INFINITE)

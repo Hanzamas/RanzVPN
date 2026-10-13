@@ -18,7 +18,6 @@
 BYTE *WaterMark = NULL;
 UINT WaterMarkSize = 0;
 
-// Read the watermark file from hamcore and check its size and SHA-256
 BUF *LoadWaterMark()
 {
 	BUF *b;
@@ -60,7 +59,6 @@ void InitWaterMark()
 	FreeBuf(b);
 }
 
-// Free the watermark
 void FreeWaterMark()
 {
 	Free(WaterMark);

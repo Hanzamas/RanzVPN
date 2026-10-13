@@ -13,25 +13,20 @@
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Win32.h"
 
-// Process starting function
 void StartProcess()
 {
-	// Start the server
 	InitCedar();
 	StInit();
 	StStartServer(false);
 }
 
-// Process termination function
 void StopProcess()
 {
-	// Stop the server
 	StStopServer();
 	StFree();
 	FreeCedar();
 }
 
-// WinMain function
 int main(int argc, char *argv[])
 {
 	InitProcessCallOnce();
