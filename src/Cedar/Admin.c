@@ -14,6 +14,7 @@
 #include "Listener.h"
 #include "MsChapV2.h"
 #include "Remote.h"
+#include "RpcField.h"
 #include "Protocol.h"
 #include "Sam.h"
 #include "Server.h"
@@ -5890,57 +5891,34 @@ void FreeRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t)
 }
 
 // RPC_ENUM_LOG_FILE
+static const RPC_FIELD rpc_enum_log_file_item_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_LOG_FILE_ITEM, FilePath, "FilePath"),
+	RPC_ROW_INT(RPC_ENUM_LOG_FILE_ITEM, FileSize, "FileSize"),
+	RPC_ROW_TIME64(RPC_ENUM_LOG_FILE_ITEM, UpdatedTime, "UpdatedTime"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_log_file_item_table, RPC_ENUM_LOG_FILE_ITEM, rpc_enum_log_file_item_fields);
+
+static const RPC_FIELD rpc_enum_log_file_fields[] =
+{
+	RPC_ROW_COUNT(RPC_ENUM_LOG_FILE, NumItem),
+	RPC_ROW_ARRAY(RPC_ENUM_LOG_FILE, Items, NumItem, &rpc_enum_log_file_item_table, "FilePath", RPC_FF_READ_NUMITEM),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_log_file_table, RPC_ENUM_LOG_FILE, rpc_enum_log_file_fields);
+
 void InRpcEnumLogFile(RPC_ENUM_LOG_FILE *t, PACK *p)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_ENUM_LOG_FILE));
-	t->NumItem = PackGetInt(p, "NumItem");
-	t->Items = ZeroMalloc(sizeof(RPC_ENUM_LOG_FILE_ITEM) * t->NumItem);
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_ENUM_LOG_FILE_ITEM *e = &t->Items[i];
-
-		PackGetStrEx(p, "FilePath", e->FilePath, sizeof(e->FilePath), i);
-		e->FileSize = PackGetIntEx(p, "FileSize", i);
-		e->UpdatedTime = PackGetInt64Ex(p, "UpdatedTime", i);
-	}
+	RpcFieldIn(&rpc_enum_log_file_table, t, p);
 }
 void OutRpcEnumLogFile(PACK *p, RPC_ENUM_LOG_FILE *t)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "NumItem", t->NumItem);
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_ENUM_LOG_FILE_ITEM *e = &t->Items[i];
-
-		PackAddStrEx(p, "FilePath", e->FilePath, i, t->NumItem);
-		PackAddIntEx(p, "FileSize", e->FileSize, i, t->NumItem);
-		PackAddTime64Ex(p, "UpdatedTime", e->UpdatedTime, i, t->NumItem);
-	}
+	RpcFieldOut(&rpc_enum_log_file_table, p, t);
 }
 void FreeRpcEnumLogFile(RPC_ENUM_LOG_FILE *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Items);
+	RpcFieldFree(&rpc_enum_log_file_table, t);
 }
 // RPC_READ_LOG_FILE
 void InRpcReadLogFile(RPC_READ_LOG_FILE *t, PACK *p)

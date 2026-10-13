@@ -11,6 +11,7 @@
 #include "Hub.h"
 #include "MsChapV2.h"
 #include "Protocol.h"
+#include "RpcField.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/Internat.h"

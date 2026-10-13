@@ -13,6 +13,7 @@
 #include "Link.h"
 #include "Listener.h"
 #include "Protocol.h"
+#include "RpcField.h"
 #include "Sam.h"
 
 #include "Mayaqua/Cfg.h"
