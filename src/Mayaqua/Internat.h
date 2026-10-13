@@ -12,7 +12,6 @@
 
 #include <stdarg.h>
 
-// String token
 struct UNI_TOKEN_LIST
 {
 	UINT NumTokens;
@@ -42,7 +41,6 @@ void UniTrim(wchar_t *str);
 void UniTrimLeft(wchar_t *str);
 void UniTrimRight(wchar_t *str);
 void UniTrimCrlf(wchar_t *str);
-bool UniGetLine(wchar_t *str, UINT size);
 bool UniGetLineWin32(wchar_t *str, UINT size);
 void UniFreeToken(UNI_TOKEN_LIST *tokens);
 UNI_TOKEN_LIST *UniParseToken(wchar_t *src, wchar_t *separator);
@@ -88,7 +86,5 @@ wchar_t *UniDefaultTokenSplitChars();
 bool UniIsCharInStr(wchar_t *str, wchar_t c);
 UNI_TOKEN_LIST *UniParseTokenWithoutNullStr(wchar_t *str, wchar_t *split_chars);
 
-#endif	// INTERNAT_H
-
-
+#endif
 

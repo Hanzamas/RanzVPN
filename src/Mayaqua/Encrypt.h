@@ -12,38 +12,16 @@
 
 #include <openssl/opensslv.h>
 
-// Constant
 #define	MIN_SIGN_HASH_SIZE		(15 + SHA1_SIZE)
 #define	SIGN_HASH_SIZE			(MIN_SIGN_HASH_SIZE)
 
-#define DES_KEY_SIZE				8			// DES key size
-#define	DES_IV_SIZE					8			// DES IV size
-#define DES_BLOCK_SIZE				8			// DES block size
-#define DES3_KEY_SIZE				(8 * 3)		// 3DES key size
-#define RSA_KEY_SIZE				1024		// RSA key size
-#define DH_KEY_SIZE					128			// DH key size
-#define	RSA_MIN_SIGN_HASH_SIZE		(15 + SHA1_HASH_SIZE)	// Minimum RSA hash size
-#define	RSA_SIGN_HASH_SIZE			(RSA_MIN_SIGN_HASH_SIZE)	// RSA hash size
-#define MD5_HASH_SIZE				16			// MD5 hash size
-#define SHA1_HASH_SIZE				20			// SHA-1 hash size
-#define SHA1_BLOCK_SIZE				64			// SHA-1 block size
-#define HMAC_SHA1_96_KEY_SIZE		20			// HMAC-SHA-1-96 key size
-#define HMAC_SHA1_96_HASH_SIZE		12			// HMAC-SHA-1-96 hash size
-#define HMAC_SHA1_SIZE				(SHA1_HASH_SIZE)	// HMAC-SHA-1 hash size
-#define	AES_IV_SIZE					16			// AES IV size
-#define	AES_MAX_KEY_SIZE			32			// Maximum AES key size
+#define RSA_KEY_SIZE				1024
 
 // IANA definitions taken from IKEv1 Phase 1
 #define SHA1_160						2
 #define SHA2_256						4
 #define SHA2_384						5
 #define SHA2_512						6
-
-// HMAC block size
-#define	HMAC_BLOCK_SIZE					64
-// The block size for sha-384 and sha-512 as defined by rfc4868
-#define HMAC_BLOCK_SIZE_1024					128
-#define HMAC_BLOCK_SIZE_MAX					512
 
 #define DH_GROUP1_PRIME_768 \
 	"FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD1" \
@@ -126,18 +104,8 @@
 	"93B4EA988D8FDDC186FFB7DC90A6C08F4DF435C934063199" \
 	"FFFFFFFFFFFFFFFF"
 
-// Macro
 #define	HASHED_DATA(p)			(((UCHAR *)p) + 15)
 
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || LIBRESSL_VERSION_NUMBER >= 0x3080100L
-typedef struct PKCS12_st PKCS12;
-typedef struct evp_md_st EVP_MD;
-#else
-#include <openssl/pkcs12.h>
-typedef struct env_md_st EVP_MD;
-#endif
-
-typedef struct aes_key_st AES_KEY;
 typedef struct bignum_st BIGNUM;
 typedef struct bio_st BIO;
 typedef struct DES_ks DES_key_schedule;
@@ -148,33 +116,28 @@ typedef struct evp_pkey_st EVP_PKEY;
 typedef struct rc4_key_st RC4_KEY;
 typedef struct ssl_st SSL;
 typedef struct x509_st X509;
-typedef struct X509_crl_st X509_CRL;
 
-// Crypt context
 struct CRYPT
 {
 	RC4_KEY *Rc4Key;
 };
 
-// Name in the certificate
 struct NAME
 {
-	wchar_t *CommonName;		// CN
-	wchar_t *Organization;		// O
-	wchar_t *Unit;				// OU
-	wchar_t *Country;			// C
-	wchar_t *State;				// ST
-	wchar_t *Local;				// L
+	wchar_t *CommonName;
+	wchar_t *Organization;
+	wchar_t *Unit;
+	wchar_t *Country;
+	wchar_t *State;
+	wchar_t *Local;
 };
 
-// Serial number
 struct X_SERIAL
 {
 	UINT size;
 	UCHAR *data;
 };
 
-// Certificate
 struct X
 {
 	X509 *x509;
@@ -191,55 +154,16 @@ struct X
 	char issuer_url[256];
 };
 
-// Key
 struct K
 {
 	EVP_PKEY *pkey;
 	bool private_key;
 };
 
-// PKCS#12
-struct P12
-{
-	PKCS12 *pkcs12;
-};
-
-// CEL
-struct X_CRL
-{
-	X509_CRL *Crl;
-};
-
-// Constant
 #define	MD5_SIZE	16
 #define	SHA1_SIZE	20
 #define	SHA256_SIZE	32
-#define	SHA384_SIZE	48
-#define	SHA512_SIZE	64
 
-// Key element of DES
-struct DES_KEY_VALUE
-{
-	DES_key_schedule *KeySchedule;
-	UCHAR KeyValue[DES_KEY_SIZE];
-};
-
-// DES key
-struct DES_KEY
-{
-	DES_KEY_VALUE *k1, *k2, *k3;
-};
-
-// AES key
-struct AES_KEY_VALUE
-{
-	AES_KEY *EncryptKey;
-	AES_KEY *DecryptKey;
-	UCHAR KeyValue[AES_MAX_KEY_SIZE];
-	UINT KeySize;
-};
-
-// DH
 struct DH_CTX
 {
 	DH *dh;
@@ -248,7 +172,6 @@ struct DH_CTX
 	UINT Size;
 };
 
-// Cipher object
 struct CIPHER
 {
 	char Name[MAX_PATH];
@@ -259,22 +182,9 @@ struct CIPHER
 	UINT BlockSize, IvSize, KeySize;
 };
 
-// Message digest object
-struct MD
-{
-	char Name[MAX_PATH];
-	bool IsNullMd;
-	bool IsHMac;
-	const EVP_MD *Md;
-	void *Ctx;
-	UINT Size;
-};
 
-
-// Lock of the OpenSSL
 extern LOCK **ssl_lock_obj;
 
-// Function prototype
 CRYPT *NewCrypt(void *key, UINT size);
 void FreeCrypt(CRYPT *c);
 void Encrypt(CRYPT *c, void *dst, void *src, UINT size);
@@ -289,7 +199,6 @@ UINT HashPtrToUINT(void *p);
 
 BIO *BufToBio(BUF *b);
 BUF *BioToBuf(BIO *bio);
-BIO *NewBio();
 void FreeBio(BIO *bio);
 X *BioToX(BIO *bio, bool text);
 LIST *BioToXList(BIO *bio, bool text);
@@ -378,13 +287,6 @@ void Sha(UINT sha_type, void *dst, void *src, UINT size);
 
 void DesEcbEncrypt(void *dst, void *src, void *key_7bytes);
 
-DH_CTX *DhNewGroup1();
-DH_CTX *DhNewGroup2();
-DH_CTX *DhNewGroup5();
-DH_CTX *DhNewSimple160();
-DH_CTX *DhNew2048();
-DH_CTX *DhNew3072();
-DH_CTX *DhNew4096();
 DH_CTX *DhNewFromBits(UINT bits);
 DH_CTX *DhNew(char *prime, UINT g);
 void DhFree(DH_CTX *dh);
@@ -393,17 +295,13 @@ bool IsAesNiSupported();
 
 void OpenSSL_InitLock();
 void OpenSSL_FreeLock();
-void OpenSSL_Lock(int mode, int n, const char *file, int line);
 void FreeOpenSSLThreadState();
-char *OpenSSL_Error();
 
-// Encryption/Decryption
 CIPHER *NewCipher(char *name);
 void FreeCipher(CIPHER *c);
 void SetCipherKey(CIPHER *c, void *key, bool enc);
 UINT CipherProcessAead(CIPHER *c, void *iv, void *tag, UINT tag_size, void *dest, void *src, UINT src_size, void *aad, UINT aad_size);
 
-// Hashing
 void HashMd4(void *dst, void *src, UINT size);
 void Md5(void *dst, void *src, UINT size);
 void Sha(UINT sha_type, void *dst, void *src, UINT size);
@@ -411,6 +309,4 @@ void Sha0(void *dst, void *src, UINT size);
 void Sha1(void *dst, void *src, UINT size);
 void Sha2_256(void *dst, void *src, UINT size);
 
-int GetSslClientCertIndex();
-
-#endif	// ENCRYPT_H
+#endif
