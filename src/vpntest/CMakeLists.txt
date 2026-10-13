@@ -1,7 +1,7 @@
 set(COMPONENT_NAME "Testing Utility")
 set(COMPONENT_INTERNAL_NAME "vpntest")
 
-add_executable(vpntest vpntest.c harness.c stress.c)
+add_executable(vpntest vpntest.c harness.c stress.c runtime.c)
 
 set_target_properties(vpntest
   PROPERTIES
