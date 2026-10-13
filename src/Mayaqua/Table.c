@@ -85,30 +85,6 @@ LABEL_FATAL_ERROR:
 	FreeLangList(o);
 }
 
-// Get the language of the current OS
-void GetCurrentOsLang(LANGLIST *e)
-{
-	// Validate arguments
-	if (e == NULL)
-	{
-		return;
-	}
-
-	Copy(e, &current_os_lang, sizeof(LANGLIST));
-}
-
-// Get the language ID of the current OS
-UINT GetCurrentOsLangId()
-{
-	LANGLIST e;
-
-	Zero(&e, sizeof(e));
-
-	GetCurrentOsLang(&e);
-
-	return e.Id;
-}
-
 // Get the current language
 void GetCurrentLang(LANGLIST *e)
 {
@@ -254,29 +230,6 @@ bool LoadLangConfig(wchar_t *filename, char *str, UINT str_size)
 	FreeBuf(b);
 
 	return ret;
-}
-
-// Choose the language from the ID
-LANGLIST *GetLangById(LIST *o, UINT id)
-{
-	UINT i;
-	// Validate arguments
-	if (o == NULL)
-	{
-		return NULL;
-	}
-
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		LANGLIST *e = LIST_DATA(o, i);
-
-		if (e->Id == id)
-		{
-			return e;
-		}
-	}
-
-	return NULL;
 }
 
 // Choice the best language for the current environment

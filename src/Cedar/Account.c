@@ -305,24 +305,6 @@ bool IsUserName(char *name)
 	return true;
 }
 
-// Get policy title
-wchar_t *GetPolicyTitle(UINT id)
-{
-	char tmp[MAX_SIZE];
-	Format(tmp, sizeof(tmp), "POL_%u", id);
-
-	return _UU(tmp);
-}
-
-// Get policy description
-wchar_t *GetPolicyDescription(UINT id)
-{
-	char tmp[MAX_SIZE];
-	Format(tmp, sizeof(tmp), "POL_EX_%u", id);
-
-	return _UU(tmp);
-}
-
 // Clone the policy value
 POLICY *ClonePolicy(POLICY *policy)
 {
@@ -864,35 +846,6 @@ USER *AcGetUser(HUB *h, char *name)
 	AddRef(u->ref);
 
 	return u;
-}
-
-USER* AcGetUserByCert(HUB *h, X *cert)
-{
-	int i;
-
-	if (cert == NULL)
-	{
-		return NULL;
-	}
-
-	for (i = 0; i < LIST_NUM(h->HubDb->UserList); i++)
-	{
-		USER* u = LIST_DATA(h->HubDb->UserList, i);
-		if (u->AuthType == AUTHTYPE_USERCERT)
-		{
-			X* ucert = ((AUTHUSERCERT*)u->AuthData)->UserX;
-			if (ucert != NULL)
-			{
-				if (CompareX(cert, ucert))
-				{
-					AddRef(u->ref);
-					return u;
-				}
-			}
-		}
-	}
-
-	return NULL;
 }
 
 // Delete the user

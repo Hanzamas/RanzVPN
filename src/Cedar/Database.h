@@ -11,8 +11,6 @@
 #include "Mayaqua/MayaType.h"
 
 wchar_t *LiGetLicenseStatusStr(UINT i);
-bool LiIsLicenseKey(char *str);
-bool LiStrToKeyBit(UCHAR *keybit, char *keystr);
 
 
 #endif	// DATABASE_H

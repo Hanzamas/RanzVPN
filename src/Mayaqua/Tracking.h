@@ -62,7 +62,6 @@ void GetCallStackStr(char *str, UINT size, CALLSTACK_DATA *s);
 void PrintCallStack(CALLSTACK_DATA *s);
 void InitTracking();
 void FreeTracking();
-int CompareTrackingObject(const void *p1, const void *p2);
 void LockTrackingList();
 void UnlockTrackingList();
 void InsertTrackingList(TRACKING_OBJECT *o);
@@ -75,7 +74,6 @@ void TrackDeleteObj(UINT64 addr);
 void TrackChangeObjSize(UINT64 addr, UINT size, UINT64 new_addr);
 
 void GetMemoryStatus(MEMORY_STATUS *status);
-void PrintMemoryStatus();
 void MemoryDebugMenu();
 int SortObjectView(void *p1, void *p2);
 void DebugPrintAllObjects();

@@ -91,14 +91,12 @@ struct CMD_EVAL_MIN_MAX
 
 // Function prototype
 wchar_t *Prompt(wchar_t *prompt_str);
-char *PromptA(wchar_t *prompt_str);
 bool PasswordPrompt(char *password, UINT size);
 void *SetConsoleRaw();
 void RestoreConsole(void *p);
 wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list);
 wchar_t *ParseCommand(wchar_t *str, wchar_t *name);
 TOKEN_LIST *GetCommandNameList(wchar_t *str);
-char *ParseCommandA(wchar_t *str, char *name);
 LIST *NewParamValueList();
 int CmpParamValue(void *p1, void *p2);
 void FreeParamValueList(LIST *o);
@@ -114,7 +112,6 @@ bool IsOmissionName(char *input_name, char *real_name);
 TOKEN_LIST *GetRealnameCandidate(char *input_name, TOKEN_LIST *real_name_list);
 bool SeparateCommandAndParam(wchar_t *src, char **cmd, wchar_t **param);
 UINT GetConsoleWidth(CONSOLE *c);
-bool DispatchNextCmd(CONSOLE *c, char *prompt, CMD cmd[], UINT num_cmd, void *param);
 bool DispatchNextCmdEx(CONSOLE *c, wchar_t *exec_command, char *prompt, CMD cmd[], UINT num_cmd, void *param);
 void PrintCandidateHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *candidate_list, UINT left_space);
 UNI_TOKEN_LIST *SeparateStringByWidth(wchar_t *str, UINT width);
@@ -125,7 +122,6 @@ void GetCommandParamHelpStr(char *command_name, char *param_name, wchar_t **desc
 bool CmdEvalMinMax(CONSOLE *c, wchar_t *str, void *param);
 wchar_t *CmdPrompt(CONSOLE *c, void *param);
 bool CmdEvalNotEmpty(CONSOLE *c, wchar_t *str, void *param);
-bool CmdEvalInt1(CONSOLE *c, wchar_t *str, void *param);
 bool CmdEvalIsFile(CONSOLE *c, wchar_t *str, void *param);
 bool CmdEvalSafe(CONSOLE *c, wchar_t *str, void *param);
 void PrintCmdHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *param_list);

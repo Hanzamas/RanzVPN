@@ -65,7 +65,6 @@ ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr);
 void CloseEth(ETH *e);
 CANCEL *EthGetCancel(ETH *e);
 UINT EthGetPacket(ETH *e, void **data);
-void EthPutPacket(ETH *e, void *data, UINT size);
 void EthPutPackets(ETH *e, UINT num, void **datas, UINT *sizes);
 void GetEthNetworkConnectionName(wchar_t *dst, UINT size, char *device_name);
 UINT EthGetMtu(ETH *e);

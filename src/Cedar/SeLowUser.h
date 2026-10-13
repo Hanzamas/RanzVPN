@@ -54,7 +54,6 @@ struct SU_ADAPTER_LIST
 SU *SuInit();
 SU *SuInitEx(UINT wait_for_bind_complete_tick);
 void SuFree(SU *u);
-TOKEN_LIST *SuEnumAdapters(SU *u);
 SU_ADAPTER *SuOpenAdapter(SU *u, char *adapter_id);
 void SuCloseAdapter(SU_ADAPTER *a);
 void SuCloseAdapterHandleInner(SU_ADAPTER *a);
@@ -76,7 +75,6 @@ bool SuCopySysFile(wchar_t *src, wchar_t *dst);
 void SuDeleteGarbageInfs();
 void SuDeleteGarbageInfsInner();
 bool SuLoadDriversHive();
-bool SuUnloadDriversHive();
 
 #endif	// SELOWUSER_H
 

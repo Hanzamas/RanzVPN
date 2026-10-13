@@ -273,37 +273,6 @@ void TCPAccepted(LISTENER *r, SOCK *s)
 	ReleaseThread(t);
 }
 
-// Remove a DOS entry
-bool RemoveDosEntry(LISTENER *r, SOCK *s)
-{
-	DOS *d;
-	bool ok = false;
-	// Validate arguments
-	if (r == NULL || s == NULL)
-	{
-		return false;
-	}
-
-	LockList(r->DosList);
-	{
-		// Delete old entries from the DOS attack list
-		RefreshDosList(r);
-
-		// Search the table
-		d = SearchDosList(r, &s->RemoteIP);
-
-		if (d != NULL)
-		{
-			Delete(r->DosList, d);
-			Free(d);
-			ok = true;
-		}
-	}
-	UnlockList(r->DosList);
-
-	return ok;
-}
-
 // Check whether this is a DOS attack
 bool CheckDosAttack(LISTENER *r, SOCK *s)
 {
@@ -1084,15 +1053,5 @@ void AddUDPEntry(CEDAR *cedar, SESSION *session)
 	UnlockList(cedar->UDPEntryList);
 
 	Debug("UDP_Entry Added.\n");
-}
-
-// Clear the UDP entry
-void CleanupUDPEntry(CEDAR *cedar)
-{
-	// Validate arguments
-	if (cedar == NULL)
-	{
-		return;
-	}
 }
 

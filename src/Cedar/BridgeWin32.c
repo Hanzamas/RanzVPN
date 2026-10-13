@@ -666,18 +666,6 @@ void EthPutPackets(ETH *e, UINT num, void **datas, UINT *sizes)
 	}
 }
 
-// Send a packet
-void EthPutPacket(ETH *e, void *data, UINT size)
-{
-	// Validate arguments
-	if (e == NULL || data == NULL || size == 0)
-	{
-		return;
-	}
-
-	EthPutPackets(e, 1, &data, &size);
-}
-
 // Read next packet
 UINT EthGetPacket(ETH *e, void **data)
 {

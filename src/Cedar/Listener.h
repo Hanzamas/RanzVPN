@@ -89,7 +89,6 @@ void TCPAcceptedThread(THREAD *t, void *param);
 void ListenerUDPMainLoop(LISTENER *r);
 void UDPReceivedPacket(CEDAR *cedar, SOCK *s, IP *ip, UINT port, void *data, UINT size);
 int CompareUDPEntry(void *p1, void *p2);
-void CleanupUDPEntry(CEDAR *cedar);
 void AddUDPEntry(CEDAR *cedar, SESSION *session);
 void DelUDPEntry(CEDAR *cedar, SESSION *session);
 SESSION *GetSessionFromUDPEntry(CEDAR *cedar, UINT key32);
@@ -102,7 +101,6 @@ int CompareDos(void *p1, void *p2);
 DOS *SearchDosList(LISTENER *r, IP *ip);
 void RefreshDosList(LISTENER *r);
 bool CheckDosAttack(LISTENER *r, SOCK *s);
-bool RemoveDosEntry(LISTENER *r, SOCK *s);
 
 #endif	// LISTENER_H
 

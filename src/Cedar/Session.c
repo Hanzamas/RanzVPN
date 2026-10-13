@@ -1334,14 +1334,6 @@ SKIP:
 }
 
 // Create an RPC session
-SESSION *NewRpcSession(CEDAR *cedar, CLIENT_OPTION *option)
-{
-	return NewRpcSessionEx(cedar, option, NULL, NULL);
-}
-SESSION *NewRpcSessionEx(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *client_str)
-{
-	return NewRpcSessionEx2(cedar, option, err, client_str, NULL);
-}
 SESSION *NewRpcSessionEx2(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *client_str, void *hWnd)
 {
 	SESSION *s;
