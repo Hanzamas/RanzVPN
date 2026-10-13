@@ -61,9 +61,7 @@ bool IsBridgeSupported()
 		{
 			bool ret = false;
 
-#ifdef	OS_WIN32
 			ret = MsIsAdmin();
-#endif	// OS_WIN32
 
 			return ret;
 		}
@@ -132,10 +130,7 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 		return;
 	}
 
-	if (OS_IS_UNIX(GetOsInfo()->OsType) == false)
-	{
-		tapmode = false;
-	}
+	tapmode = false;
 
 	LockList(c->HubList);
 	{

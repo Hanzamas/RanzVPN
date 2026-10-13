@@ -141,14 +141,12 @@ bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *p
 	if (name != NULL)
 	{
 		// NT authentication
-#ifdef	OS_WIN32
 		Unlock(hub->lock);
 
 		// Plaintext password authentication
 		b = MsCheckLogon(name, password);
 
 		Lock(hub->lock);
-#endif	// OS_WIN32
 
 		// Memory release
 		if( groupname != NULL )

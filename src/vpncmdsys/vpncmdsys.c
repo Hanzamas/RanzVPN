@@ -173,7 +173,6 @@ int main(int argc, char *argv[])
 			swprintf(args, sizeof(args), L"\"%S\" %s", buf, current_args);
 			if (ExecProcess(buf, args) == false)
 			{
-				//sprintf(error, "Failed to execute \"%S\".", buf);
 			}
 			else
 			{

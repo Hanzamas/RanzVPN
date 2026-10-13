@@ -36,8 +36,6 @@ int main(int argc, char *argv[])
 {
 	InitProcessCallOnce();
 
-#ifdef	OS_WIN32
 	return MsService(GC_SVC_NAME_VPNSERVER, StartProcess, StopProcess, 0, argv[0]);
-#endif	// OS_WIN32
 }
 

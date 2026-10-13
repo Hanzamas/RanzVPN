@@ -5,7 +5,6 @@
 // Win32Com.c
 // Win32 COM module call
 
-#ifdef OS_WIN32
 
 #include "Win32Com.h"
 
@@ -168,4 +167,3 @@ LABEL_CLEANUP:
 	return ret;
 }
 
-#endif

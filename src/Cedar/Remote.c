@@ -174,7 +174,6 @@ PACK *RpcCall(RPC *r, char *function_name, PACK *p)
 		return NULL;
 	}
 
-//	Debug("RpcCall: %s\n", function_name);
 
 	Lock(r->Lock);
 	{

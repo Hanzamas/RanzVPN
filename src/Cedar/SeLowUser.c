@@ -5,7 +5,6 @@
 // SeLowUser.c
 // SoftEther Lightweight Network Protocol User-mode Library
 
-#ifdef OS_WIN32
 
 #include "SeLowUser.h"
 
@@ -662,13 +661,11 @@ LIST *SuGetAdapterList(SU *u)
 
 			if (a != NULL)
 			{
-				// Debug("SU: Adapter %u (OK): ID=%S, MAC=%s, FriendlyName=%s\n", i, info->AdapterId, macstr, info->FriendlyName);
 
 				Add(ret, a);
 			}
 			else
 			{
-				// Debug("SU: Adapter %u (NG): ID=%S, MAC=%s, FriendlyName=%s\n", i, info->AdapterId, macstr, info->FriendlyName);
 			}
 		}
 	}
@@ -820,7 +817,6 @@ LABEL_RETRY:
 		return NULL;
 	}
 
-	//Debug("CreateFileA(%s) Ok.\n", SL_BASIC_DEVICE_FILENAME_WIN32);
 
 	u = ZeroMalloc(sizeof(SU));
 
@@ -890,5 +886,4 @@ void SuFree(SU *u)
 	Free(u);
 }
 
-#endif	// WIN32
 

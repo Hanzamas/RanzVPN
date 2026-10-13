@@ -6,8 +6,6 @@
 // VPN Command Line Management Utility
 
 #include "Cedar/Cedar.h"
-#ifdef OS_WIN32
-#endif
 #include "Cedar/Command.h"
 
 #include "Mayaqua/Internat.h"
@@ -23,9 +21,7 @@ int main(int argc, char *argv[])
 
 	InitProcessCallOnce();
 
-#ifdef	OS_WIN32
 	SetConsoleTitleA(CEDAR_PRODUCT_STR " VPN Command Line Utility");
-#endif	// OS_WIN32
 
 #if defined(_DEBUG) || defined(DEBUG)	// In VC++ compilers, the macro is "_DEBUG", not "DEBUG".
 	// If set memcheck = true, the program will be vitally slow since it will log all malloc() / realloc() / free() calls to find the cause of memory leak.
@@ -56,7 +52,6 @@ int main(int argc, char *argv[])
 		Free(tmp);
 	}
 
-#ifdef	OS_WIN32
 	{
 		UINT i;
 		LIST *o = MsGetProcessList();
@@ -83,7 +78,6 @@ int main(int argc, char *argv[])
 			}
 		}
 	}
-#endif	// OS_WIN32
 
 	Free(s);
 
