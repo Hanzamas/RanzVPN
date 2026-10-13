@@ -304,9 +304,7 @@ wchar_t *InternalFormatArgs(wchar_t *fmt, va_list args, bool ansi_mode)
 				tmp[wp++] = 0;
 				tag = CopyUniToStr(tmp);
 
-				#ifdef	OS_WIN32
 					ReplaceStrEx(tag, 0, tag, "ll", "I64", false);
-				#endif	// OS_WIN32
 
 				if ((UniStrLen(tmp) >= 5 && tmp[UniStrLen(tmp) - 4] == L'I' &&
 					tmp[UniStrLen(tmp) - 3] == L'6' &&
@@ -315,15 +313,11 @@ wchar_t *InternalFormatArgs(wchar_t *fmt, va_list args, bool ansi_mode)
 					UniStrLen(tmp) >= 4 && tmp[UniStrLen(tmp) - 3] == L'l' &&
 					tmp[UniStrLen(tmp) - 2] == L'l'))
 				{
-					#ifdef	OS_WIN32
 						_snprintf(dst, sizeof(dst), tag, va_arg(args, UINT64));
-					#endif	// OS_WIN32
 				}
 				else
 				{
-					#ifdef	OS_WIN32
 						_snprintf(dst, sizeof(dst), tag, va_arg(args, int));
-					#endif	// OS_WIN32
 				}
 
 				Free(tag);
@@ -342,9 +336,7 @@ wchar_t *InternalFormatArgs(wchar_t *fmt, va_list args, bool ansi_mode)
 				tmp[wp++] = 0;
 				tag = CopyUniToStr(tmp);
 
-				#ifdef	OS_WIN32
 					_snprintf(dst, sizeof(dst), tag, va_arg(args, double));
-				#endif	// OS_WIN32
 
 				Free(tag);
 				Add(o, CopyStrToUni(dst));
@@ -360,9 +352,7 @@ wchar_t *InternalFormatArgs(wchar_t *fmt, va_list args, bool ansi_mode)
 				tag = ZeroMalloc(UniStrSize(tmp) + 32);
 				UniToStr(tag, 0, tmp);
 
-				#ifdef	OS_WIN32
 					_snprintf(dst, sizeof(dst), tag, va_arg(args, void *));
-				#endif	// OS_WIN32
 
 				Free(tag);
 				Add(o, CopyStrToUni(dst));
@@ -890,7 +880,6 @@ bool IsSafeUniChar(wchar_t c)
 // Convert Unicode string to ANSI string
 UINT UniToStr(char *str, UINT size, wchar_t *s)
 {
-#ifdef	OS_WIN32
 	UINT ret;
 	char *tmp;
 	UINT new_size;
@@ -917,13 +906,11 @@ UINT UniToStr(char *str, UINT size, wchar_t *s)
 	Free(tmp);
 
 	return ret;
-#endif	// OS_WIN32
 }
 
 // Get the required number of bytes to convert Unicode string to the ANSI string
 UINT CalcUniToStr(wchar_t *s)
 {
-#ifdef	OS_WIN32
 	UINT ret;
 	// Validate arguments
 	if (s == NULL)
@@ -938,13 +925,11 @@ UINT CalcUniToStr(wchar_t *s)
 	}
 
 	return ret + 1;
-#endif	// OS_WIN32
 }
 
 // Converted an ANSI string to a Unicode string
 UINT StrToUni(wchar_t *s, UINT size, char *str)
 {
-#ifdef	OS_WIN32
 	UINT ret;
 	wchar_t *tmp;
 	UINT new_size;
@@ -971,13 +956,11 @@ UINT StrToUni(wchar_t *s, UINT size, char *str)
 	Free(tmp);
 
 	return ret;
-#endif	// OS_WIN32
 }
 
 // Get the required buffer size for converting an ANSI string to an Unicode string
 UINT CalcStrToUni(char *str)
 {
-#ifdef	OS_WIN32
 	UINT ret;
 	// Validate arguments
 	if (str == NULL)
@@ -992,7 +975,6 @@ UINT CalcStrToUni(char *str)
 	}
 
 	return (ret + 1) * sizeof(wchar_t);
-#endif	// OS_WIN32
 }
 
 // Convert the UTF-8 strings to a Unicode string
@@ -1635,17 +1617,13 @@ UNI_TOKEN_LIST *UniParseToken(wchar_t *src, wchar_t *separator)
 // Get a line from standard input
 bool UniGetLine(wchar_t *str, UINT size)
 {
-#ifdef	OS_WIN32
 	return UniGetLineWin32(str, size);
-#endif	// OS_WIN32
 }
 bool UniGetLineWin32(wchar_t *str, UINT size)
 {
 	bool ret = false;
 
-#ifdef	OS_WIN32
 	ret = Win32InputW(str, size);
-#endif	// OS_WIN32
 
 	return ret;
 }

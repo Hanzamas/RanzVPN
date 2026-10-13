@@ -40,62 +40,21 @@
 #include <openssl/pem.h>
 #include <openssl/conf.h>
 #include <openssl/x509v3.h>
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
 #include <openssl/provider.h>
 // Static oqsprovider initialization function
 #ifndef SKIP_OQS_PROVIDER
 	extern OSSL_provider_init_fn oqs_provider_init;
 #endif
-#endif
 
-#ifdef _MSC_VER
 	#include <intrin.h> // For __cpuid()
-#else // _MSC_VER
-
-
-#ifndef SKIP_CPU_FEATURES
-	#include "cpu_features_macros.h"
-#endif
-
-	#if defined(CPU_FEATURES_ARCH_X86)
-		#include "cpuinfo_x86.h"
-	#elif defined(CPU_FEATURES_ARCH_ARM)
-		#include "cpuinfo_arm.h"
-	#elif defined(CPU_FEATURES_ARCH_AARCH64)
-		#include "cpuinfo_aarch64.h"
-	#elif defined(CPU_FEATURES_ARCH_MIPS)
-		#include "cpuinfo_mips.h"
-	#elif defined(CPU_FEATURES_ARCH_PPC)
-		#include "cpuinfo_ppc.h"
-	#endif
-#endif // _MSC_VER
-
-// OpenSSL <1.1 Shims
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-#	define EVP_PKEY_get0_RSA(obj) ((obj)->pkey.rsa)
-#	define EVP_PKEY_base_id(pkey) ((pkey)->type)
-#	define X509_get0_notBefore(x509) ((x509)->cert_info->validity->notBefore)
-#	define X509_get0_notAfter(x509) ((x509)->cert_info->validity->notAfter)
-#	define X509_get_serialNumber(x509) ((x509)->cert_info->serialNumber)
-#endif
-
-#ifndef EVP_CTRL_AEAD_GET_TAG
-#	define EVP_CTRL_AEAD_GET_TAG EVP_CTRL_GCM_GET_TAG
-#endif
-
-#ifndef EVP_CTRL_AEAD_SET_TAG
-#	define EVP_CTRL_AEAD_SET_TAG EVP_CTRL_GCM_SET_TAG
-#endif
 
 LOCK *openssl_lock = NULL;
 
 int ssl_clientcert_index = 0;
 
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
 static OSSL_PROVIDER *ossl_provider_legacy = NULL;
 static OSSL_PROVIDER *ossl_provider_default = NULL;
 static OSSL_PROVIDER *ossl_provider_oqsprovider = NULL;
-#endif
 
 LOCK **ssl_lock_obj = NULL;
 UINT ssl_lock_num;
@@ -209,12 +168,7 @@ CIPHER *NewCipher(char *name)
 		return NULL;
 	}
 
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 	c->Ctx = EVP_CIPHER_CTX_new();
-#else
-	c->Ctx = ZeroMalloc(sizeof(struct evp_cipher_ctx_st));
-	EVP_CIPHER_CTX_init(c->Ctx);
-#endif
 
 	c->IsAeadCipher = EVP_CIPHER_flags(c->Cipher) & EVP_CIPH_FLAG_AEAD_CIPHER;
 	c->BlockSize = EVP_CIPHER_block_size(c->Cipher);
@@ -323,12 +277,7 @@ void FreeCipher(CIPHER *c)
 
 	if (c->Ctx != NULL)
 	{
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 		EVP_CIPHER_CTX_free(c->Ctx);
-#else
-		EVP_CIPHER_CTX_cleanup(c->Ctx);
-		Free(c->Ctx);
-#endif
 	}
 
 	Free(c);
@@ -338,17 +287,14 @@ void FreeCipher(CIPHER *c)
 BUF *RsaPublicToBuf(K *k)
 {
 	BUF *b;
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 	RSA *rsa;
 	const BIGNUM *n;
-#endif
 	// Validate arguments
 	if (k == NULL || k->pkey == NULL)
 	{
 		return NULL;
 	}
 
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 	rsa = EVP_PKEY_get0_RSA(k->pkey);
 	if (rsa == NULL)
 	{
@@ -362,14 +308,6 @@ BUF *RsaPublicToBuf(K *k)
 	}
 
 	b = BigNumToBuf(n);
-#else
-	if (k->pkey->pkey.rsa == NULL || k->pkey->pkey.rsa->n == NULL)
-	{
-		return NULL;
-	}
-
-	b = BigNumToBuf(k->pkey->pkey.rsa->n);
-#endif
 
 	if (b == NULL)
 	{
@@ -475,69 +413,19 @@ BUF *BigNumToBuf(const BIGNUM *bn)
 	return b;
 }
 
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-// Return the thread ID
-static void OpenSSL_Id(CRYPTO_THREADID *id)
-{
-	CRYPTO_THREADID_set_numeric(id, (unsigned long)ThreadId());
-}
-#endif
-
 // Initialization of the lock of OpenSSL
 void OpenSSL_InitLock()
 {
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-	UINT i;
-
-	// Initialization of the lock object
-	ssl_lock_num = CRYPTO_num_locks();
-	ssl_lock_obj = Malloc(sizeof(LOCK *) * ssl_lock_num);
-	for (i = 0;i < ssl_lock_num;i++)
-	{
-		ssl_lock_obj[i] = NewLock();
-	}
-
-	// Setting the lock function
-	CRYPTO_set_locking_callback(OpenSSL_Lock);
-	CRYPTO_THREADID_set_callback(OpenSSL_Id);
-#endif
 }
 
 // Release of the lock of OpenSSL
 void OpenSSL_FreeLock()
 {
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-	UINT i;
-
-	for (i = 0;i < ssl_lock_num;i++)
-	{
-		DeleteLock(ssl_lock_obj[i]);
-	}
-	Free(ssl_lock_obj);
-	ssl_lock_obj = NULL;
-
-	CRYPTO_set_locking_callback(NULL);
-	CRYPTO_THREADID_set_callback(NULL);
-#endif
 }
 
 // Lock function for OpenSSL
 void OpenSSL_Lock(int mode, int n, const char *file, int line)
 {
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-	LOCK *lock = ssl_lock_obj[n];
-
-	if (mode & CRYPTO_LOCK)
-	{
-		// Lock
-		Lock(lock);
-	}
-	else
-	{
-		// Unlock
-		Unlock(lock);
-	}
-#endif
 }
 
 char *OpenSSL_Error()
@@ -1148,7 +1036,6 @@ X509 *NewX509(K *pub, K *priv, X *ca, NAME *name, UINT days, X_SERIAL *serial)
 
 	// Set the Serial Number
 	s = X509_get_serialNumber(x509);
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 	if (serial == NULL)
 	{
 		ASN1_INTEGER_set(s, 0);
@@ -1162,29 +1049,6 @@ X509 *NewX509(K *pub, K *priv, X *ca, NAME *name, UINT days, X_SERIAL *serial)
 			BN_free(bn);
 		}
 	}
-#else
-	OPENSSL_free(s->data);
-	if (serial == NULL)
-	{
-		char zero = 0;
-		s->data = OPENSSL_malloc(sizeof(char));
-		Copy(s->data, &zero, sizeof(char));
-		s->length = sizeof(char);
-	}
-	else
-	{
-		s->data = OPENSSL_malloc(serial->size);
-		Copy(s->data, serial->data, serial->size);
-		s->length = serial->size;
-	}
-#endif
-
-	/*
-	// Extensions
-	ex = X509V3_EXT_conf_nid(NULL, NULL, NID_basic_constraints,	"critical,CA:TRUE");
-	X509_add_ext(x509, ex, -1);
-	X509_EXTENSION_free(ex);
-*/
 
 	// Basic usage
 	busage = NewBasicKeyUsageForX509();
@@ -1307,7 +1171,6 @@ X509 *NewRootX509(K *pub, K *priv, NAME *name, UINT days, X_SERIAL *serial)
 
 	// Set a Serial Number
 	s = X509_get_serialNumber(x509);
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 	if (serial == NULL)
 	{
 		ASN1_INTEGER_set(s, 0);
@@ -1321,22 +1184,6 @@ X509 *NewRootX509(K *pub, K *priv, NAME *name, UINT days, X_SERIAL *serial)
 			BN_free(bn);
 		}
 	}
-#else
-	OPENSSL_free(s->data);
-	if (serial == NULL)
-	{
-		char zero = 0;
-		s->data = OPENSSL_malloc(sizeof(char));
-		Copy(s->data, &zero, sizeof(char));
-		s->length = sizeof(char);
-	}
-	else
-	{
-		s->data = OPENSSL_malloc(serial->size);
-		Copy(s->data, serial->data, serial->size);
-		s->length = serial->size;
-	}
-#endif
 
 	// Extensions
 	ex = X509V3_EXT_conf_nid(NULL, NULL, NID_basic_constraints,	"critical,CA:TRUE");
@@ -1564,19 +1411,7 @@ bool SystemToAsn1Time(void *asn1_time, SYSTEMTIME *s)
 		return false;
 	}
 	t = (ASN1_TIME *)asn1_time;
-#if OPENSSL_VERSION_NUMBER >= 0x10000000L
 	return ASN1_TIME_set_string(t, tmp) != 0;
-#else
-	if (t->data == NULL || t->length < sizeof(tmp))
-	{
-		t->data = OPENSSL_malloc(sizeof(tmp));
-	}
-	StrCpy((char *)t->data, t->length, tmp);
-	t->length = StrLen(tmp);
-	t->type = V_ASN1_UTCTIME;
-
-	return true;
-#endif
 }
 
 // Convert the system time to a string
@@ -1616,12 +1451,10 @@ UINT64 Asn1TimeToUINT64(void *asn1_time)
 bool Asn1TimeToSystem(SYSTEMTIME *s, void *asn1_time)
 {
 	ASN1_TIME *t;
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 	char tmp[32];
 	int len;
 	const char *src;
 	int type;
-#endif
 	// Validate arguments
 	if (s == NULL || asn1_time == NULL)
 	{
@@ -1629,7 +1462,6 @@ bool Asn1TimeToSystem(SYSTEMTIME *s, void *asn1_time)
 	}
 
 	t = (ASN1_TIME *)asn1_time;
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 	len = ASN1_STRING_length((const ASN1_STRING *)t);
 	src = (const char *)ASN1_STRING_get0_data((const ASN1_STRING *)t);
 	type = ASN1_STRING_type((const ASN1_STRING *)t);
@@ -1651,17 +1483,6 @@ bool Asn1TimeToSystem(SYSTEMTIME *s, void *asn1_time)
 	{
 		LocalToSystem(s, s);
 	}
-#else
-	if (StrToSystem(s, (char *)t->data) == false)
-	{
-		return false;
-	}
-
-	if (t->type == V_ASN1_GENERALIZEDTIME)
-	{
-		LocalToSystem(s, s);
-	}
-#endif
 
 	return true;
 }
@@ -2239,7 +2060,6 @@ wchar_t *GetUniStrFromX509Name(void *xn, int nid)
 	{
 		return NULL;
 	}
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 	if (ASN1_STRING_type(data) == V_ASN1_BMPSTRING)
 	{
 		unicode = true;
@@ -2248,16 +2068,6 @@ wchar_t *GetUniStrFromX509Name(void *xn, int nid)
 	{
 		is_utf_8 = true;
 	}
-#else
-	if (data->type == V_ASN1_BMPSTRING)
-	{
-		unicode = true;
-	}
-	if (data->type == V_ASN1_UTF8STRING || data->type == V_ASN1_T61STRING)
-	{
-		is_utf_8 = true;
-	}
-#endif
 
 	size = UniStrLen((wchar_t *)txt) * 4 + 8;
 	for (i = 0;i < size;i++)
@@ -3123,11 +2933,7 @@ X *X509ToX(X509 *x509)
 				{
 					if (OBJ_obj2nid(ad->method) == NID_ad_ca_issuers && ad->location->type == GEN_URI)
 					{
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 						char *uri = (char *)ASN1_STRING_get0_data(ad->location->d.uniformResourceIdentifier);
-#else
-						char *uri = (char *)ASN1_STRING_data(ad->location->d.uniformResourceIdentifier);
-#endif
 						if (IsEmptyStr(uri) == false)
 						{
 							StrCpy(x->issuer_url, sizeof(x->issuer_url), uri);
@@ -3143,11 +2949,7 @@ X *X509ToX(X509 *x509)
 
 	// Get the Serial Number
 	s = X509_get_serialNumber(x509);
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 	x->serial = (s != NULL) ? NewXSerial((void *)ASN1_STRING_get0_data((const ASN1_STRING *)s), ASN1_STRING_length((const ASN1_STRING *)s)) : NULL;
-#else
-	x->serial = (s != NULL) ? NewXSerial(s->data, s->length) : NULL;
-#endif
 	if (x->serial == NULL)
 	{
 		char zero = 0;
@@ -3337,19 +3139,8 @@ void Rand(void *buf, UINT size)
 // Delete a thread-specific information that OpenSSL has holded
 void FreeOpenSSLThreadState()
 {
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-	CRYPTO_cleanup_all_ex_data();
-	ERR_remove_thread_state(NULL);
-#else
-#ifndef LIBRESSL_VERSION_NUMBER
 	OPENSSL_thread_stop();
-#endif
-#endif
 }
-
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-#define SSL_COMP_free_compression_methods() (sk_free(SSL_COMP_get_compression_methods()))
-#endif
 
 // Release the Crypt library
 void FreeCryptLibrary()
@@ -3358,28 +3149,7 @@ void FreeCryptLibrary()
 
 	DeleteLock(openssl_lock);
 	openssl_lock = NULL;
-//	RAND_Free_For_SoftEther();
 	OpenSSL_FreeLock();
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-#ifdef OPENSSL_FIPS
-	FIPS_mode_set(0);
-#endif
-#ifndef OPENSSL_NO_ENGINE
-	ENGINE_cleanup();
-#endif
-	CONF_modules_unload(1);
-	EVP_cleanup();
-
-	FreeOpenSSLThreadState();
-
-	ERR_free_strings();
-
-#ifndef OPENSSL_NO_COMP
-	SSL_COMP_free_compression_methods();
-#endif
-#endif
-
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
 	if (ossl_provider_default != NULL)
 	{
 		OSSL_PROVIDER_unload(ossl_provider_default);
@@ -3397,7 +3167,6 @@ void FreeCryptLibrary()
 		OSSL_PROVIDER_unload(ossl_provider_oqsprovider);
 		ossl_provider_oqsprovider = NULL;
 	}
-#endif
 }
 
 // Initialize the Crypt library
@@ -3405,18 +3174,6 @@ void InitCryptLibrary()
 {
 	char tmp[16];
 
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined(LIBRESSL_VERSION_NUMBER)
-//	RAND_Init_For_SoftEther()
-	openssl_lock = NewLock();
-	SSL_library_init();
-	//OpenSSL_add_all_algorithms();
-	OpenSSL_add_all_ciphers();
-	OpenSSL_add_all_digests();
-	ERR_load_crypto_strings();
-	SSL_load_error_strings();
-#endif
-
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
 	ossl_provider_default = OSSL_PROVIDER_load(NULL, "legacy");
 	ossl_provider_legacy = OSSL_PROVIDER_load(NULL, "default");
 
@@ -3426,15 +3183,11 @@ void InitCryptLibrary()
 		OSSL_PROVIDER_add_builtin(NULL, oqs_provider_name, oqs_provider_init); 
 	#endif
 	ossl_provider_oqsprovider = OSSL_PROVIDER_load(NULL, oqs_provider_name);
-#endif
 
 	ssl_clientcert_index = SSL_get_ex_new_index(0, "struct SslClientCertInfo *", NULL, NULL, NULL);
 
 	RAND_poll();
 
-#ifdef	OS_WIN32
-//	RAND_screen();
-#endif
 	Rand(tmp, sizeof(tmp));
 	OpenSSL_InitLock();
 
@@ -3511,7 +3264,6 @@ bool IsAesNiSupported()
 	bool supported = false;
 
 	// Unfortunately OpenSSL doesn't provide a function to do it
-#ifdef _MSC_VER
   #if defined(_M_X64) || defined(_M_IX86)
     int regs[4]; // EAX, EBX, ECX, EDX
     __cpuid(regs, 1);
@@ -3519,22 +3271,6 @@ bool IsAesNiSupported()
   #elif defined(_M_ARM64)
 	return IsProcessorFeaturePresent(PF_ARM_V8_CRYPTO_INSTRUCTIONS_AVAILABLE);
   #endif
-#else // _MSC_VER
-	#if defined(CPU_FEATURES_ARCH_X86)
-		const X86Features features = GetX86Info().features;
-		supported = features.aes;
-	#elif defined(CPU_FEATURES_ARCH_ARM)
-		const ArmFeatures features = GetArmInfo().features;
-		supported = features.aes;
-	#elif defined(CPU_FEATURES_ARCH_AARCH64)
-		const Aarch64Features features = GetAarch64Info().features;
-		supported = features.aes;
-	#elif defined(CPU_FEATURES_ARCH_MIPS)
-		//const MipsFeatures features = GetMipsInfo().features;  // no features.aes
-	#elif defined(CPU_FEATURES_ARCH_PPC)
-		//const PPCFeatures features = GetPPCInfo().features;  // no features.aes
-	#endif
-#endif // _MSC_VER
 
 	return supported;
 }
@@ -3608,10 +3344,8 @@ DH_CTX *DhNew(char *prime, UINT g)
 {
 	DH_CTX *dh;
 	BUF *buf;
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 	BIGNUM *dhp, *dhg;
 	const BIGNUM *pub, *priv;
-#endif
 	// Validate arguments
 	if (prime == NULL || g == 0)
 	{
@@ -3628,27 +3362,16 @@ DH_CTX *DhNew(char *prime, UINT g)
 		return NULL;
 	}
 	
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 	dhp = BinToBigNum(buf->Buf, buf->Size);
 	dhg = BN_new();
 	BN_set_word(dhg, g);
 	DH_set0_pqg(dh->dh, dhp, NULL, dhg);
-#else
-	dh->dh->p = BinToBigNum(buf->Buf, buf->Size);
-	dh->dh->g = BN_new();
-	BN_set_word(dh->dh->g, g);
-#endif
 
 	DH_generate_key(dh->dh);
 
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
 	DH_get0_key(dh->dh, &pub, &priv);
 	dh->MyPublicKey = BigNumToBuf(pub);
 	dh->MyPrivateKey = BigNumToBuf(priv);
-#else
-	dh->MyPublicKey = BigNumToBuf(dh->dh->pub_key);
-	dh->MyPrivateKey = BigNumToBuf(dh->dh->priv_key);
-#endif
 
 	dh->Size = buf->Size;
 
@@ -3718,7 +3441,6 @@ int GetSslClientCertIndex()
 #define rol(bits, value) (((value) << (bits)) | ((value) >> (32 - (bits))))
 
 typedef struct MY_SHA0_CTX {
-//	const HASH_VTAB * f;
 	UINT64 count;
 	UCHAR buf[64];
 	UINT state[8];  // upto SHA2
@@ -3770,7 +3492,6 @@ static void MY_SHA0_Transform(MY_SHA0_CTX* ctx) {
 	ctx->state[4] += E;
 }
 void MY_SHA0_init(MY_SHA0_CTX* ctx) {
-	//ctx->f = &SHA_VTAB;
 	ctx->state[0] = 0x67452301;
 	ctx->state[1] = 0xEFCDAB89;
 	ctx->state[2] = 0x98BADCFE;

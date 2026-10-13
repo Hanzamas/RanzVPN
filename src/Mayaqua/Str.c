@@ -1543,9 +1543,7 @@ void InitStringLibrary()
 	// Operation check
 	if (CheckStringLibrary() == false)
 	{
-#ifdef	OS_WIN32
 		Alert("String Library Init Failed.\r\nPlease check your locale settings.", NULL);
-#endif	// OS_WIN32
 		exit(0);
 	}
 }

@@ -108,11 +108,6 @@
 // Macro
 #define	HASHED_DATA(p)			(((UCHAR *)p) + 15)
 
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || LIBRESSL_VERSION_NUMBER >= 0x3080100L
-#else
-#include <openssl/pkcs12.h>
-#endif
-
 typedef struct bignum_st BIGNUM;
 typedef struct bio_st BIO;
 typedef struct DES_ks DES_key_schedule;
