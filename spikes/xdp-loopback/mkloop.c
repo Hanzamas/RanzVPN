@@ -10,6 +10,10 @@
 #include <newdev.h>
 #include <stdio.h>
 
+#ifndef MAX_CLASS_NAME_LEN
+#define MAX_CLASS_NAME_LEN 32
+#endif
+
 int __cdecl wmain(void)
 {
     WCHAR Inf[MAX_PATH];
