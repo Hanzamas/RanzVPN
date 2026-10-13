@@ -1,0 +1,88 @@
+# Spike only (ADR-0018 follow-up): the supported eBPF path of XDP for Windows
+# (eBPF for Windows + XDP eBPF hook + XSKMAP redirect) on a KM-TEST Loopback
+# Adapter. Lives on spike/* branches; never merged to master.
+name: spike-xdp-ebpf
+
+on:
+  push:
+    branches: ['spike/**']
+    paths: ['spikes/xdp-ebpf/**', 'spikes/xdp-loopback/mkloop.c', '.github/workflows/spike-xdp-ebpf.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  XDP_VERSION: '1.4.0'   # nuget.org, production-signed x64 runtime
+  EBPF_VERSION: '1.4.0'  # XDP release/1.4 builds against eBPF 1.4.0 (bpf_redirect_map needs >= 1.4.0)
+
+jobs:
+  ebpf:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch XDP ${{ env.XDP_VERSION }} and eBPF ${{ env.EBPF_VERSION }}
+        run: |
+          $pk = "$env:RUNNER_TEMP\pkg"
+          New-Item -ItemType Directory -Force $pk | Out-Null
+          $get = @(
+            @{ n = 'Microsoft.XDP-for-Windows.Sdk'; u = "https://www.nuget.org/api/v2/package/Microsoft.XDP-for-Windows.Sdk/$env:XDP_VERSION" },
+            @{ n = 'Microsoft.XDP-for-Windows.Runtime.x64'; u = "https://www.nuget.org/api/v2/package/Microsoft.XDP-for-Windows.Runtime.x64/$env:XDP_VERSION" },
+            @{ n = 'eBPF-for-Windows.x64'; u = "https://www.nuget.org/api/v2/package/eBPF-for-Windows.x64/$env:EBPF_VERSION" }
+          )
+          foreach ($g in $get) {
+            $z = "$pk\$($g.n).zip"
+            Invoke-WebRequest $g.u -OutFile $z
+            "$($g.n) sha256=$((Get-FileHash $z -Algorithm SHA256).Hash)"
+            Expand-Archive $z "$pk\$($g.n)" -Force
+          }
+          $msi = "$pk\ebpf-for-windows.x64.$env:EBPF_VERSION.msi"
+          Invoke-WebRequest "https://github.com/microsoft/ebpf-for-windows/releases/download/v$env:EBPF_VERSION/ebpf-for-windows.x64.$env:EBPF_VERSION.msi" -OutFile $msi
+          "ebpf msi sha256=$((Get-FileHash $msi -Algorithm SHA256).Hash)"
+
+      - name: Build spike (CMake, MSVC x64)
+        run: |
+          cmake -S spikes/xdp-ebpf -B build -A x64 -DXDP_SDK="$env:RUNNER_TEMP\pkg\Microsoft.XDP-for-Windows.Sdk" -DEBPF_SDK="$env:RUNNER_TEMP\pkg\eBPF-for-Windows.x64"
+          cmake --build build --config Release
+
+      - name: Setup (eBPF MSI, KM-TEST, XDP + xdpebpf)
+        timeout-minutes: 10
+        run: |
+          ./spikes/xdp-ebpf/setup.ps1 -Bin build/Release -Runtime "$env:RUNNER_TEMP\pkg\Microsoft.XDP-for-Windows.Runtime.x64" -EbpfMsi "$env:RUNNER_TEMP\pkg\ebpf-for-windows.x64.$env:EBPF_VERSION.msi" -LogDir logs
+
+      - name: Build eBPF program (clang + Convert-BpfToNative)
+        if: always()
+        timeout-minutes: 15
+        run: |
+          ./spikes/xdp-ebpf/build-bpf.ps1 -EbpfSdk "$env:RUNNER_TEMP\pkg\eBPF-for-Windows.x64" -XdpSdk "$env:RUNNER_TEMP\pkg\Microsoft.XDP-for-Windows.Sdk" -OutDir "$env:RUNNER_TEMP\bpf" -LogDir logs
+
+      - name: Run spike
+        if: always()
+        timeout-minutes: 10
+        run: |
+          ./spikes/xdp-ebpf/run.ps1 -Bin build/Release -Sys "$env:RUNNER_TEMP\bpf\ranz_xsk.sys" -LogDir logs -Seconds 5
+
+      - name: Summary
+        if: always()
+        run: |
+          "### ${{ matrix.os }}" >> $env:GITHUB_STEP_SUMMARY
+          Get-Content logs/*.txt -ErrorAction SilentlyContinue | Select-String -Pattern '^(RESULT|PPS) ' | ForEach-Object { $_.Line } | Select-Object -Unique | ForEach-Object { "- ``$_``" } >> $env:GITHUB_STEP_SUMMARY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spike-xdp-ebpf-${{ matrix.os }}
+          path: logs
