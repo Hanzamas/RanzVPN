@@ -465,9 +465,7 @@ void Win32InitAsyncSocket(SOCK *sock);
 void Win32JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event);
 void Win32FreeAsyncSocket(SOCK *sock);
 void Win32IpForwardRow2ToRouteEntry(ROUTE_ENTRY *entry, void *ip_forward_row);
-void Win32RouteEntryToIpForwardRow2(void *ip_forward_row, ROUTE_ENTRY *entry);
 int Win32CompareRouteEntryByMetric(void *p1, void *p2);
-ROUTE_TABLE *Win32GetRouteTable2(bool ipv4, bool ipv6);
 void Win32Cancel(CANCEL *c);
 void Win32CleanupCancel(CANCEL *c);
 CANCEL *Win32NewCancel();
@@ -480,10 +478,7 @@ bool Win32GetAdapterFromGuid(void *a, char *guid);
 SOCKET Win32Accept(SOCK *sock, SOCKET s, struct sockaddr *addr, int *addrlen, bool ipv6);
 
 bool Win32ReleaseAddress(void *a);
-bool Win32ReleaseAddressByGuid(char *guid);
-void ReleaseWin32ReleaseAddressByGuidThreadParam(WIN32_RELEASEADDRESS_THREAD_PARAM *p);
 bool Win32RenewAddress(void *a);
-bool Win32RenewAddressByGuid(char *guid);
 
 #endif	// OS_WIN32
 
@@ -647,7 +642,6 @@ void GetLoopbackAddress6(IP *ip);
 UINT GetIPAddrType6(IP *ip);
 UINT GetIPv6AddrType(IPV6_ADDR *addr);
 void GetPrefixAddress6(IP *dst, IP *ip, IP *subnet);
-bool IsInSameNetwork(IP *a1, IP *a2, IP *subnet);
 bool IsInSameNetwork6(IP *a1, IP *a2, IP *subnet);
 void GenerateEui64Address6(UCHAR *dst, UCHAR *mac);
 void GenerateEui64LocalAddress(IP *a, UCHAR *mac);
@@ -690,8 +684,6 @@ struct SslClientCertInfo {
 	char PreverifyErrMessage[PREVERIFY_ERR_MESSAGE_SIZE];
 	X *X;
 };
-
-SSL_PIPE* NewSslPipeEx3(bool server_mode, X* x, K* k, LIST* chain, DH_CTX* dh, bool verify_peer, struct SslClientCertInfo* clientcert, int tls13ticketscnt, bool disableTls13);
 
 SSL_BIO *NewSslBioMem();
 SSL_BIO *NewSslBioSsl();

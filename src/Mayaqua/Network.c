@@ -522,135 +522,6 @@ int SslCertVerifyCallback(int preverify_ok, X509_STORE_CTX *ctx)
 	return 1; /* allow the verification process to continue */
 }
 
-SSL_PIPE *NewSslPipeEx3(bool server_mode, X *x, K *k, LIST *chain, DH_CTX *dh, bool verify_peer, struct SslClientCertInfo *clientcert, int tls13ticketscnt, bool disableTls13)
-{
-	SSL_PIPE *s;
-	SSL *ssl;
-	SSL_CTX *ssl_ctx = NewSSLCtx(server_mode);
-	if (ssl_ctx == NULL)
-	{
-		return NULL;
-	}
-
-	Lock(openssl_lock);
-	{
-		if (server_mode)
-		{
-			if (chain == NULL)
-			{
-				AddChainSslCertOnDirectory(ssl_ctx);
-			}
-			else
-			{
-				UINT i;
-				X *x;
-				LockList(chain);
-				{
-					for (i = 0;i < LIST_NUM(chain);i++)
-					{
-						x = LIST_DATA(chain, i);
-						AddChainSslCert(ssl_ctx, x);
-					}
-				}
-				UnlockList(chain);
-			}
-
-			if (dh != NULL)
-			{
-				SSL_CTX_set_tmp_dh(ssl_ctx, dh->dh);
-			}
-
-#if 0
-			// Cannot get config
-#ifdef SSL_SECOP_VERSION
-			if (sock->SslAcceptSettings.Override_Security_Level)
-			{
-				SSL_CTX_set_security_level(ssl_ctx, sock->SslAcceptSettings.Override_Security_Level_Value);
-			}
-#endif
-#endif
-		}
-
-		if (verify_peer)
-		{
-			SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, SslCertVerifyCallback);
-
-			if (server_mode)
-			{
-				// Allow incomplete client trust chain
-				X509_VERIFY_PARAM *vpm = SSL_CTX_get0_param(ssl_ctx);
-				X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_PARTIAL_CHAIN);
-			}
-		}
-
-		if (dh != NULL)
-		{
-			SSL_CTX_set_options(ssl_ctx, SSL_OP_SINGLE_DH_USE);
-		}
-
-		if (server_mode == false)
-		{
-			SSL_CTX_set_options(ssl_ctx, SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS);
-		}
-
-#ifdef SSL_OP_NO_TLSv1_3
-		if (disableTls13)
-		{
-			SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_3);
-		}
-#endif
-#ifdef HAVE_SSL_CTX_SET_NUM_TICKETS
-		SSL_CTX_set_num_tickets(ssl_ctx, tls13ticketscnt);
-#endif
-
-		ssl = SSL_new(ssl_ctx);
-		if (ssl == NULL)
-		{
-			return NULL;
-		}
-
-		SSL_set_ex_data(ssl, GetSslClientCertIndex(), clientcert);
-	}
-	Unlock(openssl_lock);
-
-	s = ZeroMalloc(sizeof(SSL_PIPE));
-
-	s->ssl = ssl;
-	s->ssl_ctx = ssl_ctx;
-	s->ServerMode = server_mode;
-
-	s->SslInOut = NewSslBioSsl();
-	s->RawIn = NewSslBioMem();
-	s->RawOut = NewSslBioMem();
-
-	if (x != NULL && k != NULL)
-	{
-		Lock(openssl_lock);
-		{
-			SSL_use_certificate(s->ssl, x->x509);
-			SSL_use_PrivateKey(s->ssl, k->pkey);
-		}
-		Unlock(openssl_lock);
-	}
-
-	if (s->ServerMode == false)
-	{
-		SSL_set_connect_state(s->ssl);
-	}
-	else
-	{
-		SSL_set_accept_state(s->ssl);
-	}
-
-	SSL_set_bio(s->ssl, s->RawIn->bio, s->RawOut->bio);
-	BIO_set_ssl(s->SslInOut->bio, s->ssl, BIO_NOCLOSE);
-
-	//s->RawIn->NoFree = true;
-	s->RawOut->NoFree = true;
-
-	return s;
-}
-
 // Create a new SSL BIO (SSL)
 SSL_BIO *NewSslBioSsl()
 {
@@ -937,17 +808,6 @@ void GenerateEui64Address6(UCHAR *dst, UCHAR *mac)
 }
 
 // Examine whether two IP addresses are in the same network
-bool IsInSameNetwork(IP *a1, IP *a2, IP *subnet)
-{
-	if (IsIP4(a1))
-	{
-		return IsInSameNetwork4(a1, a2, subnet);
-	}
-	else
-	{
-		return IsInSameNetwork6(a1, a2, subnet);
-	}
-}
 bool IsInSameNetwork6(IP *a1, IP *a2, IP *subnet)
 {
 	IP prefix1, prefix2;
@@ -2185,23 +2045,6 @@ int CompareIpAdapterIndexMap(void *p1, void *p2)
 }
 
 // Update the IP address of the adapter
-bool Win32RenewAddressByGuid(char *guid)
-{
-	IP_ADAPTER_INDEX_MAP a;
-	// Validate arguments
-	if (guid == NULL)
-	{
-		return false;
-	}
-
-	Zero(&a, sizeof(a));
-	if (Win32GetAdapterFromGuid(&a, guid) == false)
-	{
-		return false;
-	}
-
-	return Win32RenewAddress(&a);
-}
 bool Win32RenewAddress(void *a)
 {
 	DWORD ret;
@@ -2248,36 +2091,6 @@ bool Win32ReleaseAddress(void *a)
 	{
 		Debug("IpReleaseAddress: Error: %u\n", ret);
 		return false;
-	}
-}
-bool Win32ReleaseAddressByGuid(char *guid)
-{
-	IP_ADAPTER_INDEX_MAP a;
-	// Validate arguments
-	if (guid == NULL)
-	{
-		return false;
-	}
-
-	Zero(&a, sizeof(a));
-	if (Win32GetAdapterFromGuid(&a, guid) == false)
-	{
-		return false;
-	}
-
-	return Win32ReleaseAddress(&a);
-}
-void ReleaseWin32ReleaseAddressByGuidThreadParam(WIN32_RELEASEADDRESS_THREAD_PARAM *p)
-{
-	// Validate arguments
-	if (p == NULL)
-	{
-		return;
-	}
-
-	if (Release(p->Ref) == 0)
-	{
-		Free(p);
 	}
 }
 
@@ -2344,76 +2157,6 @@ bool Win32GetAdapterFromGuid(void *a, char *guid)
 	return ret;
 }
 
-// Get the routing table (For Vista and later)
-ROUTE_TABLE *Win32GetRouteTable2(bool ipv4, bool ipv6)
-{
-	ROUTE_TABLE *t = ZeroMallocFast(sizeof(ROUTE_TABLE));
-	MIB_IPFORWARD_TABLE2 *p = NULL;
-	UINT ret;
-	UINT num_retry = 0;
-	LIST *o;
-	UINT i;
-	ROUTE_ENTRY *e;
-	ADDRESS_FAMILY family;
-
-	if (ipv4 && ipv6)
-	{
-		family = AF_UNSPEC;
-	}
-	else if (ipv6)
-	{
-		family = AF_INET6;
-	}
-	else
-	{
-		family = AF_INET;
-	}
-
-RETRY:
-	// Actually get
-	ret = GetIpForwardTable2(family, &p);
-	if (ret != NO_ERROR)
-	{
-		// Acquisition failure
-		if ((++num_retry) >= 5)
-		{
-			FreeMibTable(p);
-			t->Entry = MallocFast(0);
-			return t;
-		}
-		FreeMibTable(p);
-		goto RETRY;
-	}
-
-	// Add to the list along
-	o = NewListFast(Win32CompareRouteEntryByMetric);
-	for (i = 0; i < p->NumEntries; i++)
-	{
-		e = ZeroMallocFast(sizeof(ROUTE_ENTRY));
-		Win32IpForwardRow2ToRouteEntry(e, &p->Table[i]);
-
-		if (e->Active)
-		{
-			Add(o, e);
-		}
-		else
-		{
-			FreeRouteEntry(e);
-		}
-	}
-	FreeMibTable(p);
-
-	// Sort by metric
-	Sort(o);
-
-	// Combine the results
-	t->NumEntry = LIST_NUM(o);
-	t->Entry = ToArrayEx(o, true);
-	ReleaseList(o);
-
-	return t;
-}
-
 // Sort the routing entries by metric
 int Win32CompareRouteEntryByMetric(void *p1, void *p2)
 {
@@ -2443,58 +2186,6 @@ int Win32CompareRouteEntryByMetric(void *p1, void *p2)
 	{
 		return -1;
 	}
-}
-
-// Convert the ROUTE_ENTRY to a MIB_IPFORWARD_ROW2 (For Vista and later)
-void Win32RouteEntryToIpForwardRow2(void *ip_forward_row, ROUTE_ENTRY *entry)
-{
-	MIB_IPFORWARD_ROW2 *r;
-	// Validate arguments
-	if (entry == NULL || ip_forward_row == NULL)
-	{
-		return;
-	}
-
-	r = (MIB_IPFORWARD_ROW2 *)ip_forward_row;
-	InitializeIpForwardEntry(r);
-
-	if (IsIP4(&entry->DestIP))
-	{
-		// IP address
-		r->DestinationPrefix.Prefix.Ipv4.sin_family = AF_INET;
-		IPToInAddr(&r->DestinationPrefix.Prefix.Ipv4.sin_addr, &entry->DestIP);
-		// Subnet mask
-		r->DestinationPrefix.PrefixLength = SubnetMaskToInt4(&entry->DestMask);
-		// Gateway IP address
-		r->NextHop.Ipv4.sin_family = AF_INET;
-		IPToInAddr(&r->NextHop.Ipv4.sin_addr, &entry->GatewayIP);
-	}
-	else
-	{
-		// IP address
-		r->DestinationPrefix.Prefix.Ipv6.sin6_family = AF_INET6;
-		IPToInAddr6(&r->DestinationPrefix.Prefix.Ipv6.sin6_addr, &entry->DestIP);
-		// Subnet mask
-		r->DestinationPrefix.PrefixLength = SubnetMaskToInt6(&entry->DestMask);
-		// Gateway IP address
-		r->NextHop.Ipv6.sin6_family = AF_INET6;
-		IPToInAddr6(&r->NextHop.Ipv6.sin6_addr, &entry->GatewayIP);
-	}
-
-	// Metric offset
-	if (entry->Metric >= entry->IfMetric)
-	{
-		r->Metric = entry->Metric - entry->IfMetric;
-	}
-	else
-	{
-		r->Metric = 0;
-	}
-
-	// Interface ID
-	r->InterfaceIndex = entry->InterfaceID;
-
-	Debug("Win32RouteEntryToIpForwardRow2()\n");
 }
 
 // Convert the MIB_IPFORWARD_ROW2 to a ROUTE_ENTRY (For Vista and later)

@@ -1532,16 +1532,6 @@ void AddInt64(LIST *o, UINT64 i)
 
 	Add(o, Clone(&i, sizeof(UINT64)));
 }
-void InsertInt(LIST *o, UINT i)
-{
-	// Validate arguments
-	if (o == NULL)
-	{
-		return;
-	}
-
-	Insert(o, Clone(&i, sizeof(UINT)));
-}
 
 // Add an integer to the list (no duplicates)
 void AddIntDistinct(LIST *o, UINT i)
@@ -1776,18 +1766,6 @@ void WriteFifo(FIFO *f, void *p, UINT size)
 
 	// KS
 	KS_INC(KS_WRITE_FIFO_COUNT);
-}
-
-// Get the current pointer of the FIFO
-UCHAR *GetFifoPointer(FIFO *f)
-{
-	// Validate arguments
-	if (f == NULL)
-	{
-		return NULL;
-	}
-
-	return ((UCHAR *)f->p) + f->pos;
 }
 
 // Get the size of the FIFO

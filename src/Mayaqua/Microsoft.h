@@ -303,7 +303,6 @@ LIST *MsRegReadStrListEx2(UINT root, char *keyname, char *valuename, bool force3
 bool MsRegNewKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit);
 
 bool MsRegWriteValueEx2(UINT root, char *keyname, char *valuename, UINT type, void *data, UINT size, bool force32bit, bool force64bit);
-bool MsRegWriteValueEx2W(UINT root, char *keyname, char *valuename, UINT type, void *data, UINT size, bool force32bit, bool force64bit);
 
 bool MsRegWriteStr(UINT root, char *keyname, char *valuename, char *str);
 bool MsRegWriteStrEx(UINT root, char *keyname, char *valuename, char *str, bool force32bit);

@@ -114,8 +114,6 @@ LIST *WpcParseDataEntry(BUF *b);
 void WpcFreeDataEntryList(LIST *o);
 WPC_ENTRY *WpcFindDataEntry(LIST *o, char *name);
 BUF *WpcDataEntryToBuf(WPC_ENTRY *e);
-BUF *WpcGeneratePacket(PACK *pack, X *cert, K *key);
-bool WpcParsePacket(WPC_PACKET *packet, BUF *buf);
 
 #endif	// WPC_H
 

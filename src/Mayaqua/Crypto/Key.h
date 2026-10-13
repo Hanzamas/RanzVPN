@@ -20,6 +20,4 @@ struct CRYPTO_KEY_RAW
 	CRYPTO_KEY_TYPE Type;
 };
 
-UINT CryptoKeyTypeSize(const CRYPTO_KEY_TYPE type);
-
 #endif

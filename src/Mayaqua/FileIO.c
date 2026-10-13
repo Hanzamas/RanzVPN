@@ -27,19 +27,6 @@ static HAMCORE *hamcore_io = NULL;
 #define	NUM_CRC32_TABLE	256
 static UINT crc32_table[NUM_CRC32_TABLE];
 
-// Simply add the file
-void ZipAddFileSimple(ZIP_PACKER *p, char *name, UINT64 dt, UINT attribute, void *data, UINT size)
-{
-	// Validate arguments
-	if (p == NULL || IsEmptyStr(name) || (size != 0 && data == NULL))
-	{
-		return;
-	}
-
-	ZipAddFileStart(p, name, size, dt, attribute);
-	ZipAddFileData(p, data, 0, size);
-}
-
 // Start adding a file
 void ZipAddFileStart(ZIP_PACKER *p, char *name, UINT size, UINT64 dt, UINT attribute)
 {
@@ -231,33 +218,6 @@ UINT Crc32Next(void *buf, UINT pos, UINT len, UINT last_crc32)
 UINT Crc32Finish(UINT last_crc32)
 {
 	return ~last_crc32;
-}
-
-// Save the file
-bool SaveFileW(wchar_t *name, void *data, UINT size)
-{
-	IO *io;
-	// Validate arguments
-	if (name == NULL || (data == NULL && size != 0))
-	{
-		return false;
-	}
-
-	io = FileCreateW(name);
-	if (io == NULL)
-	{
-		return false;
-	}
-
-	if (FileWrite(io, data, size) == false)
-	{
-		FileClose(io);
-		return false;
-	}
-
-	FileClose(io);
-
-	return true;
 }
 
 // Check whether the file exists

@@ -232,7 +232,6 @@ bool CompareBuf(BUF *b1, BUF *b2);
 
 UINT ReadFifo(FIFO *f, void *p, UINT size);
 void ShrinkFifoMemory(FIFO *f);
-UCHAR *GetFifoPointer(FIFO *f);
 void WriteFifo(FIFO *f, void *p, UINT size);
 UINT FifoSize(FIFO *f);
 void ReleaseFifo(FIFO *f);
@@ -280,7 +279,6 @@ LIST *NewIntList(bool sorted);
 LIST *NewInt64List(bool sorted);
 int CompareInt(void *p1, void *p2);
 int CompareInt64(void *p1, void *p2);
-void InsertInt(LIST *o, UINT i);
 
 void *GetNext(QUEUE *q);
 void InsertQueue(QUEUE *q, void *p);

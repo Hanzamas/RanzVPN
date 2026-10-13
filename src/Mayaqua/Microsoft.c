@@ -3937,41 +3937,6 @@ bool MsRegWriteValueEx2(UINT root, char *keyname, char *valuename, UINT type, vo
 
 	return true;
 }
-bool MsRegWriteValueEx2W(UINT root, char *keyname, char *valuename, UINT type, void *data, UINT size, bool force32bit, bool force64bit)
-{
-	HKEY h;
-	wchar_t *valuename_w;
-	// Validate arguments
-	if (keyname == NULL || (size != 0 && data == NULL))
-	{
-		return false;
-	}
-
-	// Create a key
-	MsRegNewKeyEx2(root, keyname, force32bit, force64bit);
-
-	// Open the key
-	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_ALL_ACCESS | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS)
-	{
-		return false;
-	}
-
-	valuename_w = CopyStrToUni(valuename);
-
-	// Write the value
-	if (RegSetValueExW(h, valuename_w, 0, type, data, size) != ERROR_SUCCESS)
-	{
-		RegCloseKey(h);
-		Free(valuename_w);
-		return false;
-	}
-
-	// Close the key
-	RegCloseKey(h);
-	Free(valuename_w);
-
-	return true;
-}
 
 // Get an integer value
 UINT MsRegReadInt(UINT root, char *keyname, char *valuename)
