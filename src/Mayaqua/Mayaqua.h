@@ -13,20 +13,18 @@
 #include <stdio.h>
 
 
-// Macro for the release flag
 #ifdef	VPN_SPEED
 
 #ifndef	RANZ_ASAN	// AddressSanitizer must see every allocation, so ASan builds keep the CRT heap
-#define	WIN32_USE_HEAP_API_FOR_MEMORY	// Use the heap API to allocate memory
-#endif	// RANZ_ASAN
-#define	WIN32_NO_DEBUG_HELP_DLL			// Do not call the DLL for debugging
+#define	WIN32_USE_HEAP_API_FOR_MEMORY
+#endif
+#define	WIN32_NO_DEBUG_HELP_DLL
 
-#endif	// VPN_SPEED
+#endif
 
 void InitProcessCallOnce();
 
 #ifdef VPN_EXE
-// To build the executable file
 int main(int argc, char *argv[]);
 int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 {
@@ -34,54 +32,41 @@ int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 	InitProcessCallOnce();
 	return main(1, argv);
 }
-#endif	// VPN_EXE
+#endif
 
-// Constant
+#define	STRTABLE_ID					"SE_VPN_20121007"
 
-#define	STRTABLE_ID					"SE_VPN_20121007"	// String table identifier
+#define	PATH_BACKSLASH
 
-// Directory separator
-#define	PATH_BACKSLASH	// Backslash (\)
-
-// Endian
 #define	IsBigEndian()		(g_little_endian ? false : true)
 #define	IsLittleEndian()	(g_little_endian)
 
-// Replace the snprintf function
 #define	snprintf	_snprintf
 
-// Compiler dependent
-// VC++ compiler
 #define	GCC_PACKED
 
-// Macro that displays the current file name and line number
 #define	WHERE			if (IsDebug()){printf("%s: %u\n", __FILE__, __LINE__); SleepThread(10);}
 
-// Probe related
 #define	PROBE_STR(str)
 #define	PROBE_DATA2(str, data, size)
 
-// Global variables
 extern bool g_memcheck;
 extern bool g_debug;
 extern char *cmdline;
 extern wchar_t *uni_cmdline;
 extern bool g_little_endian;
 
-// Kernel state
 #define	NUM_KERNEL_STATUS	128
 extern UINT64 kernel_status[NUM_KERNEL_STATUS];
 extern UINT64 kernel_status_max[NUM_KERNEL_STATUS];
 extern LOCK *kernel_status_lock[NUM_KERNEL_STATUS];
 extern bool kernel_status_inited;
 
-// Kernel state operation macro
 #define	KS_GET64(id)	(kernel_status[id])
 #define	KS_GET(id)		((UINT)KS_GET64(id))
 #define	KS_GETMAX64(id)	(kernel_status_max[id])
 #define	KS_GETMAX(id)	((UINT)KS_GETMAX64(id))
 
-// Operations of the kernel status
 #define	KS_INC(id)															\
 if (IsTrackingEnabled()) {													\
 	LockKernelStatus(id);															\
@@ -111,102 +96,86 @@ if (IsTrackingEnabled()) {													\
 	UnlockKernelStatus(id);															\
 }
 
-// Kernel status
-// String related
-#define	KS_STRCPY_COUNT			0		// number of calls StrCpy
-#define	KS_STRLEN_COUNT			1		// number of calls StrLen
-#define	KS_STRCHECK_COUNT		2		// number of calls StrCheck
-#define	KS_STRCAT_COUNT			3		// number of calls StrCat
-#define	KS_FORMAT_COUNT			4		// number of calls Format
-// Memory related
-#define	KS_MALLOC_COUNT			5		// Number of calls Malloc
-#define	KS_REALLOC_COUNT		6		// Number of calls ReAlloc
-#define	KS_FREE_COUNT			7		// number of calls Free
-#define	KS_TOTAL_MEM_SIZE		8		// The total size of the memory that was allocated so far
-#define	KS_CURRENT_MEM_COUNT	9		// Number of memory blocks that are currently reserved
-#define	KS_TOTAL_MEM_COUNT		10		// The total number of memory blocks that ware allocated so far
-#define	KS_ZERO_COUNT			11		// Number of calls Zero
-#define	KS_COPY_COUNT			12		// Number of calls Copy
-// Lock related
-#define	KS_NEWLOCK_COUNT		13		// Number of calls NewLock
-#define	KS_DELETELOCK_COUNT		14		// Number of calls DeleteLock
-#define	KS_LOCK_COUNT			15		// Number of calls Lock
-#define	KS_UNLOCK_COUNT			16		// Number of calls Unlock
-#define	KS_CURRENT_LOCK_COUNT	17		// Current number of LOCK objects
-#define	KS_CURRENT_LOCKED_COUNT	18		// Current number of locked LOCK objects
-// Counter information
-#define	KS_NEW_COUNTER_COUNT	19		// Number of calls NewCounter
-#define	KS_DELETE_COUNTER_COUNT	20		// Number of calls DeleteCounter
-#define	KS_INC_COUNT			21		// Number of calls Inc
-#define	KS_DEC_COUNT			22		// Number of calls Dec
-#define	KS_CURRENT_COUNT		23		// Current total number of counts
-// Reference counter information
-#define	KS_NEWREF_COUNT			24		// Number of calls NewRef
-#define	KS_FREEREF_COUNT		72		// Number of times REF objects are deleted
-#define	KS_ADDREF_COUNT			25		// Number of calls AddRef
-#define	KS_RELEASE_COUNT		26		// Number of calls Release
-#define	KS_CURRENT_REF_COUNT	27		// Current number of REF objects
-#define	KS_CURRENT_REFED_COUNT	28		// The sum of the current number of references
-// Buffer information
-#define	KS_NEWBUF_COUNT			29		// Number of calls NewBuf
-#define	KS_FREEBUF_COUNT		30		// NNumber of calls FreeBuf
-#define	KS_CURRENT_BUF_COUNT	31		// Current number of objects in the BUF
-#define	KS_READ_BUF_COUNT		32		// Number of calls ReadBuf
-#define	KS_WRITE_BUF_COUNT		33		// Number of calls WriteBuf
-#define	KS_ADJUST_BUFSIZE_COUNT	34		// Number of times to adjust the buffer size
-#define	KS_SEEK_BUF_COUNT		35		// Number of calls SeekBuf
-// FIFO information
-#define	KS_NEWFIFO_COUNT		36		// Number of calls NewFifo
-#define	KS_FREEFIFO_COUNT		37		// Number of times the FIFO object is deleted
-#define	KS_READ_FIFO_COUNT		38		// Number of calls ReadFifo
-#define	KS_WRITE_FIFO_COUNT		39		// Number of calls WriteFifo
-// List related
-#define	KS_NEWLIST_COUNT		41		// Number of calls NewList
-#define	KS_FREELIST_COUNT		42		// Number of times the object LIST was deleted
-#define	KS_INSERT_COUNT			43		// Number of calls Add
-#define	KS_DELETE_COUNT			44		// Number of calls Delete
-#define	KS_SORT_COUNT			45		// Number of calls Sort
-#define	KS_SEARCH_COUNT			46		// Number of calls Search
-#define	KS_TOARRAY_COUNT		47		// Number of calls ToArray
-// Queue related
-#define	KS_NEWQUEUE_COUNT		48		// Number of calls NewQueue
-#define	KS_FREEQUEUE_COUNT		49		// Number of times you delete the object QUEUE
-#define	KS_PUSH_COUNT			50		// Number of calls Push
-#define	KS_POP_COUNT			51		// Number of calls POP
-// Stack related
-#define	KS_NEWSK_COUNT			52		// Number of calls NewSk
-#define	KS_FREESK_COUNT			53		// Number of times you delete the object SK
-#define	KS_INSERT_QUEUE_COUNT	54		// Number of calls InsertQueue
-#define	KS_GETNEXT_COUNT		55		// Number of calls GetNext
-// Kernel related
-#define	KS_GETTIME_COUNT		56		// Number of times to get the time
-#define	KS_GETTICK_COUNT		57		// Number of times to get the system timer
-#define	KS_NEWTHREAD_COUNT		58		// Number of calls NewThread
-#define	KS_FREETHREAD_COUNT		59		// Number of times you delete the object THREAD
-#define	KS_WAITFORTHREAD_COUNT	60		// Number of calls WaitForThread
-#define	KS_NEWEVENT_COUNT		61		// Number of calls NewEvent
-#define	KS_FREEEVENT_COUNT		62		// Number of times which EVENT object is deleted
-#define	KS_WAIT_COUNT			63		// Number of calls Wait
-#define	KS_SLEEPTHREAD_COUNT	64		// Number of calls SleepThread
-// About IO
-#define	KS_IO_OPEN_COUNT		65		// Number of times to open the file
-#define	KS_IO_CREATE_COUNT		66		// Number of times that the file was created
-#define	KS_IO_CLOSE_COUNT		67		// Number of times to close the file
-#define	KS_IO_READ_COUNT		68		// Number of times to read from the file
-#define	KS_IO_WRITE_COUNT		69		// Number of times to write to a file
-#define	KS_IO_TOTAL_READ_SIZE	70		// Total number of bytes read from the file
-#define	KS_IO_TOTAL_WRITE_SIZE	71		// The total number of bytes written to the file
-// Memory pool related
-#define	KS_MEMPOOL_MALLOC_COUNT	75		// Number of times to allocate the memory pool
-#define	KS_MEMPOOL_CURRENT_NUM	74		// Current number of the memory pool
-#define	KS_MEMPOOL_REALLOC_COUNT	76	// Number of times you have realloc the memory pool
+#define	KS_STRCPY_COUNT			0
+#define	KS_STRLEN_COUNT			1
+#define	KS_STRCHECK_COUNT		2
+#define	KS_STRCAT_COUNT			3
+#define	KS_FORMAT_COUNT			4
+#define	KS_MALLOC_COUNT			5
+#define	KS_REALLOC_COUNT		6
+#define	KS_FREE_COUNT			7
+#define	KS_TOTAL_MEM_SIZE		8
+#define	KS_CURRENT_MEM_COUNT	9
+#define	KS_TOTAL_MEM_COUNT		10
+#define	KS_ZERO_COUNT			11
+#define	KS_COPY_COUNT			12
+#define	KS_NEWLOCK_COUNT		13
+#define	KS_DELETELOCK_COUNT		14
+#define	KS_LOCK_COUNT			15
+#define	KS_UNLOCK_COUNT			16
+#define	KS_CURRENT_LOCK_COUNT	17
+#define	KS_CURRENT_LOCKED_COUNT	18
+#define	KS_NEW_COUNTER_COUNT	19
+#define	KS_DELETE_COUNTER_COUNT	20
+#define	KS_INC_COUNT			21
+#define	KS_DEC_COUNT			22
+#define	KS_CURRENT_COUNT		23
+#define	KS_NEWREF_COUNT			24
+#define	KS_FREEREF_COUNT		72
+#define	KS_ADDREF_COUNT			25
+#define	KS_RELEASE_COUNT		26
+#define	KS_CURRENT_REF_COUNT	27
+#define	KS_CURRENT_REFED_COUNT	28
+#define	KS_NEWBUF_COUNT			29
+#define	KS_FREEBUF_COUNT		30
+#define	KS_CURRENT_BUF_COUNT	31
+#define	KS_READ_BUF_COUNT		32
+#define	KS_WRITE_BUF_COUNT		33
+#define	KS_ADJUST_BUFSIZE_COUNT	34
+#define	KS_SEEK_BUF_COUNT		35
+#define	KS_NEWFIFO_COUNT		36
+#define	KS_FREEFIFO_COUNT		37
+#define	KS_READ_FIFO_COUNT		38
+#define	KS_WRITE_FIFO_COUNT		39
+#define	KS_NEWLIST_COUNT		41
+#define	KS_FREELIST_COUNT		42
+#define	KS_INSERT_COUNT			43
+#define	KS_DELETE_COUNT			44
+#define	KS_SORT_COUNT			45
+#define	KS_SEARCH_COUNT			46
+#define	KS_TOARRAY_COUNT		47
+#define	KS_NEWQUEUE_COUNT		48
+#define	KS_FREEQUEUE_COUNT		49
+#define	KS_PUSH_COUNT			50
+#define	KS_POP_COUNT			51
+#define	KS_NEWSK_COUNT			52
+#define	KS_FREESK_COUNT			53
+#define	KS_INSERT_QUEUE_COUNT	54
+#define	KS_GETNEXT_COUNT		55
+#define	KS_GETTIME_COUNT		56
+#define	KS_GETTICK_COUNT		57
+#define	KS_NEWTHREAD_COUNT		58
+#define	KS_FREETHREAD_COUNT		59
+#define	KS_WAITFORTHREAD_COUNT	60
+#define	KS_NEWEVENT_COUNT		61
+#define	KS_FREEEVENT_COUNT		62
+#define	KS_WAIT_COUNT			63
+#define	KS_SLEEPTHREAD_COUNT	64
+#define	KS_IO_OPEN_COUNT		65
+#define	KS_IO_CREATE_COUNT		66
+#define	KS_IO_CLOSE_COUNT		67
+#define	KS_IO_READ_COUNT		68
+#define	KS_IO_WRITE_COUNT		69
+#define	KS_IO_TOTAL_READ_SIZE	70
+#define	KS_IO_TOTAL_WRITE_SIZE	71
+#define	KS_MEMPOOL_MALLOC_COUNT	75
+#define	KS_MEMPOOL_CURRENT_NUM	74
+#define	KS_MEMPOOL_REALLOC_COUNT	76
 
 
-// Macro
-#define	IsDebug()		(g_debug)		// A debug mode
-#define	IsMemCheck()	(g_memcheck)	// Memory check mode
+#define	IsDebug()		(g_debug)
+#define	IsMemCheck()	(g_memcheck)
 
-// Function prototype
 void InitMayaqua(bool memcheck, bool debug, int argc, char **argv);
 void FreeMayaqua();
 bool MayaquaIsDotNetMode();
@@ -244,4 +213,4 @@ void WriteProbe(char *filename, UINT line, char *str);
 USHORT CalcChecksum16(void *buf, UINT size);
 
 
-#endif	// MAYAQUA_H
+#endif
