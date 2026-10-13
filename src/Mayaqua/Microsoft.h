@@ -12,7 +12,6 @@
 
 #include "Network.h"
 
-// Constant
 #define	SVC_ARG_INSTALL				"/install"
 #define	SVC_ARG_UNINSTALL			"/uninstall"
 #define	SVC_ARG_START				"/start"
@@ -26,13 +25,11 @@
 #define	SVC_ARG_SETUP_UNINSTALL		"/setup_uninstall"
 #define SVC_ARG_SILENT				"/silent"
 
-// Time to suicide, if the service freezed
+// Self-kill timeout if the service freezes
 #define	SVC_SELFKILL_TIMEOUT		(5 * 60 * 1000)
 
-// Command line format in the service mode
 #define	SVC_RUN_COMMANDLINE			L"\"%s\" /service"
 
-// Mode value
 #define	SVC_MODE_NONE				0
 #define	SVC_MODE_INSTALL			1
 #define	SVC_MODE_UNINSTALL			2
@@ -53,13 +50,10 @@
 
 #define	SOFTETHER_FW_SCRIPT_HASH	"Software\\" GC_REG_COMPANY_NAME "\\PacketiX VPN\\FW ScriptHash"
 
-// Other constants
 #define	MS_REG_TCP_SETTING_KEY		"Software\\" GC_REG_COMPANY_NAME "\\Network Settings"
 
 
-
 #ifdef	MICROSOFT_C
-// Internal structure
 typedef struct MS
 {
 	HINSTANCE hInst;
@@ -131,7 +125,6 @@ typedef struct MS_USERMODE_SVC_PULSE_THREAD_PARAM
 
 #endif	// MICROSOFT_C
 
-// Structure to suppress the warning message
 typedef struct NO_WARNING
 {
 	UINT ThreadId;
@@ -142,77 +135,70 @@ typedef struct NO_WARNING
 	UINT64 StartTick;
 } NO_WARNING;
 
-// ID of the root key
-#define	REG_CLASSES_ROOT		0	// HKEY_CLASSES_ROOT
-#define	REG_LOCAL_MACHINE		1	// HKEY_LOCAL_MACHINE
-#define	REG_CURRENT_USER		2	// HKEY_CURRENT_USER
-#define	REG_USERS				3	// HKEY_USERS
+#define	REG_CLASSES_ROOT		0
+#define	REG_LOCAL_MACHINE		1
+#define	REG_CURRENT_USER		2
+#define	REG_USERS				3
 
-// Service Functions
 typedef void (SERVICE_FUNCTION)();
 
-// Process list item
 typedef struct MS_PROCESS
 {
-	char ExeFilename[MAX_PATH];		// EXE file name
-	wchar_t ExeFilenameW[MAX_PATH];	// EXE file name (Unicode)
-	UINT ProcessId;					// Process ID
+	char ExeFilename[MAX_PATH];
+	wchar_t ExeFilenameW[MAX_PATH];
+	UINT ProcessId;
 } MS_PROCESS;
 
 #define	MAX_MS_ADAPTER_IP_ADDRESS	64
 
-// Network adapter
 typedef struct MS_ADAPTER
 {
-	char Title[MAX_PATH];			// Display name
-	wchar_t TitleW[MAX_PATH];		// Display Name (Unicode)
-	UINT Index;						// Index
-	UINT MediaConnectState;			// Media Connect State
-	UINT Type;						// Type
-	UINT Status;					// Status
-	UINT Mtu;						// MTU
-	UINT Speed;						// Speed
-	UINT AddressSize;				// Address size
-	UCHAR Address[8];				// Address
-	UINT64 RecvBytes;				// Number of received bytes
-	UINT64 RecvPacketsBroadcast;	// Number of broadcast packets received
-	UINT64 RecvPacketsUnicast;		// Number of unicast packets received
-	UINT64 SendBytes;				// Number of bytes sent
-	UINT64 SendPacketsBroadcast;	// Number of sent broadcast packets
-	UINT64 SendPacketsUnicast;		// Number of sent unicast packets
-	bool Info;						// Whether there is detailed information
-	char Guid[MAX_SIZE];			// GUID
-	UINT NumIpAddress;				// The number of IP addresses
-	IP IpAddresses[MAX_MS_ADAPTER_IP_ADDRESS];	// IP address
-	IP SubnetMasks[MAX_MS_ADAPTER_IP_ADDRESS];	// Subnet mask
-	UINT NumGateway;				// The number of the gateway
-	IP Gateways[MAX_MS_ADAPTER_IP_ADDRESS];	// Gateway
-	bool UseDhcp;					// Using DHCP flag
-	IP DhcpServer;					// DHCP Server
-	UINT64 DhcpLeaseStart;			// DHCP lease start date and time
-	UINT64 DhcpLeaseExpires;		// DHCP lease expiration date and time
-	bool UseWins;					// WINS use flag
-	IP PrimaryWinsServer;			// Primary WINS server
-	IP SecondaryWinsServer;			// Secondary WINS server
-	bool IsWireless;				// Whether wireless
-	bool IsNotEthernetLan;			// Whether It isn't a Ethernet LAN
+	char Title[MAX_PATH];
+	wchar_t TitleW[MAX_PATH];
+	UINT Index;
+	UINT MediaConnectState;
+	UINT Type;
+	UINT Status;
+	UINT Mtu;
+	UINT Speed;
+	UINT AddressSize;
+	UCHAR Address[8];
+	UINT64 RecvBytes;
+	UINT64 RecvPacketsBroadcast;
+	UINT64 RecvPacketsUnicast;
+	UINT64 SendBytes;
+	UINT64 SendPacketsBroadcast;
+	UINT64 SendPacketsUnicast;
+	bool Info;
+	char Guid[MAX_SIZE];
+	UINT NumIpAddress;
+	IP IpAddresses[MAX_MS_ADAPTER_IP_ADDRESS];
+	IP SubnetMasks[MAX_MS_ADAPTER_IP_ADDRESS];
+	UINT NumGateway;
+	IP Gateways[MAX_MS_ADAPTER_IP_ADDRESS];
+	bool UseDhcp;
+	IP DhcpServer;
+	UINT64 DhcpLeaseStart;
+	UINT64 DhcpLeaseExpires;
+	bool UseWins;
+	IP PrimaryWinsServer;
+	IP SecondaryWinsServer;
+	bool IsWireless;
+	bool IsNotEthernetLan;
 } MS_ADAPTER;
 
-// Network adapter list
 typedef struct MS_ADAPTER_LIST
 {
-	UINT Num;						// Count
-	MS_ADAPTER **Adapters;			// Content
+	UINT Num;
+	MS_ADAPTER **Adapters;
 } MS_ADAPTER_LIST;
 
-// TCP setting
 typedef struct MS_TCP
 {
-	UINT RecvWindowSize;			// Receive window size
-	UINT SendWindowSize;			// Send window size
+	UINT RecvWindowSize;
+	UINT SendWindowSize;
 } MS_TCP;
 
-// Child window enumeration
 typedef struct ENUM_CHILD_WINDOW_PARAM
 {
 	LIST *o;
@@ -221,7 +207,6 @@ typedef struct ENUM_CHILD_WINDOW_PARAM
 } ENUM_CHILD_WINDOW_PARAM;
 
 
-// Function prototype
 void MsInit();
 void MsFree();
 char *MsCutExeNameFromCommandLine(char *str);
@@ -392,7 +377,6 @@ bool MsIsInVm();
 
 void MsInitProcessCallOnce();
 
-// Inner functions
 #ifdef MICROSOFT_C
 LONG CALLBACK MsExceptionHandler(struct _EXCEPTION_POINTERS *ExceptionInfo);
 HKEY MsGetRootKeyFromInt(UINT root);
