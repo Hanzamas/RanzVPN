@@ -1,37 +1,39 @@
 # Ranz VPN
 
-Ranz VPN is a Windows-only slim fork of [SoftEther VPN](https://github.com/SoftEtherVPN/SoftEtherVPN), maintained by Hanzcodes. It keeps the native SE-VPN protocol (SSL-VPN over TCP, with UDP Acceleration) and removes everything else.
+Ranz VPN is a Windows-only, lightweight VPN server maintained by Hanzcodes. It focuses strictly on the native SE-VPN protocol (SSL-VPN over TCP with UDP Acceleration) and strips out unrelated modules to keep the core small.
 
-The version is `0.1.N`, where `N` is the number of the GitHub Actions run that built the binaries.
+The version format is `0.1.N`, where `N` represents the GitHub Actions build run number.
 
 ## What it is
 
-- Headless executables: `vpnserver.exe` (the VPN server, also installable as a Windows service) and `vpncmd.exe` (command-line administration), plus `vpntest.exe` for self-tests. There is no GUI.
-- Windows 10 and Windows Server 2016 or later, on x64 and arm64. x86 and other platforms are not supported.
-- Default listeners are TCP 443 and 5555.
-- Peers still see the SoftEther VPN 5.02 build 5187 version numbers and the `SE-VPN4-PROTOCOL` signature, so SE-VPN clients and servers keep working with it.
-- The server reads `ranz_server.config` next to `vpnserver.exe`. Configuration files from SoftEther VPN (`vpn_server.config`) are not read or migrated.
-- Settings in the Windows registry live under `Software\Hanzcodes\Ranz VPN`.
+- Headless binaries: `vpnserver.exe` (runs directly or as a Windows service), `vpncmd.exe` (CLI administration tool), and `vpntest.exe` (diagnostics). No GUI is included.
+- Platform support: Windows 10 and Windows Server 2016 or newer, on x64 and arm64 architectures. 32-bit (x86) and other operating systems are unsupported.
+- Default listening ports: TCP 443 and TCP 5555.
+- Client compatibility: Emits build version 5.02.5187 and the `SE-VPN4-PROTOCOL` signature, allowing existing SE-VPN clients and servers to connect without modification.
+- Configuration: Loaded exclusively from `ranz_server.config` in the same directory as `vpnserver.exe`. Legacy configuration files (`vpn_server.config`) are ignored.
+- Registry keys: Stored under `Software\Hanzcodes\Ranz VPN`.
 
-## Removed from SoftEther VPN
+## Design and exclusions
 
-- Windows GUI applications (server manager, client manager, setup) and the GUI-only build targets
-- JSON-RPC API, HTML5 web console, VPN Gate, and the JSON-RPC API clients, generator and samples under `developer_tools`
-- The VPN Bridge (`vpnbridge`) executable
-- OpenVPN, SSTP, L2TP/IPsec, EtherIP, IPsec/IKE, WireGuard (with libsodium and BLAKE2), PPP and the protocol dispatcher
-- RADIUS authentication and the hub EAP client
-- SecureNAT (virtual NAT, virtual DHCP and the native stack)
-- The in-process IPC client module and in-process sockets
-- Clustering and PKCS#11 smart-card authentication
-- Cloud dependencies: VPN Azure, dynamic DNS, NAT traversal, R-UDP, the keep-alive server and the update check
-- VPN over ICMP and VPN over DNS, which were built on R-UDP
-- Windows 7 / Vista support, WinPcap bridging and the legacy driver packages
+To reduce attack surface and resource usage, the following modules are excluded:
+
+- Windows GUI applications (management consoles, client managers, setup wizards) and GUI build targets.
+- Remote management APIs: JSON-RPC, HTML5 web consoles, public directory services, and tools under `developer_tools`.
+- The standalone bridge utility (`vpnbridge`).
+- Multi-protocol dispatchers and secondary tunnel protocols: OpenVPN, SSTP, L2TP/IPsec, EtherIP, IPsec/IKE, WireGuard (including libsodium and BLAKE2), and PPP.
+- Enterprise auth add-ons: RADIUS authentication and hub EAP clients.
+- SecureNAT components: virtual NAT, internal DHCP, and user-mode network stacks.
+- In-process IPC client modules and in-process network sockets.
+- Cluster nodes and PKCS#11 smart-card authentication.
+- External cloud features: relay services, dynamic DNS, NAT traversal, R-UDP, keep-alive connections, and update check endpoints.
+- Tunnels over ICMP and DNS.
+- Legacy driver packages, WinPcap bridging, and support for Windows 7 or Vista.
 
 ## Build
 
-Ranz VPN is built only on GitHub Actions, by [`.github/workflows/windows.yml`](.github/workflows/windows.yml), with clang-cl, vcpkg and Ninja. Each run passes its run number to CMake as `BUILD_NUMBER`, runs the self-tests and uploads the executables, debug symbols and `hamcore.se2` as artifacts.
+Ranz VPN is built on GitHub Actions via [`.github/workflows/windows.yml`](.github/workflows/windows.yml) using clang-cl, vcpkg, and Ninja. The workflow supplies the current run number to CMake as `BUILD_NUMBER`, runs the diagnostic suite, and archives the compiled binaries, debug symbols, and `hamcore.se2`.
 
-The configure step the workflow runs is:
+Build steps:
 
 ```
 cmake -G "Ninja" -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_NUMBER=<run number> ..
@@ -40,4 +42,5 @@ cmake --build .
 
 ## License
 
-Ranz VPN is proprietary software. Copyright (c) 2026 Hanzcodes. All rights reserved. See [LICENSE](LICENSE) for the terms.
+Ranz VPN is proprietary software. Copyright (c) 2026 Hanzcodes. All rights reserved. See [LICENSE](LICENSE) for terms.
+```
