@@ -2695,10 +2695,6 @@ bool ApplyAccessListToStoredPacket(HUB *hub, SESSION *s, PKT *p)
 								{
 									if (IsTcpPacketNcsiHttpAccess(p) == false)
 									{
-/*										char tmp[4000];
-										Zero(tmp, sizeof(tmp));
-										Copy(tmp, p->Payload, p->PayloadSize);
-										Debug("HTTP: %s\n", tmp);*/
 										if (IsEmptyStr(s->FirstTimeHttpRedirectUrl) == false)
 										{
 											use_redirect_url = true;
@@ -3847,7 +3843,6 @@ DISCARD_PACKET:
 								if (no_heavy == false)
 								{
 									MacToStr(mac_address, sizeof(mac_address), packet->MacAddressSrc);
-	//								Debug("Register MAC Address %s to Session %X.\n", mac_address, s);
 
 									if (packet->VlanId == 0)
 									{
@@ -3915,17 +3910,6 @@ DISCARD_PACKET:
 									else
 									{
 										goto UPDATE_FDB;
-									}
-								}
-								else
-								{
-									if (0)
-									{
-										// If the CheckMac policy-enabled, owning same
-										// MAC address by other sessions are prohibited
-										// (If the second byte is 0xAE, don't perform this check)
-										char mac_address[32];
-										BinToStr(mac_address, sizeof(mac_address), packet->MacAddressSrc, 6);
 									}
 								}
 
@@ -4152,14 +4136,6 @@ UPDATE_FDB:
 									}
 
 									Insert(hub->IpTable, e);
-
-									if (0)
-									{
-										char ip_address[64];
-										IPToStr(ip_address, sizeof(ip_address), &ip);
-										Debug("Registered IP Address %s to Session %X.\n",
-											ip_address, s);
-									}
 								}
 							}
 							else
@@ -4328,14 +4304,6 @@ UPDATE_FDB:
 									}
 
 									Insert(hub->IpTable, e);
-
-									if (0)
-									{
-										char ip_address[64];
-										IPToStr(ip_address, sizeof(ip_address), &ip);
-										Debug("Registered IP Address %s to Session %X.\n",
-											ip_address, s);
-									}
 								}
 							}
 						}
