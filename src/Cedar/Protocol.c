@@ -3012,7 +3012,6 @@ bool ClientCheckServerCert(CONNECTION *c, bool *expired)
 			// Send a NOOP periodically for disconnection prevention
 			start = Tick64();
 			// Do not send because we now ask for user permission before sending signature
-			//ClientUploadNoop(c);
 		}
 		if (p->UserSelected)
 		{
@@ -4488,9 +4487,7 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 		}
 		// Bottom of Bind outgoing connection
 
-#ifdef OS_WIN32
 		in.Hwnd = c->hWndForUI;
-#endif
 
 		UniFormat(tmp, sizeof(tmp), _UU("STATUS_2"), in.TargetHostname, in.Hostname);
 		PrintStatus(sess, tmp);
@@ -4498,15 +4495,12 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 		switch (o->ProxyType)
 		{
 		case PROXY_HTTP:
-//			ret = ProxyHttpConnect(&out, &in, cancel_flag);
 			ret = BindProxyHttpConnect(&out, &in, cancel_flag);		// Bind outgoing connection
 			break;
 		case PROXY_SOCKS:
-//			ret = ProxySocks4Connect(&out, &in, cancel_flag);
 			ret = BindProxySocks4Connect(&out, &in, cancel_flag);	// Bind outgoing connection
 			break;
 		case PROXY_SOCKS5:
-//			ret = ProxySocks5Connect(&out, &in, cancel_flag);
 			ret = BindProxySocks5Connect(&out, &in, cancel_flag);	// Bind outgoing connection
 			break;
 		default:
@@ -4595,15 +4589,12 @@ SOCK *TcpConnectEx3(char *hostname, UINT port, UINT timeout, bool *cancel_flag, 
 }
 
 // TCP connection function
-//SOCK* TcpConnectEx3(char* hostname, UINT port, UINT timeout, bool* cancel_flag, void* hWnd, IP* ret_ip)
 SOCK *BindTcpConnectEx3(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, void *hWnd, IP *ret_ip)
 {
-//	return ConnectEx4(hostname, port, timeout, cancel_flag, true, ret_ip);
 	return BindConnectEx4(localIP, localport, hostname, port, timeout, cancel_flag, true, ret_ip);
 }
 
 // Connect with TCP/IP
-//SOCK *TcpIpConnectEx(char *hostname, UINT port, bool *cancel_flag, void *hWnd, IP *ret_ip)
 SOCK *BindTcpIpConnectEx(IP *localIP, UINT localport, char *hostname, UINT port, bool *cancel_flag, void *hWnd, IP *ret_ip)
 {
 	SOCK *s = NULL;
@@ -4613,7 +4604,6 @@ SOCK *BindTcpIpConnectEx(IP *localIP, UINT localport, char *hostname, UINT port,
 		return NULL;
 	}
 
-//	s = TcpConnectEx3(hostname, port, 0, cancel_flag, hWnd, ret_ip);
 	s = BindTcpConnectEx3(localIP, localport, hostname, port, 0, cancel_flag, hWnd, ret_ip);
 	if (s == NULL)
 	{
@@ -4721,12 +4711,8 @@ UINT GetProtocolFromPack(PACK *p)
 		return 0;
 	}
 
-#if	0
-	return PackGetInt(p, "protocol");
-#else
 	// Limit to the TCP protocol in the current version
 	return CONNECTION_TCP;
-#endif
 }
 
 // Get the method from the PACK

@@ -204,24 +204,12 @@ void SendDataWithUDP(SOCK *s, CONNECTION *c)
 		*key32 = Endian32(c->Session->SessionKey32);
 		*seq = Endian64(c->Udp->Seq++); // Increment the sequence number
 
-//		InsertQueue(c->Udp->BufferQueue, b);
-
 		packet_sent = true;
-/*	}
-
-	// Send a buffer
-	while (c->Udp->BufferQueue->num_item != 0)
-	{
-		FIFO *f = c->Udp->BufferQueue->fifo;
-		BUF **pb = (BUF**)(((UCHAR *)f->p) + f->pos);
-		BUF *b = *pb;
-
-*/		ret = SendTo(s, &c->Udp->ip, c->Udp->port, b->Buf, b->Size);
+		ret = SendTo(s, &c->Udp->ip, c->Udp->port, b->Buf, b->Size);
 		if (ret == SOCK_LATER)
 		{
 			// Blocking
 			Debug(".");
-//			break;
 		}
 		if (ret != b->Size)
 		{
@@ -234,7 +222,6 @@ void SendDataWithUDP(SOCK *s, CONNECTION *c)
 
 		// Memory release
 		FreeBuf(b);
-//		GetNext(c->Udp->BufferQueue);
 	}
 
 	if (packet_sent)
@@ -287,11 +274,8 @@ void PutUDPPacketData(CONNECTION *c, void *data, UINT size)
 
 			if ((UINT)(seq - c->Udp->RecvSeq - (UINT64)1))
 			{
-				//Debug("** UDP Seq Lost %u\n", (UINT)(seq - c->Udp->RecvSeq - (UINT64)1));
 			}
 			c->Udp->RecvSeq = seq;
-
-			//Debug("SEQ: %I32u\n", seq);
 
 			while (true)
 			{
@@ -1382,7 +1366,6 @@ DISCONNECT_THIS_TCP:
 
 				case 4:
 					// Keep-Alive packet body
-					//Debug("KeepAlive Recved.\n");
 					ts->Mode = 0;
 					sz = ts->NextBlockSize;
 
@@ -1401,7 +1384,6 @@ DISCONNECT_THIS_TCP:
 			}
 
 			ShrinkFifoMemory(ts->RecvFifo);
-			//printf("Fifo: %u\n", ts->RecvFifo->memsize);
 		}
 
 		if (true)
@@ -1556,9 +1538,7 @@ DISCONNECT_THIS_TCP:
 
 			if ((b->LastNumDeviceCheck + BRIDGE_NUM_DEVICE_CHECK_SPAN) <= Tick64())
 			{
-#ifdef	OS_WIN32
 				check_device_num = true;
-#endif	// OS_WIN32
 				b->LastNumDeviceCheck = Tick64();
 			}
 
@@ -1574,7 +1554,6 @@ DISCONNECT_THIS_TCP:
 					ret = EthGetPacket(b->Eth, &data);
 				}
 
-#ifdef	OS_WIN32
 				if (c->Session != NULL)
 				{
 					c->Session->BridgeIsEthLoopbackBlock = false;
@@ -1585,7 +1564,6 @@ DISCONNECT_THIS_TCP:
 						c->Session->BridgeIsEthLoopbackBlock = true;
 					}
 				}
-#endif	// OS_WIN32
 
 				if (ret == INFINITE)
 				{
@@ -1638,7 +1616,6 @@ DISCONNECT_THIS_TCP:
 						num++;
 						if (num >= MAX_SEND_SOCKET_QUEUE_NUM)
 						{
-	//						WHERE;
 							break;
 						}
 					}
@@ -1666,7 +1643,6 @@ DISCONNECT_THIS_TCP:
 					b->LastNumDevice = GetEthDeviceHash();
 
 					// Update the NIC name of the bridge
-#ifdef	OS_WIN32
 					if (IsEmptyStr(e->Title) == false)
 					{
 						StrCpy(b->Name, sizeof(b->Name), e->Title);
@@ -1676,7 +1652,6 @@ DISCONNECT_THIS_TCP:
 							StrCpy(b->ParentLocalBridge->DeviceName, sizeof(b->ParentLocalBridge->DeviceName), e->Title);
 						}
 					}
-#endif	// OS_WIN32
 
 					Debug("Bridge Open Succeed.\n");
 
