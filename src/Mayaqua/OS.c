@@ -9,9 +9,6 @@
 
 #undef Yield
 
-// Dispatch table
-static OS_DISPATCH_TABLE *os = NULL;
-
 // Convert OS type to a string
 char *OsTypeToStr(UINT type)
 {
@@ -47,11 +44,6 @@ char *OsTypeToStr(UINT type)
 // Initialization
 void OSInit()
 {
-	// Get the dispatch table
-#ifdef	OS_WIN32
-	os = Win32GetDispatchTable();
-#endif	// OS_WIN32
-
 	// Calling the OS-specific initialization function
 	Win32Init();
 }
@@ -145,78 +137,6 @@ bool OSRunW(wchar_t *filename, wchar_t *arg, bool hide, bool wait)
 UINT OSThreadId()
 {
 	return Win32ThreadId();
-}
-
-// Rename
-bool OSFileRenameW(wchar_t *old_name, wchar_t *new_name)
-{
-	return Win32FileRenameW(old_name, new_name);
-}
-
-// Get the file size
-UINT64 OSFileSize(void *pData)
-{
-	return Win32FileSize(pData);
-}
-
-// Seek the file
-bool OSFileSeek(void *pData, UINT mode, int offset)
-{
-	return Win32FileSeek(pData, mode, offset);
-}
-
-// Delete the file
-bool OSFileDeleteW(wchar_t *name)
-{
-	return Win32FileDeleteW(name);
-}
-
-// Create a directory
-bool OSMakeDirW(wchar_t *name)
-{
-	return Win32MakeDirW(name);
-}
-
-// Delete the directory
-bool OSDeleteDirW(wchar_t *name)
-{
-	return Win32DeleteDirW(name);
-}
-
-// Open the file
-void *OSFileOpenW(wchar_t *name, bool write_mode, bool read_lock)
-{
-	return Win32FileOpenW(name, write_mode, read_lock);
-}
-
-// Create a file
-void *OSFileCreateW(wchar_t *name)
-{
-	return Win32FileCreateW(name);
-}
-
-// Write to a file
-bool OSFileWrite(void *pData, void *buf, UINT size)
-{
-	return Win32FileWrite(pData, buf, size);
-}
-
-// Read from a file
-bool OSFileRead(void *pData, void *buf, UINT size)
-{
-	return Win32FileRead(pData, buf, size);
-}
-
-// Close the file
-void OSFileClose(void *pData, bool no_flush)
-{
-	Win32FileClose(pData, no_flush);
-}
-
-// Flush to the file
-void OSFileFlush(void *pData)
-{
-	Win32FileFlush(pData);
 }
 
 // Get the call stack
