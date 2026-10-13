@@ -5830,64 +5830,37 @@ void FreeRpcMsg(RPC_MSG *t)
 }
 
 // RPC_ENUM_ETH_VLAN
+static const RPC_FIELD rpc_enum_eth_vlan_item_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_ETH_VLAN_ITEM, DeviceName, "DeviceName"),
+	RPC_ROW_STR(RPC_ENUM_ETH_VLAN_ITEM, Guid, "Guid"),
+	RPC_ROW_STR(RPC_ENUM_ETH_VLAN_ITEM, DeviceInstanceId, "DeviceInstanceId"),
+	RPC_ROW_STR(RPC_ENUM_ETH_VLAN_ITEM, DriverName, "DriverName"),
+	RPC_ROW_STR(RPC_ENUM_ETH_VLAN_ITEM, DriverType, "DriverType"),
+	RPC_ROW_BOOL(RPC_ENUM_ETH_VLAN_ITEM, Support, "Support"),
+	RPC_ROW_BOOL(RPC_ENUM_ETH_VLAN_ITEM, Enabled, "Enabled"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_eth_vlan_item_table, RPC_ENUM_ETH_VLAN_ITEM, rpc_enum_eth_vlan_item_fields);
+
+static const RPC_FIELD rpc_enum_eth_vlan_fields[] =
+{
+	RPC_ROW_ARRAY(RPC_ENUM_ETH_VLAN, Items, NumItem, &rpc_enum_eth_vlan_item_table, "DeviceName", 0),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_eth_vlan_table, RPC_ENUM_ETH_VLAN, rpc_enum_eth_vlan_fields);
+
 void InRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t, PACK *p)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_ENUM_ETH_VLAN));
-
-	t->NumItem = PackGetIndexCount(p, "DeviceName");
-	t->Items = ZeroMalloc(sizeof(RPC_ENUM_ETH_VLAN_ITEM) * t->NumItem);
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_ENUM_ETH_VLAN_ITEM *e = &t->Items[i];
-
-		PackGetStrEx(p, "DeviceName", e->DeviceName, sizeof(e->DeviceName), i);
-		PackGetStrEx(p, "Guid", e->Guid, sizeof(e->Guid), i);
-		PackGetStrEx(p, "DeviceInstanceId", e->DeviceInstanceId, sizeof(e->DeviceInstanceId), i);
-		PackGetStrEx(p, "DriverName", e->DriverName, sizeof(e->DriverName), i);
-		PackGetStrEx(p, "DriverType", e->DriverType, sizeof(e->DriverType), i);
-		e->Support = PackGetBoolEx(p, "Support", i);
-		e->Enabled = PackGetBoolEx(p, "Enabled", i);
-	}
+	RpcFieldIn(&rpc_enum_eth_vlan_table, t, p);
 }
 void OutRpcEnumEthVLan(PACK *p, RPC_ENUM_ETH_VLAN *t)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_ENUM_ETH_VLAN_ITEM *e = &t->Items[i];
-
-		PackAddStrEx(p, "DeviceName", e->DeviceName, i, t->NumItem);
-		PackAddStrEx(p, "Guid", e->Guid, i, t->NumItem);
-		PackAddStrEx(p, "DeviceInstanceId", e->DeviceInstanceId, i, t->NumItem);
-		PackAddStrEx(p, "DriverName", e->DriverName, i, t->NumItem);
-		PackAddStrEx(p, "DriverType", e->DriverType, i, t->NumItem);
-		PackAddBoolEx(p, "Support", e->Support, i, t->NumItem);
-		PackAddBoolEx(p, "Enabled", e->Enabled, i, t->NumItem);
-	}
+	RpcFieldOut(&rpc_enum_eth_vlan_table, p, t);
 }
 void FreeRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Items);
+	RpcFieldFree(&rpc_enum_eth_vlan_table, t);
 }
 
 // RPC_ENUM_LOG_FILE
@@ -6635,118 +6608,70 @@ void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t)
 }
 
 // RPC_ENUM_LICENSE_KEY
+static const RPC_FIELD rpc_enum_license_key_item_fields[] =
+{
+	RPC_ROW_INT(RPC_ENUM_LICENSE_KEY_ITEM, Id, "Id"),
+	RPC_ROW_STR(RPC_ENUM_LICENSE_KEY_ITEM, LicenseKey, "LicenseKey"),
+	RPC_ROW_STR(RPC_ENUM_LICENSE_KEY_ITEM, LicenseId, "LicenseId"),
+	RPC_ROW_STR(RPC_ENUM_LICENSE_KEY_ITEM, LicenseName, "LicenseName"),
+	RPC_ROW_TIME64(RPC_ENUM_LICENSE_KEY_ITEM, Expires, "Expires"),
+	RPC_ROW_INT(RPC_ENUM_LICENSE_KEY_ITEM, Status, "Status"),
+	RPC_ROW_INT(RPC_ENUM_LICENSE_KEY_ITEM, ProductId, "ProductId"),
+	RPC_ROW_INT64(RPC_ENUM_LICENSE_KEY_ITEM, SystemId, "SystemId"),
+	RPC_ROW_INT(RPC_ENUM_LICENSE_KEY_ITEM, SerialId, "SerialId"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_license_key_item_table, RPC_ENUM_LICENSE_KEY_ITEM, rpc_enum_license_key_item_fields);
+
+static const RPC_FIELD rpc_enum_license_key_fields[] =
+{
+	RPC_ROW_COUNT(RPC_ENUM_LICENSE_KEY, NumItem),
+	RPC_ROW_ARRAY(RPC_ENUM_LICENSE_KEY, Items, NumItem, &rpc_enum_license_key_item_table, "Id", RPC_FF_READ_NUMITEM),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_license_key_table, RPC_ENUM_LICENSE_KEY, rpc_enum_license_key_fields);
+
 void InRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t, PACK *p)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_ENUM_LICENSE_KEY));
-	t->NumItem = PackGetInt(p, "NumItem");
-	t->Items = ZeroMalloc(sizeof(RPC_ENUM_LICENSE_KEY_ITEM) * t->NumItem);
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_ENUM_LICENSE_KEY_ITEM *e = &t->Items[i];
-
-		e->Id = PackGetIntEx(p, "Id", i);
-		PackGetStrEx(p, "LicenseKey", e->LicenseKey, sizeof(e->LicenseKey), i);
-		PackGetStrEx(p, "LicenseId", e->LicenseId, sizeof(e->LicenseId), i);
-		PackGetStrEx(p, "LicenseName", e->LicenseName, sizeof(e->LicenseName), i);
-		e->Expires = PackGetInt64Ex(p, "Expires", i);
-		e->Status = PackGetIntEx(p, "Status", i);
-		e->ProductId = PackGetIntEx(p, "ProductId", i);
-		e->SystemId = PackGetInt64Ex(p, "SystemId", i);
-		e->SerialId = PackGetIntEx(p, "SerialId", i);
-	}
+	RpcFieldIn(&rpc_enum_license_key_table, t, p);
 }
 void OutRpcEnumLicenseKey(PACK *p, RPC_ENUM_LICENSE_KEY *t)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "NumItem", t->NumItem);
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_ENUM_LICENSE_KEY_ITEM *e = &t->Items[i];
-
-		PackAddIntEx(p, "Id", e->Id, i, t->NumItem);
-		PackAddStrEx(p, "LicenseKey", e->LicenseKey, i, t->NumItem);
-		PackAddStrEx(p, "LicenseId", e->LicenseId, i, t->NumItem);
-		PackAddStrEx(p, "LicenseName", e->LicenseName, i, t->NumItem);
-		PackAddTime64Ex(p, "Expires", e->Expires, i, t->NumItem);
-		PackAddIntEx(p, "Status", e->Status, i, t->NumItem);
-		PackAddIntEx(p, "ProductId", e->ProductId, i, t->NumItem);
-		PackAddInt64Ex(p, "SystemId", e->SystemId, i, t->NumItem);
-		PackAddIntEx(p, "SerialId", e->SerialId, i, t->NumItem);
-	}
+	RpcFieldOut(&rpc_enum_license_key_table, p, t);
 }
 void FreeRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Items);
+	RpcFieldFree(&rpc_enum_license_key_table, t);
 }
 
 // RPC_LICENSE_STATUS
-void InRpcLicenseStatus(RPC_LICENSE_STATUS *t, PACK *p)
+static const RPC_FIELD rpc_license_status_fields[] =
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_LICENSE_STATUS));
-
-	t->EditionId = PackGetInt(p, "EditionId");
-	PackGetStr(p, "EditionStr", t->EditionStr, sizeof(t->EditionStr) );
-	t->SystemId = PackGetInt64(p, "SystemId");
-	t->SystemExpires = PackGetInt64(p, "SystemExpires");
-	t->NumClientConnectLicense = PackGetInt(p, "NumClientConnectLicense");
-	t->NumBridgeConnectLicense = PackGetInt(p, "NumBridgeConnectLicense");
+	RPC_ROW_INT(RPC_LICENSE_STATUS, EditionId, "EditionId"),
+	RPC_ROW_STR(RPC_LICENSE_STATUS, EditionStr, "EditionStr"),
+	RPC_ROW_INT64(RPC_LICENSE_STATUS, SystemId, "SystemId"),
+	RPC_ROW_TIME64(RPC_LICENSE_STATUS, SystemExpires, "SystemExpires"),
+	RPC_ROW_INT(RPC_LICENSE_STATUS, NumClientConnectLicense, "NumClientConnectLicense"),
+	RPC_ROW_INT(RPC_LICENSE_STATUS, NumBridgeConnectLicense, "NumBridgeConnectLicense"),
 
 	// v3.0
-	t->NeedSubscription = PackGetBool(p, "NeedSubscription");
-	t->AllowEnterpriseFunction = PackGetBool(p, "AllowEnterpriseFunction");
-	t->SubscriptionExpires = PackGetInt64(p, "SubscriptionExpires");
-	t->IsSubscriptionExpired = PackGetBool(p, "IsSubscriptionExpired");
-	t->NumUserCreationLicense = PackGetInt(p, "NumUserCreationLicense");
-	t->ReleaseDate = PackGetInt64(p, "ReleaseDate");
+	RPC_ROW_BOOL(RPC_LICENSE_STATUS, NeedSubscription, "NeedSubscription"),
+	RPC_ROW_BOOL(RPC_LICENSE_STATUS, AllowEnterpriseFunction, "AllowEnterpriseFunction"),
+	RPC_ROW_TIME64(RPC_LICENSE_STATUS, SubscriptionExpires, "SubscriptionExpires"),
+	RPC_ROW_BOOL(RPC_LICENSE_STATUS, IsSubscriptionExpired, "IsSubscriptionExpired"),
+	RPC_ROW_INT(RPC_LICENSE_STATUS, NumUserCreationLicense, "NumUserCreationLicense"),
+	RPC_ROW_TIME64(RPC_LICENSE_STATUS, ReleaseDate, "ReleaseDate"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_license_status_table, RPC_LICENSE_STATUS, rpc_license_status_fields);
+
+void InRpcLicenseStatus(RPC_LICENSE_STATUS *t, PACK *p)
+{
+	RpcFieldIn(&rpc_license_status_table, t, p);
 }
 void OutRpcLicenseStatus(PACK *p, RPC_LICENSE_STATUS *t)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "EditionId", t->EditionId);
-	PackAddStr(p, "EditionStr", t->EditionStr);
-	PackAddInt64(p, "SystemId", t->SystemId);
-	PackAddTime64(p, "SystemExpires", t->SystemExpires);
-	PackAddInt(p, "NumClientConnectLicense", t->NumClientConnectLicense);
-	PackAddInt(p, "NumBridgeConnectLicense", t->NumBridgeConnectLicense);
-
-	// v3.0
-	PackAddBool(p, "NeedSubscription", t->NeedSubscription);
-	PackAddBool(p, "AllowEnterpriseFunction", t->AllowEnterpriseFunction);
-	PackAddTime64(p, "SubscriptionExpires", t->SubscriptionExpires);
-	PackAddBool(p, "IsSubscriptionExpired", t->IsSubscriptionExpired);
-	PackAddInt(p, "NumUserCreationLicense", t->NumUserCreationLicense);
-	PackAddTime64(p, "ReleaseDate", t->ReleaseDate);
+	RpcFieldOut(&rpc_license_status_table, p, t);
 }
 
 // RPC_ADMIN_OPTION
@@ -8539,91 +8464,58 @@ void OutRpcDeleteUser(PACK *p, RPC_DELETE_USER *t)
 }
 
 // RPC_ENUM_SESSION
+// Ip is read as a plain integer; the write side uses the IPv4 helper
+static void RpcEnumSessionIpIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	*((UINT *)(((UCHAR *)base) + f->Offset)) = PackGetIntEx(p, f->Key, index);
+}
+static const RPC_HOOK rpc_enum_session_ip_hook = {NULL, RpcEnumSessionIpIn, NULL};
+
+static const RPC_FIELD rpc_enum_session_item_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_SESSION_ITEM, Name, "Name"),
+	RPC_ROW_STR(RPC_ENUM_SESSION_ITEM, Username, "Username"),
+	RPC_ROW_HOOK(RPC_FT_IP32, RPC_ENUM_SESSION_ITEM, Ip, "Ip", 0, &rpc_enum_session_ip_hook),
+	RPC_ROW_IP(RPC_ENUM_SESSION_ITEM, ClientIP, "ClientIP"),
+	RPC_ROW_STR(RPC_ENUM_SESSION_ITEM, Hostname, "Hostname"),
+	RPC_ROW_INT(RPC_ENUM_SESSION_ITEM, MaxNumTcp, "MaxNumTcp"),
+	RPC_ROW_INT(RPC_ENUM_SESSION_ITEM, CurrentNumTcp, "CurrentNumTcp"),
+	RPC_ROW_INT64(RPC_ENUM_SESSION_ITEM, PacketSize, "PacketSize"),
+	RPC_ROW_INT64(RPC_ENUM_SESSION_ITEM, PacketNum, "PacketNum"),
+	RPC_ROW_BOOL(RPC_ENUM_SESSION_ITEM, LinkMode, "LinkMode"),
+	RPC_ROW_BOOL(RPC_ENUM_SESSION_ITEM, BridgeMode, "BridgeMode"),
+	RPC_ROW_BOOL(RPC_ENUM_SESSION_ITEM, Client_BridgeMode, "Client_BridgeMode"),
+	RPC_ROW_BOOL(RPC_ENUM_SESSION_ITEM, Client_MonitorMode, "Client_MonitorMode"),
+	RPC_ROW_INT(RPC_ENUM_SESSION_ITEM, VLanId, "VLanId"),
+	RPC_ROW_DATA(RPC_ENUM_SESSION_ITEM, UniqueId, "UniqueId"),
+	RPC_ROW_BOOL(RPC_ENUM_SESSION_ITEM, IsDormantEnabled, "IsDormantEnabled"),
+	RPC_ROW_BOOL(RPC_ENUM_SESSION_ITEM, IsDormant, "IsDormant"),
+	RPC_ROW_TIME64(RPC_ENUM_SESSION_ITEM, LastCommDormant, "LastCommDormant"),
+	RPC_ROW_TIME64(RPC_ENUM_SESSION_ITEM, CreatedTime, "CreatedTime"),
+	RPC_ROW_TIME64(RPC_ENUM_SESSION_ITEM, LastCommTime, "LastCommTime"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_session_item_table, RPC_ENUM_SESSION_ITEM, rpc_enum_session_item_fields);
+
+static const RPC_FIELD rpc_enum_session_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_SESSION, HubName, "HubName"),
+	RPC_ROW_ARRAY(RPC_ENUM_SESSION, Sessions, NumSession, &rpc_enum_session_item_table, "Name", 0),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_session_table, RPC_ENUM_SESSION, rpc_enum_session_fields);
+
 void InRpcEnumSession(RPC_ENUM_SESSION *t, PACK *p)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_ENUM_SESSION));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->NumSession = PackGetIndexCount(p, "Name");
-	t->Sessions = ZeroMalloc(sizeof(RPC_ENUM_SESSION_ITEM) * t->NumSession);
-
-	for (i = 0;i < t->NumSession;i++)
-	{
-		RPC_ENUM_SESSION_ITEM *e = &t->Sessions[i];
-
-		PackGetStrEx(p, "Name", e->Name, sizeof(e->Name), i);
-		PackGetStrEx(p, "Username", e->Username, sizeof(e->Username), i);
-		e->Ip = PackGetIntEx(p, "Ip", i);
-		PackGetIpEx(p, "ClientIP", &e->ClientIP, i);
-		PackGetStrEx(p, "Hostname", e->Hostname, sizeof(e->Hostname), i);
-		e->MaxNumTcp = PackGetIntEx(p, "MaxNumTcp", i);
-		e->CurrentNumTcp = PackGetIntEx(p, "CurrentNumTcp", i);
-		e->PacketSize = PackGetInt64Ex(p, "PacketSize", i);
-		e->PacketNum = PackGetInt64Ex(p, "PacketNum", i);
-		e->LinkMode = PackGetBoolEx(p, "LinkMode", i);
-		e->BridgeMode = PackGetBoolEx(p, "BridgeMode", i);
-		e->Client_BridgeMode = PackGetBoolEx(p, "Client_BridgeMode", i);
-		e->Client_MonitorMode = PackGetBoolEx(p, "Client_MonitorMode", i);
-		e->VLanId = PackGetIntEx(p, "VLanId", i);
-		PackGetDataEx2(p, "UniqueId", e->UniqueId, sizeof(e->UniqueId), i);
-		e->IsDormantEnabled = PackGetBoolEx(p, "IsDormantEnabled", i);
-		e->IsDormant = PackGetBoolEx(p, "IsDormant", i);
-		e->LastCommDormant = PackGetInt64Ex(p, "LastCommDormant", i);
-		e->CreatedTime = PackGetInt64Ex(p, "CreatedTime", i);
-		e->LastCommTime = PackGetInt64Ex(p, "LastCommTime", i);
-	}
+	RpcFieldIn(&rpc_enum_session_table, t, p);
 }
 void OutRpcEnumSession(PACK *p, RPC_ENUM_SESSION *t)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-	PackAddStr(p, "HubName", t->HubName);
-
-	for (i = 0;i < t->NumSession;i++)
-	{
-		RPC_ENUM_SESSION_ITEM *e = &t->Sessions[i];
-
-		PackAddStrEx(p, "Name", e->Name, i, t->NumSession);
-		PackAddStrEx(p, "Username", e->Username, i, t->NumSession);
-		PackAddIp32Ex(p, "Ip", e->Ip, i, t->NumSession);
-		PackAddIpEx(p, "ClientIP", &e->ClientIP, i, t->NumSession);
-		PackAddStrEx(p, "Hostname", e->Hostname, i, t->NumSession);
-		PackAddIntEx(p, "MaxNumTcp", e->MaxNumTcp, i, t->NumSession);
-		PackAddIntEx(p, "CurrentNumTcp", e->CurrentNumTcp, i, t->NumSession);
-		PackAddInt64Ex(p, "PacketSize", e->PacketSize, i, t->NumSession);
-		PackAddInt64Ex(p, "PacketNum", e->PacketNum, i, t->NumSession);
-		PackAddBoolEx(p, "LinkMode", e->LinkMode, i, t->NumSession);
-		PackAddBoolEx(p, "BridgeMode", e->BridgeMode, i, t->NumSession);
-		PackAddBoolEx(p, "Client_BridgeMode", e->Client_BridgeMode, i, t->NumSession);
-		PackAddBoolEx(p, "Client_MonitorMode", e->Client_MonitorMode, i, t->NumSession);
-		PackAddIntEx(p, "VLanId", e->VLanId, i, t->NumSession);
-		PackAddDataEx(p, "UniqueId", e->UniqueId, sizeof(e->UniqueId), i, t->NumSession);
-		PackAddBoolEx(p, "IsDormantEnabled", e->IsDormantEnabled, i, t->NumSession);
-		PackAddBoolEx(p, "IsDormant", e->IsDormant, i, t->NumSession);
-		PackAddTime64Ex(p, "LastCommDormant", e->LastCommDormant, i, t->NumSession);
-		PackAddTime64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumSession);
-		PackAddTime64Ex(p, "LastCommTime", e->LastCommTime, i, t->NumSession);
-	}
+	RpcFieldOut(&rpc_enum_session_table, p, t);
 }
 void FreeRpcEnumSession(RPC_ENUM_SESSION *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Sessions);
+	RpcFieldFree(&rpc_enum_session_table, t);
 }
 
 // RPC_KEY_PAIR
@@ -8730,237 +8622,194 @@ void OutRpcNodeInfo(PACK *p, NODE_INFO *t)
 }
 
 // RPC_SESSION_STATUS
+// Embedded connection status, through its own entry points (Free releases its certificates)
+static void RpcSessionStatusStatusOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	OutRpcClientGetConnectionStatus(p, (RPC_CLIENT_GET_CONNECTION_STATUS *)(((UCHAR *)base) + f->Offset));
+}
+static void RpcSessionStatusStatusIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcClientGetConnectionStatus((RPC_CLIENT_GET_CONNECTION_STATUS *)(((UCHAR *)base) + f->Offset), p);
+}
+static void RpcSessionStatusStatusFree(const RPC_FIELD *f, void *base)
+{
+	CiFreeClientGetConnectionStatus((RPC_CLIENT_GET_CONNECTION_STATUS *)(((UCHAR *)base) + f->Offset));
+}
+static const RPC_HOOK rpc_session_status_status_hook =
+{
+	RpcSessionStatusStatusOut, RpcSessionStatusStatusIn, RpcSessionStatusStatusFree
+};
+
+// Embedded node information, through its own entry points
+static void RpcSessionStatusNodeInfoOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	OutRpcNodeInfo(p, (NODE_INFO *)(((UCHAR *)base) + f->Offset));
+}
+static void RpcSessionStatusNodeInfoIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcNodeInfo((NODE_INFO *)(((UCHAR *)base) + f->Offset), p);
+}
+static const RPC_HOOK rpc_session_status_node_info_hook =
+{
+	RpcSessionStatusNodeInfoOut, RpcSessionStatusNodeInfoIn, NULL
+};
+
+// The direct rows come first, then the connection status, then the node
+// information: on a colliding key the first writer wins
+static const RPC_FIELD rpc_session_status_fields[] =
+{
+	RPC_ROW_STR(RPC_SESSION_STATUS, HubName, "HubName"),
+	RPC_ROW_STR(RPC_SESSION_STATUS, Name, "Name"),
+	RPC_ROW_STR(RPC_SESSION_STATUS, Username, "Username"),
+	RPC_ROW_STR(RPC_SESSION_STATUS, GroupName, "GroupName"),
+	RPC_ROW_STR(RPC_SESSION_STATUS, RealUsername, "RealUsername"),
+	RPC_ROW_IP32(RPC_SESSION_STATUS, ClientIp, "SessionStatus_ClientIp"),
+	RPC_ROW_DATA(RPC_SESSION_STATUS, ClientIp6, "SessionStatus_ClientIp6"),
+	RPC_ROW_STR(RPC_SESSION_STATUS, ClientHostName, "SessionStatus_ClientHostName"),
+	RPC_ROW_IP(RPC_SESSION_STATUS, ClientIpAddress, "Client_Ip_Address"),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_SESSION_STATUS, Status, NULL, 0, &rpc_session_status_status_hook),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_SESSION_STATUS, NodeInfo, NULL, 0, &rpc_session_status_node_info_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_session_status_table, RPC_SESSION_STATUS, rpc_session_status_fields);
+
 void InRpcSessionStatus(RPC_SESSION_STATUS *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_SESSION_STATUS));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	PackGetStr(p, "Name", t->Name, sizeof(t->Name));
-	PackGetStr(p, "Username", t->Username, sizeof(t->Username));
-	PackGetStr(p, "GroupName", t->GroupName, sizeof(t->GroupName));
-	PackGetStr(p, "RealUsername", t->RealUsername, sizeof(t->RealUsername));
-	t->ClientIp = PackGetIp32(p, "SessionStatus_ClientIp");
-	PackGetData2(p, "SessionStatus_ClientIp6", t->ClientIp6, sizeof(t->ClientIp6));
-	PackGetStr(p, "SessionStatus_ClientHostName", t->ClientHostName, sizeof(t->ClientHostName));
-	PackGetIp(p, "Client_Ip_Address", &t->ClientIpAddress);
-
-	InRpcClientGetConnectionStatus(&t->Status, p);
-	InRpcNodeInfo(&t->NodeInfo, p);
+	RpcFieldIn(&rpc_session_status_table, t, p);
 }
 void OutRpcSessionStatus(PACK *p, RPC_SESSION_STATUS *t)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddStr(p, "Name", t->Name);
-	PackAddStr(p, "Username", t->Username);
-	PackAddStr(p, "GroupName", t->GroupName);
-	PackAddStr(p, "RealUsername", t->RealUsername);
-	PackAddIp32(p, "SessionStatus_ClientIp", t->ClientIp);
-	PackAddData(p, "SessionStatus_ClientIp6", t->ClientIp6, sizeof(t->ClientIp6));
-	PackAddStr(p, "SessionStatus_ClientHostName", t->ClientHostName);
-	PackAddIp(p, "Client_Ip_Address", &t->ClientIpAddress);
-
-	OutRpcClientGetConnectionStatus(p, &t->Status);
-	OutRpcNodeInfo(p, &t->NodeInfo);
+	RpcFieldOut(&rpc_session_status_table, p, t);
 }
 void FreeRpcSessionStatus(RPC_SESSION_STATUS *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	CiFreeClientGetConnectionStatus(&t->Status);
+	RpcFieldFree(&rpc_session_status_table, t);
 }
 
 // RPC_DELETE_SESSION
+static const RPC_FIELD rpc_delete_session_fields[] =
+{
+	RPC_ROW_STR(RPC_DELETE_SESSION, HubName, "HubName"),
+	RPC_ROW_STR(RPC_DELETE_SESSION, Name, "Name"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_delete_session_table, RPC_DELETE_SESSION, rpc_delete_session_fields);
+
 void InRpcDeleteSession(RPC_DELETE_SESSION *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_DELETE_SESSION));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	PackGetStr(p, "Name", t->Name, sizeof(t->Name));
+	RpcFieldIn(&rpc_delete_session_table, t, p);
 }
 void OutRpcDeleteSession(PACK *p, RPC_DELETE_SESSION *t)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddStr(p, "Name", t->Name);
+	RpcFieldOut(&rpc_delete_session_table, p, t);
 }
 
 // RPC_ENUM_MAC_TABLE
+static const RPC_FIELD rpc_enum_mac_table_item_fields[] =
+{
+	RPC_ROW_INT(RPC_ENUM_MAC_TABLE_ITEM, Key, "Key"),
+	RPC_ROW_STR(RPC_ENUM_MAC_TABLE_ITEM, SessionName, "SessionName"),
+	RPC_ROW_DATA(RPC_ENUM_MAC_TABLE_ITEM, MacAddress, "MacAddress"),
+	RPC_ROW_INT(RPC_ENUM_MAC_TABLE_ITEM, VlanId, "VlanId"),
+	RPC_ROW_TIME64(RPC_ENUM_MAC_TABLE_ITEM, CreatedTime, "CreatedTime"),
+	RPC_ROW_TIME64(RPC_ENUM_MAC_TABLE_ITEM, UpdatedTime, "UpdatedTime"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_mac_table_item_table, RPC_ENUM_MAC_TABLE_ITEM, rpc_enum_mac_table_item_fields);
+
+static const RPC_FIELD rpc_enum_mac_table_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_MAC_TABLE, HubName, "HubName"),
+	RPC_ROW_ARRAY(RPC_ENUM_MAC_TABLE, MacTables, NumMacTable, &rpc_enum_mac_table_item_table, "SessionName", 0),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_mac_table_table, RPC_ENUM_MAC_TABLE, rpc_enum_mac_table_fields);
+
 void InRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t, PACK *p)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_ENUM_MAC_TABLE));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->NumMacTable = PackGetIndexCount(p, "SessionName");
-	t->MacTables = ZeroMalloc(sizeof(RPC_ENUM_MAC_TABLE_ITEM) * t->NumMacTable);
-
-	for (i = 0;i < t->NumMacTable;i++)
-	{
-		RPC_ENUM_MAC_TABLE_ITEM *e = &t->MacTables[i];
-
-		e->Key = PackGetIntEx(p, "Key", i);
-		PackGetStrEx(p, "SessionName", e->SessionName, sizeof(e->SessionName), i);
-		PackGetDataEx2(p, "MacAddress", e->MacAddress, sizeof(e->MacAddress), i);
-		e->VlanId = PackGetIntEx(p, "VlanId", i);
-		e->CreatedTime = PackGetInt64Ex(p, "CreatedTime", i);
-		e->UpdatedTime = PackGetInt64Ex(p, "UpdatedTime", i);
-	}
+	RpcFieldIn(&rpc_enum_mac_table_table, t, p);
 }
 void OutRpcEnumMacTable(PACK *p, RPC_ENUM_MAC_TABLE *t)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-
-	for (i = 0;i < t->NumMacTable;i++)
-	{
-		RPC_ENUM_MAC_TABLE_ITEM *e = &t->MacTables[i];
-
-		PackAddIntEx(p, "Key", e->Key, i, t->NumMacTable);
-		PackAddStrEx(p, "SessionName", e->SessionName, i, t->NumMacTable);
-		PackAddDataEx(p, "MacAddress", e->MacAddress, sizeof(e->MacAddress), i, t->NumMacTable);
-		PackAddIntEx(p, "VlanId", e->VlanId, i, t->NumMacTable);
-		PackAddTime64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumMacTable);
-		PackAddTime64Ex(p, "UpdatedTime", e->UpdatedTime, i, t->NumMacTable);
-	}
+	RpcFieldOut(&rpc_enum_mac_table_table, p, t);
 }
 void FreeRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->MacTables);
+	RpcFieldFree(&rpc_enum_mac_table_table, t);
 }
 
 // RPC_ENUM_IP_TABLE
+// IpV6: when the peer sent none, it comes from Ip (the row before)
+static void RpcEnumIpTableIpV6In(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	RPC_ENUM_IP_TABLE_ITEM *e = (RPC_ENUM_IP_TABLE_ITEM *)base;
+	IP *ip = (IP *)(((UCHAR *)base) + f->Offset);
+
+	if (PackGetIpEx(p, f->Key, ip, index) == false)
+	{
+		UINTToIP(ip, e->Ip);
+	}
+}
+static const RPC_HOOK rpc_enum_ip_table_ipv6_hook = {NULL, RpcEnumIpTableIpV6In, NULL};
+
+// IpAddress is read without the index, as before: every item gets the first address
+static void RpcEnumIpTableIpAddressIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	PackGetIp(p, f->Key, (IP *)(((UCHAR *)base) + f->Offset));
+}
+static const RPC_HOOK rpc_enum_ip_table_ip_address_hook = {NULL, RpcEnumIpTableIpAddressIn, NULL};
+
+static const RPC_FIELD rpc_enum_ip_table_item_fields[] =
+{
+	RPC_ROW_INT(RPC_ENUM_IP_TABLE_ITEM, Key, "Key"),
+	RPC_ROW_STR(RPC_ENUM_IP_TABLE_ITEM, SessionName, "SessionName"),
+	RPC_ROW_IP32(RPC_ENUM_IP_TABLE_ITEM, Ip, "Ip"),
+	RPC_ROW_HOOK(RPC_FT_IP, RPC_ENUM_IP_TABLE_ITEM, IpV6, "IpV6", 0, &rpc_enum_ip_table_ipv6_hook),
+	RPC_ROW_HOOK(RPC_FT_IP, RPC_ENUM_IP_TABLE_ITEM, IpAddress, "IpAddress", 0, &rpc_enum_ip_table_ip_address_hook),
+	RPC_ROW_BOOL(RPC_ENUM_IP_TABLE_ITEM, DhcpAllocated, "DhcpAllocated"),
+	RPC_ROW_TIME64(RPC_ENUM_IP_TABLE_ITEM, CreatedTime, "CreatedTime"),
+	RPC_ROW_TIME64(RPC_ENUM_IP_TABLE_ITEM, UpdatedTime, "UpdatedTime"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_ip_table_item_table, RPC_ENUM_IP_TABLE_ITEM, rpc_enum_ip_table_item_fields);
+
+static const RPC_FIELD rpc_enum_ip_table_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_IP_TABLE, HubName, "HubName"),
+	RPC_ROW_ARRAY(RPC_ENUM_IP_TABLE, IpTables, NumIpTable, &rpc_enum_ip_table_item_table, "SessionName", 0),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_ip_table_table, RPC_ENUM_IP_TABLE, rpc_enum_ip_table_fields);
+
 void InRpcEnumIpTable(RPC_ENUM_IP_TABLE *t, PACK *p)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_ENUM_IP_TABLE));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->NumIpTable = PackGetIndexCount(p, "SessionName");
-	t->IpTables = ZeroMalloc(sizeof(RPC_ENUM_IP_TABLE_ITEM) * t->NumIpTable);
-
-	for (i = 0;i < t->NumIpTable;i++)
-	{
-		RPC_ENUM_IP_TABLE_ITEM *e = &t->IpTables[i];
-
-		e->Key = PackGetIntEx(p, "Key", i);
-		PackGetStrEx(p, "SessionName", e->SessionName, sizeof(e->SessionName), i);
-		e->Ip = PackGetIp32Ex(p, "Ip", i);
-		if (PackGetIpEx(p, "IpV6", &e->IpV6, i) == false)
-		{
-			UINTToIP(&e->IpV6, e->Ip);
-		}
-		PackGetIp(p, "IpAddress", &e->IpAddress);
-		e->DhcpAllocated = PackGetBoolEx(p, "DhcpAllocated", i);
-		e->CreatedTime = PackGetInt64Ex(p, "CreatedTime", i);
-		e->UpdatedTime = PackGetInt64Ex(p, "UpdatedTime", i);
-	}
+	RpcFieldIn(&rpc_enum_ip_table_table, t, p);
 }
 void OutRpcEnumIpTable(PACK *p, RPC_ENUM_IP_TABLE *t)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-
-	for (i = 0;i < t->NumIpTable;i++)
-	{
-		RPC_ENUM_IP_TABLE_ITEM *e = &t->IpTables[i];
-
-		PackAddIntEx(p, "Key", e->Key, i, t->NumIpTable);
-		PackAddStrEx(p, "SessionName", e->SessionName, i, t->NumIpTable);
-		PackAddIp32Ex(p, "Ip", e->Ip, i, t->NumIpTable);
-		PackAddIpEx(p, "IpV6", &e->IpV6, i, t->NumIpTable);
-		PackAddIpEx(p, "IpAddress", &e->IpAddress, i, t->NumIpTable);
-		PackAddBoolEx(p, "DhcpAllocated", e->DhcpAllocated, i, t->NumIpTable);
-		PackAddTime64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumIpTable);
-		PackAddTime64Ex(p, "UpdatedTime", e->UpdatedTime, i, t->NumIpTable);
-	}
+	RpcFieldOut(&rpc_enum_ip_table_table, p, t);
 }
 void FreeRpcEnumIpTable(RPC_ENUM_IP_TABLE *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->IpTables);
+	RpcFieldFree(&rpc_enum_ip_table_table, t);
 }
 
 // RPC_DELETE_TABLE
+static const RPC_FIELD rpc_delete_table_fields[] =
+{
+	RPC_ROW_STR(RPC_DELETE_TABLE, HubName, "HubName"),
+	RPC_ROW_INT(RPC_DELETE_TABLE, Key, "Key"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_delete_table_table, RPC_DELETE_TABLE, rpc_delete_table_fields);
+
 void InRpcDeleteTable(RPC_DELETE_TABLE *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_DELETE_TABLE));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->Key = PackGetInt(p, "Key");
+	RpcFieldIn(&rpc_delete_table_table, t, p);
 }
 void OutRpcDeleteTable(PACK *p, RPC_DELETE_TABLE *t)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddInt(p, "Key", t->Key);
+	RpcFieldOut(&rpc_delete_table_table, p, t);
 }
 
 // test RPC function
@@ -8972,20 +8821,23 @@ UINT StTest(ADMIN *a, RPC_TEST *t)
 }
 
 // RPC_TEST
+static const RPC_FIELD rpc_test_fields[] =
+{
+	RPC_ROW_INT(RPC_TEST, IntValue, "IntValue"),
+	RPC_ROW_INT64(RPC_TEST, Int64Value, "Int64Value"),
+	RPC_ROW_STR(RPC_TEST, StrValue, "StrValue"),
+	RPC_ROW_UNISTR(RPC_TEST, UniStrValue, "UniStrValue"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_test_table, RPC_TEST, rpc_test_fields);
+
 void InRpcTest(RPC_TEST *t, PACK *p)
 {
-	Zero(t, sizeof(RPC_TEST));
-	t->IntValue = PackGetInt(p, "IntValue");
-	t->Int64Value = PackGetInt64(p, "Int64Value");
-	PackGetStr(p, "StrValue", t->StrValue, sizeof(t->StrValue));
-	PackGetUniStr(p, "UniStrValue", t->UniStrValue, sizeof(t->UniStrValue));
+	RpcFieldIn(&rpc_test_table, t, p);
 }
 void OutRpcTest(PACK *p, RPC_TEST *t)
 {
-	PackAddInt(p, "IntValue", t->IntValue);
-	PackAddInt64(p, "Int64Value", t->Int64Value);
-	PackAddStr(p, "StrValue", t->StrValue);
-	PackAddUniStr(p, "UniStrValue", t->UniStrValue);
+	RpcFieldOut(&rpc_test_table, p, t);
 }
 void FreeRpcTest(RPC_TEST *t)
 {

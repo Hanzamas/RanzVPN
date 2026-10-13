@@ -1353,6 +1353,16 @@ static PACK *HarnessPackBuildStrMissing(void)
 	return NewPack();
 }
 
+// NumItem whose item array does not fit in 32 bits: the table engine reads no item (count 0)
+static PACK *HarnessPackBuildEnumLicenseKeyNumItemOverflow(void)
+{
+	PACK *p = NewPack();
+
+	PackAddInt(p, "NumItem", 0x10000000);
+
+	return p;
+}
+
 ////////////////////////////
 // Case table
 
@@ -1474,6 +1484,10 @@ static HARNESS_PACK_CASE harness_pack_cases[] =
 	HARNESS_PACK_IN_CASE("RPC_CREATE_HUB_in_wrongtype", RPC_CREATE_HUB, HarnessPackBuildCreateHubWrongType),
 	HARNESS_PACK_IN_CASE("RPC_MSG_in_nomsg", RPC_MSG, HarnessPackBuildMsgNoMsg),
 	HARNESS_PACK_IN_CASE("RPC_STR_in_missing", RPC_STR, HarnessPackBuildStrMissing),
+
+	// IN: intended change of the table engine (spec #28, unchecked NumItem option b)
+	HARNESS_PACK_IN_CASE("RPC_ENUM_LICENSE_KEY_in_numitem_overflow", RPC_ENUM_LICENSE_KEY,
+		HarnessPackBuildEnumLicenseKeyNumItemOverflow),
 };
 
 ////////////////////////////
