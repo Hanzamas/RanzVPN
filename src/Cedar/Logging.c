@@ -464,28 +464,6 @@ void FreeEraser(ERASER *e)
 	Free(e);
 }
 
-// Take the debug log (variable-length argument)
-void DebugLog(CEDAR *c, char *fmt, ...)
-{
-	char buf[MAX_SIZE * 2];
-	va_list args;
-	// Validate arguments
-	if (fmt == NULL)
-	{
-		return;
-	}
-	if (c->DebugLog == NULL)
-	{
-		return;
-	}
-
-	va_start(args, fmt);
-	FormatArgs(buf, sizeof(buf), fmt, args);
-
-	InsertStringRecord(c->DebugLog, buf);
-	va_end(args);
-}
-
 // Take the log of eraser
 void ELog(ERASER *e, char *name, ...)
 {
@@ -2252,14 +2230,12 @@ static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *l
 	if (num >= LOG_ENGINE_SAVE_START_CACHE_COUNT)
 	{
 		// Raise the priority
-		Debug("LOG_THREAD: MsSetThreadPriorityRealtime\n");
 		MsSetThreadPriorityRealtime();
 	}
 
 	if (num < (LOG_ENGINE_SAVE_START_CACHE_COUNT / 2))
 	{
 		// Restore the priority
-		Debug("LOG_THREAD: MsSetThreadPriorityIdle\n");
 		MsSetThreadPriorityIdle();
 	}
 

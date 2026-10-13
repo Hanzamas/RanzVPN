@@ -126,7 +126,6 @@ void ReplaceForCsv(char *str);
 char *PortStr(CEDAR *cedar, UINT port, bool udp);
 char *TcpFlagStr(UCHAR flag);
 void SiSetDefaultLogSetting(HUB_LOG *g);
-void DebugLog(CEDAR *c, char *fmt, ...);
 void SLog(CEDAR *c, char *name, ...);
 void WriteHubLog(HUB *h, wchar_t *str);
 void HLog(HUB *h, char *name, ...);
