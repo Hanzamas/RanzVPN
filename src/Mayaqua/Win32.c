@@ -92,11 +92,7 @@ OS_DISPATCH_TABLE *Win32GetDispatchTable()
 		Win32Lock,
 		Win32Unlock,
 		Win32DeleteLock,
-		Win32InitEvent,
-		Win32SetEvent,
 		Win32ResetEvent,
-		Win32WaitEvent,
-		Win32FreeEvent,
 		Win32WaitThread,
 		Win32FreeThread,
 		Win32InitThread,
@@ -2302,27 +2298,6 @@ void Win32DeleteLock(LOCK *lock)
 	Win32MemoryFree(lock);
 }
 
-// Initialization of the event
-void Win32InitEvent(EVENT *event)
-{
-	// Creating an auto-reset event
-	HANDLE hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-
-	event->pData = hEvent;
-}
-
-// Set the event
-void Win32SetEvent(EVENT *event)
-{
-	HANDLE hEvent = (HANDLE)event->pData;
-	if (hEvent == NULL)
-	{
-		return;
-	}
-
-	SetEvent(hEvent);
-}
-
 // Reset the event
 void Win32ResetEvent(EVENT *event)
 {
@@ -2333,42 +2308,6 @@ void Win32ResetEvent(EVENT *event)
 	}
 
 	ResetEvent(hEvent);
-}
-
-// Wait for the event
-bool Win32WaitEvent(EVENT *event, UINT timeout)
-{
-	HANDLE hEvent = (HANDLE)event->pData;
-	UINT ret;
-	if (hEvent == NULL)
-	{
-		return false;
-	}
-
-	// Wait for an object
-	ret = WaitForSingleObject(hEvent, timeout);
-	if (ret == WAIT_TIMEOUT)
-	{
-		// Time-out
-		return false;
-	}
-	else
-	{
-		// Signaled state
-		return true;
-	}
-}
-
-// Release of the event
-void Win32FreeEvent(EVENT *event)
-{
-	HANDLE hEvent = (HANDLE)event->pData;
-	if (hEvent == NULL)
-	{
-		return;
-	}
-
-	CloseHandle(hEvent);
 }
 
 // Read a string from the console
