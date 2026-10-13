@@ -59,7 +59,6 @@ struct SERVER
 	bool NoHighPriorityProcess;
 	bool NoDebugDump;
 	bool NoMoreSave;
-	bool EnableConditionalAccept;
 
 	volatile bool Halt;
 	LOCK *lock;
@@ -120,7 +119,6 @@ struct RPC_SESSION_STATUS
 	char Username[MAX_USERNAME_LEN + 1];
 	char RealUsername[MAX_USERNAME_LEN + 1];
 	char GroupName[MAX_USERNAME_LEN + 1];
-	bool LinkMode;
 	RPC_CLIENT_GET_CONNECTION_STATUS Status;
 	UINT ClientIp;
 	UCHAR ClientIp6[16];

@@ -850,15 +850,11 @@ bool SessionConnect(SESSION *s)
 	}
 	Unlock(s->lock);
 
-	s->CancelConnect = false;
-
 	c = NewClientConnectionEx(s, NULL, 0, 0);
 	s->Connection = c;
 
 	ret = ClientConnect(c);
 	s->Err = c->Err;
-
-	s->CancelConnect = false;
 
 	s->Connection = NULL;
 	ReleaseConnection(c);
@@ -888,7 +884,6 @@ void StopSessionEx(SESSION *s, bool no_wait)
 	}
 
 	s->UserCanceled = true;
-	s->CancelConnect = true;
 	s->Halt = true;
 
 	Cancel(s->Cancel1);
@@ -1164,7 +1159,6 @@ SKIP:
 
 	if (s->Account != NULL)
 	{
-		s->Account->ClientSession = NULL;
 		ReleaseSession(s);
 	}
 

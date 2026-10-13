@@ -111,19 +111,6 @@ struct UDP_HEADER
 	USHORT	Checksum;
 } GCC_PACKED;
 
-struct UDPV4_PSEUDO_HEADER
-{
-	UINT	SrcIP;
-	UINT	DstIP;
-	UCHAR	Reserved;
-	UCHAR	Protocol;
-	USHORT	PacketLength1;
-	USHORT	SrcPort;
-	USHORT	DstPort;
-	USHORT	PacketLength2;
-	USHORT	Checksum;
-} GCC_PACKED;
-
 struct IPV4_PSEUDO_HEADER
 {
 	UINT	SrcIP;
@@ -201,17 +188,6 @@ struct DNSV4_HEADER
 } GCC_PACKED;
 
 #define	DHCP_MAGIC_COOKIE	0x63825363
-
-struct NBTDG_HEADER
-{
-	UCHAR MessageType;
-	UCHAR MoreFragments;
-	USHORT DatagramId;
-	UINT SrcIP;
-	USHORT SrcPort;
-	USHORT DatagramLen;
-	USHORT PacketOffset;
-} GCC_PACKED;
 
 struct IPV6_HEADER_PACKET_INFO
 {
@@ -357,22 +333,6 @@ struct ICMPV6_OPTION_MTU
 	UINT Mtu;
 } GCC_PACKED;
 
-
-struct IPV6_HEADER_INFO
-{
-	bool IsRawIpPacket;
-	USHORT Size;
-	UINT Id;
-	UCHAR Protocol;
-	UCHAR HopLimit;
-	IPV6_ADDR SrcIpAddress;
-	IPV6_ADDR DestIpAddress;
-	bool UnicastForMe;
-	bool UnicastForRouting;
-	bool UnicastForRoutingWithProxyNdp;
-	bool IsBroadcast;
-	UINT TypeL4;
-};
 
 struct ICMPV6_HEADER_INFO
 {

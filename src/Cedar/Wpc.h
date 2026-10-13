@@ -25,7 +25,6 @@ struct WPC_CONNECT
 	char ProxyUsername[MAX_USERNAME_LEN + 1];
 	char ProxyPassword[MAX_USERNAME_LEN + 1];
 	char CustomHttpHeader[HTTP_CUSTOM_HEADER_MAX_SIZE];
-	bool UseCompress;
 };
 
 struct INTERNET_SETTING

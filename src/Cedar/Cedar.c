@@ -802,8 +802,6 @@ void StopCedar(CEDAR *c)
 		return;
 	}
 
-	c->Halt = true;
-
 	StopAllListener(c);
 	StopAllConnection(c);
 	StopAllHub(c);

@@ -31,7 +31,6 @@ struct ETH
 	char *Name;
 	char *Title;
 	CANCEL *Cancel;
-	bool LoopbackBlock;
 	UCHAR MacAddress[6];
 	bool HasFatalError;
 

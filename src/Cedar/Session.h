@@ -74,7 +74,6 @@ struct SESSION
 	CLIENT_AUTH *ClientAuth;
 	SSL_VERIFY_OPTION *SslOption;
 	volatile bool Halt;
-	volatile bool CancelConnect;
 	EVENT *HaltEvent;
 	UINT Err;
 	HUB *Hub;
@@ -98,7 +97,6 @@ struct SESSION
 	BRIDGE *Bridge;
 	NODE_INFO NodeInfo;
 	UINT64 LastIncrementTraffic;
-	bool AdministratorMode;
 	LIST *CancelList;
 	bool IPv6Session;
 	UINT VLanId;
@@ -153,8 +151,6 @@ struct SESSION
 
 	bool IsMonitorMode;
 	bool IsBridgeMode;
-	bool UseClientLicense;
-	bool UseBridgeLicense;
 
 	COUNTER *LoggingRecordCount;
 
@@ -189,7 +185,6 @@ void CleanupSession(SESSION *s);
 void StopSession(SESSION *s);
 void StopSessionEx(SESSION *s, bool no_wait);
 bool SessionConnect(SESSION *s);
-bool ClientConnect(CONNECTION *c);
 PACKET_ADAPTER *NewPacketAdapter(PA_INIT *init, PA_GETCANCEL *getcancel, PA_GETNEXTPACKET *getnext,
 								 PA_PUTPACKET *put, PA_FREE *free);
 void FreePacketAdapter(PACKET_ADAPTER *pa);

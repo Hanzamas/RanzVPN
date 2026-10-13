@@ -177,15 +177,11 @@ void FormatPolicyValue(wchar_t *str, UINT size, UINT id, UINT value);
 
 struct ACCOUNT
 {
-	CLIENT_OPTION *ClientOption;
-	CLIENT_AUTH *ClientAuth;
 	bool CheckServerCert;
 	bool RetryOnServerCert;
 	bool AddDefaultCA;
 	X *ServerCert;
 
-	LOCK *lock;
-	SESSION *ClientSession;
 	CLIENT_STATUS_PRINTER *StatusPrinter;
 };
 

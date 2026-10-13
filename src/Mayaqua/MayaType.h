@@ -23,7 +23,6 @@
 #include <WinSock2.h>
 #include <ws2ipdef.h>
 
-#define	STD_SIZE			512
 #define	MAX_SIZE			512
 
 #define	SUPPORTED_WINDOWS_LIST		"Windows 10 / 11 / Server 2016 / Server 2019 / Server 2022"
@@ -75,11 +74,8 @@ typedef int (COMPARE)(void *p1, void *p2);
 
 #define	LESS(a, max_value)	((a) <= (max_value) ? (a) : (max_value))
 #define	MORE(a, min_value)	((a) >= (min_value) ? (a) : (min_value))
-#define	INNER(a, b, c)		(((b) <= (c) && (a) >= (b) && (a) <= (c)) || ((b) >= (c) && (a) >= (c) && (a) <= (b)))
-#define	OUTER(a, b, c)		(!INNER((a), (b), (c)))
 #define	MAKESURE(a, b, c)		(((b) <= (c)) ? (MORE(LESS((a), (c)), (b))) : (MORE(LESS((a), (b)), (c))))
 #define COMPARE_RET(a, b)	(((a) == (b)) ? 0 : (((a) > (b)) ? 1 : -1))
-#define	EQUAL_BOOL(a, b)	(((a) && (b)) || ((!(a)) && (!(b))))
 
 #define	POINTER_TO_KEY(p)		(HashPtrToUINT(p))
 
@@ -200,17 +196,12 @@ typedef struct TICK64 TICK64;
 
 typedef struct DIRENT DIRENT;
 typedef struct DIRLIST DIRLIST;
-typedef struct ZIP_DATA_HEADER ZIP_DATA_HEADER;
-typedef struct ZIP_DATA_FOOTER ZIP_DATA_FOOTER;
-typedef struct ZIP_DIR_HEADER ZIP_DIR_HEADER;
-typedef struct ZIP_END_HEADER ZIP_END_HEADER;
 
 typedef struct MAC_HEADER MAC_HEADER;
 typedef struct ARPV4_HEADER ARPV4_HEADER;
 typedef struct IPV4_HEADER IPV4_HEADER;
 typedef struct TAGVLAN_HEADER TAGVLAN_HEADER;
 typedef struct UDP_HEADER UDP_HEADER;
-typedef struct UDPV4_PSEUDO_HEADER UDPV4_PSEUDO_HEADER;
 typedef struct IPV4_PSEUDO_HEADER IPV4_PSEUDO_HEADER;
 typedef struct TCP_HEADER TCP_HEADER;
 typedef struct ICMP_HEADER ICMP_HEADER;
@@ -234,7 +225,6 @@ typedef struct ICMPV6_OPTION ICMPV6_OPTION;
 typedef struct ICMPV6_OPTION_LINK_LAYER ICMPV6_OPTION_LINK_LAYER;
 typedef struct ICMPV6_OPTION_PREFIX ICMPV6_OPTION_PREFIX;
 typedef struct ICMPV6_OPTION_MTU ICMPV6_OPTION_MTU;
-typedef struct IPV6_HEADER_INFO IPV6_HEADER_INFO;
 typedef struct ICMPV6_HEADER_INFO ICMPV6_HEADER_INFO;
 typedef struct DHCPV4_DATA DHCPV4_DATA;
 typedef struct DHCP_OPTION DHCP_OPTION;
@@ -243,7 +233,6 @@ typedef struct DHCP_CLASSLESS_ROUTE DHCP_CLASSLESS_ROUTE;
 typedef struct DHCP_CLASSLESS_ROUTE_TABLE DHCP_CLASSLESS_ROUTE_TABLE;
 typedef struct HTTPLOG HTTPLOG;
 typedef struct DHCP_MODIFY_OPTION DHCP_MODIFY_OPTION;
-typedef struct NBTDG_HEADER NBTDG_HEADER;
 typedef struct IKE_HEADER IKE_HEADER;
 
 typedef struct PROXY_PARAM_IN PROXY_PARAM_IN;

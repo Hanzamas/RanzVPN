@@ -165,7 +165,6 @@ typedef struct MS_ADAPTER
 	UINT64 SendBytes;
 	UINT64 SendPacketsBroadcast;
 	UINT64 SendPacketsUnicast;
-	bool Info;
 	char Guid[MAX_SIZE];
 	UINT NumIpAddress;
 	IP IpAddresses[MAX_MS_ADAPTER_IP_ADDRESS];
@@ -285,7 +284,6 @@ bool MsStopService(char *name);
 bool MsIsServiceRunning(char *name);
 UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT icon, char *cmd_line);
 void MsTestModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop);
-void MsServiceMode(SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop);
 void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT icon);
 bool MsIsUserMode();
 LIST *MsGetProcessList();

@@ -456,7 +456,6 @@ struct CEDAR
 	LIST *HubList;
 	LIST *ConnectionList;
 	LIST *CaList;
-	volatile bool Halt;
 	COUNTER *ConnectionIncrement;
 	X *ServerX;
 	K *ServerK;

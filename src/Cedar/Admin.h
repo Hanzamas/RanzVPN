@@ -32,7 +32,6 @@ struct ADMIN
 	char *HubName;
 	RPC *Rpc;
 	LIST *LogFileList;
-	UINT ClientBuild;
 	RPC_WINVER ClientWinVer;
 	char dummy1[MAX_HUBNAME_LEN + 1];
 };
@@ -564,7 +563,6 @@ struct RPC_READ_LOG_FILE
 
 struct DOWNLOAD_PROGRESS
 {
-	void *Param;
 	UINT TotalSize;
 	UINT CurrentSize;
 	UINT ProgressPercent;

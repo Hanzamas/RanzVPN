@@ -23,8 +23,6 @@ struct DYN_VALUE
 
 #define	TIMEOUT_NETBIOS_HOSTNAME	(100)
 
-#define	UDP_MAX_MSG_SIZE_DEFAULT	65507
-
 #define	MAX_NUM_IGNORE_ERRORS		1024
 
 #define	DEFAULT_CIPHER_LIST			"ECDHE+AESGCM:ECDHE+CHACHA20:DHE+AESGCM:DHE+CHACHA20:ECDHE+AES256:DHE+AES256:RSA+AES"
@@ -117,7 +115,6 @@ struct SOCK
 	bool ListenMode;
 	BUF *SendBuf;
 	bool IpClientAdded;
-	bool LocalOnly;
 	bool EnableConditionalAccept;
 	IP RemoteIP;
 	IP LocalIP;
@@ -139,7 +136,6 @@ struct SOCK
 	bool CancelAccept;
 	bool AcceptCanceled;
 	bool UdpBroadcast;
-	void *Param;
 	bool IPv6;
 	bool IsRawSocket;
 	const char *SslVersion;
@@ -456,10 +452,6 @@ void FreeHostIPAddressList(LIST *o);
 void AddHostIPAddressToList(LIST *o, IP *ip);
 int CmpIpAddressList(void *p1, void *p2);
 UINT64 GetHostIPAddressListHash();
-
-struct SslClientCertInfo {
-	X *X;
-};
 
 void SetCurrentGlobalIP(IP *ip, bool ipv6);
 bool GetCurrentGlobalIP(IP *ip, bool ipv6);

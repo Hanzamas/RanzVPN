@@ -321,7 +321,6 @@ BRIDGE *BrNewBridge(HUB *h, char *name, POLICY *p, bool local, bool monitor, boo
 	StrCpy(b->Name, sizeof(b->Name), name);
 	b->Policy = policy;
 	b->Local = local;
-	b->Monitor = monitor;
 	b->TapMode = tapmode;
 	b->LimitBroadcast = limit_broadcast;
 	b->ParentLocalBridge = parent_local_bridge;

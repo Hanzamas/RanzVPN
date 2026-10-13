@@ -20,34 +20,6 @@ static wchar_t exe_file_name_w[MAX_SIZE] = L"/tmp/a.out";
 static LIST *hamcore = NULL;
 static HAMCORE *hamcore_io = NULL;
 
-#define	NUM_CRC32_TABLE	256
-static UINT crc32_table[NUM_CRC32_TABLE];
-
-void InitCrc32()
-{
-	UINT poly = 0xEDB88320;
-	UINT u, i, j;
-
-	for (i = 0;i < 256;i++)
-	{
-		u = i;
-
-		for (j = 0;j < 8;j++)
-		{
-			if ((u & 0x1) != 0)
-			{
-				u = (u >> 1) ^ poly;
-			}
-			else
-			{
-				u >>= 1;
-			}
-		}
-
-		crc32_table[i] = u;
-	}
-}
-
 bool IsFile(char *name)
 {
 	wchar_t *name_w = CopyStrToUni(name);

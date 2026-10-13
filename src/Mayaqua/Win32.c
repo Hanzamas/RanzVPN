@@ -74,10 +74,7 @@ OS_DISPATCH_TABLE *Win32GetDispatchTable()
 		Win32MemoryAlloc,
 		Win32MemoryReAlloc,
 		Win32MemoryFree,
-		Win32GetTick,
 		Win32GetSystemTime,
-		Win32Inc32,
-		Win32Dec32,
 		Win32Sleep,
 		Win32NewLock,
 		Win32Lock,
@@ -85,35 +82,26 @@ OS_DISPATCH_TABLE *Win32GetDispatchTable()
 		Win32DeleteLock,
 		Win32InitEvent,
 		Win32SetEvent,
-		Win32ResetEvent,
 		Win32WaitEvent,
 		Win32FreeEvent,
 		Win32WaitThread,
 		Win32FreeThread,
 		Win32InitThread,
 		Win32ThreadId,
-		Win32FileOpen,
 		Win32FileOpenW,
-		Win32FileCreate,
 		Win32FileCreateW,
 		Win32FileWrite,
 		Win32FileRead,
 		Win32FileClose,
-		Win32FileFlush,
 		Win32FileSize,
 		Win32FileSeek,
-		Win32FileDelete,
 		Win32FileDeleteW,
-		Win32MakeDir,
 		Win32MakeDirW,
-		Win32DeleteDir,
 		Win32DeleteDirW,
 		Win32GetCallStack,
 		Win32GetCallStackSymbolInfo,
-		Win32FileRename,
 		Win32FileRenameW,
 		Win32Run,
-		Win32RunW,
 		Win32IsSupportedOs,
 		Win32GetOsInfo,
 		Win32Alert,
@@ -914,68 +902,6 @@ void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id,
 	return ret.hProcess;
 }
 
-bool Win32RunW(wchar_t *filename, wchar_t *arg, bool hide, bool wait)
-{
-	STARTUPINFOW info;
-	PROCESS_INFORMATION ret;
-	wchar_t cmdline[MAX_SIZE];
-	wchar_t name[MAX_PATH];
-	if (filename == NULL)
-	{
-		return false;
-	}
-
-	UniStrCpy(name, sizeof(name), filename);
-	UniTrim(name);
-
-	if (UniSearchStr(name, L"\"", 0) == INFINITE)
-	{
-		if (arg == NULL)
-		{
-			UniFormat(cmdline, sizeof(cmdline), L"%s", name);
-		}
-		else
-		{
-			UniFormat(cmdline, sizeof(cmdline), L"%s %s", name, arg);
-		}
-	}
-	else
-	{
-		if (arg == NULL)
-		{
-			UniFormat(cmdline, sizeof(cmdline), L"\"%s\"", name);
-		}
-		else
-		{
-			UniFormat(cmdline, sizeof(cmdline), L"\"%s\" %s", name, arg);
-		}
-	}
-
-	Zero(&info, sizeof(info));
-	Zero(&ret, sizeof(ret));
-	info.cb = sizeof(info);
-	info.dwFlags = STARTF_USESHOWWINDOW;
-	info.wShowWindow = (hide == false ? SW_SHOWDEFAULT : SW_HIDE);
-
-	UniTrim(cmdline);
-
-	if (CreateProcessW(NULL, cmdline, NULL, NULL, FALSE,
-		(hide == false ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW | CREATE_NEW_CONSOLE) | NORMAL_PRIORITY_CLASS,
-		NULL, NULL, &info, &ret) == FALSE)
-	{
-		return false;
-	}
-
-	if (wait)
-	{
-		WaitForSingleObject(ret.hProcess, INFINITE);
-	}
-
-	CloseHandle(ret.hThread);
-	CloseHandle(ret.hProcess);
-
-	return true;
-}
 bool Win32Run(char *filename, char *arg, bool hide, bool wait)
 {
 	STARTUPINFO info;
@@ -1052,20 +978,6 @@ bool Win32FileRenameW(wchar_t *old_name, wchar_t *new_name)
 	}
 
 	if (MoveFileW(old_name, new_name) == FALSE)
-	{
-		return false;
-	}
-
-	return true;
-}
-bool Win32FileRename(char *old_name, char *new_name)
-{
-	if (old_name == NULL || new_name == NULL)
-	{
-		return false;
-	}
-
-	if (MoveFile(old_name, new_name) == FALSE)
 	{
 		return false;
 	}
@@ -1202,19 +1114,6 @@ bool Win32DeleteDirW(wchar_t *name)
 	}
 	return true;
 }
-bool Win32DeleteDir(char *name)
-{
-	if (name == NULL)
-	{
-		return false;
-	}
-
-	if (RemoveDirectory(name) == FALSE)
-	{
-		return false;
-	}
-	return true;
-}
 
 bool Win32MakeDirW(wchar_t *name)
 {
@@ -1230,20 +1129,6 @@ bool Win32MakeDirW(wchar_t *name)
 
 	return true;
 }
-bool Win32MakeDir(char *name)
-{
-	if (name == NULL)
-	{
-		return false;
-	}
-
-	if (CreateDirectory(name, NULL) == FALSE)
-	{
-		return false;
-	}
-
-	return true;
-}
 
 bool Win32FileDeleteW(wchar_t *name)
 {
@@ -1253,19 +1138,6 @@ bool Win32FileDeleteW(wchar_t *name)
 	}
 
 	if (DeleteFileW(name) == FALSE)
-	{
-		return false;
-	}
-	return true;
-}
-bool Win32FileDelete(char *name)
-{
-	if (name == NULL)
-	{
-		return false;
-	}
-
-	if (DeleteFile(name) == FALSE)
 	{
 		return false;
 	}
@@ -1467,21 +1339,6 @@ bool Win32FileSetDate(void *pData, UINT64 created_time, UINT64 updated_time)
 	return SetFileTime(p->hFile, p_created_time, NULL, p_updated_time);
 }
 
-void Win32FileFlush(void *pData)
-{
-	WIN32IO *p;
-	if (pData == NULL)
-	{
-		return;
-	}
-
-	p = (WIN32IO *)pData;
-	if (p->WriteMode)
-	{
-		FlushFileBuffers(p->hFile);
-	}
-}
-
 void *Win32FileOpenW(wchar_t *name, bool write_mode, bool read_lock)
 {
 	WIN32IO *p;
@@ -1525,49 +1382,6 @@ void *Win32FileOpenW(wchar_t *name, bool write_mode, bool read_lock)
 
 	return (void *)p;
 }
-void *Win32FileOpen(char *name, bool write_mode, bool read_lock)
-{
-	WIN32IO *p;
-	HANDLE h;
-	DWORD lock_mode;
-	if (name == NULL)
-	{
-		return NULL;
-	}
-
-	if (write_mode)
-	{
-		lock_mode = FILE_SHARE_READ;
-	}
-	else
-	{
-		if (read_lock == false)
-		{
-			lock_mode = FILE_SHARE_READ | FILE_SHARE_WRITE;
-		}
-		else
-		{
-			lock_mode = FILE_SHARE_READ;
-		}
-	}
-
-	h = CreateFile(name,
-		(write_mode ? GENERIC_READ | GENERIC_WRITE : GENERIC_READ),
-		lock_mode,
-		NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-	if (h == INVALID_HANDLE_VALUE)
-	{
-		UINT ret = GetLastError();
-		return NULL;
-	}
-
-	p = Win32MemoryAlloc(sizeof(WIN32IO));
-	p->hFile = h;
-
-	p->WriteMode = write_mode;
-
-	return (void *)p;
-}
 
 void *Win32FileCreateW(wchar_t *name)
 {
@@ -1584,36 +1398,6 @@ void *Win32FileCreateW(wchar_t *name)
 	if (h == INVALID_HANDLE_VALUE)
 	{
 		h = CreateFileW(name, GENERIC_READ | GENERIC_WRITE,
-			FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_HIDDEN,
-			NULL);
-		if (h == INVALID_HANDLE_VALUE)
-		{
-			return NULL;
-		}
-	}
-
-	p = Win32MemoryAlloc(sizeof(WIN32IO));
-	p->hFile = h;
-
-	p->WriteMode = true;
-
-	return (void *)p;
-}
-void *Win32FileCreate(char *name)
-{
-	WIN32IO *p;
-	HANDLE h;
-	if (name == NULL)
-	{
-		return NULL;
-	}
-
-	h = CreateFile(name, GENERIC_READ | GENERIC_WRITE,
-		FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
-		NULL);
-	if (h == INVALID_HANDLE_VALUE)
-	{
-		h = CreateFile(name, GENERIC_READ | GENERIC_WRITE,
 			FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_HIDDEN,
 			NULL);
 		if (h == INVALID_HANDLE_VALUE)
@@ -1998,16 +1782,6 @@ void Win32GetSystemTime(SYSTEMTIME *system_time)
 	GetSystemTime(system_time);
 }
 
-void Win32Inc32(UINT *value)
-{
-	InterlockedIncrement((volatile LONG *)value);
-}
-
-void Win32Dec32(UINT *value)
-{
-	InterlockedDecrement((volatile LONG *)value);
-}
-
 void Win32Sleep(UINT time)
 {
 	Sleep(time);
@@ -2094,17 +1868,6 @@ void Win32SetEvent(EVENT *event)
 	}
 
 	SetEvent(hEvent);
-}
-
-void Win32ResetEvent(EVENT *event)
-{
-	HANDLE hEvent = (HANDLE)event->pData;
-	if (hEvent == NULL)
-	{
-		return;
-	}
-
-	ResetEvent(hEvent);
 }
 
 bool Win32WaitEvent(EVENT *event, UINT timeout)

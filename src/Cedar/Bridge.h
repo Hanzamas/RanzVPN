@@ -17,7 +17,6 @@ struct BRIDGE
 	char Name[MAX_SIZE];
 	UINT64 LastBridgeTry;
 	bool Local;
-	bool Monitor;
 	bool TapMode;
 	bool LimitBroadcast;
 	UCHAR TapMacAddress[6];

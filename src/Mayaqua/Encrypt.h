@@ -298,7 +298,6 @@ UINT CipherProcessAead(CIPHER *c, void *iv, void *tag, UINT tag_size, void *dest
 
 void HashMd4(void *dst, void *src, UINT size);
 void Md5(void *dst, void *src, UINT size);
-void Sha(UINT sha_type, void *dst, void *src, UINT size);
 void Sha0(void *dst, void *src, UINT size);
 void Sha1(void *dst, void *src, UINT size);
 void Sha2_256(void *dst, void *src, UINT size);

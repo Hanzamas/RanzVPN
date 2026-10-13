@@ -49,8 +49,6 @@ static LIST *local_mac_list = NULL;
 static LOCK *local_mac_list_lock = NULL;
 
 
-static bool g_use_privateip_file = false;
-
 static DH_CTX *dh_param = NULL;
 
 typedef struct PRIVATE_IP_SUBNET
@@ -363,7 +361,6 @@ void GetCurrentMachineIpProcessHashInternal(void *hash)
 
 typedef struct WIN32_ACCEPT_CHECK_DATA
 {
-	bool IsIPv6;
 	bool Rejected;
 } WIN32_ACCEPT_CHECK_DATA;
 
@@ -404,8 +401,6 @@ L_LOOP:
 	}
 
 	Zero(&d, sizeof(d));
-
-	d.IsIPv6 = ipv6;
 
 	*addrlen = initial_addrlen;
 	Zero(addr, initial_addrlen);
@@ -4045,7 +4040,6 @@ SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 	sock->SecureMode = false;
 	sock->LocalPort = port;
 	sock->IPv6 = true;
-	sock->LocalOnly = local_only;
 	sock->EnableConditionalAccept = enable_ca;
 
 	return sock;
@@ -4133,7 +4127,6 @@ SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 	sock->ListenMode = true;
 	sock->SecureMode = false;
 	sock->LocalPort = port;
-	sock->LocalOnly = local_only;
 	sock->EnableConditionalAccept = enable_ca;
 
 	return sock;
@@ -6045,7 +6038,6 @@ void LoadPrivateIPFile()
 	}
 
 	g_private_ip_list = o;
-	g_use_privateip_file = true;
 
 	FreeBuf(b);
 }
@@ -6091,8 +6083,6 @@ void FreePrivateIPFile()
 
 		ReleaseList(o);
 	}
-
-	g_use_privateip_file = false;
 }
 
 void SetCurrentGlobalIP(IP *ip, bool ipv6)

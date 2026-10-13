@@ -51,8 +51,6 @@ static OSSL_PROVIDER *ossl_provider_legacy = NULL;
 static OSSL_PROVIDER *ossl_provider_default = NULL;
 static OSSL_PROVIDER *ossl_provider_oqsprovider = NULL;
 
-static bool openssl_inited = false;
-
 static void Internal_Sha0(unsigned char *dest, const unsigned char *src, const UINT size);
 
 typedef struct CB_PARAM
@@ -2839,8 +2837,6 @@ void FreeOpenSSLThreadState()
 
 void FreeCryptLibrary()
 {
-	openssl_inited = false;
-
 	DeleteLock(openssl_lock);
 	openssl_lock = NULL;
 	OpenSSL_FreeLock();
@@ -2883,8 +2879,6 @@ void InitCryptLibrary()
 
 	Rand(tmp, sizeof(tmp));
 	OpenSSL_InitLock();
-
-	openssl_inited = true;
 }
 
 CRYPT *NewCrypt(void *key, UINT size)

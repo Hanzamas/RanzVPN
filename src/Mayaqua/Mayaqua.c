@@ -167,8 +167,6 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 
 	srand((UINT)SystemTime64());
 
-	InitCrc32();
-
 	InitFifo();
 
 	InitKernelStatus();

@@ -46,68 +46,6 @@ struct DIRLIST
 	struct DIRENT **File;
 };
 
-#pragma pack(push, 1)
-
-struct ZIP_DATA_HEADER
-{
-	UINT Signature;
-	USHORT NeedVer;
-	USHORT Option;
-	USHORT CompType;
-	USHORT FileTime;
-	USHORT FileDate;
-	UINT Crc32;
-	UINT CompSize;
-	UINT UncompSize;
-	USHORT FileNameLen;
-	USHORT ExtraLen;
-} GCC_PACKED;
-
-struct ZIP_DATA_FOOTER
-{
-	UINT Signature;
-	UINT Crc32;
-	UINT CompSize;
-	UINT UncompSize;
-} GCC_PACKED;
-
-struct ZIP_DIR_HEADER
-{
-	UINT Signature;
-	USHORT MadeVer;
-	USHORT NeedVer;
-	USHORT Option;
-	USHORT CompType;
-	USHORT FileTime;
-	USHORT FileDate;
-	UINT Crc32;
-	UINT CompSize;
-	UINT UncompSize;
-	USHORT FileNameLen;
-	USHORT ExtraLen;
-	USHORT CommentLen;
-	USHORT DiskNum;
-	USHORT InAttr;
-	UINT OutAttr;
-	UINT HeaderPos;
-} GCC_PACKED;
-
-struct ZIP_END_HEADER
-{
-	UINT Signature;
-	USHORT DiskNum;
-	USHORT StartDiskNum;
-	USHORT DiskDirEntry;
-	USHORT DirEntry;
-	UINT DirSize;
-	UINT StartPos;
-	USHORT CommentLen;
-} GCC_PACKED;
-
-#pragma pack(pop)
-
-void InitCrc32();
-
 bool DeleteDirInnerW(wchar_t *name);
 bool DeleteDirW(wchar_t *name);
 bool MakeDirInnerW(wchar_t *name);

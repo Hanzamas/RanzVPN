@@ -1832,9 +1832,6 @@ bool ServerAccept(CONNECTION *c)
 				}
 			}
 
-			s->UseClientLicense = use_client_license;
-			s->UseBridgeLicense = use_bridge_license;
-
 			s->AdjustMss = adjust_mss;
 			if (s->AdjustMss != 0)
 			{
@@ -1880,7 +1877,6 @@ bool ServerAccept(CONNECTION *c)
 			}
 
 			c->Session = s;
-			s->AdministratorMode = admin_mode;
 			StrCpy(s->UserNameReal, sizeof(s->UserNameReal), username_real);
 			StrCpy(s->GroupName, sizeof(s->GroupName), groupname);
 

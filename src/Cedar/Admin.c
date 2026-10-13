@@ -850,7 +850,6 @@ BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PR
 
 		offset += t.Buffer->Size;
 		Zero(&g, sizeof(g));
-		g.Param = param;
 		g.CurrentSize = offset;
 		g.TotalSize = MAX(total_size, offset);
 		g.ProgressPercent = (UINT)(MAKESURE((UINT64)g.CurrentSize * 100ULL / (UINT64)(MAX(g.TotalSize, 1)), 0, 100ULL));
@@ -8780,7 +8779,6 @@ UINT AdminAccept(CONNECTION *c, PACK *p)
 	a->ServerAdmin = ((StrLen(hubname) == 0) ? true : false);
 	a->HubName = (StrLen(hubname) != 0 ? hubname : NULL);
 	a->Server = c->Cedar->Server;
-	a->ClientBuild = c->ClientBuild;
 
 	Copy(&a->ClientWinVer, &ver, sizeof(RPC_WINVER));
 

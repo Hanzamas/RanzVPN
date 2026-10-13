@@ -53,9 +53,7 @@ static SERVICE_FUNCTION *g_start, *g_stop;
 static bool exiting = false;
 static bool wnd_end;
 static bool is_usermode = false;
-static HWND hWndUsermode = NULL;
 static HANDLE hLsa = NULL;
-static ULONG lsa_package_id = 0;
 static TOKEN_SOURCE lsa_token_source;
 
 static HINSTANCE hMsi = NULL;
@@ -770,8 +768,6 @@ void MsGetAdapterTcpIpInformation(MS_ADAPTER *a)
 
 			StrCpy(a->Guid, sizeof(a->Guid), info->AdapterName);
 
-			a->Info = true;
-
 			break;
 		}
 
@@ -1327,8 +1323,6 @@ void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop
 		recv_thread = NewThread(MsUserModeGlobalPulseRecvThread, &p);
 	}
 
-	hWndUsermode = hWnd;
-
 	wnd_end = false;
 	while (wnd_end == false)
 	{
@@ -1340,8 +1334,6 @@ void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop
 	FreeSingleInstance(inst);
 
 	p.hWnd = NULL;
-
-	hWndUsermode = NULL;
 
 	if (p.GlobalPulse != NULL)
 	{
@@ -4208,7 +4200,6 @@ void MsInit()
 	SetUnhandledExceptionFilter(MsExceptionHandler);
 
 	hLsa = NULL;
-	lsa_package_id = 0;
 
 	MsEnablePrivilege(SE_TCB_NAME, true);
 
@@ -4233,7 +4224,6 @@ void MsInit()
 			AllocateLocallyUniqueId(&lsa_token_source.SourceIdentifier);
 			Copy(lsa_token_source.SourceName, "SE-VPN  ", 8);
 
-			lsa_package_id = ul;
 			hLsa = h;
 		}
 		else
