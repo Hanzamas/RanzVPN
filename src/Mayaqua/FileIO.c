@@ -48,27 +48,6 @@ void InitCrc32()
 	}
 }
 
-UINT Crc32(void *buf, UINT pos, UINT len)
-{
-	return Crc32Finish(Crc32Next(buf, pos, len, 0xffffffff));
-}
-UINT Crc32Next(void *buf, UINT pos, UINT len, UINT last_crc32)
-{
-	UINT ret = last_crc32;
-	UINT i;
-
-	for (i = 0;i < len;i++)
-	{
-		ret = (ret >> 8) ^ crc32_table[((UCHAR *)buf)[pos + i] ^ (ret & 0xff)];
-	}
-
-	return ret;
-}
-UINT Crc32Finish(UINT last_crc32)
-{
-	return ~last_crc32;
-}
-
 bool IsFile(char *name)
 {
 	wchar_t *name_w = CopyStrToUni(name);
@@ -837,15 +816,6 @@ void ConvertPathW(wchar_t *path)
 	}
 }
 
-bool DeleteDir(char *name)
-{
-	wchar_t *name_w = CopyStrToUni(name);
-	bool ret = DeleteDirW(name_w);
-
-	Free(name_w);
-
-	return ret;
-}
 bool DeleteDirW(wchar_t *name)
 {
 	wchar_t tmp[MAX_SIZE];
@@ -1118,21 +1088,6 @@ bool FileWrite(IO *o, void *buf, UINT size)
 	}
 
 	return OSFileWrite(o->pData, buf, size);
-}
-
-void FileFlush(IO *o)
-{
-	if (o == NULL)
-	{
-		return;
-	}
-
-	if (o->HamMode)
-	{
-		return;
-	}
-
-	OSFileFlush(o->pData);
 }
 
 void FileClose(IO *o)

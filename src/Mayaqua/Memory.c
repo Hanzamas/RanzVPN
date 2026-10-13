@@ -369,7 +369,6 @@ HASH_LIST *NewHashList(GET_HASH *get_hash_proc, COMPARE *compare_proc, UINT bits
 
 	h = ZeroMalloc(sizeof(HASH_LIST));
 
-	h->Bits = bits;
 	h->Size = Power(2, bits);
 
 	h->Lock = NewLock();

@@ -376,15 +376,6 @@ bool Run(char *filename, char *arg, bool hide, bool wait)
 
 	return OSRun(filename, arg, hide, wait);
 }
-bool RunW(wchar_t *filename, wchar_t *arg, bool hide, bool wait)
-{
-	if (filename == NULL)
-	{
-		return false;
-	}
-
-	return OSRunW(filename, arg, hide, wait);
-}
 
 void GetDateTimeStr64Uni(wchar_t *str, UINT size, UINT64 sec64)
 {
@@ -1468,12 +1459,6 @@ time_64t c_mkgmtime(struct tm *tm)
 		return (time_64t)(86400L * (unsigned long)(unsigned)days +
 			3600L * (unsigned long)hours +
 			(unsigned long)(60 * minutes + seconds));
-}
-
-UINT Tick()
-{
-	KS_INC(KS_GETTICK_COUNT);
-	return OSGetTick();
 }
 
 void SleepThread(UINT time)

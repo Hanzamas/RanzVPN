@@ -56,7 +56,6 @@ struct SERVER
 	bool SaveDebugLog;
 	bool NoSendSignature;
 	bool UseWebTimePage;
-	bool NoLinuxArpFilter;
 	bool NoHighPriorityProcess;
 	bool NoDebugDump;
 	bool NoMoreSave;

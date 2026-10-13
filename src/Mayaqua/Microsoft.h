@@ -328,8 +328,6 @@ NO_WARNING *MsInitNoWarningEx(UINT start_timer);
 void MsFreeNoWarning(NO_WARNING *nw);
 void MsNoWarningThreadProc(THREAD *thread, void *param);
 bool MsCloseWarningWindow(NO_WARNING *nw, UINT thread_id);
-LIST *MsEnumChildWindows(LIST *o, HWND hWnd);
-void MsAddWindowToList(LIST *o, HWND hWnd);
 UINT MsGetThreadLocale();
 int CmpWindowList(void *p1, void *p2);
 void AddWindow(LIST *o, HWND hWnd);
@@ -378,7 +376,6 @@ void CALLBACK MsServiceHandler(DWORD opcode);
 bool MsServiceStopProc();
 void MsServiceStoperMainThread(THREAD *t, void *p);
 LRESULT CALLBACK MsUserModeWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-BOOL CALLBACK MsEnumChildWindowProc(HWND hWnd, LPARAM lParam);
 BOOL CALLBACK EnumTopWindowProc(HWND hWnd, LPARAM lParam);
 #endif // MICROSOFT_C
 

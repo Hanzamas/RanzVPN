@@ -179,8 +179,6 @@ struct CIPHER
 };
 
 
-extern LOCK **ssl_lock_obj;
-
 CRYPT *NewCrypt(void *key, UINT size);
 void FreeCrypt(CRYPT *c);
 void Encrypt(CRYPT *c, void *dst, void *src, UINT size);

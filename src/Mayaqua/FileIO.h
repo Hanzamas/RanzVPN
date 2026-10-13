@@ -104,35 +104,11 @@ struct ZIP_END_HEADER
 	USHORT CommentLen;
 } GCC_PACKED;
 
-#define	ZIP_SIGNATURE				0x04034B50
-#define	ZIP_VERSION					10
-
 #pragma pack(pop)
 
-struct ZIP_FILE
-{
-	char Name[MAX_PATH];
-	UINT Size;
-	UINT64 DateTime;
-	UINT Attributes;
-	UINT CurrentSize;
-	UINT Crc32;
-};
-
-struct ZIP_PACKER
-{
-	FIFO *Fifo;
-	LIST *FileList;
-	ZIP_FILE *CurrentFile;
-};
-
 void InitCrc32();
-UINT Crc32(void *buf, UINT pos, UINT len);
-UINT Crc32Next(void *buf, UINT pos, UINT len, UINT last_crc32);
-UINT Crc32Finish(UINT last_crc32);
 
 bool DeleteDirInnerW(wchar_t *name);
-bool DeleteDir(char *name);
 bool DeleteDirW(wchar_t *name);
 bool MakeDirInnerW(wchar_t *name);
 bool MakeDir(char *name);
@@ -147,7 +123,6 @@ UINT FileSize(IO *o);
 UINT64 FileSize64(IO *o);
 bool FileRead(IO *o, void *buf, UINT size);
 bool FileWrite(IO *o, void *buf, UINT size);
-void FileFlush(IO *o);
 void FileClose(IO *o);
 void FileCloseEx(IO *o, bool no_flush);
 IO *FileCreateInnerW(wchar_t *name);

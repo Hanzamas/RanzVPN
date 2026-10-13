@@ -2494,50 +2494,6 @@ void MsInitGlobalNetworkConfig()
 	MsApplyTcpConfig();
 }
 
-BOOL CALLBACK MsEnumChildWindowProc(HWND hWnd, LPARAM lParam)
-{
-	LIST *o = (LIST *)lParam;
-
-	if (o != NULL)
-	{
-		MsEnumChildWindows(o, hWnd);
-	}
-
-	return true;
-}
-
-LIST *MsEnumChildWindows(LIST *o, HWND hWnd)
-{
-	if (hWnd == NULL)
-	{
-		return NULL;
-	}
-
-	if (o == NULL)
-	{
-		o = NewListFast(NULL);
-	}
-
-	MsAddWindowToList(o, hWnd);
-
-	EnumChildWindows(hWnd, MsEnumChildWindowProc, (LPARAM)o);
-
-	return o;
-}
-
-void MsAddWindowToList(LIST *o, HWND hWnd)
-{
-	if (o == NULL || hWnd == NULL)
-	{
-		return;
-	}
-
-	if (IsInList(o, hWnd) == false)
-	{
-		Add(o, hWnd);
-	}
-}
-
 BOOL CALLBACK EnumTopWindowProc(HWND hWnd, LPARAM lParam)
 {
 	LIST *o = (LIST *)lParam;

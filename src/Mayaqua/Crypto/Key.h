@@ -3,21 +3,4 @@
 
 #include "MayaType.h"
 
-#define KEY_X25519_SIZE 32
-#define KEY_X448_SIZE   56
-
-enum CRYPTO_KEY_TYPE
-{
-	KEY_UNKNOWN,
-	KEY_X25519,
-	KEY_X448
-};
-
-struct CRYPTO_KEY_RAW
-{
-	BYTE *Data;
-	UINT Size;
-	CRYPTO_KEY_TYPE Type;
-};
-
 #endif

@@ -148,14 +148,9 @@ typedef struct FIFO FIFO;
 typedef struct LIST LIST;
 typedef struct QUEUE QUEUE;
 typedef struct SK SK;
-typedef struct CANDIDATE CANDIDATE;
-typedef struct STRMAP_ENTRY STRMAP_ENTRY;
-typedef struct SHARED_BUFFER SHARED_BUFFER;
 typedef struct HASH_LIST HASH_LIST;
-typedef struct PRAND PRAND;
 
 typedef struct TOKEN_LIST TOKEN_LIST;
-typedef struct INI_ENTRY INI_ENTRY;
 
 typedef struct UNI_TOKEN_LIST UNI_TOKEN_LIST;
 
@@ -164,14 +159,8 @@ typedef struct NAME NAME;
 typedef struct X_SERIAL X_SERIAL;
 typedef struct X X;
 typedef struct K K;
-typedef struct P12 P12;
-typedef struct X_CRL X_CRL;
-typedef struct DES_KEY_VALUE DES_KEY_VALUE;
-typedef struct DES_KEY DES_KEY;
 typedef struct DH_CTX DH_CTX;
-typedef struct AES_KEY_VALUE AES_KEY_VALUE;
 typedef struct CIPHER CIPHER;
-typedef struct MD MD;
 
 typedef struct MEMINFO MEMINFO;
 typedef struct LOCALE LOCALE;
@@ -196,24 +185,13 @@ typedef struct SOCK_EVENT SOCK_EVENT;
 typedef struct SOCK SOCK;
 typedef struct SOCKSET SOCKSET;
 typedef struct CANCEL CANCEL;
-typedef struct ROUTE_ENTRY ROUTE_ENTRY;
-typedef struct ROUTE_TABLE ROUTE_TABLE;
 typedef struct IP_CLIENT IP_CLIENT;
-typedef struct ROUTE_CHANGE ROUTE_CHANGE;
-typedef struct ROUTE_CHANGE_DATA ROUTE_CHANGE_DATA;
-typedef struct WIN32_RELEASEADDRESS_THREAD_PARAM WIN32_RELEASEADDRESS_THREAD_PARAM;
 typedef struct IPV6_ADDR IPV6_ADDR;
-typedef struct UDPPACKET UDPPACKET;
-typedef struct INTERRUPT_MANAGER INTERRUPT_MANAGER;
-typedef struct ICMP_RESULT ICMP_RESULT;
-typedef struct SSL_PIPE SSL_PIPE;
-typedef struct SSL_BIO SSL_BIO;
 typedef struct CONNECT_SERIAL_PARAM CONNECT_SERIAL_PARAM;
 typedef struct SSL_VERIFY_OPTION SSL_VERIFY_OPTION;
 typedef struct NIC_ENTRY NIC_ENTRY;
 typedef struct HTTP_VALUE HTTP_VALUE;
 typedef struct HTTP_HEADER HTTP_HEADER;
-typedef struct IPBLOCK IPBLOCK;
 typedef struct DYN_VALUE DYN_VALUE;
 typedef struct SSL_ACCEPT_SETTINGS SSL_ACCEPT_SETTINGS;
 
@@ -226,8 +204,6 @@ typedef struct ZIP_DATA_HEADER ZIP_DATA_HEADER;
 typedef struct ZIP_DATA_FOOTER ZIP_DATA_FOOTER;
 typedef struct ZIP_DIR_HEADER ZIP_DIR_HEADER;
 typedef struct ZIP_END_HEADER ZIP_END_HEADER;
-typedef struct ZIP_FILE ZIP_FILE;
-typedef struct ZIP_PACKER ZIP_PACKER;
 
 typedef struct MAC_HEADER MAC_HEADER;
 typedef struct ARPV4_HEADER ARPV4_HEADER;
@@ -269,8 +245,6 @@ typedef struct HTTPLOG HTTPLOG;
 typedef struct DHCP_MODIFY_OPTION DHCP_MODIFY_OPTION;
 typedef struct NBTDG_HEADER NBTDG_HEADER;
 typedef struct IKE_HEADER IKE_HEADER;
-
-typedef struct HTTP_MIME_TYPE HTTP_MIME_TYPE;
 
 typedef struct PROXY_PARAM_IN PROXY_PARAM_IN;
 typedef struct PROXY_PARAM_OUT PROXY_PARAM_OUT;

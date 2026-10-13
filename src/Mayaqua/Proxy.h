@@ -32,7 +32,6 @@ struct PROXY_PARAM_IN
 	char HttpUserAgent[HTTP_HEADER_USER_AGENT_MAX_SIZE + 1];
 	IP   *BindLocalIP;
 	UINT BindLocalPort;
-	void *Hwnd;
 };
 
 struct PROXY_PARAM_OUT

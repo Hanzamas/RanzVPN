@@ -4734,7 +4734,6 @@ SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_serve
 
 	s->IsInVm = MsIsInVm();
 
-	s->Cedar->CheckExpires = true;
 	s->ServerListenerList = NewList(CompareServerListener);
 	s->StartTime = SystemTime64();
 

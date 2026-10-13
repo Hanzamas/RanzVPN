@@ -479,68 +479,6 @@ UINT64 GetTrafficPacketNum(TRAFFIC *t)
 		t->Send.BroadcastCount + t->Send.UnicastCount;
 }
 
-bool DeleteCa(CEDAR *cedar, UINT ptr)
-{
-	bool b = false;
-	if (cedar == NULL || ptr == 0)
-	{
-		return false;
-	}
-
-	LockList(cedar->CaList);
-	{
-		UINT i;
-
-		for (i = 0;i < LIST_NUM(cedar->CaList);i++)
-		{
-			X *x = LIST_DATA(cedar->CaList, i);
-
-			if (POINTER_TO_KEY(x) == ptr)
-			{
-				Delete(cedar->CaList, x);
-				FreeX(x);
-
-				b = true;
-
-				break;
-			}
-		}
-	}
-	UnlockList(cedar->CaList);
-
-	return b;
-}
-
-void AddCa(CEDAR *cedar, X *x)
-{
-	if (cedar == NULL || x == NULL)
-	{
-		return;
-	}
-
-	LockList(cedar->CaList);
-	{
-		UINT i;
-		bool ok = true;
-
-		for (i = 0;i < LIST_NUM(cedar->CaList);i++)
-		{
-			X *exist_x = LIST_DATA(cedar->CaList, i);
-			if (CompareX(exist_x, x))
-			{
-				ok = false;
-				break;
-			}
-		}
-
-		if (ok)
-		{
-			Insert(cedar->CaList, CloneX(x));
-		}
-	}
-	UnlockList(cedar->CaList);
-}
-
 void DelConnection(CEDAR *cedar, CONNECTION *c)
 {
 	if (cedar == NULL || c == NULL)

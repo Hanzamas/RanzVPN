@@ -35,7 +35,6 @@ typedef struct ERASER ERASER;
 typedef struct SLOG SLOG;
 
 
-typedef struct RC4_KEY_PAIR RC4_KEY_PAIR;
 typedef struct CLIENT_OPTION CLIENT_OPTION;
 typedef struct CLIENT_AUTH CLIENT_AUTH;
 typedef struct TCPSOCK TCPSOCK;
@@ -50,9 +49,6 @@ typedef struct PACKET_ADAPTER PACKET_ADAPTER;
 typedef struct SESSION SESSION;
 
 
-typedef struct SE_LINK SE_LINK;
-typedef struct TEST_HISTORY TEST_HISTORY;
-typedef struct SE_TEST SE_TEST;
 typedef struct HUBDB HUBDB;
 typedef struct TRAFFIC_LIMITER TRAFFIC_LIMITER;
 typedef struct STORM STORM;
@@ -60,7 +56,6 @@ typedef struct HUB_PA HUB_PA;
 typedef struct HUB_OPTION HUB_OPTION;
 typedef struct MAC_TABLE_ENTRY MAC_TABLE_ENTRY;
 typedef struct IP_TABLE_ENTRY IP_TABLE_ENTRY;
-typedef struct LOOP_LIST LOOP_LIST;
 typedef struct ACCESS ACCESS;
 typedef struct HUB HUB;
 typedef struct ADMIN_OPTION ADMIN_OPTION;
@@ -70,7 +65,6 @@ typedef struct USERLIST USERLIST;
 
 
 typedef struct CHECK_CERT_THREAD_PROC CHECK_CERT_THREAD_PROC;
-typedef struct SEND_SIGNATURE_PARAM SEND_SIGNATURE_PARAM;
 
 
 typedef struct LINK LINK;
@@ -78,8 +72,6 @@ typedef struct LINK LINK;
 
 typedef struct INTERNET_SETTING INTERNET_SETTING;
 typedef struct URL_DATA URL_DATA;
-typedef struct WPC_ENTRY WPC_ENTRY;
-typedef struct WPC_PACKET WPC_PACKET;
 typedef struct WPC_CONNECT WPC_CONNECT;
 
 typedef struct VLAN VLAN;
@@ -114,7 +106,6 @@ typedef struct RPC_STR RPC_STR;
 typedef struct RPC_SET_PASSWORD RPC_SET_PASSWORD;
 typedef struct RPC_KEY_PAIR RPC_KEY_PAIR;
 typedef struct RPC_HUB_OPTION RPC_HUB_OPTION;
-typedef struct RPC_HUB RPC_HUB;
 typedef struct RPC_CREATE_HUB RPC_CREATE_HUB;
 typedef struct RPC_ENUM_HUB_ITEM RPC_ENUM_HUB_ITEM;
 typedef struct RPC_ENUM_HUB RPC_ENUM_HUB;
@@ -163,7 +154,6 @@ typedef struct RPC_ADMIN_OPTION RPC_ADMIN_OPTION;
 typedef struct RPC_CRL RPC_CRL;
 typedef struct RPC_ENUM_CRL_ITEM RPC_ENUM_CRL_ITEM;
 typedef struct RPC_ENUM_CRL RPC_ENUM_CRL;
-typedef struct RPC_INT RPC_INT;
 typedef struct RPC_AC_LIST RPC_AC_LIST;
 typedef struct RPC_ENUM_LOG_FILE_ITEM RPC_ENUM_LOG_FILE_ITEM;
 typedef struct RPC_ENUM_LOG_FILE RPC_ENUM_LOG_FILE;

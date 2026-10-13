@@ -642,61 +642,6 @@ UINT ChangePasswordAccept(CONNECTION *c, PACK *p)
 	return ret;
 }
 
-TOKEN_LIST *EnumHub(SESSION *s)
-{
-	SOCK *sock;
-	TOKEN_LIST *ret;
-	PACK *p;
-	UINT num;
-	UINT i;
-	if (s == NULL || s->Connection == NULL)
-	{
-		return NULL;
-	}
-
-	sock = s->Connection->FirstSock;
-	if (sock == NULL)
-	{
-		return NULL;
-	}
-
-	SetTimeout(sock, 10000);
-
-	p = NewPack();
-	PackAddStr(p, "method", "enum_hub");
-
-	PackAddClientVersion(p, s->Connection);
-
-	if (HttpClientSend(sock, p) == false)
-	{
-		FreePack(p);
-		return NULL;
-	}
-	FreePack(p);
-
-	p = HttpClientRecv(sock);
-	if (p == NULL)
-	{
-		return NULL;
-	}
-
-	num = PackGetInt(p, "NumHub");
-	ret = ZeroMalloc(sizeof(TOKEN_LIST));
-	ret->NumTokens = num;
-	ret->Token = ZeroMalloc(sizeof(char *) * num);
-	for (i = 0;i < num;i++)
-	{
-		char tmp[MAX_SIZE];
-		if (PackGetStrEx(p, "HubName", tmp, sizeof(tmp), i))
-		{
-			ret->Token[i] = CopyStr(tmp);
-		}
-	}
-	FreePack(p);
-
-	return ret;
-}
-
 bool ServerAccept(CONNECTION *c)
 {
 	bool ret = false;
@@ -4052,8 +3997,6 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 		else {
 			in.BindLocalPort = sess->ClientOption->BindLocalPort + Count(sess->Connection->CurrentNumConnection) - 1;
 		}
-
-		in.Hwnd = c->hWndForUI;
 
 		UniFormat(tmp, sizeof(tmp), _UU("STATUS_2"), in.TargetHostname, in.Hostname);
 		PrintStatus(sess, tmp);

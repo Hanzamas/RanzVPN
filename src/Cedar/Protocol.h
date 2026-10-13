@@ -67,7 +67,6 @@ bool GetSessionKeyFromPack(PACK *p, UCHAR *session_key, UINT *session_key_32);
 void CreateNodeInfo(NODE_INFO *info, CONNECTION *c);
 bool ClientCheckServerCert(CONNECTION *c, bool *expired);
 void ClientCheckServerCertThread(THREAD *thread, void *param);
-TOKEN_LIST *EnumHub(SESSION *s);
 UINT ChangePasswordAccept(CONNECTION *c, PACK *p);
 void PackAddClientVersion(PACK *p, CONNECTION *c);
 void NodeInfoToStr(wchar_t *str, UINT size, NODE_INFO *info);

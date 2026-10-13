@@ -422,23 +422,6 @@ wchar_t *GetUniErrorStr(UINT err)
 	}
 }
 
-char *GetErrorStr(UINT err)
-{
-	char *ret;
-	char name[MAX_SIZE];
-	Format(name, sizeof(name), "ERR_%u", err);
-
-	ret = GetTableStr(name);
-	if (StrLen(ret) != 0)
-	{
-		return ret;
-	}
-	else
-	{
-		return _SS("ERR_UNKNOWN");
-	}
-}
-
 UINT GetTableInt(char *name)
 {
 	char *str;

@@ -34,12 +34,6 @@ struct HTTP_HEADER
 	LIST *ValueList;
 };
 
-struct HTTP_MIME_TYPE
-{
-	char *Extension;
-	char *MimeType;
-};
-
 void GetHttpDateStr(char *str, UINT size, UINT64 t);
 void ReplaceUnsafeCharInHttpTarget(char *target);
 HTTP_HEADER *NewHttpHeader(char *method, char *target, char *version);

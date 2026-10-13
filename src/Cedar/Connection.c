@@ -1349,15 +1349,6 @@ DISCONNECT_THIS_TCP:
 					ret = EthGetPacket(b->Eth, &data);
 				}
 
-				if (c->Session != NULL)
-				{
-					c->Session->BridgeIsEthLoopbackBlock = false;
-					if (b->Eth != NULL && b->Eth->LoopbackBlock)
-					{
-						c->Session->BridgeIsEthLoopbackBlock = true;
-					}
-				}
-
 				if (ret == INFINITE)
 				{
 					CloseEth(b->Eth);
@@ -1504,8 +1495,6 @@ BLOCK *NewBlock(void *data, UINT size, int compress)
 	}
 
 	b = MallocFast(sizeof(BLOCK));
-
-	b->RawFlagRetUdpAccel = 0;
 
 	b->IsFlooding = false;
 

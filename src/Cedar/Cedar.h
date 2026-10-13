@@ -84,7 +84,6 @@
 
 
 #define SERVER_MAX_SESSIONS_FOR_CARRIER_EDITION	100000
-#define	MAX_HUBS					4096
 #define	MAX_ACCESSLISTS				(4096 * 8)
 #define	MAX_USERS					10000
 #define	MAX_GROUPS					10000
@@ -410,9 +409,6 @@
 #define	ERR_NOT_SUPPORTED_AUTH_ON_OPENSOURCE	143
 #define	ERR_NOT_SUPPORTED_FUNCTION_ON_OPENSOURCE	147
 #define ERR_HOSTNAME_MISMATCH			149
-#define ERR_SSL_PROTOCOL_VERSION		150
-#define ERR_SSL_SHARED_CIPHER			151
-#define ERR_SSL_HANDSHAKE				152
 
 
 typedef struct NETSVC
@@ -485,7 +481,6 @@ struct CEDAR
 	char *BuildInfo;
 	struct SERVER *Server;
 	UINT64 CreatedTick;
-	bool CheckExpires;
 	struct LOG *DebugLog;
 	UCHAR UniqueId[16];
 	LIST *LocalBridgeList;
@@ -536,8 +531,6 @@ void DelConnection(CEDAR *cedar, CONNECTION *c);
 void SetCedarCipherList(CEDAR *cedar, char *name);
 void InitCedar();
 void FreeCedar();
-void AddCa(CEDAR *cedar, X *x);
-bool DeleteCa(CEDAR *cedar, UINT ptr);
 void InitNetSvcList(CEDAR *cedar);
 void FreeNetSvcList(CEDAR *cedar);
 int CompareNetSvc(void *p1, void *p2);

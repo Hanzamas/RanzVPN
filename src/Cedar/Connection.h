@@ -120,7 +120,6 @@ struct BLOCK
 	bool PriorityQoS;
 	UINT Param1;
 	bool IsFlooding;
-	UCHAR RawFlagRetUdpAccel;
 };
 
 struct CONNECTION

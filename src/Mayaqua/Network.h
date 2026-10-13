@@ -144,10 +144,7 @@ struct SOCK
 	bool IsRawSocket;
 	const char *SslVersion;
 	UINT RawSocketIPProtocol;
-	UINT UdpMaxMsgSize;
 	int CurrentTos;
-	bool IsTtlSupported;
-	UINT CurrentTtl;
 	char UnderlayProtocol[64];
 	char ProtocolDetails[256];
 	UCHAR Ssl_Init_Async_SendAlert[2];
@@ -327,7 +324,6 @@ SOCK *Accept(SOCK *sock);
 SOCK *Accept6(SOCK *sock);
 UINT Send(SOCK *sock, void *data, UINT size, bool secure);
 UINT Recv(SOCK *sock, void *data, UINT size, bool secure);
-UINT Peek(SOCK *sock, void *data, UINT size);
 UINT SecureSend(SOCK *sock, void *data, UINT size);
 UINT SecureRecv(SOCK *sock, void *data, UINT size);
 bool StartSSL(SOCK *sock, X *x, K *priv);

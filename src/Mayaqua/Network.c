@@ -3591,38 +3591,6 @@ UINT SecureSend(SOCK *sock, void *data, UINT size)
 	return 0;
 }
 
-UINT Peek(SOCK *sock, void *data, UINT size)
-{
-	SOCKET s;
-	int ret;
-
-	if (sock == NULL || data == NULL || size == 0)
-	{
-		return 0;
-	}
-	if (sock->Type != SOCK_TCP || sock->Connected == false || sock->ListenMode != false ||
-	        sock->socket == INVALID_SOCKET)
-	{
-		return 0;
-	}
-	if (sock->AsyncMode)
-	{
-		return 0;
-	}
-
-	s = sock->socket;
-
-	ret = recv(s, data, size, MSG_PEEK);
-
-
-	if (ret > 0)
-	{
-		return ret;
-	}
-
-	return 0;
-}
-
 UINT Recv(SOCK *sock, void *data, UINT size, bool secure)
 {
 	SOCKET s;
@@ -5175,8 +5143,6 @@ void QuerySocketInformation(SOCK *sock)
 
 		if (sock->Type == SOCK_UDP)
 		{
-			sock->UdpMaxMsgSize = UDP_MAX_MSG_SIZE_DEFAULT;
-
 			if (true)
 			{
 				UINT max_value = 0;
@@ -5184,7 +5150,6 @@ void QuerySocketInformation(SOCK *sock)
 
 				if (getsockopt(sock->socket, SOL_SOCKET, SO_MAX_MSG_SIZE, (char *)&max_value, &len) == 0)
 				{
-					sock->UdpMaxMsgSize = max_value;
 				}
 			}
 		}
@@ -5206,12 +5171,9 @@ void QuerySocketInformation(SOCK *sock)
 		if (opt_value == 0 ||
 		        getsockopt(sock->socket, (sock->IPv6 ? IPPROTO_IPV6 : IPPROTO_IP), opt_value, (char *)&dw, &size) != 0)
 		{
-			sock->IsTtlSupported = false;
 		}
 		else
 		{
-			sock->IsTtlSupported = true;
-			sock->CurrentTtl = dw;
 		}
 	}
 	Unlock(sock->lock);

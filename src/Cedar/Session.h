@@ -67,7 +67,6 @@ struct SESSION
 	bool LinkModeClient;
 	bool LinkModeServer;
 	bool BridgeMode;
-	bool BridgeIsEthLoopbackBlock;
 	THREAD *Thread;
 	CONNECTION *Connection;
 	char ClientIP[64];
@@ -141,7 +140,6 @@ struct SESSION
 	UINT AdjustMss;
 
 	bool UseUdpAcceleration;
-	UINT UdpAccelerationVersion;
 	bool UseHMacOnUdpAcceleration;
 	UDP_ACCEL *UdpAccel;
 	bool IsUsingUdpAcceleration;

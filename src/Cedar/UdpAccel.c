@@ -551,10 +551,6 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 	if (inner_size >= 1)
 	{
 		b = NewBlock(Clone(inner_data, inner_size), inner_size, a->ReadRawFlagMode == false ? (compress_flag ? -1 : 0) : 0);
-		if (a->ReadRawFlagMode)
-		{
-			b->RawFlagRetUdpAccel = raw_flag;
-		}
 	}
 
 	if (a->LastSetSrcIpAndPortTick < a->LastRecvYourTick)

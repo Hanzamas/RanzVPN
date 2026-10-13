@@ -37,7 +37,6 @@ typedef struct UNICODE_CACHE
 #define	_UU(name)		(GetTableUniStr((char *)(name)))
 #define	_II(name)		(GetTableInt((char *)(name)))
 #define	_E(name)		(GetUniErrorStr((UINT)(name)))
-#define	_EA(name)		(GetErrorStr((UINT)(name)))
 #define _GETLANG()		(_II("LANG"))
 
 struct LANGLIST
@@ -62,7 +61,6 @@ TABLE *FindTable(char *name);
 TOKEN_LIST *GetTableNameStartWith(char *str);
 char *GetTableStr(char *name);
 wchar_t *GetTableUniStr(char *name);
-char *GetErrorStr(UINT err);
 wchar_t *GetUniErrorStr(UINT err);
 UINT GetTableInt(char *name);
 void GenerateUnicodeCacheFileName(wchar_t *name, UINT size, wchar_t *strfilename, UINT strfilesize, UCHAR *filehash);

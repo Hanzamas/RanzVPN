@@ -113,10 +113,6 @@ bool OSRun(char *filename, char *arg, bool hide, bool wait)
 {
 	return os->Run(filename, arg, hide, wait);
 }
-bool OSRunW(wchar_t *filename, wchar_t *arg, bool hide, bool wait)
-{
-	return os->RunW(filename, arg, hide, wait);
-}
 
 UINT OSThreadId()
 {
@@ -178,11 +174,6 @@ void OSFileClose(void *pData, bool no_flush)
 	os->FileClose(pData, no_flush);
 }
 
-void OSFileFlush(void *pData)
-{
-	os->FileFlush(pData);
-}
-
 CALLSTACK_DATA *OSGetCallStack()
 {
 	return os->GetCallStack();
@@ -221,11 +212,6 @@ void *OSMemoryReAlloc(void *addr, UINT size)
 void OSMemoryFree(void *addr)
 {
 	os->MemoryFree(addr);
-}
-
-UINT OSGetTick()
-{
-	return os->GetTick();
 }
 
 void OSGetSystemTime(SYSTEMTIME *system_time)

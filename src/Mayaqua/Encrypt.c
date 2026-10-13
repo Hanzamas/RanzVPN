@@ -51,8 +51,6 @@ static OSSL_PROVIDER *ossl_provider_legacy = NULL;
 static OSSL_PROVIDER *ossl_provider_default = NULL;
 static OSSL_PROVIDER *ossl_provider_oqsprovider = NULL;
 
-LOCK **ssl_lock_obj = NULL;
-UINT ssl_lock_num;
 static bool openssl_inited = false;
 
 static void Internal_Sha0(unsigned char *dest, const unsigned char *src, const UINT size);

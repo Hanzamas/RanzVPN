@@ -32,8 +32,6 @@ int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 
 #define	STRTABLE_ID					"SE_VPN_20121007"
 
-#define	PATH_BACKSLASH
-
 #define	IsBigEndian()		(g_little_endian ? false : true)
 #define	IsLittleEndian()	(g_little_endian)
 
@@ -43,7 +41,6 @@ int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 
 #define	WHERE			if (IsDebug()){printf("%s: %u\n", __FILE__, __LINE__); SleepThread(10);}
 
-#define	PROBE_STR(str)
 #define	PROBE_DATA2(str, data, size)
 
 extern bool g_memcheck;
@@ -167,7 +164,6 @@ if (IsTrackingEnabled()) {													\
 #define	KS_IO_TOTAL_READ_SIZE	70
 #define	KS_IO_TOTAL_WRITE_SIZE	71
 #define	KS_MEMPOOL_MALLOC_COUNT	75
-#define	KS_MEMPOOL_FREE_COUNT	73		// Number of times you release the memory pool
 #define	KS_MEMPOOL_CURRENT_NUM	74
 #define	KS_MEMPOOL_REALLOC_COUNT	76
 

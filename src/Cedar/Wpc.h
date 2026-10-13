@@ -14,7 +14,6 @@
 #define WPC_USER_AGENT				DEFAULT_USER_AGENT
 #define WPC_TIMEOUT					(15 * 1000)
 #define WPC_RECV_BUF_SIZE			64000
-#define WPC_DATA_ENTRY_SIZE			4
 
 struct WPC_CONNECT
 {

@@ -28,7 +28,6 @@ static HANDLE hstdin = INVALID_HANDLE_VALUE;
 typedef struct WIN32THREAD
 {
 	HANDLE hThread;
-	DWORD thread_id;
 } WIN32THREAD;
 
 typedef struct WIN32THREADSTARTUPINFO
@@ -1871,7 +1870,6 @@ bool Win32InitThread(THREAD *t)
 	}
 
 	w->hThread = hThread;
-	w->thread_id = thread_id;
 
 	return true;
 }

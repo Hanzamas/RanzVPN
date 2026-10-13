@@ -10,8 +10,6 @@
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Network.h"
 
-typedef void (NEW_CONNECTION_PROC)(CONNECTION *c);
-
 struct DOS
 {
 	IP IpAddress;
