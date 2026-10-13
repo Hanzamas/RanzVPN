@@ -8262,280 +8262,225 @@ void FreeRpcAuthData(void *authdata, UINT authtype)
 }
 
 // RPC_SET_USER
+// Embedded TRAFFIC through the TRAFFIC entry points
+static void RpcSetUserTrafficOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	OutRpcTraffic(p, (TRAFFIC *)(((UCHAR *)base) + f->Offset));
+}
+static void RpcSetUserTrafficIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcTraffic((TRAFFIC *)(((UCHAR *)base) + f->Offset), p);
+}
+static const RPC_HOOK rpc_set_user_traffic_hook = {RpcSetUserTrafficOut, RpcSetUserTrafficIn, NULL};
+
+// Authentication data: "AuthType" and the data of that type. Read after
+// Name, which hashes a plain-text password.
+static void RpcSetUserAuthDataOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	RPC_SET_USER *t = base;
+
+	OutRpcAuthData(p, t->AuthData, t->AuthType);
+}
+static void RpcSetUserAuthDataIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	RPC_SET_USER *t = base;
+
+	t->AuthData = InRpcAuthData(p, &t->AuthType, t->Name);
+}
+static void RpcSetUserAuthDataFree(const RPC_FIELD *f, void *base)
+{
+	RPC_SET_USER *t = base;
+
+	FreeRpcAuthData(t->AuthData, t->AuthType);
+}
+static const RPC_HOOK rpc_set_user_auth_data_hook = {RpcSetUserAuthDataOut, RpcSetUserAuthDataIn, RpcSetUserAuthDataFree};
+
+// Optional policy: "UsePolicy" and the policy, only when the POLICY pointer is set
+static void RpcSetUserPolicyOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	POLICY *policy = *((POLICY **)(((UCHAR *)base) + f->Offset));
+
+	if (policy != NULL)
+	{
+		PackAddBool(p, f->Key, true);
+		OutRpcPolicy(p, policy);
+	}
+}
+static void RpcSetUserPolicyIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	POLICY **policy = (POLICY **)(((UCHAR *)base) + f->Offset);
+
+	if (PackGetBool(p, f->Key))
+	{
+		*policy = ZeroMalloc(sizeof(POLICY));
+		InRpcPolicy(*policy, p);
+	}
+}
+static void RpcSetUserPolicyFree(const RPC_FIELD *f, void *base)
+{
+	Free(*((POLICY **)(((UCHAR *)base) + f->Offset)));
+}
+static const RPC_HOOK rpc_set_user_policy_hook = {RpcSetUserPolicyOut, RpcSetUserPolicyIn, RpcSetUserPolicyFree};
+
+static const RPC_FIELD rpc_set_user_fields[] =
+{
+	RPC_ROW_STR(RPC_SET_USER, HubName, "HubName"),
+	RPC_ROW_STR(RPC_SET_USER, Name, "Name"),
+	RPC_ROW_STR(RPC_SET_USER, GroupName, "GroupName"),
+	RPC_ROW_UNISTR(RPC_SET_USER, Realname, "Realname"),
+	RPC_ROW_UNISTR(RPC_SET_USER, Note, "Note"),
+	RPC_ROW_TIME64(RPC_SET_USER, CreatedTime, "CreatedTime"),
+	RPC_ROW_TIME64(RPC_SET_USER, UpdatedTime, "UpdatedTime"),
+	RPC_ROW_TIME64(RPC_SET_USER, ExpireTime, "ExpireTime"),
+	RPC_ROW_OPAQUE(RPC_SET_USER, AuthData, "AuthType", 0, &rpc_set_user_auth_data_hook),
+	RPC_ROW_INT(RPC_SET_USER, NumLogin, "NumLogin"),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_SET_USER, Traffic, NULL, 0, &rpc_set_user_traffic_hook),
+	RPC_ROW_OPAQUE(RPC_SET_USER, Policy, "UsePolicy", 0, &rpc_set_user_policy_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_set_user_table, RPC_SET_USER, rpc_set_user_fields);
+
 void InRpcSetUser(RPC_SET_USER *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_SET_USER));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	PackGetStr(p, "Name", t->Name, sizeof(t->Name));
-	PackGetStr(p, "GroupName", t->GroupName, sizeof(t->GroupName));
-	PackGetUniStr(p, "Realname", t->Realname, sizeof(t->Realname));
-	PackGetUniStr(p, "Note", t->Note, sizeof(t->Note));
-	t->CreatedTime = PackGetInt64(p, "CreatedTime");
-	t->UpdatedTime = PackGetInt64(p, "UpdatedTime");
-	t->ExpireTime = PackGetInt64(p, "ExpireTime");
-	t->AuthData = InRpcAuthData(p, &t->AuthType, t->Name);
-	t->NumLogin = PackGetInt(p, "NumLogin");
-	InRpcTraffic(&t->Traffic, p);
-
-	if (PackGetBool(p, "UsePolicy"))
-	{
-		t->Policy = ZeroMalloc(sizeof(POLICY));
-		InRpcPolicy(t->Policy, p);
-	}
+	RpcFieldIn(&rpc_set_user_table, t, p);
 }
 
 void OutRpcSetUser(PACK *p, RPC_SET_USER *t)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddStr(p, "Name", t->Name);
-	PackAddStr(p, "GroupName", t->GroupName);
-	PackAddUniStr(p, "Realname", t->Realname);
-	PackAddUniStr(p, "Note", t->Note);
-	PackAddTime64(p, "CreatedTime", t->CreatedTime);
-	PackAddTime64(p, "UpdatedTime", t->UpdatedTime);
-	PackAddTime64(p, "ExpireTime", t->ExpireTime);
-	OutRpcAuthData(p, t->AuthData, t->AuthType);
-	PackAddInt(p, "NumLogin", t->NumLogin);
-	OutRpcTraffic(p, &t->Traffic);
-
-	if (t->Policy != NULL)
-	{
-		PackAddBool(p, "UsePolicy", true);
-		OutRpcPolicy(p, t->Policy);
-	}
+	RpcFieldOut(&rpc_set_user_table, p, t);
 }
 void FreeRpcSetUser(RPC_SET_USER *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	FreeRpcAuthData(t->AuthData, t->AuthType);
-	if (t->Policy)
-	{
-		Free(t->Policy);
-	}
+	RpcFieldFree(&rpc_set_user_table, t);
 }
 
 // RPC_ENUM_USER
+// Embedded TRAFFIC of an item through the indexed TRAFFIC entry points
+static void RpcEnumUserTrafficOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	OutRpcTrafficEx((TRAFFIC *)(((UCHAR *)base) + f->Offset), p, index, total);
+}
+static void RpcEnumUserTrafficIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcTrafficEx((TRAFFIC *)(((UCHAR *)base) + f->Offset), p, index);
+}
+static const RPC_HOOK rpc_enum_user_traffic_hook = {RpcEnumUserTrafficOut, RpcEnumUserTrafficIn, NULL};
+
+static const RPC_FIELD rpc_enum_user_item_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_USER_ITEM, Name, "Name"),
+	RPC_ROW_STR(RPC_ENUM_USER_ITEM, GroupName, "GroupName"),
+	RPC_ROW_UNISTR(RPC_ENUM_USER_ITEM, Realname, "Realname"),
+	RPC_ROW_UNISTR(RPC_ENUM_USER_ITEM, Note, "Note"),
+	RPC_ROW_INT(RPC_ENUM_USER_ITEM, AuthType, "AuthType"),
+	RPC_ROW_TIME64(RPC_ENUM_USER_ITEM, LastLoginTime, "LastLoginTime"),
+	RPC_ROW_INT(RPC_ENUM_USER_ITEM, NumLogin, "NumLogin"),
+	RPC_ROW_BOOL(RPC_ENUM_USER_ITEM, DenyAccess, "DenyAccess"),
+	RPC_ROW_BOOL(RPC_ENUM_USER_ITEM, IsTrafficFilled, "IsTrafficFilled"),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_ENUM_USER_ITEM, Traffic, NULL, 0, &rpc_enum_user_traffic_hook),
+	RPC_ROW_BOOL(RPC_ENUM_USER_ITEM, IsExpiresFilled, "IsExpiresFilled"),
+	RPC_ROW_TIME64(RPC_ENUM_USER_ITEM, Expires, "Expires"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_user_item_table, RPC_ENUM_USER_ITEM, rpc_enum_user_item_fields);
+
+static const RPC_FIELD rpc_enum_user_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_USER, HubName, "HubName"),
+	RPC_ROW_ARRAY(RPC_ENUM_USER, Users, NumUser, &rpc_enum_user_item_table, "Name", 0),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_user_table, RPC_ENUM_USER, rpc_enum_user_fields);
+
 void InRpcEnumUser(RPC_ENUM_USER *t, PACK *p)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_ENUM_USER));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->NumUser = PackGetIndexCount(p, "Name");
-	t->Users = ZeroMalloc(sizeof(RPC_ENUM_USER_ITEM) * t->NumUser);
-
-	for (i = 0;i < t->NumUser;i++)
-	{
-		RPC_ENUM_USER_ITEM *e = &t->Users[i];
-
-		PackGetStrEx(p, "Name", e->Name, sizeof(e->Name), i);
-		PackGetStrEx(p, "GroupName", e->GroupName, sizeof(e->GroupName), i);
-		PackGetUniStrEx(p, "Realname", e->Realname, sizeof(e->Realname), i);
-		PackGetUniStrEx(p, "Note", e->Note, sizeof(e->Note), i);
-		e->AuthType = PackGetIntEx(p, "AuthType", i);
-		e->LastLoginTime = PackGetInt64Ex(p, "LastLoginTime", i);
-		e->NumLogin = PackGetIntEx(p, "NumLogin", i);
-		e->DenyAccess = PackGetBoolEx(p, "DenyAccess", i);
-
-		e->IsTrafficFilled = PackGetBoolEx(p, "IsTrafficFilled", i);
-		InRpcTrafficEx(&e->Traffic, p, i);
-
-		e->IsExpiresFilled = PackGetBoolEx(p, "IsExpiresFilled", i);
-		e->Expires = PackGetInt64Ex(p, "Expires", i);
-	}
+	RpcFieldIn(&rpc_enum_user_table, t, p);
 }
 void OutRpcEnumUser(PACK *p, RPC_ENUM_USER *t)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-	PackAddStr(p, "HubName", t->HubName);
-
-	for (i = 0;i < t->NumUser;i++)
-	{
-		RPC_ENUM_USER_ITEM *e = &t->Users[i];
-
-		PackAddStrEx(p, "Name", e->Name, i, t->NumUser);
-		PackAddStrEx(p, "GroupName", e->GroupName, i, t->NumUser);
-		PackAddUniStrEx(p, "Realname", e->Realname, i, t->NumUser);
-		PackAddUniStrEx(p, "Note", e->Note, i, t->NumUser);
-		PackAddIntEx(p, "AuthType", e->AuthType, i, t->NumUser);
-		PackAddTime64Ex(p, "LastLoginTime", e->LastLoginTime, i, t->NumUser);
-		PackAddIntEx(p, "NumLogin", e->NumLogin, i, t->NumUser);
-		PackAddBoolEx(p, "DenyAccess", e->DenyAccess, i, t->NumUser);
-
-		PackAddBoolEx(p, "IsTrafficFilled", e->IsTrafficFilled, i, t->NumUser);
-		OutRpcTrafficEx(&e->Traffic, p, i, t->NumUser);
-
-		PackAddBoolEx(p, "IsExpiresFilled", e->IsExpiresFilled, i, t->NumUser);
-		PackAddTime64Ex(p, "Expires", e->Expires, i, t->NumUser);
-	}
+	RpcFieldOut(&rpc_enum_user_table, p, t);
 }
 void FreeRpcEnumUser(RPC_ENUM_USER *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Users);
+	RpcFieldFree(&rpc_enum_user_table, t);
 }
 
 // RPC_SET_GROUP
+// TRAFFIC and the optional policy use the RPC_SET_USER hooks
+static const RPC_FIELD rpc_set_group_fields[] =
+{
+	RPC_ROW_STR(RPC_SET_GROUP, HubName, "HubName"),
+	RPC_ROW_STR(RPC_SET_GROUP, Name, "Name"),
+	RPC_ROW_UNISTR(RPC_SET_GROUP, Realname, "Realname"),
+	RPC_ROW_UNISTR(RPC_SET_GROUP, Note, "Note"),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_SET_GROUP, Traffic, NULL, 0, &rpc_set_user_traffic_hook),
+	RPC_ROW_OPAQUE(RPC_SET_GROUP, Policy, "UsePolicy", 0, &rpc_set_user_policy_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_set_group_table, RPC_SET_GROUP, rpc_set_group_fields);
+
 void InRpcSetGroup(RPC_SET_GROUP *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_SET_GROUP));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	PackGetStr(p, "Name", t->Name, sizeof(t->Name));
-	PackGetUniStr(p, "Realname", t->Realname, sizeof(t->Realname));
-	PackGetUniStr(p, "Note", t->Note, sizeof(t->Note));
-	InRpcTraffic(&t->Traffic, p);
-
-	if (PackGetBool(p, "UsePolicy"))
-	{
-		t->Policy = ZeroMalloc(sizeof(POLICY));
-		InRpcPolicy(t->Policy, p);
-	}
+	RpcFieldIn(&rpc_set_group_table, t, p);
 }
 void OutRpcSetGroup(PACK *p, RPC_SET_GROUP *t)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddStr(p, "Name", t->Name);
-	PackAddUniStr(p, "Realname", t->Realname);
-	PackAddUniStr(p, "Note", t->Note);
-	OutRpcTraffic(p, &t->Traffic);
-
-	if (t->Policy != NULL)
-	{
-		PackAddBool(p, "UsePolicy", true);
-		OutRpcPolicy(p, t->Policy);
-	}
+	RpcFieldOut(&rpc_set_group_table, p, t);
 }
 void FreeRpcSetGroup(RPC_SET_GROUP *t)
 {
-	Free(t->Policy);
+	RpcFieldFree(&rpc_set_group_table, t);
 }
 
 // RPC_ENUM_GROUP
+static const RPC_FIELD rpc_enum_group_item_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_GROUP_ITEM, Name, "Name"),
+	RPC_ROW_UNISTR(RPC_ENUM_GROUP_ITEM, Realname, "Realname"),
+	RPC_ROW_UNISTR(RPC_ENUM_GROUP_ITEM, Note, "Note"),
+	RPC_ROW_INT(RPC_ENUM_GROUP_ITEM, NumUsers, "NumUsers"),
+	RPC_ROW_BOOL(RPC_ENUM_GROUP_ITEM, DenyAccess, "DenyAccess"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_group_item_table, RPC_ENUM_GROUP_ITEM, rpc_enum_group_item_fields);
+
+static const RPC_FIELD rpc_enum_group_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_GROUP, HubName, "HubName"),
+	RPC_ROW_ARRAY(RPC_ENUM_GROUP, Groups, NumGroup, &rpc_enum_group_item_table, "Name", 0),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_group_table, RPC_ENUM_GROUP, rpc_enum_group_fields);
+
 void InRpcEnumGroup(RPC_ENUM_GROUP *t, PACK *p)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_ENUM_GROUP));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->NumGroup = PackGetIndexCount(p, "Name");
-	t->Groups = ZeroMalloc(sizeof(RPC_ENUM_GROUP_ITEM) * t->NumGroup);
-
-	for (i = 0;i < t->NumGroup;i++)
-	{
-		RPC_ENUM_GROUP_ITEM *e = &t->Groups[i];
-
-		PackGetStrEx(p, "Name", e->Name, sizeof(e->Name), i);
-		PackGetUniStrEx(p, "Realname", e->Realname, sizeof(e->Realname), i);
-		PackGetUniStrEx(p, "Note", e->Note, sizeof(e->Note), i);
-		e->NumUsers = PackGetIntEx(p, "NumUsers", i);
-		e->DenyAccess = PackGetBoolEx(p, "DenyAccess", i);
-	}
+	RpcFieldIn(&rpc_enum_group_table, t, p);
 }
 void OutRpcEnumGroup(PACK *p, RPC_ENUM_GROUP *t)
 {
-	UINT i;
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-
-	for (i = 0;i < t->NumGroup;i++)
-	{
-		RPC_ENUM_GROUP_ITEM *e = &t->Groups[i];
-
-		PackAddStrEx(p, "Name", e->Name, i, t->NumGroup);
-		PackAddUniStrEx(p, "Realname", e->Realname, i, t->NumGroup);
-		PackAddUniStrEx(p, "Note", e->Note, i, t->NumGroup);
-		PackAddIntEx(p, "NumUsers", e->NumUsers, i, t->NumGroup);
-		PackAddBoolEx(p, "DenyAccess", e->DenyAccess, i, t->NumGroup);
-	}
+	RpcFieldOut(&rpc_enum_group_table, p, t);
 }
 void FreeRpcEnumGroup(RPC_ENUM_GROUP *t)
 {
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Groups);
+	RpcFieldFree(&rpc_enum_group_table, t);
 }
 
 // RPC_DELETE_USER
+static const RPC_FIELD rpc_delete_user_fields[] =
+{
+	RPC_ROW_STR(RPC_DELETE_USER, HubName, "HubName"),
+	RPC_ROW_STR(RPC_DELETE_USER, Name, "Name"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_delete_user_table, RPC_DELETE_USER, rpc_delete_user_fields);
+
 void InRpcDeleteUser(RPC_DELETE_USER *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_DELETE_USER));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	PackGetStr(p, "Name", t->Name, sizeof(t->Name));
+	RpcFieldIn(&rpc_delete_user_table, t, p);
 }
 void OutRpcDeleteUser(PACK *p, RPC_DELETE_USER *t)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddStr(p, "Name", t->Name);
+	RpcFieldOut(&rpc_delete_user_table, p, t);
 }
 
 // RPC_ENUM_SESSION
