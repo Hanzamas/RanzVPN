@@ -35,7 +35,7 @@ if(WIN32)
     COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
   )
 
-  target_link_libraries(cedar PRIVATE comctl32.lib urlmon.lib)
+  target_link_libraries(cedar PRIVATE comctl32.lib urlmon.lib winhttp.lib)
 endif()
 
 # Version
