@@ -112,11 +112,14 @@ static BUF *WpcWinHttpGet(HINTERNET request, bool secure, UINT timeout_connect, 
 	BUF *recv_buf;
 	bool ok;
 
-	// No redirect, cookie, authentication or default credentials; no total time limit on the response header
+	// No redirect, cookie, authentication or default credentials
 	ok = WpcWinHttpSetDword(request, WINHTTP_OPTION_DISABLE_FEATURE,
 		WINHTTP_DISABLE_REDIRECTS | WINHTTP_DISABLE_COOKIES | WINHTTP_DISABLE_AUTHENTICATION) &&
-		WpcWinHttpSetDword(request, WINHTTP_OPTION_AUTOLOGON_POLICY, WINHTTP_AUTOLOGON_SECURITY_LEVEL_HIGH) &&
-		WpcWinHttpSetDword(request, WINHTTP_OPTION_RECEIVE_RESPONSE_TIMEOUT, INFINITE);
+		WpcWinHttpSetDword(request, WINHTTP_OPTION_AUTOLOGON_POLICY, WINHTTP_AUTOLOGON_SECURITY_LEVEL_HIGH);
+
+	// No total time limit on the response header. Should WinHTTP refuse the value, the request keeps
+	// WinHTTP's default limit instead of failing.
+	WpcWinHttpSetDword(request, WINHTTP_OPTION_RECEIVE_RESPONSE_TIMEOUT, INFINITE);
 
 	if (ok && secure)
 	{
