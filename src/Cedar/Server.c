@@ -164,9 +164,7 @@ UINT SiDebugProcDump(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size)
 		return ERR_INVALID_PARAMETER;
 	}
 
-#ifdef	OS_WIN32
 	MsWriteMinidump(NULL, NULL);
-#endif	// OS_WIN32
 
 	return ERR_NO_ERROR;
 }
@@ -284,7 +282,6 @@ void SiCheckDeadLockMain(SERVER *s, UINT timeout)
 		return;
 	}
 
-	//Debug("SiCheckDeadLockMain Start.\n");
 
 
 	cedar = s->Cedar;
@@ -362,7 +359,6 @@ void SiCheckDeadLockMain(SERVER *s, UINT timeout)
 		}
 	}
 
-	//Debug("SiCheckDeadLockMain Finish.\n");
 }
 
 // Deadlock check thread
@@ -572,11 +568,9 @@ void SiGetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting)
 		return;
 	}
 
-	//Lock(s->SyslogLock);
 	{
 		Copy(setting, &s->SyslogSetting, sizeof(SYSLOG_SETTING));
 	}
-	//Unlock(s->SyslogLock);
 }
 
 
@@ -592,11 +586,7 @@ void GetServerProductName(SERVER *s, char *name, UINT size)
 
 	GetServerProductNameInternal(s, name, size);
 
-#ifdef	CPU_64
 	cpu = " (64 bit)";
-#else	// CPU_64
-	cpu = " (32 bit)";
-#endif	// CPU_64
 
 	StrCat(name, size, cpu);
 }
@@ -608,17 +598,6 @@ void GetServerProductNameInternal(SERVER *s, char *name, UINT size)
 		return;
 	}
 
-#ifdef	BETA_NUMBER
-	if (s->Cedar->Bridge)
-	{
-		StrCpy(name, size, CEDAR_BRIDGE_STR);
-	}
-	else
-	{
-		StrCpy(name, size, CEDAR_BETA_SERVER);
-	}
-	return;
-#else	// BETA_NUMBER
 	if (s->Cedar->Bridge)
 	{
 		StrCpy(name, size, CEDAR_BRIDGE_STR);
@@ -627,7 +606,6 @@ void GetServerProductNameInternal(SERVER *s, char *name, UINT size)
 	{
 		StrCpy(name, size, CEDAR_SERVER_STR);
 	}
-#endif	// BETA_NUMBER
 }
 
 // Check whether the log file with the specified name is contained in the enumerated list
@@ -1171,12 +1149,10 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 	AddCapsBool(t, "b_is_in_vm", s->IsInVm);
 
 	// Support for display name of the network connection for the local bridge
-#ifdef	OS_WIN32
 	if (IsBridgeSupported())
 	{
 		AddCapsBool(t, "b_support_network_connection_name", true);
 	}
-#endif	// OS_WIN32
 
 	// Support for MAC address filtering
 	AddCapsBool(t, "b_support_check_mac", true);
@@ -1227,10 +1203,8 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 	// AES acceleration function
 	AddCapsBool(t, "b_support_aes_ni", IsAesNiSupported());
 
-#ifdef	OS_WIN32
 	// SeLow driver
 	AddCapsBool(t, "b_using_selow_driver", Win32IsUsingSeLow());
-#endif	// OS_WIN32
 
 	// VPN3
 	AddCapsBool(t, "b_vpn3", true);
@@ -2063,15 +2037,6 @@ void SiInitConfiguration(SERVER *s)
 
 	s->CfgRw->DontBackup = s->DontBackupConfig;
 
-	// The arp_filter in Linux
-	if (GetOsInfo()->OsType == OSTYPE_LINUX)
-	{
-		if (s->NoLinuxArpFilter == false)
-		{
-			SetLinuxArpFilter();
-		}
-	}
-
 	if (s->DisableDosProtection)
 	{
 		DisableDosProtect();
@@ -2084,12 +2049,10 @@ void SiInitConfiguration(SERVER *s)
 	s->AutoSaveConfigSpanSaved = s->AutoSaveConfigSpan;
 
 	// Reduce the storage interval in the case of user mode
-#ifdef	OS_WIN32
 	if (MsIsUserMode())
 	{
 		s->AutoSaveConfigSpan = MIN(s->AutoSaveConfigSpan, SERVER_FILE_SAVE_INTERVAL_USERMODE);
 	}
-#endif	//OS_WIN32
 
 	// Create a saving thread
 	SLog(s->Cedar, "LS_INIT_SAVE_THREAD", s->AutoSaveConfigSpan / 1000);
@@ -2119,7 +2082,6 @@ bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root)
 		return false;
 	}
 
-#ifdef	OS_WIN32
 	if (f4 != NULL)
 	{
 		// Read the flag of using the SeLow driver
@@ -2132,7 +2094,6 @@ bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root)
 
 		Win32SetEnableSeLow(b);
 	}
-#endif	// OS_WIN32
 
 	// Ethernet initialization
 	InitEth();
@@ -2261,18 +2222,6 @@ void SiWriteLocalBridgeCfg(FOLDER *f, LOCALBRIDGE *br)
 	CfgAddBool(f, "NoPromiscuousMode", br->Local);
 	CfgAddBool(f, "MonitorMode", br->Monitor);
 	CfgAddBool(f, "LimitBroadcast", br->LimitBroadcast);
-
-	if (OS_IS_UNIX(GetOsInfo()->OsType))
-	{
-		CfgAddBool(f, "TapMode", br->TapMode);
-
-		if (br->TapMode)
-		{
-			char tmp[MAX_SIZE];
-			MacToStr(tmp, sizeof(tmp), br->TapMacAddress);
-			CfgAddStr(f, "TapMacAddress", tmp);
-		}
-	}
 }
 
 // Write the bridge list
@@ -2284,11 +2233,9 @@ void SiWriteLocalBridges(FOLDER *f, SERVER *s)
 		return;
 	}
 
-#ifdef	OS_WIN32
 	CfgAddBool(f, "ShowAllInterfaces", Win32EthGetShowAllIf());
 
 	CfgAddBool(f, "EnableSoftEtherKernelModeDriver", Win32GetEnableSeLow());
-#endif	// OS_WIN32
 
 	LockList(s->Cedar->LocalBridgeList);
 	{
@@ -2330,26 +2277,6 @@ void SiLoadLocalBridgeCfg(SERVER *s, FOLDER *f)
 		return;
 	}
 
-	if (OS_IS_UNIX(GetOsInfo()->OsType))
-	{
-		if (CfgGetBool(f, "TapMode"))
-		{
-			char tmp[MAX_SIZE];
-			tapmode = true;
-			Zero(tapaddr, sizeof(tapaddr));
-			if (CfgGetStr(f, "TapMacAddress", tmp, sizeof(tmp)))
-			{
-				BUF *b;
-				b = StrToBin(tmp);
-				if (b != NULL && b->Size == 6)
-				{
-					Copy(tapaddr, b->Buf, sizeof(tapaddr));
-				}
-				FreeBuf(b);
-			}
-		}
-	}
-
 	AddLocalBridge(s->Cedar, hub, nic, CfgGetBool(f, "NoPromiscuousMode"), CfgGetBool(f, "MonitorMode"),
 		tapmode, tapaddr, CfgGetBool(f, "LimitBroadcast"));
 }
@@ -2365,9 +2292,7 @@ void SiLoadLocalBridges(SERVER *s, FOLDER *f)
 		return;
 	}
 
-#ifdef	OS_WIN32
 	Win32EthSetShowAllIf(CfgGetBool(f, "ShowAllInterfaces"));
-#endif	// OS_WIN32
 
 	t = CfgEnumFolderToTokenList(f);
 
@@ -4429,9 +4354,7 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 		s->NoDebugDump = CfgGetBool(f, "NoDebugDump");
 		if (s->NoDebugDump)
 		{
-#ifdef	OS_WIN32
 			MsSetEnableMinidump(false);
-#endif	// OS_WIN32
 		}
 
 		// Debug log
@@ -4704,18 +4627,10 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s)
 		CfgAddInt(f, "AutoDeleteCheckIntervalSecs", GetEraserCheckInterval());
 
 
-		// NoLinuxArpFilter
-		if (GetOsInfo()->OsType == OSTYPE_LINUX)
-		{
-			CfgAddBool(f, "NoLinuxArpFilter", s->NoLinuxArpFilter);
-		}
-
 		// NoHighPriorityProcess
 		CfgAddBool(f, "NoHighPriorityProcess", s->NoHighPriorityProcess);
 
-#ifdef	OS_WIN32
 		CfgAddBool(f, "NoDebugDump", s->NoDebugDump);
-#endif	// OS_WIN32
 
 		// WebTimePage
 		CfgAddBool(f, "UseWebTimePage", s->UseWebTimePage);
@@ -4991,8 +4906,6 @@ void StStartServer(bool bridge)
 		server = SiNewServer(bridge);
 	}
 	Unlock(server_lock);
-
-//	StartCedarLog();
 }
 
 // Stop the server
@@ -5348,9 +5261,7 @@ SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_serve
 	s->Cedar->Server = s;
 
 
-#ifdef	OS_WIN32
 	s->IsInVm = MsIsInVm();
-#endif	// OS_WIN32
 
 	s->Cedar->CheckExpires = true;
 	s->ServerListenerList = NewList(CompareServerListener);
@@ -5361,12 +5272,10 @@ SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_serve
 		SetCedarVpnBridge(s->Cedar);
 	}
 
-#ifdef OS_WIN32
 	if (IsHamMode() == false)
 	{
 		RegistWindowsFirewallAll();
 	}
-#endif
 
 	// Log related
 	MakeDir(bridge == false ? SERVER_LOG_DIR_NAME : BRIDGE_LOG_DIR_NAME);
