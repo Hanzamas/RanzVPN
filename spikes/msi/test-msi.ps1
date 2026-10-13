@@ -62,6 +62,11 @@ Note "install: vpnserver (PID $pid_) listens on TCP $($ports -join ', ')"
 $missing = @($want | Where-Object { $ports -notcontains $_ })
 if ($missing.Count -gt 0) { throw "vpnserver does not listen on TCP $($missing -join ', ')" }
 
+# Failure actions: not in the MSI, set by vpnserver at service start (MsUpdateServiceConfig)
+$qf = (sc.exe qfailure $svc | Out-String)
+Write-Host $qf
+Note "install: failure actions set by vpnserver at start: $(if ($qf -match 'RESTART') { 'yes (RESTART)' } else { 'NO' })"
+
 Note "install: files in $dir after the first start:"
 Get-ChildItem -LiteralPath $dir -Recurse -Force | ForEach-Object { Note "  $($_.FullName.Substring($dir.Length + 1))$(if ($_.PSIsContainer) { '\' })" }
 

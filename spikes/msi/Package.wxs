@@ -10,7 +10,8 @@
 
   Service: same values as "vpnserver /install" (MsService + MsInstallServiceExW, string
   table SVC_SEVPNSERVERDEV_*): name sevpnserverdev, own process, auto start, LocalSystem,
-  command line "<exe>" /service, failure action restart x3 after 10 s, reset after 1 day.
+  command line "<exe>" /service. The failure actions (restart x3 after 10 s, reset after
+  1 day) are set by vpnserver itself when the service starts, see below.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="Ranz VPN Server"
@@ -38,13 +39,11 @@
                         Start="auto"
                         ErrorControl="normal"
                         Arguments="/service"
-                        Vital="yes">
-          <ServiceConfigFailureActions OnInstall="yes" OnReinstall="yes" ResetPeriod="86400">
-            <Failure Action="restartService" Delay="10000" />
-            <Failure Action="restartService" Delay="10000" />
-            <Failure Action="restartService" Delay="10000" />
-          </ServiceConfigFailureActions>
-        </ServiceInstall>
+                        Vital="yes" />
+        <!-- No ServiceConfigFailureActions: Windows Installer fails it with error 1939 (access
+             denied, 5) for restartService. vpnserver sets the same failure actions itself on
+             every service start (MsServiceDispatcher calls MsUpdateServiceConfig). -->
+
         <ServiceControl Id="VpnServerServiceControl"
                         Name="sevpnserverdev"
                         Start="install"
