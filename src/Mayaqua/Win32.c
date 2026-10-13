@@ -21,31 +21,12 @@
 
 #include <CommCtrl.h>
 #include <objbase.h>
-#include <process.h>
 #include <timeapi.h>
 #include <winioctl.h>
 
 static HANDLE heap_handle = NULL;
 static HANDLE hstdout = INVALID_HANDLE_VALUE;
 static HANDLE hstdin = INVALID_HANDLE_VALUE;
-
-// Thread data for Win32
-typedef struct WIN32THREAD
-{
-	HANDLE hThread;
-	DWORD thread_id;
-} WIN32THREAD;
-
-// Thread startup information for Win32
-typedef struct WIN32THREADSTARTUPINFO
-{
-	THREAD_PROC *thread_proc;
-	void *param;
-	THREAD *thread;
-} WIN32THREADSTARTUPINFO;
-
-// Function prototype for Win32
-DWORD CALLBACK Win32DefaultThreadProc(void *param);
 
 // Current process handle
 static HANDLE hCurrentProcessHandle = NULL;
@@ -89,9 +70,6 @@ OS_DISPATCH_TABLE *Win32GetDispatchTable()
 		Win32Dec32,
 		Win32Sleep,
 		Win32ResetEvent,
-		Win32WaitThread,
-		Win32FreeThread,
-		Win32InitThread,
 		Win32ThreadId,
 		Win32FileOpen,
 		Win32FileOpenW,
@@ -1930,135 +1908,6 @@ bool Win32GetCallStackSymbolInfo(CALLSTACK_DATA *s)
 
 	return true;
 #endif	// WIN32_NO_DEBUG_HELP_DLL
-}
-
-// Default Win32 thread
-DWORD CALLBACK Win32DefaultThreadProc(void *param)
-{
-	WIN32THREADSTARTUPINFO *info = (WIN32THREADSTARTUPINFO *)param;
-	// Validate arguments
-	if (info == NULL)
-	{
-		return 0;
-	}
-
-	Win32InitNewThread();
-
-	CoInitialize(NULL);
-
-	// Call the thread function
-	info->thread_proc(info->thread, info->param);
-
-	// Release the reference
-	ReleaseThread(info->thread);
-
-	Win32MemoryFree(info);
-
-	FreeOpenSSLThreadState();
-
-	CoUninitialize();
-
-	_endthreadex(0);
-	return 0;
-}
-
-// Wait for the termination of the thread
-bool Win32WaitThread(THREAD *t)
-{
-	WIN32THREAD *w;
-	// Validate arguments
-	if (t == NULL)
-	{
-		return false;
-	}
-	w = (WIN32THREAD *)t->pData;
-	if (w == NULL)
-	{
-		return false;
-	}
-
-	// Wait for the thread event
-	if (WaitForSingleObject(w->hThread, INFINITE) == WAIT_OBJECT_0)
-	{
-		// The thread was signaled
-		return true;
-	}
-
-	// Wait failure (time-out, etc.)
-	return false;
-}
-
-// Release the thread
-void Win32FreeThread(THREAD *t)
-{
-	WIN32THREAD *w;
-	// Validate arguments
-	if (t == NULL)
-	{
-		return;
-	}
-	w = (WIN32THREAD *)t->pData;
-	if (w == NULL)
-	{
-		return;
-	}
-
-	// Close the handle
-	CloseHandle(w->hThread);
-
-	// Memory release
-	Win32MemoryFree(t->pData);
-	t->pData = NULL;
-}
-
-// Thread initialization
-bool Win32InitThread(THREAD *t)
-{
-	WIN32THREAD *w;
-	HANDLE hThread;
-	UINT thread_id;
-	WIN32THREADSTARTUPINFO *info;
-	// Validate arguments
-	if (t == NULL)
-	{
-		return false;
-	}
-	if (t->thread_proc == NULL)
-	{
-		return false;
-	}
-
-	// Thread data generation
-	w = Win32MemoryAlloc(sizeof(WIN32THREAD));
-
-	// Creating the startup information
-	info = Win32MemoryAlloc(sizeof(WIN32THREADSTARTUPINFO));
-	info->param = t->param;
-	info->thread_proc = t->thread_proc;
-	info->thread = t;
-	AddRef(t->ref);
-
-	// Thread creation
-	t->pData = w;
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wincompatible-function-pointer-types"
-	hThread = (HANDLE)_beginthreadex(NULL, 0, Win32DefaultThreadProc, info, 0, &thread_id);
-    #pragma clang diagnostic pop
-	if (hThread == NULL)
-	{
-		// Thread creation failure
-		t->pData = NULL;
-		Release(t->ref);
-		Win32MemoryFree(info);
-		Win32MemoryFree(w);
-		return false;
-	}
-
-	// Save the thread information
-	w->hThread = hThread;
-	w->thread_id = thread_id;
-
-	return true;
 }
 
 // Initialize the library for Win32

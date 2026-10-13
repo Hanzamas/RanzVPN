@@ -205,7 +205,7 @@ jobs:
       timeout-minutes: 10
       env:
         # harness and bench have time budgets that AddressSanitizer would exceed; run them in build_and_test only.
-        RANZ_SMOKE_TESTS: mschapv2,stun,watermark,stress,tickorigin,timeenc,nullsafe,fileio
+        RANZ_SMOKE_TESTS: mschapv2,stun,watermark,stress,tickorigin,timeenc,nullsafe,fileio,threadpool
       run: |
         # The smoke test script of build_and_test itself, so both jobs run the same test list:
         # its new path (.github/scripts) first, its old one second. Its output and the vpntest

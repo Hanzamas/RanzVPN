@@ -233,24 +233,6 @@ bool OSGetCallStackSymbolInfo(CALLSTACK_DATA *s)
 	return os->GetCallStackSymbolInfo(s);
 }
 
-// Wait for the termination of the thread
-bool OSWaitThread(THREAD *t)
-{
-	return os->WaitThread(t);
-}
-
-// Release of thread
-void OSFreeThread(THREAD *t)
-{
-	os->FreeThread(t);
-}
-
-// Thread initialization
-bool OSInitThread(THREAD *t)
-{
-	return os->InitThread(t);
-}
-
 // Memory allocation
 void *OSMemoryAlloc(UINT size)
 {

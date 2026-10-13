@@ -18,6 +18,8 @@
 #include "Tracking.h"
 #include "Win32.h"
 
+#include <objbase.h>
+#include <process.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -911,6 +913,50 @@ UINT ThreadId()
 	return OSThreadId();
 }
 
+// Thread handle of a host THREAD (its pData), from the raw OS allocator
+typedef struct HOST_THREAD
+{
+	HANDLE hThread;
+} HOST_THREAD;
+
+// Startup information of a host thread, from the raw OS allocator
+typedef struct HOST_THREAD_STARTUP
+{
+	THREAD_PROC *thread_proc;
+	void *param;
+	THREAD *thread;
+} HOST_THREAD_STARTUP;
+
+// Host thread procedure: run the THREAD procedure on the new OS thread
+static UINT __stdcall HostThreadProc(void *param)
+{
+	HOST_THREAD_STARTUP *info = (HOST_THREAD_STARTUP *)param;
+	// Validate arguments
+	if (info == NULL)
+	{
+		return 0;
+	}
+
+	Win32InitNewThread();
+
+	CoInitialize(NULL);
+
+	// Call the thread function
+	info->thread_proc(info->thread, info->param);
+
+	// Release the reference
+	ReleaseThread(info->thread);
+
+	Win32MemoryFree(info);
+
+	FreeOpenSSLThreadState();
+
+	CoUninitialize();
+
+	_endthreadex(0);
+	return 0;
+}
+
 // Creating a thread
 THREAD *NewThreadInternal(THREAD_PROC *thread_proc, void *param)
 {
@@ -933,15 +979,37 @@ THREAD *NewThreadInternal(THREAD_PROC *thread_proc, void *param)
 	// Wait until the OS to initialize the thread
 	while (true)
 	{
+		HOST_THREAD_STARTUP *info;
+		HOST_THREAD *host;
+		HANDLE h;
+
 		if ((retry++) > 60)
 		{
 			printf("\n\n*** error: new thread create failed.\n\n");
 			AbortExit();
 		}
-		if (OSInitThread(t))
+
+		// Creating the startup information: the new thread holds one reference
+		info = Win32MemoryAlloc(sizeof(HOST_THREAD_STARTUP));
+		info->thread_proc = t->thread_proc;
+		info->param = t->param;
+		info->thread = t;
+		AddRef(t->ref);
+
+		h = (HANDLE)_beginthreadex(NULL, 0, HostThreadProc, info, 0, NULL);
+		if (h != NULL)
 		{
+			// Save the thread handle
+			host = Win32MemoryAlloc(sizeof(HOST_THREAD));
+			host->hThread = h;
+			t->pData = host;
 			break;
 		}
+
+		// Thread creation failure
+		Release(t->ref);
+		Win32MemoryFree(info);
+
 		SleepThread(500);
 	}
 
@@ -969,14 +1037,21 @@ void ReleaseThreadInternal(THREAD *t)
 // Clean up of the thread
 void CleanupThreadInternal(THREAD *t)
 {
+	HOST_THREAD *host;
 	// Validate arguments
 	if (t == NULL)
 	{
 		return;
 	}
 
-	// Release of the thread
-	OSFreeThread(t);
+	// Close the thread handle
+	host = (HOST_THREAD *)t->pData;
+	if (host != NULL)
+	{
+		CloseHandle(host->hThread);
+		Win32MemoryFree(host);
+		t->pData = NULL;
+	}
 
 	// Release the event
 	ReleaseEvent(t->init_finished_event);
@@ -990,13 +1065,21 @@ void CleanupThreadInternal(THREAD *t)
 // Wait for the termination of the thread
 bool WaitThreadInternal(THREAD *t)
 {
+	HOST_THREAD *host;
 	// Validate arguments
 	if (t == NULL)
 	{
 		return false;
 	}
 
-	return OSWaitThread(t);
+	host = (HOST_THREAD *)t->pData;
+	if (host == NULL)
+	{
+		return false;
+	}
+
+	// Only WAIT_OBJECT_0 means that the thread ended
+	return (WaitForSingleObject(host->hThread, INFINITE) == WAIT_OBJECT_0);
 }
 
 // Notify that the thread initialization is complete
