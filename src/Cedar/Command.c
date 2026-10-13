@@ -2126,10 +2126,6 @@ void TtcThread(THREAD *thread, void *param)
 }
 
 // Start the communication throughput measurement client
-TTC *NewTtc(char *host, UINT port, UINT numtcp, UINT type, UINT64 span, bool dbl, bool raw, TT_PRINT_PROC *print_proc, void *param)
-{
-	return NewTtcEx(host, port, numtcp, type, span, dbl, raw, print_proc, param, NULL, NULL);
-}
 TTC *NewTtcEx(char *host, UINT port, UINT numtcp, UINT type, UINT64 span, bool dbl, bool raw, TT_PRINT_PROC *print_proc, void *param, EVENT *start_event, bool *cancel)
 {
 	TTC *ttc;
@@ -2512,7 +2508,7 @@ UINT PtTrafficClient(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		if (ret == ERR_NO_ERROR)
 		{
 			TT_RESULT result;
-			ttc = NewTtc(host, port, num, type, span, dbl, raw, PtTrafficPrintProc, c);
+			ttc = NewTtcEx(host, port, num, type, span, dbl, raw, PtTrafficPrintProc, c, NULL, NULL);
 
 			if (c->ConsoleType == CONSOLE_LOCAL)
 			{
@@ -3206,10 +3202,6 @@ UINT PsServerKeyGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 }
 
 // Read the certificate and the private key
-bool CmdLoadCertAndKey(CONSOLE *c, X **xx, K **kk, wchar_t *cert_filename, wchar_t *key_filename)
-{
-	return CmdLoadCertChainAndKey(c, xx, kk, NULL, cert_filename, key_filename);
-}
 bool CmdLoadCertChainAndKey(CONSOLE *c, X **xx, K **kk, LIST **cc, wchar_t *cert_filename, wchar_t *key_filename)
 {
 	X *x = NULL;
@@ -6783,7 +6775,7 @@ UINT PsCascadeCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	if (CmdLoadCertAndKey(c, &x, &k, GetParamUniStr(o, "LOADCERT"), GetParamUniStr(o, "LOADKEY")) == false)
+	if (CmdLoadCertChainAndKey(c, &x, &k, NULL, GetParamUniStr(o, "LOADCERT"), GetParamUniStr(o, "LOADKEY")) == false)
 	{
 		return ERR_INTERNAL_ERROR;
 	}
@@ -8573,10 +8565,6 @@ UINT PsCascadePolicySet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 }
 
 // Display the status information of the session
-void CmdPrintStatusToListView(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s)
-{
-	CmdPrintStatusToListViewEx(ct, s, false);
-}
 void CmdPrintStatusToListViewEx(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s, bool server_mode)
 {
 	wchar_t tmp[MAX_SIZE];
@@ -8853,7 +8841,7 @@ UINT PsCascadeStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		// Get the cascade connection state
 		CT *ct = CtNewStandard();
 
-		CmdPrintStatusToListView(ct, &t.Status);
+		CmdPrintStatusToListViewEx(ct, &t.Status, false);
 
 		CtFree(ct, c);
 
