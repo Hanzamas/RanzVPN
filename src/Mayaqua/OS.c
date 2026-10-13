@@ -48,9 +48,7 @@ char *OsTypeToStr(UINT type)
 void OSInit()
 {
 	// Get the dispatch table
-#ifdef	OS_WIN32
 	os = Win32GetDispatchTable();
-#endif	// OS_WIN32
 
 	// Calling the OS-specific initialization function
 	os->Init();

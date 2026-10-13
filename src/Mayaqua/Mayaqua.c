@@ -63,9 +63,7 @@ void InitProcessCallOnce()
 
 		InitCanaryRand();
 
-#ifdef	OS_WIN32
 		MsInitProcessCallOnce();
-#endif	// OS_WIN32
 	}
 }
 
@@ -131,7 +129,6 @@ void WriteProbeData(char *filename, UINT line, char *str, void *data, UINT size)
 // Writing Probe
 void WriteProbe(char *filename, UINT line, char *str)
 {
-#ifdef	OS_WIN32
 	char *s;
 	char tmp[MAX_SIZE];
 	char tmp2[MAX_SIZE];
@@ -193,7 +190,6 @@ void WriteProbe(char *filename, UINT line, char *str)
 		WriteBuf(probe_buf, s, StrLen(s));
 	}
 	Unlock(probe_lock);
-#endif	// OS_WIN32
 }
 
 // Initialization of Probe
@@ -205,9 +201,7 @@ void InitProbe()
 
 	probe_start = 0;
 
-#ifdef	OS_WIN32
 	probe_start = MsGetHiResCounter();
-#endif	// OS_WIN32
 }
 
 // Release of Probe
@@ -264,7 +258,6 @@ bool IsHamMode()
 // Display the time from the previous call to now
 void TimeCheck()
 {
-#ifdef OS_WIN32
 	UINT now, ret, total;
 	now = Win32GetTick();
 	if (last_time_check == 0)
@@ -285,17 +278,12 @@ void TimeCheck()
 	total = now - first_time_check;
 
 	printf(" -- %3.3f / %3.3f\n", (double)ret / 1000.0f, (double)total / 1000.0f);
-#endif	// OS_WIN32
 }
 
 // Whether 64bit
 bool Is64()
 {
-#ifdef	CPU_64
 	return true;
-#else	// CPU_64
-	return false;
-#endif	// CPU_64
 }
 
 // Acquisition whether in .NET mode
@@ -357,9 +345,7 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 	// Check endian
 	CheckEndian();
 
-#ifdef	OS_WIN32
 	_configthreadlocale(_DISABLE_PER_THREAD_LOCALE);
-#endif	// OS_WIN32
 
 	// Set the locale information of the CRT to the Japanese
 	setlocale(LC_ALL, "");
@@ -413,9 +399,7 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 	InitOsInfo();
 
 	// Initialization of the operating system-specific module
-#ifdef	OS_WIN32
 	MsInit();	// Microsoft Win32
-#endif	// OS_WIN32
 
 	if (OSIsSupportedOs() == false)
 	{
@@ -489,9 +473,7 @@ void FreeMayaqua()
 	FreeTable();
 
 	// Release of the operating system specific module
-#ifdef	OS_WIN32
 	MsFree();
-#endif	// OS_WIN32
 
 	// Release of OS information
 	FreeOsInfo();

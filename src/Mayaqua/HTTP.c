@@ -719,7 +719,6 @@ bool HttpSendForbidden(SOCK *s, char *target, char *server_id)
 	}
 
 	// Get the host name
-	//GetMachineName(host, MAX_SIZE);
 	Zero(host, sizeof(host));
 	IPToStr(host, sizeof(host), &s->LocalIP);
 	// Get the port number
@@ -778,7 +777,6 @@ bool HttpSendNotFound(SOCK *s, char *target)
 	}
 
 	// Get the host name
-	//GetMachineName(host, MAX_SIZE);
 	Zero(host, sizeof(host));
 	IPToStr(host, sizeof(host), &s->LocalIP);
 	// Get the port number
@@ -837,7 +835,6 @@ bool HttpSendNotImplemented(SOCK *s, char *method, char *target, char *version)
 	}
 
 	// Get the host name
-	//GetMachineName(host, MAX_SIZE);
 	Zero(host, sizeof(host));
 	IPToStr(host, sizeof(host), &s->LocalIP);
 	// Get the port number

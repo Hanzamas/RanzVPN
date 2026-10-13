@@ -32,9 +32,7 @@ struct PROXY_PARAM_IN
 	char HttpUserAgent[HTTP_HEADER_USER_AGENT_MAX_SIZE + 1];
 	IP   *BindLocalIP;											// Source IP address for outgoing connection
 	UINT BindLocalPort;					// UINT used not USHORT	// Source port number for outgoing connection
-#ifdef OS_WIN32
 	void *Hwnd;
-#endif
 };
 
 struct PROXY_PARAM_OUT

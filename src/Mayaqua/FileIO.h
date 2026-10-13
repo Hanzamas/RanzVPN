@@ -55,9 +55,7 @@ struct DIRLIST
 };
 
 // ZIP related structure
-#ifdef	OS_WIN32
 #pragma pack(push, 1)
-#endif	// OS_WIN32
 
 struct ZIP_DATA_HEADER
 {
@@ -118,9 +116,7 @@ struct ZIP_END_HEADER
 #define	ZIP_SIGNATURE				0x04034B50
 #define	ZIP_VERSION					10
 
-#ifdef	OS_WIN32
 #pragma pack(pop)
-#endif	// OS_WIN32
 
 struct ZIP_FILE
 {

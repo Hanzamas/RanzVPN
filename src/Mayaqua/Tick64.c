@@ -21,11 +21,9 @@ static EVENT *halt_tick_event = NULL;
 UINT64 TickHighres64()
 {
 
-#ifdef	OS_WIN32
 
 	return (UINT64)(MsGetHiResTimeSpan(MsGetHiResCounter()) * 1000.0f);
 
-#endif	// OS_WIN32
 
 }
 
@@ -33,11 +31,9 @@ UINT64 TickHighresNano64(bool raw)
 {
 	UINT64 ret = 0;
 
-#ifdef	OS_WIN32
 
 	ret = (UINT64)(MsGetHiResTimeSpan(MsGetHiResCounter()) * 1000000000.0f);
 
-#endif	// OS_WIN32
 
 	return ret;
 }
@@ -80,9 +76,7 @@ UINT64 TickToTime(UINT64 tick)
 // Get the Tick value
 UINT64 Tick64()
 {
-#ifdef	OS_WIN32
 	return Win32FastTick64();
-#endif	// OS_WIN32
 }
 
 // Real-time clock measuring thread
@@ -98,14 +92,12 @@ void Tick64Thread(THREAD *thread, void *param)
 		return;
 	}
 
-#ifdef	OS_WIN32
 
 	// Raise the priority of the Win32 thread
 	MsSetThreadPriorityRealtime();
 
 	tick_span = TICK64_SPAN_WIN32;
 
-#endif	// OS_WIN32
 
 	while (true)
 	{
@@ -173,9 +165,7 @@ void Tick64Thread(THREAD *thread, void *param)
 			break;
 		}
 
-#ifdef	OS_WIN32
 		Wait(halt_tick_event, tick_span);
-#endif	// OS_WIN32
 	}
 }
 

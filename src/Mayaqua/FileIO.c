@@ -200,9 +200,7 @@ bool GetDiskFree(char *path, UINT64 *free_size, UINT64 *used_size, UINT64 *total
 		path = "./";
 	}
 
-#ifdef	OS_WIN32
 	ret = Win32GetDiskFree(path, free_size, used_size, total_size);
-#endif	// OS_WIN32
 
 	return ret;
 }
@@ -231,9 +229,7 @@ DIRLIST *EnumDirExW(wchar_t *dirname, COMPARE *compare)
 		compare = CompareDirListByName;
 	}
 
-#ifdef	OS_WIN32
 	d = Win32EnumDirExW(dirname, compare);
-#endif	// OS_WIN32
 
 	return d;
 }
@@ -520,9 +516,7 @@ void InitGetExeName(char *arg)
 
 	arg_w = CopyUtfToUni(arg);
 
-#ifdef	OS_WIN32
 	Win32GetExeNameW(exe_file_name_w, sizeof(exe_file_name_w));
-#endif	// OS_WIN32
 
 	UniToStr(exe_file_name, sizeof(exe_file_name), exe_file_name_w);
 
@@ -698,7 +692,6 @@ void ConbinePathW(wchar_t *dst, UINT size, wchar_t *dirname, wchar_t *filename)
 
 	filename = &filename_ident[0];
 
-#ifdef	OS_WIN32
 	if (UniStrLen(filename) >= 2)
 	{
 		if ((L'a' <= filename[0] && filename[0] <= L'z') || (L'A' <= filename[0] && filename[0] <= L'Z'))
@@ -709,7 +702,6 @@ void ConbinePathW(wchar_t *dst, UINT size, wchar_t *dirname, wchar_t *filename)
 			}
 		}
 	}
-#endif	// OS_WIN32
 
 	if (is_full_path == false)
 	{
@@ -786,9 +778,7 @@ void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 	UNI_TOKEN_LIST *t;
 	bool first_double_slash = false;
 	bool first_single_slash = false;
-#ifdef  OS_WIN32
 	wchar_t win32_drive_char = 0;
-#endif  // OS_WIN32
 	bool is_full_path = false;
 	UINT i;
 	SK *sk;
@@ -811,9 +801,7 @@ void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 		wchar_t cd[MAX_SIZE];
 		Zero(cd, sizeof(cd));
 
-#ifdef	OS_WIN32
 		Win32GetCurrentDirW(cd, sizeof(cd));
-#endif	// OS_WIN32
 
 		if (UniStartWith(tmp, L".."))
 		{
@@ -852,7 +840,6 @@ void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 		is_full_path = true;
 	}
 
-#ifdef	OS_WIN32
 	if (UniStrLen(tmp) >= 2)
 	{
 		if (tmp[1] == L':')
@@ -865,7 +852,6 @@ void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 			UniStrCpy(tmp, sizeof(tmp), tmp2);
 		}
 	}
-#endif	// OS_WIN32
 
 	if (UniStrLen(tmp) == 1 && (tmp[0] == L'/' || tmp[0] == L'\\'))
 	{
@@ -910,7 +896,6 @@ void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 		UniStrCat(tmp, sizeof(tmp), L"/");
 	}
 
-#ifdef  OS_WIN32
 	if (win32_drive_char != 0)
 	{
 		wchar_t d[2];
@@ -919,7 +904,6 @@ void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 		UniStrCat(tmp, sizeof(tmp), d);
 		UniStrCat(tmp, sizeof(tmp), L":/");
 	}
-#endif  // OS_WIN32
 
 	for (i = 0;i < sk->num_item;i++)
 	{
@@ -981,11 +965,7 @@ bool FileRenameInnerW(wchar_t *old_name, wchar_t *new_name)
 void ConvertPathW(wchar_t *path)
 {
 	UINT i, len;
-#ifdef	PATH_BACKSLASH
 	wchar_t new_char = L'\\';
-#else
-	wchar_t new_char = L'/';
-#endif
 
 	len = UniStrLen(path);
 	for (i = 0;i < len;i++)
@@ -1337,9 +1317,7 @@ void FileCloseEx(IO *o, bool no_flush)
 	{
 		if (o->WriteMode)
 		{
-#ifdef	OS_WIN32
 			Win32FileSetDate(o->pData, o->SetCreateTime, o->SetUpdateTime);
-#endif	// OS_WIN32
 		}
 
 		OSFileClose(o->pData, no_flush);
@@ -1436,9 +1414,7 @@ IO *FileOpenInnerW(wchar_t *name, bool write_mode, bool read_lock)
 	UniToStr(o->Name, sizeof(o->Name), o->NameW);
 	o->WriteMode = write_mode;
 
-#ifdef	OS_WIN32
 	Win32FileGetDate(p, &o->GetCreateTime, &o->GetUpdateTime, &o->GetAccessTime);
-#endif	// OS_WIN32
 
 	// KS
 	KS_INC(KS_IO_OPEN_COUNT);
@@ -1496,9 +1472,7 @@ IO *FileOpenExW(wchar_t *name, bool write_mode, bool read_lock)
 		IO *o = ZeroMalloc(sizeof(IO));
 		name++;
 		UniStrCpy(o->NameW, sizeof(o->NameW), name);
-#ifdef	OS_WIN32
 		UniReplaceCharW(o->NameW, sizeof(o->NameW), L'\\', L'/');		// Path separator "/" is used.
-#endif	// OS_WIN32
 		UniToStr(o->Name, sizeof(o->Name), o->NameW);
 		o->HamMode = true;
 		o->HamBuf = ReadHamcoreW(o->NameW);

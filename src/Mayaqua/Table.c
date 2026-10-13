@@ -242,9 +242,7 @@ LANGLIST *GetBestLangForCurrentEnvironment(LIST *o)
 		return NULL;
 	}
 
-#ifdef	OS_WIN32
 	ret = GetBestLangByLcid(o, MsGetUserLocaleId());
-#endif	// OS_WIN32
 
 	return ret;
 }
@@ -494,7 +492,6 @@ wchar_t *GetTableUniStr(char *name)
 	// Validate arguments
 	if (name == NULL)
 	{
-//		Debug("%s: ************\n", name);
 		return L"";
 	}
 
@@ -502,7 +499,6 @@ wchar_t *GetTableUniStr(char *name)
 	t = FindTable(name);
 	if (t == NULL)
 	{
-		//Debug("%s: UNICODE STRING NOT FOUND\n", name);
 		return L"";
 	}
 
@@ -523,7 +519,6 @@ char *GetTableStr(char *name)
 	t = FindTable(name);
 	if (t == NULL)
 	{
-		//Debug("%s: ANSI STRING NOT FOUND\n", name);
 		return "";
 	}
 
@@ -1184,11 +1179,9 @@ bool LoadTableMain(wchar_t *filename)
 
 		SaveUnicodeCache(filename, b->Size, hash);
 
-		//Debug("Unicode Source: strtable.stb\n");
 	}
 	else
 	{
-		//Debug("Unicode Source: unicode_cache\n");
 	}
 
 	FreeBuf(b);
@@ -1209,7 +1202,6 @@ bool LoadTableMain(wchar_t *filename)
 		return false;
 	}
 
-	//Debug("Unicode File Read Cost: %u (%u Lines)\n", (UINT)(t2 - t1), LIST_NUM(TableList));
 
 	return true;
 }
