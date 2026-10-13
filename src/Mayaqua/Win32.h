@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Mayaqua Kernel
-
-
 // Win32.h
 // Header of Win32.c
 
@@ -12,7 +8,6 @@
 
 #include "OS.h"
 
-// Function prototype
 OS_DISPATCH_TABLE *Win32GetDispatchTable();
 
 void Win32Init();
@@ -62,16 +57,8 @@ bool Win32FileRename(char *old_name, char *new_name);
 bool Win32FileRenameW(wchar_t *old_name, wchar_t *new_name);
 bool Win32Run(char *filename, char *arg, bool hide, bool wait);
 bool Win32RunW(wchar_t *filename, wchar_t *arg, bool hide, bool wait);
-void *Win32RunEx(char *filename, char *arg, bool hide);
-void *Win32RunEx2(char *filename, char *arg, bool hide, UINT *process_id);
-void *Win32RunEx3(char *filename, char *arg, bool hide, UINT *process_id, bool disableWow);
-void *Win32RunExW(wchar_t *filename, wchar_t *arg, bool hide);
-void *Win32RunEx2W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id);
 void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id, bool disableWow);
 bool Win32WaitProcess(void *h, UINT timeout);
-bool Win32RunAndWaitProcess(wchar_t *filename, wchar_t *arg, bool hide, bool disableWow, UINT timeout);
-bool Win32IsProcessAlive(void *handle);
-bool Win32TerminateProcess(void *handle);
 void Win32CloseProcess(void *handle);
 bool Win32IsSupportedOs();
 void Win32GetOsInfo(OS_INFO *info);
@@ -88,23 +75,15 @@ void Win32Yield();
 
 void Win32UnlockEx(LOCK *lock, bool inner);
 UINT Win32GetOsType();
-UINT Win32GetOsSpVer();
 void Win32NukuEn(char *dst, UINT size, char *src);
 void Win32NukuEnW(wchar_t *dst, UINT size, wchar_t *src);
 void Win32GetDirFromPath(char *dst, UINT size, char *src);
 void Win32GetDirFromPathW(wchar_t *dst, UINT size, wchar_t *src);
-void Win32GetExeDir(char *name, UINT size);
-void Win32GetExeDirW(wchar_t *name, UINT size);
-void Win32GetCurrentDir(char *dir, UINT size);
 void Win32GetCurrentDirW(wchar_t *dir, UINT size);
-void Win32GetExeName(char *name, UINT size);
 void Win32GetExeNameW(wchar_t *name, UINT size);
-DIRLIST *Win32EnumDirEx(char *dirname, COMPARE *compare);
 DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare);
-bool Win32GetDiskFreeW(wchar_t *path, UINT64 *free_size, UINT64 *used_size, UINT64 *total_size);
 bool Win32GetDiskFree(char *path, UINT64 *free_size, UINT64 *used_size, UINT64 *total_size);
 bool Win32SetFolderCompress(char *path, bool compressed);
-bool Win32SetFolderCompressW(wchar_t *path, bool compressed);
 UINT64 Win32FastTick64();
 void Win32InitNewThread();
 bool Win32InputW(wchar_t *str, UINT size);
@@ -119,8 +98,7 @@ UINT Win32GetNumberOfCpuInner();
 
 void Win32SetThreadName(UINT thread_id, char *name);
 
-#endif	// WIN32_H
+#endif
 
-#endif	// OS_WIN32
-
+#endif
 

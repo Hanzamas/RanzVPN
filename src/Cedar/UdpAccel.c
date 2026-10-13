@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
-
 // UdpAccel.c
 // UDP acceleration function
 
@@ -19,12 +15,10 @@
 
 #include <stdlib.h>
 
-// Polling process
 void UdpAccelPoll(UDP_ACCEL *a)
 {
 	UINT num_ignore_errors = 0;
 	UCHAR *tmp;
-	// Validate arguments
 	if (a == NULL)
 	{
 		return;
@@ -32,7 +26,6 @@ void UdpAccelPoll(UDP_ACCEL *a)
 
 	tmp = a->TmpBuf;
 
-	// Receive a new UDP packet
 	while (true)
 	{
 		IP src_ip;
@@ -45,18 +38,8 @@ void UdpAccelPoll(UDP_ACCEL *a)
 		{
 			BLOCK *b = UdpAccelProcessRecvPacket(a, tmp, ret, &src_ip, src_port);
 
-			//Debug("UDP Recv: %u %u %u\n", ret, (b == NULL ? 0 : b->Size), (b == NULL ? 0 : b->Compressed));
-
-			/*if (b != NULL)
-			{
-				char tmp[MAX_SIZE * 10];
-				BinToStr(tmp, sizeof(tmp), b->Buf, b->Size);
-				Debug("Recv Pkt: %s\n", tmp);
-			}*/
-
 			if (b != NULL)
 			{
-				// Receive a packet
 				InsertQueue(a->RecvBlockQueue, b);
 			}
 		}
@@ -66,7 +49,6 @@ void UdpAccelPoll(UDP_ACCEL *a)
 			{
 				if (a->UdpSock->IgnoreRecvErr == false)
 				{
-					// Serious UDP reception error occurs
 					a->FatalError = true;
 					break;
 				}
@@ -79,13 +61,11 @@ void UdpAccelPoll(UDP_ACCEL *a)
 			}
 			else
 			{
-				// SOCK_LATER
 				break;
 			}
 		}
 	}
 
-	// Send a Keep-Alive packet
 	if (a->NextSendKeepAlive == 0 || (a->NextSendKeepAlive <= a->Now))
 	{
 		if (UdpAccelIsSendReady(a, false))
@@ -103,17 +83,13 @@ void UdpAccelPoll(UDP_ACCEL *a)
 
 			a->NextSendKeepAlive = a->Now + (UINT64)rand_interval;
 
-			//Debug("UDP KeepAlive\n");
-
 			UdpAccelSend(a, NULL, 0, false, 1000, false);
 		}
 	}
 }
 
-// Send a packet block
 void UdpAccelSendBlock(UDP_ACCEL *a, BLOCK *b)
 {
-	// Validate arguments
 	if (a == NULL || b == NULL)
 	{
 		return;
@@ -122,12 +98,10 @@ void UdpAccelSendBlock(UDP_ACCEL *a, BLOCK *b)
 	UdpAccelSend(a, b->Buf, b->Size, b->Compressed ? 1 : 0, a->MaxUdpPacketSize, b->PriorityQoS);
 }
 
-// Calculate the best MSS
 UINT UdpAccelCalcMss(UDP_ACCEL *a)
 {
 	UINT ret;
 
-	// Validate arguments
 	if (a == NULL)
 	{
 		return 0;
@@ -135,7 +109,6 @@ UINT UdpAccelCalcMss(UDP_ACCEL *a)
 
 	ret = MTU_FOR_PPPOE;
 
-	// IPv4
 	if (a->IsIPv6)
 	{
 		ret -= 40;
@@ -145,49 +118,37 @@ UINT UdpAccelCalcMss(UDP_ACCEL *a)
 		ret -= 20;
 	}
 
-	// UDP
 	ret -= 8;
 
 	if (a->PlainTextMode == false)
 	{
-		// IV
 		ret -= UDP_ACCELERATION_PACKET_IV_SIZE_V1;
 	}
 
-	// Cookie
 	ret -= sizeof(UINT);
 
-	// My Tick
 	ret -= sizeof(UINT64);
 
-	// Your Tick
 	ret -= sizeof(UINT64);
 
-	// Size
 	ret -= sizeof(USHORT);
 
-	// Compress Flag
 	ret -= sizeof(UCHAR);
 
 	if (a->PlainTextMode == false)
 	{
-		// Verify
 		ret -= UDP_ACCELERATION_PACKET_IV_SIZE_V1;
 	}
 
-	// Ethernet header (communication packets)
 	ret -= 14;
 
-	// IPv4 Header (communication packets)
 	ret -= 20;
 
-	// TCP header (communication packet)
 	ret -= 20;
 
 	return ret;
 }
 
-// Send
 void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT max_size, bool high_priority)
 {
 	UCHAR buffer[UDP_ACCELERATION_TMP_BUF_SIZE];
@@ -197,7 +158,6 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 	UINT ret;
 	UINT u32;
 	USHORT u16;
-	// Validate arguments
 	if (a == NULL || (data_size != 0 && data == NULL))
 	{
 		return;
@@ -225,36 +185,30 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 		}
 	}
 
-	// Cookie
 	u32 = Endian32(a->YourCookie);
 	Copy(buf, &u32, sizeof(UINT));
 	buf += sizeof(UINT);
 	size += sizeof(UINT);
 
-	// My tick
 	tmp = Endian64(a->Now == 0 ? 1ULL : a->Now);
 	Copy(buf, &tmp, sizeof(UINT64));
 	buf += sizeof(UINT64);
 	size += sizeof(UINT64);
 
-	// Your tick
 	tmp = Endian64(a->LastRecvYourTick);
 	Copy(buf, &tmp, sizeof(UINT64));
 	buf += sizeof(UINT64);
 	size += sizeof(UINT64);
 
-	// Size
 	u16 = Endian16(data_size);
 	Copy(buf, &u16, sizeof(USHORT));
 	buf += sizeof(USHORT);
 	size += sizeof(USHORT);
 
-	// Flag
 	Copy(buf, &flag, sizeof(UCHAR));
 	buf += sizeof(UCHAR);
 	size += sizeof(UCHAR);
 
-	// Data
 	Copy(buf, data, data_size);
 	buf += data_size;
 	size += data_size;
@@ -282,7 +236,6 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 			ret = CipherProcessAead(a->CipherEncrypt, a->NextIv_V2, inner + inner_size, UDP_ACCELERATION_PACKET_MAC_SIZE_V2, inner, inner, inner_size, NULL, 0);
 			if (ret == 0)
 			{
-				Debug("UdpAccelSend(): CipherProcessAead() failed!\n");
 				return;
 			}
 
@@ -298,8 +251,8 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 			const UINT inner_size = size; // We don't have to subtract because we add below
 			CRYPT *c;
 
-			// Simple integrity check system: we fill some bytes with zeroes.
-			// The remote host verifies whether all the zeroes are present.
+			// Integrity check: some bytes are filled with zeroes,
+			// and the remote host checks that all of them are still zero.
 			Zero(buf, UDP_ACCELERATION_PACKET_IV_SIZE_V1);
 			buf += UDP_ACCELERATION_PACKET_IV_SIZE_V1;
 			size += UDP_ACCELERATION_PACKET_IV_SIZE_V1;
@@ -318,7 +271,6 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 
 	if (SendTo(a->UdpSock, &a->YourIp, a->YourPort, buffer, size) == 0)
 	{
-		Debug("UdpAccelSend(): SendTo() failed! IP: %r, port: %u, size: %u\n", &a->YourIp, a->YourPort, size);
 		if (a->UdpSock->IgnoreSendErr == false)
 		{
 			a->FatalError = true;
@@ -330,8 +282,6 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 	{
 		return;
 	}
-
-	Debug("UdpAccelSend(): Peer has not replied in a while, sending keep-alive packet to alt destinations...\n");
 
 	IP *ips[2];
 	ips[0] = &a->YourIp;
@@ -362,7 +312,6 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 
 			if (SendTo(a->UdpSock, ips[i], ports[j], buffer, size) == 0)
 			{
-				Debug("UdpAccelSend(): SendTo() failed! IP: %r, port: %u, size: %u\n", ips[i], ports[j], size);
 				if (a->UdpSock->IgnoreSendErr == false)
 				{
 					a->FatalError = true;
@@ -378,11 +327,9 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 	}
 }
 
-// Determine whether transmission is possible
 bool UdpAccelIsSendReady(UDP_ACCEL *a, bool check_keepalive)
 {
 	UINT64 timeout_value;
-	// Validate arguments
 	if (a == NULL)
 	{
 		return false;
@@ -433,7 +380,6 @@ bool UdpAccelIsSendReady(UDP_ACCEL *a, bool check_keepalive)
 	return true;
 }
 
-// Process the received packet
 BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip, UINT src_port)
 {
 	UINT64 my_tick, your_tick;
@@ -443,7 +389,6 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 	UCHAR raw_flag;
 	BLOCK *b = NULL;
 	UINT cookie;
-	// Validate arguments
 	if (a == NULL || buf == NULL || size == 0 || src_ip == NULL)
 	{
 		return NULL;
@@ -474,7 +419,6 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 
 			if (CipherProcessAead(a->CipherDecrypt, iv, buf + data_size, UDP_ACCELERATION_PACKET_MAC_SIZE_V2, buf, buf, data_size, NULL, 0) == 0)
 			{
-				Debug("UdpAccelProcessRecvPacket(): CipherProcessAead() failed!\n");
 				return NULL;
 			}
 
@@ -501,7 +445,6 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 		}
 	}
 
-	// Cookie
 	if (size < sizeof(UINT))
 	{
 		return NULL;
@@ -515,7 +458,6 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 		return NULL;
 	}
 
-	// My tick
 	if (size < sizeof(UINT64))
 	{
 		return NULL;
@@ -524,7 +466,6 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 	buf += sizeof(UINT64);
 	size -= sizeof(UINT64);
 
-	// Your tick
 	if (size < sizeof(UINT64))
 	{
 		return NULL;
@@ -533,7 +474,6 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 	buf += sizeof(UINT64);
 	size -= sizeof(UINT64);
 
-	// Inner data size
 	if (size < sizeof(USHORT))
 	{
 		return NULL;
@@ -542,7 +482,6 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 	buf += sizeof(USHORT);
 	size -= sizeof(USHORT);
 
-	// Flag
 	if (size < sizeof(UCHAR))
 	{
 		return NULL;
@@ -564,7 +503,6 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 		return NULL;
 	}
 
-	// Inner_data
 	if (inner_size >= 1)
 	{
 		inner_data = buf;
@@ -574,7 +512,6 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 
 	if (a->PlainTextMode == false)
 	{
-		// Verify packet integrity
 		if (a->Version == 1)
 		{
 			UINT pad_size;
@@ -634,8 +571,6 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 		{
 			a->LastRecvTick = a->Now;
 
-			a->IsReachedOnce = true;
-
 			if (a->FirstStableReceiveTick == 0)
 			{
 				a->FirstStableReceiveTick = a->Now;
@@ -646,11 +581,9 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 	return b;
 }
 
-// Calculate V1 key
 void UdpAccelCalcKeyV1(UCHAR *key, UCHAR *common_key, UCHAR *iv)
 {
 	UCHAR tmp[UDP_ACCELERATION_COMMON_KEY_SIZE_V1 + UDP_ACCELERATION_PACKET_IV_SIZE_V1];
-	// Validate arguments
 	if (key == NULL || common_key == NULL || iv == NULL)
 	{
 		return;
@@ -662,10 +595,8 @@ void UdpAccelCalcKeyV1(UCHAR *key, UCHAR *common_key, UCHAR *iv)
 	Sha1(key, tmp, sizeof(tmp));
 }
 
-// Set the current time
 void UdpAccelSetTick(UDP_ACCEL *a, UINT64 tick64)
 {
-	// Validate arguments
 	if (a == NULL)
 	{
 		return;
@@ -674,17 +605,12 @@ void UdpAccelSetTick(UDP_ACCEL *a, UINT64 tick64)
 	a->Now = tick64;
 }
 
-// Initialize the server-side
 bool UdpAccelInitServer(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, IP *reported_ip, USHORT port)
 {
-	// Validate arguments
 	if (a == NULL || key == NULL || detected_ip == NULL || port == 0)
 	{
 		return false;
 	}
-
-	Debug("UdpAccelInitServer(): Version: %u, detected_ip: %r, reported_ip: %r, port: %hu, YourCookie: %u, MyCookie: %u\n",
-		  a->Version, detected_ip, reported_ip, port, a->YourCookie, a->MyCookie);
 
 	if (IsIP6(detected_ip) != a->IsIPv6)
 	{
@@ -716,17 +642,12 @@ bool UdpAccelInitServer(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, IP *reported_
 	return true;
 }
 
-// Initialize the client-side
 bool UdpAccelInitClient(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, IP *reported_ip, USHORT port, UINT cookie, UINT my_cookie)
 {
-	// Validate arguments
 	if (a == NULL || key == NULL || detected_ip == NULL || port == 0)
 	{
 		return false;
 	}
-
-	Debug("UdpAccelInitClient(): Version: %u, detected_ip: %s, reported_ip: %s, port: %hu, cookie: %u, my_cookie: %u\n",
-		  a->Version, detected_ip, reported_ip, port, cookie, my_cookie);
 
 	if (IsIP6(detected_ip) != a->IsIPv6)
 	{
@@ -772,7 +693,6 @@ void UdpAccelQueryStun(UDP_ACCEL *a, IP *peer_ip)
 	char server[MAX_HOST_NAME_LEN + 1];
 	IP ip;
 	UINT port;
-	// Validate arguments
 	if (a == NULL || a->UdpSock == NULL || peer_ip == NULL)
 	{
 		return;
@@ -786,7 +706,6 @@ void UdpAccelQueryStun(UDP_ACCEL *a, IP *peer_ip)
 
 	if (IsEmptyStr(server))
 	{
-		// STUN is disabled
 		return;
 	}
 
@@ -799,7 +718,6 @@ void UdpAccelQueryStun(UDP_ACCEL *a, IP *peer_ip)
 
 	if (StunGetMappedAddress(a->UdpSock, server, &ip, &port) == false)
 	{
-		Debug("UdpAccelQueryStun(): STUN query to %s failed, reporting the local endpoint.\n", server);
 		return;
 	}
 
@@ -808,7 +726,6 @@ void UdpAccelQueryStun(UDP_ACCEL *a, IP *peer_ip)
 	if (IsIP6(&ip) != a->IsIPv6 || port == 0 || port > 65535 || IsLocalHostIP(&ip) ||
 		(IsIP6(&ip) ? IsValidUnicastIPAddress6(&ip) : IsValidUnicastIPAddress4(&ip)) == false)
 	{
-		Debug("UdpAccelQueryStun(): unusable STUN result: %r, port: %u\n", &ip, port);
 		return;
 	}
 
@@ -816,10 +733,8 @@ void UdpAccelQueryStun(UDP_ACCEL *a, IP *peer_ip)
 	a->StunPort = (USHORT)port;
 	a->UseStun = true;
 
-	Debug("UdpAccelQueryStun(): local port: %u, public endpoint: %r, port: %u\n", a->MyPort, &a->StunIp, a->StunPort);
 }
 
-// Create a new UDP acceleration function
 UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port)
 {
 	UDP_ACCEL *a;
@@ -834,12 +749,10 @@ UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port)
 
 	if (client_mode || random_port)
 	{
-		// Use a appropriate vacant port number in the case of using random port or client mode
 		s = NewUDPEx3(0, ip);
 	}
 	else
 	{
-		// Specify in the range in the case of server mode
 		UINT i;
 		s = NULL;
 
@@ -861,7 +774,7 @@ UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port)
 
 			if (s == NULL)
 			{
-				// Leave the port selection to the OS because the available port is not found within the range
+				// No free port in the range: let the OS pick one
 				s = NewUDPEx3(0, ip);
 			}
 
@@ -888,8 +801,6 @@ UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port)
 	a->CreatedTick = Tick64();
 
 	a->IsInCedarPortList = is_in_cedar_port_list;
-
-	a->ClientMode = client_mode;
 
 	a->Now = Tick64();
 	a->UdpSock = s;
@@ -919,34 +830,26 @@ UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port)
 	}
 	while (a->MyCookie == 0 || a->MyCookie == a->YourCookie);
 
-	// Calculate the maximum transmittable UDP packet size
 	max_udp_size = MTU_FOR_PPPOE;
 
 	if (a->IsIPv6 == false)
 	{
-		// IPv4
 		max_udp_size -= 20;
 	}
 	else
 	{
-		// IPv6
 		max_udp_size -= 40;
 	}
 
-	// UDP
 	max_udp_size -= 8;
 
 	a->MaxUdpPacketSize = max_udp_size;
 
-	Debug("Udp Accel My Port = %u\n", a->MyPort);
-
 	return a;
 }
 
-// Release the UDP acceleration function
 void FreeUdpAccel(UDP_ACCEL *a)
 {
-	// Validate arguments
 	if (a == NULL)
 	{
 		return;

@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Mayaqua Kernel
-
-
 // TcpIp.h
 // Header of TcpIp.c
 
@@ -13,26 +9,22 @@
 
 #ifdef	OS_WIN32
 #pragma pack(push, 1)
-#endif	// OS_WIN32
+#endif
 
-// MTU when using of the PPPoE
 #define	MTU_FOR_PPPOE		(1500 - 46)
 
-// MAC header
 struct MAC_HEADER
 {
-	UCHAR	DestAddress[6];			// Source MAC address
-	UCHAR	SrcAddress[6];			// Destination MAC address
-	USHORT	Protocol;				// Protocol
+	UCHAR	DestAddress[6];
+	UCHAR	SrcAddress[6];
+	USHORT	Protocol;
 } GCC_PACKED;
 
-// MAC protocol
-#define	MAC_PROTO_ARPV4		0x0806	// ARPv4 packet
-#define	MAC_PROTO_IPV4		0x0800	// IPv4 packets
-#define	MAC_PROTO_IPV6		0x86dd	// IPv6 packets
-#define	MAC_PROTO_TAGVLAN	0x8100	// Tagged VLAN packets
+#define	MAC_PROTO_ARPV4		0x0806
+#define	MAC_PROTO_IPV4		0x0800
+#define	MAC_PROTO_IPV6		0x86dd
+#define	MAC_PROTO_TAGVLAN	0x8100
 
-// LLC header
 struct LLC_HEADER
 {
 	UCHAR	Dsap;
@@ -40,144 +32,123 @@ struct LLC_HEADER
 	UCHAR	Ctl;
 } GCC_PACKED;
 
-// The value of the SSAP and the DSAP of the LLC header
 #define	LLC_DSAP_BPDU		0x42
 #define	LLC_SSAP_BPDU		0x42
 
-// BPDU header
 struct BPDU_HEADER
 {
 	USHORT	ProtocolId;				// Protocol ID (STP == 0x0000)
-	UCHAR	Version;				// Version
-	UCHAR	Type;					// Type
-	UCHAR	Flags;					// Flag
-	USHORT	RootPriority;			// Priority of the root bridge
-	UCHAR	RootMacAddress[6];		// MAC address of the root bridge
-	UINT	RootPathCost;			// Path cost to the root bridge
-	USHORT	BridgePriority;			// Priority of the outgoing bridge
-	UCHAR	BridgeMacAddress[6];	// MAC address of the outgoing bridge
-	USHORT	BridgePortId;			// Port ID of the outgoing bridge
-	USHORT	MessageAge;				// Expiration date
-	USHORT	MaxAge;					// Maximum expiration date
-	USHORT	HelloTime;				// Hello Time
-	USHORT	ForwardDelay;			// Forward Delay
+	UCHAR	Version;
+	UCHAR	Type;
+	UCHAR	Flags;
+	USHORT	RootPriority;
+	UCHAR	RootMacAddress[6];
+	UINT	RootPathCost;
+	USHORT	BridgePriority;
+	UCHAR	BridgeMacAddress[6];
+	USHORT	BridgePortId;
+	USHORT	MessageAge;
+	USHORT	MaxAge;
+	USHORT	HelloTime;
+	USHORT	ForwardDelay;
 } GCC_PACKED;
 
-// ARPv4 header
 struct ARPV4_HEADER
 {
-	USHORT	HardwareType;			// Hardware type
-	USHORT	ProtocolType;			// Protocol type
-	UCHAR	HardwareSize;			// Hardware size
-	UCHAR	ProtocolSize;			// Protocol size
-	USHORT	Operation;				// Operation
-	UCHAR	SrcAddress[6];			// Source MAC address
-	UINT	SrcIP;					// Source IP address
-	UCHAR	TargetAddress[6];		// Target MAC address
-	UINT	TargetIP;				// Target IP address
+	USHORT	HardwareType;
+	USHORT	ProtocolType;
+	UCHAR	HardwareSize;
+	UCHAR	ProtocolSize;
+	USHORT	Operation;
+	UCHAR	SrcAddress[6];
+	UINT	SrcIP;
+	UCHAR	TargetAddress[6];
+	UINT	TargetIP;
 } GCC_PACKED;
 
-// ARP hardware type
 #define	ARP_HARDWARE_TYPE_ETHERNET		0x0001
 
-// ARP operation type
 #define	ARP_OPERATION_REQUEST			1
 #define	ARP_OPERATION_RESPONSE			2
 
-// Tagged VLAN header
 struct TAGVLAN_HEADER
 {
-	UCHAR TagID[2];					// TagID
-	UCHAR Protocol[2];				// Protocol
+	UCHAR TagID[2];
+	UCHAR Protocol[2];
 } GCC_PACKED;
 
-// IPv4 header
 struct IPV4_HEADER
 {
-	UCHAR	VersionAndHeaderLength;		// Version and header size
-	UCHAR	TypeOfService;				// Service Type
-	USHORT	TotalLength;				// Total size
-	USHORT	Identification;				// Identifier
-	UCHAR	FlagsAndFragmentOffset[2];	// Flag and Fragment offset
-	UCHAR	TimeToLive;					// TTL
-	UCHAR	Protocol;					// Protocol
-	USHORT	Checksum;					// Checksum
-	UINT	SrcIP;						// Source IP address
-	UINT	DstIP;						// Destination IP address
+	UCHAR	VersionAndHeaderLength;
+	UCHAR	TypeOfService;
+	USHORT	TotalLength;
+	USHORT	Identification;
+	UCHAR	FlagsAndFragmentOffset[2];
+	UCHAR	TimeToLive;
+	UCHAR	Protocol;
+	USHORT	Checksum;
+	UINT	SrcIP;
+	UINT	DstIP;
 } GCC_PACKED;
 
-// Macro for IPv4 header operation
-#define	IPV4_GET_VERSION(h)			(((h)->VersionAndHeaderLength >> 4 & 0x0f))
 #define	IPV4_SET_VERSION(h, v)		((h)->VersionAndHeaderLength |= (((v) & 0x0f) << 4))
 #define	IPV4_GET_HEADER_LEN(h)		((h)->VersionAndHeaderLength & 0x0f)
 #define	IPV4_SET_HEADER_LEN(h, v)	((h)->VersionAndHeaderLength |= ((v) & 0x0f))
 
-// Macro for IPv4 fragment related operation
 #define	IPV4_GET_FLAGS(h)			(((h)->FlagsAndFragmentOffset[0] >> 5) & 0x07)
 #define	IPV4_SET_FLAGS(h, v)		((h)->FlagsAndFragmentOffset[0] |= (((v) & 0x07) << 5))
 #define	IPV4_GET_OFFSET(h)			(((h)->FlagsAndFragmentOffset[0] & 0x1f) * 256 + ((h)->FlagsAndFragmentOffset[1]))
-#define	IPV4_SET_OFFSET(h, v)		{(h)->FlagsAndFragmentOffset[0] |= (UCHAR)((v) / 256); (h)->FlagsAndFragmentOffset[1] = (UCHAR)((v) % 256);}
 
-// IPv4 / IPv6 common protocol
-#define	IP_PROTO_TCP		0x06	// TCP protocol
-#define	IP_PROTO_UDP		0x11	// UDP protocol
-#define	IP_PROTO_ESP		50		// ESP protocol
-#define	IP_PROTO_ETHERIP	97		// EtherIP protocol
-#define	IP_PROTO_L2TPV3		115		// L2TPv3 protocol
+#define	IP_PROTO_TCP		0x06
+#define	IP_PROTO_UDP		0x11
 
 
-// UDP header
 struct UDP_HEADER
 {
-	USHORT	SrcPort;				// Source port number
-	USHORT	DstPort;				// Destination port number
-	USHORT	PacketLength;			// Data length
-	USHORT	Checksum;				// Checksum
+	USHORT	SrcPort;
+	USHORT	DstPort;
+	USHORT	PacketLength;
+	USHORT	Checksum;
 } GCC_PACKED;
 
-// UDPv4 pseudo header
 struct UDPV4_PSEUDO_HEADER
 {
-	UINT	SrcIP;					// Source IP address
-	UINT	DstIP;					// Destination IP address
-	UCHAR	Reserved;				// Unused
-	UCHAR	Protocol;				// Protocol number
-	USHORT	PacketLength1;			// UDP data length 1
-	USHORT	SrcPort;				// Source port number
-	USHORT	DstPort;				// Destination port number
-	USHORT	PacketLength2;			// UDP data length 2
-	USHORT	Checksum;				// Checksum
+	UINT	SrcIP;
+	UINT	DstIP;
+	UCHAR	Reserved;
+	UCHAR	Protocol;
+	USHORT	PacketLength1;
+	USHORT	SrcPort;
+	USHORT	DstPort;
+	USHORT	PacketLength2;
+	USHORT	Checksum;
 } GCC_PACKED;
 
-// IPv4 pseudo header
 struct IPV4_PSEUDO_HEADER
 {
-	UINT	SrcIP;					// Source IP address
-	UINT	DstIP;					// Destination IP address
-	UCHAR	Reserved;				// Unused
-	UCHAR	Protocol;				// Protocol number
-	USHORT	PacketLength;			// Packet size
+	UINT	SrcIP;
+	UINT	DstIP;
+	UCHAR	Reserved;
+	UCHAR	Protocol;
+	USHORT	PacketLength;
 } GCC_PACKED;
 
-// TCP header
 struct TCP_HEADER
 {
-	USHORT	SrcPort;					// Source port number
-	USHORT	DstPort;					// Destination port number
-	UINT	SeqNumber;				// Sequence number
-	UINT	AckNumber;				// Acknowledgment number
-	UCHAR	HeaderSizeAndReserved;	// Header size and Reserved area
-	UCHAR	Flag;					// Flag
-	USHORT	WindowSize;				// Window size
-	USHORT	Checksum;				// Checksum
-	USHORT	UrgentPointer;			// Urgent Pointer
+	USHORT	SrcPort;
+	USHORT	DstPort;
+	UINT	SeqNumber;
+	UINT	AckNumber;
+	UCHAR	HeaderSizeAndReserved;
+	UCHAR	Flag;
+	USHORT	WindowSize;
+	USHORT	Checksum;
+	USHORT	UrgentPointer;
 } GCC_PACKED;
 
-// TCP macro
 #define	TCP_GET_HEADER_SIZE(h)	(((h)->HeaderSizeAndReserved >> 4) & 0x0f)
 #define	TCP_SET_HEADER_SIZE(h, v)	((h)->HeaderSizeAndReserved = (((v) & 0x0f) << 4))
 
-// TCP flags
 #define	TCP_FIN						1
 #define	TCP_SYN						2
 #define	TCP_RST						4
@@ -185,75 +156,52 @@ struct TCP_HEADER
 #define	TCP_ACK						16
 #define	TCP_URG						32
 
-// ICMP header
 struct ICMP_HEADER
 {
-	UCHAR	Type;					// Type
-	UCHAR	Code;					// Code
-	USHORT	Checksum;				// Checksum
+	UCHAR	Type;
+	UCHAR	Code;
+	USHORT	Checksum;
 } GCC_PACKED;
 
-// ICMP Echo
 struct ICMP_ECHO
 {
-	USHORT	Identifier;						// ID
-	USHORT	SeqNo;							// Sequence number
+	USHORT	Identifier;
+	USHORT	SeqNo;
 } GCC_PACKED;
 
-// ICMP message type
 #define	ICMP_TYPE_ECHO_REQUEST						8
 #define	ICMP_TYPE_ECHO_RESPONSE						0
-#define	ICMP_TYPE_DESTINATION_UNREACHABLE			3
-#define	ICMP_TYPE_TIME_EXCEEDED						11
-#define	ICMP_TYPE_INFORMATION_REQUEST				15
-#define	ICMP_TYPE_INFORMATION_REPLY					16
 
-// ICMP message code
-// In case of ICMP_TYPE_DESTINATION_UNREACHABLE
-#define	ICMP_CODE_NET_UNREACHABLE					0
-#define	ICMP_CODE_HOST_UNREACHABLE					1
-#define	ICMP_CODE_PROTOCOL_UNREACHABLE				2
-#define	ICMP_CODE_PORT_UNREACHABLE					3
-#define	ICMP_CODE_FRAGMENTATION_NEEDED_DF_SET		4
-#define	ICMP_CODE_SOURCE_ROUTE_FAILED				5
-
-// In case of TIME_EXCEEDED
-#define	ICMP_CODE_TTL_EXCEEDED_IN_TRANSIT			0
-#define	ICMP_CODE_FRAGMENT_REASSEMBLY_TIME_EXCEEDED	1
-
-// DHCPv4 Header
 struct DHCPV4_HEADER
 {
-	UCHAR	OpCode;				// Op-code
-	UCHAR	HardwareType;		// Hardware type
-	UCHAR	HardwareAddressSize;	// Hardware address size
-	UCHAR	Hops;				// Number of hops
-	UINT	TransactionId;		// Transaction ID
-	USHORT	Seconds;				// Seconds
-	USHORT	Flags;				// Flag
-	UINT	ClientIP;			// Client IP address
-	UINT	YourIP;				// Assigned IP address
-	UINT	ServerIP;			// Server IP address
-	UINT	RelayIP;				// Relay IP address
-	UCHAR	ClientMacAddress[6];	// Client MAC address
-	UCHAR	Padding[10];			// Padding for non-Ethernet
+	UCHAR	OpCode;
+	UCHAR	HardwareType;
+	UCHAR	HardwareAddressSize;
+	UCHAR	Hops;
+	UINT	TransactionId;
+	USHORT	Seconds;
+	USHORT	Flags;
+	UINT	ClientIP;
+	UINT	YourIP;
+	UINT	ServerIP;
+	UINT	RelayIP;
+	UCHAR	ClientMacAddress[6];
+	UCHAR	Padding[10];
 } GCC_PACKED;
 
-// DNSv4 header
 struct DNSV4_HEADER
 {
-	USHORT	TransactionId;			// Transaction ID
-	UCHAR	Flag1;					// Flag 1
-	UCHAR	Flag2;					// Flag 2
-	USHORT	NumQuery;				// Number of queries
-	USHORT	AnswerRRs;				// Answer RR number
-	USHORT	AuthorityRRs;			// Authority RR number
-	USHORT	AdditionalRRs;			// Additional RR number
+	USHORT	TransactionId;
+	UCHAR	Flag1;
+	UCHAR	Flag2;
+	USHORT	NumQuery;
+	USHORT	AnswerRRs;
+	USHORT	AuthorityRRs;
+	USHORT	AdditionalRRs;
 } GCC_PACKED;
 
-#define	DHCP_MAGIC_COOKIE	0x63825363	// Magic Cookie (fixed)
+#define	DHCP_MAGIC_COOKIE	0x63825363
 
-// NetBIOS Datagram header
 struct NBTDG_HEADER
 {
 	UCHAR MessageType;
@@ -265,199 +213,151 @@ struct NBTDG_HEADER
 	USHORT PacketOffset;
 } GCC_PACKED;
 
-// IPv6 packet header information
 struct IPV6_HEADER_PACKET_INFO
 {
-	IPV6_HEADER *IPv6Header;					// IPv6 header
-	IPV6_OPTION_HEADER *HopHeader;				// Hop-by-hop option header
-	UINT HopHeaderSize;							// Hop-by-hop option header size
-	IPV6_OPTION_HEADER *EndPointHeader;			// End point option header
-	UINT EndPointHeaderSize;					// End point option header size
-	IPV6_OPTION_HEADER *RoutingHeader;			// Routing header
-	UINT RoutingHeaderSize;						// Routing header size
-	IPV6_FRAGMENT_HEADER *FragmentHeader;		// Fragment header
-	void *Payload;								// Payload
-	UINT PayloadSize;							// Payload size
-	UCHAR Protocol;								// Payload protocol
-	bool IsFragment;							// Whether it's a fragmented packet
-	UINT TotalHeaderSize;						// Total header size
+	IPV6_HEADER *IPv6Header;
+	IPV6_OPTION_HEADER *HopHeader;
+	UINT HopHeaderSize;
+	IPV6_OPTION_HEADER *EndPointHeader;
+	UINT EndPointHeaderSize;
+	IPV6_OPTION_HEADER *RoutingHeader;
+	UINT RoutingHeaderSize;
+	IPV6_FRAGMENT_HEADER *FragmentHeader;
+	void *Payload;
+	UINT PayloadSize;
+	UCHAR Protocol;
+	bool IsFragment;
+	UINT TotalHeaderSize;
 };
 
-// IPv6 header
 struct IPV6_HEADER
 {
-	UCHAR VersionAndTrafficClass1;		// Version Number (4 bit) and Traffic Class 1 (4 bit)
-	UCHAR TrafficClass2AndFlowLabel1;	// Traffic Class 2 (4 bit) and Flow Label 1 (4 bit)
+	UCHAR VersionAndTrafficClass1;		// Version (4 bit) and Traffic Class high (4 bit)
+	UCHAR TrafficClass2AndFlowLabel1;	// Traffic Class low (4 bit) and Flow Label 1 (4 bit)
 	UCHAR FlowLabel2;					// Flow Label 2 (8 bit)
 	UCHAR FlowLabel3;					// Flow Label 3 (8 bit)
-	USHORT PayloadLength;				// Length of the payload (including extension header)
-	UCHAR NextHeader;					// Next header
-	UCHAR HopLimit;						// Hop limit
-	IPV6_ADDR SrcAddress;				// Source address
-	IPV6_ADDR DestAddress;				// Destination address
+	USHORT PayloadLength;				// Payload length (includes extension headers)
+	UCHAR NextHeader;
+	UCHAR HopLimit;
+	IPV6_ADDR SrcAddress;
+	IPV6_ADDR DestAddress;
 } GCC_PACKED;
 
 
-// Macro for IPv6 header operation
 #define IPV6_GET_VERSION(h)			(((h)->VersionAndTrafficClass1 >> 4) & 0x0f)
 #define IPV6_SET_VERSION(h, v)		((h)->VersionAndTrafficClass1 = ((h)->VersionAndTrafficClass1 & 0x0f) | ((v) << 4) & 0xf0)
-#define IPV6_GET_TRAFFIC_CLASS(h)	((((h)->VersionAndTrafficClass1 << 4) & 0xf0) | ((h)->TrafficClass2AndFlowLabel1 >> 4) & 0x0f)
-#define	IPV6_SET_TRAFFIC_CLASS(h, v)	((h)->VersionAndTrafficClass1 = ((h)->VersionAndTrafficClass1 & 0xf0) | (((v) >> 4) & 0x0f),\
-	(h)->TrafficClass2AndFlowLabel1 = (h)->TrafficClass2AndFlowLabel1 & 0x0f | ((v) << 4) & 0xf0)
-#define	IPV6_GET_FLOW_LABEL(h)		((((h)->TrafficClass2AndFlowLabel1 << 16) & 0xf0000) | (((h)->FlowLabel2 << 8) & 0xff00) |\
-	(((h)->FlowLabel3) & 0xff))
-#define IPV6_SET_FLOW_LABEL(h, v)	((h)->TrafficClass2AndFlowLabel1 = ((h)->TrafficClass2AndFlowLabel1 & 0xf0 | ((v) >> 16) & 0x0f),\
-	(h)->FlowLabel2 = ((v) >> 8) & 0xff,\
-	(h)->FlowLabel3 = (v) & 0xff)
 
 
-// Maximum hops of IPv6 (not routing)
-#define IPV6_HOP_MAX					255
+#define IPV6_HEADER_HOP					0
+#define IPV6_HEADER_ENDPOINT			60
+#define IPV6_HEADER_ROUTING				43
+#define IPV6_HEADER_FRAGMENT			44
+#define IPV6_HEADER_NONE				59
 
-// Standard hops of IPv6
-#define IPV6_HOP_DEFAULT				127
-
-// IPv6 header number
-#define IPV6_HEADER_HOP					0	// Hop-by-hop option header
-#define IPV6_HEADER_ENDPOINT			60	// End point option header
-#define IPV6_HEADER_ROUTING				43	// Routing header
-#define IPV6_HEADER_FRAGMENT			44	// Fragment header
-#define IPV6_HEADER_NONE				59	// No Next Header
-
-// IPv6 option header
-// (Used on hop option header, end point option header, routing header)
 struct IPV6_OPTION_HEADER
 {
-	UCHAR NextHeader;					// Next header
+	UCHAR NextHeader;
 	UCHAR Size;							// Header size (/8)
 } GCC_PACKED;
 
-// IPv6 fragment header
-// (fragment impossible part is until just before the routing header
-// or hop-by-hop option header or first extended header or payload)
+// The unfragmentable part runs up to the routing header, the hop-by-hop
+// header, the first extension header or the payload
 struct IPV6_FRAGMENT_HEADER
 {
-	UCHAR NextHeader;					// Next header
-	UCHAR Reserved;						// Reserved
+	UCHAR NextHeader;
+	UCHAR Reserved;
 	UCHAR FragmentOffset1;				// Fragment offset 1 (/8, 8 bit)
 	UCHAR FragmentOffset2AndFlags;		// Fragment offset 2 (/8, 5 bit) + Reserved (2 bit) + More flag (1 bit)
-	UINT Identification;				// ID
+	UINT Identification;
 } GCC_PACKED;
 
-// Macro for IPv6 fragment header operation
 #define IPV6_GET_FRAGMENT_OFFSET(h)		(((((h)->FragmentOffset1) << 5) & 0x1fe0) | (((h)->FragmentOffset2AndFlags >> 3) & 0x1f))
-#define IPV6_SET_FRAGMENT_OFFSET(h, v)	((h)->FragmentOffset1 = (v / 32) & 0xff,	\
-	((h)->FragmentOffset2AndFlags = ((v % 256) << 3) & 0xf8) | ((h)->FragmentOffset2AndFlags & 0x07))
 #define IPV6_GET_FLAGS(h)				((h)->FragmentOffset2AndFlags & 0x0f)
-#define IPV6_SET_FLAGS(h, v)				((h)->FragmentOffset2AndFlags = (((h)->FragmentOffset2AndFlags & 0xf8) | (v & 0x07)))
 
-// Flag
-#define IPV6_FRAGMENT_HEADER_FLAG_MORE_FRAGMENTS		0x01	// There are more fragments
+#define IPV6_FRAGMENT_HEADER_FLAG_MORE_FRAGMENTS		0x01
 
-// Virtual IPv6 header
 struct IPV6_PSEUDO_HEADER
 {
-	IPV6_ADDR SrcAddress;				// Source address
-	IPV6_ADDR DestAddress;				// Destination address
-	UINT UpperLayerPacketSize;			// Upper layer packet size
-	UCHAR Padding[3];					// Padding
-	UCHAR NextHeader;					// Next Header (TCP / UDP)
+	IPV6_ADDR SrcAddress;
+	IPV6_ADDR DestAddress;
+	UINT UpperLayerPacketSize;
+	UCHAR Padding[3];
+	UCHAR NextHeader;
 } GCC_PACKED;
 
-// ICMPv6 Router Solicitation header
 struct ICMPV6_ROUTER_SOLICIATION_HEADER
 {
-	UINT Reserved;							// Reserved
-	// + Option (source link-layer address [optional])
+	UINT Reserved;
 } GCC_PACKED;
 
-// ICMPv6 Router Advertisement header
 struct ICMPV6_ROUTER_ADVERTISEMENT_HEADER
 {
-	UCHAR CurHopLimit;						// Hop limit of the default
-	UCHAR Flags;							// Flag (0)
-	USHORT Lifetime;						// Lifetime
-	UINT ReachableTime;						// 0
-	UINT RetransTimer;						// 0
-	// + Option (prefix information [required], MTU [optional])
+	UCHAR CurHopLimit;
+	UCHAR Flags;
+	USHORT Lifetime;
+	UINT ReachableTime;
+	UINT RetransTimer;
 } GCC_PACKED;
 
-// ICMPv6 Neighbor Solicitation header
 struct ICMPV6_NEIGHBOR_SOLICIATION_HEADER
 {
-	UINT Reserved;							// Reserved
-	IPV6_ADDR TargetAddress;				// Target address
-	// + Option (source link-layer address [required])
+	UINT Reserved;
+	IPV6_ADDR TargetAddress;
 } GCC_PACKED;
 
-// ICMPv6 Neighbor Advertisement header
 struct ICMPV6_NEIGHBOR_ADVERTISEMENT_HEADER
 {
-	UCHAR Flags;							// Flag
-	UCHAR Reserved[3];						// Reserved
-	IPV6_ADDR TargetAddress;				// Target address
-	// + Option (target link-layer address)
+	UCHAR Flags;
+	UCHAR Reserved[3];
+	IPV6_ADDR TargetAddress;
 } GCC_PACKED;
-
-#define ICMPV6_NEIGHBOR_ADVERTISEMENT_FLAG_ROUTER		0x80	// Router
-#define ICMPV6_NEIGHBOR_ADVERTISEMENT_FLAG_SOLICITED	0x40	// Solicited flag
-#define ICMPV6_NEIGHBOR_ADVERTISEMENT_FLAG_OVERWRITE	0x20	// Overwrite flag
 
 #define ICMPV6_OPTION_PREFIXES_MAX_COUNT				10
 
-// ICMPv6 option list
 struct ICMPV6_OPTION_LIST
 {
-	ICMPV6_OPTION_LINK_LAYER *SourceLinkLayer;		// Source link-layer address
-	ICMPV6_OPTION_LINK_LAYER *TargetLinkLayer;		// Target link-layer address
-	ICMPV6_OPTION_PREFIX *Prefix[ICMPV6_OPTION_PREFIXES_MAX_COUNT];	// Prefix Information - may be multiple in one request
-	ICMPV6_OPTION_MTU *Mtu;							// MTU
+	ICMPV6_OPTION_LINK_LAYER *SourceLinkLayer;
+	ICMPV6_OPTION_LINK_LAYER *TargetLinkLayer;
+	ICMPV6_OPTION_PREFIX *Prefix[ICMPV6_OPTION_PREFIXES_MAX_COUNT];
+	ICMPV6_OPTION_MTU *Mtu;
 } GCC_PACKED;
 
-// ICMPv6 option
 struct ICMPV6_OPTION
 {
-	UCHAR Type;								// Type
+	UCHAR Type;
 	UCHAR Length;							// Length (/8, include type and length)
 } GCC_PACKED;
 
-#define	ICMPV6_OPTION_TYPE_SOURCE_LINK_LAYER	1		// Source link-layer address
-#define ICMPV6_OPTION_TYPE_TARGET_LINK_LAYER	2		// Target link-layer address
-#define ICMPV6_OPTION_TYPE_PREFIX				3		// Prefix Information
-#define ICMPV6_OPTION_TYPE_MTU					5		// MTU
+#define	ICMPV6_OPTION_TYPE_SOURCE_LINK_LAYER	1
+#define ICMPV6_OPTION_TYPE_TARGET_LINK_LAYER	2
+#define ICMPV6_OPTION_TYPE_PREFIX				3
+#define ICMPV6_OPTION_TYPE_MTU					5
 
-// ICMPv6 link layer options
 struct ICMPV6_OPTION_LINK_LAYER
 {
-	ICMPV6_OPTION IcmpOptionHeader;			// Option header
-	UCHAR Address[6];						// MAC address
+	ICMPV6_OPTION IcmpOptionHeader;
+	UCHAR Address[6];
 } GCC_PACKED;
 
-// ICMPv6 prefix information option
 struct ICMPV6_OPTION_PREFIX
 {
-	ICMPV6_OPTION IcmpOptionHeader;			// Option header
-	UCHAR SubnetLength;						// Subnet length
-	UCHAR Flags;							// Flag
-	UINT ValidLifetime;						// Formal lifetime
-	UINT PreferredLifetime;					// Preferred lifetime
-	UINT Reserved;							// Reserved
-	IPV6_ADDR Prefix;						// Prefix address
+	ICMPV6_OPTION IcmpOptionHeader;
+	UCHAR SubnetLength;
+	UCHAR Flags;
+	UINT ValidLifetime;
+	UINT PreferredLifetime;
+	UINT Reserved;
+	IPV6_ADDR Prefix;
 } GCC_PACKED;
 
-#define ICMPV6_OPTION_PREFIX_FLAG_ONLINK		0x80	// On link
-#define ICMPV6_OPTION_PREFIX_FLAG_AUTO			0x40	// Automatic
-
-// ICMPv6 MTU option
 struct ICMPV6_OPTION_MTU
 {
-	ICMPV6_OPTION IcmpOptionHeader;			// Option header
-	USHORT Reserved;						// Reserved
-	UINT Mtu;								// MTU value
+	ICMPV6_OPTION IcmpOptionHeader;
+	USHORT Reserved;
+	UINT Mtu;
 } GCC_PACKED;
 
 
-// IPv6 header information
 struct IPV6_HEADER_INFO
 {
 	bool IsRawIpPacket;
@@ -474,7 +374,6 @@ struct IPV6_HEADER_INFO
 	UINT TypeL4;
 };
 
-// ICMPv6 header information
 struct ICMPV6_HEADER_INFO
 {
 	UCHAR Type;
@@ -487,7 +386,6 @@ struct ICMPV6_HEADER_INFO
 
 	union
 	{
-		// Meaning is determined by the value of the Type
 		ICMPV6_ROUTER_SOLICIATION_HEADER *RouterSoliciationHeader;
 		ICMPV6_ROUTER_ADVERTISEMENT_HEADER *RouterAdvertisementHeader;
 		ICMPV6_NEIGHBOR_SOLICIATION_HEADER *NeighborSoliciationHeader;
@@ -498,18 +396,15 @@ struct ICMPV6_HEADER_INFO
 	ICMPV6_OPTION_LIST OptionList;
 };
 
-// The Type value of ICMPv6
-#define ICMPV6_TYPE_ECHO_REQUEST				128		// ICMPv6 Echo request
-#define ICMPV6_TYPE_ECHO_RESPONSE				129		// ICMPv6 Echo response
-#define ICMPV6_TYPE_ROUTER_SOLICIATION			133		// Router Solicitation
-#define ICMPV6_TYPE_ROUTER_ADVERTISEMENT		134		// Router Advertisement
-#define ICMPV6_TYPE_NEIGHBOR_SOLICIATION		135		// Neighbor Solicitation
-#define ICMPV6_TYPE_NEIGHBOR_ADVERTISEMENT		136		// Neighbor Advertisement
+#define ICMPV6_TYPE_ECHO_REQUEST				128
+#define ICMPV6_TYPE_ECHO_RESPONSE				129
+#define ICMPV6_TYPE_ROUTER_SOLICIATION			133
+#define ICMPV6_TYPE_ROUTER_ADVERTISEMENT		134
+#define ICMPV6_TYPE_NEIGHBOR_SOLICIATION		135
+#define ICMPV6_TYPE_NEIGHBOR_ADVERTISEMENT		136
 
-// Minimum DHCP packet size
 #define	DHCP_MIN_SIZE				300
 
-// Constants about DHCP
 #define	DHCP_ID_MESSAGE_TYPE		0x35
 #define	DHCP_ID_REQUEST_IP_ADDRESS	0x32
 #define	DHCP_ID_HOST_NAME			0x0c
@@ -520,137 +415,117 @@ struct ICMPV6_HEADER_INFO
 #define	DHCP_ID_GATEWAY_ADDR		0x03
 #define	DHCP_ID_DNS_ADDR			0x06
 #define	DHCP_ID_WINS_ADDR			0x2C
-#define	DHCP_ID_CLIENT_ID			0x3d
-#define	DHCP_ID_VENDOR_ID			0x3c
-#define	DHCP_ID_REQ_PARAM_LIST		0x37
-#define	DHCP_ID_USER_CLASS			0x4d
 #define	DHCP_ID_CLASSLESS_ROUTE		0x79
 #define	DHCP_ID_MS_CLASSLESS_ROUTE	0xF9
 #define	DHCP_ID_PRIVATE				0xFA
 
 
-// DHCP client action
 #define	DHCP_DISCOVER		1
 #define	DHCP_REQUEST		3
-#define	DHCP_RELEASE		7
-#define	DHCP_INFORM			8
 
-// DHCP server action
 #define	DHCP_OFFER			2
-#define	DHCP_DECLINE		4
 #define	DHCP_ACK			5
-#define	DHCP_NACK			6
 
-// HTTPLOG data structure
 struct HTTPLOG
 {
-	char Method[32];						// Method
-	char Hostname[MAX_HOST_NAME_LEN + 1];	// Host name
-	UINT Port;								// Port number
-	char Path[MAX_SIZE];					// Path
-	char Protocol[64];						// Protocol
-	char UserAgent[MAX_SIZE];				// User Agent value
-	char Referer[MAX_SIZE];					// Referer
-	bool IsSsl;								// Is SSL
+	char Method[32];
+	char Hostname[MAX_HOST_NAME_LEN + 1];
+	UINT Port;
+	char Path[MAX_SIZE];
+	char Protocol[64];
+	char UserAgent[MAX_SIZE];
+	char Referer[MAX_SIZE];
+	bool IsSsl;
 };
 
-// Packet
 struct PKT
 {
-	UCHAR			*PacketData;	// Packet data body
-	UINT			PacketSize;		// Packet size
-	MAC_HEADER		*MacHeader;		// MAC header
-	UCHAR			*MacAddressSrc;	// Source MAC address
-	UCHAR			*MacAddressDest;	// Destination MAC address
-	bool			BroadcastPacket;		// Broadcast packet
-	bool			InvalidSourcePacket;	// Packet with an invalid source address
-	bool			AccessChecked;	// Packets that pass was confirmed by the access list
+	UCHAR			*PacketData;
+	UINT			PacketSize;
+	MAC_HEADER		*MacHeader;
+	UCHAR			*MacAddressSrc;
+	UCHAR			*MacAddressDest;
+	bool			BroadcastPacket;
+	bool			InvalidSourcePacket;
+	bool			AccessChecked;
 	UINT			VlanTypeID;		// TypeID of the tagged VLAN (usually 0x8100)
-	UINT			VlanId;			// VLAN ID
-	UINT			Delay;			// Delay
-	UINT			Jitter;			// Jitter
-	UINT			Loss;			// Packet loss
-	UINT64			DelayedForwardTick;	// Sending time in case of delayed
-	struct SESSION	*DelayedSrcSession;	// Source session
-	UINT			TypeL3;			// Layer-3 packet classification
-	IPV6_HEADER_PACKET_INFO IPv6HeaderPacketInfo;	// IPv6 packet header information (only for TypeL3 == L3_IPV6)
-	ICMPV6_HEADER_INFO ICMPv6HeaderPacketInfo;		// ICMPv6 header information (Only for TypeL4 == L4_ICMPV6)
-	UINT			DhcpOpCode;		// DHCP opcode
+	UINT			VlanId;
+	UINT			Delay;
+	UINT			Jitter;
+	UINT			Loss;
+	UINT64			DelayedForwardTick;
+	struct SESSION	*DelayedSrcSession;
+	UINT			TypeL3;
+	IPV6_HEADER_PACKET_INFO IPv6HeaderPacketInfo;	// Only for TypeL3 == L3_IPV6
+	ICMPV6_HEADER_INFO ICMPv6HeaderPacketInfo;		// Only for TypeL4 == L4_ICMPV6
+	UINT			DhcpOpCode;
 	union
 	{
-		IPV4_HEADER		*IPv4Header;	// IPv4 header
-		ARPV4_HEADER	*ARPv4Header;	// ARPv4 header
-		IPV6_HEADER		*IPv6Header;	// IPv6 header
-		TAGVLAN_HEADER	*TagVlanHeader;	// Tag header
-		BPDU_HEADER		*BpduHeader;	// BPDU header
+		IPV4_HEADER		*IPv4Header;
+		ARPV4_HEADER	*ARPv4Header;
+		IPV6_HEADER		*IPv6Header;
+		TAGVLAN_HEADER	*TagVlanHeader;
+		BPDU_HEADER		*BpduHeader;
 		void			*PointerL3;
 	} L3;
-	UINT			TypeL4;				// Layer-4 packet classification
-	UINT			IPv4PayloadSize;	// IPv4 payload size
-	void			*IPv4PayloadData;	// IPv4 payload data
+	UINT			TypeL4;
+	UINT			IPv4PayloadSize;
+	void			*IPv4PayloadData;
 	union
 	{
-		UDP_HEADER	*UDPHeader;			// UDP header
-		TCP_HEADER	*TCPHeader;			// TCP header
-		ICMP_HEADER	*ICMPHeader;		// ICMP header
+		UDP_HEADER	*UDPHeader;
+		TCP_HEADER	*TCPHeader;
+		ICMP_HEADER	*ICMPHeader;
 		void		*PointerL4;
 	} L4;
-	UINT			TypeL7;			// Layer-7 packet classification
+	UINT			TypeL7;
 	union
 	{
-		DHCPV4_HEADER	*DHCPv4Header;	// DHCPv4 header
-		IKE_HEADER		*IkeHeader;		// IKE header
+		DHCPV4_HEADER	*DHCPv4Header;
+		IKE_HEADER		*IkeHeader;
 		void			*PointerL7;
 	} L7;
-	UCHAR				*Payload;		// Pointer to the payload of TCP or UDP
-	UINT				PayloadSize;	// Payload size
-	struct HTTPLOG		*HttpLog;		// HTTP log
-	char DnsQueryHost[64];				// DNS hostname
+	UCHAR				*Payload;
+	UINT				PayloadSize;
+	struct HTTPLOG		*HttpLog;
+	char DnsQueryHost[64];
 } GCC_PACKED;
 
-// Layer-3 packet classification
-#define	L3_UNKNOWN			0		// Unknown
-#define	L3_ARPV4			1		// ARPv4 packet
-#define	L3_IPV4				2		// IPv4 packet
-#define	L3_TAGVLAN			3		// Tagged VLAN packet
-#define	L3_BPDU				4		// BPDU packet
-#define L3_IPV6				5		// IPv6 packet
+#define	L3_UNKNOWN			0
+#define	L3_ARPV4			1
+#define	L3_IPV4				2
+#define	L3_TAGVLAN			3
+#define	L3_BPDU				4
+#define L3_IPV6				5
 
-// Layer-4 packet classification
-#define	L4_UNKNOWN			0		// Unknown
-#define	L4_UDP				1		// UDPv4 packet
-#define	L4_TCP				2		// TCPv4 packet
-#define	L4_ICMPV4			3		// ICMPv4 packet
-#define	L4_ICMPV6			4		// ICMPv6 packet
-#define	L4_FRAGMENT			5		// Fragment packet
+#define	L4_UNKNOWN			0
+#define	L4_UDP				1
+#define	L4_TCP				2
+#define	L4_ICMPV4			3
+#define	L4_ICMPV6			4
+#define	L4_FRAGMENT			5
 
-// Layer-7 packet classification
-#define	L7_UNKNOWN			0		// Unknown
-#define	L7_DHCPV4			1		// DHCPv4 packet
-#define	L7_IKECONN			2		// IKE connection request packet
-#define L7_DNS				4		// DNS packet
+#define	L7_UNKNOWN			0
+#define	L7_DHCPV4			1
+#define	L7_IKECONN			2
+#define L7_DNS				4
 
 
-// IKE header
 struct IKE_HEADER
 {
-	UINT64 InitiatorCookie;						// Initiator cookie
-	UINT64 ResponderCookie;						// Responder cookie
-	UCHAR NextPayload;							// Next payload
-	UCHAR Version;								// Version
-	UCHAR ExchangeType;							// Exchange type
-	UCHAR Flag;									// Flag
-	UINT MessageId;								// Message ID
-	UINT MessageSize;							// Message size
+	UINT64 InitiatorCookie;
+	UINT64 ResponderCookie;
+	UCHAR NextPayload;
+	UCHAR Version;
+	UCHAR ExchangeType;
+	UCHAR Flag;
+	UINT MessageId;
+	UINT MessageSize;
 } GCC_PACKED;
 
-// IKE exchange type
-#define	IKE_EXCHANGE_TYPE_MAIN				2	// Main mode
-#define IKE_EXCHANGE_TYPE_AGGRESSIVE		4	// Aggressive mode
-#define IKE_EXCHANGE_TYPE_INFORMATION		5	// Information exchange
-#define IKE_EXCHANGE_TYPE_QUICK				32	// Quick mode
+#define	IKE_EXCHANGE_TYPE_MAIN				2
+#define IKE_EXCHANGE_TYPE_AGGRESSIVE		4
 
-// DHCPv4 data
 struct DHCPV4_DATA
 {
 	UCHAR *Data;
@@ -669,91 +544,66 @@ struct DHCPV4_DATA
 
 	struct DHCP_OPTION_LIST *ParsedOptionList;
 };
-// DHCP Option
 struct DHCP_OPTION
 {
-	UINT Id;						// ID
-	UINT Size;						// Size
-	void *Data;						// Data
+	UINT Id;
+	UINT Size;
+	void *Data;
 };
 
-// DHCP classless static route entry
 struct DHCP_CLASSLESS_ROUTE
 {
-	bool Exists;					// Existing flag
-	IP Network;						// Network address
-	IP SubnetMask;					// Subnet mask
-	IP Gateway;						// Gateway
-	UINT SubnetMaskLen;				// Subnet mask length
+	bool Exists;
+	IP Network;
+	IP SubnetMask;
+	IP Gateway;
+	UINT SubnetMaskLen;
 };
 
 #define	MAX_DHCP_CLASSLESS_ROUTE_ENTRIES	64
-#define	MAX_DHCP_CLASSLESS_ROUTE_TABLE_STR_SIZE	3200
 
-// DHCP classless static route table
 struct DHCP_CLASSLESS_ROUTE_TABLE
 {
-	UINT NumExistingRoutes;			// Number of existing routing table entries
-	DHCP_CLASSLESS_ROUTE Entries[MAX_DHCP_CLASSLESS_ROUTE_ENTRIES];	// Entries
+	UINT NumExistingRoutes;
+	DHCP_CLASSLESS_ROUTE Entries[MAX_DHCP_CLASSLESS_ROUTE_ENTRIES];
 };
 
 #define	MAX_USER_CLASS_LEN	255
 
-// DHCP option list
 struct DHCP_OPTION_LIST
 {
-	// Common Item
-	UINT Opcode;					// DHCP opcode
+	UINT Opcode;
 
-	// Client request
-	UINT RequestedIp;				// Requested IP address
-	char Hostname[MAX_HOST_NAME_LEN + 1]; // Host name
-	char UserClass[MAX_USER_CLASS_LEN + 1]; // User class
-	// RFC3003 defines that User Class option is array of text strings,
-	// but the most popular DHCP clients and servers,
+	UINT RequestedIp;
+	char Hostname[MAX_HOST_NAME_LEN + 1];
+	char UserClass[MAX_USER_CLASS_LEN + 1];
+	// RFC 3003 makes User Class an array of text strings, but ISC DHCP
+	// and Microsoft DHCP Server treat it as one text string
 	// i.e. ISC DHCP and Microsoft DHCP Server, consider it a text string
 
-	// Server response
-	UINT ClientAddress;				// Client address
-	UINT ServerAddress;				// DHCP server address
-	UINT LeaseTime;					// Lease time
-	char DomainName[MAX_HOST_NAME_LEN + 1];	// Domain name
-	UINT SubnetMask;				// Subnet mask
-	UINT Gateway;					// Gateway address
-	UINT DnsServer;					// DNS server address 1
-	UINT DnsServer2;				// DNS server address 2
-	UINT WinsServer;				// WINS server address 1
-	UINT WinsServer2;				// WINS server address 2
-	DHCP_CLASSLESS_ROUTE_TABLE ClasslessRoute;	// Classless static routing table
+	UINT ClientAddress;
+	UINT ServerAddress;
+	UINT LeaseTime;
+	char DomainName[MAX_HOST_NAME_LEN + 1];
+	UINT SubnetMask;
+	UINT Gateway;
+	UINT DnsServer;
+	UINT DnsServer2;
+	UINT WinsServer;
+	UINT WinsServer2;
+	DHCP_CLASSLESS_ROUTE_TABLE ClasslessRoute;
 };
 
-// Modification option in the DHCP packet
 struct DHCP_MODIFY_OPTION
 {
-	bool RemoveDefaultGatewayOnReply;			// Remove the default gateway from the DHCP Reply
+	bool RemoveDefaultGatewayOnReply;
 };
 
-// Special IP address
-#define	SPECIAL_IPV4_ADDR_LLMNR_DEST		0xE00000FC	// 224.0.0.252
 
-// Special port
-#define	SPECIAL_UDP_PORT_LLMNR				5355	// LLMNR
-#define	SPECIAL_UDP_PORT_NBTNS				137		// NetBIOS Name Service
-#define	SPECIAL_UDP_PORT_NBTDGM				138		// NetBIOS Datagram
-#define	SPECIAL_UDP_PORT_WSD				3702	// WS-Discovery
-#define	SPECIAL_UDP_PORT_SSDP				1900	// SSDP
-
-
-PKT *ParsePacketIPv4WithDummyMacHeader(UCHAR *buf, UINT size);
 PKT *ParsePacket(UCHAR *buf, UINT size);
-PKT *ParsePacketEx(UCHAR *buf, UINT size, bool no_l3);
-PKT *ParsePacketEx2(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id);
-PKT *ParsePacketEx3(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address);
 PKT *ParsePacketEx4(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum);
-PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum, bool no_l3_l4_except_icmpv6);
-PKT *ParsePacketUpToICMPv6(UCHAR *buf, UINT size);
+PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum, bool no_l3_l4_except_icmpv6, bool no_dns);
 void FreePacket(PKT *p);
-void FreePacketWithData(PKT *p);
 void FreePacketIPv4(PKT *p);
 void FreePacketTagVlan(PKT *p);
 void FreePacketARPv4(PKT *p);
@@ -794,7 +644,6 @@ BUF *BuildIPv6PacketHeader(IPV6_HEADER_PACKET_INFO *info, UINT *bytes_before_pay
 UCHAR IPv6GetNextHeaderFromQueue(QUEUE *q);
 void BuildAndAddIPv6PacketOptionHeader(BUF *b, IPV6_OPTION_HEADER *opt, UCHAR next_header, UINT size);
 BUF *BuildICMPv6NeighborSoliciation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCHAR *my_mac_address, UINT id, bool use_multicast);
-BUF *BuildICMPv6RouterSoliciation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCHAR *my_mac_address, UINT id);
 BUF *BuildICMPv6(IPV6_ADDR *src_ip, IPV6_ADDR *dest_ip, UCHAR hop_limit, UCHAR type, UCHAR code, void *data, UINT size, UINT id);
 
 bool VLanRemoveTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vlan_tpid);
@@ -814,10 +663,7 @@ bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address);
 USHORT IpChecksum(void *buf, UINT size);
 
 void GenMacAddress(UCHAR *mac);
-UINT GetBroadcastAddress(UINT addr, UINT mask);
-void GetBroadcastAddress4(IP *dst, IP *addr, IP *mask);
 
-LIST *BuildDhcpOption(DHCP_OPTION_LIST *opt);
 DHCP_OPTION *NewDhcpOption(UINT id, void *data, UINT size);
 DHCP_OPTION_LIST *ParseDhcpOptionList(void *data, UINT size);
 DHCP_OPTION *GetDhcpOption(LIST *o, UINT id);
@@ -830,21 +676,12 @@ HTTPLOG *ParseHttpsAccessLog(PKT *pkt);
 BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size);
 BUF *DhcpModifyIPv4(DHCP_MODIFY_OPTION *m, void *data, UINT size);
 
-DHCP_CLASSLESS_ROUTE *GetBestClasslessRoute(DHCP_CLASSLESS_ROUTE_TABLE *t, IP *ip);
 void DhcpParseClasslessRouteData(DHCP_CLASSLESS_ROUTE_TABLE *t, void *data, UINT size);
-BUF *DhcpBuildClasslessRouteData(DHCP_CLASSLESS_ROUTE_TABLE *t);
-bool ParseClasslessRouteStr(DHCP_CLASSLESS_ROUTE *r, char *str);
-bool ParseClasslessRouteTableStr(DHCP_CLASSLESS_ROUTE_TABLE *d, char *str);
-void BuildClasslessRouteStr(char *str, UINT str_size, DHCP_CLASSLESS_ROUTE *r);
-void BuildClasslessRouteTableStr(char *str, UINT str_size, DHCP_CLASSLESS_ROUTE_TABLE *t);
-bool NormalizeClasslessRouteTableStr(char *dst, UINT dst_size, char *src);
-
 
 
 #ifdef	OS_WIN32
 #pragma pack(pop)
-#endif	// OS_WIN32
+#endif
 
-#endif	// TCPIP_H
-
+#endif
 

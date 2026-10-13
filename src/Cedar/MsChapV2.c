@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
-
 // MsChapV2.c
 // MS-CHAPv2 and NT-hash authentication helpers
 
@@ -14,19 +10,16 @@
 #include "Mayaqua/Network.h"
 #include "Mayaqua/Str.h"
 
-// Generate the NT hash of the password
 void GenerateNtPasswordHash(UCHAR *dst, char *password)
 {
 	UCHAR *tmp;
 	UINT tmp_size;
 	UINT i, len;
-	// Validate arguments
 	if (dst == NULL || password == NULL)
 	{
 		return;
 	}
 
-	// Generate a Unicode password
 	len = StrLen(password);
 	tmp_size = len * 2;
 
@@ -37,32 +30,17 @@ void GenerateNtPasswordHash(UCHAR *dst, char *password)
 		tmp[i * 2] = password[i];
 	}
 
-	// Hashing
 	HashMd4(dst, tmp, tmp_size);
 
 	Free(tmp);
 }
 
-// Generate the MS-CHAPv2 client-side challenge
-void MsChapV2Client_GenerateChallenge(UCHAR *dst)
-{
-	// Validate arguments
-	if (dst == NULL)
-	{
-		return;
-	}
-
-	Rand(dst, 16);
-}
-
-// Generate a 8 bytes challenge
 void MsChapV2_GenerateChallenge8(UCHAR *dst, UCHAR *client_challenge, UCHAR *server_challenge, char *username)
 {
 	BUF *b;
 	UCHAR hash[SHA1_SIZE];
 	char username2[MAX_SIZE];
 	char domainname2[MAX_SIZE];
-	// Validate arguments
 	if (dst == NULL || client_challenge == NULL || server_challenge == NULL)
 	{
 		return;
@@ -87,12 +65,10 @@ void MsChapV2_GenerateChallenge8(UCHAR *dst, UCHAR *client_challenge, UCHAR *ser
 	Copy(dst, hash, 8);
 }
 
-// Generate the MS-CHAPv2 client response
 void MsChapV2Client_GenerateResponse(UCHAR *dst, UCHAR *challenge8, UCHAR *nt_password_hash)
 {
 	UCHAR password_hash_2[21];
 	UCHAR key1[8], key2[8], key3[8];
-	// Validate arguments
 	if (dst == NULL || challenge8 == NULL || nt_password_hash == NULL)
 	{
 		return;
@@ -114,10 +90,8 @@ void MsChapV2Client_GenerateResponse(UCHAR *dst, UCHAR *challenge8, UCHAR *nt_pa
 	DesEcbEncrypt(dst + 16, challenge8, key3);
 }
 
-// Generate a hash of the hash of the NT password
 void GenerateNtPasswordHashHash(UCHAR *dst_hash, UCHAR *src_hash)
 {
-	// Validate arguments
 	if (dst_hash == NULL || src_hash == NULL)
 	{
 		return;
@@ -126,14 +100,12 @@ void GenerateNtPasswordHashHash(UCHAR *dst_hash, UCHAR *src_hash)
 	HashMd4(dst_hash, src_hash, 16);
 }
 
-// Generate the MS-CHAPv2 server response
 void MsChapV2Server_GenerateResponse(UCHAR *dst, UCHAR *nt_password_hash_hash, UCHAR *client_response, UCHAR *challenge8)
 {
 	UCHAR digest[SHA1_SIZE];
 	BUF *b;
 	char *magic1 = "Magic server to client signing constant";
 	char *magic2 = "Pad to make it do more than one iteration";
-	// Validate arguments
 	if (dst == NULL || nt_password_hash_hash == NULL || client_response == NULL || challenge8 == NULL)
 	{
 		return;
@@ -154,71 +126,10 @@ void MsChapV2Server_GenerateResponse(UCHAR *dst, UCHAR *nt_password_hash_hash, U
 	FreeBuf(b);
 }
 
-// Verify whether the password matches one that is specified by the user in the MS-CHAPv2
-bool MsChapV2VerityPassword(IPC_MSCHAP_V2_AUTHINFO *d, char *password)
-{
-	UCHAR ntlm_hash[MD5_SIZE];
-	UCHAR challenge8[8];
-	UCHAR client_response[24];
-	// Validate arguments
-	if (d == NULL || password == NULL)
-	{
-		return false;
-	}
-
-	GenerateNtPasswordHash(ntlm_hash, password);
-	MsChapV2_GenerateChallenge8(challenge8, d->MsChapV2_ClientChallenge, d->MsChapV2_ServerChallenge, d->MsChapV2_PPPUsername);
-	MsChapV2Client_GenerateResponse(client_response, challenge8, ntlm_hash);
-
-	if (Cmp(client_response, d->MsChapV2_ClientResponse, 24) != 0)
-	{
-		return false;
-	}
-
-	return true;
-}
-
-// Estimate the password in the brute force for the request packet of MS-CHAPv2
-char *MsChapV2DoBruteForce(IPC_MSCHAP_V2_AUTHINFO *d, LIST *password_list)
-{
-	UINT i;
-	// Validate arguments
-	if (d == NULL || password_list == NULL)
-	{
-		return NULL;
-	}
-
-	for (i = 0; i < LIST_NUM(password_list); i++)
-	{
-		char *s = LIST_DATA(password_list, i);
-		char tmp[MAX_SIZE];
-		UINT j, max;
-		UINT len;
-
-		StrCpy(tmp, sizeof(tmp), s);
-
-		len = StrLen(tmp);
-		max = Power(2, MIN(len, 9));
-
-		for (j = 0; j < max; j++)
-		{
-			SetStrCaseAccordingToBits(tmp, j);
-			if (MsChapV2VerityPassword(d, tmp))
-			{
-				return CopyStr(tmp);
-			}
-		}
-	}
-
-	return NULL;
-}
-
-// Extract the MS-CHAP v2 authentication information by parsing the password string
 bool ParseAndExtractMsChapV2InfoFromPassword(IPC_MSCHAP_V2_AUTHINFO *d, char *password)
 {
 	TOKEN_LIST *t;
 	bool ret = false;
-	// Validate arguments
 	if (d == NULL || password == NULL)
 	{
 		return false;

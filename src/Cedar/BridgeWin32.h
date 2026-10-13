@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
-
 // BridgeWin32.h
 // Header of BridgeWin32.c
 
@@ -14,9 +10,6 @@
 
 #ifdef BRIDGE_C
 
-// Header for Internal function (for BridgeWin32.c)
-
-// Adapter list
 typedef struct WP_ADAPTER
 {
 	char Name[MAX_SIZE];
@@ -25,36 +18,28 @@ typedef struct WP_ADAPTER
 	UINT Id;
 } WP_ADAPTER;
 
-// Internal function prototype
 void InitEthAdaptersList();
 void FreeEthAdaptersList();
 int CompareWpAdapter(void *p1, void *p2);
 LIST *GetEthAdapterList();
 LIST *GetEthAdapterListInternal();
 
-#endif	// BRIDGE_C
+#endif
 
-// ETH structure
 struct ETH
 {
-	char *Name;					// Adapter name
-	char *Title;				// Adapter title
-	CANCEL *Cancel;				// Cancel object
-	bool LoopbackBlock;			// Whether to block the loop back packet
-	UCHAR MacAddress[6];		// MAC address
-	bool HasFatalError;			// A fatal error occurred on the transmission side
+	char *Name;
+	char *Title;
+	CANCEL *Cancel;
+	bool LoopbackBlock;
+	UCHAR MacAddress[6];
+	bool HasFatalError;
 
-	SU *Su;						// SeLow handle
-	SU_ADAPTER *SuAdapter;		// SeLow adapter handle
+	SU *Su;
+	SU_ADAPTER *SuAdapter;
 
-	// Unused
-	bool IsRawIpMode;			// RAW IP mode
-	UCHAR RawIpMyMacAddr[6];
-	UCHAR RawIpYourMacAddr[6];
-	IP MyPhysicalIPForce;
 };
 
-// Function prototype
 void InitEth();
 void FreeEth();
 bool IsEthSupported();
@@ -65,7 +50,6 @@ ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr);
 void CloseEth(ETH *e);
 CANCEL *EthGetCancel(ETH *e);
 UINT EthGetPacket(ETH *e, void **data);
-void EthPutPacket(ETH *e, void *data, UINT size);
 void EthPutPackets(ETH *e, UINT num, void **datas, UINT *sizes);
 void GetEthNetworkConnectionName(wchar_t *dst, UINT size, char *device_name);
 UINT EthGetMtu(ETH *e);
@@ -94,6 +78,6 @@ bool Win32IsUsingSeLow();
 void Win32SetEnableSeLow(bool b);
 bool Win32GetEnableSeLow();
 
-#endif // BRIDGEWIN32_H
+#endif
 
-#endif // OS_WIN32
+#endif

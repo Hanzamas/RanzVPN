@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
-
 // BridgeWin32.c
 // Ethernet Bridge Program (Win32)
 
@@ -35,31 +31,26 @@ static bool enable_selow = true;
 
 static bool g_bridge_win32_show_all_if = false;
 
-// Set the flag which indicates whether using SeLow
 void Win32SetEnableSeLow(bool b)
 {
 	enable_selow = b;
 }
 
-// Get the flag which indicates whether using SeLow
 bool Win32GetEnableSeLow()
 {
 	return enable_selow;
 }
 
-// Set the flag which indicates whether enumerating all interfaces
 void Win32EthSetShowAllIf(bool b)
 {
 	g_bridge_win32_show_all_if = b;
 }
 
-// Get the flag which indicates whether enumerating all interfaces
 bool Win32EthGetShowAllIf()
 {
 	return g_bridge_win32_show_all_if;
 }
 
-// Compare Ethernet device list
 int CmpRpcEnumEthVLan(void *p1, void *p2)
 {
 	RPC_ENUM_ETH_VLAN_ITEM *v1, *v2;
@@ -77,25 +68,21 @@ int CmpRpcEnumEthVLan(void *p1, void *p2)
 	return StrCmpi(v1->DeviceName, v2->DeviceName);
 }
 
-// Get the value of MTU (Not supported in Windows)
 UINT EthGetMtu(ETH *e)
 {
 	return 0;
 }
 
-// Set the value of MTU (Not supported in Windows)
 bool EthSetMtu(ETH *e, UINT mtu)
 {
 	return false;
 }
 
-// Check whether setting MEU value (Not supported in Windows)
 bool EthIsChangeMtuSupported(ETH *e)
 {
 	return false;
 }
 
-// Set the state of VLAN tag pass-through 
 bool SetVLanEnableStatus(char *title, bool enable)
 {
 	RPC_ENUM_ETH_VLAN t;
@@ -104,7 +91,6 @@ bool SetVLanEnableStatus(char *title, bool enable)
 	char key[MAX_SIZE];
 	char tcpkey[MAX_SIZE];
 	char short_key[MAX_SIZE];
-	// Validate arguments
 	if (title == NULL)
 	{
 		return false;
@@ -205,11 +191,9 @@ bool SetVLanEnableStatus(char *title, bool enable)
 	return ret;
 }
 
-// Find Ethernet device
 RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, char *name)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || name == NULL)
 	{
 		return NULL;
@@ -226,13 +210,11 @@ RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, char *name)
 	return NULL;
 }
 
-// Get the state of VLAN tag pass-through 
 void GetVLanEnableStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
 {
 	char key[MAX_SIZE];
 	char short_key[MAX_SIZE];
 	char tcpkey[MAX_SIZE];
-	// Validate arguments
 	if (e == NULL)
 	{
 		return;
@@ -301,13 +283,11 @@ void GetVLanEnableStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
 	}
 }
 
-// Get VLAN tag pass-through availability of the device
 void GetVLanSupportStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
 {
 	BUF *b;
 	char filename[MAX_SIZE];
 	void *wow;
-	// Validate arguments
 	if (e == NULL)
 	{
 		return;
@@ -315,7 +295,6 @@ void GetVLanSupportStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
 
 	wow = MsDisableWow64FileSystemRedirection();
 
-	// Read the device driver file
 	CombinePath(filename, sizeof(filename), MsGetSystem32Dir(), "drivers");
 	CombinePath(filename, sizeof(filename), filename, e->DriverName);
 
@@ -367,12 +346,10 @@ void GetVLanSupportStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
 	MsRestoreWow64FileSystemRedirection(wow);
 }
 
-// Get the device instance id from short_key
 char *SearchDeviceInstanceIdFromShortKey(char *short_key)
 {
 	char *ret = NULL;
 	TOKEN_LIST *t1;
-	// Validate arguments
 	if (short_key == NULL)
 	{
 		return NULL;
@@ -448,12 +425,10 @@ char *SearchDeviceInstanceIdFromShortKey(char *short_key)
 	return ret;
 }
 
-// Get VLAN tag pass-through availability of all devices
 bool EnumEthVLanWin32(RPC_ENUM_ETH_VLAN *t)
 {
 	UINT i;
 	LIST *o;
-	// Validate arguments
 	if (t == NULL)
 	{
 		return false;
@@ -466,7 +441,6 @@ bool EnumEthVLanWin32(RPC_ENUM_ETH_VLAN *t)
 		return false;
 	}
 
-	// Get device list
 	Lock(eth_list_lock);
 
 	InitEthAdaptersList();
@@ -523,7 +497,6 @@ bool EnumEthVLanWin32(RPC_ENUM_ETH_VLAN *t)
 
 							if (EndWith(sysname, ".sys"))
 							{
-								// device found
 								RPC_ENUM_ETH_VLAN_ITEM *e = ZeroMalloc(sizeof(RPC_ENUM_ETH_VLAN_ITEM));
 
 								StrCpy(e->DeviceName, sizeof(e->DeviceName), a->Title);
@@ -531,10 +504,8 @@ bool EnumEthVLanWin32(RPC_ENUM_ETH_VLAN *t)
 								StrCpy(e->DeviceInstanceId, sizeof(e->DeviceInstanceId), device_instance_id);
 								StrCpy(e->DriverName, sizeof(e->DriverName), sysname);
 
-								// Get VLAN tag pass-through availability of the device
 								GetVLanSupportStatus(e);
 
-								// Get current pass-through setting of the device
 								GetVLanEnableStatus(e);
 
 								Insert(o, e);
@@ -571,13 +542,11 @@ bool EnumEthVLanWin32(RPC_ENUM_ETH_VLAN *t)
 	return true;
 }
 
-// Get registry key of the network class data by GUID
 bool GetClassRegKeyWin32(char *key, UINT key_size, char *short_key, UINT short_key_size, char *guid)
 {
 	TOKEN_LIST *t;
 	bool ret = false;
 	UINT i;
-	// Validate arguments
 	if (key == NULL || short_key == NULL || guid == NULL)
 	{
 		return false;
@@ -619,12 +588,10 @@ bool GetClassRegKeyWin32(char *key, UINT key_size, char *short_key, UINT short_k
 	return ret;
 }
 
-// Send multiple packets
 void EthPutPackets(ETH *e, UINT num, void **datas, UINT *sizes)
 {
 	UINT i;
 	bool ok = true;
-	// Validate arguments
 	if (e == NULL || num == 0 || datas == NULL || sizes == NULL)
 	{
 		return;
@@ -634,7 +601,6 @@ void EthPutPackets(ETH *e, UINT num, void **datas, UINT *sizes)
 		return;
 	}
 
-	// Send packets with SeLow
 	for (i = 0;i < num;i++)
 	{
 		UCHAR *data = datas[i];
@@ -642,47 +608,29 @@ void EthPutPackets(ETH *e, UINT num, void **datas, UINT *sizes)
 
 		if (ok)
 		{
-			// Actually, only enqueuing
 			ok = SuPutPacket(e->SuAdapter, data, size);
 		}
 
 		if (ok == false)
 		{
-			// Free memory on write error
 			Free(data);
 		}
 	}
 
 	if (ok)
 	{
-		// Send all data in queue at once
 		ok = SuPutPacket(e->SuAdapter, NULL, 0);
 	}
 
 	if (ok == false)
 	{
-		// Error occurred
 		e->HasFatalError = true;
 	}
 }
 
-// Send a packet
-void EthPutPacket(ETH *e, void *data, UINT size)
-{
-	// Validate arguments
-	if (e == NULL || data == NULL || size == 0)
-	{
-		return;
-	}
-
-	EthPutPackets(e, 1, &data, &size);
-}
-
-// Read next packet
 UINT EthGetPacket(ETH *e, void **data)
 {
 	UINT size;
-	// Validate arguments
 	if (e == NULL || data == NULL)
 	{
 		return INFINITE;
@@ -692,10 +640,8 @@ UINT EthGetPacket(ETH *e, void **data)
 		return INFINITE;
 	}
 
-	// Read packet with SeLow
 	if (SuGetNextPacket(e->SuAdapter, data, &size) == false)
 	{
-		// Error occurred
 		e->HasFatalError = true;
 		return INFINITE;
 	}
@@ -703,10 +649,8 @@ UINT EthGetPacket(ETH *e, void **data)
 	return size;
 }
 
-// Get cancel object
 CANCEL *EthGetCancel(ETH *e)
 {
-	// Validate arguments
 	if (e == NULL)
 	{
 		return NULL;
@@ -717,10 +661,8 @@ CANCEL *EthGetCancel(ETH *e)
 	return e->Cancel;
 }
 
-// Close adapter
 void CloseEth(ETH *e)
 {
-	// Validate arguments
 	if (e == NULL)
 	{
 		return;
@@ -728,7 +670,6 @@ void CloseEth(ETH *e)
 
 	ReleaseCancel(e->Cancel);
 
-	// Close SeLow adapter
 	SuCloseAdapter(e->SuAdapter);
 	SuFree(e->Su);
 
@@ -738,7 +679,6 @@ void CloseEth(ETH *e)
 	Free(e);
 }
 
-// Search adapter with the name
 struct WP_ADAPTER *Win32EthSearch(char *name)
 {
 	UINT i;
@@ -751,7 +691,6 @@ struct WP_ADAPTER *Win32EthSearch(char *name)
 	if (id != 0)
 	{
 		UINT num_match = 0;
-		// Search with ID when ID is specified
 		for (i = 0;i < LIST_NUM(eth_list);i++)
 		{
 			WP_ADAPTER *a = LIST_DATA(eth_list, i);
@@ -765,7 +704,6 @@ struct WP_ADAPTER *Win32EthSearch(char *name)
 
 		if (num_match >= 2)
 		{
-			// If the ID matches to 2 or more devices, search with the name
 			for (i = 0;i < LIST_NUM(eth_list);i++)
 			{
 				WP_ADAPTER *a = LIST_DATA(eth_list, i);
@@ -783,7 +721,6 @@ struct WP_ADAPTER *Win32EthSearch(char *name)
 	}
 	else
 	{
-		// Search with name when ID is not specified
 		for (i = 0;i < LIST_NUM(eth_list);i++)
 		{
 			WP_ADAPTER *a = LIST_DATA(eth_list, i);
@@ -799,7 +736,6 @@ struct WP_ADAPTER *Win32EthSearch(char *name)
 	return ret;
 }
 
-// Open adapter
 ETH *OpenEth(char *name, bool local, bool tapmode, char *tapaddr)
 {
 	ETH *ret;
@@ -823,7 +759,6 @@ ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
 	char name_with_id[MAX_SIZE];
 	SU *su = NULL;
 	SU_ADAPTER *su_adapter = NULL;
-	// Validate arguments
 	if (name == NULL || IsEthSupported() == false)
 	{
 		return NULL;
@@ -831,7 +766,6 @@ ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
 
 	if (tapmode)
 	{
-		// Tap is not supported in Windows
 		return NULL;
 	}
 
@@ -847,13 +781,9 @@ ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
 		return NULL;
 	}
 
-	Debug("OpenEthInternal: %s\n", t->Name);
-
-	// Open with SU
 	su = SuInit();
 	if (su == NULL)
 	{
-		// Fail to initialize SU
 		Unlock(eth_list_lock);
 		return NULL;
 	}
@@ -862,7 +792,6 @@ ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
 
 	if (su_adapter == NULL)
 	{
-		// Fail to get adapter
 		SuFree(su);
 		Unlock(eth_list_lock);
 		return NULL;
@@ -876,17 +805,14 @@ ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
 	Win32EthMakeCombinedName(name_with_id, sizeof(name_with_id), t->Title, t->Guid);
 	e->Title = CopyStr(name_with_id);
 
-	// SU
 	e->SuAdapter = su_adapter;
 	e->Su = su;
 
-	// Get event object
 	h = e->SuAdapter->hEvent;
 
 	c = NewCancelSpecial(h);
 	e->Cancel = c;
 
-	// Get MAC address by GUID
 	ms = MsGetAdapterByGuid(t->Guid);
 	if (ms != NULL)
 	{
@@ -903,10 +829,8 @@ ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
 	return e;
 }
 
-// Generate a combined name from NIC name and GUID
 void Win32EthMakeCombinedName(char *dst, UINT dst_size, char *nicname, char *guid)
 {
-	// Validate arguments
 	if (dst == NULL || nicname == NULL || guid == NULL)
 	{
 		return;
@@ -914,7 +838,6 @@ void Win32EthMakeCombinedName(char *dst, UINT dst_size, char *nicname, char *gui
 
 	if (IsEmptyStr(guid) == false)
 	{
-		// Allow to combine "FriendlyName" consisting of a NULL character and ID.
 		Format(dst, dst_size, "%s(ID=%010u)", nicname, Win32EthGenIdFromGuid(guid));
 	}
 	else
@@ -923,13 +846,11 @@ void Win32EthMakeCombinedName(char *dst, UINT dst_size, char *nicname, char *gui
 	}
 }
 
-// Decompose combined name
 UINT Win32EthGetNameAndIdFromCombinedName(char *name, UINT name_size, char *str)
 {
 	UINT ret = 0;
 	char id_str[MAX_SIZE];
 	UINT len;
-	// Validate arguments
 	ClearStr(name, name_size);
 	StrCpy(name, name_size, str);
 	if (name == NULL || str == NULL)
@@ -939,7 +860,6 @@ UINT Win32EthGetNameAndIdFromCombinedName(char *name, UINT name_size, char *str)
 
 	len = StrLen(str);
 
-	// Allow to combine "FriendlyName" consisting of a NULL character and ID beginning with "(ID=".
 	if (len >= 15)
 	{
 		StrCpy(id_str, sizeof(id_str), str + len - 15);
@@ -968,13 +888,11 @@ UINT Win32EthGetNameAndIdFromCombinedName(char *name, UINT name_size, char *str)
 	return ret;
 }
 
-// Generate an ID from GUID
 UINT Win32EthGenIdFromGuid(char *guid)
 {
 	char tmp[MAX_SIZE];
 	UCHAR hash[SHA1_SIZE];
 	UINT i;
-	// Validate arguments
 	if (guid == NULL)
 	{
 		return 0;
@@ -998,7 +916,6 @@ UINT Win32EthGenIdFromGuid(char *guid)
 	return i;
 }
 
-// Get Ethernet adapter list
 TOKEN_LIST *GetEthList()
 {
 	UINT v;
@@ -1053,38 +970,32 @@ TOKEN_LIST *GetEthListEx(UINT *total_num_including_hidden, bool enum_normal, boo
 
 			if (InStr(a->Title, "vpn client adapter"))
 			{
-				// Hide virtual NIC for VPN client
 				show = false;
 			}
 
 			if (InStr(a->Title, "tunnel adapter"))
 			{
-				// Hide tunnel adapter
 				show = false;
 			}
 
 			if (InStr(a->Title, "teredo tunnel"))
 			{
-				// Hide tunnel adapter
 				show = false;
 			}
 
 			if (InStr(a->Title, "MS Tunnel Interface"))
 			{
-				// Hide tunnel adapter
 				show = false;
 			}
 
 			if (InStr(a->Title, "pseudo-interface"))
 			{
-				// Hide tunnel adapter
 				show = false;
 			}
 		}
 
 		if (msa != NULL)
 		{
-			// Hide except physical Ethernet NIC
 			if (msa->IsNotEthernetLan)
 			{
 				show = false;
@@ -1098,11 +1009,7 @@ TOKEN_LIST *GetEthListEx(UINT *total_num_including_hidden, bool enum_normal, boo
 		if (show)
 		{
 			ret->Token[j++] = CopyStr(tmp);
-
-			Debug("%s - %s\n", a->Guid, a->Title);
 		}
-		// Make sure that "FriendlyName" does not cosist a NULL character.
-		Debug("%s,- s=%d, t=%s, %s,\n", a->Guid, show, tmp, a->Title[0] == 0 ? "check=NG FriendlyName(Title) is NULL !" : "check=OK");
 	}
 
 	*total_num_including_hidden = ret->NumTokens;
@@ -1116,7 +1023,6 @@ TOKEN_LIST *GetEthListEx(UINT *total_num_including_hidden, bool enum_normal, boo
 	return ret;
 }
 
-// Compare the name of WP_ADAPTER
 int CompareWpAdapter(void *p1, void *p2)
 {
 	int i;
@@ -1135,13 +1041,11 @@ int CompareWpAdapter(void *p1, void *p2)
 	return i;
 }
 
-// Get whether the SeLow is used 
 bool Win32IsUsingSeLow()
 {
 	return is_using_selow;
 }
 
-// Get Ethernet adapter list
 LIST *GetEthAdapterList()
 {
 	void *p;
@@ -1160,11 +1064,10 @@ LIST *GetEthAdapterListInternal()
 	LIST *o;
 	LIST *ret;
 	UINT i, j;
-	char *qos_tag = "(Microsoft's Packet Scheduler)";	// Allow to combine "FriendlyName" consisting of a NULL character and QOS tag.
+	char *qos_tag = "(Microsoft's Packet Scheduler)";
 	SU *su = NULL;
 	LIST *su_adapter_list = NULL;
 
-	// Try to use SeLow
 	if (enable_selow)
 	{
 		su = SuInit();
@@ -1172,22 +1075,18 @@ LIST *GetEthAdapterListInternal()
 
 	o = NewListFast(CompareWpAdapter);
 
-	// Try to enumerate with SeLow
 	if (su != NULL)
 	{
 		su_adapter_list = SuGetAdapterList(su);
 
 		if (su_adapter_list == NULL)
 		{
-			// Fail to enumerate
 			SuFree(su);
 			su = NULL;
-			//WHERE;
 			is_using_selow = false;
 		}
 		else
 		{
-			//WHERE;
 			is_using_selow = true;
 		}
 	}
@@ -1198,7 +1097,6 @@ LIST *GetEthAdapterListInternal()
 
 	if (su_adapter_list != NULL)
 	{
-		// If 1 or more adapters are enumerated by SeLow, create adapter list object
 		UINT i;
 
 		for (i = 0;i < LIST_NUM(su_adapter_list);i++)
@@ -1228,10 +1126,9 @@ LIST *GetEthAdapterListInternal()
 		}
 	}
 
-	// Sort
 	if (su_adapter_list != NULL)
 	{
-		// Since adapter list made by SeLow is already sorted, don't sort here
+		// SeLow already returns the adapter list sorted
 		Sort(o);
 	}
 
@@ -1255,12 +1152,10 @@ LIST *GetEthAdapterListInternal()
 			continue;
 		}
 
-		// In using SeLow, all devices should be Ethernet device
 		is_ethernet = true;
 
 		if (is_ethernet)
 		{
-			// Add only Ethernet device
 			char tmp[MAX_SIZE];
 			UINT k;
 
@@ -1274,7 +1169,6 @@ LIST *GetEthAdapterListInternal()
 				}
 				else
 				{
-					// Allow to combine "FriendlyName" consisting of a NULL character and SEQ number.
 					Format(tmp, sizeof(tmp), "%s(%u)", a->Title, k + 1);
 				}
 
@@ -1319,7 +1213,6 @@ LIST *GetEthAdapterListInternal()
 	return ret;
 }
 
-// Initialize Ethernet adapter list
 void InitEthAdaptersList()
 {
 	if (eth_list != NULL)
@@ -1330,7 +1223,6 @@ void InitEthAdaptersList()
 	eth_list = GetEthAdapterList();
 }
 
-// Free Ethernet adapter list
 void FreeEthAdaptersList()
 {
 	UINT i;
@@ -1347,7 +1239,6 @@ void FreeEthAdaptersList()
 	eth_list = NULL;
 }
 
-// Is the SU supported
 bool Win32EthIsSuSupported()
 {
 	bool ret = false;
@@ -1363,41 +1254,34 @@ bool Win32EthIsSuSupported()
 	return ret;
 }
 
-// Is the Ethernet supported
 bool IsEthSupported()
 {
 	return Win32EthIsSuSupported();
 }
 
-// Initialize Ethernet
 void InitEth()
 {
 	if (eth_list_lock != NULL)
 	{
-		// Already initialized
 		return;
 	}
 
 	eth_list_lock = NewLock();
 }
 
-// Free Ethernet
 void FreeEth()
 {
 	if (eth_list_lock == NULL)
 	{
-		// Not initialized
 		return;
 	}
 
-	// Free adapter list
 	FreeEthAdaptersList();
 
 	DeleteLock(eth_list_lock);
 	eth_list_lock = NULL;
 }
 
-// Get network connection name from Ethernet device name
 void GetEthNetworkConnectionName(wchar_t *dst, UINT size, char *device_name)
 {
 	WP_ADAPTER *t;
@@ -1406,7 +1290,6 @@ void GetEthNetworkConnectionName(wchar_t *dst, UINT size, char *device_name)
 
 	UniStrCpy(dst, size, L"");
 
-	// Validate arguments
 	if (device_name == NULL || IsEthSupported() == false)
 	{
 		return;

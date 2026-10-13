@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Mayaqua Kernel
-
-
 // Cfg.c
 // Configuration information manipulation module
 
@@ -15,7 +11,6 @@
 #include "Object.h"
 #include "Str.h"
 
-// Create a backup of the configuration file
 void BackupCfgWEx(CFG_RW *rw, FOLDER *f, wchar_t *original, UINT revision_number)
 {
 	wchar_t dirname[MAX_PATH];
@@ -23,16 +18,13 @@ void BackupCfgWEx(CFG_RW *rw, FOLDER *f, wchar_t *original, UINT revision_number
 	wchar_t fullpath[MAX_PATH];
 	wchar_t datestr[MAX_PATH];
 	SYSTEMTIME st;
-	// Validate arguments
 	if (f == NULL || rw == NULL)
 	{
 		return;
 	}
 
-	// Determine the directory name
 	UniFormat(dirname, sizeof(dirname), L"$backup.%s", original[0] == L'$' ? original + 1 : original);
 
-	// Determine the file name
 	LocalTime(&st);
 	UniFormat(datestr, sizeof(datestr), L"%04u%02u%02u%02u_%s",
 		st.wYear, st.wMonth, st.wDay, st.wHour, original[0] == L'$' ? original + 1 : original);
@@ -47,7 +39,6 @@ void BackupCfgWEx(CFG_RW *rw, FOLDER *f, wchar_t *original, UINT revision_number
 			revision_number, original[0] == L'$' ? original + 1 : original);
 	}
 
-	// Don't save if the date and time has not been changed
 	if (UniStrCmpi(datestr, rw->LastSavedDateStr) == 0)
 	{
 		return;
@@ -55,24 +46,19 @@ void BackupCfgWEx(CFG_RW *rw, FOLDER *f, wchar_t *original, UINT revision_number
 
 	UniStrCpy(rw->LastSavedDateStr, sizeof(rw->LastSavedDateStr), datestr);
 
-	// Check the existence of file name
 	if (IsFileExistsW(filename))
 	{
 		return;
 	}
 
-	// Create the directory
 	MakeDirW(dirname);
 
-	// Save the file
 	UniFormat(fullpath, sizeof(fullpath), L"%s/%s", dirname, filename);
 	CfgSaveW(f, fullpath);
 }
 
-// Close the configuration file R/W
 void FreeCfgRw(CFG_RW *rw)
 {
-	// Validate arguments
 	if (rw == NULL)
 	{
 		return;
@@ -89,7 +75,6 @@ void FreeCfgRw(CFG_RW *rw)
 	Free(rw);
 }
 
-// Writing to the configuration file
 UINT SaveCfgRw(CFG_RW *rw, FOLDER *f)
 {
 	return SaveCfgRwEx(rw, f, INFINITE);
@@ -97,7 +82,6 @@ UINT SaveCfgRw(CFG_RW *rw, FOLDER *f)
 UINT SaveCfgRwEx(CFG_RW *rw, FOLDER *f, UINT revision_number)
 {
 	UINT ret = 0;
-	// Validate arguments
 	if (rw == NULL || f == NULL)
 	{
 		return 0;
@@ -130,24 +114,6 @@ UINT SaveCfgRwEx(CFG_RW *rw, FOLDER *f, UINT revision_number)
 	return ret;
 }
 
-// Creating a configuration file R/W
-CFG_RW *NewCfgRw(FOLDER **root, char *cfg_name)
-{
-	return NewCfgRwEx(root, cfg_name, false);
-}
-CFG_RW *NewCfgRwEx(FOLDER **root, char *cfg_name, bool dont_backup)
-{
-	wchar_t *cfg_name_w = CopyStrToUni(cfg_name);
-	CFG_RW *ret = NewCfgRwExW(root, cfg_name_w, dont_backup);
-
-	Free(cfg_name_w);
-
-	return ret;
-}
-CFG_RW *NewCfgRwExW(FOLDER **root, wchar_t *cfg_name, bool dont_backup)
-{
-	return NewCfgRwEx2W(root, cfg_name, dont_backup, NULL);
-}
 CFG_RW *NewCfgRwEx2A(FOLDER **root, char *cfg_name_a, bool dont_backup, char *template_name_a)
 {
 	CFG_RW *ret;
@@ -166,7 +132,6 @@ CFG_RW *NewCfgRwEx2W(FOLDER **root, wchar_t *cfg_name, bool dont_backup, wchar_t
 	CFG_RW *rw;
 	FOLDER *f;
 	bool loaded_from_template = false;
-	// Validate arguments
 	if (cfg_name == NULL || root == NULL)
 	{
 		return NULL;
@@ -175,7 +140,6 @@ CFG_RW *NewCfgRwEx2W(FOLDER **root, wchar_t *cfg_name, bool dont_backup, wchar_t
 	f = CfgReadW(cfg_name);
 	if (f == NULL)
 	{
-		// Load from template
 		if (UniIsEmptyStr(template_name) == false)
 		{
 			f = CfgReadW(template_name);
@@ -219,12 +183,10 @@ LABEL_CONTINUE:
 	return rw;
 }
 
-// Copy a file
 bool FileCopy(char *src, char *dst)
 {
 	BUF *b;
 	bool ret = false;
-	// Validate arguments
 	if (src == NULL || dst == NULL)
 	{
 		return false;
@@ -252,7 +214,6 @@ bool FileCopyExW(wchar_t *src, wchar_t *dst, bool read_lock)
 {
 	BUF *b;
 	bool ret = false;
-	// Validate arguments
 	if (src == NULL || dst == NULL)
 	{
 		return false;
@@ -276,7 +237,6 @@ bool FileCopyExWithEofW(wchar_t *src, wchar_t *dst, bool read_lock)
 {
 	BUF *b;
 	bool ret = false;
-	// Validate arguments
 	if (src == NULL || dst == NULL)
 	{
 		return false;
@@ -301,23 +261,9 @@ bool FileCopyExWithEofW(wchar_t *src, wchar_t *dst, bool read_lock)
 	return ret;
 }
 
-// Save the settings to a file
-void CfgSave(FOLDER *f, char *name)
-{
-	CfgSaveEx(NULL, f, name);
-}
 void CfgSaveW(FOLDER *f, wchar_t *name)
 {
 	CfgSaveExW(NULL, f, name);
-}
-bool CfgSaveEx(CFG_RW *rw, FOLDER *f, char *name)
-{
-	wchar_t *name_w = CopyStrToUni(name);
-	bool ret = CfgSaveExW(rw, f, name_w);
-
-	Free(name_w);
-
-	return ret;
 }
 bool CfgSaveExW(CFG_RW *rw, FOLDER *f, wchar_t *name)
 {
@@ -336,7 +282,6 @@ bool CfgSaveExW3(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size, bool 
 	IO *o;
 	bool ret = true;
 	UINT dummy_int = 0;
-	// Validate arguments
 	if (name == NULL || f == NULL)
 	{
 		return false;
@@ -346,21 +291,17 @@ bool CfgSaveExW3(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size, bool 
 		written_size = &dummy_int;
 	}
 
-	// Convert to buffer
 	b = CfgFolderToBuf(f, text);
 	if (b == NULL)
 	{
 		return false;
 	}
-	// Hash the contents
 	Sha0(hash, b->Buf, b->Size);
 
-	// Compare the contents to be written with the content which was written last
 	if (rw != NULL)
 	{
 		if (Cmp(hash, rw->LashHash, SHA1_SIZE) == 0)
 		{
-			// Contents are not changed
 			ret = false;
 		}
 		else
@@ -371,19 +312,14 @@ bool CfgSaveExW3(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size, bool 
 
 	if (ret || OS_IS_UNIX(GetOsInfo()->OsType))
 	{
-		// Generate a temporary file name
 		UniFormat(tmp, sizeof(tmp), L"%s.log", name);
-		// Copy the file that currently exist to a temporary file
-		// with appending the EOF
 		FileCopyExWithEofW(name, tmp, true);
 
-		// Save the new file
 		o = FileCreateW(name);
 		if (o != NULL)
 		{
 			if (FileWrite(o, b->Buf, b->Size) == false)
 			{
-				// File saving failure
 				FileClose(o);
 				FileDeleteW(name);
 				FileRenameW(tmp, name);
@@ -395,16 +331,13 @@ bool CfgSaveExW3(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size, bool 
 			}
 			else
 			{
-				// Successful saving file
 				FileClose(o);
 
-				// Delete the temporary file
 				FileDeleteW(tmp);
 			}
 		}
 		else
 		{
-			// File saving failure
 			FileRenameW(tmp, name);
 
 			if (rw != NULL)
@@ -416,22 +349,11 @@ bool CfgSaveExW3(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size, bool 
 
 	*written_size = b->Size;
 
-	// Release memory 
 	FreeBuf(b);
 
 	return ret;
 }
 
-// Read the settings from the file
-FOLDER *CfgRead(char *name)
-{
-	wchar_t *name_w = CopyStrToUni(name);
-	FOLDER *ret = CfgReadW(name_w);
-
-	Free(name_w);
-
-	return ret;
-}
 FOLDER *CfgReadW(wchar_t *name)
 {
 	wchar_t tmp[MAX_SIZE];
@@ -445,28 +367,22 @@ FOLDER *CfgReadW(wchar_t *name)
 	bool binary_file = false;
 	UCHAR header[8];
 	bool has_eof = false;
-	// Validate arguments
 	if (name == NULL)
 	{
 		return NULL;
 	}
 
-	// Generate a new file name
 	UniFormat(newfile, sizeof(newfile), L"%s.new", name);
-	// Generate a temporary file name
 	UniFormat(tmp, sizeof(tmp), L"%s.log", name);
 
-	// Read the new file if it exists
 	o = FileOpenW(newfile, false);
 	if (o == NULL)
 	{
 		UINT size;
-		// Read the temporary file
 		o = FileOpenW(tmp, false);
 
 		if (o != NULL)
 		{
-			// Check the EOF
 			size = FileSize(o);
 			if (size >= 2)
 			{
@@ -474,12 +390,10 @@ FOLDER *CfgReadW(wchar_t *name)
 
 				if (FileSeek(o, FILE_BEGIN, size - 1) && FileRead(o, &c, 1) && c == 0x1A && FileSeek(o, FILE_BEGIN, 0))
 				{
-					// EOF ok
 					has_eof = true;
 				}
 				else
 				{
-					// No EOF: file is corrupted
 					FileClose(o);
 					o = NULL;
 				}
@@ -492,12 +406,10 @@ FOLDER *CfgReadW(wchar_t *name)
 	}
 	if (o == NULL)
 	{
-		// Read the original file if there is no temporary file
 		o = FileOpenW(name, false);
 	}
 	else
 	{
-		// Read the original file too if the size of temporary file is 0
 		if (FileSize(o) == 0)
 		{
 			FileClose(o);
@@ -506,15 +418,12 @@ FOLDER *CfgReadW(wchar_t *name)
 	}
 	if (o == NULL)
 	{
-		// Failed to read
 		return NULL;
 	}
 
-	// Read into the buffer
 	size = FileSize(o);
 	if (has_eof)
 	{
-		// Ignore EOF
 		size -= 1;
 	}
 	buf = Malloc(size);
@@ -523,30 +432,26 @@ FOLDER *CfgReadW(wchar_t *name)
 	WriteBuf(b, buf, size);
 	SeekBuf(b, 0, 0);
 
-	// Close the file
 	FileClose(o);
 
 	if (delete_new)
 	{
-		// Delete the new file
 		FileDeleteW(newfile);
 	}
 
-	// If the beginning 8 character of the buffer is "SEVPN_DB", it is binary file
+	// A buffer starting with "SEVPN_DB" is the binary format
 	ReadBuf(b, header, sizeof(header));
 	if (Cmp(header, TAG_BINARY, 8) == 0)
 	{
 		UCHAR hash1[SHA1_SIZE], hash2[SHA1_SIZE];
 		binary_file = true;
 
-		// Check the hash 
 		ReadBuf(b, hash1, sizeof(hash1));
 
 		Sha0(hash2, ((UCHAR *)b->Buf) + 8 + SHA1_SIZE, b->Size - 8 - SHA1_SIZE);
 
 		if (Cmp(hash1, hash2, SHA1_SIZE) != 0)
 		{
-			// Corrupted file
 			FreeBuf(b);
 			return NULL;
 		}
@@ -559,19 +464,15 @@ FOLDER *CfgReadW(wchar_t *name)
 		SeekBuf(b, 8 + SHA1_SIZE, 0);
 	}
 
-	// Convert the buffer into a folder
 	if (binary_file == false)
 	{
-		// Text mode
 		f = CfgBufTextToFolder(b);
 	}
 	else
 	{
-		// Binary mode
 		f = CfgBufBinToFolder(b);
 	}
 
-	// Memory release
 	Free(buf);
 	FreeBuf(b);
 
@@ -580,23 +481,19 @@ FOLDER *CfgReadW(wchar_t *name)
 	return f;
 }
 
-// Read one line
 char *CfgReadNextLine(BUF *b)
 {
 	char *tmp;
 	char *buf;
 	UINT len;
-	// Validate arguments
 	if (b == NULL)
 	{
 		return NULL;
 	}
 
-	// Examine the number of characters up to the next newline
 	tmp = (char *)b->Buf + b->Current;
 	if ((b->Size - b->Current) == 0)
 	{
-		// Read to the end
 		return NULL;
 	}
 	len = 0;
@@ -620,7 +517,6 @@ char *CfgReadNextLine(BUF *b)
 		}
 	}
 
-	// Read ahead only 'len' bytes
 	buf = ZeroMalloc(len + 1);
 	ReadBuf(b, buf, len);
 	SeekBuf(b, 1, 1);
@@ -636,7 +532,6 @@ char *CfgReadNextLine(BUF *b)
 	return buf;
 }
 
-// Read the text stream
 bool CfgReadNextTextBUF(BUF *b, FOLDER *current)
 {
 	char *buf;
@@ -647,7 +542,6 @@ bool CfgReadNextTextBUF(BUF *b, FOLDER *current)
 	bool ret;
 	FOLDER *f;
 
-	// Validate arguments
 	if (b == NULL || current == NULL)
 	{
 		return false;
@@ -655,14 +549,12 @@ bool CfgReadNextTextBUF(BUF *b, FOLDER *current)
 
 	ret = true;
 
-	// Read one line
 	buf = CfgReadNextLine(b);
 	if (buf == NULL)
 	{
 		return false;
 	}
 
-	// Analyze this line
 	token = ParseToken(buf, "\t ");
 	if (token == NULL)
 	{
@@ -676,13 +568,10 @@ bool CfgReadNextTextBUF(BUF *b, FOLDER *current)
 		{
 			if (token->NumTokens >= 2)
 			{
-				// declare
 				name = CfgUnescape(token->Token[1]);
 
-				// Create a folder
 				f = CfgCreateFolder(current, name);
 
-				// Read the next folder
 				while (true)
 				{
 					if (CfgReadNextTextBUF(b, f) == false)
@@ -696,7 +585,6 @@ bool CfgReadNextTextBUF(BUF *b, FOLDER *current)
 		}
 		if (!StrCmpi(token->Token[0], "}"))
 		{
-			// end
 			ret = false;
 		}
 		if (token->NumTokens >= 3)
@@ -706,7 +594,6 @@ bool CfgReadNextTextBUF(BUF *b, FOLDER *current)
 
 			if (!StrCmpi(token->Token[0], TAG_STRING))
 			{
-				// string
 				wchar_t *uni;
 				UINT uni_size;
 				string = CfgUnescape(data);
@@ -722,17 +609,14 @@ bool CfgReadNextTextBUF(BUF *b, FOLDER *current)
 			}
 			if (!StrCmpi(token->Token[0], TAG_INT))
 			{
-				// uint
 				CfgAddInt(current, name, ToInt(data));
 			}
 			if (!StrCmpi(token->Token[0], TAG_INT64))
 			{
-				// uint64
 				CfgAddInt64(current, name, ToInt64(data));
 			}
 			if (!StrCmpi(token->Token[0], TAG_BOOL))
 			{
-				// bool
 				bool b = false;
 				if (!StrCmpi(data, TAG_TRUE))
 				{
@@ -746,7 +630,6 @@ bool CfgReadNextTextBUF(BUF *b, FOLDER *current)
 			}
 			if (!StrCmpi(token->Token[0], TAG_BYTE))
 			{
-				// byte
 				char *base64 = CfgUnescape(data);
 				const UINT base64_size = StrLen(base64);
 
@@ -765,7 +648,6 @@ bool CfgReadNextTextBUF(BUF *b, FOLDER *current)
 		}
 	}
 
-	// Release of the token
 	FreeToken(token);
 
 	Free(buf);
@@ -773,49 +655,39 @@ bool CfgReadNextTextBUF(BUF *b, FOLDER *current)
 	return ret;
 }
 
-// Convert the stream text to a folder
 FOLDER *CfgBufTextToFolder(BUF *b)
 {
 	FOLDER *f, *c;
-	// Validate arguments
 	if (b == NULL)
 	{
 		return NULL;
 	}
 
-	// Read recursively from the root folder
 	c = CfgCreateFolder(NULL, "tmp");
 
 	while (true)
 	{
-		// Read the text stream
 		if (CfgReadNextTextBUF(b, c) == false)
 		{
 			break;
 		}
 	}
 
-	// Getting root folder
 	f = CfgGetFolder(c, TAG_ROOT);
 	if (f == NULL)
 	{
-		// Root folder is not found
 		CfgDeleteFolder(c);
 		return NULL;
 	}
 
-	// Remove the reference from tmp folder to the root
 	Delete(c->Folders, f);
 	f->Parent = NULL;
 
-	// Delete the tmp folder
 	CfgDeleteFolder(c);
 
-	// Return the root folder
 	return f;
 }
 
-// Read the next folder
 void CfgReadNextFolderBin(BUF *b, FOLDER *parent)
 {
 	char name[MAX_SIZE];
@@ -824,49 +696,39 @@ void CfgReadNextFolderBin(BUF *b, FOLDER *parent)
 	UINT size;
 	UCHAR *buf;
 	wchar_t *string;
-	// Validate arguments
 	if (b == NULL || parent == NULL)
 	{
 		return;
 	}
 
-	// Folder name
 	ReadBufStr(b, name, sizeof(name));
 	f = CfgCreateFolder(parent, name);
 
-	// The number of the subfolder
 	n = ReadBufInt(b);
 	for (i = 0;i < n;i++)
 	{
-		// Subfolder
 		CfgReadNextFolderBin(b, f);
 	}
 
-	// The number of items
 	n = ReadBufInt(b);
 	for (i = 0;i < n;i++)
 	{
 		UINT type;
 
-		// Name
 		ReadBufStr(b, name, sizeof(name));
-		// Type
 		type = ReadBufInt(b);
 
 		switch (type)
 		{
 		case ITEM_TYPE_INT:
-			// int
 			CfgAddInt(f, name, ReadBufInt(b));
 			break;
 
 		case ITEM_TYPE_INT64:
-			// int64
 			CfgAddInt64(f, name, ReadBufInt64(b));
 			break;
 
 		case ITEM_TYPE_BYTE:
-			// data
 			size = ReadBufInt(b);
 			buf = ZeroMalloc(size);
 			ReadBuf(b, buf, size);
@@ -875,7 +737,6 @@ void CfgReadNextFolderBin(BUF *b, FOLDER *parent)
 			break;
 
 		case ITEM_TYPE_STRING:
-			// string
 			size = ReadBufInt(b);
 			buf = ZeroMalloc(size + 1);
 			ReadBuf(b, buf, size);
@@ -887,34 +748,27 @@ void CfgReadNextFolderBin(BUF *b, FOLDER *parent)
 			break;
 
 		case ITEM_TYPE_BOOL:
-			// bool
 			CfgAddBool(f, name, ReadBufInt(b) == 0 ? false : true);
 			break;
 		}
 	}
 }
 
-// Convert the binary to folder
 FOLDER *CfgBufBinToFolder(BUF *b)
 {
 	FOLDER *f, *c;
-	// Validate arguments
 	if (b == NULL)
 	{
 		return NULL;
 	}
 
-	// Create a temporary folder
 	c = CfgCreateFolder(NULL, "tmp");
 
-	// Read a binary
 	CfgReadNextFolderBin(b, c);
 
-	// Get root folder
 	f = CfgGetFolder(c, TAG_ROOT);
 	if (f == NULL)
 	{
-		// Missing
 		CfgDeleteFolder(c);
 		return NULL;
 	}
@@ -927,12 +781,10 @@ FOLDER *CfgBufBinToFolder(BUF *b)
 	return f;
 }
 
-// Convert the folder to binary
 BUF *CfgFolderToBufBin(FOLDER *f)
 {
 	BUF *b;
 	UCHAR hash[SHA1_SIZE];
-	// Validate arguments
 	if (f == NULL)
 	{
 		return NULL;
@@ -940,69 +792,55 @@ BUF *CfgFolderToBufBin(FOLDER *f)
 
 	b = NewBuf();
 
-	// Header
 	WriteBuf(b, TAG_BINARY, 8);
 
-	// Hash area
 	Zero(hash, sizeof(hash));
 	WriteBuf(b, hash, sizeof(hash));
 
-	// Output the root folder (recursive)
 	CfgOutputFolderBin(b, f);
 
-	// Hash
 	Sha0(((UCHAR *)b->Buf) + 8, ((UCHAR *)b->Buf) + 8 + SHA1_SIZE, b->Size - 8 - SHA1_SIZE);
 
 	return b;
 }
 
-// Convert the folder to a stream text
 BUF *CfgFolderToBufTextEx(FOLDER *f, bool no_banner)
 {
 	BUF *b;
-	// Validate arguments
 	if (f == NULL)
 	{
 		return NULL;
 	}
 
-	// Create a stream
 	b = NewBuf();
 
-	// Copyright notice
 	if (no_banner == false)
 	{
 		WriteBuf(b, TAG_CPYRIGHT, StrLen(TAG_CPYRIGHT));
 	}
 
-	// Output the root folder (recursive)
 	CfgOutputFolderText(b, f, 0);
 
 	return b;
 }
 
-// Output the folder contents (Enumerate folders)
 bool CfgEnumFolderProc(FOLDER *f, void *param)
 {
 	CFG_ENUM_PARAM *p;
-	// Validate arguments
 	if (f == NULL || param == NULL)
 	{
 		return false;
 	}
 
 	p = (CFG_ENUM_PARAM *)param;
-	// Output the folder contents (recursive)
 	CfgOutputFolderText(p->b, f, p->depth);
 
 	return true;
 }
 
-// Output the contents of the item (enumeration)
 bool CfgEnumItemProc(ITEM *t, void *param)
 {
 	CFG_ENUM_PARAM *p;
-	// Validate arguments
 	if (t == NULL || param == NULL)
 	{
 		return false;
@@ -1014,23 +852,18 @@ bool CfgEnumItemProc(ITEM *t, void *param)
 	return true;
 }
 
-// Output the folder contents (Recursive, binary)
 void CfgOutputFolderBin(BUF *b, FOLDER *f)
 {
 	UINT i;
-	// Validate arguments
 	if (b == NULL || f == NULL)
 	{
 		return;
 	}
 
-	// Folder name
 	WriteBufStr(b, f->Name);
 
-	// The number of the subfolder
 	WriteBufInt(b, LIST_NUM(f->Folders));
 
-	// Subfolder
 	for (i = 0;i < LIST_NUM(f->Folders);i++)
 	{
 		FOLDER *sub = LIST_DATA(f->Folders, i);
@@ -1042,43 +875,34 @@ void CfgOutputFolderBin(BUF *b, FOLDER *f)
 		}
 	}
 
-	// The number of Items
 	WriteBufInt(b, LIST_NUM(f->Items));
 
-	// Item
 	for (i = 0;i < LIST_NUM(f->Items);i++)
 	{
 		char *utf8;
 		UINT utf8_size;
 		ITEM *t = LIST_DATA(f->Items, i);
 
-		// Item Name
 		WriteBufStr(b, t->Name);
 
-		// Type
 		WriteBufInt(b, t->Type);
 
 		switch (t->Type)
 		{
 		case ITEM_TYPE_INT:
-			// Integer
 			WriteBufInt(b, *((UINT *)t->Buf));
 			break;
 
 		case ITEM_TYPE_INT64:
-			// 64-bit integer
 			WriteBufInt64(b, *((UINT64 *)t->Buf));
 			break;
 
 		case ITEM_TYPE_BYTE:
-			// Data size
 			WriteBufInt(b, t->size);
-			// Data
 			WriteBuf(b, t->Buf, t->size);
 			break;
 
 		case ITEM_TYPE_STRING:
-			// String
 			utf8_size = CalcUniToUtf8((wchar_t *)t->Buf) + 1;
 			utf8 = ZeroMalloc(utf8_size);
 			UniToUtf8(utf8, utf8_size, (wchar_t *)t->Buf);
@@ -1088,7 +912,6 @@ void CfgOutputFolderBin(BUF *b, FOLDER *f)
 			break;
 
 		case ITEM_TYPE_BOOL:
-			// Boolean type
 			if (*((bool *)t->Buf) == false)
 			{
 				WriteBufInt(b, 0);
@@ -1102,26 +925,21 @@ void CfgOutputFolderBin(BUF *b, FOLDER *f)
 	}
 }
 
-// Output the contents of the folder (Recursive, text)
 void CfgOutputFolderText(BUF *b, FOLDER *f, UINT depth)
 {
 	CFG_ENUM_PARAM p;
-	// Validate arguments
 	if (b == NULL || f == NULL)
 	{
 		return;
 	}
 
-	// Output starting of the folder
 	CfgAddDeclare(b, f->Name, depth);
 	depth++;
 
 	Zero(&p, sizeof(CFG_ENUM_PARAM));
 	p.depth = depth;
 	p.b = b;
-	p.f = f;
 
-	// Enumerate the list of items
 	CfgEnumItem(f, CfgEnumItemProc, &p);
 
 	if (LIST_NUM(f->Folders) != 0 && LIST_NUM(f->Items) != 0)
@@ -1129,16 +947,12 @@ void CfgOutputFolderText(BUF *b, FOLDER *f, UINT depth)
 		WriteBuf(b, "\r\n", 2);
 	}
 
-	// Enumerate the folder list
 	CfgEnumFolder(f, CfgEnumFolderProc, &p);
-	// Output the end of the folder
 	depth--;
 	CfgAddEnd(b, depth);
 
-	//WriteBuf(b, "\r\n", 2);
 }
 
-// Output contents of the item
 void CfgAddItemText(BUF *b, ITEM *t, UINT depth)
 {
 	char *data;
@@ -1148,13 +962,11 @@ void CfgAddItemText(BUF *b, ITEM *t, UINT depth)
 	char *utf8;
 	UINT utf8_size;
 	wchar_t *string;
-	// Validate arguments
 	if (b == NULL || t == NULL)
 	{
 		return;
 	}
 
-	// Process the data by its type
 	data = NULL;
 	switch (t->Type)
 	{
@@ -1201,14 +1013,11 @@ void CfgAddItemText(BUF *b, ITEM *t, UINT depth)
 		return;
 	}
 
-	// Output the data line
 	CfgAddData(b, t->Type, t->Name, data, sub, depth);
 
-	// Memory release
 	Free(data);
 }
 
-// Output the data line
 void CfgAddData(BUF *b, UINT type, char *name, char *data, char *sub, UINT depth)
 {
 	char *tmp;
@@ -1216,7 +1025,6 @@ void CfgAddData(BUF *b, UINT type, char *name, char *data, char *sub, UINT depth
 	char *data2;
 	char *sub2 = NULL;
 	UINT tmp_size;
-	// Validate arguments
 	if (b == NULL || type == 0 || name == NULL || data == NULL)
 	{
 		return;
@@ -1261,7 +1069,6 @@ void CfgAddData(BUF *b, UINT type, char *name, char *data, char *sub, UINT depth
 	Free(tmp);
 }
 
-// Convert the type of data to a string
 char *CfgTypeToStr(UINT type)
 {
 	switch (type)
@@ -1280,26 +1087,21 @@ char *CfgTypeToStr(UINT type)
 	return NULL;
 }
 
-// Outputs the End line
 void CfgAddEnd(BUF *b, UINT depth)
 {
-	// Validate arguments
 	if (b == NULL)
 	{
 		return;
 	}
 
 	CfgAddLine(b, "}", depth);
-//	CfgAddLine(b, TAG_END, depth);
 }
 
-// Outputs the Declare lines
 void CfgAddDeclare(BUF *b, char *name, UINT depth)
 {
 	char *tmp;
 	char *name2;
 	UINT tmp_size;
-	// Validate arguments
 	if (b == NULL || name == NULL)
 	{
 		return;
@@ -1317,11 +1119,9 @@ void CfgAddDeclare(BUF *b, char *name, UINT depth)
 	Free(name2);
 }
 
-// Outputs one line
 void CfgAddLine(BUF *b, char *str, UINT depth)
 {
 	UINT i;
-	// Validate arguments
 	if (b == NULL)
 	{
 		return;
@@ -1335,14 +1135,12 @@ void CfgAddLine(BUF *b, char *str, UINT depth)
 	WriteBuf(b, "\r\n", 2);
 }
 
-// Convert the folder to a stream
 BUF *CfgFolderToBuf(FOLDER *f, bool textmode)
 {
 	return CfgFolderToBufEx(f, textmode, false);
 }
 BUF *CfgFolderToBufEx(FOLDER *f, bool textmode, bool no_banner)
 {
-	// Validate arguments
 	if (f == NULL)
 	{
 		return NULL;
@@ -1358,7 +1156,6 @@ BUF *CfgFolderToBufEx(FOLDER *f, bool textmode, bool no_banner)
 	}
 }
 
-// Escape restoration of the string
 char *CfgUnescape(char *str)
 {
 	char *tmp;
@@ -1366,7 +1163,6 @@ char *CfgUnescape(char *str)
 	char tmp2[16];
 	UINT len, wp, i;
 	UINT code;
-	// Validate arguments
 	if (str == NULL)
 	{
 		return NULL;
@@ -1377,7 +1173,6 @@ char *CfgUnescape(char *str)
 	wp = 0;
 	if (len == 1 && str[0] == '$')
 	{
-		// Empty character
 		tmp[0] = 0;
 	}
 	else
@@ -1408,7 +1203,6 @@ char *CfgUnescape(char *str)
 	return ret;
 }
 
-// Escape the string
 char *CfgEscape(char *str)
 {
 	char *tmp;
@@ -1416,7 +1210,6 @@ char *CfgEscape(char *str)
 	char tmp2[16];
 	UINT len;
 	UINT wp, i;
-	// Validate arguments
 	if (str == NULL)
 	{
 		return NULL;
@@ -1426,12 +1219,10 @@ char *CfgEscape(char *str)
 	tmp = ZeroMalloc(len * 3 + 2);
 	if (len == 0)
 	{
-		// Empty character
 		StrCpy(tmp, (len * 3 + 2), "$");
 	}
 	else
 	{
-		// Non null character
 		wp = 0;
 		for (i = 0;i < len;i++)
 		{
@@ -1454,7 +1245,6 @@ char *CfgEscape(char *str)
 	return ret;
 }
 
-// Check if the character can be used in the name
 bool CfgCheckCharForName(char c)
 {
 	if (c >= 0 && c <= 31)
@@ -1472,12 +1262,10 @@ bool CfgCheckCharForName(char c)
 	return true;
 }
 
-// Get the string type value
 bool CfgGetStr(FOLDER *f, char *name, char *str, UINT size)
 {
 	wchar_t *tmp;
 	UINT tmp_size;
-	// Validate arguments
 	if (f == NULL || name == NULL || str == NULL)
 	{
 		return false;
@@ -1485,28 +1273,23 @@ bool CfgGetStr(FOLDER *f, char *name, char *str, UINT size)
 
 	str[0] = 0;
 
-	// Get unicode string temporarily
-	tmp_size = size * 4 + 10; // Just to make sure, a quantity of this amount is secured.
+	tmp_size = size * 4 + 10;
 	tmp = Malloc(tmp_size);
 	if (CfgGetUniStr(f, name, tmp, tmp_size) == false)
 	{
-		// Failure
 		Free(tmp);
 		return false;
 	}
 
-	// Copy to the ANSI string
 	UniToStr(str, size, tmp);
 	Free(tmp);
 
 	return true;
 }
 
-// Get the value of the unicode_string type
 bool CfgGetUniStr(FOLDER *f, char *name, wchar_t *str, UINT size)
 {
 	ITEM *t;
-	// Validate arguments
 	if (f == NULL || name == NULL || str == NULL)
 	{
 		return false;
@@ -1527,11 +1310,9 @@ bool CfgGetUniStr(FOLDER *f, char *name, wchar_t *str, UINT size)
 	return true;
 }
 
-// Check for the existence of item
 bool CfgIsItem(FOLDER *f, char *name)
 {
 	ITEM *t;
-	// Validate arguments
 	if (f == NULL || name == NULL)
 	{
 		return false;
@@ -1546,12 +1327,10 @@ bool CfgIsItem(FOLDER *f, char *name)
 	return true;
 }
 
-// Get the byte[] type as a BUF
 BUF *CfgGetBuf(FOLDER *f, char *name)
 {
 	ITEM *t;
 	BUF *b;
-	// Validate arguments
 	if (f == NULL || name == NULL)
 	{
 		return NULL;
@@ -1570,11 +1349,9 @@ BUF *CfgGetBuf(FOLDER *f, char *name)
 	return b;
 }
 
-// Get the value of type byte[]
 UINT CfgGetByte(FOLDER *f, char *name, void *buf, UINT size)
 {
 	ITEM *t;
-	// Validate arguments
 	if (f == NULL || name == NULL || buf == NULL)
 	{
 		return 0;
@@ -1601,12 +1378,10 @@ UINT CfgGetByte(FOLDER *f, char *name, void *buf, UINT size)
 	}
 }
 
-// Get the value of type int64
 UINT64 CfgGetInt64(FOLDER *f, char *name)
 {
 	ITEM *t;
 	UINT64 *ret;
-	// Validate arguments
 	if (f == NULL || name == NULL)
 	{
 		return 0;
@@ -1630,12 +1405,10 @@ UINT64 CfgGetInt64(FOLDER *f, char *name)
 	return *ret;
 }
 
-// Get the value of the bool type
 bool CfgGetBool(FOLDER *f, char *name)
 {
 	ITEM *t;
 	bool *ret;
-	// Validate arguments
 	if (f == NULL || name == NULL)
 	{
 		return 0;
@@ -1666,12 +1439,10 @@ bool CfgGetBool(FOLDER *f, char *name)
 	}
 }
 
-// Get the value of the int type
 UINT CfgGetInt(FOLDER *f, char *name)
 {
 	ITEM *t;
 	UINT *ret;
-	// Validate arguments
 	if (f == NULL || name == NULL)
 	{
 		return 0;
@@ -1695,11 +1466,9 @@ UINT CfgGetInt(FOLDER *f, char *name)
 	return *ret;
 }
 
-// Search for an item
 ITEM *CfgFindItem(FOLDER *parent, char *name)
 {
 	ITEM *t, tt;
-	// Validate arguments
 	if (parent == NULL || name == NULL)
 	{
 		return NULL;
@@ -1713,17 +1482,14 @@ ITEM *CfgFindItem(FOLDER *parent, char *name)
 	return t;
 }
 
-// Get a folder
 FOLDER *CfgGetFolder(FOLDER *parent, char *name)
 {
 	return CfgFindFolder(parent, name);
 }
 
-// Search a folder
 FOLDER *CfgFindFolder(FOLDER *parent, char *name)
 {
 	FOLDER *f, ff;
-	// Validate arguments
 	if (parent == NULL || name == NULL)
 	{
 		return NULL;
@@ -1737,19 +1503,16 @@ FOLDER *CfgFindFolder(FOLDER *parent, char *name)
 	return f;
 }
 
-// Adding a string type
 ITEM *CfgAddStr(FOLDER *f, char *name, char *str)
 {
 	wchar_t *tmp;
 	UINT tmp_size;
 	ITEM *t;
-	// Validate arguments
 	if (f == NULL || name == NULL || str == NULL)
 	{
 		return NULL;
 	}
 
-	// Convert to a Unicode string
 	tmp_size = CalcStrToUni(str);
 	if (tmp_size == 0)
 	{
@@ -1763,10 +1526,8 @@ ITEM *CfgAddStr(FOLDER *f, char *name, char *str)
 	return t;
 }
 
-// Add unicode_string type
 ITEM *CfgAddUniStr(FOLDER *f, char *name, wchar_t *str)
 {
-	// Validate arguments
 	if (f == NULL || name == NULL || str == NULL)
 	{
 		return NULL;
@@ -1775,10 +1536,8 @@ ITEM *CfgAddUniStr(FOLDER *f, char *name, wchar_t *str)
 	return CfgCreateItem(f, name, ITEM_TYPE_STRING, str, UniStrSize(str));
 }
 
-// Add a binary
 ITEM *CfgAddBuf(FOLDER *f, char *name, BUF *b)
 {
-	// Validate arguments
 	if (f == NULL || name == NULL || b == NULL)
 	{
 		return NULL;
@@ -1786,10 +1545,8 @@ ITEM *CfgAddBuf(FOLDER *f, char *name, BUF *b)
 	return CfgAddByte(f, name, b->Buf, b->Size);
 }
 
-// Add byte type
 ITEM *CfgAddByte(FOLDER *f, char *name, void *buf, UINT size)
 {
-	// Validate arguments
 	if (f == NULL || name == NULL || buf == NULL)
 	{
 		return NULL;
@@ -1797,10 +1554,8 @@ ITEM *CfgAddByte(FOLDER *f, char *name, void *buf, UINT size)
 	return CfgCreateItem(f, name, ITEM_TYPE_BYTE, buf, size);
 }
 
-// Add a 64-bit integer type
 ITEM *CfgAddInt64(FOLDER *f, char *name, UINT64 i)
 {
-	// Validate arguments
 	if (f == NULL || name == NULL)
 	{
 		return NULL;
@@ -1808,11 +1563,9 @@ ITEM *CfgAddInt64(FOLDER *f, char *name, UINT64 i)
 	return CfgCreateItem(f, name, ITEM_TYPE_INT64, &i, sizeof(UINT64));
 }
 
-// Get an IP address type
 bool CfgGetIp(FOLDER *f, char *name, struct IP *ip)
 {
 	char tmp[MAX_SIZE];
-	// Validate arguments
 	if (f == NULL || name == NULL || ip == NULL)
 	{
 		return false;
@@ -1835,7 +1588,6 @@ bool CfgGetIp(FOLDER *f, char *name, struct IP *ip)
 UINT CfgGetIp32(FOLDER *f, char *name)
 {
 	IP p;
-	// Validate arguments
 	if (f == NULL || name == NULL)
 	{
 		return 0;
@@ -1851,7 +1603,6 @@ UINT CfgGetIp32(FOLDER *f, char *name)
 bool CfgGetIp6Addr(FOLDER *f, char *name, IPV6_ADDR *addr)
 {
 	IP ip;
-	// Validate arguments
 	Zero(addr, sizeof(IPV6_ADDR));
 	if (f == NULL || name == NULL || addr == NULL)
 	{
@@ -1876,11 +1627,9 @@ bool CfgGetIp6Addr(FOLDER *f, char *name, IPV6_ADDR *addr)
 	return true;
 }
 
-// Add an IP address type
 ITEM *CfgAddIp(FOLDER *f, char *name, struct IP *ip)
 {
 	char tmp[MAX_SIZE];
-	// Validate arguments
 	if (f == NULL || name == NULL || ip == NULL)
 	{
 		return NULL;
@@ -1893,7 +1642,6 @@ ITEM *CfgAddIp(FOLDER *f, char *name, struct IP *ip)
 ITEM *CfgAddIp32(FOLDER *f, char *name, UINT ip)
 {
 	IP p;
-	// Validate arguments
 	if (f == NULL || name == NULL)
 	{
 		return NULL;
@@ -1906,7 +1654,6 @@ ITEM *CfgAddIp32(FOLDER *f, char *name, UINT ip)
 ITEM *CfgAddIp6Addr(FOLDER *f, char *name, IPV6_ADDR *addr)
 {
 	IP ip;
-	// Validate arguments
 	if (f == NULL || name == NULL || addr == NULL)
 	{
 		return NULL;
@@ -1917,10 +1664,8 @@ ITEM *CfgAddIp6Addr(FOLDER *f, char *name, IPV6_ADDR *addr)
 	return CfgAddIp(f, name, &ip);
 }
 
-// Add an integer type
 ITEM *CfgAddInt(FOLDER *f, char *name, UINT i)
 {
-	// Validate arguments
 	if (f == NULL || name == NULL)
 	{
 		return NULL;
@@ -1928,10 +1673,8 @@ ITEM *CfgAddInt(FOLDER *f, char *name, UINT i)
 	return CfgCreateItem(f, name, ITEM_TYPE_INT, &i, sizeof(UINT));
 }
 
-// Adding a bool type
 ITEM *CfgAddBool(FOLDER *f, char *name, bool b)
 {
-	// Validate arguments
 	if (f == NULL || name == NULL)
 	{
 		return NULL;
@@ -1940,7 +1683,6 @@ ITEM *CfgAddBool(FOLDER *f, char *name, bool b)
 	return CfgCreateItem(f, name, ITEM_TYPE_BOOL, &b, sizeof(bool));
 }
 
-// Comparison function of the item names
 int CmpItemName(void *p1, void *p2)
 {
 	ITEM *f1, *f2;
@@ -1957,7 +1699,6 @@ int CmpItemName(void *p1, void *p2)
 	return StrCmpi(f1->Name, f2->Name);
 }
 
-// Comparison function of the folder names
 int CmpFolderName(void *p1, void *p2)
 {
 	FOLDER *f1, *f2;
@@ -1974,11 +1715,9 @@ int CmpFolderName(void *p1, void *p2)
 	return StrCmpi(f1->Name, f2->Name);
 }
 
-// Enumeration of items
 void CfgEnumItem(FOLDER *f, ENUM_ITEM proc, void *param)
 {
 	UINT i;
-	// Validate arguments
 	if (f == NULL || proc == NULL)
 	{
 		return;
@@ -1994,12 +1733,10 @@ void CfgEnumItem(FOLDER *f, ENUM_ITEM proc, void *param)
 	}
 }
 
-// Enumerate the folders and store it in the token list
 TOKEN_LIST *CfgEnumFolderToTokenList(FOLDER *f)
 {
 	TOKEN_LIST *t, *ret;
 	UINT i;
-	// Validate arguments
 	if (f == NULL)
 	{
 		return NULL;
@@ -2021,12 +1758,10 @@ TOKEN_LIST *CfgEnumFolderToTokenList(FOLDER *f)
 	return ret;
 }
 
-// Enumerate items and store these to the token list
 TOKEN_LIST *CfgEnumItemToTokenList(FOLDER *f)
 {
 	TOKEN_LIST *t, *ret;
 	UINT i;
-	// Validate arguments
 	if (f == NULL)
 	{
 		return NULL;
@@ -2048,11 +1783,9 @@ TOKEN_LIST *CfgEnumItemToTokenList(FOLDER *f)
 	return ret;
 }
 
-// Folder enumeration
 void CfgEnumFolder(FOLDER *f, ENUM_FOLDER proc, void *param)
 {
 	UINT i;
-	// Validate arguments
 	if (f == NULL || proc == NULL)
 	{
 		return;
@@ -2073,36 +1806,16 @@ void CfgEnumFolder(FOLDER *f, ENUM_FOLDER proc, void *param)
 	}
 }
 
-// Create an item
 ITEM *CfgCreateItem(FOLDER *parent, char *name, UINT type, void *buf, UINT size)
 {
 	UINT name_size;
 	ITEM *t;
-#ifdef	CHECK_CFG_NAME_EXISTS
-	ITEM tt;
-#endif	// CHECK_CFG_NAME_EXISTS
-	// Validate arguments
 	if (parent == NULL || name == NULL || type == 0 || buf == NULL)
 	{
 		return NULL;
 	}
 
 	name_size = StrLen(name) + 1;
-
-#ifdef	CHECK_CFG_NAME_EXISTS
-
-	// Check whether there are any items with the same name already
-	tt.Name = ZeroMalloc(name_size);
-	StrCpy(tt.Name, 0, name);
-	t = Search(parent->Items, &tt);
-	Free(tt.Name);
-	if (t != NULL)
-	{
-		// Duplicated
-		return NULL;
-	}
-
-#endif	// CHECK_CFG_NAME_EXISTS
 
 	t = ZeroMalloc(sizeof(ITEM));
 	t->Buf = Malloc(size);
@@ -2113,38 +1826,31 @@ ITEM *CfgCreateItem(FOLDER *parent, char *name, UINT type, void *buf, UINT size)
 	t->size = size;
 	t->Parent = parent;
 	
-	// Add to the parent list 
 	Insert(parent->Items, t);
 
 	return t;
 }
 
-// Delete the item
 void CfgDeleteItem(ITEM *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
 	}
 
-	// Remove from the parent list
 	Delete(t->Parent->Items, t);
 
-	// Memory release
 	Free(t->Buf);
 	Free(t->Name);
 	Free(t);
 }
 
 
-// Delete the folder
 void CfgDeleteFolder(FOLDER *f)
 {
 	FOLDER **ff;
 	ITEM **tt;
 	UINT num, i;
-	// Validate arguments
 	if (f == NULL)
 	{
 		return;
@@ -2155,7 +1861,6 @@ void CfgDeleteFolder(FOLDER *f)
 		return;
 	}
 
-	// Remove all subfolders
 	num = LIST_NUM(f->Folders);
 	if (num  != 0)
 	{
@@ -2168,7 +1873,6 @@ void CfgDeleteFolder(FOLDER *f)
 		Free(ff);
 	}
 
-	// Remove all items
 	num = LIST_NUM(f->Items);
 	if (num != 0)
 	{
@@ -2181,58 +1885,27 @@ void CfgDeleteFolder(FOLDER *f)
 		Free(tt);
 	}
 
-	// Memory release
 	Free(f->Name);
-	// Remove from the parent list
 	if (f->Parent != NULL)
 	{
 		Delete(f->Parent->Folders, f);
 	}
-	// Release the list
 	ReleaseList(f->Folders);
 	ReleaseList(f->Items);
 
-	// Release of the memory of the body
 	Free(f);
 }
 
-// Creating a root
-FOLDER *CfgCreateRoot()
-{
-	return CfgCreateFolder(NULL, TAG_ROOT);
-}
-
-// Create a folder
 FOLDER *CfgCreateFolder(FOLDER *parent, char *name)
 {
 	UINT size;
 	FOLDER *f;
-	// Validate arguments
 	if (name == NULL)
 	{
 		return NULL;
 	}
 
 	size = StrLen(name) + 1;
-
-#ifdef	CHECK_CFG_NAME_EXISTS
-
-	// Check the name in the parent list
-	if (parent != NULL)
-	{
-		FOLDER ff;
-		ff.Name = ZeroMalloc(size);
-		StrCpy(ff.Name, 0, name);
-		f = Search(parent->Folders, &ff);
-		Free(ff.Name);
-		if (f != NULL)
-		{
-			// Folder with the same name already exists
-			return NULL;
-		}
-	}
-
-#endif	// CHECK_CFG_NAME_EXISTS
 
 	f = ZeroMalloc(sizeof(FOLDER));
 	f->Items = NewListFast(CmpItemName);
@@ -2241,12 +1914,10 @@ FOLDER *CfgCreateFolder(FOLDER *parent, char *name)
 	StrCpy(f->Name, 0, name);
 	f->Parent = parent;
 
-	// Add to parentlist
 	if (f->Parent != NULL)
 	{
 		Insert(f->Parent->Folders, f);
 	}
 	return f;
 }
-
 

@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
-
 // Sam.c
 // Security Accounts Manager
 
@@ -23,11 +19,9 @@
 
 #include <string.h>
 
-// Password encryption
 void SecurePassword(void *secure_password, void *password, void *random)
 {
 	BUF *b;
-	// Validate arguments
 	if (secure_password == NULL || password == NULL || random == NULL)
 	{
 		return;
@@ -41,23 +35,9 @@ void SecurePassword(void *secure_password, void *password, void *random)
 	FreeBuf(b);
 }
 
-// Generate 160bit random number
-void GenRandom(void *random)
-{
-	// Validate arguments
-	if (random == NULL)
-	{
-		return;
-	}
-
-	Rand(random, SHA1_SIZE);
-}
-
-// Anonymous authentication of user
 bool SamAuthUserByAnonymous(HUB *h, char *username)
 {
 	bool b = false;
-	// Validate arguments
 	if (h == NULL || username == NULL)
 	{
 		return false;
@@ -84,7 +64,6 @@ bool SamAuthUserByAnonymous(HUB *h, char *username)
 	return b;
 }
 
-// Plaintext password authentication of user
 bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *password, bool ast)
 {
 	bool b = false;
@@ -92,7 +71,6 @@ bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *p
 	wchar_t *groupname = NULL;
 	UINT timeout = 90;
 	HUB *h;
-	// Validate arguments
 	if (hub == NULL || c == NULL || username == NULL || password == NULL)
 	{
 		return false;
@@ -107,12 +85,10 @@ bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *p
 
 	AddRef(h->ref);
 
-	// Get the user name on authentication system
 	AcLock(hub);
 	{
 		USER *u;
 
-		// Find exact user first
 		u = AcGetUser(hub, username);
 		if (u == NULL && ast)
 		{
@@ -125,7 +101,6 @@ bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *p
 			{
 				if (u->AuthType == AUTHTYPE_NT)
 				{
-					// NT authentication
 					AUTHNT *auth = (AUTHNT *)u->AuthData;
 					if (auth->NtUsername == NULL || UniStrLen(auth->NtUsername) == 0)
 					{
@@ -152,17 +127,12 @@ bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *p
 
 	if (name != NULL)
 	{
-		// NT authentication
-#ifdef	OS_WIN32
 		Unlock(hub->lock);
 
-		// Plaintext password authentication
 		b = MsCheckLogon(name, password);
 
 		Lock(hub->lock);
-#endif	// OS_WIN32
 
-		// Memory release
 		if( groupname != NULL )
 			Free(groupname);
 		Free(name);
@@ -173,11 +143,9 @@ bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *p
 	return b;
 }
 
-// Certificate authentication of user
 bool SamAuthUserByCert(HUB *h, char *username, X *x)
 {
 	bool b = false;
-	// Validate arguments
 	if (h == NULL || username == NULL || x == NULL)
 	{
 		return false;
@@ -188,19 +156,15 @@ bool SamAuthUserByCert(HUB *h, char *username, X *x)
 		return false;
 	}
 
-	// Check expiration date
 	if (CheckXDateNow(x) == false)
 	{
 		return false;
 	}
 
-	// Check the Certification Revocation List
 	if (IsValidCertInHub(h, x) == false)
 	{
-		// Bad
 		wchar_t tmp[MAX_SIZE * 2];
 
-		// Log the contents of the certificate
 		GetAllNameFromX(tmp, sizeof(tmp), x);
 
 		HLog(h, "LH_AUTH_NG_CERT", username, tmp);
@@ -217,7 +181,6 @@ bool SamAuthUserByCert(HUB *h, char *username, X *x)
 			{
 				if (u->AuthType == AUTHTYPE_USERCERT)
 				{
-					// Check whether to matche with the registered certificate
 					AUTHUSERCERT *auth = (AUTHUSERCERT *)u->AuthData;
 					if (CompareX(auth->UserX, x))
 					{
@@ -226,7 +189,6 @@ bool SamAuthUserByCert(HUB *h, char *username, X *x)
 				}
 				else if (u->AuthType == AUTHTYPE_ROOTCERT)
 				{
-					// Check whether the certificate has been signed by the root certificate
 					AUTHROOTCERT *auth = (AUTHROOTCERT *)u->AuthData;
 					if (h->HubDb != NULL)
 					{
@@ -239,7 +201,6 @@ bool SamAuthUserByCert(HUB *h, char *username, X *x)
 								b = true;
 								if (auth->CommonName != NULL && UniIsEmptyStr(auth->CommonName) == false)
 								{
-									// Compare the CN
 									if (UniStrCmpi(x->subject_name->CommonName, auth->CommonName) != 0)
 									{
 										b = false;
@@ -247,7 +208,6 @@ bool SamAuthUserByCert(HUB *h, char *username, X *x)
 								}
 								if (auth->Serial != NULL && auth->Serial->size >= 1)
 								{
-									// Compare the serial number
 									if (CompareXSerial(x->serial, auth->Serial) == false)
 									{
 										b = false;
@@ -269,7 +229,6 @@ bool SamAuthUserByCert(HUB *h, char *username, X *x)
 	{
 		wchar_t tmp[MAX_SIZE * 2];
 
-		// Log the contents of the certificate
 		GetAllNameFromX(tmp, sizeof(tmp), x);
 
 		HLog(h, "LH_AUTH_OK_CERT", username, tmp);
@@ -278,12 +237,10 @@ bool SamAuthUserByCert(HUB *h, char *username, X *x)
 	return b;
 }
 
-// Get the root certificate that signed the specified certificate from the list
 X *GetIssuerFromList(LIST *cert_list, X *cert)
 {
 	UINT i;
 	X *ret = NULL;
-	// Validate arguments
 	if (cert_list == NULL || cert == NULL)
 	{
 		return NULL;
@@ -292,17 +249,14 @@ X *GetIssuerFromList(LIST *cert_list, X *cert)
 	for (i = 0;i < LIST_NUM(cert_list);i++)
 	{
 		X *x = LIST_DATA(cert_list, i);
-		// Name comparison
 		if (CheckXDateNow(x))
 		{
 			if (CompareName(x->subject_name, cert->issuer_name))
 			{
-				// Get the public key of the root certificate
 				K *k = GetKFromX(x);
 
 				if (k != NULL)
 				{
-					// Check the signature
 					if (CheckSignature(cert, k))
 					{
 						ret = x;
@@ -313,7 +267,6 @@ X *GetIssuerFromList(LIST *cert_list, X *cert)
 		}
 		if (CompareX(x, cert))
 		{
-			// Complete identical
 			ret = x;
 		}
 	}
@@ -321,11 +274,9 @@ X *GetIssuerFromList(LIST *cert_list, X *cert)
 	return ret;
 }
 
-// Get the policy to be applied for the user
 POLICY *SamGetUserPolicy(HUB *h, char *username)
 {
 	POLICY *ret = NULL;
-	// Validate arguments
 	if (h == NULL || username == NULL)
 	{
 		return NULL;
@@ -380,7 +331,6 @@ POLICY *SamGetUserPolicy(HUB *h, char *username)
 	return ret;
 }
 
-// Password authentication of user
 bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_password, char *mschap_v2_password, UCHAR *mschap_v2_server_response_20, UINT *err)
 {
 	bool b = false;
@@ -388,7 +338,6 @@ bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_pa
 	bool is_mschap = false;
 	IPC_MSCHAP_V2_AUTHINFO mschap;
 	UINT dummy = 0;
-	// Validate arguments
 	if (h == NULL || username == NULL || secure_password == NULL)
 	{
 		return false;
@@ -406,7 +355,6 @@ bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_pa
 
 	if (StrCmpi(username, ADMINISTRATOR_USERNAME) == 0)
 	{
-		// Administrator mode
 		SecurePassword(secure_password_check, h->SecurePassword, random);
 		if (Cmp(secure_password_check, secure_password, SHA1_SIZE) == 0)
 		{
@@ -432,7 +380,6 @@ bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_pa
 
 					if (is_mschap == false)
 					{
-						// Normal password authentication
 						SecurePassword(secure_password_check, auth->HashedKey, random);
 						if (Cmp(secure_password_check, secure_password, SHA1_SIZE) == 0)
 						{
@@ -441,13 +388,11 @@ bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_pa
 					}
 					else
 					{
-						// MS-CHAP v2 authentication via PPP
 						UCHAR challenge8[8];
 						UCHAR client_response[24];
 
 						if (IsZero(auth->NtLmSecureHash, MD5_SIZE))
 						{
-							// NTLM hash is not registered in the user account
 							*err = ERR_MSCHAP2_PASSWORD_NEED_RESET;
 						}
 						else
@@ -463,10 +408,8 @@ bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_pa
 
 							if (Cmp(client_response, mschap.MsChapV2_ClientResponse, 24) == 0)
 							{
-								// Hash matched
 								b = true;
 
-								// Calculate the response
 								GenerateNtPasswordHashHash(nt_pw_hash_hash, auth->NtLmSecureHash);
 								MsChapV2Server_GenerateResponse(mschap_v2_server_response_20, nt_pw_hash_hash,
 									client_response, challenge8);
@@ -482,52 +425,5 @@ bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_pa
 	AcUnlock(h);
 
 	return b;
-}
-
-// Make sure that the user exists
-bool SamIsUser(HUB *h, char *username)
-{
-	bool b;
-	// Validate arguments
-	if (h == NULL || username == NULL)
-	{
-		return false;
-	}
-
-	AcLock(h);
-	{
-		b = AcIsUser(h, username);
-	}
-	AcUnlock(h);
-
-	return b;
-}
-
-// Get the type of authentication used by the user
-UINT SamGetUserAuthType(HUB *h, char *username)
-{
-	UINT authtype;
-	// Validate arguments
-	if (h == NULL || username == NULL)
-	{
-		return INFINITE;
-	}
-
-	AcLock(h);
-	{
-		USER *u = AcGetUser(h, username);
-		if (u == NULL)
-		{
-			authtype = INFINITE;
-		}
-		else
-		{
-			authtype = u->AuthType;
-			ReleaseUser(u);
-		}
-	}
-	AcUnlock(h);
-
-	return authtype;
 }
 

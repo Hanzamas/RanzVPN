@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
-
 // vpncmdsys.h
 // Header of VPN vpncmdsys.c
 

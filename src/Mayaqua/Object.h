@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Mayaqua Kernel
-
-
 // Object.h
 // Header of Object.c
 
@@ -10,11 +6,9 @@
 
 #include "MayaType.h"
 
-// Constants
 #define	OBJECT_ALLOC_FAIL_SLEEP_TIME		150
 #define	OBJECT_ALLOC__MAX_RETRY				30
 
-// Lock object
 struct LOCK
 {
 	void *pData;
@@ -26,7 +20,6 @@ struct LOCK
 #endif	// _DEBUG
 };
 
-// Counter object
 struct COUNTER
 {
 	LOCK *lock;
@@ -34,20 +27,17 @@ struct COUNTER
 	bool Ready;
 };
 
-// Reference counter
 struct REF
 {
 	COUNTER *c;
 };
 
-// Event object
 struct EVENT
 {
 	REF *ref;
 	void *pData;
 };
 
-// Deadlock detection
 struct DEADCHECK
 {
 	LOCK *Lock;
@@ -55,8 +45,6 @@ struct DEADCHECK
 	bool Unlocked;
 };
 
-
-// Lock function
 #ifndef	_DEBUG
 
 #define	Lock(lock)		LockInner((lock))
@@ -78,8 +66,6 @@ struct DEADCHECK
 
 #endif	// _DEBUG
 
-
-// Function prototype
 LOCK *NewLock();
 LOCK *NewLockMain();
 void DeleteLock(LOCK *lock);

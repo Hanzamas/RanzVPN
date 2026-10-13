@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Mayaqua Kernel
-
-
 // OS.h
 // Header of OS.c
 
@@ -10,7 +6,6 @@
 
 #include "MayaType.h"
 
-// Function prototype
 char *OsTypeToStr(UINT type);
 
 void OSInit();
@@ -61,7 +56,6 @@ void OSFreeSingleInstance(void *data);
 void OSGetMemInfo(MEMINFO *info);
 void OSYield();
 
-// Dispatch table
 typedef struct OS_DISPATCH_TABLE
 {
 	void (*Init)();
@@ -122,10 +116,7 @@ typedef struct OS_DISPATCH_TABLE
 	void (*Yield)();
 } OS_DISPATCH_TABLE;
 
-// Include the OS-specific header
-#ifdef	OS_WIN32
 #include <Mayaqua/Win32.h>
-#endif	// OS_WIN32
 
 #endif	// OS_H
 

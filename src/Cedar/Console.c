@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
-
 // Console.c
 // Console Service
 
@@ -22,11 +18,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#ifdef OS_WIN32
 #include <conio.h>
-#endif
 
-// Display the help for the command
 void PrintCmdHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *param_list)
 {
 	wchar_t tmp[MAX_SIZE];
@@ -37,7 +30,6 @@ void PrintCmdHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *param_list)
 	UINT width;
 	UINT i;
 	char *space;
-	// Validate arguments
 	if (c == NULL || cmd_name == NULL || param_list == NULL)
 	{
 		return;
@@ -52,12 +44,10 @@ void PrintCmdHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *param_list)
 
 	space = MakeCharArray(' ', 2);
 
-	// Title
 	UniFormat(tmp, sizeof(tmp), _UU("CMD_HELP_TITLE"), cmd_name);
 	c->Write(c, tmp);
 	c->Write(c, L"");
 
-	// Purpose
 	c->Write(c, _UU("CMD_HELP_DESCRIPTION"));
 	t = SeparateStringByWidth(description, width - 2);
 	for (i = 0;i < t->NumTokens;i++)
@@ -68,7 +58,6 @@ void PrintCmdHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *param_list)
 	UniFreeToken(t);
 	c->Write(c, L"");
 
-	// Description
 	c->Write(c, _UU("CMD_HELP_HELP"));
 	t = SeparateStringByWidth(help, width - 2);
 	for (i = 0;i < t->NumTokens;i++)
@@ -79,7 +68,6 @@ void PrintCmdHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *param_list)
 	UniFreeToken(t);
 	c->Write(c, L"");
 
-	// Usage
 	c->Write(c, _UU("CMD_HELP_USAGE"));
 	t = SeparateStringByWidth(args, width - 2);
 	for (i = 0;i < t->NumTokens;i++)
@@ -89,7 +77,6 @@ void PrintCmdHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *param_list)
 	}
 	UniFreeToken(t);
 
-	// Arguments
 	if (param_list->NumTokens >= 1)
 	{
 		c->Write(c, L"");
@@ -102,7 +89,6 @@ void PrintCmdHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *param_list)
 	Free(buf);
 }
 
-// Evaluate whether it is SafeStr
 bool CmdEvalSafe(CONSOLE *c, wchar_t *str, void *param)
 {
 	wchar_t *p = (param == NULL) ? _UU("CMD_EVAL_SAFE") : (wchar_t *)param;
@@ -117,7 +103,6 @@ bool CmdEvalSafe(CONSOLE *c, wchar_t *str, void *param)
 	return false;
 }
 
-// String input prompt
 wchar_t *CmdPrompt(CONSOLE *c, void *param)
 {
 	wchar_t *p = (param == NULL) ? _UU("CMD_PROMPT") : (wchar_t *)param;
@@ -125,11 +110,9 @@ wchar_t *CmdPrompt(CONSOLE *c, void *param)
 	return c->ReadLine(c, p, true);
 }
 
-// Evaluation whether the specified file exists
 bool CmdEvalIsFile(CONSOLE *c, wchar_t *str, void *param)
 {
 	wchar_t tmp[MAX_PATH];
-	// Validate arguments
 	if (c == NULL || str == NULL)
 	{
 		return false;
@@ -156,22 +139,6 @@ bool CmdEvalIsFile(CONSOLE *c, wchar_t *str, void *param)
 	return true;
 }
 
-// Evaluation of integer
-bool CmdEvalInt1(CONSOLE *c, wchar_t *str, void *param)
-{
-	wchar_t *p = (param == NULL) ? _UU("CMD_EVAL_INT") : (wchar_t *)param;
-
-	if (UniToInt(str) == 0)
-	{
-		c->Write(c, p);
-
-		return false;
-	}
-
-	return true;
-}
-
-// Evaluation of the parameters that a blank cannot be specified to
 bool CmdEvalNotEmpty(CONSOLE *c, wchar_t *str, void *param)
 {
 	wchar_t *p = (param == NULL) ? _UU("CMD_EVAL_NOT_EMPTY") : (wchar_t *)param;
@@ -186,13 +153,11 @@ bool CmdEvalNotEmpty(CONSOLE *c, wchar_t *str, void *param)
 	return false;
 }
 
-// Evaluation function for minimum / maximum value of the parameter
 bool CmdEvalMinMax(CONSOLE *c, wchar_t *str, void *param)
 {
 	CMD_EVAL_MIN_MAX *e;
 	wchar_t *tag;
 	UINT v;
-	// Validate arguments
 	if (param == NULL)
 	{
 		return false;
@@ -226,7 +191,6 @@ bool CmdEvalMinMax(CONSOLE *c, wchar_t *str, void *param)
 	}
 }
 
-// Get the help string of command
 void GetCommandHelpStr(char *command_name, wchar_t **description, wchar_t **args, wchar_t **help)
 {
 	char tmp1[128], tmp2[128], tmp3[128];
@@ -263,7 +227,6 @@ void GetCommandHelpStr(char *command_name, wchar_t **description, wchar_t **args
 	}
 }
 
-// Get the help string for parameter
 void GetCommandParamHelpStr(char *command_name, char *param_name, wchar_t **description)
 {
 	char tmp[160];
@@ -282,7 +245,6 @@ void GetCommandParamHelpStr(char *command_name, char *param_name, wchar_t **desc
 	}
 }
 
-// String comparison function
 int CompareCandidateStr(void *p1, void *p2)
 {
 	char *s1, *s2;
@@ -309,7 +271,6 @@ int CompareCandidateStr(void *p1, void *p2)
 	return StrCmp(s1, s2);
 }
 
-// Display the help of the candidate list
 void PrintCandidateHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *candidate_list, UINT left_space)
 {
 	UINT console_width;
@@ -320,13 +281,11 @@ void PrintCandidateHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *candidate_list, 
 	UINT tmpbuf_size;
 	char *left_space_array;
 	char *max_space_array;
-	// Validate arguments
 	if (c == NULL || candidate_list == NULL)
 	{
 		return;
 	}
 
-	// Get the width of the screen
 	console_width = GetConsoleWidth(c) - 1;
 
 	tmpbuf_size = sizeof(wchar_t) * (console_width + 32);
@@ -334,8 +293,6 @@ void PrintCandidateHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *candidate_list, 
 
 	left_space_array = MakeCharArray(' ', left_space);
 
-	// Sort and enlist the command name
-	// no need to sort the parameter name
 	o = NewListFast(cmd_name == NULL ? CompareCandidateStr : NULL);
 
 	max_keyword_width = 0;
@@ -344,7 +301,6 @@ void PrintCandidateHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *candidate_list, 
 	{
 		UINT keyword_width;
 
-		// Get the width of each keyword
 		Insert(o, candidate_list->Token[i]);
 
 		keyword_width = StrWidth(candidate_list->Token[i]);
@@ -365,7 +321,6 @@ void PrintCandidateHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *candidate_list, 
 
 	max_space_array = MakeCharArray(' ', max_keyword_width);
 
-	// Display the candidate
 	for (i = 0;i < LIST_NUM(o);i++)
 	{
 		char tmp[128];
@@ -387,15 +342,12 @@ void PrintCandidateHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *candidate_list, 
 			descript_width = 2;
 		}
 
-		// Generate the name
 		if (cmd_name != NULL && name[0] != '[')
 		{
-			// Prepend a "/" in the case of a parameter
 			Format(tmp, sizeof(tmp), "/%s", name);
 		}
 		else
 		{
-			// Use the characters as it is in the case of a command name
 			if (cmd_name == NULL)
 			{
 				StrCpy(tmp, sizeof(tmp), name);
@@ -410,7 +362,6 @@ void PrintCandidateHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *candidate_list, 
 			}
 		}
 
-		// Get the help string
 		if (cmd_name == NULL)
 		{
 			GetCommandHelpStr(name, &help, NULL, NULL);
@@ -452,7 +403,6 @@ void PrintCandidateHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *candidate_list, 
 	Free(left_space_array);
 }
 
-// Acquisition whether word characters
 bool IsWordChar(wchar_t c)
 {
 	if (c >= L'a' && c <= 'z')
@@ -499,12 +449,10 @@ bool IsWordChar(wchar_t c)
 	return false;
 }
 
-// Get the character width of the word that comes next
 UINT GetNextWordWidth(wchar_t *str)
 {
 	UINT i;
 	UINT ret;
-	// Validate arguments
 	if (str == NULL)
 	{
 		return 0;
@@ -532,7 +480,6 @@ UINT GetNextWordWidth(wchar_t *str)
 	return ret;
 }
 
-// Split a string into specified width
 UNI_TOKEN_LIST *SeparateStringByWidth(wchar_t *str, UINT width)
 {
 	UINT wp;
@@ -540,7 +487,6 @@ UNI_TOKEN_LIST *SeparateStringByWidth(wchar_t *str, UINT width)
 	UINT len, i;
 	LIST *o;
 	UNI_TOKEN_LIST *ret;
-	// Validate arguments
 	if (str == NULL)
 	{
 		return UniNullToken();
@@ -630,10 +576,8 @@ UNI_TOKEN_LIST *SeparateStringByWidth(wchar_t *str, UINT width)
 	return ret;
 }
 
-// Check whether the specified string means 'help'
 bool IsHelpStr(char *str)
 {
-	// Validate arguments
 	if (str == NULL)
 	{
 		return false;
@@ -653,11 +597,6 @@ bool IsHelpStr(char *str)
 	return false;
 }
 
-// Execution of the command
-bool DispatchNextCmd(CONSOLE *c, char *prompt, CMD cmd[], UINT num_cmd, void *param)
-{
-	return DispatchNextCmdEx(c, NULL, prompt, cmd, num_cmd, param);
-}
 bool DispatchNextCmdEx(CONSOLE *c, wchar_t *exec_command, char *prompt, CMD cmd[], UINT num_cmd, void *param)
 {
 	wchar_t *str;
@@ -670,7 +609,6 @@ bool DispatchNextCmdEx(CONSOLE *c, wchar_t *exec_command, char *prompt, CMD cmd[
 	TOKEN_LIST *candidate;
 	bool no_end_crlf = false;
 	UINT i;
-	// Validate arguments
 	if (c == NULL || (num_cmd >= 1 && cmd == NULL))
 	{
 		return false;
@@ -678,7 +616,6 @@ bool DispatchNextCmdEx(CONSOLE *c, wchar_t *exec_command, char *prompt, CMD cmd[
 
 	if (exec_command == NULL)
 	{
-		// Show the prompt
 RETRY:
 		tmp = CopyStrToUni(prompt);
 
@@ -705,7 +642,6 @@ RETRY:
 	else
 	{
 		wchar_t tmp[MAX_SIZE];
-		// Use exec_command
 		if (UniStartWith(exec_command, L"vpncmd") == false)
 		{
 			if (prompt != NULL)
@@ -722,7 +658,6 @@ RETRY:
 
 	if (str == NULL)
 	{
-		// User canceled
 		return false;
 	}
 
@@ -731,15 +666,12 @@ RETRY:
 
 	if (UniIsEmptyStr(str))
 	{
-		// Do Nothing
 		Free(str);
 		return true;
 	}
 
-	// Divide into command name and parameter
 	if (SeparateCommandAndParam(str, &cmd_name, &cmd_param) == false)
 	{
-		// Do Nothing
 		Free(str);
 		return true;
 	}
@@ -770,7 +702,6 @@ RETRY:
 		cmd_param = s;
 	}
 
-	// Get the candidate of command
 	t = ZeroMalloc(sizeof(TOKEN_LIST));
 	t->NumTokens = num_cmd;
 	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
@@ -785,7 +716,6 @@ RETRY:
 		{
 			wchar_t tmp[MAX_SIZE];
 
-			// Display the list of commands that can be used
 			UniFormat(tmp, sizeof(tmp), _UU("CMD_HELP_1"), t->NumTokens);
 			c->Write(c, tmp);
 
@@ -798,7 +728,6 @@ RETRY:
 		{
 			char *cmd_name;
 
-			// Display the help for the specified command
 			if (SeparateCommandAndParam(cmd_param, &cmd_name, NULL))
 			{
 				bool b = true;
@@ -823,7 +752,6 @@ RETRY:
 	}
 	else if (StrCmpi(cmd_name, "exit") == 0 || StrCmpi(cmd_name, "quit") == 0)
 	{
-		// Exit
 		b_exit = true;
 	}
 	else
@@ -834,7 +762,6 @@ RETRY:
 		{
 			wchar_t tmp[MAX_SIZE];
 
-			// No candidate
 			UniFormat(tmp, sizeof(tmp), _UU("CON_UNKNOWN_CMD"), cmd_name);
 			c->Write(c, tmp);
 
@@ -844,7 +771,6 @@ RETRY:
 		{
 			wchar_t tmp[MAX_SIZE];
 
-			// There is more than one candidate
 			UniFormat(tmp, sizeof(tmp), _UU("CON_AMBIGUOUS_CMD"), cmd_name);
 			c->Write(c, tmp);
 			c->Write(c, _UU("CON_AMBIGUOUS_CMD_1"));
@@ -858,7 +784,6 @@ RETRY:
 			char *real_cmd_name;
 			UINT i;
 
-			// The candidate was shortlisted to one
 			real_cmd_name = candidate->Token[0];
 
 			for (i = 0;i < num_cmd;i++)
@@ -867,7 +792,6 @@ RETRY:
 				{
 					if (cmd[i].Proc != NULL)
 					{
-						// Show the description of the command if it isn't in CSV mode
 						if(c->ConsoleType != CONSOLE_CSV)
 						{
 							wchar_t tmp[256];
@@ -878,12 +802,10 @@ RETRY:
 							c->Write(c, tmp);
 						}
 
-						// Call the procedure of the command
 						ret = cmd[i].Proc(c, cmd[i].Name, cmd_param, param);
 
 						if (ret == INFINITE)
 						{
-							// Exit command
 							b_exit = true;
 						}
 						else
@@ -905,7 +827,6 @@ RETRY:
 
 	if (no_end_crlf == false)
 	{
-		//c->Write(c, L"");
 	}
 
 	if (b_exit)
@@ -916,7 +837,6 @@ RETRY:
 	return true;
 }
 
-// Get the width of the current console
 UINT GetConsoleWidth(CONSOLE *c)
 {
 	UINT size;
@@ -941,13 +861,11 @@ UINT GetConsoleWidth(CONSOLE *c)
 	return size;
 }
 
-// Separate the command line into the command and the parameters
 bool SeparateCommandAndParam(wchar_t *src, char **cmd, wchar_t **param)
 {
 	UINT i, len, wp;
 	wchar_t *tmp;
 	wchar_t *src_tmp;
-	// Validate arguments
 	if (src == NULL)
 	{
 		return false;
@@ -1011,14 +929,12 @@ ESCAPE:
 	return true;
 }
 
-// Get the candidates list of of the real command name whose abbreviation matches to the command specified by the user
 TOKEN_LIST *GetRealnameCandidate(char *input_name, TOKEN_LIST *real_name_list)
 {
 	TOKEN_LIST *ret;
 	LIST *o;
 	UINT i;
 	bool ok = false;
-	// Validate arguments
 	if (input_name == NULL || real_name_list == NULL)
 	{
 		return NullToken();
@@ -1030,7 +946,6 @@ TOKEN_LIST *GetRealnameCandidate(char *input_name, TOKEN_LIST *real_name_list)
 	{
 		char *name = real_name_list->Token[i];
 
-		// Search for an exact match with the highest priority first
 		if (StrCmpi(name, input_name) == 0)
 		{
 			Insert(o, name);
@@ -1041,14 +956,12 @@ TOKEN_LIST *GetRealnameCandidate(char *input_name, TOKEN_LIST *real_name_list)
 
 	if (ok == false)
 	{
-		// If there is no command to exact match, check whether it matches to a short form command
 		for (i = 0;i < real_name_list->NumTokens;i++)
 		{
 			char *name = real_name_list->Token[i];
 
 			if (IsOmissionName(input_name, name) || IsNameInRealName(input_name, name))
 			{
-				// A abbreviation is found
 				Insert(o, name);
 				ok = true;
 			}
@@ -1057,7 +970,6 @@ TOKEN_LIST *GetRealnameCandidate(char *input_name, TOKEN_LIST *real_name_list)
 
 	if (ok)
 	{
-		// One or more candidate is found
 		ret = ListToTokenList(o);
 	}
 	else
@@ -1070,11 +982,9 @@ TOKEN_LIST *GetRealnameCandidate(char *input_name, TOKEN_LIST *real_name_list)
 	return ret;
 }
 
-// Check whether the command specified by the user is a abbreviation of existing commands
 bool IsOmissionName(char *input_name, char *real_name)
 {
 	char oname[128];
-	// Validate arguments
 	if (input_name == NULL || real_name == NULL)
 	{
 		return false;
@@ -1095,15 +1005,13 @@ bool IsOmissionName(char *input_name, char *real_name)
 
 	if (StartWith(oname, input_name))
 	{
-		// Example: The oname of AccountSecureCertSet is "ascs".
-		// But if the user enters "asc", returns true
+		// e.g. the short name of AccountSecureCertSet is "ascs", so "asc" matches
 		return true;
 	}
 
 	if (StartWith(input_name, oname))
 	{
-		// Example: When two commands AccountCreate and AccountConnect exist,
-		// if the user enter "aconnect" , only AccountConnect is true
+		// e.g. with AccountCreate and AccountConnect, "aconnect" matches only AccountConnect
 
 		if (EndWith(real_name, &input_name[StrLen(oname)]))
 		{
@@ -1114,11 +1022,9 @@ bool IsOmissionName(char *input_name, char *real_name)
 	return false;
 }
 
-// Get the short name of the specified command
 void GetOmissionName(char *dst, UINT size, char *src)
 {
 	UINT i, len;
-	// Validate arguments
 	if (dst == NULL || src == NULL)
 	{
 		return;
@@ -1143,10 +1049,8 @@ void GetOmissionName(char *dst, UINT size, char *src)
 	}
 }
 
-// Check whether the command specified by the user matches the existing commands
 bool IsNameInRealName(char *input_name, char *real_name)
 {
-	// Validate arguments
 	if (input_name == NULL || real_name == NULL)
 	{
 		return false;
@@ -1160,7 +1064,6 @@ bool IsNameInRealName(char *input_name, char *real_name)
 	return false;
 }
 
-// Parse the command list
 LIST *ParseCommandList(CONSOLE *c, char *cmd_name, wchar_t *command, PARAM param[], UINT num_param)
 {
 	UINT i;
@@ -1170,13 +1073,11 @@ LIST *ParseCommandList(CONSOLE *c, char *cmd_name, wchar_t *command, PARAM param
 	TOKEN_LIST *real_name_list;
 	bool help_mode = false;
 	wchar_t *tmp;
-	// Validate arguments
 	if (c == NULL || command == NULL || (num_param >= 1 && param == NULL) || cmd_name == NULL)
 	{
 		return NULL;
 	}
 
-	// Initialization
 	for (i = 0;i < num_param;i++)
 	{
 		if (IsEmptyStr(param[i].Name) == false)
@@ -1205,7 +1106,6 @@ LIST *ParseCommandList(CONSOLE *c, char *cmd_name, wchar_t *command, PARAM param
 		real_name_list->Token[i] = CopyStr(param[i].Name);
 	}
 
-	// Generate a list of parameter name specified by the user
 	param_list = GetCommandNameList(command);
 
 	for (i = 0;i < param_list->NumTokens;i++)
@@ -1231,7 +1131,6 @@ LIST *ParseCommandList(CONSOLE *c, char *cmd_name, wchar_t *command, PARAM param
 
 	if (help_mode)
 	{
-		// Show the help
 		PrintCmdHelp(c, cmd_name, real_name_list);
 		FreeToken(param_list);
 		FreeToken(real_name_list);
@@ -1240,7 +1139,6 @@ LIST *ParseCommandList(CONSOLE *c, char *cmd_name, wchar_t *command, PARAM param
 
 	for (i = 0;i < param_list->NumTokens;i++)
 	{
-		// Get the corresponding commands for all parameter names which is specified by the user
 		TOKEN_LIST *candidate = GetRealnameCandidate(param_list->Token[i], real_name_list);
 
 		if (candidate != NULL && candidate->NumTokens >= 1)
@@ -1249,7 +1147,6 @@ LIST *ParseCommandList(CONSOLE *c, char *cmd_name, wchar_t *command, PARAM param
 			{
 				wchar_t tmp[MAX_SIZE];
 
-				// There is more than one candidate
 				UniFormat(tmp, sizeof(tmp), _UU("CON_AMBIGUOUS_PARAM"), param_list->Token[i]);
 				c->Write(c, tmp);
 				UniFormat(tmp, sizeof(tmp), _UU("CON_AMBIGUOUS_PARAM_1"), cmd_name);
@@ -1266,7 +1163,6 @@ LIST *ParseCommandList(CONSOLE *c, char *cmd_name, wchar_t *command, PARAM param
 				UINT j;
 				char *real_name = candidate->Token[0];
 
-				// There is only one candidate
 				for (j = 0;j < num_param;j++)
 				{
 					if (StrCmpi(param[j].Name, real_name) == 0)
@@ -1280,7 +1176,6 @@ LIST *ParseCommandList(CONSOLE *c, char *cmd_name, wchar_t *command, PARAM param
 		{
 			wchar_t tmp[MAX_SIZE];
 
-			// No candidate
 			UniFormat(tmp, sizeof(tmp), _UU("CON_INVALID_PARAM"), param_list->Token[i], cmd_name, cmd_name);
 			c->Write(c, tmp);
 
@@ -1298,10 +1193,8 @@ LIST *ParseCommandList(CONSOLE *c, char *cmd_name, wchar_t *command, PARAM param
 		return NULL;
 	}
 
-	// Creating a list
 	o = NewParamValueList();
 
-	// Read all the parameters of the specified name in the parameter list
 	for (i = 0;i < num_param;i++)
 	{
 		bool prompt_input_value = false;
@@ -1329,26 +1222,21 @@ LIST *ParseCommandList(CONSOLE *c, char *cmd_name, wchar_t *command, PARAM param
 				wchar_t *unistr;
 				bool ret;
 EVAL_VALUE:
-				// Reading succeeded
 				unistr = str;
 
 				if (p->EvalProc != NULL)
 				{
-					// Evaluate the value if EvalProc is specified
 					ret = p->EvalProc(c, unistr, p->EvalProcParam);
 				}
 				else
 				{
-					// Accept any value if EvalProc is not specified
 					ret = true;
 				}
 
 				if (ret == false)
 				{
-					// The specified value is invalid
 					if (p->PromptProc == NULL)
 					{
-						// Cancel
 						ok = false;
 						Free(name);
 						Free(str);
@@ -1356,7 +1244,7 @@ EVAL_VALUE:
 					}
 					else if (c->ProgrammingMode)
 					{
-						// In the programming mode, return the error immediately.
+						// In programming mode, fail at once instead of asking again
 						ok = false;
 						Free(name);
 						Free(str);
@@ -1364,7 +1252,6 @@ EVAL_VALUE:
 					}
 					else
 					{
-						// Request to re-enter
 						Free(str);
 						str = NULL;
 						goto SHOW_PROMPT;
@@ -1373,7 +1260,6 @@ EVAL_VALUE:
 				else
 				{
 					PARAM_VALUE *v;
-					// Finished loading, add it to the list
 					v = ZeroMalloc(sizeof(PARAM_VALUE));
 					v->Name = CopyStr(p->Name);
 					v->StrValue = CopyUniToStr(str);
@@ -1384,12 +1270,10 @@ EVAL_VALUE:
 			}
 			else
 			{
-				// Failed to read. The parameter is not specified
 				if (p->PromptProc != NULL)
 				{
 					wchar_t *tmp;
 SHOW_PROMPT:
-					// Prompt because it is a mandatory parameter
 					tmp = NULL;
 					if (c->ProgrammingMode == false)
 					{
@@ -1397,7 +1281,6 @@ SHOW_PROMPT:
 					}
 					if (tmp == NULL)
 					{
-						// User canceled
 						ok = false;
 						Free(str);
 						Free(name);
@@ -1405,7 +1288,6 @@ SHOW_PROMPT:
 					}
 					else
 					{
-						// Entered by the user
 						c->Write(c, L"");
 						str = tmp;
 						prompt_input_value = true;
@@ -1433,12 +1315,10 @@ SHOW_PROMPT:
 	}
 }
 
-// Acquisition of [Yes] or [No]
 bool GetParamYes(LIST *o, char *name)
 {
 	char *s;
 	char tmp[64];
-	// Validate arguments
 	if (o == NULL)
 	{
 		return false;
@@ -1471,11 +1351,9 @@ bool GetParamYes(LIST *o, char *name)
 	return false;
 }
 
-// Acquisition of parameter value Int
 UINT GetParamInt(LIST *o, char *name)
 {
 	PARAM_VALUE *v;
-	// Validate arguments
 	if (o == NULL)
 	{
 		return 0;
@@ -1492,11 +1370,9 @@ UINT GetParamInt(LIST *o, char *name)
 	}
 }
 
-// Acquisition of parameter value Unicode string
 wchar_t *GetParamUniStr(LIST *o, char *name)
 {
 	PARAM_VALUE *v;
-	// Validate arguments
 	if (o == NULL)
 	{
 		return NULL;
@@ -1513,11 +1389,9 @@ wchar_t *GetParamUniStr(LIST *o, char *name)
 	}
 }
 
-// Acquisition of the parameter value string
 char *GetParamStr(LIST *o, char *name)
 {
 	PARAM_VALUE *v;
-	// Validate arguments
 	if (o == NULL)
 	{
 		return NULL;
@@ -1534,11 +1408,9 @@ char *GetParamStr(LIST *o, char *name)
 	}
 }
 
-// Acquisition of parameter value
 PARAM_VALUE *FindParamValue(LIST *o, char *name)
 {
 	PARAM_VALUE t, *ret;
-	// Validate arguments
 	if (o == NULL)
 	{
 		return NULL;
@@ -1556,11 +1428,9 @@ PARAM_VALUE *FindParamValue(LIST *o, char *name)
 	return ret;
 }
 
-// Release of the parameter value list
 void FreeParamValueList(LIST *o)
 {
 	UINT i;
-	// Validate arguments
 	if (o == NULL)
 	{
 		return;
@@ -1579,7 +1449,6 @@ void FreeParamValueList(LIST *o)
 	ReleaseList(o);
 }
 
-// Parameter value list sort function
 int CmpParamValue(void *p1, void *p2)
 {
 	PARAM_VALUE *v1, *v2;
@@ -1601,17 +1470,14 @@ int CmpParamValue(void *p1, void *p2)
 	return StrCmpi(v1->Name, v2->Name);
 }
 
-// Generation of the parameter value list
 LIST *NewParamValueList()
 {
 	return NewListFast(CmpParamValue);
 }
 
-// Get the list of parameter names that were included in the entered command
 TOKEN_LIST *GetCommandNameList(wchar_t *str)
 {
 	TOKEN_LIST *t;
-	// Validate arguments
 	if (str == NULL)
 	{
 		return NullToken();
@@ -1622,7 +1488,6 @@ TOKEN_LIST *GetCommandNameList(wchar_t *str)
 	return t;
 }
 
-// Get the commands that start with the specified name
 wchar_t *ParseCommand(wchar_t *str, wchar_t *name)
 {
 	return ParseCommandEx(str, name, NULL);
@@ -1634,7 +1499,6 @@ wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list)
 	wchar_t *tmp;
 	wchar_t *ret = NULL;
 	LIST *o;
-	// Validate arguments
 	if (str == NULL)
 	{
 		return NULL;
@@ -1750,8 +1614,6 @@ wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list)
 				{
 					UINT i;
 
-					// Named parameter
-					// Examine whether there is a colon character
 
 					if (UniStrCmpi(token, L"--help") == 0)
 					{
@@ -1768,7 +1630,6 @@ wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list)
 						wchar_t *tmp;
 						char *a;
 
-						// There is a colon character
 						tmp = CopyUniStr(token);
 						tmp[i] = 0;
 
@@ -1782,7 +1643,6 @@ wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list)
 						{
 							if (ret == NULL)
 							{
-								// Content
 								ret = UniCopyStr(&token[i + 1]);
 							}
 						}
@@ -1791,7 +1651,6 @@ wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list)
 					}
 					else
 					{
-						// There is no colon character
 						char *a;
 
 						a = CopyUniToStr(&token[1]);
@@ -1804,7 +1663,6 @@ wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list)
 						{
 							if (ret == NULL)
 							{
-								// Empty character
 								ret = UniCopyStr(L"");
 							}
 						}
@@ -1812,7 +1670,6 @@ wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list)
 				}
 				else
 				{
-					// Nameless argument
 					if (name == NULL)
 					{
 						if (ret == NULL)
@@ -1866,49 +1723,12 @@ wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list)
 
 	return ret;
 }
-char *ParseCommandA(wchar_t *str, char *name)
-{
-	wchar_t *tmp1, *tmp2;
-	char *ret;
-	// Validate arguments
-	if (str == NULL)
-	{
-		return NULL;
-	}
 
-	if (name != NULL)
-	{
-		tmp1 = CopyStrToUni(name);
-	}
-	else
-	{
-		tmp1 = NULL;
-	}
-
-	tmp2 = ParseCommand(str, tmp1);
-
-	if (tmp2 == NULL)
-	{
-		ret = NULL;
-	}
-	else
-	{
-		ret = CopyUniToStr(tmp2);
-		Free(tmp2);
-	}
-
-	Free(tmp1);
-
-	return ret;
-}
-
-// Password prompt
 bool PasswordPrompt(char *password, UINT size)
 {
 	UINT wp;
 	bool escape = false;
 	void *console;
-	// Validate arguments
 	if (password == NULL || size <= 1)
 	{
 		if (size >= 1)
@@ -1928,13 +1748,10 @@ bool PasswordPrompt(char *password, UINT size)
 	{
 		int c;
 
-#ifdef	OS_WIN32
 		c = _getch();
-#endif	// OS_WIN32
 
 		if (c >= 0x20 && c <= 0x7E)
 		{
-			// Character
 			if ((wp + 1) < size)
 			{
 				password[wp++] = (char)c;
@@ -1943,13 +1760,11 @@ bool PasswordPrompt(char *password, UINT size)
 		}
 		else if (c == 0x03)
 		{
-			// Break
 			RestoreConsole(console);
 			exit(0);
 		}
 		else if (c == 0x04 || c == 0x1a || c == 0x0D || c==0x0A)
 		{
-			// Exit
 			if (c == 0x04 || c == 0x1a)
 			{
 				escape = true;
@@ -1958,20 +1773,15 @@ bool PasswordPrompt(char *password, UINT size)
 		}
 		else if (c == 0xE0)
 		{
-			// Read one more character
-#ifdef	OS_WIN32
 			c = _getch();
-#endif	// OS_WIN32
 			if (c == 0x4B || c == 0x53)
 			{
-				// Backspace
 				goto BACKSPACE;
 			}
 		}
 		else if (c == 0x08 || c == 0x7F)
 		{
 BACKSPACE:
-			// Backspace
 			if (wp >= 1)
 			{
 				password[--wp] = 0;
@@ -1988,18 +1798,15 @@ BACKSPACE:
 	return (escape ? false : true);
 }
 
-// Show the prompt
 wchar_t *Prompt(wchar_t *prompt_str)
 {
 	wchar_t *ret = NULL;
 	wchar_t *tmp = NULL;
-	// Validate arguments
 	if (prompt_str == NULL)
 	{
 		prompt_str = L"";
 	}
 
-#ifdef	OS_WIN32
 	UniPrint(L"%s", prompt_str);
 	tmp = Malloc(MAX_PROMPT_STRSIZE);
 	if (fgetws(tmp, MAX_PROMPT_STRSIZE - 1, stdin) != NULL)
@@ -2025,7 +1832,6 @@ wchar_t *Prompt(wchar_t *prompt_str)
 		}
 	}
 	Free(tmp);
-#endif	// OS_WIN32
 
 	if (ret == NULL)
 	{
@@ -2034,30 +1840,12 @@ wchar_t *Prompt(wchar_t *prompt_str)
 
 	return ret;
 }
-char *PromptA(wchar_t *prompt_str)
-{
-	wchar_t *str = Prompt(prompt_str);
 
-	if (str == NULL)
-	{
-		return NULL;
-	}
-	else
-	{
-		char *ret = CopyUniToStr(str);
-
-		Free(str);
-		return ret;
-	}
-}
-
-// Set the console to raw mode
 void *SetConsoleRaw()
 {
 	return Malloc(0);
 }
 
-// Restore the mode of the console
 void RestoreConsole(void *p)
 {
 	if (p != NULL)
@@ -2066,10 +1854,7 @@ void RestoreConsole(void *p)
 	}
 }
 
-////////////////////////////
-// Local console function
 
-// Creating a new local console
 CONSOLE *NewLocalConsole(wchar_t *infile, wchar_t *outfile)
 {
 	IO *in_io = NULL, *out_io = NULL;
@@ -2077,12 +1862,9 @@ CONSOLE *NewLocalConsole(wchar_t *infile, wchar_t *outfile)
 	LOCAL_CONSOLE_PARAM *p;
 	UINT old_size = 0;
 
-#ifdef	OS_WIN32
 	if (MsGetConsoleWidth() == 80)
 	{
-		//old_size = MsSetConsoleWidth(WIN32_DEFAULT_CONSOLE_WIDTH);
 	}
-#endif	// OS_WIN32
 
 	c->ConsoleType = CONSOLE_LOCAL;
 	c->Free = ConsoleLocalFree;
@@ -2094,7 +1876,6 @@ CONSOLE *NewLocalConsole(wchar_t *infile, wchar_t *outfile)
 
 	if (UniIsEmptyStr(infile) == false)
 	{
-		// Input file is specified
 		in_io = FileOpenW(infile, false);
 		if (in_io == NULL)
 		{
@@ -2116,7 +1897,6 @@ CONSOLE *NewLocalConsole(wchar_t *infile, wchar_t *outfile)
 
 	if (UniIsEmptyStr(outfile) == false)
 	{
-		// Output file is specified
 		out_io = FileCreateW(outfile);
 		if (out_io == NULL)
 		{
@@ -2167,11 +1947,9 @@ CONSOLE *NewLocalConsole(wchar_t *infile, wchar_t *outfile)
 	return c;
 }
 
-// Release Console
 void ConsoleLocalFree(CONSOLE *c)
 {
 	LOCAL_CONSOLE_PARAM *p;
-	// Validate arguments
 	if (c == NULL)
 	{
 		return;
@@ -2179,12 +1957,10 @@ void ConsoleLocalFree(CONSOLE *c)
 
 	p = (LOCAL_CONSOLE_PARAM *)c->Param;
 
-#ifdef	OS_WIN32
 	if (p->Win32_OldConsoleWidth != 0)
 	{
 		MsSetConsoleWidth(p->Win32_OldConsoleWidth);
 	}
-#endif	// OS_WIN32
 
 	if (p != NULL)
 	{
@@ -2204,33 +1980,26 @@ void ConsoleLocalFree(CONSOLE *c)
 
 	DeleteLock(c->OutputLock);
 
-	// Memory release
 	Free(c);
 }
 
-// Get the width of the screen
 UINT ConsoleLocalGetWidth(CONSOLE *c)
 {
 	UINT ret = 0;
-	// Validate arguments
 	if (c == NULL)
 	{
 		return 0;
 	}
 
-#ifdef	OS_WIN32
 	ret = MsGetConsoleWidth();
-#endif	// OS_WIN32
 
 	return ret;
 }
 
-// Read one line from the console
 wchar_t *ConsoleLocalReadLine(CONSOLE *c, wchar_t *prompt, bool nofile)
 {
 	wchar_t *ret;
 	LOCAL_CONSOLE_PARAM *p;
-	// Validate arguments
 	if (c == NULL)
 	{
 		return NULL;
@@ -2245,21 +2014,17 @@ wchar_t *ConsoleLocalReadLine(CONSOLE *c, wchar_t *prompt, bool nofile)
 
 	if (nofile == false && p->InBuf != NULL)
 	{
-		// Read the next line from the file
 		ret = ConsoleReadNextFromInFile(c);
 
 		if (ret != NULL)
 		{
-			// Display the pseudo prompt
 			UniPrint(L"%s", prompt);
 
-			// Display on the screen
 			UniPrint(L"%s\n", ret);
 		}
 	}
 	else
 	{
-		// Read the following line from the console
 		ret = Prompt(prompt);
 	}
 
@@ -2275,11 +2040,9 @@ wchar_t *ConsoleLocalReadLine(CONSOLE *c, wchar_t *prompt, bool nofile)
 	return ret;
 }
 
-// Read the password from the console
 char *ConsoleLocalReadPassword(CONSOLE *c, wchar_t *prompt)
 {
 	char tmp[64];
-	// Validate arguments
 	if (c == NULL)
 	{
 		return NULL;
@@ -2304,10 +2067,8 @@ char *ConsoleLocalReadPassword(CONSOLE *c, wchar_t *prompt)
 	}
 }
 
-// Display a string to the console
 bool ConsoleLocalWrite(CONSOLE *c, wchar_t *str)
 {
-	// Validate arguments
 	if (c == NULL || str == NULL)
 	{
 		return false;
@@ -2320,12 +2081,10 @@ bool ConsoleLocalWrite(CONSOLE *c, wchar_t *str)
 	return true;
 }
 
-// Read the next line from the input file
 wchar_t *ConsoleReadNextFromInFile(CONSOLE *c)
 {
 	LOCAL_CONSOLE_PARAM *p;
 	char *str;
-	// Validate arguments
 	if (c == NULL)
 	{
 		return NULL;
@@ -2367,11 +2126,9 @@ wchar_t *ConsoleReadNextFromInFile(CONSOLE *c)
 	}
 }
 
-// Write when the output file is specified
 void ConsoleWriteOutFile(CONSOLE *c, wchar_t *str, bool add_last_crlf)
 {
 	LOCAL_CONSOLE_PARAM *p;
-	// Validate arguments
 	if (c == NULL || str == NULL)
 	{
 		return;

@@ -9,51 +9,37 @@
 #define	HTTP_CONTENT_TYPE	"text/html; charset=iso-8859-1"
 #define	HTTP_CONTENT_TYPE2	"application/octet-stream"
 #define	HTTP_CONTENT_TYPE3	"image/jpeg"
-#define	HTTP_CONTENT_TYPE4	"text/html"
-#define	HTTP_CONTENT_TYPE5	"message/rfc822"
 #define	HTTP_KEEP_ALIVE		"timeout=15; max=19"
 #define	HTTP_VPN_TARGET		"/vpnsvc/vpn.cgi"
 #define	HTTP_VPN_TARGET2	"/vpnsvc/connect.cgi"
 #define HTTP_VPN_TARGET_POSTDATA	"VPNCONNECT"
-#define	HTTP_SAITAMA		"/saitama.jpg"
-#define	HTTP_PICTURES		"/picture"
-// Maximum size of the custom HTTP header
 #define	HTTP_CUSTOM_HEADER_MAX_SIZE		1024
-// Maximum size of a single line in the HTTP header
 #define	HTTP_HEADER_LINE_MAX_SIZE		4096
-// Maximum number of lines in the HTTP header
 #define	HTTP_HEADER_MAX_LINES			128
-// Maximum size of the user agent string
 #define	HTTP_HEADER_USER_AGENT_MAX_SIZE	512
-// Maximum size of the random number to be included in the PACK
 #define	HTTP_PACK_RAND_SIZE_MAX			1000
-// Maximum PACK size in the HTTP
 #define	HTTP_PACK_MAX_SIZE				65536
 
-// HTTP value
 struct HTTP_VALUE
 {
-	char *Name;						// Name
-	char *Data;						// Data
+	char *Name;
+	char *Data;
 };
 
-// HTTP header
 struct HTTP_HEADER
 {
-	char *Method;					// Method
-	char *Target;					// Target
-	char *Version;					// Version
-	LIST *ValueList;				// Value list
+	char *Method;
+	char *Target;
+	char *Version;
+	LIST *ValueList;
 };
 
-// MIME type
 struct HTTP_MIME_TYPE
 {
 	char *Extension;
 	char *MimeType;
 };
 
-char *GetMimeTypeFromFileName(char *filename);
 void GetHttpDateStr(char *str, UINT size, UINT64 t);
 void ReplaceUnsafeCharInHttpTarget(char *target);
 HTTP_HEADER *NewHttpHeader(char *method, char *target, char *version);
