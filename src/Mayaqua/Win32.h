@@ -80,7 +80,6 @@ void Win32Yield();
 
 void Win32UnlockEx(LOCK *lock, bool inner);
 UINT Win32GetOsType();
-UINT Win32GetOsSpVer();
 void Win32NukuEn(char *dst, UINT size, char *src);
 void Win32NukuEnW(wchar_t *dst, UINT size, wchar_t *src);
 void Win32GetDirFromPath(char *dst, UINT size, char *src);

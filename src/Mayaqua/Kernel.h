@@ -43,12 +43,9 @@ struct THREAD
 	void *AppData1, *AppData2, *AppData3;
 	UINT AppInt1, AppInt2, AppInt3;
 	UINT ThreadId;
-	bool PoolThread;
-	THREAD *PoolHostThread;
 	LIST *PoolWaitList;						// Thread termination waiting list
 	volatile bool PoolHalting;				// Thread stopped
 	EVENT *release_event;
-	bool Stopped;							// Indicates that the operation is Stopped
 	char *Name;								// Thread name
 };
 

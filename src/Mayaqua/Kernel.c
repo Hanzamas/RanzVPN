@@ -76,13 +76,7 @@ static LOCALE current_locale;
 #define SECSPERHOUR (60*60)
 #define SECSPERDAY (24*60*60)
 #define DAYSPERWEEK 7
-#define TM_SUNDAY	0
-#define TM_MONDAY	1
-#define TM_TUESDAY	2
-#define TM_WEDNESDAY	3
 #define TM_THURSDAY	4
-#define TM_FRIDAY	5
-#define TM_SATURDAY	6
 
 #define TM_YEAR_BASE	1900
 
@@ -634,8 +628,6 @@ void ThreadPoolProc(THREAD *t, void *param)
 		// Set the thread name
 		SetThreadName(thread->ThreadId, NULL, 0);
 
-		pd->Thread->Stopped = true;
-
 		thread->PoolHalting = true;
 
 		// Set the waiting event list
@@ -750,9 +742,7 @@ THREAD *NewThreadNamed(THREAD_PROC *thread_proc, void *param, char *name)
 	ret->param = param;
 	ret->pData = NULL;
 	ret->init_finished_event = NewEvent();
-	ret->PoolThread = true;
 	ret->PoolWaitList = NewList(NULL);
-	ret->PoolHostThread = host;
 	ret->release_event = NewEvent();
 
 	if (IsEmptyStr(name) == false)

@@ -24,7 +24,6 @@
 #define	TAG_BYTE			"byte"
 #define	TAG_TRUE			"true"
 #define	TAG_FALSE			"false"
-#define	TAG_END				"end"
 #define	TAG_ROOT			"root"
 
 #define	TAG_CPYRIGHT		"\xef\xbb\xbf# Software Configuration File\r\n# ---------------------------\r\n# \r\n# You may edit this file when the VPN Server / Client / Bridge program is not running.\r\n# \r\n# In prior to edit this file manually by your text editor,\r\n# shutdown the VPN Server / Client / Bridge background service.\r\n# Otherwise, all changes will be lost.\r\n# \r\n"
@@ -75,7 +74,6 @@ typedef bool (*ENUM_ITEM)(ITEM *t, void *param);
 struct CFG_ENUM_PARAM
 {
 	BUF *b;
-	FOLDER *f;
 	UINT depth;
 };
 
@@ -133,8 +131,6 @@ bool CfgSaveExW(CFG_RW *rw, FOLDER *f, wchar_t *name);
 bool CfgSaveExW2(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size);
 bool CfgSaveExW3(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size, bool write_binary);
 FOLDER *CfgReadW(wchar_t *name);
-void CfgTest();
-void CfgTest2(FOLDER *f, UINT n);
 CFG_RW *NewCfgRwEx2W(FOLDER **root, wchar_t *cfg_name, bool dont_backup, wchar_t *template_name);
 CFG_RW *NewCfgRwEx2A(FOLDER **root, char *cfg_name_a, bool dont_backup, char *template_name_a);
 UINT SaveCfgRw(CFG_RW *rw, FOLDER *f);

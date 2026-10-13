@@ -80,7 +80,6 @@ VALUE *NewUniStrValue(wchar_t *str);
 void FreeValue(VALUE *v, UINT type);
 int ComparePackName(void *p1, void *p2);
 void FreeElement(ELEMENT *e);
-UINT GetValueNum(ELEMENT *e);
 UINT GetIntValue(ELEMENT *e, UINT index);
 UINT64 GetInt64Value(ELEMENT *e, UINT index);
 char *GetStrValue(ELEMENT *e, UINT index);

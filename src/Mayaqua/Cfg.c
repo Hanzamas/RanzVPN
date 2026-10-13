@@ -1080,7 +1080,6 @@ void CfgOutputFolderText(BUF *b, FOLDER *f, UINT depth)
 	Zero(&p, sizeof(CFG_ENUM_PARAM));
 	p.depth = depth;
 	p.b = b;
-	p.f = f;
 
 	// Enumerate the list of items
 	CfgEnumItem(f, CfgEnumItemProc, &p);
