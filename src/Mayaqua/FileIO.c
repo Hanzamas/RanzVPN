@@ -27,271 +27,12 @@ static HAMCORE *hamcore_io = NULL;
 #define	NUM_CRC32_TABLE	256
 static UINT crc32_table[NUM_CRC32_TABLE];
 
-// Confirm that the specified string exists as a line
-bool IsInLines(BUF *buf, char *str, bool instr)
+// File I/O data of a disk file (IO pData), from the raw OS allocator
+typedef struct WIN32IO
 {
-	bool ret = false;
-	// Validate arguments
-	if (buf == NULL || str == NULL)
-	{
-		return false;
-	}
-
-	if (IsEmptyStr(str))
-	{
-		return false;
-	}
-
-	SeekBufToBegin(buf);
-
-	while (ret == false)
-	{
-		char *line = CfgReadNextLine(buf);
-
-		if (line == NULL)
-		{
-			break;
-		}
-
-		Trim(line);
-
-		if (IsEmptyStr(line) == false)
-		{
-			if (StrCmpi(line, str) == 0)
-			{
-				ret = true;
-			}
-
-			if (instr)
-			{
-				if (InStr(str, line))
-				{
-					ret = true;
-				}
-
-				if (InStr(line, str))
-				{
-					ret = true;
-				}
-			}
-		}
-
-		Free(line);
-	}
-
-	return ret;
-}
-bool IsInLinesFile(wchar_t *filename, char *str, bool instr)
-{
-	bool ret = false;
-	BUF *b;
-	// Validate arguments
-	if (filename == NULL || str == NULL)
-	{
-		return false;
-	}
-
-	b = ReadDumpW(filename);
-	if (b == NULL)
-	{
-		return false;
-	}
-
-	ret = IsInLines(b, str, instr);
-
-	FreeBuf(b);
-
-	return ret;
-}
-
-// Check whether the file is write-locked
-bool IsFileWriteLockedW(wchar_t *name)
-{
-	IO *io;
-	// Validate arguments
-	if (name == NULL)
-	{
-		return false;
-	}
-
-	if (IsFileExistsW(name) == false)
-	{
-		return false;
-	}
-
-	io = FileOpenW(name, true);
-	if (io == NULL)
-	{
-		return true;
-	}
-
-	FileClose(io);
-
-	return false;
-}
-
-// Creating a ZIP packer
-ZIP_PACKER *NewZipPacker()
-{
-	ZIP_PACKER *p = ZeroMalloc(sizeof(ZIP_PACKER));
-
-	p->Fifo = NewFifo();
-	p->FileList = NewList(NULL);
-	p->CurrentFile = NULL;
-
-	return p;
-}
-
-// Release of ZIP packer
-void FreeZipPacker(ZIP_PACKER *p)
-{
-	UINT i;
-	// Validate arguments
-	if (p == NULL)
-	{
-		return;
-	}
-
-	ReleaseFifo(p->Fifo);
-
-	for (i = 0;i < LIST_NUM(p->FileList);i++)
-	{
-		ZIP_FILE *f = LIST_DATA(p->FileList, i);
-
-		Free(f);
-	}
-
-	ReleaseList(p->FileList);
-
-	Free(p);
-}
-
-// Simply add the file
-void ZipAddFileSimple(ZIP_PACKER *p, char *name, UINT64 dt, UINT attribute, void *data, UINT size)
-{
-	// Validate arguments
-	if (p == NULL || IsEmptyStr(name) || (size != 0 && data == NULL))
-	{
-		return;
-	}
-
-	ZipAddFileStart(p, name, size, dt, attribute);
-	ZipAddFileData(p, data, 0, size);
-}
-bool ZipAddRealFileW(ZIP_PACKER *p, char *name, UINT64 dt, UINT attribute, wchar_t *srcname)
-{
-	BUF *b;
-	// Validate arguments
-	if (p == NULL || IsEmptyStr(name) || srcname == NULL)
-	{
-		return false;
-	}
-
-	b = ReadDumpW(srcname);
-	if (b == NULL)
-	{
-		return false;
-	}
-
-	ZipAddFileSimple(p, name, dt, attribute, b->Buf, b->Size);
-
-	FreeBuf(b);
-
-	return true;
-}
-bool ZipAddRealFile(ZIP_PACKER *p, char *name, UINT64 dt, UINT attribute, char *srcname)
-{
-	bool ret = false;
-	wchar_t *s;
-
-	s = CopyStrToUni(srcname);
-
-	ret = ZipAddRealFileW(p, name, dt, attribute, s);
-
-	Free(s);
-
-	return ret;
-}
-
-// Start adding a file
-void ZipAddFileStart(ZIP_PACKER *p, char *name, UINT size, UINT64 dt, UINT attribute)
-{
-	char tmp[MAX_PATH];
-	ZIP_FILE *f;
-	ZIP_DATA_HEADER h;
-	// Validate arguments
-	if (p == NULL || IsEmptyStr(name))
-	{
-		return;
-	}
-	if (dt == 0)
-	{
-		dt = LocalTime64();
-	}
-
-	if (p->CurrentFile != NULL)
-	{
-		return;
-	}
-
-	StrCpy(tmp, sizeof(tmp), name);
-	ReplaceStrEx(tmp, sizeof(tmp), tmp, "/", "\\", true);
-
-	f = ZeroMalloc(sizeof(ZIP_FILE));
-
-	StrCpy(f->Name, sizeof(f->Name), tmp);
-	f->Size = size;
-	f->DateTime = dt;
-	f->Attributes = attribute;
-
-	Add(p->FileList, f);
-
-	Zero(&h, sizeof(h));
-	f->HeaderPos = (UINT)p->Fifo->total_write_size;
-	WriteZipDataHeader(f, &h, false);
-	WriteFifo(p->Fifo, &h, sizeof(h));
-	WriteFifo(p->Fifo, f->Name, StrLen(f->Name));
-	f->Crc32 = 0xffffffff;
-
-	p->CurrentFile = f;
-}
-
-// Add data to the file
-UINT ZipAddFileData(ZIP_PACKER *p, void *data, UINT pos, UINT len)
-{
-	UINT ret;
-	UINT total_size;
-	// Validate arguments
-	if (p == NULL)
-	{
-		return 0;
-	}
-
-	total_size = p->CurrentFile->CurrentSize + len;
-
-	if (total_size > p->CurrentFile->Size)
-	{
-		return 0;
-	}
-
-	WriteFifo(p->Fifo, ((UCHAR *)data) + pos, len);
-
-	p->CurrentFile->CurrentSize += len;
-	p->CurrentFile->Crc32 = Crc32Next(data, pos, len, p->CurrentFile->Crc32);
-
-	ret = p->CurrentFile->Size - p->CurrentFile->CurrentSize;
-
-	if (ret == 0)
-	{
-		p->CurrentFile->Crc32 = ~p->CurrentFile->Crc32;
-
-		ZipAddFileFooter(p);
-
-		p->CurrentFile = NULL;
-	}
-
-	return ret;
-}
+	HANDLE hFile;
+	bool WriteMode;
+} WIN32IO;
 
 // Append a file footer
 void ZipAddFileFooter(ZIP_PACKER *p)
@@ -307,89 +48,6 @@ void ZipAddFileFooter(ZIP_PACKER *p)
 	WriteZipDataFooter(p->CurrentFile, &f);
 
 	WriteFifo(p->Fifo, &f, sizeof(f));
-}
-
-// Output the ZIP data to a file
-bool ZipWriteW(ZIP_PACKER *p, wchar_t *name)
-{
-	FIFO *f;
-	// Validate arguments
-	if (p == NULL || name == NULL)
-	{
-		return false;
-	}
-
-	f = ZipFinish(p);
-	if (f == NULL)
-	{
-		return false;
-	}
-
-	return FileWriteAllW(name, FifoPtr(f), FifoSize(f));
-}
-
-// Complete the creation of the ZIP data
-FIFO *ZipFinish(ZIP_PACKER *p)
-{
-	UINT i;
-	UINT pos_start;
-	UINT pos_end;
-	ZIP_END_HEADER e;
-	// Validate arguments
-	if (p == NULL)
-	{
-		return NULL;
-	}
-
-	pos_start = (UINT)p->Fifo->total_write_size;
-
-	for (i = 0;i < LIST_NUM(p->FileList);i++)
-	{
-		ZIP_FILE *f = LIST_DATA(p->FileList, i);
-		ZIP_DIR_HEADER d;
-		ZIP_DATA_HEADER dh;
-
-		Zero(&d, sizeof(d));
-		Zero(&dh, sizeof(dh));
-
-		d.Signature = Endian32(Swap32(0x02014B50));
-		d.MadeVer = Endian16(Swap16(ZIP_VERSION));
-
-		WriteZipDataHeader(f, &dh, true);
-
-		d.NeedVer = dh.NeedVer;
-		d.Option = dh.Option;
-		d.CompType = dh.CompType;
-		d.FileTime = dh.FileTime;
-		d.FileDate = dh.FileDate;
-		d.Crc32 = dh.Crc32;
-		d.CompSize = dh.CompSize;
-		d.UncompSize = dh.UncompSize;
-		d.FileNameLen = dh.FileNameLen;
-		d.ExtraLen = dh.ExtraLen;
-		d.CommentLen = 0;
-		d.DiskNum = 0;
-		d.InAttr = 0;
-		d.OutAttr = Endian32(Swap32((USHORT)f->Attributes));
-		d.HeaderPos = Endian32(Swap32(f->HeaderPos));
-
-		WriteFifo(p->Fifo, &d, sizeof(d));
-		WriteFifo(p->Fifo, f->Name, StrLen(f->Name));
-	}
-
-	pos_end = (UINT)p->Fifo->total_write_size;
-
-	Zero(&e, sizeof(e));
-	e.Signature = Endian32(Swap32(ZIP_SIGNATURE_END));
-	e.DiskNum = e.StartDiskNum = 0;
-	e.DiskDirEntry = e.DirEntry = Endian16(Swap16((USHORT)LIST_NUM(p->FileList)));
-	e.DirSize = Endian32(Swap32((UINT)(pos_end - pos_start)));
-	e.StartPos = Endian32(Swap32(pos_start));
-	e.CommentLen = 0;
-
-	WriteFifo(p->Fifo, &e, sizeof(e));
-
-	return p->Fifo;
 }
 
 // Creating a ZIP data header
@@ -487,42 +145,6 @@ UINT Crc32Next(void *buf, UINT pos, UINT len, UINT last_crc32)
 UINT Crc32Finish(UINT last_crc32)
 {
 	return ~last_crc32;
-}
-
-// Save the file
-bool SaveFileW(wchar_t *name, void *data, UINT size)
-{
-	IO *io;
-	// Validate arguments
-	if (name == NULL || (data == NULL && size != 0))
-	{
-		return false;
-	}
-
-	io = FileCreateW(name);
-	if (io == NULL)
-	{
-		return false;
-	}
-
-	if (FileWrite(io, data, size) == false)
-	{
-		FileClose(io);
-		return false;
-	}
-
-	FileClose(io);
-
-	return true;
-}
-bool SaveFile(char *name, void *data, UINT size)
-{
-	wchar_t *name_w = CopyStrToUni(name);
-	bool ret = SaveFileW(name_w, data, size);
-
-	Free(name_w);
-
-	return ret;
 }
 
 // Check whether the file exists
@@ -669,35 +291,6 @@ void FreeDir(DIRLIST *d)
 	Free(d);
 }
 
-
-// Make the file name safe
-void UniSafeFileName(wchar_t *name)
-{
-	UINT i, len, dlen;
-	static wchar_t *danger_str = L"\\/:*?\"<>|";
-	// Validate arguments
-	if (name == NULL)
-	{
-		return;
-	}
-
-	dlen = UniStrLen(danger_str);
-	len = UniStrLen(name);
-
-	for (i = 0;i < len;i++)
-	{
-		wchar_t c = name[i];
-		UINT j;
-		for (j = 0;j < dlen;j++)
-		{
-			if (c == danger_str[j])
-			{
-				c = L'_';
-			}
-		}
-		name[i] = c;
-	}
-}
 
 // Read HamCore file
 BUF *ReadHamcoreW(wchar_t *filename)
@@ -917,11 +510,6 @@ void GetLogDirW(wchar_t *name, UINT size)
 	GetExeDirW(name, size);
 }
 
-void GetDbDir(char *name, UINT size)
-{
-	GetExeDir(name, size);
-}
-
 void GetDbDirW(wchar_t *name, UINT size)
 {
 	GetExeDirW(name, size);
@@ -948,62 +536,7 @@ void InitGetExeName(char *arg)
 	Free(arg_w);
 }
 
-// Generate a secure file name
-void MakeSafeFileName(char *dst, UINT size, char *src)
-{
-	char tmp[MAX_PATH];
-	// Validate arguments
-	if (dst == NULL || src == NULL)
-	{
-		return;
-	}
-
-	StrCpy(tmp, sizeof(tmp), src);
-	ReplaceStrEx(tmp, sizeof(tmp), tmp, "..", "__", false);
-	ReplaceStrEx(tmp, sizeof(tmp), tmp, "/", "_", false);
-	ReplaceStrEx(tmp, sizeof(tmp), tmp, "\\", "_", false);
-	ReplaceStrEx(tmp, sizeof(tmp), tmp, "@", "_", false);
-	ReplaceStrEx(tmp, sizeof(tmp), tmp, "|", "_", false);
-
-	StrCpy(dst, size, tmp);
-}
-
 // Get the file name from the file path
-void GetFileNameFromFilePathW(wchar_t *dst, UINT size, wchar_t *filepath)
-{
-	wchar_t tmp[MAX_SIZE];
-	UINT i, len, wp;
-	// Validate arguments
-	if (dst == NULL || filepath == NULL)
-	{
-		return;
-	}
-
-	len = MIN(UniStrLen(filepath), (MAX_SIZE - 2));
-	wp = 0;
-
-	for (i = 0;i < (len + 1);i++)
-	{
-		wchar_t c = filepath[i];
-
-		switch (c)
-		{
-		case L'\\':
-		case L'/':
-		case 0:
-			tmp[wp] = 0;
-			wp = 0;
-			break;
-
-		default:
-			tmp[wp] = c;
-			wp++;
-			break;
-		}
-	}
-
-	UniStrCpy(dst, size, tmp);
-}
 void GetFileNameFromFilePath(char *dst, UINT size, char *filepath)
 {
 	char tmp[MAX_SIZE];
@@ -1253,61 +786,6 @@ bool IsFileExistsInnerW(wchar_t *name)
 	return true;
 }
 
-// Get the current contents of the PATH environment variable
-char *GetCurrentPathEnvStr()
-{
-	char tmp[1024];
-	char *tag_name;
-
-#ifdef	OS_WIN32
-	tag_name = "Path";
-#endif	// OS_WIN32
-
-	if (GetEnv(tag_name, tmp, sizeof(tmp)) == false)
-	{
-#ifdef	OS_WIN32
-		Win32GetCurrentDir(tmp, sizeof(tmp));
-#endif	// OS_WIN32
-	}
-
-	return CopyStr(tmp);
-}
-
-// Get multiple paths separated by colons
-UNI_TOKEN_LIST *ParseSplitedPathW(wchar_t *path)
-{
-	UNI_TOKEN_LIST *ret;
-	wchar_t *tmp = UniCopyStr(path);
-	wchar_t *split_str;
-	UINT i;
-
-	UniTrim(tmp);
-	UniTrimCrlf(tmp);
-	UniTrim(tmp);
-	UniTrimCrlf(tmp);
-
-#ifdef	OS_WIN32
-	split_str = L";";
-#endif	// OS_WIN32
-
-	ret = UniParseToken(tmp, split_str);
-
-	if (ret != NULL)
-	{
-		for (i = 0;i < ret->NumTokens;i++)
-		{
-			UniTrim(ret->Token[i]);
-			UniTrimCrlf(ret->Token[i]);
-			UniTrim(ret->Token[i]);
-			UniTrimCrlf(ret->Token[i]);
-		}
-	}
-
-	Free(tmp);
-
-	return ret;
-}
-
 // Normalize the file path
 void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 {
@@ -1503,7 +981,13 @@ bool FileRenameInnerW(wchar_t *old_name, wchar_t *new_name)
 		return false;
 	}
 
-	return OSFileRenameW(old_name, new_name);
+	// Rename
+	if (MoveFileW(old_name, new_name) == FALSE)
+	{
+		return false;
+	}
+
+	return true;
 }
 
 // Convert the path
@@ -1557,7 +1041,12 @@ bool DeleteDirInnerW(wchar_t *name)
 		return false;
 	}
 
-	return OSDeleteDirW(name);
+	if (RemoveDirectoryW(name) == FALSE)
+	{
+		return false;
+	}
+
+	return true;
 }
 
 // Generation of internal file path
@@ -1689,7 +1178,12 @@ bool MakeDirInnerW(wchar_t *name)
 		return false;
 	}
 
-	return OSMakeDirW(name);
+	if (CreateDirectoryW(name, NULL) == FALSE)
+	{
+		return false;
+	}
+
+	return true;
 }
 
 // Delete the file
@@ -1727,45 +1221,76 @@ bool FileDeleteInnerW(wchar_t *name)
 	UniStrCpy(name2, sizeof(name2), name);
 	ConvertPathW(name2);
 
-	return OSFileDeleteW(name2);
+	if (DeleteFileW(name2) == FALSE)
+	{
+		return false;
+	}
+
+	return true;
 }
 
-// Seek the file
+// Seek the file (a 32-bit offset; a hamcore file cannot seek)
 bool FileSeek(IO *o, UINT mode, int offset)
 {
+	WIN32IO *p;
+	DWORD ret;
 	// Validate arguments
 	if (o == NULL)
 	{
 		return false;
 	}
 
-	if (o->HamMode == false)
-	{
-		return OSFileSeek(o->pData, mode, offset);
-	}
-	else
+	if (o->HamMode)
 	{
 		return false;
 	}
+
+	if (mode != FILE_BEGIN && mode != FILE_END && mode != FILE_CURRENT)
+	{
+		return false;
+	}
+
+	p = (WIN32IO *)o->pData;
+	ret = SetFilePointer(p->hFile, (LONG)offset, NULL, mode);
+	if (ret == INVALID_SET_FILE_POINTER || ret == ERROR_NEGATIVE_SEEK)
+	{
+		return false;
+	}
+
+	return true;
 }
 
 // Get the file size
 UINT64 FileSize64(IO *o)
 {
+	WIN32IO *p;
+	UINT64 ret;
+	DWORD tmp;
 	// Validate arguments
 	if (o == NULL)
 	{
 		return 0;
 	}
 
-	if (o->HamMode == false)
-	{
-		return OSFileSize(o->pData);
-	}
-	else
+	if (o->HamMode)
 	{
 		return (UINT64)o->HamBuf->Size;
 	}
+
+	p = (WIN32IO *)o->pData;
+	tmp = 0;
+	ret = GetFileSize(p->hFile, &tmp);
+	if (ret == (DWORD)-1)
+	{
+		return 0;
+	}
+
+	if (tmp != 0)
+	{
+		ret += (UINT64)tmp * 4294967296ULL;
+	}
+
+	return ret;
 }
 UINT FileSize(IO *o)
 {
@@ -1779,9 +1304,11 @@ UINT FileSize(IO *o)
 	return (UINT)size;
 }
 
-// Read from a file
+// Read from a file (all or nothing: a short read fails)
 bool FileRead(IO *o, void *buf, UINT size)
 {
+	WIN32IO *p;
+	DWORD read_size;
 	// Validate arguments
 	if (o == NULL || buf == NULL)
 	{
@@ -1797,19 +1324,30 @@ bool FileRead(IO *o, void *buf, UINT size)
 		return true;
 	}
 
-	if (o->HamMode == false)
-	{
-		return OSFileRead(o->pData, buf, size);
-	}
-	else
+	if (o->HamMode)
 	{
 		return ReadBuf(o->HamBuf, buf, size) == size ? true : false;
 	}
+
+	p = (WIN32IO *)o->pData;
+	if (ReadFile(p->hFile, buf, size, &read_size, NULL) == FALSE)
+	{
+		return false;
+	}
+
+	if (read_size != size)
+	{
+		return false;
+	}
+
+	return true;
 }
 
-// Write to a file
+// Write to a file (all or nothing: a short write fails)
 bool FileWrite(IO *o, void *buf, UINT size)
 {
+	WIN32IO *p;
+	DWORD write_size;
 	// Validate arguments
 	if (o == NULL || buf == NULL)
 	{
@@ -1829,12 +1367,24 @@ bool FileWrite(IO *o, void *buf, UINT size)
 		return true;
 	}
 
-	return OSFileWrite(o->pData, buf, size);
+	p = (WIN32IO *)o->pData;
+	if (WriteFile(p->hFile, buf, size, &write_size, NULL) == FALSE)
+	{
+		return false;
+	}
+
+	if (write_size != size)
+	{
+		return false;
+	}
+
+	return true;
 }
 
 // Flush the file
 void FileFlush(IO *o)
 {
+	WIN32IO *p;
 	// Validate arguments
 	if (o == NULL)
 	{
@@ -1846,7 +1396,97 @@ void FileFlush(IO *o)
 		return;
 	}
 
-	OSFileFlush(o->pData);
+	p = (WIN32IO *)o->pData;
+	if (p->WriteMode)
+	{
+		FlushFileBuffers(p->hFile);
+	}
+}
+
+// Read the dates of a disk file (on open)
+static bool FileGetDate(void *pData, UINT64 *created_time, UINT64 *updated_time, UINT64 *accessed_date)
+{
+	WIN32IO *p;
+	BY_HANDLE_FILE_INFORMATION info;
+	SYSTEMTIME st_create, st_update, st_access;
+	// Validate arguments
+	if (pData == NULL)
+	{
+		return false;
+	}
+
+	p = (WIN32IO *)pData;
+
+	Zero(&info, sizeof(info));
+
+	if (GetFileInformationByHandle(p->hFile, &info) == false)
+	{
+		return false;
+	}
+
+	Zero(&st_create, sizeof(st_create));
+	Zero(&st_update, sizeof(st_update));
+	Zero(&st_access, sizeof(st_access));
+
+	FileTimeToSystemTime(&info.ftCreationTime, &st_create);
+	FileTimeToSystemTime(&info.ftLastWriteTime, &st_update);
+	FileTimeToSystemTime(&info.ftLastAccessTime, &st_access);
+
+	if (created_time != NULL)
+	{
+		*created_time = SystemToUINT64(&st_create);
+	}
+
+	if (updated_time != NULL)
+	{
+		*updated_time = SystemToUINT64(&st_update);
+	}
+
+	if (accessed_date != NULL)
+	{
+		*accessed_date = SystemToUINT64(&st_access);
+	}
+
+	return true;
+}
+
+// Write the dates of a disk file (on close of a writer); nothing to do when both are 0
+static bool FileSetDate(void *pData, UINT64 created_time, UINT64 updated_time)
+{
+	WIN32IO *p;
+	SYSTEMTIME st_created_time, st_updated_time;
+	FILETIME ft_created_time, ft_updated_time;
+	FILETIME *p_created_time = NULL, *p_updated_time = NULL;
+	// Validate arguments
+	if (pData == NULL || (created_time == 0 && updated_time == 0))
+	{
+		return false;
+	}
+
+	p = (WIN32IO *)pData;
+
+	Zero(&st_created_time, sizeof(st_created_time));
+	Zero(&st_updated_time, sizeof(st_updated_time));
+
+	if (created_time != 0)
+	{
+		UINT64ToSystem(&st_created_time, created_time);
+
+		SystemTimeToFileTime(&st_created_time, &ft_created_time);
+
+		p_created_time = &ft_created_time;
+	}
+
+	if (updated_time != 0)
+	{
+		UINT64ToSystem(&st_updated_time, updated_time);
+
+		SystemTimeToFileTime(&st_updated_time, &ft_updated_time);
+
+		p_updated_time = &ft_updated_time;
+	}
+
+	return SetFileTime(p->hFile, p_created_time, NULL, p_updated_time);
 }
 
 // Close the file
@@ -1864,14 +1504,21 @@ void FileCloseEx(IO *o, bool no_flush)
 
 	if (o->HamMode == false)
 	{
+		WIN32IO *p = (WIN32IO *)o->pData;
+
 		if (o->WriteMode)
 		{
-#ifdef	OS_WIN32
-			Win32FileSetDate(o->pData, o->SetCreateTime, o->SetUpdateTime);
-#endif	// OS_WIN32
+			FileSetDate(p, o->SetCreateTime, o->SetUpdateTime);
 		}
 
-		OSFileClose(o->pData, no_flush);
+		// A writer is flushed unless no_flush is set
+		if (p->WriteMode && no_flush == false)
+		{
+			FlushFileBuffers(p->hFile);
+		}
+		CloseHandle(p->hFile);
+
+		Win32MemoryFree(p);
 	}
 	else
 	{
@@ -1887,7 +1534,8 @@ void FileCloseEx(IO *o, bool no_flush)
 IO *FileCreateInnerW(wchar_t *name)
 {
 	IO *o;
-	void *p;
+	WIN32IO *p;
+	HANDLE h;
 	wchar_t name2[MAX_SIZE];
 	// Validate arguments
 	if (name == NULL)
@@ -1898,11 +1546,25 @@ IO *FileCreateInnerW(wchar_t *name)
 	UniStrCpy(name2, sizeof(name2), name);
 	ConvertPathW(name2);
 
-	p = OSFileCreateW(name2);
-	if (p == NULL)
+	// Replace an existing file, read-write, sharing read. An existing hidden file denies
+	// FILE_ATTRIBUTE_NORMAL, so retry with FILE_ATTRIBUTE_HIDDEN.
+	h = CreateFileW(name2, GENERIC_READ | GENERIC_WRITE,
+		FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
+		NULL);
+	if (h == INVALID_HANDLE_VALUE)
 	{
-		return NULL;
+		h = CreateFileW(name2, GENERIC_READ | GENERIC_WRITE,
+			FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_HIDDEN,
+			NULL);
+		if (h == INVALID_HANDLE_VALUE)
+		{
+			return NULL;
+		}
 	}
+
+	p = Win32MemoryAlloc(sizeof(WIN32IO));
+	p->hFile = h;
+	p->WriteMode = true;
 
 	o = ZeroMalloc(sizeof(IO));
 	o->pData = p;
@@ -1938,35 +1600,13 @@ IO *FileCreateW(wchar_t *name)
 	return FileCreateInnerW(tmp);
 }
 
-// Write all the data to the file
-bool FileWriteAllW(wchar_t *name, void *data, UINT size)
-{
-	IO *io;
-	// Validate arguments
-	if (name == NULL || (data == NULL && size != 0))
-	{
-		return false;
-	}
-
-	io = FileCreateW(name);
-
-	if (io == NULL)
-	{
-		return false;
-	}
-
-	FileWrite(io, data, size);
-
-	FileClose(io);
-
-	return true;
-}
-
 // Open the file
 IO *FileOpenInnerW(wchar_t *name, bool write_mode, bool read_lock)
 {
 	IO *o;
-	void *p;
+	WIN32IO *p;
+	HANDLE h;
+	DWORD lock_mode;
 	wchar_t name2[MAX_SIZE];
 	// Validate arguments
 	if (name == NULL)
@@ -1977,11 +1617,36 @@ IO *FileOpenInnerW(wchar_t *name, bool write_mode, bool read_lock)
 	UniStrCpy(name2, sizeof(name2), name);
 	ConvertPathW(name2);
 
-	p = OSFileOpenW(name2, write_mode, read_lock);
-	if (p == NULL)
+	// A writer opens read-write and shares read. A reader shares read, and also write
+	// when it does not take the read lock.
+	if (write_mode)
+	{
+		lock_mode = FILE_SHARE_READ;
+	}
+	else
+	{
+		if (read_lock == false)
+		{
+			lock_mode = FILE_SHARE_READ | FILE_SHARE_WRITE;
+		}
+		else
+		{
+			lock_mode = FILE_SHARE_READ;
+		}
+	}
+
+	h = CreateFileW(name2,
+		(write_mode ? GENERIC_READ | GENERIC_WRITE : GENERIC_READ),
+		lock_mode,
+		NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	if (h == INVALID_HANDLE_VALUE)
 	{
 		return NULL;
 	}
+
+	p = Win32MemoryAlloc(sizeof(WIN32IO));
+	p->hFile = h;
+	p->WriteMode = write_mode;
 
 	o = ZeroMalloc(sizeof(IO));
 	o->pData = p;
@@ -1989,9 +1654,7 @@ IO *FileOpenInnerW(wchar_t *name, bool write_mode, bool read_lock)
 	UniToStr(o->Name, sizeof(o->Name), o->NameW);
 	o->WriteMode = write_mode;
 
-#ifdef	OS_WIN32
-	Win32FileGetDate(p, &o->GetCreateTime, &o->GetUpdateTime, &o->GetAccessTime);
-#endif	// OS_WIN32
+	FileGetDate(p, &o->GetCreateTime, &o->GetUpdateTime, &o->GetAccessTime);
 
 	// KS
 	KS_INC(KS_IO_OPEN_COUNT);

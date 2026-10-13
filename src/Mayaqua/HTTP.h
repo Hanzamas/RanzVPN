@@ -53,7 +53,6 @@ struct HTTP_MIME_TYPE
 	char *MimeType;
 };
 
-char *GetMimeTypeFromFileName(char *filename);
 void GetHttpDateStr(char *str, UINT size, UINT64 t);
 void ReplaceUnsafeCharInHttpTarget(char *target);
 HTTP_HEADER *NewHttpHeader(char *method, char *target, char *version);

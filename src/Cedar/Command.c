@@ -1569,20 +1569,6 @@ void TtcPrintSummary(TTC *ttc)
 	TtPrint(ttc->Param, ttc->Print, L"");
 }
 
-// Stop the communication throughput measurement client
-void StopTtc(TTC *ttc)
-{
-	// Validate arguments
-	if (ttc == NULL)
-	{
-		return;
-	}
-
-	TtPrint(ttc->Param, ttc->Print, _UU("TTC_STOPPING"));
-
-	ttc->Halt = true;
-}
-
 // Generate a result
 void TtcGenerateResult(TTC *ttc)
 {
@@ -3129,66 +3115,6 @@ void PsMain(PS *ps)
 	// Release the Caps
 	FreeCapsList(ps->CapsList);
 	ps->CapsList = NULL;
-}
-
-// A template for a new command function
-UINT PsXxx(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT ret;
-	RPC_LISTENER t;
-	PARAM args[] =
-	{
-		{"[port]", CmdPromptPort, _UU("CMD_ListenerCreate_PortPrompt"), CmdEvalPort, NULL},
-	};
-
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Zero(&t, sizeof(t));
-	t.Enable = true;
-	t.Port = ToInt(GetParamStr(o, "[port]"));
-
-	ret = ScCreateListener(ps->Rpc, &t);
-
-	if (ret != ERR_NO_ERROR)
-	{
-		CmdPrintError(c, ret);
-		FreeParamValueList(o);
-		return ret;
-	}
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
-// Evaluate the IP address
-bool CmdEvalIp(CONSOLE *c, wchar_t *str, void *param)
-{
-	// Validate arguments
-	if (c == NULL || str == NULL)
-	{
-		return false;
-	}
-
-	if (UniIsEmptyStr(str))
-	{
-		return true;
-	}
-
-	if (UniStrToIP32(str) == 0 && UniStrCmpi(str, L"0.0.0.0") != 0)
-	{
-		wchar_t *msg = (param == NULL) ? _UU("CMD_IP_EVAL_FAILED") : (wchar_t *)param;
-		c->Write(c, msg);
-		return false;
-	}
-
-	return true;
 }
 
 // Check the string of the form of the host name and port number

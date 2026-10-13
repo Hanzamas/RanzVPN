@@ -775,44 +775,6 @@ BUF *BuildICMPv6NeighborSoliciation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCH
 	return ret;
 }
 
-BUF *BuildICMPv6RouterSoliciation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCHAR *my_mac_address, UINT id)
-{
-	ICMPV6_OPTION_LIST opt;
-	ICMPV6_OPTION_LINK_LAYER link;
-	ICMPV6_ROUTER_SOLICIATION_HEADER header;
-	BUF *b;
-	BUF *b2;
-	BUF *ret;
-
-	if (src_ip == NULL || target_ip == NULL || my_mac_address == NULL)
-	{
-		return NULL;
-	}
-
-	Zero(&link, sizeof(link));
-	Copy(link.Address, my_mac_address, 6);
-
-	Zero(&opt, sizeof(opt));
-	opt.SourceLinkLayer = &link;
-
-	b = BuildICMPv6Options(&opt);
-
-	Zero(&header, sizeof(header));
-
-	b2 = NewBuf();
-
-	WriteBuf(b2, &header, sizeof(header));
-	WriteBufBuf(b2, b);
-
-	ret = BuildICMPv6(src_ip, target_ip, 255,
-	                  ICMPV6_TYPE_ROUTER_SOLICIATION, 0, b2->Buf, b2->Size, id);
-
-	FreeBuf(b);
-	FreeBuf(b2);
-
-	return ret;
-}
-
 // Get the next header number from the queue
 UCHAR IPv6GetNextHeaderFromQueue(QUEUE *q)
 {
@@ -1382,12 +1344,6 @@ PKT *ClonePacket(PKT *p, bool copy_data)
 	}
 
 	return ret;
-}
-
-// Parse the packet but without data layer except for ICMP
-PKT *ParsePacketUpToICMPv6(UCHAR *buf, UINT size)
-{
-	return ParsePacketEx5(buf, size, false, 0, true, true, false, true);
 }
 
 // Parse the contents of the packet
@@ -2583,34 +2539,6 @@ bool ParsePacketIPv6(PKT *p, UCHAR *buf, UINT size, bool no_l3_l4_except_icmpv6)
 	return true;
 }
 
-// Parse the IPv4 by adding a dummy MAC header
-PKT *ParsePacketIPv4WithDummyMacHeader(UCHAR *buf, UINT size)
-{
-	UCHAR *tmp;
-	UINT tmp_size;
-	PKT *ret;
-	// Validate arguments
-	if (buf == NULL)
-	{
-		return NULL;
-	}
-
-	tmp_size = size + 14;
-	tmp = Malloc(tmp_size);
-	Zero(tmp, 12);
-	WRITE_USHORT(tmp + 12, MAC_PROTO_IPV4);
-	Copy(tmp + 14, buf, size);
-
-	ret = ParsePacket(tmp, tmp_size);
-
-	if (ret == NULL)
-	{
-		Free(tmp);
-	}
-
-	return ret;
-}
-
 // IPv4 parsing
 bool ParsePacketIPv4(PKT *p, UCHAR *buf, UINT size)
 {
@@ -3012,23 +2940,6 @@ void FreePacket(PKT *p)
 	Free(p);
 }
 
-// Release the memory of the packet with data
-void FreePacketWithData(PKT *p)
-{
-	void *data;
-	// Validate arguments
-	if (p == NULL)
-	{
-		return;
-	}
-
-	data = p->PacketData;
-
-	FreePacket(p);
-
-	Free(data);
-}
-
 // Release the memory for the IPv4 packet
 void FreePacketIPv4(PKT *p)
 {
@@ -3238,77 +3149,6 @@ BUF *BuildDhcpOptionsBuf(LIST *o)
 	return b;
 }
 
-// Convert a DHCP option list to the DHCP option
-LIST *BuildDhcpOption(DHCP_OPTION_LIST *opt)
-{
-	LIST *o;
-	UCHAR opcode;
-	BUF *dns_buf;
-	// Validate arguments
-	if (opt == NULL)
-	{
-		return NULL;
-	}
-
-	o = NewListFast(NULL);
-
-	// Op-code
-	opcode = (UCHAR)opt->Opcode;
-	Add(o, NewDhcpOption(DHCP_ID_MESSAGE_TYPE, &opcode, sizeof(opcode)));
-	Add(o, NewDhcpOption(DHCP_ID_SERVER_ADDRESS, &opt->ServerAddress, sizeof(opt->ServerAddress)));
-
-	if (opt->LeaseTime != 0)
-	{
-		Add(o, NewDhcpOption(DHCP_ID_LEASE_TIME, &opt->LeaseTime, sizeof(opt->LeaseTime)));
-	}
-
-	if (StrLen(opt->DomainName) != 0 && opt->DnsServer != 0)
-	{
-		Add(o, NewDhcpOption(DHCP_ID_DOMAIN_NAME, opt->DomainName, StrLen(opt->DomainName)));
-	}
-	if (opt->SubnetMask != 0)
-	{
-		Add(o, NewDhcpOption(DHCP_ID_SUBNET_MASK, &opt->SubnetMask, sizeof(opt->SubnetMask)));
-	}
-	if (opt->Gateway != 0)
-	{
-		Add(o, NewDhcpOption(DHCP_ID_GATEWAY_ADDR, &opt->Gateway, sizeof(opt->Gateway)));
-	}
-
-	dns_buf = NewBuf();
-
-	if (opt->DnsServer != 0)
-	{
-		WriteBuf(dns_buf, &opt->DnsServer, sizeof(opt->DnsServer));
-	}
-	if (opt->DnsServer2 != 0)
-	{
-		WriteBuf(dns_buf, &opt->DnsServer2, sizeof(opt->DnsServer2));
-	}
-
-	if (dns_buf->Size >= 1)
-	{
-		Add(o, NewDhcpOption(DHCP_ID_DNS_ADDR, dns_buf->Buf, dns_buf->Size));
-	}
-
-	FreeBuf(dns_buf);
-
-	if (opt->ClasslessRoute.NumExistingRoutes >= 1)
-	{
-		BUF *b = DhcpBuildClasslessRouteData(&opt->ClasslessRoute);
-
-		if (b != NULL)
-		{
-			Add(o, NewDhcpOption(DHCP_ID_CLASSLESS_ROUTE, b->Buf, b->Size));
-			Add(o, NewDhcpOption(DHCP_ID_MS_CLASSLESS_ROUTE, b->Buf, b->Size));
-
-			FreeBuf(b);
-		}
-	}
-
-	return o;
-}
-
 // Create a new DHCP option item
 DHCP_OPTION *NewDhcpOption(UINT id, void *data, UINT size)
 {
@@ -3465,229 +3305,6 @@ DHCP_OPTION_LIST *ParseDhcpOptionList(void *data, UINT size)
 	return ret;
 }
 
-// Normalize the classless routing table string
-bool NormalizeClasslessRouteTableStr(char *dst, UINT dst_size, char *src)
-{
-	DHCP_CLASSLESS_ROUTE_TABLE t;
-	// Validate arguments
-	if (dst == NULL || src == NULL)
-	{
-		return false;
-	}
-
-	Zero(&t, sizeof(t));
-	if (ParseClasslessRouteTableStr(&t, src))
-	{
-		BuildClasslessRouteTableStr(dst, dst_size, &t);
-
-		return true;
-	}
-
-	return false;
-}
-
-// Build the string from the classless routing table
-void BuildClasslessRouteTableStr(char *str, UINT str_size, DHCP_CLASSLESS_ROUTE_TABLE *t)
-{
-	UINT i;
-	UINT num = 0;
-	ClearStr(str, str_size);
-	// Validate arguments
-	if (str == NULL || t == NULL)
-	{
-		return;
-	}
-
-	for (i = 0; i < MAX_DHCP_CLASSLESS_ROUTE_ENTRIES; i++)
-	{
-		DHCP_CLASSLESS_ROUTE *r = &t->Entries[i];
-
-		if (r->Exists)
-		{
-			char tmp[128];
-
-			Zero(tmp, sizeof(tmp));
-			BuildClasslessRouteStr(tmp, sizeof(tmp), r);
-
-			if (IsEmptyStr(tmp) == false)
-			{
-				if (num >= 1)
-				{
-					StrCat(str, str_size, ", ");
-				}
-
-				StrCat(str, str_size, tmp);
-
-				num++;
-			}
-		}
-	}
-}
-
-// Build the string from the classless routing table entry
-void BuildClasslessRouteStr(char *str, UINT str_size, DHCP_CLASSLESS_ROUTE *r)
-{
-	ClearStr(str, str_size);
-	// Validate arguments
-	if (str == NULL || r == NULL || r->Exists == false)
-	{
-		return;
-	}
-
-	Format(str, str_size, "%r/%r/%r", &r->Network, &r->SubnetMask, &r->Gateway);
-}
-
-// Parse the classless routing table string
-bool ParseClasslessRouteTableStr(DHCP_CLASSLESS_ROUTE_TABLE *d, char *str)
-{
-	bool ret = true;
-	TOKEN_LIST *t;
-	// Validate arguments
-	if (d == NULL || str == NULL)
-	{
-		return false;
-	}
-
-	Zero(d, sizeof(DHCP_CLASSLESS_ROUTE_TABLE));
-
-	t = ParseTokenWithoutNullStr(str, NULL);
-
-	if (t != NULL)
-	{
-		UINT i;
-
-		for (i = 0; i < t->NumTokens; i++)
-		{
-			DHCP_CLASSLESS_ROUTE r;
-
-			Zero(&r, sizeof(r));
-			if (ParseClasslessRouteStr(&r, t->Token[i]))
-			{
-				if (d->NumExistingRoutes < MAX_DHCP_CLASSLESS_ROUTE_ENTRIES)
-				{
-					Copy(&d->Entries[d->NumExistingRoutes], &r, sizeof(DHCP_CLASSLESS_ROUTE));
-					d->NumExistingRoutes++;
-				}
-				else
-				{
-					// Overflow
-					ret = false;
-					break;
-				}
-			}
-			else
-			{
-				// Parse error
-				ret = false;
-				break;
-			}
-		}
-	}
-
-	FreeToken(t);
-
-	return ret;
-}
-
-// Parse the classless routing table entry string
-bool ParseClasslessRouteStr(DHCP_CLASSLESS_ROUTE *r, char *str)
-{
-	TOKEN_LIST *t;
-	bool ret = false;
-	char tmp[MAX_PATH];
-	// Validate arguments
-	if (r == NULL || str == NULL)
-	{
-		return false;
-	}
-
-	StrCpy(tmp, sizeof(tmp), str);
-	Trim(tmp);
-
-	t = ParseTokenWithoutNullStr(str, "/");
-	if (t == NULL)
-	{
-		return false;
-	}
-
-	if (t->NumTokens == 3)
-	{
-		char ip_and_mask[MAX_PATH];
-		char gateway[MAX_PATH];
-
-		Zero(r, sizeof(DHCP_CLASSLESS_ROUTE));
-
-		Format(ip_and_mask, sizeof(ip_and_mask), "%s/%s", t->Token[0], t->Token[1]);
-		StrCpy(gateway, sizeof(gateway), t->Token[2]);
-
-		if (ParseIpAndSubnetMask46(ip_and_mask, &r->Network, &r->SubnetMask))
-		{
-			r->SubnetMaskLen = SubnetMaskToInt4(&r->SubnetMask);
-
-			if (StrToIP(&r->Gateway, gateway))
-			{
-				if (IsIP4(&r->Gateway) && IsIP4(&r->Network) && IsIP4(&r->SubnetMask))
-				{
-					r->Exists = true;
-
-					IPAnd4(&r->Network, &r->Network, &r->SubnetMask);
-
-					ret = true;
-				}
-			}
-		}
-	}
-
-	FreeToken(t);
-
-	return ret;
-}
-
-// Build the classless static routing table data for a DHCP message
-BUF *DhcpBuildClasslessRouteData(DHCP_CLASSLESS_ROUTE_TABLE *t)
-{
-	BUF *b;
-	UINT i;
-	// Validate arguments
-	if (t == NULL || t->NumExistingRoutes == 0)
-	{
-		return NULL;
-	}
-
-	b = NewBuf();
-
-	for (i = 0; i < MAX_DHCP_CLASSLESS_ROUTE_ENTRIES; i++)
-	{
-		DHCP_CLASSLESS_ROUTE *r = &t->Entries[i];
-
-		if (r->Exists && r->SubnetMaskLen <= 32)
-		{
-			UCHAR c;
-			UINT data_len;
-			UINT ip32;
-			UCHAR tmp[4];
-
-			// Width of subnet mask
-			c = (UCHAR)r->SubnetMaskLen;
-			WriteBuf(b, &c, 1);
-
-			// Number of significant octets
-			data_len = (r->SubnetMaskLen + 7) / 8;
-			Zero(tmp, sizeof(tmp));
-			Copy(tmp, IPV4(r->Network.address), data_len);
-			WriteBuf(b, tmp, data_len);
-
-			// Gateway
-			ip32 = IPToUINT(&r->Gateway);
-			WriteBuf(b, &ip32, sizeof(UINT));
-		}
-	}
-
-	SeekBufToBegin(b);
-
-	return b;
-}
-
 // Parse a classless static routing table entries from the DHCP message
 void DhcpParseClasslessRouteData(DHCP_CLASSLESS_ROUTE_TABLE *t, void *data, UINT size)
 {
@@ -3797,42 +3414,6 @@ DHCP_OPTION *GetDhcpOption(LIST *o, UINT id)
 		if (opt->Id == id)
 		{
 			ret = opt;
-		}
-	}
-
-	return ret;
-}
-
-// Get the best classless routing table entry from the routing table
-DHCP_CLASSLESS_ROUTE *GetBestClasslessRoute(DHCP_CLASSLESS_ROUTE_TABLE *t, IP *ip)
-{
-	DHCP_CLASSLESS_ROUTE *ret = NULL;
-	UINT i;
-	UINT max_mask = 0;
-	// Validate arguments
-	if (t == NULL || ip == NULL)
-	{
-		return NULL;
-	}
-	if (t->NumExistingRoutes == 0)
-	{
-		return NULL;
-	}
-
-	for (i = 0; i < MAX_DHCP_CLASSLESS_ROUTE_ENTRIES; i++)
-	{
-		DHCP_CLASSLESS_ROUTE *e = &t->Entries[i];
-
-		if (e->Exists)
-		{
-			if (IsInSameNetwork4(ip, &e->Network, &e->SubnetMask))
-			{
-				if (max_mask <= e->SubnetMaskLen)
-				{
-					max_mask = e->SubnetMaskLen;
-					ret = e;
-				}
-			}
 		}
 	}
 
@@ -4185,21 +3766,4 @@ void GenMacAddress(UCHAR *mac)
 	mac[5] = hash[4];
 
 	FreeBuf(b);
-}
-
-// Get the broadcast address
-UINT GetBroadcastAddress(UINT addr, UINT mask)
-{
-	return ((addr & mask) | (~mask));
-}
-void GetBroadcastAddress4(IP *dst, IP *addr, IP *mask)
-{
-	// Validate arguments
-	if (dst == NULL || IsIP4(addr) == false || IsIP4(mask) == false)
-	{
-		Zero(dst, sizeof(IP));
-		return;
-	}
-
-	UINTToIP(dst, GetBroadcastAddress(IPToUINT(addr), IPToUINT(mask)));
 }

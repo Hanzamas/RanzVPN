@@ -432,7 +432,6 @@ PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 }
 
 // RPC call function declaration: from here
-DECLARE_SC_EX("Test", RPC_TEST, ScTest, InRpcTest, OutRpcTest, FreeRpcTest)
 DECLARE_SC_EX("GetServerInfo", RPC_SERVER_INFO, ScGetServerInfo, InRpcServerInfo, OutRpcServerInfo, FreeRpcServerInfo)
 DECLARE_SC("GetServerStatus", RPC_SERVER_STATUS, ScGetServerStatus, InRpcServerStatus, OutRpcServerStatus)
 DECLARE_SC("CreateListener", RPC_LISTENER, ScCreateListener, InRpcListener, OutRpcListener)
@@ -504,12 +503,10 @@ DECLARE_SC_EX("GetHubAdminOptions", RPC_ADMIN_OPTION, ScGetHubAdminOptions, InRp
 DECLARE_SC_EX("SetHubAdminOptions", RPC_ADMIN_OPTION, ScSetHubAdminOptions, InRpcAdminOption, OutRpcAdminOption, FreeRpcAdminOption)
 DECLARE_SC_EX("GetHubExtOptions", RPC_ADMIN_OPTION, ScGetHubExtOptions, InRpcAdminOption, OutRpcAdminOption, FreeRpcAdminOption)
 DECLARE_SC_EX("SetHubExtOptions", RPC_ADMIN_OPTION, ScSetHubExtOptions, InRpcAdminOption, OutRpcAdminOption, FreeRpcAdminOption)
-DECLARE_SC_EX("GetDefaultHubAdminOptions", RPC_ADMIN_OPTION, ScGetDefaultHubAdminOptions, InRpcAdminOption, OutRpcAdminOption, FreeRpcAdminOption)
 DECLARE_SC_EX("EnumCrl", RPC_ENUM_CRL, ScEnumCrl, InRpcEnumCrl, OutRpcEnumCrl, FreeRpcEnumCrl)
 DECLARE_SC_EX("AddCrl", RPC_CRL, ScAddCrl, InRpcCrl, OutRpcCrl, FreeRpcCrl)
 DECLARE_SC_EX("DelCrl", RPC_CRL, ScDelCrl, InRpcCrl, OutRpcCrl, FreeRpcCrl)
 DECLARE_SC_EX("GetCrl", RPC_CRL, ScGetCrl, InRpcCrl, OutRpcCrl, FreeRpcCrl)
-DECLARE_SC_EX("SetCrl", RPC_CRL, ScSetCrl, InRpcCrl, OutRpcCrl, FreeRpcCrl)
 DECLARE_SC_EX("SetAcList", RPC_AC_LIST, ScSetAcList, InRpcAcList, OutRpcAcList, FreeRpcAcList)
 DECLARE_SC_EX("GetAcList", RPC_AC_LIST, ScGetAcList, InRpcAcList, OutRpcAcList, FreeRpcAcList)
 DECLARE_SC_EX("EnumLogFile", RPC_ENUM_LOG_FILE, ScEnumLogFile, InRpcEnumLogFile, OutRpcEnumLogFile, FreeRpcEnumLogFile)
@@ -520,12 +517,7 @@ DECLARE_SC_EX("EnumLicenseKey", RPC_ENUM_LICENSE_KEY, ScEnumLicenseKey, InRpcEnu
 DECLARE_SC("GetLicenseStatus", RPC_LICENSE_STATUS, ScGetLicenseStatus, InRpcLicenseStatus, OutRpcLicenseStatus)
 DECLARE_SC("SetSysLog", SYSLOG_SETTING, ScSetSysLog, InRpcSysLogSetting, OutRpcSysLogSetting)
 DECLARE_SC("GetSysLog", SYSLOG_SETTING, ScGetSysLog, InRpcSysLogSetting, OutRpcSysLogSetting)
-DECLARE_SC_EX("EnumEthVLan", RPC_ENUM_ETH_VLAN, ScEnumEthVLan, InRpcEnumEthVLan, OutRpcEnumEthVLan, FreeRpcEnumEthVLan)
-DECLARE_SC("SetEnableEthVLan", RPC_TEST, ScSetEnableEthVLan, InRpcTest, OutRpcTest)
-DECLARE_SC_EX("SetHubMsg", RPC_MSG, ScSetHubMsg, InRpcMsg, OutRpcMsg, FreeRpcMsg)
-DECLARE_SC_EX("GetHubMsg", RPC_MSG, ScGetHubMsg, InRpcMsg, OutRpcMsg, FreeRpcMsg)
 DECLARE_SC("Crash", RPC_TEST, ScCrash, InRpcTest, OutRpcTest)
-DECLARE_SC_EX("GetAdminMsg", RPC_MSG, ScGetAdminMsg, InRpcMsg, OutRpcMsg, FreeRpcMsg)
 DECLARE_SC("Flush", RPC_TEST, ScFlush, InRpcTest, OutRpcTest)
 DECLARE_SC("Debug", RPC_TEST, ScDebug, InRpcTest, OutRpcTest)
 DECLARE_SC("RegenerateServerCert", RPC_TEST, ScRegenerateServerCert, InRpcTest, OutRpcTest)
@@ -6078,29 +6070,6 @@ void FreeRpcAcList(RPC_AC_LIST *t)
 	FreeAcList(t->o);
 }
 
-// RPC_INT
-void InRpcInt(RPC_INT *t, PACK *p)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_INT));
-	t->IntValue = PackGetInt(p, "IntValue");
-}
-void OutRpcInt(PACK *p, RPC_INT *t)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "IntValue", t->IntValue);
-}
-
 // RPC_ENUM_CRL
 void InRpcEnumCrl(RPC_ENUM_CRL *t, PACK *p)
 {
@@ -7253,29 +7222,6 @@ void OutRpcHubOption(PACK *p, RPC_HUB_OPTION *t)
 
 	PackAddInt(p, "MaxSession", t->MaxSession);
 	PackAddBool(p, "NoEnum", t->NoEnum);
-}
-
-// RPC_HUB
-void InRpcHub(RPC_HUB *t, PACK *p)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_HUB));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-}
-void OutRpcHub(PACK *p, RPC_HUB *t)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
 }
 
 // RPC_CREATE_HUB

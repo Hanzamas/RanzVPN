@@ -43,61 +43,6 @@ bool UniInChar(wchar_t *string, wchar_t c)
 	return false;
 }
 
-// Check whether the string is included
-bool UniInStr(wchar_t *str, wchar_t *keyword)
-{
-	return UniInStrEx(str, keyword, false);
-}
-bool UniInStrEx(wchar_t *str, wchar_t *keyword, bool case_sensitive)
-{
-	// Validate arguments
-	if (UniIsEmptyStr(str) || UniIsEmptyStr(keyword))
-	{
-		return false;
-	}
-
-	if (UniSearchStrEx(str, keyword, 0, case_sensitive) == INFINITE)
-	{
-		return false;
-	}
-
-	return true;
-}
-
-// Convert to binary data
-BUF *UniStrToBin(wchar_t *str)
-{
-	char *str_a = CopyUniToStr(str);
-	BUF *ret;
-
-	ret = StrToBin(str_a);
-
-	Free(str_a);
-
-	return ret;
-}
-
-// Check whether the character is safe
-bool UniIsSafeChar(wchar_t c)
-{
-	UINT i, len;
-	wchar_t *check_str =
-		L"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-		L"abcdefghijklmnopqrstuvwxyz"
-		L"0123456789"
-		L" ()-_#%&.";
-
-	len = UniStrLen(check_str);
-	for (i = 0;i < len;i++)
-	{
-		if (c == check_str[i])
-		{
-			return true;
-		}
-	}
-	return false;
-}
-
 // Convert a string list to a token list
 UNI_TOKEN_LIST *UniListToTokenList(LIST *o)
 {
@@ -594,62 +539,6 @@ UINT UniStrWidth(wchar_t *str)
 	return ret;
 }
 
-// Convert string of 2 byte/character to wchar_t of 4 byte/character
-wchar_t *Utf16ToWide(USHORT *str)
-{
-	wchar_t *ret;
-	UINT len, i;
-	// Validate arguments
-	if (str == NULL)
-	{
-		return NULL;
-	}
-
-	len = 0;
-	while (true)
-	{
-		if (str[len] == 0)
-		{
-			break;
-		}
-		len++;
-	}
-
-	ret = Malloc((len + 1) * sizeof(wchar_t));
-	for (i = 0;i < len + 1;i++)
-	{
-		ret[i] = (wchar_t)str[i];
-	}
-
-	return ret;
-}
-
-// Convert wchar_t string of 4 byte/character to string of 2 byte/character
-USHORT *WideToUtf16(wchar_t *str)
-{
-	USHORT *ret;
-	UINT len;
-	UINT ret_size;
-	UINT i;
-	// Validate arguments
-	if (str == NULL)
-	{
-		return NULL;
-	}
-
-	len = UniStrLen(str);
-
-	ret_size = (len + 1) * 2;
-	ret = Malloc(ret_size);
-
-	for (i = 0;i < len + 1;i++)
-	{
-		ret[i] = (USHORT)str[i];
-	}
-
-	return ret;
-}
-
 // Check whether the specified string is a space
 bool UniIsEmptyStr(wchar_t *str)
 {
@@ -682,22 +571,6 @@ bool IsEmptyUniStr(wchar_t *str)
 	return ret;
 }
 
-// Check whether the specified string is a number
-bool UniIsNum(wchar_t *str)
-{
-	char tmp[MAX_SIZE];
-
-	// Validate arguments
-	if (str == NULL)
-	{
-		return false;
-	}
-
-	UniToStrForSingleChars(tmp, sizeof(tmp), str);
-
-	return IsNum(tmp);
-}
-
 
 // Empty Unicode token list
 UNI_TOKEN_LIST *UniNullToken()
@@ -708,78 +581,10 @@ UNI_TOKEN_LIST *UniNullToken()
 	return ret;
 }
 
-// Convert the token list to Unicode token list
-UNI_TOKEN_LIST *TokenListToUniTokenList(TOKEN_LIST *src)
-{
-	UNI_TOKEN_LIST *ret;
-	UINT i;
-	// Validate arguments
-	if (src == NULL)
-	{
-		return NULL;
-	}
-
-	ret = ZeroMalloc(sizeof(UNI_TOKEN_LIST));
-	ret->NumTokens = src->NumTokens;
-	ret->Token = ZeroMalloc(sizeof(wchar_t *) * ret->NumTokens);
-
-	for (i = 0;i < ret->NumTokens;i++)
-	{
-		ret->Token[i] = CopyStrToUni(src->Token[i]);
-	}
-
-	return ret;
-}
-
-// Convert a Unicode token list to a token list
-TOKEN_LIST *UniTokenListToTokenList(UNI_TOKEN_LIST *src)
-{
-	TOKEN_LIST *ret;
-	UINT i;
-	// Validate arguments
-	if (src == NULL)
-	{
-		return NULL;
-	}
-
-	ret = ZeroMalloc(sizeof(TOKEN_LIST));
-	ret->NumTokens = src->NumTokens;
-	ret->Token = ZeroMalloc(sizeof(char *) * ret->NumTokens);
-
-	for (i = 0;i < ret->NumTokens;i++)
-	{
-		ret->Token[i] = CopyUniToStr(src->Token[i]);
-	}
-
-	return ret;
-}
-
 // Unicode string copy
 wchar_t *UniCopyStr(wchar_t *str)
 {
 	return CopyUniStr(str);
-}
-
-// Copy the token list
-UNI_TOKEN_LIST *UniCopyToken(UNI_TOKEN_LIST *src)
-{
-	UNI_TOKEN_LIST *ret;
-	UINT i;
-	// Validate arguments
-	if (src == NULL)
-	{
-		return NULL;
-	}
-
-	ret = ZeroMalloc(sizeof(TOKEN_LIST));
-	ret->NumTokens = src->NumTokens;
-	ret->Token = ZeroMalloc(sizeof(wchar_t *) * ret->NumTokens);
-	for (i = 0;i < ret->NumTokens;i++)
-	{
-		ret->Token[i] = CopyUniStr(src->Token[i]);
-	}
-
-	return ret;
 }
 
 // Parse the command line string
@@ -905,21 +710,6 @@ UNI_TOKEN_LIST *UniParseCmdLine(wchar_t *str)
 	ReleaseList(o);
 
 	return t;
-}
-
-// Convert Unicode string to 64bit integer
-UINT64 UniToInt64(wchar_t *str)
-{
-	char tmp[MAX_SIZE];
-	// Validate arguments
-	if (str == NULL)
-	{
-		return 0;
-	}
-
-	UniToStrForSingleChars(tmp, sizeof(tmp), str);
-
-	return ToInt64(tmp);
 }
 
 // Convert the UTF string to a Unicode string
@@ -1521,12 +1311,6 @@ UINT GetUniType(wchar_t c)
 	return 3;
 }
 
-// String replacing (case-sensitive)
-UINT UniReplaceStr(wchar_t *dst, UINT size, wchar_t *string, wchar_t *old_keyword, wchar_t *new_keyword)
-{
-	return UniReplaceStrEx(dst, size, string, old_keyword, new_keyword, true);
-}
-
 // Replacement of string
 UINT UniReplaceStrEx(wchar_t *dst, UINT size, wchar_t *string, wchar_t *old_keyword, wchar_t *new_keyword, bool case_sensitive)
 {
@@ -1770,67 +1554,6 @@ bool UniIsCharInStr(wchar_t *str, wchar_t c)
 	return false;
 }
 
-// Cut out the token from the string (not ignore the blanks between delimiters)
-UNI_TOKEN_LIST *UniParseTokenWithNullStr(wchar_t *str, wchar_t *split_chars)
-{
-	LIST *o;
-	UINT i, len;
-	BUF *b;
-	wchar_t zero = 0;
-	UNI_TOKEN_LIST *t;
-	// Validate arguments
-	if (str == NULL)
-	{
-		return UniNullToken();
-	}
-	if (split_chars == NULL)
-	{
-		split_chars = UniDefaultTokenSplitChars();
-	}
-
-	b = NewBuf();
-	o = NewListFast(NULL);
-
-	len = UniStrLen(str);
-
-	for (i = 0;i < (len + 1);i++)
-	{
-		wchar_t c = str[i];
-		bool flag = UniIsCharInStr(split_chars, c);
-
-		if (c == L'\0')
-		{
-			flag = true;
-		}
-
-		if (flag == false)
-		{
-			WriteBuf(b, &c, sizeof(wchar_t));
-		}
-		else
-		{
-			WriteBuf(b, &zero, sizeof(wchar_t));
-
-			Insert(o, UniCopyStr((wchar_t *)b->Buf));
-			ClearBuf(b);
-		}
-	}
-
-	t = ZeroMalloc(sizeof(UNI_TOKEN_LIST));
-	t->NumTokens = LIST_NUM(o);
-	t->Token = ZeroMalloc(sizeof(wchar_t *) * t->NumTokens);
-
-	for (i = 0;i < t->NumTokens;i++)
-	{
-		t->Token[i] = LIST_DATA(o, i);
-	}
-
-	ReleaseList(o);
-	FreeBuf(b);
-
-	return t;
-}
-
 // Cut out the token from string (Ignore blanks between delimiters)
 UNI_TOKEN_LIST *UniParseTokenWithoutNullStr(wchar_t *str, wchar_t *split_chars)
 {
@@ -2054,12 +1777,6 @@ void UniTrimLeft(wchar_t *str)
 	Free(buf);
 }
 
-// Convert a signed integer to a string
-void UniToStri(wchar_t *str, int i)
-{
-	UniFormat(str, 0, L"%i", i);
-}
-
 // Convert an integer to a string
 void UniToStru(wchar_t *str, UINT i)
 {
@@ -2234,32 +1951,6 @@ void UniPrint(wchar_t *fmt, ...)
 	va_end(args);
 }
 
-// Display debug string with arguments
-void UniDebugArgs(wchar_t *fmt, va_list args)
-{
-	if (g_debug == false)
-	{
-		return;
-	}
-
-	UniPrintArgs(fmt, args);
-}
-
-// Display a debug string
-void UniDebug(wchar_t *fmt, ...)
-{
-	va_list args;
-	// Validate arguments
-	if (fmt == NULL)
-	{
-		return;
-	}
-
-	va_start(args, fmt);
-	UniDebugArgs(fmt, args);
-	va_end(args);
-}
-
 // Format a string (argument list)
 void UniFormatArgs(wchar_t *buf, UINT size, wchar_t *fmt, va_list args)
 {
@@ -2282,31 +1973,6 @@ void UniFormatArgs(wchar_t *buf, UINT size, wchar_t *fmt, va_list args)
 	UniStrCpy(buf, size, ret);
 
 	Free(ret);
-}
-
-// Format the string, and copy it
-wchar_t *CopyUniFormat(wchar_t *fmt, ...)
-{
-	wchar_t *ret, *str;
-	UINT size;
-	va_list args;
-	// Validate arguments
-	if (fmt == NULL)
-	{
-		return NULL;
-	}
-
-	size = MAX(UniStrSize(fmt) * 10, MAX_SIZE * 10);
-	str = Malloc(size);
-
-	va_start(args, fmt);
-	UniFormatArgs(str, size, fmt, args);
-
-	ret = UniCopyStr(str);
-	Free(str);
-	va_end(args);
-
-	return ret;
 }
 
 // Format the string

@@ -744,16 +744,13 @@ struct DHCP_MODIFY_OPTION
 #define	SPECIAL_UDP_PORT_SSDP				1900	// SSDP
 
 
-PKT *ParsePacketIPv4WithDummyMacHeader(UCHAR *buf, UINT size);
 PKT *ParsePacket(UCHAR *buf, UINT size);
 PKT *ParsePacketEx(UCHAR *buf, UINT size, bool no_l3);
 PKT *ParsePacketEx2(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id);
 PKT *ParsePacketEx3(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address);
 PKT *ParsePacketEx4(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum);
 PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum, bool no_l3_l4_except_icmpv6);
-PKT *ParsePacketUpToICMPv6(UCHAR *buf, UINT size);
 void FreePacket(PKT *p);
-void FreePacketWithData(PKT *p);
 void FreePacketIPv4(PKT *p);
 void FreePacketTagVlan(PKT *p);
 void FreePacketARPv4(PKT *p);
@@ -794,7 +791,6 @@ BUF *BuildIPv6PacketHeader(IPV6_HEADER_PACKET_INFO *info, UINT *bytes_before_pay
 UCHAR IPv6GetNextHeaderFromQueue(QUEUE *q);
 void BuildAndAddIPv6PacketOptionHeader(BUF *b, IPV6_OPTION_HEADER *opt, UCHAR next_header, UINT size);
 BUF *BuildICMPv6NeighborSoliciation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCHAR *my_mac_address, UINT id, bool use_multicast);
-BUF *BuildICMPv6RouterSoliciation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCHAR *my_mac_address, UINT id);
 BUF *BuildICMPv6(IPV6_ADDR *src_ip, IPV6_ADDR *dest_ip, UCHAR hop_limit, UCHAR type, UCHAR code, void *data, UINT size, UINT id);
 
 bool VLanRemoveTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vlan_tpid);
@@ -814,10 +810,7 @@ bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address);
 USHORT IpChecksum(void *buf, UINT size);
 
 void GenMacAddress(UCHAR *mac);
-UINT GetBroadcastAddress(UINT addr, UINT mask);
-void GetBroadcastAddress4(IP *dst, IP *addr, IP *mask);
 
-LIST *BuildDhcpOption(DHCP_OPTION_LIST *opt);
 DHCP_OPTION *NewDhcpOption(UINT id, void *data, UINT size);
 DHCP_OPTION_LIST *ParseDhcpOptionList(void *data, UINT size);
 DHCP_OPTION *GetDhcpOption(LIST *o, UINT id);
@@ -830,14 +823,7 @@ HTTPLOG *ParseHttpsAccessLog(PKT *pkt);
 BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size);
 BUF *DhcpModifyIPv4(DHCP_MODIFY_OPTION *m, void *data, UINT size);
 
-DHCP_CLASSLESS_ROUTE *GetBestClasslessRoute(DHCP_CLASSLESS_ROUTE_TABLE *t, IP *ip);
 void DhcpParseClasslessRouteData(DHCP_CLASSLESS_ROUTE_TABLE *t, void *data, UINT size);
-BUF *DhcpBuildClasslessRouteData(DHCP_CLASSLESS_ROUTE_TABLE *t);
-bool ParseClasslessRouteStr(DHCP_CLASSLESS_ROUTE *r, char *str);
-bool ParseClasslessRouteTableStr(DHCP_CLASSLESS_ROUTE_TABLE *d, char *str);
-void BuildClasslessRouteStr(char *str, UINT str_size, DHCP_CLASSLESS_ROUTE *r);
-void BuildClasslessRouteTableStr(char *str, UINT str_size, DHCP_CLASSLESS_ROUTE_TABLE *t);
-bool NormalizeClasslessRouteTableStr(char *dst, UINT dst_size, char *src);
 
 
 

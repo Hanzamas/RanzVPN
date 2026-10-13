@@ -41,18 +41,6 @@ void SecurePassword(void *secure_password, void *password, void *random)
 	FreeBuf(b);
 }
 
-// Generate 160bit random number
-void GenRandom(void *random)
-{
-	// Validate arguments
-	if (random == NULL)
-	{
-		return;
-	}
-
-	Rand(random, SHA1_SIZE);
-}
-
 // Anonymous authentication of user
 bool SamAuthUserByAnonymous(HUB *h, char *username)
 {
@@ -482,52 +470,5 @@ bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_pa
 	AcUnlock(h);
 
 	return b;
-}
-
-// Make sure that the user exists
-bool SamIsUser(HUB *h, char *username)
-{
-	bool b;
-	// Validate arguments
-	if (h == NULL || username == NULL)
-	{
-		return false;
-	}
-
-	AcLock(h);
-	{
-		b = AcIsUser(h, username);
-	}
-	AcUnlock(h);
-
-	return b;
-}
-
-// Get the type of authentication used by the user
-UINT SamGetUserAuthType(HUB *h, char *username)
-{
-	UINT authtype;
-	// Validate arguments
-	if (h == NULL || username == NULL)
-	{
-		return INFINITE;
-	}
-
-	AcLock(h);
-	{
-		USER *u = AcGetUser(h, username);
-		if (u == NULL)
-		{
-			authtype = INFINITE;
-		}
-		else
-		{
-			authtype = u->AuthType;
-			ReleaseUser(u);
-		}
-	}
-	AcUnlock(h);
-
-	return authtype;
 }
 
