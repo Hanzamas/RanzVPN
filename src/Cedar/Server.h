@@ -15,19 +15,10 @@
 #define	SERVER_DEF_PORTS_1				443
 #define	SERVER_DEF_PORTS_4				GC_DEFAULT_PORT
 
-#define	SERVER_DEF_PORTS_INCLIENT_1		995
-#define	SERVER_DEF_PORTS_INCLIENT_2		465
-#define	SERVER_DEF_PORTS_INCLIENT_3		9008	// for admin (in client)
-#define	SERVER_DEF_PORTS_INCLIENT_4		1195
-
-#define	SERVER_DEF_PORTS_INCLIENT_DYN_MIN	1201
-#define	SERVER_DEF_PORTS_INCLIENT_DYN_MAX	1999
-
 extern char *SERVER_CONFIG_FILE_NAME;
 // This is set to an invalid OpenSSL cipher specification by default.
 // The server will default to a list of sane and secure modern ciphers.
 #define	SERVER_DEFAULT_CIPHER_NAME		"~DEFAULT~"
-#define	SERVER_DEFAULT_CERT_DAYS		(365 * 10)
 #define	SERVER_DEFAULT_HUB_NAME			"DEFAULT"
 #define	SERVER_DEFAULT_BRIDGE_NAME		"BRIDGE"
 
@@ -79,7 +70,6 @@ struct SERVER
 	bool NoDebugDump;					// Not to output the debug dump
 	bool NoMoreSave;					// Do not save any more
 	bool EnableConditionalAccept;		// Apply the Conditional Accept the Listener
-	bool EnableLegacySSL;				// Enable Legacy SSL
 
 	volatile bool Halt;					// Halting flag
 	LOCK *lock;							// Lock
@@ -107,14 +97,6 @@ struct SERVER
 
 	LOCK *CapsCacheLock;				// Lock for Caps cache
 	CAPSLIST *CapsListCache;			// Caps cache
-	UINT LicenseHash;					// Hash value of the license list
-
-	bool SnapshotInited;
-	EVENT *SnapshotHaltEvent;			// Snapshot halting event
-	volatile bool HaltSnapshot;			// Snapshot halting flag
-	THREAD *SnapshotThread;				// Snapshot thread
-	LOG *SnapshotLogger;				// Snapshot logger
-	UINT64 LastSnapshotTime;			// Time that the last snapshot created
 
 	THREAD *DeadLockCheckThread;		// Deadlock check thread
 	volatile bool HaltDeadLockThread;	// Halting flag

@@ -33,8 +33,6 @@
 static SERVER *server = NULL;
 static LOCK *server_lock = NULL;
 char *SERVER_CONFIG_FILE_NAME = "$ranz_server.config";
-char *SERVER_CONFIG_FILE_NAME_IN_CLIENT = "$vpn_gate_svc.config";
-char *SERVER_CONFIG_FILE_NAME_IN_CLIENT_RELAY = "$vpn_gate_relay.config";
 char *BRIDGE_CONFIG_FILE_NAME = "$vpn_bridge.config";
 char *SERVER_CONFIG_TEMPLATE_NAME = "$ranz_server_template.config";
 char *BRIDGE_CONFIG_TEMPLATE_NAME = "$ranz_server_template.config";
