@@ -28,7 +28,19 @@ foreach ($f in 'xdp.sys', 'xdp.cat') {
     $s = Get-AuthenticodeSignature (Join-Path $native $f)
     "$f : Status=$($s.Status) Signer=$($s.SignerCertificate.Subject) Issuer=$($s.SignerCertificate.Issuer)"
 }
-Select-String -Path (Join-Path $native 'xdp.inf') -Pattern 'DriverVer|NT\$ARCH|FilterMediaTypes|FilterClass' | ForEach-Object { $_.Line.Trim() }
+Select-String -Path (Join-Path $native 'xdp.inf') -Pattern 'DriverVer|NTamd64|NTarm64|FilterMediaTypes|FilterClass' | ForEach-Object { $_.Line.Trim() }
+# Runners boot with testsigning on, so a successful load alone does not prove
+# production signing. Check the kernel-mode (production) policy explicitly.
+$signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+    Where-Object FullName -match '\\x64\\' | Sort-Object FullName | Select-Object -Last 1
+if ($signtool) {
+    & $signtool.FullName verify /kp /v /c (Join-Path $native 'xdp.cat') (Join-Path $native 'xdp.sys') 2>&1 |
+        Select-String -Pattern 'Signing Certificate Chain|Issued to|Issued by|Successfully verified|Number of|Error|SignTool' |
+        ForEach-Object { "signtool: $($_.Line.Trim())" }
+    "signtool /kp exit=$LASTEXITCODE"
+}
+certutil -dump (Join-Path $native 'xdp.cat') 2>&1 | Select-String -Pattern 'OSAttr' -Context 0, 2 | Select-Object -First 2 |
+    ForEach-Object { $_.ToString().Trim() }
 
 Section 'KM-TEST Loopback install'
 $devcon = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Tools" -Recurse -Filter devcon.exe -ErrorAction SilentlyContinue |
