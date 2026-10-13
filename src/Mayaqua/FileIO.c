@@ -27,7 +27,6 @@ static HAMCORE *hamcore_io = NULL;
 #define	NUM_CRC32_TABLE	256
 static UINT crc32_table[NUM_CRC32_TABLE];
 
-// Initialize the common table of CRC32
 void InitCrc32()
 {
 	UINT poly = 0xEDB88320;
@@ -53,7 +52,6 @@ void InitCrc32()
 	}
 }
 
-// CRC32 arithmetic processing
 UINT Crc32(void *buf, UINT pos, UINT len)
 {
 	return Crc32Finish(Crc32Next(buf, pos, len, 0xffffffff));
@@ -75,7 +73,6 @@ UINT Crc32Finish(UINT last_crc32)
 	return ~last_crc32;
 }
 
-// Check whether the file exists
 bool IsFile(char *name)
 {
 	wchar_t *name_w = CopyStrToUni(name);
@@ -88,7 +85,6 @@ bool IsFile(char *name)
 bool IsFileW(wchar_t *name)
 {
 	IO *io;
-	// Validate arguments
 	if (name == NULL)
 	{
 		return false;
@@ -105,11 +101,9 @@ bool IsFileW(wchar_t *name)
 	return true;
 }
 
-// Make the file name safe
 void ConvertSafeFileName(char *dst, UINT size, char *src)
 {
 	UINT i;
-	// Validate arguments
 	if (dst == NULL || src == NULL)
 	{
 		return;
@@ -125,11 +119,9 @@ void ConvertSafeFileName(char *dst, UINT size, char *src)
 	}
 }
 
-// Get the free disk space
 bool GetDiskFree(char *path, UINT64 *free_size, UINT64 *used_size, UINT64 *total_size)
 {
 	bool ret;
-	// Validate arguments
 	if (path == NULL)
 	{
 		path = "./";
@@ -140,7 +132,6 @@ bool GetDiskFree(char *path, UINT64 *free_size, UINT64 *used_size, UINT64 *total
 	return ret;
 }
 
-// Enumeration of directory
 DIRLIST *EnumDirEx(char *dirname, COMPARE *compare)
 {
 	wchar_t *dirname_w = CopyStrToUni(dirname);
@@ -153,7 +144,6 @@ DIRLIST *EnumDirEx(char *dirname, COMPARE *compare)
 DIRLIST *EnumDirExW(wchar_t *dirname, COMPARE *compare)
 {
 	DIRLIST *d = NULL;
-	// Validate arguments
 	if (dirname == NULL)
 	{
 		dirname = L"./";
@@ -177,7 +167,6 @@ DIRLIST *EnumDirW(wchar_t *dirname)
 	return EnumDirExW(dirname, NULL);
 }
 
-// Comparison of DIRLIST list entry
 int CompareDirListByName(void *p1, void *p2)
 {
 	DIRENT *d1, *d2;
@@ -194,11 +183,9 @@ int CompareDirListByName(void *p1, void *p2)
 	return UniStrCmpi(d1->FileNameW, d2->FileNameW);
 }
 
-// Release the enumeration of the directory 
 void FreeDir(DIRLIST *d)
 {
 	UINT i;
-	// Validate arguments
 	if (d == NULL)
 	{
 		return;
@@ -215,8 +202,6 @@ void FreeDir(DIRLIST *d)
 	Free(d);
 }
 
-
-// Read HamCore file
 BUF *ReadHamcoreW(wchar_t *filename)
 {
 	char *filename_a = CopyUniToStr(filename);
@@ -317,7 +302,6 @@ BUF *ReadHamcore(char *name)
 	return buf;
 }
 
-// Initialization of HamCore file system
 void InitHamcore()
 {
 	if (MayaquaIsMinimalMode())
@@ -343,7 +327,6 @@ void InitHamcore()
 	}
 }
 
-// Release of HamCore file system
 void FreeHamcore()
 {
 	for (UINT i = 0; i < LIST_NUM(hamcore); ++i)
@@ -361,7 +344,6 @@ void FreeHamcore()
 	hamcore = NULL;
 }
 
-// Comparison of the HCs
 int CompareHamcore(void *p1, void *p2)
 {
 	HC *c1, *c2;
@@ -378,10 +360,8 @@ int CompareHamcore(void *p1, void *p2)
 	return StrCmpi(c1->Path, c2->Path);
 }
 
-// Getting the name of the directory where the EXE file is in
 void GetExeDir(char *name, UINT size)
 {
-	// Validate arguments
 	if (name == NULL)
 	{
 		return;
@@ -391,7 +371,6 @@ void GetExeDir(char *name, UINT size)
 }
 void GetExeDirW(wchar_t *name, UINT size)
 {
-	// Validate arguments
 	if (name == NULL)
 	{
 		return;
@@ -400,10 +379,8 @@ void GetExeDirW(wchar_t *name, UINT size)
 	GetDirNameFromFilePathW(name, size, exe_file_name_w);
 }
 
-// Get the EXE file name
 void GetExeName(char *name, UINT size)
 {
-	// Validate arguments
 	if (name == NULL)
 	{
 		return;
@@ -413,7 +390,6 @@ void GetExeName(char *name, UINT size)
 }
 void GetExeNameW(wchar_t *name, UINT size)
 {
-	// Validate arguments
 	if (name == NULL)
 	{
 		return;
@@ -432,11 +408,9 @@ void GetDbDirW(wchar_t *name, UINT size)
 	GetExeDirW(name, size);
 }
 
-// Initialization of the acquisition of the EXE file name
 void InitGetExeName(char *arg)
 {
 	wchar_t *arg_w = NULL;
-	// Validate arguments
 	if (arg == NULL)
 	{
 		arg = "./a.out";
@@ -451,12 +425,10 @@ void InitGetExeName(char *arg)
 	Free(arg_w);
 }
 
-// Get the file name from the file path
 void GetFileNameFromFilePath(char *dst, UINT size, char *filepath)
 {
 	char tmp[MAX_SIZE];
 	UINT i, len, wp;
-	// Validate arguments
 	if (dst == NULL || filepath == NULL)
 	{
 		return;
@@ -493,7 +465,6 @@ void GetDirNameFromFilePathW(wchar_t *dst, UINT size, wchar_t *filepath)
 	UINT wp;
 	UINT i;
 	UINT len;
-	// Validate arguments
 	if (dst == NULL || filepath == NULL)
 	{
 		return;
@@ -535,14 +506,12 @@ void GetDirNameFromFilePathW(wchar_t *dst, UINT size, wchar_t *filepath)
 	NormalizePathW(dst, size, dst);
 }
 
-// Get the directory name from the file path
 void GetDirNameFromFilePath(char *dst, UINT size, char *filepath)
 {
 	char tmp[MAX_SIZE];
 	UINT wp;
 	UINT i;
 	UINT len;
-	// Validate arguments
 	if (dst == NULL || filepath == NULL)
 	{
 		return;
@@ -584,7 +553,6 @@ void GetDirNameFromFilePath(char *dst, UINT size, char *filepath)
 	NormalizePath(dst, size, dst);
 }
 
-// Combine the two paths
 void ConbinePath(char *dst, UINT size, char *dirname, char *filename)
 {
 	wchar_t dst_w[MAX_PATH];
@@ -603,7 +571,6 @@ void ConbinePathW(wchar_t *dst, UINT size, wchar_t *dirname, wchar_t *filename)
 	bool is_full_path;
 	wchar_t tmp[MAX_SIZE];
 	wchar_t filename_ident[MAX_SIZE];
-	// Validate arguments
 	if (dst == NULL || dirname == NULL || filename == NULL)
 	{
 		return;
@@ -656,7 +623,6 @@ void CombinePathW(wchar_t *dst, UINT size, wchar_t *dirname, wchar_t *filename)
 	ConbinePathW(dst, size, dirname, filename);
 }
 
-// Check whether the file exists
 bool IsFileExists(char *name)
 {
 	wchar_t *name_w = CopyStrToUni(name);
@@ -669,7 +635,6 @@ bool IsFileExists(char *name)
 bool IsFileExistsW(wchar_t *name)
 {
 	wchar_t tmp[MAX_SIZE];
-	// Validate arguments
 	if (name == NULL)
 	{
 		return false;
@@ -682,7 +647,6 @@ bool IsFileExistsW(wchar_t *name)
 bool IsFileExistsInnerW(wchar_t *name)
 {
 	IO *o;
-	// Validate arguments
 	if (name == NULL)
 	{
 		return false;
@@ -699,7 +663,6 @@ bool IsFileExistsInnerW(wchar_t *name)
 	return true;
 }
 
-// Normalize the file path
 void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 {
 	wchar_t tmp[MAX_SIZE];
@@ -710,18 +673,15 @@ void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 	bool is_full_path = false;
 	UINT i;
 	SK *sk;
-	// Validate arguments
 	if (dst == NULL || src == 0)
 	{
 		return;
 	}
 
-	// Convert the path (Win32, UNIX conversion)
 	UniStrCpy(tmp, sizeof(tmp), src);
 	ConvertPathW(tmp);
 	UniTrim(tmp);
 
-	// If the path begins with "./ " or " ../", replace it to the current directory
 	if (UniStartWith(tmp, L"./") || UniStartWith(tmp, L".\\") ||
 		UniStartWith(tmp, L"../") || UniStartWith(tmp, L"..\\") ||
 		UniStrCmpi(tmp, L".") == 0 || UniStrCmpi(tmp, L"..") == 0)
@@ -745,7 +705,6 @@ void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 		UniStrCpy(tmp, sizeof(tmp), cd);
 	}
 
-	// If the path starts with "~/", replace it with the home directory
 	if (UniStartWith(tmp, L"~/") || UniStartWith(tmp, L"~\\"))
 	{
 		wchar_t tmp2[MAX_SIZE];
@@ -757,13 +716,11 @@ void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 
 	if (UniStartWith(tmp, L"//") || UniStartWith(tmp, L"\\\\"))
 	{
-        // Begin with "//" or "\\"
 		first_double_slash = true;
 		is_full_path = true;
 	}
 	else if (UniStartWith(tmp, L"/") || UniStartWith(tmp, L"\\"))
 	{
-		// Begin with "\"
 		first_single_slash = true;
 		is_full_path = true;
 	}
@@ -772,7 +729,6 @@ void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 	{
 		if (tmp[1] == L':')
 		{
-			// The drive string representation of the Win32
 			wchar_t tmp2[MAX_SIZE];
 			is_full_path = true;
 			win32_drive_char = tmp[0];
@@ -786,7 +742,6 @@ void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 		tmp[0] = 0;
 	}
 
-	// Tokenize
 	t = UniParseToken(tmp, L"/\\");
 
 	sk = NewSk();
@@ -812,7 +767,6 @@ void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 		}
 	}
 
-	// Token concatenation
 	UniStrCpy(tmp, sizeof(tmp), L"");
 
 	if (first_double_slash)
@@ -862,12 +816,10 @@ void NormalizePath(char *dst, UINT size, char *src)
 	UniToStr(dst, size, dst_w);
 }
 
-// Rename the file
 bool FileRenameW(wchar_t *old_name, wchar_t *new_name)
 {
 	wchar_t tmp1[MAX_SIZE];
 	wchar_t tmp2[MAX_SIZE];
-	// Validate arguments
 	if (old_name == NULL || new_name == NULL)
 	{
 		return false;
@@ -880,7 +832,6 @@ bool FileRenameW(wchar_t *old_name, wchar_t *new_name)
 }
 bool FileRenameInnerW(wchar_t *old_name, wchar_t *new_name)
 {
-	// Validate arguments
 	if (old_name == NULL || new_name == NULL)
 	{
 		return false;
@@ -889,7 +840,6 @@ bool FileRenameInnerW(wchar_t *old_name, wchar_t *new_name)
 	return OSFileRenameW(old_name, new_name);
 }
 
-// Convert the path
 void ConvertPathW(wchar_t *path)
 {
 	UINT i, len;
@@ -905,7 +855,6 @@ void ConvertPathW(wchar_t *path)
 	}
 }
 
-// Delete the directory
 bool DeleteDir(char *name)
 {
 	wchar_t *name_w = CopyStrToUni(name);
@@ -918,7 +867,6 @@ bool DeleteDir(char *name)
 bool DeleteDirW(wchar_t *name)
 {
 	wchar_t tmp[MAX_SIZE];
-	// Validate arguments
 	if (name == NULL)
 	{
 		return false;
@@ -930,7 +878,6 @@ bool DeleteDirW(wchar_t *name)
 }
 bool DeleteDirInnerW(wchar_t *name)
 {
-	// Validate arguments
 	if (name == NULL)
 	{
 		return false;
@@ -939,10 +886,8 @@ bool DeleteDirInnerW(wchar_t *name)
 	return OSDeleteDirW(name);
 }
 
-// Generation of internal file path
 void InnerFilePathW(wchar_t *dst, UINT size, wchar_t *src)
 {
-	// Validate arguments
 	if (dst == NULL || src == NULL)
 	{
 		return;
@@ -977,7 +922,6 @@ void InnerFilePath(char *dst, UINT size, char *src)
 	UniToStr(dst, size, dst_w);
 }
 
-// Recursive directory creation
 bool MakeDirEx(char *name)
 {
 	bool ret;
@@ -996,7 +940,6 @@ bool MakeDirExW(wchar_t *name)
 	wchar_t tmp2[MAX_PATH];
 	UINT i;
 	bool ret = false;
-	// Validate arguments
 	if (name == NULL)
 	{
 		return false;
@@ -1037,7 +980,6 @@ bool MakeDirExW(wchar_t *name)
 	return ret;
 }
 
-// Create a directory
 bool MakeDir(char *name)
 {
 	wchar_t *name_w = CopyStrToUni(name);
@@ -1050,7 +992,6 @@ bool MakeDir(char *name)
 bool MakeDirW(wchar_t *name)
 {
 	wchar_t tmp[MAX_SIZE];
-	// Validate arguments
 	if (name == NULL)
 	{
 		return false;
@@ -1062,7 +1003,6 @@ bool MakeDirW(wchar_t *name)
 }
 bool MakeDirInnerW(wchar_t *name)
 {
-	// Validate arguments
 	if (name == NULL)
 	{
 		return false;
@@ -1071,7 +1011,6 @@ bool MakeDirInnerW(wchar_t *name)
 	return OSMakeDirW(name);
 }
 
-// Delete the file
 bool FileDelete(char *name)
 {
 	wchar_t *name_w = CopyStrToUni(name);
@@ -1084,7 +1023,6 @@ bool FileDelete(char *name)
 bool FileDeleteW(wchar_t *name)
 {
 	wchar_t tmp[MAX_SIZE];
-	// Validate arguments
 	if (name == NULL)
 	{
 		return false;
@@ -1097,7 +1035,6 @@ bool FileDeleteW(wchar_t *name)
 bool FileDeleteInnerW(wchar_t *name)
 {
 	wchar_t name2[MAX_SIZE];
-	// Validate arguments
 	if (name == NULL)
 	{
 		return false;
@@ -1109,10 +1046,8 @@ bool FileDeleteInnerW(wchar_t *name)
 	return OSFileDeleteW(name2);
 }
 
-// Seek the file
 bool FileSeek(IO *o, UINT mode, int offset)
 {
-	// Validate arguments
 	if (o == NULL)
 	{
 		return false;
@@ -1128,10 +1063,8 @@ bool FileSeek(IO *o, UINT mode, int offset)
 	}
 }
 
-// Get the file size
 UINT64 FileSize64(IO *o)
 {
-	// Validate arguments
 	if (o == NULL)
 	{
 		return 0;
@@ -1158,16 +1091,13 @@ UINT FileSize(IO *o)
 	return (UINT)size;
 }
 
-// Read from a file
 bool FileRead(IO *o, void *buf, UINT size)
 {
-	// Validate arguments
 	if (o == NULL || buf == NULL)
 	{
 		return false;
 	}
 
-	// KS
 	KS_INC(KS_IO_READ_COUNT);
 	KS_ADD(KS_IO_TOTAL_READ_SIZE, size);
 
@@ -1186,10 +1116,8 @@ bool FileRead(IO *o, void *buf, UINT size)
 	}
 }
 
-// Write to a file
 bool FileWrite(IO *o, void *buf, UINT size)
 {
-	// Validate arguments
 	if (o == NULL || buf == NULL)
 	{
 		return false;
@@ -1199,7 +1127,6 @@ bool FileWrite(IO *o, void *buf, UINT size)
 		return false;
 	}
 
-	// KS
 	KS_INC(KS_IO_WRITE_COUNT);
 	KS_ADD(KS_IO_TOTAL_WRITE_SIZE, size);
 
@@ -1211,10 +1138,8 @@ bool FileWrite(IO *o, void *buf, UINT size)
 	return OSFileWrite(o->pData, buf, size);
 }
 
-// Flush the file
 void FileFlush(IO *o)
 {
-	// Validate arguments
 	if (o == NULL)
 	{
 		return;
@@ -1228,14 +1153,12 @@ void FileFlush(IO *o)
 	OSFileFlush(o->pData);
 }
 
-// Close the file
 void FileClose(IO *o)
 {
 	FileCloseEx(o, false);
 }
 void FileCloseEx(IO *o, bool no_flush)
 {
-	// Validate arguments
 	if (o == NULL)
 	{
 		return;
@@ -1256,17 +1179,14 @@ void FileCloseEx(IO *o, bool no_flush)
 	}
 	Free(o);
 
-	// KS
 	KS_INC(KS_IO_CLOSE_COUNT);
 }
 
-// Create a file
 IO *FileCreateInnerW(wchar_t *name)
 {
 	IO *o;
 	void *p;
 	wchar_t name2[MAX_SIZE];
-	// Validate arguments
 	if (name == NULL)
 	{
 		return NULL;
@@ -1287,7 +1207,6 @@ IO *FileCreateInnerW(wchar_t *name)
 	UniToStr(o->Name, sizeof(o->Name), o->NameW);
 	o->WriteMode = true;
 
-	// KS
 	KS_INC(KS_IO_CREATE_COUNT);
 
 	return o;
@@ -1304,7 +1223,6 @@ IO *FileCreate(char *name)
 IO *FileCreateW(wchar_t *name)
 {
 	wchar_t tmp[MAX_SIZE];
-	// Validate arguments
 	if (name == NULL)
 	{
 		return NULL;
@@ -1315,13 +1233,11 @@ IO *FileCreateW(wchar_t *name)
 	return FileCreateInnerW(tmp);
 }
 
-// Open the file
 IO *FileOpenInnerW(wchar_t *name, bool write_mode, bool read_lock)
 {
 	IO *o;
 	void *p;
 	wchar_t name2[MAX_SIZE];
-	// Validate arguments
 	if (name == NULL)
 	{
 		return NULL;
@@ -1344,7 +1260,6 @@ IO *FileOpenInnerW(wchar_t *name, bool write_mode, bool read_lock)
 
 	Win32FileGetDate(p, &o->GetCreateTime, &o->GetUpdateTime, &o->GetAccessTime);
 
-	// KS
 	KS_INC(KS_IO_OPEN_COUNT);
 
 	return o;
@@ -1367,7 +1282,6 @@ IO *FileOpenEx(char *name, bool write_mode, bool read_lock)
 	return ret;
 }
 
-// Replace the specified character in the string with a new character
 wchar_t *UniReplaceCharW(wchar_t *src, UINT size, wchar_t c, wchar_t  newc) {
 	if (src == NULL)
 	{
@@ -1387,7 +1301,6 @@ wchar_t *UniReplaceCharW(wchar_t *src, UINT size, wchar_t c, wchar_t  newc) {
 IO *FileOpenExW(wchar_t *name, bool write_mode, bool read_lock)
 {
 	wchar_t tmp[MAX_SIZE];
-	// Validate arguments
 	if (name == NULL)
 	{
 		return NULL;
@@ -1400,7 +1313,7 @@ IO *FileOpenExW(wchar_t *name, bool write_mode, bool read_lock)
 		IO *o = ZeroMalloc(sizeof(IO));
 		name++;
 		UniStrCpy(o->NameW, sizeof(o->NameW), name);
-		UniReplaceCharW(o->NameW, sizeof(o->NameW), L'\\', L'/');		// Path separator "/" is used.
+		UniReplaceCharW(o->NameW, sizeof(o->NameW), L'\\', L'/');
 		UniToStr(o->Name, sizeof(o->Name), o->NameW);
 		o->HamMode = true;
 		o->HamBuf = ReadHamcoreW(o->NameW);
@@ -1416,5 +1329,4 @@ IO *FileOpenExW(wchar_t *name, bool write_mode, bool read_lock)
 		return FileOpenInnerW(tmp, write_mode, read_lock);
 	}
 }
-
 

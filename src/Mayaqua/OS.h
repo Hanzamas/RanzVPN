@@ -10,7 +10,6 @@
 
 #include "MayaType.h"
 
-// Function prototype
 char *OsTypeToStr(UINT type);
 
 void OSInit();
@@ -61,7 +60,6 @@ void OSFreeSingleInstance(void *data);
 void OSGetMemInfo(MEMINFO *info);
 void OSYield();
 
-// Dispatch table
 typedef struct OS_DISPATCH_TABLE
 {
 	void (*Init)();
@@ -122,7 +120,6 @@ typedef struct OS_DISPATCH_TABLE
 	void (*Yield)();
 } OS_DISPATCH_TABLE;
 
-// Include the OS-specific header
 #include <Mayaqua/Win32.h>
 
 #endif	// OS_H

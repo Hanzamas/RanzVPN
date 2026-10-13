@@ -666,10 +666,8 @@ bool GetIPEx(IP *ip, const char *hostname, UINT timeout, volatile const bool *ca
 	return false;
 }
 
-// Release of the parameters of the DNS Resolver thread
 void ReleaseDnsResolver(DNS_RESOLVER *p)
 {
-	// Validate arguments
 	if (p == NULL)
 	{
 		return;
@@ -684,10 +682,8 @@ void ReleaseDnsResolver(DNS_RESOLVER *p)
 	}
 }
 
-// Release of the parameters of the DNS Resolver Reverse thread
 void ReleaseDnsResolverReverse(DNS_RESOLVER_REVERSE *p)
 {
-	// Validate arguments
 	if (p == NULL)
 	{
 		return;

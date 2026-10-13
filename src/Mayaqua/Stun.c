@@ -14,7 +14,6 @@
 #include "Str.h"
 #include "Tick64.h"
 
-// Parse the value of a MAPPED-ADDRESS or XOR-MAPPED-ADDRESS attribute
 static bool StunParseAddressAttr(UCHAR *value, UINT value_size, bool xor_mapped, UCHAR *transaction_id, IP *ip, UINT *port)
 {
 	UCHAR family;
@@ -23,13 +22,11 @@ static bool StunParseAddressAttr(UCHAR *value, UINT value_size, bool xor_mapped,
 	UCHAR addr[16];
 	UCHAR xor_key[16];
 	UINT i;
-	// Validate arguments
 	if (value == NULL || transaction_id == NULL || ip == NULL || port == NULL)
 	{
 		return false;
 	}
 
-	// Reserved (1 byte), family (1 byte) and port (2 bytes)
 	if (value_size < 4)
 	{
 		return false;
@@ -92,10 +89,8 @@ static bool StunParseAddressAttr(UCHAR *value, UINT value_size, bool xor_mapped,
 	return true;
 }
 
-// Build a Binding Request (header only) and return its size, or 0 if the buffer is too small
 UINT StunBuildBindingRequest(UCHAR *buf, UINT buf_size, UCHAR *transaction_id)
 {
-	// Validate arguments
 	if (buf == NULL || transaction_id == NULL)
 	{
 		return 0;
@@ -106,20 +101,16 @@ UINT StunBuildBindingRequest(UCHAR *buf, UINT buf_size, UCHAR *transaction_id)
 		return 0;
 	}
 
-	// Message type and message length (no attributes)
 	WRITE_USHORT(buf, STUN_BINDING_REQUEST);
 	WRITE_USHORT(buf + 2, 0);
 
-	// Magic cookie
 	WRITE_UINT(buf + 4, STUN_MAGIC_COOKIE);
 
-	// Transaction ID
 	Copy(buf + 8, transaction_id, STUN_TRANSACTION_ID_SIZE);
 
 	return STUN_HEADER_SIZE;
 }
 
-// Parse a Binding Success Response and get the mapped address.
 // XOR-MAPPED-ADDRESS is preferred, MAPPED-ADDRESS is the fallback, other attributes are skipped.
 // Unknown comprehension-required attributes (0x0000-0x7FFF) are skipped too. This deliberately
 // differs from RFC 5389 section 7.3.3, so that a response that also carries RFC 3489 attributes
@@ -133,7 +124,6 @@ bool StunParseBindingResponse(UCHAR *buf, UINT size, UCHAR *transaction_id, IP *
 	bool has_mapped = false;
 	IP xor_mapped_ip, plain_mapped_ip;
 	UINT xor_mapped_port = 0, plain_mapped_port = 0;
-	// Validate arguments
 	if (buf == NULL || transaction_id == NULL || mapped_ip == NULL || mapped_port == NULL)
 	{
 		return false;
@@ -142,7 +132,6 @@ bool StunParseBindingResponse(UCHAR *buf, UINT size, UCHAR *transaction_id, IP *
 	Zero(&xor_mapped_ip, sizeof(xor_mapped_ip));
 	Zero(&plain_mapped_ip, sizeof(plain_mapped_ip));
 
-	// Header
 	if (size < STUN_HEADER_SIZE)
 	{
 		return false;
@@ -180,7 +169,6 @@ bool StunParseBindingResponse(UCHAR *buf, UINT size, UCHAR *transaction_id, IP *
 	pos = STUN_HEADER_SIZE;
 	end = STUN_HEADER_SIZE + msg_len;
 
-	// Attributes
 	while (pos < end)
 	{
 		UINT attr_type;
@@ -256,7 +244,6 @@ bool StunParseServerStr(char *src, char *host, UINT host_size, UINT *port)
 	char *port_part = NULL;
 	UINT port_value = STUN_DEFAULT_PORT;
 	UINT len, i;
-	// Validate arguments
 	if (src == NULL || host == NULL || host_size == 0 || port == NULL)
 	{
 		return false;
@@ -273,7 +260,6 @@ bool StunParseServerStr(char *src, char *host, UINT host_size, UINT *port)
 
 	if (tmp[0] == '[')
 	{
-		// "[IPv6 address]" or "[IPv6 address]:port"
 		char *close = NULL;
 
 		for (i = 1;i < len;i++)
@@ -321,12 +307,10 @@ bool StunParseServerStr(char *src, char *host, UINT host_size, UINT *port)
 
 		if (num_colons == 1)
 		{
-			// "host:port"
 			tmp[colon_pos] = 0;
 			port_part = &tmp[colon_pos + 1];
 		}
 
-		// Two or more colons: a bare IPv6 address with the default port
 	}
 
 	if (port_part != NULL)
@@ -390,7 +374,6 @@ bool StunGetMappedAddress(SOCK *udp_sock, char *server_host_port, IP *mapped_ip,
 	UINT wait_list[] = {STUN_WAIT_FIRST, STUN_WAIT_RETRANSMIT};
 	UINT i;
 	UINT64 limit;
-	// Validate arguments
 	if (udp_sock == NULL || server_host_port == NULL || mapped_ip == NULL || mapped_port == NULL)
 	{
 		return false;
@@ -409,7 +392,6 @@ bool StunGetMappedAddress(SOCK *udp_sock, char *server_host_port, IP *mapped_ip,
 	// One time limit covers name resolution, the request and its retransmission
 	limit = Tick64() + (UINT64)STUN_TOTAL_TIMEOUT;
 
-	// Resolve the server in the address family of the socket
 	if (udp_sock->IPv6)
 	{
 		resolved = GetIP6Ex(&server_ip, host, STUN_DNS_RESOLVE_TIMEOUT, NULL);
@@ -438,11 +420,9 @@ bool StunGetMappedAddress(SOCK *udp_sock, char *server_host_port, IP *mapped_ip,
 
 		if (Tick64() >= limit)
 		{
-			// The time limit is used up
 			break;
 		}
 
-		// Send (or retransmit) the Binding Request
 		if (SendTo(udp_sock, &server_ip, server_port, request, request_size) == 0)
 		{
 			if (udp_sock->IgnoreSendErr == false)
@@ -499,14 +479,12 @@ bool StunGetMappedAddress(SOCK *udp_sock, char *server_host_port, IP *mapped_ip,
 				{
 					if (udp_sock->IgnoreRecvErr == false || (num_ignore_errors++) >= MAX_NUM_IGNORE_ERRORS)
 					{
-						// Serious UDP reception error
 						return false;
 					}
 
 					continue;
 				}
 
-				// Ignore datagrams from other sources
 				if (CmpIpAddr(&src_ip, &server_ip) != 0 || src_port != server_port)
 				{
 					continue;

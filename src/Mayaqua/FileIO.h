@@ -14,7 +14,6 @@
 #define	HAMCORE_FILE_NAME			"hamcore.se2"
 #define	HAMCORE_CACHE_EXPIRES		(5 * 60 * 1000)
 
-// IO structure
 struct IO
 {
 	char Name[MAX_SIZE];
@@ -27,7 +26,6 @@ struct IO
 	UINT64 GetUpdateTime, GetCreateTime, GetAccessTime;
 };
 
-// HC structure
 typedef struct HC
 {
 	char *Path;
@@ -36,25 +34,22 @@ typedef struct HC
 	UINT64 LastAccess;
 } HC;
 
-// DIRENT structure
 struct DIRENT
 {
-	bool Folder;				// Folder
-	char *FileName;				// File name (ANSI)
-	wchar_t *FileNameW;			// File name (Unicode)
-	UINT64 FileSize;			// File size
-	UINT64 CreateDate;			// Creation Date
-	UINT64 UpdateDate;			// Updating date
+	bool Folder;
+	char *FileName;
+	wchar_t *FileNameW;
+	UINT64 FileSize;
+	UINT64 CreateDate;
+	UINT64 UpdateDate;
 };
 
-// DIRLIST structure
 struct DIRLIST
 {
-	UINT NumFiles;				// Number of files
-	struct DIRENT **File;			// File array
+	UINT NumFiles;
+	struct DIRENT **File;
 };
 
-// ZIP related structure
 #pragma pack(push, 1)
 
 struct ZIP_DATA_HEADER

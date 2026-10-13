@@ -10,17 +10,14 @@
 
 #include "MayaType.h"
 
-// Maximum number of correction list entries
 #define	MAX_ADJUST_TIME				1024
 
-// Correction list entry
 struct ADJUST_TIME
 {
 	UINT64 Tick;
 	UINT64 Time;
 };
 
-// TICK64 structure
 struct TICK64
 {
 	THREAD *Thread;
@@ -30,10 +27,8 @@ struct TICK64
 	LIST *AdjustTime;
 };
 
-// Constant
-#define	TICK64_SPAN_WIN32	1000	// Interval of measurement on Win32
+#define	TICK64_SPAN_WIN32	1000
 
-// Function prototype
 void InitTick64();
 void FreeTick64();
 void Tick64Thread(THREAD *thread, void *param);
@@ -45,6 +40,4 @@ UINT64 TickHighres64();
 UINT64 TickHighresNano64(bool raw);
 
 #endif	// TICK64_H
-
-
 

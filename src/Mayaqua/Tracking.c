@@ -12,7 +12,6 @@
 #include "OS.h"
 #include "Str.h"
 
-// Global variables
 static LOCK *obj_lock;
 static LOCK *obj_id_lock;
 static UINT obj_id;
@@ -21,13 +20,11 @@ static TRACKING_LIST **hashlist;
 
 static bool do_not_get_callstack;
 
-// Get whether the tracking is enabled
 bool IsTrackingEnabled()
 {
 	return (IsDebug() || IsMemCheck()) && kernel_status_inited;
 }
 
-// Memory debug menu
 void MemoryDebugMenu()
 {
 	char tmp[MAX_SIZE];
@@ -86,7 +83,6 @@ void MemoryDebugMenu()
 	g_memcheck = true;
 }
 
-// Sort the objects by chronological order
 int SortObjectView(void *p1, void *p2)
 {
 	TRACKING_OBJECT *o1, *o2;
@@ -112,12 +108,10 @@ int SortObjectView(void *p1, void *p2)
 	return -1;
 }
 
-// Display the information of the object 
 void PrintObjectInfo(TRACKING_OBJECT *o)
 {
 	SYSTEMTIME t;
 	char tmp[MAX_SIZE];
-	// Validate arguments
 	if (o == NULL)
 	{
 		return;
@@ -136,13 +130,11 @@ void PrintObjectInfo(TRACKING_OBJECT *o)
 	PrintCallStack(o->CallStack);
 }
 
-// Display the object information
 void DebugPrintObjectInfo(UINT id)
 {
 	UINT i;
 	TRACKING_OBJECT *o;
 
-	// Search
 	o = NULL;
 	OSLock(obj_lock);
 	{
@@ -179,7 +171,6 @@ void DebugPrintObjectInfo(UINT id)
 
 	if (o == NULL)
 	{
-		// The ID could not be found
 		Print("obj_id %u Not Found.\n\n", id);
 		return;
 	}
@@ -188,7 +179,6 @@ void DebugPrintObjectInfo(UINT id)
 	Print("\n");
 }
 
-// Show a Summary of the object
 void PrintObjectList(TRACKING_OBJECT *o)
 {
 	char tmp[MAX_SIZE];
@@ -200,13 +190,11 @@ void PrintObjectList(TRACKING_OBJECT *o)
 		o->Id, o->Name, tmp, UINT64_TO_POINTER(o->Address), o->Size, o->FileName, o->LineNumber);
 }
 
-// Display all the objects
 void DebugPrintAllObjects()
 {
 	UINT i;
 	LIST *view;
 
-	// Creating a List
 	view = NewListFast(SortObjectView);
 	OSLock(obj_lock);
 	{
@@ -232,23 +220,19 @@ void DebugPrintAllObjects()
 	}
 	OSUnlock(obj_lock);
 
-	// Sort
 	Sort(view);
 
-	// Drawing
 	for (i = 0;i < LIST_NUM(view);i++)
 	{
 		TRACKING_OBJECT *o = (TRACKING_OBJECT *)LIST_DATA(view, i);
 		PrintObjectList(o);
 	}
 
-	// Release the list
 	ReleaseList(view);
 
 	Print("\n");
 }
 
-// List of the commands
 void DebugPrintCommandList()
 {
 	Print(
@@ -259,11 +243,9 @@ void DebugPrintCommandList()
 		);
 }
 
-// Get the using state of the memory
 void GetMemoryStatus(MEMORY_STATUS *status)
 {
 	UINT i, num, size;
-	// Validate arguments
 	if (status == NULL)
 	{
 		return;
@@ -305,10 +287,8 @@ void GetMemoryStatus(MEMORY_STATUS *status)
 	status->MemorySize = size;
 }
 
-// Get the symbol information by the object
 void TrackGetObjSymbolInfo(TRACKING_OBJECT *o)
 {
-	// Validate arguments
 	if (o == NULL)
 	{
 		return;
@@ -330,12 +310,10 @@ void TrackGetObjSymbolInfo(TRACKING_OBJECT *o)
 	}
 }
 
-// Put a new object into the tracking list
 void TrackNewObj(UINT64 addr, char *name, UINT size)
 {
 	TRACKING_OBJECT *o;
 	UINT new_id;
-	// Validate arguments
 	if (addr == 0 || name == NULL)
 	{
 		return;
@@ -343,11 +321,9 @@ void TrackNewObj(UINT64 addr, char *name, UINT size)
 
 	if ((IsTrackingEnabled() && IsMemCheck()) == false)
 	{
-		// Don't track in detail if the memory check option is not specified
 		return;
 	}
 
-	// Generate a new ID
 	OSLock(obj_id_lock);
 	{
 		new_id = ++obj_id;
@@ -372,11 +348,9 @@ void TrackNewObj(UINT64 addr, char *name, UINT size)
 	OSUnlock(obj_lock);
 }
 
-// Remove the object from the tracking list
 void TrackDeleteObj(UINT64 addr)
 {
 	TRACKING_OBJECT *o;
-	// Validate arguments
 	if (addr == 0)
 	{
 		return;
@@ -384,7 +358,6 @@ void TrackDeleteObj(UINT64 addr)
 
 	if ((IsTrackingEnabled() && IsMemCheck()) == false)
 	{
-		// Don't track in detail if the memory check option is not specified
 		return;
 	}
 
@@ -401,11 +374,9 @@ void TrackDeleteObj(UINT64 addr)
 	OSUnlock(obj_lock);
 }
 
-// Change the size of the object being tracked
 void TrackChangeObjSize(UINT64 addr, UINT size, UINT64 new_addr)
 {
 	TRACKING_OBJECT *o;
-	// Validate arguments
 	if (addr == 0)
 	{
 		return;
@@ -413,7 +384,6 @@ void TrackChangeObjSize(UINT64 addr, UINT size, UINT64 new_addr)
 
 	if ((IsTrackingEnabled() && IsMemCheck()) == false)
 	{
-		// Don't track in detail if the memory check option is not specified
 		return;
 	}
 
@@ -436,11 +406,9 @@ void TrackChangeObjSize(UINT64 addr, UINT size, UINT64 new_addr)
 	OSUnlock(obj_lock);
 }
 
-// Search an object in the tracking list
 TRACKING_OBJECT *SearchTrackingList(UINT64 Address)
 {
 	UINT i;
-	// Validate arguments
 	if (Address == 0)
 	{
 		return NULL;
@@ -471,11 +439,9 @@ TRACKING_OBJECT *SearchTrackingList(UINT64 Address)
 	return NULL;
 }
 
-// Remove an object from a tracking list
 void DeleteTrackingList(TRACKING_OBJECT *o, bool free_object_memory)
 {
 	UINT i;
-	// Validate arguments
 	if (o == NULL)
 	{
 		return;
@@ -529,12 +495,10 @@ void DeleteTrackingList(TRACKING_OBJECT *o, bool free_object_memory)
 	}
 }
 
-// Insert an object into the tracking list
 void InsertTrackingList(TRACKING_OBJECT *o)
 {
 	UINT i;
 	TRACKING_LIST *t;
-	// Validate arguments
 	if (o == NULL)
 	{
 		return;
@@ -566,13 +530,11 @@ void InsertTrackingList(TRACKING_OBJECT *o)
 	}
 }
 
-// Initialize the tracking
 void InitTracking()
 {
 	UINT i;
 	CALLSTACK_DATA *s;
 
-	// Hash list initialization
 	hashlist = (TRACKING_LIST **)OSMemoryAlloc(sizeof(TRACKING_LIST *) * TRACKING_NUM_ARRAY);
 
 	for (i = 0;i < TRACKING_NUM_ARRAY;i++)
@@ -582,7 +544,6 @@ void InitTracking()
 
 	obj_id = 0;
 
-	// Create a lock
 	obj_lock = OSNewLock();
 	obj_id_lock = OSNewLock();
 	cs_lock = OSNewLock();
@@ -599,11 +560,9 @@ void InitTracking()
 	}
 }
 
-// Release the tracking
 void FreeTracking()
 {
 	UINT i;
-	// Delete the lock
 	OSDeleteLock(obj_lock);
 	OSDeleteLock(obj_id_lock);
 	OSDeleteLock(cs_lock);
@@ -611,7 +570,6 @@ void FreeTracking()
 	obj_id_lock = NULL;
 	obj_lock = NULL;
 
-	// Release all of the elements
 	for (i = 0;i < TRACKING_NUM_ARRAY;i++)
 	{
 		if (hashlist[i] != NULL)
@@ -638,11 +596,9 @@ void FreeTracking()
 		}
 	}
 
-	// Release the list
 	OSMemoryFree(hashlist);
 }
 
-// Show the call stack
 void PrintCallStack(CALLSTACK_DATA *s)
 {
 	char tmp[MAX_SIZE * 2];
@@ -651,14 +607,12 @@ void PrintCallStack(CALLSTACK_DATA *s)
 	Print("%s", tmp);
 }
 
-// Convert the call stack to a string
 void GetCallStackStr(char *str, UINT size, CALLSTACK_DATA *s)
 {
 	char tmp[MAX_SIZE];
 	char tmp2[MAX_SIZE];
 	char tmp3[MAX_SIZE];
 	UINT num, i;
-	// Validate arguments
 	if (str == NULL)
 	{
 		return;
@@ -705,19 +659,16 @@ void GetCallStackStr(char *str, UINT size, CALLSTACK_DATA *s)
 	}
 }
 
-// Get the current call stack
 CALLSTACK_DATA *GetCallStack()
 {
 	CALLSTACK_DATA *s;
 	if (do_not_get_callstack)
 	{
-		// Not to get the call stack
 		return NULL;
 	}
 
 	OSLock(cs_lock);
 	{
-		// Get the call stack
 		s = OSGetCallStack();
 	}
 	OSUnlock(cs_lock);
@@ -726,17 +677,14 @@ CALLSTACK_DATA *GetCallStack()
 		return NULL;
 	}
 
-	// Descend in the call stack for 3 steps
 	s = WalkDownCallStack(s, 3);
 
 	return s;
 }
 
-// Get the symbol information of the call stack
 bool GetCallStackSymbolInfo(CALLSTACK_DATA *s)
 {
 	bool ret;
-	// Validate arguments
 	if (s == NULL)
 	{
 		return false;
@@ -751,12 +699,10 @@ bool GetCallStackSymbolInfo(CALLSTACK_DATA *s)
 	return ret;
 }
 
-// Descend in the call stack by a specified number
 CALLSTACK_DATA *WalkDownCallStack(CALLSTACK_DATA *s, UINT num)
 {
 	CALLSTACK_DATA *cs, *tmp;
 	UINT i;
-	// Validate arguments
 	if (s == NULL)
 	{
 		return NULL;
@@ -784,10 +730,8 @@ CALLSTACK_DATA *WalkDownCallStack(CALLSTACK_DATA *s, UINT num)
 	}
 }
 
-// Release the call stack
 void FreeCallStack(CALLSTACK_DATA *s)
 {
-	// Validate arguments
 	if (s == NULL)
 	{
 		return;
@@ -805,5 +749,4 @@ void FreeCallStack(CALLSTACK_DATA *s)
 		s = next;
 	}
 }
-
 

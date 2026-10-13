@@ -30,8 +30,8 @@ struct PROXY_PARAM_IN
 	UINT Timeout;
 	char HttpCustomHeader[HTTP_CUSTOM_HEADER_MAX_SIZE];
 	char HttpUserAgent[HTTP_HEADER_USER_AGENT_MAX_SIZE + 1];
-	IP   *BindLocalIP;											// Source IP address for outgoing connection
-	UINT BindLocalPort;					// UINT used not USHORT	// Source port number for outgoing connection
+	IP   *BindLocalIP;
+	UINT BindLocalPort;
 	void *Hwnd;
 };
 
@@ -45,7 +45,6 @@ UINT ProxyHttpConnect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *c
 UINT ProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag);
 UINT ProxySocks4Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag);
 
-// New function named with prefix "Bind" binds outgoing connection to a specific address. New one is wrapped in original one.
 UINT BindProxyHttpConnect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag);
 UINT BindProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag);
 UINT BindProxySocks4Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag);

@@ -6,14 +6,11 @@
 
 SOCK *Internal_ProxyTcpConnect(PROXY_PARAM_IN *param, volatile bool *cancel_flag, IP *resolved_ip)
 {
-	//return ConnectEx4(param->Hostname, param->Port, param->Timeout, (bool*)cancel_flag, true, resolved_ip);
 	return BindConnectEx4(param->BindLocalIP, param->BindLocalPort, param->Hostname, param->Port, param->Timeout, (bool *)cancel_flag, true, resolved_ip);
 }
 
-// Connect to an HTTP proxy
 UINT ProxyHttpConnect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag)
 {
-	// Validate arguments
 	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname))
 	{
 		return PROXY_ERROR_PARAMETER;
@@ -23,7 +20,6 @@ UINT ProxyHttpConnect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *c
 	return BindProxyHttpConnect(out, in, cancel_flag);
 }
 
-// Connect to an HTTP proxy
 UINT BindProxyHttpConnect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag)
 {
 	bool dummy_cancel_flag = false, use_auth = false;
@@ -32,7 +28,6 @@ UINT BindProxyHttpConnect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile boo
 	HTTP_HEADER *h;
 	UINT i, ret;
 	SOCK *s;
-	// Validate arguments
 	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname))
 	{
 		return PROXY_ERROR_PARAMETER;
@@ -49,7 +44,6 @@ UINT BindProxyHttpConnect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile boo
 
 	Zero(out, sizeof(PROXY_PARAM_OUT));
 
-	// Open TCP connection to the proxy server
 	s = Internal_ProxyTcpConnect(in, cancel_flag, &out->ResolvedIp);
 	if (s == NULL)
 	{
@@ -74,7 +68,6 @@ UINT BindProxyHttpConnect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile boo
 		}
 	}
 
-	// Generate HTTP header
 	if (IsStrIPv6Address(target_hostname))
 	{
 		IP ip;
@@ -143,7 +136,6 @@ UINT BindProxyHttpConnect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile boo
 		AddHttpValue(h, NewHttpValue("Proxy-Authorization", auth_str));
 	}
 
-	// Transmission
 	ret = SendHttpHeader(s, h);
 
 	FreeHttpHeader(h);
@@ -160,7 +152,6 @@ UINT BindProxyHttpConnect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile boo
 		goto FAILURE;
 	}
 
-	// Receive the results
 	h = RecvHttpHeader(s);
 	if (h == NULL)
 	{
@@ -179,27 +170,23 @@ UINT BindProxyHttpConnect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile boo
 	}
 	FreeHttpHeader(h);
 
-	// Check the code
 	switch (ret)
 	{
 	case 401:
 	case 403:
 	case 407:
-		// Authentication failure
 		ret = PROXY_ERROR_AUTHENTICATION;
 		goto FAILURE;
 
 	default:
 		if ((ret / 100) == 2)
 		{
-			// Success
 			SetTimeout(s, INFINITE);
 			out->Sock = s;
 			return PROXY_ERROR_SUCCESS;
 		}
 		else
 		{
-			// Unknown result
 			ret = PROXY_ERROR_GENERIC;
 		}
 	}
@@ -210,10 +197,9 @@ FAILURE:
 	return ret;
 }
 
-// Connect to a SOCKS5 proxy (RFC1928, RFC1929 defines username/password authentication)
+// SOCKS5: RFC 1928; username/password authentication: RFC 1929
 UINT ProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag)
 {
-	// Validate arguments
 	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname))
 	{
 		return PROXY_ERROR_PARAMETER;
@@ -223,7 +209,6 @@ UINT ProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool 
 	return BindProxySocks5Connect(out, in, cancel_flag);
 }
 
-// Connect to a SOCKS5 proxy (RFC1928, RFC1929 defines username/password authentication)
 UINT BindProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag)
 {
 	bool dummy_cancel_flag = false;
@@ -233,7 +218,6 @@ UINT BindProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 	UINT ret;
 	SOCK *s;
 	BUF *b;
-	// Validate arguments
 	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname))
 	{
 		return PROXY_ERROR_PARAMETER;
@@ -250,7 +234,6 @@ UINT BindProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 
 	Zero(out, sizeof(PROXY_PARAM_OUT));
 
-	// Open TCP connection to the proxy server
 	s = Internal_ProxyTcpConnect(in, cancel_flag, &out->ResolvedIp);
 	if (s == NULL)
 	{
@@ -274,13 +257,13 @@ UINT BindProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 
 	b = NewBuf();
 	tmp = 5;
-	WriteBuf(b, &tmp, sizeof(tmp));	// SOCKS version
+	WriteBuf(b, &tmp, sizeof(tmp));
 	tmp = 2;
-	WriteBuf(b, &tmp, sizeof(tmp));	// Number of supported methods
+	WriteBuf(b, &tmp, sizeof(tmp));
 	tmp = 0;
-	WriteBuf(b, &tmp, sizeof(tmp));	// No authentication
+	WriteBuf(b, &tmp, sizeof(tmp));
 	tmp = 2;
-	WriteBuf(b, &tmp, sizeof(tmp));	// Username/password
+	WriteBuf(b, &tmp, sizeof(tmp));
 
 	ret = SendAll(s, b->Buf, b->Size, false);
 
@@ -313,7 +296,6 @@ UINT BindProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 
 	ClearBuf(b);
 
-	// Username/password authentication (RFC1929)
 	if (recv_buf[1] == 2)
 	{
 		// +----+------+----------+------+----------+
@@ -323,13 +305,13 @@ UINT BindProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 		// +----+------+----------+------+----------+
 
 		tmp = 1;
-		WriteBuf(b, &tmp, sizeof(tmp));	// Authentication protocol version
+		WriteBuf(b, &tmp, sizeof(tmp));
 		tmp = StrLen(in->Username);
-		WriteBuf(b, &tmp, sizeof(tmp));	// Username length
-		WriteBuf(b, in->Username, tmp);	// Username
+		WriteBuf(b, &tmp, sizeof(tmp));
+		WriteBuf(b, in->Username, tmp);
 		tmp = StrLen(in->Password);
-		WriteBuf(b, &tmp, sizeof(tmp));	// Password length
-		WriteBuf(b, in->Password, tmp);	// Password
+		WriteBuf(b, &tmp, sizeof(tmp));
+		WriteBuf(b, in->Password, tmp);
 
 		ret = SendAll(s, b->Buf, b->Size, false);
 
@@ -379,47 +361,42 @@ UINT BindProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 	// DST.ADDR			desired destination address
 	// DST.PORT			desired destination port in network octet order
 
-	// Prepare data to send
 	tmp = 5;
-	WriteBuf(b, &tmp, sizeof(tmp));	// SOCKS version
+	WriteBuf(b, &tmp, sizeof(tmp));
 	tmp = 1;
-	WriteBuf(b, &tmp, sizeof(tmp));	// Command
+	WriteBuf(b, &tmp, sizeof(tmp));
 	tmp = 0;
-	WriteBuf(b, &tmp, sizeof(tmp));	// Reserved byte
+	WriteBuf(b, &tmp, sizeof(tmp));
 
-	// Convert the hostname to an IP structure (if it's an IP address)
 	StrToIP(&target_ip, in->TargetHostname);
 
-	// If the IP structure doesn't contain an IP address, the string should be an hostname
 	if (IsZeroIP(&target_ip))
 	{
 		UCHAR dest_length = StrLen(in->TargetHostname);
 		tmp = 3;
-		WriteBuf(b, &tmp, sizeof(tmp));									// Destination type (hostname)
-		WriteBuf(b, &dest_length, sizeof(dest_length));					// Destination hostname length
-		WriteBuf(b, in->TargetHostname, dest_length);					// Destination hostname
+		WriteBuf(b, &tmp, sizeof(tmp));
+		WriteBuf(b, &dest_length, sizeof(dest_length));
+		WriteBuf(b, in->TargetHostname, dest_length);
 	}
 	else
 	{
 		if (IsIP6(&target_ip))
 		{
 			tmp = 4;
-			WriteBuf(b, &tmp, sizeof(tmp));								// Destination type (IPv6)
-			WriteBuf(b, target_ip.address, sizeof(target_ip.address));	// Destination IPv6 address
+			WriteBuf(b, &tmp, sizeof(tmp));
+			WriteBuf(b, target_ip.address, sizeof(target_ip.address));
 		}
 		else
 		{
 			tmp = 1;
-			WriteBuf(b, &tmp, sizeof(tmp));								// Destination type (IPv4)
-			WriteBuf(b, IPV4(target_ip.address), IPV4_SIZE);			// Destination IPv4 address
+			WriteBuf(b, &tmp, sizeof(tmp));
+			WriteBuf(b, IPV4(target_ip.address), IPV4_SIZE);
 		}
 	}
 
-	// Convert the port in network octet order
 	target_port = Endian16(in->TargetPort);
-	WriteBuf(b, &target_port, sizeof(target_port));							// Destination port
+	WriteBuf(b, &target_port, sizeof(target_port));
 
-	// Send data
 	ret = SendAll(s, b->Buf, b->Size, false);
 	FreeBuf(b);
 
@@ -468,17 +445,14 @@ UINT BindProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 	switch (recv_buf_final[3])
 	{
 	case 1:
-		// IPv4
 		recv_buf_final = ReAlloc(recv_buf_final, 6);			// 4 bytes (IPv4) + 2 bytes (port)
 		ret = RecvAll(s, recv_buf_final, 6, false);
 		break;
 	case 4:
-		// IPv6
 		recv_buf_final = ReAlloc(recv_buf_final, 18);			// 16 bytes (IPv6) + 2 bytes (port)
 		ret = RecvAll(s, recv_buf_final, 18, false);
 		break;
 	case 3:
-		// Hostname
 		ret = RecvAll(s, &tmp, 1, false);
 		if (ret == true)
 		{
@@ -504,7 +478,6 @@ UINT BindProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 	switch (recv_buf[1])
 	{
 	case 0:
-		// Success
 		SetTimeout(s, INFINITE);
 		out->Sock = s;
 		return PROXY_ERROR_SUCCESS;
@@ -524,10 +497,8 @@ FAILURE:
 	return ret;
 }
 
-// Connect to a SOCKS4 proxy
 UINT ProxySocks4Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag)
 {
-	// Validate arguments
 	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname))
 	{
 		return PROXY_ERROR_PARAMETER;
@@ -537,7 +508,6 @@ UINT ProxySocks4Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool 
 	return BindProxySocks4Connect(out, in, cancel_flag);
 }
 
-// Connect to a SOCKS4 proxy
 UINT BindProxySocks4Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag)
 {
 	bool dummy_cancel_flag = false;
@@ -547,7 +517,6 @@ UINT BindProxySocks4Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 	UINT ret;
 	SOCK *s;
 	BUF *b;
-	// Validate arguments
 	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname))
 	{
 		return PROXY_ERROR_PARAMETER;
@@ -570,7 +539,6 @@ UINT BindProxySocks4Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 		return PROXY_ERROR_CONNECTION;
 	}
 
-	// Open TCP connection to the proxy server
 	s = Internal_ProxyTcpConnect(in, cancel_flag, &out->ResolvedIp);
 	if (s == NULL)
 	{
@@ -579,7 +547,6 @@ UINT BindProxySocks4Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 
 	SetTimeout(s, MIN(PROXY_CONNECTION_TIMEOUT, (in->Timeout == 0 ? INFINITE : in->Timeout)));
 
-	// Send request packet
 	b = NewBuf();
 	tmp = 4;
 	WriteBuf(b, &tmp, sizeof(tmp));
@@ -600,7 +567,6 @@ UINT BindProxySocks4Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 		goto FAILURE;
 	}
 
-	// Receive response packet
 	if (RecvAll(s, recv_buf, sizeof(recv_buf), false) == false)
 	{
 		ret = PROXY_ERROR_DISCONNECTED;
@@ -616,16 +582,13 @@ UINT BindProxySocks4Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile b
 	switch (recv_buf[1])
 	{
 	case 90:
-		// Success
 		SetTimeout(s, INFINITE);
 		out->Sock = s;
 		return PROXY_ERROR_SUCCESS;
 	case 93:
-		// Authentication failure
 		ret = PROXY_ERROR_AUTHENTICATION;
 		goto FAILURE;
 	default:
-		// Failed to connect to the target server
 		ret = PROXY_ERROR_TARGET;
 	}
 
