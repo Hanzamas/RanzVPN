@@ -379,7 +379,7 @@ PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 	DECLARE_RPC_EX("EnumLogFile", RPC_ENUM_LOG_FILE, StEnumLogFile, InRpcEnumLogFile, OutRpcEnumLogFile, FreeRpcEnumLogFile)
 	DECLARE_RPC_EX("ReadLogFile", RPC_READ_LOG_FILE, StReadLogFile, InRpcReadLogFile, OutRpcReadLogFile, FreeRpcReadLogFile)
 	DECLARE_RPC("AddLicenseKey", RPC_TEST, StAddLicenseKey, InRpcTest, OutRpcTest)
-	DECLARE_RPC("DelLicenseKey", RPC_TEST, StDelLicenseKey, InRpcTest, OutRpcTest)
+	DECLARE_RPC("DelLicenseKey", RPC_TEST, StAddLicenseKey, InRpcTest, OutRpcTest)
 	DECLARE_RPC_EX("EnumLicenseKey", RPC_ENUM_LICENSE_KEY, StEnumLicenseKey, InRpcEnumLicenseKey, OutRpcEnumLicenseKey, FreeRpcEnumLicenseKey)
 	DECLARE_RPC("GetLicenseStatus", RPC_LICENSE_STATUS, StGetLicenseStatus, InRpcLicenseStatus, OutRpcLicenseStatus)
 	DECLARE_RPC("SetSysLog", SYSLOG_SETTING, StSetSysLog, InRpcSysLogSetting, OutRpcSysLogSetting)
@@ -834,14 +834,8 @@ UINT StEnumLicenseKey(ADMIN *a, RPC_ENUM_LICENSE_KEY *t)
 	return ERR_NOT_SUPPORTED;
 }
 
-// Add new license key
+// Add or delete a license key (both unsupported)
 UINT StAddLicenseKey(ADMIN *a, RPC_TEST *t)
-{
-	return ERR_NOT_SUPPORTED;
-}
-
-// Delete a license key
-UINT StDelLicenseKey(ADMIN *a, RPC_TEST *t)
 {
 	return ERR_NOT_SUPPORTED;
 }
@@ -8264,10 +8258,6 @@ void OutRpcAuthData(PACK *p, void *authdata, UINT authtype)
 		break;
 	}
 }
-void FreeRpcAuthData(void *authdata, UINT authtype)
-{
-	FreeAuthData(authtype, authdata);
-}
 
 // RPC_SET_USER
 void InRpcSetUser(RPC_SET_USER *t, PACK *p)
@@ -8332,7 +8322,7 @@ void FreeRpcSetUser(RPC_SET_USER *t)
 		return;
 	}
 
-	FreeRpcAuthData(t->AuthData, t->AuthType);
+	FreeAuthData(t->AuthType, t->AuthData);
 	if (t->Policy)
 	{
 		Free(t->Policy);
