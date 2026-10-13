@@ -112,9 +112,11 @@ static BUF *WpcWinHttpGet(HINTERNET request, bool secure, UINT timeout_connect, 
 	BUF *recv_buf;
 	bool ok;
 
-	// No redirect, cookie, authentication or default credentials
+	// No redirect, cookie, authentication or default credentials, and no keep-alive. DownloadCert makes
+	// one request per connection: a pooled keep-alive connection would outlive the request and let a later
+	// request reach a server that already answered the first one
 	ok = WpcWinHttpSetDword(request, WINHTTP_OPTION_DISABLE_FEATURE,
-		WINHTTP_DISABLE_REDIRECTS | WINHTTP_DISABLE_COOKIES | WINHTTP_DISABLE_AUTHENTICATION) &&
+		WINHTTP_DISABLE_KEEP_ALIVE | WINHTTP_DISABLE_REDIRECTS | WINHTTP_DISABLE_COOKIES | WINHTTP_DISABLE_AUTHENTICATION) &&
 		WpcWinHttpSetDword(request, WINHTTP_OPTION_AUTOLOGON_POLICY, WINHTTP_AUTOLOGON_SECURITY_LEVEL_HIGH);
 
 	// No total time limit on the response header. Should WinHTTP refuse the value, the request keeps
