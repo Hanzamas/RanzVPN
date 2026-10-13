@@ -3,7 +3,6 @@
 
 #include "Cfg.h"
 
-#include "Encoding.h"
 #include "FileIO.h"
 #include "Internat.h"
 #include "Memory.h"
@@ -11,7 +10,7 @@
 #include "Object.h"
 #include "Str.h"
 
-void BackupCfgWEx(CFG_RW *rw, FOLDER *f, wchar_t *original, UINT revision_number)
+static void BackupCfgWEx(CFG_RW *rw, FOLDER *f, wchar_t *original, UINT revision_number)
 {
 	wchar_t dirname[MAX_PATH];
 	wchar_t filename[MAX_PATH];
@@ -229,7 +228,7 @@ bool FileCopyExW(wchar_t *src, wchar_t *dst, bool read_lock)
 
 	return ret;
 }
-bool FileCopyExWithEofW(wchar_t *src, wchar_t *dst, bool read_lock)
+static bool FileCopyExWithEofW(wchar_t *src, wchar_t *dst, bool read_lock)
 {
 	BUF *b;
 	bool ret = false;
@@ -528,7 +527,7 @@ char *CfgReadNextLine(BUF *b)
 	return buf;
 }
 
-bool CfgReadNextTextBUF(BUF *b, FOLDER *current)
+static bool CfgReadNextTextBUF(BUF *b, FOLDER *current)
 {
 	char *buf;
 	TOKEN_LIST *token;
@@ -684,7 +683,7 @@ FOLDER *CfgBufTextToFolder(BUF *b)
 	return f;
 }
 
-void CfgReadNextFolderBin(BUF *b, FOLDER *parent)
+static void CfgReadNextFolderBin(BUF *b, FOLDER *parent)
 {
 	char name[MAX_SIZE];
 	FOLDER *f;
@@ -777,7 +776,7 @@ FOLDER *CfgBufBinToFolder(BUF *b)
 	return f;
 }
 
-BUF *CfgFolderToBufBin(FOLDER *f)
+static BUF *CfgFolderToBufBin(FOLDER *f)
 {
 	BUF *b;
 	UCHAR hash[SHA1_SIZE];
@@ -800,7 +799,7 @@ BUF *CfgFolderToBufBin(FOLDER *f)
 	return b;
 }
 
-BUF *CfgFolderToBufTextEx(FOLDER *f, bool no_banner)
+static BUF *CfgFolderToBufTextEx(FOLDER *f, bool no_banner)
 {
 	BUF *b;
 	if (f == NULL)
@@ -820,7 +819,7 @@ BUF *CfgFolderToBufTextEx(FOLDER *f, bool no_banner)
 	return b;
 }
 
-bool CfgEnumFolderProc(FOLDER *f, void *param)
+static bool CfgEnumFolderProc(FOLDER *f, void *param)
 {
 	CFG_ENUM_PARAM *p;
 	if (f == NULL || param == NULL)
@@ -834,7 +833,7 @@ bool CfgEnumFolderProc(FOLDER *f, void *param)
 	return true;
 }
 
-bool CfgEnumItemProc(ITEM *t, void *param)
+static bool CfgEnumItemProc(ITEM *t, void *param)
 {
 	CFG_ENUM_PARAM *p;
 	if (t == NULL || param == NULL)
@@ -1674,7 +1673,7 @@ ITEM *CfgAddBool(FOLDER *f, char *name, bool b)
 	return CfgCreateItem(f, name, ITEM_TYPE_BOOL, &b, sizeof(bool));
 }
 
-int CmpItemName(void *p1, void *p2)
+static int CmpItemName(void *p1, void *p2)
 {
 	ITEM *f1, *f2;
 	if (p1 == NULL || p2 == NULL)
@@ -1690,7 +1689,7 @@ int CmpItemName(void *p1, void *p2)
 	return StrCmpi(f1->Name, f2->Name);
 }
 
-int CmpFolderName(void *p1, void *p2)
+static int CmpFolderName(void *p1, void *p2)
 {
 	FOLDER *f1, *f2;
 	if (p1 == NULL || p2 == NULL)
@@ -1822,7 +1821,7 @@ ITEM *CfgCreateItem(FOLDER *parent, char *name, UINT type, void *buf, UINT size)
 	return t;
 }
 
-void CfgDeleteItem(ITEM *t)
+static void CfgDeleteItem(ITEM *t)
 {
 	if (t == NULL)
 	{

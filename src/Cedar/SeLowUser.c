@@ -20,7 +20,7 @@
 
 #include <winioctl.h>
 
-bool SuLoadDriversHive()
+static bool SuLoadDriversHive()
 {
 	wchar_t config_dir[MAX_PATH];
 	wchar_t filename[MAX_PATH];
@@ -34,7 +34,7 @@ bool SuLoadDriversHive()
 	return MsRegLoadHive(REG_LOCAL_MACHINE, L"DRIVERS", filename);
 }
 
-void SuDeleteGarbageInfs()
+static void SuDeleteGarbageInfs()
 {
 	void *wow;
 	bool load_hive = false;
@@ -117,7 +117,7 @@ void SuDeleteGarbageInfsInner()
 	}
 }
 
-bool SuInstallDriver(bool force)
+static bool SuInstallDriver(bool force)
 {
 	bool ret;
 	void *wow;

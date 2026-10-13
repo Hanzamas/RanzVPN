@@ -7,14 +7,12 @@
 #include "Protocol.h"
 
 #include "Mayaqua/DNS.h"
-#include "Mayaqua/Encoding.h"
 #include "Mayaqua/Memory.h"
-#include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Pack.h"
 #include "Mayaqua/Proxy.h"
 #include "Mayaqua/Str.h"
 
-SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool *cancel)
+static SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool *cancel)
 {
 	SOCK *sock;
 	UINT ret;

@@ -20,7 +20,7 @@
 
 #include <conio.h>
 
-void PrintCmdHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *param_list)
+static void PrintCmdHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *param_list)
 {
 	wchar_t tmp[MAX_SIZE];
 	wchar_t *buf;
@@ -227,7 +227,7 @@ void GetCommandHelpStr(char *command_name, wchar_t **description, wchar_t **args
 	}
 }
 
-void GetCommandParamHelpStr(char *command_name, char *param_name, wchar_t **description)
+static void GetCommandParamHelpStr(char *command_name, char *param_name, wchar_t **description)
 {
 	char tmp[160];
 	if (description == NULL)
@@ -245,7 +245,7 @@ void GetCommandParamHelpStr(char *command_name, char *param_name, wchar_t **desc
 	}
 }
 
-int CompareCandidateStr(void *p1, void *p2)
+static int CompareCandidateStr(void *p1, void *p2)
 {
 	char *s1, *s2;
 	if (p1 == NULL || p2 == NULL)
@@ -403,7 +403,7 @@ void PrintCandidateHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *candidate_list, 
 	Free(left_space_array);
 }
 
-bool IsWordChar(wchar_t c)
+static bool IsWordChar(wchar_t c)
 {
 	if (c >= L'a' && c <= 'z')
 	{
@@ -449,7 +449,7 @@ bool IsWordChar(wchar_t c)
 	return false;
 }
 
-UINT GetNextWordWidth(wchar_t *str)
+static UINT GetNextWordWidth(wchar_t *str)
 {
 	UINT i;
 	UINT ret;
@@ -576,7 +576,7 @@ UNI_TOKEN_LIST *SeparateStringByWidth(wchar_t *str, UINT width)
 	return ret;
 }
 
-bool IsHelpStr(char *str)
+static bool IsHelpStr(char *str)
 {
 	if (str == NULL)
 	{
@@ -1449,7 +1449,7 @@ void FreeParamValueList(LIST *o)
 	ReleaseList(o);
 }
 
-int CmpParamValue(void *p1, void *p2)
+static int CmpParamValue(void *p1, void *p2)
 {
 	PARAM_VALUE *v1, *v2;
 	if (p1 == NULL || p2 == NULL)
@@ -1720,7 +1720,7 @@ wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list)
 	return ret;
 }
 
-bool PasswordPrompt(char *password, UINT size)
+static bool PasswordPrompt(char *password, UINT size)
 {
 	UINT wp;
 	bool escape = false;
@@ -1794,7 +1794,7 @@ BACKSPACE:
 	return (escape ? false : true);
 }
 
-wchar_t *Prompt(wchar_t *prompt_str)
+static wchar_t *Prompt(wchar_t *prompt_str)
 {
 	wchar_t *ret = NULL;
 	wchar_t *tmp = NULL;

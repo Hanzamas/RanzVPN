@@ -325,7 +325,7 @@ bool IsXInCertList(LIST *o, X *x)
 	return false;
 }
 
-void AddXToCertList(LIST *o, X *x)
+static void AddXToCertList(LIST *o, X *x)
 {
 	if (o == NULL || x == NULL)
 	{
@@ -490,7 +490,7 @@ void GenerateMachineUniqueHash(void *data)
 	FreeBuf(b);
 }
 
-void NodeInfoToStr(wchar_t *str, UINT size, NODE_INFO *info)
+static void NodeInfoToStr(wchar_t *str, UINT size, NODE_INFO *info)
 {
 	char client_ip[128], server_ip[128], proxy_ip[128], unique_id[128];
 	if (str == NULL || info == NULL)
@@ -513,7 +513,7 @@ void NodeInfoToStr(wchar_t *str, UINT size, NODE_INFO *info)
 		info->HubName, unique_id);
 }
 
-UINT ChangePasswordAccept(CONNECTION *c, PACK *p)
+static UINT ChangePasswordAccept(CONNECTION *c, PACK *p)
 {
 	CEDAR *cedar;
 	UCHAR random[SHA1_SIZE];
@@ -2332,7 +2332,7 @@ CLEANUP:
 }
 
 
-void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
+static void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
 {
 	SESSION *s;
 	OS_INFO *os;
@@ -2438,7 +2438,7 @@ void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
 	Copy(info->UniqueId, c->Cedar->UniqueId, sizeof(info->UniqueId));
 }
 
-SOCK *ClientAdditionalConnectToServer(CONNECTION *c)
+static SOCK *ClientAdditionalConnectToServer(CONNECTION *c)
 {
 	SOCK *s;
 	if (c == NULL)
@@ -2620,7 +2620,7 @@ CLEANUP:
 	return false;
 }
 
-void ClientCheckServerCertThread(THREAD *thread, void *param)
+static void ClientCheckServerCertThread(THREAD *thread, void *param)
 {
 	CHECK_CERT_THREAD_PROC *p = (CHECK_CERT_THREAD_PROC *)param;
 	if (thread == NULL || param == NULL)
@@ -2634,7 +2634,7 @@ void ClientCheckServerCertThread(THREAD *thread, void *param)
 	p->UserSelected = true;
 }
 
-bool ClientCheckServerCert(CONNECTION *c, bool *expired)
+static bool ClientCheckServerCert(CONNECTION *c, bool *expired)
 {
 	CLIENT_AUTH *auth;
 	X *x;

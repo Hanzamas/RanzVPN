@@ -723,7 +723,7 @@ void ClientAdditionalConnectChance(SESSION *s)
 	}
 }
 
-void FreePacketAdapter(PACKET_ADAPTER *pa)
+static void FreePacketAdapter(PACKET_ADAPTER *pa)
 {
 	if (pa == NULL)
 	{
@@ -753,7 +753,7 @@ PACKET_ADAPTER *NewPacketAdapter(PA_INIT *init, PA_GETCANCEL *getcancel, PA_GETN
 	return pa;
 }
 
-void ClientAdditionalThread(THREAD *t, void *param)
+static void ClientAdditionalThread(THREAD *t, void *param)
 {
 	SESSION *s;
 	CONNECTION *c;
@@ -828,7 +828,7 @@ void SessionAdditionalConnect(SESSION *s)
 	ReleaseThread(t);
 }
 
-bool SessionConnect(SESSION *s)
+static bool SessionConnect(SESSION *s)
 {
 	CONNECTION *c;
 	bool ret = false;
@@ -917,7 +917,7 @@ void StopSessionEx(SESSION *s, bool no_wait)
 	}
 }
 
-void CleanupSession(SESSION *s)
+static void CleanupSession(SESSION *s)
 {
 	if (s == NULL)
 	{
@@ -1045,7 +1045,7 @@ void PrintSessionTotalDataSize(SESSION *s)
 	}
 }
 
-void ClientThread(THREAD *t, void *param)
+static void ClientThread(THREAD *t, void *param)
 {
 	SESSION *s;
 	CEDAR *cedar;
@@ -1232,7 +1232,7 @@ SESSION *NewRpcSessionEx2(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *
 	return s;
 }
 
-SESSION *NewClientSessionEx(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *auth, PACKET_ADAPTER *pa, ACCOUNT *account)
+static SESSION *NewClientSessionEx(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *auth, PACKET_ADAPTER *pa, ACCOUNT *account)
 {
 	SESSION *s;
 	THREAD *t;
@@ -1391,7 +1391,7 @@ SESSION *GetSessionFromKey(CEDAR *cedar, UCHAR *session_key)
 	return NULL;
 }
 
-void NewSessionKey(CEDAR *cedar, UCHAR *session_key, UINT *session_key_32)
+static void NewSessionKey(CEDAR *cedar, UCHAR *session_key, UINT *session_key_32)
 {
 	if (cedar == NULL || session_key == NULL || session_key_32 == NULL)
 	{

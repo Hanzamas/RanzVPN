@@ -28,7 +28,6 @@ int UniSoftStrCmp(wchar_t *str1, wchar_t *str2);
 void UniFormat(wchar_t *buf, UINT size, wchar_t *fmt, ...);
 void UniFormatArgs(wchar_t *buf, UINT size, wchar_t *fmt, va_list args);
 void UniPrint(wchar_t *fmt, ...);
-void UniPrintArgs(wchar_t *fmt, va_list args);
 void UniPrintStr(wchar_t *string);
 void UniToStru(wchar_t *str, UINT i);
 UINT UniToInt(wchar_t *str);
@@ -75,12 +74,8 @@ bool UniEndWith(wchar_t *str, wchar_t *key);
 bool UniStartWith(wchar_t *str, wchar_t *key);
 wchar_t *UniNormalizeCrlf(wchar_t *str);
 void UniFreeStrList(LIST *o);
-UNI_TOKEN_LIST *UniListToTokenList(LIST *o);
 bool UniInChar(wchar_t *string, wchar_t c);
 UNI_TOKEN_LIST *UniGetLines(wchar_t *str);
-wchar_t *UniDefaultTokenSplitChars();
-bool UniIsCharInStr(wchar_t *str, wchar_t c);
-UNI_TOKEN_LIST *UniParseTokenWithoutNullStr(wchar_t *str, wchar_t *split_chars);
 
 #endif
 

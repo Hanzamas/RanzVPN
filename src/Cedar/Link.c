@@ -16,7 +16,7 @@
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
 
-void LinkServerSessionThread(THREAD *t, void *param)
+static void LinkServerSessionThread(THREAD *t, void *param)
 {
 	LINK *k = (LINK *)param;
 	CONNECTION *c;
@@ -57,7 +57,7 @@ void LinkServerSessionThread(THREAD *t, void *param)
 	ReleaseSession(s);
 }
 
-bool LinkPaInit(SESSION *s)
+static bool LinkPaInit(SESSION *s)
 {
 	LINK *k;
 	THREAD *t;
@@ -84,7 +84,7 @@ bool LinkPaInit(SESSION *s)
 	return true;
 }
 
-CANCEL *LinkPaGetCancel(SESSION *s)
+static CANCEL *LinkPaGetCancel(SESSION *s)
 {
 	LINK *k;
 	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
@@ -95,7 +95,7 @@ CANCEL *LinkPaGetCancel(SESSION *s)
 	return NULL;
 }
 
-UINT LinkPaGetNextPacket(SESSION *s, void **data)
+static UINT LinkPaGetNextPacket(SESSION *s, void **data)
 {
 	LINK *k;
 	UINT ret = 0;
@@ -127,7 +127,7 @@ UINT LinkPaGetNextPacket(SESSION *s, void **data)
 	return ret;
 }
 
-bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
+static bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 {
 	LINK *k;
 	BLOCK *block = NULL;
@@ -235,7 +235,7 @@ bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 	return ret;
 }
 
-void LinkPaFree(SESSION *s)
+static void LinkPaFree(SESSION *s)
 {
 	LINK *k;
 	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
@@ -264,7 +264,7 @@ void LinkPaFree(SESSION *s)
 	k->CurrentSendPacketQueueSize = 0;
 }
 
-PACKET_ADAPTER *LinkGetPacketAdapter()
+static PACKET_ADAPTER *LinkGetPacketAdapter()
 {
 	return NewPacketAdapter(LinkPaInit, LinkPaGetCancel, LinkPaGetNextPacket,
 		LinkPaPutPacket, LinkPaFree);
@@ -535,7 +535,7 @@ void UnlockLink(LINK *k)
 	Unlock(k->lock);
 }
 
-void NormalizeLinkPolicy(POLICY *p)
+static void NormalizeLinkPolicy(POLICY *p)
 {
 	if (p == NULL)
 	{

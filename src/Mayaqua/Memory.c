@@ -17,7 +17,6 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 #include <zlib.h>
 
@@ -828,7 +827,7 @@ QUEUE *NewQueueFast()
 	return q;
 }
 
-void CopyToArray(LIST *o, void *p)
+static void CopyToArray(LIST *o, void *p)
 {
 	if (o == NULL || p == NULL)
 	{
@@ -1350,7 +1349,7 @@ int CompareInt64(void *p1, void *p2)
 	return COMPARE_RET(*v1, *v2);
 }
 
-void AddInt(LIST *o, UINT i)
+static void AddInt(LIST *o, UINT i)
 {
 	if (o == NULL)
 	{
@@ -1359,7 +1358,7 @@ void AddInt(LIST *o, UINT i)
 
 	Add(o, Clone(&i, sizeof(UINT)));
 }
-void AddInt64(LIST *o, UINT64 i)
+static void AddInt64(LIST *o, UINT64 i)
 {
 	if (o == NULL)
 	{

@@ -72,14 +72,11 @@ struct CMD_EVAL_MIN_MAX
 };
 
 
-wchar_t *Prompt(wchar_t *prompt_str);
-bool PasswordPrompt(char *password, UINT size);
 void *SetConsoleRaw();
 void RestoreConsole(void *p);
 wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list);
 TOKEN_LIST *GetCommandNameList(wchar_t *str);
 LIST *NewParamValueList();
-int CmpParamValue(void *p1, void *p2);
 void FreeParamValueList(LIST *o);
 PARAM_VALUE *FindParamValue(LIST *o, char *name);
 char *GetParamStr(LIST *o, char *name);
@@ -96,18 +93,12 @@ UINT GetConsoleWidth(CONSOLE *c);
 bool DispatchNextCmdEx(CONSOLE *c, wchar_t *exec_command, char *prompt, CMD cmd[], UINT num_cmd, void *param);
 void PrintCandidateHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *candidate_list, UINT left_space);
 UNI_TOKEN_LIST *SeparateStringByWidth(wchar_t *str, UINT width);
-UINT GetNextWordWidth(wchar_t *str);
-bool IsWordChar(wchar_t c);
 void GetCommandHelpStr(char *command_name, wchar_t **description, wchar_t **args, wchar_t **help);
-void GetCommandParamHelpStr(char *command_name, char *param_name, wchar_t **description);
 bool CmdEvalMinMax(CONSOLE *c, wchar_t *str, void *param);
 wchar_t *CmdPrompt(CONSOLE *c, void *param);
 bool CmdEvalNotEmpty(CONSOLE *c, wchar_t *str, void *param);
 bool CmdEvalIsFile(CONSOLE *c, wchar_t *str, void *param);
 bool CmdEvalSafe(CONSOLE *c, wchar_t *str, void *param);
-void PrintCmdHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *param_list);
-int CompareCandidateStr(void *p1, void *p2);
-bool IsHelpStr(char *str);
 
 CONSOLE *NewLocalConsole(wchar_t *infile, wchar_t *outfile);
 void ConsoleLocalFree(CONSOLE *c);

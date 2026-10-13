@@ -39,7 +39,6 @@ struct LOCALBRIDGE
 };
 
 BRIDGE *BrNewBridge(HUB *h, char *name, POLICY *p, bool local, bool monitor, bool tapmode, char *tapaddr, bool limit_broadcast, LOCALBRIDGE *parent_local_bridge);
-void BrBridgeThread(THREAD *thread, void *param);
 void BrFreeBridge(BRIDGE *b);
 void InitLocalBridgeList(CEDAR *c);
 void FreeLocalBridgeList(CEDAR *c);

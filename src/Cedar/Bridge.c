@@ -235,7 +235,7 @@ void FreeLocalBridgeList(CEDAR *c)
 	c->LocalBridgeList = NULL;
 }
 
-void BrBridgeThread(THREAD *thread, void *param)
+static void BrBridgeThread(THREAD *thread, void *param)
 {
 	BRIDGE *b;
 	CONNECTION *c;

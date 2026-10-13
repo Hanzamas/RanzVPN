@@ -59,17 +59,10 @@ struct UDP_ENTRY
 LISTENER *NewListener(CEDAR *cedar, UINT proto, UINT port);
 LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only, bool shadow_ipv6, bool enable_ca);
 void ReleaseListener(LISTENER *r);
-void CleanupListener(LISTENER *r);
-void ListenerThread(THREAD *thread, void *param);
-void ListenerTCPMainLoop(LISTENER *r);
 void StopListener(LISTENER *r);
 int CompareListener(void *p1, void *p2);
-void TCPAccepted(LISTENER *r, SOCK *s);
 void EnableDosProtect();
 void DisableDosProtect();
-void TCPAcceptedThread(THREAD *t, void *param);
-void ListenerUDPMainLoop(LISTENER *r);
-void UDPReceivedPacket(CEDAR *cedar, SOCK *s, IP *ip, UINT port, void *data, UINT size);
 int CompareUDPEntry(void *p1, void *p2);
 void AddUDPEntry(CEDAR *cedar, SESSION *session);
 void DelUDPEntry(CEDAR *cedar, SESSION *session);
@@ -79,7 +72,6 @@ void SetMaxConnectionsPerIp(UINT num);
 UINT GetMaxUnestablishedConnections();
 void SetMaxUnestablishedConnections(UINT num);
 
-int CompareDos(void *p1, void *p2);
 DOS *SearchDosList(LISTENER *r, IP *ip);
 void RefreshDosList(LISTENER *r);
 bool CheckDosAttack(LISTENER *r, SOCK *s);

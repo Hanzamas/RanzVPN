@@ -135,7 +135,7 @@ bool IsSupportedWinVer(RPC_WINVER *v)
 }
 
 #ifdef	OS_WIN32
-void Win32GetWinVer(RPC_WINVER *v)
+static void Win32GetWinVer(RPC_WINVER *v)
 {
 	if (v == NULL)
 	{
@@ -258,7 +258,7 @@ TINY_LOG *NewTinyLog()
 	return t;
 }
 
-int CompareNoSslList(void *p1, void *p2)
+static int CompareNoSslList(void *p1, void *p2)
 {
 	NON_SSL *n1, *n2;
 	if (p1 == NULL || p2 == NULL)
@@ -413,7 +413,7 @@ NON_SSL *SearchNoSslList(CEDAR *c, IP *ip)
 	return n;
 }
 
-void InitNoSslList(CEDAR *c)
+static void InitNoSslList(CEDAR *c)
 {
 	if (c == NULL)
 	{
@@ -423,7 +423,7 @@ void InitNoSslList(CEDAR *c)
 	c->NonSslList = NewList(CompareNoSslList);
 }
 
-void FreeNoSslList(CEDAR *c)
+static void FreeNoSslList(CEDAR *c)
 {
 	UINT i;
 	if (c == NULL)
@@ -562,7 +562,7 @@ void AddConnection(CEDAR *cedar, CONNECTION *c)
 	UnlockList(cedar->ConnectionList);
 }
 
-void StopAllConnection(CEDAR *c)
+static void StopAllConnection(CEDAR *c)
 {
 	UINT num;
 	UINT i;
@@ -626,7 +626,7 @@ void AddHub(CEDAR *c, HUB *h)
 	UnlockHubList(c);
 }
 
-void StopAllHub(CEDAR *c)
+static void StopAllHub(CEDAR *c)
 {
 	HUB **hubs;
 	UINT i, num;
@@ -667,7 +667,7 @@ void AddListener(CEDAR *c, LISTENER *r)
 	UnlockList(c->ListenerList);
 }
 
-void StopAllListener(CEDAR *c)
+static void StopAllListener(CEDAR *c)
 {
 	LISTENER **array;
 	UINT i, num;
@@ -807,7 +807,7 @@ void StopCedar(CEDAR *c)
 	StopAllHub(c);
 }
 
-void CleanupCedar(CEDAR *c)
+static void CleanupCedar(CEDAR *c)
 {
 	UINT i;
 	if (c == NULL)
@@ -928,7 +928,7 @@ void SetCedarCipherList(CEDAR *cedar, char *name)
 	}
 }
 
-int CompareNetSvc(void *p1, void *p2)
+static int CompareNetSvc(void *p1, void *p2)
 {
 	NETSVC *n1, *n2;
 	if (p1 == NULL || p2 == NULL)
@@ -960,7 +960,7 @@ int CompareNetSvc(void *p1, void *p2)
 	return 0;
 }
 
-void InitNetSvcList(CEDAR *cedar)
+static void InitNetSvcList(CEDAR *cedar)
 {
 	char filename[MAX_PATH] = "/etc/services";
 	BUF *b;
@@ -1108,7 +1108,7 @@ void RegistWindowsFirewallAll()
 }
 #endif
 
-void CedarForceLink()
+static void CedarForceLink()
 {
 }
 

@@ -96,7 +96,7 @@ void MsInitProcessCallOnce()
 	}
 }
 
-bool MsIsInVmMain()
+static bool MsIsInVmMain()
 {
 	char *bat_data = "On Error Resume Next\r\n\r\nDim str\r\n\r\nSet wmi_svc = GetObject(\"winmgmts:{impersonationLevel=impersonate}!\\\\.\\root\\cimv2\")\r\n\r\nSet items = wmi_svc.ExecQuery(\"Select * from Win32_BaseBoard\")\r\n\r\nFor Each item in items\r\n	str = str & item.Manufacturer\r\nNext\r\n\r\nSet items = Nothing\r\n\r\nSet items = wmi_svc.ExecQuery(\"Select * from Win32_ComputerSystem\")\r\n\r\nFor Each item in items\r\n	str = str & item.Manufacturer\r\nNext\r\n\r\nSet items = Nothing\r\n\r\nSet wmi_svc = Nothing\r\n\r\nstr = LCase(str)\r\n\r\nDim ret\r\n\r\nret = 0\r\n\r\nif InStr(str, \"microsoft corporation\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"vmware\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"virtualbox\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"virtualpc\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"xen\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"hvm\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"domu\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"kvm\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"oracle vm\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"qemu\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"parallels\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"xvm\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"virtual\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"bochs\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nwscript.quit ret\r\n\r\n";
 	wchar_t bat_filename[MAX_SIZE];
@@ -167,7 +167,7 @@ UINT MsGetUserLocaleId()
 	return lcid_cache;
 }
 
-void MsSendGlobalPulse(void *p)
+static void MsSendGlobalPulse(void *p)
 {
 	HANDLE h;
 	if (p == NULL)
@@ -180,7 +180,7 @@ void MsSendGlobalPulse(void *p)
 	PulseEvent(h);
 }
 
-void MsCloseGlobalPulse(void *p)
+static void MsCloseGlobalPulse(void *p)
 {
 	HANDLE h;
 	if (p == NULL)
@@ -193,7 +193,7 @@ void MsCloseGlobalPulse(void *p)
 	CloseHandle(h);
 }
 
-bool MsWaitForGlobalPulse(void *p, UINT timeout)
+static bool MsWaitForGlobalPulse(void *p, UINT timeout)
 {
 	HANDLE h;
 	UINT ret;
@@ -218,7 +218,7 @@ bool MsWaitForGlobalPulse(void *p, UINT timeout)
 	return false;
 }
 
-void *MsOpenOrCreateGlobalPulse(char *name)
+static void *MsOpenOrCreateGlobalPulse(char *name)
 {
 	UCHAR hash[20];
 	char tmp[MAX_SIZE];
@@ -286,7 +286,7 @@ UINT64 MsGetHiResCounter()
 	return ret;
 }
 
-void MsUniMakeDirEx(wchar_t *name)
+static void MsUniMakeDirEx(wchar_t *name)
 {
 	UINT wp;
 	wchar_t *tmp;
@@ -560,7 +560,7 @@ UINT MsGetConsoleWidth()
 	return info.dwSize.X;
 }
 
-bool MsDisableIme()
+static bool MsDisableIme()
 {
 	HINSTANCE h;
 	bool ret = false;
@@ -586,7 +586,7 @@ bool MsDisableIme()
 	return ret;
 }
 
-void *MsLoadLibraryW(wchar_t *name)
+static void *MsLoadLibraryW(wchar_t *name)
 {
 	BUF *b;
 	wchar_t tmp_dll_name[MAX_SIZE];
@@ -681,7 +681,7 @@ MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid)
 	}															\
 }
 
-void MsGetAdapterTcpIpInformation(MS_ADAPTER *a)
+static void MsGetAdapterTcpIpInformation(MS_ADAPTER *a)
 {
 	IP_ADAPTER_INFO *info, *info_top;
 	ULONG info_size;
@@ -835,14 +835,14 @@ MS_ADAPTER_LIST *MsCreateAdapterListEx(bool no_info)
 	return ret;
 }
 
-void MsInitAdapterListModule()
+static void MsInitAdapterListModule()
 {
 	lock_adapter_list = NewLock(NULL);
 
 	last_adapter_list = MsCreateAdapterListInnerExVista(false);
 }
 
-void MsFreeAdapterListModule()
+static void MsFreeAdapterListModule()
 {
 	if (last_adapter_list != NULL)
 	{
@@ -1042,7 +1042,7 @@ void MsFreeAdapter(MS_ADAPTER *a)
 	Free(a);
 }
 
-MS_PROCESS *MsSearchProcessById(LIST *o, UINT id)
+static MS_PROCESS *MsSearchProcessById(LIST *o, UINT id)
 {
 	MS_PROCESS *p, t;
 	if (o == NULL)
@@ -1058,7 +1058,7 @@ MS_PROCESS *MsSearchProcessById(LIST *o, UINT id)
 	return p;
 }
 
-int MsCompareProcessList(void *p1, void *p2)
+static int MsCompareProcessList(void *p1, void *p2)
 {
 	MS_PROCESS *e1, *e2;
 	if (p1 == NULL || p2 == NULL)
@@ -1103,7 +1103,7 @@ void MsFreeProcessList(LIST *o)
 	ReleaseList(o);
 }
 
-LIST *MsGetProcessListNt()
+static LIST *MsGetProcessListNt()
 {
 	LIST *o;
 	UINT max = 16384;
@@ -1185,7 +1185,7 @@ LIST *MsGetProcessList()
 	return MsGetProcessListNt();
 }
 
-LRESULT CALLBACK MsUserModeWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
+static LRESULT CALLBACK MsUserModeWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	if (hWnd == NULL)
 	{
@@ -1231,7 +1231,7 @@ bool MsIsUserMode()
 	return is_usermode;
 }
 
-void *MsCreateUserModeSvcGlocalPulse(char *svc_name)
+static void *MsCreateUserModeSvcGlocalPulse(char *svc_name)
 {
 	char name[MAX_SIZE];
 	if (svc_name == NULL)
@@ -1263,7 +1263,7 @@ void MsGenerateUserModeSvcGlobalPulseName(char *name, UINT size, char *svc_name)
 	BinToStr(name, size, hash, sizeof(hash));
 }
 
-void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT icon)
+static void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT icon)
 {
 	WNDCLASS wc;
 	HWND hWnd;
@@ -1371,12 +1371,12 @@ void MsUserModeGlobalPulseRecvThread(THREAD *thread, void *param)
 	}
 }
 
-void MsServiceStoperMainThread(THREAD *t, void *p)
+static void MsServiceStoperMainThread(THREAD *t, void *p)
 {
 	g_stop();
 }
 
-bool MsServiceStopProc()
+static bool MsServiceStopProc()
 {
 	THREAD *thread;
 	bool ret = true;
@@ -1417,7 +1417,7 @@ bool MsServiceStopProc()
 	return ret;
 }
 
-void CALLBACK MsServiceHandler(DWORD opcode)
+static void CALLBACK MsServiceHandler(DWORD opcode)
 {
 	switch (opcode)
 	{
@@ -1438,7 +1438,7 @@ void CALLBACK MsServiceHandler(DWORD opcode)
 	_SetServiceStatus(ssh, &status);
 }
 
-void CALLBACK MsServiceDispatcher(DWORD argc, LPTSTR *argv)
+static void CALLBACK MsServiceDispatcher(DWORD argc, LPTSTR *argv)
 {
 	service_stop_event = CreateEventA(NULL, true, false, NULL);
 
@@ -1483,7 +1483,7 @@ void CALLBACK MsServiceDispatcher(DWORD argc, LPTSTR *argv)
 	MsServiceStopProc();
 }
 
-void MsTestModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop)
+static void MsTestModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop)
 {
 	INSTANCE *inst;
 	wchar_t msg[MAX_SIZE];
@@ -1513,7 +1513,7 @@ void MsTestModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop
 	FreeSingleInstance(inst);
 }
 
-void MsWriteCallingServiceManagerProcessId(char *svcname, UINT pid)
+static void MsWriteCallingServiceManagerProcessId(char *svcname, UINT pid)
 {
 	char tmp[MAX_PATH];
 
@@ -2352,7 +2352,7 @@ void MsRestoreThreadPriority()
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL);
 }
 
-void MsApplyTcpConfig()
+static void MsApplyTcpConfig()
 {
 	if (MsIsAdmin())
 	{
@@ -2486,7 +2486,7 @@ void MsInitGlobalNetworkConfig()
 	MsApplyTcpConfig();
 }
 
-BOOL CALLBACK EnumTopWindowProc(HWND hWnd, LPARAM lParam)
+static BOOL CALLBACK EnumTopWindowProc(HWND hWnd, LPARAM lParam)
 {
 	LIST *o = (LIST *)lParam;
 	HWND hParent;
@@ -2516,7 +2516,7 @@ BOOL CALLBACK EnumTopWindowProc(HWND hWnd, LPARAM lParam)
 	return TRUE;
 }
 
-BOOL CALLBACK EnumChildWindowProc(HWND hWnd, LPARAM lParam)
+static BOOL CALLBACK EnumChildWindowProc(HWND hWnd, LPARAM lParam)
 {
 	ENUM_CHILD_WINDOW_PARAM *p = (ENUM_CHILD_WINDOW_PARAM *)lParam;
 	LIST *o;
@@ -2559,7 +2559,7 @@ BOOL CALLBACK EnumChildWindowProc(HWND hWnd, LPARAM lParam)
 
 	return TRUE;
 }
-LIST *EnumAllTopWindow()
+static LIST *EnumAllTopWindow()
 {
 	LIST *o = NewListFast(CmpWindowList);
 
@@ -2568,7 +2568,7 @@ LIST *EnumAllTopWindow()
 	return o;
 }
 
-LIST *EnumAllChildWindowEx(HWND hWnd, bool no_recursion, bool include_ipcontrol, bool no_self)
+static LIST *EnumAllChildWindowEx(HWND hWnd, bool no_recursion, bool include_ipcontrol, bool no_self)
 {
 	ENUM_CHILD_WINDOW_PARAM p;
 	LIST *o = NewListFast(CmpWindowList);
@@ -2588,7 +2588,7 @@ LIST *EnumAllChildWindowEx(HWND hWnd, bool no_recursion, bool include_ipcontrol,
 	return o;
 }
 
-void FreeWindowList(LIST *o)
+static void FreeWindowList(LIST *o)
 {
 	UINT i;
 	if (o == NULL)
@@ -2644,7 +2644,7 @@ int CmpWindowList(void *p1, void *p2)
 	return Cmp(h1, h2, sizeof(HWND));
 }
 
-bool MsGetWindowOwnerProcessExeName(char *path, UINT size, HWND hWnd)
+static bool MsGetWindowOwnerProcessExeName(char *path, UINT size, HWND hWnd)
 {
 	DWORD procId = 0;
 	if (path == NULL || hWnd == NULL)
@@ -2690,7 +2690,7 @@ bool MsGetProcessExeName(char *path, UINT size, UINT id)
 	return ret;
 }
 
-bool MsCloseWarningWindow(NO_WARNING *nw, UINT thread_id)
+static bool MsCloseWarningWindow(NO_WARNING *nw, UINT thread_id)
 {
 	UINT i;
 	LIST *o;
@@ -2861,7 +2861,7 @@ bool MsCloseWarningWindow(NO_WARNING *nw, UINT thread_id)
 	return ret;
 }
 
-void MsNoWarningThreadProc(THREAD *thread, void *param)
+static void MsNoWarningThreadProc(THREAD *thread, void *param)
 {
 	NO_WARNING *nw;
 	UINT interval;
@@ -2939,7 +2939,7 @@ void MsFreeNoWarning(NO_WARNING *nw)
 	Free(nw);
 }
 
-void MsDeleteTempDir()
+static void MsDeleteTempDir()
 {
 	HANDLE h;
 	wchar_t dir_mask[MAX_PATH];
@@ -3073,7 +3073,7 @@ void MsDeleteAllFileW(wchar_t *dir)
 	}
 }
 
-void MsInitTempDir()
+static void MsInitTempDir()
 {
 	wchar_t tmp[MAX_PATH];
 	wchar_t tmp2[16];
@@ -3114,7 +3114,7 @@ void MsInitTempDir()
 	ms->LockFile = FileCreateW(lockfilename);
 }
 
-void MsFreeTempDir()
+static void MsFreeTempDir()
 {
 	wchar_t lock_file_name[MAX_SIZE];
 
@@ -3229,7 +3229,7 @@ bool MsIsAdmin()
 }
 
 // Access mask that forces the 32-bit or 64-bit registry view
-UINT MsRegAccessMaskFor64BitEx(bool force32bit, bool force64bit)
+static UINT MsRegAccessMaskFor64BitEx(bool force32bit, bool force64bit)
 {
 	if (force32bit)
 	{
@@ -3489,7 +3489,7 @@ UINT MsRegReadIntEx2(UINT root, char *keyname, char *valuename, bool force32bit,
 	return value;
 }
 
-LIST *MsRegReadStrListEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit)
+static LIST *MsRegReadStrListEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit)
 {
 	LIST *o;
 	char *ret;
@@ -3808,7 +3808,7 @@ HKEY MsGetRootKeyFromInt(UINT root)
 	return NULL;
 }
 
-wchar_t *MsCutExeNameFromUniCommandLine(wchar_t *str)
+static wchar_t *MsCutExeNameFromUniCommandLine(wchar_t *str)
 {
 	if (str == NULL)
 	{
@@ -3858,7 +3858,7 @@ wchar_t *MsCutExeNameFromUniCommandLine(wchar_t *str)
 	}
 }
 
-char *MsCutExeNameFromCommandLine(char *str)
+static char *MsCutExeNameFromCommandLine(char *str)
 {
 	if (str == NULL)
 	{
@@ -3918,7 +3918,7 @@ char *MsGetExeDirName()
 	return ms->ExeFileDir;
 }
 
-char *MsGetSpecialDir(int id)
+static char *MsGetSpecialDir(int id)
 {
 	LPITEMIDLIST t = NULL;
 	char tmp[MAX_PATH];
@@ -3937,7 +3937,7 @@ char *MsGetSpecialDir(int id)
 
 	return CopyStr(tmp);
 }
-wchar_t *MsGetSpecialDirW(int id)
+static wchar_t *MsGetSpecialDirW(int id)
 {
 	LPITEMIDLIST t = NULL;
 	wchar_t tmp[MAX_PATH];
@@ -3957,7 +3957,7 @@ wchar_t *MsGetSpecialDirW(int id)
 	return UniCopyStr(tmp);
 }
 
-void MsGetSpecialDirs()
+static void MsGetSpecialDirs()
 {
 	char tmp[MAX_PATH];
 
@@ -4058,7 +4058,7 @@ void MsGetSpecialDirs()
 	ms->LocalAppDataDirW = MsGetSpecialDirW(CSIDL_LOCAL_APPDATA);
 }
 
-bool MsCheckIsAdmin()
+static bool MsCheckIsAdmin()
 {
 	UCHAR test_bit[32];
 	UCHAR tmp[32];

@@ -294,7 +294,7 @@ POLICY *ClonePolicy(POLICY *policy)
 }
 
 // Overwrite policy values; data from an older version leaves the Ver 3.0 fields as they are
-void OverwritePolicy(POLICY **target, POLICY *p)
+static void OverwritePolicy(POLICY **target, POLICY *p)
 {
 	if (target == NULL)
 	{

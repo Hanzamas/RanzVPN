@@ -79,7 +79,7 @@ bool GetDiskFree(char *path, UINT64 *free_size, UINT64 *used_size, UINT64 *total
 	return ret;
 }
 
-DIRLIST *EnumDirEx(char *dirname, COMPARE *compare)
+static DIRLIST *EnumDirEx(char *dirname, COMPARE *compare)
 {
 	wchar_t *dirname_w = CopyStrToUni(dirname);
 	DIRLIST *ret = EnumDirExW(dirname_w, compare);
@@ -149,7 +149,7 @@ void FreeDir(DIRLIST *d)
 	Free(d);
 }
 
-BUF *ReadHamcoreW(wchar_t *filename)
+static BUF *ReadHamcoreW(wchar_t *filename)
 {
 	char *filename_a = CopyUniToStr(filename);
 	BUF *ret;
@@ -1084,7 +1084,7 @@ void FileCloseEx(IO *o, bool no_flush)
 	KS_INC(KS_IO_CLOSE_COUNT);
 }
 
-IO *FileCreateInnerW(wchar_t *name)
+static IO *FileCreateInnerW(wchar_t *name)
 {
 	IO *o;
 	void *p;
@@ -1184,7 +1184,7 @@ IO *FileOpenEx(char *name, bool write_mode, bool read_lock)
 	return ret;
 }
 
-wchar_t *UniReplaceCharW(wchar_t *src, UINT size, wchar_t c, wchar_t  newc) {
+static wchar_t *UniReplaceCharW(wchar_t *src, UINT size, wchar_t c, wchar_t  newc) {
 	if (src == NULL)
 	{
 		return NULL;

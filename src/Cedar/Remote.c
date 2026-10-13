@@ -26,7 +26,7 @@ void RpcFree(RPC *rpc)
 	Free(rpc);
 }
 
-PACK *CallRpcDispatcher(RPC *r, PACK *p)
+static PACK *CallRpcDispatcher(RPC *r, PACK *p)
 {
 	char func_name[MAX_SIZE];
 	if (r == NULL || p == NULL)
@@ -42,7 +42,7 @@ PACK *CallRpcDispatcher(RPC *r, PACK *p)
 	return r->Dispatch(r, func_name, p);
 }
 
-bool RpcRecvNextCall(RPC *r)
+static bool RpcRecvNextCall(RPC *r)
 {
 	UINT size;
 	void *tmp;

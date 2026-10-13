@@ -161,7 +161,6 @@ void HashPassword(void *dst, char *username, char *password);
 POLICY *GetDefaultPolicy();
 POLICY *ClonePolicy(POLICY *policy);
 void SetUserPolicy(USER *u, POLICY *policy);
-void OverwritePolicy(POLICY **target, POLICY *p);
 void SetGroupPolicy(USERGROUP *g, POLICY *policy);
 POLICY *GetGroupPolicy(USERGROUP *g);
 bool IsUserName(char *name);

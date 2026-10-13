@@ -221,8 +221,6 @@ bool CheckXandK(X *x, K *k);
 bool CompareX(X *x1, X *x2);
 NAME *X509NameToName(void *xn);
 wchar_t *GetUniStrFromX509Name(void *xn, int nid);
-void LoadXNames(X *x);
-void FreeXNames(X *x);
 void FreeName(NAME *n);
 bool CompareName(NAME *n1, NAME *n2);
 K *GetKFromX(X *x);
@@ -235,7 +233,6 @@ UINT64 Asn1TimeToUINT64(void *asn1_time);
 bool SystemToAsn1Time(void *asn1_time, SYSTEMTIME *s);
 bool UINT64ToAsn1Time(void *asn1_time, UINT64 t);
 bool SystemToStr(char *str, UINT size, SYSTEMTIME *s);
-void LoadXDates(X *x);
 bool CheckXDate(X *x, UINT64 current_system_time);
 bool CheckXDateNow(X *x);
 NAME *NewName(wchar_t *common_name, wchar_t *organization, wchar_t *unit,
@@ -247,7 +244,6 @@ X509 *NewRootX509(K *pub, K *priv, NAME *name, UINT days, X_SERIAL *serial);
 X *NewRootX(K *pub, K *priv, NAME *name, UINT days, X_SERIAL *serial);
 X509 *NewX509(K *pub, K *priv, X *ca, NAME *name, UINT days, X_SERIAL *serial);
 X *NewX(K *pub, K *priv, X *ca, NAME *name, UINT days, X_SERIAL *serial);
-UINT GetDaysUntil2038();
 UINT GetDaysUntil2038Ex();
 X_SERIAL *NewXSerial(void *data, UINT size);
 void FreeXSerial(X_SERIAL *serial);
@@ -261,7 +257,6 @@ void GetAllNameFromX(wchar_t *str, UINT size, X *x);
 void GetAllNameFromName(wchar_t *str, UINT size, NAME *name);
 void GetAllNameFromNameEx(wchar_t *str, UINT size, NAME *name);
 BUF *BigNumToBuf(const BIGNUM *bn);
-BIGNUM *BinToBigNum(void *data, UINT size);
 X_SERIAL *CloneXSerial(X_SERIAL *src);
 bool CompareXSerial(X_SERIAL *s1, X_SERIAL *s2);
 void GetXDigest(X *x, UCHAR *buf, bool sha1);
@@ -274,10 +269,6 @@ bool RsaCheckEx();
 bool RsaSignEx(void *dst, void *src, UINT size, K *k, UINT bits);
 bool HashForSign(void *dst, UINT dst_size, void *src, UINT src_size);
 bool RsaVerifyEx(void *data, UINT data_size, void *sign, K *k, UINT bits);
-UINT RsaPublicSize(K *k);
-BUF *RsaPublicToBuf(K *k);
-
-void Sha(UINT sha_type, void *dst, void *src, UINT size);
 
 void DesEcbEncrypt(void *dst, void *src, void *key_7bytes);
 
@@ -287,8 +278,6 @@ void DhFree(DH_CTX *dh);
 
 bool IsAesNiSupported();
 
-void OpenSSL_InitLock();
-void OpenSSL_FreeLock();
 void FreeOpenSSLThreadState();
 
 CIPHER *NewCipher(char *name);

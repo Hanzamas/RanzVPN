@@ -19,7 +19,6 @@
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Tick64.h"
-#include "Mayaqua/Str.h"
 
 #include <Ws2tcpip.h>
 
@@ -51,7 +50,7 @@ bool Win32EthGetShowAllIf()
 	return g_bridge_win32_show_all_if;
 }
 
-int CmpRpcEnumEthVLan(void *p1, void *p2)
+static int CmpRpcEnumEthVLan(void *p1, void *p2)
 {
 	RPC_ENUM_ETH_VLAN_ITEM *v1, *v2;
 	if (p1 == NULL || p2 == NULL)
@@ -210,7 +209,7 @@ RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, char *name)
 	return NULL;
 }
 
-void GetVLanEnableStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
+static void GetVLanEnableStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
 {
 	char key[MAX_SIZE];
 	char short_key[MAX_SIZE];
@@ -283,7 +282,7 @@ void GetVLanEnableStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
 	}
 }
 
-void GetVLanSupportStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
+static void GetVLanSupportStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
 {
 	BUF *b;
 	char filename[MAX_SIZE];
@@ -346,7 +345,7 @@ void GetVLanSupportStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
 	MsRestoreWow64FileSystemRedirection(wow);
 }
 
-char *SearchDeviceInstanceIdFromShortKey(char *short_key)
+static char *SearchDeviceInstanceIdFromShortKey(char *short_key)
 {
 	char *ret = NULL;
 	TOKEN_LIST *t1;
@@ -679,7 +678,7 @@ void CloseEth(ETH *e)
 	Free(e);
 }
 
-struct WP_ADAPTER *Win32EthSearch(char *name)
+static struct WP_ADAPTER *Win32EthSearch(char *name)
 {
 	UINT i;
 	UINT id;
@@ -1023,7 +1022,7 @@ TOKEN_LIST *GetEthListEx(UINT *total_num_including_hidden, bool enum_normal, boo
 	return ret;
 }
 
-int CompareWpAdapter(void *p1, void *p2)
+static int CompareWpAdapter(void *p1, void *p2)
 {
 	int i;
 	WP_ADAPTER *a1, *a2;
@@ -1046,7 +1045,7 @@ bool Win32IsUsingSeLow()
 	return is_using_selow;
 }
 
-LIST *GetEthAdapterList()
+static LIST *GetEthAdapterList()
 {
 	void *p;
 	LIST *o;

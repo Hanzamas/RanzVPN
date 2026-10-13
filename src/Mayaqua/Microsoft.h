@@ -204,10 +204,6 @@ typedef struct ENUM_CHILD_WINDOW_PARAM
 
 void MsInit();
 void MsFree();
-char *MsCutExeNameFromCommandLine(char *str);
-wchar_t *MsCutExeNameFromUniCommandLine(wchar_t *str);
-
-UINT MsRegAccessMaskFor64BitEx(bool force32bit, bool force64bit);
 
 bool MsRegIsKeyEx2(UINT root, char *name, bool force32bit, bool force64bit);
 
@@ -223,7 +219,6 @@ wchar_t *MsRegReadStrEx2W(UINT root, char *keyname, char *valuename, bool force3
 
 UINT MsRegReadInt(UINT root, char *keyname, char *valuename);
 UINT MsRegReadIntEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
-LIST *MsRegReadStrListEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
 
 bool MsRegNewKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit);
 
@@ -252,14 +247,7 @@ char *MsGetExeDirName();
 bool MsCheckLogon(wchar_t *username, char *password);
 wchar_t *MsGetNetworkConnectionName(char *guid);
 
-char *MsGetSpecialDir(int id);
-wchar_t *MsGetSpecialDirW(int id);
-void MsGetSpecialDirs();
-bool MsCheckIsAdmin();
-void MsInitTempDir();
-void MsFreeTempDir();
 void MsGenLockFile(wchar_t *name, UINT size, wchar_t *temp_dir);
-void MsDeleteTempDir();
 void MsDeleteAllFileW(wchar_t *dir);
 
 void MsInitGlobalNetworkConfig();
@@ -283,18 +271,11 @@ bool MsStartServiceEx(char *name, UINT *error_code);
 bool MsStopService(char *name);
 bool MsIsServiceRunning(char *name);
 UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT icon, char *cmd_line);
-void MsTestModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop);
-void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT icon);
 bool MsIsUserMode();
 LIST *MsGetProcessList();
-LIST *MsGetProcessListNt();
 void MsFreeProcessList(LIST *o);
-int MsCompareProcessList(void *p1, void *p2);
-MS_PROCESS *MsSearchProcessById(LIST *o, UINT id);
-void MsWriteCallingServiceManagerProcessId(char *svcname, UINT pid);
 
 void MsGenerateUserModeSvcGlobalPulseName(char *name, UINT size, char *svc_name);
-void *MsCreateUserModeSvcGlocalPulse(char *svc_name);
 void MsUserModeGlobalPulseRecvThread(THREAD *thread, void *param);
 
 MS_ADAPTER_LIST *MsCreateAdapterListInnerExVista(bool no_info);
@@ -302,36 +283,24 @@ void MsFreeAdapter(MS_ADAPTER *a);
 void MsFreeAdapterList(MS_ADAPTER_LIST *o);
 MS_ADAPTER *MsCloneAdapter(MS_ADAPTER *a);
 MS_ADAPTER_LIST *MsCloneAdapterList(MS_ADAPTER_LIST *o);
-void MsInitAdapterListModule();
-void MsFreeAdapterListModule();
 MS_ADAPTER_LIST *MsCreateAdapterList();
 MS_ADAPTER_LIST *MsCreateAdapterListEx(bool no_info);
-void MsGetAdapterTcpIpInformation(MS_ADAPTER *a);
 MS_ADAPTER *MsGetAdapterByGuid(char *guid);
 MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid);
 UINT ConvertMidStatusVistaToXp(UINT st);
 
 void *MsLoadLibrary(char *name);
-void *MsLoadLibraryW(wchar_t *name);
-
-bool MsDisableIme();
 
 void MsSetTcpConfig(MS_TCP *tcp);
 bool MsLoadTcpConfigReg(MS_TCP *tcp);
-void MsApplyTcpConfig();
 
 UINT MsGetConsoleWidth();
 UINT MsSetConsoleWidth(UINT size);
 NO_WARNING *MsInitNoWarningEx(UINT start_timer);
 void MsFreeNoWarning(NO_WARNING *nw);
-void MsNoWarningThreadProc(THREAD *thread, void *param);
-bool MsCloseWarningWindow(NO_WARNING *nw, UINT thread_id);
 UINT MsGetThreadLocale();
 int CmpWindowList(void *p1, void *p2);
 void AddWindow(LIST *o, HWND hWnd);
-void FreeWindowList(LIST *o);
-LIST *EnumAllChildWindowEx(HWND hWnd, bool no_recursion, bool include_ipcontrol, bool no_self);
-LIST *EnumAllTopWindow();
 
 void MsRegistWindowsFirewallEx(char *title, char *exe);
 void MsRegistWindowsFirewallEx2(char *title, char *exe, char *dir);
@@ -340,13 +309,11 @@ void *MsDisableWow64FileSystemRedirection();
 void MsRestoreWow64FileSystemRedirection(void *p);
 
 bool MsGetProcessExeName(char *path, UINT size, UINT id);
-bool MsGetWindowOwnerProcessExeName(char *path, UINT size, HWND hWnd);
 
 void MsGetComputerName(char *name, UINT size);
 void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache);
 
 bool MsUniMakeDir(wchar_t *name);
-void MsUniMakeDirEx(wchar_t *name);
 UINT64 MsGetHiResCounter();
 double MsGetHiResTimeSpan(UINT64 diff);
 bool MsGetFileInformation(void *h, void *info);
@@ -354,14 +321,8 @@ void MsSetEnableMinidump(bool enabled);
 void MsWriteMinidump(wchar_t *filename, void *ex);
 
 
-void *MsOpenOrCreateGlobalPulse(char *name);
-bool MsWaitForGlobalPulse(void *p, UINT timeout);
-void MsCloseGlobalPulse(void *p);
-void MsSendGlobalPulse(void *p);
-
 UINT MsGetUserLocaleId();
 
-bool MsIsInVmMain();
 bool MsIsInVm();
 
 void MsInitProcessCallOnce();
@@ -369,12 +330,6 @@ void MsInitProcessCallOnce();
 #ifdef MICROSOFT_C
 LONG CALLBACK MsExceptionHandler(struct _EXCEPTION_POINTERS *ExceptionInfo);
 HKEY MsGetRootKeyFromInt(UINT root);
-void CALLBACK MsServiceDispatcher(DWORD argc, LPTSTR *argv);
-void CALLBACK MsServiceHandler(DWORD opcode);
-bool MsServiceStopProc();
-void MsServiceStoperMainThread(THREAD *t, void *p);
-LRESULT CALLBACK MsUserModeWindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-BOOL CALLBACK EnumTopWindowProc(HWND hWnd, LPARAM lParam);
 #endif // MICROSOFT_C
 
 #endif // MICROSOFT_H

@@ -10,7 +10,7 @@ static char http_404_str[] = "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\
 static char http_403_str[] = "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\r\n<HTML><HEAD>\r\n<TITLE>403 Forbidden</TITLE>\r\n</HEAD><BODY>\r\n<H1>Forbidden</H1>\r\nYou don't have permission to access $TARGET$\r\non this server.<P>\r\n<HR>\r\n<ADDRESS>HTTP Server at $HOST$ Port $PORT$</ADDRESS>\r\n</BODY></HTML>\r\n";
 static char http_501_str[] = "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\r\n<HTML><HEAD>\r\n<TITLE>501 Method Not Implemented</TITLE>\r\n</HEAD><BODY>\r\n<H1>Method Not Implemented</H1>\r\n$METHOD$ to $TARGET$ not supported.<P>\r\nInvalid method in request $METHOD$ $TARGET$ $VERSION$<P>\r\n<HR>\r\n<ADDRESS>HTTP Server at $HOST$ Port $PORT$</ADDRESS>\r\n</BODY></HTML>\r\n";
 
-void GetHttpDateStr(char *str, UINT size, UINT64 t)
+static void GetHttpDateStr(char *str, UINT size, UINT64 t)
 {
 	SYSTEMTIME s;
 	static char *wday[] =
@@ -33,7 +33,7 @@ void GetHttpDateStr(char *str, UINT size, UINT64 t)
 		s.wHour, s.wMinute, s.wSecond);
 }
 
-void ReplaceUnsafeCharInHttpTarget(char *target)
+static void ReplaceUnsafeCharInHttpTarget(char *target)
 {
 	UINT i;
 	for(i = 0; target[i] ; i++) {

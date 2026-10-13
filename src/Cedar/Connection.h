@@ -181,7 +181,6 @@ struct CONNECTION
 CONNECTION *NewClientConnectionEx(SESSION *s, char *client_str, UINT client_ver, UINT client_build);
 CONNECTION *NewServerConnection(CEDAR *cedar, SOCK *s, THREAD *t);
 void ReleaseConnection(CONNECTION *c);
-void CleanupConnection(CONNECTION *c);
 int CompareConnection(void *p1, void *p2);
 void StopConnection(CONNECTION *c, bool no_wait);
 void ConnectionAccept(CONNECTION *c);
@@ -196,16 +195,11 @@ BLOCK *NewBlock(void *data, UINT size, int compress);
 void FreeBlock(BLOCK *b);
 void StopAllAdditionalConnectThread(CONNECTION *c);
 UINT GenNextKeepAliveSpan(CONNECTION *c);
-void SendKeepAlive(CONNECTION *c, TCPSOCK *ts);
 void DisconnectUDPSockets(CONNECTION *c);
 void PutUDPPacketData(CONNECTION *c, void *data, UINT size);
-void SendDataWithUDP(SOCK *s, CONNECTION *c);
 void InsertReceivedBlockToQueue(CONNECTION *c, BLOCK *block, bool no_lock);
-void WriteSendFifo(SESSION *s, TCPSOCK *ts, void *data, UINT size);
-void WriteRecvFifo(SESSION *s, TCPSOCK *ts, void *data, UINT size);
 CLIENT_AUTH *CopyClientAuth(CLIENT_AUTH *a);
 void NormalizeEthMtu(BRIDGE *b, CONNECTION *c, UINT packet_size);
-UINT GetMachineRand();
 
 
 #endif

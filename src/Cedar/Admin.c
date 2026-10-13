@@ -229,7 +229,7 @@ CAPSLIST *ScGetCapsEx(RPC *rpc)
 	return t;
 }
 
-PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
+static PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 {
 	ADMIN *a;
 	PACK *ret;
@@ -1956,7 +1956,7 @@ UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t)
 	return ret;
 }
 
-UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t)
+static UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t)
 {
 	CEDAR *c;
 	UINT i;
@@ -2077,7 +2077,7 @@ UINT StDeleteMacTable(ADMIN *a, RPC_DELETE_TABLE *t)
 	return ret;
 }
 
-UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t)
+static UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t)
 {
 	CEDAR *c;
 	UINT i;
@@ -6138,7 +6138,7 @@ void FreeRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t)
 	Free(t->Items);
 }
 
-void InRpcMemInfo(MEMINFO *t, PACK *p)
+static void InRpcMemInfo(MEMINFO *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6153,7 +6153,7 @@ void InRpcMemInfo(MEMINFO *t, PACK *p)
 	t->UsedPhys = PackGetInt64(p, "UsedPhys");
 	t->FreePhys = PackGetInt64(p, "FreePhys");
 }
-void OutRpcMemInfo(PACK *p, MEMINFO *t)
+static void OutRpcMemInfo(PACK *p, MEMINFO *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6168,7 +6168,7 @@ void OutRpcMemInfo(PACK *p, MEMINFO *t)
 	PackAddInt64(p, "FreePhys", t->FreePhys);
 }
 
-void InRpcOsInfo(OS_INFO *t, PACK *p)
+static void InRpcOsInfo(OS_INFO *t, PACK *p)
 {
 	char tmp[MAX_SIZE];
 	if (t == NULL || p == NULL)
@@ -6204,7 +6204,7 @@ void InRpcOsInfo(OS_INFO *t, PACK *p)
 		t->KernelVersion = CopyStr(tmp);
 	}
 }
-void OutRpcOsInfo(PACK *p, OS_INFO *t)
+static void OutRpcOsInfo(PACK *p, OS_INFO *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6220,7 +6220,7 @@ void OutRpcOsInfo(PACK *p, OS_INFO *t)
 	PackAddStr(p, "KernelName", t->KernelName);
 	PackAddStr(p, "KernelVersion", t->KernelVersion);
 }
-void FreeRpcOsInfo(OS_INFO *t)
+static void FreeRpcOsInfo(OS_INFO *t)
 {
 	if (t == NULL)
 	{
@@ -6889,7 +6889,7 @@ void OutRpcSetPassword(PACK *p, RPC_SET_PASSWORD *t)
 	PackAddStr(p, "PlainTextPassword", t->PlainTextPassword);
 }
 
-void InRpcHubOption(RPC_HUB_OPTION *t, PACK *p)
+static void InRpcHubOption(RPC_HUB_OPTION *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6900,7 +6900,7 @@ void InRpcHubOption(RPC_HUB_OPTION *t, PACK *p)
 	t->MaxSession = PackGetInt(p, "MaxSession");
 	t->NoEnum = PackGetBool(p, "NoEnum");
 }
-void OutRpcHubOption(PACK *p, RPC_HUB_OPTION *t)
+static void OutRpcHubOption(PACK *p, RPC_HUB_OPTION *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -7599,7 +7599,7 @@ void OutRpcRenameLink(PACK *p, RPC_RENAME_LINK *t)
 	PackAddUniStr(p, "NewAccountName", t->NewAccountName);
 }
 
-void InRpcAccessEx(ACCESS *a, PACK *p, UINT index)
+static void InRpcAccessEx(ACCESS *a, PACK *p, UINT index)
 {
 	if (a == NULL || p == NULL)
 	{
@@ -7654,7 +7654,7 @@ void InRpcAccess(ACCESS *a, PACK *p)
 
 	InRpcAccessEx(a, p, 0);
 }
-void OutRpcAccessEx(PACK *p, ACCESS *a, UINT index, UINT total)
+static void OutRpcAccessEx(PACK *p, ACCESS *a, UINT index, UINT total)
 {
 	if (a == NULL || p == NULL)
 	{
@@ -7776,7 +7776,7 @@ void FreeRpcEnumAccessList(RPC_ENUM_ACCESS_LIST *a)
 	Free(a->Accesses);
 }
 
-void *InRpcAuthData(PACK *p, UINT *authtype, char *username)
+static void *InRpcAuthData(PACK *p, UINT *authtype, char *username)
 {
 	wchar_t tmp[MAX_SIZE];
 	AUTHPASSWORD *pw;
@@ -7847,7 +7847,7 @@ void *InRpcAuthData(PACK *p, UINT *authtype, char *username)
 
 	return NULL;
 }
-void OutRpcAuthData(PACK *p, void *authdata, UINT authtype)
+static void OutRpcAuthData(PACK *p, void *authdata, UINT authtype)
 {
 	AUTHPASSWORD *pw = authdata;
 	AUTHUSERCERT *usercert = authdata;
@@ -8579,7 +8579,7 @@ PACK *AdminCall(RPC *rpc, char *function_name, PACK *p)
 	return RpcCall(rpc, function_name, p);
 }
 
-bool CheckAdminSourceAddress(SOCK *sock, char *hubname)
+static bool CheckAdminSourceAddress(SOCK *sock, char *hubname)
 {
 	BUF *b;
 	char *s;
@@ -8902,7 +8902,7 @@ void AdminDisconnect(RPC *rpc)
 	ReleaseSession(s);
 }
 
-SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name, void *hWnd, bool *empty_password)
+static SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name, void *hWnd, bool *empty_password)
 {
 	UCHAR secure_password[SHA1_SIZE];
 	SESSION *s;

@@ -24,11 +24,11 @@ bool g_memcheck;
 bool g_debug;
 UINT64 kernel_status[NUM_KERNEL_STATUS];
 UINT64 kernel_status_max[NUM_KERNEL_STATUS];
-LOCK *kernel_status_lock[NUM_KERNEL_STATUS];
+static LOCK *kernel_status_lock[NUM_KERNEL_STATUS];
 bool kernel_status_inited = false;
 bool g_little_endian = true;
 char *cmdline = NULL;
-wchar_t *uni_cmdline = NULL;
+static wchar_t *uni_cmdline = NULL;
 
 static char *exename = NULL;
 static wchar_t *exename_w = NULL;
@@ -58,7 +58,7 @@ void InitProcessCallOnce()
 	}
 }
 
-void InitProbe()
+static void InitProbe()
 {
 	probe_buf = NewBuf();
 	probe_lock = NewLock();
@@ -69,7 +69,7 @@ void InitProbe()
 	probe_start = MsGetHiResCounter();
 }
 
-void FreeProbe()
+static void FreeProbe()
 {
 	if (probe_buf->Size >= 1)
 	{
@@ -110,7 +110,7 @@ bool MayaquaIsDotNetMode()
 	return dot_net_mode;
 }
 
-void CheckEndian()
+static void CheckEndian()
 {
 	unsigned short test;
 	UCHAR *buf;
@@ -376,7 +376,7 @@ TOKEN_LIST *GetCommandLineToken()
 	}
 }
 
-void ParseCommandLineTokens()
+static void ParseCommandLineTokens()
 {
 	if (cmdline_token != NULL)
 	{

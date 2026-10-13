@@ -14,7 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-LOCK *token_lock = NULL;
+static LOCK *token_lock = NULL;
 static char *default_spliter = " ,\t\r\n";
 
 typedef struct BYTESTR

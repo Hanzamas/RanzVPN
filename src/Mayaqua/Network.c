@@ -62,12 +62,12 @@ static LIST *g_private_ip_list = NULL;
 static LIST *g_dyn_value_list = NULL;
 
 
-void InitDynList()
+static void InitDynList()
 {
 	g_dyn_value_list = NewList(NULL);
 }
 
-void FreeDynList()
+static void FreeDynList()
 {
 	UINT i;
 	if (g_dyn_value_list == NULL)
@@ -364,14 +364,14 @@ typedef struct WIN32_ACCEPT_CHECK_DATA
 	bool Rejected;
 } WIN32_ACCEPT_CHECK_DATA;
 
-int CALLBACK Win32AcceptCheckCallback(LPWSABUF lpCallerId, LPWSABUF lpCallerData, LPQOS pQos,
+static int CALLBACK Win32AcceptCheckCallback(LPWSABUF lpCallerId, LPWSABUF lpCallerData, LPQOS pQos,
                                       LPQOS lpGQOS, LPWSABUF lpCalleeId, LPWSABUF lpCalleeData,
                                       GROUP FAR *g, DWORD_PTR dwCallbackData)
 {
 	return CF_ACCEPT;
 }
 
-SOCKET Win32Accept(SOCK *sock, SOCKET s, struct sockaddr *addr, int *addrlen, bool ipv6)
+static SOCKET Win32Accept(SOCK *sock, SOCKET s, struct sockaddr *addr, int *addrlen, bool ipv6)
 {
 	SOCKET ret;
 	WIN32_ACCEPT_CHECK_DATA d;
@@ -485,7 +485,7 @@ UINT SubnetMaskToInt6(IP *a)
 
 	return 0;
 }
-UINT SubnetMaskToInt4(IP *a)
+static UINT SubnetMaskToInt4(IP *a)
 {
 	UINT i;
 	if (IsIP4(a) == false)
@@ -507,7 +507,7 @@ UINT SubnetMaskToInt4(IP *a)
 
 	return 0;
 }
-UINT SubnetMaskToInt(IP *a)
+static UINT SubnetMaskToInt(IP *a)
 {
 	if (IsIP6(a))
 	{
@@ -519,7 +519,7 @@ UINT SubnetMaskToInt(IP *a)
 	}
 }
 
-bool IsSubnetMask6(IP *a)
+static bool IsSubnetMask6(IP *a)
 {
 	UINT i;
 	if (IsIP6(a) == false)
@@ -1108,7 +1108,7 @@ void GetLocalHostIP4(IP *ip)
 	SetIP(ip, 127, 0, 0, 1);
 }
 
-bool IsLocalHostIP6(IP *ip)
+static bool IsLocalHostIP6(IP *ip)
 {
 	IP local;
 	if (ip == NULL)
@@ -1129,7 +1129,7 @@ bool IsLocalHostIP6(IP *ip)
 
 	return false;
 }
-bool IsLocalHostIP4(IP *ip)
+static bool IsLocalHostIP4(IP *ip)
 {
 	if (ip == NULL)
 	{
@@ -1316,7 +1316,7 @@ UINT GetNumIpClient(IP *ip)
 	return ret;
 }
 
-void AddIpClient(IP *ip)
+static void AddIpClient(IP *ip)
 {
 	IP_CLIENT *c;
 	if (ip == NULL)
@@ -1343,7 +1343,7 @@ void AddIpClient(IP *ip)
 
 }
 
-void DelIpClient(IP *ip)
+static void DelIpClient(IP *ip)
 {
 	IP_CLIENT *c;
 	if (ip == NULL)
@@ -1384,12 +1384,12 @@ IP_CLIENT *SearchIpClient(IP *ip)
 	return Search(ip_clients, &t);
 }
 
-void InitIpClientList()
+static void InitIpClientList()
 {
 	ip_clients = NewList(CompareIpClientList);
 }
 
-void FreeIpClientList()
+static void FreeIpClientList()
 {
 	UINT i;
 
@@ -1450,7 +1450,7 @@ bool IsZeroIP6Addr(IPV6_ADDR *addr)
 	return IsZero(addr, sizeof(IPV6_ADDR));
 }
 
-UINT IntToSubnetMask32(UINT i)
+static UINT IntToSubnetMask32(UINT i)
 {
 	UINT ret = 0xFFFFFFFF;
 
@@ -1577,7 +1577,7 @@ void IntToSubnetMask4(IP *ip, UINT i)
 	UINTToIP(ip, m);
 }
 
-bool IsSubnetMask(IP *ip)
+static bool IsSubnetMask(IP *ip)
 {
 	if (IsIP6(ip))
 	{
@@ -1650,14 +1650,14 @@ bool IsSubnetMask4(IP *ip)
 }
 
 
-void Win32InitSocketLibrary()
+static void Win32InitSocketLibrary()
 {
 	WSADATA data;
 	Zero(&data, sizeof(data));
 	WSAStartup(MAKEWORD(2, 2), &data);
 }
 
-void Win32Cancel(CANCEL *c)
+static void Win32Cancel(CANCEL *c)
 {
 	if (c == NULL)
 	{
@@ -1667,7 +1667,7 @@ void Win32Cancel(CANCEL *c)
 	SetEvent((HANDLE)c->hEvent);
 }
 
-void Win32CleanupCancel(CANCEL *c)
+static void Win32CleanupCancel(CANCEL *c)
 {
 	if (c == NULL)
 	{

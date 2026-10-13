@@ -254,19 +254,15 @@ void GetCurrentMachineIpProcessHashInternal(void *hash);
 void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_size, char *dst_domain, UINT dst_domain_size, bool do_not_parse_atmark);
 
 
-void Win32InitSocketLibrary();
 void Win32Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2);
 void Win32InitAsyncSocket(SOCK *sock);
 void Win32JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event);
 void Win32FreeAsyncSocket(SOCK *sock);
-void Win32Cancel(CANCEL *c);
-void Win32CleanupCancel(CANCEL *c);
 CANCEL *Win32NewCancel();
 SOCK_EVENT *Win32NewSockEvent();
 void Win32SetSockEvent(SOCK_EVENT *event);
 void Win32CleanupSockEvent(SOCK_EVENT *event);
 bool Win32WaitSockEvent(SOCK_EVENT *event, UINT timeout);
-SOCKET Win32Accept(SOCK *sock, SOCKET s, struct sockaddr *addr, int *addrlen, bool ipv6);
 
 
 void InitNetwork();
@@ -357,22 +353,16 @@ void InitWaitThread();
 void FreeWaitThread();
 void AddWaitThread(THREAD *t);
 void DelWaitThread(THREAD *t);
-bool IsSubnetMask(IP *ip);
 bool IsSubnetMask4(IP *ip);
 bool IsZeroIP(IP *ip);
 bool IsZeroIP6Addr(IPV6_ADDR *addr);
-UINT IntToSubnetMask32(UINT i);
 void IntToSubnetMask4(IP *ip, UINT i);
 bool GetNetBiosName(char *name, UINT size, IP *ip);
 bool IsIPv6Supported();
 bool HasIPv6Address();
 void SetSockTos(SOCK *s, int tos);
 void SetSockHighPriority(SOCK *s, bool flag);
-void InitIpClientList();
-void FreeIpClientList();
 int CompareIpClientList(void *p1, void *p2);
-void AddIpClient(IP *ip);
-void DelIpClient(IP *ip);
 IP_CLIENT *SearchIpClient(IP *ip);
 UINT GetNumIpClient(IP *ip);
 int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool *cancel_flag);
@@ -387,8 +377,6 @@ bool IPToIPv6Addr(IPV6_ADDR *addr, IP *ip);
 void SetIP6(IP *ip, UCHAR *value);
 void GetLocalHostIP6(IP *ip);
 void GetLocalHostIP4(IP *ip);
-bool IsLocalHostIP6(IP *ip);
-bool IsLocalHostIP4(IP *ip);
 bool IsLocalHostIP(IP *ip);
 void ZeroIP4(IP *ip);
 bool CheckIPItemStr6(char *str);
@@ -407,10 +395,7 @@ UINT GetIPAddrType6(IP *ip);
 UINT GetIPv6AddrType(IPV6_ADDR *addr);
 void GenerateEui64Address6(UCHAR *dst, UCHAR *mac);
 void GenerateEui64LocalAddress(IP *a, UCHAR *mac);
-bool IsSubnetMask6(IP *a);
-UINT SubnetMaskToInt(IP *a);
 UINT SubnetMaskToInt6(IP *a);
-UINT SubnetMaskToInt4(IP *a);
 bool IsStrIPv6Address(char *str);
 void IPAnd4(IP *dst, IP *a, IP *b);
 
@@ -458,9 +443,6 @@ UINT GetOSSecurityLevel();
 
 LIST *Win32GetNicList();
 
-
-void InitDynList();
-void FreeDynList();
 
 
 #endif

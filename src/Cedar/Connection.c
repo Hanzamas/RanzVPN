@@ -73,7 +73,7 @@ CLIENT_AUTH *CopyClientAuth(CLIENT_AUTH *a)
 	return ret;
 }
 
-void WriteSendFifo(SESSION *s, TCPSOCK *ts, void *data, UINT size)
+static void WriteSendFifo(SESSION *s, TCPSOCK *ts, void *data, UINT size)
 {
 	if (s == NULL || ts == NULL || data == NULL)
 	{
@@ -83,7 +83,7 @@ void WriteSendFifo(SESSION *s, TCPSOCK *ts, void *data, UINT size)
 	WriteFifo(ts->SendFifo, data, size);
 }
 
-void WriteRecvFifo(SESSION *s, TCPSOCK *ts, void *data, UINT size)
+static void WriteRecvFifo(SESSION *s, TCPSOCK *ts, void *data, UINT size)
 {
 	if (s == NULL || ts == NULL || data == NULL)
 	{
@@ -93,7 +93,7 @@ void WriteRecvFifo(SESSION *s, TCPSOCK *ts, void *data, UINT size)
 	WriteFifo(ts->RecvFifo, data, size);
 }
 
-void SendDataWithUDP(SOCK *s, CONNECTION *c)
+static void SendDataWithUDP(SOCK *s, CONNECTION *c)
 {
 	UCHAR *buf;
 	BUF *b;
@@ -314,7 +314,7 @@ UINT GenNextKeepAliveSpan(CONNECTION *c)
 	return b;
 }
 
-void SendKeepAlive(CONNECTION *c, TCPSOCK *ts)
+static void SendKeepAlive(CONNECTION *c, TCPSOCK *ts)
 {
 	UINT size, i, num;
 	UINT size_be;
@@ -1662,7 +1662,7 @@ void StartTunnelingMode(CONNECTION *c)
 	}
 }
 
-UINT GetMachineRand()
+static UINT GetMachineRand()
 {
 	char pcname[MAX_SIZE];
 	UCHAR hash[SHA1_SIZE];
@@ -1889,7 +1889,7 @@ void DisconnectTcpSockets(CONNECTION *c)
 	Free(tcpsocks);
 }
 
-void CleanupConnection(CONNECTION *c)
+static void CleanupConnection(CONNECTION *c)
 {
 	UINT i, num;
 	if (c == NULL)

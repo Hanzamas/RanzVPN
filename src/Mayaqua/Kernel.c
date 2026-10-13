@@ -152,7 +152,7 @@ struct tm * const		tmp;
 	tmp->tm_isdst = 0;
 }
 
-struct tm * c_gmtime_r(const time_64t* timep, struct tm *tm)
+static struct tm * c_gmtime_r(const time_64t* timep, struct tm *tm)
 {
 	c_timesub(timep, 0L, tm);
 	return tm;
@@ -453,7 +453,7 @@ void GetTimeStrMilli64(char *str, UINT size, UINT64 sec64)
 	GetTimeStrMilli(str, size, &st);
 }
 
-UINT64 SafeTime64(UINT64 sec64)
+static UINT64 SafeTime64(UINT64 sec64)
 {
 	return MAKESURE(sec64, 0, 4102243323123ULL);
 }
@@ -515,7 +515,7 @@ void FreeThreading()
 	current_num_thread = NULL;
 }
 
-void ThreadPoolProc(THREAD *t, void *param)
+static void ThreadPoolProc(THREAD *t, void *param)
 {
 	THREAD_POOL_DATA *pd;
 	if (t == NULL)
@@ -681,7 +681,7 @@ THREAD *NewThreadNamed(THREAD_PROC *thread_proc, void *param, char *name)
 	return ret;
 }
 
-void CleanupThread(THREAD *t)
+static void CleanupThread(THREAD *t)
 {
 	if (t == NULL)
 	{
@@ -1098,7 +1098,7 @@ bool LoadLocale(LOCALE *locale, wchar_t *str)
 	return true;
 }
 
-void TmToSystem(SYSTEMTIME *st, struct tm *t)
+static void TmToSystem(SYSTEMTIME *st, struct tm *t)
 {
 	struct tm tmp;
 	if (st == NULL || t == NULL)
@@ -1120,7 +1120,7 @@ void TmToSystem(SYSTEMTIME *st, struct tm *t)
 	st->wMilliseconds = 0;
 }
 
-void SystemToTm(struct tm *t, SYSTEMTIME *st)
+static void SystemToTm(struct tm *t, SYSTEMTIME *st)
 {
 	if (t == NULL || st == NULL)
 	{
@@ -1151,7 +1151,7 @@ void TimeToSystem(SYSTEMTIME *st, time_64t t)
 	TmToSystem(st, &tmp);
 }
 
-time_64t SystemToTime(SYSTEMTIME *st)
+static time_64t SystemToTime(SYSTEMTIME *st)
 {
 	struct tm t;
 	if (st == NULL)

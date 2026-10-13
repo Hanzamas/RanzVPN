@@ -140,7 +140,7 @@ SLOG *NewSysLog(char *hostname, UINT port, IP *ip)
 	return g;
 }
 
-bool CheckEraserDiskFreeSpace(ERASER *e)
+static bool CheckEraserDiskFreeSpace(ERASER *e)
 {
 	UINT64 s;
 	if (e == NULL)
@@ -161,7 +161,7 @@ bool CheckEraserDiskFreeSpace(ERASER *e)
 	return true;
 }
 
-void FreeEraseFileList(LIST *o)
+static void FreeEraseFileList(LIST *o)
 {
 	UINT i;
 	if (o == NULL)
@@ -179,7 +179,7 @@ void FreeEraseFileList(LIST *o)
 	ReleaseList(o);
 }
 
-void EnumEraseFile(LIST *o, char *dirname)
+static void EnumEraseFile(LIST *o, char *dirname)
 {
 	DIRLIST *dir;
 	UINT i;
@@ -219,7 +219,7 @@ void EnumEraseFile(LIST *o, char *dirname)
 	FreeDir(dir);
 }
 
-LIST *GenerateEraseFileList(ERASER *e)
+static LIST *GenerateEraseFileList(ERASER *e)
 {
 	LIST *o;
 	UINT i;
@@ -243,7 +243,7 @@ LIST *GenerateEraseFileList(ERASER *e)
 	return o;
 }
 
-void EraserMain(ERASER *e)
+static void EraserMain(ERASER *e)
 {
 	LIST *o;
 	UINT i;
@@ -316,7 +316,7 @@ int CompareEraseFile(void *p1, void *p2)
 	}
 }
 
-void EraserThread(THREAD *t, void *p)
+static void EraserThread(THREAD *t, void *p)
 {
 	ERASER *e = (ERASER *)p;
 	char bs[64];
@@ -735,7 +735,7 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 	return true;
 }
 
-UINT CalcPacketLoggingLevelEx(HUB_LOG *g, PKT *packet)
+static UINT CalcPacketLoggingLevelEx(HUB_LOG *g, PKT *packet)
 {
 	UINT ret = 0;
 	if (g == NULL || packet == NULL)
@@ -853,7 +853,7 @@ UINT CalcPacketLoggingLevel(HUB *hub, PKT *packet)
 	return CalcPacketLoggingLevelEx(&hub->LogSetting, packet);
 }
 
-char *BuildHttpLogStr(HTTPLOG *h)
+static char *BuildHttpLogStr(HTTPLOG *h)
 {
 	BUF *b;
 	char url[MAX_SIZE];
@@ -1690,7 +1690,7 @@ void SetLogSwitchType(LOG *g, UINT switch_type)
 	UnlockLog(g);
 }
 
-char *StringRecordParseProc(RECORD *rec)
+static char *StringRecordParseProc(RECORD *rec)
 {
 	if (rec == NULL)
 	{
@@ -1772,7 +1772,7 @@ void UnlockLog(LOG *g)
 	Unlock(g->lock);
 }
 
-void MakeLogFileNameStringFromTick(LOG *g, char *str, UINT size, UINT64 tick, UINT switch_type)
+static void MakeLogFileNameStringFromTick(LOG *g, char *str, UINT size, UINT64 tick, UINT switch_type)
 {
 	UINT64 time;
 	SYSTEMTIME st;
@@ -1830,7 +1830,7 @@ void MakeLogFileNameStringFromTick(LOG *g, char *str, UINT size, UINT64 tick, UI
 	StrCpy(g->LastStr, sizeof(g->LastStr), str);
 }
 
-bool MakeLogFileName(LOG *g, char *name, UINT size, char *dir, char *prefix, UINT64 tick, UINT switch_type, UINT num, char *old_datestr)
+static bool MakeLogFileName(LOG *g, char *name, UINT size, char *dir, char *prefix, UINT64 tick, UINT switch_type, UINT num, char *old_datestr)
 {
 	char tmp[MAX_SIZE];
 	char tmp2[64];
@@ -1954,7 +1954,7 @@ UINT64 GetMaxLogSize()
 	return ret;
 }
 
-void LogThread(THREAD *thread, void *param)
+static void LogThread(THREAD *thread, void *param)
 {
 	LOG *g;
 	IO *io;

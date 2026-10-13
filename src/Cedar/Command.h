@@ -173,9 +173,7 @@ struct CT
 };
 
 UINT CommandMain(wchar_t *command_line);
-UINT VpnCmdProc(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 bool ParseHostPort(char *src, char **host, UINT *port, UINT default_port);
-bool ParseHostPortAtmark(char *src, char **host, UINT *port, UINT default_port);
 CT *CtNew();
 void CtFree(CT *ct, CONSOLE *c);
 void CtFreeEx(CT *ct, CONSOLE *c, bool standard_view);
@@ -183,10 +181,6 @@ void CtInsertColumn(CT *ct, wchar_t *str, bool right);
 CT *CtNewStandard();
 CT *CtNewStandardEx();
 void CtInsert(CT *ct, ...);
-void CtPrint(CT *ct, CONSOLE *c);
-void CtPrintStandard(CT *ct, CONSOLE *c);
-void CtPrintRow(CONSOLE *c, UINT num, UINT *widths, wchar_t **strings, bool *rights, char separate_char);
-void VpnCmdInitBootPath();
 
 void CmdPrintError(CONSOLE *c, UINT err);
 void CmdPrintAbout(CONSOLE *c);
@@ -195,54 +189,15 @@ wchar_t *CmdPromptChoosePassword(CONSOLE *c, void *param);
 bool CmdEvalPort(CONSOLE *c, wchar_t *str, void *param);
 void CmdInsertTrafficInfo(CT *ct, TRAFFIC *t);
 char *CmdPasswordPrompt(CONSOLE *c);
-bool CmdEvalHostAndPort(CONSOLE *c, wchar_t *str, void *param);
 K *CmdLoadKey(CONSOLE *c, wchar_t *filename);
-bool CmdLoadCertChainAndKey(CONSOLE *c, X **xx, K **kk, LIST **cc, wchar_t *cert_filename, wchar_t *key_filename);
-wchar_t *GetConnectionTypeStr(UINT type);
-bool CmdEvalIpAndMask4(CONSOLE *c, wchar_t *str, void *param);
-bool CmdEvalIpAndMask6(CONSOLE *c, wchar_t *str, void *param);
-wchar_t *GetLogSwitchStr(UINT i);
-wchar_t *GetPacketLogNameStr(UINT i);
-UINT StrToLogSwitchType(char *str);
-UINT StrToPacketLogType(char *str);
-UINT StrToPacketLogSaveInfoType(char *str);
-wchar_t *GetProxyTypeStr(UINT i);
-wchar_t *GetClientAuthTypeStr(UINT i);
-void PrintPolicyList(CONSOLE *c, char *name);
 void PrintPolicy(CONSOLE *c, POLICY *pol, bool cascade_mode);
-bool EditPolicy(CONSOLE *c, POLICY *pol, char *name, char *value, bool cascade_mode);
-void CmdPrintStatusToListViewEx(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s, bool server_mode);
-bool StrToPassOrDiscard(char *str);
-bool CmdEvalProtocol(CONSOLE *c, wchar_t *str, void *param);
-UINT StrToProtocol(char *str);
-bool CmdEvalPortRange(CONSOLE *c, wchar_t *str, void *param);
-bool ParsePortRange(char *str, UINT *start, UINT *end);
 wchar_t *GetAuthTypeStr(UINT id);
-UINT64 StrToDateTime64(char *str);
-bool CmdEvalDateTime(CONSOLE *c, wchar_t *str, void *param);
-void CmdPrintNodeInfo(CT *ct, NODE_INFO *info);
 wchar_t *GetSyslogSettingName(UINT n);
 
 
-void TtPrint(void *param, TT_PRINT_PROC *print_proc, wchar_t *str);
-void TtGenerateRandomData(UCHAR **buf, UINT *size);
-void TtsWorkerThread(THREAD *thread, void *param);
-void TtsListenThread(THREAD *thread, void *param);
 void TtsAcceptProc(TTS *tts, SOCK *listen_socket);
-void TtsIPv6AcceptThread(THREAD *thread, void *param);
-wchar_t *GetTtcTypeStr(UINT type);
-void TtcPrintSummary(TTC *ttc);
-void TtcGenerateResult(TTC *ttc);
-void TtcThread(THREAD *thread, void *param);
-TTC *NewTtcEx(char *host, UINT port, UINT numtcp, UINT type, UINT64 span, bool dbl, bool raw, TT_PRINT_PROC *print_proc, void *param, EVENT *start_event, bool *cancel);
-UINT FreeTtc(TTC *ttc, TT_RESULT *result);
-TTS *NewTts(UINT port, void *param, TT_PRINT_PROC *print_proc);
-UINT FreeTts(TTS *tts);
-void PtTrafficPrintProc(void *param, wchar_t *str);
-void TtcPrintResult(CONSOLE *c, TT_RESULT *res);
 
 
-bool SystemCheck();
 bool CheckKernel();
 bool CheckMemory();
 bool CheckStrings();
@@ -254,21 +209,12 @@ UINT RetZero();
 
 
 
-UINT PtConnect(CONSOLE *c, wchar_t *cmdline);
-PT *NewPt(CONSOLE *c, wchar_t *cmdline);
-void FreePt(PT *pt);
-void PtMain(PT *pt);
 UINT PtMakeCert(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PtMakeCert2048(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PtTrafficClient(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PtTrafficServer(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PtCheck(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 
 
-PS *NewPs(CONSOLE *c, RPC *rpc, char *servername, UINT serverport, char *hubname, char *adminhub, wchar_t *cmdline);
-void FreePs(PS *ps);
-UINT PsConnect(CONSOLE *c, char *host, UINT port, char *hub, char *adminhub, wchar_t *cmdline, char *password);
-void PsMain(PS *ps);
 UINT PsAbout(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsServerInfoGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsServerStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);

@@ -34,8 +34,6 @@ struct HTTP_HEADER
 	LIST *ValueList;
 };
 
-void GetHttpDateStr(char *str, UINT size, UINT64 t);
-void ReplaceUnsafeCharInHttpTarget(char *target);
 HTTP_HEADER *NewHttpHeader(char *method, char *target, char *version);
 HTTP_HEADER *NewHttpHeaderEx(char *method, char *target, char *version, bool no_sort);
 void FreeHttpHeader(HTTP_HEADER *header);

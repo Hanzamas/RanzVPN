@@ -60,22 +60,15 @@ bool ParseWelcomeFromPack(PACK *p, char *session_name, UINT session_name_size,
 
 
 bool ClientAdditionalConnect(CONNECTION *c, THREAD *t);
-SOCK *ClientAdditionalConnectToServer(CONNECTION *c);
 bool ClientUploadAuth2(CONNECTION *c, SOCK *s);
 bool GetSessionKeyFromPack(PACK *p, UCHAR *session_key, UINT *session_key_32);
 
-void CreateNodeInfo(NODE_INFO *info, CONNECTION *c);
-bool ClientCheckServerCert(CONNECTION *c, bool *expired);
-void ClientCheckServerCertThread(THREAD *thread, void *param);
-UINT ChangePasswordAccept(CONNECTION *c, PACK *p);
 void PackAddClientVersion(PACK *p, CONNECTION *c);
-void NodeInfoToStr(wchar_t *str, UINT size, NODE_INFO *info);
 void GenerateMachineUniqueHash(void *data);
 
 LIST *NewCertList(bool load_root_and_chain);
 void FreeCertList(LIST *o);
 bool IsXInCertList(LIST *o, X *x);
-void AddXToCertList(LIST *o, X *x);
 void AddAllRootCertsToCertList(LIST *o);
 void AddAllChainCertsToCertList(LIST *o);
 X *DownloadCert(char *url);

@@ -35,7 +35,7 @@ bool UniInChar(wchar_t *string, wchar_t c)
 	return false;
 }
 
-UNI_TOKEN_LIST *UniListToTokenList(LIST *o)
+static UNI_TOKEN_LIST *UniListToTokenList(LIST *o)
 {
 	UINT i;
 	UNI_TOKEN_LIST *t;
@@ -1389,12 +1389,12 @@ void UniFreeToken(UNI_TOKEN_LIST *tokens)
 	Free(tokens);
 }
 
-wchar_t *UniDefaultTokenSplitChars()
+static wchar_t *UniDefaultTokenSplitChars()
 {
 	return L" ,\t\r\n";
 }
 
-bool UniIsCharInStr(wchar_t *str, wchar_t c)
+static bool UniIsCharInStr(wchar_t *str, wchar_t c)
 {
 	UINT i, len;
 	if (str == NULL)
@@ -1414,7 +1414,7 @@ bool UniIsCharInStr(wchar_t *str, wchar_t c)
 	return false;
 }
 
-UNI_TOKEN_LIST *UniParseTokenWithoutNullStr(wchar_t *str, wchar_t *split_chars)
+static UNI_TOKEN_LIST *UniParseTokenWithoutNullStr(wchar_t *str, wchar_t *split_chars)
 {
 	LIST *o;
 	UINT i, len;
@@ -1749,7 +1749,7 @@ void UniPrintStr(wchar_t *string)
 	Win32PrintW(string);
 }
 
-void UniPrintArgs(wchar_t *fmt, va_list args)
+static void UniPrintArgs(wchar_t *fmt, va_list args)
 {
 	wchar_t *str;
 	if (fmt == NULL)

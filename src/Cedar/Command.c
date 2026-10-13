@@ -17,14 +17,11 @@
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Network.h"
 #include "Mayaqua/Object.h"
-#include "Mayaqua/OS.h"
 #include "Mayaqua/Pack.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 #include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
-
-#include "Mayaqua/Crypto/Key.h"
 
 #include <stdlib.h>
 
@@ -58,7 +55,7 @@ typedef struct CHECK_NETWORK_2
 } CHECK_NETWORK_2;
 
 
-void CheckNetworkAcceptThread(THREAD *thread, void *param)
+static void CheckNetworkAcceptThread(THREAD *thread, void *param)
 {
 	CHECK_NETWORK_2 *c = (CHECK_NETWORK_2 *)param;
 	SOCK *s = c->s;
@@ -83,7 +80,7 @@ void CheckNetworkAcceptThread(THREAD *thread, void *param)
 }
 
 
-void CheckNetworkListenThread(THREAD *thread, void *param)
+static void CheckNetworkListenThread(THREAD *thread, void *param)
 {
 	CHECK_NETWORK_1 *c = (CHECK_NETWORK_1 *)param;
 	SOCK *s;
@@ -280,7 +277,7 @@ static UINT check_thread_global_1 = 0;
 
 #define	CHECK_THREAD_INCREMENT_COUNT		32
 
-void CheckThread1(THREAD *thread, void *param)
+static void CheckThread1(THREAD *thread, void *param)
 {
 	CHECK_THREAD_1 *ct1 = (CHECK_THREAD_1 *)param;
 	UINT i;
@@ -299,7 +296,7 @@ void CheckThread1(THREAD *thread, void *param)
 	}
 }
 
-void CheckThread2(THREAD *thread, void *param)
+static void CheckThread2(THREAD *thread, void *param)
 {
 	EVENT *e = (EVENT *)param;
 	Wait(e, INFINITE);
@@ -310,7 +307,7 @@ typedef struct CHECK_THREAD_3
 	UINT num, a;
 } CHECK_THREAD_3;
 
-void CheckThread3(THREAD *thread, void *param)
+static void CheckThread3(THREAD *thread, void *param)
 {
 	CHECK_THREAD_3 *c = (CHECK_THREAD_3 *)param;
 	THREAD *t;
@@ -669,7 +666,7 @@ bool CheckKernel()
 	return true;
 }
 
-bool SystemCheck()
+static bool SystemCheck()
 {
 	UINT i;
 	bool ng = false;
@@ -710,7 +707,7 @@ bool SystemCheck()
 }
 
 
-UINT PtCheck(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT PtCheck(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	UINT ret = ERR_NO_ERROR;
@@ -730,7 +727,7 @@ UINT PtCheck(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return ret;
 }
 
-void PtMain(PT *pt)
+static void PtMain(PT *pt)
 {
 	char prompt[MAX_SIZE];
 	wchar_t tmp[MAX_SIZE];
@@ -776,7 +773,7 @@ void PtMain(PT *pt)
 	}
 }
 
-PT *NewPt(CONSOLE *c, wchar_t *cmdline)
+static PT *NewPt(CONSOLE *c, wchar_t *cmdline)
 {
 	PT *pt;
 	if (c == NULL)
@@ -796,7 +793,7 @@ PT *NewPt(CONSOLE *c, wchar_t *cmdline)
 	return pt;
 }
 
-void FreePt(PT *pt)
+static void FreePt(PT *pt)
 {
 	if (pt == NULL)
 	{
@@ -807,7 +804,7 @@ void FreePt(PT *pt)
 	Free(pt);
 }
 
-UINT PtConnect(CONSOLE *c, wchar_t *cmdline)
+static UINT PtConnect(CONSOLE *c, wchar_t *cmdline)
 {
 	PT *pt;
 	UINT ret = 0;
@@ -827,7 +824,7 @@ UINT PtConnect(CONSOLE *c, wchar_t *cmdline)
 	return ret;
 }
 
-void VpnCmdInitBootPath()
+static void VpnCmdInitBootPath()
 {
 	char exe_path[MAX_PATH];
 	char tmp[MAX_PATH];
@@ -864,7 +861,7 @@ void VpnCmdInitBootPath()
 	}
 }
 
-void TtPrint(void *param, TT_PRINT_PROC *print_proc, wchar_t *str)
+static void TtPrint(void *param, TT_PRINT_PROC *print_proc, wchar_t *str)
 {
 	if (print_proc == NULL || str == NULL)
 	{
@@ -874,7 +871,7 @@ void TtPrint(void *param, TT_PRINT_PROC *print_proc, wchar_t *str)
 	print_proc(param, str);
 }
 
-void TtGenerateRandomData(UCHAR **buf, UINT *size)
+static void TtGenerateRandomData(UCHAR **buf, UINT *size)
 {
 	UCHAR *tmp;
 	UINT sz;
@@ -900,7 +897,7 @@ void TtGenerateRandomData(UCHAR **buf, UINT *size)
 	*size = sz;
 }
 
-void TtsWorkerThread(THREAD *thread, void *param)
+static void TtsWorkerThread(THREAD *thread, void *param)
 {
 	TTS *tts;
 	TTS_WORKER *w;
@@ -1209,7 +1206,7 @@ void TtsWorkerThread(THREAD *thread, void *param)
 	Free(recv_buf_data);
 }
 
-void TtsIPv6AcceptThread(THREAD *thread, void *param)
+static void TtsIPv6AcceptThread(THREAD *thread, void *param)
 {
 	TTS *tts = (TTS *)param;
 	if (tts == NULL || param == NULL)
@@ -1282,7 +1279,7 @@ void TtsAcceptProc(TTS *tts, SOCK *listen_socket)
 	}
 }
 
-void TtsListenThread(THREAD *thread, void *param)
+static void TtsListenThread(THREAD *thread, void *param)
 {
 	TTS *tts;
 	wchar_t tmp[MAX_SIZE];
@@ -1382,7 +1379,7 @@ void TtsListenThread(THREAD *thread, void *param)
 	}
 }
 
-wchar_t *GetTtcTypeStr(UINT type)
+static wchar_t *GetTtcTypeStr(UINT type)
 {
 	switch (type)
 	{
@@ -1397,7 +1394,7 @@ wchar_t *GetTtcTypeStr(UINT type)
 	}
 }
 
-void TtcPrintSummary(TTC *ttc)
+static void TtcPrintSummary(TTC *ttc)
 {
 	wchar_t tmp[MAX_SIZE];
 	wchar_t tmp2[MAX_SIZE];
@@ -1441,7 +1438,7 @@ void TtcPrintSummary(TTC *ttc)
 	TtPrint(ttc->Param, ttc->Print, L"");
 }
 
-void TtcGenerateResult(TTC *ttc)
+static void TtcGenerateResult(TTC *ttc)
 {
 	TT_RESULT *res;
 	UINT i;
@@ -1495,7 +1492,7 @@ void TtcGenerateResult(TTC *ttc)
 	res->BpsTotal = res->BpsUpload + res->BpsDownload;
 }
 
-void TtcWorkerThread(THREAD *thread, void *param)
+static void TtcWorkerThread(THREAD *thread, void *param)
 {
 	TTC_WORKER *w;
 	TTC *ttc;
@@ -1767,7 +1764,7 @@ void TtcWorkerThread(THREAD *thread, void *param)
 	Free(recv_buf_data);
 }
 
-void TtcThread(THREAD *thread, void *param)
+static void TtcThread(THREAD *thread, void *param)
 {
 	TTC *ttc;
 	UINT i;
@@ -1984,7 +1981,7 @@ void TtcThread(THREAD *thread, void *param)
 	ReleaseList(ttc->ItcSockList);
 }
 
-TTC *NewTtcEx(char *host, UINT port, UINT numtcp, UINT type, UINT64 span, bool dbl, bool raw, TT_PRINT_PROC *print_proc, void *param, EVENT *start_event, bool *cancel)
+static TTC *NewTtcEx(char *host, UINT port, UINT numtcp, UINT type, UINT64 span, bool dbl, bool raw, TT_PRINT_PROC *print_proc, void *param, EVENT *start_event, bool *cancel)
 {
 	TTC *ttc;
 
@@ -2017,7 +2014,7 @@ TTC *NewTtcEx(char *host, UINT port, UINT numtcp, UINT type, UINT64 span, bool d
 	return ttc;
 }
 
-UINT FreeTtc(TTC *ttc, TT_RESULT *result)
+static UINT FreeTtc(TTC *ttc, TT_RESULT *result)
 {
 	UINT ret;
 	if (ttc == NULL)
@@ -2047,7 +2044,7 @@ UINT FreeTtc(TTC *ttc, TT_RESULT *result)
 	return ret;
 }
 
-TTS *NewTts(UINT port, void *param, TT_PRINT_PROC *print_proc)
+static TTS *NewTts(UINT port, void *param, TT_PRINT_PROC *print_proc)
 {
 	TTS *tts;
 	THREAD *t;
@@ -2069,7 +2066,7 @@ TTS *NewTts(UINT port, void *param, TT_PRINT_PROC *print_proc)
 	return tts;
 }
 
-UINT FreeTts(TTS *tts)
+static UINT FreeTts(TTS *tts)
 {
 	UINT ret;
 	if (tts == NULL)
@@ -2100,7 +2097,7 @@ UINT FreeTts(TTS *tts)
 	return ret;
 }
 
-void PtTrafficPrintProc(void *param, wchar_t *str)
+static void PtTrafficPrintProc(void *param, wchar_t *str)
 {
 	CONSOLE *c;
 	if (param == NULL || str == NULL)
@@ -2127,7 +2124,7 @@ void PtTrafficPrintProc(void *param, wchar_t *str)
 	}
 }
 
-void TtcPrintResult(CONSOLE *c, TT_RESULT *res)
+static void TtcPrintResult(CONSOLE *c, TT_RESULT *res)
 {
 	CT *ct;
 	wchar_t tmp[MAX_SIZE];
@@ -2613,7 +2610,7 @@ UINT PtMakeCert2048(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 }
 
 
-void PsMain(PS *ps)
+static void PsMain(PS *ps)
 {
 	char prompt[MAX_SIZE];
 	wchar_t tmp[MAX_SIZE];
@@ -2887,7 +2884,7 @@ void PsMain(PS *ps)
 	ps->CapsList = NULL;
 }
 
-bool CmdEvalHostAndPort(CONSOLE *c, wchar_t *str, void *param)
+static bool CmdEvalHostAndPort(CONSOLE *c, wchar_t *str, void *param)
 {
 	char *tmp;
 	bool ret = false;
@@ -2998,7 +2995,7 @@ UINT PsServerKeyGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return ret;
 }
 
-bool CmdLoadCertChainAndKey(CONSOLE *c, X **xx, K **kk, LIST **cc, wchar_t *cert_filename, wchar_t *key_filename)
+static bool CmdLoadCertChainAndKey(CONSOLE *c, X **xx, K **kk, LIST **cc, wchar_t *cert_filename, wchar_t *key_filename)
 {
 	X *x = NULL;
 	K *k;
@@ -3415,7 +3412,7 @@ wchar_t *GetSyslogSettingName(UINT n)
 	return _UU(tmp);
 }
 
-wchar_t *GetConnectionTypeStr(UINT type)
+static wchar_t *GetConnectionTypeStr(UINT type)
 {
 	char tmp[MAX_SIZE];
 	Format(tmp, sizeof(tmp), "SM_CONNECTION_TYPE_%u", type);
@@ -4019,7 +4016,7 @@ UINT PsConfigSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-bool CmdEvalIpAndMask4(CONSOLE *c, wchar_t *str, void *param)
+static bool CmdEvalIpAndMask4(CONSOLE *c, wchar_t *str, void *param)
 {
 	char tmp[MAX_SIZE];
 	UINT ip, mask;
@@ -4038,7 +4035,7 @@ bool CmdEvalIpAndMask4(CONSOLE *c, wchar_t *str, void *param)
 
 	return true;
 }
-bool CmdEvalIpAndMask6(CONSOLE *c, wchar_t *str, void *param)
+static bool CmdEvalIpAndMask6(CONSOLE *c, wchar_t *str, void *param)
 {
 	char tmp[MAX_SIZE];
 	IP ip, mask;
@@ -4886,7 +4883,7 @@ UINT PsStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-wchar_t *GetLogSwitchStr(UINT i)
+static wchar_t *GetLogSwitchStr(UINT i)
 {
 	char tmp[64];
 
@@ -4895,7 +4892,7 @@ wchar_t *GetLogSwitchStr(UINT i)
 	return _UU(tmp);
 }
 
-wchar_t *GetPacketLogNameStr(UINT i)
+static wchar_t *GetPacketLogNameStr(UINT i)
 {
 	char tmp[64];
 
@@ -5132,7 +5129,7 @@ UINT PsLogDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT StrToLogSwitchType(char *str)
+static UINT StrToLogSwitchType(char *str)
 {
 	UINT ret = INFINITE;
 	if (str == NULL)
@@ -5251,7 +5248,7 @@ UINT PsLogSwitchSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-UINT StrToPacketLogSaveInfoType(char *str)
+static UINT StrToPacketLogSaveInfoType(char *str)
 {
 	UINT ret = INFINITE;
 	if (str == NULL)
@@ -5275,7 +5272,7 @@ UINT StrToPacketLogSaveInfoType(char *str)
 	return ret;
 }
 
-UINT StrToPacketLogType(char *str)
+static UINT StrToPacketLogType(char *str)
 {
 	UINT ret = INFINITE;
 	if (str == NULL || IsEmptyStr(str))
@@ -5824,7 +5821,7 @@ UINT PsCascadeSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-wchar_t *GetProxyTypeStr(UINT i)
+static wchar_t *GetProxyTypeStr(UINT i)
 {
 	switch (i)
 	{
@@ -5843,7 +5840,7 @@ wchar_t *GetProxyTypeStr(UINT i)
 	}
 }
 
-wchar_t *GetClientAuthTypeStr(UINT i)
+static wchar_t *GetClientAuthTypeStr(UINT i)
 {
 	char tmp[MAX_SIZE];
 
@@ -7620,7 +7617,7 @@ void PrintPolicy(CONSOLE *c, POLICY *pol, bool cascade_mode)
 	CtFree(ct, c);
 }
 
-void PrintPolicyList(CONSOLE *c, char *name)
+static void PrintPolicyList(CONSOLE *c, char *name)
 {
 	UINT id;
 	if (c == NULL)
@@ -7706,7 +7703,7 @@ void PrintPolicyList(CONSOLE *c, char *name)
 	}
 }
 
-bool EditPolicy(CONSOLE *c, POLICY *pol, char *name, char *value, bool cascade_mode)
+static bool EditPolicy(CONSOLE *c, POLICY *pol, char *name, char *value, bool cascade_mode)
 {
 	PACK *p;
 	ELEMENT *e;
@@ -7874,7 +7871,7 @@ UINT PsCascadePolicySet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-void CmdPrintStatusToListViewEx(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s, bool server_mode)
+static void CmdPrintStatusToListViewEx(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s, bool server_mode)
 {
 	wchar_t tmp[MAX_SIZE];
 	char str[MAX_SIZE];
@@ -8279,7 +8276,7 @@ UINT PsCascadeOffline(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-bool StrToPassOrDiscard(char *str)
+static bool StrToPassOrDiscard(char *str)
 {
 	if (str == NULL)
 	{
@@ -8299,7 +8296,7 @@ bool StrToPassOrDiscard(char *str)
 	return false;
 }
 
-UINT StrToProtocol(char *str)
+static UINT StrToProtocol(char *str)
 {
 	if (IsEmptyStr(str))
 	{
@@ -8347,7 +8344,7 @@ UINT StrToProtocol(char *str)
 	return ToInt(str);
 }
 
-bool CmdEvalProtocol(CONSOLE *c, wchar_t *str, void *param)
+static bool CmdEvalProtocol(CONSOLE *c, wchar_t *str, void *param)
 {
 	char tmp[64];
 	if (c == NULL || str == NULL)
@@ -8366,7 +8363,7 @@ bool CmdEvalProtocol(CONSOLE *c, wchar_t *str, void *param)
 	return true;
 }
 
-bool ParsePortRange(char *str, UINT *start, UINT *end)
+static bool ParsePortRange(char *str, UINT *start, UINT *end)
 {
 	UINT a = 0, b = 0;
 	TOKEN_LIST *t;
@@ -8420,7 +8417,7 @@ bool ParsePortRange(char *str, UINT *start, UINT *end)
 	return true;
 }
 
-bool CmdEvalPortRange(CONSOLE *c, wchar_t *str, void *param)
+static bool CmdEvalPortRange(CONSOLE *c, wchar_t *str, void *param)
 {
 	char tmp[64];
 	if (c == NULL || str == NULL)
@@ -8439,7 +8436,7 @@ bool CmdEvalPortRange(CONSOLE *c, wchar_t *str, void *param)
 	return true;
 }
 
-bool ParseMacAddressAndMask(char *src, bool *check_mac, UCHAR *mac_bin, UCHAR *mask_bin)
+static bool ParseMacAddressAndMask(char *src, bool *check_mac, UCHAR *mac_bin, UCHAR *mask_bin)
 {
 	TOKEN_LIST *t;
 	char *macstr, *maskstr;
@@ -8498,7 +8495,7 @@ bool ParseMacAddressAndMask(char *src, bool *check_mac, UCHAR *mac_bin, UCHAR *m
 	return true;
 }
 
-bool CmdEvalMacAddressAndMask(CONSOLE *c, wchar_t *str, void *param)
+static bool CmdEvalMacAddressAndMask(CONSOLE *c, wchar_t *str, void *param)
 {
 	char tmp[64];
 	if(c == NULL || str == NULL)
@@ -8517,7 +8514,7 @@ bool CmdEvalMacAddressAndMask(CONSOLE *c, wchar_t *str, void *param)
 
 	return true;
 }
-bool ParseTcpState(char *src, bool *check_tcp_state, bool *established)
+static bool ParseTcpState(char *src, bool *check_tcp_state, bool *established)
 {
 	bool ok = false;
 	if(src == NULL)
@@ -8564,7 +8561,7 @@ bool ParseTcpState(char *src, bool *check_tcp_state, bool *established)
 
 	return true;
 }
-bool CmdEvalTcpState(CONSOLE *c, wchar_t *str, void *param)
+static bool CmdEvalTcpState(CONSOLE *c, wchar_t *str, void *param)
 {
 	char tmp[64];
 	if(c == NULL || str == NULL)
@@ -10180,7 +10177,7 @@ UINT PsUserPolicySet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return ret;
 }
 
-UINT64 StrToDateTime64(char *str)
+static UINT64 StrToDateTime64(char *str)
 {
 	UINT64 ret = 0;
 	TOKEN_LIST *t;
@@ -10232,7 +10229,7 @@ UINT64 StrToDateTime64(char *str)
 	return ret;
 }
 
-bool CmdEvalDateTime(CONSOLE *c, wchar_t *str, void *param)
+static bool CmdEvalDateTime(CONSOLE *c, wchar_t *str, void *param)
 {
 	UINT64 ret;
 	char tmp[MAX_SIZE];
@@ -10982,7 +10979,7 @@ UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-void CmdPrintNodeInfo(CT *ct, NODE_INFO *info)
+static void CmdPrintNodeInfo(CT *ct, NODE_INFO *info)
 {
 	wchar_t tmp[MAX_SIZE];
 	char str[MAX_SIZE];
@@ -13016,7 +13013,7 @@ UINT PsListenerEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-void CtPrintRow(CONSOLE *c, UINT num, UINT *widths, wchar_t **strings, bool *rights, char separate_char)
+static void CtPrintRow(CONSOLE *c, UINT num, UINT *widths, wchar_t **strings, bool *rights, char separate_char)
 {
 	UINT i;
 	wchar_t *buf;
@@ -13122,7 +13119,7 @@ void CtPrintRow(CONSOLE *c, UINT num, UINT *widths, wchar_t **strings, bool *rig
 	Free(buf);
 }
 
-void CtPrintStandard(CT *ct, CONSOLE *c)
+static void CtPrintStandard(CT *ct, CONSOLE *c)
 {
 	CT *t;
 	UINT i, j;
@@ -13152,7 +13149,7 @@ void CtPrintStandard(CT *ct, CONSOLE *c)
 	CtFree(t, c);
 }
 
-void CtPrint(CT *ct, CONSOLE *c)
+static void CtPrint(CT *ct, CONSOLE *c)
 {
 	UINT *widths;
 	UINT num;
@@ -13229,7 +13226,7 @@ void CtPrint(CT *ct, CONSOLE *c)
 	Free(widths);
 }
 
-void CtEscapeCsv(wchar_t *dst, UINT size, wchar_t *src){
+static void CtEscapeCsv(wchar_t *dst, UINT size, wchar_t *src){
 	UINT i;
 	UINT len = UniStrLen(src);
 	UINT idx;
@@ -13274,7 +13271,7 @@ void CtEscapeCsv(wchar_t *dst, UINT size, wchar_t *src){
 	return;
 }
 
-void CtPrintCsv(CT *ct, CONSOLE *c)
+static void CtPrintCsv(CT *ct, CONSOLE *c)
 {
 	UINT i, j;
 	UINT num_columns = LIST_NUM(ct->Columns);
@@ -13879,7 +13876,7 @@ UINT PsAbout(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-PS *NewPs(CONSOLE *c, RPC *rpc, char *servername, UINT serverport, char *hubname, char *adminhub, wchar_t *cmdline)
+static PS *NewPs(CONSOLE *c, RPC *rpc, char *servername, UINT serverport, char *hubname, char *adminhub, wchar_t *cmdline)
 {
 	PS *ps;
 	if (c == NULL || rpc == NULL || servername == NULL)
@@ -13913,7 +13910,7 @@ PS *NewPs(CONSOLE *c, RPC *rpc, char *servername, UINT serverport, char *hubname
 	return ps;
 }
 
-void FreePs(PS *ps)
+static void FreePs(PS *ps)
 {
 	if (ps == NULL)
 	{
@@ -13928,7 +13925,7 @@ void FreePs(PS *ps)
 	Free(ps);
 }
 
-UINT PsConnect(CONSOLE *c, char *host, UINT port, char *hub, char *adminhub, wchar_t *cmdline, char *password)
+static UINT PsConnect(CONSOLE *c, char *host, UINT port, char *hub, char *adminhub, wchar_t *cmdline, char *password)
 {
 	UINT retcode = 0;
 	RPC *rpc = NULL;
@@ -14060,7 +14057,7 @@ void CmdPrintAbout(CONSOLE *c)
 	ReleaseCedar(cedar);
 }
 
-bool ParseHostPortAtmark(char *src, char **host, UINT *port, UINT default_port)
+static bool ParseHostPortAtmark(char *src, char **host, UINT *port, UINT default_port)
 {
 	TOKEN_LIST *t;
 	bool ret = false;
@@ -14239,7 +14236,7 @@ bool ParseHostPort(char *src, char **host, UINT *port, UINT default_port)
 	return ret;
 }
 
-UINT VpnCmdProc(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+static UINT VpnCmdProc(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
 	char *target;

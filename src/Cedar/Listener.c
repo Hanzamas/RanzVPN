@@ -58,7 +58,7 @@ void DisableDosProtect()
 	disable_dos = true;
 }
 
-void UDPReceivedPacket(CEDAR *cedar, SOCK *s, IP *ip, UINT port, void *data, UINT size)
+static void UDPReceivedPacket(CEDAR *cedar, SOCK *s, IP *ip, UINT port, void *data, UINT size)
 {
 	SESSION *session;
 	UINT *key32;
@@ -110,7 +110,7 @@ void UDPReceivedPacket(CEDAR *cedar, SOCK *s, IP *ip, UINT port, void *data, UIN
 	ReleaseSession(session);
 }
 
-void TCPAcceptedThread(THREAD *t, void *param)
+static void TCPAcceptedThread(THREAD *t, void *param)
 {
 	TCP_ACCEPTED_PARAM *data;
 	LISTENER *r;
@@ -168,7 +168,7 @@ void TCPAcceptedThread(THREAD *t, void *param)
 	ReleaseListener(r);
 }
 
-void TCPAccepted(LISTENER *r, SOCK *s)
+static void TCPAccepted(LISTENER *r, SOCK *s)
 {
 	TCP_ACCEPTED_PARAM *data;
 	THREAD *t;
@@ -338,7 +338,7 @@ DOS *SearchDosList(LISTENER *r, IP *ip)
 	return d;
 }
 
-int CompareDos(void *p1, void *p2)
+static int CompareDos(void *p1, void *p2)
 {
 	DOS *d1, *d2;
 	if (p1 == NULL || p2 == NULL)
@@ -355,7 +355,7 @@ int CompareDos(void *p1, void *p2)
 	return CmpIpAddr(&d1->IpAddress, &d2->IpAddress);
 }
 
-void ListenerUDPMainLoop(LISTENER *r)
+static void ListenerUDPMainLoop(LISTENER *r)
 {
 	UCHAR *data;
 	if (r == NULL)
@@ -427,7 +427,7 @@ STOP:
 	}
 }
 
-void ListenerTCPMainLoop(LISTENER *r)
+static void ListenerTCPMainLoop(LISTENER *r)
 {
 	SOCK *new_sock;
 	SOCK *s;
@@ -574,7 +574,7 @@ STOP:
 	}
 }
 
-void ListenerThread(THREAD *thread, void *param)
+static void ListenerThread(THREAD *thread, void *param)
 {
 	LISTENER *r;
 	if (thread == NULL || param == NULL)
@@ -665,7 +665,7 @@ void StopListener(LISTENER *r)
 	}
 }
 
-void CleanupListener(LISTENER *r)
+static void CleanupListener(LISTENER *r)
 {
 	UINT i = 0;
 	if (r == NULL)

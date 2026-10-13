@@ -77,14 +77,14 @@ ADMIN_OPTION admin_options[] =
 UINT num_admin_options = sizeof(admin_options) / sizeof(ADMIN_OPTION);
 
 
-LIST *NewUserList()
+static LIST *NewUserList()
 {
 	LIST *o = NewList(CompareUserList);
 
 	return o;
 }
 
-bool IsUserMatchInUserListWithCacheExpires(LIST *o, char *filename, UINT64 user_hash, UINT64 lifetime)
+static bool IsUserMatchInUserListWithCacheExpires(LIST *o, char *filename, UINT64 user_hash, UINT64 lifetime)
 {
 	bool ret = false;
 	UINT64 now = Tick64();
@@ -111,7 +111,7 @@ bool IsUserMatchInUserListWithCacheExpires(LIST *o, char *filename, UINT64 user_
 
 	return ret;
 }
-bool IsUserMatchInUserListWithCacheExpiresAcl(LIST *o, char *name_in_acl, UINT64 user_hash, UINT64 lifetime)
+static bool IsUserMatchInUserListWithCacheExpiresAcl(LIST *o, char *name_in_acl, UINT64 user_hash, UINT64 lifetime)
 {
 	char tmp[16];
 	bool exclude = false;
@@ -319,7 +319,7 @@ void DeleteAllUserListCache(LIST *o)
 	UnlockList(o);
 }
 
-void FreeUserList(LIST *o)
+static void FreeUserList(LIST *o)
 {
 	UINT i;
 	if (o == NULL)
@@ -1172,7 +1172,7 @@ UINT GetHubAdminOption(HUB *h, char *name)
 	return ret;
 }
 
-int CompareAdminOption(void *p1, void *p2)
+static int CompareAdminOption(void *p1, void *p2)
 {
 	ADMIN_OPTION *a1, *a2;
 	if (p1 == NULL || p2 == NULL)
@@ -1188,7 +1188,7 @@ int CompareAdminOption(void *p1, void *p2)
 	return StrCmpi(a1->Name, a2->Name);
 }
 
-void StartHubWatchDog(HUB *h)
+static void StartHubWatchDog(HUB *h)
 {
 	THREAD *t;
 	if (h == NULL)
@@ -1204,7 +1204,7 @@ void StartHubWatchDog(HUB *h)
 	ReleaseThread(t);
 }
 
-void StopHubWatchDog(HUB *h)
+static void StopHubWatchDog(HUB *h)
 {
 	if (h == NULL)
 	{
@@ -1675,7 +1675,7 @@ void GetAccessListStr(char *str, UINT size, ACCESS *a)
 	}
 }
 
-bool IsPacketMaskedByAccessList(SESSION *s, PKT *p, ACCESS *a, UINT64 dest_username, UINT64 dest_groupname, SESSION *dest_session)
+static bool IsPacketMaskedByAccessList(SESSION *s, PKT *p, ACCESS *a, UINT64 dest_username, UINT64 dest_groupname, SESSION *dest_session)
 {
 	UINT64 src_username;
 	UINT64 src_username_simple;
@@ -2107,7 +2107,7 @@ bool IsPacketMaskedByAccessList(SESSION *s, PKT *p, ACCESS *a, UINT64 dest_usern
 	return true;
 }
 
-bool ApplyAccessListToForwardPacket(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *p)
+static bool ApplyAccessListToForwardPacket(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *p)
 {
 	UINT i;
 	bool pass = true;
@@ -2152,7 +2152,7 @@ bool ApplyAccessListToForwardPacket(HUB *hub, SESSION *src_session, SESSION *des
 	return pass;
 }
 
-BUF *BuildRedirectToUrlPayload(HUB *hub, SESSION *s, char *redirect_url)
+static BUF *BuildRedirectToUrlPayload(HUB *hub, SESSION *s, char *redirect_url)
 {
 	char html[MAX_REDIRECT_URL_LEN * 2 + 1 + MAX_SIZE];
 	char header[MAX_REDIRECT_URL_LEN * 2 + 1 + MAX_SIZE];
@@ -2237,7 +2237,7 @@ BUF *BuildRedirectToUrlPayload(HUB *hub, SESSION *s, char *redirect_url)
 	return b;
 }
 
-void ForceRedirectToUrl(HUB *hub, SESSION *src_session, PKT *p, char *redirect_url)
+static void ForceRedirectToUrl(HUB *hub, SESSION *src_session, PKT *p, char *redirect_url)
 {
 	BUF *payload;
 	UINT tcp_size;
@@ -2343,7 +2343,7 @@ void ForceRedirectToUrl(HUB *hub, SESSION *src_session, PKT *p, char *redirect_u
 	Free(b);
 }
 
-bool ApplyAccessListToStoredPacket(HUB *hub, SESSION *s, PKT *p)
+static bool ApplyAccessListToStoredPacket(HUB *hub, SESSION *s, PKT *p)
 {
 	UINT i;
 	bool pass = true;
@@ -2669,7 +2669,7 @@ void AddAccessListEx(HUB *hub, ACCESS *a, bool no_sort, bool no_reassign_id)
 	UnlockList(hub->AccessList);
 }
 
-void InitAccessList(HUB *hub)
+static void InitAccessList(HUB *hub)
 {
 	if (hub == NULL)
 	{
@@ -2679,7 +2679,7 @@ void InitAccessList(HUB *hub)
 	hub->AccessList = NewList(CmpAccessList);
 }
 
-void FreeAccessList(HUB *hub)
+static void FreeAccessList(HUB *hub)
 {
 	UINT i;
 	if (hub == NULL)
@@ -2805,7 +2805,7 @@ SESSION *GetSessionByName(HUB *hub, char *name)
 	return NULL;
 }
 
-int CompareStormList(void *p1, void *p2)
+static int CompareStormList(void *p1, void *p2)
 {
 	STORM *s1, *s2;
 	UINT r;
@@ -2857,7 +2857,7 @@ int CompareStormList(void *p1, void *p2)
 	return r;
 }
 
-bool HubPaInit(SESSION *s)
+static bool HubPaInit(SESSION *s)
 {
 	HUB_PA *pa = ZeroMalloc(sizeof(HUB_PA));
 	pa->Cancel = NewCancel();
@@ -2884,7 +2884,7 @@ bool HubPaInit(SESSION *s)
 	return true;
 }
 
-void HubPaFree(SESSION *s)
+static void HubPaFree(SESSION *s)
 {
 	HUB_PA *pa = (HUB_PA *)s->PacketAdapter->Param;
 	HUB *hub = s->Hub;
@@ -2981,7 +2981,7 @@ void HubPaFree(SESSION *s)
 	s->PacketAdapter->Param = NULL;
 }
 
-CANCEL *HubPaGetCancel(SESSION *s)
+static CANCEL *HubPaGetCancel(SESSION *s)
 {
 	HUB_PA *pa = (HUB_PA *)s->PacketAdapter->Param;
 
@@ -2989,7 +2989,7 @@ CANCEL *HubPaGetCancel(SESSION *s)
 	return pa->Cancel;
 }
 
-UINT HubPaGetNextPacket(SESSION *s, void **data)
+static UINT HubPaGetNextPacket(SESSION *s, void **data)
 {
 	UINT ret = 0;
 	HUB_PA *pa = (HUB_PA *)s->PacketAdapter->Param;
@@ -3018,7 +3018,7 @@ UINT HubPaGetNextPacket(SESSION *s, void **data)
 	return ret;
 }
 
-bool HubPaPutPacket(SESSION *s, void *data, UINT size)
+static bool HubPaPutPacket(SESSION *s, void *data, UINT size)
 {
 	PKT *packet;
 	HUB_PA *pa = (HUB_PA *)s->PacketAdapter->Param;
@@ -3208,7 +3208,7 @@ LABEL_TRY_AGAIN:
 }
 
 // Broadcast storm guard: filter frequent broadcasts from a single endpoint
-bool CheckBroadcastStorm(HUB *hub, SESSION *s, PKT *p)
+static bool CheckBroadcastStorm(HUB *hub, SESSION *s, PKT *p)
 {
 	IP src_ip, dest_ip;
 	HUB_PA *pa;
@@ -4737,7 +4737,7 @@ bool DeleteIPv6DefaultRouterInRA(PKT *p)
 	return false;
 }
 
-bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
+static bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
 {
 	POLICY *pol;
 	HUB *hub;
@@ -5178,7 +5178,7 @@ void IntoTrafficLimiter(TRAFFIC_LIMITER *tr, PKT *p)
 	tr->Value += (UINT64)p->PacketSize * (UINT64)8;
 }
 
-bool StorePacketFilterByTrafficLimiter(SESSION *s, PKT *p)
+static bool StorePacketFilterByTrafficLimiter(SESSION *s, PKT *p)
 {
 	HUB_PA *pa;
 	TRAFFIC_LIMITER *tr;
@@ -5243,7 +5243,7 @@ PACKET_ADAPTER *GetHubPacketAdapter()
 	return pa;
 }
 
-void StopAllSession(HUB *h)
+static void StopAllSession(HUB *h)
 {
 	SESSION **s;
 	UINT i, num;
@@ -5542,7 +5542,7 @@ void CleanupHub(HUB *h)
 	Free(h);
 }
 
-int CompareIpTable(void *p1, void *p2)
+static int CompareIpTable(void *p1, void *p2)
 {
 	IP_TABLE_ENTRY *e1, *e2;
 	if (p1 == NULL || p2 == NULL)
@@ -5558,7 +5558,7 @@ int CompareIpTable(void *p1, void *p2)
 	return CmpIpAddr(&e1->Ip, &e2->Ip);
 }
 
-UINT GetHashOfMacTable(void *p)
+static UINT GetHashOfMacTable(void *p)
 {
 	UINT v;
 	MAC_TABLE_ENTRY *e = p;
@@ -5575,7 +5575,7 @@ UINT GetHashOfMacTable(void *p)
 	return v;
 }
 
-int CompareMacTable(void *p1, void *p2)
+static int CompareMacTable(void *p1, void *p2)
 {
 	int r;
 	MAC_TABLE_ENTRY *e1, *e2;
@@ -5689,7 +5689,7 @@ bool IsHubIpAddress64(IPV6_ADDR *addr)
 	return false;
 }
 
-void GenHubIpAddress(IP *ip, char *name)
+static void GenHubIpAddress(IP *ip, char *name)
 {
 	char tmp1[MAX_SIZE];
 	char tmp2[MAX_SIZE];
@@ -5711,7 +5711,7 @@ void GenHubIpAddress(IP *ip, char *name)
 	SetIP(ip, 172, 31, hash[0] % 254 + 1, hash[0] % 254 + 1);
 }
 
-void GenHubMacAddress(UCHAR *mac, char *name)
+static void GenHubMacAddress(UCHAR *mac, char *name)
 {
 	char tmp1[MAX_SIZE];
 	char tmp2[MAX_SIZE];

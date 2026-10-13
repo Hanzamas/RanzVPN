@@ -45,7 +45,7 @@
 
 LOCK *openssl_lock = NULL;
 
-int ssl_clientcert_index = 0;
+static int ssl_clientcert_index = 0;
 
 static OSSL_PROVIDER *ossl_provider_legacy = NULL;
 static OSSL_PROVIDER *ossl_provider_default = NULL;
@@ -78,7 +78,7 @@ void Md5(void *dst, void *src, UINT size)
 	MD5(src, size, dst);
 }
 
-void Sha(UINT sha_type, void *dst, void *src, UINT size)
+static void Sha(UINT sha_type, void *dst, void *src, UINT size)
 {
 	if (dst == NULL || (src == NULL && size != 0))
 	{
@@ -255,7 +255,7 @@ void FreeCipher(CIPHER *c)
 	Free(c);
 }
 
-BUF *RsaPublicToBuf(K *k)
+static BUF *RsaPublicToBuf(K *k)
 {
 	BUF *b;
 	RSA *rsa;
@@ -287,7 +287,7 @@ BUF *RsaPublicToBuf(K *k)
 	return b;
 }
 
-UINT RsaPublicSize(K *k)
+static UINT RsaPublicSize(K *k)
 {
 	BUF *b;
 	UINT ret;
@@ -337,7 +337,7 @@ NAME *CopyName(NAME *n)
 		n->Country, n->State, n->Local);
 }
 
-BIGNUM *BinToBigNum(void *data, UINT size)
+static BIGNUM *BinToBigNum(void *data, UINT size)
 {
 	BIGNUM *bn;
 	if (data == NULL)
@@ -374,11 +374,11 @@ BUF *BigNumToBuf(const BIGNUM *bn)
 	return b;
 }
 
-void OpenSSL_InitLock()
+static void OpenSSL_InitLock()
 {
 }
 
-void OpenSSL_FreeLock()
+static void OpenSSL_FreeLock()
 {
 }
 
@@ -702,7 +702,7 @@ X_SERIAL *NewXSerial(void *data, UINT size)
 	return serial;
 }
 
-UINT GetDaysUntil2038()
+static UINT GetDaysUntil2038()
 {
 	UINT64 now = SystemTime64();
 	UINT64 target;
@@ -811,7 +811,7 @@ X *NewRootX(K *pub, K *priv, NAME *name, UINT days, X_SERIAL *serial)
 	return x2;
 }
 
-void AddKeyUsageX509(EXTENDED_KEY_USAGE *ex, int nid)
+static void AddKeyUsageX509(EXTENDED_KEY_USAGE *ex, int nid)
 {
 	ASN1_OBJECT *obj;
 	if (ex == NULL)
@@ -825,7 +825,7 @@ void AddKeyUsageX509(EXTENDED_KEY_USAGE *ex, int nid)
 		sk_ASN1_OBJECT_push(ex, obj);
 	}
 }
-X509_EXTENSION *NewExtendedKeyUsageForX509()
+static X509_EXTENSION *NewExtendedKeyUsageForX509()
 {
 	EXTENDED_KEY_USAGE *ex = sk_ASN1_OBJECT_new_null();
 	X509_EXTENSION *ret;
@@ -846,7 +846,7 @@ X509_EXTENSION *NewExtendedKeyUsageForX509()
 
 	return ret;
 }
-void BitStringSetBit(ASN1_BIT_STRING *str, int bit)
+static void BitStringSetBit(ASN1_BIT_STRING *str, int bit)
 {
 	if (str == NULL)
 	{
@@ -855,7 +855,7 @@ void BitStringSetBit(ASN1_BIT_STRING *str, int bit)
 
 	ASN1_BIT_STRING_set_bit(str, bit, 1);
 }
-X509_EXTENSION *NewBasicKeyUsageForX509()
+static X509_EXTENSION *NewBasicKeyUsageForX509()
 {
 	X509_EXTENSION *ret = NULL;
 	ASN1_BIT_STRING *str;
@@ -1244,7 +1244,7 @@ bool CheckXDate(X *x, UINT64 current_system_time)
 	return true;
 }
 
-void LoadXDates(X *x)
+static void LoadXDates(X *x)
 {
 	if (x == NULL)
 	{
@@ -1775,7 +1775,7 @@ bool CompareName(NAME *n1, NAME *n2)
 	return false;
 }
 
-void FreeXNames(X *x)
+static void FreeXNames(X *x)
 {
 	if (x == NULL)
 	{
@@ -1808,7 +1808,7 @@ void FreeName(NAME *n)
 	return;
 }
 
-void LoadXNames(X *x)
+static void LoadXNames(X *x)
 {
 	X509 *x509;
 	if (x == NULL)
@@ -3117,7 +3117,7 @@ static void MY_SHA0_Transform(MY_SHA0_CTX* ctx) {
 	ctx->state[3] += D;
 	ctx->state[4] += E;
 }
-void MY_SHA0_init(MY_SHA0_CTX* ctx) {
+static void MY_SHA0_init(MY_SHA0_CTX* ctx) {
 	ctx->state[0] = 0x67452301;
 	ctx->state[1] = 0xEFCDAB89;
 	ctx->state[2] = 0x98BADCFE;
@@ -3125,7 +3125,7 @@ void MY_SHA0_init(MY_SHA0_CTX* ctx) {
 	ctx->state[4] = 0xC3D2E1F0;
 	ctx->count = 0;
 }
-void MY_SHA0_update(MY_SHA0_CTX* ctx, const void* data, int len) {
+static void MY_SHA0_update(MY_SHA0_CTX* ctx, const void* data, int len) {
 	int i = (int) (ctx->count & 63);
 	const UCHAR* p = (const UCHAR*)data;
 	ctx->count += len;
@@ -3137,7 +3137,7 @@ void MY_SHA0_update(MY_SHA0_CTX* ctx, const void* data, int len) {
 		}
 	}
 }
-const UCHAR* MY_SHA0_final(MY_SHA0_CTX* ctx) {
+static const UCHAR* MY_SHA0_final(MY_SHA0_CTX* ctx) {
 	UCHAR *p = ctx->buf;
 	UINT64 cnt = ctx->count * 8;
 	int i;
@@ -3158,7 +3158,7 @@ const UCHAR* MY_SHA0_final(MY_SHA0_CTX* ctx) {
 	}
 	return ctx->buf;
 }
-const UCHAR* MY_SHA0_hash(const void* data, int len, UCHAR* digest) {
+static const UCHAR* MY_SHA0_hash(const void* data, int len, UCHAR* digest) {
 	MY_SHA0_CTX ctx;
 	MY_SHA0_init(&ctx);
 	MY_SHA0_update(&ctx, data, len);

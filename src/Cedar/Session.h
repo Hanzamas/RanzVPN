@@ -175,25 +175,18 @@ struct SESSION
 	UCHAR LastDLinkSTPPacketDataHash[MD5_SIZE];
 };
 
-SESSION *NewClientSessionEx(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *auth, PACKET_ADAPTER *pa, struct ACCOUNT *account);
 SESSION *NewClientSession(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *auth, PACKET_ADAPTER *pa);
 SESSION *NewRpcSessionEx2(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *client_str, void *hWnd);
 SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, POLICY *policy);
-void ClientThread(THREAD *t, void *param);
 void ReleaseSession(SESSION *s);
-void CleanupSession(SESSION *s);
 void StopSession(SESSION *s);
 void StopSessionEx(SESSION *s, bool no_wait);
-bool SessionConnect(SESSION *s);
 PACKET_ADAPTER *NewPacketAdapter(PA_INIT *init, PA_GETCANCEL *getcancel, PA_GETNEXTPACKET *getnext,
 								 PA_PUTPACKET *put, PA_FREE *free);
-void FreePacketAdapter(PACKET_ADAPTER *pa);
 void SessionMain(SESSION *s);
-void NewSessionKey(CEDAR *cedar, UCHAR *session_key, UINT *session_key_32);
 SESSION *GetSessionFromKey(CEDAR *cedar, UCHAR *session_key);
 void ClientAdditionalConnectChance(SESSION *s);
 void SessionAdditionalConnect(SESSION *s);
-void ClientAdditionalThread(THREAD *t, void *param);
 void PrintSessionTotalDataSize(SESSION *s);
 void AddTrafficForSession(SESSION *s, TRAFFIC *t);
 void IncrementUserTraffic(HUB *hub, char *username, SESSION *s);

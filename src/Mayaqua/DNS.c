@@ -24,7 +24,7 @@ static LIST *cache_reverse;
 static COUNTER *threads_counter;
 static UINT threads_max;
 
-int DnsCacheCompare(void *p1, void *p2)
+static int DnsCacheCompare(void *p1, void *p2)
 {
 	if (p1 == NULL || p2 == NULL)
 	{
@@ -37,7 +37,7 @@ int DnsCacheCompare(void *p1, void *p2)
 	return StrCmpi(c1->Hostname, c2->Hostname);
 }
 
-int DnsCacheReverseCompare(void *p1, void *p2)
+static int DnsCacheReverseCompare(void *p1, void *p2)
 {
 	if (p1 == NULL || p2 == NULL)
 	{
@@ -113,7 +113,7 @@ void DnsThreadNumMaxSet(const UINT max)
 	threads_max = max;
 }
 
-bool DnsCacheIsEnabled()
+static bool DnsCacheIsEnabled()
 {
 	return cache_enabled;
 }
@@ -123,7 +123,7 @@ void DnsCacheToggle(const bool enabled)
 	cache_enabled = enabled;
 }
 
-DNS_CACHE *DnsCacheFind(const char *hostname)
+static DNS_CACHE *DnsCacheFind(const char *hostname)
 {
 	if (DnsCacheIsEnabled() == false || IsEmptyStr(hostname))
 	{
@@ -143,7 +143,7 @@ DNS_CACHE *DnsCacheFind(const char *hostname)
 	return entry;
 }
 
-DNS_CACHE *DnsCacheUpdateEx(const char *hostname, const LIST *iplist_v6, const LIST *iplist_v4)
+static DNS_CACHE *DnsCacheUpdateEx(const char *hostname, const LIST *iplist_v6, const LIST *iplist_v4)
 {
 	if (DnsCacheIsEnabled() == false || IsEmptyStr(hostname))
 	{
@@ -209,7 +209,7 @@ DNS_CACHE *DnsCacheUpdateEx(const char *hostname, const LIST *iplist_v6, const L
 	return entry;
 }
 
-DNS_CACHE_REVERSE *DnsCacheReverseFind(const IP *ip)
+static DNS_CACHE_REVERSE *DnsCacheReverseFind(const IP *ip)
 {
 	if (DnsCacheIsEnabled() == false || ip == NULL)
 	{

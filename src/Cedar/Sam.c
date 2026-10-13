@@ -10,14 +10,11 @@
 #include "MsChapV2.h"
 #include "Server.h"
 
-#include "Mayaqua/Encoding.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
-
-#include <string.h>
 
 void SecurePassword(void *secure_password, void *password, void *random)
 {

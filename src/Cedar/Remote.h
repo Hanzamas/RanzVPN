@@ -29,8 +29,6 @@ RPC *StartRpcServer(SOCK *s, RPC_DISPATCHER *dispatch, void *param);
 PACK *RpcCallInternal(RPC *r, PACK *p);
 PACK *RpcCall(RPC *r, char *function_name, PACK *p);
 void RpcServer(RPC *r);
-bool RpcRecvNextCall(RPC *r);
-PACK *CallRpcDispatcher(RPC *r, PACK *p);
 void RpcFree(RPC *rpc);
 
 #endif	// REMOTE_H

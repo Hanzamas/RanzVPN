@@ -46,13 +46,11 @@ int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 extern bool g_memcheck;
 extern bool g_debug;
 extern char *cmdline;
-extern wchar_t *uni_cmdline;
 extern bool g_little_endian;
 
 #define	NUM_KERNEL_STATUS	128
 extern UINT64 kernel_status[NUM_KERNEL_STATUS];
 extern UINT64 kernel_status_max[NUM_KERNEL_STATUS];
-extern LOCK *kernel_status_lock[NUM_KERNEL_STATUS];
 extern bool kernel_status_inited;
 
 #define	KS_LOCK(id)		LockKernelStatus(id)
@@ -187,19 +185,15 @@ void FreeCommandLineStr();
 void SetCommandLineStr(char *str);
 void SetCommandLineUniStr(wchar_t *str);
 wchar_t *GetCommandLineUniStr();
-void ParseCommandLineTokens();
 void FreeCommandLineTokens();
 TOKEN_LIST *GetCommandLineToken();
 void InitOsInfo();
 void FreeOsInfo();
 void Alert(char *msg, char *caption);
 OS_INFO *GetOsInfo();
-void CheckEndian();
 void CheckUnixTempDir();
 void SetHamMode();
 bool IsHamMode();
-void InitProbe();
-void FreeProbe();
 void EnableProbe(bool enable);
 
 

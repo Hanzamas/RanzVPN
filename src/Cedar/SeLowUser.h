@@ -58,14 +58,11 @@ LIST *SuGetAdapterList(SU *u);
 void SuFreeAdapterList(LIST *o);
 int SuCmpAdapterList(void *p1, void *p2);
 
-bool SuInstallDriver(bool force);
 bool SuInstallDriverInner(bool force);
 bool SuIsSupportedOs(bool on_install);
 bool SuCopySysFile(wchar_t *src, wchar_t *dst);
 
-void SuDeleteGarbageInfs();
 void SuDeleteGarbageInfsInner();
-bool SuLoadDriversHive();
 
 #endif	// SELOWUSER_H
 
