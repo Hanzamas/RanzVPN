@@ -577,8 +577,6 @@ void MsRegistWindowsFirewallEx(char *title, char *exe)
 		{
 			MsRegWriteIntEx2(REG_LOCAL_MACHINE, SOFTETHER_FW_SCRIPT_HASH, file_hash_str, 1, false, true);
 		}
-
-		Debug("cscript %s\n", arg);
 	}
 
 	Free(tmp);
@@ -3674,17 +3672,14 @@ bool MsRegLoadHive(UINT root, wchar_t *keyname, wchar_t *filename)
 	LONG ret;
 	if (keyname == NULL || filename == NULL)
 	{
-		WHERE;
 		return false;
 	}
 	ret = RegLoadKeyW(MsGetRootKeyFromInt(root), keyname, filename);
 
 	if (ret != ERROR_SUCCESS)
 	{
-		Debug("RegLoadKeyW: %S %S %u\n", keyname, filename, GetLastError());
 		return false;
 	}
-	WHERE;
 
 	return true;
 }
