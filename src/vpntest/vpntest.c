@@ -444,6 +444,7 @@ void timeenc_test(UINT num, char **arg);
 void nullsafe_test(UINT num, char **arg);
 void fileio_test(UINT num, char **arg);
 void threadpool_test(UINT num, char **arg);
+void dns_test(UINT num, char **arg);
 
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
@@ -542,6 +543,7 @@ TEST_LIST test_list[] =
 	{"nullsafe", nullsafe_test, "NULL safety of the LOCK, LIST, COUNTER, REF and EVENT functions."},
 	{"fileio", fileio_test, "FileIO: @, $ and | prefixes, path separator, sharing modes, reads past the end."},
 	{"threadpool", threadpool_test, "Thread pool: job pickup, host thread id and COM, idle reuse, many waiters, host handles."},
+	{"dns", dns_test, "DNS: localhost and IP literals answered at once, the computer name through the resolver thread."},
 };
 
 // Test function
