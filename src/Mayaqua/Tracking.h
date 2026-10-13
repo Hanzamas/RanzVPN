@@ -62,8 +62,6 @@ void GetCallStackStr(char *str, UINT size, CALLSTACK_DATA *s);
 void PrintCallStack(CALLSTACK_DATA *s);
 void InitTracking();
 void FreeTracking();
-void LockTrackingList();
-void UnlockTrackingList();
 void InsertTrackingList(TRACKING_OBJECT *o);
 void DeleteTrackingList(TRACKING_OBJECT *o, bool free_object_memory);
 TRACKING_OBJECT *SearchTrackingList(UINT64 Address);

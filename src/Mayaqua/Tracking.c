@@ -144,7 +144,7 @@ void DebugPrintObjectInfo(UINT id)
 
 	// Search
 	o = NULL;
-	LockTrackingList();
+	OSLock(obj_lock);
 	{
 		for (i = 0;i < TRACKING_NUM_ARRAY;i++)
 		{
@@ -175,7 +175,7 @@ void DebugPrintObjectInfo(UINT id)
 			}
 		}
 	}
-	UnlockTrackingList();
+	OSUnlock(obj_lock);
 
 	if (o == NULL)
 	{
@@ -208,7 +208,7 @@ void DebugPrintAllObjects()
 
 	// Creating a List
 	view = NewListFast(SortObjectView);
-	LockTrackingList();
+	OSLock(obj_lock);
 	{
 		for (i = 0;i < TRACKING_NUM_ARRAY;i++)
 		{
@@ -230,7 +230,7 @@ void DebugPrintAllObjects()
 			}
 		}
 	}
-	UnlockTrackingList();
+	OSUnlock(obj_lock);
 
 	// Sort
 	Sort(view);
@@ -269,7 +269,7 @@ void GetMemoryStatus(MEMORY_STATUS *status)
 		return;
 	}
 
-	LockTrackingList();
+	OSLock(obj_lock);
 	{
 		size = num = 0;
 
@@ -299,7 +299,7 @@ void GetMemoryStatus(MEMORY_STATUS *status)
 			}
 		}
 	}
-	UnlockTrackingList();
+	OSUnlock(obj_lock);
 
 	status->MemoryBlocksNum = num;
 	status->MemorySize = size;
@@ -365,11 +365,11 @@ void TrackNewObj(UINT64 addr, char *name, UINT size)
 	o->FileName[0] = 0;
 	o->LineNumber = 0;
 
-	LockTrackingList();
+	OSLock(obj_lock);
 	{
 		InsertTrackingList(o);
 	}
-	UnlockTrackingList();
+	OSUnlock(obj_lock);
 }
 
 // Remove the object from the tracking list
@@ -388,17 +388,17 @@ void TrackDeleteObj(UINT64 addr)
 		return;
 	}
 
-	LockTrackingList();
+	OSLock(obj_lock);
 	{
 		o = SearchTrackingList(addr);
 		if (o == NULL)
 		{
-			UnlockTrackingList();
+			OSUnlock(obj_lock);
 			return;
 		}
 		DeleteTrackingList(o, true);
 	}
-	UnlockTrackingList();
+	OSUnlock(obj_lock);
 }
 
 // Change the size of the object being tracked
@@ -417,12 +417,12 @@ void TrackChangeObjSize(UINT64 addr, UINT size, UINT64 new_addr)
 		return;
 	}
 
-	LockTrackingList();
+	OSLock(obj_lock);
 	{
 		o = SearchTrackingList(addr);
 		if (o == NULL)
 		{
-			UnlockTrackingList();
+			OSUnlock(obj_lock);
 			return;
 		}
 
@@ -433,7 +433,7 @@ void TrackChangeObjSize(UINT64 addr, UINT size, UINT64 new_addr)
 
 		InsertTrackingList(o);
 	}
-	UnlockTrackingList();
+	OSUnlock(obj_lock);
 }
 
 // Search an object in the tracking list
@@ -564,18 +564,6 @@ void InsertTrackingList(TRACKING_OBJECT *o)
 			tt = tt->Next;
 		}
 	}
-}
-
-// Lock the tracking list
-void LockTrackingList()
-{
-	OSLock(obj_lock);
-}
-
-// Unlock the tracking list
-void UnlockTrackingList()
-{
-	OSUnlock(obj_lock);
 }
 
 // Initialize the tracking

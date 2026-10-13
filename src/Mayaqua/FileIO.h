@@ -137,7 +137,6 @@ struct ZIP_PACKER
 
 void InitCrc32();
 UINT Crc32(void *buf, UINT pos, UINT len);
-UINT Crc32First(void *buf, UINT pos, UINT len);
 UINT Crc32Next(void *buf, UINT pos, UINT len, UINT last_crc32);
 UINT Crc32Finish(UINT last_crc32);
 void WriteZipDataHeader(ZIP_FILE *f, ZIP_DATA_HEADER *h, bool write_sizes);
@@ -194,7 +193,6 @@ void GetExeNameW(wchar_t *name, UINT size);
 void GetExeDir(char *name, UINT size);
 void GetExeDirW(wchar_t *name, UINT size);
 void GetLogDir(char *name, UINT size);
-void GetLogDirW(wchar_t *name, UINT size);
 void GetDbDirW(wchar_t *name, UINT size);
 int CompareHamcore(void *p1, void *p2);
 void InitHamcore();

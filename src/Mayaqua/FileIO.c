@@ -117,11 +117,7 @@ void InitCrc32()
 // CRC32 arithmetic processing
 UINT Crc32(void *buf, UINT pos, UINT len)
 {
-	return Crc32Finish(Crc32First(buf, pos, len));
-}
-UINT Crc32First(void *buf, UINT pos, UINT len)
-{
-	return Crc32Next(buf, pos, len, 0xffffffff);
+	return Crc32Finish(Crc32Next(buf, pos, len, 0xffffffff));
 }
 UINT Crc32Next(void *buf, UINT pos, UINT len, UINT last_crc32)
 {
@@ -490,11 +486,6 @@ void GetExeNameW(wchar_t *name, UINT size)
 void GetLogDir(char *name, UINT size)
 {
 	GetExeDir(name, size);
-}
-
-void GetLogDirW(wchar_t *name, UINT size)
-{
-	GetExeDirW(name, size);
 }
 
 void GetDbDirW(wchar_t *name, UINT size)
@@ -1021,7 +1012,7 @@ void InnerFilePathW(wchar_t *dst, UINT size, wchar_t *src)
 	if (src[0] == L'@')
 	{
 		wchar_t dir[MAX_SIZE];
-		GetLogDirW(dir, sizeof(dir));
+		GetExeDirW(dir, sizeof(dir));
 		ConbinePathW(dst, size, dir, &src[1]);
 	}
 	else if (src[0] == L'$')
