@@ -20,7 +20,7 @@
 //   "BENCH <name>_runs <run 1>,...,<run n> <unit>" in run order. Besides the cascade path it has in-process
 //   cases without TLS, one per hot spot of spec #31: flood_fps_<n> (one session floods broadcast frames to
 //   n sessions of hub HARNESS_FLOOD through the hub packet adapter, no SessionMain thread), parse_packet_<kind>
-//   (ParsePacketEx4 as HubPaPutPacket calls it), pack_<encode|decode>_names_<n> (a Pack with n distinct element
+//   (the parse of HubPaPutPacket; _nolog: hub packet log off), pack_<encode|decode>_names_<n> (a Pack with n distinct element
 //   names) and ip_table_expire_<n> (one DeleteExpiredIpTableEntry pass). A wrong result of these cases prints a
 //   "BENCH WARNING" line and skips the case; it does not fail the test.
 // - Files left after a run: the server_log, security_log and packet_log folders (as in the "s"
@@ -210,6 +210,7 @@ typedef struct HARNESS_PARSE_BENCH
 	HARNESS_PARSE_FRAME Frames[HARNESS_NUM_PARSE_FRAMES];
 	UINT Current;				// Frame of a single-frame case
 	UINT Next;					// Next frame of the mixed case
+	bool NoLog;					// Parse as with the hub packet log off
 } HARNESS_PARSE_BENCH;
 
 // Current phase of the test, read by the watchdog thread (static strings only)
@@ -3726,23 +3727,29 @@ static UINT HarnessBuildDnsQuery(UCHAR *buf, UINT buf_size, char *host)
 }
 
 // Parse a frame as HubPaPutPacket does with the default hub options: IP and HTTP parsing, BPDU bridge id,
-// checksum correction (the frames have valid checksums, so the buffer is not changed)
-static PKT *HarnessParseLikeHub(HARNESS_PARSE_FRAME *f)
+// checksum correction (the frames have valid checksums, so the buffer is not changed). no_log: the hub packet
+// log is off, so HTTP, TLS SNI and DNS are not parsed
+static PKT *HarnessParseLikeHub(HARNESS_PARSE_FRAME *f, bool no_log)
 {
-	return ParsePacketEx4(f->Data, f->Size, false, 0, true, false, true);
+	return ParsePacketEx5(f->Data, f->Size, false, 0, true, no_log, true, false, no_log);
 }
 
-// The parser reached the layer the frame was built for
-static bool HarnessParsedAsBuilt(HARNESS_PARSE_FRAME *f, PKT *p)
+// The parser reached the layer the frame was built for (no_log: and stopped before layer 7)
+static bool HarnessParsedAsBuilt(HARNESS_PARSE_FRAME *f, PKT *p, bool no_log)
 {
 	if (p == NULL)
 	{
 		return false;
 	}
 
-	if (StrCmp(f->Kind, "tcp") == 0)
+	if (StrCmp(f->Kind, "tcp") == 0 || (no_log && (StrCmp(f->Kind, "http") == 0 || StrCmp(f->Kind, "tls") == 0)))
 	{
 		return (p->TypeL4 == L4_TCP && p->HttpLog == NULL);
+	}
+
+	if (no_log && StrCmp(f->Kind, "dns") == 0)
+	{
+		return (p->TypeL4 == L4_UDP && p->TypeL7 == L7_UNKNOWN);
 	}
 
 	if (StrCmp(f->Kind, "http") == 0)
@@ -3767,7 +3774,7 @@ static bool HarnessParsedAsBuilt(HARNESS_PARSE_FRAME *f, PKT *p)
 static bool HarnessOpParseOne(void *param)
 {
 	HARNESS_PARSE_BENCH *b = (HARNESS_PARSE_BENCH *)param;
-	PKT *p = HarnessParseLikeHub(&b->Frames[b->Current]);
+	PKT *p = HarnessParseLikeHub(&b->Frames[b->Current], b->NoLog);
 
 	if (p == NULL)
 	{
@@ -3783,7 +3790,7 @@ static bool HarnessOpParseOne(void *param)
 static bool HarnessOpParseMix(void *param)
 {
 	HARNESS_PARSE_BENCH *b = (HARNESS_PARSE_BENCH *)param;
-	PKT *p = HarnessParseLikeHub(&b->Frames[b->Next]);
+	PKT *p = HarnessParseLikeHub(&b->Frames[b->Next], b->NoLog);
 
 	b->Next = (b->Next + 1) % HARNESS_NUM_PARSE_FRAMES;
 
@@ -3799,7 +3806,7 @@ static bool HarnessOpParseMix(void *param)
 
 // parse_packet_<kind>: ParsePacket per frame kind, then over the mix of all kinds in turn.
 // l2: non-IP frame; tcp: TCP data without a layer 7 parser; http: request to TCP 80; tls: ClientHello with SNI
-// to TCP 443; dns: query to UDP 53
+// to TCP 443; dns: query to UDP 53. The _nolog cases parse the same frames as with the hub packet log off
 static void HarnessBenchParse()
 {
 	HARNESS_PARSE_BENCH b;
@@ -3808,7 +3815,8 @@ static void HarnessBenchParse()
 	char *http = "GET /index.html HTTP/1.1\r\nHost: " HARNESS_BENCH_HOST "\r\nUser-Agent: ranz-bench/1.0\r\nAccept: */*\r\n\r\n";
 	UINT i;
 	UINT size;
-	bool ok = true;
+	UINT pass;
+	bool ok;
 	char name[MAX_SIZE];
 
 	Zero(&b, sizeof(b));
@@ -3840,35 +3848,45 @@ static void HarnessBenchParse()
 	size = HarnessBuildDnsQuery(payload, sizeof(payload), HARNESS_BENCH_HOST);
 	f->Size = HarnessBuildIpFrame(f->Data, sizeof(f->Data), IP_PROTO_UDP, 53, payload, size);
 
-	for (i = 0;i < HARNESS_NUM_PARSE_FRAMES;i++)
+	for (pass = 0;pass < 2;pass++)
 	{
-		PKT *p = NULL;
+		char *suffix = (pass == 0 ? "" : "_nolog");
 
-		f = &b.Frames[i];
-		Format(name, sizeof(name), "parse_packet_%s", f->Kind);
+		b.NoLog = (pass != 0);
+		b.Next = 0;
+		ok = true;
 
-		if (f->Size != 0)
+		for (i = 0;i < HARNESS_NUM_PARSE_FRAMES;i++)
 		{
-			p = HarnessParseLikeHub(f);
+			PKT *p = NULL;
+
+			f = &b.Frames[i];
+			Format(name, sizeof(name), "parse_packet_%s%s", f->Kind, suffix);
+
+			if (f->Size != 0)
+			{
+				p = HarnessParseLikeHub(f, b.NoLog);
+			}
+
+			if (HarnessParsedAsBuilt(f, p, b.NoLog))
+			{
+				b.Current = i;
+				HarnessBenchOps(name, HarnessOpParseOne, &b, HARNESS_BENCH_MICRO_SPAN, 16);
+			}
+			else
+			{
+				Print("BENCH WARNING %s: the frame does not parse as built, case skipped\n", name);
+				ok = false;
+			}
+
+			FreePacket(p);
 		}
 
-		if (HarnessParsedAsBuilt(f, p))
+		if (ok)
 		{
-			b.Current = i;
-			HarnessBenchOps(name, HarnessOpParseOne, &b, HARNESS_BENCH_MICRO_SPAN, 16);
+			Format(name, sizeof(name), "parse_packet_mix%s", suffix);
+			HarnessBenchOps(name, HarnessOpParseMix, &b, HARNESS_BENCH_MICRO_SPAN, 16);
 		}
-		else
-		{
-			Print("BENCH WARNING %s: the frame does not parse as built, case skipped\n", name);
-			ok = false;
-		}
-
-		FreePacket(p);
-	}
-
-	if (ok)
-	{
-		HarnessBenchOps("parse_packet_mix", HarnessOpParseMix, &b, HARNESS_BENCH_MICRO_SPAN, 16);
 	}
 }
 
