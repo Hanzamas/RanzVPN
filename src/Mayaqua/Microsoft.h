@@ -340,7 +340,6 @@ LIST *EnumAllTopWindow();
 
 void MsRegistWindowsFirewallEx(char *title, char *exe);
 void MsRegistWindowsFirewallEx2(char *title, char *exe, char *dir);
-bool MsIs64BitWindows();
 bool MsIsX64();
 void *MsDisableWow64FileSystemRedirection();
 void MsRestoreWow64FileSystemRedirection(void *p);

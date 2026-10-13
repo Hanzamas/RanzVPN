@@ -180,7 +180,6 @@ void FreeMayaqua();
 bool MayaquaIsDotNetMode();
 void MayaquaMinimalMode();
 bool MayaquaIsMinimalMode();
-bool Is64();
 void InitKernelStatus();
 void FreeKernelStatus();
 void PrintDebugInformation();

@@ -261,11 +261,6 @@ void TimeCheck()
 	printf(" -- %3.3f / %3.3f\n", (double)ret / 1000.0f, (double)total / 1000.0f);
 }
 
-bool Is64()
-{
-	return true;
-}
-
 bool MayaquaIsDotNetMode()
 {
 	return dot_net_mode;

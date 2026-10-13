@@ -4,9 +4,10 @@ else()
   add_definitions(-DNDEBUG -DVPN_SPEED)
 endif()
 
-if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-  add_definitions(-DCPU_64)
+if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+  message(FATAL_ERROR "Ranz VPN builds for x64 and arm64 only")
 endif()
+add_definitions(-DCPU_64)
 
 add_definitions(-D_REENTRANT -DREENTRANT -D_THREAD_SAFE -D_THREADSAFE -DTHREAD_SAFE -DTHREADSAFE -D_FILE_OFFSET_BITS=64)
 

@@ -397,11 +397,6 @@ void MsGetComputerName(char *name, UINT size)
 void *MsDisableWow64FileSystemRedirection()
 {
 	void *p = NULL;
-	if (MsIs64BitWindows() == false)
-	{
-		return NULL;
-	}
-
 	if (Wow64DisableWow64FsRedirection(&p) == false)
 	{
 		return NULL;
@@ -425,10 +420,6 @@ void MsRestoreWow64FileSystemRedirection(void *p)
 	{
 		p = NULL;
 	}
-	if (MsIs64BitWindows() == false)
-	{
-		return;
-	}
 
 	Wow64RevertWow64FsRedirection(p);
 }
@@ -436,11 +427,6 @@ void MsRestoreWow64FileSystemRedirection(void *p)
 bool MsIsX64()
 {
 	SYSTEM_INFO info;
-
-	if (MsIs64BitWindows() == false)
-	{
-		return false;
-	}
 
 	Zero(&info, sizeof(info));
 	GetNativeSystemInfo(&info);
@@ -451,22 +437,6 @@ bool MsIsX64()
 	}
 
 	return false;
-}
-
-bool MsIs64BitWindows()
-{
-	if (Is64())
-	{
-		return true;
-	}
-
-	BOOL b = false;
-	if (IsWow64Process(GetCurrentProcess(), &b) == false)
-	{
-		return false;
-	}
-
-	return b;
 }
 
 void MsRegistWindowsFirewallEx2(char *title, char *exe, char *dir)
@@ -3346,10 +3316,6 @@ bool MsIsAdmin()
 // Access mask that forces the 32-bit or 64-bit registry view
 UINT MsRegAccessMaskFor64BitEx(bool force32bit, bool force64bit)
 {
-	if (MsIs64BitWindows() == false)
-	{
-		return 0;
-	}
 	if (force32bit)
 	{
 		return KEY_WOW64_32KEY;
@@ -4138,63 +4104,25 @@ void MsGetSpecialDirs()
 	ms->ProgramFilesDirX86 = MsGetSpecialDir(CSIDL_PROGRAM_FILESX86);
 	if (StrCmpi(ms->ProgramFilesDirX86, ms->ExeFileDir) == 0)
 	{
-		if (MsIs64BitWindows())
-		{
-			char tmp[MAX_PATH];
-			Format(tmp, sizeof(tmp), "%s\\Program Files (x86)", ms->WindowsDrive);
+		char tmp[MAX_PATH];
+		Format(tmp, sizeof(tmp), "%s\\Program Files (x86)", ms->WindowsDrive);
 
-			Free(ms->ProgramFilesDirX86);
-			ms->ProgramFilesDirX86 = CopyStr(tmp);
-		}
-		else
-		{
-			Free(ms->ProgramFilesDirX86);
-			ms->ProgramFilesDirX86 = CopyStr(ms->ProgramFilesDir);
-		}
+		Free(ms->ProgramFilesDirX86);
+		ms->ProgramFilesDirX86 = CopyStr(tmp);
 	}
 
 	ms->ProgramFilesDirX86W = MsGetSpecialDirW(CSIDL_PROGRAM_FILESX86);
 	if (UniStrCmpi(ms->ProgramFilesDirX86W, ms->ExeFileDirW) == 0)
 	{
-		if (MsIs64BitWindows())
-		{
-			wchar_t tmp[MAX_PATH];
-			UniFormat(tmp, sizeof(tmp), L"%s\\Program Files (x86)", ms->WindowsDriveW);
+		wchar_t tmp[MAX_PATH];
+		UniFormat(tmp, sizeof(tmp), L"%s\\Program Files (x86)", ms->WindowsDriveW);
 
-			Free(ms->ProgramFilesDirX86W);
-			ms->ProgramFilesDirX86W = UniCopyStr(tmp);
-		}
-		else
-		{
-			Free(ms->ProgramFilesDirX86W);
-			ms->ProgramFilesDirX86W = UniCopyStr(ms->ProgramFilesDirW);
-		}
+		Free(ms->ProgramFilesDirX86W);
+		ms->ProgramFilesDirX86W = UniCopyStr(tmp);
 	}
 
-	if (MsIs64BitWindows())
-	{
-		if (Is64())
-		{
-			ms->ProgramFilesDirX64 = CopyStr(ms->ProgramFilesDir);
-			ms->ProgramFilesDirX64W = CopyUniStr(ms->ProgramFilesDirW);
-		}
-		else
-		{
-			char tmpa[MAX_SIZE];
-			wchar_t tmpw[MAX_SIZE];
-
-			ReplaceStrEx(tmpa, sizeof(tmpa), ms->ProgramFilesDir, "\\Program Files (x86)", "\\Program Files", false);
-			UniReplaceStrEx(tmpw, sizeof(tmpw), ms->ProgramFilesDirW, L"\\Program Files (x86)", L"\\Program Files", false);
-
-			ms->ProgramFilesDirX64 = CopyStr(tmpa);
-			ms->ProgramFilesDirX64W = CopyUniStr(tmpw);
-		}
-	}
-	else
-	{
-		ms->ProgramFilesDirX64 = CopyStr(ms->ProgramFilesDir);
-		ms->ProgramFilesDirX64W = CopyUniStr(ms->ProgramFilesDirW);
-	}
+	ms->ProgramFilesDirX64 = CopyStr(ms->ProgramFilesDir);
+	ms->ProgramFilesDirX64W = CopyUniStr(ms->ProgramFilesDirW);
 
 	ms->CommonStartMenuDir = MsGetSpecialDir(CSIDL_COMMON_STARTMENU);
 	ms->CommonStartMenuDirW = MsGetSpecialDirW(CSIDL_COMMON_STARTMENU);

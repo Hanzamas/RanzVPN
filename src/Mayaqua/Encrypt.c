@@ -2951,7 +2951,7 @@ bool IsAesNiSupported()
 	bool supported = false;
 
 	// OpenSSL has no API to detect AES-NI
-  #if defined(_M_X64) || defined(_M_IX86)
+  #if defined(_M_X64)
     int regs[4]; // EAX, EBX, ECX, EDX
     __cpuid(regs, 1);
     supported = (regs[2] >> 25) & 1;
