@@ -479,11 +479,6 @@ bool MsIsX64()
 {
 	SYSTEM_INFO info;
 
-	if (MsIs64BitWindows() == false)
-	{
-		return false;
-	}
-
 	Zero(&info, sizeof(info));
 	GetNativeSystemInfo(&info);
 
@@ -498,18 +493,7 @@ bool MsIsX64()
 // Acquisition whether it's a 64bit Windows
 bool MsIs64BitWindows()
 {
-	if (Is64())
-	{
-		return true;
-	}
-
-	BOOL b = false;
-	if (IsWow64Process(GetCurrentProcess(), &b) == false)
-	{
-		return false;
-	}
-
-	return b;
+	return true;
 }
 
 // Windows Firewall registration
@@ -1071,9 +1055,7 @@ MS_ADAPTER_LIST *MsCreateAdapterListInnerExVista(bool no_info)
 		MS_ADAPTER *a;
 		UINT j;
 
-		//if (r->dwOperStatus == MIB_IF_OPER_STATUS_CONNECTED || r->dwOperStatus == MIB_IF_OPER_STATUS_OPERATIONAL)
 		{
-			//if (r->dwType & IF_TYPE_ETHERNET_CSMACD)
 			{
 				for (j = 1;;j++)
 				{
@@ -2253,8 +2235,6 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 				break;
 			case SVC_MODE_SERVICE:
 				// Run as a service
-				// Obsoleted (2012.12.31) (Do this in the above code)
-				//MsServiceMode(start, stop);
 				break;
 			}
 
@@ -4606,64 +4586,26 @@ void MsGetSpecialDirs()
 	ms->ProgramFilesDirX86 = MsGetSpecialDir(CSIDL_PROGRAM_FILESX86);
 	if (StrCmpi(ms->ProgramFilesDirX86, ms->ExeFileDir) == 0)
 	{
-		if (MsIs64BitWindows())
-		{
-			char tmp[MAX_PATH];
-			Format(tmp, sizeof(tmp), "%s\\Program Files (x86)", ms->WindowsDrive);
+		char tmp[MAX_PATH];
+		Format(tmp, sizeof(tmp), "%s\\Program Files (x86)", ms->WindowsDrive);
 
-			Free(ms->ProgramFilesDirX86);
-			ms->ProgramFilesDirX86 = CopyStr(tmp);
-		}
-		else
-		{
-			Free(ms->ProgramFilesDirX86);
-			ms->ProgramFilesDirX86 = CopyStr(ms->ProgramFilesDir);
-		}
+		Free(ms->ProgramFilesDirX86);
+		ms->ProgramFilesDirX86 = CopyStr(tmp);
 	}
 
 	ms->ProgramFilesDirX86W = MsGetSpecialDirW(CSIDL_PROGRAM_FILESX86);
 	if (UniStrCmpi(ms->ProgramFilesDirX86W, ms->ExeFileDirW) == 0)
 	{
-		if (MsIs64BitWindows())
-		{
-			wchar_t tmp[MAX_PATH];
-			UniFormat(tmp, sizeof(tmp), L"%s\\Program Files (x86)", ms->WindowsDriveW);
+		wchar_t tmp[MAX_PATH];
+		UniFormat(tmp, sizeof(tmp), L"%s\\Program Files (x86)", ms->WindowsDriveW);
 
-			Free(ms->ProgramFilesDirX86W);
-			ms->ProgramFilesDirX86W = UniCopyStr(tmp);
-		}
-		else
-		{
-			Free(ms->ProgramFilesDirX86W);
-			ms->ProgramFilesDirX86W = UniCopyStr(ms->ProgramFilesDirW);
-		}
+		Free(ms->ProgramFilesDirX86W);
+		ms->ProgramFilesDirX86W = UniCopyStr(tmp);
 	}
 
 	// Program Files (x64)
-	if (MsIs64BitWindows())
-	{
-		if (Is64())
-		{
-			ms->ProgramFilesDirX64 = CopyStr(ms->ProgramFilesDir);
-			ms->ProgramFilesDirX64W = CopyUniStr(ms->ProgramFilesDirW);
-		}
-		else
-		{
-			char tmpa[MAX_SIZE];
-			wchar_t tmpw[MAX_SIZE];
-
-			ReplaceStrEx(tmpa, sizeof(tmpa), ms->ProgramFilesDir, "\\Program Files (x86)", "\\Program Files", false);
-			UniReplaceStrEx(tmpw, sizeof(tmpw), ms->ProgramFilesDirW, L"\\Program Files (x86)", L"\\Program Files", false);
-
-			ms->ProgramFilesDirX64 = CopyStr(tmpa);
-			ms->ProgramFilesDirX64W = CopyUniStr(tmpw);
-		}
-	}
-	else
-	{
-		ms->ProgramFilesDirX64 = CopyStr(ms->ProgramFilesDir);
-		ms->ProgramFilesDirX64W = CopyUniStr(ms->ProgramFilesDirW);
-	}
+	ms->ProgramFilesDirX64 = CopyStr(ms->ProgramFilesDir);
+	ms->ProgramFilesDirX64W = CopyUniStr(ms->ProgramFilesDirW);
 
 	// Common start menu
 	ms->CommonStartMenuDir = MsGetSpecialDir(CSIDL_COMMON_STARTMENU);
