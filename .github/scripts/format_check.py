@@ -17,9 +17,12 @@
 #                            declaration, whichever #if arm is taken (directives only inside a
 #                            nested bracket group, each arm keeping the brackets balanced);
 #                            deleting the braces must not let a following 'else' bind to a
-#                            different 'if'; and outside nested { } the statement must not use
-#                            a macro whose expansion is more than one statement (a ';' or an
-#                            'if' outside parentheses and braces).
+#                            different 'if', on any path through the #if groups after the
+#                            pair (the first token of every arm, the token after the group
+#                            when an arm is empty or there is no #else, and the token after
+#                            the #endif when the pair ends an arm); and outside nested { }
+#                            the statement must not use a macro whose expansion is more than
+#                            one statement (a ';' or an 'if' outside parentheses and braces).
 #   files                    print the files the reformat applies to, one per line.
 #   count ROOT               print line counts of those files per directory as JSON.
 #   table NAME=JSON ...      print a markdown table of several 'count' outputs.
@@ -315,6 +318,98 @@ def parse_statement(v, k):
     raise NotAStatement('missing ;')
 
 
+_IF_DIRECTIVES = {'if', 'ifdef', 'ifndef'}
+_ARM_DIRECTIVES = {'elif', 'else', 'elifdef', 'elifndef'}
+
+
+def _directive_name(v, i):
+    """v[i] is the '#' of a directive; return its name ('' when there is none)."""
+    return v[i + 1] if i + 1 < len(v) else ''
+
+
+def _conditional_arms(v, i):
+    """v[i] is the '#' of an #if, #ifdef or #ifndef. Return (starts, has_else, end): the index
+    after the directive line that opens each arm (the #if, every #elif and the #else), whether
+    the group has an #else, and the index after its #endif (len(v) when it is missing)."""
+    starts = []
+    has_else = False
+    depth = 0
+    k = i
+    while k < len(v):
+        if v[k] != '#':
+            k += 1
+            continue
+        name = _directive_name(v, k)
+        nxt = _skip_directive(v, k)
+        if name in _IF_DIRECTIVES:
+            depth += 1
+            if depth == 1:
+                starts.append(nxt)
+        elif name in _ARM_DIRECTIVES:
+            if depth == 1:
+                starts.append(nxt)
+                has_else = has_else or name == 'else'
+        elif name == 'endif':
+            depth -= 1
+            if depth == 0:
+                return starts, has_else, nxt
+        k = nxt
+    return starts, has_else, len(v)
+
+
+def _skip_to_endif(v, k):
+    """v[k] is the '#' of an #elif or #else, reached at the end of the arm before it; return the
+    index after the #endif of that group, where the compiler goes on (len(v) when missing)."""
+    depth = 0
+    while k < len(v):
+        if v[k] != '#':
+            k += 1
+            continue
+        name = _directive_name(v, k)
+        nxt = _skip_directive(v, k)
+        if name in _IF_DIRECTIVES:
+            depth += 1
+        elif name == 'endif':
+            if depth == 0:
+                return nxt
+            depth -= 1
+        k = nxt
+    return len(v)
+
+
+def following_tokens(v, k, skip=frozenset()):
+    """The tokens that can come right after v[k] once the indices in skip are gone, on every
+    path the compiler can take through the #if groups that follow. An #if group leads to the
+    first token of each of its arms, and to the token after the group when an arm is empty or
+    there is no #else; an #elif or #else reached from inside an arm ends it, so the path goes on
+    after the #endif; other directives are skipped. None stands for the end of the tokens."""
+    out = set()
+    todo = [k + 1]
+    groups = set()
+    while todo:
+        i = todo.pop()
+        while i < len(v) and (i in skip or v[i] == '#'):
+            if i in skip:
+                i += 1
+                continue
+            name = _directive_name(v, i)
+            if name in _IF_DIRECTIVES:
+                break
+            if name in _ARM_DIRECTIVES:
+                i = _skip_to_endif(v, i)
+            else:
+                i = _skip_directive(v, i)
+        if i >= len(v):
+            out.add(None)
+        elif v[i] != '#':
+            out.add(v[i])
+        elif i not in groups:
+            groups.add(i)
+            starts, has_else, end = _conditional_arms(v, i)
+            todo.extend(starts if has_else else starts + [end])
+    return out
+
+
 def conditional_arms_balanced(v):
     """Every #if group in v starts and ends in v, and each of its arms closes exactly the
     brackets it opens: at every #elif, #else and #endif the open brackets are the very ones
@@ -326,10 +421,10 @@ def conditional_arms_balanced(v):
     while i < len(v):
         t = v[i]
         if t == '#':
-            name = v[i + 1] if i + 1 < len(v) else ''
-            if name in ('if', 'ifdef', 'ifndef'):
+            name = _directive_name(v, i)
+            if name in _IF_DIRECTIVES:
                 starts.append(tuple(open_brackets))
-            elif name in ('elif', 'else', 'elifdef', 'elifndef'):
+            elif name in _ARM_DIRECTIVES:
                 if not starts or starts[-1] != tuple(open_brackets):
                     return False
             elif name == 'endif':
@@ -482,19 +577,6 @@ def check_braces(a, b, macros):
     if j != len(b):
         return None, (i, j, 'extra tokens after the end of the original')
 
-    def next_kept(k):
-        """The next token after k that stays and is not part of a directive: an 'else' behind
-        an #if line binds to the same 'if' as one right after k."""
-        k += 1
-        while k < len(a):
-            if k in deleted:
-                k += 1
-            elif a[k] == '#':
-                k = _skip_directive(a, k)
-            else:
-                break
-        return a[k] if k < len(a) else None
-
     in_directive = directive_indices(a)
 
     def pair_error(o, c):
@@ -513,7 +595,9 @@ def check_braces(a, b, macros):
             return 'the braces do not enclose exactly one statement (%s)' % e
         if '#' in content and not conditional_arms_balanced(content):
             return 'a preprocessor conditional inside does not keep the brackets balanced'
-        if open_if and next_kept(c) == 'else':
+        # an 'else' that can follow the pair, in any #if arm or after one, binds to the inner
+        # 'if' once the braces go
+        if open_if and 'else' in following_tokens(a, c, deleted):
             return 'a following else would bind to a different if'
         # a macro inside a nested { } that stays is harmless; one outside it is not
         used = macros.intersection(top_level_tokens(kept))

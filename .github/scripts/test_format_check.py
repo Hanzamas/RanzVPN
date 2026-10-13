@@ -162,6 +162,51 @@ class BracesTest(unittest.TestCase):
         self.ok('if (a) { if (b) x(); }\n#ifdef W\nz();\n#endif\n',
                 'if (a) if (b) x();\n#ifdef W\nz();\n#endif\n', 1)
 
+    def test_dangling_else_in_every_arm(self):
+        # the else in the #else arm binds to 'if (b)' once the braces go, although the first
+        # arm starts with x()
+        before = 'if (a) {\n if (b) g();\n}\n#ifdef X\nx();\n#else\nelse y();\n#endif'
+        after = 'if (a)\n if (b) g();\n\n#ifdef X\nx();\n#else\nelse y();\n#endif'
+        self.assertIn('else', self.bad(before, after))
+        # an #elif arm, and an arm of a nested group
+        self.assertIn('else', self.bad(
+            'if (a) { if (b) g(); }\n#if A\nx();\n#elif B\nelse y();\n#endif\n',
+            'if (a) if (b) g();\n#if A\nx();\n#elif B\nelse y();\n#endif\n'))
+        self.assertIn('else', self.bad(
+            'if (a) { if (b) g(); }\n#ifdef X\nx();\n#else\n#ifdef Y\nelse y();\n#endif\n#endif\n',
+            'if (a) if (b) g();\n#ifdef X\nx();\n#else\n#ifdef Y\nelse y();\n#endif\n#endif\n'))
+        # empty arms lead to the token after the group
+        self.assertIn('else', self.bad(
+            'if (a) { if (b) g(); }\n#ifdef X\n#define Q 1\n#else\n#define Q 2\n#endif\nelse y();\n',
+            'if (a) if (b) g();\n#ifdef X\n#define Q 1\n#else\n#define Q 2\n#endif\nelse y();\n'))
+        self.assertIn('else', self.bad(
+            'if (a) { if (b) g(); }\n#if A\nx();\n#elif B\n#endif\nelse y();\n',
+            'if (a) if (b) g();\n#if A\nx();\n#elif B\n#endif\nelse y();\n'))
+        # every arm starts with something else: fine
+        self.ok('if (a) { if (b) g(); }\n#if A\nx();\n#elif B\nz();\n#else\nw();\n#endif\nelse y();\n',
+                'if (a) if (b) g();\n#if A\nx();\n#elif B\nz();\n#else\nw();\n#endif\nelse y();\n', 1)
+
+    def test_dangling_else_after_the_end_of_an_arm(self):
+        # '}' then #else: the X arm goes on after the #endif, where the else is
+        before = ('#ifdef X\nif (a) {\n if (b) g();\n}\n#else\nif (a) h();\n#endif\n'
+                  'else y();\n')
+        after = '#ifdef X\nif (a)\n if (b) g();\n#else\nif (a) h();\n#endif\nelse y();\n'
+        self.assertIn('else', self.bad(before, after))
+        # '}' then #endif
+        before = 'if (a) x();\n#ifdef X\nelse if (c) {\n if (b) g();\n}\n#endif\nelse y();\n'
+        after = 'if (a) x();\n#ifdef X\nelse if (c)\n if (b) g();\n#endif\nelse y();\n'
+        self.assertIn('else', self.bad(before, after))
+        # the #else arm is not a path from the end of the first arm
+        self.ok('#ifdef X\nif (a) {\n if (b) g();\n}\n#else\nelse h();\n#endif\nz();\n',
+                '#ifdef X\nif (a)\n if (b) g();\n#else\nelse h();\n#endif\nz();\n', 1)
+
+    def test_following_tokens(self):
+        v = toks('a;\n#if A\nb;\n#elif B\n#else\n#ifdef C\nc;\n#endif\n#endif\nd;\n')
+        self.assertEqual(fc.following_tokens(v, v.index(';')), {'b', 'c', 'd'})
+        v = toks('#ifdef X\na;\n#else\nb;\n#endif\nc;')
+        self.assertEqual(fc.following_tokens(v, v.index(';')), {'c'})
+        self.assertEqual(fc.following_tokens(toks('a;'), 1), {None})
+
     def test_position(self):
         self.assertIn('body', self.bad('int a[] = { 1 };', 'int a[] = 1 ;'))
         self.assertIn('body', self.bad('void f(void) { g(); }', 'void f(void) g();'))
