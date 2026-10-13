@@ -3559,7 +3559,6 @@ bool CheckBroadcastStorm(HUB *hub, SESSION *s, PKT *p)
 				{
 					s->DiscardValue = MAX(s->DiscardValue, 1) * 2;
 				}
-				Debug("s->DiscardValue: %u  (%u)\n", s->DiscardValue, num);
 
 				MacToStr(mac, sizeof(mac), p->MacAddressSrc);
 
@@ -3904,7 +3903,6 @@ DISCARD_PACKET:
 										(Cmp(hash, s->LastDLinkSTPPacketDataHash, MD5_SIZE) == 0))
 									{
 										// Discard if the same packet sent before 750ms ago
-										Debug("D-Link Discard %u\n", (UINT)tick_diff);
 										goto DISCARD_PACKET;	// Drop the packet
 									}
 									else
@@ -3936,7 +3934,6 @@ UPDATE_FDB:
 										if (no_heavy == false)
 										{
 											MacToStr(mac_address, sizeof(mac_address), packet->MacHeader->SrcAddress);
-											Debug("Register MAC Address %s to Session %X.\n", mac_address, s);
 											if (packet->VlanId == 0)
 											{
 												HLog(hub, "LH_MAC_REGIST", s->Name, mac_address);
@@ -4158,8 +4155,6 @@ UPDATE_FDB:
 										char mac_str[48];
 										IPToStr(ip_address, sizeof(ip_address), &ip);
 
-										Debug("IP Address %s is Already used by Session %X.\n",
-											ip_address, s);
 
 										MacToStr(mac_str, sizeof(mac_str), e->MacAddress);
 
@@ -4328,8 +4323,6 @@ UPDATE_FDB:
 									char mac_str[48];
 									IPToStr(ip_address, sizeof(ip_address), &ip);
 
-									Debug("IP Address %s is Already used by Session %X.\n",
-										ip_address, s);
 
 									MacToStr(mac_str, sizeof(mac_str), e->MacAddress);
 
@@ -5144,7 +5137,6 @@ bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
 				{
 					char ip1[64], ip2[64];
 					// Not to send a SYN + ACK packet
-					Debug("pol->NoServer: Discard SYN+ACK Packet.\n");
 
 					IPToStr32(ip1, sizeof(ip1), p->L3.IPv4Header->SrcIP);
 					IPToStr32(ip2, sizeof(ip2), p->L3.IPv4Header->DstIP);
@@ -5173,7 +5165,6 @@ bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
 				{
 					char ip1[128], ip2[128];
 					// Not to send a SYN + ACK packet
-					Debug("pol->NoServerV6: Discard SYN+ACK Packet.\n");
 
 					IP6AddrToStr(ip1, sizeof(ip1), &p->IPv6HeaderPacketInfo.IPv6Header->SrcAddress);
 					IP6AddrToStr(ip2, sizeof(ip2), &p->IPv6HeaderPacketInfo.IPv6Header->DestAddress);
@@ -5277,7 +5268,6 @@ bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
 			p->TypeL7 == L7_DHCPV4)
 		{
 			// Discard the DHCP packet
-			Debug("pol->DHCPFilter: Discard DHCP Packet.\n");
 
 			return false;
 		}
@@ -5293,7 +5283,6 @@ bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
 				Endian16(p->L4.UDPHeader->DstPort) == 547)
 			{
 				// Discard the DHCPv6 packet
-				Debug("pol->DHCPv6Filter: Discard DHCPv6 Packet.\n");
 
 				return false;
 			}
@@ -5322,7 +5311,6 @@ bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
 				}
 
 				// Discard the DHCP response packet
-				Debug("pol->DHCPNoServer: Discard DHCP Response Packet.\n");
 				return false;
 			}
 		}
@@ -5347,7 +5335,6 @@ bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
 			}
 
 			// Discard the DHCP response packet
-			Debug("pol->DHCPv6NoServer: Discard DHCPv6 Response Packet.\n");
 			return false;
 		}
 	}
@@ -5437,8 +5424,6 @@ UPDATE_DHCP_ALLOC_ENTRY:
 										MacToStr(dest_mac_addr, sizeof(dest_mac_addr), h->ClientMacAddress);
 										IPToStr(dest_ip_addr, sizeof(dest_ip_addr), &ip);
 										IPToStr32(server_ip_addr, sizeof(server_ip_addr), p->L3.IPv4Header->SrcIP);
-										Debug("DHCP Allocated; dhcp server: %s, client: %s, new_ip: %s\n",
-											dhcp_mac_addr, dest_mac_addr, dest_ip_addr);
 
 										if (no_heavy == false)
 										{
@@ -5722,7 +5707,6 @@ void DelSession(HUB *h, SESSION *s)
 	{
 		if (Delete(h->SessionList, s))
 		{
-			Debug("Session %s was Deleted from %s.\n", s->Name, h->Name);
 			ReleaseSession(s);
 		}
 	}
@@ -5742,7 +5726,6 @@ void AddSession(HUB *h, SESSION *s)
 	{
 		Insert(h->SessionList, s);
 		AddRef(s->ref);
-		Debug("Session %s Inserted to %s.\n", s->Name, h->Name);
 	}
 	UnlockList(h->SessionList);
 }
