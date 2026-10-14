@@ -30,7 +30,7 @@ Facts that shape the migration, read from the tree at 46550173:
    |---|---|
    | Kernel/Object: `LOCK`, `COUNTER`, `REF`, `EVENT`, `THREAD` | `CRITICAL_SECTION` (embedded), `Interlocked*`, kernel event, `_beginthreadex` |
    | `Tick64` and time helpers | `GetTickCount64` / `QueryPerformanceCounter`, `GetSystemTimeAsFileTime` |
-   | Memory tracker and `NO MEMORY LEAKS` | CRT debug heap (`_CrtSetDbgFlag`, `_CrtDumpMemoryLeaks`); the CI marker moves with it. **Withdrawn 2026-10-13: the tracker stays.** |
+   | Memory tracker and `NO MEMORY LEAKS` | CRT debug heap (`_CrtSetDbgFlag`, `_CrtDumpMemoryLeaks`); the CI marker moves with it. **Withdrawn 2026-10-13: the tracker stays** (Mayaqua's `KS_*` counters and the marker are kept as-is; see the 2026-10-13 amendments). A separate test branch only trials the CRT debug heap against it. |
    | `FileIO`, `OS` dispatch table, `Win32.c` backend | direct `CreateFileW` family; the dispatch table disappears once it has a single backend |
    | DNS in `Network.c` | `GetAddrInfoW` / `GetAddrInfoExW` |
    | `Encrypt.c` on OpenSSL | CNG (`BCrypt*`, `NCrypt*`) and CryptoAPI for X.509, per ADR-0007. **Moved to the new core, 2026-10-13.** |
@@ -63,3 +63,12 @@ Consequences of the amendment:
 - OpenSSL, its vcpkg build and the in-tree liboqs and oqs-provider builds stay in the current code base and in CI. The consequence above that OpenSSL leaves at the `Encrypt` and TLS steps now happens with the new core.
 - Besides the list in decision 5, Mayaqua keeps the memory tracker until a later decision retires it, and keeps `Encrypt` on OpenSSL and the TLS code in `Network.c` until the new core replaces them. The estimate of 25k to 30k lines is reached only then; `Encrypt` alone is about 5,400 lines today.
 - Spec #30 needs the same amendment through the issue tracker: its memory, crypto and TLS user stories move to the new core or are withdrawn.
+
+## Amendment 2026-10-13: #30 scope, the memory tracker, and CNG/Schannel deferred to the new core
+
+The 2026-10-13 grilling fixed the scope of the Windows-native runtime migration (ticket #30) within the slim fork. The direction, header shape and wrapper-flip method of the original decision are unchanged; the step boundaries and three details are:
+
+- **#30 stops at step 7 (DNS → `GetAddrInfoW`) and step 9 (HTTP client → WinHTTP).** Completed on branch `winnative` (PR #40): step 0/1 (`Tick64` plus `Native.h` setup), step 2 (`LOCK`/`COUNTER`/`REF`), step 3 (`EVENT`), step 4 (`THREAD`) and step 6 (`FileIO` plus the `OS` dispatch-table collapse); step 7 (DNS) and step 9 (HTTP) raced in parallel.
+- **Step 5 (memory tracker) is not migrated.** Mayaqua's `KS_*` counters and the `NO MEMORY LEAKS` marker are **kept** (this reverses the original Map row, which moved the marker to the CRT debug heap). In addition, a **separate test branch** carries a Debug CI job that trials the CRT debug heap (`_CrtSetDbgFlag` / `_CrtDumpMemoryLeaks`); acceptance is that the debug-heap leak check agrees with the `KS_*` marker. The extra CI minutes are noted; the repo is private.
+- **Steps 8 (`Encrypt` → CNG) and 10 (TLS → Schannel) move to the new core (ADR-0022); they are not dropped.** The new core is CNG and Schannel only.
+- **Step 8, the part that is useful inside the slim fork while OpenSSL stays for TLS:** move only SHA-1, MD5, MD4, RC4, DES and the RNG to CNG, each with known-answer tests. X.509, RSA and DH stay on OpenSSL until TLS moves (step 10). The OpenSSL-engine client auth for cascades is dropped as a scope-cut ticket with its own golden diff. The legacy SE-VPN listener stays on OpenSSL until the slim fork retires.
