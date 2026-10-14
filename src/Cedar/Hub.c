@@ -5548,7 +5548,7 @@ void CleanupHub(HUB *h)
 	Free(h);
 }
 
-static int CompareIpTable(void *p1, void *p2)
+int CompareIpTable(void *p1, void *p2)
 {
 	IP_TABLE_ENTRY *e1, *e2;
 	if (p1 == NULL || p2 == NULL)

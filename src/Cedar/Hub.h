@@ -282,6 +282,7 @@ bool IsHubMacAddress(UCHAR *mac);
 void ReleaseHub(HUB *h);
 void CleanupHub(HUB *h);
 int CompareHub(void *p1, void *p2);
+int CompareIpTable(void *p1, void *p2);
 void LockHubList(CEDAR *cedar);
 void UnlockHubList(CEDAR *cedar);
 HUB *GetHub(CEDAR *cedar, char *name);

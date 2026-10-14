@@ -7,6 +7,8 @@
 #include "Memory.h"
 #include "Str.h"
 
+static void ParseDNS(PKT *p, UCHAR *buf, UINT size);
+
 bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address)
 {
 	USHORT *us;
