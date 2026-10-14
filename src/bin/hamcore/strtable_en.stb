@@ -362,9 +362,6 @@ CT_i_max_groups_per_hub	Maximum Groups per Virtual Hub
 CT_i_max_access_lists	Maximum Access Lists per Virtual Hub
 CT_i_max_mac_tables		Maximum MAC Address Entries per Virtual Hub
 CT_i_max_ip_tables		Maximum IP Address Entries per Virtual Hub
-CT_i_max_l3_sw			Maximum Virtual Layer 3 Switches
-CT_i_max_l3_if			Maximum Virtual Interfaces per Layer 3 Switch
-CT_i_max_l3_table		Maximum Routing Tables per Layer 3 Switch
 CT_b_bridge				Works as VPN Bridge Software
 CT_b_standalone			Standalone Mode
 CT_b_vpn_client_connect	Accepting Connection from VPN Client / Bridge
@@ -379,7 +376,6 @@ CT_b_support_config_rw	Remote Reading and Writing of Config File is Supported
 CT_b_support_hub_admin_option	Virtual Hub Administration Options is Supported
 CT_b_support_cascade_client_cert	Client Certificates for Cascade Connection is Supported
 CT_b_support_hide_hub	Virtual Hub Enumeration Setting is Supported
-CT_b_support_layer3		The Virtual Layer 3 Switch is Supported
 CT_b_support_crl		Virtual Hub-Specific Certificate Revocation Lists is Supported
 CT_b_support_ac			Virtual Hub-Specific Source IP Address Limit Lists is Supported
 CT_b_support_read_log	Downloading of Log Files is Supported
@@ -772,7 +768,6 @@ SM_SESS_LINK			Cascade Connection
 SM_SESS_LINK_HOSTNAME	Virtual Host
 SM_SESS_LINK_TCP		None
 SM_SESS_BRIDGE_HOSTNAME	Ethernet Bridge
-SM_SESS_LAYER3_HOSTNAME	Virtual Layer 3 Switch
 SM_SESS_BRIDGE_TCP		None
 SM_SESS_STATUS_USERNAME	User Name (Authentication)
 SM_SESS_STATUS_REALUSER	User Name (Database)
@@ -812,20 +807,6 @@ SM_BRIDGE_OFFLINE		Offline
 SM_BRIDGE_ONLINE		Operating
 SM_BRIDGE_ERROR			Error
 SM_BRIDGE_INTEL			While in the condition that occurs immediately after a new bridge connection is made when bridging to a physical network adapter, depending on the type of network adapter, there are cases where it will not be possible to communicate using TCP/IP to the network adapter using a bridge connection from a computer on the virtual network. \r\n(This phenomenon is known to occur for Intel and Broadcom network adapters.) \r\n\r\n\r\nIf this issue arises, remedy the situation by restarting the computer on which VPN Server / Bridge is running. Normal communication will be possible after the computer has restarted. \r\n\r\n\r\nAlso many wireless network adapters will not respond to the sending of packets in promiscuous mode and when this occurs you will be unable to use the Local Bridge. If this issue arises, try using a regular wired network adapter instead of the wireless network adapter.
-SM_L3_SW_COLUMN1		Layer 3 Switch Name
-SM_L3_SW_COLUMN2		Running Status
-SM_L3_SW_COLUMN3		Interfaces
-SM_L3_SW_COLUMN4		Routing Tables
-SM_L3_SW_ST_F_F			Stop
-SM_L3_SW_ST_T_F			Start (Error) 
-SM_L3_SW_ST_T_T			Start (Running)
-SM_L3_SW_IF_COLUMN1		IP Address
-SM_L3_SW_IF_COLUMN2		Subnet Mask
-SM_L3_SW_IF_COLUMN3		Virtual Hub Name
-SM_L3_SW_TABLE_COLUMN1	Network Address
-SM_L3_SW_TABLE_COLUMN2	Subnet Mask
-SM_L3_SW_TABLE_COLUMN3	Gateway Address
-SM_L3_SW_TABLE_COLUMN4	Metric
 SM_CRL_COLUMN_1			Certificate Summary
 SM_AC_COLUMN_1			ID
 SM_AC_COLUMN_2			Priority
@@ -1033,14 +1014,6 @@ LA_GET_CONFIG			The config file has been read.
 LA_SET_CONFIG			The config file has been written. Restarting VPN Server.
 LA_SET_HUB_ADMIN_OPTION	The administration option has been set for Virtual Hub "%S".
 LA_SET_HUB_EXT_OPTION	The Virtual Hub Extended Option has been set for Virtual Hub "%S".
-LA_ADD_L3_SW			The Virtual Layer 3 Switch "%S" has been created on the server.
-LA_DEL_L3_SW			The Virtual Layer 3 Switch "%S" has been deleted from the server.
-LA_START_L3_SW			The Virtual Layer 3 Switch "%S" has been started.
-LA_STOP_L3_SW			The Virtual Layer 3 Switch "%S" has been stopped.
-LA_ADD_L3_IF			The virtual interface for Virtual Hub "%S" has been added to Virtual Layer 3 Switch "%S".
-LA_DEL_L3_IF			The virtual interface for Virtual Hub "%S" has been deleted from Virtual Layer 3 Switch "%S".
-LA_ADD_L3_TABLE			The routing table for network "%S" has been added to Virtual Layer 3 Switch "%S".
-LA_DEL_L3_TABLE			The routing table for network "%S" has been deleted from Virtual Layer 3 Switch "%S".
 LA_ADD_CRL				A certificate has been added to Certificate Revocation List.
 LA_DEL_CRL				A certificate has been deleted from Certificate Revocation List.
 LA_SET_CRL				A registered item in a registration of a list of invalid certificates has been edited.
@@ -1050,13 +1023,6 @@ LA_READ_LOG_FILE		The log file on the server "%S" (log file "%S") has been downl
 LE_START				Monitoring the directory "%S". If the amount of available free disk space becomes less than %S, the backup files for log files and configurations that are saved on the sub-directories of this directory will be automatically deleted in the order of oldest first. The amount of free disk space that determines when to start deletion can be modified by changing the "AutoDeleteCheckDiskFreeSpaceMin" item in the configuration file.
 LE_DELETE				The free disk space is now less then %S so the old file "%S" has been automatically deleted. The amount of free disk space that determines when to start deletion can be modified by changing the "AutoDeleteCheckDiskFreeSpaceMin" item in the configuration file.
 LE_NOT_ENOUGH_FREE		<<WARNING>> If the free disk space becomes lower than %S, it will no longer be possible to automatically delete the old backup files of log files and configurations. We recommend that you immediately manually delete the unnecessary files on this computer and recover the necessary free disk space. When there is a very small amount of free disk space, computer operation can become unstable. 
-
-# (Layer 3 Switch log)
-L3_SWITCH_START			The Virtual Layer 3 Switch "%S" started. It will wait until the Virtual Hubs of all interfaces registered on this switch become online and then it will start operation.
-L3_SWITCH_ONLINE		The Virtual Hubs of all interfaces of the Virtual Layer 3 Switch "%S" are online and the Virtual Layer 3 Switch has commenced Virtual Layer 3 Switch operation.
-L3_SWITCH_OFFLINE		At least one Virtual Hub of an interface registered on Virtual Layer 3 Switch "%S" stopped, and Virtual Layer 3 Switch operation has been stopped.
-L3_SWITCH_STOP			The Virtual Layer 3 Switch "%S" terminated.
-
 
 ###########################################################################
 #                                                                         #
@@ -1132,8 +1098,6 @@ CMD_EVAL_PORT			Port number is invalid. Specify a port number that is within the
 CMD_CT_STD_COLUMN_1		Item
 CMD_CT_STD_COLUMN_2		Value
 CMD_CT_STD_COLUMN_3		Description
-CMD_PARSE_IP_SUBNET_ERROR_1	Specify in the format of "IPv4 address/subnet mask". \nSpecify the IPv4 address by separating the decimal values using dots such as "192.168.0.1". For the subnet mask, either specify decimal values separated by dots such as "255.255.255.0", or you can specify the bit length of subnet mask using a decimal value such as 24. \nTo specify a standalone host, specify the subnet mask as either "255.255.255.255" or "32". \n(Example)\n 192.168.0.1/24\n 192.168.0.1/255.255.255.0\n192.168.0.5/255.255.255.255\n\n
-CMD_PARSE_IP_SUBNET_ERROR_2	The specified IP address is not a network address.
 CMD_EVAL_DATE_TIME_FAILED	The date and time specification is invalid. \nThe date and time must be in the same format as "2005/10/08 19:30:00" where 6 integers are specified, representing year/month/day hour:minute:second separated by forward slashes, a space and then colons. Specify 4 digits for the year.
 CMD_PARSE_IP_MASK_ERROR_1_6	Specify in the format of "IPv6 address/mask". \nSpecify the IPv6 address by separating the hexadecimal values using colons such as "2001:200:0:1::". For the mask, either specify hexadecimal values separated by colons such as "ffff:ffff:ffff:ffff::", or you can specify the bit length of mask using a decimal value such as 64. \nTo specify a standalone host, specify the mask as either "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff" or "128". \n(Example)\n2001:200:0:1::/64\n2001:200:0:1::/ffff:ffff:ffff:ffff::\n2001:200:0:1::5/12\n\n
 CMD_PARSE_IP_MASK_ERROR_1	Specify in the format of "IPv4 address/mask". \nSpecify the IPv4 address by separating the decimal values using dots such as "192.168.0.1". For the mask, either specify decimal values separated by dots such as "255.255.255.0", or you can specify the bit length of mask using a decimal value such as 24. \nTo specify a standalone host, specify the mask as either "255.255.255.255" or "32". \n(Example)\n 192.168.0.1/24\n 192.168.0.1/255.255.255.0\n192.168.0.5/255.255.255.255\n\n
@@ -1482,104 +1446,6 @@ CMD_ConfigSet_Args		ConfigSet [path]
 CMD_ConfigSet_[path]	Specify the file name of the write destination configuration file. If the write destination file contains multiple-byte characters, the encoding must be Unicode (UTF-8).
 CMD_ConfigSet_PROMPT_PATH	Config file path name to upload to server: 
 CMD_ConfigSet_FILE_LOAD_FAILED	Reading from specified file failed.
-
-
-# RouterList command
-CMD_RouterList			Get List of Virtual Layer 3 Switches
-CMD_RouterList_Help		Use this to get the list of Virtual Layer 3 Switches defined on the VPN Server. You can get the following information on the Virtual Layer 3 Switches: Switch Name, Operating Status, Number of Interfaces, and Number of Routing Tables. \nTo execute this command, you must have VPN Server administrator privileges. \nAlso, this command does not operate on VPN Bridge.
-CMD_RouterList_Args		RouterList
-
-
-# RouterAdd command
-CMD_RouterAdd			Define New Virtual Layer 3 Switch
-CMD_RouterAdd_Help		Use this to define a new Virtual Layer 3 Switch on the VPN Server. \nTo execute this command, you must have VPN Server administrator privileges. \nAlso, this command does not operate on VPN Bridge. \n\n[Explanation on Virtual Layer 3 Switch Function]\nYou can define Virtual Layer 3 Switches between multiple Virtual Hubs operating on this VPN Server and configure routing between different IP networks. \n\n[Caution about the Virtual Layer 3 Switch Function]\nThe Virtual Layer 3 Switch functions are provided for network administrators and other people who know a lot about networks and IP routing. If you are using the regular VPN functions, you do not need to use the Virtual Layer 3 Switch functions. \nIf the Virtual Layer 3 Switch functions are to be used, the person who configures them must have sufficient knowledge of IP routing and be perfectly capable of not impacting the network.
-CMD_RouterAdd_Args		RouterAdd [name]
-CMD_RouterAdd_[name]	Use this to specify the name of the newly created Virtual Layer 3 Switch name. You cannot add a name that is identical to an existing Virtual Layer 3 Switch.
-CMD_RouterAdd_PROMPT_NAME	Name of Virtual Layer 3 Switch to Create: 
-
-
-# RouterDelete command
-CMD_RouterDelete		Delete Virtual Layer 3 Switch
-CMD_RouterDelete_Help	Use this to delete an existing Virtual Layer 3 Switch that is defined on the VPN Server. When the specified Virtual Layer 3 Switch is operating, it will be automatically deleted after operation stops. \nTo get a list of existing Virtual Layer 3 Switches, use the RouterList command. \nTo execute this command, you must have VPN Server administrator privileges. \nAlso, this command does not operate on VPN Bridge.
-CMD_RouterDelete_Args	RouterDelete [name]
-CMD_RouterDelete_[name]	Use this to specify the name of the Virtual Layer 3 Switch to be deleted.
-CMD_RouterDelete_PROMPT_NAME	Name of Virtual Layer 3 Switch to Delete: 
-
-
-# RouterStart command
-CMD_RouterStart			Start Virtual Layer 3 Switch Operation
-CMD_RouterStart_Help	Use this to start the operation of an existing Virtual Layer 3 Switch defined on the VPN Server whose operation is currently stopped. \nTo get a list of existing Virtual Layer 3 Switches, use the RouterList command. \nTo execute this command, you must have VPN Server administrator privileges. \nAlso, this command does not operate on VPN Bridge. \n\n[Explanation on Virtual Layer 3 Switch Function]\nYou can define Virtual Layer 3 Switches between multiple Virtual Hubs operating on this VPN Server and configure routing between different IP networks. \n\n[Caution about the Virtual Layer 3 Switch Function]\nThe Virtual Layer 3 Switch functions are provided for network administrators and other people who know a lot about networks and IP routing. If you are using the regular VPN functions, you do not need to use the Virtual Layer 3 Switch functions. \nIf the Virtual Layer 3 Switch functions are to be used, the person who configures them must have sufficient knowledge of IP routing and be perfectly capable of not impacting the network.
-CMD_RouterStart_Args	RouterStart [name]
-CMD_RouterStart_[name]	Use this to specify the name of the Virtual Layer 3 Switch to start.
-CMD_RouterStart_PROMPT_NAME	Name of Virtual Layer 3 Switch to Start: 
-
-
-# RouterStop command
-CMD_RouterStop			Stop Virtual Layer 3 Switch Operation
-CMD_RouterStop_Help		Use this to stop the operation of an existing Virtual Layer 3 Switch defined on the VPN Server whose operation is currently operating. \nTo get a list of existing Virtual Layer 3 Switches, use the RouterList command. \nTo execute this command, you must have VPN Server administrator privileges.
-CMD_RouterStop_Args		RouterStop [name]
-CMD_RouterStop_[name]	Use this to specify the name of the Virtual Layer 3 Switch to stop.
-CMD_RouterStop_PROMPT_NAME	Name of Virtual Layer 3 Switch to Stop: 
-
-
-# RouterIfList command
-CMD_RouterIfList		Get List of Interfaces Registered on the Virtual Layer 3 Switch
-CMD_RouterIfList_Help	Use this to get a list of virtual interfaces when virtual interfaces have been defined on a specified Virtual Layer 3 Switch. \nYou can define multiple virtual interfaces and routing tables for a single Virtual Layer 3 Switch. \nA virtual interface is associated to a virtual Hub and operates as a single IP host on the Virtual Hub when that Virtual Hub is operating. When multiple virtual interfaces that respectively belong to a different IP network of a different Virtual Hub are defined, IP routing will be automatically performed between these interfaces. \nTo execute this command, you must have VPN Server administrator privileges. \nAlso, this command does not operate on VPN Bridge.
-CMD_RouterIfList_Args	RouterIfList [name]
-CMD_RouterIfList_[name]	Use this to specify the name of the Virtual Layer 3 Switch.
-CMD_RouterIfList_PROMPT_NAME	Name of Virtual Layer 3 Switch: 
-
-
-# RouterIfAdd command
-CMD_RouterIfAdd			Add Virtual Interface to Virtual Layer 3 Switch
-CMD_RouterIfAdd_Help	Use this to add to a specified Virtual Layer 3 Switch, a virtual interface that connects to a Virtual Hub operating on the same VPN Server. \nYou can define multiple virtual interfaces and routing tables for a single Virtual Layer 3 Switch. \nA virtual interface is associated to a virtual Hub and operates as a single IP host on the Virtual Hub when that Virtual Hub is operating. When multiple virtual interfaces that respectively belong to a different IP network of a different Virtual Hub are defined, IP routing will be automatically performed between these interfaces. \nYou must define the IP network space that the virtual interface belongs to and the IP address of the interface itself. \nAlso, you must specify the name of the Virtual Hub that the interface will connect to. \nYou can specify a Virtual Hub that currently doesn't exist for the Virtual Hub name. \nThe virtual interface must have one IP address in the Virtual Hub. You also must specify the subnet mask of an IP network that the IP address belongs to. \nRouting via the Virtual Layer 3 Switches of IP spaces of multiple virtual Hubs operates based on the IP address is specified here. \nTo execute this command, you must have VPN Server administrator privileges. \nAlso, this command does not operate on VPN Bridge. \nTo execute this command, the target Virtual Layer 3 Switch must be stopped. If it is not stopped, first use the RouterStop command to stop it and then execute this command.
-CMD_RouterIfAdd_Args	RouterIfAdd [name] [/HUB:hub] [/IP:ip/mask]
-CMD_RouterIfAdd_[name]	Use this to specify the name of the Virtual Layer 3 Switch.
-CMD_RouterIfAdd_HUB		Use this to specify the name of the Virtual Hub to be the connection destination of the virtual interface to be newly added. To get a list of Virtual Hubs, you can use the HubList command. It is not essential that you specify a Virtual Hub that is currently operating. If you specify a Virtual Hub name that is not currently operating or that does not exist, the Virtual Layer 3 Switch will become enabled when the actual operation of that Virtual Hub begins.
-CMD_RouterIfAdd_IP		Using the format: "IP address/subnet mask", specify the IP address and subnet mask held by the virtual interface to be newly added. Specify the IP address by separating the decimal values using dots such as 192.168.0.1 For the subnet mask, either specify decimal values separated by dots such as 255.255.255.0, or you can specify the bit length from the header using a decimal value such as 24. 
-CMD_RouterIfAdd_PROMPT_NAME	Name of Virtual Layer 3 Switch: 
-CMD_RouterIfAdd_PROMPT_HUB	Destination Virtual Hub Name of Virtual Interface: 
-CMD_RouterIfAdd_PROMPT_IP	IP Address/Subnet Mask: 
-
-
-# RouterIfDel command
-CMD_RouterIfDel			Delete Virtual Interface of Virtual Layer 3 Switch
-CMD_RouterIfDel_Help	Use this to delete a virtual interface already defined in the specified Virtual Layer 3 Switch. \nYou can get a list of the virtual interfaces currently defined, by using the RouterIfList command. \nTo execute this command, you must have VPN Server administrator privileges. \nAlso, this command does not operate on VPN Bridge. \nTo execute this command, the target Virtual Layer 3 Switch must be stopped. If it is not stopped, first use the RouterStop command to stop it and then execute this command.
-CMD_RouterIfDel_Args	RouterIfDel [name] [/HUB:hub]
-CMD_RouterIfDel_[name]	Use this to specify the name of the Virtual Layer 3 Switch.
-CMD_RouterIfDel_HUB		Use this to specify the name of the Virtual Hub to be the connection destination of the virtual interface to be deleted.
-
-
-# RouterTableList command
-CMD_RouterTableList		Get List of Routing Tables of Virtual Layer 3 Switch 
-CMD_RouterTableList_Help	Use this to get a list of routing tables when routing tables have been defined on a specified Virtual Layer 3 Switch. \nIf the destination IP address of the IP packet does not belong to any IP network that belongs to a virtual interface, the IP routing engine of the Virtual Layer 3 Switch will reference this routing table and execute routing. \nTo execute this command, you must have VPN Server administrator privileges. \nAlso, this command does not operate on VPN Bridge.
-CMD_RouterTableList_Args	RouterTableList [name]
-CMD_RouterTableList_[name]	Use this to specify the name of the Virtual Layer 3 Switch.
-CMD_RouterTableList_PROMPT_NAME	Name of Virtual Layer 3 Switch: 
-
-
-# RouterTableAdd command
-CMD_RouterTableAdd		Add Routing Table Entry for Virtual Layer 3 Switch
-CMD_RouterTableAdd_Help	Here you can add a new routing table entry to the routing table of the specified Virtual Layer 3 Switch. \nIf the destination IP address of the IP packet does not belong to any IP network that belongs to a virtual interface, the IP routing engine of the Virtual Layer 3 Switch will reference the routing table and execute routing. \nYou must specify the contents of the routing table entry to be added to the Virtual Layer 3 Switch. You must specify any IP address that belongs to the same IP network in the virtual interface of this Virtual Layer 3 Switch as the gateway address. \nTo execute this command, you must have VPN Server administrator privileges. \nAlso, this command does not operate on VPN Bridge. \nTo execute this command, the target Virtual Layer 3 Switch must be stopped. If it is not stopped, first use the RouterStop command to stop it and then execute this command.
-CMD_RouterTableAdd_Args	RouterTableAdd [name] [/NETWORK:ip/mask] [/GATEWAY:gwip] [/METRIC:metric]
-CMD_RouterTableAdd_[name]	Use this to specify the name of the Virtual Layer 3 Switch.
-CMD_RouterTableAdd_NETWORK	Using the format: "IP address/subnet mask", specify the network address and subnet mask of the routing table entry to be newly added. Specify the network address by separating the decimal values using dots such as "192.168.0.1". For the subnet mask, either specify decimal values separated by dots such as 255.255.255.0, or you can specify the bit length from the header using a decimal value such as 24. If you specify 0.0.0.0/0.0.0.0, the default route will be used. 
-CMD_RouterTableAdd_GATEWAY	Specify the gateway IP address.
-CMD_RouterTableAdd_METRIC	Specify a metric value. Specify an integer (1 or higher).
-CMD_RouterTableAdd_PROMPT_NAME	Name of Virtual Layer 3 Switch: 
-CMD_RouterTableAdd_PROMPT_NETWORK	Network Address/Subnet Mask: 
-CMD_RouterTableAdd_PROMPT_GATEWAY	Gateway Address: 
-CMD_RouterTableAdd_PROMPT_METRIC	Metric Value: 
-
-
-# RouterTableDel command
-CMD_RouterTableDel		Delete Routing Table Entry of Virtual Layer 3 Switch
-CMD_RouterTableDel_Help	Use this to delete a routing table entry that is defined in the specified Virtual Layer 3 Switch. \nYou can get a list of the already defined routing table entries by using the RouterTableList command. \nTo execute this command, you must have VPN Server administrator privileges. \nAlso, this command does not operate on VPN Bridge. \nTo execute this command, the target Virtual Layer 3 Switch must be stopped. If it is not stopped, first use the RouterStop command to stop it and then execute this command.
-CMD_RouterTableDel_Args	RouterTableDel [name] [/NETWORK:ip/mask] [/GATEWAY:gwip] [/METRIC:metric]
-CMD_RouterTableDel_[name]	Use this to specify the name of the Virtual Layer 3 Switch.
-CMD_RouterTableDel_NETWORK	Using the format: "IP address/subnet mask", specify the network address of the routing table entry to be deleted.
-CMD_RouterTableDel_GATEWAY	Specify the gateway IP address.
-CMD_RouterTableDel_METRIC	Specify a metric value. Specify an integer (1 or higher).
 
 
 # LogFileList command
@@ -2793,7 +2659,6 @@ TTC_COMM_START			\nAll connections were established and so data transfer started
 TTC_COMM_END			Because %.1f seconds or more have passed, the data communication will end. \n\n
 TTC_COMM_USER_CANCEL	Because of cancellation by user, the data communication will end. \n\n
 TTC_COMM_DISCONNECTED	The TCP connection %u has been disconnected.
-TTC_STOPPING			Stopping the operation of the communication throughput measurement tool client...
 TTC_RES_TITLE			\n\nNetwork Traffic Speed Test Tool\n\n
 TTC_RES_COLUMN_1		Item Name
 TTC_RES_COLUMN_2		Normal View

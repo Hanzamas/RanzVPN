@@ -20,7 +20,6 @@ Virtual Hub Administration Options is Supported,Yes
 Virtual Hub Extended Option is Supported,Yes
 IPv6 IP Access Control Lists is Supported,Yes
 IPv6 Access List is Supported,Yes
-The Virtual Layer 3 Switch is Supported,No
 Management of Licenses is Supported,No
 Limits for Multiple Login by Same User is Supported,Yes
 Message of Today function is Supported,Yes
