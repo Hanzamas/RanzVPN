@@ -18,6 +18,13 @@
 //   "HARNESS GOLDEN MODE update|compare" tells whether the golden files were compared.
 // - The admin RPC Pack goldens (golden family "pack", harness_pack.c) run right after the vpncmd
 //   goldens, while the sessions and the cascade are up. harness_int.h holds the shared types.
+// - "bench" runs every case HARNESS_BENCH_RUNS times and prints "BENCH <name> <median> <unit>", then
+//   "BENCH <name>_runs <run 1>,...,<run n> <unit>" in run order. Besides the cascade path it has in-process
+//   cases without TLS, one per hot spot of spec #31: flood_fps_<n> (one session floods broadcast frames to
+//   n sessions of hub HARNESS_FLOOD through the hub packet adapter, no SessionMain thread), parse_packet_<kind>
+//   (the parse of HubPaPutPacket; _nolog: hub packet log off), pack_<encode|decode>_names_<n> (a Pack with n distinct element
+//   names) and ip_table_expire_<n> (one DeleteExpiredIpTableEntry pass). A wrong result of these cases prints a
+//   "BENCH WARNING" line and skips the case; it does not fail the test.
 // - Files left after a run: the server_log, security_log and packet_log folders (as in the "s"
 //   mode). The configuration file and its backup folder are deleted at the start and at the end.
 
@@ -29,6 +36,7 @@
 #include "Cedar/Cedar.h"
 #include "Cedar/Command.h"
 #include "Cedar/Connection.h"
+#include "Cedar/Hub.h"
 #include "Cedar/Listener.h"
 #include "Cedar/Server.h"
 #include "Cedar/Session.h"
@@ -44,6 +52,7 @@
 #include "Mayaqua/Pack.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
+#include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
 
 #include <stdio.h>
@@ -59,9 +68,11 @@
 #define	HARNESS_RUNTIME_BUDGET		60000				// Whole "harness" test
 #define	HARNESS_BENCH_BUDGET		30000				// Whole "bench" test (warning only)
 #define	HARNESS_BENCH_WARMUP		300					// Not measured
-#define	HARNESS_BENCH_SPAN			2000				// Measured window per frame size
+#define	HARNESS_BENCH_SPAN			400					// Measured window per run and frame size (cascade path)
 #define	HARNESS_BENCH_DRAIN			1000				// Max wait for the send queue to drain
-#define	HARNESS_BENCH_PACK_SPAN		1000				// Per Pack benchmark
+#define	HARNESS_BENCH_PACK_SPAN		200					// Per run of a Pack case
+#define	HARNESS_BENCH_FLOOD_SPAN	200					// Per run of a flood case
+#define	HARNESS_BENCH_MICRO_SPAN	100					// Per run of a ParsePacket case
 #define	HARNESS_WATCHDOG_LIMIT		120000				// "harness" process aborted after this (product calls can block forever)
 #define	HARNESS_BENCH_WATCHDOG		90000				// "bench" process aborted after this
 
@@ -73,6 +84,15 @@
 #define	HARNESS_DIFF_MAX_LINES		1000				// Larger texts only report the first difference
 #define	HARNESS_DIFF_CONTEXT		2					// Context lines around a difference
 #define	HARNESS_PACK_ITEMS			32					// Sessions in the Pack benchmark struct
+#define	HARNESS_BENCH_RUNS			5					// Runs per bench case: the median and every run are printed
+#define	HARNESS_FLOOD_BATCH			32					// Frames the flood sender stores per receive loop
+#define	HARNESS_PACK_NAMES			500					// Distinct element names of the many-names Pack case
+#define	HARNESS_PARSE_FRAME_MAX		512					// Buffer of one ParsePacket bench frame
+#define	HARNESS_NUM_PARSE_FRAMES	5					// ParsePacket bench frames: l2, tcp, http, tls, dns
+
+// Time units of the high-resolution bench clock
+#define	HARNESS_NS_PER_MS			1000000ULL
+#define	HARNESS_NS_PER_S			1000000000ULL
 
 // Normalised placeholders
 #define	HARNESS_TAG_VOLATILE		"<VOLATILE>"
@@ -120,6 +140,34 @@ typedef struct HARNESS_WATCHDOG
 	EVENT *Done;				// Set when the test completes
 	THREAD *Thread;				// Watchdog thread
 } HARNESS_WATCHDOG;
+
+// One operation of a timed bench case: false means a wrong result and stops the case
+typedef bool (HARNESS_BENCH_OP)(void *param);
+
+// State of the Pack bench cases
+typedef struct HARNESS_PACK_BENCH
+{
+	RPC_ENUM_SESSION *Struct;	// Encoded by pack_encode_enum_session
+	BUF *Buf;					// Decoded by the decode case
+	char **Names;				// HARNESS_PACK_NAMES distinct element names, not in sorted order
+} HARNESS_PACK_BENCH;
+
+// Frame of the ParsePacket bench cases
+typedef struct HARNESS_PARSE_FRAME
+{
+	char *Kind;					// Case name: parse_packet_<Kind>
+	UCHAR Data[HARNESS_PARSE_FRAME_MAX];
+	UINT Size;
+} HARNESS_PARSE_FRAME;
+
+// State of the ParsePacket bench cases
+typedef struct HARNESS_PARSE_BENCH
+{
+	HARNESS_PARSE_FRAME Frames[HARNESS_NUM_PARSE_FRAMES];
+	UINT Current;				// Frame of a single-frame case
+	UINT Next;					// Next frame of the mixed case
+	bool NoLog;					// Parse as with the hub packet log off
+} HARNESS_PARSE_BENCH;
 
 // Current phase of the test, read by the watchdog thread (static strings only)
 static char *volatile harness_phase = "start";
@@ -298,8 +346,33 @@ static void HarnessDeleteConfigFiles();
 static void HarnessTeardown(HARNESS *h, bool check);
 static HARNESS *HarnessNew();
 static void HarnessFree(HARNESS *h);
+static UINT64 HarnessNowNs();
+static void HarnessBenchValue(char *str, UINT size, UINT64 value, bool centi);
+static void HarnessBenchReport(char *name, UINT64 *runs, UINT num, char *unit, bool centi);
+static bool HarnessBenchOps(char *name, HARNESS_BENCH_OP *op, void *param, UINT span, UINT check_every);
 static void HarnessBenchFrames(HARNESS *h, UINT size);
+static void HarnessFloodIdleThread(THREAD *thread, void *param);
+static SESSION *HarnessNewFloodSession(HUB *hub, THREAD *thread, UINT index, bool sender);
+static void HarnessFreeFloodSession(SESSION *s);
+static UINT64 HarnessFloodBatch(SESSION *sender, SESSION **recv, UINT num_recv, UCHAR *frame, UINT size);
+static void HarnessBenchFloodCase(HUB *hub, UINT num_recv);
+static void HarnessBenchFlood(HARNESS *h);
+static bool HarnessOpEncodeEnumSession(void *param);
+static bool HarnessOpDecodeEnumSession(void *param);
 static void HarnessBenchPack(HARNESS *h);
+static PACK *HarnessNewNamesPack(HARNESS_PACK_BENCH *b);
+static bool HarnessOpEncodeNames(void *param);
+static bool HarnessOpDecodePack(void *param);
+static void HarnessBenchPackNames();
+static UINT HarnessBuildIpFrame(UCHAR *buf, UINT buf_size, UCHAR protocol, USHORT dst_port, UCHAR *payload, UINT payload_size);
+static UINT HarnessBuildClientHello(UCHAR *buf, UINT buf_size, char *host);
+static UINT HarnessBuildDnsQuery(UCHAR *buf, UINT buf_size, char *host);
+static PKT *HarnessParseLikeHub(HARNESS_PARSE_FRAME *f, bool no_log);
+static bool HarnessParsedAsBuilt(HARNESS_PARSE_FRAME *f, PKT *p, bool no_log);
+static bool HarnessOpParseOne(void *param);
+static bool HarnessOpParseMix(void *param);
+static void HarnessBenchParse();
+static void HarnessBenchIpTableExpire(UINT num);
 
 ////////////////////////////
 // Reporting and text helpers
@@ -2880,14 +2953,123 @@ static void HarnessFree(HARNESS *h)
 ////////////////////////////
 // Benchmark
 
-// Frames per second from session A to session B through the cascade for one frame size
+// Monotonic time in nanoseconds from the high-resolution counter (Tick64 steps in whole milliseconds)
+static UINT64 HarnessNowNs()
+{
+	return TickHighresNano64(false);
+}
+
+// One bench value as text; centi: the value is in hundredths and gets two decimals
+static void HarnessBenchValue(char *str, UINT size, UINT64 value, bool centi)
+{
+	if (centi)
+	{
+		Format(str, size, "%I64u.%02u", value / 100, (UINT)(value % 100));
+	}
+	else
+	{
+		Format(str, size, "%I64u", value);
+	}
+}
+
+// Print one case: "BENCH <name> <median> <unit>", then "BENCH <name>_runs <run 1>,...,<run n> <unit>" in run order
+static void HarnessBenchReport(char *name, UINT64 *runs, UINT num, char *unit, bool centi)
+{
+	UINT64 sorted[HARNESS_BENCH_RUNS];
+	char list[MAX_SIZE];
+	char value[64];
+	UINT i, j;
+
+	if (num == 0 || num > HARNESS_BENCH_RUNS)
+	{
+		return;
+	}
+
+	Copy(sorted, runs, sizeof(UINT64) * num);
+	for (i = 1;i < num;i++)
+	{
+		UINT64 v = sorted[i];
+
+		for (j = i;j > 0 && sorted[j - 1] > v;j--)
+		{
+			sorted[j] = sorted[j - 1];
+		}
+		sorted[j] = v;
+	}
+
+	list[0] = 0;
+	for (i = 0;i < num;i++)
+	{
+		HarnessBenchValue(value, sizeof(value), runs[i], centi);
+		if (i != 0)
+		{
+			StrCat(list, sizeof(list), ",");
+		}
+		StrCat(list, sizeof(list), value);
+	}
+
+	// HARNESS_BENCH_RUNS is odd: the median is the middle run
+	HarnessBenchValue(value, sizeof(value), sorted[num / 2], centi);
+	Print("BENCH %s %s %s\n", name, value, unit);
+	Print("BENCH %s_runs %s %s\n", name, list, unit);
+}
+
+// Run one case HARNESS_BENCH_RUNS times for span milliseconds each and report the operations per second.
+// The clock is read every check_every operations (1 for slow operations, more when the clock would cost too much)
+static bool HarnessBenchOps(char *name, HARNESS_BENCH_OP *op, void *param, UINT span, UINT check_every)
+{
+	UINT64 runs[HARNESS_BENCH_RUNS];
+	UINT64 span_ns = (UINT64)span * HARNESS_NS_PER_MS;
+	UINT r;
+
+	for (r = 0;r < HARNESS_BENCH_RUNS;r++)
+	{
+		UINT64 start = HarnessNowNs();
+		UINT64 now = start;
+		UINT64 ops = 0;
+
+		while (true)
+		{
+			if (op(param) == false)
+			{
+				Print("BENCH WARNING %s: wrong result, case skipped\n", name);
+				return false;
+			}
+
+			ops++;
+			if ((ops % check_every) == 0)
+			{
+				now = HarnessNowNs();
+				if ((now - start) >= span_ns)
+				{
+					break;
+				}
+			}
+		}
+
+		runs[r] = ops * HARNESS_NS_PER_S / (now - start);
+	}
+
+	HarnessBenchReport(name, runs, HARNESS_BENCH_RUNS, "ops/s", false);
+
+	return true;
+}
+
+// Frames per second from session A to session B through the cascade for one frame size: a warm-up,
+// then HARNESS_BENCH_RUNS back-to-back windows of one continuous stream
 static void HarnessBenchFrames(HARNESS *h, UINT size)
 {
 	UCHAR *frame = Malloc(size);
 	HARNESS_FRAME *batch[HARNESS_QUEUE_HIGH];
-	UINT64 end_warmup, end, now;
-	UINT64 t0 = 0, t1, c0 = 0, c1, elapsed, fps, centi_mbps;
+	UINT64 mark_ns[HARNESS_BENCH_RUNS + 1];		// Run boundaries: end of the warm-up, then end of each run
+	UINT64 mark_recv[HARNESS_BENCH_RUNS + 1];	// Frames received by session B at each boundary
+	UINT64 fps[HARNESS_BENCH_RUNS];
+	UINT64 centi_mbps[HARNESS_BENCH_RUNS];
+	UINT64 next_mark;
+	UINT num_marks = 0;
 	UINT num_unsent;
+	UINT i;
+	char name[MAX_SIZE];
 	char tmp[MAX_SIZE];
 
 	HarnessBuildFrame(frame, size, harness_mac_b, harness_mac_a, 0x10000 + size);
@@ -2899,29 +3081,30 @@ static void HarnessBenchFrames(HARNESS *h, UINT size)
 	}
 	Unlock(h->PaB->Lock);
 
-	end_warmup = Tick64() + (UINT64)HARNESS_BENCH_WARMUP;
-	end = end_warmup + (UINT64)HARNESS_BENCH_SPAN;
+	next_mark = HarnessNowNs() + (UINT64)HARNESS_BENCH_WARMUP * HARNESS_NS_PER_MS;
 
 	while (true)
 	{
 		UINT queued;
+		UINT64 now = HarnessNowNs();
 
-		now = Tick64();
-		if (t0 == 0 && now >= end_warmup)
+		if (now >= next_mark)
 		{
-			t0 = now;
-			c0 = HarnessPaGetNumRecv(h->PaB);
-		}
+			mark_ns[num_marks] = now;
+			mark_recv[num_marks] = HarnessPaGetNumRecv(h->PaB);
+			num_marks++;
 
-		if (now >= end)
-		{
-			break;
+			if (num_marks > HARNESS_BENCH_RUNS)
+			{
+				break;
+			}
+
+			next_mark = now + (UINT64)HARNESS_BENCH_SPAN * HARNESS_NS_PER_MS;
 		}
 
 		queued = HarnessPaQueued(h->PaA);
 		if (queued < HARNESS_QUEUE_HIGH)
 		{
-			UINT i;
 			UINT num = HARNESS_QUEUE_HIGH - queued;
 
 			for (i = 0;i < num;i++)
@@ -2949,40 +3132,262 @@ static void HarnessBenchFrames(HARNESS *h, UINT size)
 		}
 	}
 
-	t1 = Tick64();
-	c1 = HarnessPaGetNumRecv(h->PaB);
-
 	HarnessPaDrain(h->PaA, HARNESS_BENCH_DRAIN);
 
 	// Frames still queued after the drain would be counted in the next frame size: discard them
 	num_unsent = HarnessPaPurge(h->PaA);
 
-	elapsed = (t1 > t0) ? (t1 - t0) : 1;
-	fps = (c1 - c0) * 1000 / elapsed;
-	centi_mbps = ((c1 - c0) * (UINT64)size * 8) / (elapsed * 10);
+	for (i = 0;i < HARNESS_BENCH_RUNS;i++)
+	{
+		UINT64 elapsed = mark_ns[i + 1] - mark_ns[i];
+		UINT64 delivered = mark_recv[i + 1] - mark_recv[i];
+
+		if (elapsed == 0)
+		{
+			elapsed = 1;
+		}
+
+		fps[i] = delivered * HARNESS_NS_PER_S / elapsed;
+		// Hundredths of Mbit/s: bits / (elapsed_ns / 10^9) / 10^6 * 100
+		centi_mbps[i] = delivered * (UINT64)size * 8ULL * 100000ULL / elapsed;
+	}
 
 	// "cascade_path": test session A, the cascade and test session B (3 TLS connections)
-	Print("BENCH cascade_path_fps_%u %I64u frames/s\n", size, fps);
-	Print("BENCH cascade_path_mbps_%u %I64u.%02u Mbit/s\n", size, centi_mbps / 100, (UINT)(centi_mbps % 100));
+	Format(name, sizeof(name), "cascade_path_fps_%u", size);
+	HarnessBenchReport(name, fps, HARNESS_BENCH_RUNS, "frames/s", false);
+	Format(name, sizeof(name), "cascade_path_mbps_%u", size);
+	HarnessBenchReport(name, centi_mbps, HARNESS_BENCH_RUNS, "Mbit/s", true);
 	Print("BENCH cascade_path_unsent_%u %u frames\n", size, num_unsent);
 
 	// The numbers are informational, a dead data path is an error
-	Format(tmp, sizeof(tmp), "bench %u: frames delivered during the measured window", size);
-	HarnessCheck(h, c1 > c0, tmp);
+	Format(tmp, sizeof(tmp), "bench %u: frames delivered during the measured windows", size);
+	HarnessCheck(h, mark_recv[HARNESS_BENCH_RUNS] > mark_recv[0], tmp);
 
 	Free(frame);
+}
+
+////////////////////////////
+// Flood benchmark: in-process sessions on hub HARNESS_FLOOD, no transport and no TLS
+
+// Owner of the flood session connections (a server CONNECTION holds a THREAD); it has nothing to run
+static void HarnessFloodIdleThread(THREAD *thread, void *param)
+{
+}
+
+// In-process server session on the flood hub, made like the server side of a cascade (Link.c): a CONNECTION
+// without sockets and the hub packet adapter, but no SessionMain thread. The bench thread calls the packet
+// adapter itself, so a frame goes through HubPaPutPacket, StorePacket and HubPaGetNextPacket only
+static SESSION *HarnessNewFloodSession(HUB *hub, THREAD *thread, UINT index, bool sender)
+{
+	CONNECTION *c;
+	SESSION *s;
+	POLICY *policy = ClonePolicy(GetDefaultPolicy());
+	char username[MAX_USERNAME_LEN + 1];
+
+	Format(username, sizeof(username), "bench-flood-%u", index);
+
+	if (sender)
+	{
+		// The single sender floods at full rate: the broadcast storm guard would drop most of its frames
+		policy->NoBroadcastLimiter = true;
+	}
+
+	c = NewServerConnection(hub->Cedar, NULL, thread);
+	s = NewServerSession(hub->Cedar, c, hub, username, policy);
+	c->Session = s;
+	ReleaseConnection(c);
+
+	s->Username = CopyStr(username);
+
+	// Joined the hub in NewServerSession; floods reach it from here on (HubPaInit always succeeds)
+	s->PacketAdapter->Init(s);
+
+	return s;
+}
+
+// Release a flood session in the order of the end of SessionMain: leave the hub, free the packet adapter, release
+static void HarnessFreeFloodSession(SESSION *s)
+{
+	DelSession(s->Hub, s);
+	s->PacketAdapter->Free(s);
+	ReleaseSession(s);
+}
+
+// One receive loop of the sender: HARNESS_FLOOD_BATCH broadcast frames into the hub, the end-of-loop call that
+// wakes the receivers (cancel list), then every receiver takes its queued frames as its SessionMain would.
+// Returns the frames the receivers got
+static UINT64 HarnessFloodBatch(SESSION *sender, SESSION **recv, UINT num_recv, UCHAR *frame, UINT size)
+{
+	PACKET_ADAPTER *pa = sender->PacketAdapter;
+	UINT64 delivered = 0;
+	UINT i;
+
+	for (i = 0;i < HARNESS_FLOOD_BATCH;i++)
+	{
+		void *data = Malloc(size);
+
+		Copy(data, frame, size);
+		pa->PutPacket(sender, data, size);
+	}
+
+	pa->PutPacket(sender, NULL, 0);
+
+	for (i = 0;i < num_recv;i++)
+	{
+		SESSION *s = recv[i];
+		void *data;
+
+		while (s->PacketAdapter->GetNextPacket(s, &data) != 0)
+		{
+			Free(data);
+			delivered++;
+		}
+	}
+
+	return delivered;
+}
+
+// flood_fps_<n>: broadcast frames per second that one session floods to n receiving sessions of the hub
+static void HarnessBenchFloodCase(HUB *hub, UINT num_recv)
+{
+	UCHAR frame[HARNESS_FRAME_SIZE];
+	UCHAR mac_sender[6] = {0x02, 0x42, 0x55, 0x52, 0x00, 0xF0};
+	UINT64 runs[HARNESS_BENCH_RUNS];
+	UINT64 span_ns = (UINT64)HARNESS_BENCH_FLOOD_SPAN * HARNESS_NS_PER_MS;
+	UINT64 sent = 0;
+	UINT64 delivered = 0;
+	THREAD *thread;
+	SESSION *sender;
+	SESSION **recv;
+	UINT i, r;
+	char name[MAX_SIZE];
+
+	Format(name, sizeof(name), "flood_fps_%u", num_recv);
+
+	thread = NewThread(HarnessFloodIdleThread, NULL);
+	sender = HarnessNewFloodSession(hub, thread, 0, true);
+	recv = ZeroMalloc(sizeof(SESSION *) * num_recv);
+	for (i = 0;i < num_recv;i++)
+	{
+		recv[i] = HarnessNewFloodSession(hub, thread, i + 1, false);
+	}
+
+	HarnessBuildFrame(frame, sizeof(frame), harness_mac_broadcast, mac_sender, 0x20000 + num_recv);
+
+	// Warm-up: the hub learns the sender MAC address
+	HarnessFloodBatch(sender, recv, num_recv, frame, sizeof(frame));
+
+	for (r = 0;r < HARNESS_BENCH_RUNS;r++)
+	{
+		UINT64 start = HarnessNowNs();
+		UINT64 now;
+		UINT64 frames = 0;
+
+		do
+		{
+			delivered += HarnessFloodBatch(sender, recv, num_recv, frame, sizeof(frame));
+			frames += HARNESS_FLOOD_BATCH;
+			now = HarnessNowNs();
+		}
+		while ((now - start) < span_ns);
+
+		sent += frames;
+		runs[r] = frames * HARNESS_NS_PER_S / (now - start);
+	}
+
+	HarnessBenchReport(name, runs, HARNESS_BENCH_RUNS, "frames/s", false);
+
+	// Every frame reaches every receiver: fewer copies means the hub dropped frames and the number is no flood rate
+	if (delivered < sent * (UINT64)num_recv)
+	{
+		Print("BENCH WARNING %s: %I64u of %I64u copies delivered\n", name, delivered, sent * (UINT64)num_recv);
+	}
+
+	for (i = 0;i < num_recv;i++)
+	{
+		HarnessFreeFloodSession(recv[i]);
+	}
+	Free(recv);
+	HarnessFreeFloodSession(sender);
+
+	ReleaseThread(thread);
+}
+
+// Flood cases on a hub of their own: the flood loop of StorePacket sends to every session of the hub
+static void HarnessBenchFlood(HARNESS *h)
+{
+	RPC_DELETE_HUB d;
+	HUB *hub;
+
+	if (HarnessCreateHub(h, HARNESS_HUB_FLOOD) == false)
+	{
+		return;
+	}
+
+	hub = GetHub(h->Server->Cedar, HARNESS_HUB_FLOOD);
+	if (HarnessCheck(h, hub != NULL, "GetHub " HARNESS_HUB_FLOOD))
+	{
+		HarnessSetPhase("bench_flood_8", NULL);
+		HarnessBenchFloodCase(hub, 8);
+		HarnessSetPhase("bench_flood_64", NULL);
+		HarnessBenchFloodCase(hub, 64);
+
+		ReleaseHub(hub);
+	}
+
+	Zero(&d, sizeof(d));
+	StrCpy(d.HubName, sizeof(d.HubName), HARNESS_HUB_FLOOD);
+	HarnessCheckErr(h, ScDeleteHub(h->Rpc, &d), "DeleteHub " HARNESS_HUB_FLOOD);
+}
+
+////////////////////////////
+// Pack benchmark
+
+// Encode RPC_ENUM_SESSION: struct -> PACK -> BUF
+static bool HarnessOpEncodeEnumSession(void *param)
+{
+	HARNESS_PACK_BENCH *b = (HARNESS_PACK_BENCH *)param;
+	PACK *p = NewPack();
+	BUF *buf;
+
+	OutRpcEnumSession(p, b->Struct);
+	buf = PackToBuf(p);
+	FreePack(p);
+	FreeBuf(buf);
+
+	return true;
+}
+
+// Decode RPC_ENUM_SESSION: BUF -> PACK -> struct
+static bool HarnessOpDecodeEnumSession(void *param)
+{
+	HARNESS_PACK_BENCH *b = (HARNESS_PACK_BENCH *)param;
+	RPC_ENUM_SESSION t;
+	PACK *p;
+
+	SeekBufToBegin(b->Buf);
+	p = BufToPack(b->Buf);
+	if (p == NULL)
+	{
+		return false;
+	}
+
+	InRpcEnumSession(&t, p);
+	FreeRpcEnumSession(&t);
+	FreePack(p);
+
+	return true;
 }
 
 // Pack encode and decode operations per second for an admin RPC struct (RPC_ENUM_SESSION)
 static void HarnessBenchPack(HARNESS *h)
 {
+	HARNESS_PACK_BENCH b;
 	RPC_ENUM_SESSION t;
 	RPC_ENUM_SESSION t2;
 	PACK *p;
-	BUF *b;
 	UINT i;
-	UINT64 start, now = 0, ops, elapsed;
-	bool ok = true;
+	bool ok = false;
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
@@ -3007,82 +3412,531 @@ static void HarnessBenchPack(HARNESS *h)
 		e->LastCommTime = 1700000001000ULL + (UINT64)i;
 	}
 
+	Zero(&b, sizeof(b));
+	b.Struct = &t;
+
 	p = NewPack();
 	OutRpcEnumSession(p, &t);
-	b = PackToBuf(p);
+	b.Buf = PackToBuf(p);
 	FreePack(p);
 
-	Print("BENCH pack_enum_session_bytes %u bytes\n", b->Size);
+	Print("BENCH pack_enum_session_bytes %u bytes\n", b.Buf->Size);
 
-	// Encode: struct -> PACK -> BUF
-	ops = 0;
-	start = Tick64();
-	while (true)
+	// The decoded struct is checked once, outside the measured runs
+	SeekBufToBegin(b.Buf);
+	p = BufToPack(b.Buf);
+	if (p != NULL)
 	{
-		PACK *p2 = NewPack();
-		BUF *b2;
-
-		OutRpcEnumSession(p2, &t);
-		b2 = PackToBuf(p2);
-		FreePack(p2);
-		FreeBuf(b2);
-
-		ops++;
-		if ((ops % 16) == 0)
-		{
-			now = Tick64();
-			if ((now - start) >= HARNESS_BENCH_PACK_SPAN)
-			{
-				break;
-			}
-		}
-	}
-	elapsed = (now > start) ? (now - start) : 1;
-	Print("BENCH pack_encode_enum_session %I64u ops/s\n", ops * 1000 / elapsed);
-
-	// Decode: BUF -> PACK -> struct
-	ops = 0;
-	start = Tick64();
-	while (true)
-	{
-		PACK *p2;
-
-		SeekBufToBegin(b);
-		p2 = BufToPack(b);
-		if (p2 == NULL)
-		{
-			ok = false;
-			break;
-		}
-
-		InRpcEnumSession(&t2, p2);
-		if (ops == 0)
-		{
-			ok = (t2.NumSession == HARNESS_PACK_ITEMS && StrCmp(t2.Sessions[5].Name, t.Sessions[5].Name) == 0 &&
-				t2.Sessions[5].PacketSize == t.Sessions[5].PacketSize);
-		}
+		InRpcEnumSession(&t2, p);
+		ok = (t2.NumSession == HARNESS_PACK_ITEMS && StrCmp(t2.Sessions[5].Name, t.Sessions[5].Name) == 0 &&
+			t2.Sessions[5].PacketSize == t.Sessions[5].PacketSize);
 		FreeRpcEnumSession(&t2);
-		FreePack(p2);
-
-		ops++;
-		if ((ops % 16) == 0)
-		{
-			now = Tick64();
-			if ((now - start) >= HARNESS_BENCH_PACK_SPAN)
-			{
-				break;
-			}
-		}
+		FreePack(p);
 	}
-	elapsed = (now > start) ? (now - start) : 1;
+
+	HarnessBenchOps("pack_encode_enum_session", HarnessOpEncodeEnumSession, &b, HARNESS_BENCH_PACK_SPAN, 16);
 	if (ok)
 	{
-		Print("BENCH pack_decode_enum_session %I64u ops/s\n", ops * 1000 / elapsed);
+		HarnessBenchOps("pack_decode_enum_session", HarnessOpDecodeEnumSession, &b, HARNESS_BENCH_PACK_SPAN, 16);
 	}
 	HarnessCheck(h, ok, "Pack decode returns the encoded RPC_ENUM_SESSION");
 
-	FreeBuf(b);
+	FreeBuf(b.Buf);
 	FreeRpcEnumSession(&t);
+}
+
+// Pack with HARNESS_PACK_NAMES distinct element names (integers and strings), added in a non-sorted order
+static PACK *HarnessNewNamesPack(HARNESS_PACK_BENCH *b)
+{
+	PACK *p = NewPack();
+	UINT i;
+
+	for (i = 0;i < HARNESS_PACK_NAMES;i++)
+	{
+		if ((i % 2) == 0)
+		{
+			PackAddInt(p, b->Names[i], i);
+		}
+		else
+		{
+			PackAddStr(p, b->Names[i], b->Names[i]);
+		}
+	}
+
+	return p;
+}
+
+// Encode the many-names Pack: element adds -> BUF
+static bool HarnessOpEncodeNames(void *param)
+{
+	HARNESS_PACK_BENCH *b = (HARNESS_PACK_BENCH *)param;
+	PACK *p = HarnessNewNamesPack(b);
+	BUF *buf = PackToBuf(p);
+
+	FreePack(p);
+	FreeBuf(buf);
+
+	return true;
+}
+
+// Decode a Pack: BUF -> PACK
+static bool HarnessOpDecodePack(void *param)
+{
+	HARNESS_PACK_BENCH *b = (HARNESS_PACK_BENCH *)param;
+	PACK *p;
+
+	SeekBufToBegin(b->Buf);
+	p = BufToPack(b->Buf);
+	if (p == NULL)
+	{
+		return false;
+	}
+
+	FreePack(p);
+
+	return true;
+}
+
+// pack_<encode|decode>_names_<n>: a Pack with many distinct element names (every new name is looked up first)
+static void HarnessBenchPackNames()
+{
+	HARNESS_PACK_BENCH b;
+	PACK *p;
+	UINT i;
+	bool ok = false;
+	char name[MAX_SIZE];
+
+	Zero(&b, sizeof(b));
+	b.Names = ZeroMalloc(sizeof(char *) * HARNESS_PACK_NAMES);
+	for (i = 0;i < HARNESS_PACK_NAMES;i++)
+	{
+		char tmp[MAX_ELEMENT_NAME_LEN + 1];
+
+		// 7919 is a prime: (i * 7919) % n takes every value below n once, in a non-sorted order
+		Format(tmp, sizeof(tmp), "bench_item_%03u", (i * 7919) % HARNESS_PACK_NAMES);
+		b.Names[i] = CopyStr(tmp);
+	}
+
+	p = HarnessNewNamesPack(&b);
+	b.Buf = PackToBuf(p);
+	FreePack(p);
+
+	Print("BENCH pack_names_%u_bytes %u bytes\n", HARNESS_PACK_NAMES, b.Buf->Size);
+
+	SeekBufToBegin(b.Buf);
+	p = BufToPack(b.Buf);
+	if (p != NULL)
+	{
+		ok = (LIST_NUM(p->elements) == HARNESS_PACK_NAMES && PackGetInt(p, b.Names[2]) == 2);
+		FreePack(p);
+	}
+
+	Format(name, sizeof(name), "pack_encode_names_%u", HARNESS_PACK_NAMES);
+	HarnessBenchOps(name, HarnessOpEncodeNames, &b, HARNESS_BENCH_PACK_SPAN, 1);
+
+	Format(name, sizeof(name), "pack_decode_names_%u", HARNESS_PACK_NAMES);
+	if (ok)
+	{
+		HarnessBenchOps(name, HarnessOpDecodePack, &b, HARNESS_BENCH_PACK_SPAN, 1);
+	}
+	else
+	{
+		Print("BENCH WARNING %s: the decoded Pack does not hold the encoded names, case skipped\n", name);
+	}
+
+	FreeBuf(b.Buf);
+	for (i = 0;i < HARNESS_PACK_NAMES;i++)
+	{
+		Free(b.Names[i]);
+	}
+	Free(b.Names);
+}
+
+////////////////////////////
+// ParsePacket and IP table benchmarks
+
+// IPv4 frame from 10.0.0.1 (harness_mac_a) to 10.0.0.2 (harness_mac_b): a TCP header (PSH+ACK) or a UDP header
+// from port 49152, then the payload, with valid IPv4, TCP and UDP checksums. Returns the size, 0 if it does not fit
+static UINT HarnessBuildIpFrame(UCHAR *buf, UINT buf_size, UCHAR protocol, USHORT dst_port, UCHAR *payload, UINT payload_size)
+{
+	UINT l4_header = (protocol == IP_PROTO_TCP ? 20 : 8);
+	UINT l4_size = l4_header + payload_size;
+	UINT ip_size = 20 + l4_size;
+	UINT size = 14 + ip_size;
+	UCHAR *ip = buf + 14;
+	UCHAR *l4 = ip + 20;
+	UINT src_ip, dst_ip;
+	USHORT sum;
+
+	if (size > buf_size)
+	{
+		return 0;
+	}
+
+	Zero(buf, size);
+
+	Copy(buf, harness_mac_b, 6);
+	Copy(buf + 6, harness_mac_a, 6);
+	buf[12] = 0x08;								// IPv4
+	buf[13] = 0x00;
+
+	ip[0] = 0x45;								// Version 4, 20-byte header
+	ip[2] = (UCHAR)(ip_size >> 8);
+	ip[3] = (UCHAR)(ip_size & 0xFF);
+	ip[4] = 0x12;								// Identification
+	ip[5] = 0x34;
+	ip[6] = 0x40;								// Don't fragment
+	ip[8] = 64;									// TTL
+	ip[9] = protocol;
+	ip[12] = 10;
+	ip[15] = 1;
+	ip[16] = 10;
+	ip[19] = 2;
+	sum = IpChecksum(ip, 20);
+	Copy(ip + 10, &sum, sizeof(USHORT));
+
+	l4[0] = 0xC0;								// Source port 49152
+	l4[2] = (UCHAR)(dst_port >> 8);
+	l4[3] = (UCHAR)(dst_port & 0xFF);
+
+	if (protocol == IP_PROTO_TCP)
+	{
+		l4[5] = 0x01;							// Sequence number
+		l4[9] = 0x02;							// Acknowledgment number
+		l4[12] = 0x50;							// 20-byte header
+		l4[13] = TCP_PSH | TCP_ACK;
+		l4[14] = 0xFA;							// Window 64240
+		l4[15] = 0xF0;
+	}
+	else
+	{
+		l4[4] = (UCHAR)(l4_size >> 8);
+		l4[5] = (UCHAR)(l4_size & 0xFF);
+	}
+
+	Copy(l4 + l4_header, payload, payload_size);
+
+	Copy(&src_ip, ip + 12, sizeof(UINT));
+	Copy(&dst_ip, ip + 16, sizeof(UINT));
+	sum = CalcChecksumForIPv4(src_ip, dst_ip, protocol, l4, l4_size, 0);
+	Copy(l4 + (protocol == IP_PROTO_TCP ? 16 : 6), &sum, sizeof(USHORT));
+
+	return size;
+}
+
+// TLS ClientHello with one cipher suite and only the server_name extension (the part GetSniNameFromSslPacket reads).
+// Returns the size, 0 if it does not fit
+static UINT HarnessBuildClientHello(UCHAR *buf, UINT buf_size, char *host)
+{
+	UINT name_len = StrLen(host);
+	UINT ext_data = 2 + 1 + 2 + name_len;		// server_name_list length, name type, name length, name
+	UINT ext_len = 4 + ext_data;				// Extension type and length, then its data
+	UINT body = 43 + ext_len;					// Version 2, random 32, session id 1, ciphers 4, compression 2, extensions length 2
+	UINT size = 5 + 4 + body;					// Record header, handshake header, ClientHello body
+	UCHAR *p = buf;
+	UINT i;
+
+	if (size > buf_size)
+	{
+		return 0;
+	}
+
+	*p++ = 0x16;								// Handshake record, record version TLS 1.0
+	*p++ = 0x03;
+	*p++ = 0x01;
+	*p++ = (UCHAR)((4 + body) >> 8);
+	*p++ = (UCHAR)((4 + body) & 0xFF);
+	*p++ = 0x01;								// ClientHello, 24-bit length
+	*p++ = 0x00;
+	*p++ = (UCHAR)(body >> 8);
+	*p++ = (UCHAR)(body & 0xFF);
+	*p++ = 0x03;								// Client version TLS 1.2
+	*p++ = 0x03;
+	for (i = 0;i < 32;i++)
+	{
+		*p++ = (UCHAR)(i * 11 + 1);				// Random
+	}
+	*p++ = 0x00;								// No session id
+	*p++ = 0x00;								// One cipher suite: TLS_AES_128_GCM_SHA256
+	*p++ = 0x02;
+	*p++ = 0x13;
+	*p++ = 0x01;
+	*p++ = 0x01;								// Null compression only
+	*p++ = 0x00;
+	*p++ = (UCHAR)(ext_len >> 8);
+	*p++ = (UCHAR)(ext_len & 0xFF);
+	*p++ = 0x00;								// server_name extension
+	*p++ = 0x00;
+	*p++ = (UCHAR)(ext_data >> 8);
+	*p++ = (UCHAR)(ext_data & 0xFF);
+	*p++ = (UCHAR)((3 + name_len) >> 8);
+	*p++ = (UCHAR)((3 + name_len) & 0xFF);
+	*p++ = 0x00;								// host_name
+	*p++ = (UCHAR)(name_len >> 8);
+	*p++ = (UCHAR)(name_len & 0xFF);
+	Copy(p, host, name_len);
+	p += name_len;
+
+	return (UINT)(p - buf);
+}
+
+// DNS query (recursion desired, one question, type A, class IN). Returns the size, 0 if it does not fit
+static UINT HarnessBuildDnsQuery(UCHAR *buf, UINT buf_size, char *host)
+{
+	UINT len = StrLen(host);
+	UINT start = 0;
+	UINT i;
+	UCHAR *p;
+
+	if ((12 + len + 2 + 4) > buf_size)
+	{
+		return 0;
+	}
+
+	Zero(buf, 12);
+	buf[0] = 0x52;								// Transaction id
+	buf[1] = 0x41;
+	buf[2] = 0x01;								// Recursion desired
+	buf[5] = 0x01;								// One question
+
+	p = buf + 12;
+	for (i = 0;i <= len;i++)
+	{
+		if (i == len || host[i] == '.')
+		{
+			*p++ = (UCHAR)(i - start);
+			Copy(p, host + start, i - start);
+			p += i - start;
+			start = i + 1;
+		}
+	}
+	*p++ = 0x00;								// Root label
+	*p++ = 0x00;								// Type A
+	*p++ = 0x01;
+	*p++ = 0x00;								// Class IN
+	*p++ = 0x01;
+
+	return (UINT)(p - buf);
+}
+
+// Parse a frame as HubPaPutPacket does with the default hub options: IP and HTTP parsing, BPDU bridge id,
+// checksum correction (the frames have valid checksums, so the buffer is not changed). no_log: the hub packet
+// log is off, so HTTP, TLS SNI and DNS are not parsed
+static PKT *HarnessParseLikeHub(HARNESS_PARSE_FRAME *f, bool no_log)
+{
+	return ParsePacketEx5(f->Data, f->Size, false, 0, true, no_log, true, false, no_log);
+}
+
+// The parser reached the layer the frame was built for (no_log: and stopped before layer 7)
+static bool HarnessParsedAsBuilt(HARNESS_PARSE_FRAME *f, PKT *p, bool no_log)
+{
+	if (p == NULL)
+	{
+		return false;
+	}
+
+	if (StrCmp(f->Kind, "tcp") == 0 || (no_log && (StrCmp(f->Kind, "http") == 0 || StrCmp(f->Kind, "tls") == 0)))
+	{
+		return (p->TypeL4 == L4_TCP && p->HttpLog == NULL);
+	}
+
+	if (no_log && StrCmp(f->Kind, "dns") == 0)
+	{
+		return (p->TypeL4 == L4_UDP && p->TypeL7 == L7_UNKNOWN);
+	}
+
+	if (StrCmp(f->Kind, "http") == 0)
+	{
+		return (p->HttpLog != NULL && p->HttpLog->IsSsl == false && StrCmp(p->HttpLog->Hostname, HARNESS_BENCH_HOST) == 0);
+	}
+
+	if (StrCmp(f->Kind, "tls") == 0)
+	{
+		return (p->HttpLog != NULL && p->HttpLog->IsSsl && StrCmp(p->HttpLog->Hostname, HARNESS_BENCH_HOST) == 0);
+	}
+
+	if (StrCmp(f->Kind, "dns") == 0)
+	{
+		return (p->TypeL7 == L7_DNS && StrCmp(p->DnsQueryHost, HARNESS_BENCH_HOST) == 0);
+	}
+
+	return true;
+}
+
+// Parse the frame of a single-frame case
+static bool HarnessOpParseOne(void *param)
+{
+	HARNESS_PARSE_BENCH *b = (HARNESS_PARSE_BENCH *)param;
+	PKT *p = HarnessParseLikeHub(&b->Frames[b->Current], b->NoLog);
+
+	if (p == NULL)
+	{
+		return false;
+	}
+
+	FreePacket(p);
+
+	return true;
+}
+
+// Parse the next frame of the mix, in turn
+static bool HarnessOpParseMix(void *param)
+{
+	HARNESS_PARSE_BENCH *b = (HARNESS_PARSE_BENCH *)param;
+	PKT *p = HarnessParseLikeHub(&b->Frames[b->Next], b->NoLog);
+
+	b->Next = (b->Next + 1) % HARNESS_NUM_PARSE_FRAMES;
+
+	if (p == NULL)
+	{
+		return false;
+	}
+
+	FreePacket(p);
+
+	return true;
+}
+
+// parse_packet_<kind>: ParsePacket per frame kind, then over the mix of all kinds in turn.
+// l2: non-IP frame; tcp: TCP data without a layer 7 parser; http: request to TCP 80; tls: ClientHello with SNI
+// to TCP 443; dns: query to UDP 53. The _nolog cases parse the same frames as with the hub packet log off
+static void HarnessBenchParse()
+{
+	HARNESS_PARSE_BENCH b;
+	HARNESS_PARSE_FRAME *f;
+	UCHAR payload[HARNESS_PARSE_FRAME_MAX];
+	char *http = "GET /index.html HTTP/1.1\r\nHost: " HARNESS_BENCH_HOST "\r\nUser-Agent: ranz-bench/1.0\r\nAccept: */*\r\n\r\n";
+	UINT i;
+	UINT size;
+	UINT pass;
+	bool ok;
+	char name[MAX_SIZE];
+
+	Zero(&b, sizeof(b));
+
+	f = &b.Frames[0];
+	f->Kind = "l2";
+	f->Size = HARNESS_FRAME_SIZE;
+	HarnessBuildFrame(f->Data, f->Size, harness_mac_b, harness_mac_a, 1);
+
+	f = &b.Frames[1];
+	f->Kind = "tcp";
+	for (i = 0;i < 64;i++)
+	{
+		payload[i] = (UCHAR)(i * 3);
+	}
+	f->Size = HarnessBuildIpFrame(f->Data, sizeof(f->Data), IP_PROTO_TCP, 5001, payload, 64);
+
+	f = &b.Frames[2];
+	f->Kind = "http";
+	f->Size = HarnessBuildIpFrame(f->Data, sizeof(f->Data), IP_PROTO_TCP, 80, (UCHAR *)http, StrLen(http));
+
+	f = &b.Frames[3];
+	f->Kind = "tls";
+	size = HarnessBuildClientHello(payload, sizeof(payload), HARNESS_BENCH_HOST);
+	f->Size = HarnessBuildIpFrame(f->Data, sizeof(f->Data), IP_PROTO_TCP, 443, payload, size);
+
+	f = &b.Frames[4];
+	f->Kind = "dns";
+	size = HarnessBuildDnsQuery(payload, sizeof(payload), HARNESS_BENCH_HOST);
+	f->Size = HarnessBuildIpFrame(f->Data, sizeof(f->Data), IP_PROTO_UDP, 53, payload, size);
+
+	for (pass = 0;pass < 2;pass++)
+	{
+		char *suffix = (pass == 0 ? "" : "_nolog");
+
+		b.NoLog = (pass != 0);
+		b.Next = 0;
+		ok = true;
+
+		for (i = 0;i < HARNESS_NUM_PARSE_FRAMES;i++)
+		{
+			PKT *p = NULL;
+
+			f = &b.Frames[i];
+			Format(name, sizeof(name), "parse_packet_%s%s", f->Kind, suffix);
+
+			if (f->Size != 0)
+			{
+				p = HarnessParseLikeHub(f, b.NoLog);
+			}
+
+			if (HarnessParsedAsBuilt(f, p, b.NoLog))
+			{
+				b.Current = i;
+				HarnessBenchOps(name, HarnessOpParseOne, &b, HARNESS_BENCH_MICRO_SPAN, 16);
+			}
+			else
+			{
+				Print("BENCH WARNING %s: the frame does not parse as built, case skipped\n", name);
+				ok = false;
+			}
+
+			FreePacket(p);
+		}
+
+		if (ok)
+		{
+			Format(name, sizeof(name), "parse_packet_mix%s", suffix);
+			HarnessBenchOps(name, HarnessOpParseMix, &b, HARNESS_BENCH_MICRO_SPAN, 16);
+		}
+	}
+}
+
+// ip_table_expire_<n>: microseconds of one DeleteExpiredIpTableEntry pass over an IP table of n entries,
+// every second entry expired
+static void HarnessBenchIpTableExpire(UINT num)
+{
+	UINT64 runs[HARNESS_BENCH_RUNS];
+	UINT r, i;
+	bool ok = true;
+	char name[MAX_SIZE];
+
+	Format(name, sizeof(name), "ip_table_expire_%u", num);
+
+	for (r = 0;r < HARNESS_BENCH_RUNS;r++)
+	{
+		LIST *o = NewList(CompareIpTable);
+		UINT64 now = Tick64();
+		UINT64 start;
+
+		for (i = 0;i < num;i++)
+		{
+			IP_TABLE_ENTRY *e = ZeroMalloc(sizeof(IP_TABLE_ENTRY));
+
+			SetIP(&e->Ip, 10, (UCHAR)((i >> 16) & 0xFF), (UCHAR)((i >> 8) & 0xFF), (UCHAR)(i & 0xFF));
+			e->MacAddress[0] = 0x02;
+			e->MacAddress[4] = (UCHAR)((i >> 8) & 0xFF);
+			e->MacAddress[5] = (UCHAR)(i & 0xFF);
+			e->CreatedTime = now;
+			// Expired entries were last updated more than IP_TABLE_EXPIRE_TIME ago. Unsigned arithmetic wraps
+			// consistently, so this also holds when the machine has been up for less than that time
+			e->UpdatedTime = ((i % 2) == 0 ? now - (UINT64)IP_TABLE_EXPIRE_TIME - 1000ULL : now);
+			Insert(o, e);
+		}
+
+		start = HarnessNowNs();
+		DeleteExpiredIpTableEntry(o);
+		runs[r] = (HarnessNowNs() - start) / 1000ULL;
+
+		if (LIST_NUM(o) != (num - (num + 1) / 2))
+		{
+			ok = false;
+		}
+
+		for (i = 0;i < LIST_NUM(o);i++)
+		{
+			Free(LIST_DATA(o, i));
+		}
+		ReleaseList(o);
+	}
+
+	HarnessBenchReport(name, runs, HARNESS_BENCH_RUNS, "us", false);
+
+	if (ok == false)
+	{
+		Print("BENCH WARNING %s: the pass did not delete exactly the expired entries\n", name);
+	}
 }
 
 ////////////////////////////
@@ -3145,7 +3999,8 @@ void harness_test(UINT num, char **arg)
 	HarnessFree(h);
 }
 
-// "bench": cascade frames per second and Pack operations per second (informational, fails only on errors)
+// "bench": cascade path frames per second, in-process hub flood, Pack, ParsePacket and IP table expiry
+// (informational, fails only on errors). Every case runs HARNESS_BENCH_RUNS times: the median, then every run
 void bench_test(UINT num, char **arg)
 {
 	HARNESS *h = HarnessNew();
@@ -3154,8 +4009,10 @@ void bench_test(UINT num, char **arg)
 	UINT64 elapsed;
 	bool ok;
 
-	Print("Ranz bench: cascade path throughput for %u ms per frame size, Pack encode/decode for %u ms\n",
-		HARNESS_BENCH_SPAN, HARNESS_BENCH_PACK_SPAN);
+	Print("Ranz bench: %u runs per case (median, then every run); per run: cascade path %u ms per frame size, "
+		"hub flood %u ms, Pack %u ms, ParsePacket %u ms, one IP table expiry pass\n",
+		HARNESS_BENCH_RUNS, HARNESS_BENCH_SPAN, HARNESS_BENCH_FLOOD_SPAN, HARNESS_BENCH_PACK_SPAN,
+		HARNESS_BENCH_MICRO_SPAN);
 
 	ok = HarnessSetup(h);
 
@@ -3174,10 +4031,20 @@ void bench_test(UINT num, char **arg)
 		HarnessBenchFrames(h, 512);
 		HarnessSetPhase("bench_1500", NULL);
 		HarnessBenchFrames(h, 1500);
+		HarnessSetPhase("bench_flood", NULL);
+		HarnessBenchFlood(h);
 	}
 
 	HarnessSetPhase("bench_pack", NULL);
 	HarnessBenchPack(h);
+	HarnessSetPhase("bench_pack_names", NULL);
+	HarnessBenchPackNames();
+	HarnessSetPhase("bench_parse", NULL);
+	HarnessBenchParse();
+	HarnessSetPhase("bench_ip_table", NULL);
+	HarnessBenchIpTableExpire(1024);
+	HarnessBenchIpTableExpire(4096);
+	HarnessBenchIpTableExpire(16384);
 
 	HarnessSetPhase("teardown", NULL);
 	HarnessTeardown(h, ok);

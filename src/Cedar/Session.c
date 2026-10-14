@@ -1462,6 +1462,11 @@ void PrintStatus(SESSION *s, wchar_t *str)
 	s->Account->StatusPrinter(s, str);
 }
 
+// Add c to the cancel list o once. The flood loop of StorePacket adds the cancel of every session of the hub,
+// so a scan of o on every add made each flooded frame cost O(N^2) compares. Two marks on c skip the scan:
+// CancelListOwner == o means c is in o (only the thread of o sets it to o, and clears it when o is emptied);
+// CancelListNum == 0 means c is in no list. Otherwise (c is in some list, the owner mark is not o) the old
+// scan runs, so o stays a set exactly as before.
 void AddCancelList(LIST *o, CANCEL *c)
 {
 	UINT i;
@@ -1470,17 +1475,39 @@ void AddCancelList(LIST *o, CANCEL *c)
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	if (c->CancelListOwner == o)
 	{
-		CANCEL *t = LIST_DATA(o, i);
-		if (t == c)
+		return;
+	}
+
+	if (c->CancelListNum != 0)
+	{
+		for (i = 0;i < LIST_NUM(o);i++)
 		{
-			return;
+			CANCEL *t = LIST_DATA(o, i);
+			if (t == c)
+			{
+				c->CancelListOwner = o;
+				return;
+			}
 		}
 	}
 
 	AddRef(c->ref);
 	Add(o, c);
+	InterlockedIncrement((volatile LONG *)&c->CancelListNum);
+	c->CancelListOwner = o;
+}
+
+// c leaves the cancel list o: undo the marks of AddCancelList before o drops its reference to c
+static void LeaveCancelList(LIST *o, CANCEL *c)
+{
+	if (c->CancelListOwner == o)
+	{
+		c->CancelListOwner = NULL;
+	}
+
+	InterlockedDecrement((volatile LONG *)&c->CancelListNum);
 }
 
 void CancelList(LIST *o)
@@ -1494,6 +1521,7 @@ void CancelList(LIST *o)
 	for (i = 0;i < LIST_NUM(o);i++)
 	{
 		CANCEL *c = LIST_DATA(o, i);
+		LeaveCancelList(o, c);
 		Cancel(c);
 		ReleaseCancel(c);
 	}
@@ -1512,6 +1540,7 @@ void ReleaseCancelList(LIST *o)
 	for (i = 0;i < LIST_NUM(o);i++)
 	{
 		CANCEL *c = LIST_DATA(o, i);
+		LeaveCancelList(o, c);
 		ReleaseCancel(c);
 	}
 

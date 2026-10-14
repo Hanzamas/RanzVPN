@@ -581,6 +581,19 @@ bool AddElement(PACK *p, ELEMENT *e)
 		return false;
 	}
 
+	// Without this, the lookup below qsorts the whole list on every new name (n adds = n sorts).
+	// Only the element appended by the previous AddElement can be out of place, so move it into
+	// its sorted slot instead. The list then holds the same order the qsort gave, so WritePack
+	// still emits the elements in the same order (wire format).
+	if (p->elements->sorted == false && LIST_NUM(p->elements) >= 1)
+	{
+		ELEMENT *last = LIST_DATA(p->elements, LIST_NUM(p->elements) - 1);
+
+		p->elements->num_item--;
+		p->elements->sorted = true;
+		Insert(p->elements, last);
+	}
+
 	if (GetElement(p, e->name, INFINITE))
 	{
 		FreeElement(e);

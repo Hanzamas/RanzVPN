@@ -780,13 +780,9 @@ void CedarAddCurrentTcpQueueSize(CEDAR *c, int diff)
 		return;
 	}
 
-	Lock(c->CurrentTcpQueueSizeLock);
-	{
-		int v = (int)c->CurrentTcpQueueSize;
-		v += diff;
-		c->CurrentTcpQueueSize = (UINT)v;
-	}
-	Unlock(c->CurrentTcpQueueSizeLock);
+	// One atomic add instead of a Cedar-wide lock: every flooded copy calls this on enqueue and again on
+	// dequeue, from all sessions of all hubs, and nothing else shares the counter. Readers read it unlocked
+	InterlockedExchangeAdd((volatile LONG *)&c->CurrentTcpQueueSize, (LONG)diff);
 }
 
 UINT CedarGetCurrentTcpQueueSize(CEDAR *c)
@@ -889,7 +885,6 @@ static void CleanupCedar(CEDAR *c)
 
 	DeleteLock(c->CurrentRegionLock);
 
-	DeleteLock(c->CurrentTcpQueueSizeLock);
 	DeleteLock(c->QueueBudgetLock);
 	DeleteLock(c->FifoBudgetLock);
 
@@ -1145,7 +1140,6 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 	c->AssignedBridgeLicense = NewCounter();
 	c->AssignedClientLicense = NewCounter();
 
-	c->CurrentTcpQueueSizeLock = NewLock();
 	c->QueueBudgetLock = NewLock();
 	c->FifoBudgetLock = NewLock();
 

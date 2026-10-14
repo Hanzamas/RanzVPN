@@ -12,6 +12,7 @@
 #define	HARNESS_PORT				39555				// Test listener (never 443; below the dynamic port range)
 #define	HARNESS_HUB_A				"HARNESS_A"
 #define	HARNESS_HUB_B				"HARNESS_B"
+#define	HARNESS_HUB_FLOOD			"HARNESS_FLOOD"		// Hub of the in-process flood bench ("bench" only)
 #define	HARNESS_LINK_NAME			L"HARNESS_CASCADE"
 #define	HARNESS_LINK_USER			"harness_cascade"
 #define	HARNESS_USER_A				"tester_a"
@@ -23,6 +24,7 @@
 #define	HARNESS_FRAME_SIZE			96
 #define	HARNESS_ETHERTYPE_HI		0x88				// EtherType 0x88B5 (IEEE local experimental)
 #define	HARNESS_ETHERTYPE_LO		0xB5
+#define	HARNESS_BENCH_HOST			"www.example.invalid"	// Host name in the HTTP, TLS and DNS bench frames
 
 // Test packet adapter: injects queued frames into a hub and records the frames the hub delivers
 typedef struct HARNESS_PA

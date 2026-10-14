@@ -110,6 +110,9 @@ jobs:
     - name: Test
       timeout-minutes: 10
       shell: powershell
+      env:
+        # Names build/harness-out/bench-<arch>.txt (the BENCH lines of vpntest bench)
+        ARCHITECTURE: ${{ matrix.platform.ARCHITECTURE }}
       run: |
         . .github/scripts/vpntest.ps1
     - name: Self-check
