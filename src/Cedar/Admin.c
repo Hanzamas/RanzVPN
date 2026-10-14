@@ -866,8 +866,6 @@ static UINT StFlush(ADMIN *a, RPC_TEST *t)
 
 static UINT StCrash(ADMIN *a, RPC_TEST *t)
 {
-	SERVER *s = a->Server;
-
 	SERVER_ADMIN_ONLY;
 
 	MsSetEnableMinidump(false);
