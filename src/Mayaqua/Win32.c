@@ -524,17 +524,7 @@ void Win32RestorePriority()
 
 char* Win32GetProductId()
 {
-	char *product_id;
-
 	return CopyStr("--");
-
-	product_id = MsRegReadStr(REG_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", "ProductId");
-	if (product_id == NULL)
-	{
-		product_id = MsRegReadStr(REG_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion", "ProductId");
-	}
-
-	return product_id;
 }
 
 bool Win32IsSupportedOs()

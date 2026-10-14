@@ -97,7 +97,6 @@ static void SendDataWithUDP(SOCK *s, CONNECTION *c)
 {
 	UCHAR *buf;
 	BUF *b;
-	UINT64 dummy_64 = 0;
 	UCHAR dummy_buf[16];
 	UINT64 now = Tick64();
 	UINT ret;
@@ -954,7 +953,6 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 		for (i = 0;i < num;i++)
 		{
 			TCPSOCK *ts = tcpsocks[i];
-			SOCK *sock = ts->Sock;
 
 			UINT current_fifo_budget = 0;
 			UINT current_packet_index = 0;

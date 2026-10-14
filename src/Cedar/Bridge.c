@@ -16,7 +16,6 @@
 
 UINT GetEthDeviceHash()
 {
-	UINT ret = 0;
 	MS_ADAPTER_LIST *a = MsCreateAdapterListEx(true);
 	UINT num;
 	UINT i;

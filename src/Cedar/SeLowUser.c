@@ -474,16 +474,6 @@ void SuCloseAdapter(SU_ADAPTER *a)
 void SuCloseAdapterHandleInner(SU_ADAPTER *a)
 {
 	return;
-	if (a == NULL)
-	{
-		return;
-	}
-
-	if (a->hFile != INVALID_HANDLE_VALUE)
-	{
-		CloseHandle(a->hFile);
-		a->hFile = INVALID_HANDLE_VALUE;
-	}
 }
 
 SU_ADAPTER *SuOpenAdapter(SU *u, char *adapter_id)

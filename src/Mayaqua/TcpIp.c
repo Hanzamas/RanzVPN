@@ -158,7 +158,6 @@ bool AdjustTcpMssL2(UCHAR *src, UINT src_size, UINT mss, USHORT tag_vlan_tpid)
 UINT GetIpHeaderSize(UCHAR *src, UINT src_size)
 {
 	UCHAR ip_ver;
-	TCP_HEADER *tcp = NULL;
 	IPV4_HEADER *ip = NULL;
 	IPV6_HEADER *ip6 = NULL;
 	if (src == NULL || src_size == 0)
@@ -1856,7 +1855,6 @@ bool ParsePacketARPv4(PKT *p, UCHAR *buf, UINT size)
 
 static bool ParseIPv6ExtHeader(IPV6_HEADER_PACKET_INFO *info, UCHAR next_header, UCHAR *buf, UINT size)
 {
-	bool ret = false;
 	IPV6_OPTION_HEADER *option_header;
 	UINT option_header_size;
 	UCHAR next_header_2 = IPV6_HEADER_NONE;

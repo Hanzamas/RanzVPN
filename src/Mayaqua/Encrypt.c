@@ -1844,7 +1844,6 @@ NAME *X509NameToName(void *xn)
 wchar_t *GetUniStrFromX509Name(void *xn, int nid)
 {
 	UCHAR txt[1024];
-	bool b = false;
 	UINT i, size;
 	int index;
 	bool unicode = false;

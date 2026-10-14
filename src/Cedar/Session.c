@@ -27,20 +27,16 @@ void SessionMain(SESSION *s)
 	CONNECTION *c;
 	POLICY *policy;
 	UINT64 now;
-	UINT i = 0;
 	PACKET_ADAPTER *pa;
 	bool pa_inited = false;
 	UINT packet_size;
 	void *packet;
 	bool packet_put;
 	bool pa_fail = false;
-	UINT test = 0;
 	bool update_hub_last_comm = false;
 	UINT err = ERR_SESSION_TIMEOUT;
-	UINT64 next_black_list_check = 0;
 	UINT64 next_update_hub_last_comm = 0;
 	bool block_all_packets = false;
-	UINT64 next_check_block_all_packets = 0;
 	TRAFFIC t;
 	bool is_server_session = false;
 	bool lock_receive_blocks_queue = false;
@@ -439,7 +435,6 @@ void SessionMain(SESSION *s)
 					}
 
 					UINT num_tcp_conn = LIST_NUM(s->Connection->Tcp->TcpSockList);
-					UINT max_conn = s->ClientOption->MaxConnection;
 
 					if ((s->CurrentConnectionEstablishTime +
 						(UINT64)(num_tcp_conn * s->ClientOption->AdditionalConnectionInterval * 1000 * 2 + CONNECTING_TIMEOUT * 2))

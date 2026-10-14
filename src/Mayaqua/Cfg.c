@@ -952,7 +952,6 @@ void CfgAddItemText(BUF *b, ITEM *t, UINT depth)
 {
 	char *data;
 	char *sub = NULL;
-	UINT len;
 	UINT size;
 	char *utf8;
 	UINT utf8_size;

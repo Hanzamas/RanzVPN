@@ -929,7 +929,6 @@ static void CleanupUser(USER *u)
 
 void FreeAuthData(UINT authtype, void *authdata)
 {
-	AUTHPASSWORD *pw = (AUTHPASSWORD *)authdata;
 	AUTHUSERCERT *uc = (AUTHUSERCERT *)authdata;
 	AUTHROOTCERT *rc = (AUTHROOTCERT *)authdata;
 	AUTHNT *nt = (AUTHNT *)authdata;

@@ -328,7 +328,6 @@ void PrintCandidateHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *candidate_list, 
 		UNI_TOKEN_LIST *t;
 		wchar_t *help;
 		UINT j;
-		UINT keyword_start_width = left_space;
 		UINT descript_start_width = left_space + max_keyword_width + 1;
 		UINT descript_width;
 		char *space;

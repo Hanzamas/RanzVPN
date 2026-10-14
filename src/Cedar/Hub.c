@@ -3022,7 +3022,6 @@ static bool HubPaPutPacket(SESSION *s, void *data, UINT size)
 {
 	PKT *packet;
 	HUB_PA *pa = (HUB_PA *)s->PacketAdapter->Param;
-	bool b = false;
 	HUB *hub;
 	bool no_l3 = false;
 	bool no_http = false;
@@ -4259,8 +4258,6 @@ DISCARD_UNICAST_PACKET:
 
 										if (dest_session->LinkModeServer)
 										{
-											LINK *k = dest_session->Link;
-
 											discard = true;
 										}
 									}

@@ -729,7 +729,6 @@ static UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
 	X *x;
 	K *k;
 
@@ -830,7 +829,6 @@ static UINT StGetHubMsg(ADMIN *a, RPC_MSG *t)
 static UINT StDebug(ADMIN *a, RPC_TEST *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	UINT ret = ERR_NO_ERROR;
 	RPC_TEST t2;
 
@@ -855,8 +853,6 @@ static UINT StDebug(ADMIN *a, RPC_TEST *t)
 static UINT StFlush(ADMIN *a, RPC_TEST *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
 	UINT size;
 
 	SERVER_ADMIN_ONLY;
@@ -871,8 +867,6 @@ static UINT StFlush(ADMIN *a, RPC_TEST *t)
 static UINT StCrash(ADMIN *a, RPC_TEST *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
 
 	SERVER_ADMIN_ONLY;
 
@@ -887,7 +881,6 @@ static UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
 	RPC_WINVER server_ver;
 	RPC_WINVER client_ver;
 	wchar_t winver_msg_client[3800];
@@ -964,7 +957,6 @@ static UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t)
 static UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	UINT ret = ERR_NO_ERROR;
 
 	SERVER_ADMIN_ONLY;
@@ -990,7 +982,6 @@ static UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t)
 static UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	UINT ret = ERR_NO_ERROR;
 
 	SERVER_ADMIN_ONLY;
@@ -1098,7 +1089,6 @@ BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PR
 static UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	char logfilename[MAX_PATH];
 	char servername[MAX_HOST_NAME_LEN + 1];
 	UINT offset;
@@ -2229,7 +2219,6 @@ static UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t)
 static UINT StEnumIpTable(ADMIN *a, RPC_ENUM_IP_TABLE *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
@@ -2350,8 +2339,6 @@ static UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t)
 static UINT StEnumMacTable(ADMIN *a, RPC_ENUM_MAC_TABLE *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	HUB *h = NULL;
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
@@ -2527,7 +2514,6 @@ static UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
 void SiEnumSessionMain(SERVER *s, RPC_ENUM_SESSION *t)
 {
 	char hubname[MAX_HUBNAME_LEN + 1];
-	UINT ret = ERR_NO_ERROR;
 	UINT num;
 	if (s == NULL || t == NULL)
 	{
@@ -2583,7 +2569,6 @@ static UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
-	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
@@ -2917,7 +2902,6 @@ static UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
-	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 	UINT i, num;
 
@@ -3044,7 +3028,6 @@ static UINT StGetUser(ADMIN *a, RPC_SET_USER *t)
 	HUB *h = NULL;
 	UINT ret = ERR_NO_ERROR;
 	USER *u = NULL;
-	USERGROUP *g = NULL;
 	char name[MAX_USERNAME_LEN + 1];
 	char hubname[MAX_HUBNAME_LEN + 1];
 	StrCpy(name, sizeof(name), t->Name);
@@ -5006,7 +4989,6 @@ static UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
-	HUB *h = NULL;
 
 	FreeRpcEnumHub(t);
 
@@ -5566,7 +5548,6 @@ static UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t)
 
 static UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t)
 {
-	CEDAR *c = a->Server->Cedar;
 	UINT i;
 
 	FreeRpcListenerList(t);
@@ -5602,7 +5583,6 @@ static UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t)
 static UINT StCreateListener(ADMIN *a, RPC_LISTENER *t)
 {
 	UINT ret = ERR_NO_ERROR;
-	CEDAR *c = a->Server->Cedar;
 
 	if (t->Port == 0 || t->Port > 65535)
 	{

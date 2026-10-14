@@ -3893,7 +3893,6 @@ SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 		return NULL;
 	}
 
-	UINT true_flag = 1;
 
 	if (bind(s, (struct sockaddr *)&addr, sizeof(struct sockaddr_in6)) != 0)
 	{

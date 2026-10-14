@@ -726,32 +726,6 @@ static bool CheckKernel()
 		Print("Tick64 #2 Failed.\n");
 		return false;
 	}
-	else if (false)
-	{
-		UINT64 tick1 = Tick64();
-		UINT64 time1;
-		UINT64 time2;
-
-		SleepThread(1000);
-
-		time2 = LocalTime64();
-		time1 = SystemToLocal64(Tick64ToTime64(tick1));
-
-		if (time2 > time1)
-		{
-			s = time2 - time1;
-		}
-		else
-		{
-			s = time1 - time2;
-		}
-
-		if (s <= 500 || s >= 2000)
-		{
-			Print("TickToTime Failed.\n");
-			return false;
-		}
-	}
 
 	return true;
 }
@@ -1043,8 +1017,6 @@ static void TtsWorkerThread(THREAD *thread, void *param)
 				for (i = 0;i < LIST_NUM(w->TtsSockList);i++)
 				{
 					UINT ret = SOCK_LATER;
-					UCHAR *send_data = NULL, *recv_data = NULL;
-					UINT send_size = 0, recv_size = 0;
 					TTS_SOCK *ts = LIST_DATA(w->TtsSockList, i);
 					bool blocked_for_this_socket = false;
 
