@@ -105,3 +105,12 @@ Maintainer decision (Hilmi: "ya se rekomend mu lah ... fondasi 100% total"). Rev
 - Native from the start: Windows Thread Pool API and timer queues (no own thread pool), resources embedded as PE resources via FindResource/LoadResource (no hamcore archive format), strsafe plus MultiByteToWideChar/WideCharToMultiByte for strings and charsets (no own string library or code-page tables), ETW TraceLogging for debug tracing and the Windows Event Log for service events, CNG, Schannel, IOCP, winsqlite3.
 - Own code, because Windows has no equivalent: the small containers (list, queue, FIFO, buffer), the packet parser the policy engine needs, the legacy SHA-0 password verifier (only for accounts imported from ranz_server.config; new accounts use PBKDF2 via CNG). The Pack wire format is replaced by nanopb messages on the control stream.
 - Dropped: payload compression (zlib), R-UDP, the own thread pool, the own string-table format.
+
+## Amendment 2026-10-14: L2 backend per role
+
+Maintainer decision (Hilmi: "ya setuju"). This replaces the tap-windows6 fallback above:
+
+- Server, virtual L2 (KM-TEST loopback): XDP rule API (proven: TX inspect and RX inject).
+- Server, bridge to a physical NIC: SeLow by default (proven, sets promiscuous itself); XDP plus Npcap as a performance option once CORE-S3-3 proves it on a physical NIC and on a Hyper-V network.
+- Client (Windows 11, x64 or arm64): L3 through Wintun by default. When L2 is needed: SeLow on KM-TEST by default (signed, x64 and arm64, already shipped, no extra runtime); XDP on KM-TEST as an option if the manual Windows 11 test passes. tap-windows6 is no longer needed.
+- Speed matters mainly on servers (10 Gbps target is roughly 0.8 Mpps at 1500 bytes); a client link rarely exceeds what SeLow carries. A CI benchmark of SeLow vs XDP on the same KM-TEST adapter gives the numbers.
