@@ -70,6 +70,7 @@ void InitThreading();
 void FreeThreading();
 void SetThreadName(UINT thread_id, char *name, void *param);
 
+struct tm;
 time_64t c_mkgmtime(struct tm *tm);
 void TimeToSystem(SYSTEMTIME *st, time_64t t);
 time_64t TmToTime(struct tm *t);
