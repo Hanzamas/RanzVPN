@@ -66,7 +66,7 @@ void Win32SetThreadName(UINT thread_id, char *name)
 	}
 }
 
-static void Win32InitNewThread()
+void Win32InitNewThread()
 {
 	static HINSTANCE hDll = NULL;
 	static bool (WINAPI *_SetThreadLocale)(LCID) = NULL;

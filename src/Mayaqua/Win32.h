@@ -16,6 +16,7 @@ void Win32MemoryFree(void *addr);
 void Win32GetSystemTime(SYSTEMTIME *system_time);
 void Win32Sleep(UINT time);
 UINT Win32ThreadId();
+void Win32InitNewThread();
 bool Win32DeleteDirW(wchar_t *name);
 CALLSTACK_DATA *Win32GetCallStack();
 bool Win32GetCallStackSymbolInfo(CALLSTACK_DATA *s);

@@ -1222,6 +1222,26 @@ static bool FileSetDate(void *pData, UINT64 created_time, UINT64 updated_time)
 	return SetFileTime(p->hFile, p_created_time, NULL, p_updated_time);
 }
 
+void FileFlush(IO *o)
+{
+	WIN32IO *p;
+	if (o == NULL)
+	{
+		return;
+	}
+
+	if (o->HamMode)
+	{
+		return;
+	}
+
+	p = (WIN32IO *)o->pData;
+	if (p->WriteMode)
+	{
+		FlushFileBuffers(p->hFile);
+	}
+}
+
 void FileClose(IO *o)
 {
 	FileCloseEx(o, false);

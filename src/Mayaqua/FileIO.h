@@ -61,6 +61,7 @@ UINT FileSize(IO *o);
 UINT64 FileSize64(IO *o);
 bool FileRead(IO *o, void *buf, UINT size);
 bool FileWrite(IO *o, void *buf, UINT size);
+void FileFlush(IO *o);
 void FileClose(IO *o);
 void FileCloseEx(IO *o, bool no_flush);
 IO *FileCreate(char *name);
