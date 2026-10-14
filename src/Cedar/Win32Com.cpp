@@ -1,11 +1,6 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
-
 // Win32Com.c
 // Win32 COM module call
 
-#ifdef OS_WIN32
 
 #include "Win32Com.h"
 
@@ -22,135 +17,6 @@ extern "C"
 #include <netcfgn.h>
 #include <SetupAPI.h>
 
-// Install the NDIS protocol driver
-bool UninstallNdisProtocolDriver(wchar_t *id, UINT lock_timeout)
-{
-	bool ret = false;
-	HRESULT hr;
-	INetCfg *pNetCfg;
-	// Validate arguments
-	if (id == NULL)
-	{
-		return false;
-	}
-
-	hr = CoCreateInstance(CLSID_CNetCfg, NULL, CLSCTX_INPROC_SERVER, IID_INetCfg, (void **)&pNetCfg);
-
-	if (SUCCEEDED(hr))
-	{
-		INetCfgLock *pLock;
-
-		hr = pNetCfg->QueryInterface(IID_INetCfgLock, (PVOID*)&pLock);
-
-		if (SUCCEEDED(hr))
-		{
-			LPWSTR locked_by;
-
-			hr = pLock->AcquireWriteLock(lock_timeout, L"Ranz VPN", &locked_by);
-
-			if (SUCCEEDED(hr))
-			{
-				hr = pNetCfg->Initialize(NULL);
-
-				if (SUCCEEDED(hr))
-				{
-					INetCfgComponent *pncc = NULL;
-
-					hr = pNetCfg->FindComponent(id, &pncc);
-
-					if (pncc == NULL || hr == S_FALSE)
-					{
-						hr = E_FAIL;
-					}
-
-					if (SUCCEEDED(hr))
-					{
-						INetCfgClass *pncClass;
-
-						hr = pNetCfg->QueryNetCfgClass(&GUID_DEVCLASS_NETTRANS, IID_INetCfgClass, (void **)&pncClass);
-						if (SUCCEEDED(hr))
-						{
-							INetCfgClassSetup *pncClassSetup;
-
-							hr = pncClass->QueryInterface(IID_INetCfgClassSetup, (void **)&pncClassSetup);
-							if (SUCCEEDED(hr))
-							{
-								OBO_TOKEN obo;
-								wchar_t *c = NULL;
-
-								Zero(&obo, sizeof(obo));
-
-								obo.Type = OBO_USER;
-
-								hr = pncClassSetup->DeInstall(pncc, &obo, &c);
-
-								if (SUCCEEDED(hr))
-								{
-									hr = pNetCfg->Apply();
-
-									if (SUCCEEDED(hr))
-									{
-										ret = true;
-									}
-									else
-									{
-										WHERE;
-										Debug("0x%x\n", hr);
-									}
-								}
-								else
-								{
-									WHERE;
-									Debug("0x%x\n", hr);
-								}
-
-								pncClassSetup->Release();
-							}
-							else
-							{
-								WHERE;
-							}
-
-							pncClass->Release();
-						}
-						else
-						{
-							WHERE;
-						}
-
-						pncc->Release();
-					}
-					else
-					{
-						WHERE;
-					}
-				}
-				else
-				{
-					WHERE;
-				}
-
-				pLock->ReleaseWriteLock();
-			}
-			else
-			{
-				WHERE;
-			}
-
-			pLock->Release();
-		}
-
-		pNetCfg->Release();
-	}
-	else
-	{
-		WHERE;
-	}
-
-	return ret;
-}
-
-// Install the NDIS protocol driver
 bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout)
 {
 	bool ret = false;
@@ -159,7 +25,6 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout
 	HINSTANCE hSetupApiDll = NULL;
 	BOOL (WINAPI *_SetupCopyOEMInfW)(PCWSTR, PCWSTR, DWORD, DWORD, PWSTR, DWORD, PDWORD, PWSTR *) = NULL;
 	BOOL (WINAPI *_SetupUninstallOEMInfW)(PCWSTR, DWORD, PVOID) = NULL;
-	// Validate arguments
 	if (inf_path == NULL || id == NULL)
 	{
 		return false;
@@ -236,7 +101,6 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout
 							else
 							{
 								WHERE;
-								Debug("0x%x\n", hr);
 							}
 
 							pSetup->Release();
@@ -296,4 +160,3 @@ LABEL_CLEANUP:
 	return ret;
 }
 
-#endif

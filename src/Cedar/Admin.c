@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
-
 // Admin.c
 // RPC Module for Management
 
@@ -32,7 +28,224 @@
 #include "Mayaqua/Table.h"
 #include "Mayaqua/Tick64.h"
 
-// Macro for RPC function declaration
+static UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t);
+static UINT StSetHubMsg(ADMIN *a, RPC_MSG *t);
+static UINT StGetHubMsg(ADMIN *a, RPC_MSG *t);
+static UINT StDebug(ADMIN *a, RPC_TEST *t);
+static UINT StFlush(ADMIN *a, RPC_TEST *t);
+static UINT StCrash(ADMIN *a, RPC_TEST *t);
+static UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t);
+static UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t);
+static UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t);
+static UINT StGetLicenseStatus(ADMIN *a, RPC_LICENSE_STATUS *t);
+static UINT StEnumLicenseKey(ADMIN *a, RPC_ENUM_LICENSE_KEY *t);
+static UINT StAddLicenseKey(ADMIN *a, RPC_TEST *t);
+static UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t);
+static UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t);
+static UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t);
+static UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t);
+static UINT StSetCrl(ADMIN *a, RPC_CRL *t);
+static UINT StGetCrl(ADMIN *a, RPC_CRL *t);
+static UINT StDelCrl(ADMIN *a, RPC_CRL *t);
+static UINT StAddCrl(ADMIN *a, RPC_CRL *t);
+static UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t);
+static UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
+static UINT StGetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
+static UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
+static UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
+static UINT StGetDefaultHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t);
+static UINT StGetConfig(ADMIN *a, RPC_CONFIG *t);
+static UINT StSetConfig(ADMIN *a, RPC_CONFIG *t);
+static UINT StGetCaps(ADMIN *a, CAPSLIST *t);
+static UINT StRebootServer(ADMIN *a, RPC_TEST *t);
+static UINT StGetBridgeSupport(ADMIN *a, RPC_BRIDGE_SUPPORT *t);
+static UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t);
+static UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t);
+static UINT StDeleteLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t);
+static UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t);
+static UINT StSetSysLog(ADMIN *a, SYSLOG_SETTING *t);
+static UINT StGetSysLog(ADMIN *a, SYSLOG_SETTING *t);
+static UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t);
+static UINT StEnumIpTable(ADMIN *a, RPC_ENUM_IP_TABLE *t);
+static UINT StDeleteMacTable(ADMIN *a, RPC_DELETE_TABLE *t);
+static UINT StEnumMacTable(ADMIN *a, RPC_ENUM_MAC_TABLE *t);
+static UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t);
+static UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t);
+static UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t);
+static UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t);
+static UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t);
+static UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t);
+static UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t);
+static UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t);
+static UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t);
+static UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t);
+static UINT StGetUser(ADMIN *a, RPC_SET_USER *t);
+static UINT StSetUser(ADMIN *a, RPC_SET_USER *t);
+static UINT StCreateUser(ADMIN *a, RPC_SET_USER *t);
+static UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t);
+static UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t);
+static UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t);
+static UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t);
+static UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t);
+static UINT StDeleteLink(ADMIN *a, RPC_LINK *t);
+static UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t);
+static UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t);
+static UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t);
+static UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t);
+static UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t);
+static UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t);
+static UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t);
+static UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t);
+static UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t);
+static UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t);
+static UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t);
+static UINT StGetHubLog(ADMIN *a, RPC_HUB_LOG *t);
+static UINT StSetHubLog(ADMIN *a, RPC_HUB_LOG *t);
+static UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t);
+static UINT StSetHubOnline(ADMIN *a, RPC_SET_HUB_ONLINE *t);
+static UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t);
+static UINT StDisconnectConnection(ADMIN *a, RPC_DISCONNECT_CONNECTION *t);
+static UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t);
+static UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t);
+static UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t);
+static UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t);
+static UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t);
+static UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t);
+static UINT StSetServerCipher(ADMIN *a, RPC_STR *t);
+static UINT StGetServerCipher(ADMIN *a, RPC_STR *t);
+static UINT StGetServerCipherList(ADMIN *a, RPC_STR *t);
+static UINT StGetServerCert(ADMIN *a, RPC_KEY_PAIR *t);
+static UINT StSetServerCert(ADMIN *a, RPC_KEY_PAIR *t);
+static UINT StSetServerPassword(ADMIN *a, RPC_SET_PASSWORD *t);
+static UINT StEnableListener(ADMIN *a, RPC_LISTENER *t);
+static UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t);
+static UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t);
+static UINT StCreateListener(ADMIN *a, RPC_LISTENER *t);
+static UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t);
+static UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t);
+static void CopyOsInfo(OS_INFO *dst, OS_INFO *info);
+static void InRpcMsg(RPC_MSG *t, PACK *p);
+static void OutRpcMsg(PACK *p, RPC_MSG *t);
+static void FreeRpcMsg(RPC_MSG *t);
+static void InRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t, PACK *p);
+static void OutRpcEnumEthVLan(PACK *p, RPC_ENUM_ETH_VLAN *t);
+static void InRpcEnumLogFile(RPC_ENUM_LOG_FILE *t, PACK *p);
+static void OutRpcEnumLogFile(PACK *p, RPC_ENUM_LOG_FILE *t);
+static void InRpcReadLogFile(RPC_READ_LOG_FILE *t, PACK *p);
+static void OutRpcReadLogFile(PACK *p, RPC_READ_LOG_FILE *t);
+static void FreeRpcReadLogFile(RPC_READ_LOG_FILE *t);
+static void InRpcAcList(RPC_AC_LIST *t, PACK *p);
+static void OutRpcAcList(PACK *p, RPC_AC_LIST *t);
+static void InRpcEnumCrl(RPC_ENUM_CRL *t, PACK *p);
+static void OutRpcEnumCrl(PACK *p, RPC_ENUM_CRL *t);
+static void InRpcCrl(RPC_CRL *t, PACK *p);
+static void OutRpcCrl(PACK *p, RPC_CRL *t);
+static void InRpcEnumEth(RPC_ENUM_ETH *t, PACK *p);
+static void OutRpcEnumEth(PACK *p, RPC_ENUM_ETH *t);
+static void InRpcLocalBridge(RPC_LOCALBRIDGE *t, PACK *p);
+static void OutRpcLocalBridge(PACK *p, RPC_LOCALBRIDGE *t);
+static void InRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t, PACK *p);
+static void OutRpcEnumLocalBridge(PACK *p, RPC_ENUM_LOCALBRIDGE *t);
+static void SiReadLocalLogFile(SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FILE *t);
+static void SiEnumLocalLogFileList(SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t);
+static void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t);
+static void InRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t, PACK *p);
+static void OutRpcEnumLicenseKey(PACK *p, RPC_ENUM_LICENSE_KEY *t);
+static void InRpcLicenseStatus(RPC_LICENSE_STATUS *t, PACK *p);
+static void OutRpcLicenseStatus(PACK *p, RPC_LICENSE_STATUS *t);
+static void InRpcAdminOption(RPC_ADMIN_OPTION *t, PACK *p);
+static void OutRpcAdminOption(PACK *p, RPC_ADMIN_OPTION *t);
+static void InRpcConfig(RPC_CONFIG *t, PACK *p);
+static void OutRpcConfig(PACK *p, RPC_CONFIG *t);
+static void InRpcBridgeSupport(RPC_BRIDGE_SUPPORT *t, PACK *p);
+static void OutRpcBridgeSupport(PACK *p, RPC_BRIDGE_SUPPORT *t);
+static void InRpcAddAccess(RPC_ADD_ACCESS *t, PACK *p);
+static void OutRpcAddAccess(PACK *p, RPC_ADD_ACCESS *t);
+static void InRpcDeleteAccess(RPC_DELETE_ACCESS *t, PACK *p);
+static void OutRpcDeleteAccess(PACK *p, RPC_DELETE_ACCESS *t);
+static void InRpcServerInfo(RPC_SERVER_INFO *t, PACK *p);
+static void OutRpcServerInfo(PACK *p, RPC_SERVER_INFO *t);
+static void InRpcServerStatus(RPC_SERVER_STATUS *t, PACK *p);
+static void OutRpcServerStatus(PACK *p, RPC_SERVER_STATUS *t);
+static void InRpcListener(RPC_LISTENER *t, PACK *p);
+static void OutRpcListener(PACK *p, RPC_LISTENER *t);
+static void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p);
+static void OutRpcListenerList(PACK *p, RPC_LISTENER_LIST *t);
+static void InRpcStr(RPC_STR *t, PACK *p);
+static void OutRpcStr(PACK *p, RPC_STR *t);
+static void InRpcSetPassword(RPC_SET_PASSWORD *t, PACK *p);
+static void OutRpcSetPassword(PACK *p, RPC_SET_PASSWORD *t);
+static void InRpcCreateHub(RPC_CREATE_HUB *t, PACK *p);
+static void OutRpcCreateHub(PACK *p, RPC_CREATE_HUB *t);
+static void InRpcEnumHub(RPC_ENUM_HUB *t, PACK *p);
+static void OutRpcEnumHub(PACK *p, RPC_ENUM_HUB *t);
+static void InRpcDeleteHub(RPC_DELETE_HUB *t, PACK *p);
+static void OutRpcDeleteHub(PACK *p, RPC_DELETE_HUB *t);
+static void InRpcEnumConnection(RPC_ENUM_CONNECTION *t, PACK *p);
+static void OutRpcEnumConnection(PACK *p, RPC_ENUM_CONNECTION *t);
+static void InRpcDisconnectConnection(RPC_DISCONNECT_CONNECTION *t, PACK *p);
+static void OutRpcDisconnectConnection(PACK *p, RPC_DISCONNECT_CONNECTION *t);
+static void InRpcConnectionInfo(RPC_CONNECTION_INFO *t, PACK *p);
+static void OutRpcConnectionInfo(PACK *p, RPC_CONNECTION_INFO *t);
+static void InRpcSetHubOnline(RPC_SET_HUB_ONLINE *t, PACK *p);
+static void OutRpcSetHubOnline(PACK *p, RPC_SET_HUB_ONLINE *t);
+static void InRpcHubStatus(RPC_HUB_STATUS *t, PACK *p);
+static void OutRpcHubStatus(PACK *p, RPC_HUB_STATUS *t);
+static void InRpcHubLog(RPC_HUB_LOG *t, PACK *p);
+static void OutRpcHubLog(PACK *p, RPC_HUB_LOG *t);
+static void InRpcHubAddCa(RPC_HUB_ADD_CA *t, PACK *p);
+static void OutRpcHubAddCa(PACK *p, RPC_HUB_ADD_CA *t);
+static void InRpcHubEnumCa(RPC_HUB_ENUM_CA *t, PACK *p);
+static void OutRpcHubEnumCa(PACK *p, RPC_HUB_ENUM_CA *t);
+static void InRpcHubGetCa(RPC_HUB_GET_CA *t, PACK *p);
+static void OutRpcHubGetCa(PACK *p, RPC_HUB_GET_CA *t);
+static void InRpcHubDeleteCa(RPC_HUB_DELETE_CA *t, PACK *p);
+static void OutRpcHubDeleteCa(PACK *p, RPC_HUB_DELETE_CA *t);
+static void InRpcCreateLink(RPC_CREATE_LINK *t, PACK *p);
+static void OutRpcCreateLink(PACK *p, RPC_CREATE_LINK *t);
+static void InRpcEnumLink(RPC_ENUM_LINK *t, PACK *p);
+static void OutRpcEnumLink(PACK *p, RPC_ENUM_LINK *t);
+static void InRpcLinkStatus(RPC_LINK_STATUS *t, PACK *p);
+static void OutRpcLinkStatus(PACK *p, RPC_LINK_STATUS *t);
+static void InRpcLink(RPC_LINK *t, PACK *p);
+static void OutRpcLink(PACK *p, RPC_LINK *t);
+static void InRpcRenameLink(RPC_RENAME_LINK *t, PACK *p);
+static void OutRpcRenameLink(PACK *p, RPC_RENAME_LINK *t);
+static void InRpcAccess(ACCESS *a, PACK *p);
+static void OutRpcAccess(PACK *p, ACCESS *a);
+static void InRpcEnumAccessList(RPC_ENUM_ACCESS_LIST *a, PACK *p);
+static void OutRpcEnumAccessList(PACK *p, RPC_ENUM_ACCESS_LIST *a);
+static void InRpcSetUser(RPC_SET_USER *t, PACK *p);
+static void OutRpcSetUser(PACK *p, RPC_SET_USER *t);
+static void InRpcEnumUser(RPC_ENUM_USER *t, PACK *p);
+static void OutRpcEnumUser(PACK *p, RPC_ENUM_USER *t);
+static void InRpcSetGroup(RPC_SET_GROUP *t, PACK *p);
+static void OutRpcSetGroup(PACK *p, RPC_SET_GROUP *t);
+static void InRpcEnumGroup(RPC_ENUM_GROUP *t, PACK *p);
+static void OutRpcEnumGroup(PACK *p, RPC_ENUM_GROUP *t);
+static void InRpcDeleteUser(RPC_DELETE_USER *t, PACK *p);
+static void OutRpcDeleteUser(PACK *p, RPC_DELETE_USER *t);
+static void InRpcKeyPair(RPC_KEY_PAIR *t, PACK *p);
+static void OutRpcKeyPair(PACK *p, RPC_KEY_PAIR *t);
+static void InRpcSessionStatus(RPC_SESSION_STATUS *t, PACK *p);
+static void OutRpcSessionStatus(PACK *p, RPC_SESSION_STATUS *t);
+static void InRpcDeleteSession(RPC_DELETE_SESSION *t, PACK *p);
+static void OutRpcDeleteSession(PACK *p, RPC_DELETE_SESSION *t);
+static void InRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t, PACK *p);
+static void OutRpcEnumMacTable(PACK *p, RPC_ENUM_MAC_TABLE *t);
+static void InRpcEnumIpTable(RPC_ENUM_IP_TABLE *t, PACK *p);
+static void OutRpcEnumIpTable(PACK *p, RPC_ENUM_IP_TABLE *t);
+static void InRpcDeleteTable(RPC_DELETE_TABLE *t, PACK *p);
+static void OutRpcDeleteTable(PACK *p, RPC_DELETE_TABLE *t);
+static UINT StTest(ADMIN *a, RPC_TEST *t);
+static void InRpcTest(RPC_TEST *t, PACK *p);
+static void OutRpcTest(PACK *p, RPC_TEST *t);
+static PACK *AdminCall(RPC *rpc, char *function_name, PACK *p);
+static UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hubname, bool accept_empty_password, bool *is_password_empty);
+static void HashAdminPassword(void *hash, char *password);
+static RPC *AdminConnectEx2(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name, void *hWnd);
+static bool SiIsEmptyPassword(void *hash_password);
+
 #define	DECLARE_RPC_EX(rpc_name, data_type, function, in_rpc, out_rpc, free_rpc)		\
 	else if (StrCmpi(name, rpc_name) == 0)								\
 	{																	\
@@ -116,13 +329,11 @@
 	if (a->Server->Cedar->Bridge)										\
 		return ERR_NOT_SUPPORTED;
 
-// Get server Caps (Guessing from the build number if failed to get Caps)
 CAPSLIST *ScGetCapsEx(RPC *rpc)
 {
 	RPC_SERVER_INFO info;
 	CAPSLIST *t;
 	bool is_bridge = false;
-	// Validate arguments
 	if (rpc == NULL)
 	{
 		return NULL;
@@ -133,7 +344,6 @@ CAPSLIST *ScGetCapsEx(RPC *rpc)
 
 	t = ZeroMalloc(sizeof(CAPSLIST));
 
-	// Try to get Caps by RPC
 	if (ScGetCaps(rpc, t) != ERR_NO_ERROR)
 	{
 		UINT build;
@@ -141,7 +351,7 @@ CAPSLIST *ScGetCapsEx(RPC *rpc)
 		Free(t);
 		t = NewCapsList();
 
-		// Since acquisition of Caps went wrong, get build number
+		// Caps RPC failed: fall back to guessing from the build number
 		build = info.ServerBuildInt;
 
 		is_bridge = (SearchStrEx(info.ServerProductName, "bridge", 0, false) == INFINITE) ? false : true;
@@ -213,7 +423,7 @@ CAPSLIST *ScGetCapsEx(RPC *rpc)
 	{
 		TOKEN_LIST *names;
 
-		// Fill items that doesn't exist in server-side as false
+		// Caps the server did not report default to false
 		names = GetTableNameStartWith("CT_b_");
 		if (names != NULL)
 		{
@@ -237,8 +447,7 @@ CAPSLIST *ScGetCapsEx(RPC *rpc)
 	return t;
 }
 
-// Dispatch routine for Administration RPC 
-PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
+static PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 {
 	ADMIN *a;
 	PACK *ret;
@@ -246,7 +455,6 @@ PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 	SERVER *server = NULL;
 	CEDAR *cedar = NULL;
 	bool ok = false;
-	// Validate arguments
 	if (rpc == NULL || name == NULL || p == NULL)
 	{
 		return NULL;
@@ -255,7 +463,6 @@ PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 	ret = NewPack();
 	err = ERR_NO_ERROR;
 
-	// Administration structure
 	a = (ADMIN *)rpc->Param;
 	if (a == NULL)
 	{
@@ -295,7 +502,6 @@ PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 
 	if (0) {}
 
-	// RPC function declaration: from here
 	DECLARE_RPC_EX("Test", RPC_TEST, StTest, InRpcTest, OutRpcTest, FreeRpcTest)
 	DECLARE_RPC_EX("GetServerInfo", RPC_SERVER_INFO, StGetServerInfo, InRpcServerInfo, OutRpcServerInfo, FreeRpcServerInfo)
 	DECLARE_RPC("GetServerStatus", RPC_SERVER_STATUS, StGetServerStatus, InRpcServerStatus, OutRpcServerStatus)
@@ -379,7 +585,7 @@ PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 	DECLARE_RPC_EX("EnumLogFile", RPC_ENUM_LOG_FILE, StEnumLogFile, InRpcEnumLogFile, OutRpcEnumLogFile, FreeRpcEnumLogFile)
 	DECLARE_RPC_EX("ReadLogFile", RPC_READ_LOG_FILE, StReadLogFile, InRpcReadLogFile, OutRpcReadLogFile, FreeRpcReadLogFile)
 	DECLARE_RPC("AddLicenseKey", RPC_TEST, StAddLicenseKey, InRpcTest, OutRpcTest)
-	DECLARE_RPC("DelLicenseKey", RPC_TEST, StDelLicenseKey, InRpcTest, OutRpcTest)
+	DECLARE_RPC("DelLicenseKey", RPC_TEST, StAddLicenseKey, InRpcTest, OutRpcTest)
 	DECLARE_RPC_EX("EnumLicenseKey", RPC_ENUM_LICENSE_KEY, StEnumLicenseKey, InRpcEnumLicenseKey, OutRpcEnumLicenseKey, FreeRpcEnumLicenseKey)
 	DECLARE_RPC("GetLicenseStatus", RPC_LICENSE_STATUS, StGetLicenseStatus, InRpcLicenseStatus, OutRpcLicenseStatus)
 	DECLARE_RPC("SetSysLog", SYSLOG_SETTING, StSetSysLog, InRpcSysLogSetting, OutRpcSysLogSetting)
@@ -393,8 +599,6 @@ PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 	DECLARE_RPC("Flush", RPC_TEST, StFlush, InRpcTest, OutRpcTest)
 	DECLARE_RPC("Debug", RPC_TEST, StDebug, InRpcTest, OutRpcTest)
 	DECLARE_RPC("RegenerateServerCert", RPC_TEST, StRegenerateServerCert, InRpcTest, OutRpcTest)
-	// RPC function declaration: till here
-
 
 	if (ok == false)
 	{
@@ -431,8 +635,6 @@ PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 	return ret;
 }
 
-// RPC call function declaration: from here
-DECLARE_SC_EX("Test", RPC_TEST, ScTest, InRpcTest, OutRpcTest, FreeRpcTest)
 DECLARE_SC_EX("GetServerInfo", RPC_SERVER_INFO, ScGetServerInfo, InRpcServerInfo, OutRpcServerInfo, FreeRpcServerInfo)
 DECLARE_SC("GetServerStatus", RPC_SERVER_STATUS, ScGetServerStatus, InRpcServerStatus, OutRpcServerStatus)
 DECLARE_SC("CreateListener", RPC_LISTENER, ScCreateListener, InRpcListener, OutRpcListener)
@@ -504,12 +706,10 @@ DECLARE_SC_EX("GetHubAdminOptions", RPC_ADMIN_OPTION, ScGetHubAdminOptions, InRp
 DECLARE_SC_EX("SetHubAdminOptions", RPC_ADMIN_OPTION, ScSetHubAdminOptions, InRpcAdminOption, OutRpcAdminOption, FreeRpcAdminOption)
 DECLARE_SC_EX("GetHubExtOptions", RPC_ADMIN_OPTION, ScGetHubExtOptions, InRpcAdminOption, OutRpcAdminOption, FreeRpcAdminOption)
 DECLARE_SC_EX("SetHubExtOptions", RPC_ADMIN_OPTION, ScSetHubExtOptions, InRpcAdminOption, OutRpcAdminOption, FreeRpcAdminOption)
-DECLARE_SC_EX("GetDefaultHubAdminOptions", RPC_ADMIN_OPTION, ScGetDefaultHubAdminOptions, InRpcAdminOption, OutRpcAdminOption, FreeRpcAdminOption)
 DECLARE_SC_EX("EnumCrl", RPC_ENUM_CRL, ScEnumCrl, InRpcEnumCrl, OutRpcEnumCrl, FreeRpcEnumCrl)
 DECLARE_SC_EX("AddCrl", RPC_CRL, ScAddCrl, InRpcCrl, OutRpcCrl, FreeRpcCrl)
 DECLARE_SC_EX("DelCrl", RPC_CRL, ScDelCrl, InRpcCrl, OutRpcCrl, FreeRpcCrl)
 DECLARE_SC_EX("GetCrl", RPC_CRL, ScGetCrl, InRpcCrl, OutRpcCrl, FreeRpcCrl)
-DECLARE_SC_EX("SetCrl", RPC_CRL, ScSetCrl, InRpcCrl, OutRpcCrl, FreeRpcCrl)
 DECLARE_SC_EX("SetAcList", RPC_AC_LIST, ScSetAcList, InRpcAcList, OutRpcAcList, FreeRpcAcList)
 DECLARE_SC_EX("GetAcList", RPC_AC_LIST, ScGetAcList, InRpcAcList, OutRpcAcList, FreeRpcAcList)
 DECLARE_SC_EX("EnumLogFile", RPC_ENUM_LOG_FILE, ScEnumLogFile, InRpcEnumLogFile, OutRpcEnumLogFile, FreeRpcEnumLogFile)
@@ -520,23 +720,15 @@ DECLARE_SC_EX("EnumLicenseKey", RPC_ENUM_LICENSE_KEY, ScEnumLicenseKey, InRpcEnu
 DECLARE_SC("GetLicenseStatus", RPC_LICENSE_STATUS, ScGetLicenseStatus, InRpcLicenseStatus, OutRpcLicenseStatus)
 DECLARE_SC("SetSysLog", SYSLOG_SETTING, ScSetSysLog, InRpcSysLogSetting, OutRpcSysLogSetting)
 DECLARE_SC("GetSysLog", SYSLOG_SETTING, ScGetSysLog, InRpcSysLogSetting, OutRpcSysLogSetting)
-DECLARE_SC_EX("EnumEthVLan", RPC_ENUM_ETH_VLAN, ScEnumEthVLan, InRpcEnumEthVLan, OutRpcEnumEthVLan, FreeRpcEnumEthVLan)
-DECLARE_SC("SetEnableEthVLan", RPC_TEST, ScSetEnableEthVLan, InRpcTest, OutRpcTest)
-DECLARE_SC_EX("SetHubMsg", RPC_MSG, ScSetHubMsg, InRpcMsg, OutRpcMsg, FreeRpcMsg)
-DECLARE_SC_EX("GetHubMsg", RPC_MSG, ScGetHubMsg, InRpcMsg, OutRpcMsg, FreeRpcMsg)
 DECLARE_SC("Crash", RPC_TEST, ScCrash, InRpcTest, OutRpcTest)
-DECLARE_SC_EX("GetAdminMsg", RPC_MSG, ScGetAdminMsg, InRpcMsg, OutRpcMsg, FreeRpcMsg)
 DECLARE_SC("Flush", RPC_TEST, ScFlush, InRpcTest, OutRpcTest)
 DECLARE_SC("Debug", RPC_TEST, ScDebug, InRpcTest, OutRpcTest)
 DECLARE_SC("RegenerateServerCert", RPC_TEST, ScRegenerateServerCert, InRpcTest, OutRpcTest)
-// RPC call function declaration: till here
 
-// Regenerate server certification
-UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t)
+static UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
 	X *x;
 	K *k;
 
@@ -544,7 +736,7 @@ UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t)
 
 	SiGenerateDefaultCertEx(&x, &k, t->StrValue);
 
-	SetCedarCert(c, x, k);
+	SetCedarCertAndChain(c, x, k, NULL);
 
 	ALog(a, NULL, "LA_REGENERATE_SERVER_CERT", t->StrValue);
 
@@ -556,8 +748,7 @@ UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t)
 	return ERR_NO_ERROR;
 }
 
-// Set message of today on hub
-UINT StSetHubMsg(ADMIN *a, RPC_MSG *t)
+static UINT StSetHubMsg(ADMIN *a, RPC_MSG *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -599,8 +790,7 @@ UINT StSetHubMsg(ADMIN *a, RPC_MSG *t)
 	return ret;
 }
 
-// Get message of today on hub
-UINT StGetHubMsg(ADMIN *a, RPC_MSG *t)
+static UINT StGetHubMsg(ADMIN *a, RPC_MSG *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -636,11 +826,9 @@ UINT StGetHubMsg(ADMIN *a, RPC_MSG *t)
 	return ret;
 }
 
-// Do debug function
-UINT StDebug(ADMIN *a, RPC_TEST *t)
+static UINT StDebug(ADMIN *a, RPC_TEST *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	UINT ret = ERR_NO_ERROR;
 	RPC_TEST t2;
 
@@ -662,12 +850,9 @@ UINT StDebug(ADMIN *a, RPC_TEST *t)
 	return ret;
 }
 
-// Flush configuration file
-UINT StFlush(ADMIN *a, RPC_TEST *t)
+static UINT StFlush(ADMIN *a, RPC_TEST *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
 	UINT size;
 
 	SERVER_ADMIN_ONLY;
@@ -679,30 +864,21 @@ UINT StFlush(ADMIN *a, RPC_TEST *t)
 	return ERR_NO_ERROR;
 }
 
-// Do Crash
-UINT StCrash(ADMIN *a, RPC_TEST *t)
+static UINT StCrash(ADMIN *a, RPC_TEST *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
-
 	SERVER_ADMIN_ONLY;
 
-#ifdef	OS_WIN32
 	MsSetEnableMinidump(false);
-#endif	// OS_WIN32
 
 	CrashNow();
 
 	return ERR_NO_ERROR;
 }
 
-// Get message for administrators
-UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t)
+static UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
-	UINT ret = ERR_NO_ERROR;
 	RPC_WINVER server_ver;
 	RPC_WINVER client_ver;
 	wchar_t winver_msg_client[3800];
@@ -713,7 +889,6 @@ UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t)
 	FreeRpcMsg(t);
 	Zero(t, sizeof(RPC_MSG));
 
-	// Check for Windows version
 	GetWinVer(&server_ver);
 	Copy(&client_ver, &a->ClientWinVer, sizeof(RPC_WINVER));
 
@@ -777,16 +952,13 @@ UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t)
 	return ERR_NO_ERROR;
 }
 
-// Enumerate VLAN tag transparent setting
-UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t)
+static UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	UINT ret = ERR_NO_ERROR;
 
 	SERVER_ADMIN_ONLY;
 
-#ifdef	OS_WIN32
 	if (GetServerCapsBool(s, "b_support_eth_vlan") == false)
 	{
 		ret = ERR_NOT_SUPPORTED;
@@ -801,21 +973,17 @@ UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t)
 			ret = ERR_INTERNAL_ERROR;
 		}
 	}
-#endif	// OS_WIN32
 
 	return ret;
 }
 
-// Set VLAN tag transparent setting
-UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t)
+static UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	UINT ret = ERR_NO_ERROR;
 
 	SERVER_ADMIN_ONLY;
 
-#ifdef	OS_WIN32
 	if (GetServerCapsBool(s, "b_support_eth_vlan") == false)
 	{
 		ret = ERR_NOT_SUPPORTED;
@@ -826,46 +994,34 @@ UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t)
 	}
 	else
 	{
-		if (SetVLanEnableStatus(t->StrValue, MAKEBOOL(t->IntValue)) == false)
+		if (SetVLanEnableStatus(t->StrValue, INT_TO_BOOL(t->IntValue)) == false)
 		{
 			ret = ERR_INTERNAL_ERROR;
 		}
 	}
-#endif	// OS_WIN32
 
 	return ret;
 }
 
-// Get license status
-UINT StGetLicenseStatus(ADMIN *a, RPC_LICENSE_STATUS *t)
+static UINT StGetLicenseStatus(ADMIN *a, RPC_LICENSE_STATUS *t)
 {
 	return ERR_NOT_SUPPORTED;
 }
 
-// Enumerate license key
-UINT StEnumLicenseKey(ADMIN *a, RPC_ENUM_LICENSE_KEY *t)
+static UINT StEnumLicenseKey(ADMIN *a, RPC_ENUM_LICENSE_KEY *t)
 {
 	return ERR_NOT_SUPPORTED;
 }
 
-// Add new license key
-UINT StAddLicenseKey(ADMIN *a, RPC_TEST *t)
+static UINT StAddLicenseKey(ADMIN *a, RPC_TEST *t)
 {
 	return ERR_NOT_SUPPORTED;
 }
 
-// Delete a license key
-UINT StDelLicenseKey(ADMIN *a, RPC_TEST *t)
-{
-	return ERR_NOT_SUPPORTED;
-}
-
-// Download a log file
 BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PROC *proc, void *param)
 {
 	UINT offset;
 	BUF *buf;
-	// Validate arguments
 	if (r == NULL || filepath == NULL)
 	{
 		return NULL;
@@ -889,7 +1045,6 @@ BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PR
 
 		if (ret != ERR_NO_ERROR)
 		{
-			// Failed
 			FreeRpcReadLogFile(&t);
 			FreeBuf(buf);
 			return NULL;
@@ -897,14 +1052,11 @@ BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PR
 
 		if (t.Buffer == NULL)
 		{
-			// read to the end
 			break;
 		}
 
-		// Update current progress
 		offset += t.Buffer->Size;
 		Zero(&g, sizeof(g));
-		g.Param = param;
 		g.CurrentSize = offset;
 		g.TotalSize = MAX(total_size, offset);
 		g.ProgressPercent = (UINT)(MAKESURE((UINT64)g.CurrentSize * 100ULL / (UINT64)(MAX(g.TotalSize, 1)), 0, 100ULL));
@@ -917,7 +1069,6 @@ BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PR
 		{
 			if (proc(&g) == false)
 			{
-				// Canceled by user
 				FreeBuf(buf);
 				return NULL;
 			}
@@ -926,7 +1077,6 @@ BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PR
 
 	if (buf->Size == 0)
 	{
-		// Downloading failed
 		FreeBuf(buf);
 		return NULL;
 	}
@@ -934,11 +1084,9 @@ BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PR
 	return buf;
 }
 
-// Read a log file
-UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
+static UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	char logfilename[MAX_PATH];
 	char servername[MAX_HOST_NAME_LEN + 1];
 	UINT offset;
@@ -956,7 +1104,6 @@ UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
 	// Check the permission to read the log file
 	if (a->LogFileList == NULL)
 	{
-		// Enum the log files first
 		RPC_ENUM_LOG_FILE elf;
 		UINT elf_ret;
 
@@ -973,14 +1120,12 @@ UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
 	}
 	if (CheckLogFileNameFromEnumList(a->LogFileList, logfilename) == false)
 	{
-		// There is no such file in the log file list
 		return ERR_OBJECT_NOT_FOUND;
 	}
 
 	FreeRpcReadLogFile(t);
 	Zero(t, sizeof(RPC_READ_LOG_FILE));
 
-	// Read a local file
 	SiReadLocalLogFile(s, logfilename, offset, t);
 
 	if (offset == 0)
@@ -994,8 +1139,7 @@ UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
 	return ERR_NO_ERROR;
 }
 
-// Enumerate log files
-UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t)
+static UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -1024,10 +1168,9 @@ UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t)
 	FreeRpcEnumLogFile(t);
 	Zero(t, sizeof(RPC_ENUM_LOG_FILE));
 
-	// Enumerate local log files
 	SiEnumLocalLogFileList(s, a->ServerAdmin ? NULL : a->HubName, t);
 
-	// Cache the last list of log files on RPC session
+	// Cache the log file list on the RPC session
 	if (a->LogFileList != NULL)
 	{
 		FreeEnumLogFile(a->LogFileList);
@@ -1051,8 +1194,7 @@ UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t)
 }
 
 
-// Get access control list
-UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t)
+static UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -1087,7 +1229,7 @@ UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t)
 
 			LockList(db->AcList);
 			{
-				t->o = NewAcList();
+				t->o = NewList(CmpAc);
 
 				SetAcList(t->o, db->AcList);
 			}
@@ -1099,8 +1241,7 @@ UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t)
 	return ret;
 }
 
-// Set access control list
-UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t)
+static UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -1164,8 +1305,7 @@ UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t)
 	return ret;
 }
 
-// Set CRL (Certificate Revocation List) entry
-UINT StSetCrl(ADMIN *a, RPC_CRL *t)
+static UINT StSetCrl(ADMIN *a, RPC_CRL *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -1229,8 +1369,7 @@ UINT StSetCrl(ADMIN *a, RPC_CRL *t)
 	return ret;
 }
 
-// Get CRL (Certificate Revocation List) entry
-UINT StGetCrl(ADMIN *a, RPC_CRL *t)
+static UINT StGetCrl(ADMIN *a, RPC_CRL *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -1285,8 +1424,7 @@ UINT StGetCrl(ADMIN *a, RPC_CRL *t)
 	return ret;
 }
 
-// Delete CRL (Certificate Revocation List) entry
-UINT StDelCrl(ADMIN *a, RPC_CRL *t)
+static UINT StDelCrl(ADMIN *a, RPC_CRL *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -1343,8 +1481,7 @@ UINT StDelCrl(ADMIN *a, RPC_CRL *t)
 	return ret;
 }
 
-// Add new CRL (Certificate Revocation List) entry
-UINT StAddCrl(ADMIN *a, RPC_CRL *t)
+static UINT StAddCrl(ADMIN *a, RPC_CRL *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -1404,8 +1541,7 @@ UINT StAddCrl(ADMIN *a, RPC_CRL *t)
 	return ret;
 }
 
-// Get CRL (Certificate Revocation List) index
-UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t)
+static UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -1462,8 +1598,7 @@ UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t)
 	return ret;
 }
 
-// Set hub extended options
-UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
+static UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -1497,13 +1632,11 @@ UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 
 	if (GetHubAdminOption(h, "deny_hub_admin_change_ext_option") && not_server_admin)
 	{
-		// Insufficient permission
 		ReleaseHub(h);
 
 		return ERR_NOT_ENOUGH_RIGHT;
 	}
 
-	// Update setting
 	Lock(h->lock);
 	{
 		DataToHubOptionStruct(h->Option, t);
@@ -1519,8 +1652,7 @@ UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	return ERR_NO_ERROR;
 }
 
-// Get hub extended options
-UINT StGetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
+static UINT StGetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -1544,7 +1676,6 @@ UINT StGetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 
 	StrCpy(t->HubName, sizeof(t->HubName), h->Name);
 
-	// Get options
 	Lock(h->lock);
 	{
 		HubOptionStructToData(t, h->Option, h->Name);
@@ -1556,8 +1687,7 @@ UINT StGetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	return ERR_NO_ERROR;
 }
 
-// Set hub administration options
-UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
+static UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
 	UINT i;
 	SERVER *s = a->Server;
@@ -1594,7 +1724,6 @@ UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	if (GetHubAdminOption(h, "allow_hub_admin_change_option") == false
 		&& not_server_admin)
 	{
-		// Insufficient permission
 		ReleaseHub(h);
 
 		return ERR_NOT_ENOUGH_RIGHT;
@@ -1628,8 +1757,7 @@ UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	return ERR_NO_ERROR;
 }
 
-// Get hub administration options
-UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
+static UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
 	UINT i;
 	SERVER *s = a->Server;
@@ -1677,8 +1805,7 @@ UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	return ERR_NO_ERROR;
 }
 
-// Get default hub administration options
-UINT StGetDefaultHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
+static UINT StGetDefaultHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
 	UINT i;
 
@@ -1701,8 +1828,7 @@ UINT StGetDefaultHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	return ERR_NO_ERROR;
 }
 
-// Get configuration file stream
-UINT StGetConfig(ADMIN *a, RPC_CONFIG *t)
+static UINT StGetConfig(ADMIN *a, RPC_CONFIG *t)
 {
 	SERVER *s;
 
@@ -1736,8 +1862,7 @@ UINT StGetConfig(ADMIN *a, RPC_CONFIG *t)
 	}
 }
 
-// Overwrite configuration file by specified data
-UINT StSetConfig(ADMIN *a, RPC_CONFIG *t)
+static UINT StSetConfig(ADMIN *a, RPC_CONFIG *t)
 {
 	SERVER *s;
 	IO *o;
@@ -1751,7 +1876,6 @@ UINT StSetConfig(ADMIN *a, RPC_CONFIG *t)
 		return ERR_INTERNAL_ERROR;
 	}
 
-	// Write new configuration file
 	Format(filename, sizeof(filename), "%s.new", s->CfgRw->FileName);
 
 	o = FileCreate(filename);
@@ -1764,14 +1888,12 @@ UINT StSetConfig(ADMIN *a, RPC_CONFIG *t)
 
 	ALog(a, NULL, "LA_SET_CONFIG");
 
-	// Reboot server itself
-	SiRebootServer(s->Cedar->Bridge);
+	SiRebootServerEx(s->Cedar->Bridge, false);
 
 	return ERR_NO_ERROR;
 }
 
-// Get capabilities
-UINT StGetCaps(ADMIN *a, CAPSLIST *t)
+static UINT StGetCaps(ADMIN *a, CAPSLIST *t)
 {
 	FreeRpcCapsList(t);
 	Zero(t, sizeof(CAPSLIST));
@@ -1781,8 +1903,7 @@ UINT StGetCaps(ADMIN *a, CAPSLIST *t)
 	return ERR_NO_ERROR;
 }
 
-// Reboot server itself
-UINT StRebootServer(ADMIN *a, RPC_TEST *t)
+static UINT StRebootServer(ADMIN *a, RPC_TEST *t)
 {
 	SERVER_ADMIN_ONLY;
 
@@ -1793,8 +1914,7 @@ UINT StRebootServer(ADMIN *a, RPC_TEST *t)
 	return ERR_NO_ERROR;
 }
 
-// Get availability to localbridge function
-UINT StGetBridgeSupport(ADMIN *a, RPC_BRIDGE_SUPPORT *t)
+static UINT StGetBridgeSupport(ADMIN *a, RPC_BRIDGE_SUPPORT *t)
 {
 	Zero(t, sizeof(RPC_BRIDGE_SUPPORT));
 
@@ -1803,8 +1923,7 @@ UINT StGetBridgeSupport(ADMIN *a, RPC_BRIDGE_SUPPORT *t)
 	return ERR_NO_ERROR;
 }
 
-// Enumerate Ethernet devices
-UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t)
+static UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t)
 {
 	TOKEN_LIST *o;
 	UINT i;
@@ -1832,9 +1951,7 @@ UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t)
 
 		StrCpy(tmp, sizeof(tmp), e->DeviceName);
 
-#ifdef OS_WIN32
 		GetEthNetworkConnectionName(e->NetworkConnectionName, sizeof(e->NetworkConnectionName), e->DeviceName);
-#endif
 	}
 
 	FreeToken(o);
@@ -1842,8 +1959,7 @@ UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t)
 	return ERR_NO_ERROR;
 }
 
-// Add a new local bridge
-UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
+static UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 {
 	if (IsEmptyStr(t->DeviceName) || IsEmptyStr(t->HubName))
 	{
@@ -1853,12 +1969,11 @@ UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 	SERVER_ADMIN_ONLY;
 
 
-	if (IsEthSupported() == false)
+	if (Win32EthIsSuSupported() == false)
 	{
 		return ERR_LOCAL_BRIDGE_UNSUPPORTED;
 	}
 
-#ifdef	OS_WIN32
 	if (true)
 	{
 		char tmp[MAX_SIZE];
@@ -1866,11 +1981,10 @@ UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 
 		if (id == 0)
 		{
-			// If a ID is not specified in Win32, adding will fail
+			// On Win32, adding fails when no device ID is given
 			return ERR_OBJECT_NOT_FOUND;
 		}
 	}
-#endif	// OS_WIN32
 
 	ALog(a, NULL, "LA_ADD_BRIDGE", t->HubName, t->DeviceName);
 
@@ -1881,8 +1995,7 @@ UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 	return ERR_NO_ERROR;
 }
 
-// Delete a local bridge
-UINT StDeleteLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
+static UINT StDeleteLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 {
 	if (IsEmptyStr(t->DeviceName) || IsEmptyStr(t->HubName))
 	{
@@ -1903,13 +2016,12 @@ UINT StDeleteLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 	return ERR_NO_ERROR;
 }
 
-// Enumerate local bridges
-UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t)
+static UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t)
 {
 	UINT i;
 	CEDAR *c;
 
-	if (IsEthSupported() == false)
+	if (Win32EthIsSuSupported() == false)
 	{
 		return ERR_LOCAL_BRIDGE_UNSUPPORTED;
 	}
@@ -1956,8 +2068,7 @@ UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t)
 	return ERR_NO_ERROR;
 }
 
-// Set syslog function setting
-UINT StSetSysLog(ADMIN *a, SYSLOG_SETTING *t)
+static UINT StSetSysLog(ADMIN *a, SYSLOG_SETTING *t)
 {
 	SERVER *s = a->Server;
 
@@ -1981,8 +2092,7 @@ UINT StSetSysLog(ADMIN *a, SYSLOG_SETTING *t)
 	return ERR_NO_ERROR;
 }
 
-// Get syslog function setting
-UINT StGetSysLog(ADMIN *a, SYSLOG_SETTING *t)
+static UINT StGetSysLog(ADMIN *a, SYSLOG_SETTING *t)
 {
 	SERVER *s = a->Server;
 
@@ -1990,7 +2100,7 @@ UINT StGetSysLog(ADMIN *a, SYSLOG_SETTING *t)
 
 	if (a->ServerAdmin == false)
 	{
-		// Hide server name for non-administrator
+		// Hide the server name from non-administrators
 		if (t->SaveType == SYSLOG_NONE)
 		{
 			StrCpy(t->Hostname, sizeof(t->Hostname), "");
@@ -2006,8 +2116,7 @@ UINT StGetSysLog(ADMIN *a, SYSLOG_SETTING *t)
 	return ERR_NO_ERROR;
 }
 
-// Delete IP address table entry
-UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t)
+static UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2053,13 +2162,11 @@ UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t)
 	return ret;
 }
 
-// Get local IP address table
-UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t)
+static UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t)
 {
 	CEDAR *c;
 	UINT i;
 	HUB *h = NULL;
-	// Validate arguments
 	if (s == NULL || hubname == NULL || t == NULL)
 	{
 		return ERR_INTERNAL_ERROR;
@@ -2096,8 +2203,8 @@ UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t)
 			Copy(&e->IpV6, &table->Ip, sizeof(IP));
 			Copy(&e->IpAddress, &table->Ip, sizeof(IP));
 			e->DhcpAllocated = table->DhcpAllocated;
-			e->CreatedTime = TickToTime(table->CreatedTime);
-			e->UpdatedTime = TickToTime(table->UpdatedTime);
+			e->CreatedTime = Tick64ToTime64(table->CreatedTime);
+			e->UpdatedTime = Tick64ToTime64(table->UpdatedTime);
 		}
 	}
 	UnlockList(h->IpTable);
@@ -2107,17 +2214,14 @@ UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t)
 	return ERR_NO_ERROR;
 }
 
-// Get IP address table
-UINT StEnumIpTable(ADMIN *a, RPC_ENUM_IP_TABLE *t)
+static UINT StEnumIpTable(ADMIN *a, RPC_ENUM_IP_TABLE *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
 
-	// Get local IP address table
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 	FreeRpcEnumIpTable(t);
 	Zero(t, sizeof(RPC_ENUM_IP_TABLE));
@@ -2132,8 +2236,7 @@ UINT StEnumIpTable(ADMIN *a, RPC_ENUM_IP_TABLE *t)
 	return ret;
 }
 
-// Delete MAC address table entry
-UINT StDeleteMacTable(ADMIN *a, RPC_DELETE_TABLE *t)
+static UINT StDeleteMacTable(ADMIN *a, RPC_DELETE_TABLE *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2179,13 +2282,11 @@ UINT StDeleteMacTable(ADMIN *a, RPC_DELETE_TABLE *t)
 	return ret;
 }
 
-// Get local MAC address table
-UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t)
+static UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t)
 {
 	CEDAR *c;
 	UINT i;
 	HUB *h = NULL;
-	// Validate arguments
 	if (s == NULL || hubname == NULL || t == NULL)
 	{
 		return ERR_INTERNAL_ERROR;
@@ -2219,8 +2320,8 @@ UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t)
 			e->Key = POINTER_TO_KEY(mac);
 			StrCpy(e->SessionName, sizeof(e->SessionName), mac->Session->Name);
 			Copy(e->MacAddress, mac->MacAddress, sizeof(e->MacAddress));
-			e->CreatedTime = TickToTime(mac->CreatedTime);
-			e->UpdatedTime = TickToTime(mac->UpdatedTime);
+			e->CreatedTime = Tick64ToTime64(mac->CreatedTime);
+			e->UpdatedTime = Tick64ToTime64(mac->UpdatedTime);
 			e->VlanId = mac->VlanId;
 		}
 
@@ -2233,18 +2334,14 @@ UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t)
 	return ERR_NO_ERROR;
 }
 
-// Get MAC address table
-UINT StEnumMacTable(ADMIN *a, RPC_ENUM_MAC_TABLE *t)
+static UINT StEnumMacTable(ADMIN *a, RPC_ENUM_MAC_TABLE *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	HUB *h = NULL;
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
 
-	// Get local MAC address table
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 	FreeRpcEnumMacTable(t);
 	Zero(t, sizeof(RPC_ENUM_MAC_TABLE));
@@ -2258,8 +2355,7 @@ UINT StEnumMacTable(ADMIN *a, RPC_ENUM_MAC_TABLE *t)
 	return ret;
 }
 
-// Delete a session
-UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t)
+static UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2329,8 +2425,7 @@ UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t)
 	return ret;
 }
 
-// Get session status
-UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
+static UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2376,7 +2471,6 @@ UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
 
 	if (sess == NULL)
 	{
-		// Session is not found
 		ret = ERR_OBJECT_NOT_FOUND;
 	}
 	else
@@ -2415,13 +2509,10 @@ UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
 	return ret;
 }
 
-// Main routine of session enumeration
 void SiEnumSessionMain(SERVER *s, RPC_ENUM_SESSION *t)
 {
 	char hubname[MAX_HUBNAME_LEN + 1];
-	UINT ret = ERR_NO_ERROR;
 	UINT num;
-	// Validate arguments
 	if (s == NULL || t == NULL)
 	{
 		return;
@@ -2433,14 +2524,12 @@ void SiEnumSessionMain(SERVER *s, RPC_ENUM_SESSION *t)
 	Zero(t, sizeof(RPC_ENUM_SESSION));
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 
-	// Local session enumeration
 	num = 0;
 	SiEnumLocalSession(s, hubname, t);
 
 }
 
-// Enumerate sessions
-UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t)
+static UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2473,13 +2562,11 @@ UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t)
 	return ret;
 }
 
-// Enumerate groups
-UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
+static UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
-	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
@@ -2559,8 +2646,7 @@ UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 	return ERR_NO_ERROR;
 }
 
-// Delete a group
-UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t)
+static UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2613,8 +2699,7 @@ UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t)
 	return ret;
 }
 
-// Get group information
-UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t)
+static UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2678,8 +2763,7 @@ UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t)
 	return ret;
 }
 
-// Set group setting
-UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t)
+static UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2744,8 +2828,7 @@ UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t)
 	return ret;
 }
 
-// Create a group
-UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t)
+static UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2812,13 +2895,11 @@ UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t)
 	return ret;
 }
 
-// Enumerate users
-UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
+static UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
-	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 	UINT i, num;
 
@@ -2888,8 +2969,7 @@ UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
 	return ERR_NO_ERROR;
 }
 
-// Delete a user
-UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t)
+static UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -2939,15 +3019,13 @@ UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t)
 	return ret;
 }
 
-// Get user setting
-UINT StGetUser(ADMIN *a, RPC_SET_USER *t)
+static UINT StGetUser(ADMIN *a, RPC_SET_USER *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
 	UINT ret = ERR_NO_ERROR;
 	USER *u = NULL;
-	USERGROUP *g = NULL;
 	char name[MAX_USERNAME_LEN + 1];
 	char hubname[MAX_HUBNAME_LEN + 1];
 	StrCpy(name, sizeof(name), t->Name);
@@ -3015,8 +3093,7 @@ UINT StGetUser(ADMIN *a, RPC_SET_USER *t)
 	return ret;
 }
 
-// Set user setting
-UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
+static UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3143,8 +3220,7 @@ UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
 	return ret;
 }
 
-// Create a user
-UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
+static UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3276,8 +3352,7 @@ UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
 	return ret;
 }
 
-// Get access list
-UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
+static UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3322,8 +3397,7 @@ UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 	return ERR_NO_ERROR;
 }
 
-// Delete access list entry
-UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t)
+static UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3388,8 +3462,7 @@ UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t)
 	return ERR_NO_ERROR;
 }
 
-// Set access list
-UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
+static UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3435,7 +3508,6 @@ UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 
 	LockList(h->AccessList);
 	{
-		// Delete whole access list
 		for (i = 0; i < LIST_NUM(h->AccessList); ++i)
 		{
 			ACCESS *access = LIST_DATA(h->AccessList, i);
@@ -3446,7 +3518,6 @@ UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 
 		ALog(a, h, "LA_SET_ACCESS_LIST", t->NumAccess);
 
-		// Add whole access list
 		for (i = 0; i < t->NumAccess; ++i)
 		{
 			ACCESS *a = &t->Accesses[i];
@@ -3490,8 +3561,7 @@ UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 	return ERR_NO_ERROR;
 }
 
-// Add access list entry
-UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t)
+static UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -3552,7 +3622,7 @@ UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t)
 		}
 	}
 
-	AddAccessList(h, &t->Access);
+	AddAccessListEx(h, &t->Access, false, false);
 
 	ReleaseHub(h);
 
@@ -3561,8 +3631,7 @@ UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t)
 	return ERR_NO_ERROR;
 }
 
-// Rename link (cascade connection)
-UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
+static UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
 {
 	UINT i;
 	SERVER *s = a->Server;
@@ -3581,7 +3650,6 @@ UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
 
 	if (UniStrCmpi(t->NewAccountName, t->OldAccountName) == 0)
 	{
-		// Noop if new name is same to old name
 		return ERR_NO_ERROR;
 	}
 
@@ -3600,7 +3668,6 @@ UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
 
 	k = NULL;
 
-	// Find specified link
 	LockList(h->LinkList);
 	{
 		for (i = 0;i < LIST_NUM(h->LinkList);i++)
@@ -3626,7 +3693,6 @@ UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
 
 		if (k != NULL)
 		{
-			// Check whether the new link name is same to other links 
 			for (i = 0;i < LIST_NUM(h->LinkList);i++)
 			{
 				LINK *kk = LIST_DATA(h->LinkList, i);
@@ -3634,7 +3700,6 @@ UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
 				{
 					if (UniStrCmpi(kk->Option->AccountName, t->NewAccountName) == 0)
 					{
-						// duplicated
 						exists = true;
 					}
 				}
@@ -3643,12 +3708,10 @@ UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
 
 			if (exists)
 			{
-				// Already same name exists
 				ret = ERR_LINK_ALREADY_EXISTS;
 			}
 			else
 			{
-				// Do rename
 				UniStrCpy(k->Option->AccountName, sizeof(k->Option->AccountName), t->NewAccountName);
 
 				ALog(a, h, "LA_RENAME_LINK", t->OldAccountName, t->NewAccountName);
@@ -3661,7 +3724,6 @@ UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
 
 	if (k == NULL)
 	{
-		// specified link is not found
 		ReleaseHub(h);
 		return ERR_OBJECT_NOT_FOUND;
 	}
@@ -3673,8 +3735,7 @@ UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
 	return ret;
 }
 
-// Delete a link
-UINT StDeleteLink(ADMIN *a, RPC_LINK *t)
+static UINT StDeleteLink(ADMIN *a, RPC_LINK *t)
 {
 	UINT i;
 	SERVER *s = a->Server;
@@ -3713,7 +3774,6 @@ UINT StDeleteLink(ADMIN *a, RPC_LINK *t)
 	UniStrCpy(accountname, sizeof(accountname), t->AccountName);
 	k = NULL;
 
-	// Find specified link
 	LockList(h->LinkList);
 	{
 		for (i = 0;i < LIST_NUM(h->LinkList);i++)
@@ -3739,7 +3799,6 @@ UINT StDeleteLink(ADMIN *a, RPC_LINK *t)
 
 	if (k == NULL)
 	{
-		// Specified link is not found
 		ReleaseHub(h);
 
 		return ERR_OBJECT_NOT_FOUND;
@@ -3761,8 +3820,7 @@ UINT StDeleteLink(ADMIN *a, RPC_LINK *t)
 	return ret;
 }
 
-// Make a link into off-line
-UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t)
+static UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t)
 {
 	UINT i;
 	SERVER *s = a->Server;
@@ -3802,7 +3860,6 @@ UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t)
 	UniStrCpy(accountname, sizeof(accountname), t->AccountName);
 	k = NULL;
 
-	// Find specified link
 	LockList(h->LinkList);
 	{
 		for (i = 0;i < LIST_NUM(h->LinkList);i++)
@@ -3828,7 +3885,6 @@ UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t)
 
 	if (k == NULL)
 	{
-		// Link is not found
 		ReleaseHub(h);
 
 		return ERR_OBJECT_NOT_FOUND;
@@ -3846,8 +3902,7 @@ UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t)
 	return ret;
 }
 
-// Make a link into on-line
-UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t)
+static UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t)
 {
 	UINT i;
 	SERVER *s = a->Server;
@@ -3887,7 +3942,6 @@ UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t)
 	UniStrCpy(accountname, sizeof(accountname), t->AccountName);
 	k = NULL;
 
-	// Find specified link
 	LockList(h->LinkList);
 	{
 		for (i = 0;i < LIST_NUM(h->LinkList);i++)
@@ -3913,7 +3967,6 @@ UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t)
 
 	if (k == NULL)
 	{
-		// Specified link is not found
 		ReleaseHub(h);
 
 		return ERR_OBJECT_NOT_FOUND;
@@ -3931,8 +3984,7 @@ UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t)
 	return ret;
 }
 
-// Get link status
-UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t)
+static UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t)
 {
 	UINT i;
 	SERVER *s = a->Server;
@@ -3971,7 +4023,6 @@ UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t)
 
 	k = NULL;
 
-	// Find the link
 	LockList(h->LinkList);
 	{
 		for (i = 0;i < LIST_NUM(h->LinkList);i++)
@@ -3997,13 +4048,11 @@ UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t)
 
 	if (k == NULL)
 	{
-		// Specified link is not found
 		ReleaseHub(h);
 
 		return ERR_OBJECT_NOT_FOUND;
 	}
 
-	// Get status information from session
 	Lock(k->lock);
 	{
 		sess = k->ClientSession;
@@ -4030,8 +4079,7 @@ UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t)
 	return ret;
 }
 
-// Enumerate links
-UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t)
+static UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4078,7 +4126,7 @@ UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t)
 				{
 					if (k->ClientSession != NULL)
 					{
-						e->ConnectedTime = TickToTime(k->ClientSession->CurrentConnectionEstablishTime);
+						e->ConnectedTime = Tick64ToTime64(k->ClientSession->CurrentConnectionEstablishTime);
 						e->Connected = (k->ClientSession->ClientStatus == CLIENT_STATUS_ESTABLISHED);
 						e->LastError = k->ClientSession->Err;
 					}
@@ -4094,8 +4142,7 @@ UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t)
 	return ERR_NO_ERROR;
 }
 
-// Get link configuration
-UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t)
+static UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4120,7 +4167,6 @@ UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t)
 
 	k = NULL;
 
-	// Find the link
 	LockList(h->LinkList);
 	{
 		for (i = 0;i < LIST_NUM(h->LinkList);i++)
@@ -4146,7 +4192,6 @@ UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t)
 
 	if (k == NULL)
 	{
-		// The link is not found
 		ReleaseHub(h);
 		return ERR_OBJECT_NOT_FOUND;
 	}
@@ -4158,7 +4203,6 @@ UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t)
 
 	Lock(k->lock);
 	{
-		// Get configuration
 		t->Online = k->Offline ? false : true;
 		t->ClientOption = ZeroMalloc(sizeof(CLIENT_OPTION));
 		Copy(t->ClientOption, k->Option, sizeof(CLIENT_OPTION));
@@ -4177,8 +4221,7 @@ UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t)
 	return ret;
 }
 
-// Set link configuration
-UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
+static UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4209,7 +4252,6 @@ UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 
 	k = NULL;
 
-	// Find the link
 	LockList(h->LinkList);
 	{
 		for (i = 0;i < LIST_NUM(h->LinkList);i++)
@@ -4235,7 +4277,6 @@ UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 
 	if (k == NULL)
 	{
-		// The link is not found
 		ReleaseHub(h);
 		return ERR_OBJECT_NOT_FOUND;
 	}
@@ -4244,7 +4285,6 @@ UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 
 	Lock(k->lock);
 	{
-		// Update the configuration of the link
 		if (k->ServerCert != NULL)
 		{
 			FreeX(k->ServerCert);
@@ -4268,8 +4308,8 @@ UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 			Copy(k->Policy, &t->Policy, sizeof(POLICY));
 		}
 
-		k->Option->RequireBridgeRoutingMode = true;	// Enable Bridge / Routing mode
-		k->Option->RequireMonitorMode = false;	// Disable monitor mode
+		k->Option->RequireBridgeRoutingMode = true;
+		k->Option->RequireMonitorMode = false;
 
 		k->CheckServerCert = t->CheckServerCert;
 		k->AddDefaultCA = t->AddDefaultCA;
@@ -4285,8 +4325,7 @@ UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 	return ret;
 }
 
-// Create a new link(cascade)
-UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t)
+static UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4317,7 +4356,6 @@ UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t)
 
 	k = NULL;
 
-	// Check for existing a link which has same name
 	LockList(h->LinkList);
 	{
 		for (i = 0;i < LIST_NUM(h->LinkList);i++)
@@ -4343,7 +4381,6 @@ UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t)
 
 	if (k != NULL)
 	{
-		// There is a link which has same name
 		ReleaseLink(k);
 		ReleaseHub(h);
 		return ERR_LINK_ALREADY_EXISTS;
@@ -4351,23 +4388,18 @@ UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t)
 
 	ALog(a, h, "LA_CREATE_LINK", t->ClientOption->AccountName);
 
-	// Create a new link
 	k = NewLink(c, h, t->ClientOption, t->ClientAuth, &t->Policy);
 
 	if (k == NULL)
 	{
-		// Link creation failed
 		ret = ERR_INTERNAL_ERROR;
 	}
 	else
 	{
-		// setting of verifying server certification
-		// 
 		k->CheckServerCert = t->CheckServerCert;
 		k->AddDefaultCA = t->AddDefaultCA;
 		k->ServerCert = CloneX(t->ServerCert);
 
-		// stay this off-line
 		k->Offline = false;
 		SetLinkOffline(k);
 		ReleaseLink(k);
@@ -4380,8 +4412,7 @@ UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t)
 	return ret;
 }
 
-// Delete a CA(Certificate Authority) setting from the hub
-UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t)
+static UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4432,8 +4463,7 @@ UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t)
 	return ret;
 }
 
-// Get CA(Certificate Authority) setting from the hub
-UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t)
+static UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4485,8 +4515,7 @@ UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t)
 	return ret;
 }
 
-// Enumerate CA(Certificate Authority) in the hub
-UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
+static UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4544,8 +4573,7 @@ UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
 	return ERR_NO_ERROR;
 }
 
-// Add CA(Certificate Authority) into the hub
-UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t)
+static UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4591,8 +4619,7 @@ UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t)
 	return ERR_NO_ERROR;
 }
 
-// Get logging configuration of the hub
-UINT StGetHubLog(ADMIN *a, RPC_HUB_LOG *t)
+static UINT StGetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4618,8 +4645,7 @@ UINT StGetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 	return ERR_NO_ERROR;
 }
 
-// Set logging configuration into the hub
-UINT StSetHubLog(ADMIN *a, RPC_HUB_LOG *t)
+static UINT StSetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4657,8 +4683,7 @@ UINT StSetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 	return ERR_NO_ERROR;
 }
 
-// Get hub status
-UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
+static UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4715,8 +4740,7 @@ UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
 	return ERR_NO_ERROR;
 }
 
-// Make a hub on-line or off-line
-UINT StSetHubOnline(ADMIN *a, RPC_SET_HUB_ONLINE *t)
+static UINT StSetHubOnline(ADMIN *a, RPC_SET_HUB_ONLINE *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4768,8 +4792,7 @@ UINT StSetHubOnline(ADMIN *a, RPC_SET_HUB_ONLINE *t)
 	return ERR_NO_ERROR;
 }
 
-// Get connection information
-UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t)
+static UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4819,7 +4842,7 @@ UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t)
 		}
 
 		StrCpy(t->Name, sizeof(t->Name), connection->Name);
-		t->ConnectedTime = TickToTime(connection->ConnectedTick);
+		t->ConnectedTime = Tick64ToTime64(connection->ConnectedTick);
 		t->Type = connection->Type;
 
 		StrCpy(t->ServerStr, sizeof(t->ServerStr), connection->ServerStr);
@@ -4836,8 +4859,7 @@ UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t)
 	return ERR_NO_ERROR;
 }
 
-// Disconnect a connection
-UINT StDisconnectConnection(ADMIN *a, RPC_DISCONNECT_CONNECTION *t)
+static UINT StDisconnectConnection(ADMIN *a, RPC_DISCONNECT_CONNECTION *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4878,8 +4900,7 @@ UINT StDisconnectConnection(ADMIN *a, RPC_DISCONNECT_CONNECTION *t)
 	return ERR_NO_ERROR;
 }
 
-// Enumerate connections
-UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t)
+static UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4912,7 +4933,7 @@ UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t)
 				}
 
 				StrCpy(e->Name, sizeof(e->Name), connection->Name);
-				e->ConnectedTime = TickToTime(connection->ConnectedTick);
+				e->ConnectedTime = Tick64ToTime64(connection->ConnectedTick);
 				e->Type = connection->Type;
 			}
 			Unlock(connection->lock);
@@ -4923,8 +4944,7 @@ UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t)
 	return ERR_NO_ERROR;
 }
 
-// Delete a hub
-UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t)
+static UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -4963,12 +4983,10 @@ UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t)
 	return ERR_NO_ERROR;
 }
 
-// Enumerate hubs
-UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
+static UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
-	HUB *h = NULL;
 
 	FreeRpcEnumHub(t);
 
@@ -4990,11 +5008,9 @@ UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 				h->Option != NULL &&
 				StrCmpi(h->Name, a->HubName) != 0)
 			{
-				// This hub is not listed
 			}
 			else
 			{
-				// This hub is listed
 				num++;
 			}
 		}
@@ -5012,11 +5028,9 @@ UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 				h->Option != NULL &&
 				StrCmpi(h->Name, a->HubName) != 0)
 			{
-				// This hub is not listed
 			}
 			else
 			{
-				// This hub is listed
 				RPC_ENUM_HUB_ITEM *e = &t->Hubs[i++];
 
 				StrCpy(e->HubName, sizeof(e->HubName), h->Name);
@@ -5073,8 +5087,7 @@ UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 	return ERR_NO_ERROR;
 }
 
-// Get hub configuration
-UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t)
+static UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -5116,8 +5129,7 @@ UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t)
 	return ret;
 }
 
-// Set hub configuration
-UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
+static UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -5160,7 +5172,6 @@ UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 		}
 	}
 
-	// Is the password to be set blank
 	{
 		UCHAR hash1[SHA1_SIZE], hash2[SHA1_SIZE];
 		HashPassword(hash1, ADMINISTRATOR_USERNAME, "");
@@ -5170,7 +5181,7 @@ UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 		{
 			if (a->ServerAdmin == false && IsLocalHostIP(&a->Rpc->Sock->RemoteIP) == false)
 			{
-				// Refuse to set a blank password to hub admin from remote host
+				// Refuse a blank hub admin password set from a remote host
 				ReleaseHub(h);
 				return ERR_INVALID_PARAMETER;
 			}
@@ -5215,8 +5226,7 @@ UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 	return ret;
 }
 
-// Create a hub
-UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
+static UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -5244,12 +5254,10 @@ UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	// Create a hub object
 	Zero(&o, sizeof(o));
 	o.MaxSession = t->HubOption.MaxSession;
 	o.NoEnum = t->HubOption.NoEnum;
 
-	// Default setting for hub admin options
 	SiSetDefaultHubOption(&o);
 
 	LockList(c->HubList);
@@ -5311,8 +5319,7 @@ UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
 	return ERR_NO_ERROR;
 }
 
-// Set cipher for SSL to the server
-UINT StSetServerCipher(ADMIN *a, RPC_STR *t)
+static UINT StSetServerCipher(ADMIN *a, RPC_STR *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -5339,8 +5346,7 @@ UINT StSetServerCipher(ADMIN *a, RPC_STR *t)
 	return ERR_NO_ERROR;
 }
 
-// Get cipher for SSL
-UINT StGetServerCipher(ADMIN *a, RPC_STR *t)
+static UINT StGetServerCipher(ADMIN *a, RPC_STR *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -5357,8 +5363,7 @@ UINT StGetServerCipher(ADMIN *a, RPC_STR *t)
 	return ERR_NO_ERROR;
 }
 
-// Get list of available ciphers for SSL
-UINT StGetServerCipherList(ADMIN *a, RPC_STR *t)
+static UINT StGetServerCipherList(ADMIN *a, RPC_STR *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -5394,8 +5399,7 @@ UINT StGetServerCipherList(ADMIN *a, RPC_STR *t)
 	return ERR_NO_ERROR;
 }
 
-// Get the server certification
-UINT StGetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
+static UINT StGetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
 {
 	bool admin;
 	SERVER *s = a->Server;
@@ -5420,8 +5424,7 @@ UINT StGetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
 	return ERR_NO_ERROR;
 }
 
-// Set the server certification
-UINT StSetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
+static UINT StSetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
@@ -5456,8 +5459,7 @@ UINT StSetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
 	return ERR_NO_ERROR;
 }
 
-// Set server password
-UINT StSetServerPassword(ADMIN *a, RPC_SET_PASSWORD *t)
+static UINT StSetServerPassword(ADMIN *a, RPC_SET_PASSWORD *t)
 {
 	SERVER_ADMIN_ONLY;
 
@@ -5476,8 +5478,7 @@ UINT StSetServerPassword(ADMIN *a, RPC_SET_PASSWORD *t)
 	return ERR_NO_ERROR;
 }
 
-// Enable / Disable listener
-UINT StEnableListener(ADMIN *a, RPC_LISTENER *t)
+static UINT StEnableListener(ADMIN *a, RPC_LISTENER *t)
 {
 	UINT ret = ERR_NO_ERROR;
 
@@ -5518,8 +5519,7 @@ UINT StEnableListener(ADMIN *a, RPC_LISTENER *t)
 	return ret;
 }
 
-// Delete a listener
-UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t)
+static UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t)
 {
 	UINT ret = ERR_NO_ERROR;
 
@@ -5544,10 +5544,8 @@ UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t)
 	return ret;
 }
 
-// Enumerating listeners
-UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t)
+static UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t)
 {
-	CEDAR *c = a->Server->Cedar;
 	UINT i;
 
 	FreeRpcListenerList(t);
@@ -5580,11 +5578,9 @@ UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t)
 	return ERR_NO_ERROR;
 }
 
-// Create a listener
-UINT StCreateListener(ADMIN *a, RPC_LISTENER *t)
+static UINT StCreateListener(ADMIN *a, RPC_LISTENER *t)
 {
 	UINT ret = ERR_NO_ERROR;
-	CEDAR *c = a->Server->Cedar;
 
 	if (t->Port == 0 || t->Port > 65535)
 	{
@@ -5595,7 +5591,7 @@ UINT StCreateListener(ADMIN *a, RPC_LISTENER *t)
 
 	LockList(a->Server->ServerListenerList);
 	{
-		if (SiAddListener(a->Server, t->Port, t->Enable) == false)
+		if (SiAddListenerEx(a->Server, t->Port, t->Enable, false) == false)
 		{
 			ret = ERR_LISTENER_ALREADY_EXISTS;
 		}
@@ -5613,8 +5609,7 @@ UINT StCreateListener(ADMIN *a, RPC_LISTENER *t)
 	return ret;
 }
 
-// Get server status
-UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
+static UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 {
 	CEDAR *c;
 	UINT i;
@@ -5638,7 +5633,6 @@ UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 
 	t->NumMacTables = t->NumIpTables = t->NumUsers = t->NumGroups = 0;
 
-	// The number of hubs
 	LockList(c->HubList);
 	{
 		t->NumHubTotal = LIST_NUM(c->HubList);
@@ -5667,7 +5661,6 @@ UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 	}
 	UnlockList(c->HubList);
 
-	// The number of sessions
 	t->NumSessionsLocal = Count(c->CurrentSessions);
 	t->NumSessionsTotal = t->NumSessionsLocal;
 	t->NumTcpConnections = t->NumTcpConnectionsLocal;
@@ -5686,13 +5679,11 @@ UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 	return ERR_NO_ERROR;
 }
 
-// Get server information
-UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t)
+static UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t)
 {
 	CEDAR *c;
 	OS_INFO *info;
 	SYSTEMTIME st;
-	// Validate arguments
 	if (a == NULL || t == NULL)
 	{
 		return ERR_INTERNAL_ERROR;
@@ -5730,10 +5721,8 @@ UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t)
 	return ERR_NO_ERROR;
 }
 
-// Copy OS_INFO
-void CopyOsInfo(OS_INFO *dst, OS_INFO *info)
+static void CopyOsInfo(OS_INFO *dst, OS_INFO *info)
 {
-	// Validate arguments
 	if (info == NULL || dst == NULL)
 	{
 		return;
@@ -5749,10 +5738,8 @@ void CopyOsInfo(OS_INFO *dst, OS_INFO *info)
 	dst->KernelVersion = CopyStr(info->KernelVersion);
 }
 
-// RPC_WINVER
 void InRpcWinVer(RPC_WINVER *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -5772,7 +5759,6 @@ void InRpcWinVer(RPC_WINVER *t, PACK *p)
 }
 void OutRpcWinVer(PACK *p, RPC_WINVER *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -5789,12 +5775,10 @@ void OutRpcWinVer(PACK *p, RPC_WINVER *t)
 	PackAddStr(p, "V_Title", t->Title);
 }
 
-// RPC_MSG
-void InRpcMsg(RPC_MSG *t, PACK *p)
+static void InRpcMsg(RPC_MSG *t, PACK *p)
 {
 	UINT size;
 	char *utf8;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -5809,11 +5793,10 @@ void InRpcMsg(RPC_MSG *t, PACK *p)
 	t->Msg = CopyUtfToUni(utf8);
 	Free(utf8);
 }
-void OutRpcMsg(PACK *p, RPC_MSG *t)
+static void OutRpcMsg(PACK *p, RPC_MSG *t)
 {
 	UINT size;
 	char *utf8;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -5825,9 +5808,8 @@ void OutRpcMsg(PACK *p, RPC_MSG *t)
 	PackAddData(p, "Msg", utf8, size);
 	Free(utf8);
 }
-void FreeRpcMsg(RPC_MSG *t)
+static void FreeRpcMsg(RPC_MSG *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -5836,11 +5818,9 @@ void FreeRpcMsg(RPC_MSG *t)
 	Free(t->Msg);
 }
 
-// RPC_ENUM_ETH_VLAN
-void InRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t, PACK *p)
+static void InRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t, PACK *p)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -5857,17 +5837,15 @@ void InRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t, PACK *p)
 
 		PackGetStrEx(p, "DeviceName", e->DeviceName, sizeof(e->DeviceName), i);
 		PackGetStrEx(p, "Guid", e->Guid, sizeof(e->Guid), i);
-		PackGetStrEx(p, "DeviceInstanceId", e->DeviceInstanceId, sizeof(e->DeviceInstanceId), i);
 		PackGetStrEx(p, "DriverName", e->DriverName, sizeof(e->DriverName), i);
 		PackGetStrEx(p, "DriverType", e->DriverType, sizeof(e->DriverType), i);
 		e->Support = PackGetBoolEx(p, "Support", i);
 		e->Enabled = PackGetBoolEx(p, "Enabled", i);
 	}
 }
-void OutRpcEnumEthVLan(PACK *p, RPC_ENUM_ETH_VLAN *t)
+static void OutRpcEnumEthVLan(PACK *p, RPC_ENUM_ETH_VLAN *t)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -5888,7 +5866,6 @@ void OutRpcEnumEthVLan(PACK *p, RPC_ENUM_ETH_VLAN *t)
 }
 void FreeRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -5897,11 +5874,9 @@ void FreeRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t)
 	Free(t->Items);
 }
 
-// RPC_ENUM_LOG_FILE
-void InRpcEnumLogFile(RPC_ENUM_LOG_FILE *t, PACK *p)
+static void InRpcEnumLogFile(RPC_ENUM_LOG_FILE *t, PACK *p)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -5920,10 +5895,9 @@ void InRpcEnumLogFile(RPC_ENUM_LOG_FILE *t, PACK *p)
 		e->UpdatedTime = PackGetInt64Ex(p, "UpdatedTime", i);
 	}
 }
-void OutRpcEnumLogFile(PACK *p, RPC_ENUM_LOG_FILE *t)
+static void OutRpcEnumLogFile(PACK *p, RPC_ENUM_LOG_FILE *t)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -5937,12 +5911,11 @@ void OutRpcEnumLogFile(PACK *p, RPC_ENUM_LOG_FILE *t)
 
 		PackAddStrEx(p, "FilePath", e->FilePath, i, t->NumItem);
 		PackAddIntEx(p, "FileSize", e->FileSize, i, t->NumItem);
-		PackAddTime64Ex(p, "UpdatedTime", e->UpdatedTime, i, t->NumItem);
+		PackAddInt64Ex(p, "UpdatedTime", e->UpdatedTime, i, t->NumItem);
 	}
 }
 void FreeRpcEnumLogFile(RPC_ENUM_LOG_FILE *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -5950,10 +5923,8 @@ void FreeRpcEnumLogFile(RPC_ENUM_LOG_FILE *t)
 
 	Free(t->Items);
 }
-// RPC_READ_LOG_FILE
-void InRpcReadLogFile(RPC_READ_LOG_FILE *t, PACK *p)
+static void InRpcReadLogFile(RPC_READ_LOG_FILE *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -5965,9 +5936,8 @@ void InRpcReadLogFile(RPC_READ_LOG_FILE *t, PACK *p)
 
 	t->Buffer = PackGetBuf(p, "Buffer");
 }
-void OutRpcReadLogFile(PACK *p, RPC_READ_LOG_FILE *t)
+static void OutRpcReadLogFile(PACK *p, RPC_READ_LOG_FILE *t)
 {
-	// Validate arguments
 	if (p == NULL || t == NULL)
 	{
 		return;
@@ -5981,9 +5951,8 @@ void OutRpcReadLogFile(PACK *p, RPC_READ_LOG_FILE *t)
 		PackAddBuf(p, "Buffer", t->Buffer);
 	}
 }
-void FreeRpcReadLogFile(RPC_READ_LOG_FILE *t)
+static void FreeRpcReadLogFile(RPC_READ_LOG_FILE *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -5995,20 +5964,18 @@ void FreeRpcReadLogFile(RPC_READ_LOG_FILE *t)
 	}
 }
 
-// RPC_AC_LIST
-void InRpcAcList(RPC_AC_LIST *t, PACK *p)
+static void InRpcAcList(RPC_AC_LIST *t, PACK *p)
 {
 	UINT i;
 	LIST *o;
 	UINT num;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
 	}
 
 	Zero(t, sizeof(RPC_AC_LIST));
-	o = NewAcList();
+	o = NewList(CmpAc);
 
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	num = PackGetIndexCount(p, "IpAddress");
@@ -6036,11 +6003,10 @@ void InRpcAcList(RPC_AC_LIST *t, PACK *p)
 
 	t->o = o;
 }
-void OutRpcAcList(PACK *p, RPC_AC_LIST *t)
+static void OutRpcAcList(PACK *p, RPC_AC_LIST *t)
 {
 	UINT i, num;
 	LIST *o;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6069,7 +6035,6 @@ void OutRpcAcList(PACK *p, RPC_AC_LIST *t)
 }
 void FreeRpcAcList(RPC_AC_LIST *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -6078,34 +6043,9 @@ void FreeRpcAcList(RPC_AC_LIST *t)
 	FreeAcList(t->o);
 }
 
-// RPC_INT
-void InRpcInt(RPC_INT *t, PACK *p)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_INT));
-	t->IntValue = PackGetInt(p, "IntValue");
-}
-void OutRpcInt(PACK *p, RPC_INT *t)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "IntValue", t->IntValue);
-}
-
-// RPC_ENUM_CRL
-void InRpcEnumCrl(RPC_ENUM_CRL *t, PACK *p)
+static void InRpcEnumCrl(RPC_ENUM_CRL *t, PACK *p)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6124,10 +6064,9 @@ void InRpcEnumCrl(RPC_ENUM_CRL *t, PACK *p)
 		PackGetUniStrEx(p, "CrlInfo", e->CrlInfo, sizeof(e->CrlInfo), i);
 	}
 }
-void OutRpcEnumCrl(PACK *p, RPC_ENUM_CRL *t)
+static void OutRpcEnumCrl(PACK *p, RPC_ENUM_CRL *t)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6146,7 +6085,6 @@ void OutRpcEnumCrl(PACK *p, RPC_ENUM_CRL *t)
 }
 void FreeRpcEnumCrl(RPC_ENUM_CRL *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -6155,13 +6093,11 @@ void FreeRpcEnumCrl(RPC_ENUM_CRL *t)
 	Free(t->Items);
 }
 
-// RPC_CRL
-void InRpcCrl(RPC_CRL *t, PACK *p)
+static void InRpcCrl(RPC_CRL *t, PACK *p)
 {
 	BUF *b;
 	NAME *n;
 	wchar_t tmp[MAX_SIZE];
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6212,10 +6148,9 @@ void InRpcCrl(RPC_CRL *t, PACK *p)
 		PackGetData(p, "DigestSHA1", t->Crl->DigestSHA1);
 	}
 }
-void OutRpcCrl(PACK *p, RPC_CRL *t)
+static void OutRpcCrl(PACK *p, RPC_CRL *t)
 {
 	NAME *n;
-	// Validate arguments
 	if (p == NULL || t == NULL)
 	{
 		return;
@@ -6269,7 +6204,6 @@ void OutRpcCrl(PACK *p, RPC_CRL *t)
 }
 void FreeRpcCrl(RPC_CRL *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -6278,11 +6212,9 @@ void FreeRpcCrl(RPC_CRL *t)
 	FreeCrl(t->Crl);
 }
 
-// RPC_ENUM_ETH
-void InRpcEnumEth(RPC_ENUM_ETH *t, PACK *p)
+static void InRpcEnumEth(RPC_ENUM_ETH *t, PACK *p)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6296,13 +6228,11 @@ void InRpcEnumEth(RPC_ENUM_ETH *t, PACK *p)
 	{
 		RPC_ENUM_ETH_ITEM *e = &t->Items[i];
 		PackGetStrEx(p, "DeviceName", e->DeviceName, sizeof(e->DeviceName), i);
-		PackGetUniStrEx(p, "NetworkConnectionName", e->NetworkConnectionName, sizeof(e->NetworkConnectionName), i);
 	}
 }
-void OutRpcEnumEth(PACK *p, RPC_ENUM_ETH *t)
+static void OutRpcEnumEth(PACK *p, RPC_ENUM_ETH *t)
 {
 	UINT i;
-	// Validate arguments
 	if (p == NULL || t == NULL)
 	{
 		return;
@@ -6319,7 +6249,6 @@ void OutRpcEnumEth(PACK *p, RPC_ENUM_ETH *t)
 }
 void FreeRpcEnumEth(RPC_ENUM_ETH *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -6328,10 +6257,8 @@ void FreeRpcEnumEth(RPC_ENUM_ETH *t)
 	Free(t->Items);
 }
 
-// RPC_LOCALBRIDGE
-void InRpcLocalBridge(RPC_LOCALBRIDGE *t, PACK *p)
+static void InRpcLocalBridge(RPC_LOCALBRIDGE *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6342,9 +6269,8 @@ void InRpcLocalBridge(RPC_LOCALBRIDGE *t, PACK *p)
 	PackGetStr(p, "HubNameLB", t->HubName, sizeof(t->HubName));
 	t->TapMode = PackGetBool(p, "TapMode");
 }
-void OutRpcLocalBridge(PACK *p, RPC_LOCALBRIDGE *t)
+static void OutRpcLocalBridge(PACK *p, RPC_LOCALBRIDGE *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6355,11 +6281,9 @@ void OutRpcLocalBridge(PACK *p, RPC_LOCALBRIDGE *t)
 	PackAddBool(p, "TapMode", t->TapMode);
 }
 
-// RPC_ENUM_LOCALBRIDGE
-void InRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t, PACK *p)
+static void InRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t, PACK *p)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6380,10 +6304,9 @@ void InRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t, PACK *p)
 		e->TapMode = PackGetBoolEx(p, "TapMode", i);
 	}
 }
-void OutRpcEnumLocalBridge(PACK *p, RPC_ENUM_LOCALBRIDGE *t)
+static void OutRpcEnumLocalBridge(PACK *p, RPC_ENUM_LOCALBRIDGE *t)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6404,7 +6327,6 @@ void OutRpcEnumLocalBridge(PACK *p, RPC_ENUM_LOCALBRIDGE *t)
 }
 void FreeRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -6412,10 +6334,8 @@ void FreeRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t)
 	Free(t->Items);
 }
 
-// MEMINFO
-void InRpcMemInfo(MEMINFO *t, PACK *p)
+static void InRpcMemInfo(MEMINFO *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6429,9 +6349,8 @@ void InRpcMemInfo(MEMINFO *t, PACK *p)
 	t->UsedPhys = PackGetInt64(p, "UsedPhys");
 	t->FreePhys = PackGetInt64(p, "FreePhys");
 }
-void OutRpcMemInfo(PACK *p, MEMINFO *t)
+static void OutRpcMemInfo(PACK *p, MEMINFO *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6445,11 +6364,9 @@ void OutRpcMemInfo(PACK *p, MEMINFO *t)
 	PackAddInt64(p, "FreePhys", t->FreePhys);
 }
 
-// OS_INFO
-void InRpcOsInfo(OS_INFO *t, PACK *p)
+static void InRpcOsInfo(OS_INFO *t, PACK *p)
 {
 	char tmp[MAX_SIZE];
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6483,9 +6400,8 @@ void InRpcOsInfo(OS_INFO *t, PACK *p)
 		t->KernelVersion = CopyStr(tmp);
 	}
 }
-void OutRpcOsInfo(PACK *p, OS_INFO *t)
+static void OutRpcOsInfo(PACK *p, OS_INFO *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6500,9 +6416,8 @@ void OutRpcOsInfo(PACK *p, OS_INFO *t)
 	PackAddStr(p, "KernelName", t->KernelName);
 	PackAddStr(p, "KernelVersion", t->KernelVersion);
 }
-void FreeRpcOsInfo(OS_INFO *t)
+static void FreeRpcOsInfo(OS_INFO *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -6516,12 +6431,10 @@ void FreeRpcOsInfo(OS_INFO *t)
 	Free(t->KernelVersion);
 }
 
-// Read a local log file
-void SiReadLocalLogFile(SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FILE *t)
+static void SiReadLocalLogFile(SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FILE *t)
 {
 	char exe_dir[MAX_PATH], full_path[MAX_PATH];
 	IO *o;
-	// Validate arguments
 	if (s == NULL || t == NULL || filepath == NULL)
 	{
 		return;
@@ -6529,10 +6442,9 @@ void SiReadLocalLogFile(SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FIL
 
 	Zero(t, sizeof(RPC_READ_LOG_FILE));
 
-	GetLogDir(exe_dir, sizeof(exe_dir));
+	GetExeDir(exe_dir, sizeof(exe_dir));
 	Format(full_path, sizeof(full_path), "%s/%s", exe_dir, filepath);
 
-	// Read file
 	o = FileOpenEx(full_path, false, false);
 	if (o != NULL)
 	{
@@ -6555,12 +6467,10 @@ void SiReadLocalLogFile(SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FIL
 	}
 }
 
-// Enumerate local log files
-void SiEnumLocalLogFileList(SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t)
+static void SiEnumLocalLogFileList(SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t)
 {
 	LIST *o;
 	UINT i;
-	// Validate arguments
 	if (s == NULL || t == NULL)
 	{
 		return;
@@ -6586,13 +6496,11 @@ void SiEnumLocalLogFileList(SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t)
 	FreeEnumLogFile(o);
 }
 
-// Enumerate local sessions
-void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t)
+static void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t)
 {
 	HUB *h;
 	UINT64 now = Tick64();
 	UINT64 dormant_interval = 0;
-	// Validate arguments
 	if (s == NULL || hubname == NULL || t == NULL)
 	{
 		return;
@@ -6687,11 +6595,9 @@ void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t)
 	ReleaseHub(h);
 }
 
-// RPC_ENUM_LICENSE_KEY
-void InRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t, PACK *p)
+static void InRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t, PACK *p)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6715,10 +6621,9 @@ void InRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t, PACK *p)
 		e->SerialId = PackGetIntEx(p, "SerialId", i);
 	}
 }
-void OutRpcEnumLicenseKey(PACK *p, RPC_ENUM_LICENSE_KEY *t)
+static void OutRpcEnumLicenseKey(PACK *p, RPC_ENUM_LICENSE_KEY *t)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6734,7 +6639,7 @@ void OutRpcEnumLicenseKey(PACK *p, RPC_ENUM_LICENSE_KEY *t)
 		PackAddStrEx(p, "LicenseKey", e->LicenseKey, i, t->NumItem);
 		PackAddStrEx(p, "LicenseId", e->LicenseId, i, t->NumItem);
 		PackAddStrEx(p, "LicenseName", e->LicenseName, i, t->NumItem);
-		PackAddTime64Ex(p, "Expires", e->Expires, i, t->NumItem);
+		PackAddInt64Ex(p, "Expires", e->Expires, i, t->NumItem);
 		PackAddIntEx(p, "Status", e->Status, i, t->NumItem);
 		PackAddIntEx(p, "ProductId", e->ProductId, i, t->NumItem);
 		PackAddInt64Ex(p, "SystemId", e->SystemId, i, t->NumItem);
@@ -6743,7 +6648,6 @@ void OutRpcEnumLicenseKey(PACK *p, RPC_ENUM_LICENSE_KEY *t)
 }
 void FreeRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -6752,10 +6656,8 @@ void FreeRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t)
 	Free(t->Items);
 }
 
-// RPC_LICENSE_STATUS
-void InRpcLicenseStatus(RPC_LICENSE_STATUS *t, PACK *p)
+static void InRpcLicenseStatus(RPC_LICENSE_STATUS *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6770,17 +6672,14 @@ void InRpcLicenseStatus(RPC_LICENSE_STATUS *t, PACK *p)
 	t->NumClientConnectLicense = PackGetInt(p, "NumClientConnectLicense");
 	t->NumBridgeConnectLicense = PackGetInt(p, "NumBridgeConnectLicense");
 
-	// v3.0
 	t->NeedSubscription = PackGetBool(p, "NeedSubscription");
 	t->AllowEnterpriseFunction = PackGetBool(p, "AllowEnterpriseFunction");
 	t->SubscriptionExpires = PackGetInt64(p, "SubscriptionExpires");
 	t->IsSubscriptionExpired = PackGetBool(p, "IsSubscriptionExpired");
-	t->NumUserCreationLicense = PackGetInt(p, "NumUserCreationLicense");
 	t->ReleaseDate = PackGetInt64(p, "ReleaseDate");
 }
-void OutRpcLicenseStatus(PACK *p, RPC_LICENSE_STATUS *t)
+static void OutRpcLicenseStatus(PACK *p, RPC_LICENSE_STATUS *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6789,24 +6688,21 @@ void OutRpcLicenseStatus(PACK *p, RPC_LICENSE_STATUS *t)
 	PackAddInt(p, "EditionId", t->EditionId);
 	PackAddStr(p, "EditionStr", t->EditionStr);
 	PackAddInt64(p, "SystemId", t->SystemId);
-	PackAddTime64(p, "SystemExpires", t->SystemExpires);
+	PackAddInt64(p, "SystemExpires", t->SystemExpires);
 	PackAddInt(p, "NumClientConnectLicense", t->NumClientConnectLicense);
 	PackAddInt(p, "NumBridgeConnectLicense", t->NumBridgeConnectLicense);
 
-	// v3.0
 	PackAddBool(p, "NeedSubscription", t->NeedSubscription);
 	PackAddBool(p, "AllowEnterpriseFunction", t->AllowEnterpriseFunction);
-	PackAddTime64(p, "SubscriptionExpires", t->SubscriptionExpires);
+	PackAddInt64(p, "SubscriptionExpires", t->SubscriptionExpires);
 	PackAddBool(p, "IsSubscriptionExpired", t->IsSubscriptionExpired);
 	PackAddInt(p, "NumUserCreationLicense", t->NumUserCreationLicense);
-	PackAddTime64(p, "ReleaseDate", t->ReleaseDate);
+	PackAddInt64(p, "ReleaseDate", t->ReleaseDate);
 }
 
-// RPC_ADMIN_OPTION
-void InRpcAdminOption(RPC_ADMIN_OPTION *t, PACK *p)
+static void InRpcAdminOption(RPC_ADMIN_OPTION *t, PACK *p)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6827,10 +6723,9 @@ void InRpcAdminOption(RPC_ADMIN_OPTION *t, PACK *p)
 		PackGetUniStrEx(p, "Descrption", o->Descrption, sizeof(o->Descrption), i);
 	}
 }
-void OutRpcAdminOption(PACK *p, RPC_ADMIN_OPTION *t)
+static void OutRpcAdminOption(PACK *p, RPC_ADMIN_OPTION *t)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6851,7 +6746,6 @@ void OutRpcAdminOption(PACK *p, RPC_ADMIN_OPTION *t)
 }
 void FreeRpcAdminOption(RPC_ADMIN_OPTION *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -6860,11 +6754,9 @@ void FreeRpcAdminOption(RPC_ADMIN_OPTION *t)
 	Free(t->Items);
 }
 
-// RPC_CONFIG
-void InRpcConfig(RPC_CONFIG *t, PACK *p)
+static void InRpcConfig(RPC_CONFIG *t, PACK *p)
 {
 	UINT size;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6876,9 +6768,8 @@ void InRpcConfig(RPC_CONFIG *t, PACK *p)
 	t->FileData = ZeroMalloc(size + 1);
 	PackGetData(p, "FileData", t->FileData);
 }
-void OutRpcConfig(PACK *p, RPC_CONFIG *t)
+static void OutRpcConfig(PACK *p, RPC_CONFIG *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6889,7 +6780,6 @@ void OutRpcConfig(PACK *p, RPC_CONFIG *t)
 }
 void FreeRpcConfig(RPC_CONFIG *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -6898,10 +6788,8 @@ void FreeRpcConfig(RPC_CONFIG *t)
 	Free(t->FileData);
 }
 
-// RPC_BRIDGE_SUPPORT
-void InRpcBridgeSupport(RPC_BRIDGE_SUPPORT *t, PACK *p)
+static void InRpcBridgeSupport(RPC_BRIDGE_SUPPORT *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6911,9 +6799,8 @@ void InRpcBridgeSupport(RPC_BRIDGE_SUPPORT *t, PACK *p)
 
 	t->IsBridgeSupportedOs = PackGetBool(p, "IsBridgeSupportedOs");
 }
-void OutRpcBridgeSupport(PACK *p, RPC_BRIDGE_SUPPORT *t)
+static void OutRpcBridgeSupport(PACK *p, RPC_BRIDGE_SUPPORT *t)
 {
-	// Validate arguments
 	if (p == NULL || t == NULL)
 	{
 		return;
@@ -6922,10 +6809,8 @@ void OutRpcBridgeSupport(PACK *p, RPC_BRIDGE_SUPPORT *t)
 	PackAddBool(p, "IsBridgeSupportedOs", t->IsBridgeSupportedOs);
 }
 
-// RPC_ADD_ACCESS
-void InRpcAddAccess(RPC_ADD_ACCESS *t, PACK *p)
+static void InRpcAddAccess(RPC_ADD_ACCESS *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6936,9 +6821,8 @@ void InRpcAddAccess(RPC_ADD_ACCESS *t, PACK *p)
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	InRpcAccess(&t->Access, p);
 }
-void OutRpcAddAccess(PACK *p, RPC_ADD_ACCESS *t)
+static void OutRpcAddAccess(PACK *p, RPC_ADD_ACCESS *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6948,10 +6832,8 @@ void OutRpcAddAccess(PACK *p, RPC_ADD_ACCESS *t)
 	OutRpcAccess(p, &t->Access);
 }
 
-// RPC_DELETE_ACCESS
-void InRpcDeleteAccess(RPC_DELETE_ACCESS *t, PACK *p)
+static void InRpcDeleteAccess(RPC_DELETE_ACCESS *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6962,9 +6844,8 @@ void InRpcDeleteAccess(RPC_DELETE_ACCESS *t, PACK *p)
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	t->Id = PackGetInt(p, "Id");
 }
-void OutRpcDeleteAccess(PACK *p, RPC_DELETE_ACCESS *t)
+static void OutRpcDeleteAccess(PACK *p, RPC_DELETE_ACCESS *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6975,10 +6856,8 @@ void OutRpcDeleteAccess(PACK *p, RPC_DELETE_ACCESS *t)
 }
 
 
-// RPC_SERVER_INFO
-void InRpcServerInfo(RPC_SERVER_INFO *t, PACK *p)
+static void InRpcServerInfo(RPC_SERVER_INFO *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -6989,15 +6868,12 @@ void InRpcServerInfo(RPC_SERVER_INFO *t, PACK *p)
 	PackGetStr(p, "ServerProductName", t->ServerProductName, sizeof(t->ServerProductName));
 	PackGetStr(p, "ServerVersionString", t->ServerVersionString, sizeof(t->ServerVersionString));
 	PackGetStr(p, "ServerBuildInfoString", t->ServerBuildInfoString, sizeof(t->ServerBuildInfoString));
-	t->ServerVerInt = PackGetInt(p, "ServerVerInt");
 	t->ServerBuildInt = PackGetInt(p, "ServerBuildInt");
 	PackGetStr(p, "ServerHostName", t->ServerHostName, sizeof(t->ServerHostName));
-	t->ServerBuildDate = PackGetInt64(p, "ServerBuildDate");
 	InRpcOsInfo(&t->OsInfo, p);
 }
-void OutRpcServerInfo(PACK *p, RPC_SERVER_INFO *t)
+static void OutRpcServerInfo(PACK *p, RPC_SERVER_INFO *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7009,12 +6885,11 @@ void OutRpcServerInfo(PACK *p, RPC_SERVER_INFO *t)
 	PackAddInt(p, "ServerVerInt", t->ServerVerInt);
 	PackAddInt(p, "ServerBuildInt", t->ServerBuildInt);
 	PackAddStr(p, "ServerHostName", t->ServerHostName);
-	PackAddTime64(p, "ServerBuildDate", t->ServerBuildDate);
+	PackAddInt64(p, "ServerBuildDate", t->ServerBuildDate);
 	OutRpcOsInfo(p, &t->OsInfo);
 }
 void FreeRpcServerInfo(RPC_SERVER_INFO *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -7023,10 +6898,8 @@ void FreeRpcServerInfo(RPC_SERVER_INFO *t)
 	FreeRpcOsInfo(&t->OsInfo);
 }
 
-// RPC_SERVER_STATUS
-void InRpcServerStatus(RPC_SERVER_STATUS *t, PACK *p)
+static void InRpcServerStatus(RPC_SERVER_STATUS *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7036,7 +6909,6 @@ void InRpcServerStatus(RPC_SERVER_STATUS *t, PACK *p)
 	t->NumTcpConnections = PackGetInt(p, "NumTcpConnections");
 	t->NumTcpConnectionsLocal = PackGetInt(p, "NumTcpConnectionsLocal");
 	t->NumHubTotal = PackGetInt(p, "NumHubTotal");
-	t->NumHubStandalone = PackGetInt(p, "NumHubStandalone");
 	t->NumSessionsTotal = PackGetInt(p, "NumSessionsTotal");
 	t->NumSessionsLocal = PackGetInt(p, "NumSessionsLocal");
 	t->NumMacTables = PackGetInt(p, "NumMacTables");
@@ -7047,17 +6919,14 @@ void InRpcServerStatus(RPC_SERVER_STATUS *t, PACK *p)
 	t->CurrentTick = PackGetInt64(p, "CurrentTick");
 	t->AssignedBridgeLicenses = PackGetInt(p, "AssignedBridgeLicenses");
 	t->AssignedClientLicenses = PackGetInt(p, "AssignedClientLicenses");
-	t->AssignedBridgeLicensesTotal = PackGetInt(p, "AssignedBridgeLicensesTotal");
-	t->AssignedClientLicensesTotal = PackGetInt(p, "AssignedClientLicensesTotal");
 	t->StartTime = PackGetInt64(p, "StartTime");
 
 	InRpcTraffic(&t->Traffic, p);
 
 	InRpcMemInfo(&t->MemInfo, p);
 }
-void OutRpcServerStatus(PACK *p, RPC_SERVER_STATUS *t)
+static void OutRpcServerStatus(PACK *p, RPC_SERVER_STATUS *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7073,23 +6942,21 @@ void OutRpcServerStatus(PACK *p, RPC_SERVER_STATUS *t)
 	PackAddInt(p, "NumIpTables", t->NumIpTables);
 	PackAddInt(p, "NumUsers", t->NumUsers);
 	PackAddInt(p, "NumGroups", t->NumGroups);
-	PackAddTime64(p, "CurrentTime", t->CurrentTime);
+	PackAddInt64(p, "CurrentTime", t->CurrentTime);
 	PackAddInt64(p, "CurrentTick", t->CurrentTick);
 	PackAddInt(p, "AssignedBridgeLicenses", t->AssignedBridgeLicenses);
 	PackAddInt(p, "AssignedClientLicenses", t->AssignedClientLicenses);
 	PackAddInt(p, "AssignedBridgeLicensesTotal", t->AssignedBridgeLicensesTotal);
 	PackAddInt(p, "AssignedClientLicensesTotal", t->AssignedClientLicensesTotal);
-	PackAddTime64(p, "StartTime", t->StartTime);
+	PackAddInt64(p, "StartTime", t->StartTime);
 
 	OutRpcTraffic(p, &t->Traffic);
 
 	OutRpcMemInfo(p, &t->MemInfo);
 }
 
-// RPC_LISTENER
-void InRpcListener(RPC_LISTENER *t, PACK *p)
+static void InRpcListener(RPC_LISTENER *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7099,9 +6966,8 @@ void InRpcListener(RPC_LISTENER *t, PACK *p)
 	t->Port = PackGetInt(p, "Port");
 	t->Enable = PackGetBool(p, "Enable");
 }
-void OutRpcListener(PACK *p, RPC_LISTENER *t)
+static void OutRpcListener(PACK *p, RPC_LISTENER *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7111,11 +6977,9 @@ void OutRpcListener(PACK *p, RPC_LISTENER *t)
 	PackAddBool(p, "Enable", t->Enable);
 }
 
-// RPC_LISTENER_LIST
-void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p)
+static void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7133,10 +6997,9 @@ void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p)
 		t->Errors[i] = PackGetBoolEx(p, "Errors", i);
 	}
 }
-void OutRpcListenerList(PACK *p, RPC_LISTENER_LIST *t)
+static void OutRpcListenerList(PACK *p, RPC_LISTENER_LIST *t)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7151,7 +7014,6 @@ void OutRpcListenerList(PACK *p, RPC_LISTENER_LIST *t)
 }
 void FreeRpcListenerList(RPC_LISTENER_LIST *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -7162,12 +7024,10 @@ void FreeRpcListenerList(RPC_LISTENER_LIST *t)
 	Free(t->Errors);
 }
 
-// RPC_STR
-void InRpcStr(RPC_STR *t, PACK *p)
+static void InRpcStr(RPC_STR *t, PACK *p)
 {
 	UINT size = 65536;
 	char *tmp = Malloc(size);
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7184,9 +7044,8 @@ void InRpcStr(RPC_STR *t, PACK *p)
 	}
 	Free(tmp);
 }
-void OutRpcStr(PACK *p, RPC_STR *t)
+static void OutRpcStr(PACK *p, RPC_STR *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7196,7 +7055,6 @@ void OutRpcStr(PACK *p, RPC_STR *t)
 }
 void FreeRpcStr(RPC_STR *t)
 {
-	// Validate arguments
 	if (t == NULL )
 	{
 		return;
@@ -7205,10 +7063,8 @@ void FreeRpcStr(RPC_STR *t)
 	Free(t->String);
 }
 
-// RPC_SET_PASSWORD
-void InRpcSetPassword(RPC_SET_PASSWORD *t, PACK *p)
+static void InRpcSetPassword(RPC_SET_PASSWORD *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7218,9 +7074,8 @@ void InRpcSetPassword(RPC_SET_PASSWORD *t, PACK *p)
 	PackGetData2(p, "HashedPassword", t->HashedPassword, sizeof(t->HashedPassword));
 	PackGetStr(p, "PlainTextPassword", t->PlainTextPassword, sizeof(t->PlainTextPassword));
 }
-void OutRpcSetPassword(PACK *p, RPC_SET_PASSWORD *t)
+static void OutRpcSetPassword(PACK *p, RPC_SET_PASSWORD *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7230,10 +7085,8 @@ void OutRpcSetPassword(PACK *p, RPC_SET_PASSWORD *t)
 	PackAddStr(p, "PlainTextPassword", t->PlainTextPassword);
 }
 
-// RPC_HUB_OPTION
-void InRpcHubOption(RPC_HUB_OPTION *t, PACK *p)
+static void InRpcHubOption(RPC_HUB_OPTION *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7243,9 +7096,8 @@ void InRpcHubOption(RPC_HUB_OPTION *t, PACK *p)
 	t->MaxSession = PackGetInt(p, "MaxSession");
 	t->NoEnum = PackGetBool(p, "NoEnum");
 }
-void OutRpcHubOption(PACK *p, RPC_HUB_OPTION *t)
+static void OutRpcHubOption(PACK *p, RPC_HUB_OPTION *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7255,33 +7107,8 @@ void OutRpcHubOption(PACK *p, RPC_HUB_OPTION *t)
 	PackAddBool(p, "NoEnum", t->NoEnum);
 }
 
-// RPC_HUB
-void InRpcHub(RPC_HUB *t, PACK *p)
+static void InRpcCreateHub(RPC_CREATE_HUB *t, PACK *p)
 {
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_HUB));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-}
-void OutRpcHub(PACK *p, RPC_HUB *t)
-{
-	// Validate arguments
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-}
-
-// RPC_CREATE_HUB
-void InRpcCreateHub(RPC_CREATE_HUB *t, PACK *p)
-{
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7295,9 +7122,8 @@ void InRpcCreateHub(RPC_CREATE_HUB *t, PACK *p)
 	t->Online = PackGetBool(p, "Online");
 	InRpcHubOption(&t->HubOption, p);
 }
-void OutRpcCreateHub(PACK *p, RPC_CREATE_HUB *t)
+static void OutRpcCreateHub(PACK *p, RPC_CREATE_HUB *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7311,11 +7137,9 @@ void OutRpcCreateHub(PACK *p, RPC_CREATE_HUB *t)
 	OutRpcHubOption(p, &t->HubOption);
 }
 
-// RPC_ENUM_HUB
-void InRpcEnumHub(RPC_ENUM_HUB *t, PACK *p)
+static void InRpcEnumHub(RPC_ENUM_HUB *t, PACK *p)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7345,10 +7169,9 @@ void InRpcEnumHub(RPC_ENUM_HUB *t, PACK *p)
 		InRpcTrafficEx(&e->Traffic, p, i);
 	}
 }
-void OutRpcEnumHub(PACK *p, RPC_ENUM_HUB *t)
+static void OutRpcEnumHub(PACK *p, RPC_ENUM_HUB *t)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7365,9 +7188,9 @@ void OutRpcEnumHub(PACK *p, RPC_ENUM_HUB *t)
 		PackAddIntEx(p, "NumGroups", e->NumGroups, i, t->NumHub);
 		PackAddIntEx(p, "NumMacTables", e->NumMacTables, i, t->NumHub);
 		PackAddIntEx(p, "NumIpTables", e->NumIpTables, i, t->NumHub);
-		PackAddTime64Ex(p, "LastCommTime", e->LastCommTime, i, t->NumHub);
-		PackAddTime64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumHub);
-		PackAddTime64Ex(p, "LastLoginTime", e->LastLoginTime, i, t->NumHub);
+		PackAddInt64Ex(p, "LastCommTime", e->LastCommTime, i, t->NumHub);
+		PackAddInt64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumHub);
+		PackAddInt64Ex(p, "LastLoginTime", e->LastLoginTime, i, t->NumHub);
 		PackAddIntEx(p, "NumLogin", e->NumLogin, i, t->NumHub);
 		PackAddBoolEx(p, "IsTrafficFilled", e->IsTrafficFilled, i, t->NumHub);
 
@@ -7376,7 +7199,6 @@ void OutRpcEnumHub(PACK *p, RPC_ENUM_HUB *t)
 }
 void FreeRpcEnumHub(RPC_ENUM_HUB *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -7385,10 +7207,8 @@ void FreeRpcEnumHub(RPC_ENUM_HUB *t)
 	Free(t->Hubs);
 }
 
-// RPC_DELETE_HUB
-void InRpcDeleteHub(RPC_DELETE_HUB *t, PACK *p)
+static void InRpcDeleteHub(RPC_DELETE_HUB *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7397,9 +7217,8 @@ void InRpcDeleteHub(RPC_DELETE_HUB *t, PACK *p)
 	Zero(t, sizeof(RPC_DELETE_HUB));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 }
-void OutRpcDeleteHub(PACK *p, RPC_DELETE_HUB *t)
+static void OutRpcDeleteHub(PACK *p, RPC_DELETE_HUB *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7408,11 +7227,9 @@ void OutRpcDeleteHub(PACK *p, RPC_DELETE_HUB *t)
 	PackAddStr(p, "HubName", t->HubName);
 }
 
-// RPC_ENUM_CONNECTION
-void InRpcEnumConnection(RPC_ENUM_CONNECTION *t, PACK *p)
+static void InRpcEnumConnection(RPC_ENUM_CONNECTION *t, PACK *p)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7434,10 +7251,9 @@ void InRpcEnumConnection(RPC_ENUM_CONNECTION *t, PACK *p)
 		e->Type = PackGetIntEx(p, "Type", i);
 	}
 }
-void OutRpcEnumConnection(PACK *p, RPC_ENUM_CONNECTION *t)
+static void OutRpcEnumConnection(PACK *p, RPC_ENUM_CONNECTION *t)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7451,13 +7267,12 @@ void OutRpcEnumConnection(PACK *p, RPC_ENUM_CONNECTION *t)
 		PackAddIntEx(p, "Port", e->Port, i, t->NumConnection);
 		PackAddStrEx(p, "Name", e->Name, i, t->NumConnection);
 		PackAddStrEx(p, "Hostname", e->Hostname, i, t->NumConnection);
-		PackAddTime64Ex(p, "ConnectedTime", e->ConnectedTime, i, t->NumConnection);
+		PackAddInt64Ex(p, "ConnectedTime", e->ConnectedTime, i, t->NumConnection);
 		PackAddIntEx(p, "Type", e->Type, i, t->NumConnection);
 	}
 }
 void FreeRpcEnumConnection(RPC_ENUM_CONNECTION *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -7466,10 +7281,8 @@ void FreeRpcEnumConnection(RPC_ENUM_CONNECTION *t)
 	Free(t->Connections);
 }
 
-// RPC_DISCONNECT_CONNECTION
-void InRpcDisconnectConnection(RPC_DISCONNECT_CONNECTION *t, PACK *p)
+static void InRpcDisconnectConnection(RPC_DISCONNECT_CONNECTION *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7478,9 +7291,8 @@ void InRpcDisconnectConnection(RPC_DISCONNECT_CONNECTION *t, PACK *p)
 	Zero(t, sizeof(RPC_DISCONNECT_CONNECTION));
 	PackGetStr(p, "Name", t->Name, sizeof(t->Name));
 }
-void OutRpcDisconnectConnection(PACK *p, RPC_DISCONNECT_CONNECTION *t)
+static void OutRpcDisconnectConnection(PACK *p, RPC_DISCONNECT_CONNECTION *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7489,10 +7301,8 @@ void OutRpcDisconnectConnection(PACK *p, RPC_DISCONNECT_CONNECTION *t)
 	PackAddStr(p, "Name", t->Name);
 }
 
-// RPC_CONNECTION_INFO
-void InRpcConnectionInfo(RPC_CONNECTION_INFO *t, PACK *p)
+static void InRpcConnectionInfo(RPC_CONNECTION_INFO *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7512,9 +7322,8 @@ void InRpcConnectionInfo(RPC_CONNECTION_INFO *t, PACK *p)
 	t->ClientBuild = PackGetInt(p, "ClientBuild");
 	t->Type = PackGetInt(p, "Type");
 }
-void OutRpcConnectionInfo(PACK *p, RPC_CONNECTION_INFO *t)
+static void OutRpcConnectionInfo(PACK *p, RPC_CONNECTION_INFO *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7523,7 +7332,7 @@ void OutRpcConnectionInfo(PACK *p, RPC_CONNECTION_INFO *t)
 	PackAddStr(p, "Name", t->Name);
 	PackAddIp32(p, "Ip", t->Ip);
 	PackAddInt(p, "Port", t->Port);
-	PackAddTime64(p, "ConnectedTime", t->ConnectedTime);
+	PackAddInt64(p, "ConnectedTime", t->ConnectedTime);
 	PackAddStr(p, "Hostname", t->Hostname);
 	PackAddStr(p, "ServerStr", t->ServerStr);
 	PackAddStr(p, "ClientStr", t->ClientStr);
@@ -7534,10 +7343,8 @@ void OutRpcConnectionInfo(PACK *p, RPC_CONNECTION_INFO *t)
 	PackAddInt(p, "Type", t->Type);
 }
 
-// RPC_SET_HUB_ONLINE
-void InRpcSetHubOnline(RPC_SET_HUB_ONLINE *t, PACK *p)
+static void InRpcSetHubOnline(RPC_SET_HUB_ONLINE *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7547,9 +7354,8 @@ void InRpcSetHubOnline(RPC_SET_HUB_ONLINE *t, PACK *p)
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	t->Online = PackGetBool(p, "Online");
 }
-void OutRpcSetHubOnline(PACK *p, RPC_SET_HUB_ONLINE *t)
+static void OutRpcSetHubOnline(PACK *p, RPC_SET_HUB_ONLINE *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7559,11 +7365,9 @@ void OutRpcSetHubOnline(PACK *p, RPC_SET_HUB_ONLINE *t)
 	PackAddBool(p, "Online", t->Online);
 }
 
-// RPC_HUB_STATUS
-void InRpcHubStatus(RPC_HUB_STATUS *t, PACK *p)
+static void InRpcHubStatus(RPC_HUB_STATUS *t, PACK *p)
 {
 	Zero(t, sizeof(RPC_HUB_STATUS));
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7585,9 +7389,8 @@ void InRpcHubStatus(RPC_HUB_STATUS *t, PACK *p)
 	t->LastLoginTime = PackGetInt64(p, "LastLoginTime");
 	t->NumLogin = PackGetInt(p, "NumLogin");
 }
-void OutRpcHubStatus(PACK *p, RPC_HUB_STATUS *t)
+static void OutRpcHubStatus(PACK *p, RPC_HUB_STATUS *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7604,17 +7407,15 @@ void OutRpcHubStatus(PACK *p, RPC_HUB_STATUS *t)
 	PackAddInt(p, "NumMacTables", t->NumMacTables);
 	PackAddInt(p, "NumIpTables", t->NumIpTables);
 	OutRpcTraffic(p, &t->Traffic);
-	PackAddTime64(p, "LastCommTime", t->LastCommTime);
-	PackAddTime64(p, "CreatedTime", t->CreatedTime);
-	PackAddTime64(p, "LastLoginTime", t->LastLoginTime);
+	PackAddInt64(p, "LastCommTime", t->LastCommTime);
+	PackAddInt64(p, "CreatedTime", t->CreatedTime);
+	PackAddInt64(p, "LastLoginTime", t->LastLoginTime);
 	PackAddInt(p, "NumLogin", t->NumLogin);
 }
 
-// RPC_HUB_LOG
-void InRpcHubLog(RPC_HUB_LOG *t, PACK *p)
+static void InRpcHubLog(RPC_HUB_LOG *t, PACK *p)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7631,10 +7432,9 @@ void InRpcHubLog(RPC_HUB_LOG *t, PACK *p)
 		t->LogSetting.PacketLogConfig[i] = PackGetIntEx(p, "PacketLogConfig", i);
 	}
 }
-void OutRpcHubLog(PACK *p, RPC_HUB_LOG *t)
+static void OutRpcHubLog(PACK *p, RPC_HUB_LOG *t)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7651,10 +7451,8 @@ void OutRpcHubLog(PACK *p, RPC_HUB_LOG *t)
 	}
 }
 
-// RPC_HUB_ADD_CA
-void InRpcHubAddCa(RPC_HUB_ADD_CA *t, PACK *p)
+static void InRpcHubAddCa(RPC_HUB_ADD_CA *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7664,9 +7462,8 @@ void InRpcHubAddCa(RPC_HUB_ADD_CA *t, PACK *p)
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	t->Cert = PackGetX(p, "Cert");
 }
-void OutRpcHubAddCa(PACK *p, RPC_HUB_ADD_CA *t)
+static void OutRpcHubAddCa(PACK *p, RPC_HUB_ADD_CA *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7677,7 +7474,6 @@ void OutRpcHubAddCa(PACK *p, RPC_HUB_ADD_CA *t)
 }
 void FreeRpcHubAddCa(RPC_HUB_ADD_CA *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -7686,11 +7482,9 @@ void FreeRpcHubAddCa(RPC_HUB_ADD_CA *t)
 	FreeX(t->Cert);
 }
 
-// RPC_HUB_ENUM_CA
-void InRpcHubEnumCa(RPC_HUB_ENUM_CA *t, PACK *p)
+static void InRpcHubEnumCa(RPC_HUB_ENUM_CA *t, PACK *p)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7711,10 +7505,9 @@ void InRpcHubEnumCa(RPC_HUB_ENUM_CA *t, PACK *p)
 		e->Expires = PackGetInt64Ex(p, "Expires", i);
 	}
 }
-void OutRpcHubEnumCa(PACK *p, RPC_HUB_ENUM_CA *t)
+static void OutRpcHubEnumCa(PACK *p, RPC_HUB_ENUM_CA *t)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7728,12 +7521,11 @@ void OutRpcHubEnumCa(PACK *p, RPC_HUB_ENUM_CA *t)
 		PackAddIntEx(p, "Key", e->Key, i, t->NumCa);
 		PackAddUniStrEx(p, "SubjectName", e->SubjectName, i, t->NumCa);
 		PackAddUniStrEx(p, "IssuerName", e->IssuerName, i, t->NumCa);
-		PackAddTime64Ex(p, "Expires", e->Expires, i, t->NumCa);
+		PackAddInt64Ex(p, "Expires", e->Expires, i, t->NumCa);
 	}
 }
 void FreeRpcHubEnumCa(RPC_HUB_ENUM_CA *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -7742,10 +7534,8 @@ void FreeRpcHubEnumCa(RPC_HUB_ENUM_CA *t)
 	Free(t->Ca);
 }
 
-// RPC_HUB_GET_CA
-void InRpcHubGetCa(RPC_HUB_GET_CA *t, PACK *p)
+static void InRpcHubGetCa(RPC_HUB_GET_CA *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7756,9 +7546,8 @@ void InRpcHubGetCa(RPC_HUB_GET_CA *t, PACK *p)
 	t->Key = PackGetInt(p, "Key");
 	t->Cert = PackGetX(p, "Cert");
 }
-void OutRpcHubGetCa(PACK *p, RPC_HUB_GET_CA *t)
+static void OutRpcHubGetCa(PACK *p, RPC_HUB_GET_CA *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7770,7 +7559,6 @@ void OutRpcHubGetCa(PACK *p, RPC_HUB_GET_CA *t)
 }
 void FreeRpcHubGetCa(RPC_HUB_GET_CA *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -7779,10 +7567,8 @@ void FreeRpcHubGetCa(RPC_HUB_GET_CA *t)
 	FreeX(t->Cert);
 }
 
-// RPC_HUB_DELETE_CA
-void InRpcHubDeleteCa(RPC_HUB_DELETE_CA *t, PACK *p)
+static void InRpcHubDeleteCa(RPC_HUB_DELETE_CA *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7792,9 +7578,8 @@ void InRpcHubDeleteCa(RPC_HUB_DELETE_CA *t, PACK *p)
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	t->Key = PackGetInt(p, "Key");
 }
-void OutRpcHubDeleteCa(PACK *p, RPC_HUB_DELETE_CA *t)
+static void OutRpcHubDeleteCa(PACK *p, RPC_HUB_DELETE_CA *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7804,11 +7589,9 @@ void OutRpcHubDeleteCa(PACK *p, RPC_HUB_DELETE_CA *t)
 	PackAddInt(p, "Key", t->Key);
 }
 
-// RPC_CREATE_LINK
-void InRpcCreateLink(RPC_CREATE_LINK *t, PACK *p)
+static void InRpcCreateLink(RPC_CREATE_LINK *t, PACK *p)
 {
 	BUF *b;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7832,9 +7615,8 @@ void InRpcCreateLink(RPC_CREATE_LINK *t, PACK *p)
 		FreeBuf(b);
 	}
 }
-void OutRpcCreateLink(PACK *p, RPC_CREATE_LINK *t)
+static void OutRpcCreateLink(PACK *p, RPC_CREATE_LINK *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7858,7 +7640,6 @@ void OutRpcCreateLink(PACK *p, RPC_CREATE_LINK *t)
 }
 void FreeRpcCreateLink(RPC_CREATE_LINK *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -7872,11 +7653,9 @@ void FreeRpcCreateLink(RPC_CREATE_LINK *t)
 	CiFreeClientAuth(t->ClientAuth);
 }
 
-// RPC_ENUM_LINK
-void InRpcEnumLink(RPC_ENUM_LINK *t, PACK *p)
+static void InRpcEnumLink(RPC_ENUM_LINK *t, PACK *p)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7903,10 +7682,9 @@ void InRpcEnumLink(RPC_ENUM_LINK *t, PACK *p)
 		e->LastError = PackGetIntEx(p, "LastError", i);
 	}
 }
-void OutRpcEnumLink(PACK *p, RPC_ENUM_LINK *t)
+static void OutRpcEnumLink(PACK *p, RPC_ENUM_LINK *t)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7922,7 +7700,7 @@ void OutRpcEnumLink(PACK *p, RPC_ENUM_LINK *t)
 		PackAddStrEx(p, "ConnectedHubName", e->HubName, i, t->NumLink);
 		PackAddStrEx(p, "Hostname", e->Hostname, i, t->NumLink);
 		PackAddBoolEx(p, "Online", e->Online, i, t->NumLink);
-		PackAddTime64Ex(p, "ConnectedTime", e->ConnectedTime, i, t->NumLink);
+		PackAddInt64Ex(p, "ConnectedTime", e->ConnectedTime, i, t->NumLink);
 		PackAddBoolEx(p, "Connected", e->Connected, i, t->NumLink);
 		PackAddIntEx(p, "LastError", e->LastError, i, t->NumLink);
 		PackAddStrEx(p, "TargetHubName", e->HubName, i, t->NumLink);
@@ -7930,7 +7708,6 @@ void OutRpcEnumLink(PACK *p, RPC_ENUM_LINK *t)
 }
 void FreeRpcEnumLink(RPC_ENUM_LINK *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -7939,10 +7716,8 @@ void FreeRpcEnumLink(RPC_ENUM_LINK *t)
 	Free(t->Links);
 }
 
-// RPC_LINK_STATUS
-void InRpcLinkStatus(RPC_LINK_STATUS *t, PACK *p)
+static void InRpcLinkStatus(RPC_LINK_STATUS *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7953,9 +7728,8 @@ void InRpcLinkStatus(RPC_LINK_STATUS *t, PACK *p)
 	PackGetUniStr(p, "AccountName", t->AccountName, sizeof(t->AccountName));
 	InRpcClientGetConnectionStatus(&t->Status, p);
 }
-void OutRpcLinkStatus(PACK *p, RPC_LINK_STATUS *t)
+static void OutRpcLinkStatus(PACK *p, RPC_LINK_STATUS *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7967,7 +7741,6 @@ void OutRpcLinkStatus(PACK *p, RPC_LINK_STATUS *t)
 }
 void FreeRpcLinkStatus(RPC_LINK_STATUS *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -7976,10 +7749,8 @@ void FreeRpcLinkStatus(RPC_LINK_STATUS *t)
 	CiFreeClientGetConnectionStatus(&t->Status);
 }
 
-// RPC_LINK
-void InRpcLink(RPC_LINK *t, PACK *p)
+static void InRpcLink(RPC_LINK *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -7989,9 +7760,8 @@ void InRpcLink(RPC_LINK *t, PACK *p)
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	PackGetUniStr(p, "AccountName", t->AccountName, sizeof(t->AccountName));
 }
-void OutRpcLink(PACK *p, RPC_LINK *t)
+static void OutRpcLink(PACK *p, RPC_LINK *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -8001,10 +7771,8 @@ void OutRpcLink(PACK *p, RPC_LINK *t)
 	PackAddUniStr(p, "AccountName", t->AccountName);
 }
 
-// RPC_RENAME_LINK
-void InRpcRenameLink(RPC_RENAME_LINK *t, PACK *p)
+static void InRpcRenameLink(RPC_RENAME_LINK *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8015,9 +7783,8 @@ void InRpcRenameLink(RPC_RENAME_LINK *t, PACK *p)
 	PackGetUniStr(p, "OldAccountName", t->OldAccountName, sizeof(t->OldAccountName));
 	PackGetUniStr(p, "NewAccountName", t->NewAccountName, sizeof(t->NewAccountName));
 }
-void OutRpcRenameLink(PACK *p, RPC_RENAME_LINK *t)
+static void OutRpcRenameLink(PACK *p, RPC_RENAME_LINK *t)
 {
-	// Validate arguments
 	if (p == NULL || t == NULL)
 	{
 		return;
@@ -8028,10 +7795,8 @@ void OutRpcRenameLink(PACK *p, RPC_RENAME_LINK *t)
 	PackAddUniStr(p, "NewAccountName", t->NewAccountName);
 }
 
-// ACCESS
-void InRpcAccessEx(ACCESS *a, PACK *p, UINT index)
+static void InRpcAccessEx(ACCESS *a, PACK *p, UINT index)
 {
-	// Validate arguments
 	if (a == NULL || p == NULL)
 	{
 		return;
@@ -8052,9 +7817,7 @@ void InRpcAccessEx(ACCESS *a, PACK *p, UINT index)
 	a->SrcPortEnd = PackGetIntEx(p, "SrcPortEnd", index);
 	a->DestPortStart = PackGetIntEx(p, "DestPortStart", index);
 	a->DestPortEnd = PackGetIntEx(p, "DestPortEnd", index);
-	//a->SrcUsernameHash = PackGetIntEx(p, "SrcUsernameHash", index);
 	PackGetStrEx(p, "SrcUsername", a->SrcUsername, sizeof(a->SrcUsername), index);
-	//a->DestUsernameHash = PackGetIntEx(p, "DestUsernameHash", index);
 	PackGetStrEx(p, "DestUsername", a->DestUsername, sizeof(a->DestUsername), index);
 	a->CheckSrcMac = PackGetBoolEx(p, "CheckSrcMac", index);
 	PackGetDataEx2(p, "SrcMacAddress", a->SrcMacAddress, sizeof(a->SrcMacAddress), index);
@@ -8078,9 +7841,8 @@ void InRpcAccessEx(ACCESS *a, PACK *p, UINT index)
 		PackGetIp6AddrEx(p, "DestSubnetMask6", &a->DestSubnetMask6, index);
 	}
 }
-void InRpcAccess(ACCESS *a, PACK *p)
+static void InRpcAccess(ACCESS *a, PACK *p)
 {
-	// Validate arguments
 	if (a == NULL || p == NULL)
 	{
 		return;
@@ -8088,9 +7850,8 @@ void InRpcAccess(ACCESS *a, PACK *p)
 
 	InRpcAccessEx(a, p, 0);
 }
-void OutRpcAccessEx(PACK *p, ACCESS *a, UINT index, UINT total)
+static void OutRpcAccessEx(PACK *p, ACCESS *a, UINT index, UINT total)
 {
-	// Validate arguments
 	if (a == NULL || p == NULL)
 	{
 		return;
@@ -8120,9 +7881,7 @@ void OutRpcAccessEx(PACK *p, ACCESS *a, UINT index, UINT total)
 	PackAddIntEx(p, "SrcPortEnd", a->SrcPortEnd, index, total);
 	PackAddIntEx(p, "DestPortStart", a->DestPortStart, index, total);
 	PackAddIntEx(p, "DestPortEnd", a->DestPortEnd, index, total);
-	//PackAddIntEx(p, "SrcUsernameHash", a->SrcUsernameHash, index, total);
 	PackAddStrEx(p, "SrcUsername", a->SrcUsername, index, total);
-	//PackAddIntEx(p, "DestUsernameHash", a->DestUsernameHash, index, total);
 	PackAddStrEx(p, "DestUsername", a->DestUsername, index, total);
 	PackAddBoolEx(p, "CheckSrcMac", a->CheckSrcMac, index, total);
 	PackAddDataEx(p, "SrcMacAddress", a->SrcMacAddress, sizeof(a->SrcMacAddress), index, total);
@@ -8157,9 +7916,8 @@ void OutRpcAccessEx(PACK *p, ACCESS *a, UINT index, UINT total)
 		PackAddIp6AddrEx(p, "DestSubnetMask6", &zero, index, total);
 	}
 }
-void OutRpcAccess(PACK *p, ACCESS *a)
+static void OutRpcAccess(PACK *p, ACCESS *a)
 {
-	// Validate arguments
 	if (a == NULL || p == NULL)
 	{
 		return;
@@ -8168,11 +7926,9 @@ void OutRpcAccess(PACK *p, ACCESS *a)
 	OutRpcAccessEx(p, a, 0, 1);
 }
 
-// RPC_ENUM_ACCESS_LIST
-void InRpcEnumAccessList(RPC_ENUM_ACCESS_LIST *a, PACK *p)
+static void InRpcEnumAccessList(RPC_ENUM_ACCESS_LIST *a, PACK *p)
 {
 	UINT i;
-	// Validate arguments
 	if (a == NULL || p == NULL)
 	{
 		return;
@@ -8190,10 +7946,9 @@ void InRpcEnumAccessList(RPC_ENUM_ACCESS_LIST *a, PACK *p)
 		InRpcAccessEx(e, p, i);
 	}
 }
-void OutRpcEnumAccessList(PACK *p, RPC_ENUM_ACCESS_LIST *a)
+static void OutRpcEnumAccessList(PACK *p, RPC_ENUM_ACCESS_LIST *a)
 {
 	UINT i;
-	// Validate arguments
 	if (a == NULL || p == NULL)
 	{
 		return;
@@ -8209,7 +7964,6 @@ void OutRpcEnumAccessList(PACK *p, RPC_ENUM_ACCESS_LIST *a)
 }
 void FreeRpcEnumAccessList(RPC_ENUM_ACCESS_LIST *a)
 {
-	// Validate arguments
 	if (a == NULL)
 	{
 		return;
@@ -8218,8 +7972,7 @@ void FreeRpcEnumAccessList(RPC_ENUM_ACCESS_LIST *a)
 	Free(a->Accesses);
 }
 
-// AUTHDATA
-void *InRpcAuthData(PACK *p, UINT *authtype, char *username)
+static void *InRpcAuthData(PACK *p, UINT *authtype, char *username)
 {
 	wchar_t tmp[MAX_SIZE];
 	AUTHPASSWORD *pw;
@@ -8228,7 +7981,6 @@ void *InRpcAuthData(PACK *p, UINT *authtype, char *username)
 	AUTHNT *nt;
 	BUF *b;
 	char plain_pw[MAX_SIZE];
-	// Validate arguments
 	if (p == NULL)
 	{
 		return NULL;
@@ -8291,13 +8043,12 @@ void *InRpcAuthData(PACK *p, UINT *authtype, char *username)
 
 	return NULL;
 }
-void OutRpcAuthData(PACK *p, void *authdata, UINT authtype)
+static void OutRpcAuthData(PACK *p, void *authdata, UINT authtype)
 {
 	AUTHPASSWORD *pw = authdata;
 	AUTHUSERCERT *usercert = authdata;
 	AUTHROOTCERT *rootcert = authdata;
 	AUTHNT *nt = authdata;
-	// Validate arguments
 	if (p == NULL)
 	{
 		return;
@@ -8332,15 +8083,9 @@ void OutRpcAuthData(PACK *p, void *authdata, UINT authtype)
 		break;
 	}
 }
-void FreeRpcAuthData(void *authdata, UINT authtype)
-{
-	FreeAuthData(authtype, authdata);
-}
 
-// RPC_SET_USER
-void InRpcSetUser(RPC_SET_USER *t, PACK *p)
+static void InRpcSetUser(RPC_SET_USER *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8366,9 +8111,8 @@ void InRpcSetUser(RPC_SET_USER *t, PACK *p)
 	}
 }
 
-void OutRpcSetUser(PACK *p, RPC_SET_USER *t)
+static void OutRpcSetUser(PACK *p, RPC_SET_USER *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8379,9 +8123,9 @@ void OutRpcSetUser(PACK *p, RPC_SET_USER *t)
 	PackAddStr(p, "GroupName", t->GroupName);
 	PackAddUniStr(p, "Realname", t->Realname);
 	PackAddUniStr(p, "Note", t->Note);
-	PackAddTime64(p, "CreatedTime", t->CreatedTime);
-	PackAddTime64(p, "UpdatedTime", t->UpdatedTime);
-	PackAddTime64(p, "ExpireTime", t->ExpireTime);
+	PackAddInt64(p, "CreatedTime", t->CreatedTime);
+	PackAddInt64(p, "UpdatedTime", t->UpdatedTime);
+	PackAddInt64(p, "ExpireTime", t->ExpireTime);
 	OutRpcAuthData(p, t->AuthData, t->AuthType);
 	PackAddInt(p, "NumLogin", t->NumLogin);
 	OutRpcTraffic(p, &t->Traffic);
@@ -8394,24 +8138,21 @@ void OutRpcSetUser(PACK *p, RPC_SET_USER *t)
 }
 void FreeRpcSetUser(RPC_SET_USER *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
 	}
 
-	FreeRpcAuthData(t->AuthData, t->AuthType);
+	FreeAuthData(t->AuthType, t->AuthData);
 	if (t->Policy)
 	{
 		Free(t->Policy);
 	}
 }
 
-// RPC_ENUM_USER
-void InRpcEnumUser(RPC_ENUM_USER *t, PACK *p)
+static void InRpcEnumUser(RPC_ENUM_USER *t, PACK *p)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8433,7 +8174,6 @@ void InRpcEnumUser(RPC_ENUM_USER *t, PACK *p)
 		e->AuthType = PackGetIntEx(p, "AuthType", i);
 		e->LastLoginTime = PackGetInt64Ex(p, "LastLoginTime", i);
 		e->NumLogin = PackGetIntEx(p, "NumLogin", i);
-		e->DenyAccess = PackGetBoolEx(p, "DenyAccess", i);
 
 		e->IsTrafficFilled = PackGetBoolEx(p, "IsTrafficFilled", i);
 		InRpcTrafficEx(&e->Traffic, p, i);
@@ -8442,10 +8182,9 @@ void InRpcEnumUser(RPC_ENUM_USER *t, PACK *p)
 		e->Expires = PackGetInt64Ex(p, "Expires", i);
 	}
 }
-void OutRpcEnumUser(PACK *p, RPC_ENUM_USER *t)
+static void OutRpcEnumUser(PACK *p, RPC_ENUM_USER *t)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8461,7 +8200,7 @@ void OutRpcEnumUser(PACK *p, RPC_ENUM_USER *t)
 		PackAddUniStrEx(p, "Realname", e->Realname, i, t->NumUser);
 		PackAddUniStrEx(p, "Note", e->Note, i, t->NumUser);
 		PackAddIntEx(p, "AuthType", e->AuthType, i, t->NumUser);
-		PackAddTime64Ex(p, "LastLoginTime", e->LastLoginTime, i, t->NumUser);
+		PackAddInt64Ex(p, "LastLoginTime", e->LastLoginTime, i, t->NumUser);
 		PackAddIntEx(p, "NumLogin", e->NumLogin, i, t->NumUser);
 		PackAddBoolEx(p, "DenyAccess", e->DenyAccess, i, t->NumUser);
 
@@ -8469,12 +8208,11 @@ void OutRpcEnumUser(PACK *p, RPC_ENUM_USER *t)
 		OutRpcTrafficEx(&e->Traffic, p, i, t->NumUser);
 
 		PackAddBoolEx(p, "IsExpiresFilled", e->IsExpiresFilled, i, t->NumUser);
-		PackAddTime64Ex(p, "Expires", e->Expires, i, t->NumUser);
+		PackAddInt64Ex(p, "Expires", e->Expires, i, t->NumUser);
 	}
 }
 void FreeRpcEnumUser(RPC_ENUM_USER *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -8483,10 +8221,8 @@ void FreeRpcEnumUser(RPC_ENUM_USER *t)
 	Free(t->Users);
 }
 
-// RPC_SET_GROUP
-void InRpcSetGroup(RPC_SET_GROUP *t, PACK *p)
+static void InRpcSetGroup(RPC_SET_GROUP *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8505,9 +8241,8 @@ void InRpcSetGroup(RPC_SET_GROUP *t, PACK *p)
 		InRpcPolicy(t->Policy, p);
 	}
 }
-void OutRpcSetGroup(PACK *p, RPC_SET_GROUP *t)
+static void OutRpcSetGroup(PACK *p, RPC_SET_GROUP *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8530,11 +8265,9 @@ void FreeRpcSetGroup(RPC_SET_GROUP *t)
 	Free(t->Policy);
 }
 
-// RPC_ENUM_GROUP
-void InRpcEnumGroup(RPC_ENUM_GROUP *t, PACK *p)
+static void InRpcEnumGroup(RPC_ENUM_GROUP *t, PACK *p)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8553,13 +8286,11 @@ void InRpcEnumGroup(RPC_ENUM_GROUP *t, PACK *p)
 		PackGetUniStrEx(p, "Realname", e->Realname, sizeof(e->Realname), i);
 		PackGetUniStrEx(p, "Note", e->Note, sizeof(e->Note), i);
 		e->NumUsers = PackGetIntEx(p, "NumUsers", i);
-		e->DenyAccess = PackGetBoolEx(p, "DenyAccess", i);
 	}
 }
-void OutRpcEnumGroup(PACK *p, RPC_ENUM_GROUP *t)
+static void OutRpcEnumGroup(PACK *p, RPC_ENUM_GROUP *t)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8580,7 +8311,6 @@ void OutRpcEnumGroup(PACK *p, RPC_ENUM_GROUP *t)
 }
 void FreeRpcEnumGroup(RPC_ENUM_GROUP *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -8589,10 +8319,8 @@ void FreeRpcEnumGroup(RPC_ENUM_GROUP *t)
 	Free(t->Groups);
 }
 
-// RPC_DELETE_USER
-void InRpcDeleteUser(RPC_DELETE_USER *t, PACK *p)
+static void InRpcDeleteUser(RPC_DELETE_USER *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8602,9 +8330,8 @@ void InRpcDeleteUser(RPC_DELETE_USER *t, PACK *p)
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	PackGetStr(p, "Name", t->Name, sizeof(t->Name));
 }
-void OutRpcDeleteUser(PACK *p, RPC_DELETE_USER *t)
+static void OutRpcDeleteUser(PACK *p, RPC_DELETE_USER *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8614,11 +8341,9 @@ void OutRpcDeleteUser(PACK *p, RPC_DELETE_USER *t)
 	PackAddStr(p, "Name", t->Name);
 }
 
-// RPC_ENUM_SESSION
 void InRpcEnumSession(RPC_ENUM_SESSION *t, PACK *p)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8644,13 +8369,9 @@ void InRpcEnumSession(RPC_ENUM_SESSION *t, PACK *p)
 		e->PacketNum = PackGetInt64Ex(p, "PacketNum", i);
 		e->LinkMode = PackGetBoolEx(p, "LinkMode", i);
 		e->BridgeMode = PackGetBoolEx(p, "BridgeMode", i);
-		e->Client_BridgeMode = PackGetBoolEx(p, "Client_BridgeMode", i);
-		e->Client_MonitorMode = PackGetBoolEx(p, "Client_MonitorMode", i);
 		e->VLanId = PackGetIntEx(p, "VLanId", i);
 		PackGetDataEx2(p, "UniqueId", e->UniqueId, sizeof(e->UniqueId), i);
 		e->IsDormantEnabled = PackGetBoolEx(p, "IsDormantEnabled", i);
-		e->IsDormant = PackGetBoolEx(p, "IsDormant", i);
-		e->LastCommDormant = PackGetInt64Ex(p, "LastCommDormant", i);
 		e->CreatedTime = PackGetInt64Ex(p, "CreatedTime", i);
 		e->LastCommTime = PackGetInt64Ex(p, "LastCommTime", i);
 	}
@@ -8658,7 +8379,6 @@ void InRpcEnumSession(RPC_ENUM_SESSION *t, PACK *p)
 void OutRpcEnumSession(PACK *p, RPC_ENUM_SESSION *t)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8686,14 +8406,13 @@ void OutRpcEnumSession(PACK *p, RPC_ENUM_SESSION *t)
 		PackAddDataEx(p, "UniqueId", e->UniqueId, sizeof(e->UniqueId), i, t->NumSession);
 		PackAddBoolEx(p, "IsDormantEnabled", e->IsDormantEnabled, i, t->NumSession);
 		PackAddBoolEx(p, "IsDormant", e->IsDormant, i, t->NumSession);
-		PackAddTime64Ex(p, "LastCommDormant", e->LastCommDormant, i, t->NumSession);
-		PackAddTime64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumSession);
-		PackAddTime64Ex(p, "LastCommTime", e->LastCommTime, i, t->NumSession);
+		PackAddInt64Ex(p, "LastCommDormant", e->LastCommDormant, i, t->NumSession);
+		PackAddInt64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumSession);
+		PackAddInt64Ex(p, "LastCommTime", e->LastCommTime, i, t->NumSession);
 	}
 }
 void FreeRpcEnumSession(RPC_ENUM_SESSION *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -8702,10 +8421,8 @@ void FreeRpcEnumSession(RPC_ENUM_SESSION *t)
 	Free(t->Sessions);
 }
 
-// RPC_KEY_PAIR
-void InRpcKeyPair(RPC_KEY_PAIR *t, PACK *p)
+static void InRpcKeyPair(RPC_KEY_PAIR *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8716,9 +8433,8 @@ void InRpcKeyPair(RPC_KEY_PAIR *t, PACK *p)
 	t->Key = PackGetK(p, "Key");
 	t->Flag1 = PackGetInt(p, "Flag1");
 }
-void OutRpcKeyPair(PACK *p, RPC_KEY_PAIR *t)
+static void OutRpcKeyPair(PACK *p, RPC_KEY_PAIR *t)
 {
-	// Validate arguments
 	if (p == NULL || t == NULL)
 	{
 		return;
@@ -8736,10 +8452,8 @@ void FreeRpcKeyPair(RPC_KEY_PAIR *t)
 	FreeK(t->Key);
 }
 
-// NODE_INFO
 void InRpcNodeInfo(NODE_INFO *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8773,7 +8487,6 @@ void InRpcNodeInfo(NODE_INFO *t, PACK *p)
 }
 void OutRpcNodeInfo(PACK *p, NODE_INFO *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8805,10 +8518,8 @@ void OutRpcNodeInfo(PACK *p, NODE_INFO *t)
 	PackAddInt(p, "ProxyPort", LittleEndian32(t->ProxyPort));
 }
 
-// RPC_SESSION_STATUS
-void InRpcSessionStatus(RPC_SESSION_STATUS *t, PACK *p)
+static void InRpcSessionStatus(RPC_SESSION_STATUS *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8828,9 +8539,8 @@ void InRpcSessionStatus(RPC_SESSION_STATUS *t, PACK *p)
 	InRpcClientGetConnectionStatus(&t->Status, p);
 	InRpcNodeInfo(&t->NodeInfo, p);
 }
-void OutRpcSessionStatus(PACK *p, RPC_SESSION_STATUS *t)
+static void OutRpcSessionStatus(PACK *p, RPC_SESSION_STATUS *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8851,7 +8561,6 @@ void OutRpcSessionStatus(PACK *p, RPC_SESSION_STATUS *t)
 }
 void FreeRpcSessionStatus(RPC_SESSION_STATUS *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -8860,10 +8569,8 @@ void FreeRpcSessionStatus(RPC_SESSION_STATUS *t)
 	CiFreeClientGetConnectionStatus(&t->Status);
 }
 
-// RPC_DELETE_SESSION
-void InRpcDeleteSession(RPC_DELETE_SESSION *t, PACK *p)
+static void InRpcDeleteSession(RPC_DELETE_SESSION *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8873,9 +8580,8 @@ void InRpcDeleteSession(RPC_DELETE_SESSION *t, PACK *p)
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	PackGetStr(p, "Name", t->Name, sizeof(t->Name));
 }
-void OutRpcDeleteSession(PACK *p, RPC_DELETE_SESSION *t)
+static void OutRpcDeleteSession(PACK *p, RPC_DELETE_SESSION *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8885,11 +8591,9 @@ void OutRpcDeleteSession(PACK *p, RPC_DELETE_SESSION *t)
 	PackAddStr(p, "Name", t->Name);
 }
 
-// RPC_ENUM_MAC_TABLE
-void InRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t, PACK *p)
+static void InRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t, PACK *p)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8912,10 +8616,9 @@ void InRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t, PACK *p)
 		e->UpdatedTime = PackGetInt64Ex(p, "UpdatedTime", i);
 	}
 }
-void OutRpcEnumMacTable(PACK *p, RPC_ENUM_MAC_TABLE *t)
+static void OutRpcEnumMacTable(PACK *p, RPC_ENUM_MAC_TABLE *t)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8931,13 +8634,12 @@ void OutRpcEnumMacTable(PACK *p, RPC_ENUM_MAC_TABLE *t)
 		PackAddStrEx(p, "SessionName", e->SessionName, i, t->NumMacTable);
 		PackAddDataEx(p, "MacAddress", e->MacAddress, sizeof(e->MacAddress), i, t->NumMacTable);
 		PackAddIntEx(p, "VlanId", e->VlanId, i, t->NumMacTable);
-		PackAddTime64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumMacTable);
-		PackAddTime64Ex(p, "UpdatedTime", e->UpdatedTime, i, t->NumMacTable);
+		PackAddInt64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumMacTable);
+		PackAddInt64Ex(p, "UpdatedTime", e->UpdatedTime, i, t->NumMacTable);
 	}
 }
 void FreeRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -8946,11 +8648,9 @@ void FreeRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t)
 	Free(t->MacTables);
 }
 
-// RPC_ENUM_IP_TABLE
-void InRpcEnumIpTable(RPC_ENUM_IP_TABLE *t, PACK *p)
+static void InRpcEnumIpTable(RPC_ENUM_IP_TABLE *t, PACK *p)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8978,10 +8678,9 @@ void InRpcEnumIpTable(RPC_ENUM_IP_TABLE *t, PACK *p)
 		e->UpdatedTime = PackGetInt64Ex(p, "UpdatedTime", i);
 	}
 }
-void OutRpcEnumIpTable(PACK *p, RPC_ENUM_IP_TABLE *t)
+static void OutRpcEnumIpTable(PACK *p, RPC_ENUM_IP_TABLE *t)
 {
 	UINT i;
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -8999,13 +8698,12 @@ void OutRpcEnumIpTable(PACK *p, RPC_ENUM_IP_TABLE *t)
 		PackAddIpEx(p, "IpV6", &e->IpV6, i, t->NumIpTable);
 		PackAddIpEx(p, "IpAddress", &e->IpAddress, i, t->NumIpTable);
 		PackAddBoolEx(p, "DhcpAllocated", e->DhcpAllocated, i, t->NumIpTable);
-		PackAddTime64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumIpTable);
-		PackAddTime64Ex(p, "UpdatedTime", e->UpdatedTime, i, t->NumIpTable);
+		PackAddInt64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumIpTable);
+		PackAddInt64Ex(p, "UpdatedTime", e->UpdatedTime, i, t->NumIpTable);
 	}
 }
 void FreeRpcEnumIpTable(RPC_ENUM_IP_TABLE *t)
 {
-	// Validate arguments
 	if (t == NULL)
 	{
 		return;
@@ -9014,10 +8712,8 @@ void FreeRpcEnumIpTable(RPC_ENUM_IP_TABLE *t)
 	Free(t->IpTables);
 }
 
-// RPC_DELETE_TABLE
-void InRpcDeleteTable(RPC_DELETE_TABLE *t, PACK *p)
+static void InRpcDeleteTable(RPC_DELETE_TABLE *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -9027,9 +8723,8 @@ void InRpcDeleteTable(RPC_DELETE_TABLE *t, PACK *p)
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	t->Key = PackGetInt(p, "Key");
 }
-void OutRpcDeleteTable(PACK *p, RPC_DELETE_TABLE *t)
+static void OutRpcDeleteTable(PACK *p, RPC_DELETE_TABLE *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -9039,16 +8734,14 @@ void OutRpcDeleteTable(PACK *p, RPC_DELETE_TABLE *t)
 	PackAddInt(p, "Key", t->Key);
 }
 
-// test RPC function
-UINT StTest(ADMIN *a, RPC_TEST *t)
+static UINT StTest(ADMIN *a, RPC_TEST *t)
 {
 	Format(t->StrValue, sizeof(t->StrValue), "%u", t->IntValue);
 
 	return ERR_NO_ERROR;
 }
 
-// RPC_TEST
-void InRpcTest(RPC_TEST *t, PACK *p)
+static void InRpcTest(RPC_TEST *t, PACK *p)
 {
 	Zero(t, sizeof(RPC_TEST));
 	t->IntValue = PackGetInt(p, "IntValue");
@@ -9056,7 +8749,7 @@ void InRpcTest(RPC_TEST *t, PACK *p)
 	PackGetStr(p, "StrValue", t->StrValue, sizeof(t->StrValue));
 	PackGetUniStr(p, "UniStrValue", t->UniStrValue, sizeof(t->UniStrValue));
 }
-void OutRpcTest(PACK *p, RPC_TEST *t)
+static void OutRpcTest(PACK *p, RPC_TEST *t)
 {
 	PackAddInt(p, "IntValue", t->IntValue);
 	PackAddInt64(p, "Int64Value", t->Int64Value);
@@ -9067,10 +8760,8 @@ void FreeRpcTest(RPC_TEST *t)
 {
 }
 
-// Admin RPC call
-PACK *AdminCall(RPC *rpc, char *function_name, PACK *p)
+static PACK *AdminCall(RPC *rpc, char *function_name, PACK *p)
 {
-	// Validate arguments
 	if (rpc == NULL || function_name == NULL)
 	{
 		return NULL;
@@ -9080,18 +8771,15 @@ PACK *AdminCall(RPC *rpc, char *function_name, PACK *p)
 		p = NewPack();
 	}
 
-//	Debug("Admin RPC Call: %s\n", function_name);
 
 	return RpcCall(rpc, function_name, p);
 }
 
-// Check whether the source IP address is permitted to admin connection
-bool CheckAdminSourceAddress(SOCK *sock, char *hubname)
+static bool CheckAdminSourceAddress(SOCK *sock, char *hubname)
 {
 	BUF *b;
 	char *s;
 	bool ok = false;
-	// Validate arguments
 	if (sock == NULL)
 	{
 		return false;
@@ -9190,7 +8878,6 @@ bool CheckAdminSourceAddress(SOCK *sock, char *hubname)
 	return ok;
 }
 
-// Accept admin connection
 UINT AdminAccept(CONNECTION *c, PACK *p)
 {
 	ADMIN *a;
@@ -9206,7 +8893,6 @@ UINT AdminAccept(CONNECTION *c, PACK *p)
 	RPC_WINVER ver;
 	bool accept_empty_password;
 	bool is_empty_password = false;
-	// Validate arguments
 	if (c == NULL || p == NULL)
 	{
 		return ERR_INTERNAL_ERROR;
@@ -9222,49 +8908,39 @@ UINT AdminAccept(CONNECTION *c, PACK *p)
 
 	accept_empty_password = PackGetBool(p, "accept_empty_password");
 
-	// Get client OS version
 	InRpcWinVer(&ver, p);
 
-	// Get hub name
 	if (PackGetStr(p, "hubname", hubname, sizeof(hubname)) == false)
 	{
-		// without hub name
 		StrCpy(hubname, sizeof(hubname), "");
 	}
 
-	// Check source IP address
 	if (CheckAdminSourceAddress(sock, hubname) == false)
 	{
 		SLog(c->Cedar, "LA_IP_DENIED", c->Name);
 		return ERR_IP_ADDRESS_DENIED;
 	}
 
-	// Get password information
 	if (PackGetDataSize(p, "secure_password") != SHA1_SIZE)
 	{
-		// Malformed information
 		return ERR_PROTOCOL_ERROR;
 	}
 	PackGetData(p, "secure_password", secure_password);
 
 	if (StrLen(hubname) == 0)
 	{
-		// Server admin mode
 		SLog(c->Cedar, "LA_CONNECTED_1", c->Name);
 	}
 	else
 	{
-		// Hub admin mode
 		SLog(c->Cedar, "LA_CONNECTED_2", c->Name, hubname);
 	}
 
-	// Check password
 	err = AdminCheckPassword(cedar, c->Random, secure_password,
 		StrLen(hubname) != 0 ? hubname : NULL, accept_empty_password, &is_empty_password);
 
 	if (err != ERR_NO_ERROR)
 	{
-		// Error occured
 		SLog(c->Cedar, "LA_ERROR", c->Name, GetUniErrorStr(err), err);
 		return err;
 	}
@@ -9278,7 +8954,7 @@ UINT AdminAccept(CONNECTION *c, PACK *p)
 	{
 		if (IsLocalHostIP(&sock->RemoteIP) == false)
 		{
-			// The client tried to use blank password for hub admin mode from remote
+			// Refuse a blank hub admin password from a remote client
 			if (StrLen(hubname) != 0)
 			{
 				return ERR_NULL_PASSWORD_LOCAL_ONLY;
@@ -9287,7 +8963,6 @@ UINT AdminAccept(CONNECTION *c, PACK *p)
 	}
 
 
-	// Reply success result
 	p = NewPack();
 	if (accept_empty_password && is_empty_password)
 	{
@@ -9296,19 +8971,15 @@ UINT AdminAccept(CONNECTION *c, PACK *p)
 	HttpServerSend(sock, p);
 	FreePack(p);
 
-	// Construct ADMIN object
 	a = ZeroMalloc(sizeof(ADMIN));
 	a->ServerAdmin = ((StrLen(hubname) == 0) ? true : false);
 	a->HubName = (StrLen(hubname) != 0 ? hubname : NULL);
 	a->Server = c->Cedar->Server;
-	a->ClientBuild = c->ClientBuild;
 
 	Copy(&a->ClientWinVer, &ver, sizeof(RPC_WINVER));
 
-	// Timeout setting
 	SetTimeout(sock, INFINITE);
 
-	// RPC Server
 	rpc = StartRpcServer(sock, AdminDispatch, a);
 
 	a->Rpc = rpc;
@@ -9320,23 +8991,19 @@ UINT AdminAccept(CONNECTION *c, PACK *p)
 
 	if (a->LogFileList != NULL)
 	{
-		// Free cached log file list, if it exists
 		FreeEnumLogFile(a->LogFileList);
 	}
 
-	// Free ADMIN object
 	Free(a);
 
 	return ERR_NO_ERROR;
 }
 
-// Check for admin password
-UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hubname,
+static UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hubname,
 						bool accept_empty_password, bool *is_password_empty)
 {
 	UCHAR check[SHA1_SIZE];
 	bool b_dummy;
-	// Validate arguments
 	if (c == NULL || random == NULL || secure_password == NULL)
 	{
 		return ERR_INTERNAL_ERROR;
@@ -9350,12 +9017,10 @@ UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hub
 
 	if (hubname == NULL || StrLen(hubname) == 0)
 	{
-		// Server admin mode
 		Lock(c->lock);
 		{
 			if (accept_empty_password && SiIsEmptyPassword(c->Server->HashedPassword))
 			{
-				// blank password
 				*is_password_empty = true;
 			}
 
@@ -9365,7 +9030,6 @@ UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hub
 
 		if (Cmp(check, secure_password, SHA1_SIZE) != 0)
 		{
-			// Password incorrect
 			return ERR_ACCESS_DENIED;
 		}
 	}
@@ -9373,7 +9037,6 @@ UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hub
 	{
 		HUB *h;
 
-		// Hub admin mode
 		LockHubList(c);
 		{
 			h = GetHub(c, hubname);
@@ -9382,7 +9045,6 @@ UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hub
 
 		if (h == NULL)
 		{
-			// Specified hub is not found
 			return ERR_HUB_NOT_FOUND;
 		}
 
@@ -9390,7 +9052,6 @@ UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hub
 		{
 			if (accept_empty_password && SiIsEmptyPassword(h->HashedPassword))
 			{
-				// User specified blank password
 				*is_password_empty = true;
 			}
 
@@ -9402,7 +9063,6 @@ UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hub
 
 		if (Cmp(check, secure_password, SHA1_SIZE) != 0)
 		{
-			// Incorrect password
 			return ERR_ACCESS_DENIED;
 		}
 	}
@@ -9410,10 +9070,8 @@ UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hub
 	return ERR_NO_ERROR;
 }
 
-// Hash admin password
-void HashAdminPassword(void *hash, char *password)
+static void HashAdminPassword(void *hash, char *password)
 {
-	// Validate arguments
 	if (hash == NULL || password == NULL)
 	{
 		return;
@@ -9422,12 +9080,10 @@ void HashAdminPassword(void *hash, char *password)
 	Sha0(hash, password, StrLen(password));
 }
 
-// Disconnect admin connection
 void AdminDisconnect(RPC *rpc)
 {
 	SESSION *s;
 	SOCK *sock;
-	// Validate arguments
 	if (rpc == NULL)
 	{
 		return;
@@ -9436,31 +9092,27 @@ void AdminDisconnect(RPC *rpc)
 	s = (SESSION *)rpc->Param;
 	sock = rpc->Sock;
 
-	EndRpc(rpc);
+	RpcFree(rpc);
 
 	Disconnect(sock);
 	ReleaseSession(s);
 }
 
-// Admin connection main routine
-SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name, void *hWnd, bool *empty_password)
+static SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name, void *hWnd, bool *empty_password)
 {
 	UCHAR secure_password[SHA1_SIZE];
 	SESSION *s;
 	SOCK *sock;
 	PACK *p;
 	RPC_WINVER ver;
-	// connect
 	s = NewRpcSessionEx2(cedar, o, err, client_name, hWnd);
 	if (s == NULL)
 	{
 		return NULL;
 	}
 
-	// Get socket
 	sock = s->Connection->FirstSock;
 
-	// Generate connect method
 	p = NewPack();
 
 	PackAddClientVersion(p, s->Connection);
@@ -9468,16 +9120,13 @@ SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *h
 	PackAddStr(p, "method", "admin");
 	PackAddBool(p, "accept_empty_password", true);
 
-	// Windows version on client
 	GetWinVer(&ver);
 	OutRpcWinVer(p, &ver);
 
-	// Secure Password
 	SecurePassword(secure_password, hashed_password, s->Connection->Random);
 
 	PackAddData(p, "secure_password", secure_password, sizeof(secure_password));
 
-	// HUB name
 	if (hubname != NULL)
 	{
 		PackAddStr(p, "hubname", hubname);
@@ -9485,7 +9134,6 @@ SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *h
 
 	if (HttpClientSend(sock, p) == false)
 	{
-		// disconnect
 		FreePack(p);
 		ReleaseSession(s);
 		*err = ERR_DISCONNECTED;
@@ -9497,7 +9145,6 @@ SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *h
 	p = HttpClientRecv(sock);
 	if (p == NULL)
 	{
-		// disconnect
 		ReleaseSession(s);
 		*err = ERR_DISCONNECTED;
 		return NULL;
@@ -9505,7 +9152,6 @@ SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *h
 
 	if (GetErrorFromPack(p) != 0)
 	{
-		// error
 		ReleaseSession(s);
 		*err = GetErrorFromPack(p);
 		FreePack(p);
@@ -9522,19 +9168,17 @@ SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *h
 	return s;
 }
 
-// Admin connection
 RPC *AdminConnectEx(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name)
 {
 	return AdminConnectEx2(cedar, o, hubname, hashed_password, err, client_name, NULL);
 }
-RPC *AdminConnectEx2(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name, void *hWnd)
+static RPC *AdminConnectEx2(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name, void *hWnd)
 {
 	SESSION *s;
 	SOCK *sock;
 	RPC *rpc;
 	UCHAR hashed_password_2[SHA1_SIZE];
 	bool empty_password = false;
-	// Validate arguments
 	if (cedar == NULL || o == NULL || hashed_password == NULL || err == NULL)
 	{
 		return NULL;
@@ -9556,7 +9200,6 @@ RPC *AdminConnectEx2(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed
 
 	sock = s->Connection->FirstSock;
 
-	// RPC start
 	rpc = StartRpcClient(sock, s);
 
 	rpc->IsVpnServer = true;
@@ -9573,13 +9216,11 @@ RPC *AdminConnectEx2(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed
 		HashAdminPassword(rpc->VpnServerHashedPassword, "");
 	}
 
-	// timeout setting
 	SetTimeout(sock, INFINITE);
 
 	return rpc;
 }
 
-// Reconnect admin connection
 UINT AdminReconnect(RPC *rpc)
 {
 	SESSION *s;
@@ -9587,7 +9228,6 @@ UINT AdminReconnect(RPC *rpc)
 	CEDAR *cedar;
 	UINT err;
 	bool empty_password = false;
-	// Validate arguments
 	if (rpc == NULL || rpc->IsVpnServer == false)
 	{
 		return ERR_INTERNAL_ERROR;
@@ -9630,11 +9270,9 @@ UINT AdminReconnect(RPC *rpc)
 	return ERR_NO_ERROR;
 }
 
-// Identify blank password
-bool SiIsEmptyPassword(void *hash_password)
+static bool SiIsEmptyPassword(void *hash_password)
 {
 	UCHAR hash[SHA1_SIZE];
-	// Validate arguments
 	if (hash_password == NULL)
 	{
 		return false;

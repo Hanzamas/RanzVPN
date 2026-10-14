@@ -6,9 +6,7 @@
 #include "Str.h"
 #include "Tick64.h"
 
-#ifdef OS_WIN32
 #include <WS2tcpip.h>
-#endif
 
 #ifndef AI_ALL
 #define AI_ALL 0
@@ -26,7 +24,7 @@ static LIST *cache_reverse;
 static COUNTER *threads_counter;
 static UINT threads_max;
 
-int DnsCacheCompare(void *p1, void *p2)
+static int DnsCacheCompare(void *p1, void *p2)
 {
 	if (p1 == NULL || p2 == NULL)
 	{
@@ -39,7 +37,7 @@ int DnsCacheCompare(void *p1, void *p2)
 	return StrCmpi(c1->Hostname, c2->Hostname);
 }
 
-int DnsCacheReverseCompare(void *p1, void *p2)
+static int DnsCacheReverseCompare(void *p1, void *p2)
 {
 	if (p1 == NULL || p2 == NULL)
 	{
@@ -115,7 +113,7 @@ void DnsThreadNumMaxSet(const UINT max)
 	threads_max = max;
 }
 
-bool DnsCacheIsEnabled()
+static bool DnsCacheIsEnabled()
 {
 	return cache_enabled;
 }
@@ -125,7 +123,7 @@ void DnsCacheToggle(const bool enabled)
 	cache_enabled = enabled;
 }
 
-DNS_CACHE *DnsCacheFind(const char *hostname)
+static DNS_CACHE *DnsCacheFind(const char *hostname)
 {
 	if (DnsCacheIsEnabled() == false || IsEmptyStr(hostname))
 	{
@@ -145,36 +143,7 @@ DNS_CACHE *DnsCacheFind(const char *hostname)
 	return entry;
 }
 
-DNS_CACHE *DnsCacheUpdate(const char *hostname, const IP *ipv6, const IP *ipv4)
-{
-	if (DnsCacheIsEnabled() == false || IsEmptyStr(hostname))
-	{
-		return NULL;
-	}
-
-	LIST *iplist_v6 = NULL;
-	LIST *iplist_v4 = NULL;
-
-	if (ipv6 != NULL)
-	{
-		iplist_v6 = NewListFast(NULL);
-		AddHostIPAddressToList(iplist_v6, ipv6);
-	}
-
-	if (ipv4 != NULL)
-	{
-		iplist_v4 = NewListFast(NULL);
-		AddHostIPAddressToList(iplist_v4, ipv4);
-	}
-
-	DNS_CACHE *ret = DnsCacheUpdateEx(hostname, iplist_v6, iplist_v4);
-
-	FreeHostIPAddressList(iplist_v6);
-	FreeHostIPAddressList(iplist_v4);
-
-	return ret;
-}
-DNS_CACHE *DnsCacheUpdateEx(const char *hostname, const LIST *iplist_v6, const LIST *iplist_v4)
+static DNS_CACHE *DnsCacheUpdateEx(const char *hostname, const LIST *iplist_v6, const LIST *iplist_v4)
 {
 	if (DnsCacheIsEnabled() == false || IsEmptyStr(hostname))
 	{
@@ -240,7 +209,7 @@ DNS_CACHE *DnsCacheUpdateEx(const char *hostname, const LIST *iplist_v6, const L
 	return entry;
 }
 
-DNS_CACHE_REVERSE *DnsCacheReverseFind(const IP *ip)
+static DNS_CACHE_REVERSE *DnsCacheReverseFind(const IP *ip)
 {
 	if (DnsCacheIsEnabled() == false || ip == NULL)
 	{
@@ -540,7 +509,6 @@ void DnsResolver(THREAD *t, void *param)
 	}
 	else if (ret != EAI_NONAME)
 	{
-		Debug("DnsResolver(): getaddrinfo() failed with error %d!\n", ret);
 	}
 
 	ReleaseDnsResolver(resolver);
@@ -664,7 +632,6 @@ void DnsResolverReverse(THREAD *t, void *param)
 	}
 	else if (ret != EAI_NONAME)
 	{
-		Debug("DnsResolverReverse(): getnameinfo() failed with error %d!\n", ret);
 	}
 
 	ReleaseDnsResolverReverse(resolver);
@@ -699,10 +666,8 @@ bool GetIPEx(IP *ip, const char *hostname, UINT timeout, volatile const bool *ca
 	return false;
 }
 
-// Release of the parameters of the DNS Resolver thread
 void ReleaseDnsResolver(DNS_RESOLVER *p)
 {
-	// Validate arguments
 	if (p == NULL)
 	{
 		return;
@@ -717,10 +682,8 @@ void ReleaseDnsResolver(DNS_RESOLVER *p)
 	}
 }
 
-// Release of the parameters of the DNS Resolver Reverse thread
 void ReleaseDnsResolverReverse(DNS_RESOLVER_REVERSE *p)
 {
-	// Validate arguments
 	if (p == NULL)
 	{
 		return;
