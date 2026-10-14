@@ -18,6 +18,7 @@ permissions:
 env:
   XDP_VERSION: '1.4.0'
   BENCH_RUNS: '1'
+  BENCH_DIAG: '1'
   BENCH_SECS: '2'
 
 jobs:
@@ -55,7 +56,7 @@ jobs:
         timeout-minutes: 45
         run: |
           ./spikes/selow-vs-xdp/run.ps1 -Bin build/Release -XdpRuntime "$env:RUNNER_TEMP\xdp\Microsoft.XDP-for-Windows.Runtime.x64" `
-            -SeLowDir src/bin/hamcore/DriverPackages/SeLow_Win10/x64 -LogDir logs -Runs $env:BENCH_RUNS -Seconds $env:BENCH_SECS
+            -SeLowDir src/bin/hamcore/DriverPackages/SeLow_Win10/x64 -LogDir logs -Runs $env:BENCH_RUNS -Seconds $env:BENCH_SECS -Diag:($env:BENCH_DIAG -eq '1')
 
       - name: Summary
         if: always()

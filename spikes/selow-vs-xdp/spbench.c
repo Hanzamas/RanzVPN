@@ -30,6 +30,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <iphlpapi.h>
+#include <intrin.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -84,9 +85,15 @@ typedef struct _XSKC {
     XSK_RING Comp;
 } XSKC;
 
+// CPU is read two ways: tick-sampled times (GetSystemTimes), and cycle
+// counts (QueryThreadCycleTime, QueryIdleProcessorCycleTime), which are
+// exact and in TSC units. Tick sampling under-counts threads that run in
+// short bursts between waits, so the cycle numbers are the primary ones.
 typedef struct _SNAP {
     double T;
-    ULONGLONG SysBusy, SysAll, Proc, GenCpu, CapCpu;
+    ULONGLONG Tsc;
+    ULONGLONG SysBusy, SysAll;
+    ULONGLONG IdleCycles, ProcCycles, GenCycles, CapCycles;
     LONG64 GenCalls, GenDgrams, GenErrors, CapDgrams, CapBytes, CapOther, CapDups;
 } SNAP;
 
@@ -99,7 +106,7 @@ static IN_ADDR LocalIp, PeerIp;
 static UCHAR LocalMac[6];
 static UINT32 FrameLen = 64;
 static UINT32 Payload;
-static DWORD Seconds = 5, WarmupMs = 500;
+static DWORD Seconds = 5, WarmupMs = 500, CapSleepMs = 0;
 static int Threads = 1, Receivers = 2, Pin = 0, NCpu = 1;
 static const char *Backend = "xdp", *Dir = "tx", *GenMode = "sendto";
 static volatile LONG Stop;
@@ -165,40 +172,58 @@ static ULONGLONG Ft(const FILETIME *F)
     return ((ULONGLONG)F->dwHighDateTime << 32) | F->dwLowDateTime;
 }
 
-static ULONGLONG ThreadCpu(HANDLE H)
+static ULONGLONG ThreadCycles(HANDLE H)
 {
-    FILETIME C, E, K, U;
-    if (H == NULL || !GetThreadTimes(H, &C, &E, &K, &U)) {
+    ULONG64 C = 0;
+    if (H == NULL || !QueryThreadCycleTime(H, &C)) {
         return 0;
     }
-    return Ft(&K) + Ft(&U);
+    return C;
+}
+
+static ULONGLONG IdleCycles(void)
+{
+    ULONG64 C[64];
+    ULONG Len = sizeof(C);
+    ULONGLONG Sum = 0;
+    ULONG i;
+    if (!QueryIdleProcessorCycleTime(&Len, C)) {
+        return 0;
+    }
+    for (i = 0; i < Len / sizeof(C[0]); i++) {
+        Sum += C[i];
+    }
+    return Sum;
 }
 
 static void Snap(SNAP *S)
 {
-    FILETIME I, K, U, C, E;
+    FILETIME I, K, U;
+    ULONG64 Pc = 0;
     int i;
 
     memset(S, 0, sizeof(*S));
     GetSystemTimes(&I, &K, &U);
     S->SysAll = Ft(&K) + Ft(&U); // kernel time includes idle time
     S->SysBusy = S->SysAll - Ft(&I);
-    if (GetProcessTimes(GetCurrentProcess(), &C, &E, &K, &U)) {
-        S->Proc = Ft(&K) + Ft(&U);
+    S->IdleCycles = IdleCycles();
+    if (QueryProcessCycleTime(GetCurrentProcess(), &Pc)) {
+        S->ProcCycles = Pc;
     }
     for (i = 0; i < NGen; i++) {
-        S->GenCpu += ThreadCpu(Gen[i].Thread);
+        S->GenCycles += ThreadCycles(Gen[i].Thread);
         S->GenCalls += Gen[i].Calls;
         S->GenDgrams += Gen[i].Dgrams;
         S->GenErrors += Gen[i].Errors;
     }
     for (i = 0; i < NCap; i++) {
-        S->CapCpu += ThreadCpu(Cap[i].Thread);
+        S->CapCycles += ThreadCycles(Cap[i].Thread);
         S->CapDgrams += Cap[i].Dgrams;
         S->CapBytes += Cap[i].Bytes;
         S->CapOther += Cap[i].Other;
         S->CapDups += Cap[i].Dups;
     }
+    S->Tsc = __rdtsc();
     S->T = Now();
 }
 
@@ -219,23 +244,25 @@ static void Report(const SNAP *A, const SNAP *B, const char *Mode, int NThreads,
     double Pps = (double)(B->CapDgrams - A->CapDgrams) / Dt;
     double Mbps = (double)(B->CapBytes - A->CapBytes) * 8.0 / Dt / 1e6;
     double OtherPs = (double)(B->CapOther - A->CapOther) / Dt;
-    double Sys = (double)(B->SysBusy - A->SysBusy) / W;
-    double SysAll = (double)(B->SysAll - A->SysAll);
-    double SysPct = SysAll > 0 ? 100.0 * (double)(B->SysBusy - A->SysBusy) / SysAll : 0;
-    double GenC = (double)(B->GenCpu - A->GenCpu) / W;
-    double CapC = (double)(B->CapCpu - A->CapCpu) / W;
-    double ProcC = (double)(B->Proc - A->Proc) / W;
+    double Ticks = (double)(B->SysBusy - A->SysBusy) / W;
+    double Tsc = (double)(B->Tsc - A->Tsc);
+    double Idle = (double)(B->IdleCycles - A->IdleCycles);
+    double Sys = Tsc > 0 ? (Tsc * NCpu - Idle) / Tsc : 0;
+    double SysPct = 100.0 * Sys / NCpu;
+    double GenC = Tsc > 0 ? (double)(B->GenCycles - A->GenCycles) / Tsc : 0;
+    double CapC = Tsc > 0 ? (double)(B->CapCycles - A->CapCycles) / Tsc : 0;
+    double ProcC = Tsc > 0 ? (double)(B->ProcCycles - A->ProcCycles) / Tsc : 0;
     double Loss = GenPps > 0 ? 100.0 * (1.0 - Pps / GenPps) : 0;
     double Cpm = Pps > 0 ? Sys / (Pps / 1e6) : 0;
 
     Log("BENCH backend=%s dir=%s len=%u gen=%s threads=%d pin=%d secs=%.2f "
         "gen_calls_ps=%.0f gen_pps=%.0f pps=%.0f mbps=%.1f loss_pct=%.2f other_ps=%.0f "
-        "dups=%lld gen_errors=%lld cpu_sys=%.2f cpu_sys_pct=%.1f cpu_gen=%.2f cpu_cap=%.2f "
-        "cpu_proc=%.2f cores_per_mpps=%.2f ncpu=%d %s\n",
+        "dups=%lld gen_errors=%lld cpu_sys=%.2f cpu_sys_pct=%.1f cpu_sys_ticks=%.2f cpu_gen=%.2f cpu_cap=%.2f "
+        "cpu_proc=%.2f cores_per_mpps=%.2f ncpu=%d tsc_mhz=%.0f cap_sleep_ms=%lu %s\n",
         Backend, Dir, FrameLen, Mode, NThreads, Pin, Dt,
         GenCps, GenPps, Pps, Mbps, Loss, OtherPs,
-        B->CapDups, B->GenErrors - A->GenErrors, Sys, SysPct, GenC, CapC,
-        ProcC, Cpm, NCpu, Extra);
+        B->CapDups, B->GenErrors - A->GenErrors, Sys, SysPct, Ticks, GenC, CapC,
+        ProcC, Cpm, NCpu, Tsc / Dt / 1e6, CapSleepMs, Extra);
 }
 
 static DWORD WINAPI Watchdog(void *Ctx)
@@ -470,6 +497,9 @@ static DWORD WINAPI XdpCapThread(void *Ctx)
             XskNotifySocket(X->Sock, XSK_NOTIFY_FLAG_POKE_RX, 0, &Nr);
         }
         Publish(S, &L);
+        if (CapSleepMs != 0) {
+            Sleep(CapSleepMs);
+        }
     }
     Publish(S, &L);
     return 0;
@@ -704,6 +734,8 @@ static DWORD WINAPI SelowCapThread(void *Ctx)
         Publish(S, &L);
         if (N == 0) {
             WaitForSingleObject(SlEvent, 10);
+        } else if (CapSleepMs != 0) {
+            Sleep(CapSleepMs);
         }
     }
     Publish(S, &L);
@@ -981,11 +1013,31 @@ static int RunRx(void)
     return B.CapDgrams > 0 ? 0 : 1;
 }
 
+// Health check of the adapter's TX path: one thread of plain send() for
+// 0.5 s, no backend attached. Prints "PROBE status=ok|bad|stuck ...".
+static int RunProbe(void)
+{
+    BOOL Ok;
+    Gen[0].Index = 0;
+    Gen[0].Thread = CreateThread(NULL, 0, SendThread, &Gen[0], 0, NULL);
+    NGen = 1;
+    Sleep(500);
+    Stop = 1;
+    if (WaitForSingleObject(Gen[0].Thread, 3000) != WAIT_OBJECT_0) {
+        Log("PROBE status=stuck sends=%lld errors=%lld lasterr=%d\n", Gen[0].Dgrams, Gen[0].Errors, Gen[0].LastErr);
+        return 1;
+    }
+    Ok = Gen[0].Dgrams > 0 && Gen[0].Errors == 0;
+    Log("PROBE status=%s sends=%lld errors=%lld lasterr=%d\n", Ok ? "ok" : "bad", Gen[0].Dgrams, Gen[0].Errors,
+        Gen[0].LastErr);
+    return Ok ? 0 : 1;
+}
+
 static void Usage(void)
 {
-    Log("usage: spbench -b xdp|selow -d tx|rx|list -i IfIndex [-l FrameLen] [-s Secs]\n"
+    Log("usage: spbench -b xdp|selow -d tx|rx|list|probe -i IfIndex [-l FrameLen] [-s Secs]\n"
         "               [-g sendto|uso] [-t Threads] [-p] [-r Receivers] [-w WarmupMs]\n"
-        "               [-a LocalIPv4] [-e PeerIPv4]\n");
+        "               [-k CaptureSleepMs] [-a LocalIPv4] [-e PeerIPv4]\n");
 }
 
 int __cdecl main(int argc, char **argv)
@@ -1023,6 +1075,8 @@ int __cdecl main(int argc, char **argv)
             Receivers = atoi(V);
         } else if (!strcmp(A, "-w")) {
             WarmupMs = (DWORD)atoi(V);
+        } else if (!strcmp(A, "-k")) {
+            CapSleepMs = (DWORD)atoi(V);
         } else if (!strcmp(A, "-a")) {
             Local = V;
         } else if (!strcmp(A, "-e")) {
@@ -1066,6 +1120,11 @@ int __cdecl main(int argc, char **argv)
         FrameLen, Payload, GenMode, Threads, Pin, NCpu, Seconds);
     CloseHandle(CreateThread(NULL, 0, Watchdog, NULL, 0, NULL));
 
+    if (!strcmp(Dir, "probe")) {
+        Rc = RunProbe();
+        WSACleanup();
+        return Rc;
+    }
     if (!strcmp(Backend, "selow")) {
         if (SelowOpen(!strcmp(Dir, "list")) != 0) {
             return 3;
