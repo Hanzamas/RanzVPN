@@ -130,6 +130,8 @@ static void SiEnumLocalLogFileList(SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *
 static void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t);
 static void InRpcAccess(ACCESS *a, PACK *p);
 static void OutRpcAccess(PACK *p, ACCESS *a);
+static void InRpcAccessEx(ACCESS *a, PACK *p, UINT index);
+static void OutRpcAccessEx(PACK *p, ACCESS *a, UINT index, UINT total);
 static UINT StTest(ADMIN *a, RPC_TEST *t);
 static UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hubname, bool accept_empty_password, bool *is_password_empty);
 static void HashAdminPassword(void *hash, char *password);
