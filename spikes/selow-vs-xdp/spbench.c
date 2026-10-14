@@ -67,6 +67,7 @@ typedef struct DECLSPEC_ALIGN(64) _TSTAT {
     int Segs;
     int Uso;
     int LastErr;
+    volatile int Exited;
 } TSTAT;
 
 typedef struct _LOCAL {
@@ -796,11 +797,13 @@ static DWORD WINAPI SendThread(void *Ctx)
     if (bind(Sk, (SOCKADDR *)&Src, sizeof(Src)) != 0 || connect(Sk, (SOCKADDR *)&Dst, sizeof(Dst)) != 0) {
         S->LastErr = WSAGetLastError();
         S->Errors++;
+        S->Exited = 1;
         closesocket(Sk);
         return 1;
     }
     setsockopt(Sk, SOL_SOCKET, SO_SNDBUF, (char *)&SndBuf, sizeof(SndBuf));
 
+    S->Segs = 1;
     if (!strcmp(GenMode, "uso")) {
         DWORD M = Payload;
         if (setsockopt(Sk, IPPROTO_UDP, UDP_SEND_MSG_SIZE, (char *)&M, sizeof(M)) == 0) {
@@ -809,12 +812,14 @@ static DWORD WINAPI SendThread(void *Ctx)
             if (Segs > USO_MAX_SEGS) {
                 Segs = USO_MAX_SEGS;
             }
+            S->Segs = Segs;
         } else {
             S->LastErr = WSAGetLastError();
         }
     }
     Buf = calloc((size_t)USO_MAX_SEGS, Payload);
     if (Buf == NULL) {
+        S->Exited = 1;
         closesocket(Sk);
         return 1;
     }
@@ -836,10 +841,12 @@ static DWORD WINAPI SendThread(void *Ctx)
             S->LastErr = E;
             if (S->Uso && Segs > 1 && (E == WSAEMSGSIZE || E == WSAEINVAL)) {
                 Segs /= 2;
+                S->Segs = Segs;
             }
         }
     }
     S->Segs = Segs;
+    S->Exited = 1;
     free(Buf);
     closesocket(Sk);
     return 0;
@@ -900,7 +907,7 @@ static int RunTx(void)
     SNAP A, B;
     char Extra[512];
     const char *Mode = GenMode;
-    int i, AllUso = 1;
+    int i, AllUso = 1, Stuck = 0;
     size_t Used;
 
     if (!strcmp(Backend, "xdp")) {
@@ -930,8 +937,11 @@ static int RunTx(void)
     if (!strcmp(GenMode, "uso") && !AllUso) {
         Mode = "sendto-fallback";
     }
-    Used = (size_t)_snprintf(Extra, sizeof(Extra), "segs=%d gen_err=%d cap_calls=%lld cap_errors=%lld",
-        Gen[0].Segs, Gen[0].LastErr, Cap[0].Calls, Cap[0].Errors);
+    for (i = 0; i < NGen; i++) {
+        Stuck += Gen[i].Exited ? 0 : 1;
+    }
+    Used = (size_t)_snprintf(Extra, sizeof(Extra), "segs=%d gen_err=%d gen_stuck=%d cap_calls=%lld cap_errors=%lld",
+        Gen[0].Segs, Gen[0].LastErr, Stuck, Cap[0].Calls, Cap[0].Errors);
     if (Prog != NULL) {
         XSK_STATISTICS St = {0};
         UINT32 StLen = sizeof(St);

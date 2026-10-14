@@ -17,9 +17,9 @@ permissions:
 
 env:
   XDP_VERSION: '1.4.0'
-  BENCH_RUNS: '1'
+  BENCH_RUNS: '5'
   BENCH_DIAG: '1'
-  BENCH_SECS: '2'
+  BENCH_SECS: '5'
 
 jobs:
   bench:

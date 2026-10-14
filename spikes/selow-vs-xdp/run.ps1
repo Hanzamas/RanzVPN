@@ -120,7 +120,7 @@ function Wait-Ready {
 
 $cols = 'os', 'run', 'backend', 'dir', 'len', 'gen', 'threads', 'pin', 'secs', 'gen_calls_ps', 'gen_pps', 'pps', 'mbps',
     'loss_pct', 'other_ps', 'dups', 'gen_errors', 'cpu_sys', 'cpu_sys_pct', 'cpu_sys_ticks', 'cpu_gen', 'cpu_cap', 'cpu_proc',
-    'cores_per_mpps', 'ncpu', 'tsc_mhz', 'cap_sleep_ms', 'segs', 'gen_err', 'cap_calls', 'cap_errors', 'xdp_rx_dropped',
+    'cores_per_mpps', 'ncpu', 'tsc_mhz', 'cap_sleep_ms', 'segs', 'gen_err', 'gen_stuck', 'cap_calls', 'cap_errors', 'xdp_rx_dropped',
     'receivers', 'status', 'health_after'
 $rows = New-Object System.Collections.Generic.List[object]
 $script:broken = 0
@@ -182,18 +182,31 @@ function Invoke-Phase([string]$b) {
     Wait-Ready
     $h = Invoke-Probe "start of $b phase"
     Write-Host "health at start of ${b}: $h"
-    for ($run = 1; $run -le $Runs; $run++) {
-        foreach ($t in $tests) {
-            if ($Diag -and $b -eq 'xdp' -and $t.gen -eq 'uso' -and $run -eq 1) {
-                # Does a slow consumer (XSK ring full, drops) alone break the TX path?
-                Invoke-Bench $run $b 'tx' 64 'sendto' $ncpu $true 5
+    # All rx runs first, then all tx runs. Run 38528182565 showed that XDP
+    # RX inject started after an XDP TX-inspect session delivered nothing and
+    # broke the adapter's TX path, so measured rx never follows tx here.
+    foreach ($dir in 'rx', 'tx') {
+        for ($run = 1; $run -le $Runs; $run++) {
+            foreach ($t in ($tests | Where-Object { $_.dir -eq $dir })) {
+                foreach ($len in $Sizes) {
+                    if ($script:broken -ge 3) { Write-Host "SKIP $b run=$run $($t.dir) $($t.gen) len=$len (TX path broken)"; continue }
+                    Invoke-Bench $run $b $t.dir $len $t.gen $t.t $t.pin $t.k
+                }
             }
-            foreach ($len in $Sizes) {
-                if ($script:broken -ge 3) { Write-Host "SKIP $b run=$run $($t.dir) $($t.gen) len=$len (TX path broken)"; continue }
-                Invoke-Bench $run $b $t.dir $len $t.gen $t.t $t.pin $t.k
-            }
+            $rows | Export-Csv -Path $csv -NoTypeInformation
         }
-        $rows | Export-Csv -Path $csv -NoTypeInformation
+    }
+    if ($Diag -and $b -eq 'xdp') {
+        # Not measured data (run=diag): reproduce rx-after-tx last, when
+        # nothing else depends on the adapter.
+        Section 'XDP diagnostic: rx inject after a tx-inspect session'
+        Invoke-Bench 0 $b 'tx' 64 'sendto' 1 $false 0
+        Invoke-Bench 0 $b 'rx' 64 'inject' 1 $false 0
+        Invoke-Bench 0 $b 'tx' 1500 'uso' $ncpu $true 0
+        Invoke-Bench 0 $b 'rx' 64 'inject' 1 $false 0
+        Invoke-Bench 0 $b 'rx' 1500 'inject' 1 $false 0
+        $r = Invoke-Ps "Disable-NetAdapterBinding -Name '$name' -ComponentID ms_xdp" 90
+        Write-Host "diag: disable ms_xdp binding after the sequence: exit=$($r.Code) timedout=$($r.TimedOut)"
     }
 }
 
