@@ -5,7 +5,11 @@ name: spike-selow-vs-xdp
 on:
   push:
     branches: ['spike/**']
-    paths: ['spikes/selow-vs-xdp/**', '.github/workflows/spike-selow-vs-xdp.yml']
+    paths:
+      - 'spikes/selow-vs-xdp/**'
+      - '!spikes/selow-vs-xdp/RESULT.md'
+      - '!spikes/selow-vs-xdp/results/**'
+      - '.github/workflows/spike-selow-vs-xdp.yml'
   workflow_dispatch:
 
 concurrency:
