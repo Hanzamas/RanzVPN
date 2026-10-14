@@ -74,7 +74,7 @@ jobs:
       shell: cmd
     # Every unused or unreachable code warning of the build (cmake/RanzWarnings.cmake), de-duplicated:
     # in the job log under "=== unused-code report ===", in the job summary and as an artifact.
-    # Informational: the warnings do not fail the build yet.
+    # The kinds in RANZ_UNUSED_ERROR_FLAGS are errors and fail the Build step; the rest are informational.
     - name: Unused-code report
       if: ${{ !cancelled() }}
       shell: pwsh
