@@ -362,9 +362,6 @@ CT_i_max_groups_per_hub	Jumlah Grup Maksimum per Virtual Hub
 CT_i_max_access_lists	Jumlah Daftar Akses Maksimum per Virtual Hub
 CT_i_max_mac_tables		Jumlah Entri Alamat MAC Maksimum per Virtual Hub
 CT_i_max_ip_tables		Jumlah Entri Alamat IP Maksimum per Virtual Hub
-CT_i_max_l3_sw			Jumlah Virtual Layer 3 Switch Maksimum
-CT_i_max_l3_if			Jumlah Antarmuka Virtual per Layer 3 Switch Maksimum
-CT_i_max_l3_table		Jumlah Tabel Routing per Layer 3 Switch Maksimum
 CT_b_bridge				Berfungsi sebagai Software VPN Bridge
 CT_b_standalone			Mode Standalone
 CT_b_vpn_client_connect	Menerima Koneksi dari VPN Client / Bridge
@@ -379,7 +376,6 @@ CT_b_support_config_rw	Pembacaan dan Penulisan Jarak Jauh untuk File Konfigurasi
 CT_b_support_hub_admin_option	Opsi Administrasi Virtual Hub Didukung
 CT_b_support_cascade_client_cert	Sertifikat Klien untuk Koneksi Cascade Didukung
 CT_b_support_hide_hub	Pengaturan Penyembunyian Virtual Hub Didukung
-CT_b_support_layer3		Virtual Layer 3 Switch Didukung
 CT_b_support_crl		Daftar Pencabutan Sertifikat Khusus Virtual Hub Didukung
 CT_b_support_ac			Daftar Batas Alamat IP Sumber Khusus Virtual Hub Didukung
 CT_b_support_read_log	Pengunduhan File Log Didukung
@@ -772,7 +768,6 @@ SM_SESS_LINK			Koneksi Cascade
 SM_SESS_LINK_HOSTNAME	Virtual Host
 SM_SESS_LINK_TCP		Tidak Ada
 SM_SESS_BRIDGE_HOSTNAME	Ethernet Bridge
-SM_SESS_LAYER3_HOSTNAME	Switch Layer 3 Virtual
 SM_SESS_BRIDGE_TCP		Tidak Ada
 SM_SESS_STATUS_USERNAME	Nama Pengguna (Otentikasi)
 SM_SESS_STATUS_REALUSER	Nama Pengguna (Database)
@@ -812,20 +807,6 @@ SM_BRIDGE_OFFLINE		Offline
 SM_BRIDGE_ONLINE		Beroperasi
 SM_BRIDGE_ERROR			Error
 SM_BRIDGE_INTEL			Saat kondisi terjadi segera setelah koneksi jembatan baru dibuat saat menjembatani ke adaptor jaringan fisik, tergantung pada jenis adaptor jaringan, terkadang tidak memungkinkan untuk berkomunikasi menggunakan TCP/IP dengan adaptor jaringan melalui koneksi jembatan dari komputer di jaringan virtual. \r\n(Penemuan ini diketahui terjadi pada adaptor jaringan Intel dan Broadcom.) \r\n\r\n\r\nJika masalah ini muncul, perbaiki situasinya dengan merestart komputer tempat VPN Server / Bridge dijalankan. Komunikasi normal akan mungkin setelah komputer merestart. \r\n\r\n\r\nSelain itu banyak adaptor jaringan nirkabel yang tidak merespon pengiriman paket dalam mode promiscuous, dan saat hal ini terjadi Anda tidak dapat menggunakan Jembatan Lokal. Jika masalah ini terjadi, coba gunakan adaptor jaringan kabel biasa alih-alih adaptor jaringan nirkabel.
-SM_L3_SW_COLUMN1		Nama Switch Layer 3
-SM_L3_SW_COLUMN2		Status Berjalan
-SM_L3_SW_COLUMN3		Antarmuka
-SM_L3_SW_COLUMN4		Tabel Routing
-SM_L3_SW_ST_F_F			Stop
-SM_L3_SW_ST_T_F			Mulai (Error) 
-SM_L3_SW_ST_T_T			Mulai (Berjalan)
-SM_L3_SW_IF_COLUMN1		Alamat IP
-SM_L3_SW_IF_COLUMN2		Subnet Mask
-SM_L3_SW_IF_COLUMN3		Nama Virtual Hub
-SM_L3_SW_TABLE_COLUMN1	Alamat Jaringan
-SM_L3_SW_TABLE_COLUMN2	Subnet Mask
-SM_L3_SW_TABLE_COLUMN3	Alamat Gateway
-SM_L3_SW_TABLE_COLUMN4	Metrik
 SM_CRL_COLUMN_1			Ringkasan Sertifikat
 SM_AC_COLUMN_1			ID
 SM_AC_COLUMN_2			Prioritas
@@ -1033,14 +1014,6 @@ LA_GET_CONFIG			File konfigurasi telah dibaca.
 LA_SET_CONFIG			File konfigurasi telah ditulis. Memulai ulang VPN Server.
 LA_SET_HUB_ADMIN_OPTION	Pengaturan administrasi telah ditetapkan untuk Virtual Hub "%S".
 LA_SET_HUB_EXT_OPTION	Pengaturan Opsi Ekstensi Virtual Hub telah ditetapkan untuk Virtual Hub "%S".
-LA_ADD_L3_SW			Virtual Layer 3 Switch "%S" telah dibuat pada server.
-LA_DEL_L3_SW			Virtual Layer 3 Switch "%S" telah dihapus dari server.
-LA_START_L3_SW			Virtual Layer 3 Switch "%S" telah dimulai.
-LA_STOP_L3_SW			Virtual Layer 3 Switch "%S" telah dihentikan.
-LA_ADD_L3_IF			Antarmuka virtual untuk Virtual Hub "%S" telah ditambahkan ke Virtual Layer 3 Switch "%S".
-LA_DEL_L3_IF			Antarmuka virtual untuk Virtual Hub "%S" telah dihapus dari Virtual Layer 3 Switch "%S".
-LA_ADD_L3_TABLE			Tabel routing untuk jaringan "%S" telah ditambahkan ke Virtual Layer 3 Switch "%S".
-LA_DEL_L3_TABLE			Tabel routing untuk jaringan "%S" telah dihapus dari Virtual Layer 3 Switch "%S".
 LA_ADD_CRL				Sertifikat telah ditambahkan ke Daftar Pencabutan Sertifikat (CRL).
 LA_DEL_CRL				Sertifikat telah dihapus dari Daftar Pencabutan Sertifikat (CRL).
 LA_SET_CRL				Item yang terdaftar dalam daftar sertifikat yang tidak sah telah diedit.
@@ -1050,13 +1023,6 @@ LA_READ_LOG_FILE		File log pada server "%S" (file log "%S") telah diunduh.
 LE_START				Memantau direktori "%S". Jika jumlah ruang disk yang tersedia menjadi kurang dari %S, file cadangan untuk file log dan konfigurasi yang disimpan di sub-direktori direktori ini akan secara otomatis dihapus berdasarkan urutan file tertua terlebih dahulu. Jumlah ruang disk kosong yang menentukan kapan penghapusan dimulai dapat diubah dengan mengubah item "AutoDeleteCheckDiskFreeSpaceMin" di file konfigurasi.
 LE_DELETE				Ruang disk kosong sekarang kurang dari %S sehingga file lama "%S" telah dihapus secara otomatis. Jumlah ruang disk kosong yang menentukan kapan penghapusan dimulai dapat diubah dengan mengubah item "AutoDeleteCheckDiskFreeSpaceMin" di file konfigurasi.
 LE_NOT_ENOUGH_FREE		<<PERINGATAN>> Jika ruang disk kosong menjadi lebih rendah dari %S, maka tidak akan mungkin lagi menghapus file cadangan lama dari file log dan konfigurasi secara otomatis. Kami menyarankan Anda untuk segera menghapus file yang tidak diperlukan secara manual di komputer ini dan memulihkan ruang disk kosong yang diperlukan. Ketika ada sangat sedikit ruang disk kosong, operasi komputer bisa menjadi tidak stabil.
-
-# (Layer 3 Switch log)
-L3_SWITCH_START			Switch Lapisan 3 Virtual "%S" dimulai. Ia akan menunggu hingga Virtual Hub dari semua antarmuka yang terdaftar pada switch ini menjadi online dan kemudian akan memulai operasi.
-L3_SWITCH_ONLINE		Virtual Hub dari semua antarmuka pada Switch Lapisan 3 Virtual "%S" sudah online dan Switch Lapisan 3 Virtual telah memulai operasi Switch Lapisan 3 Virtual.
-L3_SWITCH_OFFLINE		Salah satu Virtual Hub dari antarmuka yang terdaftar pada Switch Lapisan 3 Virtual "%S" berhenti, dan operasi Switch Lapisan 3 Virtual telah dihentikan.
-L3_SWITCH_STOP			Switch Lapisan 3 Virtual "%S" dihentikan.
-
 
 ###########################################################################
 #                                                                         #
@@ -1132,8 +1098,6 @@ CMD_EVAL_PORT			Nomor port tidak valid. Tentukan nomor port yang berada dalam re
 CMD_CT_STD_COLUMN_1		Item
 CMD_CT_STD_COLUMN_2		Nilai
 CMD_CT_STD_COLUMN_3		Deskripsi
-CMD_PARSE_IP_SUBNET_ERROR_1	Tentukan dalam format "alamat IPv4/masker subnet". \nTentukan alamat IPv4 dengan memisahkan nilai desimal menggunakan titik seperti "192.168.0.1". Untuk masker subnet, tentukan nilai desimal yang dipisahkan dengan titik seperti "255.255.255.0", atau Anda dapat menentukan panjang bit masker subnet menggunakan nilai desimal seperti 24. \nUntuk menentukan host berdiri sendiri, tentukan masker subnet sebagai "255.255.255.255" atau "32". \n(Contoh)\n 192.168.0.1/24\n 192.168.0.1/255.255.255.0\n192.168.0.5/255.255.255.255\n\n
-CMD_PARSE_IP_SUBNET_ERROR_2	Alamat IP yang ditentukan bukan alamat jaringan.
 CMD_EVAL_DATE_TIME_FAILED	Spesifikasi tanggal dan waktu tidak valid. \nTanggal dan waktu harus dalam format yang sama dengan "2005/10/08 19:30:00" di mana 6 angka ditentukan, mewakili tahun/bulan/hari jam:menit:detik yang dipisahkan dengan garis miring, sebuah spasi, dan kemudian tanda titik dua. Tentukan 4 digit untuk tahun.
 CMD_PARSE_IP_MASK_ERROR_1_6	Tentukan dalam format "alamat IPv6/masker". \nTentukan alamat IPv6 dengan memisahkan nilai heksadesimal menggunakan tanda titik dua seperti "2001:200:0:1::". Untuk masker, tentukan nilai heksadesimal yang dipisahkan dengan titik dua seperti "ffff:ffff:ffff:ffff::", atau Anda dapat menentukan panjang bit masker menggunakan nilai desimal seperti 64. \nUntuk menentukan host berdiri sendiri, tentukan masker sebagai "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff" atau "128". \n(Contoh)\n2001:200:0:1::/64\n2001:200:0:1::/ffff:ffff:ffff:ffff::\n2001:200:0:1::5/12\n\n
 CMD_PARSE_IP_MASK_ERROR_1	Tentukan dalam format "alamat IPv4/masker". \nTentukan alamat IPv4 dengan memisahkan nilai desimal menggunakan titik seperti "192.168.0.1". Untuk masker, tentukan nilai desimal yang dipisahkan dengan titik seperti "255.255.255.0", atau Anda dapat menentukan panjang bit masker menggunakan nilai desimal seperti 24. \nUntuk menentukan host berdiri sendiri, tentukan masker sebagai "255.255.255.255" atau "32". \n(Contoh)\n 192.168.0.1/24\n 192.168.0.1/255.255.255.0\n192.168.0.5/255.255.255.255\n\n
@@ -1482,104 +1446,6 @@ CMD_ConfigSet_Args		ConfigSet [path]
 CMD_ConfigSet_[path]		Tentukan nama file dari file konfigurasi tujuan untuk ditulis. Jika file tujuan mengandung karakter multi-byte, encoding harus menggunakan format Unicode (UTF-8).
 CMD_ConfigSet_PROMPT_PATH	Nama jalur file konfigurasi untuk diunggah ke server: 
 CMD_ConfigSet_FILE_LOAD_FAILED	Gagal membaca dari file yang ditentukan.
-
-
-# RouterList command
-CMD_RouterList			Mendapatkan Daftar Virtual Layer 3 Switch
-CMD_RouterList_Help	    Gunakan ini untuk mendapatkan daftar Virtual Layer 3 Switch yang didefinisikan di VPN Server. Anda dapat memperoleh informasi berikut tentang Virtual Layer 3 Switch: Nama Switch, Status Operasi, Jumlah Antarmuka, dan Jumlah Tabel Routing. \nUntuk menjalankan perintah ini, Anda harus memiliki hak administrator VPN Server. \nSelain itu, perintah ini tidak berfungsi pada VPN Bridge.
-CMD_RouterList_Args	    RouterList
-
-
-# RouterAdd command
-CMD_RouterAdd			Menentukan Virtual Layer 3 Switch Baru
-CMD_RouterAdd_Help	    Gunakan ini untuk menentukan Virtual Layer 3 Switch baru di VPN Server. \nUntuk menjalankan perintah ini, Anda harus memiliki hak administrator VPN Server. \nSelain itu, perintah ini tidak berfungsi pada VPN Bridge. \n\n[Penjelasan tentang Fungsi Virtual Layer 3 Switch]\nAnda dapat menentukan Virtual Layer 3 Switch di antara beberapa Virtual Hub yang beroperasi di VPN Server ini dan mengonfigurasi routing antar jaringan IP yang berbeda. \n\n[Perhatian tentang Fungsi Virtual Layer 3 Switch]\nFungsi Virtual Layer 3 Switch disediakan untuk administrator jaringan dan orang-orang lain yang memiliki pengetahuan luas tentang jaringan dan routing IP. Jika Anda menggunakan fungsi VPN biasa, Anda tidak perlu menggunakan fungsi Virtual Layer 3 Switch. \nJika fungsi Virtual Layer 3 Switch akan digunakan, orang yang mengonfigurasikannya harus memiliki pengetahuan yang cukup tentang routing IP dan benar-benar mampu menghindari dampak negatif pada jaringan.
-CMD_RouterAdd_Args	    RouterAdd [name]
-CMD_RouterAdd_[name]    Gunakan ini untuk menentukan nama Virtual Layer 3 Switch baru yang dibuat. Anda tidak dapat menambahkan nama yang identik dengan Virtual Layer 3 Switch yang sudah ada.
-CMD_RouterAdd_PROMPT_NAME	Nama Virtual Layer 3 Switch yang Akan Dibuat:
-
-
-# RouterDelete command
-CMD_RouterDelete		Menghapus Virtual Layer 3 Switch
-CMD_RouterDelete_Help	Gunakan ini untuk menghapus Virtual Layer 3 Switch yang sudah ada dan didefinisikan di VPN Server. Ketika Virtual Layer 3 Switch yang ditentukan sedang beroperasi, akan otomatis dihapus setelah operasinya berhenti. \nUntuk mendapatkan daftar Virtual Layer 3 Switch yang ada, gunakan perintah RouterList. \nUntuk menjalankan perintah ini, Anda harus memiliki hak administrator VPN Server. \nSelain itu, perintah ini tidak berfungsi pada VPN Bridge.
-CMD_RouterDelete_Args	RouterDelete [name]
-CMD_RouterDelete_[name]	Gunakan ini untuk menentukan nama Virtual Layer 3 Switch yang akan dihapus.
-CMD_RouterDelete_PROMPT_NAME	Nama Virtual Layer 3 Switch yang Akan Dihapus:
-
-
-# RouterStart command
-CMD_RouterStart			Mulai Operasi Virtual Layer 3 Switch
-CMD_RouterStart_Help	Gunakan ini untuk memulai operasi Virtual Layer 3 Switch yang sudah ada dan didefinisikan di VPN Server yang operasinya saat ini dihentikan. \nUntuk mendapatkan daftar Virtual Layer 3 Switch yang ada, gunakan perintah RouterList. \nUntuk menjalankan perintah ini, Anda harus memiliki hak administrator VPN Server. \nSelain itu, perintah ini tidak berfungsi pada VPN Bridge. \n\n[Penjelasan tentang Fungsi Virtual Layer 3 Switch]\nAnda dapat menentukan Virtual Layer 3 Switch di antara beberapa Virtual Hub yang beroperasi di VPN Server ini dan mengonfigurasi routing antar jaringan IP yang berbeda. \n\n[Perhatian tentang Fungsi Virtual Layer 3 Switch]\nFungsi Virtual Layer 3 Switch disediakan untuk administrator jaringan dan orang-orang lain yang memiliki pengetahuan luas tentang jaringan dan routing IP. Jika Anda menggunakan fungsi VPN biasa, Anda tidak perlu menggunakan fungsi Virtual Layer 3 Switch. \nJika fungsi Virtual Layer 3 Switch akan digunakan, orang yang mengonfigurasikannya harus memiliki pengetahuan yang cukup tentang routing IP dan benar-benar mampu menghindari dampak negatif pada jaringan.
-CMD_RouterStart_Args	RouterStart [name]
-CMD_RouterStart_[name]	Gunakan ini untuk menentukan nama Virtual Layer 3 Switch yang akan dimulai.
-CMD_RouterStart_PROMPT_NAME	Nama Virtual Layer 3 Switch yang Akan Dimulai:
-
-
-# RouterStop command
-CMD_RouterStop			Menghentikan Operasi Virtual Layer 3 Switch
-CMD_RouterStop_Help		Gunakan ini untuk menghentikan operasi Virtual Layer 3 Switch yang sudah ada dan didefinisikan di VPN Server yang saat ini sedang beroperasi. \nUntuk mendapatkan daftar Virtual Layer 3 Switch yang ada, gunakan perintah RouterList. \nUntuk menjalankan perintah ini, Anda harus memiliki hak administrator VPN Server.
-CMD_RouterStop_Args		RouterStop [name]
-CMD_RouterStop_[name]	Gunakan ini untuk menentukan nama Virtual Layer 3 Switch yang akan dihentikan.
-CMD_RouterStop_PROMPT_NAME	Nama Virtual Layer 3 Switch yang Akan Dihentikan:
-
-
-# RouterIfList command
-CMD_RouterIfList		Mendapatkan Daftar Antarmuka yang Terdaftar di Virtual Layer 3 Switch
-CMD_RouterIfList_Help	Gunakan ini untuk mendapatkan daftar antarmuka virtual ketika antarmuka virtual telah didefinisikan pada Virtual Layer 3 Switch yang ditentukan. \nAnda dapat mendefinisikan beberapa antarmuka virtual dan tabel routing untuk satu Virtual Layer 3 Switch. \nSebuah antarmuka virtual dikaitkan dengan Virtual Hub dan beroperasi sebagai satu host IP pada Virtual Hub ketika Virtual Hub tersebut beroperasi. Ketika beberapa antarmuka virtual yang masing-masing berasal dari jaringan IP yang berbeda dari Virtual Hub yang berbeda telah didefinisikan, routing IP akan secara otomatis dilakukan di antara antarmuka ini. \nUntuk menjalankan perintah ini, Anda harus memiliki hak administrator VPN Server. \nSelain itu, perintah ini tidak berfungsi pada VPN Bridge.
-CMD_RouterIfList_Args	RouterIfList [name]
-CMD_RouterIfList_[name]	Gunakan ini untuk menentukan nama Virtual Layer 3 Switch.
-CMD_RouterIfList_PROMPT_NAME	Nama Virtual Layer 3 Switch:
-
-
-# RouterIfAdd command
-CMD_RouterIfAdd			Menambahkan Antarmuka Virtual ke Virtual Layer 3 Switch
-CMD_RouterIfAdd_Help	Gunakan ini untuk menambahkan antarmuka virtual yang terhubung ke Virtual Hub yang beroperasi di VPN Server yang sama ke Virtual Layer 3 Switch yang ditentukan. \nAnda dapat mendefinisikan beberapa antarmuka virtual dan tabel routing untuk satu Virtual Layer 3 Switch. \nSebuah antarmuka virtual dikaitkan dengan Virtual Hub dan beroperasi sebagai satu host IP pada Virtual Hub ketika Virtual Hub tersebut beroperasi. Ketika beberapa antarmuka virtual yang masing-masing berasal dari jaringan IP yang berbeda dari Virtual Hub yang berbeda telah didefinisikan, routing IP akan secara otomatis dilakukan di antara antarmuka ini. \nAnda harus mendefinisikan ruang jaringan IP tempat antarmuka virtual berada dan alamat IP dari antarmuka itu sendiri. \nSelain itu, Anda harus menentukan nama Virtual Hub yang akan dihubungkan oleh antarmuka tersebut. \nAnda dapat menentukan nama Virtual Hub yang saat ini belum ada. \nAntarmuka virtual harus memiliki satu alamat IP di Virtual Hub. Anda juga harus menentukan subnet mask dari jaringan IP tempat alamat IP tersebut berada. \nRouting melalui Virtual Layer 3 Switch dari ruang IP beberapa Virtual Hub beroperasi berdasarkan alamat IP yang ditentukan di sini. \nUntuk menjalankan perintah ini, Anda harus memiliki hak administrator VPN Server. \nSelain itu, perintah ini tidak berfungsi pada VPN Bridge. \nUntuk menjalankan perintah ini, Virtual Layer 3 Switch target harus dalam keadaan berhenti. Jika belum berhenti, gunakan terlebih dahulu perintah RouterStop untuk menghentikannya dan kemudian jalankan perintah ini.
-CMD_RouterIfAdd_Args	RouterIfAdd [name] [/HUB:hub] [/IP:ip/mask]
-CMD_RouterIfAdd_[name]	Gunakan ini untuk menentukan nama Virtual Layer 3 Switch.
-CMD_RouterIfAdd_HUB		Gunakan ini untuk menentukan nama Virtual Hub yang menjadi tujuan koneksi antarmuka virtual yang akan ditambahkan. Untuk mendapatkan daftar Virtual Hub, Anda dapat menggunakan perintah HubList. Tidak wajib untuk menentukan Virtual Hub yang sedang beroperasi. Jika Anda menentukan nama Virtual Hub yang saat ini tidak beroperasi atau belum ada, Virtual Layer 3 Switch akan diaktifkan ketika operasi nyata dari Virtual Hub tersebut dimulai.
-CMD_RouterIfAdd_IP		Menggunakan format: "alamat IP/subnet mask", tentukan alamat IP dan subnet mask yang dimiliki oleh antarmuka virtual yang akan ditambahkan. Tentukan alamat IP dengan memisahkan nilai desimal menggunakan titik, seperti 192.168.0.1. Untuk subnet mask, Anda dapat menentukan nilai desimal yang dipisahkan titik seperti 255.255.255.0, atau Anda dapat menentukan panjang bit dari header menggunakan nilai desimal seperti 24.
-CMD_RouterIfAdd_PROMPT_NAME	Nama Virtual Layer 3 Switch:
-CMD_RouterIfAdd_PROMPT_HUB	Nama Virtual Hub Tujuan dari Antarmuka Virtual:
-CMD_RouterIfAdd_PROMPT_IP	Alamat IP/Subnet Mask:
-
-
-# RouterIfDel command
-CMD_RouterIfDel			Menghapus Antarmuka Virtual dari Virtual Layer 3 Switch
-CMD_RouterIfDel_Help	Gunakan ini untuk menghapus antarmuka virtual yang sudah didefinisikan di Virtual Layer 3 Switch yang ditentukan. \nAnda dapat mendapatkan daftar antarmuka virtual yang saat ini didefinisikan, dengan menggunakan perintah RouterIfList. \nUntuk menjalankan perintah ini, Anda harus memiliki hak administrator VPN Server. \nSelain itu, perintah ini tidak berfungsi pada VPN Bridge. \nUntuk menjalankan perintah ini, Virtual Layer 3 Switch target harus dalam keadaan berhenti. Jika belum berhenti, gunakan terlebih dahulu perintah RouterStop untuk menghentikannya dan kemudian jalankan perintah ini.
-CMD_RouterIfDel_Args	RouterIfDel [name] [/HUB:hub]
-CMD_RouterIfDel_[name]	Gunakan ini untuk menentukan nama Virtual Layer 3 Switch.
-CMD_RouterIfDel_HUB		Gunakan ini untuk menentukan nama Virtual Hub yang menjadi tujuan koneksi antarmuka virtual yang akan dihapus.
-
-
-# RouterTableList command
-CMD_RouterTableList		Mendapatkan Daftar Tabel Routing dari Virtual Layer 3 Switch
-CMD_RouterTableList_Help	Gunakan ini untuk mendapatkan daftar tabel routing ketika tabel routing telah didefinisikan pada Virtual Layer 3 Switch yang ditentukan. \nJika alamat IP tujuan dari paket IP tidak termasuk dalam jaringan IP yang dimiliki oleh antarmuka virtual manapun, mesin routing IP dari Virtual Layer 3 Switch akan merujuk tabel routing ini dan menjalankan routing. \nUntuk menjalankan perintah ini, Anda harus memiliki hak administrator VPN Server. \nSelain itu, perintah ini tidak berfungsi pada VPN Bridge.
-CMD_RouterTableList_Args	RouterTableList [name]
-CMD_RouterTableList_[name]	Gunakan ini untuk menentukan nama Virtual Layer 3 Switch.
-CMD_RouterTableList_PROMPT_NAME	Nama Virtual Layer 3 Switch:
-
-
-# RouterTableAdd command
-CMD_RouterTableAdd		Menambahkan Entri Tabel Routing untuk Virtual Layer 3 Switch
-CMD_RouterTableAdd_Help	Di sini Anda dapat menambahkan entri tabel routing baru ke tabel routing Virtual Layer 3 Switch yang ditentukan. \nJika alamat IP tujuan dari paket IP tidak termasuk dalam jaringan IP yang dimiliki oleh antarmuka virtual manapun, mesin routing IP dari Virtual Layer 3 Switch akan merujuk tabel routing ini dan menjalankan routing. \nAnda harus menentukan isi entri tabel routing yang akan ditambahkan ke Virtual Layer 3 Switch. Anda harus menentukan alamat IP yang termasuk dalam jaringan IP yang sama di antarmuka virtual dari Virtual Layer 3 Switch ini sebagai alamat gateway. \nUntuk menjalankan perintah ini, Anda harus memiliki hak administrator VPN Server. \nSelain itu, perintah ini tidak berfungsi pada VPN Bridge. \nUntuk menjalankan perintah ini, Virtual Layer 3 Switch target harus dalam keadaan berhenti. Jika belum berhenti, gunakan terlebih dahulu perintah RouterStop untuk menghentikannya dan kemudian jalankan perintah ini.
-CMD_RouterTableAdd_Args	RouterTableAdd [name] [/NETWORK:ip/mask] [/GATEWAY:gwip] [/METRIC:metric]
-CMD_RouterTableAdd_[name]	Gunakan ini untuk menentukan nama Virtual Layer 3 Switch.
-CMD_RouterTableAdd_NETWORK	Menggunakan format: "alamat IP/subnet mask", tentukan alamat jaringan dan subnet mask dari entri tabel routing yang akan ditambahkan. Tentukan alamat jaringan dengan memisahkan nilai desimal menggunakan titik, seperti "192.168.0.1". Untuk subnet mask, tentukan nilai desimal yang dipisahkan titik seperti 255.255.255.0, atau Anda dapat menentukan panjang bit dari header menggunakan nilai desimal seperti 24. Jika Anda menentukan 0.0.0.0/0.0.0.0, maka jalur default akan digunakan.
-CMD_RouterTableAdd_GATEWAY	Tentukan alamat IP gateway.
-CMD_RouterTableAdd_METRIC	Tentukan nilai metric. Tentukan sebuah bilangan bulat (1 atau lebih).
-CMD_RouterTableAdd_PROMPT_NAME	Nama Virtual Layer 3 Switch:
-CMD_RouterTableAdd_PROMPT_NETWORK	Alamat Jaringan/Subnet Mask:
-CMD_RouterTableAdd_PROMPT_GATEWAY	Alamat Gateway:
-CMD_RouterTableAdd_PROMPT_METRIC	Nilai Metric:
-
-
-# RouterTableDel command
-CMD_RouterTableDel		Menghapus Entri Tabel Routing dari Virtual Layer 3 Switch
-CMD_RouterTableDel_Help	Gunakan ini untuk menghapus entri tabel routing yang didefinisikan di Virtual Layer 3 Switch yang ditentukan. \nAnda dapat mendapatkan daftar entri tabel routing yang sudah didefinisikan dengan menggunakan perintah RouterTableList. \nUntuk menjalankan perintah ini, Anda harus memiliki hak administrator VPN Server. \nSelain itu, perintah ini tidak berfungsi pada VPN Bridge. \nUntuk menjalankan perintah ini, Virtual Layer 3 Switch target harus dalam keadaan berhenti. Jika belum berhenti, gunakan terlebih dahulu perintah RouterStop untuk menghentikannya dan kemudian jalankan perintah ini.
-CMD_RouterTableDel_Args	RouterTableDel [name] [/NETWORK:ip/mask] [/GATEWAY:gwip] [/METRIC:metric]
-CMD_RouterTableDel_[name]	Gunakan ini untuk menentukan nama Virtual Layer 3 Switch.
-CMD_RouterTableDel_NETWORK	Menggunakan format: "alamat IP/subnet mask", tentukan alamat jaringan dari entri tabel routing yang akan dihapus.
-CMD_RouterTableDel_GATEWAY	Tentukan alamat IP gateway.
-CMD_RouterTableDel_METRIC	Tentukan nilai metric. Tentukan sebuah bilangan bulat (1 atau lebih).
 
 
 # LogFileList command
@@ -2793,7 +2659,6 @@ TTC_COMM_START			\nSemua koneksi telah didirikan dan transfer data dimulai. \nWa
 TTC_COMM_END			Sudah %.1f detik atau lebih berlalu, maka komunikasi data akan berakhir. \n\n
 TTC_COMM_USER_CANCEL	Karena pembatalan oleh pengguna, komunikasi data akan berakhir. \n\n
 TTC_COMM_DISCONNECTED	Koneksi TCP %u telah terputus.
-TTC_STOPPING			Memberhentikan operasi alat pengukuran throughput komunikasi klien...
 TTC_RES_TITLE			\n\nAlat Uji Kecepatan Lalu Lintas Jaringan\n\n
 TTC_RES_COLUMN_1		Nama Item
 TTC_RES_COLUMN_2		Tampilan Normal

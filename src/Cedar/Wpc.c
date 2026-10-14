@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
-
 // Wpc.c
 // RPC over HTTP
 
@@ -11,515 +7,15 @@
 #include "Protocol.h"
 
 #include "Mayaqua/DNS.h"
-#include "Mayaqua/Encoding.h"
 #include "Mayaqua/Memory.h"
-#include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Pack.h"
 #include "Mayaqua/Proxy.h"
 #include "Mayaqua/Str.h"
 
-// Get whether the proxy server is specified by a private IP
-bool IsProxyPrivateIp(INTERNET_SETTING *s)
-{
-	IP ip;
-	// Validate arguments
-	if (s == NULL)
-	{
-		return false;
-	}
-
-	if (s->ProxyType == PROXY_DIRECT)
-	{
-		return false;
-	}
-
-	if (GetIP(&ip, s->ProxyHostName) == false)
-	{
-		return false;
-	}
-
-	if (IsIPPrivate(&ip))
-	{
-		return true;
-	}
-
-	if (IsIPMyHost(&ip))
-	{
-		return true;
-	}
-
-	if (IsLocalHostIP(&ip))
-	{
-		return true;
-	}
-
-	return false;
-}
-
-// Call
-PACK *WpcCall(char *url, INTERNET_SETTING *setting, UINT timeout_connect, UINT timeout_comm,
-			  char *function_name, PACK *pack, X *cert, K *key, void *sha1_cert_hash)
-{
-	return WpcCallEx(url, setting, timeout_connect, timeout_comm, function_name, pack, cert, key,
-		sha1_cert_hash, NULL, 0, NULL, NULL);
-}
-PACK *WpcCallEx(char *url, INTERNET_SETTING *setting, UINT timeout_connect, UINT timeout_comm,
-				char *function_name, PACK *pack, X *cert, K *key, void *sha1_cert_hash, bool *cancel, UINT max_recv_size,
-				char *additional_header_name, char *additional_header_value)
-{
-	return WpcCallEx2(url, setting, timeout_connect, timeout_comm, function_name, pack,
-		cert, key, sha1_cert_hash, (sha1_cert_hash == NULL ? 0 : 1),
-		cancel, max_recv_size, additional_header_name, additional_header_value, NULL);
-}
-PACK *WpcCallEx2(char *url, INTERNET_SETTING *setting, UINT timeout_connect, UINT timeout_comm,
-				char *function_name, PACK *pack, X *cert, K *key, void *sha1_cert_hash, UINT num_hashes, bool *cancel, UINT max_recv_size,
-				char *additional_header_name, char *additional_header_value, char *sni_string)
-{
-	URL_DATA data;
-	BUF *b, *recv;
-	UINT error;
-	WPC_PACKET packet;
-	// Validate arguments
-	if (function_name == NULL || pack == NULL)
-	{
-		return PackError(ERR_INTERNAL_ERROR);
-	}
-
-	if (ParseUrl(&data, url, true, NULL) == false)
-	{
-		return PackError(ERR_INTERNAL_ERROR);
-	}
-
-	PackAddStr(pack, "function", function_name);
-
-	b = WpcGeneratePacket(pack, cert, key);
-	if (b == NULL)
-	{
-		return PackError(ERR_INTERNAL_ERROR);
-	}
-
-	SeekBuf(b, b->Size, 0);
-	WriteBufInt(b, 0);
-	SeekBuf(b, 0, 0);
-
-	if (IsEmptyStr(additional_header_name) == false && IsEmptyStr(additional_header_value) == false)
-	{
-		StrCpy(data.AdditionalHeaderName, sizeof(data.AdditionalHeaderName), additional_header_name);
-		StrCpy(data.AdditionalHeaderValue, sizeof(data.AdditionalHeaderValue), additional_header_value);
-	}
-
-	if (sni_string != NULL && IsEmptyStr(sni_string) == false)
-	{
-		StrCpy(data.SniString, sizeof(data.SniString), sni_string);
-	}
-
-	recv = HttpRequestEx3(&data, setting, timeout_connect, timeout_comm, &error,
-		false, b->Buf, NULL, NULL, sha1_cert_hash, num_hashes, cancel, max_recv_size,
-		NULL, NULL);
-
-	FreeBuf(b);
-
-	if (recv == NULL)
-	{
-		return PackError(error);
-	}
-
-	if (WpcParsePacket(&packet, recv) == false)
-	{
-		FreeBuf(recv);
-		return PackError(ERR_PROTOCOL_ERROR);
-	}
-
-	FreeBuf(recv);
-
-	FreeX(packet.Cert);
-
-	return packet.Pack;
-}
-
-// Release the packet
-void WpcFreePacket(WPC_PACKET *packet)
-{
-	// Validate arguments
-	if (packet == NULL)
-	{
-		return;
-	}
-
-	FreePack(packet->Pack);
-	FreeX(packet->Cert);
-}
-
-// Parse the packet
-bool WpcParsePacket(WPC_PACKET *packet, BUF *buf)
-{
-	LIST *o;
-	BUF *b;
-	bool ret = false;
-	UCHAR hash[SHA1_SIZE];
-	// Validate arguments
-	if (packet == NULL || buf == NULL)
-	{
-		return false;
-	}
-
-	Zero(packet, sizeof(WPC_PACKET));
-
-	o = WpcParseDataEntry(buf);
-
-	b = WpcDataEntryToBuf(WpcFindDataEntry(o, "PACK"));
-	if (b != NULL)
-	{
-		Sha1(hash, b->Buf, b->Size);
-
-		packet->Pack = BufToPack(b);
-		FreeBuf(b);
-
-		if (packet->Pack != NULL)
-		{
-			BUF *b;
-
-			ret = true;
-
-			b = WpcDataEntryToBuf(WpcFindDataEntry(o, "HASH"));
-
-			if (b != NULL)
-			{
-				if (b->Size != SHA1_SIZE || Cmp(b->Buf, hash, SHA1_SIZE) != 0)
-				{
-					ret = false;
-					FreePack(packet->Pack);
-				}
-				else
-				{
-					BUF *b;
-
-					Copy(packet->Hash, hash, SHA1_SIZE);
-
-					b = WpcDataEntryToBuf(WpcFindDataEntry(o, "CERT"));
-
-					if (b != NULL)
-					{
-						X *cert = BufToX(b, false);
-						if (cert == NULL)
-						{
-							ret = false;
-							FreePack(packet->Pack);
-						}
-						else
-						{
-							BUF *b = WpcDataEntryToBuf(WpcFindDataEntry(o, "SIGN"));
-
-							if (b == NULL || (b->Size != 128))
-							{
-								ret = false;
-								FreeX(cert);
-								FreePack(packet->Pack);
-							}
-							else
-							{
-								K *k = GetKFromX(cert);
-
-								if (RsaVerify(hash, SHA1_SIZE, b->Buf, k) == false)
-								{
-									ret = false;
-									FreeX(cert);
-									FreePack(packet->Pack);
-								}
-								else
-								{
-									packet->Cert = cert;
-									Copy(packet->Sign, b->Buf, 128);
-								}
-
-								FreeK(k);
-							}
-
-							FreeBuf(b);
-						}
-						FreeBuf(b);
-					}
-				}
-				FreeBuf(b);
-			}
-		}
-	}
-
-	WpcFreeDataEntryList(o);
-
-	return ret;
-}
-
-// Generate the packet
-BUF *WpcGeneratePacket(PACK *pack, X *cert, K *key)
-{
-	UCHAR hash[SHA1_SIZE];
-	BUF *pack_data;
-	BUF *cert_data = NULL;
-	BUF *sign_data = NULL;
-	BUF *b;
-	// Validate arguments
-	if (pack == NULL)
-	{
-		return NULL;
-	}
-
-	pack_data = PackToBuf(pack);
-	Sha1(hash, pack_data->Buf, pack_data->Size);
-
-	if (cert != NULL && key != NULL)
-	{
-		UCHAR sign[128];
-		cert_data = XToBuf(cert, false);
-
-		RsaSign(sign, hash, sizeof(hash), key);
-
-		sign_data = NewBuf();
-		WriteBuf(sign_data, sign, sizeof(sign));
-		SeekBuf(sign_data, 0, 0);
-	}
-
-	b = NewBuf();
-
-	WpcAddDataEntryBin(b, "PACK", pack_data->Buf, pack_data->Size);
-	WpcAddDataEntryBin(b, "HASH", hash, sizeof(hash));
-
-	if (cert_data != NULL)
-	{
-		WpcAddDataEntryBin(b, "CERT", cert_data->Buf, cert_data->Size);
-		WpcAddDataEntryBin(b, "SIGN", sign_data->Buf, sign_data->Size);
-	}
-
-	FreeBuf(pack_data);
-	FreeBuf(cert_data);
-	FreeBuf(sign_data);
-
-	SeekBuf(b, 0, 0);
-
-	return b;
-}
-
-// Decode the buffer from WPC_ENTRY
-BUF *WpcDataEntryToBuf(WPC_ENTRY *e)
-{
-	void *data;
-	UINT data_size;
-	UINT size;
-	BUF *b;
-	// Validate arguments
-	if (e == NULL)
-	{
-		return NULL;
-	}
-
-	data_size = e->Size + 4096;
-	data = ZeroMalloc(data_size);
-
-	if (e->Size >= 1)
-	{
-		size = DecodeSafe64(data, e->Data, e->Size);
-	}
-	else
-	{
-		size = 0;
-	}
-
-	b = NewBuf();
-	WriteBuf(b, data, size);
-	SeekBuf(b, 0, 0);
-
-	Free(data);
-
-	return b;
-}
-
-// Search for the data entry
-WPC_ENTRY *WpcFindDataEntry(LIST *o, char *name)
-{
-	UINT i;
-	char name_str[WPC_DATA_ENTRY_SIZE];
-	// Validate arguments
-	if (o == NULL || name == NULL)
-	{
-		return NULL;
-	}
-
-	WpcFillEntryName(name_str, name);
-
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		WPC_ENTRY *e = LIST_DATA(o, i);
-
-		if (Cmp(e->EntryName, name_str, WPC_DATA_ENTRY_SIZE) == 0)
-		{
-			return e;
-		}
-	}
-
-	return NULL;
-}
-
-// Release the data entry list
-void WpcFreeDataEntryList(LIST *o)
-{
-	UINT i;
-	// Validate arguments
-	if (o == NULL)
-	{
-		return;
-	}
-
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		WPC_ENTRY *e = LIST_DATA(o, i);
-
-		Free(e);
-	}
-
-	ReleaseList(o);
-}
-
-// Parse the data entry
-LIST *WpcParseDataEntry(BUF *b)
-{
-	char entry_name[WPC_DATA_ENTRY_SIZE];
-	char size_str[11];
-	LIST *o;
-	// Validate arguments
-	if (b == NULL)
-	{
-		return NULL;
-	}
-
-	SeekBuf(b, 0, 0);
-
-	o = NewListFast(NULL);
-
-	while (true)
-	{
-		UINT size;
-		WPC_ENTRY *e;
-
-		if (ReadBuf(b, entry_name, WPC_DATA_ENTRY_SIZE) != WPC_DATA_ENTRY_SIZE)
-		{
-			break;
-		}
-
-		Zero(size_str, sizeof(size_str));
-		if (ReadBuf(b, size_str, 10) != 10)
-		{
-			break;
-		}
-
-		size = ToInt(size_str);
-		if ((b->Size - b->Current) < size)
-		{
-			break;
-		}
-
-		e = ZeroMalloc(sizeof(WPC_ENTRY));
-		e->Data = (UCHAR *)b->Buf + b->Current;
-		Copy(e->EntryName, entry_name, WPC_DATA_ENTRY_SIZE);
-		e->Size = size;
-
-		SeekBuf(b, size, 1);
-
-		Add(o, e);
-	}
-
-	return o;
-}
-
-// Generate a entry name
-void WpcFillEntryName(char *dst, char *name)
-{
-	UINT i, len;
-	char tmp[MAX_SIZE];
-	// Validate arguments
-	if (dst == NULL || name == NULL)
-	{
-		return;
-	}
-
-	StrCpy(tmp, sizeof(tmp), name);
-	StrUpper(tmp);
-	len = StrLen(tmp);
-
-	for (i = 0;i < WPC_DATA_ENTRY_SIZE;i++)
-	{
-		dst[i] = ' ';
-	}
-
-	if (len <= WPC_DATA_ENTRY_SIZE)
-	{
-		Copy(dst, tmp, len);
-	}
-	else
-	{
-		Copy(dst, tmp, WPC_DATA_ENTRY_SIZE);
-	}
-}
-
-// Add the data entry (binary)
-void WpcAddDataEntryBin(BUF *b, char *name, void *data, UINT size)
-{
-	char *str;
-	// Validate arguments
-	if (b == NULL || name == NULL || (data == NULL && size != 0))
-	{
-		return;
-	}
-
-	str = Malloc(size * 2 + 64);
-
-	EncodeSafe64(str, data, size);
-
-	WpcAddDataEntry(b, name, str, StrLen(str));
-
-	Free(str);
-}
-
-
-// Add the data entry
-void WpcAddDataEntry(BUF *b, char *name, void *data, UINT size)
-{
-	char entry_name[WPC_DATA_ENTRY_SIZE];
-	char size_str[11];
-	// Validate arguments
-	if (b == NULL || name == NULL || (data == NULL && size != 0))
-	{
-		return;
-	}
-
-	WpcFillEntryName(entry_name, name);
-	WriteBuf(b, entry_name, WPC_DATA_ENTRY_SIZE);
-
-	Format(size_str, sizeof(size_str), "%010u", size);
-	WriteBuf(b, size_str, 10);
-
-	WriteBuf(b, data, size);
-}
-
-// Get the empty INTERNET_SETTING
-INTERNET_SETTING *GetNullInternetSetting()
-{
-	static INTERNET_SETTING ret;
-
-	Zero(&ret, sizeof(ret));
-
-	return &ret;
-}
-
-// Socket connection
-SOCK *WpcSockConnect(WPC_CONNECT *param, UINT *error_code, UINT timeout)
-{
-	return WpcSockConnectEx(param, error_code, timeout, NULL);
-}
-SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool *cancel)
+static SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool *cancel)
 {
 	SOCK *sock;
 	UINT ret;
-	// Validate arguments
 	if (param == NULL)
 	{
 		return NULL;
@@ -532,7 +28,7 @@ SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool 
 
 	if (param->ProxyType == PROXY_DIRECT)
 	{
-		sock = TcpConnectEx3(param->HostName, param->Port, timeout, cancel, NULL, NULL);
+		sock = BindConnectEx4(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, param->HostName, param->Port, timeout, cancel, true, NULL);
 		*error_code = (sock != NULL ? ERR_NO_ERROR : ERR_CONNECT_FAILED);
 		return sock;
 	}
@@ -570,7 +66,6 @@ SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool 
 			break;
 		default:
 			*error_code = ERR_INTERNAL_ERROR;
-			Debug("WpcSockConnect(): Unknown proxy type: %u!\n", param->ProxyType);
 			return NULL;
 		}
 
@@ -578,48 +73,13 @@ SOCK *WpcSockConnectEx(WPC_CONNECT *param, UINT *error_code, UINT timeout, bool 
 
 		if (*error_code != ERR_NO_ERROR)
 		{
-			Debug("ClientConnectGetSocket(): Connection via proxy server failed with error %u\n", ret);
 			return NULL;
 		}
 
 		return out.Sock;
 	}
 }
-SOCK *WpcSockConnect2(char *hostname, UINT port, INTERNET_SETTING *t, UINT *error_code, UINT timeout)
-{
-	// Validate arguments
-	INTERNET_SETTING t2;
-	WPC_CONNECT c;
-	if (t == NULL)
-	{
-		Zero(&t2, sizeof(t2));
 
-		t = &t2;
-	}
-
-	Zero(&c, sizeof(c));
-	StrCpy(c.HostName, sizeof(c.HostName), hostname);
-	c.Port = port;
-	c.ProxyType = t->ProxyType;
-	StrCpy(c.ProxyHostName, sizeof(c.HostName), t->ProxyHostName);
-	c.ProxyPort = t->ProxyPort;
-	StrCpy(c.ProxyUsername, sizeof(c.ProxyUsername), t->ProxyUsername);
-	StrCpy(c.ProxyPassword, sizeof(c.ProxyPassword), t->ProxyPassword);
-	StrCpy(c.CustomHttpHeader, sizeof(c.CustomHttpHeader), t->CustomHttpHeader);
-
-	return WpcSockConnect(&c, error_code, timeout);
-}
-
-// Handle the HTTP request
-BUF *HttpRequest(URL_DATA *data, INTERNET_SETTING *setting,
-				 UINT timeout_connect, UINT timeout_comm,
-				 UINT *error_code, bool check_ssl_trust, char *post_data,
-				 WPC_RECV_CALLBACK *recv_callback, void *recv_callback_param, void *sha1_cert_hash)
-{
-	return HttpRequestEx(data, setting, timeout_connect, timeout_comm,
-		error_code, check_ssl_trust, post_data,
-		recv_callback, recv_callback_param, sha1_cert_hash, NULL, 0);
-}
 BUF *HttpRequestEx(URL_DATA *data, INTERNET_SETTING *setting,
 				   UINT timeout_connect, UINT timeout_comm,
 				   UINT *error_code, bool check_ssl_trust, char *post_data,
@@ -661,7 +121,6 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 	UINT socket_buffer_size = WPC_RECV_BUF_SIZE;
 	UINT num_continue = 0;
 	INTERNET_SETTING wt_setting;
-	// Validate arguments
 	if (data == NULL)
 	{
 		return NULL;
@@ -689,7 +148,6 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 		sha1_cert_hash = NULL;
 	}
 
-	// Connection
 	Zero(&con, sizeof(con));
 	StrCpy(con.HostName, sizeof(con.HostName), data->HostName);
 	con.Port = data->Port;
@@ -713,13 +171,11 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 
 	if (use_http_proxy == false)
 	{
-		// If the connection is not via HTTP Proxy, or is a SSL connection even via HTTP Proxy
 		s = WpcSockConnectEx(&con, error_code, timeout_connect, cancel);
 	}
 	else
 	{
-		// If the connection is not SSL via HTTP Proxy
-		s = TcpConnectEx3(con.ProxyHostName, con.ProxyPort, timeout_connect, cancel, NULL, NULL);
+		s = BindConnectEx4(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, con.ProxyHostName, con.ProxyPort, timeout_connect, cancel, true, NULL);
 		if (s == NULL)
 		{
 			*error_code = ERR_PROXY_CONNECT_FAILED;
@@ -733,10 +189,8 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 
 	if (data->Secure)
 	{
-		// Start the SSL communication
 		if (StartSSLEx(s, NULL, NULL, 0, (IsEmptyStr(data->SniString) ? NULL : data->SniString)) == false)
 		{
-			// SSL connection failed
 			*error_code = ERR_PROTOCOL_ERROR;
 			Disconnect(s);
 			ReleaseSock(s);
@@ -766,7 +220,6 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 
 			if (ok == false)
 			{
-				// Destination certificate hash mismatch
 				*error_code = ERR_CERT_NOT_TRUSTED;
 				Disconnect(s);
 				ReleaseSock(s);
@@ -775,10 +228,8 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 		}
 	}
 
-	// Timeout setting
 	SetTimeout(s, timeout_comm);
 
-	// Generate a request
 	h = NewHttpHeader(data->Method, target, use_http_proxy ? "HTTP/1.0" : "HTTP/1.1");
 	AddHttpValue(h, NewHttpValue("Keep-Alive", HTTP_KEEP_ALIVE));
 	AddHttpValue(h, NewHttpValue("Connection", "Keep-Alive"));
@@ -834,13 +285,11 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 	WriteBuf(send_buf, send_str, StrLen(send_str));
 	Free(send_str);
 
-	// Append to the sending data in the case of POST
 	if (StrCmpi(data->Method, WPC_HTTP_POST_NAME) == 0)
 	{
 		WriteBuf(send_buf, post_data, StrLen(post_data));
 	}
 
-	// Send
 	if (SendAll(s, send_buf->Buf, send_buf->Size, s->SecureMode) == false)
 	{
 		Disconnect(s);
@@ -855,7 +304,6 @@ BUF *HttpRequestEx3(URL_DATA *data, INTERNET_SETTING *setting,
 	FreeBuf(send_buf);
 
 CONT:
-	// Receive
 	h = RecvHttpHeader(s);
 	if (h == NULL)
 	{
@@ -882,17 +330,14 @@ CONT:
 	{
 	case 401:
 	case 407:
-		// Proxy authentication error
 		*error_code = ERR_PROXY_AUTH_FAILED;
 		break;
 
 	case 404:
-		// 404 File Not Found
 		*error_code = ERR_OBJECT_NOT_FOUND;
 		break;
 
 	case 100:
-		// Continue
 		num_continue++;
 		if (num_continue >= 10)
 		{
@@ -902,11 +347,9 @@ CONT:
 		goto CONT;
 
 	case 200:
-		// Success
 		break;
 
 	default:
-		// Protocol error
 DEF:
 		*error_code = ERR_PROTOCOL_ERROR;
 		break;
@@ -914,14 +357,12 @@ DEF:
 
 	if (*error_code != ERR_NO_ERROR)
 	{
-		// An error has occured
 		Disconnect(s);
 		ReleaseSock(s);
 		FreeHttpHeader(h);
 		return NULL;
 	}
 
-	// Get the length of the content
 	content_len = GetContentLength(h);
 	if (max_recv_size != 0)
 	{
@@ -932,7 +373,6 @@ DEF:
 
 	socket_buffer = Malloc(socket_buffer_size);
 
-	// Receive the content
 	recv_buf = NewBuf();
 
 	while (true)
@@ -945,7 +385,6 @@ DEF:
 			if (recv_callback(recv_callback_param,
 				content_len, recv_buf->Size, recv_buf) == false)
 			{
-				// Cancel the reception
 				*error_code = ERR_USER_CANCEL;
 				goto RECV_CANCEL;
 			}
@@ -959,7 +398,6 @@ DEF:
 		size = Recv(s, socket_buffer, recvsize, s->SecureMode);
 		if (size == 0)
 		{
-			// Disconnected
 			*error_code = ERR_DISCONNECTED;
 
 RECV_CANCEL:
@@ -980,144 +418,12 @@ RECV_CANCEL:
 	Disconnect(s);
 	ReleaseSock(s);
 
-	// Transmission
 	return recv_buf;
 }
 
-// Get the proxy server settings from the registry string of IE
-bool GetProxyServerNameAndPortFromIeProxyRegStr(char *name, UINT name_size, UINT *port, char *str, char *server_type)
-{
-#ifdef	OS_WIN32
-	TOKEN_LIST *t;
-	UINT i;
-	bool ret = false;
-	// Validate arguments
-	if (name == NULL || port == NULL || str == NULL || server_type == NULL)
-	{
-		return false;
-	}
-
-	t = ParseToken(str, ";");
-
-	for (i = 0;i < t->NumTokens;i++)
-	{
-		char *s = t->Token[i];
-		UINT i;
-
-		Trim(s);
-
-		i = SearchStrEx(s, "=", 0, false);
-		if (i != INFINITE)
-		{
-			char tmp[MAX_PATH];
-
-			StrCpy(name, name_size, s);
-			name[i] = 0;
-
-			if (StrCmpi(name, server_type) == 0)
-			{
-				char *host;
-				StrCpy(tmp, sizeof(tmp), s + i + 1);
-
-				if (ParseHostPort(tmp, &host, port, 0))
-				{
-					StrCpy(name, name_size, host);
-					Free(host);
-
-					if (*port != 0)
-					{
-						ret = true;
-					}
-					break;
-				}
-			}
-		}
-	}
-
-	FreeToken(t);
-
-	return ret;
-#endif	// OS_WIN32
-}
-
-// Get the internet connection settings of the system
-void GetSystemInternetSetting(INTERNET_SETTING *setting)
-{
-#ifdef	OS_WIN32
-	bool use_proxy;
-	// Validate arguments
-	if (setting == NULL)
-	{
-		return;
-	}
-
-	Zero(setting, sizeof(INTERNET_SETTING));
-
-	use_proxy = MsRegReadInt(REG_CURRENT_USER,
-		"Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings",
-		"ProxyEnable");
-
-	if (use_proxy)
-	{
-		char *str = MsRegReadStr(REG_CURRENT_USER,
-			"Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings",
-			"ProxyServer");
-		if (str != NULL)
-		{
-			char name[MAX_HOST_NAME_LEN + 1];
-			UINT port;
-
-			if (GetProxyServerNameAndPortFromIeProxyRegStr(name, sizeof(name),
-				&port, str, "https"))
-			{
-				setting->ProxyType = PROXY_HTTP;
-				StrCpy(setting->ProxyHostName, sizeof(setting->ProxyHostName), name);
-				setting->ProxyPort = port;
-			}
-			else if (GetProxyServerNameAndPortFromIeProxyRegStr(name, sizeof(name),
-				&port, str, "http"))
-			{
-				setting->ProxyType = PROXY_HTTP;
-				StrCpy(setting->ProxyHostName, sizeof(setting->ProxyHostName), name);
-				setting->ProxyPort = port;
-			}
-			else if (GetProxyServerNameAndPortFromIeProxyRegStr(name, sizeof(name),
-				&port, str, "socks"))
-			{
-				setting->ProxyType = PROXY_SOCKS;
-				StrCpy(setting->ProxyHostName, sizeof(setting->ProxyHostName), name);
-				setting->ProxyPort = port;
-			}
-			else
-			{
-				if (SearchStrEx(str, "=", 0, false) == INFINITE)
-				{
-					char *host;
-					UINT port;
-					if (ParseHostPort(str, &host, &port, 0))
-					{
-						if (port != 0)
-						{
-							setting->ProxyType = PROXY_HTTP;
-							StrCpy(setting->ProxyHostName, sizeof(setting->ProxyHostName), host);
-							setting->ProxyPort = port;
-						}
-						Free(host);
-					}
-				}
-			}
-
-			Free(str);
-		}
-	}
-#endif	// OS_WIN32
-}
-
-// Generate the URL
 void CreateUrl(char *url, UINT url_size, URL_DATA *data)
 {
 	char *protocol;
-	// Validate arguments
 	if (url == NULL || data == NULL)
 	{
 		return;
@@ -1136,7 +442,6 @@ void CreateUrl(char *url, UINT url_size, URL_DATA *data)
 }
 
 
-// Parse the URL
 bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer)
 {
 	char tmp[MAX_SIZE * 3];
@@ -1145,7 +450,6 @@ bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer)
 	char *host;
 	UINT port;
 	UINT i;
-	// Validate arguments
 	if (data == NULL || str == NULL)
 	{
 		return false;
@@ -1170,7 +474,6 @@ bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer)
 	StrCpy(tmp, sizeof(tmp), str);
 	Trim(tmp);
 
-	// Determine the protocol
 	if (StartWith(tmp, "http://"))
 	{
 		data->Secure = false;
@@ -1191,7 +494,6 @@ bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer)
 		s = &tmp[0];
 	}
 
-	// Get the "server name:port number"
 	StrCpy(server_port, sizeof(server_port), s);
 	i = SearchStrEx(server_port, "/", 0, false);
 	if (i != INFINITE)
@@ -1226,93 +528,4 @@ bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer)
 	}
 
 	return true;
-}
-
-// String replacement
-void Base64ToSafe64(char *str, const UINT size)
-{
-	if (str == NULL || size == 0)
-	{
-		return;
-	}
-
-	for (UINT i = 0; i < size; ++i)
-	{
-		switch (str[i])
-		{
-		case '=':
-			str[i] = '(';
-			break;
-
-		case '+':
-			str[i] = ')';
-			break;
-
-		case '/':
-			str[i] = '_';
-			break;
-		}
-	}
-}
-void Safe64ToBase64(char *str, const UINT size)
-{
-	if (str == NULL || size == 0)
-	{
-		return;
-	}
-
-	for (UINT i = 0; i < size; ++i)
-	{
-		switch (str[i])
-		{
-		case '(':
-			str[i] = '=';
-			break;
-
-		case ')':
-			str[i] = '+';
-			break;
-
-		case '_':
-			str[i] = '/';
-			break;
-		}
-	}
-}
-
-// Decode from escaped Base64
-UINT DecodeSafe64(void *dst, const char *src, UINT size)
-{
-	if (dst == NULL || src == NULL)
-	{
-		return 0;
-	}
-
-	if (size == 0)
-	{
-		size = StrLen(src);
-	}
-
-	char *tmp = Malloc(size + 1);
-	Copy(tmp, src, size);
-	tmp[size] = '\0';
-
-	Safe64ToBase64(tmp, size);
-	const UINT ret = Base64Decode(dst, tmp, size);
-	Free(tmp);
-
-	return ret;
-}
-
-// Encode to escaped Base64
-void EncodeSafe64(char *dst, const void *src, const UINT size)
-{
-	if (dst == NULL || src == NULL)
-	{
-		return;
-	}
-
-	const UINT ret = Base64Encode(dst, src, size);
-
-	Base64ToSafe64(dst, ret);
 }

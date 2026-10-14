@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
-
 // vpncmdsys.c
 // vpncmd bootstrup
 
@@ -18,8 +14,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
-#include <stdarg.h>
-#include <time.h>
 #include <locale.h>
 #include <Mayaqua/Mayaqua.h>
 #include <Cedar/Cedar.h>
@@ -27,8 +21,7 @@
 
 static UINT ret_code = 0;
 
-// Get whether the system is a Windows NT
-bool IsWindowsNt()
+static bool IsWindowsNt()
 {
 	OSVERSIONINFO info;
 
@@ -48,8 +41,7 @@ bool IsWindowsNt()
 	return false;
 }
 
-// Execute a child process
-bool ExecProcess(char *exe_name, wchar_t *args_w)
+static bool ExecProcess(char *exe_name, wchar_t *args_w)
 {
 	bool ret;
 	wchar_t exe_name_w[MAX_SIZE];
@@ -57,7 +49,6 @@ bool ExecProcess(char *exe_name, wchar_t *args_w)
 	STARTUPINFO info;
 	STARTUPINFOW info_w;
 	PROCESS_INFORMATION proc;
-	// Validate arguments
 	if (exe_name == NULL || args_w == NULL)
 	{
 		return false;
@@ -97,7 +88,6 @@ bool ExecProcess(char *exe_name, wchar_t *args_w)
 	return ret;
 }
 
-// Entry point
 int main(int argc, char *argv[])
 {
 	HKEY hKey;
@@ -113,7 +103,6 @@ int main(int argc, char *argv[])
 
 	current_args = GetCommandLineW();
 
-	// Remove the program name portion from the command line string
 	while (true)
 	{
 		switch (*current_args)
@@ -159,7 +148,6 @@ int main(int argc, char *argv[])
 
 	strcpy(error, "VPN Command Line Tools is not Installed.\nPlease reinstall programs.");
 
-	// Get the path of the vpncmd.exe from the registry
 	if (RegOpenKey(HKEY_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, &hKey) == 0)
 	{
 		DWORD type = REG_SZ;
@@ -173,7 +161,6 @@ int main(int argc, char *argv[])
 			swprintf(args, sizeof(args), L"\"%S\" %s", buf, current_args);
 			if (ExecProcess(buf, args) == false)
 			{
-				//sprintf(error, "Failed to execute \"%S\".", buf);
 			}
 			else
 			{

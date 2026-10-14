@@ -1,13 +1,7 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
-
 // vpncmd.c
 // VPN Command Line Management Utility
 
 #include "Cedar/Cedar.h"
-#ifdef OS_WIN32
-#endif
 #include "Cedar/Command.h"
 
 #include "Mayaqua/Internat.h"
@@ -15,7 +9,6 @@
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Str.h"
 
-// main function
 int main(int argc, char *argv[])
 {
 	wchar_t *s;
@@ -23,14 +16,10 @@ int main(int argc, char *argv[])
 
 	InitProcessCallOnce();
 
-#ifdef	OS_WIN32
 	SetConsoleTitleA(CEDAR_PRODUCT_STR " VPN Command Line Utility");
-#endif	// OS_WIN32
 
-#if defined(_DEBUG) || defined(DEBUG)	// In VC++ compilers, the macro is "_DEBUG", not "DEBUG".
-	// If set memcheck = true, the program will be vitally slow since it will log all malloc() / realloc() / free() calls to find the cause of memory leak.
-	// For normal debug we set memcheck = false.
-	// Please set memcheck = true if you want to test the cause of memory leaks.
+#if defined(_DEBUG) || defined(DEBUG)	// MSVC defines _DEBUG, not DEBUG
+	// memcheck = true logs every malloc/realloc/free to find leaks; it is very slow.
 	InitMayaqua(false, true, argc, argv);
 #else
 	InitMayaqua(false, false, argc, argv);
@@ -56,7 +45,6 @@ int main(int argc, char *argv[])
 		Free(tmp);
 	}
 
-#ifdef	OS_WIN32
 	{
 		UINT i;
 		LIST *o = MsGetProcessList();
@@ -83,7 +71,6 @@ int main(int argc, char *argv[])
 			}
 		}
 	}
-#endif	// OS_WIN32
 
 	Free(s);
 

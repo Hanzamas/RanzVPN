@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
-
 // Account.c
 // Account Manager
 
@@ -22,57 +18,57 @@
 #include "Mayaqua/Table.h"
 #include "Mayaqua/Tick64.h"
 
-// Policy items
+static void CleanupUser(USER *u);
+static void CleanupGroup(USERGROUP *g);
+static char *DecryptPassword(BUF *b);
+static BUF *EncryptPassword(char *password);
+
 POLICY_ITEM policy_item[] =
 {
 //  ID,     Value,  Omittable, Min, Max, Default, Unit name, Offset
-// Ver 2.0
-	{0,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, Access)},								// Access
-	{1,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, DHCPFilter)},							// DHCPFilter
-	{2,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, DHCPNoServer)},						// DHCPNoServer
-	{3,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, DHCPForce)},							// DHCPForce
-	{4,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoBridge)},							// NoBridge
-	{5,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoRouting)},							// NoRouting
-	{6,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, CheckMac)},							// CheckMac
-	{7,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, CheckIP)},								// CheckIP
-	{8,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, ArpDhcpOnly)},							// ArpDhcpOnly
-	{9,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, PrivacyFilter)},						// PrivacyFilter
-	{10,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoServer)},							// NoServer
-	{11,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoBroadcastLimiter)},					// NoBroadcastLimiter
-	{12,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, MonitorPort)},							// MonitorPort
-	{13,	true,	false,	1,	32,	32,		"POL_INT_COUNT",		offsetof(POLICY, MaxConnection)},			// MaxConnection
-	{14,	true,	false,	5,	60,	20,		"POL_INT_SEC",			offsetof(POLICY, TimeOut)},					// TimeOut
-	{15,	true,	true,	1,	65535,	0,	"POL_INT_COUNT",		offsetof(POLICY, MaxMac)},					// MaxMac
-	{16,	true,	true,	1,	65535,	0,	"POL_INT_COUNT",		offsetof(POLICY, MaxIP)},					// MaxIP
-	{17,	true,	true,	1,	4294967295UL,	0,	"POL_INT_BPS",	offsetof(POLICY, MaxUpload)},				// MaxUpload
-	{18,	true,	true,	1,	4294967295UL,	0,	"POL_INT_BPS",	offsetof(POLICY, MaxDownload)},				// MaxDownload
-	{19,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, FixPassword)},							// FixPassword
-	{20,	true,	true,	1,	65535,	0,	"POL_INT_COUNT",		offsetof(POLICY, MultiLogins)},				// MultiLogins
-	{21,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoQoS)},								// NoQoS
-// Ver 3.0
-	{22,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, RSandRAFilter)},						// RSandRAFilter
-	{23,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, RAFilter)},							// RAFilter
-	{24,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, DHCPv6Filter)},						// DHCPv6Filter
-	{25,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, DHCPv6NoServer)},						// DHCPv6NoServer
-	{26,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoRoutingV6)},							// NoRoutingV6
-	{27,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, CheckIPv6)},							// CheckIPv6
-	{28,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoServerV6)},							// NoServerV6
-	{29,	true,	true,	1,	65535,	0,	"POL_INT_COUNT",		offsetof(POLICY, MaxIPv6)},					// MaxIPv6
-	{30,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoSavePassword)},						// NoSavePassword
-	{31,	true,	true,	1,	4294967295UL,	0,	"POL_INT_SEC",	offsetof(POLICY, AutoDisconnect)},			// AutoDisconnect
-	{32,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, FilterIPv4)},							// FilterIPv4
-	{33,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, FilterIPv6)},							// FilterIPv6
-	{34,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, FilterNonIP)},							// FilterNonIP
-	{35,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoIPv6DefaultRouterInRA)},				// NoIPv6DefaultRouterInRA
-	{36,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoIPv6DefaultRouterInRAWhenIPv6)},		// NoIPv6DefaultRouterInRAWhenIPv6
-	{37,	true,	true,	1,	4095,	0,	"POL_INT_VLAN",			offsetof(POLICY, VLanId)},					// VLanId
+	{0,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, Access)},
+	{1,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, DHCPFilter)},
+	{2,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, DHCPNoServer)},
+	{3,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, DHCPForce)},
+	{4,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoBridge)},
+	{5,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoRouting)},
+	{6,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, CheckMac)},
+	{7,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, CheckIP)},
+	{8,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, ArpDhcpOnly)},
+	{9,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, PrivacyFilter)},
+	{10,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoServer)},
+	{11,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoBroadcastLimiter)},
+	{12,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, MonitorPort)},
+	{13,	true,	false,	1,	32,	32,		"POL_INT_COUNT",		offsetof(POLICY, MaxConnection)},
+	{14,	true,	false,	5,	60,	20,		"POL_INT_SEC",			offsetof(POLICY, TimeOut)},
+	{15,	true,	true,	1,	65535,	0,	"POL_INT_COUNT",		offsetof(POLICY, MaxMac)},
+	{16,	true,	true,	1,	65535,	0,	"POL_INT_COUNT",		offsetof(POLICY, MaxIP)},
+	{17,	true,	true,	1,	4294967295UL,	0,	"POL_INT_BPS",	offsetof(POLICY, MaxUpload)},
+	{18,	true,	true,	1,	4294967295UL,	0,	"POL_INT_BPS",	offsetof(POLICY, MaxDownload)},
+	{19,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, FixPassword)},
+	{20,	true,	true,	1,	65535,	0,	"POL_INT_COUNT",		offsetof(POLICY, MultiLogins)},
+	{21,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoQoS)},
+	{22,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, RSandRAFilter)},
+	{23,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, RAFilter)},
+	{24,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, DHCPv6Filter)},
+	{25,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, DHCPv6NoServer)},
+	{26,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoRoutingV6)},
+	{27,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, CheckIPv6)},
+	{28,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoServerV6)},
+	{29,	true,	true,	1,	65535,	0,	"POL_INT_COUNT",		offsetof(POLICY, MaxIPv6)},
+	{30,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoSavePassword)},
+	{31,	true,	true,	1,	4294967295UL,	0,	"POL_INT_SEC",	offsetof(POLICY, AutoDisconnect)},
+	{32,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, FilterIPv4)},
+	{33,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, FilterIPv6)},
+	{34,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, FilterNonIP)},
+	{35,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoIPv6DefaultRouterInRA)},
+	{36,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoIPv6DefaultRouterInRAWhenIPv6)},
+	{37,	true,	true,	1,	4095,	0,	"POL_INT_VLAN",			offsetof(POLICY, VLanId)},
 };
 
-// Format policy value
 void FormatPolicyValue(wchar_t *str, UINT size, UINT id, UINT value)
 {
 	POLICY_ITEM *p;
-	// Validate arguments
 	if (str == NULL)
 	{
 		return;
@@ -82,7 +78,6 @@ void FormatPolicyValue(wchar_t *str, UINT size, UINT id, UINT value)
 
 	if (p->TypeInt == false)
 	{
-		// bool type
 		if (value == 0)
 		{
 			UniStrCpy(str, size, L"No");
@@ -94,7 +89,6 @@ void FormatPolicyValue(wchar_t *str, UINT size, UINT id, UINT value)
 	}
 	else
 	{
-		// int type
 		if (value == 0 && p->AllowZero)
 		{
 			UniStrCpy(str, size, _UU("CMD_NO_SETTINGS"));
@@ -106,11 +100,9 @@ void FormatPolicyValue(wchar_t *str, UINT size, UINT id, UINT value)
 	}
 }
 
-// Get description string for range of the policy value
 void GetPolicyValueRangeStr(wchar_t *str, UINT size, UINT id)
 {
 	POLICY_ITEM *p;
-	// Validate arguments
 	if (str == NULL)
 	{
 		return;
@@ -120,7 +112,6 @@ void GetPolicyValueRangeStr(wchar_t *str, UINT size, UINT id)
 
 	if (p->TypeInt == false)
 	{
-		// bool type
 		UniStrCpy(str, size, _UU("CMD_PolicyList_Range_Bool"));
 	}
 	else
@@ -128,7 +119,6 @@ void GetPolicyValueRangeStr(wchar_t *str, UINT size, UINT id)
 		wchar_t *tag;
 		wchar_t tmp1[256], tmp2[256];
 
-		// int type
 		if (p->AllowZero)
 		{
 			tag = _UU("CMD_PolicyList_Range_Int_2");
@@ -145,31 +135,26 @@ void GetPolicyValueRangeStr(wchar_t *str, UINT size, UINT id)
 	}
 }
 
-// Get a policy item for id
 POLICY_ITEM *GetPolicyItem(UINT id)
 {
 	return &policy_item[id];
 }
 
-// Does cascade connection support the specified policy?
 bool PolicyIsSupportedForCascade(UINT i)
 {
 	if (i == 0 || i == 4 || i == 5 || i == 12 || i == 13 ||
 		i == 14 || i == 19 || i == 20 || i == 21 || i == 26 || i == 30 || i == 31 || i == 36)
 	{
-		// These items are not supported by cascade connection.
 		return false;
 	}
 
 	return true;
 }
 
-// Get policy name
 char *PolicyIdToStr(UINT i)
 {
 	switch (i)
 	{
-	// Ver 2.0
 	case 0:		return "Access";
 	case 1:		return "DHCPFilter";
 	case 2:		return "DHCPNoServer";
@@ -193,7 +178,6 @@ char *PolicyIdToStr(UINT i)
 	case 20:	return "MultiLogins";
 	case 21:	return "NoQoS";
 
-	// Ver 3.0
 	case 22:	return "RSandRAFilter";
 	case 23:	return "RAFilter";
 	case 24:	return "DHCPv6Filter";
@@ -215,11 +199,9 @@ char *PolicyIdToStr(UINT i)
 	return NULL;
 }
 
-// Get policy id for name
 UINT PolicyStrToId(char *name)
 {
 	UINT i;
-	// Validate arguments
 	if (name == NULL)
 	{
 		return INFINITE;
@@ -236,18 +218,15 @@ UINT PolicyStrToId(char *name)
 	return INFINITE;
 }
 
-// Get number of policies
 UINT PolicyNum()
 {
 	return NUM_POLICY_ITEM;
 }
 
-// Check the name is valid for account name
 bool IsUserName(char *name)
 {
 	UINT i, len;
 	char tmp[MAX_SIZE];
-	// Validate arguments
 	if (name == NULL)
 	{
 		return false;
@@ -305,29 +284,9 @@ bool IsUserName(char *name)
 	return true;
 }
 
-// Get policy title
-wchar_t *GetPolicyTitle(UINT id)
-{
-	char tmp[MAX_SIZE];
-	Format(tmp, sizeof(tmp), "POL_%u", id);
-
-	return _UU(tmp);
-}
-
-// Get policy description
-wchar_t *GetPolicyDescription(UINT id)
-{
-	char tmp[MAX_SIZE];
-	Format(tmp, sizeof(tmp), "POL_EX_%u", id);
-
-	return _UU(tmp);
-}
-
-// Clone the policy value
 POLICY *ClonePolicy(POLICY *policy)
 {
 	POLICY *ret;
-	// Validate arguments
 	if (policy == NULL)
 	{
 		return NULL;
@@ -339,10 +298,9 @@ POLICY *ClonePolicy(POLICY *policy)
 	return ret;
 }
 
-// Overwrite policy value (If old version data overwrites new version, leave new version value as it is.)
-void OverwritePolicy(POLICY **target, POLICY *p)
+// Overwrite policy values; data from an older version leaves the Ver 3.0 fields as they are
+static void OverwritePolicy(POLICY **target, POLICY *p)
 {
-	// Validate arguments
 	if (target == NULL)
 	{
 		return;
@@ -350,7 +308,6 @@ void OverwritePolicy(POLICY **target, POLICY *p)
 
 	if (p == NULL)
 	{
-		// Erase policy
 		if (*target != NULL)
 		{
 			Free(*target);
@@ -361,7 +318,6 @@ void OverwritePolicy(POLICY **target, POLICY *p)
 	{
 		if (p->Ver3)
 		{
-			// Ver 3
 			if (*target != NULL)
 			{
 				Free(*target);
@@ -372,7 +328,6 @@ void OverwritePolicy(POLICY **target, POLICY *p)
 		}
 		else
 		{
-			// Ver 2
 			if (*target == NULL)
 			{
 				*target = ClonePolicy(p);
@@ -385,10 +340,8 @@ void OverwritePolicy(POLICY **target, POLICY *p)
 	}
 }
 
-// Set user policy
 void SetUserPolicy(USER *u, POLICY *policy)
 {
-	// Validate arguments
 	if (u == NULL)
 	{
 		return;
@@ -401,10 +354,8 @@ void SetUserPolicy(USER *u, POLICY *policy)
 	Unlock(u->lock);
 }
 
-// Set group policy
 void SetGroupPolicy(USERGROUP *g, POLICY *policy)
 {
-	// Validate arguments
 	if (g == NULL)
 	{
 		return;
@@ -417,11 +368,9 @@ void SetGroupPolicy(USERGROUP *g, POLICY *policy)
 	Unlock(g->lock);
 }
 
-// Get group policy
 POLICY *GetGroupPolicy(USERGROUP *g)
 {
 	POLICY *ret;
-	// Validate arguments
 	if (g == NULL)
 	{
 		return NULL;
@@ -443,7 +392,6 @@ POLICY *GetGroupPolicy(USERGROUP *g)
 	return ret;
 }
 
-// Get default policy template
 POLICY *GetDefaultPolicy()
 {
 	static POLICY def_policy =
@@ -490,18 +438,15 @@ POLICY *GetDefaultPolicy()
 	return &def_policy;
 }
 
-// Create a NT authentication data
 void *NewNTAuthData(wchar_t *username)
 {
 	AUTHNT *a;
-	// Validate arguments
 	a = ZeroMallocEx(sizeof(AUTHNT), true);
 	a->NtUsername = CopyUniStr(username);
 
 	return a;
 }
 
-// Create a root certification authentication data
 void *NewRootCertAuthData(X_SERIAL *serial, wchar_t *common_name)
 {
 	AUTHROOTCERT *a;
@@ -519,7 +464,6 @@ void *NewRootCertAuthData(X_SERIAL *serial, wchar_t *common_name)
 	return a;
 }
 
-// Create an authentication data for user certification
 void *NewUserCertAuthData(X *x)
 {
 	AUTHUSERCERT *a;
@@ -530,12 +474,10 @@ void *NewUserCertAuthData(X *x)
 	return a;
 }
 
-// Hash the password
 void HashPassword(void *dst, char *username, char *password)
 {
 	BUF *b;
 	char *username_upper;
-	// Validate arguments
 	if (dst == NULL || username == NULL || password == NULL)
 	{
 		return;
@@ -552,11 +494,9 @@ void HashPassword(void *dst, char *username, char *password)
 	Free(username_upper);
 }
 
-// Create a password authentication data
 void *NewPasswordAuthData(char *username, char *password)
 {
 	AUTHPASSWORD *pw;
-	// Validate arguments
 	if (username == NULL || password == NULL)
 	{
 		return NULL;
@@ -569,11 +509,9 @@ void *NewPasswordAuthData(char *username, char *password)
 	return pw;
 }
 
-// Create a password authentication data for the hashed password
 void *NewPasswordAuthDataRaw(UCHAR *hashed_password, UCHAR *ntlm_secure_hash)
 {
 	AUTHPASSWORD *pw;
-	// Validate arguments
 	if (hashed_password == NULL)
 	{
 		return NULL;
@@ -590,14 +528,12 @@ void *NewPasswordAuthDataRaw(UCHAR *hashed_password, UCHAR *ntlm_secure_hash)
 	return pw;
 }
 
-// Clone authentication data
 void *CopyAuthData(void *authdata, UINT authtype)
 {
 	AUTHPASSWORD *pw = (AUTHPASSWORD *)authdata;
 	AUTHUSERCERT *usercert = (AUTHUSERCERT *)authdata;
 	AUTHROOTCERT *rootcert = (AUTHROOTCERT *)authdata;
 	AUTHNT *nt = (AUTHNT *)authdata;
-	// Validate arguments
 	if (authdata == NULL || authtype == AUTHTYPE_ANONYMOUS)
 	{
 		return NULL;
@@ -642,10 +578,8 @@ void *CopyAuthData(void *authdata, UINT authtype)
 	return NULL;
 }
 
-// Set authentication data to the user
 void SetUserAuthData(USER *u, UINT authtype, void *authdata)
 {
-	// Validate arguments
 	if (u == NULL)
 	{
 		return;
@@ -664,8 +598,7 @@ void SetUserAuthData(USER *u, UINT authtype, void *authdata)
 				AUTHPASSWORD *pw_old = (AUTHPASSWORD *)u->AuthData;
 				AUTHPASSWORD *pw_new = (AUTHPASSWORD *)authdata;
 
-				// Copy NTLM hash for new password from old data, if the password is not changed 
-				// and management tool don't send NTLM hash.
+				// Keep the old NTLM hash if the password is unchanged and the admin tool sent no NTLM hash
 
 				if (Cmp(pw_old->HashedKey, pw_new->HashedKey, SHA1_SIZE) == 0)
 				{
@@ -676,20 +609,16 @@ void SetUserAuthData(USER *u, UINT authtype, void *authdata)
 				}
 			}
 
-			// Free current authentication data
 			FreeAuthData(u->AuthType, u->AuthData);
 		}
-		// Set new authentication data
 		u->AuthType = authtype;
 		u->AuthData = authdata;
 	}
 	Unlock(u->lock);
 }
 
-// Set traffic data for group
 void SetGroupTraffic(USERGROUP *g, TRAFFIC *t)
 {
-	// Validate arguments
 	if (g == NULL)
 	{
 		return;
@@ -709,10 +638,8 @@ void SetGroupTraffic(USERGROUP *g, TRAFFIC *t)
 	Unlock(g->lock);
 }
 
-// Set traffic data for user
 void SetUserTraffic(USER *u, TRAFFIC *t)
 {
-	// Validate arguments
 	if (u == NULL)
 	{
 		return;
@@ -732,10 +659,8 @@ void SetUserTraffic(USER *u, TRAFFIC *t)
 	Unlock(u->lock);
 }
 
-// Join the user to the group
 void JoinUserToGroup(USER *u, USERGROUP *g)
 {
-	// Validate arguments
 	if (u == NULL)
 	{
 		return;
@@ -743,21 +668,17 @@ void JoinUserToGroup(USER *u, USERGROUP *g)
 
 	if (g != NULL)
 	{
-		// Join
 		Lock(u->lock);
 		{
 			Lock(g->lock);
 			{
 				if (u->Group != NULL)
 				{
-					// Remove the user from current group first
-					// 
 					ReleaseGroup(u->Group);
 					u->Group = NULL;
 					Free(u->GroupName);
 					u->GroupName = NULL;
 				}
-				// Join the user to the group
 				u->GroupName = CopyStr(g->Name);
 				u->Group = g;
 				AddRef(g->ref);
@@ -768,12 +689,10 @@ void JoinUserToGroup(USER *u, USERGROUP *g)
 	}
 	else
 	{
-		// Withdrawal
 		Lock(u->lock);
 		{
 			if (u->Group != NULL)
 			{
-				// Remove the user from current group
 				ReleaseGroup(u->Group);
 				u->Group = NULL;
 				Free(u->GroupName);
@@ -784,11 +703,9 @@ void JoinUserToGroup(USER *u, USERGROUP *g)
 	}
 }
 
-// Validate group name
 bool AcIsGroup(HUB *h, char *name)
 {
 	USERGROUP *g;
-	// Validate arguments
 	if (h == NULL || name == NULL)
 	{
 		return false;
@@ -804,11 +721,9 @@ bool AcIsGroup(HUB *h, char *name)
 	return true;
 }
 
-// Validate user name
 bool AcIsUser(HUB *h, char *name)
 {
 	USER *u;
-	// Validate arguments
 	if (h == NULL || name == NULL)
 	{
 		return false;
@@ -824,11 +739,9 @@ bool AcIsUser(HUB *h, char *name)
 	return true;
 }
 
-// Get group object
 USERGROUP *AcGetGroup(HUB *h, char *name)
 {
 	USERGROUP *g, t;
-	// Validate arguments
 	if (h == NULL || name == NULL)
 	{
 		return NULL;
@@ -845,11 +758,9 @@ USERGROUP *AcGetGroup(HUB *h, char *name)
 	return g;
 }
 
-// Get user object
 USER *AcGetUser(HUB *h, char *name)
 {
 	USER *u, t;
-	// Validate arguments
 	if (h == NULL || name == NULL)
 	{
 		return NULL;
@@ -866,40 +777,9 @@ USER *AcGetUser(HUB *h, char *name)
 	return u;
 }
 
-USER* AcGetUserByCert(HUB *h, X *cert)
-{
-	int i;
-
-	if (cert == NULL)
-	{
-		return NULL;
-	}
-
-	for (i = 0; i < LIST_NUM(h->HubDb->UserList); i++)
-	{
-		USER* u = LIST_DATA(h->HubDb->UserList, i);
-		if (u->AuthType == AUTHTYPE_USERCERT)
-		{
-			X* ucert = ((AUTHUSERCERT*)u->AuthData)->UserX;
-			if (ucert != NULL)
-			{
-				if (CompareX(cert, ucert))
-				{
-					AddRef(u->ref);
-					return u;
-				}
-			}
-		}
-	}
-
-	return NULL;
-}
-
-// Delete the user
 bool AcDeleteUser(HUB *h, char *name)
 {
 	USER *u;
-	// Validate arguments
 	if (h == NULL || name == NULL)
 	{
 		return false;
@@ -921,12 +801,10 @@ bool AcDeleteUser(HUB *h, char *name)
 	return true;
 }
 
-// Delete the group
 bool AcDeleteGroup(HUB *h, char *name)
 {
 	USERGROUP *g;
 	UINT i;
-	// Validate arguments
 	if (h == NULL || name == NULL)
 	{
 		return false;
@@ -961,10 +839,8 @@ bool AcDeleteGroup(HUB *h, char *name)
 	return true;
 }
 
-// Add new group to the hub
 bool AcAddGroup(HUB *h, USERGROUP *g)
 {
-	// Validate arguments
 	if (h == NULL || g == NULL)
 	{
 		return false;
@@ -986,10 +862,8 @@ bool AcAddGroup(HUB *h, USERGROUP *g)
 	return true;
 }
 
-// Add new user in the hub
 bool AcAddUser(HUB *h, USER *u)
 {
-	// Validate arguments
 	if (h == NULL || u == NULL)
 	{
 		return false;
@@ -1011,10 +885,8 @@ bool AcAddUser(HUB *h, USER *u)
 	return true;
 }
 
-// Release user object (decrease reference counter)
 void ReleaseUser(USER *u)
 {
-	// Validate arguments
 	if (u == NULL)
 	{
 		return;
@@ -1026,10 +898,8 @@ void ReleaseUser(USER *u)
 	}
 }
 
-// Cleanup the user object 
-void CleanupUser(USER *u)
+static void CleanupUser(USER *u)
 {
-	// Validate arguments
 	if (u == NULL)
 	{
 		return;
@@ -1045,12 +915,10 @@ void CleanupUser(USER *u)
 		ReleaseGroup(u->Group);
 	}
 
-	// Free authentication data
 	FreeAuthData(u->AuthType, u->AuthData);
 
 	if (u->Policy)
 	{
-		// Free policy data
 		Free(u->Policy);
 	}
 
@@ -1059,14 +927,11 @@ void CleanupUser(USER *u)
 	Free(u);
 }
 
-// Free authentication data
 void FreeAuthData(UINT authtype, void *authdata)
 {
-	AUTHPASSWORD *pw = (AUTHPASSWORD *)authdata;
 	AUTHUSERCERT *uc = (AUTHUSERCERT *)authdata;
 	AUTHROOTCERT *rc = (AUTHROOTCERT *)authdata;
 	AUTHNT *nt = (AUTHNT *)authdata;
-	// Validate arguments
 	if (authtype == AUTHTYPE_ANONYMOUS || authdata == NULL)
 	{
 		return;
@@ -1075,17 +940,13 @@ void FreeAuthData(UINT authtype, void *authdata)
 	switch (authtype)
 	{
 	case AUTHTYPE_PASSWORD:
-		// Password authentication
-		// Nothing to free
 		break;
 
 	case AUTHTYPE_USERCERT:
-		// User certification
 		FreeX(uc->UserX);
 		break;
 
 	case AUTHTYPE_ROOTCERT:
-		// Root certification
 		if (rc->Serial != NULL)
 		{
 			FreeXSerial(rc->Serial);
@@ -1097,7 +958,6 @@ void FreeAuthData(UINT authtype, void *authdata)
 		break;
 
 	case AUTHTYPE_NT:
-		// Windows NT authentication
 		Free(nt->NtUsername);
 		break;
 	}
@@ -1105,11 +965,9 @@ void FreeAuthData(UINT authtype, void *authdata)
 	Free(authdata);
 }
 
-// Create new user object
 USER *NewUser(char *name, wchar_t *realname, wchar_t *note, UINT authtype, void *authdata)
 {
 	USER *u;
-	// Validate arguments
 	if (name == NULL || realname == NULL || note == NULL)
 	{
 		return NULL;
@@ -1138,10 +996,8 @@ USER *NewUser(char *name, wchar_t *realname, wchar_t *note, UINT authtype, void 
 	return u;
 }
 
-// Release group object (decrease reference counter)
 void ReleaseGroup(USERGROUP *g)
 {
-	// Validate arguments
 	if (g == NULL)
 	{
 		return;
@@ -1153,10 +1009,8 @@ void ReleaseGroup(USERGROUP *g)
 	}
 }
 
-// Cleanup the group object
-void CleanupGroup(USERGROUP *g)
+static void CleanupGroup(USERGROUP *g)
 {
-	// Validate arguments
 	if (g == NULL)
 	{
 		return;
@@ -1168,7 +1022,6 @@ void CleanupGroup(USERGROUP *g)
 
 	if (g->Policy)
 	{
-		// Free policy data
 		Free(g->Policy);
 	}
 
@@ -1179,11 +1032,9 @@ void CleanupGroup(USERGROUP *g)
 	Free(g);
 }
 
-// Create new group object
 USERGROUP *NewGroup(char *name, wchar_t *realname, wchar_t *note)
 {
 	USERGROUP *g;
-	// Validate arguments
 	if (name == NULL || realname == NULL || note == NULL)
 	{
 		return NULL;
@@ -1201,37 +1052,29 @@ USERGROUP *NewGroup(char *name, wchar_t *realname, wchar_t *note)
 	return g;
 }
 
-// Lock the account database for the hub
 void AcLock(HUB *h)
 {
-	// Validate arguments
 	if (h == NULL)
 	{
 		return;
 	}
-	// Lock group list and user list
 	LockList(h->HubDb->GroupList);
 	LockList(h->HubDb->UserList);
 }
 
-// Unlock the account database for the hub
 void AcUnlock(HUB *h)
 {
-	// Validate arguments
 	if (h == NULL)
 	{
 		return;
 	}
-	// Unlock group list and user list
 	UnlockList(h->HubDb->UserList);
 	UnlockList(h->HubDb->GroupList);
 }
 
-// Compare group names (for sort)
 int CompareGroupName(void *p1, void *p2)
 {
 	USERGROUP *g1, *g2;
-	// Validate arguments
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
@@ -1246,11 +1089,9 @@ int CompareGroupName(void *p1, void *p2)
 	return StrCmpi(g1->Name, g2->Name);
 }
 
-// Compare user names (for sort)
 int CompareUserName(void *p1, void *p2)
 {
 	USER *u1, *u2;
-	// Validate arguments
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
@@ -1265,17 +1106,9 @@ int CompareUserName(void *p1, void *p2)
 	return StrCmpi(u1->Name, u2->Name);
 }
 
-// ----------------------------------------------------------------------
-// Client-side account data (cascade connections)
-//   Connection settings, authentication data and connection status of
-//   the client side of a session. Used by cascade connections (Link),
-//   their configuration and their administration RPCs.
-// ----------------------------------------------------------------------
 
-// TRAFFIC_EX
 void InRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -1293,7 +1126,6 @@ void InRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i)
 }
 void OutRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i, UINT num)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -1309,10 +1141,8 @@ void OutRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i, UINT num)
 	PackAddInt64Ex(p, "Ex.Send.UnicastCount", t->Send.UnicastCount, i, num);
 }
 
-// TRAFFIC
 void InRpcTraffic(TRAFFIC *t, PACK *p)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -1330,7 +1160,6 @@ void InRpcTraffic(TRAFFIC *t, PACK *p)
 }
 void OutRpcTraffic(PACK *p, TRAFFIC *t)
 {
-	// Validate arguments
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -1346,10 +1175,8 @@ void OutRpcTraffic(PACK *p, TRAFFIC *t)
 	PackAddInt64(p, "Send.UnicastCount", t->Send.UnicastCount);
 }
 
-// CLIENT_OPTION
 void InRpcClientOption(CLIENT_OPTION *c, PACK *p)
 {
-	// Validate arguments
 	if (c == NULL || p == NULL)
 	{
 		return;
@@ -1377,8 +1204,8 @@ void InRpcClientOption(CLIENT_OPTION *c, PACK *p)
 	PackGetStr(p, "CustomHttpHeader", c->CustomHttpHeader, sizeof(c->CustomHttpHeader));
 	PackGetStr(p, "HubName", c->HubName, sizeof(c->HubName));
 	PackGetStr(p, "DeviceName", c->DeviceName, sizeof(c->DeviceName));
-	PackGetIp(p, "BindLocalIP", &c->BindLocalIP);// Source IP address for outgoing connection
-	c->BindLocalPort = PackGetInt(p, "BindLocalPort");// Source port nubmer for outgoing connection
+	PackGetIp(p, "BindLocalIP", &c->BindLocalIP);
+	c->BindLocalPort = PackGetInt(p, "BindLocalPort");
 
 	c->UseEncrypt = PackGetInt(p, "UseEncrypt") ? true : false;
 	c->UseCompress = PackGetInt(p, "UseCompress") ? true : false;
@@ -1392,7 +1219,6 @@ void InRpcClientOption(CLIENT_OPTION *c, PACK *p)
 }
 void OutRpcClientOption(PACK *p, CLIENT_OPTION *c)
 {
-	// Validate arguments
 	if (c == NULL || p == NULL)
 	{
 		return;
@@ -1427,15 +1253,13 @@ void OutRpcClientOption(PACK *p, CLIENT_OPTION *c)
 	PackAddBool(p, "FromAdminPack", c->FromAdminPack);
 	PackAddBool(p, "NoUdpAcceleration", c->NoUdpAcceleration);
 	PackAddData(p, "HostUniqueKey", c->HostUniqueKey, SHA1_SIZE);
-	PackAddIp(p, "BindLocalIP", &c->BindLocalIP);// Source IP address for outgoing connection
-	PackAddInt(p, "BindLocalPort", c->BindLocalPort);// Source port number for outgoing connection
+	PackAddIp(p, "BindLocalIP", &c->BindLocalIP);
+	PackAddInt(p, "BindLocalPort", c->BindLocalPort);
 }
 
-// CLIENT_AUTH
 void InRpcClientAuth(CLIENT_AUTH *c, PACK *p)
 {
 	BUF *b;
-	// Validate arguments
 	if (c == NULL || p == NULL)
 	{
 		return;
@@ -1491,7 +1315,6 @@ void InRpcClientAuth(CLIENT_AUTH *c, PACK *p)
 void OutRpcClientAuth(PACK *p, CLIENT_AUTH *c)
 {
 	BUF *b;
-	// Validate arguments
 	if (c == NULL || p == NULL)
 	{
 		return;
@@ -1541,11 +1364,9 @@ void OutRpcClientAuth(PACK *p, CLIENT_AUTH *c)
 	}
 }
 
-// POLICY
 void InRpcPolicy(POLICY *o, PACK *p)
 {
 	POLICY *pol;
-	// Validate arguments
 	if (o == NULL || p == NULL)
 	{
 		return;
@@ -1557,7 +1378,6 @@ void InRpcPolicy(POLICY *o, PACK *p)
 }
 void OutRpcPolicy(PACK *p, POLICY *o)
 {
-	// Validate arguments
 	if (o == NULL || p == NULL)
 	{
 		return;
@@ -1566,11 +1386,9 @@ void OutRpcPolicy(PACK *p, POLICY *o)
 	PackAddPolicy(p, o);
 }
 
-// RPC_CLIENT_GET_CONNECTION_STATUS
 void InRpcClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *s, PACK *p)
 {
 	BUF *b;
-	// Validate arguments
 	if (s == NULL || p == NULL)
 	{
 		return;
@@ -1648,7 +1466,6 @@ void InRpcClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *s, PACK *p
 void OutRpcClientGetConnectionStatus(PACK *p, RPC_CLIENT_GET_CONNECTION_STATUS *c)
 {
 	BUF *b;
-	// Validate arguments
 	if (p == NULL || c == NULL)
 	{
 		return;
@@ -1688,9 +1505,9 @@ void OutRpcClientGetConnectionStatus(PACK *p, RPC_CLIENT_GET_CONNECTION_STATUS *
 	PackAddBool(p, "IsBridgeMode", c->IsBridgeMode);
 	PackAddBool(p, "IsMonitorMode", c->IsMonitorMode);
 
-	PackAddTime64(p, "StartTime", c->StartTime);
-	PackAddTime64(p, "FirstConnectionEstablisiedTime", c->FirstConnectionEstablisiedTime);
-	PackAddTime64(p, "CurrentConnectionEstablishTime", c->CurrentConnectionEstablishTime);
+	PackAddInt64(p, "StartTime", c->StartTime);
+	PackAddInt64(p, "FirstConnectionEstablisiedTime", c->FirstConnectionEstablisiedTime);
+	PackAddInt64(p, "CurrentConnectionEstablishTime", c->CurrentConnectionEstablishTime);
 	PackAddInt64(p, "TotalSendSize", c->TotalSendSize);
 	PackAddInt64(p, "TotalRecvSize", c->TotalRecvSize);
 	PackAddInt64(p, "TotalSendSizeReal", c->TotalSendSizeReal);
@@ -1717,10 +1534,8 @@ void OutRpcClientGetConnectionStatus(PACK *p, RPC_CLIENT_GET_CONNECTION_STATUS *
 	}
 }
 
-// Get a RPC_CLIENT_GET_CONNECTION_STATUS from the session
 void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s)
 {
-	// Validate arguments
 	if (st == NULL || s == NULL)
 	{
 		return;
@@ -1728,45 +1543,30 @@ void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s)
 
 	Lock(s->lock);
 	{
-		// Operation flag
 		st->Active = true;
 
-		// Session status
 		st->SessionStatus = s->ClientStatus;
 
-		// Account name
 		UniStrCpy(st->AccountName, sizeof(st->AccountName), s->ClientOption->AccountName);
 
 		if (s->ClientStatus == CLIENT_STATUS_ESTABLISHED && s->Connection != NULL)
 		{
 			Lock(s->Connection->lock);
 			{
-				// Connected flag
 				st->Connected = true;
-				// Product name
 				StrCpy(st->ServerProductName, sizeof(st->ServerProductName), s->Connection->ServerStr);
-				// Version
 				st->ServerProductVer = s->Connection->ServerVer;
-				// Build Number
 				st->ServerProductBuild = s->Connection->ServerBuild;
-				// Server certificate
 				st->ServerX = CloneX(s->Connection->ServerX);
-				// Client certificate
 				st->ClientX = CloneX(s->Connection->ClientX);
-				// Connection completion time of this connection
-				st->CurrentConnectionEstablishTime = TickToTime(s->CurrentConnectionEstablishTime);
-				// Maximum number of the TCP connections
+				st->CurrentConnectionEstablishTime = Tick64ToTime64(s->CurrentConnectionEstablishTime);
 				st->MaxTcpConnections = s->MaxConnection;
-				// Half-connection
 				st->HalfConnection = s->HalfConnection;
-				// VLAN
 				st->VLanId = s->VLanId;
-				// VoIP / QoS
 				st->QoS = s->QoS;
 				if (s->Connection->Protocol == CONNECTION_TCP)
 				{
 					UINT i;
-					// Number of current TCP connections
 					LockList(s->Connection->Tcp->TcpSockList);
 					{
 						st->NumTcpConnections = LIST_NUM(s->Connection->Tcp->TcpSockList);
@@ -1788,28 +1588,20 @@ void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s)
 					}
 					UnlockList(s->Connection->Tcp->TcpSockList);
 				}
-				// Use of encryption
 				st->UseEncrypt = s->UseEncrypt;
 				if (st->UseEncrypt)
 				{
 					StrCpy(st->CipherName, sizeof(st->CipherName), s->Connection->CipherName);
 					StrCpy(st->ProtocolName, sizeof(st->ProtocolName), s->Connection->SslVersion);
 				}
-				// Use of compression
 				st->UseCompress = s->UseCompress;
-				// Physical communication protocol
 				StrCpy(st->UnderlayProtocol, sizeof(st->UnderlayProtocol), s->UnderlayProtocol);
-				// Protocol details
 				StrCpy(st->ProtocolDetails, sizeof(st->ProtocolDetails), s->ProtocolDetails);
 				Trim(st->ProtocolDetails);
-				// UDP acceleration function
 				st->IsUdpAccelerationEnabled = s->UseUdpAcceleration;
 				st->IsUsingUdpAcceleration = s->IsUsingUdpAcceleration;
-				// Session key
 				Copy(st->SessionKey, s->SessionKey, SHA1_SIZE);
-				// Policy
 				Copy(&st->Policy, s->Policy, sizeof(POLICY));
-				// Data size
 				if (s->ServerMode == false)
 				{
 					st->TotalSendSize = s->TotalSendSize;
@@ -1824,15 +1616,10 @@ void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s)
 					st->TotalRecvSizeReal = s->TotalSendSizeReal;
 					st->TotalSendSizeReal = s->TotalRecvSizeReal;
 				}
-				// Session name
 				StrCpy(st->SessionName, sizeof(st->SessionName), s->Name);
-				// Connection name
 				StrCpy(st->ConnectionName, sizeof(st->ConnectionName), s->Connection->Name);
-				// Server name
 				StrCpy(st->ServerName, sizeof(st->ServerName), s->Connection->ServerName);
-				// Port number
 				st->ServerPort = s->Connection->ServerPort;
-				// Traffic data
 				Lock(s->TrafficLock);
 				{
 					Copy(&st->Traffic, s->Traffic, sizeof(TRAFFIC));
@@ -1844,21 +1631,16 @@ void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s)
 			}
 			Unlock(s->Connection->lock);
 		}
-		// Connection start time
-		st->StartTime = TickToTime(s->CreatedTime);
-		// Connection completion time of the first connection
+		st->StartTime = Tick64ToTime64(s->CreatedTime);
 		/* !!! Do not correct the spelling to keep the backward protocol compatibility !!!  */
-		st->FirstConnectionEstablisiedTime = TickToTime(s->FirstConnectionEstablisiedTime);
-		// Number of connections have been established so far
+		st->FirstConnectionEstablisiedTime = Tick64ToTime64(s->FirstConnectionEstablisiedTime);
 		st->NumConnectionsEstablished = s->NumConnectionsEstablished;
 	}
 	Unlock(s->lock);
 }
 
-// Release the connection status
 void CiFreeClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st)
 {
-	// Validate arguments
 	if (st == NULL)
 	{
 		return;
@@ -1875,10 +1657,8 @@ void CiFreeClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st)
 	}
 }
 
-// Release the client authentication data
 void CiFreeClientAuth(CLIENT_AUTH *auth)
 {
-	// Validate arguments
 	if (auth == NULL)
 	{
 		return;
@@ -1896,13 +1676,11 @@ void CiFreeClientAuth(CLIENT_AUTH *auth)
 	Free(auth);
 }
 
-// Read the client authentication data
 CLIENT_AUTH *CiLoadClientAuth(FOLDER *f)
 {
 	CLIENT_AUTH *a;
 	char *s;
 	BUF *b;
-	// Validate arguments
 	if (f == NULL)
 	{
 		return NULL;
@@ -1966,13 +1744,11 @@ CLIENT_AUTH *CiLoadClientAuth(FOLDER *f)
 	return a;
 }
 
-// Read the client option
 CLIENT_OPTION *CiLoadClientOption(FOLDER *f)
 {
 	CLIENT_OPTION *o;
 	char *s;
 	BUF *b;
-	// Validate arguments
 	if (f == NULL)
 	{
 		return NULL;
@@ -2012,8 +1788,8 @@ CLIENT_OPTION *CiLoadClientOption(FOLDER *f)
 	o->DisableQoS = CfgGetBool(f, "DisableQoS");
 	o->FromAdminPack = CfgGetBool(f, "FromAdminPack");
 	o->NoUdpAcceleration = CfgGetBool(f, "NoUdpAcceleration");
-	CfgGetIp(f, "BindLocalIP", &o->BindLocalIP);// Source IP address for outgoing connection
-	o->BindLocalPort = CfgGetInt(f, "BindLocalPort");// Source port number for outgoing connection
+	CfgGetIp(f, "BindLocalIP", &o->BindLocalIP);
+	o->BindLocalPort = CfgGetInt(f, "BindLocalPort");
 
 	b = CfgGetBuf(f, "HostUniqueKey");
 	if (b != NULL)
@@ -2029,11 +1805,9 @@ CLIENT_OPTION *CiLoadClientOption(FOLDER *f)
 	return o;
 }
 
-// Write the client authentication data
 void CiWriteClientAuth(FOLDER *f, CLIENT_AUTH *a)
 {
 	BUF *b;
-	// Validate arguments
 	if (f == NULL || a == NULL)
 	{
 		return;
@@ -2082,11 +1856,9 @@ void CiWriteClientAuth(FOLDER *f, CLIENT_AUTH *a)
 	}
 }
 
-// Write the client option
 void CiWriteClientOption(FOLDER *f, CLIENT_OPTION *o)
 {
 	BUF *b;
-	// Validate arguments
 	if (f == NULL || o == NULL)
 	{
 		return;
@@ -2121,8 +1893,8 @@ void CiWriteClientOption(FOLDER *f, CLIENT_OPTION *o)
 	CfgAddBool(f, "RequireBridgeRoutingMode", o->RequireBridgeRoutingMode);
 	CfgAddBool(f, "DisableQoS", o->DisableQoS);
 	CfgAddBool(f, "NoUdpAcceleration", o->NoUdpAcceleration);
-	CfgAddIp(f, "BindLocalIP", &o->BindLocalIP);// Source IP address for outgoing connection
-	CfgAddInt(f, "BindLocalPort", o->BindLocalPort);// Source port number for outgoing connection
+	CfgAddIp(f, "BindLocalIP", &o->BindLocalIP);
+	CfgAddInt(f, "BindLocalPort", o->BindLocalPort);
 
 	if (o->FromAdminPack)
 	{
@@ -2137,20 +1909,18 @@ void CiWriteClientOption(FOLDER *f, CLIENT_OPTION *o)
 	}
 }
 
-// Decrypt the password
-char *DecryptPassword(BUF *b)
+static char *DecryptPassword(BUF *b)
 {
 	char *str;
 	char *key = "EncryptPassword";
 	CRYPT *c;
-	// Validate arguments
 	if (b == NULL)
 	{
 		return CopyStr("");
 	}
 
 	str = ZeroMalloc(b->Size + 1);
-	c = NewCrypt(key, sizeof(key)); // NOTE by Daiyuu Nobori 2018-09-28: This is not a bug! Do not try to fix it!!
+	c = NewCrypt(key, sizeof(key)); // Intentional (symmetric cipher), not a bug: do not change
 	Encrypt(c, str, b->Buf, b->Size);
 	FreeCrypt(c);
 
@@ -2159,15 +1929,13 @@ char *DecryptPassword(BUF *b)
 	return str;
 }
 
-// Encrypt the password
-BUF *EncryptPassword(char *password)
+static BUF *EncryptPassword(char *password)
 {
 	UCHAR *tmp;
 	UINT size;
 	char *key = "EncryptPassword";
 	CRYPT *c;
 	BUF *b;
-	// Validate arguments
 	if (password == NULL)
 	{
 		password = "";
@@ -2176,7 +1944,7 @@ BUF *EncryptPassword(char *password)
 	size = StrLen(password) + 1;
 	tmp = ZeroMalloc(size);
 
-	c = NewCrypt(key, sizeof(key)); // NOTE by Daiyuu Nobori 2018-09-28: This is not a bug! Do not try to fix it!!
+	c = NewCrypt(key, sizeof(key)); // Intentional, not a bug: do not change
 	Encrypt(c, tmp, password, size - 1);
 	FreeCrypt(c);
 
