@@ -125,123 +125,12 @@ static UINT StCreateListener(ADMIN *a, RPC_LISTENER *t);
 static UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t);
 static UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t);
 static void CopyOsInfo(OS_INFO *dst, OS_INFO *info);
-static void InRpcMsg(RPC_MSG *t, PACK *p);
-static void OutRpcMsg(PACK *p, RPC_MSG *t);
-static void FreeRpcMsg(RPC_MSG *t);
-static void InRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t, PACK *p);
-static void OutRpcEnumEthVLan(PACK *p, RPC_ENUM_ETH_VLAN *t);
-static void InRpcEnumLogFile(RPC_ENUM_LOG_FILE *t, PACK *p);
-static void OutRpcEnumLogFile(PACK *p, RPC_ENUM_LOG_FILE *t);
-static void InRpcReadLogFile(RPC_READ_LOG_FILE *t, PACK *p);
-static void OutRpcReadLogFile(PACK *p, RPC_READ_LOG_FILE *t);
-static void FreeRpcReadLogFile(RPC_READ_LOG_FILE *t);
-static void InRpcAcList(RPC_AC_LIST *t, PACK *p);
-static void OutRpcAcList(PACK *p, RPC_AC_LIST *t);
-static void InRpcEnumCrl(RPC_ENUM_CRL *t, PACK *p);
-static void OutRpcEnumCrl(PACK *p, RPC_ENUM_CRL *t);
-static void InRpcCrl(RPC_CRL *t, PACK *p);
-static void OutRpcCrl(PACK *p, RPC_CRL *t);
-static void InRpcEnumEth(RPC_ENUM_ETH *t, PACK *p);
-static void OutRpcEnumEth(PACK *p, RPC_ENUM_ETH *t);
-static void InRpcLocalBridge(RPC_LOCALBRIDGE *t, PACK *p);
-static void OutRpcLocalBridge(PACK *p, RPC_LOCALBRIDGE *t);
-static void InRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t, PACK *p);
-static void OutRpcEnumLocalBridge(PACK *p, RPC_ENUM_LOCALBRIDGE *t);
 static void SiReadLocalLogFile(SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FILE *t);
 static void SiEnumLocalLogFileList(SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t);
 static void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t);
-static void InRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t, PACK *p);
-static void OutRpcEnumLicenseKey(PACK *p, RPC_ENUM_LICENSE_KEY *t);
-static void InRpcLicenseStatus(RPC_LICENSE_STATUS *t, PACK *p);
-static void OutRpcLicenseStatus(PACK *p, RPC_LICENSE_STATUS *t);
-static void InRpcAdminOption(RPC_ADMIN_OPTION *t, PACK *p);
-static void OutRpcAdminOption(PACK *p, RPC_ADMIN_OPTION *t);
-static void InRpcConfig(RPC_CONFIG *t, PACK *p);
-static void OutRpcConfig(PACK *p, RPC_CONFIG *t);
-static void InRpcBridgeSupport(RPC_BRIDGE_SUPPORT *t, PACK *p);
-static void OutRpcBridgeSupport(PACK *p, RPC_BRIDGE_SUPPORT *t);
-static void InRpcAddAccess(RPC_ADD_ACCESS *t, PACK *p);
-static void OutRpcAddAccess(PACK *p, RPC_ADD_ACCESS *t);
-static void InRpcDeleteAccess(RPC_DELETE_ACCESS *t, PACK *p);
-static void OutRpcDeleteAccess(PACK *p, RPC_DELETE_ACCESS *t);
-static void InRpcServerInfo(RPC_SERVER_INFO *t, PACK *p);
-static void OutRpcServerInfo(PACK *p, RPC_SERVER_INFO *t);
-static void InRpcServerStatus(RPC_SERVER_STATUS *t, PACK *p);
-static void OutRpcServerStatus(PACK *p, RPC_SERVER_STATUS *t);
-static void InRpcListener(RPC_LISTENER *t, PACK *p);
-static void OutRpcListener(PACK *p, RPC_LISTENER *t);
-static void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p);
-static void OutRpcListenerList(PACK *p, RPC_LISTENER_LIST *t);
-static void InRpcStr(RPC_STR *t, PACK *p);
-static void OutRpcStr(PACK *p, RPC_STR *t);
-static void InRpcSetPassword(RPC_SET_PASSWORD *t, PACK *p);
-static void OutRpcSetPassword(PACK *p, RPC_SET_PASSWORD *t);
-static void InRpcCreateHub(RPC_CREATE_HUB *t, PACK *p);
-static void OutRpcCreateHub(PACK *p, RPC_CREATE_HUB *t);
-static void InRpcEnumHub(RPC_ENUM_HUB *t, PACK *p);
-static void OutRpcEnumHub(PACK *p, RPC_ENUM_HUB *t);
-static void InRpcDeleteHub(RPC_DELETE_HUB *t, PACK *p);
-static void OutRpcDeleteHub(PACK *p, RPC_DELETE_HUB *t);
-static void InRpcEnumConnection(RPC_ENUM_CONNECTION *t, PACK *p);
-static void OutRpcEnumConnection(PACK *p, RPC_ENUM_CONNECTION *t);
-static void InRpcDisconnectConnection(RPC_DISCONNECT_CONNECTION *t, PACK *p);
-static void OutRpcDisconnectConnection(PACK *p, RPC_DISCONNECT_CONNECTION *t);
-static void InRpcConnectionInfo(RPC_CONNECTION_INFO *t, PACK *p);
-static void OutRpcConnectionInfo(PACK *p, RPC_CONNECTION_INFO *t);
-static void InRpcSetHubOnline(RPC_SET_HUB_ONLINE *t, PACK *p);
-static void OutRpcSetHubOnline(PACK *p, RPC_SET_HUB_ONLINE *t);
-static void InRpcHubStatus(RPC_HUB_STATUS *t, PACK *p);
-static void OutRpcHubStatus(PACK *p, RPC_HUB_STATUS *t);
-static void InRpcHubLog(RPC_HUB_LOG *t, PACK *p);
-static void OutRpcHubLog(PACK *p, RPC_HUB_LOG *t);
-static void InRpcHubAddCa(RPC_HUB_ADD_CA *t, PACK *p);
-static void OutRpcHubAddCa(PACK *p, RPC_HUB_ADD_CA *t);
-static void InRpcHubEnumCa(RPC_HUB_ENUM_CA *t, PACK *p);
-static void OutRpcHubEnumCa(PACK *p, RPC_HUB_ENUM_CA *t);
-static void InRpcHubGetCa(RPC_HUB_GET_CA *t, PACK *p);
-static void OutRpcHubGetCa(PACK *p, RPC_HUB_GET_CA *t);
-static void InRpcHubDeleteCa(RPC_HUB_DELETE_CA *t, PACK *p);
-static void OutRpcHubDeleteCa(PACK *p, RPC_HUB_DELETE_CA *t);
-static void InRpcCreateLink(RPC_CREATE_LINK *t, PACK *p);
-static void OutRpcCreateLink(PACK *p, RPC_CREATE_LINK *t);
-static void InRpcEnumLink(RPC_ENUM_LINK *t, PACK *p);
-static void OutRpcEnumLink(PACK *p, RPC_ENUM_LINK *t);
-static void InRpcLinkStatus(RPC_LINK_STATUS *t, PACK *p);
-static void OutRpcLinkStatus(PACK *p, RPC_LINK_STATUS *t);
-static void InRpcLink(RPC_LINK *t, PACK *p);
-static void OutRpcLink(PACK *p, RPC_LINK *t);
-static void InRpcRenameLink(RPC_RENAME_LINK *t, PACK *p);
-static void OutRpcRenameLink(PACK *p, RPC_RENAME_LINK *t);
 static void InRpcAccess(ACCESS *a, PACK *p);
 static void OutRpcAccess(PACK *p, ACCESS *a);
-static void InRpcEnumAccessList(RPC_ENUM_ACCESS_LIST *a, PACK *p);
-static void OutRpcEnumAccessList(PACK *p, RPC_ENUM_ACCESS_LIST *a);
-static void InRpcSetUser(RPC_SET_USER *t, PACK *p);
-static void OutRpcSetUser(PACK *p, RPC_SET_USER *t);
-static void InRpcEnumUser(RPC_ENUM_USER *t, PACK *p);
-static void OutRpcEnumUser(PACK *p, RPC_ENUM_USER *t);
-static void InRpcSetGroup(RPC_SET_GROUP *t, PACK *p);
-static void OutRpcSetGroup(PACK *p, RPC_SET_GROUP *t);
-static void InRpcEnumGroup(RPC_ENUM_GROUP *t, PACK *p);
-static void OutRpcEnumGroup(PACK *p, RPC_ENUM_GROUP *t);
-static void InRpcDeleteUser(RPC_DELETE_USER *t, PACK *p);
-static void OutRpcDeleteUser(PACK *p, RPC_DELETE_USER *t);
-static void InRpcKeyPair(RPC_KEY_PAIR *t, PACK *p);
-static void OutRpcKeyPair(PACK *p, RPC_KEY_PAIR *t);
-static void InRpcSessionStatus(RPC_SESSION_STATUS *t, PACK *p);
-static void OutRpcSessionStatus(PACK *p, RPC_SESSION_STATUS *t);
-static void InRpcDeleteSession(RPC_DELETE_SESSION *t, PACK *p);
-static void OutRpcDeleteSession(PACK *p, RPC_DELETE_SESSION *t);
-static void InRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t, PACK *p);
-static void OutRpcEnumMacTable(PACK *p, RPC_ENUM_MAC_TABLE *t);
-static void InRpcEnumIpTable(RPC_ENUM_IP_TABLE *t, PACK *p);
-static void OutRpcEnumIpTable(PACK *p, RPC_ENUM_IP_TABLE *t);
-static void InRpcDeleteTable(RPC_DELETE_TABLE *t, PACK *p);
-static void OutRpcDeleteTable(PACK *p, RPC_DELETE_TABLE *t);
 static UINT StTest(ADMIN *a, RPC_TEST *t);
-static void InRpcTest(RPC_TEST *t, PACK *p);
-static void OutRpcTest(PACK *p, RPC_TEST *t);
-static PACK *AdminCall(RPC *rpc, char *function_name, PACK *p);
 static UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hubname, bool accept_empty_password, bool *is_password_empty);
 static void HashAdminPassword(void *hash, char *password);
 static RPC *AdminConnectEx2(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name, void *hWnd);
@@ -5776,7 +5665,7 @@ void OutRpcWinVer(PACK *p, RPC_WINVER *t)
 	PackAddStr(p, "V_Title", t->Title);
 }
 
-static void InRpcMsg(RPC_MSG *t, PACK *p)
+void InRpcMsg(RPC_MSG *t, PACK *p)
 {
 	UINT size;
 	char *utf8;
@@ -5794,7 +5683,7 @@ static void InRpcMsg(RPC_MSG *t, PACK *p)
 	t->Msg = CopyUtfToUni(utf8);
 	Free(utf8);
 }
-static void OutRpcMsg(PACK *p, RPC_MSG *t)
+void OutRpcMsg(PACK *p, RPC_MSG *t)
 {
 	UINT size;
 	char *utf8;
@@ -5809,7 +5698,7 @@ static void OutRpcMsg(PACK *p, RPC_MSG *t)
 	PackAddData(p, "Msg", utf8, size);
 	Free(utf8);
 }
-static void FreeRpcMsg(RPC_MSG *t)
+void FreeRpcMsg(RPC_MSG *t)
 {
 	if (t == NULL)
 	{
@@ -5843,7 +5732,7 @@ void InRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t, PACK *p)
 {
 	RpcFieldIn(&rpc_enum_eth_vlan_table, t, p);
 }
-static void OutRpcEnumEthVLan(PACK *p, RPC_ENUM_ETH_VLAN *t)
+void OutRpcEnumEthVLan(PACK *p, RPC_ENUM_ETH_VLAN *t)
 {
 	RpcFieldOut(&rpc_enum_eth_vlan_table, p, t);
 }
@@ -5873,7 +5762,7 @@ void InRpcEnumLogFile(RPC_ENUM_LOG_FILE *t, PACK *p)
 {
 	RpcFieldIn(&rpc_enum_log_file_table, t, p);
 }
-static void OutRpcEnumLogFile(PACK *p, RPC_ENUM_LOG_FILE *t)
+void OutRpcEnumLogFile(PACK *p, RPC_ENUM_LOG_FILE *t)
 {
 	RpcFieldOut(&rpc_enum_log_file_table, p, t);
 }
@@ -5919,16 +5808,16 @@ void InRpcReadLogFile(RPC_READ_LOG_FILE *t, PACK *p)
 {
 	RpcFieldIn(&rpc_read_log_file_table, t, p);
 }
-static void OutRpcReadLogFile(PACK *p, RPC_READ_LOG_FILE *t)
+void OutRpcReadLogFile(PACK *p, RPC_READ_LOG_FILE *t)
 {
 	RpcFieldOut(&rpc_read_log_file_table, p, t);
 }
-static void FreeRpcReadLogFile(RPC_READ_LOG_FILE *t)
+void FreeRpcReadLogFile(RPC_READ_LOG_FILE *t)
 {
 	RpcFieldFree(&rpc_read_log_file_table, t);
 }
 
-static void InRpcAcList(RPC_AC_LIST *t, PACK *p)
+void InRpcAcList(RPC_AC_LIST *t, PACK *p)
 {
 	UINT i;
 	LIST *o;
@@ -5967,7 +5856,7 @@ static void InRpcAcList(RPC_AC_LIST *t, PACK *p)
 
 	t->o = o;
 }
-static void OutRpcAcList(PACK *p, RPC_AC_LIST *t)
+void OutRpcAcList(PACK *p, RPC_AC_LIST *t)
 {
 	UINT i, num;
 	LIST *o;
@@ -6028,7 +5917,7 @@ void InRpcEnumCrl(RPC_ENUM_CRL *t, PACK *p)
 {
 	RpcFieldIn(&rpc_enum_crl_table, t, p);
 }
-static void OutRpcEnumCrl(PACK *p, RPC_ENUM_CRL *t)
+void OutRpcEnumCrl(PACK *p, RPC_ENUM_CRL *t)
 {
 	RpcFieldOut(&rpc_enum_crl_table, p, t);
 }
@@ -6037,7 +5926,7 @@ void FreeRpcEnumCrl(RPC_ENUM_CRL *t)
 	RpcFieldFree(&rpc_enum_crl_table, t);
 }
 
-static void InRpcCrl(RPC_CRL *t, PACK *p)
+void InRpcCrl(RPC_CRL *t, PACK *p)
 {
 	BUF *b;
 	NAME *n;
@@ -6092,7 +5981,7 @@ static void InRpcCrl(RPC_CRL *t, PACK *p)
 		PackGetData(p, "DigestSHA1", t->Crl->DigestSHA1);
 	}
 }
-static void OutRpcCrl(PACK *p, RPC_CRL *t)
+void OutRpcCrl(PACK *p, RPC_CRL *t)
 {
 	NAME *n;
 	if (p == NULL || t == NULL)
@@ -6176,7 +6065,7 @@ void InRpcEnumEth(RPC_ENUM_ETH *t, PACK *p)
 {
 	RpcFieldIn(&rpc_enum_eth_table, t, p);
 }
-static void OutRpcEnumEth(PACK *p, RPC_ENUM_ETH *t)
+void OutRpcEnumEth(PACK *p, RPC_ENUM_ETH *t)
 {
 	RpcFieldOut(&rpc_enum_eth_table, p, t);
 }
@@ -6198,7 +6087,7 @@ void InRpcLocalBridge(RPC_LOCALBRIDGE *t, PACK *p)
 {
 	RpcFieldIn(&rpc_localbridge_table, t, p);
 }
-static void OutRpcLocalBridge(PACK *p, RPC_LOCALBRIDGE *t)
+void OutRpcLocalBridge(PACK *p, RPC_LOCALBRIDGE *t)
 {
 	RpcFieldOut(&rpc_localbridge_table, p, t);
 }
@@ -6228,7 +6117,7 @@ void InRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t, PACK *p)
 {
 	RpcFieldIn(&rpc_enum_localbridge_table, t, p);
 }
-static void OutRpcEnumLocalBridge(PACK *p, RPC_ENUM_LOCALBRIDGE *t)
+void OutRpcEnumLocalBridge(PACK *p, RPC_ENUM_LOCALBRIDGE *t)
 {
 	RpcFieldOut(&rpc_enum_localbridge_table, p, t);
 }
@@ -6516,7 +6405,7 @@ void InRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t, PACK *p)
 {
 	RpcFieldIn(&rpc_enum_license_key_table, t, p);
 }
-static void OutRpcEnumLicenseKey(PACK *p, RPC_ENUM_LICENSE_KEY *t)
+void OutRpcEnumLicenseKey(PACK *p, RPC_ENUM_LICENSE_KEY *t)
 {
 	RpcFieldOut(&rpc_enum_license_key_table, p, t);
 }
@@ -6548,7 +6437,7 @@ void InRpcLicenseStatus(RPC_LICENSE_STATUS *t, PACK *p)
 {
 	RpcFieldIn(&rpc_license_status_table, t, p);
 }
-static void OutRpcLicenseStatus(PACK *p, RPC_LICENSE_STATUS *t)
+void OutRpcLicenseStatus(PACK *p, RPC_LICENSE_STATUS *t)
 {
 	RpcFieldOut(&rpc_license_status_table, p, t);
 }
@@ -6576,7 +6465,7 @@ void InRpcAdminOption(RPC_ADMIN_OPTION *t, PACK *p)
 {
 	RpcFieldIn(&rpc_admin_option_table, t, p);
 }
-static void OutRpcAdminOption(PACK *p, RPC_ADMIN_OPTION *t)
+void OutRpcAdminOption(PACK *p, RPC_ADMIN_OPTION *t)
 {
 	RpcFieldOut(&rpc_admin_option_table, p, t);
 }
@@ -6585,7 +6474,7 @@ void FreeRpcAdminOption(RPC_ADMIN_OPTION *t)
 	RpcFieldFree(&rpc_admin_option_table, t);
 }
 
-static void InRpcConfig(RPC_CONFIG *t, PACK *p)
+void InRpcConfig(RPC_CONFIG *t, PACK *p)
 {
 	UINT size;
 	if (t == NULL || p == NULL)
@@ -6599,7 +6488,7 @@ static void InRpcConfig(RPC_CONFIG *t, PACK *p)
 	t->FileData = ZeroMalloc(size + 1);
 	PackGetData(p, "FileData", t->FileData);
 }
-static void OutRpcConfig(PACK *p, RPC_CONFIG *t)
+void OutRpcConfig(PACK *p, RPC_CONFIG *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6630,7 +6519,7 @@ void InRpcBridgeSupport(RPC_BRIDGE_SUPPORT *t, PACK *p)
 {
 	RpcFieldIn(&rpc_bridge_support_table, t, p);
 }
-static void OutRpcBridgeSupport(PACK *p, RPC_BRIDGE_SUPPORT *t)
+void OutRpcBridgeSupport(PACK *p, RPC_BRIDGE_SUPPORT *t)
 {
 	RpcFieldOut(&rpc_bridge_support_table, p, t);
 }
@@ -6677,7 +6566,7 @@ void InRpcAddAccess(RPC_ADD_ACCESS *t, PACK *p)
 {
 	RpcFieldIn(&rpc_add_access_table, t, p);
 }
-static void OutRpcAddAccess(PACK *p, RPC_ADD_ACCESS *t)
+void OutRpcAddAccess(PACK *p, RPC_ADD_ACCESS *t)
 {
 	RpcFieldOut(&rpc_add_access_table, p, t);
 }
@@ -6694,7 +6583,7 @@ void InRpcDeleteAccess(RPC_DELETE_ACCESS *t, PACK *p)
 {
 	RpcFieldIn(&rpc_delete_access_table, t, p);
 }
-static void OutRpcDeleteAccess(PACK *p, RPC_DELETE_ACCESS *t)
+void OutRpcDeleteAccess(PACK *p, RPC_DELETE_ACCESS *t)
 {
 	RpcFieldOut(&rpc_delete_access_table, p, t);
 }
@@ -6732,7 +6621,7 @@ void InRpcServerInfo(RPC_SERVER_INFO *t, PACK *p)
 {
 	RpcFieldIn(&rpc_server_info_table, t, p);
 }
-static void OutRpcServerInfo(PACK *p, RPC_SERVER_INFO *t)
+void OutRpcServerInfo(PACK *p, RPC_SERVER_INFO *t)
 {
 	RpcFieldOut(&rpc_server_info_table, p, t);
 }
@@ -6790,7 +6679,7 @@ void InRpcServerStatus(RPC_SERVER_STATUS *t, PACK *p)
 {
 	RpcFieldIn(&rpc_server_status_table, t, p);
 }
-static void OutRpcServerStatus(PACK *p, RPC_SERVER_STATUS *t)
+void OutRpcServerStatus(PACK *p, RPC_SERVER_STATUS *t)
 {
 	RpcFieldOut(&rpc_server_status_table, p, t);
 }
@@ -6807,12 +6696,12 @@ void InRpcListener(RPC_LISTENER *t, PACK *p)
 {
 	RpcFieldIn(&rpc_listener_table, t, p);
 }
-static void OutRpcListener(PACK *p, RPC_LISTENER *t)
+void OutRpcListener(PACK *p, RPC_LISTENER *t)
 {
 	RpcFieldOut(&rpc_listener_table, p, t);
 }
 
-static void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p)
+void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -6832,7 +6721,7 @@ static void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p)
 		t->Errors[i] = PackGetBoolEx(p, "Errors", i);
 	}
 }
-static void OutRpcListenerList(PACK *p, RPC_LISTENER_LIST *t)
+void OutRpcListenerList(PACK *p, RPC_LISTENER_LIST *t)
 {
 	UINT i;
 	if (t == NULL || p == NULL)
@@ -6859,7 +6748,7 @@ void FreeRpcListenerList(RPC_LISTENER_LIST *t)
 	Free(t->Errors);
 }
 
-static void InRpcStr(RPC_STR *t, PACK *p)
+void InRpcStr(RPC_STR *t, PACK *p)
 {
 	UINT size = 65536;
 	char *tmp = Malloc(size);
@@ -6879,7 +6768,7 @@ static void InRpcStr(RPC_STR *t, PACK *p)
 	}
 	Free(tmp);
 }
-static void OutRpcStr(PACK *p, RPC_STR *t)
+void OutRpcStr(PACK *p, RPC_STR *t)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -6910,7 +6799,7 @@ void InRpcSetPassword(RPC_SET_PASSWORD *t, PACK *p)
 {
 	RpcFieldIn(&rpc_set_password_table, t, p);
 }
-static void OutRpcSetPassword(PACK *p, RPC_SET_PASSWORD *t)
+void OutRpcSetPassword(PACK *p, RPC_SET_PASSWORD *t)
 {
 	RpcFieldOut(&rpc_set_password_table, p, t);
 }
@@ -6958,7 +6847,7 @@ void InRpcCreateHub(RPC_CREATE_HUB *t, PACK *p)
 {
 	RpcFieldIn(&rpc_create_hub_table, t, p);
 }
-static void OutRpcCreateHub(PACK *p, RPC_CREATE_HUB *t)
+void OutRpcCreateHub(PACK *p, RPC_CREATE_HUB *t)
 {
 	RpcFieldOut(&rpc_create_hub_table, p, t);
 }
@@ -7003,7 +6892,7 @@ void InRpcEnumHub(RPC_ENUM_HUB *t, PACK *p)
 {
 	RpcFieldIn(&rpc_enum_hub_table, t, p);
 }
-static void OutRpcEnumHub(PACK *p, RPC_ENUM_HUB *t)
+void OutRpcEnumHub(PACK *p, RPC_ENUM_HUB *t)
 {
 	RpcFieldOut(&rpc_enum_hub_table, p, t);
 }
@@ -7023,7 +6912,7 @@ void InRpcDeleteHub(RPC_DELETE_HUB *t, PACK *p)
 {
 	RpcFieldIn(&rpc_delete_hub_table, t, p);
 }
-static void OutRpcDeleteHub(PACK *p, RPC_DELETE_HUB *t)
+void OutRpcDeleteHub(PACK *p, RPC_DELETE_HUB *t)
 {
 	RpcFieldOut(&rpc_delete_hub_table, p, t);
 }
@@ -7051,7 +6940,7 @@ void InRpcEnumConnection(RPC_ENUM_CONNECTION *t, PACK *p)
 {
 	RpcFieldIn(&rpc_enum_connection_table, t, p);
 }
-static void OutRpcEnumConnection(PACK *p, RPC_ENUM_CONNECTION *t)
+void OutRpcEnumConnection(PACK *p, RPC_ENUM_CONNECTION *t)
 {
 	RpcFieldOut(&rpc_enum_connection_table, p, t);
 }
@@ -7071,7 +6960,7 @@ void InRpcDisconnectConnection(RPC_DISCONNECT_CONNECTION *t, PACK *p)
 {
 	RpcFieldIn(&rpc_disconnect_connection_table, t, p);
 }
-static void OutRpcDisconnectConnection(PACK *p, RPC_DISCONNECT_CONNECTION *t)
+void OutRpcDisconnectConnection(PACK *p, RPC_DISCONNECT_CONNECTION *t)
 {
 	RpcFieldOut(&rpc_disconnect_connection_table, p, t);
 }
@@ -7098,7 +6987,7 @@ void InRpcConnectionInfo(RPC_CONNECTION_INFO *t, PACK *p)
 {
 	RpcFieldIn(&rpc_connection_info_table, t, p);
 }
-static void OutRpcConnectionInfo(PACK *p, RPC_CONNECTION_INFO *t)
+void OutRpcConnectionInfo(PACK *p, RPC_CONNECTION_INFO *t)
 {
 	RpcFieldOut(&rpc_connection_info_table, p, t);
 }
@@ -7115,7 +7004,7 @@ void InRpcSetHubOnline(RPC_SET_HUB_ONLINE *t, PACK *p)
 {
 	RpcFieldIn(&rpc_set_hub_online_table, t, p);
 }
-static void OutRpcSetHubOnline(PACK *p, RPC_SET_HUB_ONLINE *t)
+void OutRpcSetHubOnline(PACK *p, RPC_SET_HUB_ONLINE *t)
 {
 	RpcFieldOut(&rpc_set_hub_online_table, p, t);
 }
@@ -7155,7 +7044,7 @@ void InRpcHubStatus(RPC_HUB_STATUS *t, PACK *p)
 {
 	RpcFieldIn(&rpc_hub_status_table, t, p);
 }
-static void OutRpcHubStatus(PACK *p, RPC_HUB_STATUS *t)
+void OutRpcHubStatus(PACK *p, RPC_HUB_STATUS *t)
 {
 	RpcFieldOut(&rpc_hub_status_table, p, t);
 }
@@ -7198,7 +7087,7 @@ void InRpcHubLog(RPC_HUB_LOG *t, PACK *p)
 {
 	RpcFieldIn(&rpc_hub_log_table, t, p);
 }
-static void OutRpcHubLog(PACK *p, RPC_HUB_LOG *t)
+void OutRpcHubLog(PACK *p, RPC_HUB_LOG *t)
 {
 	RpcFieldOut(&rpc_hub_log_table, p, t);
 }
@@ -7230,7 +7119,7 @@ void InRpcHubAddCa(RPC_HUB_ADD_CA *t, PACK *p)
 {
 	RpcFieldIn(&rpc_hub_add_ca_table, t, p);
 }
-static void OutRpcHubAddCa(PACK *p, RPC_HUB_ADD_CA *t)
+void OutRpcHubAddCa(PACK *p, RPC_HUB_ADD_CA *t)
 {
 	RpcFieldOut(&rpc_hub_add_ca_table, p, t);
 }
@@ -7261,7 +7150,7 @@ void InRpcHubEnumCa(RPC_HUB_ENUM_CA *t, PACK *p)
 {
 	RpcFieldIn(&rpc_hub_enum_ca_table, t, p);
 }
-static void OutRpcHubEnumCa(PACK *p, RPC_HUB_ENUM_CA *t)
+void OutRpcHubEnumCa(PACK *p, RPC_HUB_ENUM_CA *t)
 {
 	RpcFieldOut(&rpc_hub_enum_ca_table, p, t);
 }
@@ -7283,7 +7172,7 @@ void InRpcHubGetCa(RPC_HUB_GET_CA *t, PACK *p)
 {
 	RpcFieldIn(&rpc_hub_get_ca_table, t, p);
 }
-static void OutRpcHubGetCa(PACK *p, RPC_HUB_GET_CA *t)
+void OutRpcHubGetCa(PACK *p, RPC_HUB_GET_CA *t)
 {
 	RpcFieldOut(&rpc_hub_get_ca_table, p, t);
 }
@@ -7304,7 +7193,7 @@ void InRpcHubDeleteCa(RPC_HUB_DELETE_CA *t, PACK *p)
 {
 	RpcFieldIn(&rpc_hub_delete_ca_table, t, p);
 }
-static void OutRpcHubDeleteCa(PACK *p, RPC_HUB_DELETE_CA *t)
+void OutRpcHubDeleteCa(PACK *p, RPC_HUB_DELETE_CA *t)
 {
 	RpcFieldOut(&rpc_hub_delete_ca_table, p, t);
 }
@@ -7457,7 +7346,7 @@ void InRpcEnumLink(RPC_ENUM_LINK *t, PACK *p)
 {
 	RpcFieldIn(&rpc_enum_link_table, t, p);
 }
-static void OutRpcEnumLink(PACK *p, RPC_ENUM_LINK *t)
+void OutRpcEnumLink(PACK *p, RPC_ENUM_LINK *t)
 {
 	RpcFieldOut(&rpc_enum_link_table, p, t);
 }
@@ -7494,7 +7383,7 @@ void InRpcLinkStatus(RPC_LINK_STATUS *t, PACK *p)
 {
 	RpcFieldIn(&rpc_link_status_table, t, p);
 }
-static void OutRpcLinkStatus(PACK *p, RPC_LINK_STATUS *t)
+void OutRpcLinkStatus(PACK *p, RPC_LINK_STATUS *t)
 {
 	RpcFieldOut(&rpc_link_status_table, p, t);
 }
@@ -7515,7 +7404,7 @@ void InRpcLink(RPC_LINK *t, PACK *p)
 {
 	RpcFieldIn(&rpc_link_table, t, p);
 }
-static void OutRpcLink(PACK *p, RPC_LINK *t)
+void OutRpcLink(PACK *p, RPC_LINK *t)
 {
 	RpcFieldOut(&rpc_link_table, p, t);
 }
@@ -7533,7 +7422,7 @@ void InRpcRenameLink(RPC_RENAME_LINK *t, PACK *p)
 {
 	RpcFieldIn(&rpc_rename_link_table, t, p);
 }
-static void OutRpcRenameLink(PACK *p, RPC_RENAME_LINK *t)
+void OutRpcRenameLink(PACK *p, RPC_RENAME_LINK *t)
 {
 	RpcFieldOut(&rpc_rename_link_table, p, t);
 }
@@ -7688,7 +7577,7 @@ void InRpcEnumAccessList(RPC_ENUM_ACCESS_LIST *a, PACK *p)
 {
 	RpcFieldIn(&rpc_enum_access_list_table, a, p);
 }
-static void OutRpcEnumAccessList(PACK *p, RPC_ENUM_ACCESS_LIST *a)
+void OutRpcEnumAccessList(PACK *p, RPC_ENUM_ACCESS_LIST *a)
 {
 	RpcFieldOut(&rpc_enum_access_list_table, p, a);
 }
@@ -7892,7 +7781,7 @@ void InRpcSetUser(RPC_SET_USER *t, PACK *p)
 	RpcFieldIn(&rpc_set_user_table, t, p);
 }
 
-static void OutRpcSetUser(PACK *p, RPC_SET_USER *t)
+void OutRpcSetUser(PACK *p, RPC_SET_USER *t)
 {
 	RpcFieldOut(&rpc_set_user_table, p, t);
 }
@@ -7942,7 +7831,7 @@ void InRpcEnumUser(RPC_ENUM_USER *t, PACK *p)
 {
 	RpcFieldIn(&rpc_enum_user_table, t, p);
 }
-static void OutRpcEnumUser(PACK *p, RPC_ENUM_USER *t)
+void OutRpcEnumUser(PACK *p, RPC_ENUM_USER *t)
 {
 	RpcFieldOut(&rpc_enum_user_table, p, t);
 }
@@ -7968,7 +7857,7 @@ void InRpcSetGroup(RPC_SET_GROUP *t, PACK *p)
 {
 	RpcFieldIn(&rpc_set_group_table, t, p);
 }
-static void OutRpcSetGroup(PACK *p, RPC_SET_GROUP *t)
+void OutRpcSetGroup(PACK *p, RPC_SET_GROUP *t)
 {
 	RpcFieldOut(&rpc_set_group_table, p, t);
 }
@@ -8000,7 +7889,7 @@ void InRpcEnumGroup(RPC_ENUM_GROUP *t, PACK *p)
 {
 	RpcFieldIn(&rpc_enum_group_table, t, p);
 }
-static void OutRpcEnumGroup(PACK *p, RPC_ENUM_GROUP *t)
+void OutRpcEnumGroup(PACK *p, RPC_ENUM_GROUP *t)
 {
 	RpcFieldOut(&rpc_enum_group_table, p, t);
 }
@@ -8021,7 +7910,7 @@ void InRpcDeleteUser(RPC_DELETE_USER *t, PACK *p)
 {
 	RpcFieldIn(&rpc_delete_user_table, t, p);
 }
-static void OutRpcDeleteUser(PACK *p, RPC_DELETE_USER *t)
+void OutRpcDeleteUser(PACK *p, RPC_DELETE_USER *t)
 {
 	RpcFieldOut(&rpc_delete_user_table, p, t);
 }
@@ -8080,7 +7969,7 @@ void FreeRpcEnumSession(RPC_ENUM_SESSION *t)
 	RpcFieldFree(&rpc_enum_session_table, t);
 }
 
-static void InRpcKeyPair(RPC_KEY_PAIR *t, PACK *p)
+void InRpcKeyPair(RPC_KEY_PAIR *t, PACK *p)
 {
 	if (t == NULL || p == NULL)
 	{
@@ -8092,7 +7981,7 @@ static void InRpcKeyPair(RPC_KEY_PAIR *t, PACK *p)
 	t->Key = PackGetK(p, "Key");
 	t->Flag1 = PackGetInt(p, "Flag1");
 }
-static void OutRpcKeyPair(PACK *p, RPC_KEY_PAIR *t)
+void OutRpcKeyPair(PACK *p, RPC_KEY_PAIR *t)
 {
 	if (p == NULL || t == NULL)
 	{
@@ -8232,7 +8121,7 @@ void InRpcSessionStatus(RPC_SESSION_STATUS *t, PACK *p)
 {
 	RpcFieldIn(&rpc_session_status_table, t, p);
 }
-static void OutRpcSessionStatus(PACK *p, RPC_SESSION_STATUS *t)
+void OutRpcSessionStatus(PACK *p, RPC_SESSION_STATUS *t)
 {
 	RpcFieldOut(&rpc_session_status_table, p, t);
 }
@@ -8253,7 +8142,7 @@ void InRpcDeleteSession(RPC_DELETE_SESSION *t, PACK *p)
 {
 	RpcFieldIn(&rpc_delete_session_table, t, p);
 }
-static void OutRpcDeleteSession(PACK *p, RPC_DELETE_SESSION *t)
+void OutRpcDeleteSession(PACK *p, RPC_DELETE_SESSION *t)
 {
 	RpcFieldOut(&rpc_delete_session_table, p, t);
 }
@@ -8282,7 +8171,7 @@ void InRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t, PACK *p)
 {
 	RpcFieldIn(&rpc_enum_mac_table_table, t, p);
 }
-static void OutRpcEnumMacTable(PACK *p, RPC_ENUM_MAC_TABLE *t)
+void OutRpcEnumMacTable(PACK *p, RPC_ENUM_MAC_TABLE *t)
 {
 	RpcFieldOut(&rpc_enum_mac_table_table, p, t);
 }
@@ -8337,7 +8226,7 @@ void InRpcEnumIpTable(RPC_ENUM_IP_TABLE *t, PACK *p)
 {
 	RpcFieldIn(&rpc_enum_ip_table_table, t, p);
 }
-static void OutRpcEnumIpTable(PACK *p, RPC_ENUM_IP_TABLE *t)
+void OutRpcEnumIpTable(PACK *p, RPC_ENUM_IP_TABLE *t)
 {
 	RpcFieldOut(&rpc_enum_ip_table_table, p, t);
 }
@@ -8358,7 +8247,7 @@ void InRpcDeleteTable(RPC_DELETE_TABLE *t, PACK *p)
 {
 	RpcFieldIn(&rpc_delete_table_table, t, p);
 }
-static void OutRpcDeleteTable(PACK *p, RPC_DELETE_TABLE *t)
+void OutRpcDeleteTable(PACK *p, RPC_DELETE_TABLE *t)
 {
 	RpcFieldOut(&rpc_delete_table_table, p, t);
 }
@@ -8384,7 +8273,7 @@ void InRpcTest(RPC_TEST *t, PACK *p)
 {
 	RpcFieldIn(&rpc_test_table, t, p);
 }
-static void OutRpcTest(PACK *p, RPC_TEST *t)
+void OutRpcTest(PACK *p, RPC_TEST *t)
 {
 	RpcFieldOut(&rpc_test_table, p, t);
 }
@@ -8392,7 +8281,7 @@ void FreeRpcTest(RPC_TEST *t)
 {
 }
 
-static PACK *AdminCall(RPC *rpc, char *function_name, PACK *p)
+PACK *AdminCall(RPC *rpc, char *function_name, PACK *p)
 {
 	if (rpc == NULL || function_name == NULL)
 	{
