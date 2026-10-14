@@ -7,6 +7,7 @@
 #include "Hub.h"
 #include "MsChapV2.h"
 #include "Protocol.h"
+#include "RpcField.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/Internat.h"
@@ -1107,154 +1108,96 @@ int CompareUserName(void *p1, void *p2)
 }
 
 
+static const RPC_FIELD rpc_traffic_ex_fields[] =
+{
+	RPC_ROW_INT64(TRAFFIC, Recv.BroadcastBytes, "Ex.Recv.BroadcastBytes"),
+	RPC_ROW_INT64(TRAFFIC, Recv.BroadcastCount, "Ex.Recv.BroadcastCount"),
+	RPC_ROW_INT64(TRAFFIC, Recv.UnicastBytes, "Ex.Recv.UnicastBytes"),
+	RPC_ROW_INT64(TRAFFIC, Recv.UnicastCount, "Ex.Recv.UnicastCount"),
+	RPC_ROW_INT64(TRAFFIC, Send.BroadcastBytes, "Ex.Send.BroadcastBytes"),
+	RPC_ROW_INT64(TRAFFIC, Send.BroadcastCount, "Ex.Send.BroadcastCount"),
+	RPC_ROW_INT64(TRAFFIC, Send.UnicastBytes, "Ex.Send.UnicastBytes"),
+	RPC_ROW_INT64(TRAFFIC, Send.UnicastCount, "Ex.Send.UnicastCount"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_traffic_ex_table, TRAFFIC, rpc_traffic_ex_fields);
+
 void InRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(TRAFFIC));
-	t->Recv.BroadcastBytes = PackGetInt64Ex(p, "Ex.Recv.BroadcastBytes", i);
-	t->Recv.BroadcastCount = PackGetInt64Ex(p, "Ex.Recv.BroadcastCount", i);
-	t->Recv.UnicastBytes = PackGetInt64Ex(p, "Ex.Recv.UnicastBytes", i);
-	t->Recv.UnicastCount = PackGetInt64Ex(p, "Ex.Recv.UnicastCount", i);
-	t->Send.BroadcastBytes = PackGetInt64Ex(p, "Ex.Send.BroadcastBytes", i);
-	t->Send.BroadcastCount = PackGetInt64Ex(p, "Ex.Send.BroadcastCount", i);
-	t->Send.UnicastBytes = PackGetInt64Ex(p, "Ex.Send.UnicastBytes", i);
-	t->Send.UnicastCount = PackGetInt64Ex(p, "Ex.Send.UnicastCount", i);
+	RpcFieldInItem(&rpc_traffic_ex_table, t, p, i);
 }
 void OutRpcTrafficEx(TRAFFIC *t, PACK *p, UINT i, UINT num)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt64Ex(p, "Ex.Recv.BroadcastBytes", t->Recv.BroadcastBytes, i, num);
-	PackAddInt64Ex(p, "Ex.Recv.BroadcastCount", t->Recv.BroadcastCount, i, num);
-	PackAddInt64Ex(p, "Ex.Recv.UnicastBytes", t->Recv.UnicastBytes, i, num);
-	PackAddInt64Ex(p, "Ex.Recv.UnicastCount", t->Recv.UnicastCount, i, num);
-	PackAddInt64Ex(p, "Ex.Send.BroadcastBytes", t->Send.BroadcastBytes, i, num);
-	PackAddInt64Ex(p, "Ex.Send.BroadcastCount", t->Send.BroadcastCount, i, num);
-	PackAddInt64Ex(p, "Ex.Send.UnicastBytes", t->Send.UnicastBytes, i, num);
-	PackAddInt64Ex(p, "Ex.Send.UnicastCount", t->Send.UnicastCount, i, num);
+	RpcFieldOutItem(&rpc_traffic_ex_table, p, t, i, num);
 }
+
+static const RPC_FIELD rpc_traffic_fields[] =
+{
+	RPC_ROW_INT64(TRAFFIC, Recv.BroadcastBytes, "Recv.BroadcastBytes"),
+	RPC_ROW_INT64(TRAFFIC, Recv.BroadcastCount, "Recv.BroadcastCount"),
+	RPC_ROW_INT64(TRAFFIC, Recv.UnicastBytes, "Recv.UnicastBytes"),
+	RPC_ROW_INT64(TRAFFIC, Recv.UnicastCount, "Recv.UnicastCount"),
+	RPC_ROW_INT64(TRAFFIC, Send.BroadcastBytes, "Send.BroadcastBytes"),
+	RPC_ROW_INT64(TRAFFIC, Send.BroadcastCount, "Send.BroadcastCount"),
+	RPC_ROW_INT64(TRAFFIC, Send.UnicastBytes, "Send.UnicastBytes"),
+	RPC_ROW_INT64(TRAFFIC, Send.UnicastCount, "Send.UnicastCount"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_traffic_table, TRAFFIC, rpc_traffic_fields);
 
 void InRpcTraffic(TRAFFIC *t, PACK *p)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(TRAFFIC));
-	t->Recv.BroadcastBytes = PackGetInt64(p, "Recv.BroadcastBytes");
-	t->Recv.BroadcastCount = PackGetInt64(p, "Recv.BroadcastCount");
-	t->Recv.UnicastBytes = PackGetInt64(p, "Recv.UnicastBytes");
-	t->Recv.UnicastCount = PackGetInt64(p, "Recv.UnicastCount");
-	t->Send.BroadcastBytes = PackGetInt64(p, "Send.BroadcastBytes");
-	t->Send.BroadcastCount = PackGetInt64(p, "Send.BroadcastCount");
-	t->Send.UnicastBytes = PackGetInt64(p, "Send.UnicastBytes");
-	t->Send.UnicastCount = PackGetInt64(p, "Send.UnicastCount");
+	RpcFieldIn(&rpc_traffic_table, t, p);
 }
 void OutRpcTraffic(PACK *p, TRAFFIC *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt64(p, "Recv.BroadcastBytes", t->Recv.BroadcastBytes);
-	PackAddInt64(p, "Recv.BroadcastCount", t->Recv.BroadcastCount);
-	PackAddInt64(p, "Recv.UnicastBytes", t->Recv.UnicastBytes);
-	PackAddInt64(p, "Recv.UnicastCount", t->Recv.UnicastCount);
-	PackAddInt64(p, "Send.BroadcastBytes", t->Send.BroadcastBytes);
-	PackAddInt64(p, "Send.BroadcastCount", t->Send.BroadcastCount);
-	PackAddInt64(p, "Send.UnicastBytes", t->Send.UnicastBytes);
-	PackAddInt64(p, "Send.UnicastCount", t->Send.UnicastCount);
+	RpcFieldOut(&rpc_traffic_table, p, t);
 }
+
+static const RPC_FIELD rpc_client_option_fields[] =
+{
+	RPC_ROW_UNISTR(CLIENT_OPTION, AccountName, "AccountName"),
+	RPC_ROW_STR(CLIENT_OPTION, Hostname, "Hostname"),
+	RPC_ROW_STR(CLIENT_OPTION, ProxyName, "ProxyName"),
+	RPC_ROW_STR(CLIENT_OPTION, ProxyUsername, "ProxyUsername"),
+	RPC_ROW_STR(CLIENT_OPTION, ProxyPassword, "ProxyPassword"),
+	RPC_ROW_STR(CLIENT_OPTION, CustomHttpHeader, "CustomHttpHeader"),
+	RPC_ROW_STR(CLIENT_OPTION, HubName, "HubName"),
+	RPC_ROW_STR(CLIENT_OPTION, DeviceName, "DeviceName"),
+	RPC_ROW_INT(CLIENT_OPTION, Port, "Port"),
+	RPC_ROW_INT(CLIENT_OPTION, PortUDP, "PortUDP"),
+	RPC_ROW_INT(CLIENT_OPTION, ProxyType, "ProxyType"),
+	RPC_ROW_INT(CLIENT_OPTION, ProxyPort, "ProxyPort"),
+	RPC_ROW_INT(CLIENT_OPTION, NumRetry, "NumRetry"),
+	RPC_ROW_INT(CLIENT_OPTION, RetryInterval, "RetryInterval"),
+	RPC_ROW_INT(CLIENT_OPTION, MaxConnection, "MaxConnection"),
+	RPC_ROW_BOOL(CLIENT_OPTION, UseEncrypt, "UseEncrypt"),
+	RPC_ROW_BOOL(CLIENT_OPTION, UseCompress, "UseCompress"),
+	RPC_ROW_BOOL(CLIENT_OPTION, HalfConnection, "HalfConnection"),
+	RPC_ROW_BOOL(CLIENT_OPTION, NoRoutingTracking, "NoRoutingTracking"),
+	RPC_ROW_INT(CLIENT_OPTION, AdditionalConnectionInterval, "AdditionalConnectionInterval"),
+	RPC_ROW_INT(CLIENT_OPTION, ConnectionDisconnectSpan, "ConnectionDisconnectSpan"),
+	RPC_ROW_BOOL(CLIENT_OPTION, HideStatusWindow, "HideStatusWindow"),
+	RPC_ROW_BOOL(CLIENT_OPTION, HideNicInfoWindow, "HideNicInfoWindow"),
+	RPC_ROW_BOOL(CLIENT_OPTION, RequireMonitorMode, "RequireMonitorMode"),
+	RPC_ROW_BOOL(CLIENT_OPTION, RequireBridgeRoutingMode, "RequireBridgeRoutingMode"),
+	RPC_ROW_BOOL(CLIENT_OPTION, DisableQoS, "DisableQoS"),
+	RPC_ROW_BOOL(CLIENT_OPTION, FromAdminPack, "FromAdminPack"),
+	RPC_ROW_BOOL(CLIENT_OPTION, NoUdpAcceleration, "NoUdpAcceleration"),
+	RPC_ROW_DATA(CLIENT_OPTION, HostUniqueKey, "HostUniqueKey"),
+	RPC_ROW_IP(CLIENT_OPTION, BindLocalIP, "BindLocalIP"),// Source IP address for outgoing connection
+	RPC_ROW_INT(CLIENT_OPTION, BindLocalPort, "BindLocalPort"),// Source port number for outgoing connection
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_client_option_table, CLIENT_OPTION, rpc_client_option_fields);
 
 void InRpcClientOption(CLIENT_OPTION *c, PACK *p)
 {
-	if (c == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(c, sizeof(CLIENT_OPTION));
-
-	PackGetUniStr(p, "AccountName", c->AccountName, sizeof(c->AccountName));
-	PackGetStr(p, "Hostname", c->Hostname, sizeof(c->Hostname));
-	c->Port = PackGetInt(p, "Port");
-	c->PortUDP = PackGetInt(p, "PortUDP");
-	c->ProxyType = PackGetInt(p, "ProxyType");
-	c->ProxyPort = PackGetInt(p, "ProxyPort");
-	c->NumRetry = PackGetInt(p, "NumRetry");
-	c->RetryInterval = PackGetInt(p, "RetryInterval");
-	c->MaxConnection = PackGetInt(p, "MaxConnection");
-	c->AdditionalConnectionInterval = PackGetInt(p, "AdditionalConnectionInterval");
-	c->ConnectionDisconnectSpan = PackGetInt(p, "ConnectionDisconnectSpan");
-	c->HideStatusWindow = PackGetBool(p, "HideStatusWindow");
-	c->HideNicInfoWindow = PackGetBool(p, "HideNicInfoWindow");
-	c->DisableQoS = PackGetBool(p, "DisableQoS");
-	PackGetStr(p, "ProxyName", c->ProxyName, sizeof(c->ProxyName));
-	PackGetStr(p, "ProxyUsername", c->ProxyUsername, sizeof(c->ProxyUsername));
-	PackGetStr(p, "ProxyPassword", c->ProxyPassword, sizeof(c->ProxyPassword));
-	PackGetStr(p, "CustomHttpHeader", c->CustomHttpHeader, sizeof(c->CustomHttpHeader));
-	PackGetStr(p, "HubName", c->HubName, sizeof(c->HubName));
-	PackGetStr(p, "DeviceName", c->DeviceName, sizeof(c->DeviceName));
-	PackGetIp(p, "BindLocalIP", &c->BindLocalIP);
-	c->BindLocalPort = PackGetInt(p, "BindLocalPort");
-
-	c->UseEncrypt = PackGetInt(p, "UseEncrypt") ? true : false;
-	c->UseCompress = PackGetInt(p, "UseCompress") ? true : false;
-	c->HalfConnection = PackGetInt(p, "HalfConnection") ? true : false;
-	c->NoRoutingTracking = PackGetInt(p, "NoRoutingTracking") ? true : false;
-	c->RequireMonitorMode = PackGetBool(p, "RequireMonitorMode");
-	c->RequireBridgeRoutingMode = PackGetBool(p, "RequireBridgeRoutingMode");
-	c->FromAdminPack = PackGetBool(p, "FromAdminPack");
-	c->NoUdpAcceleration = PackGetBool(p, "NoUdpAcceleration");
-	PackGetData2(p, "HostUniqueKey", c->HostUniqueKey, SHA1_SIZE);
+	RpcFieldIn(&rpc_client_option_table, c, p);
 }
 void OutRpcClientOption(PACK *p, CLIENT_OPTION *c)
 {
-	if (c == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddUniStr(p, "AccountName", c->AccountName);
-	PackAddStr(p, "Hostname", c->Hostname);
-	PackAddStr(p, "ProxyName", c->ProxyName);
-	PackAddStr(p, "ProxyUsername", c->ProxyUsername);
-	PackAddStr(p, "ProxyPassword", c->ProxyPassword);
-	PackAddStr(p, "CustomHttpHeader", c->CustomHttpHeader);
-	PackAddStr(p, "HubName", c->HubName);
-	PackAddStr(p, "DeviceName", c->DeviceName);
-	PackAddInt(p, "Port", c->Port);
-	PackAddInt(p, "PortUDP", c->PortUDP);
-	PackAddInt(p, "ProxyType", c->ProxyType);
-	PackAddInt(p, "ProxyPort", c->ProxyPort);
-	PackAddInt(p, "NumRetry", c->NumRetry);
-	PackAddInt(p, "RetryInterval", c->RetryInterval);
-	PackAddInt(p, "MaxConnection", c->MaxConnection);
-	PackAddBool(p, "UseEncrypt", c->UseEncrypt);
-	PackAddBool(p, "UseCompress", c->UseCompress);
-	PackAddBool(p, "HalfConnection", c->HalfConnection);
-	PackAddBool(p, "NoRoutingTracking", c->NoRoutingTracking);
-	PackAddInt(p, "AdditionalConnectionInterval", c->AdditionalConnectionInterval);
-	PackAddInt(p, "ConnectionDisconnectSpan", c->ConnectionDisconnectSpan);
-	PackAddBool(p, "HideStatusWindow", c->HideStatusWindow);
-	PackAddBool(p, "HideNicInfoWindow", c->HideNicInfoWindow);
-	PackAddBool(p, "RequireMonitorMode", c->RequireMonitorMode);
-	PackAddBool(p, "RequireBridgeRoutingMode", c->RequireBridgeRoutingMode);
-	PackAddBool(p, "DisableQoS", c->DisableQoS);
-	PackAddBool(p, "FromAdminPack", c->FromAdminPack);
-	PackAddBool(p, "NoUdpAcceleration", c->NoUdpAcceleration);
-	PackAddData(p, "HostUniqueKey", c->HostUniqueKey, SHA1_SIZE);
-	PackAddIp(p, "BindLocalIP", &c->BindLocalIP);
-	PackAddInt(p, "BindLocalPort", c->BindLocalPort);
+	RpcFieldOut(&rpc_client_option_table, p, c);
 }
 
 void InRpcClientAuth(CLIENT_AUTH *c, PACK *p)
@@ -1386,152 +1329,106 @@ void OutRpcPolicy(PACK *p, POLICY *o)
 	PackAddPolicy(p, o);
 }
 
+static void RpcClientGetConnectionStatusPolicyOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	OutRpcPolicy(p, (POLICY *)((UCHAR *)base + f->Offset));
+}
+static void RpcClientGetConnectionStatusPolicyIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcPolicy((POLICY *)((UCHAR *)base + f->Offset), p);
+}
+static const RPC_HOOK rpc_client_get_connection_status_policy_hook = {RpcClientGetConnectionStatusPolicyOut, RpcClientGetConnectionStatusPolicyIn, NULL};
+
+static void RpcClientGetConnectionStatusTrafficOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	OutRpcTraffic(p, (TRAFFIC *)((UCHAR *)base + f->Offset));
+}
+static void RpcClientGetConnectionStatusTrafficIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcTraffic((TRAFFIC *)((UCHAR *)base + f->Offset), p);
+}
+static const RPC_HOOK rpc_client_get_connection_status_traffic_hook = {RpcClientGetConnectionStatusTrafficOut, RpcClientGetConnectionStatusTrafficIn, NULL};
+
+// Certificate as DER data (read without the PEM fallback of PackGetX);
+// CiFreeClientGetConnectionStatus releases it
+static void RpcClientGetConnectionStatusXOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	X *x = *(X **)((UCHAR *)base + f->Offset);
+
+	if (x != NULL)
+	{
+		BUF *b = XToBuf(x, false);
+		PackAddBuf(p, f->Key, b);
+		FreeBuf(b);
+	}
+}
+static void RpcClientGetConnectionStatusXIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	BUF *b = PackGetBuf(p, f->Key);
+
+	if (b != NULL)
+	{
+		*(X **)((UCHAR *)base + f->Offset) = BufToX(b, false);
+		FreeBuf(b);
+	}
+}
+static const RPC_HOOK rpc_client_get_connection_status_x_hook = {RpcClientGetConnectionStatusXOut, RpcClientGetConnectionStatusXIn, NULL};
+
+static const RPC_FIELD rpc_client_get_connection_status_fields[] =
+{
+	RPC_ROW_UNISTR(RPC_CLIENT_GET_CONNECTION_STATUS, AccountName, "AccountName"),
+	RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, ServerName, "ServerName"),
+	RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, ServerProductName, "ServerProductName"),
+	RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, ProtocolName, "ProtocolVersion"),
+	RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, CipherName, "CipherName"),
+	RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, SessionName, "SessionName"),
+	RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, ConnectionName, "ConnectionName"),
+	RPC_ROW_DATA(RPC_CLIENT_GET_CONNECTION_STATUS, SessionKey, "SessionKey"),
+	RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, Active, "Active"),
+	RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, Connected, "Connected"),
+	RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, SessionStatus, "SessionStatus"),
+	RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, ServerPort, "ServerPort"),
+	RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, ServerProductVer, "ServerProductVer"),
+	RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, ServerProductBuild, "ServerProductBuild"),
+	RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, NumConnectionsEstablished, "NumConnectionsEstablished"),
+	RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, HalfConnection, "HalfConnection"),
+	RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, QoS, "QoS"),
+	RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, MaxTcpConnections, "MaxTcpConnections"),
+	RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, NumTcpConnections, "NumTcpConnections"),
+	RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, NumTcpConnectionsUpload, "NumTcpConnectionsUpload"),
+	RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, NumTcpConnectionsDownload, "NumTcpConnectionsDownload"),
+	RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, UseEncrypt, "UseEncrypt"),
+	RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, UseCompress, "UseCompress"),
+	RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, UnderlayProtocol, "UnderlayProtocol"),
+	RPC_ROW_STR(RPC_CLIENT_GET_CONNECTION_STATUS, ProtocolDetails, "ProtocolDetails"),
+	RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, IsUdpAccelerationEnabled, "IsUdpAccelerationEnabled"),
+	RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, IsUsingUdpAcceleration, "IsUsingUdpAcceleration"),
+	RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, IsBridgeMode, "IsBridgeMode"),
+	RPC_ROW_BOOL(RPC_CLIENT_GET_CONNECTION_STATUS, IsMonitorMode, "IsMonitorMode"),
+	RPC_ROW_TIME64(RPC_CLIENT_GET_CONNECTION_STATUS, StartTime, "StartTime"),
+	/* !!! Do not correct the spelling to keep the backward protocol compatibility !!!  */
+	RPC_ROW_TIME64(RPC_CLIENT_GET_CONNECTION_STATUS, FirstConnectionEstablisiedTime, "FirstConnectionEstablisiedTime"),
+	RPC_ROW_TIME64(RPC_CLIENT_GET_CONNECTION_STATUS, CurrentConnectionEstablishTime, "CurrentConnectionEstablishTime"),
+	RPC_ROW_INT64(RPC_CLIENT_GET_CONNECTION_STATUS, TotalSendSize, "TotalSendSize"),
+	RPC_ROW_INT64(RPC_CLIENT_GET_CONNECTION_STATUS, TotalRecvSize, "TotalRecvSize"),
+	RPC_ROW_INT64(RPC_CLIENT_GET_CONNECTION_STATUS, TotalSendSizeReal, "TotalSendSizeReal"),
+	RPC_ROW_INT64(RPC_CLIENT_GET_CONNECTION_STATUS, TotalRecvSizeReal, "TotalRecvSizeReal"),
+	RPC_ROW_INT(RPC_CLIENT_GET_CONNECTION_STATUS, VLanId, "VLanId"),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_CLIENT_GET_CONNECTION_STATUS, Policy, NULL, 0, &rpc_client_get_connection_status_policy_hook),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_CLIENT_GET_CONNECTION_STATUS, Traffic, NULL, 0, &rpc_client_get_connection_status_traffic_hook),
+	RPC_ROW_HOOK(RPC_FT_X, RPC_CLIENT_GET_CONNECTION_STATUS, ServerX, "ServerX", 0, &rpc_client_get_connection_status_x_hook),
+	RPC_ROW_HOOK(RPC_FT_X, RPC_CLIENT_GET_CONNECTION_STATUS, ClientX, "ClientX", 0, &rpc_client_get_connection_status_x_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_client_get_connection_status_table, RPC_CLIENT_GET_CONNECTION_STATUS, rpc_client_get_connection_status_fields);
+
 void InRpcClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *s, PACK *p)
 {
-	BUF *b;
-	if (s == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(s, sizeof(RPC_CLIENT_GET_CONNECTION_STATUS));
-
-	PackGetUniStr(p, "AccountName", s->AccountName, sizeof(s->AccountName));
-
-	PackGetStr(p, "ServerName", s->ServerName, sizeof(s->ServerName));
-	PackGetStr(p, "ServerProductName", s->ServerProductName, sizeof(s->ServerProductName));
-	PackGetStr(p, "ProtocolVersion", s->ProtocolName, sizeof(s->ProtocolName));
-	PackGetStr(p, "CipherName", s->CipherName, sizeof(s->CipherName));
-	PackGetStr(p, "SessionName", s->SessionName, sizeof(s->SessionName));
-	PackGetStr(p, "ConnectionName", s->ConnectionName, sizeof(s->ConnectionName));
-
-	if (PackGetDataSize(p, "SessionKey") == SHA1_SIZE)
-	{
-		PackGetData(p, "SessionKey", s->SessionKey);
-	}
-
-	s->SessionStatus = PackGetInt(p, "SessionStatus");
-	s->ServerPort = PackGetInt(p, "ServerPort");
-	s->ServerProductVer = PackGetInt(p, "ServerProductVer");
-	s->ServerProductBuild = PackGetInt(p, "ServerProductBuild");
-	s->NumConnectionsEstablished = PackGetInt(p, "NumConnectionsEstablished");
-	s->MaxTcpConnections = PackGetInt(p, "MaxTcpConnections");
-	s->NumTcpConnections = PackGetInt(p, "NumTcpConnections");
-	s->NumTcpConnectionsUpload = PackGetInt(p, "NumTcpConnectionsUpload");
-	s->NumTcpConnectionsDownload = PackGetInt(p, "NumTcpConnectionsDownload");
-
-	s->StartTime = PackGetInt64(p, "StartTime");
-	/* !!! Do not correct the spelling to keep the backward protocol compatibility !!!  */
-	s->FirstConnectionEstablisiedTime = PackGetInt64(p, "FirstConnectionEstablisiedTime");
-	s->CurrentConnectionEstablishTime = PackGetInt64(p, "CurrentConnectionEstablishTime");
-	s->TotalSendSize = PackGetInt64(p, "TotalSendSize");
-	s->TotalRecvSize = PackGetInt64(p, "TotalRecvSize");
-	s->TotalSendSizeReal = PackGetInt64(p, "TotalSendSizeReal");
-	s->TotalRecvSizeReal = PackGetInt64(p, "TotalRecvSizeReal");
-
-	s->Active = PackGetInt(p, "Active") ? true : false;
-	s->Connected = PackGetInt(p, "Connected") ? true : false;
-	s->HalfConnection = PackGetInt(p, "HalfConnection") ? true : false;
-	s->QoS = PackGetInt(p, "QoS") ? true : false;
-	s->UseEncrypt = PackGetInt(p, "UseEncrypt") ? true : false;
-	s->UseCompress = PackGetInt(p, "UseCompress") ? true : false;
-	PackGetStr(p, "UnderlayProtocol", s->UnderlayProtocol, sizeof(s->UnderlayProtocol));
-	PackGetStr(p, "ProtocolDetails", s->ProtocolDetails, sizeof(s->ProtocolDetails));
-	s->IsUdpAccelerationEnabled = PackGetInt(p, "IsUdpAccelerationEnabled") ? true : false;
-	s->IsUsingUdpAcceleration = PackGetInt(p, "IsUsingUdpAcceleration") ? true : false;
-
-	s->IsBridgeMode = PackGetBool(p, "IsBridgeMode");
-	s->IsMonitorMode = PackGetBool(p, "IsMonitorMode");
-
-	s->VLanId = PackGetInt(p, "VLanId");
-
-	b = PackGetBuf(p, "ServerX");
-	if (b != NULL)
-	{
-		s->ServerX = BufToX(b, false);
-		FreeBuf(b);
-	}
-
-	b = PackGetBuf(p, "ClientX");
-	if (b != NULL)
-	{
-		s->ClientX = BufToX(b, false);
-		FreeBuf(b);
-	}
-
-	InRpcPolicy(&s->Policy, p);
-
-	InRpcTraffic(&s->Traffic, p);
+	RpcFieldIn(&rpc_client_get_connection_status_table, s, p);
 }
 void OutRpcClientGetConnectionStatus(PACK *p, RPC_CLIENT_GET_CONNECTION_STATUS *c)
 {
-	BUF *b;
-	if (p == NULL || c == NULL)
-	{
-		return;
-	}
-
-	PackAddUniStr(p, "AccountName", c->AccountName);
-
-	PackAddStr(p, "ServerName", c->ServerName);
-	PackAddStr(p, "ServerProductName", c->ServerProductName);
-	PackAddStr(p, "ProtocolVersion", c->ProtocolName);
-	PackAddStr(p, "CipherName", c->CipherName);
-	PackAddStr(p, "SessionName", c->SessionName);
-	PackAddStr(p, "ConnectionName", c->ConnectionName);
-
-	PackAddData(p, "SessionKey", c->SessionKey, SHA1_SIZE);
-
-	PackAddBool(p, "Active", c->Active);
-	PackAddBool(p, "Connected", c->Connected);
-	PackAddInt(p, "SessionStatus", c->SessionStatus);
-	PackAddInt(p, "ServerPort", c->ServerPort);
-	PackAddInt(p, "ServerProductVer", c->ServerProductVer);
-	PackAddInt(p, "ServerProductBuild", c->ServerProductBuild);
-	PackAddInt(p, "NumConnectionsEstablished", c->NumConnectionsEstablished);
-	PackAddBool(p, "HalfConnection", c->HalfConnection);
-	PackAddBool(p, "QoS", c->QoS);
-	PackAddInt(p, "MaxTcpConnections", c->MaxTcpConnections);
-	PackAddInt(p, "NumTcpConnections", c->NumTcpConnections);
-	PackAddInt(p, "NumTcpConnectionsUpload", c->NumTcpConnectionsUpload);
-	PackAddInt(p, "NumTcpConnectionsDownload", c->NumTcpConnectionsDownload);
-	PackAddBool(p, "UseEncrypt", c->UseEncrypt);
-	PackAddBool(p, "UseCompress", c->UseCompress);
-	PackAddStr(p, "UnderlayProtocol", c->UnderlayProtocol);
-	PackAddStr(p, "ProtocolDetails", c->ProtocolDetails);
-	PackAddBool(p, "IsUdpAccelerationEnabled", c->IsUdpAccelerationEnabled);
-	PackAddBool(p, "IsUsingUdpAcceleration", c->IsUsingUdpAcceleration);
-
-	PackAddBool(p, "IsBridgeMode", c->IsBridgeMode);
-	PackAddBool(p, "IsMonitorMode", c->IsMonitorMode);
-
-	PackAddInt64(p, "StartTime", c->StartTime);
-	PackAddInt64(p, "FirstConnectionEstablisiedTime", c->FirstConnectionEstablisiedTime);
-	PackAddInt64(p, "CurrentConnectionEstablishTime", c->CurrentConnectionEstablishTime);
-	PackAddInt64(p, "TotalSendSize", c->TotalSendSize);
-	PackAddInt64(p, "TotalRecvSize", c->TotalRecvSize);
-	PackAddInt64(p, "TotalSendSizeReal", c->TotalSendSizeReal);
-	PackAddInt64(p, "TotalRecvSizeReal", c->TotalRecvSizeReal);
-
-	PackAddInt(p, "VLanId", c->VLanId);
-
-	OutRpcPolicy(p, &c->Policy);
-
-	OutRpcTraffic(p, &c->Traffic);
-
-	if (c->ServerX != NULL)
-	{
-		b = XToBuf(c->ServerX, false);
-		PackAddBuf(p, "ServerX", b);
-		FreeBuf(b);
-	}
-
-	if (c->ClientX != NULL)
-	{
-		b = XToBuf(c->ClientX, false);
-		PackAddBuf(p, "ClientX", b);
-		FreeBuf(b);
-	}
+	RpcFieldOut(&rpc_client_get_connection_status_table, p, c);
 }
 
 void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s)

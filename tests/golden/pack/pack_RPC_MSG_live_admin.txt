@@ -1,0 +1,11 @@
+# RPC_MSG_live_admin RPC_MSG live
+[out]
+#0 HubName str[1] = ""
+#1 Msg data[1] = <masked>
+bytes=<masked>
+[in-out]
+#0 HubName str[1] = "HubName#0"
+#1 Msg data[1] = hex:4d7367233020c3a9e4b8ad
+bytes=66 sha1=b4e90784fd11af71f4d7a54358c6ae011730d484
+[in-out-in-out]
+same

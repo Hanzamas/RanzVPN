@@ -10,6 +10,7 @@
 #include "Listener.h"
 #include "MsChapV2.h"
 #include "Remote.h"
+#include "RpcField.h"
 #include "Protocol.h"
 #include "Sam.h"
 #include "Server.h"
@@ -5818,150 +5819,113 @@ static void FreeRpcMsg(RPC_MSG *t)
 	Free(t->Msg);
 }
 
-static void InRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t, PACK *p)
+static const RPC_FIELD rpc_enum_eth_vlan_item_fields[] =
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_STR(RPC_ENUM_ETH_VLAN_ITEM, DeviceName, "DeviceName"),
+	RPC_ROW_STR(RPC_ENUM_ETH_VLAN_ITEM, Guid, "Guid"),
+	RPC_ROW_STR(RPC_ENUM_ETH_VLAN_ITEM, DeviceInstanceId, "DeviceInstanceId"),
+	RPC_ROW_STR(RPC_ENUM_ETH_VLAN_ITEM, DriverName, "DriverName"),
+	RPC_ROW_STR(RPC_ENUM_ETH_VLAN_ITEM, DriverType, "DriverType"),
+	RPC_ROW_BOOL(RPC_ENUM_ETH_VLAN_ITEM, Support, "Support"),
+	RPC_ROW_BOOL(RPC_ENUM_ETH_VLAN_ITEM, Enabled, "Enabled"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_eth_vlan_item_table, RPC_ENUM_ETH_VLAN_ITEM, rpc_enum_eth_vlan_item_fields);
 
-	Zero(t, sizeof(RPC_ENUM_ETH_VLAN));
+static const RPC_FIELD rpc_enum_eth_vlan_fields[] =
+{
+	RPC_ROW_ARRAY(RPC_ENUM_ETH_VLAN, Items, NumItem, &rpc_enum_eth_vlan_item_table, "DeviceName", 0),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_eth_vlan_table, RPC_ENUM_ETH_VLAN, rpc_enum_eth_vlan_fields);
 
-	t->NumItem = PackGetIndexCount(p, "DeviceName");
-	t->Items = ZeroMalloc(sizeof(RPC_ENUM_ETH_VLAN_ITEM) * t->NumItem);
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_ENUM_ETH_VLAN_ITEM *e = &t->Items[i];
-
-		PackGetStrEx(p, "DeviceName", e->DeviceName, sizeof(e->DeviceName), i);
-		PackGetStrEx(p, "Guid", e->Guid, sizeof(e->Guid), i);
-		PackGetStrEx(p, "DriverName", e->DriverName, sizeof(e->DriverName), i);
-		PackGetStrEx(p, "DriverType", e->DriverType, sizeof(e->DriverType), i);
-		e->Support = PackGetBoolEx(p, "Support", i);
-		e->Enabled = PackGetBoolEx(p, "Enabled", i);
-	}
+void InRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t, PACK *p)
+{
+	RpcFieldIn(&rpc_enum_eth_vlan_table, t, p);
 }
 static void OutRpcEnumEthVLan(PACK *p, RPC_ENUM_ETH_VLAN *t)
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_ENUM_ETH_VLAN_ITEM *e = &t->Items[i];
-
-		PackAddStrEx(p, "DeviceName", e->DeviceName, i, t->NumItem);
-		PackAddStrEx(p, "Guid", e->Guid, i, t->NumItem);
-		PackAddStrEx(p, "DeviceInstanceId", e->DeviceInstanceId, i, t->NumItem);
-		PackAddStrEx(p, "DriverName", e->DriverName, i, t->NumItem);
-		PackAddStrEx(p, "DriverType", e->DriverType, i, t->NumItem);
-		PackAddBoolEx(p, "Support", e->Support, i, t->NumItem);
-		PackAddBoolEx(p, "Enabled", e->Enabled, i, t->NumItem);
-	}
+	RpcFieldOut(&rpc_enum_eth_vlan_table, p, t);
 }
 void FreeRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Items);
+	RpcFieldFree(&rpc_enum_eth_vlan_table, t);
 }
 
-static void InRpcEnumLogFile(RPC_ENUM_LOG_FILE *t, PACK *p)
+static const RPC_FIELD rpc_enum_log_file_item_fields[] =
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_STR(RPC_ENUM_LOG_FILE_ITEM, FilePath, "FilePath"),
+	RPC_ROW_INT(RPC_ENUM_LOG_FILE_ITEM, FileSize, "FileSize"),
+	RPC_ROW_TIME64(RPC_ENUM_LOG_FILE_ITEM, UpdatedTime, "UpdatedTime"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_log_file_item_table, RPC_ENUM_LOG_FILE_ITEM, rpc_enum_log_file_item_fields);
 
-	Zero(t, sizeof(RPC_ENUM_LOG_FILE));
-	t->NumItem = PackGetInt(p, "NumItem");
-	t->Items = ZeroMalloc(sizeof(RPC_ENUM_LOG_FILE_ITEM) * t->NumItem);
+static const RPC_FIELD rpc_enum_log_file_fields[] =
+{
+	RPC_ROW_COUNT(RPC_ENUM_LOG_FILE, NumItem),
+	RPC_ROW_ARRAY(RPC_ENUM_LOG_FILE, Items, NumItem, &rpc_enum_log_file_item_table, "FilePath", RPC_FF_READ_NUMITEM),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_log_file_table, RPC_ENUM_LOG_FILE, rpc_enum_log_file_fields);
 
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_ENUM_LOG_FILE_ITEM *e = &t->Items[i];
-
-		PackGetStrEx(p, "FilePath", e->FilePath, sizeof(e->FilePath), i);
-		e->FileSize = PackGetIntEx(p, "FileSize", i);
-		e->UpdatedTime = PackGetInt64Ex(p, "UpdatedTime", i);
-	}
+void InRpcEnumLogFile(RPC_ENUM_LOG_FILE *t, PACK *p)
+{
+	RpcFieldIn(&rpc_enum_log_file_table, t, p);
 }
 static void OutRpcEnumLogFile(PACK *p, RPC_ENUM_LOG_FILE *t)
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "NumItem", t->NumItem);
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_ENUM_LOG_FILE_ITEM *e = &t->Items[i];
-
-		PackAddStrEx(p, "FilePath", e->FilePath, i, t->NumItem);
-		PackAddIntEx(p, "FileSize", e->FileSize, i, t->NumItem);
-		PackAddInt64Ex(p, "UpdatedTime", e->UpdatedTime, i, t->NumItem);
-	}
+	RpcFieldOut(&rpc_enum_log_file_table, p, t);
 }
 void FreeRpcEnumLogFile(RPC_ENUM_LOG_FILE *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Items);
+	RpcFieldFree(&rpc_enum_log_file_table, t);
 }
-static void InRpcReadLogFile(RPC_READ_LOG_FILE *t, PACK *p)
+static void RpcReadLogFileBufferOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
 {
-	if (t == NULL || p == NULL)
+	BUF *b = *((BUF **)(((UCHAR *)base) + f->Offset));
+
+	// Written only when there is a buffer
+	if (b != NULL)
 	{
-		return;
+		PackAddBuf(p, f->Key, b);
 	}
+}
+static void RpcReadLogFileBufferIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	*((BUF **)(((UCHAR *)base) + f->Offset)) = PackGetBuf(p, f->Key);
+}
+static void RpcReadLogFileBufferFree(const RPC_FIELD *f, void *base)
+{
+	BUF *b = *((BUF **)(((UCHAR *)base) + f->Offset));
 
-	Zero(t, sizeof(RPC_READ_LOG_FILE));
-	PackGetStr(p, "FilePath", t->FilePath, sizeof(t->FilePath));
-	t->Offset = PackGetInt(p, "Offset");
+	if (b != NULL)
+	{
+		FreeBuf(b);
+	}
+}
+static const RPC_HOOK rpc_read_log_file_buffer_hook = {RpcReadLogFileBufferOut, RpcReadLogFileBufferIn, RpcReadLogFileBufferFree};
 
-	t->Buffer = PackGetBuf(p, "Buffer");
+static const RPC_FIELD rpc_read_log_file_fields[] =
+{
+	RPC_ROW_STR(RPC_READ_LOG_FILE, FilePath, "FilePath"),
+	RPC_ROW_INT(RPC_READ_LOG_FILE, Offset, "Offset"),
+	RPC_ROW_HOOK(RPC_FT_BUF, RPC_READ_LOG_FILE, Buffer, "Buffer", 0, &rpc_read_log_file_buffer_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_read_log_file_table, RPC_READ_LOG_FILE, rpc_read_log_file_fields);
+
+void InRpcReadLogFile(RPC_READ_LOG_FILE *t, PACK *p)
+{
+	RpcFieldIn(&rpc_read_log_file_table, t, p);
 }
 static void OutRpcReadLogFile(PACK *p, RPC_READ_LOG_FILE *t)
 {
-	if (p == NULL || t == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "FilePath", t->FilePath);
-	PackAddInt(p, "Offset", t->Offset);
-
-	if (t->Buffer != NULL)
-	{
-		PackAddBuf(p, "Buffer", t->Buffer);
-	}
+	RpcFieldOut(&rpc_read_log_file_table, p, t);
 }
 static void FreeRpcReadLogFile(RPC_READ_LOG_FILE *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	if (t->Buffer != NULL)
-	{
-		FreeBuf(t->Buffer);
-	}
+	RpcFieldFree(&rpc_read_log_file_table, t);
 }
 
 static void InRpcAcList(RPC_AC_LIST *t, PACK *p)
@@ -6043,54 +6007,34 @@ void FreeRpcAcList(RPC_AC_LIST *t)
 	FreeAcList(t->o);
 }
 
-static void InRpcEnumCrl(RPC_ENUM_CRL *t, PACK *p)
+static const RPC_FIELD rpc_enum_crl_item_fields[] =
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_INT(RPC_ENUM_CRL_ITEM, Key, "Key"),
+	RPC_ROW_UNISTR(RPC_ENUM_CRL_ITEM, CrlInfo, "CrlInfo"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_crl_item_table, RPC_ENUM_CRL_ITEM, rpc_enum_crl_item_fields);
 
-	Zero(t, sizeof(RPC_ENUM_CRL));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->NumItem = PackGetInt(p, "NumItem");
+static const RPC_FIELD rpc_enum_crl_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_CRL, HubName, "HubName"),
+	RPC_ROW_COUNT(RPC_ENUM_CRL, NumItem),
+	RPC_ROW_ARRAY(RPC_ENUM_CRL, Items, NumItem, &rpc_enum_crl_item_table, "Key", RPC_FF_READ_NUMITEM),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_crl_table, RPC_ENUM_CRL, rpc_enum_crl_fields);
 
-	t->Items = ZeroMalloc(sizeof(RPC_ENUM_CRL_ITEM) * t->NumItem);
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_ENUM_CRL_ITEM *e = &t->Items[i];
-
-		e->Key = PackGetIntEx(p, "Key", i);
-		PackGetUniStrEx(p, "CrlInfo", e->CrlInfo, sizeof(e->CrlInfo), i);
-	}
+void InRpcEnumCrl(RPC_ENUM_CRL *t, PACK *p)
+{
+	RpcFieldIn(&rpc_enum_crl_table, t, p);
 }
 static void OutRpcEnumCrl(PACK *p, RPC_ENUM_CRL *t)
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddInt(p, "NumItem", t->NumItem);
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_ENUM_CRL_ITEM *e = &t->Items[i];
-
-		PackAddIntEx(p, "Key", e->Key, i, t->NumItem);
-		PackAddUniStrEx(p, "CrlInfo", e->CrlInfo, i, t->NumItem);
-	}
+	RpcFieldOut(&rpc_enum_crl_table, p, t);
 }
 void FreeRpcEnumCrl(RPC_ENUM_CRL *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Items);
+	RpcFieldFree(&rpc_enum_crl_table, t);
 }
 
 static void InRpcCrl(RPC_CRL *t, PACK *p)
@@ -6212,156 +6156,106 @@ void FreeRpcCrl(RPC_CRL *t)
 	FreeCrl(t->Crl);
 }
 
-static void InRpcEnumEth(RPC_ENUM_ETH *t, PACK *p)
+static const RPC_FIELD rpc_enum_eth_item_fields[] =
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_STR(RPC_ENUM_ETH_ITEM, DeviceName, "DeviceName"),
+	RPC_ROW_UNISTR(RPC_ENUM_ETH_ITEM, NetworkConnectionName, "NetworkConnectionName"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_eth_item_table, RPC_ENUM_ETH_ITEM, rpc_enum_eth_item_fields);
 
-	Zero(t, sizeof(RPC_ENUM_ETH));
-	t->NumItem = PackGetInt(p, "NumItem");
-	t->Items = ZeroMalloc(sizeof(RPC_ENUM_ETH_ITEM) * t->NumItem);
+static const RPC_FIELD rpc_enum_eth_fields[] =
+{
+	RPC_ROW_COUNT(RPC_ENUM_ETH, NumItem),
+	RPC_ROW_ARRAY(RPC_ENUM_ETH, Items, NumItem, &rpc_enum_eth_item_table, "DeviceName", RPC_FF_READ_NUMITEM),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_eth_table, RPC_ENUM_ETH, rpc_enum_eth_fields);
 
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_ENUM_ETH_ITEM *e = &t->Items[i];
-		PackGetStrEx(p, "DeviceName", e->DeviceName, sizeof(e->DeviceName), i);
-	}
+void InRpcEnumEth(RPC_ENUM_ETH *t, PACK *p)
+{
+	RpcFieldIn(&rpc_enum_eth_table, t, p);
 }
 static void OutRpcEnumEth(PACK *p, RPC_ENUM_ETH *t)
 {
-	UINT i;
-	if (p == NULL || t == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "NumItem", t->NumItem);
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_ENUM_ETH_ITEM *e = &t->Items[i];
-		PackAddStrEx(p, "DeviceName", e->DeviceName, i, t->NumItem);
-		PackAddUniStrEx(p, "NetworkConnectionName", e->NetworkConnectionName, i, t->NumItem);
-	}
+	RpcFieldOut(&rpc_enum_eth_table, p, t);
 }
 void FreeRpcEnumEth(RPC_ENUM_ETH *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Items);
+	RpcFieldFree(&rpc_enum_eth_table, t);
 }
 
-static void InRpcLocalBridge(RPC_LOCALBRIDGE *t, PACK *p)
+static const RPC_FIELD rpc_localbridge_fields[] =
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_STR(RPC_LOCALBRIDGE, DeviceName, "DeviceName"),
+	RPC_ROW_STR(RPC_LOCALBRIDGE, HubName, "HubNameLB"),
+	RPC_ROW_BOOL(RPC_LOCALBRIDGE, TapMode, "TapMode"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_localbridge_table, RPC_LOCALBRIDGE, rpc_localbridge_fields);
 
-	Zero(t, sizeof(RPC_LOCALBRIDGE));
-	PackGetStr(p, "DeviceName", t->DeviceName, sizeof(t->DeviceName));
-	PackGetStr(p, "HubNameLB", t->HubName, sizeof(t->HubName));
-	t->TapMode = PackGetBool(p, "TapMode");
+void InRpcLocalBridge(RPC_LOCALBRIDGE *t, PACK *p)
+{
+	RpcFieldIn(&rpc_localbridge_table, t, p);
 }
 static void OutRpcLocalBridge(PACK *p, RPC_LOCALBRIDGE *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "DeviceName", t->DeviceName);
-	PackAddStr(p, "HubNameLB", t->HubName);
-	PackAddBool(p, "TapMode", t->TapMode);
+	RpcFieldOut(&rpc_localbridge_table, p, t);
 }
 
-static void InRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t, PACK *p)
+// The item is an RPC_LOCALBRIDGE with Online and Active, which the
+// top-level RPC_LOCALBRIDGE table does not carry
+static const RPC_FIELD rpc_enum_localbridge_item_fields[] =
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_STR(RPC_LOCALBRIDGE, DeviceName, "DeviceName"),
+	RPC_ROW_STR(RPC_LOCALBRIDGE, HubName, "HubNameLB"),
+	RPC_ROW_BOOL(RPC_LOCALBRIDGE, Online, "Online"),
+	RPC_ROW_BOOL(RPC_LOCALBRIDGE, Active, "Active"),
+	RPC_ROW_BOOL(RPC_LOCALBRIDGE, TapMode, "TapMode"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_localbridge_item_table, RPC_LOCALBRIDGE, rpc_enum_localbridge_item_fields);
 
-	Zero(t, sizeof(RPC_ENUM_LOCALBRIDGE));
-	t->NumItem = PackGetInt(p, "NumItem");
-	t->Items = ZeroMalloc(sizeof(RPC_LOCALBRIDGE) * t->NumItem);
+static const RPC_FIELD rpc_enum_localbridge_fields[] =
+{
+	RPC_ROW_COUNT(RPC_ENUM_LOCALBRIDGE, NumItem),
+	RPC_ROW_ARRAY(RPC_ENUM_LOCALBRIDGE, Items, NumItem, &rpc_enum_localbridge_item_table, "DeviceName", RPC_FF_READ_NUMITEM),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_localbridge_table, RPC_ENUM_LOCALBRIDGE, rpc_enum_localbridge_fields);
 
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_LOCALBRIDGE *e = &t->Items[i];
-
-		PackGetStrEx(p, "DeviceName", e->DeviceName, sizeof(e->DeviceName), i);
-		PackGetStrEx(p, "HubNameLB", e->HubName, sizeof(e->HubName), i);
-		e->Online = PackGetBoolEx(p, "Online", i);
-		e->Active = PackGetBoolEx(p, "Active", i);
-		e->TapMode = PackGetBoolEx(p, "TapMode", i);
-	}
+void InRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t, PACK *p)
+{
+	RpcFieldIn(&rpc_enum_localbridge_table, t, p);
 }
 static void OutRpcEnumLocalBridge(PACK *p, RPC_ENUM_LOCALBRIDGE *t)
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "NumItem", t->NumItem);
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_LOCALBRIDGE *e = &t->Items[i];
-
-		PackAddStrEx(p, "DeviceName", e->DeviceName, i, t->NumItem);
-		PackAddStrEx(p, "HubNameLB", e->HubName, i, t->NumItem);
-		PackAddBoolEx(p, "Online", e->Online, i, t->NumItem);
-		PackAddBoolEx(p, "Active", e->Active, i, t->NumItem);
-		PackAddBoolEx(p, "TapMode", e->TapMode, i, t->NumItem);
-	}
+	RpcFieldOut(&rpc_enum_localbridge_table, p, t);
 }
 void FreeRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-	Free(t->Items);
+	RpcFieldFree(&rpc_enum_localbridge_table, t);
 }
 
-static void InRpcMemInfo(MEMINFO *t, PACK *p)
+static const RPC_FIELD rpc_meminfo_fields[] =
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_INT64(MEMINFO, TotalMemory, "TotalMemory"),
+	RPC_ROW_INT64(MEMINFO, UsedMemory, "UsedMemory"),
+	RPC_ROW_INT64(MEMINFO, FreeMemory, "FreeMemory"),
+	RPC_ROW_INT64(MEMINFO, TotalPhys, "TotalPhys"),
+	RPC_ROW_INT64(MEMINFO, UsedPhys, "UsedPhys"),
+	RPC_ROW_INT64(MEMINFO, FreePhys, "FreePhys"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_meminfo_table, MEMINFO, rpc_meminfo_fields);
 
-	Zero(t, sizeof(MEMINFO));
-	t->TotalMemory = PackGetInt64(p, "TotalMemory");
-	t->UsedMemory = PackGetInt64(p, "UsedMemory");
-	t->FreeMemory = PackGetInt64(p, "FreeMemory");
-	t->TotalPhys = PackGetInt64(p, "TotalPhys");
-	t->UsedPhys = PackGetInt64(p, "UsedPhys");
-	t->FreePhys = PackGetInt64(p, "FreePhys");
+void InRpcMemInfo(MEMINFO *t, PACK *p)
+{
+	RpcFieldIn(&rpc_meminfo_table, t, p);
 }
 static void OutRpcMemInfo(PACK *p, MEMINFO *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt64(p, "TotalMemory", t->TotalMemory);
-	PackAddInt64(p, "UsedMemory", t->UsedMemory);
-	PackAddInt64(p, "FreeMemory", t->FreeMemory);
-	PackAddInt64(p, "TotalPhys", t->TotalPhys);
-	PackAddInt64(p, "UsedPhys", t->UsedPhys);
-	PackAddInt64(p, "FreePhys", t->FreePhys);
+	RpcFieldOut(&rpc_meminfo_table, p, t);
 }
 
 static void InRpcOsInfo(OS_INFO *t, PACK *p)
@@ -6595,163 +6489,100 @@ static void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t)
 	ReleaseHub(h);
 }
 
-static void InRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t, PACK *p)
+static const RPC_FIELD rpc_enum_license_key_item_fields[] =
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_INT(RPC_ENUM_LICENSE_KEY_ITEM, Id, "Id"),
+	RPC_ROW_STR(RPC_ENUM_LICENSE_KEY_ITEM, LicenseKey, "LicenseKey"),
+	RPC_ROW_STR(RPC_ENUM_LICENSE_KEY_ITEM, LicenseId, "LicenseId"),
+	RPC_ROW_STR(RPC_ENUM_LICENSE_KEY_ITEM, LicenseName, "LicenseName"),
+	RPC_ROW_TIME64(RPC_ENUM_LICENSE_KEY_ITEM, Expires, "Expires"),
+	RPC_ROW_INT(RPC_ENUM_LICENSE_KEY_ITEM, Status, "Status"),
+	RPC_ROW_INT(RPC_ENUM_LICENSE_KEY_ITEM, ProductId, "ProductId"),
+	RPC_ROW_INT64(RPC_ENUM_LICENSE_KEY_ITEM, SystemId, "SystemId"),
+	RPC_ROW_INT(RPC_ENUM_LICENSE_KEY_ITEM, SerialId, "SerialId"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_license_key_item_table, RPC_ENUM_LICENSE_KEY_ITEM, rpc_enum_license_key_item_fields);
 
-	Zero(t, sizeof(RPC_ENUM_LICENSE_KEY));
-	t->NumItem = PackGetInt(p, "NumItem");
-	t->Items = ZeroMalloc(sizeof(RPC_ENUM_LICENSE_KEY_ITEM) * t->NumItem);
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_ENUM_LICENSE_KEY_ITEM *e = &t->Items[i];
+static const RPC_FIELD rpc_enum_license_key_fields[] =
+{
+	RPC_ROW_COUNT(RPC_ENUM_LICENSE_KEY, NumItem),
+	RPC_ROW_ARRAY(RPC_ENUM_LICENSE_KEY, Items, NumItem, &rpc_enum_license_key_item_table, "Id", RPC_FF_READ_NUMITEM),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_license_key_table, RPC_ENUM_LICENSE_KEY, rpc_enum_license_key_fields);
 
-		e->Id = PackGetIntEx(p, "Id", i);
-		PackGetStrEx(p, "LicenseKey", e->LicenseKey, sizeof(e->LicenseKey), i);
-		PackGetStrEx(p, "LicenseId", e->LicenseId, sizeof(e->LicenseId), i);
-		PackGetStrEx(p, "LicenseName", e->LicenseName, sizeof(e->LicenseName), i);
-		e->Expires = PackGetInt64Ex(p, "Expires", i);
-		e->Status = PackGetIntEx(p, "Status", i);
-		e->ProductId = PackGetIntEx(p, "ProductId", i);
-		e->SystemId = PackGetInt64Ex(p, "SystemId", i);
-		e->SerialId = PackGetIntEx(p, "SerialId", i);
-	}
+void InRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t, PACK *p)
+{
+	RpcFieldIn(&rpc_enum_license_key_table, t, p);
 }
 static void OutRpcEnumLicenseKey(PACK *p, RPC_ENUM_LICENSE_KEY *t)
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "NumItem", t->NumItem);
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_ENUM_LICENSE_KEY_ITEM *e = &t->Items[i];
-
-		PackAddIntEx(p, "Id", e->Id, i, t->NumItem);
-		PackAddStrEx(p, "LicenseKey", e->LicenseKey, i, t->NumItem);
-		PackAddStrEx(p, "LicenseId", e->LicenseId, i, t->NumItem);
-		PackAddStrEx(p, "LicenseName", e->LicenseName, i, t->NumItem);
-		PackAddInt64Ex(p, "Expires", e->Expires, i, t->NumItem);
-		PackAddIntEx(p, "Status", e->Status, i, t->NumItem);
-		PackAddIntEx(p, "ProductId", e->ProductId, i, t->NumItem);
-		PackAddInt64Ex(p, "SystemId", e->SystemId, i, t->NumItem);
-		PackAddIntEx(p, "SerialId", e->SerialId, i, t->NumItem);
-	}
+	RpcFieldOut(&rpc_enum_license_key_table, p, t);
 }
 void FreeRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Items);
+	RpcFieldFree(&rpc_enum_license_key_table, t);
 }
 
-static void InRpcLicenseStatus(RPC_LICENSE_STATUS *t, PACK *p)
+static const RPC_FIELD rpc_license_status_fields[] =
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_INT(RPC_LICENSE_STATUS, EditionId, "EditionId"),
+	RPC_ROW_STR(RPC_LICENSE_STATUS, EditionStr, "EditionStr"),
+	RPC_ROW_INT64(RPC_LICENSE_STATUS, SystemId, "SystemId"),
+	RPC_ROW_TIME64(RPC_LICENSE_STATUS, SystemExpires, "SystemExpires"),
+	RPC_ROW_INT(RPC_LICENSE_STATUS, NumClientConnectLicense, "NumClientConnectLicense"),
+	RPC_ROW_INT(RPC_LICENSE_STATUS, NumBridgeConnectLicense, "NumBridgeConnectLicense"),
 
-	Zero(t, sizeof(RPC_LICENSE_STATUS));
+	RPC_ROW_BOOL(RPC_LICENSE_STATUS, NeedSubscription, "NeedSubscription"),
+	RPC_ROW_BOOL(RPC_LICENSE_STATUS, AllowEnterpriseFunction, "AllowEnterpriseFunction"),
+	RPC_ROW_TIME64(RPC_LICENSE_STATUS, SubscriptionExpires, "SubscriptionExpires"),
+	RPC_ROW_BOOL(RPC_LICENSE_STATUS, IsSubscriptionExpired, "IsSubscriptionExpired"),
+	RPC_ROW_INT(RPC_LICENSE_STATUS, NumUserCreationLicense, "NumUserCreationLicense"),
+	RPC_ROW_TIME64(RPC_LICENSE_STATUS, ReleaseDate, "ReleaseDate"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_license_status_table, RPC_LICENSE_STATUS, rpc_license_status_fields);
 
-	t->EditionId = PackGetInt(p, "EditionId");
-	PackGetStr(p, "EditionStr", t->EditionStr, sizeof(t->EditionStr) );
-	t->SystemId = PackGetInt64(p, "SystemId");
-	t->SystemExpires = PackGetInt64(p, "SystemExpires");
-	t->NumClientConnectLicense = PackGetInt(p, "NumClientConnectLicense");
-	t->NumBridgeConnectLicense = PackGetInt(p, "NumBridgeConnectLicense");
-
-	t->NeedSubscription = PackGetBool(p, "NeedSubscription");
-	t->AllowEnterpriseFunction = PackGetBool(p, "AllowEnterpriseFunction");
-	t->SubscriptionExpires = PackGetInt64(p, "SubscriptionExpires");
-	t->IsSubscriptionExpired = PackGetBool(p, "IsSubscriptionExpired");
-	t->ReleaseDate = PackGetInt64(p, "ReleaseDate");
+void InRpcLicenseStatus(RPC_LICENSE_STATUS *t, PACK *p)
+{
+	RpcFieldIn(&rpc_license_status_table, t, p);
 }
 static void OutRpcLicenseStatus(PACK *p, RPC_LICENSE_STATUS *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "EditionId", t->EditionId);
-	PackAddStr(p, "EditionStr", t->EditionStr);
-	PackAddInt64(p, "SystemId", t->SystemId);
-	PackAddInt64(p, "SystemExpires", t->SystemExpires);
-	PackAddInt(p, "NumClientConnectLicense", t->NumClientConnectLicense);
-	PackAddInt(p, "NumBridgeConnectLicense", t->NumBridgeConnectLicense);
-
-	PackAddBool(p, "NeedSubscription", t->NeedSubscription);
-	PackAddBool(p, "AllowEnterpriseFunction", t->AllowEnterpriseFunction);
-	PackAddInt64(p, "SubscriptionExpires", t->SubscriptionExpires);
-	PackAddBool(p, "IsSubscriptionExpired", t->IsSubscriptionExpired);
-	PackAddInt(p, "NumUserCreationLicense", t->NumUserCreationLicense);
-	PackAddInt64(p, "ReleaseDate", t->ReleaseDate);
+	RpcFieldOut(&rpc_license_status_table, p, t);
 }
 
-static void InRpcAdminOption(RPC_ADMIN_OPTION *t, PACK *p)
+static const RPC_FIELD rpc_admin_option_item_fields[] =
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_STR(ADMIN_OPTION, Name, "Name"),
+	RPC_ROW_INT(ADMIN_OPTION, Value, "Value"),
+	RPC_ROW_UNISTR(ADMIN_OPTION, Descrption, "Descrption"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_admin_option_item_table, ADMIN_OPTION, rpc_admin_option_item_fields);
 
-	Zero(t, sizeof(RPC_ADMIN_OPTION));
-	t->NumItem = PackGetIndexCount(p, "Name");
-	t->Items = ZeroMalloc(sizeof(ADMIN_OPTION) * t->NumItem);
+// NumItem is written before HubName; the count is read from "Name"
+static const RPC_FIELD rpc_admin_option_fields[] =
+{
+	RPC_ROW_COUNT(RPC_ADMIN_OPTION, NumItem),
+	RPC_ROW_STR(RPC_ADMIN_OPTION, HubName, "HubName"),
+	RPC_ROW_ARRAY(RPC_ADMIN_OPTION, Items, NumItem, &rpc_admin_option_item_table, "Name", 0),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_admin_option_table, RPC_ADMIN_OPTION, rpc_admin_option_fields);
 
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		ADMIN_OPTION *o = &t->Items[i];
-
-		PackGetStrEx(p, "Name", o->Name, sizeof(o->Name), i);
-		o->Value = PackGetIntEx(p, "Value", i);
-		PackGetUniStrEx(p, "Descrption", o->Descrption, sizeof(o->Descrption), i);
-	}
+void InRpcAdminOption(RPC_ADMIN_OPTION *t, PACK *p)
+{
+	RpcFieldIn(&rpc_admin_option_table, t, p);
 }
 static void OutRpcAdminOption(PACK *p, RPC_ADMIN_OPTION *t)
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "NumItem", t->NumItem);
-
-	PackAddStr(p, "HubName", t->HubName);
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		ADMIN_OPTION *o = &t->Items[i];
-
-		PackAddStrEx(p, "Name", o->Name, i, t->NumItem);
-		PackAddIntEx(p, "Value", o->Value, i, t->NumItem);
-		PackAddUniStrEx(p, "Descrption", o->Descrption, i, t->NumItem);
-	}
+	RpcFieldOut(&rpc_admin_option_table, p, t);
 }
 void FreeRpcAdminOption(RPC_ADMIN_OPTION *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Items);
+	RpcFieldFree(&rpc_admin_option_table, t);
 }
 
 static void InRpcConfig(RPC_CONFIG *t, PACK *p)
@@ -6788,193 +6619,197 @@ void FreeRpcConfig(RPC_CONFIG *t)
 	Free(t->FileData);
 }
 
-static void InRpcBridgeSupport(RPC_BRIDGE_SUPPORT *t, PACK *p)
+static const RPC_FIELD rpc_bridge_support_fields[] =
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_BOOL(RPC_BRIDGE_SUPPORT, IsBridgeSupportedOs, "IsBridgeSupportedOs"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_bridge_support_table, RPC_BRIDGE_SUPPORT, rpc_bridge_support_fields);
 
-	Zero(t, sizeof(RPC_BRIDGE_SUPPORT));
-
-	t->IsBridgeSupportedOs = PackGetBool(p, "IsBridgeSupportedOs");
+void InRpcBridgeSupport(RPC_BRIDGE_SUPPORT *t, PACK *p)
+{
+	RpcFieldIn(&rpc_bridge_support_table, t, p);
 }
 static void OutRpcBridgeSupport(PACK *p, RPC_BRIDGE_SUPPORT *t)
 {
-	if (p == NULL || t == NULL)
-	{
-		return;
-	}
-
-	PackAddBool(p, "IsBridgeSupportedOs", t->IsBridgeSupportedOs);
+	RpcFieldOut(&rpc_bridge_support_table, p, t);
 }
 
-static void InRpcAddAccess(RPC_ADD_ACCESS *t, PACK *p)
+// ACCESS entry, written and read by the hand-written ACCESS functions: as
+// the single entry of a top-level row (index 0 of 1), or as an array item
+static void RpcAccessOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
 {
-	if (t == NULL || p == NULL)
+	ACCESS *a = (ACCESS *)(((UCHAR *)base) + f->Offset);
+
+	if (total == 0)
 	{
-		return;
+		OutRpcAccess(p, a);
 	}
+	else
+	{
+		OutRpcAccessEx(p, a, index, total);
+	}
+}
+static void RpcAccessIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	ACCESS *a = (ACCESS *)(((UCHAR *)base) + f->Offset);
 
-	Zero(t, sizeof(RPC_ADD_ACCESS));
+	if (total == 0)
+	{
+		InRpcAccess(a, p);
+	}
+	else
+	{
+		InRpcAccessEx(a, p, index);
+	}
+}
+static const RPC_HOOK rpc_access_hook = { RpcAccessOut, RpcAccessIn, NULL };
 
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	InRpcAccess(&t->Access, p);
+static const RPC_FIELD rpc_add_access_fields[] =
+{
+	RPC_ROW_STR(RPC_ADD_ACCESS, HubName, "HubName"),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_ADD_ACCESS, Access, NULL, 0, &rpc_access_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_add_access_table, RPC_ADD_ACCESS, rpc_add_access_fields);
+
+void InRpcAddAccess(RPC_ADD_ACCESS *t, PACK *p)
+{
+	RpcFieldIn(&rpc_add_access_table, t, p);
 }
 static void OutRpcAddAccess(PACK *p, RPC_ADD_ACCESS *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	OutRpcAccess(p, &t->Access);
+	RpcFieldOut(&rpc_add_access_table, p, t);
 }
 
-static void InRpcDeleteAccess(RPC_DELETE_ACCESS *t, PACK *p)
+static const RPC_FIELD rpc_delete_access_fields[] =
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_STR(RPC_DELETE_ACCESS, HubName, "HubName"),
+	RPC_ROW_INT(RPC_DELETE_ACCESS, Id, "Id"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_delete_access_table, RPC_DELETE_ACCESS, rpc_delete_access_fields);
 
-	Zero(t, sizeof(RPC_DELETE_ACCESS));
-
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->Id = PackGetInt(p, "Id");
+void InRpcDeleteAccess(RPC_DELETE_ACCESS *t, PACK *p)
+{
+	RpcFieldIn(&rpc_delete_access_table, t, p);
 }
 static void OutRpcDeleteAccess(PACK *p, RPC_DELETE_ACCESS *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddInt(p, "Id", t->Id);
+	RpcFieldOut(&rpc_delete_access_table, p, t);
 }
 
 
-static void InRpcServerInfo(RPC_SERVER_INFO *t, PACK *p)
+static void RpcServerInfoOsInfoOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	OutRpcOsInfo(p, (OS_INFO *)(((UCHAR *)base) + f->Offset));
+}
+static void RpcServerInfoOsInfoIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcOsInfo((OS_INFO *)(((UCHAR *)base) + f->Offset), p);
+}
+static void RpcServerInfoOsInfoFree(const RPC_FIELD *f, void *base)
+{
+	FreeRpcOsInfo((OS_INFO *)(((UCHAR *)base) + f->Offset));
+}
+static const RPC_HOOK rpc_server_info_os_info_hook = {RpcServerInfoOsInfoOut, RpcServerInfoOsInfoIn, RpcServerInfoOsInfoFree};
 
-	Zero(t, sizeof(RPC_SERVER_INFO));
+static const RPC_FIELD rpc_server_info_fields[] =
+{
+	RPC_ROW_STR(RPC_SERVER_INFO, ServerProductName, "ServerProductName"),
+	RPC_ROW_STR(RPC_SERVER_INFO, ServerVersionString, "ServerVersionString"),
+	RPC_ROW_STR(RPC_SERVER_INFO, ServerBuildInfoString, "ServerBuildInfoString"),
+	RPC_ROW_INT(RPC_SERVER_INFO, ServerVerInt, "ServerVerInt"),
+	RPC_ROW_INT(RPC_SERVER_INFO, ServerBuildInt, "ServerBuildInt"),
+	RPC_ROW_STR(RPC_SERVER_INFO, ServerHostName, "ServerHostName"),
+	RPC_ROW_TIME64(RPC_SERVER_INFO, ServerBuildDate, "ServerBuildDate"),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_SERVER_INFO, OsInfo, NULL, 0, &rpc_server_info_os_info_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_server_info_table, RPC_SERVER_INFO, rpc_server_info_fields);
 
-	PackGetStr(p, "ServerProductName", t->ServerProductName, sizeof(t->ServerProductName));
-	PackGetStr(p, "ServerVersionString", t->ServerVersionString, sizeof(t->ServerVersionString));
-	PackGetStr(p, "ServerBuildInfoString", t->ServerBuildInfoString, sizeof(t->ServerBuildInfoString));
-	t->ServerBuildInt = PackGetInt(p, "ServerBuildInt");
-	PackGetStr(p, "ServerHostName", t->ServerHostName, sizeof(t->ServerHostName));
-	InRpcOsInfo(&t->OsInfo, p);
+void InRpcServerInfo(RPC_SERVER_INFO *t, PACK *p)
+{
+	RpcFieldIn(&rpc_server_info_table, t, p);
 }
 static void OutRpcServerInfo(PACK *p, RPC_SERVER_INFO *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "ServerProductName", t->ServerProductName);
-	PackAddStr(p, "ServerVersionString", t->ServerVersionString);
-	PackAddStr(p, "ServerBuildInfoString", t->ServerBuildInfoString);
-	PackAddInt(p, "ServerVerInt", t->ServerVerInt);
-	PackAddInt(p, "ServerBuildInt", t->ServerBuildInt);
-	PackAddStr(p, "ServerHostName", t->ServerHostName);
-	PackAddInt64(p, "ServerBuildDate", t->ServerBuildDate);
-	OutRpcOsInfo(p, &t->OsInfo);
+	RpcFieldOut(&rpc_server_info_table, p, t);
 }
 void FreeRpcServerInfo(RPC_SERVER_INFO *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	FreeRpcOsInfo(&t->OsInfo);
+	RpcFieldFree(&rpc_server_info_table, t);
 }
 
-static void InRpcServerStatus(RPC_SERVER_STATUS *t, PACK *p)
+static void RpcServerStatusTrafficOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	OutRpcTraffic(p, (TRAFFIC *)(((UCHAR *)base) + f->Offset));
+}
+static void RpcServerStatusTrafficIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcTraffic((TRAFFIC *)(((UCHAR *)base) + f->Offset), p);
+}
+static const RPC_HOOK rpc_server_status_traffic_hook = {RpcServerStatusTrafficOut, RpcServerStatusTrafficIn, NULL};
 
-	Zero(t, sizeof(RPC_SERVER_STATUS));
-	t->NumTcpConnections = PackGetInt(p, "NumTcpConnections");
-	t->NumTcpConnectionsLocal = PackGetInt(p, "NumTcpConnectionsLocal");
-	t->NumHubTotal = PackGetInt(p, "NumHubTotal");
-	t->NumSessionsTotal = PackGetInt(p, "NumSessionsTotal");
-	t->NumSessionsLocal = PackGetInt(p, "NumSessionsLocal");
-	t->NumMacTables = PackGetInt(p, "NumMacTables");
-	t->NumIpTables = PackGetInt(p, "NumIpTables");
-	t->NumUsers = PackGetInt(p, "NumUsers");
-	t->NumGroups = PackGetInt(p, "NumGroups");
-	t->CurrentTime = PackGetInt64(p, "CurrentTime");
-	t->CurrentTick = PackGetInt64(p, "CurrentTick");
-	t->AssignedBridgeLicenses = PackGetInt(p, "AssignedBridgeLicenses");
-	t->AssignedClientLicenses = PackGetInt(p, "AssignedClientLicenses");
-	t->StartTime = PackGetInt64(p, "StartTime");
+static void RpcServerStatusMemInfoOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	OutRpcMemInfo(p, (MEMINFO *)(((UCHAR *)base) + f->Offset));
+}
+static void RpcServerStatusMemInfoIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcMemInfo((MEMINFO *)(((UCHAR *)base) + f->Offset), p);
+}
+static const RPC_HOOK rpc_server_status_mem_info_hook = {RpcServerStatusMemInfoOut, RpcServerStatusMemInfoIn, NULL};
 
-	InRpcTraffic(&t->Traffic, p);
+static const RPC_FIELD rpc_server_status_fields[] =
+{
+	RPC_ROW_INT(RPC_SERVER_STATUS, NumHubTotal, "NumHubTotal"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, NumHubStandalone, "NumHubStandalone"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, NumSessionsTotal, "NumSessionsTotal"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, NumSessionsLocal, "NumSessionsLocal"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, NumTcpConnections, "NumTcpConnections"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, NumTcpConnectionsLocal, "NumTcpConnectionsLocal"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, NumMacTables, "NumMacTables"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, NumIpTables, "NumIpTables"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, NumUsers, "NumUsers"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, NumGroups, "NumGroups"),
+	RPC_ROW_TIME64(RPC_SERVER_STATUS, CurrentTime, "CurrentTime"),
+	RPC_ROW_INT64(RPC_SERVER_STATUS, CurrentTick, "CurrentTick"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, AssignedBridgeLicenses, "AssignedBridgeLicenses"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, AssignedClientLicenses, "AssignedClientLicenses"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, AssignedBridgeLicensesTotal, "AssignedBridgeLicensesTotal"),
+	RPC_ROW_INT(RPC_SERVER_STATUS, AssignedClientLicensesTotal, "AssignedClientLicensesTotal"),
+	RPC_ROW_TIME64(RPC_SERVER_STATUS, StartTime, "StartTime"),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_SERVER_STATUS, Traffic, NULL, 0, &rpc_server_status_traffic_hook),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_SERVER_STATUS, MemInfo, NULL, 0, &rpc_server_status_mem_info_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_server_status_table, RPC_SERVER_STATUS, rpc_server_status_fields);
 
-	InRpcMemInfo(&t->MemInfo, p);
+void InRpcServerStatus(RPC_SERVER_STATUS *t, PACK *p)
+{
+	RpcFieldIn(&rpc_server_status_table, t, p);
 }
 static void OutRpcServerStatus(PACK *p, RPC_SERVER_STATUS *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "NumHubTotal", t->NumHubTotal);
-	PackAddInt(p, "NumHubStandalone", t->NumHubStandalone);
-	PackAddInt(p, "NumSessionsTotal", t->NumSessionsTotal);
-	PackAddInt(p, "NumSessionsLocal", t->NumSessionsLocal);
-	PackAddInt(p, "NumTcpConnections", t->NumTcpConnections);
-	PackAddInt(p, "NumTcpConnectionsLocal", t->NumTcpConnectionsLocal);
-	PackAddInt(p, "NumMacTables", t->NumMacTables);
-	PackAddInt(p, "NumIpTables", t->NumIpTables);
-	PackAddInt(p, "NumUsers", t->NumUsers);
-	PackAddInt(p, "NumGroups", t->NumGroups);
-	PackAddInt64(p, "CurrentTime", t->CurrentTime);
-	PackAddInt64(p, "CurrentTick", t->CurrentTick);
-	PackAddInt(p, "AssignedBridgeLicenses", t->AssignedBridgeLicenses);
-	PackAddInt(p, "AssignedClientLicenses", t->AssignedClientLicenses);
-	PackAddInt(p, "AssignedBridgeLicensesTotal", t->AssignedBridgeLicensesTotal);
-	PackAddInt(p, "AssignedClientLicensesTotal", t->AssignedClientLicensesTotal);
-	PackAddInt64(p, "StartTime", t->StartTime);
-
-	OutRpcTraffic(p, &t->Traffic);
-
-	OutRpcMemInfo(p, &t->MemInfo);
+	RpcFieldOut(&rpc_server_status_table, p, t);
 }
 
-static void InRpcListener(RPC_LISTENER *t, PACK *p)
+static const RPC_FIELD rpc_listener_fields[] =
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_INT(RPC_LISTENER, Port, "Port"),
+	RPC_ROW_BOOL(RPC_LISTENER, Enable, "Enable"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_listener_table, RPC_LISTENER, rpc_listener_fields);
 
-	Zero(t, sizeof(RPC_LISTENER));
-	t->Port = PackGetInt(p, "Port");
-	t->Enable = PackGetBool(p, "Enable");
+void InRpcListener(RPC_LISTENER *t, PACK *p)
+{
+	RpcFieldIn(&rpc_listener_table, t, p);
 }
 static void OutRpcListener(PACK *p, RPC_LISTENER *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "Port", t->Port);
-	PackAddBool(p, "Enable", t->Enable);
+	RpcFieldOut(&rpc_listener_table, p, t);
 }
 
 static void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p)
@@ -7063,736 +6898,644 @@ void FreeRpcStr(RPC_STR *t)
 	Free(t->String);
 }
 
-static void InRpcSetPassword(RPC_SET_PASSWORD *t, PACK *p)
+static const RPC_FIELD rpc_set_password_fields[] =
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_DATA(RPC_SET_PASSWORD, HashedPassword, "HashedPassword"),
+	RPC_ROW_STR(RPC_SET_PASSWORD, PlainTextPassword, "PlainTextPassword"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_set_password_table, RPC_SET_PASSWORD, rpc_set_password_fields);
 
-	Zero(t, sizeof(RPC_SET_PASSWORD));
-	PackGetData2(p, "HashedPassword", t->HashedPassword, sizeof(t->HashedPassword));
-	PackGetStr(p, "PlainTextPassword", t->PlainTextPassword, sizeof(t->PlainTextPassword));
+void InRpcSetPassword(RPC_SET_PASSWORD *t, PACK *p)
+{
+	RpcFieldIn(&rpc_set_password_table, t, p);
 }
 static void OutRpcSetPassword(PACK *p, RPC_SET_PASSWORD *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddData(p, "HashedPassword", t->HashedPassword, sizeof(t->HashedPassword));
-	PackAddStr(p, "PlainTextPassword", t->PlainTextPassword);
+	RpcFieldOut(&rpc_set_password_table, p, t);
 }
 
-static void InRpcHubOption(RPC_HUB_OPTION *t, PACK *p)
+static const RPC_FIELD rpc_hub_option_fields[] =
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_INT(RPC_HUB_OPTION, MaxSession, "MaxSession"),
+	RPC_ROW_BOOL(RPC_HUB_OPTION, NoEnum, "NoEnum"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_hub_option_table, RPC_HUB_OPTION, rpc_hub_option_fields);
 
-	Zero(t, sizeof(RPC_HUB_OPTION));
-	t->MaxSession = PackGetInt(p, "MaxSession");
-	t->NoEnum = PackGetBool(p, "NoEnum");
+void InRpcHubOption(RPC_HUB_OPTION *t, PACK *p)
+{
+	RpcFieldIn(&rpc_hub_option_table, t, p);
 }
 static void OutRpcHubOption(PACK *p, RPC_HUB_OPTION *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "MaxSession", t->MaxSession);
-	PackAddBool(p, "NoEnum", t->NoEnum);
+	RpcFieldOut(&rpc_hub_option_table, p, t);
 }
 
-static void InRpcCreateHub(RPC_CREATE_HUB *t, PACK *p)
+static void RpcCreateHubHubOptionOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	OutRpcHubOption(p, (RPC_HUB_OPTION *)(((UCHAR *)base) + f->Offset));
+}
+static void RpcCreateHubHubOptionIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcHubOption((RPC_HUB_OPTION *)(((UCHAR *)base) + f->Offset), p);
+}
+static const RPC_HOOK rpc_create_hub_hub_option_hook = {RpcCreateHubHubOptionOut, RpcCreateHubHubOptionIn, NULL};
 
-	Zero(t, sizeof(RPC_CREATE_HUB));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	PackGetData2(p, "HashedPassword", t->HashedPassword, sizeof(t->HashedPassword));
-	PackGetData2(p, "SecurePassword", t->SecurePassword, sizeof(t->SecurePassword));
-	PackGetStr(p, "AdminPasswordPlainText", t->AdminPasswordPlainText, sizeof(t->AdminPasswordPlainText));
-	t->Online = PackGetBool(p, "Online");
-	InRpcHubOption(&t->HubOption, p);
+static const RPC_FIELD rpc_create_hub_fields[] =
+{
+	RPC_ROW_STR(RPC_CREATE_HUB, HubName, "HubName"),
+	RPC_ROW_DATA(RPC_CREATE_HUB, HashedPassword, "HashedPassword"),
+	RPC_ROW_DATA(RPC_CREATE_HUB, SecurePassword, "SecurePassword"),
+	RPC_ROW_BOOL(RPC_CREATE_HUB, Online, "Online"),
+	RPC_ROW_STR(RPC_CREATE_HUB, AdminPasswordPlainText, "AdminPasswordPlainText"),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_CREATE_HUB, HubOption, NULL, 0, &rpc_create_hub_hub_option_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_create_hub_table, RPC_CREATE_HUB, rpc_create_hub_fields);
+
+void InRpcCreateHub(RPC_CREATE_HUB *t, PACK *p)
+{
+	RpcFieldIn(&rpc_create_hub_table, t, p);
 }
 static void OutRpcCreateHub(PACK *p, RPC_CREATE_HUB *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddData(p, "HashedPassword", t->HashedPassword, sizeof(t->HashedPassword));
-	PackAddData(p, "SecurePassword", t->SecurePassword, sizeof(t->SecurePassword));
-	PackAddBool(p, "Online", t->Online);
-	PackAddStr(p, "AdminPasswordPlainText", t->AdminPasswordPlainText);
-	OutRpcHubOption(p, &t->HubOption);
+	RpcFieldOut(&rpc_create_hub_table, p, t);
 }
 
-static void InRpcEnumHub(RPC_ENUM_HUB *t, PACK *p)
+static void RpcEnumHubTrafficOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	OutRpcTrafficEx((TRAFFIC *)(((UCHAR *)base) + f->Offset), p, index, total);
+}
+static void RpcEnumHubTrafficIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcTrafficEx((TRAFFIC *)(((UCHAR *)base) + f->Offset), p, index);
+}
+static const RPC_HOOK rpc_enum_hub_traffic_hook = {RpcEnumHubTrafficOut, RpcEnumHubTrafficIn, NULL};
 
-	Zero(t, sizeof(RPC_ENUM_HUB));
-	t->NumHub = PackGetIndexCount(p, "HubName");
-	t->Hubs = ZeroMalloc(sizeof(RPC_ENUM_HUB_ITEM) * t->NumHub);
+static const RPC_FIELD rpc_enum_hub_item_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_HUB_ITEM, HubName, "HubName"),
+	RPC_ROW_BOOL(RPC_ENUM_HUB_ITEM, Online, "Online"),
+	RPC_ROW_INT(RPC_ENUM_HUB_ITEM, NumSessions, "NumSessions"),
+	RPC_ROW_INT(RPC_ENUM_HUB_ITEM, NumUsers, "NumUsers"),
+	RPC_ROW_INT(RPC_ENUM_HUB_ITEM, NumGroups, "NumGroups"),
+	RPC_ROW_INT(RPC_ENUM_HUB_ITEM, NumMacTables, "NumMacTables"),
+	RPC_ROW_INT(RPC_ENUM_HUB_ITEM, NumIpTables, "NumIpTables"),
+	RPC_ROW_TIME64(RPC_ENUM_HUB_ITEM, LastCommTime, "LastCommTime"),
+	RPC_ROW_TIME64(RPC_ENUM_HUB_ITEM, CreatedTime, "CreatedTime"),
+	RPC_ROW_TIME64(RPC_ENUM_HUB_ITEM, LastLoginTime, "LastLoginTime"),
+	RPC_ROW_INT(RPC_ENUM_HUB_ITEM, NumLogin, "NumLogin"),
+	RPC_ROW_BOOL(RPC_ENUM_HUB_ITEM, IsTrafficFilled, "IsTrafficFilled"),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_ENUM_HUB_ITEM, Traffic, NULL, 0, &rpc_enum_hub_traffic_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_hub_item_table, RPC_ENUM_HUB_ITEM, rpc_enum_hub_item_fields);
 
-	for (i = 0;i < t->NumHub;i++)
-	{
-		RPC_ENUM_HUB_ITEM *e = &t->Hubs[i];
+static const RPC_FIELD rpc_enum_hub_fields[] =
+{
+	RPC_ROW_ARRAY(RPC_ENUM_HUB, Hubs, NumHub, &rpc_enum_hub_item_table, "HubName", 0),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_hub_table, RPC_ENUM_HUB, rpc_enum_hub_fields);
 
-		PackGetStrEx(p, "HubName", e->HubName, sizeof(e->HubName), i);
-		e->Online = PackGetBoolEx(p, "Online", i);
-		e->NumSessions = PackGetIntEx(p, "NumSessions", i);
-		e->NumUsers = PackGetIntEx(p, "NumUsers", i);
-		e->NumGroups = PackGetIntEx(p, "NumGroups", i);
-		e->NumMacTables = PackGetIntEx(p, "NumMacTables", i);
-		e->NumIpTables = PackGetIntEx(p, "NumIpTables", i);
-		e->LastCommTime = PackGetInt64Ex(p, "LastCommTime", i);
-		e->CreatedTime = PackGetInt64Ex(p, "CreatedTime", i);
-		e->LastLoginTime = PackGetInt64Ex(p, "LastLoginTime", i);
-		e->NumLogin = PackGetIntEx(p, "NumLogin", i);
-		e->IsTrafficFilled = PackGetBoolEx(p, "IsTrafficFilled", i);
-
-		InRpcTrafficEx(&e->Traffic, p, i);
-	}
+void InRpcEnumHub(RPC_ENUM_HUB *t, PACK *p)
+{
+	RpcFieldIn(&rpc_enum_hub_table, t, p);
 }
 static void OutRpcEnumHub(PACK *p, RPC_ENUM_HUB *t)
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	for (i = 0;i < t->NumHub;i++)
-	{
-		RPC_ENUM_HUB_ITEM *e = &t->Hubs[i];
-
-		PackAddStrEx(p, "HubName", e->HubName, i, t->NumHub);
-		PackAddBoolEx(p, "Online", e->Online, i, t->NumHub);
-		PackAddIntEx(p, "NumSessions", e->NumSessions, i, t->NumHub);
-		PackAddIntEx(p, "NumUsers", e->NumUsers, i, t->NumHub);
-		PackAddIntEx(p, "NumGroups", e->NumGroups, i, t->NumHub);
-		PackAddIntEx(p, "NumMacTables", e->NumMacTables, i, t->NumHub);
-		PackAddIntEx(p, "NumIpTables", e->NumIpTables, i, t->NumHub);
-		PackAddInt64Ex(p, "LastCommTime", e->LastCommTime, i, t->NumHub);
-		PackAddInt64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumHub);
-		PackAddInt64Ex(p, "LastLoginTime", e->LastLoginTime, i, t->NumHub);
-		PackAddIntEx(p, "NumLogin", e->NumLogin, i, t->NumHub);
-		PackAddBoolEx(p, "IsTrafficFilled", e->IsTrafficFilled, i, t->NumHub);
-
-		OutRpcTrafficEx(&e->Traffic, p, i, t->NumHub);
-	}
+	RpcFieldOut(&rpc_enum_hub_table, p, t);
 }
 void FreeRpcEnumHub(RPC_ENUM_HUB *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Hubs);
+	RpcFieldFree(&rpc_enum_hub_table, t);
 }
 
-static void InRpcDeleteHub(RPC_DELETE_HUB *t, PACK *p)
+static const RPC_FIELD rpc_delete_hub_fields[] =
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_STR(RPC_DELETE_HUB, HubName, "HubName"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_delete_hub_table, RPC_DELETE_HUB, rpc_delete_hub_fields);
 
-	Zero(t, sizeof(RPC_DELETE_HUB));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
+void InRpcDeleteHub(RPC_DELETE_HUB *t, PACK *p)
+{
+	RpcFieldIn(&rpc_delete_hub_table, t, p);
 }
 static void OutRpcDeleteHub(PACK *p, RPC_DELETE_HUB *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
+	RpcFieldOut(&rpc_delete_hub_table, p, t);
 }
 
-static void InRpcEnumConnection(RPC_ENUM_CONNECTION *t, PACK *p)
+static const RPC_FIELD rpc_enum_connection_item_fields[] =
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_IP32(RPC_ENUM_CONNECTION_ITEM, Ip, "Ip"),
+	RPC_ROW_INT(RPC_ENUM_CONNECTION_ITEM, Port, "Port"),
+	RPC_ROW_STR(RPC_ENUM_CONNECTION_ITEM, Name, "Name"),
+	RPC_ROW_STR(RPC_ENUM_CONNECTION_ITEM, Hostname, "Hostname"),
+	RPC_ROW_TIME64(RPC_ENUM_CONNECTION_ITEM, ConnectedTime, "ConnectedTime"),
+	RPC_ROW_INT(RPC_ENUM_CONNECTION_ITEM, Type, "Type"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_connection_item_table, RPC_ENUM_CONNECTION_ITEM, rpc_enum_connection_item_fields);
 
-	Zero(t, sizeof(RPC_ENUM_CONNECTION));
-	t->NumConnection = PackGetIndexCount(p, "Name");
-	t->Connections = ZeroMalloc(sizeof(RPC_ENUM_CONNECTION_ITEM) * t->NumConnection);
+static const RPC_FIELD rpc_enum_connection_fields[] =
+{
+	RPC_ROW_ARRAY(RPC_ENUM_CONNECTION, Connections, NumConnection, &rpc_enum_connection_item_table, "Name", 0),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_connection_table, RPC_ENUM_CONNECTION, rpc_enum_connection_fields);
 
-	for (i = 0;i < t->NumConnection;i++)
-	{
-		RPC_ENUM_CONNECTION_ITEM *e = &t->Connections[i];
-
-		e->Ip = PackGetIp32Ex(p, "Ip", i);
-		e->Port = PackGetIntEx(p, "Port", i);
-		PackGetStrEx(p, "Name", e->Name, sizeof(e->Name), i);
-		PackGetStrEx(p, "Hostname", e->Hostname, sizeof(e->Hostname), i);
-		e->ConnectedTime = PackGetInt64Ex(p, "ConnectedTime", i);
-		e->Type = PackGetIntEx(p, "Type", i);
-	}
+void InRpcEnumConnection(RPC_ENUM_CONNECTION *t, PACK *p)
+{
+	RpcFieldIn(&rpc_enum_connection_table, t, p);
 }
 static void OutRpcEnumConnection(PACK *p, RPC_ENUM_CONNECTION *t)
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	for (i = 0;i < t->NumConnection;i++)
-	{
-		RPC_ENUM_CONNECTION_ITEM *e = &t->Connections[i];
-
-		PackAddIp32Ex(p, "Ip", e->Ip, i, t->NumConnection);
-		PackAddIntEx(p, "Port", e->Port, i, t->NumConnection);
-		PackAddStrEx(p, "Name", e->Name, i, t->NumConnection);
-		PackAddStrEx(p, "Hostname", e->Hostname, i, t->NumConnection);
-		PackAddInt64Ex(p, "ConnectedTime", e->ConnectedTime, i, t->NumConnection);
-		PackAddIntEx(p, "Type", e->Type, i, t->NumConnection);
-	}
+	RpcFieldOut(&rpc_enum_connection_table, p, t);
 }
 void FreeRpcEnumConnection(RPC_ENUM_CONNECTION *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Connections);
+	RpcFieldFree(&rpc_enum_connection_table, t);
 }
 
-static void InRpcDisconnectConnection(RPC_DISCONNECT_CONNECTION *t, PACK *p)
+static const RPC_FIELD rpc_disconnect_connection_fields[] =
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_STR(RPC_DISCONNECT_CONNECTION, Name, "Name"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_disconnect_connection_table, RPC_DISCONNECT_CONNECTION, rpc_disconnect_connection_fields);
 
-	Zero(t, sizeof(RPC_DISCONNECT_CONNECTION));
-	PackGetStr(p, "Name", t->Name, sizeof(t->Name));
+void InRpcDisconnectConnection(RPC_DISCONNECT_CONNECTION *t, PACK *p)
+{
+	RpcFieldIn(&rpc_disconnect_connection_table, t, p);
 }
 static void OutRpcDisconnectConnection(PACK *p, RPC_DISCONNECT_CONNECTION *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "Name", t->Name);
+	RpcFieldOut(&rpc_disconnect_connection_table, p, t);
 }
 
-static void InRpcConnectionInfo(RPC_CONNECTION_INFO *t, PACK *p)
+static const RPC_FIELD rpc_connection_info_fields[] =
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_STR(RPC_CONNECTION_INFO, Name, "Name"),
+	RPC_ROW_IP32(RPC_CONNECTION_INFO, Ip, "Ip"),
+	RPC_ROW_INT(RPC_CONNECTION_INFO, Port, "Port"),
+	RPC_ROW_TIME64(RPC_CONNECTION_INFO, ConnectedTime, "ConnectedTime"),
+	RPC_ROW_STR(RPC_CONNECTION_INFO, Hostname, "Hostname"),
+	RPC_ROW_STR(RPC_CONNECTION_INFO, ServerStr, "ServerStr"),
+	RPC_ROW_STR(RPC_CONNECTION_INFO, ClientStr, "ClientStr"),
+	RPC_ROW_INT(RPC_CONNECTION_INFO, ServerVer, "ServerVer"),
+	RPC_ROW_INT(RPC_CONNECTION_INFO, ServerBuild, "ServerBuild"),
+	RPC_ROW_INT(RPC_CONNECTION_INFO, ClientVer, "ClientVer"),
+	RPC_ROW_INT(RPC_CONNECTION_INFO, ClientBuild, "ClientBuild"),
+	RPC_ROW_INT(RPC_CONNECTION_INFO, Type, "Type"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_connection_info_table, RPC_CONNECTION_INFO, rpc_connection_info_fields);
 
-	Zero(t, sizeof(RPC_CONNECTION_INFO));
-	PackGetStr(p, "Name", t->Name, sizeof(t->Name));
-	t->Ip = PackGetIp32(p, "Ip");
-	t->Port = PackGetInt(p, "Port");
-	t->ConnectedTime = PackGetInt64(p, "ConnectedTime");
-	PackGetStr(p, "Hostname", t->Hostname, sizeof(t->Hostname));
-	PackGetStr(p, "ServerStr", t->ServerStr, sizeof(t->ServerStr));
-	PackGetStr(p, "ClientStr", t->ClientStr, sizeof(t->ClientStr));
-	t->ServerVer = PackGetInt(p, "ServerVer");
-	t->ServerBuild = PackGetInt(p, "ServerBuild");
-	t->ClientVer = PackGetInt(p, "ClientVer");
-	t->ClientBuild = PackGetInt(p, "ClientBuild");
-	t->Type = PackGetInt(p, "Type");
+void InRpcConnectionInfo(RPC_CONNECTION_INFO *t, PACK *p)
+{
+	RpcFieldIn(&rpc_connection_info_table, t, p);
 }
 static void OutRpcConnectionInfo(PACK *p, RPC_CONNECTION_INFO *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "Name", t->Name);
-	PackAddIp32(p, "Ip", t->Ip);
-	PackAddInt(p, "Port", t->Port);
-	PackAddInt64(p, "ConnectedTime", t->ConnectedTime);
-	PackAddStr(p, "Hostname", t->Hostname);
-	PackAddStr(p, "ServerStr", t->ServerStr);
-	PackAddStr(p, "ClientStr", t->ClientStr);
-	PackAddInt(p, "ServerVer", t->ServerVer);
-	PackAddInt(p, "ServerBuild", t->ServerBuild);
-	PackAddInt(p, "ClientVer", t->ClientVer);
-	PackAddInt(p, "ClientBuild", t->ClientBuild);
-	PackAddInt(p, "Type", t->Type);
+	RpcFieldOut(&rpc_connection_info_table, p, t);
 }
 
-static void InRpcSetHubOnline(RPC_SET_HUB_ONLINE *t, PACK *p)
+static const RPC_FIELD rpc_set_hub_online_fields[] =
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_STR(RPC_SET_HUB_ONLINE, HubName, "HubName"),
+	RPC_ROW_BOOL(RPC_SET_HUB_ONLINE, Online, "Online"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_set_hub_online_table, RPC_SET_HUB_ONLINE, rpc_set_hub_online_fields);
 
-	Zero(t, sizeof(RPC_SET_HUB_ONLINE));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->Online = PackGetBool(p, "Online");
+void InRpcSetHubOnline(RPC_SET_HUB_ONLINE *t, PACK *p)
+{
+	RpcFieldIn(&rpc_set_hub_online_table, t, p);
 }
 static void OutRpcSetHubOnline(PACK *p, RPC_SET_HUB_ONLINE *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddBool(p, "Online", t->Online);
+	RpcFieldOut(&rpc_set_hub_online_table, p, t);
 }
 
-static void InRpcHubStatus(RPC_HUB_STATUS *t, PACK *p)
+static void RpcHubStatusTrafficOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
 {
-	Zero(t, sizeof(RPC_HUB_STATUS));
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	OutRpcTraffic(p, (TRAFFIC *)(((UCHAR *)base) + f->Offset));
+}
+static void RpcHubStatusTrafficIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcTraffic((TRAFFIC *)(((UCHAR *)base) + f->Offset), p);
+}
+static const RPC_HOOK rpc_hub_status_traffic_hook = {RpcHubStatusTrafficOut, RpcHubStatusTrafficIn, NULL};
 
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->Online = PackGetBool(p, "Online");
-	t->NumSessions = PackGetInt(p, "NumSessions");
-	t->NumSessionsClient = PackGetInt(p, "NumSessionsClient");
-	t->NumSessionsBridge = PackGetInt(p, "NumSessionsBridge");
-	t->NumAccessLists = PackGetInt(p, "NumAccessLists");
-	t->NumUsers = PackGetInt(p, "NumUsers");
-	t->NumGroups = PackGetInt(p, "NumGroups");
-	t->NumMacTables = PackGetInt(p, "NumMacTables");
-	t->NumIpTables = PackGetInt(p, "NumIpTables");
-	InRpcTraffic(&t->Traffic, p);
-	t->LastCommTime = PackGetInt64(p, "LastCommTime");
-	t->CreatedTime = PackGetInt64(p, "CreatedTime");
-	t->LastLoginTime = PackGetInt64(p, "LastLoginTime");
-	t->NumLogin = PackGetInt(p, "NumLogin");
+static const RPC_FIELD rpc_hub_status_fields[] =
+{
+	RPC_ROW_STR(RPC_HUB_STATUS, HubName, "HubName"),
+	RPC_ROW_BOOL(RPC_HUB_STATUS, Online, "Online"),
+	RPC_ROW_INT(RPC_HUB_STATUS, NumSessions, "NumSessions"),
+	RPC_ROW_INT(RPC_HUB_STATUS, NumSessionsClient, "NumSessionsClient"),
+	RPC_ROW_INT(RPC_HUB_STATUS, NumSessionsBridge, "NumSessionsBridge"),
+	RPC_ROW_INT(RPC_HUB_STATUS, NumAccessLists, "NumAccessLists"),
+	RPC_ROW_INT(RPC_HUB_STATUS, NumUsers, "NumUsers"),
+	RPC_ROW_INT(RPC_HUB_STATUS, NumGroups, "NumGroups"),
+	RPC_ROW_INT(RPC_HUB_STATUS, NumMacTables, "NumMacTables"),
+	RPC_ROW_INT(RPC_HUB_STATUS, NumIpTables, "NumIpTables"),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_HUB_STATUS, Traffic, NULL, 0, &rpc_hub_status_traffic_hook),
+	RPC_ROW_TIME64(RPC_HUB_STATUS, LastCommTime, "LastCommTime"),
+	RPC_ROW_TIME64(RPC_HUB_STATUS, CreatedTime, "CreatedTime"),
+	RPC_ROW_TIME64(RPC_HUB_STATUS, LastLoginTime, "LastLoginTime"),
+	RPC_ROW_INT(RPC_HUB_STATUS, NumLogin, "NumLogin"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_hub_status_table, RPC_HUB_STATUS, rpc_hub_status_fields);
+
+void InRpcHubStatus(RPC_HUB_STATUS *t, PACK *p)
+{
+	RpcFieldIn(&rpc_hub_status_table, t, p);
 }
 static void OutRpcHubStatus(PACK *p, RPC_HUB_STATUS *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddBool(p, "Online", t->Online);
-	PackAddInt(p, "NumSessions", t->NumSessions);
-	PackAddInt(p, "NumSessionsClient", t->NumSessionsClient);
-	PackAddInt(p, "NumSessionsBridge", t->NumSessionsBridge);
-	PackAddInt(p, "NumAccessLists", t->NumAccessLists);
-	PackAddInt(p, "NumUsers", t->NumUsers);
-	PackAddInt(p, "NumGroups", t->NumGroups);
-	PackAddInt(p, "NumMacTables", t->NumMacTables);
-	PackAddInt(p, "NumIpTables", t->NumIpTables);
-	OutRpcTraffic(p, &t->Traffic);
-	PackAddInt64(p, "LastCommTime", t->LastCommTime);
-	PackAddInt64(p, "CreatedTime", t->CreatedTime);
-	PackAddInt64(p, "LastLoginTime", t->LastLoginTime);
-	PackAddInt(p, "NumLogin", t->NumLogin);
+	RpcFieldOut(&rpc_hub_status_table, p, t);
 }
 
-static void InRpcHubLog(RPC_HUB_LOG *t, PACK *p)
+static void RpcHubLogPacketLogConfigOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	UINT *c = (UINT *)(((UCHAR *)base) + f->Offset);
+	UINT i, num = f->Size / sizeof(UINT);
 
-	Zero(t, sizeof(RPC_HUB_LOG));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->LogSetting.SaveSecurityLog = PackGetBool(p, "SaveSecurityLog");
-	t->LogSetting.SecurityLogSwitchType = PackGetInt(p, "SecurityLogSwitchType");
-	t->LogSetting.SavePacketLog = PackGetBool(p, "SavePacketLog");
-	t->LogSetting.PacketLogSwitchType = PackGetInt(p, "PacketLogSwitchType");
-	for (i = 0;i < NUM_PACKET_LOG;i++)
+	for (i = 0;i < num;i++)
 	{
-		t->LogSetting.PacketLogConfig[i] = PackGetIntEx(p, "PacketLogConfig", i);
+		PackAddIntEx(p, f->Key, c[i], i, num);
 	}
+}
+static void RpcHubLogPacketLogConfigIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	UINT *c = (UINT *)(((UCHAR *)base) + f->Offset);
+	UINT i, num = f->Size / sizeof(UINT);
+
+	for (i = 0;i < num;i++)
+	{
+		c[i] = PackGetIntEx(p, f->Key, i);
+	}
+}
+static const RPC_HOOK rpc_hub_log_packet_log_config_hook = {RpcHubLogPacketLogConfigOut, RpcHubLogPacketLogConfigIn, NULL};
+
+static const RPC_FIELD rpc_hub_log_fields[] =
+{
+	RPC_ROW_STR(RPC_HUB_LOG, HubName, "HubName"),
+	RPC_ROW_BOOL(RPC_HUB_LOG, LogSetting.SaveSecurityLog, "SaveSecurityLog"),
+	RPC_ROW_INT(RPC_HUB_LOG, LogSetting.SecurityLogSwitchType, "SecurityLogSwitchType"),
+	RPC_ROW_BOOL(RPC_HUB_LOG, LogSetting.SavePacketLog, "SavePacketLog"),
+	RPC_ROW_INT(RPC_HUB_LOG, LogSetting.PacketLogSwitchType, "PacketLogSwitchType"),
+	RPC_ROW_HOOK(RPC_FT_INTARRAY, RPC_HUB_LOG, LogSetting.PacketLogConfig, "PacketLogConfig", 0, &rpc_hub_log_packet_log_config_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_hub_log_table, RPC_HUB_LOG, rpc_hub_log_fields);
+
+void InRpcHubLog(RPC_HUB_LOG *t, PACK *p)
+{
+	RpcFieldIn(&rpc_hub_log_table, t, p);
 }
 static void OutRpcHubLog(PACK *p, RPC_HUB_LOG *t)
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddBool(p, "SaveSecurityLog", t->LogSetting.SaveSecurityLog);
-	PackAddInt(p, "SecurityLogSwitchType", t->LogSetting.SecurityLogSwitchType);
-	PackAddBool(p, "SavePacketLog", t->LogSetting.SavePacketLog);
-	PackAddInt(p, "PacketLogSwitchType", t->LogSetting.PacketLogSwitchType);
-	for (i = 0;i < NUM_PACKET_LOG;i++)
-	{
-		PackAddIntEx(p, "PacketLogConfig", t->LogSetting.PacketLogConfig[i], i, NUM_PACKET_LOG);
-	}
+	RpcFieldOut(&rpc_hub_log_table, p, t);
 }
 
-static void InRpcHubAddCa(RPC_HUB_ADD_CA *t, PACK *p)
+// Certificate of a CA row: PackAddX, PackGetX, FreeX
+static void RpcHubCaCertOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	PackAddX(p, f->Key, *((X **)(((UCHAR *)base) + f->Offset)));
+}
+static void RpcHubCaCertIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	*((X **)(((UCHAR *)base) + f->Offset)) = PackGetX(p, f->Key);
+}
+static void RpcHubCaCertFree(const RPC_FIELD *f, void *base)
+{
+	FreeX(*((X **)(((UCHAR *)base) + f->Offset)));
+}
+static const RPC_HOOK rpc_hub_ca_cert_hook = { RpcHubCaCertOut, RpcHubCaCertIn, RpcHubCaCertFree };
 
-	Zero(t, sizeof(RPC_HUB_ADD_CA));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->Cert = PackGetX(p, "Cert");
+static const RPC_FIELD rpc_hub_add_ca_fields[] =
+{
+	RPC_ROW_STR(RPC_HUB_ADD_CA, HubName, "HubName"),
+	RPC_ROW_HOOK(RPC_FT_X, RPC_HUB_ADD_CA, Cert, "Cert", 0, &rpc_hub_ca_cert_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_hub_add_ca_table, RPC_HUB_ADD_CA, rpc_hub_add_ca_fields);
+
+void InRpcHubAddCa(RPC_HUB_ADD_CA *t, PACK *p)
+{
+	RpcFieldIn(&rpc_hub_add_ca_table, t, p);
 }
 static void OutRpcHubAddCa(PACK *p, RPC_HUB_ADD_CA *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddX(p, "Cert", t->Cert);
+	RpcFieldOut(&rpc_hub_add_ca_table, p, t);
 }
 void FreeRpcHubAddCa(RPC_HUB_ADD_CA *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	FreeX(t->Cert);
+	RpcFieldFree(&rpc_hub_add_ca_table, t);
 }
 
-static void InRpcHubEnumCa(RPC_HUB_ENUM_CA *t, PACK *p)
+static const RPC_FIELD rpc_hub_enum_ca_item_fields[] =
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_INT(RPC_HUB_ENUM_CA_ITEM, Key, "Key"),
+	RPC_ROW_UNISTR(RPC_HUB_ENUM_CA_ITEM, SubjectName, "SubjectName"),
+	RPC_ROW_UNISTR(RPC_HUB_ENUM_CA_ITEM, IssuerName, "IssuerName"),
+	RPC_ROW_TIME64(RPC_HUB_ENUM_CA_ITEM, Expires, "Expires"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_hub_enum_ca_item_table, RPC_HUB_ENUM_CA_ITEM, rpc_hub_enum_ca_item_fields);
 
-	Zero(t, sizeof(RPC_HUB_ENUM_CA));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->NumCa = PackGetIndexCount(p, "Key");
-	t->Ca = ZeroMalloc(sizeof(RPC_HUB_ENUM_CA_ITEM) * t->NumCa);
+static const RPC_FIELD rpc_hub_enum_ca_fields[] =
+{
+	RPC_ROW_STR(RPC_HUB_ENUM_CA, HubName, "HubName"),
+	RPC_ROW_ARRAY(RPC_HUB_ENUM_CA, Ca, NumCa, &rpc_hub_enum_ca_item_table, "Key", 0),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_hub_enum_ca_table, RPC_HUB_ENUM_CA, rpc_hub_enum_ca_fields);
 
-	for (i = 0;i < t->NumCa;i++)
-	{
-		RPC_HUB_ENUM_CA_ITEM *e = &t->Ca[i];
-
-		e->Key = PackGetIntEx(p, "Key", i);
-		PackGetUniStrEx(p, "SubjectName", e->SubjectName, sizeof(e->SubjectName), i);
-		PackGetUniStrEx(p, "IssuerName", e->IssuerName, sizeof(e->IssuerName), i);
-		e->Expires = PackGetInt64Ex(p, "Expires", i);
-	}
+void InRpcHubEnumCa(RPC_HUB_ENUM_CA *t, PACK *p)
+{
+	RpcFieldIn(&rpc_hub_enum_ca_table, t, p);
 }
 static void OutRpcHubEnumCa(PACK *p, RPC_HUB_ENUM_CA *t)
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-	PackAddStr(p, "HubName", t->HubName);
-
-	for (i = 0;i < t->NumCa;i++)
-	{
-		RPC_HUB_ENUM_CA_ITEM *e = &t->Ca[i];
-
-		PackAddIntEx(p, "Key", e->Key, i, t->NumCa);
-		PackAddUniStrEx(p, "SubjectName", e->SubjectName, i, t->NumCa);
-		PackAddUniStrEx(p, "IssuerName", e->IssuerName, i, t->NumCa);
-		PackAddInt64Ex(p, "Expires", e->Expires, i, t->NumCa);
-	}
+	RpcFieldOut(&rpc_hub_enum_ca_table, p, t);
 }
 void FreeRpcHubEnumCa(RPC_HUB_ENUM_CA *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Ca);
+	RpcFieldFree(&rpc_hub_enum_ca_table, t);
 }
 
-static void InRpcHubGetCa(RPC_HUB_GET_CA *t, PACK *p)
+static const RPC_FIELD rpc_hub_get_ca_fields[] =
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_STR(RPC_HUB_GET_CA, HubName, "HubName"),
+	RPC_ROW_INT(RPC_HUB_GET_CA, Key, "Key"),
+	RPC_ROW_HOOK(RPC_FT_X, RPC_HUB_GET_CA, Cert, "Cert", 0, &rpc_hub_ca_cert_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_hub_get_ca_table, RPC_HUB_GET_CA, rpc_hub_get_ca_fields);
 
-	Zero(t, sizeof(RPC_HUB_GET_CA));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->Key = PackGetInt(p, "Key");
-	t->Cert = PackGetX(p, "Cert");
+void InRpcHubGetCa(RPC_HUB_GET_CA *t, PACK *p)
+{
+	RpcFieldIn(&rpc_hub_get_ca_table, t, p);
 }
 static void OutRpcHubGetCa(PACK *p, RPC_HUB_GET_CA *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddInt(p, "Key", t->Key);
-	PackAddX(p, "Cert", t->Cert);
+	RpcFieldOut(&rpc_hub_get_ca_table, p, t);
 }
 void FreeRpcHubGetCa(RPC_HUB_GET_CA *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	FreeX(t->Cert);
+	RpcFieldFree(&rpc_hub_get_ca_table, t);
 }
 
-static void InRpcHubDeleteCa(RPC_HUB_DELETE_CA *t, PACK *p)
+static const RPC_FIELD rpc_hub_delete_ca_fields[] =
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_STR(RPC_HUB_DELETE_CA, HubName, "HubName"),
+	RPC_ROW_INT(RPC_HUB_DELETE_CA, Key, "Key"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_hub_delete_ca_table, RPC_HUB_DELETE_CA, rpc_hub_delete_ca_fields);
 
-	Zero(t, sizeof(RPC_HUB_DELETE_CA));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->Key = PackGetInt(p, "Key");
+void InRpcHubDeleteCa(RPC_HUB_DELETE_CA *t, PACK *p)
+{
+	RpcFieldIn(&rpc_hub_delete_ca_table, t, p);
 }
 static void OutRpcHubDeleteCa(PACK *p, RPC_HUB_DELETE_CA *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddInt(p, "Key", t->Key);
+	RpcFieldOut(&rpc_hub_delete_ca_table, p, t);
 }
 
-static void InRpcCreateLink(RPC_CREATE_LINK *t, PACK *p)
+static void RpcCreateLinkClientOptionOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
 {
-	BUF *b;
-	if (t == NULL || p == NULL)
+	OutRpcClientOption(p, *(CLIENT_OPTION **)((UCHAR *)base + f->Offset));
+}
+static void RpcCreateLinkClientOptionIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	CLIENT_OPTION **o = (CLIENT_OPTION **)((UCHAR *)base + f->Offset);
+
+	*o = ZeroMalloc(sizeof(CLIENT_OPTION));
+	InRpcClientOption(*o, p);
+}
+static void RpcCreateLinkClientOptionFree(const RPC_FIELD *f, void *base)
+{
+	Free(*(CLIENT_OPTION **)((UCHAR *)base + f->Offset));
+}
+static const RPC_HOOK rpc_create_link_client_option_hook = {RpcCreateLinkClientOptionOut, RpcCreateLinkClientOptionIn, RpcCreateLinkClientOptionFree};
+
+static void RpcCreateLinkClientAuthOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	OutRpcClientAuth(p, *(CLIENT_AUTH **)((UCHAR *)base + f->Offset));
+}
+static void RpcCreateLinkClientAuthIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	CLIENT_AUTH **a = (CLIENT_AUTH **)((UCHAR *)base + f->Offset);
+
+	*a = ZeroMalloc(sizeof(CLIENT_AUTH));
+	InRpcClientAuth(*a, p);
+}
+static void RpcCreateLinkClientAuthFree(const RPC_FIELD *f, void *base)
+{
+	CiFreeClientAuth(*(CLIENT_AUTH **)((UCHAR *)base + f->Offset));
+}
+static const RPC_HOOK rpc_create_link_client_auth_hook = {RpcCreateLinkClientAuthOut, RpcCreateLinkClientAuthIn, RpcCreateLinkClientAuthFree};
+
+static void RpcCreateLinkPolicyOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	OutRpcPolicy(p, (POLICY *)((UCHAR *)base + f->Offset));
+}
+static void RpcCreateLinkPolicyIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcPolicy((POLICY *)((UCHAR *)base + f->Offset), p);
+}
+static const RPC_HOOK rpc_create_link_policy_hook = {RpcCreateLinkPolicyOut, RpcCreateLinkPolicyIn, NULL};
+
+// Server certificate as DER data (read without the PEM fallback of PackGetX)
+static void RpcCreateLinkServerCertOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	X *x = *(X **)((UCHAR *)base + f->Offset);
+
+	if (x != NULL)
 	{
-		return;
+		BUF *b = XToBuf(x, false);
+		PackAddBuf(p, f->Key, b);
+		FreeBuf(b);
 	}
+}
+static void RpcCreateLinkServerCertIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	BUF *b = PackGetBuf(p, f->Key);
 
-	Zero(t, sizeof(RPC_CREATE_LINK));
-	PackGetStr(p, "HubName_Ex", t->HubName, sizeof(t->HubName));
-	t->Online = PackGetBool(p, "Online");
-	t->ClientOption = ZeroMalloc(sizeof(CLIENT_OPTION));
-	InRpcClientOption(t->ClientOption, p);
-	t->ClientAuth  = ZeroMalloc(sizeof(CLIENT_AUTH));
-	InRpcClientAuth(t->ClientAuth, p);
-	InRpcPolicy(&t->Policy, p);
-
-	t->CheckServerCert = PackGetBool(p, "CheckServerCert");
-	t->AddDefaultCA = PackGetBool(p, "AddDefaultCA");
-	b = PackGetBuf(p, "ServerCert");
 	if (b != NULL)
 	{
-		t->ServerCert = BufToX(b, false);
+		*(X **)((UCHAR *)base + f->Offset) = BufToX(b, false);
 		FreeBuf(b);
 	}
 }
-static void OutRpcCreateLink(PACK *p, RPC_CREATE_LINK *t)
+static void RpcCreateLinkServerCertFree(const RPC_FIELD *f, void *base)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	X *x = *(X **)((UCHAR *)base + f->Offset);
 
-	PackAddStr(p, "HubName_Ex",t->HubName);
-	PackAddBool(p, "Online", t->Online);
-	OutRpcClientOption(p, t->ClientOption);
-	OutRpcClientAuth(p, t->ClientAuth);
-	OutRpcPolicy(p, &t->Policy);
-
-	PackAddBool(p, "CheckServerCert", t->CheckServerCert);
-	PackAddBool(p, "AddDefaultCA", t->AddDefaultCA);
-	if (t->ServerCert != NULL)
+	if (x != NULL)
 	{
-		BUF *b;
-		b = XToBuf(t->ServerCert, false);
-		PackAddBuf(p, "ServerCert", b);
-		FreeBuf(b);
+		FreeX(x);
 	}
+}
+static const RPC_HOOK rpc_create_link_server_cert_hook = {RpcCreateLinkServerCertOut, RpcCreateLinkServerCertIn, RpcCreateLinkServerCertFree};
+
+static const RPC_FIELD rpc_create_link_fields[] =
+{
+	RPC_ROW_STR(RPC_CREATE_LINK, HubName, "HubName_Ex"),
+	RPC_ROW_BOOL(RPC_CREATE_LINK, Online, "Online"),
+	RPC_ROW_HOOK(RPC_FT_STRUCTPTR, RPC_CREATE_LINK, ClientOption, NULL, 0, &rpc_create_link_client_option_hook),
+	RPC_ROW_HOOK(RPC_FT_STRUCTPTR, RPC_CREATE_LINK, ClientAuth, NULL, 0, &rpc_create_link_client_auth_hook),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_CREATE_LINK, Policy, NULL, 0, &rpc_create_link_policy_hook),
+	RPC_ROW_BOOL(RPC_CREATE_LINK, CheckServerCert, "CheckServerCert"),
+	RPC_ROW_BOOL(RPC_CREATE_LINK, AddDefaultCA, "AddDefaultCA"),
+	RPC_ROW_HOOK(RPC_FT_X, RPC_CREATE_LINK, ServerCert, "ServerCert", 0, &rpc_create_link_server_cert_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_create_link_table, RPC_CREATE_LINK, rpc_create_link_fields);
+
+void InRpcCreateLink(RPC_CREATE_LINK *t, PACK *p)
+{
+	RpcFieldIn(&rpc_create_link_table, t, p);
+}
+void OutRpcCreateLink(PACK *p, RPC_CREATE_LINK *t)
+{
+	RpcFieldOut(&rpc_create_link_table, p, t);
 }
 void FreeRpcCreateLink(RPC_CREATE_LINK *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	if (t->ServerCert != NULL)
-	{
-		FreeX(t->ServerCert);
-	}
-	Free(t->ClientOption);
-	CiFreeClientAuth(t->ClientAuth);
+	RpcFieldFree(&rpc_create_link_table, t);
 }
 
-static void InRpcEnumLink(RPC_ENUM_LINK *t, PACK *p)
+// Hub name: "ConnectedHubName", or "TargetHubName" when it is missing
+static void RpcEnumLinkHubNameIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
 {
-	UINT i;
-	if (t == NULL || p == NULL)
+	char *s = (char *)((UCHAR *)base + f->Offset);
+
+	if (PackGetStrEx(p, f->Key, s, f->Size, index) == false)
 	{
-		return;
+		PackGetStrEx(p, "TargetHubName", s, f->Size, index);
 	}
+}
+static const RPC_HOOK rpc_enum_link_hub_name_hook = {NULL, RpcEnumLinkHubNameIn, NULL};
 
-	Zero(t, sizeof(RPC_ENUM_LINK));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->NumLink = PackGetIndexCount(p, "AccountName");
-	t->Links = ZeroMalloc(sizeof(RPC_ENUM_LINK_ITEM) * t->NumLink);
+// "TargetHubName" is written last and read only by the fallback above
+static void RpcEnumLinkTargetHubNameIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+}
+static const RPC_HOOK rpc_enum_link_target_hub_name_hook = {NULL, RpcEnumLinkTargetHubNameIn, NULL};
 
-	for (i = 0;i < t->NumLink;i++)
-	{
-		RPC_ENUM_LINK_ITEM *e = &t->Links[i];
+static const RPC_FIELD rpc_enum_link_item_fields[] =
+{
+	RPC_ROW_UNISTR(RPC_ENUM_LINK_ITEM, AccountName, "AccountName"),
+	RPC_ROW_HOOK(RPC_FT_STR, RPC_ENUM_LINK_ITEM, HubName, "ConnectedHubName", 0, &rpc_enum_link_hub_name_hook),
+	RPC_ROW_STR(RPC_ENUM_LINK_ITEM, Hostname, "Hostname"),
+	RPC_ROW_BOOL(RPC_ENUM_LINK_ITEM, Online, "Online"),
+	RPC_ROW_TIME64(RPC_ENUM_LINK_ITEM, ConnectedTime, "ConnectedTime"),
+	RPC_ROW_BOOL(RPC_ENUM_LINK_ITEM, Connected, "Connected"),
+	RPC_ROW_INT(RPC_ENUM_LINK_ITEM, LastError, "LastError"),
+	RPC_ROW_HOOK(RPC_FT_STR, RPC_ENUM_LINK_ITEM, HubName, "TargetHubName", RPC_FF_ALIAS, &rpc_enum_link_target_hub_name_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_link_item_table, RPC_ENUM_LINK_ITEM, rpc_enum_link_item_fields);
 
-		PackGetUniStrEx(p, "AccountName", e->AccountName, sizeof(e->AccountName), i);
-		PackGetStrEx(p, "Hostname", e->Hostname, sizeof(e->Hostname), i);
-		if (PackGetStrEx(p, "ConnectedHubName", e->HubName, sizeof(e->HubName), i) == false)
-		{
-			PackGetStrEx(p, "TargetHubName", e->HubName, sizeof(e->HubName), i);
-		}
-		e->Online = PackGetBoolEx(p, "Online", i);
-		e->ConnectedTime = PackGetInt64Ex(p, "ConnectedTime", i);
-		e->Connected = PackGetBoolEx(p, "Connected", i);
-		e->LastError = PackGetIntEx(p, "LastError", i);
-	}
+static const RPC_FIELD rpc_enum_link_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_LINK, HubName, "HubName"),
+	RPC_ROW_ARRAY(RPC_ENUM_LINK, Links, NumLink, &rpc_enum_link_item_table, "AccountName", 0),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_link_table, RPC_ENUM_LINK, rpc_enum_link_fields);
+
+void InRpcEnumLink(RPC_ENUM_LINK *t, PACK *p)
+{
+	RpcFieldIn(&rpc_enum_link_table, t, p);
 }
 static void OutRpcEnumLink(PACK *p, RPC_ENUM_LINK *t)
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-
-	for (i = 0;i < t->NumLink;i++)
-	{
-		RPC_ENUM_LINK_ITEM *e = &t->Links[i];
-
-		PackAddUniStrEx(p, "AccountName", e->AccountName, i, t->NumLink);
-		PackAddStrEx(p, "ConnectedHubName", e->HubName, i, t->NumLink);
-		PackAddStrEx(p, "Hostname", e->Hostname, i, t->NumLink);
-		PackAddBoolEx(p, "Online", e->Online, i, t->NumLink);
-		PackAddInt64Ex(p, "ConnectedTime", e->ConnectedTime, i, t->NumLink);
-		PackAddBoolEx(p, "Connected", e->Connected, i, t->NumLink);
-		PackAddIntEx(p, "LastError", e->LastError, i, t->NumLink);
-		PackAddStrEx(p, "TargetHubName", e->HubName, i, t->NumLink);
-	}
+	RpcFieldOut(&rpc_enum_link_table, p, t);
 }
 void FreeRpcEnumLink(RPC_ENUM_LINK *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Links);
+	RpcFieldFree(&rpc_enum_link_table, t);
 }
 
-static void InRpcLinkStatus(RPC_LINK_STATUS *t, PACK *p)
+static void RpcLinkStatusStatusOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	OutRpcClientGetConnectionStatus(p, (RPC_CLIENT_GET_CONNECTION_STATUS *)((UCHAR *)base + f->Offset));
+}
+static void RpcLinkStatusStatusIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcClientGetConnectionStatus((RPC_CLIENT_GET_CONNECTION_STATUS *)((UCHAR *)base + f->Offset), p);
+}
+static void RpcLinkStatusStatusFree(const RPC_FIELD *f, void *base)
+{
+	CiFreeClientGetConnectionStatus((RPC_CLIENT_GET_CONNECTION_STATUS *)((UCHAR *)base + f->Offset));
+}
+static const RPC_HOOK rpc_link_status_status_hook = {RpcLinkStatusStatusOut, RpcLinkStatusStatusIn, RpcLinkStatusStatusFree};
 
-	Zero(t, sizeof(RPC_LINK_STATUS));
-	PackGetStr(p, "HubName_Ex", t->HubName, sizeof(t->HubName));
-	PackGetUniStr(p, "AccountName", t->AccountName, sizeof(t->AccountName));
-	InRpcClientGetConnectionStatus(&t->Status, p);
+static const RPC_FIELD rpc_link_status_fields[] =
+{
+	RPC_ROW_STR(RPC_LINK_STATUS, HubName, "HubName_Ex"),
+	RPC_ROW_UNISTR(RPC_LINK_STATUS, AccountName, "AccountName"),
+	// The connection status adds "AccountName" again: the row above is written first and wins
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_LINK_STATUS, Status, NULL, 0, &rpc_link_status_status_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_link_status_table, RPC_LINK_STATUS, rpc_link_status_fields);
+
+void InRpcLinkStatus(RPC_LINK_STATUS *t, PACK *p)
+{
+	RpcFieldIn(&rpc_link_status_table, t, p);
 }
 static void OutRpcLinkStatus(PACK *p, RPC_LINK_STATUS *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName_Ex", t->HubName);
-	PackAddUniStr(p, "AccountName", t->AccountName);
-	OutRpcClientGetConnectionStatus(p, &t->Status);
+	RpcFieldOut(&rpc_link_status_table, p, t);
 }
 void FreeRpcLinkStatus(RPC_LINK_STATUS *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	CiFreeClientGetConnectionStatus(&t->Status);
+	RpcFieldFree(&rpc_link_status_table, t);
 }
 
-static void InRpcLink(RPC_LINK *t, PACK *p)
+static const RPC_FIELD rpc_link_fields[] =
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_STR(RPC_LINK, HubName, "HubName"),
+	RPC_ROW_UNISTR(RPC_LINK, AccountName, "AccountName"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_link_table, RPC_LINK, rpc_link_fields);
 
-	Zero(t, sizeof(RPC_LINK));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	PackGetUniStr(p, "AccountName", t->AccountName, sizeof(t->AccountName));
+void InRpcLink(RPC_LINK *t, PACK *p)
+{
+	RpcFieldIn(&rpc_link_table, t, p);
 }
 static void OutRpcLink(PACK *p, RPC_LINK *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddUniStr(p, "AccountName", t->AccountName);
+	RpcFieldOut(&rpc_link_table, p, t);
 }
 
-static void InRpcRenameLink(RPC_RENAME_LINK *t, PACK *p)
+static const RPC_FIELD rpc_rename_link_fields[] =
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_STR(RPC_RENAME_LINK, HubName, "HubName"),
+	RPC_ROW_UNISTR(RPC_RENAME_LINK, OldAccountName, "OldAccountName"),
+	RPC_ROW_UNISTR(RPC_RENAME_LINK, NewAccountName, "NewAccountName"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_rename_link_table, RPC_RENAME_LINK, rpc_rename_link_fields);
 
-	Zero(t, sizeof(RPC_RENAME_LINK));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	PackGetUniStr(p, "OldAccountName", t->OldAccountName, sizeof(t->OldAccountName));
-	PackGetUniStr(p, "NewAccountName", t->NewAccountName, sizeof(t->NewAccountName));
+void InRpcRenameLink(RPC_RENAME_LINK *t, PACK *p)
+{
+	RpcFieldIn(&rpc_rename_link_table, t, p);
 }
 static void OutRpcRenameLink(PACK *p, RPC_RENAME_LINK *t)
 {
-	if (p == NULL || t == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddUniStr(p, "OldAccountName", t->OldAccountName);
-	PackAddUniStr(p, "NewAccountName", t->NewAccountName);
+	RpcFieldOut(&rpc_rename_link_table, p, t);
 }
 
 static void InRpcAccessEx(ACCESS *a, PACK *p, UINT index)
@@ -7926,50 +7669,32 @@ static void OutRpcAccess(PACK *p, ACCESS *a)
 	OutRpcAccessEx(p, a, 0, 1);
 }
 
-static void InRpcEnumAccessList(RPC_ENUM_ACCESS_LIST *a, PACK *p)
+static const RPC_FIELD rpc_enum_access_list_item_fields[] =
 {
-	UINT i;
-	if (a == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_WHOLE(ACCESS, NULL, 0, &rpc_access_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_access_list_item_table, ACCESS, rpc_enum_access_list_item_fields);
 
-	Zero(a, sizeof(RPC_ENUM_ACCESS_LIST));
-	PackGetStr(p, "HubName", a->HubName, sizeof(a->HubName));
-	a->NumAccess = PackGetIndexCount(p, "Protocol");
-	a->Accesses = ZeroMalloc(sizeof(ACCESS) * a->NumAccess);
+static const RPC_FIELD rpc_enum_access_list_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_ACCESS_LIST, HubName, "HubName"),
+	RPC_ROW_ARRAY(RPC_ENUM_ACCESS_LIST, Accesses, NumAccess, &rpc_enum_access_list_item_table, "Protocol", 0),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_access_list_table, RPC_ENUM_ACCESS_LIST, rpc_enum_access_list_fields);
 
-	for (i = 0;i < a->NumAccess;i++)
-	{
-		ACCESS *e = &a->Accesses[i];
-
-		InRpcAccessEx(e, p, i);
-	}
+void InRpcEnumAccessList(RPC_ENUM_ACCESS_LIST *a, PACK *p)
+{
+	RpcFieldIn(&rpc_enum_access_list_table, a, p);
 }
 static void OutRpcEnumAccessList(PACK *p, RPC_ENUM_ACCESS_LIST *a)
 {
-	UINT i;
-	if (a == NULL || p == NULL)
-	{
-		return;
-	}
-	PackAddStr(p, "HubName", a->HubName);
-
-	for (i = 0;i < a->NumAccess;i++)
-	{
-		ACCESS *e = &a->Accesses[i];
-
-		OutRpcAccessEx(p, e, i, a->NumAccess);
-	}
+	RpcFieldOut(&rpc_enum_access_list_table, p, a);
 }
 void FreeRpcEnumAccessList(RPC_ENUM_ACCESS_LIST *a)
 {
-	if (a == NULL)
-	{
-		return;
-	}
-
-	Free(a->Accesses);
+	RpcFieldFree(&rpc_enum_access_list_table, a);
 }
 
 static void *InRpcAuthData(PACK *p, UINT *authtype, char *username)
@@ -8084,341 +7809,275 @@ static void OutRpcAuthData(PACK *p, void *authdata, UINT authtype)
 	}
 }
 
-static void InRpcSetUser(RPC_SET_USER *t, PACK *p)
+// Embedded TRAFFIC through the TRAFFIC entry points
+static void RpcSetUserTrafficOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	OutRpcTraffic(p, (TRAFFIC *)(((UCHAR *)base) + f->Offset));
+}
+static void RpcSetUserTrafficIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcTraffic((TRAFFIC *)(((UCHAR *)base) + f->Offset), p);
+}
+static const RPC_HOOK rpc_set_user_traffic_hook = {RpcSetUserTrafficOut, RpcSetUserTrafficIn, NULL};
 
-	Zero(t, sizeof(RPC_SET_USER));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	PackGetStr(p, "Name", t->Name, sizeof(t->Name));
-	PackGetStr(p, "GroupName", t->GroupName, sizeof(t->GroupName));
-	PackGetUniStr(p, "Realname", t->Realname, sizeof(t->Realname));
-	PackGetUniStr(p, "Note", t->Note, sizeof(t->Note));
-	t->CreatedTime = PackGetInt64(p, "CreatedTime");
-	t->UpdatedTime = PackGetInt64(p, "UpdatedTime");
-	t->ExpireTime = PackGetInt64(p, "ExpireTime");
+// Authentication data: "AuthType" and the data of that type. Read after
+// Name, which hashes a plain-text password.
+static void RpcSetUserAuthDataOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	RPC_SET_USER *t = base;
+
+	OutRpcAuthData(p, t->AuthData, t->AuthType);
+}
+static void RpcSetUserAuthDataIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	RPC_SET_USER *t = base;
+
 	t->AuthData = InRpcAuthData(p, &t->AuthType, t->Name);
-	t->NumLogin = PackGetInt(p, "NumLogin");
-	InRpcTraffic(&t->Traffic, p);
+}
+static void RpcSetUserAuthDataFree(const RPC_FIELD *f, void *base)
+{
+	RPC_SET_USER *t = base;
 
-	if (PackGetBool(p, "UsePolicy"))
+	FreeAuthData(t->AuthType, t->AuthData);
+}
+static const RPC_HOOK rpc_set_user_auth_data_hook = {RpcSetUserAuthDataOut, RpcSetUserAuthDataIn, RpcSetUserAuthDataFree};
+
+// Optional policy: "UsePolicy" and the policy, only when the POLICY pointer is set
+static void RpcSetUserPolicyOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	POLICY *policy = *((POLICY **)(((UCHAR *)base) + f->Offset));
+
+	if (policy != NULL)
 	{
-		t->Policy = ZeroMalloc(sizeof(POLICY));
-		InRpcPolicy(t->Policy, p);
+		PackAddBool(p, f->Key, true);
+		OutRpcPolicy(p, policy);
 	}
+}
+static void RpcSetUserPolicyIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	POLICY **policy = (POLICY **)(((UCHAR *)base) + f->Offset);
+
+	if (PackGetBool(p, f->Key))
+	{
+		*policy = ZeroMalloc(sizeof(POLICY));
+		InRpcPolicy(*policy, p);
+	}
+}
+static void RpcSetUserPolicyFree(const RPC_FIELD *f, void *base)
+{
+	Free(*((POLICY **)(((UCHAR *)base) + f->Offset)));
+}
+static const RPC_HOOK rpc_set_user_policy_hook = {RpcSetUserPolicyOut, RpcSetUserPolicyIn, RpcSetUserPolicyFree};
+
+static const RPC_FIELD rpc_set_user_fields[] =
+{
+	RPC_ROW_STR(RPC_SET_USER, HubName, "HubName"),
+	RPC_ROW_STR(RPC_SET_USER, Name, "Name"),
+	RPC_ROW_STR(RPC_SET_USER, GroupName, "GroupName"),
+	RPC_ROW_UNISTR(RPC_SET_USER, Realname, "Realname"),
+	RPC_ROW_UNISTR(RPC_SET_USER, Note, "Note"),
+	RPC_ROW_TIME64(RPC_SET_USER, CreatedTime, "CreatedTime"),
+	RPC_ROW_TIME64(RPC_SET_USER, UpdatedTime, "UpdatedTime"),
+	RPC_ROW_TIME64(RPC_SET_USER, ExpireTime, "ExpireTime"),
+	RPC_ROW_OPAQUE(RPC_SET_USER, AuthData, "AuthType", 0, &rpc_set_user_auth_data_hook),
+	RPC_ROW_INT(RPC_SET_USER, NumLogin, "NumLogin"),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_SET_USER, Traffic, NULL, 0, &rpc_set_user_traffic_hook),
+	RPC_ROW_OPAQUE(RPC_SET_USER, Policy, "UsePolicy", 0, &rpc_set_user_policy_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_set_user_table, RPC_SET_USER, rpc_set_user_fields);
+
+void InRpcSetUser(RPC_SET_USER *t, PACK *p)
+{
+	RpcFieldIn(&rpc_set_user_table, t, p);
 }
 
 static void OutRpcSetUser(PACK *p, RPC_SET_USER *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddStr(p, "Name", t->Name);
-	PackAddStr(p, "GroupName", t->GroupName);
-	PackAddUniStr(p, "Realname", t->Realname);
-	PackAddUniStr(p, "Note", t->Note);
-	PackAddInt64(p, "CreatedTime", t->CreatedTime);
-	PackAddInt64(p, "UpdatedTime", t->UpdatedTime);
-	PackAddInt64(p, "ExpireTime", t->ExpireTime);
-	OutRpcAuthData(p, t->AuthData, t->AuthType);
-	PackAddInt(p, "NumLogin", t->NumLogin);
-	OutRpcTraffic(p, &t->Traffic);
-
-	if (t->Policy != NULL)
-	{
-		PackAddBool(p, "UsePolicy", true);
-		OutRpcPolicy(p, t->Policy);
-	}
+	RpcFieldOut(&rpc_set_user_table, p, t);
 }
 void FreeRpcSetUser(RPC_SET_USER *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	FreeAuthData(t->AuthType, t->AuthData);
-	if (t->Policy)
-	{
-		Free(t->Policy);
-	}
+	RpcFieldFree(&rpc_set_user_table, t);
 }
 
-static void InRpcEnumUser(RPC_ENUM_USER *t, PACK *p)
+// Embedded TRAFFIC of an item through the indexed TRAFFIC entry points
+static void RpcEnumUserTrafficOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	OutRpcTrafficEx((TRAFFIC *)(((UCHAR *)base) + f->Offset), p, index, total);
+}
+static void RpcEnumUserTrafficIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcTrafficEx((TRAFFIC *)(((UCHAR *)base) + f->Offset), p, index);
+}
+static const RPC_HOOK rpc_enum_user_traffic_hook = {RpcEnumUserTrafficOut, RpcEnumUserTrafficIn, NULL};
 
-	Zero(t, sizeof(RPC_ENUM_USER));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->NumUser = PackGetIndexCount(p, "Name");
-	t->Users = ZeroMalloc(sizeof(RPC_ENUM_USER_ITEM) * t->NumUser);
+static const RPC_FIELD rpc_enum_user_item_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_USER_ITEM, Name, "Name"),
+	RPC_ROW_STR(RPC_ENUM_USER_ITEM, GroupName, "GroupName"),
+	RPC_ROW_UNISTR(RPC_ENUM_USER_ITEM, Realname, "Realname"),
+	RPC_ROW_UNISTR(RPC_ENUM_USER_ITEM, Note, "Note"),
+	RPC_ROW_INT(RPC_ENUM_USER_ITEM, AuthType, "AuthType"),
+	RPC_ROW_TIME64(RPC_ENUM_USER_ITEM, LastLoginTime, "LastLoginTime"),
+	RPC_ROW_INT(RPC_ENUM_USER_ITEM, NumLogin, "NumLogin"),
+	RPC_ROW_BOOL(RPC_ENUM_USER_ITEM, DenyAccess, "DenyAccess"),
+	RPC_ROW_BOOL(RPC_ENUM_USER_ITEM, IsTrafficFilled, "IsTrafficFilled"),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_ENUM_USER_ITEM, Traffic, NULL, 0, &rpc_enum_user_traffic_hook),
+	RPC_ROW_BOOL(RPC_ENUM_USER_ITEM, IsExpiresFilled, "IsExpiresFilled"),
+	RPC_ROW_TIME64(RPC_ENUM_USER_ITEM, Expires, "Expires"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_user_item_table, RPC_ENUM_USER_ITEM, rpc_enum_user_item_fields);
 
-	for (i = 0;i < t->NumUser;i++)
-	{
-		RPC_ENUM_USER_ITEM *e = &t->Users[i];
+static const RPC_FIELD rpc_enum_user_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_USER, HubName, "HubName"),
+	RPC_ROW_ARRAY(RPC_ENUM_USER, Users, NumUser, &rpc_enum_user_item_table, "Name", 0),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_user_table, RPC_ENUM_USER, rpc_enum_user_fields);
 
-		PackGetStrEx(p, "Name", e->Name, sizeof(e->Name), i);
-		PackGetStrEx(p, "GroupName", e->GroupName, sizeof(e->GroupName), i);
-		PackGetUniStrEx(p, "Realname", e->Realname, sizeof(e->Realname), i);
-		PackGetUniStrEx(p, "Note", e->Note, sizeof(e->Note), i);
-		e->AuthType = PackGetIntEx(p, "AuthType", i);
-		e->LastLoginTime = PackGetInt64Ex(p, "LastLoginTime", i);
-		e->NumLogin = PackGetIntEx(p, "NumLogin", i);
-
-		e->IsTrafficFilled = PackGetBoolEx(p, "IsTrafficFilled", i);
-		InRpcTrafficEx(&e->Traffic, p, i);
-
-		e->IsExpiresFilled = PackGetBoolEx(p, "IsExpiresFilled", i);
-		e->Expires = PackGetInt64Ex(p, "Expires", i);
-	}
+void InRpcEnumUser(RPC_ENUM_USER *t, PACK *p)
+{
+	RpcFieldIn(&rpc_enum_user_table, t, p);
 }
 static void OutRpcEnumUser(PACK *p, RPC_ENUM_USER *t)
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-	PackAddStr(p, "HubName", t->HubName);
-
-	for (i = 0;i < t->NumUser;i++)
-	{
-		RPC_ENUM_USER_ITEM *e = &t->Users[i];
-
-		PackAddStrEx(p, "Name", e->Name, i, t->NumUser);
-		PackAddStrEx(p, "GroupName", e->GroupName, i, t->NumUser);
-		PackAddUniStrEx(p, "Realname", e->Realname, i, t->NumUser);
-		PackAddUniStrEx(p, "Note", e->Note, i, t->NumUser);
-		PackAddIntEx(p, "AuthType", e->AuthType, i, t->NumUser);
-		PackAddInt64Ex(p, "LastLoginTime", e->LastLoginTime, i, t->NumUser);
-		PackAddIntEx(p, "NumLogin", e->NumLogin, i, t->NumUser);
-		PackAddBoolEx(p, "DenyAccess", e->DenyAccess, i, t->NumUser);
-
-		PackAddBoolEx(p, "IsTrafficFilled", e->IsTrafficFilled, i, t->NumUser);
-		OutRpcTrafficEx(&e->Traffic, p, i, t->NumUser);
-
-		PackAddBoolEx(p, "IsExpiresFilled", e->IsExpiresFilled, i, t->NumUser);
-		PackAddInt64Ex(p, "Expires", e->Expires, i, t->NumUser);
-	}
+	RpcFieldOut(&rpc_enum_user_table, p, t);
 }
 void FreeRpcEnumUser(RPC_ENUM_USER *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Users);
+	RpcFieldFree(&rpc_enum_user_table, t);
 }
 
-static void InRpcSetGroup(RPC_SET_GROUP *t, PACK *p)
+// TRAFFIC and the optional policy use the RPC_SET_USER hooks
+static const RPC_FIELD rpc_set_group_fields[] =
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_STR(RPC_SET_GROUP, HubName, "HubName"),
+	RPC_ROW_STR(RPC_SET_GROUP, Name, "Name"),
+	RPC_ROW_UNISTR(RPC_SET_GROUP, Realname, "Realname"),
+	RPC_ROW_UNISTR(RPC_SET_GROUP, Note, "Note"),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_SET_GROUP, Traffic, NULL, 0, &rpc_set_user_traffic_hook),
+	RPC_ROW_OPAQUE(RPC_SET_GROUP, Policy, "UsePolicy", 0, &rpc_set_user_policy_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_set_group_table, RPC_SET_GROUP, rpc_set_group_fields);
 
-	Zero(t, sizeof(RPC_SET_GROUP));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	PackGetStr(p, "Name", t->Name, sizeof(t->Name));
-	PackGetUniStr(p, "Realname", t->Realname, sizeof(t->Realname));
-	PackGetUniStr(p, "Note", t->Note, sizeof(t->Note));
-	InRpcTraffic(&t->Traffic, p);
-
-	if (PackGetBool(p, "UsePolicy"))
-	{
-		t->Policy = ZeroMalloc(sizeof(POLICY));
-		InRpcPolicy(t->Policy, p);
-	}
+void InRpcSetGroup(RPC_SET_GROUP *t, PACK *p)
+{
+	RpcFieldIn(&rpc_set_group_table, t, p);
 }
 static void OutRpcSetGroup(PACK *p, RPC_SET_GROUP *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddStr(p, "Name", t->Name);
-	PackAddUniStr(p, "Realname", t->Realname);
-	PackAddUniStr(p, "Note", t->Note);
-	OutRpcTraffic(p, &t->Traffic);
-
-	if (t->Policy != NULL)
-	{
-		PackAddBool(p, "UsePolicy", true);
-		OutRpcPolicy(p, t->Policy);
-	}
+	RpcFieldOut(&rpc_set_group_table, p, t);
 }
 void FreeRpcSetGroup(RPC_SET_GROUP *t)
 {
-	Free(t->Policy);
+	RpcFieldFree(&rpc_set_group_table, t);
 }
 
-static void InRpcEnumGroup(RPC_ENUM_GROUP *t, PACK *p)
+static const RPC_FIELD rpc_enum_group_item_fields[] =
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_STR(RPC_ENUM_GROUP_ITEM, Name, "Name"),
+	RPC_ROW_UNISTR(RPC_ENUM_GROUP_ITEM, Realname, "Realname"),
+	RPC_ROW_UNISTR(RPC_ENUM_GROUP_ITEM, Note, "Note"),
+	RPC_ROW_INT(RPC_ENUM_GROUP_ITEM, NumUsers, "NumUsers"),
+	RPC_ROW_BOOL(RPC_ENUM_GROUP_ITEM, DenyAccess, "DenyAccess"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_group_item_table, RPC_ENUM_GROUP_ITEM, rpc_enum_group_item_fields);
 
-	Zero(t, sizeof(RPC_ENUM_GROUP));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->NumGroup = PackGetIndexCount(p, "Name");
-	t->Groups = ZeroMalloc(sizeof(RPC_ENUM_GROUP_ITEM) * t->NumGroup);
+static const RPC_FIELD rpc_enum_group_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_GROUP, HubName, "HubName"),
+	RPC_ROW_ARRAY(RPC_ENUM_GROUP, Groups, NumGroup, &rpc_enum_group_item_table, "Name", 0),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_group_table, RPC_ENUM_GROUP, rpc_enum_group_fields);
 
-	for (i = 0;i < t->NumGroup;i++)
-	{
-		RPC_ENUM_GROUP_ITEM *e = &t->Groups[i];
-
-		PackGetStrEx(p, "Name", e->Name, sizeof(e->Name), i);
-		PackGetUniStrEx(p, "Realname", e->Realname, sizeof(e->Realname), i);
-		PackGetUniStrEx(p, "Note", e->Note, sizeof(e->Note), i);
-		e->NumUsers = PackGetIntEx(p, "NumUsers", i);
-	}
+void InRpcEnumGroup(RPC_ENUM_GROUP *t, PACK *p)
+{
+	RpcFieldIn(&rpc_enum_group_table, t, p);
 }
 static void OutRpcEnumGroup(PACK *p, RPC_ENUM_GROUP *t)
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-
-	for (i = 0;i < t->NumGroup;i++)
-	{
-		RPC_ENUM_GROUP_ITEM *e = &t->Groups[i];
-
-		PackAddStrEx(p, "Name", e->Name, i, t->NumGroup);
-		PackAddUniStrEx(p, "Realname", e->Realname, i, t->NumGroup);
-		PackAddUniStrEx(p, "Note", e->Note, i, t->NumGroup);
-		PackAddIntEx(p, "NumUsers", e->NumUsers, i, t->NumGroup);
-		PackAddBoolEx(p, "DenyAccess", e->DenyAccess, i, t->NumGroup);
-	}
+	RpcFieldOut(&rpc_enum_group_table, p, t);
 }
 void FreeRpcEnumGroup(RPC_ENUM_GROUP *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Groups);
+	RpcFieldFree(&rpc_enum_group_table, t);
 }
 
-static void InRpcDeleteUser(RPC_DELETE_USER *t, PACK *p)
+static const RPC_FIELD rpc_delete_user_fields[] =
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_STR(RPC_DELETE_USER, HubName, "HubName"),
+	RPC_ROW_STR(RPC_DELETE_USER, Name, "Name"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_delete_user_table, RPC_DELETE_USER, rpc_delete_user_fields);
 
-	Zero(t, sizeof(RPC_DELETE_USER));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	PackGetStr(p, "Name", t->Name, sizeof(t->Name));
+void InRpcDeleteUser(RPC_DELETE_USER *t, PACK *p)
+{
+	RpcFieldIn(&rpc_delete_user_table, t, p);
 }
 static void OutRpcDeleteUser(PACK *p, RPC_DELETE_USER *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddStr(p, "Name", t->Name);
+	RpcFieldOut(&rpc_delete_user_table, p, t);
 }
+
+// Ip is read as a plain integer; the write side uses the IPv4 helper
+static void RpcEnumSessionIpIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	*((UINT *)(((UCHAR *)base) + f->Offset)) = PackGetIntEx(p, f->Key, index);
+}
+static const RPC_HOOK rpc_enum_session_ip_hook = {NULL, RpcEnumSessionIpIn, NULL};
+
+static const RPC_FIELD rpc_enum_session_item_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_SESSION_ITEM, Name, "Name"),
+	RPC_ROW_STR(RPC_ENUM_SESSION_ITEM, Username, "Username"),
+	RPC_ROW_HOOK(RPC_FT_IP32, RPC_ENUM_SESSION_ITEM, Ip, "Ip", 0, &rpc_enum_session_ip_hook),
+	RPC_ROW_IP(RPC_ENUM_SESSION_ITEM, ClientIP, "ClientIP"),
+	RPC_ROW_STR(RPC_ENUM_SESSION_ITEM, Hostname, "Hostname"),
+	RPC_ROW_INT(RPC_ENUM_SESSION_ITEM, MaxNumTcp, "MaxNumTcp"),
+	RPC_ROW_INT(RPC_ENUM_SESSION_ITEM, CurrentNumTcp, "CurrentNumTcp"),
+	RPC_ROW_INT64(RPC_ENUM_SESSION_ITEM, PacketSize, "PacketSize"),
+	RPC_ROW_INT64(RPC_ENUM_SESSION_ITEM, PacketNum, "PacketNum"),
+	RPC_ROW_BOOL(RPC_ENUM_SESSION_ITEM, LinkMode, "LinkMode"),
+	RPC_ROW_BOOL(RPC_ENUM_SESSION_ITEM, BridgeMode, "BridgeMode"),
+	RPC_ROW_BOOL(RPC_ENUM_SESSION_ITEM, Client_BridgeMode, "Client_BridgeMode"),
+	RPC_ROW_BOOL(RPC_ENUM_SESSION_ITEM, Client_MonitorMode, "Client_MonitorMode"),
+	RPC_ROW_INT(RPC_ENUM_SESSION_ITEM, VLanId, "VLanId"),
+	RPC_ROW_DATA(RPC_ENUM_SESSION_ITEM, UniqueId, "UniqueId"),
+	RPC_ROW_BOOL(RPC_ENUM_SESSION_ITEM, IsDormantEnabled, "IsDormantEnabled"),
+	RPC_ROW_BOOL(RPC_ENUM_SESSION_ITEM, IsDormant, "IsDormant"),
+	RPC_ROW_TIME64(RPC_ENUM_SESSION_ITEM, LastCommDormant, "LastCommDormant"),
+	RPC_ROW_TIME64(RPC_ENUM_SESSION_ITEM, CreatedTime, "CreatedTime"),
+	RPC_ROW_TIME64(RPC_ENUM_SESSION_ITEM, LastCommTime, "LastCommTime"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_session_item_table, RPC_ENUM_SESSION_ITEM, rpc_enum_session_item_fields);
+
+static const RPC_FIELD rpc_enum_session_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_SESSION, HubName, "HubName"),
+	RPC_ROW_ARRAY(RPC_ENUM_SESSION, Sessions, NumSession, &rpc_enum_session_item_table, "Name", 0),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_session_table, RPC_ENUM_SESSION, rpc_enum_session_fields);
 
 void InRpcEnumSession(RPC_ENUM_SESSION *t, PACK *p)
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(RPC_ENUM_SESSION));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->NumSession = PackGetIndexCount(p, "Name");
-	t->Sessions = ZeroMalloc(sizeof(RPC_ENUM_SESSION_ITEM) * t->NumSession);
-
-	for (i = 0;i < t->NumSession;i++)
-	{
-		RPC_ENUM_SESSION_ITEM *e = &t->Sessions[i];
-
-		PackGetStrEx(p, "Name", e->Name, sizeof(e->Name), i);
-		PackGetStrEx(p, "Username", e->Username, sizeof(e->Username), i);
-		e->Ip = PackGetIntEx(p, "Ip", i);
-		PackGetIpEx(p, "ClientIP", &e->ClientIP, i);
-		PackGetStrEx(p, "Hostname", e->Hostname, sizeof(e->Hostname), i);
-		e->MaxNumTcp = PackGetIntEx(p, "MaxNumTcp", i);
-		e->CurrentNumTcp = PackGetIntEx(p, "CurrentNumTcp", i);
-		e->PacketSize = PackGetInt64Ex(p, "PacketSize", i);
-		e->PacketNum = PackGetInt64Ex(p, "PacketNum", i);
-		e->LinkMode = PackGetBoolEx(p, "LinkMode", i);
-		e->BridgeMode = PackGetBoolEx(p, "BridgeMode", i);
-		e->VLanId = PackGetIntEx(p, "VLanId", i);
-		PackGetDataEx2(p, "UniqueId", e->UniqueId, sizeof(e->UniqueId), i);
-		e->IsDormantEnabled = PackGetBoolEx(p, "IsDormantEnabled", i);
-		e->CreatedTime = PackGetInt64Ex(p, "CreatedTime", i);
-		e->LastCommTime = PackGetInt64Ex(p, "LastCommTime", i);
-	}
+	RpcFieldIn(&rpc_enum_session_table, t, p);
 }
 void OutRpcEnumSession(PACK *p, RPC_ENUM_SESSION *t)
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-	PackAddStr(p, "HubName", t->HubName);
-
-	for (i = 0;i < t->NumSession;i++)
-	{
-		RPC_ENUM_SESSION_ITEM *e = &t->Sessions[i];
-
-		PackAddStrEx(p, "Name", e->Name, i, t->NumSession);
-		PackAddStrEx(p, "Username", e->Username, i, t->NumSession);
-		PackAddIp32Ex(p, "Ip", e->Ip, i, t->NumSession);
-		PackAddIpEx(p, "ClientIP", &e->ClientIP, i, t->NumSession);
-		PackAddStrEx(p, "Hostname", e->Hostname, i, t->NumSession);
-		PackAddIntEx(p, "MaxNumTcp", e->MaxNumTcp, i, t->NumSession);
-		PackAddIntEx(p, "CurrentNumTcp", e->CurrentNumTcp, i, t->NumSession);
-		PackAddInt64Ex(p, "PacketSize", e->PacketSize, i, t->NumSession);
-		PackAddInt64Ex(p, "PacketNum", e->PacketNum, i, t->NumSession);
-		PackAddBoolEx(p, "LinkMode", e->LinkMode, i, t->NumSession);
-		PackAddBoolEx(p, "BridgeMode", e->BridgeMode, i, t->NumSession);
-		PackAddBoolEx(p, "Client_BridgeMode", e->Client_BridgeMode, i, t->NumSession);
-		PackAddBoolEx(p, "Client_MonitorMode", e->Client_MonitorMode, i, t->NumSession);
-		PackAddIntEx(p, "VLanId", e->VLanId, i, t->NumSession);
-		PackAddDataEx(p, "UniqueId", e->UniqueId, sizeof(e->UniqueId), i, t->NumSession);
-		PackAddBoolEx(p, "IsDormantEnabled", e->IsDormantEnabled, i, t->NumSession);
-		PackAddBoolEx(p, "IsDormant", e->IsDormant, i, t->NumSession);
-		PackAddInt64Ex(p, "LastCommDormant", e->LastCommDormant, i, t->NumSession);
-		PackAddInt64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumSession);
-		PackAddInt64Ex(p, "LastCommTime", e->LastCommTime, i, t->NumSession);
-	}
+	RpcFieldOut(&rpc_enum_session_table, p, t);
 }
 void FreeRpcEnumSession(RPC_ENUM_SESSION *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->Sessions);
+	RpcFieldFree(&rpc_enum_session_table, t);
 }
 
 static void InRpcKeyPair(RPC_KEY_PAIR *t, PACK *p)
@@ -8518,220 +8177,190 @@ void OutRpcNodeInfo(PACK *p, NODE_INFO *t)
 	PackAddInt(p, "ProxyPort", LittleEndian32(t->ProxyPort));
 }
 
-static void InRpcSessionStatus(RPC_SESSION_STATUS *t, PACK *p)
+// Embedded connection status, through its own entry points (Free releases its certificates)
+static void RpcSessionStatusStatusOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	OutRpcClientGetConnectionStatus(p, (RPC_CLIENT_GET_CONNECTION_STATUS *)(((UCHAR *)base) + f->Offset));
+}
+static void RpcSessionStatusStatusIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcClientGetConnectionStatus((RPC_CLIENT_GET_CONNECTION_STATUS *)(((UCHAR *)base) + f->Offset), p);
+}
+static void RpcSessionStatusStatusFree(const RPC_FIELD *f, void *base)
+{
+	CiFreeClientGetConnectionStatus((RPC_CLIENT_GET_CONNECTION_STATUS *)(((UCHAR *)base) + f->Offset));
+}
+static const RPC_HOOK rpc_session_status_status_hook =
+{
+	RpcSessionStatusStatusOut, RpcSessionStatusStatusIn, RpcSessionStatusStatusFree
+};
 
-	Zero(t, sizeof(RPC_SESSION_STATUS));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	PackGetStr(p, "Name", t->Name, sizeof(t->Name));
-	PackGetStr(p, "Username", t->Username, sizeof(t->Username));
-	PackGetStr(p, "GroupName", t->GroupName, sizeof(t->GroupName));
-	PackGetStr(p, "RealUsername", t->RealUsername, sizeof(t->RealUsername));
-	t->ClientIp = PackGetIp32(p, "SessionStatus_ClientIp");
-	PackGetData2(p, "SessionStatus_ClientIp6", t->ClientIp6, sizeof(t->ClientIp6));
-	PackGetStr(p, "SessionStatus_ClientHostName", t->ClientHostName, sizeof(t->ClientHostName));
-	PackGetIp(p, "Client_Ip_Address", &t->ClientIpAddress);
+// Embedded node information, through its own entry points
+static void RpcSessionStatusNodeInfoOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
+{
+	OutRpcNodeInfo(p, (NODE_INFO *)(((UCHAR *)base) + f->Offset));
+}
+static void RpcSessionStatusNodeInfoIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	InRpcNodeInfo((NODE_INFO *)(((UCHAR *)base) + f->Offset), p);
+}
+static const RPC_HOOK rpc_session_status_node_info_hook =
+{
+	RpcSessionStatusNodeInfoOut, RpcSessionStatusNodeInfoIn, NULL
+};
 
-	InRpcClientGetConnectionStatus(&t->Status, p);
-	InRpcNodeInfo(&t->NodeInfo, p);
+// The direct rows come first, then the connection status, then the node
+// information: on a colliding key the first writer wins
+static const RPC_FIELD rpc_session_status_fields[] =
+{
+	RPC_ROW_STR(RPC_SESSION_STATUS, HubName, "HubName"),
+	RPC_ROW_STR(RPC_SESSION_STATUS, Name, "Name"),
+	RPC_ROW_STR(RPC_SESSION_STATUS, Username, "Username"),
+	RPC_ROW_STR(RPC_SESSION_STATUS, GroupName, "GroupName"),
+	RPC_ROW_STR(RPC_SESSION_STATUS, RealUsername, "RealUsername"),
+	RPC_ROW_IP32(RPC_SESSION_STATUS, ClientIp, "SessionStatus_ClientIp"),
+	RPC_ROW_DATA(RPC_SESSION_STATUS, ClientIp6, "SessionStatus_ClientIp6"),
+	RPC_ROW_STR(RPC_SESSION_STATUS, ClientHostName, "SessionStatus_ClientHostName"),
+	RPC_ROW_IP(RPC_SESSION_STATUS, ClientIpAddress, "Client_Ip_Address"),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_SESSION_STATUS, Status, NULL, 0, &rpc_session_status_status_hook),
+	RPC_ROW_HOOK(RPC_FT_STRUCT, RPC_SESSION_STATUS, NodeInfo, NULL, 0, &rpc_session_status_node_info_hook),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_session_status_table, RPC_SESSION_STATUS, rpc_session_status_fields);
+
+void InRpcSessionStatus(RPC_SESSION_STATUS *t, PACK *p)
+{
+	RpcFieldIn(&rpc_session_status_table, t, p);
 }
 static void OutRpcSessionStatus(PACK *p, RPC_SESSION_STATUS *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddStr(p, "Name", t->Name);
-	PackAddStr(p, "Username", t->Username);
-	PackAddStr(p, "GroupName", t->GroupName);
-	PackAddStr(p, "RealUsername", t->RealUsername);
-	PackAddIp32(p, "SessionStatus_ClientIp", t->ClientIp);
-	PackAddData(p, "SessionStatus_ClientIp6", t->ClientIp6, sizeof(t->ClientIp6));
-	PackAddStr(p, "SessionStatus_ClientHostName", t->ClientHostName);
-	PackAddIp(p, "Client_Ip_Address", &t->ClientIpAddress);
-
-	OutRpcClientGetConnectionStatus(p, &t->Status);
-	OutRpcNodeInfo(p, &t->NodeInfo);
+	RpcFieldOut(&rpc_session_status_table, p, t);
 }
 void FreeRpcSessionStatus(RPC_SESSION_STATUS *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	CiFreeClientGetConnectionStatus(&t->Status);
+	RpcFieldFree(&rpc_session_status_table, t);
 }
 
-static void InRpcDeleteSession(RPC_DELETE_SESSION *t, PACK *p)
+static const RPC_FIELD rpc_delete_session_fields[] =
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_STR(RPC_DELETE_SESSION, HubName, "HubName"),
+	RPC_ROW_STR(RPC_DELETE_SESSION, Name, "Name"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_delete_session_table, RPC_DELETE_SESSION, rpc_delete_session_fields);
 
-	Zero(t, sizeof(RPC_DELETE_SESSION));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	PackGetStr(p, "Name", t->Name, sizeof(t->Name));
+void InRpcDeleteSession(RPC_DELETE_SESSION *t, PACK *p)
+{
+	RpcFieldIn(&rpc_delete_session_table, t, p);
 }
 static void OutRpcDeleteSession(PACK *p, RPC_DELETE_SESSION *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddStr(p, "Name", t->Name);
+	RpcFieldOut(&rpc_delete_session_table, p, t);
 }
 
-static void InRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t, PACK *p)
+static const RPC_FIELD rpc_enum_mac_table_item_fields[] =
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_INT(RPC_ENUM_MAC_TABLE_ITEM, Key, "Key"),
+	RPC_ROW_STR(RPC_ENUM_MAC_TABLE_ITEM, SessionName, "SessionName"),
+	RPC_ROW_DATA(RPC_ENUM_MAC_TABLE_ITEM, MacAddress, "MacAddress"),
+	RPC_ROW_INT(RPC_ENUM_MAC_TABLE_ITEM, VlanId, "VlanId"),
+	RPC_ROW_TIME64(RPC_ENUM_MAC_TABLE_ITEM, CreatedTime, "CreatedTime"),
+	RPC_ROW_TIME64(RPC_ENUM_MAC_TABLE_ITEM, UpdatedTime, "UpdatedTime"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_mac_table_item_table, RPC_ENUM_MAC_TABLE_ITEM, rpc_enum_mac_table_item_fields);
 
-	Zero(t, sizeof(RPC_ENUM_MAC_TABLE));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->NumMacTable = PackGetIndexCount(p, "SessionName");
-	t->MacTables = ZeroMalloc(sizeof(RPC_ENUM_MAC_TABLE_ITEM) * t->NumMacTable);
+static const RPC_FIELD rpc_enum_mac_table_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_MAC_TABLE, HubName, "HubName"),
+	RPC_ROW_ARRAY(RPC_ENUM_MAC_TABLE, MacTables, NumMacTable, &rpc_enum_mac_table_item_table, "SessionName", 0),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_mac_table_table, RPC_ENUM_MAC_TABLE, rpc_enum_mac_table_fields);
 
-	for (i = 0;i < t->NumMacTable;i++)
-	{
-		RPC_ENUM_MAC_TABLE_ITEM *e = &t->MacTables[i];
-
-		e->Key = PackGetIntEx(p, "Key", i);
-		PackGetStrEx(p, "SessionName", e->SessionName, sizeof(e->SessionName), i);
-		PackGetDataEx2(p, "MacAddress", e->MacAddress, sizeof(e->MacAddress), i);
-		e->VlanId = PackGetIntEx(p, "VlanId", i);
-		e->CreatedTime = PackGetInt64Ex(p, "CreatedTime", i);
-		e->UpdatedTime = PackGetInt64Ex(p, "UpdatedTime", i);
-	}
+void InRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t, PACK *p)
+{
+	RpcFieldIn(&rpc_enum_mac_table_table, t, p);
 }
 static void OutRpcEnumMacTable(PACK *p, RPC_ENUM_MAC_TABLE *t)
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-
-	for (i = 0;i < t->NumMacTable;i++)
-	{
-		RPC_ENUM_MAC_TABLE_ITEM *e = &t->MacTables[i];
-
-		PackAddIntEx(p, "Key", e->Key, i, t->NumMacTable);
-		PackAddStrEx(p, "SessionName", e->SessionName, i, t->NumMacTable);
-		PackAddDataEx(p, "MacAddress", e->MacAddress, sizeof(e->MacAddress), i, t->NumMacTable);
-		PackAddIntEx(p, "VlanId", e->VlanId, i, t->NumMacTable);
-		PackAddInt64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumMacTable);
-		PackAddInt64Ex(p, "UpdatedTime", e->UpdatedTime, i, t->NumMacTable);
-	}
+	RpcFieldOut(&rpc_enum_mac_table_table, p, t);
 }
 void FreeRpcEnumMacTable(RPC_ENUM_MAC_TABLE *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->MacTables);
+	RpcFieldFree(&rpc_enum_mac_table_table, t);
 }
 
-static void InRpcEnumIpTable(RPC_ENUM_IP_TABLE *t, PACK *p)
+// IpV6: when the peer sent none, it comes from Ip (the row before)
+static void RpcEnumIpTableIpV6In(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
 {
-	UINT i;
-	if (t == NULL || p == NULL)
+	RPC_ENUM_IP_TABLE_ITEM *e = (RPC_ENUM_IP_TABLE_ITEM *)base;
+	IP *ip = (IP *)(((UCHAR *)base) + f->Offset);
+
+	if (PackGetIpEx(p, f->Key, ip, index) == false)
 	{
-		return;
+		UINTToIP(ip, e->Ip);
 	}
+}
+static const RPC_HOOK rpc_enum_ip_table_ipv6_hook = {NULL, RpcEnumIpTableIpV6In, NULL};
 
-	Zero(t, sizeof(RPC_ENUM_IP_TABLE));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->NumIpTable = PackGetIndexCount(p, "SessionName");
-	t->IpTables = ZeroMalloc(sizeof(RPC_ENUM_IP_TABLE_ITEM) * t->NumIpTable);
+// IpAddress is read without the index, as before: every item gets the first address
+static void RpcEnumIpTableIpAddressIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
+{
+	PackGetIp(p, f->Key, (IP *)(((UCHAR *)base) + f->Offset));
+}
+static const RPC_HOOK rpc_enum_ip_table_ip_address_hook = {NULL, RpcEnumIpTableIpAddressIn, NULL};
 
-	for (i = 0;i < t->NumIpTable;i++)
-	{
-		RPC_ENUM_IP_TABLE_ITEM *e = &t->IpTables[i];
+static const RPC_FIELD rpc_enum_ip_table_item_fields[] =
+{
+	RPC_ROW_INT(RPC_ENUM_IP_TABLE_ITEM, Key, "Key"),
+	RPC_ROW_STR(RPC_ENUM_IP_TABLE_ITEM, SessionName, "SessionName"),
+	RPC_ROW_IP32(RPC_ENUM_IP_TABLE_ITEM, Ip, "Ip"),
+	RPC_ROW_HOOK(RPC_FT_IP, RPC_ENUM_IP_TABLE_ITEM, IpV6, "IpV6", 0, &rpc_enum_ip_table_ipv6_hook),
+	RPC_ROW_HOOK(RPC_FT_IP, RPC_ENUM_IP_TABLE_ITEM, IpAddress, "IpAddress", 0, &rpc_enum_ip_table_ip_address_hook),
+	RPC_ROW_BOOL(RPC_ENUM_IP_TABLE_ITEM, DhcpAllocated, "DhcpAllocated"),
+	RPC_ROW_TIME64(RPC_ENUM_IP_TABLE_ITEM, CreatedTime, "CreatedTime"),
+	RPC_ROW_TIME64(RPC_ENUM_IP_TABLE_ITEM, UpdatedTime, "UpdatedTime"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_ip_table_item_table, RPC_ENUM_IP_TABLE_ITEM, rpc_enum_ip_table_item_fields);
 
-		e->Key = PackGetIntEx(p, "Key", i);
-		PackGetStrEx(p, "SessionName", e->SessionName, sizeof(e->SessionName), i);
-		e->Ip = PackGetIp32Ex(p, "Ip", i);
-		if (PackGetIpEx(p, "IpV6", &e->IpV6, i) == false)
-		{
-			UINTToIP(&e->IpV6, e->Ip);
-		}
-		PackGetIp(p, "IpAddress", &e->IpAddress);
-		e->DhcpAllocated = PackGetBoolEx(p, "DhcpAllocated", i);
-		e->CreatedTime = PackGetInt64Ex(p, "CreatedTime", i);
-		e->UpdatedTime = PackGetInt64Ex(p, "UpdatedTime", i);
-	}
+static const RPC_FIELD rpc_enum_ip_table_fields[] =
+{
+	RPC_ROW_STR(RPC_ENUM_IP_TABLE, HubName, "HubName"),
+	RPC_ROW_ARRAY(RPC_ENUM_IP_TABLE, IpTables, NumIpTable, &rpc_enum_ip_table_item_table, "SessionName", 0),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_enum_ip_table_table, RPC_ENUM_IP_TABLE, rpc_enum_ip_table_fields);
+
+void InRpcEnumIpTable(RPC_ENUM_IP_TABLE *t, PACK *p)
+{
+	RpcFieldIn(&rpc_enum_ip_table_table, t, p);
 }
 static void OutRpcEnumIpTable(PACK *p, RPC_ENUM_IP_TABLE *t)
 {
-	UINT i;
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-
-	for (i = 0;i < t->NumIpTable;i++)
-	{
-		RPC_ENUM_IP_TABLE_ITEM *e = &t->IpTables[i];
-
-		PackAddIntEx(p, "Key", e->Key, i, t->NumIpTable);
-		PackAddStrEx(p, "SessionName", e->SessionName, i, t->NumIpTable);
-		PackAddIp32Ex(p, "Ip", e->Ip, i, t->NumIpTable);
-		PackAddIpEx(p, "IpV6", &e->IpV6, i, t->NumIpTable);
-		PackAddIpEx(p, "IpAddress", &e->IpAddress, i, t->NumIpTable);
-		PackAddBoolEx(p, "DhcpAllocated", e->DhcpAllocated, i, t->NumIpTable);
-		PackAddInt64Ex(p, "CreatedTime", e->CreatedTime, i, t->NumIpTable);
-		PackAddInt64Ex(p, "UpdatedTime", e->UpdatedTime, i, t->NumIpTable);
-	}
+	RpcFieldOut(&rpc_enum_ip_table_table, p, t);
 }
 void FreeRpcEnumIpTable(RPC_ENUM_IP_TABLE *t)
 {
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Free(t->IpTables);
+	RpcFieldFree(&rpc_enum_ip_table_table, t);
 }
 
-static void InRpcDeleteTable(RPC_DELETE_TABLE *t, PACK *p)
+static const RPC_FIELD rpc_delete_table_fields[] =
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
+	RPC_ROW_STR(RPC_DELETE_TABLE, HubName, "HubName"),
+	RPC_ROW_INT(RPC_DELETE_TABLE, Key, "Key"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_delete_table_table, RPC_DELETE_TABLE, rpc_delete_table_fields);
 
-	Zero(t, sizeof(RPC_DELETE_TABLE));
-	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	t->Key = PackGetInt(p, "Key");
+void InRpcDeleteTable(RPC_DELETE_TABLE *t, PACK *p)
+{
+	RpcFieldIn(&rpc_delete_table_table, t, p);
 }
 static void OutRpcDeleteTable(PACK *p, RPC_DELETE_TABLE *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddStr(p, "HubName", t->HubName);
-	PackAddInt(p, "Key", t->Key);
+	RpcFieldOut(&rpc_delete_table_table, p, t);
 }
 
 static UINT StTest(ADMIN *a, RPC_TEST *t)
@@ -8741,20 +8370,23 @@ static UINT StTest(ADMIN *a, RPC_TEST *t)
 	return ERR_NO_ERROR;
 }
 
-static void InRpcTest(RPC_TEST *t, PACK *p)
+static const RPC_FIELD rpc_test_fields[] =
 {
-	Zero(t, sizeof(RPC_TEST));
-	t->IntValue = PackGetInt(p, "IntValue");
-	t->Int64Value = PackGetInt64(p, "Int64Value");
-	PackGetStr(p, "StrValue", t->StrValue, sizeof(t->StrValue));
-	PackGetUniStr(p, "UniStrValue", t->UniStrValue, sizeof(t->UniStrValue));
+	RPC_ROW_INT(RPC_TEST, IntValue, "IntValue"),
+	RPC_ROW_INT64(RPC_TEST, Int64Value, "Int64Value"),
+	RPC_ROW_STR(RPC_TEST, StrValue, "StrValue"),
+	RPC_ROW_UNISTR(RPC_TEST, UniStrValue, "UniStrValue"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_test_table, RPC_TEST, rpc_test_fields);
+
+void InRpcTest(RPC_TEST *t, PACK *p)
+{
+	RpcFieldIn(&rpc_test_table, t, p);
 }
 static void OutRpcTest(PACK *p, RPC_TEST *t)
 {
-	PackAddInt(p, "IntValue", t->IntValue);
-	PackAddInt64(p, "Int64Value", t->Int64Value);
-	PackAddStr(p, "StrValue", t->StrValue);
-	PackAddUniStr(p, "UniStrValue", t->UniStrValue);
+	RpcFieldOut(&rpc_test_table, p, t);
 }
 void FreeRpcTest(RPC_TEST *t)
 {

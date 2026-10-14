@@ -1,0 +1,27 @@
+# RPC_ENUM_LICENSE_KEY RPC_ENUM_LICENSE_KEY syn
+[out]
+#0 Expires int64[2] = 0, 0
+#1 Id int[2] = 0, 0
+#2 LicenseId str[2] = "", ""
+#3 LicenseKey str[2] = "", ""
+#4 LicenseName str[2] = "", ""
+#5 NumItem int[1] = 2
+#6 ProductId int[2] = 0, 0
+#7 SerialId int[2] = 0, 0
+#8 Status int[2] = 0, 0
+#9 SystemId int64[2] = 0, 0
+bytes=293 sha1=413f5821289543a76d429508c70448ba07b9eeb4
+[in-out]
+#0 Expires int64[2] = 56200459404181505, 56200459404181506
+#1 Id int[2] = 15634600, 15634601
+#2 LicenseId str[2] = "LicenseId#0", "LicenseId#1"
+#3 LicenseKey str[2] = "LicenseKey#0", "LicenseKey#1"
+#4 LicenseName str[2] = "LicenseName#0", "LicenseName#1"
+#5 NumItem int[1] = 2
+#6 ProductId int[2] = 0, 0
+#7 SerialId int[2] = 21646632, 21646633
+#8 Status int[2] = 15647080, 15647081
+#9 SystemId int64[2] = 60964030952505345, 60964030952505346
+bytes=365 sha1=c7fe9f8c9d6617b921f67b2ccfa893677c323c7e
+[in-out-in-out]
+same

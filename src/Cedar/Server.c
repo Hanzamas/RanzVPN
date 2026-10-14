@@ -9,6 +9,7 @@
 #include "Link.h"
 #include "Listener.h"
 #include "Protocol.h"
+#include "RpcField.h"
 #include "Sam.h"
 
 #include "Mayaqua/Cfg.h"
@@ -1073,28 +1074,22 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 	UpdateGlobalServerFlags(s, t);
 }
 
+static const RPC_FIELD rpc_syslog_setting_fields[] =
+{
+	RPC_ROW_INT(SYSLOG_SETTING, SaveType, "SaveType"),
+	RPC_ROW_INT(SYSLOG_SETTING, Port, "Port"),
+	RPC_ROW_STR(SYSLOG_SETTING, Hostname, "Hostname"),
+	RPC_ROW_END
+};
+RPC_TABLE_DEF(rpc_syslog_setting_table, SYSLOG_SETTING, rpc_syslog_setting_fields);
+
 void InRpcSysLogSetting(SYSLOG_SETTING *t, PACK *p)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(SYSLOG_SETTING));
-	t->SaveType = PackGetInt(p, "SaveType");
-	t->Port = PackGetInt(p, "Port");
-	PackGetStr(p, "Hostname", t->Hostname, sizeof(t->Hostname));
+	RpcFieldIn(&rpc_syslog_setting_table, t, p);
 }
 void OutRpcSysLogSetting(PACK *p, SYSLOG_SETTING *t)
 {
-	if (t == NULL || p == NULL)
-	{
-		return;
-	}
-
-	PackAddInt(p, "SaveType", t->SaveType);
-	PackAddInt(p, "Port", t->Port);
-	PackAddStr(p, "Hostname", t->Hostname);
+	RpcFieldOut(&rpc_syslog_setting_table, p, t);
 }
 
 void InitCapsList(CAPSLIST *t)
