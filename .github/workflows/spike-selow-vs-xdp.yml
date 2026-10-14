@@ -1,0 +1,71 @@
+# Spike only: SeLow vs XDP for Windows on one KM-TEST Loopback Adapter,
+# TX capture and RX inject at 64/512/1500 B. Lives on spike/* branches; never merged.
+name: spike-selow-vs-xdp
+
+on:
+  push:
+    branches: ['spike/**']
+    paths: ['spikes/selow-vs-xdp/**', '.github/workflows/spike-selow-vs-xdp.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  XDP_VERSION: '1.4.0'
+  BENCH_RUNS: '1'
+  BENCH_SECS: '2'
+
+jobs:
+  bench:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch XDP ${{ env.XDP_VERSION }} SDK and runtime from nuget.org
+        run: |
+          $pk = "$env:RUNNER_TEMP\xdp"
+          foreach ($p in 'Microsoft.XDP-for-Windows.Sdk', 'Microsoft.XDP-for-Windows.Runtime.x64') {
+            $z = "$pk\$p.$env:XDP_VERSION.zip"
+            New-Item -ItemType Directory -Force $pk | Out-Null
+            Invoke-WebRequest "https://www.nuget.org/api/v2/package/$p/$env:XDP_VERSION" -OutFile $z
+            "$p sha256=$((Get-FileHash $z -Algorithm SHA256).Hash)"
+            Expand-Archive $z "$pk\$p" -Force
+          }
+
+      - name: Build spbench (CMake, MSVC x64)
+        run: |
+          cmake -S spikes/selow-vs-xdp -B build -A x64 -DXDP_SDK="$env:RUNNER_TEMP\xdp\Microsoft.XDP-for-Windows.Sdk"
+          cmake --build build --config Release
+          if (-not (Test-Path build/Release/spbench.exe)) { throw 'spbench.exe was not built' }
+
+      - name: Run benchmark
+        timeout-minutes: 45
+        run: |
+          ./spikes/selow-vs-xdp/run.ps1 -Bin build/Release -XdpRuntime "$env:RUNNER_TEMP\xdp\Microsoft.XDP-for-Windows.Runtime.x64" `
+            -SeLowDir src/bin/hamcore/DriverPackages/SeLow_Win10/x64 -LogDir logs -Runs $env:BENCH_RUNS -Seconds $env:BENCH_SECS
+
+      - name: Summary
+        if: always()
+        run: |
+          "## ${{ matrix.os }}" >> $env:GITHUB_STEP_SUMMARY
+          Get-Content logs/run.txt -ErrorAction SilentlyContinue | Select-String -Pattern '^RESULT ' | ForEach-Object { "- ``$($_.Line)``" } >> $env:GITHUB_STEP_SUMMARY
+          Get-Content logs/summary.md -ErrorAction SilentlyContinue >> $env:GITHUB_STEP_SUMMARY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spike-selow-vs-xdp-${{ matrix.os }}
+          path: logs
