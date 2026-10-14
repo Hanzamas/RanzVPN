@@ -38,12 +38,14 @@
 #include "Cedar/Connection.h"
 #include "Cedar/Hub.h"
 #include "Cedar/Listener.h"
+#include "Cedar/Protocol.h"
 #include "Cedar/Server.h"
 #include "Cedar/Session.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
+#include "Mayaqua/HTTP.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
@@ -75,6 +77,34 @@
 #define	HARNESS_BENCH_MICRO_SPAN	100					// Per run of a ParsePacket case
 #define	HARNESS_WATCHDOG_LIMIT		120000				// "harness" process aborted after this (product calls can block forever)
 #define	HARNESS_BENCH_WATCHDOG		90000				// "bench" process aborted after this
+
+// Intermediate certificate download test ("certdl")
+#define	CERTDL_PORT					39556				// Loopback listener named by the issuer URLs of the fixtures
+#define	CERTDL_HOST					"127.0.0.1:39556"	// Host part of those URLs (CERTDL_PORT, not a scheme default)
+#define	CERTDL_PATH					"/ranz-certdl/ca.cer"
+#define	CERTDL_PATH_MOVED			"/ranz-certdl/moved.cer"	// Location of the redirect answer
+#define	CERTDL_URL_HTTP				"http://" CERTDL_HOST CERTDL_PATH
+#define	CERTDL_URL_HTTPS			"https://" CERTDL_HOST CERTDL_PATH
+#define	CERTDL_MAX_BODY				65536				// CERT_HTTP_DOWNLOAD_MAXSIZE: body bytes the client reads at most
+#define	CERTDL_BIG_LENGTH			1000000				// Content-Length of the over-cap answer
+#define	CERTDL_TIMEOUT_MIN			9000				// CERT_HTTP_DOWNLOAD_TIMEOUT (10 s) less a margin
+#define	CERTDL_QUICK_LIMIT			8000				// A run that never waits for the client timeout ends before this
+#define	CERTDL_SLOW_LIMIT			25000				// A run that waits for the client timeout once ends before this
+#define	CERTDL_CONN_TIMEOUT			30000				// Socket timeout of a listener connection
+#define	CERTDL_WATCHDOG_LIMIT		120000				// "certdl" process aborted after this
+
+// Answer of the certdl listener, one mode per run
+#define	CERTDL_MODE_OK				0	// 200 with Content-Length and the issuer certificate in DER
+#define	CERTDL_MODE_TLS				1	// TLS with a self-signed certificate that Windows does not trust, then as OK
+#define	CERTDL_MODE_CONTINUE		2	// 100 Continue, then as OK
+#define	CERTDL_MODE_REDIRECT		3	// 302 to CERTDL_PATH_MOVED; a later request of the run as OK
+#define	CERTDL_MODE_NOT_FOUND		4	// 404
+#define	CERTDL_MODE_AUTH			5	// 401 with Negotiate and NTLM challenges, to every request of the run
+#define	CERTDL_MODE_NO_LENGTH		6	// 200 without Content-Length: the certificate, then close
+#define	CERTDL_MODE_CHUNKED			7	// 200 with the certificate in one chunk
+#define	CERTDL_MODE_OVER_CAP		8	// 200 with Content-Length CERTDL_BIG_LENGTH, then CERTDL_MAX_BODY bytes
+										// (the certificate and zero padding) and nothing more
+#define	CERTDL_MODE_SILENT			9	// No answer
 
 // Limits
 #define	HARNESS_QUEUE_HIGH			256					// Frames kept queued by the bench sender
@@ -168,6 +198,44 @@ typedef struct HARNESS_PARSE_BENCH
 	UINT Next;					// Next frame of the mixed case
 	bool NoLog;					// Parse as with the hub packet log off
 } HARNESS_PARSE_BENCH;
+
+// Loopback listener of "certdl": serves the issuer certificate that the fixture server certificates name
+typedef struct CERTDL_SERVER
+{
+	SOCK *ListenSock;			// 127.0.0.1:CERTDL_PORT
+	THREAD *AcceptThread;		// Accepts connections until ListenSock is disconnected
+	LIST *ConnList;				// CERTDL_CONN *, joined when the listener stops
+	BUF *CaDer;					// Issuer certificate served (DER)
+	X *TlsCert;					// Certificate of CERTDL_MODE_TLS (not owned)
+	K *TlsKey;					// Its private key (not owned)
+	LOCK *Lock;					// Guards the fields below
+	UINT Mode;					// CERTDL_MODE_* of the current run
+	UINT NumRequests;			// Requests received in the current run
+	char RequestLine[MAX_SIZE];	// Request line of the first request of the run
+	char Host[MAX_SIZE];		// Host header of that request
+	char UserAgent[MAX_SIZE];	// User-Agent header of that request
+} CERTDL_SERVER;
+
+// One connection accepted by the certdl listener
+typedef struct CERTDL_CONN
+{
+	CERTDL_SERVER *Server;
+	SOCK *Sock;
+	THREAD *Thread;
+} CERTDL_CONN;
+
+// Outcome of one SetServerCert call
+typedef struct CERTDL_RESULT
+{
+	UINT Err;					// Error code of the admin RPC
+	UINT Flag1;					// 1: the server built the chain up to a root (0 makes vpncmd print SM_CERT_NEED_ROOT)
+	UINT64 Elapsed;				// Duration of the admin RPC (ms)
+	UINT NumRequests;			// Requests the listener received
+	char RequestLine[MAX_SIZE];	// Request line of the first request
+	char Host[MAX_SIZE];		// Host header of the first request
+	char UserAgent[MAX_SIZE];	// User-Agent header of the first request
+	bool Saved;					// The server saved the downloaded issuer under chain_certs
+} CERTDL_RESULT;
 
 // Current phase of the test, read by the watchdog thread (static strings only)
 static char *volatile harness_phase = "start";
@@ -373,6 +441,24 @@ static bool HarnessOpParseOne(void *param);
 static bool HarnessOpParseMix(void *param);
 static void HarnessBenchParse();
 static void HarnessBenchIpTableExpire(UINT num);
+static bool HarnessStartServer(HARNESS *h);
+static void HarnessStopServer(HARNESS *h);
+static X *CertDlPemToX(char *pem);
+static K *CertDlPemToK(char *pem);
+static void CertDlSavedPath(wchar_t *path, UINT size, X *issuer);
+static UINT CertDlRecord(CERTDL_SERVER *srv, HTTP_HEADER *h);
+static void CertDlWriteStr(BUF *b, char *str);
+static void CertDlWriteOk(CERTDL_SERVER *srv, BUF *b);
+static bool CertDlRespond(CERTDL_SERVER *srv, SOCK *s, UINT mode, UINT num);
+static void CertDlConnThread(THREAD *thread, void *param);
+static void CertDlAcceptThread(THREAD *thread, void *param);
+static CERTDL_SERVER *CertDlStartServer(X *issuer, X *tls_cert, K *tls_key);
+static void CertDlStopServer(CERTDL_SERVER *srv);
+static void CertDlRun(HARNESS *h, CERTDL_SERVER *srv, char *name, UINT mode, X *cert, K *key, wchar_t *saved_file,
+	CERTDL_RESULT *r);
+static bool CertDlCheckUint(HARNESS *h, char *what, UINT actual, UINT expected);
+static bool CertDlCheckStr(HARNESS *h, char *what, char *actual, char *expected);
+static void CertDlExpect(HARNESS *h, char *name, CERTDL_RESULT *r, bool chain, bool waits);
 
 ////////////////////////////
 // Reporting and text helpers
@@ -1545,15 +1631,14 @@ static bool HarnessWaitSession(HARNESS *h, HARNESS_PA *p, UINT timeout)
 	return HarnessCheck(h, false, tmp);
 }
 
-// Start the server, the test listener, the admin RPC, the hubs, the users, the cascade and the test sessions
-static bool HarnessSetup(HARNESS *h)
+// Start the server from a fresh configuration, add the test listener, connect the admin RPC and delete
+// every other listener
+static bool HarnessStartServer(HARNESS *h)
 {
 	UINT err = ERR_NO_ERROR;
 	bool ok;
 	char tmp[MAX_SIZE];
-	char name[MAX_SESSION_NAME_LEN + 1];
 
-	Print("[setup]\n");
 	HarnessSetPhase("setup", "server start");
 
 	// Isolated configuration file: always start from the default configuration
@@ -1592,7 +1677,18 @@ static bool HarnessSetup(HARNESS *h)
 		return false;
 	}
 
-	if (HarnessUseOnlyTestListener(h) == false)
+	return HarnessUseOnlyTestListener(h);
+}
+
+// Start the server, the test listener, the admin RPC, the hubs, the users, the cascade and the test sessions
+static bool HarnessSetup(HARNESS *h)
+{
+	bool ok;
+	char name[MAX_SESSION_NAME_LEN + 1];
+
+	Print("[setup]\n");
+
+	if (HarnessStartServer(h) == false)
 	{
 		return false;
 	}
@@ -2905,7 +3001,16 @@ static void HarnessTeardown(HARNESS *h, bool check)
 	if (h->Rpc != NULL)
 	{
 		HarnessDeleteObjects(h, check);
+	}
 
+	HarnessStopServer(h);
+}
+
+// Disconnect the admin RPC, stop the server and delete its configuration files
+static void HarnessStopServer(HARNESS *h)
+{
+	if (h->Rpc != NULL)
+	{
 		AdminDisconnect(h->Rpc);
 		h->Rpc = NULL;
 	}
@@ -3940,6 +4045,566 @@ static void HarnessBenchIpTableExpire(UINT num)
 }
 
 ////////////////////////////
+// Intermediate certificate download ("certdl")
+//
+// DownloadCert (Cedar/Protocol.c) is the only outbound HTTP client. SetServerCert reaches it when the new
+// server certificate is not a root and its issuer is in neither the root list nor chain_certs: the server
+// downloads the "CA Issuers" URL of the Authority Information Access extension. The fixtures name a
+// loopback listener of this test as that URL, so the test needs no network. Each run answers in one mode
+// and pins one behaviour of the client: the request it sends, https without a trust check, an interim
+// 100 Continue skipped, no redirect followed, no authentication tried, Content-Length required and capped
+// at 64 KiB, and the 10 s receive timeout.
+
+// Fixture certificates, committed for this test. Made with OpenSSL 3.2 "openssl ca" (RSA 2048, SHA-256,
+// valid 2020-01-01 to 2049-12-31); the server certificates carry "authorityInfoAccess =
+// caIssuers;URI:<issuer URL>", and the tls certificate is self-signed with the key below. The key of the
+// issuer is not kept: the test never signs.
+
+// Issuer: self-signed root "Ranz certdl test CA" (served as DER by the listener)
+static char certdl_ca_pem[] =
+	"-----BEGIN CERTIFICATE-----\n"
+	"MIIC+jCCAeKgAwIBAgICEAAwDQYJKoZIhvcNAQELBQAwHjEcMBoGA1UEAwwTUmFu\n"
+	"eiBjZXJ0ZGwgdGVzdCBDQTAeFw0yMDAxMDEwMDAwMDBaFw00OTEyMzEyMzU5NTla\n"
+	"MB4xHDAaBgNVBAMME1JhbnogY2VydGRsIHRlc3QgQ0EwggEiMA0GCSqGSIb3DQEB\n"
+	"AQUAA4IBDwAwggEKAoIBAQDkfEGcqde+uaYWr3NwtMSipiK/H0U5WNw027ASkoY2\n"
+	"9C/0Xi7PVsQy5DiRm08CaBua09Q0ru/KbmVKWNLUnUcaPhh3jGXalRb3GRI9aduC\n"
+	"VbL8FADOichPa91sPupfh0wYoXQ6dwj8UyZ/nflA69M5NivbJEsqySBls5VRUzfv\n"
+	"QUX1emB9Cb7N8U4WNE5tZjlMPqSIxWWvfVOw13nm/pSmHftqwjACAM0rB9sp11yb\n"
+	"0l/qcGJZvl/yscxf9Ze26CJYGC4sYEfUAOG1CHySpdjXlhwhsA8D+zxztQkZCzen\n"
+	"pvaVacpn6dJ0yyuaFrXtZltU10f4NzMbp/p3Hy4qGwNfAgMBAAGjQjBAMA8GA1Ud\n"
+	"EwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMB0GA1UdDgQWBBTTqL8XosGizAjv\n"
+	"xnwcT3zyMGRxkTANBgkqhkiG9w0BAQsFAAOCAQEAO1V2NM/veCeX68R6m+gB++/H\n"
+	"V5C74Bd4NAdFdskIITuc5uX30puvCno+utDfKVM3M3pUeWoUvOjwbAlmKV8tLntk\n"
+	"y0CH60QFe+0HeD9XNKjRjb58sXdUgqiqNk4H+J5Ba8VNIpJJpaeqPwHK8WU0PMX7\n"
+	"uWi+0a/JNwkhnGjY/oCC+YXgti7t4CeAOm1pZ20+tYbfrqmjIo7njLOXTUC2u52X\n"
+	"wtgsu240p287YwvV+SkfdtfYoeP+FoZTy0MVcgJWjmRsDaqmYf+4uFPVcZznLONC\n"
+	"/qpCFUeK5nCjO1W8XwG32Ic95ES0LjR/ifaTOvOjBadsbcjvAfUZRyN871EBdg==\n"
+	"-----END CERTIFICATE-----\n";
+
+// Server certificate "ranz-certdl-http", AIA caIssuers http://127.0.0.1:39556/ranz-certdl/ca.cer
+static char certdl_http_pem[] =
+	"-----BEGIN CERTIFICATE-----\n"
+	"MIIDczCCAlugAwIBAgICEAEwDQYJKoZIhvcNAQELBQAwHjEcMBoGA1UEAwwTUmFu\n"
+	"eiBjZXJ0ZGwgdGVzdCBDQTAeFw0yMDAxMDEwMDAwMDBaFw00OTEyMzEyMzU5NTla\n"
+	"MBsxGTAXBgNVBAMMEHJhbnotY2VydGRsLWh0dHAwggEiMA0GCSqGSIb3DQEBAQUA\n"
+	"A4IBDwAwggEKAoIBAQDH1GwSv5Io+5+pE/7H5V2v05Yh3PDrBR0u3Z7gIjifHF+1\n"
+	"qCRTEAEW7fgZLOUAJj5HCwvMuTxre2fw6XEYh8b/ivjiN1zcWWu84+B8FK3fUeeZ\n"
+	"8kZpxhtOx08veIt8mOZMtqsCOGkgVPg3GqrgJmw2IeOX7J4DqlA7QUK9u4ElOhSH\n"
+	"9bEK6g7gJiEHsFtTFKuIsTiyUOih86047Jj+1VFH6miNVfLcCDnjx4ma9Uibb4R0\n"
+	"TdDqaHUmykuNkr5ymn57BQaLq5Z2/b1pEbhDdAMivk21bFDrAItCxLt/eZOTaLZ/\n"
+	"b3QOclGB7irw/9JMWm0eIPhxG1ymPkL570zqpU9DAgMBAAGjgb0wgbowDAYDVR0T\n"
+	"AQH/BAIwADAOBgNVHQ8BAf8EBAMCBaAwEwYDVR0lBAwwCgYIKwYBBQUHAwEwHQYD\n"
+	"VR0OBBYEFLBH+RH/luMwDKZX2NKfbzkBAPnkMB8GA1UdIwQYMBaAFNOovxeiwaLM\n"
+	"CO/GfBxPfPIwZHGRMEUGCCsGAQUFBwEBBDkwNzA1BggrBgEFBQcwAoYpaHR0cDov\n"
+	"LzEyNy4wLjAuMTozOTU1Ni9yYW56LWNlcnRkbC9jYS5jZXIwDQYJKoZIhvcNAQEL\n"
+	"BQADggEBAGLJ0WbnfC24iyEcenRUENPaMmAize0vTrCkv0FsPouXewTXDK/arHpw\n"
+	"bL6CTwiEKoQH1uITciFrJlNHZUaapRRMhhGa4xvj74ODEXEWjADC3NprVT9dZwLR\n"
+	"o1FkDXZLRh0nKpgb0yKDPcVvoy2imtB6FZB9Mmy9iLAP3XWs2bQawWc/17vnIciY\n"
+	"vhavbqh5i3qFzENXEECFGjYKyWPhOOTgd+txeLnHw9IQDec/A6j59RwH3GQsLA7t\n"
+	"pSdRSBdkWLgntErlx9eFV07UgExJaS87ApB16D2nPt6cpwE6pwY8xIs51fZMDDd8\n"
+	"5D6SkRVxXrL3MkMoUyOCbJHbtr4JieQ=\n"
+	"-----END CERTIFICATE-----\n";
+
+// Server certificate "ranz-certdl-https", AIA caIssuers https://127.0.0.1:39556/ranz-certdl/ca.cer
+static char certdl_https_pem[] =
+	"-----BEGIN CERTIFICATE-----\n"
+	"MIIDdTCCAl2gAwIBAgICEAIwDQYJKoZIhvcNAQELBQAwHjEcMBoGA1UEAwwTUmFu\n"
+	"eiBjZXJ0ZGwgdGVzdCBDQTAeFw0yMDAxMDEwMDAwMDBaFw00OTEyMzEyMzU5NTla\n"
+	"MBwxGjAYBgNVBAMMEXJhbnotY2VydGRsLWh0dHBzMIIBIjANBgkqhkiG9w0BAQEF\n"
+	"AAOCAQ8AMIIBCgKCAQEAx9RsEr+SKPufqRP+x+Vdr9OWIdzw6wUdLt2e4CI4nxxf\n"
+	"tagkUxABFu34GSzlACY+RwsLzLk8a3tn8OlxGIfG/4r44jdc3FlrvOPgfBSt31Hn\n"
+	"mfJGacYbTsdPL3iLfJjmTLarAjhpIFT4Nxqq4CZsNiHjl+yeA6pQO0FCvbuBJToU\n"
+	"h/WxCuoO4CYhB7BbUxSriLE4slDoofOtOOyY/tVRR+pojVXy3Ag548eJmvVIm2+E\n"
+	"dE3Q6mh1JspLjZK+cpp+ewUGi6uWdv29aRG4Q3QDIr5NtWxQ6wCLQsS7f3mTk2i2\n"
+	"f290DnJRge4q8P/STFptHiD4cRtcpj5C+e9M6qVPQwIDAQABo4G+MIG7MAwGA1Ud\n"
+	"EwEB/wQCMAAwDgYDVR0PAQH/BAQDAgWgMBMGA1UdJQQMMAoGCCsGAQUFBwMBMB0G\n"
+	"A1UdDgQWBBSwR/kR/5bjMAymV9jSn285AQD55DAfBgNVHSMEGDAWgBTTqL8XosGi\n"
+	"zAjvxnwcT3zyMGRxkTBGBggrBgEFBQcBAQQ6MDgwNgYIKwYBBQUHMAKGKmh0dHBz\n"
+	"Oi8vMTI3LjAuMC4xOjM5NTU2L3JhbnotY2VydGRsL2NhLmNlcjANBgkqhkiG9w0B\n"
+	"AQsFAAOCAQEA0+kpMDR49qA9OS4Q5QPtlfiHeHAQ7ftxT/UxSvX0N7UylMSGr5ch\n"
+	"pyxCxVyymdEvv+Qtd4aK/EFACMzKkO55PLzjdyV6oyKCbcbsvTJQ6dZ0ZT5xYceX\n"
+	"mg13jjZOn0iIK7I/XFfWC1vtpwTO91VlDYKwwMDfypr4MBYb+hc+YB5HaLgXu8r5\n"
+	"V6sex/Tc824FU6DpyxCnQHwp1ZEcGkHkYLd6NloMGDxfLNjyC1AgoNxmiBOPxE0r\n"
+	"DUdGkMPpq1V8/J1reZlL46x4BELptJzqy8ML/+6y+a39v9Y2UBH69173zGHA/o+7\n"
+	"x1wdSvLRWbP+HGOtaAcBMO9U9ipN5Ow9DQ==\n"
+	"-----END CERTIFICATE-----\n";
+
+// TLS certificate of the listener: self-signed root "ranz-certdl-tls" (no AIA), not trusted by Windows
+static char certdl_tls_pem[] =
+	"-----BEGIN CERTIFICATE-----\n"
+	"MIIDBzCCAe+gAwIBAgICEAQwDQYJKoZIhvcNAQELBQAwGjEYMBYGA1UEAwwPcmFu\n"
+	"ei1jZXJ0ZGwtdGxzMB4XDTIwMDEwMTAwMDAwMFoXDTQ5MTIzMTIzNTk1OVowGjEY\n"
+	"MBYGA1UEAwwPcmFuei1jZXJ0ZGwtdGxzMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A\n"
+	"MIIBCgKCAQEAx9RsEr+SKPufqRP+x+Vdr9OWIdzw6wUdLt2e4CI4nxxftagkUxAB\n"
+	"Fu34GSzlACY+RwsLzLk8a3tn8OlxGIfG/4r44jdc3FlrvOPgfBSt31HnmfJGacYb\n"
+	"TsdPL3iLfJjmTLarAjhpIFT4Nxqq4CZsNiHjl+yeA6pQO0FCvbuBJToUh/WxCuoO\n"
+	"4CYhB7BbUxSriLE4slDoofOtOOyY/tVRR+pojVXy3Ag548eJmvVIm2+EdE3Q6mh1\n"
+	"JspLjZK+cpp+ewUGi6uWdv29aRG4Q3QDIr5NtWxQ6wCLQsS7f3mTk2i2f290DnJR\n"
+	"ge4q8P/STFptHiD4cRtcpj5C+e9M6qVPQwIDAQABo1cwVTAPBgNVHRMBAf8EBTAD\n"
+	"AQH/MA4GA1UdDwEB/wQEAwICpDATBgNVHSUEDDAKBggrBgEFBQcDATAdBgNVHQ4E\n"
+	"FgQUsEf5Ef+W4zAMplfY0p9vOQEA+eQwDQYJKoZIhvcNAQELBQADggEBAFmmH0lQ\n"
+	"qljBeCoxvELdgm91lTj7IB9aJKYNeFbAxgFr8HutgHWqY6KqWX+zQlNSaQCgNAIs\n"
+	"n4uTiI63HScjA0BGilF12UzCAjKVLLlKBdCfuexhUHB3ESAd0XdfEdUpG6nNxYgT\n"
+	"HLFZJ2Rtx1SlDYLJDz4DWEeNEsLpvN6aO77KCHCJ67qPLqkQtXYq1CLQVTEqbBzm\n"
+	"vSCYl5yeZJtHMfVHg3Z5tHTwC/x+OVH63OkByjFM0pA8KNSxwrPolP+CEq7mDCZE\n"
+	"siazwNaMg18O8A7gCX0QusQZUx9xULqRuikQUmCUrGOe79qovYNfu+WUIsizibJ7\n"
+	"xB/MtwXoDxrmmJ8=\n"
+	"-----END CERTIFICATE-----\n";
+
+// Private key of the http, https and tls certificates (RSA 2048)
+static char certdl_key_pem[] =
+	"-----BEGIN PRIVATE KEY-----\n"
+	"MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDH1GwSv5Io+5+p\n"
+	"E/7H5V2v05Yh3PDrBR0u3Z7gIjifHF+1qCRTEAEW7fgZLOUAJj5HCwvMuTxre2fw\n"
+	"6XEYh8b/ivjiN1zcWWu84+B8FK3fUeeZ8kZpxhtOx08veIt8mOZMtqsCOGkgVPg3\n"
+	"GqrgJmw2IeOX7J4DqlA7QUK9u4ElOhSH9bEK6g7gJiEHsFtTFKuIsTiyUOih8604\n"
+	"7Jj+1VFH6miNVfLcCDnjx4ma9Uibb4R0TdDqaHUmykuNkr5ymn57BQaLq5Z2/b1p\n"
+	"EbhDdAMivk21bFDrAItCxLt/eZOTaLZ/b3QOclGB7irw/9JMWm0eIPhxG1ymPkL5\n"
+	"70zqpU9DAgMBAAECggEAJldRJyW/pwJkh33xKCyPlcFcsIGibg2MpGXcanfWclzw\n"
+	"1jt9QLy04M/nBvmQtL8huuLZMD4oZB0I+/Xmf8TpfzWMfGcP961mmRcGBvi2xb8C\n"
+	"14xfS0M6ERr3zA1uggkaQwTXefUV4qC7AWOp/pkQsTA+aXN6fAyNGVlzs1DLPjd4\n"
+	"TaYU+fBCIoZSFNMs54c44sn5sRRTVeYk5Ww8pN5Bk0SNgQLB64grW/gO3Q051tA8\n"
+	"a8dEuujOrXQAJpCg0xpIaXDQLQyBQcFDqSunbYnQ8YAnhDyVjZCP+WobYlBUfEBm\n"
+	"EHSrjP17uwBPnrqHVpyfkNgXFQdj5MhBF2tAF+gkJQKBgQDot7lfIEMt/cGiUcAN\n"
+	"0jCEEGspn7O7eata6Ha2BU/aPRh7aGVbjnhwtQHOGVfTWEekrBsCoZqXhcpdpH2Q\n"
+	"gCQiFVGDULbrP5sV5no68S9u7BCd4uhkHwgTQDJauBG1RyH2wayIt2siZxy+0MR6\n"
+	"Jb+YjZZkDSHk4HSJlOvgGZBBLQKBgQDb0mLDyD2vCmNXsLtYXvDJ2aweA819PmcR\n"
+	"Oe5RIh5ZeyLbTw56nJozmDjFwTF/kCFdYm6MUZaR4RMyWt8uLTHk+p7I/fe6AGqi\n"
+	"+01SKDZMOApeiEu4EJZMbDDdOQ25aqTHewLA9ctdooH4YDyGFlbJvqFSYAkgEGEN\n"
+	"fiEGvDW4LwKBgQDMllAaJ9PHh/GGENaFkAZk48ZCFos8wq75QaqzRKI520I9o76P\n"
+	"qgWKGCcZGECUpWR+iWtJeebdVJpejrBwq6aYbCN4DSpyUD24GCHW1Zf8rP3Cv+vL\n"
+	"sVg5DFP4Wx/+PSXHt+ZFXvKJkRq9Se2g8LSqmbbgCIeGnij1lv1yyyZ9lQKBgC24\n"
+	"eYBdIq9IitcPVDgSLyTcmFb51YCqPQexM+c+IG/eE6bnr4xDDDOVAqHnB+OPV9Ez\n"
+	"iui2g4m99Z8wlWDmV41XrzUA1cijE4rol/FxmbGKqmV1FcKn+IrWqecpWbhp/PHc\n"
+	"nPsDZJQKG9xML+p3tP9rHeSjQuKfZYBH7piXBtlTAoGAJP6JlbzCq2EinqewhieW\n"
+	"5hS9SJ6ds9qXcaExg6dLIU3SKn6A4MmfT4aGywNpkRTrnCEjMIi36DfAcPiuSK6P\n"
+	"DjT6YifSen3zUSu5yPs0kF1Q2839JHs9eND+wrI9W0eYQjTcrqwYl5vmj9Jgqapp\n"
+	"DYbULC42TGbpDpOCNOCapDY=\n"
+	"-----END PRIVATE KEY-----\n";
+
+// Load a PEM certificate
+static X *CertDlPemToX(char *pem)
+{
+	BUF *b = NewBuf();
+	X *x;
+
+	WriteBuf(b, pem, StrLen(pem));
+	SeekBuf(b, 0, 0);
+	x = BufToX(b, true);
+	FreeBuf(b);
+
+	return x;
+}
+
+// Load a PEM private key
+static K *CertDlPemToK(char *pem)
+{
+	BUF *b = NewBuf();
+	K *k;
+
+	WriteBuf(b, pem, StrLen(pem));
+	SeekBuf(b, 0, 0);
+	k = BufToK(b, true, true, NULL);
+	FreeBuf(b);
+
+	return k;
+}
+
+// File that TryGetRootCertChain saves a downloaded issuer to: chain_certs under the database directory
+static void CertDlSavedPath(wchar_t *path, UINT size, X *issuer)
+{
+	wchar_t db_dir[MAX_SIZE];
+	wchar_t dir[MAX_SIZE];
+	wchar_t name[MAX_SIZE];
+	wchar_t hex[128];
+	char hex_a[128];
+	UCHAR hash[SHA1_SIZE];
+
+	GetXDigest(issuer, hash, true);
+	BinToStr(hex_a, sizeof(hex_a), hash, SHA1_SIZE);
+	StrToUni(hex, sizeof(hex), hex_a);
+
+	UniStrCpy(name, sizeof(name), AUTO_DOWNLOAD_CERTS_PREFIX);
+	UniStrCat(name, sizeof(name), hex);
+	UniStrCat(name, sizeof(name), L".cer");
+
+	GetExeDirW(db_dir, sizeof(db_dir));
+	CombinePathW(dir, sizeof(dir), db_dir, L"chain_certs");
+	CombinePathW(path, size, dir, name);
+}
+
+// Count one request received by the listener and record the first of the run; returns its number in the run
+static UINT CertDlRecord(CERTDL_SERVER *srv, HTTP_HEADER *h)
+{
+	HTTP_VALUE *host = GetHttpValue(h, "Host");
+	HTTP_VALUE *agent = GetHttpValue(h, "User-Agent");
+	UINT num;
+
+	Lock(srv->Lock);
+	{
+		num = ++srv->NumRequests;
+
+		if (num == 1)
+		{
+			Format(srv->RequestLine, sizeof(srv->RequestLine), "%s %s %s", h->Method, h->Target, h->Version);
+			StrCpy(srv->Host, sizeof(srv->Host), (host != NULL ? host->Data : ""));
+			StrCpy(srv->UserAgent, sizeof(srv->UserAgent), (agent != NULL ? agent->Data : ""));
+		}
+	}
+	Unlock(srv->Lock);
+
+	return num;
+}
+
+// Append a string to an answer
+static void CertDlWriteStr(BUF *b, char *str)
+{
+	WriteBuf(b, str, StrLen(str));
+}
+
+// Append the 200 answer with Content-Length and the issuer certificate in DER
+static void CertDlWriteOk(CERTDL_SERVER *srv, BUF *b)
+{
+	char tmp[MAX_SIZE];
+
+	Format(tmp, sizeof(tmp), "HTTP/1.1 200 OK\r\nContent-Type: application/pkix-cert\r\nContent-Length: %u\r\n\r\n",
+		srv->CaDer->Size);
+	CertDlWriteStr(b, tmp);
+	WriteBuf(b, srv->CaDer->Buf, srv->CaDer->Size);
+}
+
+// Answer request number num of the run in the mode of the run; true closes the connection
+static bool CertDlRespond(CERTDL_SERVER *srv, SOCK *s, UINT mode, UINT num)
+{
+	BUF *b = NewBuf();
+	bool close_now = false;
+	bool ok;
+	void *pad;
+	char tmp[MAX_SIZE];
+
+	switch (mode)
+	{
+	case CERTDL_MODE_CONTINUE:
+		CertDlWriteStr(b, "HTTP/1.1 100 Continue\r\n\r\n");
+		CertDlWriteOk(srv, b);
+		break;
+
+	case CERTDL_MODE_REDIRECT:
+		if (num == 1)
+		{
+			CertDlWriteStr(b, "HTTP/1.1 302 Found\r\nLocation: http://" CERTDL_HOST CERTDL_PATH_MOVED "\r\n"
+				"Content-Length: 0\r\n\r\n");
+		}
+		else
+		{
+			CertDlWriteOk(srv, b);
+		}
+		break;
+
+	case CERTDL_MODE_NOT_FOUND:
+		CertDlWriteStr(b, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
+		break;
+
+	case CERTDL_MODE_AUTH:
+		CertDlWriteStr(b, "HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Negotiate\r\nWWW-Authenticate: NTLM\r\n"
+			"Content-Length: 0\r\n\r\n");
+		break;
+
+	case CERTDL_MODE_NO_LENGTH:
+		CertDlWriteStr(b, "HTTP/1.1 200 OK\r\nContent-Type: application/pkix-cert\r\nConnection: close\r\n\r\n");
+		WriteBuf(b, srv->CaDer->Buf, srv->CaDer->Size);
+		close_now = true;
+		break;
+
+	case CERTDL_MODE_CHUNKED:
+		Format(tmp, sizeof(tmp), "HTTP/1.1 200 OK\r\nContent-Type: application/pkix-cert\r\n"
+			"Transfer-Encoding: chunked\r\n\r\n%x\r\n", srv->CaDer->Size);
+		CertDlWriteStr(b, tmp);
+		WriteBuf(b, srv->CaDer->Buf, srv->CaDer->Size);
+		CertDlWriteStr(b, "\r\n0\r\n\r\n");
+		break;
+
+	case CERTDL_MODE_OVER_CAP:
+		// The connection stays open after the padding: a client that waits for the announced length runs
+		// into its receive timeout
+		Format(tmp, sizeof(tmp), "HTTP/1.1 200 OK\r\nContent-Type: application/pkix-cert\r\nContent-Length: %u\r\n\r\n",
+			CERTDL_BIG_LENGTH);
+		CertDlWriteStr(b, tmp);
+		WriteBuf(b, srv->CaDer->Buf, srv->CaDer->Size);
+		pad = ZeroMalloc(CERTDL_MAX_BODY - srv->CaDer->Size);
+		WriteBuf(b, pad, CERTDL_MAX_BODY - srv->CaDer->Size);
+		Free(pad);
+		break;
+
+	case CERTDL_MODE_SILENT:
+		// No answer: the connection stays open until the client gives up
+		break;
+
+	default:
+		// CERTDL_MODE_OK and CERTDL_MODE_TLS
+		CertDlWriteOk(srv, b);
+		break;
+	}
+
+	ok = (b->Size == 0 || SendAll(s, b->Buf, b->Size, s->SecureMode));
+	FreeBuf(b);
+
+	return (close_now || ok == false);
+}
+
+// One listener connection: answer requests until the client closes the connection
+static void CertDlConnThread(THREAD *thread, void *param)
+{
+	CERTDL_CONN *c = (CERTDL_CONN *)param;
+	CERTDL_SERVER *srv = c->Server;
+	SOCK *s = c->Sock;
+	UINT mode;
+
+	Lock(srv->Lock);
+	{
+		mode = srv->Mode;
+	}
+	Unlock(srv->Lock);
+
+	SetTimeout(s, CERTDL_CONN_TIMEOUT);
+
+	if (mode == CERTDL_MODE_TLS && StartSSLEx(s, srv->TlsCert, srv->TlsKey, 0, NULL) == false)
+	{
+		Disconnect(s);
+		return;
+	}
+
+	while (true)
+	{
+		HTTP_HEADER *h = RecvHttpHeader(s);
+		bool close_now;
+
+		if (h == NULL)
+		{
+			break;
+		}
+
+		close_now = CertDlRespond(srv, s, mode, CertDlRecord(srv, h));
+		FreeHttpHeader(h);
+
+		if (close_now)
+		{
+			break;
+		}
+	}
+
+	Disconnect(s);
+}
+
+// Accept connections until the listening socket is disconnected; one thread per connection
+static void CertDlAcceptThread(THREAD *thread, void *param)
+{
+	CERTDL_SERVER *srv = (CERTDL_SERVER *)param;
+
+	while (true)
+	{
+		CERTDL_CONN *c;
+		SOCK *s = Accept(srv->ListenSock);
+
+		if (s == NULL)
+		{
+			break;
+		}
+
+		c = ZeroMalloc(sizeof(CERTDL_CONN));
+		c->Server = srv;
+		c->Sock = s;
+
+		LockList(srv->ConnList);
+		{
+			Add(srv->ConnList, c);
+			c->Thread = NewThread(CertDlConnThread, c);
+		}
+		UnlockList(srv->ConnList);
+	}
+}
+
+// Start the listener on 127.0.0.1:CERTDL_PORT; tls_cert and tls_key must outlive it
+static CERTDL_SERVER *CertDlStartServer(X *issuer, X *tls_cert, K *tls_key)
+{
+	CERTDL_SERVER *srv;
+	SOCK *s = ListenEx(CERTDL_PORT, true);
+
+	if (s == NULL)
+	{
+		return NULL;
+	}
+
+	srv = ZeroMalloc(sizeof(CERTDL_SERVER));
+	srv->ListenSock = s;
+	srv->ConnList = NewList(NULL);
+	srv->CaDer = XToBuf(issuer, false);
+	srv->TlsCert = tls_cert;
+	srv->TlsKey = tls_key;
+	srv->Lock = NewLock();
+	srv->Mode = CERTDL_MODE_OK;
+	srv->AcceptThread = NewThread(CertDlAcceptThread, srv);
+
+	return srv;
+}
+
+// Stop the listener and wait for its connection threads
+static void CertDlStopServer(CERTDL_SERVER *srv)
+{
+	UINT i;
+
+	if (srv == NULL)
+	{
+		return;
+	}
+
+	Disconnect(srv->ListenSock);
+	WaitThread(srv->AcceptThread, INFINITE);
+	ReleaseThread(srv->AcceptThread);
+
+	// The accept thread has ended: ConnList no longer changes
+	for (i = 0;i < LIST_NUM(srv->ConnList);i++)
+	{
+		CERTDL_CONN *c = LIST_DATA(srv->ConnList, i);
+
+		Disconnect(c->Sock);
+		WaitThread(c->Thread, INFINITE);
+		ReleaseThread(c->Thread);
+		ReleaseSock(c->Sock);
+		Free(c);
+	}
+	ReleaseList(srv->ConnList);
+
+	ReleaseSock(srv->ListenSock);
+	FreeBuf(srv->CaDer);
+	DeleteLock(srv->Lock);
+	Free(srv);
+}
+
+// Set a server certificate through the admin RPC while the listener answers in one mode, and collect the outcome
+static void CertDlRun(HARNESS *h, CERTDL_SERVER *srv, char *name, UINT mode, X *cert, K *key, wchar_t *saved_file,
+	CERTDL_RESULT *r)
+{
+	RPC_KEY_PAIR t;
+	UINT64 start;
+
+	Zero(r, sizeof(CERTDL_RESULT));
+
+	Lock(srv->Lock);
+	{
+		srv->Mode = mode;
+		srv->NumRequests = 0;
+		srv->RequestLine[0] = 0;
+		srv->Host[0] = 0;
+		srv->UserAgent[0] = 0;
+	}
+	Unlock(srv->Lock);
+
+	Zero(&t, sizeof(t));
+	t.Cert = CloneX(cert);
+	t.Key = CloneK(key);
+
+	start = Tick64();
+	r->Err = ScSetServerCert(h->Rpc, &t);
+	r->Elapsed = Tick64() - start;
+	r->Flag1 = t.Flag1;
+	FreeRpcKeyPair(&t);
+
+	Print("TIME certdl_%s %I64u ms\n", name, r->Elapsed);
+
+	// The listener records a request before it answers, and the RPC returns after the answer
+	Lock(srv->Lock);
+	{
+		r->NumRequests = srv->NumRequests;
+		StrCpy(r->RequestLine, sizeof(r->RequestLine), srv->RequestLine);
+		StrCpy(r->Host, sizeof(r->Host), srv->Host);
+		StrCpy(r->UserAgent, sizeof(r->UserAgent), srv->UserAgent);
+	}
+	Unlock(srv->Lock);
+
+	// A saved issuer would satisfy the next run without a download
+	r->Saved = IsFileExistsW(saved_file);
+	FileDeleteW(saved_file);
+}
+
+// Check a number; a failure also prints the value seen
+static bool CertDlCheckUint(HARNESS *h, char *what, UINT actual, UINT expected)
+{
+	bool ok = (actual == expected);
+
+	if (HarnessCheck(h, ok, what) == false)
+	{
+		Print("    got %u, expected %u\n", actual, expected);
+	}
+
+	return ok;
+}
+
+// Check a string; a failure also prints the value seen
+static bool CertDlCheckStr(HARNESS *h, char *what, char *actual, char *expected)
+{
+	bool ok = (StrCmp(actual, expected) == 0);
+
+	if (HarnessCheck(h, ok, what) == false)
+	{
+		Print("    got \"%s\", expected \"%s\"\n", actual, expected);
+	}
+
+	return ok;
+}
+
+// Check the outcome of one run: the RPC succeeds, the listener gets one request, the server builds and saves the
+// chain (chain) or reports no issuer, and the run waits for the client receive timeout (waits) or not
+static void CertDlExpect(HARNESS *h, char *name, CERTDL_RESULT *r, bool chain, bool waits)
+{
+	bool ok;
+	char tmp[MAX_SIZE];
+
+	Format(tmp, sizeof(tmp), "%s: SetServerCert", name);
+	HarnessCheckErr(h, r->Err, tmp);
+
+	Format(tmp, sizeof(tmp), "%s: the listener received one request", name);
+	CertDlCheckUint(h, tmp, r->NumRequests, 1);
+
+	if (chain)
+	{
+		Format(tmp, sizeof(tmp), "%s: the server built the chain with the downloaded issuer (Flag1)", name);
+	}
+	else
+	{
+		Format(tmp, sizeof(tmp), "%s: the server got no issuer (Flag1)", name);
+	}
+	CertDlCheckUint(h, tmp, r->Flag1, (chain ? 1 : 0));
+
+	if (chain)
+	{
+		Format(tmp, sizeof(tmp), "%s: the server saved the issuer under chain_certs", name);
+	}
+	else
+	{
+		Format(tmp, sizeof(tmp), "%s: nothing saved under chain_certs", name);
+	}
+	HarnessCheck(h, r->Saved == chain, tmp);
+
+	if (waits)
+	{
+		Format(tmp, sizeof(tmp), "%s: the server gave up after the receive timeout (%u to %u ms)", name,
+			CERTDL_TIMEOUT_MIN, CERTDL_SLOW_LIMIT);
+		ok = (r->Elapsed >= CERTDL_TIMEOUT_MIN && r->Elapsed < CERTDL_SLOW_LIMIT);
+	}
+	else
+	{
+		Format(tmp, sizeof(tmp), "%s: no wait for a timeout (under %u ms)", name, CERTDL_QUICK_LIMIT);
+		ok = (r->Elapsed < CERTDL_QUICK_LIMIT);
+	}
+
+	if (HarnessCheck(h, ok, tmp) == false)
+	{
+		Print("    took %I64u ms\n", r->Elapsed);
+	}
+}
+
+////////////////////////////
 // Entry points
 
 // "harness": in-process server, two hubs, cascade, frames, vpncmd golden outputs and configuration round-trips
@@ -4067,6 +4732,143 @@ void bench_test(UINT num, char **arg)
 	else
 	{
 		Print("BENCH TEST FAILED (%u failed checks)\n", h->NumFail);
+	}
+
+	HarnessFree(h);
+}
+
+// "certdl": SetServerCert with server certificates whose issuer URL names a loopback listener of the test; the
+// server downloads the issuer certificate from it (DownloadCert, spec #30 step 9), one listener answer per run
+void certdl_test(UINT num, char **arg)
+{
+	HARNESS *h = HarnessNew();
+	HARNESS_WATCHDOG *wd = HarnessStartWatchdog("CERTDL", CERTDL_WATCHDOG_LIMIT);
+	CERTDL_SERVER *srv = NULL;
+	CERTDL_RESULT r;
+	X *ca = CertDlPemToX(certdl_ca_pem);
+	X *leaf_http = CertDlPemToX(certdl_http_pem);
+	X *leaf_https = CertDlPemToX(certdl_https_pem);
+	X *tls = CertDlPemToX(certdl_tls_pem);
+	K *key = CertDlPemToK(certdl_key_pem);
+	wchar_t saved_file[MAX_SIZE];
+	char tmp[MAX_SIZE];
+	bool ok;
+
+	Print("Ranz certdl: SetServerCert downloads the issuer certificate from a loopback listener on TCP %u\n",
+		CERTDL_PORT);
+
+	Print("[setup]\n");
+	HarnessSetPhase("setup", "fixtures");
+	ok = HarnessCheck(h, ca != NULL && ca->root_cert, "fixture issuer certificate loads as a root certificate");
+	ok = HarnessCheck(h, leaf_http != NULL && leaf_https != NULL && tls != NULL && key != NULL &&
+		CheckXandK(leaf_http, key) && CheckXandK(leaf_https, key) && CheckXandK(tls, key),
+		"fixture server and TLS certificates load and match the fixture key") && ok;
+	ok = HarnessCheck(h, leaf_http != NULL && StrCmp(leaf_http->issuer_url, CERTDL_URL_HTTP) == 0,
+		"http fixture names " CERTDL_URL_HTTP " as its issuer URL") && ok;
+	ok = HarnessCheck(h, leaf_https != NULL && StrCmp(leaf_https->issuer_url, CERTDL_URL_HTTPS) == 0,
+		"https fixture names " CERTDL_URL_HTTPS " as its issuer URL") && ok;
+
+	if (ok)
+	{
+		// A file left by an aborted run would give the server the issuer without a download
+		CertDlSavedPath(saved_file, sizeof(saved_file), ca);
+		FileDeleteW(saved_file);
+
+		HarnessSetPhase("setup", "issuer listener");
+		srv = CertDlStartServer(ca, tls, key);
+		Format(tmp, sizeof(tmp), "issuer listener bound on 127.0.0.1:%u", CERTDL_PORT);
+		ok = HarnessCheck(h, srv != NULL, tmp);
+	}
+
+	if (ok)
+	{
+		ok = HarnessStartServer(h);
+	}
+
+	if (ok)
+	{
+		// The request: path of the issuer URL, HTTP/1.1, host and port of the URL, the product User-Agent
+		Print("[ok: 200 with Content-Length]\n");
+		HarnessSetPhase("certdl", "ok");
+		CertDlRun(h, srv, "ok", CERTDL_MODE_OK, leaf_http, key, saved_file, &r);
+		CertDlExpect(h, "ok", &r, true, false);
+		CertDlCheckStr(h, "ok: request line", r.RequestLine, "GET " CERTDL_PATH " HTTP/1.1");
+		CertDlCheckStr(h, "ok: Host header", r.Host, CERTDL_HOST);
+		CertDlCheckStr(h, "ok: User-Agent header", r.UserAgent, DEFAULT_USER_AGENT);
+
+		// https issuer URL: the client does not check the certificate of the issuer server
+		Print("[tls: https, listener certificate not trusted]\n");
+		HarnessSetPhase("certdl", "tls");
+		CertDlRun(h, srv, "tls", CERTDL_MODE_TLS, leaf_https, key, saved_file, &r);
+		CertDlExpect(h, "tls", &r, true, false);
+		CertDlCheckStr(h, "tls: request line", r.RequestLine, "GET " CERTDL_PATH " HTTP/1.1");
+		CertDlCheckStr(h, "tls: Host header", r.Host, CERTDL_HOST);
+
+		Print("[continue: 100 Continue before the 200]\n");
+		HarnessSetPhase("certdl", "continue");
+		CertDlRun(h, srv, "continue", CERTDL_MODE_CONTINUE, leaf_http, key, saved_file, &r);
+		CertDlExpect(h, "continue", &r, true, false);
+
+		// The redirect target would answer with the issuer: one request only means the client did not follow
+		Print("[redirect: 302 not followed]\n");
+		HarnessSetPhase("certdl", "redirect");
+		CertDlRun(h, srv, "redirect", CERTDL_MODE_REDIRECT, leaf_http, key, saved_file, &r);
+		CertDlExpect(h, "redirect", &r, false, false);
+
+		Print("[not_found: 404]\n");
+		HarnessSetPhase("certdl", "not_found");
+		CertDlRun(h, srv, "not_found", CERTDL_MODE_NOT_FOUND, leaf_http, key, saved_file, &r);
+		CertDlExpect(h, "not_found", &r, false, false);
+
+		// One request only: the client neither answers the challenge nor sends credentials
+		Print("[auth: 401 Negotiate and NTLM not answered]\n");
+		HarnessSetPhase("certdl", "auth");
+		CertDlRun(h, srv, "auth", CERTDL_MODE_AUTH, leaf_http, key, saved_file, &r);
+		CertDlExpect(h, "auth", &r, false, false);
+
+		// Without Content-Length the client reads no body, chunked or not
+		Print("[no_length: 200 without Content-Length, then close]\n");
+		HarnessSetPhase("certdl", "no_length");
+		CertDlRun(h, srv, "no_length", CERTDL_MODE_NO_LENGTH, leaf_http, key, saved_file, &r);
+		CertDlExpect(h, "no_length", &r, false, false);
+
+		Print("[chunked: 200 with Transfer-Encoding chunked]\n");
+		HarnessSetPhase("certdl", "chunked");
+		CertDlRun(h, srv, "chunked", CERTDL_MODE_CHUNKED, leaf_http, key, saved_file, &r);
+		CertDlExpect(h, "chunked", &r, false, false);
+
+		// The client stops at 64 KiB and parses what it has: the certificate at its start
+		Print("[over_cap: Content-Length 1000000, 64 KiB sent]\n");
+		HarnessSetPhase("certdl", "over_cap");
+		CertDlRun(h, srv, "over_cap", CERTDL_MODE_OVER_CAP, leaf_http, key, saved_file, &r);
+		CertDlExpect(h, "over_cap", &r, true, false);
+
+		Print("[silent: no answer]\n");
+		HarnessSetPhase("certdl", "silent");
+		CertDlRun(h, srv, "silent", CERTDL_MODE_SILENT, leaf_http, key, saved_file, &r);
+		CertDlExpect(h, "silent", &r, false, true);
+	}
+
+	HarnessSetPhase("teardown", NULL);
+	Print("[teardown]\n");
+	HarnessStopServer(h);
+	CertDlStopServer(srv);
+
+	FreeX(ca);
+	FreeX(leaf_http);
+	FreeX(leaf_https);
+	FreeX(tls);
+	FreeK(key);
+
+	HarnessStopWatchdog(wd);
+
+	if (h->NumFail == 0)
+	{
+		Print("CERTDL TEST OK\n");
+	}
+	else
+	{
+		Print("CERTDL TEST FAILED (%u failed checks)\n", h->NumFail);
 	}
 
 	HarnessFree(h);

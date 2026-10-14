@@ -141,10 +141,7 @@ COUNTER *NewCounter()
 
 	c = Malloc(sizeof(COUNTER));
 
-	c->Ready = true;
 	c->c = 0;
-
-	c->lock = NewLock();
 
 	KS_INC(KS_NEW_COUNTER_COUNT);
 
@@ -161,31 +158,10 @@ void DeleteCounter(COUNTER *c)
 	KS_INC(KS_DELETE_COUNTER_COUNT);
 	KS_SUB(KS_CURRENT_COUNT, c->c);
 
-	DeleteLock(c->lock);
 	Free(c);
 }
 
-UINT Count(COUNTER *c)
-{
-	UINT ret;
-	if (c == NULL)
-	{
-		return 0;
-	}
-	if (c->Ready == false)
-	{
-		return 0;
-	}
-
-	Lock(c->lock);
-	{
-		ret = c->c;
-	}
-	Unlock(c->lock);
-
-	return ret;
-}
-
+// Increment; returns the new value
 UINT Inc(COUNTER *c)
 {
 	UINT ret;
@@ -193,17 +169,8 @@ UINT Inc(COUNTER *c)
 	{
 		return 0;
 	}
-	if (c->Ready == false)
-	{
-		return 0;
-	}
 
-	Lock(c->lock);
-	{
-		c->c++;
-		ret = c->c;
-	}
-	Unlock(c->lock);
+	ret = (UINT)InterlockedIncrement((volatile LONG *)&c->c);
 
 	KS_INC(KS_INC_COUNT);
 	KS_INC(KS_CURRENT_COUNT);
@@ -211,31 +178,31 @@ UINT Inc(COUNTER *c)
 	return ret;
 }
 
+// Decrement; returns the new value. A COUNTER at 0 stays at 0 and returns 0.
 UINT Dec(COUNTER *c)
 {
-	UINT ret;
+	UINT old_value, ret;
 	if (c == NULL)
 	{
 		return 0;
 	}
-	if (c->Ready == false)
-	{
-		return 0;
-	}
 
-	Lock(c->lock);
+	// Compare-exchange loop, so that the floor at 0 holds under contention
+	while (true)
 	{
-		if (c->c != 0)
-		{
-			c->c--;
-			ret = c->c;
-		}
-		else
+		old_value = c->c;
+		if (old_value == 0)
 		{
 			ret = 0;
+			break;
+		}
+
+		ret = old_value - 1;
+		if ((UINT)InterlockedCompareExchange((volatile LONG *)&c->c, (LONG)ret, (LONG)old_value) == old_value)
+		{
+			break;
 		}
 	}
-	Unlock(c->lock);
 
 	KS_INC(KS_DEC_COUNT);
 	KS_DEC(KS_CURRENT_COUNT);
@@ -254,14 +221,12 @@ UINT Release(REF *ref)
 	KS_INC(KS_RELEASE_COUNT);
 	KS_DEC(KS_CURRENT_REFED_COUNT);
 
-	c = Dec(ref->c);
+	c = Dec(&ref->c);
 	if (c == 0)
 	{
 		KS_DEC(KS_CURRENT_REF_COUNT);
 		KS_INC(KS_FREEREF_COUNT);
 
-		DeleteCounter(ref->c);
-		ref->c = 0;
 		Free(ref);
 	}
 	return c;
@@ -275,7 +240,7 @@ UINT AddRef(REF *ref)
 		return 0;
 	}
 
-	c = Inc(ref->c);
+	c = Inc(&ref->c);
 
 	KS_INC(KS_ADDREF_COUNT);
 	KS_INC(KS_CURRENT_REFED_COUNT);
@@ -287,11 +252,13 @@ REF *NewRef()
 {
 	REF *ref;
 
+	// Memory allocation: the counter is embedded, so this is the only heap block
 	ref = Malloc(sizeof(REF));
 
-	ref->c = NewCounter();
+	// Initialization
+	ref->c.c = 0;
 
-	Inc(ref->c);
+	Inc(&ref->c);
 
 	KS_INC(KS_NEWREF_COUNT);
 	KS_INC(KS_CURRENT_REF_COUNT);
@@ -307,7 +274,8 @@ EVENT *NewEvent()
 
 	e->ref = NewRef();
 
-	OSInitEvent(e);
+	// Creating an unnamed auto-reset event; a failed create leaves a NULL handle
+	e->pData = CreateEvent(NULL, FALSE, FALSE, NULL);
 
 	KS_INC(KS_NEWEVENT_COUNT);
 
@@ -334,21 +302,14 @@ void CleanupEvent(EVENT *e)
 		return;
 	}
 
-	OSFreeEvent(e);
+	if (e->pData != NULL)
+	{
+		CloseHandle((HANDLE)e->pData);
+	}
 
 	Free(e);
 
 	KS_INC(KS_FREEEVENT_COUNT);
-}
-
-void Set(EVENT *e)
-{
-	if (e == NULL)
-	{
-		return;
-	}
-
-	OSSetEvent(e);
 }
 
 bool Wait(EVENT *e, UINT timeout)
@@ -360,7 +321,13 @@ bool Wait(EVENT *e, UINT timeout)
 
 	KS_INC(KS_WAIT_COUNT);
 
-	return OSWaitEvent(e, timeout);
+	if (e->pData == NULL)
+	{
+		return false;
+	}
+
+	// Only a time-out gives false: WAIT_FAILED and WAIT_ABANDONED give true
+	return (WaitForSingleObject((HANDLE)e->pData, timeout) != WAIT_TIMEOUT);
 }
 
 bool WaitEx(EVENT *e, UINT timeout, volatile bool *cancel)
@@ -419,4 +386,5 @@ bool WaitEx(EVENT *e, UINT timeout, volatile bool *cancel)
 		}
 	}
 }
+
 

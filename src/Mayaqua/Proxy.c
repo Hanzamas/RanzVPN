@@ -9,17 +9,6 @@ static SOCK *Internal_ProxyTcpConnect(PROXY_PARAM_IN *param, volatile bool *canc
 	return BindConnectEx4(param->BindLocalIP, param->BindLocalPort, param->Hostname, param->Port, param->Timeout, (bool *)cancel_flag, true, resolved_ip);
 }
 
-UINT ProxyHttpConnect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag)
-{
-	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname))
-	{
-		return PROXY_ERROR_PARAMETER;
-	}
-	in->BindLocalIP = BIND_LOCALIP_NULL;
-	in->BindLocalPort = BIND_LOCALPORT_NULL;
-	return BindProxyHttpConnect(out, in, cancel_flag);
-}
-
 UINT BindProxyHttpConnect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag)
 {
 	bool dummy_cancel_flag = false, use_auth = false;
@@ -198,17 +187,6 @@ FAILURE:
 }
 
 // SOCKS5: RFC 1928; username/password authentication: RFC 1929
-UINT ProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag)
-{
-	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname))
-	{
-		return PROXY_ERROR_PARAMETER;
-	}
-	in->BindLocalIP = BIND_LOCALIP_NULL;
-	in->BindLocalPort = BIND_LOCALPORT_NULL;
-	return BindProxySocks5Connect(out, in, cancel_flag);
-}
-
 UINT BindProxySocks5Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag)
 {
 	bool dummy_cancel_flag = false;
@@ -495,17 +473,6 @@ FAILURE:
 	Disconnect(s);
 	ReleaseSock(s);
 	return ret;
-}
-
-UINT ProxySocks4Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag)
-{
-	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname))
-	{
-		return PROXY_ERROR_PARAMETER;
-	}
-	in->BindLocalIP = BIND_LOCALIP_NULL;
-	in->BindLocalPort = BIND_LOCALPORT_NULL;
-	return BindProxySocks4Connect(out, in, cancel_flag);
 }
 
 UINT BindProxySocks4Connect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile bool *cancel_flag)

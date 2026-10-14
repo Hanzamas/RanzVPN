@@ -72,7 +72,6 @@ typedef struct LINK LINK;
 
 typedef struct INTERNET_SETTING INTERNET_SETTING;
 typedef struct URL_DATA URL_DATA;
-typedef struct WPC_CONNECT WPC_CONNECT;
 
 typedef struct ETH ETH;
 typedef struct BRIDGE BRIDGE;

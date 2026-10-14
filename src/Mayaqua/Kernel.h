@@ -2,6 +2,7 @@
 #define	KERNEL_H
 
 #include "MayaType.h"
+#include "Native.h"
 
 struct MEMINFO
 {

@@ -554,13 +554,87 @@ static void StressCounterWorkerThread(THREAD *t, void *param)
 	StressReleaseObj(d, o);
 }
 
+// Data of the floor phases of the COUNTER/REF case
+typedef struct STRESS_FLOOR_DATA
+{
+	COUNTER *Counter;				// COUNTER under test, shared by every worker
+	bool DecPhase;					// false: each worker calls Inc; true: each worker calls Dec twice as often
+	LOCK *StatLock;					// Protects the statistics below
+	UINT NumNonZero;				// Inc/Dec calls that returned a value other than 0
+	UINT64 Sum;						// Sum of the values that Inc/Dec returned
+	volatile bool Go;				// Opens the gate once the phase created every worker
+} STRESS_FLOOR_DATA;
+
+// Worker: call Inc STRESS_COUNTER_LOOPS times, or Dec twice as often, and sum up the return values
+static void StressFloorWorkerThread(THREAD *t, void *param)
+{
+	STRESS_FLOOR_DATA *d = (STRESS_FLOOR_DATA *)param;
+	UINT i, num, nonzero = 0;
+	UINT64 sum = 0;
+
+	if (t == NULL || d == NULL)
+	{
+		return;
+	}
+
+	num = d->DecPhase ? (STRESS_COUNTER_LOOPS * 2) : STRESS_COUNTER_LOOPS;
+
+	// Start together with the other workers, so the Inc/Dec calls contend
+	StressWaitFlag(&d->Go, STRESS_GATE_BOUND);
+
+	for (i = 0;i < num;i++)
+	{
+		UINT v = d->DecPhase ? Dec(d->Counter) : Inc(d->Counter);
+
+		if (v != 0)
+		{
+			nonzero++;
+			sum += v;
+		}
+	}
+
+	Lock(d->StatLock);
+	{
+		d->NumNonZero += nonzero;
+		d->Sum += sum;
+	}
+	Unlock(d->StatLock);
+}
+
+// Run one floor phase on STRESS_NUM_THREADS workers and wait for all of them
+static void StressFloorPhase(STRESS_FLOOR_DATA *d, bool dec_phase)
+{
+	THREAD *workers[STRESS_NUM_THREADS];
+	UINT i;
+
+	d->DecPhase = dec_phase;
+	d->NumNonZero = 0;
+	d->Sum = 0;
+	d->Go = false;
+
+	for (i = 0;i < STRESS_NUM_THREADS;i++)
+	{
+		workers[i] = NewThread(StressFloorWorkerThread, d);
+	}
+
+	// Open the gate only after every worker exists
+	d->Go = true;
+
+	for (i = 0;i < STRESS_NUM_THREADS;i++)
+	{
+		StressJoin(workers[i], INFINITE);
+	}
+}
+
 // COUNTER/REF case
 static void StressCaseCounter(STRESS_CTX *ctx)
 {
 	STRESS_COUNTER_DATA d;
+	STRESS_FLOOR_DATA f;
 	THREAD *workers[STRESS_NUM_THREADS];
 	REF *ref;
 	UINT a, b, c, i, total, bad, expected;
+	UINT64 sum;
 
 	// Return values of a REF on one thread
 	StressStep("counter: REF return values");
@@ -632,6 +706,35 @@ static void StressCaseCounter(STRESS_CTX *ctx)
 
 	DeleteCounter(d.Counter);
 	DeleteLock(d.StatLock);
+
+	// Concurrent Inc from 0 returns every new value 1..n exactly once (n non-zero returns
+	// that add up to n(n+1)/2) and leaves the COUNTER at n
+	StressStep("counter: concurrent Inc from 0");
+	Zero(&f, sizeof(f));
+	f.Counter = NewCounter();
+	f.StatLock = NewLock();
+	expected = STRESS_NUM_THREADS * STRESS_COUNTER_LOOPS;
+	StressFloorPhase(&f, false);
+	sum = (UINT64)expected * (expected + 1) / 2;
+	total = Count(f.Counter);
+	StressCheck(ctx, f.NumNonZero == expected && f.Sum == sum && total == expected,
+		"concurrent Inc returns every new value exactly once",
+		"%u non-zero returns, sum %I64u, Count %u; expected %u, %I64u, %u", f.NumNonZero, f.Sum, total, expected, sum, expected);
+
+	// Concurrent Dec, twice as many calls as the count: the floor at 0 holds under contention.
+	// Every value n-1..1 is returned exactly once, every other call returns 0, and the COUNTER
+	// ends at 0 instead of wrapping around.
+	StressStep("counter: concurrent Dec past the floor");
+	StressFloorPhase(&f, true);
+	sum = (UINT64)(expected - 1) * expected / 2;
+	total = Count(f.Counter);
+	a = Dec(f.Counter);
+	StressCheck(ctx, f.NumNonZero == (expected - 1) && f.Sum == sum && total == 0 && a == 0,
+		"concurrent Dec past 0 returns every lower value exactly once and saturates at 0",
+		"%u non-zero returns, sum %I64u, Count %u, next Dec %u; expected %u, %I64u, 0, 0", f.NumNonZero, f.Sum, total, a, expected - 1, sum);
+
+	DeleteCounter(f.Counter);
+	DeleteLock(f.StatLock);
 }
 
 //
@@ -722,6 +825,72 @@ static void StressEventHelperThread(THREAD *t, void *param)
 	{
 		Set(d->Event);
 	}
+}
+
+// Raw thread: take the mutex and end without releasing it, which abandons the mutex
+static DWORD WINAPI StressAbandonMutexThread(LPVOID param)
+{
+	WaitForSingleObject((HANDLE)param, INFINITE);
+
+	return 0;
+}
+
+// One Wait on an EVENT whose handle is swapped for a raw handle; the EVENT gets its own handle back
+static bool StressWaitOnHandle(EVENT *e, HANDLE h)
+{
+	void *own = e->pData;
+	bool ret;
+
+	e->pData = h;
+	ret = Wait(e, STRESS_WAIT_BOUND);
+	e->pData = own;
+
+	return ret;
+}
+
+// Wait gives false only on a time-out or when the EVENT has no handle (spec #30 keeps this):
+// a failed wait (WAIT_FAILED) and an abandoned wait (WAIT_ABANDONED) give true
+static void StressEventWaitResult(STRESS_CTX *ctx)
+{
+	EVENT *e = NewEvent();
+	HANDLE h = NULL;
+	HANDLE mutex;
+	bool failed = false, abandoned = false;
+	bool ran_failed = false, ran_abandoned = false;
+
+	// Failed wait: a duplicate of the event handle without SYNCHRONIZE access cannot be waited on
+	if (DuplicateHandle(GetCurrentProcess(), (HANDLE)e->pData, GetCurrentProcess(), &h, EVENT_MODIFY_STATE, FALSE, 0))
+	{
+		ran_failed = true;
+		failed = StressWaitOnHandle(e, h);
+		CloseHandle(h);
+	}
+
+	// Abandoned wait: a raw thread takes a mutex and ends without releasing it. A Mayaqua
+	// THREAD cannot abandon it, because its pool host thread outlives the job
+	mutex = CreateMutexW(NULL, FALSE, NULL);
+	if (mutex != NULL)
+	{
+		h = CreateThread(NULL, 0, StressAbandonMutexThread, mutex, 0, NULL);
+		if (h != NULL)
+		{
+			if (WaitForSingleObject(h, STRESS_WAIT_BOUND) == WAIT_OBJECT_0)
+			{
+				ran_abandoned = true;
+				abandoned = StressWaitOnHandle(e, mutex);
+				ReleaseMutex(mutex);
+			}
+			CloseHandle(h);
+		}
+		CloseHandle(mutex);
+	}
+
+	ReleaseEvent(e);
+
+	StressCheck(ctx, failed && abandoned, "Wait returns true for a failed wait (WAIT_FAILED) and an abandoned wait (WAIT_ABANDONED)",
+		"failed wait %s, abandoned wait %s",
+		ran_failed ? (failed ? "true" : "false") : "not run",
+		ran_abandoned ? (abandoned ? "true" : "false") : "not run");
 }
 
 // EVENT case
@@ -864,6 +1033,9 @@ static void StressCaseEvent(STRESS_CTX *ctx)
 	ReleaseEvent(e2);
 	StressCheck(ctx, refs == 2 && r1 && r2 == false, "an EVENT stays usable while a reference added with AddRef remains",
 		"AddRef returned %u, Wait after Set %s, second Wait %s", refs, r1 ? "true" : "false", r2 ? "true" : "false");
+
+	StressStep("event: Wait result of a failed and an abandoned wait");
+	StressEventWaitResult(ctx);
 
 	ReleaseEvent(d.Event);
 	ReleaseEvent(d.Ping);

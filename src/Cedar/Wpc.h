@@ -15,18 +15,6 @@
 #define WPC_TIMEOUT					(15 * 1000)
 #define WPC_RECV_BUF_SIZE			64000
 
-struct WPC_CONNECT
-{
-	char HostName[MAX_HOST_NAME_LEN + 1];
-	UINT Port;
-	UINT ProxyType;
-	char ProxyHostName[MAX_HOST_NAME_LEN + 1];
-	UINT ProxyPort;
-	char ProxyUsername[MAX_USERNAME_LEN + 1];
-	char ProxyPassword[MAX_USERNAME_LEN + 1];
-	char CustomHttpHeader[HTTP_CUSTOM_HEADER_MAX_SIZE];
-};
-
 struct INTERNET_SETTING
 {
 	UINT ProxyType;
@@ -54,7 +42,6 @@ struct URL_DATA
 typedef bool (WPC_RECV_CALLBACK)(void *param, UINT total_size, UINT current_size, BUF *recv_buf);
 
 bool ParseUrl(URL_DATA *data, char *str, bool is_post, char *referrer);
-void CreateUrl(char *url, UINT url_size, URL_DATA *data);
 BUF *HttpRequestEx(URL_DATA *data, INTERNET_SETTING *setting,
 				   UINT timeout_connect, UINT timeout_comm,
 				   UINT *error_code, bool check_ssl_trust, char *post_data,

@@ -20,6 +20,13 @@ static wchar_t exe_file_name_w[MAX_SIZE] = L"/tmp/a.out";
 static LIST *hamcore = NULL;
 static HAMCORE *hamcore_io = NULL;
 
+// File I/O data of a disk file (IO pData), from the raw OS allocator
+typedef struct WIN32IO
+{
+	HANDLE hFile;
+	bool WriteMode;
+} WIN32IO;
+
 bool IsFile(char *name)
 {
 	wchar_t *name_w = CopyStrToUni(name);
@@ -763,7 +770,13 @@ bool FileRenameInnerW(wchar_t *old_name, wchar_t *new_name)
 		return false;
 	}
 
-	return OSFileRenameW(old_name, new_name);
+	// Rename
+	if (MoveFileW(old_name, new_name) == FALSE)
+	{
+		return false;
+	}
+
+	return true;
 }
 
 void ConvertPathW(wchar_t *path)
@@ -800,7 +813,12 @@ bool DeleteDirInnerW(wchar_t *name)
 		return false;
 	}
 
-	return OSDeleteDirW(name);
+	if (RemoveDirectoryW(name) == FALSE)
+	{
+		return false;
+	}
+
+	return true;
 }
 
 void InnerFilePathW(wchar_t *dst, UINT size, wchar_t *src)
@@ -925,7 +943,12 @@ bool MakeDirInnerW(wchar_t *name)
 		return false;
 	}
 
-	return OSMakeDirW(name);
+	if (CreateDirectoryW(name, NULL) == FALSE)
+	{
+		return false;
+	}
+
+	return true;
 }
 
 bool FileDelete(char *name)
@@ -960,41 +983,73 @@ bool FileDeleteInnerW(wchar_t *name)
 	UniStrCpy(name2, sizeof(name2), name);
 	ConvertPathW(name2);
 
-	return OSFileDeleteW(name2);
+	if (DeleteFileW(name2) == FALSE)
+	{
+		return false;
+	}
+
+	return true;
 }
 
+// Seek the file (a 32-bit offset; a hamcore file cannot seek)
 bool FileSeek(IO *o, UINT mode, int offset)
 {
+	WIN32IO *p;
+	DWORD ret;
 	if (o == NULL)
 	{
 		return false;
 	}
 
-	if (o->HamMode == false)
-	{
-		return OSFileSeek(o->pData, mode, offset);
-	}
-	else
+	if (o->HamMode)
 	{
 		return false;
 	}
+
+	if (mode != FILE_BEGIN && mode != FILE_END && mode != FILE_CURRENT)
+	{
+		return false;
+	}
+
+	p = (WIN32IO *)o->pData;
+	ret = SetFilePointer(p->hFile, (LONG)offset, NULL, mode);
+	if (ret == INVALID_SET_FILE_POINTER || ret == ERROR_NEGATIVE_SEEK)
+	{
+		return false;
+	}
+
+	return true;
 }
 
 UINT64 FileSize64(IO *o)
 {
+	WIN32IO *p;
+	UINT64 ret;
+	DWORD tmp;
 	if (o == NULL)
 	{
 		return 0;
 	}
 
-	if (o->HamMode == false)
-	{
-		return OSFileSize(o->pData);
-	}
-	else
+	if (o->HamMode)
 	{
 		return (UINT64)o->HamBuf->Size;
 	}
+
+	p = (WIN32IO *)o->pData;
+	tmp = 0;
+	ret = GetFileSize(p->hFile, &tmp);
+	if (ret == (DWORD)-1)
+	{
+		return 0;
+	}
+
+	if (tmp != 0)
+	{
+		ret += (UINT64)tmp * 4294967296ULL;
+	}
+
+	return ret;
 }
 UINT FileSize(IO *o)
 {
@@ -1008,8 +1063,11 @@ UINT FileSize(IO *o)
 	return (UINT)size;
 }
 
+// Read from a file (all or nothing: a short read fails)
 bool FileRead(IO *o, void *buf, UINT size)
 {
+	WIN32IO *p;
+	DWORD read_size;
 	if (o == NULL || buf == NULL)
 	{
 		return false;
@@ -1023,18 +1081,30 @@ bool FileRead(IO *o, void *buf, UINT size)
 		return true;
 	}
 
-	if (o->HamMode == false)
-	{
-		return OSFileRead(o->pData, buf, size);
-	}
-	else
+	if (o->HamMode)
 	{
 		return ReadBuf(o->HamBuf, buf, size) == size ? true : false;
 	}
+
+	p = (WIN32IO *)o->pData;
+	if (ReadFile(p->hFile, buf, size, &read_size, NULL) == FALSE)
+	{
+		return false;
+	}
+
+	if (read_size != size)
+	{
+		return false;
+	}
+
+	return true;
 }
 
+// Write to a file (all or nothing: a short write fails)
 bool FileWrite(IO *o, void *buf, UINT size)
 {
+	WIN32IO *p;
+	DWORD write_size;
 	if (o == NULL || buf == NULL)
 	{
 		return false;
@@ -1052,7 +1122,104 @@ bool FileWrite(IO *o, void *buf, UINT size)
 		return true;
 	}
 
-	return OSFileWrite(o->pData, buf, size);
+	p = (WIN32IO *)o->pData;
+	if (WriteFile(p->hFile, buf, size, &write_size, NULL) == FALSE)
+	{
+		return false;
+	}
+
+	if (write_size != size)
+	{
+		return false;
+	}
+
+	return true;
+}
+
+// Read the dates of a disk file (on open)
+static bool FileGetDate(void *pData, UINT64 *created_time, UINT64 *updated_time, UINT64 *accessed_date)
+{
+	WIN32IO *p;
+	BY_HANDLE_FILE_INFORMATION info;
+	SYSTEMTIME st_create, st_update, st_access;
+	// Validate arguments
+	if (pData == NULL)
+	{
+		return false;
+	}
+
+	p = (WIN32IO *)pData;
+
+	Zero(&info, sizeof(info));
+
+	if (GetFileInformationByHandle(p->hFile, &info) == false)
+	{
+		return false;
+	}
+
+	Zero(&st_create, sizeof(st_create));
+	Zero(&st_update, sizeof(st_update));
+	Zero(&st_access, sizeof(st_access));
+
+	FileTimeToSystemTime(&info.ftCreationTime, &st_create);
+	FileTimeToSystemTime(&info.ftLastWriteTime, &st_update);
+	FileTimeToSystemTime(&info.ftLastAccessTime, &st_access);
+
+	if (created_time != NULL)
+	{
+		*created_time = SystemToUINT64(&st_create);
+	}
+
+	if (updated_time != NULL)
+	{
+		*updated_time = SystemToUINT64(&st_update);
+	}
+
+	if (accessed_date != NULL)
+	{
+		*accessed_date = SystemToUINT64(&st_access);
+	}
+
+	return true;
+}
+
+// Write the dates of a disk file (on close of a writer); nothing to do when both are 0
+static bool FileSetDate(void *pData, UINT64 created_time, UINT64 updated_time)
+{
+	WIN32IO *p;
+	SYSTEMTIME st_created_time, st_updated_time;
+	FILETIME ft_created_time, ft_updated_time;
+	FILETIME *p_created_time = NULL, *p_updated_time = NULL;
+	// Validate arguments
+	if (pData == NULL || (created_time == 0 && updated_time == 0))
+	{
+		return false;
+	}
+
+	p = (WIN32IO *)pData;
+
+	Zero(&st_created_time, sizeof(st_created_time));
+	Zero(&st_updated_time, sizeof(st_updated_time));
+
+	if (created_time != 0)
+	{
+		UINT64ToSystem(&st_created_time, created_time);
+
+		SystemTimeToFileTime(&st_created_time, &ft_created_time);
+
+		p_created_time = &ft_created_time;
+	}
+
+	if (updated_time != 0)
+	{
+		UINT64ToSystem(&st_updated_time, updated_time);
+
+		SystemTimeToFileTime(&st_updated_time, &ft_updated_time);
+
+		p_updated_time = &ft_updated_time;
+	}
+
+	return SetFileTime(p->hFile, p_created_time, NULL, p_updated_time);
 }
 
 void FileClose(IO *o)
@@ -1068,12 +1235,21 @@ void FileCloseEx(IO *o, bool no_flush)
 
 	if (o->HamMode == false)
 	{
+		WIN32IO *p = (WIN32IO *)o->pData;
+
 		if (o->WriteMode)
 		{
-			Win32FileSetDate(o->pData, o->SetCreateTime, o->SetUpdateTime);
+			FileSetDate(p, o->SetCreateTime, o->SetUpdateTime);
 		}
 
-		OSFileClose(o->pData, no_flush);
+		// A writer is flushed unless no_flush is set
+		if (p->WriteMode && no_flush == false)
+		{
+			FlushFileBuffers(p->hFile);
+		}
+		CloseHandle(p->hFile);
+
+		Win32MemoryFree(p);
 	}
 	else
 	{
@@ -1087,7 +1263,8 @@ void FileCloseEx(IO *o, bool no_flush)
 static IO *FileCreateInnerW(wchar_t *name)
 {
 	IO *o;
-	void *p;
+	WIN32IO *p;
+	HANDLE h;
 	wchar_t name2[MAX_SIZE];
 	if (name == NULL)
 	{
@@ -1097,11 +1274,25 @@ static IO *FileCreateInnerW(wchar_t *name)
 	UniStrCpy(name2, sizeof(name2), name);
 	ConvertPathW(name2);
 
-	p = OSFileCreateW(name2);
-	if (p == NULL)
+	// Replace an existing file, read-write, sharing read. An existing hidden file denies
+	// FILE_ATTRIBUTE_NORMAL, so retry with FILE_ATTRIBUTE_HIDDEN.
+	h = CreateFileW(name2, GENERIC_READ | GENERIC_WRITE,
+		FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
+		NULL);
+	if (h == INVALID_HANDLE_VALUE)
 	{
-		return NULL;
+		h = CreateFileW(name2, GENERIC_READ | GENERIC_WRITE,
+			FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_HIDDEN,
+			NULL);
+		if (h == INVALID_HANDLE_VALUE)
+		{
+			return NULL;
+		}
 	}
+
+	p = Win32MemoryAlloc(sizeof(WIN32IO));
+	p->hFile = h;
+	p->WriteMode = true;
 
 	o = ZeroMalloc(sizeof(IO));
 	o->pData = p;
@@ -1138,7 +1329,9 @@ IO *FileCreateW(wchar_t *name)
 IO *FileOpenInnerW(wchar_t *name, bool write_mode, bool read_lock)
 {
 	IO *o;
-	void *p;
+	WIN32IO *p;
+	HANDLE h;
+	DWORD lock_mode;
 	wchar_t name2[MAX_SIZE];
 	if (name == NULL)
 	{
@@ -1148,11 +1341,36 @@ IO *FileOpenInnerW(wchar_t *name, bool write_mode, bool read_lock)
 	UniStrCpy(name2, sizeof(name2), name);
 	ConvertPathW(name2);
 
-	p = OSFileOpenW(name2, write_mode, read_lock);
-	if (p == NULL)
+	// A writer opens read-write and shares read. A reader shares read, and also write
+	// when it does not take the read lock.
+	if (write_mode)
+	{
+		lock_mode = FILE_SHARE_READ;
+	}
+	else
+	{
+		if (read_lock == false)
+		{
+			lock_mode = FILE_SHARE_READ | FILE_SHARE_WRITE;
+		}
+		else
+		{
+			lock_mode = FILE_SHARE_READ;
+		}
+	}
+
+	h = CreateFileW(name2,
+		(write_mode ? GENERIC_READ | GENERIC_WRITE : GENERIC_READ),
+		lock_mode,
+		NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	if (h == INVALID_HANDLE_VALUE)
 	{
 		return NULL;
 	}
+
+	p = Win32MemoryAlloc(sizeof(WIN32IO));
+	p->hFile = h;
+	p->WriteMode = write_mode;
 
 	o = ZeroMalloc(sizeof(IO));
 	o->pData = p;
@@ -1160,7 +1378,7 @@ IO *FileOpenInnerW(wchar_t *name, bool write_mode, bool read_lock)
 	UniToStr(o->Name, sizeof(o->Name), o->NameW);
 	o->WriteMode = write_mode;
 
-	Win32FileGetDate(p, &o->GetCreateTime, &o->GetUpdateTime, &o->GetAccessTime);
+	FileGetDate(p, &o->GetCreateTime, &o->GetUpdateTime, &o->GetAccessTime);
 
 	KS_INC(KS_IO_OPEN_COUNT);
 
@@ -1231,4 +1449,5 @@ IO *FileOpenExW(wchar_t *name, bool write_mode, bool read_lock)
 		return FileOpenInnerW(tmp, write_mode, read_lock);
 	}
 }
+
 

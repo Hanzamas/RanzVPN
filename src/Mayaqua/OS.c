@@ -3,9 +3,7 @@
 
 #include "OS.h"
 
-#undef Yield
-
-static OS_DISPATCH_TABLE *os = NULL;
+#include "Native.h"
 
 char *OsTypeToStr(UINT type)
 {
@@ -40,14 +38,12 @@ char *OsTypeToStr(UINT type)
 
 void OSInit()
 {
-	os = Win32GetDispatchTable();
-
-	os->Init();
+	Win32Init();
 }
 
 void OSFree()
 {
-	os->Free();
+	Win32Free();
 }
 
 void OSGetMemInfo(MEMINFO *info)
@@ -57,210 +53,155 @@ void OSGetMemInfo(MEMINFO *info)
 		return;
 	}
 
-	os->GetMemInfo(info);
+	Win32GetMemInfo(info);
 }
 
 void OSYield()
 {
-	os->Yield();
+	Win32Yield();
 }
 
 void *OSNewSingleInstance(char *instance_name)
 {
-	return os->NewSingleInstance(instance_name);
+	return Win32NewSingleInstance(instance_name);
 }
 
 void OSFreeSingleInstance(void *data)
 {
-	os->FreeSingleInstance(data);
+	Win32FreeSingleInstance(data);
 }
 
 void OSSetHighPriority()
 {
-	os->SetHighPriority();
+	Win32SetHighPriority();
 }
 
 void OSRestorePriority()
 {
-	os->RestorePriority();
+	Win32RestorePriority();
 }
 
 char* OSGetProductId()
 {
-	return os->GetProductId();
+	return Win32GetProductId();
 }
 
 bool OSIsSupportedOs()
 {
-	return os->IsSupportedOs();
+	return Win32IsSupportedOs();
 }
 
 void OSGetOsInfo(OS_INFO *info)
 {
-	os->GetOsInfo(info);
+	Win32GetOsInfo(info);
 }
 
 void OSAlert(char *msg, char *caption)
 {
-	os->Alert(msg, caption);
+	Win32Alert(msg, caption);
 }
 void OSAlertW(wchar_t *msg, wchar_t *caption)
 {
-	os->AlertW(msg, caption);
+	Win32AlertW(msg, caption);
 }
 
 bool OSRun(char *filename, char *arg, bool hide, bool wait)
 {
-	return os->Run(filename, arg, hide, wait);
+	return Win32Run(filename, arg, hide, wait);
 }
 
 UINT OSThreadId()
 {
-	return os->ThreadId();
-}
-
-bool OSFileRenameW(wchar_t *old_name, wchar_t *new_name)
-{
-	return os->FileRenameW(old_name, new_name);
-}
-
-UINT64 OSFileSize(void *pData)
-{
-	return os->FileSize(pData);
-}
-
-bool OSFileSeek(void *pData, UINT mode, int offset)
-{
-	return os->FileSeek(pData, mode, offset);
-}
-
-bool OSFileDeleteW(wchar_t *name)
-{
-	return os->FileDeleteW(name);
-}
-
-bool OSMakeDirW(wchar_t *name)
-{
-	return os->MakeDirW(name);
-}
-
-bool OSDeleteDirW(wchar_t *name)
-{
-	return os->DeleteDirW(name);
-}
-
-void *OSFileOpenW(wchar_t *name, bool write_mode, bool read_lock)
-{
-	return os->FileOpenW(name, write_mode, read_lock);
-}
-
-void *OSFileCreateW(wchar_t *name)
-{
-	return os->FileCreateW(name);
-}
-
-bool OSFileWrite(void *pData, void *buf, UINT size)
-{
-	return os->FileWrite(pData, buf, size);
-}
-
-bool OSFileRead(void *pData, void *buf, UINT size)
-{
-	return os->FileRead(pData, buf, size);
-}
-
-void OSFileClose(void *pData, bool no_flush)
-{
-	os->FileClose(pData, no_flush);
+	return Win32ThreadId();
 }
 
 CALLSTACK_DATA *OSGetCallStack()
 {
-	return os->GetCallStack();
+	return Win32GetCallStack();
 }
 
 bool OSGetCallStackSymbolInfo(CALLSTACK_DATA *s)
 {
-	return os->GetCallStackSymbolInfo(s);
-}
-
-bool OSWaitThread(THREAD *t)
-{
-	return os->WaitThread(t);
-}
-
-void OSFreeThread(THREAD *t)
-{
-	os->FreeThread(t);
-}
-
-bool OSInitThread(THREAD *t)
-{
-	return os->InitThread(t);
+	return Win32GetCallStackSymbolInfo(s);
 }
 
 void *OSMemoryAlloc(UINT size)
 {
-	return os->MemoryAlloc(size);
+	return Win32MemoryAlloc(size);
 }
 
 void *OSMemoryReAlloc(void *addr, UINT size)
 {
-	return os->MemoryReAlloc(addr, size);
+	return Win32MemoryReAlloc(addr, size);
 }
 
 void OSMemoryFree(void *addr)
 {
-	os->MemoryFree(addr);
-}
-
-void OSGetSystemTime(SYSTEMTIME *system_time)
-{
-	os->GetSystemTime(system_time);
+	Win32MemoryFree(addr);
 }
 
 void OSSleep(UINT time)
 {
-	os->Sleep(time);
+	Win32Sleep(time);
 }
 
+// Create a Lock. This is the raw LOCK: it never touches the KS_ counters, because
+// KS_INC itself takes such a lock. One heap block from the raw OS allocator.
 LOCK *OSNewLock()
 {
-	return os->NewLock();
+	// Memory allocation
+	LOCK *lock = Win32MemoryAlloc(sizeof(LOCK));
+
+	if (lock == NULL)
+	{
+		return NULL;
+	}
+
+	// Initialize the critical section
+	InitializeCriticalSection(&lock->CriticalSection);
+	lock->Ready = true;
+
+	return lock;
 }
 
 bool OSLock(LOCK *lock)
 {
-	return os->Lock(lock);
+	if (lock->Ready == false)
+	{
+		// State is invalid
+		return false;
+	}
+
+	// Enter the critical section
+	EnterCriticalSection(&lock->CriticalSection);
+
+	return true;
 }
 
 void OSUnlock(LOCK *lock)
 {
-	os->Unlock(lock);
+	if (lock->Ready == false)
+	{
+		// State is invalid
+		return;
+	}
+
+	// Leave the critical section
+	LeaveCriticalSection(&lock->CriticalSection);
 }
 
 void OSDeleteLock(LOCK *lock)
 {
-	os->DeleteLock(lock);
+	// Reset the Ready flag safely
+	EnterCriticalSection(&lock->CriticalSection);
+	lock->Ready = false;
+	LeaveCriticalSection(&lock->CriticalSection);
+
+	// Delete the critical section
+	DeleteCriticalSection(&lock->CriticalSection);
+
+	// Memory release
+	Win32MemoryFree(lock);
 }
 
-void OSInitEvent(EVENT *event)
-{
-	os->InitEvent(event);
-}
-
-void OSSetEvent(EVENT *event)
-{
-	os->SetEvent(event);
-}
-
-bool OSWaitEvent(EVENT *event, UINT timeout)
-{
-	return os->WaitEvent(event, timeout);
-}
-
-void OSFreeEvent(EVENT *event)
-{
-	os->FreeEvent(event);
-}
 
