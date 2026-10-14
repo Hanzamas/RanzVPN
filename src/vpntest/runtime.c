@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
-
 // runtime.c
 // Named runtime tests of vpntest (spec #30, Windows-native runtime)
 //

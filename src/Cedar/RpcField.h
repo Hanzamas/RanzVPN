@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
-
 // RpcField.h
 // Header of RpcField.c: field-descriptor tables for the admin RPC structures
 //
