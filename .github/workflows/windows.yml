@@ -1,6 +1,6 @@
 on:
   push:
-    branches: [master, ci-nat2b]
+    branches: [master, diag-nat2]
   pull_request:
 
 concurrency:

@@ -1,5 +1,24 @@
 $ErrorActionPreference = 'Stop'
 
+# DIAG (throwaway branch): exit code, output and Windows Error Reporting entries of a few vpntest runs
+$diagExe = "build\vpntest.exe"
+$diagStart = Get-Date
+foreach ($diagTest in @('s', 'threadpool', 'stress', 'tickorigin', 's')) {
+	$ErrorActionPreference = 'Continue'
+	$diagOut = (Write-Output "q" | & $diagExe $diagTest 2>&1 | Out-String)
+	$diagCode = $LASTEXITCODE
+	$ErrorActionPreference = 'Stop'
+	Write-Host ("=== DIAG {0}: exit {1} (0x{2:X8})" -f $diagTest, $diagCode, $diagCode)
+	$diagLines = $diagOut -split "`n"
+	$diagLines | Select-Object -Last 60 | % { Write-Host "    $_" }
+}
+Start-Sleep -Seconds 5
+Get-WinEvent -FilterHashtable @{LogName = 'Application'; StartTime = $diagStart} -ErrorAction SilentlyContinue |
+	? { $_.Id -in 1000, 1001, 1026 } | Select-Object -First 10 | % { Write-Host "=== DIAG EVENT $($_.Id) $($_.ProviderName)"; Write-Host $_.Message }
+Get-ChildItem -Path . -Filter 'abort_error_log.txt' -Recurse -ErrorAction SilentlyContinue | % { Write-Host "=== DIAG $($_.FullName)"; Get-Content $_.FullName | % { Write-Host "    $_" } }
+throw 'DIAG run: not a test result'
+
+
 if (Test-Path "env:BUILD_BINARIESDIRECTORY") {
 	$BUILD_BINARIESDIRECTORY = $env:BUILD_BINARIESDIRECTORY
 } else {
