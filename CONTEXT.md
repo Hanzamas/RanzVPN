@@ -27,7 +27,7 @@ Executables: `vpnserver` uses Cedar/Server (`StInit`, `StStartServer`) and `MsSe
 | Internat | Wide-string (`Uni*`) helpers and charset conversion | `UNI_TOKEN_LIST` | Memory, Str, Mayaqua, Win32 | all |
 | Encoding | Base64 only | none | none | Memory |
 | FileIO | Files, directories, dump read/write, hamcore reader (`\|name` paths, `HC` cache) | `IO`, `DIRENT`, `DIRLIST`, `HC` | Internat, OS, Mayaqua, Win32, libhamcore | Cfg, Microsoft, Network, Table, 10 Cedar modules |
-| Encrypt | OpenSSL wrappers: certificates, keys, ciphers, hashes, RSA, DH, random | `X`, `K`, `NAME`, `CIPHER`, `CRYPT`, `DH_CTX` | Internat, Object, OS, Kernel | Cfg, Table, Network, Pack, Stun, Memory, Kernel, 16 Cedar modules |
+| Encrypt | Crypto wrappers: certificates, keys, RSA, DH, SHA-256 and `CIPHER` on OpenSSL; MD4, MD5, SHA-1, RC4, DES and random on CNG; SHA-0 own code | `X`, `K`, `NAME`, `CIPHER`, `CRYPT`, `DH_CTX` | Internat, Object, OS, Kernel | Cfg, Table, Network, Pack, Stun, Memory, Kernel, 16 Cedar modules |
 | Cfg | Text configuration tree and reader/writer | `FOLDER`, `ITEM`, `CFG_RW` | FileIO, Internat, Encrypt, Network | Table, Cedar/Server (the config file), Account, Admin, SeLowUser |
 | Table | String table, language list, `_SS`/`_UU`/`_II`/`_E` lookup, `$lang.config` | `TABLE`, `LANGLIST` | Internat, Encrypt, FileIO, Cfg, Mayaqua | Kernel, Microsoft, Command, Console, Admin, Hub and others |
 | Mayaqua | Library init and free, command line, minimal mode, OS info, kernel status counters | none | all base modules | every executable, Cedar |
