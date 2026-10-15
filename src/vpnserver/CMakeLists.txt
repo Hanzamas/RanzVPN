@@ -18,6 +18,9 @@ if(WIN32)
 
   configure_file("${TOP_DIRECTORY}/src/BuildFiles/VerScript/ver.rc" "${CMAKE_CURRENT_BINARY_DIR}/ver.rc")
   target_sources(vpnserver PRIVATE "vpnserver.rc" "${CMAKE_CURRENT_BINARY_DIR}/ver.rc")
+
+  # The hamcore files, as resources (cmake/RanzResources.cmake)
+  ranz_hamcore_resources(vpnserver)
 endif()
 
 set_target_properties(vpnserver

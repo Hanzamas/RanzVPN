@@ -27,6 +27,9 @@ if(WIN32)
 
     "${TOP_DIRECTORY}/src/BuildFiles/Manifests/common.manifest"
   )
+
+  # The hamcore files, as resources (cmake/RanzResources.cmake)
+  ranz_hamcore_resources(vpntest)
 endif()
 
 target_link_libraries(vpntest cedar)

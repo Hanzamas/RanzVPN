@@ -29,6 +29,9 @@ include("${TOP_DIRECTORY}/cmake/RanzSanitizers.cmake")
 # Unused-code warnings for the project's own targets (RANZ_UNUSED_WARNINGS; OFF by default)
 include("${TOP_DIRECTORY}/cmake/RanzWarnings.cmake")
 
+# The hamcore files (src/bin/hamcore) as resources of the executables
+include("${TOP_DIRECTORY}/cmake/RanzResources.cmake")
+
 # We define a dedicated variable because CMAKE_BUILD_TYPE can have different
 # configurations than "Debug" and "Release", such as "RelWithDebInfo".
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")

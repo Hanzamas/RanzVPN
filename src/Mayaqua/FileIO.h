@@ -7,9 +7,8 @@
 #include "Mayaqua.h"
 
 #define	HAMCORE_DIR_NAME			"hamcore"
-#define	HAMCORE_FILE_NAME			"hamcore.se2"
-#define	HAMCORE_CACHE_EXPIRES		(5 * 60 * 1000)
 #define	HAMCORE_RESOURCE_TYPE		"HAMCORE"		// Resource type of the built-in hamcore files
+#define	HAMCORE_RESOURCE_INDEX		"INDEX"			// Resource that names them (cmake/RanzResources.cmake)
 
 struct IO
 {
