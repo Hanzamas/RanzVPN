@@ -170,6 +170,8 @@ static void StrTestCopy(STRTEST_CTX *ctx)
 	b = StrTestReset(ctx, NULL);
 	StrTestDst(ctx, "StrCpy with size 0 copies without a limit", StrCpy(b, 0, "abcdefghij"), 10, "abcdefghij", STRTEST_GUARD_END);
 	b = StrTestReset(ctx, NULL);
+	StrTestDst(ctx, "StrCpy with size 0xFFFFFFFF copies without a limit, like size 0", StrCpy(b, 0xFFFFFFFF, "abcdefghij"), 10, "abcdefghij", STRTEST_GUARD_END);
+	b = StrTestReset(ctx, NULL);
 	StrTestDst(ctx, "StrCpy of an empty string writes the terminator and returns 0", StrCpy(b, 8, ""), 0, "", STRTEST_GUARD_END);
 	b = StrTestReset(ctx, "xy");
 	StrTestDst(ctx, "StrCpy of NULL writes the terminator and returns 0", StrCpy(b, 8, NULL), 0, "", sizeof("xy"));
@@ -200,6 +202,8 @@ static void StrTestCopy(STRTEST_CTX *ctx)
 	StrTestDst(ctx, "StrCpyAllowOverlap truncates to size - 1 characters", StrCpyAllowOverlap(b + 1, 4, b), 3, "aabc", sizeof("abcdef"));
 	b = StrTestReset(ctx, NULL);
 	StrTestDst(ctx, "StrCpyAllowOverlap with size 0 copies without a limit", StrCpyAllowOverlap(b, 0, "abcdefghij"), 10, "abcdefghij", STRTEST_GUARD_END);
+	b = StrTestReset(ctx, NULL);
+	StrTestDst(ctx, "StrCpyAllowOverlap with size 0xFFFFFFFF copies without a limit, like size 0", StrCpyAllowOverlap(b, 0xFFFFFFFF, "abcdefghij"), 10, "abcdefghij", STRTEST_GUARD_END);
 	b = StrTestReset(ctx, "abc");
 	StrTestDst(ctx, "StrCpyAllowOverlap with size 1 writes only the terminator and returns 0", StrCpyAllowOverlap(b, 1, "xyz"), 0, "", sizeof("abc"));
 	b = StrTestReset(ctx, "xy");
@@ -229,6 +233,8 @@ static void StrTestCat(STRTEST_CTX *ctx)
 	StrTestDst(ctx, "StrCat truncates to size - 1 characters and returns that length", StrCat(b, 5, "cdef"), 4, "abcd", STRTEST_GUARD_END);
 	b = StrTestReset(ctx, "ab");
 	StrTestDst(ctx, "StrCat with size 0 appends without a limit", StrCat(b, 0, "cdefghij"), 10, "abcdefghij", STRTEST_GUARD_END);
+	b = StrTestReset(ctx, "ab");
+	StrTestDst(ctx, "StrCat with size 0xFFFFFFFF appends without a limit, like size 0", StrCat(b, 0xFFFFFFFF, "cdefghij"), 10, "abcdefghij", STRTEST_GUARD_END);
 	b = StrTestReset(ctx, "ab");
 	StrTestDst(ctx, "StrCat of an empty string returns the length of the destination", StrCat(b, 8, ""), 2, "ab", STRTEST_GUARD_END);
 	b = StrTestReset(ctx, "abcd");
@@ -348,6 +354,7 @@ static void StrTestSearch(STRTEST_CTX *ctx)
 	StrTestUint(ctx, "SearchStrEx ignores the case when asked", SearchStrEx("aBcAbC", "abc", 1, false), 3);
 	StrTestUint(ctx, "SearchStrEx keeps the case when asked", SearchStrEx("aBcAbC", "abc", 0, true), INFINITE);
 	StrTestUint(ctx, "SearchStrEx folds only letters", SearchStrEx("x_Y", "_y", 0, false), 1);
+	StrTestUint(ctx, "SearchStrEx folds only ASCII letters, not bytes above 127", SearchStrEx("\xe9X", "\xc9x", 0, false), INFINITE);
 
 	StrTestCheck(ctx, InStr("Hello World", "WORLD"), "InStr ignores the case", "returned false");
 	StrTestCheck(ctx, InStrEx("Hello World", "WORLD", true) == false, "InStrEx keeps the case when asked", "returned true");
@@ -373,6 +380,8 @@ static void StrTestChars(STRTEST_CTX *ctx)
 	StrTestTokens(ctx, "ParseToken of only separators gives no token", ParseToken(" ,, ", ", "), 0, "");
 	StrTestTokens(ctx, "ParseToken of an empty string gives no token", ParseToken("", ","), 0, "");
 	StrTestTokens(ctx, "ParseToken of NULL gives no token", ParseToken(NULL, ","), 0, "");
+	StrTestTokens(ctx, "ParseToken splits at a separator byte above 127", ParseToken("a\xe9z", "\xe9"), 2, "a|z");
+	StrTestTokens(ctx, "ParseTokenWithNullStr splits at a separator byte above 127", ParseTokenWithNullStr("a\xe9z", "\xe9"), 2, "a|z");
 	StrTestTokens(ctx, "ParseTokenWithNullStr keeps empty tokens", ParseTokenWithNullStr("a,,b", ","), 3, "a||b");
 	StrTestTokens(ctx, "ParseTokenWithNullStr keeps a leading and a trailing empty token", ParseTokenWithNullStr(",a;", ",;"), 3, "|a|");
 	StrTestTokens(ctx, "ParseTokenWithNullStr of an empty string gives one empty token", ParseTokenWithNullStr("", ","), 1, "");
@@ -417,6 +426,16 @@ static void StrTestTrim(STRTEST_CTX *ctx)
 	b = StrTestReset(ctx, "");
 	Trim(b);
 	StrTestOut(ctx, "Trim leaves an empty string as it is", "", STRTEST_GUARD_END);
+
+	// A string literal is read-only: these calls fault if they write to a string they leave as it
+	// is, even a write of the same value, which the fill-byte guard cannot see
+	Trim("abc");
+	TrimLeft("abc");
+	TrimRight("abc");
+	Trim("");
+	TrimLeft("");
+	TrimRight("");
+	StrTestCheck(ctx, true, "Trim, TrimLeft and TrimRight do not write to a string they leave as it is", "");
 }
 
 // StrCmp and StrCmpi
