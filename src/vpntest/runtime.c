@@ -755,6 +755,184 @@ void fileio_test(UINT num, char **arg)
 	RtEnd(&ctx);
 }
 
+// Constants of the resources test
+#define	RT_RES_OVERRIDE_NAME	"empty.config"						// Hamcore file that a loose file replaces
+#define	RT_RES_OVERRIDE_DATA	"vpntest resources override\r\n"	// Contents of that loose file
+#define	RT_RES_MISSING_NAME		"vpntest_no_such_resource.bin"		// Name that no hamcore file has
+#define	RT_RES_SLASH_NAME		"DriverPackages/SeLow_Win10/x64/SeLow_x64.sys"		// Read with "/" and with "\"
+#define	RT_RES_BACKSLASH_NAME	"|DriverPackages\\SeLow_Win10\\x64\\SeLow_x64.sys"	// The same file, as SeLowUser.c names it
+
+// One hamcore file: its path under src/bin/hamcore, its size (0 for a text file), and the
+// SHA-256 of its bytes. For a text file the CR bytes are left out of the hash, so that an LF
+// and a CRLF checkout give the same value.
+typedef struct RT_RESOURCE
+{
+	char *Name;
+	UINT Size;
+	char *Sha256;
+} RT_RESOURCE;
+
+// Every file of src/bin/hamcore
+static RT_RESOURCE rt_resources[] =
+{
+	{"DriverPackages/SeLow_Win10/x64/SeLow_Win10_x64.cat", 19609, "CD33B3DBD773F1A2F8CC2FBB41D007579A74239DB45850C49B4A503DEED75B17"},
+	{"DriverPackages/SeLow_Win10/x64/SeLow_x64.inf", 0, "D9B0721BD32533E3F0348FCC798AF9AB4D8A054662EA37AA263AA136F109D0C6"},
+	{"DriverPackages/SeLow_Win10/x64/SeLow_x64.sys", 50624, "A4D553F8A1FB2D665F72DFE11725A7D848E847F155A25F13389D4674B905368F"},
+	{"empty.config", 0, "C9A345DAA95FB06D0264816DF03B9D19224BC0A5DBDEE6EA124A857B25CD4B76"},
+	{"lang.config", 0, "0E3D152BE5777727C251160E7B252540BF681D6EA56C043ED7BCB6B503B74F59"},
+	{"languages.txt", 0, "1C3A1CF43654DFF988EC22BA9C2C066050D53E72288C191309A3B8B79DAE5FDD"},
+	{"legal.txt", 0, "E9C08438A73B8F5347166E0ACEE0DBC463ADD86A0DC8B82FA5FAC672C6E7E172"},
+	{"root_certs.dat", 400489, "775E500924110ECA78A14BC9DB2A117AFF1654E2A9E83617BD8BD8FB601400CE"},
+	{"strtable_en.stb", 0, "9F9A36AB1FB200E85F855EEF0C845B582A4D958E84A807FE2FD10F6C78BADC62"},
+	{"strtable_id.stb", 0, "0AA785D1EEFEDBC61B6391E95634FB6D209160BB344BC919072C9D13428BFB9C"},
+	{"warning_en.txt", 0, "8F0D9C5636BB5726C7446688B5FE7F2A1A00A4AE9A10BCC76D70B4BA382C6803"},
+	{"warning_id.txt", 0, "E3C62BB1DD8FC04FE284192650CCCD9B6F31F561812102CA0E4D0B8EF27E3D8E"},
+	{"watermark.bin", 1411, "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0"},
+};
+
+// SHA-256 of a hamcore file as rt_resources gives it: of every byte, or of every byte but CR for a text file
+static void RtResourceHash(char *hash_str, UINT hash_str_size, BUF *b, bool text)
+{
+	UCHAR hash[SHA256_SIZE];
+	UCHAR *src = (UCHAR *)b->Buf;
+	UCHAR *data = Malloc(MAX(b->Size, 1));
+	UINT i, size = 0;
+
+	for (i = 0;i < b->Size;i++)
+	{
+		if (text == false || src[i] != '\r')
+		{
+			data[size++] = src[i];
+		}
+	}
+
+	Sha2_256(hash, data, size);
+	BinToStr(hash_str, hash_str_size, hash, sizeof(hash));
+
+	Free(data);
+}
+
+// resources: the hamcore files (src/bin/hamcore) that ReadHamcore and the "|" prefix read.
+// Every file with its exact bytes, "\" read as "/", a leading "/" skipped, a missing name, a
+// new buffer for each read, a loose "hamcore" folder next to the executable winning over the
+// built-in file, and no hamcore.se2 archive next to the executable (#89)
+void resources_test(UINT num, char **arg)
+{
+	RT_CTX ctx;
+	wchar_t exe_dir[MAX_SIZE];
+	wchar_t se2_path[MAX_SIZE];
+	wchar_t dir_path[MAX_SIZE];
+	wchar_t override_path[MAX_SIZE];
+	char hash_str[SHA256_SIZE * 2 + 1];
+	char what[MAX_SIZE];
+	BUF *b, *b2, *embedded;
+	IO *io;
+	UINT i, size;
+	void *data;
+	bool ok, made_dir;
+
+	RtBegin(&ctx, "RESOURCES", "Resources test");
+
+	GetExeDirW(exe_dir, sizeof(exe_dir));
+	ConbinePathW(se2_path, sizeof(se2_path), exe_dir, L"hamcore.se2");
+	ConbinePathW(dir_path, sizeof(dir_path), exe_dir, L"" HAMCORE_DIR_NAME);
+	ConbinePathW(override_path, sizeof(override_path), dir_path, L"" RT_RES_OVERRIDE_NAME);
+
+	// The executable carries the files itself: the build writes no hamcore.se2 archive
+	RtCheck(&ctx, IsFileExistsW(se2_path) == false, "No hamcore.se2 next to the executable", "%S exists", se2_path);
+
+	// Every file holds the bytes of its source file
+	for (i = 0;i < sizeof(rt_resources) / sizeof(rt_resources[0]);i++)
+	{
+		RT_RESOURCE *r = &rt_resources[i];
+
+		b = ReadHamcore(r->Name);
+		Format(what, sizeof(what), "ReadHamcore of %s", r->Name);
+		if (RtCheck(&ctx, b != NULL, what, "returned NULL"))
+		{
+			RtResourceHash(hash_str, sizeof(hash_str), b, r->Size == 0);
+			Format(what, sizeof(what), "%s holds the bytes of src/bin/hamcore/%s", r->Name, r->Name);
+			RtCheck(&ctx, (r->Size == 0 || b->Size == r->Size) && StrCmpi(hash_str, r->Sha256) == 0, what,
+				"%u bytes, SHA-256 = %s", b->Size, hash_str);
+		}
+		FreeBuf(b);
+	}
+
+	// "|" opens the same bytes, with "\" in the name read as "/"
+	b = ReadHamcore(RT_RES_SLASH_NAME);
+	io = FileOpen(RT_RES_BACKSLASH_NAME, false);
+	if (RtCheck(&ctx, io != NULL, "FileOpen of a \"|\" name written with backslashes", "returned NULL"))
+	{
+		size = FileSize(io);
+		data = ZeroMalloc(size + 1);
+		ok = FileRead(io, data, size);
+		RtCheck(&ctx, b != NULL && ok && size == b->Size && Cmp(data, b->Buf, size) == 0,
+			"FileRead through \"|\" returns the bytes of ReadHamcore", "read %s, %u bytes", ok ? "ok" : "failed", size);
+		Free(data);
+		FileClose(io);
+	}
+	FreeBuf(b);
+
+	// A leading "/" is skipped, and each read returns its own buffer at offset 0
+	b = ReadHamcore("watermark.bin");
+	b2 = ReadHamcore("/watermark.bin");
+	if (RtCheck(&ctx, b != NULL && b2 != NULL && b->Size != 0 && b2->Size == b->Size && Cmp(b2->Buf, b->Buf, b->Size) == 0,
+		"ReadHamcore skips a leading \"/\"", "%s", b2 == NULL ? "returned NULL" : "the bytes differ"))
+	{
+		RtCheck(&ctx, b->Current == 0 && b2->Current == 0, "A read starts at offset 0", "offsets %u and %u", b->Current, b2->Current);
+
+		((UCHAR *)b->Buf)[0] ^= 0xFF;
+		FreeBuf(b2);
+		b2 = ReadHamcore("watermark.bin");
+		RtCheck(&ctx, b2 != NULL && b2->Size == b->Size && ((UCHAR *)b2->Buf)[0] == (((UCHAR *)b->Buf)[0] ^ 0xFF),
+			"Each read returns its own copy", "%s", b2 == NULL ? "returned NULL" : "a change to an earlier read shows");
+	}
+	FreeBuf(b);
+	FreeBuf(b2);
+
+	// A name that no file has
+	RtCheck(&ctx, ReadHamcore(NULL) == NULL, "ReadHamcore(NULL) returns NULL", "returned a buffer");
+	b = ReadHamcore(RT_RES_MISSING_NAME);
+	RtCheck(&ctx, b == NULL, "ReadHamcore of a missing name returns NULL", "returned a buffer");
+	FreeBuf(b);
+	io = FileOpen("|" RT_RES_MISSING_NAME, false);
+	RtCheck(&ctx, io == NULL, "FileOpen of a missing \"|\" name returns NULL", "returned a file");
+	FileClose(io);
+	RtCheck(&ctx, IsFile("|watermark.bin"), "IsFile of a \"|\" name", "returned false");
+	RtCheck(&ctx, IsFile("|" RT_RES_MISSING_NAME) == false, "IsFile of a missing \"|\" name", "returned true");
+
+	// A file in a "hamcore" folder next to the executable wins over the built-in one, until it is deleted
+	embedded = ReadHamcore(RT_RES_OVERRIDE_NAME);
+	made_dir = MakeDirW(dir_path);
+	b = NewBufFromMemory(RT_RES_OVERRIDE_DATA, StrLen(RT_RES_OVERRIDE_DATA));
+	ok = DumpBufW(b, override_path);
+	FreeBuf(b);
+	if (RtCheck(&ctx, ok, "Write a loose hamcore/" RT_RES_OVERRIDE_NAME " next to the executable", "cannot write %S", override_path))
+	{
+		b = ReadHamcore(RT_RES_OVERRIDE_NAME);
+		RtCheck(&ctx, b != NULL && b->Size == StrLen(RT_RES_OVERRIDE_DATA) && Cmp(b->Buf, RT_RES_OVERRIDE_DATA, b->Size) == 0,
+			"ReadHamcore returns the loose file", "%s", b == NULL ? "returned NULL" : "returned other bytes");
+		FreeBuf(b);
+
+		b = ReadDump("|" RT_RES_OVERRIDE_NAME);
+		RtCheck(&ctx, b != NULL && b->Size == StrLen(RT_RES_OVERRIDE_DATA) && Cmp(b->Buf, RT_RES_OVERRIDE_DATA, b->Size) == 0,
+			"ReadDump through \"|\" returns the loose file", "%s", b == NULL ? "returned NULL" : "returned other bytes");
+		FreeBuf(b);
+	}
+	RtCheck(&ctx, FileDeleteW(override_path), "Delete the loose file", "failed");
+	if (made_dir)
+	{
+		DeleteDirW(dir_path);
+	}
+	b = ReadHamcore(RT_RES_OVERRIDE_NAME);
+	RtCheck(&ctx, b != NULL && embedded != NULL && b->Size == embedded->Size && Cmp(b->Buf, embedded->Buf, b->Size) == 0,
+		"Without the loose file, ReadHamcore returns the built-in file again", "%s", b == NULL ? "returned NULL" : "returned other bytes");
+	FreeBuf(b);
+	FreeBuf(embedded);
+
+	RtEnd(&ctx);
+}
+
 // Constants of the threadpool test
 #define	RT_POOL_BOUND			5000	// Fail-safe bound of every wait in the threadpool test (ms)
 #define	RT_POOL_SETTLE			300		// Time given to an idle pool thread to (wrongly) end (ms)
