@@ -137,7 +137,6 @@ jobs:
         path: |
           build/*.exe
           build/*.pdb
-          build/*.se2
 
   # AddressSanitizer + libFuzzer (x64 only: Microsoft documents ASan on Windows for x86 and x64).
   # Builds with -DRANZ_ASAN=ON -DRANZ_FUZZ=ON (cmake/RanzSanitizers.cmake), runs the vpntest
@@ -240,8 +239,8 @@ jobs:
         path: |
           build/fuzz-artifacts/
           build/fuzz-logs/
-    # What a crash needs to be replayed elsewhere: the instrumented executables, their symbols,
-    # hamcore and the ASan runtime DLL
+    # What a crash needs to be replayed elsewhere: the instrumented executables, their symbols
+    # and the ASan runtime DLL
     - uses: actions/upload-artifact@v4
       if: failure()
       with:
@@ -252,5 +251,4 @@ jobs:
           build/fuzz_*.pdb
           build/vpntest.exe
           build/vpntest.pdb
-          build/*.se2
           build/clang_rt.asan_dynamic*.dll

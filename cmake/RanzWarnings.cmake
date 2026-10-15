@@ -10,8 +10,7 @@
 # edit an executed statement, which the sweep does not do.
 #
 # Only the targets that src/CMakeLists.txt names get the flags (Cedar, Mayaqua, vpnserver, vpncmd,
-# vpntest). Vendored third-party targets (liboqs, oqs-provider, libhamcore), hamcorebuilder and
-# the fuzz targets do not.
+# vpntest). Vendored third-party targets (liboqs, oqs-provider) and the fuzz targets do not.
 
 option(RANZ_UNUSED_WARNINGS "Enable clang's unused and unreachable code warnings for the project's own targets (clang or clang-cl only)" OFF)
 
