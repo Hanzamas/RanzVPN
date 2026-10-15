@@ -104,18 +104,16 @@
 
 typedef struct bignum_st BIGNUM;
 typedef struct bio_st BIO;
-typedef struct DES_ks DES_key_schedule;
 typedef struct dh_st DH;
 typedef struct evp_cipher_st EVP_CIPHER;
 typedef struct evp_cipher_ctx_st EVP_CIPHER_CTX;
 typedef struct evp_pkey_st EVP_PKEY;
-typedef struct rc4_key_st RC4_KEY;
 typedef struct ssl_st SSL;
 typedef struct x509_st X509;
 
 struct CRYPT
 {
-	RC4_KEY *Rc4Key;
+	void *Rc4Key;					// CNG key object (BCRYPT_KEY_HANDLE) of the RC4 key, NULL if CNG refused the key
 };
 
 struct NAME
@@ -156,6 +154,7 @@ struct K
 	bool private_key;
 };
 
+#define	MD4_SIZE	16
 #define	MD5_SIZE	16
 #define	SHA1_SIZE	20
 #define	SHA256_SIZE	32
