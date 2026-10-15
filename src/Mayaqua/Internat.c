@@ -11,7 +11,7 @@
 #include "Tracking.h"
 #include "Win32.h"
 
-#include <stdlib.h>
+#include <locale.h>
 #include <wchar.h>
 
 bool UniInChar(wchar_t *string, wchar_t c)
@@ -811,6 +811,61 @@ bool IsSafeUniChar(wchar_t c)
 	return false;
 }
 
+// The ANSI conversions run on MultiByteToWideChar and WideCharToMultiByte in the code page of
+// the C runtime's LC_CTYPE locale (InitMayaqua sets it with setlocale(LC_ALL, "")), with the
+// flags the UCRT's mbstowcs() and wcstombs() use, so they convert as those did: a string that
+// does not convert exactly gives an empty string (a byte sequence that is invalid in the code
+// page; a character without an equivalent, where a best-fit mapping counts as one).
+
+// Code page standing for the C locale, in which the CRT maps the bytes 1:1 to U+0000-U+00FF and
+// has no best fit: ISO 8859-1 with WC_NO_BEST_FIT_CHARS. No locale that setlocale(LC_ALL, "")
+// selects uses this code page.
+#define	ANSI_C_LOCALE_CODE_PAGE		28591
+
+// Code page of the ANSI conversions
+static UINT AnsiCodePage()
+{
+	if (___lc_locale_name_func()[LC_CTYPE] == NULL)
+	{
+		return ANSI_C_LOCALE_CODE_PAGE;
+	}
+
+	return ___lc_codepage_func();
+}
+
+// Convert the ANSI string str into dst (NULL: only count), dst_len wchar_t at most. Returns the
+// number of wchar_t with the terminating NUL, or 0 when str does not convert
+static UINT ConvertAnsiToUni(wchar_t *dst, UINT dst_len, char *str)
+{
+	UINT cp = AnsiCodePage();
+	// UTF-8 takes no flag but MB_ERR_INVALID_CHARS
+	DWORD flags = (cp == CP_UTF8) ? MB_ERR_INVALID_CHARS : (MB_PRECOMPOSED | MB_ERR_INVALID_CHARS);
+	int ret = MultiByteToWideChar(cp, flags, str, -1, dst, (int)dst_len);
+
+	return (ret > 0) ? (UINT)ret : 0;
+}
+
+// Convert the wide string s into dst (NULL: only count), dst_size bytes at most. Returns the
+// number of bytes with the terminating NUL, or 0 when s does not convert
+static UINT ConvertUniToAnsi(char *dst, UINT dst_size, wchar_t *s)
+{
+	UINT cp = AnsiCodePage();
+	BOOL used_default = FALSE;
+	int ret;
+
+	if (cp == CP_UTF8)
+	{
+		// UTF-8 has no default character; an unpaired surrogate does not convert
+		ret = WideCharToMultiByte(cp, WC_ERR_INVALID_CHARS, s, -1, dst, (int)dst_size, NULL, NULL);
+	}
+	else
+	{
+		ret = WideCharToMultiByte(cp, (cp == ANSI_C_LOCALE_CODE_PAGE) ? WC_NO_BEST_FIT_CHARS : 0, s, -1, dst, (int)dst_size, NULL, &used_default);
+	}
+
+	return (ret > 0 && used_default == FALSE) ? (UINT)ret : 0;
+}
+
 UINT UniToStr(char *str, UINT size, wchar_t *s)
 {
 	UINT ret;
@@ -832,7 +887,7 @@ UINT UniToStr(char *str, UINT size, wchar_t *s)
 	}
 	tmp = Malloc(new_size);
 	tmp[0] = 0;
-	wcstombs(tmp, s, new_size);
+	ConvertUniToAnsi(tmp, new_size, s);
 	tmp[new_size - 1] = 0;
 	ret = StrCpy(str, size, tmp);
 	Free(tmp);
@@ -842,19 +897,12 @@ UINT UniToStr(char *str, UINT size, wchar_t *s)
 
 UINT CalcUniToStr(wchar_t *s)
 {
-	UINT ret;
 	if (s == NULL)
 	{
 		return 0;
 	}
 
-	ret = (UINT)wcstombs(NULL, s, UniStrLen(s));
-	if (ret == (UINT)-1)
-	{
-		return 0;
-	}
-
-	return ret + 1;
+	return ConvertUniToAnsi(NULL, 0, s);
 }
 
 UINT StrToUni(wchar_t *s, UINT size, char *str)
@@ -878,7 +926,7 @@ UINT StrToUni(wchar_t *s, UINT size, char *str)
 	}
 	tmp = Malloc(new_size);
 	tmp[0] = 0;
-	mbstowcs(tmp, str, StrLen(str));
+	ConvertAnsiToUni(tmp, new_size / (UINT)sizeof(wchar_t), str);
 	tmp[(new_size - 1) / sizeof(wchar_t)] = 0;
 	ret = UniStrCpy(s, size, tmp);
 	Free(tmp);
@@ -888,19 +936,12 @@ UINT StrToUni(wchar_t *s, UINT size, char *str)
 
 UINT CalcStrToUni(char *str)
 {
-	UINT ret;
 	if (str == NULL)
 	{
 		return 0;
 	}
 
-	ret = (UINT)mbstowcs(NULL, str, StrLen(str));
-	if (ret == (UINT)-1)
-	{
-		return 0;
-	}
-
-	return (ret + 1) * sizeof(wchar_t);
+	return ConvertAnsiToUni(NULL, 0, str) * (UINT)sizeof(wchar_t);
 }
 
 UINT Utf8ToUni(wchar_t *s, UINT size, BYTE *u, UINT u_size)
