@@ -19,6 +19,11 @@
 #define	STRSAFE_NO_DEPRECATE
 #include <strsafe.h>
 
+// Room for the longest result of ToStr, ToStr64 and ToHex, terminator included
+#define	TOSTR_SIZE			sizeof("4294967295")
+#define	TOSTR64_SIZE		sizeof("18446744073709551615")
+#define	TOHEX_SIZE			sizeof("ffffffff")
+
 static LOCK *token_lock = NULL;
 static char *default_spliter = " ,\t\r\n";
 
@@ -96,34 +101,13 @@ UINT HexToInt(char *str)
 
 void ToHex(char *str, UINT value)
 {
-	char tmp[MAX_SIZE];
-	UINT wp = 0;
-	UINT len, i;
 	if (str == NULL)
 	{
 		return;
 	}
 
-	StrCpy(tmp, 0, "");
-
-	while (true)
-	{
-		UINT a = (UINT)(value % (UINT)16);
-		value = value / (UINT)16;
-		tmp[wp++] = FourBitToHex(a);
-		if (value == 0)
-		{
-			tmp[wp++] = 0;
-			break;
-		}
-	}
-
-	len = StrLen(tmp);
-	for (i = 0;i < len;i++)
-	{
-		str[len - i - 1] = tmp[i];
-	}
-	str[len] = 0;
+	// Lower case digits without leading zeros
+	StringCchPrintfA(str, TOHEX_SIZE, "%x", value);
 }
 
 char FourBitToHex(UINT value)
@@ -986,34 +970,12 @@ TOKEN_LIST *ParseCmdLine(char *str)
 
 void ToStr64(char *str, UINT64 value)
 {
-	char tmp[MAX_SIZE];
-	UINT wp = 0;
-	UINT len, i;
 	if (str == NULL)
 	{
 		return;
 	}
 
-	StrCpy(tmp, 0, "");
-
-	while (true)
-	{
-		UINT a = (UINT)(value % (UINT64)10);
-		value = value / (UINT64)10;
-		tmp[wp++] = (char)('0' + a);
-		if (value == 0)
-		{
-			tmp[wp++] = 0;
-			break;
-		}
-	}
-
-	len = StrLen(tmp);
-	for (i = 0;i < len;i++)
-	{
-		str[len - i - 1] = tmp[i];
-	}
-	str[len] = 0;
+	StringCchPrintfA(str, TOSTR64_SIZE, "%I64u", value);
 }
 
 UINT64 ToInt64(char *str)
@@ -1201,7 +1163,7 @@ void BinToStrEx(char *str, UINT str_size, void *data, UINT data_size)
 	tmp = ZeroMalloc(size);
 	for (i = 0;i < data_size;i++)
 	{
-		Format(&tmp[i * 3], 0, "%02X ", buf[i]);
+		StringCchPrintfA(&tmp[i * 3], size - i * 3, "%02X ", buf[i]);
 	}
 	Trim(tmp);
 	StrCpy(str, str_size, tmp);
@@ -1227,7 +1189,7 @@ void BinToStr(char *str, UINT str_size, void *data, UINT data_size)
 	tmp = ZeroMalloc(size);
 	for (i = 0;i < data_size;i++)
 	{
-		sprintf(&tmp[i * 2], "%02X", buf[i]);
+		StringCchPrintfA(&tmp[i * 2], size - i * 2, "%02X", buf[i]);
 	}
 	StrCpy(str, str_size, tmp);
 	Free(tmp);
@@ -1763,7 +1725,7 @@ void TrimLeft(char *str)
 
 void ToStr(char *str, UINT i)
 {
-	sprintf(str, "%u", i);
+	StringCchPrintfA(str, TOSTR_SIZE, "%u", i);
 }
 
 int ToInti(char *str)
