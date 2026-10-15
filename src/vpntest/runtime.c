@@ -17,7 +17,10 @@
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Tick64.h"
 
+#include <locale.h>
 #include <stdarg.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <objbase.h>
 
@@ -356,6 +359,1164 @@ void nullsafe_test(UINT num, char **arg)
 		"returned %s after %I64u ms", waited ? "true" : "false", elapsed);
 	ReleaseEvent(e);
 	RtCheck(&ctx, true, "Set and ReleaseEvent on an EVENT without a handle return", "");
+
+	RtEnd(&ctx);
+}
+
+// Constants of the charset test
+#define	RT_CHARSET_BUF			128			// Code units, or bytes, of one conversion buffer
+#define	RT_CHARSET_FILL			0xA5A5		// Fill of a wchar_t buffer: a conversion must leave it where it writes nothing
+#define	RT_CHARSET_FILL_BYTE	0xA5		// Fill of a byte buffer
+#define	RT_CHARSET_ROUNDS		20000		// Random strings checked in each direction
+#define	RT_CHARSET_MAX_LEN		24			// Pieces (decoding) or code units (encoding) of the longest random string
+#define	RT_CHARSET_SEED			0x2545F491	// Seed of the random strings: every run checks the same ones
+
+// A fixed UTF-8 decoding vector: input bytes and the code units Mayaqua decodes them to
+typedef struct RT_UTF8_DECODE_VECTOR
+{
+	char *What;
+	char *Bytes;					// Input, Size bytes (may hold NUL bytes); Size 0: up to the first NUL
+	UINT Size;
+	UINT NumUnits;
+	wchar_t Units[4];
+} RT_UTF8_DECODE_VECTOR;
+
+// A fixed UTF-8 encoding vector: a NUL-terminated string and the bytes Mayaqua encodes it to
+typedef struct RT_UTF8_ENCODE_VECTOR
+{
+	char *What;
+	wchar_t Units[6];
+	UINT Size;
+	char *Bytes;
+} RT_UTF8_ENCODE_VECTOR;
+
+// Decoding vectors. Mayaqua's decoder takes the length of a sequence from the lead byte alone
+// (below 0x80: 1, bit 0x20 clear: 2, otherwise 3), ends at a sequence cut off by the end of the
+// input, and uses the payload bits without validation
+static RT_UTF8_DECODE_VECTOR rt_utf8_decode_vectors[] =
+{
+	{"UTF-8 decode: ASCII", "Az", 2, 2, {L'A', L'z'}},
+	{"UTF-8 decode: C3 A9 gives U+00E9", "\xC3\xA9", 2, 1, {0x00E9}},
+	{"UTF-8 decode: DF BF gives U+07FF", "\xDF\xBF", 2, 1, {0x07FF}},
+	{"UTF-8 decode: E0 A0 80 gives U+0800", "\xE0\xA0\x80", 3, 1, {0x0800}},
+	{"UTF-8 decode: E3 81 82 gives U+3042", "\xE3\x81\x82", 3, 1, {0x3042}},
+	{"UTF-8 decode: a BOM is kept as U+FEFF", "\xEF\xBB\xBF" "A", 4, 2, {0xFEFF, L'A'}},
+	{"UTF-8 decode: EF BF BF gives U+FFFF", "\xEF\xBF\xBF", 3, 1, {0xFFFF}},
+	{"UTF-8 decode: a NUL byte inside the size gives U+0000", "A\0B", 3, 3, {L'A', 0x0000, L'B'}},
+	{"UTF-8 decode: size 0 decodes up to the first NUL", "AB\0C", 0, 2, {L'A', L'B'}},
+	{"UTF-8 decode: the empty string", "", 0, 0, {0}},
+	{"UTF-8 decode: continuation byte 80 is a 2-byte lead (80 41 gives U+0001)", "\x80\x41", 2, 1, {0x0001}},
+	{"UTF-8 decode: continuation byte A0 is a 3-byte lead (A0 41 42 gives U+0042)", "\xA0\x41\x42", 3, 1, {0x0042}},
+	{"UTF-8 decode: a bad continuation byte is taken as is (C3 41 gives U+00C1)", "\xC3\x41", 2, 1, {0x00C1}},
+	{"UTF-8 decode: overlong C0 80 gives U+0000", "\xC0\x80" "A", 3, 2, {0x0000, L'A'}},
+	{"UTF-8 decode: overlong C1 BF gives U+007F", "\xC1\xBF", 2, 1, {0x007F}},
+	{"UTF-8 decode: overlong E0 80 AF gives U+002F", "\xE0\x80\xAF", 3, 1, {0x002F}},
+	{"UTF-8 decode: CESU-8 ED A0 80 gives the lone surrogate U+D800", "\xED\xA0\x80", 3, 1, {0xD800}},
+	{"UTF-8 decode: CESU-8 surrogate pair gives U+D83D U+DE00", "\xED\xA0\xBD\xED\xB8\x80", 6, 2, {0xD83D, 0xDE00}},
+	{"UTF-8 decode: 4-byte F0 9F 98 80 gives U+07D8, then the cut-off 2-byte lead 80 ends it", "\xF0\x9F\x98\x80", 4, 1, {0x07D8}},
+	{"UTF-8 decode: 4-byte F0 9F 98 80 then A gives U+07D8 U+0001", "\xF0\x9F\x98\x80" "A", 5, 2, {0x07D8, 0x0001}},
+	{"UTF-8 decode: a 2-byte sequence cut off at the end ends the input", "A\xC3", 2, 1, {L'A'}},
+	{"UTF-8 decode: a 3-byte sequence cut off at the end ends the input", "A\xE3\x81", 3, 1, {L'A'}},
+	{"UTF-8 decode: a lone continuation byte at the end ends the input", "A\x80", 2, 1, {L'A'}},
+	{"UTF-8 decode: FF FF FF gives U+FFFF", "\xFF\xFF\xFF", 3, 1, {0xFFFF}},
+	{"UTF-8 decode: FE alone gives nothing", "\xFE", 1, 0, {0}},
+};
+
+// Encoding vectors. Mayaqua's encoder writes every UTF-16 code unit on its own, so a surrogate
+// is a 3-byte sequence (CESU-8) and a surrogate pair is two of them
+static RT_UTF8_ENCODE_VECTOR rt_utf8_encode_vectors[] =
+{
+	{"UTF-8 encode: ASCII", {L'A', L'z', 0}, 2, "Az"},
+	{"UTF-8 encode: U+0080 gives C2 80", {0x0080, 0}, 2, "\xC2\x80"},
+	{"UTF-8 encode: U+07FF gives DF BF", {0x07FF, 0}, 2, "\xDF\xBF"},
+	{"UTF-8 encode: U+0800 gives E0 A0 80", {0x0800, 0}, 3, "\xE0\xA0\x80"},
+	{"UTF-8 encode: U+FEFF gives EF BB BF", {0xFEFF, 0}, 3, "\xEF\xBB\xBF"},
+	{"UTF-8 encode: U+FFFF gives EF BF BF", {0xFFFF, 0}, 3, "\xEF\xBF\xBF"},
+	{"UTF-8 encode: a surrogate pair gives two 3-byte sequences (CESU-8)", {0xD83D, 0xDE00, 0}, 6, "\xED\xA0\xBD\xED\xB8\x80"},
+	{"UTF-8 encode: the lone high surrogate U+D800 gives ED A0 80", {0xD800, 0}, 3, "\xED\xA0\x80"},
+	{"UTF-8 encode: the lone low surrogate U+DFFF gives ED BF BF", {0xDFFF, 0}, 3, "\xED\xBF\xBF"},
+	{"UTF-8 encode: surrogates between text", {L'a', 0xDBFF, L'b', 0xDC00, 0}, 8, "a\xED\xAF\xBF" "b\xED\xB0\x80"},
+	{"UTF-8 encode: the empty string", {0}, 0, ""},
+};
+
+// Bytes around the boundaries of the lead byte classes and of well-formed UTF-8
+static BYTE rt_charset_bytes[] =
+{
+	0x00, 0x41, 0x7F, 0x80, 0x9F, 0xA0, 0xBF, 0xC0, 0xC2, 0xDF, 0xE0, 0xED, 0xEF, 0xF0, 0xF5, 0xFF,
+};
+
+// Pseudo-random numbers of the charset test (xorshift32)
+static UINT RtCharsetRandom(UINT *state)
+{
+	UINT x = *state;
+
+	x ^= x << 13;
+	x ^= x >> 17;
+	x ^= x << 5;
+	*state = x;
+
+	return x;
+}
+
+// Reference of the UTF-8 decoding Mayaqua has always done, independent of Internat.c (see the
+// decoding vectors). Writes the code units to s when s is not NULL and returns their number
+static UINT RtUtf8DecodeRef(wchar_t *s, BYTE *u, UINT size)
+{
+	UINT i = 0, num = 0;
+
+	while (i < size)
+	{
+		BYTE b = u[i];
+		UINT type = (b < 0x80) ? 1 : (((b & 0x20) == 0) ? 2 : 3);
+		wchar_t c;
+
+		if (i + type > size)
+		{
+			break;
+		}
+
+		if (type == 1)
+		{
+			c = b;
+		}
+		else if (type == 2)
+		{
+			c = (wchar_t)(((b & 0x1f) << 6) | (u[i + 1] & 0x3f));
+		}
+		else
+		{
+			c = (wchar_t)(((b & 0x0f) << 12) | ((u[i + 1] & 0x3f) << 6) | (u[i + 2] & 0x3f));
+		}
+
+		if (s != NULL)
+		{
+			s[num] = c;
+		}
+		num++;
+		i += type;
+	}
+
+	return num;
+}
+
+// Reference of the UTF-8 encoding Mayaqua has always done (see the encoding vectors): 1 byte
+// below U+0080, 2 below U+0800, 3 otherwise. Writes the bytes to u and returns their number
+static UINT RtUtf8EncodeRef(BYTE *u, wchar_t *s, UINT len)
+{
+	UINT i, wp = 0;
+
+	for (i = 0;i < len;i++)
+	{
+		UINT c = s[i];
+
+		if (c < 0x80)
+		{
+			u[wp++] = (BYTE)c;
+		}
+		else if (c < 0x800)
+		{
+			u[wp++] = (BYTE)(0xc0 | (c >> 6));
+			u[wp++] = (BYTE)(0x80 | (c & 0x3f));
+		}
+		else
+		{
+			u[wp++] = (BYTE)(0xe0 | (c >> 12));
+			u[wp++] = (BYTE)(0x80 | ((c >> 6) & 0x3f));
+			u[wp++] = (BYTE)(0x80 | (c & 0x3f));
+		}
+	}
+
+	return wp;
+}
+
+// Compare Utf8Len, CalcUtf8ToUni and Utf8ToUni on the size bytes of u (at least 1) with the
+// reference. out_units is the size given to Utf8ToUni in wchar_t (0: no limit). On a difference,
+// describe it in err and return false
+static bool RtUtf8DecodeMatches(BYTE *u, UINT size, UINT out_units, char *err, UINT err_size)
+{
+	wchar_t expect[RT_CHARSET_BUF];
+	wchar_t got[RT_CHARSET_BUF];
+	char hex[RT_CHARSET_BUF * 2 + 1];
+	UINT n, len, calc, num, expect_num, i;
+	bool ok;
+
+	n = RtUtf8DecodeRef(expect, u, size);
+	len = Utf8Len(u, size);
+	calc = CalcUtf8ToUni(u, size);
+
+	memset(got, RT_CHARSET_FILL_BYTE, sizeof(got));
+	num = Utf8ToUni(got, (UINT)(out_units * sizeof(wchar_t)), u, size);
+	expect_num = (out_units == 0) ? n : MIN(n, out_units - 1);
+
+	// The code units, the terminating NUL, and nothing written after it
+	ok = (len == n && calc == (n + 1) * sizeof(wchar_t) && num == expect_num &&
+		Cmp(got, expect, num * sizeof(wchar_t)) == 0 && got[num] == 0);
+	for (i = num + 1;ok && i < RT_CHARSET_BUF;i++)
+	{
+		ok = (got[i] == RT_CHARSET_FILL);
+	}
+
+	if (ok == false)
+	{
+		BinToStr(hex, sizeof(hex), u, size);
+		Format(err, err_size, "input %s, room %u: Utf8Len %u, CalcUtf8ToUni %u, Utf8ToUni %u (first 0x%04X); expected %u units, %u written (first 0x%04X)",
+			hex, out_units, len, calc, num, (UINT)got[0], n, expect_num, (UINT)expect[0]);
+	}
+
+	return ok;
+}
+
+// Compare CalcUniToUtf8 and UniToUtf8 on s (at most RT_CHARSET_BUF code units) with the
+// reference. out_size is the size given to UniToUtf8 in bytes (0: no limit). On a difference,
+// describe it in err and return false
+static bool RtUtf8EncodeMatches(wchar_t *s, UINT out_size, char *err, UINT err_size)
+{
+	BYTE expect[RT_CHARSET_BUF * 3];
+	BYTE got[RT_CHARSET_BUF * 3 + 1];
+	char hex[RT_CHARSET_BUF * 4 + 1];
+	UINT len, n, calc, wp, expect_wp, i;
+	bool ok;
+
+	len = UniStrLen(s);
+	n = RtUtf8EncodeRef(expect, s, len);
+	calc = CalcUniToUtf8(s);
+
+	memset(got, RT_CHARSET_FILL_BYTE, sizeof(got));
+	wp = UniToUtf8(got, out_size, s);
+	expect_wp = (out_size == 0) ? n : MIN(n, out_size);
+
+	// The bytes, then the terminating NUL only when there is room for it, and nothing else
+	ok = (calc == n && wp == expect_wp && Cmp(got, expect, wp) == 0);
+	i = wp;
+	if (ok && (out_size == 0 || wp < out_size))
+	{
+		ok = (got[wp] == 0);
+		i++;
+	}
+	for (;ok && i < sizeof(got);i++)
+	{
+		ok = (got[i] == RT_CHARSET_FILL_BYTE);
+	}
+
+	if (ok == false)
+	{
+		BinToStr(hex, sizeof(hex), s, len * sizeof(wchar_t));
+		Format(err, err_size, "input (UTF-16LE) %s, room %u: CalcUniToUtf8 %u, UniToUtf8 %u; expected %u bytes, %u written",
+			hex, out_size, calc, wp, n, expect_wp);
+	}
+
+	return ok;
+}
+
+// Decode one fixed vector without a limit
+static void RtCharsetDecodeVector(RT_CTX *ctx, RT_UTF8_DECODE_VECTOR *v)
+{
+	wchar_t got[RT_CHARSET_BUF];
+	UINT len, calc, num;
+	bool ok;
+
+	memset(got, RT_CHARSET_FILL_BYTE, sizeof(got));
+
+	len = Utf8Len((BYTE *)v->Bytes, v->Size);
+	calc = CalcUtf8ToUni((BYTE *)v->Bytes, v->Size);
+	num = Utf8ToUni(got, sizeof(got), (BYTE *)v->Bytes, v->Size);
+
+	ok = (len == v->NumUnits && calc == (v->NumUnits + 1) * sizeof(wchar_t) && num == v->NumUnits &&
+		Cmp(got, v->Units, num * sizeof(wchar_t)) == 0 && got[num] == 0 && got[num + 1] == RT_CHARSET_FILL);
+
+	RtCheck(ctx, ok, v->What, "Utf8Len %u, CalcUtf8ToUni %u, Utf8ToUni %u, first unit 0x%04X; expected %u units, first 0x%04X",
+		len, calc, num, (UINT)got[0], v->NumUnits, (UINT)v->Units[0]);
+}
+
+// Encode one fixed vector without a limit
+static void RtCharsetEncodeVector(RT_CTX *ctx, RT_UTF8_ENCODE_VECTOR *v)
+{
+	BYTE got[RT_CHARSET_BUF];
+	char hex[RT_CHARSET_BUF * 2 + 1];
+	UINT calc, wp;
+	bool ok;
+
+	memset(got, RT_CHARSET_FILL_BYTE, sizeof(got));
+
+	calc = CalcUniToUtf8(v->Units);
+	wp = UniToUtf8(got, sizeof(got), v->Units);
+
+	ok = (calc == v->Size && wp == v->Size && Cmp(got, v->Bytes, wp) == 0 && got[wp] == 0 &&
+		got[wp + 1] == RT_CHARSET_FILL_BYTE);
+
+	BinToStr(hex, sizeof(hex), got, MIN(wp, 32));
+	RtCheck(ctx, ok, v->What, "CalcUniToUtf8 %u, UniToUtf8 %u bytes %s; expected %u bytes", calc, wp, hex, v->Size);
+}
+
+// UTF-8: the fixed vectors, the size limits, NULL arguments and the copy functions
+static void RtCharsetUtf8Fixed(RT_CTX *ctx)
+{
+	wchar_t w[RT_CHARSET_BUF];
+	BYTE b[RT_CHARSET_BUF];
+	wchar_t mixed[] = {L'a', 0x00E9, 0xD83D, 0xDE00, 0};
+	wchar_t two[] = {L'a', 0x00E9, 0};
+	wchar_t high[] = {0xD800, 0};
+	char *mixed_utf8 = "a\xC3\xA9\xED\xA0\xBD\xED\xB8\x80";
+	char *utf;
+	wchar_t *uni;
+	UINT i, ret;
+	bool ok;
+
+	for (i = 0;i < sizeof(rt_utf8_decode_vectors) / sizeof(rt_utf8_decode_vectors[0]);i++)
+	{
+		RtCharsetDecodeVector(ctx, &rt_utf8_decode_vectors[i]);
+	}
+	for (i = 0;i < sizeof(rt_utf8_encode_vectors) / sizeof(rt_utf8_encode_vectors[0]);i++)
+	{
+		RtCharsetEncodeVector(ctx, &rt_utf8_encode_vectors[i]);
+	}
+
+	// GetUtf8Type and GetUniType: the length classes
+	ok = (GetUtf8Type((BYTE *)"A", 1, 0) == 1 && GetUtf8Type((BYTE *)"\xC3\xA9", 2, 0) == 2 &&
+		GetUtf8Type((BYTE *)"\x80\x41", 2, 0) == 2 && GetUtf8Type((BYTE *)"\xA0\x41\x42", 3, 0) == 3 &&
+		GetUtf8Type((BYTE *)"\xF0\x9F\x98\x80", 4, 0) == 3 && GetUtf8Type((BYTE *)"\xC3", 1, 0) == 0 &&
+		GetUtf8Type((BYTE *)"\xE3\x81", 2, 0) == 0 && GetUtf8Type((BYTE *)"A", 1, 1) == 0 &&
+		GetUtf8Type(NULL, 1, 0) == 0);
+	RtCheck(ctx, ok, "GetUtf8Type: the length from the lead byte, 0 when cut off or past the end", "a value differs");
+	ok = (GetUniType(0x0000) == 1 && GetUniType(0x007F) == 1 && GetUniType(0x0080) == 2 && GetUniType(0x07FF) == 2 &&
+		GetUniType(0x0800) == 3 && GetUniType(0xD800) == 3 && GetUniType(0xFFFF) == 3);
+	RtCheck(ctx, ok, "GetUniType: 1 below U+0080, 2 below U+0800, 3 otherwise", "a value differs");
+
+	// Utf8ToUni size limits: size counts bytes, room for the NUL is kept, 0 means no limit
+	memset(w, RT_CHARSET_FILL_BYTE, sizeof(w));
+	ret = Utf8ToUni(w, 3 * sizeof(wchar_t), (BYTE *)"ABCDE", 5);
+	RtCheck(ctx, ret == 2 && w[0] == L'A' && w[1] == L'B' && w[2] == 0 && w[3] == RT_CHARSET_FILL,
+		"Utf8ToUni with room for 3 code units writes 2 and the NUL", "returned %u", ret);
+	memset(w, RT_CHARSET_FILL_BYTE, sizeof(w));
+	ret = Utf8ToUni(w, 5, (BYTE *)"ABC", 3);
+	RtCheck(ctx, ret == 1 && w[0] == L'A' && w[1] == 0 && w[2] == RT_CHARSET_FILL,
+		"Utf8ToUni with an odd byte size rounds down to whole code units", "returned %u", ret);
+	memset(w, RT_CHARSET_FILL_BYTE, sizeof(w));
+	ret = Utf8ToUni(w, sizeof(wchar_t), (BYTE *)"AB", 2);
+	RtCheck(ctx, ret == 0 && w[0] == 0 && w[1] == RT_CHARSET_FILL,
+		"Utf8ToUni with room for 1 code unit writes only the NUL", "returned %u", ret);
+	memset(w, RT_CHARSET_FILL_BYTE, sizeof(w));
+	ret = Utf8ToUni(w, 3 * sizeof(wchar_t), (BYTE *)"\xC3\xA9\xC3\xA9\xC3\xA9", 6);
+	RtCheck(ctx, ret == 2 && w[0] == 0x00E9 && w[1] == 0x00E9 && w[2] == 0 && w[3] == RT_CHARSET_FILL,
+		"Utf8ToUni cuts well-formed UTF-8 at the room", "returned %u", ret);
+	memset(w, RT_CHARSET_FILL_BYTE, sizeof(w));
+	ret = Utf8ToUni(w, 2 * sizeof(wchar_t), (BYTE *)"\xF0\x9F\x98\x80" "A", 5);
+	RtCheck(ctx, ret == 1 && w[0] == 0x07D8 && w[1] == 0 && w[2] == RT_CHARSET_FILL,
+		"Utf8ToUni cuts input that is not well-formed at the room", "returned %u", ret);
+	memset(w, RT_CHARSET_FILL_BYTE, sizeof(w));
+	ret = Utf8ToUni(w, 0, (BYTE *)"\xC3\xA9" "B", 0);
+	RtCheck(ctx, ret == 2 && w[0] == 0x00E9 && w[1] == L'B' && w[2] == 0 && w[3] == RT_CHARSET_FILL,
+		"Utf8ToUni with size 0 and input size 0: no limit, up to the NUL", "returned %u", ret);
+
+	// UniToUtf8 size limits: the first bytes of the encoding, cut inside a sequence when need be,
+	// and the NUL only when there is room for it
+	memset(b, RT_CHARSET_FILL_BYTE, sizeof(b));
+	ret = UniToUtf8(b, 2, two);
+	RtCheck(ctx, ret == 2 && b[0] == 'a' && b[1] == 0xC3 && b[2] == RT_CHARSET_FILL_BYTE,
+		"UniToUtf8 with room for 2 bytes cuts inside a sequence and writes no NUL", "returned %u", ret);
+	memset(b, RT_CHARSET_FILL_BYTE, sizeof(b));
+	ret = UniToUtf8(b, 3, two);
+	RtCheck(ctx, ret == 3 && b[1] == 0xC3 && b[2] == 0xA9 && b[3] == RT_CHARSET_FILL_BYTE,
+		"UniToUtf8 with room for exactly the bytes writes no NUL", "returned %u", ret);
+	memset(b, RT_CHARSET_FILL_BYTE, sizeof(b));
+	ret = UniToUtf8(b, 4, two);
+	RtCheck(ctx, ret == 3 && b[2] == 0xA9 && b[3] == 0 && b[4] == RT_CHARSET_FILL_BYTE,
+		"UniToUtf8 with room for the NUL writes it", "returned %u", ret);
+	memset(b, RT_CHARSET_FILL_BYTE, sizeof(b));
+	ret = UniToUtf8(b, 1, high);
+	RtCheck(ctx, ret == 1 && b[0] == 0xED && b[1] == RT_CHARSET_FILL_BYTE,
+		"UniToUtf8 cuts a surrogate's 3-byte sequence at the room", "returned %u", ret);
+	memset(b, RT_CHARSET_FILL_BYTE, sizeof(b));
+	ret = UniToUtf8(b, 0, mixed);
+	RtCheck(ctx, ret == 9 && Cmp(b, mixed_utf8, 9) == 0 && b[9] == 0 && b[10] == RT_CHARSET_FILL_BYTE,
+		"UniToUtf8 with size 0: no limit", "returned %u", ret);
+
+	// NULL arguments
+	ok = (Utf8ToUni(NULL, sizeof(w), (BYTE *)"A", 1) == 0 && Utf8ToUni(w, sizeof(w), NULL, 1) == 0 &&
+		Utf8Len(NULL, 1) == 0 && CalcUtf8ToUni(NULL, 1) == 0 && UniToUtf8(NULL, sizeof(b), two) == 0 &&
+		UniToUtf8(b, sizeof(b), NULL) == 0 && CalcUniToUtf8(NULL) == 0 &&
+		CopyUniToUtf(NULL) == NULL && CopyUtfToUni(NULL) == NULL);
+	RtCheck(ctx, ok, "The UTF-8 functions return 0 or NULL on NULL arguments", "a call returned something else");
+
+	// The copy functions: a surrogate pair goes out as CESU-8 and comes back unchanged
+	utf = CopyUniToUtf(mixed);
+	RtCheck(ctx, utf != NULL && StrLen(utf) == 9 && Cmp(utf, mixed_utf8, 10) == 0,
+		"CopyUniToUtf writes CESU-8 for a surrogate pair", "length %u", StrLen(utf));
+	uni = CopyUtfToUni(utf);
+	RtCheck(ctx, uni != NULL && UniStrCmp(uni, mixed) == 0, "CopyUtfToUni gives the surrogate pair back", "length %u", UniStrLen(uni));
+	Free(uni);
+	Free(utf);
+	uni = CopyUtfToUni("\xF0\x9F\x98\x80");
+	RtCheck(ctx, uni != NULL && UniStrLen(uni) == 1 && uni[0] == 0x07D8,
+		"CopyUtfToUni decodes 4-byte UTF-8 as Mayaqua always has", "length %u", UniStrLen(uni));
+	Free(uni);
+	ret = UtfToUni(w, sizeof(w), "x\xC3\xA9");
+	RtCheck(ctx, ret == 2 && w[0] == L'x' && w[1] == 0x00E9 && w[2] == 0, "UtfToUni decodes and returns the length", "returned %u", ret);
+}
+
+// UTF-8: every code unit, every 1- and 2-byte input, 3-byte inputs over the boundary bytes, and
+// random strings, each against the reference
+static void RtCharsetUtf8Sweep(RT_CTX *ctx)
+{
+	char err[MAX_SIZE];
+	char first[MAX_SIZE];
+	BYTE u[RT_CHARSET_MAX_LEN * 4];
+	wchar_t s[RT_CHARSET_MAX_LEN + 1];
+	UINT c, i, j, k, n, bad, bad_back, len, room, r;
+	UINT state = RT_CHARSET_SEED;
+
+	// Every code unit U+0001-U+FFFF alone: encoded as the reference does, decoded as the
+	// reference does, and back to the same code unit
+	bad = bad_back = 0;
+	StrCpy(first, sizeof(first), "");
+	for (c = 1;c <= 0xFFFF;c++)
+	{
+		wchar_t one[2];
+		wchar_t back[2];
+
+		one[0] = (wchar_t)c;
+		one[1] = 0;
+
+		if (RtUtf8EncodeMatches(one, 0, err, sizeof(err)) == false || RtUtf8DecodeMatches(u, RtUtf8EncodeRef(u, one, 1), 0, err, sizeof(err)) == false)
+		{
+			if (bad++ == 0)
+			{
+				StrCpy(first, sizeof(first), err);
+			}
+		}
+
+		n = RtUtf8EncodeRef(u, one, 1);
+		if (Utf8ToUni(back, sizeof(back), u, n) != 1 || back[0] != one[0])
+		{
+			bad_back++;
+		}
+	}
+	RtCheck(ctx, bad == 0, "Every code unit U+0001-U+FFFF encodes and decodes as Mayaqua's UTF-8 always has", "%u differ, first: %s", bad, first);
+	RtCheck(ctx, bad_back == 0, "Every code unit U+0001-U+FFFF comes back from its own encoding", "%u differ", bad_back);
+
+	// Every input of 1 and 2 bytes
+	bad = 0;
+	StrCpy(first, sizeof(first), "");
+	for (i = 0;i < 256;i++)
+	{
+		u[0] = (BYTE)i;
+		if (RtUtf8DecodeMatches(u, 1, 0, err, sizeof(err)) == false && bad++ == 0)
+		{
+			StrCpy(first, sizeof(first), err);
+		}
+		for (j = 0;j < 256;j++)
+		{
+			u[1] = (BYTE)j;
+			if (RtUtf8DecodeMatches(u, 2, 0, err, sizeof(err)) == false && bad++ == 0)
+			{
+				StrCpy(first, sizeof(first), err);
+			}
+		}
+	}
+	RtCheck(ctx, bad == 0, "Every input of 1 and 2 bytes decodes as Mayaqua's UTF-8 always has", "%u differ, first: %s", bad, first);
+
+	// Every lead byte followed by two boundary bytes
+	bad = 0;
+	StrCpy(first, sizeof(first), "");
+	for (i = 0;i < 256;i++)
+	{
+		for (j = 0;j < sizeof(rt_charset_bytes);j++)
+		{
+			for (k = 0;k < sizeof(rt_charset_bytes);k++)
+			{
+				u[0] = (BYTE)i;
+				u[1] = rt_charset_bytes[j];
+				u[2] = rt_charset_bytes[k];
+				if (RtUtf8DecodeMatches(u, 3, 0, err, sizeof(err)) == false && bad++ == 0)
+				{
+					StrCpy(first, sizeof(first), err);
+				}
+			}
+		}
+	}
+	RtCheck(ctx, bad == 0, "Every lead byte before two boundary bytes decodes as Mayaqua's UTF-8 always has", "%u differ, first: %s", bad, first);
+
+	// Random strings of pieces: mostly encoded code units (CESU-8 for surrogates), some well-formed
+	// 4-byte sequences and some boundary bytes; decoded with a random room
+	bad = 0;
+	StrCpy(first, sizeof(first), "");
+	for (i = 0;i < RT_CHARSET_ROUNDS;i++)
+	{
+		UINT pieces = 1 + RtCharsetRandom(&state) % RT_CHARSET_MAX_LEN;
+
+		len = 0;
+		for (j = 0;j < pieces;j++)
+		{
+			r = RtCharsetRandom(&state);
+			if ((r & 7) == 0)
+			{
+				u[len++] = rt_charset_bytes[(r >> 3) % sizeof(rt_charset_bytes)];
+			}
+			else if ((r & 15) == 1)
+			{
+				c = 0x10000 + (r >> 4) % 0x100000;
+				u[len++] = (BYTE)(0xf0 | (c >> 18));
+				u[len++] = (BYTE)(0x80 | ((c >> 12) & 0x3f));
+				u[len++] = (BYTE)(0x80 | ((c >> 6) & 0x3f));
+				u[len++] = (BYTE)(0x80 | (c & 0x3f));
+			}
+			else
+			{
+				wchar_t one = (wchar_t)(1 + (r >> 4) % 0xFFFF);
+				len += RtUtf8EncodeRef(&u[len], &one, 1);
+			}
+		}
+
+		n = RtUtf8DecodeRef(NULL, u, len);
+		r = RtCharsetRandom(&state);
+		room = ((r & 3) == 0) ? 0 : 1 + (r >> 2) % (n + 2);
+		if (RtUtf8DecodeMatches(u, len, room, err, sizeof(err)) == false && bad++ == 0)
+		{
+			StrCpy(first, sizeof(first), err);
+		}
+	}
+	RtCheck(ctx, bad == 0, "Random UTF-8 strings decode as Mayaqua's UTF-8 always has", "%u differ, first: %s", bad, first);
+
+	// Random strings of code units (one in eight a surrogate), encoded with a random room
+	bad = 0;
+	StrCpy(first, sizeof(first), "");
+	for (i = 0;i < RT_CHARSET_ROUNDS;i++)
+	{
+		len = 1 + RtCharsetRandom(&state) % RT_CHARSET_MAX_LEN;
+		for (j = 0;j < len;j++)
+		{
+			r = RtCharsetRandom(&state);
+			switch (r & 7)
+			{
+			case 0:
+			case 1:
+			case 2:
+				c = 0x01 + (r >> 3) % 0x7F;
+				break;
+			case 3:
+			case 4:
+				c = 0x80 + (r >> 3) % 0x780;
+				break;
+			case 5:
+			case 6:
+				c = 0x800 + (r >> 3) % 0xF000;
+				if (c >= 0xD800)
+				{
+					c += 0x800;
+				}
+				break;
+			default:
+				c = 0xD800 + (r >> 3) % 0x800;
+				break;
+			}
+			s[j] = (wchar_t)c;
+		}
+		s[len] = 0;
+
+		n = RtUtf8EncodeRef(u, s, len);
+		r = RtCharsetRandom(&state);
+		room = ((r & 3) == 0) ? 0 : 1 + (r >> 2) % (n + 2);
+		if (RtUtf8EncodeMatches(s, room, err, sizeof(err)) == false && bad++ == 0)
+		{
+			StrCpy(first, sizeof(first), err);
+		}
+	}
+	RtCheck(ctx, bad == 0, "Random UTF-16 strings encode as Mayaqua's UTF-8 always has", "%u differ, first: %s", bad, first);
+}
+
+// StrToUni, CalcStrToUni and CopyStrToUni of str in the current locale: expect, or an empty
+// string with CalcStrToUni 0 when str does not convert (converts false)
+static void RtCharsetStrToUni(RT_CTX *ctx, char *what, char *str, wchar_t *expect, bool converts)
+{
+	wchar_t got[RT_CHARSET_BUF];
+	wchar_t *copy;
+	UINT calc, len, expect_len;
+	bool ok;
+
+	expect_len = UniStrLen(expect);
+	calc = CalcStrToUni(str);
+	len = StrToUni(got, sizeof(got), str);
+	copy = CopyStrToUni(str);
+
+	ok = (calc == (converts ? (expect_len + 1) * sizeof(wchar_t) : 0) && len == expect_len &&
+		Cmp(got, expect, (expect_len + 1) * sizeof(wchar_t)) == 0 && copy != NULL && UniStrCmp(copy, expect) == 0);
+
+	RtCheck(ctx, ok, what, "CalcStrToUni %u, StrToUni %u (first 0x%04X); expected %u units", calc, len, (UINT)got[0], expect_len);
+
+	Free(copy);
+}
+
+// UniToStr, CalcUniToStr and CopyUniToStr of s in the current locale: expect, or an empty string
+// with CalcUniToStr 0 when s does not convert (converts false)
+static void RtCharsetUniToStr(RT_CTX *ctx, char *what, wchar_t *s, char *expect, bool converts)
+{
+	char got[RT_CHARSET_BUF];
+	char hex[RT_CHARSET_BUF * 2 + 1];
+	char *copy;
+	UINT calc, len, expect_len;
+	bool ok;
+
+	expect_len = StrLen(expect);
+	calc = CalcUniToStr(s);
+	len = UniToStr(got, sizeof(got), s);
+	copy = CopyUniToStr(s);
+
+	ok = (calc == (converts ? expect_len + 1 : 0) && len == expect_len && Cmp(got, expect, expect_len + 1) == 0 &&
+		copy != NULL && Cmp(copy, expect, expect_len + 1) == 0);
+
+	BinToStr(hex, sizeof(hex), got, MIN(StrLen(got), 32));
+	RtCheck(ctx, ok, what, "CalcUniToStr %u, UniToStr %u bytes %s; expected %u bytes", calc, len, hex, expect_len);
+
+	Free(copy);
+}
+
+// ANSI: the conversions follow the code page of the C runtime's LC_CTYPE locale. Checked in
+// the locale of the process (ASCII only: every code page setlocale(LC_ALL, "") picks keeps it),
+// then in the C locale and in code pages 1252, 932 and UTF-8
+static void RtCharsetAnsi(RT_CTX *ctx)
+{
+	wchar_t w[RT_CHARSET_BUF];
+	char a[RT_CHARSET_BUF];
+	wchar_t latin[] = {0x0080, 0x00FF, 0};
+	wchar_t e_acute[] = {0x00E9, 0};
+	wchar_t euro_e[] = {0x20AC, 0x00E9, 0};
+	wchar_t a_macron[] = {0x0100, 0};
+	wchar_t hiragana_a[] = {0x3042, 0};
+	wchar_t sjis[] = {L'A', 0x3042, L'B', 0};
+	wchar_t pair[] = {0xD83D, 0xDE00, 0};
+	char saved[MAX_SIZE];
+	char *name;
+	UINT ret;
+	bool ok;
+
+	// The locale of the process
+	RtCharsetStrToUni(ctx, "StrToUni: ASCII", "Hello, World 123", L"Hello, World 123", true);
+	RtCharsetStrToUni(ctx, "StrToUni: the empty string", "", L"", true);
+	RtCharsetUniToStr(ctx, "UniToStr: ASCII", L"Hello, World 123", "Hello, World 123", true);
+	RtCharsetUniToStr(ctx, "UniToStr: the empty string", L"", "", true);
+
+	ret = StrToUni(w, 4 * sizeof(wchar_t), "abcdef");
+	RtCheck(ctx, ret == 3 && UniStrCmp(w, L"abc") == 0, "StrToUni cuts at the room and keeps the NUL", "returned %u", ret);
+	ret = UniToStr(a, 4, L"abcdef");
+	RtCheck(ctx, ret == 3 && StrCmp(a, "abc") == 0, "UniToStr cuts at the room and keeps the NUL", "returned %u", ret);
+
+	ok = (StrToUni(NULL, sizeof(w), "a") == 0 && StrToUni(w, sizeof(w), NULL) == 0 && UniToStr(NULL, sizeof(a), L"a") == 0 &&
+		UniToStr(a, sizeof(a), NULL) == 0 && CalcStrToUni(NULL) == 0 && CalcUniToStr(NULL) == 0 &&
+		CopyStrToUni(NULL) == NULL && CopyUniToStr(NULL) == NULL);
+	RtCheck(ctx, ok, "The ANSI functions return 0 or NULL on NULL arguments", "a call returned something else");
+
+	name = setlocale(LC_CTYPE, NULL);
+	StrCpy(saved, sizeof(saved), (name == NULL) ? "" : name);
+
+	// The C locale: the bytes map 1:1 to U+0000-U+00FF, and nothing above U+00FF converts
+	ok = (setlocale(LC_CTYPE, "C") != NULL);
+	RtCheck(ctx, ok, "setlocale(LC_CTYPE, \"C\") succeeds", "returned NULL");
+	if (ok)
+	{
+		RtCharsetStrToUni(ctx, "C locale: StrToUni maps 80 FF to U+0080 U+00FF", "\x80\xFF", latin, true);
+		RtCharsetUniToStr(ctx, "C locale: UniToStr maps U+00E9 to E9", e_acute, "\xE9", true);
+		RtCharsetUniToStr(ctx, "C locale: U+20AC does not convert", &euro_e[0], "", false);
+		RtCharsetUniToStr(ctx, "C locale: U+0100 does not convert (no best fit)", a_macron, "", false);
+	}
+
+	// Code page 1252: best-fit mappings convert, characters without one do not
+	ok = (setlocale(LC_CTYPE, ".1252") != NULL);
+	RtCheck(ctx, ok, "setlocale(LC_CTYPE, \".1252\") succeeds", "returned NULL");
+	if (ok)
+	{
+		RtCharsetStrToUni(ctx, "Code page 1252: StrToUni maps 80 E9 to U+20AC U+00E9", "\x80\xE9", euro_e, true);
+		RtCharsetUniToStr(ctx, "Code page 1252: UniToStr maps U+20AC U+00E9 to 80 E9", euro_e, "\x80\xE9", true);
+		RtCharsetUniToStr(ctx, "Code page 1252: U+0100 converts to A by best fit", a_macron, "A", true);
+		RtCharsetUniToStr(ctx, "Code page 1252: U+3042 does not convert", hiragana_a, "", false);
+	}
+
+	// Code page 932 (double-byte)
+	if (setlocale(LC_CTYPE, ".932") != NULL)
+	{
+		RtCharsetStrToUni(ctx, "Code page 932: StrToUni maps 41 82 A0 42 to A U+3042 B", "A\x82\xA0" "B", sjis, true);
+		RtCharsetStrToUni(ctx, "Code page 932: a lead byte at the end does not convert", "A\x82", L"", false);
+		RtCharsetUniToStr(ctx, "Code page 932: UniToStr maps U+3042 to 82 A0", hiragana_a, "\x82\xA0", true);
+	}
+	else
+	{
+		Print("  [SKIP] Code page 932: setlocale(LC_CTYPE, \".932\") returned NULL\n");
+	}
+
+	// UTF-8: strict, with surrogate pairs for 4-byte sequences
+	if (setlocale(LC_CTYPE, ".UTF8") != NULL)
+	{
+		RtCharsetStrToUni(ctx, "UTF-8 locale: StrToUni maps C3 A9 to U+00E9", "\xC3\xA9", e_acute, true);
+		RtCharsetStrToUni(ctx, "UTF-8 locale: StrToUni maps F0 9F 98 80 to a surrogate pair", "\xF0\x9F\x98\x80", pair, true);
+		RtCharsetStrToUni(ctx, "UTF-8 locale: a cut-off sequence does not convert", "\xC3", L"", false);
+		RtCharsetStrToUni(ctx, "UTF-8 locale: overlong C0 80 does not convert", "\xC0\x80", L"", false);
+		RtCharsetStrToUni(ctx, "UTF-8 locale: CESU-8 ED A0 80 does not convert", "\xED\xA0\x80", L"", false);
+		RtCharsetUniToStr(ctx, "UTF-8 locale: UniToStr maps a surrogate pair to F0 9F 98 80", pair, "\xF0\x9F\x98\x80", true);
+		RtCharsetUniToStr(ctx, "UTF-8 locale: UniToStr maps U+00E9 to C3 A9", e_acute, "\xC3\xA9", true);
+	}
+	else
+	{
+		Print("  [SKIP] UTF-8 locale: setlocale(LC_CTYPE, \".UTF8\") returned NULL\n");
+	}
+
+	name = setlocale(LC_CTYPE, saved);
+	RtCheck(ctx, name != NULL, "The locale of the process is restored", "setlocale(LC_CTYPE, \"%s\") returned NULL", saved);
+}
+
+// Constants of the ANSI comparison of the charset test
+#define	RT_ANSI_ROUNDS			1500		// Generated strings per direction and locale
+#define	RT_ANSI_MAX_LEN			12			// Code units, or bytes, of the longest generated random string
+#define	RT_ANSI_SEED			0x7C3A91E5	// Seed of the generated strings: every run checks the same ones
+
+// Locales of the ANSI comparison (setlocale(LC_CTYPE) names); NULL is the locale of the process
+static char *rt_ansi_locales[] =
+{
+	NULL, "C", ".1252", ".932", ".UTF8", ".28591",
+};
+
+// UTF-16 code units the generator favours: ASCII, the C1 and Latin-1 edges, characters with and
+// without a best fit in the Western code pages, Japanese, surrogates and the last code units
+static wchar_t rt_ansi_units[] =
+{
+	L'A', L'z', L' ', 0x007F, 0x0080, 0x009F, 0x00A0, 0x00E9, 0x00FF, 0x0100, 0x0152, 0x0192,
+	0x20AC, 0x2122, 0x3042, 0x30A2, 0x4E00, 0xFF61, 0xD83D, 0xDE00, 0xFFFD, 0xFFFE, 0xFFFF,
+};
+
+// Bytes the generator favours: ASCII, the lead and trail bytes of code page 932, and the lead
+// and continuation bytes of UTF-8 around the boundaries of well-formed input
+static BYTE rt_ansi_bytes[] =
+{
+	0x41, 0x7F, 0x80, 0x81, 0x82, 0x9F, 0xA0, 0xA9, 0xBF, 0xC0, 0xC3, 0xDF, 0xE0, 0xE3, 0xED, 0xEF,
+	0xF0, 0xF4, 0xF5, 0xFC, 0xFF,
+};
+
+// Result of the ANSI comparison in one locale. The first difference is kept as raw data and only
+// formatted once the locale of the process is back (Format itself converts through the ANSI code page)
+typedef struct RT_ANSI_DIFF
+{
+	bool Set;								// The locale was set and compared
+	UINT NumCompared;						// Calls compared with the old code
+	UINT NumDiffer;							// Calls whose result differs
+	char *FirstFunc;						// Function of the first difference
+	UINT FirstSize;							// Its size argument
+	bool FirstIsUni;						// Its input is FirstUni (else FirstStr)
+	wchar_t FirstUni[RT_ANSI_MAX_LEN + 1];	// Its UTF-16 input
+	char FirstStr[RT_CHARSET_BUF];			// Its byte input
+} RT_ANSI_DIFF;
+
+// The old ANSI conversions of Internat.c (before NAT-5), kept as the live oracle: wcstombs and
+// mbstowcs of the C runtime in its current LC_CTYPE locale
+static UINT RtOldCalcUniToStr(wchar_t *s)
+{
+	UINT ret;
+	if (s == NULL)
+	{
+		return 0;
+	}
+
+	ret = (UINT)wcstombs(NULL, s, UniStrLen(s));
+	if (ret == (UINT)-1)
+	{
+		return 0;
+	}
+
+	return ret + 1;
+}
+
+static UINT RtOldUniToStr(char *str, UINT size, wchar_t *s)
+{
+	UINT ret;
+	char *tmp;
+	UINT new_size;
+	if (s == NULL || str == NULL)
+	{
+		return 0;
+	}
+
+	new_size = RtOldCalcUniToStr(s);
+	if (new_size == 0)
+	{
+		if (size >= 1)
+		{
+			StrCpy(str, 0, "");
+		}
+		return 0;
+	}
+	tmp = Malloc(new_size);
+	tmp[0] = 0;
+	wcstombs(tmp, s, new_size);
+	tmp[new_size - 1] = 0;
+	ret = StrCpy(str, size, tmp);
+	Free(tmp);
+
+	return ret;
+}
+
+static char *RtOldCopyUniToStr(wchar_t *unistr)
+{
+	char *str;
+	UINT str_size;
+	if (unistr == NULL)
+	{
+		return NULL;
+	}
+
+	str_size = RtOldCalcUniToStr(unistr);
+	if (str_size == 0)
+	{
+		return CopyStr("");
+	}
+	str = Malloc(str_size);
+	RtOldUniToStr(str, str_size, unistr);
+
+	return str;
+}
+
+static UINT RtOldCalcStrToUni(char *str)
+{
+	UINT ret;
+	if (str == NULL)
+	{
+		return 0;
+	}
+
+	ret = (UINT)mbstowcs(NULL, str, StrLen(str));
+	if (ret == (UINT)-1)
+	{
+		return 0;
+	}
+
+	return (ret + 1) * sizeof(wchar_t);
+}
+
+static UINT RtOldStrToUni(wchar_t *s, UINT size, char *str)
+{
+	UINT ret;
+	wchar_t *tmp;
+	UINT new_size;
+	if (s == NULL || str == NULL)
+	{
+		return 0;
+	}
+
+	new_size = RtOldCalcStrToUni(str);
+	if (new_size == 0)
+	{
+		if (size >= 2)
+		{
+			UniStrCpy(s, 0, L"");
+		}
+		return 0;
+	}
+	tmp = Malloc(new_size);
+	tmp[0] = 0;
+	mbstowcs(tmp, str, StrLen(str));
+	tmp[(new_size - 1) / sizeof(wchar_t)] = 0;
+	ret = UniStrCpy(s, size, tmp);
+	Free(tmp);
+
+	return ret;
+}
+
+static wchar_t *RtOldCopyStrToUni(char *str)
+{
+	wchar_t *uni;
+	UINT uni_size;
+	if (str == NULL)
+	{
+		return NULL;
+	}
+
+	uni_size = RtOldCalcStrToUni(str);
+	if (uni_size == 0)
+	{
+		return CopyUniStr(L"");
+	}
+	uni = Malloc(uni_size);
+	RtOldStrToUni(uni, uni_size, str);
+
+	return uni;
+}
+
+// Count one compared call, and keep the first one whose result differs
+static void RtAnsiDiff(RT_ANSI_DIFF *d, bool same, char *func, UINT size, wchar_t *w, char *s)
+{
+	d->NumCompared++;
+	if (same)
+	{
+		return;
+	}
+
+	if (d->NumDiffer++ == 0)
+	{
+		d->FirstFunc = func;
+		d->FirstSize = size;
+		d->FirstIsUni = (w != NULL);
+		if (w != NULL)
+		{
+			Copy(d->FirstUni, w, (UniStrLen(w) + 1) * sizeof(wchar_t));
+		}
+		else
+		{
+			Copy(d->FirstStr, s, StrLen(s) + 1);
+		}
+	}
+}
+
+// Generate a UTF-16 string of up to RT_ANSI_MAX_LEN non-zero code units into w (RT_ANSI_MAX_LEN + 1
+// units): favoured units, printable ASCII, U+0080-U+01FF, surrogate pairs (a lone high surrogate
+// at the end), or any code unit
+static void RtAnsiGenUni(UINT *state, wchar_t *w)
+{
+	UINT len = RtCharsetRandom(state) % (RT_ANSI_MAX_LEN + 1);
+	UINT i;
+
+	for (i = 0;i < len;i++)
+	{
+		UINT r = RtCharsetRandom(state);
+
+		switch (r % 5)
+		{
+		case 0:
+			w[i] = rt_ansi_units[(r >> 3) % (sizeof(rt_ansi_units) / sizeof(rt_ansi_units[0]))];
+			break;
+		case 1:
+			w[i] = (wchar_t)(0x20 + (r >> 3) % 0x5F);
+			break;
+		case 2:
+			w[i] = (wchar_t)(0x80 + (r >> 3) % 0x180);
+			break;
+		case 3:
+			w[i] = (wchar_t)(0xD800 + (r >> 3) % 0x400);
+			if ((i + 1) < len)
+			{
+				i++;
+				w[i] = (wchar_t)(0xDC00 + (r >> 13) % 0x400);
+			}
+			break;
+		default:
+			w[i] = (wchar_t)(1 + (r >> 3) % 0xFFFF);
+			break;
+		}
+	}
+	w[len] = 0;
+}
+
+// Generate a byte string into s (RT_CHARSET_BUF bytes): random bytes, favoured bytes, or the
+// bytes of a generated UTF-16 string in the current locale (input that converts), the last
+// now and then cut by a byte or with one byte replaced
+static void RtAnsiGenStr(UINT *state, char *s)
+{
+	UINT mode = RtCharsetRandom(state) % 3;
+	UINT len = 0;
+	UINT i;
+
+	if (mode == 0 || mode == 1)
+	{
+		len = RtCharsetRandom(state) % (RT_ANSI_MAX_LEN + 1);
+		for (i = 0;i < len;i++)
+		{
+			UINT r = RtCharsetRandom(state);
+
+			if (mode == 0)
+			{
+				s[i] = (char)(1 + (r >> 3) % 0xFF);
+			}
+			else
+			{
+				s[i] = (char)rt_ansi_bytes[(r >> 3) % sizeof(rt_ansi_bytes)];
+			}
+		}
+		s[len] = 0;
+		return;
+	}
+
+	{
+		wchar_t w[RT_ANSI_MAX_LEN + 1];
+		UINT r;
+
+		RtAnsiGenUni(state, w);
+		len = RtOldUniToStr(s, RT_CHARSET_BUF, w);
+
+		r = RtCharsetRandom(state);
+		if (len != 0 && (r % 3) == 0)
+		{
+			if (((r >> 2) % 2) == 0)
+			{
+				s[len - 1] = 0;
+			}
+			else
+			{
+				s[(r >> 3) % len] = (char)rt_ansi_bytes[(r >> 8) % sizeof(rt_ansi_bytes)];
+			}
+		}
+	}
+}
+
+// UniToStr, CalcUniToStr and CopyUniToStr against the old code on wcstombs, StrToUni,
+// CalcStrToUni and CopyStrToUni against the old code on mbstowcs, in the current locale. Each
+// destination is filled first and compared whole, at size 0 (no limit), at the exact size and at
+// a random size. Prints nothing: the current locale may not be the locale of the process.
+static void RtAnsiCompare(RT_ANSI_DIFF *d, UINT *state)
+{
+	UINT n, i;
+
+	for (n = 0;n < RT_ANSI_ROUNDS;n++)
+	{
+		wchar_t w[RT_ANSI_MAX_LEN + 1];
+		char got[RT_CHARSET_BUF];
+		char want[RT_CHARSET_BUF];
+		UINT full, sizes[3];
+		char *copy, *want_copy;
+
+		RtAnsiGenUni(state, w);
+		full = RtOldCalcUniToStr(w);
+		RtAnsiDiff(d, CalcUniToStr(w) == full, "CalcUniToStr", 0, w, NULL);
+
+		sizes[0] = 0;
+		sizes[1] = full;
+		sizes[2] = 1 + RtCharsetRandom(state) % (full + 2);
+		for (i = 0;i < 3;i++)
+		{
+			UINT r1, r2;
+
+			memset(got, RT_CHARSET_FILL_BYTE, sizeof(got));
+			memset(want, RT_CHARSET_FILL_BYTE, sizeof(want));
+			r1 = UniToStr(got, sizes[i], w);
+			r2 = RtOldUniToStr(want, sizes[i], w);
+			RtAnsiDiff(d, r1 == r2 && Cmp(got, want, sizeof(got)) == 0, "UniToStr", sizes[i], w, NULL);
+		}
+
+		copy = CopyUniToStr(w);
+		want_copy = RtOldCopyUniToStr(w);
+		RtAnsiDiff(d, copy != NULL && want_copy != NULL && StrCmp(copy, want_copy) == 0, "CopyUniToStr", 0, w, NULL);
+		Free(copy);
+		Free(want_copy);
+	}
+
+	for (n = 0;n < RT_ANSI_ROUNDS;n++)
+	{
+		char s[RT_CHARSET_BUF];
+		wchar_t got[RT_CHARSET_BUF];
+		wchar_t want[RT_CHARSET_BUF];
+		UINT full, sizes[3];
+		wchar_t *copy, *want_copy;
+
+		RtAnsiGenStr(state, s);
+		full = RtOldCalcStrToUni(s);
+		RtAnsiDiff(d, CalcStrToUni(s) == full, "CalcStrToUni", 0, NULL, s);
+
+		sizes[0] = 0;
+		sizes[1] = full;
+		sizes[2] = 1 + RtCharsetRandom(state) % (full + 4);
+		for (i = 0;i < 3;i++)
+		{
+			UINT r1, r2;
+
+			memset(got, RT_CHARSET_FILL_BYTE, sizeof(got));
+			memset(want, RT_CHARSET_FILL_BYTE, sizeof(want));
+			r1 = StrToUni(got, sizes[i], s);
+			r2 = RtOldStrToUni(want, sizes[i], s);
+			RtAnsiDiff(d, r1 == r2 && Cmp(got, want, sizeof(got)) == 0, "StrToUni", sizes[i], NULL, s);
+		}
+
+		copy = CopyStrToUni(s);
+		want_copy = RtOldCopyStrToUni(s);
+		RtAnsiDiff(d, copy != NULL && want_copy != NULL && UniStrCmp(copy, want_copy) == 0, "CopyStrToUni", 0, NULL, s);
+		Free(copy);
+		Free(want_copy);
+	}
+}
+
+// ANSI against the old code, live: the six ANSI functions against copies of their old code on
+// wcstombs and mbstowcs, on generated strings, in the locale of the process, in the C locale, and
+// in code pages 1252, 932, UTF-8 and 28591 whenever setlocale accepts them. The checks are
+// printed once the locale of the process is back.
+static void RtCharsetAnsiOracle(RT_CTX *ctx)
+{
+	RT_ANSI_DIFF d[sizeof(rt_ansi_locales) / sizeof(rt_ansi_locales[0])];
+	UINT num = sizeof(rt_ansi_locales) / sizeof(rt_ansi_locales[0]);
+	UINT state = RT_ANSI_SEED;
+	char saved[MAX_SIZE];
+	char what[MAX_SIZE];
+	char input[MAX_SIZE];
+	char *name;
+	bool restored;
+	UINT i, j;
+
+	Zero(d, sizeof(d));
+
+	name = setlocale(LC_CTYPE, NULL);
+	StrCpy(saved, sizeof(saved), (name == NULL) ? "" : name);
+
+	for (i = 0;i < num;i++)
+	{
+		d[i].Set = (rt_ansi_locales[i] == NULL || setlocale(LC_CTYPE, rt_ansi_locales[i]) != NULL);
+		if (d[i].Set)
+		{
+			RtAnsiCompare(&d[i], &state);
+		}
+	}
+
+	restored = (setlocale(LC_CTYPE, saved) != NULL);
+
+	for (i = 0;i < num;i++)
+	{
+		char *label = (rt_ansi_locales[i] == NULL) ? "the process locale" : rt_ansi_locales[i];
+
+		Format(what, sizeof(what), "ANSI functions match the old wcstombs and mbstowcs code in %s", label);
+		if (d[i].Set == false)
+		{
+			if (StrCmp(rt_ansi_locales[i], "C") == 0)
+			{
+				RtCheck(ctx, false, what, "setlocale(LC_CTYPE, \"C\") returned NULL");
+			}
+			else
+			{
+				Print("  [SKIP] %s: setlocale(LC_CTYPE, \"%s\") returned NULL\n", what, label);
+			}
+			continue;
+		}
+
+		input[0] = 0;
+		if (d[i].NumDiffer != 0)
+		{
+			if (d[i].FirstIsUni)
+			{
+				for (j = 0;d[i].FirstUni[j] != 0;j++)
+				{
+					char unit[8];
+
+					Format(unit, sizeof(unit), "%04X ", (UINT)d[i].FirstUni[j]);
+					StrCat(input, sizeof(input), unit);
+				}
+			}
+			else
+			{
+				BinToStrEx(input, sizeof(input), d[i].FirstStr, StrLen(d[i].FirstStr));
+			}
+		}
+
+		RtCheck(ctx, d[i].NumCompared != 0 && d[i].NumDiffer == 0, what,
+			"%u of %u calls differ, first: %s size %u, input %s", d[i].NumDiffer, d[i].NumCompared,
+			(d[i].FirstFunc == NULL) ? "-" : d[i].FirstFunc, d[i].FirstSize, input);
+	}
+
+	RtCheck(ctx, restored, "The locale of the process is restored after the ANSI comparison",
+		"setlocale(LC_CTYPE, \"%s\") returned NULL", saved);
+}
+
+// charset: the UTF-8 and ANSI conversions of Internat.c against fixed vectors (valid, invalid
+// and boundary sequences) and against a reference of the UTF-8 coding Mayaqua has always done
+void charset_test(UINT num, char **arg)
+{
+	RT_CTX ctx;
+
+	RtBegin(&ctx, "CHARSET", "Charset conversion test");
+
+	RtCharsetUtf8Fixed(&ctx);
+	RtCharsetUtf8Sweep(&ctx);
+	RtCharsetAnsi(&ctx);
+	RtCharsetAnsiOracle(&ctx);
 
 	RtEnd(&ctx);
 }
