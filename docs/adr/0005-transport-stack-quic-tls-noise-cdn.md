@@ -1,6 +1,6 @@
 # ADR-0005: Transport stack: QUIC as primary, Trojan-style TLS/TCP fallback, Noise-style end-to-end session, CDN path, stealth sidecar
 
-**Status:** Proposed. Hilmi asked "putuskan mana yang better"; this is the decision as made by the assistant. Hilmi moved on to the next topic without objecting and without explicit agreement.
+**Status:** Accepted (2026-10-13, in the grilling; see the amendment at the end). Originally Proposed: Hilmi asked "putuskan mana yang better", this was the decision as made by the assistant, which he moved past without objecting or explicitly agreeing; the 2026-10-13 grilling confirmed it and moved the concrete new-core parameters into ADR-0022 and ADR-0023.
 
 ## Context
 
@@ -27,7 +27,19 @@ Licensing: Hysteria is MIT, Xray-core is MPL-2.0 (file-level copyleft, may be li
 
 - Dropped from SoftEther: multi-TCP connections and half-duplex, custom UDP Acceleration, cloud NAT-T, the watermark, PACK as the session wire format, R-UDP.
 - Kept as ideas: getting through 443, looking like HTTPS, aggressive fallback.
-- Double encryption (Noise inside TLS/QUIC) is accepted; with AES-NI its cost is negligible, and it is what makes the CDN path safe.
+- Double encryption (Noise inside TLS/QUIC) is accepted; with AES-NI its cost is negligible, and it is what makes the CDN path safe. *(Superseded 2026-10-15 by ADR-0023: data is encrypted once by QUIC/TLS with Noise as a bound identity handshake; inner Noise encryption only on the CDN path.)*
 - ECH and ClientHello control are not provided by the core's TLS stack (ADR-0007); they belong to the tier-3 sidecar (ADR-0006). Minimum OS for the new core is Windows 11 / Server 2022.
 - The CDN path does not change the client's JA3: the censor on the client's network still sees the core's (Schannel) ClientHello; only the server side (anycast IP, certificate, JA3S) becomes Cloudflare's (ADR-0006).
 - The censorship tiers and client-side DPI evasion options are detailed in ADR-0006.
+
+## Amendment 2026-10-13: Accepted; new-core parameters moved to ADR-0022/0023
+
+The 2026-10-13 grilling accepted this transport design and fixed the details that were left open here:
+
+- **Status is now Accepted.**
+- **AES-GCM only; ChaCha20-Poly1305 is off by default** in both Schannel and msquic (ADR-0022). The "Hysteria2 model" QUIC listener and the Trojan-style TLS/TCP 443 fallback are unchanged.
+- The **session layer** is Noise_IK with X25519, SHA-256 and HKDF via CNG, with a CNG ML-KEM hybrid where the OS provides it; the parameters now live in ADR-0022.
+- **msquic ships as the official signed `msquic.dll`** (Schannel build), pinned, x64 and arm64 (ADR-0022).
+- The **tier-3 "stealth sidecar"** row is now specified concretely as the **Go mimicry sidecar** (REALITY + uTLS first, full-proxy over a local named pipe) in ADR-0023; the Xray/sing-box option remains a valid separate-process choice under the same licence boundary.
+- The **pluggable transport interface** (dial / listen / stream read-write) is defined now so later transports plug in (ADR-0023), even though v1 ships only QUIC and TLS-443.
+- The CDN/WebSocket path and the tier-3 sidecar land at **strangler step 7** (ADR-0022).
