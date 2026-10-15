@@ -3,6 +3,9 @@ set(COMPONENT_INTERNAL_NAME "vpntest")
 
 add_executable(vpntest vpntest.c harness.c harness_pack.c stress.c runtime.c)
 
+# Named string test of NAT-4 (#90)
+target_sources(vpntest PRIVATE strtest.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
