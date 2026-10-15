@@ -174,13 +174,43 @@ static bool HamcoreResource(char *id, void **data, UINT *size)
 	return (*data != NULL || *size == 0);
 }
 
+// The line of the index text that starts at *pos: its start and its length without the line
+// end (LF, or CR LF). Moves *pos past the line. False when *pos is at the end of the text.
+static bool HamcoreIndexLine(char *text, UINT size, UINT *pos, UINT *start, UINT *len)
+{
+	UINT n = 0;
+
+	if (*pos >= size)
+	{
+		return false;
+	}
+
+	while (*pos + n < size && text[*pos + n] != '\n')
+	{
+		++n;
+	}
+
+	*start = *pos;
+	*pos = *pos + n + 1;
+
+	// A line may end with CR LF
+	if (n != 0 && text[*start + n - 1] == '\r')
+	{
+		--n;
+	}
+
+	*len = n;
+
+	return true;
+}
+
 // Resource ID of the built-in hamcore file <name> (compared byte by byte): its line in the
 // index, from 1, or 0 when the index does not name it. <num> (optional) receives the number of
 // lines: 0 when the executable has no index.
 static UINT HamcoreResourceId(char *name, UINT *num)
 {
 	char *text;
-	UINT size, pos, line = 0, id = 0;
+	UINT size, pos, start, len, line = 0, id = 0;
 	UINT name_len = (name == NULL ? 0 : StrLen(name));
 
 	if (num != NULL)
@@ -193,30 +223,13 @@ static UINT HamcoreResourceId(char *name, UINT *num)
 		return 0;
 	}
 
-	for (pos = 0; pos < size;)
+	for (pos = 0; HamcoreIndexLine(text, size, &pos, &start, &len);)
 	{
-		UINT len = 0;
-		UINT next;
-
-		while (pos + len < size && text[pos + len] != '\n')
-		{
-			++len;
-		}
-		next = pos + len + 1;
-
-		// A line may end with CR LF
-		if (len != 0 && text[pos + len - 1] == '\r')
-		{
-			--len;
-		}
-
 		++line;
-		if (id == 0 && name != NULL && len == name_len && Cmp(text + pos, name, len) == 0)
+		if (id == 0 && name != NULL && len == name_len && Cmp(text + start, name, len) == 0)
 		{
 			id = line;
 		}
-
-		pos = next;
 	}
 
 	if (num != NULL)
@@ -225,6 +238,36 @@ static UINT HamcoreResourceId(char *name, UINT *num)
 	}
 
 	return id;
+}
+
+// Name of the built-in hamcore file with the resource ID <id>: line <id> of the index, cut to
+// fit <name>. Empty when the index has no such line.
+static void HamcoreResourceName(UINT id, char *name, UINT name_size)
+{
+	char *text;
+	UINT size, pos, start, len, line = 0;
+
+	if (name_size == 0)
+	{
+		return;
+	}
+	name[0] = 0;
+
+	if (HamcoreResource(HAMCORE_RESOURCE_INDEX, (void **)&text, &size) == false)
+	{
+		return;
+	}
+
+	for (pos = 0; HamcoreIndexLine(text, size, &pos, &start, &len);)
+	{
+		if (++line == id)
+		{
+			len = MIN(len, name_size - 1);
+			Copy(name, text + start, len);
+			name[len] = 0;
+			return;
+		}
+	}
 }
 
 static BUF *ReadHamcoreW(wchar_t *filename)
@@ -305,7 +348,10 @@ void InitHamcore()
 		}
 		else
 		{
-			Format(tmp, sizeof(tmp), "Fatal Error: This executable lacks the hamcore file %u of %u (resource " HAMCORE_RESOURCE_TYPE " %u).", i, num, i);
+			char name[MAX_PATH];
+
+			HamcoreResourceName(i, name, sizeof(name));
+			Format(tmp, sizeof(tmp), "Fatal Error: This executable lacks the hamcore file \"%s\" (file %u of %u, resource " HAMCORE_RESOURCE_TYPE " %u).", name, i, num, i);
 		}
 		StrCat(tmp, sizeof(tmp), "\r\nThe build embeds src/bin/hamcore with cmake/RanzResources.cmake.\r\n\r\n(If this problem occurs again, please reinstall VPN software files.)");
 

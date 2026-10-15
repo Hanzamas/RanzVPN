@@ -762,54 +762,104 @@ void fileio_test(UINT num, char **arg)
 #define	RT_RES_SLASH_NAME		"DriverPackages/SeLow_Win10/x64/SeLow_x64.sys"		// Read with "/" and with "\"
 #define	RT_RES_BACKSLASH_NAME	"|DriverPackages\\SeLow_Win10\\x64\\SeLow_x64.sys"	// The same file, as SeLowUser.c names it
 
-// One hamcore file: its path under src/bin/hamcore, its size (0 for a text file), and the
-// SHA-256 of its bytes. For a text file the CR bytes are left out of the hash, so that an LF
-// and a CRLF checkout give the same value.
-typedef struct RT_RESOURCE
-{
-	char *Name;
-	UINT Size;
-	char *Sha256;
-} RT_RESOURCE;
+#define	RT_RES_SOURCE_DIR		RANZ_HAMCORE_SOURCE_DIR				// src/bin/hamcore of the source tree (src/vpntest/CMakeLists.txt)
 
-// Every file of src/bin/hamcore
-static RT_RESOURCE rt_resources[] =
+// Both buffers were read and hold the same bytes
+static bool RtResourceSame(BUF *a, BUF *b)
 {
-	{"DriverPackages/SeLow_Win10/x64/SeLow_Win10_x64.cat", 19609, "CD33B3DBD773F1A2F8CC2FBB41D007579A74239DB45850C49B4A503DEED75B17"},
-	{"DriverPackages/SeLow_Win10/x64/SeLow_x64.inf", 0, "D9B0721BD32533E3F0348FCC798AF9AB4D8A054662EA37AA263AA136F109D0C6"},
-	{"DriverPackages/SeLow_Win10/x64/SeLow_x64.sys", 50624, "A4D553F8A1FB2D665F72DFE11725A7D848E847F155A25F13389D4674B905368F"},
-	{"empty.config", 0, "C9A345DAA95FB06D0264816DF03B9D19224BC0A5DBDEE6EA124A857B25CD4B76"},
-	{"lang.config", 0, "0E3D152BE5777727C251160E7B252540BF681D6EA56C043ED7BCB6B503B74F59"},
-	{"languages.txt", 0, "1C3A1CF43654DFF988EC22BA9C2C066050D53E72288C191309A3B8B79DAE5FDD"},
-	{"legal.txt", 0, "E9C08438A73B8F5347166E0ACEE0DBC463ADD86A0DC8B82FA5FAC672C6E7E172"},
-	{"root_certs.dat", 400489, "775E500924110ECA78A14BC9DB2A117AFF1654E2A9E83617BD8BD8FB601400CE"},
-	{"strtable_en.stb", 0, "9F9A36AB1FB200E85F855EEF0C845B582A4D958E84A807FE2FD10F6C78BADC62"},
-	{"strtable_id.stb", 0, "0AA785D1EEFEDBC61B6391E95634FB6D209160BB344BC919072C9D13428BFB9C"},
-	{"warning_en.txt", 0, "8F0D9C5636BB5726C7446688B5FE7F2A1A00A4AE9A10BCC76D70B4BA382C6803"},
-	{"warning_id.txt", 0, "E3C62BB1DD8FC04FE284192650CCCD9B6F31F561812102CA0E4D0B8EF27E3D8E"},
-	{"watermark.bin", 1411, "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0"},
-};
+	return a != NULL && b != NULL && a->Size == b->Size && Cmp(a->Buf, b->Buf, a->Size) == 0;
+}
 
-// SHA-256 of a hamcore file as rt_resources gives it: of every byte, or of every byte but CR for a text file
-static void RtResourceHash(char *hash_str, UINT hash_str_size, BUF *b, bool text)
+// One file of src/bin/hamcore: ReadHamcore of its name and "|" with its name return the exact
+// bytes of the source file. No CR byte is left out of the comparison, so a line-ending change
+// between the source file and the resource shows. A name with folders also opens with "\"
+// between them, as SeLowUser.c names the driver package files.
+static void RtResourceFile(RT_CTX *ctx, char *path, char *name)
 {
-	UCHAR hash[SHA256_SIZE];
-	UCHAR *src = (UCHAR *)b->Buf;
-	UCHAR *data = Malloc(MAX(b->Size, 1));
-	UINT i, size = 0;
+	char what[MAX_SIZE];
+	char bar_name[MAX_SIZE];
+	BUF *src, *b;
+	bool sub = false;
+	UINT i;
 
-	for (i = 0;i < b->Size;i++)
+	src = ReadDump(path);
+	Format(what, sizeof(what), "Read the source file of %s", name);
+	if (RtCheck(ctx, src != NULL, what, "cannot read %s", path) == false)
 	{
-		if (text == false || src[i] != '\r')
-		{
-			data[size++] = src[i];
-		}
+		return;
 	}
 
-	Sha2_256(hash, data, size);
-	BinToStr(hash_str, hash_str_size, hash, sizeof(hash));
+	b = ReadHamcore(name);
+	Format(what, sizeof(what), "ReadHamcore of %s returns the bytes of its source file", name);
+	RtCheck(ctx, RtResourceSame(src, b), what, "source %u bytes, read %u bytes%s",
+		src->Size, b != NULL ? b->Size : 0, b != NULL ? "" : " (NULL)");
+	FreeBuf(b);
 
-	Free(data);
+	Format(bar_name, sizeof(bar_name), "|%s", name);
+	b = ReadDump(bar_name);
+	Format(what, sizeof(what), "ReadDump of %s returns the bytes of its source file", bar_name);
+	RtCheck(ctx, RtResourceSame(src, b), what, "source %u bytes, read %u bytes%s",
+		src->Size, b != NULL ? b->Size : 0, b != NULL ? "" : " (NULL)");
+	FreeBuf(b);
+
+	for (i = 0;bar_name[i] != 0;i++)
+	{
+		if (bar_name[i] == '/')
+		{
+			bar_name[i] = '\\';
+			sub = true;
+		}
+	}
+	if (sub)
+	{
+		b = ReadDump(bar_name);
+		Format(what, sizeof(what), "ReadDump of %s returns the same bytes", bar_name);
+		RtCheck(ctx, RtResourceSame(src, b), what, "source %u bytes, read %u bytes%s",
+			src->Size, b != NULL ? b->Size : 0, b != NULL ? "" : " (NULL)");
+		FreeBuf(b);
+	}
+
+	FreeBuf(src);
+}
+
+// Every file under a folder of src/bin/hamcore, its subfolders included, through
+// RtResourceFile. rel is the path of the folder relative to src/bin/hamcore ("" for
+// src/bin/hamcore itself, "/" between folders). Returns the number of files.
+static UINT RtResourceDir(RT_CTX *ctx, char *dir, char *rel)
+{
+	char path[MAX_SIZE];
+	char name[MAX_SIZE];
+	DIRLIST *d;
+	UINT i, files = 0;
+
+	d = EnumDir(dir);
+	for (i = 0;d != NULL && i < d->NumFiles;i++)
+	{
+		DIRENT *e = d->File[i];
+
+		Format(path, sizeof(path), "%s/%s", dir, e->FileName);
+		if (rel[0] == 0)
+		{
+			StrCpy(name, sizeof(name), e->FileName);
+		}
+		else
+		{
+			Format(name, sizeof(name), "%s/%s", rel, e->FileName);
+		}
+
+		if (e->Folder)
+		{
+			files += RtResourceDir(ctx, path, name);
+		}
+		else
+		{
+			RtResourceFile(ctx, path, name);
+			files++;
+		}
+	}
+	FreeDir(d);
+
+	return files;
 }
 
 // Executables of the build that carry the same hamcore resources as vpntest.exe, next to it
@@ -865,11 +915,10 @@ void resources_test(UINT num, char **arg)
 	wchar_t se2_path[MAX_SIZE];
 	wchar_t dir_path[MAX_SIZE];
 	wchar_t override_path[MAX_SIZE];
-	char hash_str[SHA256_SIZE * 2 + 1];
 	char what[MAX_SIZE];
 	BUF *b, *b2, *embedded;
 	IO *io;
-	UINT i, size;
+	UINT i, size, files;
 	void *data;
 	bool ok, made_dir;
 
@@ -916,22 +965,9 @@ void resources_test(UINT num, char **arg)
 		}
 	}
 
-	// Every file holds the bytes of its source file
-	for (i = 0;i < sizeof(rt_resources) / sizeof(rt_resources[0]);i++)
-	{
-		RT_RESOURCE *r = &rt_resources[i];
-
-		b = ReadHamcore(r->Name);
-		Format(what, sizeof(what), "ReadHamcore of %s", r->Name);
-		if (RtCheck(&ctx, b != NULL, what, "returned NULL"))
-		{
-			RtResourceHash(hash_str, sizeof(hash_str), b, r->Size == 0);
-			Format(what, sizeof(what), "%s holds the bytes of src/bin/hamcore/%s", r->Name, r->Name);
-			RtCheck(&ctx, (r->Size == 0 || b->Size == r->Size) && StrCmpi(hash_str, r->Sha256) == 0, what,
-				"%u bytes, SHA-256 = %s", b->Size, hash_str);
-		}
-		FreeBuf(b);
-	}
+	// Every file of src/bin/hamcore, walked at run time, holds the bytes of its source file
+	files = RtResourceDir(&ctx, RT_RES_SOURCE_DIR, "");
+	RtCheck(&ctx, files != 0, "The hamcore source folder holds files", "no file in %s", RT_RES_SOURCE_DIR);
 
 	// "|" opens the same bytes, with "\" in the name read as "/"
 	b = ReadHamcore(RT_RES_SLASH_NAME);
