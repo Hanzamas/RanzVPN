@@ -14,6 +14,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Without STRSAFE_NO_DEPRECATE, strsafe.h redefines the unsafe copy and print names, among them
+// StrCpy and StrCat, which Mayaqua defines itself
+#define	STRSAFE_NO_DEPRECATE
+#include <strsafe.h>
+
 static LOCK *token_lock = NULL;
 static char *default_spliter = " ,\t\r\n";
 
@@ -2009,9 +2014,22 @@ char ToUpper(char c)
 	return c;
 }
 
+// The cch that strsafe takes for the size argument of a string function: size 0 means no limit,
+// and strsafe accepts at most STRSAFE_MAX_CCH characters
+static size_t StrSafeCch(UINT size)
+{
+	if (size == 0 || size > STRSAFE_MAX_CCH)
+	{
+		return STRSAFE_MAX_CCH;
+	}
+
+	return size;
+}
+
 UINT StrCat(char *dst, UINT size, char *src)
 {
-	UINT len1, len2, len_test;
+	size_t cch, len1;
+	char *end;
 	if (dst == NULL || src == NULL)
 	{
 		return 0;
@@ -2019,26 +2037,20 @@ UINT StrCat(char *dst, UINT size, char *src)
 
 	KS_INC(KS_STRCAT_COUNT);
 
-	if (size == 0)
+	cch = StrSafeCch(size);
+
+	// A destination without room for one more character takes nothing and gives 0, except that
+	// an empty src gives the length of a destination that fits
+	if (FAILED(StringCchLengthA(dst, cch, &len1)) || (len1 == cch - 1 && src[0] != '\0'))
 	{
-		size = 0x7fffffff;
+		return 0;
 	}
 
-	len1 = StrLen(dst);
-	len2 = StrLen(src);
-	len_test = len1 + len2 + 1;
-	if (len_test > size)
-	{
-		if (len2 <= (len_test - size))
-		{
-			return 0;
-		}
-		len2 -= len_test - size;
-	}
-	Copy(dst + len1, src, len2);
-	dst[len1 + len2] = 0;
+	// Appends at most cch - 1 - len1 characters and always writes the terminator
+	end = dst + len1;
+	StringCchCopyExA(dst + len1, cch - len1, src, &end, NULL, 0);
 
-	return len1 + len2;
+	return (UINT)(end - dst);
 }
 UINT StrCatLeft(char *dst, UINT size, char *src)
 {
@@ -2059,7 +2071,7 @@ UINT StrCatLeft(char *dst, UINT size, char *src)
 
 UINT StrCpy(char *dst, UINT size, char *src)
 {
-	UINT len;
+	char *end;
 	if (dst == src)
 	{
 		return StrLen(src);
@@ -2075,35 +2087,19 @@ UINT StrCpy(char *dst, UINT size, char *src)
 		}
 		return 0;
 	}
-	if (size == 1)
-	{
-		dst[0] = '\0';
-		return 0;
-	}
-	if (size == 0)
-	{
-		size = 0x7fffffff;
-	}
 
-	len = StrLen(src);
-	if (len <= (size - 1))
-	{
-		Copy(dst, src, len + 1);
-	}
-	else
-	{
-		len = size - 1;
-		Copy(dst, src, len);
-		dst[len] = '\0';
-	}
+	// Copies at most size - 1 characters and always writes the terminator: a longer src is cut,
+	// and size 1 writes only the terminator
+	end = dst;
+	StringCchCopyExA(dst, StrSafeCch(size), src, &end, NULL, 0);
 
 	KS_INC(KS_STRCPY_COUNT);
 
-	return len;
+	return (UINT)(end - dst);
 }
 UINT StrCpyAllowOverlap(char *dst, UINT size, char *src)
 {
-	UINT len;
+	size_t cch, len;
 	if (dst == src)
 	{
 		return StrLen(src);
@@ -2119,37 +2115,24 @@ UINT StrCpyAllowOverlap(char *dst, UINT size, char *src)
 		}
 		return 0;
 	}
-	if (size == 1)
-	{
-		dst[0] = '\0';
-		return 0;
-	}
-	if (size == 0)
-	{
-		size = 0x7fffffff;
-	}
 
-	len = StrLen(src);
-	if (len <= (size - 1))
+	// strsafe copies forward only, so Move copies; strsafe bounds the length, which is size - 1
+	// for a src of size characters or more
+	cch = StrSafeCch(size);
+	if (FAILED(StringCchLengthA(src, cch, &len)))
 	{
-		Move(dst, src, len + 1);
+		len = cch - 1;
 	}
-	else
-	{
-		len = size - 1;
-		Move(dst, src, len);
-		dst[len] = '\0';
-	}
+	Move(dst, src, (UINT)len);
+	dst[len] = '\0';
 
 	KS_INC(KS_STRCPY_COUNT);
 
-	return len;
+	return (UINT)len;
 }
 
 bool StrCheckLen(char *str, UINT len)
 {
-	UINT count = 0;
-	UINT i;
 	if (str == NULL)
 	{
 		return false;
@@ -2157,18 +2140,8 @@ bool StrCheckLen(char *str, UINT len)
 
 	KS_INC(KS_STRCHECK_COUNT);
 
-	for (i = 0;;i++)
-	{
-		if (str[i] == '\0')
-		{
-			return true;
-		}
-		count++;
-		if (count > len)
-		{
-			return false;
-		}
-	}
+	// True when a terminator is among the first len + 1 characters; reads no further
+	return SUCCEEDED(StringCchLengthA(str, (len >= STRSAFE_MAX_CCH) ? STRSAFE_MAX_CCH : (size_t)len + 1, NULL));
 }
 
 UINT StrSize(char *str)
