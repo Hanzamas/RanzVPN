@@ -17,6 +17,7 @@
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Tick64.h"
+#include "Mayaqua/Trace.h"
 
 #include <stdarg.h>
 
@@ -1167,11 +1168,16 @@ void trace_test(UINT num, char **arg)
 	RtBegin(&ctx, "TRACE", listening ? "ETW trace test (inside a trace session)" : "ETW trace test (no trace session)");
 
 	RtCheck(&ctx, debug, "vpntest runs with debug output on", "g_debug is off");
+	RtCheck(&ctx, IsTraceEnabled() == listening,
+		listening ? "The trace session enables the provider" : "Without a trace session the provider is off",
+		"IsTraceEnabled() returned %s", IsTraceEnabled() ? "true" : "false");
 
 	// Printed, and traced while a session listens
 	Debug(RT_TRACE_PROBE_FMT, RT_TRACE_PROBE_NUM, "debug-on");
 
-	// Not printed, but traced while a session listens
+	// Not printed, but traced while a session listens. g_debug also switches the memory tracker
+	// (IsTrackingEnabled), so the probe allocates and frees untracked and leaves the tracker
+	// balanced; the other vpntest threads are idle at this point.
 	g_debug = false;
 	Debug(RT_TRACE_PROBE_FMT, RT_TRACE_PROBE_NUM, "debug-off");
 	g_debug = debug;

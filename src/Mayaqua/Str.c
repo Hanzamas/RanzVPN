@@ -8,6 +8,7 @@
 #include "Mayaqua.h"
 #include "Memory.h"
 #include "Object.h"
+#include "Trace.h"
 #include "Tracking.h"
 
 #include <stdio.h>
@@ -1848,6 +1849,15 @@ static void DebugArgs(char *fmt, va_list args)
 	{
 		return;
 	}
+	if (IsTraceEnabled())
+	{
+		// An ETW trace session listens (Trace.c): it gets the message also with debug output off
+		va_list trace_args;
+
+		va_copy(trace_args, args);
+		TraceDebugArgs(fmt, trace_args);
+		va_end(trace_args);
+	}
 	if (g_debug == false)
 	{
 		return;
@@ -1863,7 +1873,7 @@ void Debug(char *fmt, ...)
 	{
 		return;
 	}
-	if (g_debug == false)
+	if (g_debug == false && IsTraceEnabled() == false)
 	{
 		return;
 	}
