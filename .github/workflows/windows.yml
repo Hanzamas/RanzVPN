@@ -130,6 +130,13 @@ jobs:
       shell: pwsh
       run: |
         . .github/scripts/etw-trace.ps1
+    # vpnserver installed, started, stopped and uninstalled as a Windows service: its start and stop entries
+    # in the Application event log (ticket #92)
+    - name: Service events in the Event Log
+      timeout-minutes: 10
+      shell: pwsh
+      run: |
+        . .github/scripts/service-eventlog.ps1
     - name: Upload harness outputs (golden bootstrap and diffs)
       if: always()
       uses: actions/upload-artifact@v4
