@@ -12,6 +12,8 @@
 
 #include <string.h>
 
+#include <bcrypt.h>
+
 #include <openssl/crypto.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
@@ -23,12 +25,8 @@
 #include <openssl/x509.h>
 #include <openssl/pkcs7.h>
 #include <openssl/pkcs12.h>
-#include <openssl/rc4.h>
-#include <openssl/md5.h>
-#include <openssl/md4.h>
 #include <openssl/hmac.h>
 #include <openssl/sha.h>
-#include <openssl/des.h>
 #include <openssl/aes.h>
 #include <openssl/rsa.h>
 #include <openssl/dh.h>
@@ -58,6 +56,100 @@ typedef struct CB_PARAM
 	char *password;
 } CB_PARAM;
 
+// Whether a CNG call succeeded: an NTSTATUS of 0 or more (success or information)
+#define	CNG_SUCCESS(status)		(((NTSTATUS)(status)) >= 0)
+
+// BCryptGenRandom() flag of Windows 7 and later, in case the Vista SDK level of MayaType.h hides it
+#ifndef	BCRYPT_USE_SYSTEM_PREFERRED_RNG
+#define	BCRYPT_USE_SYSTEM_PREFERRED_RNG	0x00000002
+#endif	// BCRYPT_USE_SYSTEM_PREFERRED_RNG
+
+// Longest RC4 key (bytes) that CNG turns into real RC4. CNG accepts longer keys without an error
+// but then produces a keystream that is not RC4, so NewCrypt() does not give it those.
+#define	RC4_MAX_KEY_SIZE	64
+
+// CNG algorithm providers of MD4, MD5, SHA-1, RC4 and DES, which run on CNG instead of OpenSSL.
+// They are opened once, on first use, and kept for the life of the process, as the CNG
+// pseudo-handles are (MayaType.h selects the Vista SDK level, which does not declare those).
+// A provider that failed to open stays NULL.
+static INIT_ONCE cng_init_once = INIT_ONCE_STATIC_INIT;
+static BCRYPT_ALG_HANDLE cng_md4 = NULL;
+static BCRYPT_ALG_HANDLE cng_md5 = NULL;
+static BCRYPT_ALG_HANDLE cng_sha1 = NULL;
+static BCRYPT_ALG_HANDLE cng_rc4 = NULL;
+static BCRYPT_ALG_HANDLE cng_des_ecb = NULL;
+
+// Open one CNG algorithm provider; NULL on failure
+static BCRYPT_ALG_HANDLE CngOpenAlg(LPCWSTR alg_id)
+{
+	BCRYPT_ALG_HANDLE h = NULL;
+
+	if (CNG_SUCCESS(BCryptOpenAlgorithmProvider(&h, alg_id, NULL, 0)) == false)
+	{
+		return NULL;
+	}
+
+	return h;
+}
+
+// INIT_ONCE callback of CngInit(): open every provider
+static BOOL CALLBACK CngOpenAll(PINIT_ONCE once, PVOID param, PVOID *context)
+{
+	BCRYPT_ALG_HANDLE des = CngOpenAlg(BCRYPT_DES_ALGORITHM);
+
+	cng_md4 = CngOpenAlg(BCRYPT_MD4_ALGORITHM);
+	cng_md5 = CngOpenAlg(BCRYPT_MD5_ALGORITHM);
+	cng_sha1 = CngOpenAlg(BCRYPT_SHA1_ALGORITHM);
+	cng_rc4 = CngOpenAlg(BCRYPT_RC4_ALGORITHM);
+
+	// DesEcbEncrypt() encrypts single blocks, without chaining
+	if (des != NULL)
+	{
+		if (CNG_SUCCESS(BCryptSetProperty(des, BCRYPT_CHAINING_MODE, (PUCHAR)BCRYPT_CHAIN_MODE_ECB, sizeof(BCRYPT_CHAIN_MODE_ECB), 0)))
+		{
+			cng_des_ecb = des;
+		}
+		else
+		{
+			BCryptCloseAlgorithmProvider(des, 0);
+		}
+	}
+
+	return TRUE;
+}
+
+// Open the CNG providers, once per process; any thread, any time, also before InitCryptLibrary()
+static void CngInit()
+{
+	InitOnceExecuteOnce(&cng_init_once, CngOpenAll, NULL, NULL);
+}
+
+// Hash with a CNG provider. digest_size is the digest size of the algorithm; the source may be the
+// destination. Should CNG fail, the digest is all zero.
+static void CngHash(BCRYPT_ALG_HANDLE *alg, void *dst, UINT digest_size, void *src, UINT size)
+{
+	BCRYPT_HASH_HANDLE h = NULL;
+	bool ok = false;
+
+	CngInit();
+
+	if (*alg != NULL && CNG_SUCCESS(BCryptCreateHash(*alg, &h, NULL, 0, NULL, 0, 0)))
+	{
+		if ((size == 0 || CNG_SUCCESS(BCryptHashData(h, (PUCHAR)src, size, 0))) &&
+			CNG_SUCCESS(BCryptFinishHash(h, (PUCHAR)dst, digest_size, 0)))
+		{
+			ok = true;
+		}
+
+		BCryptDestroyHash(h);
+	}
+
+	if (ok == false)
+	{
+		Zero(dst, digest_size);
+	}
+}
+
 void HashMd4(void *dst, void *src, UINT size)
 {
 	if (dst == NULL || (src == NULL && size != 0))
@@ -65,7 +157,7 @@ void HashMd4(void *dst, void *src, UINT size)
 		return;
 	}
 
-	MD4(src, size, dst);
+	CngHash(&cng_md4, dst, MD4_SIZE, src, size);
 }
 
 void Md5(void *dst, void *src, UINT size)
@@ -75,30 +167,7 @@ void Md5(void *dst, void *src, UINT size)
 		return;
 	}
 
-	MD5(src, size, dst);
-}
-
-static void Sha(UINT sha_type, void *dst, void *src, UINT size)
-{
-	if (dst == NULL || (src == NULL && size != 0))
-	{
-		return;
-	}
-
-	switch(sha_type) {
-	case SHA1_160:
-		SHA1(src, size, dst);
-		break;
-	case SHA2_256:
-		SHA256(src, size, dst);
-		break;
-	case SHA2_384:
-		SHA384(src, size, dst);
-		break;
-	case SHA2_512:
-		SHA512(src, size, dst);
-		break;
-	}
+	CngHash(&cng_md5, dst, MD5_SIZE, src, size);
 }
 
 void Sha0(void *dst, void *src, UINT size)
@@ -113,12 +182,22 @@ void Sha0(void *dst, void *src, UINT size)
 
 void Sha1(void *dst, void *src, UINT size)
 {
-	Sha(SHA1_160, dst, src, size);
+	if (dst == NULL || (src == NULL && size != 0))
+	{
+		return;
+	}
+
+	CngHash(&cng_sha1, dst, SHA1_SIZE, src, size);
 }
 
 void Sha2_256(void *dst, void *src, UINT size)
 {
-	Sha(SHA2_256, dst, src, size);
+	if (dst == NULL || (src == NULL && size != 0))
+	{
+		return;
+	}
+
+	SHA256(src, size, dst);
 }
 
 CIPHER *NewCipher(char *name)
@@ -2826,7 +2905,13 @@ void Rand(void *buf, UINT size)
 	{
 		return;
 	}
-	RAND_bytes(buf, size);
+
+	// The system-preferred generator needs no provider handle; it fails only on bad arguments.
+	// Bytes that may not be random are never returned: the process stops instead.
+	if (CNG_SUCCESS(BCryptGenRandom(NULL, (PUCHAR)buf, size, BCRYPT_USE_SYSTEM_PREFERRED_RNG)) == false)
+	{
+		AbortExitEx("Rand(): BCryptGenRandom() failed");
+	}
 }
 
 void FreeOpenSSLThreadState()
@@ -2874,19 +2959,32 @@ void InitCryptLibrary()
 
 	ssl_clientcert_index = SSL_get_ex_new_index(0, "struct SslClientCertInfo *", NULL, NULL, NULL);
 
+	// Seeds OpenSSL's own generator, which TLS, RSA and DH still use; Rand() runs on CNG
 	RAND_poll();
+
+	// The CNG providers are opened here rather than on the first hash
+	CngInit();
 
 	Rand(tmp, sizeof(tmp));
 	OpenSSL_InitLock();
 }
 
+// RC4 key: a CNG key object, which keeps the keystream position from one Encrypt() call to the next.
+// Only keys of 1 to RC4_MAX_KEY_SIZE bytes get a key object: CNG refuses a 0-byte key, and it accepts
+// a longer one without an error but then produces a keystream that is not RC4. With any other key,
+// Rc4Key stays NULL and Encrypt() writes zeros.
 CRYPT *NewCrypt(void *key, UINT size)
 {
 	CRYPT *c = ZeroMalloc(sizeof(CRYPT));
+	BCRYPT_KEY_HANDLE k = NULL;
 
-	c->Rc4Key = Malloc(sizeof(RC4_KEY));
+	CngInit();
 
-	RC4_set_key(c->Rc4Key, size, (UCHAR *)key);
+	if (cng_rc4 != NULL && key != NULL && size >= 1 && size <= RC4_MAX_KEY_SIZE &&
+		CNG_SUCCESS(BCryptGenerateSymmetricKey(cng_rc4, &k, NULL, 0, (PUCHAR)key, size, 0)))
+	{
+		c->Rc4Key = k;
+	}
 
 	return c;
 }
@@ -2898,20 +2996,43 @@ void FreeCrypt(CRYPT *c)
 		return;
 	}
 
-	Free(c->Rc4Key);
+	if (c->Rc4Key != NULL)
+	{
+		BCryptDestroyKey(c->Rc4Key);
+	}
+
 	Free(c);
 }
 
+// RC4 of size bytes; dst may be src. Should CNG fail, dst is all zero rather than left as it was,
+// so that an in-place call never leaves the plain text in place.
 void Encrypt(CRYPT *c, void *dst, void *src, UINT size)
 {
-	RC4(c->Rc4Key, size, src, dst);
+	ULONG done = 0;
+	if (c == NULL || dst == NULL || src == NULL || size == 0)
+	{
+		return;
+	}
+
+	if (c->Rc4Key == NULL ||
+		CNG_SUCCESS(BCryptEncrypt(c->Rc4Key, (PUCHAR)src, size, NULL, NULL, 0, (PUCHAR)dst, size, &done, 0)) == false ||
+		done != size)
+	{
+		Zero(dst, size);
+	}
 }
 
+// DES-ECB of one 8-byte block with a 56-bit key given as 7 bytes; dst may be src.
+// Should CNG fail, the output block is all zero.
 void DesEcbEncrypt(void *dst, void *src, void *key_7bytes)
 {
 	UCHAR *key_56;
-	DES_cblock key;
-	DES_key_schedule ks;
+	UCHAR key[8];
+	UCHAR block[8];
+	BCRYPT_KEY_HANDLE k = NULL;
+	ULONG done = 0;
+	bool ok = false;
+	UINT i, j, ones;
 	if (dst == NULL || src == NULL || key_7bytes == NULL)
 	{
 		return;
@@ -2919,8 +3040,8 @@ void DesEcbEncrypt(void *dst, void *src, void *key_7bytes)
 
 	key_56 = (UCHAR *)key_7bytes;
 
-	Zero(&key, sizeof(key));
-	Zero(&ks, sizeof(ks));
+	Zero(key, sizeof(key));
+	Copy(block, src, sizeof(block));
 
 	key[0] = key_56[0];
 	key[1] = (unsigned char)(((key_56[0] << 7) & 0xFF) | (key_56[1] >> 1));
@@ -2931,10 +3052,36 @@ void DesEcbEncrypt(void *dst, void *src, void *key_7bytes)
 	key[6] = (unsigned char)(((key_56[5] << 2) & 0xFF) | (key_56[6] >> 6));
 	key[7] = (unsigned char) ((key_56[6] << 1) & 0xFF);
 
-	DES_set_odd_parity(&key);
-	DES_set_key_unchecked(&key, &ks);
+	// Odd parity in the low bit of each key byte (DES itself ignores the parity bits)
+	for (i = 0;i < sizeof(key);i++)
+	{
+		ones = 0;
+		for (j = 1;j < 8;j++)
+		{
+			ones += (key[i] >> j) & 1;
+		}
+		key[i] = (UCHAR)((key[i] & 0xFE) | ((ones % 2) == 0 ? 1 : 0));
+	}
 
-	DES_ecb_encrypt(src, dst, &ks, 1);
+	CngInit();
+
+	// Weak keys go to CNG as they are: the third MS-CHAPv2 key can be 0101010101010101 (crypto test)
+	if (cng_des_ecb != NULL &&
+		CNG_SUCCESS(BCryptGenerateSymmetricKey(cng_des_ecb, &k, NULL, 0, key, sizeof(key), 0)))
+	{
+		ok = (CNG_SUCCESS(BCryptEncrypt(k, block, sizeof(block), NULL, NULL, 0, (PUCHAR)dst, sizeof(block), &done, 0)) &&
+			done == sizeof(block));
+
+		BCryptDestroyKey(k);
+	}
+
+	if (ok == false)
+	{
+		Zero(dst, sizeof(block));
+	}
+
+	Zero(key, sizeof(key));
+	Zero(block, sizeof(block));
 }
 
 bool IsAesNiSupported()

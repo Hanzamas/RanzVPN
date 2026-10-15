@@ -102,6 +102,7 @@ if(WIN32)
 
   target_link_libraries(mayaqua
     PRIVATE
+      "bcrypt.lib"
       "crypt32.lib"
       "DbgHelp.Lib"
       "dwmapi.lib"

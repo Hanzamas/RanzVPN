@@ -435,6 +435,9 @@ void stun_test(UINT num, char **arg)
 	}
 }
 
+// Known-answer tests of the hash, cipher and random primitives, ticket #87 (crypto.c)
+void crypto_test(UINT num, char **arg);
+
 // Mayaqua runtime stress test (stress.c)
 void stress_test(UINT num, char **arg);
 
@@ -533,6 +536,7 @@ TEST_LIST test_list[] =
 	{"s", server_test, "VPN Server in Test Mode, enter key to graceful stop."},
 	{"memory_leak", memory_leak_test, "Memory leak test: Try to leak one byte by malloc()."},
 	{"mschapv2", mschapv2_test, "MS-CHAPv2 / NT-hash helpers against RFC 2759 test vectors."},
+	{"crypto", crypto_test, "MD4, MD5, SHA-0, SHA-1, SHA-256, RC4, DES and Rand against known-answer vectors."},
 	{"stun", stun_test, "STUN Binding Request / Response helpers against RFC 5769 sample messages."},
 	{"harness", harness_test, "In-process server: hubs, cascade, frames, vpncmd golden outputs, config round-trip."},
 	{"bench", bench_test, "Cascade frame throughput and Pack encode/decode benchmark (informational)."},
