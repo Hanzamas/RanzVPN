@@ -15,10 +15,10 @@ ADR-0005 chose a QUIC-primary transport with a Trojan-style TLS/TCP 443 fallback
 
 ### Core security properties
 
-1. **Encryption layering: Noise inside, TLS/QUIC outside.** The inner stream stays Noise-encrypted even if the outer TLS is opened (by a CDN, a decrypting middlebox, or a prober that completes the TLS handshake). Double encryption is accepted; with AES-NI its cost is negligible and it is what makes the CDN path safe (ADR-0005).
+1. **Encryption layering: Noise inside, TLS/QUIC outside.** The inner stream stays Noise-encrypted even if the outer TLS is opened (by a CDN, a decrypting middlebox, or a prober that completes the TLS handshake). Double encryption is accepted; with AES-NI its cost is negligible and it is what makes the CDN path safe (ADR-0005). *Superseded by the amendment of 2026-10-15 below (single encryption with channel binding; inner encryption only on the CDN path).*
 2. **A pluggable transport interface is defined now** (dial / listen / stream read-write), even though v1 ships only QUIC and TLS-443. Later transports — mimicry, DoH, DoT, CDN — plug into it without touching the session layer.
-3. **Secure by default.** A fresh install uses an encrypted transport (QUIC or TLS, with Noise inside), never plaintext, and refuses weak ciphers.
-4. **Forward secrecy.** Ephemeral keys per session (Noise IK) plus periodic rekey for long-lived sessions.
+3. **Secure by default.** A fresh install uses an encrypted transport (QUIC or TLS, with Noise identity bound to it per the 2026-10-15 amendment), never plaintext, and refuses weak ciphers.
+4. **Forward secrecy.** Ephemeral keys per session (Noise IK) plus periodic rekey for long-lived sessions. Since the 2026-10-15 amendment the data keys come from the ephemeral (EC)DHE of QUIC/TLS 1.3, and rekeying uses QUIC key update and TLS 1.3 KeyUpdate.
 5. **Key separation.** The Noise identity key lives in a CNG KSP (ADR-0022); the TLS certificate lives in the Windows certificate store; the mimicry sidecar's authentication keys are separate again. A compromise of one does not yield the others.
 
 ### The mimicry transport is a phase-2 Go sidecar
@@ -52,4 +52,14 @@ Maintainer decision (Hilmi: "gas"). A Hysteria-style transport joins the phase-2
 - HTTP/3 masquerade: the server answers non-Ranz clients as an ordinary HTTP/3 web server, consistent with the decoy design above.
 - Salamander obfuscation: optional extra obfuscation of the QUIC packets.
 - It plugs in behind the pluggable transport interface; the session layer (Noise) stays the same inside it.
+
+## Amendment 2026-10-15: single encryption with channel binding
+
+Maintainer decision (Hilmi: "gaperlu ada enkripsi ganda, catat"). Double encryption costs about twice the crypto per byte and is the largest per-core gap to WireGuard. It is removed wherever a Ranz node terminates the outer transport:
+- **Data is encrypted once,** by QUIC or TLS 1.3 (AES-GCM).
+- **Noise is used for identity only:** a Noise_IK handshake runs on the first stream of each connection to authenticate both nodes by their static keys (KSP, ADR-0022), and is **bound to the outer session through the TLS exporter** (channel binding, RFC 8446 section 7.5). If anything terminates the outer TLS/QUIC in the middle, the binding does not match and the connection is closed. The server certificate is pinned to the node identity; the system root store is not trusted for node-to-node links.
+- **Multi-connection tunnels** (ADR-0022): every connection is its own QUIC/TLS session, each bound to the same Noise identity; rekeying follows the outer protocol (QUIC key update, TLS 1.3 KeyUpdate).
+- This applies to QUIC, TLS-443, the mimicry sidecar and the Hysteria mode, because all of them terminate on a Ranz node.
+- **Exception: the CDN path (phase 2).** A CDN terminates TLS by design, so on that path the inner Noise data encryption stays; without it the CDN could read the traffic.
+- **Consequence:** with strict pinning, a network that forces TLS inspection (a corporate proxy with its own root CA) makes the TLS-443 path fail instead of being read. That is accepted; such networks can use the CDN path in phase 2.
 

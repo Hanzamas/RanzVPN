@@ -17,7 +17,7 @@ ADR-0017 sequences the work: clean and stabilise the slim fork, build a harness,
 
 Per-core run-to-completion:
 
-- msquic worker callbacks process **each datagram inline**: Noise decrypt, policy lookup, then hand the frame to the adapter ring.
+- msquic worker callbacks process **each datagram inline**: Noise decrypt, policy lookup, then hand the frame to the adapter ring. *(Since the 2026-10-15 single-encryption amendment: msquic has already decrypted the datagram; the callback does policy lookup and the hand-off only.)*
 - **One I/O thread per adapter queue** (the Wintun ring, or the single AF_XDP queue of a KM-TEST adapter).
 - The MAC, route and policy tables are **read-mostly**: rebuilt and swapped atomically, never mutated under a per-frame lock.
 - **No hub-wide forwarding lock.** The perf work (`perf-hotspots.md`, D2) shows today's hub serialises forwarding under the `MacHashTable` lock across `StorePacket` and the back-pressure sleeps; the new switch must not reproduce it.
@@ -30,7 +30,7 @@ Per-core run-to-completion:
 - **Node identity key in a CNG KSP** (TPM-backable), used for Noise static-key authentication.
 - **Certificates via CryptoAPI:** ECDSA P-256 self-signed certificates, PFX import; ACME is a later addition, not core work for v1. Certificate keys live in a CNG KSP (`PKCS12_ALWAYS_CNG_KSP`) so TLS 1.3 server signatures (RSA-PSS / ECDSA) work.
 - **Post-quantum** is a CNG ML-KEM hybrid with X25519, used where the OS provides it (Windows 11 24H2 / Server 2025 and later) in both TLS and Noise; it is otherwise a later addition, not a blocker.
-- The transport-security layering (Noise inside TLS/QUIC), key separation and forward secrecy are specified in ADR-0023.
+- The transport-security layering, key separation and forward secrecy are specified in ADR-0023 (since 2026-10-15: single encryption by QUIC/TLS, Noise for identity bound to the outer session).
 
 ### Roles and SE-VPN compatibility
 
@@ -129,7 +129,7 @@ Maintainer decision (Hilmi: "(b) XDP default di x64"): this supersedes the clien
 Maintainer decision (Hilmi: "catat"). One QUIC connection is processed on one msquic worker, so a tunnel on one connection is capped by one core (estimated 3-8 Gbit/s on a modern server). To scale past that:
 - A tunnel may span N transport connections (QUIC or TLS-443), negotiated in the session layer, each pinned to a different core. N is configurable with an automatic default from the core count and link speed; N = 1 stays the default for small links.
 - Inner traffic is spread over the connections by a hash of the inner flow (5-tuple for IP, MAC pair plus EtherType for other L2), never per packet, so the packet order inside one inner flow is kept. One inner flow is therefore still limited to one connection.
-- Each connection carries its own Noise transport keys derived from the session handshake, and rekeys on its own; losing one connection moves its flows to the others without tearing down the session.
+- Each connection carries its own Noise transport keys derived from the session handshake, and rekeys on its own; losing one connection moves its flows to the others without tearing down the session. *(Superseded by the single-encryption amendment below: each connection is encrypted only by its own QUIC/TLS keys and bound to the session's Noise identity; the failover rule stays.)*
 - Together with QUIC over the XDP datapath (ADR-0018 decision 2) and USO/URO, the design target is tens of Gbit/s per tunnel and 50-100 Gbit/s per server on 64 cores with 100G NICs (estimate, to be measured once CORE-S1 runs on real hardware).
 
 ## Amendment 2026-10-15: TCP-over-TCP meltdown on the TLS/TCP 443 path
@@ -142,4 +142,12 @@ Maintainer decision (Hilmi: "ya"). Tunnelling TCP inside the TCP-443 fallback ca
 ## Amendment 2026-10-15: BBR congestion control in v1
 
 Maintainer decision (Hilmi). msquic runs with its BBR congestion controller instead of CUBIC by default, because BBR keeps throughput on lossy links (public Wi-Fi, mobile, long international routes) where CUBIC backs off on every loss. CUBIC stays selectable per link. The CORE-S1 benchmark measures both on a lossy-link case.
+
+## Amendment 2026-10-15: single encryption
+
+Maintainer decision (Hilmi: "gaperlu ada enkripsi ganda, catat"); the full rule is in ADR-0023 (amendment 2026-10-15).
+- Data is encrypted once, by msquic (QUIC) or Schannel (TLS 1.3), AES-GCM. The core does no per-packet crypto of its own on the QUIC and TLS-443 paths, which roughly halves the crypto cost per byte and brings per-core throughput close to WireGuard.
+- Noise_IK (CNG X25519, KSP identity key) stays as the identity handshake on the first stream of each connection, bound to that connection through the TLS exporter where the stack exposes one (Schannel: `SECPKG_ATTR_KEYING_MATERIAL`). A mismatch closes the connection.
+- Inner Noise data encryption remains only for the phase-2 CDN path.
+- Spike in CORE-S1-1: check whether Schannel (with TLS 1.3) and msquic expose an RFC 8446 exporter to the application (no msquic exporter API is known yet). Where one does not, the binding falls back to `tls-server-end-point` (RFC 5929: the hash of the pinned server certificate, whose key is in a KSP) in the Noise prologue; data encryption stays single either way.
 

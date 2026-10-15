@@ -27,7 +27,7 @@ Licensing: Hysteria is MIT, Xray-core is MPL-2.0 (file-level copyleft, may be li
 
 - Dropped from SoftEther: multi-TCP connections and half-duplex, custom UDP Acceleration, cloud NAT-T, the watermark, PACK as the session wire format, R-UDP.
 - Kept as ideas: getting through 443, looking like HTTPS, aggressive fallback.
-- Double encryption (Noise inside TLS/QUIC) is accepted; with AES-NI its cost is negligible, and it is what makes the CDN path safe.
+- Double encryption (Noise inside TLS/QUIC) is accepted; with AES-NI its cost is negligible, and it is what makes the CDN path safe. *(Superseded 2026-10-15 by ADR-0023: data is encrypted once by QUIC/TLS with Noise as a bound identity handshake; inner Noise encryption only on the CDN path.)*
 - ECH and ClientHello control are not provided by the core's TLS stack (ADR-0007); they belong to the tier-3 sidecar (ADR-0006). Minimum OS for the new core is Windows 11 / Server 2022.
 - The CDN path does not change the client's JA3: the censor on the client's network still sees the core's (Schannel) ClientHello; only the server side (anycast IP, certificate, JA3S) becomes Cloudflare's (ADR-0006).
 - The censorship tiers and client-side DPI evasion options are detailed in ADR-0006.
