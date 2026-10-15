@@ -519,7 +519,6 @@ void DnsResolver(THREAD *t, void *param)
 	}
 	else if (ret != EAI_NONAME)
 	{
-		Debug("DnsResolver(): GetAddrInfoW() failed with error %d!\n", ret);
 	}
 
 	ReleaseDnsResolver(resolver);
@@ -652,7 +651,6 @@ void DnsResolverReverse(THREAD *t, void *param)
 	}
 	else if (ret != EAI_NONAME)
 	{
-		Debug("DnsResolverReverse(): GetNameInfoW() failed with error %d!\n", ret);
 	}
 
 	ReleaseDnsResolverReverse(resolver);
