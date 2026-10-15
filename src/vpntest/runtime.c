@@ -19,6 +19,7 @@
 
 #include <locale.h>
 #include <stdarg.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <objbase.h>
@@ -1044,6 +1045,449 @@ static void RtCharsetAnsi(RT_CTX *ctx)
 	RtCheck(ctx, name != NULL, "The locale of the process is restored", "setlocale(LC_CTYPE, \"%s\") returned NULL", saved);
 }
 
+// Constants of the ANSI comparison of the charset test
+#define	RT_ANSI_ROUNDS			1500		// Generated strings per direction and locale
+#define	RT_ANSI_MAX_LEN			12			// Code units, or bytes, of the longest generated random string
+#define	RT_ANSI_SEED			0x7C3A91E5	// Seed of the generated strings: every run checks the same ones
+
+// Locales of the ANSI comparison (setlocale(LC_CTYPE) names); NULL is the locale of the process
+static char *rt_ansi_locales[] =
+{
+	NULL, "C", ".1252", ".932", ".UTF8", ".28591",
+};
+
+// UTF-16 code units the generator favours: ASCII, the C1 and Latin-1 edges, characters with and
+// without a best fit in the Western code pages, Japanese, surrogates and the last code units
+static wchar_t rt_ansi_units[] =
+{
+	L'A', L'z', L' ', 0x007F, 0x0080, 0x009F, 0x00A0, 0x00E9, 0x00FF, 0x0100, 0x0152, 0x0192,
+	0x20AC, 0x2122, 0x3042, 0x30A2, 0x4E00, 0xFF61, 0xD83D, 0xDE00, 0xFFFD, 0xFFFE, 0xFFFF,
+};
+
+// Bytes the generator favours: ASCII, the lead and trail bytes of code page 932, and the lead
+// and continuation bytes of UTF-8 around the boundaries of well-formed input
+static BYTE rt_ansi_bytes[] =
+{
+	0x41, 0x7F, 0x80, 0x81, 0x82, 0x9F, 0xA0, 0xA9, 0xBF, 0xC0, 0xC3, 0xDF, 0xE0, 0xE3, 0xED, 0xEF,
+	0xF0, 0xF4, 0xF5, 0xFC, 0xFF,
+};
+
+// Result of the ANSI comparison in one locale. The first difference is kept as raw data and only
+// formatted once the locale of the process is back (Format itself converts through the ANSI code page)
+typedef struct RT_ANSI_DIFF
+{
+	bool Set;								// The locale was set and compared
+	UINT NumCompared;						// Calls compared with the old code
+	UINT NumDiffer;							// Calls whose result differs
+	char *FirstFunc;						// Function of the first difference
+	UINT FirstSize;							// Its size argument
+	bool FirstIsUni;						// Its input is FirstUni (else FirstStr)
+	wchar_t FirstUni[RT_ANSI_MAX_LEN + 1];	// Its UTF-16 input
+	char FirstStr[RT_CHARSET_BUF];			// Its byte input
+} RT_ANSI_DIFF;
+
+// The old ANSI conversions of Internat.c (before NAT-5), kept as the live oracle: wcstombs and
+// mbstowcs of the C runtime in its current LC_CTYPE locale
+static UINT RtOldCalcUniToStr(wchar_t *s)
+{
+	UINT ret;
+	if (s == NULL)
+	{
+		return 0;
+	}
+
+	ret = (UINT)wcstombs(NULL, s, UniStrLen(s));
+	if (ret == (UINT)-1)
+	{
+		return 0;
+	}
+
+	return ret + 1;
+}
+
+static UINT RtOldUniToStr(char *str, UINT size, wchar_t *s)
+{
+	UINT ret;
+	char *tmp;
+	UINT new_size;
+	if (s == NULL || str == NULL)
+	{
+		return 0;
+	}
+
+	new_size = RtOldCalcUniToStr(s);
+	if (new_size == 0)
+	{
+		if (size >= 1)
+		{
+			StrCpy(str, 0, "");
+		}
+		return 0;
+	}
+	tmp = Malloc(new_size);
+	tmp[0] = 0;
+	wcstombs(tmp, s, new_size);
+	tmp[new_size - 1] = 0;
+	ret = StrCpy(str, size, tmp);
+	Free(tmp);
+
+	return ret;
+}
+
+static char *RtOldCopyUniToStr(wchar_t *unistr)
+{
+	char *str;
+	UINT str_size;
+	if (unistr == NULL)
+	{
+		return NULL;
+	}
+
+	str_size = RtOldCalcUniToStr(unistr);
+	if (str_size == 0)
+	{
+		return CopyStr("");
+	}
+	str = Malloc(str_size);
+	RtOldUniToStr(str, str_size, unistr);
+
+	return str;
+}
+
+static UINT RtOldCalcStrToUni(char *str)
+{
+	UINT ret;
+	if (str == NULL)
+	{
+		return 0;
+	}
+
+	ret = (UINT)mbstowcs(NULL, str, StrLen(str));
+	if (ret == (UINT)-1)
+	{
+		return 0;
+	}
+
+	return (ret + 1) * sizeof(wchar_t);
+}
+
+static UINT RtOldStrToUni(wchar_t *s, UINT size, char *str)
+{
+	UINT ret;
+	wchar_t *tmp;
+	UINT new_size;
+	if (s == NULL || str == NULL)
+	{
+		return 0;
+	}
+
+	new_size = RtOldCalcStrToUni(str);
+	if (new_size == 0)
+	{
+		if (size >= 2)
+		{
+			UniStrCpy(s, 0, L"");
+		}
+		return 0;
+	}
+	tmp = Malloc(new_size);
+	tmp[0] = 0;
+	mbstowcs(tmp, str, StrLen(str));
+	tmp[(new_size - 1) / sizeof(wchar_t)] = 0;
+	ret = UniStrCpy(s, size, tmp);
+	Free(tmp);
+
+	return ret;
+}
+
+static wchar_t *RtOldCopyStrToUni(char *str)
+{
+	wchar_t *uni;
+	UINT uni_size;
+	if (str == NULL)
+	{
+		return NULL;
+	}
+
+	uni_size = RtOldCalcStrToUni(str);
+	if (uni_size == 0)
+	{
+		return CopyUniStr(L"");
+	}
+	uni = Malloc(uni_size);
+	RtOldStrToUni(uni, uni_size, str);
+
+	return uni;
+}
+
+// Count one compared call, and keep the first one whose result differs
+static void RtAnsiDiff(RT_ANSI_DIFF *d, bool same, char *func, UINT size, wchar_t *w, char *s)
+{
+	d->NumCompared++;
+	if (same)
+	{
+		return;
+	}
+
+	if (d->NumDiffer++ == 0)
+	{
+		d->FirstFunc = func;
+		d->FirstSize = size;
+		d->FirstIsUni = (w != NULL);
+		if (w != NULL)
+		{
+			Copy(d->FirstUni, w, (UniStrLen(w) + 1) * sizeof(wchar_t));
+		}
+		else
+		{
+			Copy(d->FirstStr, s, StrLen(s) + 1);
+		}
+	}
+}
+
+// Generate a UTF-16 string of up to RT_ANSI_MAX_LEN non-zero code units into w (RT_ANSI_MAX_LEN + 1
+// units): favoured units, printable ASCII, U+0080-U+01FF, surrogate pairs (a lone high surrogate
+// at the end), or any code unit
+static void RtAnsiGenUni(UINT *state, wchar_t *w)
+{
+	UINT len = RtCharsetRandom(state) % (RT_ANSI_MAX_LEN + 1);
+	UINT i;
+
+	for (i = 0;i < len;i++)
+	{
+		UINT r = RtCharsetRandom(state);
+
+		switch (r % 5)
+		{
+		case 0:
+			w[i] = rt_ansi_units[(r >> 3) % (sizeof(rt_ansi_units) / sizeof(rt_ansi_units[0]))];
+			break;
+		case 1:
+			w[i] = (wchar_t)(0x20 + (r >> 3) % 0x5F);
+			break;
+		case 2:
+			w[i] = (wchar_t)(0x80 + (r >> 3) % 0x180);
+			break;
+		case 3:
+			w[i] = (wchar_t)(0xD800 + (r >> 3) % 0x400);
+			if ((i + 1) < len)
+			{
+				i++;
+				w[i] = (wchar_t)(0xDC00 + (r >> 13) % 0x400);
+			}
+			break;
+		default:
+			w[i] = (wchar_t)(1 + (r >> 3) % 0xFFFF);
+			break;
+		}
+	}
+	w[len] = 0;
+}
+
+// Generate a byte string into s (RT_CHARSET_BUF bytes): random bytes, favoured bytes, or the
+// bytes of a generated UTF-16 string in the current locale (input that converts), the last
+// now and then cut by a byte or with one byte replaced
+static void RtAnsiGenStr(UINT *state, char *s)
+{
+	UINT mode = RtCharsetRandom(state) % 3;
+	UINT len = 0;
+	UINT i;
+
+	if (mode == 0 || mode == 1)
+	{
+		len = RtCharsetRandom(state) % (RT_ANSI_MAX_LEN + 1);
+		for (i = 0;i < len;i++)
+		{
+			UINT r = RtCharsetRandom(state);
+
+			if (mode == 0)
+			{
+				s[i] = (char)(1 + (r >> 3) % 0xFF);
+			}
+			else
+			{
+				s[i] = (char)rt_ansi_bytes[(r >> 3) % sizeof(rt_ansi_bytes)];
+			}
+		}
+		s[len] = 0;
+		return;
+	}
+
+	{
+		wchar_t w[RT_ANSI_MAX_LEN + 1];
+		UINT r;
+
+		RtAnsiGenUni(state, w);
+		len = RtOldUniToStr(s, RT_CHARSET_BUF, w);
+
+		r = RtCharsetRandom(state);
+		if (len != 0 && (r % 3) == 0)
+		{
+			if (((r >> 2) % 2) == 0)
+			{
+				s[len - 1] = 0;
+			}
+			else
+			{
+				s[(r >> 3) % len] = (char)rt_ansi_bytes[(r >> 8) % sizeof(rt_ansi_bytes)];
+			}
+		}
+	}
+}
+
+// UniToStr, CalcUniToStr and CopyUniToStr against the old code on wcstombs, StrToUni,
+// CalcStrToUni and CopyStrToUni against the old code on mbstowcs, in the current locale. Each
+// destination is filled first and compared whole, at size 0 (no limit), at the exact size and at
+// a random size. Prints nothing: the current locale may not be the locale of the process.
+static void RtAnsiCompare(RT_ANSI_DIFF *d, UINT *state)
+{
+	UINT n, i;
+
+	for (n = 0;n < RT_ANSI_ROUNDS;n++)
+	{
+		wchar_t w[RT_ANSI_MAX_LEN + 1];
+		char got[RT_CHARSET_BUF];
+		char want[RT_CHARSET_BUF];
+		UINT full, sizes[3];
+		char *copy, *want_copy;
+
+		RtAnsiGenUni(state, w);
+		full = RtOldCalcUniToStr(w);
+		RtAnsiDiff(d, CalcUniToStr(w) == full, "CalcUniToStr", 0, w, NULL);
+
+		sizes[0] = 0;
+		sizes[1] = full;
+		sizes[2] = 1 + RtCharsetRandom(state) % (full + 2);
+		for (i = 0;i < 3;i++)
+		{
+			UINT r1, r2;
+
+			memset(got, RT_CHARSET_FILL_BYTE, sizeof(got));
+			memset(want, RT_CHARSET_FILL_BYTE, sizeof(want));
+			r1 = UniToStr(got, sizes[i], w);
+			r2 = RtOldUniToStr(want, sizes[i], w);
+			RtAnsiDiff(d, r1 == r2 && Cmp(got, want, sizeof(got)) == 0, "UniToStr", sizes[i], w, NULL);
+		}
+
+		copy = CopyUniToStr(w);
+		want_copy = RtOldCopyUniToStr(w);
+		RtAnsiDiff(d, copy != NULL && want_copy != NULL && StrCmp(copy, want_copy) == 0, "CopyUniToStr", 0, w, NULL);
+		Free(copy);
+		Free(want_copy);
+	}
+
+	for (n = 0;n < RT_ANSI_ROUNDS;n++)
+	{
+		char s[RT_CHARSET_BUF];
+		wchar_t got[RT_CHARSET_BUF];
+		wchar_t want[RT_CHARSET_BUF];
+		UINT full, sizes[3];
+		wchar_t *copy, *want_copy;
+
+		RtAnsiGenStr(state, s);
+		full = RtOldCalcStrToUni(s);
+		RtAnsiDiff(d, CalcStrToUni(s) == full, "CalcStrToUni", 0, NULL, s);
+
+		sizes[0] = 0;
+		sizes[1] = full;
+		sizes[2] = 1 + RtCharsetRandom(state) % (full + 4);
+		for (i = 0;i < 3;i++)
+		{
+			UINT r1, r2;
+
+			memset(got, RT_CHARSET_FILL_BYTE, sizeof(got));
+			memset(want, RT_CHARSET_FILL_BYTE, sizeof(want));
+			r1 = StrToUni(got, sizes[i], s);
+			r2 = RtOldStrToUni(want, sizes[i], s);
+			RtAnsiDiff(d, r1 == r2 && Cmp(got, want, sizeof(got)) == 0, "StrToUni", sizes[i], NULL, s);
+		}
+
+		copy = CopyStrToUni(s);
+		want_copy = RtOldCopyStrToUni(s);
+		RtAnsiDiff(d, copy != NULL && want_copy != NULL && UniStrCmp(copy, want_copy) == 0, "CopyStrToUni", 0, NULL, s);
+		Free(copy);
+		Free(want_copy);
+	}
+}
+
+// ANSI against the old code, live: the six ANSI functions against copies of their old code on
+// wcstombs and mbstowcs, on generated strings, in the locale of the process, in the C locale, and
+// in code pages 1252, 932, UTF-8 and 28591 whenever setlocale accepts them. The checks are
+// printed once the locale of the process is back.
+static void RtCharsetAnsiOracle(RT_CTX *ctx)
+{
+	RT_ANSI_DIFF d[sizeof(rt_ansi_locales) / sizeof(rt_ansi_locales[0])];
+	UINT num = sizeof(rt_ansi_locales) / sizeof(rt_ansi_locales[0]);
+	UINT state = RT_ANSI_SEED;
+	char saved[MAX_SIZE];
+	char what[MAX_SIZE];
+	char input[MAX_SIZE];
+	char *name;
+	bool restored;
+	UINT i, j;
+
+	Zero(d, sizeof(d));
+
+	name = setlocale(LC_CTYPE, NULL);
+	StrCpy(saved, sizeof(saved), (name == NULL) ? "" : name);
+
+	for (i = 0;i < num;i++)
+	{
+		d[i].Set = (rt_ansi_locales[i] == NULL || setlocale(LC_CTYPE, rt_ansi_locales[i]) != NULL);
+		if (d[i].Set)
+		{
+			RtAnsiCompare(&d[i], &state);
+		}
+	}
+
+	restored = (setlocale(LC_CTYPE, saved) != NULL);
+
+	for (i = 0;i < num;i++)
+	{
+		char *label = (rt_ansi_locales[i] == NULL) ? "the process locale" : rt_ansi_locales[i];
+
+		Format(what, sizeof(what), "ANSI functions match the old wcstombs and mbstowcs code in %s", label);
+		if (d[i].Set == false)
+		{
+			if (StrCmp(rt_ansi_locales[i], "C") == 0)
+			{
+				RtCheck(ctx, false, what, "setlocale(LC_CTYPE, \"C\") returned NULL");
+			}
+			else
+			{
+				Print("  [SKIP] %s: setlocale(LC_CTYPE, \"%s\") returned NULL\n", what, label);
+			}
+			continue;
+		}
+
+		input[0] = 0;
+		if (d[i].NumDiffer != 0)
+		{
+			if (d[i].FirstIsUni)
+			{
+				for (j = 0;d[i].FirstUni[j] != 0;j++)
+				{
+					char unit[8];
+
+					Format(unit, sizeof(unit), "%04X ", (UINT)d[i].FirstUni[j]);
+					StrCat(input, sizeof(input), unit);
+				}
+			}
+			else
+			{
+				BinToStrEx(input, sizeof(input), d[i].FirstStr, StrLen(d[i].FirstStr));
+			}
+		}
+
+		RtCheck(ctx, d[i].NumCompared != 0 && d[i].NumDiffer == 0, what,
+			"%u of %u calls differ, first: %s size %u, input %s", d[i].NumDiffer, d[i].NumCompared,
+			(d[i].FirstFunc == NULL) ? "-" : d[i].FirstFunc, d[i].FirstSize, input);
+	}
+
+	RtCheck(ctx, restored, "The locale of the process is restored after the ANSI comparison",
+		"setlocale(LC_CTYPE, \"%s\") returned NULL", saved);
+}
+
 // charset: the UTF-8 and ANSI conversions of Internat.c against fixed vectors (valid, invalid
 // and boundary sequences) and against a reference of the UTF-8 coding Mayaqua has always done
 void charset_test(UINT num, char **arg)
@@ -1055,6 +1499,7 @@ void charset_test(UINT num, char **arg)
 	RtCharsetUtf8Fixed(&ctx);
 	RtCharsetUtf8Sweep(&ctx);
 	RtCharsetAnsi(&ctx);
+	RtCharsetAnsiOracle(&ctx);
 
 	RtEnd(&ctx);
 }
