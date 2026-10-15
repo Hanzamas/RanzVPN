@@ -812,10 +812,52 @@ static void RtResourceHash(char *hash_str, UINT hash_str_size, BUF *b, bool text
 	Free(data);
 }
 
+// Executables of the build that carry the same hamcore resources as vpntest.exe, next to it
+static wchar_t *rt_resource_exes[] =
+{
+	L"vpnserver.exe",
+	L"vpncmd.exe",
+};
+
+// State of RtResourceCompare: the module to compare with, and the counts it gives
+typedef struct RT_RES_CMP
+{
+	HMODULE Other;		// Module whose resources are compared with the enumerated ones
+	UINT Num;			// Resources enumerated
+	UINT NumSame;		// Of them, the ones that Other holds with the same bytes
+} RT_RES_CMP;
+
+// EnumResourceNames callback: count the resource, and count it as the same when the other
+// module holds a resource of that type and name with the same bytes
+static BOOL CALLBACK RtResourceCompare(HMODULE module, LPCSTR type, LPSTR name, LONG_PTR param)
+{
+	RT_RES_CMP *c = (RT_RES_CMP *)param;
+	HRSRC r1 = FindResourceA(module, name, type);
+	HRSRC r2 = FindResourceA(c->Other, name, type);
+
+	c->Num++;
+
+	if (r1 != NULL && r2 != NULL)
+	{
+		UINT size1 = SizeofResource(module, r1);
+		UINT size2 = SizeofResource(c->Other, r2);
+		void *data1 = LockResource(LoadResource(module, r1));
+		void *data2 = LockResource(LoadResource(c->Other, r2));
+
+		if (size1 == size2 && data1 != NULL && data2 != NULL && Cmp(data1, data2, size1) == 0)
+		{
+			c->NumSame++;
+		}
+	}
+
+	return TRUE;
+}
+
 // resources: the hamcore files (src/bin/hamcore) that ReadHamcore and the "|" prefix read.
 // Every file with its exact bytes, "\" read as "/", a leading "/" skipped, a missing name, a
 // new buffer for each read, a loose "hamcore" folder next to the executable winning over the
-// built-in file, and no hamcore.se2 archive next to the executable (#89)
+// built-in file, no hamcore.se2 archive next to the executable, and vpnserver.exe and
+// vpncmd.exe carrying the same resources as vpntest.exe (#89)
 void resources_test(UINT num, char **arg)
 {
 	RT_CTX ctx;
@@ -840,6 +882,39 @@ void resources_test(UINT num, char **arg)
 
 	// The executable carries the files itself: the build writes no hamcore.se2 archive
 	RtCheck(&ctx, IsFileExistsW(se2_path) == false, "No hamcore.se2 next to the executable", "%S exists", se2_path);
+
+	// vpnserver.exe and vpncmd.exe carry the same files: each holds every resource of type
+	// HAMCORE_RESOURCE_TYPE of this executable with the same bytes, and no other one
+	for (i = 0;i < sizeof(rt_resource_exes) / sizeof(rt_resource_exes[0]);i++)
+	{
+		wchar_t other_path[MAX_SIZE];
+		HMODULE self = GetModuleHandleW(NULL);
+		HMODULE other;
+		RT_RES_CMP mine, theirs;
+		UINT err;
+
+		Zero(&mine, sizeof(mine));
+		Zero(&theirs, sizeof(theirs));
+
+		ConbinePathW(other_path, sizeof(other_path), exe_dir, rt_resource_exes[i]);
+		other = LoadLibraryExW(other_path, NULL, LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE);
+		err = GetLastError();
+		Format(what, sizeof(what), "Load %S as a data file", rt_resource_exes[i]);
+		if (RtCheck(&ctx, other != NULL, what, "cannot load %S (error %u)", other_path, err))
+		{
+			mine.Other = other;
+			theirs.Other = self;
+			EnumResourceNamesA(self, HAMCORE_RESOURCE_TYPE, RtResourceCompare, (LONG_PTR)&mine);
+			EnumResourceNamesA(other, HAMCORE_RESOURCE_TYPE, RtResourceCompare, (LONG_PTR)&theirs);
+
+			Format(what, sizeof(what), "%S holds the hamcore resources of vpntest.exe, and no other", rt_resource_exes[i]);
+			RtCheck(&ctx, mine.Num != 0 && mine.NumSame == mine.Num && theirs.NumSame == theirs.Num, what,
+				"%u of the %u resources of vpntest.exe and %u of its own %u are the same",
+				mine.NumSame, mine.Num, theirs.NumSame, theirs.Num);
+
+			FreeLibrary(other);
+		}
+	}
 
 	// Every file holds the bytes of its source file
 	for (i = 0;i < sizeof(rt_resources) / sizeof(rt_resources[0]);i++)
