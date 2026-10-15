@@ -822,10 +822,19 @@ bool IsSafeUniChar(wchar_t c)
 // selects uses this code page.
 #define	ANSI_C_LOCALE_CODE_PAGE		28591
 
-// Code page of the ANSI conversions
-static UINT AnsiCodePage()
+// Code page of the ANSI conversions. *c_locale (optional) receives whether the C locale is
+// active, the same test the UCRT's own mbstowcs() and wcstombs() make: only that locale has no
+// best fit, while a real ".28591" locale has the best fit of code page 28591.
+static UINT AnsiCodePage(bool *c_locale)
 {
-	if (___lc_locale_name_func()[LC_CTYPE] == NULL)
+	bool c = (___lc_locale_name_func()[LC_CTYPE] == NULL);
+
+	if (c_locale != NULL)
+	{
+		*c_locale = c;
+	}
+
+	if (c)
 	{
 		return ANSI_C_LOCALE_CODE_PAGE;
 	}
@@ -837,7 +846,7 @@ static UINT AnsiCodePage()
 // number of wchar_t with the terminating NUL, or 0 when str does not convert
 static UINT ConvertAnsiToUni(wchar_t *dst, UINT dst_len, char *str)
 {
-	UINT cp = AnsiCodePage();
+	UINT cp = AnsiCodePage(NULL);
 	// UTF-8 takes no flag but MB_ERR_INVALID_CHARS
 	DWORD flags = (cp == CP_UTF8) ? MB_ERR_INVALID_CHARS : (MB_PRECOMPOSED | MB_ERR_INVALID_CHARS);
 	int ret = MultiByteToWideChar(cp, flags, str, -1, dst, (int)dst_len);
@@ -849,7 +858,8 @@ static UINT ConvertAnsiToUni(wchar_t *dst, UINT dst_len, char *str)
 // number of bytes with the terminating NUL, or 0 when s does not convert
 static UINT ConvertUniToAnsi(char *dst, UINT dst_size, wchar_t *s)
 {
-	UINT cp = AnsiCodePage();
+	bool c_locale;
+	UINT cp = AnsiCodePage(&c_locale);
 	BOOL used_default = FALSE;
 	int ret;
 
@@ -860,7 +870,7 @@ static UINT ConvertUniToAnsi(char *dst, UINT dst_size, wchar_t *s)
 	}
 	else
 	{
-		ret = WideCharToMultiByte(cp, (cp == ANSI_C_LOCALE_CODE_PAGE) ? WC_NO_BEST_FIT_CHARS : 0, s, -1, dst, (int)dst_size, NULL, &used_default);
+		ret = WideCharToMultiByte(cp, c_locale ? WC_NO_BEST_FIT_CHARS : 0, s, -1, dst, (int)dst_size, NULL, &used_default);
 	}
 
 	return (ret > 0 && used_default == FALSE) ? (UINT)ret : 0;
