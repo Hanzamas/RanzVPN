@@ -11,6 +11,7 @@
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
+#include "Mayaqua/Mayaqua.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Network.h"
 #include "Mayaqua/Object.h"
@@ -1142,6 +1143,41 @@ void dns_test(UINT num, char **arg)
 
 	FreeHostIPAddressList(v6);
 	FreeHostIPAddressList(v4);
+
+	RtEnd(&ctx);
+}
+
+// Probe message of the trace test; the ETW step of CI (.github/scripts/etw-trace.ps1) looks for
+// "RANZ TRACE PROBE 92 debug-on" and "RANZ TRACE PROBE 92 debug-off" in the console output and in
+// the trace session's .etl file
+#define	RT_TRACE_PROBE_FMT		"RANZ TRACE PROBE %u %s\n"
+#define	RT_TRACE_PROBE_NUM		92
+
+// trace: Debug() prints only while debug output is on, with or without an ETW trace session, and
+// hands every message to the TraceLogging provider while a session listens (ticket #92). One probe
+// goes out with debug output on and one with it off. Run as "trace listening" inside the CI
+// trace session, both probes must reach the session's .etl file; before the provider existed,
+// neither did.
+void trace_test(UINT num, char **arg)
+{
+	RT_CTX ctx;
+	bool listening = (num >= 1 && StrCmpi(arg[0], "listening") == 0);
+	bool debug = g_debug;
+
+	RtBegin(&ctx, "TRACE", listening ? "ETW trace test (inside a trace session)" : "ETW trace test (no trace session)");
+
+	RtCheck(&ctx, debug, "vpntest runs with debug output on", "g_debug is off");
+
+	// Printed, and traced while a session listens
+	Debug(RT_TRACE_PROBE_FMT, RT_TRACE_PROBE_NUM, "debug-on");
+
+	// Not printed, but traced while a session listens
+	g_debug = false;
+	Debug(RT_TRACE_PROBE_FMT, RT_TRACE_PROBE_NUM, "debug-off");
+	g_debug = debug;
+
+	// No format: Debug() returns at once, also while a session listens
+	Debug(NULL);
 
 	RtEnd(&ctx);
 }

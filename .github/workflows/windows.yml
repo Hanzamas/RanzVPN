@@ -123,6 +123,13 @@ jobs:
         Write-Host $out
         if ($LASTEXITCODE -ne 0) { throw "vpncmd self-check exited with code $LASTEXITCODE" }
         if ($out -notmatch 'All checks passed') { throw "vpncmd self-check did not report 'All checks passed'" }
+    # vpntest trace without and inside an ETW trace session on the Debug() TraceLogging provider (ticket #92).
+    # The session's .etl file is kept in build/harness-out/.
+    - name: ETW trace session
+      timeout-minutes: 5
+      shell: pwsh
+      run: |
+        . .github/scripts/etw-trace.ps1
     - name: Upload harness outputs (golden bootstrap and diffs)
       if: always()
       uses: actions/upload-artifact@v4
@@ -209,7 +216,7 @@ jobs:
       env:
         # harness and bench have time budgets that AddressSanitizer would exceed; run them in build_and_test only.
         # certdl has time windows too (it measures the client timeouts); it also runs in build_and_test only.
-        RANZ_SMOKE_TESTS: mschapv2,stun,watermark,stress,tickorigin,timeenc,nullsafe,fileio,threadpool,dns
+        RANZ_SMOKE_TESTS: mschapv2,stun,watermark,stress,tickorigin,timeenc,nullsafe,fileio,threadpool,dns,trace
       run: |
         # The smoke test script of build_and_test itself, so both jobs run the same test list:
         # its new path (.github/scripts) first, its old one second. Its output and the vpntest
