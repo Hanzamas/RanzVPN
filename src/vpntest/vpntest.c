@@ -446,6 +446,7 @@ void fileio_test(UINT num, char **arg);
 void threadpool_test(UINT num, char **arg);
 void dns_test(UINT num, char **arg);
 void trace_test(UINT num, char **arg);
+void eventlog_test(UINT num, char **arg);
 
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
@@ -546,6 +547,7 @@ TEST_LIST test_list[] =
 	{"threadpool", threadpool_test, "Thread pool: job pickup, host thread id and COM, idle reuse, many waiters, host handles."},
 	{"dns", dns_test, "DNS: localhost and IP literals answered at once, the computer name through the resolver thread."},
 	{"trace", trace_test, "ETW trace: Debug() output unchanged, messages to the TraceLogging provider: trace [listening]."},
+	{"eventlog", eventlog_test, "Event Log: MsWriteEventLog entries read back from the Application log."},
 	{"certdl", certdl_test, "SetServerCert downloads the issuer certificate from a loopback listener (DownloadCert)."},
 };
 

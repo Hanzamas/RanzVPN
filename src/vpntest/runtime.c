@@ -13,6 +13,7 @@
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Mayaqua.h"
 #include "Mayaqua/Memory.h"
+#include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Network.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
@@ -1184,6 +1185,126 @@ void trace_test(UINT num, char **arg)
 
 	// No format: Debug() returns at once, also while a session listens
 	Debug(NULL);
+
+	RtEnd(&ctx);
+}
+
+// Event source and limits of the event log test
+#define	RT_EVENTLOG_SOURCE		"vpntest"
+#define	RT_EVENTLOG_WAIT		10000		// How long the entry may take to appear in the log (ms)
+#define	RT_EVENTLOG_SCAN		2000		// Newest entries of the Application log searched
+
+// Whether one of the newest entries of the Application log has the source, type and event ID,
+// and the message as its only insertion string
+static bool RtEventLogFind(char *source, UINT type, UINT event_id, char *message)
+{
+	HANDLE h;
+	UCHAR *buf;
+	DWORD buf_size = 0x10000;
+	UINT scanned = 0;
+	bool found = false;
+	wchar_t source_w[MAX_SIZE];
+	wchar_t message_w[MAX_SIZE];
+
+	StrToUni(source_w, sizeof(source_w), source);
+	StrToUni(message_w, sizeof(message_w), message);
+
+	h = OpenEventLogW(NULL, L"Application");
+	if (h == NULL)
+	{
+		return false;
+	}
+
+	buf = Malloc(buf_size);
+
+	// Newest first
+	while (found == false && scanned < RT_EVENTLOG_SCAN)
+	{
+		DWORD read = 0;
+		DWORD needed = 0;
+		DWORD pos = 0;
+
+		if (ReadEventLogW(h, EVENTLOG_SEQUENTIAL_READ | EVENTLOG_BACKWARDS_READ, 0, buf, buf_size, &read, &needed) == false)
+		{
+			if (GetLastError() == ERROR_INSUFFICIENT_BUFFER && needed > buf_size)
+			{
+				buf_size = needed;
+				buf = ReAlloc(buf, buf_size);
+				continue;
+			}
+
+			// ERROR_HANDLE_EOF: no older entries
+			break;
+		}
+
+		while (found == false && pos + sizeof(EVENTLOGRECORD) <= read)
+		{
+			EVENTLOGRECORD *r = (EVENTLOGRECORD *)(buf + pos);
+			wchar_t *rec_source = (wchar_t *)(buf + pos + sizeof(EVENTLOGRECORD));
+			wchar_t *rec_message = (wchar_t *)(buf + pos + r->StringOffset);
+
+			if (r->Length == 0)
+			{
+				break;
+			}
+
+			if (r->EventID == event_id && r->EventType == type && r->NumStrings == 1 &&
+				UniStrCmp(rec_source, source_w) == 0 && UniStrCmp(rec_message, message_w) == 0)
+			{
+				found = true;
+			}
+
+			scanned++;
+			pos += r->Length;
+		}
+	}
+
+	Free(buf);
+	CloseEventLog(h);
+
+	return found;
+}
+
+// eventlog: MsWriteEventLog() writes an Application log entry that the Event Log gives back with
+// its source, type, event ID and message, the way the service writes its start and stop entries
+// (ticket #92); a NULL source or message writes nothing
+void eventlog_test(UINT num, char **arg)
+{
+	RT_CTX ctx;
+	char msg[MAX_SIZE];
+	bool ret;
+	UINT err;
+	bool found = false;
+	UINT64 end;
+
+	RtBegin(&ctx, "EVENTLOG", "Event log test");
+
+	// Unique to this run, so that an entry of an earlier run does not count
+	Format(msg, sizeof(msg), "vpntest event log probe %u %I64u", MsGetCurrentProcessId(), SystemTime64());
+
+	ret = MsWriteEventLog(RT_EVENTLOG_SOURCE, EVENTLOG_INFORMATION_TYPE, MS_EVENT_SERVICE_STARTED, msg);
+	err = GetLastError();
+	RtCheck(&ctx, ret, "MsWriteEventLog writes an information entry", "returned false, error %u", err);
+
+	// The entry may take a moment to become readable
+	end = Tick64() + RT_EVENTLOG_WAIT;
+	while (ret)
+	{
+		found = RtEventLogFind(RT_EVENTLOG_SOURCE, EVENTLOG_INFORMATION_TYPE, MS_EVENT_SERVICE_STARTED, msg);
+		if (found || Tick64() >= end)
+		{
+			break;
+		}
+
+		SleepThread(100);
+	}
+	RtCheck(&ctx, found, "The Application log holds the entry with its source, type, event ID and message",
+		"not among the newest %u entries within %u ms", RT_EVENTLOG_SCAN, RT_EVENTLOG_WAIT);
+
+	RtCheck(&ctx, MsWriteEventLog(NULL, EVENTLOG_INFORMATION_TYPE, MS_EVENT_SERVICE_STARTED, msg) == false,
+		"MsWriteEventLog with a NULL source returns false", "returned true");
+	RtCheck(&ctx, MsWriteEventLog(RT_EVENTLOG_SOURCE, EVENTLOG_INFORMATION_TYPE, MS_EVENT_SERVICE_STARTED, NULL) == false,
+		"MsWriteEventLog with a NULL message returns false", "returned true");
 
 	RtEnd(&ctx);
 }
