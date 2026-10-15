@@ -82,10 +82,13 @@ try {
 	Show-Diagnostics
 	throw
 } finally {
-	# Leave no service behind for the later steps
+	# Leave no service behind for the later steps. A service that /uninstall already deleted can
+	# still be listed until its process ends; sc.exe then fails, which is not an error of this step,
+	# and the exit code it leaves must not become the step's (the runner exits with $LASTEXITCODE).
 	if (Get-Service -Name $service -ErrorAction SilentlyContinue) {
 		& sc.exe stop $service | Out-Null
 		& sc.exe delete $service | Out-Null
+		$global:LASTEXITCODE = 0
 	}
 }
 
