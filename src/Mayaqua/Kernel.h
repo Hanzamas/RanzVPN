@@ -34,18 +34,10 @@ struct THREAD
 	void *pData;
 	EVENT *init_finished_event;
 	UINT ThreadId;
-	LIST *PoolWaitList;
-	volatile bool PoolHalting;
+	void *StartedEvent;				// Kernel event the pool callback sets once it took the job (NewThread waits for it)
+	void *EndedEvent;				// Manual-reset kernel event set once the job ended (WaitThread waits on it)
 	EVENT *release_event;
 	char *Name;
-};
-
-struct THREAD_POOL_DATA
-{
-	EVENT *Event;
-	EVENT *InitFinishEvent;
-	THREAD *Thread;
-	THREAD_PROC *ThreadProc;
 };
 
 struct INSTANCE

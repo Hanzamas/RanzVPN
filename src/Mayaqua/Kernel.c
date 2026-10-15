@@ -57,7 +57,6 @@ static int ydays[] =
 	0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365
 };
 
-static COUNTER *current_num_thread = NULL;
 static UINT cached_number_of_cpus = 0;
 
 
@@ -461,149 +460,116 @@ static UINT64 SafeTime64(UINT64 sec64)
 	return MAKESURE(sec64, 0, 4102243323123ULL);
 }
 
-static SK *thread_pool = NULL;
-static COUNTER *thread_count = NULL;
+// The THREAD jobs (NewThreadNamed) run on a private Windows thread pool. Every job joins the
+// cleanup group, which FreeThreading waits on.
+#define	THREAD_POOL_MAX_THREADS		65535	// Upper bound of pool threads: the Windows default (500) is too low for a server
+
+static PTP_POOL thread_pool = NULL;
+static PTP_CLEANUP_GROUP thread_pool_cleanup = NULL;
+static TP_CALLBACK_ENVIRON thread_pool_env;
+static volatile LONG thread_pool_posted = 0;	// Jobs posted so far (only compared, so it may wrap)
 
 void InitThreading()
 {
-	thread_pool = NewSk();
-	thread_count = NewCounter();
-	current_num_thread = NewCounter();
+	thread_pool = CreateThreadpool(NULL);
+	thread_pool_cleanup = CreateThreadpoolCleanupGroup();
+	if (thread_pool == NULL || thread_pool_cleanup == NULL)
+	{
+		printf("\n\n*** error: thread pool create failed.\n\n");
+		AbortExit();
+	}
+
+	SetThreadpoolThreadMaximum(thread_pool, THREAD_POOL_MAX_THREADS);
+
+	InitializeThreadpoolEnvironment(&thread_pool_env);
+	SetThreadpoolCallbackPool(&thread_pool_env, thread_pool);
+	SetThreadpoolCallbackCleanupGroup(&thread_pool_env, thread_pool_cleanup, NULL);
 }
 
 void FreeThreading()
 {
-	while (true)
+	LONG posted;
+
+	// Wait until every job has ended. A job that a running job posts after the wait took the
+	// members of the cleanup group is not part of that wait, but NewThreadNamed counts the post
+	// before the running job can end, so wait again until a whole wait passed without a post.
+	do
 	{
-		if (Count(thread_count) == 0)
-		{
-			break;
-		}
+		posted = InterlockedCompareExchange(&thread_pool_posted, 0, 0);
 
-		SleepThread(25);
+		CloseThreadpoolCleanupGroupMembers(thread_pool_cleanup, FALSE, NULL);
 	}
+	while (InterlockedCompareExchange(&thread_pool_posted, 0, 0) != posted);
 
-	while (true)
-	{
-		THREAD_POOL_DATA *pd;
-		THREAD *t = Pop(thread_pool);
+	CloseThreadpoolCleanupGroup(thread_pool_cleanup);
+	thread_pool_cleanup = NULL;
 
-		if (t == NULL)
-		{
-			break;
-		}
+	DestroyThreadpoolEnvironment(&thread_pool_env);
 
-		pd = (THREAD_POOL_DATA *)t->param;
-
-		pd->ThreadProc = NULL;
-		Set(pd->Event);
-
-		WaitThreadInternal(t);
-
-		pd = (THREAD_POOL_DATA *)t->param;
-		ReleaseEvent(pd->Event);
-		ReleaseEvent(pd->InitFinishEvent);
-
-		ReleaseThreadInternal(t);
-
-		Free(pd);
-	}
-
-	ReleaseSk(thread_pool);
-
-	DeleteCounter(thread_count);
-	thread_count = NULL;
-
-	DeleteCounter(current_num_thread);
-	current_num_thread = NULL;
+	CloseThreadpool(thread_pool);
+	thread_pool = NULL;
 }
 
-static void ThreadPoolProc(THREAD *t, void *param)
+// Pool callback of one THREAD job, called once on a thread of the pool: prepare the thread as a
+// host thread (HostThreadProc), take the job, run it, wake the WaitThread callers, hold the thread
+// until every other holder released the THREAD, and give the thread back as it was found
+static void NTAPI ThreadPoolCallback(PTP_CALLBACK_INSTANCE instance, void *param)
 {
-	THREAD_POOL_DATA *pd;
-	if (t == NULL)
+	THREAD *thread = (THREAD *)param;
+	HRESULT hr;
+	if (thread == NULL)
 	{
 		return;
 	}
 
-	pd = (THREAD_POOL_DATA *)param;
+	// A job may run for the life of the process: the pool keeps another thread for the next job
+	CallbackMayRunLong(instance);
 
-	NoticeThreadInitInternal(t);
+	Win32InitNewThread();
+
+	hr = CoInitialize(NULL);
+
+	thread->ThreadId = ThreadId();
+
+	// NewThreadNamed returns from here on
+	SetEvent((HANDLE)thread->StartedEvent);
+
+	if (thread->Name != NULL)
+	{
+		SetThreadName(thread->ThreadId, thread->Name, thread->param);
+	}
+	else
+	{
+		SetThreadName(thread->ThreadId, "Unknown", 0);
+	}
+
+	thread->thread_proc(thread, thread->param);
+
+	SetThreadName(thread->ThreadId, NULL, 0);
+
+	// Every WaitThread caller, now or later, sees the end
+	SetEvent((HANDLE)thread->EndedEvent);
 
 	while (true)
 	{
-		THREAD *thread;
-		UINT i, num;
-		EVENT **ee;
-
-		Wait(pd->Event, INFINITE);
-
-		if (pd->ThreadProc == NULL)
+		if (Count(&thread->ref->c) <= 1)
 		{
 			break;
 		}
 
-		thread = pd->Thread;
-		thread->ThreadId = ThreadId();
-
-		Set(pd->InitFinishEvent);
-
-		if (thread->Name != NULL)
-		{
-			SetThreadName(thread->ThreadId, thread->Name, thread->param);
-		}
-		else
-		{
-			SetThreadName(thread->ThreadId, "Unknown", 0);
-		}
-
-		pd->ThreadProc(pd->Thread, thread->param);
-
-		SetThreadName(thread->ThreadId, NULL, 0);
-
-		thread->PoolHalting = true;
-
-		LockList(thread->PoolWaitList);
-		{
-			num = LIST_NUM(thread->PoolWaitList);
-			ee = ToArray(thread->PoolWaitList);
-
-			DeleteAll(thread->PoolWaitList);
-		}
-		UnlockList(thread->PoolWaitList);
-
-		for (i = 0;i < num;i++)
-		{
-			EVENT *e = ee[i];
-
-			Set(e);
-			ReleaseEvent(e);
-		}
-
-		Free(ee);
-
-		while (true)
-		{
-			if (Count(&thread->ref->c) <= 1)
-			{
-				break;
-			}
-
-			Wait(thread->release_event, 256);
-		}
-
-		ReleaseThread(thread);
-
-		MsRestoreThreadPriority();
-
-		LockSk(thread_pool);
-		{
-			Push(thread_pool, t);
-		}
-		UnlockSk(thread_pool);
-
-		Dec(thread_count);
+		Wait(thread->release_event, 256);
 	}
+
+	ReleaseThread(thread);
+
+	FreeOpenSSLThreadState();
+
+	if (SUCCEEDED(hr))
+	{
+		CoUninitialize();
+	}
+
+	MsRestoreThreadPriority();
 }
 
 void SetThreadName(UINT thread_id, char *name, void *param)
@@ -627,33 +593,11 @@ void SetThreadName(UINT thread_id, char *name, void *param)
 
 THREAD *NewThreadNamed(THREAD_PROC *thread_proc, void *param, char *name)
 {
-	THREAD *host = NULL;
-	THREAD_POOL_DATA *pd = NULL;
 	THREAD *ret;
+	UINT retry = 0;
 	if (thread_proc == NULL)
 	{
 		return NULL;
-	}
-
-	Inc(thread_count);
-
-	LockSk(thread_pool);
-	{
-		host = Pop(thread_pool);
-	}
-	UnlockSk(thread_pool);
-
-	if (host == NULL)
-	{
-		pd = ZeroMalloc(sizeof(THREAD_POOL_DATA));
-		pd->Event = NewEvent();
-		pd->InitFinishEvent = NewEvent();
-		host = NewThreadInternal(ThreadPoolProc, pd);
-		WaitThreadInit(host);
-	}
-	else
-	{
-		pd = (THREAD_POOL_DATA *)host->param;
 	}
 
 	ret = ZeroMalloc(sizeof(THREAD));
@@ -662,7 +606,8 @@ THREAD *NewThreadNamed(THREAD_PROC *thread_proc, void *param, char *name)
 	ret->param = param;
 	ret->pData = NULL;
 	ret->init_finished_event = NewEvent();
-	ret->PoolWaitList = NewList(NULL);
+	ret->StartedEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+	ret->EndedEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
 	ret->release_event = NewEvent();
 
 	if (IsEmptyStr(name) == false)
@@ -670,16 +615,31 @@ THREAD *NewThreadNamed(THREAD_PROC *thread_proc, void *param, char *name)
 		ret->Name = CopyStr(name);
 	}
 
-	pd->ThreadProc = thread_proc;
-	pd->Thread = ret;
+	// The pool callback holds this reference until the job ended and every other holder let go
 	AddRef(ret->ref);
 
-	Set(pd->Event);
+	// Post the job, retried like the creation of a host thread
+	while (TrySubmitThreadpoolCallback(ThreadPoolCallback, ret, &thread_pool_env) == FALSE)
+	{
+		if ((retry++) > 60)
+		{
+			printf("\n\n*** error: new thread create failed.\n\n");
+			AbortExit();
+		}
 
-	Wait(pd->InitFinishEvent, INFINITE);
+		SleepThread(500);
+	}
 
-	Inc(current_num_thread);
+	// Count the post before this returns, so that a running job's post is counted before the job ends
+	InterlockedIncrement(&thread_pool_posted);
 
+	// Return once a pool thread took the job
+	if (ret->StartedEvent != NULL)
+	{
+		WaitForSingleObject((HANDLE)ret->StartedEvent, INFINITE);
+		CloseHandle((HANDLE)ret->StartedEvent);
+		ret->StartedEvent = NULL;
+	}
 
 	return ret;
 }
@@ -693,7 +653,11 @@ static void CleanupThread(THREAD *t)
 
 	ReleaseEvent(t->init_finished_event);
 	ReleaseEvent(t->release_event);
-	ReleaseList(t->PoolWaitList);
+
+	if (t->EndedEvent != NULL)
+	{
+		CloseHandle((HANDLE)t->EndedEvent);
+	}
 
 	if (t->Name != NULL)
 	{
@@ -701,8 +665,6 @@ static void CleanupThread(THREAD *t)
 	}
 
 	Free(t);
-
-	Dec(current_num_thread);
 }
 
 void ReleaseThread(THREAD *t)
@@ -755,45 +717,14 @@ void WaitThreadInit(THREAD *t)
 
 bool WaitThread(THREAD *t, UINT timeout)
 {
-	bool ret = false;
-	EVENT *e = NULL;
-	if (t == NULL)
+	if (t == NULL || t->EndedEvent == NULL)
 	{
 		return false;
 	}
 
-	LockList(t->PoolWaitList);
-	{
-		if (t->PoolHalting)
-		{
-			ret = true;
-		}
-		else
-		{
-			e = NewEvent();
-			AddRef(e->ref);
-			Insert(t->PoolWaitList, e);
-		}
-	}
-	UnlockList(t->PoolWaitList);
-
-	if (e != NULL)
-	{
-		ret = Wait(e, timeout);
-
-		LockList(t->PoolWaitList);
-		{
-			if (Delete(t->PoolWaitList, e))
-			{
-				ReleaseEvent(e);
-			}
-		}
-		UnlockList(t->PoolWaitList);
-
-		ReleaseEvent(e);
-	}
-
-	return ret;
+	// Any number of threads can wait: the end event is manual-reset and never reset.
+	// Only a time-out gives false, as Wait gives for an EVENT.
+	return (WaitForSingleObject((HANDLE)t->EndedEvent, timeout) != WAIT_TIMEOUT);
 }
 
 UINT ThreadId()
