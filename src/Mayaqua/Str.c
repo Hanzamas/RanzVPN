@@ -149,32 +149,20 @@ static char *DefaultTokenSplitChars()
 	return " ,\t\r\n";
 }
 
-static bool IsCharInStr(char *str, char c)
+// A heap copy of the first len characters of str
+static char *CopyStrPrefix(char *str, UINT len)
 {
-	UINT i, len;
-	if (str == NULL)
-	{
-		return false;
-	}
+	char *ret = Malloc(len + 1);
 
-	len = StrLen(str);
-	for (i = 0;i < len;i++)
-	{
-		if (str[i] == c)
-		{
-			return true;
-		}
-	}
+	StringCchCopyNA(ret, (size_t)len + 1, str, len);
 
-	return false;
+	return ret;
 }
 
 TOKEN_LIST *ParseTokenWithNullStr(char *str, char *split_chars)
 {
 	LIST *o;
-	UINT i, len;
-	BUF *b;
-	char zero = 0;
+	UINT i;
 	TOKEN_LIST *t;
 	if (str == NULL)
 	{
@@ -185,32 +173,21 @@ TOKEN_LIST *ParseTokenWithNullStr(char *str, char *split_chars)
 		split_chars = DefaultTokenSplitChars();
 	}
 
-	b = NewBuf();
 	o = NewListFast(NULL);
 
-	len = StrLen(str);
-
-	for (i = 0;i < (len + 1);i++)
+	// Each separator and the terminator end a token, also an empty one
+	while (true)
 	{
-		char c = str[i];
-		bool flag = IsCharInStr(split_chars, c);
+		UINT len = (UINT)strcspn(str, split_chars);
 
-		if (c == '\0')
+		Insert(o, CopyStrPrefix(str, len));
+
+		if (str[len] == '\0')
 		{
-			flag = true;
+			break;
 		}
 
-		if (flag == false)
-		{
-			WriteBuf(b, &c, sizeof(char));
-		}
-		else
-		{
-			WriteBuf(b, &zero, sizeof(char));
-
-			Insert(o, CopyStr((char *)b->Buf));
-			ClearBuf(b);
-		}
+		str += len + 1;
 	}
 
 	t = ZeroMalloc(sizeof(TOKEN_LIST));
@@ -223,7 +200,6 @@ TOKEN_LIST *ParseTokenWithNullStr(char *str, char *split_chars)
 	}
 
 	ReleaseList(o);
-	FreeBuf(b);
 
 	return t;
 }
@@ -231,10 +207,7 @@ TOKEN_LIST *ParseTokenWithNullStr(char *str, char *split_chars)
 TOKEN_LIST *ParseTokenWithoutNullStr(char *str, char *split_chars)
 {
 	LIST *o;
-	UINT i, len;
-	bool last_flag;
-	BUF *b;
-	char zero = 0;
+	UINT i;
 	TOKEN_LIST *t;
 	if (str == NULL)
 	{
@@ -245,41 +218,24 @@ TOKEN_LIST *ParseTokenWithoutNullStr(char *str, char *split_chars)
 		split_chars = DefaultTokenSplitChars();
 	}
 
-	b = NewBuf();
 	o = NewListFast(NULL);
 
-	len = StrLen(str);
-	last_flag = false;
-
-	for (i = 0;i < (len + 1);i++)
+	// A run of separators splits once, and no token is empty
+	while (true)
 	{
-		char c = str[i];
-		bool flag = IsCharInStr(split_chars, c);
+		UINT len;
 
-		if (c == '\0')
+		str += strspn(str, split_chars);
+		if (str[0] == '\0')
 		{
-			flag = true;
+			break;
 		}
 
-		if (flag == false)
-		{
-			WriteBuf(b, &c, sizeof(char));
-		}
-		else
-		{
-			if (last_flag == false)
-			{
-				WriteBuf(b, &zero, sizeof(char));
+		len = (UINT)strcspn(str, split_chars);
 
-				if ((StrLen((char *)b->Buf)) != 0)
-				{
-					Insert(o, CopyStr((char *)b->Buf));
-				}
-				ClearBuf(b);
-			}
-		}
+		Insert(o, CopyStrPrefix(str, len));
 
-		last_flag = flag;
+		str += len;
 	}
 
 	t = ZeroMalloc(sizeof(TOKEN_LIST));
@@ -292,7 +248,6 @@ TOKEN_LIST *ParseTokenWithoutNullStr(char *str, char *split_chars)
 	}
 
 	ReleaseList(o);
-	FreeBuf(b);
 
 	return t;
 }
@@ -413,13 +368,9 @@ bool GetKeyAndValue(char *str, char *key, UINT key_size, char *value, UINT value
 
 char *MakeCharArray(char c, UINT count)
 {
-	UINT i;
 	char *ret = Malloc(count + 1);
 
-	for (i = 0;i < count;i++)
-	{
-		ret[i] = c;
-	}
+	memset(ret, c, count);
 
 	ret[count] = 0;
 
@@ -1299,22 +1250,14 @@ void EnPrintableAsciiStr(char *str, char replace)
 
 bool IsSafeChar(char c)
 {
-	UINT i, len;
 	char *check_str =
 		"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 		"abcdefghijklmnopqrstuvwxyz"
 		"0123456789"
 		" ()-_#%&.";
 
-	len = StrLen(check_str);
-	for (i = 0;i < len;i++)
-	{
-		if (c == check_str[i])
-		{
-			return true;
-		}
-	}
-	return false;
+	// strchr also finds the terminator, which is not a safe character
+	return c != '\0' && strchr(check_str, c) != NULL;
 }
 
 // If the replacement is a space, line breaks are removed instead
@@ -1501,9 +1444,9 @@ UINT SearchStr(char *string, char *keyword, UINT start)
 UINT SearchStrEx(char *string, char *keyword, UINT start, bool case_sensitive)
 {
 	UINT len_string, len_keyword;
-	UINT i;
+	UINT ret;
 	char *cmp_string, *cmp_keyword;
-	bool found;
+	char *found;
 	if (string == NULL || keyword == NULL)
 	{
 		return INFINITE;
@@ -1533,23 +1476,15 @@ UINT SearchStrEx(char *string, char *keyword, UINT start, bool case_sensitive)
 	}
 	else
 	{
-		cmp_string = Malloc(len_string + 1);
-		StrCpy(cmp_string, len_string + 1, string);
-		cmp_keyword = Malloc(len_keyword + 1);
-		StrCpy(cmp_keyword, len_keyword + 1, keyword);
+		cmp_string = CopyStr(string);
+		cmp_keyword = CopyStr(keyword);
 		StrUpper(cmp_string);
 		StrUpper(cmp_keyword);
 	}
 
-	found = false;
-	for (i = start;i < (len_string - len_keyword + 1);i++)
-	{
-		if (!strncmp(&cmp_string[i], cmp_keyword, len_keyword))
-		{
-			found = true;
-			break;
-		}
-	}
+	// The first match at or after start
+	found = strstr(cmp_string + start, cmp_keyword);
+	ret = (found == NULL) ? INFINITE : (UINT)(found - cmp_string);
 
 	if (case_sensitive == false)
 	{
@@ -1557,11 +1492,7 @@ UINT SearchStrEx(char *string, char *keyword, UINT start, bool case_sensitive)
 		Free(cmp_string);
 	}
 
-	if (found == false)
-	{
-		return INFINITE;
-	}
-	return i;
+	return ret;
 }
 
 void FreeToken(TOKEN_LIST *tokens)
@@ -1645,82 +1576,40 @@ void Trim(char *str)
 
 void TrimRight(char *str)
 {
-	char *buf, *tmp;
-	UINT len, i, wp, wp2;
+	UINT len, end;
 	if (str == NULL)
 	{
 		return;
 	}
+
 	len = StrLen(str);
-	if (len == 0)
+	end = len;
+	while (end != 0 && (str[end - 1] == ' ' || str[end - 1] == '\t'))
 	{
-		return;
-	}
-	if (str[len - 1] != ' ' && str[len - 1] != '\t')
-	{
-		return;
+		end--;
 	}
 
-	buf = Malloc(len + 1);
-	tmp = Malloc(len + 1);
-	wp = 0;
-	wp2 = 0;
-	for (i = 0; i < len; ++i)
+	// Writes only when there is something to remove
+	if (end != len)
 	{
-		if (str[i] != ' ' && str[i] != '\t')
-		{
-			Copy(buf + wp, tmp, wp2);
-			wp += wp2;
-			wp2 = 0;
-			buf[wp++] = str[i];
-		}
-		else
-		{
-			tmp[wp2++] = str[i];
-		}
+		str[end] = '\0';
 	}
-	buf[wp] = 0;
-	StrCpy(str, 0, buf);
-	Free(buf);
-	Free(tmp);
 }
 
 void TrimLeft(char *str)
 {
-	char *buf;
-	UINT len, i, wp;
-	bool flag;
+	UINT skip;
 	if (str == NULL)
 	{
 		return;
 	}
-	len = StrLen(str);
-	if (len == 0)
-	{
-		return;
-	}
-	if (str[0] != ' ' && str[0] != '\t')
-	{
-		return;
-	}
 
-	buf = Malloc(len + 1);
-	flag = false;
-	wp = 0;
-	for (i = 0;i < len;i++)
+	// Writes only when there is something to remove
+	skip = (UINT)strspn(str, " \t");
+	if (skip != 0)
 	{
-		if (str[i] != ' ' && str[i] != '\t')
-		{
-			flag = true;
-		}
-		if (flag)
-		{
-			buf[wp++] = str[i];
-		}
+		StrCpyAllowOverlap(str, 0, str + skip);
 	}
-	buf[wp] = 0;
-	StrCpy(str, 0, buf);
-	Free(buf);
 }
 
 void ToStr(char *str, UINT i)
