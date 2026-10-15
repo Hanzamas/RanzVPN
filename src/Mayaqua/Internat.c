@@ -944,9 +944,135 @@ UINT CalcStrToUni(char *str)
 	return ConvertAnsiToUni(NULL, 0, str) * (UINT)sizeof(wchar_t);
 }
 
+// Mayaqua's UTF-8 differs from the standard in two ways, which stay. The encoder writes every
+// UTF-16 code unit on its own, so a surrogate becomes a 3-byte sequence (CESU-8). The decoder
+// takes sequences of at most 3 bytes without validation: GetUtf8Type gives the length from the
+// lead byte alone, a sequence cut off by the end of the input ends the decoding, and the payload
+// bits are used as they are. Everything else is plain UTF-8 and runs on WideCharToMultiByte and
+// MultiByteToWideChar (CP_UTF8). Only surrogates, input that is not well-formed, and 4-byte
+// sequences (which MultiByteToWideChar decodes to surrogate pairs) take the bit-level path, so
+// the results do not change.
+
+// Longest input of one WideCharToMultiByte or MultiByteToWideChar call: they count in int
+#define	UTF8_NATIVE_MAX		((UINT)0x7fffffff)
+
+static bool IsSurrogateUnit(wchar_t c)
+{
+	return (c >= 0xd800 && c <= 0xdfff);
+}
+
+// Encode the len code units of s into u (NULL: only count), which has room for u_size bytes,
+// all of the encoding. Returns the number of bytes
+static UINT UniToUtf8Units(BYTE *u, UINT u_size, wchar_t *s, UINT len)
+{
+	UINT i = 0, wp = 0;
+
+	while (i < len)
+	{
+		wchar_t c = s[i];
+		UINT run;
+
+		if (IsSurrogateUnit(c))
+		{
+			if (u != NULL)
+			{
+				u[wp] = (BYTE)(0xe0 | (c >> 12));
+				u[wp + 1] = (BYTE)(0x80 | ((c >> 6) & 0x3f));
+				u[wp + 2] = (BYTE)(0x80 | (c & 0x3f));
+			}
+			wp += 3;
+			i++;
+			continue;
+		}
+
+		// A run without surrogates: WideCharToMultiByte writes the same bytes as one code unit
+		// at a time
+		run = 1;
+		while (i + run < len && run < UTF8_NATIVE_MAX && IsSurrogateUnit(s[i + run]) == false)
+		{
+			run++;
+		}
+
+		if (u != NULL)
+		{
+			wp += (UINT)WideCharToMultiByte(CP_UTF8, 0, &s[i], (int)run, (char *)&u[wp], (int)MIN(u_size - wp, UTF8_NATIVE_MAX), NULL, NULL);
+		}
+		else
+		{
+			wp += (UINT)WideCharToMultiByte(CP_UTF8, 0, &s[i], (int)run, NULL, 0, NULL, NULL);
+		}
+		i += run;
+	}
+
+	return wp;
+}
+
+// Number of code units MultiByteToWideChar decodes the size bytes of u to, or 0 when they take
+// the bit-level decoder: they are not well-formed UTF-8, or hold a 4-byte sequence (a byte of
+// 0xF0 or above)
+static UINT Utf8NativeLen(BYTE *u, UINT size)
+{
+	UINT i;
+	int ret;
+
+	if (size == 0 || size > UTF8_NATIVE_MAX)
+	{
+		return 0;
+	}
+
+	for (i = 0;i < size;i++)
+	{
+		if (u[i] >= 0xf0)
+		{
+			return 0;
+		}
+	}
+
+	ret = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, (char *)u, (int)size, NULL, 0);
+
+	return (ret > 0) ? (UINT)ret : 0;
+}
+
+// The bit-level decoder: decode the size bytes of u into s (NULL: only count), at most room code
+// units. Returns the number of code units
+static UINT Utf8ToUniBits(wchar_t *s, UINT room, BYTE *u, UINT size)
+{
+	UINT i = 0, num = 0;
+
+	while (num < room)
+	{
+		UINT type = GetUtf8Type(u, size, i);
+		if (type == 0)
+		{
+			break;
+		}
+
+		if (s != NULL)
+		{
+			switch (type)
+			{
+			case 1:
+				s[num] = (wchar_t)u[i];
+				break;
+			case 2:
+				s[num] = (wchar_t)(((u[i] & 0x1f) << 6) | (u[i + 1] & 0x3f));
+				break;
+			default:
+				s[num] = (wchar_t)(((u[i] & 0x0f) << 12) | ((u[i + 1] & 0x3f) << 6) | (u[i + 2] & 0x3f));
+				break;
+			}
+		}
+
+		i += type;
+		num++;
+	}
+
+	return num;
+}
+
 UINT Utf8ToUni(wchar_t *s, UINT size, BYTE *u, UINT u_size)
 {
-	UINT i, wp, num;
+	UINT room, len, num;
 	if (s == NULL || u == NULL)
 	{
 		return 0;
@@ -960,70 +1086,31 @@ UINT Utf8ToUni(wchar_t *s, UINT size, BYTE *u, UINT u_size)
 		u_size = StrLen((char *)u);
 	}
 
-	i = 0;
-	wp = 0;
-	num = 0;
-	while (true)
+	// Code units that fit before the terminating NUL
+	room = (UINT)(size / sizeof(wchar_t) - 1);
+
+	len = Utf8NativeLen(u, u_size);
+	if (len == 0)
 	{
-		UINT type;
-		wchar_t c = 0;
-		BYTE c1, c2;
-
-		type = GetUtf8Type(u, u_size, i);
-		if (type == 0)
-		{
-			break;
-		}
-		switch (type)
-		{
-		case 1:
-			c1 = 0;
-			c2 = u[i];
-			break;
-		case 2:
-			c1 = (((u[i] & 0x1c) >> 2) & 0x07);
-			c2 = (((u[i] & 0x03) << 6) & 0xc0) | (u[i + 1] & 0x3f);
-			break;
-		case 3:
-			c1 = ((((u[i] & 0x0f) << 4) & 0xf0)) | (((u[i + 1] & 0x3c) >> 2) & 0x0f);
-			c2 = (((u[i + 1] & 0x03) << 6) & 0xc0) | (u[i + 2] & 0x3f);
-			break;
-		}
-		i += type;
-
-		if (IsBigEndian())
-		{
-			if (sizeof(wchar_t) == 2)
-			{
-				((BYTE *)&c)[0] = c1;
-				((BYTE *)&c)[1] = c2;
-			}
-			else
-			{
-				((BYTE *)&c)[2] = c1;
-				((BYTE *)&c)[3] = c2;
-			}
-		}
-		else
-		{
-			((BYTE *)&c)[0] = c2;
-			((BYTE *)&c)[1] = c1;
-		}
-
-		if (wp < ((size / sizeof(wchar_t)) - 1))
-		{
-			s[wp++] = c;
-			num++;
-		}
-		else
-		{
-			break;
-		}
+		num = Utf8ToUniBits(s, room, u, u_size);
+	}
+	else if (len <= room)
+	{
+		num = (UINT)MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, (char *)u, (int)u_size, s, (int)len);
+	}
+	else
+	{
+		// Too small: the first room code units
+		wchar_t *tmp = Malloc(len * sizeof(wchar_t));
+		MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, (char *)u, (int)u_size, tmp, (int)len);
+		Copy(s, tmp, room * sizeof(wchar_t));
+		Free(tmp);
+		num = room;
 	}
 
-	if (wp < (size / sizeof(wchar_t)))
+	if (num < (size / sizeof(wchar_t)))
 	{
-		s[wp++] = 0;
+		s[num] = 0;
 	}
 
 	return num;
@@ -1045,7 +1132,7 @@ UINT CalcUtf8ToUni(BYTE *u, UINT u_size)
 
 UINT Utf8Len(BYTE *u, UINT size)
 {
-	UINT i, num;
+	UINT num;
 	if (u == NULL)
 	{
 		return 0;
@@ -1055,18 +1142,10 @@ UINT Utf8Len(BYTE *u, UINT size)
 		size = StrLen((char *)u);
 	}
 
-	i = num = 0;
-	while (true)
+	num = Utf8NativeLen(u, size);
+	if (num == 0)
 	{
-		UINT type;
-
-		type = GetUtf8Type(u, size, i);
-		if (type == 0)
-		{
-			break;
-		}
-		i += type;
-		num++;
+		num = Utf8ToUniBits(NULL, INFINITE, u, size);
 	}
 
 	return num;
@@ -1074,7 +1153,7 @@ UINT Utf8Len(BYTE *u, UINT size)
 
 UINT UniToUtf8(BYTE *u, UINT size, wchar_t *s)
 {
-	UINT i, len, type, wp;
+	UINT len, need, wp;
 	if (u == NULL || s == NULL)
 	{
 		return 0;
@@ -1085,89 +1164,37 @@ UINT UniToUtf8(BYTE *u, UINT size, wchar_t *s)
 	}
 
 	len = UniStrLen(s);
-	wp = 0;
-	for (i = 0;i < len;i++)
+	need = UniToUtf8Units(NULL, 0, s, len);
+	if (need <= size)
 	{
-		BYTE c1, c2;
-		wchar_t c = s[i];
-
-		if (IsBigEndian())
-		{
-			if (sizeof(wchar_t) == 2)
-			{
-				c1 = ((BYTE *)&c)[0];
-				c2 = ((BYTE *)&c)[1];
-			}
-			else
-			{
-				c1 = ((BYTE *)&c)[2];
-				c2 = ((BYTE *)&c)[3];
-			}
-		}
-		else
-		{
-			c1 = ((BYTE *)&c)[1];
-			c2 = ((BYTE *)&c)[0];
-		}
-
-		type = GetUniType(s[i]);
-		switch (type)
-		{
-		case 1:
-			if (wp < size)
-			{
-				u[wp++] = c2;
-			}
-			break;
-		case 2:
-			if (wp < size)
-			{
-				u[wp++] = 0xc0 | (((((c1 & 0x07) << 2) & 0x1c)) | (((c2 & 0xc0) >> 6) & 0x03));
-			}
-			if (wp < size)
-			{
-				u[wp++] = 0x80 | (c2 & 0x3f);
-			}
-			break;
-		case 3:
-			if (wp < size)
-			{
-				u[wp++] = 0xe0 | (((c1 & 0xf0) >> 4) & 0x0f);
-			}
-			if (wp < size)
-			{
-				u[wp++] = 0x80 | (((c1 & 0x0f) << 2) & 0x3c) | (((c2 & 0xc0) >> 6) & 0x03);
-			}
-			if (wp < size)
-			{
-				u[wp++] = 0x80 | (c2 & 0x3f);
-			}
-			break;
-		}
+		wp = UniToUtf8Units(u, need, s, len);
 	}
+	else
+	{
+		// Too small: the first size bytes, which can end inside a sequence
+		BYTE *tmp = Malloc(need);
+		UniToUtf8Units(tmp, need, s, len);
+		Copy(u, tmp, size);
+		Free(tmp);
+		wp = size;
+	}
+
 	if (wp < size)
 	{
 		u[wp] = 0;
 	}
+
 	return wp;
 }
 
 UINT CalcUniToUtf8(wchar_t *s)
 {
-	UINT i, len, size;
 	if (s == NULL)
 	{
 		return 0;
 	}
 
-	size = 0;
-	len = UniStrLen(s);
-	for (i = 0;i < len;i++)
-	{
-		size += GetUniType(s[i]);
-	}
-
-	return size;
+	return UniToUtf8Units(NULL, 0, s, UniStrLen(s));
 }
 
 UINT GetUtf8Type(BYTE *s, UINT size, UINT offset)
