@@ -442,6 +442,7 @@ void stress_test(UINT num, char **arg);
 void tickorigin_test(UINT num, char **arg);
 void timeenc_test(UINT num, char **arg);
 void nullsafe_test(UINT num, char **arg);
+void charset_test(UINT num, char **arg);
 void fileio_test(UINT num, char **arg);
 void threadpool_test(UINT num, char **arg);
 void dns_test(UINT num, char **arg);
@@ -544,6 +545,7 @@ TEST_LIST test_list[] =
 	{"tickorigin", tickorigin_test, "Tick64 origin: the first value is at least 1 and at most the process age."},
 	{"timeenc", timeenc_test, "Time encoding: SystemTime64/LocalTime64 against the OS clock, fixed-input conversions."},
 	{"nullsafe", nullsafe_test, "NULL safety of the LOCK, LIST, COUNTER, REF and EVENT functions."},
+	{"charset", charset_test, "Charset: UTF-8 and ANSI conversions against fixed vectors and the historic UTF-8 coding."},
 	{"fileio", fileio_test, "FileIO: @, $ and | prefixes, path separator, sharing modes, reads past the end."},
 	{"threadpool", threadpool_test, "Thread pool: job pickup, host thread id and COM, idle reuse, many waiters, host handles."},
 	{"dns", dns_test, "DNS: localhost and IP literals answered at once, the computer name through the resolver thread."},
