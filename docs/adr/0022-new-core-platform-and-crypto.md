@@ -123,3 +123,18 @@ Maintainer decision (Hilmi: "(b) XDP default di x64"): this supersedes the clien
 - Client x64: XDP on KM-TEST is the default L2 backend (needs the XDP runtime; Microsoft does not yet support XDP on client SKUs, so the manual Windows 11 test gates it); SeLow on KM-TEST is the fallback when XDP is not installed or fails.
 - Client arm64: SeLow on KM-TEST (no production-signed arm64 XDP runtime yet).
 - Known XDP risks to handle in CORE-S3-2: TX inspect with USO blocks senders instead of dropping when the consumer lags; unbinding ms_xdp can hang after heavy load; one unreproduced RX-inject stall followed by WSAENOBUFS. Mitigations: a dedicated drain thread per queue, bounded rings, health check plus reattach, unbind only after all sockets close with a timeout, a CI soak test, and upstream issues.
+
+## Amendment 2026-10-15: multi-connection tunnels
+
+Maintainer decision (Hilmi: "catat"). One QUIC connection is processed on one msquic worker, so a tunnel on one connection is capped by one core (estimated 3-8 Gbit/s on a modern server). To scale past that:
+- A tunnel may span N transport connections (QUIC or TLS-443), negotiated in the session layer, each pinned to a different core. N is configurable with an automatic default from the core count and link speed; N = 1 stays the default for small links.
+- Inner traffic is spread over the connections by a hash of the inner flow (5-tuple for IP, MAC pair plus EtherType for other L2), never per packet, so the packet order inside one inner flow is kept. One inner flow is therefore still limited to one connection.
+- Each connection carries its own Noise transport keys derived from the session handshake, and rekeys on its own; losing one connection moves its flows to the others without tearing down the session.
+- Together with QUIC over the XDP datapath (ADR-0018 decision 2) and USO/URO, the design target is tens of Gbit/s per tunnel and 50-100 Gbit/s per server on 64 cores with 100G NICs (estimate, to be measured once CORE-S1 runs on real hardware).
+
+## Amendment 2026-10-15: TCP-over-TCP meltdown on the TLS/TCP 443 path
+
+Maintainer decision (Hilmi: "ya"). Tunnelling TCP inside the TCP-443 fallback causes retransmission amplification on lossy links; it cannot be removed while the outer transport is TCP.
+1. Avoid it: QUIC over UDP stays the primary transport; TLS/TCP 443 is used only when UDP is blocked.
+2. v1 mitigations on the TCP path: an active queue (CoDel-style) at the tunnel ingress drops inner packets whose queueing delay exceeds the target instead of buffering them, so inner TCP backs off early; multi-connection tunnels (previous amendment) confine a loss stall to the flows of one connection; the outer TCP uses BBR2 where Windows offers it (to verify on Windows 11 and Server 2022/2025), otherwise the system default.
+3. Phase 2 option for L3 mode: TCP splitting. The client node terminates inner TCP flows with a user-mode TCP stack and sends only the byte stream through the tunnel, which removes the meltdown entirely; it applies to L3 TCP traffic only, not to L2 frames, and changes end-to-end ACK semantics, so it is opt-in.
