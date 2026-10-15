@@ -491,7 +491,8 @@ void InitThreading()
 	SetThreadpoolCallbackCleanupGroup(&thread_pool_env, thread_pool_cleanup, NULL);
 
 	// Jobs may run for a long time: the pool knows this before a callback starts, so several
-	// NewThread calls at once do not wait for one another to start
+	// NewThread calls at once do not wait for one another to start. This replaces a
+	// CallbackMayRunLong call in each callback, which the pool refuses on such a callback.
 	SetThreadpoolCallbackRunsLong(&thread_pool_env);
 }
 
@@ -531,9 +532,9 @@ static void NTAPI ThreadPoolCallback(PTP_CALLBACK_INSTANCE instance, void *param
 		return;
 	}
 
-	// A job may run for the life of the process: the pool keeps another thread for the next job
-	CallbackMayRunLong(instance);
-
+	// A job may run for the life of the process. The environment marks every callback as long
+	// running (InitThreading), so the pool keeps another thread for the next job; a call to
+	// CallbackMayRunLong on such a callback raises STATUS_INVALID_PARAMETER in ntdll.
 	Win32InitNewThread();
 
 	hr = CoInitialize(NULL);
