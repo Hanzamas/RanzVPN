@@ -847,7 +847,7 @@ static void RtPoolJobThread(THREAD *t, void *param)
 	j->OsThreadId = GetCurrentThreadId();
 	j->MayaThreadId = ThreadId();
 
-	// S_FALSE: COM is already initialised on this thread, by the host thread procedure
+	// S_FALSE: COM is already initialised on this thread, by the pool callback or the host thread procedure
 	hr = CoInitialize(NULL);
 	j->ComReady = (hr == S_FALSE);
 	if (SUCCEEDED(hr))
@@ -1074,10 +1074,15 @@ void threadpool_test(UINT num, char **arg)
 	// The process exit waits for pool work: a released job runs on past this test into
 	// FreeThreading and starts another job there. The run ends with "NO MEMORY LEAKS" only if
 	// FreeThreading waited for both, including the one started while it was waiting.
+	// The check that the job is still running keeps this pin honest: a job that had already
+	// ended would let the run end with "NO MEMORY LEAKS" without testing the wait.
 	late = ZeroMalloc(sizeof(RT_POOL_LATE));
 	late->Delay = RT_POOL_LATE_PARENT;
 	late->StartChild = true;
-	ReleaseThread(NewThread(RtPoolLateThread, late));
+	t = NewThread(RtPoolLateThread, late);
+	RtCheck(&ctx, WaitThread(t, 0) == false, "the late job is still running when the test ends",
+		"it has already ended");
+	ReleaseThread(t);
 
 	RtEnd(&ctx);
 }

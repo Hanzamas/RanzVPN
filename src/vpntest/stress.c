@@ -867,7 +867,7 @@ static void StressEventWaitResult(STRESS_CTX *ctx)
 	}
 
 	// Abandoned wait: a raw thread takes a mutex and ends without releasing it. A Mayaqua
-	// THREAD cannot abandon it, because its pool host thread outlives the job
+	// THREAD cannot abandon it, because its pool thread outlives the job
 	mutex = CreateMutexW(NULL, FALSE, NULL);
 	if (mutex != NULL)
 	{

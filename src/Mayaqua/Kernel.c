@@ -462,6 +462,11 @@ static UINT64 SafeTime64(UINT64 sec64)
 
 // The THREAD jobs (NewThreadNamed) run on a private Windows thread pool. Every job joins the
 // cleanup group, which FreeThreading waits on.
+// The shutdown wait rests on an assumption: the Microsoft documentation of
+// CloseThreadpoolCleanupGroupMembers names only work, wait and timer objects as members, and that
+// a simple callback (TrySubmitThreadpoolCallback) joins the cleanup group of its environment is
+// observed behaviour, not documented. The "NO MEMORY LEAKS" marker after the threadpool test of
+// vpntest pins it: that test leaves a job running into the process exit.
 #define	THREAD_POOL_MAX_THREADS		65535	// Upper bound of pool threads: the Windows default (500) is too low for a server
 
 static PTP_POOL thread_pool = NULL;
@@ -484,6 +489,10 @@ void InitThreading()
 	InitializeThreadpoolEnvironment(&thread_pool_env);
 	SetThreadpoolCallbackPool(&thread_pool_env, thread_pool);
 	SetThreadpoolCallbackCleanupGroup(&thread_pool_env, thread_pool_cleanup, NULL);
+
+	// Jobs may run for a long time: the pool knows this before a callback starts, so several
+	// NewThread calls at once do not wait for one another to start
+	SetThreadpoolCallbackRunsLong(&thread_pool_env);
 }
 
 void FreeThreading()
