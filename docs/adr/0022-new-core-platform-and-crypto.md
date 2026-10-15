@@ -131,3 +131,10 @@ Maintainer decision (Hilmi: "catat"). One QUIC connection is processed on one ms
 - Inner traffic is spread over the connections by a hash of the inner flow (5-tuple for IP, MAC pair plus EtherType for other L2), never per packet, so the packet order inside one inner flow is kept. One inner flow is therefore still limited to one connection.
 - Each connection carries its own Noise transport keys derived from the session handshake, and rekeys on its own; losing one connection moves its flows to the others without tearing down the session.
 - Together with QUIC over the XDP datapath (ADR-0018 decision 2) and USO/URO, the design target is tens of Gbit/s per tunnel and 50-100 Gbit/s per server on 64 cores with 100G NICs (estimate, to be measured once CORE-S1 runs on real hardware).
+
+## Amendment 2026-10-15: TCP-over-TCP meltdown on the TLS/TCP 443 path
+
+Maintainer decision (Hilmi: "ya"). Tunnelling TCP inside the TCP-443 fallback causes retransmission amplification on lossy links; it cannot be removed while the outer transport is TCP.
+1. Avoid it: QUIC over UDP stays the primary transport; TLS/TCP 443 is used only when UDP is blocked.
+2. v1 mitigations on the TCP path: an active queue (CoDel-style) at the tunnel ingress drops inner packets whose queueing delay exceeds the target instead of buffering them, so inner TCP backs off early; multi-connection tunnels (previous amendment) confine a loss stall to the flows of one connection; the outer TCP uses BBR2 where Windows offers it (to verify on Windows 11 and Server 2022/2025), otherwise the system default.
+3. Phase 2 option for L3 mode: TCP splitting. The client node terminates inner TCP flows with a user-mode TCP stack and sends only the byte stream through the tunnel, which removes the meltdown entirely; it applies to L3 TCP traffic only, not to L2 frames, and changes end-to-end ACK semantics, so it is opt-in.
