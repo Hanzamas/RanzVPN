@@ -138,3 +138,8 @@ Maintainer decision (Hilmi: "ya"). Tunnelling TCP inside the TCP-443 fallback ca
 1. Avoid it: QUIC over UDP stays the primary transport; TLS/TCP 443 is used only when UDP is blocked.
 2. v1 mitigations on the TCP path: an active queue (CoDel-style) at the tunnel ingress drops inner packets whose queueing delay exceeds the target instead of buffering them, so inner TCP backs off early; multi-connection tunnels (previous amendment) confine a loss stall to the flows of one connection; the outer TCP uses BBR2 where Windows offers it (to verify on Windows 11 and Server 2022/2025), otherwise the system default.
 3. Phase 2 option for L3 mode: TCP splitting. The client node terminates inner TCP flows with a user-mode TCP stack and sends only the byte stream through the tunnel, which removes the meltdown entirely; it applies to L3 TCP traffic only, not to L2 frames, and changes end-to-end ACK semantics, so it is opt-in.
+
+## Amendment 2026-10-15: BBR congestion control in v1
+
+Maintainer decision (Hilmi). msquic runs with its BBR congestion controller instead of CUBIC by default, because BBR keeps throughput on lossy links (public Wi-Fi, mobile, long international routes) where CUBIC backs off on every loss. CUBIC stays selectable per link. The CORE-S1 benchmark measures both on a lossy-link case.
+

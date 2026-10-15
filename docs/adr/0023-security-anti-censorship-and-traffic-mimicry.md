@@ -44,3 +44,12 @@ Native Schannel and msquic cannot shape a ClientHello, and the mature libraries 
 - Keeping ClientHello control in the sidecar means the core's TLS stack stays Schannel-only (ADR-0007), with the OS fingerprint as the camouflage for tiers 1 and 2; only tier 3 pays the cost of the Go sidecar.
 - The decoy page is shared between the admin access-control rule (ADR-0021) and the active-probing path, so a single real site (own page or borrowed) covers both.
 - ECH remains out of the core (Schannel has no ECH) and a per-deployment sidecar choice, because in hostile networks the presence of ECH is itself a flag (ADR-0006, ADR-0007).
+
+## Amendment 2026-10-15: Hysteria mode (phase 2)
+
+Maintainer decision (Hilmi: "gas"). A Hysteria-style transport joins the phase-2 Go transport sidecar, using the Hysteria 2 library (Go, MIT) per the native-then-library rule: msquic serves the ordinary QUIC mode, Hysteria serves the bad-link mode.
+- Brutal congestion control: a fixed send rate set per link that does not back off on loss, for very lossy links. Opt-in only, because it does not share capacity fairly with other traffic.
+- HTTP/3 masquerade: the server answers non-Ranz clients as an ordinary HTTP/3 web server, consistent with the decoy design above.
+- Salamander obfuscation: optional extra obfuscation of the QUIC packets.
+- It plugs in behind the pluggable transport interface; the session layer (Noise) stays the same inside it.
+
