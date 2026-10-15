@@ -114,3 +114,12 @@ Maintainer decision (Hilmi: "ya setuju"). This replaces the tap-windows6 fallbac
 - Server, bridge to a physical NIC: SeLow by default (proven, sets promiscuous itself); XDP plus Npcap as a performance option once CORE-S3-3 proves it on a physical NIC and on a Hyper-V network.
 - Client (Windows 11, x64 or arm64): L3 through Wintun by default. When L2 is needed: SeLow on KM-TEST by default (signed, x64 and arm64, already shipped, no extra runtime); XDP on KM-TEST as an option if the manual Windows 11 test passes. tap-windows6 is no longer needed.
 - Speed matters mainly on servers (10 Gbps target is roughly 0.8 Mpps at 1500 bytes); a client link rarely exceeds what SeLow carries. A CI benchmark of SeLow vs XDP on the same KM-TEST adapter gives the numbers.
+
+## Amendment 2026-10-15: measured SeLow vs XDP, client default flips to XDP
+
+CI benchmark on the same KM-TEST adapter (branch spike/selow-vs-xdp, Server 2022/2025, 1500 B): XDP TX capture 1.24-1.47 Mpps on about 1.1-1.4 cores, RX inject 337-445 kpps; SeLow TX capture 0.93-1.25 Mpps on 4 cores, RX inject about 70 kpps (WriteFile about 14 us per frame).
+Maintainer decision (Hilmi: "(b) XDP default di x64"): this supersedes the client line of the 2026-10-14 amendment.
+- Server: XDP is the default for virtual L2 AND for the physical-NIC bridge (XDP plus Npcap for promiscuous until xdp-for-windows #44); SeLow is not viable at 10 Gbit/s and stays only as a compatibility fallback.
+- Client x64: XDP on KM-TEST is the default L2 backend (needs the XDP runtime; Microsoft does not yet support XDP on client SKUs, so the manual Windows 11 test gates it); SeLow on KM-TEST is the fallback when XDP is not installed or fails.
+- Client arm64: SeLow on KM-TEST (no production-signed arm64 XDP runtime yet).
+- Known XDP risks to handle in CORE-S3-2: TX inspect with USO blocks senders instead of dropping when the consumer lags; unbinding ms_xdp can hang after heavy load; one unreproduced RX-inject stall followed by WSAENOBUFS. Mitigations: a dedicated drain thread per queue, bounded rings, health check plus reattach, unbind only after all sockets close with a timeout, a CI soak test, and upstream issues.
