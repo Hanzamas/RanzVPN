@@ -31,7 +31,7 @@ To reduce attack surface and resource usage, the following modules are excluded:
 
 ## Build
 
-Ranz VPN is built on GitHub Actions via [`.github/workflows/windows.yml`](.github/workflows/windows.yml) using clang-cl, vcpkg, and Ninja. The workflow supplies the current run number to CMake as `BUILD_NUMBER`, runs the diagnostic suite, and archives the compiled binaries, debug symbols, and `hamcore.se2`.
+Ranz VPN is built on GitHub Actions via [`.github/workflows/windows.yml`](.github/workflows/windows.yml) using clang-cl, vcpkg, and Ninja. The workflow supplies the current run number to CMake as `BUILD_NUMBER`, runs the diagnostic suite, and archives the compiled binaries and debug symbols. The files of `src/bin/hamcore` are resources of each executable (`cmake/RanzResources.cmake`); there is no `hamcore.se2` archive.
 
 Build steps:
 

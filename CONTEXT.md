@@ -9,7 +9,7 @@ A module is one `X.c` / `X.h` pair under `src/Cedar` or `src/Mayaqua`. Edges bel
 - The low-level Mayaqua modules (OS, Win32, Memory, Object, Kernel, Str, Internat, FileIO, Tracking, Tick64, Mayaqua) call each other in cycles. They are one layer, not a chain. `InitMayaqua` brings them up in this order: OS, FIFO, kernel status, Tracking, threading, string library, crypto, Tick64, Network, exe name and command line, OS info, Microsoft (`MsInit`), hamcore, string table.
 - The Cedar core (Hub, Session, Connection, Protocol, Server, Admin, Account, Logging) is also one cycle. Only the leaves listed as "none in Cedar" below are independent.
 
-Executables: `vpnserver` uses Cedar/Server (`StInit`, `StStartServer`) and `MsService`; `vpncmd` uses Cedar/Command (`CommandMain`); `vpncmdsys` uses Cedar and Mayaqua init only; `vpntest` uses Account, Admin, Command, Connection, Listener, MsChapV2, Server, Session, WaterMark and many Mayaqua modules; `fuzz` uses Mayaqua only (Cfg, Encrypt, HTTP, Pack, TcpIp); `hamcorebuilder` uses only `libhamcore`.
+Executables: `vpnserver` uses Cedar/Server (`StInit`, `StStartServer`) and `MsService`; `vpncmd` uses Cedar/Command (`CommandMain`); `vpncmdsys` uses Cedar and Mayaqua init only; `vpntest` uses Account, Admin, Command, Connection, Listener, MsChapV2, Server, Session, WaterMark and many Mayaqua modules; `fuzz` uses Mayaqua only (Cfg, Encrypt, HTTP, Pack, TcpIp).
 
 ### Mayaqua (`src/Mayaqua`)
 
@@ -26,7 +26,7 @@ Executables: `vpnserver` uses Cedar/Server (`StInit`, `StStartServer`) and `MsSe
 | Str | ANSI/UTF-8 string helpers and tokenising | `TOKEN_LIST` | Memory, Internat, OS | all |
 | Internat | Wide-string (`Uni*`) helpers and charset conversion | `UNI_TOKEN_LIST` | Memory, Str, Mayaqua, Win32 | all |
 | Encoding | Base64 only | none | none | Memory |
-| FileIO | Files, directories, dump read/write, hamcore reader (`\|name` paths, `HC` cache) | `IO`, `DIRENT`, `DIRLIST`, `HC` | Internat, OS, Mayaqua, Win32, libhamcore | Cfg, Microsoft, Network, Table, 10 Cedar modules |
+| FileIO | Files, directories, dump read/write, hamcore reader (`\|name` paths, PE resources) | `IO`, `DIRENT`, `DIRLIST`, `HC` | Internat, OS, Mayaqua, Win32 | Cfg, Microsoft, Network, Table, 10 Cedar modules |
 | Encrypt | Crypto wrappers: certificates, keys, RSA, DH, SHA-256 and `CIPHER` on OpenSSL; MD4, MD5, SHA-1, RC4, DES and random on CNG; SHA-0 own code | `X`, `K`, `NAME`, `CIPHER`, `CRYPT`, `DH_CTX` | Internat, Object, OS, Kernel | Cfg, Table, Network, Pack, Stun, Memory, Kernel, 16 Cedar modules |
 | Cfg | Text configuration tree and reader/writer | `FOLDER`, `ITEM`, `CFG_RW` | FileIO, Internat, Encrypt, Network | Table, Cedar/Server (the config file), Account, Admin, SeLowUser |
 | Table | String table, language list, `_SS`/`_UU`/`_II`/`_E` lookup, `$lang.config` | `TABLE`, `LANGLIST` | Internat, Encrypt, FileIO, Cfg, Mayaqua | Kernel, Microsoft, Command, Console, Admin, Hub and others |
@@ -105,7 +105,7 @@ The management protocol. A Connection whose login PACK has `method` = `admin` (`
 _Avoid_: JSON-RPC (removed from the fork), management API
 
 **hamcore**:
-The resource archive `hamcore.se2`, built by `hamcorebuilder` from `src/bin/hamcore/` and read through `libhamcore` (a submodule). Files are named with a `|` prefix in IO paths (for example `|strtable_en.stb`, `|root_certs.dat`, `|watermark.bin`). A loose `hamcore/` folder next to the executable wins over the archive. A missing archive is fatal at start-up.
+The files of `src/bin/hamcore/`, compiled into `vpnserver`, `vpncmd` and `vpntest` as PE resources of type `HAMCORE` by `cmake/RanzResources.cmake` (one resource per file, and an `INDEX` resource that names them) and read by `ReadHamcore` through `FindResource`/`LoadResource`. Files are named with a `|` prefix in IO paths (for example `|strtable_en.stb`, `|root_certs.dat`, `|watermark.bin`). A loose `hamcore/` folder next to the executable wins over the built-in files. An executable without them is fatal at start-up (`InitHamcore`). There is no `hamcore.se2` archive any more.
 _Avoid_: resource file, data pack
 
 **String table**:

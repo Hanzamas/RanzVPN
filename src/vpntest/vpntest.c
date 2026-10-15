@@ -446,6 +446,7 @@ void tickorigin_test(UINT num, char **arg);
 void timeenc_test(UINT num, char **arg);
 void nullsafe_test(UINT num, char **arg);
 void fileio_test(UINT num, char **arg);
+void resources_test(UINT num, char **arg);
 void threadpool_test(UINT num, char **arg);
 void dns_test(UINT num, char **arg);
 
@@ -546,6 +547,7 @@ TEST_LIST test_list[] =
 	{"timeenc", timeenc_test, "Time encoding: SystemTime64/LocalTime64 against the OS clock, fixed-input conversions."},
 	{"nullsafe", nullsafe_test, "NULL safety of the LOCK, LIST, COUNTER, REF and EVENT functions."},
 	{"fileio", fileio_test, "FileIO: @, $ and | prefixes, path separator, sharing modes, reads past the end."},
+	{"resources", resources_test, "Resources: every hamcore file through ReadHamcore and |, the loose hamcore folder, no hamcore.se2, the same resources in vpnserver and vpncmd."},
 	{"threadpool", threadpool_test, "Thread pool: job pickup, host thread id and COM, idle reuse, many waiters, host handles."},
 	{"dns", dns_test, "DNS: localhost and IP literals answered at once, the computer name through the resolver thread."},
 	{"certdl", certdl_test, "SetServerCert downloads the issuer certificate from a loopback listener (DownloadCert)."},

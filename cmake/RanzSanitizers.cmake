@@ -130,8 +130,7 @@ if(_ranz_asan_dynamic AND _ranz_asan_static_thunk)
 
   # [MS-RT]: "Even when statically linking, the ASan runtime DLL must be present at runtime".
   # Copy the DLL of this compiler next to the executables: the build directory (vpntest,
-  # vpnserver, vpncmd, the fuzz targets) here, hamcorebuilder, which runs during the build,
-  # through ranz_copy_asan_dll() below.
+  # vpnserver, vpncmd, the fuzz targets).
   get_filename_component(_ranz_cc_dir "${CMAKE_C_COMPILER}" DIRECTORY)
   set(RANZ_ASAN_DLL "")
   foreach(candidate
@@ -155,19 +154,6 @@ elseif(_ranz_asan_static AND _ranz_asan_cxx)
 else()
   message(FATAL_ERROR "RANZ_ASAN: no clang_rt.asan libraries for ${RANZ_RT_ARCH} in ${RANZ_RT_DIR}")
 endif()
-
-# Copies the ASan runtime DLL next to the executable of <target>, a tool that runs during the
-# build (src/CMakeLists.txt calls it for hamcorebuilder, which writes hamcore.se2). Reads the
-# target's output directory, so a RUNTIME_OUTPUT_DIRECTORY set by its own CMakeLists.txt is
-# followed. Copied at configure time because add_custom_command(TARGET ... POST_BUILD) only
-# accepts targets created in the calling directory.
-function(ranz_copy_asan_dll target)
-  get_target_property(_ranz_dir ${target} RUNTIME_OUTPUT_DIRECTORY)
-  if(NOT _ranz_dir)
-    get_target_property(_ranz_dir ${target} BINARY_DIR)
-  endif()
-  file(COPY "${RANZ_ASAN_DLL}" DESTINATION "${_ranz_dir}")
-endfunction()
 
 # Compiler: [MS-FSAN] /fsanitize=address, which clang-cl accepts with the same spelling.
 # C and C++ only, so that resource and assembler sources keep their flags.

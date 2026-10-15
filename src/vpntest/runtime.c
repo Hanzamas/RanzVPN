@@ -772,6 +772,295 @@ void fileio_test(UINT num, char **arg)
 	RtEnd(&ctx);
 }
 
+// Constants of the resources test
+#define	RT_RES_OVERRIDE_NAME	"empty.config"						// Hamcore file that a loose file replaces
+#define	RT_RES_OVERRIDE_DATA	"vpntest resources override\r\n"	// Contents of that loose file
+#define	RT_RES_MISSING_NAME		"vpntest_no_such_resource.bin"		// Name that no hamcore file has
+#define	RT_RES_SLASH_NAME		"DriverPackages/SeLow_Win10/x64/SeLow_x64.sys"		// Read with "/" and with "\"
+#define	RT_RES_BACKSLASH_NAME	"|DriverPackages\\SeLow_Win10\\x64\\SeLow_x64.sys"	// The same file, as SeLowUser.c names it
+
+#define	RT_RES_SOURCE_DIR		RANZ_HAMCORE_SOURCE_DIR				// src/bin/hamcore of the source tree (src/vpntest/CMakeLists.txt)
+
+// Both buffers were read and hold the same bytes
+static bool RtResourceSame(BUF *a, BUF *b)
+{
+	return a != NULL && b != NULL && a->Size == b->Size && Cmp(a->Buf, b->Buf, a->Size) == 0;
+}
+
+// One file of src/bin/hamcore: ReadHamcore of its name and "|" with its name return the exact
+// bytes of the source file. No CR byte is left out of the comparison, so a line-ending change
+// between the source file and the resource shows. A name with folders also opens with "\"
+// between them, as SeLowUser.c names the driver package files.
+static void RtResourceFile(RT_CTX *ctx, char *path, char *name)
+{
+	char what[MAX_SIZE];
+	char bar_name[MAX_SIZE];
+	BUF *src, *b;
+	bool sub = false;
+	UINT i;
+
+	src = ReadDump(path);
+	Format(what, sizeof(what), "Read the source file of %s", name);
+	if (RtCheck(ctx, src != NULL, what, "cannot read %s", path) == false)
+	{
+		return;
+	}
+
+	b = ReadHamcore(name);
+	Format(what, sizeof(what), "ReadHamcore of %s returns the bytes of its source file", name);
+	RtCheck(ctx, RtResourceSame(src, b), what, "source %u bytes, read %u bytes%s",
+		src->Size, b != NULL ? b->Size : 0, b != NULL ? "" : " (NULL)");
+	FreeBuf(b);
+
+	Format(bar_name, sizeof(bar_name), "|%s", name);
+	b = ReadDump(bar_name);
+	Format(what, sizeof(what), "ReadDump of %s returns the bytes of its source file", bar_name);
+	RtCheck(ctx, RtResourceSame(src, b), what, "source %u bytes, read %u bytes%s",
+		src->Size, b != NULL ? b->Size : 0, b != NULL ? "" : " (NULL)");
+	FreeBuf(b);
+
+	for (i = 0;bar_name[i] != 0;i++)
+	{
+		if (bar_name[i] == '/')
+		{
+			bar_name[i] = '\\';
+			sub = true;
+		}
+	}
+	if (sub)
+	{
+		b = ReadDump(bar_name);
+		Format(what, sizeof(what), "ReadDump of %s returns the same bytes", bar_name);
+		RtCheck(ctx, RtResourceSame(src, b), what, "source %u bytes, read %u bytes%s",
+			src->Size, b != NULL ? b->Size : 0, b != NULL ? "" : " (NULL)");
+		FreeBuf(b);
+	}
+
+	FreeBuf(src);
+}
+
+// Every file under a folder of src/bin/hamcore, its subfolders included, through
+// RtResourceFile. rel is the path of the folder relative to src/bin/hamcore ("" for
+// src/bin/hamcore itself, "/" between folders). Returns the number of files.
+static UINT RtResourceDir(RT_CTX *ctx, char *dir, char *rel)
+{
+	char path[MAX_SIZE];
+	char name[MAX_SIZE];
+	DIRLIST *d;
+	UINT i, files = 0;
+
+	d = EnumDir(dir);
+	for (i = 0;d != NULL && i < d->NumFiles;i++)
+	{
+		DIRENT *e = d->File[i];
+
+		Format(path, sizeof(path), "%s/%s", dir, e->FileName);
+		if (rel[0] == 0)
+		{
+			StrCpy(name, sizeof(name), e->FileName);
+		}
+		else
+		{
+			Format(name, sizeof(name), "%s/%s", rel, e->FileName);
+		}
+
+		if (e->Folder)
+		{
+			files += RtResourceDir(ctx, path, name);
+		}
+		else
+		{
+			RtResourceFile(ctx, path, name);
+			files++;
+		}
+	}
+	FreeDir(d);
+
+	return files;
+}
+
+// Executables of the build that carry the same hamcore resources as vpntest.exe, next to it
+static wchar_t *rt_resource_exes[] =
+{
+	L"vpnserver.exe",
+	L"vpncmd.exe",
+};
+
+// State of RtResourceCompare: the module to compare with, and the counts it gives
+typedef struct RT_RES_CMP
+{
+	HMODULE Other;		// Module whose resources are compared with the enumerated ones
+	UINT Num;			// Resources enumerated
+	UINT NumSame;		// Of them, the ones that Other holds with the same bytes
+} RT_RES_CMP;
+
+// EnumResourceNames callback: count the resource, and count it as the same when the other
+// module holds a resource of that type and name with the same bytes
+static BOOL CALLBACK RtResourceCompare(HMODULE module, LPCSTR type, LPSTR name, LONG_PTR param)
+{
+	RT_RES_CMP *c = (RT_RES_CMP *)param;
+	HRSRC r1 = FindResourceA(module, name, type);
+	HRSRC r2 = FindResourceA(c->Other, name, type);
+
+	c->Num++;
+
+	if (r1 != NULL && r2 != NULL)
+	{
+		UINT size1 = SizeofResource(module, r1);
+		UINT size2 = SizeofResource(c->Other, r2);
+		void *data1 = LockResource(LoadResource(module, r1));
+		void *data2 = LockResource(LoadResource(c->Other, r2));
+
+		if (size1 == size2 && data1 != NULL && data2 != NULL && Cmp(data1, data2, size1) == 0)
+		{
+			c->NumSame++;
+		}
+	}
+
+	return TRUE;
+}
+
+// resources: the hamcore files (src/bin/hamcore) that ReadHamcore and the "|" prefix read.
+// Every file with its exact bytes, "\" read as "/", a leading "/" skipped, a missing name, a
+// new buffer for each read, a loose "hamcore" folder next to the executable winning over the
+// built-in file, no hamcore.se2 archive next to the executable, and vpnserver.exe and
+// vpncmd.exe carrying the same resources as vpntest.exe (#89)
+void resources_test(UINT num, char **arg)
+{
+	RT_CTX ctx;
+	wchar_t exe_dir[MAX_SIZE];
+	wchar_t se2_path[MAX_SIZE];
+	wchar_t dir_path[MAX_SIZE];
+	wchar_t override_path[MAX_SIZE];
+	char what[MAX_SIZE];
+	BUF *b, *b2, *embedded;
+	IO *io;
+	UINT i, size, files;
+	void *data;
+	bool ok, made_dir;
+
+	RtBegin(&ctx, "RESOURCES", "Resources test");
+
+	GetExeDirW(exe_dir, sizeof(exe_dir));
+	ConbinePathW(se2_path, sizeof(se2_path), exe_dir, L"hamcore.se2");
+	ConbinePathW(dir_path, sizeof(dir_path), exe_dir, L"" HAMCORE_DIR_NAME);
+	ConbinePathW(override_path, sizeof(override_path), dir_path, L"" RT_RES_OVERRIDE_NAME);
+
+	// The executable carries the files itself: the build writes no hamcore.se2 archive
+	RtCheck(&ctx, IsFileExistsW(se2_path) == false, "No hamcore.se2 next to the executable", "%S exists", se2_path);
+
+	// vpnserver.exe and vpncmd.exe carry the same files: each holds every resource of type
+	// HAMCORE_RESOURCE_TYPE of this executable with the same bytes, and no other one
+	for (i = 0;i < sizeof(rt_resource_exes) / sizeof(rt_resource_exes[0]);i++)
+	{
+		wchar_t other_path[MAX_SIZE];
+		HMODULE self = GetModuleHandleW(NULL);
+		HMODULE other;
+		RT_RES_CMP mine, theirs;
+		UINT err;
+
+		Zero(&mine, sizeof(mine));
+		Zero(&theirs, sizeof(theirs));
+
+		ConbinePathW(other_path, sizeof(other_path), exe_dir, rt_resource_exes[i]);
+		other = LoadLibraryExW(other_path, NULL, LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE);
+		err = GetLastError();
+		Format(what, sizeof(what), "Load %S as a data file", rt_resource_exes[i]);
+		if (RtCheck(&ctx, other != NULL, what, "cannot load %S (error %u)", other_path, err))
+		{
+			mine.Other = other;
+			theirs.Other = self;
+			EnumResourceNamesA(self, HAMCORE_RESOURCE_TYPE, RtResourceCompare, (LONG_PTR)&mine);
+			EnumResourceNamesA(other, HAMCORE_RESOURCE_TYPE, RtResourceCompare, (LONG_PTR)&theirs);
+
+			Format(what, sizeof(what), "%S holds the hamcore resources of vpntest.exe, and no other", rt_resource_exes[i]);
+			RtCheck(&ctx, mine.Num != 0 && mine.NumSame == mine.Num && theirs.NumSame == theirs.Num, what,
+				"%u of the %u resources of vpntest.exe and %u of its own %u are the same",
+				mine.NumSame, mine.Num, theirs.NumSame, theirs.Num);
+
+			FreeLibrary(other);
+		}
+	}
+
+	// Every file of src/bin/hamcore, walked at run time, holds the bytes of its source file
+	files = RtResourceDir(&ctx, RT_RES_SOURCE_DIR, "");
+	RtCheck(&ctx, files != 0, "The hamcore source folder holds files", "no file in %s", RT_RES_SOURCE_DIR);
+
+	// "|" opens the same bytes, with "\" in the name read as "/"
+	b = ReadHamcore(RT_RES_SLASH_NAME);
+	io = FileOpen(RT_RES_BACKSLASH_NAME, false);
+	if (RtCheck(&ctx, io != NULL, "FileOpen of a \"|\" name written with backslashes", "returned NULL"))
+	{
+		size = FileSize(io);
+		data = ZeroMalloc(size + 1);
+		ok = FileRead(io, data, size);
+		RtCheck(&ctx, b != NULL && ok && size == b->Size && Cmp(data, b->Buf, size) == 0,
+			"FileRead through \"|\" returns the bytes of ReadHamcore", "read %s, %u bytes", ok ? "ok" : "failed", size);
+		Free(data);
+		FileClose(io);
+	}
+	FreeBuf(b);
+
+	// A leading "/" is skipped, and each read returns its own buffer at offset 0
+	b = ReadHamcore("watermark.bin");
+	b2 = ReadHamcore("/watermark.bin");
+	if (RtCheck(&ctx, b != NULL && b2 != NULL && b->Size != 0 && b2->Size == b->Size && Cmp(b2->Buf, b->Buf, b->Size) == 0,
+		"ReadHamcore skips a leading \"/\"", "%s", b2 == NULL ? "returned NULL" : "the bytes differ"))
+	{
+		RtCheck(&ctx, b->Current == 0 && b2->Current == 0, "A read starts at offset 0", "offsets %u and %u", b->Current, b2->Current);
+
+		((UCHAR *)b->Buf)[0] ^= 0xFF;
+		FreeBuf(b2);
+		b2 = ReadHamcore("watermark.bin");
+		RtCheck(&ctx, b2 != NULL && b2->Size == b->Size && ((UCHAR *)b2->Buf)[0] == (((UCHAR *)b->Buf)[0] ^ 0xFF),
+			"Each read returns its own copy", "%s", b2 == NULL ? "returned NULL" : "a change to an earlier read shows");
+	}
+	FreeBuf(b);
+	FreeBuf(b2);
+
+	// A name that no file has
+	RtCheck(&ctx, ReadHamcore(NULL) == NULL, "ReadHamcore(NULL) returns NULL", "returned a buffer");
+	b = ReadHamcore(RT_RES_MISSING_NAME);
+	RtCheck(&ctx, b == NULL, "ReadHamcore of a missing name returns NULL", "returned a buffer");
+	FreeBuf(b);
+	io = FileOpen("|" RT_RES_MISSING_NAME, false);
+	RtCheck(&ctx, io == NULL, "FileOpen of a missing \"|\" name returns NULL", "returned a file");
+	FileClose(io);
+	RtCheck(&ctx, IsFile("|watermark.bin"), "IsFile of a \"|\" name", "returned false");
+	RtCheck(&ctx, IsFile("|" RT_RES_MISSING_NAME) == false, "IsFile of a missing \"|\" name", "returned true");
+
+	// A file in a "hamcore" folder next to the executable wins over the built-in one, until it is deleted
+	embedded = ReadHamcore(RT_RES_OVERRIDE_NAME);
+	made_dir = MakeDirW(dir_path);
+	b = NewBufFromMemory(RT_RES_OVERRIDE_DATA, StrLen(RT_RES_OVERRIDE_DATA));
+	ok = DumpBufW(b, override_path);
+	FreeBuf(b);
+	if (RtCheck(&ctx, ok, "Write a loose hamcore/" RT_RES_OVERRIDE_NAME " next to the executable", "cannot write %S", override_path))
+	{
+		b = ReadHamcore(RT_RES_OVERRIDE_NAME);
+		RtCheck(&ctx, b != NULL && b->Size == StrLen(RT_RES_OVERRIDE_DATA) && Cmp(b->Buf, RT_RES_OVERRIDE_DATA, b->Size) == 0,
+			"ReadHamcore returns the loose file", "%s", b == NULL ? "returned NULL" : "returned other bytes");
+		FreeBuf(b);
+
+		b = ReadDump("|" RT_RES_OVERRIDE_NAME);
+		RtCheck(&ctx, b != NULL && b->Size == StrLen(RT_RES_OVERRIDE_DATA) && Cmp(b->Buf, RT_RES_OVERRIDE_DATA, b->Size) == 0,
+			"ReadDump through \"|\" returns the loose file", "%s", b == NULL ? "returned NULL" : "returned other bytes");
+		FreeBuf(b);
+	}
+	RtCheck(&ctx, FileDeleteW(override_path), "Delete the loose file", "failed");
+	if (made_dir)
+	{
+		DeleteDirW(dir_path);
+	}
+	b = ReadHamcore(RT_RES_OVERRIDE_NAME);
+	RtCheck(&ctx, b != NULL && embedded != NULL && b->Size == embedded->Size && Cmp(b->Buf, embedded->Buf, b->Size) == 0,
+		"Without the loose file, ReadHamcore returns the built-in file again", "%s", b == NULL ? "returned NULL" : "returned other bytes");
+	FreeBuf(b);
+	FreeBuf(embedded);
+
+	RtEnd(&ctx);
+}
+
 // Constants of the threadpool test
 #define	RT_POOL_BOUND			5000	// Fail-safe bound of every wait in the threadpool test (ms)
 #define	RT_POOL_SETTLE			300		// Time given to an idle pool thread to (wrongly) end (ms)

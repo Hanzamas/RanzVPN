@@ -27,6 +27,13 @@ if(WIN32)
 
     "${TOP_DIRECTORY}/src/BuildFiles/Manifests/common.manifest"
   )
+
+  # The hamcore files, as resources (cmake/RanzResources.cmake)
+  ranz_hamcore_resources(vpntest)
 endif()
 
 target_link_libraries(vpntest cedar)
+
+# The resources test (runtime.c) compares every hamcore file the executable serves with its source
+# file. A source property, so the resource scripts of vpntest do not get the quoted path.
+set_source_files_properties(runtime.c PROPERTIES COMPILE_DEFINITIONS "RANZ_HAMCORE_SOURCE_DIR=\"${TOP_DIRECTORY}/src/bin/hamcore\"")

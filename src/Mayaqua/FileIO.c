@@ -9,16 +9,13 @@
 #include "Memory.h"
 #include "Microsoft.h"
 #include "Str.h"
-#include "Tick64.h"
 #include "Tracking.h"
 #include "Win32.h"
 
-#include <Hamcore.h>
+#include <stdlib.h>
 
 static char exe_file_name[MAX_SIZE] = "/tmp/a.out";
 static wchar_t exe_file_name_w[MAX_SIZE] = L"/tmp/a.out";
-static LIST *hamcore = NULL;
-static HAMCORE *hamcore_io = NULL;
 
 // File I/O data of a disk file (IO pData), from the raw OS allocator
 typedef struct WIN32IO
@@ -156,6 +153,123 @@ void FreeDir(DIRLIST *d)
 	Free(d);
 }
 
+// The built-in hamcore files are resources of the executable (module NULL: Mayaqua is linked
+// into it), of type HAMCORE_RESOURCE_TYPE (cmake/RanzResources.cmake). The resource
+// HAMCORE_RESOURCE_INDEX names them, one per line; the file on line n is the resource with the
+// integer ID n.
+
+// Bytes of the resource <id> of type HAMCORE_RESOURCE_TYPE, mapped with the image (read-only).
+// False when the executable has no such resource.
+static bool HamcoreResource(char *id, void **data, UINT *size)
+{
+	HRSRC res = FindResourceA(NULL, id, HAMCORE_RESOURCE_TYPE);
+	if (res == NULL)
+	{
+		return false;
+	}
+
+	*size = SizeofResource(NULL, res);
+	*data = LockResource(LoadResource(NULL, res));
+
+	return (*data != NULL || *size == 0);
+}
+
+// The line of the index text that starts at *pos: its start and its length without the line
+// end (LF, or CR LF). Moves *pos past the line. False when *pos is at the end of the text.
+static bool HamcoreIndexLine(char *text, UINT size, UINT *pos, UINT *start, UINT *len)
+{
+	UINT n = 0;
+
+	if (*pos >= size)
+	{
+		return false;
+	}
+
+	while (*pos + n < size && text[*pos + n] != '\n')
+	{
+		++n;
+	}
+
+	*start = *pos;
+	*pos = *pos + n + 1;
+
+	// A line may end with CR LF
+	if (n != 0 && text[*start + n - 1] == '\r')
+	{
+		--n;
+	}
+
+	*len = n;
+
+	return true;
+}
+
+// Resource ID of the built-in hamcore file <name> (compared byte by byte): its line in the
+// index, from 1, or 0 when the index does not name it. <num> (optional) receives the number of
+// lines: 0 when the executable has no index.
+static UINT HamcoreResourceId(char *name, UINT *num)
+{
+	char *text;
+	UINT size, pos, start, len, line = 0, id = 0;
+	UINT name_len = (name == NULL ? 0 : StrLen(name));
+
+	if (num != NULL)
+	{
+		*num = 0;
+	}
+
+	if (HamcoreResource(HAMCORE_RESOURCE_INDEX, (void **)&text, &size) == false)
+	{
+		return 0;
+	}
+
+	for (pos = 0; HamcoreIndexLine(text, size, &pos, &start, &len);)
+	{
+		++line;
+		if (id == 0 && name != NULL && len == name_len && Cmp(text + start, name, len) == 0)
+		{
+			id = line;
+		}
+	}
+
+	if (num != NULL)
+	{
+		*num = line;
+	}
+
+	return id;
+}
+
+// Name of the built-in hamcore file with the resource ID <id>: line <id> of the index, cut to
+// fit <name>. Empty when the index has no such line.
+static void HamcoreResourceName(UINT id, char *name, UINT name_size)
+{
+	char *text;
+	UINT size, pos, start, len, line = 0;
+
+	if (name_size == 0)
+	{
+		return;
+	}
+	name[0] = 0;
+
+	if (HamcoreResource(HAMCORE_RESOURCE_INDEX, (void **)&text, &size) == false)
+	{
+		return;
+	}
+
+	for (pos = 0; HamcoreIndexLine(text, size, &pos, &start, &len);)
+	{
+		if (++line == id)
+		{
+			len = MIN(len, name_size - 1);
+			Copy(name, text + start, len);
+			name[len] = 0;
+			return;
+		}
+	}
+}
+
 static BUF *ReadHamcoreW(wchar_t *filename)
 {
 	char *filename_a = CopyUniToStr(filename);
@@ -179,6 +293,7 @@ BUF *ReadHamcore(char *name)
 		++name;
 	}
 
+	// A loose file in the "hamcore" folder next to the executable wins over the built-in one
 	char path[MAX_PATH];
 	GetExeDir(path, sizeof(path));
 	Format(path, sizeof(path), "%s/%s/%s", path, HAMCORE_DIR_NAME, name);
@@ -189,106 +304,65 @@ BUF *ReadHamcore(char *name)
 		return buf;
 	}
 
-	LockList(hamcore);
+	// The built-in file, copied into a new buffer at offset 0
+	UINT id = HamcoreResourceId(name, NULL);
+	void *data;
+	UINT size;
+	if (id == 0 || HamcoreResource(MAKEINTRESOURCEA(id), &data, &size) == false)
 	{
-		HC t = {0};
-		t.Path = name;
-		HC *c = Search(hamcore, &t);
-		if (c == NULL)
-		{
-			const HAMCORE_FILE *file = HamcoreFind(hamcore_io, name);
-			if (file)
-			{
-				c = Malloc(sizeof(HC));
-				c->Size = file->OriginalSize;
-				c->Path = CopyStr(name);
-				c->Buffer = Malloc(c->Size);
-
-				if (HamcoreRead(hamcore_io, c->Buffer, file))
-				{
-					Add(hamcore, c);
-				}
-				else
-				{
-					Free(c->Buffer);
-					Free(c->Path);
-					Free(c);
-
-					c = NULL;
-				}
-			}
-		}
-
-		if (c != NULL)
-		{
-			buf = NewBuf();
-			WriteBuf(buf, c->Buffer, c->Size);
-			SeekBuf(buf, 0, 0);
-			c->LastAccess = Tick64();
-		}
-
-		LIST *to_delete = NewListFast(NULL);
-
-		for (UINT i = 0; i < LIST_NUM(hamcore); ++i)
-		{
-			HC *c = LIST_DATA(hamcore, i);
-			if (c->LastAccess + HAMCORE_CACHE_EXPIRES <= Tick64())
-			{
-				Add(to_delete, c);
-			}
-		}
-
-		for (UINT i = 0; i < LIST_NUM(to_delete); ++i)
-		{
-			HC *c = LIST_DATA(to_delete, i);
-
-			Delete(hamcore, c);
-
-			Free(c->Buffer);
-			Free(c->Path);
-			Free(c);
-		}
-
-		ReleaseList(to_delete);
+		return NULL;
 	}
-	UnlockList(hamcore);
 
-	return buf;
+	return MemToBuf(data, size);
 }
 
+// The built-in hamcore files are mapped with the image: there is no archive to open and no
+// cache to fill. An executable without them, or whose index names a file it does not hold,
+// stops here, at start, instead of failing on the first read.
 void InitHamcore()
 {
+	UINT i, num, size;
+	void *data;
+
 	if (MayaquaIsMinimalMode())
 	{
 		return;
 	}
 
-	hamcore = NewList(CompareHamcore);
-	char path[MAX_PATH];
-	GetExeDir(path, sizeof(path));
-	Format(path, sizeof(path), "%s/%s", path, HAMCORE_FILE_NAME);
-
-	hamcore_io = HamcoreOpen(path);
-	if (hamcore_io != NULL)
+	HamcoreResourceId(NULL, &num);
+	for (i = 1; i <= num; ++i)
 	{
+		if (HamcoreResource(MAKEINTRESOURCEA(i), &data, &size) == false)
+		{
+			break;
+		}
+	}
+
+	if (num == 0 || i <= num)
+	{
+		char tmp[MAX_SIZE];
+
+		if (num == 0)
+		{
+			StrCpy(tmp, sizeof(tmp), "Fatal Error: This executable holds no hamcore files (no resource " HAMCORE_RESOURCE_TYPE " " HAMCORE_RESOURCE_INDEX ").");
+		}
+		else
+		{
+			char name[MAX_PATH];
+
+			HamcoreResourceName(i, name, sizeof(name));
+			Format(tmp, sizeof(tmp), "Fatal Error: This executable lacks the hamcore file \"%s\" (file %u of %u, resource " HAMCORE_RESOURCE_TYPE " %u).", name, i, num, i);
+		}
+		StrCat(tmp, sizeof(tmp), "\r\nThe build embeds src/bin/hamcore with cmake/RanzResources.cmake.\r\n\r\n(If this problem occurs again, please reinstall VPN software files.)");
+
+		Alert(tmp, NULL);
+		exit(-1);
 	}
 }
 
+// Nothing to free: the built-in hamcore files belong to the image of the executable
 void FreeHamcore()
 {
-	for (UINT i = 0; i < LIST_NUM(hamcore); ++i)
-	{
-		HC *c = LIST_DATA(hamcore, i);
-
-		Free(c->Buffer);
-		Free(c->Path);
-		Free(c);
-	}
-	ReleaseList(hamcore);
-
-	HamcoreClose(hamcore_io);
-	hamcore_io = NULL;
-	hamcore = NULL;
 }
 
 int CompareHamcore(void *p1, void *p2)
