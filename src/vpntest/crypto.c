@@ -6,7 +6,8 @@
 // (stays on OpenSSL). The hash vectors are the RFC 1320 and RFC 1321 test suites and the FIPS 180
 // messages, the RC4 vectors come from RFC 6229 and the DES vectors from FIPS 81 and the DES
 // literature; a value marked "computed" was made with two independent implementations. All of
-// them hold for the OpenSSL code and for CNG alike, so the test runs against both.
+// them hold for the OpenSSL code and for CNG alike, so the test runs against both. The one
+// exception is the 65-byte RC4 key, which pins the CNG code: Encrypt() writes zeros for it.
 // The test prints "CRYPTO TEST OK" only when every check passes, and frees everything it
 // allocates, so that the run still ends with "NO MEMORY LEAKS". The [PASS] lines carry only
 // fixed values; the [FAIL] details show what was computed.
@@ -27,6 +28,7 @@
 #define	KAT_NUM_MESSAGES		9			// Messages of the hash suite
 #define	KAT_RC4_BLOCK			16			// Keystream bytes compared per RC4 vector
 #define	KAT_RC4_LONG			4096		// Offset of the RFC 6229 vector at 4096
+#define	KAT_RC4_LONG_KEY		65			// RC4 key one byte longer than CNG makes into real RC4
 #define	KAT_RAND_BULK			65536		// Bytes drawn for the random generator statistics
 #define	KAT_RAND_MAX_SKEW		2200		// Allowed distance of the 1-bit count from its mean (about 6 sigma)
 #define	KAT_RAND_DRAWS			64			// Draws of each RandN function
@@ -327,6 +329,7 @@ static void KatRc4(KAT_CTX *ctx)
 	UCHAR in[8];
 	UCHAR out[8];
 	UCHAR back[8];
+	UCHAR long_key[KAT_RC4_LONG_KEY];
 	char got[sizeof(out) * 2 + 1];
 	CRYPT *c;
 
@@ -372,6 +375,17 @@ static void KatRc4(KAT_CTX *ctx)
 
 	BinToStr(got, sizeof(got), back, sizeof(back));
 	KatCheck(ctx, Cmp(back, in, sizeof(in)) == 0, "RC4 round trip with a fresh key restores the text", "got %s", got);
+
+	// A key longer than 64 bytes gets no CNG key object (CNG would make a keystream that is not RC4),
+	// so Encrypt() writes zeros
+	memset(long_key, 0x01, sizeof(long_key));
+	memset(out, KAT_GUARD_BYTE, sizeof(out));
+	c = NewCrypt(long_key, sizeof(long_key));
+	Encrypt(c, out, in, sizeof(in));
+	FreeCrypt(c);
+
+	BinToStr(got, sizeof(got), out, sizeof(out));
+	KatCheck(ctx, KatAllBytes(out, sizeof(out), 0), "RC4 with a 65-byte key writes zeros", "got %s", got);
 }
 
 // One DES vector: DesEcbEncrypt() takes the 56 key bits without the parity bits, 7 bytes

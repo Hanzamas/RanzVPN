@@ -64,6 +64,10 @@ typedef struct CB_PARAM
 #define	BCRYPT_USE_SYSTEM_PREFERRED_RNG	0x00000002
 #endif	// BCRYPT_USE_SYSTEM_PREFERRED_RNG
 
+// Longest RC4 key (bytes) that CNG turns into real RC4. CNG accepts longer keys without an error
+// but then produces a keystream that is not RC4, so NewCrypt() does not give it those.
+#define	RC4_MAX_KEY_SIZE	64
+
 // CNG algorithm providers of MD4, MD5, SHA-1, RC4 and DES, which run on CNG instead of OpenSSL.
 // They are opened once, on first use, and kept for the life of the process, as the CNG
 // pseudo-handles are (MayaType.h selects the Vista SDK level, which does not declare those).
@@ -2966,7 +2970,9 @@ void InitCryptLibrary()
 }
 
 // RC4 key: a CNG key object, which keeps the keystream position from one Encrypt() call to the next.
-// CNG's RC4 takes keys of 1 to 64 bytes; with any other key, Encrypt() writes zeros.
+// Only keys of 1 to RC4_MAX_KEY_SIZE bytes get a key object: CNG refuses a 0-byte key, and it accepts
+// a longer one without an error but then produces a keystream that is not RC4. With any other key,
+// Rc4Key stays NULL and Encrypt() writes zeros.
 CRYPT *NewCrypt(void *key, UINT size)
 {
 	CRYPT *c = ZeroMalloc(sizeof(CRYPT));
@@ -2974,7 +2980,7 @@ CRYPT *NewCrypt(void *key, UINT size)
 
 	CngInit();
 
-	if (cng_rc4 != NULL && key != NULL &&
+	if (cng_rc4 != NULL && key != NULL && size >= 1 && size <= RC4_MAX_KEY_SIZE &&
 		CNG_SUCCESS(BCryptGenerateSymmetricKey(cng_rc4, &k, NULL, 0, (PUCHAR)key, size, 0)))
 	{
 		c->Rc4Key = k;
