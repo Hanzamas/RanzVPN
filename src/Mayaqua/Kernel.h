@@ -34,7 +34,7 @@ struct THREAD
 	void *pData;
 	EVENT *init_finished_event;
 	UINT ThreadId;
-	void *StartedEvent;				// Kernel event the pool callback sets once it took the job (NewThread waits for it)
+	void *StartedEvent;				// Kernel event the pool callback sets once it took the job (NewThread waits for it, then closes it)
 	void *EndedEvent;				// Manual-reset kernel event set once the job ended (WaitThread waits on it)
 	EVENT *release_event;
 	char *Name;
