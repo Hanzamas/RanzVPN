@@ -21,7 +21,7 @@ static void FuzzAtExit(void)
 // libFuzzer calls this once, before the first input
 int LLVMFuzzerInitialize(int *argc, char ***argv)
 {
-	// Minimal mode: no hamcore.se2 and no string table, which none of the parsers needs
+	// Minimal mode: no hamcore files and no string table, which none of the parsers needs
 	MayaquaMinimalMode();
 
 	// Same flags as vpntest: no memcheck, debug on (debug enables the kernel status counters
