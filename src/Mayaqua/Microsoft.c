@@ -1371,6 +1371,51 @@ void MsUserModeGlobalPulseRecvThread(THREAD *thread, void *param)
 	}
 }
 
+// Write one entry to the Application event log, with the message as its only insertion string;
+// type is an EVENTLOG_*_TYPE value. Plain Win32 calls only, so that the service code can write
+// entries before InitMayaqua().
+bool MsWriteEventLog(char *source, UINT type, UINT event_id, char *message)
+{
+	HANDLE h;
+	LPCSTR strings[1];
+	BOOL ret;
+	if (source == NULL || message == NULL)
+	{
+		return false;
+	}
+
+	h = RegisterEventSourceA(NULL, source);
+	if (h == NULL)
+	{
+		return false;
+	}
+
+	strings[0] = message;
+	ret = ReportEventA(h, (WORD)type, 0, event_id, NULL, 1, 0, strings, NULL);
+
+	DeregisterEventSource(h);
+
+	return ret ? true : false;
+}
+
+// Write a service entry (MS_EVENT_SERVICE_*) under the service name: "Service <name> <what>.",
+// with the Win32 error code when it is not 0
+static void MsWriteServiceEvent(UINT type, UINT event_id, char *what, UINT error)
+{
+	char msg[MAX_SIZE];
+
+	if (error == 0)
+	{
+		_snprintf_s(msg, sizeof(msg), _TRUNCATE, "Service %s %s.", g_service_name, what);
+	}
+	else
+	{
+		_snprintf_s(msg, sizeof(msg), _TRUNCATE, "Service %s %s (error %u).", g_service_name, what, error);
+	}
+
+	MsWriteEventLog(g_service_name, type, event_id, msg);
+}
+
 static void MsServiceStoperMainThread(THREAD *t, void *p)
 {
 	g_stop();
@@ -1396,6 +1441,17 @@ static bool MsServiceStopProc()
 		status.dwCheckPoint++;
 		status.dwCurrentState = SERVICE_STOP_PENDING;
 		_SetServiceStatus(ssh, &status);
+	}
+
+	// The entry goes out before SERVICE_STOPPED: once that is reported, the process may end at any time
+	if (ret)
+	{
+		MsWriteServiceEvent(EVENTLOG_INFORMATION_TYPE, MS_EVENT_SERVICE_STOPPED, "stopped", 0);
+	}
+	else
+	{
+		MsWriteServiceEvent(EVENTLOG_ERROR_TYPE, MS_EVENT_SERVICE_FAILED,
+			"did not stop within the self-kill timeout and is terminated", 0);
 	}
 
 	status.dwWin32ExitCode = 0;
@@ -1451,6 +1507,8 @@ static void CALLBACK MsServiceDispatcher(DWORD argc, LPTSTR *argv)
 
 	if (ssh == NULL)
 	{
+		MsWriteServiceEvent(EVENTLOG_ERROR_TYPE, MS_EVENT_SERVICE_FAILED,
+			"could not start: RegisterServiceCtrlHandler() failed", GetLastError());
 		MessageBox(NULL, "RegisterServiceCtrlHandler() Failed.", "MsServiceDispatcher()", MB_SETFOREGROUND | MB_TOPMOST | MB_SERVICE_NOTIFICATION | MB_OK | MB_ICONEXCLAMATION);
 		return;
 	}
@@ -1476,6 +1534,7 @@ static void CALLBACK MsServiceDispatcher(DWORD argc, LPTSTR *argv)
 	MsDisableIme();
 
 	g_start();
+	MsWriteServiceEvent(EVENTLOG_INFORMATION_TYPE, MS_EVENT_SERVICE_STARTED, "started", 0);
 	MsUpdateServiceConfig(g_service_name);
 
 	WaitForSingleObject(service_stop_event, INFINITE);
@@ -1597,6 +1656,8 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 
 		if (_StartServiceCtrlDispatcher(dispatch_table) == false)
 		{
+			MsWriteServiceEvent(EVENTLOG_ERROR_TYPE, MS_EVENT_SERVICE_FAILED,
+				"could not start: StartServiceCtrlDispatcher() failed", GetLastError());
 			MessageBox(NULL, "StartServiceCtrlDispatcher() Failed.", "MsServiceMode()", MB_SETFOREGROUND | MB_TOPMOST | MB_SERVICE_NOTIFICATION | MB_OK | MB_ICONEXCLAMATION);
 		}
 		else

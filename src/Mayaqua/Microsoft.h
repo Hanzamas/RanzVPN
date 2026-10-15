@@ -24,6 +24,11 @@
 // Self-kill timeout if the service freezes
 #define	SVC_SELFKILL_TIMEOUT		(5 * 60 * 1000)
 
+// Event IDs of the service entries in the Application event log, under the service name as source
+#define	MS_EVENT_SERVICE_STARTED	1
+#define	MS_EVENT_SERVICE_STOPPED	2
+#define	MS_EVENT_SERVICE_FAILED		3
+
 #define	SVC_RUN_COMMANDLINE			L"\"%s\" /service"
 
 #define	SVC_MODE_NONE				0
@@ -271,6 +276,7 @@ bool MsStartServiceEx(char *name, UINT *error_code);
 bool MsStopService(char *name);
 bool MsIsServiceRunning(char *name);
 UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT icon, char *cmd_line);
+bool MsWriteEventLog(char *source, UINT type, UINT event_id, char *message);
 bool MsIsUserMode();
 LIST *MsGetProcessList();
 void MsFreeProcessList(LIST *o);

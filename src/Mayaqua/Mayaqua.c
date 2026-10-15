@@ -15,6 +15,7 @@
 #include "Str.h"
 #include "Table.h"
 #include "Tick64.h"
+#include "Trace.h"
 #include "Tracking.h"
 
 #include <locale.h>
@@ -165,6 +166,9 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 
 	OSInit();
 
+	// The ETW provider of Debug() (Trace.c), registered first so that it sees the whole start
+	InitTrace();
+
 	srand((UINT)SystemTime64());
 
 	InitFifo();
@@ -289,6 +293,8 @@ void FreeMayaqua()
 	}
 
 	FreeKernelStatus();
+
+	FreeTrace();
 
 	OSFree();
 }

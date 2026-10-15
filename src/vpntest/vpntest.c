@@ -450,6 +450,8 @@ void fileio_test(UINT num, char **arg);
 void resources_test(UINT num, char **arg);
 void threadpool_test(UINT num, char **arg);
 void dns_test(UINT num, char **arg);
+void trace_test(UINT num, char **arg);
+void eventlog_test(UINT num, char **arg);
 
 // Named string test of NAT-4, #90 (strtest.c)
 void str_test(UINT num, char **arg);
@@ -555,6 +557,8 @@ TEST_LIST test_list[] =
 	{"resources", resources_test, "Resources: every hamcore file through ReadHamcore and |, the loose hamcore folder, no hamcore.se2, the same resources in vpnserver and vpncmd."},
 	{"threadpool", threadpool_test, "Thread pool: job pickup, host thread id and COM, idle reuse, many waiters, host handles."},
 	{"dns", dns_test, "DNS: localhost and IP literals answered at once, the computer name through the resolver thread."},
+	{"trace", trace_test, "ETW trace: Debug() output unchanged, messages to the TraceLogging provider: trace [listening]."},
+	{"eventlog", eventlog_test, "Event Log: MsWriteEventLog entries read back from the Application log."},
 	{"certdl", certdl_test, "SetServerCert downloads the issuer certificate from a loopback listener (DownloadCert)."},
 	{"str", str_test, "String functions: truncation and return values of copy, concatenate, format, search, tokens, compare."},
 };
