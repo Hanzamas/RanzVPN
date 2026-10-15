@@ -16,10 +16,9 @@ struct ADJUST_TIME
 
 struct TICK64
 {
-	THREAD *Thread;
+	PTP_TIMER Timer;				// Thread pool timer that runs the clock check every TICK64_SPAN_WIN32 ms
 	UINT64 Time64;
 	UINT64 Tick64WithTime64;
-	volatile bool Halt;
 	LIST *AdjustTime;
 };
 

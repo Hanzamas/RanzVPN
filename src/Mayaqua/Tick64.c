@@ -6,11 +6,9 @@
 #include "Kernel.h"
 #include "Memory.h"
 #include "Microsoft.h"
-#include "Object.h"
 #include "Str.h"
 
 static TICK64 *tk64 = NULL;
-static EVENT *halt_tick_event = NULL;
 static volatile LONG64 tick64_origin = 0;
 
 UINT64 TickHighres64()
@@ -69,84 +67,54 @@ UINT64 Tick64()
 	return GetTickCount64() - (UINT64)tick64_origin + 1;
 }
 
-static void Tick64Thread(THREAD *thread, void *param)
+// Clock check: record a correction when the system clock moved against the tick by a span or
+// more, or went back, so that Tick64ToTime64 follows the clock. It runs under the list lock,
+// so two checks never interleave.
+static void Tick64CheckTime()
 {
-	UINT n = 0;
-	bool first = false;
-	bool create_first_entry = true;
-	UINT tick_span;
-	if (thread == NULL)
+	LockList(tk64->AdjustTime);
 	{
-		return;
-	}
+		UINT64 tick64 = Tick64();
+		UINT64 now = SystemTime64();
 
-	MsSetThreadPriorityRealtime();
-
-	tick_span = TICK64_SPAN_WIN32;
-
-	while (true)
-	{
-		UINT tick;
-		UINT64 tick64;
-
-		tick64 = Tick64();
-		tick = (UINT)tick64;
-
-		if (create_first_entry)
+		if (now < tk64->Time64 ||
+			Diff64((now - tk64->Time64) + tk64->Tick64WithTime64, tick64) >= TICK64_SPAN_WIN32)
 		{
 			ADJUST_TIME *t = ZeroMalloc(sizeof(ADJUST_TIME));
+
 			t->Tick = tick64;
-			t->Time = SystemTime64();
-			tk64->Tick64WithTime64 = tick64;
-			tk64->Time64 = t->Time;
+			t->Time = now;
 			Add(tk64->AdjustTime, t);
 
-			NoticeThreadInit(thread);
-			create_first_entry = false;
-		}
-
-		n += tick_span;
-		if (n >= 1000 || first == false)
-		{
-			UINT64 now = SystemTime64();
-
-			if (now < tk64->Time64 ||
-				Diff64((now - tk64->Time64) + tk64->Tick64WithTime64, tick64) >= tick_span)
+			// Bound the correction list on a system whose clock keeps skewing
+			if (LIST_NUM(tk64->AdjustTime) > MAX_ADJUST_TIME)
 			{
-				ADJUST_TIME *t = ZeroMalloc(sizeof(ADJUST_TIME));
-				LockList(tk64->AdjustTime);
-				{
-					t->Tick = tick64;
-					t->Time = now;
-					Add(tk64->AdjustTime, t);
+				ADJUST_TIME *t2 = LIST_DATA(tk64->AdjustTime, 1);
 
-					// Bound the correction list on a system whose clock keeps skewing
-					if (LIST_NUM(tk64->AdjustTime) > MAX_ADJUST_TIME)
-					{
-						ADJUST_TIME *t2 = LIST_DATA(tk64->AdjustTime, 1);
+				Delete(tk64->AdjustTime, t2);
 
-						Delete(tk64->AdjustTime, t2);
+				Debug("NUM_ADJUST TIME: %u\n", LIST_NUM(tk64->AdjustTime));
 
-						Debug("NUM_ADJUST TIME: %u\n", LIST_NUM(tk64->AdjustTime));
-
-						Free(t2);
-					}
-				}
-				UnlockList(tk64->AdjustTime);
-				tk64->Time64 = now;
-				tk64->Tick64WithTime64 = tick64;
+				Free(t2);
 			}
-			first = true;
-			n = 0;
-		}
 
-		if (tk64->Halt)
-		{
-			break;
+			tk64->Time64 = now;
+			tk64->Tick64WithTime64 = tick64;
 		}
-
-		Wait(halt_tick_event, tick_span);
 	}
+	UnlockList(tk64->AdjustTime);
+}
+
+// Timer callback (process thread pool), every TICK64_SPAN_WIN32 ms: the clock check runs at
+// time-critical priority, so that its two clock reads stay close, and the pool thread gets
+// its normal priority back
+static void NTAPI Tick64TimerCallback(PTP_CALLBACK_INSTANCE instance, void *param, PTP_TIMER timer)
+{
+	MsSetThreadPriorityRealtime();
+
+	Tick64CheckTime();
+
+	MsRestoreThreadPriority();
 }
 
 UINT64 Diff64(UINT64 a, UINT64 b)
@@ -163,18 +131,36 @@ UINT64 Diff64(UINT64 a, UINT64 b)
 
 void InitTick64()
 {
+	ADJUST_TIME *t;
+	ULARGE_INTEGER span;
+	FILETIME due;
 	if (tk64 != NULL)
 	{
 		return;
 	}
 
-	halt_tick_event = NewEvent();
-
 	tk64 = ZeroMalloc(sizeof(TICK64));
 	tk64->AdjustTime = NewList(NULL);
 
-	tk64->Thread = NewThread(Tick64Thread, NULL);
-	WaitThreadInit(tk64->Thread);
+	// The first correction, before this returns: the time at the current tick
+	t = ZeroMalloc(sizeof(ADJUST_TIME));
+	t->Tick = Tick64();
+	t->Time = SystemTime64();
+	tk64->Tick64WithTime64 = t->Tick;
+	tk64->Time64 = t->Time;
+	Add(tk64->AdjustTime, t);
+
+	// Then the clock check every TICK64_SPAN_WIN32 ms, from one span on (a negative due time is relative)
+	tk64->Timer = CreateThreadpoolTimer(Tick64TimerCallback, NULL, NULL);
+	if (tk64->Timer == NULL)
+	{
+		AbortExitEx("Tick64 timer create failed.");
+	}
+
+	span.QuadPart = (ULONGLONG)(-((LONGLONG)TICK64_SPAN_WIN32 * 10000LL));
+	due.dwLowDateTime = span.LowPart;
+	due.dwHighDateTime = span.HighPart;
+	SetThreadpoolTimer(tk64->Timer, &due, TICK64_SPAN_WIN32, 0);
 }
 
 void FreeTick64()
@@ -185,10 +171,11 @@ void FreeTick64()
 		return;
 	}
 
-	tk64->Halt = true;
-	Set(halt_tick_event);
-	WaitThread(tk64->Thread, INFINITE);
-	ReleaseThread(tk64->Thread);
+	// Stop the clock check, and wait for a check that is still running
+	SetThreadpoolTimer(tk64->Timer, NULL, 0, 0);
+	WaitForThreadpoolTimerCallbacks(tk64->Timer, TRUE);
+	CloseThreadpoolTimer(tk64->Timer);
+	tk64->Timer = NULL;
 
 	for (i = 0;i < LIST_NUM(tk64->AdjustTime);i++)
 	{
@@ -198,8 +185,5 @@ void FreeTick64()
 	ReleaseList(tk64->AdjustTime);
 	Free(tk64);
 	tk64 = NULL;
-
-	ReleaseEvent(halt_tick_event);
-	halt_tick_event = NULL;
 }
 

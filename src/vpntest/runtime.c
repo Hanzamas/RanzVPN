@@ -129,6 +129,7 @@ void tickorigin_test(UINT num, char **arg)
 #define	RT_UNIX_EPOCH_FILETIME	116444736000000000ULL	// 1970-01-01 00:00:00 UTC as a FILETIME (100 ns units)
 #define	RT_TIME_2024			1709177696789ULL		// 2024-02-29 12:34:56.789 UTC, encoded
 #define	RT_TIME_1971			32367600000ULL			// 1971-01-11 00:00:00.000 UTC, encoded: the smallest value above 0
+#define	RT_TICK_TIME_WAIT		(TICK64_SPAN_WIN32 + 200)	// Wait that lets the periodic Tick64 clock check run at least once (ms)
 
 // Distance between two UINT64 values
 static UINT64 RtDiff64(UINT64 a, UINT64 b)
@@ -186,7 +187,8 @@ static bool RtOsZoneOffset(SYSTEMTIME *utc, INT64 *offset)
 }
 
 // timeenc: the UINT64 time encoding is Unix-epoch milliseconds minus 9 hours, times before
-// 1971-01-11 encode as 0, and local time is UTC plus the OS time zone offset
+// 1971-01-11 encode as 0, local time is UTC plus the OS time zone offset, and Tick64ToTime64
+// maps a tick to that encoding
 void timeenc_test(UINT num, char **arg)
 {
 	RT_CTX ctx;
@@ -257,6 +259,21 @@ void timeenc_test(UINT num, char **arg)
 	RtCheck(&ctx, value == 0, "SystemToLocal64(0) is 0", "got %I64u", value);
 	value = LocalToSystem64(0);
 	RtCheck(&ctx, value == 0, "LocalToSystem64(0) is 0", "got %I64u", value);
+
+	// Tick64ToTime64 maps the current tick to the current time, before and after the
+	// periodic clock check of Tick64 ran, and keeps 0 as "unset"
+	value = Tick64ToTime64(Tick64());
+	system64 = SystemTime64();
+	RtCheck(&ctx, RtDiff64(value, system64) <= RT_TIME_TOLERANCE, "Tick64ToTime64 of the current tick is SystemTime64",
+		"Tick64ToTime64 = %I64u, SystemTime64 = %I64u", value, system64);
+	SleepThread(RT_TICK_TIME_WAIT);
+	value = Tick64ToTime64(Tick64());
+	system64 = SystemTime64();
+	RtCheck(&ctx, RtDiff64(value, system64) <= RT_TIME_TOLERANCE,
+		"Tick64ToTime64 of the current tick is still SystemTime64 after the periodic clock check",
+		"Tick64ToTime64 = %I64u, SystemTime64 = %I64u", value, system64);
+	value = Tick64ToTime64(0);
+	RtCheck(&ctx, value == 0, "Tick64ToTime64(0) is 0", "got %I64u", value);
 
 	RtEnd(&ctx);
 }
@@ -762,6 +779,8 @@ void fileio_test(UINT num, char **arg)
 #define	RT_POOL_WAITERS			4		// Threads that wait on one THREAD at the same time
 #define	RT_HOST_CYCLES			16		// Host threads created and ended by the handle check
 #define	RT_POOL_MARK			0x5A17C0DE	// Per-thread mark the first job leaves on its pool thread
+#define	RT_POOL_LATE_PARENT		1500	// Time a released job outlives the test by, into the process exit (ms)
+#define	RT_POOL_LATE_CHILD		500		// Time the job that it starts there runs (ms)
 
 // Per-thread state of the pool thread: a later job on the same thread must see it
 static __declspec(thread) UINT rt_pool_mark = 0;
@@ -776,7 +795,16 @@ typedef struct RT_POOL_JOB
 	volatile bool Ran;				// The job ran
 	UINT MarkSet;					// Per-thread mark the job leaves on its thread, or 0
 	volatile UINT MarkSeen;			// Per-thread mark the job found on its thread
+	int PrioritySet;				// Thread priority the job leaves on its thread (0: THREAD_PRIORITY_NORMAL, unchanged)
+	volatile int PrioritySeen;		// Thread priority the job found on its thread
 } RT_POOL_JOB;
+
+// A job that is still running when the test ends. It owns this block and frees it at its end.
+typedef struct RT_POOL_LATE
+{
+	UINT Delay;						// Time the job runs (ms)
+	bool StartChild;				// Start another late job just before it ends
+} RT_POOL_LATE;
 
 // Threads that wait on one THREAD at the same time
 typedef struct RT_POOL_WAIT_DATA
@@ -819,7 +847,7 @@ static void RtPoolJobThread(THREAD *t, void *param)
 	j->OsThreadId = GetCurrentThreadId();
 	j->MayaThreadId = ThreadId();
 
-	// S_FALSE: COM is already initialised on this thread, by the host thread procedure
+	// S_FALSE: COM is already initialised on this thread, by the pool callback or the host thread procedure
 	hr = CoInitialize(NULL);
 	j->ComReady = (hr == S_FALSE);
 	if (SUCCEEDED(hr))
@@ -832,6 +860,13 @@ static void RtPoolJobThread(THREAD *t, void *param)
 	if (j->MarkSet != 0)
 	{
 		rt_pool_mark = j->MarkSet;
+	}
+
+	// Thread priority, which the pool gives back as normal after each job
+	j->PrioritySeen = GetThreadPriority(GetCurrentThread());
+	if (j->PrioritySet != THREAD_PRIORITY_NORMAL)
+	{
+		SetThreadPriority(GetCurrentThread(), j->PrioritySet);
 	}
 
 	j->Ran = true;
@@ -860,11 +895,37 @@ static void RtPoolWaiterThread(THREAD *t, void *param)
 	InterlockedIncrement(&d->Returned);
 }
 
-// threadpool: NewThread runs each job on a pooled host thread (open question 12 (a)).
-// NewThread returns only after a host thread took the job, the job sees the thread id and
-// the COM state of its host, an idle host thread stays alive and takes a later job, several
-// threads can wait on one THREAD, and a host thread (NewThreadInternal) ends with its
-// handle closed
+// Late job: run on into the process exit, start one more late job there if asked, then free
+// its block. A FreeThreading that does not wait for both leaves their THREAD objects and blocks
+// allocated at the leak check, so the run then ends without "NO MEMORY LEAKS".
+static void RtPoolLateThread(THREAD *t, void *param)
+{
+	RT_POOL_LATE *late = (RT_POOL_LATE *)param;
+
+	if (t == NULL || late == NULL)
+	{
+		return;
+	}
+
+	SleepThread(late->Delay);
+
+	if (late->StartChild)
+	{
+		RT_POOL_LATE *child = ZeroMalloc(sizeof(RT_POOL_LATE));
+
+		child->Delay = RT_POOL_LATE_CHILD;
+		ReleaseThread(NewThread(RtPoolLateThread, child));
+	}
+
+	Free(late);
+}
+
+// threadpool: NewThread runs each job on a pooled thread (open question 12 (a)).
+// NewThread returns only after a pool thread took the job, the job sees the thread id and
+// the COM state of its pool thread, an idle pool thread stays alive and takes a later job at
+// normal priority, several threads can wait on one THREAD, a host thread (NewThreadInternal)
+// ends with its handle closed, and the process exit waits for a job that outlives the test
+// and for the job that it starts during the exit (shown by "NO MEMORY LEAKS" after the test)
 void threadpool_test(UINT num, char **arg)
 {
 	RT_CTX ctx;
@@ -873,6 +934,7 @@ void threadpool_test(UINT num, char **arg)
 	THREAD *jobs[RT_POOL_MAX_JOBS];
 	THREAD *waiters[RT_POOL_WAITERS];
 	RT_POOL_WAIT_DATA wd;
+	RT_POOL_LATE *late;
 	volatile bool go;
 	THREAD *t;
 	HANDLE h;
@@ -882,9 +944,11 @@ void threadpool_test(UINT num, char **arg)
 
 	RtBegin(&ctx, "THREADPOOL", "Thread pool test");
 
-	// A job runs on a pool thread, which has already taken the job when NewThread returns
+	// A job runs on a pool thread, which has already taken the job when NewThread returns.
+	// It also raises the priority of that thread, which a later job there must not see.
 	Zero(&first, sizeof(first));
 	first.MarkSet = RT_POOL_MARK;
+	first.PrioritySet = THREAD_PRIORITY_HIGHEST;
 	t = NewThread(RtPoolJobThread, &first);
 	picked = t->ThreadId;
 	RtCheck(&ctx, picked != 0, "NewThread returns after a pool thread took the job (ThreadId is set)", "ThreadId is 0");
@@ -941,6 +1005,9 @@ void threadpool_test(UINT num, char **arg)
 	RtCheck(&ctx, found && held[found_index].MarkSeen == RT_POOL_MARK,
 		"per-thread state survives from one job to the next on the same pool thread",
 		"mark 0x%X, expected 0x%X", found ? (UINT)held[found_index].MarkSeen : 0, (UINT)RT_POOL_MARK);
+	RtCheck(&ctx, found && held[found_index].PrioritySeen == THREAD_PRIORITY_NORMAL,
+		"the later job finds that pool thread back at normal priority, which the first job had raised",
+		"priority %d, expected %d", found ? held[found_index].PrioritySeen : 0, THREAD_PRIORITY_NORMAL);
 	RtCheck(&ctx, joined == num_jobs, "every held job ends once its gate opens", "%u of %u ended", joined, num_jobs);
 
 	// Several threads wait on one THREAD at the same time, and every one of them sees it end
@@ -1003,6 +1070,19 @@ void threadpool_test(UINT num, char **arg)
 	RtCheck(&ctx, counted && handles_after < handles_before + RT_HOST_CYCLES / 2,
 		"releasing an ended host thread closes its handle",
 		"%u handles before, %u after %u host threads", (UINT)handles_before, (UINT)handles_after, RT_HOST_CYCLES);
+
+	// The process exit waits for pool work: a released job runs on past this test into
+	// FreeThreading and starts another job there. The run ends with "NO MEMORY LEAKS" only if
+	// FreeThreading waited for both, including the one started while it was waiting.
+	// The check that the job is still running keeps this pin honest: a job that had already
+	// ended would let the run end with "NO MEMORY LEAKS" without testing the wait.
+	late = ZeroMalloc(sizeof(RT_POOL_LATE));
+	late->Delay = RT_POOL_LATE_PARENT;
+	late->StartChild = true;
+	t = NewThread(RtPoolLateThread, late);
+	RtCheck(&ctx, WaitThread(t, 0) == false, "the late job is still running when the test ends",
+		"it has already ended");
+	ReleaseThread(t);
 
 	RtEnd(&ctx);
 }

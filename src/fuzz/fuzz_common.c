@@ -69,7 +69,7 @@ static bool FuzzLiveGrew(UINT64 *before, UINT64 *after)
 // Runs proc over the input and checks that every Mayaqua object it allocated was released.
 // A run that leaves more live objects is run once more: a parser leak repeats on the same
 // input, while a one-time lazy initialisation or an allocation by another Mayaqua thread
-// (the Tick64 thread records clock adjustments) does not. A leak on both runs calls abort(),
+// (the Tick64 timer records clock adjustments) does not. A leak on both runs calls abort(),
 // so that libFuzzer stops and saves the input as a crash artifact. libFuzzer's own leak
 // detection needs LeakSanitizer, which Windows does not have, and OpenSSL allocations are
 // not counted here: only -rss_limit_mb bounds them (src/fuzz/run_fuzzers.ps1).

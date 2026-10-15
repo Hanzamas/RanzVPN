@@ -161,7 +161,6 @@ typedef struct CIPHER CIPHER;
 typedef struct MEMINFO MEMINFO;
 typedef struct LOCALE LOCALE;
 typedef struct THREAD THREAD;
-typedef struct THREAD_POOL_DATA THREAD_POOL_DATA;
 typedef struct INSTANCE INSTANCE;
 
 typedef struct VALUE VALUE;
