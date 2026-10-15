@@ -56,8 +56,9 @@ function Invoke-TraceTest([string[]] $testArgs) {
 # 1. No trace session
 Invoke-TraceTest @('trace')
 
-# 2. A trace session on the provider: every keyword, every level
-& logman start $session -p $providerGuid 0xffffffffffffffff 0xff -o $etl -ets
+# 2. A trace session on the provider: every keyword, every level. The hex values are quoted, or
+# PowerShell would pass them on as decimal numbers (0xffffffffffffffff as -1).
+& logman start $session -p $providerGuid '0xffffffffffffffff' '0xff' -o $etl -ets
 if ($LASTEXITCODE -ne 0) { throw "logman could not start the trace session (exit code $LASTEXITCODE)" }
 try {
 	Invoke-TraceTest @('trace', 'listening')
@@ -66,6 +67,13 @@ try {
 	$stopCode = $LASTEXITCODE
 }
 if ($stopCode -ne 0) { throw "logman could not stop the trace session (exit code $stopCode)" }
+
+# logman may add a suffix to the file name
+if (-not (Test-Path $etl)) {
+	$written = Get-ChildItem -Path $outDir -Filter 'trace*.etl' | Sort-Object LastWriteTime | Select-Object -Last 1
+	if (-not $written) { throw "the trace session wrote no .etl file in $outDir" }
+	$etl = $written.FullName
+}
 
 # The probes are UTF-16LE strings in the event payload (TraceLoggingWideString). A payload string
 # need not start at an even offset of the file, so the file is decoded from both offsets.
