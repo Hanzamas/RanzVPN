@@ -43,10 +43,15 @@ void UdpAccelPoll(UDP_ACCEL *a)
 
 		// A flood must not hold the session thread: past the budget, the datagrams stay in the
 		// socket for the next call. After a full poll the last read has re-armed the socket event,
-		// so the session loop comes back at once; after a full tick it comes back on its next wake.
+		// so the session loop comes back at once; after a full tick ConnectionReceive() waits at most
+		// 1 ms (UdpAccelIsRecvBudgetSpent), so it reads on at the next tick.
 		if (num_recv >= UDP_ACCELERATION_MAX_RECV_PER_POLL || a->RecvNumInTick >= UDP_ACCELERATION_MAX_RECV_PER_TICK)
 		{
-			a->NumRecvLimit++;
+			// Only a poll that read something counts, not one that finds the tick's budget already spent
+			if (num_recv > 0)
+			{
+				a->NumRecvLimit++;
+			}
 			break;
 		}
 
@@ -779,6 +784,17 @@ void UdpAccelQueryStun(UDP_ACCEL *a, IP *peer_ip)
 	a->StunPort = (USHORT)port;
 	a->UseStun = true;
 
+}
+
+// True when the polls of the current tick have read UDP_ACCELERATION_MAX_RECV_PER_TICK datagrams
+bool UdpAccelIsRecvBudgetSpent(UDP_ACCEL *a)
+{
+	if (a == NULL)
+	{
+		return false;
+	}
+
+	return a->RecvNumInTick >= UDP_ACCELERATION_MAX_RECV_PER_TICK;
 }
 
 // Write the drop counters to the log of hub h (its security log and the server log) when

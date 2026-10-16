@@ -866,6 +866,12 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 		time = SELECT_TIME;
 		next_delay_packet_diff = GetNextDelayedPacketTickDiff(s);
 		time = MIN(time, next_delay_packet_diff);
+		if (s->UseUdpAcceleration && UdpAccelIsRecvBudgetSpent(s->UdpAccel))
+		{
+			// The per-tick receive budget is spent and no read re-arms the socket event:
+			// come back on the next tick instead of after SELECT_TIME
+			time = MIN(time, 1);
+		}
 		num_delayed = LIST_NUM(s->DelayedPacketList);
 
 

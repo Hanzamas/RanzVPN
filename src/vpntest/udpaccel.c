@@ -279,14 +279,16 @@ static void UdpAccelTestFlood(UDPACCEL_TEST *t)
 	{
 		UdpAccelPoll(t->Recv);
 	}
-	UdpAccelTestCheck(t, UdpAccelTestDrops(t) - drops == per_tick && t->Recv->NumRecvLimit - limit >= per_tick / per_poll,
+	UdpAccelTestCheck(t, UdpAccelTestDrops(t) - drops == per_tick && t->Recv->NumRecvLimit - limit >= per_tick / per_poll &&
+		UdpAccelIsRecvBudgetSpent(t->Recv),
 		"flood: the polls of one tick read UDP_ACCELERATION_MAX_RECV_PER_TICK datagrams (the old loop read the whole flood)",
 		"%I64u read of %u, NumRecvLimit +%I64u", UdpAccelTestDrops(t) - drops, per_tick + UDPACCEL_TEST_EXTRA,
 		t->Recv->NumRecvLimit - limit);
 
 	tick++;
 	UdpAccelTestPoll(t, tick);
-	UdpAccelTestCheck(t, UdpAccelTestDrops(t) - drops == per_tick + UDPACCEL_TEST_EXTRA,
+	UdpAccelTestCheck(t, UdpAccelTestDrops(t) - drops == per_tick + UDPACCEL_TEST_EXTRA &&
+		UdpAccelIsRecvBudgetSpent(t->Recv) == false,
 		"flood: the next tick reads the rest",
 		"%I64u read of %u", UdpAccelTestDrops(t) - drops, per_tick + UDPACCEL_TEST_EXTRA);
 

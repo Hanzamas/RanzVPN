@@ -109,5 +109,6 @@ void UdpAccelSendBlock(UDP_ACCEL *a, BLOCK *b);
 UINT UdpAccelCalcMss(UDP_ACCEL *a);
 void UdpAccelQueryStun(UDP_ACCEL *a, IP *peer_ip);
 bool UdpAccelLogDrops(UDP_ACCEL *a, HUB *h, char *session_name, bool final);
+bool UdpAccelIsRecvBudgetSpent(UDP_ACCEL *a);
 
 #endif
