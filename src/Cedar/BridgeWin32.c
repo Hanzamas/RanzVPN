@@ -767,7 +767,7 @@ static ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
 	char name_with_id[MAX_SIZE];
 	SU *su = NULL;
 	SU_ADAPTER *su_adapter = NULL;
-	if (name == NULL || Win32EthIsSuSupported() == false)
+	if (name == NULL || Win32EthInstallSu() == false)
 	{
 		return NULL;
 	}
@@ -938,7 +938,8 @@ static TOKEN_LIST *GetEthListEx(UINT *total_num_including_hidden, bool enum_norm
 	UINT dummy_int;
 	MS_ADAPTER_LIST *adapter_list;
 
-	if (Win32EthIsSuSupported() == false)
+	// Listing the devices for a Local Bridge is the first step of creating one: install SeLow when needed
+	if (Win32EthInstallSu() == false)
 	{
 		return NULL;
 	}
@@ -1247,10 +1248,30 @@ static void FreeEthAdaptersList()
 	eth_list = NULL;
 }
 
+// Whether SeLow is usable now. Read-only: never starts the SeLow service or installs the driver,
+// so the capability queries (caps, BridgeSupport, BridgeList) change nothing (FIX-2 #98)
 bool Win32EthIsSuSupported()
 {
 	bool ret = false;
 	SU *su = SuInitEx(0);
+
+	if (su != NULL)
+	{
+		ret = true;
+	}
+
+	SuFree(su);
+
+	return ret;
+}
+
+// Make SeLow usable for a Local Bridge: start the SeLow service or install the driver when needed
+// (at most once per process), then report whether SeLow is usable. Only for creating a Local
+// Bridge (OpenEth, the AddLocalBridge RPC) and for listing the devices for one (the EnumEthernet RPC)
+bool Win32EthInstallSu()
+{
+	bool ret = false;
+	SU *su = SuInitInstall();
 
 	if (su != NULL)
 	{

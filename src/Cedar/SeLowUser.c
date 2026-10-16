@@ -20,6 +20,8 @@
 
 #include <winioctl.h>
 
+static SU *SuInitMain(UINT wait_for_bind_complete_tick, bool start_service, bool install);
+
 static bool SuLoadDriversHive()
 {
 	wchar_t config_dir[MAX_PATH];
@@ -130,6 +132,20 @@ static bool SuInstallDriver(bool force)
 
 	return ret;
 }
+
+// Driver install step: SuInstallDriver, or the stub that a test sets with SuSetInstallProc
+static SU_INSTALL_PROC *su_install_proc = SuInstallDriver;
+// The install step already ran in this process: it runs at most once per process
+static bool su_install_tried = false;
+
+// Test seam (vpntest selow): replace the driver install step with proc; NULL restores
+// SuInstallDriver. Also forgets an earlier install attempt, so the next one runs the step again
+void SuSetInstallProc(SU_INSTALL_PROC *proc)
+{
+	su_install_proc = (proc != NULL ? proc : SuInstallDriver);
+	su_install_tried = false;
+}
+
 bool SuInstallDriverInner(bool force)
 {
 	wchar_t sys_fullpath[MAX_PATH];
@@ -228,9 +244,10 @@ bool SuInstallDriverInner(bool force)
 		MsFreeNoWarning(nw);
 	}
 
+	// Wait for the new driver to bind: it may start the service, it never installs again
 	if (ret)
 	{
-		SuFree(SuInitEx(180 * 1000));
+		SuFree(SuInitMain(180 * 1000, true, false));
 	}
 
 	return ret;
@@ -524,10 +541,27 @@ SU_ADAPTER *SuOpenAdapter(SU *u, char *adapter_id)
 	return a;
 }
 
+// Read the adapter list from the SeLow basic device h into list and check its signature. This is
+// the only copy of that read; each caller keeps its own cleanup when it fails
+bool SuReadAdapterInfoList(void *h, SL_ADAPTER_INFO_LIST *list)
+{
+	DWORD read_size;
+	if (h == NULL || list == NULL)
+	{
+		return false;
+	}
+
+	if (ReadFile(h, list, sizeof(SL_ADAPTER_INFO_LIST), &read_size, NULL) == false)
+	{
+		return false;
+	}
+
+	return (list->Signature == SL_SIGNATURE);
+}
+
 LIST *SuGetAdapterList(SU *u)
 {
 	LIST *ret;
-	DWORD read_size;
 	UINT i;
 	if (u == NULL)
 	{
@@ -536,10 +570,9 @@ LIST *SuGetAdapterList(SU *u)
 
 	ret = NewList(SuCmpAdapterList);
 
+	// On a failed read, free the list; the device handle stays open (SuFree closes it)
 	Zero(&u->AdapterInfoList, sizeof(u->AdapterInfoList));
-	if (ReadFile(u->hFile, &u->AdapterInfoList, sizeof(u->AdapterInfoList),
-		&read_size, NULL) == false ||
-		u->AdapterInfoList.Signature != SL_SIGNATURE)
+	if (SuReadAdapterInfoList(u->hFile, &u->AdapterInfoList) == false)
 	{
 		SuFreeAdapterList(ret);
 		return NULL;
@@ -666,14 +699,30 @@ SU_ADAPTER_LIST *SuAdapterInfoToAdapterList(SL_ADAPTER_INFO *info)
 	return Clone(&t, sizeof(t));
 }
 
+// Open the SeLow basic device and read its adapter list. Read-only: never starts the SeLow service
+// or installs the driver, so asking whether SeLow is supported changes nothing (FIX-2 #98)
 SU *SuInitEx(UINT wait_for_bind_complete_tick)
+{
+	return SuInitMain(wait_for_bind_complete_tick, false, false);
+}
+
+// Like SuInitEx, but when the device is missing, start the SeLow service and, when that fails,
+// install the driver (at most once per process). Only for creating a Local Bridge or for an
+// explicit admin action
+SU *SuInitInstall()
+{
+	return SuInitMain(0, true, true);
+}
+
+// Open the SeLow basic device and read its adapter list. When the device is missing: with
+// start_service, start the SeLow service once and try again; when that start fails, with install,
+// run the driver install step (at most once per process) and try again
+static SU *SuInitMain(UINT wait_for_bind_complete_tick, bool start_service, bool install)
 {
 	void *h;
 	SU *u;
-	DWORD read_size;
 	bool flag = false;
 	UINT64 giveup_tick = 0;
-	static bool flag2 = false; // static: must persist across calls
 
 	if (SuIsSupportedOs(false) == false)
 	{
@@ -687,15 +736,15 @@ LABEL_RETRY:
 
 	if (h == INVALID_HANDLE_VALUE)
 	{
-		if (flag == false)
+		if (start_service && flag == false)
 		{
 			if (MsStartService(SL_PROTOCOL_NAME) == false)
 			{
-				if (flag2 == false)
+				if (install && su_install_tried == false)
 				{
-					flag2 = true;
+					su_install_tried = true;
 
-					if (SuInstallDriver(true))
+					if (su_install_proc(true))
 					{
 						goto LABEL_RETRY;
 					}
@@ -716,10 +765,10 @@ LABEL_RETRY:
 
 	giveup_tick = Tick64() + (UINT64)wait_for_bind_complete_tick;
 
+	// On a failed read, free the SU and close the device handle
 	if (wait_for_bind_complete_tick == 0)
 	{
-		if (ReadFile(h, &u->AdapterInfoList, sizeof(u->AdapterInfoList), &read_size, NULL) == false ||
-			u->AdapterInfoList.Signature != SL_SIGNATURE)
+		if (SuReadAdapterInfoList(h, &u->AdapterInfoList) == false)
 		{
 
 			Free(u);
@@ -732,8 +781,7 @@ LABEL_RETRY:
 	{
 		while (giveup_tick >= Tick64())
 		{
-			if (ReadFile(h, &u->AdapterInfoList, sizeof(u->AdapterInfoList), &read_size, NULL) == false ||
-				u->AdapterInfoList.Signature != SL_SIGNATURE)
+			if (SuReadAdapterInfoList(h, &u->AdapterInfoList) == false)
 			{
 
 				Free(u);

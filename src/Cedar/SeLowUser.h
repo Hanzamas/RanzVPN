@@ -16,6 +16,9 @@
 #define	SL_USER_INSTALL_LOCK_TIMEOUT		60000		// Lock acquisition timeout
 #define	SL_USER_AUTO_PUSH_TIMER				60000		// Timer to start the installation automatically
 
+// Driver install step (SuInstallDriver); a test replaces it with SuSetInstallProc
+typedef bool (SU_INSTALL_PROC)(bool force);
+
 struct SU
 {
 	void *hFile;
@@ -44,6 +47,7 @@ struct SU_ADAPTER_LIST
 
 
 SU *SuInitEx(UINT wait_for_bind_complete_tick);
+SU *SuInitInstall();
 void SuFree(SU *u);
 SU_ADAPTER *SuOpenAdapter(SU *u, char *adapter_id);
 void SuCloseAdapter(SU_ADAPTER *a);
@@ -54,11 +58,13 @@ bool SuPutPacketsToDriver(SU_ADAPTER *a);
 bool SuPutPacket(SU_ADAPTER *a, void *buf, UINT size);
 
 SU_ADAPTER_LIST *SuAdapterInfoToAdapterList(SL_ADAPTER_INFO *info);
+bool SuReadAdapterInfoList(void *h, SL_ADAPTER_INFO_LIST *list);
 LIST *SuGetAdapterList(SU *u);
 void SuFreeAdapterList(LIST *o);
 int SuCmpAdapterList(void *p1, void *p2);
 
 bool SuInstallDriverInner(bool force);
+void SuSetInstallProc(SU_INSTALL_PROC *proc);
 bool SuIsSupportedOs(bool on_install);
 bool SuCopySysFile(wchar_t *src, wchar_t *dst);
 

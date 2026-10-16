@@ -9,6 +9,9 @@ target_sources(vpntest PRIVATE strtest.c)
 # Named UDP Acceleration receive test of FIX-1 (#97)
 target_sources(vpntest PRIVATE udpaccel.c)
 
+# Named SeLow test of FIX-2 (#98)
+target_sources(vpntest PRIVATE selowtest.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"

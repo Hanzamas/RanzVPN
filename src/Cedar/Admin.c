@@ -1861,7 +1861,8 @@ static UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 	SERVER_ADMIN_ONLY;
 
 
-	if (Win32EthIsSuSupported() == false)
+	// Creating a Local Bridge installs SeLow when needed (FIX-2 #98)
+	if (Win32EthInstallSu() == false)
 	{
 		return ERR_LOCAL_BRIDGE_UNSUPPORTED;
 	}

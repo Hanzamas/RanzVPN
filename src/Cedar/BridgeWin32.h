@@ -47,6 +47,7 @@ bool EthSetMtu(ETH *e, UINT mtu);
 bool EthIsChangeMtuSupported(ETH *e);
 
 bool Win32EthIsSuSupported();
+bool Win32EthInstallSu();
 
 void Win32EthSetShowAllIf(bool b);
 bool Win32EthGetShowAllIf();
