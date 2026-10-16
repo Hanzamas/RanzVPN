@@ -118,6 +118,10 @@ An optional encrypted UDP data path set up inside a Session (`UDP_ACCEL`), with 
 **Config file**:
 The server's text configuration tree (`$ranz_server.config`, `FOLDER`/`ITEM`), loaded and autosaved by `Server.c` through `CFG_RW`. Its format is frozen.
 
+**Machine identity**:
+The 20 bytes that `GenerateMachineUniqueHash` returns for a server: a hash of the Windows MachineGuid and the `MachineIdSalt` of the Config file, kept in the `CEDAR`. It sets the MAC address and the 172.31.x.x address of every Hub and the `unique_id` of a Cascade login. It stays the same across restarts, renames and IP changes; servers cloned from one image differ by their salts (FIX-5, `docs/upgrade-notes.md`).
+_Avoid_: machine ID (Windows' name for the MachineGuid), `UniqueId` (a random value per `CEDAR`, copied into `NODE_INFO`)
+
 ## Flagged ambiguities
 
 - "Cedar" names both the library and the root `CEDAR` object. "Mayaqua" is only the library.
