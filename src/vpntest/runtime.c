@@ -192,9 +192,53 @@ static bool RtOsZoneOffset(SYSTEMTIME *utc, INT64 *offset)
 	return true;
 }
 
+// An RFC 3339 printing vector: a local time, its offset from UTC and the string printed for it
+typedef struct RT_RFC3339_VECTOR
+{
+	char *What;
+	UINT Year, Month, Day, Hour, Minute, Second, Ms;	// Local time
+	int OffsetMin;										// Local time minus UTC (minutes)
+	char *Str;
+} RT_RFC3339_VECTOR;
+
+// Printing vectors (ticket #102). The former printer took the offset as UTC minus local time and
+// printed it with "%+02d:%02d": UTC+7 came out as "-7:00", UTC-3:30 as "+3:30", UTC+5:30 as "-5:-30"
+static RT_RFC3339_VECTOR rt_rfc3339_vectors[] =
+{
+	{"RFC 3339: UTC prints Z", 2024, 2, 29, 12, 34, 56, 789, 0, "2024-02-29T12:34:56.789Z"},
+	{"RFC 3339: UTC+7 prints +07:00", 2024, 2, 29, 12, 34, 56, 789, 420, "2024-02-29T12:34:56.789+07:00"},
+	{"RFC 3339: UTC-3:30 prints -03:30", 2024, 2, 29, 12, 34, 56, 789, -210, "2024-02-29T12:34:56.789-03:30"},
+	{"RFC 3339: UTC+5:30 prints +05:30", 2024, 2, 29, 12, 34, 56, 789, 330, "2024-02-29T12:34:56.789+05:30"},
+	{"RFC 3339: UTC+5:45 prints +05:45", 2024, 2, 29, 12, 34, 56, 789, 345, "2024-02-29T12:34:56.789+05:45"},
+	{"RFC 3339: UTC-10 prints -10:00", 2024, 2, 29, 12, 34, 56, 789, -600, "2024-02-29T12:34:56.789-10:00"},
+	{"RFC 3339: UTC+14 prints +14:00", 2024, 2, 29, 12, 34, 56, 789, 840, "2024-02-29T12:34:56.789+14:00"},
+	{"RFC 3339: UTC-0:30 prints -00:30, the sign of the whole offset", 2024, 2, 29, 12, 34, 56, 789, -30, "2024-02-29T12:34:56.789-00:30"},
+	{"RFC 3339: single-digit fields print with leading zeros", 2025, 1, 5, 3, 4, 5, 6, 60, "2025-01-05T03:04:05.006+01:00"},
+	{"RFC 3339: a local time just after midnight of New Year", 2024, 1, 1, 0, 30, 0, 0, 120, "2024-01-01T00:30:00.000+02:00"},
+	{"RFC 3339: a local time just before midnight of New Year's Eve", 2023, 12, 31, 22, 0, 0, 0, -210, "2023-12-31T22:00:00.000-03:30"},
+};
+
+// GetDateTimeStrRFC3339 against the printing vectors
+static void RtCheckRfc3339Print(RT_CTX *ctx)
+{
+	UINT i;
+	SYSTEMTIME st;
+	char str[MAX_SIZE];
+
+	for (i = 0; i < sizeof(rt_rfc3339_vectors) / sizeof(rt_rfc3339_vectors[0]); i++)
+	{
+		RT_RFC3339_VECTOR *v = &rt_rfc3339_vectors[i];
+
+		RtSetSystem(&st, v->Year, v->Month, v->Day, v->Hour, v->Minute, v->Second, v->Ms);
+		GetDateTimeStrRFC3339(str, sizeof(str), &st, v->OffsetMin);
+		RtCheck(ctx, StrCmp(str, v->Str) == 0, v->What, "got \"%s\", expected \"%s\"", str, v->Str);
+	}
+}
+
 // timeenc: the UINT64 time encoding is Unix-epoch milliseconds minus 9 hours, times before
-// 1971-01-11 encode as 0, local time is UTC plus the OS time zone offset, and Tick64ToTime64
-// maps a tick to that encoding
+// 1971-01-11 encode as 0, local time is UTC plus the OS time zone offset, Tick64ToTime64
+// maps a tick to that encoding, and RFC 3339 strings carry the offset from UTC as +HH:MM,
+// -HH:MM or Z
 void timeenc_test(UINT num, char **arg)
 {
 	RT_CTX ctx;
@@ -280,6 +324,9 @@ void timeenc_test(UINT num, char **arg)
 		"Tick64ToTime64 = %I64u, SystemTime64 = %I64u", value, system64);
 	value = Tick64ToTime64(0);
 	RtCheck(&ctx, value == 0, "Tick64ToTime64(0) is 0", "got %I64u", value);
+
+	// RFC 3339 strings of the strict syslog format
+	RtCheckRfc3339Print(&ctx);
 
 	RtEnd(&ctx);
 }

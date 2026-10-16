@@ -1012,23 +1012,33 @@ void GetDateTimeStrMilli(char *str, UINT size, SYSTEMTIME *st)
 }
 
 
-void GetDateTimeStrRFC3339(char *str, UINT size, SYSTEMTIME *st, int timezone_min){
+// Print an RFC 3339 date-time: st is the local time and timezone_min its offset from UTC in
+// minutes (local time minus UTC, positive east of UTC). Offset 0 prints "Z", any other offset
+// prints "+HH:MM" or "-HH:MM", the sign taken from the whole offset and both fields two digits
+void GetDateTimeStrRFC3339(char *str, UINT size, SYSTEMTIME *st, int timezone_min)
+{
+	UINT abs_min;
 	if (str == NULL || st == NULL)
 	{
 		ClearStr(str, size);
 		return;
 	}
 
-	if(timezone_min == 0){
+	if (timezone_min == 0)
+	{
 		Format(str, size, "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ",
-		st->wYear, st->wMonth, st->wDay,
-		st->wHour, st->wMinute, st->wSecond,
-		st->wMilliseconds);
-	}else{
-		Format(str, size, "%04u-%02u-%02uT%02u:%02u:%02u.%03u%+02d:%02d",
-		st->wYear, st->wMonth, st->wDay,
-		st->wHour, st->wMinute, st->wSecond,
-		st->wMilliseconds, timezone_min/60, timezone_min%60);
+			st->wYear, st->wMonth, st->wDay,
+			st->wHour, st->wMinute, st->wSecond,
+			st->wMilliseconds);
+	}
+	else
+	{
+		abs_min = (timezone_min < 0) ? (UINT)(-timezone_min) : (UINT)timezone_min;
+
+		Format(str, size, "%04u-%02u-%02uT%02u:%02u:%02u.%03u%s%02u:%02u",
+			st->wYear, st->wMonth, st->wDay,
+			st->wHour, st->wMinute, st->wSecond,
+			st->wMilliseconds, (timezone_min < 0) ? "-" : "+", abs_min / 60, abs_min % 60);
 	}
 }
 
