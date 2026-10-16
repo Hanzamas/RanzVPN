@@ -179,11 +179,14 @@ static void MsSmbiosAddString(char *dst, UINT dst_size, UCHAR *str_set, UINT str
 // formatted area, handle and the rest of the area, then a string set that ends with two zero bytes.
 static bool MsIsVmFirmware()
 {
-	// Lower case; "virtual" covers Hyper-V and Azure ("Virtual Machine"), VirtualBox and Virtual PC
+	// Lower case; "virtual" covers Hyper-V and Azure ("Virtual Machine"), VirtualBox and Virtual PC.
+	// "microsoft corporation", "hvm", "domu", "xvm" and "oracle vm" are kept from the old WMI list:
+	// the manufacturer "microsoft corporation" names Hyper-V and Azure guests (the arm64 CI runner
+	// included) and also physical Microsoft hardware, as before.
 	static char *vm_names[] =
 	{
-		"virtual", "vmware", "innotek", "qemu", "kvm", "xen", "parallels", "bochs", "bhyve",
-		"amazon ec2", "google compute engine",
+		"microsoft corporation", "virtual", "vmware", "innotek", "qemu", "kvm", "xen", "parallels", "bochs", "bhyve",
+		"hvm", "domu", "xvm", "oracle vm", "amazon ec2", "google compute engine",
 	};
 	char names[MAX_SIZE];
 	UCHAR *buf;
