@@ -462,6 +462,9 @@ void udpaccel_test(UINT num, char **arg);
 // Named SeLow test of FIX-2, #98 (selowtest.c)
 void selow_test(UINT num, char **arg);
 
+// Named DLL search order test of FIX-4, #100 (dllsearch.c)
+void dllsearch_test(UINT num, char **arg);
+
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
 char *watermark_expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
@@ -570,6 +573,7 @@ TEST_LIST test_list[] =
 	{"udpaccel", udpaccel_test, "UDP Acceleration: receive budget per poll and per tick, header check before decryption, drop counters and their log."},
 	{"selow", selow_test, "SeLow: the capability query installs nothing, a Local Bridge reaches the driver install, one adapter-list read."},
 	{"listenerbind", listenerbind_test, "ListenerCreate and ListenerEnable wait for the bind and report a port that cannot be bound."},
+	{"dllsearch", dllsearch_test, "DLL search order: next to the executable, System32 and AddDllDirectory, never the current directory or PATH."},
 };
 
 // Test function

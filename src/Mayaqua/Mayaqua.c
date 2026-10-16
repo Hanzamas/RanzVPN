@@ -53,9 +53,10 @@ void InitProcessCallOnce()
 	{
 		init_proc_once_flag = true;
 
-		InitCanaryRand();
-
+		// The DLL search order first, before anything can load a DLL
 		MsInitProcessCallOnce();
+
+		InitCanaryRand();
 	}
 }
 

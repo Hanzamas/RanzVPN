@@ -65,35 +65,15 @@ static INSTALLSTATE (WINAPI *_MsiLocateComponentW)(LPCWSTR, LPWSTR, LPDWORD) = N
 void MsInitProcessCallOnce()
 {
 	// Mitigate DLL injection attacks
-	char system_dir[MAX_PATH];
-	char kernel32_path[MAX_PATH];
-	UINT len;
-	HINSTANCE hKernel32;
-
-	memset(system_dir, 0, sizeof(system_dir));
-	GetSystemDirectory(system_dir, sizeof(system_dir));
-	len = lstrlenA(system_dir);
-	if (system_dir[len] == '\\')
-	{
-		system_dir[len] = 0;
-	}
-	wsprintfA(kernel32_path, "%s\\kernel32.dll", system_dir);
-
-	hKernel32 = LoadLibraryA(kernel32_path);
-	if (hKernel32 != NULL)
-	{
-		BOOL (WINAPI *_SetDllDirectoryA)(LPCTSTR);
-
-		_SetDllDirectoryA = (BOOL (WINAPI *)(LPCTSTR))
-			GetProcAddress(hKernel32, "SetDllDirectoryA");
-
-		if (_SetDllDirectoryA != NULL)
-		{
-			_SetDllDirectoryA("");
-		}
-
-		FreeLibrary(hKernel32);
-	}
+	// A dynamic load of a DLL named without a path searches the directory of the executable, the
+	// directories added with AddDllDirectory and System32: never the current directory, the Windows
+	// directory or PATH. LOAD_LIBRARY_SEARCH_SYSTEM32 alone would drop the directory of the
+	// executable. Statically imported DLLs (the ASan runtime) were loaded before this runs.
+	SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+	// SetDllDirectory("") also keeps the current directory out of the orders the default directories do not
+	// govern: the standard order of child processes (cscript.exe, Win32Run) and the alternate order of
+	// LoadLibraryEx with LOAD_WITH_ALTERED_SEARCH_PATH. Empty, it adds no directory to the default ones.
+	SetDllDirectoryW(L"");
 }
 
 static bool MsIsInVmMain()
