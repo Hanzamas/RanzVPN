@@ -21,7 +21,7 @@ static void FuzzAtExit(void)
 // libFuzzer calls this once, before the first input
 int LLVMFuzzerInitialize(int *argc, char ***argv)
 {
-	// Minimal mode: no hamcore.se2 and no string table, which none of the parsers needs
+	// Minimal mode: no hamcore files and no string table, which none of the parsers needs
 	MayaquaMinimalMode();
 
 	// Same flags as vpntest: no memcheck, debug on (debug enables the kernel status counters
@@ -69,7 +69,7 @@ static bool FuzzLiveGrew(UINT64 *before, UINT64 *after)
 // Runs proc over the input and checks that every Mayaqua object it allocated was released.
 // A run that leaves more live objects is run once more: a parser leak repeats on the same
 // input, while a one-time lazy initialisation or an allocation by another Mayaqua thread
-// (the Tick64 thread records clock adjustments) does not. A leak on both runs calls abort(),
+// (the Tick64 timer records clock adjustments) does not. A leak on both runs calls abort(),
 // so that libFuzzer stops and saves the input as a crash artifact. libFuzzer's own leak
 // detection needs LeakSanitizer, which Windows does not have, and OpenSSL allocations are
 // not counted here: only -rss_limit_mb bounds them (src/fuzz/run_fuzzers.ps1).

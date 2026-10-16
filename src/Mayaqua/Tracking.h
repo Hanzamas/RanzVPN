@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Mayaqua Kernel
-
-
 // Tracking.h
 // Header of Tracking.c
 
@@ -10,13 +6,10 @@
 
 #include "MayaType.h"
 
-// The number of array
 #define	TRACKING_NUM_ARRAY	1048576
 
-// Hash from an pointer to an array index
 #define	TRACKING_HASH(p)	(UINT)(((((UINT64)(p)) / (UINT64)(sizeof(void *))) % ((UINT64)TRACKING_NUM_ARRAY)))
 
-// Call stack
 struct CALLSTACK_DATA
 {
 	bool symbol_cache;
@@ -27,7 +20,6 @@ struct CALLSTACK_DATA
 	UINT line;
 };
 
-// Object
 struct TRACKING_OBJECT
 {
 	UINT Id;
@@ -40,14 +32,12 @@ struct TRACKING_OBJECT
 	UINT LineNumber;
 };
 
-// Usage of the memory
 struct MEMORY_STATUS
 {
 	UINT MemoryBlocksNum;
 	UINT MemorySize;
 };
 
-// Tracking list
 struct TRACKING_LIST
 {
 	struct TRACKING_LIST *Next;
@@ -62,9 +52,6 @@ void GetCallStackStr(char *str, UINT size, CALLSTACK_DATA *s);
 void PrintCallStack(CALLSTACK_DATA *s);
 void InitTracking();
 void FreeTracking();
-int CompareTrackingObject(const void *p1, const void *p2);
-void LockTrackingList();
-void UnlockTrackingList();
 void InsertTrackingList(TRACKING_OBJECT *o);
 void DeleteTrackingList(TRACKING_OBJECT *o, bool free_object_memory);
 TRACKING_OBJECT *SearchTrackingList(UINT64 Address);
@@ -75,13 +62,9 @@ void TrackDeleteObj(UINT64 addr);
 void TrackChangeObjSize(UINT64 addr, UINT size, UINT64 new_addr);
 
 void GetMemoryStatus(MEMORY_STATUS *status);
-void PrintMemoryStatus();
 void MemoryDebugMenu();
-int SortObjectView(void *p1, void *p2);
 void DebugPrintAllObjects();
 void DebugPrintCommandList();
-void PrintObjectList(TRACKING_OBJECT *o);
-void PrintObjectInfo(TRACKING_OBJECT *o);
 void DebugPrintObjectInfo(UINT id);
 
 bool IsTrackingEnabled();

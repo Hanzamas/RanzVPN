@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
-
 // Remote.c
 // Remote Procedure Call
 
@@ -14,29 +10,14 @@
 #include "Mayaqua/Pack.h"
 #include "Mayaqua/Str.h"
 
-// End of RPC
-void EndRpc(RPC *rpc)
-{
-	RpcFree(rpc);
-}
-
-// Release the RPC
 void RpcFree(RPC *rpc)
 {
-	RpcFreeEx(rpc, false);
-}
-void RpcFreeEx(RPC *rpc, bool no_disconnect)
-{
-	// Validate arguments
 	if (rpc == NULL)
 	{
 		return;
 	}
 
-	if (no_disconnect == false)
-	{
-		Disconnect(rpc->Sock);
-	}
+	Disconnect(rpc->Sock);
 
 	ReleaseSock(rpc->Sock);
 
@@ -45,11 +26,9 @@ void RpcFreeEx(RPC *rpc, bool no_disconnect)
 	Free(rpc);
 }
 
-// Start the RPC dispatcher
-PACK *CallRpcDispatcher(RPC *r, PACK *p)
+static PACK *CallRpcDispatcher(RPC *r, PACK *p)
 {
 	char func_name[MAX_SIZE];
-	// Validate arguments
 	if (r == NULL || p == NULL)
 	{
 		return NULL;
@@ -63,8 +42,7 @@ PACK *CallRpcDispatcher(RPC *r, PACK *p)
 	return r->Dispatch(r, func_name, p);
 }
 
-// Wait for the next RPC call
-bool RpcRecvNextCall(RPC *r)
+static bool RpcRecvNextCall(RPC *r)
 {
 	UINT size;
 	void *tmp;
@@ -72,7 +50,6 @@ bool RpcRecvNextCall(RPC *r)
 	BUF *b;
 	PACK *p;
 	PACK *ret;
-	// Validate arguments
 	if (r == NULL)
 	{
 		return false;
@@ -139,11 +116,9 @@ bool RpcRecvNextCall(RPC *r)
 	return true;
 }
 
-// RPC server operation
 void RpcServer(RPC *r)
 {
 	SOCK *s;
-	// Validate arguments
 	if (r == NULL)
 	{
 		return;
@@ -153,28 +128,23 @@ void RpcServer(RPC *r)
 
 	while (true)
 	{
-		// Wait for the next RPC call
 		if (RpcRecvNextCall(r) == false)
 		{
-			// Communication error
 			break;
 		}
 	}
 }
 
-// RPC call
 PACK *RpcCall(RPC *r, char *function_name, PACK *p)
 {
 	PACK *ret;
 	UINT num_retry = 0;
 	UINT err = 0;
-	// Validate arguments
 	if (r == NULL || function_name == NULL)
 	{
 		return NULL;
 	}
 
-//	Debug("RpcCall: %s\n", function_name);
 
 	Lock(r->Lock);
 	{
@@ -197,7 +167,6 @@ RETRY:
 				{
 					num_retry++;
 
-					// Attempt to reconnect the RPC to the VPN Server
 					err = AdminReconnect(r);
 
 					if (err == ERR_NO_ERROR)
@@ -226,14 +195,12 @@ RETRY:
 	return ret;
 }
 
-// RPC internal call
 PACK *RpcCallInternal(RPC *r, PACK *p)
 {
 	BUF *b;
 	UINT size;
 	PACK *ret;
 	void *tmp;
-	// Validate arguments
 	if (r == NULL || p == NULL)
 	{
 		return NULL;
@@ -291,11 +258,9 @@ PACK *RpcCallInternal(RPC *r, PACK *p)
 	return ret;
 }
 
-// Start the RPC server
 RPC *StartRpcServer(SOCK *s, RPC_DISPATCHER *dispatch, void *param)
 {
 	RPC *r;
-	// Validate arguments
 	if (s == NULL)
 	{
 		return NULL;
@@ -310,17 +275,14 @@ RPC *StartRpcServer(SOCK *s, RPC_DISPATCHER *dispatch, void *param)
 	r->ServerMode = true;
 	r->Dispatch = dispatch;
 
-	// Name generation
 	Format(r->Name, sizeof(r->Name), "RPC-%u", s->socket);
 
 	return r;
 }
 
-// Start the RPC client
 RPC *StartRpcClient(SOCK *s, void *param)
 {
 	RPC *r;
-	// Validate arguments
 	if (s == NULL)
 	{
 		return NULL;

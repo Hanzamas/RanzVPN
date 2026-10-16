@@ -1,6 +1,6 @@
 # ADR-0006: Censorship circumvention is a tiered edge feature, not part of the core
 
-**Status:** Proposed (assistant's recommendation; Hilmi asked for the discussion and for the viral Chinese protocols to be looked up, and did not confirm a tier).
+**Status:** Accepted (2026-10-13, in the grilling; see the amendment at the end). Originally Proposed (assistant's recommendation; Hilmi asked for the discussion and for the viral Chinese protocols to be looked up, and did not confirm a tier); the 2026-10-13 grilling accepted the tiered design and fixed the threat model.
 
 ## Context
 
@@ -31,3 +31,14 @@ An external analysis Hilmi pasted got the transport design and the Cloudflare or
 - Licensing as in ADR-0005: GPLv3 components only as separate processes.
 - Schannel is the core's TLS stack (ADR-0007); anything needing ClientHello control is sidecar-only.
 - Sources consulted during the discussion are listed in the discussion log.
+
+## Amendment 2026-10-13: Accepted, with the threat model and tier-3 sidecar fixed
+
+The 2026-10-13 grilling accepted the tiered design and made it concrete (full detail in ADR-0023):
+
+- **Status is now Accepted.**
+- **Threat model split in two.** v1 defeats **commercial DPI that fingerprints VPN protocols** (traffic indistinguishable from ordinary HTTPS). **Nation-state resistance** (active probing, SNI blocking, ML classification, GFW-class) is **designed for now and fully enabled in phase 2**; v1 makes no claim against a GFW-class adversary.
+- **Tier 3 is a Go mimicry sidecar.** Because native Schannel and msquic cannot shape a ClientHello and the mature libraries (uTLS, uQUIC, REALITY) are Go, the sidecar is a Go program: **REALITY (server) + uTLS (client) over TCP 443 first**, uQUIC later, a **full proxy** that forwards the inner stream to the core over a local named pipe. Browser fingerprint defaults to **Edge**, with Chrome and Firefox selectable per link; uTLS is pinned and bumped per browser release. This is ADR-0023; the Xray/sing-box option stays valid under the same separate-process licence boundary.
+- **Active-probing resistance and two decoy modes** are added: (1) an own decoy landing page with a real ACME certificate (default, shared with the admin surface of ADR-0021), and (2) a borrow-a-big-site REALITY relay where probers are spliced to the real site and see its real certificate.
+- **Tier 1 fragmentation** (ClientHello / SNI split across TCP segments) is a client toggle; **ChaCha20-Poly1305 stays off by default** (ADR-0022).
+- The **pluggable transport interface** is defined now so mimicry, DoH, DoT and CDN transports plug in later (ADR-0023). Padding and CDN fronting are phase-2 options.

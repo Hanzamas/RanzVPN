@@ -63,9 +63,38 @@ jobs:
         )
 
         call "%VCVARS_PATH%"
-        cmake -G "Ninja" -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=%VCPKG_TRIPLET% -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER="%COMPILER_PATH%" -DCMAKE_CXX_COMPILER="%COMPILER_PATH%" -DBUILD_NUMBER=%BUILD_NUMBER% %CMAKE_EXTRA_FLAGS% ..
-        cmake --build .
+        cmake -G "Ninja" -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=%VCPKG_TRIPLET% -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER="%COMPILER_PATH%" -DCMAKE_CXX_COMPILER="%COMPILER_PATH%" -DBUILD_NUMBER=%BUILD_NUMBER% -DRANZ_UNUSED_WARNINGS=ON %CMAKE_EXTRA_FLAGS% ..
+        if errorlevel 1 exit /b 1
+
+        rem The compiler output goes to build-log.txt for the unused-code report step, then to the job log
+        cmake --build . > build-log.txt 2>&1
+        set BUILD_EXIT=%ERRORLEVEL%
+        type build-log.txt
+        exit /b %BUILD_EXIT%
       shell: cmd
+    # Every unused or unreachable code warning of the build (cmake/RanzWarnings.cmake), de-duplicated:
+    # in the job log under "=== unused-code report ===", in the job summary and as an artifact.
+    # The kinds in RANZ_UNUSED_ERROR_FLAGS are errors and fail the Build step; the rest are informational.
+    - name: Unused-code report
+      if: ${{ !cancelled() }}
+      shell: pwsh
+      run: |
+        python .github/scripts/unused-report.py --log build/build-log.txt --out build/unused-report.txt --arch ${{ matrix.platform.ARCHITECTURE }}
+    - name: Upload unused-code report and build log
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        if-no-files-found: warn
+        name: unused-report-${{ matrix.platform.ARCHITECTURE }}
+        path: |
+          build/unused-report.txt
+          build/build-log.txt
+    # Source lines per directory and executable sizes, in the job log and the job summary. Never a gate.
+    - name: Size metrics
+      if: ${{ !cancelled() }}
+      shell: pwsh
+      run: |
+        python .github/scripts/size-metrics.py --build-dir build --arch ${{ matrix.platform.ARCHITECTURE }}
     - name: Set up .NET for stbchecker
       if: matrix.platform.ARCHITECTURE == 'x64'
       uses: actions/setup-dotnet@v4
@@ -81,6 +110,9 @@ jobs:
     - name: Test
       timeout-minutes: 10
       shell: powershell
+      env:
+        # Names build/harness-out/bench-<arch>.txt (the BENCH lines of vpntest bench)
+        ARCHITECTURE: ${{ matrix.platform.ARCHITECTURE }}
       run: |
         . .github/scripts/vpntest.ps1
     - name: Self-check
@@ -91,6 +123,20 @@ jobs:
         Write-Host $out
         if ($LASTEXITCODE -ne 0) { throw "vpncmd self-check exited with code $LASTEXITCODE" }
         if ($out -notmatch 'All checks passed') { throw "vpncmd self-check did not report 'All checks passed'" }
+    # vpntest trace without and inside an ETW trace session on the Debug() TraceLogging provider (ticket #92).
+    # The session's .etl file is kept in build/harness-out/.
+    - name: ETW trace session
+      timeout-minutes: 5
+      shell: pwsh
+      run: |
+        . .github/scripts/etw-trace.ps1
+    # vpnserver installed, started, stopped and uninstalled as a Windows service: its start and stop entries
+    # in the Application event log (ticket #92)
+    - name: Service events in the Event Log
+      timeout-minutes: 10
+      shell: pwsh
+      run: |
+        . .github/scripts/service-eventlog.ps1
     - name: Upload harness outputs (golden bootstrap and diffs)
       if: always()
       uses: actions/upload-artifact@v4
@@ -105,7 +151,6 @@ jobs:
         path: |
           build/*.exe
           build/*.pdb
-          build/*.se2
 
   # AddressSanitizer + libFuzzer (x64 only: Microsoft documents ASan on Windows for x86 and x64).
   # Builds with -DRANZ_ASAN=ON -DRANZ_FUZZ=ON (cmake/RanzSanitizers.cmake), runs the vpntest
@@ -176,7 +221,8 @@ jobs:
       timeout-minutes: 10
       env:
         # harness and bench have time budgets that AddressSanitizer would exceed; run them in build_and_test only.
-        RANZ_SMOKE_TESTS: mschapv2,stun,watermark,stress
+        # certdl has time windows too (it measures the client timeouts); it also runs in build_and_test only.
+        RANZ_SMOKE_TESTS: mschapv2,crypto,stun,watermark,stress,tickorigin,timeenc,nullsafe,charset,fileio,resources,threadpool,dns,trace,eventlog,str,udpaccel,selow,dllsearch,machineid,vmdetect
       run: |
         # The smoke test script of build_and_test itself, so both jobs run the same test list:
         # its new path (.github/scripts) first, its old one second. Its output and the vpntest
@@ -207,8 +253,8 @@ jobs:
         path: |
           build/fuzz-artifacts/
           build/fuzz-logs/
-    # What a crash needs to be replayed elsewhere: the instrumented executables, their symbols,
-    # hamcore and the ASan runtime DLL
+    # What a crash needs to be replayed elsewhere: the instrumented executables, their symbols
+    # and the ASan runtime DLL
     - uses: actions/upload-artifact@v4
       if: failure()
       with:
@@ -219,5 +265,4 @@ jobs:
           build/fuzz_*.pdb
           build/vpntest.exe
           build/vpntest.pdb
-          build/*.se2
           build/clang_rt.asan_dynamic*.dll

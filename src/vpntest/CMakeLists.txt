@@ -1,7 +1,25 @@
 set(COMPONENT_NAME "Testing Utility")
 set(COMPONENT_INTERNAL_NAME "vpntest")
 
-add_executable(vpntest vpntest.c harness.c stress.c)
+add_executable(vpntest vpntest.c harness.c harness_pack.c stress.c runtime.c crypto.c)
+
+# Named string test of NAT-4 (#90)
+target_sources(vpntest PRIVATE strtest.c)
+
+# Named UDP Acceleration receive test of FIX-1 (#97)
+target_sources(vpntest PRIVATE udpaccel.c)
+
+# Named SeLow test of FIX-2 (#98)
+target_sources(vpntest PRIVATE selowtest.c)
+
+# Named DLL search order test of FIX-4 (#100)
+target_sources(vpntest PRIVATE dllsearch.c)
+
+# Named machine identity test of FIX-5 (#101)
+target_sources(vpntest PRIVATE machineid.c)
+
+# Named VM detection test of FIX-7 (#103)
+target_sources(vpntest PRIVATE vmdetect.c)
 
 set_target_properties(vpntest
   PROPERTIES
@@ -27,6 +45,13 @@ if(WIN32)
 
     "${TOP_DIRECTORY}/src/BuildFiles/Manifests/common.manifest"
   )
+
+  # The hamcore files, as resources (cmake/RanzResources.cmake)
+  ranz_hamcore_resources(vpntest)
 endif()
 
 target_link_libraries(vpntest cedar)
+
+# The resources test (runtime.c) compares every hamcore file the executable serves with its source
+# file. A source property, so the resource scripts of vpntest do not get the quoted path.
+set_source_files_properties(runtime.c PROPERTIES COMPILE_DEFINITIONS "RANZ_HAMCORE_SOURCE_DIR=\"${TOP_DIRECTORY}/src/bin/hamcore\"")

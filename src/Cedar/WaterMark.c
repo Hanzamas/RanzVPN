@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
-
 // WaterMark.c
 // SoftEther protocol digital watermark data
 
@@ -18,7 +14,6 @@
 BYTE *WaterMark = NULL;
 UINT WaterMarkSize = 0;
 
-// Read the watermark file from hamcore and check its size and SHA-256
 BUF *LoadWaterMark()
 {
 	BUF *b;
@@ -50,7 +45,7 @@ void InitWaterMark()
 
 	if (b == NULL)
 	{
-		Alert("Error: Can't read the watermark data (watermark.bin is missing or corrupt).\r\nPlease check hamcore.se2.\r\n\r\n(First, reboot the computer. If this problem occurs again, please reinstall VPN software files.)", NULL);
+		Alert("Error: Can't read the watermark data (watermark.bin is missing or corrupt).\r\nPlease check the hamcore files: the resources of the executable, and a hamcore folder next to it.\r\n\r\n(First, reboot the computer. If this problem occurs again, please reinstall VPN software files.)", NULL);
 		exit(-1);
 	}
 
@@ -60,7 +55,6 @@ void InitWaterMark()
 	FreeBuf(b);
 }
 
-// Free the watermark
 void FreeWaterMark()
 {
 	Free(WaterMark);

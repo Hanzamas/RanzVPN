@@ -435,15 +435,51 @@ void stun_test(UINT num, char **arg)
 	}
 }
 
+// Known-answer tests of the hash, cipher and random primitives, ticket #87 (crypto.c)
+void crypto_test(UINT num, char **arg);
+
 // Mayaqua runtime stress test (stress.c)
 void stress_test(UINT num, char **arg);
+
+// Named runtime tests of the Windows-native runtime, spec #30 (runtime.c)
+void tickorigin_test(UINT num, char **arg);
+void timeenc_test(UINT num, char **arg);
+void nullsafe_test(UINT num, char **arg);
+void charset_test(UINT num, char **arg);
+void fileio_test(UINT num, char **arg);
+void resources_test(UINT num, char **arg);
+void threadpool_test(UINT num, char **arg);
+void dns_test(UINT num, char **arg);
+void trace_test(UINT num, char **arg);
+void eventlog_test(UINT num, char **arg);
+
+// Named string test of NAT-4, #90 (strtest.c)
+void str_test(UINT num, char **arg);
+
+// Named UDP Acceleration receive test of FIX-1, #97 (udpaccel.c)
+void udpaccel_test(UINT num, char **arg);
+
+// Named SeLow test of FIX-2, #98 (selowtest.c)
+void selow_test(UINT num, char **arg);
+
+// Named DLL search order test of FIX-4, #100 (dllsearch.c)
+void dllsearch_test(UINT num, char **arg);
+
+// Named machine identity test of FIX-5, #101 (machineid.c)
+void machineid_test(UINT num, char **arg);
+
+// Named VM detection test of FIX-7, #103 (vmdetect.c)
+void vmdetect_test(UINT num, char **arg);
+
+// Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
+UINT watermark_expect_size = 1411;
+char *watermark_expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
 
 // Watermark test: the hamcore file must hold the bytes of the former WaterMark[] C array
 void watermark_test(UINT num, char **arg)
 {
-	// Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c
-	UINT expect_size = 1411;
-	char *expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
+	UINT expect_size = watermark_expect_size;
+	char *expect_sha256 = watermark_expect_sha256;
 
 	UCHAR hash[SHA256_SIZE];
 	char hash_str[SHA256_SIZE * 2 + 1];
@@ -522,11 +558,30 @@ TEST_LIST test_list[] =
 	{"s", server_test, "VPN Server in Test Mode, enter key to graceful stop."},
 	{"memory_leak", memory_leak_test, "Memory leak test: Try to leak one byte by malloc()."},
 	{"mschapv2", mschapv2_test, "MS-CHAPv2 / NT-hash helpers against RFC 2759 test vectors."},
+	{"crypto", crypto_test, "MD4, MD5, SHA-0, SHA-1, SHA-256, RC4, DES and Rand against known-answer vectors."},
 	{"stun", stun_test, "STUN Binding Request / Response helpers against RFC 5769 sample messages."},
 	{"harness", harness_test, "In-process server: hubs, cascade, frames, vpncmd golden outputs, config round-trip."},
 	{"bench", bench_test, "Cascade frame throughput and Pack encode/decode benchmark (informational)."},
 	{"stress", stress_test, "Mayaqua runtime stress test: stress [timing] [case ...]."},
 	{"watermark", watermark_test, "Watermark: hamcore watermark.bin size and SHA-256 against the former C array."},
+	{"tickorigin", tickorigin_test, "Tick64 origin: the first value is at least 1 and at most the process age."},
+	{"timeenc", timeenc_test, "Time encoding: SystemTime64/LocalTime64 against the OS clock, fixed-input conversions, RFC 3339 strings."},
+	{"nullsafe", nullsafe_test, "NULL safety of the LOCK, LIST, COUNTER, REF and EVENT functions."},
+	{"charset", charset_test, "Charset: UTF-8 and ANSI conversions against fixed vectors and the historic UTF-8 coding."},
+	{"fileio", fileio_test, "FileIO: @, $ and | prefixes, path separator, sharing modes, reads past the end."},
+	{"resources", resources_test, "Resources: every hamcore file through ReadHamcore and |, the loose hamcore folder, no hamcore.se2, the same resources in vpnserver and vpncmd."},
+	{"threadpool", threadpool_test, "Thread pool: job pickup, host thread id and COM, idle reuse, many waiters, host handles."},
+	{"dns", dns_test, "DNS: localhost and IP literals answered at once, the computer name through the resolver thread."},
+	{"trace", trace_test, "ETW trace: Debug() output unchanged, messages to the TraceLogging provider: trace [listening]."},
+	{"eventlog", eventlog_test, "Event Log: MsWriteEventLog entries read back from the Application log."},
+	{"certdl", certdl_test, "SetServerCert downloads the issuer certificate from a loopback listener (DownloadCert)."},
+	{"str", str_test, "String functions: truncation and return values of copy, concatenate, format, search, tokens, compare."},
+	{"udpaccel", udpaccel_test, "UDP Acceleration: receive budget per poll and per tick, header check before decryption, drop counters and their log."},
+	{"selow", selow_test, "SeLow: the capability query installs nothing, a Local Bridge reaches the driver install, one adapter-list read."},
+	{"listenerbind", listenerbind_test, "ListenerCreate and ListenerEnable wait for the bind and report a port that cannot be bound."},
+	{"dllsearch", dllsearch_test, "DLL search order: next to the executable, System32 and AddDllDirectory, never the current directory or PATH."},
+	{"machineid", machineid_test, "Machine identity: MachineGuid and the configuration salt, known answers, separate salts, the salt in the config."},
+	{"vmdetect", vmdetect_test, "VM detection: MsIsInVm writes no script, starts no process, answers at once, reports a VM on a GitHub-hosted runner."},
 };
 
 // Test function

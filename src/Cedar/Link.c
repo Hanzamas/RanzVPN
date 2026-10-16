@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-// © 2020 Nokia
-
 // Link.c
 // Inter-HUB Link
 
@@ -20,48 +16,40 @@
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
 
-// Link server thread
-void LinkServerSessionThread(THREAD *t, void *param)
+static void LinkServerSessionThread(THREAD *t, void *param)
 {
 	LINK *k = (LINK *)param;
 	CONNECTION *c;
 	SESSION *s;
 	POLICY *policy;
 	wchar_t name[MAX_SIZE];
-	// Validate arguments
 	if (t == NULL || param == NULL)
 	{
 		return;
 	}
 
-	// Create a server connection
 	c = NewServerConnection(k->Cedar, NULL, t);
 	c->Protocol = CONNECTION_HUB_LINK_SERVER;
 
-	// Create a policy
 	policy = ZeroMalloc(sizeof(POLICY));
 	Copy(policy, k->Policy, sizeof(POLICY));
 
-	// Create a server session
 	s = NewServerSession(k->Cedar, c, k->Hub, LINK_USER_NAME, policy);
 	s->LinkModeServer = true;
 	s->Link = k;
 	c->Session = s;
 	ReleaseConnection(c);
 
-	// User name
 	s->Username = CopyStr(LINK_USER_NAME_PRINT);
 
 	k->ServerSession = s;
 	AddRef(k->ServerSession->ref);
 
-	// Notify the initialization completion
 	NoticeThreadInit(t);
 
 	UniStrCpy(name, sizeof(name), k->Option->AccountName);
 	HLog(s->Hub, "LH_LINK_START", name, s->Name);
 
-	// Main function of session
 	SessionMain(s);
 
 	HLog(s->Hub, "LH_LINK_STOP", name);
@@ -69,12 +57,10 @@ void LinkServerSessionThread(THREAD *t, void *param)
 	ReleaseSession(s);
 }
 
-// Initialize the packet adapter
-bool LinkPaInit(SESSION *s)
+static bool LinkPaInit(SESSION *s)
 {
 	LINK *k;
 	THREAD *t;
-	// Validate arguments
 	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
 	{
 		return false;
@@ -85,10 +71,8 @@ bool LinkPaInit(SESSION *s)
 		return false;
 	}
 
-	// Create a transmission packet queue
 	k->SendPacketQueue = NewQueue();
 
-	// Creat a link server thread
 	t = NewThread(LinkServerSessionThread, (void *)k);
 	WaitThreadInit(t);
 
@@ -100,11 +84,9 @@ bool LinkPaInit(SESSION *s)
 	return true;
 }
 
-// Get the cancel object
-CANCEL *LinkPaGetCancel(SESSION *s)
+static CANCEL *LinkPaGetCancel(SESSION *s)
 {
 	LINK *k;
-	// Validate arguments
 	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
 	{
 		return NULL;
@@ -113,12 +95,10 @@ CANCEL *LinkPaGetCancel(SESSION *s)
 	return NULL;
 }
 
-// Get the next packet
-UINT LinkPaGetNextPacket(SESSION *s, void **data)
+static UINT LinkPaGetNextPacket(SESSION *s, void **data)
 {
 	LINK *k;
 	UINT ret = 0;
-	// Validate arguments
 	if (s == NULL || data == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
 	{
 		return INFINITE;
@@ -128,20 +108,17 @@ UINT LinkPaGetNextPacket(SESSION *s, void **data)
 	{
 		return INFINITE;
 	}
-	// Examine whether there are packets in the queue
 	LockQueue(k->SendPacketQueue);
 	{
 		BLOCK *block = GetNext(k->SendPacketQueue);
 
 		if (block != NULL)
 		{
-			// There was a packet
 			*data = block->Buf;
 			ret = block->Size;
 
 			k->CurrentSendPacketQueueSize -= block->Size;
 
-			// Discard the memory for the structure
 			Free(block);
 		}
 	}
@@ -150,8 +127,7 @@ UINT LinkPaGetNextPacket(SESSION *s, void **data)
 	return ret;
 }
 
-// Write the received packet
-bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
+static bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 {
 	LINK *k;
 	BLOCK *block = NULL;
@@ -159,7 +135,6 @@ bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 	CONNECTION *server_connection;
 	bool ret = true;
 	bool halting = false;
-	// Validate arguments
 	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
 	{
 		return false;
@@ -173,7 +148,7 @@ bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 	k->Flag1++;
 	if ((k->Flag1 % 32) == 0)
 	{
-		// Omit for performance
+		// Only every 32nd call, for speed
 		UINT current_num;
 		int diff;
 
@@ -186,8 +161,8 @@ bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 		CedarAddQueueBudget(k->Cedar, diff);
 	}
 
-	// Since the packet arrives from the HUB of the link destination,
-	// deliver it to the ReceivedBlocks of the server session
+	// The packet came from the link destination HUB,
+	// so deliver it to the server session's ReceivedBlocks
 	if (data != NULL)
 	{
 		if (halting == false)
@@ -243,7 +218,7 @@ bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 			UnlockQueue(server_connection->ReceivedBlocks);
 		}
 
-		// Issue the Cancel, since finished store all packets when the data == NULL
+		// data == NULL means all packets are stored, so issue the Cancel
 		Cancel(server_session->Cancel1);
 
 		if (k->Hub != NULL && k->Hub->Option != NULL && k->Hub->Option->YieldAfterStorePacket)
@@ -260,11 +235,9 @@ bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 	return ret;
 }
 
-// Release the packet adapter
-void LinkPaFree(SESSION *s)
+static void LinkPaFree(SESSION *s)
 {
 	LINK *k;
-	// Validate arguments
 	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
 	{
 		return;
@@ -273,11 +246,9 @@ void LinkPaFree(SESSION *s)
 	CedarAddQueueBudget(k->Cedar, -((int)k->LastServerConnectionReceivedBlocksNum));
 	k->LastServerConnectionReceivedBlocksNum = 0;
 
-	// Stop the server session
 	StopSession(k->ServerSession);
 	ReleaseSession(k->ServerSession);
 
-	// Release the transmission packet queue
 	LockQueue(k->SendPacketQueue);
 	{
 		BLOCK *block;
@@ -293,19 +264,16 @@ void LinkPaFree(SESSION *s)
 	k->CurrentSendPacketQueueSize = 0;
 }
 
-// Packet adapter
-PACKET_ADAPTER *LinkGetPacketAdapter()
+static PACKET_ADAPTER *LinkGetPacketAdapter()
 {
 	return NewPacketAdapter(LinkPaInit, LinkPaGetCancel, LinkPaGetNextPacket,
 		LinkPaPutPacket, LinkPaFree);
 }
 
-// Release all links
 void ReleaseAllLink(HUB *h)
 {
 	LINK **kk;
 	UINT num, i;
-	// Validate arguments
 	if (h == NULL)
 	{
 		return;
@@ -329,10 +297,8 @@ void ReleaseAllLink(HUB *h)
 	Free(kk);
 }
 
-// Release the link
 void ReleaseLink(LINK *k)
 {
-	// Validate arguments
 	if (k == NULL)
 	{
 		return;
@@ -344,10 +310,8 @@ void ReleaseLink(LINK *k)
 	}
 }
 
-// Clean-up the link
 void CleanupLink(LINK *k)
 {
-	// Validate arguments
 	if (k == NULL)
 	{
 		return;
@@ -370,10 +334,8 @@ void CleanupLink(LINK *k)
 	Free(k);
 }
 
-// Make the link on-line
 void SetLinkOnline(LINK *k)
 {
-	// Validate arguments
 	if (k == NULL)
 	{
 		return;
@@ -393,10 +355,8 @@ void SetLinkOnline(LINK *k)
 	StartLink(k);
 }
 
-// Make the link off-line
 void SetLinkOffline(LINK *k)
 {
-	// Validate arguments
 	if (k == NULL)
 	{
 		return;
@@ -411,10 +371,8 @@ void SetLinkOffline(LINK *k)
 	k->Offline = true;
 }
 
-// Delete the link
 void DelLink(HUB *hub, LINK *k)
 {
-	// Validate arguments
 	if (hub == NULL || k == NULL)
 	{
 		return;
@@ -430,10 +388,8 @@ void DelLink(HUB *hub, LINK *k)
 	UnlockList(hub->LinkList);
 }
 
-// Start all links
 void StartAllLink(HUB *h)
 {
-	// Validate arguments
 	if (h == NULL)
 	{
 		return;
@@ -455,13 +411,11 @@ void StartAllLink(HUB *h)
 	UnlockList(h->LinkList);
 }
 
-// Stop all links
 void StopAllLink(HUB *h)
 {
 	LINK **link_list;
 	UINT num_link;
 	UINT i;
-	// Validate arguments
 	if (h == NULL)
 	{
 		return;
@@ -491,11 +445,9 @@ void StopAllLink(HUB *h)
 	h->StopAllLinkFlag = false;
 }
 
-// Start the link
 void StartLink(LINK *k)
 {
 	PACKET_ADAPTER *pa;
-	// Validate arguments
 	if (k == NULL)
 	{
 		return;
@@ -514,7 +466,6 @@ void StartLink(LINK *k)
 	}
 	UnlockLink(k);
 
-	// Connect the client session
 	pa = LinkGetPacketAdapter();
 	pa->Param = (void *)k;
 	LockLink(k);
@@ -524,10 +475,8 @@ void StartLink(LINK *k)
 	UnlockLink(k);
 }
 
-// Stop the link
 void StopLink(LINK *k)
 {
-	// Validate arguments
 	if (k == NULL)
 	{
 		return;
@@ -549,7 +498,6 @@ void StopLink(LINK *k)
 
 	if (k->ClientSession != NULL)
 	{
-		// Disconnect the client session
 		StopSession(k->ClientSession);
 
 		LockLink(k);
@@ -567,10 +515,8 @@ void StopLink(LINK *k)
 	UnlockLink(k);
 }
 
-// Lock the link
 void LockLink(LINK *k)
 {
-	// Validate arguments
 	if (k == NULL)
 	{
 		return;
@@ -579,10 +525,8 @@ void LockLink(LINK *k)
 	Lock(k->lock);
 }
 
-// Unlock the link
 void UnlockLink(LINK *k)
 {
-	// Validate arguments
 	if (k == NULL)
 	{
 		return;
@@ -591,10 +535,8 @@ void UnlockLink(LINK *k)
 	Unlock(k->lock);
 }
 
-// Normalize the policy for the link
-void NormalizeLinkPolicy(POLICY *p)
+static void NormalizeLinkPolicy(POLICY *p)
 {
-	// Validate arguments
 	if (p == NULL)
 	{
 		return;
@@ -607,13 +549,11 @@ void NormalizeLinkPolicy(POLICY *p)
 	p->FixPassword = false;
 }
 
-// Create a Link
 LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, POLICY *policy)
 {
 	CLIENT_OPTION *o;
 	LINK *k;
 	CLIENT_AUTH *a;
-	// Validate arguments
 	if (cedar == NULL || hub == NULL || option == NULL || auth == NULL || policy == NULL)
 	{
 		return NULL;
@@ -633,31 +573,26 @@ LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, 
 		return NULL;
 	}
 
-	// Limitation of authentication method
 	if (auth->AuthType != CLIENT_AUTHTYPE_ANONYMOUS && auth->AuthType != CLIENT_AUTHTYPE_PASSWORD &&
 		auth->AuthType != CLIENT_AUTHTYPE_PLAIN_PASSWORD && auth->AuthType != CLIENT_AUTHTYPE_CERT && auth->AuthType != CLIENT_AUTHTYPE_OPENSSLENGINE)
 	{
-		// Authentication method other than anonymous authentication, password authentication, plain password, certificate authentication cannot be used
 		return NULL;
 	}
 
-	// Copy of the client options (for modification)
 	o = ZeroMalloc(sizeof(CLIENT_OPTION));
 	Copy(o, option, sizeof(CLIENT_OPTION));
 	StrCpy(o->DeviceName, sizeof(o->DeviceName), LINK_DEVICE_NAME);
 
-	o->RequireBridgeRoutingMode = true;	// Request the bridge mode
-	o->RequireMonitorMode = false;	// Not to require the monitor mode
+	o->RequireBridgeRoutingMode = true;
+	o->RequireMonitorMode = false;
 
-	o->NumRetry = INFINITE;			// Retry the connection infinitely
-	o->RetryInterval = 10;			// Retry interval is 10 seconds
-	o->NoRoutingTracking = true;	// Stop the routing tracking
+	o->NumRetry = INFINITE;
+	o->RetryInterval = 10;			// seconds
+	o->NoRoutingTracking = true;
 
-	// Copy the authentication data
 	a = CopyClientAuth(auth);
 	a->CheckCertProc = NULL;
 
-	// Link object
 	k = ZeroMalloc(sizeof(LINK));
 
 	k->StopAllLinkFlag = &hub->StopAllLinkFlag;
@@ -670,14 +605,11 @@ LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, 
 	k->Auth = a;
 	k->Hub = hub;
 
-	// Copy the policy
 	k->Policy = ZeroMalloc(sizeof(POLICY));
 	Copy(k->Policy, policy, sizeof(POLICY));
 
-	// Normalize the policy
 	NormalizeLinkPolicy(k->Policy);
 
-	// Register in the link list of the HUB
 	LockList(hub->LinkList);
 	{
 		Add(hub->LinkList, k);

@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Mayaqua Kernel
-
-
 // Object.c
 // Object management code
 
@@ -15,8 +11,7 @@
 #include "Tick64.h"
 #include "Tracking.h"
 
-// Thread to try to lock
-void CheckDeadLockThread(THREAD *t, void *param)
+static void CheckDeadLockThread(THREAD *t, void *param)
 {
 	DEADCHECK *c = (DEADCHECK *)param;
 
@@ -32,7 +27,6 @@ void CheckDeadLockThread(THREAD *t, void *param)
 	c->Unlocked = true;
 }
 
-// Deadlock Detection
 void CheckDeadLock(LOCK *lock, UINT timeout, char *name)
 {
 	DEADCHECK c;
@@ -52,7 +46,6 @@ void CheckDeadLock(LOCK *lock, UINT timeout, char *name)
 
 	Zero(&c, sizeof(c));
 	c.Lock = lock;
-	c.Timeout = timeout;
 	c.Unlocked = false;
 
 	t = NewThread(CheckDeadLockThread, &c);
@@ -61,7 +54,6 @@ void CheckDeadLock(LOCK *lock, UINT timeout, char *name)
 	{
 		if (c.Unlocked == false)
 		{
-			// Deadlock occured
 			AbortExitEx(msg);
 		}
 		else
@@ -73,8 +65,7 @@ void CheckDeadLock(LOCK *lock, UINT timeout, char *name)
 	ReleaseThread(t);
 }
 
-// Create a lock object
-LOCK *NewLockMain()
+static LOCK *NewLockMain()
 {
 	LOCK *lock;
 	UINT retry = 0;
@@ -99,248 +90,176 @@ LOCK *NewLock()
 {
 	LOCK *lock = NewLockMain();
 
-	// KS
 	KS_INC(KS_NEWLOCK_COUNT);
 	KS_INC(KS_CURRENT_LOCK_COUNT);
 
 	return lock;
 }
 
-// Delete the lock object
 void DeleteLock(LOCK *lock)
 {
-	// Validate arguments
 	if (lock == NULL)
 	{
 		return;
 	}
 
-	// KS
 	KS_INC(KS_DELETELOCK_COUNT);
 	KS_DEC(KS_CURRENT_LOCK_COUNT);
 
 	OSDeleteLock(lock);
 }
 
-// Lock
 bool LockInner(LOCK *lock)
 {
-	// Validate arguments
 	if (lock == NULL)
 	{
 		return false;
 	}
 
-	// KS
 	KS_INC(KS_LOCK_COUNT);
 	KS_INC(KS_CURRENT_LOCKED_COUNT);
 
 	return OSLock(lock);
 }
 
-// Unlock
 void UnlockInner(LOCK *lock)
 {
-	// Validate arguments
 	if (lock == NULL)
 	{
 		return;
 	}
 
-	// KS
 	KS_INC(KS_UNLOCK_COUNT);
 	KS_DEC(KS_CURRENT_LOCKED_COUNT);
 
 	OSUnlock(lock);
 }
 
-// Creating a counter
 COUNTER *NewCounter()
 {
 	COUNTER *c;
 
-	// Memory allocation
 	c = Malloc(sizeof(COUNTER));
 
-	// Initialization
-	c->Ready = true;
 	c->c = 0;
 
-	// Lock created
-	c->lock = NewLock();
-
-	// KS
 	KS_INC(KS_NEW_COUNTER_COUNT);
 
 	return c;
 }
 
-// Delete the counter
 void DeleteCounter(COUNTER *c)
 {
-	// Validate arguments
 	if (c == NULL)
 	{
 		return;
 	}
 
-	// KS
 	KS_INC(KS_DELETE_COUNTER_COUNT);
 	KS_SUB(KS_CURRENT_COUNT, c->c);
 
-	DeleteLock(c->lock);
 	Free(c);
 }
 
-// Get the count value
-UINT Count(COUNTER *c)
-{
-	UINT ret;
-	// Validate arguments
-	if (c == NULL)
-	{
-		return 0;
-	}
-	if (c->Ready == false)
-	{
-		return 0;
-	}
-
-	Lock(c->lock);
-	{
-		ret = c->c;
-	}
-	Unlock(c->lock);
-
-	return ret;
-}
-
-// Increment
+// Increment; returns the new value
 UINT Inc(COUNTER *c)
 {
 	UINT ret;
-	// Validate arguments
 	if (c == NULL)
 	{
 		return 0;
 	}
-	if (c->Ready == false)
-	{
-		return 0;
-	}
 
-	Lock(c->lock);
-	{
-		c->c++;
-		ret = c->c;
-	}
-	Unlock(c->lock);
+	ret = (UINT)InterlockedIncrement((volatile LONG *)&c->c);
 
-	// KS
 	KS_INC(KS_INC_COUNT);
 	KS_INC(KS_CURRENT_COUNT);
 
 	return ret;
 }
 
-// Decrement
+// Decrement; returns the new value. A COUNTER at 0 stays at 0 and returns 0.
 UINT Dec(COUNTER *c)
 {
-	UINT ret;
-	// Validate arguments
+	UINT old_value, ret;
 	if (c == NULL)
 	{
 		return 0;
 	}
-	if (c->Ready == false)
-	{
-		return 0;
-	}
 
-	Lock(c->lock);
+	// Compare-exchange loop, so that the floor at 0 holds under contention
+	while (true)
 	{
-		if (c->c != 0)
-		{
-			c->c--;
-			ret = c->c;
-		}
-		else
+		old_value = c->c;
+		if (old_value == 0)
 		{
 			ret = 0;
+			break;
+		}
+
+		ret = old_value - 1;
+		if ((UINT)InterlockedCompareExchange((volatile LONG *)&c->c, (LONG)ret, (LONG)old_value) == old_value)
+		{
+			break;
 		}
 	}
-	Unlock(c->lock);
 
-	// KS
 	KS_INC(KS_DEC_COUNT);
 	KS_DEC(KS_CURRENT_COUNT);
 
 	return ret;
 }
 
-
-// Release of the reference counter
 UINT Release(REF *ref)
 {
 	UINT c;
-	// Validate arguments
 	if (ref == NULL)
 	{
 		return 0;
 	}
 
-	// KS
 	KS_INC(KS_RELEASE_COUNT);
 	KS_DEC(KS_CURRENT_REFED_COUNT);
 
-	c = Dec(ref->c);
+	c = Dec(&ref->c);
 	if (c == 0)
 	{
-		// KS
 		KS_DEC(KS_CURRENT_REF_COUNT);
 		KS_INC(KS_FREEREF_COUNT);
 
-		DeleteCounter(ref->c);
-		ref->c = 0;
 		Free(ref);
 	}
 	return c;
 }
 
-// Increase of the reference counter
 UINT AddRef(REF *ref)
 {
 	UINT c;
-	// Validate arguments
 	if (ref == NULL)
 	{
 		return 0;
 	}
 
-	c = Inc(ref->c);
+	c = Inc(&ref->c);
 
-	// KS
 	KS_INC(KS_ADDREF_COUNT);
 	KS_INC(KS_CURRENT_REFED_COUNT);
 
 	return c;
 }
 
-// Create a reference counter
 REF *NewRef()
 {
 	REF *ref;
 
-	// Memory allocation
+	// Memory allocation: the counter is embedded, so this is the only heap block
 	ref = Malloc(sizeof(REF));
 
-	// Create a Counter
-	ref->c = NewCounter();
+	// Initialization
+	ref->c.c = 0;
 
-	// Increment only once
-	Inc(ref->c);
+	Inc(&ref->c);
 
-	// KS
 	KS_INC(KS_NEWREF_COUNT);
 	KS_INC(KS_CURRENT_REF_COUNT);
 	KS_INC(KS_ADDREF_COUNT);
@@ -349,28 +268,22 @@ REF *NewRef()
 	return ref;
 }
 
-// Creating an event object
 EVENT *NewEvent()
 {
-	// Memory allocation
 	EVENT *e = Malloc(sizeof(EVENT));
 
-	// Reference counter
 	e->ref = NewRef();
 
-	// Event initialization
-	OSInitEvent(e);
+	// Creating an unnamed auto-reset event; a failed create leaves a NULL handle
+	e->pData = CreateEvent(NULL, FALSE, FALSE, NULL);
 
-	// KS
 	KS_INC(KS_NEWEVENT_COUNT);
 
 	return e;
 }
 
-// Release of the event
 void ReleaseEvent(EVENT *e)
 {
-	// Validate arguments
 	if (e == NULL)
 	{
 		return;
@@ -382,58 +295,45 @@ void ReleaseEvent(EVENT *e)
 	}
 }
 
-// Delete the event
 void CleanupEvent(EVENT *e)
 {
-	// Validate arguments
 	if (e == NULL)
 	{
 		return;
 	}
 
-	// Release event
-	OSFreeEvent(e);
+	if (e->pData != NULL)
+	{
+		CloseHandle((HANDLE)e->pData);
+	}
 
-	// Memory release
 	Free(e);
 
-	// KS
 	KS_INC(KS_FREEEVENT_COUNT);
 }
 
-// Set event
-void Set(EVENT *e)
-{
-	// Validate arguments
-	if (e == NULL)
-	{
-		return;
-	}
-
-	OSSetEvent(e);
-}
-
-// Wait for event
 bool Wait(EVENT *e, UINT timeout)
 {
-	// Validate arguments
 	if (e == NULL)
 	{
 		return false;
 	}
 
-	// KS
 	KS_INC(KS_WAIT_COUNT);
 
-	return OSWaitEvent(e, timeout);
+	if (e->pData == NULL)
+	{
+		return false;
+	}
+
+	// Only a time-out gives false: WAIT_FAILED and WAIT_ABANDONED give true
+	return (WaitForSingleObject((HANDLE)e->pData, timeout) != WAIT_TIMEOUT);
 }
 
-// Wait for a event until the cancel flag becomes true
 bool WaitEx(EVENT *e, UINT timeout, volatile bool *cancel)
 {
 	bool dummy_bool = false;
 	UINT64 start, giveup;
-	// Validate arguments
 	if (cancel == NULL)
 	{
 		cancel = &dummy_bool;
@@ -462,7 +362,6 @@ bool WaitEx(EVENT *e, UINT timeout, volatile bool *cancel)
 		{
 			if (now >= giveup)
 			{
-				// Time-out occurs
 				return false;
 			}
 		}
@@ -471,7 +370,6 @@ bool WaitEx(EVENT *e, UINT timeout, volatile bool *cancel)
 
 		if (*cancel)
 		{
-			// Cancel flag is set to true. Time-out occurs
 			return false;
 		}
 
@@ -479,7 +377,6 @@ bool WaitEx(EVENT *e, UINT timeout, volatile bool *cancel)
 		{
 			if (Wait(e, interval_to_giveup))
 			{
-				// Event is set
 				return true;
 			}
 		}
@@ -489,6 +386,5 @@ bool WaitEx(EVENT *e, UINT timeout, volatile bool *cancel)
 		}
 	}
 }
-
 
 

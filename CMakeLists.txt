@@ -26,6 +26,12 @@ set(BUILD_DIRECTORY ${CMAKE_BINARY_DIR})
 # AddressSanitizer and libFuzzer builds (RANZ_ASAN, RANZ_FUZZ; both OFF by default)
 include("${TOP_DIRECTORY}/cmake/RanzSanitizers.cmake")
 
+# Unused-code warnings for the project's own targets (RANZ_UNUSED_WARNINGS; OFF by default)
+include("${TOP_DIRECTORY}/cmake/RanzWarnings.cmake")
+
+# The hamcore files (src/bin/hamcore) as resources of the executables
+include("${TOP_DIRECTORY}/cmake/RanzResources.cmake")
+
 # We define a dedicated variable because CMAKE_BUILD_TYPE can have different
 # configurations than "Debug" and "Release", such as "RelWithDebInfo".
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -35,7 +41,7 @@ else()
 endif()
 
 # Check that submodules are present only if source was downloaded with git
-if(EXISTS "${TOP_DIRECTORY}/.git" AND NOT EXISTS "${TOP_DIRECTORY}/src/libhamcore/CMakeLists.txt")
+if(EXISTS "${TOP_DIRECTORY}/.git" AND NOT EXISTS "${TOP_DIRECTORY}/src/Mayaqua/3rdparty/liboqs/CMakeLists.txt")
     message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init --recursive")
 endif()
 

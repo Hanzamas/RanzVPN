@@ -6,17 +6,7 @@
 #include "Str.h"
 #include "Tick64.h"
 
-#ifdef OS_WIN32
 #include <WS2tcpip.h>
-#endif
-
-#ifndef AI_ALL
-#define AI_ALL 0
-#endif
-
-#ifndef AI_V4MAPPED
-#define AI_V4MAPPED 0
-#endif
 
 static bool cache_enabled;
 
@@ -26,7 +16,7 @@ static LIST *cache_reverse;
 static COUNTER *threads_counter;
 static UINT threads_max;
 
-int DnsCacheCompare(void *p1, void *p2)
+static int DnsCacheCompare(void *p1, void *p2)
 {
 	if (p1 == NULL || p2 == NULL)
 	{
@@ -39,7 +29,7 @@ int DnsCacheCompare(void *p1, void *p2)
 	return StrCmpi(c1->Hostname, c2->Hostname);
 }
 
-int DnsCacheReverseCompare(void *p1, void *p2)
+static int DnsCacheReverseCompare(void *p1, void *p2)
 {
 	if (p1 == NULL || p2 == NULL)
 	{
@@ -115,7 +105,7 @@ void DnsThreadNumMaxSet(const UINT max)
 	threads_max = max;
 }
 
-bool DnsCacheIsEnabled()
+static bool DnsCacheIsEnabled()
 {
 	return cache_enabled;
 }
@@ -125,7 +115,7 @@ void DnsCacheToggle(const bool enabled)
 	cache_enabled = enabled;
 }
 
-DNS_CACHE *DnsCacheFind(const char *hostname)
+static DNS_CACHE *DnsCacheFind(const char *hostname)
 {
 	if (DnsCacheIsEnabled() == false || IsEmptyStr(hostname))
 	{
@@ -145,36 +135,7 @@ DNS_CACHE *DnsCacheFind(const char *hostname)
 	return entry;
 }
 
-DNS_CACHE *DnsCacheUpdate(const char *hostname, const IP *ipv6, const IP *ipv4)
-{
-	if (DnsCacheIsEnabled() == false || IsEmptyStr(hostname))
-	{
-		return NULL;
-	}
-
-	LIST *iplist_v6 = NULL;
-	LIST *iplist_v4 = NULL;
-
-	if (ipv6 != NULL)
-	{
-		iplist_v6 = NewListFast(NULL);
-		AddHostIPAddressToList(iplist_v6, ipv6);
-	}
-
-	if (ipv4 != NULL)
-	{
-		iplist_v4 = NewListFast(NULL);
-		AddHostIPAddressToList(iplist_v4, ipv4);
-	}
-
-	DNS_CACHE *ret = DnsCacheUpdateEx(hostname, iplist_v6, iplist_v4);
-
-	FreeHostIPAddressList(iplist_v6);
-	FreeHostIPAddressList(iplist_v4);
-
-	return ret;
-}
-DNS_CACHE *DnsCacheUpdateEx(const char *hostname, const LIST *iplist_v6, const LIST *iplist_v4)
+static DNS_CACHE *DnsCacheUpdateEx(const char *hostname, const LIST *iplist_v6, const LIST *iplist_v4)
 {
 	if (DnsCacheIsEnabled() == false || IsEmptyStr(hostname))
 	{
@@ -240,7 +201,7 @@ DNS_CACHE *DnsCacheUpdateEx(const char *hostname, const LIST *iplist_v6, const L
 	return entry;
 }
 
-DNS_CACHE_REVERSE *DnsCacheReverseFind(const IP *ip)
+static DNS_CACHE_REVERSE *DnsCacheReverseFind(const IP *ip)
 {
 	if (DnsCacheIsEnabled() == false || ip == NULL)
 	{
@@ -484,7 +445,7 @@ void DnsResolver(THREAD *t, void *param)
 	NoticeThreadInit(t);
 	AddWaitThread(t);
 
-	struct addrinfo hints;
+	ADDRINFOW hints;
 	Zero(&hints, sizeof(hints));
 
 	if (HasIPv6Address())
@@ -497,13 +458,31 @@ void DnsResolver(THREAD *t, void *param)
 		hints.ai_family = AF_INET;
 	}
 
-	struct addrinfo *results;
-	const int ret = getaddrinfo(resolver->Hostname, NULL, &hints, &results);
-	if (ret == 0)
+	// getaddrinfo() took the name in the ANSI code page: convert it the same way
+	int ret = EAI_FAIL;
+	bool converted = false;
+	ADDRINFOW *results = NULL;
+	const int hostname_len = MultiByteToWideChar(CP_ACP, 0, resolver->Hostname, -1, NULL, 0);
+	if (hostname_len > 0)
+	{
+		wchar_t *hostname_w = Malloc(sizeof(wchar_t) * (UINT)hostname_len);
+		if (MultiByteToWideChar(CP_ACP, 0, resolver->Hostname, -1, hostname_w, hostname_len) == hostname_len)
+		{
+			converted = true;
+			ret = GetAddrInfoW(hostname_w, NULL, &hints, &results);
+		}
+		Free(hostname_w);
+	}
+
+	if (converted == false)
+	{
+		Debug("DnsResolver(): MultiByteToWideChar() failed to convert the host name!\n");
+	}
+	else if (ret == 0)
 	{
 		bool ipv6_ok = false;
 		bool ipv4_ok = false;
-		for (struct addrinfo *result = results; result != NULL; result = result->ai_next)
+		for (ADDRINFOW *result = results; result != NULL; result = result->ai_next)
 		{
 			IP ip;
 			if (hints.ai_family == AF_INET6)
@@ -536,11 +515,10 @@ void DnsResolver(THREAD *t, void *param)
 
 		resolver->OK = true;
 
-		freeaddrinfo(results);
+		FreeAddrInfoW(results);
 	}
 	else if (ret != EAI_NONAME)
 	{
-		Debug("DnsResolver(): getaddrinfo() failed with error %d!\n", ret);
 	}
 
 	ReleaseDnsResolver(resolver);
@@ -656,15 +634,23 @@ void DnsResolverReverse(THREAD *t, void *param)
 	IPToInAddr6(&in.sin6_addr, &resolver->IP);
 
 	char tmp[NI_MAXHOST];
-	const int ret = getnameinfo((struct sockaddr *)&in, sizeof(in), tmp, sizeof(tmp), NULL, 0, NI_NAMEREQD);
+	wchar_t tmp_w[NI_MAXHOST];
+	const int ret = GetNameInfoW((struct sockaddr *)&in, sizeof(in), tmp_w, sizeof(tmp_w) / sizeof(tmp_w[0]), NULL, 0, NI_NAMEREQD);
 	if (ret == 0)
 	{
-		resolver->Hostname = CopyStr(tmp);
-		resolver->OK = true;
+		// getnameinfo() returned the name in the ANSI code page: convert it the same way
+		if (WideCharToMultiByte(CP_ACP, 0, tmp_w, -1, tmp, sizeof(tmp), NULL, NULL) != 0)
+		{
+			resolver->Hostname = CopyStr(tmp);
+			resolver->OK = true;
+		}
+		else
+		{
+			Debug("DnsResolverReverse(): WideCharToMultiByte() failed with error %u!\n", GetLastError());
+		}
 	}
 	else if (ret != EAI_NONAME)
 	{
-		Debug("DnsResolverReverse(): getnameinfo() failed with error %d!\n", ret);
 	}
 
 	ReleaseDnsResolverReverse(resolver);
@@ -699,10 +685,8 @@ bool GetIPEx(IP *ip, const char *hostname, UINT timeout, volatile const bool *ca
 	return false;
 }
 
-// Release of the parameters of the DNS Resolver thread
 void ReleaseDnsResolver(DNS_RESOLVER *p)
 {
-	// Validate arguments
 	if (p == NULL)
 	{
 		return;
@@ -717,10 +701,8 @@ void ReleaseDnsResolver(DNS_RESOLVER *p)
 	}
 }
 
-// Release of the parameters of the DNS Resolver Reverse thread
 void ReleaseDnsResolverReverse(DNS_RESOLVER_REVERSE *p)
 {
-	// Validate arguments
 	if (p == NULL)
 	{
 		return;

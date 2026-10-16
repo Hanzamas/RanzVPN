@@ -16,23 +16,38 @@
 // - The [PASS]/[FAIL] lines carry no timing values: timings are on "TIME <name> <n> ms" and
 //   "BENCH <name> <value> <unit>" lines that a log diff can filter out.
 //   "HARNESS GOLDEN MODE update|compare" tells whether the golden files were compared.
+// - The admin RPC Pack goldens (golden family "pack", harness_pack.c) run right after the vpncmd
+//   goldens, while the sessions and the cascade are up. harness_int.h holds the shared types.
+// - "bench" runs every case HARNESS_BENCH_RUNS times and prints "BENCH <name> <median> <unit>", then
+//   "BENCH <name>_runs <run 1>,...,<run n> <unit>" in run order. Besides the cascade path it has in-process
+//   cases without TLS, one per hot spot of spec #31: flood_fps_<n> (one session floods broadcast frames to
+//   n sessions of hub HARNESS_FLOOD through the hub packet adapter, no SessionMain thread), parse_packet_<kind>
+//   (the parse of HubPaPutPacket; _nolog: hub packet log off), pack_<encode|decode>_names_<n> (a Pack with n distinct element
+//   names) and ip_table_expire_<n> (one DeleteExpiredIpTableEntry pass). A wrong result of these cases prints a
+//   "BENCH WARNING" line and skips the case; it does not fail the test.
 // - Files left after a run: the server_log, security_log and packet_log folders (as in the "s"
 //   mode). The configuration file and its backup folder are deleted at the start and at the end.
+// - "listenerbind" (FIX-3 #99) adds listeners on TCP 39557 (held by the test) and 39558 through the admin
+//   RPC and deletes them again; "certdl" runs its own loopback listener on TCP 39556.
 
 #include "harness.h"
+#include "harness_int.h"
 
 #include "Cedar/Account.h"
 #include "Cedar/Admin.h"
 #include "Cedar/Cedar.h"
 #include "Cedar/Command.h"
 #include "Cedar/Connection.h"
+#include "Cedar/Hub.h"
 #include "Cedar/Listener.h"
+#include "Cedar/Protocol.h"
 #include "Cedar/Server.h"
 #include "Cedar/Session.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
+#include "Mayaqua/HTTP.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
@@ -41,25 +56,10 @@
 #include "Mayaqua/Pack.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
+#include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
 
 #include <stdio.h>
-
-// Fixed scenario
-#define	HARNESS_PORT				39555				// Test listener (never 443; below the dynamic port range)
-#define	HARNESS_HUB_A				"HARNESS_A"
-#define	HARNESS_HUB_B				"HARNESS_B"
-#define	HARNESS_LINK_NAME			L"HARNESS_CASCADE"
-#define	HARNESS_LINK_USER			"harness_cascade"
-#define	HARNESS_USER_A				"tester_a"
-#define	HARNESS_USER_B				"tester_b"
-#define	HARNESS_PASSWORD			"Harness-Pass-1"
-#define	HARNESS_CONFIG_FILE			"$vpn_harness.config"
-#define	HARNESS_CONFIG_BACKUP_DIR	L"$backup.vpn_harness.config"	// Named by BackupCfgWEx after HARNESS_CONFIG_FILE
-#define	HARNESS_VPNCMD_OUT			"@harness_vpncmd.tmp"
-#define	HARNESS_FRAME_SIZE			96
-#define	HARNESS_ETHERTYPE_HI		0x88				// EtherType 0x88B5 (IEEE local experimental)
-#define	HARNESS_ETHERTYPE_LO		0xB5
 
 // Time bounds (milliseconds)
 #define	HARNESS_LISTEN_TIMEOUT		5000				// Test listener bound (the listener retries every 2 s)
@@ -72,11 +72,51 @@
 #define	HARNESS_RUNTIME_BUDGET		60000				// Whole "harness" test
 #define	HARNESS_BENCH_BUDGET		30000				// Whole "bench" test (warning only)
 #define	HARNESS_BENCH_WARMUP		300					// Not measured
-#define	HARNESS_BENCH_SPAN			2000				// Measured window per frame size
+#define	HARNESS_BENCH_SPAN			400					// Measured window per run and frame size (cascade path)
 #define	HARNESS_BENCH_DRAIN			1000				// Max wait for the send queue to drain
-#define	HARNESS_BENCH_PACK_SPAN		1000				// Per Pack benchmark
+#define	HARNESS_BENCH_PACK_SPAN		200					// Per run of a Pack case
+#define	HARNESS_BENCH_FLOOD_SPAN	200					// Per run of a flood case
+#define	HARNESS_BENCH_MICRO_SPAN	100					// Per run of a ParsePacket case
 #define	HARNESS_WATCHDOG_LIMIT		120000				// "harness" process aborted after this (product calls can block forever)
 #define	HARNESS_BENCH_WATCHDOG		90000				// "bench" process aborted after this
+
+// Intermediate certificate download test ("certdl")
+#define	CERTDL_PORT					39556				// Loopback listener named by the issuer URLs of the fixtures
+#define	CERTDL_HOST					"127.0.0.1:39556"	// Host part of those URLs (CERTDL_PORT, not a scheme default)
+#define	CERTDL_PATH					"/ranz-certdl/ca.cer"
+#define	CERTDL_PATH_MOVED			"/ranz-certdl/moved.cer"	// Location of the redirect answer
+#define	CERTDL_URL_HTTP				"http://" CERTDL_HOST CERTDL_PATH
+#define	CERTDL_URL_HTTPS			"https://" CERTDL_HOST CERTDL_PATH
+#define	CERTDL_MAX_BODY				65536				// CERT_HTTP_DOWNLOAD_MAXSIZE: body bytes the client reads at most
+#define	CERTDL_BIG_LENGTH			1000000				// Content-Length of the over-cap answer
+#define	CERTDL_TIMEOUT_MIN			9000				// CERT_HTTP_DOWNLOAD_TIMEOUT (10 s) less a margin
+#define	CERTDL_QUICK_LIMIT			8000				// A run that never waits for the client timeout ends before this
+#define	CERTDL_SLOW_LIMIT			25000				// A run that waits for the client timeout once ends before this
+#define	CERTDL_CONN_TIMEOUT			30000				// Socket timeout of a listener connection
+#define	CERTDL_WATCHDOG_LIMIT		120000				// "certdl" process aborted after this
+
+// Answer of the certdl listener, one mode per run
+#define	CERTDL_MODE_OK				0	// 200 with Content-Length and the issuer certificate in DER
+#define	CERTDL_MODE_TLS				1	// TLS with a self-signed certificate that Windows does not trust, then as OK
+#define	CERTDL_MODE_CONTINUE		2	// 100 Continue, then as OK
+#define	CERTDL_MODE_REDIRECT		3	// 302 to CERTDL_PATH_MOVED; a later request of the run as OK
+#define	CERTDL_MODE_NOT_FOUND		4	// 404
+#define	CERTDL_MODE_AUTH			5	// 401 with Negotiate and NTLM challenges, to every request of the run
+#define	CERTDL_MODE_NO_LENGTH		6	// 200 without Content-Length: the certificate, then close
+#define	CERTDL_MODE_CHUNKED			7	// 200 with the certificate in one chunk
+#define	CERTDL_MODE_OVER_CAP		8	// 200 with Content-Length CERTDL_BIG_LENGTH, then CERTDL_MAX_BODY bytes
+										// (the certificate and zero padding) and nothing more
+#define	CERTDL_MODE_SILENT			9	// No answer
+
+// Bind status of ListenerCreate and ListenerEnable ("listenerbind", FIX-3 #99)
+#define	LISTENBIND_PORT_HELD		39557				// Held by the test with the server's own bind: the server cannot bind it
+#define	LISTENBIND_PORT_FREE		39558				// Free: the server binds it
+#define	LISTENBIND_FORMER_SLEEP		250					// Fixed sleep of ListenerCreate and ListenerEnable before FIX-3
+#define	LISTENBIND_CYCLES			3					// Disable and enable cycles on the free port (the fastest call is compared)
+#define	LISTENBIND_RPC_LIMIT		(LISTENER_BIND_WAIT_TIME / 2)	// One listener RPC: a call that reaches the server's bind wait limit has missed the bind event
+#define	LISTENBIND_RETRY_LIMIT		(LISTEN_RETRY_TIME * 3)	// A retrying listener binds a released port within this
+#define	LISTENBIND_POLL				50					// ListenerList poll interval while waiting for that bind
+#define	LISTENBIND_WATCHDOG_LIMIT	60000				// "listenerbind" process aborted after this
 
 // Limits
 #define	HARNESS_QUEUE_HIGH			256					// Frames kept queued by the bench sender
@@ -86,6 +126,15 @@
 #define	HARNESS_DIFF_MAX_LINES		1000				// Larger texts only report the first difference
 #define	HARNESS_DIFF_CONTEXT		2					// Context lines around a difference
 #define	HARNESS_PACK_ITEMS			32					// Sessions in the Pack benchmark struct
+#define	HARNESS_BENCH_RUNS			5					// Runs per bench case: the median and every run are printed
+#define	HARNESS_FLOOD_BATCH			32					// Frames the flood sender stores per receive loop
+#define	HARNESS_PACK_NAMES			500					// Distinct element names of the many-names Pack case
+#define	HARNESS_PARSE_FRAME_MAX		512					// Buffer of one ParsePacket bench frame
+#define	HARNESS_NUM_PARSE_FRAMES	5					// ParsePacket bench frames: l2, tcp, http, tls, dns
+
+// Time units of the high-resolution bench clock
+#define	HARNESS_NS_PER_MS			1000000ULL
+#define	HARNESS_NS_PER_S			1000000000ULL
 
 // Normalised placeholders
 #define	HARNESS_TAG_VOLATILE		"<VOLATILE>"
@@ -101,35 +150,6 @@ typedef struct HARNESS_FRAME
 	UCHAR *Data;
 	UINT Size;
 } HARNESS_FRAME;
-
-// Test packet adapter: injects queued frames into a hub and records the frames the hub delivers
-typedef struct HARNESS_PA
-{
-	char Name[64];
-	LOCK *Lock;
-	QUEUE *SendQueue;			// HARNESS_FRAME * waiting to be handed to the session
-	LIST *RecvList;				// HARNESS_FRAME * received from the hub (when Record is true)
-	EVENT *RecvEvent;			// Set after a batch of received frames
-	EVENT *SpaceEvent;			// Set when the send queue drains
-	bool Record;				// Keep received frames (false: count only)
-	bool Pending;				// Frames received since the last RecvEvent
-	volatile bool Ready;		// PA Init has been called: the session is established
-	UINT64 NumRecv;				// Received frames
-	UINT64 RecvBytes;			// Received bytes
-	SESSION *Session;			// Client session using this adapter
-} HARNESS_PA;
-
-// One harness run
-typedef struct HARNESS
-{
-	SERVER *Server;				// In-process server
-	CEDAR *ClientCedar;			// Cedar of the admin RPC and of the test sessions
-	RPC *Rpc;					// Admin RPC (same client API as vpncmd)
-	HARNESS_PA *PaA;			// Test session on HARNESS_A
-	HARNESS_PA *PaB;			// Test session on HARNESS_B
-	char *OldConfigName;		// SERVER_CONFIG_FILE_NAME before the run
-	UINT NumFail;				// Failed checks
-} HARNESS;
 
 // vpncmd command captured as a golden output
 typedef struct HARNESS_VPNCMD
@@ -162,6 +182,72 @@ typedef struct HARNESS_WATCHDOG
 	EVENT *Done;				// Set when the test completes
 	THREAD *Thread;				// Watchdog thread
 } HARNESS_WATCHDOG;
+
+// One operation of a timed bench case: false means a wrong result and stops the case
+typedef bool (HARNESS_BENCH_OP)(void *param);
+
+// State of the Pack bench cases
+typedef struct HARNESS_PACK_BENCH
+{
+	RPC_ENUM_SESSION *Struct;	// Encoded by pack_encode_enum_session
+	BUF *Buf;					// Decoded by the decode case
+	char **Names;				// HARNESS_PACK_NAMES distinct element names, not in sorted order
+} HARNESS_PACK_BENCH;
+
+// Frame of the ParsePacket bench cases
+typedef struct HARNESS_PARSE_FRAME
+{
+	char *Kind;					// Case name: parse_packet_<Kind>
+	UCHAR Data[HARNESS_PARSE_FRAME_MAX];
+	UINT Size;
+} HARNESS_PARSE_FRAME;
+
+// State of the ParsePacket bench cases
+typedef struct HARNESS_PARSE_BENCH
+{
+	HARNESS_PARSE_FRAME Frames[HARNESS_NUM_PARSE_FRAMES];
+	UINT Current;				// Frame of a single-frame case
+	UINT Next;					// Next frame of the mixed case
+	bool NoLog;					// Parse as with the hub packet log off
+} HARNESS_PARSE_BENCH;
+
+// Loopback listener of "certdl": serves the issuer certificate that the fixture server certificates name
+typedef struct CERTDL_SERVER
+{
+	SOCK *ListenSock;			// 127.0.0.1:CERTDL_PORT
+	THREAD *AcceptThread;		// Accepts connections until ListenSock is disconnected
+	LIST *ConnList;				// CERTDL_CONN *, joined when the listener stops
+	BUF *CaDer;					// Issuer certificate served (DER)
+	X *TlsCert;					// Certificate of CERTDL_MODE_TLS (not owned)
+	K *TlsKey;					// Its private key (not owned)
+	LOCK *Lock;					// Guards the fields below
+	UINT Mode;					// CERTDL_MODE_* of the current run
+	UINT NumRequests;			// Requests received in the current run
+	char RequestLine[MAX_SIZE];	// Request line of the first request of the run
+	char Host[MAX_SIZE];		// Host header of that request
+	char UserAgent[MAX_SIZE];	// User-Agent header of that request
+} CERTDL_SERVER;
+
+// One connection accepted by the certdl listener
+typedef struct CERTDL_CONN
+{
+	CERTDL_SERVER *Server;
+	SOCK *Sock;
+	THREAD *Thread;
+} CERTDL_CONN;
+
+// Outcome of one SetServerCert call
+typedef struct CERTDL_RESULT
+{
+	UINT Err;					// Error code of the admin RPC
+	UINT Flag1;					// 1: the server built the chain up to a root (0 makes vpncmd print SM_CERT_NEED_ROOT)
+	UINT64 Elapsed;				// Duration of the admin RPC (ms)
+	UINT NumRequests;			// Requests the listener received
+	char RequestLine[MAX_SIZE];	// Request line of the first request
+	char Host[MAX_SIZE];		// Host header of the first request
+	char UserAgent[MAX_SIZE];	// User-Agent header of the first request
+	bool Saved;					// The server saved the downloaded issuer under chain_certs
+} CERTDL_RESULT;
 
 // Current phase of the test, read by the watchdog thread (static strings only)
 static char *volatile harness_phase = "start";
@@ -270,15 +356,10 @@ static UCHAR harness_mac_a[6] = {0x02, 0x42, 0x55, 0x52, 0x00, 0x0A};
 static UCHAR harness_mac_b[6] = {0x02, 0x42, 0x55, 0x52, 0x00, 0x0B};
 static UCHAR harness_mac_broadcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
-static bool HarnessCheck(HARNESS *h, bool ok, char *what);
-static bool HarnessCheckErr(HARNESS *h, UINT err, char *what);
 static void HarnessStep(HARNESS *h, UINT err, char *what, bool check);
-static void HarnessSetPhase(char *phase, char *detail);
 static void HarnessWatchdogThread(THREAD *thread, void *param);
 static HARNESS_WATCHDOG *HarnessStartWatchdog(char *test_name, UINT limit);
 static void HarnessStopWatchdog(HARNESS_WATCHDOG *w);
-static char *HarnessUniToUtf8(wchar_t *s);
-static char *HarnessBufToStr(BUF *b);
 static char *HarnessSkipBom(char *s);
 static LIST *HarnessSplitLines(char *text);
 static void HarnessFreeLines(LIST *o);
@@ -311,7 +392,6 @@ static bool HarnessCreateHub(HARNESS *h, char *name);
 static bool HarnessCreateUser(HARNESS *h, char *hubname, char *username, wchar_t *realname);
 static bool HarnessCreateLink(HARNESS *h);
 static bool HarnessWaitLink(HARNESS *h, UINT timeout);
-static bool HarnessFindSession(HARNESS *h, char *hubname, char *username, bool link_mode, char *name, UINT name_size);
 static bool HarnessWaitSessionListed(HARNESS *h, char *hubname, char *username, bool link_mode, char *name, UINT name_size);
 static bool HarnessWaitSession(HARNESS *h, HARNESS_PA *p, UINT timeout);
 static bool HarnessSetup(HARNESS *h);
@@ -333,9 +413,7 @@ static bool HarnessHasRandomMac(char *s);
 static char *HarnessNormalizeCell(char *s);
 static char *HarnessNormalizeVpncmd(HARNESS_NORM *n, BUF *raw);
 static BUF *HarnessRunVpncmd(HARNESS *h, HARNESS_VPNCMD *v);
-static bool HarnessDirHasFiles(char *dir);
 static void HarnessGetDirs(char *out_dir, UINT out_size, char *golden_dir, UINT golden_size, bool *update);
-static void HarnessCompareGolden(HARNESS *h, char *out_dir, char *golden_dir, char *file_name, char *actual, bool update);
 static void HarnessCheckStaleGolden(HARNESS *h, char *golden_dir);
 static void HarnessGolden(HARNESS *h);
 static bool HarnessIsVolatileConfigName(char *name, bool is_uint64);
@@ -348,14 +426,61 @@ static void HarnessDeleteConfigFiles();
 static void HarnessTeardown(HARNESS *h, bool check);
 static HARNESS *HarnessNew();
 static void HarnessFree(HARNESS *h);
+static UINT64 HarnessNowNs();
+static void HarnessBenchValue(char *str, UINT size, UINT64 value, bool centi);
+static void HarnessBenchReport(char *name, UINT64 *runs, UINT num, char *unit, bool centi);
+static bool HarnessBenchOps(char *name, HARNESS_BENCH_OP *op, void *param, UINT span, UINT check_every);
 static void HarnessBenchFrames(HARNESS *h, UINT size);
+static void HarnessFloodIdleThread(THREAD *thread, void *param);
+static SESSION *HarnessNewFloodSession(HUB *hub, THREAD *thread, UINT index, bool sender);
+static void HarnessFreeFloodSession(SESSION *s);
+static UINT64 HarnessFloodBatch(SESSION *sender, SESSION **recv, UINT num_recv, UCHAR *frame, UINT size);
+static void HarnessBenchFloodCase(HUB *hub, UINT num_recv);
+static void HarnessBenchFlood(HARNESS *h);
+static bool HarnessOpEncodeEnumSession(void *param);
+static bool HarnessOpDecodeEnumSession(void *param);
 static void HarnessBenchPack(HARNESS *h);
+static PACK *HarnessNewNamesPack(HARNESS_PACK_BENCH *b);
+static bool HarnessOpEncodeNames(void *param);
+static bool HarnessOpDecodePack(void *param);
+static void HarnessBenchPackNames();
+static UINT HarnessBuildIpFrame(UCHAR *buf, UINT buf_size, UCHAR protocol, USHORT dst_port, UCHAR *payload, UINT payload_size);
+static UINT HarnessBuildClientHello(UCHAR *buf, UINT buf_size, char *host);
+static UINT HarnessBuildDnsQuery(UCHAR *buf, UINT buf_size, char *host);
+static PKT *HarnessParseLikeHub(HARNESS_PARSE_FRAME *f, bool no_log);
+static bool HarnessParsedAsBuilt(HARNESS_PARSE_FRAME *f, PKT *p, bool no_log);
+static bool HarnessOpParseOne(void *param);
+static bool HarnessOpParseMix(void *param);
+static void HarnessBenchParse();
+static void HarnessBenchIpTableExpire(UINT num);
+static bool HarnessStartServer(HARNESS *h);
+static void HarnessStopServer(HARNESS *h);
+static X *CertDlPemToX(char *pem);
+static K *CertDlPemToK(char *pem);
+static void CertDlSavedPath(wchar_t *path, UINT size, X *issuer);
+static UINT CertDlRecord(CERTDL_SERVER *srv, HTTP_HEADER *h);
+static void CertDlWriteStr(BUF *b, char *str);
+static void CertDlWriteOk(CERTDL_SERVER *srv, BUF *b);
+static bool CertDlRespond(CERTDL_SERVER *srv, SOCK *s, UINT mode, UINT num);
+static void CertDlConnThread(THREAD *thread, void *param);
+static void CertDlAcceptThread(THREAD *thread, void *param);
+static CERTDL_SERVER *CertDlStartServer(X *issuer, X *tls_cert, K *tls_key);
+static void CertDlStopServer(CERTDL_SERVER *srv);
+static void CertDlRun(HARNESS *h, CERTDL_SERVER *srv, char *name, UINT mode, X *cert, K *key, wchar_t *saved_file,
+	CERTDL_RESULT *r);
+static bool CertDlCheckUint(HARNESS *h, char *what, UINT actual, UINT expected);
+static bool CertDlCheckStr(HARNESS *h, char *what, char *actual, char *expected);
+static void CertDlExpect(HARNESS *h, char *name, CERTDL_RESULT *r, bool chain, bool waits);
+static bool ListenBindState(HARNESS *h, UINT port, bool *enabled, bool *error);
+static UINT ListenBindCall(HARNESS *h, bool create, UINT port, bool enable, UINT64 *elapsed);
+static bool ListenBindExpect(HARNESS *h, char *name, char *what, UINT err, UINT expected, UINT64 elapsed);
+static bool ListenBindIsListening(HARNESS *h, UINT port, char *what);
 
 ////////////////////////////
 // Reporting and text helpers
 
 // Print a check result and count the failures
-static bool HarnessCheck(HARNESS *h, bool ok, char *what)
+bool HarnessCheck(HARNESS *h, bool ok, char *what)
 {
 	Print("  [%s] %s\n", ok ? "PASS" : "FAIL", what);
 
@@ -368,7 +493,7 @@ static bool HarnessCheck(HARNESS *h, bool ok, char *what)
 }
 
 // Check the result of an admin RPC call
-static bool HarnessCheckErr(HARNESS *h, UINT err, char *what)
+bool HarnessCheckErr(HARNESS *h, UINT err, char *what)
 {
 	char tmp[MAX_SIZE];
 
@@ -399,7 +524,7 @@ static void HarnessStep(HARNESS *h, UINT err, char *what, bool check)
 // Watchdog
 
 // Record the current phase for the watchdog message (phase and detail must be static strings)
-static void HarnessSetPhase(char *phase, char *detail)
+void HarnessSetPhase(char *phase, char *detail)
 {
 	harness_phase_detail = (detail != NULL ? detail : "");
 	harness_phase = phase;
@@ -466,7 +591,7 @@ static void HarnessStopWatchdog(HARNESS_WATCHDOG *w)
 }
 
 // Convert a Unicode string into a newly allocated UTF-8 string
-static char *HarnessUniToUtf8(wchar_t *s)
+char *HarnessUniToUtf8(wchar_t *s)
 {
 	UINT size;
 	char *ret;
@@ -484,7 +609,7 @@ static char *HarnessUniToUtf8(wchar_t *s)
 }
 
 // Copy a buffer into a newly allocated NUL-terminated string
-static char *HarnessBufToStr(BUF *b)
+char *HarnessBufToStr(BUF *b)
 {
 	char *ret;
 
@@ -1432,7 +1557,7 @@ static bool HarnessWaitLink(HARNESS *h, UINT timeout)
 }
 
 // Find a session through EnumSession: by user name, or the local cascade session (link_mode)
-static bool HarnessFindSession(HARNESS *h, char *hubname, char *username, bool link_mode, char *name, UINT name_size)
+bool HarnessFindSession(HARNESS *h, char *hubname, char *username, bool link_mode, char *name, UINT name_size)
 {
 	RPC_ENUM_SESSION t;
 	UINT i;
@@ -1522,15 +1647,14 @@ static bool HarnessWaitSession(HARNESS *h, HARNESS_PA *p, UINT timeout)
 	return HarnessCheck(h, false, tmp);
 }
 
-// Start the server, the test listener, the admin RPC, the hubs, the users, the cascade and the test sessions
-static bool HarnessSetup(HARNESS *h)
+// Start the server from a fresh configuration, add the test listener, connect the admin RPC and delete
+// every other listener
+static bool HarnessStartServer(HARNESS *h)
 {
 	UINT err = ERR_NO_ERROR;
 	bool ok;
 	char tmp[MAX_SIZE];
-	char name[MAX_SESSION_NAME_LEN + 1];
 
-	Print("[setup]\n");
 	HarnessSetPhase("setup", "server start");
 
 	// Isolated configuration file: always start from the default configuration
@@ -1569,7 +1693,18 @@ static bool HarnessSetup(HARNESS *h)
 		return false;
 	}
 
-	if (HarnessUseOnlyTestListener(h) == false)
+	return HarnessUseOnlyTestListener(h);
+}
+
+// Start the server, the test listener, the admin RPC, the hubs, the users, the cascade and the test sessions
+static bool HarnessSetup(HARNESS *h)
+{
+	bool ok;
+	char name[MAX_SESSION_NAME_LEN + 1];
+
+	Print("[setup]\n");
+
+	if (HarnessStartServer(h) == false)
 	{
 		return false;
 	}
@@ -2321,7 +2456,7 @@ static BUF *HarnessRunVpncmd(HARNESS *h, HARNESS_VPNCMD *v)
 }
 
 // Whether a directory contains at least one file
-static bool HarnessDirHasFiles(char *dir)
+bool HarnessDirHasFiles(char *dir)
 {
 	DIRLIST *d = EnumDir(dir);
 	UINT i;
@@ -2388,8 +2523,53 @@ static void HarnessGetDirs(char *out_dir, UINT out_size, char *golden_dir, UINT 
 	}
 }
 
+// Output and golden directories of another golden family (for example "pack") and its update mode: the output
+// directory is <harness output directory>/<family>, the golden directory is the sibling <family> of the harness
+// golden directory (tests/golden/<family>). Update mode when that directory has no file or RANZ_UPDATE_GOLDEN=1.
+void HarnessGetFamilyDirs(char *family, char *out_dir, UINT out_size, char *golden_dir, UINT golden_size, bool *update)
+{
+	char exe_dir[MAX_SIZE];
+	char tmp[MAX_SIZE];
+	char path[MAX_SIZE];
+
+	GetExeDir(exe_dir, sizeof(exe_dir));
+
+	// RANZ_HARNESS_OUT overrides <exe dir>/harness-out, as for the harness family
+	if (GetEnv("RANZ_HARNESS_OUT", tmp, sizeof(tmp)) && IsEmptyStr(tmp) == false)
+	{
+		Format(out_dir, out_size, "%s/%s", tmp, family);
+	}
+	else
+	{
+		Format(out_dir, out_size, "%s/harness-out/%s", exe_dir, family);
+	}
+
+	// RANZ_GOLDEN_DIR names the harness family directory: the family directory is its sibling
+	if (GetEnv("RANZ_GOLDEN_DIR", tmp, sizeof(tmp)) && IsEmptyStr(tmp) == false)
+	{
+		Format(path, sizeof(path), "%s/../%s", tmp, family);
+	}
+	else
+	{
+		Format(path, sizeof(path), "%s/../tests/golden/%s", exe_dir, family);
+	}
+	NormalizePath(golden_dir, golden_size, path);
+
+	*update = false;
+
+	if (GetEnv("RANZ_UPDATE_GOLDEN", tmp, sizeof(tmp)) && StrCmp(tmp, "1") == 0)
+	{
+		*update = true;
+	}
+
+	if (HarnessDirHasFiles(golden_dir) == false)
+	{
+		*update = true;
+	}
+}
+
 // Write the actual output, then compare it with the golden file (or print it in update mode)
-static void HarnessCompareGolden(HARNESS *h, char *out_dir, char *golden_dir, char *file_name, char *actual, bool update)
+void HarnessCompareGolden(HARNESS *h, char *out_dir, char *golden_dir, char *file_name, char *actual, bool update)
 {
 	char path[MAX_SIZE];
 	char tmp[MAX_SIZE];
@@ -2684,12 +2864,40 @@ static void HarnessConfigApiRoundTrip(HARNESS *h)
 	FreeRpcConfig(&c);
 }
 
+// The machine identity of the server and the MAC address and address of hub HARNESS_HUB_A (FIX-5, #101)
+static bool HarnessGetMachineId(HARNESS *h, UCHAR *id, UCHAR *hub_mac, IP *hub_ip)
+{
+	HUB *hub;
+
+	GenerateMachineUniqueHash(h->Server->Cedar, id);
+
+	hub = GetHub(h->Server->Cedar, HARNESS_HUB_A);
+	if (hub == NULL)
+	{
+		return false;
+	}
+
+	Copy(hub_mac, hub->HubMacAddr, sizeof(hub->HubMacAddr));
+	Copy(hub_ip, &hub->HubIp, sizeof(IP));
+
+	ReleaseHub(hub);
+
+	return true;
+}
+
 // Save the configuration, restart the server from the saved file and compare the reloaded configuration
 static void HarnessReload(HARNESS *h)
 {
 	RPC_CONFIG c;
 	char *text1;
 	UINT err = ERR_NO_ERROR;
+	UCHAR id1[SHA1_SIZE];
+	UCHAR id2[SHA1_SIZE];
+	UCHAR mac1[6];
+	UCHAR mac2[6];
+	IP ip1;
+	IP ip2;
+	bool have_id1;
 
 	Print("[config: reload into a fresh server instance]\n");
 
@@ -2702,6 +2910,8 @@ static void HarnessReload(HARNESS *h)
 	text1 = CopyStr(c.FileData);
 	FreeRpcConfig(&c);
 
+	have_id1 = HarnessCheck(h, HarnessGetMachineId(h, id1, mac1, &ip1), "GetHub " HARNESS_HUB_A " before the restart");
+
 	// SiReleaseServer writes the configuration file, SiNewServer loads it again
 	AdminDisconnect(h->Rpc);
 	h->Rpc = NULL;
@@ -2712,6 +2922,15 @@ static void HarnessReload(HARNESS *h)
 	if (HarnessCheck(h, h->Server != NULL, "server restarted from the saved " HARNESS_CONFIG_FILE) &&
 		HarnessWaitListener(h, HARNESS_LISTEN_TIMEOUT))
 	{
+		// FIX-5: the salt in the configuration keeps the machine identity, and with it the hub MAC address
+		// and address, across the restart
+		if (have_id1 && HarnessCheck(h, HarnessGetMachineId(h, id2, mac2, &ip2), "GetHub " HARNESS_HUB_A " after the restart"))
+		{
+			HarnessCheck(h, Cmp(id1, id2, SHA1_SIZE) == 0, "machine identity kept by the restart (MachineIdSalt in the configuration)");
+			HarnessCheck(h, Cmp(mac1, mac2, sizeof(mac1)) == 0 && CmpIpAddr(&ip1, &ip2) == 0,
+				"hub MAC address and address kept by the restart");
+		}
+
 		h->Rpc = HarnessAdminConnect(h->ClientCedar, HARNESS_START_TIMEOUT, &err);
 		if (HarnessCheckErr(h, (h->Rpc != NULL ? ERR_NO_ERROR : err), "admin RPC reconnected after the restart"))
 		{
@@ -2837,7 +3056,16 @@ static void HarnessTeardown(HARNESS *h, bool check)
 	if (h->Rpc != NULL)
 	{
 		HarnessDeleteObjects(h, check);
+	}
 
+	HarnessStopServer(h);
+}
+
+// Disconnect the admin RPC, stop the server and delete its configuration files
+static void HarnessStopServer(HARNESS *h)
+{
+	if (h->Rpc != NULL)
+	{
 		AdminDisconnect(h->Rpc);
 		h->Rpc = NULL;
 	}
@@ -2885,14 +3113,123 @@ static void HarnessFree(HARNESS *h)
 ////////////////////////////
 // Benchmark
 
-// Frames per second from session A to session B through the cascade for one frame size
+// Monotonic time in nanoseconds from the high-resolution counter (Tick64 steps in whole milliseconds)
+static UINT64 HarnessNowNs()
+{
+	return TickHighresNano64(false);
+}
+
+// One bench value as text; centi: the value is in hundredths and gets two decimals
+static void HarnessBenchValue(char *str, UINT size, UINT64 value, bool centi)
+{
+	if (centi)
+	{
+		Format(str, size, "%I64u.%02u", value / 100, (UINT)(value % 100));
+	}
+	else
+	{
+		Format(str, size, "%I64u", value);
+	}
+}
+
+// Print one case: "BENCH <name> <median> <unit>", then "BENCH <name>_runs <run 1>,...,<run n> <unit>" in run order
+static void HarnessBenchReport(char *name, UINT64 *runs, UINT num, char *unit, bool centi)
+{
+	UINT64 sorted[HARNESS_BENCH_RUNS];
+	char list[MAX_SIZE];
+	char value[64];
+	UINT i, j;
+
+	if (num == 0 || num > HARNESS_BENCH_RUNS)
+	{
+		return;
+	}
+
+	Copy(sorted, runs, sizeof(UINT64) * num);
+	for (i = 1;i < num;i++)
+	{
+		UINT64 v = sorted[i];
+
+		for (j = i;j > 0 && sorted[j - 1] > v;j--)
+		{
+			sorted[j] = sorted[j - 1];
+		}
+		sorted[j] = v;
+	}
+
+	list[0] = 0;
+	for (i = 0;i < num;i++)
+	{
+		HarnessBenchValue(value, sizeof(value), runs[i], centi);
+		if (i != 0)
+		{
+			StrCat(list, sizeof(list), ",");
+		}
+		StrCat(list, sizeof(list), value);
+	}
+
+	// HARNESS_BENCH_RUNS is odd: the median is the middle run
+	HarnessBenchValue(value, sizeof(value), sorted[num / 2], centi);
+	Print("BENCH %s %s %s\n", name, value, unit);
+	Print("BENCH %s_runs %s %s\n", name, list, unit);
+}
+
+// Run one case HARNESS_BENCH_RUNS times for span milliseconds each and report the operations per second.
+// The clock is read every check_every operations (1 for slow operations, more when the clock would cost too much)
+static bool HarnessBenchOps(char *name, HARNESS_BENCH_OP *op, void *param, UINT span, UINT check_every)
+{
+	UINT64 runs[HARNESS_BENCH_RUNS];
+	UINT64 span_ns = (UINT64)span * HARNESS_NS_PER_MS;
+	UINT r;
+
+	for (r = 0;r < HARNESS_BENCH_RUNS;r++)
+	{
+		UINT64 start = HarnessNowNs();
+		UINT64 now = start;
+		UINT64 ops = 0;
+
+		while (true)
+		{
+			if (op(param) == false)
+			{
+				Print("BENCH WARNING %s: wrong result, case skipped\n", name);
+				return false;
+			}
+
+			ops++;
+			if ((ops % check_every) == 0)
+			{
+				now = HarnessNowNs();
+				if ((now - start) >= span_ns)
+				{
+					break;
+				}
+			}
+		}
+
+		runs[r] = ops * HARNESS_NS_PER_S / (now - start);
+	}
+
+	HarnessBenchReport(name, runs, HARNESS_BENCH_RUNS, "ops/s", false);
+
+	return true;
+}
+
+// Frames per second from session A to session B through the cascade for one frame size: a warm-up,
+// then HARNESS_BENCH_RUNS back-to-back windows of one continuous stream
 static void HarnessBenchFrames(HARNESS *h, UINT size)
 {
 	UCHAR *frame = Malloc(size);
 	HARNESS_FRAME *batch[HARNESS_QUEUE_HIGH];
-	UINT64 end_warmup, end, now;
-	UINT64 t0 = 0, t1, c0 = 0, c1, elapsed, fps, centi_mbps;
+	UINT64 mark_ns[HARNESS_BENCH_RUNS + 1];		// Run boundaries: end of the warm-up, then end of each run
+	UINT64 mark_recv[HARNESS_BENCH_RUNS + 1];	// Frames received by session B at each boundary
+	UINT64 fps[HARNESS_BENCH_RUNS];
+	UINT64 centi_mbps[HARNESS_BENCH_RUNS];
+	UINT64 next_mark;
+	UINT num_marks = 0;
 	UINT num_unsent;
+	UINT i;
+	char name[MAX_SIZE];
 	char tmp[MAX_SIZE];
 
 	HarnessBuildFrame(frame, size, harness_mac_b, harness_mac_a, 0x10000 + size);
@@ -2904,29 +3241,30 @@ static void HarnessBenchFrames(HARNESS *h, UINT size)
 	}
 	Unlock(h->PaB->Lock);
 
-	end_warmup = Tick64() + (UINT64)HARNESS_BENCH_WARMUP;
-	end = end_warmup + (UINT64)HARNESS_BENCH_SPAN;
+	next_mark = HarnessNowNs() + (UINT64)HARNESS_BENCH_WARMUP * HARNESS_NS_PER_MS;
 
 	while (true)
 	{
 		UINT queued;
+		UINT64 now = HarnessNowNs();
 
-		now = Tick64();
-		if (t0 == 0 && now >= end_warmup)
+		if (now >= next_mark)
 		{
-			t0 = now;
-			c0 = HarnessPaGetNumRecv(h->PaB);
-		}
+			mark_ns[num_marks] = now;
+			mark_recv[num_marks] = HarnessPaGetNumRecv(h->PaB);
+			num_marks++;
 
-		if (now >= end)
-		{
-			break;
+			if (num_marks > HARNESS_BENCH_RUNS)
+			{
+				break;
+			}
+
+			next_mark = now + (UINT64)HARNESS_BENCH_SPAN * HARNESS_NS_PER_MS;
 		}
 
 		queued = HarnessPaQueued(h->PaA);
 		if (queued < HARNESS_QUEUE_HIGH)
 		{
-			UINT i;
 			UINT num = HARNESS_QUEUE_HIGH - queued;
 
 			for (i = 0;i < num;i++)
@@ -2954,40 +3292,262 @@ static void HarnessBenchFrames(HARNESS *h, UINT size)
 		}
 	}
 
-	t1 = Tick64();
-	c1 = HarnessPaGetNumRecv(h->PaB);
-
 	HarnessPaDrain(h->PaA, HARNESS_BENCH_DRAIN);
 
 	// Frames still queued after the drain would be counted in the next frame size: discard them
 	num_unsent = HarnessPaPurge(h->PaA);
 
-	elapsed = (t1 > t0) ? (t1 - t0) : 1;
-	fps = (c1 - c0) * 1000 / elapsed;
-	centi_mbps = ((c1 - c0) * (UINT64)size * 8) / (elapsed * 10);
+	for (i = 0;i < HARNESS_BENCH_RUNS;i++)
+	{
+		UINT64 elapsed = mark_ns[i + 1] - mark_ns[i];
+		UINT64 delivered = mark_recv[i + 1] - mark_recv[i];
+
+		if (elapsed == 0)
+		{
+			elapsed = 1;
+		}
+
+		fps[i] = delivered * HARNESS_NS_PER_S / elapsed;
+		// Hundredths of Mbit/s: bits / (elapsed_ns / 10^9) / 10^6 * 100
+		centi_mbps[i] = delivered * (UINT64)size * 8ULL * 100000ULL / elapsed;
+	}
 
 	// "cascade_path": test session A, the cascade and test session B (3 TLS connections)
-	Print("BENCH cascade_path_fps_%u %I64u frames/s\n", size, fps);
-	Print("BENCH cascade_path_mbps_%u %I64u.%02u Mbit/s\n", size, centi_mbps / 100, (UINT)(centi_mbps % 100));
+	Format(name, sizeof(name), "cascade_path_fps_%u", size);
+	HarnessBenchReport(name, fps, HARNESS_BENCH_RUNS, "frames/s", false);
+	Format(name, sizeof(name), "cascade_path_mbps_%u", size);
+	HarnessBenchReport(name, centi_mbps, HARNESS_BENCH_RUNS, "Mbit/s", true);
 	Print("BENCH cascade_path_unsent_%u %u frames\n", size, num_unsent);
 
 	// The numbers are informational, a dead data path is an error
-	Format(tmp, sizeof(tmp), "bench %u: frames delivered during the measured window", size);
-	HarnessCheck(h, c1 > c0, tmp);
+	Format(tmp, sizeof(tmp), "bench %u: frames delivered during the measured windows", size);
+	HarnessCheck(h, mark_recv[HARNESS_BENCH_RUNS] > mark_recv[0], tmp);
 
 	Free(frame);
+}
+
+////////////////////////////
+// Flood benchmark: in-process sessions on hub HARNESS_FLOOD, no transport and no TLS
+
+// Owner of the flood session connections (a server CONNECTION holds a THREAD); it has nothing to run
+static void HarnessFloodIdleThread(THREAD *thread, void *param)
+{
+}
+
+// In-process server session on the flood hub, made like the server side of a cascade (Link.c): a CONNECTION
+// without sockets and the hub packet adapter, but no SessionMain thread. The bench thread calls the packet
+// adapter itself, so a frame goes through HubPaPutPacket, StorePacket and HubPaGetNextPacket only
+static SESSION *HarnessNewFloodSession(HUB *hub, THREAD *thread, UINT index, bool sender)
+{
+	CONNECTION *c;
+	SESSION *s;
+	POLICY *policy = ClonePolicy(GetDefaultPolicy());
+	char username[MAX_USERNAME_LEN + 1];
+
+	Format(username, sizeof(username), "bench-flood-%u", index);
+
+	if (sender)
+	{
+		// The single sender floods at full rate: the broadcast storm guard would drop most of its frames
+		policy->NoBroadcastLimiter = true;
+	}
+
+	c = NewServerConnection(hub->Cedar, NULL, thread);
+	s = NewServerSession(hub->Cedar, c, hub, username, policy);
+	c->Session = s;
+	ReleaseConnection(c);
+
+	s->Username = CopyStr(username);
+
+	// Joined the hub in NewServerSession; floods reach it from here on (HubPaInit always succeeds)
+	s->PacketAdapter->Init(s);
+
+	return s;
+}
+
+// Release a flood session in the order of the end of SessionMain: leave the hub, free the packet adapter, release
+static void HarnessFreeFloodSession(SESSION *s)
+{
+	DelSession(s->Hub, s);
+	s->PacketAdapter->Free(s);
+	ReleaseSession(s);
+}
+
+// One receive loop of the sender: HARNESS_FLOOD_BATCH broadcast frames into the hub, the end-of-loop call that
+// wakes the receivers (cancel list), then every receiver takes its queued frames as its SessionMain would.
+// Returns the frames the receivers got
+static UINT64 HarnessFloodBatch(SESSION *sender, SESSION **recv, UINT num_recv, UCHAR *frame, UINT size)
+{
+	PACKET_ADAPTER *pa = sender->PacketAdapter;
+	UINT64 delivered = 0;
+	UINT i;
+
+	for (i = 0;i < HARNESS_FLOOD_BATCH;i++)
+	{
+		void *data = Malloc(size);
+
+		Copy(data, frame, size);
+		pa->PutPacket(sender, data, size);
+	}
+
+	pa->PutPacket(sender, NULL, 0);
+
+	for (i = 0;i < num_recv;i++)
+	{
+		SESSION *s = recv[i];
+		void *data;
+
+		while (s->PacketAdapter->GetNextPacket(s, &data) != 0)
+		{
+			Free(data);
+			delivered++;
+		}
+	}
+
+	return delivered;
+}
+
+// flood_fps_<n>: broadcast frames per second that one session floods to n receiving sessions of the hub
+static void HarnessBenchFloodCase(HUB *hub, UINT num_recv)
+{
+	UCHAR frame[HARNESS_FRAME_SIZE];
+	UCHAR mac_sender[6] = {0x02, 0x42, 0x55, 0x52, 0x00, 0xF0};
+	UINT64 runs[HARNESS_BENCH_RUNS];
+	UINT64 span_ns = (UINT64)HARNESS_BENCH_FLOOD_SPAN * HARNESS_NS_PER_MS;
+	UINT64 sent = 0;
+	UINT64 delivered = 0;
+	THREAD *thread;
+	SESSION *sender;
+	SESSION **recv;
+	UINT i, r;
+	char name[MAX_SIZE];
+
+	Format(name, sizeof(name), "flood_fps_%u", num_recv);
+
+	thread = NewThread(HarnessFloodIdleThread, NULL);
+	sender = HarnessNewFloodSession(hub, thread, 0, true);
+	recv = ZeroMalloc(sizeof(SESSION *) * num_recv);
+	for (i = 0;i < num_recv;i++)
+	{
+		recv[i] = HarnessNewFloodSession(hub, thread, i + 1, false);
+	}
+
+	HarnessBuildFrame(frame, sizeof(frame), harness_mac_broadcast, mac_sender, 0x20000 + num_recv);
+
+	// Warm-up: the hub learns the sender MAC address
+	HarnessFloodBatch(sender, recv, num_recv, frame, sizeof(frame));
+
+	for (r = 0;r < HARNESS_BENCH_RUNS;r++)
+	{
+		UINT64 start = HarnessNowNs();
+		UINT64 now;
+		UINT64 frames = 0;
+
+		do
+		{
+			delivered += HarnessFloodBatch(sender, recv, num_recv, frame, sizeof(frame));
+			frames += HARNESS_FLOOD_BATCH;
+			now = HarnessNowNs();
+		}
+		while ((now - start) < span_ns);
+
+		sent += frames;
+		runs[r] = frames * HARNESS_NS_PER_S / (now - start);
+	}
+
+	HarnessBenchReport(name, runs, HARNESS_BENCH_RUNS, "frames/s", false);
+
+	// Every frame reaches every receiver: fewer copies means the hub dropped frames and the number is no flood rate
+	if (delivered < sent * (UINT64)num_recv)
+	{
+		Print("BENCH WARNING %s: %I64u of %I64u copies delivered\n", name, delivered, sent * (UINT64)num_recv);
+	}
+
+	for (i = 0;i < num_recv;i++)
+	{
+		HarnessFreeFloodSession(recv[i]);
+	}
+	Free(recv);
+	HarnessFreeFloodSession(sender);
+
+	ReleaseThread(thread);
+}
+
+// Flood cases on a hub of their own: the flood loop of StorePacket sends to every session of the hub
+static void HarnessBenchFlood(HARNESS *h)
+{
+	RPC_DELETE_HUB d;
+	HUB *hub;
+
+	if (HarnessCreateHub(h, HARNESS_HUB_FLOOD) == false)
+	{
+		return;
+	}
+
+	hub = GetHub(h->Server->Cedar, HARNESS_HUB_FLOOD);
+	if (HarnessCheck(h, hub != NULL, "GetHub " HARNESS_HUB_FLOOD))
+	{
+		HarnessSetPhase("bench_flood_8", NULL);
+		HarnessBenchFloodCase(hub, 8);
+		HarnessSetPhase("bench_flood_64", NULL);
+		HarnessBenchFloodCase(hub, 64);
+
+		ReleaseHub(hub);
+	}
+
+	Zero(&d, sizeof(d));
+	StrCpy(d.HubName, sizeof(d.HubName), HARNESS_HUB_FLOOD);
+	HarnessCheckErr(h, ScDeleteHub(h->Rpc, &d), "DeleteHub " HARNESS_HUB_FLOOD);
+}
+
+////////////////////////////
+// Pack benchmark
+
+// Encode RPC_ENUM_SESSION: struct -> PACK -> BUF
+static bool HarnessOpEncodeEnumSession(void *param)
+{
+	HARNESS_PACK_BENCH *b = (HARNESS_PACK_BENCH *)param;
+	PACK *p = NewPack();
+	BUF *buf;
+
+	OutRpcEnumSession(p, b->Struct);
+	buf = PackToBuf(p);
+	FreePack(p);
+	FreeBuf(buf);
+
+	return true;
+}
+
+// Decode RPC_ENUM_SESSION: BUF -> PACK -> struct
+static bool HarnessOpDecodeEnumSession(void *param)
+{
+	HARNESS_PACK_BENCH *b = (HARNESS_PACK_BENCH *)param;
+	RPC_ENUM_SESSION t;
+	PACK *p;
+
+	SeekBufToBegin(b->Buf);
+	p = BufToPack(b->Buf);
+	if (p == NULL)
+	{
+		return false;
+	}
+
+	InRpcEnumSession(&t, p);
+	FreeRpcEnumSession(&t);
+	FreePack(p);
+
+	return true;
 }
 
 // Pack encode and decode operations per second for an admin RPC struct (RPC_ENUM_SESSION)
 static void HarnessBenchPack(HARNESS *h)
 {
+	HARNESS_PACK_BENCH b;
 	RPC_ENUM_SESSION t;
 	RPC_ENUM_SESSION t2;
 	PACK *p;
-	BUF *b;
 	UINT i;
-	UINT64 start, now = 0, ops, elapsed;
-	bool ok = true;
+	bool ok = false;
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
@@ -3012,82 +3572,1177 @@ static void HarnessBenchPack(HARNESS *h)
 		e->LastCommTime = 1700000001000ULL + (UINT64)i;
 	}
 
+	Zero(&b, sizeof(b));
+	b.Struct = &t;
+
 	p = NewPack();
 	OutRpcEnumSession(p, &t);
-	b = PackToBuf(p);
+	b.Buf = PackToBuf(p);
 	FreePack(p);
 
-	Print("BENCH pack_enum_session_bytes %u bytes\n", b->Size);
+	Print("BENCH pack_enum_session_bytes %u bytes\n", b.Buf->Size);
 
-	// Encode: struct -> PACK -> BUF
-	ops = 0;
-	start = Tick64();
-	while (true)
+	// The decoded struct is checked once, outside the measured runs
+	SeekBufToBegin(b.Buf);
+	p = BufToPack(b.Buf);
+	if (p != NULL)
 	{
-		PACK *p2 = NewPack();
-		BUF *b2;
-
-		OutRpcEnumSession(p2, &t);
-		b2 = PackToBuf(p2);
-		FreePack(p2);
-		FreeBuf(b2);
-
-		ops++;
-		if ((ops % 16) == 0)
-		{
-			now = Tick64();
-			if ((now - start) >= HARNESS_BENCH_PACK_SPAN)
-			{
-				break;
-			}
-		}
-	}
-	elapsed = (now > start) ? (now - start) : 1;
-	Print("BENCH pack_encode_enum_session %I64u ops/s\n", ops * 1000 / elapsed);
-
-	// Decode: BUF -> PACK -> struct
-	ops = 0;
-	start = Tick64();
-	while (true)
-	{
-		PACK *p2;
-
-		SeekBufToBegin(b);
-		p2 = BufToPack(b);
-		if (p2 == NULL)
-		{
-			ok = false;
-			break;
-		}
-
-		InRpcEnumSession(&t2, p2);
-		if (ops == 0)
-		{
-			ok = (t2.NumSession == HARNESS_PACK_ITEMS && StrCmp(t2.Sessions[5].Name, t.Sessions[5].Name) == 0 &&
-				t2.Sessions[5].PacketSize == t.Sessions[5].PacketSize);
-		}
+		InRpcEnumSession(&t2, p);
+		ok = (t2.NumSession == HARNESS_PACK_ITEMS && StrCmp(t2.Sessions[5].Name, t.Sessions[5].Name) == 0 &&
+			t2.Sessions[5].PacketSize == t.Sessions[5].PacketSize);
 		FreeRpcEnumSession(&t2);
-		FreePack(p2);
-
-		ops++;
-		if ((ops % 16) == 0)
-		{
-			now = Tick64();
-			if ((now - start) >= HARNESS_BENCH_PACK_SPAN)
-			{
-				break;
-			}
-		}
+		FreePack(p);
 	}
-	elapsed = (now > start) ? (now - start) : 1;
+
+	HarnessBenchOps("pack_encode_enum_session", HarnessOpEncodeEnumSession, &b, HARNESS_BENCH_PACK_SPAN, 16);
 	if (ok)
 	{
-		Print("BENCH pack_decode_enum_session %I64u ops/s\n", ops * 1000 / elapsed);
+		HarnessBenchOps("pack_decode_enum_session", HarnessOpDecodeEnumSession, &b, HARNESS_BENCH_PACK_SPAN, 16);
 	}
 	HarnessCheck(h, ok, "Pack decode returns the encoded RPC_ENUM_SESSION");
 
-	FreeBuf(b);
+	FreeBuf(b.Buf);
 	FreeRpcEnumSession(&t);
+}
+
+// Pack with HARNESS_PACK_NAMES distinct element names (integers and strings), added in a non-sorted order
+static PACK *HarnessNewNamesPack(HARNESS_PACK_BENCH *b)
+{
+	PACK *p = NewPack();
+	UINT i;
+
+	for (i = 0;i < HARNESS_PACK_NAMES;i++)
+	{
+		if ((i % 2) == 0)
+		{
+			PackAddInt(p, b->Names[i], i);
+		}
+		else
+		{
+			PackAddStr(p, b->Names[i], b->Names[i]);
+		}
+	}
+
+	return p;
+}
+
+// Encode the many-names Pack: element adds -> BUF
+static bool HarnessOpEncodeNames(void *param)
+{
+	HARNESS_PACK_BENCH *b = (HARNESS_PACK_BENCH *)param;
+	PACK *p = HarnessNewNamesPack(b);
+	BUF *buf = PackToBuf(p);
+
+	FreePack(p);
+	FreeBuf(buf);
+
+	return true;
+}
+
+// Decode a Pack: BUF -> PACK
+static bool HarnessOpDecodePack(void *param)
+{
+	HARNESS_PACK_BENCH *b = (HARNESS_PACK_BENCH *)param;
+	PACK *p;
+
+	SeekBufToBegin(b->Buf);
+	p = BufToPack(b->Buf);
+	if (p == NULL)
+	{
+		return false;
+	}
+
+	FreePack(p);
+
+	return true;
+}
+
+// pack_<encode|decode>_names_<n>: a Pack with many distinct element names (every new name is looked up first)
+static void HarnessBenchPackNames()
+{
+	HARNESS_PACK_BENCH b;
+	PACK *p;
+	UINT i;
+	bool ok = false;
+	char name[MAX_SIZE];
+
+	Zero(&b, sizeof(b));
+	b.Names = ZeroMalloc(sizeof(char *) * HARNESS_PACK_NAMES);
+	for (i = 0;i < HARNESS_PACK_NAMES;i++)
+	{
+		char tmp[MAX_ELEMENT_NAME_LEN + 1];
+
+		// 7919 is a prime: (i * 7919) % n takes every value below n once, in a non-sorted order
+		Format(tmp, sizeof(tmp), "bench_item_%03u", (i * 7919) % HARNESS_PACK_NAMES);
+		b.Names[i] = CopyStr(tmp);
+	}
+
+	p = HarnessNewNamesPack(&b);
+	b.Buf = PackToBuf(p);
+	FreePack(p);
+
+	Print("BENCH pack_names_%u_bytes %u bytes\n", HARNESS_PACK_NAMES, b.Buf->Size);
+
+	SeekBufToBegin(b.Buf);
+	p = BufToPack(b.Buf);
+	if (p != NULL)
+	{
+		ok = (LIST_NUM(p->elements) == HARNESS_PACK_NAMES && PackGetInt(p, b.Names[2]) == 2);
+		FreePack(p);
+	}
+
+	Format(name, sizeof(name), "pack_encode_names_%u", HARNESS_PACK_NAMES);
+	HarnessBenchOps(name, HarnessOpEncodeNames, &b, HARNESS_BENCH_PACK_SPAN, 1);
+
+	Format(name, sizeof(name), "pack_decode_names_%u", HARNESS_PACK_NAMES);
+	if (ok)
+	{
+		HarnessBenchOps(name, HarnessOpDecodePack, &b, HARNESS_BENCH_PACK_SPAN, 1);
+	}
+	else
+	{
+		Print("BENCH WARNING %s: the decoded Pack does not hold the encoded names, case skipped\n", name);
+	}
+
+	FreeBuf(b.Buf);
+	for (i = 0;i < HARNESS_PACK_NAMES;i++)
+	{
+		Free(b.Names[i]);
+	}
+	Free(b.Names);
+}
+
+////////////////////////////
+// ParsePacket and IP table benchmarks
+
+// IPv4 frame from 10.0.0.1 (harness_mac_a) to 10.0.0.2 (harness_mac_b): a TCP header (PSH+ACK) or a UDP header
+// from port 49152, then the payload, with valid IPv4, TCP and UDP checksums. Returns the size, 0 if it does not fit
+static UINT HarnessBuildIpFrame(UCHAR *buf, UINT buf_size, UCHAR protocol, USHORT dst_port, UCHAR *payload, UINT payload_size)
+{
+	UINT l4_header = (protocol == IP_PROTO_TCP ? 20 : 8);
+	UINT l4_size = l4_header + payload_size;
+	UINT ip_size = 20 + l4_size;
+	UINT size = 14 + ip_size;
+	UCHAR *ip = buf + 14;
+	UCHAR *l4 = ip + 20;
+	UINT src_ip, dst_ip;
+	USHORT sum;
+
+	if (size > buf_size)
+	{
+		return 0;
+	}
+
+	Zero(buf, size);
+
+	Copy(buf, harness_mac_b, 6);
+	Copy(buf + 6, harness_mac_a, 6);
+	buf[12] = 0x08;								// IPv4
+	buf[13] = 0x00;
+
+	ip[0] = 0x45;								// Version 4, 20-byte header
+	ip[2] = (UCHAR)(ip_size >> 8);
+	ip[3] = (UCHAR)(ip_size & 0xFF);
+	ip[4] = 0x12;								// Identification
+	ip[5] = 0x34;
+	ip[6] = 0x40;								// Don't fragment
+	ip[8] = 64;									// TTL
+	ip[9] = protocol;
+	ip[12] = 10;
+	ip[15] = 1;
+	ip[16] = 10;
+	ip[19] = 2;
+	sum = IpChecksum(ip, 20);
+	Copy(ip + 10, &sum, sizeof(USHORT));
+
+	l4[0] = 0xC0;								// Source port 49152
+	l4[2] = (UCHAR)(dst_port >> 8);
+	l4[3] = (UCHAR)(dst_port & 0xFF);
+
+	if (protocol == IP_PROTO_TCP)
+	{
+		l4[5] = 0x01;							// Sequence number
+		l4[9] = 0x02;							// Acknowledgment number
+		l4[12] = 0x50;							// 20-byte header
+		l4[13] = TCP_PSH | TCP_ACK;
+		l4[14] = 0xFA;							// Window 64240
+		l4[15] = 0xF0;
+	}
+	else
+	{
+		l4[4] = (UCHAR)(l4_size >> 8);
+		l4[5] = (UCHAR)(l4_size & 0xFF);
+	}
+
+	Copy(l4 + l4_header, payload, payload_size);
+
+	Copy(&src_ip, ip + 12, sizeof(UINT));
+	Copy(&dst_ip, ip + 16, sizeof(UINT));
+	sum = CalcChecksumForIPv4(src_ip, dst_ip, protocol, l4, l4_size, 0);
+	Copy(l4 + (protocol == IP_PROTO_TCP ? 16 : 6), &sum, sizeof(USHORT));
+
+	return size;
+}
+
+// TLS ClientHello with one cipher suite and only the server_name extension (the part GetSniNameFromSslPacket reads).
+// Returns the size, 0 if it does not fit
+static UINT HarnessBuildClientHello(UCHAR *buf, UINT buf_size, char *host)
+{
+	UINT name_len = StrLen(host);
+	UINT ext_data = 2 + 1 + 2 + name_len;		// server_name_list length, name type, name length, name
+	UINT ext_len = 4 + ext_data;				// Extension type and length, then its data
+	UINT body = 43 + ext_len;					// Version 2, random 32, session id 1, ciphers 4, compression 2, extensions length 2
+	UINT size = 5 + 4 + body;					// Record header, handshake header, ClientHello body
+	UCHAR *p = buf;
+	UINT i;
+
+	if (size > buf_size)
+	{
+		return 0;
+	}
+
+	*p++ = 0x16;								// Handshake record, record version TLS 1.0
+	*p++ = 0x03;
+	*p++ = 0x01;
+	*p++ = (UCHAR)((4 + body) >> 8);
+	*p++ = (UCHAR)((4 + body) & 0xFF);
+	*p++ = 0x01;								// ClientHello, 24-bit length
+	*p++ = 0x00;
+	*p++ = (UCHAR)(body >> 8);
+	*p++ = (UCHAR)(body & 0xFF);
+	*p++ = 0x03;								// Client version TLS 1.2
+	*p++ = 0x03;
+	for (i = 0;i < 32;i++)
+	{
+		*p++ = (UCHAR)(i * 11 + 1);				// Random
+	}
+	*p++ = 0x00;								// No session id
+	*p++ = 0x00;								// One cipher suite: TLS_AES_128_GCM_SHA256
+	*p++ = 0x02;
+	*p++ = 0x13;
+	*p++ = 0x01;
+	*p++ = 0x01;								// Null compression only
+	*p++ = 0x00;
+	*p++ = (UCHAR)(ext_len >> 8);
+	*p++ = (UCHAR)(ext_len & 0xFF);
+	*p++ = 0x00;								// server_name extension
+	*p++ = 0x00;
+	*p++ = (UCHAR)(ext_data >> 8);
+	*p++ = (UCHAR)(ext_data & 0xFF);
+	*p++ = (UCHAR)((3 + name_len) >> 8);
+	*p++ = (UCHAR)((3 + name_len) & 0xFF);
+	*p++ = 0x00;								// host_name
+	*p++ = (UCHAR)(name_len >> 8);
+	*p++ = (UCHAR)(name_len & 0xFF);
+	Copy(p, host, name_len);
+	p += name_len;
+
+	return (UINT)(p - buf);
+}
+
+// DNS query (recursion desired, one question, type A, class IN). Returns the size, 0 if it does not fit
+static UINT HarnessBuildDnsQuery(UCHAR *buf, UINT buf_size, char *host)
+{
+	UINT len = StrLen(host);
+	UINT start = 0;
+	UINT i;
+	UCHAR *p;
+
+	if ((12 + len + 2 + 4) > buf_size)
+	{
+		return 0;
+	}
+
+	Zero(buf, 12);
+	buf[0] = 0x52;								// Transaction id
+	buf[1] = 0x41;
+	buf[2] = 0x01;								// Recursion desired
+	buf[5] = 0x01;								// One question
+
+	p = buf + 12;
+	for (i = 0;i <= len;i++)
+	{
+		if (i == len || host[i] == '.')
+		{
+			*p++ = (UCHAR)(i - start);
+			Copy(p, host + start, i - start);
+			p += i - start;
+			start = i + 1;
+		}
+	}
+	*p++ = 0x00;								// Root label
+	*p++ = 0x00;								// Type A
+	*p++ = 0x01;
+	*p++ = 0x00;								// Class IN
+	*p++ = 0x01;
+
+	return (UINT)(p - buf);
+}
+
+// Parse a frame as HubPaPutPacket does with the default hub options: IP and HTTP parsing, BPDU bridge id,
+// checksum correction (the frames have valid checksums, so the buffer is not changed). no_log: the hub packet
+// log is off, so HTTP, TLS SNI and DNS are not parsed
+static PKT *HarnessParseLikeHub(HARNESS_PARSE_FRAME *f, bool no_log)
+{
+	return ParsePacketEx5(f->Data, f->Size, false, 0, true, no_log, true, false, no_log);
+}
+
+// The parser reached the layer the frame was built for (no_log: and stopped before layer 7)
+static bool HarnessParsedAsBuilt(HARNESS_PARSE_FRAME *f, PKT *p, bool no_log)
+{
+	if (p == NULL)
+	{
+		return false;
+	}
+
+	if (StrCmp(f->Kind, "tcp") == 0 || (no_log && (StrCmp(f->Kind, "http") == 0 || StrCmp(f->Kind, "tls") == 0)))
+	{
+		return (p->TypeL4 == L4_TCP && p->HttpLog == NULL);
+	}
+
+	if (no_log && StrCmp(f->Kind, "dns") == 0)
+	{
+		return (p->TypeL4 == L4_UDP && p->TypeL7 == L7_UNKNOWN);
+	}
+
+	if (StrCmp(f->Kind, "http") == 0)
+	{
+		return (p->HttpLog != NULL && p->HttpLog->IsSsl == false && StrCmp(p->HttpLog->Hostname, HARNESS_BENCH_HOST) == 0);
+	}
+
+	if (StrCmp(f->Kind, "tls") == 0)
+	{
+		return (p->HttpLog != NULL && p->HttpLog->IsSsl && StrCmp(p->HttpLog->Hostname, HARNESS_BENCH_HOST) == 0);
+	}
+
+	if (StrCmp(f->Kind, "dns") == 0)
+	{
+		return (p->TypeL7 == L7_DNS && StrCmp(p->DnsQueryHost, HARNESS_BENCH_HOST) == 0);
+	}
+
+	return true;
+}
+
+// Parse the frame of a single-frame case
+static bool HarnessOpParseOne(void *param)
+{
+	HARNESS_PARSE_BENCH *b = (HARNESS_PARSE_BENCH *)param;
+	PKT *p = HarnessParseLikeHub(&b->Frames[b->Current], b->NoLog);
+
+	if (p == NULL)
+	{
+		return false;
+	}
+
+	FreePacket(p);
+
+	return true;
+}
+
+// Parse the next frame of the mix, in turn
+static bool HarnessOpParseMix(void *param)
+{
+	HARNESS_PARSE_BENCH *b = (HARNESS_PARSE_BENCH *)param;
+	PKT *p = HarnessParseLikeHub(&b->Frames[b->Next], b->NoLog);
+
+	b->Next = (b->Next + 1) % HARNESS_NUM_PARSE_FRAMES;
+
+	if (p == NULL)
+	{
+		return false;
+	}
+
+	FreePacket(p);
+
+	return true;
+}
+
+// parse_packet_<kind>: ParsePacket per frame kind, then over the mix of all kinds in turn.
+// l2: non-IP frame; tcp: TCP data without a layer 7 parser; http: request to TCP 80; tls: ClientHello with SNI
+// to TCP 443; dns: query to UDP 53. The _nolog cases parse the same frames as with the hub packet log off
+static void HarnessBenchParse()
+{
+	HARNESS_PARSE_BENCH b;
+	HARNESS_PARSE_FRAME *f;
+	UCHAR payload[HARNESS_PARSE_FRAME_MAX];
+	char *http = "GET /index.html HTTP/1.1\r\nHost: " HARNESS_BENCH_HOST "\r\nUser-Agent: ranz-bench/1.0\r\nAccept: */*\r\n\r\n";
+	UINT i;
+	UINT size;
+	UINT pass;
+	bool ok;
+	char name[MAX_SIZE];
+
+	Zero(&b, sizeof(b));
+
+	f = &b.Frames[0];
+	f->Kind = "l2";
+	f->Size = HARNESS_FRAME_SIZE;
+	HarnessBuildFrame(f->Data, f->Size, harness_mac_b, harness_mac_a, 1);
+
+	f = &b.Frames[1];
+	f->Kind = "tcp";
+	for (i = 0;i < 64;i++)
+	{
+		payload[i] = (UCHAR)(i * 3);
+	}
+	f->Size = HarnessBuildIpFrame(f->Data, sizeof(f->Data), IP_PROTO_TCP, 5001, payload, 64);
+
+	f = &b.Frames[2];
+	f->Kind = "http";
+	f->Size = HarnessBuildIpFrame(f->Data, sizeof(f->Data), IP_PROTO_TCP, 80, (UCHAR *)http, StrLen(http));
+
+	f = &b.Frames[3];
+	f->Kind = "tls";
+	size = HarnessBuildClientHello(payload, sizeof(payload), HARNESS_BENCH_HOST);
+	f->Size = HarnessBuildIpFrame(f->Data, sizeof(f->Data), IP_PROTO_TCP, 443, payload, size);
+
+	f = &b.Frames[4];
+	f->Kind = "dns";
+	size = HarnessBuildDnsQuery(payload, sizeof(payload), HARNESS_BENCH_HOST);
+	f->Size = HarnessBuildIpFrame(f->Data, sizeof(f->Data), IP_PROTO_UDP, 53, payload, size);
+
+	for (pass = 0;pass < 2;pass++)
+	{
+		char *suffix = (pass == 0 ? "" : "_nolog");
+
+		b.NoLog = (pass != 0);
+		b.Next = 0;
+		ok = true;
+
+		for (i = 0;i < HARNESS_NUM_PARSE_FRAMES;i++)
+		{
+			PKT *p = NULL;
+
+			f = &b.Frames[i];
+			Format(name, sizeof(name), "parse_packet_%s%s", f->Kind, suffix);
+
+			if (f->Size != 0)
+			{
+				p = HarnessParseLikeHub(f, b.NoLog);
+			}
+
+			if (HarnessParsedAsBuilt(f, p, b.NoLog))
+			{
+				b.Current = i;
+				HarnessBenchOps(name, HarnessOpParseOne, &b, HARNESS_BENCH_MICRO_SPAN, 16);
+			}
+			else
+			{
+				Print("BENCH WARNING %s: the frame does not parse as built, case skipped\n", name);
+				ok = false;
+			}
+
+			FreePacket(p);
+		}
+
+		if (ok)
+		{
+			Format(name, sizeof(name), "parse_packet_mix%s", suffix);
+			HarnessBenchOps(name, HarnessOpParseMix, &b, HARNESS_BENCH_MICRO_SPAN, 16);
+		}
+	}
+}
+
+// ip_table_expire_<n>: microseconds of one DeleteExpiredIpTableEntry pass over an IP table of n entries,
+// every second entry expired
+static void HarnessBenchIpTableExpire(UINT num)
+{
+	UINT64 runs[HARNESS_BENCH_RUNS];
+	UINT r, i;
+	bool ok = true;
+	char name[MAX_SIZE];
+
+	Format(name, sizeof(name), "ip_table_expire_%u", num);
+
+	for (r = 0;r < HARNESS_BENCH_RUNS;r++)
+	{
+		LIST *o = NewList(CompareIpTable);
+		UINT64 now = Tick64();
+		UINT64 start;
+
+		for (i = 0;i < num;i++)
+		{
+			IP_TABLE_ENTRY *e = ZeroMalloc(sizeof(IP_TABLE_ENTRY));
+
+			SetIP(&e->Ip, 10, (UCHAR)((i >> 16) & 0xFF), (UCHAR)((i >> 8) & 0xFF), (UCHAR)(i & 0xFF));
+			e->MacAddress[0] = 0x02;
+			e->MacAddress[4] = (UCHAR)((i >> 8) & 0xFF);
+			e->MacAddress[5] = (UCHAR)(i & 0xFF);
+			e->CreatedTime = now;
+			// Expired entries were last updated more than IP_TABLE_EXPIRE_TIME ago. Unsigned arithmetic wraps
+			// consistently, so this also holds when the machine has been up for less than that time
+			e->UpdatedTime = ((i % 2) == 0 ? now - (UINT64)IP_TABLE_EXPIRE_TIME - 1000ULL : now);
+			Insert(o, e);
+		}
+
+		start = HarnessNowNs();
+		DeleteExpiredIpTableEntry(o);
+		runs[r] = (HarnessNowNs() - start) / 1000ULL;
+
+		if (LIST_NUM(o) != (num - (num + 1) / 2))
+		{
+			ok = false;
+		}
+
+		for (i = 0;i < LIST_NUM(o);i++)
+		{
+			Free(LIST_DATA(o, i));
+		}
+		ReleaseList(o);
+	}
+
+	HarnessBenchReport(name, runs, HARNESS_BENCH_RUNS, "us", false);
+
+	if (ok == false)
+	{
+		Print("BENCH WARNING %s: the pass did not delete exactly the expired entries\n", name);
+	}
+}
+
+////////////////////////////
+// Intermediate certificate download ("certdl")
+//
+// DownloadCert (Cedar/Protocol.c) is the only outbound HTTP client. SetServerCert reaches it when the new
+// server certificate is not a root and its issuer is in neither the root list nor chain_certs: the server
+// downloads the "CA Issuers" URL of the Authority Information Access extension. The fixtures name a
+// loopback listener of this test as that URL, so the test needs no network. Each run answers in one mode
+// and pins one behaviour of the client: the request it sends, https without a trust check, an interim
+// 100 Continue skipped, no redirect followed, no authentication tried, Content-Length required and capped
+// at 64 KiB, and the 10 s receive timeout.
+
+// Fixture certificates, committed for this test. Made with OpenSSL 3.2 "openssl ca" (RSA 2048, SHA-256,
+// valid 2020-01-01 to 2049-12-31); the server certificates carry "authorityInfoAccess =
+// caIssuers;URI:<issuer URL>", and the tls certificate is self-signed with the key below. The key of the
+// issuer is not kept: the test never signs.
+
+// Issuer: self-signed root "Ranz certdl test CA" (served as DER by the listener)
+static char certdl_ca_pem[] =
+	"-----BEGIN CERTIFICATE-----\n"
+	"MIIC+jCCAeKgAwIBAgICEAAwDQYJKoZIhvcNAQELBQAwHjEcMBoGA1UEAwwTUmFu\n"
+	"eiBjZXJ0ZGwgdGVzdCBDQTAeFw0yMDAxMDEwMDAwMDBaFw00OTEyMzEyMzU5NTla\n"
+	"MB4xHDAaBgNVBAMME1JhbnogY2VydGRsIHRlc3QgQ0EwggEiMA0GCSqGSIb3DQEB\n"
+	"AQUAA4IBDwAwggEKAoIBAQDkfEGcqde+uaYWr3NwtMSipiK/H0U5WNw027ASkoY2\n"
+	"9C/0Xi7PVsQy5DiRm08CaBua09Q0ru/KbmVKWNLUnUcaPhh3jGXalRb3GRI9aduC\n"
+	"VbL8FADOichPa91sPupfh0wYoXQ6dwj8UyZ/nflA69M5NivbJEsqySBls5VRUzfv\n"
+	"QUX1emB9Cb7N8U4WNE5tZjlMPqSIxWWvfVOw13nm/pSmHftqwjACAM0rB9sp11yb\n"
+	"0l/qcGJZvl/yscxf9Ze26CJYGC4sYEfUAOG1CHySpdjXlhwhsA8D+zxztQkZCzen\n"
+	"pvaVacpn6dJ0yyuaFrXtZltU10f4NzMbp/p3Hy4qGwNfAgMBAAGjQjBAMA8GA1Ud\n"
+	"EwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMB0GA1UdDgQWBBTTqL8XosGizAjv\n"
+	"xnwcT3zyMGRxkTANBgkqhkiG9w0BAQsFAAOCAQEAO1V2NM/veCeX68R6m+gB++/H\n"
+	"V5C74Bd4NAdFdskIITuc5uX30puvCno+utDfKVM3M3pUeWoUvOjwbAlmKV8tLntk\n"
+	"y0CH60QFe+0HeD9XNKjRjb58sXdUgqiqNk4H+J5Ba8VNIpJJpaeqPwHK8WU0PMX7\n"
+	"uWi+0a/JNwkhnGjY/oCC+YXgti7t4CeAOm1pZ20+tYbfrqmjIo7njLOXTUC2u52X\n"
+	"wtgsu240p287YwvV+SkfdtfYoeP+FoZTy0MVcgJWjmRsDaqmYf+4uFPVcZznLONC\n"
+	"/qpCFUeK5nCjO1W8XwG32Ic95ES0LjR/ifaTOvOjBadsbcjvAfUZRyN871EBdg==\n"
+	"-----END CERTIFICATE-----\n";
+
+// Server certificate "ranz-certdl-http", AIA caIssuers http://127.0.0.1:39556/ranz-certdl/ca.cer
+static char certdl_http_pem[] =
+	"-----BEGIN CERTIFICATE-----\n"
+	"MIIDczCCAlugAwIBAgICEAEwDQYJKoZIhvcNAQELBQAwHjEcMBoGA1UEAwwTUmFu\n"
+	"eiBjZXJ0ZGwgdGVzdCBDQTAeFw0yMDAxMDEwMDAwMDBaFw00OTEyMzEyMzU5NTla\n"
+	"MBsxGTAXBgNVBAMMEHJhbnotY2VydGRsLWh0dHAwggEiMA0GCSqGSIb3DQEBAQUA\n"
+	"A4IBDwAwggEKAoIBAQDH1GwSv5Io+5+pE/7H5V2v05Yh3PDrBR0u3Z7gIjifHF+1\n"
+	"qCRTEAEW7fgZLOUAJj5HCwvMuTxre2fw6XEYh8b/ivjiN1zcWWu84+B8FK3fUeeZ\n"
+	"8kZpxhtOx08veIt8mOZMtqsCOGkgVPg3GqrgJmw2IeOX7J4DqlA7QUK9u4ElOhSH\n"
+	"9bEK6g7gJiEHsFtTFKuIsTiyUOih86047Jj+1VFH6miNVfLcCDnjx4ma9Uibb4R0\n"
+	"TdDqaHUmykuNkr5ymn57BQaLq5Z2/b1pEbhDdAMivk21bFDrAItCxLt/eZOTaLZ/\n"
+	"b3QOclGB7irw/9JMWm0eIPhxG1ymPkL570zqpU9DAgMBAAGjgb0wgbowDAYDVR0T\n"
+	"AQH/BAIwADAOBgNVHQ8BAf8EBAMCBaAwEwYDVR0lBAwwCgYIKwYBBQUHAwEwHQYD\n"
+	"VR0OBBYEFLBH+RH/luMwDKZX2NKfbzkBAPnkMB8GA1UdIwQYMBaAFNOovxeiwaLM\n"
+	"CO/GfBxPfPIwZHGRMEUGCCsGAQUFBwEBBDkwNzA1BggrBgEFBQcwAoYpaHR0cDov\n"
+	"LzEyNy4wLjAuMTozOTU1Ni9yYW56LWNlcnRkbC9jYS5jZXIwDQYJKoZIhvcNAQEL\n"
+	"BQADggEBAGLJ0WbnfC24iyEcenRUENPaMmAize0vTrCkv0FsPouXewTXDK/arHpw\n"
+	"bL6CTwiEKoQH1uITciFrJlNHZUaapRRMhhGa4xvj74ODEXEWjADC3NprVT9dZwLR\n"
+	"o1FkDXZLRh0nKpgb0yKDPcVvoy2imtB6FZB9Mmy9iLAP3XWs2bQawWc/17vnIciY\n"
+	"vhavbqh5i3qFzENXEECFGjYKyWPhOOTgd+txeLnHw9IQDec/A6j59RwH3GQsLA7t\n"
+	"pSdRSBdkWLgntErlx9eFV07UgExJaS87ApB16D2nPt6cpwE6pwY8xIs51fZMDDd8\n"
+	"5D6SkRVxXrL3MkMoUyOCbJHbtr4JieQ=\n"
+	"-----END CERTIFICATE-----\n";
+
+// Server certificate "ranz-certdl-https", AIA caIssuers https://127.0.0.1:39556/ranz-certdl/ca.cer
+static char certdl_https_pem[] =
+	"-----BEGIN CERTIFICATE-----\n"
+	"MIIDdTCCAl2gAwIBAgICEAIwDQYJKoZIhvcNAQELBQAwHjEcMBoGA1UEAwwTUmFu\n"
+	"eiBjZXJ0ZGwgdGVzdCBDQTAeFw0yMDAxMDEwMDAwMDBaFw00OTEyMzEyMzU5NTla\n"
+	"MBwxGjAYBgNVBAMMEXJhbnotY2VydGRsLWh0dHBzMIIBIjANBgkqhkiG9w0BAQEF\n"
+	"AAOCAQ8AMIIBCgKCAQEAx9RsEr+SKPufqRP+x+Vdr9OWIdzw6wUdLt2e4CI4nxxf\n"
+	"tagkUxABFu34GSzlACY+RwsLzLk8a3tn8OlxGIfG/4r44jdc3FlrvOPgfBSt31Hn\n"
+	"mfJGacYbTsdPL3iLfJjmTLarAjhpIFT4Nxqq4CZsNiHjl+yeA6pQO0FCvbuBJToU\n"
+	"h/WxCuoO4CYhB7BbUxSriLE4slDoofOtOOyY/tVRR+pojVXy3Ag548eJmvVIm2+E\n"
+	"dE3Q6mh1JspLjZK+cpp+ewUGi6uWdv29aRG4Q3QDIr5NtWxQ6wCLQsS7f3mTk2i2\n"
+	"f290DnJRge4q8P/STFptHiD4cRtcpj5C+e9M6qVPQwIDAQABo4G+MIG7MAwGA1Ud\n"
+	"EwEB/wQCMAAwDgYDVR0PAQH/BAQDAgWgMBMGA1UdJQQMMAoGCCsGAQUFBwMBMB0G\n"
+	"A1UdDgQWBBSwR/kR/5bjMAymV9jSn285AQD55DAfBgNVHSMEGDAWgBTTqL8XosGi\n"
+	"zAjvxnwcT3zyMGRxkTBGBggrBgEFBQcBAQQ6MDgwNgYIKwYBBQUHMAKGKmh0dHBz\n"
+	"Oi8vMTI3LjAuMC4xOjM5NTU2L3JhbnotY2VydGRsL2NhLmNlcjANBgkqhkiG9w0B\n"
+	"AQsFAAOCAQEA0+kpMDR49qA9OS4Q5QPtlfiHeHAQ7ftxT/UxSvX0N7UylMSGr5ch\n"
+	"pyxCxVyymdEvv+Qtd4aK/EFACMzKkO55PLzjdyV6oyKCbcbsvTJQ6dZ0ZT5xYceX\n"
+	"mg13jjZOn0iIK7I/XFfWC1vtpwTO91VlDYKwwMDfypr4MBYb+hc+YB5HaLgXu8r5\n"
+	"V6sex/Tc824FU6DpyxCnQHwp1ZEcGkHkYLd6NloMGDxfLNjyC1AgoNxmiBOPxE0r\n"
+	"DUdGkMPpq1V8/J1reZlL46x4BELptJzqy8ML/+6y+a39v9Y2UBH69173zGHA/o+7\n"
+	"x1wdSvLRWbP+HGOtaAcBMO9U9ipN5Ow9DQ==\n"
+	"-----END CERTIFICATE-----\n";
+
+// TLS certificate of the listener: self-signed root "ranz-certdl-tls" (no AIA), not trusted by Windows
+static char certdl_tls_pem[] =
+	"-----BEGIN CERTIFICATE-----\n"
+	"MIIDBzCCAe+gAwIBAgICEAQwDQYJKoZIhvcNAQELBQAwGjEYMBYGA1UEAwwPcmFu\n"
+	"ei1jZXJ0ZGwtdGxzMB4XDTIwMDEwMTAwMDAwMFoXDTQ5MTIzMTIzNTk1OVowGjEY\n"
+	"MBYGA1UEAwwPcmFuei1jZXJ0ZGwtdGxzMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A\n"
+	"MIIBCgKCAQEAx9RsEr+SKPufqRP+x+Vdr9OWIdzw6wUdLt2e4CI4nxxftagkUxAB\n"
+	"Fu34GSzlACY+RwsLzLk8a3tn8OlxGIfG/4r44jdc3FlrvOPgfBSt31HnmfJGacYb\n"
+	"TsdPL3iLfJjmTLarAjhpIFT4Nxqq4CZsNiHjl+yeA6pQO0FCvbuBJToUh/WxCuoO\n"
+	"4CYhB7BbUxSriLE4slDoofOtOOyY/tVRR+pojVXy3Ag548eJmvVIm2+EdE3Q6mh1\n"
+	"JspLjZK+cpp+ewUGi6uWdv29aRG4Q3QDIr5NtWxQ6wCLQsS7f3mTk2i2f290DnJR\n"
+	"ge4q8P/STFptHiD4cRtcpj5C+e9M6qVPQwIDAQABo1cwVTAPBgNVHRMBAf8EBTAD\n"
+	"AQH/MA4GA1UdDwEB/wQEAwICpDATBgNVHSUEDDAKBggrBgEFBQcDATAdBgNVHQ4E\n"
+	"FgQUsEf5Ef+W4zAMplfY0p9vOQEA+eQwDQYJKoZIhvcNAQELBQADggEBAFmmH0lQ\n"
+	"qljBeCoxvELdgm91lTj7IB9aJKYNeFbAxgFr8HutgHWqY6KqWX+zQlNSaQCgNAIs\n"
+	"n4uTiI63HScjA0BGilF12UzCAjKVLLlKBdCfuexhUHB3ESAd0XdfEdUpG6nNxYgT\n"
+	"HLFZJ2Rtx1SlDYLJDz4DWEeNEsLpvN6aO77KCHCJ67qPLqkQtXYq1CLQVTEqbBzm\n"
+	"vSCYl5yeZJtHMfVHg3Z5tHTwC/x+OVH63OkByjFM0pA8KNSxwrPolP+CEq7mDCZE\n"
+	"siazwNaMg18O8A7gCX0QusQZUx9xULqRuikQUmCUrGOe79qovYNfu+WUIsizibJ7\n"
+	"xB/MtwXoDxrmmJ8=\n"
+	"-----END CERTIFICATE-----\n";
+
+// Private key of the http, https and tls certificates (RSA 2048)
+static char certdl_key_pem[] =
+	"-----BEGIN PRIVATE KEY-----\n"
+	"MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDH1GwSv5Io+5+p\n"
+	"E/7H5V2v05Yh3PDrBR0u3Z7gIjifHF+1qCRTEAEW7fgZLOUAJj5HCwvMuTxre2fw\n"
+	"6XEYh8b/ivjiN1zcWWu84+B8FK3fUeeZ8kZpxhtOx08veIt8mOZMtqsCOGkgVPg3\n"
+	"GqrgJmw2IeOX7J4DqlA7QUK9u4ElOhSH9bEK6g7gJiEHsFtTFKuIsTiyUOih8604\n"
+	"7Jj+1VFH6miNVfLcCDnjx4ma9Uibb4R0TdDqaHUmykuNkr5ymn57BQaLq5Z2/b1p\n"
+	"EbhDdAMivk21bFDrAItCxLt/eZOTaLZ/b3QOclGB7irw/9JMWm0eIPhxG1ymPkL5\n"
+	"70zqpU9DAgMBAAECggEAJldRJyW/pwJkh33xKCyPlcFcsIGibg2MpGXcanfWclzw\n"
+	"1jt9QLy04M/nBvmQtL8huuLZMD4oZB0I+/Xmf8TpfzWMfGcP961mmRcGBvi2xb8C\n"
+	"14xfS0M6ERr3zA1uggkaQwTXefUV4qC7AWOp/pkQsTA+aXN6fAyNGVlzs1DLPjd4\n"
+	"TaYU+fBCIoZSFNMs54c44sn5sRRTVeYk5Ww8pN5Bk0SNgQLB64grW/gO3Q051tA8\n"
+	"a8dEuujOrXQAJpCg0xpIaXDQLQyBQcFDqSunbYnQ8YAnhDyVjZCP+WobYlBUfEBm\n"
+	"EHSrjP17uwBPnrqHVpyfkNgXFQdj5MhBF2tAF+gkJQKBgQDot7lfIEMt/cGiUcAN\n"
+	"0jCEEGspn7O7eata6Ha2BU/aPRh7aGVbjnhwtQHOGVfTWEekrBsCoZqXhcpdpH2Q\n"
+	"gCQiFVGDULbrP5sV5no68S9u7BCd4uhkHwgTQDJauBG1RyH2wayIt2siZxy+0MR6\n"
+	"Jb+YjZZkDSHk4HSJlOvgGZBBLQKBgQDb0mLDyD2vCmNXsLtYXvDJ2aweA819PmcR\n"
+	"Oe5RIh5ZeyLbTw56nJozmDjFwTF/kCFdYm6MUZaR4RMyWt8uLTHk+p7I/fe6AGqi\n"
+	"+01SKDZMOApeiEu4EJZMbDDdOQ25aqTHewLA9ctdooH4YDyGFlbJvqFSYAkgEGEN\n"
+	"fiEGvDW4LwKBgQDMllAaJ9PHh/GGENaFkAZk48ZCFos8wq75QaqzRKI520I9o76P\n"
+	"qgWKGCcZGECUpWR+iWtJeebdVJpejrBwq6aYbCN4DSpyUD24GCHW1Zf8rP3Cv+vL\n"
+	"sVg5DFP4Wx/+PSXHt+ZFXvKJkRq9Se2g8LSqmbbgCIeGnij1lv1yyyZ9lQKBgC24\n"
+	"eYBdIq9IitcPVDgSLyTcmFb51YCqPQexM+c+IG/eE6bnr4xDDDOVAqHnB+OPV9Ez\n"
+	"iui2g4m99Z8wlWDmV41XrzUA1cijE4rol/FxmbGKqmV1FcKn+IrWqecpWbhp/PHc\n"
+	"nPsDZJQKG9xML+p3tP9rHeSjQuKfZYBH7piXBtlTAoGAJP6JlbzCq2EinqewhieW\n"
+	"5hS9SJ6ds9qXcaExg6dLIU3SKn6A4MmfT4aGywNpkRTrnCEjMIi36DfAcPiuSK6P\n"
+	"DjT6YifSen3zUSu5yPs0kF1Q2839JHs9eND+wrI9W0eYQjTcrqwYl5vmj9Jgqapp\n"
+	"DYbULC42TGbpDpOCNOCapDY=\n"
+	"-----END PRIVATE KEY-----\n";
+
+// Load a PEM certificate
+static X *CertDlPemToX(char *pem)
+{
+	BUF *b = NewBuf();
+	X *x;
+
+	WriteBuf(b, pem, StrLen(pem));
+	SeekBuf(b, 0, 0);
+	x = BufToX(b, true);
+	FreeBuf(b);
+
+	return x;
+}
+
+// Load a PEM private key
+static K *CertDlPemToK(char *pem)
+{
+	BUF *b = NewBuf();
+	K *k;
+
+	WriteBuf(b, pem, StrLen(pem));
+	SeekBuf(b, 0, 0);
+	k = BufToK(b, true, true, NULL);
+	FreeBuf(b);
+
+	return k;
+}
+
+// File that TryGetRootCertChain saves a downloaded issuer to: chain_certs under the database directory
+static void CertDlSavedPath(wchar_t *path, UINT size, X *issuer)
+{
+	wchar_t db_dir[MAX_SIZE];
+	wchar_t dir[MAX_SIZE];
+	wchar_t name[MAX_SIZE];
+	wchar_t hex[128];
+	char hex_a[128];
+	UCHAR hash[SHA1_SIZE];
+
+	GetXDigest(issuer, hash, true);
+	BinToStr(hex_a, sizeof(hex_a), hash, SHA1_SIZE);
+	StrToUni(hex, sizeof(hex), hex_a);
+
+	UniStrCpy(name, sizeof(name), AUTO_DOWNLOAD_CERTS_PREFIX);
+	UniStrCat(name, sizeof(name), hex);
+	UniStrCat(name, sizeof(name), L".cer");
+
+	GetExeDirW(db_dir, sizeof(db_dir));
+	CombinePathW(dir, sizeof(dir), db_dir, L"chain_certs");
+	CombinePathW(path, size, dir, name);
+}
+
+// Count one request received by the listener and record the first of the run; returns its number in the run
+static UINT CertDlRecord(CERTDL_SERVER *srv, HTTP_HEADER *h)
+{
+	HTTP_VALUE *host = GetHttpValue(h, "Host");
+	HTTP_VALUE *agent = GetHttpValue(h, "User-Agent");
+	UINT num;
+
+	Lock(srv->Lock);
+	{
+		num = ++srv->NumRequests;
+
+		if (num == 1)
+		{
+			Format(srv->RequestLine, sizeof(srv->RequestLine), "%s %s %s", h->Method, h->Target, h->Version);
+			StrCpy(srv->Host, sizeof(srv->Host), (host != NULL ? host->Data : ""));
+			StrCpy(srv->UserAgent, sizeof(srv->UserAgent), (agent != NULL ? agent->Data : ""));
+		}
+	}
+	Unlock(srv->Lock);
+
+	return num;
+}
+
+// Append a string to an answer
+static void CertDlWriteStr(BUF *b, char *str)
+{
+	WriteBuf(b, str, StrLen(str));
+}
+
+// Append the 200 answer with Content-Length and the issuer certificate in DER
+static void CertDlWriteOk(CERTDL_SERVER *srv, BUF *b)
+{
+	char tmp[MAX_SIZE];
+
+	Format(tmp, sizeof(tmp), "HTTP/1.1 200 OK\r\nContent-Type: application/pkix-cert\r\nContent-Length: %u\r\n\r\n",
+		srv->CaDer->Size);
+	CertDlWriteStr(b, tmp);
+	WriteBuf(b, srv->CaDer->Buf, srv->CaDer->Size);
+}
+
+// Answer request number num of the run in the mode of the run; true closes the connection
+static bool CertDlRespond(CERTDL_SERVER *srv, SOCK *s, UINT mode, UINT num)
+{
+	BUF *b = NewBuf();
+	bool close_now = false;
+	bool ok;
+	void *pad;
+	char tmp[MAX_SIZE];
+
+	switch (mode)
+	{
+	case CERTDL_MODE_CONTINUE:
+		CertDlWriteStr(b, "HTTP/1.1 100 Continue\r\n\r\n");
+		CertDlWriteOk(srv, b);
+		break;
+
+	case CERTDL_MODE_REDIRECT:
+		if (num == 1)
+		{
+			CertDlWriteStr(b, "HTTP/1.1 302 Found\r\nLocation: http://" CERTDL_HOST CERTDL_PATH_MOVED "\r\n"
+				"Content-Length: 0\r\n\r\n");
+		}
+		else
+		{
+			CertDlWriteOk(srv, b);
+		}
+		break;
+
+	case CERTDL_MODE_NOT_FOUND:
+		CertDlWriteStr(b, "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
+		break;
+
+	case CERTDL_MODE_AUTH:
+		CertDlWriteStr(b, "HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Negotiate\r\nWWW-Authenticate: NTLM\r\n"
+			"Content-Length: 0\r\n\r\n");
+		break;
+
+	case CERTDL_MODE_NO_LENGTH:
+		CertDlWriteStr(b, "HTTP/1.1 200 OK\r\nContent-Type: application/pkix-cert\r\nConnection: close\r\n\r\n");
+		WriteBuf(b, srv->CaDer->Buf, srv->CaDer->Size);
+		close_now = true;
+		break;
+
+	case CERTDL_MODE_CHUNKED:
+		Format(tmp, sizeof(tmp), "HTTP/1.1 200 OK\r\nContent-Type: application/pkix-cert\r\n"
+			"Transfer-Encoding: chunked\r\n\r\n%x\r\n", srv->CaDer->Size);
+		CertDlWriteStr(b, tmp);
+		WriteBuf(b, srv->CaDer->Buf, srv->CaDer->Size);
+		CertDlWriteStr(b, "\r\n0\r\n\r\n");
+		break;
+
+	case CERTDL_MODE_OVER_CAP:
+		// The connection stays open after the padding: a client that waits for the announced length runs
+		// into its receive timeout
+		Format(tmp, sizeof(tmp), "HTTP/1.1 200 OK\r\nContent-Type: application/pkix-cert\r\nContent-Length: %u\r\n\r\n",
+			CERTDL_BIG_LENGTH);
+		CertDlWriteStr(b, tmp);
+		WriteBuf(b, srv->CaDer->Buf, srv->CaDer->Size);
+		pad = ZeroMalloc(CERTDL_MAX_BODY - srv->CaDer->Size);
+		WriteBuf(b, pad, CERTDL_MAX_BODY - srv->CaDer->Size);
+		Free(pad);
+		break;
+
+	case CERTDL_MODE_SILENT:
+		// No answer: the connection stays open until the client gives up
+		break;
+
+	default:
+		// CERTDL_MODE_OK and CERTDL_MODE_TLS
+		CertDlWriteOk(srv, b);
+		break;
+	}
+
+	ok = (b->Size == 0 || SendAll(s, b->Buf, b->Size, s->SecureMode));
+	FreeBuf(b);
+
+	return (close_now || ok == false);
+}
+
+// One listener connection: answer requests until the client closes the connection
+static void CertDlConnThread(THREAD *thread, void *param)
+{
+	CERTDL_CONN *c = (CERTDL_CONN *)param;
+	CERTDL_SERVER *srv = c->Server;
+	SOCK *s = c->Sock;
+	UINT mode;
+
+	Lock(srv->Lock);
+	{
+		mode = srv->Mode;
+	}
+	Unlock(srv->Lock);
+
+	SetTimeout(s, CERTDL_CONN_TIMEOUT);
+
+	if (mode == CERTDL_MODE_TLS && StartSSLEx(s, srv->TlsCert, srv->TlsKey, 0, NULL) == false)
+	{
+		Disconnect(s);
+		return;
+	}
+
+	while (true)
+	{
+		HTTP_HEADER *h = RecvHttpHeader(s);
+		bool close_now;
+
+		if (h == NULL)
+		{
+			break;
+		}
+
+		close_now = CertDlRespond(srv, s, mode, CertDlRecord(srv, h));
+		FreeHttpHeader(h);
+
+		if (close_now)
+		{
+			break;
+		}
+	}
+
+	Disconnect(s);
+}
+
+// Accept connections until the listening socket is disconnected; one thread per connection
+static void CertDlAcceptThread(THREAD *thread, void *param)
+{
+	CERTDL_SERVER *srv = (CERTDL_SERVER *)param;
+
+	while (true)
+	{
+		CERTDL_CONN *c;
+		SOCK *s = Accept(srv->ListenSock);
+
+		if (s == NULL)
+		{
+			break;
+		}
+
+		c = ZeroMalloc(sizeof(CERTDL_CONN));
+		c->Server = srv;
+		c->Sock = s;
+
+		LockList(srv->ConnList);
+		{
+			Add(srv->ConnList, c);
+			c->Thread = NewThread(CertDlConnThread, c);
+		}
+		UnlockList(srv->ConnList);
+	}
+}
+
+// Start the listener on 127.0.0.1:CERTDL_PORT; tls_cert and tls_key must outlive it
+static CERTDL_SERVER *CertDlStartServer(X *issuer, X *tls_cert, K *tls_key)
+{
+	CERTDL_SERVER *srv;
+	SOCK *s = ListenEx(CERTDL_PORT, true);
+
+	if (s == NULL)
+	{
+		return NULL;
+	}
+
+	srv = ZeroMalloc(sizeof(CERTDL_SERVER));
+	srv->ListenSock = s;
+	srv->ConnList = NewList(NULL);
+	srv->CaDer = XToBuf(issuer, false);
+	srv->TlsCert = tls_cert;
+	srv->TlsKey = tls_key;
+	srv->Lock = NewLock();
+	srv->Mode = CERTDL_MODE_OK;
+	srv->AcceptThread = NewThread(CertDlAcceptThread, srv);
+
+	return srv;
+}
+
+// Stop the listener and wait for its connection threads
+static void CertDlStopServer(CERTDL_SERVER *srv)
+{
+	UINT i;
+
+	if (srv == NULL)
+	{
+		return;
+	}
+
+	Disconnect(srv->ListenSock);
+	WaitThread(srv->AcceptThread, INFINITE);
+	ReleaseThread(srv->AcceptThread);
+
+	// The accept thread has ended: ConnList no longer changes
+	for (i = 0;i < LIST_NUM(srv->ConnList);i++)
+	{
+		CERTDL_CONN *c = LIST_DATA(srv->ConnList, i);
+
+		Disconnect(c->Sock);
+		WaitThread(c->Thread, INFINITE);
+		ReleaseThread(c->Thread);
+		ReleaseSock(c->Sock);
+		Free(c);
+	}
+	ReleaseList(srv->ConnList);
+
+	ReleaseSock(srv->ListenSock);
+	FreeBuf(srv->CaDer);
+	DeleteLock(srv->Lock);
+	Free(srv);
+}
+
+// Set a server certificate through the admin RPC while the listener answers in one mode, and collect the outcome
+static void CertDlRun(HARNESS *h, CERTDL_SERVER *srv, char *name, UINT mode, X *cert, K *key, wchar_t *saved_file,
+	CERTDL_RESULT *r)
+{
+	RPC_KEY_PAIR t;
+	UINT64 start;
+
+	Zero(r, sizeof(CERTDL_RESULT));
+
+	Lock(srv->Lock);
+	{
+		srv->Mode = mode;
+		srv->NumRequests = 0;
+		srv->RequestLine[0] = 0;
+		srv->Host[0] = 0;
+		srv->UserAgent[0] = 0;
+	}
+	Unlock(srv->Lock);
+
+	Zero(&t, sizeof(t));
+	t.Cert = CloneX(cert);
+	t.Key = CloneK(key);
+
+	start = Tick64();
+	r->Err = ScSetServerCert(h->Rpc, &t);
+	r->Elapsed = Tick64() - start;
+	r->Flag1 = t.Flag1;
+	FreeRpcKeyPair(&t);
+
+	Print("TIME certdl_%s %I64u ms\n", name, r->Elapsed);
+
+	// The listener records a request before it answers, and the RPC returns after the answer
+	Lock(srv->Lock);
+	{
+		r->NumRequests = srv->NumRequests;
+		StrCpy(r->RequestLine, sizeof(r->RequestLine), srv->RequestLine);
+		StrCpy(r->Host, sizeof(r->Host), srv->Host);
+		StrCpy(r->UserAgent, sizeof(r->UserAgent), srv->UserAgent);
+	}
+	Unlock(srv->Lock);
+
+	// A saved issuer would satisfy the next run without a download
+	r->Saved = IsFileExistsW(saved_file);
+	FileDeleteW(saved_file);
+}
+
+// Check a number; a failure also prints the value seen
+static bool CertDlCheckUint(HARNESS *h, char *what, UINT actual, UINT expected)
+{
+	bool ok = (actual == expected);
+
+	if (HarnessCheck(h, ok, what) == false)
+	{
+		Print("    got %u, expected %u\n", actual, expected);
+	}
+
+	return ok;
+}
+
+// Check a string; a failure also prints the value seen
+static bool CertDlCheckStr(HARNESS *h, char *what, char *actual, char *expected)
+{
+	bool ok = (StrCmp(actual, expected) == 0);
+
+	if (HarnessCheck(h, ok, what) == false)
+	{
+		Print("    got \"%s\", expected \"%s\"\n", actual, expected);
+	}
+
+	return ok;
+}
+
+// Check the outcome of one run: the RPC succeeds, the listener gets one request, the server builds and saves the
+// chain (chain) or reports no issuer, and the run waits for the client receive timeout (waits) or not
+static void CertDlExpect(HARNESS *h, char *name, CERTDL_RESULT *r, bool chain, bool waits)
+{
+	bool ok;
+	char tmp[MAX_SIZE];
+
+	Format(tmp, sizeof(tmp), "%s: SetServerCert", name);
+	HarnessCheckErr(h, r->Err, tmp);
+
+	Format(tmp, sizeof(tmp), "%s: the listener received one request", name);
+	CertDlCheckUint(h, tmp, r->NumRequests, 1);
+
+	if (chain)
+	{
+		Format(tmp, sizeof(tmp), "%s: the server built the chain with the downloaded issuer (Flag1)", name);
+	}
+	else
+	{
+		Format(tmp, sizeof(tmp), "%s: the server got no issuer (Flag1)", name);
+	}
+	CertDlCheckUint(h, tmp, r->Flag1, (chain ? 1 : 0));
+
+	if (chain)
+	{
+		Format(tmp, sizeof(tmp), "%s: the server saved the issuer under chain_certs", name);
+	}
+	else
+	{
+		Format(tmp, sizeof(tmp), "%s: nothing saved under chain_certs", name);
+	}
+	HarnessCheck(h, r->Saved == chain, tmp);
+
+	if (waits)
+	{
+		Format(tmp, sizeof(tmp), "%s: the server gave up after the receive timeout (%u to %u ms)", name,
+			CERTDL_TIMEOUT_MIN, CERTDL_SLOW_LIMIT);
+		ok = (r->Elapsed >= CERTDL_TIMEOUT_MIN && r->Elapsed < CERTDL_SLOW_LIMIT);
+	}
+	else
+	{
+		Format(tmp, sizeof(tmp), "%s: no wait for a timeout (under %u ms)", name, CERTDL_QUICK_LIMIT);
+		ok = (r->Elapsed < CERTDL_QUICK_LIMIT);
+	}
+
+	if (HarnessCheck(h, ok, tmp) == false)
+	{
+		Print("    took %I64u ms\n", r->Elapsed);
+	}
+}
+
+////////////////////////////
+// Listener bind status ("listenerbind", FIX-3 #99)
+
+// State of the listener on a port through EnumListener (what ListenerList shows); false when it is not listed
+static bool ListenBindState(HARNESS *h, UINT port, bool *enabled, bool *error)
+{
+	RPC_LISTENER_LIST t;
+	UINT i;
+	bool found = false;
+
+	*enabled = false;
+	*error = false;
+
+	Zero(&t, sizeof(t));
+	if (ScEnumListener(h->Rpc, &t) != ERR_NO_ERROR)
+	{
+		return false;
+	}
+
+	for (i = 0;i < t.NumPort;i++)
+	{
+		if (t.Ports[i] == port)
+		{
+			found = true;
+			*enabled = t.Enables[i];
+			*error = t.Errors[i];
+		}
+	}
+
+	FreeRpcListenerList(&t);
+
+	return found;
+}
+
+// ListenerCreate (create true) or ListenerEnable / ListenerDisable of a port through the admin RPC, timed
+static UINT ListenBindCall(HARNESS *h, bool create, UINT port, bool enable, UINT64 *elapsed)
+{
+	RPC_LISTENER t;
+	UINT64 start;
+	UINT err;
+
+	Zero(&t, sizeof(t));
+	t.Port = port;
+	t.Enable = enable;
+
+	start = Tick64();
+	err = (create ? ScCreateListener(h->Rpc, &t) : ScEnableListener(h->Rpc, &t));
+	*elapsed = Tick64() - start;
+
+	return err;
+}
+
+// Check the error of a timed listener RPC and that it returned well before the server's bind wait limit,
+// so the listener thread's bind event (failed or successful bind) ended the wait
+static bool ListenBindExpect(HARNESS *h, char *name, char *what, UINT err, UINT expected, UINT64 elapsed)
+{
+	char tmp[MAX_SIZE];
+	bool ok;
+
+	Print("TIME listenerbind_%s %I64u ms\n", name, elapsed);
+
+	if (err == expected)
+	{
+		Format(tmp, sizeof(tmp), "%s: error %u", what, err);
+	}
+	else
+	{
+		Format(tmp, sizeof(tmp), "%s: error %u (%S), expected %u (%S)", what, err, _E(err), expected, _E(expected));
+	}
+	ok = HarnessCheck(h, err == expected, tmp);
+
+	Format(tmp, sizeof(tmp), "%s: returned within %u ms", what, LISTENBIND_RPC_LIMIT);
+	ok = HarnessCheck(h, elapsed < LISTENBIND_RPC_LIMIT, tmp) && ok;
+
+	return ok;
+}
+
+// Check that ListenerList shows the listener on a port enabled and not in error state
+static bool ListenBindIsListening(HARNESS *h, UINT port, char *what)
+{
+	bool enabled, error;
+	bool listed = ListenBindState(h, port, &enabled, &error);
+
+	return HarnessCheck(h, listed && enabled && error == false, what);
 }
 
 ////////////////////////////
@@ -3113,6 +4768,8 @@ void harness_test(UINT num, char **arg)
 		HarnessSetPhase("frames", NULL);
 		HarnessFrames(h);
 		HarnessGolden(h);
+		HarnessSetPhase("pack", NULL);
+		HarnessPackGolden(h);
 		HarnessSetPhase("config", NULL);
 		HarnessConfigApiRoundTrip(h);
 	}
@@ -3148,7 +4805,8 @@ void harness_test(UINT num, char **arg)
 	HarnessFree(h);
 }
 
-// "bench": cascade frames per second and Pack operations per second (informational, fails only on errors)
+// "bench": cascade path frames per second, in-process hub flood, Pack, ParsePacket and IP table expiry
+// (informational, fails only on errors). Every case runs HARNESS_BENCH_RUNS times: the median, then every run
 void bench_test(UINT num, char **arg)
 {
 	HARNESS *h = HarnessNew();
@@ -3157,8 +4815,10 @@ void bench_test(UINT num, char **arg)
 	UINT64 elapsed;
 	bool ok;
 
-	Print("Ranz bench: cascade path throughput for %u ms per frame size, Pack encode/decode for %u ms\n",
-		HARNESS_BENCH_SPAN, HARNESS_BENCH_PACK_SPAN);
+	Print("Ranz bench: %u runs per case (median, then every run); per run: cascade path %u ms per frame size, "
+		"hub flood %u ms, Pack %u ms, ParsePacket %u ms, one IP table expiry pass\n",
+		HARNESS_BENCH_RUNS, HARNESS_BENCH_SPAN, HARNESS_BENCH_FLOOD_SPAN, HARNESS_BENCH_PACK_SPAN,
+		HARNESS_BENCH_MICRO_SPAN);
 
 	ok = HarnessSetup(h);
 
@@ -3177,10 +4837,20 @@ void bench_test(UINT num, char **arg)
 		HarnessBenchFrames(h, 512);
 		HarnessSetPhase("bench_1500", NULL);
 		HarnessBenchFrames(h, 1500);
+		HarnessSetPhase("bench_flood", NULL);
+		HarnessBenchFlood(h);
 	}
 
 	HarnessSetPhase("bench_pack", NULL);
 	HarnessBenchPack(h);
+	HarnessSetPhase("bench_pack_names", NULL);
+	HarnessBenchPackNames();
+	HarnessSetPhase("bench_parse", NULL);
+	HarnessBenchParse();
+	HarnessSetPhase("bench_ip_table", NULL);
+	HarnessBenchIpTableExpire(1024);
+	HarnessBenchIpTableExpire(4096);
+	HarnessBenchIpTableExpire(16384);
 
 	HarnessSetPhase("teardown", NULL);
 	HarnessTeardown(h, ok);
@@ -3203,6 +4873,297 @@ void bench_test(UINT num, char **arg)
 	else
 	{
 		Print("BENCH TEST FAILED (%u failed checks)\n", h->NumFail);
+	}
+
+	HarnessFree(h);
+}
+
+// "certdl": SetServerCert with server certificates whose issuer URL names a loopback listener of the test; the
+// server downloads the issuer certificate from it (DownloadCert, spec #30 step 9), one listener answer per run
+void certdl_test(UINT num, char **arg)
+{
+	HARNESS *h = HarnessNew();
+	HARNESS_WATCHDOG *wd = HarnessStartWatchdog("CERTDL", CERTDL_WATCHDOG_LIMIT);
+	CERTDL_SERVER *srv = NULL;
+	CERTDL_RESULT r;
+	X *ca = CertDlPemToX(certdl_ca_pem);
+	X *leaf_http = CertDlPemToX(certdl_http_pem);
+	X *leaf_https = CertDlPemToX(certdl_https_pem);
+	X *tls = CertDlPemToX(certdl_tls_pem);
+	K *key = CertDlPemToK(certdl_key_pem);
+	wchar_t saved_file[MAX_SIZE];
+	char tmp[MAX_SIZE];
+	bool ok;
+
+	Print("Ranz certdl: SetServerCert downloads the issuer certificate from a loopback listener on TCP %u\n",
+		CERTDL_PORT);
+
+	Print("[setup]\n");
+	HarnessSetPhase("setup", "fixtures");
+	ok = HarnessCheck(h, ca != NULL && ca->root_cert, "fixture issuer certificate loads as a root certificate");
+	ok = HarnessCheck(h, leaf_http != NULL && leaf_https != NULL && tls != NULL && key != NULL &&
+		CheckXandK(leaf_http, key) && CheckXandK(leaf_https, key) && CheckXandK(tls, key),
+		"fixture server and TLS certificates load and match the fixture key") && ok;
+	ok = HarnessCheck(h, leaf_http != NULL && StrCmp(leaf_http->issuer_url, CERTDL_URL_HTTP) == 0,
+		"http fixture names " CERTDL_URL_HTTP " as its issuer URL") && ok;
+	ok = HarnessCheck(h, leaf_https != NULL && StrCmp(leaf_https->issuer_url, CERTDL_URL_HTTPS) == 0,
+		"https fixture names " CERTDL_URL_HTTPS " as its issuer URL") && ok;
+
+	if (ok)
+	{
+		// A file left by an aborted run would give the server the issuer without a download
+		CertDlSavedPath(saved_file, sizeof(saved_file), ca);
+		FileDeleteW(saved_file);
+
+		HarnessSetPhase("setup", "issuer listener");
+		srv = CertDlStartServer(ca, tls, key);
+		Format(tmp, sizeof(tmp), "issuer listener bound on 127.0.0.1:%u", CERTDL_PORT);
+		ok = HarnessCheck(h, srv != NULL, tmp);
+	}
+
+	if (ok)
+	{
+		ok = HarnessStartServer(h);
+	}
+
+	if (ok)
+	{
+		// The request: path of the issuer URL, HTTP/1.1, host and port of the URL, the product User-Agent
+		Print("[ok: 200 with Content-Length]\n");
+		HarnessSetPhase("certdl", "ok");
+		CertDlRun(h, srv, "ok", CERTDL_MODE_OK, leaf_http, key, saved_file, &r);
+		CertDlExpect(h, "ok", &r, true, false);
+		CertDlCheckStr(h, "ok: request line", r.RequestLine, "GET " CERTDL_PATH " HTTP/1.1");
+		CertDlCheckStr(h, "ok: Host header", r.Host, CERTDL_HOST);
+		CertDlCheckStr(h, "ok: User-Agent header", r.UserAgent, DEFAULT_USER_AGENT);
+
+		// https issuer URL: the client does not check the certificate of the issuer server
+		Print("[tls: https, listener certificate not trusted]\n");
+		HarnessSetPhase("certdl", "tls");
+		CertDlRun(h, srv, "tls", CERTDL_MODE_TLS, leaf_https, key, saved_file, &r);
+		CertDlExpect(h, "tls", &r, true, false);
+		CertDlCheckStr(h, "tls: request line", r.RequestLine, "GET " CERTDL_PATH " HTTP/1.1");
+		CertDlCheckStr(h, "tls: Host header", r.Host, CERTDL_HOST);
+
+		Print("[continue: 100 Continue before the 200]\n");
+		HarnessSetPhase("certdl", "continue");
+		CertDlRun(h, srv, "continue", CERTDL_MODE_CONTINUE, leaf_http, key, saved_file, &r);
+		CertDlExpect(h, "continue", &r, true, false);
+
+		// The redirect target would answer with the issuer: one request only means the client did not follow
+		Print("[redirect: 302 not followed]\n");
+		HarnessSetPhase("certdl", "redirect");
+		CertDlRun(h, srv, "redirect", CERTDL_MODE_REDIRECT, leaf_http, key, saved_file, &r);
+		CertDlExpect(h, "redirect", &r, false, false);
+
+		Print("[not_found: 404]\n");
+		HarnessSetPhase("certdl", "not_found");
+		CertDlRun(h, srv, "not_found", CERTDL_MODE_NOT_FOUND, leaf_http, key, saved_file, &r);
+		CertDlExpect(h, "not_found", &r, false, false);
+
+		// One request only: the client neither answers the challenge nor sends credentials
+		Print("[auth: 401 Negotiate and NTLM not answered]\n");
+		HarnessSetPhase("certdl", "auth");
+		CertDlRun(h, srv, "auth", CERTDL_MODE_AUTH, leaf_http, key, saved_file, &r);
+		CertDlExpect(h, "auth", &r, false, false);
+
+		// Without Content-Length the client reads no body, chunked or not
+		Print("[no_length: 200 without Content-Length, then close]\n");
+		HarnessSetPhase("certdl", "no_length");
+		CertDlRun(h, srv, "no_length", CERTDL_MODE_NO_LENGTH, leaf_http, key, saved_file, &r);
+		CertDlExpect(h, "no_length", &r, false, false);
+
+		Print("[chunked: 200 with Transfer-Encoding chunked]\n");
+		HarnessSetPhase("certdl", "chunked");
+		CertDlRun(h, srv, "chunked", CERTDL_MODE_CHUNKED, leaf_http, key, saved_file, &r);
+		CertDlExpect(h, "chunked", &r, false, false);
+
+		// The client stops at 64 KiB and parses what it has: the certificate at its start
+		Print("[over_cap: Content-Length 1000000, 64 KiB sent]\n");
+		HarnessSetPhase("certdl", "over_cap");
+		CertDlRun(h, srv, "over_cap", CERTDL_MODE_OVER_CAP, leaf_http, key, saved_file, &r);
+		CertDlExpect(h, "over_cap", &r, true, false);
+
+		Print("[silent: no answer]\n");
+		HarnessSetPhase("certdl", "silent");
+		CertDlRun(h, srv, "silent", CERTDL_MODE_SILENT, leaf_http, key, saved_file, &r);
+		CertDlExpect(h, "silent", &r, false, true);
+	}
+
+	HarnessSetPhase("teardown", NULL);
+	Print("[teardown]\n");
+	HarnessStopServer(h);
+	CertDlStopServer(srv);
+
+	FreeX(ca);
+	FreeX(leaf_http);
+	FreeX(leaf_https);
+	FreeX(tls);
+	FreeK(key);
+
+	HarnessStopWatchdog(wd);
+
+	if (h->NumFail == 0)
+	{
+		Print("CERTDL TEST OK\n");
+	}
+	else
+	{
+		Print("CERTDL TEST FAILED (%u failed checks)\n", h->NumFail);
+	}
+
+	HarnessFree(h);
+}
+
+// "listenerbind": ListenerCreate and ListenerEnable wait for the bind attempt of the listener thread and report a
+// port that cannot be bound (FIX-3 #99). Before FIX-3 both slept a fixed 250 ms and always returned ERR_NO_ERROR.
+void listenerbind_test(UINT num, char **arg)
+{
+	HARNESS *h = HarnessNew();
+	HARNESS_WATCHDOG *wd = HarnessStartWatchdog("LISTENERBIND", LISTENBIND_WATCHDOG_LIMIT);
+	SOCK *held;
+	RPC_LISTENER d;
+	UINT64 elapsed, fastest, end;
+	UINT i, err;
+	bool ok, enabled, error;
+	char tmp[MAX_SIZE];
+
+	Print("Ranz listenerbind: ListenerCreate and ListenerEnable report the bind status; TCP %u held by the test, "
+		"TCP %u free\n", LISTENBIND_PORT_HELD, LISTENBIND_PORT_FREE);
+
+	Print("[setup]\n");
+	HarnessSetPhase("setup", "held port");
+	// The bind of the server's listener (any address, no address reuse): the server cannot bind the port while
+	// this socket is open
+	held = ListenEx2(LISTENBIND_PORT_HELD, false, false, NULL);
+	Format(tmp, sizeof(tmp), "the test holds TCP %u", LISTENBIND_PORT_HELD);
+	ok = HarnessCheck(h, held != NULL, tmp);
+
+	if (ok)
+	{
+		ok = HarnessStartServer(h);
+	}
+
+	if (ok)
+	{
+		// The listener stays registered and keeps retrying, as before FIX-3: only the result of the RPC changes
+		Print("[held: ListenerCreate]\n");
+		HarnessSetPhase("listenerbind", "create on the held port");
+		err = ListenBindCall(h, true, LISTENBIND_PORT_HELD, true, &elapsed);
+		ListenBindExpect(h, "create_held", "ListenerCreate on the held port reports the failed bind", err,
+			ERR_LISTENER_BIND_FAILED, elapsed);
+		ok = ListenBindState(h, LISTENBIND_PORT_HELD, &enabled, &error);
+		HarnessCheck(h, ok && enabled && error,
+			"ListenerList keeps the listener on the held port, enabled and in error state");
+
+		Print("[held: ListenerDisable, ListenerEnable]\n");
+		HarnessSetPhase("listenerbind", "enable on the held port");
+		err = ListenBindCall(h, false, LISTENBIND_PORT_HELD, false, &elapsed);
+		ListenBindExpect(h, "disable_held", "ListenerDisable on the held port", err, ERR_NO_ERROR, elapsed);
+		err = ListenBindCall(h, false, LISTENBIND_PORT_HELD, true, &elapsed);
+		ListenBindExpect(h, "enable_held", "ListenerEnable on the held port reports the failed bind", err,
+			ERR_LISTENER_BIND_FAILED, elapsed);
+
+		// The RPC returns once the port is bound. The fastest call is compared with the former fixed sleep, so one
+		// slow RPC on a busy machine does not fail the test.
+		Print("[free: ListenerCreate, %u disable and enable cycles]\n", LISTENBIND_CYCLES);
+		HarnessSetPhase("listenerbind", "free port");
+		err = ListenBindCall(h, true, LISTENBIND_PORT_FREE, true, &elapsed);
+		ListenBindExpect(h, "create_free", "ListenerCreate on the free port", err, ERR_NO_ERROR, elapsed);
+		ListenBindIsListening(h, LISTENBIND_PORT_FREE,
+			"ListenerList shows the free port listening right after ListenerCreate");
+		fastest = elapsed;
+
+		for (i = 0;i < LISTENBIND_CYCLES;i++)
+		{
+			err = ListenBindCall(h, false, LISTENBIND_PORT_FREE, false, &elapsed);
+			ListenBindExpect(h, "disable_free", "ListenerDisable on the free port", err, ERR_NO_ERROR, elapsed);
+			ok = ListenBindState(h, LISTENBIND_PORT_FREE, &enabled, &error);
+			HarnessCheck(h, ok && enabled == false,
+				"ListenerList shows the free port disabled right after ListenerDisable");
+
+			err = ListenBindCall(h, false, LISTENBIND_PORT_FREE, true, &elapsed);
+			ListenBindExpect(h, "enable_free", "ListenerEnable on the free port", err, ERR_NO_ERROR, elapsed);
+			ListenBindIsListening(h, LISTENBIND_PORT_FREE,
+				"ListenerList shows the free port listening right after ListenerEnable");
+			fastest = MIN(fastest, elapsed);
+		}
+
+		Print("TIME listenerbind_fastest %I64u ms\n", fastest);
+		Format(tmp, sizeof(tmp), "the fastest ListenerCreate or ListenerEnable on the free port returns before the "
+			"former fixed %u ms sleep", LISTENBIND_FORMER_SLEEP);
+		HarnessCheck(h, fastest < LISTENBIND_FORMER_SLEEP, tmp);
+
+		// A disabled listener has no bind to wait for
+		Print("[free: ListenerCreate disabled]\n");
+		HarnessSetPhase("listenerbind", "create disabled");
+		Zero(&d, sizeof(d));
+		d.Port = LISTENBIND_PORT_FREE;
+		HarnessCheckErr(h, ScDeleteListener(h->Rpc, &d), "ListenerDelete on the free port");
+		err = ListenBindCall(h, true, LISTENBIND_PORT_FREE, false, &elapsed);
+		ListenBindExpect(h, "create_disabled", "ListenerCreate of a disabled listener", err, ERR_NO_ERROR, elapsed);
+		ok = ListenBindState(h, LISTENBIND_PORT_FREE, &enabled, &error);
+		HarnessCheck(h, ok && enabled == false, "ListenerList shows the new listener disabled");
+
+		// The listener on the released port binds by its own retry; ListenerEnable then reports the bound port
+		Print("[released: retry, ListenerEnable]\n");
+		HarnessSetPhase("listenerbind", "held port released");
+		Disconnect(held);
+		ReleaseSock(held);
+		held = NULL;
+
+		end = Tick64() + (UINT64)LISTENBIND_RETRY_LIMIT;
+		while (true)
+		{
+			ok = ListenBindState(h, LISTENBIND_PORT_HELD, &enabled, &error);
+			if ((ok && enabled && error == false) || Tick64() >= end)
+			{
+				break;
+			}
+
+			SleepThread(LISTENBIND_POLL);
+		}
+		Format(tmp, sizeof(tmp), "the listener binds the released port by its own retry within %u ms",
+			LISTENBIND_RETRY_LIMIT);
+		HarnessCheck(h, ok && enabled && error == false, tmp);
+
+		err = ListenBindCall(h, false, LISTENBIND_PORT_HELD, true, &elapsed);
+		ListenBindExpect(h, "enable_released", "ListenerEnable on the enabled listener reports the bound port", err,
+			ERR_NO_ERROR, elapsed);
+
+		Print("[cleanup]\n");
+		HarnessSetPhase("listenerbind", "cleanup");
+		Zero(&d, sizeof(d));
+		d.Port = LISTENBIND_PORT_HELD;
+		HarnessCheckErr(h, ScDeleteListener(h->Rpc, &d), "ListenerDelete on the released port");
+		Zero(&d, sizeof(d));
+		d.Port = LISTENBIND_PORT_FREE;
+		HarnessCheckErr(h, ScDeleteListener(h->Rpc, &d), "ListenerDelete on the free port");
+		ok = ListenBindState(h, LISTENBIND_PORT_HELD, &enabled, &error) ||
+			ListenBindState(h, LISTENBIND_PORT_FREE, &enabled, &error);
+		HarnessCheck(h, ok == false, "ListenerList no longer lists the test ports");
+		ListenBindIsListening(h, HARNESS_PORT, "ListenerList still shows the harness listener listening");
+	}
+
+	HarnessSetPhase("teardown", NULL);
+	Print("[teardown]\n");
+	HarnessStopServer(h);
+
+	if (held != NULL)
+	{
+		Disconnect(held);
+		ReleaseSock(held);
+	}
+
+	HarnessStopWatchdog(wd);
+
+	if (h->NumFail == 0)
+	{
+		Print("LISTENERBIND TEST OK\n");
+	}
+	else
+	{
+		Print("LISTENERBIND TEST FAILED (%u failed checks)\n", h->NumFail);
 	}
 
 	HarnessFree(h);

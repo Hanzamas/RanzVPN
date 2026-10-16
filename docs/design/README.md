@@ -19,10 +19,11 @@ Architecture decision records live in `docs/adr/`; the reasoning behind them is 
 - [ADR-0013](../adr/0013-selow-stays-in-slim-fork-not-in-l3-core.md) — SeLow stays: Local Bridge in the fork, L2 bridging in the new product (Accepted).
 - [ADR-0014](../adr/0014-dual-mode-networks-l2-first-class.md) — Dual-mode virtual networks, L2 switched first-class and L3 routed, one binary with both backends (Accepted).
 - [ADR-0015](../adr/0015-nat-traversal-p2p-and-relay.md) — NAT traversal, P2P and relay: libjuice ICE, libplum port mapping, Ranz's own relay role, relay-first with background upgrade (Accepted).
-- [ADR-0016](../adr/0016-windows-native-runtime-thin-inline-header.md) — Windows-native runtime for Mayaqua behind one thin inline header (`Lock(x)` stays readable), wrapper flip per primitive, semantics preserved, after the harness (Accepted).
+- [ADR-0016](../adr/0016-windows-native-runtime-thin-inline-header.md) — Windows-native runtime for Mayaqua behind one thin inline header (`Lock(x)` stays readable), wrapper flip per primitive, semantics preserved, after the harness (Accepted; amended 2026-10-13: stops after DNS and WinHTTP, CNG and Schannel move to the new core, the memory tracker stays).
 - [ADR-0017](../adr/0017-roadmap-foundation-before-new-core.md) — Roadmap: slim-down, scope cuts, safe sweep, harness, table-driven RPC/vpncmd, structural refactor and Windows-native runtime, and only then the new core (Accepted).
 - [ADR-0018](../adr/0018-packet-io-xdp-for-windows.md) — Packet I/O and XDP for Windows: TLS/TCP 443 fallback stays on the Windows TCP stack (Accepted); QUIC gets XDP only through MsQuic, and an AF_XDP Local Bridge backend after a spike (Proposed).
 - [ADR-0019](../adr/0019-l2-isolation-vlans-and-policy-engine.md) — New core: isolation primitives kept, full VLAN support (access/trunk ports, native VLAN, QinQ, per-VLAN limits), stateful identity-based policy engine replacing the access list (Accepted).
+- [ADR-0020](../adr/0020-release-packaging-and-listener-defaults.md) — Release packaging and listener defaults for the current server: unsigned MSI built in CI, data next to the exe, uninstall keeps config, service `ranzvpnserver`, tag-driven releases, TCP 443 only with a 5555 fallback, port 80 off by default (redirect and ACME only), DNS/ICMP transports in new-core phase 2 (Accepted).
 
 ## Discussion log
 
