@@ -37,6 +37,10 @@
 #include <SoftPub.h>
 #include <WtsApi32.h>
 
+#if defined(_M_X64) || defined(_M_IX86)
+#include <intrin.h>		// __cpuid() of the VM detection
+#endif	// defined(_M_X64) || defined(_M_IX86)
+
 static MS *ms = NULL;
 
 static LOCK *lock_adapter_list = NULL;
@@ -76,49 +80,186 @@ void MsInitProcessCallOnce()
 	SetDllDirectoryW(L"");
 }
 
-static bool MsIsInVmMain()
+// Raw SMBIOS table of GetSystemFirmwareTable
+#define	MS_SMBIOS_PROVIDER			0x52534D42		// Firmware table provider 'RSMB'
+#define	MS_SMBIOS_HEADER_SIZE		8				// Header before the structures
+#define	MS_SMBIOS_TYPE_SYSTEM		1				// Structure type: system information
+#define	MS_SMBIOS_TYPE_BASEBOARD	2				// Structure type: baseboard information
+#define	MS_SMBIOS_TYPE_END			127				// Structure type: end of the table
+
+#if defined(_M_X64) || defined(_M_IX86)
+// True when CPUID reports a hypervisor that runs this OS as a guest. The hypervisor-present bit
+// (leaf 1, ECX bit 31) is also set in the root partition of Hyper-V, which is the host OS of a
+// physical machine that runs Hyper-V or virtualization-based security: that partition holds the
+// CreatePartitions privilege (leaf 0x40000003, EBX bit 0) and is not a guest.
+static bool MsIsHypervisorGuest()
 {
-	char *bat_data = "On Error Resume Next\r\n\r\nDim str\r\n\r\nSet wmi_svc = GetObject(\"winmgmts:{impersonationLevel=impersonate}!\\\\.\\root\\cimv2\")\r\n\r\nSet items = wmi_svc.ExecQuery(\"Select * from Win32_BaseBoard\")\r\n\r\nFor Each item in items\r\n	str = str & item.Manufacturer\r\nNext\r\n\r\nSet items = Nothing\r\n\r\nSet items = wmi_svc.ExecQuery(\"Select * from Win32_ComputerSystem\")\r\n\r\nFor Each item in items\r\n	str = str & item.Manufacturer\r\nNext\r\n\r\nSet items = Nothing\r\n\r\nSet wmi_svc = Nothing\r\n\r\nstr = LCase(str)\r\n\r\nDim ret\r\n\r\nret = 0\r\n\r\nif InStr(str, \"microsoft corporation\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"vmware\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"virtualbox\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"virtualpc\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"xen\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"hvm\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"domu\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"kvm\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"oracle vm\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"qemu\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"parallels\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"xvm\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"virtual\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nif InStr(str, \"bochs\") > 0 then\r\n	ret = 1\r\nend if\r\n\r\nwscript.quit ret\r\n\r\n";
-	wchar_t bat_filename[MAX_SIZE];
-	wchar_t cscript_exe[MAX_SIZE];
-	wchar_t tmp[MAX_SIZE];
-	void *process;
-	bool ret = false;
+	int regs[4];	// EAX, EBX, ECX, EDX
+	char vendor[13];
 
-	CombinePathW(bat_filename, sizeof(bat_filename), MsGetMyTempDirW(), L"detectvm.vbs");
-
-	if (DumpDataW(bat_data, StrLen(bat_data), bat_filename) == false)
+	__cpuid(regs, 1);
+	if (((UINT)regs[2] & 0x80000000) == 0)
 	{
 		return false;
 	}
 
-	CombinePathW(cscript_exe, sizeof(cscript_exe), MsGetSystem32DirW(), L"cscript.exe");
+	// Highest hypervisor leaf in EAX, vendor signature in EBX, ECX and EDX
+	__cpuid(regs, 0x40000000);
+	Copy(vendor, &regs[1], 12);
+	vendor[12] = 0;
 
-	UniFormat(tmp, sizeof(tmp), L"\"%s\"", bat_filename);
-
-	process = Win32RunEx3W(cscript_exe, tmp, true, NULL, true);
-
-	if (process == NULL)
+	if (StrCmp(vendor, "Microsoft Hv") == 0 && (UINT)regs[0] >= 0x40000003)
 	{
-		return false;
-	}
-
-	if (Win32WaitProcess(process, 30000))
-	{
-		DWORD exit_code = 0;
-
-		if (GetExitCodeProcess(process, &exit_code))
+		__cpuid(regs, 0x40000003);
+		if (((UINT)regs[1] & 1) != 0)
 		{
-			if (exit_code == 1)
-			{
-				ret = true;
-			}
+			return false;
 		}
 	}
 
-	Win32CloseProcess(process);
+	return true;
+}
+#endif	// defined(_M_X64) || defined(_M_IX86)
+
+// Append string number index (1 is the first, 0 is none) of an SMBIOS string set to dst, after a space
+static void MsSmbiosAddString(char *dst, UINT dst_size, UCHAR *str_set, UINT str_set_size, UINT index)
+{
+	UINT pos = 0;
+	UINT i;
+
+	for (i = 1; index != 0 && pos < str_set_size; i++)
+	{
+		UINT len = 0;
+
+		while (pos + len < str_set_size && str_set[pos + len] != 0)
+		{
+			len++;
+		}
+
+		if (len == 0 || pos + len >= str_set_size)
+		{
+			// End of the set, or a string without its terminator
+			return;
+		}
+
+		if (i == index)
+		{
+			StrCat(dst, dst_size, " ");
+			StrCat(dst, dst_size, (char *)str_set + pos);
+			return;
+		}
+
+		pos += len + 1;
+	}
+}
+
+// True when the SMBIOS manufacturer or product name of the system (structure type 1) or of the
+// baseboard (type 2) names a virtual machine. The raw SMBIOS table of GetSystemFirmwareTable is
+// a header of 8 bytes (the table length at offset 4), then the structures: type, length of the
+// formatted area, handle and the rest of the area, then a string set that ends with two zero bytes.
+static bool MsIsVmFirmware()
+{
+	// Lower case; "virtual" covers Hyper-V and Azure ("Virtual Machine"), VirtualBox and Virtual PC.
+	// "microsoft corporation", "hvm", "domu", "xvm" and "oracle vm" are kept from the old WMI list:
+	// the manufacturer "microsoft corporation" names Hyper-V and Azure guests (the arm64 CI runner
+	// included) and also physical Microsoft hardware, as before.
+	static char *vm_names[] =
+	{
+		"microsoft corporation", "virtual", "vmware", "innotek", "qemu", "kvm", "xen", "parallels", "bochs", "bhyve",
+		"hvm", "domu", "xvm", "oracle vm", "amazon ec2", "google compute engine",
+	};
+	char names[MAX_SIZE];
+	UCHAR *buf;
+	UINT size;
+	UINT table_size;
+	UINT end;
+	UINT pos;
+	UINT i;
+	bool ret = false;
+
+	size = GetSystemFirmwareTable(MS_SMBIOS_PROVIDER, 0, NULL, 0);
+	if (size <= MS_SMBIOS_HEADER_SIZE)
+	{
+		return false;
+	}
+
+	buf = ZeroMalloc(size);
+	if (GetSystemFirmwareTable(MS_SMBIOS_PROVIDER, 0, buf, size) != size)
+	{
+		Free(buf);
+		return false;
+	}
+
+	table_size = (UINT)buf[4] | ((UINT)buf[5] << 8) | ((UINT)buf[6] << 16) | ((UINT)buf[7] << 24);
+	end = MS_SMBIOS_HEADER_SIZE + MIN(table_size, size - MS_SMBIOS_HEADER_SIZE);
+
+	names[0] = 0;
+	pos = MS_SMBIOS_HEADER_SIZE;
+
+	while (pos + 4 <= end)
+	{
+		UINT type = buf[pos];
+		UINT len = buf[pos + 1];
+		UINT str_set = pos + len;
+		UINT next = str_set;
+
+		if (len < 4 || str_set > end)
+		{
+			break;
+		}
+
+		while (next + 1 < end && (buf[next] != 0 || buf[next + 1] != 0))
+		{
+			next++;
+		}
+		if (next + 1 >= end)
+		{
+			break;
+		}
+		next += 2;
+
+		if (type == MS_SMBIOS_TYPE_END)
+		{
+			break;
+		}
+
+		if ((type == MS_SMBIOS_TYPE_SYSTEM || type == MS_SMBIOS_TYPE_BASEBOARD) && len > 5)
+		{
+			// Manufacturer at offset 4 and product name at offset 5 of the formatted area
+			MsSmbiosAddString(names, sizeof(names), buf + str_set, next - str_set, buf[pos + 4]);
+			MsSmbiosAddString(names, sizeof(names), buf + str_set, next - str_set, buf[pos + 5]);
+		}
+
+		pos = next;
+	}
+
+	Free(buf);
+
+	for (i = 0; i < sizeof(vm_names) / sizeof(vm_names[0]); i++)
+	{
+		if (InStrEx(names, vm_names[i], false))
+		{
+			ret = true;
+			break;
+		}
+	}
 
 	return ret;
+}
+
+// True when this OS runs in a virtual machine: CPUID reports a hypervisor that runs it as a guest
+// (x64), or the SMBIOS strings name a virtual machine (the only check on arm64, which has no CPUID).
+// Writes no file and starts no process.
+static bool MsIsInVmMain()
+{
+#if defined(_M_X64) || defined(_M_IX86)
+	if (MsIsHypervisorGuest())
+	{
+		return true;
+	}
+#endif	// defined(_M_X64) || defined(_M_IX86)
+
+	return MsIsVmFirmware();
 }
 bool MsIsInVm()
 {

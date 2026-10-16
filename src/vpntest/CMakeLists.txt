@@ -18,6 +18,9 @@ target_sources(vpntest PRIVATE dllsearch.c)
 # Named machine identity test of FIX-5 (#101)
 target_sources(vpntest PRIVATE machineid.c)
 
+# Named VM detection test of FIX-7 (#103)
+target_sources(vpntest PRIVATE vmdetect.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
