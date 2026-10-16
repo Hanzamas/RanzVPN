@@ -454,6 +454,36 @@ void AddAllRootCertsToCertList(LIST *o)
 
 }
 
+// Machine identity (FIX-5, #101): the first SHA1_SIZE bytes of SHA-256 over MACHINE_ID_LABEL with its
+// terminator, the MachineGuid of Windows (trimmed, lower case) with its terminator, and the salt. Host
+// name, IP addresses and OS version are no input. An unreadable MachineGuid is the empty string, so the
+// salt alone still tells two servers apart.
+void ComputeMachineUniqueHash(void *data, char *machine_guid, void *salt, UINT salt_size)
+{
+	BUF *b;
+	char guid[MAX_SIZE];
+	UCHAR hash[SHA256_SIZE];
+	if (data == NULL || (salt == NULL && salt_size != 0))
+	{
+		return;
+	}
+
+	StrCpy(guid, sizeof(guid), machine_guid);
+	Trim(guid);
+	StrLower(guid);
+
+	b = NewBuf();
+	WriteBuf(b, MACHINE_ID_LABEL, StrSize(MACHINE_ID_LABEL));
+	WriteBuf(b, guid, StrSize(guid));
+	WriteBuf(b, salt, salt_size);
+
+	Sha2_256(hash, b->Buf, b->Size);
+
+	FreeBuf(b);
+
+	Copy(data, hash, SHA1_SIZE);
+}
+
 void GenerateMachineUniqueHash(void *data)
 {
 	BUF *b;
