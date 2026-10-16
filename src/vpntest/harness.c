@@ -113,7 +113,7 @@
 #define	LISTENBIND_PORT_FREE		39558				// Free: the server binds it
 #define	LISTENBIND_FORMER_SLEEP		250					// Fixed sleep of ListenerCreate and ListenerEnable before FIX-3
 #define	LISTENBIND_CYCLES			3					// Disable and enable cycles on the free port (the fastest call is compared)
-#define	LISTENBIND_RPC_LIMIT		(LISTENER_BIND_WAIT_TIME + 3000)	// One listener RPC, the server's bind wait included
+#define	LISTENBIND_RPC_LIMIT		(LISTENER_BIND_WAIT_TIME / 2)	// One listener RPC: a call that reaches the server's bind wait limit has missed the bind event
 #define	LISTENBIND_RETRY_LIMIT		(LISTEN_RETRY_TIME * 3)	// A retrying listener binds a released port within this
 #define	LISTENBIND_POLL				50					// ListenerList poll interval while waiting for that bind
 #define	LISTENBIND_WATCHDOG_LIMIT	60000				// "listenerbind" process aborted after this
@@ -4672,7 +4672,8 @@ static UINT ListenBindCall(HARNESS *h, bool create, UINT port, bool enable, UINT
 	return err;
 }
 
-// Check the error of a timed listener RPC and that it returned within the bind wait of the server
+// Check the error of a timed listener RPC and that it returned well before the server's bind wait limit,
+// so the listener thread's bind event (failed or successful bind) ended the wait
 static bool ListenBindExpect(HARNESS *h, char *name, char *what, UINT err, UINT expected, UINT64 elapsed)
 {
 	char tmp[MAX_SIZE];
