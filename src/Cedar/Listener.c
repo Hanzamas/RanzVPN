@@ -355,6 +355,15 @@ static int CompareDos(void *p1, void *p2)
 	return CmpIpAddr(&d1->IpAddress, &d2->IpAddress);
 }
 
+// Wake WaitListenerBind: the listener thread has tried to bind, r->Status holds the result
+static void ListenerBindTried(LISTENER *r)
+{
+	if (r->BindEvent != NULL)
+	{
+		SetEvent((HANDLE)r->BindEvent);
+	}
+}
+
 static void ListenerUDPMainLoop(LISTENER *r)
 {
 	UCHAR *data;
@@ -505,6 +514,9 @@ static void ListenerTCPMainLoop(LISTENER *r)
 				}
 			}
 
+			// Status is LISTENER_STATUS_TRYING: the bind failed, the thread retries after the interval
+			ListenerBindTried(r);
+
 			interval = LISTEN_RETRY_TIME;
 
 			if (r->ShadowIPv6)
@@ -525,6 +537,7 @@ static void ListenerTCPMainLoop(LISTENER *r)
 		}
 
 		r->Status = LISTENER_STATUS_LISTENING;
+		ListenerBindTried(r);
 
 		if (r->Halt)
 		{
@@ -599,6 +612,9 @@ static void ListenerThread(THREAD *thread, void *param)
 		break;
 	}
 
+	// Halted before any bind attempt: a waiter must not wait for a thread that has ended
+	ListenerBindTried(r);
+
 	ReleaseListener(r);
 }
 
@@ -665,6 +681,24 @@ void StopListener(LISTENER *r)
 	}
 }
 
+// Wait until the listener thread has tried to bind the port, at most timeout ms. True when the port is bound;
+// false when the bind failed (the thread keeps retrying every LISTEN_RETRY_TIME) or did not finish in time.
+bool WaitListenerBind(LISTENER *r, UINT timeout)
+{
+	if (r == NULL)
+	{
+		return false;
+	}
+
+	// The event is set after the thread wrote r->Status and stays set
+	if (r->BindEvent != NULL)
+	{
+		WaitForSingleObject((HANDLE)r->BindEvent, timeout);
+	}
+
+	return (r->Status == LISTENER_STATUS_LISTENING);
+}
+
 static void CleanupListener(LISTENER *r)
 {
 	UINT i = 0;
@@ -688,6 +722,11 @@ static void CleanupListener(LISTENER *r)
 	DeleteLock(r->lock);
 	ReleaseThread(r->Thread);
 	ReleaseEvent(r->Event);
+
+	if (r->BindEvent != NULL)
+	{
+		CloseHandle((HANDLE)r->BindEvent);
+	}
 
 	ReleaseCedar(r->Cedar);
 
@@ -798,6 +837,8 @@ LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc,
 	r->Protocol = proto;
 	r->Port = port;
 	r->Event = NewEvent();
+	// Manual-reset: every waiter of WaitListenerBind sees the first bind attempt, also after it happened
+	r->BindEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
 
 	r->DosList = NewList(CompareDos);
 
