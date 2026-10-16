@@ -235,6 +235,113 @@ static void RtCheckRfc3339Print(RT_CTX *ctx)
 	}
 }
 
+// An RFC 3339 parsing vector: the string, whether DateTimeStrRFC3339ToSystemTime takes it, and
+// the UTC time it names (day of the week: 0 = Sunday)
+typedef struct RT_RFC3339_PARSE_VECTOR
+{
+	char *Str;
+	bool Ok;
+	UINT Year, Month, Day, DayOfWeek, Hour, Minute, Second, Ms;
+} RT_RFC3339_PARSE_VECTOR;
+
+// Parsing vectors (ticket #102): the offset is applied, so every time comes back as UTC
+static RT_RFC3339_PARSE_VECTOR rt_rfc3339_parse_vectors[] =
+{
+	{"2024-02-29T12:34:56Z", true, 2024, 2, 29, 4, 12, 34, 56, 0},
+	{"2024-02-29T19:34:56.789+07:00", true, 2024, 2, 29, 4, 12, 34, 56, 789},
+	{"2024-02-29T09:04:56.789-03:30", true, 2024, 2, 29, 4, 12, 34, 56, 789},
+	{"2024-02-29T12:34:56.789+00:00", true, 2024, 2, 29, 4, 12, 34, 56, 789},
+	{"2024-02-29T12:34:56.789-00:00", true, 2024, 2, 29, 4, 12, 34, 56, 789},
+	{"2024-02-29T13:34:56.7+01:00", true, 2024, 2, 29, 4, 12, 34, 56, 700},
+	{"2024-02-29t12:34:56.123456z", true, 2024, 2, 29, 4, 12, 34, 56, 123},
+	{"2024-03-01T03:00:00.000+07:00", true, 2024, 2, 29, 4, 20, 0, 0, 0},
+	{"2023-12-31T22:00:00.000-03:30", true, 2024, 1, 1, 1, 1, 30, 0, 0},
+	{"2024-02-29T12:34:56.789", false},
+	{"2024-02-29T12:34:56.789+7:00", false},
+	{"2024-02-29T12:34:56.789-5:-30", false},
+	{"2024-02-29T12:34:56.789+0700", false},
+	{"2024-02-29T12:34:56.+07:00", false},
+	{"2024-02-29 12:34:56Z", false},
+	{"2024-02-30T00:00:00Z", false},
+	{"2023-02-29T00:00:00Z", false},
+	{"2024-13-01T00:00:00Z", false},
+	{"2024-02-29T24:00:00Z", false},
+	{"2016-12-31T23:59:60Z", false},
+	{"2024-02-29T12:34:56+24:00", false},
+	{"2024-02-29T12:34:56+07:60", false},
+	{"2024-02-29T12:34:56Z ", false},
+	{"2024-02-29", false},
+	{"", false},
+};
+
+// DateTimeStrRFC3339ToSystemTime against the parsing vectors, and every printing vector through
+// the printer, the parser and the printer again
+static void RtCheckRfc3339Parse(RT_CTX *ctx)
+{
+	UINT i;
+	SYSTEMTIME st, utc, back;
+	char str[MAX_SIZE];
+	char what[MAX_SIZE];
+	UINT64 local64, utc64, expect64;
+	bool ok;
+
+	for (i = 0; i < sizeof(rt_rfc3339_parse_vectors) / sizeof(rt_rfc3339_parse_vectors[0]); i++)
+	{
+		RT_RFC3339_PARSE_VECTOR *v = &rt_rfc3339_parse_vectors[i];
+
+		RtSetSystem(&st, 2000, 1, 1, 1, 1, 1, 1);
+		ok = DateTimeStrRFC3339ToSystemTime(&st, v->Str);
+
+		if (v->Ok == false)
+		{
+			Format(what, sizeof(what), "RFC 3339 parse refuses \"%s\" and zeroes the result", v->Str);
+			RtCheck(ctx, ok == false && IsZero(&st, sizeof(st)), what, "returned %s, result %s",
+				ok ? "true" : "false", IsZero(&st, sizeof(st)) ? "zero" : "not zero");
+			continue;
+		}
+
+		Format(what, sizeof(what), "RFC 3339 parse: \"%s\" is UTC %04u-%02u-%02u %02u:%02u:%02u.%03u",
+			v->Str, v->Year, v->Month, v->Day, v->Hour, v->Minute, v->Second, v->Ms);
+		if (ok)
+		{
+			RtCheckSystem(ctx, &st, what, v->Year, v->Month, v->Day, v->DayOfWeek, v->Hour, v->Minute, v->Second, v->Ms);
+		}
+		else
+		{
+			RtCheck(ctx, false, what, "refused");
+		}
+	}
+
+	ok = DateTimeStrRFC3339ToSystemTime(&st, NULL);
+	RtCheck(ctx, ok == false, "RFC 3339 parse refuses a NULL string", "returned true");
+	ok = DateTimeStrRFC3339ToSystemTime(NULL, "2024-02-29T12:34:56Z");
+	RtCheck(ctx, ok == false, "RFC 3339 parse refuses a NULL result", "returned true");
+
+	// Round trip: printer, parser (UTC: the local time minus the offset), printer again
+	for (i = 0; i < sizeof(rt_rfc3339_vectors) / sizeof(rt_rfc3339_vectors[0]); i++)
+	{
+		RT_RFC3339_VECTOR *v = &rt_rfc3339_vectors[i];
+
+		RtSetSystem(&st, v->Year, v->Month, v->Day, v->Hour, v->Minute, v->Second, v->Ms);
+		local64 = SystemToUINT64(&st);
+		expect64 = (UINT64)((INT64)local64 - (INT64)v->OffsetMin * 60000);
+
+		GetDateTimeStrRFC3339(str, sizeof(str), &st, v->OffsetMin);
+		ok = DateTimeStrRFC3339ToSystemTime(&utc, str);
+		utc64 = SystemToUINT64(&utc);
+
+		UINT64ToSystem(&back, (UINT64)((INT64)utc64 + (INT64)v->OffsetMin * 60000));
+		GetDateTimeStrRFC3339(str, sizeof(str), &back, v->OffsetMin);
+
+		UINT64ToSystem(&st, expect64);
+
+		Format(what, sizeof(what), "RFC 3339 round trip: \"%s\"", v->Str);
+		RtCheck(ctx, ok && utc64 == expect64 && utc.wDayOfWeek == st.wDayOfWeek && StrCmp(str, v->Str) == 0, what,
+			"parsed %s, UTC %I64u (expected %I64u), day of the week %u (expected %u), printed again \"%s\"",
+			ok ? "ok" : "refused", utc64, expect64, utc.wDayOfWeek, st.wDayOfWeek, str);
+	}
+}
+
 // A time zone vector: the biases of a TIME_ZONE_INFORMATION (UTC minus local time, minutes), the
 // zone ID GetTimeZoneInformation returns with them, the offset from UTC and its printed form
 typedef struct RT_ZONE_VECTOR
@@ -390,6 +497,7 @@ void timeenc_test(UINT num, char **arg)
 
 	// RFC 3339 strings of the strict syslog format
 	RtCheckRfc3339Print(&ctx);
+	RtCheckRfc3339Parse(&ctx);
 	RtCheckZoneOffset(&ctx);
 
 	RtEnd(&ctx);

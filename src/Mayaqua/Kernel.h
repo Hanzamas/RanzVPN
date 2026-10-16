@@ -99,6 +99,7 @@ void GetDateTimeStrEx64(wchar_t *str, UINT size, UINT64 sec64, LOCALE *locale);
 void GetDateStrEx64(wchar_t *str, UINT size, UINT64 sec64, LOCALE *locale);
 void GetTimeStrMilli64(char *str, UINT size, UINT64 sec64);
 void GetDateTimeStrRFC3339(char *str, UINT size, SYSTEMTIME *st, int timezone_min);
+bool DateTimeStrRFC3339ToSystemTime(SYSTEMTIME *st, char *str);
 bool Run(char *filename, char *arg, bool hide, bool wait);
 void HashInstanceName(char *name, UINT size, char *instance_name);
 void HashInstanceNameLocal(char *name, UINT size, char *instance_name);
