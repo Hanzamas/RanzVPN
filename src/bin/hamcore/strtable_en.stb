@@ -929,6 +929,7 @@ LH_SET_SESSION			Session "%S": The parameter has been set. Max number of TCP con
 LH_NODE_INFO			Session "%S": VPN Client details: (%s)
 LH_VLAN_ID				Session "%S": Assigned VLAN ID: %u
 LH_END_SESSION			Session "%S": The session has been terminated. The statistical information is as follows: Total outgoing data size: %I64u bytes, Total incoming data size: %I64u bytes.
+LH_UDP_ACCEL_DROP		Session "%S": UDP Acceleration has dropped received datagrams that are not packets of this session. Shorter than a packet (dropped before decryption): %I64u, failed decryption or the packet checks: %I64u. Receiving paused at the per-poll or per-tick limit %I64u times.
 LH_BCAST_STORM			Session "%S": A large volume of broadcast packets has been detected. There are cases where packets are discarded based on the policy. The source MAC address is %S, the source IP address is %S, the destination IP address is %S. The number of broadcast packets is equal to or larger than %u items per 1 second (note this information is the result of mechanical analysis of part of the packets and could be incorrect).
 LH_DHCP_FORCE			Session "%S": The packet was discarded because it has been attempting to use the IP address %S, which is not a DHCP server allocated IP address.
 LH_MAC_LIMIT			Session "%S": Although the virtual hub has attempt to assign a new MAC address "%S" was made, %u MAC addresses have already been assigned for this service. According to the security policy, this session is allowed to have a maximum of %u MAC addresses. The packet has been discarded.

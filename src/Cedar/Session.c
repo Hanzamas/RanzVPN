@@ -40,11 +40,16 @@ void SessionMain(SESSION *s)
 	TRAFFIC t;
 	bool is_server_session = false;
 	bool lock_receive_blocks_queue = false;
+	HUB *udp_accel_log_hub;
 
 	if (s == NULL)
 	{
 		return;
 	}
+
+	// The drop counters of the UDP Acceleration go to the log of the session's hub, or for a
+	// cascade connection to the log of the local hub of the cascade
+	udp_accel_log_hub = (s->Hub != NULL ? s->Hub : (s->Link != NULL ? s->Link->Hub : NULL));
 
 	BinToStr(s->SessionKeyStr, sizeof(s->SessionKeyStr), s->SessionKey, sizeof(s->SessionKey));
 
@@ -175,6 +180,12 @@ void SessionMain(SESSION *s)
 			// A send error on the UDP acceleration socket is fatal
 			err = ERR_DISCONNECTED;
 			pa_fail = true;
+		}
+
+		if (s->UseUdpAcceleration && s->UdpAccel != NULL)
+		{
+			// Dropped datagrams of the UDP Acceleration port, at most one entry per interval
+			UdpAccelLogDrops(s->UdpAccel, udp_accel_log_hub, s->Name, false);
 		}
 
 		if (lock_receive_blocks_queue)
@@ -466,6 +477,12 @@ void SessionMain(SESSION *s)
 	}
 
 CLEANUP:
+
+	if (s->UdpAccel != NULL)
+	{
+		// The drops since the last entry, before the UDP Acceleration of this connection is freed
+		UdpAccelLogDrops(s->UdpAccel, udp_accel_log_hub, s->Name, true);
+	}
 
 	if (s->ServerMode)
 	{
