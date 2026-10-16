@@ -47,6 +47,7 @@ struct SU_ADAPTER_LIST
 
 
 SU *SuInitEx(UINT wait_for_bind_complete_tick);
+SU *SuInitInstall();
 void SuFree(SU *u);
 SU_ADAPTER *SuOpenAdapter(SU *u, char *adapter_id);
 void SuCloseAdapter(SU_ADAPTER *a);

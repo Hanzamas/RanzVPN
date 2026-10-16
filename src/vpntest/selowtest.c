@@ -5,8 +5,9 @@
 // - Asking whether SeLow is supported (SuInitEx, Win32EthIsSuSupported, IsBridgeSupported) never
 //   reaches the driver install step, leaves the SeLow service as it was, and does not use up the one
 //   install attempt of the process.
-// - Creating a Local Bridge (OpenEth) and listing the devices for one (GetEthList, the EnumEthernet
-//   RPC) still reach the install step when the SeLow device is missing, at most once per process.
+// - Creating a Local Bridge (OpenEth, and Win32EthInstallSu of the AddLocalBridge RPC) and listing
+//   the devices for one (GetEthList, the EnumEthernet RPC) still reach the install step when the
+//   SeLow device is missing, at most once per process.
 // - The adapter-list read (SuReadAdapterInfoList) accepts a list with SL_SIGNATURE and refuses a
 //   wrong signature or a failed read. SuGetAdapterList frees its list on a failed read and leaves
 //   the device handle open (SuFree closes it).
@@ -218,6 +219,7 @@ static void SelowTestInstall(SELOWTEST_CTX *ctx, bool supported)
 {
 	ETH *e;
 	TOKEN_LIST *t;
+	bool ok;
 
 	if (supported)
 	{
@@ -257,6 +259,13 @@ static void SelowTestInstall(SELOWTEST_CTX *ctx, bool supported)
 	SelowTestCheck(ctx, t == NULL && selowtest_num_install == 1, "Listing the devices for a Local Bridge without SeLow reaches the driver install",
 		"GetEthList returned %s, install step ran %u times", t == NULL ? "NULL" : "a list", selowtest_num_install);
 	FreeToken(t);
+
+	// The AddLocalBridge RPC checks SeLow through Win32EthInstallSu
+	SuSetInstallProc(SelowTestInstallProc);
+	selowtest_num_install = 0;
+	ok = Win32EthInstallSu();
+	SelowTestCheck(ctx, ok == false && selowtest_num_install == 1, "Adding a Local Bridge without SeLow (Win32EthInstallSu) reaches the driver install",
+		"returned %u, install step ran %u times", ok, selowtest_num_install);
 }
 
 // selow: read-only capability query, explicit driver install, one adapter-list read (FIX-2 #98)

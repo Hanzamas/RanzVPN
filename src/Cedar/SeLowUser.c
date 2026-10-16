@@ -20,6 +20,8 @@
 
 #include <winioctl.h>
 
+static SU *SuInitMain(UINT wait_for_bind_complete_tick, bool start_service, bool install);
+
 static bool SuLoadDriversHive()
 {
 	wchar_t config_dir[MAX_PATH];
@@ -242,9 +244,10 @@ bool SuInstallDriverInner(bool force)
 		MsFreeNoWarning(nw);
 	}
 
+	// Wait for the new driver to bind: it may start the service, it never installs again
 	if (ret)
 	{
-		SuFree(SuInitEx(180 * 1000));
+		SuFree(SuInitMain(180 * 1000, true, false));
 	}
 
 	return ret;
@@ -696,7 +699,25 @@ SU_ADAPTER_LIST *SuAdapterInfoToAdapterList(SL_ADAPTER_INFO *info)
 	return Clone(&t, sizeof(t));
 }
 
+// Open the SeLow basic device and read its adapter list. Read-only: never starts the SeLow service
+// or installs the driver, so asking whether SeLow is supported changes nothing (FIX-2 #98)
 SU *SuInitEx(UINT wait_for_bind_complete_tick)
+{
+	return SuInitMain(wait_for_bind_complete_tick, false, false);
+}
+
+// Like SuInitEx, but when the device is missing, start the SeLow service and, when that fails,
+// install the driver (at most once per process). Only for creating a Local Bridge or for an
+// explicit admin action
+SU *SuInitInstall()
+{
+	return SuInitMain(0, true, true);
+}
+
+// Open the SeLow basic device and read its adapter list. When the device is missing: with
+// start_service, start the SeLow service once and try again; when that start fails, with install,
+// run the driver install step (at most once per process) and try again
+static SU *SuInitMain(UINT wait_for_bind_complete_tick, bool start_service, bool install)
 {
 	void *h;
 	SU *u;
@@ -715,11 +736,11 @@ LABEL_RETRY:
 
 	if (h == INVALID_HANDLE_VALUE)
 	{
-		if (flag == false)
+		if (start_service && flag == false)
 		{
 			if (MsStartService(SL_PROTOCOL_NAME) == false)
 			{
-				if (su_install_tried == false)
+				if (install && su_install_tried == false)
 				{
 					su_install_tried = true;
 
