@@ -130,6 +130,20 @@ static bool SuInstallDriver(bool force)
 
 	return ret;
 }
+
+// Driver install step: SuInstallDriver, or the stub that a test sets with SuSetInstallProc
+static SU_INSTALL_PROC *su_install_proc = SuInstallDriver;
+// The install step already ran in this process: it runs at most once per process
+static bool su_install_tried = false;
+
+// Test seam (vpntest selow): replace the driver install step with proc; NULL restores
+// SuInstallDriver. Also forgets an earlier install attempt, so the next one runs the step again
+void SuSetInstallProc(SU_INSTALL_PROC *proc)
+{
+	su_install_proc = (proc != NULL ? proc : SuInstallDriver);
+	su_install_tried = false;
+}
+
 bool SuInstallDriverInner(bool force)
 {
 	wchar_t sys_fullpath[MAX_PATH];
@@ -688,7 +702,6 @@ SU *SuInitEx(UINT wait_for_bind_complete_tick)
 	SU *u;
 	bool flag = false;
 	UINT64 giveup_tick = 0;
-	static bool flag2 = false; // static: must persist across calls
 
 	if (SuIsSupportedOs(false) == false)
 	{
@@ -706,11 +719,11 @@ LABEL_RETRY:
 		{
 			if (MsStartService(SL_PROTOCOL_NAME) == false)
 			{
-				if (flag2 == false)
+				if (su_install_tried == false)
 				{
-					flag2 = true;
+					su_install_tried = true;
 
-					if (SuInstallDriver(true))
+					if (su_install_proc(true))
 					{
 						goto LABEL_RETRY;
 					}

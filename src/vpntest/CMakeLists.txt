@@ -6,6 +6,9 @@ add_executable(vpntest vpntest.c harness.c harness_pack.c stress.c runtime.c cry
 # Named string test of NAT-4 (#90)
 target_sources(vpntest PRIVATE strtest.c)
 
+# Named SeLow test of FIX-2 (#98)
+target_sources(vpntest PRIVATE selowtest.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
