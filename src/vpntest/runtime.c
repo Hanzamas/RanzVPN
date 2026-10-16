@@ -235,6 +235,69 @@ static void RtCheckRfc3339Print(RT_CTX *ctx)
 	}
 }
 
+// A time zone vector: the biases of a TIME_ZONE_INFORMATION (UTC minus local time, minutes), the
+// zone ID GetTimeZoneInformation returns with them, the offset from UTC and its printed form
+typedef struct RT_ZONE_VECTOR
+{
+	char *What;
+	LONG Bias, StandardBias, DaylightBias;
+	UINT ZoneId;
+	int OffsetMin;										// Local time minus UTC (minutes)
+	char *Suffix;										// End of the RFC 3339 string with that offset
+} RT_ZONE_VECTOR;
+
+// Time zone vectors (ticket #102). The former GetCurrentTimezoneWin32 returned Bias alone: the
+// sign was turned around and the daylight bias was never added
+static RT_ZONE_VECTOR rt_zone_vectors[] =
+{
+	{"Zone offset: UTC+7 (Bias -420) is +420", -420, 0, 0, TIME_ZONE_ID_UNKNOWN, 420, "+07:00"},
+	{"Zone offset: UTC (Bias 0) is 0", 0, 0, 0, TIME_ZONE_ID_UNKNOWN, 0, "Z"},
+	{"Zone offset: UTC-3:30 in standard time (Bias 210) is -210", 210, 0, -60, TIME_ZONE_ID_STANDARD, -210, "-03:30"},
+	{"Zone offset: UTC-3:30 in daylight time adds the daylight bias", 210, 0, -60, TIME_ZONE_ID_DAYLIGHT, -150, "-02:30"},
+	{"Zone offset: UTC+1 in standard time (Bias -60) is +60", -60, 0, -60, TIME_ZONE_ID_STANDARD, 60, "+01:00"},
+	{"Zone offset: UTC+1 in daylight time is +120", -60, 0, -60, TIME_ZONE_ID_DAYLIGHT, 120, "+02:00"},
+	{"Zone offset: UTC+0 in daylight time is +60", 0, 0, -60, TIME_ZONE_ID_DAYLIGHT, 60, "+01:00"},
+	{"Zone offset: UTC+10:30 in half-hour daylight time is +660", -630, 0, -30, TIME_ZONE_ID_DAYLIGHT, 660, "+11:00"},
+	{"Zone offset: a standard bias is added in standard time", 300, 60, -60, TIME_ZONE_ID_STANDARD, -360, "-06:00"},
+	{"Zone offset: no daylight bias in a zone without daylight saving time", -60, 0, -60, TIME_ZONE_ID_UNKNOWN, 60, "+01:00"},
+};
+
+// GetTimezoneInfoOffsetWin32 against the time zone vectors, and GetCurrentTimezone against the
+// offset of the OS time zone now, daylight saving time included
+static void RtCheckZoneOffset(RT_CTX *ctx)
+{
+	UINT i;
+	TIME_ZONE_INFORMATION info;
+	SYSTEMTIME st;
+	char str[MAX_SIZE];
+	int offset;
+	INT64 os_offset = 0;
+	bool have_offset;
+
+	for (i = 0; i < sizeof(rt_zone_vectors) / sizeof(rt_zone_vectors[0]); i++)
+	{
+		RT_ZONE_VECTOR *v = &rt_zone_vectors[i];
+
+		Zero(&info, sizeof(info));
+		info.Bias = v->Bias;
+		info.StandardBias = v->StandardBias;
+		info.DaylightBias = v->DaylightBias;
+
+		offset = GetTimezoneInfoOffsetWin32(&info, v->ZoneId);
+		RtSetSystem(&st, 2024, 2, 29, 12, 34, 56, 789);
+		GetDateTimeStrRFC3339(str, sizeof(str), &st, offset);
+		RtCheck(ctx, offset == v->OffsetMin && EndWith(str, v->Suffix), v->What,
+			"offset %d, \"%s\"; expected %d, \"...%s\"", offset, str, v->OffsetMin, v->Suffix);
+	}
+
+	GetSystemTime(&st);
+	have_offset = RtOsZoneOffset(&st, &os_offset);
+	offset = GetCurrentTimezone();
+	RtCheck(ctx, have_offset && (INT64)offset * 60000 == os_offset,
+		"GetCurrentTimezone is the OS time zone offset now, daylight saving time included",
+		"GetCurrentTimezone = %d min, OS offset = %I64d ms", offset, os_offset);
+}
+
 // timeenc: the UINT64 time encoding is Unix-epoch milliseconds minus 9 hours, times before
 // 1971-01-11 encode as 0, local time is UTC plus the OS time zone offset, Tick64ToTime64
 // maps a tick to that encoding, and RFC 3339 strings carry the offset from UTC as +HH:MM,
@@ -327,6 +390,7 @@ void timeenc_test(UINT num, char **arg)
 
 	// RFC 3339 strings of the strict syslog format
 	RtCheckRfc3339Print(&ctx);
+	RtCheckZoneOffset(&ctx);
 
 	RtEnd(&ctx);
 }
