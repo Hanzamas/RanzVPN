@@ -562,7 +562,7 @@ TEST_LIST test_list[] =
 	{"stress", stress_test, "Mayaqua runtime stress test: stress [timing] [case ...]."},
 	{"watermark", watermark_test, "Watermark: hamcore watermark.bin size and SHA-256 against the former C array."},
 	{"tickorigin", tickorigin_test, "Tick64 origin: the first value is at least 1 and at most the process age."},
-	{"timeenc", timeenc_test, "Time encoding: SystemTime64/LocalTime64 against the OS clock, fixed-input conversions."},
+	{"timeenc", timeenc_test, "Time encoding: SystemTime64/LocalTime64 against the OS clock, fixed-input conversions, RFC 3339 strings."},
 	{"nullsafe", nullsafe_test, "NULL safety of the LOCK, LIST, COUNTER, REF and EVENT functions."},
 	{"charset", charset_test, "Charset: UTF-8 and ANSI conversions against fixed vectors and the historic UTF-8 coding."},
 	{"fileio", fileio_test, "FileIO: @, $ and | prefixes, path separator, sharing modes, reads past the end."},

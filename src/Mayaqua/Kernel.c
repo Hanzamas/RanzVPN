@@ -1012,24 +1012,168 @@ void GetDateTimeStrMilli(char *str, UINT size, SYSTEMTIME *st)
 }
 
 
-void GetDateTimeStrRFC3339(char *str, UINT size, SYSTEMTIME *st, int timezone_min){
+// Print an RFC 3339 date-time: st is the local time and timezone_min its offset from UTC in
+// minutes (local time minus UTC, positive east of UTC). Offset 0 prints "Z", any other offset
+// prints "+HH:MM" or "-HH:MM", the sign taken from the whole offset and both fields two digits
+void GetDateTimeStrRFC3339(char *str, UINT size, SYSTEMTIME *st, int timezone_min)
+{
+	UINT abs_min;
 	if (str == NULL || st == NULL)
 	{
 		ClearStr(str, size);
 		return;
 	}
 
-	if(timezone_min == 0){
+	if (timezone_min == 0)
+	{
 		Format(str, size, "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ",
-		st->wYear, st->wMonth, st->wDay,
-		st->wHour, st->wMinute, st->wSecond,
-		st->wMilliseconds);
-	}else{
-		Format(str, size, "%04u-%02u-%02uT%02u:%02u:%02u.%03u%+02d:%02d",
-		st->wYear, st->wMonth, st->wDay,
-		st->wHour, st->wMinute, st->wSecond,
-		st->wMilliseconds, timezone_min/60, timezone_min%60);
+			st->wYear, st->wMonth, st->wDay,
+			st->wHour, st->wMinute, st->wSecond,
+			st->wMilliseconds);
 	}
+	else
+	{
+		abs_min = (timezone_min < 0) ? (UINT)(-timezone_min) : (UINT)timezone_min;
+
+		Format(str, size, "%04u-%02u-%02uT%02u:%02u:%02u.%03u%s%02u:%02u",
+			st->wYear, st->wMonth, st->wDay,
+			st->wHour, st->wMinute, st->wSecond,
+			st->wMilliseconds, (timezone_min < 0) ? "-" : "+", abs_min / 60, abs_min % 60);
+	}
+}
+
+// Read count decimal digits at str. Stops at the first character that is not a digit, so it
+// never reads past the end of the string
+static bool ParseRFC3339Digits(char *str, UINT count, UINT *value)
+{
+	UINT i;
+
+	*value = 0;
+	for (i = 0; i < count; i++)
+	{
+		if (str[i] < '0' || str[i] > '9')
+		{
+			return false;
+		}
+
+		*value = *value * 10 + (UINT)(str[i] - '0');
+	}
+
+	return true;
+}
+
+// Parse an RFC 3339 date-time, "YYYY-MM-DDTHH:MM:SS", an optional fraction of a second and the
+// offset "Z", "+HH:MM" or "-HH:MM", into the UTC time it names. Fraction digits after the third
+// are dropped; "T" and "Z" may be lower case. A leap second (60) is refused, as SYSTEMTIME cannot
+// hold it. Returns false, with st zeroed, for anything else, an invalid date included
+bool DateTimeStrRFC3339ToSystemTime(SYSTEMTIME *st, char *str)
+{
+	UINT year, month, day, hour, minute, second;
+	UINT msec = 0, msec_scale = 100;
+	UINT offset_hour = 0, offset_minute = 0;
+	INT64 offset_sign = 0;
+	SYSTEMTIME tmp;
+	FILETIME ft;
+	UINT64 t;
+	char *p;
+	if (st == NULL)
+	{
+		return false;
+	}
+
+	Zero(st, sizeof(SYSTEMTIME));
+
+	if (str == NULL)
+	{
+		return false;
+	}
+
+	if (ParseRFC3339Digits(str, 4, &year) == false || str[4] != '-' ||
+		ParseRFC3339Digits(str + 5, 2, &month) == false || str[7] != '-' ||
+		ParseRFC3339Digits(str + 8, 2, &day) == false || (str[10] != 'T' && str[10] != 't') ||
+		ParseRFC3339Digits(str + 11, 2, &hour) == false || str[13] != ':' ||
+		ParseRFC3339Digits(str + 14, 2, &minute) == false || str[16] != ':' ||
+		ParseRFC3339Digits(str + 17, 2, &second) == false ||
+		hour > 23 || minute > 59 || second > 59)
+	{
+		return false;
+	}
+
+	p = str + 19;
+
+	// Fraction of a second: at least one digit, the first three kept
+	if (*p == '.')
+	{
+		p++;
+		if (*p < '0' || *p > '9')
+		{
+			return false;
+		}
+
+		while (*p >= '0' && *p <= '9')
+		{
+			msec += (UINT)(*p - '0') * msec_scale;
+			msec_scale /= 10;
+			p++;
+		}
+	}
+
+	// Offset from UTC
+	if (*p == 'Z' || *p == 'z')
+	{
+		p++;
+	}
+	else if (*p == '+' || *p == '-')
+	{
+		offset_sign = (*p == '-') ? -1 : 1;
+
+		if (ParseRFC3339Digits(p + 1, 2, &offset_hour) == false || p[3] != ':' ||
+			ParseRFC3339Digits(p + 4, 2, &offset_minute) == false ||
+			offset_hour > 23 || offset_minute > 59)
+		{
+			return false;
+		}
+
+		p += 6;
+	}
+	else
+	{
+		return false;
+	}
+
+	if (*p != 0)
+	{
+		return false;
+	}
+
+	// SystemTimeToFileTime refuses an invalid date (month 13, February 30, ...)
+	Zero(&tmp, sizeof(tmp));
+	tmp.wYear = (WORD)year;
+	tmp.wMonth = (WORD)month;
+	tmp.wDay = (WORD)day;
+	tmp.wHour = (WORD)hour;
+	tmp.wMinute = (WORD)minute;
+	tmp.wSecond = (WORD)second;
+	tmp.wMilliseconds = (WORD)msec;
+
+	if (SystemTimeToFileTime(&tmp, &ft) == FALSE)
+	{
+		return false;
+	}
+
+	// Local time minus the offset is UTC (FILETIME counts 100 ns units)
+	t = ((UINT64)ft.dwHighDateTime << 32) | (UINT64)ft.dwLowDateTime;
+	t = (UINT64)((INT64)t - offset_sign * (INT64)(offset_hour * 60 + offset_minute) * 600000000LL);
+	ft.dwHighDateTime = (DWORD)(t >> 32);
+	ft.dwLowDateTime = (DWORD)t;
+
+	if (FileTimeToSystemTime(&ft, st) == FALSE)
+	{
+		Zero(st, sizeof(SYSTEMTIME));
+		return false;
+	}
+
+	return true;
 }
 
 void GetSpanStrMilli(char *str, UINT size, UINT64 sec64)

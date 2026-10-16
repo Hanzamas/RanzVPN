@@ -192,9 +192,223 @@ static bool RtOsZoneOffset(SYSTEMTIME *utc, INT64 *offset)
 	return true;
 }
 
+// An RFC 3339 printing vector: a local time, its offset from UTC and the string printed for it
+typedef struct RT_RFC3339_VECTOR
+{
+	char *What;
+	UINT Year, Month, Day, Hour, Minute, Second, Ms;	// Local time
+	int OffsetMin;										// Local time minus UTC (minutes)
+	char *Str;
+} RT_RFC3339_VECTOR;
+
+// Printing vectors (ticket #102). The former printer took the offset as UTC minus local time and
+// printed it with "%+02d:%02d": UTC+7 came out as "-7:00", UTC-3:30 as "+3:30", UTC+5:30 as "-5:-30"
+static RT_RFC3339_VECTOR rt_rfc3339_vectors[] =
+{
+	{"RFC 3339: UTC prints Z", 2024, 2, 29, 12, 34, 56, 789, 0, "2024-02-29T12:34:56.789Z"},
+	{"RFC 3339: UTC+7 prints +07:00", 2024, 2, 29, 12, 34, 56, 789, 420, "2024-02-29T12:34:56.789+07:00"},
+	{"RFC 3339: UTC-3:30 prints -03:30", 2024, 2, 29, 12, 34, 56, 789, -210, "2024-02-29T12:34:56.789-03:30"},
+	{"RFC 3339: UTC+5:30 prints +05:30", 2024, 2, 29, 12, 34, 56, 789, 330, "2024-02-29T12:34:56.789+05:30"},
+	{"RFC 3339: UTC+5:45 prints +05:45", 2024, 2, 29, 12, 34, 56, 789, 345, "2024-02-29T12:34:56.789+05:45"},
+	{"RFC 3339: UTC-10 prints -10:00", 2024, 2, 29, 12, 34, 56, 789, -600, "2024-02-29T12:34:56.789-10:00"},
+	{"RFC 3339: UTC+14 prints +14:00", 2024, 2, 29, 12, 34, 56, 789, 840, "2024-02-29T12:34:56.789+14:00"},
+	{"RFC 3339: UTC-0:30 prints -00:30, the sign of the whole offset", 2024, 2, 29, 12, 34, 56, 789, -30, "2024-02-29T12:34:56.789-00:30"},
+	{"RFC 3339: single-digit fields print with leading zeros", 2025, 1, 5, 3, 4, 5, 6, 60, "2025-01-05T03:04:05.006+01:00"},
+	{"RFC 3339: a local time just after midnight of New Year", 2024, 1, 1, 0, 30, 0, 0, 120, "2024-01-01T00:30:00.000+02:00"},
+	{"RFC 3339: a local time just before midnight of New Year's Eve", 2023, 12, 31, 22, 0, 0, 0, -210, "2023-12-31T22:00:00.000-03:30"},
+};
+
+// GetDateTimeStrRFC3339 against the printing vectors
+static void RtCheckRfc3339Print(RT_CTX *ctx)
+{
+	UINT i;
+	SYSTEMTIME st;
+	char str[MAX_SIZE];
+
+	for (i = 0; i < sizeof(rt_rfc3339_vectors) / sizeof(rt_rfc3339_vectors[0]); i++)
+	{
+		RT_RFC3339_VECTOR *v = &rt_rfc3339_vectors[i];
+
+		RtSetSystem(&st, v->Year, v->Month, v->Day, v->Hour, v->Minute, v->Second, v->Ms);
+		GetDateTimeStrRFC3339(str, sizeof(str), &st, v->OffsetMin);
+		RtCheck(ctx, StrCmp(str, v->Str) == 0, v->What, "got \"%s\", expected \"%s\"", str, v->Str);
+	}
+}
+
+// An RFC 3339 parsing vector: the string, whether DateTimeStrRFC3339ToSystemTime takes it, and
+// the UTC time it names (day of the week: 0 = Sunday)
+typedef struct RT_RFC3339_PARSE_VECTOR
+{
+	char *Str;
+	bool Ok;
+	UINT Year, Month, Day, DayOfWeek, Hour, Minute, Second, Ms;
+} RT_RFC3339_PARSE_VECTOR;
+
+// Parsing vectors (ticket #102): the offset is applied, so every time comes back as UTC
+static RT_RFC3339_PARSE_VECTOR rt_rfc3339_parse_vectors[] =
+{
+	{"2024-02-29T12:34:56Z", true, 2024, 2, 29, 4, 12, 34, 56, 0},
+	{"2024-02-29T19:34:56.789+07:00", true, 2024, 2, 29, 4, 12, 34, 56, 789},
+	{"2024-02-29T09:04:56.789-03:30", true, 2024, 2, 29, 4, 12, 34, 56, 789},
+	{"2024-02-29T12:34:56.789+00:00", true, 2024, 2, 29, 4, 12, 34, 56, 789},
+	{"2024-02-29T12:34:56.789-00:00", true, 2024, 2, 29, 4, 12, 34, 56, 789},
+	{"2024-02-29T13:34:56.7+01:00", true, 2024, 2, 29, 4, 12, 34, 56, 700},
+	{"2024-02-29t12:34:56.123456z", true, 2024, 2, 29, 4, 12, 34, 56, 123},
+	{"2024-03-01T03:00:00.000+07:00", true, 2024, 2, 29, 4, 20, 0, 0, 0},
+	{"2023-12-31T22:00:00.000-03:30", true, 2024, 1, 1, 1, 1, 30, 0, 0},
+	{"2024-02-29T12:34:56.789", false},
+	{"2024-02-29T12:34:56.789+7:00", false},
+	{"2024-02-29T12:34:56.789-5:-30", false},
+	{"2024-02-29T12:34:56.789+0700", false},
+	{"2024-02-29T12:34:56.+07:00", false},
+	{"2024-02-29 12:34:56Z", false},
+	{"2024-02-30T00:00:00Z", false},
+	{"2023-02-29T00:00:00Z", false},
+	{"2024-13-01T00:00:00Z", false},
+	{"2024-02-29T24:00:00Z", false},
+	{"2016-12-31T23:59:60Z", false},
+	{"2024-02-29T12:34:56+24:00", false},
+	{"2024-02-29T12:34:56+07:60", false},
+	{"2024-02-29T12:34:56Z ", false},
+	{"2024-02-29", false},
+	{"", false},
+};
+
+// DateTimeStrRFC3339ToSystemTime against the parsing vectors, and every printing vector through
+// the printer, the parser and the printer again
+static void RtCheckRfc3339Parse(RT_CTX *ctx)
+{
+	UINT i;
+	SYSTEMTIME st, utc, back;
+	char str[MAX_SIZE];
+	char what[MAX_SIZE];
+	UINT64 local64, utc64, expect64;
+	bool ok;
+
+	for (i = 0; i < sizeof(rt_rfc3339_parse_vectors) / sizeof(rt_rfc3339_parse_vectors[0]); i++)
+	{
+		RT_RFC3339_PARSE_VECTOR *v = &rt_rfc3339_parse_vectors[i];
+
+		RtSetSystem(&st, 2000, 1, 1, 1, 1, 1, 1);
+		ok = DateTimeStrRFC3339ToSystemTime(&st, v->Str);
+
+		if (v->Ok == false)
+		{
+			Format(what, sizeof(what), "RFC 3339 parse refuses \"%s\" and zeroes the result", v->Str);
+			RtCheck(ctx, ok == false && IsZero(&st, sizeof(st)), what, "returned %s, result %s",
+				ok ? "true" : "false", IsZero(&st, sizeof(st)) ? "zero" : "not zero");
+			continue;
+		}
+
+		Format(what, sizeof(what), "RFC 3339 parse: \"%s\" is UTC %04u-%02u-%02u %02u:%02u:%02u.%03u",
+			v->Str, v->Year, v->Month, v->Day, v->Hour, v->Minute, v->Second, v->Ms);
+		if (ok)
+		{
+			RtCheckSystem(ctx, &st, what, v->Year, v->Month, v->Day, v->DayOfWeek, v->Hour, v->Minute, v->Second, v->Ms);
+		}
+		else
+		{
+			RtCheck(ctx, false, what, "refused");
+		}
+	}
+
+	ok = DateTimeStrRFC3339ToSystemTime(&st, NULL);
+	RtCheck(ctx, ok == false, "RFC 3339 parse refuses a NULL string", "returned true");
+	ok = DateTimeStrRFC3339ToSystemTime(NULL, "2024-02-29T12:34:56Z");
+	RtCheck(ctx, ok == false, "RFC 3339 parse refuses a NULL result", "returned true");
+
+	// Round trip: printer, parser (UTC: the local time minus the offset), printer again
+	for (i = 0; i < sizeof(rt_rfc3339_vectors) / sizeof(rt_rfc3339_vectors[0]); i++)
+	{
+		RT_RFC3339_VECTOR *v = &rt_rfc3339_vectors[i];
+
+		RtSetSystem(&st, v->Year, v->Month, v->Day, v->Hour, v->Minute, v->Second, v->Ms);
+		local64 = SystemToUINT64(&st);
+		expect64 = (UINT64)((INT64)local64 - (INT64)v->OffsetMin * 60000);
+
+		GetDateTimeStrRFC3339(str, sizeof(str), &st, v->OffsetMin);
+		ok = DateTimeStrRFC3339ToSystemTime(&utc, str);
+		utc64 = SystemToUINT64(&utc);
+
+		UINT64ToSystem(&back, (UINT64)((INT64)utc64 + (INT64)v->OffsetMin * 60000));
+		GetDateTimeStrRFC3339(str, sizeof(str), &back, v->OffsetMin);
+
+		UINT64ToSystem(&st, expect64);
+
+		Format(what, sizeof(what), "RFC 3339 round trip: \"%s\"", v->Str);
+		RtCheck(ctx, ok && utc64 == expect64 && utc.wDayOfWeek == st.wDayOfWeek && StrCmp(str, v->Str) == 0, what,
+			"parsed %s, UTC %I64u (expected %I64u), day of the week %u (expected %u), printed again \"%s\"",
+			ok ? "ok" : "refused", utc64, expect64, utc.wDayOfWeek, st.wDayOfWeek, str);
+	}
+}
+
+// A time zone vector: the biases of a TIME_ZONE_INFORMATION (UTC minus local time, minutes), the
+// zone ID GetTimeZoneInformation returns with them, the offset from UTC and its printed form
+typedef struct RT_ZONE_VECTOR
+{
+	char *What;
+	LONG Bias, StandardBias, DaylightBias;
+	UINT ZoneId;
+	int OffsetMin;										// Local time minus UTC (minutes)
+	char *Suffix;										// End of the RFC 3339 string with that offset
+} RT_ZONE_VECTOR;
+
+// Time zone vectors (ticket #102). The former GetCurrentTimezoneWin32 returned Bias alone: the
+// sign was turned around and the daylight bias was never added
+static RT_ZONE_VECTOR rt_zone_vectors[] =
+{
+	{"Zone offset: UTC+7 (Bias -420) is +420", -420, 0, 0, TIME_ZONE_ID_UNKNOWN, 420, "+07:00"},
+	{"Zone offset: UTC (Bias 0) is 0", 0, 0, 0, TIME_ZONE_ID_UNKNOWN, 0, "Z"},
+	{"Zone offset: UTC-3:30 in standard time (Bias 210) is -210", 210, 0, -60, TIME_ZONE_ID_STANDARD, -210, "-03:30"},
+	{"Zone offset: UTC-3:30 in daylight time adds the daylight bias", 210, 0, -60, TIME_ZONE_ID_DAYLIGHT, -150, "-02:30"},
+	{"Zone offset: UTC+1 in standard time (Bias -60) is +60", -60, 0, -60, TIME_ZONE_ID_STANDARD, 60, "+01:00"},
+	{"Zone offset: UTC+1 in daylight time is +120", -60, 0, -60, TIME_ZONE_ID_DAYLIGHT, 120, "+02:00"},
+	{"Zone offset: UTC+0 in daylight time is +60", 0, 0, -60, TIME_ZONE_ID_DAYLIGHT, 60, "+01:00"},
+	{"Zone offset: UTC+10:30 in half-hour daylight time is +660", -630, 0, -30, TIME_ZONE_ID_DAYLIGHT, 660, "+11:00"},
+	{"Zone offset: a standard bias is added in standard time", 300, 60, -60, TIME_ZONE_ID_STANDARD, -360, "-06:00"},
+	{"Zone offset: no daylight bias in a zone without daylight saving time", -60, 0, -60, TIME_ZONE_ID_UNKNOWN, 60, "+01:00"},
+};
+
+// GetTimezoneInfoOffsetWin32 against the time zone vectors, and GetCurrentTimezone against the
+// offset of the OS time zone now, daylight saving time included
+static void RtCheckZoneOffset(RT_CTX *ctx)
+{
+	UINT i;
+	TIME_ZONE_INFORMATION info;
+	SYSTEMTIME st;
+	char str[MAX_SIZE];
+	int offset;
+	INT64 os_offset = 0;
+	bool have_offset;
+
+	for (i = 0; i < sizeof(rt_zone_vectors) / sizeof(rt_zone_vectors[0]); i++)
+	{
+		RT_ZONE_VECTOR *v = &rt_zone_vectors[i];
+
+		Zero(&info, sizeof(info));
+		info.Bias = v->Bias;
+		info.StandardBias = v->StandardBias;
+		info.DaylightBias = v->DaylightBias;
+
+		offset = GetTimezoneInfoOffsetWin32(&info, v->ZoneId);
+		RtSetSystem(&st, 2024, 2, 29, 12, 34, 56, 789);
+		GetDateTimeStrRFC3339(str, sizeof(str), &st, offset);
+		RtCheck(ctx, offset == v->OffsetMin && EndWith(str, v->Suffix), v->What,
+			"offset %d, \"%s\"; expected %d, \"...%s\"", offset, str, v->OffsetMin, v->Suffix);
+	}
+
+	GetSystemTime(&st);
+	have_offset = RtOsZoneOffset(&st, &os_offset);
+	offset = GetCurrentTimezone();
+	RtCheck(ctx, have_offset && (INT64)offset * 60000 == os_offset,
+		"GetCurrentTimezone is the OS time zone offset now, daylight saving time included",
+		"GetCurrentTimezone = %d min, OS offset = %I64d ms", offset, os_offset);
+}
+
 // timeenc: the UINT64 time encoding is Unix-epoch milliseconds minus 9 hours, times before
-// 1971-01-11 encode as 0, local time is UTC plus the OS time zone offset, and Tick64ToTime64
-// maps a tick to that encoding
+// 1971-01-11 encode as 0, local time is UTC plus the OS time zone offset, Tick64ToTime64
+// maps a tick to that encoding, and RFC 3339 strings carry the offset from UTC as +HH:MM,
+// -HH:MM or Z
 void timeenc_test(UINT num, char **arg)
 {
 	RT_CTX ctx;
@@ -280,6 +494,11 @@ void timeenc_test(UINT num, char **arg)
 		"Tick64ToTime64 = %I64u, SystemTime64 = %I64u", value, system64);
 	value = Tick64ToTime64(0);
 	RtCheck(&ctx, value == 0, "Tick64ToTime64(0) is 0", "got %I64u", value);
+
+	// RFC 3339 strings of the strict syslog format
+	RtCheckRfc3339Print(&ctx);
+	RtCheckRfc3339Parse(&ctx);
+	RtCheckZoneOffset(&ctx);
 
 	RtEnd(&ctx);
 }

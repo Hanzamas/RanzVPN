@@ -96,17 +96,47 @@ int GetCurrentTimezone()
 	return ret;
 }
 
-int GetCurrentTimezoneWin32()
+// Offset of local time from UTC in minutes (positive east of UTC), for the time zone
+// information and the zone ID that GetTimeZoneInformation returned. The biases of
+// TIME_ZONE_INFORMATION are UTC minus local time: the offset is the zone bias plus the
+// daylight or standard bias in effect, with the sign turned around
+int GetTimezoneInfoOffsetWin32(TIME_ZONE_INFORMATION *info, UINT zone_id)
 {
-	TIME_ZONE_INFORMATION info;
-	Zero(&info, sizeof(info));
-
-	if (GetTimeZoneInformation(&info) == TIME_ZONE_ID_INVALID)
+	LONG bias;
+	if (info == NULL)
 	{
 		return 0;
 	}
 
-	return info.Bias;
+	bias = info->Bias;
+
+	if (zone_id == TIME_ZONE_ID_DAYLIGHT)
+	{
+		bias += info->DaylightBias;
+	}
+	else if (zone_id == TIME_ZONE_ID_STANDARD)
+	{
+		bias += info->StandardBias;
+	}
+
+	return -(int)bias;
+}
+
+// Current offset of local time from UTC in minutes (positive east of UTC), daylight saving
+// time included when it is in effect; 0 when the time zone cannot be read
+int GetCurrentTimezoneWin32()
+{
+	TIME_ZONE_INFORMATION info;
+	DWORD zone_id;
+	Zero(&info, sizeof(info));
+
+	zone_id = GetTimeZoneInformation(&info);
+	if (zone_id == TIME_ZONE_ID_INVALID)
+	{
+		return 0;
+	}
+
+	return GetTimezoneInfoOffsetWin32(&info, zone_id);
 }
 
 bool IsMacAddressLocalFast(void *addr)
