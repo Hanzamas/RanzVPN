@@ -929,6 +929,7 @@ LH_SET_SESSION			Sesi "%S": Parameter telah disetel. Jumlah maksimum koneksi TCP
 LH_NODE_INFO			Sesi "%S": Detail VPN Client: (%s)
 LH_VLAN_ID				Sesi "%S": VLAN ID yang ditetapkan: %u
 LH_END_SESSION			Sesi "%S": Sesi telah dihentikan. Informasi statistik adalah sebagai berikut: Total ukuran data keluar: %I64u byte, Total ukuran data masuk: %I64u byte.
+LH_UDP_ACCEL_DROP		Sesi "%S": UDP Acceleration telah membuang datagram diterima yang bukan paket sesi ini. Lebih pendek dari sebuah paket (dibuang sebelum dekripsi): %I64u, gagal dekripsi atau pemeriksaan paket: %I64u. Penerimaan dijeda pada batas per-poll atau per-tick sebanyak %I64u kali.
 LH_BCAST_STORM			Sesi "%S": Volume besar paket broadcast terdeteksi. Ada kasus di mana paket dibuang berdasarkan kebijakan. Alamat MAC sumber adalah %S, alamat IP sumber adalah %S, alamat IP tujuan adalah %S. Jumlah paket broadcast sama dengan atau lebih besar dari %u item per 1 detik (perhatikan bahwa informasi ini adalah hasil analisis mekanis dari sebagian paket dan bisa jadi tidak akurat).
 LH_DHCP_FORCE			Sesi "%S": Paket dibuang karena mencoba menggunakan alamat IP %S, yang bukan alamat IP yang dialokasikan oleh server DHCP.
 LH_MAC_LIMIT			Sesi "%S": Meskipun Virtual Hub mencoba menetapkan alamat MAC baru "%S", %u alamat MAC telah diberikan untuk layanan ini. Berdasarkan kebijakan keamanan, sesi ini diizinkan memiliki maksimum %u alamat MAC. Paket telah dibuang.
