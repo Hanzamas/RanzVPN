@@ -395,7 +395,6 @@ LIST *GetHostIPAddressList();
 LIST *CloneIPAddressList(LIST *o);
 void FreeHostIPAddressList(LIST *o);
 void AddHostIPAddressToList(LIST *o, IP *ip);
-UINT64 GetHostIPAddressListHash();
 
 void SetCurrentGlobalIP(IP *ip, bool ipv6);
 bool GetCurrentGlobalIP(IP *ip, bool ipv6);

@@ -7,14 +7,21 @@
 // and two servers on cloned machines got the same one. FIX-5 hashes the MachineGuid of Windows with
 // a random salt that the server configuration keeps (ComputeMachineUniqueHash). This test pins that
 // hash with known answers and checks that the same MachineGuid with separate salts gives separate
-// identities. Prints "MACHINEID TEST OK" only when every check passes, and frees everything it
-// allocates.
+// identities, that a server's identity has no other input (so a rename, an IP change or an OS update
+// keeps it), and that the salt goes into the configuration text and back. The harness test checks
+// the same across a real server restart. Prints "MACHINEID TEST OK" only when every check passes,
+// and frees everything it allocates.
 
+#include "Cedar/Cedar.h"
 #include "Cedar/Protocol.h"
+#include "Cedar/Server.h"
 
+#include "Mayaqua/Cfg.h"
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Str.h"
+
+#include <windows.h>
 
 // Known answers: the first SHA1_SIZE bytes of SHA-256 over MACHINE_ID_LABEL, the MachineGuid and the
 // salt, each string with its terminator (computed with Python hashlib)
@@ -109,6 +116,134 @@ static void MachineIdTestDerivation(MACHINEID_CTX *ctx)
 	MachineIdCheck(ctx, Cmp(a, b, SHA1_SIZE) == 0, "an empty MachineGuid counts as none");
 }
 
+// Read the MachineGuid with the registry API, apart from the code under test
+static bool MachineIdReadGuid(char *guid, UINT size)
+{
+	HKEY key;
+	DWORD type = 0;
+	DWORD bytes = size - 1;		// The zeroed last byte stays the terminator
+	LONG ret;
+
+	Zero(guid, size);
+
+	if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Cryptography", 0, KEY_READ | KEY_WOW64_64KEY, &key) != ERROR_SUCCESS)
+	{
+		return false;
+	}
+
+	ret = RegQueryValueExA(key, "MachineGuid", NULL, &type, (BYTE *)guid, &bytes);
+
+	RegCloseKey(key);
+
+	if (ret != ERROR_SUCCESS || type != REG_SZ)
+	{
+		Zero(guid, size);
+		return false;
+	}
+
+	return guid[0] != 0;
+}
+
+// The identity of a CEDAR: the MachineGuid and the salt only, a salt per CEDAR, the same salt gives it back
+static void MachineIdTestCedar(MACHINEID_CTX *ctx)
+{
+	char guid[MAX_SIZE];
+	CEDAR *c1 = NewCedar(NULL, NULL);
+	CEDAR *c2 = NewCedar(NULL, NULL);
+	UCHAR id1[SHA1_SIZE];
+	UCHAR id2[SHA1_SIZE];
+	UCHAR expect[SHA1_SIZE];
+
+	MachineIdCheck(ctx, MachineIdReadGuid(guid, sizeof(guid)),
+		"MachineGuid read from HKLM\\SOFTWARE\\Microsoft\\Cryptography (64-bit view)");
+
+	GenerateMachineUniqueHash(c1, id1);
+	ComputeMachineUniqueHash(expect, guid, c1->MachineIdSalt, sizeof(c1->MachineIdSalt));
+	MachineIdCheck(ctx, Cmp(id1, expect, SHA1_SIZE) == 0,
+		"the identity hashes the MachineGuid and the salt only: a rename, an IP change or an OS update keeps it");
+
+	GenerateMachineUniqueHash(c1, id2);
+	MachineIdCheck(ctx, Cmp(id1, id2, SHA1_SIZE) == 0, "the identity is the same on every call");
+
+	MachineIdCheck(ctx, Cmp(c1->MachineIdSalt, c2->MachineIdSalt, MACHINE_ID_SALT_SIZE) != 0,
+		"each NewCedar draws a salt of its own");
+
+	GenerateMachineUniqueHash(c2, id2);
+	MachineIdCheck(ctx, Cmp(id1, id2, SHA1_SIZE) != 0,
+		"two servers on one MachineGuid with their own salts have different identities (the old identity was the same)");
+
+	SetCedarMachineIdSalt(c2, c1->MachineIdSalt);
+	GenerateMachineUniqueHash(c2, id2);
+	MachineIdCheck(ctx, Cmp(id1, id2, SHA1_SIZE) == 0, "the same salt gives the same identity back");
+
+	ReleaseCedar(c1);
+	ReleaseCedar(c2);
+}
+
+// Load a folder holding a MachineIdSalt item of the given size into c; true when the salt of c stayed
+static bool MachineIdLoadKeeps(CEDAR *c, UINT size)
+{
+	UCHAR before[MACHINE_ID_SALT_SIZE];
+	UCHAR item[MACHINE_ID_SALT_SIZE * 2];
+	FOLDER *f = CfgCreateFolder(NULL, TAG_ROOT);
+	bool ret;
+
+	Copy(before, c->MachineIdSalt, sizeof(before));
+	Rand(item, sizeof(item));
+
+	if (size != 0)
+	{
+		CfgAddByte(f, "MachineIdSalt", item, size);
+	}
+
+	SiLoadMachineIdCfg(c, f);
+
+	ret = (Cmp(before, c->MachineIdSalt, sizeof(before)) == 0);
+
+	CfgDeleteFolder(f);
+
+	return ret;
+}
+
+// The salt in the config file: written, read back from the configuration text; a config file without it
+// (an upgrade) or with a salt of another size keeps the salt of NewCedar
+static void MachineIdTestCfg(MACHINEID_CTX *ctx)
+{
+	CEDAR *c1 = NewCedar(NULL, NULL);
+	CEDAR *c2 = NewCedar(NULL, NULL);
+	UCHAR id1[SHA1_SIZE];
+	UCHAR id2[SHA1_SIZE];
+	FOLDER *f = CfgCreateFolder(NULL, TAG_ROOT);
+	FOLDER *f2;
+	BUF *b;
+
+	MachineIdCheck(ctx, MachineIdLoadKeeps(c2, 0), "a config file without MachineIdSalt keeps the salt of NewCedar");
+	MachineIdCheck(ctx, MachineIdLoadKeeps(c2, MACHINE_ID_SALT_SIZE / 2), "a MachineIdSalt of half the size is ignored");
+	MachineIdCheck(ctx, MachineIdLoadKeeps(c2, MACHINE_ID_SALT_SIZE * 2), "a MachineIdSalt of twice the size is ignored");
+	MachineIdCheck(ctx, MachineIdLoadKeeps(c2, MACHINE_ID_SALT_SIZE) == false, "a MachineIdSalt of the right size replaces the salt");
+
+	SiWriteMachineIdCfg(f, c1);
+	b = CfgFolderToBuf(f, true);
+	SeekBufToBegin(b);
+	f2 = CfgBufTextToFolder(b);
+
+	if (MachineIdCheck(ctx, f2 != NULL && CfgIsItem(f2, "MachineIdSalt"), "SiWriteMachineIdCfg writes the MachineIdSalt item"))
+	{
+		SiLoadMachineIdCfg(c2, f2);
+		GenerateMachineUniqueHash(c1, id1);
+		GenerateMachineUniqueHash(c2, id2);
+		MachineIdCheck(ctx, Cmp(id1, id2, SHA1_SIZE) == 0,
+			"the salt read back from the configuration text gives the same identity (a restart keeps it)");
+	}
+
+	CfgDeleteFolder(f2);
+	FreeBuf(b);
+	CfgDeleteFolder(f);
+
+	ReleaseCedar(c1);
+	ReleaseCedar(c2);
+}
+
 // machineid: the machine identity of FIX-5
 void machineid_test(UINT num, char **arg)
 {
@@ -119,6 +254,8 @@ void machineid_test(UINT num, char **arg)
 	Print("Machine identity test\n");
 
 	MachineIdTestDerivation(&ctx);
+	MachineIdTestCedar(&ctx);
+	MachineIdTestCfg(&ctx);
 
 	if (ctx.NumFailed == 0)
 	{

@@ -67,7 +67,8 @@ bool ClientUploadAuth2(CONNECTION *c, SOCK *s);
 bool GetSessionKeyFromPack(PACK *p, UCHAR *session_key, UINT *session_key_32);
 
 void PackAddClientVersion(PACK *p, CONNECTION *c);
-void GenerateMachineUniqueHash(void *data);
+void GenerateMachineUniqueHash(CEDAR *c, void *data);
+void SetCedarMachineIdSalt(CEDAR *c, void *salt);
 void ComputeMachineUniqueHash(void *data, char *machine_guid, void *salt, UINT salt_size);
 
 LIST *NewCertList(bool load_root_and_chain);

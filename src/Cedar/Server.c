@@ -3850,6 +3850,33 @@ void SiLoadHubs(SERVER *s, FOLDER *f)
 	}
 }
 
+// Write the machine identity salt (FIX-5, #101) as the "MachineIdSalt" item of ServerConfiguration
+void SiWriteMachineIdCfg(FOLDER *f, CEDAR *c)
+{
+	if (f == NULL || c == NULL)
+	{
+		return;
+	}
+
+	CfgAddByte(f, "MachineIdSalt", c->MachineIdSalt, sizeof(c->MachineIdSalt));
+}
+
+// Load the machine identity salt. A config file without one, or with one of another size, keeps the random
+// salt of NewCedar, and the next save writes it: the identity changes once on the upgrade, then stays.
+void SiLoadMachineIdCfg(CEDAR *c, FOLDER *f)
+{
+	UCHAR salt[MACHINE_ID_SALT_SIZE];
+	if (c == NULL || f == NULL)
+	{
+		return;
+	}
+
+	if (CfgGetByte(f, "MachineIdSalt", salt, sizeof(salt)) == sizeof(salt))
+	{
+		SetCedarMachineIdSalt(c, salt);
+	}
+}
+
 void SiLoadServerCfg(SERVER *s, FOLDER *f)
 {
 	BUF *b;
@@ -4026,6 +4053,9 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 		{
 			Sha0(s->HashedPassword, "", 0);
 		}
+
+		// Before SiLoadHubs: the hub MAC addresses and addresses come from the machine identity
+		SiLoadMachineIdCfg(c, f);
 
 		s->DisableGetHostNameWhenAcceptTcp = CfgGetBool(f, "DisableGetHostNameWhenAcceptTcp");
 
@@ -4229,6 +4259,8 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s)
 		CfgAddStr(f, "CipherName", s->Cedar->CipherList);
 
 		CfgAddByte(f, "HashedPassword", s->HashedPassword, sizeof(s->HashedPassword));
+
+		SiWriteMachineIdCfg(f, c);
 
 		CfgAddBool(f, "DisableGetHostNameWhenAcceptTcp", s->DisableGetHostNameWhenAcceptTcp);
 		CfgAddBool(f, "DisableCoreDumpOnUnix", s->DisableCoreDumpOnUnix);

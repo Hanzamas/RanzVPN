@@ -564,7 +564,7 @@ TEST_LIST test_list[] =
 	{"eventlog", eventlog_test, "Event Log: MsWriteEventLog entries read back from the Application log."},
 	{"certdl", certdl_test, "SetServerCert downloads the issuer certificate from a loopback listener (DownloadCert)."},
 	{"str", str_test, "String functions: truncation and return values of copy, concatenate, format, search, tokens, compare."},
-	{"machineid", machineid_test, "Machine identity: MachineGuid and the configuration salt, known answers, separate salts."},
+	{"machineid", machineid_test, "Machine identity: MachineGuid and the configuration salt, known answers, separate salts, the salt in the config."},
 };
 
 // Test function

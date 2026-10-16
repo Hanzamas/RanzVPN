@@ -484,40 +484,49 @@ void ComputeMachineUniqueHash(void *data, char *machine_guid, void *salt, UINT s
 	Copy(data, hash, SHA1_SIZE);
 }
 
-void GenerateMachineUniqueHash(void *data)
+// HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid in the 64-bit registry view, or "" when it cannot be read
+static void GetMachineGuid(char *guid, UINT size)
 {
-	BUF *b;
-	char name[64];
-	OS_INFO *osinfo;
-	UINT64 iphash = 0;
-	if (data == NULL)
+	char *s;
+	if (guid == NULL)
 	{
 		return;
 	}
 
-	iphash = GetHostIPAddressListHash();
+	s = MsRegReadStrEx2(REG_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Cryptography", "MachineGuid", false, true);
 
-	b = NewBuf();
-	GetMachineName(name, sizeof(name));
+	StrCpy(guid, size, s);
 
-	osinfo = GetOsInfo();
+	Free(s);
+}
 
-	WriteBuf(b, name, StrLen(name));
+// Set the machine identity salt of a CEDAR (NewCedar: a random one; SiLoadMachineIdCfg: the one of the
+// config file) and derive its machine identity. Called before the hubs and listeners exist, so readers
+// of the identity need no lock.
+void SetCedarMachineIdSalt(CEDAR *c, void *salt)
+{
+	char guid[MAX_SIZE];
+	if (c == NULL || salt == NULL)
+	{
+		return;
+	}
 
-	WriteBufInt64(b, iphash);
+	Copy(c->MachineIdSalt, salt, sizeof(c->MachineIdSalt));
 
-	WriteBuf(b, &osinfo->OsType, sizeof(osinfo->OsType));
-	WriteBuf(b, osinfo->KernelName, StrLen(osinfo->KernelName));
-	WriteBuf(b, osinfo->KernelVersion, StrLen(osinfo->KernelVersion));
-	WriteBuf(b, osinfo->OsProductName, StrLen(osinfo->OsProductName));
-	WriteBuf(b, &osinfo->OsServicePack, sizeof(osinfo->OsServicePack));
-	WriteBuf(b, osinfo->OsSystemName, StrLen(osinfo->OsSystemName));
-	WriteBuf(b, osinfo->OsVendorName, StrLen(osinfo->OsVendorName));
-	WriteBuf(b, osinfo->OsVersion, StrLen(osinfo->OsVersion));
+	GetMachineGuid(guid, sizeof(guid));
 
-	Sha0(data, b->Buf, b->Size);
+	ComputeMachineUniqueHash(c->MachineUniqueHash, guid, c->MachineIdSalt, sizeof(c->MachineIdSalt));
+}
 
-	FreeBuf(b);
+// The machine identity of a server (SHA1_SIZE bytes): virtual hub MAC address and address, Cascade unique_id
+void GenerateMachineUniqueHash(CEDAR *c, void *data)
+{
+	if (c == NULL || data == NULL)
+	{
+		return;
+	}
+
+	Copy(data, c->MachineUniqueHash, SHA1_SIZE);
 }
 
 static void NodeInfoToStr(wchar_t *str, UINT size, NODE_INFO *info)
@@ -738,7 +747,7 @@ bool ServerAccept(CONNECTION *c)
 		return false;
 	}
 
-	GenerateMachineUniqueHash(unique2);
+	GenerateMachineUniqueHash(c->Cedar, unique2);
 
 	Zero(ctoken_hash_str, sizeof(ctoken_hash_str));
 
@@ -3540,7 +3549,7 @@ bool ClientUploadAuth(CONNECTION *c)
 
 	PackAddBool(p, "qos", o->DisableQoS ? false : true);
 
-	GenerateMachineUniqueHash(unique);
+	GenerateMachineUniqueHash(c->Cedar, unique);
 	PackAddData(p, "unique_id", unique, SHA1_SIZE);
 
 	if (o->NoUdpAcceleration == false && c->Session->UdpAccel != NULL)

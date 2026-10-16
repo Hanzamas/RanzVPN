@@ -210,6 +210,8 @@ void SiLoadLocalBridges(SERVER *s, FOLDER *f);
 void SiLoadListeners(SERVER *s, FOLDER *f);
 void SiWriteServerCfg(FOLDER *f, SERVER *s);
 void SiLoadServerCfg(SERVER *s, FOLDER *f);
+void SiWriteMachineIdCfg(FOLDER *f, CEDAR *c);
+void SiLoadMachineIdCfg(CEDAR *c, FOLDER *f);
 void SiLoadGlobalParamsCfg(FOLDER *f);
 void SiLoadGlobalParamItem(UINT id, UINT value);
 void SiWriteTraffic(FOLDER *parent, char *name, TRAFFIC *t);
