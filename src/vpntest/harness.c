@@ -2864,12 +2864,40 @@ static void HarnessConfigApiRoundTrip(HARNESS *h)
 	FreeRpcConfig(&c);
 }
 
+// The machine identity of the server and the MAC address and address of hub HARNESS_HUB_A (FIX-5, #101)
+static bool HarnessGetMachineId(HARNESS *h, UCHAR *id, UCHAR *hub_mac, IP *hub_ip)
+{
+	HUB *hub;
+
+	GenerateMachineUniqueHash(h->Server->Cedar, id);
+
+	hub = GetHub(h->Server->Cedar, HARNESS_HUB_A);
+	if (hub == NULL)
+	{
+		return false;
+	}
+
+	Copy(hub_mac, hub->HubMacAddr, sizeof(hub->HubMacAddr));
+	Copy(hub_ip, &hub->HubIp, sizeof(IP));
+
+	ReleaseHub(hub);
+
+	return true;
+}
+
 // Save the configuration, restart the server from the saved file and compare the reloaded configuration
 static void HarnessReload(HARNESS *h)
 {
 	RPC_CONFIG c;
 	char *text1;
 	UINT err = ERR_NO_ERROR;
+	UCHAR id1[SHA1_SIZE];
+	UCHAR id2[SHA1_SIZE];
+	UCHAR mac1[6];
+	UCHAR mac2[6];
+	IP ip1;
+	IP ip2;
+	bool have_id1;
 
 	Print("[config: reload into a fresh server instance]\n");
 
@@ -2882,6 +2910,8 @@ static void HarnessReload(HARNESS *h)
 	text1 = CopyStr(c.FileData);
 	FreeRpcConfig(&c);
 
+	have_id1 = HarnessCheck(h, HarnessGetMachineId(h, id1, mac1, &ip1), "GetHub " HARNESS_HUB_A " before the restart");
+
 	// SiReleaseServer writes the configuration file, SiNewServer loads it again
 	AdminDisconnect(h->Rpc);
 	h->Rpc = NULL;
@@ -2892,6 +2922,15 @@ static void HarnessReload(HARNESS *h)
 	if (HarnessCheck(h, h->Server != NULL, "server restarted from the saved " HARNESS_CONFIG_FILE) &&
 		HarnessWaitListener(h, HARNESS_LISTEN_TIMEOUT))
 	{
+		// FIX-5: the salt in the configuration keeps the machine identity, and with it the hub MAC address
+		// and address, across the restart
+		if (have_id1 && HarnessCheck(h, HarnessGetMachineId(h, id2, mac2, &ip2), "GetHub " HARNESS_HUB_A " after the restart"))
+		{
+			HarnessCheck(h, Cmp(id1, id2, SHA1_SIZE) == 0, "machine identity kept by the restart (MachineIdSalt in the configuration)");
+			HarnessCheck(h, Cmp(mac1, mac2, sizeof(mac1)) == 0 && CmpIpAddr(&ip1, &ip2) == 0,
+				"hub MAC address and address kept by the restart");
+		}
+
 		h->Rpc = HarnessAdminConnect(h->ClientCedar, HARNESS_START_TIMEOUT, &err);
 		if (HarnessCheckErr(h, (h->Rpc != NULL ? ERR_NO_ERROR : err), "admin RPC reconnected after the restart"))
 		{

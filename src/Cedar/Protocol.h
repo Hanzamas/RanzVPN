@@ -22,6 +22,9 @@ struct CHECK_CERT_THREAD_PROC
 #define	AUTO_DOWNLOAD_CERTS_PREFIX	L".autodownload_"
 #define	FIND_CERT_CHAIN_MAX_DEPTH	16
 
+// Fixed first input of the machine identity hash (ComputeMachineUniqueHash, FIX-5 #101)
+#define	MACHINE_ID_LABEL			"RanzVPN machine identity v1"
+
 bool ServerAccept(CONNECTION *c);
 bool ClientConnect(CONNECTION *c);
 SOCK *ClientConnectToServer(CONNECTION *c);
@@ -64,7 +67,9 @@ bool ClientUploadAuth2(CONNECTION *c, SOCK *s);
 bool GetSessionKeyFromPack(PACK *p, UCHAR *session_key, UINT *session_key_32);
 
 void PackAddClientVersion(PACK *p, CONNECTION *c);
-void GenerateMachineUniqueHash(void *data);
+void GenerateMachineUniqueHash(CEDAR *c, void *data);
+void SetCedarMachineIdSalt(CEDAR *c, void *salt);
+void ComputeMachineUniqueHash(void *data, char *machine_guid, void *salt, UINT salt_size);
 
 LIST *NewCertList(bool load_root_and_chain);
 void FreeCertList(LIST *o);

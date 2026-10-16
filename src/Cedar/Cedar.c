@@ -1145,6 +1145,14 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 
 	Rand(c->UniqueId, sizeof(c->UniqueId));
 
+	// Machine identity (FIX-5): a fresh salt; a server replaces it with the salt of its config file
+	{
+		UCHAR salt[MACHINE_ID_SALT_SIZE];
+
+		Rand(salt, sizeof(salt));
+		SetCedarMachineIdSalt(c, salt);
+	}
+
 	c->CreatedTick = Tick64();
 
 	c->lock = NewLock();

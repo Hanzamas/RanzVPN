@@ -203,6 +203,8 @@
 
 #define	SE_HUB_MAC_ADDR_SIGN				0xAE					// Second byte of a virtual HUB MAC address (00:AE:...)
 
+#define	MACHINE_ID_SALT_SIZE				32						// Bytes of the machine identity salt (FIX-5)
+
 #define	HUB_ACCESSLIST_DELAY_MAX	10000
 #define	HUB_ACCESSLIST_JITTER_MAX	100
 #define	HUB_ACCESSLIST_LOSS_MAX		100
@@ -502,6 +504,8 @@ struct CEDAR
 	SSL_ACCEPT_SETTINGS SslAcceptSettings;
 	UINT DhParamBits;
 	char StunServer[MAX_HOST_NAME_LEN + 1];	// STUN server (host[:port]) for UDP acceleration, empty = STUN disabled
+	UCHAR MachineIdSalt[MACHINE_ID_SALT_SIZE];	// Machine identity salt: random from NewCedar, then the one of the config file
+	UCHAR MachineUniqueHash[SHA1_SIZE];	// Machine identity from MachineGuid and MachineIdSalt (SetCedarMachineIdSalt)
 };
 
 TRAFFIC *NewTraffic();

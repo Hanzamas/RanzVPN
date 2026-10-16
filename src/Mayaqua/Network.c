@@ -6364,45 +6364,6 @@ static int CmpIpAddressList(void *p1, void *p2)
 	return r;
 }
 
-UINT64 GetHostIPAddressListHash()
-{
-	UINT i;
-	LIST *o;
-	BUF *buf = NewBuf();
-	UCHAR hash[SHA1_SIZE];
-	UINT64 ret = 0;
-
-	o = GetHostIPAddressList();
-
-	if (o != NULL)
-	{
-		for (i = 0; i < LIST_NUM(o); i++)
-		{
-			IP *ip = LIST_DATA(o, i);
-			char tmp[128];
-
-			Zero(tmp, sizeof(tmp));
-			IPToStr(tmp, sizeof(tmp), ip);
-
-			WriteBufStr(buf, tmp);
-		}
-
-		FreeHostIPAddressList(o);
-	}
-
-	WriteBufStr(buf, "test");
-
-	Sha1(hash, buf->Buf, buf->Size);
-
-	FreeBuf(buf);
-
-	Copy(&ret, hash, sizeof(UINT64));
-
-	ret = Endian64(ret);
-
-	return ret;
-}
-
 LIST *GetHostIPAddressList()
 {
 	LIST *o = NULL;

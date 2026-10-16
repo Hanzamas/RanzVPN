@@ -15,6 +15,9 @@ target_sources(vpntest PRIVATE selowtest.c)
 # Named DLL search order test of FIX-4 (#100)
 target_sources(vpntest PRIVATE dllsearch.c)
 
+# Named machine identity test of FIX-5 (#101)
+target_sources(vpntest PRIVATE machineid.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"

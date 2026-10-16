@@ -5695,20 +5695,19 @@ bool IsHubIpAddress64(IPV6_ADDR *addr)
 	return false;
 }
 
-static void GenHubIpAddress(IP *ip, char *name)
+static void GenHubIpAddress(IP *ip, UCHAR *machine_hash, char *name)
 {
 	char tmp1[MAX_SIZE];
 	char tmp2[MAX_SIZE];
 	UCHAR hash[SHA1_SIZE];
-	if (ip == NULL || name == NULL)
+	if (ip == NULL || machine_hash == NULL || name == NULL)
 	{
 		return;
 	}
 
 	StrCpy(tmp1, sizeof(tmp1), name);
 	Trim(tmp1);
-	GenerateMachineUniqueHash(hash);
-	BinToStr(tmp2, sizeof(tmp2), hash, sizeof(hash));
+	BinToStr(tmp2, sizeof(tmp2), machine_hash, SHA1_SIZE);
 	StrCat(tmp2, sizeof(tmp2), tmp1);
 	StrUpper(tmp2);
 
@@ -5717,20 +5716,19 @@ static void GenHubIpAddress(IP *ip, char *name)
 	SetIP(ip, 172, 31, hash[0] % 254 + 1, hash[0] % 254 + 1);
 }
 
-static void GenHubMacAddress(UCHAR *mac, char *name)
+static void GenHubMacAddress(UCHAR *mac, UCHAR *machine_hash, char *name)
 {
 	char tmp1[MAX_SIZE];
 	char tmp2[MAX_SIZE];
 	UCHAR hash[SHA1_SIZE];
-	if (mac == NULL || name == NULL)
+	if (mac == NULL || machine_hash == NULL || name == NULL)
 	{
 		return;
 	}
 
 	StrCpy(tmp1, sizeof(tmp1), name);
 	Trim(tmp1);
-	GenerateMachineUniqueHash(hash);
-	BinToStr(tmp2, sizeof(tmp2), hash, sizeof(hash));
+	BinToStr(tmp2, sizeof(tmp2), machine_hash, SHA1_SIZE);
 	StrCat(tmp2, sizeof(tmp2), tmp1);
 	StrUpper(tmp2);
 
@@ -5850,9 +5848,9 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 
 	Rand(h->HubSignature, sizeof(h->HubSignature));
 
-	GenerateMachineUniqueHash(hash);
-	GenHubMacAddress(h->HubMacAddr, h->Name);
-	GenHubIpAddress(&h->HubIp, h->Name);
+	GenerateMachineUniqueHash(cedar, hash);
+	GenHubMacAddress(h->HubMacAddr, hash, h->Name);
+	GenHubIpAddress(&h->HubIp, hash, h->Name);
 
 	GenerateEui64LocalAddress(&ip6, h->HubMacAddr);
 	IPToIPv6Addr(&h->HubIpV6, &ip6);
