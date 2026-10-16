@@ -70,6 +70,10 @@ void MsInitProcessCallOnce()
 	// directory or PATH. LOAD_LIBRARY_SEARCH_SYSTEM32 alone would drop the directory of the
 	// executable. Statically imported DLLs (the ASan runtime) were loaded before this runs.
 	SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
+	// SetDllDirectory("") also keeps the current directory out of the orders the default directories do not
+	// govern: the standard order of child processes (cscript.exe, Win32Run) and the alternate order of
+	// LoadLibraryEx with LOAD_WITH_ALTERED_SEARCH_PATH. Empty, it adds no directory to the default ones.
+	SetDllDirectoryW(L"");
 }
 
 static bool MsIsInVmMain()

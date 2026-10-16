@@ -172,7 +172,8 @@ void dllsearch_test(UINT num, char **arg)
 	// The ASan runtime DLL is a static import of every executable of this build
 	// (cmake/RanzSanitizers.cmake): the loader resolved it from the directory of the executable
 	// before main(), so the default DLL directories set at process start never apply to it
-	DllSearchCheck(&ctx, GetModuleHandleW(L"clang_rt.asan_dynamic-x86_64.dll") != NULL || GetModuleHandleW(L"clang_rt.asan_dynamic.dll") != NULL,
+	DllSearchCheck(&ctx, GetModuleHandleW(L"clang_rt.asan_dynamic-x86_64.dll") != NULL || GetModuleHandleW(L"clang_rt.asan_dynamic.dll") != NULL ||
+		GetModuleHandleW(L"clang_rt.asan_dynamic-i386.dll") != NULL,
 		"The statically imported ASan runtime DLL is loaded", "no clang_rt.asan_dynamic module in the process");
 #endif	// RANZ_ASAN
 
