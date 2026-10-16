@@ -561,6 +561,7 @@ TEST_LIST test_list[] =
 	{"eventlog", eventlog_test, "Event Log: MsWriteEventLog entries read back from the Application log."},
 	{"certdl", certdl_test, "SetServerCert downloads the issuer certificate from a loopback listener (DownloadCert)."},
 	{"str", str_test, "String functions: truncation and return values of copy, concatenate, format, search, tokens, compare."},
+	{"listenerbind", listenerbind_test, "ListenerCreate and ListenerEnable wait for the bind and report a port that cannot be bound."},
 };
 
 // Test function
