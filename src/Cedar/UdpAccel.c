@@ -4,6 +4,7 @@
 #include "UdpAccel.h"
 
 #include "Connection.h"
+#include "Logging.h"
 
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
@@ -18,6 +19,7 @@
 void UdpAccelPoll(UDP_ACCEL *a)
 {
 	UINT num_ignore_errors = 0;
+	UINT num_recv = 0;
 	UCHAR *tmp;
 	if (a == NULL)
 	{
@@ -26,17 +28,38 @@ void UdpAccelPoll(UDP_ACCEL *a)
 
 	tmp = a->TmpBuf;
 
+	// The per-tick budget starts over on a new tick
+	if (a->RecvTick != a->Now)
+	{
+		a->RecvTick = a->Now;
+		a->RecvNumInTick = 0;
+	}
+
 	while (true)
 	{
 		IP src_ip;
 		UINT src_port;
 		UINT ret;
 
+		// A flood must not hold the session thread: past the budget, the datagrams stay in the
+		// socket for the next call. After a full poll the last read has re-armed the socket event,
+		// so the session loop comes back at once; after a full tick it comes back on its next wake.
+		if (num_recv >= UDP_ACCELERATION_MAX_RECV_PER_POLL || a->RecvNumInTick >= UDP_ACCELERATION_MAX_RECV_PER_TICK)
+		{
+			a->NumRecvLimit++;
+			break;
+		}
+
 		ret = RecvFrom(a->UdpSock, &src_ip, &src_port, tmp, UDP_ACCELERATION_TMP_BUF_SIZE);
 
 		if (ret != 0 && ret != SOCK_LATER)
 		{
-			BLOCK *b = UdpAccelProcessRecvPacket(a, tmp, ret, &src_ip, src_port);
+			BLOCK *b;
+
+			num_recv++;
+			a->RecvNumInTick++;
+
+			b = UdpAccelProcessRecvPacket(a, tmp, ret, &src_ip, src_port);
 
 			if (b != NULL)
 			{
@@ -380,6 +403,27 @@ bool UdpAccelIsSendReady(UDP_ACCEL *a, bool check_keepalive)
 	return true;
 }
 
+// Size of the smallest packet of the format in use: the header with no data and no padding,
+// plus the IV and the tag (version 2) or the IV and the zero trailer (version 1)
+static UINT UdpAccelMinPacketSize(UDP_ACCEL *a)
+{
+	UINT ret = (UINT)UDP_ACCELERATION_PACKET_HEADER_SIZE;
+
+	if (a->PlainTextMode == false)
+	{
+		if (a->Version > 1)
+		{
+			ret += UDP_ACCELERATION_PACKET_IV_SIZE_V2 + UDP_ACCELERATION_PACKET_MAC_SIZE_V2;
+		}
+		else
+		{
+			ret += UDP_ACCELERATION_PACKET_IV_SIZE_V1 + UDP_ACCELERATION_PACKET_IV_SIZE_V1;
+		}
+	}
+
+	return ret;
+}
+
 BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip, UINT src_port)
 {
 	UINT64 my_tick, your_tick;
@@ -394,6 +438,14 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 		return NULL;
 	}
 
+	// Header check before any decryption: a datagram shorter than the smallest packet of the
+	// format (header, no data, no padding) cannot be one, so it costs no cipher work
+	if (size < UdpAccelMinPacketSize(a))
+	{
+		a->NumDropShort++;
+		return NULL;
+	}
+
 	if (a->PlainTextMode == false)
 	{
 		UCHAR *iv = buf;
@@ -402,24 +454,14 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 		{
 			UINT data_size;
 
-			if (size < UDP_ACCELERATION_PACKET_IV_SIZE_V2)
-			{
-				return NULL;
-			}
-
 			buf += UDP_ACCELERATION_PACKET_IV_SIZE_V2;
 			size -= UDP_ACCELERATION_PACKET_IV_SIZE_V2;
-
-			if (size < UDP_ACCELERATION_PACKET_MAC_SIZE_V2)
-			{
-				return NULL;
-			}
 
 			data_size = size - UDP_ACCELERATION_PACKET_MAC_SIZE_V2;
 
 			if (CipherProcessAead(a->CipherDecrypt, iv, buf + data_size, UDP_ACCELERATION_PACKET_MAC_SIZE_V2, buf, buf, data_size, NULL, 0) == 0)
 			{
-				return NULL;
+				goto DROP;
 			}
 
 			size -= UDP_ACCELERATION_PACKET_MAC_SIZE_V2;
@@ -429,25 +471,28 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 			UCHAR key[UDP_ACCELERATION_PACKET_KEY_SIZE_V1];
 			CRYPT *c;
 
-			if (size < UDP_ACCELERATION_PACKET_IV_SIZE_V1)
-			{
-				return NULL;
-			}
-
 			buf += UDP_ACCELERATION_PACKET_IV_SIZE_V1;
 			size -= UDP_ACCELERATION_PACKET_IV_SIZE_V1;
 
 			UdpAccelCalcKeyV1(key, a->YourKey, iv);
 
+			// The cookie first: RC4 keeps its keystream position from one Encrypt() to the next,
+			// so a datagram with a wrong cookie is dropped without decrypting the rest of it
 			c = NewCrypt(key, UDP_ACCELERATION_PACKET_KEY_SIZE_V1);
-			Encrypt(c, buf, buf, size);
+			Encrypt(c, buf, buf, sizeof(UINT));
+			if (READ_UINT(buf) != a->MyCookie)
+			{
+				FreeCrypt(c);
+				goto DROP;
+			}
+			Encrypt(c, buf + sizeof(UINT), buf + sizeof(UINT), size - sizeof(UINT));
 			FreeCrypt(c);
 		}
 	}
 
 	if (size < sizeof(UINT))
 	{
-		return NULL;
+		goto DROP;
 	}
 	cookie = READ_UINT(buf);
 	buf += sizeof(UINT);
@@ -455,12 +500,12 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 
 	if (cookie != a->MyCookie)
 	{
-		return NULL;
+		goto DROP;
 	}
 
 	if (size < sizeof(UINT64))
 	{
-		return NULL;
+		goto DROP;
 	}
 	my_tick = READ_UINT64(buf);
 	buf += sizeof(UINT64);
@@ -468,7 +513,7 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 
 	if (size < sizeof(UINT64))
 	{
-		return NULL;
+		goto DROP;
 	}
 	your_tick = READ_UINT64(buf);
 	buf += sizeof(UINT64);
@@ -476,7 +521,7 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 
 	if (size < sizeof(USHORT))
 	{
-		return NULL;
+		goto DROP;
 	}
 	inner_size = READ_USHORT(buf);
 	buf += sizeof(USHORT);
@@ -484,7 +529,7 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 
 	if (size < sizeof(UCHAR))
 	{
-		return NULL;
+		goto DROP;
 	}
 	if (a->ReadRawFlagMode == false)
 	{
@@ -500,7 +545,7 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 
 	if (size < inner_size)
 	{
-		return NULL;
+		goto DROP;
 	}
 
 	if (inner_size >= 1)
@@ -518,7 +563,7 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 
 			if (size < UDP_ACCELERATION_PACKET_IV_SIZE_V1)
 			{
-				return false;
+				goto DROP;
 			}
 
 			pad_size = size - UDP_ACCELERATION_PACKET_IV_SIZE_V1;
@@ -527,12 +572,12 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 
 			if (size != UDP_ACCELERATION_PACKET_IV_SIZE_V1)
 			{
-				return NULL;
+				goto DROP;
 			}
 
 			if (IsZero(buf, UDP_ACCELERATION_PACKET_IV_SIZE_V1) == false)
 			{
-				return NULL;
+				goto DROP;
 			}
 		}
 	}
@@ -541,7 +586,7 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 	{
 		if ((a->LastRecvYourTick - my_tick) >= ((UINT64)UDP_ACCELERATION_WINDOW_SIZE_MSEC))
 		{
-			return NULL;
+			goto DROP;
 		}
 	}
 
@@ -575,6 +620,11 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 	}
 
 	return b;
+
+DROP:
+	// Failed decryption, the cookie, the format or the window: not a packet of this session
+	a->NumDropInvalid++;
+	return NULL;
 }
 
 void UdpAccelCalcKeyV1(UCHAR *key, UCHAR *common_key, UCHAR *iv)
@@ -729,6 +779,37 @@ void UdpAccelQueryStun(UDP_ACCEL *a, IP *peer_ip)
 	a->StunPort = (USHORT)port;
 	a->UseStun = true;
 
+}
+
+// Write the drop counters to the log of hub h (its security log and the server log) when
+// datagrams were dropped since the last entry: at most once per UDP_ACCELERATION_DROP_LOG_INTERVAL
+// while the session runs, and at once when final is set (the session ends). The first drops of a
+// session are written at once. Returns true when an entry was written.
+bool UdpAccelLogDrops(UDP_ACCEL *a, HUB *h, char *session_name, bool final)
+{
+	UINT64 num_drop;
+	if (a == NULL)
+	{
+		return false;
+	}
+
+	num_drop = a->NumDropShort + a->NumDropInvalid;
+	if (num_drop == a->LogDropNum)
+	{
+		return false;
+	}
+
+	if (final == false && a->LogDropTick != 0 && (a->LogDropTick + (UINT64)UDP_ACCELERATION_DROP_LOG_INTERVAL) > a->Now)
+	{
+		return false;
+	}
+
+	a->LogDropTick = a->Now;
+	a->LogDropNum = num_drop;
+
+	HLog(h, "LH_UDP_ACCEL_DROP", session_name, a->NumDropShort, a->NumDropInvalid, a->NumRecvLimit);
+
+	return true;
 }
 
 UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port)
