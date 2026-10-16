@@ -524,10 +524,27 @@ SU_ADAPTER *SuOpenAdapter(SU *u, char *adapter_id)
 	return a;
 }
 
+// Read the adapter list from the SeLow basic device h into list and check its signature. This is
+// the only copy of that read; each caller keeps its own cleanup when it fails
+bool SuReadAdapterInfoList(void *h, SL_ADAPTER_INFO_LIST *list)
+{
+	DWORD read_size;
+	if (h == NULL || list == NULL)
+	{
+		return false;
+	}
+
+	if (ReadFile(h, list, sizeof(SL_ADAPTER_INFO_LIST), &read_size, NULL) == false)
+	{
+		return false;
+	}
+
+	return (list->Signature == SL_SIGNATURE);
+}
+
 LIST *SuGetAdapterList(SU *u)
 {
 	LIST *ret;
-	DWORD read_size;
 	UINT i;
 	if (u == NULL)
 	{
@@ -536,10 +553,9 @@ LIST *SuGetAdapterList(SU *u)
 
 	ret = NewList(SuCmpAdapterList);
 
+	// On a failed read, free the list; the device handle stays open (SuFree closes it)
 	Zero(&u->AdapterInfoList, sizeof(u->AdapterInfoList));
-	if (ReadFile(u->hFile, &u->AdapterInfoList, sizeof(u->AdapterInfoList),
-		&read_size, NULL) == false ||
-		u->AdapterInfoList.Signature != SL_SIGNATURE)
+	if (SuReadAdapterInfoList(u->hFile, &u->AdapterInfoList) == false)
 	{
 		SuFreeAdapterList(ret);
 		return NULL;
@@ -670,7 +686,6 @@ SU *SuInitEx(UINT wait_for_bind_complete_tick)
 {
 	void *h;
 	SU *u;
-	DWORD read_size;
 	bool flag = false;
 	UINT64 giveup_tick = 0;
 	static bool flag2 = false; // static: must persist across calls
@@ -716,10 +731,10 @@ LABEL_RETRY:
 
 	giveup_tick = Tick64() + (UINT64)wait_for_bind_complete_tick;
 
+	// On a failed read, free the SU and close the device handle
 	if (wait_for_bind_complete_tick == 0)
 	{
-		if (ReadFile(h, &u->AdapterInfoList, sizeof(u->AdapterInfoList), &read_size, NULL) == false ||
-			u->AdapterInfoList.Signature != SL_SIGNATURE)
+		if (SuReadAdapterInfoList(h, &u->AdapterInfoList) == false)
 		{
 
 			Free(u);
@@ -732,8 +747,7 @@ LABEL_RETRY:
 	{
 		while (giveup_tick >= Tick64())
 		{
-			if (ReadFile(h, &u->AdapterInfoList, sizeof(u->AdapterInfoList), &read_size, NULL) == false ||
-				u->AdapterInfoList.Signature != SL_SIGNATURE)
+			if (SuReadAdapterInfoList(h, &u->AdapterInfoList) == false)
 			{
 
 				Free(u);

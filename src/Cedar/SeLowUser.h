@@ -54,6 +54,7 @@ bool SuPutPacketsToDriver(SU_ADAPTER *a);
 bool SuPutPacket(SU_ADAPTER *a, void *buf, UINT size);
 
 SU_ADAPTER_LIST *SuAdapterInfoToAdapterList(SL_ADAPTER_INFO *info);
+bool SuReadAdapterInfoList(void *h, SL_ADAPTER_INFO_LIST *list);
 LIST *SuGetAdapterList(SU *u);
 void SuFreeAdapterList(LIST *o);
 int SuCmpAdapterList(void *p1, void *p2);
