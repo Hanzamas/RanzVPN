@@ -16,6 +16,6 @@ After that, the identity stays the same across restarts, host renames, IP addres
 
 Other cases:
 
-- Two servers cloned from one image share the MachineGuid. Their separate salts still give them separate identities.
-- A config file restored on the same machine keeps the identity. A new config file, or one without `MachineIdSalt`, gives a new identity.
+- Two servers cloned from one image share the MachineGuid. They get separate identities only if each has its own config file: an image made before the server first started has none, so each clone draws its own salt. An image that already holds the config file gives every clone the same salt, and with it the same hub MAC address and address. On each such clone, stop the server, delete the `byte MachineIdSalt` line from the `ServerConfiguration` folder of the config file, and start it again; it draws and saves a new salt.
+- A config file restored on the same machine keeps the identity. Restored on a different machine, it gives a new identity, because the MachineGuid differs. A new config file, or one without `MachineIdSalt`, gives a new identity.
 - Two server instances on one machine no longer share the identity. A Cascade between them still counts as a local-host session, because the server also checks whether the peer address is one of its own.
