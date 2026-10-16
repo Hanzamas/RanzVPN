@@ -192,6 +192,7 @@ ERR_149					The destination VPN Server's certificate does not match the specifie
 ERR_150					Failed to find the TLS version that is supported by both sides. This usually means that one side may be using an obsolete TLS version which is diabled by the other side.
 ERR_151					Failed to find an available cipher that is supported by both sides, or the cipher specified is not compatible with the server certificate.
 ERR_152					TLS handshake has failed.
+ERR_153					The TCP Listener has been registered, but its port could not be opened: another program is using it or Windows reserves it. The VPN Server keeps trying and starts listening once the port is free; until then ListenerList shows the listener as Error.
 
 
 # Concerning licenses

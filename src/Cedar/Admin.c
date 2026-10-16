@@ -5371,6 +5371,33 @@ static UINT StSetServerPassword(ADMIN *a, RPC_SET_PASSWORD *t)
 	return ERR_NO_ERROR;
 }
 
+// Wait for the bind attempt of the listener on a port, at most LISTENER_BIND_WAIT_TIME: ERR_NO_ERROR when the port
+// is bound, ERR_LISTENER_BIND_FAILED when it is not (the listener stays registered and keeps retrying)
+static UINT StWaitListenerBind(SERVER *s, UINT port)
+{
+	SERVER_LISTENER *e;
+	LISTENER *r = NULL;
+	bool bound;
+
+	LockList(s->ServerListenerList);
+	{
+		e = SiGetListener(s, port);
+		if (e != NULL && e->Listener != NULL)
+		{
+			r = e->Listener;
+			AddRef(r->ref);
+		}
+	}
+	UnlockList(s->ServerListenerList);
+
+	// Outside the list lock: other admin calls take it, the listener thread does not
+	bound = WaitListenerBind(r, LISTENER_BIND_WAIT_TIME);
+
+	ReleaseListener(r);
+
+	return (bound ? ERR_NO_ERROR : ERR_LISTENER_BIND_FAILED);
+}
+
 static UINT StEnableListener(ADMIN *a, RPC_LISTENER *t)
 {
 	UINT ret = ERR_NO_ERROR;
@@ -5407,7 +5434,11 @@ static UINT StEnableListener(ADMIN *a, RPC_LISTENER *t)
 
 	IncrementServerConfigRevision(a->Server);
 
-	SleepThread(250);
+	// Disabling is synchronous (StopListener waits for the listener thread); enabling reports the bind
+	if (ret == ERR_NO_ERROR && t->Enable)
+	{
+		ret = StWaitListenerBind(a->Server, t->Port);
+	}
 
 	return ret;
 }
@@ -5497,7 +5528,11 @@ static UINT StCreateListener(ADMIN *a, RPC_LISTENER *t)
 	}
 	UnlockList(a->Server->ServerListenerList);
 
-	SleepThread(250);
+	// A disabled listener has no bind to wait for
+	if (ret == ERR_NO_ERROR && t->Enable)
+	{
+		ret = StWaitListenerBind(a->Server, t->Port);
+	}
 
 	return ret;
 }

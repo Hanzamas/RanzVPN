@@ -569,6 +569,7 @@ TEST_LIST test_list[] =
 	{"str", str_test, "String functions: truncation and return values of copy, concatenate, format, search, tokens, compare."},
 	{"udpaccel", udpaccel_test, "UDP Acceleration: receive budget per poll and per tick, header check before decryption, drop counters and their log."},
 	{"selow", selow_test, "SeLow: the capability query installs nothing, a Local Bridge reaches the driver install, one adapter-list read."},
+	{"listenerbind", listenerbind_test, "ListenerCreate and ListenerEnable wait for the bind and report a port that cannot be bound."},
 };
 
 // Test function

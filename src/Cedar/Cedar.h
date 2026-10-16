@@ -228,6 +228,7 @@
 
 #define	LISTEN_RETRY_TIME			(2 * 1000)
 #define LISTEN_RETRY_TIME_NOIPV6	(60 * 1000)
+#define	LISTENER_BIND_WAIT_TIME		(5 * 1000)		// ListenerCreate / ListenerEnable wait at most this for the bind attempt
 
 #define	DOS_TABLE_EXPIRES_FIRST		250
 #define	DOS_TABLE_EXPIRES_MAX		1000
@@ -405,6 +406,7 @@
 #define	ERR_NOT_SUPPORTED_AUTH_ON_OPENSOURCE	143
 #define	ERR_NOT_SUPPORTED_FUNCTION_ON_OPENSOURCE	147
 #define ERR_HOSTNAME_MISMATCH			149
+#define	ERR_LISTENER_BIND_FAILED		153		// Listener registered, but its TCP port is not bound (it keeps retrying)
 
 
 typedef struct NETSVC

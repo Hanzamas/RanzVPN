@@ -192,6 +192,7 @@ ERR_149					Sertifikat VPN Server tujuan tidak cocok dengan nama host yang diten
 ERR_150					Gagal menemukan versi TLS yang didukung oleh kedua sisi. Ini biasanya berarti salah satu sisi mungkin menggunakan versi TLS yang sudah usang yang dinonaktifkan oleh sisi lainnya.
 ERR_151					Gagal menemukan cipher yang tersedia yang didukung oleh kedua sisi, atau cipher yang ditentukan tidak kompatibel dengan sertifikat server.
 ERR_152					Gagal melakukan handshake TLS.
+ERR_153					Listener TCP sudah terdaftar, tetapi port-nya tidak dapat dibuka: program lain sedang memakainya atau Windows mencadangkannya. VPN Server terus mencoba dan mulai mendengarkan begitu port itu bebas; sampai saat itu ListenerList menampilkan listener tersebut sebagai Gagal.
 
 
 # Concerning licenses

@@ -27,6 +27,8 @@
 //   "BENCH WARNING" line and skips the case; it does not fail the test.
 // - Files left after a run: the server_log, security_log and packet_log folders (as in the "s"
 //   mode). The configuration file and its backup folder are deleted at the start and at the end.
+// - "listenerbind" (FIX-3 #99) adds listeners on TCP 39557 (held by the test) and 39558 through the admin
+//   RPC and deletes them again; "certdl" runs its own loopback listener on TCP 39556.
 
 #include "harness.h"
 #include "harness_int.h"
@@ -105,6 +107,16 @@
 #define	CERTDL_MODE_OVER_CAP		8	// 200 with Content-Length CERTDL_BIG_LENGTH, then CERTDL_MAX_BODY bytes
 										// (the certificate and zero padding) and nothing more
 #define	CERTDL_MODE_SILENT			9	// No answer
+
+// Bind status of ListenerCreate and ListenerEnable ("listenerbind", FIX-3 #99)
+#define	LISTENBIND_PORT_HELD		39557				// Held by the test with the server's own bind: the server cannot bind it
+#define	LISTENBIND_PORT_FREE		39558				// Free: the server binds it
+#define	LISTENBIND_FORMER_SLEEP		250					// Fixed sleep of ListenerCreate and ListenerEnable before FIX-3
+#define	LISTENBIND_CYCLES			3					// Disable and enable cycles on the free port (the fastest call is compared)
+#define	LISTENBIND_RPC_LIMIT		(LISTENER_BIND_WAIT_TIME / 2)	// One listener RPC: a call that reaches the server's bind wait limit has missed the bind event
+#define	LISTENBIND_RETRY_LIMIT		(LISTEN_RETRY_TIME * 3)	// A retrying listener binds a released port within this
+#define	LISTENBIND_POLL				50					// ListenerList poll interval while waiting for that bind
+#define	LISTENBIND_WATCHDOG_LIMIT	60000				// "listenerbind" process aborted after this
 
 // Limits
 #define	HARNESS_QUEUE_HIGH			256					// Frames kept queued by the bench sender
@@ -459,6 +471,10 @@ static void CertDlRun(HARNESS *h, CERTDL_SERVER *srv, char *name, UINT mode, X *
 static bool CertDlCheckUint(HARNESS *h, char *what, UINT actual, UINT expected);
 static bool CertDlCheckStr(HARNESS *h, char *what, char *actual, char *expected);
 static void CertDlExpect(HARNESS *h, char *name, CERTDL_RESULT *r, bool chain, bool waits);
+static bool ListenBindState(HARNESS *h, UINT port, bool *enabled, bool *error);
+static UINT ListenBindCall(HARNESS *h, bool create, UINT port, bool enable, UINT64 *elapsed);
+static bool ListenBindExpect(HARNESS *h, char *name, char *what, UINT err, UINT expected, UINT64 elapsed);
+static bool ListenBindIsListening(HARNESS *h, UINT port, char *what);
 
 ////////////////////////////
 // Reporting and text helpers
@@ -4605,6 +4621,92 @@ static void CertDlExpect(HARNESS *h, char *name, CERTDL_RESULT *r, bool chain, b
 }
 
 ////////////////////////////
+// Listener bind status ("listenerbind", FIX-3 #99)
+
+// State of the listener on a port through EnumListener (what ListenerList shows); false when it is not listed
+static bool ListenBindState(HARNESS *h, UINT port, bool *enabled, bool *error)
+{
+	RPC_LISTENER_LIST t;
+	UINT i;
+	bool found = false;
+
+	*enabled = false;
+	*error = false;
+
+	Zero(&t, sizeof(t));
+	if (ScEnumListener(h->Rpc, &t) != ERR_NO_ERROR)
+	{
+		return false;
+	}
+
+	for (i = 0;i < t.NumPort;i++)
+	{
+		if (t.Ports[i] == port)
+		{
+			found = true;
+			*enabled = t.Enables[i];
+			*error = t.Errors[i];
+		}
+	}
+
+	FreeRpcListenerList(&t);
+
+	return found;
+}
+
+// ListenerCreate (create true) or ListenerEnable / ListenerDisable of a port through the admin RPC, timed
+static UINT ListenBindCall(HARNESS *h, bool create, UINT port, bool enable, UINT64 *elapsed)
+{
+	RPC_LISTENER t;
+	UINT64 start;
+	UINT err;
+
+	Zero(&t, sizeof(t));
+	t.Port = port;
+	t.Enable = enable;
+
+	start = Tick64();
+	err = (create ? ScCreateListener(h->Rpc, &t) : ScEnableListener(h->Rpc, &t));
+	*elapsed = Tick64() - start;
+
+	return err;
+}
+
+// Check the error of a timed listener RPC and that it returned well before the server's bind wait limit,
+// so the listener thread's bind event (failed or successful bind) ended the wait
+static bool ListenBindExpect(HARNESS *h, char *name, char *what, UINT err, UINT expected, UINT64 elapsed)
+{
+	char tmp[MAX_SIZE];
+	bool ok;
+
+	Print("TIME listenerbind_%s %I64u ms\n", name, elapsed);
+
+	if (err == expected)
+	{
+		Format(tmp, sizeof(tmp), "%s: error %u", what, err);
+	}
+	else
+	{
+		Format(tmp, sizeof(tmp), "%s: error %u (%S), expected %u (%S)", what, err, _E(err), expected, _E(expected));
+	}
+	ok = HarnessCheck(h, err == expected, tmp);
+
+	Format(tmp, sizeof(tmp), "%s: returned within %u ms", what, LISTENBIND_RPC_LIMIT);
+	ok = HarnessCheck(h, elapsed < LISTENBIND_RPC_LIMIT, tmp) && ok;
+
+	return ok;
+}
+
+// Check that ListenerList shows the listener on a port enabled and not in error state
+static bool ListenBindIsListening(HARNESS *h, UINT port, char *what)
+{
+	bool enabled, error;
+	bool listed = ListenBindState(h, port, &enabled, &error);
+
+	return HarnessCheck(h, listed && enabled && error == false, what);
+}
+
+////////////////////////////
 // Entry points
 
 // "harness": in-process server, two hubs, cascade, frames, vpncmd golden outputs and configuration round-trips
@@ -4869,6 +4971,160 @@ void certdl_test(UINT num, char **arg)
 	else
 	{
 		Print("CERTDL TEST FAILED (%u failed checks)\n", h->NumFail);
+	}
+
+	HarnessFree(h);
+}
+
+// "listenerbind": ListenerCreate and ListenerEnable wait for the bind attempt of the listener thread and report a
+// port that cannot be bound (FIX-3 #99). Before FIX-3 both slept a fixed 250 ms and always returned ERR_NO_ERROR.
+void listenerbind_test(UINT num, char **arg)
+{
+	HARNESS *h = HarnessNew();
+	HARNESS_WATCHDOG *wd = HarnessStartWatchdog("LISTENERBIND", LISTENBIND_WATCHDOG_LIMIT);
+	SOCK *held;
+	RPC_LISTENER d;
+	UINT64 elapsed, fastest, end;
+	UINT i, err;
+	bool ok, enabled, error;
+	char tmp[MAX_SIZE];
+
+	Print("Ranz listenerbind: ListenerCreate and ListenerEnable report the bind status; TCP %u held by the test, "
+		"TCP %u free\n", LISTENBIND_PORT_HELD, LISTENBIND_PORT_FREE);
+
+	Print("[setup]\n");
+	HarnessSetPhase("setup", "held port");
+	// The bind of the server's listener (any address, no address reuse): the server cannot bind the port while
+	// this socket is open
+	held = ListenEx2(LISTENBIND_PORT_HELD, false, false, NULL);
+	Format(tmp, sizeof(tmp), "the test holds TCP %u", LISTENBIND_PORT_HELD);
+	ok = HarnessCheck(h, held != NULL, tmp);
+
+	if (ok)
+	{
+		ok = HarnessStartServer(h);
+	}
+
+	if (ok)
+	{
+		// The listener stays registered and keeps retrying, as before FIX-3: only the result of the RPC changes
+		Print("[held: ListenerCreate]\n");
+		HarnessSetPhase("listenerbind", "create on the held port");
+		err = ListenBindCall(h, true, LISTENBIND_PORT_HELD, true, &elapsed);
+		ListenBindExpect(h, "create_held", "ListenerCreate on the held port reports the failed bind", err,
+			ERR_LISTENER_BIND_FAILED, elapsed);
+		ok = ListenBindState(h, LISTENBIND_PORT_HELD, &enabled, &error);
+		HarnessCheck(h, ok && enabled && error,
+			"ListenerList keeps the listener on the held port, enabled and in error state");
+
+		Print("[held: ListenerDisable, ListenerEnable]\n");
+		HarnessSetPhase("listenerbind", "enable on the held port");
+		err = ListenBindCall(h, false, LISTENBIND_PORT_HELD, false, &elapsed);
+		ListenBindExpect(h, "disable_held", "ListenerDisable on the held port", err, ERR_NO_ERROR, elapsed);
+		err = ListenBindCall(h, false, LISTENBIND_PORT_HELD, true, &elapsed);
+		ListenBindExpect(h, "enable_held", "ListenerEnable on the held port reports the failed bind", err,
+			ERR_LISTENER_BIND_FAILED, elapsed);
+
+		// The RPC returns once the port is bound. The fastest call is compared with the former fixed sleep, so one
+		// slow RPC on a busy machine does not fail the test.
+		Print("[free: ListenerCreate, %u disable and enable cycles]\n", LISTENBIND_CYCLES);
+		HarnessSetPhase("listenerbind", "free port");
+		err = ListenBindCall(h, true, LISTENBIND_PORT_FREE, true, &elapsed);
+		ListenBindExpect(h, "create_free", "ListenerCreate on the free port", err, ERR_NO_ERROR, elapsed);
+		ListenBindIsListening(h, LISTENBIND_PORT_FREE,
+			"ListenerList shows the free port listening right after ListenerCreate");
+		fastest = elapsed;
+
+		for (i = 0;i < LISTENBIND_CYCLES;i++)
+		{
+			err = ListenBindCall(h, false, LISTENBIND_PORT_FREE, false, &elapsed);
+			ListenBindExpect(h, "disable_free", "ListenerDisable on the free port", err, ERR_NO_ERROR, elapsed);
+			ok = ListenBindState(h, LISTENBIND_PORT_FREE, &enabled, &error);
+			HarnessCheck(h, ok && enabled == false,
+				"ListenerList shows the free port disabled right after ListenerDisable");
+
+			err = ListenBindCall(h, false, LISTENBIND_PORT_FREE, true, &elapsed);
+			ListenBindExpect(h, "enable_free", "ListenerEnable on the free port", err, ERR_NO_ERROR, elapsed);
+			ListenBindIsListening(h, LISTENBIND_PORT_FREE,
+				"ListenerList shows the free port listening right after ListenerEnable");
+			fastest = MIN(fastest, elapsed);
+		}
+
+		Print("TIME listenerbind_fastest %I64u ms\n", fastest);
+		Format(tmp, sizeof(tmp), "the fastest ListenerCreate or ListenerEnable on the free port returns before the "
+			"former fixed %u ms sleep", LISTENBIND_FORMER_SLEEP);
+		HarnessCheck(h, fastest < LISTENBIND_FORMER_SLEEP, tmp);
+
+		// A disabled listener has no bind to wait for
+		Print("[free: ListenerCreate disabled]\n");
+		HarnessSetPhase("listenerbind", "create disabled");
+		Zero(&d, sizeof(d));
+		d.Port = LISTENBIND_PORT_FREE;
+		HarnessCheckErr(h, ScDeleteListener(h->Rpc, &d), "ListenerDelete on the free port");
+		err = ListenBindCall(h, true, LISTENBIND_PORT_FREE, false, &elapsed);
+		ListenBindExpect(h, "create_disabled", "ListenerCreate of a disabled listener", err, ERR_NO_ERROR, elapsed);
+		ok = ListenBindState(h, LISTENBIND_PORT_FREE, &enabled, &error);
+		HarnessCheck(h, ok && enabled == false, "ListenerList shows the new listener disabled");
+
+		// The listener on the released port binds by its own retry; ListenerEnable then reports the bound port
+		Print("[released: retry, ListenerEnable]\n");
+		HarnessSetPhase("listenerbind", "held port released");
+		Disconnect(held);
+		ReleaseSock(held);
+		held = NULL;
+
+		end = Tick64() + (UINT64)LISTENBIND_RETRY_LIMIT;
+		while (true)
+		{
+			ok = ListenBindState(h, LISTENBIND_PORT_HELD, &enabled, &error);
+			if ((ok && enabled && error == false) || Tick64() >= end)
+			{
+				break;
+			}
+
+			SleepThread(LISTENBIND_POLL);
+		}
+		Format(tmp, sizeof(tmp), "the listener binds the released port by its own retry within %u ms",
+			LISTENBIND_RETRY_LIMIT);
+		HarnessCheck(h, ok && enabled && error == false, tmp);
+
+		err = ListenBindCall(h, false, LISTENBIND_PORT_HELD, true, &elapsed);
+		ListenBindExpect(h, "enable_released", "ListenerEnable on the enabled listener reports the bound port", err,
+			ERR_NO_ERROR, elapsed);
+
+		Print("[cleanup]\n");
+		HarnessSetPhase("listenerbind", "cleanup");
+		Zero(&d, sizeof(d));
+		d.Port = LISTENBIND_PORT_HELD;
+		HarnessCheckErr(h, ScDeleteListener(h->Rpc, &d), "ListenerDelete on the released port");
+		Zero(&d, sizeof(d));
+		d.Port = LISTENBIND_PORT_FREE;
+		HarnessCheckErr(h, ScDeleteListener(h->Rpc, &d), "ListenerDelete on the free port");
+		ok = ListenBindState(h, LISTENBIND_PORT_HELD, &enabled, &error) ||
+			ListenBindState(h, LISTENBIND_PORT_FREE, &enabled, &error);
+		HarnessCheck(h, ok == false, "ListenerList no longer lists the test ports");
+		ListenBindIsListening(h, HARNESS_PORT, "ListenerList still shows the harness listener listening");
+	}
+
+	HarnessSetPhase("teardown", NULL);
+	Print("[teardown]\n");
+	HarnessStopServer(h);
+
+	if (held != NULL)
+	{
+		Disconnect(held);
+		ReleaseSock(held);
+	}
+
+	HarnessStopWatchdog(wd);
+
+	if (h->NumFail == 0)
+	{
+		Print("LISTENERBIND TEST OK\n");
+	}
+	else
+	{
+		Print("LISTENERBIND TEST FAILED (%u failed checks)\n", h->NumFail);
 	}
 
 	HarnessFree(h);

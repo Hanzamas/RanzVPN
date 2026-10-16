@@ -32,6 +32,7 @@ struct LISTENER
 	EVENT *Event;
 	volatile bool Halt;
 	UINT Status;
+	void *BindEvent;			// Manual-reset kernel event, set once the listener thread has tried to bind (WaitListenerBind)
 
 	LIST *DosList;
 	UINT64 DosListLastRefreshTime;
@@ -60,6 +61,7 @@ LISTENER *NewListener(CEDAR *cedar, UINT proto, UINT port);
 LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only, bool shadow_ipv6, bool enable_ca);
 void ReleaseListener(LISTENER *r);
 void StopListener(LISTENER *r);
+bool WaitListenerBind(LISTENER *r, UINT timeout);
 int CompareListener(void *p1, void *p2);
 void EnableDosProtect();
 void DisableDosProtect();
