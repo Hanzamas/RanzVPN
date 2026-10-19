@@ -29,6 +29,8 @@
 //   mode). The configuration file and its backup folder are deleted at the start and at the end.
 // - "listenerbind" (FIX-3 #99) adds listeners on TCP 39557 (held by the test) and 39558 through the admin
 //   RPC and deletes them again; "certdl" runs its own loopback listener on TCP 39556.
+// - Phase "zerokey" (SEC-6 #96) runs after the Pack goldens: CreateUser and SetUser refuse a password user
+//   without a password hash, and the user it creates is deleted again before the configuration phases.
 
 #include "harness.h"
 #include "harness_int.h"
@@ -143,6 +145,9 @@
 #define	HARNESS_TAG_NUMBER			"<N>"
 
 #define	HARNESS_IS_DIGIT(c)			((c) >= '0' && (c) <= '9')
+
+// User of phase "zerokey" on hub HARNESS_HUB_A (deleted again by the phase)
+#define	HARNESS_ZEROKEY_USER		"zerokey"
 
 // Ethernet frame owned by the test packet adapter
 typedef struct HARNESS_FRAME
@@ -357,6 +362,7 @@ static UCHAR harness_mac_b[6] = {0x02, 0x42, 0x55, 0x52, 0x00, 0x0B};
 static UCHAR harness_mac_broadcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 static void HarnessStep(HARNESS *h, UINT err, char *what, bool check);
+static bool HarnessExpectErr(HARNESS *h, UINT err, UINT expected, char *what);
 static void HarnessWatchdogThread(THREAD *thread, void *param);
 static HARNESS_WATCHDOG *HarnessStartWatchdog(char *test_name, UINT limit);
 static void HarnessStopWatchdog(HARNESS_WATCHDOG *w);
@@ -421,6 +427,8 @@ static char *HarnessNormalizeConfig(char *text);
 static bool HarnessCompareConfig(HARNESS *h, char *what, char *text1, char *text2);
 static void HarnessConfigApiRoundTrip(HARNESS *h);
 static void HarnessReload(HARNESS *h);
+static void HarnessZeroKeyDelete(HARNESS *h, char *what);
+static void HarnessZeroKeyUser(HARNESS *h);
 static void HarnessDeleteObjects(HARNESS *h, bool check);
 static void HarnessDeleteConfigFiles();
 static void HarnessTeardown(HARNESS *h, bool check);
@@ -518,6 +526,23 @@ static void HarnessStep(HARNESS *h, UINT err, char *what, bool check)
 	{
 		Print("  [info] %s: error %u\n", what, err);
 	}
+}
+
+// Check that an admin RPC call returned the expected error code
+static bool HarnessExpectErr(HARNESS *h, UINT err, UINT expected, char *what)
+{
+	char tmp[MAX_SIZE];
+
+	if (err == expected)
+	{
+		Format(tmp, sizeof(tmp), "%s: error %u", what, err);
+	}
+	else
+	{
+		Format(tmp, sizeof(tmp), "%s: error %u (%S), expected %u (%S)", what, err, _E(err), expected, _E(expected));
+	}
+
+	return HarnessCheck(h, err == expected, tmp);
 }
 
 ////////////////////////////
@@ -2948,6 +2973,94 @@ static void HarnessReload(HARNESS *h)
 }
 
 ////////////////////////////
+// Admin RPC checks of SEC-6 (#96)
+
+// Delete user HARNESS_ZEROKEY_USER of hub HARNESS_HUB_A
+static void HarnessZeroKeyDelete(HARNESS *h, char *what)
+{
+	RPC_DELETE_USER d;
+
+	Zero(&d, sizeof(d));
+	StrCpy(d.HubName, sizeof(d.HubName), HARNESS_HUB_A);
+	StrCpy(d.Name, sizeof(d.Name), HARNESS_ZEROKEY_USER);
+
+	HarnessCheckErr(h, ScDeleteUser(h->Rpc, &d), what);
+}
+
+// CreateUser and SetUser refuse a password user record whose password hash (HashedKey) is missing or all zero
+// bytes: the server would store it as a user without a password. No login is attempted. A user that a call
+// creates against the expectation is deleted, so the configuration phases see the same users as before.
+static void HarnessZeroKeyUser(HARNESS *h)
+{
+	RPC_SET_USER t;
+	PACK *p;
+	PACK *ret;
+	UINT err;
+
+	Print("[zerokey: password user record without a password hash]\n");
+
+	// All-zero HashedKey through the client API
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
+	StrCpy(t.Name, sizeof(t.Name), HARNESS_ZEROKEY_USER);
+	t.AuthType = AUTHTYPE_PASSWORD;
+	t.AuthData = ZeroMalloc(sizeof(AUTHPASSWORD));
+	err = ScCreateUser(h->Rpc, &t);
+	FreeRpcSetUser(&t);
+	HarnessExpectErr(h, err, ERR_INVALID_PARAMETER, "CreateUser " HARNESS_ZEROKEY_USER " with an all-zero HashedKey");
+	if (err == ERR_NO_ERROR)
+	{
+		HarnessZeroKeyDelete(h, "DeleteUser " HARNESS_ZEROKEY_USER " (created with an all-zero HashedKey)");
+	}
+
+	// Raw request Pack: AuthType password with neither HashedKey nor Auth_Password
+	p = NewPack();
+	PackAddStr(p, "HubName", HARNESS_HUB_A);
+	PackAddStr(p, "Name", HARNESS_ZEROKEY_USER);
+	PackAddInt(p, "AuthType", AUTHTYPE_PASSWORD);
+	ret = AdminCall(h->Rpc, "CreateUser", p);
+	err = GetErrorFromPack(ret);
+	FreePack(ret);
+	HarnessExpectErr(h, err, ERR_INVALID_PARAMETER, "CreateUser " HARNESS_ZEROKEY_USER " without HashedKey and Auth_Password");
+	if (err == ERR_NO_ERROR)
+	{
+		HarnessZeroKeyDelete(h, "DeleteUser " HARNESS_ZEROKEY_USER " (created without a password hash)");
+	}
+
+	// A user with a password keeps its hash when SetUser sends an all-zero HashedKey
+	if (HarnessCreateUser(h, HARNESS_HUB_A, HARNESS_ZEROKEY_USER, L"ranz zerokey"))
+	{
+		UCHAR expected[SHA1_SIZE];
+
+		Zero(&t, sizeof(t));
+		StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
+		StrCpy(t.Name, sizeof(t.Name), HARNESS_ZEROKEY_USER);
+		t.AuthType = AUTHTYPE_PASSWORD;
+		t.AuthData = ZeroMalloc(sizeof(AUTHPASSWORD));
+		err = ScSetUser(h->Rpc, &t);
+		FreeRpcSetUser(&t);
+		HarnessExpectErr(h, err, ERR_INVALID_PARAMETER, "SetUser " HARNESS_ZEROKEY_USER " with an all-zero HashedKey");
+
+		HashPassword(expected, HARNESS_ZEROKEY_USER, HARNESS_PASSWORD);
+
+		Zero(&t, sizeof(t));
+		StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
+		StrCpy(t.Name, sizeof(t.Name), HARNESS_ZEROKEY_USER);
+		err = ScGetUser(h->Rpc, &t);
+		if (HarnessCheckErr(h, err, "GetUser " HARNESS_ZEROKEY_USER))
+		{
+			AUTHPASSWORD *pw = (t.AuthType == AUTHTYPE_PASSWORD ? (AUTHPASSWORD *)t.AuthData : NULL);
+
+			HarnessCheck(h, pw != NULL && Cmp(pw->HashedKey, expected, SHA1_SIZE) == 0,
+				"GetUser " HARNESS_ZEROKEY_USER ": the password hash of CreateUser is kept");
+		}
+		FreeRpcSetUser(&t);
+
+		HarnessZeroKeyDelete(h, "DeleteUser " HARNESS_ZEROKEY_USER);
+	}
+}
+
+////////////////////////////
 // Teardown
 
 // Delete the cascade, the users and the hubs through the admin RPC, then verify the hub list
@@ -4770,6 +4883,8 @@ void harness_test(UINT num, char **arg)
 		HarnessGolden(h);
 		HarnessSetPhase("pack", NULL);
 		HarnessPackGolden(h);
+		HarnessSetPhase("zerokey", NULL);
+		HarnessZeroKeyUser(h);
 		HarnessSetPhase("config", NULL);
 		HarnessConfigApiRoundTrip(h);
 	}
