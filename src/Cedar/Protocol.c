@@ -4057,21 +4057,8 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 		UniFormat(tmp, sizeof(tmp), _UU("STATUS_2"), in.TargetHostname, in.Hostname);
 		PrintStatus(sess, tmp);
 
-		switch (o->ProxyType)
-		{
-		case PROXY_HTTP:
-			ret = BindProxyHttpConnect(&out, &in, cancel_flag);
-			break;
-		case PROXY_SOCKS:
-			ret = BindProxySocks4Connect(&out, &in, cancel_flag);
-			break;
-		case PROXY_SOCKS5:
-			ret = BindProxySocks5Connect(&out, &in, cancel_flag);
-			break;
-		default:
-			c->Err = ERR_INTERNAL_ERROR;
-			return NULL;
-		}
+		// An unknown proxy type gives PROXY_ERROR_PARAMETER, which is ERR_INTERNAL_ERROR
+		ret = ProxyConnect(o->ProxyType, &out, &in, cancel_flag);
 
 		c->Err = ProxyCodeToCedar(ret);
 
