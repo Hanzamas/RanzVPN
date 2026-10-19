@@ -230,7 +230,7 @@ bool SuInstallDriverInner(bool force)
 		else
 		{
 			// Also copy by hand: the installer sometimes fails to copy the .sys file
-			Debug("SuCopySysFile from %S to %s: ret = %u\n", src_sys, sys_fullpath, SuCopySysFile(src_sys, sys_fullpath));
+			Debug("SuCopySysFile from %S to %S: ret = %u\n", src_sys, sys_fullpath, SuCopySysFile(src_sys, sys_fullpath));
 
 			ret = true;
 

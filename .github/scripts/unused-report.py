@@ -27,6 +27,9 @@ KINDS = {
     'unused-function', 'unneeded-internal-declaration',
     'unused-variable', 'unused-const-variable', 'unused-but-set-variable',
     'unused-label', 'unreachable-code',
+    # printf format checking of Format, FormatArgs, Print and Debug (RANZ_PRINTF_FORMAT, FND-204)
+    'format', 'format-extra-args', 'format-insufficient-args', 'format-invalid-specifier',
+    'format-security', 'format-zero-length',
 }
 
 SUMMARY_MAX_LINES = 3000

@@ -449,7 +449,7 @@ L_LOOP:
 				goto L_LOOP;
 			}
 
-			Debug("!!! WaitForSingleObject Error. ret=%u GetLastError=%u\n", wait_ret, GetLastError());
+			Debug("!!! WaitForSingleObject Error. ret=%u GetLastError=%u\n", wait_ret, (UINT)GetLastError());
 		}
 
 		num_error++;
@@ -3119,7 +3119,7 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 				unsigned long err;
 				while (err = ERR_get_error())
 				{
-					Debug("SSL_accept error %X: %s\n", err, ERR_reason_error_string(err));
+					Debug("SSL_accept error %X: %s\n", (UINT)err, ERR_reason_error_string(err));
 					if (ERR_GET_LIB(err) == ERR_LIB_SSL)
 					{
 						switch (ERR_GET_REASON(err))
@@ -3175,7 +3175,7 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 				unsigned long err;
 				while (err = ERR_get_error())
 				{
-					Debug("SSL_connect error %X: %s\n", err, ERR_reason_error_string(err));
+					Debug("SSL_connect error %X: %s\n", (UINT)err, ERR_reason_error_string(err));
 					if (ERR_GET_LIB(err) == ERR_LIB_SSL)
 					{
 						switch (ERR_GET_REASON(err))

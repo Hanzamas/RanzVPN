@@ -23,12 +23,15 @@ set(RANZ_UNUSED_WARNING_FLAGS
   -Wunreachable-code
 )
 
-# The kinds whose report is empty fail the build (-Werror=<kind>)
+# The kinds whose report is empty fail the build (-Werror=<kind>). format: Format, FormatArgs, Print
+# and Debug carry RANZ_PRINTF_FORMAT (Mayaqua/MayaType.h), so clang checks their arguments against
+# the format string; the -Wformat report of the project's own targets was empty after FND-204.
 set(RANZ_UNUSED_ERROR_FLAGS
   -Werror=unused-function
   -Werror=unused-label
   -Werror=unused-const-variable
   -Werror=unreachable-code
+  -Werror=format
 )
 
 if(RANZ_UNUSED_WARNINGS AND NOT CMAKE_C_COMPILER_ID STREQUAL "Clang")

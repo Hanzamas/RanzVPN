@@ -310,7 +310,7 @@ static bool CheckNetwork()
 				ret = Recv(socks[i], &n, sizeof(UINT), true);
 				if (ret == 0)
 				{
-					Print("Recv Failed (Disconnected).\n", ret);
+					Print("Recv Failed (Disconnected).\n");
 					end = true;
 					ok = false;
 				}

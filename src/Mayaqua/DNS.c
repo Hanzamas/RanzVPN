@@ -528,6 +528,8 @@ void DnsResolver(THREAD *t, void *param)
 
 bool DnsResolveReverse(char *dst, const UINT size, const IP *ip, UINT timeout, volatile const bool *cancel_flag)
 {
+	char ip_str[MAX_SIZE];
+
 	if (dst == NULL || size == 0 || IsZeroIP(ip))
 	{
 		return false;
@@ -601,7 +603,8 @@ bool DnsResolveReverse(char *dst, const UINT size, const IP *ip, UINT timeout, v
 	ReleaseDnsResolverReverse(resolver);
 
 CACHE:
-	Debug("DnsResolveReverse(): Could not resolve \"%r\". Searching for it in the cache...\n", ip);
+	IPToStr(ip_str, sizeof(ip_str), (IP *)ip);
+	Debug("DnsResolveReverse(): Could not resolve \"%s\". Searching for it in the cache...\n", ip_str);
 
 	const DNS_CACHE_REVERSE *cached = DnsCacheReverseFind(ip);
 	if (cached == NULL || cached->Expiration <= Tick64())
@@ -646,7 +649,7 @@ void DnsResolverReverse(THREAD *t, void *param)
 		}
 		else
 		{
-			Debug("DnsResolverReverse(): WideCharToMultiByte() failed with error %u!\n", GetLastError());
+			Debug("DnsResolverReverse(): WideCharToMultiByte() failed with error %u!\n", (UINT)GetLastError());
 		}
 	}
 	else if (ret != EAI_NONAME)

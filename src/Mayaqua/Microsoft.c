@@ -3146,7 +3146,7 @@ static void MsInitTempDir()
 		{
 			char msg[MAX_SIZE];
 			Format(msg, sizeof(msg),
-				"Couldn't create Temporary Directory: %s\r\n\r\n"
+				"Couldn't create Temporary Directory: %S\r\n\r\n"
 				"Please contact your system administrator.",
 				tmp);
 			exit(0);
