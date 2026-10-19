@@ -10,16 +10,6 @@
 
 void InitProcessCallOnce();
 
-#ifdef VPN_EXE
-int main(int argc, char *argv[]);
-int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
-{
-	char *argv[] = { CmdLine, };
-	InitProcessCallOnce();
-	return main(1, argv);
-}
-#endif
-
 #define	STRTABLE_ID					"SE_VPN_20121007"
 
 #define	IsBigEndian()		(g_little_endian ? false : true)

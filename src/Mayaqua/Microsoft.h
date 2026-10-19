@@ -112,13 +112,6 @@ typedef struct MS
 	IO *LockFile;
 } MS;
 
-typedef struct MS_USERMODE_SVC_PULSE_THREAD_PARAM
-{
-	void *hWnd;
-	void *GlobalPulse;
-	volatile bool Halt;
-} MS_USERMODE_SVC_PULSE_THREAD_PARAM;
-
 #endif	// MICROSOFT_C
 
 typedef struct NO_WARNING
@@ -267,9 +260,6 @@ bool MsWriteEventLog(char *source, UINT type, UINT event_id, char *message);
 bool MsIsUserMode();
 LIST *MsGetProcessList();
 void MsFreeProcessList(LIST *o);
-
-void MsGenerateUserModeSvcGlobalPulseName(char *name, UINT size, char *svc_name);
-void MsUserModeGlobalPulseRecvThread(THREAD *thread, void *param);
 
 MS_ADAPTER_LIST *MsCreateAdapterListInnerExVista(bool no_info);
 void MsFreeAdapter(MS_ADAPTER *a);

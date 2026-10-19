@@ -20,6 +20,14 @@
 
 #define SECURITY_WIN32
 
+// Shlwapi.h only for its path functions: its string macros (StrCpy, StrCat, ...) would replace ours
+#define NO_SHLWAPI_STRFCNS
+#define NO_SHLWAPI_REG
+#define NO_SHLWAPI_STREAM
+#define NO_SHLWAPI_HTTP
+#define NO_SHLWAPI_ISOS
+#define NO_SHLWAPI_GDI
+
 #include <AclAPI.h>
 #include <DbgHelp.h>
 #include <dwmapi.h>
@@ -31,6 +39,7 @@
 #include <security.h>
 #include <shellapi.h>
 #include <ShlObj.h>
+#include <Shlwapi.h>		// PathGetArgsA/W() of MsInit
 #include <SoftPub.h>
 #include <WtsApi32.h>
 
@@ -276,83 +285,6 @@ UINT MsGetUserLocaleId()
 
 	return lcid_cache;
 }
-
-static void MsSendGlobalPulse(void *p)
-{
-	HANDLE h;
-	if (p == NULL)
-	{
-		return;
-	}
-
-	h = (HANDLE)p;
-
-	PulseEvent(h);
-}
-
-static void MsCloseGlobalPulse(void *p)
-{
-	HANDLE h;
-	if (p == NULL)
-	{
-		return;
-	}
-
-	h = (HANDLE)p;
-
-	CloseHandle(h);
-}
-
-static bool MsWaitForGlobalPulse(void *p, UINT timeout)
-{
-	HANDLE h;
-	UINT ret;
-	if (p == NULL)
-	{
-		return false;
-	}
-	if (timeout == TIMEOUT_INFINITE)
-	{
-		timeout = INFINITE;
-	}
-
-	h = (HANDLE)p;
-
-	ret = WaitForSingleObject(h, timeout);
-
-	if (ret == WAIT_OBJECT_0)
-	{
-		return true;
-	}
-
-	return false;
-}
-
-static void *MsOpenOrCreateGlobalPulse(char *name)
-{
-	UCHAR hash[20];
-	char tmp[MAX_SIZE];
-	char tmp2[MAX_SIZE];
-	HANDLE h;
-	if (name == NULL)
-	{
-		return NULL;
-	}
-
-	StrCpy(tmp, sizeof(tmp), name);
-	Trim(tmp);
-	StrUpper(tmp);
-
-	Sha1(hash, name, StrLen(name));
-
-	BinToStr(tmp, sizeof(tmp), hash, sizeof(hash));
-	Format(tmp2, sizeof(tmp2), "Global\\GlobalPulse_%s", tmp);
-
-	h = CreateEvent(NULL, true, false, tmp2);
-
-	return (void *)h;
-}
-
 
 bool MsGetFileInformation(void *h, void *info)
 {
@@ -1266,38 +1198,6 @@ bool MsIsUserMode()
 	return is_usermode;
 }
 
-static void *MsCreateUserModeSvcGlocalPulse(char *svc_name)
-{
-	char name[MAX_SIZE];
-	if (svc_name == NULL)
-	{
-		return NULL;
-	}
-
-	MsGenerateUserModeSvcGlobalPulseName(name, sizeof(name), svc_name);
-
-	return MsOpenOrCreateGlobalPulse(name);
-}
-
-void MsGenerateUserModeSvcGlobalPulseName(char *name, UINT size, char *svc_name)
-{
-	wchar_t tmp[MAX_SIZE];
-	UCHAR hash[SHA1_SIZE];
-	if (name == NULL || svc_name == NULL)
-	{
-		return;
-	}
-
-	UniFormat(tmp, sizeof(tmp), L"usersvc_%S_@_%s", svc_name, MsGetUserNameW());
-
-	UniTrim(tmp);
-	UniStrUpper(tmp);
-
-	Sha1(hash, tmp, UniStrLen(tmp) * sizeof(wchar_t));
-
-	BinToStr(name, size, hash, sizeof(hash));
-}
-
 static void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop)
 {
 	WNDCLASS wc;
@@ -1306,8 +1206,6 @@ static void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTIO
 	INSTANCE *inst;
 	char title_a[MAX_PATH];
 	wchar_t msg_str[MAX_SIZE];
-	MS_USERMODE_SVC_PULSE_THREAD_PARAM p;
-	THREAD *recv_thread = NULL;
 	if (title == NULL || start == NULL || stop == NULL)
 	{
 		return;
@@ -1347,17 +1245,6 @@ static void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTIO
 		return;
 	}
 
-	Zero(&p, sizeof(p));
-	p.hWnd = hWnd;
-	p.GlobalPulse = MsCreateUserModeSvcGlocalPulse(g_service_name);
-
-	if (p.GlobalPulse != NULL)
-	{
-		p.Halt = false;
-
-		recv_thread = NewThread(MsUserModeGlobalPulseRecvThread, &p);
-	}
-
 	wnd_end = false;
 	while (wnd_end == false)
 	{
@@ -1368,42 +1255,7 @@ static void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTIO
 
 	FreeSingleInstance(inst);
 
-	p.hWnd = NULL;
-
-	if (p.GlobalPulse != NULL)
-	{
-		p.Halt = true;
-		MsSendGlobalPulse(p.GlobalPulse);
-
-		WaitThread(recv_thread, INFINITE);
-		ReleaseThread(recv_thread);
-
-		MsCloseGlobalPulse(p.GlobalPulse);
-	}
-
 	_exit(0);
-}
-
-void MsUserModeGlobalPulseRecvThread(THREAD *thread, void *param)
-{
-	MS_USERMODE_SVC_PULSE_THREAD_PARAM *p = (MS_USERMODE_SVC_PULSE_THREAD_PARAM *)param;
-	if (thread == NULL || p == NULL)
-	{
-		return;
-	}
-
-	while (p->Halt == false)
-	{
-		if (MsWaitForGlobalPulse(p->GlobalPulse, INFINITE))
-		{
-			break;
-		}
-	}
-
-	if (p->hWnd != NULL)
-	{
-		PostMessageA(p->hWnd, WM_CLOSE, 0, 0);
-	}
 }
 
 // Write one entry to the Application event log, with the message as its only insertion string;
@@ -3637,106 +3489,6 @@ HKEY MsGetRootKeyFromInt(UINT root)
 	return NULL;
 }
 
-static wchar_t *MsCutExeNameFromUniCommandLine(wchar_t *str)
-{
-	if (str == NULL)
-	{
-		return NULL;
-	}
-
-	if (str[0] != L'\"')
-	{
-		UINT i = UniSearchStrEx(str, L" ", 0, true);
-		if (i == INFINITE)
-		{
-			return str + UniStrLen(str);
-		}
-		else
-		{
-			return str + i + 1;
-		}
-	}
-	else
-	{
-		str++;
-		while (true)
-		{
-			if ((*str) == 0)
-			{
-				return str + UniStrLen(str);
-			}
-			if ((*str) == L'\"')
-			{
-				break;
-			}
-			str++;
-		}
-
-		while (true)
-		{
-			if ((*str) == 0)
-			{
-				return str + UniStrLen(str);
-			}
-			if ((*str) == L' ')
-			{
-				return str + 1;
-			}
-			str++;
-		}
-	}
-}
-
-static char *MsCutExeNameFromCommandLine(char *str)
-{
-	if (str == NULL)
-	{
-		return NULL;
-	}
-
-	if (str[0] != '\"')
-	{
-		UINT i = SearchStrEx(str, " ", 0, true);
-		if (i == INFINITE)
-		{
-			return str + StrLen(str);
-		}
-		else
-		{
-			return str + i + 1;
-		}
-	}
-	else
-	{
-		str++;
-		while (true)
-		{
-			if ((*str) == 0)
-			{
-				return str + StrLen(str);
-			}
-			if ((*str) == '\"')
-			{
-				break;
-			}
-			str++;
-		}
-
-		while (true)
-		{
-			if ((*str) == 0)
-			{
-				return str + StrLen(str);
-			}
-			if ((*str) == ' ')
-			{
-				return str + 1;
-			}
-			str++;
-		}
-	}
-}
-
 UINT MsGetCurrentProcessId()
 {
 	return ms->CurrentProcessId;
@@ -3934,8 +3686,9 @@ void MsInit()
 	str_unicode = UniCopyStr(GetCommandLineW());
 	UniTrim(str_unicode);
 
-	SetCommandLineStr(MsCutExeNameFromCommandLine(str_ansi));
-	SetCommandLineUniStr(MsCutExeNameFromUniCommandLine(str_unicode));
+	// PathGetArgs skips the program name, quoted or not, and the one space after it
+	SetCommandLineStr(PathGetArgsA(str_ansi));
+	SetCommandLineUniStr(PathGetArgsW(str_unicode));
 
 	Free(str_unicode);
 	Free(str_ansi);
