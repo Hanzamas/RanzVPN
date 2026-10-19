@@ -24,6 +24,9 @@ target_sources(vpntest PRIVATE vmdetect.c)
 # Named TCP/IP packet test of SEC-1 (#96)
 target_sources(vpntest PRIVATE tcpiptest.c)
 
+# Named X.509 and certificate signature test of SEC-2 (#96)
+target_sources(vpntest PRIVATE x509test.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"

@@ -474,6 +474,9 @@ void vmdetect_test(UINT num, char **arg);
 // Named TCP/IP packet test of SEC-1, #96 (tcpiptest.c)
 void tcpip_test(UINT num, char **arg);
 
+// Named X.509 and certificate signature test of SEC-2, #96 (x509test.c)
+void x509_test(UINT num, char **arg);
+
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
 char *watermark_expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
@@ -586,6 +589,7 @@ TEST_LIST test_list[] =
 	{"machineid", machineid_test, "Machine identity: MachineGuid and the configuration salt, known answers, separate salts, the salt in the config."},
 	{"vmdetect", vmdetect_test, "VM detection: MsIsInVm writes no script, starts no process, answers at once, reports a VM on a GitHub-hosted runner."},
 	{"tcpip", tcpip_test, "TCP/IP packets: DhcpModify reads the cookie at offset 236 and nothing past the payload, the MSS clamp walks the TCP options."},
+	{"x509", x509_test, "X.509: long name fields, certificate times in UTC, PKCS#1 v1.5 signature length, PEM bundle with an unknown key."},
 };
 
 // Test function

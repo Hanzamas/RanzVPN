@@ -1398,7 +1398,6 @@ bool Asn1TimeToSystem(SYSTEMTIME *s, void *asn1_time)
 	char tmp[32];
 	int len;
 	const char *src;
-	int type;
 	if (s == NULL || asn1_time == NULL)
 	{
 		return false;
@@ -1407,7 +1406,6 @@ bool Asn1TimeToSystem(SYSTEMTIME *s, void *asn1_time)
 	t = (ASN1_TIME *)asn1_time;
 	len = ASN1_STRING_length((const ASN1_STRING *)t);
 	src = (const char *)ASN1_STRING_get0_data((const ASN1_STRING *)t);
-	type = ASN1_STRING_type((const ASN1_STRING *)t);
 
 	if (src == NULL || len <= 0 || len >= (int)sizeof(tmp))
 	{
@@ -1417,17 +1415,9 @@ bool Asn1TimeToSystem(SYSTEMTIME *s, void *asn1_time)
 	Copy(tmp, src, len);
 	tmp[len] = '\0';
 
-	if (StrToSystem(s, tmp) == false)
-	{
-		return false;
-	}
-
-	if (type == V_ASN1_GENERALIZEDTIME)
-	{
-		LocalToSystem(s, s);
-	}
-
-	return true;
+	// UTCTime and GeneralizedTime in a certificate are both UTC ("Z", RFC 5280 section 4.1.2.5),
+	// so neither form is moved by the local time zone
+	return StrToSystem(s, tmp);
 }
 
 bool StrToSystem(SYSTEMTIME *s, char *str)
@@ -1515,11 +1505,18 @@ bool RsaVerifyEx(void *data, UINT data_size, void *sign, K *k, UINT bits)
 		return false;
 	}
 
+	// A signature is exactly one modulus long
 	rsa_size = RSA_size(rsa);
+	if (bits / 8 != rsa_size)
+	{
+		return false;
+	}
 	rsa_size = MAX(rsa_size, 1024);
 	decrypt_data = ZeroMalloc(rsa_size);
 
-	if (RSA_public_decrypt(bits / 8, sign, decrypt_data, rsa, RSA_PKCS1_PADDING) <= 0)
+	// The PKCS#1 v1.5 block must hold the DigestInfo and the hash and nothing after them:
+	// comparing only the first SIGN_HASH_SIZE bytes of a longer block let a forged block verify
+	if (RSA_public_decrypt(bits / 8, sign, decrypt_data, rsa, RSA_PKCS1_PADDING) != SIGN_HASH_SIZE)
 	{
 		Free(decrypt_data);
 		return false;
@@ -1924,7 +1921,7 @@ wchar_t *GetUniStrFromX509Name(void *xn, int nid)
 {
 	UCHAR txt[1024];
 	UINT i, size;
-	int index;
+	int index, len;
 	bool unicode = false;
 	bool is_utf_8 = false;
 	ASN1_OBJECT *obj;
@@ -1935,7 +1932,8 @@ wchar_t *GetUniStrFromX509Name(void *xn, int nid)
 	}
 
 	Zero(txt, sizeof(txt));
-	if (X509_NAME_get_text_by_NID(xn, nid, (char *)txt, sizeof(txt) - 2) <= 0)
+	len = X509_NAME_get_text_by_NID(xn, nid, (char *)txt, sizeof(txt) - 2);
+	if (len <= 0)
 	{
 		return NULL;
 	}
@@ -1964,7 +1962,9 @@ wchar_t *GetUniStrFromX509Name(void *xn, int nid)
 		is_utf_8 = true;
 	}
 
-	size = UniStrLen((wchar_t *)txt) * 4 + 8;
+	// Scan only the bytes X509_NAME_get_text_by_NID copied (at most sizeof(txt) - 3): the field
+	// comes from the peer's certificate, and a scan sized from it ran past txt
+	size = (UINT)len;
 	for (i = 0;i < size;i++)
 	{
 		if (txt[i] >= 0x80)
@@ -2683,10 +2683,12 @@ LIST *BioToXList(BIO *bio, bool text)
 		{
 			xi = sk_X509_INFO_shift(sk);
 			x = X509ToX(xi->x509);
+			// X509ToX owns the certificate now, also when it fails (it freed it then), so
+			// X509_INFO_free must not free it again
+			xi->x509 = NULL;
 			if (x != NULL)
 			{
 				Add(chain, x);
-				xi->x509 = NULL;
 			}
 			X509_INFO_free(xi);
 		}
@@ -2698,6 +2700,7 @@ LIST *BioToXList(BIO *bio, bool text)
 	return chain;
 }
 
+// Takes ownership of x509: it is freed with the returned X, or here when the conversion fails
 X *X509ToX(X509 *x509)
 {
 	X *x;
