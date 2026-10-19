@@ -9,10 +9,20 @@
 // the file in order. A second LOG on the same file with a small maximum log size (SetMaxLogSize)
 // appends to it, switches once to the next file, named as before, and keeps every record in order.
 //
+// "logbound" (FND-16): while the log file could not be opened, the record queue grew without a limit
+// and the buffer up to the maximum log size (1 GiB), and the writer slept 30 ms per record. A LOG whose
+// directory has an existing file as its parent takes LOGTEST_BOUND_RECORDS string records and LOGTEST_BOUND_PACKETS
+// packet log records: the queue never holds more than LOG_ENGINE_MAX_QUEUE records, every dropped
+// packet log record releases its session reference and its logging record count. Once that file is a
+// directory, the writer opens the log on its own retry timer: the file starts with the buffered records
+// (at most LOG_ENGINE_BUFFER_NO_FILE_MAX bytes, in order), then one dropped-records line whose count
+// makes up the rest, then the records inserted after the unblock.
+//
 // Each test prints "<NAME> TEST OK" only when every check passes, and frees everything it allocates.
 
 #include "Cedar/Cedar.h"
 #include "Cedar/Logging.h"
+#include "Cedar/Session.h"
 
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
@@ -23,6 +33,7 @@
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
+#include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
 #include "Mayaqua/Tracking.h"
 
@@ -37,6 +48,19 @@
 #define	LOGTEST_WRITER_NEXT_FILE		"lw~0000002.log"	// A third file, never made
 #define	LOGTEST_WRITER_MAX_OPENS		2					// Files one LOG may open or create
 #define	LOGTEST_WRITER_SWITCH_WAIT		10000				// Milliseconds waited for the size switch
+
+#define	LOGTEST_BOUND_PREFIX			"lb"				// Prefix of the log file
+#define	LOGTEST_BOUND_DIR				"blocked"			// Parent of the log directory: a file while the LOG cannot write
+#define	LOGTEST_BOUND_LOG_DIR			"logs"				// The log directory
+#define	LOGTEST_BOUND_TEXT				"logbound record %06u "	// Start of string record n; LOGTEST_BOUND_PAD characters follow
+#define	LOGTEST_BOUND_PAD				170					// With the date and the time, a line of 219 bytes
+#define	LOGTEST_BOUND_RECORDS			300000				// String records inserted while the directory is blocked
+#define	LOGTEST_BOUND_PACKETS			100					// Packet log records inserted after them
+#define	LOGTEST_BOUND_AFTER_TEXT		"logbound after %02u"	// Text of a record inserted after the unblock
+#define	LOGTEST_BOUND_AFTER				10					// Records inserted after the unblock
+#define	LOGTEST_BOUND_DRAIN_WAIT		10000				// Milliseconds waited for the writer to take every queued record
+#define	LOGTEST_BOUND_OPEN_WAIT			(LOG_ENGINE_RETRY_MAX + 10000)	// Milliseconds waited for the log file after the unblock
+#define	LOGTEST_BOUND_FRAME_SIZE		64					// Frame of the packet log records (EtherType 0x88B5, no IP)
 
 // Run state of a test
 typedef struct LOGTEST_CTX
@@ -158,6 +182,29 @@ static char *LogTestNextLine(char **pos)
 	*pos = s;
 
 	return line;
+}
+
+// Text of a string record line after its date and time ("<date> <time> <text>"), NULL when the line has
+// no two spaces
+static char *LogTestLineText(char *line)
+{
+	UINT num_spaces = 0;
+	char *s;
+
+	for (s = line;*s != 0;s++)
+	{
+		if (*s == ' ')
+		{
+			num_spaces++;
+
+			if (num_spaces == 2)
+			{
+				return s + 1;
+			}
+		}
+	}
+
+	return NULL;
 }
 
 ////////////////////////////
@@ -330,4 +377,308 @@ void logwriter_test(UINT num, char **arg)
 	LogTestDeleteDir(dir);
 
 	LogTestEnd(&ctx, "LOGWRITER");
+}
+
+////////////////////////////
+// logbound (FND-16)
+
+// Run state of logbound
+typedef struct LOGBOUND_TEST
+{
+	LOG *Log;							// The LOG under test
+	UINT MaxQueue;						// Most records seen in its queue
+	char Pad[LOGTEST_BOUND_PAD + 1];	// Padding of a string record
+} LOGBOUND_TEST;
+
+// Records in the queue of the LOG; the most seen so far goes to t->MaxQueue
+static UINT LogBoundQueued(LOGBOUND_TEST *t)
+{
+	UINT num;
+
+	LockQueue(t->Log->RecordQueue);
+	{
+		num = t->Log->RecordQueue->num_item;
+	}
+	UnlockQueue(t->Log->RecordQueue);
+
+	t->MaxQueue = MAX(t->MaxQueue, num);
+
+	return num;
+}
+
+// Insert string record n: LOGTEST_BOUND_TEXT and the padding
+static void LogBoundInsert(LOGBOUND_TEST *t, UINT n)
+{
+	char tmp[MAX_SIZE];
+
+	Format(tmp, sizeof(tmp), LOGTEST_BOUND_TEXT, n);
+	StrCat(tmp, sizeof(tmp), t->Pad);
+
+	InsertStringRecord(t->Log, tmp);
+	LogBoundQueued(t);
+}
+
+// Insert a packet log record of session s as PacketLog makes it: a clone of the frame without its data,
+// the session names, a reference to the session and one more logging record of it
+static void LogBoundInsertPacket(LOGBOUND_TEST *t, SESSION *s, PKT *frame)
+{
+	PACKET_LOG *pl = ZeroMalloc(sizeof(PACKET_LOG));
+
+	pl->Packet = ClonePacket(frame, false);
+	pl->SrcSessionName = CopyStr("logbound-session");
+	pl->DestSessionName = CopyStr("");
+	pl->SrcSession = s;
+	AddRef(s->ref);
+	Inc(s->LoggingRecordCount);
+
+	InsertRecord(t->Log, pl, PacketLogParseProc);
+	LogBoundQueued(t);
+}
+
+// Session of the packet log records: a packet log record uses only its reference and its logging record count
+static SESSION *LogBoundNewSession()
+{
+	SESSION *s = ZeroMalloc(sizeof(SESSION));
+
+	s->ref = NewRef();
+	s->LoggingRecordCount = NewCounter();
+
+	return s;
+}
+
+// Release the session of the packet log records: its reference is freed only when no record holds it
+static void LogBoundFreeSession(SESSION *s)
+{
+	Release(s->ref);
+	DeleteCounter(s->LoggingRecordCount);
+	Free(s);
+}
+
+// Frame of the packet log records (EtherType 0x88B5, no IP), parsed as the hub parses it
+static PKT *LogBoundParseFrame(UCHAR *buf)
+{
+	UINT i;
+
+	for (i = 0;i < LOGTEST_BOUND_FRAME_SIZE;i++)
+	{
+		buf[i] = (UCHAR)i;
+	}
+
+	buf[0] = 0x02;								// Locally administered unicast addresses
+	buf[6] = 0x02;
+	buf[12] = 0x88;
+	buf[13] = 0xB5;
+
+	return ParsePacket(buf, LOGTEST_BOUND_FRAME_SIZE);
+}
+
+// The log file after the unblock: the buffered records in order, one dropped-records line that makes up the
+// rest of the records inserted while blocked, then the records inserted after the unblock
+static void LogBoundCheckFile(LOGTEST_CTX *ctx, char *path)
+{
+	char *text = LogTestReadText(path);
+	char expect[MAX_SIZE];
+	char *pos;
+	char *line;
+	UINT num_buffered = 0;
+	UINT64 buffered_bytes = 0;
+	UINT num_dropped_lines = 0;
+	UINT64 num_dropped = 0;
+	bool dropped_next = false;
+	UINT num_after = 0;
+	UINT num_other = 0;
+	UINT64 total = (UINT64)LOGTEST_BOUND_RECORDS + (UINT64)LOGTEST_BOUND_PACKETS;
+
+	if (LogTestCheck(ctx, text != NULL, "the log file can be read after the unblock", "%s cannot be read", path) == false)
+	{
+		return;
+	}
+
+	pos = text;
+
+	while ((line = LogTestNextLine(&pos)) != NULL)
+	{
+		char *s = LogTestLineText(line);
+
+		if (s == NULL)
+		{
+			num_other++;
+			continue;
+		}
+
+		Format(expect, sizeof(expect), LOGTEST_BOUND_TEXT, num_buffered);
+		if (num_dropped_lines == 0 && num_after == 0 && StartWith(s, expect) &&
+			StrLen(s) == StrLen(expect) + LOGTEST_BOUND_PAD)
+		{
+			num_buffered++;
+			buffered_bytes += (UINT64)StrLen(line) + 2;
+			continue;
+		}
+
+		Format(expect, sizeof(expect), LOG_DROPPED_RECORDS_FORMAT, ToInt64(s));
+		if (StrCmp(s, expect) == 0)
+		{
+			if (num_dropped_lines == 0 && num_after == 0 && num_other == 0)
+			{
+				dropped_next = true;
+			}
+
+			num_dropped_lines++;
+			num_dropped += ToInt64(s);
+			continue;
+		}
+
+		Format(expect, sizeof(expect), LOGTEST_BOUND_AFTER_TEXT, num_after);
+		if (num_dropped_lines != 0 && StrCmp(s, expect) == 0)
+		{
+			num_after++;
+			continue;
+		}
+
+		num_other++;
+	}
+
+	Free(text);
+
+	LogTestCheck(ctx, num_buffered >= 1 && buffered_bytes <= LOG_ENGINE_BUFFER_NO_FILE_MAX,
+		"the file starts with the buffered records in order, at most LOG_ENGINE_BUFFER_NO_FILE_MAX bytes of them",
+		"%u records, %I64u bytes, cap %u bytes", num_buffered, buffered_bytes, LOG_ENGINE_BUFFER_NO_FILE_MAX);
+
+	LogTestCheck(ctx, num_dropped_lines == 1 && dropped_next,
+		"one dropped-records line, right after the buffered records",
+		"%u dropped-records lines, %s", num_dropped_lines, dropped_next ? "the first one after the buffered records" : "none after the buffered records");
+
+	LogTestCheck(ctx, (UINT64)num_buffered + num_dropped == total,
+		"the buffered and the dropped records make up every record inserted while the file could not be opened",
+		"%u buffered + %I64u dropped, %I64u inserted", num_buffered, num_dropped, total);
+
+	LogTestCheck(ctx, num_after == LOGTEST_BOUND_AFTER && num_other == 0,
+		"the records inserted after the unblock follow in order, no other line",
+		"%u of %u in order, %u other lines", num_after, LOGTEST_BOUND_AFTER, num_other);
+}
+
+// "logbound": bounded record queue and buffer while the log file cannot be opened, one dropped-records line
+void logbound_test(UINT num, char **arg)
+{
+	LOGTEST_CTX ctx;
+	LOGBOUND_TEST t;
+	char dir[MAX_PATH];
+	char block[MAX_PATH];
+	char log_dir[MAX_PATH];
+	char file[MAX_PATH];
+	UCHAR frame_buf[LOGTEST_BOUND_FRAME_SIZE];
+	PKT *frame;
+	SESSION *s;
+	IO *io;
+	UINT64 end;
+	bool blocked;
+	bool drained;
+	bool opened;
+	UINT i;
+
+	Zero(&ctx, sizeof(ctx));
+	Zero(&t, sizeof(t));
+
+	Print("Log bound test: %u string records and %u packet log records while the parent of the log directory is a "
+		"file, %u more after it is a directory\n", LOGTEST_BOUND_RECORDS, LOGTEST_BOUND_PACKETS, LOGTEST_BOUND_AFTER);
+
+	for (i = 0;i < LOGTEST_BOUND_PAD;i++)
+	{
+		t.Pad[i] = 'x';
+	}
+
+	LogTestDirName(dir, sizeof(dir), "logbound");
+	Format(block, sizeof(block), "%s/%s", dir, LOGTEST_BOUND_DIR);
+	Format(log_dir, sizeof(log_dir), "%s/%s", block, LOGTEST_BOUND_LOG_DIR);
+	Format(file, sizeof(file), "%s/%s.log", log_dir, LOGTEST_BOUND_PREFIX);
+
+	// The parent of the log directory is an existing file: the writer can make neither the directory nor the log file
+	MakeDir(dir);
+	io = FileCreate(block);
+	blocked = (io != NULL);
+	FileClose(io);
+	LogTestCheck(&ctx, blocked, "the parent of the log directory is an existing file", "%s cannot be created", block);
+
+	s = LogBoundNewSession();
+	frame = LogBoundParseFrame(frame_buf);
+	LogTestCheck(&ctx, frame != NULL, "the frame of the packet log records parses", "ParsePacket returned NULL");
+
+	SetMaxLogSize(0);
+	t.Log = NewLog(log_dir, LOGTEST_BOUND_PREFIX, LOG_SWITCH_NO);
+
+	for (i = 0;i < LOGTEST_BOUND_RECORDS;i++)
+	{
+		LogBoundInsert(&t, i);
+	}
+
+	if (frame != NULL)
+	{
+		for (i = 0;i < LOGTEST_BOUND_PACKETS;i++)
+		{
+			LogBoundInsertPacket(&t, s, frame);
+		}
+	}
+
+	// The writer takes every record while the file cannot be opened: the first ones into its buffer, the
+	// others it drops through their release path
+	end = Tick64() + LOGTEST_BOUND_DRAIN_WAIT;
+	while (true)
+	{
+		drained = (LogBoundQueued(&t) == 0 && Count(s->LoggingRecordCount) == 0);
+
+		if (drained || Tick64() >= end)
+		{
+			break;
+		}
+
+		SleepThread(50);
+	}
+
+	LogTestCheck(&ctx, t.MaxQueue <= LOG_ENGINE_MAX_QUEUE,
+		"the record queue never holds more than LOG_ENGINE_MAX_QUEUE records (it had no limit)",
+		"%u records queued at most, cap %u", t.MaxQueue, LOG_ENGINE_MAX_QUEUE);
+
+	LogTestCheck(&ctx, drained, "the writer takes every queued record while the file cannot be opened (it took one per 30 ms)",
+		"%u records still queued after %u ms", LogBoundQueued(&t), LOGTEST_BOUND_DRAIN_WAIT);
+
+	LogTestCheck(&ctx, Count(s->LoggingRecordCount) == 0 && Count(&s->ref->c) == 1,
+		"dropped packet log records release their session reference and their logging record count",
+		"logging record count %u, session references %u (expected 0 and 1)", Count(s->LoggingRecordCount), Count(&s->ref->c));
+
+	// Unblock (the parent becomes a directory): with no new record, the writer makes the log directory and the
+	// file on its retry timer
+	FileDelete(block);
+	MakeDir(block);
+
+	end = Tick64() + LOGTEST_BOUND_OPEN_WAIT;
+	while ((opened = IsFileExists(file)) == false && Tick64() < end)
+	{
+		SleepThread(50);
+	}
+
+	LogTestCheck(&ctx, opened, "the writer opens the log file on its own once the directory can be made",
+		"%s missing after %u ms", file, LOGTEST_BOUND_OPEN_WAIT);
+
+	for (i = 0;i < LOGTEST_BOUND_AFTER;i++)
+	{
+		char tmp[MAX_SIZE];
+
+		Format(tmp, sizeof(tmp), LOGTEST_BOUND_AFTER_TEXT, i);
+		InsertStringRecord(t.Log, tmp);
+	}
+
+	FreeLog(t.Log);
+
+	LogBoundCheckFile(&ctx, file);
+
+	FreePacket(frame);
+	LogBoundFreeSession(s);
+
+	FileDelete(file);
+	LogTestDeleteDir(log_dir);
+	FileDelete(block);
+	LogTestDeleteDir(block);
+	LogTestDeleteDir(dir);
+
+	LogTestEnd(&ctx, "LOGBOUND");
 }
