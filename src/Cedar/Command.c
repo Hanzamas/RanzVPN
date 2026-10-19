@@ -25,6 +25,9 @@
 
 #include <stdlib.h>
 
+// RSA key size of MakeCert and its MakeCert2048 alias
+#define	MAKECERT_RSA_BITS		2048
+
 static bool CheckNetwork();
 static bool CheckThread();
 static bool CheckFileSystem();
@@ -37,7 +40,6 @@ static void TtsAcceptProc(TTS *tts, SOCK *listen_socket);
 static UINT PtTrafficServer(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 static UINT PtTrafficClient(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 static UINT PtMakeCert(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-static UINT PtMakeCert2048(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 static UINT PsServerCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 static UINT PsServerKeyGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 static K *CmdLoadKey(CONSOLE *c, wchar_t *filename);
@@ -810,7 +812,7 @@ static void PtMain(PT *pt)
 		{
 			{"About", PsAbout},
 			{"MakeCert", PtMakeCert},
-			{"MakeCert2048", PtMakeCert2048},
+			{"MakeCert2048", PtMakeCert},
 			{"TrafficClient", PtTrafficClient},
 			{"TrafficServer", PtTrafficServer},
 			{"Check", PtCheck},
@@ -2429,6 +2431,14 @@ static UINT PtTrafficClient(CONSOLE *c, char *cmd_name, wchar_t *str, void *para
 	return ret;
 }
 
+// A file could not be saved: print the reason and return the error the command exits with
+static UINT CmdSaveFailed(CONSOLE *c, char *str_id)
+{
+	c->Write(c, _UU(str_id));
+
+	return ERR_INTERNAL_ERROR;
+}
+
 static UINT PtMakeCert(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
@@ -2501,15 +2511,17 @@ static UINT PtMakeCert(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			days = 3650;
 		}
 
-		RsaGen(&pri, &pub, 1024);
-
-		if (root_x == NULL)
+		// MakeCert and MakeCert2048 both make a key of MAKECERT_RSA_BITS
+		if (RsaGen(&pri, &pub, MAKECERT_RSA_BITS))
 		{
-			x = NewRootX(pub, pri, n, days, x_serial);
-		}
-		else
-		{
-			x = NewX(pub, root_k, root_x, n, days, x_serial);
+			if (root_x == NULL)
+			{
+				x = NewRootX(pub, pri, n, days, x_serial);
+			}
+			else
+			{
+				x = NewX(pub, root_k, root_x, n, days, x_serial);
+			}
 		}
 
 		FreeXSerial(x_serial);
@@ -2524,11 +2536,11 @@ static UINT PtMakeCert(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		{
 			if (XToFileW(x, GetParamUniStr(o, "SAVECERT"), true) == false)
 			{
-				c->Write(c, _UU("CMD_SAVECERT_FAILED"));
+				ret = CmdSaveFailed(c, "CMD_SAVECERT_FAILED");
 			}
 			else if (KToFileW(pri, GetParamUniStr(o, "SAVEKEY"), true, NULL) == false)
 			{
-				c->Write(c, _UU("CMD_SAVEKEY_FAILED"));
+				ret = CmdSaveFailed(c, "CMD_SAVEKEY_FAILED");
 			}
 		}
 	}
@@ -2549,128 +2561,6 @@ static UINT PtMakeCert(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	return ret;
 }
-
-static UINT PtMakeCert2048(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	UINT ret = ERR_NO_ERROR;
-	X *x = NULL;
-	K *pub = NULL;
-	K *pri = NULL;
-	NAME *n;
-	X_SERIAL *x_serial = NULL;
-	BUF *buf;
-	UINT days;
-	X *root_x = NULL;
-	K *root_k = NULL;
-	CMD_EVAL_MIN_MAX minmax =
-	{
-		"CMD_MakeCert_EVAL_EXPIRES",
-		0,
-		10950,
-	};
-	PARAM args[] =
-	{
-		{"CN", CmdPrompt, _UU("CMD_MakeCert_PROMPT_CN"), NULL, NULL},
-		{"O", CmdPrompt, _UU("CMD_MakeCert_PROMPT_O"), NULL, NULL},
-		{"OU", CmdPrompt, _UU("CMD_MakeCert_PROMPT_OU"), NULL, NULL},
-		{"C", CmdPrompt, _UU("CMD_MakeCert_PROMPT_C"), NULL, NULL},
-		{"ST", CmdPrompt, _UU("CMD_MakeCert_PROMPT_ST"), NULL, NULL},
-		{"L", CmdPrompt, _UU("CMD_MakeCert_PROMPT_L"), NULL, NULL},
-		{"SERIAL", CmdPrompt, _UU("CMD_MakeCert_PROMPT_SERIAL"), NULL, NULL},
-		{"EXPIRES", CmdPrompt, _UU("CMD_MakeCert_PROMPT_EXPIRES"), CmdEvalMinMax, &minmax},
-		{"SIGNCERT", NULL, NULL, CmdEvalIsFile, NULL},
-		{"SIGNKEY", NULL, NULL, CmdEvalIsFile, NULL},
-		{"SAVECERT", CmdPrompt, _UU("CMD_MakeCert_PROMPT_SAVECERT"), CmdEvalNotEmpty, NULL},
-		{"SAVEKEY", CmdPrompt, _UU("CMD_MakeCert_PROMPT_SAVEKEY"), CmdEvalNotEmpty, NULL},
-	};
-
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	if (IsEmptyStr(GetParamStr(o, "SIGNCERT")) == false && IsEmptyStr(GetParamStr(o, "SIGNKEY")) == false)
-	{
-		root_x = FileToXW(GetParamUniStr(o, "SIGNCERT"));
-		root_k = FileToKW(GetParamUniStr(o, "SIGNKEY"), true, NULL);
-
-		if (root_x == NULL || root_k == NULL || CheckXandK(root_x, root_k) == false)
-		{
-			ret = ERR_INTERNAL_ERROR;
-
-			c->Write(c, _UU("CMD_MakeCert_ERROR_SIGNKEY"));
-		}
-	}
-
-	if (ret == ERR_NO_ERROR)
-	{
-		buf = StrToBin(GetParamStr(o, "SERIAL"));
-		if (buf != NULL && buf->Size >= 1)
-		{
-			x_serial = NewXSerial(buf->Buf, buf->Size);
-		}
-		FreeBuf(buf);
-
-		n = NewName(GetParamUniStr(o, "CN"), GetParamUniStr(o, "O"), GetParamUniStr(o, "OU"), 
-			GetParamUniStr(o, "C"), GetParamUniStr(o, "ST"), GetParamUniStr(o, "L"));
-
-		days = GetParamInt(o, "EXPIRES");
-		if (days == 0)
-		{
-			days = 3650;
-		}
-
-		RsaGen(&pri, &pub, 2048);
-
-		if (root_x == NULL)
-		{
-			x = NewRootX(pub, pri, n, days, x_serial);
-		}
-		else
-		{
-			x = NewX(pub, root_k, root_x, n, days, x_serial);
-		}
-
-		FreeXSerial(x_serial);
-		FreeName(n);
-
-		if (x == NULL)
-		{
-			ret = ERR_INTERNAL_ERROR;
-			c->Write(c, _UU("CMD_MakeCert_ERROR_GEN_FAILED"));
-		}
-		else
-		{
-			if (XToFileW(x, GetParamUniStr(o, "SAVECERT"), true) == false)
-			{
-				c->Write(c, _UU("CMD_SAVECERT_FAILED"));
-			}
-			else if (KToFileW(pri, GetParamUniStr(o, "SAVEKEY"), true, NULL) == false)
-			{
-				c->Write(c, _UU("CMD_SAVEKEY_FAILED"));
-			}
-		}
-	}
-
-	if (ret != ERR_NO_ERROR)
-	{
-		CmdPrintError(c, ret);
-	}
-
-	FreeParamValueList(o);
-
-	FreeX(root_x);
-	FreeK(root_k);
-
-	FreeX(x);
-	FreeK(pri);
-	FreeK(pub);
-
-	return ret;
-}
-
 
 static void PsMain(PS *ps)
 {
@@ -2905,7 +2795,7 @@ static void PsMain(PS *ps)
 			{"AcAdd6", PsAcAdd6},
 			{"AcDel", PsAcDel},
 			{"MakeCert", PtMakeCert},
-			{"MakeCert2048", PtMakeCert2048},
+			{"MakeCert2048", PtMakeCert},
 			{"TrafficClient", PtTrafficClient},
 			{"TrafficServer", PtTrafficServer},
 			{"LicenseAdd", PsLicenseAdd},
@@ -3007,14 +2897,14 @@ static UINT PsServerCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *para
 
 	if (XToFileW(t.Cert, GetParamUniStr(o, "[cert]"), true) == false)
 	{
-		c->Write(c, _UU("CMD_SAVECERT_FAILED"));
+		ret = CmdSaveFailed(c, "CMD_SAVECERT_FAILED");
 	}
 
 	FreeRpcKeyPair(&t);
 
 	FreeParamValueList(o);
 
-	return 0;
+	return ret;
 }
 
 static UINT PsServerKeyGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
@@ -3049,7 +2939,7 @@ static UINT PsServerKeyGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param
 	{
 		if (KToFileW(t.Key, GetParamUniStr(o, "[key]"), true, NULL) == false)
 		{
-			c->Write(c, _UU("CMD_SAVEKEY_FAILED"));
+			ret = CmdSaveFailed(c, "CMD_SAVEKEY_FAILED");
 		}
 	}
 	else
@@ -4017,13 +3907,14 @@ static UINT PsConfigGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 			if (io == NULL)
 			{
-				c->Write(c, _UU("CMD_ConfigGet_FILE_SAVE_FAILED"));
-
-				ret = ERR_INTERNAL_ERROR;
+				ret = CmdSaveFailed(c, "CMD_ConfigGet_FILE_SAVE_FAILED");
 			}
 			else
 			{
-				FileWrite(io, t.FileData, StrLen(t.FileData));
+				if (FileWrite(io, t.FileData, StrLen(t.FileData)) == false)
+				{
+					ret = CmdSaveFailed(c, "CMD_ConfigGet_FILE_SAVE_FAILED");
+				}
 				FileClose(io);
 			}
 		}
@@ -4061,6 +3952,7 @@ static UINT PsConfigSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	if (buf == NULL)
 	{
 		c->Write(c, _UU("CMD_ConfigSet_FILE_LOAD_FAILED"));
+		ret = ERR_INTERNAL_ERROR;
 	}
 	else
 	{
@@ -4075,8 +3967,6 @@ static UINT PsConfigSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		if (ret != ERR_NO_ERROR)
 		{
 			CmdPrintError(c, ret);
-			FreeParamValueList(o);
-			return ret;
 		}
 
 		FreeRpcConfig(&t);
@@ -4084,7 +3974,7 @@ static UINT PsConfigSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	FreeParamValueList(o);
 
-	return 0;
+	return ret;
 }
 
 static bool CmdEvalIpAndMask4(CONSOLE *c, wchar_t *str, void *param)
@@ -6293,7 +6183,7 @@ static UINT PsCascadePasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void 
 			ret = ERR_INVALID_PARAMETER;
 			CmdPrintError(c, ret);
 			FreeParamValueList(o);
-			return ERR_INTERNAL_ERROR;
+			return ret;
 		}
 
 		ret = ScSetLink(ps->Rpc, &t);
@@ -6439,9 +6329,9 @@ static UINT PsCascadeCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *par
 			c->Write(c, _UU("CMD_CascadeCertSet_Cert_Not_Exists"));
 			ret = ERR_INTERNAL_ERROR;
 		}
-		else
+		else if (XToFileW(t.ClientAuth->ClientX, GetParamUniStr(o, "SAVECERT"), true) == false)
 		{
-			XToFileW(t.ClientAuth->ClientX, GetParamUniStr(o, "SAVECERT"), true);
+			ret = CmdSaveFailed(c, "CMD_SAVECERT_FAILED");
 		}
 		FreeRpcCreateLink(&t);
 	}
@@ -7584,8 +7474,7 @@ static UINT PsCascadeServerCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, voi
 		{
 			if (XToFileW(t.ServerCert, GetParamUniStr(o, "SAVECERT"), true) == false)
 			{
-				c->Write(c, _UU("CMD_SAVECERT_FAILED"));
-				ret = ERR_INTERNAL_ERROR;
+				ret = CmdSaveFailed(c, "CMD_SAVECERT_FAILED");
 			}
 		}
 
@@ -10055,7 +9944,7 @@ UINT PsUserCertGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	{
 		if (XToFileW(a->UserX, GetParamUniStr(o, "SAVECERT"), true) == false)
 		{
-			c->Write(c, _UU("CMD_SAVECERT_FAILED"));
+			ret = CmdSaveFailed(c, "CMD_SAVECERT_FAILED");
 		}
 	}
 
@@ -14609,7 +14498,9 @@ UINT CommandMain(wchar_t *command_line)
 	}
 	else
 	{
+		// The /IN file cannot be read or the /OUT file cannot be created
 		Print("Error: Couldn't open local console.\n");
+		ret = ERR_INVALID_PARAMETER;
 	}
 
 	Free(a_infile);
