@@ -21,6 +21,9 @@ target_sources(vpntest PRIVATE machineid.c)
 # Named VM detection test of FIX-7 (#103)
 target_sources(vpntest PRIVATE vmdetect.c)
 
+# Named BUF and binary configuration bounds test of SEC-3 (#96)
+target_sources(vpntest PRIVATE bufbounds.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"

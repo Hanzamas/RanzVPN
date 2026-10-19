@@ -165,6 +165,16 @@ def cfg_bin_folder(name, folders, items):
     return out
 
 
+def cfg_bin_file(body):
+    # CfgFolderToBufBin: "SEVPN_DB", SHA-0 of the body, body
+    return b'SEVPN_DB' + sha0(body) + body
+
+
+def cfg_bin_one_item(name, itype):
+    # Folder "root" without subfolders and with one item of the given name and type; the caller adds the value
+    return buf_str('root') + struct.pack('>II', 0, 1) + buf_str(name) + struct.pack('>I', itype)
+
+
 def make_cfg_seeds():
     write_seed('fuzz_cfg', 'server_text.config', TAG_CPYRIGHT + b'\r\n' + CFG_TEXT)
     body = cfg_bin_folder('root', [
@@ -178,8 +188,28 @@ def make_cfg_seeds():
         ('ConfigRevision', ITEM_TYPE_INT, 3),
         ('IPsecMessageDisplayed', ITEM_TYPE_BOOL, 0),
     ])
-    # CfgFolderToBufBin: "SEVPN_DB", SHA-0 of the body, body
-    write_seed('fuzz_cfg', 'server_binary.config', b'SEVPN_DB' + sha0(body) + body)
+    write_seed('fuzz_cfg', 'server_binary.config', cfg_bin_file(body))
+
+    # Malformed binary configurations (SEC-3 #96), each with a valid hash: CfgBufBinToFolder()
+    # must reject every one without a crash. Counts and sizes beyond the bytes left (the old
+    # reader looped up to 2^32 times, or aborted in MallocEx), a string size of 0xFFFFFFFF (the
+    # old reader wrapped size + 1 to 0 and copied past the block), an item name length of
+    # 0xFFFFFFFF with more than 511 bytes after it (the old ReadBufStr() moved the cursor back),
+    # an unknown item type and a body cut in the middle.
+    write_seed('fuzz_cfg', 'bin_folder_count_huge.config',
+               cfg_bin_file(buf_str('root') + struct.pack('>I', 0xFFFFFFFF)))
+    write_seed('fuzz_cfg', 'bin_item_count_huge.config',
+               cfg_bin_file(buf_str('root') + struct.pack('>II', 0, 0xFFFFFFFF)))
+    write_seed('fuzz_cfg', 'bin_byte_size_huge.config',
+               cfg_bin_file(cfg_bin_one_item('HashedPassword', ITEM_TYPE_BYTE) + struct.pack('>I', 0xFFFFFFF0) + bytes(range(4))))
+    write_seed('fuzz_cfg', 'bin_string_size_wrap.config',
+               cfg_bin_file(cfg_bin_one_item('ServerName', ITEM_TYPE_STRING) + struct.pack('>I', 0xFFFFFFFF) + b'Ranz'))
+    write_seed('fuzz_cfg', 'bin_name_length_wrap.config',
+               cfg_bin_file(buf_str('root') + struct.pack('>III', 0, 1, 0xFFFFFFFF) + b'n' * 600 +
+                            struct.pack('>II', ITEM_TYPE_INT, 3)))
+    write_seed('fuzz_cfg', 'bin_unknown_type.config',
+               cfg_bin_file(cfg_bin_one_item('ConfigRevision', 9) + struct.pack('>I', 3)))
+    write_seed('fuzz_cfg', 'bin_truncated.config', cfg_bin_file(body[:len(body) // 2]))
 
 
 # ---------------------------------------------------------------------------
