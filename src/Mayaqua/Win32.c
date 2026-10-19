@@ -228,7 +228,6 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 				UniStrCmpi(data_w.cFileName, L".") != 0)
 			{
 				DIRENT *f = ZeroMalloc(sizeof(DIRENT));
-				SYSTEMTIME t2;
 				wchar_t fullpath[MAX_SIZE];
 				bool ok = false;
 				HANDLE hfile;
@@ -251,9 +250,7 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 
 					if (GetFileInformationByHandle(hfile, &info))
 					{
-						Zero(&t2, sizeof(t2));
-						FileTimeToSystemTime(&info.ftLastWriteTime, &t2);
-						f->UpdateDate = SystemToUINT64(&t2);
+						f->UpdateDate = FileTimeToUINT64(&info.ftLastWriteTime);
 
 						if (f->Folder == false)
 						{
@@ -268,9 +265,7 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 
 				if (ok == false)
 				{
-					Zero(&t2, sizeof(t2));
-					FileTimeToSystemTime(&data_w.ftLastWriteTime, &t2);
-					f->UpdateDate = SystemToUINT64(&t2);
+					f->UpdateDate = FileTimeToUINT64(&data_w.ftLastWriteTime);
 
 					if (f->Folder == false)
 					{
