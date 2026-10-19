@@ -3171,7 +3171,6 @@ LABEL_TRY_AGAIN:
 								{
 									BUF *new_buf;
 									DHCP_MODIFY_OPTION m;
-									WHERE;
 
 									Zero(&m, sizeof(m));
 									m.RemoveDefaultGatewayOnReply = true;
@@ -3343,6 +3342,32 @@ static bool CheckBroadcastStorm(HUB *hub, SESSION *s, PKT *p)
 	return ret;
 }
 
+// D-Link switches send their spanning tree frames from these two source MACs (FixForDLinkBPDU)
+static bool IsDLinkStpMac(UCHAR *mac)
+{
+	static UCHAR dlink_mac_1[6] = {0x00, 0x80, 0xc8, 0x00, 0x00, 0x00};
+	static UCHAR dlink_mac_2[6] = {0x00, 0x0d, 0x88, 0x00, 0x00, 0x00};
+
+	return (Cmp(mac, dlink_mac_1, 6) == 0 || Cmp(mac, dlink_mac_2, 6) == 0);
+}
+
+// Security log line for a MAC address that session s now owns in the MAC table
+static void HubLogMacRegist(HUB *hub, SESSION *s, UCHAR *mac, UINT vlan_id)
+{
+	char mac_address[32];
+
+	MacToStr(mac_address, sizeof(mac_address), mac);
+
+	if (vlan_id == 0)
+	{
+		HLog(hub, "LH_MAC_REGIST", s->Name, mac_address);
+	}
+	else
+	{
+		HLog(hub, "LH_MAC_REGIST_VLAN", s->Name, mac_address, vlan_id);
+	}
+}
+
 void StorePacket(HUB *hub, SESSION *s, PKT *packet)
 {
 	MAC_TABLE_ENTRY *entry = NULL;
@@ -3468,7 +3493,8 @@ DISCARD_PACKET:
 						goto DISCARD_PACKET;
 					}
 				}
-				if (s != NULL && (Cmp(packet->MacAddressSrc, hub->HubMacAddr, 6) != 0))
+				// With a session, a frame from the hub's own MAC address is gone by now
+				if (s != NULL)
 				{
 					Copy(t.MacAddress, packet->MacAddressSrc, 6);
 					if (hub->Option->NoManageVlanId == false)
@@ -3525,22 +3551,19 @@ DISCARD_PACKET:
 							{
 								char mac_str[64];
 
-								if (s != NULL)
+								MacToStr(mac_str, sizeof(mac_str), packet->MacAddressSrc);
+								if (s->Policy->NoBridge)
 								{
-									MacToStr(mac_str, sizeof(mac_str), packet->MacAddressSrc);
-									if (s->Policy->NoBridge)
+									if (no_heavy == false)
 									{
-										if (no_heavy == false)
-										{
-											HLog(hub, "LH_BRIDGE_LIMIT", s->Name, mac_str, num_mac_for_me, limited_count);
-										}
+										HLog(hub, "LH_BRIDGE_LIMIT", s->Name, mac_str, num_mac_for_me, limited_count);
 									}
-									else
+								}
+								else
+								{
+									if (no_heavy == false)
 									{
-										if (no_heavy == false)
-										{
-											HLog(hub, "LH_MAC_LIMIT", s->Name, mac_str, num_mac_for_me, limited_count);
-										}
+										HLog(hub, "LH_MAC_LIMIT", s->Name, mac_str, num_mac_for_me, limited_count);
 									}
 								}
 
@@ -3569,26 +3592,9 @@ DISCARD_PACKET:
 
 						AddHash(hub->MacHashTable, entry);
 
-						if (hub->Option->NoMacAddressLog == false)
+						if (hub->Option->NoMacAddressLog == false && no_heavy == false)
 						{
-							char mac_address[32];
-
-							if (s != NULL)
-							{
-								if (no_heavy == false)
-								{
-									MacToStr(mac_address, sizeof(mac_address), packet->MacAddressSrc);
-
-									if (packet->VlanId == 0)
-									{
-										HLog(hub, "LH_MAC_REGIST", s->Name, mac_address);
-									}
-									else
-									{
-										HLog(hub, "LH_MAC_REGIST_VLAN", s->Name, mac_address, packet->VlanId);
-									}
-								}
-							}
+							HubLogMacRegist(hub, s, packet->MacAddressSrc, packet->VlanId);
 						}
 					}
 					else
@@ -3614,13 +3620,9 @@ DISCARD_PACKET:
 								}
 							}
 
-							if (check_mac && (Cmp(packet->MacAddressSrc, hub->HubMacAddr, 6) != 0) &&
-								((entry->UpdatedTime + MAC_TABLE_EXCLUSIVE_TIME) >= now))
+							if (check_mac && ((entry->UpdatedTime + MAC_TABLE_EXCLUSIVE_TIME) >= now))
 							{
-								UCHAR *mac = packet->MacAddressSrc;
-								if (hub->Option != NULL && hub->Option->FixForDLinkBPDU &&
-									(mac[0] == 0x00 && mac[1] == 0x80 && mac[2] == 0xc8 && mac[3] == 0x00 && mac[4] == 0x00 && mac[5] == 0x00) ||
-									(mac[0] == 0x00 && mac[1] == 0x0d && mac[2] == 0x88 && mac[3] == 0x00 && mac[4] == 0x00 && mac[5] == 0x00))
+								if (hub->Option != NULL && hub->Option->FixForDLinkBPDU && IsDLinkStpMac(packet->MacAddressSrc))
 								{
 									// D-Link sends spanning tree packets from these addresses. CheckMac on a local
 									// bridge would break them, so they are handled separately.
@@ -3646,33 +3648,14 @@ DISCARD_PACKET:
 							}
 							else
 							{
-								char mac_address[32];
 UPDATE_FDB:
-								BinToStr(mac_address, sizeof(mac_address), packet->MacAddressSrc, 6);
-
 								entry->Session = s;
 								entry->HubPa = (HUB_PA *)s->PacketAdapter->Param;
 								entry->UpdatedTime = entry->CreatedTime = now;
 
-								if (1)
+								if (no_heavy == false)
 								{
-									char mac_address[32];
-
-									if (s != NULL)
-									{
-										if (no_heavy == false)
-										{
-											MacToStr(mac_address, sizeof(mac_address), packet->MacHeader->SrcAddress);
-											if (packet->VlanId == 0)
-											{
-												HLog(hub, "LH_MAC_REGIST", s->Name, mac_address);
-											}
-											else
-											{
-												HLog(hub, "LH_MAC_REGIST_VLAN", s->Name, mac_address, packet->VlanId);
-											}
-										}
-									}
+									HubLogMacRegist(hub, s, packet->MacHeader->SrcAddress, packet->VlanId);
 								}
 							}
 						}
@@ -4661,9 +4644,7 @@ void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *
 	if (packet != NULL && src != NULL && src->Hub != NULL && src->Hub->Option != NULL && src->Hub->Option->FixForDLinkBPDU)
 	{
 		// Workaround for D-Link BPDUs sent from these source MACs
-		UCHAR *mac = packet->MacAddressSrc;
-		if ((mac[0] == 0x00 && mac[1] == 0x80 && mac[2] == 0xc8 && mac[3] == 0x00 && mac[4] == 0x00 && mac[5] == 0x00) ||
-			(mac[0] == 0x00 && mac[1] == 0x0d && mac[2] == 0x88 && mac[3] == 0x00 && mac[4] == 0x00 && mac[5] == 0x00))
+		if (IsDLinkStpMac(packet->MacAddressSrc))
 		{
 			SESSION *session = dest->Session;
 
