@@ -266,14 +266,13 @@ wchar_t *MsGetSystem32DirW();
 wchar_t *MsGetMyTempDirW();
 wchar_t *MsGetUserNameW();
 bool MsIsServiceInstalled(char *name);
-bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar_t *path, UINT *error_code);
+bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar_t *path);
 bool MsUpdateServiceConfig(char *name);
 bool MsUninstallService(char *name);
 bool MsStartService(char *name);
-bool MsStartServiceEx(char *name, UINT *error_code);
 bool MsStopService(char *name);
 bool MsIsServiceRunning(char *name);
-UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT icon, char *cmd_line);
+UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line);
 bool MsWriteEventLog(char *source, UINT type, UINT event_id, char *message);
 bool MsIsUserMode();
 LIST *MsGetProcessList();
@@ -292,8 +291,6 @@ MS_ADAPTER_LIST *MsCreateAdapterListEx(bool no_info);
 MS_ADAPTER *MsGetAdapterByGuid(char *guid);
 MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid);
 UINT ConvertMidStatusVistaToXp(UINT st);
-
-void *MsLoadLibrary(char *name);
 
 void MsSetTcpConfig(MS_TCP *tcp);
 bool MsLoadTcpConfigReg(MS_TCP *tcp);

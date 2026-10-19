@@ -675,76 +675,6 @@ UINT MsGetConsoleWidth()
 	return info.dwSize.X;
 }
 
-static bool MsDisableIme()
-{
-	HINSTANCE h;
-	bool ret = false;
-	char dll_name[MAX_PATH];
-	BOOL (WINAPI *_ImmDisableIME)(DWORD);
-
-	Format(dll_name, sizeof(dll_name), "%s\\imm32.dll", MsGetSystem32Dir());
-	h = MsLoadLibrary(dll_name);
-	if (h == NULL)
-	{
-		return false;
-	}
-
-	_ImmDisableIME = (BOOL (__stdcall *)(DWORD))GetProcAddress(h, "ImmDisableIME");
-
-	if (_ImmDisableIME != NULL)
-	{
-		ret = _ImmDisableIME(-1);
-	}
-
-	FreeLibrary(h);
-
-	return ret;
-}
-
-static void *MsLoadLibraryW(wchar_t *name)
-{
-	BUF *b;
-	wchar_t tmp_dll_name[MAX_SIZE];
-	char hash_str[MAX_SIZE];
-	UCHAR hash[SHA1_SIZE];
-	if (name == NULL)
-	{
-		return NULL;
-	}
-
-	Sha0(hash, name, UniStrSize(name));
-
-	BinToStr(hash_str, sizeof(hash_str), hash, 4);
-
-	UniFormat(tmp_dll_name, sizeof(tmp_dll_name), L"%s\\%S.dll", MsGetMyTempDirW(), hash_str);
-
-	if (IsFileExistsW(tmp_dll_name) == false)
-	{
-		b = ReadDumpW(name);
-		if (b == NULL)
-		{
-			return NULL;
-		}
-
-		DumpBufW(b, tmp_dll_name);
-		FreeBuf(b);
-	}
-
-	return LoadLibraryW(tmp_dll_name);
-}
-void *MsLoadLibrary(char *name)
-{
-	wchar_t name_w[MAX_SIZE];
-	if (name == NULL)
-	{
-		return NULL;
-	}
-
-	StrToUni(name_w, sizeof(name_w), name);
-
-	return MsLoadLibraryW(name_w);
-}
-
 MS_ADAPTER *MsGetAdapterByGuid(char *guid)
 {
 	MS_ADAPTER_LIST *o;
@@ -1378,7 +1308,7 @@ void MsGenerateUserModeSvcGlobalPulseName(char *name, UINT size, char *svc_name)
 	BinToStr(name, size, hash, sizeof(hash));
 }
 
-static void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT icon)
+static void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop)
 {
 	WNDCLASS wc;
 	HWND hWnd;
@@ -1646,8 +1576,6 @@ static void CALLBACK MsServiceDispatcher(DWORD argc, LPTSTR *argv)
 	InitMayaqua(false, false, 0, NULL);
 #endif
 
-	MsDisableIme();
-
 	g_start();
 	MsWriteServiceEvent(EVENTLOG_INFORMATION_TYPE, MS_EVENT_SERVICE_STARTED, "started", 0);
 	MsUpdateServiceConfig(g_service_name);
@@ -1708,7 +1636,26 @@ static void MsWriteCallingServiceManagerProcessId(char *svcname, UINT pid)
 	}
 }
 
-UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT icon, char *cmd_line)
+// Print the string table message id, formatted with the arguments, on a line of its own; nothing
+// when silent
+static void MsSvcMsg(bool silent, char *id, ...)
+{
+	wchar_t msg[MAX_SIZE * 4];
+	va_list args;
+
+	if (silent)
+	{
+		return;
+	}
+
+	va_start(args, id);
+	UniFormatArgs(msg, sizeof(msg), _UU(id), args);
+	va_end(args);
+
+	UniPrint(L"%s\n", msg);
+}
+
+UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line)
 {
 	UINT mode;
 	UINT ret = 0;
@@ -1718,7 +1665,6 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 	wchar_t *service_title;
 	wchar_t *service_description;
 	char tmp[MAX_SIZE];
-	wchar_t msg[MAX_SIZE * 4];
 	bool restoreReg = false;
 	bool silent = false;
 	bool is_win32_service_mode = false;
@@ -1791,8 +1737,6 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 	InitMayaqua(false, false, 0, NULL);
 #endif
 
-	MsDisableIme();
-
 	Format(tmp, sizeof(tmp), SVC_NAME, name);
 	service_name = _SS(tmp);
 	Format(tmp, sizeof(tmp), SVC_TITLE, name);
@@ -1802,8 +1746,7 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 
 	if (StrLen(service_name) == 0 || UniStrLen(service_title) == 0)
 	{
-		UniFormat(msg, sizeof(msg), _UU("SVC_NOT_FOUND"), name);
-		UniPrint(L"%s\n", msg);
+		MsSvcMsg(false, "SVC_NOT_FOUND", name);
 	}
 	else
 	{
@@ -1888,9 +1831,8 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 			switch (mode)
 			{
 			case SVC_MODE_NONE:
-				UniFormat(msg, sizeof(msg), _UU("SVC_HELP"),
+				MsSvcMsg(false, "SVC_HELP",
 					service_title, service_name, service_title, service_title, service_name, service_title, service_name, service_title, service_name, service_title, service_name, service_title, service_title);
-				UniPrint(L"%s\n", msg);
 				break;
 
 			case SVC_MODE_SETUP_INSTALL:
@@ -1905,7 +1847,7 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 					}
 					MsUninstallService(service_name);
 				}
-				if (MsInstallServiceExW(service_name, service_title, service_description, path, NULL) == false)
+				if (MsInstallServiceExW(service_name, service_title, service_description, path) == false)
 				{
 					ret = 1;
 				}
@@ -1941,63 +1883,36 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 						break;
 					}
 					// The operator explicitly requested /install, so uninstall and then re-install
-					UniFormat(msg, sizeof(msg), _UU("SVC_ALREADY_INSTALLED"),
-						service_title, service_name);
-					UniPrint(L"%s\n", msg);
+					MsSvcMsg(silent, "SVC_ALREADY_INSTALLED", service_title, service_name);
 
 					if (MsIsServiceRunning(service_name))
 					{
 						if (MsStopService(service_name) == false)
 						{
-							if(silent == false)
-							{
-								UniFormat(msg, sizeof(msg), _UU("SVC_STOP_FAILED"),
-									service_title, service_name);
-								UniPrint(L"%s\n", msg);
-							}
+							MsSvcMsg(silent, "SVC_STOP_FAILED", service_title, service_name);
 							break;
 						}
 					}
 					if (MsUninstallService(service_name) == false)
 					{
-						if(silent == false)
-						{
-							UniFormat(msg, sizeof(msg), _UU("SVC_UNINSTALL_FAILED"),
-								service_title, service_name);
-							UniPrint(L"%s\n", msg);
-						}
+						MsSvcMsg(silent, "SVC_UNINSTALL_FAILED", service_title, service_name);
 						break;
 					}
 				}
 
-				if (MsInstallServiceExW(service_name, service_title, service_description, path, NULL) == false)
+				if (MsInstallServiceExW(service_name, service_title, service_description, path) == false)
 				{
-					if(silent == false)
-					{
-						UniFormat(msg, sizeof(msg), _UU("SVC_INSTALL_FAILED"),
-							service_title, service_name);
-						UniPrint(L"%s\n", msg);
-					}
+					MsSvcMsg(silent, "SVC_INSTALL_FAILED", service_title, service_name);
 					break;
 				}
 
 				if (MsStartService(service_name) == false)
 				{
-					if(silent == false)
-					{
-						UniFormat(msg, sizeof(msg), _UU("SVC_INSTALL_FAILED_2"),
-							service_title, service_name, path);
-						UniPrint(L"%s\n", msg);
-					}
+					MsSvcMsg(silent, "SVC_INSTALL_FAILED_2", service_title, service_name, path);
 					break;
 				}
 
-				if(silent == false)
-				{
-					UniFormat(msg, sizeof(msg), _UU("SVC_INSTALL_OK"),
-						service_title, service_name, path);
-					UniPrint(L"%s\n", msg);
-				}
+				MsSvcMsg(silent, "SVC_INSTALL_OK", service_title, service_name, path);
 				break;
 
 			case SVC_MODE_UNINSTALL:
@@ -2006,12 +1921,7 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 
 				if (MsIsServiceInstalled(service_name) == false)
 				{
-					if(silent == false)
-					{
-						UniFormat(msg, sizeof(msg), _UU("SVC_NOT_INSTALLED"),
-							service_title, service_name, path);
-						UniPrint(L"%s\n", msg);
-					}
+					MsSvcMsg(silent, "SVC_NOT_INSTALLED", service_title, service_name, path);
 					break;
 				}
 
@@ -2019,33 +1929,18 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 				{
 					if (MsStopService(service_name) == false)
 					{
-						if(silent == false)
-						{
-							UniFormat(msg, sizeof(msg), _UU("SVC_STOP_FAILED"),
-								service_title, service_name);
-							UniPrint(L"%s\n", msg);
-						}
+						MsSvcMsg(silent, "SVC_STOP_FAILED", service_title, service_name);
 						break;
 					}
 				}
 
 				if (MsUninstallService(service_name) == false)
 				{
-					if(silent == false)
-					{
-						UniFormat(msg, sizeof(msg), _UU("SVC_UNINSTALL_FAILED"),
-							service_title, service_name);
-						UniPrint(L"%s\n", msg);
-					}
+					MsSvcMsg(silent, "SVC_UNINSTALL_FAILED", service_title, service_name);
 					break;
 				}
 
-				if(silent == false)
-				{
-					UniFormat(msg, sizeof(msg), _UU("SVC_UNINSTALL_OK"),
-						service_title, service_name);
-					UniPrint(L"%s\n", msg);
-				}
+				MsSvcMsg(silent, "SVC_UNINSTALL_OK", service_title, service_name);
 				break;
 
 			case SVC_MODE_START:
@@ -2054,43 +1949,23 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 
 				if (MsIsServiceInstalled(service_name) == false)
 				{
-					if(silent == false)
-					{
-						UniFormat(msg, sizeof(msg), _UU("SVC_NOT_INSTALLED"),
-							service_title, service_name);
-						UniPrint(L"%s\n", msg);
-					}
+					MsSvcMsg(silent, "SVC_NOT_INSTALLED", service_title, service_name);
 					break;
 				}
 
 				if (MsIsServiceRunning(service_name))
 				{
-					if(silent == false)
-					{
-						UniFormat(msg, sizeof(msg), _UU("SVR_ALREADY_START"),
-							service_title, service_name);
-						UniPrint(L"%s\n", msg);
-					}
+					MsSvcMsg(silent, "SVR_ALREADY_START", service_title, service_name);
 					break;
 				}
 
 				if (MsStartService(service_name) == false)
 				{
-					if(silent == false)
-					{
-						UniFormat(msg, sizeof(msg), _UU("SVC_START_FAILED"),
-							service_title, service_name);
-						UniPrint(L"%s\n", msg);
-					}
+					MsSvcMsg(silent, "SVC_START_FAILED", service_title, service_name);
 					break;
 				}
 
-				if(silent == false)
-				{
-					UniFormat(msg, sizeof(msg), _UU("SVC_START_OK"),
-						service_title, service_name);
-					UniPrint(L"%s\n", msg);
-				}
+				MsSvcMsg(silent, "SVC_START_OK", service_title, service_name);
 				break;
 
 			case SVC_MODE_STOP:
@@ -2099,49 +1974,29 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 
 				if (MsIsServiceInstalled(service_name) == false)
 				{
-					if(silent == false)
-					{
-						UniFormat(msg, sizeof(msg), _UU("SVC_NOT_INSTALLED"),
-							service_title, service_name);
-						UniPrint(L"%s\n", msg);
-					}
+					MsSvcMsg(silent, "SVC_NOT_INSTALLED", service_title, service_name);
 					break;
 				}
 
 				if (MsIsServiceRunning(service_name) == false)
 				{
-					if(silent == false)
-					{
-					UniFormat(msg, sizeof(msg), _UU("SVC_ALREADY_STOP"),
-						service_title, service_name);
-					UniPrint(L"%s\n", msg);
-					}
+					MsSvcMsg(silent, "SVC_ALREADY_STOP", service_title, service_name);
 					break;
 				}
 				if (MsStopService(service_name) == false)
 				{
-					if(silent == false)
-					{
-						UniFormat(msg, sizeof(msg), _UU("SVC_STOP_FAILED"),
-							service_title, service_name);
-						UniPrint(L"%s\n", msg);
-					}
+					MsSvcMsg(silent, "SVC_STOP_FAILED", service_title, service_name);
 					break;
 				}
 
-				if(silent == false)
-				{
-					UniFormat(msg, sizeof(msg), _UU("SVC_STOP_OK"),
-						service_title, service_name);
-					UniPrint(L"%s\n", msg);
-				}
+				MsSvcMsg(silent, "SVC_STOP_OK", service_title, service_name);
 				break;
 
 			case SVC_MODE_TEST:
 				MsTestModeW(service_title, start, stop);
 				break;
 			case SVC_MODE_USERMODE:
-				MsUserModeW(service_title, start, stop, icon);
+				MsUserModeW(service_title, start, stop);
 				break;
 			case SVC_MODE_SERVICE:
 				break;
@@ -2159,6 +2014,23 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 	FreeMayaqua();
 
 	return 0;
+}
+
+// Wait up to 10 s, polling every 250 ms, until the service is running (running == true) or no longer
+// running (running == false)
+static void MsWaitServiceState(char *name, bool running)
+{
+	UINT64 end = Tick64() + 10000ULL;
+
+	while (Tick64() < end)
+	{
+		if (MsIsServiceRunning(name) == running)
+		{
+			break;
+		}
+
+		SleepThread(250);
+	}
 }
 
 bool MsStopService(char *name)
@@ -2187,16 +2059,7 @@ bool MsStopService(char *name)
 
 	if (ret)
 	{
-		UINT64 end = Tick64() + 10000ULL;
-		while (Tick64() < end)
-		{
-			if (MsIsServiceRunning(name) == false)
-			{
-				break;
-			}
-
-			SleepThread(250);
-		}
+		MsWaitServiceState(name, false);
 	}
 
 	CloseServiceHandle(sc);
@@ -2205,29 +2068,16 @@ bool MsStopService(char *name)
 
 bool MsStartService(char *name)
 {
-	return MsStartServiceEx(name, NULL);
-}
-bool MsStartServiceEx(char *name, UINT *error_code)
-{
 	SC_HANDLE sc, service;
 	bool ret = false;
-	static UINT dummy = 0;
 	if (name == NULL)
 	{
 		return false;
 	}
 
-	if (error_code == NULL)
-	{
-		error_code = &dummy;
-	}
-
-	*error_code = 0;
-
 	sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
 	if (sc == NULL)
 	{
-		*error_code = GetLastError();
 		return false;
 	}
 
@@ -2238,23 +2088,10 @@ bool MsStartServiceEx(char *name, UINT *error_code)
 
 		CloseServiceHandle(service);
 	}
-	else
-	{
-		*error_code = GetLastError();
-	}
 
 	if (ret)
 	{
-		UINT64 end = Tick64() + 10000ULL;
-		while (Tick64() < end)
-		{
-			if (MsIsServiceRunning(name))
-			{
-				break;
-			}
-
-			SleepThread(250);
-		}
+		MsWaitServiceState(name, true);
 	}
 
 	CloseServiceHandle(sc);
@@ -2340,6 +2177,29 @@ bool MsUninstallService(char *name)
 	return ret;
 }
 
+// Recovery of the service: restart it 10 s after each of its first three failures, and count the
+// failures from zero again after a day without one. The handle needs SERVICE_CHANGE_CONFIG, and
+// SERVICE_START for the restart actions.
+static void MsSetServiceRecovery(SC_HANDLE service)
+{
+	SERVICE_FAILURE_ACTIONS action;
+	SC_ACTION e[3];
+	UINT i;
+
+	Zero(&action, sizeof(action));
+	action.dwResetPeriod = 1 * 60 * 60 * 24;
+	action.cActions = (DWORD)(sizeof(e) / sizeof(e[0]));
+	action.lpsaActions = e;
+
+	for (i = 0;i < action.cActions;i++)
+	{
+		e[i].Type = SC_ACTION_RESTART;
+		e[i].Delay = 10000;
+	}
+
+	ChangeServiceConfig2(service, SERVICE_CONFIG_FAILURE_ACTIONS, &action);
+}
+
 bool MsUpdateServiceConfig(char *name)
 {
 	SC_HANDLE sc, service;
@@ -2357,49 +2217,33 @@ bool MsUpdateServiceConfig(char *name)
 		}
 	}
 
-	sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
+	sc = OpenSCManager(NULL, NULL, SC_MANAGER_CONNECT);
 	if (sc == NULL)
 	{
 		return false;
 	}
 
-	service = OpenService(sc, name, SERVICE_ALL_ACCESS);
+	// ChangeServiceConfig2 needs SERVICE_CHANGE_CONFIG, and SERVICE_START for the restart actions
+	service = OpenService(sc, name, SERVICE_CHANGE_CONFIG | SERVICE_START);
 	if (service != NULL)
 	{
-		if (GET_KETA(GetOsInfo()->OsType, 100) >= 2)
+		SERVICE_DESCRIPTIONW d;
+		wchar_t *description;
+		char dname[MAX_SIZE];
+
+		MsSetServiceRecovery(service);
+
+		MsRegWriteInt(REG_LOCAL_MACHINE, "Software\\" GC_REG_COMPANY_NAME "\\Update Service Config", name, 1);
+
+		Format(dname, sizeof(dname), "SVC_%s_DESCRIPT", name);
+
+		description = _UU(dname);
+
+		if (UniIsEmptyStr(description) == false)
 		{
-			SERVICE_FAILURE_ACTIONS action;
-			SC_ACTION *e;
-			Zero(&action, sizeof(action));
-			e = ZeroMalloc(sizeof(SC_ACTION) * 3);
-			e[0].Delay = 10000; e[0].Type = SC_ACTION_RESTART;
-			e[1].Delay = 10000; e[1].Type = SC_ACTION_RESTART;
-			e[2].Delay = 10000; e[2].Type = SC_ACTION_RESTART;
-			action.cActions = 3;
-			action.lpsaActions = e;
-			action.dwResetPeriod = 1 * 60 * 60 * 24;
-			ChangeServiceConfig2(service, SERVICE_CONFIG_FAILURE_ACTIONS, &action);
-
-			MsRegWriteInt(REG_LOCAL_MACHINE, "Software\\" GC_REG_COMPANY_NAME "\\Update Service Config", name, 1);
-		}
-
-		
-		if (GET_KETA(GetOsInfo()->OsType, 100) >= 2)
-		{
-			SERVICE_DESCRIPTIONW d;
-			wchar_t *description;
-			char dname[MAX_SIZE];
-
-			Format(dname, sizeof(dname), "SVC_%s_DESCRIPT", name);
-
-			description = _UU(dname);
-
-			if (UniIsEmptyStr(description) == false)
-			{
-				Zero(&d, sizeof(d));
-				d.lpDescription = description;
-				ChangeServiceConfig2(service, SERVICE_CONFIG_DESCRIPTION, &d);
-			}
+			Zero(&d, sizeof(d));
+			d.lpDescription = description;
+			ChangeServiceConfig2(service, SERVICE_CONFIG_DESCRIPTION, &d);
 		}
 
 		CloseServiceHandle(service);
@@ -2410,30 +2254,21 @@ bool MsUpdateServiceConfig(char *name)
 	return true;
 }
 
-bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar_t *path, UINT *error_code)
+bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar_t *path)
 {
 	SC_HANDLE sc, service;
 	bool ret = false;
 	wchar_t name_w[MAX_SIZE];
-	static UINT temp_int = 0;
 	if (name == NULL || title == NULL || path == NULL)
 	{
 		return false;
 	}
-
-	if (error_code == NULL)
-	{
-		error_code = &temp_int;
-	}
-
-	*error_code = 0;
 
 	StrToUni(name_w, sizeof(name_w), name);
 
 	sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
 	if (sc == NULL)
 	{
-		*error_code = GetLastError();
 		return false;
 	}
 
@@ -2443,34 +2278,17 @@ bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar
 
 	if (service != NULL)
 	{
+		SERVICE_DESCRIPTIONW d;
+
 		ret = true;
 
-		if (GET_KETA(GetOsInfo()->OsType, 100) >= 2)
-		{
-			SERVICE_DESCRIPTIONW d;
-			SERVICE_FAILURE_ACTIONS action;
-			SC_ACTION *e;
-			Zero(&d, sizeof(d));
-			d.lpDescription = description;
-			ChangeServiceConfig2(service, SERVICE_CONFIG_DESCRIPTION, &d);
-			Zero(&action, sizeof(action));
-			e = ZeroMalloc(sizeof(SC_ACTION) * 3);
-			e[0].Delay = 10000; e[0].Type = SC_ACTION_RESTART;
-			e[1].Delay = 10000; e[1].Type = SC_ACTION_RESTART;
-			e[2].Delay = 10000; e[2].Type = SC_ACTION_RESTART;
-			action.cActions = 3;
-			action.lpsaActions = e;
-			action.dwResetPeriod = 1 * 60 * 60 * 24;
-			ChangeServiceConfig2(service, SERVICE_CONFIG_FAILURE_ACTIONS, &action);
+		Zero(&d, sizeof(d));
+		d.lpDescription = description;
+		ChangeServiceConfig2(service, SERVICE_CONFIG_DESCRIPTION, &d);
 
-			Free(e);
-		}
+		MsSetServiceRecovery(service);
 
 		CloseServiceHandle(service);
-	}
-	else
-	{
-		*error_code = GetLastError();
 	}
 
 	CloseServiceHandle(sc);
@@ -2518,8 +2336,6 @@ void MsSetThreadPriorityIdle()
 
 void MsSetThreadPriorityRealtime()
 {
-	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
-	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 }
 
@@ -3124,6 +2940,9 @@ void MsFreeNoWarning(NO_WARNING *nw)
 #define	MS_TEMP_DIR_NAME_LEN	(4 + MS_TEMP_DIR_RANDOM_SIZE * 2)	// "VPN_" and the hex digits
 #define	MS_TEMP_DIR_SDDL		L"D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)"
 
+// Delete the temp directories that earlier processes left in %TEMP% (no lock file, or one no process
+// holds). A reparse point named like one (a junction or a symbolic link, which anyone who can write
+// to %TEMP% can make) is no temp directory of this program: it is left alone and never followed.
 static void MsDeleteTempDir()
 {
 	HANDLE h;
@@ -3145,7 +2964,8 @@ static void MsDeleteTempDir()
 			if (UniStrCmpi(data_w.cFileName, L".") != 0 &&
 				UniStrCmpi(data_w.cFileName, L"..") != 0)
 			{
-				if (data_w.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+				if ((data_w.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
+					(data_w.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0)
 				{
 					if (UniStartWith(data_w.cFileName, L"VPN_") && UniStrLen(data_w.cFileName) == MS_TEMP_DIR_NAME_LEN)
 					{
@@ -3217,13 +3037,36 @@ static void MsDeleteTempDir()
 	}
 }
 
+// Delete the files and subdirectories of dir, never through a reparse point. dir is opened without
+// following a reparse point and left alone when it is one. A junction or a symbolic link in it goes
+// as a link: RemoveDirectoryW and DeleteFileW remove the link, not its target. dir stays open
+// without delete or write sharing while its entries go, so that it cannot be renamed or replaced
+// in the meantime.
 void MsDeleteAllFileW(wchar_t *dir)
 {
 	HANDLE h;
+	HANDLE dir_handle;
+	BY_HANDLE_FILE_INFORMATION info;
 	wchar_t file_mask[MAX_PATH];
 	WIN32_FIND_DATAW data;
 	if (dir == NULL || UniIsEmptyStr(dir))
 	{
+		return;
+	}
+
+	dir_handle = CreateFileW(dir, FILE_LIST_DIRECTORY, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+		FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+	if (dir_handle == INVALID_HANDLE_VALUE)
+	{
+		return;
+	}
+
+	Zero(&info, sizeof(info));
+	if (GetFileInformationByHandle(dir_handle, &info) == FALSE ||
+		(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 ||
+		(info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0)
+	{
+		CloseHandle(dir_handle);
 		return;
 	}
 
@@ -3241,13 +3084,17 @@ void MsDeleteAllFileW(wchar_t *dir)
 
 				UniFormat(fullpath, sizeof(fullpath), L"%s\\%s", dir, data.cFileName);
 
-				if ((data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == false)
+				if ((data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0)
 				{
 					DeleteFileW(fullpath);
 				}
 				else
 				{
-					MsDeleteAllFileW(fullpath);
+					if ((data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0)
+					{
+						MsDeleteAllFileW(fullpath);
+					}
+
 					RemoveDirectoryW(fullpath);
 				}
 			}
@@ -3256,6 +3103,8 @@ void MsDeleteAllFileW(wchar_t *dir)
 
 		FindClose(h);
 	}
+
+	CloseHandle(dir_handle);
 }
 
 static void MsInitTempDir()
@@ -3472,7 +3321,8 @@ bool MsRegDeleteValueEx2(UINT root, char *keyname, char *valuename, bool force32
 		return false;
 	}
 
-	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_ALL_ACCESS | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS)
+	// RegDeleteValue needs KEY_SET_VALUE only
+	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_SET_VALUE | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS)
 	{
 		return false;
 	}
@@ -3615,7 +3465,8 @@ bool MsRegWriteValueEx2(UINT root, char *keyname, char *valuename, UINT type, vo
 
 	MsRegNewKeyEx2(root, keyname, force32bit, force64bit);
 
-	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_ALL_ACCESS | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS)
+	// RegSetValueEx needs KEY_SET_VALUE only
+	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_SET_VALUE | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS)
 	{
 		return false;
 	}
@@ -3688,46 +3539,6 @@ UINT MsRegReadIntEx2(UINT root, char *keyname, char *valuename, bool force32bit,
 	return value;
 }
 
-static LIST *MsRegReadStrListEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit)
-{
-	LIST *o;
-	char *ret;
-	DWORD type, size;
-	if (keyname == NULL || valuename == NULL)
-	{
-		return NULL;
-	}
-
-	if (MsRegReadValueEx2(root, keyname, valuename, (void **)&ret, &type, &size, force32bit, force64bit) == false)
-	{
-		return NULL;
-	}
-
-	if (type != REG_MULTI_SZ)
-	{
-		Free(ret);
-		return NULL;
-	}
-
-	if (size < 2)
-	{
-		Free(ret);
-		return NULL;
-	}
-
-	if (ret[size - 1] != 0)
-	{
-		Free(ret);
-		return NULL;
-	}
-
-	o = StrToStrList(ret, size);
-
-	Free(ret);
-
-	return o;
-}
-
 char *MsRegReadStr(UINT root, char *keyname, char *valuename)
 {
 	return MsRegReadStrEx2(root, keyname, valuename, false, false);
@@ -3746,23 +3557,11 @@ char *MsRegReadStrEx2(UINT root, char *keyname, char *valuename, bool force32bit
 		return NULL;
 	}
 
+	// A REG_MULTI_SZ reads as its first string: the buffer ends with a terminator (checked below)
+	// and the first string ends at its first one
 	if (type != REG_SZ && type != REG_EXPAND_SZ && type != REG_MULTI_SZ)
 	{
 		Free(ret);
-
-		if (type == REG_MULTI_SZ)
-		{
-			LIST *o = MsRegReadStrListEx2(root, keyname, valuename, false, false);
-			if (o != NULL)
-			{
-				if (LIST_NUM(o) >= 1)
-				{
-					ret = CopyStr(LIST_DATA(o, 0));
-					FreeStrList(o);
-					return ret;
-				}
-			}
-		}
 		return NULL;
 	}
 
@@ -3802,6 +3601,14 @@ wchar_t *MsRegReadStrEx2W(UINT root, char *keyname, char *valuename, bool force3
 		return NULL;
 	}
 
+	if (size < sizeof(wchar_t))
+	{
+		// An empty value, or one byte: no whole character, and no last character to test below
+		Free(ret);
+
+		return CopyUniStr(L"");
+	}
+
 	if (ret[size / sizeof(wchar_t) - 1] != 0)
 	{
 		Free(ret);
@@ -3822,7 +3629,7 @@ bool MsRegReadValueEx2(UINT root, char *keyname, char *valuename, void **data, D
 	*type = 0;
 	*size = 0;
 
-	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_READ | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS)
+	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_QUERY_VALUE | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS)
 	{
 		return false;
 	}
@@ -3830,30 +3637,22 @@ bool MsRegReadValueEx2(UINT root, char *keyname, char *valuename, void **data, D
 	*data = ZeroMalloc(*size);
 	ret = RegQueryValueEx(h, valuename, 0, type, *data, size);
 
-	if (ret == ERROR_SUCCESS)
+	if (ret == ERROR_MORE_DATA)
 	{
-		RegCloseKey(h);
-		return true;
-	}
-
-	if (ret != ERROR_MORE_DATA)
-	{
-		Free(*data);
-		*data = NULL;
-		RegCloseKey(h);
-		return false;
-	}
-
-	*data = ReAlloc(*data, *size);
-	ret = RegQueryValueEx(h, valuename, 0, type, *data, size);
-	if (ret != ERROR_SUCCESS)
-	{
-		Free(*data);
-		*data = NULL;
-		RegCloseKey(h);
+		// Again with the size the first query gave
+		*data = ReAlloc(*data, *size);
+		ret = RegQueryValueEx(h, valuename, 0, type, *data, size);
 	}
 
 	RegCloseKey(h);
+
+	if (ret != ERROR_SUCCESS)
+	{
+		// Also when the value grew or went away between the two queries: no data, no success
+		Free(*data);
+		*data = NULL;
+		return false;
+	}
 
 	return true;
 }
@@ -3869,7 +3668,7 @@ bool MsRegReadValueEx2W(UINT root, char *keyname, char *valuename, void **data, 
 	*type = 0;
 	*size = 0;
 
-	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_READ | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS)
+	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_QUERY_VALUE | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS)
 	{
 		return false;
 	}
@@ -3879,35 +3678,24 @@ bool MsRegReadValueEx2W(UINT root, char *keyname, char *valuename, void **data, 
 	*data = ZeroMalloc(*size);
 	ret = RegQueryValueExW(h, valuename_w, 0, type, *data, size);
 
-	if (ret == ERROR_SUCCESS)
+	if (ret == ERROR_MORE_DATA)
 	{
-		RegCloseKey(h);
-		Free(valuename_w);
-		return true;
-	}
-
-	if (ret != ERROR_MORE_DATA)
-	{
-		Free(*data);
-		*data = NULL;
-		Free(valuename_w);
-		RegCloseKey(h);
-		return false;
-	}
-
-	*data = ReAlloc(*data, *size);
-	ret = RegQueryValueExW(h, valuename_w, 0, type, *data, size);
-	if (ret != ERROR_SUCCESS)
-	{
-		Free(*data);
-		*data = NULL;
-		Free(valuename_w);
-		RegCloseKey(h);
+		// Again with the size the first query gave
+		*data = ReAlloc(*data, *size);
+		ret = RegQueryValueExW(h, valuename_w, 0, type, *data, size);
 	}
 
 	Free(valuename_w);
 
 	RegCloseKey(h);
+
+	if (ret != ERROR_SUCCESS)
+	{
+		// Also when the value grew or went away between the two queries: no data, no success
+		Free(*data);
+		*data = NULL;
+		return false;
+	}
 
 	return true;
 }
@@ -3926,7 +3714,7 @@ bool MsRegIsValueEx2(UINT root, char *keyname, char *valuename, bool force32bit,
 		return false;
 	}
 
-	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_READ | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS)
+	if (RegOpenKeyEx(MsGetRootKeyFromInt(root), keyname, 0, KEY_QUERY_VALUE | MsRegAccessMaskFor64BitEx(force32bit, force64bit), &h) != ERROR_SUCCESS)
 	{
 		return false;
 	}
@@ -3958,8 +3746,10 @@ bool MsRegNewKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit)
 		return true;
 	}
 
+	// The handle is closed at once, so it asks for little. Creating the key needs KEY_CREATE_SUB_KEY
+	// on the parent key, which RegCreateKeyEx checks by itself.
 	if (RegCreateKeyEx(MsGetRootKeyFromInt(root), keyname, 0, NULL, REG_OPTION_NON_VOLATILE,
-		KEY_ALL_ACCESS | MsRegAccessMaskFor64BitEx(force32bit, force64bit), NULL, &h, NULL) != ERROR_SUCCESS)
+		KEY_QUERY_VALUE | MsRegAccessMaskFor64BitEx(force32bit, force64bit), NULL, &h, NULL) != ERROR_SUCCESS)
 	{
 		return false;
 	}
