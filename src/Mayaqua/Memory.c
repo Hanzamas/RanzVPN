@@ -15,6 +15,7 @@
 #include "Tick64.h"
 #include "Tracking.h"
 
+#include <intrin.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -70,72 +71,22 @@ UCHAR *GetCanaryRand(UINT id)
 
 void InitCanaryRand()
 {
-	SYSTEMTIME st = { 0 };
-	char random_seed[1024] = { 0 };
-	UINT64 t1 = 0, t2 = 0;
+	UINT i;
 	if (canary_inited)
 	{
 		return;
 	}
 
-	Win32GetSystemTime(&st);
-	memcpy(&t1, ((UCHAR *)&st) + 0, 8);
-	memcpy(&t2, ((UCHAR *)&st) + 8, 8);
-
+	// From CNG (Rand): no seed, no state shared with the CRT generator
+	for (i = 0;i < NUM_CANARY_RAND;i++)
 	{
-		UINT64 dos_rand = (UINT64)rand();
-		UINT64 tick1 = TickHighresNano64(true);
-		UINT64 tick2 = TickHighresNano64(true);
-
-		UINT i;
-
-		void *p1 = malloc(1);
-		void *p2 = malloc(1);
-
-		for (i = 0;i < NUM_CANARY_RAND;i++)
-		{
-			// using sprintf() here is safe.
-			sprintf(random_seed,
-				"%u "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%u "
-				,
-				i,
-				(UINT64)InitCanaryRand,
-				(UINT64)&canary_inited,
-				(UINT64) & ((canary_rand_data[0].Data)[0]),
-				(UINT64)&random_seed[0],
-				tick1,
-				tick2,
-				dos_rand,
-				(UINT64)p1,
-				(UINT64)p2,
-				t1,
-				t2,
-				~i
-			);
-
-			Sha0(canary_rand_data[i].Data, random_seed, (UINT)strlen(random_seed));
-		}
-
-		free(p1);
-		free(p2);
-
-		canary_memtag_magic1 = *((UINT64 *)(GetCanaryRand(CANARY_RAND_ID_MEMTAG_MAGIC) + 0));
-		canary_memtag_magic2 = *((UINT64 *)(GetCanaryRand(CANARY_RAND_ID_MEMTAG_MAGIC) + 8));
-
-		canary_inited = true;
+		Rand(canary_rand_data[i].Data, CANARY_RAND_SIZE);
 	}
+
+	canary_memtag_magic1 = *((UINT64 *)(GetCanaryRand(CANARY_RAND_ID_MEMTAG_MAGIC) + 0));
+	canary_memtag_magic2 = *((UINT64 *)(GetCanaryRand(CANARY_RAND_ID_MEMTAG_MAGIC) + 8));
+
+	canary_inited = true;
 }
 
 bool IsInHashListKey(HASH_LIST *h, UINT key)
@@ -498,15 +449,11 @@ UINT SearchBin(void *data, UINT data_start, UINT data_size, void *key, UINT key_
 	return INFINITE;
 }
 
+// Ends the process at once with a fail-fast exception, which Windows Error Reporting records.
+// Writing to a random address could hit valid memory and corrupt it instead of crashing.
 void CrashNow()
 {
-	while (true)
-	{
-		UINT r = Rand32();
-		UCHAR *c = (UCHAR *)r;
-
-		*c = Rand8();
-	}
+	__fastfail(FAST_FAIL_FATAL_APP_EXIT);
 }
 
 bool IsZero(void *data, UINT size)

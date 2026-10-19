@@ -23,8 +23,6 @@
 #include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
 
-#include <stdlib.h>
-
 #define	IS_SEND_TCP_SOCK(ts)		\
 	((ts->Direction == TCP_BOTH) || ((ts->Direction == TCP_SERVER_TO_CLIENT) && (s->ServerMode)) || ((ts->Direction == TCP_CLIENT_TO_SERVER) && (s->ServerMode == false)))
 
@@ -308,7 +306,7 @@ UINT GenNextKeepAliveSpan(CONNECTION *c)
 
 	// Clamped to the bounds of ServerAccept: a timeout below 2 would divide by zero
 	a = MAKESURE(c->Session->Timeout, TIMEOUT_MIN, TIMEOUT_MAX);
-	b = rand() % (a / 2);
+	b = Rand32() % (a / 2);
 	b = MAX(b, a / 5);
 
 	return b;
@@ -316,7 +314,7 @@ UINT GenNextKeepAliveSpan(CONNECTION *c)
 
 static void SendKeepAlive(CONNECTION *c, TCPSOCK *ts)
 {
-	UINT size, i, num;
+	UINT size, num;
 	UINT size_be;
 	SESSION *s;
 	UCHAR *buf;
@@ -331,15 +329,11 @@ static void SendKeepAlive(CONNECTION *c, TCPSOCK *ts)
 		return;
 	}
 
-	size = rand() % MAX_KEEPALIVE_SIZE;
+	size = Rand32() % MAX_KEEPALIVE_SIZE;
 	num = KEEP_ALIVE_MAGIC;
 
-	buf = MallocFast(size);
-
-	for (i = 0; i < size; ++i)
-	{
-		buf[i] = rand();
-	}
+	buf = Malloc(size);
+	Rand(buf, size);
 
 	num = Endian32(num);
 	size_be = Endian32(size);

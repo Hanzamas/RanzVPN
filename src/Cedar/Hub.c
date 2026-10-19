@@ -3411,7 +3411,7 @@ static bool CheckBroadcastStorm(HUB *hub, SESSION *s, PKT *p)
 			{
 				ret = false;
 			}
-			else if ((rand() % s->DiscardValue) != 0)
+			else if ((Rand32() % s->DiscardValue) != 0)
 			{
 				ret = false;
 			}
@@ -3521,7 +3521,7 @@ DISCARD_PACKET:
 
 			if (packet->Loss >= 1)
 			{
-				UINT r = rand() % 100;
+				UINT r = Rand32() % 100;
 				if ((packet->Loss >= 100) || (r < packet->Loss))
 				{
 					goto DISCARD_PACKET;
