@@ -3424,21 +3424,25 @@ DISCARD_PACKET:
 
 			if (packet->Delay >= 1)
 			{
-				float delay = (float)packet->Delay;
-				float jitter;
-				UINT delay_uint;
+				// Jitter is a percentage of the delay, in whole ms: a span below 1 ms means no jitter, never a
+				// modulo by zero (Delay 10 with Jitter 5 gave a span of 0)
+				UINT jitter_span = (UINT)((UINT64)packet->Jitter * (UINT64)packet->Delay / 100);
+				UINT jitter = 0;
+				UINT delay_uint = packet->Delay;
 				bool f = Rand1();
-				if (packet->Jitter == 0)
+				if (jitter_span != 0)
 				{
-					jitter = 0;
+					jitter = Rand32() % jitter_span;
+				}
+
+				if (f)
+				{
+					delay_uint += jitter;
 				}
 				else
 				{
-					jitter = (float)(Rand32() % (int)((float)packet->Jitter * delay / 100.0f));
+					delay_uint = (jitter < delay_uint ? delay_uint - jitter : 0);
 				}
-
-				delay += jitter * (f ? 1 : -1);
-				delay_uint = (UINT)delay;
 
 				if (delay_uint >= 1)
 				{
