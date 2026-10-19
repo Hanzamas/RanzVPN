@@ -98,6 +98,7 @@ bool Win32SetFolderCompress(char *path, bool compressed)
 	HANDLE h;
 	DWORD retsize = 0;
 	USHORT flag;
+	bool ret;
 	char tmp[MAX_PATH];
 	if (path == NULL)
 	{
@@ -115,15 +116,12 @@ bool Win32SetFolderCompress(char *path, bool compressed)
 
 	flag = compressed ? COMPRESSION_FORMAT_DEFAULT : COMPRESSION_FORMAT_NONE;
 
-	if (DeviceIoControl(h, FSCTL_SET_COMPRESSION, &flag, sizeof(USHORT),
-		NULL, 0, &retsize, NULL) == false)
-	{
-		return false;
-	}
+	ret = (DeviceIoControl(h, FSCTL_SET_COMPRESSION, &flag, sizeof(USHORT),
+		NULL, 0, &retsize, NULL) != FALSE);
 
 	CloseHandle(h);
 
-	return true;
+	return ret;
 }
 
 bool Win32GetDiskFree(char *path, UINT64 *free_size, UINT64 *used_size, UINT64 *total_size)
@@ -411,6 +409,7 @@ void *Win32NewSingleInstance(char *instance_name)
 {
 	WIN32MUTEX *ret;
 	char tmp[MAX_SIZE];
+	wchar_t name_w[MAX_SIZE];
 	HANDLE hMutex;
 	if (instance_name == NULL)
 	{
@@ -420,15 +419,14 @@ void *Win32NewSingleInstance(char *instance_name)
 		instance_name = tmp;
 	}
 
-	hMutex = OpenMutex(MUTEX_ALL_ACCESS, FALSE, instance_name);
-	if (hMutex != NULL)
+	// One atomic create: an existing mutex (or one this account may not open) means another instance runs
+	StrToUni(name_w, sizeof(name_w), instance_name);
+	hMutex = CreateMutexW(NULL, FALSE, name_w);
+	if (hMutex == NULL)
 	{
-		CloseHandle(hMutex);
 		return NULL;
 	}
-
-	hMutex = CreateMutex(NULL, FALSE, instance_name);
-	if (hMutex == NULL)
+	if (GetLastError() == ERROR_ALREADY_EXISTS)
 	{
 		CloseHandle(hMutex);
 		return NULL;
@@ -774,18 +772,8 @@ void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id,
 	UniStrCpy(name, sizeof(name), filename);
 	UniTrim(name);
 
+	// Quote a bare path so CreateProcess does not probe "C:\Program" first; a name that already has quotes goes as is
 	if (UniSearchStr(name, L"\"", 0) == INFINITE)
-	{
-		if (arg == NULL)
-		{
-			UniFormat(cmdline, sizeof(cmdline), L"%s", name);
-		}
-		else
-		{
-			UniFormat(cmdline, sizeof(cmdline), L"%s %s", name, arg);
-		}
-	}
-	else
 	{
 		if (arg == NULL)
 		{
@@ -794,6 +782,17 @@ void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id,
 		else
 		{
 			UniFormat(cmdline, sizeof(cmdline), L"\"%s\" %s", name, arg);
+		}
+	}
+	else
+	{
+		if (arg == NULL)
+		{
+			UniFormat(cmdline, sizeof(cmdline), L"%s", name);
+		}
+		else
+		{
+			UniFormat(cmdline, sizeof(cmdline), L"%s %s", name, arg);
 		}
 	}
 
@@ -810,8 +809,9 @@ void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id,
 		p = MsDisableWow64FileSystemRedirection();
 	}
 
+	// CREATE_NO_WINDOW is ignored together with CREATE_NEW_CONSOLE, so a hidden launch sets it alone
 	if (CreateProcessW(NULL, cmdline, NULL, NULL, FALSE,
-		(hide == false ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW | CREATE_NEW_CONSOLE) | NORMAL_PRIORITY_CLASS,
+		(hide == false ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW) | NORMAL_PRIORITY_CLASS,
 		NULL, NULL, &info, &ret) == FALSE)
 	{
 		if (disableWow)
@@ -849,18 +849,8 @@ bool Win32Run(char *filename, char *arg, bool hide, bool wait)
 	StrCpy(name, sizeof(name), filename);
 	Trim(name);
 
+	// Quote a bare path so CreateProcess does not probe "C:\Program" first; a name that already has quotes goes as is
 	if (SearchStr(name, "\"", 0) == INFINITE)
-	{
-		if (arg == NULL)
-		{
-			Format(cmdline, sizeof(cmdline), "%s", name);
-		}
-		else
-		{
-			Format(cmdline, sizeof(cmdline), "%s %s", name, arg);
-		}
-	}
-	else
 	{
 		if (arg == NULL)
 		{
@@ -869,6 +859,17 @@ bool Win32Run(char *filename, char *arg, bool hide, bool wait)
 		else
 		{
 			Format(cmdline, sizeof(cmdline), "\"%s\" %s", name, arg);
+		}
+	}
+	else
+	{
+		if (arg == NULL)
+		{
+			Format(cmdline, sizeof(cmdline), "%s", name);
+		}
+		else
+		{
+			Format(cmdline, sizeof(cmdline), "%s %s", name, arg);
 		}
 	}
 
@@ -880,8 +881,9 @@ bool Win32Run(char *filename, char *arg, bool hide, bool wait)
 
 	Trim(cmdline);
 
+	// CREATE_NO_WINDOW is ignored together with CREATE_NEW_CONSOLE, so a hidden launch sets it alone
 	if (CreateProcess(NULL, cmdline, NULL, NULL, FALSE,
-		(hide == false ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW | CREATE_NEW_CONSOLE) | NORMAL_PRIORITY_CLASS,
+		(hide == false ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW) | NORMAL_PRIORITY_CLASS,
 		NULL, NULL, &info, &ret) == FALSE)
 	{
 		return false;
@@ -916,7 +918,7 @@ void Win32NukuEnW(wchar_t *dst, UINT size, wchar_t *src)
 		UniStrCpy(str, sizeof(str), dst);
 	}
 	i = UniStrLen(str);
-	if (str[i - 1] == L'\\')
+	if (i > 0 && str[i - 1] == L'\\')
 	{
 		str[i - 1] = 0;
 	}
@@ -935,7 +937,7 @@ void Win32NukuEn(char *dst, UINT size, char *src)
 		StrCpy(str, sizeof(str), dst);
 	}
 	i = StrLen(str);
-	if (str[i - 1] == '\\')
+	if (i > 0 && str[i - 1] == '\\')
 	{
 		str[i - 1] = 0;
 	}
