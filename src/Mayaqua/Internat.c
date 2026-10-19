@@ -283,11 +283,11 @@ wchar_t *InternalFormatArgs(wchar_t *fmt, va_list args, bool ansi_mode)
 					UniStrLen(tmp) >= 4 && tmp[UniStrLen(tmp) - 3] == L'l' &&
 					tmp[UniStrLen(tmp) - 2] == L'l'))
 				{
-						_snprintf(dst, sizeof(dst), tag, va_arg(args, UINT64));
+						snprintf(dst, sizeof(dst), tag, va_arg(args, UINT64));
 				}
 				else
 				{
-						_snprintf(dst, sizeof(dst), tag, va_arg(args, int));
+						snprintf(dst, sizeof(dst), tag, va_arg(args, int));
 				}
 
 				Free(tag);
@@ -305,7 +305,7 @@ wchar_t *InternalFormatArgs(wchar_t *fmt, va_list args, bool ansi_mode)
 				tmp[wp++] = 0;
 				tag = CopyUniToStr(tmp);
 
-					_snprintf(dst, sizeof(dst), tag, va_arg(args, double));
+					snprintf(dst, sizeof(dst), tag, va_arg(args, double));
 
 				Free(tag);
 				Add(o, CopyStrToUni(dst));
@@ -320,7 +320,7 @@ wchar_t *InternalFormatArgs(wchar_t *fmt, va_list args, bool ansi_mode)
 				tag = ZeroMalloc(UniStrSize(tmp) + 32);
 				UniToStr(tag, 0, tmp);
 
-					_snprintf(dst, sizeof(dst), tag, va_arg(args, void *));
+					snprintf(dst, sizeof(dst), tag, va_arg(args, void *));
 
 				Free(tag);
 				Add(o, CopyStrToUni(dst));

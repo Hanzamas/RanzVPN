@@ -35,8 +35,6 @@ int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 #define	IsBigEndian()		(g_little_endian ? false : true)
 #define	IsLittleEndian()	(g_little_endian)
 
-#define	snprintf	_snprintf
-
 #define	GCC_PACKED
 
 #define	WHERE			if (IsDebug()){printf("%s: %u\n", __FILE__, __LINE__); SleepThread(10);}

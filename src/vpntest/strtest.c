@@ -339,8 +339,8 @@ static void StrTestFormat(STRTEST_CTX *ctx)
 }
 
 // snprintf after the Mayaqua headers, and Format of a field wider than the conversion buffer of
-// InternalFormatArgs (Internat.c). Mayaqua.h once defined snprintf as the legacy _snprintf, which
-// leaves a truncated result without its terminator and returns -1.
+// InternalFormatArgs (Internat.c). Mayaqua.h once mapped snprintf to the legacy Microsoft variant,
+// which leaves a truncated result without its terminator and returns -1.
 static void StrTestSnprintf(STRTEST_CTX *ctx)
 {
 	char *b;
