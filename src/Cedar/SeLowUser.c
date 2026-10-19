@@ -119,14 +119,14 @@ void SuDeleteGarbageInfsInner()
 	}
 }
 
-static bool SuInstallDriver(bool force)
+static bool SuInstallDriver()
 {
 	bool ret;
 	void *wow;
 
 	wow = MsDisableWow64FileSystemRedirection();
 
-	ret = SuInstallDriverInner(force);
+	ret = SuInstallDriverInner();
 
 	MsRestoreWow64FileSystemRedirection(wow);
 
@@ -146,21 +146,19 @@ void SuSetInstallProc(SU_INSTALL_PROC *proc)
 	su_install_tried = false;
 }
 
-bool SuInstallDriverInner(bool force)
+bool SuInstallDriverInner()
 {
 	wchar_t sys_fullpath[MAX_PATH];
-	UINT current_sl_ver = 0;
 	bool ret = false;
-	wchar_t src_cat[MAX_PATH];
-	wchar_t src_inf[MAX_PATH];
-	wchar_t src_sys[MAX_PATH];
+	wchar_t *src_cat = SU_PACKAGE_DIR L"\\" SU_PACKAGE_CAT;
+	wchar_t *src_inf = SU_PACKAGE_DIR L"\\" SU_PACKAGE_INF;
+	wchar_t *src_sys = SU_PACKAGE_DIR L"\\" SU_PACKAGE_SYS;
 	wchar_t dst_cat[MAX_PATH];
 	wchar_t dst_inf[MAX_PATH];
 	wchar_t dst_sys[MAX_PATH];
 	wchar_t tmp_dir[MAX_PATH];
-	char *cpu_type = MsIsX64() ? "x64" : "x86";
 
-	if (SuIsSupportedOs(true) == false)
+	if (SuIsSupportedOs() == false)
 	{
 		return false;
 	}
@@ -171,44 +169,12 @@ bool SuInstallDriverInner(bool force)
 	UniStrCat(tmp_dir, sizeof(tmp_dir), L"\\selowtmp");
 	MakeDirExW(tmp_dir);
 
-	CombinePathW(sys_fullpath, sizeof(sys_fullpath), MsGetSystem32DirW(), L"drivers\\SeLow_%S.sys");
-	UniFormat(sys_fullpath, sizeof(sys_fullpath), sys_fullpath, cpu_type);
+	// Where the installed driver lives; SuCopySysFile also copies it there by hand
+	CombinePathW(sys_fullpath, sizeof(sys_fullpath), MsGetSystem32DirW(), L"drivers\\" SU_PACKAGE_SYS);
 
-	if (IsFileExistsW(sys_fullpath))
-	{
-		char *path;
-
-		current_sl_ver = MsRegReadIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME,
-			SL_REG_VER_VALUE_WIN10,
-			false, true);
-
-		path = MsRegReadStrEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "ImagePath", false, true);
-
-		if (IsEmptyStr(path) || IsFileExists(path) == false || MsIsServiceInstalled(SL_PROTOCOL_NAME) == false)
-		{
-			current_sl_ver = 0;
-		}
-
-		Free(path);
-	}
-
-	if (force == false && current_sl_ver >= SL_VER)
-	{
-		return true;
-	}
-
-	UniFormat(src_sys, sizeof(src_sys), L"|DriverPackages\\SeLow_Win10\\%S\\SeLow_%S.sys",
-		cpu_type, cpu_type);
-	// Windows 10 uses WHQL catalog files
-	UniFormat(src_cat, sizeof(src_cat), L"|DriverPackages\\SeLow_Win10\\%S\\SeLow_Win10_%S.cat", cpu_type, cpu_type);
-	UniFormat(src_inf, sizeof(src_inf), L"|DriverPackages\\SeLow_Win10\\%S\\SeLow_%S.inf",
-		cpu_type, cpu_type);
-
-	UniFormat(dst_sys, sizeof(dst_cat), L"%s\\SeLow_%S.sys", tmp_dir, cpu_type);
-	UniFormat(dst_cat, sizeof(dst_cat), L"%s\\SeLow_Win10_%S.cat", tmp_dir,
-		cpu_type);
-
-	UniFormat(dst_inf, sizeof(dst_inf), L"%s\\SeLow_%S.inf", tmp_dir, cpu_type);
+	UniFormat(dst_sys, sizeof(dst_sys), L"%s\\%s", tmp_dir, SU_PACKAGE_SYS);
+	UniFormat(dst_cat, sizeof(dst_cat), L"%s\\%s", tmp_dir, SU_PACKAGE_CAT);
+	UniFormat(dst_inf, sizeof(dst_inf), L"%s\\%s", tmp_dir, SU_PACKAGE_INF);
 
 	if (FileCopyW(src_sys, dst_sys) &&
 		FileCopyW(src_cat, dst_cat) &&
@@ -224,7 +190,7 @@ bool SuInstallDriverInner(bool force)
 
 		SuDeleteGarbageInfs();
 
-		if (InstallNdisProtocolDriver(dst_inf, L"SeLow", SL_USER_INSTALL_LOCK_TIMEOUT) == false)
+		if (InstallNdisProtocolDriver(dst_inf) == false)
 		{
 		}
 		else
@@ -233,10 +199,6 @@ bool SuInstallDriverInner(bool force)
 			Debug("SuCopySysFile from %S to %s: ret = %u\n", src_sys, sys_fullpath, SuCopySysFile(src_sys, sys_fullpath));
 
 			ret = true;
-
-			MsRegWriteIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME,
-				SL_REG_VER_VALUE_WIN10,
-				SL_VER, false, true);
 
 			MsRegWriteIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "Start", SERVICE_SYSTEM_START, false, true);
 		}
@@ -310,8 +272,14 @@ bool SuCopySysFile(wchar_t *src, wchar_t *dst)
 	return false;
 }
 
-bool SuIsSupportedOs(bool on_install)
+// SeLow is usable on this build and machine. Only an x64 driver package exists (hamcore
+// DriverPackages\SeLow_Win10\x64), so on arm64 it never is: no service start, no staging and no
+// install is tried there
+bool SuIsSupportedOs()
 {
+#if defined(_M_ARM64)
+	return false;
+#else	// defined(_M_ARM64)
 	if (MsRegReadIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "EnableSeLow", false, true) != 0)
 	{
 		return true;
@@ -323,6 +291,7 @@ bool SuIsSupportedOs(bool on_install)
 	}
 
 	return true;
+#endif	// defined(_M_ARM64)
 }
 
 bool SuPutPacket(SU_ADAPTER *a, void *buf, UINT size)
@@ -724,7 +693,7 @@ static SU *SuInitMain(UINT wait_for_bind_complete_tick, bool start_service, bool
 	bool flag = false;
 	UINT64 giveup_tick = 0;
 
-	if (SuIsSupportedOs(false) == false)
+	if (SuIsSupportedOs() == false)
 	{
 		return NULL;
 	}
@@ -744,7 +713,7 @@ LABEL_RETRY:
 				{
 					su_install_tried = true;
 
-					if (su_install_proc(true))
+					if (su_install_proc())
 					{
 						goto LABEL_RETRY;
 					}

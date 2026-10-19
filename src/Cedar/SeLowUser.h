@@ -16,8 +16,14 @@
 #define	SL_USER_INSTALL_LOCK_TIMEOUT		60000		// Lock acquisition timeout
 #define	SL_USER_AUTO_PUSH_TIMER				60000		// Timer to start the installation automatically
 
+// The SeLow driver package in hamcore. Only an x64 package exists (see SuIsSupportedOs)
+#define	SU_PACKAGE_DIR		L"|DriverPackages\\SeLow_Win10\\x64"
+#define	SU_PACKAGE_SYS		L"SeLow_x64.sys"
+#define	SU_PACKAGE_CAT		L"SeLow_Win10_x64.cat"		// Windows 10 uses WHQL catalog files
+#define	SU_PACKAGE_INF		L"SeLow_x64.inf"
+
 // Driver install step (SuInstallDriver); a test replaces it with SuSetInstallProc
-typedef bool (SU_INSTALL_PROC)(bool force);
+typedef bool (SU_INSTALL_PROC)(void);
 
 struct SU
 {
@@ -63,9 +69,9 @@ LIST *SuGetAdapterList(SU *u);
 void SuFreeAdapterList(LIST *o);
 int SuCmpAdapterList(void *p1, void *p2);
 
-bool SuInstallDriverInner(bool force);
+bool SuInstallDriverInner();
 void SuSetInstallProc(SU_INSTALL_PROC *proc);
-bool SuIsSupportedOs(bool on_install);
+bool SuIsSupportedOs();
 bool SuCopySysFile(wchar_t *src, wchar_t *dst);
 
 void SuDeleteGarbageInfsInner();

@@ -6,6 +6,8 @@
 
 extern "C"
 {
+#include "SeLowUser.h"
+
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Mayaqua.h"
@@ -17,7 +19,8 @@ extern "C"
 #include <netcfgn.h>
 #include <SetupAPI.h>
 
-bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout)
+// Install the SeLow NDIS protocol driver (SL_PROTOCOL_NAME) from the package whose INF is inf_path
+bool InstallNdisProtocolDriver(wchar_t *inf_path)
 {
 	bool ret = false;
 	HRESULT hr;
@@ -25,7 +28,7 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout
 	HINSTANCE hSetupApiDll = NULL;
 	BOOL (WINAPI *_SetupCopyOEMInfW)(PCWSTR, PCWSTR, DWORD, DWORD, PWSTR, DWORD, PDWORD, PWSTR *) = NULL;
 	BOOL (WINAPI *_SetupUninstallOEMInfW)(PCWSTR, DWORD, PVOID) = NULL;
-	if (inf_path == NULL || id == NULL)
+	if (inf_path == NULL)
 	{
 		return false;
 	}
@@ -63,7 +66,7 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout
 		{
 			LPWSTR locked_by;
 
-			hr = pLock->AcquireWriteLock(lock_timeout, L"Ranz VPN", &locked_by);
+			hr = pLock->AcquireWriteLock(SL_USER_INSTALL_LOCK_TIMEOUT, L"Ranz VPN", &locked_by);
 
 			if (SUCCEEDED(hr))
 			{
@@ -90,7 +93,7 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout
 
 							token.Type = OBO_USER;
 
-							hr = pSetup->Install(id, &token, 0, 0, NULL, NULL, &pComponent);
+							hr = pSetup->Install(L"" SL_PROTOCOL_NAME, &token, 0, 0, NULL, NULL, &pComponent);
 
 							if (SUCCEEDED(hr))
 							{

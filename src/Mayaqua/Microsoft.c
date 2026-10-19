@@ -526,21 +526,6 @@ void MsRestoreWow64FileSystemRedirection(void *p)
 	Wow64RevertWow64FsRedirection(p);
 }
 
-bool MsIsX64()
-{
-	SYSTEM_INFO info;
-
-	Zero(&info, sizeof(info));
-	GetNativeSystemInfo(&info);
-
-	if (info.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_AMD64)
-	{
-		return true;
-	}
-
-	return false;
-}
-
 void MsRegistWindowsFirewallEx2(char *title, char *exe, char *dir)
 {
 	char tmp[MAX_PATH];

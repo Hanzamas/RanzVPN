@@ -42,7 +42,7 @@ typedef struct SELOWTEST_CTX
 static UINT selowtest_num_install = 0;
 
 // Install step stub: counts the call and installs nothing
-static bool SelowTestInstallProc(bool force)
+static bool SelowTestInstallProc()
 {
 	selowtest_num_install++;
 
@@ -227,9 +227,16 @@ static void SelowTestInstall(SELOWTEST_CTX *ctx, bool supported)
 		return;
 	}
 
-	if (SuIsSupportedOs(false) == false)
+	if (SuIsSupportedOs() == false)
 	{
-		Print("  [SKIP] Install step: SeLow is turned off by the DisableSeLow registry value\n");
+#if defined(_M_ARM64)
+		// No SeLow package exists for arm64: even adding a Local Bridge never reaches the install step
+		selowtest_num_install = 0;
+		ok = Win32EthInstallSu();
+		SelowTestCheck(ctx, ok == false && selowtest_num_install == 0, "On arm64, adding a Local Bridge never reaches the driver install",
+			"returned %u, install step ran %u times", ok, selowtest_num_install);
+#endif	// defined(_M_ARM64)
+		Print("  [SKIP] Install step: SeLow is not supported (arm64, or the DisableSeLow registry value)\n");
 		return;
 	}
 
