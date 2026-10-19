@@ -5,12 +5,9 @@
 // trace session enables it: until then IsTraceEnabled() is false and Debug() prints, or does not,
 // exactly as before. While a session listens, each message becomes one "Debug" event (level
 // verbose, field "Message"), with debug output on or off.
-
-// This file is compiled for Windows 10, the oldest version Ranz VPN supports (SUPPORTED_WINDOWS_LIST
-// in MayaType.h), not for the Vista targets that MayaType.h sets for the rest of Mayaqua:
-// TraceLoggingProvider.h and evntprov.h select their declarations by these targets.
-#define	NTDDI_VERSION	0x0A000000		// NTDDI_WIN10
-#define	_WIN32_WINNT	0x0A00			// _WIN32_WINNT_WIN10
+//
+// TraceLoggingProvider.h and evntprov.h select their declarations by the Windows API level, which the
+// build sets for every file (Windows 10, cmake/RanzOptions.cmake).
 
 #include "Trace.h"
 

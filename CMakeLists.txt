@@ -32,6 +32,9 @@ include("${TOP_DIRECTORY}/cmake/RanzWarnings.cmake")
 # The hamcore files (src/bin/hamcore) as resources of the executables
 include("${TOP_DIRECTORY}/cmake/RanzResources.cmake")
 
+# Build options of the project's own code: the ranz_options target (Windows API level)
+include("${TOP_DIRECTORY}/cmake/RanzOptions.cmake")
+
 # We define a dedicated variable because CMAKE_BUILD_TYPE can have different
 # configurations than "Debug" and "Release", such as "RelWithDebInfo".
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")

@@ -7,6 +7,9 @@ endif()
 
 target_include_directories(mayaqua PUBLIC .)
 
+# The project's build options (cmake/RanzOptions.cmake), for Mayaqua and every target built on it
+target_link_libraries(mayaqua PUBLIC ranz_options)
+
 set_target_properties(mayaqua
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
