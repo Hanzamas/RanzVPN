@@ -2778,34 +2778,96 @@ void SetWantToUseCipher(SOCK *sock, char *name)
 	sock->WaitToUseCipher = CopyStr(name);
 }
 
-static void AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx)
+// Certificates of the chain_certs folder next to the exe, deduplicated by SHA-1 digest. The cache is scanned
+// once and again only after the folder changed (a change notification) or InvalidateChainCertCache() was called
+static LOCK *chain_cert_lock = NULL;
+static LIST *chain_cert_list = NULL;				// X of the folder, each digest once
+static HANDLE chain_cert_notify = INVALID_HANDLE_VALUE;	// Change notification of the folder
+static bool chain_cert_valid = false;				// chain_cert_list is current
+static UINT chain_cert_scans = 0;					// Scans of the folder so far
+
+// Get the folder of the chain certificates
+static void GetChainCertDirW(wchar_t *dirname, UINT size)
+{
+	wchar_t exedir[MAX_SIZE];
+
+	GetExeDirW(exedir, sizeof(exedir));
+
+	CombinePathW(dirname, size, exedir, L"chain_certs");
+}
+
+// Create the folder of the chain certificates (once, at server start)
+void PrepareChainCertDir()
 {
 	wchar_t dirname[MAX_SIZE];
-	wchar_t exedir[MAX_SIZE];
-	wchar_t txtname[MAX_SIZE];
-	DIRLIST *dir;
-	LIST *o;
-	UINT i;
 
-	if (ctx == NULL)
+	GetChainCertDirW(dirname, sizeof(dirname));
+
+	MakeDirExW(dirname);
+}
+
+// Mark the cached chain certificates as out of date: the next connection scans the folder again
+void InvalidateChainCertCache()
+{
+	if (chain_cert_lock == NULL)
 	{
 		return;
 	}
 
-	o = NewListFast(NULL);
-
-	GetExeDirW(exedir, sizeof(exedir));
-
-	CombinePathW(dirname, sizeof(dirname), exedir, L"chain_certs");
-
-	MakeDirExW(dirname);
-
-	CombinePathW(txtname, sizeof(txtname), dirname, L"Readme_Chain_Certs.txt");
-
-	if (IsFileExistsW(txtname) == false)
+	Lock(chain_cert_lock);
 	{
-		FileCopyW(L"|chain_certs.txt", txtname);
+		chain_cert_valid = false;
 	}
+	Unlock(chain_cert_lock);
+}
+
+// Number of scans of the chain_certs folder so far
+UINT GetChainCertScanCount()
+{
+	UINT ret;
+
+	if (chain_cert_lock == NULL)
+	{
+		return 0;
+	}
+
+	Lock(chain_cert_lock);
+	{
+		ret = chain_cert_scans;
+	}
+	Unlock(chain_cert_lock);
+
+	return ret;
+}
+
+// Release the cache and the change notification
+static void FreeChainCertCache()
+{
+	if (chain_cert_list != NULL)
+	{
+		FreeXList(chain_cert_list);
+		chain_cert_list = NULL;
+	}
+
+	if (chain_cert_notify != INVALID_HANDLE_VALUE)
+	{
+		FindCloseChangeNotification(chain_cert_notify);
+		chain_cert_notify = INVALID_HANDLE_VALUE;
+	}
+
+	chain_cert_valid = false;
+}
+
+// Read the folder into the cache. chain_cert_lock is held
+static void ScanChainCertDir(wchar_t *dirname)
+{
+	DIRLIST *dir;
+	LIST *o;
+	LIST *hashes;
+	UINT i;
+
+	o = NewListFast(NULL);
+	hashes = NewListFast(NULL);
 
 	dir = EnumDirW(dirname);
 
@@ -2832,24 +2894,26 @@ static void AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx)
 
 					GetXDigest(x, hash, true);
 
-					for (j = 0; j < LIST_NUM(o); j++)
+					for (j = 0; j < LIST_NUM(hashes); j++)
 					{
-						UCHAR *hash2 = LIST_DATA(o, j);
+						UCHAR *hash2 = LIST_DATA(hashes, j);
 
 						if (Cmp(hash, hash2, SHA1_SIZE) == 0)
 						{
 							exists = true;
+							break;
 						}
 					}
 
 					if (exists == false)
 					{
-						AddChainSslCert(ctx, x);
-
-						Add(o, Clone(hash, SHA1_SIZE));
+						Add(hashes, Clone(hash, SHA1_SIZE));
+						Add(o, x);
 					}
-
-					FreeX(x);
+					else
+					{
+						FreeX(x);
+					}
 				}
 			}
 		}
@@ -2857,14 +2921,79 @@ static void AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx)
 		FreeDir(dir);
 	}
 
-	for (i = 0; i < LIST_NUM(o); i++)
+	for (i = 0; i < LIST_NUM(hashes); i++)
 	{
-		UCHAR *hash = LIST_DATA(o, i);
-
-		Free(hash);
+		Free(LIST_DATA(hashes, i));
 	}
 
-	ReleaseList(o);
+	ReleaseList(hashes);
+
+	chain_cert_list = o;
+	chain_cert_scans++;
+}
+
+// Add the certificates of the chain_certs folder to the chain of ctx. Returns the number added
+UINT AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx)
+{
+	UINT i;
+	UINT ret = 0;
+
+	if (ctx == NULL || chain_cert_lock == NULL)
+	{
+		return 0;
+	}
+
+	Lock(chain_cert_lock);
+	{
+		if (chain_cert_valid && chain_cert_notify != INVALID_HANDLE_VALUE &&
+			WaitForSingleObject(chain_cert_notify, 0) == WAIT_OBJECT_0)
+		{
+			// The folder changed: arm the notification again before the scan so that a change during it is seen
+			if (FindNextChangeNotification(chain_cert_notify) == false)
+			{
+				FindCloseChangeNotification(chain_cert_notify);
+				chain_cert_notify = INVALID_HANDLE_VALUE;
+			}
+
+			chain_cert_valid = false;
+		}
+
+		if (chain_cert_valid == false)
+		{
+			wchar_t dirname[MAX_SIZE];
+
+			GetChainCertDirW(dirname, sizeof(dirname));
+
+			if (chain_cert_list != NULL)
+			{
+				FreeXList(chain_cert_list);
+				chain_cert_list = NULL;
+			}
+
+			// The notification is opened before the scan so that no change between them is lost
+			if (chain_cert_notify == INVALID_HANDLE_VALUE)
+			{
+				chain_cert_notify = FindFirstChangeNotificationW(dirname, FALSE,
+					FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_LAST_WRITE);
+			}
+
+			ScanChainCertDir(dirname);
+
+			// Without a notification (no folder) every connection scans
+			chain_cert_valid = (chain_cert_notify != INVALID_HANDLE_VALUE);
+		}
+
+		for (i = 0; i < LIST_NUM(chain_cert_list); i++)
+		{
+			if (AddChainSslCert(ctx, LIST_DATA(chain_cert_list, i)))
+			{
+				ret++;
+			}
+		}
+	}
+	Unlock(chain_cert_lock);
+
+	return ret;
 }
 
 bool AddChainSslCert(struct ssl_ctx_st *ctx, X *x)
@@ -5616,6 +5745,8 @@ void InitNetwork()
 
 	current_global_ip_lock = NewLock();
 	current_global_ip_set = false;
+
+	chain_cert_lock = NewLock();
 }
 
 TOKEN_LIST *GetCipherList()
@@ -5926,6 +6057,10 @@ void FreeNetwork()
 	}
 
 	FreeWaitThread();
+
+	FreeChainCertCache();
+	DeleteLock(chain_cert_lock);
+	chain_cert_lock = NULL;
 
 	DeleteLock(machine_name_lock);
 	DeleteLock(disconnect_function_lock);
