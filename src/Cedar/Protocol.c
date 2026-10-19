@@ -3726,6 +3726,8 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 
 		if (StrCmpi(h->Method, "POST") == 0)
 		{
+			bool signature_ok = false;
+
 			data_size = GetContentLength(h);
 
 			if ((data_size > MAX_WATERMARK_SIZE || data_size < WaterMarkSize) && (data_size != StrLen(HTTP_VPN_TARGET_POSTDATA)))
@@ -3748,7 +3750,6 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 			if ((StrCmpi(h->Target, vpn_http_target) != 0) || not_found_error)
 			{
 				HttpSendNotFound(s, h->Target);
-				Free(data);
 				*error_detail_str = "POST_Target_Wrong";
 			}
 			else
@@ -3756,9 +3757,7 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 				if ((data_size == StrLen(HTTP_VPN_TARGET_POSTDATA) && (Cmp(data, HTTP_VPN_TARGET_POSTDATA, data_size) == 0))
 					|| ((data_size >= WaterMarkSize) && Cmp(data, WaterMark, WaterMarkSize) == 0))
 				{
-					Free(data);
-					FreeHttpHeader(h);
-					return true;
+					signature_ok = true;
 				}
 				else
 				{
@@ -3766,7 +3765,15 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 					*error_detail_str = "POST_WaterMark_Error";
 				}
 			}
+
+			// The one release of the body of a received POST, whatever the comparison found
+			Free(data);
 			FreeHttpHeader(h);
+
+			if (signature_ok)
+			{
+				return true;
+			}
 		}
 		else
 		{
