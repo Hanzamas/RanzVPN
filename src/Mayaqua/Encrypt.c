@@ -1505,11 +1505,18 @@ bool RsaVerifyEx(void *data, UINT data_size, void *sign, K *k, UINT bits)
 		return false;
 	}
 
+	// A signature is exactly one modulus long
 	rsa_size = RSA_size(rsa);
+	if (bits / 8 != rsa_size)
+	{
+		return false;
+	}
 	rsa_size = MAX(rsa_size, 1024);
 	decrypt_data = ZeroMalloc(rsa_size);
 
-	if (RSA_public_decrypt(bits / 8, sign, decrypt_data, rsa, RSA_PKCS1_PADDING) <= 0)
+	// The PKCS#1 v1.5 block must hold the DigestInfo and the hash and nothing after them:
+	// comparing only the first SIGN_HASH_SIZE bytes of a longer block let a forged block verify
+	if (RSA_public_decrypt(bits / 8, sign, decrypt_data, rsa, RSA_PKCS1_PADDING) != SIGN_HASH_SIZE)
 	{
 		Free(decrypt_data);
 		return false;
