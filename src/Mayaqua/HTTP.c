@@ -427,7 +427,15 @@ bool HttpClientSend(SOCK *s, PACK *p)
 	return ret;
 }
 
+// Receive a Pack of up to MAX_PACK_SIZE from the server (the answer to the admin RPC login)
 PACK *HttpClientRecv(SOCK *s)
+{
+	return HttpClientRecvEx(s, MAX_PACK_SIZE);
+}
+
+// Receive a Pack from the server. A Content-Length above max_data_size is refused before the body is
+// read or anything is allocated for it.
+PACK *HttpClientRecvEx(SOCK *s, UINT max_data_size)
 {
 	BUF *b;
 	PACK *p;
@@ -463,7 +471,7 @@ START:
 	}
 
 	size = GetContentLength(h);
-	if (size == 0 || size > MAX_PACK_SIZE)
+	if (size == 0 || size > max_data_size)
 	{
 		FreeHttpHeader(h);
 		return NULL;

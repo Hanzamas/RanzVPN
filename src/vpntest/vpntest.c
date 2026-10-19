@@ -480,6 +480,10 @@ void x509_test(UINT num, char **arg);
 // Named BUF and binary configuration bounds test of SEC-3, #96 (bufbounds.c)
 void bufbounds_test(UINT num, char **arg);
 
+// Named keepalive span and client Pack size cap tests of SEC-4, #96 (keepalive.c, packcap.c)
+void keepalive_test(UINT num, char **arg);
+void packcap_test(UINT num, char **arg);
+
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
 char *watermark_expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
@@ -594,6 +598,8 @@ TEST_LIST test_list[] =
 	{"tcpip", tcpip_test, "TCP/IP packets: DhcpModify reads the cookie at offset 236 and nothing past the payload, the MSS clamp walks the TCP options."},
 	{"x509", x509_test, "X.509: long name fields, certificate times in UTC, PKCS#1 v1.5 signature length, PEM bundle with an unknown key."},
 	{"bufbounds", bufbounds_test, "BUF bounds: ReadBuf, ReadBufStr and WriteBuf near 2^32, the binary configuration reader against counts and sizes past the end."},
+	{"keepalive", keepalive_test, "Keepalive span: a session timeout out of bounds, also 0 or 1 from a server, gives the span of the clamped timeout."},
+	{"packcap", packcap_test, "Client Pack size cap: a 1 MiB hello or welcome Pack from a loopback peer is refused, the longest real welcome Pack is read."},
 };
 
 // Test function

@@ -30,6 +30,9 @@ target_sources(vpntest PRIVATE x509test.c)
 # Named BUF and binary configuration bounds test of SEC-3 (#96)
 target_sources(vpntest PRIVATE bufbounds.c)
 
+# Named keepalive span and client Pack size cap tests of SEC-4 (#96)
+target_sources(vpntest PRIVATE keepalive.c packcap.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"

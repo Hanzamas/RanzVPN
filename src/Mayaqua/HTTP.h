@@ -50,6 +50,7 @@ bool SendHttpHeader(SOCK *s, HTTP_HEADER *header);
 HTTP_HEADER *RecvHttpHeader(SOCK *s);
 bool HttpClientSend(SOCK *s, PACK *p);
 PACK *HttpClientRecv(SOCK *s);
+PACK *HttpClientRecvEx(SOCK *s, UINT max_data_size);
 bool HttpServerSend(SOCK *s, PACK *p);
 PACK *HttpServerRecv(SOCK *s);
 PACK *HttpServerRecvEx(SOCK *s, UINT max_data_size);
