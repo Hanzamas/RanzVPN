@@ -8576,6 +8576,13 @@ static bool CmdEvalMacAddressAndMask(CONSOLE *c, wchar_t *str, void *param)
 
 	return true;
 }
+
+// Whether input abbreviates word: a non-empty prefix of it in any case ("est" abbreviates "Established")
+static bool IsAbbreviationOf(char *input, char *word)
+{
+	return StartWith(word, input);
+}
+
 static bool ParseTcpState(char *src, bool *check_tcp_state, bool *established)
 {
 	bool ok = false;
@@ -8591,7 +8598,7 @@ static bool ParseTcpState(char *src, bool *check_tcp_state, bool *established)
 
 	if (IsEmptyStr(src) == false)
 	{
-		if (StartWith("Established", src) == 0)
+		if (IsAbbreviationOf(src, "Established"))
 		{
 			if(ok != false)
 			{
@@ -8599,7 +8606,7 @@ static bool ParseTcpState(char *src, bool *check_tcp_state, bool *established)
 				*established = true;
 			}
 		}
-		else if (StartWith("Unestablished", src) == 0)
+		else if (IsAbbreviationOf(src, "Unestablished"))
 		{
 			if(ok != false)
 			{
