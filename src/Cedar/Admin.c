@@ -3034,6 +3034,17 @@ static UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
 		}
 	}
 
+	// A password user needs a password hash: a missing or all-zero HashedKey is refused
+	if (t->AuthType == AUTHTYPE_PASSWORD)
+	{
+		AUTHPASSWORD *pw = t->AuthData;
+
+		if (pw == NULL || IsZero(pw->HashedKey, sizeof(pw->HashedKey)))
+		{
+			return ERR_INVALID_PARAMETER;
+		}
+	}
+
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -3148,6 +3159,17 @@ static UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
 			return ERR_NOT_RSA_1024;
 		}
 		if (c == NULL || c->UserX == NULL)
+		{
+			return ERR_INVALID_PARAMETER;
+		}
+	}
+
+	// A password user needs a password hash: a missing or all-zero HashedKey is refused
+	if (t->AuthType == AUTHTYPE_PASSWORD)
+	{
+		AUTHPASSWORD *pw = t->AuthData;
+
+		if (pw == NULL || IsZero(pw->HashedKey, sizeof(pw->HashedKey)))
 		{
 			return ERR_INVALID_PARAMETER;
 		}
