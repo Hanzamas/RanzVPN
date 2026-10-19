@@ -1398,7 +1398,6 @@ bool Asn1TimeToSystem(SYSTEMTIME *s, void *asn1_time)
 	char tmp[32];
 	int len;
 	const char *src;
-	int type;
 	if (s == NULL || asn1_time == NULL)
 	{
 		return false;
@@ -1407,7 +1406,6 @@ bool Asn1TimeToSystem(SYSTEMTIME *s, void *asn1_time)
 	t = (ASN1_TIME *)asn1_time;
 	len = ASN1_STRING_length((const ASN1_STRING *)t);
 	src = (const char *)ASN1_STRING_get0_data((const ASN1_STRING *)t);
-	type = ASN1_STRING_type((const ASN1_STRING *)t);
 
 	if (src == NULL || len <= 0 || len >= (int)sizeof(tmp))
 	{
@@ -1417,17 +1415,9 @@ bool Asn1TimeToSystem(SYSTEMTIME *s, void *asn1_time)
 	Copy(tmp, src, len);
 	tmp[len] = '\0';
 
-	if (StrToSystem(s, tmp) == false)
-	{
-		return false;
-	}
-
-	if (type == V_ASN1_GENERALIZEDTIME)
-	{
-		LocalToSystem(s, s);
-	}
-
-	return true;
+	// UTCTime and GeneralizedTime in a certificate are both UTC ("Z", RFC 5280 section 4.1.2.5),
+	// so neither form is moved by the local time zone
+	return StrToSystem(s, tmp);
 }
 
 bool StrToSystem(SYSTEMTIME *s, char *str)
