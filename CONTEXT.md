@@ -38,7 +38,7 @@ Executables: `vpnserver` uses Cedar/Server (`StInit`, `StStartServer`) and `MsSe
 | Proxy | Outbound HTTP CONNECT, SOCKS4 and SOCKS5 connectors | `PROXY_PARAM_IN`, `PROXY_PARAM_OUT` | Network, HTTP | Protocol, Wpc |
 | Stun | STUN binding request/response (mapped address discovery) | none | Network, DNS, Tick64, Encrypt | Cedar/UdpAccel, vpntest |
 | Pack | PACK serialisation | `PACK`, `ELEMENT`, `VALUE` | Memory, Encrypt, Network, Internat | HTTP, Network, Protocol, Admin, Account, Command, Remote, Server |
-| Microsoft | Windows services, registry, privileges, process list, adapter info, `MsService` | `MS`, `MS_ADAPTER`, `MS_TCP`, `MS_PROCESS` | Internat, Table, FileIO, Kernel, Win32 | Win32, Mayaqua, Network, Table, Tick64, Admin, Bridge, BridgeWin32, Cedar, Command, Console, Logging, SeLowUser, Server, `vpnserver` |
+| Microsoft | Windows services, registry, privileges, adapter info, `MsService` | `MS`, `MS_ADAPTER`, `MS_TCP` | Internat, Table, FileIO, Kernel, Win32 | Win32, Mayaqua, Network, Table, Tick64, Admin, Bridge, BridgeWin32, Cedar, Command, Console, Logging, SeLowUser, Server, `vpnserver` |
 
 `Crypto/Key.c`, `Crypto/Key.h` and `Crypto/Types.h` hold no code (7, 6 and 4 lines); `MayaType.h` includes `Types.h`.
 

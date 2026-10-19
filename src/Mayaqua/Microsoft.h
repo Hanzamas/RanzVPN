@@ -124,29 +124,12 @@ typedef struct MS_USERMODE_SVC_PULSE_THREAD_PARAM
 
 #endif	// MICROSOFT_C
 
-typedef struct NO_WARNING
-{
-	UINT ThreadId;
-	THREAD *NoWarningThread;
-	EVENT *HaltEvent;
-	volatile bool Halt;
-	UINT64 StartTimer;
-	UINT64 StartTick;
-} NO_WARNING;
-
 #define	REG_CLASSES_ROOT		0
 #define	REG_LOCAL_MACHINE		1
 #define	REG_CURRENT_USER		2
 #define	REG_USERS				3
 
 typedef void (SERVICE_FUNCTION)();
-
-typedef struct MS_PROCESS
-{
-	char ExeFilename[MAX_PATH];
-	wchar_t ExeFilenameW[MAX_PATH];
-	UINT ProcessId;
-} MS_PROCESS;
 
 #define	MAX_MS_ADAPTER_IP_ADDRESS	64
 
@@ -196,13 +179,6 @@ typedef struct MS_TCP
 	UINT RecvWindowSize;
 	UINT SendWindowSize;
 } MS_TCP;
-
-typedef struct ENUM_CHILD_WINDOW_PARAM
-{
-	LIST *o;
-	bool no_recursion;
-	bool include_ipcontrol;
-} ENUM_CHILD_WINDOW_PARAM;
 
 
 void MsInit();
@@ -275,8 +251,6 @@ bool MsIsServiceRunning(char *name);
 UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line);
 bool MsWriteEventLog(char *source, UINT type, UINT event_id, char *message);
 bool MsIsUserMode();
-LIST *MsGetProcessList();
-void MsFreeProcessList(LIST *o);
 
 void MsGenerateUserModeSvcGlobalPulseName(char *name, UINT size, char *svc_name);
 void MsUserModeGlobalPulseRecvThread(THREAD *thread, void *param);
@@ -297,18 +271,12 @@ bool MsLoadTcpConfigReg(MS_TCP *tcp);
 
 UINT MsGetConsoleWidth();
 UINT MsSetConsoleWidth(UINT size);
-NO_WARNING *MsInitNoWarningEx(UINT start_timer);
-void MsFreeNoWarning(NO_WARNING *nw);
-int CmpWindowList(void *p1, void *p2);
-void AddWindow(LIST *o, HWND hWnd);
 
 void MsRegistWindowsFirewallEx(char *title, char *exe);
 void MsRegistWindowsFirewallEx2(char *title, char *exe, char *dir);
 bool MsIsX64();
 void *MsDisableWow64FileSystemRedirection();
 void MsRestoreWow64FileSystemRedirection(void *p);
-
-bool MsGetProcessExeName(char *path, UINT size, UINT id);
 
 void MsGetComputerName(char *name, UINT size);
 void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache);

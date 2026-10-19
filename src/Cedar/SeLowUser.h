@@ -14,7 +14,6 @@
 #include <SeLow/SeLowCommon.h>
 
 #define	SL_USER_INSTALL_LOCK_TIMEOUT		60000		// Lock acquisition timeout
-#define	SL_USER_AUTO_PUSH_TIMER				60000		// Timer to start the installation automatically
 
 // Driver install step (SuInstallDriver); a test replaces it with SuSetInstallProc
 typedef bool (SU_INSTALL_PROC)(bool force);

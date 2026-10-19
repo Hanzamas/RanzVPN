@@ -214,10 +214,6 @@ bool SuInstallDriverInner(bool force)
 		FileCopyW(src_cat, dst_cat) &&
 		FileCopyW(src_inf, dst_inf))
 	{
-		NO_WARNING *nw;
-
-		nw = MsInitNoWarningEx(SL_USER_AUTO_PUSH_TIMER);
-
 		if (MsIsServiceInstalled(SL_PROTOCOL_NAME) == false && MsIsServiceRunning(SL_PROTOCOL_NAME) == false)
 		{
 		}
@@ -240,8 +236,6 @@ bool SuInstallDriverInner(bool force)
 
 			MsRegWriteIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "Start", SERVICE_SYSTEM_START, false, true);
 		}
-
-		MsFreeNoWarning(nw);
 	}
 
 	// Wait for the new driver to bind: it may start the service, it never installs again
