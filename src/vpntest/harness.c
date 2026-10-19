@@ -5063,6 +5063,168 @@ static void HarnessLogInject(HARNESS *h)
 	ReleaseSock(s);
 }
 
+#define	HARNESS_SELF_SRC_PORT		39611				// Source port of the frame to the syslog address
+#define	HARNESS_OTHER_SRC_PORT		39612				// Source port of the frame to another port
+
+// UDP frame of test session A from 10.0.0.1:src_port to 127.0.0.1:dst_port, 8 bytes of data (no UDP
+// checksum). Returns its size
+static UINT HarnessBuildLoopbackUdp(UCHAR *buf, USHORT src_port, USHORT dst_port)
+{
+	UCHAR *ip = buf + 14;
+	UCHAR *udp = ip + 20;
+	UINT udp_size = 8 + 8;
+	UINT ip_size = 20 + udp_size;
+	USHORT sum;
+	UINT i;
+
+	Zero(buf, 14 + ip_size);
+
+	Copy(buf, harness_mac_b, 6);
+	Copy(buf + 6, harness_mac_a, 6);
+	buf[12] = 0x08;								// IPv4
+	buf[13] = 0x00;
+
+	ip[0] = 0x45;								// Version 4, 20-byte header
+	ip[2] = (UCHAR)(ip_size >> 8);
+	ip[3] = (UCHAR)(ip_size & 0xFF);
+	ip[8] = 64;									// TTL
+	ip[9] = IP_PROTO_UDP;
+	ip[12] = 10;								// 10.0.0.1
+	ip[15] = 1;
+	ip[16] = 127;								// 127.0.0.1
+	ip[19] = 1;
+	sum = IpChecksum(ip, 20);
+	Copy(ip + 10, &sum, sizeof(USHORT));
+
+	udp[0] = (UCHAR)(src_port >> 8);
+	udp[1] = (UCHAR)(src_port & 0xFF);
+	udp[2] = (UCHAR)(dst_port >> 8);
+	udp[3] = (UCHAR)(dst_port & 0xFF);
+	udp[5] = (UCHAR)udp_size;					// Length
+
+	for (i = 0;i < 8;i++)
+	{
+		udp[8 + i] = (UCHAR)(0x50 + i);
+	}
+
+	return 14 + ip_size;
+}
+
+// Count the PACKET_LOG syslog datagrams of the two frames of SYSLOG_SELF that arrive within timeout ms; stop at
+// the first one of the frame to the other port when stop_at_other is set
+static void HarnessCountSelfDatagrams(SOCK *s, UINT timeout, bool stop_at_other, UINT *num_self, UINT *num_other)
+{
+	UINT64 end = Tick64() + (UINT64)timeout;
+	char self_marker[32];
+	char other_marker[32];
+
+	Format(self_marker, sizeof(self_marker), ",%u,", HARNESS_SELF_SRC_PORT);
+	Format(other_marker, sizeof(other_marker), ",%u,", HARNESS_OTHER_SRC_PORT);
+
+	while (true)
+	{
+		UINT64 now = Tick64();
+		bool other = false;
+		char *d;
+
+		if (now >= end)
+		{
+			return;
+		}
+
+		d = HarnessRecvSyslog(s, (UINT)(end - now));
+		if (d == NULL)
+		{
+			return;
+		}
+
+		if (InStrEx(d, "<PACKET_LOG>", true))
+		{
+			if (InStrEx(d, self_marker, true))
+			{
+				(*num_self)++;
+			}
+			if (InStrEx(d, other_marker, true))
+			{
+				(*num_other)++;
+				other = true;
+			}
+		}
+
+		Free(d);
+
+		if (other && stop_at_other)
+		{
+			return;
+		}
+	}
+}
+
+// SYSLOG_SELF (FND-19): every log goes to the syslog socket of the test, UDP packet logging is on in HARNESS_A.
+// A frame to the syslog address and port is the server's own syslog traffic: it gives no PACKET_LOG datagram; a
+// frame to another port gives one
+static void HarnessSyslogSelf(HARNESS *h)
+{
+	RPC_HUB_LOG old_log;
+	RPC_HUB_LOG t;
+	SYSLOG_SETTING old_syslog;
+	IP localhost;
+	SOCK *s;
+	UCHAR frame[128];
+	UINT frame_size;
+	UINT num_self = 0;
+	UINT num_other = 0;
+	UINT err;
+	char tmp[MAX_SIZE];
+
+	Print("[logs: SYSLOG_SELF]\n");
+
+	Zero(&old_log, sizeof(old_log));
+	StrCpy(old_log.HubName, sizeof(old_log.HubName), HARNESS_HUB_A);
+	err = ScGetHubLog(h->Rpc, &old_log);
+	if (HarnessCheckErr(h, err, "SYSLOG_SELF: GetHubLog " HARNESS_HUB_A) == false)
+	{
+		return;
+	}
+
+	Copy(&t, &old_log, sizeof(t));
+	t.LogSetting.SavePacketLog = true;
+	t.LogSetting.PacketLogConfig[PACKET_LOG_UDP] = PACKET_LOG_HEADER;
+	err = ScSetHubLog(h->Rpc, &t);
+	if (HarnessCheckErr(h, err, "SYSLOG_SELF: SetHubLog " HARNESS_HUB_A " logs UDP packet headers") == false)
+	{
+		return;
+	}
+
+	SetIP(&localhost, 127, 0, 0, 1);
+	s = NewUDPEx2(0, false, &localhost);
+
+	if (HarnessCheck(h, s != NULL, "SYSLOG_SELF: loopback UDP socket for the syslog datagrams") &&
+		HarnessSetSyslog(h, SYSLOG_SERVER_AND_HUB_ALL_LOG, s->LocalPort, &old_syslog))
+	{
+		frame_size = HarnessBuildLoopbackUdp(frame, HARNESS_SELF_SRC_PORT, (USHORT)s->LocalPort);
+		HarnessPaSend(h->PaA, frame, frame_size);
+
+		frame_size = HarnessBuildLoopbackUdp(frame, HARNESS_OTHER_SRC_PORT, SYSLOG_PORT);
+		HarnessPaSend(h->PaA, frame, frame_size);
+
+		// The frames are logged in order: once the datagram of the second one is in, a datagram of the first one
+		// would be too; then a quiet time catches late or doubled datagrams
+		HarnessCountSelfDatagrams(s, HARNESS_LOG_TIMEOUT, true, &num_self, &num_other);
+		HarnessCountSelfDatagrams(s, HARNESS_SETTLE_TIME, false, &num_self, &num_other);
+
+		Format(tmp, sizeof(tmp), "SYSLOG_SELF: a frame to the syslog address and port gives no PACKET_LOG datagram, "
+			"a frame to another port gives one (%u and %u)", num_self, num_other);
+		HarnessCheck(h, num_self == 0 && num_other == 1, tmp);
+
+		HarnessRestoreSyslog(h, &old_syslog);
+	}
+
+	ReleaseSock(s);
+
+	HarnessCheckErr(h, ScSetHubLog(h->Rpc, &old_log), "SYSLOG_SELF: SetHubLog restores the log setting of " HARNESS_HUB_A);
+}
+
 ////////////////////////////
 // Entry points
 
@@ -5090,6 +5252,7 @@ void harness_test(UINT num, char **arg)
 		HarnessPackGolden(h);
 		HarnessSetPhase("logs", NULL);
 		HarnessLogInject(h);
+		HarnessSyslogSelf(h);
 		HarnessSetPhase("config", NULL);
 		HarnessConfigApiRoundTrip(h);
 	}
