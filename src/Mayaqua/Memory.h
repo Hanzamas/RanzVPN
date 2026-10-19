@@ -155,6 +155,7 @@ void ClearBuf(BUF *b);
 void WriteBuf(BUF *b, void *buf, UINT size);
 void WriteBufBuf(BUF *b, BUF *bb);
 UINT ReadBuf(BUF *b, void *buf, UINT size);
+UINT ReadBufRemainSize(BUF *b);
 void AdjustBufSize(BUF *b, UINT new_size);
 void SeekBuf(BUF *b, UINT offset, int mode);
 void SeekBufToEnd(BUF *b);

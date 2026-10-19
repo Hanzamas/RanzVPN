@@ -27,6 +27,9 @@ target_sources(vpntest PRIVATE tcpiptest.c)
 # Named X.509 and certificate signature test of SEC-2 (#96)
 target_sources(vpntest PRIVATE x509test.c)
 
+# Named BUF and binary configuration bounds test of SEC-3 (#96)
+target_sources(vpntest PRIVATE bufbounds.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
