@@ -24,7 +24,6 @@ typedef struct AUTHNT AUTHNT;
 typedef struct DOS DOS;
 typedef struct LISTENER LISTENER;
 typedef struct TCP_ACCEPTED_PARAM TCP_ACCEPTED_PARAM;
-typedef struct UDP_ENTRY UDP_ENTRY;
 
 
 typedef struct PACKET_LOG PACKET_LOG;
@@ -39,7 +38,6 @@ typedef struct CLIENT_OPTION CLIENT_OPTION;
 typedef struct CLIENT_AUTH CLIENT_AUTH;
 typedef struct TCPSOCK TCPSOCK;
 typedef struct TCP TCP;
-typedef struct UDP UDP;
 typedef struct BLOCK BLOCK;
 typedef struct CONNECTION CONNECTION;
 

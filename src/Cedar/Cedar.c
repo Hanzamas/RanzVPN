@@ -821,7 +821,6 @@ static void CleanupCedar(CEDAR *c)
 	ReleaseList(c->ListenerList);
 	ReleaseList(c->HubList);
 	ReleaseList(c->ConnectionList);
-	ReleaseList(c->UDPEntryList);
 	DeleteLock(c->lock);
 	DeleteCounter(c->ConnectionIncrement);
 	DeleteCounter(c->CurrentSessions);
@@ -1153,7 +1152,6 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 	c->CurrentTcpConnections = GetNumTcpConnectionsCounter();
 
 	c->ListenerList = NewList(CompareListener);
-	c->UDPEntryList = NewList(CompareUDPEntry);
 	c->HubList = NewList(CompareHub);
 	c->ConnectionList = NewList(CompareConnection);
 

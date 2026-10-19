@@ -96,7 +96,6 @@
 #define	FIFO_BUDGET					VPN_GP(GP_FIFO_BUDGET, 1600 * 1600 * 4)
 
 #define	MAX_PACKET_SIZE				1600
-#define	UDP_BUF_SIZE				(32 * 1024)
 
 #define	MAX_SEND_SOCKET_QUEUE_SIZE	VPN_GP(GP_MAX_SEND_SOCKET_QUEUE_SIZE, (1600 * 1600 * 1))
 #define	MIN_SEND_SOCKET_QUEUE_SIZE	VPN_GP(GP_MIN_SEND_SOCKET_QUEUE_SIZE, (1600 * 200 * 1))
@@ -143,8 +142,6 @@
 #define DH_PARAM_BITS_DEFAULT		2048
 
 
-#define	SE_UDP_SIGN			"SE2P"
-
 #define	INCREMENT_TRAFFIC_INTERVAL		(10 * 1000)
 
 #define	CLIENT_STATUS_CONNECTING	0
@@ -184,7 +181,6 @@
 #define	CONNECTION_TYPE_PASSWORD		7
 
 #define	CONNECTION_TCP					0
-#define	CONNECTION_UDP					1
 #define	CONNECTION_HUB_BRIDGE			7
 #define	CONNECTION_HUB_LINK_SERVER		9
 
@@ -239,7 +235,6 @@
 
 
 #define	LISTENER_TCP				0
-#define	LISTENER_UDP				1
 
 #define	LISTENER_STATUS_TRYING		0
 #define	LISTENER_STATUS_LISTENING	1
@@ -471,7 +466,6 @@ struct CEDAR
 	char *HttpAcceptEncoding;
 	TRAFFIC *Traffic;
 	LOCK *TrafficLock;
-	LIST *UDPEntryList;
 	COUNTER *CurrentSessions;
 	COUNTER *CurrentTcpConnections;
 	LIST *NetSvcList;

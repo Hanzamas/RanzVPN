@@ -80,8 +80,6 @@ struct SESSION
 	CANCEL *Cancel1;
 	CANCEL *Cancel2;
 	PACKET_ADAPTER *PacketAdapter;
-	UCHAR UdpSendKey[16];
-	UCHAR UdpRecvKey[16];
 	UINT ClientStatus;
 	bool RetryFlag;
 	bool ForceStopFlag;
