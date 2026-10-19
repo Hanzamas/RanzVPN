@@ -14,7 +14,7 @@
 //   option code without its length byte or a body that runs past the end ends the list without
 //   that option. The old code read the byte behind a Pad as a length and filled a short body with
 //   zeros.
-// - ParseDHCPv4Data (PKT.DhcpOpCode of ParsePacket) reads the magic cookie only at offset 236.
+// - the DHCP message type reader (PKT.DhcpOpCode of ParsePacket) reads the magic cookie only at offset 236.
 //   The old code took the first cookie bytes anywhere in the payload, also in sname or file.
 //
 // vlantpid pins the VLAN TPID of the packet parser. A hub with VlanTypeId set (here 0x88A8, the
@@ -331,24 +331,7 @@ static void PktTestOptionsCase(PKTTEST_CTX *ctx, char *what, UCHAR *options, UIN
 	Free(data);
 }
 
-// One ParseDhcpOptionList case on the options, in a heap block of exactly options_size bytes: it
-// must give the opcode expect_opcode and the host name expect_host
-static void PktTestOptionListCase(PKTTEST_CTX *ctx, char *what, UCHAR *options, UINT options_size,
-	UINT expect_opcode, char *expect_host)
-{
-	UCHAR *data = Clone(options, options_size);
-	DHCP_OPTION_LIST *list = ParseDhcpOptionList(data, options_size);
-	bool ok = (list != NULL && list->Opcode == expect_opcode && StrCmp(list->Hostname, expect_host) == 0);
-
-	PktTestCheck(ctx, ok, what, "%s, opcode %u, host name \"%s\"; expected opcode %u, host name \"%s\"",
-		list == NULL ? "NULL" : "a list", list == NULL ? 0 : list->Opcode,
-		list == NULL ? "" : list->Hostname, expect_opcode, expect_host);
-
-	Free(list);
-	Free(data);
-}
-
-// ParseDhcpOptions and ParseDhcpOptionList
+// ParseDhcpOptions
 static void PktTestDhcpOptions(PKTTEST_CTX *ctx)
 {
 	UCHAR discover[] = {DHCP_DISCOVER};
@@ -391,10 +374,8 @@ static void PktTestDhcpOptions(PKTTEST_CTX *ctx)
 	PktTestOptionsCase(ctx, "ParseDhcpOptions rejects an option 250 whose body runs past the end, keeping the option before it",
 		continued_short, sizeof(continued_short), 1, DHCP_ID_HOST_NAME, host_part, sizeof(host_part));
 
-	PktTestOptionListCase(ctx, "ParseDhcpOptionList reads the message type and the host name of a DISCOVER with Pads",
-		discover_pads, sizeof(discover_pads), DHCP_DISCOVER, "host");
-	PktTestOptionListCase(ctx, "ParseDhcpOptionList takes no host name whose body runs past the end",
-		body_short, sizeof(body_short), DHCP_DISCOVER, "");
+	PktTestOptionsCase(ctx, "ParseDhcpOptions reads the message type and the host name of a DISCOVER with Pads",
+		discover_pads, sizeof(discover_pads), 2, DHCP_ID_HOST_NAME, host, sizeof(host));
 }
 
 // DHCP payload of a BOOTREQUEST of the client in a zeroed heap block of PKTTEST_DHCP_SIZE bytes: the
@@ -449,7 +430,7 @@ static void PktTestOpCodeCase(PKTTEST_CTX *ctx, char *what, UCHAR *payload, UINT
 	Free(f);
 }
 
-// ParseDHCPv4Data through ParsePacket (PKT.DhcpOpCode, which the IP table of the hub reads)
+// The DHCP message type reader through ParsePacket (PKT.DhcpOpCode, which the IP table of the hub reads)
 static void PktTestOpCode(PKTTEST_CTX *ctx)
 {
 	UCHAR discover[] = {53, 1, 1, 255};

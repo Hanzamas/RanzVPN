@@ -33,7 +33,7 @@ Executables: `vpnserver` uses Cedar/Server (`StInit`, `StStartServer`) and `MsSe
 | Mayaqua | Library init and free, command line, minimal mode, OS info, kernel status counters | none | all base modules | every executable, Cedar |
 | Network | Sockets (TCP, UDP, SSL), listen/accept/connect, IP types, cancel objects, socket sets | `SOCK`, `SOCKSET`, `CANCEL`, `IP`, `IPV6_ADDR`, `SSL_ACCEPT_SETTINGS` | Object, Encrypt, OS, FileIO, Microsoft, DNS, Pack | DNS, HTTP, Proxy, Stun, TcpIp, Pack, Cfg, Table, 15 Cedar modules |
 | DNS | Resolver with forward and reverse caches | `DNS_CACHE`, `DNS_RESOLVER` | Network, Object, Kernel, Tick64 | Network, Stun, Table, Logging, Protocol, Server |
-| TcpIp | Wire-format headers and parse/build for Ethernet, ARP, IPv4/IPv6, ICMP, UDP, TCP, DHCP | `PKT`, `MAC_HEADER`, `IPV4_HEADER`, `DHCPV4_DATA` | Memory, Network, Encrypt | Hub (frame inspection), Logging, Bridge, Command, Connection, Server, UdpAccel |
+| TcpIp | Wire-format headers and parse/build for Ethernet, ARP, IPv4/IPv6, ICMP, UDP, TCP, DHCP | `PKT`, `MAC_HEADER`, `IPV4_HEADER`, `DHCP_OPTION` | Memory, Network, Encrypt | Hub (frame inspection), Logging, Bridge, Command, Connection, Server, UdpAccel |
 | HTTP | HTTP header parse and send | `HTTP_HEADER`, `HTTP_VALUE` | Pack, Network, Kernel | Proxy, Cedar/Protocol, Wpc, Admin, Command, Cedar |
 | Proxy | Outbound HTTP CONNECT, SOCKS4 and SOCKS5 connectors | `PROXY_PARAM_IN`, `PROXY_PARAM_OUT` | Network, HTTP | Protocol, Wpc |
 | Stun | STUN binding request/response (mapped address discovery) | none | Network, DNS, Tick64, Encrypt | Cedar/UdpAccel, vpntest |

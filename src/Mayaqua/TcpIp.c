@@ -468,94 +468,37 @@ bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss)
 	}
 }
 
-
-static DHCPV4_DATA *ParseDHCPv4Data(PKT *pkt)
+// The options of a DHCP payload: the bytes behind the magic cookie. The cookie is read only at its fixed
+// offset, and only when it is inside the payload: cookie bytes in sname, file or chaddr select nothing.
+// NULL when the payload has no cookie
+static UCHAR *DhcpOptionsOf(void *data, UINT size, UINT *options_size)
 {
-	DHCPV4_DATA *d;
 	UINT magic_cookie = Endian32(DHCP_MAGIC_COOKIE);
-	DHCP_OPTION *o;
-	if (pkt == NULL)
-	{
-		return NULL;
-	}
-	if (pkt->TypeL3 != L3_IPV4 || pkt->TypeL4 != L4_UDP || pkt->TypeL7 != L7_DHCPV4)
+	if (data == NULL || size < DHCP_MAGIC_COOKIE_OFFSET + sizeof(UINT))
 	{
 		return NULL;
 	}
 
-	d = ZeroMalloc(sizeof(DHCPV4_DATA));
-	d->Size = (UINT)(pkt->PacketSize - (((UCHAR *)pkt->L7.PointerL7) - ((UCHAR *)pkt->PacketData)));
-	d->Data = Clone(pkt->L7.PointerL7, d->Size);
-
-	// The magic cookie is read only at its fixed offset, and only when it is inside the payload:
-	// cookie bytes in sname, file or chaddr select nothing
-	if (d->Size < DHCP_MAGIC_COOKIE_OFFSET + sizeof(UINT))
+	if (Cmp(((UCHAR *)data) + DHCP_MAGIC_COOKIE_OFFSET, &magic_cookie, sizeof(UINT)) != 0)
 	{
-		goto LABEL_ERROR;
+		return NULL;
 	}
 
-	d->Header = (DHCPV4_HEADER *)d->Data;
+	*options_size = size - (UINT)(DHCP_MAGIC_COOKIE_OFFSET + sizeof(UINT));
 
-	if (Cmp(d->Data + DHCP_MAGIC_COOKIE_OFFSET, &magic_cookie, sizeof(UINT)) != 0)
-	{
-		goto LABEL_ERROR;
-	}
-
-	d->OptionData = d->Data + DHCP_MAGIC_COOKIE_OFFSET + sizeof(UINT);
-	d->OptionSize = d->Size - (UINT)(DHCP_MAGIC_COOKIE_OFFSET + sizeof(UINT));
-
-	d->OptionList = ParseDhcpOptions(d->OptionData, d->OptionSize);
-	if (d->OptionList == NULL)
-	{
-		goto LABEL_ERROR;
-	}
-
-	UINTToIP(&d->SrcIP, pkt->L3.IPv4Header->SrcIP);
-	UINTToIP(&d->DestIP, pkt->L3.IPv4Header->DstIP);
-
-	d->SrcPort = Endian16(pkt->L4.UDPHeader->SrcPort);
-	d->DestPort = Endian16(pkt->L4.UDPHeader->DstPort);
-
-	o = GetDhcpOption(d->OptionList, DHCP_ID_MESSAGE_TYPE);
-	if (o == NULL || o->Size != 1)
-	{
-		goto LABEL_ERROR;
-	}
-
-	d->OpCode = *((UCHAR *)o->Data);
-
-	d->ParsedOptionList = ParseDhcpOptionList(d->OptionData, d->OptionSize);
-
-	if (d->ParsedOptionList == NULL)
-	{
-		goto LABEL_ERROR;
-	}
-
-	if (d->ParsedOptionList->ServerAddress == 0)
-	{
-		d->ParsedOptionList->ServerAddress = d->Header->ServerIP;
-	}
-
-	return d;
-
-LABEL_ERROR:
-	FreeDHCPv4Data(d);
-	return NULL;
+	return ((UCHAR *)data) + DHCP_MAGIC_COOKIE_OFFSET + sizeof(UINT);
 }
 
-void FreeDHCPv4Data(DHCPV4_DATA *d)
+// The DHCP message type (option 53) of an option list: 0 when the list has none or it is not one byte long
+static UINT DhcpMessageType(LIST *o)
 {
-	if (d == NULL)
+	DHCP_OPTION *opt = GetDhcpOption(o, DHCP_ID_MESSAGE_TYPE);
+	if (opt == NULL || opt->Size != 1)
 	{
-		return;
+		return 0;
 	}
 
-	FreeDhcpOptions(d->OptionList);
-	Free(d->Data);
-
-	Free(d->ParsedOptionList);
-
-	Free(d);
+	return *((UCHAR *)opt->Data);
 }
 
 void VLanInsertTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vlan_tpid)
@@ -1258,9 +1201,9 @@ PKT *ParsePacket(UCHAR *buf, UINT size)
 }
 PKT *ParsePacketEx4(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum)
 {
-	return ParsePacketEx5(buf, size, no_l3, vlan_type_id, bridge_id_as_mac_address, no_http, correct_checksum, false, false);
+	return ParsePacketEx5(buf, size, no_l3, vlan_type_id, bridge_id_as_mac_address, no_http, correct_checksum, false);
 }
-PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum, bool no_l3_l4_except_icmpv6, bool no_dns)
+PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum, bool no_dns)
 {
 	PKT *p;
 	USHORT vlan_type_id_16;
@@ -1346,7 +1289,7 @@ PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool b
 		}
 	}
 
-	if (ParsePacketL2Ex(p, buf, size, no_l3, no_l3_l4_except_icmpv6, (USHORT)vlan_type_id) == false)
+	if (ParsePacketL2Ex(p, buf, size, no_l3, (USHORT)vlan_type_id) == false)
 	{
 		FreePacket(p);
 		return NULL;
@@ -1407,13 +1350,17 @@ PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool b
 
 	if (p->TypeL3 == L3_IPV4 && p->TypeL4 == L4_UDP && p->TypeL7 == L7_DHCPV4)
 	{
-		DHCPV4_DATA *d = ParseDHCPv4Data(p);
+		UINT dhcp_size = (UINT)(p->PacketSize - (((UCHAR *)p->L7.PointerL7) - ((UCHAR *)p->PacketData)));
+		UINT options_size;
+		UCHAR *options = DhcpOptionsOf(p->L7.PointerL7, dhcp_size, &options_size);
 
-		if (d != NULL)
+		if (options != NULL)
 		{
-			p->DhcpOpCode = d->OpCode;
+			LIST *o = ParseDhcpOptions(options, options_size);
 
-			FreeDHCPv4Data(d);
+			p->DhcpOpCode = DhcpMessageType(o);
+
+			FreeDhcpOptions(o);
 		}
 	}
 
@@ -1628,7 +1575,7 @@ HTTPLOG *ParseHttpAccessLog(PKT *pkt)
 		{
 			if (tokens->NumTokens == 3)
 			{
-				StrCpy(h.Method, sizeof(h.Hostname), tokens->Token[0]);
+				StrCpy(h.Method, sizeof(h.Method), tokens->Token[0]);
 				Trim(h.Method);
 
 				StrCpy(h.Path, sizeof(h.Path), tokens->Token[1]);
@@ -1706,7 +1653,7 @@ HTTPLOG *ParseHttpAccessLog(PKT *pkt)
 // the hub (HUB_OPTION.VlanTypeId, for example 0x88A8), is a VLAN frame: ParsePacketTAGVLAN parses
 // what is behind the tag, as VLanInsertTag, VLanRemoveTag and AdjustTcpMssL2 use that TPID. A
 // vlan_tpid that is the type of ARP, IPv4 or IPv6 tags nothing, so those frames stay what they are
-bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4_except_icmpv6, USHORT vlan_tpid)
+bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, USHORT vlan_tpid)
 {
 	UINT i;
 	bool b1, b2;
@@ -1771,11 +1718,11 @@ bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4_ex
 	{
 		if (is_tag_vlan)
 		{
-			return ParsePacketTAGVLAN(p, buf, size, no_l3, no_l3_l4_except_icmpv6);
+			return ParsePacketTAGVLAN(p, buf, size, no_l3);
 		}
 		else
 		{
-			return ParsePacketL3(p, buf, size, type_id_16, no_l3, no_l3_l4_except_icmpv6);
+			return ParsePacketL3(p, buf, size, type_id_16, no_l3);
 		}
 	}
 	else
@@ -1804,12 +1751,12 @@ bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4_ex
 	}
 }
 
-bool ParsePacketL3(PKT *p, UCHAR *buf, UINT size, USHORT proto, bool no_l3, bool no_l3_l4_except_icmpv6)
+bool ParsePacketL3(PKT *p, UCHAR *buf, UINT size, USHORT proto, bool no_l3)
 {
 	switch (proto)
 		{
 		case MAC_PROTO_ARPV4:
-			if (no_l3 || no_l3_l4_except_icmpv6)
+			if (no_l3)
 			{
 				return true;
 			}
@@ -1817,7 +1764,7 @@ bool ParsePacketL3(PKT *p, UCHAR *buf, UINT size, USHORT proto, bool no_l3, bool
 			return ParsePacketARPv4(p, buf, size);
 
 		case MAC_PROTO_IPV4:
-			if (no_l3 || no_l3_l4_except_icmpv6)
+			if (no_l3)
 			{
 				return true;
 			}
@@ -1830,14 +1777,14 @@ bool ParsePacketL3(PKT *p, UCHAR *buf, UINT size, USHORT proto, bool no_l3, bool
 				return true;
 			}
 
-			return ParsePacketIPv6(p, buf, size, no_l3_l4_except_icmpv6);
+			return ParsePacketIPv6(p, buf, size);
 
 		default:
 			return true;
 		}
 }
 
-bool ParsePacketTAGVLAN(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4_except_icmpv6)
+bool ParsePacketTAGVLAN(PKT *p, UCHAR *buf, UINT size, bool no_l3)
 {
 	USHORT vlan_ushort;
 	USHORT proto_ushort;
@@ -1866,7 +1813,7 @@ bool ParsePacketTAGVLAN(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4
 	proto_ushort = proto_ushort & 0xFFFF;
 
 	
-	return ParsePacketL3(p, buf, size, proto_ushort, no_l3, no_l3_l4_except_icmpv6);
+	return ParsePacketL3(p, buf, size, proto_ushort, no_l3);
 }
 
 bool ParsePacketBPDU(PKT *p, UCHAR *buf, UINT size)
@@ -2293,7 +2240,7 @@ void CloneICMPv6Options(ICMPV6_OPTION_LIST *dst, ICMPV6_OPTION_LIST *src)
 	dst->Mtu = Clone(src->Mtu, sizeof(ICMPV6_OPTION_MTU));
 }
 
-bool ParsePacketIPv6(PKT *p, UCHAR *buf, UINT size, bool no_l3_l4_except_icmpv6)
+bool ParsePacketIPv6(PKT *p, UCHAR *buf, UINT size)
 {
 	if (p == NULL || buf == NULL)
 	{
@@ -2337,17 +2284,9 @@ bool ParsePacketIPv6(PKT *p, UCHAR *buf, UINT size, bool no_l3_l4_except_icmpv6)
 		}
 
 	case IP_PROTO_TCP:
-		if (no_l3_l4_except_icmpv6)
-		{
-			return true;
-		}
 		return ParseTCP(p, buf, size);
 
 	case IP_PROTO_UDP:
-		if (no_l3_l4_except_icmpv6)
-		{
-			return true;
-		}
 		return ParseUDP(p, buf, size);
 
 	default:
@@ -2695,131 +2634,10 @@ void FreePacket(PKT *p)
 		return;
 	}
 
-	if (p->MacHeader != NULL)
-	{
-		switch (p->TypeL3)
-		{
-		case L3_IPV4:
-			FreePacketIPv4(p);
-			break;
-
-		case L3_ARPV4:
-			FreePacketARPv4(p);
-			break;
-
-		case L3_TAGVLAN:
-			FreePacketTagVlan(p);
-			break;
-		}
-	}
-
-	if (p->HttpLog != NULL)
-	{
-		Free(p->HttpLog);
-	}
-
+	// The headers of a PKT point into the buffer the caller owns: only the HTTP log is the PKT's own
+	Free(p->HttpLog);
 	Free(p);
 }
-
-void FreePacketIPv4(PKT *p)
-{
-	if (p == NULL)
-	{
-		return;
-	}
-
-	switch (p->TypeL4)
-	{
-	case L4_ICMPV4:
-		FreePacketICMPv4(p);
-		break;
-
-	case L4_TCP:
-		FreePacketTCPv4(p);
-		break;
-
-	case L4_UDP:
-		FreePacketUDPv4(p);
-		break;
-	}
-
-	p->L3.IPv4Header = NULL;
-	p->TypeL3 = L3_UNKNOWN;
-}
-
-void FreePacketTagVlan(PKT *p)
-{
-	if (p == NULL)
-	{
-		return;
-	}
-
-	p->L3.TagVlanHeader = NULL;
-	p->TypeL3 = L3_UNKNOWN;
-}
-
-void FreePacketARPv4(PKT *p)
-{
-	if (p == NULL)
-	{
-		return;
-	}
-
-	p->L3.ARPv4Header = NULL;
-	p->TypeL3 = L3_UNKNOWN;
-}
-
-void FreePacketUDPv4(PKT *p)
-{
-	if (p == NULL)
-	{
-		return;
-	}
-
-	switch (p->TypeL7)
-	{
-	case L7_DHCPV4:
-		FreePacketDHCPv4(p);
-		break;
-	}
-
-	p->L4.UDPHeader = NULL;
-	p->TypeL4 = L4_UNKNOWN;
-}
-
-void FreePacketTCPv4(PKT *p)
-{
-	if (p == NULL)
-	{
-		return;
-	}
-
-	p->L4.TCPHeader = NULL;
-	p->TypeL4 = L4_UNKNOWN;
-}
-
-void FreePacketICMPv4(PKT *p)
-{
-	if (p == NULL)
-	{
-		return;
-	}
-
-	p->L4.ICMPHeader = NULL;
-	p->TypeL4 = L4_UNKNOWN;
-}
-
-void FreePacketDHCPv4(PKT *p)
-{
-	if (p == NULL)
-	{
-		return;
-	}
-
-	p->L7.DHCPv4Header = NULL;
-	p->TypeL7 = L7_UNKNOWN;
-}
-
 
 USHORT IpChecksum(void *buf, UINT size)
 {
@@ -2928,211 +2746,6 @@ static DHCP_OPTION *NewDhcpOption(UINT id, void *data, UINT size)
 	ret->Id = id;
 
 	return ret;
-}
-
-DHCP_OPTION_LIST *ParseDhcpOptionList(void *data, UINT size)
-{
-	DHCP_OPTION_LIST *ret;
-	LIST *o;
-	DHCP_OPTION *a;
-	if (data == NULL)
-	{
-		return NULL;
-	}
-
-	o = ParseDhcpOptions(data, size);
-	if (o == NULL)
-	{
-		return NULL;
-	}
-
-	ret = ZeroMalloc(sizeof(DHCP_OPTION_LIST));
-
-	a = GetDhcpOption(o, DHCP_ID_MESSAGE_TYPE);
-	if (a != NULL)
-	{
-		if (a->Size == 1)
-		{
-			ret->Opcode = *((UCHAR *)a->Data);
-		}
-	}
-
-	switch (ret->Opcode)
-	{
-	case DHCP_DISCOVER:
-	case DHCP_REQUEST:
-		a = GetDhcpOption(o, DHCP_ID_REQUEST_IP_ADDRESS);
-		if (a != NULL && a->Size == 4)
-		{
-			Copy(&ret->RequestedIp, a->Data, 4);
-		}
-		a = GetDhcpOption(o, DHCP_ID_HOST_NAME);
-		if (a != NULL)
-		{
-			if (a->Size > 1)
-			{
-				Copy(ret->Hostname, a->Data, MIN(a->Size, sizeof(ret->Hostname) - 1));
-			}
-		}
-		break;
-
-	case DHCP_OFFER:
-	case DHCP_ACK:
-		a = GetDhcpOption(o, DHCP_ID_SUBNET_MASK);
-		if (a != NULL && a->Size >= 4)
-		{
-			Copy(&ret->SubnetMask, a->Data, 4);
-		}
-
-		a = GetDhcpOption(o, DHCP_ID_LEASE_TIME);
-		if (a != NULL && a->Size == 4)
-		{
-			ret->LeaseTime = READ_UINT(a->Data);
-		}
-
-		a = GetDhcpOption(o, DHCP_ID_SERVER_ADDRESS);
-		if (a != NULL && a->Size >= 4)
-		{
-			Copy(&ret->ServerAddress, a->Data, 4);
-		}
-
-		a = GetDhcpOption(o, DHCP_ID_DOMAIN_NAME);
-		if (a != NULL && a->Size >= 1)
-		{
-			Zero(ret->DomainName, sizeof(ret->DomainName));
-			Copy(ret->DomainName, a->Data, MIN(a->Size, sizeof(ret->DomainName) - 1));
-		}
-
-		a = GetDhcpOption(o, DHCP_ID_GATEWAY_ADDR);
-		if (a != NULL && a->Size >= 4)
-		{
-			Copy(&ret->Gateway, a->Data, 4);
-		}
-
-		a = GetDhcpOption(o, DHCP_ID_DNS_ADDR);
-		if (a != NULL && a->Size >= 4)
-		{
-			Copy(&ret->DnsServer, a->Data, 4);
-
-			if (a->Size >= 8)
-			{
-				Copy(&ret->DnsServer2, ((UCHAR *)a->Data) + 4, 4);
-			}
-		}
-
-		a = GetDhcpOption(o, DHCP_ID_WINS_ADDR);
-		if (a != NULL && a->Size >= 4)
-		{
-			Copy(&ret->WinsServer, a->Data, 4);
-
-			if (a->Size >= 8)
-			{
-				Copy(&ret->WinsServer2, ((UCHAR *)a->Data) + 4, 4);
-			}
-		}
-
-		// RFC 3442
-		a = GetDhcpOption(o, DHCP_ID_CLASSLESS_ROUTE);
-		if (a != NULL)
-		{
-			DhcpParseClasslessRouteData(&ret->ClasslessRoute, a->Data, a->Size);
-		}
-		// Microsoft Extension
-		a = GetDhcpOption(o, DHCP_ID_MS_CLASSLESS_ROUTE);
-		if (a != NULL)
-		{
-			DhcpParseClasslessRouteData(&ret->ClasslessRoute, a->Data, a->Size);
-		}
-
-		break;
-	}
-
-	FreeDhcpOptions(o);
-
-	return ret;
-}
-
-void DhcpParseClasslessRouteData(DHCP_CLASSLESS_ROUTE_TABLE *t, void *data, UINT size)
-{
-	BUF *b;
-	if (t == NULL || data == NULL || size == 0)
-	{
-		return;
-	}
-
-	b = MemToBuf(data, size);
-
-	while (b->Current < b->Size)
-	{
-		UCHAR c;
-		UINT subnet_mask_len;
-		UINT data_len;
-		BYTE tmp[IPV4_SIZE];
-		IP ip;
-		IP mask;
-		IP gateway;
-		DHCP_CLASSLESS_ROUTE r;
-		UINT ip32;
-		bool exists = false;
-		UINT i;
-
-		c = ReadBufChar(b);
-		subnet_mask_len = c;
-		if (subnet_mask_len > 32)
-		{
-			break;
-		}
-
-		data_len = (subnet_mask_len + 7) / 8;
-
-		Zero(tmp, sizeof(tmp));
-		if (ReadBuf(b, tmp, data_len) != data_len)
-		{
-			break;
-		}
-
-		ZeroIP4(&ip);
-		Copy(IPV4(ip.address), tmp, sizeof(tmp));
-
-		Zero(&mask, sizeof(mask));
-		IntToSubnetMask4(&mask, subnet_mask_len);
-
-		Zero(&gateway, sizeof(gateway));
-		if (ReadBuf(b, &ip32, sizeof(UINT)) != sizeof(UINT))
-		{
-			break;
-		}
-		UINTToIP(&gateway, ip32);
-
-		Zero(&r, sizeof(r));
-		r.Exists = true;
-		Copy(&r.Gateway, &gateway, sizeof(IP));
-		Copy(&r.Network, &ip, sizeof(IP));
-		Copy(&r.SubnetMask, &mask, sizeof(IP));
-		r.SubnetMaskLen = subnet_mask_len;
-
-		for (i = 0; i < MAX_DHCP_CLASSLESS_ROUTE_ENTRIES; i++)
-		{
-			if (Cmp(&t->Entries[i], &r, sizeof(DHCP_CLASSLESS_ROUTE)) == 0)
-			{
-				exists = true;
-				break;
-			}
-		}
-
-		if (exists == false)
-		{
-			if (t->NumExistingRoutes >= MAX_DHCP_CLASSLESS_ROUTE_ENTRIES)
-			{
-				break;
-			}
-
-			Copy(&t->Entries[t->NumExistingRoutes], &r, sizeof(DHCP_CLASSLESS_ROUTE));
-			t->NumExistingRoutes++;
-		}
-	}
-
-	FreeBuf(b);
 }
 
 DHCP_OPTION *GetDhcpOption(LIST *o, UINT id)
@@ -3312,13 +2925,12 @@ BUF *DhcpModifyIPv4(DHCP_MODIFY_OPTION *m, void *data, UINT size)
 
 BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size)
 {
-	DHCPV4_HEADER *dhcp_header;
-	UCHAR *data_ptr;
+	UCHAR *options;
+	UINT options_size;
+	UINT opcode;
 	bool ret_ok = false;
 	BUF *ret = NULL;
 	BUF *opt_buf = NULL;
-	UINT magic_cookie = Endian32(DHCP_MAGIC_COOKIE);
-	DHCP_OPTION_LIST *opt = NULL;
 	LIST *opt_list = NULL;
 	LIST *opt_list2 = NULL;
 	UINT src_size = size;
@@ -3329,40 +2941,22 @@ BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size)
 		return NULL;
 	}
 
-	data_ptr = (UCHAR *)data;
-
-	// The magic cookie is read only at its fixed offset, and only when it is inside the payload
-	if (size < DHCP_MAGIC_COOKIE_OFFSET + sizeof(UINT))
+	options = DhcpOptionsOf(data, size, &options_size);
+	if (options == NULL)
 	{
 		goto LABEL_CLEANUP;
 	}
-
-	dhcp_header = (DHCPV4_HEADER *)data_ptr;
-	data_ptr += DHCP_MAGIC_COOKIE_OFFSET;
-	size -= DHCP_MAGIC_COOKIE_OFFSET;
-
-	if (Cmp(data_ptr, &magic_cookie, sizeof(UINT)) != 0)
-	{
-		goto LABEL_CLEANUP;
-	}
-
-	data_ptr += sizeof(UINT);
-	size -= sizeof(UINT);
 
 	ret = NewBuf();
-	WriteBuf(ret, data, (UINT)(data_ptr - ((UCHAR *)data)));
+	WriteBuf(ret, data, (UINT)(options - ((UCHAR *)data)));
 
-	opt = ParseDhcpOptionList(data_ptr, size);
-	if (opt == NULL)
-	{
-		goto LABEL_CLEANUP;
-	}
-
-	opt_list = ParseDhcpOptions(data_ptr, size);
+	opt_list = ParseDhcpOptions(options, options_size);
 	if (opt_list == NULL)
 	{
 		goto LABEL_CLEANUP;
 	}
+
+	opcode = DhcpMessageType(opt_list);
 
 	opt_list2 = NewListFast(NULL);
 
@@ -3374,7 +2968,7 @@ BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size)
 
 		if (m->RemoveDefaultGatewayOnReply)
 		{
-			if (opt->Opcode == DHCP_OFFER || opt->Opcode == DHCP_ACK)
+			if (opcode == DHCP_OFFER || opcode == DHCP_ACK)
 			{
 				if (o->Id == DHCP_ID_GATEWAY_ADDR)
 				{
@@ -3426,11 +3020,6 @@ LABEL_CLEANUP:
 	if (opt_buf != NULL)
 	{
 		FreeBuf(opt_buf);
-	}
-
-	if (opt != NULL)
-	{
-		Free(opt);
 	}
 
 	if (opt_list != NULL)
