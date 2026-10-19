@@ -14,7 +14,6 @@ extern char *SERVER_CONFIG_FILE_NAME;
 // An invalid cipher spec makes the server fall back to its built-in list of modern ciphers.
 #define	SERVER_DEFAULT_CIPHER_NAME		"~DEFAULT~"
 #define	SERVER_DEFAULT_HUB_NAME			"DEFAULT"
-#define	SERVER_DEFAULT_BRIDGE_NAME		"BRIDGE"
 
 #define	SERVER_FILE_SAVE_INTERVAL_DEFAULT	(5 * 60 * 1000)
 #define	SERVER_FILE_SAVE_INTERVAL_MIN		(5 * 1000)
@@ -189,10 +188,9 @@ struct SERVER_HUB_CREATE_HISTORY
 	UINT64 CreatedTime;
 };
 
-SERVER *SiNewServer(bool bridge);
-SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_server);
+SERVER *SiNewServer(void);
 void SiReleaseServer(SERVER *s);
-void StStartServer(bool bridge);
+void StStartServer(void);
 void StStopServer();
 UINT SiWriteConfigurationFile(SERVER *s);
 void SiGenerateDefaultCertEx(X **server_x, K **server_k, char *common_name);
@@ -224,7 +222,7 @@ void SiWriteLicenseManager(FOLDER *f, SERVER *s);
 void SiWriteHubs(FOLDER *f, SERVER *s);
 void SiLoadHubs(SERVER *s, FOLDER *f);
 void SiWriteHubLogCfgEx(FOLDER *f, HUB_LOG *g, bool el_mode);
-void SiRebootServerEx(bool bridge, bool reset_setting);
+void SiRebootServerEx(bool reset_setting);
 void StInit();
 void StFree();
 int CmpLogFile(void *p1, void *p2);
@@ -234,7 +232,6 @@ void FreeEnumLogFile(LIST *o);
 bool CheckLogFileNameFromEnumList(LIST *o, char *name);
 void IncrementServerConfigRevision(SERVER *s);
 void GetServerProductName(SERVER *s, char *name, UINT size);
-void GetServerProductNameInternal(SERVER *s, char *name, UINT size);
 
 
 void SiSetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting);

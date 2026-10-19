@@ -29,9 +29,7 @@
 static SERVER *server = NULL;
 static LOCK *server_lock = NULL;
 char *SERVER_CONFIG_FILE_NAME = "$ranz_server.config";
-static char *BRIDGE_CONFIG_FILE_NAME = "$vpn_bridge.config";
 static char *SERVER_CONFIG_TEMPLATE_NAME = "$ranz_server_template.config";
-static char *BRIDGE_CONFIG_TEMPLATE_NAME = "$ranz_server_template.config";
 
 static bool server_reset_setting = false;
 
@@ -532,33 +530,12 @@ void SiGetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting)
 
 void GetServerProductName(SERVER *s, char *name, UINT size)
 {
-	char *cpu;
 	if (s == NULL || name == NULL)
 	{
 		return;
 	}
 
-	GetServerProductNameInternal(s, name, size);
-
-	cpu = " (64 bit)";
-
-	StrCat(name, size, cpu);
-}
-void GetServerProductNameInternal(SERVER *s, char *name, UINT size)
-{
-	if (s == NULL || name == NULL)
-	{
-		return;
-	}
-
-	if (s->Cedar->Bridge)
-	{
-		StrCpy(name, size, CEDAR_BRIDGE_STR);
-	}
-	else
-	{
-		StrCpy(name, size, CEDAR_SERVER_STR);
-	}
+	StrCpy(name, size, CEDAR_SERVER_STR " (64 bit)");
 }
 
 bool CheckLogFileNameFromEnumList(LIST *o, char *name)
@@ -908,57 +885,27 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 
 	AddCapsInt(t, "i_max_packet_size", MAX_PACKET_SIZE);
 
-	if (s->Cedar->Bridge == false)
-	{
-		UINT max_sessions, max_clients, max_bridges, max_user_creations;
+	AddCapsInt(t, "i_max_hubs", SERVER_MAX_SESSIONS);
 
-		max_clients = INFINITE;
-		max_bridges = INFINITE;
-		max_sessions = SERVER_MAX_SESSIONS_FOR_CARRIER_EDITION;
-		max_user_creations = INFINITE;
+	AddCapsInt(t, "i_max_sessions", SERVER_MAX_SESSIONS);
 
-		AddCapsInt(t, "i_max_hubs", SERVER_MAX_SESSIONS_FOR_CARRIER_EDITION);
+	AddCapsInt(t, "i_max_user_creation", INFINITE);
 
-		AddCapsInt(t, "i_max_sessions", max_sessions);
+	AddCapsInt(t, "i_max_clients", INFINITE);
 
-		AddCapsInt(t, "i_max_user_creation", max_user_creations);
+	AddCapsInt(t, "i_max_bridges", INFINITE);
 
-		AddCapsInt(t, "i_max_clients", max_clients);
+	AddCapsInt(t, "i_max_users_per_hub", MAX_USERS);
 
-		AddCapsInt(t, "i_max_bridges", max_bridges);
+	AddCapsInt(t, "i_max_groups_per_hub", MAX_GROUPS);
 
-		AddCapsInt(t, "i_max_users_per_hub", MAX_USERS);
+	AddCapsInt(t, "i_max_access_lists", MAX_ACCESSLISTS);
 
-		AddCapsInt(t, "i_max_groups_per_hub", MAX_GROUPS);
+	AddCapsBool(t, "b_support_limit_multilogin", true);
 
-		AddCapsInt(t, "i_max_access_lists", MAX_ACCESSLISTS);
+	AddCapsBool(t, "b_support_qos", true);
 
-		AddCapsBool(t, "b_support_limit_multilogin", true);
-
-		AddCapsBool(t, "b_support_qos", true);
-
-		AddCapsBool(t, "b_support_syslog", true);
-	}
-	else
-	{
-		AddCapsInt(t, "i_max_hubs", 0);
-
-		AddCapsInt(t, "i_max_sessions", 0);
-
-		AddCapsInt(t, "i_max_clients", 0);
-
-		AddCapsInt(t, "i_max_bridges", 0);
-
-		AddCapsInt(t, "i_max_users_per_hub", 0);
-
-		AddCapsInt(t, "i_max_groups_per_hub", 0);
-
-		AddCapsInt(t, "i_max_access_lists", 0);
-
-		AddCapsBool(t, "b_support_qos", true);
-
-		AddCapsBool(t, "b_support_syslog", true);
-	}
+	AddCapsBool(t, "b_support_syslog", true);
 
 	AddCapsInt(t, "i_max_mac_tables", MAX_MAC_TABLES);
 
@@ -966,18 +913,11 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 
 	AddCapsBool(t, "b_support_cascade", true);
 
-	if (s->Cedar->Bridge)
-	{
-		AddCapsBool(t, "b_bridge", true);
-	}
-	else
-	{
-		AddCapsBool(t, "b_standalone", true);
-	}
+	AddCapsBool(t, "b_standalone", true);
 
-	AddCapsBool(t, "b_support_config_hub", s->Cedar->Bridge == false);
+	AddCapsBool(t, "b_support_config_hub", true);
 
-	AddCapsBool(t, "b_vpn_client_connect", s->Cedar->Bridge == false ? true : false);
+	AddCapsBool(t, "b_vpn_client_connect", true);
 
 	AddCapsBool(t, "b_local_bridge", IsBridgeSupported());
 
@@ -1005,12 +945,9 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 
 	AddCapsBool(t, "b_is_softether", true);
 
-	if (s->Cedar->Bridge == false)
-	{
-		AddCapsBool(t, "b_support_crl", true);
+	AddCapsBool(t, "b_support_crl", true);
 
-		AddCapsBool(t, "b_support_ac", true);
-	}
+	AddCapsBool(t, "b_support_ac", true);
 
 	AddCapsBool(t, "b_support_read_log", true);
 
@@ -1035,14 +972,7 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 
 	AddCapsBool(t, "b_support_vlan", true);
 
-	if (s->Cedar->Bridge == false)
-	{
-		AddCapsBool(t, "b_support_hub_ext_options", true);
-	}
-	else
-	{
-		AddCapsBool(t, "b_support_hub_ext_options", false);
-	}
+	AddCapsBool(t, "b_support_hub_ext_options", true);
 
 	AddCapsBool(t, "b_support_policy_ver_3", true);
 
@@ -1649,15 +1579,9 @@ static void SiInitDefaultHubList(SERVER *s)
 
 	SiSetDefaultHubOption(&o);
 
-	h = NewHub(s->Cedar, s->Cedar->Bridge == false ? SERVER_DEFAULT_HUB_NAME : SERVER_DEFAULT_BRIDGE_NAME, &o);
+	h = NewHub(s->Cedar, SERVER_DEFAULT_HUB_NAME, &o);
 	h->CreatedTime = SystemTime64();
 	AddHub(s->Cedar, h);
-
-	if (s->Cedar->Bridge)
-	{
-		Rand(h->HashedPassword, sizeof(h->HashedPassword));
-		Rand(h->SecurePassword, sizeof(h->SecurePassword));
-	}
 
 	h->Offline = true;
 	SetHubOnline(h);
@@ -1729,16 +1653,13 @@ static bool SiLoadConfigurationFile(SERVER *s)
 {
 	bool ret = false;
 	FOLDER *root;
-	char *server_config_filename = SERVER_CONFIG_FILE_NAME;
 	if (s == NULL)
 	{
 		return false;
 	}
 
 
-	s->CfgRw = NewCfgRwEx2A(&root,
-		s->Cedar->Bridge == false ? server_config_filename : BRIDGE_CONFIG_FILE_NAME, false,
-		s->Cedar->Bridge == false ? SERVER_CONFIG_TEMPLATE_NAME : BRIDGE_CONFIG_TEMPLATE_NAME);
+	s->CfgRw = NewCfgRwEx2A(&root, SERVER_CONFIG_FILE_NAME, false, SERVER_CONFIG_TEMPLATE_NAME);
 
 	if (server_reset_setting)
 	{
@@ -1846,7 +1767,7 @@ bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root)
 
 	s->ConfigRevision = CfgGetInt(root, "ConfigRevision");
 
-	if (s->Cedar->Bridge == false && f6 != NULL)
+	if (f6 != NULL)
 	{
 		if (GetServerCapsBool(s, "b_support_license"))
 		{
@@ -2071,12 +1992,9 @@ FOLDER *SiWriteConfigurationToCfg(SERVER *s)
 
 	SiWriteHubs(CfgCreateFolder(root, "VirtualHUB"), s);
 
-	if (s->Cedar->Bridge == false)
+	if (GetServerCapsBool(s, "b_support_license"))
 	{
-		if (GetServerCapsBool(s, "b_support_license"))
-		{
-			SiWriteLicenseManager(CfgCreateFolder(root, "LicenseManager"), s);
-		}
+		SiWriteLicenseManager(CfgCreateFolder(root, "LicenseManager"), s);
 	}
 
 	if (s->Led)
@@ -3563,10 +3481,7 @@ static void SiWriteHubCfg(FOLDER *f, HUB *h)
 	CfgAddByte(f, "HashedPassword", h->HashedPassword, sizeof(h->HashedPassword));
 	CfgAddByte(f, "SecurePassword", h->SecurePassword, sizeof(h->SecurePassword));
 
-	if (h->Cedar->Bridge == false)
-	{
-		CfgAddBool(f, "Online", (h->Offline && (h->HubIsOnlineButHalting == false)) ? false : true);
-	}
+	CfgAddBool(f, "Online", (h->Offline && (h->HubIsOnlineButHalting == false)) ? false : true);
 
 	SiWriteTraffic(f, "Traffic", h->Traffic);
 
@@ -3589,12 +3504,9 @@ static void SiWriteHubCfg(FOLDER *f, HUB *h)
 
 	SiWriteHubAdminOptions(CfgCreateFolder(f, "AdminOption"), h);
 
-	if (h->Cedar->Bridge == false)
-	{
-		SiWriteHubDb(CfgCreateFolder(f, "SecurityAccountDatabase"), h->HubDb,
-			false
-			);
-	}
+	SiWriteHubDb(CfgCreateFolder(f, "SecurityAccountDatabase"), h->HubDb,
+		false
+		);
 
 	CfgAddInt64(f, "LastCommTime", h->LastCommTime);
 	CfgAddInt64(f, "LastLoginTime", h->LastLoginTime);
@@ -3684,14 +3596,7 @@ static void SiLoadHubCfg(SERVER *s, FOLDER *f, char *name)
 		SiLoadHubLogCfg(&g, CfgFindFolder(f, "LogSetting"));
 		SetHubLogSettingEx(h, &g, false);
 
-		if (h->Cedar->Bridge == false)
-		{
-			online = CfgGetBool(f, "Online");
-		}
-		else
-		{
-			online = true;
-		}
+		online = CfgGetBool(f, "Online");
 
 		SiLoadTraffic(f, "Traffic", h->Traffic);
 
@@ -3714,10 +3619,7 @@ static void SiLoadHubCfg(SERVER *s, FOLDER *f, char *name)
 
 		SiLoadHubAdminOptions(h, CfgFindFolder(f, "AdminOption"));
 
-		if (h->Cedar->Bridge == false)
-		{
-			SiLoadHubDb(h, CfgFindFolder(f, "SecurityAccountDatabase"));
-		}
+		SiLoadHubDb(h, CfgFindFolder(f, "SecurityAccountDatabase"));
 
 		h->LastCommTime = CfgGetInt64(f, "LastCommTime");
 		if (h->LastCommTime == 0)
@@ -3812,7 +3714,6 @@ void SiLoadHubs(SERVER *s, FOLDER *f)
 	UINT i;
 	FOLDER *hub_folder;
 	TOKEN_LIST *t;
-	bool b = false;
 	if (f == NULL || s == NULL)
 	{
 		return;
@@ -3823,19 +3724,6 @@ void SiLoadHubs(SERVER *s, FOLDER *f)
 	{
 		char *name = t->Token[i];
 
-
-		if (s->Cedar->Bridge)
-		{
-			if (StrCmpi(name, SERVER_DEFAULT_BRIDGE_NAME) == 0)
-			{
-				// In bridge mode, load only the hub named "BRIDGE"
-				b = true;
-			}
-			else
-			{
-				continue;
-			}
-		}
 		hub_folder = CfgFindFolder(f, name);
 		if (hub_folder != NULL)
 		{
@@ -3843,11 +3731,6 @@ void SiLoadHubs(SERVER *s, FOLDER *f)
 		}
 	}
 	FreeToken(t);
-
-	if (s->Cedar->Bridge && b == false)
-	{
-		SiInitDefaultHubList(s);
-	}
 }
 
 // Write the machine identity salt (FIX-5, #101) as the "MachineIdSalt" item of ServerConfiguration
@@ -4451,7 +4334,7 @@ void StFree()
 	server_lock = NULL;
 }
 
-void StStartServer(bool bridge)
+void StStartServer(void)
 {
 	Lock(server_lock);
 	{
@@ -4461,7 +4344,7 @@ void StStartServer(bool bridge)
 			return;
 		}
 
-		server = SiNewServer(bridge);
+		server = SiNewServer();
 	}
 	Unlock(server_lock);
 }
@@ -4498,16 +4381,16 @@ static void SiRebootServerThread(THREAD *thread, void *param)
 
 	StStopServer();
 
-	StStartServer((bool)param);
+	StStartServer();
 }
 
-void SiRebootServerEx(bool bridge, bool reset_setting)
+void SiRebootServerEx(bool reset_setting)
 {
 	THREAD *t;
 
 	server_reset_setting = reset_setting;
 
-	t = NewThread(SiRebootServerThread, (void *)bridge);
+	t = NewThread(SiRebootServerThread, NULL);
 	ReleaseThread(t);
 }
 
@@ -4729,11 +4612,7 @@ static void SiUpdateCurrentRegion(CEDAR *c, char *region, bool force_update)
 	}
 }
 
-SERVER *SiNewServer(bool bridge)
-{
-	return SiNewServerEx(bridge, false, false);
-}
-SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_server)
+SERVER *SiNewServer(void)
 {
 	SERVER *s;
 
@@ -4763,18 +4642,13 @@ SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_serve
 	s->ServerListenerList = NewList(CompareServerListener);
 	s->StartTime = SystemTime64();
 
-	if (bridge)
-	{
-		SetCedarVpnBridge(s->Cedar);
-	}
-
 	if (IsHamMode() == false)
 	{
 		RegistWindowsFirewallAll();
 	}
 
-	MakeDir(bridge == false ? SERVER_LOG_DIR_NAME : BRIDGE_LOG_DIR_NAME);
-	s->Logger = NewLog(bridge == false ? SERVER_LOG_DIR_NAME : BRIDGE_LOG_DIR_NAME, SERVER_LOG_PERFIX, LOG_SWITCH_DAY);
+	MakeDir(SERVER_LOG_DIR_NAME);
+	s->Logger = NewLog(SERVER_LOG_DIR_NAME, SERVER_LOG_PERFIX, LOG_SWITCH_DAY);
 
 	SLog(s->Cedar, "L_LINE");
 	SLog(s->Cedar, "LS_START_2", s->Cedar->ServerStr, s->Cedar->VerString);

@@ -217,15 +217,11 @@ static bool SiIsEmptyPassword(void *hash_password);
 #define	SERVER_ADMIN_ONLY												\
 	if (a->ServerAdmin == false)										\
 		return ERR_NOT_ENOUGH_RIGHT;
-#define	NO_SUPPORT_FOR_BRIDGE											\
-	if (a->Server->Cedar->Bridge)										\
-		return ERR_NOT_SUPPORTED;
 
 CAPSLIST *ScGetCapsEx(RPC *rpc)
 {
 	RPC_SERVER_INFO info;
 	CAPSLIST *t;
-	bool is_bridge = false;
 	if (rpc == NULL)
 	{
 		return NULL;
@@ -246,43 +242,23 @@ CAPSLIST *ScGetCapsEx(RPC *rpc)
 		// Caps RPC failed: fall back to guessing from the build number
 		build = info.ServerBuildInt;
 
-		is_bridge = (SearchStrEx(info.ServerProductName, "bridge", 0, false) == INFINITE) ? false : true;
-
 		AddCapsInt(t, "i_max_packet_size", 1514);
 
-		if (is_bridge == false)
-		{
-			AddCapsInt(t, "i_max_hubs", 4096);
-			AddCapsInt(t, "i_max_sessions", 4096);
+		AddCapsInt(t, "i_max_hubs", 4096);
+		AddCapsInt(t, "i_max_sessions", 4096);
 
-			AddCapsInt(t, "i_max_users_per_hub", 10000);
-			AddCapsInt(t, "i_max_groups_per_hub", 10000);
-			AddCapsInt(t, "i_max_access_lists", 4096);
-		}
-		else
-		{
-			AddCapsInt(t, "i_max_hubs", 0);
-			AddCapsInt(t, "i_max_sessions", 0);
-			AddCapsInt(t, "i_max_users_per_hub", 0);
-			AddCapsInt(t, "i_max_groups_per_hub", 0);
-			AddCapsInt(t, "i_max_access_lists", 0);
-		}
+		AddCapsInt(t, "i_max_users_per_hub", 10000);
+		AddCapsInt(t, "i_max_groups_per_hub", 10000);
+		AddCapsInt(t, "i_max_access_lists", 4096);
 
 		AddCapsInt(t, "i_max_mac_tables", 10000);
 		AddCapsInt(t, "i_max_ip_tables", 10000);
 
-		if (is_bridge)
-		{
-			AddCapsBool(t, "b_bridge", true);
-		}
-		else
-		{
-			AddCapsBool(t, "b_standalone", true);
-		}
+		AddCapsBool(t, "b_standalone", true);
 
-		AddCapsBool(t, "b_support_config_hub", is_bridge == false);
+		AddCapsBool(t, "b_support_config_hub", true);
 
-		AddCapsBool(t, "b_vpn_client_connect", is_bridge == false ? true : false);
+		AddCapsBool(t, "b_vpn_client_connect", true);
 
 		if (build >= 3600)
 		{
@@ -649,7 +625,6 @@ static UINT StSetHubMsg(ADMIN *a, RPC_MSG *t)
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	if (UniStrLen(t->Msg) > HUB_MAXMSG_LEN)
 	{
 		return ERR_MEMORY_NOT_ENOUGH;
@@ -691,7 +666,6 @@ static UINT StGetHubMsg(ADMIN *a, RPC_MSG *t)
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
@@ -765,8 +739,6 @@ static UINT StCrash(ADMIN *a, RPC_TEST *t)
 
 static UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	RPC_WINVER server_ver;
 	RPC_WINVER client_ver;
 	wchar_t winver_msg_client[3800];
@@ -823,13 +795,9 @@ static UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t)
 
 	tmp = ZeroMalloc(tmpsize);
 
-	if (
-		c->Bridge == false)
+	if (GetGlobalServerFlag(GSF_SHOW_OSS_MSG) != 0)
 	{
-		if (GetGlobalServerFlag(GSF_SHOW_OSS_MSG) != 0)
-		{
-			UniStrCat(tmp, tmpsize, _UU("OSS_MSG"));
-		}
+		UniStrCat(tmp, tmpsize, _UU("OSS_MSG"));
 	}
 
 	UniStrCat(tmp, tmpsize, winver_msg_client);
@@ -1091,7 +1059,6 @@ static UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t)
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
@@ -1137,19 +1104,12 @@ static UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t)
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
-
-	if (c->Bridge)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	if (GetGlobalServerFlag(GSF_DISABLE_AC) != 0 && LIST_NUM(t->o) >= 1)
 	{
 		return ERR_NOT_SUPPORTED_FUNCTION_ON_OPENSOURCE;
 	}
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
 	h = GetHub(c, hubname);
@@ -1203,7 +1163,6 @@ static UINT StSetCrl(ADMIN *a, RPC_CRL *t)
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 	key = t->Key;
 
@@ -1267,7 +1226,6 @@ static UINT StGetCrl(ADMIN *a, RPC_CRL *t)
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 	key = t->Key;
 
@@ -1321,7 +1279,6 @@ static UINT StDelCrl(ADMIN *a, RPC_CRL *t)
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
 	h = GetHub(c, hubname);
@@ -1379,13 +1336,7 @@ static UINT StAddCrl(ADMIN *a, RPC_CRL *t)
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
-	if (c->Bridge)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
 	h = GetHub(c, hubname);
@@ -1440,7 +1391,6 @@ static UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t)
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 	FreeRpcEnumCrl(t);
 	Zero(t, sizeof(RPC_ENUM_CRL));
@@ -1592,7 +1542,6 @@ static UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 		return ERR_TOO_MANT_ITEMS;
 	}
 
-	NO_SUPPORT_FOR_BRIDGE;
 	CHECK_RIGHT;
 
 	if (a->ServerAdmin == false)
@@ -1656,7 +1605,6 @@ static UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 
 	CHECK_RIGHT;
 
-	NO_SUPPORT_FOR_BRIDGE;
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -1699,7 +1647,6 @@ static UINT StGetDefaultHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
 	UINT i;
 
-	NO_SUPPORT_FOR_BRIDGE;
 	FreeRpcAdminOption(t);
 	Zero(t, sizeof(RPC_ADMIN_OPTION));
 
@@ -1778,7 +1725,7 @@ static UINT StSetConfig(ADMIN *a, RPC_CONFIG *t)
 
 	ALog(a, NULL, "LA_SET_CONFIG");
 
-	SiRebootServerEx(s->Cedar->Bridge, false);
+	SiRebootServerEx(false);
 
 	return ERR_NO_ERROR;
 }
@@ -1799,7 +1746,7 @@ static UINT StRebootServer(ADMIN *a, RPC_TEST *t)
 
 	ALog(a, NULL, "LA_REBOOT_SERVER");
 
-	SiRebootServerEx(a->Server->Cedar->Bridge, t->IntValue);
+	SiRebootServerEx(t->IntValue);
 
 	return ERR_NO_ERROR;
 }
@@ -2465,8 +2412,6 @@ static UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 
 	CHECK_RIGHT;
 
-	NO_SUPPORT_FOR_BRIDGE;
-
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -2552,7 +2497,6 @@ static UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t)
 
 	CHECK_RIGHT;
 
-	NO_SUPPORT_FOR_BRIDGE;
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -2605,7 +2549,6 @@ static UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t)
 	}
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
 	LockHubList(c);
@@ -2668,7 +2611,6 @@ static UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t)
 	}
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -2734,7 +2676,6 @@ static UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t)
 
 	CHECK_RIGHT;
 
-	NO_SUPPORT_FOR_BRIDGE;
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -2799,7 +2740,6 @@ static UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
 	UINT i, num;
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -2876,7 +2816,6 @@ static UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t)
 	}
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -2933,7 +2872,6 @@ static UINT StGetUser(ADMIN *a, RPC_SET_USER *t)
 	}
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	FreeRpcSetUser(t);
 	Zero(t, sizeof(RPC_SET_USER));
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
@@ -3004,7 +2942,6 @@ static UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	NO_SUPPORT_FOR_BRIDGE;
 	CHECK_RIGHT;
 
 	if (GetGlobalServerFlag(GSF_DISABLE_RADIUS_AUTH) != 0)
@@ -3142,7 +3079,6 @@ static UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	NO_SUPPORT_FOR_BRIDGE;
 	CHECK_RIGHT;
 
 	if (GetGlobalServerFlag(GSF_DISABLE_RADIUS_AUTH) != 0)
@@ -3279,7 +3215,6 @@ static UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -3325,7 +3260,6 @@ static UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t)
 
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 
 	LockHubList(c);
 	{
@@ -3389,7 +3323,6 @@ static UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 	bool no_jitter = false;
 	bool no_include = false;
 
-	NO_SUPPORT_FOR_BRIDGE;
 	CHECK_RIGHT;
 
 	if (t->NumAccess > GetServerCapsInt(a->Server, "i_max_access_lists"))
@@ -3488,7 +3421,6 @@ static UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t)
 	bool no_include = false;
 
 
-	NO_SUPPORT_FOR_BRIDGE;
 	CHECK_RIGHT;
 
 	LockHubList(c);
@@ -4342,7 +4274,6 @@ static UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t)
 	HUB *h;
 	UINT ret = ERR_NO_ERROR;
 
-	NO_SUPPORT_FOR_BRIDGE;
 	CHECK_RIGHT;
 
 	LockHubList(c);
@@ -4395,8 +4326,6 @@ static UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t)
 	char hubname[MAX_HUBNAME_LEN + 1];
 	UINT key;
 
-	NO_SUPPORT_FOR_BRIDGE;
-
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 	key = t->Key;
 
@@ -4445,8 +4374,6 @@ static UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
 	HUB *h;
 	char hubname[MAX_HUBNAME_LEN + 1];
 	UINT i;
-
-	NO_SUPPORT_FOR_BRIDGE;
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
@@ -4501,11 +4428,6 @@ static UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t)
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	HUB *h;
-
-	if (c->Bridge)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
 
 	if (t->Cert == NULL)
 	{
@@ -4671,8 +4593,6 @@ static UINT StSetHubOnline(ADMIN *a, RPC_SET_HUB_ONLINE *t)
 	CEDAR *c = s->Cedar;
 	HUB *h;
 
-
-	NO_SUPPORT_FOR_BRIDGE;
 
 	CHECK_RIGHT;
 
@@ -4881,8 +4801,6 @@ static UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	NO_SUPPORT_FOR_BRIDGE;
-
 	SERVER_ADMIN_ONLY;
 
 	LockHubList(c);
@@ -5019,7 +4937,6 @@ static UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	NO_SUPPORT_FOR_BRIDGE;
 	CHECK_RIGHT;
 
 	LockHubList(c);
@@ -5062,7 +4979,6 @@ static UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 	}
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 
 	LockHubList(c);
 	{
@@ -5159,8 +5075,6 @@ static UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
 	{
 		return ERR_INVALID_PARAMETER;
 	}
-
-	NO_SUPPORT_FOR_BRIDGE;
 
 	SERVER_ADMIN_ONLY;
 

@@ -5970,11 +5970,6 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 
 	SetHubOnline(h);
 
-	if (h->Cedar->Bridge)
-	{
-		h->Option->NoArpPolling = true;
-	}
-
 	if (h->Option->NoArpPolling == false && h->Option->NoIpTable == false)
 	{
 		StartHubWatchDog(h);

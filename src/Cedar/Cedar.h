@@ -79,7 +79,7 @@
 #define	MAX_REDIRECT_URL_LEN		255
 
 
-#define SERVER_MAX_SESSIONS_FOR_CARRIER_EDITION	100000
+#define SERVER_MAX_SESSIONS			100000
 #define	MAX_ACCESSLISTS				(4096 * 8)
 #define	MAX_USERS					10000
 #define	MAX_GROUPS					10000
@@ -260,7 +260,6 @@
 // $ - placeholder for DbDir (config directory)
 #define	SERVER_LOG_DIR				"server_log"
 #define	SERVER_LOG_DIR_NAME			"@"SERVER_LOG_DIR
-#define	BRIDGE_LOG_DIR_NAME			SERVER_LOG_DIR_NAME
 #define	SERVER_LOG_PERFIX			"vpn"
 
 #define	HUB_SECURITY_LOG_DIR		"security_log"
@@ -482,7 +481,6 @@ struct CEDAR
 	struct LOG *DebugLog;
 	UCHAR UniqueId[16];
 	LIST *LocalBridgeList;
-	bool Bridge;
 	COUNTER *AssignedClientLicense;
 	COUNTER *AssignedBridgeLicense;
 	LIST *NonSslList;
@@ -511,7 +509,6 @@ TRAFFIC *NewTraffic();
 void FreeTraffic(TRAFFIC *t);
 CEDAR *NewCedar(X *server_x, K *server_k);
 void RegistWindowsFirewallAll();
-void SetCedarVpnBridge(CEDAR *c);
 void SetCedarCertAndChain(CEDAR *c, X *server_x, K *server_k, LIST *server_chain);
 void ReleaseCedar(CEDAR *c);
 void StopCedar(CEDAR *c);

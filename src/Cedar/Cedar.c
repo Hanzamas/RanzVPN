@@ -1075,19 +1075,6 @@ void SetCedarCertAndChain(CEDAR *c, X *server_x, K *server_k, LIST *server_chain
 	Unlock(c->lock);
 }
 
-void SetCedarVpnBridge(CEDAR *c)
-{
-	if (c == NULL)
-	{
-		return;
-	}
-
-	c->Bridge = true;
-
-	Free(c->ServerStr);
-	c->ServerStr = CopyStr(CEDAR_BRIDGE_STR);
-}
-
 void RegistWindowsFirewallAll()
 {
 	char exedir[MAX_SIZE];

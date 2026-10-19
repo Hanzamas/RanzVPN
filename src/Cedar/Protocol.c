@@ -927,13 +927,6 @@ bool ServerAccept(CONNECTION *c)
 			}
 		}
 
-		if (GetServerCapsBool(c->Cedar->Server, "b_vpn_client_connect") == false)
-		{
-			FreePack(p);
-			c->Err = ERR_NOT_SUPPORTED;
-			goto CLEANUP;
-		}
-
 		authtype = GetAuthTypeFromPack(p);
 		if (GetHubnameAndUsernameFromPack(p, username, sizeof(username), hubname, sizeof(hubname)) == false)
 		{
@@ -1422,11 +1415,6 @@ bool ServerAccept(CONNECTION *c)
 				{
 					qos = false;
 				}
-				if (GetServerCapsBool(c->Cedar->Server, "b_support_qos") == false)
-				{
-					qos = false;
-					policy->NoQoS = true;
-				}
 				if (GetHubAdminOption(hub, "deny_qos") != 0)
 				{
 					qos = false;
@@ -1605,67 +1593,64 @@ bool ServerAccept(CONNECTION *c)
 
 			if (server != NULL && policy != NULL)
 			{
-				if (GetServerCapsBool(hub->Cedar->Server, "b_support_limit_multilogin"))
-				{
-					RPC_ENUM_SESSION t;
-					UINT i, num;
-					UINT max_logins = policy->MultiLogins;
-					UINT ao = GetHubAdminOption(hub, "max_multilogins_per_user");
+				RPC_ENUM_SESSION t;
+				UINT i, num;
+				UINT max_logins = policy->MultiLogins;
+				UINT ao = GetHubAdminOption(hub, "max_multilogins_per_user");
 
-					if (ao != 0)
+				if (ao != 0)
+				{
+					if (max_logins != 0)
 					{
-						if (max_logins != 0)
+						max_logins = MIN(max_logins, ao);
+					}
+					else
+					{
+						max_logins = ao;
+					}
+				}
+
+				if (max_logins != 0)
+				{
+					Zero(&t, sizeof(t));
+					StrCpy(t.HubName, sizeof(t.HubName), hub->Name);
+
+					Unlock(hub->lock);
+
+					SiEnumSessionMain(server, &t);
+
+					Lock(hub->lock);
+
+					num = 0;
+
+					for (i = 0;i < t.NumSession;i++)
+					{
+						RPC_ENUM_SESSION_ITEM *e = &t.Sessions[i];
+
+						if (e->BridgeMode == false && e->LinkMode == false && e->CurrentNumTcp != 0)
 						{
-							max_logins = MIN(max_logins, ao);
-						}
-						else
-						{
-							max_logins = ao;
+							if (StrCmpi(e->Username, username) == 0 &&
+								(IsZero(e->UniqueId, 16) || Cmp(e->UniqueId, node.UniqueId, 16) != 0))
+							{
+								num++;
+							}
 						}
 					}
 
-					if (max_logins != 0)
-					{
-						Zero(&t, sizeof(t));
-						StrCpy(t.HubName, sizeof(t.HubName), hub->Name);
+					FreeRpcEnumSession(&t);
 
+					if (num >= max_logins)
+					{
 						Unlock(hub->lock);
 
-						SiEnumSessionMain(server, &t);
+						HLog(hub, "LH_TOO_MANY_MULTILOGINS",
+							c->Name,
+							username, max_logins, num);
 
-						Lock(hub->lock);
-
-						num = 0;
-
-						for (i = 0;i < t.NumSession;i++)
-						{
-							RPC_ENUM_SESSION_ITEM *e = &t.Sessions[i];
-
-							if (e->BridgeMode == false && e->LinkMode == false && e->CurrentNumTcp != 0)
-							{
-								if (StrCmpi(e->Username, username) == 0 &&
-									(IsZero(e->UniqueId, 16) || Cmp(e->UniqueId, node.UniqueId, 16) != 0))
-								{
-									num++;
-								}
-							}
-						}
-
-						FreeRpcEnumSession(&t);
-
-						if (num >= max_logins)
-						{
-							Unlock(hub->lock);
-
-							HLog(hub, "LH_TOO_MANY_MULTILOGINS",
-								c->Name,
-								username, max_logins, num);
-
-							ReleaseHub(hub);
-							c->Err = ERR_TOO_MANY_USER_SESSION;
-							Free(policy);
-							goto CLEANUP;
-						}
+						ReleaseHub(hub);
+						c->Err = ERR_TOO_MANY_USER_SESSION;
+						Free(policy);
+						goto CLEANUP;
 					}
 				}
 			}
@@ -1750,11 +1735,11 @@ bool ServerAccept(CONNECTION *c)
 				}
 			}
 
-			if (Count(hub->Cedar->CurrentSessions) >= GetServerCapsInt(hub->Cedar->Server, "i_max_sessions"))
+			if (Count(hub->Cedar->CurrentSessions) >= SERVER_MAX_SESSIONS)
 			{
 				Unlock(hub->lock);
 
-				HLog(hub, "LH_MAX_SESSION_2", c->Name, GetServerCapsInt(hub->Cedar->Server, "i_max_sessions"));
+				HLog(hub, "LH_MAX_SESSION_2", c->Name, SERVER_MAX_SESSIONS);
 
 				ReleaseHub(hub);
 				c->Err = ERR_HUB_IS_BUSY;
