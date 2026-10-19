@@ -42,6 +42,9 @@ target_sources(vpntest PRIVATE consoleline.c)
 # Named temp directory and string table test of SEC-8 (#96)
 target_sources(vpntest PRIVATE tempdir.c)
 
+# Named packet parser tests of PKG-9 (#113)
+target_sources(vpntest PRIVATE pkttest.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
