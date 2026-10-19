@@ -43,7 +43,7 @@
 #define	LOGIN_AUTHTYPE_96			96					// Former external authentication, sent only by the removed IPC client
 #define	LOGIN_AUTHTYPE_UNKNOWN		97					// An authtype that never existed
 #define	LOGIN_WATCHDOG_LIMIT		120000				// A login test process is aborted after this (ms)
-#define	LOGIN_SESSION_TIMEOUT		10000				// The session of a login ends this soon after its client left (ms)
+#define	LOGIN_SESSION_TIMEOUT		10000				// The session of a login ends this soon after its client left (ms): session reconnect is off
 #define	LOGIN_POLL					50					// Poll interval of the session count (ms)
 #define	LOGIN_SIG_CONNECTIONS		4					// "sigleak" connections that use up their signature requests
 #define	LOGIN_SIG_REQUESTS			19					// HTTP requests that ServerDownloadSignature reads on one connection
@@ -72,7 +72,8 @@ static UINT LoginNumSessions(HARNESS *h)
 	return num;
 }
 
-// Wait until LOGIN_HUB has no session: the session of a login that passed ends when its client disconnects
+// Wait until LOGIN_HUB has no session: the session of a login that passed ends when its client disconnects, because
+// HarnessOpenServer disables session reconnect (GSF_DISABLE_SESSION_RECONNECT)
 static bool LoginWaitNoSession(HARNESS *h)
 {
 	UINT64 end = Tick64() + (UINT64)LOGIN_SESSION_TIMEOUT;

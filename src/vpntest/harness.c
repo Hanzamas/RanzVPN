@@ -5190,6 +5190,11 @@ HARNESS *HarnessOpenServer(char *test_name, UINT limit, char *hubname, char *use
 
 	if (*ok && hubname != NULL)
 	{
+		// A server session then ends as soon as its last TCP connection is gone (Session.c, SessionMain), instead
+		// of after the 20 s TimeOut of the default policy. Set after the server started, because loading its
+		// configuration resets the flag
+		SetGlobalServerFlag(GSF_DISABLE_SESSION_RECONNECT, 1);
+
 		HarnessSetPhase("setup", "hub and user");
 		*ok = HarnessCreateHub(h, hubname) && HarnessCreateUser(h, hubname, username, L"Harness login tester");
 	}
@@ -5205,6 +5210,7 @@ UINT HarnessCloseServer(HARNESS *h)
 	HarnessSetPhase("teardown", NULL);
 	Print("[teardown]\n");
 	HarnessStopServer(h);
+	SetGlobalServerFlag(GSF_DISABLE_SESSION_RECONNECT, 0);
 
 	HarnessStopWatchdog(harness_open_watchdog);
 	harness_open_watchdog = NULL;
