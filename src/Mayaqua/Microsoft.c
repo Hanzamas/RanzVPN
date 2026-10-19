@@ -9,9 +9,11 @@
 #include "Microsoft.h"
 
 #include "Cfg.h"
+#include "Encrypt.h"
 #include "FileIO.h"
 #include "GlobalConst.h"
 #include "Internat.h"
+#include "Kernel.h"
 #include "Memory.h"
 #include "Object.h"
 #include "Str.h"
@@ -623,11 +625,6 @@ void MsRegistWindowsFirewallEx(char *title, char *exe)
 	}
 
 	Free(tmp);
-}
-
-UINT MsGetThreadLocale()
-{
-	return (UINT)GetThreadLocale();
 }
 
 UINT MsSetConsoleWidth(UINT size)
@@ -3121,6 +3118,15 @@ void MsFreeNoWarning(NO_WARNING *nw)
 	Free(nw);
 }
 
+// Temp directory of the process: %TEMP%\VPN_ and 16 hex digits of the CNG generator (64 bits),
+// so the name cannot be guessed and created first. The protected DACL inherits nothing from
+// %TEMP% (C:\Windows\Temp for the service, where every user can add files and folders): full
+// access for SYSTEM, Administrators and the owner of the directory (the user who runs the
+// process), nothing for anyone else.
+#define	MS_TEMP_DIR_RANDOM_SIZE	8
+#define	MS_TEMP_DIR_NAME_LEN	(4 + MS_TEMP_DIR_RANDOM_SIZE * 2)	// "VPN_" and the hex digits
+#define	MS_TEMP_DIR_SDDL		L"D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)"
+
 static void MsDeleteTempDir()
 {
 	HANDLE h;
@@ -3144,7 +3150,7 @@ static void MsDeleteTempDir()
 			{
 				if (data_w.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
 				{
-					if (UniStartWith(data_w.cFileName, L"VPN_") && UniStrLen(data_w.cFileName) == 8)
+					if (UniStartWith(data_w.cFileName, L"VPN_") && UniStrLen(data_w.cFileName) == MS_TEMP_DIR_NAME_LEN)
 					{
 						wchar_t lock_file_name[MAX_PATH];
 						wchar_t dir_name[MAX_PATH];
@@ -3258,22 +3264,34 @@ void MsDeleteAllFileW(wchar_t *dir)
 static void MsInitTempDir()
 {
 	wchar_t tmp[MAX_PATH];
-	wchar_t tmp2[16];
-	UCHAR random[2];
+	wchar_t tmp2[MS_TEMP_DIR_RANDOM_SIZE * 2 + 1];
+	UCHAR random[MS_TEMP_DIR_RANDOM_SIZE];
 	wchar_t lockfilename[MAX_PATH];
+	SECURITY_ATTRIBUTES sa;
+	PSECURITY_DESCRIPTOR sd = NULL;
 	UINT num = 0;
 
 	MsDeleteTempDir();
 
+	if (ConvertStringSecurityDescriptorToSecurityDescriptorW(MS_TEMP_DIR_SDDL, SDDL_REVISION_1, &sd, NULL) == FALSE)
+	{
+		AbortExitEx("MsInitTempDir(): ConvertStringSecurityDescriptorToSecurityDescriptorW() failed");
+	}
+
+	Zero(&sa, sizeof(sa));
+	sa.nLength = sizeof(sa);
+	sa.lpSecurityDescriptor = sd;
+	sa.bInheritHandle = FALSE;
+
 	while (true)
 	{
-		random[0] = rand() % 256;
-		random[1] = rand() % 256;
+		Rand(random, sizeof(random));
 		BinToStrW(tmp2, sizeof(tmp2), random, sizeof(random));
 
 		UniFormat(tmp, sizeof(tmp), L"%s\\VPN_%s", ms->TempDirW, tmp2);
 
-		if (MakeDirW(tmp))
+		// Fails when the name exists, so the directory is always a new one made here
+		if (CreateDirectoryW(tmp, &sa))
 		{
 			break;
 		}
@@ -3288,6 +3306,8 @@ static void MsInitTempDir()
 			exit(0);
 		}
 	}
+
+	LocalFree(sd);
 
 	ms->MyTempDirW = CopyUniStr(tmp);
 	ms->MyTempDir = CopyUniToStr(tmp);
