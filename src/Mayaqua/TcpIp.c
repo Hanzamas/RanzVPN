@@ -7,6 +7,20 @@
 #include "Memory.h"
 #include "Str.h"
 
+// Offset of the DHCP magic cookie (RFC 2131): the fixed header, then sname (64 bytes) and file
+// (128 bytes). The options follow the cookie.
+#define	DHCP_MAGIC_COOKIE_OFFSET	(sizeof(DHCPV4_HEADER) + 64 + 128)
+
+// Bits of the first flag byte of a DNS header (RFC 1035 4.1.1): QR (the message is a response) and
+// the opcode (0 is a standard query). The AA, TC and RD bits below them say nothing about the query
+#define	DNS_FLAG1_QR				0x80
+#define	DNS_FLAG1_OPCODE			0x78
+
+// Longest label and longest name of a DNS question, in octets on the wire with the length bytes
+// and the root label (RFC 1035 2.3.4)
+#define	DNS_MAX_LABEL_LEN			63
+#define	DNS_MAX_NAME_LEN			255
+
 static void ParseDNS(PKT *p, UCHAR *buf, UINT size);
 
 bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address)
@@ -458,10 +472,7 @@ bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss)
 static DHCPV4_DATA *ParseDHCPv4Data(PKT *pkt)
 {
 	DHCPV4_DATA *d;
-	UCHAR *data;
-	UINT size;
 	UINT magic_cookie = Endian32(DHCP_MAGIC_COOKIE);
-	bool ok = false;
 	DHCP_OPTION *o;
 	if (pkt == NULL)
 	{
@@ -476,40 +487,24 @@ static DHCPV4_DATA *ParseDHCPv4Data(PKT *pkt)
 	d->Size = (UINT)(pkt->PacketSize - (((UCHAR *)pkt->L7.PointerL7) - ((UCHAR *)pkt->PacketData)));
 	d->Data = Clone(pkt->L7.PointerL7, d->Size);
 
-	if (d->Size < sizeof(DHCPV4_HEADER))
+	// The magic cookie is read only at its fixed offset, and only when it is inside the payload:
+	// cookie bytes in sname, file or chaddr select nothing
+	if (d->Size < DHCP_MAGIC_COOKIE_OFFSET + sizeof(UINT))
 	{
 		goto LABEL_ERROR;
 	}
 
 	d->Header = (DHCPV4_HEADER *)d->Data;
 
-	data = d->Data;
-	size = d->Size;
-
-	ok = false;
-	while (size >= 5)
-	{
-		if (Cmp(data, &magic_cookie, 4) == 0)
-		{
-			data += 4;
-			size -= 4;
-			ok = true;
-			break;
-		}
-
-		data++;
-		size--;
-	}
-
-	if (ok == false)
+	if (Cmp(d->Data + DHCP_MAGIC_COOKIE_OFFSET, &magic_cookie, sizeof(UINT)) != 0)
 	{
 		goto LABEL_ERROR;
 	}
 
-	d->OptionData = data;
-	d->OptionSize = size;
+	d->OptionData = d->Data + DHCP_MAGIC_COOKIE_OFFSET + sizeof(UINT);
+	d->OptionSize = d->Size - (UINT)(DHCP_MAGIC_COOKIE_OFFSET + sizeof(UINT));
 
-	d->OptionList = ParseDhcpOptions(data, size);
+	d->OptionList = ParseDhcpOptions(d->OptionData, d->OptionSize);
 	if (d->OptionList == NULL)
 	{
 		goto LABEL_ERROR;
@@ -2480,8 +2475,9 @@ static UCHAR GetNextByte(BUF *b)
 static bool ParseDnsQuery(char *name, UINT name_size, void *data, UINT data_size)
 {
 	BUF *b;
-	char tmp[257];
+	char tmp[DNS_MAX_LABEL_LEN + 1];
 	bool ok = true;
+	UINT wire_len = 1;		// Octets of the name on the wire: the root label, then each label with its length byte
 	USHORT val;
 	if (name == NULL || data == NULL || data_size == 0)
 	{
@@ -2498,6 +2494,16 @@ static bool ParseDnsQuery(char *name, UINT name_size, void *data, UINT data_size
 		UINT next_len = (UINT)GetNextByte(b);
 		if (next_len > 0)
 		{
+			// A label is at most 63 octets and a name at most 255 (RFC 1035 2.3.4). A length byte
+			// above 63 is no length: 0xC0 starts a compression pointer, 0x40 and 0x80 extended
+			// label types. None of them is read as a label
+			wire_len += 1 + next_len;
+			if (next_len > DNS_MAX_LABEL_LEN || wire_len > DNS_MAX_NAME_LEN)
+			{
+				ok = false;
+				break;
+			}
+
 			Zero(tmp, sizeof(tmp));
 			if (ReadBuf(b, tmp, next_len) != next_len)
 			{
@@ -2570,7 +2576,8 @@ static void ParseDNS(PKT *p, UCHAR *buf, UINT size)
 
 	dns = (DNSV4_HEADER *)buf;
 
-	if ((dns->Flag1 & 78) != 0 || (dns->Flag1 & 0x80) != 0)
+	// A standard query only: not a response, opcode 0 (QUERY), whatever its AA, TC and RD bits
+	if ((dns->Flag1 & (DNS_FLAG1_QR | DNS_FLAG1_OPCODE)) != 0)
 	{
 		return;
 	}
@@ -3156,6 +3163,11 @@ void FreeDhcpOptions(LIST *o)
 	ReleaseList(o);
 }
 
+// Parse DHCP options (RFC 2132 3): Pad (0) is one byte, End (255) or the end of the data ends the
+// list, and every other option is its code, its length byte and that many bytes. An option is taken
+// only with its whole body: an option code without its length byte, or a body that runs past the
+// end of the data, ends the list without that option. Option 250 (DHCP_ID_PRIVATE) continues the
+// option before it: BuildDhcpOptionsBuf splits an option of more than 255 bytes that way
 LIST *ParseDhcpOptions(void *data, UINT size)
 {
 	BUF *b;
@@ -3178,6 +3190,7 @@ LIST *ParseDhcpOptions(void *data, UINT size)
 	{
 		UCHAR c = 0;
 		UCHAR sz = 0;
+		UCHAR *body;
 		DHCP_OPTION *opt;
 		if (ReadBuf(b, &c, 1) != 1)
 		{
@@ -3187,8 +3200,21 @@ LIST *ParseDhcpOptions(void *data, UINT size)
 		{
 			break;
 		}
+		if (c == 0x00)
+		{
+			// Pad: one byte, without a length
+			continue;
+		}
 		if (ReadBuf(b, &sz, 1) != 1)
 		{
+			break;
+		}
+
+		body = ZeroMalloc((UINT)sz);
+		if (ReadBuf(b, body, sz) != sz)
+		{
+			// The body runs past the end of the data
+			Free(body);
 			break;
 		}
 
@@ -3197,7 +3223,8 @@ LIST *ParseDhcpOptions(void *data, UINT size)
 			UINT new_size = last_opt->Size + (UINT)sz;
 			UCHAR *new_buf = ZeroMalloc(new_size);
 			Copy(new_buf, last_opt->Data, last_opt->Size);
-			ReadBuf(b, new_buf + last_opt->Size, sz);
+			Copy(new_buf + last_opt->Size, body, sz);
+			Free(body);
 			Free(last_opt->Data);
 			last_opt->Data = new_buf;
 			last_opt->Size = new_size;
@@ -3207,8 +3234,7 @@ LIST *ParseDhcpOptions(void *data, UINT size)
 			opt = ZeroMalloc(sizeof(DHCP_OPTION));
 			opt->Id = (UINT)c;
 			opt->Size = (UINT)sz;
-			opt->Data = ZeroMalloc((UINT)sz);
-			ReadBuf(b, opt->Data, sz);
+			opt->Data = body;
 			Add(o, opt);
 
 			last_opt = opt;
@@ -3272,10 +3298,6 @@ BUF *DhcpModifyIPv4(DHCP_MODIFY_OPTION *m, void *data, UINT size)
 
 	return ret;
 }
-
-// Offset of the DHCP magic cookie (RFC 2131): the fixed header, then sname (64 bytes) and file
-// (128 bytes). The options follow the cookie.
-#define	DHCP_MAGIC_COOKIE_OFFSET	(sizeof(DHCPV4_HEADER) + 64 + 128)
 
 BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size)
 {
