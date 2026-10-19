@@ -100,6 +100,53 @@ def make_pack_bad_seeds():
                pack_one_element(VALUE_STR, 2, pack_value(VALUE_STR, 'abc') + struct.pack('>I', 10) + b'abc'))
 
 
+def make_login_seeds():
+    # Login PACKs for ParseLoginRequest (fuzz_login, FND-196 #164)
+    write_seed('fuzz_login', 'udp_accel_v2.bin', pack([
+        ('method', VALUE_STR, ['login']),
+        ('hubname', VALUE_STR, ['DEFAULT']),
+        ('username', VALUE_STR, ['fuzz']),
+        ('authtype', VALUE_INT, [1]),
+        ('max_connection', VALUE_INT, [8]),
+        ('use_encrypt', VALUE_INT, [1]),
+        ('use_compress', VALUE_INT, [1]),
+        ('half_connection', VALUE_INT, [1]),
+        ('qos', VALUE_INT, [1]),
+        ('client_id', VALUE_INT, [123]),
+        ('adjust_mss', VALUE_INT, [1300]),
+        ('use_udp_acceleration', VALUE_INT, [1]),
+        ('udp_acceleration_max_version', VALUE_INT, [2]),
+        ('support_hmac_on_udp_acceleration', VALUE_INT, [1]),
+        ('support_udp_accel_fast_disconnect_detect', VALUE_INT, [1]),
+        ('udp_acceleration_client_key', VALUE_DATA, [bytes(range(20))]),
+        ('udp_acceleration_client_key_v2', VALUE_DATA, [bytes(range(128))]),
+        ('udp_acceleration_client_ip', VALUE_INT, [0x0100007F]),
+        ('udp_acceleration_client_port', VALUE_INT, [40000]),
+        ('require_bridge_routing_mode', VALUE_INT, [1]),
+        ('unique_id', VALUE_DATA, [bytes(range(100, 120))]),
+        ('ClientProductName', VALUE_STR, ['Ranz VPN Client']),
+        ('ClientHostname', VALUE_STR, ['fuzz-host']),
+        ('ClientIpAddress', VALUE_INT, [0x0100007F]),
+    ]))
+    write_seed('fuzz_login', 'monitor_ipv6.bin', pack([
+        ('hubname', VALUE_STR, ['DEFAULT']),
+        ('username', VALUE_STR, ['administrator']),
+        ('authtype', VALUE_INT, [0]),
+        ('qos', VALUE_INT, [1]),
+        ('use_udp_acceleration', VALUE_INT, [1]),
+        ('udp_acceleration_client_ip@ipv6_bool', VALUE_INT, [1]),
+        ('udp_acceleration_client_ip@ipv6_array', VALUE_DATA, [bytes(16)]),
+        ('udp_acceleration_client_ip@ipv6_scope_id', VALUE_INT, [0]),
+        ('udp_acceleration_client_port', VALUE_INT, [0]),
+        ('require_monitor_mode', VALUE_INT, [1]),
+        ('unique_id', VALUE_DATA, [bytes(7)]),
+    ]))
+    write_seed('fuzz_login', 'no_hubname.bin', pack([
+        ('username', VALUE_STR, ['fuzz']),
+        ('authtype', VALUE_INT, [1]),
+    ]))
+
+
 # ---------------------------------------------------------------------------
 # Configuration (Mayaqua/Cfg.c): text and binary
 # ---------------------------------------------------------------------------
@@ -478,6 +525,7 @@ if __name__ == '__main__':
     assert sha0(b'abc').hex() == '0164b8a914cd2a5e74c4f7ff082c4d97f1edf880'
     make_pack_seeds()
     make_pack_bad_seeds()
+    make_login_seeds()
     make_cfg_seeds()
     make_tcpip_seeds()
     make_x509_seeds()

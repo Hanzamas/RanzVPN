@@ -1689,6 +1689,7 @@ void ConnectionAccept(CONNECTION *c)
 	char tmp[128];
 	UINT initial_timeout = CONNECTING_TIMEOUT;
 	UCHAR ctoken_hash[SHA1_SIZE];
+	SERVER_LOGIN login;
 
 	if (c == NULL)
 	{
@@ -1746,8 +1747,11 @@ void ConnectionAccept(CONNECTION *c)
 
 	Copy(c->CToken_Hash, ctoken_hash, SHA1_SIZE);
 
-	if (ServerAccept(c) == false)
+	Zero(&login, sizeof(login));
+	if (ServerAccept(c, &login))
 	{
+		// A logged-in session: run it until it ends, then give its hub slot back
+		ServerRunSession(c, &login);
 	}
 
 FINAL:

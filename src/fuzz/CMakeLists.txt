@@ -9,6 +9,7 @@ set(RANZ_FUZZ_TARGETS
   fuzz_tcpip
   fuzz_x509
   fuzz_http
+  fuzz_login
 )
 
 foreach(fuzz_target IN LISTS RANZ_FUZZ_TARGETS)

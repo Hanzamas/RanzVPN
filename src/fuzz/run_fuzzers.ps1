@@ -23,7 +23,7 @@ param(
 	[string] $BuildDir = 'build',
 	[int] $Seconds = 60,
 	[int] $Seed = 1,
-	[string[]] $Targets = @('fuzz_pack', 'fuzz_cfg', 'fuzz_tcpip', 'fuzz_x509', 'fuzz_http')
+	[string[]] $Targets = @('fuzz_pack', 'fuzz_cfg', 'fuzz_tcpip', 'fuzz_x509', 'fuzz_http', 'fuzz_login')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -33,7 +33,7 @@ $ErrorActionPreference = 'Stop'
 
 # Largest input per target (-max_len); fuzz_tcpip matches its FUZZ_MAX_FRAME_SIZE, fuzz_http is
 # above twice HTTP_HEADER_LINE_MAX_SIZE (4096) so that over-long lines are reached
-$MaxLen = @{ 'fuzz_pack' = 4096; 'fuzz_cfg' = 4096; 'fuzz_tcpip' = 1600; 'fuzz_x509' = 4096; 'fuzz_http' = 10240 }
+$MaxLen = @{ 'fuzz_pack' = 4096; 'fuzz_cfg' = 4096; 'fuzz_tcpip' = 1600; 'fuzz_x509' = 4096; 'fuzz_http' = 10240; 'fuzz_login' = 4096 }
 
 $BuildDir = (Resolve-Path $BuildDir).Path
 $CorpusRoot = Join-Path $PSScriptRoot 'corpus'
