@@ -148,8 +148,6 @@ typedef struct MS_PROCESS
 	UINT ProcessId;
 } MS_PROCESS;
 
-#define	MAX_MS_ADAPTER_IP_ADDRESS	64
-
 typedef struct MS_ADAPTER
 {
 	char Title[MAX_PATH];
@@ -162,25 +160,7 @@ typedef struct MS_ADAPTER
 	UINT Speed;
 	UINT AddressSize;
 	UCHAR Address[8];
-	UINT64 RecvBytes;
-	UINT64 RecvPacketsBroadcast;
-	UINT64 RecvPacketsUnicast;
-	UINT64 SendBytes;
-	UINT64 SendPacketsBroadcast;
-	UINT64 SendPacketsUnicast;
-	char Guid[MAX_SIZE];
-	UINT NumIpAddress;
-	IP IpAddresses[MAX_MS_ADAPTER_IP_ADDRESS];
-	IP SubnetMasks[MAX_MS_ADAPTER_IP_ADDRESS];
-	UINT NumGateway;
-	IP Gateways[MAX_MS_ADAPTER_IP_ADDRESS];
-	bool UseDhcp;
-	IP DhcpServer;
-	UINT64 DhcpLeaseStart;
-	UINT64 DhcpLeaseExpires;
-	bool UseWins;
-	IP PrimaryWinsServer;
-	IP SecondaryWinsServer;
+	char Guid[MAX_SIZE];			// MIB_IF_ROW2.InterfaceGuid as "{XXXXXXXX-...}"
 	bool IsWireless;
 	bool IsNotEthernetLan;
 } MS_ADAPTER;
@@ -281,14 +261,10 @@ void MsFreeProcessList(LIST *o);
 void MsGenerateUserModeSvcGlobalPulseName(char *name, UINT size, char *svc_name);
 void MsUserModeGlobalPulseRecvThread(THREAD *thread, void *param);
 
-MS_ADAPTER_LIST *MsCreateAdapterListInnerExVista(bool no_info);
 void MsFreeAdapter(MS_ADAPTER *a);
 void MsFreeAdapterList(MS_ADAPTER_LIST *o);
 MS_ADAPTER *MsCloneAdapter(MS_ADAPTER *a);
-MS_ADAPTER_LIST *MsCloneAdapterList(MS_ADAPTER_LIST *o);
 MS_ADAPTER_LIST *MsCreateAdapterList();
-MS_ADAPTER_LIST *MsCreateAdapterListEx(bool no_info);
-MS_ADAPTER *MsGetAdapterByGuid(char *guid);
 MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid);
 UINT ConvertMidStatusVistaToXp(UINT st);
 

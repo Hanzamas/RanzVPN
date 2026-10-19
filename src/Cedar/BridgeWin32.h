@@ -14,6 +14,7 @@ typedef struct WP_ADAPTER
 	char Title[MAX_SIZE];
 	char Guid[MAX_SIZE];
 	UINT Id;
+	UCHAR MacAddress[6];			// Current MAC address reported by SeLow
 } WP_ADAPTER;
 
 #endif

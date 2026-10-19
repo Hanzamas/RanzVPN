@@ -757,7 +757,6 @@ static ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
 	ETH *e;
 	HANDLE h;
 	CANCEL *c;
-	MS_ADAPTER *ms;
 	char name_with_id[MAX_SIZE];
 	SU *su = NULL;
 	SU_ADAPTER *su_adapter = NULL;
@@ -815,16 +814,7 @@ static ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
 	c = NewCancelSpecial(h);
 	e->Cancel = c;
 
-	ms = MsGetAdapterByGuid(t->Guid);
-	if (ms != NULL)
-	{
-		if (ms->AddressSize == 6)
-		{
-			Copy(e->MacAddress, ms->Address, 6);
-		}
-
-		MsFreeAdapter(ms);
-	}
+	Copy(e->MacAddress, t->MacAddress, sizeof(e->MacAddress));
 
 	Unlock(eth_list_lock);
 
@@ -1110,6 +1100,7 @@ static LIST *GetEthAdapterListInternal()
 			StrCpy(a->Name, sizeof(a->Name), t->Name);
 			StrCpy(a->Guid, sizeof(a->Guid), t->Guid);
 			StrCpy(a->Title, sizeof(a->Title), t->Info.FriendlyName);
+			Copy(a->MacAddress, t->Info.MacAddress, sizeof(a->MacAddress));
 
 			TrimCrlf(a->Title);
 			Trim(a->Title);

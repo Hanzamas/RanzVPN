@@ -635,16 +635,9 @@ LIST *SuGetAdapterList(SU *u)
 		{
 			SU_ADAPTER_LIST *a = SuAdapterInfoToAdapterList(info);
 
-			char macstr[128] = {0};
-			BinToStr(macstr, sizeof(macstr), info->MacAddress, sizeof(info->MacAddress));
-
 			if (a != NULL)
 			{
-
 				Add(ret, a);
-			}
-			else
-			{
 			}
 		}
 	}
