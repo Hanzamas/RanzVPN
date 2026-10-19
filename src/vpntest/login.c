@@ -10,6 +10,10 @@
 // - "acpassword" (FND-27): the access list of the hub (source IP address limit) applies to the 'password' method as
 //   it does to a login. From a denied address the method gets ERR_IP_ADDRESS_DENIED before the old password is
 //   checked, so it neither changes the password nor tells a right old password from a wrong one.
+// - "sigleak" (FND-28): ServerDownloadSignature reads up to LOGIN_SIG_REQUESTS HTTP requests of an unauthenticated
+//   TLS client before the signature. A POST to HTTP_VPN_TARGET2 whose body has a signature length but is not the
+//   watermark gets 403, and its body must be freed: the test sends such POSTs until the server disconnects, on
+//   several connections, and the process-wide leak check (NO MEMORY LEAKS) catches a body that stays allocated.
 // A test prints "<NAME> TEST OK" only when every check passes.
 
 #include "harness_int.h"
@@ -18,10 +22,13 @@
 #include "Cedar/Admin.h"
 #include "Cedar/Cedar.h"
 #include "Cedar/Hub.h"
+#include "Cedar/Protocol.h"
 #include "Cedar/Sam.h"
 #include "Cedar/Server.h"
+#include "Cedar/WaterMark.h"
 
 #include "Mayaqua/Encrypt.h"
+#include "Mayaqua/HTTP.h"
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Network.h"
@@ -38,6 +45,12 @@
 #define	LOGIN_WATCHDOG_LIMIT		120000				// A login test process is aborted after this (ms)
 #define	LOGIN_SESSION_TIMEOUT		10000				// The session of a login ends this soon after its client left (ms)
 #define	LOGIN_POLL					50					// Poll interval of the session count (ms)
+#define	LOGIN_SIG_CONNECTIONS		4					// "sigleak" connections that use up their signature requests
+#define	LOGIN_SIG_REQUESTS			19					// HTTP requests that ServerDownloadSignature reads on one connection
+#define	LOGIN_SIG_TIMEOUT			15000				// Send and receive timeout of a "sigleak" connection (ms)
+#define	LOGIN_SIG_ANSWER_MAX		65536				// Largest HTTP answer body that a "sigleak" request reads
+#define	LOGIN_SIG_NO_ANSWER			0					// LoginSigPost: the connection ended without an answer
+#define	LOGIN_SIG_WRONG_TARGET		"/vpnsvc/harness.cgi"	// A POST target that is not HTTP_VPN_TARGET2
 
 // Number of sessions of LOGIN_HUB through EnumSession, or INFINITE when the call fails
 static UINT LoginNumSessions(HARNESS *h)
@@ -376,4 +389,165 @@ void acpassword_test(UINT num, char **arg)
 	}
 
 	LoginReport("ACPASSWORD", HarnessCloseServer(h));
+}
+
+// TLS connection to the test listener without the signature POST: ServerDownloadSignature reads its requests.
+// Returns NULL when a step fails.
+static SOCK *LoginSigConnect()
+{
+	SOCK *s = Connect("127.0.0.1", HARNESS_PORT);
+
+	if (s == NULL)
+	{
+		return NULL;
+	}
+
+	SetTimeout(s, LOGIN_SIG_TIMEOUT);
+
+	if (StartSSLEx(s, NULL, NULL, 0, NULL) == false)
+	{
+		HarnessRawClose(s);
+		return NULL;
+	}
+
+	return s;
+}
+
+// One POST of body_size zero bytes to target, with the headers of the signature POST of ClientUploadSignature; zero
+// bytes are not the watermark, which starts with "GIF89a". Returns the HTTP status of the answer (its body is read
+// and dropped), or LOGIN_SIG_NO_ANSWER when the connection ended before an answer.
+static UINT LoginSigPost(SOCK *s, char *target, UINT body_size)
+{
+	HTTP_HEADER *h = NewHttpHeader("POST", target, "HTTP/1.1");
+	UCHAR *body = ZeroMalloc(body_size);
+	HTTP_HEADER *r = NULL;
+	UINT ret = LOGIN_SIG_NO_ANSWER;
+
+	AddHttpValue(h, NewHttpValue("Host", "127.0.0.1"));
+	AddHttpValue(h, NewHttpValue("Content-Type", HTTP_CONTENT_TYPE3));
+	AddHttpValue(h, NewHttpValue("Connection", "Keep-Alive"));
+
+	if (PostHttp(s, h, body, body_size))
+	{
+		r = RecvHttpHeader(s);
+	}
+
+	FreeHttpHeader(h);
+	Free(body);
+
+	if (r != NULL)
+	{
+		UINT size = GetContentLength(r);
+
+		if (StrCmpi(r->Method, "HTTP/1.1") == 0 && size <= LOGIN_SIG_ANSWER_MAX)
+		{
+			UCHAR *answer = Malloc(size);
+
+			if (RecvAll(s, answer, size, s->SecureMode))
+			{
+				ret = ToInt(r->Target);
+			}
+
+			Free(answer);
+		}
+
+		FreeHttpHeader(r);
+	}
+
+	return ret;
+}
+
+// Check the status of a "sigleak" request
+static void LoginSigExpect(HARNESS *h, char *what, UINT status, UINT expected_status)
+{
+	char tmp[MAX_SIZE];
+
+	Format(tmp, sizeof(tmp), "%s (status %u, expected %u; 0: no answer)", what, status, expected_status);
+	HarnessCheck(h, status == expected_status, tmp);
+}
+
+// "sigleak": every POST of the signature exchange frees its body (FND-28)
+void sigleak_test(UINT num, char **arg)
+{
+	HARNESS *h;
+	bool ok;
+	UINT sizes[3];
+	UINT i, j;
+	SOCK *s;
+	char tmp[MAX_SIZE];
+
+	Print("Signature POST bodies: in-process server on TCP %u, %u connections of %u requests\n", HARNESS_PORT,
+		LOGIN_SIG_CONNECTIONS, LOGIN_SIG_REQUESTS);
+
+	h = HarnessOpenServer("SIGLEAK", LOGIN_WATCHDOG_LIMIT, NULL, NULL, &ok);
+
+	if (HarnessCheck(h, ok, "server ready"))
+	{
+		// Body lengths that ServerDownloadSignature reads: the shortest and the longest signature, one between
+		sizes[0] = WaterMarkSize;
+		sizes[1] = WaterMarkSize + HTTP_PACK_RAND_SIZE_MAX;
+		sizes[2] = MAX_WATERMARK_SIZE;
+
+		Print("[wrong signature body until the server disconnects]\n");
+		HarnessSetPhase("sigleak", "wrong body");
+
+		for (i = 0;i < LOGIN_SIG_CONNECTIONS;i++)
+		{
+			UINT num_forbidden = 0;
+			UINT last;
+
+			s = LoginSigConnect();
+			if (HarnessCheck(h, s != NULL, "TLS connection to the test listener") == false)
+			{
+				break;
+			}
+
+			for (j = 0;j < LOGIN_SIG_REQUESTS;j++)
+			{
+				if (LoginSigPost(s, HTTP_VPN_TARGET2, sizes[j % 3]) == 403)
+				{
+					num_forbidden++;
+				}
+			}
+
+			last = LoginSigPost(s, HTTP_VPN_TARGET2, WaterMarkSize);
+			HarnessRawClose(s);
+
+			Format(tmp, sizeof(tmp), "connection %u: %u of %u wrong signatures get 403, request %u gets no answer (status %u)",
+				i + 1, num_forbidden, LOGIN_SIG_REQUESTS, LOGIN_SIG_REQUESTS + 1, last);
+			HarnessCheck(h, num_forbidden == LOGIN_SIG_REQUESTS && last == LOGIN_SIG_NO_ANSWER, tmp);
+		}
+
+		Print("[wrong body and wrong target, then the signature]\n");
+		HarnessSetPhase("sigleak", "mixed");
+
+		s = LoginSigConnect();
+		if (HarnessCheck(h, s != NULL, "TLS connection to the test listener"))
+		{
+			PACK *p;
+			UCHAR random[SHA1_SIZE];
+			char server_str[MAX_SIZE];
+			UINT ver, build;
+
+			LoginSigExpect(h, "wrong signature body, shortest: 403", LoginSigPost(s, HTTP_VPN_TARGET2, sizes[0]), 403);
+			LoginSigExpect(h, "wrong target, longest body: 404", LoginSigPost(s, LOGIN_SIG_WRONG_TARGET, sizes[2]), 404);
+			LoginSigExpect(h, "wrong signature body, longest: 403", LoginSigPost(s, HTTP_VPN_TARGET2, sizes[2]), 403);
+			LoginSigExpect(h, "wrong target, shortest body: 404", LoginSigPost(s, LOGIN_SIG_WRONG_TARGET, sizes[0]), 404);
+
+			p = NULL;
+			if (ClientUploadSignature(s))
+			{
+				p = HttpClientRecvEx(s, HTTP_PACK_MAX_SIZE);
+			}
+
+			HarnessCheck(h, p != NULL && GetErrorFromPack(p) == ERR_NO_ERROR &&
+				GetHello(p, random, &ver, &build, server_str, sizeof(server_str)),
+				"the watermark after four refused requests: the hello Pack");
+
+			FreePack(p);
+			HarnessRawClose(s);
+		}
+	}
+
+	LoginReport("SIGLEAK", HarnessCloseServer(h));
 }
