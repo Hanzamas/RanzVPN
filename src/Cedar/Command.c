@@ -6732,7 +6732,7 @@ static UINT PsCascadeHttpHeaderAdd(CONSOLE *c, char *cmd_name, wchar_t *str, voi
 			EnSafeHttpHeaderValueStr(s, ' ');
 
 			if ((StrLen(s) + StrLen(t.ClientOption->CustomHttpHeader)) < sizeof(t.ClientOption->CustomHttpHeader)) {
-				StrCat(t.ClientOption->CustomHttpHeader, sizeof(s), s);
+				StrCat(t.ClientOption->CustomHttpHeader, sizeof(t.ClientOption->CustomHttpHeader), s);
 				ret = ScSetLink(ps->Rpc, &t);
 			}
 			else
@@ -6756,6 +6756,27 @@ static UINT PsCascadeHttpHeaderAdd(CONSOLE *c, char *cmd_name, wchar_t *str, voi
 	FreeRpcCreateLink(&t);
 
 	FreeParamValueList(o);
+
+	return ret;
+}
+
+// Whether line is a header named name: the text before its first colon, trimmed, is name in any case
+static bool IsHttpHeaderLineOf(char *line, char *name)
+{
+	char *tmp = CopyStr(line);
+	UINT pos = SearchStr(tmp, ":", 0);
+	bool ret;
+
+	if (pos != INFINITE)
+	{
+		tmp[pos] = 0;
+	}
+
+	Trim(tmp);
+
+	ret = (StrCmpi(tmp, name) == 0);
+
+	Free(tmp);
 
 	return ret;
 }
@@ -6795,24 +6816,32 @@ static UINT PsCascadeHttpHeaderDelete(CONSOLE *c, char *cmd_name, wchar_t *str, 
 	{
 		UINT i = 0;
 		TOKEN_LIST *tokens = NULL;
-		char *value = GetParamStr(o, "NAME");
+		char *headers = t.ClientOption->CustomHttpHeader;
+		UINT headers_size = sizeof(t.ClientOption->CustomHttpHeader);
+		char *name = GetParamStr(o, "NAME");
 
-		Zero(t.ClientOption->CustomHttpHeader, sizeof(t.ClientOption->CustomHttpHeader));
+		Trim(name);
 
-		tokens = ParseToken(t.ClientOption->CustomHttpHeader, "\r\n");
+		// Parse the stored headers first, then rebuild the field from the ones kept
+		tokens = ParseToken(headers, "\r\n");
+
+		Zero(headers, headers_size);
 
 		for (i = 0; i < tokens->NumTokens; i++)
 		{
-			if (StartWith(tokens->Token[i], value) == false)
+			if (IsHttpHeaderLineOf(tokens->Token[i], name) == false)
 			{
-				StrCat(t.ClientOption->CustomHttpHeader, sizeof(t.ClientOption->CustomHttpHeader), tokens->Token[i]);
-				StrCat(t.ClientOption->CustomHttpHeader, 1, "\r\n");
+				StrCat(headers, headers_size, tokens->Token[i]);
+				StrCat(headers, headers_size, "\r\n");
 			}
 		}
 
+		FreeToken(tokens);
+
 		ret = ScSetLink(ps->Rpc, &t);
 	}
-	else
+
+	if (ret != ERR_NO_ERROR)
 	{
 		CmdPrintError(c, ret);
 	}
@@ -6871,6 +6900,8 @@ static UINT PsCascadeHttpHeaderGet(CONSOLE *c, char *cmd_name, wchar_t *str, voi
 			StrToUni(unistr, sizeof(unistr), tokens->Token[i]);
 			CtInsert(ct, unistr);
 		}
+
+		FreeToken(tokens);
 
 		CtFreeEx(ct, c, false);
 	}
