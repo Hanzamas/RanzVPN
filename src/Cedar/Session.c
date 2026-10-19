@@ -248,7 +248,6 @@ void SessionMain(SESSION *s)
 				Free(b);
 			}
 
-			if (true)
 			{
 				PROBE_DATA2("pa->PutPacket", NULL, 0);
 				if (pa->PutPacket(s, NULL, 0) == false)
@@ -364,7 +363,6 @@ void SessionMain(SESSION *s)
 
 		AddTrafficForSession(s, &t);
 
-		if (true)
 		{
 			int diff = ((int)c->CurrentSendQueueSize) - ((int)c->LastPacketQueueSize);
 			CedarAddCurrentTcpQueueSize(c->Cedar, diff);

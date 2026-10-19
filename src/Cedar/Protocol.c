@@ -747,7 +747,6 @@ bool ServerAccept(CONNECTION *c)
 	UINT direction;
 	UINT max_connection;
 	UINT timeout;
-	bool no_reconnect_to_session = false;
 	bool require_bridge_routing_mode;
 	bool require_monitor_mode;
 	bool use_client_license = false, use_bridge_license = false;
@@ -760,7 +759,6 @@ bool ServerAccept(CONNECTION *c)
 	wchar_t *msg = NULL;
 	bool suppress_client_update_notification = false;
 	USER *loggedin_user_object = NULL;
-	SERVER *server = NULL;
 	UCHAR unique[SHA1_SIZE], unique2[SHA1_SIZE];
 	CEDAR *cedar;
 	RPC_WINVER winver;
@@ -769,9 +767,6 @@ bool ServerAccept(CONNECTION *c)
 	UCHAR mschap_v2_server_response_20[20];
 	UINT ms_chap_error = 0;
 	bool is_empty_password = false;
-	char *error_detail = NULL;
-	char *error_detail_2 = NULL;
-	char ctoken_hash_str[64];
 
 	if (c == NULL)
 	{
@@ -779,8 +774,6 @@ bool ServerAccept(CONNECTION *c)
 	}
 
 	GenerateMachineUniqueHash(c->Cedar, unique2);
-
-	Zero(ctoken_hash_str, sizeof(ctoken_hash_str));
 
 	Zero(mschap_v2_server_response_20, sizeof(mschap_v2_server_response_20));
 
@@ -794,11 +787,6 @@ bool ServerAccept(CONNECTION *c)
 	StrCpy(groupname, sizeof(groupname), "");
 	StrCpy(sessionname, sizeof(sessionname), "");
 
-	if (IsZero(c->CToken_Hash, SHA1_SIZE) == false)
-	{
-		BinToStr(ctoken_hash_str, sizeof(ctoken_hash_str), c->CToken_Hash, SHA1_SIZE);
-	}
-
 	cedar = c->Cedar;
 
 
@@ -806,28 +794,8 @@ bool ServerAccept(CONNECTION *c)
 
 	c->Status = CONNECTION_STATUS_NEGOTIATION;
 
-	if (c->Cedar->Server != NULL)
+	if (ServerDownloadSignature(c) == false)
 	{
-		server = c->Cedar->Server;
-	}
-
-	error_detail_2 = NULL;
-	if (ServerDownloadSignature(c, &error_detail_2) == false)
-	{
-		if (c->Type == CONNECTION_TYPE_ADMIN_RPC)
-		{
-			c->Err = ERR_NO_ERROR;
-		}
-
-		if (error_detail_2 == NULL)
-		{
-			error_detail = "ServerDownloadSignature";
-		}
-		else
-		{
-			error_detail = error_detail_2;
-		}
-
 		supress_return_pack_error = true;
 
 		goto CLEANUP;
@@ -835,7 +803,6 @@ bool ServerAccept(CONNECTION *c)
 
 	if (ServerUploadHello(c) == false)
 	{
-		error_detail = "ServerUploadHello";
 		goto CLEANUP;
 	}
 
@@ -844,7 +811,6 @@ bool ServerAccept(CONNECTION *c)
 	if (p == NULL)
 	{
 		c->Err = ERR_DISCONNECTED;
-		error_detail = "RecvAuth1";
 		goto CLEANUP;
 	}
 
@@ -852,7 +818,6 @@ bool ServerAccept(CONNECTION *c)
 	{
 		FreePack(p);
 		c->Err = err;
-		error_detail = "RecvAuth2";
 		goto CLEANUP;
 	}
 
@@ -860,7 +825,6 @@ bool ServerAccept(CONNECTION *c)
 	{
 		FreePack(p);
 		c->Err = ERR_PROTOCOL_ERROR;
-		error_detail = "GetMethodFromPack";
 		goto CLEANUP;
 	}
 
@@ -903,7 +867,6 @@ bool ServerAccept(CONNECTION *c)
 		{
 			FreePack(p);
 			c->Err = ERR_TOO_MANY_USER;
-			error_detail = "ERR_TOO_MANY_USER";
 			goto CLEANUP;
 		}
 
@@ -911,8 +874,6 @@ bool ServerAccept(CONNECTION *c)
 		{
 			StrCpy(c->ClientStr, sizeof(c->ClientStr), "Unknown");
 		}
-		c->ServerVer = GetCedarVersionNumber();
-		c->ServerBuild = CEDAR_WIRE_BUILD;
 
 		Zero(&node, sizeof(node));
 		InRpcNodeInfo(&node, p);
@@ -939,7 +900,6 @@ bool ServerAccept(CONNECTION *c)
 		{
 			FreePack(p);
 			c->Err = ERR_PROTOCOL_ERROR;
-			error_detail = "GetHubnameAndUsernameFromPack";
 			goto CLEANUP;
 		}
 
@@ -953,7 +913,6 @@ bool ServerAccept(CONNECTION *c)
 			FreePack(p);
 			c->Err = ERR_HUB_NOT_FOUND;
 			SLog(c->Cedar, "LS_HUB_NOT_FOUND", c->Name, hubname);
-			error_detail = "ERR_HUB_NOT_FOUND";
 			goto CLEANUP;
 		}
 
@@ -961,7 +920,6 @@ bool ServerAccept(CONNECTION *c)
 		{
 			FreePack(p);
 			c->Err = ERR_SERVER_CANT_ACCEPT;
-			error_detail = "ERR_COMM_DISABLED";
 			ReleaseHub(hub);
 			goto CLEANUP;
 		}
@@ -1074,7 +1032,6 @@ bool ServerAccept(CONNECTION *c)
 				PackGetData(p, "unique_id", unique);
 			}
 
-			if (1)
 			{
 				char ip1[64], ip2[64], verstr[64];
 				wchar_t *authtype_str = _UU("LH_AUTH_UNKNOWN");
@@ -1121,10 +1078,7 @@ bool ServerAccept(CONNECTION *c)
 						POLICY *pol = NULL;
 						UCHAR secure_password[SHA1_SIZE];
 						Zero(secure_password, sizeof(secure_password));
-						if (PackGetDataSize(p, "secure_password") == SHA1_SIZE)
-						{
-							PackGetData(p, "secure_password", secure_password);
-						}
+						PackGetData(p, "secure_password", secure_password);
 						auth_ret = SamAuthUserByPassword(hub, username, c->Random, secure_password, NULL, NULL, NULL);
 
 						pol = SamGetUserPolicy(hub, username);
@@ -1248,9 +1202,6 @@ bool ServerAccept(CONNECTION *c)
 													c->ClientX = CloneX(x);
 												}
 											}
-											else
-											{
-											}
 											FreeK(k);
 										}
 										FreeX(x);
@@ -1278,7 +1229,6 @@ bool ServerAccept(CONNECTION *c)
 					ReleaseHub(hub);
 					FreePack(p);
 					c->Err = ERR_AUTHTYPE_NOT_SUPPORTED;
-					error_detail = "ERR_AUTHTYPE_NOT_SUPPORTED";
 					goto CLEANUP;
 				}
 			}
@@ -1297,7 +1247,6 @@ bool ServerAccept(CONNECTION *c)
 				{
 					c->Err = ms_chap_error;
 				}
-				error_detail = "ERR_AUTH_FAILED";
 				goto CLEANUP;
 			}
 			else
@@ -1316,7 +1265,6 @@ bool ServerAccept(CONNECTION *c)
 							ReleaseHub(hub);
 							FreePack(p);
 							c->Err = ERR_NULL_PASSWORD_LOCAL_ONLY;
-							error_detail = "ERR_NULL_PASSWORD_LOCAL_ONLY";
 							goto CLEANUP;
 						}
 					}
@@ -1340,7 +1288,6 @@ bool ServerAccept(CONNECTION *c)
 						Unlock(hub->lock);
 						ReleaseHub(hub);
 						c->Err = ERR_ACCESS_DENIED;
-						error_detail = "AcGetUser";
 						goto CLEANUP;
 					}
 				}
@@ -1479,7 +1426,6 @@ bool ServerAccept(CONNECTION *c)
 				ReleaseHub(hub);
 				c->Err = ERR_VERSION_INVALID;
 				Free(policy);
-				error_detail = "ERR_VERSION_INVALID";
 				goto CLEANUP;
 			}
 
@@ -1492,7 +1438,6 @@ bool ServerAccept(CONNECTION *c)
 				Unlock(hub->lock);
 				ReleaseHub(hub);
 				c->Err = ERR_CLIENT_ID_REQUIRED;
-				error_detail = "ERR_CLIENT_ID_REQUIRED";
 				Free(policy);
 				goto CLEANUP;
 			}
@@ -1504,7 +1449,6 @@ bool ServerAccept(CONNECTION *c)
 				Unlock(hub->lock);
 				ReleaseHub(hub);
 				c->Err = ERR_ACCESS_DENIED;
-				error_detail = "LH_USER_EXPIRES";
 				Free(policy);
 				goto CLEANUP;
 			}
@@ -1515,7 +1459,6 @@ bool ServerAccept(CONNECTION *c)
 
 				Unlock(hub->lock);
 				ReleaseHub(hub);
-				error_detail = "LH_POLICY_ACCESS_NG";
 				c->Err = ERR_ACCESS_DENIED;
 				Free(policy);
 				goto CLEANUP;
@@ -1529,7 +1472,6 @@ bool ServerAccept(CONNECTION *c)
 				ReleaseHub(hub);
 				c->Err = ERR_MONITOR_MODE_DENIED;
 				Free(policy);
-				error_detail = "ERR_MONITOR_MODE_DENIED";
 				goto CLEANUP;
 			}
 
@@ -1554,7 +1496,6 @@ bool ServerAccept(CONNECTION *c)
 				Unlock(hub->lock);
 				ReleaseHub(hub);
 				c->Err = ERR_BRIDGE_MODE_DENIED;
-				error_detail = "ERR_BRIDGE_MODE_DENIED";
 				Free(policy);
 				goto CLEANUP;
 			}
@@ -1603,69 +1544,66 @@ bool ServerAccept(CONNECTION *c)
 			}
 
 
-			if (server != NULL && policy != NULL)
+			if (GetServerCapsBool(hub->Cedar->Server, "b_support_limit_multilogin"))
 			{
-				if (GetServerCapsBool(hub->Cedar->Server, "b_support_limit_multilogin"))
-				{
-					RPC_ENUM_SESSION t;
-					UINT i, num;
-					UINT max_logins = policy->MultiLogins;
-					UINT ao = GetHubAdminOption(hub, "max_multilogins_per_user");
+				RPC_ENUM_SESSION t;
+				UINT i, num;
+				UINT max_logins = policy->MultiLogins;
+				UINT ao = GetHubAdminOption(hub, "max_multilogins_per_user");
 
-					if (ao != 0)
+				if (ao != 0)
+				{
+					if (max_logins != 0)
 					{
-						if (max_logins != 0)
+						max_logins = MIN(max_logins, ao);
+					}
+					else
+					{
+						max_logins = ao;
+					}
+				}
+
+				if (max_logins != 0)
+				{
+					Zero(&t, sizeof(t));
+					StrCpy(t.HubName, sizeof(t.HubName), hub->Name);
+
+					Unlock(hub->lock);
+
+					SiEnumSessionMain(cedar->Server, &t);
+
+					Lock(hub->lock);
+
+					num = 0;
+
+					for (i = 0;i < t.NumSession;i++)
+					{
+						RPC_ENUM_SESSION_ITEM *e = &t.Sessions[i];
+
+						if (e->BridgeMode == false && e->LinkMode == false && e->CurrentNumTcp != 0)
 						{
-							max_logins = MIN(max_logins, ao);
-						}
-						else
-						{
-							max_logins = ao;
+							if (StrCmpi(e->Username, username) == 0 &&
+								(IsZero(e->UniqueId, 16) || Cmp(e->UniqueId, node.UniqueId, 16) != 0))
+							{
+								num++;
+							}
 						}
 					}
 
-					if (max_logins != 0)
-					{
-						Zero(&t, sizeof(t));
-						StrCpy(t.HubName, sizeof(t.HubName), hub->Name);
+					FreeRpcEnumSession(&t);
 
+					if (num >= max_logins)
+					{
 						Unlock(hub->lock);
 
-						SiEnumSessionMain(server, &t);
+						HLog(hub, "LH_TOO_MANY_MULTILOGINS",
+							c->Name,
+							username, max_logins, num);
 
-						Lock(hub->lock);
-
-						num = 0;
-
-						for (i = 0;i < t.NumSession;i++)
-						{
-							RPC_ENUM_SESSION_ITEM *e = &t.Sessions[i];
-
-							if (e->BridgeMode == false && e->LinkMode == false && e->CurrentNumTcp != 0)
-							{
-								if (StrCmpi(e->Username, username) == 0 &&
-									(IsZero(e->UniqueId, 16) || Cmp(e->UniqueId, node.UniqueId, 16) != 0))
-								{
-									num++;
-								}
-							}
-						}
-
-						FreeRpcEnumSession(&t);
-
-						if (num >= max_logins)
-						{
-							Unlock(hub->lock);
-
-							HLog(hub, "LH_TOO_MANY_MULTILOGINS",
-								c->Name,
-								username, max_logins, num);
-
-							ReleaseHub(hub);
-							c->Err = ERR_TOO_MANY_USER_SESSION;
-							Free(policy);
-							goto CLEANUP;
-						}
+						ReleaseHub(hub);
+						c->Err = ERR_TOO_MANY_USER_SESSION;
+						Free(policy);
+						goto CLEANUP;
 					}
 				}
 			}
@@ -1693,7 +1631,6 @@ bool ServerAccept(CONNECTION *c)
 					ReleaseHub(hub);
 					c->Err = ERR_HUB_IS_BUSY;
 					Free(policy);
-					error_detail = "ERR_HUB_IS_BUSY";
 					goto CLEANUP;
 				}
 			}
@@ -1721,7 +1658,7 @@ bool ServerAccept(CONNECTION *c)
 			if (use_client_license)
 			{
 				if (GetHubAdminOption(hub, "max_sessions_client_bridge_apply") != 0 &&
-					Count(hub->NumSessionsClient) >= GetHubAdminOption(hub, "max_sessions_client") && hub->Cedar->Server != NULL)
+					Count(hub->NumSessionsClient) >= GetHubAdminOption(hub, "max_sessions_client"))
 				{
 					Unlock(hub->lock);
 
@@ -1737,7 +1674,7 @@ bool ServerAccept(CONNECTION *c)
 			if (use_bridge_license)
 			{
 				if (GetHubAdminOption(hub, "max_sessions_client_bridge_apply") != 0 &&
-					Count(hub->NumSessionsBridge) >= GetHubAdminOption(hub, "max_sessions_bridge") && hub->Cedar->Server != NULL)
+					Count(hub->NumSessionsBridge) >= GetHubAdminOption(hub, "max_sessions_bridge"))
 				{
 					Unlock(hub->lock);
 
@@ -1818,10 +1755,7 @@ bool ServerAccept(CONNECTION *c)
 
 			AddProtocolDetailsStr(s->ProtocolDetails, sizeof(s->ProtocolDetails), c->FirstSock->ProtocolDetails);
 
-			if (server != NULL)
-			{
-				s->NoSendSignature = server->NoSendSignature;
-			}
+			s->NoSendSignature = cedar->Server->NoSendSignature;
 
 			if (use_udp_acceleration_client)
 			{
@@ -1836,7 +1770,7 @@ bool ServerAccept(CONNECTION *c)
 				}
 			}
 
-			if (hub->Option != NULL && hub->Option->DisableUdpAcceleration)
+			if (hub->Option->DisableUdpAcceleration)
 			{
 				s->UseUdpAcceleration = false;
 			}
@@ -1908,11 +1842,8 @@ bool ServerAccept(CONNECTION *c)
 				Inc(s->Cedar->AssignedClientLicense);
 			}
 
-			if (server != NULL)
-			{
-				server->CurrentAssignedClientLicense = Count(s->Cedar->AssignedClientLicense);
-				server->CurrentAssignedBridgeLicense = Count(s->Cedar->AssignedBridgeLicense);
-			}
+			cedar->Server->CurrentAssignedClientLicense = Count(s->Cedar->AssignedClientLicense);
+			cedar->Server->CurrentAssignedBridgeLicense = Count(s->Cedar->AssignedBridgeLicense);
 
 			if (StrLen(sessionname) != 0)
 			{
@@ -1938,7 +1869,6 @@ bool ServerAccept(CONNECTION *c)
 			s->HalfConnection = half_connection;
 			s->Timeout = timeout;
 			s->QoS = qos;
-			s->NoReconnectToSession = no_reconnect_to_session;
 			s->VLanId = policy->VLanId;
 
 			s->Username = CopyStr(username);
@@ -1951,10 +1881,7 @@ bool ServerAccept(CONNECTION *c)
 
 			msg = GetHubMsg(hub);
 
-			if (hub->Option != NULL)
-			{
-				suppress_client_update_notification = hub->Option->SuppressClientUpdateNotification;
-			}
+			suppress_client_update_notification = hub->Option->SuppressClientUpdateNotification;
 		}
 		Unlock(hub->lock);
 
@@ -1969,7 +1896,6 @@ bool ServerAccept(CONNECTION *c)
 
 		PackAddBool(p, "suppress_client_update_notification", suppress_client_update_notification);
 
-		if (true)
 		{
 			char *utf;
 			wchar_t winver_msg_client[3800];
@@ -2126,11 +2052,8 @@ bool ServerAccept(CONNECTION *c)
 				Dec(s->Cedar->AssignedClientLicense);
 			}
 
-			if (server != NULL)
-			{
-				server->CurrentAssignedClientLicense = Count(s->Cedar->AssignedClientLicense);
-				server->CurrentAssignedBridgeLicense = Count(s->Cedar->AssignedBridgeLicense);
-			}
+			cedar->Server->CurrentAssignedClientLicense = Count(s->Cedar->AssignedClientLicense);
+			cedar->Server->CurrentAssignedBridgeLicense = Count(s->Cedar->AssignedBridgeLicense);
 		}
 		Unlock(s->Hub->lock);
 
@@ -2171,7 +2094,7 @@ bool ServerAccept(CONNECTION *c)
 		FreePack(p);
 
 		s = GetSessionFromKey(c->Cedar, session_key);
-		if (s == NULL || s->Halt || s->NoReconnectToSession)
+		if (s == NULL || s->Halt)
 		{
 			c->Err = ERR_SESSION_TIMEOUT;
 			goto CLEANUP;
@@ -2197,12 +2120,6 @@ bool ServerAccept(CONNECTION *c)
 		if (c->Err != 0)
 		{
 			Unlock(s->Connection->lock);
-			if (c->Err == ERR_TOO_MANY_CONNECTION)
-			{
-			}
-			else
-			{
-			}
 			ReleaseSession(s);
 			goto CLEANUP;
 		}
@@ -2286,7 +2203,7 @@ bool ServerAccept(CONNECTION *c)
 			for (i = 0;i < num;i++)
 			{
 				HUB *h = LIST_DATA(c->Cedar->HubList, i);
-				if (h->Option != NULL && h->Option->NoEnum == false)
+				if (h->Option->NoEnum == false)
 				{
 					Insert(o, CopyStr(h->Name));
 				}
@@ -2311,11 +2228,9 @@ bool ServerAccept(CONNECTION *c)
 
 		SLog(c->Cedar, "LS_ENUM_HUB", c->Name, num);
 
-		error_detail = "enum_hub";
-
 		goto CLEANUP;
 	}
-	else if (StrCmpi(method, "admin") == 0 && c->Cedar->Server != NULL)
+	else if (StrCmpi(method, "admin") == 0)
 	{
 		UINT err;
 		c->Type = CONNECTION_TYPE_ADMIN_RPC;
@@ -2327,8 +2242,6 @@ bool ServerAccept(CONNECTION *c)
 			HttpServerSend(c->FirstSock, p);
 			FreePack(p);
 		}
-
-		error_detail = "admin_rpc";
 
 		goto CLEANUP;
 	}
@@ -2343,16 +2256,12 @@ bool ServerAccept(CONNECTION *c)
 		HttpServerSend(c->FirstSock, p);
 		FreePack(p);
 
-		error_detail = "change_password";
-
 		goto CLEANUP;
 	}
 	else
 	{
 		FreePack(p);
 		c->Err = ERR_PROTOCOL_ERROR;
-
-		error_detail = "unknown_method";
 
 		goto CLEANUP;
 	}
@@ -2413,7 +2322,6 @@ static void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
 	StrCpy(info->ClientOsProductId, sizeof(info->ClientOsProductId), product_id);
 	Free(product_id);
 
-	if (true)
 	{
 		wchar_t namew[256];
 		char namea[256];
@@ -2913,7 +2821,6 @@ bool ClientConnect(CONNECTION *c)
 		}
 	}
 
-	if (true)
 	{
 		UINT utf_size;
 		char *utf;
@@ -3686,35 +3593,29 @@ bool ClientDownloadHello(CONNECTION *c, SOCK *s)
 	return true;
 }
 
-bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
+bool ServerDownloadSignature(CONNECTION *c)
 {
 	HTTP_HEADER *h;
 	UCHAR *data;
 	UINT data_size;
 	SOCK *s;
 	UINT num = 0, max = 19;
-	SERVER *server;
 	char *vpn_http_target = HTTP_VPN_TARGET2;
 	if (c == NULL)
 	{
 		return false;
 	}
 
-	server = c->Cedar->Server;
-
 	s = c->FirstSock;
 
 	while (true)
 	{
-		bool not_found_error = false;
-
 		num++;
 		if (num > max)
 		{
 			Disconnect(s);
 			c->Err = ERR_CLIENT_IS_NOT_VPN;
 
-			*error_detail_str = "HTTP_TOO_MANY_REQUEST";
 			return false;
 		}
 		h = RecvHttpHeader(s);
@@ -3735,7 +3636,6 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 				HttpSendForbidden(s, h->Target, NULL);
 				FreeHttpHeader(h);
 				c->Err = ERR_CLIENT_IS_NOT_VPN;
-				*error_detail_str = "POST_Recv_TooLong";
 				return false;
 			}
 			data = Malloc(data_size);
@@ -3744,13 +3644,11 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 				Free(data);
 				FreeHttpHeader(h);
 				c->Err = ERR_DISCONNECTED;
-				*error_detail_str = "POST_Recv_Failed";
 				return false;
 			}
-			if ((StrCmpi(h->Target, vpn_http_target) != 0) || not_found_error)
+			if (StrCmpi(h->Target, vpn_http_target) != 0)
 			{
 				HttpSendNotFound(s, h->Target);
-				*error_detail_str = "POST_Target_Wrong";
 			}
 			else
 			{
@@ -3762,7 +3660,6 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 				else
 				{
 					HttpSendForbidden(s, h->Target, NULL);
-					*error_detail_str = "POST_WaterMark_Error";
 				}
 			}
 
@@ -3782,21 +3679,16 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 				 && StrCmpi(h->Method, "POST") != 0)
 			{
 				HttpSendNotImplemented(s, h->Method, h->Target, h->Version);
-				*error_detail_str = "HTTP_BAD_METHOD";
 			}
 			else
 			{
 				if (StrCmpi(h->Target, "/") == 0)
 				{
-					*error_detail_str = "HTTP_ROOT";
-
 					HttpSendForbidden(c->FirstSock, h->Target, "");
 				}
 				else
 				{
 					HttpSendNotFound(s, h->Target);
-
-					*error_detail_str = "HTTP_NOT_FOUND";
 				}
 			}
 			FreeHttpHeader(h);

@@ -169,7 +169,6 @@ struct CONNECTION
 	void *hWndForUI;
 	UINT AdditionalConnectionFailedCounter;
 	UINT64 LastCounterResetTick;
-	UCHAR CToken_Hash[SHA1_SIZE];
 	UINT LastTcpQueueSize;
 	UINT LastPacketQueueSize;
 	UINT LastRecvFifoTotalSize;

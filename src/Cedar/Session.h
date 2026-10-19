@@ -128,7 +128,6 @@ struct SESSION
 	bool QoS;
 	bool NoSendSignature;
 	UINT NumDisconnected;
-	bool NoReconnectToSession;
 	char UnderlayProtocol[64];
 	char ProtocolDetails[256];
 	/* !!! Do not correct the spelling to keep the backward protocol compatibility !!!  */
