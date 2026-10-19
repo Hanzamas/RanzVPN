@@ -1707,6 +1707,7 @@ UINT UniToInt(wchar_t *str)
 		return 0;
 	}
 
+	// A longer string is read up to its first sizeof(tmp) - 1 characters
 	UniToStrForSingleChars(tmp, sizeof(tmp), str);
 
 	return ToInti(tmp);
@@ -1714,32 +1715,34 @@ UINT UniToInt(wchar_t *str)
 
 void UniToStrForSingleChars(char *dst, UINT dst_size, wchar_t *src)
 {
-	UINT i;
-	if (dst == NULL || src == NULL)
+	UINT i, len;
+	if (dst == NULL || src == NULL || dst_size == 0)
 	{
 		return;
 	}
 
-	for (i = 0;i < UniStrLen(src) + 1;i++)
+	// At most dst_size - 1 characters and the terminator
+	len = UniStrLen(src);
+	if (len > dst_size - 1)
+	{
+		len = dst_size - 1;
+	}
+
+	for (i = 0;i < len;i++)
 	{
 		wchar_t s = src[i];
-		char d;
 
-		if (s == 0)
+		if (s <= 0xff)
 		{
-			d = 0;
-		}
-		else if (s <= 0xff)
-		{
-			d = (char)s;
+			dst[i] = (char)s;
 		}
 		else
 		{
-			d = ' ';
+			dst[i] = ' ';
 		}
-
-		dst[i] = d;
 	}
+
+	dst[len] = 0;
 }
 
 UNI_TOKEN_LIST *UniGetLines(wchar_t *str)

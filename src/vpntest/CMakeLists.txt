@@ -36,6 +36,9 @@ target_sources(vpntest PRIVATE keepalive.c packcap.c)
 # Named StorePacket test of SEC-5 (#96)
 target_sources(vpntest PRIVATE storepacket.c)
 
+# Named console input test of SEC-7 (#96)
+target_sources(vpntest PRIVATE consoleline.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"

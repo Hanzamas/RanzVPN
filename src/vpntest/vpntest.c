@@ -487,6 +487,9 @@ void packcap_test(UINT num, char **arg);
 // Named StorePacket test of SEC-5, #96 (storepacket.c)
 void storepacket_test(UINT num, char **arg);
 
+// Named console input test of SEC-7, #96 (consoleline.c)
+void consoleline_test(UINT num, char **arg);
+
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
 char *watermark_expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
@@ -604,6 +607,7 @@ TEST_LIST test_list[] =
 	{"keepalive", keepalive_test, "Keepalive span: a session timeout out of bounds, also 0 or 1 from a server, gives the span of the clamped timeout."},
 	{"packcap", packcap_test, "Client Pack size cap: a 1 MiB hello or welcome Pack from a loopback peer is refused, the longest real welcome Pack is read."},
 	{"storepacket", storepacket_test, "StorePacket: the broadcast storm list of a session stays at its cap, access list delay and jitter never divide by zero."},
+	{"consoleline", consoleline_test, "Console input: a prompt line longer than its buffer, Ctrl+D and Ctrl+Z, the /IN file reader, UniToInt on a long string."},
 };
 
 // Test function
