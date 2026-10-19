@@ -1301,7 +1301,7 @@ static PACK *HarnessPackBuildAdminOptionNumItemMismatch(void)
 	return p;
 }
 
-// NumItem larger than the values: the count comes from NumItem, the missing items read as empty
+// NumItem larger than the values: the count is NumItem capped at the FilePath values (SEC-6), so one item
 static PACK *HarnessPackBuildEnumLogFileNumItemMore(void)
 {
 	PACK *p = NewPack();

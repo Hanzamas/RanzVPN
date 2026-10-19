@@ -63,14 +63,19 @@ static void RpcFieldSetBool(const RPC_FIELD *f, void *base, bool b)
 	}
 }
 
-// Item count of an ARRAY row, or 0 when the item array would not fit in 32 bits
+// Item count of an ARRAY row, or 0 when the item array would not fit in 32 bits. A "NumItem" count is capped at the
+// values of the sentinel key: the peer sends the count, and without the cap a large one made the reader allocate
+// gigabytes of empty items (well-formed peers send NumItem equal to the value count)
 static UINT RpcFieldArrayCount(const RPC_FIELD *f, PACK *p)
 {
 	UINT num;
 
 	if (f->Flags & RPC_FF_READ_NUMITEM)
 	{
-		num = PackGetInt(p, "NumItem");
+		UINT num_item = PackGetInt(p, "NumItem");
+		UINT num_values = PackGetIndexCount(p, f->Key);
+
+		num = MIN(num_item, num_values);
 	}
 	else
 	{
