@@ -44,7 +44,7 @@ if (Test-Path $benchFile) { Remove-Item $benchFile }
 }
 
 # Named self-tests: must print their OK marker and no leak. RANZ_SMOKE_TESTS (comma list) overrides the list.
-$named = @('mschapv2', 'crypto', 'stun', 'watermark', 'stress', 'harness', 'bench', 'tickorigin', 'timeenc', 'nullsafe', 'charset', 'fileio', 'resources', 'threadpool', 'dns', 'trace', 'eventlog', 'certdl', 'str', 'udpaccel', 'selow', 'listenerbind', 'dllsearch', 'machineid', 'vmdetect', 'tcpip', 'x509', 'bufbounds', 'keepalive', 'packcap', 'storepacket', 'consoleline', 'tempdir')
+$named = @('mschapv2', 'crypto', 'stun', 'watermark', 'stress', 'harness', 'bench', 'tickorigin', 'timeenc', 'nullsafe', 'charset', 'fileio', 'resources', 'threadpool', 'dns', 'trace', 'eventlog', 'certdl', 'str', 'udpaccel', 'selow', 'listenerbind', 'dllsearch', 'machineid', 'vmdetect', 'tcpip', 'x509', 'bufbounds', 'keepalive', 'packcap', 'storepacket', 'consoleline', 'tempdir', 'adminaudit', 'logwriter', 'logbound', 'slog', 'eraser', 'authtype', 'acpassword', 'sigleak', 'pktparse', 'vlantpid', 'pack_decode_bounds', 'tablecache', 'registry', 'certsig', 'x509root', 'rsasig', 'ptrkey')
 if ($env:RANZ_SMOKE_TESTS) { $named = $env:RANZ_SMOKE_TESTS -split ',' | % { $_.Trim() } | ? { $_ } }
 $named | % {
 
@@ -74,7 +74,7 @@ $named | % {
 	# The harness must compare its golden files: a missing or empty golden directory switches a family to update
 	# mode, which passes without comparing. RANZ_UPDATE_GOLDEN=1 is the deliberate way to record new files.
 	if ($test -eq 'harness' -and $env:RANZ_UPDATE_GOLDEN -ne '1') {
-		$missing = @('HARNESS GOLDEN MODE compare', 'HARNESS GOLDEN MODE pack compare') | ? {
+		$missing = @('HARNESS GOLDEN MODE compare', 'HARNESS GOLDEN MODE pack compare', 'HARNESS GOLDEN MODE cmd compare') | ? {
 			($full | Select-String -Pattern $_ -SimpleMatch -CaseSensitive).Count -ne 1
 		}
 		if ($missing) {

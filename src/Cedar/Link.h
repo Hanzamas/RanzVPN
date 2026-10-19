@@ -36,6 +36,7 @@ struct LINK
 };
 
 
+bool LinkValidateAuthAndPolicy(CLIENT_AUTH *auth, POLICY *policy);
 LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, POLICY *policy);
 void StartLink(LINK *k);
 void StopLink(LINK *k);

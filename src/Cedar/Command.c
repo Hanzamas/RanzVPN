@@ -2946,8 +2946,16 @@ static void PsMain(PS *ps)
 	ps->CapsList = NULL;
 }
 
+// Eval parameter of CmdEvalHostAndPort; a NULL parameter is port 0 and the standard message
+typedef struct CMD_EVAL_HOST_PORT
+{
+	UINT DefaultPort;			// Port taken when the text names none (0: the text must name a port)
+	wchar_t *ErrorMessage;		// Message printed when the text is invalid (NULL: CMD_HOSTPORT_EVAL_FAILED)
+} CMD_EVAL_HOST_PORT;
+
 static bool CmdEvalHostAndPort(CONSOLE *c, wchar_t *str, void *param)
 {
+	CMD_EVAL_HOST_PORT *e = (CMD_EVAL_HOST_PORT *)param;
 	char *tmp;
 	bool ret = false;
 	if (c == NULL || str == NULL)
@@ -2957,11 +2965,11 @@ static bool CmdEvalHostAndPort(CONSOLE *c, wchar_t *str, void *param)
 
 	tmp = CopyUniToStr(str);
 
-	ret = ParseHostPort(tmp, NULL, NULL, (UINT)param);
+	ret = ParseHostPort(tmp, NULL, NULL, e == NULL ? 0 : e->DefaultPort);
 
 	if (ret == false)
 	{
-		c->Write(c, param == NULL ? _UU("CMD_HOSTPORT_EVAL_FAILED") : (wchar_t *)param);
+		c->Write(c, (e == NULL || e->ErrorMessage == NULL) ? _UU("CMD_HOSTPORT_EVAL_FAILED") : e->ErrorMessage);
 	}
 
 	Free(tmp);
@@ -3338,13 +3346,14 @@ static UINT PsSyslogEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param
 	UINT ret = 0;
 	SYSLOG_SETTING t;
 	CMD_EVAL_MIN_MAX minmax = {"CMD_SyslogEnable_MINMAX", 1, 3};
+	CMD_EVAL_HOST_PORT host_eval = {SYSLOG_PORT, NULL};
 	char *host;
 	UINT port;
 
 	PARAM args[] =
 	{
 		{"[1|2|3]", CmdPrompt, _UU("CMD_SyslogEnable_Prompt_123"), CmdEvalMinMax, &minmax},
-		{"HOST", CmdPrompt, _UU("CMD_SyslogEnable_Prompt_HOST"), CmdEvalHostAndPort, (void *)SYSLOG_PORT},
+		{"HOST", CmdPrompt, _UU("CMD_SyslogEnable_Prompt_HOST"), CmdEvalHostAndPort, &host_eval},
 	};
 
 	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
@@ -6723,7 +6732,7 @@ static UINT PsCascadeHttpHeaderAdd(CONSOLE *c, char *cmd_name, wchar_t *str, voi
 			EnSafeHttpHeaderValueStr(s, ' ');
 
 			if ((StrLen(s) + StrLen(t.ClientOption->CustomHttpHeader)) < sizeof(t.ClientOption->CustomHttpHeader)) {
-				StrCat(t.ClientOption->CustomHttpHeader, sizeof(s), s);
+				StrCat(t.ClientOption->CustomHttpHeader, sizeof(t.ClientOption->CustomHttpHeader), s);
 				ret = ScSetLink(ps->Rpc, &t);
 			}
 			else
@@ -6747,6 +6756,27 @@ static UINT PsCascadeHttpHeaderAdd(CONSOLE *c, char *cmd_name, wchar_t *str, voi
 	FreeRpcCreateLink(&t);
 
 	FreeParamValueList(o);
+
+	return ret;
+}
+
+// Whether line is a header named name: the text before its first colon, trimmed, is name in any case
+static bool IsHttpHeaderLineOf(char *line, char *name)
+{
+	char *tmp = CopyStr(line);
+	UINT pos = SearchStr(tmp, ":", 0);
+	bool ret;
+
+	if (pos != INFINITE)
+	{
+		tmp[pos] = 0;
+	}
+
+	Trim(tmp);
+
+	ret = (StrCmpi(tmp, name) == 0);
+
+	Free(tmp);
 
 	return ret;
 }
@@ -6786,24 +6816,32 @@ static UINT PsCascadeHttpHeaderDelete(CONSOLE *c, char *cmd_name, wchar_t *str, 
 	{
 		UINT i = 0;
 		TOKEN_LIST *tokens = NULL;
-		char *value = GetParamStr(o, "NAME");
+		char *headers = t.ClientOption->CustomHttpHeader;
+		UINT headers_size = sizeof(t.ClientOption->CustomHttpHeader);
+		char *name = GetParamStr(o, "NAME");
 
-		Zero(t.ClientOption->CustomHttpHeader, sizeof(t.ClientOption->CustomHttpHeader));
+		Trim(name);
 
-		tokens = ParseToken(t.ClientOption->CustomHttpHeader, "\r\n");
+		// Parse the stored headers first, then rebuild the field from the ones kept
+		tokens = ParseToken(headers, "\r\n");
+
+		Zero(headers, headers_size);
 
 		for (i = 0; i < tokens->NumTokens; i++)
 		{
-			if (StartWith(tokens->Token[i], value) == false)
+			if (IsHttpHeaderLineOf(tokens->Token[i], name) == false)
 			{
-				StrCat(t.ClientOption->CustomHttpHeader, sizeof(t.ClientOption->CustomHttpHeader), tokens->Token[i]);
-				StrCat(t.ClientOption->CustomHttpHeader, 1, "\r\n");
+				StrCat(headers, headers_size, tokens->Token[i]);
+				StrCat(headers, headers_size, "\r\n");
 			}
 		}
 
+		FreeToken(tokens);
+
 		ret = ScSetLink(ps->Rpc, &t);
 	}
-	else
+
+	if (ret != ERR_NO_ERROR)
 	{
 		CmdPrintError(c, ret);
 	}
@@ -6862,6 +6900,8 @@ static UINT PsCascadeHttpHeaderGet(CONSOLE *c, char *cmd_name, wchar_t *str, voi
 			StrToUni(unistr, sizeof(unistr), tokens->Token[i]);
 			CtInsert(ct, unistr);
 		}
+
+		FreeToken(tokens);
 
 		CtFreeEx(ct, c, false);
 	}
@@ -8425,10 +8465,52 @@ static bool CmdEvalProtocol(CONSOLE *c, wchar_t *str, void *param)
 	return true;
 }
 
+// Value of str when it is only decimal digits (no sign, no space) and at most max
+static bool StrToUIntStrict(char *str, UINT max, UINT *value)
+{
+	UINT v = 0;
+	UINT i;
+
+	if (str == NULL || str[0] == 0)
+	{
+		return false;
+	}
+
+	for (i = 0;str[i] != 0;i++)
+	{
+		UINT d;
+
+		if (str[i] < '0' || str[i] > '9')
+		{
+			return false;
+		}
+
+		d = (UINT)(str[i] - '0');
+
+		// v * 10 + d must not pass max (nor wrap)
+		if (d > max || v > (max - d) / 10)
+		{
+			return false;
+		}
+
+		v = v * 10 + d;
+	}
+
+	*value = v;
+
+	return true;
+}
+
+// Port range of an access list rule: empty text is every port (0-0); otherwise one port or two joined by a
+// hyphen, spaces around each allowed, each 1 to 65535 and the first not above the second. Anything else (a
+// service name, a list, a sign, a third number) is refused instead of being stored as another range.
 static bool ParsePortRange(char *str, UINT *start, UINT *end)
 {
 	UINT a = 0, b = 0;
-	TOKEN_LIST *t;
+	char *tmp;
+	UINT pos;
+	bool ok;
+
 	if (str == NULL)
 	{
 		return false;
@@ -8436,32 +8518,28 @@ static bool ParsePortRange(char *str, UINT *start, UINT *end)
 
 	if (IsEmptyStr(str) == false)
 	{
+		tmp = CopyStr(str);
 
-		t = ParseToken(str, "\t -");
-
-		if (t->NumTokens == 1)
+		pos = SearchStr(tmp, "-", 0);
+		if (pos == INFINITE)
 		{
-			a = b = ToInt(t->Token[0]);
+			Trim(tmp);
+			ok = StrToUIntStrict(tmp, 65535, &a);
+			b = a;
 		}
-		else if (t->NumTokens == 2)
+		else
 		{
-			a = ToInt(t->Token[0]);
-			b = ToInt(t->Token[1]);
-		}
+			char *second = tmp + pos + 1;
 
-		FreeToken(t);
-
-		if (a > b)
-		{
-			return false;
-		}
-
-		if (a >= 65536 || b >= 65536)
-		{
-			return false;
+			tmp[pos] = 0;
+			Trim(tmp);
+			Trim(second);
+			ok = StrToUIntStrict(tmp, 65535, &a) && StrToUIntStrict(second, 65535, &b);
 		}
 
-		if (a == 0 && b != 0)
+		Free(tmp);
+
+		if (ok == false || a == 0 || a > b)
 		{
 			return false;
 		}
@@ -8481,15 +8559,19 @@ static bool ParsePortRange(char *str, UINT *start, UINT *end)
 
 static bool CmdEvalPortRange(CONSOLE *c, wchar_t *str, void *param)
 {
-	char tmp[64];
+	char *tmp;
+	bool ok;
 	if (c == NULL || str == NULL)
 	{
 		return false;
 	}
 
-	UniToStr(tmp, sizeof(tmp), str);
+	// The whole text: the AccessAdd commands parse it again from the parameter
+	tmp = CopyUniToStr(str);
+	ok = ParsePortRange(tmp, NULL, NULL);
+	Free(tmp);
 
-	if (ParsePortRange(tmp, NULL, NULL) == false)
+	if (ok == false)
 	{
 		c->Write(c, _UU("CMD_PORT_RANGE_EVAL_FAILED"));
 		return false;
@@ -8576,6 +8658,13 @@ static bool CmdEvalMacAddressAndMask(CONSOLE *c, wchar_t *str, void *param)
 
 	return true;
 }
+
+// Whether input abbreviates word: a non-empty prefix of it in any case ("est" abbreviates "Established")
+static bool IsAbbreviationOf(char *input, char *word)
+{
+	return StartWith(word, input);
+}
+
 static bool ParseTcpState(char *src, bool *check_tcp_state, bool *established)
 {
 	bool ok = false;
@@ -8591,7 +8680,7 @@ static bool ParseTcpState(char *src, bool *check_tcp_state, bool *established)
 
 	if (IsEmptyStr(src) == false)
 	{
-		if (StartWith("Established", src) == 0)
+		if (IsAbbreviationOf(src, "Established"))
 		{
 			if(ok != false)
 			{
@@ -8599,7 +8688,7 @@ static bool ParseTcpState(char *src, bool *check_tcp_state, bool *established)
 				*established = true;
 			}
 		}
-		else if (StartWith("Unestablished", src) == 0)
+		else if (IsAbbreviationOf(src, "Unestablished"))
 		{
 			if(ok != false)
 			{
@@ -11876,41 +11965,14 @@ UINT PsCrlAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		bool param_exists = false;
 		CRL *crl = ZeroMalloc(sizeof(CRL));
 		NAME *n;
-		n = crl->Name = ZeroMalloc(sizeof(NAME));
 
-		if (IsEmptyStr(GetParamStr(o, "CN")) == false)
-		{
-			n->CommonName = CopyUniStr(GetParamUniStr(o, "CN"));
-			param_exists = true;
-		}
+		// Each option in its own field; NewName copies only the non-empty ones and FreeName frees them
+		n = crl->Name = NewName(GetParamUniStr(o, "CN"), GetParamUniStr(o, "O"), GetParamUniStr(o, "OU"),
+			GetParamUniStr(o, "C"), GetParamUniStr(o, "ST"), GetParamUniStr(o, "L"));
 
-		if (IsEmptyStr(GetParamStr(o, "O")) == false)
+		if (n->CommonName != NULL || n->Organization != NULL || n->Unit != NULL ||
+			n->Country != NULL || n->State != NULL || n->Local != NULL)
 		{
-			n->CommonName = CopyUniStr(GetParamUniStr(o, "O"));
-			param_exists = true;
-		}
-
-		if (IsEmptyStr(GetParamStr(o, "OU")) == false)
-		{
-			n->CommonName = CopyUniStr(GetParamUniStr(o, "OU"));
-			param_exists = true;
-		}
-
-		if (IsEmptyStr(GetParamStr(o, "C")) == false)
-		{
-			n->CommonName = CopyUniStr(GetParamUniStr(o, "C"));
-			param_exists = true;
-		}
-
-		if (IsEmptyStr(GetParamStr(o, "ST")) == false)
-		{
-			n->CommonName = CopyUniStr(GetParamUniStr(o, "ST"));
-			param_exists = true;
-		}
-
-		if (IsEmptyStr(GetParamStr(o, "L")) == false)
-		{
-			n->CommonName = CopyUniStr(GetParamUniStr(o, "L"));
 			param_exists = true;
 		}
 

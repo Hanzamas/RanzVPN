@@ -26,6 +26,6 @@ int main(int argc, char *argv[])
 {
 	InitProcessCallOnce();
 
-	return MsService(GC_SVC_NAME_VPNSERVER, StartProcess, StopProcess, 0, argv[0]);
+	return MsService(GC_SVC_NAME_VPNSERVER, StartProcess, StopProcess, argv[0]);
 }
 

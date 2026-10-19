@@ -138,7 +138,6 @@ bool IsSupportedWinVer(RPC_WINVER *v)
 	return false;
 }
 
-#ifdef	OS_WIN32
 static void Win32GetWinVer(RPC_WINVER *v)
 {
 	if (v == NULL)
@@ -187,7 +186,6 @@ static void Win32GetWinVer(RPC_WINVER *v)
 		}
 	}
 }
-#endif
 
 void GetWinVer(RPC_WINVER *v)
 {
@@ -196,9 +194,7 @@ void GetWinVer(RPC_WINVER *v)
 		return;
 	}
 
-#ifdef	OS_WIN32
 	Win32GetWinVer(v);
-#endif
 }
 
 void FreeTinyLog(TINY_LOG *t)
@@ -968,9 +964,7 @@ static void InitNetSvcList(CEDAR *cedar)
 		return;
 	}
 
-#ifdef	OS_WIN32
 	Format(filename, sizeof(filename), "%s\\drivers\\etc\\services", MsGetSystem32Dir());
-#endif
 
 	cedar->NetSvcList = NewList(CompareNetSvc);
 
@@ -1094,7 +1088,6 @@ void SetCedarVpnBridge(CEDAR *c)
 	c->ServerStr = CopyStr(CEDAR_BRIDGE_STR);
 }
 
-#ifdef	OS_WIN32
 void RegistWindowsFirewallAll()
 {
 	char exedir[MAX_SIZE];
@@ -1105,7 +1098,6 @@ void RegistWindowsFirewallAll()
 	MsRegistWindowsFirewallEx2(CEDAR_CUI_STR, "vpncmd.exe", exedir);
 	MsRegistWindowsFirewallEx2(CEDAR_PRODUCT_STR, "vpntest.exe", exedir);
 }
-#endif
 
 static void CedarForceLink()
 {

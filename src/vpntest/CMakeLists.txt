@@ -42,6 +42,27 @@ target_sources(vpntest PRIVATE consoleline.c)
 # Named temp directory and string table test of SEC-8 (#96)
 target_sources(vpntest PRIVATE tempdir.c)
 
+# vpncmd command cases of the harness (golden family "cmd"), PKG-2 (#106)
+target_sources(vpntest PRIVATE harness_cmd.c)
+
+# Named log writer, syslog and eraser tests of PKG-4 (#108)
+target_sources(vpntest PRIVATE logtest.c)
+
+# Named login path tests of PKG-6 (#110)
+target_sources(vpntest PRIVATE login.c)
+
+# Named packet parser tests of PKG-9 (#113)
+target_sources(vpntest PRIVATE pkttest.c)
+
+# Named PACK decoder bounds test of FND-42 (#114)
+target_sources(vpntest PRIVATE packdecode.c)
+
+# Named string table loader test of FND-43 (#114)
+target_sources(vpntest PRIVATE tablecache.c)
+
+# Named registry test of FND-64 (#121)
+target_sources(vpntest PRIVATE registry.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"

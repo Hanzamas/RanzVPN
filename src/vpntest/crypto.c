@@ -11,6 +11,9 @@
 // The test prints "CRYPTO TEST OK" only when every check passes, and frees everything it
 // allocates, so that the run still ends with "NO MEMORY LEAKS". The [PASS] lines carry only
 // fixed values; the [FAIL] details show what was computed.
+// RsaSignEx (FND-83, #127) has one known answer: the client certificate signature, PKCS#1 v1.5 with
+// SHA-1, of fixed bytes with a fixed RSA-2048 key. PKCS#1 v1.5 signing is deterministic, so the
+// signature must stay byte for byte what RSA_private_encrypt() over the DigestInfo made.
 
 #include "Cedar/Account.h"
 
@@ -34,6 +37,7 @@
 #define	KAT_RAND_DRAWS			64			// Draws of each RandN function
 #define	KAT_GUARD				16			// Guard bytes after an output buffer
 #define	KAT_GUARD_BYTE			0xA5		// Value of the guard bytes
+#define	KAT_RSA_SIGN			(2048 / 8)	// Signature of the RSA-2048 known-answer key (bytes)
 
 // Run state of the test
 typedef struct KAT_CTX
@@ -143,6 +147,50 @@ static char *kat_sha256[KAT_NUM_MESSAGES] =
 	"248D6A61D20638B8E5C026930C3E6039A33CE45964FF2167F6ECEDD419DB06C1",
 	"CDC76E5C9914FB9281A1C7E284D73E67F1809A48A497200E046D39CCC7112CD0",
 };
+
+// RSA-2048 key of the RsaSignEx known answer, made for this test with the openssl CLI
+static char kat_rsa_key_pem[] =
+	"-----BEGIN PRIVATE KEY-----\n"
+	"MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDgeuvBSOwJqi+l\n"
+	"qFUbo8lFuVr91qnuNCL4fS2yikJiznqQCMkebigc6aohY4crtzylcbczBhbGjhco\n"
+	"TI/qg+httRwt9AElrnp4BxD53tIwliIUcoIG8q7Op2ZAGeMwyyAW1QuB6G9jDZqr\n"
+	"OP8Tl0TyL2dCPXnmP91zL2Lj61sp91B9YAAbz11VHEM+XwrepaQrGsl6tSRMPLTf\n"
+	"PHFT84+E+ePSfPPtzs/FhMHwfe+9YF/k+VnlkZeH2LjZJCx3MlEbJz6mMflfQqbm\n"
+	"PNEu1pcCfbLOHVRyDLewpy8k8LTjBBKKo4FgkAA1Kb0j3M4aBPkP8wS/hcd0T6wb\n"
+	"H9eEtQ9lAgMBAAECggEAFglLEm7XqP05bzAupqd17y/KdGe5x8X7dtxG+6Nh7/Qo\n"
+	"CPKr155ltqzjhCKSluKGhBE9NDeRTc2ODWkyqYlobDieuw4cfLf7ksPS0Uyj4pwi\n"
+	"XVJ+XDM/oM7DFWDVMimGjWc9mXOZV6ZyvAM82w36+TFZGCIT0NwNH60Trp8glGZh\n"
+	"NUqtl9CzqDpGGYxw9My2ID20elqgw3pQpW9tRnABavKtYTlXSrFPRekZaVviysKT\n"
+	"dHYwUyIug9KwLLrX3E9tEutyJsyZAmGkCclO3vDcx1hXdaojHf+nLlsfP91T0vGN\n"
+	"yz1JnqQ4VT+N46xLL0pO4sYoRp3HES0W4BlHgf+W8QKBgQD7ADn5kfPEAoRKVRaB\n"
+	"n5eeMytKFcNNIosBDoZkz90gi1Iq2V6clMjXhLNjC859w791UMu9Tgu8WaLZijaB\n"
+	"Na9wLfwpuLrYHpqJb49BU6MUVu5hXDZrlRHMNNrMzqDy4i3nORvLtwFUO8UpHItz\n"
+	"jIpDXkTtt0vMVH68+DbCCsU5DQKBgQDk83lGPsyE2kQobfyxYvXLCfKxMPj1YWZA\n"
+	"m7m9u9g0e7XqR2t6EI7+bppx/reYtN+t4AP1UIjBS7pRsV9UlVxifpEBYU8bZ22B\n"
+	"TcxQjsCGBjhw0gjwsl9TvM5UaRwuJXhAVjPQfBoF+/vcYXqBBySNvWq4eeOvcTlJ\n"
+	"LXL6U8rpuQKBgA2DDZvpx32dxRFbU0LXHIpfpszuLv1QBruf1IxIxFakKWA1I2q6\n"
+	"d7ViZ2XFlPAgQYZHOzCNqwQQrzuWvShng3I+h3yXfTd1LkyHvOZ/YiAOLfb/x84y\n"
+	"0Cp2DfFIjlGE64OvB1gIGgI21X5JExi9UBQgVwWVAHeXdNsnYYtAmS1hAoGAEsfm\n"
+	"Ktz76en9rVNYZzS29PDb960MvxQ+Tw53Lhk6oxOC2LUDHAA/up9YDAHZDa3Iq3q0\n"
+	"2GrCzRhpMEpch5O5AFthibtxwc26LeEz4WfUYyofdyHDmfsH1tamFkaJCUAJnT11\n"
+	"AqUrfVIuVuWoJu1vEjF3j6pwAvRGvrn7tI0rGAECgYAdhHv+C3QXGje5OcfXY1fO\n"
+	"asfN8EyeiVF1hI58ZOgxFquFdJFfIQo1WJXnTxNsA5QoyeYXm524OOboW/abMVM7\n"
+	"y5LmDK0h6vRBsijVdiUf9al5Su4wqRJ3XuijjyPGVs6yolG5G/uxGOxvz2oC4GjJ\n"
+	"KYs8gc2C8Nja0gqJUJoN/g==\n"
+	"-----END PRIVATE KEY-----\n";
+
+// Its PKCS#1 v1.5 SHA-1 signature of the 20 bytes 0x01 .. 0x14, computed: the RFC 8017 type 1 block
+// of the SHA-1 DigestInfo raised to the private exponent (Python), and "openssl dgst -sha1 -sign"
+// of the openssl 3.2 CLI
+static char kat_rsa_sign[] =
+	"918C9DA9534412118D74403CEDC472EAD85585CF60EFF5CC361BBC6501D10A64"
+	"D3842457973AC77FB85DF8F1A9FD0A56F526D83087D95B711C25C2CFCABE8618"
+	"FFEC75861E5084582A007E6015F3C2A30B1F18BE8F2C582D1348CBE5EFAB0010"
+	"3CB88F16302FF4D68AF49D1CE8ADC64066A5DB1EA5CE710DAC9EB8ECBA3BB40D"
+	"78A20C76B2E4348869E9BC73D79A98720522369E7EEEF2D18157AE937C411BC7"
+	"02C41243385584B3DE8748BB6E9048185A02A3B2B6F5978C686BB96167A5C067"
+	"7C190E108DD76DFB756FA961F168C99C713761156F915816B283822A94132A55"
+	"2957CF788434D94662208B79320354002796C6EE1637FA7FAB576CA712643DD1";
 
 // Record one check: print [PASS], or [FAIL] with the formatted detail
 static bool KatCheck(KAT_CTX *ctx, bool ok, char *what, char *detail_fmt, ...)
@@ -535,6 +583,41 @@ static void KatRand(KAT_CTX *ctx)
 	Free(bulk);
 }
 
+// RsaSignEx known answer: the fixed RSA-2048 key signs the bytes 0x01 .. 0x14
+static void KatRsaSign(KAT_CTX *ctx)
+{
+	BUF *b = NewBuf();
+	K *k;
+	UCHAR src[SHA1_SIZE];
+	UCHAR sign[KAT_RSA_SIGN + KAT_GUARD];
+	char got[KAT_RSA_SIGN * 2 + 1];
+	bool signed_ok, same;
+	UINT i;
+
+	for (i = 0;i < sizeof(src);i++)
+	{
+		src[i] = (UCHAR)(i + 1);
+	}
+
+	WriteBuf(b, kat_rsa_key_pem, StrLen(kat_rsa_key_pem));
+	SeekBuf(b, 0, 0);
+	k = BufToK(b, true, true, NULL);
+	FreeBuf(b);
+
+	if (KatCheck(ctx, k != NULL, "RsaSignEx: the RSA-2048 known-answer key loads", "BufToK failed"))
+	{
+		memset(sign, KAT_GUARD_BYTE, sizeof(sign));
+		signed_ok = RsaSignEx(sign, KAT_RSA_SIGN, src, sizeof(src), k);
+		same = KatHexEq(sign, KAT_RSA_SIGN, kat_rsa_sign, got, sizeof(got));
+		KatCheck(ctx, signed_ok && same, "RsaSignEx: PKCS#1 v1.5 SHA-1 signature of 0x01 .. 0x14 with the RSA-2048 key",
+			"returned %u, got %s", signed_ok, got);
+		KatCheck(ctx, KatAllBytes(sign + KAT_RSA_SIGN, KAT_GUARD, KAT_GUARD_BYTE), "RsaSignEx writes no byte past the signature",
+			"guard bytes were written");
+	}
+
+	FreeK(k);
+}
+
 // Crypto known-answer test
 void crypto_test(UINT num, char **arg)
 {
@@ -544,7 +627,7 @@ void crypto_test(UINT num, char **arg)
 	Zero(&ctx, sizeof(ctx));
 	memset(million, 'a', KAT_MILLION);
 
-	Print("Crypto known-answer test (MD4, MD5, SHA-0, SHA-1, SHA-256, RC4, DES, random generator)\n");
+	Print("Crypto known-answer test (MD4, MD5, SHA-0, SHA-1, SHA-256, RC4, DES, random generator, RSA signature)\n");
 
 	KatHashSuite(&ctx, "HashMd4", HashMd4, KAT_MD4_SIZE, kat_md4, million);
 	KatHashSuite(&ctx, "Md5", Md5, MD5_SIZE, kat_md5, million);
@@ -559,6 +642,7 @@ void crypto_test(UINT num, char **arg)
 	KatRc4(&ctx);
 	KatDesSuite(&ctx);
 	KatRand(&ctx);
+	KatRsaSign(&ctx);
 
 	Free(million);
 

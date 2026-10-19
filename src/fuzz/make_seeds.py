@@ -85,6 +85,21 @@ def make_pack_seeds():
     ]))
 
 
+def pack_one_element(vtype, num_value, payload):
+    # A PACK of one element "a" that claims num_value values; payload is the bytes that follow
+    return struct.pack('>I', 1) + buf_str('a') + struct.pack('>II', vtype, num_value) + payload
+
+
+def make_pack_bad_seeds():
+    # Malformed PACKs the decoder rejects before it allocates (FND-42 #114, vpntest pack_decode_bounds)
+    write_seed('fuzz_pack', 'bad_int_count_huge.bin', pack_one_element(VALUE_INT, 262144, b''))
+    write_seed('fuzz_pack', 'bad_unknown_type.bin', pack_one_element(7, 1, struct.pack('>I', 0)))
+    write_seed('fuzz_pack', 'bad_data_size_huge.bin',
+               pack_one_element(VALUE_DATA, 1, struct.pack('>I', 0x10000000) + b'abcd'))
+    write_seed('fuzz_pack', 'bad_str_truncated.bin',
+               pack_one_element(VALUE_STR, 2, pack_value(VALUE_STR, 'abc') + struct.pack('>I', 10) + b'abc'))
+
+
 # ---------------------------------------------------------------------------
 # Configuration (Mayaqua/Cfg.c): text and binary
 # ---------------------------------------------------------------------------
@@ -250,6 +265,12 @@ def tcp(src, dst, sport, dport, seq, ack, flags, payload):
     return seg[:16] + struct.pack('>H', l4_csum(src, dst, 6, seg)) + seg[18:]
 
 
+def tcp_syn(src, dst, sport, dport, seq, options):
+    # SYN without data; the options are a multiple of 4 bytes
+    seg = struct.pack('>HHIIBBHHH', sport, dport, seq, 0, (5 + len(options) // 4) << 4, 0x02, 64240, 0, 0) + options
+    return seg[:16] + struct.pack('>H', l4_csum(src, dst, 6, seg)) + seg[18:]
+
+
 def eth(dst, src, ethertype, payload):
     return dst + src + struct.pack('>H', ethertype) + payload
 
@@ -275,6 +296,18 @@ def make_tcpip_seeds():
              b'\x35\x01\x01' + b'\x37\x03\x01\x03\x06' + b'\xff')
     write_seed('fuzz_tcpip', 'ipv4_udp_dhcp_discover.bin',
                eth(BROADCAST, MAC_A, 0x0800, ipv4(zero, bcast, 17, udp(zero, bcast, 68, 67, bootp), 3)))
+
+    # The same DHCPDISCOVER tagged with 802.1ad (TPID 0x88A8), VLAN 10: the parser of a hub with
+    # VlanTypeId 0x88A8 reads it through the VLAN tag (FND-39 #113)
+    write_seed('fuzz_tcpip', 'vlan_8021ad_ipv4_udp_dhcp_discover.bin',
+               eth(BROADCAST, MAC_A, 0x88A8, struct.pack('>HH', 10, 0x0800) +
+                   ipv4(zero, bcast, 17, udp(zero, bcast, 68, 67, bootp), 3)))
+
+    # SYN with No-Operation, No-Operation, timestamps and MSS 1460: the MSS clamp walks the options
+    # to the MSS (SEC-1 #96, FND-40 #113)
+    syn_options = b'\x01\x01' + b'\x08\x0a' + struct.pack('>II', 1, 0) + b'\x02\x04' + struct.pack('>H', 1460)
+    write_seed('fuzz_tcpip', 'ipv4_tcp_syn_mss_after_ts.bin',
+               eth(MAC_B, MAC_A, 0x0800, ipv4(a, b, 6, tcp_syn(a, b, 49152, 443, 1000, syn_options), 5)))
 
     # IPv6 ICMPv6 neighbor solicitation for fe80::2 from fe80::1
     src6 = bytes.fromhex('fe800000000000000000000000000001')
@@ -444,6 +477,7 @@ def make_http_seeds():
 if __name__ == '__main__':
     assert sha0(b'abc').hex() == '0164b8a914cd2a5e74c4f7ff082c4d97f1edf880'
     make_pack_seeds()
+    make_pack_bad_seeds()
     make_cfg_seeds()
     make_tcpip_seeds()
     make_x509_seeds()

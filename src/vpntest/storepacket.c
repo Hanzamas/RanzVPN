@@ -12,20 +12,35 @@
 // - Delay and jitter of the access list: Delay 10 ms with Jitter 5 % holds a frame for 10 ms and then
 //   delivers it unchanged. The old jitter span (int)(5 * 10 / 100.0f) was 0 and the modulo by it ended
 //   the process. Sampled Delay and Jitter values hold every frame within Delay +- Jitter % of Delay.
+// - D-Link spanning tree MACs (FND-22 #109): a session with CheckMac sends from a MAC the other session
+//   owns. The two D-Link MACs skip the CheckMac window only with FixForDLinkBPDU on; with it off the owner
+//   stays. The old test lacked parentheses, so 00:0d:88:00:00:00 moved without the option.
+// - Access list redirect (FND-23 #109): a TCP data frame to port 80 under an entry with a RedirectUrl gets
+//   back an HTTP 302 whose Content-Length is the length of its body (the old one gave the URL length).
+//   The user name in the <INFO> text is percent-encoded (the old reply pasted CR, LF and '|' as they
+//   are) and the hash covers the encoded text. A URL with a space or LF gets no redirect, and no reply
+//   frame exceeds MAX_PACKET_SIZE.
+// - NoServer ports (FND-25 #109): under the NoServer and NoServerV6 policies a SYN+ACK of the sender is
+//   dropped, and its security log line names both TCP ports in host order. The old line printed them
+//   big-endian: port 443 as 47873.
 // Prints "STOREPACKET TEST OK" only when every check passes, and frees everything it allocates.
 
 #include "Cedar/Account.h"
 #include "Cedar/Cedar.h"
 #include "Cedar/Connection.h"
 #include "Cedar/Hub.h"
+#include "Cedar/Logging.h"
 #include "Cedar/Server.h"
 #include "Cedar/Session.h"
 
+#include "Mayaqua/Encrypt.h"
+#include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Network.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
+#include "Mayaqua/Table.h"
 #include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
 
@@ -47,6 +62,29 @@
 #define	STOREPACKET_TEST_DELIVER_MARGIN	50		// Milliseconds waited past that delay
 #define	STOREPACKET_TEST_SAMPLE_DELAY	99		// Sampled delays 1 .. this, each with every jitter
 #define	STOREPACKET_TEST_LARGE_REPEAT	20		// Frames per large Delay and Jitter pair
+#define	STOREPACKET_TEST_DLINK_SEQ		0xD11C0000	// First sequence number of the D-Link MAC frames
+#define	STOREPACKET_TEST_IP_SENDER		0x0A050001	// IPv4 address of the sender: 10.5.0.1
+#define	STOREPACKET_TEST_IP_PEER		0x0A050002	// IPv4 address of its TCP peer: 10.5.0.2
+#define	STOREPACKET_TEST_TCP_SEQ		1000	// Sequence and acknowledgement numbers of the TCP frames
+#define	STOREPACKET_TEST_TCP_ACK		2000
+#define	STOREPACKET_TEST_CLIENT_PORT	40000	// The sender's port as an HTTP client
+#define	STOREPACKET_TEST_HTTP_PORT		80
+#define	STOREPACKET_TEST_HTTP_GET		"GET / HTTP/1.1\r\nHost: portal.test\r\n\r\n"
+#define	STOREPACKET_TEST_REPLY_MAX		4096	// Buffer of the HTTP text of a redirect
+#define	STOREPACKET_TEST_REPLY_LINES	5		// Header lines of the redirect: status, Location, Cache-Control, Content-Type, Content-Length
+#define	STOREPACKET_TEST_REDIRECT_URL	"http://portal.test/login"
+#define	STOREPACKET_TEST_INFO_PREFIX	"http://portal.test/login?info="
+#define	STOREPACKET_TEST_INFO_SECRET	"s3cret"
+#define	STOREPACKET_TEST_INFO_URL		STOREPACKET_TEST_INFO_PREFIX ACCESS_LIST_URL_INFO_TAG "|" STOREPACKET_TEST_INFO_SECRET
+#define	STOREPACKET_TEST_INFO_FIELDS	5		// user|session|client IP|time|hash
+#define	STOREPACKET_TEST_EVIL_USER		"evil\r\nSet-Cookie: a=b|x"
+#define	STOREPACKET_TEST_EVIL_ENCODED	"evil%0D%0ASet-Cookie%3A%20a%3Db%7Cx"
+#define	STOREPACKET_TEST_SPACE_URL		"http://portal.test/a b"	// Admin URLs that must get no redirect
+#define	STOREPACKET_TEST_LF_URL			"http://portal.test/a\nb"
+#define	STOREPACKET_TEST_LONG_URL_HEAD	"http://portal.test/"
+#define	STOREPACKET_TEST_LONG_URL_TAIL	"?i=" ACCESS_LIST_URL_INFO_TAG "|" STOREPACKET_TEST_INFO_SECRET
+#define	STOREPACKET_TEST_SERVER_PORT	443		// The sender's port as a TCP server (NoServer case)
+#define	STOREPACKET_TEST_LOG_MAX		2048	// Buffer of one security log line (UTF-8)
 
 // Run state of the test
 typedef struct STOREPACKET_TEST
@@ -60,8 +98,24 @@ typedef struct STOREPACKET_TEST
 	SESSION *Receiver;					// Takes the frames the hub floods
 } STOREPACKET_TEST;
 
+// Parts of the HTTP text of a redirect
+typedef struct STOREPACKET_TEST_REPLY
+{
+	bool Found;							// The first line is "HTTP/1.1 302 Found"
+	UINT NumLines;						// Lines before the blank line, the first one included
+	char Location[STOREPACKET_TEST_REPLY_MAX];	// Value of the Location line
+	UINT ContentLength;					// Value of the Content-Length line, INFINITE without one
+	UINT BodyLength;					// Bytes after the blank line, INFINITE without a blank line
+} STOREPACKET_TEST_REPLY;
+
 static UCHAR storepacket_test_mac_sender[6] = {0x02, 0x42, 0x55, 0x52, 0x00, 0x5A};
 static UCHAR storepacket_test_mac_broadcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+static UCHAR storepacket_test_mac_peer[6] = {0x02, 0x42, 0x55, 0x52, 0x00, 0x5B};	// No session has it
+static UCHAR storepacket_test_mac_dlink[2][6] =		// Source MACs of D-Link spanning tree frames
+{
+	{0x00, 0x80, 0xC8, 0x00, 0x00, 0x00},
+	{0x00, 0x0D, 0x88, 0x00, 0x00, 0x00},
+};
 
 // Record one check: print [PASS], or [FAIL] with the formatted detail
 static bool StorePacketTestCheck(STOREPACKET_TEST *t, bool ok, char *what, char *detail_fmt, ...)
@@ -527,6 +581,587 @@ static void StorePacketTestDelaySampled(STOREPACKET_TEST *t)
 	StorePacketTestCheck(t, num_fail == 0, what, "%u out of range, first: %s", num_fail, first_fail);
 }
 
+// Hand one frame to the hub from session s and end its receive loop, as its SessionMain would
+static void StorePacketTestSendFrom(SESSION *s, UCHAR *frame, UINT size)
+{
+	void *data = Malloc(size);
+
+	Copy(data, frame, size);
+	s->PacketAdapter->PutPacket(s, data, size);
+	s->PacketAdapter->PutPacket(s, NULL, 0);
+}
+
+// Free the frames the hub queued for session s. Returns their number
+static UINT StorePacketTestDrainFrom(SESSION *s)
+{
+	void *data;
+	UINT num = 0;
+
+	while (s->PacketAdapter->GetNextPacket(s, &data) != 0)
+	{
+		Free(data);
+		num++;
+	}
+
+	return num;
+}
+
+// Session that owns mac (VLAN 0) in the MAC table of the test hub, NULL when no session does
+static SESSION *StorePacketTestMacOwner(STOREPACKET_TEST *t, UCHAR *mac)
+{
+	MAC_TABLE_ENTRY key;
+	MAC_TABLE_ENTRY *e;
+	SESSION *ret = NULL;
+
+	Zero(&key, sizeof(key));
+	Copy(key.MacAddress, mac, 6);
+
+	LockHashList(t->Hub->MacHashTable);
+	{
+		e = SearchHash(t->Hub->MacHashTable, &key);
+		if (e != NULL)
+		{
+			ret = e->Session;
+		}
+	}
+	UnlockHashList(t->Hub->MacHashTable);
+
+	return ret;
+}
+
+// Role of a session of the test, for the detail of a failed check
+static char *StorePacketTestRole(STOREPACKET_TEST *t, SESSION *s)
+{
+	if (s == NULL)
+	{
+		return "none";
+	}
+
+	return (s == t->Sender ? "sender" : (s == t->Receiver ? "receiver" : "other"));
+}
+
+// D-Link spanning tree MACs: the sender takes the MAC, then the receiver (CheckMac on) sends from it at once.
+// Only FixForDLinkBPDU lets such a frame through the CheckMac window, and then the receiver takes the MAC.
+// Without the option the sender keeps it; the old test moved 00:0d:88:00:00:00 to the receiver anyway
+static void StorePacketTestDLinkMac(STOREPACKET_TEST *t)
+{
+	UCHAR frame[STOREPACKET_TEST_FRAME_MAX];
+	bool old_check_mac = t->Receiver->Policy->CheckMac;
+	UINT seq = STOREPACKET_TEST_DLINK_SEQ;
+	UINT fix, i;
+
+	t->Receiver->Policy->CheckMac = true;
+
+	// The option off first: with it on, StorePacketToHubPa records the D-Link frames the receiver gets
+	for (fix = 0;fix < 2;fix++)
+	{
+		t->Hub->Option->FixForDLinkBPDU = (fix != 0);
+
+		for (i = 0;i < sizeof(storepacket_test_mac_dlink) / sizeof(storepacket_test_mac_dlink[0]);i++)
+		{
+			UCHAR *mac = storepacket_test_mac_dlink[i];
+			SESSION *expected = (fix != 0 ? t->Receiver : t->Sender);
+			SESSION *first, *second;
+			char mac_str[MAX_SIZE];
+			char what[MAX_SIZE];
+			UINT size;
+
+			// Each frame differs from the one before: the D-Link guard drops a repeat within 750 ms
+			size = StorePacketTestRawFrame(frame, seq++);
+			Copy(frame + 6, mac, 6);
+			StorePacketTestSendFrom(t->Sender, frame, size);
+			first = StorePacketTestMacOwner(t, mac);
+
+			size = StorePacketTestRawFrame(frame, seq++);
+			Copy(frame + 6, mac, 6);
+			StorePacketTestSendFrom(t->Receiver, frame, size);
+			second = StorePacketTestMacOwner(t, mac);
+
+			StorePacketTestDrainFrom(t->Sender);
+			StorePacketTestDrainFrom(t->Receiver);
+
+			MacToStr(mac_str, sizeof(mac_str), mac);
+			Format(what, sizeof(what), "D-Link MAC %s with FixForDLinkBPDU %s: a frame of the CheckMac session %s",
+				mac_str, (fix != 0 ? "on" : "off"), (fix != 0 ? "takes the MAC" : "leaves the MAC to its owner"));
+			StorePacketTestCheck(t, first == t->Sender && second == expected, what,
+				"owner %s after the sender's frame, %s after the receiver's frame", StorePacketTestRole(t, first),
+				StorePacketTestRole(t, second));
+		}
+	}
+
+	t->Hub->Option->FixForDLinkBPDU = false;
+	t->Receiver->Policy->CheckMac = old_check_mac;
+}
+
+// TCP frame of the sender to the peer MAC: 10.5.0.1 to 10.5.0.2, or fd00::1 to fd00::2 with ipv6, from
+// src_port to dst_port (host order) with the given flags and payload (NULL for none). Returns its size
+static UINT StorePacketTestTcpFrame(UCHAR *buf, bool ipv6, USHORT src_port, USHORT dst_port, UCHAR flags, char *payload)
+{
+	UINT payload_size = StrLen(payload);
+	UINT ip_size = (ipv6 ? sizeof(IPV6_HEADER) : sizeof(IPV4_HEADER));
+	UINT tcp_size = sizeof(TCP_HEADER) + payload_size;
+	TCP_HEADER *tcp = (TCP_HEADER *)(buf + 14 + ip_size);
+
+	Zero(buf, 14 + ip_size + tcp_size);
+
+	Copy(buf, storepacket_test_mac_peer, 6);
+	Copy(buf + 6, storepacket_test_mac_sender, 6);
+
+	tcp->SrcPort = Endian16(src_port);
+	tcp->DstPort = Endian16(dst_port);
+	tcp->SeqNumber = Endian32(STOREPACKET_TEST_TCP_SEQ);
+	tcp->AckNumber = Endian32(STOREPACKET_TEST_TCP_ACK);
+	TCP_SET_HEADER_SIZE(tcp, 5);
+	tcp->Flag = flags;
+	tcp->WindowSize = Endian16(0xFFFF);
+	Copy(((UCHAR *)tcp) + sizeof(TCP_HEADER), payload, payload_size);
+
+	if (ipv6 == false)
+	{
+		IPV4_HEADER *ip = (IPV4_HEADER *)(buf + 14);
+
+		buf[12] = 0x08;
+		buf[13] = 0x00;
+
+		IPV4_SET_VERSION(ip, 4);
+		IPV4_SET_HEADER_LEN(ip, 5);
+		ip->TotalLength = Endian16((USHORT)(ip_size + tcp_size));
+		ip->TimeToLive = 64;
+		ip->Protocol = IP_PROTO_TCP;
+		ip->SrcIP = Endian32(STOREPACKET_TEST_IP_SENDER);
+		ip->DstIP = Endian32(STOREPACKET_TEST_IP_PEER);
+		ip->Checksum = IpChecksum(ip, sizeof(IPV4_HEADER));
+
+		tcp->Checksum = CalcChecksumForIPv4(ip->SrcIP, ip->DstIP, IP_PROTO_TCP, tcp, tcp_size, 0);
+	}
+	else
+	{
+		IPV6_HEADER *ip = (IPV6_HEADER *)(buf + 14);
+
+		buf[12] = 0x86;
+		buf[13] = 0xDD;
+
+		IPV6_SET_VERSION(ip, 6);
+		ip->PayloadLength = Endian16((USHORT)tcp_size);
+		ip->NextHeader = IP_PROTO_TCP;
+		ip->HopLimit = 64;
+		ip->SrcAddress.Value[0] = 0xFD;
+		ip->SrcAddress.Value[15] = 1;
+		ip->DestAddress.Value[0] = 0xFD;
+		ip->DestAddress.Value[15] = 2;
+
+		tcp->Checksum = CalcChecksumForIPv6(&ip->SrcAddress, &ip->DestAddress, IP_PROTO_TCP, tcp, tcp_size, 0);
+	}
+
+	return 14 + ip_size + tcp_size;
+}
+
+// Remove every access list entry of the test hub
+static void StorePacketTestClearAccessList(STOREPACKET_TEST *t)
+{
+	UINT i;
+
+	LockList(t->Hub->AccessList);
+	{
+		for (i = 0;i < LIST_NUM(t->Hub->AccessList);i++)
+		{
+			Free(LIST_DATA(t->Hub->AccessList, i));
+		}
+
+		DeleteAll(t->Hub->AccessList);
+	}
+	UnlockList(t->Hub->AccessList);
+}
+
+// HTTP text of a reply frame of the hub: the TCP payload of an IPv4 frame. False for any other frame
+static bool StorePacketTestHttpText(UCHAR *frame, UINT size, char *text, UINT text_size)
+{
+	IPV4_HEADER *ip;
+	TCP_HEADER *tcp;
+	UINT ip_size, tcp_size, total, payload_size;
+
+	if (size < 14 + sizeof(IPV4_HEADER) + sizeof(TCP_HEADER) || frame[12] != 0x08 || frame[13] != 0x00)
+	{
+		return false;
+	}
+
+	ip = (IPV4_HEADER *)(frame + 14);
+	ip_size = IPV4_GET_HEADER_LEN(ip) * 4;
+	total = Endian16(ip->TotalLength);
+	if (ip->Protocol != IP_PROTO_TCP || ip_size < sizeof(IPV4_HEADER) || total > size - 14 ||
+		total < ip_size + sizeof(TCP_HEADER))
+	{
+		return false;
+	}
+
+	tcp = (TCP_HEADER *)(frame + 14 + ip_size);
+	tcp_size = TCP_GET_HEADER_SIZE(tcp) * 4;
+	if (tcp_size < sizeof(TCP_HEADER) || total < ip_size + tcp_size)
+	{
+		return false;
+	}
+
+	payload_size = total - ip_size - tcp_size;
+	if (payload_size >= text_size)
+	{
+		return false;
+	}
+
+	Copy(text, frame + 14 + ip_size + tcp_size, payload_size);
+	text[payload_size] = 0;
+
+	return true;
+}
+
+// Split the HTTP text of a redirect into its header lines and its body
+static void StorePacketTestParseReply(char *text, STOREPACKET_TEST_REPLY *r)
+{
+	UINT header_end = SearchStr(text, "\r\n\r\n", 0);
+	UINT header_len = (header_end == INFINITE ? StrLen(text) : header_end);
+	UINT pos = 0;
+
+	Zero(r, sizeof(STOREPACKET_TEST_REPLY));
+	r->ContentLength = INFINITE;
+	r->BodyLength = (header_end == INFINITE ? INFINITE : StrLen(text) - header_end - 4);
+
+	while (pos < header_len)
+	{
+		char line[STOREPACKET_TEST_REPLY_MAX];
+		UINT next = SearchStr(text, "\r\n", pos);
+		UINT len;
+
+		if (next == INFINITE || next > header_len)
+		{
+			next = header_len;
+		}
+
+		len = MIN(next - pos, sizeof(line) - 1);
+		Copy(line, text + pos, len);
+		line[len] = 0;
+
+		if (r->NumLines == 0)
+		{
+			r->Found = (StrCmp(line, "HTTP/1.1 302 Found") == 0);
+		}
+		else if (StartWith(line, "Location: "))
+		{
+			StrCpy(r->Location, sizeof(r->Location), line + StrLen("Location: "));
+		}
+		else if (StartWith(line, "Content-Length: "))
+		{
+			r->ContentLength = ToInt(line + StrLen("Content-Length: "));
+		}
+
+		r->NumLines++;
+		pos = next + 2;
+	}
+}
+
+// Number of c in str
+static UINT StorePacketTestCountChar(char *str, char c)
+{
+	UINT len = StrLen(str);
+	UINT num = 0;
+	UINT i;
+
+	for (i = 0;i < len;i++)
+	{
+		if (str[i] == c)
+		{
+			num++;
+		}
+	}
+
+	return num;
+}
+
+// Whether str holds a space or a control character (CR, LF and the others)
+static bool StorePacketTestHasSpaceOrCtl(char *str)
+{
+	UINT len = StrLen(str);
+	UINT i;
+
+	for (i = 0;i < len;i++)
+	{
+		UCHAR c = (UCHAR)str[i];
+
+		if (c <= 0x20 || c == 0x7F)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+// The <INFO> text of a Location with STOREPACKET_TEST_INFO_PREFIX ends in |hash: the hex SHA-1 of the
+// text up to that '|' and the secret
+static bool StorePacketTestInfoHashOk(char *location)
+{
+	char hash_str[MAX_SIZE];
+	UCHAR hash[SHA1_SIZE];
+	char *info;
+	UINT len;
+	UINT bar = INFINITE;
+	UINT i;
+	BUF *b;
+
+	if (StartWith(location, STOREPACKET_TEST_INFO_PREFIX) == false)
+	{
+		return false;
+	}
+
+	info = location + StrLen(STOREPACKET_TEST_INFO_PREFIX);
+	len = StrLen(info);
+
+	for (i = 0;i < len;i++)
+	{
+		if (info[i] == '|')
+		{
+			bar = i;
+		}
+	}
+
+	if (bar == INFINITE)
+	{
+		return false;
+	}
+
+	b = NewBuf();
+	WriteBuf(b, info, bar + 1);
+	WriteBuf(b, STOREPACKET_TEST_INFO_SECRET, StrLen(STOREPACKET_TEST_INFO_SECRET));
+	Sha1(hash, b->Buf, b->Size);
+	FreeBuf(b);
+
+	BinToStr(hash_str, sizeof(hash_str), hash, sizeof(hash));
+
+	return (StrCmpi(hash_str, info + bar + 1) == 0);
+}
+
+// One HTTP request frame of the sender (a normal client named username) to port 80, under a single access list
+// entry that redirects TCP port 80 to url. Returns the number of frames the hub sent back to the sender; text
+// gets the HTTP text of the first one, frame_size its size (0 when there is none)
+static UINT StorePacketTestRedirect(STOREPACKET_TEST *t, char *url, char *username, char *text, UINT text_size,
+	UINT *frame_size)
+{
+	UCHAR frame[STOREPACKET_TEST_FRAME_MAX];
+	char *old_username = t->Sender->Username;
+	ACCESS a;
+	void *data;
+	UINT size;
+	UINT num = 0;
+
+	Zero(&a, sizeof(a));
+	a.Active = true;
+	a.Priority = 1;
+	a.Protocol = IP_PROTO_TCP;
+	a.DestPortStart = a.DestPortEnd = STOREPACKET_TEST_HTTP_PORT;
+	StrCpy(a.RedirectUrl, sizeof(a.RedirectUrl), url);
+	AddAccessListEx(t->Hub, &a, false, false);
+
+	// Only the sessions of normal VPN clients get the redirect
+	t->Sender->NormalClient = true;
+	t->Sender->Username = CopyStr(username);
+
+	StorePacketTestDrainFrom(t->Sender);
+	StorePacketTestDrainFrom(t->Receiver);
+
+	size = StorePacketTestTcpFrame(frame, false, STOREPACKET_TEST_CLIENT_PORT, STOREPACKET_TEST_HTTP_PORT,
+		TCP_ACK | TCP_PSH, STOREPACKET_TEST_HTTP_GET);
+	StorePacketTestSendFrom(t->Sender, frame, size);
+
+	StrCpy(text, text_size, "");
+	*frame_size = 0;
+
+	while ((size = t->Sender->PacketAdapter->GetNextPacket(t->Sender, &data)) != 0)
+	{
+		if (num++ == 0)
+		{
+			*frame_size = size;
+
+			if (StorePacketTestHttpText(data, size, text, text_size) == false)
+			{
+				StrCpy(text, text_size, "(no IPv4 TCP reply)");
+			}
+		}
+
+		Free(data);
+	}
+
+	// The request itself never goes on
+	StorePacketTestDrainFrom(t->Receiver);
+
+	Free(t->Sender->Username);
+	t->Sender->Username = old_username;
+	t->Sender->NormalClient = false;
+
+	StorePacketTestClearAccessList(t);
+
+	return num;
+}
+
+// Access list redirect: a well-formed 302 with escaped substitutions, none for a URL with a space or LF, and
+// never a frame above MAX_PACKET_SIZE
+static void StorePacketTestRedirectCases(STOREPACKET_TEST *t)
+{
+	static char *bad_url[] = {STOREPACKET_TEST_SPACE_URL, STOREPACKET_TEST_LF_URL};
+	char text[STOREPACKET_TEST_REPLY_MAX];
+	char long_url[MAX_REDIRECT_URL_LEN + 1];
+	char long_user[MAX_USERNAME_LEN + 1];
+	STOREPACKET_TEST_REPLY r;
+	UINT frame_size;
+	UINT num;
+	UINT i;
+
+	num = StorePacketTestRedirect(t, STOREPACKET_TEST_REDIRECT_URL, "storepacket-sender", text, sizeof(text), &frame_size);
+	StorePacketTestParseReply(text, &r);
+	StorePacketTestCheck(t, num == 1 && r.Found && r.NumLines == STOREPACKET_TEST_REPLY_LINES &&
+		StrCmp(r.Location, STOREPACKET_TEST_REDIRECT_URL) == 0 && r.BodyLength != INFINITE && r.ContentLength == r.BodyLength,
+		"redirect: a 302 to the URL whose Content-Length is the length of its body (the old one gave the URL length)",
+		"%u replies, 302 %s, %u header lines, Location '%s', Content-Length %u, body %u bytes", num,
+		(r.Found ? "yes" : "no"), r.NumLines, r.Location, r.ContentLength, r.BodyLength);
+
+	num = StorePacketTestRedirect(t, STOREPACKET_TEST_INFO_URL, STOREPACKET_TEST_EVIL_USER, text, sizeof(text), &frame_size);
+	StorePacketTestParseReply(text, &r);
+	StorePacketTestCheck(t, num == 1 && r.Found && r.NumLines == STOREPACKET_TEST_REPLY_LINES &&
+		StartWith(r.Location, STOREPACKET_TEST_INFO_PREFIX STOREPACKET_TEST_EVIL_ENCODED "|") &&
+		StorePacketTestCountChar(r.Location, '|') == STOREPACKET_TEST_INFO_FIELDS - 1 &&
+		StorePacketTestHasSpaceOrCtl(r.Location) == false && StorePacketTestInfoHashOk(r.Location) &&
+		r.BodyLength != INFINITE && r.ContentLength == r.BodyLength,
+		"redirect: a user name with CR, LF, ':', '=' and '|' is percent-encoded into the <INFO> text, the hash covers the encoded text",
+		"%u replies, %u header lines, Location '%s'", num, r.NumLines, r.Location);
+
+	for (i = 0;i < sizeof(bad_url) / sizeof(bad_url[0]);i++)
+	{
+		num = StorePacketTestRedirect(t, bad_url[i], "storepacket-sender", text, sizeof(text), &frame_size);
+		StorePacketTestCheck(t, num == 0,
+			(i == 0 ? "redirect: no 302 to a URL with a space (the old reply put it into the Location line)" :
+			"redirect: no 302 to a URL with an LF (the old reply ended the Location line with it)"),
+			"%u replies, the first: '%s'", num, text);
+	}
+
+	// The longest URL with <INFO>|secret (only a secret expands the tag) and the longest user name, all '|':
+	// the encoded reply does not fit a frame
+	StrCpy(long_url, sizeof(long_url), STOREPACKET_TEST_LONG_URL_HEAD);
+	while (StrLen(long_url) + StrLen(STOREPACKET_TEST_LONG_URL_TAIL) < MAX_REDIRECT_URL_LEN)
+	{
+		StrCat(long_url, sizeof(long_url), "a");
+	}
+	StrCat(long_url, sizeof(long_url), STOREPACKET_TEST_LONG_URL_TAIL);
+
+	for (i = 0;i < MAX_USERNAME_LEN;i++)
+	{
+		long_user[i] = '|';
+	}
+	long_user[MAX_USERNAME_LEN] = 0;
+
+	num = StorePacketTestRedirect(t, long_url, long_user, text, sizeof(text), &frame_size);
+	StorePacketTestCheck(t, num == 0 || frame_size <= MAX_PACKET_SIZE,
+		"redirect: no reply frame above MAX_PACKET_SIZE for the longest URL and user name",
+		"%u replies, the first %u bytes", num, frame_size);
+}
+
+// NoServer policy: a SYN+ACK of the sender from port 443 to the peer's port 40000, over IPv4 and IPv6, is
+// dropped, and the security log line is LH_NO_SERVER with both ports in host order (the old line printed them
+// big-endian: 443 as 47873, 40000 as 16540). The hub's security logger is swapped for a LOG with a record queue
+// and no log thread: InsertRecord only queues the line and sets the event, so the test reads it from the queue
+static void StorePacketTestNoServerPort(STOREPACKET_TEST *t)
+{
+	LOG *old_logger = t->Hub->SecurityLogger;
+	bool old_save = t->Hub->LogSetting.SaveSecurityLog;
+	POLICY *pol = t->Sender->Policy;
+	bool old_no_server = pol->NoServer;
+	bool old_no_server_v6 = pol->NoServerV6;
+	bool has_string = (UniIsEmptyStr(_UU("LH_NO_SERVER")) == false);
+	UINT v;
+
+	pol->NoServer = true;
+	pol->NoServerV6 = true;
+	t->Hub->LogSetting.SaveSecurityLog = true;
+
+	for (v = 0;v < 2;v++)
+	{
+		bool ipv6 = (v != 0);
+		UCHAR frame[STOREPACKET_TEST_FRAME_MAX];
+		char sender_ip[MAX_SIZE], peer_ip[MAX_SIZE];
+		wchar_t expected_uni[STOREPACKET_TEST_LOG_MAX];
+		char expected[STOREPACKET_TEST_LOG_MAX];
+		char first[STOREPACKET_TEST_LOG_MAX];
+		char what[MAX_SIZE];
+		LOG *capture = ZeroMalloc(sizeof(LOG));
+		RECORD *rec;
+		UINT size, num_recv;
+		UINT num_lines = 0;
+		bool found = false;
+
+		capture->RecordQueue = NewQueue();
+		capture->Event = NewEvent();
+		t->Hub->SecurityLogger = capture;
+
+		size = StorePacketTestTcpFrame(frame, ipv6, STOREPACKET_TEST_SERVER_PORT, STOREPACKET_TEST_CLIENT_PORT,
+			TCP_SYN | TCP_ACK, NULL);
+		StorePacketTestDrainFrom(t->Receiver);
+		StorePacketTestSendFrom(t->Sender, frame, size);
+		num_recv = StorePacketTestDrainFrom(t->Receiver);
+		StorePacketTestDrainFrom(t->Sender);
+
+		t->Hub->SecurityLogger = old_logger;
+
+		if (ipv6)
+		{
+			IPV6_HEADER *ip = (IPV6_HEADER *)(frame + 14);
+
+			IP6AddrToStr(sender_ip, sizeof(sender_ip), &ip->SrcAddress);
+			IP6AddrToStr(peer_ip, sizeof(peer_ip), &ip->DestAddress);
+		}
+		else
+		{
+			IPV4_HEADER *ip = (IPV4_HEADER *)(frame + 14);
+
+			IPToStr32(sender_ip, sizeof(sender_ip), ip->SrcIP);
+			IPToStr32(peer_ip, sizeof(peer_ip), ip->DstIP);
+		}
+
+		// The connection request came from the peer's port to the sender's port
+		UniFormat(expected_uni, sizeof(expected_uni), _UU("LH_NO_SERVER"), t->Sender->Name, peer_ip,
+			(UINT)STOREPACKET_TEST_CLIENT_PORT, sender_ip, (UINT)STOREPACKET_TEST_SERVER_PORT);
+		UniToUtf8((BYTE *)expected, sizeof(expected), expected_uni);
+
+		StrCpy(first, sizeof(first), "(none)");
+
+		while ((rec = GetNext(capture->RecordQueue)) != NULL)
+		{
+			char *line = (char *)rec->Data;
+
+			if (num_lines++ == 0)
+			{
+				StrCpy(first, sizeof(first), line);
+			}
+
+			if (StrCmp(line, expected) == 0)
+			{
+				found = true;
+			}
+
+			Free(rec->Data);
+			Free(rec);
+		}
+
+		ReleaseQueue(capture->RecordQueue);
+		ReleaseEvent(capture->Event);
+		Free(capture);
+
+		Format(what, sizeof(what), "NoServer%s: the SYN+ACK is dropped, the security log shows ports %u and %u (the old line printed them big-endian)",
+			(ipv6 ? "V6" : ""), STOREPACKET_TEST_CLIENT_PORT, STOREPACKET_TEST_SERVER_PORT);
+		StorePacketTestCheck(t, has_string && found && num_recv == 0, what, "%u delivered, %u log lines, the first: '%s'",
+			num_recv, num_lines, first);
+	}
+
+	t->Hub->LogSetting.SaveSecurityLog = old_save;
+	pol->NoServer = old_no_server;
+	pol->NoServerV6 = old_no_server_v6;
+}
+
 // storepacket: bounded broadcast storm list, access list delay and jitter without a divide by zero
 void storepacket_test(UINT num, char **arg)
 {
@@ -559,6 +1194,11 @@ void storepacket_test(UINT num, char **arg)
 	StorePacketTestCheck(&t, StorePacketTestStormNum(&t) == MAX_STORM_LIST_ENTRIES,
 		"storm: a new flow at the cap takes the place of the oldest one", "%u entries, cap %u",
 		StorePacketTestStormNum(&t), MAX_STORM_LIST_ENTRIES);
+
+	// Before the access list entry of the delay cases, which would hold these frames back
+	StorePacketTestDLinkMac(&t);
+	StorePacketTestRedirectCases(&t);
+	StorePacketTestNoServerPort(&t);
 
 	Zero(&a, sizeof(a));
 	a.Active = true;

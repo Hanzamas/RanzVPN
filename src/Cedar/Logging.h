@@ -10,6 +10,14 @@
 
 #define	MAX_LOG_SIZE_DEFAULT				1073741823ULL
 
+// Bounds of the log writer while it cannot write its file (FND-16). A record past a bound is dropped
+// through its normal release path and counted; the count is written as one line once a file is open.
+#define	LOG_ENGINE_MAX_QUEUE				200000		// Records queued in one LOG: above LOG_ENGINE_SAVE_START_CACHE_COUNT and the 30000-record back-pressure of PacketLog
+#define	LOG_ENGINE_BUFFER_NO_FILE_MAX		(2 * LOG_ENGINE_BUFFER_CACHE_SIZE_MAX)	// Bytes buffered while no log file is open
+#define	LOG_ENGINE_RETRY_MIN				30			// Milliseconds before the first new try to open a log file
+#define	LOG_ENGINE_RETRY_MAX				5000		// The wait doubles after each failed try, up to this
+#define	LOG_DROPPED_RECORDS_FORMAT			"%I64u log records dropped: the log file could not be written or the record queue was full"
+
 typedef char *(RECORD_PARSE_PROC)(RECORD *rec);
 
 struct PACKET_LOG
@@ -61,6 +69,7 @@ struct LOG
 	UINT64 CurrentFilePointer;
 	UINT CurrentLogNumber;
 	bool log_number_incremented;
+	UINT64 NumDropped;					// Records dropped and not yet reported in the file (under the RecordQueue lock)
 };
 
 
@@ -73,6 +82,7 @@ struct ERASER
 	THREAD *Thread;
 	bool LastFailed;
 	EVENT *HaltEvent;
+	volatile UINT NumChecks;			// Free space checks made so far (EraserMain passes)
 };
 
 typedef struct ERASE_FILE

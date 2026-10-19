@@ -394,9 +394,11 @@ UINT HashPtrToUINT(void *p)
 		return 0;
 	}
 
+	// The key names the block by its address: the pointer value, never the bytes it points to (blocks
+	// with equal content must get different keys, and a key must not change with the content)
 	Zero(hash_src, sizeof(hash_src));
 	Copy(hash_src + 0, GetCanaryRand(CANARY_RAND_ID_PTR_KEY_HASH), CANARY_RAND_SIZE);
-	Copy(hash_src + CANARY_RAND_SIZE, p, sizeof(void *));
+	Copy(hash_src + CANARY_RAND_SIZE, &p, sizeof(void *));
 
 	Sha2_256(hash_data, hash_src, sizeof(hash_src));
 
@@ -857,6 +859,7 @@ X *NewX(K *pub, K *priv, X *ca, NAME *name, UINT days, X_SERIAL *serial)
 
 	if (x == NULL)
 	{
+		FreeX509(x509);
 		return NULL;
 	}
 
@@ -881,6 +884,7 @@ X *NewRootX(K *pub, K *priv, NAME *name, UINT days, X_SERIAL *serial)
 	x = X509ToX(x509);
 	if (x == NULL)
 	{
+		FreeX509(x509);
 		return NULL;
 	}
 
@@ -1479,105 +1483,85 @@ bool StrToSystem(SYSTEMTIME *s, char *str)
 	return true;
 }
 
-bool RsaVerifyEx(void *data, UINT data_size, void *sign, K *k, UINT bits)
+// Verifies the RSASSA-PKCS1-v1_5 signature with SHA-1 of a client certificate (over the server's
+// random bytes). sign_size is the size received: a signature is exactly one modulus long, and
+// OpenSSL accepts only the padding, the SHA-1 DigestInfo and the hash in the block, nothing after it.
+bool RsaVerifyEx(void *data, UINT data_size, void *sign, UINT sign_size, K *k)
 {
-	UCHAR hash_data[SIGN_HASH_SIZE];
-	UCHAR *decrypt_data;
-	RSA *rsa;
-	UINT rsa_size;
-	if (data == NULL || sign == NULL || k == NULL || k->private_key != false)
-	{
-		return false;
-	}
-	if (bits == 0)
-	{
-		bits = RSA_KEY_SIZE;
-	}
-
-	rsa = EVP_PKEY_get0_RSA(k->pkey);
-	if (rsa == NULL)
+	EVP_MD_CTX *md_ctx;
+	EVP_PKEY_CTX *pkey_ctx = NULL;
+	int key_size;
+	bool ret = false;
+	if (data == NULL || data_size == 0 || sign == NULL || k == NULL || k->pkey == NULL || k->private_key != false ||
+		EVP_PKEY_base_id(k->pkey) != EVP_PKEY_RSA)
 	{
 		return false;
 	}
 
-	if (HashForSign(hash_data, sizeof(hash_data), data, data_size) == false)
+	key_size = EVP_PKEY_size(k->pkey);
+	if (key_size <= 0 || sign_size != (UINT)key_size)
 	{
 		return false;
 	}
 
-	// A signature is exactly one modulus long
-	rsa_size = RSA_size(rsa);
-	if (bits / 8 != rsa_size)
+	md_ctx = EVP_MD_CTX_new();
+	if (md_ctx == NULL)
 	{
 		return false;
 	}
-	rsa_size = MAX(rsa_size, 1024);
-	decrypt_data = ZeroMalloc(rsa_size);
 
-	// The PKCS#1 v1.5 block must hold the DigestInfo and the hash and nothing after them:
-	// comparing only the first SIGN_HASH_SIZE bytes of a longer block let a forged block verify
-	if (RSA_public_decrypt(bits / 8, sign, decrypt_data, rsa, RSA_PKCS1_PADDING) != SIGN_HASH_SIZE)
+	if (EVP_DigestVerifyInit(md_ctx, &pkey_ctx, EVP_sha1(), NULL, k->pkey) == 1 &&
+		EVP_PKEY_CTX_set_rsa_padding(pkey_ctx, RSA_PKCS1_PADDING) == 1 &&
+		EVP_DigestVerify(md_ctx, sign, sign_size, data, data_size) == 1)
 	{
-		Free(decrypt_data);
-		return false;
+		ret = true;
 	}
 
-	if (Cmp(decrypt_data, hash_data, SIGN_HASH_SIZE) != 0)
-	{
-		Free(decrypt_data);
-		return false;
-	}
+	EVP_MD_CTX_free(md_ctx);
 
-	Free(decrypt_data);
-
-	return true;
+	return ret;
 }
 
-bool RsaSignEx(void *dst, void *src, UINT size, K *k, UINT bits)
+// Makes the RSASSA-PKCS1-v1_5 signature with SHA-1 of src (the client certificate signature). The
+// signature is EVP_PKEY_size() bytes long; a dst_size smaller than that is refused before anything
+// is written.
+bool RsaSignEx(void *dst, UINT dst_size, void *src, UINT src_size, K *k)
 {
-	UCHAR hash[SIGN_HASH_SIZE];
-	if (dst == NULL || src == NULL || k == NULL || EVP_PKEY_base_id(k->pkey) != EVP_PKEY_RSA)
-	{
-		return false;
-	}
-	if (bits == 0)
-	{
-		bits = RSA_KEY_SIZE;
-	}
-
-	Zero(dst, bits / 8);
-
-	if (HashForSign(hash, sizeof(hash), src, size) == false)
+	EVP_MD_CTX *md_ctx;
+	EVP_PKEY_CTX *pkey_ctx = NULL;
+	size_t sign_size;
+	int key_size;
+	bool ret = false;
+	if (dst == NULL || src == NULL || src_size == 0 || k == NULL || k->pkey == NULL ||
+		EVP_PKEY_base_id(k->pkey) != EVP_PKEY_RSA)
 	{
 		return false;
 	}
 
-	if (RSA_private_encrypt(sizeof(hash), hash, dst, EVP_PKEY_get0_RSA(k->pkey), RSA_PKCS1_PADDING) <= 0)
+	key_size = EVP_PKEY_size(k->pkey);
+	if (key_size <= 0 || (UINT)key_size > dst_size)
 	{
 		return false;
 	}
 
-	return true;
-}
-
-bool HashForSign(void *dst, UINT dst_size, void *src, UINT src_size)
-{
-	UCHAR *buf = (UCHAR *)dst;
-	UCHAR sign_data[] =
-	{
-		0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2B, 0x0E,
-		0x03, 0x02, 0x1A, 0x05, 0x00, 0x04, 0x14,
-	};
-	if (dst == NULL || src == NULL || src_size == 0 || MIN_SIGN_HASH_SIZE > dst_size)
+	md_ctx = EVP_MD_CTX_new();
+	if (md_ctx == NULL)
 	{
 		return false;
 	}
 
-	Copy(buf, sign_data, sizeof(sign_data));
+	sign_size = (size_t)key_size;
+	if (EVP_DigestSignInit(md_ctx, &pkey_ctx, EVP_sha1(), NULL, k->pkey) == 1 &&
+		EVP_PKEY_CTX_set_rsa_padding(pkey_ctx, RSA_PKCS1_PADDING) == 1 &&
+		EVP_DigestSign(md_ctx, dst, &sign_size, src, src_size) == 1 &&
+		sign_size == (size_t)key_size)
+	{
+		ret = true;
+	}
 
-	Sha1(HASHED_DATA(buf), src, src_size);
+	EVP_MD_CTX_free(md_ctx);
 
-	return true;
+	return ret;
 }
 
 bool RsaCheckEx()
@@ -1789,21 +1773,21 @@ bool CheckXEx(X *x, X *x_issuer, bool check_name, bool check_date)
 
 bool CheckSignature(X *x, K *k)
 {
+	bool ret;
 	if (x == NULL || k == NULL)
 	{
 		return false;
 	}
 
+	// X509_verify() returns 1 for a valid signature, 0 for a bad one and a negative value when it
+	// cannot check it (unknown signature algorithm, bad BIT STRING): only 1 is a valid signature
 	Lock(openssl_lock);
 	{
-		if (X509_verify(x->x509, k->pkey) == 0)
-		{
-			Unlock(openssl_lock);
-			return false;
-		}
+		ret = (X509_verify(x->x509, k->pkey) == 1);
 	}
 	Unlock(openssl_lock);
-	return true;
+
+	return ret;
 }
 
 K *GetKFromX(X *x)
@@ -2555,6 +2539,7 @@ void FreeX509(X509 *x509)
 	Unlock(openssl_lock);
 }
 
+// The caller keeps b and frees it, also when this fails
 X *BufToX(BUF *b, bool text)
 {
 	X *x;
@@ -2567,7 +2552,6 @@ X *BufToX(BUF *b, bool text)
 	bio = BufToBio(b);
 	if (bio == NULL)
 	{
-		FreeBuf(b);
 		return NULL;
 	}
 
@@ -2578,6 +2562,7 @@ X *BufToX(BUF *b, bool text)
 	return x;
 }
 
+// The caller keeps b and frees it, also when this fails
 LIST *BufToXList(BUF *b, bool text)
 {
 	LIST *chain;
@@ -2590,7 +2575,6 @@ LIST *BufToXList(BUF *b, bool text)
 	bio = BufToBio(b);
 	if (bio == NULL)
 	{
-		FreeBuf(b);
 		return NULL;
 	}
 
@@ -2651,6 +2635,7 @@ X *BioToX(BIO *bio, bool text)
 
 	if (x == NULL)
 	{
+		FreeX509(x509);
 		return NULL;
 	}
 
@@ -2674,6 +2659,7 @@ LIST *BioToXList(BIO *bio, bool text)
 		sk = PEM_X509_INFO_read_bio(bio, NULL, NULL, NULL);
 		if (sk == NULL)
 		{
+			Unlock(openssl_lock);
 			return NULL;
 		}
 
@@ -2683,13 +2669,13 @@ LIST *BioToXList(BIO *bio, bool text)
 		{
 			xi = sk_X509_INFO_shift(sk);
 			x = X509ToX(xi->x509);
-			// X509ToX owns the certificate now, also when it fails (it freed it then), so
-			// X509_INFO_free must not free it again
-			xi->x509 = NULL;
 			if (x != NULL)
 			{
+				// The X owns the certificate now
+				xi->x509 = NULL;
 				Add(chain, x);
 			}
+			// Also frees a certificate X509ToX refused, once
 			X509_INFO_free(xi);
 		}
 
@@ -2700,13 +2686,12 @@ LIST *BioToXList(BIO *bio, bool text)
 	return chain;
 }
 
-// Takes ownership of x509: it is freed with the returned X, or here when the conversion fails
+// Takes ownership of x509 only when it succeeds: the certificate is then freed with the returned X.
+// A certificate it refuses (NULL) stays the caller's, who frees it or leaves it to its owner.
 X *X509ToX(X509 *x509)
 {
 	X *x;
 	K *k;
-	BUF *b;
-	UINT size;
 	UINT type;
 	ASN1_INTEGER *s;
 	if (x509 == NULL)
@@ -2721,12 +2706,14 @@ X *X509ToX(X509 *x509)
 
 	LoadXDates(x);
 
+	// A root certificate is self-issued and verifies with its own key: equal names alone (with the
+	// key matching itself, which always holds) let a certificate with a bad self-signature end a chain
 	if (CompareName(x->issuer_name, x->subject_name))
 	{
 		K *pubkey = GetKFromX(x);
 		if (pubkey != NULL)
 		{
-			if (CheckXandK(x, pubkey))
+			if (CheckSignature(x, pubkey))
 			{
 				x->root_cert = true;
 			}
@@ -2780,17 +2767,14 @@ X *X509ToX(X509 *x509)
 	k = GetKFromX(x);
 	if (k == NULL)
 	{
+		// The certificate stays the caller's
+		x->x509 = NULL;
 		FreeX(x);
 		return NULL;
 	}
 
-	b = KToBuf(k, false, NULL);
-
-	size = b->Size;
 	type = EVP_PKEY_base_id(k->pkey);
 
-	FreeBuf(b);
-	
 	x->bits = EVP_PKEY_bits(k->pkey);
 	
 	FreeK(k);

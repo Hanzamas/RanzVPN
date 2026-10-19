@@ -96,7 +96,6 @@ static bool StressCheck(STRESS_CTX *ctx, bool ok, char *what, char *detail_fmt, 
 	return false;
 }
 
-#ifdef	OS_WIN32
 // Watchdog of one case: a native thread that does not use the Mayaqua runtime under test
 typedef struct STRESS_WATCHDOG
 {
@@ -209,33 +208,6 @@ static void StressExitWatchdogStart()
 		CloseHandle(h);
 	}
 }
-#else	// OS_WIN32
-// No native watchdog outside Windows: the cases still use bounded waits where they can
-typedef struct STRESS_WATCHDOG
-{
-	char *CaseName;					// Name of the guarded case
-	UINT BudgetMs;					// Time budget of the case
-} STRESS_WATCHDOG;
-
-// Arm the watchdog for one case
-static bool StressWatchdogStart(STRESS_WATCHDOG *w, char *case_name, UINT budget_ms)
-{
-	w->CaseName = case_name;
-	w->BudgetMs = budget_ms;
-
-	return true;
-}
-
-// Disarm the watchdog after the case returned
-static void StressWatchdogStop(STRESS_WATCHDOG *w)
-{
-}
-
-// Arm the exit watchdog after a failed run (none outside Windows)
-static void StressExitWatchdogStart()
-{
-}
-#endif	// OS_WIN32
 
 // Read a counter protected by a lock
 static UINT StressGet(LOCK *lock, UINT *p)
@@ -1372,31 +1344,25 @@ static void StressCaseTick(STRESS_CTX *ctx)
 	// Tick64 advances by about the time slept
 	StressStep("tick: Tick64 across a sleep");
 	{
-#ifdef	OS_WIN32
 		UINT64 g0, g1, native;
 
 		g0 = GetTickCount64();
-#endif	// OS_WIN32
 		t0 = Tick64();
 		SleepThread(STRESS_TICK_SLEEP);
 		t1 = Tick64();
-#ifdef	OS_WIN32
 		g1 = GetTickCount64();
-#endif	// OS_WIN32
 
 		advanced = (t1 >= t0) ? (t1 - t0) : 0;
 		StressCheck(ctx, t1 >= t0 && advanced >= (STRESS_TICK_SLEEP - 50) && advanced <= (STRESS_TICK_SLEEP + 1750),
 			"Tick64 advances by about the time slept",
 			"advanced %u ms over a %u ms sleep", (UINT)advanced, STRESS_TICK_SLEEP);
 
-#ifdef	OS_WIN32
 		// The GetTickCount64 reads bracket the Tick64 reads: only clock granularity lets Tick64
 		// measure more, and a preemption between two reads only lets GetTickCount64 measure more
 		native = (g1 >= g0) ? (g1 - g0) : 0;
 		StressCheck(ctx, t1 >= t0 && advanced <= (native + 100) && native <= (advanced + 300),
 			"Tick64 and GetTickCount64 agree on the elapsed time",
 			"Tick64 %u ms, GetTickCount64 %u ms", (UINT)advanced, (UINT)native);
-#endif	// OS_WIN32
 	}
 
 	DeleteLock(d.Lock);

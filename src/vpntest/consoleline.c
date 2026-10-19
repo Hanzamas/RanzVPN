@@ -16,6 +16,10 @@
 // ConsoleLocalReadPassword is not run: it reads key presses from the console (_getch), which a CI
 // runner does not have, and it already stops at its 64-byte buffer.
 //
+// A redirected standard input is UTF-8, as the /IN file is (FND-9 #106): a line with a non-ASCII hub
+// name comes back unchanged. The child prints such a line as its UTF-16 code units ("CODES"), so the
+// result does not depend on the code page of its standard output.
+//
 // The former Prompt overran its block on the 40000-character line: the child ended in the heap
 // canary check of Free or in an AddressSanitizer report, and that case fails. The former
 // UniToStrForSingleChars wrote past its size (the bounded copy case fails) and the 302-character
@@ -88,6 +92,46 @@ static bool ConsoleLineAllA(wchar_t *s, UINT len)
 	return true;
 }
 
+// True when every character of s is printable ASCII
+static bool ConsoleLineIsAscii(wchar_t *s)
+{
+	UINT i;
+
+	for (i = 0;s[i] != 0;i++)
+	{
+		if (s[i] < 0x20 || s[i] > 0x7e)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+// The UTF-16 code units of s in hexadecimal, each after a space (" 0048 00E9")
+static void ConsoleLineCodes(char *dst, UINT size, wchar_t *s)
+{
+	char *hex = "0123456789ABCDEF";
+	UINT i;
+
+	dst[0] = 0;
+
+	for (i = 0;s[i] != 0;i++)
+	{
+		UINT v = (UINT)s[i];
+		char one[6];
+
+		one[0] = ' ';
+		one[1] = hex[(v >> 12) & 0xf];
+		one[2] = hex[(v >> 8) & 0xf];
+		one[3] = hex[(v >> 4) & 0xf];
+		one[4] = hex[v & 0xf];
+		one[5] = 0;
+
+		StrCat(dst, size, one);
+	}
+}
+
 // Child: read lines through ConsoleLocalReadLine until a read is cancelled, one result line per read
 static void ConsoleLineChild()
 {
@@ -119,9 +163,16 @@ static void ConsoleLineChild()
 		}
 
 		len = UniStrLen(s);
-		if (len <= CONSOLELINE_SHORT_MAX)
+		if (len <= CONSOLELINE_SHORT_MAX && ConsoleLineIsAscii(s))
 		{
 			Print(CONSOLELINE_MARK "LINE [%S]\n", s);
+		}
+		else if (len <= CONSOLELINE_SHORT_MAX)
+		{
+			char codes[CONSOLELINE_SHORT_MAX * 5 + 1];
+
+			ConsoleLineCodes(codes, sizeof(codes), s);
+			Print(CONSOLELINE_MARK "CODES%s\n", codes);
 		}
 		else
 		{
@@ -447,6 +498,10 @@ void consoleline_test(UINT num, char **arg)
 
 	ConsoleLineCase(&ctx, "The end of the standard input cancels the prompt",
 		ConsoleLineInput(""), NULL, "CANCEL|CHILD DONE");
+
+	// "Hub", U+00E9 and U+4E2D in UTF-8: the former fgetws read the bytes in the ANSI code page
+	ConsoleLineCase(&ctx, "A UTF-8 line with a non-ASCII hub name from a redirected standard input comes back unchanged",
+		ConsoleLineInput("Hub\xc3\xa9\xe4\xb8\xad\r\n"), NULL, "CODES 0048 0075 0062 00E9 4E2D|CANCEL|CHILD DONE");
 
 	// ConsoleReadNextFromInFile, through the /IN file of a child
 	Format(expect, sizeof(expect), "LINE [hello world]|LONG %u ALL-A|LINE [next]|CANCEL|CHILD DONE", CONSOLELINE_LONG_LEN);

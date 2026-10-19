@@ -910,7 +910,6 @@ LH_AUTH_ANONYMOUS		Anonymous authentication
 LH_AUTH_PASSWORD		Password authentication
 LH_AUTH_PLAIN_PASSWORD	External server authentication
 LH_AUTH_CERT			Certificate authentication
-LH_AUTH_EXTERNAL		External server authentication
 LH_AUTH_CERT_NOT_SUPPORT_ON_OPEN_SOURCE	Connection "%S": The authentication method of the user "%S" has been specified as Certificate Authentication. However, the Certificate Authentication function hasn't been implemented on the Open-Source version of Ranz VPN yet. The connection will be denied.
 LH_AUTH_OK				Connection "%S": Successfully authenticated as user "%S".
 LH_AUTH_OK_CERT			The Virtual Hub's Security Account Manager has received the following certificate from the VPN Client and accepted its contents as the certificate for when user "%S" logs in: %s

@@ -1,8 +1,6 @@
 // Win32.h
 // Header of Win32.c
 
-#ifdef OS_WIN32
-
 #ifndef	WIN32_H
 #define	WIN32_H
 
@@ -57,8 +55,6 @@ UINT Win32GetNumberOfCpuInner();
 
 
 void Win32SetThreadName(UINT thread_id, char *name);
-
-#endif
 
 #endif
 

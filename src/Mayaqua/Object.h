@@ -23,26 +23,9 @@ struct DEADCHECK
 // collides with the SDK. These macros live here (Object.h), not in the leaf
 // Native.h that Kernel.h pulls into every unit, so they never reach the Windows
 // COM/security headers of units that do not include Object.h (e.g. Win32Com.cpp).
-#ifndef	_DEBUG
-
+// The same expressions in every configuration: Lock() returns the bool of LockInner().
 #define	Lock(lock)		LockInner((lock))
 #define	Unlock(lock)	UnlockInner((lock))
-
-#else	// _DEBUG
-
-#define	Lock(lock)			\
-	{						\
-		LockInner(lock);	\
-		if (lock != NULL) { lock->FileName = __FILE__; lock->Line = __LINE__; lock->ThreadId = ThreadId();}	\
-	}
-
-#define	Unlock(lock)		\
-	{						\
-		if (lock != NULL) { lock->FileName = NULL; lock->Line = 0; lock->ThreadId = 0;}	\
-		UnlockInner(lock);	\
-	}
-
-#endif	// _DEBUG
 
 LOCK *NewLock();
 void DeleteLock(LOCK *lock);

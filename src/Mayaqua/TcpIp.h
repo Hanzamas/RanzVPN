@@ -7,9 +7,7 @@
 #include "Mayaqua.h"
 #include "Network.h"
 
-#ifdef	OS_WIN32
 #pragma pack(push, 1)
-#endif
 
 #define	MTU_FOR_PPPOE		(1500 - 46)
 
@@ -560,7 +558,7 @@ void FreePacketUDPv4(PKT *p);
 void FreePacketTCPv4(PKT *p);
 void FreePacketICMPv4(PKT *p);
 void FreePacketDHCPv4(PKT *p);
-bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4_except_icmpv6);
+bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4_except_icmpv6, USHORT vlan_tpid);
 bool ParsePacketL3(PKT *p, UCHAR *buf, UINT size, USHORT proto, bool no_l3, bool no_l3_l4_except_icmpv6);
 bool ParsePacketARPv4(PKT *p, UCHAR *buf, UINT size);
 bool ParsePacketIPv4(PKT *p, UCHAR *buf, UINT size);
@@ -615,9 +613,7 @@ BUF *DhcpModifyIPv4(DHCP_MODIFY_OPTION *m, void *data, UINT size);
 void DhcpParseClasslessRouteData(DHCP_CLASSLESS_ROUTE_TABLE *t, void *data, UINT size);
 
 
-#ifdef	OS_WIN32
 #pragma pack(pop)
-#endif
 
 #endif
 

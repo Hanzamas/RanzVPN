@@ -78,11 +78,9 @@ void InitCanaryRand()
 		return;
 	}
 
-#ifdef OS_WIN32
 	Win32GetSystemTime(&st);
 	memcpy(&t1, ((UCHAR *)&st) + 0, 8);
 	memcpy(&t2, ((UCHAR *)&st) + 8, 8);
-#endif
 
 	{
 		UINT64 dos_rand = (UINT64)rand();
@@ -1978,7 +1976,8 @@ void WriteBuf(BUF *b, void *buf, UINT size)
 		Copy((UCHAR *)b->Buf + b->Current, buf, size);
 	}
 	b->Current += size;
-	b->Size = new_size;
+	// A write inside the buffer (after SeekBuf) keeps the bytes after it
+	b->Size = MAX(b->Size, new_size);
 
 	KS_INC(KS_WRITE_BUF_COUNT);
 }

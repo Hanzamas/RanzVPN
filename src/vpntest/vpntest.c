@@ -493,6 +493,39 @@ void consoleline_test(UINT num, char **arg);
 // Named temp directory and string table test of SEC-8, #96 (tempdir.c)
 void tempdir_test(UINT num, char **arg);
 
+// Named log writer, syslog and eraser tests of PKG-4, #108 (logtest.c)
+void logwriter_test(UINT num, char **arg);
+void logbound_test(UINT num, char **arg);
+void slog_test(UINT num, char **arg);
+void eraser_test(UINT num, char **arg);
+
+// Named login path tests of PKG-6, #110 (login.c)
+void authtype_test(UINT num, char **arg);
+void acpassword_test(UINT num, char **arg);
+void sigleak_test(UINT num, char **arg);
+
+// Named packet parser tests of FND-38 and FND-39, #113 (pkttest.c)
+void pktparse_test(UINT num, char **arg);
+void vlantpid_test(UINT num, char **arg);
+
+// Named PACK decoder bounds test of FND-42, #114 (packdecode.c)
+void pack_decode_bounds_test(UINT num, char **arg);
+
+// Named string table loader test of FND-43, #114 (tablecache.c)
+void tablecache_test(UINT num, char **arg);
+
+// Named registry test of FND-64, #121 (registry.c)
+void registry_test(UINT num, char **arg);
+
+// Named certificate signature test of FND-80, #127 (x509test.c)
+void certsig_test(UINT num, char **arg);
+
+// Named root certificate and X509ToX ownership test of FND-81, #127 (x509test.c)
+void x509root_test(UINT num, char **arg);
+
+// Named RSA client certificate signature test of FND-83, #127 (x509test.c)
+void rsasig_test(UINT num, char **arg);
+
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
 char *watermark_expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
@@ -612,6 +645,23 @@ TEST_LIST test_list[] =
 	{"storepacket", storepacket_test, "StorePacket: the broadcast storm list of a session stays at its cap, access list delay and jitter never divide by zero."},
 	{"consoleline", consoleline_test, "Console input: a prompt line longer than its buffer, Ctrl+D and Ctrl+Z, the /IN file reader, UniToInt on a long string."},
 	{"tempdir", tempdir_test, "Temp directory: 64-bit random name, protected DACL; loading a string table writes no cache file."},
+	{"adminaudit", adminaudit_test, "Admin audit: audit lines only after a successful call and with the right key, the configuration revision only after a change."},
+	{"logwriter", logwriter_test, "Log writer: one file open per LOG for 1000 records, every record in order, one size switch named as before."},
+	{"logbound", logbound_test, "Log writer without a file: bounded record queue and buffer, dropped records released and counted in one line."},
+	{"slog", slog_test, "Syslog: the next resolve is a tick deadline, a second sender does not wait for a slow resolve, datagram content."},
+	{"eraser", eraser_test, "Eraser: a check interval of 1 s gives at most 4 free space checks in 3 s; the configuration keeps seconds."},
+	{"authtype", authtype_test, "Login authtype: 96 (the former external authentication) and unknown types are refused without a session, 0 to 2 keep their results."},
+	{"acpassword", acpassword_test, "Access list on the 'password' method: a denied address gets ERR_IP_ADDRESS_DENIED before the old password is checked."},
+	{"sigleak", sigleak_test, "Signature POST: a body that is not the watermark gets 403 and is freed; the request after the last one gets no answer."},
+	{"pktparse", pktparse_test, "Packet parsers: DNS opcode mask and label limits, DHCP Pad and whole option bodies, the DHCP cookie at offset 236."},
+	{"vlantpid", vlantpid_test, "VLAN TPID: frames tagged with the hub's VlanTypeId reach layer 3 and 4, the access list of such a hub sees their IPv4."},
+	{"pack_decode_bounds", pack_decode_bounds_test, "PACK decoder: value counts and sizes past the bytes present, unknown types and values cut short are rejected before they allocate."},
+	{"tablecache", tablecache_test, "String table: loaded from the resource only, a planted table_name.txt beside the exe is ignored, no cache file is written."},
+	{"registry", registry_test, "Registry: empty and 1-byte REG_SZ read as empty strings, a REG_MULTI_SZ as its first string, writes and deletes need no KEY_ALL_ACCESS."},
+	{"certsig", certsig_test, "Certificate signatures: only X509_verify() == 1 is valid; an unknown signature algorithm fails CheckXEx and GetIssuerFromList."},
+	{"x509root", x509root_test, "Root certificates: root_cert only for a verified self-signature; X509ToX leaves a certificate it refuses to its caller."},
+	{"rsasig", rsasig_test, "RSA client certificate signatures: PKCS#1 v1.5 SHA-1, a destination smaller than the key refused, a signature of another length rejected."},
+	{"ptrkey", ptrkey_test, "Pointer keys: POINTER_TO_KEY keys a block by its address; AccessDelete by UniqueId removes that entry after the Ids are renumbered."},
 };
 
 // Test function
@@ -629,9 +679,7 @@ int TestMain(char *cmd)
 	Print("Enter 'q' or 'exit' to exit the process.\n\n");
 	Print("   - In Jurassic Park: \"It's a UNIX system! I know this!\"\n\n");
 
-#ifdef	OS_WIN32
 	MsSetEnableMinidump(true);
-#endif	// OS_WIN32
 
 	while (true)
 	{

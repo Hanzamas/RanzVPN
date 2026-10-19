@@ -8,11 +8,15 @@
 // is a buffer filled with STRTEST_FILL before the call, so a check also sees every byte written
 // behind the result. Prints "STR TEST OK" only when every check passes, and frees everything it
 // allocates. The [PASS] lines carry no values; the [FAIL] details do.
+// It also pins snprintf as a unit that includes Mayaqua.h sees it: the C99 snprintf of the CRT,
+// which ends a truncated result in NUL (FND-2, #105).
 
+#include "Mayaqua/Mayaqua.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Str.h"
 
 #include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
 
 // Destination buffer
@@ -334,6 +338,44 @@ static void StrTestFormat(STRTEST_CTX *ctx)
 	StrTestOut(ctx, "BinToStrEx of NULL leaves the destination as it is", "xy", STRTEST_GUARD_END);
 }
 
+// snprintf after the Mayaqua headers, and Format of a field wider than the conversion buffer of
+// InternalFormatArgs (Internat.c). Mayaqua.h once mapped snprintf to the legacy Microsoft variant,
+// which leaves a truncated result without its terminator and returns -1.
+static void StrTestSnprintf(STRTEST_CTX *ctx)
+{
+	char *b;
+	char *six = "abcdef";		// Arguments, not literals, so the compiler does not report the truncation
+	char *three = "abc";
+	char wide[MAX_SIZE * 2];
+	UINT len, spaces;
+	int ret;
+
+	b = StrTestReset(ctx, NULL);
+	ret = snprintf(b, 4, "%s", six);
+	StrTestCheck(ctx, ret == 6 && b[3] == 0 && StrTestIs(ctx, "abc", STRTEST_GUARD_END),
+		"snprintf truncates to size - 1 characters, ends them in NUL and returns the full length",
+		"returned %d, buffer \"%s\"", ret, b);
+	b = StrTestReset(ctx, NULL);
+	ret = snprintf(b, 3, "%s", three);
+	StrTestCheck(ctx, ret == 3 && b[2] == 0 && StrTestIs(ctx, "ab", STRTEST_GUARD_END),
+		"snprintf of exactly size characters keeps size - 1 of them and the NUL",
+		"returned %d, buffer \"%s\"", ret, b);
+
+	// 600 characters do not fit the 512-byte buffer that InternalFormatArgs formats a number into:
+	// the result stops at its end and is terminated there (AddressSanitizer sees the read past the
+	// buffer when it is not)
+	Format(wide, sizeof(wide), "%600u", 7);
+	len = StrLen(wide);
+	spaces = 0;
+	while (spaces < len && wide[spaces] == ' ')
+	{
+		spaces++;
+	}
+	StrTestCheck(ctx, len >= (MAX_SIZE - 1) && len <= 600 && (spaces == len || (spaces == len - 1 && wide[spaces] == '7')),
+		"Format of a numeric field wider than its conversion buffer gives only the padded number",
+		"%u characters, %u leading spaces", len, spaces);
+}
+
 // SearchStr, SearchStrEx, InStr, InStrEx, ReplaceStr and ReplaceStri
 static void StrTestSearch(STRTEST_CTX *ctx)
 {
@@ -477,6 +519,7 @@ void str_test(UINT num, char **arg)
 	StrTestCat(&ctx);
 	StrTestCheckLen(&ctx);
 	StrTestFormat(&ctx);
+	StrTestSnprintf(&ctx);
 	StrTestSearch(&ctx);
 	StrTestChars(&ctx);
 	StrTestTrim(&ctx);

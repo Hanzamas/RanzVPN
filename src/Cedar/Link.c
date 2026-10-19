@@ -549,11 +549,32 @@ static void NormalizeLinkPolicy(POLICY *p)
 	p->FixPassword = false;
 }
 
+// Check the authentication type of a cascade and set the policy fields every cascade has, in place.
+// NewLink and the SetLink admin RPC call it; false for an authentication type a cascade cannot use
+bool LinkValidateAuthAndPolicy(CLIENT_AUTH *auth, POLICY *policy)
+{
+	if (auth == NULL || policy == NULL)
+	{
+		return false;
+	}
+
+	if (auth->AuthType != CLIENT_AUTHTYPE_ANONYMOUS && auth->AuthType != CLIENT_AUTHTYPE_PASSWORD &&
+		auth->AuthType != CLIENT_AUTHTYPE_PLAIN_PASSWORD && auth->AuthType != CLIENT_AUTHTYPE_CERT && auth->AuthType != CLIENT_AUTHTYPE_OPENSSLENGINE)
+	{
+		return false;
+	}
+
+	NormalizeLinkPolicy(policy);
+
+	return true;
+}
+
 LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, POLICY *policy)
 {
 	CLIENT_OPTION *o;
 	LINK *k;
 	CLIENT_AUTH *a;
+	POLICY link_policy;
 	if (cedar == NULL || hub == NULL || option == NULL || auth == NULL || policy == NULL)
 	{
 		return NULL;
@@ -573,8 +594,8 @@ LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, 
 		return NULL;
 	}
 
-	if (auth->AuthType != CLIENT_AUTHTYPE_ANONYMOUS && auth->AuthType != CLIENT_AUTHTYPE_PASSWORD &&
-		auth->AuthType != CLIENT_AUTHTYPE_PLAIN_PASSWORD && auth->AuthType != CLIENT_AUTHTYPE_CERT && auth->AuthType != CLIENT_AUTHTYPE_OPENSSLENGINE)
+	Copy(&link_policy, policy, sizeof(POLICY));
+	if (LinkValidateAuthAndPolicy(auth, &link_policy) == false)
 	{
 		return NULL;
 	}
@@ -606,9 +627,7 @@ LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, 
 	k->Hub = hub;
 
 	k->Policy = ZeroMalloc(sizeof(POLICY));
-	Copy(k->Policy, policy, sizeof(POLICY));
-
-	NormalizeLinkPolicy(k->Policy);
+	Copy(k->Policy, &link_policy, sizeof(POLICY));
 
 	LockList(hub->LinkList);
 	{

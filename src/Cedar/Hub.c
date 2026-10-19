@@ -21,6 +21,8 @@
 #include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
 
+#include <string.h>
+
 #define GetHubAdminOptionDataAndSet(ao, name, dest) \
 	value = GetHubAdminOptionData(ao, name);        \
 	if (value != INFINITE)                          \
@@ -2152,13 +2154,90 @@ static bool ApplyAccessListToForwardPacket(HUB *hub, SESSION *src_session, SESSI
 	return pass;
 }
 
-static BUF *BuildRedirectToUrlPayload(HUB *hub, SESSION *s, char *redirect_url)
+// Percent-encode src into dst (RFC 3986): every byte but the unreserved A-Z a-z 0-9 - . _ ~ becomes %XX.
+// Byte by byte, because the hash covers exactly the bytes sent and the names have no fixed code page
+// (UrlEscapeW takes UTF-16). False when dst is too small
+static bool HubUrlEncode(char *dst, UINT size, char *src)
 {
-	char html[MAX_REDIRECT_URL_LEN * 2 + 1 + MAX_SIZE];
-	char header[MAX_REDIRECT_URL_LEN * 2 + 1 + MAX_SIZE];
-	char redirect_url2[MAX_REDIRECT_URL_LEN * 2];
+	static char hex[] = "0123456789ABCDEF";
+	UINT len = StrLen(src);
+	UINT n = 0;
+	UINT i;
+	if (dst == NULL || size == 0)
+	{
+		return false;
+	}
+
+	for (i = 0;i < len;i++)
+	{
+		UCHAR c = (UCHAR)src[i];
+
+		if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+			c == '-' || c == '.' || c == '_' || c == '~')
+		{
+			if (n + 1 >= size)
+			{
+				return false;
+			}
+
+			dst[n++] = (char)c;
+		}
+		else
+		{
+			if (n + 3 >= size)
+			{
+				return false;
+			}
+
+			dst[n++] = '%';
+			dst[n++] = hex[c >> 4];
+			dst[n++] = hex[c & 0x0F];
+		}
+	}
+
+	dst[n] = 0;
+
+	return true;
+}
+
+// Whether url can go into a Location header and an href as it is: not empty, no space, no control character
+static bool IsRedirectUrlSafe(char *url)
+{
+	UINT len = StrLen(url);
+	UINT i;
+
+	if (len == 0)
+	{
+		return false;
+	}
+
+	for (i = 0;i < len;i++)
+	{
+		UCHAR c = (UCHAR)url[i];
+
+		if (c <= 0x20 || c == 0x7F)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+// HTTP 302 to redirect_url, the payload of a reply forged for session s. When the URL ends in |secret, its
+// <INFO> tag becomes user|session|client IP|time|hash, the user and session names percent-encoded and the hash
+// the SHA-1 of the text before it and the secret. NULL when a name does not fit or the URL would still hold a
+// space or a control character (CR and LF would end the Location line)
+static BUF *BuildRedirectToUrlPayload(SESSION *s, char *redirect_url)
+{
+	char username[MAX_USERNAME_LEN * 3 + 1];
+	char session_name[MAX_SESSION_NAME_LEN * 3 + 1];
+	char info[sizeof(username) + sizeof(session_name) + MAX_SIZE];
+	char redirect_url2[MAX_REDIRECT_URL_LEN + sizeof(info)];
+	char html[sizeof(redirect_url2) + MAX_SIZE];
+	char header[sizeof(redirect_url2) + MAX_SIZE];
 	BUF *b;
-	if (hub == NULL || s == NULL || redirect_url == NULL)
+	if (s == NULL || redirect_url == NULL)
 	{
 		return NULL;
 	}
@@ -2169,43 +2248,41 @@ static BUF *BuildRedirectToUrlPayload(HUB *hub, SESSION *s, char *redirect_url)
 	if (InStr(redirect_url2, ACCESS_LIST_URL_INFO_TAG))
 	{
 		char secret[MAX_SIZE];
-		char tmp[MAX_SIZE];
-		SYSTEMTIME st;
-		UINT i, len, isp;
+		char *sep;
 
-		isp = INFINITE;
-
-		SystemTime(&st);
 		ClearStr(secret, sizeof(secret));
 
-		len = StrLen(redirect_url2);
-
-		for (i = 0;i < len;i++)
+		// The secret follows the last '|'
+		sep = strrchr(redirect_url2, '|');
+		if (sep != NULL)
 		{
-			char c = redirect_url2[i];
-			if (c == '|')
-			{
-				isp = i;
-			}
+			StrCpy(secret, sizeof(secret), sep + 1);
+			*sep = 0;
 		}
 
-		if (isp != INFINITE)
-		{
-			StrCpy(secret, sizeof(secret), redirect_url2 + isp + 1);
-			redirect_url2[isp] = 0;
-		}
-
-		Format(tmp, sizeof(tmp), "%s|%s|%r|%04u%02u%02u%02u%02u%02u%s",
-			s->Username, s->Name, &s->Connection->ClientIp,
-			st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, (IsEmptyStr(secret) ? "" : "|"));
-
+		// Without a secret the tag stays as it is
 		if (IsEmptyStr(secret) == false)
 		{
 			UCHAR hash[SHA1_SIZE];
 			char hash_str[MAX_SIZE];
-			BUF *b2 = NewBuf();
+			SYSTEMTIME st;
+			BUF *b2;
 
-			WriteBuf(b2, tmp, StrLen(tmp));
+			// The client chooses its user name: encoded, it cannot end the URL or a header line, nor add a '|' field
+			if (HubUrlEncode(username, sizeof(username), s->Username) == false ||
+				HubUrlEncode(session_name, sizeof(session_name), s->Name) == false)
+			{
+				return NULL;
+			}
+
+			SystemTime(&st);
+
+			Format(info, sizeof(info), "%s|%s|%r|%04u%02u%02u%02u%02u%02u|",
+				username, session_name, &s->Connection->ClientIp,
+				st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+
+			b2 = NewBuf();
+			WriteBuf(b2, info, StrLen(info));
 			WriteBuf(b2, secret, StrLen(secret));
 
 			Sha1(hash, b2->Buf, b2->Size);
@@ -2214,11 +2291,16 @@ static BUF *BuildRedirectToUrlPayload(HUB *hub, SESSION *s, char *redirect_url)
 
 			FreeBuf(b2);
 
-			StrCat(tmp, sizeof(tmp), hash_str);
+			StrCat(info, sizeof(info), hash_str);
 
 			ReplaceStrEx(redirect_url2, sizeof(redirect_url2), redirect_url2,
-				ACCESS_LIST_URL_INFO_TAG, tmp, false);
+				ACCESS_LIST_URL_INFO_TAG, info, false);
 		}
+	}
+
+	if (IsRedirectUrlSafe(redirect_url2) == false)
+	{
+		return NULL;
 	}
 
 	Format(html, sizeof(html),
@@ -2227,7 +2309,7 @@ static BUF *BuildRedirectToUrlPayload(HUB *hub, SESSION *s, char *redirect_url)
 
 	Format(header, sizeof(header),
 		"HTTP/1.1 302 Found\r\nLocation: %s\r\nCache-Control: private\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %u\r\n\r\n",
-		redirect_url2, StrLen(redirect_url2));
+		redirect_url2, StrLen(html));
 
 	b = NewBuf();
 
@@ -2237,14 +2319,15 @@ static BUF *BuildRedirectToUrlPayload(HUB *hub, SESSION *s, char *redirect_url)
 	return b;
 }
 
-static void ForceRedirectToUrl(HUB *hub, SESSION *src_session, PKT *p, char *redirect_url)
+static void ForceRedirectToUrl(SESSION *src_session, PKT *p, char *redirect_url)
 {
 	BUF *payload;
+	UINT ip_header_size;
 	UINT tcp_size;
 	TCP_HEADER *tcp_data;
 	TCP_HEADER *src_tcp;
 	BUF *b;
-	if (hub == NULL || src_session == NULL || p == NULL || redirect_url == NULL)
+	if (src_session == NULL || p == NULL || redirect_url == NULL)
 	{
 		return;
 	}
@@ -2263,13 +2346,21 @@ static void ForceRedirectToUrl(HUB *hub, SESSION *src_session, PKT *p, char *red
 		return;
 	}
 
-	payload = BuildRedirectToUrlPayload(hub, src_session, redirect_url);
+	payload = BuildRedirectToUrlPayload(src_session, redirect_url);
 	if (payload == NULL)
 	{
 		return;
 	}
 
+	// The reply goes back as a single frame
+	ip_header_size = (p->TypeL3 == L3_IPV4 ? sizeof(IPV4_HEADER) : sizeof(IPV6_HEADER));
 	tcp_size = sizeof(TCP_HEADER) + payload->Size;
+	if (sizeof(MAC_HEADER) + ip_header_size + tcp_size > MAX_PACKET_SIZE)
+	{
+		FreeBuf(payload);
+		return;
+	}
+
 	tcp_data = (TCP_HEADER *)ZeroMalloc(tcp_size);
 	tcp_data->SrcPort = src_tcp->DstPort;
 	tcp_data->DstPort = src_tcp->SrcPort;
@@ -2323,7 +2414,7 @@ static void ForceRedirectToUrl(HUB *hub, SESSION *src_session, PKT *p, char *red
 		Zero(&v6, sizeof(v6));
 
 		IPV6_SET_VERSION(&v6, 6);
-		v6.PayloadLength = Endian16(tcp_size);
+		v6.PayloadLength = Endian16((USHORT)tcp_size);
 		v6.NextHeader = IP_PROTO_TCP;
 		v6.HopLimit = 64;
 
@@ -2528,7 +2619,7 @@ static bool ApplyAccessListToStoredPacket(HUB *hub, SESSION *s, PKT *p)
 		if (s->NormalClient)
 		{
 			// Normal VPN clients get the URL redirect; local bridges only drop the packet
-			ForceRedirectToUrl(hub, s, p, redirect_url);
+			ForceRedirectToUrl(s, p, redirect_url);
 		}
 		else
 		{
@@ -2837,20 +2928,10 @@ static int CompareStormList(void *p1, void *p2)
 		int r1, r2;
 		r1 = CmpIpAddr(&s1->DestIp, &s2->DestIp);
 		r2 = CmpIpAddr(&s1->SrcIp, &s2->SrcIp);
-		if (r1 == 0 || r2 == 0)
+		// Strict mode: entries that share either address differ only by MAC address
+		if (r1 != 0 && r2 != 0)
 		{
-		}
-		else
-		{
-			if (r1 != 0)
-			{
-				return r1;
-			}
-
-			if (r2 != 0)
-			{
-				return r2;
-			}
+			return r1;
 		}
 	}
 	r = Cmp(s1->MacAddress, s2->MacAddress, 6);
@@ -3171,7 +3252,6 @@ LABEL_TRY_AGAIN:
 								{
 									BUF *new_buf;
 									DHCP_MODIFY_OPTION m;
-									WHERE;
 
 									Zero(&m, sizeof(m));
 									m.RemoveDefaultGatewayOnReply = true;
@@ -3343,6 +3423,32 @@ static bool CheckBroadcastStorm(HUB *hub, SESSION *s, PKT *p)
 	return ret;
 }
 
+// D-Link switches send their spanning tree frames from these two source MACs (FixForDLinkBPDU)
+static bool IsDLinkStpMac(UCHAR *mac)
+{
+	static UCHAR dlink_mac_1[6] = {0x00, 0x80, 0xc8, 0x00, 0x00, 0x00};
+	static UCHAR dlink_mac_2[6] = {0x00, 0x0d, 0x88, 0x00, 0x00, 0x00};
+
+	return (Cmp(mac, dlink_mac_1, 6) == 0 || Cmp(mac, dlink_mac_2, 6) == 0);
+}
+
+// Security log line for a MAC address that session s now owns in the MAC table
+static void HubLogMacRegist(HUB *hub, SESSION *s, UCHAR *mac, UINT vlan_id)
+{
+	char mac_address[32];
+
+	MacToStr(mac_address, sizeof(mac_address), mac);
+
+	if (vlan_id == 0)
+	{
+		HLog(hub, "LH_MAC_REGIST", s->Name, mac_address);
+	}
+	else
+	{
+		HLog(hub, "LH_MAC_REGIST_VLAN", s->Name, mac_address, vlan_id);
+	}
+}
+
 void StorePacket(HUB *hub, SESSION *s, PKT *packet)
 {
 	MAC_TABLE_ENTRY *entry = NULL;
@@ -3468,7 +3574,8 @@ DISCARD_PACKET:
 						goto DISCARD_PACKET;
 					}
 				}
-				if (s != NULL && (Cmp(packet->MacAddressSrc, hub->HubMacAddr, 6) != 0))
+				// With a session, a frame from the hub's own MAC address is gone by now
+				if (s != NULL)
 				{
 					Copy(t.MacAddress, packet->MacAddressSrc, 6);
 					if (hub->Option->NoManageVlanId == false)
@@ -3525,22 +3632,19 @@ DISCARD_PACKET:
 							{
 								char mac_str[64];
 
-								if (s != NULL)
+								MacToStr(mac_str, sizeof(mac_str), packet->MacAddressSrc);
+								if (s->Policy->NoBridge)
 								{
-									MacToStr(mac_str, sizeof(mac_str), packet->MacAddressSrc);
-									if (s->Policy->NoBridge)
+									if (no_heavy == false)
 									{
-										if (no_heavy == false)
-										{
-											HLog(hub, "LH_BRIDGE_LIMIT", s->Name, mac_str, num_mac_for_me, limited_count);
-										}
+										HLog(hub, "LH_BRIDGE_LIMIT", s->Name, mac_str, num_mac_for_me, limited_count);
 									}
-									else
+								}
+								else
+								{
+									if (no_heavy == false)
 									{
-										if (no_heavy == false)
-										{
-											HLog(hub, "LH_MAC_LIMIT", s->Name, mac_str, num_mac_for_me, limited_count);
-										}
+										HLog(hub, "LH_MAC_LIMIT", s->Name, mac_str, num_mac_for_me, limited_count);
 									}
 								}
 
@@ -3569,26 +3673,9 @@ DISCARD_PACKET:
 
 						AddHash(hub->MacHashTable, entry);
 
-						if (hub->Option->NoMacAddressLog == false)
+						if (hub->Option->NoMacAddressLog == false && no_heavy == false)
 						{
-							char mac_address[32];
-
-							if (s != NULL)
-							{
-								if (no_heavy == false)
-								{
-									MacToStr(mac_address, sizeof(mac_address), packet->MacAddressSrc);
-
-									if (packet->VlanId == 0)
-									{
-										HLog(hub, "LH_MAC_REGIST", s->Name, mac_address);
-									}
-									else
-									{
-										HLog(hub, "LH_MAC_REGIST_VLAN", s->Name, mac_address, packet->VlanId);
-									}
-								}
-							}
+							HubLogMacRegist(hub, s, packet->MacAddressSrc, packet->VlanId);
 						}
 					}
 					else
@@ -3614,13 +3701,9 @@ DISCARD_PACKET:
 								}
 							}
 
-							if (check_mac && (Cmp(packet->MacAddressSrc, hub->HubMacAddr, 6) != 0) &&
-								((entry->UpdatedTime + MAC_TABLE_EXCLUSIVE_TIME) >= now))
+							if (check_mac && ((entry->UpdatedTime + MAC_TABLE_EXCLUSIVE_TIME) >= now))
 							{
-								UCHAR *mac = packet->MacAddressSrc;
-								if (hub->Option != NULL && hub->Option->FixForDLinkBPDU &&
-									(mac[0] == 0x00 && mac[1] == 0x80 && mac[2] == 0xc8 && mac[3] == 0x00 && mac[4] == 0x00 && mac[5] == 0x00) ||
-									(mac[0] == 0x00 && mac[1] == 0x0d && mac[2] == 0x88 && mac[3] == 0x00 && mac[4] == 0x00 && mac[5] == 0x00))
+								if (hub->Option != NULL && hub->Option->FixForDLinkBPDU && IsDLinkStpMac(packet->MacAddressSrc))
 								{
 									// D-Link sends spanning tree packets from these addresses. CheckMac on a local
 									// bridge would break them, so they are handled separately.
@@ -3646,33 +3729,14 @@ DISCARD_PACKET:
 							}
 							else
 							{
-								char mac_address[32];
 UPDATE_FDB:
-								BinToStr(mac_address, sizeof(mac_address), packet->MacAddressSrc, 6);
-
 								entry->Session = s;
 								entry->HubPa = (HUB_PA *)s->PacketAdapter->Param;
 								entry->UpdatedTime = entry->CreatedTime = now;
 
-								if (1)
+								if (no_heavy == false)
 								{
-									char mac_address[32];
-
-									if (s != NULL)
-									{
-										if (no_heavy == false)
-										{
-											MacToStr(mac_address, sizeof(mac_address), packet->MacHeader->SrcAddress);
-											if (packet->VlanId == 0)
-											{
-												HLog(hub, "LH_MAC_REGIST", s->Name, mac_address);
-											}
-											else
-											{
-												HLog(hub, "LH_MAC_REGIST_VLAN", s->Name, mac_address, packet->VlanId);
-											}
-										}
-									}
+									HubLogMacRegist(hub, s, packet->MacHeader->SrcAddress, packet->VlanId);
 								}
 							}
 						}
@@ -4661,9 +4725,7 @@ void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *
 	if (packet != NULL && src != NULL && src->Hub != NULL && src->Hub->Option != NULL && src->Hub->Option->FixForDLinkBPDU)
 	{
 		// Workaround for D-Link BPDUs sent from these source MACs
-		UCHAR *mac = packet->MacAddressSrc;
-		if ((mac[0] == 0x00 && mac[1] == 0x80 && mac[2] == 0xc8 && mac[3] == 0x00 && mac[4] == 0x00 && mac[5] == 0x00) ||
-			(mac[0] == 0x00 && mac[1] == 0x0d && mac[2] == 0x88 && mac[3] == 0x00 && mac[4] == 0x00 && mac[5] == 0x00))
+		if (IsDLinkStpMac(packet->MacAddressSrc))
 		{
 			SESSION *session = dest->Session;
 
@@ -4756,7 +4818,7 @@ void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *
 	}
 }
 
-bool DeleteIPv6DefaultRouterInRA(PKT *p)
+void DeleteIPv6DefaultRouterInRA(PKT *p)
 {
 	if (p->TypeL3 == L3_IPV6 && p->TypeL4 == L4_ICMPV6 &&
 		(p->ICMPv6HeaderPacketInfo.Type == ICMPV6_TYPE_ROUTER_ADVERTISEMENT))
@@ -4772,8 +4834,6 @@ bool DeleteIPv6DefaultRouterInRA(PKT *p)
 					p->L4.ICMPHeader, p->IPv6HeaderPacketInfo.PayloadSize, 0);
 		}
 	}
-
-	return false;
 }
 
 static bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
@@ -4811,8 +4871,8 @@ static bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
 
 					if (no_heavy == false)
 					{
-						HLog(s->Hub, "LH_NO_SERVER", s->Name, ip2, p->L4.TCPHeader->DstPort,
-							ip1, p->L4.TCPHeader->SrcPort);
+						HLog(s->Hub, "LH_NO_SERVER", s->Name, ip2, Endian16(p->L4.TCPHeader->DstPort),
+							ip1, Endian16(p->L4.TCPHeader->SrcPort));
 					}
 
 					return false;
@@ -4837,8 +4897,8 @@ static bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
 
 					if (no_heavy == false)
 					{
-						HLog(s->Hub, "LH_NO_SERVER", s->Name, ip2, p->L4.TCPHeader->DstPort,
-							ip1, p->L4.TCPHeader->SrcPort);
+						HLog(s->Hub, "LH_NO_SERVER", s->Name, ip2, Endian16(p->L4.TCPHeader->DstPort),
+							ip1, Endian16(p->L4.TCPHeader->SrcPort));
 					}
 
 					return false;
@@ -6027,12 +6087,14 @@ void SetHubLogSettingEx(HUB *h, HUB_LOG *setting, bool no_change_switch_type)
 	SetLogSwitchType(h->SecurityLogger, setting->SecurityLogSwitchType);
 }
 
-void AddRootCert(HUB *hub, X *x)
+// Add a trusted root certificate to the hub; false when the hub already trusts it or holds MAX_HUB_CERTS
+bool AddRootCert(HUB *hub, X *x)
 {
 	HUBDB *db;
+	bool added = false;
 	if (hub == NULL || x == NULL)
 	{
-		return;
+		return false;
 	}
 
 	db = hub->HubDb;
@@ -6058,11 +6120,14 @@ void AddRootCert(HUB *hub, X *x)
 				if (ok)
 				{
 					Insert(db->RootCertList, CloneX(x));
+					added = true;
 				}
 			}
 		}
 		UnlockList(db->RootCertList);
 	}
+
+	return added;
 }
 
 int CompareCert(void *p1, void *p2)

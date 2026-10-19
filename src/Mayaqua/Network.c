@@ -3223,6 +3223,11 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 	else
 	{
 		sock->RemoteX = X509ToX(x509);
+		if (sock->RemoteX == NULL)
+		{
+			// X509ToX leaves a certificate it refuses to the caller: our reference
+			FreeX509(x509);
+		}
 	}
 
 	if (ssl_option != NULL && ssl_option->VerifyPeer)
@@ -3277,11 +3282,19 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 	}
 	else
 	{
+		// The certificate belongs to the SSL object: neither X509ToX (when it refuses it) nor the X frees it
 		X *local_x;
 		local_x = X509ToX(x509);
-		local_x->do_not_free = true;
-		sock->LocalX = CloneX(local_x);
-		FreeX(local_x);
+		if (local_x == NULL)
+		{
+			sock->LocalX = NULL;
+		}
+		else
+		{
+			local_x->do_not_free = true;
+			sock->LocalX = CloneX(local_x);
+			FreeX(local_x);
+		}
 	}
 
 	SSL_set_mode(sock->ssl, SSL_MODE_AUTO_RETRY);

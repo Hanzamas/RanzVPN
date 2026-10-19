@@ -1,7 +1,8 @@
 // Win32.c
 // Microsoft Windows dependent code
-
-#ifdef OS_WIN32
+//
+// WIN32_USE_HEAP_API_FOR_MEMORY (Malloc on a private heap) and WIN32_NO_DEBUG_HELP_DLL (no DbgHelp
+// call stacks) come from the build, per configuration (cmake/RanzOptions.cmake)
 
 #include "Win32.h"
 
@@ -12,13 +13,19 @@
 #include "Memory.h"
 #include "Object.h"
 #include "Str.h"
+#include "Tracking.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 #include <CommCtrl.h>
 #include <objbase.h>
 #include <timeapi.h>
 #include <winioctl.h>
+
+#ifndef	WIN32_NO_DEBUG_HELP_DLL
+#include <DbgHelp.h>		// The call stacks of Win32GetCallStack and Win32GetCallStackSymbolInfo
+#endif
 
 static HANDLE heap_handle = NULL;
 static HANDLE hstdout = INVALID_HANDLE_VALUE;
@@ -1094,7 +1101,8 @@ bool Win32GetCallStackSymbolInfo(CALLSTACK_DATA *s)
 	return false;
 #else
 	UINT64 disp;
-	UINT disp32, len;
+	DWORD disp32;		// The DWORD that SymGetLineFromAddr64 writes
+	UINT len;
 	IMAGEHLP_SYMBOL64 *sym;
 	IMAGEHLP_LINE64 line;
 	char tmp[MAX_PATH];
@@ -1404,7 +1412,4 @@ void Win32PrintToFileW(wchar_t *str)
 
 	Free(utf);
 }
-
-
-#endif
 
