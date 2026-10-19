@@ -8,7 +8,6 @@
 #include "Cedar.h"
 #include "Hub.h"
 #include "Logging.h"
-#include "Wpc.h"
 
 #include "Mayaqua/Kernel.h"
 

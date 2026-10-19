@@ -15,7 +15,6 @@
 #include "Sam.h"
 #include "Server.h"
 #include "Session.h"
-#include "Wpc.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/FileIO.h"
