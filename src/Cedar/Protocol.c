@@ -2526,7 +2526,7 @@ static SOCK *ClientAdditionalConnectToServer(CONNECTION *c)
 
 	SetTimeout(s, CONNECTING_TIMEOUT);
 
-	if (StartSSLEx(s, NULL, NULL, 0, c->ServerName) == false)
+	if (StartSSLEx(s, NULL, NULL, c->ServerName) == false)
 	{
 		Disconnect(s);
 		LockList(c->ConnectingSocks);
@@ -3877,7 +3877,7 @@ SOCK *ClientConnectToServer(CONNECTION *c)
 	SetTimeout(s, CONNECTING_TIMEOUT);
 
 	UINT err = 0;
-	if (StartSSLEx3(s, x, k, NULL, 0, c->ServerName, c->Session->SslOption, &err) == false)
+	if (StartSSLEx3(s, x, k, NULL, c->ServerName, c->Session->SslOption, &err) == false)
 	{
 		Disconnect(s);
 		ReleaseSock(s);

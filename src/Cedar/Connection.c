@@ -1724,7 +1724,7 @@ void ConnectionAccept(CONNECTION *c)
 
 	Copy(&s->SslAcceptSettings, &c->Cedar->SslAcceptSettings, sizeof(SSL_ACCEPT_SETTINGS));
 	UINT ssl_err = 0;
-	if (StartSSLEx3(s, x, k, chain, 0, NULL, NULL, &ssl_err) == false)
+	if (StartSSLEx3(s, x, k, chain, NULL, NULL, &ssl_err) == false)
 	{
 		AddNoSsl(c->Cedar, &s->RemoteIP);
 		if (ssl_err != 0)
