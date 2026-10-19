@@ -2543,8 +2543,20 @@ static SOCK *ClientAdditionalConnectToServer(CONNECTION *c)
 
 	if (CompareX(s->RemoteX, c->ServerX) == false)
 	{
+		// The server of an additional connection presents another certificate than the
+		// first one: drop the socket and fail, like the other failures above
 		Disconnect(s);
 		c->Session->SessionTimeOuted = true;
+		LockList(c->ConnectingSocks);
+		{
+			if (Delete(c->ConnectingSocks, s))
+			{
+				ReleaseSock(s);
+			}
+		}
+		UnlockList(c->ConnectingSocks);
+		ReleaseSock(s);
+		return NULL;
 	}
 
 	return s;

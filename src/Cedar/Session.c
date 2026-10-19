@@ -1183,6 +1183,10 @@ SESSION *NewRpcSessionEx2(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *
 	SOCK *sock;
 	if (cedar == NULL || option == NULL)
 	{
+		if (err != NULL)
+		{
+			*err = ERR_INTERNAL_ERROR;
+		}
 		return NULL;
 	}
 
@@ -1223,6 +1227,8 @@ SESSION *NewRpcSessionEx2(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *
 
 	if (ClientUploadSignature(sock) == false)
 	{
+		// ClientUploadSignature has no connection to set the error of: the socket broke
+		c->Err = ERR_DISCONNECTED;
 		if (err != NULL)
 		{
 			*err = c->Err;
