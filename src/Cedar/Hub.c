@@ -4871,8 +4871,8 @@ static bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
 
 					if (no_heavy == false)
 					{
-						HLog(s->Hub, "LH_NO_SERVER", s->Name, ip2, p->L4.TCPHeader->DstPort,
-							ip1, p->L4.TCPHeader->SrcPort);
+						HLog(s->Hub, "LH_NO_SERVER", s->Name, ip2, Endian16(p->L4.TCPHeader->DstPort),
+							ip1, Endian16(p->L4.TCPHeader->SrcPort));
 					}
 
 					return false;
@@ -4897,8 +4897,8 @@ static bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
 
 					if (no_heavy == false)
 					{
-						HLog(s->Hub, "LH_NO_SERVER", s->Name, ip2, p->L4.TCPHeader->DstPort,
-							ip1, p->L4.TCPHeader->SrcPort);
+						HLog(s->Hub, "LH_NO_SERVER", s->Name, ip2, Endian16(p->L4.TCPHeader->DstPort),
+							ip1, Endian16(p->L4.TCPHeader->SrcPort));
 					}
 
 					return false;
