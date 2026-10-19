@@ -51,6 +51,11 @@ static LOCK *local_mac_list_lock = NULL;
 
 static DH_CTX *dh_param = NULL;
 
+// Decoded copy of the Windows ROOT store, for the client's peer verification (guarded by openssl_lock)
+#define	SSL_ROOT_CERTS_REFRESH_SPAN		(10 * 60 * 1000ULL)
+static STACK_OF(X509) *ssl_root_certs = NULL;
+static UINT64 ssl_root_certs_tick = 0;
+
 typedef struct PRIVATE_IP_SUBNET
 {
 	UINT Ip, Mask, Ip2;
@@ -2930,6 +2935,50 @@ static void SslHandshakeError(bool server_mode, UINT *ssl_err)
 	}
 }
 
+// Add the Windows ROOT store's certificates to a client's verification store (caller holds openssl_lock)
+static void AddSslRootCerts(X509_STORE *store)
+{
+	UINT64 now = Tick64();
+	int i;
+
+	if (ssl_root_certs == NULL || now >= ssl_root_certs_tick + SSL_ROOT_CERTS_REFRESH_SPAN)
+	{
+		STACK_OF(X509) *certs = sk_X509_new_null();
+
+		if (certs != NULL)
+		{
+			HCERTSTORE hStore = CertOpenSystemStore(0, "ROOT");
+			if (hStore != NULL)
+			{
+				PCCERT_CONTEXT pContext = NULL;
+				while ((pContext = CertEnumCertificatesInStore(hStore, pContext)) != NULL)
+				{
+					// d2i_X509 advances the pointer it is given: decode from a local copy, never the store's own context
+					const unsigned char *der = pContext->pbCertEncoded;
+					X509 *x509 = d2i_X509(NULL, &der, (long)pContext->cbCertEncoded);
+					if (x509 != NULL && sk_X509_push(certs, x509) == 0)
+					{
+						X509_free(x509);
+					}
+				}
+				CertCloseStore(hStore, 0);
+			}
+
+			sk_X509_pop_free(ssl_root_certs, X509_free);
+			ssl_root_certs = certs;
+			ssl_root_certs_tick = now;
+		}
+	}
+
+	if (ssl_root_certs != NULL)
+	{
+		for (i = 0; i < sk_X509_num(ssl_root_certs); i++)
+		{
+			X509_STORE_add_cert(store, sk_X509_value(ssl_root_certs, i));
+		}
+	}
+}
+
 bool StartSSL(SOCK *sock, X *x, K *priv)
 {
 	return StartSSLEx(sock, x, priv, NULL);
@@ -3044,21 +3093,7 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 				X509_STORE* store = SSL_CTX_get_cert_store(ssl_ctx);
 				if (ssl_option->AddDefaultCA)
 				{
-					HCERTSTORE hStore = CertOpenSystemStore(0, "ROOT");
-					if (hStore != NULL)
-					{
-						PCCERT_CONTEXT pContext = NULL;
-						while ((pContext = CertEnumCertificatesInStore(hStore, pContext)))
-						{
-							X509 *x509 = d2i_X509(NULL, (const unsigned char**)&pContext->pbCertEncoded, pContext->cbCertEncoded);
-							if (x509 != NULL)
-							{
-								X509_STORE_add_cert(store, x509);
-								X509_free(x509);
-							}
-						}
-						CertCloseStore(hStore, 0);
-					}
+					AddSslRootCerts(store);
 				}
 
 				UINT i;
@@ -3203,6 +3238,12 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 
 	if (ssl_option != NULL && ssl_option->VerifyPeer)
 	{
+		// OpenSSL checks no name when none is given: hostname verification without a hostname is a mismatch
+		if (ssl_verify_err == X509_V_OK && sock->ServerMode == false && ssl_option->VerifyHostname && IsEmptyStr(sni_hostname))
+		{
+			ssl_verify_err = X509_V_ERR_HOSTNAME_MISMATCH;
+		}
+
 		if (ssl_verify_err != X509_V_OK)
 		{
 			// Clear any error if matching saved certificate and not expired
@@ -5962,6 +6003,9 @@ void FreeNetwork()
 		DhFree(dh_param);
 		dh_param = NULL;
 	}
+
+	sk_X509_pop_free(ssl_root_certs, X509_free);
+	ssl_root_certs = NULL;
 
 	FreeWaitThread();
 
