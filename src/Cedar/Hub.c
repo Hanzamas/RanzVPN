@@ -21,6 +21,8 @@
 #include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
 
+#include <string.h>
+
 #define GetHubAdminOptionDataAndSet(ao, name, dest) \
 	value = GetHubAdminOptionData(ao, name);        \
 	if (value != INFINITE)                          \
@@ -2152,13 +2154,90 @@ static bool ApplyAccessListToForwardPacket(HUB *hub, SESSION *src_session, SESSI
 	return pass;
 }
 
-static BUF *BuildRedirectToUrlPayload(HUB *hub, SESSION *s, char *redirect_url)
+// Percent-encode src into dst (RFC 3986): every byte but the unreserved A-Z a-z 0-9 - . _ ~ becomes %XX.
+// Byte by byte, because the hash covers exactly the bytes sent and the names have no fixed code page
+// (UrlEscapeW takes UTF-16). False when dst is too small
+static bool HubUrlEncode(char *dst, UINT size, char *src)
 {
-	char html[MAX_REDIRECT_URL_LEN * 2 + 1 + MAX_SIZE];
-	char header[MAX_REDIRECT_URL_LEN * 2 + 1 + MAX_SIZE];
-	char redirect_url2[MAX_REDIRECT_URL_LEN * 2];
+	static char hex[] = "0123456789ABCDEF";
+	UINT len = StrLen(src);
+	UINT n = 0;
+	UINT i;
+	if (dst == NULL || size == 0)
+	{
+		return false;
+	}
+
+	for (i = 0;i < len;i++)
+	{
+		UCHAR c = (UCHAR)src[i];
+
+		if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
+			c == '-' || c == '.' || c == '_' || c == '~')
+		{
+			if (n + 1 >= size)
+			{
+				return false;
+			}
+
+			dst[n++] = (char)c;
+		}
+		else
+		{
+			if (n + 3 >= size)
+			{
+				return false;
+			}
+
+			dst[n++] = '%';
+			dst[n++] = hex[c >> 4];
+			dst[n++] = hex[c & 0x0F];
+		}
+	}
+
+	dst[n] = 0;
+
+	return true;
+}
+
+// Whether url can go into a Location header and an href as it is: not empty, no space, no control character
+static bool IsRedirectUrlSafe(char *url)
+{
+	UINT len = StrLen(url);
+	UINT i;
+
+	if (len == 0)
+	{
+		return false;
+	}
+
+	for (i = 0;i < len;i++)
+	{
+		UCHAR c = (UCHAR)url[i];
+
+		if (c <= 0x20 || c == 0x7F)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+// HTTP 302 to redirect_url, the payload of a reply forged for session s. When the URL ends in |secret, its
+// <INFO> tag becomes user|session|client IP|time|hash, the user and session names percent-encoded and the hash
+// the SHA-1 of the text before it and the secret. NULL when a name does not fit or the URL would still hold a
+// space or a control character (CR and LF would end the Location line)
+static BUF *BuildRedirectToUrlPayload(SESSION *s, char *redirect_url)
+{
+	char username[MAX_USERNAME_LEN * 3 + 1];
+	char session_name[MAX_SESSION_NAME_LEN * 3 + 1];
+	char info[sizeof(username) + sizeof(session_name) + MAX_SIZE];
+	char redirect_url2[MAX_REDIRECT_URL_LEN + sizeof(info)];
+	char html[sizeof(redirect_url2) + MAX_SIZE];
+	char header[sizeof(redirect_url2) + MAX_SIZE];
 	BUF *b;
-	if (hub == NULL || s == NULL || redirect_url == NULL)
+	if (s == NULL || redirect_url == NULL)
 	{
 		return NULL;
 	}
@@ -2169,43 +2248,41 @@ static BUF *BuildRedirectToUrlPayload(HUB *hub, SESSION *s, char *redirect_url)
 	if (InStr(redirect_url2, ACCESS_LIST_URL_INFO_TAG))
 	{
 		char secret[MAX_SIZE];
-		char tmp[MAX_SIZE];
-		SYSTEMTIME st;
-		UINT i, len, isp;
+		char *sep;
 
-		isp = INFINITE;
-
-		SystemTime(&st);
 		ClearStr(secret, sizeof(secret));
 
-		len = StrLen(redirect_url2);
-
-		for (i = 0;i < len;i++)
+		// The secret follows the last '|'
+		sep = strrchr(redirect_url2, '|');
+		if (sep != NULL)
 		{
-			char c = redirect_url2[i];
-			if (c == '|')
-			{
-				isp = i;
-			}
+			StrCpy(secret, sizeof(secret), sep + 1);
+			*sep = 0;
 		}
 
-		if (isp != INFINITE)
-		{
-			StrCpy(secret, sizeof(secret), redirect_url2 + isp + 1);
-			redirect_url2[isp] = 0;
-		}
-
-		Format(tmp, sizeof(tmp), "%s|%s|%r|%04u%02u%02u%02u%02u%02u%s",
-			s->Username, s->Name, &s->Connection->ClientIp,
-			st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond, (IsEmptyStr(secret) ? "" : "|"));
-
+		// Without a secret the tag stays as it is
 		if (IsEmptyStr(secret) == false)
 		{
 			UCHAR hash[SHA1_SIZE];
 			char hash_str[MAX_SIZE];
-			BUF *b2 = NewBuf();
+			SYSTEMTIME st;
+			BUF *b2;
 
-			WriteBuf(b2, tmp, StrLen(tmp));
+			// The client chooses its user name: encoded, it cannot end the URL or a header line, nor add a '|' field
+			if (HubUrlEncode(username, sizeof(username), s->Username) == false ||
+				HubUrlEncode(session_name, sizeof(session_name), s->Name) == false)
+			{
+				return NULL;
+			}
+
+			SystemTime(&st);
+
+			Format(info, sizeof(info), "%s|%s|%r|%04u%02u%02u%02u%02u%02u|",
+				username, session_name, &s->Connection->ClientIp,
+				st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+
+			b2 = NewBuf();
+			WriteBuf(b2, info, StrLen(info));
 			WriteBuf(b2, secret, StrLen(secret));
 
 			Sha1(hash, b2->Buf, b2->Size);
@@ -2214,11 +2291,16 @@ static BUF *BuildRedirectToUrlPayload(HUB *hub, SESSION *s, char *redirect_url)
 
 			FreeBuf(b2);
 
-			StrCat(tmp, sizeof(tmp), hash_str);
+			StrCat(info, sizeof(info), hash_str);
 
 			ReplaceStrEx(redirect_url2, sizeof(redirect_url2), redirect_url2,
-				ACCESS_LIST_URL_INFO_TAG, tmp, false);
+				ACCESS_LIST_URL_INFO_TAG, info, false);
 		}
+	}
+
+	if (IsRedirectUrlSafe(redirect_url2) == false)
+	{
+		return NULL;
 	}
 
 	Format(html, sizeof(html),
@@ -2227,7 +2309,7 @@ static BUF *BuildRedirectToUrlPayload(HUB *hub, SESSION *s, char *redirect_url)
 
 	Format(header, sizeof(header),
 		"HTTP/1.1 302 Found\r\nLocation: %s\r\nCache-Control: private\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %u\r\n\r\n",
-		redirect_url2, StrLen(redirect_url2));
+		redirect_url2, StrLen(html));
 
 	b = NewBuf();
 
@@ -2237,14 +2319,15 @@ static BUF *BuildRedirectToUrlPayload(HUB *hub, SESSION *s, char *redirect_url)
 	return b;
 }
 
-static void ForceRedirectToUrl(HUB *hub, SESSION *src_session, PKT *p, char *redirect_url)
+static void ForceRedirectToUrl(SESSION *src_session, PKT *p, char *redirect_url)
 {
 	BUF *payload;
+	UINT ip_header_size;
 	UINT tcp_size;
 	TCP_HEADER *tcp_data;
 	TCP_HEADER *src_tcp;
 	BUF *b;
-	if (hub == NULL || src_session == NULL || p == NULL || redirect_url == NULL)
+	if (src_session == NULL || p == NULL || redirect_url == NULL)
 	{
 		return;
 	}
@@ -2263,13 +2346,21 @@ static void ForceRedirectToUrl(HUB *hub, SESSION *src_session, PKT *p, char *red
 		return;
 	}
 
-	payload = BuildRedirectToUrlPayload(hub, src_session, redirect_url);
+	payload = BuildRedirectToUrlPayload(src_session, redirect_url);
 	if (payload == NULL)
 	{
 		return;
 	}
 
+	// The reply goes back as a single frame
+	ip_header_size = (p->TypeL3 == L3_IPV4 ? sizeof(IPV4_HEADER) : sizeof(IPV6_HEADER));
 	tcp_size = sizeof(TCP_HEADER) + payload->Size;
+	if (sizeof(MAC_HEADER) + ip_header_size + tcp_size > MAX_PACKET_SIZE)
+	{
+		FreeBuf(payload);
+		return;
+	}
+
 	tcp_data = (TCP_HEADER *)ZeroMalloc(tcp_size);
 	tcp_data->SrcPort = src_tcp->DstPort;
 	tcp_data->DstPort = src_tcp->SrcPort;
@@ -2323,7 +2414,7 @@ static void ForceRedirectToUrl(HUB *hub, SESSION *src_session, PKT *p, char *red
 		Zero(&v6, sizeof(v6));
 
 		IPV6_SET_VERSION(&v6, 6);
-		v6.PayloadLength = Endian16(tcp_size);
+		v6.PayloadLength = Endian16((USHORT)tcp_size);
 		v6.NextHeader = IP_PROTO_TCP;
 		v6.HopLimit = 64;
 
@@ -2528,7 +2619,7 @@ static bool ApplyAccessListToStoredPacket(HUB *hub, SESSION *s, PKT *p)
 		if (s->NormalClient)
 		{
 			// Normal VPN clients get the URL redirect; local bridges only drop the packet
-			ForceRedirectToUrl(hub, s, p, redirect_url);
+			ForceRedirectToUrl(s, p, redirect_url);
 		}
 		else
 		{
@@ -2837,20 +2928,10 @@ static int CompareStormList(void *p1, void *p2)
 		int r1, r2;
 		r1 = CmpIpAddr(&s1->DestIp, &s2->DestIp);
 		r2 = CmpIpAddr(&s1->SrcIp, &s2->SrcIp);
-		if (r1 == 0 || r2 == 0)
+		// Strict mode: entries that share either address differ only by MAC address
+		if (r1 != 0 && r2 != 0)
 		{
-		}
-		else
-		{
-			if (r1 != 0)
-			{
-				return r1;
-			}
-
-			if (r2 != 0)
-			{
-				return r2;
-			}
+			return r1;
 		}
 	}
 	r = Cmp(s1->MacAddress, s2->MacAddress, 6);
@@ -4737,7 +4818,7 @@ void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *
 	}
 }
 
-bool DeleteIPv6DefaultRouterInRA(PKT *p)
+void DeleteIPv6DefaultRouterInRA(PKT *p)
 {
 	if (p->TypeL3 == L3_IPV6 && p->TypeL4 == L4_ICMPV6 &&
 		(p->ICMPv6HeaderPacketInfo.Type == ICMPV6_TYPE_ROUTER_ADVERTISEMENT))
@@ -4753,8 +4834,6 @@ bool DeleteIPv6DefaultRouterInRA(PKT *p)
 					p->L4.ICMPHeader, p->IPv6HeaderPacketInfo.PayloadSize, 0);
 		}
 	}
-
-	return false;
 }
 
 static bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
