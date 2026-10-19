@@ -29,6 +29,12 @@
 //   mode). The configuration file and its backup folder are deleted at the start and at the end.
 // - "listenerbind" (FIX-3 #99) adds listeners on TCP 39557 (held by the test) and 39558 through the admin
 //   RPC and deletes them again; "certdl" runs its own loopback listener on TCP 39556.
+// - Phase "iptablelock" (FND-11 #107) runs after the Pack goldens: while the test holds the MacHashTable lock of
+//   hub HARNESS_HUB_A (the lock of the hub IP table), EnumIpTable and DeleteIpTable wait for it. Then session A
+//   sends frames from new source addresses while the admin RPC lists and deletes the IP table entries, with
+//   MAX_IP_TABLES lowered to HARNESS_IPTABLE_MAX. The entries left are deleted before the configuration phases.
+//   The harness does not run under AddressSanitizer (fuzz-asan leaves it out for its time budgets): the lock-held
+//   cases are the deterministic check, the stress loop runs in build_and_test.
 
 #include "harness.h"
 #include "harness_int.h"
@@ -144,6 +150,14 @@
 
 #define	HARNESS_IS_DIGIT(c)			((c) >= '0' && (c) <= '9')
 
+// Phase "iptablelock" on hub HARNESS_HUB_A
+#define	HARNESS_IPTABLE_HOLD		500					// A lock-held admin RPC must still wait after this (ms)
+#define	HARNESS_IPTABLE_RETURN		5000				// It returns within this after the unlock (ms)
+#define	HARNESS_IPTABLE_MAX			64					// MAX_IP_TABLES of the stress loop: the hub evicts on every new address
+#define	HARNESS_IPTABLE_ROUNDS		20					// EnumIpTable and DeleteIpTable rounds of the stress loop
+#define	HARNESS_IPTABLE_SPAN		3000				// The stress loop ends after this even with rounds left (ms)
+#define	HARNESS_IPTABLE_PORT		9					// UDP destination port of the stress frames (discard)
+
 // Ethernet frame owned by the test packet adapter
 typedef struct HARNESS_FRAME
 {
@@ -248,6 +262,22 @@ typedef struct CERTDL_RESULT
 	char UserAgent[MAX_SIZE];	// User-Agent header of the first request
 	bool Saved;					// The server saved the downloaded issuer under chain_certs
 } CERTDL_RESULT;
+
+// One admin RPC of phase "iptablelock", run on a worker thread while the test may hold the MacHashTable lock
+typedef struct HARNESS_IPTABLE_CALL
+{
+	HARNESS *H;
+	UINT Which;					// 0: EnumIpTable, 1: DeleteIpTable of a key that does not exist
+	UINT Err;					// Error code of the call
+	EVENT *Done;				// Set when the call returned
+} HARNESS_IPTABLE_CALL;
+
+// Sender of the "iptablelock" stress loop: IPv4 frames of session A, each from a new source address
+typedef struct HARNESS_IPTABLE_SENDER
+{
+	HARNESS_PA *Pa;				// Session A
+	volatile bool Halt;			// Set by the test to stop the sender
+} HARNESS_IPTABLE_SENDER;
 
 // Current phase of the test, read by the watchdog thread (static strings only)
 static char *volatile harness_phase = "start";
@@ -357,6 +387,7 @@ static UCHAR harness_mac_b[6] = {0x02, 0x42, 0x55, 0x52, 0x00, 0x0B};
 static UCHAR harness_mac_broadcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 static void HarnessStep(HARNESS *h, UINT err, char *what, bool check);
+static bool HarnessExpectErr(HARNESS *h, UINT err, UINT expected, char *what);
 static void HarnessWatchdogThread(THREAD *thread, void *param);
 static HARNESS_WATCHDOG *HarnessStartWatchdog(char *test_name, UINT limit);
 static void HarnessStopWatchdog(HARNESS_WATCHDOG *w);
@@ -421,6 +452,11 @@ static char *HarnessNormalizeConfig(char *text);
 static bool HarnessCompareConfig(HARNESS *h, char *what, char *text1, char *text2);
 static void HarnessConfigApiRoundTrip(HARNESS *h);
 static void HarnessReload(HARNESS *h);
+static void HarnessIpTableLockThread(THREAD *thread, void *param);
+static bool HarnessIpTableLockCase(HARNESS *h, HUB *hub, UINT which, UINT expected, char *what);
+static void HarnessIpTableSendThread(THREAD *thread, void *param);
+static bool HarnessIpTableRound(HARNESS *h, UINT *num_listed, UINT *num_deleted, UINT *bad_err);
+static void HarnessIpTableLock(HARNESS *h);
 static void HarnessDeleteObjects(HARNESS *h, bool check);
 static void HarnessDeleteConfigFiles();
 static void HarnessTeardown(HARNESS *h, bool check);
@@ -518,6 +554,23 @@ static void HarnessStep(HARNESS *h, UINT err, char *what, bool check)
 	{
 		Print("  [info] %s: error %u\n", what, err);
 	}
+}
+
+// Check that an admin RPC call returned the expected error code
+static bool HarnessExpectErr(HARNESS *h, UINT err, UINT expected, char *what)
+{
+	char tmp[MAX_SIZE];
+
+	if (err == expected)
+	{
+		Format(tmp, sizeof(tmp), "%s: error %u", what, err);
+	}
+	else
+	{
+		Format(tmp, sizeof(tmp), "%s: error %u (%S), expected %u (%S)", what, err, _E(err), expected, _E(expected));
+	}
+
+	return HarnessCheck(h, err == expected, tmp);
 }
 
 ////////////////////////////
@@ -2948,6 +3001,265 @@ static void HarnessReload(HARNESS *h)
 }
 
 ////////////////////////////
+// Admin IP table RPCs and the hub IP table lock (FND-11 #107)
+
+// Worker of HarnessIpTableLockCase: one admin RPC on hub HARNESS_HUB_A, then the Done event
+static void HarnessIpTableLockThread(THREAD *thread, void *param)
+{
+	HARNESS_IPTABLE_CALL *c = (HARNESS_IPTABLE_CALL *)param;
+
+	if (c == NULL)
+	{
+		return;
+	}
+
+	if (c->Which == 0)
+	{
+		RPC_ENUM_IP_TABLE t;
+
+		Zero(&t, sizeof(t));
+		StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
+		c->Err = ScEnumIpTable(c->H->Rpc, &t);
+		FreeRpcEnumIpTable(&t);
+	}
+	else
+	{
+		RPC_DELETE_TABLE t;
+
+		Zero(&t, sizeof(t));
+		StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
+		t.Key = 1;
+		c->Err = ScDeleteIpTable(c->H->Rpc, &t);
+	}
+
+	Set(c->Done);
+}
+
+// Run one admin RPC on a worker thread while the test holds the MacHashTable lock of the hub: the call waits for
+// the lock and returns after the unlock with the expected error code. While it holds the lock, the test thread
+// takes no other lock and makes no admin RPC call
+static bool HarnessIpTableLockCase(HARNESS *h, HUB *hub, UINT which, UINT expected, char *what)
+{
+	HARNESS_IPTABLE_CALL c;
+	THREAD *t;
+	bool waits;
+	char tmp[MAX_SIZE];
+
+	// One event per case: a Mayaqua event resets itself when a Wait returns
+	Zero(&c, sizeof(c));
+	c.H = h;
+	c.Which = which;
+	c.Done = NewEvent();
+
+	LockHashList(hub->MacHashTable);
+	t = NewThread(HarnessIpTableLockThread, &c);
+	waits = (Wait(c.Done, HARNESS_IPTABLE_HOLD) == false);
+	UnlockHashList(hub->MacHashTable);
+
+	Format(tmp, sizeof(tmp), "%s waits for the MacHashTable lock", what);
+	HarnessCheck(h, waits, tmp);
+
+	if (waits)
+	{
+		Format(tmp, sizeof(tmp), "%s returns after the unlock", what);
+		HarnessCheck(h, Wait(c.Done, HARNESS_IPTABLE_RETURN), tmp);
+	}
+
+	WaitThread(t, INFINITE);
+	ReleaseThread(t);
+	ReleaseEvent(c.Done);
+
+	return HarnessExpectErr(h, c.Err, expected, what);
+}
+
+// Sender of the stress loop: UDP frames from session A to 10.0.0.2, each from a new source address in
+// 10.128.0.0/9, with at most HARNESS_QUEUE_LOW frames queued
+static void HarnessIpTableSendThread(THREAD *thread, void *param)
+{
+	HARNESS_IPTABLE_SENDER *s = (HARNESS_IPTABLE_SENDER *)param;
+	UCHAR frame[128];
+	UCHAR payload[8];
+	UINT size;
+	UINT n = 0;
+	USHORT sum;
+
+	if (s == NULL)
+	{
+		return;
+	}
+
+	Zero(payload, sizeof(payload));
+	size = HarnessBuildIpFrame(frame, sizeof(frame), IP_PROTO_UDP, HARNESS_IPTABLE_PORT, payload, sizeof(payload));
+	if (size == 0)
+	{
+		return;
+	}
+
+	while (s->Halt == false)
+	{
+		if (HarnessPaQueued(s->Pa) >= HARNESS_QUEUE_LOW)
+		{
+			Wait(s->Pa->SpaceEvent, 10);
+			continue;
+		}
+
+		// Source address (frame bytes 26-29), then the IPv4 header checksum again. The UDP checksum covers the
+		// source address: 0 (no checksum) instead
+		n++;
+		frame[26] = 10;
+		frame[27] = (UCHAR)(0x80 | ((n >> 16) & 0x7F));
+		frame[28] = (UCHAR)((n >> 8) & 0xFF);
+		frame[29] = (UCHAR)(n & 0xFF);
+		frame[24] = 0;
+		frame[25] = 0;
+		sum = IpChecksum(frame + 14, 20);
+		Copy(frame + 24, &sum, sizeof(USHORT));
+		frame[40] = 0;
+		frame[41] = 0;
+
+		HarnessPaSend(s->Pa, frame, size);
+	}
+}
+
+// One EnumIpTable of hub HARNESS_HUB_A, then DeleteIpTable on each listed key. ERR_OBJECT_NOT_FOUND is expected
+// for an entry that the hub evicted between the two calls. Adds the listed and the deleted entries to the counters;
+// false, with the error code in bad_err, on any other error
+static bool HarnessIpTableRound(HARNESS *h, UINT *num_listed, UINT *num_deleted, UINT *bad_err)
+{
+	RPC_ENUM_IP_TABLE t;
+	UINT err;
+	UINT i;
+	bool ret = true;
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
+	err = ScEnumIpTable(h->Rpc, &t);
+	if (err != ERR_NO_ERROR)
+	{
+		*bad_err = err;
+		ret = false;
+	}
+	else
+	{
+		*num_listed += t.NumIpTable;
+	}
+
+	for (i = 0;ret && i < t.NumIpTable;i++)
+	{
+		RPC_DELETE_TABLE d;
+
+		Zero(&d, sizeof(d));
+		StrCpy(d.HubName, sizeof(d.HubName), HARNESS_HUB_A);
+		d.Key = t.IpTables[i].Key;
+
+		err = ScDeleteIpTable(h->Rpc, &d);
+		if (err == ERR_NO_ERROR)
+		{
+			(*num_deleted)++;
+		}
+		else if (err != ERR_OBJECT_NOT_FOUND)
+		{
+			*bad_err = err;
+			ret = false;
+		}
+	}
+
+	FreeRpcEnumIpTable(&t);
+
+	return ret;
+}
+
+// EnumIpTable and DeleteIpTable take the lock that guards the hub IP table: the MacHashTable lock, which the hub
+// holds when it adds, updates and evicts entries. They took the lock of the IpTable list before, which the hub
+// never takes, so an entry could be freed while the admin RPC read or freed it
+static void HarnessIpTableLock(HARNESS *h)
+{
+	HUB *hub;
+	RPC_ENUM_HUB e;
+	HARNESS_IPTABLE_SENDER s;
+	THREAD *t;
+	UINT old_max;
+	UINT rounds = 0;
+	UINT num_listed = 0;
+	UINT num_deleted = 0;
+	UINT num_left = 0;
+	UINT num_left_deleted = 0;
+	UINT bad_err = ERR_NO_ERROR;
+	bool ok = true;
+	UINT64 start;
+	char tmp[MAX_SIZE];
+
+	Print("[iptablelock: admin IP table RPCs and the MacHashTable lock of " HARNESS_HUB_A "]\n");
+
+	hub = GetHub(h->Server->Cedar, HARNESS_HUB_A);
+	if (HarnessCheck(h, hub != NULL, "GetHub " HARNESS_HUB_A " for the lock cases") == false)
+	{
+		return;
+	}
+
+	HarnessIpTableLockCase(h, hub, 0, ERR_NO_ERROR, "EnumIpTable " HARNESS_HUB_A);
+	HarnessIpTableLockCase(h, hub, 1, ERR_OBJECT_NOT_FOUND, "DeleteIpTable " HARNESS_HUB_A " of key 1");
+
+	ReleaseHub(hub);
+
+	// EnumHub counts the IP table entries. It took the MacHashTable lock before the fix too, so a lock-held case
+	// would not tell the two apart: a plain call
+	Zero(&e, sizeof(e));
+	HarnessCheckErr(h, ScEnumHub(h->Rpc, &e), "EnumHub after the lock cases");
+	FreeRpcEnumHub(&e);
+
+	// Stress: session A sends from new addresses, so the hub adds entries and evicts the oldest one at
+	// HARNESS_IPTABLE_MAX, while the admin RPC lists the entries and deletes them. A round counts once it listed
+	// entries; the loop ends after HARNESS_IPTABLE_ROUNDS rounds or HARNESS_IPTABLE_SPAN ms
+	old_max = vpn_global_parameters[GP_MAX_IP_TABLES];
+	vpn_global_parameters[GP_MAX_IP_TABLES] = HARNESS_IPTABLE_MAX;
+
+	Zero(&s, sizeof(s));
+	s.Pa = h->PaA;
+	t = NewThread(HarnessIpTableSendThread, &s);
+
+	start = Tick64();
+	while (ok && rounds < HARNESS_IPTABLE_ROUNDS && (Tick64() - start) < HARNESS_IPTABLE_SPAN)
+	{
+		UINT listed = 0;
+
+		ok = HarnessIpTableRound(h, &listed, &num_deleted, &bad_err);
+		num_listed += listed;
+
+		if (listed != 0)
+		{
+			rounds++;
+		}
+	}
+
+	s.Halt = true;
+	WaitThread(t, INFINITE);
+	ReleaseThread(t);
+
+	// Let the queued frames reach the hub, then delete the entries left
+	HarnessPaDrain(h->PaA, HARNESS_BENCH_DRAIN);
+	if (ok)
+	{
+		ok = HarnessIpTableRound(h, &num_left, &num_left_deleted, &bad_err);
+	}
+
+	vpn_global_parameters[GP_MAX_IP_TABLES] = old_max;
+
+	Print("TIME harness_iptablelock_stress %I64u ms\n", Tick64() - start);
+
+	if (ok)
+	{
+		StrCpy(tmp, sizeof(tmp), "EnumIpTable and DeleteIpTable while session A adds addresses: no error but ERR_OBJECT_NOT_FOUND");
+	}
+	else
+	{
+		Format(tmp, sizeof(tmp), "EnumIpTable and DeleteIpTable while session A adds addresses: error %u (%S)", bad_err, _E(bad_err));
+	}
+	HarnessCheck(h, ok, tmp);
+	HarnessCheck(h, num_listed != 0 && num_deleted != 0, "the stress loop listed and deleted IP table entries of session A");
+}
+
+////////////////////////////
 // Teardown
 
 // Delete the cascade, the users and the hubs through the admin RPC, then verify the hub list
@@ -4770,6 +5082,8 @@ void harness_test(UINT num, char **arg)
 		HarnessGolden(h);
 		HarnessSetPhase("pack", NULL);
 		HarnessPackGolden(h);
+		HarnessSetPhase("iptablelock", NULL);
+		HarnessIpTableLock(h);
 		HarnessSetPhase("config", NULL);
 		HarnessConfigApiRoundTrip(h);
 	}
