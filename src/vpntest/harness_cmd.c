@@ -159,6 +159,9 @@ static void HarnessCmdRunStep(HARNESS *h, HARNESS_NORM *n, HARNESS_CMD_CASE *c, 
 	BUF *golden);
 static void HarnessCmdRunCase(HARNESS *h, HARNESS_NORM *n, HARNESS_CMD_CASE *c, char *out_dir, char *golden_dir, bool update);
 static void HarnessCheckStaleCmd(HARNESS *h, char *golden_dir);
+static void HarnessParseHostPortCase(HARNESS *h, char *src, UINT default_port, bool expect_ret, char *expect_host,
+	UINT expect_port, char *what);
+static void HarnessParseHostPort(HARNESS *h);
 
 // Run one vpncmd /SERVER command in-process; returns its /OUT file (empty when it wrote none) and its return code
 static BUF *HarnessCmdRun(char *hub, char *command, UINT *ret)
@@ -442,6 +445,36 @@ static void HarnessCheckStaleCmd(HARNESS *h, char *golden_dir)
 }
 
 // vpncmd command cases: every case of the table, then the stale file check
+// ParseHostPort on one input: its result and, when it succeeds, the host and the port it gives
+static void HarnessParseHostPortCase(HARNESS *h, char *src, UINT default_port, bool expect_ret, char *expect_host,
+	UINT expect_port, char *what)
+{
+	char *host = NULL;
+	UINT port = 0;
+	bool ok = (ParseHostPort(src, &host, &port, default_port) == expect_ret);
+
+	if (ok && expect_ret)
+	{
+		ok = (host != NULL && StrCmp(host, expect_host) == 0 && port == expect_port);
+	}
+
+	HarnessCheck(h, ok, what);
+
+	Free(host);
+}
+
+// ParseHostPort and its '@' form keep their results after sharing one tail (FND-47)
+static void HarnessParseHostPort(HARNESS *h)
+{
+	HarnessParseHostPortCase(h, "host", 443, true, "host", 443, "ParseHostPort: host alone takes the default port");
+	HarnessParseHostPortCase(h, "host:5555", 443, true, "host", 5555, "ParseHostPort: host:port");
+	HarnessParseHostPortCase(h, "host@5555", 443, true, "host", 5555, "ParseHostPort: host@port");
+	HarnessParseHostPortCase(h, "[::1]:5555", 443, true, "[::1]", 5555, "ParseHostPort: [v6]:port");
+	HarnessParseHostPortCase(h, "host", 0, false, NULL, 0, "ParseHostPort: a missing port with default 0 fails");
+	HarnessParseHostPortCase(h, "host:0", 443, false, NULL, 0, "ParseHostPort: port 0 fails");
+	HarnessParseHostPortCase(h, "host@0", 443, false, NULL, 0, "ParseHostPort: port 0 after '@' fails");
+}
+
 void HarnessCmdCases(HARNESS *h)
 {
 	char out_dir[MAX_SIZE];
@@ -461,6 +494,8 @@ void HarnessCmdCases(HARNESS *h)
 	Print("  golden directory: %s (%s)\n", golden_dir,
 		update ? "update mode: missing or empty, or RANZ_UPDATE_GOLDEN=1" : "compare mode");
 	Print("  output directory: %s\n", out_dir);
+
+	HarnessParseHostPort(h);
 
 	n = HarnessNewNorm();
 

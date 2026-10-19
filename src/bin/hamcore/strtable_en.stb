@@ -2658,7 +2658,6 @@ TTC_TYPE_FULL			Full (Server < -- > Client)
 TTC_SPAN_STR			%.1f seconds
 TTC_COMM_START			\nAll connections were established and so data transfer started. \nMeasurement Start Time: %s\nScheduled Finish Time: %s\n\nMeasuring in progress. Please wait... \n(Do not use any other applications while measuring is in progress.)\n\n
 TTC_COMM_END			Because %.1f seconds or more have passed, the data communication will end. \n\n
-TTC_COMM_USER_CANCEL	Because of cancellation by user, the data communication will end. \n\n
 TTC_COMM_DISCONNECTED	The TCP connection %u has been disconnected.
 TTC_RES_TITLE			\n\nNetwork Traffic Speed Test Tool\n\n
 TTC_RES_COLUMN_1		Item Name

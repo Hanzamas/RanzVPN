@@ -2658,7 +2658,6 @@ TTC_TYPE_FULL			Penuh (Server < -- > Klien)
 TTC_SPAN_STR			%.1f detik
 TTC_COMM_START			\nSemua koneksi telah didirikan dan transfer data dimulai. \nWaktu Mulai Pengukuran: %s\nWaktu Selesai yang Dijadwalkan: %s\n\nPengukuran sedang berlangsung. Harap tunggu... \n(Jangan gunakan aplikasi lain saat pengukuran sedang berlangsung.)\n\n
 TTC_COMM_END			Sudah %.1f detik atau lebih berlalu, maka komunikasi data akan berakhir. \n\n
-TTC_COMM_USER_CANCEL	Karena pembatalan oleh pengguna, komunikasi data akan berakhir. \n\n
 TTC_COMM_DISCONNECTED	Koneksi TCP %u telah terputus.
 TTC_RES_TITLE			\n\nAlat Uji Kecepatan Lalu Lintas Jaringan\n\n
 TTC_RES_COLUMN_1		Nama Item
