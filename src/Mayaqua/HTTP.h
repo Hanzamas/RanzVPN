@@ -38,7 +38,6 @@ struct HTTP_HEADER
 typedef char *(HTTP_LINE_SOURCE)(void *param, UINT max_size);
 
 HTTP_HEADER *NewHttpHeader(char *method, char *target, char *version);
-HTTP_HEADER *NewHttpHeaderEx(char *method, char *target, char *version, bool no_sort);
 void FreeHttpHeader(HTTP_HEADER *header);
 HTTP_VALUE *NewHttpValue(char *name, char *data);
 void FreeHttpValue(HTTP_VALUE *value);
@@ -58,9 +57,6 @@ PACK *HttpClientRecv(SOCK *s);
 PACK *HttpClientRecvEx(SOCK *s, UINT max_data_size);
 bool HttpServerSend(SOCK *s, PACK *p);
 PACK *HttpServerRecv(SOCK *s);
-PACK *HttpServerRecvEx(SOCK *s, UINT max_data_size);
-bool HttpSendForbidden(SOCK *s, char *target, char *server_id);
-bool HttpSendNotFound(SOCK *s, char *target);
-bool HttpSendNotImplemented(SOCK *s, char *method, char *target, char *version);
+bool HttpSendDecoyPage(SOCK *s, UINT code, HTTP_HEADER *request);
 
 #endif
