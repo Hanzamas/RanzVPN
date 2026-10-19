@@ -40,6 +40,10 @@
 //   phase deletes the cascade again.
 // - Phase "adminreconnect" (FND-14 #107) runs after "setlink": a second admin RPC loses its connection
 //   (DisconnectConnection through the first one), reconnects inside the next call and keeps no socket timeout.
+// - "adminaudit" (FND-10 #107) starts its own server with hub HARNESS_A and points the server's syslog (server log
+//   and hub security log) at a loopback UDP receiver of the test. Each step is one admin RPC, then GetConfig, whose
+//   LA_GET_CONFIG line ends the step: the lines before it are the audit lines of the call. The step also compares
+//   ConfigRevision of the in-process server before and after.
 
 #include "harness.h"
 #include "harness_int.h"
@@ -128,6 +132,22 @@
 #define	LISTENBIND_RETRY_LIMIT		(LISTEN_RETRY_TIME * 3)	// A retrying listener binds a released port within this
 #define	LISTENBIND_POLL				50					// ListenerList poll interval while waiting for that bind
 #define	LISTENBIND_WATCHDOG_LIMIT	60000				// "listenerbind" process aborted after this
+
+// Audit lines and configuration revision of the admin RPC handlers ("adminaudit", FND-10 #107)
+#define	ADMINAUDIT_LOG_TIMEOUT		5000				// The GetConfig line that ends a step reaches the syslog receiver within this
+#define	ADMINAUDIT_LINE_MAX			1024				// Longest syslog datagram (SendSysLog sends at most 1023 bytes)
+#define	ADMINAUDIT_WATCHDOG_LIMIT	120000				// "adminaudit" process aborted after this
+#define	ADMINAUDIT_USER				"audit_user"		// User that DeleteUser deletes
+#define	ADMINAUDIT_NO_USER			"audit_nouser"		// No such user
+#define	ADMINAUDIT_GROUP			"audit_group"		// Group that CreateGroup creates and DeleteGroup deletes
+#define	ADMINAUDIT_GROUP2			"audit_group2"		// Group over the max_groups limit
+#define	ADMINAUDIT_NO_HUB			"AUDIT_NOHUB"		// No such hub
+#define	ADMINAUDIT_NO_SESSION		"AUDIT-NOSESSION"	// No such session
+#define	ADMINAUDIT_NO_DEVICE		"audit_nodevice"	// No such Local Bridge device
+#define	ADMINAUDIT_MSG				L"Ranz adminaudit hub message"
+#define	ADMINAUDIT_CRL_NAME			L"AUDITCRL"			// CommonName of the CRL entry
+#define	ADMINAUDIT_CRL_NAME_A		"AUDITCRL"			// The same in the configuration file
+#define	ADMINAUDIT_CRL_ORG			L"audit"			// Organization that SetCrl adds to the entry
 
 // Limits
 #define	HARNESS_QUEUE_HIGH			256					// Frames kept queued by the bench sender
@@ -287,6 +307,16 @@ typedef struct HARNESS_IPTABLE_SENDER
 	HARNESS_PA *Pa;				// Session A
 	volatile bool Halt;			// Set by the test to stop the sender
 } HARNESS_IPTABLE_SENDER;
+
+// State of "adminaudit": the server sends its server log and the hub security logs to a syslog receiver of the test
+typedef struct ADMINAUDIT
+{
+	HARNESS *H;
+	SOCK *Udp;					// Syslog receiver on 127.0.0.1
+	char *Marker;				// Text of LA_GET_CONFIG (UTF-8): the GetConfig call that ends a step logs it
+	LIST *Lines;				// char *: the syslog lines of the current step (UTF-8)
+	UINT Revision;				// ConfigRevision of the server when the step began
+} ADMINAUDIT;
 
 // Current phase of the test, read by the watchdog thread (static strings only)
 static char *volatile harness_phase = "start";
@@ -526,6 +556,29 @@ static bool ListenBindState(HARNESS *h, UINT port, bool *enabled, bool *error);
 static UINT ListenBindCall(HARNESS *h, bool create, UINT port, bool enable, UINT64 *elapsed);
 static bool ListenBindExpect(HARNESS *h, char *name, char *what, UINT err, UINT expected, UINT64 elapsed);
 static bool ListenBindIsListening(HARNESS *h, UINT port, char *what);
+static bool AdminAuditCollect(ADMINAUDIT *a, UINT timeout);
+static bool AdminAuditSync(ADMINAUDIT *a);
+static void AdminAuditBegin(ADMINAUDIT *a);
+static bool AdminAuditLogged(ADMINAUDIT *a, wchar_t *text);
+static void AdminAuditEnd(ADMINAUDIT *a, char *what, UINT err, UINT expected, wchar_t *logged, wchar_t *not_logged,
+	bool bumped);
+static wchar_t *AdminAuditText(wchar_t *buf, UINT size, char *name, char *arg1, char *arg2);
+static void AdminAuditFree(ADMINAUDIT *a);
+static ADMINAUDIT *AdminAuditNew(HARNESS *h);
+static void AdminAuditUsers(ADMINAUDIT *a);
+static UINT AdminAuditCreateGroup(ADMINAUDIT *a, char *name);
+static bool AdminAuditMaxGroups(ADMINAUDIT *a);
+static void AdminAuditGroups(ADMINAUDIT *a);
+static UINT AdminAuditHubMsgCall(ADMINAUDIT *a, char *rpc_name, char *hubname, wchar_t *msg, wchar_t **got);
+static void AdminAuditHubMsg(ADMINAUDIT *a);
+static CRL *AdminAuditNewCrl(wchar_t *organization);
+static bool AdminAuditCrlKey(ADMINAUDIT *a, UINT *key);
+static void AdminAuditCheckSaved(ADMINAUDIT *a, bool expected, char *what);
+static void AdminAuditCrl(ADMINAUDIT *a);
+static void AdminAuditSession(ADMINAUDIT *a, char *session);
+static void AdminAuditBridge(ADMINAUDIT *a);
+static void AdminAuditAddCa(ADMINAUDIT *a, X *x, char *what, bool added);
+static void AdminAuditCa(ADMINAUDIT *a);
 
 ////////////////////////////
 // Reporting and text helpers
@@ -5294,6 +5347,619 @@ static bool ListenBindIsListening(HARNESS *h, UINT port, char *what)
 }
 
 ////////////////////////////
+// Admin audit lines and configuration revision ("adminaudit", FND-10 #107)
+
+// Read syslog datagrams until one holds the marker text or the timeout passes. The datagrams before the marker are
+// lines of the current step (a->Lines). True when the marker arrived
+static bool AdminAuditCollect(ADMINAUDIT *a, UINT timeout)
+{
+	UINT64 end = Tick64() + (UINT64)timeout;
+	char buf[ADMINAUDIT_LINE_MAX + 1];
+
+	while (true)
+	{
+		SOCKSET set;
+		UINT64 now;
+
+		while (true)
+		{
+			IP src;
+			UINT src_port;
+			UINT size = RecvFrom(a->Udp, &src, &src_port, buf, ADMINAUDIT_LINE_MAX);
+
+			if (size == 0 || size == SOCK_LATER)
+			{
+				break;
+			}
+
+			buf[size] = 0;
+			if (InStr(buf, a->Marker))
+			{
+				return true;
+			}
+
+			Add(a->Lines, CopyStr(buf));
+		}
+
+		now = Tick64();
+		if (now >= end)
+		{
+			return false;
+		}
+
+		InitSockSet(&set);
+		AddSockSet(&set, a->Udp);
+		Select(&set, (UINT)(end - now), NULL, NULL);
+	}
+}
+
+// GetConfig, then read the syslog lines up to its LA_GET_CONFIG line: every line an earlier call logged arrived
+// before it (the server sends its syslog datagrams in order from one socket while it handles the call)
+static bool AdminAuditSync(ADMINAUDIT *a)
+{
+	RPC_CONFIG c;
+
+	Zero(&c, sizeof(c));
+	if (ScGetConfig(a->H->Rpc, &c) != ERR_NO_ERROR)
+	{
+		return false;
+	}
+	FreeRpcConfig(&c);
+
+	return AdminAuditCollect(a, ADMINAUDIT_LOG_TIMEOUT);
+}
+
+// Start a step: drop the lines of the last step and keep the configuration revision
+static void AdminAuditBegin(ADMINAUDIT *a)
+{
+	UINT i;
+
+	for (i = 0;i < LIST_NUM(a->Lines);i++)
+	{
+		Free(LIST_DATA(a->Lines, i));
+	}
+	DeleteAll(a->Lines);
+
+	a->Revision = a->H->Server->ConfigRevision;
+}
+
+// A line of the current step holds the text
+static bool AdminAuditLogged(ADMINAUDIT *a, wchar_t *text)
+{
+	char *s = HarnessUniToUtf8(text);
+	bool ret = false;
+	UINT i;
+
+	for (i = 0;i < LIST_NUM(a->Lines);i++)
+	{
+		if (InStr(LIST_DATA(a->Lines, i), s))
+		{
+			ret = true;
+			break;
+		}
+	}
+
+	Free(s);
+
+	return ret;
+}
+
+// End a step: the error code of its call, the audit line it must write (logged) or must not write (not_logged), and
+// whether the configuration revision changed
+static void AdminAuditEnd(ADMINAUDIT *a, char *what, UINT err, UINT expected, wchar_t *logged, wchar_t *not_logged,
+	bool bumped)
+{
+	HARNESS *h = a->H;
+	bool changed;
+	char tmp[MAX_SIZE];
+
+	HarnessExpectErr(h, err, expected, what);
+
+	if (AdminAuditSync(a) == false)
+	{
+		Format(tmp, sizeof(tmp), "%s: the GetConfig line reaches the syslog receiver within %u ms", what,
+			ADMINAUDIT_LOG_TIMEOUT);
+		HarnessCheck(h, false, tmp);
+		return;
+	}
+
+	if (logged != NULL)
+	{
+		Format(tmp, sizeof(tmp), "%s: audit line \"%S\" written", what, logged);
+		HarnessCheck(h, AdminAuditLogged(a, logged), tmp);
+	}
+
+	if (not_logged != NULL)
+	{
+		Format(tmp, sizeof(tmp), "%s: no audit line \"%S\"", what, not_logged);
+		HarnessCheck(h, AdminAuditLogged(a, not_logged) == false, tmp);
+	}
+
+	changed = (h->Server->ConfigRevision != a->Revision);
+	Format(tmp, sizeof(tmp), "%s: configuration revision %s", what, bumped ? "incremented" : "unchanged");
+	HarnessCheck(h, changed == bumped, tmp);
+}
+
+// Text of a string table entry with up to two string arguments, as ALog formats it
+static wchar_t *AdminAuditText(wchar_t *buf, UINT size, char *name, char *arg1, char *arg2)
+{
+	UniFormat(buf, size, _UU(name), arg1, arg2);
+
+	return buf;
+}
+
+// Release the receiver (a may be NULL)
+static void AdminAuditFree(ADMINAUDIT *a)
+{
+	UINT i;
+
+	if (a == NULL)
+	{
+		return;
+	}
+
+	for (i = 0;i < LIST_NUM(a->Lines);i++)
+	{
+		Free(LIST_DATA(a->Lines, i));
+	}
+	ReleaseList(a->Lines);
+
+	if (a->Udp != NULL)
+	{
+		ReleaseSock(a->Udp);
+	}
+
+	Free(a->Marker);
+	Free(a);
+}
+
+// Open the syslog receiver on 127.0.0.1 and point the server log and the hub security log at it (SetSysLog). The
+// lines of the setup are read up to a first GetConfig line. NULL on failure
+static ADMINAUDIT *AdminAuditNew(HARNESS *h)
+{
+	ADMINAUDIT *a = ZeroMalloc(sizeof(ADMINAUDIT));
+	SYSLOG_SETTING s;
+	SOCKSET set;
+	IP localhost;
+	bool ok;
+
+	a->H = h;
+	a->Lines = NewListFast(NULL);
+	a->Marker = HarnessUniToUtf8(_UU("LA_GET_CONFIG"));
+
+	SetIP(&localhost, 127, 0, 0, 1);
+	a->Udp = NewUDPEx3(0, &localhost);
+	ok = HarnessCheck(h, a->Udp != NULL, "syslog receiver bound on 127.0.0.1");
+
+	if (ok)
+	{
+		// Select() puts the socket in non-blocking mode: RecvFrom then returns SOCK_LATER when no datagram is left
+		InitSockSet(&set);
+		AddSockSet(&set, a->Udp);
+		Select(&set, 0, NULL, NULL);
+
+		Zero(&s, sizeof(s));
+		s.SaveType = SYSLOG_SERVER_AND_HUB_SECURITY_LOG;
+		StrCpy(s.Hostname, sizeof(s.Hostname), "127.0.0.1");
+		s.Port = a->Udp->LocalPort;
+		ok = HarnessCheckErr(h, ScSetSysLog(h->Rpc, &s), "SetSysLog: server log and hub security log to the receiver");
+	}
+
+	if (ok)
+	{
+		AdminAuditBegin(a);
+		ok = HarnessCheck(h, AdminAuditSync(a), "the GetConfig line of the setup reaches the syslog receiver");
+	}
+
+	if (ok == false)
+	{
+		AdminAuditFree(a);
+		return NULL;
+	}
+
+	return a;
+}
+
+// EnumUser only reads; DeleteUser logs and changes the configuration only when it deleted a user
+static void AdminAuditUsers(ADMINAUDIT *a)
+{
+	RPC_ENUM_USER e;
+	RPC_DELETE_USER d;
+	wchar_t text[MAX_SIZE];
+	UINT err;
+
+	Print("[users]\n");
+
+	Zero(&e, sizeof(e));
+	StrCpy(e.HubName, sizeof(e.HubName), HARNESS_HUB_A);
+	AdminAuditBegin(a);
+	err = ScEnumUser(a->H->Rpc, &e);
+	if (err == ERR_NO_ERROR)
+	{
+		FreeRpcEnumUser(&e);
+	}
+	AdminAuditEnd(a, "EnumUser " HARNESS_HUB_A, err, ERR_NO_ERROR, NULL, NULL, false);
+
+	AdminAuditText(text, sizeof(text), "LA_DELETE_USER", ADMINAUDIT_USER, NULL);
+	Zero(&d, sizeof(d));
+	StrCpy(d.HubName, sizeof(d.HubName), HARNESS_HUB_A);
+	StrCpy(d.Name, sizeof(d.Name), ADMINAUDIT_USER);
+	AdminAuditBegin(a);
+	err = ScDeleteUser(a->H->Rpc, &d);
+	AdminAuditEnd(a, "DeleteUser " ADMINAUDIT_USER, err, ERR_NO_ERROR, text, NULL, true);
+
+	AdminAuditText(text, sizeof(text), "LA_DELETE_USER", ADMINAUDIT_NO_USER, NULL);
+	Zero(&d, sizeof(d));
+	StrCpy(d.HubName, sizeof(d.HubName), HARNESS_HUB_A);
+	StrCpy(d.Name, sizeof(d.Name), ADMINAUDIT_NO_USER);
+	AdminAuditBegin(a);
+	err = ScDeleteUser(a->H->Rpc, &d);
+	AdminAuditEnd(a, "DeleteUser " ADMINAUDIT_NO_USER " (no such user)", err, ERR_OBJECT_NOT_FOUND, NULL, text, false);
+}
+
+// CreateGroup of a group on hub HARNESS_HUB_A
+static UINT AdminAuditCreateGroup(ADMINAUDIT *a, char *name)
+{
+	RPC_SET_GROUP t;
+	UINT err;
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
+	StrCpy(t.Name, sizeof(t.Name), name);
+
+	err = ScCreateGroup(a->H->Rpc, &t);
+	if (err == ERR_NO_ERROR)
+	{
+		FreeRpcSetGroup(&t);
+	}
+
+	return err;
+}
+
+// Hub admin option max_groups 1 on hub HARNESS_HUB_A (the other options keep their defaults)
+static bool AdminAuditMaxGroups(ADMINAUDIT *a)
+{
+	RPC_ADMIN_OPTION o;
+	UINT err;
+
+	Zero(&o, sizeof(o));
+	StrCpy(o.HubName, sizeof(o.HubName), HARNESS_HUB_A);
+	o.NumItem = 1;
+	o.Items = ZeroMalloc(sizeof(ADMIN_OPTION));
+	StrCpy(o.Items[0].Name, sizeof(o.Items[0].Name), "max_groups");
+	o.Items[0].Value = 1;
+
+	err = ScSetHubAdminOptions(a->H->Rpc, &o);
+	if (err == ERR_NO_ERROR)
+	{
+		FreeRpcAdminOption(&o);
+	}
+
+	return HarnessCheckErr(a->H, err, "SetHubAdminOptions " HARNESS_HUB_A ": max_groups 1");
+}
+
+// CreateGroup and DeleteGroup log and change the configuration only when they created or deleted a group
+static void AdminAuditGroups(ADMINAUDIT *a)
+{
+	RPC_DELETE_USER d;
+	wchar_t text[MAX_SIZE];
+	UINT err;
+
+	Print("[groups]\n");
+
+	AdminAuditText(text, sizeof(text), "LA_CREATE_GROUP", ADMINAUDIT_GROUP, NULL);
+	AdminAuditBegin(a);
+	err = AdminAuditCreateGroup(a, ADMINAUDIT_GROUP);
+	AdminAuditEnd(a, "CreateGroup " ADMINAUDIT_GROUP, err, ERR_NO_ERROR, text, NULL, true);
+
+	AdminAuditBegin(a);
+	err = AdminAuditCreateGroup(a, ADMINAUDIT_GROUP);
+	AdminAuditEnd(a, "CreateGroup " ADMINAUDIT_GROUP " again (exists)", err, ERR_GROUP_ALREADY_EXISTS, NULL, text, false);
+
+	if (AdminAuditMaxGroups(a))
+	{
+		AdminAuditText(text, sizeof(text), "LA_CREATE_GROUP", ADMINAUDIT_GROUP2, NULL);
+		AdminAuditBegin(a);
+		err = AdminAuditCreateGroup(a, ADMINAUDIT_GROUP2);
+		AdminAuditEnd(a, "CreateGroup " ADMINAUDIT_GROUP2 " (over max_groups 1)", err, ERR_TOO_MANY_GROUP, NULL, text,
+			false);
+	}
+
+	AdminAuditText(text, sizeof(text), "LA_DELETE_GROUP", ADMINAUDIT_GROUP, NULL);
+	Zero(&d, sizeof(d));
+	StrCpy(d.HubName, sizeof(d.HubName), HARNESS_HUB_A);
+	StrCpy(d.Name, sizeof(d.Name), ADMINAUDIT_GROUP);
+	AdminAuditBegin(a);
+	err = ScDeleteGroup(a->H->Rpc, &d);
+	AdminAuditEnd(a, "DeleteGroup " ADMINAUDIT_GROUP, err, ERR_NO_ERROR, text, NULL, true);
+
+	Zero(&d, sizeof(d));
+	StrCpy(d.HubName, sizeof(d.HubName), HARNESS_HUB_A);
+	StrCpy(d.Name, sizeof(d.Name), ADMINAUDIT_GROUP);
+	AdminAuditBegin(a);
+	err = ScDeleteGroup(a->H->Rpc, &d);
+	AdminAuditEnd(a, "DeleteGroup " ADMINAUDIT_GROUP " again (no such group)", err, ERR_OBJECT_NOT_FOUND, NULL, text,
+		false);
+}
+
+// SetHubMsg or GetHubMsg (no Sc* stubs) with a hub name and a message. For GetHubMsg, *got receives the message of
+// the answer (the caller frees it)
+static UINT AdminAuditHubMsgCall(ADMINAUDIT *a, char *rpc_name, char *hubname, wchar_t *msg, wchar_t **got)
+{
+	RPC_MSG t;
+	PACK *p = NewPack();
+	PACK *ret;
+	UINT err;
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), hubname);
+	t.Msg = msg;
+	OutRpcMsg(p, &t);
+
+	// AdminCall releases the request
+	ret = AdminCall(a->H->Rpc, rpc_name, p);
+	err = GetErrorFromPack(ret);
+	if (err == ERR_NO_ERROR && got != NULL)
+	{
+		Zero(&t, sizeof(t));
+		InRpcMsg(&t, ret);
+		*got = t.Msg;
+	}
+	FreePack(ret);
+
+	return err;
+}
+
+// SetHubMsg changes the configuration only when it set the message; GetHubMsg reads no message from the request
+static void AdminAuditHubMsg(ADMINAUDIT *a)
+{
+	wchar_t *msg;
+	wchar_t *got = NULL;
+	UINT err;
+	UINT i;
+
+	Print("[hub message]\n");
+
+	AdminAuditBegin(a);
+	err = AdminAuditHubMsgCall(a, "SetHubMsg", ADMINAUDIT_NO_HUB, ADMINAUDIT_MSG, NULL);
+	AdminAuditEnd(a, "SetHubMsg " ADMINAUDIT_NO_HUB " (no such hub)", err, ERR_HUB_NOT_FOUND, NULL, NULL, false);
+
+	AdminAuditBegin(a);
+	err = AdminAuditHubMsgCall(a, "SetHubMsg", HARNESS_HUB_A, ADMINAUDIT_MSG, NULL);
+	AdminAuditEnd(a, "SetHubMsg " HARNESS_HUB_A, err, ERR_NO_ERROR, NULL, NULL, true);
+
+	msg = ZeroMalloc(sizeof(wchar_t) * (HUB_MAXMSG_LEN + 2));
+	for (i = 0;i <= HUB_MAXMSG_LEN;i++)
+	{
+		msg[i] = L'x';
+	}
+	err = AdminAuditHubMsgCall(a, "GetHubMsg", HARNESS_HUB_A, msg, &got);
+	HarnessExpectErr(a->H, err, ERR_NO_ERROR, "GetHubMsg " HARNESS_HUB_A " with a request message one character over "
+		"HUB_MAXMSG_LEN");
+	HarnessCheck(a->H, got != NULL && UniStrCmp(got, ADMINAUDIT_MSG) == 0,
+		"GetHubMsg " HARNESS_HUB_A " returns the message of SetHubMsg");
+
+	Free(got);
+	Free(msg);
+}
+
+// CRL entry with the CommonName ADMINAUDIT_CRL_NAME and an optional Organization
+static CRL *AdminAuditNewCrl(wchar_t *organization)
+{
+	CRL *crl = ZeroMalloc(sizeof(CRL));
+
+	crl->Name = NewName(ADMINAUDIT_CRL_NAME, organization, NULL, NULL, NULL, NULL);
+
+	return crl;
+}
+
+// Key of the one CRL entry of hub HARNESS_HUB_A (EnumCrl)
+static bool AdminAuditCrlKey(ADMINAUDIT *a, UINT *key)
+{
+	RPC_ENUM_CRL e;
+	UINT err;
+
+	*key = 0;
+
+	Zero(&e, sizeof(e));
+	StrCpy(e.HubName, sizeof(e.HubName), HARNESS_HUB_A);
+	err = ScEnumCrl(a->H->Rpc, &e);
+	if (err == ERR_NO_ERROR)
+	{
+		if (e.NumItem == 1)
+		{
+			*key = e.Items[0].Key;
+		}
+		FreeRpcEnumCrl(&e);
+	}
+
+	return HarnessCheck(a->H, err == ERR_NO_ERROR && *key != 0, "EnumCrl lists the one CRL entry of " HARNESS_HUB_A);
+}
+
+// Flush, then whether the saved configuration file holds the CRL entry
+static void AdminAuditCheckSaved(ADMINAUDIT *a, bool expected, char *what)
+{
+	RPC_TEST t;
+	BUF *b;
+	char *s;
+
+	Zero(&t, sizeof(t));
+	if (HarnessCheckErr(a->H, ScFlush(a->H->Rpc, &t), "Flush (the server writes " HARNESS_CONFIG_FILE ")") == false)
+	{
+		return;
+	}
+
+	b = ReadDump(HARNESS_CONFIG_FILE);
+	s = HarnessBufToStr(b);
+
+	HarnessCheck(a->H, b != NULL && InStr(s, ADMINAUDIT_CRL_NAME_A) == expected, what);
+
+	Free(s);
+	FreeBuf(b);
+}
+
+// AddCrl writes "added" and SetCrl "edited" (the two keys were swapped); DelCrl changes the configuration revision
+// as AddCrl and SetCrl do
+static void AdminAuditCrl(ADMINAUDIT *a)
+{
+	RPC_CRL t;
+	PACK *p;
+	PACK *ret;
+	wchar_t add_text[MAX_SIZE];
+	wchar_t set_text[MAX_SIZE];
+	wchar_t del_text[MAX_SIZE];
+	UINT key;
+	UINT err;
+
+	Print("[certificate revocation list]\n");
+
+	AdminAuditText(add_text, sizeof(add_text), "LA_ADD_CRL", NULL, NULL);
+	AdminAuditText(set_text, sizeof(set_text), "LA_SET_CRL", NULL, NULL);
+	AdminAuditText(del_text, sizeof(del_text), "LA_DEL_CRL", NULL, NULL);
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
+	t.Crl = AdminAuditNewCrl(NULL);
+	AdminAuditBegin(a);
+	err = ScAddCrl(a->H->Rpc, &t);
+	if (err == ERR_NO_ERROR)
+	{
+		FreeRpcCrl(&t);
+	}
+	AdminAuditEnd(a, "AddCrl " ADMINAUDIT_CRL_NAME_A, err, ERR_NO_ERROR, add_text, set_text, true);
+
+	if (AdminAuditCrlKey(a, &key) == false)
+	{
+		return;
+	}
+
+	// SetCrl has no Sc* stub
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
+	t.Key = key;
+	t.Crl = AdminAuditNewCrl(ADMINAUDIT_CRL_ORG);
+	p = NewPack();
+	OutRpcCrl(p, &t);
+	FreeRpcCrl(&t);
+	AdminAuditBegin(a);
+	ret = AdminCall(a->H->Rpc, "SetCrl", p);
+	err = GetErrorFromPack(ret);
+	FreePack(ret);
+	AdminAuditEnd(a, "SetCrl " ADMINAUDIT_CRL_NAME_A, err, ERR_NO_ERROR, set_text, add_text, true);
+
+	AdminAuditCheckSaved(a, true, "the saved configuration holds the CRL entry " ADMINAUDIT_CRL_NAME_A);
+
+	// SetCrl replaced the entry, which gives it another key
+	if (AdminAuditCrlKey(a, &key) == false)
+	{
+		return;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
+	t.Key = key;
+	AdminAuditBegin(a);
+	err = ScDelCrl(a->H->Rpc, &t);
+	if (err == ERR_NO_ERROR)
+	{
+		FreeRpcCrl(&t);
+	}
+	AdminAuditEnd(a, "DelCrl " ADMINAUDIT_CRL_NAME_A, err, ERR_NO_ERROR, del_text, NULL, true);
+
+	AdminAuditCheckSaved(a, false, "the saved configuration no longer holds the CRL entry " ADMINAUDIT_CRL_NAME_A);
+}
+
+// DeleteSession writes its line when it disconnected the session, not when it failed
+static void AdminAuditSession(ADMINAUDIT *a, char *session)
+{
+	RPC_DELETE_SESSION t;
+	wchar_t text[MAX_SIZE];
+	UINT err;
+
+	Print("[sessions]\n");
+
+	AdminAuditText(text, sizeof(text), "LA_DELETE_SESSION", ADMINAUDIT_NO_SESSION, NULL);
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
+	StrCpy(t.Name, sizeof(t.Name), ADMINAUDIT_NO_SESSION);
+	AdminAuditBegin(a);
+	err = ScDeleteSession(a->H->Rpc, &t);
+	AdminAuditEnd(a, "DeleteSession " ADMINAUDIT_NO_SESSION " (no such session)", err, ERR_OBJECT_NOT_FOUND, NULL, text,
+		false);
+
+	AdminAuditText(text, sizeof(text), "LA_DELETE_SESSION", session, NULL);
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
+	StrCpy(t.Name, sizeof(t.Name), session);
+	AdminAuditBegin(a);
+	err = ScDeleteSession(a->H->Rpc, &t);
+	AdminAuditEnd(a, "DeleteSession of test session A", err, ERR_NO_ERROR, text, NULL, false);
+
+	// The client would log in again after its retry interval
+	HarnessStopSession(a->H->PaA);
+}
+
+// DeleteLocalBridge writes its line only when it deleted a Local Bridge
+static void AdminAuditBridge(ADMINAUDIT *a)
+{
+	RPC_LOCALBRIDGE t;
+	wchar_t text[MAX_SIZE];
+	UINT err;
+
+	Print("[local bridge]\n");
+
+	AdminAuditText(text, sizeof(text), "LA_DELETE_BRIDGE", HARNESS_HUB_A, ADMINAUDIT_NO_DEVICE);
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
+	StrCpy(t.DeviceName, sizeof(t.DeviceName), ADMINAUDIT_NO_DEVICE);
+	AdminAuditBegin(a);
+	err = ScDeleteLocalBridge(a->H->Rpc, &t);
+	AdminAuditEnd(a, "DeleteLocalBridge " ADMINAUDIT_NO_DEVICE " (no such bridge)", err, ERR_OBJECT_NOT_FOUND, NULL,
+		text, false);
+}
+
+// One AddCa of a certificate on hub HARNESS_HUB_A: the line and the revision change only when the hub added it
+static void AdminAuditAddCa(ADMINAUDIT *a, X *x, char *what, bool added)
+{
+	RPC_HUB_ADD_CA t;
+	wchar_t text[MAX_SIZE];
+	UINT err;
+
+	AdminAuditText(text, sizeof(text), "LA_ADD_CA", NULL, NULL);
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
+	t.Cert = CloneX(x);
+	AdminAuditBegin(a);
+	err = ScAddCa(a->H->Rpc, &t);
+	if (err == ERR_NO_ERROR)
+	{
+		FreeRpcHubAddCa(&t);
+	}
+	AdminAuditEnd(a, what, err, ERR_NO_ERROR, added ? text : NULL, added ? NULL : text, added);
+}
+
+// AddCa logs and changes the configuration after the hub added the certificate; the hub ignores a certificate it
+// already trusts, and the call still succeeds
+static void AdminAuditCa(ADMINAUDIT *a)
+{
+	RPC_KEY_PAIR k;
+
+	Print("[trusted CA certificates]\n");
+
+	Zero(&k, sizeof(k));
+	if (HarnessCheckErr(a->H, ScGetServerCert(a->H->Rpc, &k), "GetServerCert (the certificate AddCa registers)") == false)
+	{
+		return;
+	}
+
+	AdminAuditAddCa(a, k.Cert, "AddCa of the server certificate", true);
+	AdminAuditAddCa(a, k.Cert, "AddCa of the same certificate again (already trusted)", false);
+
+	FreeRpcKeyPair(&k);
+}
+
+////////////////////////////
 // Entry points
 
 // "harness": in-process server, two hubs, cascade, frames, vpncmd golden outputs and configuration round-trips
@@ -5718,6 +6384,82 @@ void listenerbind_test(UINT num, char **arg)
 	else
 	{
 		Print("LISTENERBIND TEST FAILED (%u failed checks)\n", h->NumFail);
+	}
+
+	HarnessFree(h);
+}
+
+// "adminaudit": the admin RPC handlers write their audit line after an operation that succeeded, never after a
+// failed one, with the right string table key, and change the configuration revision only when the configuration
+// changed (FND-10 #107). The server's syslog goes to a loopback receiver of the test
+void adminaudit_test(UINT num, char **arg)
+{
+	HARNESS *h = HarnessNew();
+	HARNESS_WATCHDOG *wd = HarnessStartWatchdog("ADMINAUDIT", ADMINAUDIT_WATCHDOG_LIMIT);
+	ADMINAUDIT *a = NULL;
+	char session[MAX_SESSION_NAME_LEN + 1];
+	bool ok;
+
+	session[0] = 0;
+
+	Print("Ranz adminaudit: audit lines and configuration revision of the admin RPC handlers, hub %s, syslog on a "
+		"loopback receiver\n", HARNESS_HUB_A);
+
+	Print("[setup]\n");
+	ok = HarnessStartServer(h);
+
+	if (ok)
+	{
+		HarnessSetPhase("setup", "hub, users, test session");
+		ok = HarnessCreateHub(h, HARNESS_HUB_A) &&
+			HarnessCreateUser(h, HARNESS_HUB_A, HARNESS_USER_A, L"Harness tester A") &&
+			HarnessCreateUser(h, HARNESS_HUB_A, ADMINAUDIT_USER, L"Adminaudit user") &&
+			HarnessCheck(h, HarnessStartSession(h, h->PaA, HARNESS_HUB_A, HARNESS_USER_A), "test session A created") &&
+			HarnessWaitSession(h, h->PaA, HARNESS_SESSION_TIMEOUT) &&
+			HarnessCheck(h, HarnessWaitSessionListed(h, HARNESS_HUB_A, HARNESS_USER_A, false, session, sizeof(session)),
+				"HARNESS_A lists test session A (EnumSession)");
+	}
+
+	if (ok)
+	{
+		HarnessSetPhase("setup", "syslog receiver");
+		a = AdminAuditNew(h);
+		ok = (a != NULL);
+	}
+
+	if (ok)
+	{
+		HarnessSetPhase("adminaudit", "users");
+		AdminAuditUsers(a);
+		HarnessSetPhase("adminaudit", "groups");
+		AdminAuditGroups(a);
+		HarnessSetPhase("adminaudit", "hub message");
+		AdminAuditHubMsg(a);
+		HarnessSetPhase("adminaudit", "crl");
+		AdminAuditCrl(a);
+		HarnessSetPhase("adminaudit", "sessions");
+		AdminAuditSession(a, session);
+		HarnessSetPhase("adminaudit", "local bridge");
+		AdminAuditBridge(a);
+		HarnessSetPhase("adminaudit", "ca");
+		AdminAuditCa(a);
+	}
+
+	HarnessSetPhase("teardown", NULL);
+	Print("[teardown]\n");
+	AdminAuditFree(a);
+	HarnessStopSessions(h);
+	HarnessStopServer(h);
+
+	HarnessStopWatchdog(wd);
+
+	if (h->NumFail == 0)
+	{
+		Print("ADMINAUDIT TEST OK\n");
+	}
+	else
+	{
+		Print("ADMINAUDIT TEST FAILED (%u failed checks)\n", h->NumFail);
 	}
 
 	HarnessFree(h);

@@ -612,6 +612,7 @@ TEST_LIST test_list[] =
 	{"storepacket", storepacket_test, "StorePacket: the broadcast storm list of a session stays at its cap, access list delay and jitter never divide by zero."},
 	{"consoleline", consoleline_test, "Console input: a prompt line longer than its buffer, Ctrl+D and Ctrl+Z, the /IN file reader, UniToInt on a long string."},
 	{"tempdir", tempdir_test, "Temp directory: 64-bit random name, protected DACL; loading a string table writes no cache file."},
+	{"adminaudit", adminaudit_test, "Admin audit: audit lines only after a successful call and with the right key, the configuration revision only after a change."},
 };
 
 // Test function

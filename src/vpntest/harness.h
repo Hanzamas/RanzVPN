@@ -10,5 +10,6 @@ void harness_test(UINT num, char **arg);
 void bench_test(UINT num, char **arg);
 void certdl_test(UINT num, char **arg);
 void listenerbind_test(UINT num, char **arg);
+void adminaudit_test(UINT num, char **arg);
 
 #endif	// HARNESS_H
