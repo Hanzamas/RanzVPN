@@ -42,6 +42,9 @@ target_sources(vpntest PRIVATE consoleline.c)
 # Named temp directory and string table test of SEC-8 (#96)
 target_sources(vpntest PRIVATE tempdir.c)
 
+# vpncmd command cases of the harness (golden family "cmd"), PKG-2 (#106)
+target_sources(vpntest PRIVATE harness_cmd.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"

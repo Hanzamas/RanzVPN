@@ -18,6 +18,8 @@
 //   "HARNESS GOLDEN MODE update|compare" tells whether the golden files were compared.
 // - The admin RPC Pack goldens (golden family "pack", harness_pack.c) run right after the vpncmd
 //   goldens, while the sessions and the cascade are up. harness_int.h holds the shared types.
+// - The vpncmd command cases (golden family "cmd", harness_cmd.c) run after phase "iptablelock": command
+//   sequences with failing steps, each on a Virtual Hub of its own.
 // - "bench" runs every case HARNESS_BENCH_RUNS times and prints "BENCH <name> <median> <unit>", then
 //   "BENCH <name>_runs <run 1>,...,<run n> <unit>" in run order. Besides the cascade path it has in-process
 //   cases without TLS, one per hot spot of spec #31: flood_fps_<n> (one session floods broadcast frames to
@@ -176,13 +178,13 @@ typedef struct HARNESS_VPNCMD
 	char *Command;				// Command after /CMD
 } HARNESS_VPNCMD;
 
-// Normalisation rules resolved from the string table (UTF-8 titles)
-typedef struct HARNESS_NORM
+// Normalisation rules resolved from the string table (UTF-8 titles); typedef in harness_int.h
+struct HARNESS_NORM
 {
 	LIST *VolatileColumns;		// Column titles whose cells are volatile
 	LIST *VolatileRows;			// Row titles whose values are volatile
 	LIST *DropRows;				// Row titles removed (environment dependent rows)
-} HARNESS_NORM;
+};
 
 // Cells of one CSV line
 typedef struct HARNESS_CELLS
@@ -315,6 +317,7 @@ static char *harness_volatile_columns[] =
 	"SM_SESS_COLUMN_6",			// Transfer Bytes
 	"SM_SESS_COLUMN_7",			// Transfer Packets
 	"SM_LINK_COLUMN_3",			// Established at
+	"SM_ACCESS_COLUMN_6",		// Unique ID of an access list rule (hash of its address, vpncmd cases)
 };
 
 // Item,Value rows whose values depend on the build, the machine, the time or traffic timing
@@ -432,8 +435,6 @@ static bool HarnessSetup(HARNESS *h);
 static bool HarnessCheckMac(HARNESS *h, char *hubname, UCHAR *mac, char *session_name);
 static bool HarnessTeach(HARNESS *h);
 static bool HarnessFrames(HARNESS *h);
-static HARNESS_NORM *HarnessNewNorm();
-static void HarnessFreeNorm(HARNESS_NORM *n);
 static void HarnessAddLabel(LIST *o, wchar_t *label);
 static void HarnessAddCapsLabel(LIST *o, char *caps_name);
 static bool HarnessInList(LIST *o, char *str);
@@ -445,7 +446,6 @@ static bool HarnessIsDateTime(char *s);
 static bool HarnessIsHexChar(char c);
 static bool HarnessHasRandomMac(char *s);
 static char *HarnessNormalizeCell(char *s);
-static char *HarnessNormalizeVpncmd(HARNESS_NORM *n, BUF *raw);
 static BUF *HarnessRunVpncmd(HARNESS *h, HARNESS_VPNCMD *v);
 static void HarnessGetDirs(char *out_dir, UINT out_size, char *golden_dir, UINT golden_size, bool *update);
 static void HarnessCheckStaleGolden(HARNESS *h, char *golden_dir);
@@ -1936,7 +1936,7 @@ static bool HarnessFrames(HARNESS *h)
 // vpncmd golden outputs
 
 // Resolve the normalisation rules from the string table
-static HARNESS_NORM *HarnessNewNorm()
+HARNESS_NORM *HarnessNewNorm()
 {
 	HARNESS_NORM *n = ZeroMalloc(sizeof(HARNESS_NORM));
 	UINT i;
@@ -1969,7 +1969,7 @@ static HARNESS_NORM *HarnessNewNorm()
 }
 
 // Release the normalisation rules
-static void HarnessFreeNorm(HARNESS_NORM *n)
+void HarnessFreeNorm(HARNESS_NORM *n)
 {
 	if (n == NULL)
 	{
@@ -2352,7 +2352,7 @@ static char *HarnessNormalizeCell(char *s)
 }
 
 // Normalise the CSV output of one vpncmd command
-static char *HarnessNormalizeVpncmd(HARNESS_NORM *n, BUF *raw)
+char *HarnessNormalizeVpncmd(HARNESS_NORM *n, BUF *raw)
 {
 	char *text = HarnessBufToStr(raw);
 	LIST *lines = HarnessSplitLines(HarnessSkipBom(text));
@@ -5176,6 +5176,7 @@ void harness_test(UINT num, char **arg)
 		HarnessZeroKeyUser(h);
 		HarnessSetPhase("iptablelock", NULL);
 		HarnessIpTableLock(h);
+		HarnessCmdCases(h);
 		HarnessSetPhase("config", NULL);
 		HarnessConfigApiRoundTrip(h);
 	}
