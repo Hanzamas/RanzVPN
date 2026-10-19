@@ -4,15 +4,12 @@
 #include "Table.h"
 
 #include "Cfg.h"
-#include "DNS.h"
 #include "FileIO.h"
 #include "Internat.h"
 #include "Mayaqua.h"
 #include "Memory.h"
 #include "Microsoft.h"
-#include "Network.h"
 #include "Str.h"
-#include "Tick64.h"
 
 #include <stdlib.h>
 
@@ -860,192 +857,9 @@ static bool LoadTableFromBuf(BUF *b)
 	return true;
 }
 
-static void GenerateUnicodeCacheFileName(wchar_t *name, UINT size, wchar_t *strfilename, UINT strfilesize, UCHAR *filehash)
-{
-	wchar_t tmp[MAX_SIZE];
-	wchar_t hashstr[64];
-	wchar_t hashtemp[MAX_SIZE];
-	wchar_t exe[MAX_SIZE];
-	UCHAR hash[SHA1_SIZE];
-	if (name == NULL || strfilename == NULL || filehash == NULL)
-	{
-		return;
-	}
-
-	GetExeDirW(exe, sizeof(exe));
-	UniStrCpy(hashtemp, sizeof(hashtemp), strfilename);
-	BinToStrW(tmp, sizeof(tmp), filehash, MD5_SIZE);
-	UniStrCat(hashtemp, sizeof(hashtemp), tmp);
-	UniStrCat(hashtemp, sizeof(hashtemp), exe);
-	UniStrLower(hashtemp);
-
-	Sha0(hash, hashtemp, UniStrLen(hashtemp) * sizeof(wchar_t));
-	BinToStrW(hashstr, sizeof(hashstr), hash, 4);
-	UniFormat(tmp, sizeof(tmp), UNICODE_CACHE_FILE, hashstr);
-	UniStrLower(tmp);
-
-	StrToUni(exe, sizeof(exe), MsGetTempDir());
-
-	UniFormat(name, size, L"%s/%s", exe, tmp);
-	NormalizePathW(name, size, name);
-}
-
-static void SaveUnicodeCache(wchar_t *strfilename, UINT strfilesize, UCHAR *hash)
-{
-	UNICODE_CACHE c;
-	BUF *b;
-	UINT i;
-	IO *io;
-	wchar_t name[MAX_PATH];
-	UCHAR binhash[MD5_SIZE];
-	if (strfilename == NULL || hash == NULL)
-	{
-		return;
-	}
-
-	Zero(&c, sizeof(c));
-	UniToStr(c.StrFileName, sizeof(c.StrFileName), strfilename);
-	c.StrFileSize = strfilesize;
-	GetMachineName(c.MachineName, sizeof(c.MachineName));
-	c.OsType = GetOsInfo()->OsType;
-	Copy(c.hash, hash, MD5_SIZE);
-
-	{
-		UINT id = MsGetThreadLocale();
-		Copy(c.CharSet, &id, sizeof(id));
-	}
-
-	b = NewBuf();
-	WriteBuf(b, &c, sizeof(c));
-
-	WriteBufInt(b, LIST_NUM(TableList));
-	for (i = 0;i < LIST_NUM(TableList);i++)
-	{
-		TABLE *t = LIST_DATA(TableList, i);
-		WriteBufInt(b, StrLen(t->name));
-		WriteBuf(b, t->name, StrLen(t->name));
-		WriteBufInt(b, StrLen(t->str));
-		WriteBuf(b, t->str, StrLen(t->str));
-		WriteBufInt(b, UniStrLen(t->unistr));
-		WriteBuf(b, t->unistr, UniStrLen(t->unistr) * sizeof(wchar_t));
-	}
-
-	Md5(binhash, b->Buf, b->Size);
-	WriteBuf(b, binhash, MD5_SIZE);
-
-	GenerateUnicodeCacheFileName(name, sizeof(name), strfilename, strfilesize, hash);
-
-	io = FileCreateW(name);
-	if (io != NULL)
-	{
-		SeekBuf(b, 0, 0);
-		BufToFile(io, b);
-		FileClose(io);
-	}
-
-	FreeBuf(b);
-}
-
-static bool LoadUnicodeCache(wchar_t *strfilename, UINT strfilesize, UCHAR *hash)
-{
-	UNICODE_CACHE c, t;
-	BUF *b;
-	UINT i, num;
-	IO *io;
-	wchar_t name[MAX_PATH];
-	UCHAR binhash[MD5_SIZE];
-	UCHAR binhash_2[MD5_SIZE];
-	if (strfilename == NULL || hash == NULL)
-	{
-		return false;
-	}
-
-	GenerateUnicodeCacheFileName(name, sizeof(name), strfilename, strfilesize, hash);
-
-	io = FileOpenW(name, false);
-	if (io == NULL)
-	{
-		return false;
-	}
-
-	b = FileToBuf(io);
-	if (b == NULL)
-	{
-		FileClose(io);
-		return false;
-	}
-
-	SeekBuf(b, 0, 0);
-	FileClose(io);
-
-	Md5(binhash, b->Buf, b->Size >= MD5_SIZE ? (b->Size - MD5_SIZE) : 0);
-	Copy(binhash_2, ((UCHAR *)b->Buf) + (b->Size >= MD5_SIZE ? (b->Size - MD5_SIZE) : 0), MD5_SIZE);
-	if (Cmp(binhash, binhash_2, MD5_SIZE) != 0)
-	{
-		FreeBuf(b);
-		return false;
-	}
-
-	Zero(&c, sizeof(c));
-	UniToStr(c.StrFileName, sizeof(c.StrFileName), strfilename);
-	c.StrFileSize = strfilesize;
-	DnsCacheToggle(false);
-	GetMachineName(c.MachineName, sizeof(c.MachineName));
-	DnsCacheToggle(true);
-	c.OsType = GetOsInfo()->OsType;
-	Copy(c.hash, hash, MD5_SIZE);
-
-	{
-		UINT id = MsGetThreadLocale();
-		Copy(c.CharSet, &id, sizeof(id));
-	}
-
-	Zero(&t, sizeof(t));
-	ReadBuf(b, &t, sizeof(t));
-
-	if (Cmp(&c, &t, sizeof(UNICODE_CACHE)) != 0)
-	{
-		FreeBuf(b);
-		return false;
-	}
-
-	num = ReadBufInt(b);
-
-	FreeTable();
-	TableList = NewList(CmpTableName);
-
-	for (i = 0;i < num;i++)
-	{
-		UINT len;
-		TABLE *t = ZeroMalloc(sizeof(TABLE));
-
-		len = ReadBufInt(b);
-		t->name = ZeroMalloc(len + 1);
-		ReadBuf(b, t->name, len);
-
-		len = ReadBufInt(b);
-		t->str = ZeroMalloc(len + 1);
-		ReadBuf(b, t->str, len);
-
-		len = ReadBufInt(b);
-		t->unistr = ZeroMalloc((len + 1) * sizeof(wchar_t));
-		ReadBuf(b, t->unistr, len * sizeof(wchar_t));
-
-		Add(TableList, t);
-	}
-
-	FreeBuf(b);
-
-	Sort(TableList);
-
-	return true;
-}
-
 static bool LoadTableMain(wchar_t *filename)
 {
 	BUF *b;
-	UINT64 t1, t2;
-	UCHAR hash[MD5_SIZE];
 	if (filename == NULL)
 	{
 		return false;
@@ -1061,8 +875,6 @@ static bool LoadTableMain(wchar_t *filename)
 		return true;
 	}
 
-	t1 = Tick64();
-
 	b = ReadDumpW(filename);
 	if (b == NULL)
 	{
@@ -1073,21 +885,11 @@ static bool LoadTableMain(wchar_t *filename)
 		return false;
 	}
 
-	Md5(hash, b->Buf, b->Size);
-
-	if (LoadUnicodeCache(filename, b->Size, hash) == false)
+	// Parsed from the resource at every load: no cache file in %TEMP%, which other users can write (SEC-8)
+	if (LoadTableFromBuf(b) == false)
 	{
-		if (LoadTableFromBuf(b) == false)
-		{
-			FreeBuf(b);
-			return false;
-		}
-
-		SaveUnicodeCache(filename, b->Size, hash);
-
-	}
-	else
-	{
+		FreeBuf(b);
+		return false;
 	}
 
 	FreeBuf(b);
@@ -1095,8 +897,6 @@ static bool LoadTableMain(wchar_t *filename)
 	SetLocale(_UU("DEFAULT_LOCALE"));
 
 	UniStrCpy(old_table_name, sizeof(old_table_name), filename);
-
-	t2 = Tick64();
 
 	if (StrCmpi(_SS("STRTABLE_ID"), STRTABLE_ID) != 0)
 	{

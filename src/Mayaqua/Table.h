@@ -6,8 +6,6 @@
 
 #include "Encrypt.h"
 
-#define	UNICODE_CACHE_FILE		L".unicode_cache_%s.dat"
-
 #define	LANGLIST_FILENAME		"|languages.txt"
 
 #define	LANG_CONFIG_FILENAME	L"$lang.config"
@@ -22,16 +20,6 @@ struct TABLE
 	char *str;
 	wchar_t *unistr;
 };
-
-typedef struct UNICODE_CACHE
-{
-	char StrFileName[256];
-	UINT StrFileSize;
-	char MachineName[256];
-	UINT OsType;
-	UCHAR hash[MD5_SIZE];
-	UCHAR CharSet[64];
-} UNICODE_CACHE;
 
 #define	_SS(name)		(GetTableStr((char *)(name)))
 #define	_UU(name)		(GetTableUniStr((char *)(name)))

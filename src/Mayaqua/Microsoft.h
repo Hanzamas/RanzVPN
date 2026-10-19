@@ -304,7 +304,6 @@ UINT MsGetConsoleWidth();
 UINT MsSetConsoleWidth(UINT size);
 NO_WARNING *MsInitNoWarningEx(UINT start_timer);
 void MsFreeNoWarning(NO_WARNING *nw);
-UINT MsGetThreadLocale();
 int CmpWindowList(void *p1, void *p2);
 void AddWindow(LIST *o, HWND hWnd);
 
