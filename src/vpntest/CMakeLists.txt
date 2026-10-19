@@ -33,6 +33,9 @@ target_sources(vpntest PRIVATE bufbounds.c)
 # Named keepalive span and client Pack size cap tests of SEC-4 (#96)
 target_sources(vpntest PRIVATE keepalive.c packcap.c)
 
+# Named StorePacket test of SEC-5 (#96)
+target_sources(vpntest PRIVATE storepacket.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"

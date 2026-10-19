@@ -22,6 +22,9 @@
 
 #define	DEFAULT_DHCP_DISCOVER_TIMEOUT				(5 * 1000)
 
+// Entries of the broadcast storm list of one session (HUB_PA.StormList): AddStormList drops the oldest one beyond this
+#define	MAX_STORM_LIST_ENTRIES						4096
+
 struct HUBDB
 {
 	LIST *UserList;

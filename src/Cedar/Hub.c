@@ -3424,21 +3424,25 @@ DISCARD_PACKET:
 
 			if (packet->Delay >= 1)
 			{
-				float delay = (float)packet->Delay;
-				float jitter;
-				UINT delay_uint;
+				// Jitter is a percentage of the delay, in whole ms: a span below 1 ms means no jitter, never a
+				// modulo by zero (Delay 10 with Jitter 5 gave a span of 0)
+				UINT jitter_span = (UINT)((UINT64)packet->Jitter * (UINT64)packet->Delay / 100);
+				UINT jitter = 0;
+				UINT delay_uint = packet->Delay;
 				bool f = Rand1();
-				if (packet->Jitter == 0)
+				if (jitter_span != 0)
 				{
-					jitter = 0;
+					jitter = Rand32() % jitter_span;
+				}
+
+				if (f)
+				{
+					delay_uint += jitter;
 				}
 				else
 				{
-					jitter = (float)(Rand32() % (int)((float)packet->Jitter * delay / 100.0f));
+					delay_uint = (jitter < delay_uint ? delay_uint - jitter : 0);
 				}
-
-				delay += jitter * (f ? 1 : -1);
-				delay_uint = (UINT)delay;
 
 				if (delay_uint >= 1)
 				{
@@ -4529,12 +4533,42 @@ void DeleteOldIpTableEntry(LIST *o)
 }
 
 
+// Drop the storm list entry whose check window started first: the flow that has been quiet the longest
+static void DeleteOldestStorm(LIST *o)
+{
+	STORM *oldest = NULL;
+	UINT i;
+
+	for (i = 0;i < LIST_NUM(o);i++)
+	{
+		STORM *s = LIST_DATA(o, i);
+
+		if (oldest == NULL || s->CheckStartTick < oldest->CheckStartTick)
+		{
+			oldest = s;
+		}
+	}
+
+	if (oldest != NULL)
+	{
+		Delete(o, oldest);
+		Free(oldest);
+	}
+}
+
 STORM *AddStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, bool strict)
 {
 	STORM *s;
 	if (pa == NULL || mac_address == NULL)
 	{
 		return NULL;
+	}
+
+	// One entry per source MAC, source IP and destination IP: a session that varies its addresses would
+	// grow the list without bound, so a full list makes room first
+	if (LIST_NUM(pa->StormList) >= MAX_STORM_LIST_ENTRIES)
+	{
+		DeleteOldestStorm(pa->StormList);
 	}
 
 	s = ZeroMalloc(sizeof(STORM));
