@@ -21,6 +21,9 @@ target_sources(vpntest PRIVATE machineid.c)
 # Named VM detection test of FIX-7 (#103)
 target_sources(vpntest PRIVATE vmdetect.c)
 
+# Named X.509 and certificate signature test of SEC-2 (#96)
+target_sources(vpntest PRIVATE x509test.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"

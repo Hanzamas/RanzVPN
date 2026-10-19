@@ -1,6 +1,7 @@
 // fuzz_x509.c
-// libFuzzer target: X.509 certificate loading from a buffer (BufToX), DER and PEM, and
-// the conversion of the parsed certificate into Mayaqua's X (X509ToX)
+// libFuzzer target: X.509 certificate loading from a buffer (BufToX), DER and PEM, PEM
+// certificate bundles (BufToXList, as for a chain file), and the conversion of the parsed
+// certificates into Mayaqua's X (X509ToX)
 
 #include "fuzz_common.h"
 
@@ -53,6 +54,12 @@ static void FuzzX509(const uint8_t *data, size_t size)
 			FreeBuf(der);
 			FreeBuf(pem);
 			FreeX(x);
+		}
+
+		// The PEM pass also reads the input as a bundle of certificates
+		if (i == 1)
+		{
+			FreeXList(BufToXList(b, true));
 		}
 	}
 
