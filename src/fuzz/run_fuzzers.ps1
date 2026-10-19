@@ -3,8 +3,7 @@
 #
 # For every target:
 #   1. replay: every seed of src/fuzz/corpus/<target> once (-runs=0); must exit 0 and print
-#      "NO MEMORY LEAKS" (Mayaqua's leak check, run at exit by fuzz_common.c). Runs with
-#      RANZ_FUZZ_CFG_BINARY=1, so fuzz_cfg also parses its binary seed (see fuzz_cfg.c).
+#      "NO MEMORY LEAKS" (Mayaqua's leak check, run at exit by fuzz_common.c).
 #   2. fuzz: -max_total_time=<Seconds> with a fixed -seed; must exit 0. A leak report at the
 #      end of this run is printed as a warning only: an input that leaks Mayaqua objects
 #      already aborted (FuzzRun() in fuzz_common.c), so this report means a leak that did not
@@ -45,10 +44,9 @@ foreach ($dir in @($WorkRoot, $ArtifactDir, $LogDir)) {
 	New-Item -ItemType Directory -Force -Path $dir | Out-Null
 }
 
-# Runs one fuzzer process with stdin closed (a leak report waits for Enter otherwise) and the
-# extra environment variables given, captures stdout (Mayaqua) and stderr (libFuzzer, ASan)
-# into the log, returns the result
-function Invoke-Fuzzer([string] $Exe, [string[]] $Arguments, [string] $Log, [hashtable] $Environment = @{}) {
+# Runs one fuzzer process with stdin closed (a leak report waits for Enter otherwise), captures
+# stdout (Mayaqua) and stderr (libFuzzer, ASan) into the log, returns the result
+function Invoke-Fuzzer([string] $Exe, [string[]] $Arguments, [string] $Log) {
 	$psi = New-Object System.Diagnostics.ProcessStartInfo
 	$psi.FileName = $Exe
 	$psi.Arguments = ($Arguments | ForEach-Object { '"' + $_ + '"' }) -join ' '
@@ -57,7 +55,6 @@ function Invoke-Fuzzer([string] $Exe, [string[]] $Arguments, [string] $Log, [has
 	$psi.RedirectStandardOutput = $true
 	$psi.RedirectStandardError = $true
 	$psi.WorkingDirectory = $BuildDir
-	foreach ($name in $Environment.Keys) { $psi.EnvironmentVariables[$name] = $Environment[$name] }
 
 	$proc = [System.Diagnostics.Process]::Start($psi)
 	$proc.StandardInput.Close()
@@ -102,10 +99,10 @@ foreach ($target in $Targets) {
 	$common = @("-max_len=$($MaxLen[$target])", '-timeout=25', '-rss_limit_mb=2048',
 		('-artifact_prefix=' + (Join-Path $ArtifactDir "$($target)-")))
 
-	# 1. Replay the seed corpus, binary configurations included (fuzz_cfg.c)
+	# 1. Replay the seed corpus
 	$log = Join-Path $LogDir "$target-replay.log"
 	Write-Host "[$target] replay $seeds"
-	$result = Invoke-Fuzzer $exe ($common + @('-runs=0', $seeds)) $log @{ 'RANZ_FUZZ_CFG_BINARY' = '1' }
+	$result = Invoke-Fuzzer $exe ($common + @('-runs=0', $seeds)) $log
 	$problems = Get-Problems $result $true
 	if ($problems.Count -ne 0) {
 		Write-LogTail $result

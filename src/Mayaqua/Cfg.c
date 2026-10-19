@@ -683,48 +683,109 @@ FOLDER *CfgBufTextToFolder(BUF *b)
 	return f;
 }
 
-static void CfgReadNextFolderBin(BUF *b, FOLDER *parent)
+// Smallest encoding of one folder or one item in the binary format: a folder is a name length and
+// two counts, an item a name length, a type and a value of at least 4 bytes
+#define	CFG_BIN_MIN_ENTRY_SIZE		12
+
+// Read one big-endian UINT of the binary format; false at the end of the data, where ReadBufInt()
+// returns 0
+static bool CfgReadBinInt(BUF *b, UINT *value)
+{
+	UINT v;
+
+	if (ReadBuf(b, &v, sizeof(v)) != sizeof(v))
+	{
+		return false;
+	}
+
+	*value = Endian32(v);
+
+	return true;
+}
+
+// Read a folder or item count; false when that many entries cannot fit in the bytes left
+static bool CfgReadBinCount(BUF *b, UINT *count)
+{
+	if (CfgReadBinInt(b, count) == false)
+	{
+		return false;
+	}
+
+	return (*count <= ReadBufRemainSize(b) / CFG_BIN_MIN_ENTRY_SIZE);
+}
+
+// Read one folder of the binary format into parent. Every count and size is checked against the
+// bytes left before it is used: false on a short or malformed input, which leaves a partial tree
+// under parent for the caller to delete
+static bool CfgReadNextFolderBin(BUF *b, FOLDER *parent)
 {
 	char name[MAX_SIZE];
 	FOLDER *f;
 	UINT n, i;
 	UINT size;
+	UINT value;
 	UCHAR *buf;
 	wchar_t *string;
 	if (b == NULL || parent == NULL)
 	{
-		return;
+		return false;
 	}
 
-	ReadBufStr(b, name, sizeof(name));
+	if (ReadBufStr(b, name, sizeof(name)) == false)
+	{
+		return false;
+	}
 	f = CfgCreateFolder(parent, name);
 
-	n = ReadBufInt(b);
+	if (CfgReadBinCount(b, &n) == false)
+	{
+		return false;
+	}
 	for (i = 0;i < n;i++)
 	{
-		CfgReadNextFolderBin(b, f);
+		if (CfgReadNextFolderBin(b, f) == false)
+		{
+			return false;
+		}
 	}
 
-	n = ReadBufInt(b);
+	if (CfgReadBinCount(b, &n) == false)
+	{
+		return false;
+	}
 	for (i = 0;i < n;i++)
 	{
 		UINT type;
 
-		ReadBufStr(b, name, sizeof(name));
-		type = ReadBufInt(b);
+		if (ReadBufStr(b, name, sizeof(name)) == false || CfgReadBinInt(b, &type) == false)
+		{
+			return false;
+		}
 
 		switch (type)
 		{
 		case ITEM_TYPE_INT:
-			CfgAddInt(f, name, ReadBufInt(b));
+			if (CfgReadBinInt(b, &value) == false)
+			{
+				return false;
+			}
+			CfgAddInt(f, name, value);
 			break;
 
 		case ITEM_TYPE_INT64:
+			if (ReadBufRemainSize(b) < sizeof(UINT64))
+			{
+				return false;
+			}
 			CfgAddInt64(f, name, ReadBufInt64(b));
 			break;
 
 		case ITEM_TYPE_BYTE:
-			size = ReadBufInt(b);
+			// The size is bounded by the bytes left before it allocates
+			if (CfgReadBinInt(b, &size) == false || size > ReadBufRemainSize(b))
+			{
+				return false;
+			}
 			buf = ZeroMalloc(size);
 			ReadBuf(b, buf, size);
 			CfgAddByte(f, name, buf, size);
@@ -732,7 +793,11 @@ static void CfgReadNextFolderBin(BUF *b, FOLDER *parent)
 			break;
 
 		case ITEM_TYPE_STRING:
-			size = ReadBufInt(b);
+			// Bounded by the bytes left, so size + 1 does not wrap
+			if (CfgReadBinInt(b, &size) == false || size > ReadBufRemainSize(b))
+			{
+				return false;
+			}
 			buf = ZeroMalloc(size + 1);
 			ReadBuf(b, buf, size);
 			string = ZeroMalloc(CalcUtf8ToUni(buf, StrLen(buf)) + 4);
@@ -743,10 +808,20 @@ static void CfgReadNextFolderBin(BUF *b, FOLDER *parent)
 			break;
 
 		case ITEM_TYPE_BOOL:
-			CfgAddBool(f, name, ReadBufInt(b) == 0 ? false : true);
+			if (CfgReadBinInt(b, &value) == false)
+			{
+				return false;
+			}
+			CfgAddBool(f, name, value == 0 ? false : true);
 			break;
+
+		default:
+			// The size of an unknown value is unknown: the rest cannot be read
+			return false;
 		}
 	}
+
+	return true;
 }
 
 FOLDER *CfgBufBinToFolder(BUF *b)
@@ -759,7 +834,11 @@ FOLDER *CfgBufBinToFolder(BUF *b)
 
 	c = CfgCreateFolder(NULL, "tmp");
 
-	CfgReadNextFolderBin(b, c);
+	if (CfgReadNextFolderBin(b, c) == false)
+	{
+		CfgDeleteFolder(c);
+		return NULL;
+	}
 
 	f = CfgFindFolder(c, TAG_ROOT);
 	if (f == NULL)
