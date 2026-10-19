@@ -2946,8 +2946,16 @@ static void PsMain(PS *ps)
 	ps->CapsList = NULL;
 }
 
+// Eval parameter of CmdEvalHostAndPort; a NULL parameter is port 0 and the standard message
+typedef struct CMD_EVAL_HOST_PORT
+{
+	UINT DefaultPort;			// Port taken when the text names none (0: the text must name a port)
+	wchar_t *ErrorMessage;		// Message printed when the text is invalid (NULL: CMD_HOSTPORT_EVAL_FAILED)
+} CMD_EVAL_HOST_PORT;
+
 static bool CmdEvalHostAndPort(CONSOLE *c, wchar_t *str, void *param)
 {
+	CMD_EVAL_HOST_PORT *e = (CMD_EVAL_HOST_PORT *)param;
 	char *tmp;
 	bool ret = false;
 	if (c == NULL || str == NULL)
@@ -2957,11 +2965,11 @@ static bool CmdEvalHostAndPort(CONSOLE *c, wchar_t *str, void *param)
 
 	tmp = CopyUniToStr(str);
 
-	ret = ParseHostPort(tmp, NULL, NULL, (UINT)param);
+	ret = ParseHostPort(tmp, NULL, NULL, e == NULL ? 0 : e->DefaultPort);
 
 	if (ret == false)
 	{
-		c->Write(c, param == NULL ? _UU("CMD_HOSTPORT_EVAL_FAILED") : (wchar_t *)param);
+		c->Write(c, (e == NULL || e->ErrorMessage == NULL) ? _UU("CMD_HOSTPORT_EVAL_FAILED") : e->ErrorMessage);
 	}
 
 	Free(tmp);
@@ -3338,13 +3346,14 @@ static UINT PsSyslogEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param
 	UINT ret = 0;
 	SYSLOG_SETTING t;
 	CMD_EVAL_MIN_MAX minmax = {"CMD_SyslogEnable_MINMAX", 1, 3};
+	CMD_EVAL_HOST_PORT host_eval = {SYSLOG_PORT, NULL};
 	char *host;
 	UINT port;
 
 	PARAM args[] =
 	{
 		{"[1|2|3]", CmdPrompt, _UU("CMD_SyslogEnable_Prompt_123"), CmdEvalMinMax, &minmax},
-		{"HOST", CmdPrompt, _UU("CMD_SyslogEnable_Prompt_HOST"), CmdEvalHostAndPort, (void *)SYSLOG_PORT},
+		{"HOST", CmdPrompt, _UU("CMD_SyslogEnable_Prompt_HOST"), CmdEvalHostAndPort, &host_eval},
 	};
 
 	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
