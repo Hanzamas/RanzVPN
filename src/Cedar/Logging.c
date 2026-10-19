@@ -69,10 +69,21 @@ static void LogMapControlChars(UCHAR *s, UINT size)
 	}
 }
 
+// Send one syslog datagram to the current address (g->lock held)
+static void SendSysLogLocked(SLOG *g, UCHAR *buf, UINT size)
+{
+	if (g->DestPort != 0 && IsZeroIp(&g->DestIp) == false)
+	{
+		SendTo(g->Udp, &g->DestIp, g->DestPort, buf, size);
+	}
+}
+
 void SendSysLog(SLOG *g, wchar_t *str)
 {
 	UCHAR *buf;
 	UINT buf_size;
+	char hostname[MAX_HOST_NAME_LEN + 1];
+	bool poll = false;
 	if (g == NULL || str == NULL)
 	{
 		return;
@@ -92,25 +103,44 @@ void SendSysLog(SLOG *g, wchar_t *str)
 	{
 		if (Tick64() >= g->NextPollIp)
 		{
-			IP ip;
-
-			if (GetIP(&ip, g->HostName))
-			{
-				g->NextPollIp = Tick64() + SYSLOG_POLL_IP_INTERVAL;
-				Copy(&g->DestIp, &ip, sizeof(IP));
-			}
-			else
-			{
-				g->NextPollIp = Tick64() + SYSLOG_POLL_IP_INTERVAL_NG;
-			}
+			// This sender resolves the host again; the others use the current address meanwhile
+			g->NextPollIp = Tick64() + SYSLOG_POLL_IP_INTERVAL_NG;
+			StrCpy(hostname, sizeof(hostname), g->HostName);
+			poll = true;
 		}
-
-		if (g->DestPort != 0 && IsZeroIp(&g->DestIp) == false)
+		else
 		{
-			SendTo(g->Udp, &g->DestIp, g->DestPort, buf, buf_size);
+			SendSysLogLocked(g, buf, buf_size);
 		}
 	}
 	Unlock(g->lock);
+
+	if (poll)
+	{
+		// The resolve can take seconds: it runs outside the lock, which every logging thread takes
+		IP ip;
+		bool resolved = GetIP(&ip, hostname);
+
+		Lock(g->lock);
+		{
+			// A SetSysLog with another host meanwhile has resolved that host already
+			if (StrCmp(g->HostName, hostname) == 0)
+			{
+				if (resolved)
+				{
+					g->NextPollIp = Tick64() + SYSLOG_POLL_IP_INTERVAL;
+					Copy(&g->DestIp, &ip, sizeof(IP));
+				}
+				else
+				{
+					g->NextPollIp = Tick64() + SYSLOG_POLL_IP_INTERVAL_NG;
+				}
+			}
+
+			SendSysLogLocked(g, buf, buf_size);
+		}
+		Unlock(g->lock);
+	}
 
 	Free(buf);
 }
@@ -152,7 +182,7 @@ void SetSysLog(SLOG *g, char *hostname, UINT port)
 		Copy(&g->DestIp, &ip, sizeof(IP));
 		g->DestPort = port;
 		StrCpy(g->HostName, sizeof(g->HostName), hostname);
-		g->NextPollIp = Tick64() + IsZeroIp(&ip) ? SYSLOG_POLL_IP_INTERVAL_NG : SYSLOG_POLL_IP_INTERVAL;
+		g->NextPollIp = Tick64() + (IsZeroIp(&ip) ? SYSLOG_POLL_IP_INTERVAL_NG : SYSLOG_POLL_IP_INTERVAL);
 	}
 	Unlock(g->lock);
 }
