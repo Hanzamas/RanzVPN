@@ -2525,8 +2525,20 @@ static SOCK *ClientAdditionalConnectToServer(CONNECTION *c)
 
 	if (CompareX(s->RemoteX, c->ServerX) == false)
 	{
+		// The server of an additional connection presents another certificate than the
+		// first one: drop the socket and fail, like the other failures above
 		Disconnect(s);
 		c->Session->SessionTimeOuted = true;
+		LockList(c->ConnectingSocks);
+		{
+			if (Delete(c->ConnectingSocks, s))
+			{
+				ReleaseSock(s);
+			}
+		}
+		UnlockList(c->ConnectingSocks);
+		ReleaseSock(s);
+		return NULL;
 	}
 
 	return s;
@@ -3148,7 +3160,12 @@ bool ClientConnect(CONNECTION *c)
 	}
 
 CLEANUP:
-	c->FirstSock = NULL;
+	// StopConnection reads c->FirstSock and takes its ref under c->lock
+	Lock(c->lock);
+	{
+		c->FirstSock = NULL;
+	}
+	Unlock(c->lock);
 
 	if (sess->UdpAccel != NULL)
 	{
@@ -3813,6 +3830,16 @@ bool ClientUploadSignature(SOCK *s)
 	return true;
 }
 
+// Set c->FirstSock under c->lock, where StopConnection reads it and takes its ref
+static void ClientSetFirstSock(CONNECTION *c, SOCK *s)
+{
+	Lock(c->lock);
+	{
+		c->FirstSock = s;
+	}
+	Unlock(c->lock);
+}
+
 SOCK *ClientConnectToServer(CONNECTION *c)
 {
 	SOCK *s = NULL;
@@ -3835,13 +3862,14 @@ SOCK *ClientConnectToServer(CONNECTION *c)
 		return NULL;
 	}
 
-	c->FirstSock = s;
+	// StopConnection reads c->FirstSock and takes its ref under c->lock
+	ClientSetFirstSock(c, s);
 
 	if (c->Halt)
 	{
 		c->Err = ERR_USER_CANCEL;
+		ClientSetFirstSock(c, NULL);
 		ReleaseSock(s);
-		c->FirstSock = NULL;
 		return NULL;
 	}
 
@@ -3851,8 +3879,8 @@ SOCK *ClientConnectToServer(CONNECTION *c)
 	if (StartSSLEx3(s, x, k, NULL, 0, c->ServerName, c->Session->SslOption, &err) == false)
 	{
 		Disconnect(s);
+		ClientSetFirstSock(c, NULL);
 		ReleaseSock(s);
-		c->FirstSock = NULL;
 		if (err != 0)
 		{
 			c->Err = err;
@@ -3872,8 +3900,8 @@ SOCK *ClientConnectToServer(CONNECTION *c)
 	if (s->RemoteX == NULL)
 	{
 		Disconnect(s);
+		ClientSetFirstSock(c, NULL);
 		ReleaseSock(s);
-		c->FirstSock = NULL;
 		c->Err = ERR_SERVER_IS_NOT_VPN;
 		return NULL;
 	}

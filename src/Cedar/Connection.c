@@ -1620,15 +1620,23 @@ void StartTunnelingMode(CONNECTION *c)
 			Add(tcp->TcpSockList, ts);
 		}
 		UnlockList(tcp->TcpSockList);
+		Lock(c->lock);
+		{
+			c->FirstSock = NULL;
+		}
+		Unlock(c->lock);
 		ReleaseSock(s);
-		c->FirstSock = NULL;
 	}
 	else
 	{
 		s = c->FirstSock;
 		Copy(&ip, &s->RemoteIP, sizeof(IP));
 		// May disconnect TCP connection at this point
-		c->FirstSock = NULL;
+		Lock(c->lock);
+		{
+			c->FirstSock = NULL;
+		}
+		Unlock(c->lock);
 		Disconnect(s);
 		ReleaseSock(s);
 
@@ -1783,6 +1791,7 @@ void StopAllAdditionalConnectThread(CONNECTION *c)
 
 void StopConnection(CONNECTION *c, bool no_wait)
 {
+	SOCK *s;
 	if (c == NULL)
 	{
 		return;
@@ -1790,7 +1799,21 @@ void StopConnection(CONNECTION *c, bool no_wait)
 
 
 	c->Halt = true;
-	Disconnect(c->FirstSock);
+
+	// The connection thread clears c->FirstSock under c->lock before it releases the socket:
+	// take a ref under the same lock so the socket outlives the Disconnect
+	Lock(c->lock);
+	{
+		s = c->FirstSock;
+		if (s != NULL)
+		{
+			AddRef(s->ref);
+		}
+	}
+	Unlock(c->lock);
+
+	Disconnect(s);
+	ReleaseSock(s);
 
 	if (no_wait == false)
 	{
@@ -1800,6 +1823,7 @@ void StopConnection(CONNECTION *c, bool no_wait)
 
 void DisconnectUDPSockets(CONNECTION *c)
 {
+	SOCK *s;
 	if (c == NULL)
 	{
 		return;
@@ -1833,11 +1857,17 @@ void DisconnectUDPSockets(CONNECTION *c)
 		c->Udp = NULL;
 	}
 
-	if (c->FirstSock != NULL)
+	Lock(c->lock);
 	{
-		Disconnect(c->FirstSock);
-		ReleaseSock(c->FirstSock);
+		s = c->FirstSock;
 		c->FirstSock = NULL;
+	}
+	Unlock(c->lock);
+
+	if (s != NULL)
+	{
+		Disconnect(s);
+		ReleaseSock(s);
 	}
 }
 

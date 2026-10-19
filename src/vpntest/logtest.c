@@ -72,7 +72,7 @@
 #define	LOGTEST_BOUND_PACKETS			100					// Packet log records inserted after them
 #define	LOGTEST_BOUND_AFTER_TEXT		"logbound after %02u"	// Text of a record inserted after the unblock
 #define	LOGTEST_BOUND_AFTER				10					// Records inserted after the unblock
-#define	LOGTEST_BOUND_DRAIN_WAIT		60000				// Milliseconds waited for the writer to take every queued record
+#define	LOGTEST_BOUND_DRAIN_WAIT		240000				// Milliseconds waited for the writer to take every queued record: about 100 s under AddressSanitizer, 6000 s at one per 30 ms
 #define	LOGTEST_BOUND_OPEN_WAIT			(LOG_ENGINE_RETRY_MAX + 10000)	// Milliseconds waited for the log file after the unblock
 #define	LOGTEST_BOUND_FRAME_SIZE		64					// Frame of the packet log records (EtherType 0x88B5, no IP)
 
