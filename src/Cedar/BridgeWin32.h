@@ -38,6 +38,7 @@ ETH *OpenEth(char *name, bool local, bool tapmode, char *tapaddr);
 void CloseEth(ETH *e);
 CANCEL *EthGetCancel(ETH *e);
 UINT EthGetPacket(ETH *e, void **data);
+bool EthHasPendingFrames(ETH *e);
 void EthPutPackets(ETH *e, UINT num, void **datas, UINT *sizes);
 void GetEthNetworkConnectionName(wchar_t *dst, UINT size, char *device_name);
 

@@ -640,6 +640,17 @@ UINT EthGetPacket(ETH *e, void **data)
 	return size;
 }
 
+// Frames EthGetPacket can return without waiting for the cancel event
+bool EthHasPendingFrames(ETH *e)
+{
+	if (e == NULL || e->HasFatalError)
+	{
+		return false;
+	}
+
+	return SuHasPendingPackets(e->SuAdapter);
+}
+
 CANCEL *EthGetCancel(ETH *e)
 {
 	if (e == NULL)

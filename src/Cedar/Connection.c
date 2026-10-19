@@ -1323,7 +1323,13 @@ DISCONNECT_THIS_TCP:
 			time = MIN(time, next_delay_packet_diff);
 			num_delayed = LIST_NUM(s->DelayedPacketList);
 
-			if (no_spinlock_for_delay || time >= 50 || num_delayed == false)
+			// Frames left in the bridge's receive buffer by the last drain do not
+			// signal c2, so take them without waiting
+			if (EthHasPendingFrames(b->Eth))
+			{
+				Select(NULL, 0, c1, c2);
+			}
+			else if (no_spinlock_for_delay || time >= 50 || num_delayed == false)
 			{
 				Select(NULL, (num_delayed == 0 ? time : (time > 100 ? (time - 100) : 1)), c1, c2);
 			}
