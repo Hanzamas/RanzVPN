@@ -1,8 +1,6 @@
 // BridgeWin32.h
 // Header of BridgeWin32.c
 
-#ifdef OS_WIN32
-
 #ifndef	BRIDGEWIN32_H
 #define	BRIDGEWIN32_H
 
@@ -60,7 +58,5 @@ UINT Win32EthGetNameAndIdFromCombinedName(char *name, UINT name_size, char *str)
 bool Win32IsUsingSeLow();
 void Win32SetEnableSeLow(bool b);
 bool Win32GetEnableSeLow();
-
-#endif
 
 #endif

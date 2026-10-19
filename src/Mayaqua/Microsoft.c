@@ -1,8 +1,5 @@
 // Microsoft.c
 // For Microsoft Windows code
-// (not compiled on non-Windows environments)
-
-#ifdef OS_WIN32
 
 #define	MICROSOFT_C
 
@@ -1524,11 +1521,11 @@ static void MsWriteServiceEvent(UINT type, UINT event_id, char *what, UINT error
 
 	if (error == 0)
 	{
-		_snprintf_s(msg, sizeof(msg), _TRUNCATE, "Service %s %s.", g_service_name, what);
+		snprintf(msg, sizeof(msg), "Service %s %s.", g_service_name, what);
 	}
 	else
 	{
-		_snprintf_s(msg, sizeof(msg), _TRUNCATE, "Service %s %s (error %u).", g_service_name, what, error);
+		snprintf(msg, sizeof(msg), "Service %s %s (error %u).", g_service_name, what, error);
 	}
 
 	MsWriteEventLog(g_service_name, type, event_id, msg);
@@ -1642,7 +1639,7 @@ static void CALLBACK MsServiceDispatcher(DWORD argc, LPTSTR *argv)
 	status.dwCurrentState = SERVICE_RUNNING;
 	_SetServiceStatus(ssh, &status);
 
-#if defined(_DEBUG) || defined(DEBUG)	// In VC++ compilers, the macro is "_DEBUG", not "DEBUG".
+#ifdef	_DEBUG	// Debug configuration: the debug CRT (/MTd) defines _DEBUG
 	// memcheck = true logs every malloc/realloc/free to find leaks, but is very slow.
 	InitMayaqua(false, true, 0, NULL);
 #else
@@ -1787,7 +1784,7 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 		return 0;
 	}
 
-#if defined(_DEBUG) || defined(DEBUG)	// In VC++ compilers, the macro is "_DEBUG", not "DEBUG".
+#ifdef	_DEBUG	// Debug configuration: the debug CRT (/MTd) defines _DEBUG
 	// memcheck = true logs every malloc/realloc/free to find leaks, but is very slow.
 	InitMayaqua(false, true, 0, NULL);
 #else
@@ -4626,6 +4623,4 @@ wchar_t *MsGetUserNameW()
 {
 	return ms->UserNameW;
 }
-
-#endif	// WIN32
 

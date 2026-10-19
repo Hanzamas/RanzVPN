@@ -7,9 +7,7 @@
 #include "Mayaqua.h"
 #include "Network.h"
 
-#ifdef	OS_WIN32
 #pragma pack(push, 1)
-#endif
 
 #define	MTU_FOR_PPPOE		(1500 - 46)
 
@@ -615,9 +613,7 @@ BUF *DhcpModifyIPv4(DHCP_MODIFY_OPTION *m, void *data, UINT size);
 void DhcpParseClasslessRouteData(DHCP_CLASSLESS_ROUTE_TABLE *t, void *data, UINT size);
 
 
-#ifdef	OS_WIN32
 #pragma pack(pop)
-#endif
 
 #endif
 

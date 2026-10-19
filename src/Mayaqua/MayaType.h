@@ -8,16 +8,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-
-#ifndef NTDDI_VERSION
-#define	NTDDI_VERSION NTDDI_VISTA
-#endif
-
-#ifndef _WIN32_WINNT
-#define _WIN32_WINNT _WIN32_WINNT_VISTA
+// The Windows API level comes from the build, once: ranz_options (cmake/RanzOptions.cmake) sets
+// Windows 10 version 1607 / Windows Server 2016 and WIN32_LEAN_AND_MEAN
+#if !defined(_WIN32_WINNT) || (_WIN32_WINNT < 0x0A00) || !defined(NTDDI_VERSION) || (NTDDI_VERSION < 0x0A000002)
+#error "Ranz VPN needs the Windows 10 version 1607 API level (_WIN32_WINNT 0x0A00, NTDDI_VERSION 0x0A000002), which the CMake target ranz_options sets"
 #endif
 
 #include <WinSock2.h>
@@ -26,33 +20,6 @@
 #define	MAX_SIZE			512
 
 #define	SUPPORTED_WINDOWS_LIST		"Windows 10 / 11 / Server 2016 / Server 2019 / Server 2022"
-
-#ifndef	INFINITE
-#define	INFINITE			(0xFFFFFFFF)
-#endif
-
-
-#ifndef	MAX_PATH
-#define	MAX_PATH			260
-#endif
-
-#ifndef	FILE_BEGIN
-#define	FILE_BEGIN	SEEK_SET
-#endif
-#ifndef	FILE_END
-#define	FILE_END	SEEK_END
-#endif
-#ifndef	FILE_CURRENT
-#define	FILE_CURRENT	SEEK_CUR
-#endif
-
-#ifndef	INVALID_SOCKET
-#define	INVALID_SOCKET		(-1)
-#endif
-
-#ifndef	SOCKET_ERROR
-#define	SOCKET_ERROR		(-1)
-#endif
 
 typedef int (COMPARE)(void *p1, void *p2);
 

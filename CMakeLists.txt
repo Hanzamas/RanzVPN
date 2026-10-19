@@ -18,8 +18,6 @@ project("Ranz VPN"
   LANGUAGES C
 )
 
-set(CMAKE_C_STANDARD 99)
-
 set(TOP_DIRECTORY ${CMAKE_SOURCE_DIR})
 set(BUILD_DIRECTORY ${CMAKE_BINARY_DIR})
 
@@ -32,13 +30,9 @@ include("${TOP_DIRECTORY}/cmake/RanzWarnings.cmake")
 # The hamcore files (src/bin/hamcore) as resources of the executables
 include("${TOP_DIRECTORY}/cmake/RanzResources.cmake")
 
-# We define a dedicated variable because CMAKE_BUILD_TYPE can have different
-# configurations than "Debug" and "Release", such as "RelWithDebInfo".
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-  set(BUILD_TYPE "Debug")
-else()
-  set(BUILD_TYPE "Release")
-endif()
+# Build options of the project's own code: C17 and the ranz_options target (Windows API level,
+# per-configuration definitions). After RanzSanitizers.cmake, whose options it reads.
+include("${TOP_DIRECTORY}/cmake/RanzOptions.cmake")
 
 # Check that submodules are present only if source was downloaded with git
 if(EXISTS "${TOP_DIRECTORY}/.git" AND NOT EXISTS "${TOP_DIRECTORY}/src/Mayaqua/3rdparty/liboqs/CMakeLists.txt")

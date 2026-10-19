@@ -28,8 +28,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# RANZ_ASAN builds allocate from the CRT heap (Mayaqua.h leaves WIN32_USE_HEAP_API_FOR_MEMORY
-# undefined), which AddressSanitizer checks without extra ASAN_OPTIONS.
+# RANZ_ASAN builds allocate from the CRT heap (cmake/RanzOptions.cmake leaves
+# WIN32_USE_HEAP_API_FOR_MEMORY undefined), which AddressSanitizer checks without extra ASAN_OPTIONS.
 
 # Largest input per target (-max_len); fuzz_tcpip matches its FUZZ_MAX_FRAME_SIZE, fuzz_http is
 # above twice HTTP_HEADER_LINE_MAX_SIZE (4096) so that over-long lines are reached

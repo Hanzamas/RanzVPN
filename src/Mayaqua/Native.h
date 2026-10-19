@@ -12,11 +12,6 @@ struct LOCK
 {
 	CRITICAL_SECTION CriticalSection;	// Recursive lock
 	bool Ready;							// false once DeleteLock has started
-#ifdef	_DEBUG
-	char *FileName;
-	UINT Line;
-	UINT ThreadId;
-#endif	// _DEBUG
 };
 
 // Counter object

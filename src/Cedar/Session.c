@@ -1331,9 +1331,7 @@ static SESSION *NewClientSessionEx(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_A
 		{
 			s->SslOption = ZeroMalloc(sizeof(SSL_VERIFY_OPTION));
 			s->SslOption->VerifyPeer = true;
-#ifdef	OS_WIN32
 			s->SslOption->PromptOnVerifyFail = true;
-#endif
 			s->SslOption->AddDefaultCA = account->AddDefaultCA;
 			s->SslOption->VerifyHostname = true;
 			s->SslOption->SavedCert = CloneX(account->ServerCert);

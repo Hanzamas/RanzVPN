@@ -1,8 +1,6 @@
 // BridgeWin32.c
 // Ethernet Bridge Program (Win32)
 
-#ifdef OS_WIN32
-
 #define BRIDGE_C
 
 #include "BridgeWin32.h"
@@ -1341,5 +1339,3 @@ void GetEthNetworkConnectionName(wchar_t *dst, UINT size, char *device_name)
 	}
 	Free(ncname);
 }
-
-#endif
