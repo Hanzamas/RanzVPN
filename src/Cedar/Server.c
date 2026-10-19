@@ -4783,11 +4783,19 @@ SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_serve
 	SLog(s->Cedar, "LS_START_1");
 
 
+	// The config load stores the syslog setting under SyslogLock; the SLOG binds to the ListenIP of the config
+	s->SyslogLock = NewLock();
 
 	SiInitConfiguration(s);
 
 	s->Syslog = NewSysLog(NULL, 0, &s->Cedar->Server->ListenIP);
-	s->SyslogLock = NewLock();
+
+	// Apply the host and port of the stored syslog setting to the new SLOG
+	Lock(s->SyslogLock);
+	{
+		SetSysLog(s->Syslog, s->SyslogSetting.Hostname, s->SyslogSetting.Port);
+	}
+	Unlock(s->SyslogLock);
 
 	SetFifoCurrentReallocMemSize(MEM_FIFO_REALLOC_MEM_SIZE);
 
