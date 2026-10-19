@@ -19,6 +19,16 @@
 // On the old code the name and bundle checks end in an AddressSanitizer report (fuzz-asan smoke
 // run), the time and signature checks fail. Prints "X509 TEST OK" only when every check passes,
 // and frees everything it allocates.
+//
+// "certsig" command (FND-80, #127): X509_verify() returns 1 for a valid signature, 0 for a bad one
+// and a negative value when it cannot check it (unknown signature algorithm, bad BIT STRING).
+// CheckSignature took every value but 0 for valid, so a certificate that names a hub's root CA as
+// its issuer and carries an unknown signature algorithm passed CheckSignature, CheckXEx and
+// GetIssuerFromList (the AUTHTYPE_ROOTCERT login of Sam.c). Against a committed test CA: the
+// forged certificate must fail all three, a certificate the CA really signed must pass them, and
+// a certificate checked against the wrong key must fail. Prints "CERTSIG TEST OK".
+
+#include "Cedar/Sam.h"
 
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/Internat.h"
@@ -60,6 +70,77 @@ static char x509t_unknown_key_pem[] =
 	"toNsloeRO2ujSHDKiVrgvDLTC8ukzj87PWxsBCUFZzSFdKXqThlQwW2ym8gH4Pol\n"
 	"e2gm1puAd/X/mYZSlNcksvTc3djTzFhuo0w4ViPnmtWs00WZMhMWg4Tm3uevzlxO\n"
 	"rGKGSfqPIuhDI2GU1BzbI+CsciPUPh7wuRtJpgE6P0W0It5dpF6Bo0VmH89A\n"
+	"-----END CERTIFICATE-----\n";
+
+// Fixtures of "certsig", built as DER with Python, signed with sha256WithRSAEncryption and checked
+// through libcrypto 3.2 X509_verify(); all valid from 2026-01-01 to 2049-12-31.
+// Test CA "Ranz VPN certsig CA": RSA-2048, self-signed, basicConstraints CA:TRUE.
+static char x509t_certsig_ca_pem[] =
+	"-----BEGIN CERTIFICATE-----\n"
+	"MIIDFjCCAf6gAwIBAgIDXsChMA0GCSqGSIb3DQEBCwUAMEMxCzAJBgNVBAYTAklE\n"
+	"MRYwFAYDVQQKDA1SYW56IFZQTiB0ZXN0MRwwGgYDVQQDDBNSYW56IFZQTiBjZXJ0\n"
+	"c2lnIENBMB4XDTI2MDEwMTAwMDAwMFoXDTQ5MTIzMTIzNTk1OVowQzELMAkGA1UE\n"
+	"BhMCSUQxFjAUBgNVBAoMDVJhbnogVlBOIHRlc3QxHDAaBgNVBAMME1JhbnogVlBO\n"
+	"IGNlcnRzaWcgQ0EwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC8C+Ft\n"
+	"K1RPcoRNxI/hKeW/ipIq/XYAD1s9sN5Ntsfa2pLTuNM3E5fPl0uAAMGtO8LhyQte\n"
+	"ah+KjjOd/TNSNTyd1Mx5LYRvCp1IztQw/yoaUhAnNBd8ejgTM89mk+ppcaiazq6D\n"
+	"/sNAGbIpQ7mzR4UOObSYIAv1RU6kaxq4RkYtiolcgEoaZzSu4gQPbn/qMy9qTXKQ\n"
+	"nwPoVfk0ty0fRuS3K6xxbA4KlGBpVXjXbSGIIn11742wgXyCz1ovaRgKpQR5EzOP\n"
+	"qXIHmgyZXkApqNlDnn18GnumVVwXZplRsWGpln2zgvMe0BXspKCKhYOu1X19/Yuv\n"
+	"v837nAliW107JAKLAgMBAAGjEzARMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcN\n"
+	"AQELBQADggEBAKuHXc+PEcnn7GlLicEhcvXiStkHSNRRx5Yucv2yibWWIO4o1lRr\n"
+	"nmJI0CdU9wPF7bxyG63lwdHfSV+ryyTSBxoBIeK9bANprsExKrFXb3mCcOVJUglT\n"
+	"1Yvknsdh3P3PYXuOUeQdFJjQCQxebQ8MFddB0okdXAwuhxD/fZMKscZdYPQXiJfQ\n"
+	"cXpkFKKl5yrUCxSa1Rn1bAiFbWJKREhKT598b/ayybOgse/NYMl/gwrj4kp4zzcD\n"
+	"5O6BPIlawGByqXAYVanCGWLk2WiH77UFynYHg3OrYdrVIETla5e/EEiQKjZ1+E8K\n"
+	"oHHWfl6LD8WopfaDtIsODgSJpPmcTaKf41U=\n"
+	"-----END CERTIFICATE-----\n";
+
+// "Ranz VPN certsig leaf": RSA-2048, signed by the test CA
+static char x509t_certsig_leaf_pem[] =
+	"-----BEGIN CERTIFICATE-----\n"
+	"MIIDAzCCAeugAwIBAgIDXsCiMA0GCSqGSIb3DQEBCwUAMEMxCzAJBgNVBAYTAklE\n"
+	"MRYwFAYDVQQKDA1SYW56IFZQTiB0ZXN0MRwwGgYDVQQDDBNSYW56IFZQTiBjZXJ0\n"
+	"c2lnIENBMB4XDTI2MDEwMTAwMDAwMFoXDTQ5MTIzMTIzNTk1OVowRTELMAkGA1UE\n"
+	"BhMCSUQxFjAUBgNVBAoMDVJhbnogVlBOIHRlc3QxHjAcBgNVBAMMFVJhbnogVlBO\n"
+	"IGNlcnRzaWcgbGVhZjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAK8w\n"
+	"w2+QJ2N9eRZr8Zupv7T3bWNoSJlYZSwQrjJCHTy4f8rI/wYOVwRliq4j9XXQT5ub\n"
+	"T5OQBJFu9oAEv+wApvkwW+A+4WQrQAYG/d9ixin7qU+Ew5XgYl7HdJXwW6yr6A7A\n"
+	"vCkLQcxuYRj46nCP+QDaYh8VycAse9tMLKEJBjDf7N4+0ltHhqtmyrWEm1f+RS3L\n"
+	"n+T1NfBkqKiyRG3qGiOdrM+NTPdTDbjnDRmsECPRD6NUN0zpqjzhf0AyrDpBT/zC\n"
+	"BhX6KxK2JkmYN1rXwq8nn1qrA7J6FXwjAss2xClvi5GhtuS5sixUIG3f/Kty7VFY\n"
+	"VaYEGHAJjkBmRou4EacCAwEAATANBgkqhkiG9w0BAQsFAAOCAQEAninpsOCHQuIy\n"
+	"5htDyuMEtdndwuvyJOJVrllPzBgbkQzRDVodhYA8WBC/ls7aJKBpoRExI6uBv7fD\n"
+	"V5QVwW/HnUrtpBiacQBlRXDVg/87Tvw9efQidJJcCOoVpp5xRou1XY4UXY28LoX+\n"
+	"jGi4+xIedZcWF/72ublcdshJE7qlQciBHbB5Gu8jxCBt3LCnsdidhwrpMOwhVVK8\n"
+	"he7PAadC2G4iF9Zy629cSR0fIRTYMy7nZs8AaFwBbSEwSREvh0n+kXuDoKD703jX\n"
+	"92i8G8yOuRYAwK5djMHLZK8jfLfR6kxjHkn3wRin1uxs0iLf8ddJ7C56IuShvfYJ\n"
+	"9EZb7TtUpA==\n"
+	"-----END CERTIFICATE-----\n";
+
+// "Ranz VPN certsig forged": names the test CA as its issuer and carries the key of the leaf, the
+// signature algorithm 1.3.6.1.4.1.32473.2 (RFC 5612 documentation enterprise number, unknown to
+// OpenSSL) in the TBS signature field and in signatureAlgorithm, and 256 arbitrary signature bytes.
+// X509_verify() with the CA key returns -1. Also the fuzz_x509 seed certsig_unknown_sigalg.der.
+static char x509t_certsig_forged_pem[] =
+	"-----BEGIN CERTIFICATE-----\n"
+	"MIIDATCCAeugAwIBAgIDXsCjMAsGCSsGAQQBgf1ZAjBDMQswCQYDVQQGEwJJRDEW\n"
+	"MBQGA1UECgwNUmFueiBWUE4gdGVzdDEcMBoGA1UEAwwTUmFueiBWUE4gY2VydHNp\n"
+	"ZyBDQTAeFw0yNjAxMDEwMDAwMDBaFw00OTEyMzEyMzU5NTlaMEcxCzAJBgNVBAYT\n"
+	"AklEMRYwFAYDVQQKDA1SYW56IFZQTiB0ZXN0MSAwHgYDVQQDDBdSYW56IFZQTiBj\n"
+	"ZXJ0c2lnIGZvcmdlZDCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAK8w\n"
+	"w2+QJ2N9eRZr8Zupv7T3bWNoSJlYZSwQrjJCHTy4f8rI/wYOVwRliq4j9XXQT5ub\n"
+	"T5OQBJFu9oAEv+wApvkwW+A+4WQrQAYG/d9ixin7qU+Ew5XgYl7HdJXwW6yr6A7A\n"
+	"vCkLQcxuYRj46nCP+QDaYh8VycAse9tMLKEJBjDf7N4+0ltHhqtmyrWEm1f+RS3L\n"
+	"n+T1NfBkqKiyRG3qGiOdrM+NTPdTDbjnDRmsECPRD6NUN0zpqjzhf0AyrDpBT/zC\n"
+	"BhX6KxK2JkmYN1rXwq8nn1qrA7J6FXwjAss2xClvi5GhtuS5sixUIG3f/Kty7VFY\n"
+	"VaYEGHAJjkBmRou4EacCAwEAATALBgkrBgEEAYH9WQIDggEBAKwpdPtyK7/emvyb\n"
+	"H1RQ3g9GI7AXp0Pa2StAd3uyvLcUrCl0+3Irv96a/JsfVFDeD0YjsBenQ9rZK0B3\n"
+	"e7K8txSsKXT7ciu/3pr8mx9UUN4PRiOwF6dD2tkrQHd7sry3FKwpdPtyK7/emvyb\n"
+	"H1RQ3g9GI7AXp0Pa2StAd3uyvLcUrCl0+3Irv96a/JsfVFDeD0YjsBenQ9rZK0B3\n"
+	"e7K8txSsKXT7ciu/3pr8mx9UUN4PRiOwF6dD2tkrQHd7sry3FKwpdPtyK7/emvyb\n"
+	"H1RQ3g9GI7AXp0Pa2StAd3uyvLcUrCl0+3Irv96a/JsfVFDeD0YjsBenQ9rZK0B3\n"
+	"e7K8txQ=\n"
 	"-----END CERTIFICATE-----\n";
 
 // Run state of the test
@@ -361,5 +442,81 @@ void x509_test(UINT num, char **arg)
 	else
 	{
 		Print("X509 TEST FAILED (%u of %u checks failed)\n", ctx.NumFailed, ctx.NumChecks);
+	}
+}
+
+// Load a PEM certificate of the test
+static X *X509TestPemToX(char *pem)
+{
+	BUF *b = NewBuf();
+	X *x;
+
+	WriteBuf(b, pem, StrLen(pem));
+	SeekBuf(b, 0, 0);
+	x = BufToX(b, true);
+	FreeBuf(b);
+
+	return x;
+}
+
+// Certificate signature test: a certificate with an unknown signature algorithm that names the test
+// CA as its issuer is not signed by it
+void certsig_test(UINT num, char **arg)
+{
+	X509T_CTX ctx;
+	X *ca = X509TestPemToX(x509t_certsig_ca_pem);
+	X *leaf = X509TestPemToX(x509t_certsig_leaf_pem);
+	X *forged = X509TestPemToX(x509t_certsig_forged_pem);
+	K *ca_k = NULL;
+	K *leaf_k = NULL;
+	LIST *roots = NewList(NULL);
+
+	Zero(&ctx, sizeof(ctx));
+
+	Print("Certificate signature test (CheckSignature, CheckXEx, GetIssuerFromList; only X509_verify() == 1 is valid)\n");
+
+	if (X509TestCheck(&ctx, ca != NULL && leaf != NULL && forged != NULL, "Test CA, leaf and forged certificates load"))
+	{
+		ca_k = GetKFromX(ca);
+		leaf_k = GetKFromX(leaf);
+		X509TestCheck(&ctx, ca_k != NULL && leaf_k != NULL, "Public keys of the test CA and the leaf load");
+
+		// The list of root certificates of a hub (AUTHTYPE_ROOTCERT)
+		Add(roots, ca);
+
+		// A certificate the CA really signed
+		X509TestCheck(&ctx, CheckSignature(leaf, ca_k), "CheckSignature: the leaf verifies with the CA key");
+		X509TestCheck(&ctx, CheckXEx(leaf, ca, true, true), "CheckXEx: the leaf verifies against the CA, name and dates checked");
+		X509TestCheck(&ctx, GetIssuerFromList(roots, leaf) == ca, "GetIssuerFromList: the CA is the issuer of the leaf");
+
+		// The wrong key
+		X509TestCheck(&ctx, CheckSignature(leaf, leaf_k) == false, "CheckSignature: the leaf does not verify with its own key");
+		X509TestCheck(&ctx, CheckXEx(leaf, leaf, false, false) == false, "CheckXEx: the leaf does not verify against itself");
+
+		// Unknown signature algorithm: X509_verify() returns -1, not 1
+		X509TestCheck(&ctx, CheckSignature(forged, ca_k) == false,
+			"CheckSignature: the certificate with an unknown signature algorithm does not verify with the CA key");
+		X509TestCheck(&ctx, CheckXEx(forged, ca, true, true) == false,
+			"CheckXEx: the certificate with an unknown signature algorithm does not verify against the CA");
+		X509TestCheck(&ctx, CheckXEx(forged, ca, false, false) == false,
+			"CheckXEx without the name and date checks: it does not verify either");
+		X509TestCheck(&ctx, GetIssuerFromList(roots, forged) == NULL,
+			"GetIssuerFromList: no issuer for the certificate with an unknown signature algorithm");
+	}
+
+	ReleaseList(roots);
+	FreeK(leaf_k);
+	FreeK(ca_k);
+	FreeX(forged);
+	FreeX(leaf);
+	FreeX(ca);
+
+	if (ctx.NumFailed == 0)
+	{
+		Print("CERTSIG TEST OK\n");
+	}
+	else
+	{
+		Print("CERTSIG TEST FAILED (%u of %u checks failed)\n", ctx.NumFailed, ctx.NumChecks);
 	}
 }
