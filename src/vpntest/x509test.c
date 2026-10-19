@@ -27,6 +27,14 @@
 // GetIssuerFromList (the AUTHTYPE_ROOTCERT login of Sam.c). Against a committed test CA: the
 // forged certificate must fail all three, a certificate the CA really signed must pass them, and
 // a certificate checked against the wrong key must fail. Prints "CERTSIG TEST OK".
+//
+// "x509root" command (FND-81, #127): X509ToX set root_cert when the issuer and subject names were
+// equal and X509_check_private_key() matched the certificate against its own public key, which
+// always holds, so the self-signature was never checked: a certificate with equal names and a bad
+// self-signature ended chain building as a root. It must not be a root; the really self-signed test
+// CA must be one. X509ToX must leave a certificate it refuses to its caller, who frees it once; the
+// old X509ToX freed it itself, so the X509_free of the test is a double free there (AddressSanitizer
+// report in the fuzz-asan smoke run). Prints "X509ROOT TEST OK".
 
 #include "Cedar/Sam.h"
 
@@ -40,8 +48,10 @@
 #include <time.h>
 
 #include <openssl/asn1.h>
+#include <openssl/bio.h>
 #include <openssl/evp.h>
 #include <openssl/objects.h>
+#include <openssl/pem.h>
 #include <openssl/rsa.h>
 #include <openssl/x509.h>
 
@@ -141,6 +151,30 @@ static char x509t_certsig_forged_pem[] =
 	"e7K8txSsKXT7ciu/3pr8mx9UUN4PRiOwF6dD2tkrQHd7sry3FKwpdPtyK7/emvyb\n"
 	"H1RQ3g9GI7AXp0Pa2StAd3uyvLcUrCl0+3Irv96a/JsfVFDeD0YjsBenQ9rZK0B3\n"
 	"e7K8txQ=\n"
+	"-----END CERTIFICATE-----\n";
+
+// Fixture of "x509root", made like the certsig ones: "Ranz VPN x509root bad self-signature", issuer
+// and subject equal, the key of the certsig leaf, signed by another RSA-2048 key. X509_verify() with
+// its own key returns 0, X509_check_private_key() with its own key returns 1.
+static char x509t_x509root_bad_pem[] =
+	"-----BEGIN CERTIFICATE-----\n"
+	"MIIDIzCCAgugAwIBAgIDXsCkMA0GCSqGSIb3DQEBCwUAMFQxCzAJBgNVBAYTAklE\n"
+	"MRYwFAYDVQQKDA1SYW56IFZQTiB0ZXN0MS0wKwYDVQQDDCRSYW56IFZQTiB4NTA5\n"
+	"cm9vdCBiYWQgc2VsZi1zaWduYXR1cmUwHhcNMjYwMTAxMDAwMDAwWhcNNDkxMjMx\n"
+	"MjM1OTU5WjBUMQswCQYDVQQGEwJJRDEWMBQGA1UECgwNUmFueiBWUE4gdGVzdDEt\n"
+	"MCsGA1UEAwwkUmFueiBWUE4geDUwOXJvb3QgYmFkIHNlbGYtc2lnbmF0dXJlMIIB\n"
+	"IjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArzDDb5AnY315Fmvxm6m/tPdt\n"
+	"Y2hImVhlLBCuMkIdPLh/ysj/Bg5XBGWKriP1ddBPm5tPk5AEkW72gAS/7ACm+TBb\n"
+	"4D7hZCtABgb932LGKfupT4TDleBiXsd0lfBbrKvoDsC8KQtBzG5hGPjqcI/5ANpi\n"
+	"HxXJwCx720wsoQkGMN/s3j7SW0eGq2bKtYSbV/5FLcuf5PU18GSoqLJEbeoaI52s\n"
+	"z41M91MNuOcNGawQI9EPo1Q3TOmqPOF/QDKsOkFP/MIGFforErYmSZg3WtfCryef\n"
+	"WqsDsnoVfCMCyzbEKW+LkaG25LmyLFQgbd/8q3LtUVhVpgQYcAmOQGZGi7gRpwID\n"
+	"AQABMA0GCSqGSIb3DQEBCwUAA4IBAQBFg38OFmKhFGs1Rw3evX7XmIdf15ypLdz6\n"
+	"nNhTBR/ZqE9K/Dkvh/X0g4YsGZlSUBJDYmFxJ+HYSZ7lKgMhZnv7ZMNVzqoRob6x\n"
+	"1eehP6E6fi/yvYsyWw1h3Vb+aAoFskegivf8Vh4y6qqXx3RYCo6XKmua48E4fPzX\n"
+	"k1oaIAt1/lfiBWEjo5q6qNpYGOwi31egfvAZU2y53zvddR+icNSw5rEfWLRgU6YJ\n"
+	"JRMv/KECgh1JWlJTmut7LIRgqfhO51EPcfrXSFtXtwOV3K1FDFSsI3DSWqV4SyPJ\n"
+	"bEH4TgptUoJbKPEDf/3xYLnuJm7TFIGdEpMQ1N1MQ3BjByrxqQwR\n"
 	"-----END CERTIFICATE-----\n";
 
 // Run state of the test
@@ -518,5 +552,67 @@ void certsig_test(UINT num, char **arg)
 	else
 	{
 		Print("CERTSIG TEST FAILED (%u of %u checks failed)\n", ctx.NumFailed, ctx.NumChecks);
+	}
+}
+
+// Read a PEM certificate of the test as an OpenSSL X509, which the caller frees
+static X509 *X509TestPemToX509(char *pem)
+{
+	BIO *bio = BIO_new_mem_buf(pem, -1);
+	X509 *x509 = NULL;
+
+	if (bio != NULL)
+	{
+		x509 = PEM_read_bio_X509(bio, NULL, NULL, NULL);
+		BIO_free(bio);
+	}
+
+	return x509;
+}
+
+// Root certificate and X509ToX ownership test
+void x509root_test(UINT num, char **arg)
+{
+	X509T_CTX ctx;
+	X *ca = X509TestPemToX(x509t_certsig_ca_pem);
+	X *bad = X509TestPemToX(x509t_x509root_bad_pem);
+	X509 *unknown = X509TestPemToX509(x509t_unknown_key_pem);
+	X *x;
+
+	Zero(&ctx, sizeof(ctx));
+
+	Print("Root certificate and X509ToX ownership test (root_cert only for a verified self-signature)\n");
+
+	X509TestCheck(&ctx, ca != NULL && ca->root_cert, "The certsig test CA, really self-signed, is a root certificate");
+	X509TestCheck(&ctx, bad != NULL && CompareName(bad->issuer_name, bad->subject_name),
+		"The certificate with a bad self-signature loads, its issuer and subject names are equal");
+	X509TestCheck(&ctx, bad != NULL && bad->root_cert == false,
+		"The certificate with a bad self-signature is not a root certificate");
+
+	// X509ToX leaves a certificate it refuses to the caller
+	if (X509TestCheck(&ctx, unknown != NULL, "The certificate with the unknown public key algorithm parses"))
+	{
+		x = X509ToX(unknown);
+		if (X509TestCheck(&ctx, x == NULL, "X509ToX refuses the certificate with the unknown public key algorithm"))
+		{
+			// Still owned here, freed once (the old X509ToX had freed it already)
+			X509_free(unknown);
+		}
+		else
+		{
+			FreeX(x);
+		}
+	}
+
+	FreeX(bad);
+	FreeX(ca);
+
+	if (ctx.NumFailed == 0)
+	{
+		Print("X509ROOT TEST OK\n");
+	}
+	else
+	{
+		Print("X509ROOT TEST FAILED (%u of %u checks failed)\n", ctx.NumFailed, ctx.NumChecks);
 	}
 }
