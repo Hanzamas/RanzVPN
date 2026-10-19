@@ -10,6 +10,13 @@ concurrency:
 permissions:
   contents: read
 
+# vcpkg binary caching: built packages (OpenSSL) are stored as zip files keyed by their ABI hash in
+# VCPKG_BINCACHE and kept between runs with actions/cache. A package whose ABI hash is unchanged is
+# restored instead of rebuilt; a runner-image or vcpkg.json change rebuilds only what changed.
+env:
+  VCPKG_BINCACHE: ${{ github.workspace }}\vcpkg-bincache
+  VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\vcpkg-bincache,readwrite
+
 jobs:
   build_and_test:
     strategy:
@@ -25,11 +32,12 @@ jobs:
     - uses: actions/checkout@v4
       with:
         submodules: true
-    - name: Cache vcpkg
-      uses: actions/cache@v4
+    - name: Restore vcpkg binary cache
+      uses: actions/cache/restore@v4
       with:
-        path: 'build/vcpkg_installed/'
-        key: vcpkg-${{ matrix.platform.VCPKG_TRIPLET }}
+        path: vcpkg-bincache
+        key: vcpkg-bin-${{ matrix.platform.VCPKG_TRIPLET }}-none
+        restore-keys: vcpkg-bin-${{ matrix.platform.VCPKG_TRIPLET }}-
     - name: Set version variables
       run: |
         $v = python version.py
@@ -42,6 +50,7 @@ jobs:
         CMAKE_EXTRA_FLAGS: ${{ matrix.platform.CMAKE_EXTRA_FLAGS }}
       run: |
         set BUILD_NUMBER=%GITHUB_RUN_NUMBER%
+        if not exist "%VCPKG_BINCACHE%" mkdir "%VCPKG_BINCACHE%"
         mkdir build
         cd build
 
@@ -72,6 +81,14 @@ jobs:
         type build-log.txt
         exit /b %BUILD_EXIT%
       shell: cmd
+    # The key is the content hash of the cache directory, so a run that built nothing new finds the key
+    # taken and saves nothing (a warning, not a failure).
+    - name: Save vcpkg binary cache
+      if: ${{ !cancelled() }}
+      uses: actions/cache/save@v4
+      with:
+        path: vcpkg-bincache
+        key: vcpkg-bin-${{ matrix.platform.VCPKG_TRIPLET }}-${{ hashFiles('vcpkg-bincache/**') }}
     # Every unused or unreachable code warning of the build (cmake/RanzWarnings.cmake), de-duplicated:
     # in the job log under "=== unused-code report ===", in the job summary and as an artifact.
     # The kinds in RANZ_UNUSED_ERROR_FLAGS are errors and fail the Build step; the rest are informational.
@@ -163,11 +180,12 @@ jobs:
     - uses: actions/checkout@v4
       with:
         submodules: true
-    - name: Cache vcpkg
-      uses: actions/cache@v4
+    - name: Restore vcpkg binary cache
+      uses: actions/cache/restore@v4
       with:
-        path: 'build/vcpkg_installed/'
-        key: vcpkg-x64-windows-static
+        path: vcpkg-bincache
+        key: vcpkg-bin-x64-windows-static-none
+        restore-keys: vcpkg-bin-x64-windows-static-
     - name: Pick clang-cl with the one-DLL ASan runtime and libFuzzer
       shell: pwsh
       run: |
@@ -202,6 +220,7 @@ jobs:
     - name: Build (RANZ_ASAN=ON, RANZ_FUZZ=ON)
       run: |
         set BUILD_NUMBER=0
+        if not exist "%VCPKG_BINCACHE%" mkdir "%VCPKG_BINCACHE%"
         mkdir build
         cd build
 
@@ -216,6 +235,12 @@ jobs:
         if errorlevel 1 exit /b 1
         cmake --build .
       shell: cmd
+    - name: Save vcpkg binary cache
+      if: ${{ !cancelled() }}
+      uses: actions/cache/save@v4
+      with:
+        path: vcpkg-bincache
+        key: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg-bincache/**') }}
     - name: vpntest smoke test under ASan
       shell: pwsh
       timeout-minutes: 10
