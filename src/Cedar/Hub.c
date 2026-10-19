@@ -2438,6 +2438,55 @@ static void ForceRedirectToUrl(SESSION *src_session, PKT *p, char *redirect_url)
 	Free(b);
 }
 
+// DHCPv4: UDP over IPv4 that the parser knows as DHCP
+static bool IsDhcpv4(PKT *p)
+{
+	return (p->TypeL3 == L3_IPV4 && p->TypeL4 == L4_UDP && p->TypeL7 == L7_DHCPV4);
+}
+
+// DHCPv6: UDP over IPv6 with a destination port of 546 or 547
+static bool IsDhcpv6Port(PKT *p)
+{
+	if (p->TypeL3 == L3_IPV6 && p->TypeL4 == L4_UDP)
+	{
+		USHORT port = Endian16(p->L4.UDPHeader->DstPort);
+
+		return (port == 546 || port == 547);
+	}
+
+	return false;
+}
+
+// EtherType of the MAC header is IPv4 or ARP (false without a MAC header)
+static bool IsEtherTypeIPv4(PKT *p)
+{
+	if (p->MacHeader != NULL)
+	{
+		USHORT proto = Endian16(p->MacHeader->Protocol);
+
+		return (proto == 0x0800 || proto == 0x0806);
+	}
+
+	return false;
+}
+
+// EtherType of the MAC header is IPv6 (false without a MAC header)
+static bool IsEtherTypeIPv6(PKT *p)
+{
+	if (p->MacHeader != NULL)
+	{
+		return (Endian16(p->MacHeader->Protocol) == 0x86dd);
+	}
+
+	return false;
+}
+
+// EtherType of the MAC header is neither IPv4, ARP nor IPv6 (false without a MAC header)
+static bool IsEtherTypeNonIP(PKT *p)
+{
+	return (p->MacHeader != NULL && IsEtherTypeIPv4(p) == false && IsEtherTypeIPv6(p) == false);
+}
+
 static bool ApplyAccessListToStoredPacket(HUB *hub, SESSION *s, PKT *p)
 {
 	UINT i;
@@ -2477,37 +2526,25 @@ static bool ApplyAccessListToStoredPacket(HUB *hub, SESSION *s, PKT *p)
 
 	if (hub->Option != NULL && hub->Option->FilterIPv4)
 	{
-		if (p->MacHeader != NULL)
+		if (IsEtherTypeIPv4(p))
 		{
-			USHORT proto = Endian16(p->MacHeader->Protocol);
-			if (proto == 0x0800 || proto == 0x0806)
-			{
-				return false;
-			}
+			return false;
 		}
 	}
 
 	if (hub->Option != NULL && hub->Option->FilterIPv6)
 	{
-		if (p->MacHeader != NULL)
+		if (IsEtherTypeIPv6(p))
 		{
-			USHORT proto = Endian16(p->MacHeader->Protocol);
-			if (proto == 0x86dd)
-			{
-				return false;
-			}
+			return false;
 		}
 	}
 
 	if (hub->Option != NULL && hub->Option->FilterNonIP)
 	{
-		if (p->MacHeader != NULL)
+		if (IsEtherTypeNonIP(p))
 		{
-			USHORT proto = Endian16(p->MacHeader->Protocol);
-			if (!(proto == 0x86dd || proto == 0x0800 || proto == 0x0806))
-			{
-				return false;
-			}
+			return false;
 		}
 	}
 
@@ -3453,6 +3490,95 @@ static void HubLogMacRegist(HUB *hub, SESSION *s, UCHAR *mac, UINT vlan_id)
 	}
 }
 
+// Destination policy: true when the policy of the session a frame goes to drops it. The rule set of the
+// unicast branch and of the flood loop of StorePacket (the source side is StorePacketFilterByPolicy)
+static bool PolicyDropsPacket(POLICY *pol, PKT *p)
+{
+	if (pol->RSandRAFilter)
+	{
+		if (p->TypeL3 == L3_IPV6 &&
+			p->TypeL4 == L4_ICMPV6 &&
+			(p->ICMPv6HeaderPacketInfo.Type == ICMPV6_TYPE_ROUTER_SOLICIATION ||
+			 p->ICMPv6HeaderPacketInfo.Type == ICMPV6_TYPE_ROUTER_ADVERTISEMENT))
+		{
+			return true;
+		}
+	}
+
+	if (pol->DHCPFilter)
+	{
+		if (IsDhcpv4(p))
+		{
+			return true;
+		}
+	}
+
+	if (pol->DHCPv6Filter)
+	{
+		if (IsDhcpv6Port(p))
+		{
+			return true;
+		}
+	}
+
+	if (pol->ArpDhcpOnly)
+	{
+		if (p->BroadcastPacket)
+		{
+			bool b = true;
+
+			if (IsDhcpv4(p))
+			{
+				b = false;
+			}
+			else if (p->TypeL3 == L3_ARPV4)
+			{
+				b = false;
+			}
+			else if (IsDhcpv6Port(p))
+			{
+				b = false;
+			}
+			else if (p->TypeL3 == L3_IPV6 &&
+				p->TypeL4 == L4_ICMPV6)
+			{
+				b = false;
+			}
+
+			if (b)
+			{
+				return true;
+			}
+		}
+	}
+
+	if (pol->FilterIPv4)
+	{
+		if (p->TypeL3 == L3_IPV4 || p->TypeL3 == L3_ARPV4)
+		{
+			return true;
+		}
+	}
+
+	if (pol->FilterIPv6)
+	{
+		if (p->TypeL3 == L3_IPV6)
+		{
+			return true;
+		}
+	}
+
+	if (pol->FilterNonIP)
+	{
+		if (p->TypeL3 != L3_IPV4 && p->TypeL3 != L3_ARPV4 && p->TypeL3 != L3_IPV6)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
 void StorePacket(HUB *hub, SESSION *s, PKT *packet)
 {
 	MAC_TABLE_ENTRY *entry = NULL;
@@ -3815,13 +3941,9 @@ UPDATE_FDB:
 								dhcp_or_ra = true;
 							}
 						}
-						else if (packet->TypeL4 == L4_UDP)
+						else if (IsDhcpv6Port(packet))
 						{
-							if (Endian16(packet->L4.UDPHeader->DstPort) == 546 ||
-								Endian16(packet->L4.UDPHeader->DstPort) == 547)
-							{
-								dhcp_or_ra = true;
-							}
+							dhcp_or_ra = true;
 						}
 
 						if (IsHubMacAddress(packet->MacAddressSrc) &&
@@ -4158,88 +4280,9 @@ UPDATE_FDB:
 						{
 							DeleteIPv6DefaultRouterInRA(packet);
 						}
-						if (dest_session->Policy->RSandRAFilter)
+						if (PolicyDropsPacket(dest_session->Policy, packet))
 						{
-							if (packet->TypeL3 == L3_IPV6 &&
-								packet->TypeL4 == L4_ICMPV6 &&
-								(packet->ICMPv6HeaderPacketInfo.Type == ICMPV6_TYPE_ROUTER_SOLICIATION ||
-								 packet->ICMPv6HeaderPacketInfo.Type == ICMPV6_TYPE_ROUTER_ADVERTISEMENT))
-							{
-								goto DISCARD_UNICAST_PACKET;
-							}
-						}
-						if (dest_session->Policy->DHCPFilter)
-						{
-							if (packet->TypeL3 == L3_IPV4 &&
-								packet->TypeL4 == L4_UDP &&
-								packet->TypeL7 == L7_DHCPV4)
-							{
-								goto DISCARD_UNICAST_PACKET;
-							}
-						}
-						if (dest_session->Policy->DHCPv6Filter)
-						{
-							if (packet->TypeL3 == L3_IPV6 &&
-								packet->TypeL4 == L4_UDP &&
-								(Endian16(packet->L4.UDPHeader->DstPort) == 546 || Endian16(packet->L4.UDPHeader->DstPort) == 547))
-							{
-								goto DISCARD_UNICAST_PACKET;
-							}
-						}
-						if (dest_session->Policy->ArpDhcpOnly)
-						{
-							if (packet->BroadcastPacket)
-							{
-								bool b = true;
-
-								if (packet->TypeL3 == L3_IPV4 &&
-									packet->TypeL4 == L4_UDP &&
-									packet->TypeL7 == L7_DHCPV4)
-								{
-									b = false;
-								}
-								else if (packet->TypeL3 == L3_ARPV4)
-								{
-									b = false;
-								}
-								else if (packet->TypeL3 == L3_IPV6 &&
-									packet->TypeL4 == L4_UDP &&
-									(Endian16(packet->L4.UDPHeader->DstPort) == 546 || Endian16(packet->L4.UDPHeader->DstPort) == 547))
-								{
-									b = false;
-								}
-								else if (packet->TypeL3 == L3_IPV6 &&
-									packet->TypeL4 == L4_ICMPV6)
-								{
-									b = false;
-								}
-
-								if (b)
-								{
-									goto DISCARD_UNICAST_PACKET;
-								}
-							}
-						}
-						if (dest_session->Policy->FilterIPv4)
-						{
-							if (packet->TypeL3 == L3_IPV4 || packet->TypeL3 == L3_ARPV4)
-							{
-								goto DISCARD_UNICAST_PACKET;
-							}
-						}
-						if (dest_session->Policy->FilterIPv6)
-						{
-							if (packet->TypeL3 == L3_IPV6)
-							{
-								goto DISCARD_UNICAST_PACKET;
-							}
-						}
-						if (dest_session->Policy->FilterNonIP)
-						{
-							if (packet->TypeL3 != L3_IPV4 && packet->TypeL3 != L3_ARPV4 && packet->TypeL3 != L3_IPV6)
-							{
-								goto DISCARD_UNICAST_PACKET;
-							}
+							goto DISCARD_UNICAST_PACKET;
 						}
 
 						if (s != NULL &&
@@ -4362,92 +4405,9 @@ DISCARD_UNICAST_PACKET:
 										}
 									}
 								}
-								if (dest_session->Policy->RSandRAFilter)
+								if (PolicyDropsPacket(dest_session->Policy, packet))
 								{
-									if (packet->TypeL3 == L3_IPV6 &&
-										packet->TypeL4 == L4_ICMPV6 &&
-										(packet->ICMPv6HeaderPacketInfo.Type == ICMPV6_TYPE_ROUTER_SOLICIATION ||
-										 packet->ICMPv6HeaderPacketInfo.Type == ICMPV6_TYPE_ROUTER_ADVERTISEMENT))
-									{
-										discard = true;
-									}
-								}
-
-								if (dest_session->Policy->DHCPFilter)
-								{
-									if (packet->TypeL3 == L3_IPV4 &&
-										packet->TypeL4 == L4_UDP &&
-										packet->TypeL7 == L7_DHCPV4)
-									{
-										discard = true;
-									}
-								}
-
-								if (dest_session->Policy->DHCPv6Filter)
-								{
-									if (packet->TypeL3 == L3_IPV6 &&
-										packet->TypeL4 == L4_UDP &&
-										(Endian16(packet->L4.UDPHeader->DstPort) == 546 || Endian16(packet->L4.UDPHeader->DstPort) == 547))
-									{
-										discard = true;
-									}
-								}
-
-								if (dest_session->Policy->ArpDhcpOnly)
-								{
-									if (packet->BroadcastPacket)
-									{
-										bool b = true;
-
-										if (packet->TypeL3 == L3_IPV4 &&
-											packet->TypeL4 == L4_UDP &&
-											packet->TypeL7 == L7_DHCPV4)
-										{
-											b = false;
-										}
-										else if (packet->TypeL3 == L3_ARPV4)
-										{
-											b = false;
-										}
-										else if (packet->TypeL3 == L3_IPV6 &&
-											packet->TypeL4 == L4_UDP &&
-											(Endian16(packet->L4.UDPHeader->DstPort) == 546 || Endian16(packet->L4.UDPHeader->DstPort) == 547))
-										{
-											b = false;
-										}
-										else if (packet->TypeL3 == L3_IPV6 &&
-											packet->TypeL4 == L4_ICMPV6)
-										{
-											b = false;
-										}
-
-										if (discard == false)
-										{
-											discard = b;
-										}
-									}
-								}
-
-								if (dest_session->Policy->FilterIPv4)
-								{
-									if (packet->TypeL3 == L3_IPV4 || packet->TypeL3 == L3_ARPV4)
-									{
-										discard = true;
-									}
-								}
-								if (dest_session->Policy->FilterIPv6)
-								{
-									if (packet->TypeL3 == L3_IPV6)
-									{
-										discard = true;
-									}
-								}
-								if (dest_session->Policy->FilterNonIP)
-								{
-									if (packet->TypeL3 != L3_IPV4 && packet->TypeL3 != L3_ARPV4 && packet->TypeL3 != L3_IPV6)
-									{
-										discard = true;
-									}
+									discard = true;
 								}
 
 								if (s != NULL &&
@@ -4919,15 +4879,9 @@ static bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
 		{
 			ok = true;
 		}
-		if (p->TypeL3 == L3_IPV4)
+		if (IsDhcpv4(p))
 		{
-			if (p->TypeL4 == L4_UDP)
-			{
-				if (p->TypeL7 == L7_DHCPV4)
-				{
-					ok = true;
-				}
-			}
+			ok = true;
 		}
 		if (p->TypeL3 == L3_IPV6)
 		{
@@ -4937,9 +4891,7 @@ static bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
 			}
 		}
 
-		if (p->TypeL3 == L3_IPV6 &&
-			p->TypeL4 == L4_UDP &&
-			(Endian16(p->L4.UDPHeader->DstPort) == 546 || Endian16(p->L4.UDPHeader->DstPort) == 547))
+		if (IsDhcpv6Port(p))
 		{
 			ok = true;
 		}
@@ -4952,70 +4904,47 @@ static bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
 
 	if (pol->FilterIPv4)
 	{
-		if (p->MacHeader != NULL)
+		if (IsEtherTypeIPv4(p))
 		{
-			USHORT proto = Endian16(p->MacHeader->Protocol);
-			if (proto == 0x0800 || proto == 0x0806)
-			{
-				return false;
-			}
+			return false;
 		}
 	}
 
 	if (pol->FilterIPv6)
 	{
-		if (p->MacHeader != NULL)
+		if (IsEtherTypeIPv6(p))
 		{
-			USHORT proto = Endian16(p->MacHeader->Protocol);
-			if (proto == 0x86dd)
-			{
-				return false;
-			}
+			return false;
 		}
 	}
 
 	if (pol->FilterNonIP)
 	{
-		if (p->MacHeader != NULL)
+		if (IsEtherTypeNonIP(p))
 		{
-			USHORT proto = Endian16(p->MacHeader->Protocol);
-			if (!(proto == 0x86dd || proto == 0x0800 || proto == 0x0806))
-			{
-				return false;
-			}
+			return false;
 		}
 	}
 
 	if (pol->DHCPFilter)
 	{
-		if (p->TypeL3 == L3_IPV4 &&
-			p->TypeL4 == L4_UDP &&
-			p->TypeL7 == L7_DHCPV4)
+		if (IsDhcpv4(p))
 		{
-
 			return false;
 		}
 	}
 
 	if (pol->DHCPv6Filter)
 	{
-		if (p->TypeL3 == L3_IPV6 &&
-			p->TypeL4 == L4_UDP)
+		if (IsDhcpv6Port(p))
 		{
-			if (Endian16(p->L4.UDPHeader->DstPort) == 546 ||
-				Endian16(p->L4.UDPHeader->DstPort) == 547)
-			{
-
-				return false;
-			}
+			return false;
 		}
 	}
 
 	if (pol->DHCPNoServer)
 	{
-		if (p->TypeL3 == L3_IPV4 &&
-			p->TypeL4 == L4_UDP &&
-			p->TypeL7 == L7_DHCPV4)
+		if (IsDhcpv4(p))
 		{
 			DHCPV4_HEADER *h = p->L7.DHCPv4Header;
 			if (h->OpCode == 2)
@@ -5074,9 +5003,7 @@ static bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
 		}
 	}
 
-	if (p->TypeL3 == L3_IPV4 &&
-		p->TypeL4 == L4_UDP &&
-		p->TypeL7 == L7_DHCPV4 &&
+	if (IsDhcpv4(p) &&
 		(s->Hub != NULL && s->Hub->Option->NoIpTable == false))
 	{
 		DHCPV4_HEADER *h = p->L7.DHCPv4Header;
@@ -5252,12 +5179,9 @@ bool IsMostHighestPriorityPacket(SESSION *s, PKT *p)
 			}
 		}
 
-		if (p->TypeL4 == L4_UDP)
+		if (IsDhcpv4(p))
 		{
-			if (p->TypeL7 == L7_DHCPV4)
-			{
-				return true;
-			}
+			return true;
 		}
 	}
 
