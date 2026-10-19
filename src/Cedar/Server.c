@@ -2164,12 +2164,7 @@ static void SiWritePolicyCfg(FOLDER *f, POLICY *p, bool cascade_mode)
 	CfgAddBool(f, "CheckMac", p->CheckMac);
 	CfgAddBool(f, "CheckIP", p->CheckIP);
 	CfgAddBool(f, "ArpDhcpOnly", p->ArpDhcpOnly);
-
-	if (cascade_mode == false)
-	{
-		CfgAddBool(f, "PrivacyFilter", p->PrivacyFilter);
-	}
-
+	CfgAddBool(f, "PrivacyFilter", p->PrivacyFilter);
 	CfgAddBool(f, "NoServer", p->NoServer);
 	CfgAddBool(f, "NoBroadcastLimiter", p->NoBroadcastLimiter);
 
