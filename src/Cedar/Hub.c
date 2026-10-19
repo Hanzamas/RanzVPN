@@ -23,13 +23,6 @@
 
 #include <string.h>
 
-#define GetHubAdminOptionDataAndSet(ao, name, dest) \
-	value = GetHubAdminOptionData(ao, name);        \
-	if (value != INFINITE)                          \
-	{                                               \
-		dest = value;                               \
-	}
-
 // These names must be shorter than 64 bytes
 ADMIN_OPTION admin_options[] =
 {
@@ -77,6 +70,111 @@ ADMIN_OPTION admin_options[] =
 };
 
 UINT num_admin_options = sizeof(admin_options) / sizeof(ADMIN_OPTION);
+
+// One row per HUB_OPTION member. The config file, the defaults of a new hub and the RPC admin option list all
+// follow it; the rows with an admin name come in the order the admin option list has. Config names are those
+// of the members, the admin names too unless they are given.
+#define	HUB_OPTION_ROW(type, name, admin, def, flags)	\
+	{#name, admin, offsetof(HUB_OPTION, name), type, def, flags}
+#define	HUB_OPTION_CFG_ROW(type, name, def)				HUB_OPTION_ROW(type, name, NULL, def, 0)
+#define	HUB_OPTION_BOOL_ROW(name, def)					HUB_OPTION_ROW(HUB_OPTION_BOOL, name, #name, def, 0)
+#define	HUB_OPTION_UINT_ROW(name, def, flags)			HUB_OPTION_ROW(HUB_OPTION_UINT, name, #name, def, flags)
+
+HUB_OPTION_FIELD hub_option_fields[] =
+{
+	HUB_OPTION_CFG_ROW(HUB_OPTION_UINT, MaxSession, 0),
+	HUB_OPTION_CFG_ROW(HUB_OPTION_BOOL, NoEnum, 0),
+	HUB_OPTION_ROW(HUB_OPTION_BOOL, NoArpPolling, "NoAddressPollingIPv4", 0, 0),
+	HUB_OPTION_ROW(HUB_OPTION_BOOL, NoIPv6AddrPolling, "NoAddressPollingIPv6", 0, 0),
+	HUB_OPTION_BOOL_ROW(NoIpTable, 0),
+	HUB_OPTION_BOOL_ROW(NoMacAddressLog, 1),
+	HUB_OPTION_BOOL_ROW(ManageOnlyPrivateIP, 1),
+	HUB_OPTION_BOOL_ROW(ManageOnlyLocalUnicastIPv6, 1),
+	HUB_OPTION_BOOL_ROW(DisableIPParsing, 0),
+	HUB_OPTION_BOOL_ROW(YieldAfterStorePacket, 0),
+	HUB_OPTION_BOOL_ROW(NoSpinLockForPacketDelay, 0),
+	HUB_OPTION_UINT_ROW(BroadcastStormDetectionThreshold, 0, 0),
+	HUB_OPTION_UINT_ROW(ClientMinimumRequiredBuild, 0, 0),
+	HUB_OPTION_BOOL_ROW(FilterPPPoE, 0),
+	HUB_OPTION_BOOL_ROW(FilterOSPF, 0),
+	HUB_OPTION_BOOL_ROW(FilterIPv4, 0),
+	HUB_OPTION_BOOL_ROW(FilterIPv6, 0),
+	HUB_OPTION_BOOL_ROW(FilterNonIP, 0),
+	HUB_OPTION_BOOL_ROW(NoIPv4PacketLog, 0),
+	HUB_OPTION_BOOL_ROW(NoIPv6PacketLog, 0),
+	HUB_OPTION_BOOL_ROW(FilterBPDU, 0),
+	HUB_OPTION_BOOL_ROW(NoIPv6DefaultRouterInRAWhenIPv6, 0),
+	HUB_OPTION_BOOL_ROW(NoLookBPDUBridgeId, 0),
+	HUB_OPTION_BOOL_ROW(NoManageVlanId, 0),
+	HUB_OPTION_ROW(HUB_OPTION_HEX, VlanTypeId, "VlanTypeId", MAC_PROTO_TAGVLAN, HUB_OPTION_ZERO_IS_DEFAULT),
+	HUB_OPTION_ROW(HUB_OPTION_BOOL, FixForDLinkBPDU, "FixForDLinkBPDU", 0, HUB_OPTION_WRITE_IF_TRUE),
+	HUB_OPTION_UINT_ROW(RequiredClientId, 0, 0),
+	HUB_OPTION_UINT_ROW(AdjustTcpMssValue, 0, 0),
+	HUB_OPTION_BOOL_ROW(DisableAdjustTcpMss, 0),
+	HUB_OPTION_BOOL_ROW(NoDhcpPacketLogOutsideHub, 1),
+	HUB_OPTION_BOOL_ROW(DisableHttpParsing, 0),
+	HUB_OPTION_BOOL_ROW(DisableUdpAcceleration, 0),
+	HUB_OPTION_BOOL_ROW(DisableUdpFilterForLocalBridgeNic, 0),
+	HUB_OPTION_BOOL_ROW(ApplyIPv4AccessListOnArpPacket, 0),
+	HUB_OPTION_BOOL_ROW(RemoveDefGwOnDhcpForLocalhost, 1),
+	HUB_OPTION_UINT_ROW(AccessListIncludeFileCacheLifetime, ACCESS_LIST_INCLUDE_FILE_CACHE_LIFETIME, HUB_OPTION_ZERO_IS_DEFAULT),
+	HUB_OPTION_BOOL_ROW(DisableCheckMacOnLocalBridge, 0),
+	HUB_OPTION_BOOL_ROW(DisableCorrectIpOffloadChecksum, 0),
+	HUB_OPTION_BOOL_ROW(BroadcastLimiterStrictMode, 0),
+	HUB_OPTION_UINT_ROW(MaxLoggedPacketsPerMinute, 0, 0),
+	HUB_OPTION_BOOL_ROW(DoNotSaveHeavySecurityLogs, 0),
+	HUB_OPTION_BOOL_ROW(DropBroadcastsInPrivacyFilterMode, 1),
+	HUB_OPTION_BOOL_ROW(DropArpInPrivacyFilterMode, 1),
+	HUB_OPTION_BOOL_ROW(AllowSameUserInPrivacyFilterMode, 0),
+	HUB_OPTION_BOOL_ROW(SuppressClientUpdateNotification, 0),
+	HUB_OPTION_UINT_ROW(FloodingSendQueueBufferQuota, DEFAULT_FLOODING_QUEUE_LENGTH, 0),
+	HUB_OPTION_UINT_ROW(DetectDormantSessionInterval, 0, 0),
+	HUB_OPTION_BOOL_ROW(NoPhysicalIPOnPacketLog, 0),
+	HUB_OPTION_BOOL_ROW(UseHubNameAsDhcpUserClassOption, 0),
+	HUB_OPTION_BOOL_ROW(AllowEapMatchUserByCert, 0),
+	HUB_OPTION_UINT_ROW(DhcpDiscoverTimeoutMs, DEFAULT_DHCP_DISCOVER_TIMEOUT, HUB_OPTION_ZERO_IS_DEFAULT),
+};
+
+UINT num_hub_option_fields = sizeof(hub_option_fields) / sizeof(HUB_OPTION_FIELD);
+
+// Value of a HUB_OPTION member, a bool as 0 or 1
+UINT GetHubOptionField(HUB_OPTION *o, HUB_OPTION_FIELD *f)
+{
+	UCHAR *p;
+	if (o == NULL || f == NULL)
+	{
+		return 0;
+	}
+
+	p = ((UCHAR *)o) + f->Offset;
+
+	if (f->Type == HUB_OPTION_BOOL)
+	{
+		return *((bool *)p) ? 1 : 0;
+	}
+
+	return *((UINT *)p);
+}
+
+void SetHubOptionField(HUB_OPTION *o, HUB_OPTION_FIELD *f, UINT value)
+{
+	UCHAR *p;
+	if (o == NULL || f == NULL)
+	{
+		return;
+	}
+
+	p = ((UCHAR *)o) + f->Offset;
+
+	if (f->Type == HUB_OPTION_BOOL)
+	{
+		*((bool *)p) = (value != 0);
+	}
+	else
+	{
+		*((UINT *)p) = value;
+	}
+}
 
 
 static LIST *NewUserList()
@@ -409,159 +507,65 @@ UINT GetHubAdminOptionData(RPC_ADMIN_OPTION *ao, char *name)
 
 void DataToHubOptionStruct(HUB_OPTION *o, RPC_ADMIN_OPTION *ao)
 {
+	UINT i;
 	if (o == NULL || ao == NULL)
 	{
 		return;
 	}
 
-	UINT value;
+	for (i = 0;i < num_hub_option_fields;i++)
+	{
+		HUB_OPTION_FIELD *f = &hub_option_fields[i];
 
-	GetHubAdminOptionDataAndSet(ao, "NoAddressPollingIPv4", o->NoArpPolling);
-	GetHubAdminOptionDataAndSet(ao, "NoAddressPollingIPv6", o->NoIPv6AddrPolling);
-	GetHubAdminOptionDataAndSet(ao, "NoIpTable", o->NoIpTable);
-	GetHubAdminOptionDataAndSet(ao, "NoMacAddressLog", o->NoMacAddressLog);
-	GetHubAdminOptionDataAndSet(ao, "ManageOnlyPrivateIP", o->ManageOnlyPrivateIP);
-	GetHubAdminOptionDataAndSet(ao, "ManageOnlyLocalUnicastIPv6", o->ManageOnlyLocalUnicastIPv6);
-	GetHubAdminOptionDataAndSet(ao, "DisableIPParsing", o->DisableIPParsing);
-	GetHubAdminOptionDataAndSet(ao, "YieldAfterStorePacket", o->YieldAfterStorePacket);
-	GetHubAdminOptionDataAndSet(ao, "NoSpinLockForPacketDelay", o->NoSpinLockForPacketDelay);
-	GetHubAdminOptionDataAndSet(ao, "BroadcastStormDetectionThreshold", o->BroadcastStormDetectionThreshold);
-	GetHubAdminOptionDataAndSet(ao, "ClientMinimumRequiredBuild", o->ClientMinimumRequiredBuild);
-	GetHubAdminOptionDataAndSet(ao, "FilterPPPoE", o->FilterPPPoE);
-	GetHubAdminOptionDataAndSet(ao, "FilterOSPF", o->FilterOSPF);
-	GetHubAdminOptionDataAndSet(ao, "FilterIPv4", o->FilterIPv4);
-	GetHubAdminOptionDataAndSet(ao, "FilterIPv6", o->FilterIPv6);
-	GetHubAdminOptionDataAndSet(ao, "FilterNonIP", o->FilterNonIP);
-	GetHubAdminOptionDataAndSet(ao, "NoIPv4PacketLog", o->NoIPv4PacketLog);
-	GetHubAdminOptionDataAndSet(ao, "NoIPv6PacketLog", o->NoIPv6PacketLog);
-	GetHubAdminOptionDataAndSet(ao, "FilterBPDU", o->FilterBPDU);
-	GetHubAdminOptionDataAndSet(ao, "NoIPv6DefaultRouterInRAWhenIPv6", o->NoIPv6DefaultRouterInRAWhenIPv6);
-	GetHubAdminOptionDataAndSet(ao, "NoLookBPDUBridgeId", o->NoLookBPDUBridgeId);
-	GetHubAdminOptionDataAndSet(ao, "NoManageVlanId", o->NoManageVlanId);
-	GetHubAdminOptionDataAndSet(ao, "VlanTypeId", o->VlanTypeId);
-	GetHubAdminOptionDataAndSet(ao, "FixForDLinkBPDU", o->FixForDLinkBPDU);
-	GetHubAdminOptionDataAndSet(ao, "RequiredClientId", o->RequiredClientId);
-	GetHubAdminOptionDataAndSet(ao, "AdjustTcpMssValue", o->AdjustTcpMssValue);
-	GetHubAdminOptionDataAndSet(ao, "DisableAdjustTcpMss", o->DisableAdjustTcpMss);
-	GetHubAdminOptionDataAndSet(ao, "NoDhcpPacketLogOutsideHub", o->NoDhcpPacketLogOutsideHub);
-	GetHubAdminOptionDataAndSet(ao, "DisableHttpParsing", o->DisableHttpParsing);
-	GetHubAdminOptionDataAndSet(ao, "DisableUdpAcceleration", o->DisableUdpAcceleration);
-	GetHubAdminOptionDataAndSet(ao, "DisableUdpFilterForLocalBridgeNic", o->DisableUdpFilterForLocalBridgeNic);
-	GetHubAdminOptionDataAndSet(ao, "ApplyIPv4AccessListOnArpPacket", o->ApplyIPv4AccessListOnArpPacket);
-	GetHubAdminOptionDataAndSet(ao, "RemoveDefGwOnDhcpForLocalhost", o->RemoveDefGwOnDhcpForLocalhost);
-	GetHubAdminOptionDataAndSet(ao, "AccessListIncludeFileCacheLifetime", o->AccessListIncludeFileCacheLifetime);
-	GetHubAdminOptionDataAndSet(ao, "DisableCheckMacOnLocalBridge", o->DisableCheckMacOnLocalBridge);
-	GetHubAdminOptionDataAndSet(ao, "DisableCorrectIpOffloadChecksum", o->DisableCorrectIpOffloadChecksum);
-	GetHubAdminOptionDataAndSet(ao, "BroadcastLimiterStrictMode", o->BroadcastLimiterStrictMode);
-	GetHubAdminOptionDataAndSet(ao, "MaxLoggedPacketsPerMinute", o->MaxLoggedPacketsPerMinute);
-	GetHubAdminOptionDataAndSet(ao, "DoNotSaveHeavySecurityLogs", o->DoNotSaveHeavySecurityLogs);
-	GetHubAdminOptionDataAndSet(ao, "DropBroadcastsInPrivacyFilterMode", o->DropBroadcastsInPrivacyFilterMode);
-	GetHubAdminOptionDataAndSet(ao, "DropArpInPrivacyFilterMode", o->DropArpInPrivacyFilterMode);
-	GetHubAdminOptionDataAndSet(ao, "AllowSameUserInPrivacyFilterMode", o->AllowSameUserInPrivacyFilterMode);
-	GetHubAdminOptionDataAndSet(ao, "SuppressClientUpdateNotification", o->SuppressClientUpdateNotification);
-	GetHubAdminOptionDataAndSet(ao, "FloodingSendQueueBufferQuota", o->FloodingSendQueueBufferQuota);
-	GetHubAdminOptionDataAndSet(ao, "DetectDormantSessionInterval", o->DetectDormantSessionInterval);
-	GetHubAdminOptionDataAndSet(ao, "NoPhysicalIPOnPacketLog", o->NoPhysicalIPOnPacketLog);
-	GetHubAdminOptionDataAndSet(ao, "UseHubNameAsDhcpUserClassOption", o->UseHubNameAsDhcpUserClassOption);
-	GetHubAdminOptionDataAndSet(ao, "AllowEapMatchUserByCert", o->AllowEapMatchUserByCert);
-	GetHubAdminOptionDataAndSet(ao, "DhcpDiscoverTimeoutMs", o->DhcpDiscoverTimeoutMs);
+		if (f->AdminName != NULL)
+		{
+			UINT value = GetHubAdminOptionData(ao, f->AdminName);
+
+			if (value != INFINITE)
+			{
+				SetHubOptionField(o, f, value);
+			}
+		}
+	}
 }
 
 void HubOptionStructToData(RPC_ADMIN_OPTION *ao, HUB_OPTION *o, char *hub_name)
 {
-	LIST *aol;
-	UINT i;
+	UINT i, num;
 	if (ao == NULL || o == NULL || hub_name == NULL)
 	{
 		return;
 	}
 
-	aol = NewListFast(NULL);
-
-	Add(aol, NewAdminOption("NoAddressPollingIPv4", o->NoArpPolling));
-	Add(aol, NewAdminOption("NoAddressPollingIPv6", o->NoIPv6AddrPolling));
-	Add(aol, NewAdminOption("NoIpTable", o->NoIpTable));
-	Add(aol, NewAdminOption("NoMacAddressLog", o->NoMacAddressLog));
-	Add(aol, NewAdminOption("ManageOnlyPrivateIP", o->ManageOnlyPrivateIP));
-	Add(aol, NewAdminOption("ManageOnlyLocalUnicastIPv6", o->ManageOnlyLocalUnicastIPv6));
-	Add(aol, NewAdminOption("DisableIPParsing", o->DisableIPParsing));
-	Add(aol, NewAdminOption("YieldAfterStorePacket", o->YieldAfterStorePacket));
-	Add(aol, NewAdminOption("NoSpinLockForPacketDelay", o->NoSpinLockForPacketDelay));
-	Add(aol, NewAdminOption("BroadcastStormDetectionThreshold", o->BroadcastStormDetectionThreshold));
-	Add(aol, NewAdminOption("ClientMinimumRequiredBuild", o->ClientMinimumRequiredBuild));
-	Add(aol, NewAdminOption("FilterPPPoE", o->FilterPPPoE));
-	Add(aol, NewAdminOption("FilterOSPF", o->FilterOSPF));
-	Add(aol, NewAdminOption("FilterIPv4", o->FilterIPv4));
-	Add(aol, NewAdminOption("FilterIPv6", o->FilterIPv6));
-	Add(aol, NewAdminOption("FilterNonIP", o->FilterNonIP));
-	Add(aol, NewAdminOption("NoIPv4PacketLog", o->NoIPv4PacketLog));
-	Add(aol, NewAdminOption("NoIPv6PacketLog", o->NoIPv6PacketLog));
-	Add(aol, NewAdminOption("FilterBPDU", o->FilterBPDU));
-	Add(aol, NewAdminOption("NoIPv6DefaultRouterInRAWhenIPv6", o->NoIPv6DefaultRouterInRAWhenIPv6));
-	Add(aol, NewAdminOption("NoLookBPDUBridgeId", o->NoLookBPDUBridgeId));
-	Add(aol, NewAdminOption("NoManageVlanId", o->NoManageVlanId));
-	Add(aol, NewAdminOption("VlanTypeId", o->VlanTypeId));
-	Add(aol, NewAdminOption("FixForDLinkBPDU", o->FixForDLinkBPDU));
-	Add(aol, NewAdminOption("RequiredClientId", o->RequiredClientId));
-	Add(aol, NewAdminOption("AdjustTcpMssValue", o->AdjustTcpMssValue));
-	Add(aol, NewAdminOption("DisableAdjustTcpMss", o->DisableAdjustTcpMss));
-	Add(aol, NewAdminOption("NoDhcpPacketLogOutsideHub", o->NoDhcpPacketLogOutsideHub));
-	Add(aol, NewAdminOption("DisableHttpParsing", o->DisableHttpParsing));
-	Add(aol, NewAdminOption("DisableUdpAcceleration", o->DisableUdpAcceleration));
-	Add(aol, NewAdminOption("DisableUdpFilterForLocalBridgeNic", o->DisableUdpFilterForLocalBridgeNic));
-	Add(aol, NewAdminOption("ApplyIPv4AccessListOnArpPacket", o->ApplyIPv4AccessListOnArpPacket));
-	Add(aol, NewAdminOption("RemoveDefGwOnDhcpForLocalhost", o->RemoveDefGwOnDhcpForLocalhost));
-	Add(aol, NewAdminOption("AccessListIncludeFileCacheLifetime", o->AccessListIncludeFileCacheLifetime));
-	Add(aol, NewAdminOption("DisableCheckMacOnLocalBridge", o->DisableCheckMacOnLocalBridge));
-	Add(aol, NewAdminOption("DisableCorrectIpOffloadChecksum", o->DisableCorrectIpOffloadChecksum));
-	Add(aol, NewAdminOption("BroadcastLimiterStrictMode", o->BroadcastLimiterStrictMode));
-	Add(aol, NewAdminOption("MaxLoggedPacketsPerMinute", o->MaxLoggedPacketsPerMinute));
-	Add(aol, NewAdminOption("DoNotSaveHeavySecurityLogs", o->DoNotSaveHeavySecurityLogs));
-	Add(aol, NewAdminOption("DropBroadcastsInPrivacyFilterMode", o->DropBroadcastsInPrivacyFilterMode));
-	Add(aol, NewAdminOption("DropArpInPrivacyFilterMode", o->DropArpInPrivacyFilterMode));
-	Add(aol, NewAdminOption("AllowSameUserInPrivacyFilterMode", o->AllowSameUserInPrivacyFilterMode));
-	Add(aol, NewAdminOption("SuppressClientUpdateNotification", o->SuppressClientUpdateNotification));
-	Add(aol, NewAdminOption("FloodingSendQueueBufferQuota", o->FloodingSendQueueBufferQuota));
-	Add(aol, NewAdminOption("DetectDormantSessionInterval", o->DetectDormantSessionInterval));
-	Add(aol, NewAdminOption("NoPhysicalIPOnPacketLog", o->NoPhysicalIPOnPacketLog));
-	Add(aol, NewAdminOption("UseHubNameAsDhcpUserClassOption", o->UseHubNameAsDhcpUserClassOption));
-	Add(aol, NewAdminOption("AllowEapMatchUserByCert", o->AllowEapMatchUserByCert));
-	Add(aol, NewAdminOption("DhcpDiscoverTimeoutMs", o->DhcpDiscoverTimeoutMs));
-
 	Zero(ao, sizeof(RPC_ADMIN_OPTION));
 
 	StrCpy(ao->HubName, sizeof(ao->HubName), hub_name);
 
-	ao->NumItem = LIST_NUM(aol);
+	for (i = 0;i < num_hub_option_fields;i++)
+	{
+		if (hub_option_fields[i].AdminName != NULL)
+		{
+			ao->NumItem++;
+		}
+	}
+
 	ao->Items = ZeroMalloc(sizeof(ADMIN_OPTION) * ao->NumItem);
 
-	for (i = 0;i < LIST_NUM(aol);i++)
+	num = 0;
+
+	for (i = 0;i < num_hub_option_fields;i++)
 	{
-		ADMIN_OPTION *a = LIST_DATA(aol, i);
+		HUB_OPTION_FIELD *f = &hub_option_fields[i];
 
-		UniStrCpy(a->Descrption, sizeof(a->Descrption), GetHubAdminOptionHelpString(a->Name));
+		if (f->AdminName != NULL)
+		{
+			ADMIN_OPTION *a = &ao->Items[num++];
 
-		Copy(&ao->Items[i], a, sizeof(ADMIN_OPTION));
-
-		Free(a);
+			StrCpy(a->Name, sizeof(a->Name), f->AdminName);
+			a->Value = GetHubOptionField(o, f);
+			UniStrCpy(a->Descrption, sizeof(a->Descrption), GetHubAdminOptionHelpString(a->Name));
+		}
 	}
-
-	ReleaseList(aol);
-}
-
-ADMIN_OPTION *NewAdminOption(char *name, UINT value)
-{
-	ADMIN_OPTION *a;
-	if (name == NULL)
-	{
-		return NULL;
-	}
-
-	a = ZeroMalloc(sizeof(ADMIN_OPTION));
-	StrCpy(a->Name, sizeof(a->Name), name);
-	a->Value = value;
-
-	return a;
 }
 
 void SetAcList(LIST *o, LIST *src)

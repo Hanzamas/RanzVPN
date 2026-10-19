@@ -54,6 +54,7 @@ typedef struct TRAFFIC_LIMITER TRAFFIC_LIMITER;
 typedef struct STORM STORM;
 typedef struct HUB_PA HUB_PA;
 typedef struct HUB_OPTION HUB_OPTION;
+typedef struct HUB_OPTION_FIELD HUB_OPTION_FIELD;
 typedef struct MAC_TABLE_ENTRY MAC_TABLE_ENTRY;
 typedef struct IP_TABLE_ENTRY IP_TABLE_ENTRY;
 typedef struct ACCESS ACCESS;
