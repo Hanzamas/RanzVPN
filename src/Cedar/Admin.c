@@ -1836,7 +1836,6 @@ static UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 		return ERR_LOCAL_BRIDGE_UNSUPPORTED;
 	}
 
-	if (true)
 	{
 		char tmp[MAX_SIZE];
 		UINT id = Win32EthGetNameAndIdFromCombinedName(tmp, sizeof(tmp), t->DeviceName);
@@ -1848,7 +1847,8 @@ static UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 		}
 	}
 
-	AddLocalBridge(a->Server->Cedar, t->HubName, t->DeviceName, false, false, t->TapMode, NULL, false);
+	// The RPC TapMode field is ignored: there is no TAP device on Windows
+	AddLocalBridge(a->Server->Cedar, t->HubName, t->DeviceName, false, false, false);
 
 	ALog(a, NULL, "LA_ADD_BRIDGE", t->HubName, t->DeviceName);
 
@@ -1924,7 +1924,7 @@ static UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t)
 			StrCpy(e->DeviceName, sizeof(e->DeviceName), br->DeviceName);
 			StrCpy(e->HubName, sizeof(e->HubName), br->HubName);
 
-			e->TapMode = br->TapMode;
+			// TapMode stays false (zeroed above): no TAP device on Windows
 		}
 	}
 	UnlockList(c->LocalBridgeList);

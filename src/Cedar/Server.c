@@ -786,8 +786,8 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 
 	if (IsBridgeSupported())
 	{
-		const UINT OsType = GetOsInfo()->OsType;
-		AddCapsBool(t, "b_tap_supported", OsType == OSTYPE_LINUX || OsType == OSTYPE_BSD);
+		// No TAP device on Windows; the cap stays for admin clients that read it
+		AddCapsBool(t, "b_tap_supported", false);
 	}
 
 	AddCapsBool(t, "b_support_cascade", true);
@@ -1793,8 +1793,6 @@ static void SiLoadLocalBridgeCfg(SERVER *s, FOLDER *f)
 {
 	char hub[MAX_SIZE];
 	char nic[MAX_SIZE];
-	bool tapmode = false;
-	UCHAR tapaddr[6];
 	if (s == NULL || f == NULL)
 	{
 		return;
@@ -1813,7 +1811,7 @@ static void SiLoadLocalBridgeCfg(SERVER *s, FOLDER *f)
 	}
 
 	AddLocalBridge(s->Cedar, hub, nic, CfgGetBool(f, "NoPromiscuousMode"), CfgGetBool(f, "MonitorMode"),
-		tapmode, tapaddr, CfgGetBool(f, "LimitBroadcast"));
+		CfgGetBool(f, "LimitBroadcast"));
 }
 
 void SiLoadLocalBridges(SERVER *s, FOLDER *f)

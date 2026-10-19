@@ -108,7 +108,7 @@ bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename)
 	return ret;
 }
 
-void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool monitor, bool tapmode, char *tapaddr, bool limit_broadcast)
+void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool monitor, bool limit_broadcast)
 {
 	UINT i;
 	HUB *h = NULL;
@@ -117,8 +117,6 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 	{
 		return;
 	}
-
-	tapmode = false;
 
 	LockList(c->HubList);
 	{
@@ -133,10 +131,7 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 				{
 					if (StrCmpi(br->HubName, hubname) == 0)
 					{
-						if (br->TapMode == tapmode)
-						{
-							exists = true;
-						}
+						exists = true;
 					}
 				}
 			}
@@ -148,20 +143,8 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 				StrCpy(br->DeviceName, sizeof(br->DeviceName), devicename);
 				br->Bridge = NULL;
 				br->Local = local;
-				br->TapMode = tapmode;
 				br->LimitBroadcast = limit_broadcast;
 				br->Monitor = monitor;
-				if (br->TapMode)
-				{
-					if (tapaddr != NULL && IsZero(tapaddr, 6) == false)
-					{
-						Copy(br->TapMacAddress, tapaddr, 6);
-					}
-					else
-					{
-						GenMacAddress(br->TapMacAddress);
-					}
-				}
 
 				Add(c->LocalBridgeList, br);
 
@@ -193,7 +176,7 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 					{
 						if (br->Bridge == NULL)
 						{
-							br->Bridge = BrNewBridge(h, br->DeviceName, NULL, br->Local, br->Monitor, br->TapMode, br->TapMacAddress, br->LimitBroadcast, br);
+							br->Bridge = BrNewBridge(h, br);
 						}
 					}
 				}
@@ -295,53 +278,31 @@ void BrFreeBridge(BRIDGE *b)
 	Free(b);
 }
 
-BRIDGE *BrNewBridge(HUB *h, char *name, POLICY *p, bool local, bool monitor, bool tapmode, char *tapaddr, bool limit_broadcast, LOCALBRIDGE *parent_local_bridge)
+BRIDGE *BrNewBridge(HUB *h, LOCALBRIDGE *parent_local_bridge)
 {
 	BRIDGE *b;
 	POLICY *policy;
 	THREAD *t;
-	if (h == NULL || name == NULL || parent_local_bridge == NULL)
+	if (h == NULL || parent_local_bridge == NULL)
 	{
 		return NULL;
 	}
 
-	if (p == NULL)
-	{
-		policy = ClonePolicy(GetDefaultPolicy());
-	}
-	else
-	{
-		policy = ClonePolicy(p);
-	}
+	policy = ClonePolicy(GetDefaultPolicy());
 
 	b = ZeroMalloc(sizeof(BRIDGE));
 	b->Cedar = h->Cedar;
 	b->Hub = h;
-	StrCpy(b->Name, sizeof(b->Name), name);
+	StrCpy(b->Name, sizeof(b->Name), parent_local_bridge->DeviceName);
 	b->Policy = policy;
-	b->Local = local;
-	b->TapMode = tapmode;
-	b->LimitBroadcast = limit_broadcast;
 	b->ParentLocalBridge = parent_local_bridge;
 
-	if (b->TapMode)
-	{
-		if (tapaddr != NULL && IsZero(tapaddr, 6) == false)
-		{
-			Copy(b->TapMacAddress, tapaddr, 6);
-		}
-		else
-		{
-			GenMacAddress(b->TapMacAddress);
-		}
-	}
-
-	if (monitor)
+	if (parent_local_bridge->Monitor)
 	{
 		policy->MonitorPort = true;
 	}
 
-	if (b->LimitBroadcast == false)
+	if (parent_local_bridge->LimitBroadcast == false)
 	{
 		policy->NoBroadcastLimiter = true;
 	}

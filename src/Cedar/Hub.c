@@ -5453,8 +5453,7 @@ void SetHubOnline(HUB *h)
 				{
 					if (br->Bridge == NULL)
 					{
-						br->Bridge = BrNewBridge(h, br->DeviceName, NULL, br->Local, br->Monitor,
-							br->TapMode, br->TapMacAddress, br->LimitBroadcast, br);
+						br->Bridge = BrNewBridge(h, br);
 					}
 				}
 			}
