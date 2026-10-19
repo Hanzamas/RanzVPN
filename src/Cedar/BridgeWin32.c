@@ -954,47 +954,20 @@ static TOKEN_LIST *GetEthListEx(UINT *total_num_including_hidden, bool enum_norm
 	{
 		char tmp[MAX_SIZE];
 		WP_ADAPTER *a = LIST_DATA(eth_list, i);
-		MS_ADAPTER *msa = NULL;
 		bool show = true;
 
 		if (Win32EthGetShowAllIf() == false)
 		{
-			msa = MsGetAdapterByGuidFromList(adapter_list, a->Guid);
+			// Hidden by the interface type that the OS reports, not by words in the title; an
+			// adapter that the OS does not list cannot be classified and stays listed
+			MS_ADAPTER *msa = MsGetAdapterByGuidFromList(adapter_list, a->Guid);
 
-			if (InStr(a->Title, "vpn client adapter"))
+			if (msa != NULL)
 			{
-				show = false;
-			}
+				show = msa->IsBridgeable;
 
-			if (InStr(a->Title, "tunnel adapter"))
-			{
-				show = false;
+				MsFreeAdapter(msa);
 			}
-
-			if (InStr(a->Title, "teredo tunnel"))
-			{
-				show = false;
-			}
-
-			if (InStr(a->Title, "MS Tunnel Interface"))
-			{
-				show = false;
-			}
-
-			if (InStr(a->Title, "pseudo-interface"))
-			{
-				show = false;
-			}
-		}
-
-		if (msa != NULL)
-		{
-			if (msa->IsNotEthernetLan)
-			{
-				show = false;
-			}
-
-			MsFreeAdapter(msa);
 		}
 
 		Win32EthMakeCombinedName(tmp, sizeof(tmp), a->Title, a->Guid);
@@ -1131,66 +1104,42 @@ static LIST *GetEthAdapterListInternal()
 	for (i = 0;i < LIST_NUM(o);i++)
 	{
 		WP_ADAPTER *a = LIST_DATA(o, i);
-		bool is_ethernet = false;
-		bool ok = false;
+		char tmp[MAX_SIZE];
+		UINT k;
 
-		if (SearchStrEx(a->Title, "ppp", 0, false) != INFINITE ||
-			SearchStrEx(a->Title, "wan", 0, false) != INFINITE ||
-			SearchStrEx(a->Title, "dialup", 0, false) != INFINITE ||
-			SearchStrEx(a->Title, "pptp", 0, false) != INFINITE ||
-			SearchStrEx(a->Title, "telepho", 0, false) != INFINITE ||
-			SearchStrEx(a->Title, "modem", 0, false) != INFINITE ||
-			SearchStrEx(a->Title, "ras", 0, false) != INFINITE)
+		// Every SeLow adapter is listed here; GetEthListEx hides the ones that are no wired LAN
+		for (k = 0;;k++)
 		{
-			Free(a);
-			continue;
-		}
+			bool ok;
 
-		is_ethernet = true;
-
-		if (is_ethernet)
-		{
-			char tmp[MAX_SIZE];
-			UINT k;
-
-			StrCpy(tmp, sizeof(tmp), a->Title);
-
-			for (k = 0;;k++)
+			if (k == 0)
 			{
-				if (k == 0)
-				{
-					StrCpy(tmp, sizeof(tmp), a->Title);
-				}
-				else
-				{
-					Format(tmp, sizeof(tmp), "%s(%u)", a->Title, k + 1);
-				}
+				StrCpy(tmp, sizeof(tmp), a->Title);
+			}
+			else
+			{
+				Format(tmp, sizeof(tmp), "%s(%u)", a->Title, k + 1);
+			}
 
-				ok = true;
-				for (j = 0;j < LIST_NUM(ret);j++)
+			ok = true;
+			for (j = 0;j < LIST_NUM(ret);j++)
+			{
+				WP_ADAPTER *aa = LIST_DATA(ret, j);
+				if (StrCmpi(aa->Title, tmp) == 0)
 				{
-					WP_ADAPTER *aa = LIST_DATA(ret, j);
-					if (StrCmpi(aa->Title, tmp) == 0)
-					{
-						ok = false;
-					}
-				}
-
-				if (ok)
-				{
-					break;
+					ok = false;
 				}
 			}
 
-			StrCpy(a->Title, sizeof(a->Title), tmp);
-			a->Id = Win32EthGenIdFromGuid(a->Guid);
-			Add(ret, a);
+			if (ok)
+			{
+				break;
+			}
 		}
 
-		if (ok == false)
-		{
-			Free(a);
-		}
+		StrCpy(a->Title, sizeof(a->Title), tmp);
+		a->Id = Win32EthGenIdFromGuid(a->Guid);
+		Add(ret, a);
 	}
 
 	Sort(ret);

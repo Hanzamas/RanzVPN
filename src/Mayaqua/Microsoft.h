@@ -161,8 +161,7 @@ typedef struct MS_ADAPTER
 	UINT AddressSize;
 	UCHAR Address[8];
 	char Guid[MAX_SIZE];			// MIB_IF_ROW2.InterfaceGuid as "{XXXXXXXX-...}"
-	bool IsWireless;
-	bool IsNotEthernetLan;
+	bool IsBridgeable;				// MsIsBridgeableIf of the interface type data
 } MS_ADAPTER;
 
 typedef struct MS_ADAPTER_LIST
@@ -266,6 +265,7 @@ void MsFreeAdapterList(MS_ADAPTER_LIST *o);
 MS_ADAPTER *MsCloneAdapter(MS_ADAPTER *a);
 MS_ADAPTER_LIST *MsCreateAdapterList();
 MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid);
+bool MsIsBridgeableIf(UINT type, UINT media_type, UINT physical_medium_type, bool hardware_interface);
 UINT ConvertMidStatusVistaToXp(UINT st);
 
 void MsSetTcpConfig(MS_TCP *tcp);

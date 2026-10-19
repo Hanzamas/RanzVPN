@@ -693,6 +693,27 @@ MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid)
 	return ret;
 }
 
+// Whether an interface is a wired Ethernet LAN, the kind that the Local Bridge lists unless it
+// shows every interface. Decided from the MIB_IF_ROW2 type data, not from words in the adapter
+// title, which are localized and also appear in unrelated names: an Ethernet interface type on
+// 802.3 media whose physical medium is 802.3, or is unspecified on a hardware NIC. Tunnels, PPP
+// and dial-up, loopback and wireless interfaces are not, and neither are software interfaces
+// that do not report their physical medium, such as the WAN Miniport interfaces of RAS
+bool MsIsBridgeableIf(UINT type, UINT media_type, UINT physical_medium_type, bool hardware_interface)
+{
+	if (type != IF_TYPE_ETHERNET_CSMACD || media_type != NdisMedium802_3)
+	{
+		return false;
+	}
+
+	if (physical_medium_type == NdisPhysicalMedium802_3)
+	{
+		return true;
+	}
+
+	return physical_medium_type == NdisPhysicalMediumUnspecified && hardware_interface;
+}
+
 MS_ADAPTER *MsCloneAdapter(MS_ADAPTER *a)
 {
 	MS_ADAPTER *ret;
@@ -786,20 +807,8 @@ MS_ADAPTER_LIST *MsCreateAdapterList()
 					(UINT)r->InterfaceGuid.Data4[4], (UINT)r->InterfaceGuid.Data4[5],
 					(UINT)r->InterfaceGuid.Data4[6], (UINT)r->InterfaceGuid.Data4[7]);
 
-				if (r->MediaType == NdisMediumWirelessWan || r->PhysicalMediumType == NdisPhysicalMediumWirelessLan ||
-					r->PhysicalMediumType == NdisPhysicalMediumWirelessWan || r->PhysicalMediumType == NdisPhysicalMediumWiMax ||
-					r->Type == IF_TYPE_IEEE80211)
-				{
-					a->IsWireless = true;
-				}
-
-				if (a->IsWireless ||
-					r->Type != IF_TYPE_ETHERNET_CSMACD ||
-					r->MediaType != NdisMedium802_3 || 
-					(r->PhysicalMediumType != 0 && r->PhysicalMediumType != NdisPhysicalMedium802_3))
-				{
-					a->IsNotEthernetLan = true;
-				}
+				a->IsBridgeable = MsIsBridgeableIf(r->Type, r->MediaType, r->PhysicalMediumType,
+					r->InterfaceAndOperStatusFlags.HardwareInterface);
 
 				Add(o, a);
 			}
