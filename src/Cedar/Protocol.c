@@ -2963,6 +2963,9 @@ bool ClientConnect(CONNECTION *c)
 		c->Session->NoSendSignature = PackGetBool(p, "no_send_signature");
 		c->Session->HalfConnection = PackGetInt(p, "half_connection") == 0 ? false : true;
 		c->Session->Timeout = PackGetInt(p, "timeout");
+		// Clamped to the bounds of ServerAccept: the server chooses it, and GenNextKeepAliveSpan divides it by 2
+		c->Session->Timeout = MIN(c->Session->Timeout, TIMEOUT_MAX);
+		c->Session->Timeout = MAX(c->Session->Timeout, TIMEOUT_MIN);
 		c->Session->QoS = PackGetInt(p, "qos") == 0 ? false : true;
 		if (c->Session->QoS)
 		{

@@ -306,7 +306,8 @@ UINT GenNextKeepAliveSpan(CONNECTION *c)
 		return INFINITE;
 	}
 
-	a = c->Session->Timeout;
+	// Clamped to the bounds of ServerAccept: a timeout below 2 would divide by zero
+	a = MAKESURE(c->Session->Timeout, TIMEOUT_MIN, TIMEOUT_MAX);
 	b = rand() % (a / 2);
 	b = MAX(b, a / 5);
 
