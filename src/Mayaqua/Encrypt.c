@@ -1489,94 +1489,8 @@ bool RsaSignEx(void *dst, UINT dst_size, void *src, UINT src_size, K *k)
 	return ret;
 }
 
-bool RsaCheckEx()
-{
-	UINT num = 20;
-	UINT i;
-
-	for (i = 0;i < num;i++)
-	{
-		if (RsaCheck())
-		{
-			return true;
-		}
-
-		SleepThread(100);
-	}
-
-	return false;
-}
-bool RsaCheck()
-{
-	int ret = 0;
-	RSA *rsa = NULL;
-	BIGNUM *e = NULL;
-	K *priv_key, *pub_key;
-	BIO *bio;
-	char errbuf[MAX_SIZE];
-	UINT size = 0;
-	UINT bit = RSA_KEY_SIZE;
-
-	e = BN_new();
-	ret = BN_set_word(e, RSA_F4);
-	if (ret == 0)
-	{
-		BN_free(e);
-		Debug("BN_set_word: err=%s\n", ERR_error_string(ERR_get_error(), errbuf));
-		return false;
-	}
-
-	Lock(openssl_lock);
-	{
-		rsa = RSA_new();
-		ret = RSA_generate_key_ex(rsa, bit, e, NULL);
-		BN_free(e);
-	}
-	Unlock(openssl_lock);
-	if (ret == 0)
-	{
-		Debug("RSA_generate_key_ex: err=%s\n", ERR_error_string(ERR_get_error(), errbuf));
-		return false;
-	}
-
-	bio = BIO_new(BIO_s_mem());
-	Lock(openssl_lock);
-	{
-		i2d_RSAPrivateKey_bio(bio, rsa);
-	}
-	Unlock(openssl_lock);
-	BIO_seek(bio, 0);
-	priv_key = BioToK(bio, true, false, NULL);
-	FreeBio(bio);
-
-	bio = BIO_new(BIO_s_mem());
-	Lock(openssl_lock);
-	{
-		i2d_RSA_PUBKEY_bio(bio, rsa);
-	}
-	Unlock(openssl_lock);
-	BIO_seek(bio, 0);
-	pub_key = BioToK(bio, false, false, NULL);
-	FreeBio(bio);
-
-	RSA_free(rsa);
-
-	size = RsaPublicSize(pub_key);
-
-	if (size != ((bit + 7) / 8))
-	{
-		FreeK(priv_key);
-		FreeK(pub_key);
-
-		return false;
-	}
-
-	FreeK(priv_key);
-	FreeK(pub_key);
-
-	return true;
-}
-
+// Generates an RSA key pair of the given size (RSA_KEY_SIZE for 0). On failure nothing is returned
+// in *priv and *pub, and everything made so far is freed.
 bool RsaGen(K **priv, K **pub, UINT bit)
 {
 	int ret = 0;
@@ -1596,6 +1510,10 @@ bool RsaGen(K **priv, K **pub, UINT bit)
 	}
 
 	e = BN_new();
+	if (e == NULL)
+	{
+		return false;
+	}
 	ret = BN_set_word(e, RSA_F4);
 	if (ret == 0)
 	{
@@ -1607,13 +1525,21 @@ bool RsaGen(K **priv, K **pub, UINT bit)
 	Lock(openssl_lock);
 	{
 		rsa = RSA_new();
-		ret = RSA_generate_key_ex(rsa, bit, e, NULL);
+		if (rsa != NULL)
+		{
+			ret = RSA_generate_key_ex(rsa, bit, e, NULL);
+		}
+		else
+		{
+			ret = 0;
+		}
 		BN_free(e);
 	}
 	Unlock(openssl_lock);
 	if (ret == 0)
 	{
 		Debug("RSA_generate_key_ex: err=%s\n", ERR_error_string(ERR_get_error(), errbuf));
+		RSA_free(rsa);
 		return false;
 	}
 
@@ -1637,20 +1563,28 @@ bool RsaGen(K **priv, K **pub, UINT bit)
 	pub_key = BioToK(bio, false, false, NULL);
 	FreeBio(bio);
 
-	*priv = priv_key;
-	*pub = pub_key;
-
 	RSA_free(rsa);
 
-	size = RsaPublicSize(*pub);
+	if (priv_key == NULL || pub_key == NULL)
+	{
+		FreeK(priv_key);
+		FreeK(pub_key);
+		return false;
+	}
+
+	size = RsaPublicSize(pub_key);
 
 	if (size != ((bit + 7) / 8))
 	{
-		FreeK(*priv);
-		FreeK(*pub);
+		// The modulus came out shorter than asked for: generate again
+		FreeK(priv_key);
+		FreeK(pub_key);
 
 		return RsaGen(priv, pub, bit);
 	}
+
+	*priv = priv_key;
+	*pub = pub_key;
 
 	return true;
 }

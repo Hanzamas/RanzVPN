@@ -254,8 +254,6 @@ NAME *CopyName(NAME *n);
 
 
 bool RsaGen(K **priv, K **pub, UINT bit);
-bool RsaCheck();
-bool RsaCheckEx();
 bool RsaSignEx(void *dst, UINT dst_size, void *src, UINT src_size, K *k);
 bool RsaVerifyEx(void *data, UINT data_size, void *sign, UINT sign_size, K *k);
 
