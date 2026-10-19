@@ -132,6 +132,15 @@ static HARNESS_CMD_STEP harness_cmd_cascade_httpheader[] =
 	{NULL},
 };
 
+// CrlAddGet (FND-8 #106): CrlAdd stores CN, O, OU, C, ST and L each in its own name field; CrlList and CrlGet show them
+static HARNESS_CMD_STEP harness_cmd_crl_add[] =
+{
+	{"CrlAdd /CN:cn1 /O:org1 /OU:unit1 /C:JP /ST:st1 /L:loc1", ERR_NO_ERROR},
+	{"CrlList", ERR_NO_ERROR, NULL, true, true},
+	{"CrlGet " HARNESS_CMD_TAG_ID, ERR_NO_ERROR, NULL, true},
+	{NULL},
+};
+
 // The cases, in run order
 static HARNESS_CMD_CASE harness_cmd_cases[] =
 {
@@ -139,6 +148,7 @@ static HARNESS_CMD_CASE harness_cmd_cases[] =
 	{"AccessAddPortRange", "HARNESS_CMD_PORTRANGE", harness_cmd_access_portrange},
 	{"SyslogEnableBadHost", NULL, harness_cmd_syslog_badhost},
 	{"CascadeHttpHeaderDelete", "HARNESS_CMD_HTTPHEADER", harness_cmd_cascade_httpheader},
+	{"CrlAddGet", "HARNESS_CMD_CRL", harness_cmd_crl_add},
 };
 
 static BUF *HarnessCmdRun(char *hub, char *command, UINT *ret);
