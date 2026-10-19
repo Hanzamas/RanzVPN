@@ -51,6 +51,9 @@ target_sources(vpntest PRIVATE logtest.c)
 # Named login path tests of PKG-6 (#110)
 target_sources(vpntest PRIVATE login.c)
 
+# Named packet parser tests of PKG-9 (#113)
+target_sources(vpntest PRIVATE pkttest.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"

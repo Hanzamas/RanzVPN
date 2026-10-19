@@ -504,6 +504,10 @@ void authtype_test(UINT num, char **arg);
 void acpassword_test(UINT num, char **arg);
 void sigleak_test(UINT num, char **arg);
 
+// Named packet parser tests of FND-38 and FND-39, #113 (pkttest.c)
+void pktparse_test(UINT num, char **arg);
+void vlantpid_test(UINT num, char **arg);
+
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
 char *watermark_expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
@@ -631,6 +635,8 @@ TEST_LIST test_list[] =
 	{"authtype", authtype_test, "Login authtype: 96 (the former external authentication) and unknown types are refused without a session, 0 to 2 keep their results."},
 	{"acpassword", acpassword_test, "Access list on the 'password' method: a denied address gets ERR_IP_ADDRESS_DENIED before the old password is checked."},
 	{"sigleak", sigleak_test, "Signature POST: a body that is not the watermark gets 403 and is freed; the request after the last one gets no answer."},
+	{"pktparse", pktparse_test, "Packet parsers: DNS opcode mask and label limits, DHCP Pad and whole option bodies, the DHCP cookie at offset 236."},
+	{"vlantpid", vlantpid_test, "VLAN TPID: frames tagged with the hub's VlanTypeId reach layer 3 and 4, the access list of such a hub sees their IPv4."},
 };
 
 // Test function
