@@ -1521,11 +1521,11 @@ static void MsWriteServiceEvent(UINT type, UINT event_id, char *what, UINT error
 
 	if (error == 0)
 	{
-		_snprintf_s(msg, sizeof(msg), _TRUNCATE, "Service %s %s.", g_service_name, what);
+		snprintf(msg, sizeof(msg), "Service %s %s.", g_service_name, what);
 	}
 	else
 	{
-		_snprintf_s(msg, sizeof(msg), _TRUNCATE, "Service %s %s (error %u).", g_service_name, what, error);
+		snprintf(msg, sizeof(msg), "Service %s %s (error %u).", g_service_name, what, error);
 	}
 
 	MsWriteEventLog(g_service_name, type, event_id, msg);
