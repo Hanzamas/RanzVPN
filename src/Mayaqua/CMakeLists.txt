@@ -99,18 +99,16 @@ if(WIN32)
     COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
   )
 
+  # Only the libraries Mayaqua sources call. EnumProcesses and GetModuleFileNameEx resolve to
+  # the K32 exports of kernel32 (PSAPI_VERSION 2), and SetupAPI is loaded at run time by Cedar.
   target_link_libraries(mayaqua
     PRIVATE
       "bcrypt.lib"
       "crypt32.lib"
       "DbgHelp.Lib"
-      "dwmapi.lib"
       "iphlpapi.lib"
-      "Psapi.Lib"
       "Secur32.Lib"
-      "setupapi.lib"
       "winmm.lib"
       "ws2_32.lib"
-      "WtsApi32.Lib"
     )
 endif()
