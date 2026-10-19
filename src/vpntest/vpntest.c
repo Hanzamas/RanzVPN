@@ -499,6 +499,11 @@ void logbound_test(UINT num, char **arg);
 void slog_test(UINT num, char **arg);
 void eraser_test(UINT num, char **arg);
 
+// Named login path tests of PKG-6, #110 (login.c)
+void authtype_test(UINT num, char **arg);
+void acpassword_test(UINT num, char **arg);
+void sigleak_test(UINT num, char **arg);
+
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
 char *watermark_expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
@@ -623,6 +628,9 @@ TEST_LIST test_list[] =
 	{"logbound", logbound_test, "Log writer without a file: bounded record queue and buffer, dropped records released and counted in one line."},
 	{"slog", slog_test, "Syslog: the next resolve is a tick deadline, a second sender does not wait for a slow resolve, datagram content."},
 	{"eraser", eraser_test, "Eraser: a check interval of 1 s gives at most 4 free space checks in 3 s; the configuration keeps seconds."},
+	{"authtype", authtype_test, "Login authtype: 96 (the former external authentication) and unknown types are refused without a session, 0 to 2 keep their results."},
+	{"acpassword", acpassword_test, "Access list on the 'password' method: a denied address gets ERR_IP_ADDRESS_DENIED before the old password is checked."},
+	{"sigleak", sigleak_test, "Signature POST: a body that is not the watermark gets 403 and is freed; the request after the last one gets no answer."},
 };
 
 // Test function

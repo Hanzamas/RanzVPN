@@ -552,6 +552,31 @@ static void NodeInfoToStr(wchar_t *str, UINT size, NODE_INFO *info)
 		info->HubName, unique_id);
 }
 
+// Whether the access list of hub (source IP address limit) admits the client of c. A denied client is logged
+// (LS_IP_DENIED); the caller refuses the request with ERR_IP_ADDRESS_DENIED before any credential check.
+static bool ServerCheckHubAccess(CONNECTION *c, HUB *hub)
+{
+	IP ip;
+	char ip_str[64];
+
+	if (GetGlobalServerFlag(GSF_DISABLE_AC) != 0 || hub->HubDb == NULL || c->FirstSock == NULL)
+	{
+		return true;
+	}
+
+	Copy(&ip, &c->FirstSock->RemoteIP, sizeof(IP));
+
+	if (IsIpDeniedByAcList(&ip, hub->HubDb->AcList) == false)
+	{
+		return true;
+	}
+
+	IPToStr(ip_str, sizeof(ip_str), &ip);
+	SLog(c->Cedar, "LS_IP_DENIED", c->Name, ip_str);
+
+	return false;
+}
+
 static UINT ChangePasswordAccept(CONNECTION *c, PACK *p)
 {
 	CEDAR *cedar;
@@ -598,6 +623,12 @@ static UINT ChangePasswordAccept(CONNECTION *c, PACK *p)
 	else
 	{
 		char tmp[MAX_SIZE];
+
+		if (ServerCheckHubAccess(c, hub) == false)
+		{
+			ReleaseHub(hub);
+			return ERR_IP_ADDRESS_DENIED;
+		}
 
 		if (GetHubAdminOption(hub, "deny_change_user_password") != 0)
 		{
@@ -935,26 +966,13 @@ bool ServerAccept(CONNECTION *c)
 			goto CLEANUP;
 		}
 
-		if (GetGlobalServerFlag(GSF_DISABLE_AC) == 0)
+		if (ServerCheckHubAccess(c, hub) == false)
 		{
-			if (hub->HubDb != NULL && c->FirstSock != NULL)
-			{
-				IP ip;
-
-				Copy(&ip, &c->FirstSock->RemoteIP, sizeof(IP));
-
-				if (IsIpDeniedByAcList(&ip, hub->HubDb->AcList))
-				{
-					char ip_str[64];
-					ReleaseHub(hub);
-					hub = NULL;
-					FreePack(p);
-					c->Err = ERR_IP_ADDRESS_DENIED;
-					IPToStr(ip_str, sizeof(ip_str), &ip);
-					SLog(c->Cedar, "LS_IP_DENIED", c->Name, ip_str);
-					goto CLEANUP;
-				}
-			}
+			ReleaseHub(hub);
+			hub = NULL;
+			FreePack(p);
+			c->Err = ERR_IP_ADDRESS_DENIED;
+			goto CLEANUP;
 		}
 
 		Lock(hub->lock);
@@ -1074,9 +1092,6 @@ bool ServerAccept(CONNECTION *c)
 				case CLIENT_AUTHTYPE_CERT:
 					authtype_str = _UU("LH_AUTH_CERT");
 					break;
-				case AUTHTYPE_EXTERNAL:
-					authtype_str = _UU("LH_AUTH_EXTERNAL");
-					break;
 				}
 				IPToStr(ip1, sizeof(ip1), &c->FirstSock->RemoteIP);
 				IPToStr(ip2, sizeof(ip2), &c->FirstSock->LocalIP);
@@ -1098,10 +1113,6 @@ bool ServerAccept(CONNECTION *c)
 				switch (authtype)
 				{
 				case CLIENT_AUTHTYPE_ANONYMOUS:
-					break;
-
-				case AUTHTYPE_EXTERNAL:
-					auth_ret = true;
 					break;
 
 				case CLIENT_AUTHTYPE_PASSWORD:
@@ -3715,6 +3726,8 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 
 		if (StrCmpi(h->Method, "POST") == 0)
 		{
+			bool signature_ok = false;
+
 			data_size = GetContentLength(h);
 
 			if ((data_size > MAX_WATERMARK_SIZE || data_size < WaterMarkSize) && (data_size != StrLen(HTTP_VPN_TARGET_POSTDATA)))
@@ -3737,7 +3750,6 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 			if ((StrCmpi(h->Target, vpn_http_target) != 0) || not_found_error)
 			{
 				HttpSendNotFound(s, h->Target);
-				Free(data);
 				*error_detail_str = "POST_Target_Wrong";
 			}
 			else
@@ -3745,9 +3757,7 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 				if ((data_size == StrLen(HTTP_VPN_TARGET_POSTDATA) && (Cmp(data, HTTP_VPN_TARGET_POSTDATA, data_size) == 0))
 					|| ((data_size >= WaterMarkSize) && Cmp(data, WaterMark, WaterMarkSize) == 0))
 				{
-					Free(data);
-					FreeHttpHeader(h);
-					return true;
+					signature_ok = true;
 				}
 				else
 				{
@@ -3755,7 +3765,15 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 					*error_detail_str = "POST_WaterMark_Error";
 				}
 			}
+
+			// The one release of the body of a received POST, whatever the comparison found
+			Free(data);
 			FreeHttpHeader(h);
+
+			if (signature_ok)
+			{
+				return true;
+			}
 		}
 		else
 		{

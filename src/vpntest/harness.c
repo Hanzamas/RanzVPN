@@ -7043,3 +7043,55 @@ void adminaudit_test(UINT num, char **arg)
 
 	HarnessFree(h);
 }
+
+////////////////////////////
+// In-process server of the named tests in other files (login.c)
+
+// Watchdog of the run that HarnessOpenServer started (one test command runs at a time)
+static HARNESS_WATCHDOG *harness_open_watchdog = NULL;
+
+// Start a run of a named test in another file: its watchdog (marker test_name, process aborted after limit ms), the
+// server from a fresh configuration with the test listener and the admin RPC, then, unless hubname is NULL, the online
+// hub hubname with the password user username (HARNESS_PASSWORD). *ok is false when a step failed. HarnessCloseServer
+// ends the run in every case.
+HARNESS *HarnessOpenServer(char *test_name, UINT limit, char *hubname, char *username, bool *ok)
+{
+	HARNESS *h = HarnessNew();
+
+	harness_open_watchdog = HarnessStartWatchdog(test_name, limit);
+
+	Print("[setup]\n");
+	*ok = HarnessStartServer(h);
+
+	if (*ok && hubname != NULL)
+	{
+		// A server session then ends as soon as its last TCP connection is gone (Session.c, SessionMain), instead
+		// of after the 20 s TimeOut of the default policy. Set after the server started, because loading its
+		// configuration resets the flag
+		SetGlobalServerFlag(GSF_DISABLE_SESSION_RECONNECT, 1);
+
+		HarnessSetPhase("setup", "hub and user");
+		*ok = HarnessCreateHub(h, hubname) && HarnessCreateUser(h, hubname, username, L"Harness login tester");
+	}
+
+	return h;
+}
+
+// Stop the server and the watchdog of a run of HarnessOpenServer and release the run. Returns its failed checks.
+UINT HarnessCloseServer(HARNESS *h)
+{
+	UINT num_fail;
+
+	HarnessSetPhase("teardown", NULL);
+	Print("[teardown]\n");
+	HarnessStopServer(h);
+	SetGlobalServerFlag(GSF_DISABLE_SESSION_RECONNECT, 0);
+
+	HarnessStopWatchdog(harness_open_watchdog);
+	harness_open_watchdog = NULL;
+
+	num_fail = h->NumFail;
+	HarnessFree(h);
+
+	return num_fail;
+}

@@ -78,4 +78,14 @@ void HarnessPackGolden(HARNESS *h);
 // harness_cmd.c
 void HarnessCmdCases(HARNESS *h);
 
+// harness.c: in-process server of the named tests in other files (login.c)
+HARNESS *HarnessOpenServer(char *test_name, UINT limit, char *hubname, char *username, bool *ok);
+UINT HarnessCloseServer(HARNESS *h);
+
+// harness_pack.c: raw-pack client of the named login tests (login.c)
+SOCK *HarnessRawConnect(UCHAR *random);
+PACK *HarnessRawLoginPack(char *hubname, char *username, UINT authtype);
+UINT HarnessRawRequest(SOCK *s, PACK *p);
+void HarnessRawClose(SOCK *s);
+
 #endif	// HARNESS_INT_H

@@ -48,6 +48,9 @@ target_sources(vpntest PRIVATE harness_cmd.c)
 # Named log writer, syslog and eraser tests of PKG-4 (#108)
 target_sources(vpntest PRIVATE logtest.c)
 
+# Named login path tests of PKG-6 (#110)
+target_sources(vpntest PRIVATE login.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
