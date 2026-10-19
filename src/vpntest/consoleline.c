@@ -467,6 +467,46 @@ static void ConsoleLineUniToInt(CONSOLELINE_CTX *ctx)
 	Free(s);
 }
 
+// One ParseCommandEx case: the CMD value of line is expect, or NULL when expect is NULL
+static void ConsoleLineParseCmdCase(CONSOLELINE_CTX *ctx, wchar_t *line, wchar_t *expect, char *what)
+{
+	wchar_t *ret = ParseCommandEx(line, L"CMD", NULL);
+	bool ok;
+
+	if (expect == NULL)
+	{
+		ok = (ret == NULL);
+	}
+	else
+	{
+		ok = (ret != NULL && UniStrCmp(ret, expect) == 0);
+	}
+
+	ConsoleLineCheck(ctx, ok, what);
+
+	Free(ret);
+}
+
+// ParseCommandEx finds /CMD and -CMD with a space, a tab, ':' or '=' (FND-48)
+static void ConsoleLineParseCmd(CONSOLELINE_CTX *ctx)
+{
+	ConsoleLineParseCmdCase(ctx, L"vpncmd /CMD HubList", L"HubList", "/CMD and a space");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd /CMD\tHubList", L"HubList", "/CMD and a tab");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd /CMD:HubList", L"HubList", "/CMD:");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd /CMD=HubList", L"HubList", "/CMD=");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd -CMD HubList", L"HubList", "-CMD and a space");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd -CMD\tHubList", L"HubList", "-CMD and a tab");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd -CMD:HubList", L"HubList", "-CMD:");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd -CMD=HubList", L"HubList", "-CMD=");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd /cmd HubList", L"HubList", "/cmd in lower case");
+	// "/" "/" keeps a doubled slash out of the source, which the brace checks read as a comment
+	ConsoleLineParseCmdCase(ctx, L"vpncmd /" L"/CMD HubList", NULL, "/CMD after a slash does not count");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd --CMD HubList", NULL, "-CMD after a dash does not count");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd /" L"/CMD a /CMD b", L"", "The first /CMD and a space decides: a slash before it hides the later /CMD");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd -CMD:a /CMD=b", L"b", "/CMD before -CMD");
+	ConsoleLineParseCmdCase(ctx, L"vpncmd /CMD=a /CMD b", L"b", "/CMD and a space before /CMD=");
+}
+
 // consoleline: console line readers and UniToInt on input longer than their buffers
 void consoleline_test(UINT num, char **arg)
 {
@@ -484,6 +524,8 @@ void consoleline_test(UINT num, char **arg)
 	Print("Console input test\n");
 
 	ConsoleLineSingleChars(&ctx);
+
+	ConsoleLineParseCmd(&ctx);
 
 	// Prompt, through the standard input of a child
 	Format(expect, sizeof(expect), "LINE [hello world]|LONG %u ALL-A|LINE [next]|CANCEL|CHILD DONE", CONSOLELINE_PROMPT_MAX);

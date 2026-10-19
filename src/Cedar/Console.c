@@ -606,7 +606,6 @@ bool DispatchNextCmdEx(CONSOLE *c, wchar_t *exec_command, char *prompt, CMD cmd[
 	UINT ret = ERR_NO_ERROR;
 	TOKEN_LIST *t;
 	TOKEN_LIST *candidate;
-	bool no_end_crlf = false;
 	UINT i;
 	if (c == NULL || (num_cmd >= 1 && cmd == NULL))
 	{
@@ -742,7 +741,6 @@ RETRY:
 
 					UniFormat(str, sizeof(str), L"%S /help", cmd_name);
 					DispatchNextCmdEx(c, str, NULL, cmd, num_cmd, param);
-					no_end_crlf = true;
 				}
 
 				Free(cmd_name);
@@ -823,10 +821,6 @@ RETRY:
 	Free(str);
 	Free(cmd_name);
 	Free(cmd_param);
-
-	if (no_end_crlf == false)
-	{
-	}
 
 	if (b_exit)
 	{
@@ -1489,8 +1483,11 @@ TOKEN_LIST *GetCommandNameList(wchar_t *str)
 
 wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list)
 {
+	static const wchar_t cmd_prefixes[2] = {L'/', L'-'};
+	static const wchar_t cmd_suffixes[4] = {L' ', L'\t', L':', L'='};
 	UNI_TOKEN_LIST *t;
 	UINT i;
+	UINT prefix_index, suffix_index;
 	wchar_t *tmp;
 	wchar_t *ret = NULL;
 	LIST *o;
@@ -1512,66 +1509,28 @@ wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list)
 	tmp = CopyUniStr(str);
 	UniTrim(tmp);
 
-	i = UniSearchStrEx(tmp, L"/CMD ", 0, false);
+	// Look for /CMD or -CMD followed by a space, a tab, ':' or '=', in that
+	// order. A match preceded by its own prefix character (//CMD, --CMD) does
+	// not count.
+	i = INFINITE;
+	for (prefix_index = 0;prefix_index < 2 && i == INFINITE;prefix_index++)
+	{
+		for (suffix_index = 0;suffix_index < 4 && i == INFINITE;suffix_index++)
+		{
+			wchar_t key[6];
 
-	if (i != INFINITE && i >= 1 && tmp[i - 1] == L'/')
-	{
-		i = INFINITE;
-	}
-	if (i == INFINITE)
-	{
-		i = UniSearchStrEx(tmp, L"/CMD\t", 0, false);
-		if (i != INFINITE && i >= 1 && tmp[i - 1] == L'/')
-		{
-			i = INFINITE;
-		}
-	}
-	if (i == INFINITE)
-	{
-		i = UniSearchStrEx(tmp, L"/CMD:", 0, false);
-		if (i != INFINITE && i >= 1 && tmp[i - 1] == L'/')
-		{
-			i = INFINITE;
-		}
-	}
-	if (i == INFINITE)
-	{
-		i = UniSearchStrEx(tmp, L"/CMD=", 0, false);
-		if (i != INFINITE && i >= 1 && tmp[i - 1] == L'/')
-		{
-			i = INFINITE;
-		}
-	}
-	if (i == INFINITE)
-	{
-		i = UniSearchStrEx(tmp, L"-CMD ", 0, false);
-		if (i != INFINITE && i >= 1 && tmp[i - 1] == L'-')
-		{
-			i = INFINITE;
-		}
-	}
-	if (i == INFINITE)
-	{
-		i = UniSearchStrEx(tmp, L"-CMD\t", 0, false);
-		if (i != INFINITE && i >= 1 && tmp[i - 1] == L'-')
-		{
-			i = INFINITE;
-		}
-	}
-	if (i == INFINITE)
-	{
-		i = UniSearchStrEx(tmp, L"-CMD:", 0, false);
-		if (i != INFINITE && i >= 1 && tmp[i - 1] == L'-')
-		{
-			i = INFINITE;
-		}
-	}
-	if (i == INFINITE)
-	{
-		i = UniSearchStrEx(tmp, L"-CMD=", 0, false);
-		if (i != INFINITE && i >= 1 && tmp[i - 1] == L'-')
-		{
-			i = INFINITE;
+			key[0] = cmd_prefixes[prefix_index];
+			key[1] = L'C';
+			key[2] = L'M';
+			key[3] = L'D';
+			key[4] = cmd_suffixes[suffix_index];
+			key[5] = 0;
+
+			i = UniSearchStrEx(tmp, key, 0, false);
+			if (i != INFINITE && i >= 1 && tmp[i - 1] == cmd_prefixes[prefix_index])
+			{
+				i = INFINITE;
+			}
 		}
 	}
 
@@ -1856,11 +1815,6 @@ CONSOLE *NewLocalConsole(wchar_t *infile, wchar_t *outfile)
 	IO *in_io = NULL, *out_io = NULL;
 	CONSOLE *c = ZeroMalloc(sizeof(CONSOLE));
 	LOCAL_CONSOLE_PARAM *p;
-	UINT old_size = 0;
-
-	if (MsGetConsoleWidth() == 80)
-	{
-	}
 
 	c->ConsoleType = CONSOLE_LOCAL;
 	c->Free = ConsoleLocalFree;
@@ -1922,7 +1876,6 @@ CONSOLE *NewLocalConsole(wchar_t *infile, wchar_t *outfile)
 
 	p->InFile = in_io;
 	p->OutFile = out_io;
-	p->Win32_OldConsoleWidth = old_size;
 
 	if (in_io != NULL)
 	{
@@ -1952,11 +1905,6 @@ void ConsoleLocalFree(CONSOLE *c)
 	}
 
 	p = (LOCAL_CONSOLE_PARAM *)c->Param;
-
-	if (p->Win32_OldConsoleWidth != 0)
-	{
-		MsSetConsoleWidth(p->Win32_OldConsoleWidth);
-	}
 
 	if (p != NULL)
 	{
