@@ -493,49 +493,96 @@ bool IsStrIPv6Address(char *str)
 	return true;
 }
 
-UINT SubnetMaskToInt6(IP *a)
+// Subnet mask of 'size' bytes with a prefix of 'len' bits: one bits from the most significant bit
+// of the first byte, then zero bits. A length beyond the mask gives all one bits
+static void PrefixLenToMask(UCHAR *mask, UINT size, UINT len)
 {
 	UINT i;
+
+	for (i = 0; i < size; i++)
+	{
+		if (len >= 8)
+		{
+			mask[i] = 0xFF;
+			len -= 8;
+		}
+		else
+		{
+			// 0 to 7 leading one bits; every byte after this one is zero
+			mask[i] = (UCHAR)(0xFF00 >> len);
+			len = 0;
+		}
+	}
+}
+
+// Prefix length of a subnet mask of 'size' bytes: the number of its leading one bits. INFINITE when
+// a one bit follows a zero bit (not a subnet mask)
+static UINT MaskToPrefixLen(UCHAR *mask, UINT size)
+{
+	UINT len = 0;
+	UINT i = 0;
+	UCHAR rest;
+
+	while (i < size && mask[i] == 0xFF)
+	{
+		len += 8;
+		i++;
+	}
+
+	if (i == size)
+	{
+		return len;
+	}
+
+	// The first byte with a zero bit: its leading one bits count, the bits behind them must be zero
+	rest = mask[i];
+	while ((rest & 0x80) != 0)
+	{
+		len++;
+		rest = (UCHAR)(rest << 1);
+	}
+
+	if (rest != 0)
+	{
+		return INFINITE;
+	}
+
+	// Every byte behind it must be zero
+	for (i++; i < size; i++)
+	{
+		if (mask[i] != 0)
+		{
+			return INFINITE;
+		}
+	}
+
+	return len;
+}
+
+// Prefix length of an IPv6 subnet mask; 0 for an IPv4 address or a mask that is not contiguous
+UINT SubnetMaskToInt6(IP *a)
+{
+	UINT len;
 	if (IsIP6(a) == false)
 	{
 		return 0;
 	}
 
-	for (i = 0; i <= 128; i++)
-	{
-		IP tmp;
+	len = MaskToPrefixLen(a->address, sizeof(a->address));
 
-		IntToSubnetMask6(&tmp, i);
-
-		if (CmpIpAddr(a, &tmp) == 0)
-		{
-			return i;
-		}
-	}
-
-	return 0;
+	return (len == INFINITE ? 0 : len);
 }
 static UINT SubnetMaskToInt4(IP *a)
 {
-	UINT i;
+	UINT len;
 	if (IsIP4(a) == false)
 	{
 		return 0;
 	}
 
-	for (i = 0; i <= 32; i++)
-	{
-		IP tmp;
+	len = MaskToPrefixLen(IPV4(a->address), IPV4_SIZE);
 
-		IntToSubnetMask4(&tmp, i);
-
-		if (CmpIpAddr(a, &tmp) == 0)
-		{
-			return i;
-		}
-	}
-
-	return 0;
+	return (len == INFINITE ? 0 : len);
 }
 static UINT SubnetMaskToInt(IP *a)
 {
@@ -551,25 +598,12 @@ static UINT SubnetMaskToInt(IP *a)
 
 static bool IsSubnetMask6(IP *a)
 {
-	UINT i;
 	if (IsIP6(a) == false)
 	{
 		return false;
 	}
 
-	for (i = 0; i <= 128; i++)
-	{
-		IP tmp;
-
-		IntToSubnetMask6(&tmp, i);
-
-		if (CmpIpAddr(a, &tmp) == 0)
-		{
-			return true;
-		}
-	}
-
-	return false;
+	return (MaskToPrefixLen(a->address, sizeof(a->address)) != INFINITE);
 }
 
 void GenerateEui64LocalAddress(IP *a, UCHAR *mac)
@@ -755,26 +789,14 @@ void IPAnd6(IP *dst, IP *a, IP *b)
 
 void IntToSubnetMask6(IP *ip, UINT i)
 {
-	UINT j = i / 8;
-	UINT k = i % 8;
-	UINT z;
-	IP a;
-
-	Zero(&a, sizeof(IP));
-
-	for (z = 0; z < sizeof(a.address); ++z)
+	if (ip == NULL)
 	{
-		if (z < j)
-		{
-			a.address[z] = 0xff;
-		}
-		else if (z == j)
-		{
-			a.address[z] = ~(0xff >> k);
-		}
+		return;
 	}
 
-	Copy(ip, &a, sizeof(IP));
+	Zero(ip, sizeof(IP));
+
+	PrefixLenToMask(ip->address, sizeof(ip->address), i);
 }
 
 void IP6AddrToStr(char *str, UINT size, IPV6_ADDR *addr)
@@ -1480,131 +1502,16 @@ bool IsZeroIP6Addr(IPV6_ADDR *addr)
 	return IsZero(addr, sizeof(IPV6_ADDR));
 }
 
-static UINT IntToSubnetMask32(UINT i)
-{
-	UINT ret = 0xFFFFFFFF;
-
-	switch (i)
-	{
-	case 0:
-		ret = 0x00000000;
-		break;
-	case 1:
-		ret = 0x80000000;
-		break;
-	case 2:
-		ret = 0xC0000000;
-		break;
-	case 3:
-		ret = 0xE0000000;
-		break;
-	case 4:
-		ret = 0xF0000000;
-		break;
-	case 5:
-		ret = 0xF8000000;
-		break;
-	case 6:
-		ret = 0xFC000000;
-		break;
-	case 7:
-		ret = 0xFE000000;
-		break;
-	case 8:
-		ret = 0xFF000000;
-		break;
-	case 9:
-		ret = 0xFF800000;
-		break;
-	case 10:
-		ret = 0xFFC00000;
-		break;
-	case 11:
-		ret = 0xFFE00000;
-		break;
-	case 12:
-		ret = 0xFFF00000;
-		break;
-	case 13:
-		ret = 0xFFF80000;
-		break;
-	case 14:
-		ret = 0xFFFC0000;
-		break;
-	case 15:
-		ret = 0xFFFE0000;
-		break;
-	case 16:
-		ret = 0xFFFF0000;
-		break;
-	case 17:
-		ret = 0xFFFF8000;
-		break;
-	case 18:
-		ret = 0xFFFFC000;
-		break;
-	case 19:
-		ret = 0xFFFFE000;
-		break;
-	case 20:
-		ret = 0xFFFFF000;
-		break;
-	case 21:
-		ret = 0xFFFFF800;
-		break;
-	case 22:
-		ret = 0xFFFFFC00;
-		break;
-	case 23:
-		ret = 0xFFFFFE00;
-		break;
-	case 24:
-		ret = 0xFFFFFF00;
-		break;
-	case 25:
-		ret = 0xFFFFFF80;
-		break;
-	case 26:
-		ret = 0xFFFFFFC0;
-		break;
-	case 27:
-		ret = 0xFFFFFFE0;
-		break;
-	case 28:
-		ret = 0xFFFFFFF0;
-		break;
-	case 29:
-		ret = 0xFFFFFFF8;
-		break;
-	case 30:
-		ret = 0xFFFFFFFC;
-		break;
-	case 31:
-		ret = 0xFFFFFFFE;
-		break;
-	case 32:
-		ret = 0xFFFFFFFF;
-		break;
-	}
-
-	if (IsLittleEndian())
-	{
-		ret = Swap32(ret);
-	}
-
-	return ret;
-}
 void IntToSubnetMask4(IP *ip, UINT i)
 {
-	UINT m;
 	if (ip == NULL)
 	{
 		return;
 	}
 
-	m = IntToSubnetMask32(i);
+	ZeroIP4(ip);
 
-	UINTToIP(ip, m);
+	PrefixLenToMask(IPV4(ip->address), IPV4_SIZE, i);
 }
 
 static bool IsSubnetMask(IP *ip)
@@ -1620,7 +1527,6 @@ static bool IsSubnetMask(IP *ip)
 }
 bool IsSubnetMask4(IP *ip)
 {
-	UINT i;
 	if (ip == NULL)
 	{
 		return false;
@@ -1631,52 +1537,7 @@ bool IsSubnetMask4(IP *ip)
 		return false;
 	}
 
-	i = IPToUINT(ip);
-
-	if (IsLittleEndian())
-	{
-		i = Swap32(i);
-	}
-
-	switch (i)
-	{
-	case 0x00000000:
-	case 0x80000000:
-	case 0xC0000000:
-	case 0xE0000000:
-	case 0xF0000000:
-	case 0xF8000000:
-	case 0xFC000000:
-	case 0xFE000000:
-	case 0xFF000000:
-	case 0xFF800000:
-	case 0xFFC00000:
-	case 0xFFE00000:
-	case 0xFFF00000:
-	case 0xFFF80000:
-	case 0xFFFC0000:
-	case 0xFFFE0000:
-	case 0xFFFF0000:
-	case 0xFFFF8000:
-	case 0xFFFFC000:
-	case 0xFFFFE000:
-	case 0xFFFFF000:
-	case 0xFFFFF800:
-	case 0xFFFFFC00:
-	case 0xFFFFFE00:
-	case 0xFFFFFF00:
-	case 0xFFFFFF80:
-	case 0xFFFFFFC0:
-	case 0xFFFFFFE0:
-	case 0xFFFFFFF0:
-	case 0xFFFFFFF8:
-	case 0xFFFFFFFC:
-	case 0xFFFFFFFE:
-	case 0xFFFFFFFF:
-		return true;
-	}
-
-	return false;
+	return (MaskToPrefixLen(IPV4(ip->address), IPV4_SIZE) != INFINITE);
 }
 
 
