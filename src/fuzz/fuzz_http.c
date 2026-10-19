@@ -94,6 +94,13 @@ static void FuzzHttp(const uint8_t *data, size_t size)
 		while (true)
 		{
 			str = FuzzRecvLine(data, size, &pos, HTTP_HEADER_LINE_MAX_SIZE);
+			if (str == NULL)
+			{
+				FreeHttpHeader(header);
+				header = NULL;
+				break;
+			}
+
 			Trim(str);
 			if (IsEmptyStr(str))
 			{

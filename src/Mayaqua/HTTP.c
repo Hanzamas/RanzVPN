@@ -366,6 +366,13 @@ HTTP_HEADER *RecvHttpHeader(SOCK *s)
 	while (true)
 	{
 		str = RecvLine(s, HTTP_HEADER_LINE_MAX_SIZE);
+		if (str == NULL)
+		{
+			// Socket error, timeout or an oversized line: not the blank line that ends the header
+			FreeHttpHeader(header);
+			return NULL;
+		}
+
 		Trim(str);
 		if (IsEmptyStr(str))
 		{
