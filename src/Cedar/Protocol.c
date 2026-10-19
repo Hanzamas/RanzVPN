@@ -2588,7 +2588,7 @@ bool ClientAdditionalConnect(CONNECTION *c, THREAD *t)
 		goto CLEANUP;
 	}
 
-	p = HttpClientRecv(s);
+	p = HttpClientRecvEx(s, HTTP_PACK_MAX_SIZE);
 	if (p == NULL)
 	{
 		goto CLEANUP;
@@ -2875,7 +2875,7 @@ bool ClientConnect(CONNECTION *c)
 		goto CLEANUP;
 	}
 
-	p = HttpClientRecv(s);
+	p = HttpClientRecvEx(s, CLIENT_WELCOME_PACK_MAX_SIZE);
 	if (p == NULL)
 	{
 		c->Err = ERR_DISCONNECTED;
@@ -3644,7 +3644,7 @@ bool ClientDownloadHello(CONNECTION *c, SOCK *s)
 		return false;
 	}
 
-	p = HttpClientRecv(s);
+	p = HttpClientRecvEx(s, HTTP_PACK_MAX_SIZE);
 	if (p == NULL)
 	{
 		c->Err = ERR_SERVER_IS_NOT_VPN;

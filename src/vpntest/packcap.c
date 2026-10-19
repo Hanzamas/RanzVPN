@@ -9,10 +9,15 @@
 // Pack through HttpServerSend, as ServerAccept does. Checks:
 // - ClientDownloadHello accepts a hello Pack of normal size;
 // - ClientDownloadHello refuses a valid hello Pack of PACKCAP_BIG_SIZE with an error (the old code
-//   read and accepted it).
+//   read and accepted it);
+// - the longest welcome Pack that ServerAccept can send (a hub message of HUB_MAXMSG_LEN characters
+//   of 3 bytes in UTF-8 and the notices) is larger than HTTP_PACK_MAX_SIZE, and the client still
+//   reads it with the welcome cap of ClientConnect (CLIENT_WELCOME_PACK_MAX_SIZE);
+// - the welcome cap refuses a welcome Pack padded by PACKCAP_BIG_SIZE.
 // Prints "PACKCAP TEST OK" only when every check passes, and frees everything it allocates.
 
 #include "Cedar/Cedar.h"
+#include "Cedar/Account.h"
 #include "Cedar/Connection.h"
 #include "Cedar/Protocol.h"
 
@@ -32,6 +37,8 @@
 #define	PACKCAP_SERVER_STR		"PACKCAP test peer"	// "hello" string of the peer
 #define	PACKCAP_SERVER_VER		444					// "version" of the peer
 #define	PACKCAP_SERVER_BUILD	9999				// "build" of the peer
+#define	PACKCAP_WINVER_MSG_LEN	3800				// Characters of each Windows version notice of ServerAccept (its buffer)
+#define	PACKCAP_OSS_MSG_LEN		1200				// ASCII characters of the OSS_MSG notice of ServerAccept, rounded up
 
 // Run state of the test
 typedef struct PACKCAP_TEST
@@ -159,6 +166,60 @@ static PACK *PackCapHello(UINT pad_size)
 	return p;
 }
 
+// Welcome Pack with the elements of PackWelcome and the longest "Msg" that ServerAccept can make:
+// the OSS_MSG notice in ASCII, then both Windows version notices and a hub message of HUB_MAXMSG_LEN
+// characters, each character 3 bytes in UTF-8. *msg_size gets the size of "Msg". pad_size bytes of
+// padding are added when pad_size is not 0.
+static PACK *PackCapWelcome(UINT pad_size, UINT *msg_size)
+{
+	PACK *p = NewPack();
+	POLICY *policy = ZeroMalloc(sizeof(POLICY));
+	BUF *msg = NewBuf();
+	UCHAR session_key[SHA1_SIZE];
+	UINT i;
+
+	PackAddStr(p, "session_name", "SID-PACKCAP-1");
+	PackAddStr(p, "connection_name", "CID-PACKCAP-1");
+	PackAddInt(p, "max_connection", 1);
+	PackAddInt(p, "use_encrypt", 1);
+	PackAddInt(p, "use_compress", 0);
+	PackAddInt(p, "half_connection", 0);
+	PackAddInt(p, "timeout", TIMEOUT_DEFAULT);
+	PackAddInt(p, "qos", 0);
+	Rand(session_key, sizeof(session_key));
+	PackAddData(p, "session_key", session_key, sizeof(session_key));
+	PackAddInt(p, "session_key_32", Rand32());
+	PackAddPolicy(p, policy);
+	PackAddInt(p, "vlan_id", 0);
+
+	for (i = 0;i < PACKCAP_OSS_MSG_LEN;i++)
+	{
+		WriteBuf(msg, "A", 1);
+	}
+
+	for (i = 0;i < PACKCAP_WINVER_MSG_LEN * 2 + HUB_MAXMSG_LEN;i++)
+	{
+		// U+3042 HIRAGANA LETTER A
+		WriteBuf(msg, "\xE3\x81\x82", 3);
+	}
+
+	PackAddData(p, "Msg", msg->Buf, msg->Size);
+	*msg_size = msg->Size;
+
+	if (pad_size != 0)
+	{
+		void *pad = ZeroMalloc(pad_size);
+
+		PackAddData(p, "packcap_pad", pad, pad_size);
+		Free(pad);
+	}
+
+	FreeBuf(msg);
+	Free(policy);
+
+	return p;
+}
+
 // ClientDownloadHello on a connection that the peer answers with p. *err gets the error of the
 // connection and *ver the server version that the client read.
 static bool PackCapDownloadHello(PACKCAP_TEST *t, PACK *p, UINT *err, UINT *ver)
@@ -182,6 +243,24 @@ static bool PackCapDownloadHello(PACKCAP_TEST *t, PACK *p, UINT *err, UINT *ver)
 	return ret;
 }
 
+// The welcome Pack as ClientConnect reads it (HttpClientRecvEx with CLIENT_WELCOME_PACK_MAX_SIZE) on a
+// connection that the peer answers with p. Returns the Pack that the client read, or NULL.
+static PACK *PackCapRecvWelcome(PACKCAP_TEST *t, PACK *p)
+{
+	PACKCAP_PEER peer;
+	SOCK *s = PackCapStart(t, &peer, p);
+	PACK *ret = NULL;
+
+	if (s != NULL)
+	{
+		ret = HttpClientRecvEx(s, CLIENT_WELCOME_PACK_MAX_SIZE);
+	}
+
+	PackCapEnd(t, &peer, s);
+
+	return ret;
+}
+
 // packcap: the client reads no Pack beyond its cap from the server
 void packcap_test(UINT num, char **arg)
 {
@@ -189,10 +268,15 @@ void packcap_test(UINT num, char **arg)
 	bool ok;
 	UINT err;
 	UINT ver;
+	UINT msg_size;
+	UINT pack_size;
+	PACK *p;
+	PACK *w;
+	BUF *b;
 
 	Zero(&t, sizeof(t));
 
-	Print("Client Pack size cap test (ClientDownloadHello)\n");
+	Print("Client Pack size cap test (ClientDownloadHello, the welcome Pack of ClientConnect)\n");
 
 	t.Listen = ListenEx(PACKCAP_PORT, true);
 	PackCapCheck(&t, t.Listen != NULL, "The peer listens on 127.0.0.1", "cannot listen on TCP %u", PACKCAP_PORT);
@@ -207,6 +291,24 @@ void packcap_test(UINT num, char **arg)
 		PackCapCheck(&t, ok == false && err != 0,
 			"ClientDownloadHello refuses a valid hello Pack of 1 MiB with an error (the old client read up to MAX_PACK_SIZE)",
 			"result %s, error %u", ok ? "true" : "false", err);
+
+		// The longest welcome Pack of a conformant server needs more than the cap before the authentication
+		p = PackCapWelcome(0, &msg_size);
+		b = PackToBuf(p);
+		pack_size = b->Size;
+		FreeBuf(b);
+		PackCapCheck(&t, pack_size > HTTP_PACK_MAX_SIZE, "The longest welcome Pack is larger than HTTP_PACK_MAX_SIZE",
+			"%u bytes, of them %u bytes of Msg", pack_size, msg_size);
+
+		w = PackCapRecvWelcome(&t, p);
+		PackCapCheck(&t, w != NULL && PackGetDataSize(w, "Msg") == msg_size && PackGetInt(w, "timeout") == TIMEOUT_DEFAULT,
+			"The welcome cap of ClientConnect reads the longest welcome Pack intact",
+			"%s, Msg of %u bytes (sent %u)", w == NULL ? "refused" : "read", PackGetDataSize(w, "Msg"), msg_size);
+		FreePack(w);
+
+		w = PackCapRecvWelcome(&t, PackCapWelcome(PACKCAP_BIG_SIZE, &msg_size));
+		PackCapCheck(&t, w == NULL, "The welcome cap of ClientConnect refuses a welcome Pack padded by 1 MiB", "the client read it");
+		FreePack(w);
 
 		Disconnect(t.Listen);
 		ReleaseSock(t.Listen);

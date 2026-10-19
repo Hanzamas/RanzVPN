@@ -587,7 +587,7 @@ TEST_LIST test_list[] =
 	{"machineid", machineid_test, "Machine identity: MachineGuid and the configuration salt, known answers, separate salts, the salt in the config."},
 	{"vmdetect", vmdetect_test, "VM detection: MsIsInVm writes no script, starts no process, answers at once, reports a VM on a GitHub-hosted runner."},
 	{"keepalive", keepalive_test, "Keepalive span: a session timeout out of bounds, also 0 or 1 from a server, gives the span of the clamped timeout."},
-	{"packcap", packcap_test, "Client Pack size cap: ClientDownloadHello refuses a 1 MiB hello Pack from a loopback peer."},
+	{"packcap", packcap_test, "Client Pack size cap: a 1 MiB hello or welcome Pack from a loopback peer is refused, the longest real welcome Pack is read."},
 };
 
 // Test function

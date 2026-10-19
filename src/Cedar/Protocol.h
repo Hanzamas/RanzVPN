@@ -22,6 +22,12 @@ struct CHECK_CERT_THREAD_PROC
 #define	AUTO_DOWNLOAD_CERTS_PREFIX	L".autodownload_"
 #define	FIND_CERT_CHAIN_MAX_DEPTH	16
 
+// Largest Pack that the client reads from the server it connects to. The hello and the answer to an
+// additional connection get HTTP_PACK_MAX_SIZE (64 KiB), the cap of the server side before the
+// authentication. The welcome Pack gets 4 times that: its "Msg" holds the hub message (HUB_MAXMSG_LEN
+// characters, up to 3 bytes each in UTF-8) and the notices of ServerAccept: under 90 KB in all.
+#define	CLIENT_WELCOME_PACK_MAX_SIZE	(256 * 1024)
+
 // Fixed first input of the machine identity hash (ComputeMachineUniqueHash, FIX-5 #101)
 #define	MACHINE_ID_LABEL			"RanzVPN machine identity v1"
 
