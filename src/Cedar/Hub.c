@@ -5360,6 +5360,12 @@ static void StopAllSession(HUB *h)
 	}
 	UnlockList(h->SessionList);
 
+	// Signal every session first so they all shut down in parallel, then wait for each one.
+	for (i = 0;i < num;i++)
+	{
+		StopSessionEx(s[i], true);
+	}
+
 	for (i = 0;i < num;i++)
 	{
 		StopSession(s[i]);

@@ -2374,7 +2374,12 @@ CLEANUP:
 
 	FreePack(HttpServerRecv(c->FirstSock));
 
-	SleepThread(25);
+	if (c->FirstSock != NULL)
+	{
+		// Give the error pack time to reach the client before the socket closes.
+		// A tunnelled session has no first socket left, so nothing was sent and the wait is skipped.
+		SleepThread(25);
+	}
 
 	SLog(c->Cedar, "LS_CONNECTION_ERROR", c->Name, GetUniErrorStr(c->Err), c->Err);
 
