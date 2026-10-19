@@ -24,7 +24,7 @@ set(BUILD_DIRECTORY ${CMAKE_BINARY_DIR})
 # AddressSanitizer and libFuzzer builds (RANZ_ASAN, RANZ_FUZZ; both OFF by default)
 include("${TOP_DIRECTORY}/cmake/RanzSanitizers.cmake")
 
-# Unused-code warnings for the project's own targets (RANZ_UNUSED_WARNINGS; OFF by default)
+# The ranz_warnings target: /W3 and the warning flags that the project's own targets link PRIVATE
 include("${TOP_DIRECTORY}/cmake/RanzWarnings.cmake")
 
 # The hamcore files (src/bin/hamcore) as resources of the executables

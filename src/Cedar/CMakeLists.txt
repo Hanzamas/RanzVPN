@@ -28,6 +28,9 @@ set_target_properties(cedar
 
 target_link_libraries(cedar PUBLIC mayaqua)
 
+# The warning flags of the project's own code (cmake/RanzWarnings.cmake); PRIVATE: they stay on Cedar
+target_link_libraries(cedar PRIVATE ranz_warnings)
+
 if(WIN32)
   set_target_properties(cedar
     PROPERTIES

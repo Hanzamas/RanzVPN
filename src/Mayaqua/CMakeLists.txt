@@ -12,6 +12,9 @@ target_include_directories(mayaqua PUBLIC "${TOP_DIRECTORY}/src")
 # The project's build options (cmake/RanzOptions.cmake), for Mayaqua and every target built on it
 target_link_libraries(mayaqua PUBLIC ranz_options)
 
+# The warning flags of the project's own code (cmake/RanzWarnings.cmake); PRIVATE: they stay on Mayaqua
+target_link_libraries(mayaqua PRIVATE ranz_warnings)
+
 set_target_properties(mayaqua
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
@@ -52,6 +55,14 @@ if(OQS_ENABLE)
   set(OQS_ENABLE_SIG_UOV OFF)
   set(OQS_ENABLE_SIG_SNOVA OFF)
   set(OQS_ENABLE_SIG_SLH_DSA OFF)
+
+  if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND MSVC)
+    # clang-cl: liboqs puts -g3 and -fno-omit-frame-pointer in its flags (it treats clang-cl as
+    # GNU-style clang), and clang-cl ignores both with a warning for every liboqs source file.
+    # The vendored code is not ours to change, so the two warnings are off for liboqs and
+    # oqs-provider; the option is directory-wide and applies to targets created after this line
+    add_compile_options(-Wno-unknown-argument -Wno-unused-command-line-argument)
+  endif()
 
   add_subdirectory(3rdparty/liboqs)
   add_subdirectory(3rdparty/oqs-provider)
