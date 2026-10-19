@@ -78,11 +78,9 @@ void InitCanaryRand()
 		return;
 	}
 
-#ifdef OS_WIN32
 	Win32GetSystemTime(&st);
 	memcpy(&t1, ((UCHAR *)&st) + 0, 8);
 	memcpy(&t2, ((UCHAR *)&st) + 8, 8);
-#endif
 
 	{
 		UINT64 dos_rand = (UINT64)rand();

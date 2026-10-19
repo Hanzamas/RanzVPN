@@ -266,3 +266,38 @@ jobs:
           build/vpntest.exe
           build/vpntest.pdb
           build/clang_rt.asan_dynamic*.dll
+
+  # Debug configuration, built without running anything: the code that build_and_test
+  # (RelWithDebInfo) never compiles, under _DEBUG (Microsoft.c and vpncmd.c) and without
+  # WIN32_NO_DEBUG_HELP_DLL (the DbgHelp call stacks of Win32.c), with the Debug definitions of
+  # cmake/RanzOptions.cmake. x64 only: the stack walk of Win32GetCallStack reads x64 registers.
+  debug:
+    runs-on: windows-latest
+    name: x64 Debug (build only)
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Cache vcpkg
+      uses: actions/cache@v4
+      with:
+        path: 'build/vcpkg_installed/'
+        key: vcpkg-x64-windows-static
+    - name: Build (Debug)
+      run: |
+        set BUILD_NUMBER=0
+        mkdir build
+        cd build
+
+        for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set "VSINSTALL=%%i"
+        if "%VSINSTALL%"=="" (
+          echo Visual Studio installation was not found.
+          exit /b 1
+        )
+
+        call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
+        set "COMPILER_PATH=%VSINSTALL%\VC\Tools\Llvm\x64\bin\clang-cl.exe"
+        cmake -G "Ninja" -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER="%COMPILER_PATH%" -DCMAKE_CXX_COMPILER="%COMPILER_PATH%" -DBUILD_NUMBER=%BUILD_NUMBER% -DRANZ_UNUSED_WARNINGS=ON ..
+        if errorlevel 1 exit /b 1
+        cmake --build .
+      shell: cmd

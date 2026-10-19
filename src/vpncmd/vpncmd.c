@@ -18,7 +18,7 @@ int main(int argc, char *argv[])
 
 	SetConsoleTitleA(CEDAR_PRODUCT_STR " VPN Command Line Utility");
 
-#if defined(_DEBUG) || defined(DEBUG)	// MSVC defines _DEBUG, not DEBUG
+#ifdef	_DEBUG	// Debug configuration: the debug CRT (/MTd) defines _DEBUG
 	// memcheck = true logs every malloc/realloc/free to find leaks; it is very slow.
 	InitMayaqua(false, true, argc, argv);
 #else

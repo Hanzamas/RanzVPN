@@ -8,16 +8,6 @@
 
 #include <stdio.h>
 
-
-#ifdef	VPN_SPEED
-
-#ifndef	RANZ_ASAN	// AddressSanitizer must see every allocation, so ASan builds keep the CRT heap
-#define	WIN32_USE_HEAP_API_FOR_MEMORY
-#endif
-#define	WIN32_NO_DEBUG_HELP_DLL
-
-#endif
-
 void InitProcessCallOnce();
 
 #ifdef VPN_EXE

@@ -1,8 +1,6 @@
 // Microsoft.h
 // Header of Microsoft.c
 
-#ifdef OS_WIN32
-
 #ifndef	MICROSOFT_H
 #define	MICROSOFT_H
 
@@ -338,5 +336,3 @@ HKEY MsGetRootKeyFromInt(UINT root);
 #endif // MICROSOFT_C
 
 #endif // MICROSOFT_H
-
-#endif // OS_WIN32
