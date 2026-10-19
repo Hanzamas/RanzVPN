@@ -4124,6 +4124,11 @@ static UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 	UINT i;
 	LINK *k;
 
+	// The checks of NewLink: a supported authentication type, and the policy fields every cascade has
+	if (LinkValidateAuthAndPolicy(t->ClientAuth, &t->Policy) == false)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
 
 	CHECK_RIGHT;
 
