@@ -672,12 +672,12 @@ static UINT StSetHubMsg(ADMIN *a, RPC_MSG *t)
 		else
 		{
 			SetHubMsg(h, t->Msg);
+
+			IncrementServerConfigRevision(s);
 		}
 
 		ReleaseHub(h);
 	}
-
-	IncrementServerConfigRevision(s);
 
 	return ret;
 }
@@ -692,10 +692,6 @@ static UINT StGetHubMsg(ADMIN *a, RPC_MSG *t)
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	if (UniStrLen(t->Msg) > HUB_MAXMSG_LEN)
-	{
-		return ERR_MEMORY_NOT_ENOUGH;
-	}
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
@@ -1044,7 +1040,7 @@ static UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t)
 	{
 		h = GetHub(c, a->HubName);
 
-		if (a->ServerAdmin == false && GetHubAdminOption(h, "no_read_log_file") != 0)
+		if (GetHubAdminOption(h, "no_read_log_file") != 0)
 		{
 			no_access = true;
 		}
@@ -1244,7 +1240,7 @@ static UINT StSetCrl(ADMIN *a, RPC_CRL *t)
 						CRL *new_crl = CopyCrl(t->Crl);
 						if (ReplaceListPointer(h->HubDb->CrlList, crl, new_crl))
 						{
-							ALog(a, h, "LA_ADD_CRL");
+							ALog(a, h, "LA_SET_CRL");
 							FreeCrl(crl);
 
 							IncrementServerConfigRevision(s);
@@ -1361,6 +1357,8 @@ static UINT StDelCrl(ADMIN *a, RPC_CRL *t)
 						ALog(a, h, "LA_DEL_CRL");
 						FreeCrl(crl);
 						Delete(h->HubDb->CrlList, crl);
+
+						IncrementServerConfigRevision(s);
 					}
 				}
 				UnlockList(h->HubDb->CrlList);
@@ -1418,7 +1416,7 @@ static UINT StAddCrl(ADMIN *a, RPC_CRL *t)
 
 						Insert(h->HubDb->CrlList, crl);
 
-						ALog(a, h, "LA_SET_CRL");
+						ALog(a, h, "LA_ADD_CRL");
 
 						IncrementServerConfigRevision(s);
 					}
@@ -1879,9 +1877,9 @@ static UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 		}
 	}
 
-	ALog(a, NULL, "LA_ADD_BRIDGE", t->HubName, t->DeviceName);
-
 	AddLocalBridge(a->Server->Cedar, t->HubName, t->DeviceName, false, false, t->TapMode, NULL, false);
+
+	ALog(a, NULL, "LA_ADD_BRIDGE", t->HubName, t->DeviceName);
 
 	IncrementServerConfigRevision(a->Server);
 
@@ -1897,12 +1895,12 @@ static UINT StDeleteLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 
 	SERVER_ADMIN_ONLY;
 
-	ALog(a, NULL, "LA_DELETE_BRIDGE", t->HubName, t->DeviceName);
-
 	if (DeleteLocalBridge(a->Server->Cedar, t->HubName, t->DeviceName) == false)
 	{
 		return ERR_OBJECT_NOT_FOUND;
 	}
+
+	ALog(a, NULL, "LA_DELETE_BRIDGE", t->HubName, t->DeviceName);
 
 	IncrementServerConfigRevision(a->Server);
 
@@ -2309,7 +2307,7 @@ static UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t)
 		ReleaseSession(sess);
 	}
 
-	if (ret != ERR_NO_ERROR)
+	if (ret == ERR_NO_ERROR)
 	{
 		ALog(a, h, "LA_DELETE_SESSION", t->Name);
 	}
@@ -2584,11 +2582,11 @@ static UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t)
 	if (ret == ERR_NO_ERROR)
 	{
 		ALog(a, h, "LA_DELETE_GROUP", t->Name);
+
+		IncrementServerConfigRevision(s);
 	}
 
 	ReleaseHub(h);
-
-	IncrementServerConfigRevision(s);
 
 	return ret;
 }
@@ -2773,18 +2771,21 @@ static UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t)
 			else
 			{
 				AcAddGroup(h, g);
+
+				ALog(a, h, "LA_CREATE_GROUP", t->Name);
 			}
 
 			ReleaseGroup(g);
-
-			ALog(a, h, "LA_CREATE_GROUP", t->Name);
 		}
 	}
 	AcUnlock(h);
 
 	ReleaseHub(h);
 
-	IncrementServerConfigRevision(s);
+	if (ret == ERR_NO_ERROR)
+	{
+		IncrementServerConfigRevision(s);
+	}
 
 	return ret;
 }
@@ -2858,8 +2859,6 @@ static UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
 
 	ReleaseHub(h);
 
-	IncrementServerConfigRevision(s);
-
 	return ERR_NO_ERROR;
 }
 
@@ -2895,8 +2894,6 @@ static UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t)
 		return ERR_NOT_ENOUGH_RIGHT;
 	}
 
-	ALog(a, h, "LA_DELETE_USER", t->Name);
-
 	AcLock(h);
 	{
 		if (AcDeleteUser(h, t->Name) == false)
@@ -2906,9 +2903,14 @@ static UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t)
 	}
 	AcUnlock(h);
 
-	ReleaseHub(h);
+	if (ret == ERR_NO_ERROR)
+	{
+		ALog(a, h, "LA_DELETE_USER", t->Name);
 
-	IncrementServerConfigRevision(s);
+		IncrementServerConfigRevision(s);
+	}
+
+	ReleaseHub(h);
 
 	return ret;
 }
@@ -4146,6 +4148,11 @@ static UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 	UINT i;
 	LINK *k;
 
+	// The checks of NewLink: a supported authentication type, and the policy fields every cascade has
+	if (LinkValidateAuthAndPolicy(t->ClientAuth, &t->Policy) == false)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
 
 	CHECK_RIGHT;
 
@@ -4524,11 +4531,13 @@ static UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t)
 		return ERR_NOT_ENOUGH_RIGHT;
 	}
 
-	IncrementServerConfigRevision(s);
+	// The hub ignores a certificate it already trusts and one over MAX_HUB_CERTS; the call still succeeds
+	if (AddRootCert(h, t->Cert))
+	{
+		ALog(a, h, "LA_ADD_CA");
 
-	ALog(a, h, "LA_ADD_CA");
-
-	AddRootCert(h, t->Cert);
+		IncrementServerConfigRevision(s);
+	}
 
 	ReleaseHub(h);
 
@@ -8745,6 +8754,18 @@ static SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, 
 	return s;
 }
 
+// The socket an admin RPC uses after the login of its session (AdminConnectMain), at the first connect and at every
+// reconnect: no timeout, because the server can take long to answer an RPC (SetConfig, a large EnumSession or
+// EnumLogFile) and the connect left CONNECTING_TIMEOUT on the socket. The caller takes its own reference
+static SOCK *AdminRpcSock(SESSION *s)
+{
+	SOCK *sock = s->Connection->FirstSock;
+
+	SetTimeout(sock, INFINITE);
+
+	return sock;
+}
+
 RPC *AdminConnectEx(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name)
 {
 	return AdminConnectEx2(cedar, o, hubname, hashed_password, err, client_name, NULL);
@@ -8775,7 +8796,7 @@ static RPC *AdminConnectEx2(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void 
 		return NULL;
 	}
 
-	sock = s->Connection->FirstSock;
+	sock = AdminRpcSock(s);
 
 	rpc = StartRpcClient(sock, s);
 
@@ -8792,8 +8813,6 @@ static RPC *AdminConnectEx2(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void 
 	{
 		HashAdminPassword(rpc->VpnServerHashedPassword, "");
 	}
-
-	SetTimeout(sock, INFINITE);
 
 	return rpc;
 }
@@ -8841,7 +8860,7 @@ UINT AdminReconnect(RPC *rpc)
 	}
 
 	rpc->Param = s;
-	rpc->Sock = s->Connection->FirstSock;
+	rpc->Sock = AdminRpcSock(s);
 	AddRef(rpc->Sock->ref);
 
 	return ERR_NO_ERROR;

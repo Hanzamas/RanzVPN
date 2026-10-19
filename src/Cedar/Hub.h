@@ -305,7 +305,7 @@ void IntoTrafficLimiter(TRAFFIC_LIMITER *tr, PKT *p);
 bool IsMostHighestPriorityPacket(SESSION *s, PKT *p);
 STORM *SearchStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, bool strict);
 STORM *AddStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, bool strict);
-void AddRootCert(HUB *hub, X *x);
+bool AddRootCert(HUB *hub, X *x);
 int CmpAccessList(void *p1, void *p2);
 void AddAccessListEx(HUB *hub, ACCESS *a, bool no_sort, bool no_reassign_id);
 bool IsTcpPacketNcsiHttpAccess(PKT *p);

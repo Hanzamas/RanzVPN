@@ -6027,12 +6027,14 @@ void SetHubLogSettingEx(HUB *h, HUB_LOG *setting, bool no_change_switch_type)
 	SetLogSwitchType(h->SecurityLogger, setting->SecurityLogSwitchType);
 }
 
-void AddRootCert(HUB *hub, X *x)
+// Add a trusted root certificate to the hub; false when the hub already trusts it or holds MAX_HUB_CERTS
+bool AddRootCert(HUB *hub, X *x)
 {
 	HUBDB *db;
+	bool added = false;
 	if (hub == NULL || x == NULL)
 	{
-		return;
+		return false;
 	}
 
 	db = hub->HubDb;
@@ -6058,11 +6060,14 @@ void AddRootCert(HUB *hub, X *x)
 				if (ok)
 				{
 					Insert(db->RootCertList, CloneX(x));
+					added = true;
 				}
 			}
 		}
 		UnlockList(db->RootCertList);
 	}
+
+	return added;
 }
 
 int CompareCert(void *p1, void *p2)
