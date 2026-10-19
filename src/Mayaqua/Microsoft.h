@@ -295,8 +295,6 @@ MS_ADAPTER *MsGetAdapterByGuid(char *guid);
 MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid);
 UINT ConvertMidStatusVistaToXp(UINT st);
 
-void *MsLoadLibrary(char *name);
-
 void MsSetTcpConfig(MS_TCP *tcp);
 bool MsLoadTcpConfigReg(MS_TCP *tcp);
 

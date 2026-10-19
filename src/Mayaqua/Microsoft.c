@@ -678,76 +678,6 @@ UINT MsGetConsoleWidth()
 	return info.dwSize.X;
 }
 
-static bool MsDisableIme()
-{
-	HINSTANCE h;
-	bool ret = false;
-	char dll_name[MAX_PATH];
-	BOOL (WINAPI *_ImmDisableIME)(DWORD);
-
-	Format(dll_name, sizeof(dll_name), "%s\\imm32.dll", MsGetSystem32Dir());
-	h = MsLoadLibrary(dll_name);
-	if (h == NULL)
-	{
-		return false;
-	}
-
-	_ImmDisableIME = (BOOL (__stdcall *)(DWORD))GetProcAddress(h, "ImmDisableIME");
-
-	if (_ImmDisableIME != NULL)
-	{
-		ret = _ImmDisableIME(-1);
-	}
-
-	FreeLibrary(h);
-
-	return ret;
-}
-
-static void *MsLoadLibraryW(wchar_t *name)
-{
-	BUF *b;
-	wchar_t tmp_dll_name[MAX_SIZE];
-	char hash_str[MAX_SIZE];
-	UCHAR hash[SHA1_SIZE];
-	if (name == NULL)
-	{
-		return NULL;
-	}
-
-	Sha0(hash, name, UniStrSize(name));
-
-	BinToStr(hash_str, sizeof(hash_str), hash, 4);
-
-	UniFormat(tmp_dll_name, sizeof(tmp_dll_name), L"%s\\%S.dll", MsGetMyTempDirW(), hash_str);
-
-	if (IsFileExistsW(tmp_dll_name) == false)
-	{
-		b = ReadDumpW(name);
-		if (b == NULL)
-		{
-			return NULL;
-		}
-
-		DumpBufW(b, tmp_dll_name);
-		FreeBuf(b);
-	}
-
-	return LoadLibraryW(tmp_dll_name);
-}
-void *MsLoadLibrary(char *name)
-{
-	wchar_t name_w[MAX_SIZE];
-	if (name == NULL)
-	{
-		return NULL;
-	}
-
-	StrToUni(name_w, sizeof(name_w), name);
-
-	return MsLoadLibraryW(name_w);
-}
-
 MS_ADAPTER *MsGetAdapterByGuid(char *guid)
 {
 	MS_ADAPTER_LIST *o;
@@ -1649,8 +1579,6 @@ static void CALLBACK MsServiceDispatcher(DWORD argc, LPTSTR *argv)
 	InitMayaqua(false, false, 0, NULL);
 #endif
 
-	MsDisableIme();
-
 	g_start();
 	MsWriteServiceEvent(EVENTLOG_INFORMATION_TYPE, MS_EVENT_SERVICE_STARTED, "started", 0);
 	MsUpdateServiceConfig(g_service_name);
@@ -1793,8 +1721,6 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 #else
 	InitMayaqua(false, false, 0, NULL);
 #endif
-
-	MsDisableIme();
 
 	Format(tmp, sizeof(tmp), SVC_NAME, name);
 	service_name = _SS(tmp);
@@ -3127,6 +3053,9 @@ void MsFreeNoWarning(NO_WARNING *nw)
 #define	MS_TEMP_DIR_NAME_LEN	(4 + MS_TEMP_DIR_RANDOM_SIZE * 2)	// "VPN_" and the hex digits
 #define	MS_TEMP_DIR_SDDL		L"D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)"
 
+// Delete the temp directories that earlier processes left in %TEMP% (no lock file, or one no process
+// holds). A reparse point named like one (a junction or a symbolic link, which anyone who can write
+// to %TEMP% can make) is no temp directory of this program: it is left alone and never followed.
 static void MsDeleteTempDir()
 {
 	HANDLE h;
@@ -3148,7 +3077,8 @@ static void MsDeleteTempDir()
 			if (UniStrCmpi(data_w.cFileName, L".") != 0 &&
 				UniStrCmpi(data_w.cFileName, L"..") != 0)
 			{
-				if (data_w.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+				if ((data_w.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
+					(data_w.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0)
 				{
 					if (UniStartWith(data_w.cFileName, L"VPN_") && UniStrLen(data_w.cFileName) == MS_TEMP_DIR_NAME_LEN)
 					{
@@ -3220,13 +3150,36 @@ static void MsDeleteTempDir()
 	}
 }
 
+// Delete the files and subdirectories of dir, never through a reparse point. dir is opened without
+// following a reparse point and left alone when it is one. A junction or a symbolic link in it goes
+// as a link: RemoveDirectoryW and DeleteFileW remove the link, not its target. dir stays open
+// without delete or write sharing while its entries go, so that it cannot be renamed or replaced
+// in the meantime.
 void MsDeleteAllFileW(wchar_t *dir)
 {
 	HANDLE h;
+	HANDLE dir_handle;
+	BY_HANDLE_FILE_INFORMATION info;
 	wchar_t file_mask[MAX_PATH];
 	WIN32_FIND_DATAW data;
 	if (dir == NULL || UniIsEmptyStr(dir))
 	{
+		return;
+	}
+
+	dir_handle = CreateFileW(dir, FILE_LIST_DIRECTORY, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+		FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+	if (dir_handle == INVALID_HANDLE_VALUE)
+	{
+		return;
+	}
+
+	Zero(&info, sizeof(info));
+	if (GetFileInformationByHandle(dir_handle, &info) == FALSE ||
+		(info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 ||
+		(info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0)
+	{
+		CloseHandle(dir_handle);
 		return;
 	}
 
@@ -3244,13 +3197,17 @@ void MsDeleteAllFileW(wchar_t *dir)
 
 				UniFormat(fullpath, sizeof(fullpath), L"%s\\%s", dir, data.cFileName);
 
-				if ((data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == false)
+				if ((data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0)
 				{
 					DeleteFileW(fullpath);
 				}
 				else
 				{
-					MsDeleteAllFileW(fullpath);
+					if ((data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0)
+					{
+						MsDeleteAllFileW(fullpath);
+					}
+
 					RemoveDirectoryW(fullpath);
 				}
 			}
@@ -3259,6 +3216,8 @@ void MsDeleteAllFileW(wchar_t *dir)
 
 		FindClose(h);
 	}
+
+	CloseHandle(dir_handle);
 }
 
 static void MsInitTempDir()
