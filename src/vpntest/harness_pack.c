@@ -1363,6 +1363,18 @@ static PACK *HarnessPackBuildEnumLicenseKeyNumItemOverflow(void)
 	return p;
 }
 
+// NumItem far above the values, with an item array that still fits in 32 bits (15,000,000 items of 272 bytes, about
+// 4 GiB): the count is capped at the one FilePath value sent, so the reader allocates one item (FND-12)
+static PACK *HarnessPackBuildEnumLogFileNumItemHuge(void)
+{
+	PACK *p = NewPack();
+
+	PackAddInt(p, "NumItem", 15000000);
+	PackAddStrEx(p, "FilePath", "in_file_1.log", 0, 1);
+
+	return p;
+}
+
 ////////////////////////////
 // Case table
 
@@ -1488,6 +1500,9 @@ static HARNESS_PACK_CASE harness_pack_cases[] =
 	// IN: intended change of the table engine (spec #28, unchecked NumItem option b)
 	HARNESS_PACK_IN_CASE("RPC_ENUM_LICENSE_KEY_in_numitem_overflow", RPC_ENUM_LICENSE_KEY,
 		HarnessPackBuildEnumLicenseKeyNumItemOverflow),
+
+	// IN: intended change of the table engine (FND-12 #107, NumItem capped at the values of the sentinel key)
+	HARNESS_PACK_IN_CASE("RPC_ENUM_LOG_FILE_in_numitem_huge", RPC_ENUM_LOG_FILE, HarnessPackBuildEnumLogFileNumItemHuge),
 };
 
 ////////////////////////////
