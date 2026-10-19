@@ -8728,6 +8728,18 @@ static SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, 
 	return s;
 }
 
+// The socket an admin RPC uses after the login of its session (AdminConnectMain), at the first connect and at every
+// reconnect: no timeout, because the server can take long to answer an RPC (SetConfig, a large EnumSession or
+// EnumLogFile) and the connect left CONNECTING_TIMEOUT on the socket. The caller takes its own reference
+static SOCK *AdminRpcSock(SESSION *s)
+{
+	SOCK *sock = s->Connection->FirstSock;
+
+	SetTimeout(sock, INFINITE);
+
+	return sock;
+}
+
 RPC *AdminConnectEx(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name)
 {
 	return AdminConnectEx2(cedar, o, hubname, hashed_password, err, client_name, NULL);
@@ -8758,7 +8770,7 @@ static RPC *AdminConnectEx2(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void 
 		return NULL;
 	}
 
-	sock = s->Connection->FirstSock;
+	sock = AdminRpcSock(s);
 
 	rpc = StartRpcClient(sock, s);
 
@@ -8775,8 +8787,6 @@ static RPC *AdminConnectEx2(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void 
 	{
 		HashAdminPassword(rpc->VpnServerHashedPassword, "");
 	}
-
-	SetTimeout(sock, INFINITE);
 
 	return rpc;
 }
@@ -8824,7 +8834,7 @@ UINT AdminReconnect(RPC *rpc)
 	}
 
 	rpc->Param = s;
-	rpc->Sock = s->Connection->FirstSock;
+	rpc->Sock = AdminRpcSock(s);
 	AddRef(rpc->Sock->ref);
 
 	return ERR_NO_ERROR;
