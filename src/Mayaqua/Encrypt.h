@@ -8,9 +8,6 @@
 
 #include <openssl/opensslv.h>
 
-#define	MIN_SIGN_HASH_SIZE		(15 + SHA1_SIZE)
-#define	SIGN_HASH_SIZE			(MIN_SIGN_HASH_SIZE)
-
 #define RSA_KEY_SIZE				1024
 
 // IANA definitions taken from IKEv1 Phase 1
@@ -99,8 +96,6 @@
 	"1F612970CEE2D7AFB81BDD762170481CD0069127D5B05AA9" \
 	"93B4EA988D8FDDC186FFB7DC90A6C08F4DF435C934063199" \
 	"FFFFFFFFFFFFFFFF"
-
-#define	HASHED_DATA(p)			(((UCHAR *)p) + 15)
 
 typedef struct bignum_st BIGNUM;
 typedef struct bio_st BIO;
@@ -265,9 +260,8 @@ NAME *CopyName(NAME *n);
 bool RsaGen(K **priv, K **pub, UINT bit);
 bool RsaCheck();
 bool RsaCheckEx();
-bool RsaSignEx(void *dst, void *src, UINT size, K *k, UINT bits);
-bool HashForSign(void *dst, UINT dst_size, void *src, UINT src_size);
-bool RsaVerifyEx(void *data, UINT data_size, void *sign, K *k, UINT bits);
+bool RsaSignEx(void *dst, UINT dst_size, void *src, UINT src_size, K *k);
+bool RsaVerifyEx(void *data, UINT data_size, void *sign, UINT sign_size, K *k);
 
 void DesEcbEncrypt(void *dst, void *src, void *key_7bytes);
 

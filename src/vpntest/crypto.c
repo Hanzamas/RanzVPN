@@ -607,7 +607,7 @@ static void KatRsaSign(KAT_CTX *ctx)
 	if (KatCheck(ctx, k != NULL, "RsaSignEx: the RSA-2048 known-answer key loads", "BufToK failed"))
 	{
 		memset(sign, KAT_GUARD_BYTE, sizeof(sign));
-		signed_ok = RsaSignEx(sign, src, sizeof(src), k, KAT_RSA_SIGN * 8);
+		signed_ok = RsaSignEx(sign, KAT_RSA_SIGN, src, sizeof(src), k);
 		same = KatHexEq(sign, KAT_RSA_SIGN, kat_rsa_sign, got, sizeof(got));
 		KatCheck(ctx, signed_ok && same, "RsaSignEx: PKCS#1 v1.5 SHA-1 signature of 0x01 .. 0x14 with the RSA-2048 key",
 			"returned %u, got %s", signed_ok, got);

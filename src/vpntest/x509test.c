@@ -69,11 +69,19 @@
 #define	X509T_LONG_UTF8			300			// Two-byte characters of the long non-ASCII UTF8String field
 #define	X509T_LONG_BMP			500			// Characters of the long BMPString field (1000 bytes)
 #define	X509T_OVERLONG			1500		// Characters of the field longer than the buffer
+#define	X509T_DIGEST_INFO		(15 + SHA1_SIZE)	// Bytes of the SHA-1 DigestInfo and hash in a PKCS#1 v1.5 block
 #define	X509T_TRAILING			8			// Bytes after the DigestInfo and hash in the forged signature block
 #define	X509T_MAX_SIGN			(4096 / 8)	// Largest signature (bytes): the buffer Protocol.c receives it into
 #define	X509T_TIME_ZONE			"JST-9"		// CRT time zone of the time checks: UTC+9, no daylight saving time
 #define	X509T_GUARD				16			// Guard bytes after a signature destination
 #define	X509T_GUARD_BYTE		0xA5		// Value of the guard bytes
+
+// DER prefix of the SHA-1 DigestInfo (RFC 8017 section 9.2, note 1); the 20-byte hash follows it
+static UCHAR x509t_sha1_digest_info[] =
+{
+	0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2B, 0x0E,
+	0x03, 0x02, 0x1A, 0x05, 0x00, 0x04, 0x14,
+};
 
 // Certificate whose public key algorithm is 1.3.6.1.4.1.32473.1 (under the RFC 5612 documentation
 // enterprise number), which OpenSSL parses but cannot turn into a key; signed by a throwaway
@@ -370,12 +378,13 @@ static void X509TestRsa(X509T_CTX *ctx, K *priv, K *pub, UINT bits)
 	UCHAR data[SHA1_SIZE];
 	UCHAR other[SHA1_SIZE];
 	UCHAR sign[X509T_MAX_SIGN];
-	UCHAR block[SIGN_HASH_SIZE + X509T_TRAILING];
+	UCHAR block[X509T_DIGEST_INFO + X509T_TRAILING];
 	UCHAR forged[X509T_MAX_SIGN];
 	size_t forged_size = sizeof(forged);
 	EVP_PKEY_CTX *pctx;
 	bool forged_ok = false;
 	char what[MAX_SIZE];
+	UINT sign_size = bits / 8;
 	UINT i;
 
 	// The client signs the 20 random bytes of the server (c->Random in Protocol.c)
@@ -385,18 +394,20 @@ static void X509TestRsa(X509T_CTX *ctx, K *priv, K *pub, UINT bits)
 
 	Zero(sign, sizeof(sign));
 	Format(what, sizeof(what), "RSA-%u: a RsaSignEx signature verifies", bits);
-	X509TestCheck(ctx, RsaSignEx(sign, data, sizeof(data), priv, bits) && RsaVerifyEx(data, sizeof(data), sign, pub, bits), what);
+	X509TestCheck(ctx, RsaSignEx(sign, sizeof(sign), data, sizeof(data), priv) &&
+		RsaVerifyEx(data, sizeof(data), sign, sign_size, pub), what);
 
 	Format(what, sizeof(what), "RSA-%u: the signature does not verify other data", bits);
-	X509TestCheck(ctx, RsaVerifyEx(other, sizeof(other), sign, pub, bits) == false, what);
+	X509TestCheck(ctx, RsaVerifyEx(other, sizeof(other), sign, sign_size, pub) == false, what);
 
 	Format(what, sizeof(what), "RSA-%u: a signature length other than the key size is rejected", bits);
-	X509TestCheck(ctx, RsaVerifyEx(data, sizeof(data), sign, pub, bits / 2) == false, what);
+	X509TestCheck(ctx, RsaVerifyEx(data, sizeof(data), sign, sign_size / 2, pub) == false, what);
 
 	// The DigestInfo and SHA-1 of the data, then trailing bytes, PKCS#1 v1.5 type 1 padded and
 	// signed with the private key (EVP_PKEY_sign with no digest signs the bytes as they are)
-	HashForSign(block, sizeof(block), data, sizeof(data));
-	for (i = SIGN_HASH_SIZE;i < sizeof(block);i++)
+	Copy(block, x509t_sha1_digest_info, sizeof(x509t_sha1_digest_info));
+	Sha1(block + sizeof(x509t_sha1_digest_info), data, sizeof(data));
+	for (i = X509T_DIGEST_INFO;i < sizeof(block);i++)
 	{
 		block[i] = 'X';
 	}
@@ -407,7 +418,7 @@ static void X509TestRsa(X509T_CTX *ctx, K *priv, K *pub, UINT bits)
 		forged_ok = EVP_PKEY_sign_init(pctx) == 1 &&
 			EVP_PKEY_CTX_set_rsa_padding(pctx, RSA_PKCS1_PADDING) == 1 &&
 			EVP_PKEY_sign(pctx, forged, &forged_size, block, sizeof(block)) == 1 &&
-			forged_size == bits / 8;
+			forged_size == sign_size;
 		EVP_PKEY_CTX_free(pctx);
 	}
 
@@ -415,7 +426,7 @@ static void X509TestRsa(X509T_CTX *ctx, K *priv, K *pub, UINT bits)
 	X509TestCheck(ctx, forged_ok, what);
 
 	Format(what, sizeof(what), "RSA-%u: that signature, with bytes after the hash, is rejected", bits);
-	X509TestCheck(ctx, forged_ok && RsaVerifyEx(data, sizeof(data), forged, pub, bits) == false, what);
+	X509TestCheck(ctx, forged_ok && RsaVerifyEx(data, sizeof(data), forged, sign_size, pub) == false, what);
 }
 
 // A PEM bundle whose first certificate X509ToX refuses: each certificate freed once
@@ -658,20 +669,20 @@ static void X509TestRsaSizes(X509T_CTX *ctx, K *priv, K *pub, UINT bits)
 	Rand(data, sizeof(data));
 
 	Zero(sign, sizeof(sign));
-	signed_ok = RsaSignEx(sign, data, sizeof(data), priv, bits);
+	signed_ok = RsaSignEx(sign, sign_size, data, sizeof(data), priv);
 	Format(what, sizeof(what), "RSA-%u: a signature into a destination of exactly %u bytes verifies", bits, sign_size);
-	X509TestCheck(ctx, signed_ok && RsaVerifyEx(data, sizeof(data), sign, pub, bits), what);
+	X509TestCheck(ctx, signed_ok && RsaVerifyEx(data, sizeof(data), sign, sign_size, pub), what);
 
 	// Half the size the key signs into
 	memset(dst, X509T_GUARD_BYTE, sizeof(dst));
 	Format(what, sizeof(what), "RSA-%u: a destination of %u bytes is refused, nothing written past it", bits, small);
-	X509TestCheck(ctx, RsaSignEx(dst, data, sizeof(data), priv, small * 8) == false &&
+	X509TestCheck(ctx, RsaSignEx(dst, small, data, sizeof(data), priv) == false &&
 		X509TestAllBytes(dst + small, sizeof(dst) - small, X509T_GUARD_BYTE), what);
 
 	// The signature with one byte less, then with one byte more (a zero) than the key's
 	Format(what, sizeof(what), "RSA-%u: the signature received as %u or %u bytes is rejected", bits, sign_size - 1, sign_size + 1);
-	X509TestCheck(ctx, signed_ok && RsaVerifyEx(data, sizeof(data), sign, pub, bits - 8) == false &&
-		RsaVerifyEx(data, sizeof(data), sign, pub, bits + 8) == false, what);
+	X509TestCheck(ctx, signed_ok && RsaVerifyEx(data, sizeof(data), sign, sign_size - 1, pub) == false &&
+		RsaVerifyEx(data, sizeof(data), sign, sign_size + 1, pub) == false, what);
 }
 
 // RSA client certificate signature test
