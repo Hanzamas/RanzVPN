@@ -45,7 +45,7 @@ typedef struct RPC_HOOK RPC_HOOK;
 #define	RPC_FT_OPAQUE		17		// Hand-written member group
 
 // Row flags
-#define	RPC_FF_READ_NUMITEM	0x00000001	// ARRAY: the count comes from "NumItem", not from the sentinel key
+#define	RPC_FF_READ_NUMITEM	0x00000001	// ARRAY: the count comes from "NumItem", capped at the values of the sentinel key
 #define	RPC_FF_ALIAS		0x00000002	// Second key for the same member (metadata; a codec skips it)
 
 // Hook procedures. base is the structure (the item for an item row);
@@ -133,7 +133,7 @@ struct RPC_TABLE
 
 // Counted array: items is the pointer member, count the UINT member,
 // item_table the table of one item and sentinel the key whose index count
-// is the number of items on read (unless flags has RPC_FF_READ_NUMITEM)
+// is the number of items on read (with RPC_FF_READ_NUMITEM: its upper bound)
 #define	RPC_ROW_ARRAY(type, items, count, item_table, sentinel, flags)							\
 	{ RPC_FT_ARRAY, (sentinel), (UINT)offsetof(type, items),									\
 	(UINT)(RPC_FIELD_SIZEOF(type, items) + RPC_FIELD_CHECK(RPC_FIELD_SIZEOF(type, items) == sizeof(void *))	\
