@@ -49,9 +49,6 @@
 
 #define	SOFTETHER_FW_SCRIPT_HASH	"Software\\" GC_REG_COMPANY_NAME "\\PacketiX VPN\\FW ScriptHash"
 
-#define	MS_REG_TCP_SETTING_KEY		"Software\\" GC_REG_COMPANY_NAME "\\Network Settings"
-
-
 #ifdef	MICROSOFT_C
 typedef struct MS
 {
@@ -191,12 +188,6 @@ typedef struct MS_ADAPTER_LIST
 	MS_ADAPTER **Adapters;
 } MS_ADAPTER_LIST;
 
-typedef struct MS_TCP
-{
-	UINT RecvWindowSize;
-	UINT SendWindowSize;
-} MS_TCP;
-
 typedef struct ENUM_CHILD_WINDOW_PARAM
 {
 	LIST *o;
@@ -253,7 +244,6 @@ wchar_t *MsGetNetworkConnectionName(char *guid);
 void MsGenLockFile(wchar_t *name, UINT size, wchar_t *temp_dir);
 void MsDeleteAllFileW(wchar_t *dir);
 
-void MsInitGlobalNetworkConfig();
 void MsSetThreadPriorityIdle();
 void MsSetThreadPriorityRealtime();
 void MsRestoreThreadPriority();
@@ -291,9 +281,6 @@ MS_ADAPTER_LIST *MsCreateAdapterListEx(bool no_info);
 MS_ADAPTER *MsGetAdapterByGuid(char *guid);
 MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid);
 UINT ConvertMidStatusVistaToXp(UINT st);
-
-void MsSetTcpConfig(MS_TCP *tcp);
-bool MsLoadTcpConfigReg(MS_TCP *tcp);
 
 UINT MsGetConsoleWidth();
 UINT MsSetConsoleWidth(UINT size);

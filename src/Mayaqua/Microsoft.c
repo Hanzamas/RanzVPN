@@ -25,9 +25,7 @@
 #include <dwmapi.h>
 #include <iphlpapi.h>
 #include <mmsystem.h>
-#include <Msi.h>
 #include <nb30.h>
-#include <NTSecAPI.h>
 #include <Psapi.h>
 #include <sddl.h>
 #include <security.h>
@@ -56,14 +54,6 @@ static SERVICE_FUNCTION *g_start, *g_stop;
 static bool exiting = false;
 static bool wnd_end;
 static bool is_usermode = false;
-static HANDLE hLsa = NULL;
-static TOKEN_SOURCE lsa_token_source;
-
-static HINSTANCE hMsi = NULL;
-static UINT (WINAPI *_MsiGetProductInfoW)(LPCWSTR, LPCWSTR, LPWSTR, LPDWORD) = NULL;
-static UINT (WINAPI *_MsiConfigureProductW)(LPCWSTR, int, INSTALLSTATE) = NULL;
-static INSTALLUILEVEL (WINAPI *_MsiSetInternalUI)(INSTALLUILEVEL, HWND *) = NULL;
-static INSTALLSTATE (WINAPI *_MsiLocateComponentW)(LPCWSTR, LPWSTR, LPDWORD) = NULL;
 
 void MsInitProcessCallOnce()
 {
@@ -1811,11 +1801,6 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 			{
 				mode = SVC_MODE_SERVICE;
 			}
-
-			if (mode != SVC_MODE_NONE)
-			{
-				MsInitGlobalNetworkConfig();
-			}
 		}
 
 		UniFormat(path, sizeof(path), SVC_RUN_COMMANDLINE, ms->ExeFileNameW);
@@ -2342,140 +2327,6 @@ void MsSetThreadPriorityRealtime()
 void MsRestoreThreadPriority()
 {
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_NORMAL);
-}
-
-static void MsApplyTcpConfig()
-{
-	if (MsIsAdmin())
-	{
-		MS_TCP tcp;
-
-		if (MsLoadTcpConfigReg(&tcp))
-		{
-			MsSetTcpConfig(&tcp);
-		}
-	}
-}
-
-bool MsLoadTcpConfigReg(MS_TCP *tcp)
-{
-	if (tcp == NULL)
-	{
-		return false;
-	}
-
-	Zero(tcp, sizeof(MS_TCP));
-
-	if (MsRegIsValueEx2(REG_LOCAL_MACHINE, MS_REG_TCP_SETTING_KEY, "RecvWindowSize", true, false) == false ||
-		MsRegIsValueEx2(REG_LOCAL_MACHINE, MS_REG_TCP_SETTING_KEY, "SendWindowSize", true, false) == false)
-	{
-		return false;
-	}
-
-	tcp->RecvWindowSize = MsRegReadIntEx2(REG_LOCAL_MACHINE, MS_REG_TCP_SETTING_KEY, "RecvWindowSize", true, false);
-	tcp->SendWindowSize = MsRegReadIntEx2(REG_LOCAL_MACHINE, MS_REG_TCP_SETTING_KEY, "SendWindowSize", true, false);
-
-	return true;
-}
-
-void MsSetTcpConfig(MS_TCP *tcp)
-{
-	if (tcp == NULL)
-	{
-		return;
-	}
-
-	if (MsIsAdmin())
-	{
-		bool window_scaling = false;
-		UINT tcp1323opts;
-
-		if (tcp->RecvWindowSize >= 65536 || tcp->SendWindowSize >= 65536)
-		{
-			window_scaling = true;
-		}
-
-		tcp1323opts = MsRegReadInt(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", "Tcp1323Opts");
-		if (window_scaling)
-		{
-			if (tcp1323opts == 0)
-			{
-				tcp1323opts = 1;
-			}
-			if (tcp1323opts == 2)
-			{
-				tcp1323opts = 3;
-			}
-		}
-		else
-		{
-			if (tcp1323opts == 1)
-			{
-				tcp1323opts = 0;
-			}
-			if (tcp1323opts == 3)
-			{
-				tcp1323opts = 2;
-			}
-		}
-		MsRegWriteInt(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", "Tcp1323Opts", tcp1323opts);
-
-		if (tcp->RecvWindowSize == 0)
-		{
-			MsRegDeleteValue(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\AFD\\Parameters",
-				"DefaultReceiveWindow");
-			MsRegDeleteValue(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters",
-				"TcpWindowSize");
-			MsRegDeleteValue(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters",
-				"GlobalMaxTcpWindowSize");
-		}
-		else
-		{
-			MsRegWriteInt(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\AFD\\Parameters",
-				"DefaultReceiveWindow", tcp->RecvWindowSize);
-			MsRegWriteInt(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters",
-				"TcpWindowSize", tcp->RecvWindowSize);
-			MsRegWriteInt(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters",
-				"GlobalMaxTcpWindowSize", tcp->RecvWindowSize);
-		}
-
-		if (tcp->SendWindowSize == 0)
-		{
-			MsRegDeleteValue(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\AFD\\Parameters",
-				"DefaultSendWindow");
-		}
-		else
-		{
-			MsRegWriteInt(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\AFD\\Parameters",
-				"DefaultSendWindow", tcp->SendWindowSize);
-		}
-	}
-}
-
-void MsInitGlobalNetworkConfig()
-{
-	UINT current_window_size = MsRegReadInt(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", "TcpWindowSize");
-
-	if (current_window_size == 65535 || current_window_size == 5980160 ||
-		current_window_size == 16777216 || current_window_size == 16777214)
-	{
-		// Remove a stray value that old PacketiX VPN versions wrote
-		MsRegDeleteValue(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\AFD\\Parameters",
-			"DefaultReceiveWindow");
-		MsRegDeleteValue(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\AFD\\Parameters",
-			"DefaultSendWindow");
-		MsRegDeleteValue(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters",
-			"Tcp1323Opts");
-		MsRegDeleteValue(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters",
-			"TcpWindowSize");
-		MsRegDeleteValue(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters",
-			"GlobalMaxTcpWindowSize");
-
-		MsRegWriteInt(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters", "vpn_no_change", 1);
-		MsRegWriteInt(REG_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Services\\AFD\\Parameters", "vpn_no_change", 1);
-	}
-
-	MsApplyTcpConfig();
 }
 
 static BOOL CALLBACK EnumTopWindowProc(HWND hWnd, LPARAM lParam)
@@ -3213,22 +3064,9 @@ bool MsCheckLogon(wchar_t *username, char *password)
 
 	StrToUni(password_unicode, sizeof(password_unicode), password);
 
-	if (GET_KETA(GetOsInfo()->OsType, 100) >= 2)
+	if (LogonUserW(username, NULL, password_unicode, LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT, &h) == false)
 	{
-		if (LogonUserW(username, NULL, password_unicode, LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT, &h) == false)
-		{
-			return false;
-		}
-	}
-	else
-	{
-		char username_ansi[MAX_SIZE];
-		UniToStr(username_ansi, sizeof(username_ansi), username);
-
-		if (LogonUserA(username_ansi, NULL, password, LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT, &h) == false)
-		{
-			return false;
-		}
+		return false;
 	}
 
 	CloseHandle(h);
@@ -3263,7 +3101,9 @@ bool MsEnablePrivilege(char *name, bool enable)
 	tp->Privileges[0].Attributes = enable ? SE_PRIVILEGE_ENABLED : 0;
 	Copy(&tp->Privileges[0].Luid, &luid, sizeof(LUID));
 
-	ret = AdjustTokenPrivileges(hToken, false, tp, sizeof(TOKEN_PRIVILEGES), 0, 0);
+	// AdjustTokenPrivileges also succeeds when the token does not hold the privilege; it then sets
+	// ERROR_NOT_ALL_ASSIGNED
+	ret = AdjustTokenPrivileges(hToken, false, tp, sizeof(TOKEN_PRIVILEGES), 0, 0) && GetLastError() == ERROR_SUCCESS;
 
 	Free(tp);
 	CloseHandle(hToken);
@@ -4047,42 +3887,29 @@ static void MsGetSpecialDirs()
 	ms->LocalAppDataDirW = MsGetSpecialDirW(CSIDL_LOCAL_APPDATA);
 }
 
+// True when the process token is elevated: an elevated administrator or LocalSystem, not a standard
+// user or an administrator filtered by UAC. Reads the token only; writes nothing.
 static bool MsCheckIsAdmin()
 {
-	UCHAR test_bit[32];
-	UCHAR tmp[32];
-	UCHAR exe_hash[SHA1_SIZE];
-	char *name_tag = "Vpn_Check_Admin_Key_%u";
-	DWORD type;
-	DWORD size;
-	char name[MAX_SIZE];
+	HANDLE token;
+	TOKEN_ELEVATION elevation;
+	DWORD size = 0;
+	bool ret = false;
 
-	Sha1(exe_hash, MsGetExeFileNameW(), UniStrLen(MsGetExeFileNameW()));
-
-	Format(name, sizeof(name), name_tag, *((UINT *)exe_hash));
-
-	Rand(test_bit, sizeof(test_bit));
-
-	if (RegSetValueEx(HKEY_LOCAL_MACHINE, name, 0, REG_BINARY, test_bit, sizeof(test_bit)) != ERROR_SUCCESS)
+	if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token) == false)
 	{
 		return false;
 	}
 
-	size = sizeof(tmp);
-	if (RegQueryValueEx(HKEY_LOCAL_MACHINE, name, 0, &type, tmp, &size) != ERROR_SUCCESS)
+	Zero(&elevation, sizeof(elevation));
+	if (GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size))
 	{
-		RegDeleteValue(HKEY_LOCAL_MACHINE, name);
-		return false;
+		ret = (elevation.TokenIsElevated != 0);
 	}
 
-	RegDeleteValue(HKEY_LOCAL_MACHINE, name);
+	CloseHandle(token);
 
-	if (Cmp(test_bit, tmp, 32) != 0)
-	{
-		return false;
-	}
-
-	return true;
+	return ret;
 }
 
 void MsInit()
@@ -4187,56 +4014,6 @@ void MsInit()
 
 	MsSetEnableMinidump(true);
 	SetUnhandledExceptionFilter(MsExceptionHandler);
-
-	hLsa = NULL;
-
-	MsEnablePrivilege(SE_TCB_NAME, true);
-
-	HANDLE h = NULL;
-	NTSTATUS ret = LsaConnectUntrusted(&h);
-
-	if (ret == 0)
-	{
-		LSA_STRING pkg_name;
-		ULONG ul = 0;
-
-		Zero(&pkg_name, sizeof(pkg_name));
-		pkg_name.Buffer = MSV1_0_PACKAGE_NAME;
-		pkg_name.Length = pkg_name.MaximumLength = StrLen(MSV1_0_PACKAGE_NAME);
-
-		ret = LsaLookupAuthenticationPackage(h, &pkg_name, &ul);
-
-		if (ret == 0)
-		{
-			Zero(&lsa_token_source, sizeof(lsa_token_source));
-
-			AllocateLocallyUniqueId(&lsa_token_source.SourceIdentifier);
-			Copy(lsa_token_source.SourceName, "SE-VPN  ", 8);
-
-			hLsa = h;
-		}
-		else
-		{
-			LsaDeregisterLogonProcess(h);
-		}
-	}
-
-	if (hMsi == NULL)
-	{
-		hMsi = LoadLibrary("msi.dll");
-
-		if (hMsi != NULL)
-		{
-			_MsiConfigureProductW =
-				(UINT (__stdcall *)(LPCWSTR,int,INSTALLSTATE)) GetProcAddress(hMsi, "MsiConfigureProductW");
-			_MsiGetProductInfoW =
-				(UINT (__stdcall *)(LPCWSTR,LPCWSTR,LPWSTR,LPDWORD)) GetProcAddress(hMsi, "MsiGetProductInfoW");
-			_MsiSetInternalUI =
-				(INSTALLUILEVEL (__stdcall *)(INSTALLUILEVEL,HWND *)) GetProcAddress(hMsi, "MsiSetInternalUI");
-			_MsiLocateComponentW =
-				(INSTALLSTATE (__stdcall *)(LPCWSTR,LPWSTR,LPDWORD)) GetProcAddress(hMsi, "MsiLocateComponentW");
-		}
-	}
 }
 
 void MsSetEnableMinidump(bool enabled)
@@ -4313,13 +4090,6 @@ void MsFree()
 	if (ms == NULL)
 	{
 		return;
-	}
-
-	if (hLsa != NULL)
-	{
-		LsaDeregisterLogonProcess(hLsa);
-
-		hLsa = NULL;
 	}
 
 	MsFreeAdapterListModule();
