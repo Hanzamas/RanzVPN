@@ -4,7 +4,7 @@
 // Every test runs the in-process server of the harness (HarnessOpenServer: TCP 39555, a fresh configuration, the hub
 // LOGIN_HUB with the password user LOGIN_USER) and talks to it through the raw-pack client of harness_pack.c, which
 // sends Packs that the client code never builds.
-// - "authtype" (FND-26): a login with authtype 96, the former AUTHTYPE_EXTERNAL of the removed IPC client, passed
+// - "authtype" (FND-26): a login with authtype 96, the former external authentication of the removed IPC client, passed
 //   without a credential as any existing user. It must get ERR_AUTHTYPE_NOT_SUPPORTED and create no session, like
 //   any other unknown authtype; authtypes 0 to 2 keep their results.
 // A test prints "<NAME> TEST OK" only when every check passes.
@@ -28,7 +28,7 @@
 #define	LOGIN_HUB					"HARNESS_LOGIN"		// Hub of the login tests
 #define	LOGIN_USER					"tester_login"		// Password user of LOGIN_HUB, password HARNESS_PASSWORD
 #define	LOGIN_WRONG_PASSWORD		"Harness-Pass-2"	// Not the password of LOGIN_USER
-#define	LOGIN_AUTHTYPE_EXTERNAL		96					// Former AUTHTYPE_EXTERNAL, sent only by the removed IPC client
+#define	LOGIN_AUTHTYPE_96			96					// Former external authentication, sent only by the removed IPC client
 #define	LOGIN_AUTHTYPE_UNKNOWN		97					// An authtype that never existed
 #define	LOGIN_WATCHDOG_LIMIT		120000				// A login test process is aborted after this (ms)
 #define	LOGIN_SESSION_TIMEOUT		10000				// The session of a login ends this soon after its client left (ms)
@@ -169,12 +169,12 @@ void authtype_test(UINT num, char **arg)
 	{
 		Print("[unsupported authtypes]\n");
 		HarnessSetPhase("authtype", "96");
-		err = LoginTry(h, LOGIN_AUTHTYPE_EXTERNAL, NULL, &num_sessions);
-		LoginExpect(h, "authtype 96 (the former AUTHTYPE_EXTERNAL) without a credential: ERR_AUTHTYPE_NOT_SUPPORTED, no session",
+		err = LoginTry(h, LOGIN_AUTHTYPE_96, NULL, &num_sessions);
+		LoginExpect(h, "authtype 96 (the former external authentication) without a credential: ERR_AUTHTYPE_NOT_SUPPORTED, no session",
 			err, ERR_AUTHTYPE_NOT_SUPPORTED, num_sessions, 0);
 
 		HarnessSetPhase("authtype", "96 with the password");
-		err = LoginTry(h, LOGIN_AUTHTYPE_EXTERNAL, HARNESS_PASSWORD, &num_sessions);
+		err = LoginTry(h, LOGIN_AUTHTYPE_96, HARNESS_PASSWORD, &num_sessions);
 		LoginExpect(h, "authtype 96 with the secure password of the user: ERR_AUTHTYPE_NOT_SUPPORTED, no session",
 			err, ERR_AUTHTYPE_NOT_SUPPORTED, num_sessions, 0);
 

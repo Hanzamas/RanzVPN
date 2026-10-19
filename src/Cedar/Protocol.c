@@ -1074,9 +1074,6 @@ bool ServerAccept(CONNECTION *c)
 				case CLIENT_AUTHTYPE_CERT:
 					authtype_str = _UU("LH_AUTH_CERT");
 					break;
-				case AUTHTYPE_EXTERNAL:
-					authtype_str = _UU("LH_AUTH_EXTERNAL");
-					break;
 				}
 				IPToStr(ip1, sizeof(ip1), &c->FirstSock->RemoteIP);
 				IPToStr(ip2, sizeof(ip2), &c->FirstSock->LocalIP);
@@ -1098,10 +1095,6 @@ bool ServerAccept(CONNECTION *c)
 				switch (authtype)
 				{
 				case CLIENT_AUTHTYPE_ANONYMOUS:
-					break;
-
-				case AUTHTYPE_EXTERNAL:
-					auth_ret = true;
 					break;
 
 				case CLIENT_AUTHTYPE_PASSWORD:

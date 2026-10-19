@@ -910,7 +910,6 @@ LH_AUTH_ANONYMOUS		Otentikasi anonim
 LH_AUTH_PASSWORD		Otentikasi kata sandi
 LH_AUTH_PLAIN_PASSWORD	Otentikasi server eksternal
 LH_AUTH_CERT			Otentikasi sertifikat
-LH_AUTH_EXTERNAL		Otentikasi server eksternal
 LH_AUTH_CERT_NOT_SUPPORT_ON_OPEN_SOURCE	Koneksi "%S": Metode otentikasi pengguna "%S" telah ditentukan sebagai Otentikasi Sertifikat. Namun, fungsi Otentikasi Sertifikat belum diimplementasikan pada versi Open-Source dari Ranz VPN. Koneksi akan ditolak.
 LH_AUTH_OK				Koneksi "%S": Berhasil diautentikasi sebagai pengguna "%S".
 LH_AUTH_OK_CERT			Manajer Akun Keamanan Virtual Hub telah menerima sertifikat berikut dari VPN Client dan menerima isinya sebagai sertifikat untuk login pengguna "%S": %s
