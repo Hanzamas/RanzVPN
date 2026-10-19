@@ -783,63 +783,6 @@ X_SERIAL *NewXSerial(void *data, UINT size)
 	return serial;
 }
 
-static UINT GetDaysUntil2038()
-{
-	UINT64 now = SystemTime64();
-	UINT64 target;
-	SYSTEMTIME st;
-
-	Zero(&st, sizeof(st));
-	st.wYear = 2038;
-	st.wMonth = 1;
-	st.wDay = 1;
-
-	target = SystemToUINT64(&st);
-
-	if (now >= target)
-	{
-		return 0;
-	}
-	else
-	{
-		return (UINT)((target - now) / (UINT64)(1000 * 60 * 60 * 24));
-	}
-}
-UINT GetDaysUntil2038Ex()
-{
-	SYSTEMTIME now;
-
-	Zero(&now, sizeof(now));
-	SystemTime(&now);
-
-	if (now.wYear >= 2030)
-	{
-		UINT64 now = SystemTime64();
-		UINT64 target;
-		SYSTEMTIME st;
-
-		Zero(&st, sizeof(st));
-		st.wYear = 2049;
-		st.wMonth = 12;
-		st.wDay = 30;
-
-		target = SystemToUINT64(&st);
-
-		if (now >= target)
-		{
-			return 0;
-		}
-		else
-		{
-			return (UINT)((target - now) / (UINT64)(1000 * 60 * 60 * 24));
-		}
-	}
-	else
-	{
-		return GetDaysUntil2038();
-	}
-}
-
 X *NewX(K *pub, K *priv, X *ca, NAME *name, UINT days, X_SERIAL *serial)
 {
 	X509 *x509;
@@ -1391,47 +1334,35 @@ static void LoadXDates(X *x)
 	x->notAfter = Asn1TimeToUINT64((ASN1_TIME *)X509_get0_notAfter(x->x509));
 }
 
+// Writes the system time t into asn1_time. OpenSSL picks the form RFC 5280 section 4.1.2.5 asks for:
+// UTCTime for 1950 to 2049, GeneralizedTime (4-digit year) from 2050, so a later time does not wrap
 bool UINT64ToAsn1Time(void *asn1_time, UINT64 t)
 {
 	SYSTEMTIME st;
+	struct tm tm;
+	time_64t sec;
 	if (asn1_time == NULL)
 	{
 		return false;
 	}
 
 	UINT64ToSystem(&st, t);
-	return SystemToAsn1Time(asn1_time, &st);
-}
 
-bool SystemToAsn1Time(void *asn1_time, SYSTEMTIME *s)
-{
-	char tmp[20];
-	ASN1_TIME *t;
-	if (asn1_time == NULL || s == NULL)
+	Zero(&tm, sizeof(tm));
+	tm.tm_year = st.wYear - 1900;
+	tm.tm_mon = st.wMonth - 1;
+	tm.tm_mday = st.wDay;
+	tm.tm_hour = st.wHour;
+	tm.tm_min = st.wMinute;
+	tm.tm_sec = st.wSecond;
+
+	sec = TmToTime(&tm);
+	if (sec <= 0)
 	{
 		return false;
 	}
 
-	if (SystemToStr(tmp, sizeof(tmp), s) == false)
-	{
-		return false;
-	}
-	t = (ASN1_TIME *)asn1_time;
-	return ASN1_TIME_set_string(t, tmp) != 0;
-}
-
-bool SystemToStr(char *str, UINT size, SYSTEMTIME *s)
-{
-	if (str == NULL || s == NULL)
-	{
-		return false;
-	}
-
-	Format(str, size, "%02u%02u%02u%02u%02u%02uZ",
-		s->wYear % 100, s->wMonth, s->wDay,
-		s->wHour, s->wMinute, s->wSecond);
-
-	return true;
+	return ASN1_TIME_set((ASN1_TIME *)asn1_time, (time_t)sec) != NULL;
 }
 
 UINT64 Asn1TimeToUINT64(void *asn1_time)
@@ -1451,87 +1382,28 @@ UINT64 Asn1TimeToUINT64(void *asn1_time)
 
 bool Asn1TimeToSystem(SYSTEMTIME *s, void *asn1_time)
 {
-	ASN1_TIME *t;
-	char tmp[32];
-	int len;
-	const char *src;
+	struct tm tm;
 	if (s == NULL || asn1_time == NULL)
 	{
 		return false;
 	}
 
-	t = (ASN1_TIME *)asn1_time;
-	len = ASN1_STRING_length((const ASN1_STRING *)t);
-	src = (const char *)ASN1_STRING_get0_data((const ASN1_STRING *)t);
-
-	if (src == NULL || len <= 0 || len >= (int)sizeof(tmp))
+	// UTCTime and GeneralizedTime in a certificate are both UTC ("Z", RFC 5280 section 4.1.2.5):
+	// ASN1_TIME_to_tm reads either form as UTC, so neither is moved by the local time zone
+	Zero(&tm, sizeof(tm));
+	if (ASN1_TIME_to_tm((const ASN1_TIME *)asn1_time, &tm) != 1)
 	{
 		return false;
 	}
 
-	Copy(tmp, src, len);
-	tmp[len] = '\0';
-
-	// UTCTime and GeneralizedTime in a certificate are both UTC ("Z", RFC 5280 section 4.1.2.5),
-	// so neither form is moved by the local time zone
-	return StrToSystem(s, tmp);
-}
-
-bool StrToSystem(SYSTEMTIME *s, char *str)
-{
-	char century[3] = {0, 0, 0};
-	bool fourdigityear = false;
-
-	if (s == NULL || str == NULL)
-	{
-		return false;
-	}
-	if (StrLen(str) != 13)
-	{
-		if (StrLen(str) != 15)
-		{
-			return false;
-		}
-
-		// A 4-digit year: keep the first two digits and parse the rest as a 2-digit year
-		fourdigityear = true;
-		century[0] = str[0];
-		century[1] = str[1];
-		str += 2;
-	}
-	if (str[12] != 'Z')
-	{
-		return false;
-	}
-
-	{
-		char year[3] = {str[0], str[1], 0},
-			month[3] = {str[2], str[3], 0},
-			day[3] = {str[4], str[5], 0},
-			hour[3] = {str[6], str[7], 0},
-			minute[3] = {str[8], str[9], 0},
-			second[3] = {str[10], str[11], 0};
-		Zero(s, sizeof(SYSTEMTIME));
-		s->wYear = ToInt(year);
-		if (fourdigityear)
-		{
-			s->wYear += ToInt(century) * 100;
-		}
-		else if (s->wYear >= 60)
-		{
-			s->wYear += 1900;
-		}
-		else
-		{
-			s->wYear += 2000;
-		}
-		s->wMonth = ToInt(month);
-		s->wDay = ToInt(day);
-		s->wHour = ToInt(hour);
-		s->wMinute = ToInt(minute);
-		s->wSecond = ToInt(second);
-		NormalizeSystem(s);
-	}
+	Zero(s, sizeof(SYSTEMTIME));
+	s->wYear = (USHORT)(tm.tm_year + 1900);
+	s->wMonth = (USHORT)(tm.tm_mon + 1);
+	s->wDay = (USHORT)tm.tm_mday;
+	s->wHour = (USHORT)tm.tm_hour;
+	s->wMinute = (USHORT)tm.tm_min;
+	s->wSecond = (USHORT)tm.tm_sec;
+	NormalizeSystem(s);
 
 	return true;
 }
