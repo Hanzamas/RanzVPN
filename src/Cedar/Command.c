@@ -8425,10 +8425,52 @@ static bool CmdEvalProtocol(CONSOLE *c, wchar_t *str, void *param)
 	return true;
 }
 
+// Value of str when it is only decimal digits (no sign, no space) and at most max
+static bool StrToUIntStrict(char *str, UINT max, UINT *value)
+{
+	UINT v = 0;
+	UINT i;
+
+	if (str == NULL || str[0] == 0)
+	{
+		return false;
+	}
+
+	for (i = 0;str[i] != 0;i++)
+	{
+		UINT d;
+
+		if (str[i] < '0' || str[i] > '9')
+		{
+			return false;
+		}
+
+		d = (UINT)(str[i] - '0');
+
+		// v * 10 + d must not pass max (nor wrap)
+		if (d > max || v > (max - d) / 10)
+		{
+			return false;
+		}
+
+		v = v * 10 + d;
+	}
+
+	*value = v;
+
+	return true;
+}
+
+// Port range of an access list rule: empty text is every port (0-0); otherwise one port or two joined by a
+// hyphen, spaces around each allowed, each 1 to 65535 and the first not above the second. Anything else (a
+// service name, a list, a sign, a third number) is refused instead of being stored as another range.
 static bool ParsePortRange(char *str, UINT *start, UINT *end)
 {
 	UINT a = 0, b = 0;
-	TOKEN_LIST *t;
+	char *tmp;
+	UINT pos;
+	bool ok;
+
 	if (str == NULL)
 	{
 		return false;
@@ -8436,32 +8478,28 @@ static bool ParsePortRange(char *str, UINT *start, UINT *end)
 
 	if (IsEmptyStr(str) == false)
 	{
+		tmp = CopyStr(str);
 
-		t = ParseToken(str, "\t -");
-
-		if (t->NumTokens == 1)
+		pos = SearchStr(tmp, "-", 0);
+		if (pos == INFINITE)
 		{
-			a = b = ToInt(t->Token[0]);
+			Trim(tmp);
+			ok = StrToUIntStrict(tmp, 65535, &a);
+			b = a;
 		}
-		else if (t->NumTokens == 2)
+		else
 		{
-			a = ToInt(t->Token[0]);
-			b = ToInt(t->Token[1]);
-		}
+			char *second = tmp + pos + 1;
 
-		FreeToken(t);
-
-		if (a > b)
-		{
-			return false;
-		}
-
-		if (a >= 65536 || b >= 65536)
-		{
-			return false;
+			tmp[pos] = 0;
+			Trim(tmp);
+			Trim(second);
+			ok = StrToUIntStrict(tmp, 65535, &a) && StrToUIntStrict(second, 65535, &b);
 		}
 
-		if (a == 0 && b != 0)
+		Free(tmp);
+
+		if (ok == false || a == 0 || a > b)
 		{
 			return false;
 		}
@@ -8481,15 +8519,19 @@ static bool ParsePortRange(char *str, UINT *start, UINT *end)
 
 static bool CmdEvalPortRange(CONSOLE *c, wchar_t *str, void *param)
 {
-	char tmp[64];
+	char *tmp;
+	bool ok;
 	if (c == NULL || str == NULL)
 	{
 		return false;
 	}
 
-	UniToStr(tmp, sizeof(tmp), str);
+	// The whole text: the AccessAdd commands parse it again from the parameter
+	tmp = CopyUniToStr(str);
+	ok = ParsePortRange(tmp, NULL, NULL);
+	Free(tmp);
 
-	if (ParsePortRange(tmp, NULL, NULL) == false)
+	if (ok == false)
 	{
 		c->Write(c, _UU("CMD_PORT_RANGE_EVAL_FAILED"));
 		return false;
