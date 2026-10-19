@@ -10,6 +10,10 @@
 #include "Object.h"
 #include "Str.h"
 
+// Folders nest at most this deep. The text and binary readers recurse once per level, so a deeper
+// file is rejected instead of running the stack out
+#define	CFG_MAX_DEPTH				64
+
 static void BackupCfgWEx(CFG_RW *rw, FOLDER *f, wchar_t *original, UINT revision_number)
 {
 	wchar_t dirname[MAX_PATH];
@@ -356,7 +360,7 @@ FOLDER *CfgReadW(wchar_t *name)
 	BUF *b;
 	IO *o;
 	UINT size;
-	void *buf;
+	bool read_ok;
 	FOLDER *f;
 	bool delete_new = false;
 	bool binary_file = false;
@@ -421,25 +425,36 @@ FOLDER *CfgReadW(wchar_t *name)
 	{
 		size -= 1;
 	}
-	buf = Malloc(size);
-	FileRead(o, buf, size);
+	// Read straight into the BUF; a failed read loads nothing, as a missing file does
 	b = NewBuf();
-	WriteBuf(b, buf, size);
-	SeekBuf(b, 0, 0);
+	AdjustBufSize(b, size);
+	read_ok = (size == 0 || FileRead(o, b->Buf, size));
+	b->Size = size;
 
 	FileClose(o);
+
+	if (read_ok == false)
+	{
+		FreeBuf(b);
+		return NULL;
+	}
 
 	if (delete_new)
 	{
 		FileDeleteW(newfile);
 	}
 
-	// A buffer starting with "SEVPN_DB" is the binary format
-	ReadBuf(b, header, sizeof(header));
-	if (Cmp(header, TAG_BINARY, 8) == 0)
+	// A buffer starting with "SEVPN_DB" is the binary format: its SHA-0 must be there and match
+	if (ReadBuf(b, header, sizeof(header)) == sizeof(header) && Cmp(header, TAG_BINARY, 8) == 0)
 	{
 		UCHAR hash1[SHA1_SIZE], hash2[SHA1_SIZE];
 		binary_file = true;
+
+		if (b->Size < 8 + SHA1_SIZE)
+		{
+			FreeBuf(b);
+			return NULL;
+		}
 
 		ReadBuf(b, hash1, sizeof(hash1));
 
@@ -452,23 +467,17 @@ FOLDER *CfgReadW(wchar_t *name)
 		}
 	}
 
-	SeekBuf(b, 0, 0);
-
 	if (binary_file)
 	{
 		SeekBuf(b, 8 + SHA1_SIZE, 0);
-	}
-
-	if (binary_file == false)
-	{
-		f = CfgBufTextToFolder(b);
+		f = CfgBufBinToFolder(b);
 	}
 	else
 	{
-		f = CfgBufBinToFolder(b);
+		SeekBuf(b, 0, 0);
+		f = CfgBufTextToFolder(b);
 	}
 
-	Free(buf);
 	FreeBuf(b);
 
 	FileDeleteW(newfile);
@@ -527,7 +536,9 @@ char *CfgReadNextLine(BUF *b)
 	return buf;
 }
 
-static bool CfgReadNextTextBUF(BUF *b, FOLDER *current)
+// Read one line of the text format into current, a folder depth levels below the top. false at
+// the end of the folder or of the data; *error set when a folder nests deeper than CFG_MAX_DEPTH
+static bool CfgReadNextTextBUF(BUF *b, FOLDER *current, UINT depth, bool *error)
 {
 	char *buf;
 	TOKEN_LIST *token;
@@ -537,7 +548,7 @@ static bool CfgReadNextTextBUF(BUF *b, FOLDER *current)
 	bool ret;
 	FOLDER *f;
 
-	if (b == NULL || current == NULL)
+	if (b == NULL || current == NULL || error == NULL)
 	{
 		return false;
 	}
@@ -563,19 +574,33 @@ static bool CfgReadNextTextBUF(BUF *b, FOLDER *current)
 		{
 			if (token->NumTokens >= 2)
 			{
-				name = CfgUnescape(token->Token[1]);
-
-				f = CfgCreateFolder(current, name);
-
-				while (true)
+				if (depth >= CFG_MAX_DEPTH)
 				{
-					if (CfgReadNextTextBUF(b, f) == false)
+					*error = true;
+				}
+				else
+				{
+					name = CfgUnescape(token->Token[1]);
+
+					f = CfgCreateFolder(current, name);
+
+					while (true)
 					{
-						break;
+						if (CfgReadNextTextBUF(b, f, depth + 1, error) == false)
+						{
+							break;
+						}
 					}
+
+					Free(name);
 				}
 
-				Free(name);
+				if (*error)
+				{
+					FreeToken(token);
+					Free(buf);
+					return false;
+				}
 			}
 		}
 		if (!StrCmpi(token->Token[0], "}"))
@@ -653,6 +678,7 @@ static bool CfgReadNextTextBUF(BUF *b, FOLDER *current)
 FOLDER *CfgBufTextToFolder(BUF *b)
 {
 	FOLDER *f, *c;
+	bool error = false;
 	if (b == NULL)
 	{
 		return NULL;
@@ -662,10 +688,16 @@ FOLDER *CfgBufTextToFolder(BUF *b)
 
 	while (true)
 	{
-		if (CfgReadNextTextBUF(b, c) == false)
+		if (CfgReadNextTextBUF(b, c, 0, &error) == false)
 		{
 			break;
 		}
+	}
+
+	if (error)
+	{
+		CfgDeleteFolder(c);
+		return NULL;
 	}
 
 	f = CfgFindFolder(c, TAG_ROOT);
@@ -714,10 +746,11 @@ static bool CfgReadBinCount(BUF *b, UINT *count)
 	return (*count <= ReadBufRemainSize(b) / CFG_BIN_MIN_ENTRY_SIZE);
 }
 
-// Read one folder of the binary format into parent. Every count and size is checked against the
-// bytes left before it is used: false on a short or malformed input, which leaves a partial tree
-// under parent for the caller to delete
-static bool CfgReadNextFolderBin(BUF *b, FOLDER *parent)
+// Read one folder of the binary format into parent, a folder depth levels below the top. Every
+// count and size is checked against the bytes left before it is used: false on a short or
+// malformed input or a folder nested deeper than CFG_MAX_DEPTH, which leaves a partial tree under
+// parent for the caller to delete
+static bool CfgReadNextFolderBin(BUF *b, FOLDER *parent, UINT depth)
 {
 	char name[MAX_SIZE];
 	FOLDER *f;
@@ -726,7 +759,7 @@ static bool CfgReadNextFolderBin(BUF *b, FOLDER *parent)
 	UINT value;
 	UCHAR *buf;
 	wchar_t *string;
-	if (b == NULL || parent == NULL)
+	if (b == NULL || parent == NULL || depth >= CFG_MAX_DEPTH)
 	{
 		return false;
 	}
@@ -743,7 +776,7 @@ static bool CfgReadNextFolderBin(BUF *b, FOLDER *parent)
 	}
 	for (i = 0;i < n;i++)
 	{
-		if (CfgReadNextFolderBin(b, f) == false)
+		if (CfgReadNextFolderBin(b, f, depth + 1) == false)
 		{
 			return false;
 		}
@@ -834,7 +867,7 @@ FOLDER *CfgBufBinToFolder(BUF *b)
 
 	c = CfgCreateFolder(NULL, "tmp");
 
-	if (CfgReadNextFolderBin(b, c) == false)
+	if (CfgReadNextFolderBin(b, c, 0) == false)
 	{
 		CfgDeleteFolder(c);
 		return NULL;
