@@ -12,6 +12,9 @@
 // - Delay and jitter of the access list: Delay 10 ms with Jitter 5 % holds a frame for 10 ms and then
 //   delivers it unchanged. The old jitter span (int)(5 * 10 / 100.0f) was 0 and the modulo by it ended
 //   the process. Sampled Delay and Jitter values hold every frame within Delay +- Jitter % of Delay.
+// - D-Link spanning tree MACs (FND-22 #109): a session with CheckMac sends from a MAC the other session
+//   owns. The two D-Link MACs skip the CheckMac window only with FixForDLinkBPDU on; with it off the owner
+//   stays. The old test lacked parentheses, so 00:0d:88:00:00:00 moved without the option.
 // Prints "STOREPACKET TEST OK" only when every check passes, and frees everything it allocates.
 
 #include "Cedar/Account.h"
@@ -47,6 +50,7 @@
 #define	STOREPACKET_TEST_DELIVER_MARGIN	50		// Milliseconds waited past that delay
 #define	STOREPACKET_TEST_SAMPLE_DELAY	99		// Sampled delays 1 .. this, each with every jitter
 #define	STOREPACKET_TEST_LARGE_REPEAT	20		// Frames per large Delay and Jitter pair
+#define	STOREPACKET_TEST_DLINK_SEQ		0xD11C0000	// First sequence number of the D-Link MAC frames
 
 // Run state of the test
 typedef struct STOREPACKET_TEST
@@ -62,6 +66,11 @@ typedef struct STOREPACKET_TEST
 
 static UCHAR storepacket_test_mac_sender[6] = {0x02, 0x42, 0x55, 0x52, 0x00, 0x5A};
 static UCHAR storepacket_test_mac_broadcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+static UCHAR storepacket_test_mac_dlink[2][6] =		// Source MACs of D-Link spanning tree frames
+{
+	{0x00, 0x80, 0xC8, 0x00, 0x00, 0x00},
+	{0x00, 0x0D, 0x88, 0x00, 0x00, 0x00},
+};
 
 // Record one check: print [PASS], or [FAIL] with the formatted detail
 static bool StorePacketTestCheck(STOREPACKET_TEST *t, bool ok, char *what, char *detail_fmt, ...)
@@ -527,6 +536,118 @@ static void StorePacketTestDelaySampled(STOREPACKET_TEST *t)
 	StorePacketTestCheck(t, num_fail == 0, what, "%u out of range, first: %s", num_fail, first_fail);
 }
 
+// Hand one frame to the hub from session s and end its receive loop, as its SessionMain would
+static void StorePacketTestSendFrom(SESSION *s, UCHAR *frame, UINT size)
+{
+	void *data = Malloc(size);
+
+	Copy(data, frame, size);
+	s->PacketAdapter->PutPacket(s, data, size);
+	s->PacketAdapter->PutPacket(s, NULL, 0);
+}
+
+// Free the frames the hub queued for session s. Returns their number
+static UINT StorePacketTestDrainFrom(SESSION *s)
+{
+	void *data;
+	UINT num = 0;
+
+	while (s->PacketAdapter->GetNextPacket(s, &data) != 0)
+	{
+		Free(data);
+		num++;
+	}
+
+	return num;
+}
+
+// Session that owns mac (VLAN 0) in the MAC table of the test hub, NULL when no session does
+static SESSION *StorePacketTestMacOwner(STOREPACKET_TEST *t, UCHAR *mac)
+{
+	MAC_TABLE_ENTRY key;
+	MAC_TABLE_ENTRY *e;
+	SESSION *ret = NULL;
+
+	Zero(&key, sizeof(key));
+	Copy(key.MacAddress, mac, 6);
+
+	LockHashList(t->Hub->MacHashTable);
+	{
+		e = SearchHash(t->Hub->MacHashTable, &key);
+		if (e != NULL)
+		{
+			ret = e->Session;
+		}
+	}
+	UnlockHashList(t->Hub->MacHashTable);
+
+	return ret;
+}
+
+// Role of a session of the test, for the detail of a failed check
+static char *StorePacketTestRole(STOREPACKET_TEST *t, SESSION *s)
+{
+	if (s == NULL)
+	{
+		return "none";
+	}
+
+	return (s == t->Sender ? "sender" : (s == t->Receiver ? "receiver" : "other"));
+}
+
+// D-Link spanning tree MACs: the sender takes the MAC, then the receiver (CheckMac on) sends from it at once.
+// Only FixForDLinkBPDU lets such a frame through the CheckMac window, and then the receiver takes the MAC.
+// Without the option the sender keeps it; the old test moved 00:0d:88:00:00:00 to the receiver anyway
+static void StorePacketTestDLinkMac(STOREPACKET_TEST *t)
+{
+	UCHAR frame[STOREPACKET_TEST_FRAME_MAX];
+	bool old_check_mac = t->Receiver->Policy->CheckMac;
+	UINT seq = STOREPACKET_TEST_DLINK_SEQ;
+	UINT fix, i;
+
+	t->Receiver->Policy->CheckMac = true;
+
+	// The option off first: with it on, StorePacketToHubPa records the D-Link frames the receiver gets
+	for (fix = 0;fix < 2;fix++)
+	{
+		t->Hub->Option->FixForDLinkBPDU = (fix != 0);
+
+		for (i = 0;i < sizeof(storepacket_test_mac_dlink) / sizeof(storepacket_test_mac_dlink[0]);i++)
+		{
+			UCHAR *mac = storepacket_test_mac_dlink[i];
+			SESSION *expected = (fix != 0 ? t->Receiver : t->Sender);
+			SESSION *first, *second;
+			char mac_str[MAX_SIZE];
+			char what[MAX_SIZE];
+			UINT size;
+
+			// Each frame differs from the one before: the D-Link guard drops a repeat within 750 ms
+			size = StorePacketTestRawFrame(frame, seq++);
+			Copy(frame + 6, mac, 6);
+			StorePacketTestSendFrom(t->Sender, frame, size);
+			first = StorePacketTestMacOwner(t, mac);
+
+			size = StorePacketTestRawFrame(frame, seq++);
+			Copy(frame + 6, mac, 6);
+			StorePacketTestSendFrom(t->Receiver, frame, size);
+			second = StorePacketTestMacOwner(t, mac);
+
+			StorePacketTestDrainFrom(t->Sender);
+			StorePacketTestDrainFrom(t->Receiver);
+
+			MacToStr(mac_str, sizeof(mac_str), mac);
+			Format(what, sizeof(what), "D-Link MAC %s with FixForDLinkBPDU %s: a frame of the CheckMac session %s",
+				mac_str, (fix != 0 ? "on" : "off"), (fix != 0 ? "takes the MAC" : "leaves the MAC to its owner"));
+			StorePacketTestCheck(t, first == t->Sender && second == expected, what,
+				"owner %s after the sender's frame, %s after the receiver's frame", StorePacketTestRole(t, first),
+				StorePacketTestRole(t, second));
+		}
+	}
+
+	t->Hub->Option->FixForDLinkBPDU = false;
+	t->Receiver->Policy->CheckMac = old_check_mac;
+}
+
 // storepacket: bounded broadcast storm list, access list delay and jitter without a divide by zero
 void storepacket_test(UINT num, char **arg)
 {
@@ -559,6 +680,9 @@ void storepacket_test(UINT num, char **arg)
 	StorePacketTestCheck(&t, StorePacketTestStormNum(&t) == MAX_STORM_LIST_ENTRIES,
 		"storm: a new flow at the cap takes the place of the oldest one", "%u entries, cap %u",
 		StorePacketTestStormNum(&t), MAX_STORM_LIST_ENTRIES);
+
+	// Before the access list entry of the delay cases, which would hold these frames back
+	StorePacketTestDLinkMac(&t);
 
 	Zero(&a, sizeof(a));
 	a.Active = true;
