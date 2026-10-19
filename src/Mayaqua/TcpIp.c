@@ -92,8 +92,6 @@ bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address)
 		return false;
 	}
 	udp = (UDP_HEADER *)data;
-	data += sizeof(UDP_HEADER);
-	size -= sizeof(UDP_HEADER);
 
 	if (is_send)
 	{
@@ -175,7 +173,6 @@ UINT GetIpHeaderSize(UCHAR *src, UINT src_size)
 {
 	UCHAR ip_ver;
 	IPV4_HEADER *ip = NULL;
-	IPV6_HEADER *ip6 = NULL;
 	if (src == NULL || src_size == 0)
 	{
 		return 0;
@@ -215,8 +212,7 @@ UINT GetIpHeaderSize(UCHAR *src, UINT src_size)
 			return 0;
 		}
 
-		ip6 = v6.IPv6Header;
-		if (ip6 == NULL)
+		if (v6.IPv6Header == NULL)
 		{
 			return 0;
 		}
@@ -1863,9 +1859,7 @@ bool ParsePacketTAGVLAN(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4
 	p->VlanId = vlan_ushort;
 
 	proto_ushort = READ_USHORT(p->L3.TagVlanHeader->Protocol);
-	proto_ushort = proto_ushort & 0xFFFF;
 
-	
 	return ParsePacketL3(p, buf, size, proto_ushort, no_l3, no_l3_l4_except_icmpv6);
 }
 
@@ -1884,9 +1878,6 @@ bool ParsePacketBPDU(PKT *p, UCHAR *buf, UINT size)
 	p->L3.BpduHeader = (BPDU_HEADER *)buf;
 	p->TypeL3 = L3_BPDU;
 
-	buf += sizeof(BPDU_HEADER);
-	size -= sizeof(BPDU_HEADER);
-
 	return true;
 }
 
@@ -1904,9 +1895,6 @@ bool ParsePacketARPv4(PKT *p, UCHAR *buf, UINT size)
 
 	p->L3.ARPv4Header = (ARPV4_HEADER *)buf;
 	p->TypeL3 = L3_ARPV4;
-
-	buf += sizeof(ARPV4_HEADER);
-	size -= sizeof(ARPV4_HEADER);
 
 	return true;
 }
@@ -2110,18 +2098,12 @@ static bool ParseICMPv6Options(ICMPV6_OPTION_LIST *o, UCHAR *buf, UINT size)
 					}
 				}
 			}
-			else
-			{
-			}
 			break;
 
 		case ICMPV6_OPTION_TYPE_MTU:
 			if (header_total_size >= sizeof(ICMPV6_OPTION_MTU))
 			{
 				o->Mtu = (ICMPV6_OPTION_MTU *)header_pointer;
-			}
-			else
-			{
 			}
 			break;
 		}
@@ -2353,8 +2335,6 @@ bool ParsePacketIPv6(PKT *p, UCHAR *buf, UINT size, bool no_l3_l4_except_icmpv6)
 	default:
 		return true;
 	}
-
-	return true;
 }
 
 bool ParsePacketIPv4(PKT *p, UCHAR *buf, UINT size)
@@ -2427,9 +2407,6 @@ bool ParseICMPv4(PKT *p, UCHAR *buf, UINT size)
 
 	p->L4.ICMPHeader = (ICMP_HEADER *)buf;
 	p->TypeL4 = L4_ICMPV4;
-
-	buf += sizeof(ICMP_HEADER);
-	size -= sizeof(ICMP_HEADER);
 
 	return true;
 }

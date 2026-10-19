@@ -104,7 +104,7 @@ void UdpAccelSetTick(UDP_ACCEL *a, UINT64 tick64);
 BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip, UINT src_port);
 void UdpAccelCalcKeyV1(UCHAR *key, UCHAR *common_key, UCHAR *iv);
 bool UdpAccelIsSendReady(UDP_ACCEL *a, bool check_keepalive);
-void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT max_size, bool high_priority);
+void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT max_size);
 void UdpAccelSendBlock(UDP_ACCEL *a, BLOCK *b);
 UINT UdpAccelCalcMss(UDP_ACCEL *a);
 void UdpAccelQueryStun(UDP_ACCEL *a, IP *peer_ip);

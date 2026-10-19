@@ -137,7 +137,6 @@ struct SOCK
 	bool IsRawSocket;
 	const char *SslVersion;
 	UINT RawSocketIPProtocol;
-	int CurrentTos;
 	char UnderlayProtocol[64];
 	char ProtocolDetails[256];
 	UCHAR Ssl_Init_Async_SendAlert[2];
@@ -342,7 +341,6 @@ void IntToSubnetMask4(IP *ip, UINT i);
 bool GetNetBiosName(char *name, UINT size, IP *ip);
 bool IsIPv6Supported();
 bool HasIPv6Address();
-void SetSockHighPriority(SOCK *s, bool flag);
 int CompareIpClientList(void *p1, void *p2);
 IP_CLIENT *SearchIpClient(IP *ip);
 UINT GetNumIpClient(IP *ip);

@@ -144,7 +144,6 @@ UINT BindProxyHttpConnect(PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, volatile boo
 	h = RecvHttpHeader(s);
 	if (h == NULL)
 	{
-		FreeHttpHeader(h);
 		ret = PROXY_ERROR_GENERIC;
 		goto FAILURE;
 	}

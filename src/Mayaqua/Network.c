@@ -4355,35 +4355,6 @@ static int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeou
 	}
 }
 
-static void SetSockTos(SOCK *s, int tos)
-{
-	if (s == NULL)
-	{
-		return;
-	}
-
-	if (s->CurrentTos == tos)
-	{
-		return;
-	}
-
-#ifdef	IP_TOS
-	(void)setsockopt(s->socket, IPPROTO_IP, IP_TOS, (char *)&tos, sizeof(int));
-#endif
-
-	s->CurrentTos = tos;
-}
-
-void SetSockHighPriority(SOCK *s, bool flag)
-{
-	if (s == NULL)
-	{
-		return;
-	}
-
-	SetSockTos(s, (flag ? 16 : 0));
-}
-
 static int bind_sock(SOCKET sock, IP *ip, UINT port)
 {
 

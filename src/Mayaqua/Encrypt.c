@@ -2781,17 +2781,7 @@ X *X509ToX(X509 *x509)
 
 	if (type == EVP_PKEY_RSA)
 	{
-		x->is_compatible_bit = true;
-
-		if(x->bits != 1024 && x->bits != 1536 && x->bits != 2048 && x->bits != 3072 && x->bits != 4096)
-		{
-			x->is_compatible_bit = false;
-		}
-		else
-		{
-			x->is_compatible_bit = true;
-		}
-		
+		x->is_compatible_bit = (x->bits == 1024 || x->bits == 1536 || x->bits == 2048 || x->bits == 3072 || x->bits == 4096);
 	}
 
 	return x;
@@ -2932,10 +2922,8 @@ void FreeCryptLibrary()
 
 void InitCryptLibrary()
 {
-	char tmp[16];
-
-	ossl_provider_default = OSSL_PROVIDER_load(NULL, "legacy");
-	ossl_provider_legacy = OSSL_PROVIDER_load(NULL, "default");
+	ossl_provider_legacy = OSSL_PROVIDER_load(NULL, "legacy");
+	ossl_provider_default = OSSL_PROVIDER_load(NULL, "default");
 
 	char *oqs_provider_name = "oqsprovider";
 	#ifndef SKIP_OQS_PROVIDER
@@ -2952,7 +2940,6 @@ void InitCryptLibrary()
 	// The CNG providers are opened here rather than on the first hash
 	CngInit();
 
-	Rand(tmp, sizeof(tmp));
 	OpenSSL_InitLock();
 }
 
