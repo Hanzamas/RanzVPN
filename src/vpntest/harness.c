@@ -35,6 +35,9 @@
 //   MAX_IP_TABLES lowered to HARNESS_IPTABLE_MAX. The entries left are deleted before the configuration phases.
 //   The harness does not run under AddressSanitizer (fuzz-asan leaves it out for its time budgets): the lock-held
 //   cases are the deterministic check, the stress loop runs in build_and_test.
+// - Phase "setlink" (FND-13 #107) runs after "iptablelock": SetLink on an offline cascade HARNESS_SETLINK of hub
+//   HARNESS_HUB_A refuses an unsupported authentication type and stores the cascade policy that NewLink stores. The
+//   phase deletes the cascade again.
 
 #include "harness.h"
 #include "harness_int.h"
@@ -157,6 +160,10 @@
 #define	HARNESS_IPTABLE_ROUNDS		20					// EnumIpTable and DeleteIpTable rounds of the stress loop
 #define	HARNESS_IPTABLE_SPAN		3000				// The stress loop ends after this even with rounds left (ms)
 #define	HARNESS_IPTABLE_PORT		9					// UDP destination port of the stress frames (discard)
+
+// Phase "setlink" on hub HARNESS_HUB_A (the cascade is offline and deleted again by the phase)
+#define	HARNESS_SETLINK_NAME		L"HARNESS_SETLINK"
+#define	HARNESS_SETLINK_AUTHTYPE	99					// No CLIENT_AUTHTYPE_* value
 
 // Ethernet frame owned by the test packet adapter
 typedef struct HARNESS_FRAME
@@ -457,6 +464,10 @@ static bool HarnessIpTableLockCase(HARNESS *h, HUB *hub, UINT which, UINT expect
 static void HarnessIpTableSendThread(THREAD *thread, void *param);
 static bool HarnessIpTableRound(HARNESS *h, UINT *num_listed, UINT *num_deleted, UINT *bad_err);
 static void HarnessIpTableLock(HARNESS *h);
+static UINT HarnessSetLinkGet(HARNESS *h, RPC_CREATE_LINK *t);
+static void HarnessSetLinkAuthType(HARNESS *h);
+static void HarnessSetLinkPolicy(HARNESS *h);
+static void HarnessSetLink(HARNESS *h);
 static void HarnessDeleteObjects(HARNESS *h, bool check);
 static void HarnessDeleteConfigFiles();
 static void HarnessTeardown(HARNESS *h, bool check);
@@ -3260,6 +3271,138 @@ static void HarnessIpTableLock(HARNESS *h)
 }
 
 ////////////////////////////
+// SetLink checks the authentication type and normalises the cascade policy (FND-13 #107)
+
+// GetLink of cascade HARNESS_SETLINK_NAME on hub HARNESS_HUB_A; the caller frees t after ERR_NO_ERROR
+static UINT HarnessSetLinkGet(HARNESS *h, RPC_CREATE_LINK *t)
+{
+	Zero(t, sizeof(RPC_CREATE_LINK));
+	StrCpy(t->HubName, sizeof(t->HubName), HARNESS_HUB_A);
+	t->ClientOption = ZeroMalloc(sizeof(CLIENT_OPTION));
+	UniStrCpy(t->ClientOption->AccountName, sizeof(t->ClientOption->AccountName), HARNESS_SETLINK_NAME);
+
+	return ScGetLink(h->Rpc, t);
+}
+
+// SetLinkRejectsBadAuthType: SetLink with an authentication type that NewLink refuses fails, and the cascade keeps
+// its password authentication
+static void HarnessSetLinkAuthType(HARNESS *h)
+{
+	RPC_CREATE_LINK t;
+	UINT err;
+	char tmp[MAX_SIZE];
+
+	err = HarnessSetLinkGet(h, &t);
+	if (HarnessCheckErr(h, err, "SetLinkRejectsBadAuthType: GetLink HARNESS_SETLINK") == false)
+	{
+		return;
+	}
+
+	t.ClientAuth->AuthType = HARNESS_SETLINK_AUTHTYPE;
+	err = ScSetLink(h->Rpc, &t);
+	if (err == ERR_NO_ERROR)
+	{
+		FreeRpcCreateLink(&t);
+	}
+	HarnessExpectErr(h, err, ERR_INVALID_PARAMETER, "SetLinkRejectsBadAuthType: SetLink HARNESS_SETLINK with AuthType 99");
+
+	err = HarnessSetLinkGet(h, &t);
+	if (HarnessCheckErr(h, err, "SetLinkRejectsBadAuthType: GetLink HARNESS_SETLINK after the SetLink"))
+	{
+		Format(tmp, sizeof(tmp), "SetLinkRejectsBadAuthType: GetLink still shows the password authentication of "
+			HARNESS_LINK_USER " (AuthType %u, user %s)", t.ClientAuth->AuthType, t.ClientAuth->Username);
+		HarnessCheck(h, t.ClientAuth->AuthType == CLIENT_AUTHTYPE_PASSWORD &&
+			StrCmp(t.ClientAuth->Username, HARNESS_LINK_USER) == 0, tmp);
+		FreeRpcCreateLink(&t);
+	}
+}
+
+// SetLinkNormalisesPolicy: SetLink with a policy against the cascade invariants stores the policy that NewLink
+// stores (Access, no NoBridge, MaxConnection 32, TimeOut 20)
+static void HarnessSetLinkPolicy(HARNESS *h)
+{
+	RPC_CREATE_LINK t;
+	UINT err;
+	char tmp[MAX_SIZE];
+
+	err = HarnessSetLinkGet(h, &t);
+	if (HarnessCheckErr(h, err, "SetLinkNormalisesPolicy: GetLink HARNESS_SETLINK") == false)
+	{
+		return;
+	}
+
+	t.Policy.Access = false;
+	t.Policy.NoBridge = true;
+	t.Policy.MaxConnection = 1;
+	t.Policy.TimeOut = 5;
+	err = ScSetLink(h->Rpc, &t);
+	if (err == ERR_NO_ERROR)
+	{
+		FreeRpcCreateLink(&t);
+	}
+	HarnessCheckErr(h, err, "SetLinkNormalisesPolicy: SetLink HARNESS_SETLINK with Access false, NoBridge true, "
+		"MaxConnection 1, TimeOut 5");
+
+	err = HarnessSetLinkGet(h, &t);
+	if (HarnessCheckErr(h, err, "SetLinkNormalisesPolicy: GetLink HARNESS_SETLINK after the SetLink"))
+	{
+		Format(tmp, sizeof(tmp), "SetLinkNormalisesPolicy: GetLink shows Access %u, NoBridge %u, MaxConnection %u, "
+			"TimeOut %u (expected 1, 0, 32, 20)", t.Policy.Access ? 1 : 0, t.Policy.NoBridge ? 1 : 0,
+			t.Policy.MaxConnection, t.Policy.TimeOut);
+		HarnessCheck(h, t.Policy.Access && t.Policy.NoBridge == false && t.Policy.MaxConnection == 32 &&
+			t.Policy.TimeOut == 20, tmp);
+		FreeRpcCreateLink(&t);
+	}
+}
+
+// SetLink validates the authentication type and normalises the policy as NewLink does. The checks run on an offline
+// cascade HARNESS_SETLINK of hub HARNESS_HUB_A that never connects; the phase deletes it again
+static void HarnessSetLink(HARNESS *h)
+{
+	RPC_CREATE_LINK t;
+	RPC_LINK k;
+	UINT err;
+
+	Print("[setlink: SetLink checks the authentication type and normalises the cascade policy]\n");
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
+	t.Online = false;
+	Copy(&t.Policy, GetDefaultPolicy(), sizeof(POLICY));
+
+	t.ClientOption = ZeroMalloc(sizeof(CLIENT_OPTION));
+	UniStrCpy(t.ClientOption->AccountName, sizeof(t.ClientOption->AccountName), HARNESS_SETLINK_NAME);
+	StrCpy(t.ClientOption->Hostname, sizeof(t.ClientOption->Hostname), "127.0.0.1");
+	t.ClientOption->Port = HARNESS_PORT;
+	t.ClientOption->ProxyType = PROXY_DIRECT;
+	StrCpy(t.ClientOption->HubName, sizeof(t.ClientOption->HubName), HARNESS_HUB_B);
+	t.ClientOption->MaxConnection = 1;
+
+	t.ClientAuth = ZeroMalloc(sizeof(CLIENT_AUTH));
+	t.ClientAuth->AuthType = CLIENT_AUTHTYPE_PASSWORD;
+	StrCpy(t.ClientAuth->Username, sizeof(t.ClientAuth->Username), HARNESS_LINK_USER);
+	HashPassword(t.ClientAuth->HashedPassword, HARNESS_LINK_USER, HARNESS_PASSWORD);
+
+	err = ScCreateLink(h->Rpc, &t);
+	if (err == ERR_NO_ERROR)
+	{
+		FreeRpcCreateLink(&t);
+	}
+	if (HarnessCheckErr(h, err, "CreateLink HARNESS_SETLINK on " HARNESS_HUB_A " (offline)") == false)
+	{
+		return;
+	}
+
+	HarnessSetLinkAuthType(h);
+	HarnessSetLinkPolicy(h);
+
+	Zero(&k, sizeof(k));
+	StrCpy(k.HubName, sizeof(k.HubName), HARNESS_HUB_A);
+	UniStrCpy(k.AccountName, sizeof(k.AccountName), HARNESS_SETLINK_NAME);
+	HarnessCheckErr(h, ScDeleteLink(h->Rpc, &k), "DeleteLink HARNESS_SETLINK");
+}
+
+////////////////////////////
 // Teardown
 
 // Delete the cascade, the users and the hubs through the admin RPC, then verify the hub list
@@ -5084,6 +5227,8 @@ void harness_test(UINT num, char **arg)
 		HarnessPackGolden(h);
 		HarnessSetPhase("iptablelock", NULL);
 		HarnessIpTableLock(h);
+		HarnessSetPhase("setlink", NULL);
+		HarnessSetLink(h);
 		HarnessSetPhase("config", NULL);
 		HarnessConfigApiRoundTrip(h);
 	}
