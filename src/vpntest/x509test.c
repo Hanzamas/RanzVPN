@@ -35,6 +35,13 @@
 // CA must be one. X509ToX must leave a certificate it refuses to its caller, who frees it once; the
 // old X509ToX freed it itself, so the X509_free of the test is a double free there (AddressSanitizer
 // report in the fuzz-asan smoke run). Prints "X509ROOT TEST OK".
+//
+// "rsasig" command (FND-83, #127): the client certificate signature (RSASSA-PKCS1-v1_5 with SHA-1
+// over the server's random bytes) with explicit sizes. RsaSignEx wrote RSA_size() bytes wherever
+// the caller's bits said the destination ended, so a key larger than the certificate's bits wrote
+// past it: a destination smaller than the key's signature must be refused with nothing written past
+// it. A signature verifies, other data and a block with bytes after the hash do not, and a received
+// signature of another length than the key's is rejected. Prints "RSASIG TEST OK".
 
 #include "Cedar/Sam.h"
 
@@ -45,6 +52,7 @@
 #include "Mayaqua/Str.h"
 
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #include <openssl/asn1.h>
@@ -64,6 +72,8 @@
 #define	X509T_TRAILING			8			// Bytes after the DigestInfo and hash in the forged signature block
 #define	X509T_MAX_SIGN			(4096 / 8)	// Largest signature (bytes): the buffer Protocol.c receives it into
 #define	X509T_TIME_ZONE			"JST-9"		// CRT time zone of the time checks: UTC+9, no daylight saving time
+#define	X509T_GUARD				16			// Guard bytes after a signature destination
+#define	X509T_GUARD_BYTE		0xA5		// Value of the guard bytes
 
 // Certificate whose public key algorithm is 1.3.6.1.4.1.32473.1 (under the RFC 5612 documentation
 // enterprise number), which OpenSSL parses but cannot turn into a key; signed by a throwaway
@@ -614,5 +624,86 @@ void x509root_test(UINT num, char **arg)
 	else
 	{
 		Print("X509ROOT TEST FAILED (%u of %u checks failed)\n", ctx.NumFailed, ctx.NumChecks);
+	}
+}
+
+// Whether every byte of the buffer has the value
+static bool X509TestAllBytes(UCHAR *buf, UINT size, UCHAR value)
+{
+	UINT i;
+
+	for (i = 0;i < size;i++)
+	{
+		if (buf[i] != value)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+// Explicit sizes: a destination smaller than the signature of the key is refused and nothing is
+// written past it; a received signature one byte shorter or longer than the key's is rejected
+static void X509TestRsaSizes(X509T_CTX *ctx, K *priv, K *pub, UINT bits)
+{
+	UCHAR data[SHA1_SIZE];
+	UCHAR sign[X509T_MAX_SIGN];
+	UCHAR dst[X509T_MAX_SIGN + X509T_GUARD];
+	UINT sign_size = bits / 8;
+	UINT small = sign_size / 2;
+	bool signed_ok;
+	char what[MAX_SIZE];
+
+	Rand(data, sizeof(data));
+
+	Zero(sign, sizeof(sign));
+	signed_ok = RsaSignEx(sign, data, sizeof(data), priv, bits);
+	Format(what, sizeof(what), "RSA-%u: a signature into a destination of exactly %u bytes verifies", bits, sign_size);
+	X509TestCheck(ctx, signed_ok && RsaVerifyEx(data, sizeof(data), sign, pub, bits), what);
+
+	// Half the size the key signs into
+	memset(dst, X509T_GUARD_BYTE, sizeof(dst));
+	Format(what, sizeof(what), "RSA-%u: a destination of %u bytes is refused, nothing written past it", bits, small);
+	X509TestCheck(ctx, RsaSignEx(dst, data, sizeof(data), priv, small * 8) == false &&
+		X509TestAllBytes(dst + small, sizeof(dst) - small, X509T_GUARD_BYTE), what);
+
+	// The signature with one byte less, then with one byte more (a zero) than the key's
+	Format(what, sizeof(what), "RSA-%u: the signature received as %u or %u bytes is rejected", bits, sign_size - 1, sign_size + 1);
+	X509TestCheck(ctx, signed_ok && RsaVerifyEx(data, sizeof(data), sign, pub, bits - 8) == false &&
+		RsaVerifyEx(data, sizeof(data), sign, pub, bits + 8) == false, what);
+}
+
+// RSA client certificate signature test
+void rsasig_test(UINT num, char **arg)
+{
+	X509T_CTX ctx;
+	K *priv1024 = NULL, *pub1024 = NULL;
+	K *priv2048 = NULL, *pub2048 = NULL;
+
+	Zero(&ctx, sizeof(ctx));
+
+	Print("RSA client certificate signature test (PKCS#1 v1.5 with SHA-1, explicit signature and destination sizes)\n");
+
+	if (X509TestCheck(&ctx, RsaGen(&priv1024, &pub1024, 1024) && RsaGen(&priv2048, &pub2048, 2048),
+		"RSA-1024 and RSA-2048 test keys are generated"))
+	{
+		X509TestRsa(&ctx, priv1024, pub1024, 1024);
+		X509TestRsa(&ctx, priv2048, pub2048, 2048);
+		X509TestRsaSizes(&ctx, priv2048, pub2048, 2048);
+	}
+
+	FreeK(pub2048);
+	FreeK(priv2048);
+	FreeK(pub1024);
+	FreeK(priv1024);
+
+	if (ctx.NumFailed == 0)
+	{
+		Print("RSASIG TEST OK\n");
+	}
+	else
+	{
+		Print("RSASIG TEST FAILED (%u of %u checks failed)\n", ctx.NumFailed, ctx.NumChecks);
 	}
 }
