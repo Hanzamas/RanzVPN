@@ -303,14 +303,16 @@ jobs:
     - uses: actions/checkout@v4
       with:
         submodules: true
-    - name: Cache vcpkg
-      uses: actions/cache@v4
+    - name: Restore vcpkg binary cache
+      uses: actions/cache/restore@v4
       with:
-        path: 'build/vcpkg_installed/'
-        key: vcpkg-x64-windows-static
+        path: vcpkg-bincache
+        key: vcpkg-bin-x64-windows-static-none
+        restore-keys: vcpkg-bin-x64-windows-static-
     - name: Build (Debug)
       run: |
         set BUILD_NUMBER=0
+        if not exist "%VCPKG_BINCACHE%" mkdir "%VCPKG_BINCACHE%"
         mkdir build
         cd build
 
