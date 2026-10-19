@@ -54,6 +54,21 @@ typedef struct LOG_WRITER
 static bool LogThreadWriteGeneral(LOG *log_object, LOG_WRITER *w);
 static UINT LogWriterWaitTime(LOG_WRITER *w);
 
+// Map the control characters of size bytes of UTF-8 text (bytes below 0x20 and 0x7F, never part of a
+// multi-byte sequence) to '?': a CR or LF from untrusted input cannot start a forged log line or syslog message
+static void LogMapControlChars(UCHAR *s, UINT size)
+{
+	UINT i;
+
+	for (i = 0;i < size;i++)
+	{
+		if (s[i] < 0x20 || s[i] == 0x7F)
+		{
+			s[i] = '?';
+		}
+	}
+}
+
 void SendSysLog(SLOG *g, wchar_t *str)
 {
 	UCHAR *buf;
@@ -66,6 +81,7 @@ void SendSysLog(SLOG *g, wchar_t *str)
 	buf_size = CalcUniToUtf8(str);
 	buf = ZeroMalloc(buf_size);
 	UniToUtf8(buf, buf_size, str);
+	LogMapControlChars(buf, buf_size);
 
 	if (buf_size >= 1024)
 	{
@@ -1225,7 +1241,9 @@ char *PacketLogParseProc(RECORD *rec)
 				case L7_DNS:
 					t->Token[6] = CopyStr("DNSv4");
 					t->Token[7] = CopyStr("DNS_Query");
+					// The query name holds raw label bytes from the wire
 					t->Token[14] = CopyStr(p->DnsQueryHost);
+					MakeSafeLogStr(t->Token[14]);
 					break;
 
 				default:
@@ -1480,7 +1498,9 @@ char *PacketLogParseProc(RECORD *rec)
 				case L7_DNS:
 					t->Token[6] = CopyStr("DNSv6");
 					t->Token[7] = CopyStr("DNS_Query");
+					// The query name holds raw label bytes from the wire
 					t->Token[14] = CopyStr(p->DnsQueryHost);
+					MakeSafeLogStr(t->Token[14]);
 					break;
 
 				default:
@@ -1680,9 +1700,10 @@ void ReplaceForCsv(char *str)
 
 	len = StrLen(str);
 
+	// A comma, a CR, an LF or another control character would split the record (a NUL ends the token)
 	for (i = 0; i < len; i++)
 	{
-		if (str[i] == ',')
+		if (str[i] == ',' || (UCHAR)str[i] < 0x20 || (UCHAR)str[i] == 0x7F)
 		{
 			str[i] = '_';
 		}
@@ -1739,6 +1760,7 @@ void InsertStringRecord(LOG *g, char *str)
 	}
 
 	str_copy = CopyStr(str);
+	LogMapControlChars((UCHAR *)str_copy, StrLen(str_copy));
 
 	InsertRecord(g, str_copy, StringRecordParseProc);
 }
