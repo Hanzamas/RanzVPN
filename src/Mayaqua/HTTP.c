@@ -328,18 +328,78 @@ bool SendHttpHeader(SOCK *s, HTTP_HEADER *header)
 	return ret;
 }
 
-// src/fuzz/fuzz_http.c repeats this loop (and RecvLine) over a buffer: change it with this function
-HTTP_HEADER *RecvHttpHeader(SOCK *s)
+// Line source over a SOCK (param): RecvLine()
+static char *HttpSockLineSource(void *param, UINT max_size)
 {
-	TOKEN_LIST *token = NULL;
-	char *str = NULL;
-	HTTP_HEADER *header = NULL;
-	if (s == NULL)
+	return RecvLine((SOCK *)param, max_size);
+}
+
+// Line source over a BUF (param), read from b->Current on: the next line exactly as RecvLine()
+// returns it when the peer sends the remaining bytes and then closes. The bytes up to '\n',
+// without the '\n' and without one '\r' before it, in a Malloc() block. NULL at the end of the
+// buffer before '\n', and when more than max_size bytes, '\n' included, were consumed without
+// completing the line.
+char *HttpBufLineSource(void *param, UINT max_size)
+{
+	BUF *b = (BUF *)param;
+	UCHAR *data;
+	UINT start;
+	UINT i;
+	if (b == NULL || max_size == 0)
 	{
 		return NULL;
 	}
 
-	str = RecvLine(s, HTTP_HEADER_LINE_MAX_SIZE);
+	data = (UCHAR *)b->Buf;
+	start = b->Current;
+
+	for (i = start;i < b->Size;i++)
+	{
+		UINT consumed = i - start + 1;
+
+		if (consumed > max_size)
+		{
+			b->Current = i + 1;
+			return NULL;
+		}
+
+		if (data[i] == '\n')
+		{
+			UINT len = consumed - 1;
+			char *str;
+
+			if (len >= 1 && data[start + len - 1] == '\r')
+			{
+				len--;
+			}
+
+			str = Malloc(len + 1);
+			Copy(str, data + start, len);
+			str[len] = 0;
+
+			b->Current = i + 1;
+			return str;
+		}
+	}
+
+	b->Current = b->Size;
+	return NULL;
+}
+
+// Parses an HTTP header from the lines that source returns: the request or status line, then
+// the header lines up to the blank line (none for HTTP/0.9). NULL when a line cannot be read
+// (a NULL line is not the blank line that ends the header) or does not parse.
+HTTP_HEADER *HttpParseHeaderLines(HTTP_LINE_SOURCE *source, void *param)
+{
+	TOKEN_LIST *token = NULL;
+	char *str = NULL;
+	HTTP_HEADER *header = NULL;
+	if (source == NULL)
+	{
+		return NULL;
+	}
+
+	str = source(param, HTTP_HEADER_LINE_MAX_SIZE);
 	if (str == NULL)
 	{
 		return NULL;
@@ -348,6 +408,11 @@ HTTP_HEADER *RecvHttpHeader(SOCK *s)
 	token = ParseToken(str, " ");
 
 	FreeSafe(PTR_TO_PTR(str));
+
+	if (token == NULL)
+	{
+		return NULL;
+	}
 
 	if (token->NumTokens < 3)
 	{
@@ -365,7 +430,7 @@ HTTP_HEADER *RecvHttpHeader(SOCK *s)
 
 	while (true)
 	{
-		str = RecvLine(s, HTTP_HEADER_LINE_MAX_SIZE);
+		str = source(param, HTTP_HEADER_LINE_MAX_SIZE);
 		if (str == NULL)
 		{
 			// Socket error, timeout or an oversized line: not the blank line that ends the header
@@ -392,6 +457,16 @@ HTTP_HEADER *RecvHttpHeader(SOCK *s)
 	}
 
 	return header;
+}
+
+HTTP_HEADER *RecvHttpHeader(SOCK *s)
+{
+	if (s == NULL)
+	{
+		return NULL;
+	}
+
+	return HttpParseHeaderLines(HttpSockLineSource, s);
 }
 
 bool HttpClientSend(SOCK *s, PACK *p)

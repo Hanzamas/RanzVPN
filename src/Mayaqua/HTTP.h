@@ -34,6 +34,9 @@ struct HTTP_HEADER
 	LIST *ValueList;
 };
 
+// One header line for HttpParseHeaderLines(), as RecvLine() returns it; NULL when no line can be read
+typedef char *(HTTP_LINE_SOURCE)(void *param, UINT max_size);
+
 HTTP_HEADER *NewHttpHeader(char *method, char *target, char *version);
 HTTP_HEADER *NewHttpHeaderEx(char *method, char *target, char *version, bool no_sort);
 void FreeHttpHeader(HTTP_HEADER *header);
@@ -47,6 +50,8 @@ UINT GetContentLength(HTTP_HEADER *header);
 bool PostHttp(SOCK *s, HTTP_HEADER *header, void *post_data, UINT post_size);
 char *HttpHeaderToStr(HTTP_HEADER *header);
 bool SendHttpHeader(SOCK *s, HTTP_HEADER *header);
+char *HttpBufLineSource(void *param, UINT max_size);
+HTTP_HEADER *HttpParseHeaderLines(HTTP_LINE_SOURCE *source, void *param);
 HTTP_HEADER *RecvHttpHeader(SOCK *s);
 bool HttpClientSend(SOCK *s, PACK *p);
 PACK *HttpClientRecv(SOCK *s);
