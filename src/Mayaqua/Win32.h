@@ -19,7 +19,6 @@ bool Win32DeleteDirW(wchar_t *name);
 CALLSTACK_DATA *Win32GetCallStack();
 bool Win32GetCallStackSymbolInfo(CALLSTACK_DATA *s);
 bool Win32Run(char *filename, char *arg, bool hide, bool wait);
-void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id, bool disableWow);
 bool Win32WaitProcess(void *h, UINT timeout);
 void Win32CloseProcess(void *handle);
 bool Win32IsSupportedOs();

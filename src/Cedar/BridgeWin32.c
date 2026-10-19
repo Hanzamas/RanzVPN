@@ -21,11 +21,9 @@
 #include <Ws2tcpip.h>
 
 static RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, char *name);
-static ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr);
 static void Win32EthMakeCombinedName(char *dst, UINT dst_size, char *nicname, char *guid);
 static UINT Win32EthGenIdFromGuid(char *guid);
 static TOKEN_LIST *GetEthListEx(UINT *total_num_including_hidden, bool enum_normal, bool enum_rawip);
-static LIST *GetEthAdapterListInternal();
 static void InitEthAdaptersList();
 static void FreeEthAdaptersList();
 
@@ -293,13 +291,10 @@ static void GetVLanSupportStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
 {
 	BUF *b;
 	char filename[MAX_SIZE];
-	void *wow;
 	if (e == NULL)
 	{
 		return;
 	}
-
-	wow = MsDisableWow64FileSystemRedirection();
 
 	ConbinePath(filename, sizeof(filename), MsGetSystem32Dir(), "drivers");
 	ConbinePath(filename, sizeof(filename), filename, e->DriverName);
@@ -348,8 +343,6 @@ static void GetVLanSupportStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
 
 		FreeBuf(b);
 	}
-
-	MsRestoreWow64FileSystemRedirection(wow);
 }
 
 static char *SearchDeviceInstanceIdFromShortKey(char *short_key)
@@ -744,19 +737,6 @@ static struct WP_ADAPTER *Win32EthSearch(char *name)
 
 ETH *OpenEth(char *name, bool local, bool tapmode, char *tapaddr)
 {
-	ETH *ret;
-	void *p;
-
-	p = MsDisableWow64FileSystemRedirection();
-
-	ret = OpenEthInternal(name, local, tapmode, tapaddr);
-
-	MsRestoreWow64FileSystemRedirection(p);
-
-	return ret;
-}
-static ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
-{
 	WP_ADAPTER *t;
 	ETH *e;
 	HANDLE h;
@@ -1054,19 +1034,6 @@ bool Win32IsUsingSeLow()
 }
 
 static LIST *GetEthAdapterList()
-{
-	void *p;
-	LIST *o;
-
-	p = MsDisableWow64FileSystemRedirection();
-
-	o = GetEthAdapterListInternal();
-
-	MsRestoreWow64FileSystemRedirection(p);
-
-	return o;
-}
-static LIST *GetEthAdapterListInternal()
 {
 	LIST *o;
 	LIST *ret;

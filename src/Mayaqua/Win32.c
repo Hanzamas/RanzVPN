@@ -747,42 +747,29 @@ bool Win32WaitProcess(void *h, UINT timeout)
 	return true;
 }
 
-void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id, bool disableWow)
+bool Win32Run(char *filename, char *arg, bool hide, bool wait)
 {
 	STARTUPINFOW info;
 	PROCESS_INFORMATION ret;
 	wchar_t cmdline[MAX_SIZE];
 	wchar_t name[MAX_PATH];
-	void *p;
+	wchar_t arg_w[MAX_SIZE];
 	if (filename == NULL)
 	{
-		return NULL;
+		return false;
 	}
 
-	UniStrCpy(name, sizeof(name), filename);
+	StrToUni(name, sizeof(name), filename);
 	UniTrim(name);
 
-	if (UniSearchStr(name, L"\"", 0) == INFINITE)
+	if (arg == NULL)
 	{
-		if (arg == NULL)
-		{
-			UniFormat(cmdline, sizeof(cmdline), L"%s", name);
-		}
-		else
-		{
-			UniFormat(cmdline, sizeof(cmdline), L"%s %s", name, arg);
-		}
+		UniFormat(cmdline, sizeof(cmdline), L"\"%s\"", name);
 	}
 	else
 	{
-		if (arg == NULL)
-		{
-			UniFormat(cmdline, sizeof(cmdline), L"\"%s\"", name);
-		}
-		else
-		{
-			UniFormat(cmdline, sizeof(cmdline), L"\"%s\" %s", name, arg);
-		}
+		StrToUni(arg_w, sizeof(arg_w), arg);
+		UniFormat(cmdline, sizeof(cmdline), L"\"%s\" %s", name, arg_w);
 	}
 
 	Zero(&info, sizeof(info));
@@ -793,82 +780,7 @@ void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id,
 
 	UniTrim(cmdline);
 
-	if (disableWow)
-	{
-		p = MsDisableWow64FileSystemRedirection();
-	}
-
 	if (CreateProcessW(NULL, cmdline, NULL, NULL, FALSE,
-		(hide == false ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW | CREATE_NEW_CONSOLE) | NORMAL_PRIORITY_CLASS,
-		NULL, NULL, &info, &ret) == FALSE)
-	{
-		if (disableWow)
-		{
-			MsRestoreWow64FileSystemRedirection(p);
-		}
-		return NULL;
-	}
-
-	if (disableWow)
-	{
-		MsRestoreWow64FileSystemRedirection(p);
-	}
-
-	if (process_id != NULL)
-	{
-		*process_id = ret.dwProcessId;
-	}
-
-	CloseHandle(ret.hThread);
-	return ret.hProcess;
-}
-
-bool Win32Run(char *filename, char *arg, bool hide, bool wait)
-{
-	STARTUPINFO info;
-	PROCESS_INFORMATION ret;
-	char cmdline[MAX_SIZE];
-	char name[MAX_PATH];
-	if (filename == NULL)
-	{
-		return false;
-	}
-
-	StrCpy(name, sizeof(name), filename);
-	Trim(name);
-
-	if (SearchStr(name, "\"", 0) == INFINITE)
-	{
-		if (arg == NULL)
-		{
-			Format(cmdline, sizeof(cmdline), "%s", name);
-		}
-		else
-		{
-			Format(cmdline, sizeof(cmdline), "%s %s", name, arg);
-		}
-	}
-	else
-	{
-		if (arg == NULL)
-		{
-			Format(cmdline, sizeof(cmdline), "\"%s\"", name);
-		}
-		else
-		{
-			Format(cmdline, sizeof(cmdline), "\"%s\" %s", name, arg);
-		}
-	}
-
-	Zero(&info, sizeof(info));
-	Zero(&ret, sizeof(ret));
-	info.cb = sizeof(info);
-	info.dwFlags = STARTF_USESHOWWINDOW;
-	info.wShowWindow = (hide == false ? SW_SHOWDEFAULT : SW_HIDE);
-
-	Trim(cmdline);
-
-	if (CreateProcess(NULL, cmdline, NULL, NULL, FALSE,
 		(hide == false ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW | CREATE_NEW_CONSOLE) | NORMAL_PRIORITY_CLASS,
 		NULL, NULL, &info, &ret) == FALSE)
 	{

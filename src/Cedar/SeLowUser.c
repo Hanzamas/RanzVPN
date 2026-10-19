@@ -21,6 +21,7 @@
 #include <winioctl.h>
 
 static SU *SuInitMain(UINT wait_for_bind_complete_tick, bool start_service, bool install);
+static bool SuInstallDriver(bool force);
 
 static bool SuLoadDriversHive()
 {
@@ -38,23 +39,12 @@ static bool SuLoadDriversHive()
 
 static void SuDeleteGarbageInfs()
 {
-	void *wow;
-	bool load_hive = false;
-
-	wow = MsDisableWow64FileSystemRedirection();
-
-	load_hive = SuLoadDriversHive();
-
-	SuDeleteGarbageInfsInner();
-
-	MsRestoreWow64FileSystemRedirection(wow);
-}
-void SuDeleteGarbageInfsInner()
-{
 	char *base_key_name = "DRIVERS\\DriverDatabase\\DriverPackages";
 	TOKEN_LIST *keys;
 	HINSTANCE hSetupApiDll = NULL;
 	BOOL (WINAPI *_SetupUninstallOEMInfA)(PCSTR, DWORD, PVOID) = NULL;
+
+	SuLoadDriversHive();
 
 	hSetupApiDll = LoadLibraryA("setupapi.dll");
 	if (hSetupApiDll == NULL)
@@ -119,20 +109,6 @@ void SuDeleteGarbageInfsInner()
 	}
 }
 
-static bool SuInstallDriver(bool force)
-{
-	bool ret;
-	void *wow;
-
-	wow = MsDisableWow64FileSystemRedirection();
-
-	ret = SuInstallDriverInner(force);
-
-	MsRestoreWow64FileSystemRedirection(wow);
-
-	return ret;
-}
-
 // Driver install step: SuInstallDriver, or the stub that a test sets with SuSetInstallProc
 static SU_INSTALL_PROC *su_install_proc = SuInstallDriver;
 // The install step already ran in this process: it runs at most once per process
@@ -146,7 +122,7 @@ void SuSetInstallProc(SU_INSTALL_PROC *proc)
 	su_install_tried = false;
 }
 
-bool SuInstallDriverInner(bool force)
+static bool SuInstallDriver(bool force)
 {
 	wchar_t sys_fullpath[MAX_PATH];
 	UINT current_sl_ver = 0;

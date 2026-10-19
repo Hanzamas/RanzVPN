@@ -496,36 +496,6 @@ void MsGetComputerName(char *name, UINT size)
 	GetComputerName(name, &sz);
 }
 
-void *MsDisableWow64FileSystemRedirection()
-{
-	void *p = NULL;
-	if (Wow64DisableWow64FsRedirection(&p) == false)
-	{
-		return NULL;
-	}
-
-	if (p == NULL)
-	{
-		p = (void *)0x12345678;
-	}
-
-	return p;
-}
-
-void MsRestoreWow64FileSystemRedirection(void *p)
-{
-	if (p == NULL)
-	{
-		return;
-	}
-	if (p == (void *)0x12345678)
-	{
-		p = NULL;
-	}
-
-	Wow64RevertWow64FsRedirection(p);
-}
-
 bool MsIsX64()
 {
 	SYSTEM_INFO info;
