@@ -1346,7 +1346,7 @@ PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool b
 		}
 	}
 
-	if (ParsePacketL2Ex(p, buf, size, no_l3, no_l3_l4_except_icmpv6) == false)
+	if (ParsePacketL2Ex(p, buf, size, no_l3, no_l3_l4_except_icmpv6, (USHORT)vlan_type_id) == false)
 	{
 		FreePacket(p);
 		return NULL;
@@ -1702,11 +1702,16 @@ HTTPLOG *ParseHttpAccessLog(PKT *pkt)
 }
 
 
-bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4_except_icmpv6)
+// Parse the Ethernet header. A frame tagged with 0x8100 (802.1Q) or with vlan_tpid, the VLAN TPID of
+// the hub (HUB_OPTION.VlanTypeId, for example 0x88A8), is a VLAN frame: ParsePacketTAGVLAN parses
+// what is behind the tag, as VLanInsertTag, VLanRemoveTag and AdjustTcpMssL2 use that TPID. A
+// vlan_tpid that is the type of ARP, IPv4 or IPv6 tags nothing, so those frames stay what they are
+bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4_except_icmpv6, USHORT vlan_tpid)
 {
 	UINT i;
 	bool b1, b2;
 	USHORT type_id_16;
+	bool is_tag_vlan;
 	if (p == NULL || buf == NULL)
 	{
 		return false;
@@ -1756,9 +1761,15 @@ bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4_ex
 
 	type_id_16 = Endian16(p->MacHeader->Protocol);
 
+	is_tag_vlan = (type_id_16 == MAC_PROTO_TAGVLAN);
+	if (type_id_16 == vlan_tpid && vlan_tpid != MAC_PROTO_ARPV4 && vlan_tpid != MAC_PROTO_IPV4 && vlan_tpid != MAC_PROTO_IPV6)
+	{
+		is_tag_vlan = true;
+	}
+
 	if (type_id_16 > 1500)
 	{
-		if (type_id_16 == MAC_PROTO_TAGVLAN)
+		if (is_tag_vlan)
 		{
 			return ParsePacketTAGVLAN(p, buf, size, no_l3, no_l3_l4_except_icmpv6);
 		}

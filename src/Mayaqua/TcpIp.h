@@ -560,7 +560,7 @@ void FreePacketUDPv4(PKT *p);
 void FreePacketTCPv4(PKT *p);
 void FreePacketICMPv4(PKT *p);
 void FreePacketDHCPv4(PKT *p);
-bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4_except_icmpv6);
+bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4_except_icmpv6, USHORT vlan_tpid);
 bool ParsePacketL3(PKT *p, UCHAR *buf, UINT size, USHORT proto, bool no_l3, bool no_l3_l4_except_icmpv6);
 bool ParsePacketARPv4(PKT *p, UCHAR *buf, UINT size);
 bool ParsePacketIPv4(PKT *p, UCHAR *buf, UINT size);
