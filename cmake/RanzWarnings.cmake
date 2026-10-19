@@ -9,8 +9,9 @@
 # them is initialised by a function call or assigned by executed statements, so deleting it would
 # edit an executed statement, which the sweep does not do.
 #
-# Only the targets that src/CMakeLists.txt names get the flags (Cedar, Mayaqua, vpnserver, vpncmd,
-# vpntest). Vendored third-party targets (liboqs, oqs-provider) and the fuzz targets do not.
+# Only the project's own targets get the flags: Cedar and Mayaqua (src/CMakeLists.txt) and every
+# executable (ranz_add_executable, cmake/RanzExecutable.cmake). Vendored third-party targets
+# (liboqs, oqs-provider) do not.
 
 option(RANZ_UNUSED_WARNINGS "Enable clang's unused and unreachable code warnings for the project's own targets (clang or clang-cl only)" OFF)
 

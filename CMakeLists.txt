@@ -34,6 +34,9 @@ include("${TOP_DIRECTORY}/cmake/RanzResources.cmake")
 # per-configuration definitions). After RanzSanitizers.cmake, whose options it reads.
 include("${TOP_DIRECTORY}/cmake/RanzOptions.cmake")
 
+# ranz_add_executable(): each executable with its version resource, icon, manifest and options
+include("${TOP_DIRECTORY}/cmake/RanzExecutable.cmake")
+
 # Check that submodules are present only if source was downloaded with git
 if(EXISTS "${TOP_DIRECTORY}/.git" AND NOT EXISTS "${TOP_DIRECTORY}/src/Mayaqua/3rdparty/liboqs/CMakeLists.txt")
     message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init --recursive")

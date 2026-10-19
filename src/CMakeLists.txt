@@ -42,8 +42,9 @@ add_subdirectory(vpncmd)
 # vpntest
 add_subdirectory(vpntest)
 
-# Unused-code warnings (RANZ_UNUSED_WARNINGS=ON, cmake/RanzWarnings.cmake): the project's own targets only
-ranz_unused_warnings(cedar mayaqua vpnserver vpncmd vpntest)
+# Unused-code warnings (RANZ_UNUSED_WARNINGS=ON, cmake/RanzWarnings.cmake): the project's own targets
+# only. The executables get them from ranz_add_executable (cmake/RanzExecutable.cmake).
+ranz_unused_warnings(cedar mayaqua)
 
 # libFuzzer targets (RANZ_FUZZ=ON only)
 if(RANZ_FUZZ)

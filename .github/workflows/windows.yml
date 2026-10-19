@@ -112,6 +112,17 @@ jobs:
       shell: pwsh
       run: |
         python .github/scripts/size-metrics.py --build-dir build --arch ${{ matrix.platform.ARCHITECTURE }}
+    # The version resource of each executable (src/BuildFiles/VerScript/ver.rc.in): English (United
+    # States), language 0x0409, with the file description filled in.
+    - name: Version resource
+      shell: pwsh
+      run: |
+        foreach ($exe in 'vpnserver', 'vpncmd', 'vpntest') {
+          $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path "build/$exe.exe").Path)
+          Write-Host "${exe}.exe: Language '$($info.Language)', FileDescription '$($info.FileDescription)', FileVersion '$($info.FileVersion)'"
+          if ($info.Language -ne 'English (United States)') { throw "${exe}.exe: version resource language is '$($info.Language)', not English (United States) (0x0409)" }
+          if (-not $info.FileDescription) { throw "${exe}.exe: version resource has no FileDescription" }
+        }
     - name: Set up .NET for stbchecker
       if: matrix.platform.ARCHITECTURE == 'x64'
       uses: actions/setup-dotnet@v4
