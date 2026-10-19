@@ -2485,9 +2485,7 @@ SOCK *NewUDP4(UINT port, IP *ip)
 			{
 				UINT false_flag = 0;
 				(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&false_flag, sizeof(false_flag));
-#ifdef	SO_EXCLUSIVEADDRUSE
 				(void)setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (char *)&true_flag, sizeof(true_flag));
-#endif
 				if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
 				{
 					closesocket(s);
@@ -2581,9 +2579,7 @@ SOCK *NewUDP6(UINT port, IP *ip)
 			if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
 			{
 				(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&false_flag, sizeof(false_flag));
-#ifdef	SO_EXCLUSIVEADDRUSE
 				(void)setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (char *)&true_flag, sizeof(true_flag));
-#endif
 				if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
 				{
 					closesocket(s);
@@ -2617,9 +2613,7 @@ SOCK *NewUDP6(UINT port, IP *ip)
 	if (IS_SPECIAL_PORT(port))
 	{
 		UINT no = 0;
-#ifdef	IPV6_HDRINCL
 		(void)setsockopt(sock->socket, IPPROTO_IP, IPV6_HDRINCL, (char *)&no, sizeof(no));
-#endif
 		(void)setsockopt(sock->socket, IPPROTO_IP, IP_HDRINCL, (char *)&no, sizeof(no));
 
 		sock->IsRawSocket = true;
@@ -2958,33 +2952,25 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 	{
 		if (sock->ServerMode)
 		{
-#ifdef	SSL_OP_NO_TLSv1
 			if (sock->SslAcceptSettings.Tls_Disable1_0)
 			{
 				SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1);
 			}
-#endif
 
-#ifdef	SSL_OP_NO_TLSv1_1
 			if (sock->SslAcceptSettings.Tls_Disable1_1)
 			{
 				SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_1);
 			}
-#endif
 
-#ifdef	SSL_OP_NO_TLSv1_2
 			if (sock->SslAcceptSettings.Tls_Disable1_2)
 			{
 				SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_2);
 			}
-#endif
 
-#ifdef	SSL_OP_NO_TLSv1_3
 			if (sock->SslAcceptSettings.Tls_Disable1_3)
 			{
 				SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_3);
 			}
-#endif
 
 			Unlock(openssl_lock);
 			if (chain == NULL)
@@ -3049,12 +3035,10 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 			}
 		}
 
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) ||  LIBRESSL_VERSION_NUMBER >= 0x3060000L
 		if (sock->SslAcceptSettings.Override_Security_Level)
 		{
 			SSL_CTX_set_security_level(ssl_ctx, sock->SslAcceptSettings.Override_Security_Level_Value);
 		}
-#endif
 
 		sock->ssl = SSL_new(ssl_ctx);
 
@@ -3065,7 +3049,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 
 		SSL_set_fd(sock->ssl, (int)sock->socket);
 
-#ifdef	SSL_CTRL_SET_TLSEXT_HOSTNAME
 		if (sock->ServerMode == false)
 		{
 			if (IsEmptyStr(sni_hostname) == false)
@@ -3073,7 +3056,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 				SSL_set_tlsext_host_name(sock->ssl, sni_hostname);
 			}
 		}
-#endif
 
 	}
 	Unlock(openssl_lock);
@@ -3104,10 +3086,8 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 		Unlock(openssl_lock);
 	}
 
-	#if OPENSSL_VERSION_NUMBER >= 0x30000000L
-		SSL_set1_groups_list(sock->ssl, PQ_GROUP_LIST);
-	#endif
-	
+	SSL_set1_groups_list(sock->ssl, PQ_GROUP_LIST);
+
 	if (sock->ServerMode)
 	{
 
@@ -3126,9 +3106,7 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 						{
 						case SSL_R_UNSUPPORTED_PROTOCOL:
 						case SSL_R_VERSION_TOO_LOW:
-#if defined(SSL_R_VERSION_TOO_HIGH)
 						case SSL_R_VERSION_TOO_HIGH:
-#endif
 							*ssl_err = 150;
 							break;
 						case SSL_R_NO_SHARED_CIPHER:
@@ -3149,8 +3127,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 			return false;
 		}
 
-#ifdef	SSL_CTRL_SET_TLSEXT_HOSTNAME
-#ifdef	TLSEXT_NAMETYPE_host_name
 		if (true)
 		{
 			const char *sni_recv_hostname = SSL_get_servername(sock->ssl, TLSEXT_NAMETYPE_host_name);
@@ -3160,8 +3136,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 				StrCpy(sock->SniHostname, sizeof(sock->SniHostname), (char *)sni_recv_hostname);
 			}
 		}
-#endif
-#endif
 
 	}
 	else
@@ -3182,9 +3156,7 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 						{
 						case SSL_R_UNSUPPORTED_PROTOCOL:
 						case SSL_R_VERSION_TOO_LOW:
-#if defined(SSL_R_VERSION_TOO_HIGH)
 						case SSL_R_VERSION_TOO_HIGH:
-#endif
 						case SSL_R_TLSV1_ALERT_PROTOCOL_VERSION:
 							*ssl_err = 150;
 							break;
@@ -3336,28 +3308,14 @@ static UINT SecureRecv(SOCK *sock, void *data, UINT size)
 			ret = SSL_peek(ssl, &c, sizeof(c));
 		}
 		Unlock(sock->ssl_lock);
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-		// OpenSSL 3: both 0 and negative values may be retryable; use SSL_get_error().
+		// Both 0 and negative values may be retryable: use SSL_get_error().
 		// See: https://github.com/openssl/openssl/blob/435981cbadad2c58c35bacd30ca5d8b4c9bea72f/doc/man3/SSL_read.pod
-		if (ret == 0)
-		{
-			Disconnect(sock);
-			return 0;
-		}
-#endif
 		if (ret <= 0)
 		{
 			e = SSL_get_error(ssl, ret);
 			if (e == SSL_ERROR_WANT_READ || e == SSL_ERROR_WANT_WRITE || e == SSL_ERROR_SSL)
 			{
-				if (e == SSL_ERROR_SSL
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-					&&
-					sock->ssl->s3->send_alert[0] == SSL3_AL_FATAL &&
-					sock->ssl->s3->send_alert[0] != sock->Ssl_Init_Async_SendAlert[0] &&
-					sock->ssl->s3->send_alert[1] != sock->Ssl_Init_Async_SendAlert[1]
-#endif
-					)
+				if (e == SSL_ERROR_SSL)
 				{
 					UINT ssl_err_no;
 					while (ssl_err_no = ERR_get_error()){
@@ -3383,11 +3341,7 @@ static UINT SecureRecv(SOCK *sock, void *data, UINT size)
 		ERR_clear_error();
 		ret = SSL_read(ssl, data, size);
 
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-		if (ret < 0)
-#else
 		if (ret <= 0)
-#endif
 		{
 			e = SSL_get_error(ssl, ret);
 		}
@@ -3403,28 +3357,11 @@ static UINT SecureRecv(SOCK *sock, void *data, UINT size)
 		return (UINT)ret;
 	}
 
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-	// OpenSSL 3: both 0 and negative values may be retryable; use SSL_get_error().
-	// See: https://github.com/openssl/openssl/blob/435981cbadad2c58c35bacd30ca5d8b4c9bea72f/doc/man3/SSL_read.pod
-	if (ret == 0)
-	{
-		Disconnect(sock);
-		return 0;
-	}
-#endif
-
 	if (sock->AsyncMode)
 	{
 		if (e == SSL_ERROR_WANT_READ || e == SSL_ERROR_WANT_WRITE || e == SSL_ERROR_SSL)
 		{
-			if (e == SSL_ERROR_SSL
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-				&&
-				sock->ssl->s3->send_alert[0] == SSL3_AL_FATAL &&
-				sock->ssl->s3->send_alert[0] != sock->Ssl_Init_Async_SendAlert[0] &&
-				sock->ssl->s3->send_alert[1] != sock->Ssl_Init_Async_SendAlert[1]
-#endif
-				)
+			if (e == SSL_ERROR_SSL)
 			{
 				UINT ssl_err_no;
 				while (ssl_err_no = ERR_get_error()) {
@@ -3463,11 +3400,7 @@ static UINT SecureSend(SOCK *sock, void *data, UINT size)
 
 		ERR_clear_error();
 		ret = SSL_write(ssl, data, size);
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-		if (ret < 0)
-#else
 		if (ret <= 0)
-#endif
 		{
 			e = SSL_get_error(ssl, ret);
 		}
@@ -3480,14 +3413,6 @@ static UINT SecureSend(SOCK *sock, void *data, UINT size)
 		sock->SendNum++;
 		return (UINT)ret;
 	}
-
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-	if (ret == 0)
-	{
-		Disconnect(sock);
-		return 0;
-	}
-#endif
 
 	if (sock->AsyncMode)
 	{
@@ -4101,13 +4026,8 @@ void Disconnect(SOCK *sock)
 	{
 		if (sock->socket != INVALID_SOCKET)
 		{
-#ifdef	SO_DONTLINGER
 			UINT true_flag = 1;
 			(void)setsockopt(sock->socket, SOL_SOCKET, SO_DONTLINGER, (char *)&true_flag, sizeof(true_flag));
-#else
-			UINT false_flag = 0;
-			(void)setsockopt(sock->socket, SOL_SOCKET, SO_LINGER, (char *)&false_flag, sizeof(false_flag));
-#endif
 		}
 
 		Lock(sock->lock);
@@ -4367,9 +4287,7 @@ static void SetSockTos(SOCK *s, int tos)
 		return;
 	}
 
-#ifdef	IP_TOS
 	(void)setsockopt(s->socket, IPPROTO_IP, IP_TOS, (char *)&tos, sizeof(int));
-#endif
 
 	s->CurrentTos = tos;
 }
@@ -4667,12 +4585,7 @@ SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname
 	Zero(&ling, sizeof(ling));
 
 	UINT true_flag = 1;
-#ifdef	SO_DONTLINGER
 	(void)setsockopt(sock->socket, SOL_SOCKET, SO_DONTLINGER, (char *)&true_flag, sizeof(true_flag));
-#else
-	UINT false_flag = 0;
-	(void)setsockopt(sock->socket, SOL_SOCKET, SO_LINGER, (char *)&false_flag, sizeof(false_flag));
-#endif
 
 	(void)setsockopt(sock->socket, IPPROTO_TCP, TCP_NODELAY, (char *)&true_flag, sizeof(true_flag));
 
@@ -5069,15 +4982,11 @@ void QuerySocketInformation(SOCK *sock)
 
 		if (sock->IPv6)
 		{
-#ifdef	IPV6_UNICAST_HOPS
 			opt_value = IPV6_UNICAST_HOPS;
-#endif
 		}
 		else
 		{
-#ifdef	IP_TTL
 			opt_value = IP_TTL;
-#endif
 		}
 
 		size = sizeof(UINT);
@@ -5626,40 +5535,22 @@ static DH *TmpDhCallback(SSL *ssl, int is_export, int keylength)
 
 struct ssl_ctx_st *NewSSLCtx(bool server_mode)
 {
-	struct ssl_ctx_st *ctx = SSL_CTX_new(SSLv23_method());
+	struct ssl_ctx_st *ctx = SSL_CTX_new(server_mode ? TLS_server_method() : TLS_client_method());
 	if(ctx == NULL)
 	{
 		return NULL;
 	}
-	if (server_mode)
-	{
-		SSL_CTX_set_ssl_version(ctx, SSLv23_server_method());
-	}
-	else
-	{
-		SSL_CTX_set_ssl_version(ctx, SSLv23_client_method());
-	}
 
-#ifdef	SSL_OP_NO_SSLv3
 	SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv3);
-#endif
 
-#ifdef	SSL_OP_NO_TICKET
 	SSL_CTX_set_options(ctx, SSL_OP_NO_TICKET);
-#endif
 
-#ifdef	SSL_OP_CIPHER_SERVER_PREFERENCE
 	if (server_mode)
 	{
 		SSL_CTX_set_options(ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
 	}
-#endif
 
 	SSL_CTX_set_tmp_dh_callback(ctx, TmpDhCallback);
-
-#ifdef	SSL_CTX_set_ecdh_auto
-	SSL_CTX_set_ecdh_auto(ctx, 1);
-#endif
 
 	return ctx;
 }
@@ -5677,7 +5568,7 @@ void FreeSSLCtx(struct ssl_ctx_st *ctx)
 UINT GetOSSecurityLevel()
 {
 	UINT security_level_new = 0, security_level_set_ssl_version = 0;
-	struct ssl_ctx_st *ctx = SSL_CTX_new(SSLv23_method());
+	struct ssl_ctx_st *ctx = SSL_CTX_new(TLS_method());
 
 	if (ctx == NULL)
 	{
@@ -5685,11 +5576,9 @@ UINT GetOSSecurityLevel()
 	}
 
 
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || LIBRESSL_VERSION_NUMBER >= 0x3060000L
 	security_level_new = SSL_CTX_get_security_level(ctx);
-#endif
 
-	security_level_set_ssl_version = SSL_CTX_set_ssl_version(ctx, SSLv23_server_method());
+	security_level_set_ssl_version = SSL_CTX_set_ssl_version(ctx, TLS_server_method());
 
 	FreeSSLCtx(ctx);
 
@@ -5754,11 +5643,7 @@ TOKEN_LIST *GetCipherList()
 		return ciphers;
 	}
 
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || LIBRESSL_VERSION_NUMBER >= 0x2090100L
 	sk = SSL_get1_supported_ciphers(ssl);
-#else
-	sk = SSL_get_ciphers(ssl);
-#endif
 
 	for (i = 0; i < (UINT)sk_SSL_CIPHER_num(sk); i++)
 	{
