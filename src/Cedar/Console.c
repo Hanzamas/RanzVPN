@@ -1804,7 +1804,8 @@ static wchar_t *Prompt(wchar_t *prompt_str)
 
 	UniPrint(L"%s", prompt_str);
 	tmp = Malloc(MAX_PROMPT_STRSIZE);
-	if (fgetws(tmp, MAX_PROMPT_STRSIZE - 1, stdin) != NULL)
+	// The size is in bytes: at most MAX_PROMPT_STRSIZE / sizeof(wchar_t) - 1 characters and the terminator
+	if (UniGetLineWin32(tmp, MAX_PROMPT_STRSIZE))
 	{
 		bool escape = false;
 		UINT i, len;
