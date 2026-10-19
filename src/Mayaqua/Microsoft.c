@@ -1311,7 +1311,7 @@ void MsGenerateUserModeSvcGlobalPulseName(char *name, UINT size, char *svc_name)
 	BinToStr(name, size, hash, sizeof(hash));
 }
 
-static void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT icon)
+static void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop)
 {
 	WNDCLASS wc;
 	HWND hWnd;
@@ -1639,7 +1639,26 @@ static void MsWriteCallingServiceManagerProcessId(char *svcname, UINT pid)
 	}
 }
 
-UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT icon, char *cmd_line)
+// Print the string table message id, formatted with the arguments, on a line of its own; nothing
+// when silent
+static void MsSvcMsg(bool silent, char *id, ...)
+{
+	wchar_t msg[MAX_SIZE * 4];
+	va_list args;
+
+	if (silent)
+	{
+		return;
+	}
+
+	va_start(args, id);
+	UniFormatArgs(msg, sizeof(msg), _UU(id), args);
+	va_end(args);
+
+	UniPrint(L"%s\n", msg);
+}
+
+UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line)
 {
 	UINT mode;
 	UINT ret = 0;
@@ -1649,7 +1668,6 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 	wchar_t *service_title;
 	wchar_t *service_description;
 	char tmp[MAX_SIZE];
-	wchar_t msg[MAX_SIZE * 4];
 	bool restoreReg = false;
 	bool silent = false;
 	bool is_win32_service_mode = false;
@@ -1731,8 +1749,7 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 
 	if (StrLen(service_name) == 0 || UniStrLen(service_title) == 0)
 	{
-		UniFormat(msg, sizeof(msg), _UU("SVC_NOT_FOUND"), name);
-		UniPrint(L"%s\n", msg);
+		MsSvcMsg(false, "SVC_NOT_FOUND", name);
 	}
 	else
 	{
@@ -1817,9 +1834,8 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 			switch (mode)
 			{
 			case SVC_MODE_NONE:
-				UniFormat(msg, sizeof(msg), _UU("SVC_HELP"),
+				MsSvcMsg(false, "SVC_HELP",
 					service_title, service_name, service_title, service_title, service_name, service_title, service_name, service_title, service_name, service_title, service_name, service_title, service_title);
-				UniPrint(L"%s\n", msg);
 				break;
 
 			case SVC_MODE_SETUP_INSTALL:
@@ -1834,7 +1850,7 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 					}
 					MsUninstallService(service_name);
 				}
-				if (MsInstallServiceExW(service_name, service_title, service_description, path, NULL) == false)
+				if (MsInstallServiceExW(service_name, service_title, service_description, path) == false)
 				{
 					ret = 1;
 				}
@@ -1870,63 +1886,36 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 						break;
 					}
 					// The operator explicitly requested /install, so uninstall and then re-install
-					UniFormat(msg, sizeof(msg), _UU("SVC_ALREADY_INSTALLED"),
-						service_title, service_name);
-					UniPrint(L"%s\n", msg);
+					MsSvcMsg(silent, "SVC_ALREADY_INSTALLED", service_title, service_name);
 
 					if (MsIsServiceRunning(service_name))
 					{
 						if (MsStopService(service_name) == false)
 						{
-							if(silent == false)
-							{
-								UniFormat(msg, sizeof(msg), _UU("SVC_STOP_FAILED"),
-									service_title, service_name);
-								UniPrint(L"%s\n", msg);
-							}
+							MsSvcMsg(silent, "SVC_STOP_FAILED", service_title, service_name);
 							break;
 						}
 					}
 					if (MsUninstallService(service_name) == false)
 					{
-						if(silent == false)
-						{
-							UniFormat(msg, sizeof(msg), _UU("SVC_UNINSTALL_FAILED"),
-								service_title, service_name);
-							UniPrint(L"%s\n", msg);
-						}
+						MsSvcMsg(silent, "SVC_UNINSTALL_FAILED", service_title, service_name);
 						break;
 					}
 				}
 
-				if (MsInstallServiceExW(service_name, service_title, service_description, path, NULL) == false)
+				if (MsInstallServiceExW(service_name, service_title, service_description, path) == false)
 				{
-					if(silent == false)
-					{
-						UniFormat(msg, sizeof(msg), _UU("SVC_INSTALL_FAILED"),
-							service_title, service_name);
-						UniPrint(L"%s\n", msg);
-					}
+					MsSvcMsg(silent, "SVC_INSTALL_FAILED", service_title, service_name);
 					break;
 				}
 
 				if (MsStartService(service_name) == false)
 				{
-					if(silent == false)
-					{
-						UniFormat(msg, sizeof(msg), _UU("SVC_INSTALL_FAILED_2"),
-							service_title, service_name, path);
-						UniPrint(L"%s\n", msg);
-					}
+					MsSvcMsg(silent, "SVC_INSTALL_FAILED_2", service_title, service_name, path);
 					break;
 				}
 
-				if(silent == false)
-				{
-					UniFormat(msg, sizeof(msg), _UU("SVC_INSTALL_OK"),
-						service_title, service_name, path);
-					UniPrint(L"%s\n", msg);
-				}
+				MsSvcMsg(silent, "SVC_INSTALL_OK", service_title, service_name, path);
 				break;
 
 			case SVC_MODE_UNINSTALL:
@@ -1935,12 +1924,7 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 
 				if (MsIsServiceInstalled(service_name) == false)
 				{
-					if(silent == false)
-					{
-						UniFormat(msg, sizeof(msg), _UU("SVC_NOT_INSTALLED"),
-							service_title, service_name, path);
-						UniPrint(L"%s\n", msg);
-					}
+					MsSvcMsg(silent, "SVC_NOT_INSTALLED", service_title, service_name, path);
 					break;
 				}
 
@@ -1948,33 +1932,18 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 				{
 					if (MsStopService(service_name) == false)
 					{
-						if(silent == false)
-						{
-							UniFormat(msg, sizeof(msg), _UU("SVC_STOP_FAILED"),
-								service_title, service_name);
-							UniPrint(L"%s\n", msg);
-						}
+						MsSvcMsg(silent, "SVC_STOP_FAILED", service_title, service_name);
 						break;
 					}
 				}
 
 				if (MsUninstallService(service_name) == false)
 				{
-					if(silent == false)
-					{
-						UniFormat(msg, sizeof(msg), _UU("SVC_UNINSTALL_FAILED"),
-							service_title, service_name);
-						UniPrint(L"%s\n", msg);
-					}
+					MsSvcMsg(silent, "SVC_UNINSTALL_FAILED", service_title, service_name);
 					break;
 				}
 
-				if(silent == false)
-				{
-					UniFormat(msg, sizeof(msg), _UU("SVC_UNINSTALL_OK"),
-						service_title, service_name);
-					UniPrint(L"%s\n", msg);
-				}
+				MsSvcMsg(silent, "SVC_UNINSTALL_OK", service_title, service_name);
 				break;
 
 			case SVC_MODE_START:
@@ -1983,43 +1952,23 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 
 				if (MsIsServiceInstalled(service_name) == false)
 				{
-					if(silent == false)
-					{
-						UniFormat(msg, sizeof(msg), _UU("SVC_NOT_INSTALLED"),
-							service_title, service_name);
-						UniPrint(L"%s\n", msg);
-					}
+					MsSvcMsg(silent, "SVC_NOT_INSTALLED", service_title, service_name);
 					break;
 				}
 
 				if (MsIsServiceRunning(service_name))
 				{
-					if(silent == false)
-					{
-						UniFormat(msg, sizeof(msg), _UU("SVR_ALREADY_START"),
-							service_title, service_name);
-						UniPrint(L"%s\n", msg);
-					}
+					MsSvcMsg(silent, "SVR_ALREADY_START", service_title, service_name);
 					break;
 				}
 
 				if (MsStartService(service_name) == false)
 				{
-					if(silent == false)
-					{
-						UniFormat(msg, sizeof(msg), _UU("SVC_START_FAILED"),
-							service_title, service_name);
-						UniPrint(L"%s\n", msg);
-					}
+					MsSvcMsg(silent, "SVC_START_FAILED", service_title, service_name);
 					break;
 				}
 
-				if(silent == false)
-				{
-					UniFormat(msg, sizeof(msg), _UU("SVC_START_OK"),
-						service_title, service_name);
-					UniPrint(L"%s\n", msg);
-				}
+				MsSvcMsg(silent, "SVC_START_OK", service_title, service_name);
 				break;
 
 			case SVC_MODE_STOP:
@@ -2028,49 +1977,29 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 
 				if (MsIsServiceInstalled(service_name) == false)
 				{
-					if(silent == false)
-					{
-						UniFormat(msg, sizeof(msg), _UU("SVC_NOT_INSTALLED"),
-							service_title, service_name);
-						UniPrint(L"%s\n", msg);
-					}
+					MsSvcMsg(silent, "SVC_NOT_INSTALLED", service_title, service_name);
 					break;
 				}
 
 				if (MsIsServiceRunning(service_name) == false)
 				{
-					if(silent == false)
-					{
-					UniFormat(msg, sizeof(msg), _UU("SVC_ALREADY_STOP"),
-						service_title, service_name);
-					UniPrint(L"%s\n", msg);
-					}
+					MsSvcMsg(silent, "SVC_ALREADY_STOP", service_title, service_name);
 					break;
 				}
 				if (MsStopService(service_name) == false)
 				{
-					if(silent == false)
-					{
-						UniFormat(msg, sizeof(msg), _UU("SVC_STOP_FAILED"),
-							service_title, service_name);
-						UniPrint(L"%s\n", msg);
-					}
+					MsSvcMsg(silent, "SVC_STOP_FAILED", service_title, service_name);
 					break;
 				}
 
-				if(silent == false)
-				{
-					UniFormat(msg, sizeof(msg), _UU("SVC_STOP_OK"),
-						service_title, service_name);
-					UniPrint(L"%s\n", msg);
-				}
+				MsSvcMsg(silent, "SVC_STOP_OK", service_title, service_name);
 				break;
 
 			case SVC_MODE_TEST:
 				MsTestModeW(service_title, start, stop);
 				break;
 			case SVC_MODE_USERMODE:
-				MsUserModeW(service_title, start, stop, icon);
+				MsUserModeW(service_title, start, stop);
 				break;
 			case SVC_MODE_SERVICE:
 				break;
@@ -2088,6 +2017,23 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, UINT
 	FreeMayaqua();
 
 	return 0;
+}
+
+// Wait up to 10 s, polling every 250 ms, until the service is running (running == true) or no longer
+// running (running == false)
+static void MsWaitServiceState(char *name, bool running)
+{
+	UINT64 end = Tick64() + 10000ULL;
+
+	while (Tick64() < end)
+	{
+		if (MsIsServiceRunning(name) == running)
+		{
+			break;
+		}
+
+		SleepThread(250);
+	}
 }
 
 bool MsStopService(char *name)
@@ -2116,16 +2062,7 @@ bool MsStopService(char *name)
 
 	if (ret)
 	{
-		UINT64 end = Tick64() + 10000ULL;
-		while (Tick64() < end)
-		{
-			if (MsIsServiceRunning(name) == false)
-			{
-				break;
-			}
-
-			SleepThread(250);
-		}
+		MsWaitServiceState(name, false);
 	}
 
 	CloseServiceHandle(sc);
@@ -2134,29 +2071,16 @@ bool MsStopService(char *name)
 
 bool MsStartService(char *name)
 {
-	return MsStartServiceEx(name, NULL);
-}
-bool MsStartServiceEx(char *name, UINT *error_code)
-{
 	SC_HANDLE sc, service;
 	bool ret = false;
-	static UINT dummy = 0;
 	if (name == NULL)
 	{
 		return false;
 	}
 
-	if (error_code == NULL)
-	{
-		error_code = &dummy;
-	}
-
-	*error_code = 0;
-
 	sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
 	if (sc == NULL)
 	{
-		*error_code = GetLastError();
 		return false;
 	}
 
@@ -2167,23 +2091,10 @@ bool MsStartServiceEx(char *name, UINT *error_code)
 
 		CloseServiceHandle(service);
 	}
-	else
-	{
-		*error_code = GetLastError();
-	}
 
 	if (ret)
 	{
-		UINT64 end = Tick64() + 10000ULL;
-		while (Tick64() < end)
-		{
-			if (MsIsServiceRunning(name))
-			{
-				break;
-			}
-
-			SleepThread(250);
-		}
+		MsWaitServiceState(name, true);
 	}
 
 	CloseServiceHandle(sc);
@@ -2269,6 +2180,29 @@ bool MsUninstallService(char *name)
 	return ret;
 }
 
+// Recovery of the service: restart it 10 s after each of its first three failures, and count the
+// failures from zero again after a day without one. The handle needs SERVICE_CHANGE_CONFIG, and
+// SERVICE_START for the restart actions.
+static void MsSetServiceRecovery(SC_HANDLE service)
+{
+	SERVICE_FAILURE_ACTIONS action;
+	SC_ACTION e[3];
+	UINT i;
+
+	Zero(&action, sizeof(action));
+	action.dwResetPeriod = 1 * 60 * 60 * 24;
+	action.cActions = (DWORD)(sizeof(e) / sizeof(e[0]));
+	action.lpsaActions = e;
+
+	for (i = 0;i < action.cActions;i++)
+	{
+		e[i].Type = SC_ACTION_RESTART;
+		e[i].Delay = 10000;
+	}
+
+	ChangeServiceConfig2(service, SERVICE_CONFIG_FAILURE_ACTIONS, &action);
+}
+
 bool MsUpdateServiceConfig(char *name)
 {
 	SC_HANDLE sc, service;
@@ -2286,49 +2220,33 @@ bool MsUpdateServiceConfig(char *name)
 		}
 	}
 
-	sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
+	sc = OpenSCManager(NULL, NULL, SC_MANAGER_CONNECT);
 	if (sc == NULL)
 	{
 		return false;
 	}
 
-	service = OpenService(sc, name, SERVICE_ALL_ACCESS);
+	// ChangeServiceConfig2 needs SERVICE_CHANGE_CONFIG, and SERVICE_START for the restart actions
+	service = OpenService(sc, name, SERVICE_CHANGE_CONFIG | SERVICE_START);
 	if (service != NULL)
 	{
-		if (GET_KETA(GetOsInfo()->OsType, 100) >= 2)
+		SERVICE_DESCRIPTIONW d;
+		wchar_t *description;
+		char dname[MAX_SIZE];
+
+		MsSetServiceRecovery(service);
+
+		MsRegWriteInt(REG_LOCAL_MACHINE, "Software\\" GC_REG_COMPANY_NAME "\\Update Service Config", name, 1);
+
+		Format(dname, sizeof(dname), "SVC_%s_DESCRIPT", name);
+
+		description = _UU(dname);
+
+		if (UniIsEmptyStr(description) == false)
 		{
-			SERVICE_FAILURE_ACTIONS action;
-			SC_ACTION *e;
-			Zero(&action, sizeof(action));
-			e = ZeroMalloc(sizeof(SC_ACTION) * 3);
-			e[0].Delay = 10000; e[0].Type = SC_ACTION_RESTART;
-			e[1].Delay = 10000; e[1].Type = SC_ACTION_RESTART;
-			e[2].Delay = 10000; e[2].Type = SC_ACTION_RESTART;
-			action.cActions = 3;
-			action.lpsaActions = e;
-			action.dwResetPeriod = 1 * 60 * 60 * 24;
-			ChangeServiceConfig2(service, SERVICE_CONFIG_FAILURE_ACTIONS, &action);
-
-			MsRegWriteInt(REG_LOCAL_MACHINE, "Software\\" GC_REG_COMPANY_NAME "\\Update Service Config", name, 1);
-		}
-
-		
-		if (GET_KETA(GetOsInfo()->OsType, 100) >= 2)
-		{
-			SERVICE_DESCRIPTIONW d;
-			wchar_t *description;
-			char dname[MAX_SIZE];
-
-			Format(dname, sizeof(dname), "SVC_%s_DESCRIPT", name);
-
-			description = _UU(dname);
-
-			if (UniIsEmptyStr(description) == false)
-			{
-				Zero(&d, sizeof(d));
-				d.lpDescription = description;
-				ChangeServiceConfig2(service, SERVICE_CONFIG_DESCRIPTION, &d);
-			}
+			Zero(&d, sizeof(d));
+			d.lpDescription = description;
+			ChangeServiceConfig2(service, SERVICE_CONFIG_DESCRIPTION, &d);
 		}
 
 		CloseServiceHandle(service);
@@ -2339,30 +2257,21 @@ bool MsUpdateServiceConfig(char *name)
 	return true;
 }
 
-bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar_t *path, UINT *error_code)
+bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar_t *path)
 {
 	SC_HANDLE sc, service;
 	bool ret = false;
 	wchar_t name_w[MAX_SIZE];
-	static UINT temp_int = 0;
 	if (name == NULL || title == NULL || path == NULL)
 	{
 		return false;
 	}
-
-	if (error_code == NULL)
-	{
-		error_code = &temp_int;
-	}
-
-	*error_code = 0;
 
 	StrToUni(name_w, sizeof(name_w), name);
 
 	sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
 	if (sc == NULL)
 	{
-		*error_code = GetLastError();
 		return false;
 	}
 
@@ -2372,34 +2281,17 @@ bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar
 
 	if (service != NULL)
 	{
+		SERVICE_DESCRIPTIONW d;
+
 		ret = true;
 
-		if (GET_KETA(GetOsInfo()->OsType, 100) >= 2)
-		{
-			SERVICE_DESCRIPTIONW d;
-			SERVICE_FAILURE_ACTIONS action;
-			SC_ACTION *e;
-			Zero(&d, sizeof(d));
-			d.lpDescription = description;
-			ChangeServiceConfig2(service, SERVICE_CONFIG_DESCRIPTION, &d);
-			Zero(&action, sizeof(action));
-			e = ZeroMalloc(sizeof(SC_ACTION) * 3);
-			e[0].Delay = 10000; e[0].Type = SC_ACTION_RESTART;
-			e[1].Delay = 10000; e[1].Type = SC_ACTION_RESTART;
-			e[2].Delay = 10000; e[2].Type = SC_ACTION_RESTART;
-			action.cActions = 3;
-			action.lpsaActions = e;
-			action.dwResetPeriod = 1 * 60 * 60 * 24;
-			ChangeServiceConfig2(service, SERVICE_CONFIG_FAILURE_ACTIONS, &action);
+		Zero(&d, sizeof(d));
+		d.lpDescription = description;
+		ChangeServiceConfig2(service, SERVICE_CONFIG_DESCRIPTION, &d);
 
-			Free(e);
-		}
+		MsSetServiceRecovery(service);
 
 		CloseServiceHandle(service);
-	}
-	else
-	{
-		*error_code = GetLastError();
 	}
 
 	CloseServiceHandle(sc);
@@ -2447,8 +2339,6 @@ void MsSetThreadPriorityIdle()
 
 void MsSetThreadPriorityRealtime()
 {
-	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_ABOVE_NORMAL);
-	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_HIGHEST);
 	SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
 }
 
