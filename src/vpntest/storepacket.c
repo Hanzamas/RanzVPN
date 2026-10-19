@@ -41,6 +41,7 @@
 #define	STOREPACKET_TEST_BATCH			32		// Frames between two drains of the receiver
 #define	STOREPACKET_TEST_STORM_FRAMES	100		// Frames of one flow within one storm check span
 #define	STOREPACKET_TEST_STORM_MARGIN	200		// Milliseconds waited past STORM_CHECK_SPAN
+#define	STOREPACKET_TEST_TICK_GAP		50		// Milliseconds: more than one step of Tick64 (GetTickCount64)
 #define	STOREPACKET_TEST_DELAY			10		// Delay of the delivery case (ms)
 #define	STOREPACKET_TEST_JITTER			5		// Its jitter (%): a span of 0 ms
 #define	STOREPACKET_TEST_DELIVER_MARGIN	50		// Milliseconds waited past that delay
@@ -307,6 +308,9 @@ static void StorePacketTestStormFlood(STOREPACKET_TEST *t)
 	UINT num_list;
 	bool has_first, has_last, has_detect;
 	UINT i;
+
+	// The storm flow before the flood keeps an older check window than every flow of the flood
+	SleepThread(STOREPACKET_TEST_TICK_GAP);
 
 	for (i = 0;i < STOREPACKET_TEST_FLOOD;i++)
 	{
