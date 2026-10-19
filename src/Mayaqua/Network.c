@@ -217,7 +217,7 @@ LIST *Win32GetNicList()
 {
 	UINT i;
 	LIST *o = NewListFast(NULL);
-	MS_ADAPTER_LIST *al = MsCreateAdapterList();
+	MS_ADAPTER_LIST *al = MsCreateAdapterListEx(true);
 
 	if (al == NULL)
 	{

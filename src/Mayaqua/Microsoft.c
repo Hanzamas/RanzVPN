@@ -42,9 +42,6 @@
 
 static MS *ms = NULL;
 
-static LOCK *lock_adapter_list = NULL;
-static MS_ADAPTER_LIST *last_adapter_list = NULL;
-
 static SERVICE_STATUS_HANDLE ssh = NULL;
 static SERVICE_STATUS status = { 0 };
 static HANDLE service_stop_event = NULL;
@@ -687,15 +684,7 @@ MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid)
 	return ret;
 }
 
-// Detect a 32-bit counter wraparound
-#define	CHECK_32BIT_OVERFLOW(old_value, new_value)				\
-{																\
-	if ((old_value) > (new_value))								\
-	{															\
-		(new_value) += ((UINT64)4294967296ULL);					\
-	}															\
-}
-
+// Fill in the adapter GUID: the legacy IPv4 adapter list is the only source of the adapter name
 static void MsGetAdapterTcpIpInformation(MS_ADAPTER *a)
 {
 	IP_ADAPTER_INFO *info, *info_top;
@@ -734,53 +723,6 @@ static void MsGetAdapterTcpIpInformation(MS_ADAPTER *a)
 	{
 		if (info->Index == a->Index)
 		{
-			IP_ADDR_STRING *s;
-
-			a->NumIpAddress = 0;
-			s = &info->IpAddressList;
-			while (s != NULL)
-			{
-				if (a->NumIpAddress < MAX_MS_ADAPTER_IP_ADDRESS)
-				{
-					StrToIP(&a->IpAddresses[a->NumIpAddress], s->IpAddress.String);
-					StrToIP(&a->SubnetMasks[a->NumIpAddress], s->IpMask.String);
-					a->NumIpAddress++;
-				}
-				s = s->Next;
-			}
-
-			a->NumGateway = 0;
-			s = &info->GatewayList;
-			while (s != NULL)
-			{
-				if (a->NumGateway < MAX_MS_ADAPTER_IP_ADDRESS)
-				{
-					StrToIP(&a->Gateways[a->NumGateway], s->IpAddress.String);
-					a->NumGateway++;
-				}
-				s = s->Next;
-			}
-
-			a->UseDhcp = (info->DhcpEnabled == 0 ? false : true);
-			if (a->UseDhcp)
-			{
-				SYSTEMTIME st;
-
-				StrToIP(&a->DhcpServer, info->DhcpServer.IpAddress.String);
-				TimeToSystem(&st, info->LeaseObtained);
-				a->DhcpLeaseStart = SystemToUINT64(&st);
-
-				TimeToSystem(&st, info->LeaseExpires);
-				a->DhcpLeaseExpires = SystemToUINT64(&st);
-			}
-
-			a->UseWins = info->HaveWins;
-			if (a->UseWins)
-			{
-				StrToIP(&a->PrimaryWinsServer, info->PrimaryWinsServer.IpAddress.String);
-				StrToIP(&a->SecondaryWinsServer, info->SecondaryWinsServer.IpAddress.String);
-			}
-
 			StrCpy(a->Guid, sizeof(a->Guid), info->AdapterName);
 
 			break;
@@ -795,100 +737,6 @@ static void MsGetAdapterTcpIpInformation(MS_ADAPTER *a)
 MS_ADAPTER_LIST *MsCreateAdapterList()
 {
 	return MsCreateAdapterListEx(false);
-}
-MS_ADAPTER_LIST *MsCreateAdapterListEx(bool no_info)
-{
-	MS_ADAPTER_LIST *ret;
-
-	if (no_info)
-	{
-		ret = MsCreateAdapterListInnerExVista(true);
-
-		return ret;
-	}
-
-	Lock(lock_adapter_list);
-	{
-		MS_ADAPTER_LIST *old = last_adapter_list;
-		UINT i;
-
-		ret = MsCreateAdapterListInnerExVista(false);
-
-		if (ret == NULL)
-		{
-			Unlock(lock_adapter_list);
-			return NULL;
-		}
-
-		for (i = 0;i < ret->Num;i++)
-		{
-			UINT j;
-			for (j = 0;j < old->Num;j++)
-			{
-				MS_ADAPTER *o = old->Adapters[j];
-				MS_ADAPTER *n = ret->Adapters[i];
-
-				if (StrCmpi(o->Title, n->Title) == 0)
-				{
-					CHECK_32BIT_OVERFLOW(o->RecvBytes, n->RecvBytes);
-					CHECK_32BIT_OVERFLOW(o->RecvPacketsBroadcast, n->RecvPacketsBroadcast);
-					CHECK_32BIT_OVERFLOW(o->RecvPacketsUnicast, n->RecvPacketsUnicast);
-					CHECK_32BIT_OVERFLOW(o->SendBytes, n->SendBytes);
-					CHECK_32BIT_OVERFLOW(o->SendPacketsBroadcast, n->SendPacketsBroadcast);
-					CHECK_32BIT_OVERFLOW(o->SendPacketsUnicast, n->SendPacketsUnicast);
-					break;
-				}
-			}
-		}
-
-		MsFreeAdapterList(old);
-
-		last_adapter_list = MsCloneAdapterList(ret);
-	}
-	Unlock(lock_adapter_list);
-
-	return ret;
-}
-
-static void MsInitAdapterListModule()
-{
-	lock_adapter_list = NewLock(NULL);
-
-	last_adapter_list = MsCreateAdapterListInnerExVista(false);
-}
-
-static void MsFreeAdapterListModule()
-{
-	if (last_adapter_list != NULL)
-	{
-		MsFreeAdapterList(last_adapter_list);
-		last_adapter_list = NULL;
-	}
-
-	DeleteLock(lock_adapter_list);
-	lock_adapter_list = NULL;
-}
-
-MS_ADAPTER_LIST *MsCloneAdapterList(MS_ADAPTER_LIST *o)
-{
-	MS_ADAPTER_LIST *ret;
-	UINT i;
-	if (o == NULL)
-	{
-		return NULL;
-	}
-
-	ret = ZeroMalloc(sizeof(MS_ADAPTER_LIST));
-	ret->Num = o->Num;
-	ret->Adapters = ZeroMalloc(sizeof(MS_ADAPTER *) * ret->Num);
-
-	for (i = 0;i < ret->Num;i++)
-	{
-		ret->Adapters[i] = ZeroMalloc(sizeof(MS_ADAPTER));
-		Copy(ret->Adapters[i], o->Adapters[i], sizeof(MS_ADAPTER));
-	}
-
-	return ret;
 }
 
 MS_ADAPTER *MsCloneAdapter(MS_ADAPTER *a)
@@ -905,7 +753,7 @@ MS_ADAPTER *MsCloneAdapter(MS_ADAPTER *a)
 	return ret;
 }
 
-MS_ADAPTER_LIST *MsCreateAdapterListInnerExVista(bool no_info)
+MS_ADAPTER_LIST *MsCreateAdapterListEx(bool no_info)
 {
 	LIST *o;
 	UINT i;
@@ -927,6 +775,7 @@ MS_ADAPTER_LIST *MsCreateAdapterListInnerExVista(bool no_info)
 		wchar_t title[MAX_PATH];
 		MS_ADAPTER *a;
 		UINT j;
+		bool is_wireless;
 
 		{
 			{
@@ -969,26 +818,14 @@ MS_ADAPTER_LIST *MsCreateAdapterListInnerExVista(bool no_info)
 				a->Index = r->InterfaceIndex;
 				a->MediaConnectState = r->MediaConnectState;
 				a->Type = r->Type;
-				a->Status = ConvertMidStatusVistaToXp(r->OperStatus);
-				a->Mtu = r->Mtu;
-				a->Speed = MAX((UINT)r->TransmitLinkSpeed, (UINT)r->ReceiveLinkSpeed);
 				a->AddressSize = MIN(sizeof(a->Address), r->PhysicalAddressLength);
 				Copy(a->Address, r->PhysicalAddress, a->AddressSize);
-				a->RecvBytes = r->InOctets;
-				a->RecvPacketsBroadcast = r->InNUcastPkts;
-				a->RecvPacketsUnicast = r->InUcastPkts;
-				a->SendBytes = r->OutOctets;
-				a->SendPacketsBroadcast = r->OutNUcastPkts;
-				a->SendPacketsUnicast = r->OutUcastPkts;
 
-				if (r->MediaType == NdisMediumWirelessWan || r->PhysicalMediumType == NdisPhysicalMediumWirelessLan ||
+				is_wireless = (r->MediaType == NdisMediumWirelessWan || r->PhysicalMediumType == NdisPhysicalMediumWirelessLan ||
 					r->PhysicalMediumType == NdisPhysicalMediumWirelessWan || r->PhysicalMediumType == NdisPhysicalMediumWiMax ||
-					r->Type == IF_TYPE_IEEE80211)
-				{
-					a->IsWireless = true;
-				}
+					r->Type == IF_TYPE_IEEE80211);
 
-				if (a->IsWireless ||
+				if (is_wireless ||
 					r->Type != IF_TYPE_ETHERNET_CSMACD ||
 					r->MediaType != NdisMedium802_3 || 
 					(r->PhysicalMediumType != 0 && r->PhysicalMediumType != NdisPhysicalMedium802_3))
@@ -1014,20 +851,6 @@ MS_ADAPTER_LIST *MsCreateAdapterListInnerExVista(bool no_info)
 	FreeMibTable(table);
 
 	return ret;
-}
-
-UINT ConvertMidStatusVistaToXp(UINT st)
-{
-	switch (st)
-	{
-	case IfOperStatusUp:
-		return MIB_IF_OPER_STATUS_CONNECTED;
-
-	case IfOperStatusDown:
-		return MIB_IF_OPER_STATUS_DISCONNECTED;
-	}
-
-	return MIB_IF_OPER_STATUS_NON_OPERATIONAL;
 }
 
 void MsFreeAdapterList(MS_ADAPTER_LIST *o)
@@ -4139,8 +3962,6 @@ void MsInit()
 		ms->UserNameExW = CopyUniStr(ms->UserNameW);
 	}
 
-	MsInitAdapterListModule();
-
 	if (true)
 	{
 		wchar_t tmp[MAX_PATH];
@@ -4291,8 +4112,6 @@ void MsFree()
 
 		hLsa = NULL;
 	}
-
-	MsFreeAdapterListModule();
 
 	MsFreeTempDir();
 
