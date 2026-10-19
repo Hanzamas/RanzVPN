@@ -2768,7 +2768,6 @@ static void PsMain(PS *ps)
 			{"Check", PtCheck},
 			{"Crash", PsCrash},
 			{"Flush", PsFlush},
-			{"Debug", PsDebug},
 			{"ServerInfoGet", PsServerInfoGet},
 			{"ServerStatusGet", PsServerStatusGet},
 			{"ListenerCreate", PsListenerCreate},
@@ -12439,59 +12438,6 @@ UINT PsAcAdd6(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	}
 
 	FreeRpcAcList(&t);
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
-UINT PsDebug(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT id;
-	PARAM args[] =
-	{
-		{"[id]", NULL, NULL, NULL, NULL},
-		{"ARG", NULL, NULL, NULL, NULL},
-	};
-
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	id = GetParamInt(o, "[id]");
-
-	if (true)
-	{
-		RPC_TEST t;
-		UINT ret;
-
-		c->Write(c, _UU("CMD_Debug_Msg1"));
-
-		Zero(&t, sizeof(t));
-
-		t.IntValue = id;
-		StrCpy(t.StrValue, sizeof(t.StrValue), GetParamStr(o, "ARG"));
-
-		ret = ScDebug(ps->Rpc, &t);
-
-		if (ret != ERR_NO_ERROR)
-		{
-			CmdPrintError(c, ret);
-			FreeParamValueList(o);
-			return ret;
-		}
-		else
-		{
-			wchar_t tmp[sizeof(t.StrValue)];
-
-			UniFormat(tmp, sizeof(tmp), _UU("CMD_Debug_Msg2"), t.StrValue);
-			c->Write(c, tmp);
-		}
-	}
 
 	FreeParamValueList(o);
 

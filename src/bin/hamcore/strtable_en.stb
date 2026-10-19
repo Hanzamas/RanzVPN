@@ -1274,16 +1274,6 @@ CMD_ServerPasswordSet_Args	ServerPasswordSet [password]
 CMD_ServerPasswordSet_[password]	This specifies a new password setting.
 
 
-# Debug command
-CMD_Debug				Execute a Debug Command
-CMD_Debug_Help			Runs a debug command on the running VPN Server / Bridge process.\nThis command should be executed wjen the support staff requests to do so.\nMisuse of this command might cause a crash of VPN Server / Bridge running.
-CMD_Debug_Args			Debug [id] [/ARG:arg]
-CMD_Debug_[id]			Specify a debug command number.
-CMD_Debug_ARG			Specify a string to pass to the debug command. If a string contains spaces, contains the whole command by " ".
-CMD_Debug_Msg1			Sending the debug command...
-CMD_Debug_Msg2			The debug command has executed.\nResults: \"%S\"
-
-
 # Crash command
 CMD_Crash				Raise a error on the VPN Server / Bridge to terminate the process forcefully.
 CMD_Crash_Help			This command will raise a fatal error (memory access violation) on the VPN Server / Bridge running process in order to crash the process. As the result, VPN Server / Bridge will be terminated and restarted if it is running as a service mode. If the VPN Server is running as a user mode, the process will not automatically restarted.\nThis command is for a situation when the VPN Server / Bridge is under a non-recoverable error or the process is in an infinite loop. This command will disconnect all VPN Sessions on the VPN Server / Bridge. All unsaved settings in the memory of VPN Server / Bridge will be lost.\nBefore run this command, run the Flush command to try to save volatile data to the configuration file.\nTo execute this command, you must have VPN Server / VPN Bridge administrator privileges.

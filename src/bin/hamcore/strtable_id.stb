@@ -1274,16 +1274,6 @@ CMD_ServerPasswordSet_Args	ServerPasswordSet [password]
 CMD_ServerPasswordSet_[password]	Ini menentukan pengaturan kata sandi baru.
 
 
-# Debug command
-CMD_Debug				Jalankan Perintah Debug
-CMD_Debug_Help			Menjalankan perintah debug pada proses VPN Server / Bridge yang sedang berjalan.\nPerintah ini harus dijalankan ketika staf dukungan meminta untuk melakukannya.\nPenyalahgunaan perintah ini dapat menyebabkan kerusakan pada VPN Server / Bridge yang sedang berjalan.
-CMD_Debug_Args			Debug [id] [/ARG:arg]
-CMD_Debug_[id]			Tentukan nomor perintah debug.
-CMD_Debug_ARG			Tentukan string yang akan diteruskan ke perintah debug. Jika string mengandung spasi, masukkan seluruh perintah dalam tanda kutip (" ").
-CMD_Debug_Msg1			Mengirim perintah debug...
-CMD_Debug_Msg2			Perintah debug telah dijalankan.\nHasil: "%S"
-
-
 # Crash command
 CMD_Crash				Menimbulkan kesalahan pada VPN Server / Bridge untuk menghentikan proses secara paksa.
 CMD_Crash_Help			Perintah ini akan menimbulkan kesalahan fatal (pelanggaran akses memori) pada proses VPN Server / Bridge yang sedang berjalan untuk menghentikan proses tersebut. Sebagai hasilnya, VPN Server / Bridge akan dihentikan dan dimulai ulang jika berjalan dalam mode layanan. Jika VPN Server berjalan dalam mode pengguna, proses tidak akan dimulai ulang secara otomatis.\nPerintah ini digunakan ketika VPN Server / Bridge mengalami kesalahan yang tidak dapat diperbaiki atau proses berada dalam loop tak terbatas. Perintah ini akan memutuskan semua Sesi VPN di VPN Server / Bridge. Semua pengaturan yang belum disimpan dalam memori VPN Server / Bridge akan hilang.\nSebelum menjalankan perintah ini, jalankan perintah Flush untuk mencoba menyimpan data yang bersifat volatil ke file konfigurasi.\nUntuk menjalankan perintah ini, Anda harus memiliki hak akses administrator VPN Server / VPN Bridge.
