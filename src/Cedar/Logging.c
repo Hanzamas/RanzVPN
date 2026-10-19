@@ -392,7 +392,8 @@ static void EraserThread(THREAD *t, void *p)
 		EraserMain(e);
 		e->NumChecks++;
 
-		Wait(e->HaltEvent, GetEraserCheckInterval());
+		// The interval in milliseconds (at least 1 s, as the seconds of GetEraserCheckInterval for the configuration)
+		Wait(e->HaltEvent, MAX(eraser_check_interval, 1000));
 	}
 }
 
