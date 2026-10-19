@@ -69,6 +69,7 @@ struct LOG
 	UINT64 CurrentFilePointer;
 	UINT CurrentLogNumber;
 	bool log_number_incremented;
+	UINT64 NumDropped;					// Records dropped and not yet reported in the file (under the RecordQueue lock)
 };
 
 
