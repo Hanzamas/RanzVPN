@@ -9,57 +9,12 @@
 
 #include "Mayaqua/Network.h"
 
-#ifndef	CEDAR_VERSION_MAJOR
-#define	CEDAR_VERSION_MAJOR		0
-#endif
-
-#ifndef	CEDAR_VERSION_MINOR
-#define	CEDAR_VERSION_MINOR		0
-#endif
-
-#ifndef	CEDAR_VERSION_BUILD
-#define	CEDAR_VERSION_BUILD		0
-#endif
-
-// The version above (major.minor.build) is for display only. Peers receive
-// and compare these fixed values instead (hello/welcome packs, node info,
-// admin RPC, server caps), kept at the last SoftEther VPN 5.02 build 5187
-// so that existing peers keep gating features the same way.
+// The version in BuildInfo.h (major.minor.build) is for display only. Peers
+// receive and compare these fixed values instead (hello/welcome packs, node
+// info, admin RPC, server caps), kept at the last SoftEther VPN 5.02 build
+// 5187 so that existing peers keep gating features the same way.
 #define	CEDAR_WIRE_VER			502		// Major * 100 + minor
 #define	CEDAR_WIRE_BUILD		5187
-
-#ifndef	BUILDER_NAME
-#define	BUILDER_NAME			"Unknown"
-#endif
-
-#ifndef	BUILD_PLACE
-#define	BUILD_PLACE				"Unknown"
-#endif
-
-#ifndef	BUILD_DATE_Y
-#define	BUILD_DATE_Y			1970
-#endif
-
-#ifndef	BUILD_DATE_M
-#define	BUILD_DATE_M			1
-#endif
-
-#ifndef	BUILD_DATE_D
-#define	BUILD_DATE_D			1
-#endif
-
-#ifndef	BUILD_DATE_HO
-#define	BUILD_DATE_HO			0
-#endif
-
-#ifndef	BUILD_DATE_MI
-#define	BUILD_DATE_MI			0
-#endif
-
-#ifndef	BUILD_DATE_SE
-#define	BUILD_DATE_SE			0
-#endif
-
 
 #define	DEFAULT_USERNAME_HUB_SEPARATOR	'@'
 

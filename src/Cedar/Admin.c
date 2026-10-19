@@ -5,6 +5,7 @@
 
 #include "Account.h"
 #include "BridgeWin32.h"
+#include "BuildInfo.h"
 #include "Connection.h"
 #include "Link.h"
 #include "Listener.h"
