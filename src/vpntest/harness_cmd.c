@@ -116,12 +116,29 @@ static HARNESS_CMD_STEP harness_cmd_syslog_badhost[] =
 	{NULL},
 };
 
+// CascadeHttpHeaderDelete (FND-7 #106): deleting a custom HTTP header of a cascade keeps the other headers, including
+// one whose name starts with the deleted name. The cascade stays offline (it is created offline).
+static HARNESS_CMD_STEP harness_cmd_cascade_httpheader[] =
+{
+	{"CascadeCreate hdr /SERVER:127.0.0.1:1 /HUB:HUB /USERNAME:user", ERR_NO_ERROR},
+	{"CascadeHttpHeaderAdd hdr /NAME:X-A /DATA:a1", ERR_NO_ERROR},
+	{"CascadeHttpHeaderAdd hdr /NAME:X-B /DATA:b1", ERR_NO_ERROR},
+	{"CascadeHttpHeaderAdd hdr /NAME:X-AB /DATA:ab1", ERR_NO_ERROR},
+	{"CascadeHttpHeaderGet hdr", ERR_NO_ERROR, NULL, true},
+	{"CascadeHttpHeaderDelete hdr /NAME:X-A", ERR_NO_ERROR},
+	{"CascadeHttpHeaderGet hdr", ERR_NO_ERROR, NULL, true},
+	{"CascadeHttpHeaderDelete hdr /NAME:X-AB", ERR_NO_ERROR},
+	{"CascadeHttpHeaderGet hdr", ERR_NO_ERROR, NULL, true},
+	{NULL},
+};
+
 // The cases, in run order
 static HARNESS_CMD_CASE harness_cmd_cases[] =
 {
 	{"AccessAddTcpState", "HARNESS_CMD_TCPSTATE", harness_cmd_access_tcpstate},
 	{"AccessAddPortRange", "HARNESS_CMD_PORTRANGE", harness_cmd_access_portrange},
 	{"SyslogEnableBadHost", NULL, harness_cmd_syslog_badhost},
+	{"CascadeHttpHeaderDelete", "HARNESS_CMD_HTTPHEADER", harness_cmd_cascade_httpheader},
 };
 
 static BUF *HarnessCmdRun(char *hub, char *command, UINT *ret);
