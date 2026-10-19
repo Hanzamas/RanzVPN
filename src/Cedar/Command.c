@@ -11965,41 +11965,14 @@ UINT PsCrlAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		bool param_exists = false;
 		CRL *crl = ZeroMalloc(sizeof(CRL));
 		NAME *n;
-		n = crl->Name = ZeroMalloc(sizeof(NAME));
 
-		if (IsEmptyStr(GetParamStr(o, "CN")) == false)
-		{
-			n->CommonName = CopyUniStr(GetParamUniStr(o, "CN"));
-			param_exists = true;
-		}
+		// Each option in its own field; NewName copies only the non-empty ones and FreeName frees them
+		n = crl->Name = NewName(GetParamUniStr(o, "CN"), GetParamUniStr(o, "O"), GetParamUniStr(o, "OU"),
+			GetParamUniStr(o, "C"), GetParamUniStr(o, "ST"), GetParamUniStr(o, "L"));
 
-		if (IsEmptyStr(GetParamStr(o, "O")) == false)
+		if (n->CommonName != NULL || n->Organization != NULL || n->Unit != NULL ||
+			n->Country != NULL || n->State != NULL || n->Local != NULL)
 		{
-			n->CommonName = CopyUniStr(GetParamUniStr(o, "O"));
-			param_exists = true;
-		}
-
-		if (IsEmptyStr(GetParamStr(o, "OU")) == false)
-		{
-			n->CommonName = CopyUniStr(GetParamUniStr(o, "OU"));
-			param_exists = true;
-		}
-
-		if (IsEmptyStr(GetParamStr(o, "C")) == false)
-		{
-			n->CommonName = CopyUniStr(GetParamUniStr(o, "C"));
-			param_exists = true;
-		}
-
-		if (IsEmptyStr(GetParamStr(o, "ST")) == false)
-		{
-			n->CommonName = CopyUniStr(GetParamUniStr(o, "ST"));
-			param_exists = true;
-		}
-
-		if (IsEmptyStr(GetParamStr(o, "L")) == false)
-		{
-			n->CommonName = CopyUniStr(GetParamUniStr(o, "L"));
 			param_exists = true;
 		}
 
