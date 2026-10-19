@@ -2046,22 +2046,42 @@ void IncrementServerConfigRevision(SERVER *s)
 	s->ConfigRevision++;
 }
 
-// Stages an uploaded configuration that the next start loads in place of the live file
-bool SiStageConfiguration(SERVER *s, char *data, UINT size)
+// Stages an uploaded configuration that the next start loads in place of the live file. An upload
+// that does not parse, is truncated or holds no ServerConfiguration folder gives ERR_INVALID_PARAMETER
+// and a failed write ERR_INTERNAL_ERROR; either way the live configuration stays.
+UINT SiStageConfiguration(SERVER *s, char *data, UINT size)
 {
-	if (s == NULL || s->CfgRw == NULL || data == NULL)
+	BUF *b;
+	FOLDER *root;
+	bool valid;
+	if (s == NULL || s->CfgRw == NULL)
 	{
-		return false;
+		return ERR_INTERNAL_ERROR;
+	}
+	if (data == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	b = NewBufFromMemory(data, size);
+	root = CfgBufToFolder(b, true);
+	FreeBuf(b);
+
+	valid = (root != NULL && CfgFindFolder(root, "ServerConfiguration") != NULL);
+	CfgDeleteFolder(root);
+	if (valid == false)
+	{
+		return ERR_INVALID_PARAMETER;
 	}
 
 	if (CfgStageNewFile(s->CfgRw, data, size) == false)
 	{
-		return false;
+		return ERR_INTERNAL_ERROR;
 	}
 
 	IncrementServerConfigRevision(s);
 
-	return true;
+	return ERR_NO_ERROR;
 }
 
 FOLDER *SiWriteConfigurationToCfg(SERVER *s)

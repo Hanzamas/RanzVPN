@@ -1755,6 +1755,7 @@ static UINT StGetConfig(ADMIN *a, RPC_CONFIG *t)
 static UINT StSetConfig(ADMIN *a, RPC_CONFIG *t)
 {
 	SERVER *s;
+	UINT ret;
 
 	SERVER_ADMIN_ONLY;
 
@@ -1764,7 +1765,12 @@ static UINT StSetConfig(ADMIN *a, RPC_CONFIG *t)
 		return ERR_INTERNAL_ERROR;
 	}
 
-	SiStageConfiguration(s, t->FileData, StrLen(t->FileData));
+	// A bad upload or a failed write keeps the live configuration and the server running
+	ret = SiStageConfiguration(s, t->FileData, StrLen(t->FileData));
+	if (ret != ERR_NO_ERROR)
+	{
+		return ret;
+	}
 
 	ALog(a, NULL, "LA_SET_CONFIG");
 

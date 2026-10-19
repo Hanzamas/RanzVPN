@@ -2992,6 +2992,24 @@ static void HarnessConfigApiRoundTrip(HARNESS *h)
 		CfgDeleteFolder(root);
 	}
 
+	// SetConfig parses the upload with require_closed (FND-94): the saved text passes, a truncated copy
+	// fails, and garbage gives ERR_INVALID_PARAMETER without a reboot
+	b = NewBufFromMemory(c.FileData, StrLen(c.FileData));
+	root = CfgBufToFolder(b, true);
+	HarnessCheck(h, root != NULL, "saved configuration passes the SetConfig parse");
+	CfgDeleteFolder(root);
+	FreeBuf(b);
+	b = NewBufFromMemory(c.FileData, StrLen(c.FileData) / 2);
+	root = CfgBufToFolder(b, true);
+	HarnessCheck(h, root == NULL, "truncated configuration fails the SetConfig parse");
+	CfgDeleteFolder(root);
+	FreeBuf(b);
+	FreeRpcConfig(&c);
+
+	Zero(&c, sizeof(c));
+	c.FileData = CopyStr("garbage");
+	HarnessExpectErr(h, ScSetConfig(h->Rpc, &c), ERR_INVALID_PARAMETER, "SetConfig of garbage");
+
 	FreeRpcConfig(&c);
 }
 

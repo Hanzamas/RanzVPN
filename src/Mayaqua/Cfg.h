@@ -104,6 +104,7 @@ char *CfgTypeToStr(UINT type);
 void CfgAddItemText(BUF *b, ITEM *t, UINT depth);
 FOLDER *CfgBufTextToFolder(BUF *b);
 FOLDER *CfgBufBinToFolder(BUF *b);
+FOLDER *CfgBufToFolder(BUF *b, bool require_closed);
 char *CfgReadNextLine(BUF *b);
 void CfgSaveW(FOLDER *f, wchar_t *name);
 bool CfgSaveExW(CFG_RW *rw, FOLDER *f, wchar_t *name);

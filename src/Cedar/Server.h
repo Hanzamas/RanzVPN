@@ -233,7 +233,7 @@ void EnumLogFileDir(LIST *o, char *dirname);
 void FreeEnumLogFile(LIST *o);
 bool CheckLogFileNameFromEnumList(LIST *o, char *name);
 void IncrementServerConfigRevision(SERVER *s);
-bool SiStageConfiguration(SERVER *s, char *data, UINT size);
+UINT SiStageConfiguration(SERVER *s, char *data, UINT size);
 void GetServerProductName(SERVER *s, char *name, UINT size);
 void GetServerProductNameInternal(SERVER *s, char *name, UINT size);
 

@@ -379,8 +379,6 @@ FOLDER *CfgReadW(wchar_t *name)
 	void *buf;
 	FOLDER *f;
 	bool delete_new = false;
-	bool binary_file = false;
-	UCHAR header[8];
 	bool has_eof = false;
 	if (name == NULL)
 	{
@@ -454,39 +452,7 @@ FOLDER *CfgReadW(wchar_t *name)
 		FileDeleteW(newfile);
 	}
 
-	// A buffer starting with "SEVPN_DB" is the binary format
-	ReadBuf(b, header, sizeof(header));
-	if (Cmp(header, TAG_BINARY, 8) == 0)
-	{
-		UCHAR hash1[SHA1_SIZE], hash2[SHA1_SIZE];
-		binary_file = true;
-
-		ReadBuf(b, hash1, sizeof(hash1));
-
-		Sha0(hash2, ((UCHAR *)b->Buf) + 8 + SHA1_SIZE, b->Size - 8 - SHA1_SIZE);
-
-		if (Cmp(hash1, hash2, SHA1_SIZE) != 0)
-		{
-			FreeBuf(b);
-			return NULL;
-		}
-	}
-
-	SeekBuf(b, 0, 0);
-
-	if (binary_file)
-	{
-		SeekBuf(b, 8 + SHA1_SIZE, 0);
-	}
-
-	if (binary_file == false)
-	{
-		f = CfgBufTextToFolder(b);
-	}
-	else
-	{
-		f = CfgBufBinToFolder(b);
-	}
+	f = CfgBufToFolder(b, false);
 
 	Free(buf);
 	FreeBuf(b);
@@ -547,7 +513,9 @@ char *CfgReadNextLine(BUF *b)
 	return buf;
 }
 
-static bool CfgReadNextTextBUF(BUF *b, FOLDER *current)
+// Read the next line into current; false at the closing brace of current or at the end of the
+// buffer. *open counts the declared folders whose closing brace has not been read yet.
+static bool CfgReadNextTextBUF(BUF *b, FOLDER *current, UINT *open)
 {
 	char *buf;
 	TOKEN_LIST *token;
@@ -557,7 +525,7 @@ static bool CfgReadNextTextBUF(BUF *b, FOLDER *current)
 	bool ret;
 	FOLDER *f;
 
-	if (b == NULL || current == NULL)
+	if (b == NULL || current == NULL || open == NULL)
 	{
 		return false;
 	}
@@ -586,10 +554,11 @@ static bool CfgReadNextTextBUF(BUF *b, FOLDER *current)
 				name = CfgUnescape(token->Token[1]);
 
 				f = CfgCreateFolder(current, name);
+				(*open)++;
 
 				while (true)
 				{
-					if (CfgReadNextTextBUF(b, f) == false)
+					if (CfgReadNextTextBUF(b, f, open) == false)
 					{
 						break;
 					}
@@ -600,6 +569,10 @@ static bool CfgReadNextTextBUF(BUF *b, FOLDER *current)
 		}
 		if (!StrCmpi(token->Token[0], "}"))
 		{
+			if (*open != 0)
+			{
+				(*open)--;
+			}
 			ret = false;
 		}
 		if (token->NumTokens >= 3)
@@ -670,9 +643,12 @@ static bool CfgReadNextTextBUF(BUF *b, FOLDER *current)
 	return ret;
 }
 
-FOLDER *CfgBufTextToFolder(BUF *b)
+// Parse a text configuration. With require_closed, a folder whose closing brace is missing, as in a
+// truncated file, gives NULL.
+static FOLDER *CfgBufTextToFolderEx(BUF *b, bool require_closed)
 {
 	FOLDER *f, *c;
+	UINT open = 0;
 	if (b == NULL)
 	{
 		return NULL;
@@ -682,14 +658,14 @@ FOLDER *CfgBufTextToFolder(BUF *b)
 
 	while (true)
 	{
-		if (CfgReadNextTextBUF(b, c) == false)
+		if (CfgReadNextTextBUF(b, c, &open) == false)
 		{
 			break;
 		}
 	}
 
 	f = CfgFindFolder(c, TAG_ROOT);
-	if (f == NULL)
+	if (f == NULL || (require_closed && open != 0))
 	{
 		CfgDeleteFolder(c);
 		return NULL;
@@ -701,6 +677,43 @@ FOLDER *CfgBufTextToFolder(BUF *b)
 	CfgDeleteFolder(c);
 
 	return f;
+}
+
+FOLDER *CfgBufTextToFolder(BUF *b)
+{
+	return CfgBufTextToFolderEx(b, false);
+}
+
+// Parse a configuration in either format. A buffer starting with "SEVPN_DB" is the binary format,
+// whose stored SHA-0 must match the body; anything else is text, where require_closed rejects a
+// truncated file. NULL when it does not parse.
+FOLDER *CfgBufToFolder(BUF *b, bool require_closed)
+{
+	UCHAR hash[SHA1_SIZE];
+	if (b == NULL)
+	{
+		return NULL;
+	}
+
+	if (b->Size < 8 || Cmp(b->Buf, TAG_BINARY, 8) != 0)
+	{
+		SeekBuf(b, 0, 0);
+		return CfgBufTextToFolderEx(b, require_closed);
+	}
+
+	if (b->Size < 8 + SHA1_SIZE)
+	{
+		return NULL;
+	}
+
+	Sha0(hash, ((UCHAR *)b->Buf) + 8 + SHA1_SIZE, b->Size - 8 - SHA1_SIZE);
+	if (Cmp(((UCHAR *)b->Buf) + 8, hash, SHA1_SIZE) != 0)
+	{
+		return NULL;
+	}
+
+	SeekBuf(b, 8 + SHA1_SIZE, 0);
+	return CfgBufBinToFolder(b);
 }
 
 // Smallest encoding of one folder or one item in the binary format: a folder is a name length and
