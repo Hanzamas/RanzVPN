@@ -1,0 +1,42 @@
+# packet log lines (PacketLogParseProc): session sess-a, no destination session
+arp-request: sess-a,-,02425552000A,FFFFFFFFFFFF,0x0806,42,ARPv4,Request,-,-,-,-,-,-,Who has 10.0.0.2? Please Tell 02425552000A(10.0.0.1),FFFFFFFFFFFF02425552000A0806000108000604000102425552000A0A0000010000000000000A000002
+arp-reply: sess-a,-,02425552000A,02425552000B,0x0806,42,ARPv4,Response,-,-,-,-,-,-,02425552000A has 10.0.0.1,-
+icmp4-echo: sess-a,-,02425552000A,02425552000B,0x0800,42,ICMPv4,Echo Request,10.0.0.1,-,10.0.0.2,-,-,-,-,-
+ip4-other: sess-a,-,02425552000A,02425552000B,0x0800,42,IPv4(0x2F),-,10.0.0.1,-,10.0.0.2,-,-,-,-,-
+tcp4-syn: sess-a,-,02425552000A,02425552000B,0x0800,54,TCP_CONNECTv4,SYN,10.0.0.1,49152,10.0.0.2,40001,65536,131072,WindowSize=64240,-
+tcp4-data: sess-a,-,02425552000A,02425552000B,0x0800,58,TCP_DATAv4,PSH+ACK,10.0.0.1,49152,10.0.0.2,40001,65536,131072,WindowSize=64240,-,192.0.2.1,192.0.2.2
+tcp4-http: sess-a,-,02425552000A,02425552000B,0x0800,129,TCP_DATAv4,PSH+ACK,10.0.0.1,49152,10.0.0.2,http(80),65536,131072,WindowSize=64240 HttpMethod=GET HttpUrl=http://example.test/index.html HttpProtocol=HTTP/1.1 HttpUserAgent=ranz-test/1.0 ,-
+udp4: sess-a,-,02425552000A,02425552000B,0x0800,46,UDPv4,-,10.0.0.1,49152,10.0.0.2,40002,-,-,-,-
+dns4: sess-a,-,02425552000A,02425552000B,0x0800,72,DNSv4,DNS_Query,10.0.0.1,49152,10.0.0.2,domain(53),-,-,example.test,-
+ike4: sess-a,-,02425552000A,02425552000B,0x0800,70,IKE_CONNECTv4,MainMode,10.0.0.1,49152,10.0.0.2,isakmp(500),-,-,InitiatorCookie=72623859790382856 ResponderCookie=0 Version=0x10 ExchangeType=0x2 Flag=0x0 MessageId=0 MessageSize=28,-
+dhcp4: sess-a,-,02425552000A,02425552000B,0x0800,86,DHCPv4,Request,10.0.0.1,68,10.0.0.2,67,-,-,TransactionId=256 ClientIP=0.0.0.0 YourIP=0.0.0.0 ServerIP=0.0.0.0 RelayIP=0.0.0.0,-
+icmp6-echo: sess-a,-,02425552000A,02425552000B,0x86DD,66,ICMPv6,Echo Request,fe80::1,-,fe80::2,-,-,-,EchoDataSize=4,-
+icmp6-rs: sess-a,-,02425552000A,02425552000B,0x86DD,62,ICMPv6,Router Soliciation,fe80::1,-,fe80::2,-,-,-,-,-
+ip6-other: sess-a,-,02425552000A,02425552000B,0x86DD,62,IPv6(0x2F),-,fe80::1,-,fe80::2,-,-,-,-,-
+tcp6-syn: sess-a,-,02425552000A,02425552000B,0x86DD,74,TCP_CONNECTv6,SYN,fe80::1,49152,fe80::2,40001,65536,131072,WindowSize=64240,-
+tcp6-data: sess-a,-,02425552000A,02425552000B,0x86DD,78,TCP_DATAv6,PSH+ACK,fe80::1,49152,fe80::2,40001,65536,131072,WindowSize=64240,-
+tcp6-http: sess-a,-,02425552000A,02425552000B,0x86DD,149,TCP_DATAv6,PSH+ACK,fe80::1,49152,fe80::2,http(80),65536,131072,WindowSize=64240 HttpMethod=GET HttpUrl=http://example.test/index.html HttpProtocol=HTTP/1.1 HttpUserAgent=ranz-test/1.0 ,-
+udp6: sess-a,-,02425552000A,02425552000B,0x86DD,66,UDPv6,-,fe80::1,49152,fe80::2,40002,-,-,-,-
+dns6: sess-a,-,02425552000A,02425552000B,0x86DD,92,DNSv6,DNS_Query,fe80::1,49152,fe80::2,domain(53),-,-,example.test,-
+ike6: sess-a,-,02425552000A,02425552000B,0x86DD,90,IKE_CONNECTv6,MainMode,fe80::1,49152,fe80::2,isakmp(500),-,-,InitiatorCookie=72623859790382856 ResponderCookie=0 Version=0x10 ExchangeType=0x2 Flag=0x0 MessageId=0 MessageSize=28,-
+# packet log levels (CalcPacketLoggingLevel), the level when only one entry is ALL: TCP_CONN TCP DHCP UDP ICMP IP ARP ETHERNET
+arp-request 0 0 0 0 0 0 2 2
+arp-reply 0 0 0 0 0 0 2 2
+icmp4-echo 0 0 0 0 2 2 0 2
+ip4-other 0 0 0 0 0 2 0 2
+tcp4-syn 2 2 0 0 0 2 0 2
+tcp4-data 0 2 0 0 0 2 0 2
+tcp4-http 2 2 0 0 0 2 0 2
+udp4 0 0 0 2 0 2 0 2
+dns4 2 0 0 2 0 2 0 2
+ike4 2 0 0 2 0 2 0 2
+dhcp4 0 0 2 2 0 2 0 2
+icmp6-echo 0 0 0 0 2 2 0 2
+icmp6-rs 0 0 0 0 2 2 0 2
+ip6-other 0 0 0 0 0 2 0 2
+tcp6-syn 2 2 0 0 0 2 0 2
+tcp6-data 0 2 0 0 0 2 0 2
+tcp6-http 2 2 0 0 0 2 0 2
+udp6 0 0 0 2 0 2 0 2
+dns6 2 0 0 2 0 2 0 2
+ike6 2 0 0 2 0 2 0 2

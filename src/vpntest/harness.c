@@ -61,6 +61,7 @@
 #include "Cedar/Connection.h"
 #include "Cedar/Hub.h"
 #include "Cedar/Listener.h"
+#include "Cedar/Logging.h"
 #include "Cedar/Protocol.h"
 #include "Cedar/Remote.h"
 #include "Cedar/Server.h"
@@ -6533,6 +6534,491 @@ static void HarnessSyslogSelf(HARNESS *h)
 }
 
 ////////////////////////////
+// Packet log golden (FND-101)
+
+// The packet log line of PacketLogParseProc and the packet log level of CalcPacketLoggingLevel for fixed frames
+// (ARP, IPv4 and IPv6 with TCP, HTTP, UDP, DNS, IKE, ICMP and an unknown protocol, DHCP). The frames are parsed as
+// the hub parses them with the packet log on, and the text is compared with packetlog.txt of the golden directory.
+// It needs no server: the port names come from a list of three services of its own
+
+#define	HARNESS_PLOG_FILE			"packetlog.txt"
+#define	HARNESS_PLOG_FRAME			256					// Largest frame
+#define	HARNESS_PLOG_L3				34					// Ethernet and IPv4 header of a frame of HarnessBuildIpFrame
+#define	HARNESS_PLOG_HOST			"example.test"
+#define	HARNESS_PLOG_HTTP			"GET /index.html HTTP/1.1\r\nHost: " HARNESS_PLOG_HOST "\r\nUser-Agent: ranz-test/1.0\r\n\r\n"
+
+// Frame kinds
+#define	HARNESS_PLOG_ARP_REQUEST	0
+#define	HARNESS_PLOG_ARP_REPLY		1
+#define	HARNESS_PLOG_ICMP			2					// ICMPv4 echo request
+#define	HARNESS_PLOG_OTHER			3					// Protocol 47, no parser
+#define	HARNESS_PLOG_TCP_SYN		4
+#define	HARNESS_PLOG_TCP_DATA		5
+#define	HARNESS_PLOG_HTTP_GET		6
+#define	HARNESS_PLOG_UDP			7
+#define	HARNESS_PLOG_DNS			8
+#define	HARNESS_PLOG_IKE			9
+#define	HARNESS_PLOG_DHCP			10
+#define	HARNESS_PLOG_ICMP6_ECHO		11
+#define	HARNESS_PLOG_ICMP6_RS		12
+
+typedef struct HARNESS_PLOG_CASE
+{
+	char *Name;
+	UINT Kind;
+	bool V6;					// IPv6 frame, otherwise IPv4
+	bool Data;					// The record holds the frame data (level ALL)
+	bool Physical;				// The record holds the physical IP addresses
+} HARNESS_PLOG_CASE;
+
+static HARNESS_PLOG_CASE harness_plog_cases[] =
+{
+	{"arp-request", HARNESS_PLOG_ARP_REQUEST, false, true, false},
+	{"arp-reply", HARNESS_PLOG_ARP_REPLY, false, false, false},
+	{"icmp4-echo", HARNESS_PLOG_ICMP, false, false, false},
+	{"ip4-other", HARNESS_PLOG_OTHER, false, false, false},
+	{"tcp4-syn", HARNESS_PLOG_TCP_SYN, false, false, false},
+	{"tcp4-data", HARNESS_PLOG_TCP_DATA, false, false, true},
+	{"tcp4-http", HARNESS_PLOG_HTTP_GET, false, false, false},
+	{"udp4", HARNESS_PLOG_UDP, false, false, false},
+	{"dns4", HARNESS_PLOG_DNS, false, false, false},
+	{"ike4", HARNESS_PLOG_IKE, false, false, false},
+	{"dhcp4", HARNESS_PLOG_DHCP, false, false, false},
+	{"icmp6-echo", HARNESS_PLOG_ICMP6_ECHO, true, false, false},
+	{"icmp6-rs", HARNESS_PLOG_ICMP6_RS, true, false, false},
+	{"ip6-other", HARNESS_PLOG_OTHER, true, false, false},
+	{"tcp6-syn", HARNESS_PLOG_TCP_SYN, true, false, false},
+	{"tcp6-data", HARNESS_PLOG_TCP_DATA, true, false, false},
+	{"tcp6-http", HARNESS_PLOG_HTTP_GET, true, false, false},
+	{"udp6", HARNESS_PLOG_UDP, true, false, false},
+	{"dns6", HARNESS_PLOG_DNS, true, false, false},
+	{"ike6", HARNESS_PLOG_IKE, true, false, false},
+};
+
+// Order of the services of GetSvcName: by port, then TCP before UDP
+static int HarnessPlogCompareSvc(void *p1, void *p2)
+{
+	NETSVC *n1, *n2;
+
+	if (p1 == NULL || p2 == NULL)
+	{
+		return 0;
+	}
+
+	n1 = *(NETSVC **)p1;
+	n2 = *(NETSVC **)p2;
+
+	if (n1 == NULL || n2 == NULL)
+	{
+		return 0;
+	}
+
+	if (n1->Port != n2->Port)
+	{
+		return (n1->Port > n2->Port ? 1 : -1);
+	}
+
+	if (n1->Udp != n2->Udp)
+	{
+		return (n1->Udp > n2->Udp ? 1 : -1);
+	}
+
+	return 0;
+}
+
+static void HarnessPlogAddSvc(CEDAR *cedar, bool udp, UINT port, char *name)
+{
+	NETSVC *n = ZeroMalloc(sizeof(NETSVC));
+
+	n->Udp = udp;
+	n->Port = port;
+	n->Name = name;
+
+	Add(cedar->NetSvcList, n);
+}
+
+// ARP frame of test session A for 10.0.0.2: a request to everyone, or a reply to B
+static UINT HarnessPlogBuildArp(UCHAR *buf, bool request)
+{
+	UCHAR *arp = buf + 14;
+
+	Zero(buf, 42);
+
+	Copy(buf, (request ? harness_mac_broadcast : harness_mac_b), 6);
+	Copy(buf + 6, harness_mac_a, 6);
+	buf[12] = 0x08;								// ARP
+	buf[13] = 0x06;
+
+	arp[1] = 0x01;								// Ethernet
+	arp[2] = 0x08;								// IPv4
+	arp[4] = 6;									// Hardware address size
+	arp[5] = 4;									// Protocol address size
+	arp[7] = (request ? ARP_OPERATION_REQUEST : ARP_OPERATION_RESPONSE);
+	Copy(arp + 8, harness_mac_a, 6);			// Sender 10.0.0.1
+	arp[14] = 10;
+	arp[17] = 1;
+	if (request == false)
+	{
+		Copy(arp + 18, harness_mac_b, 6);
+	}
+	arp[24] = 10;								// Target 10.0.0.2
+	arp[27] = 2;
+
+	return 42;
+}
+
+// Ethernet frame from A to B around an L4 segment: IPv4 10.0.0.1 to 10.0.0.2 or IPv6 fe80::1 to fe80::2, no
+// checksum (the parser does not check one). Returns the size, 0 if it does not fit
+static UINT HarnessPlogWrap(UCHAR *buf, UINT buf_size, bool v6, UCHAR protocol, UCHAR *l4, UINT l4_size)
+{
+	UINT ip_header = (v6 ? 40 : 20);
+	UINT ip_size = ip_header + l4_size;
+	UINT size = 14 + ip_size;
+	UCHAR *ip = buf + 14;
+
+	if (size > buf_size)
+	{
+		return 0;
+	}
+
+	Zero(buf, size);
+
+	Copy(buf, harness_mac_b, 6);
+	Copy(buf + 6, harness_mac_a, 6);
+
+	if (v6 == false)
+	{
+		buf[12] = 0x08;							// IPv4
+		buf[13] = 0x00;
+		ip[0] = 0x45;							// Version 4, 20-byte header
+		ip[2] = (UCHAR)(ip_size >> 8);
+		ip[3] = (UCHAR)(ip_size & 0xFF);
+		ip[8] = 64;								// TTL
+		ip[9] = protocol;
+		ip[12] = 10;
+		ip[15] = 1;
+		ip[16] = 10;
+		ip[19] = 2;
+	}
+	else
+	{
+		buf[12] = 0x86;							// IPv6
+		buf[13] = 0xDD;
+		ip[0] = 0x60;							// Version 6
+		ip[4] = (UCHAR)(l4_size >> 8);
+		ip[5] = (UCHAR)(l4_size & 0xFF);
+		ip[6] = protocol;						// Next header
+		ip[7] = 64;								// Hop limit
+		ip[8] = 0xFE;
+		ip[9] = 0x80;
+		ip[23] = 1;
+		ip[24] = 0xFE;
+		ip[25] = 0x80;
+		ip[39] = 2;
+	}
+
+	Copy(ip + ip_header, l4, l4_size);
+
+	return size;
+}
+
+// IPv4 frame of a TCP or UDP kind: HarnessBuildIpFrame sets the ports and the TCP header
+static UINT HarnessPlogBuildL4Frame(UINT kind, UCHAR *buf, UINT buf_size)
+{
+	UCHAR payload[96];
+	UINT payload_size = 0;
+	UCHAR protocol = IP_PROTO_UDP;
+	USHORT dst_port = 40002;
+	UINT size;
+
+	Zero(payload, sizeof(payload));
+
+	switch (kind)
+	{
+	case HARNESS_PLOG_TCP_SYN:
+		protocol = IP_PROTO_TCP;
+		dst_port = 40001;
+		break;
+
+	case HARNESS_PLOG_TCP_DATA:
+		protocol = IP_PROTO_TCP;
+		dst_port = 40001;
+		Copy(payload, "ranz", 4);
+		payload_size = 4;
+		break;
+
+	case HARNESS_PLOG_HTTP_GET:
+		protocol = IP_PROTO_TCP;
+		dst_port = 80;
+		payload_size = StrLen(HARNESS_PLOG_HTTP);
+		Copy(payload, HARNESS_PLOG_HTTP, payload_size);
+		break;
+
+	case HARNESS_PLOG_UDP:
+		Copy(payload, "ranz", 4);
+		payload_size = 4;
+		break;
+
+	case HARNESS_PLOG_DNS:
+		dst_port = 53;
+		payload_size = HarnessBuildDnsQuery(payload, sizeof(payload), HARNESS_PLOG_HOST);
+		break;
+
+	case HARNESS_PLOG_IKE:
+		// Initiator cookie 0x0102030405060708, no responder cookie, main mode, 28 bytes
+		dst_port = 500;
+		payload[0] = 1;
+		payload[1] = 2;
+		payload[2] = 3;
+		payload[3] = 4;
+		payload[4] = 5;
+		payload[5] = 6;
+		payload[6] = 7;
+		payload[7] = 8;
+		payload[16] = 1;						// Next payload
+		payload[17] = 0x10;						// Version
+		payload[18] = IKE_EXCHANGE_TYPE_MAIN;
+		payload[27] = 28;						// Message size
+		payload_size = 28;
+		break;
+
+	case HARNESS_PLOG_DHCP:
+		// Request from port 68 to port 67 with the transaction id 256: the 44 bytes of DHCPV4_HEADER
+		dst_port = 67;
+		payload[0] = 1;
+		payload[6] = 1;
+		payload_size = 44;
+		break;
+	}
+
+	size = HarnessBuildIpFrame(buf, buf_size, protocol, dst_port, payload, payload_size);
+
+	if (size != 0 && kind == HARNESS_PLOG_TCP_SYN)
+	{
+		buf[HARNESS_PLOG_L3 + 13] = TCP_SYN;	// Flags: SYN instead of PSH and ACK
+	}
+
+	if (size != 0 && kind == HARNESS_PLOG_DHCP)
+	{
+		buf[HARNESS_PLOG_L3] = 0x00;			// Source port 68
+		buf[HARNESS_PLOG_L3 + 1] = 0x44;
+	}
+
+	return size;
+}
+
+// Frame of a case. Returns its size, 0 if it does not fit
+static UINT HarnessPlogBuild(HARNESS_PLOG_CASE *c, UCHAR *buf, UINT buf_size)
+{
+	UCHAR frame[HARNESS_PLOG_FRAME];
+	UCHAR l4[12];
+	UINT l4_size = 8;
+	UCHAR protocol = 0;
+	UINT size;
+
+	Zero(l4, sizeof(l4));
+
+	switch (c->Kind)
+	{
+	case HARNESS_PLOG_ARP_REQUEST:
+	case HARNESS_PLOG_ARP_REPLY:
+		if (buf_size < 42)
+		{
+			return 0;
+		}
+
+		return HarnessPlogBuildArp(buf, c->Kind == HARNESS_PLOG_ARP_REQUEST);
+
+	case HARNESS_PLOG_ICMP:
+		protocol = IP_PROTO_ICMPV4;
+		l4[0] = ICMP_TYPE_ECHO_REQUEST;
+		l4[5] = 1;
+		l4[7] = 2;
+		break;
+
+	case HARNESS_PLOG_OTHER:
+		protocol = 47;
+		break;
+
+	case HARNESS_PLOG_ICMP6_ECHO:
+		protocol = IP_PROTO_ICMPV6;
+		l4[0] = ICMPV6_TYPE_ECHO_REQUEST;
+		l4[5] = 1;
+		l4[7] = 2;
+		Copy(l4 + 8, "data", 4);
+		l4_size = 12;
+		break;
+
+	case HARNESS_PLOG_ICMP6_RS:
+		protocol = IP_PROTO_ICMPV6;
+		l4[0] = ICMPV6_TYPE_ROUTER_SOLICIATION;
+		break;
+
+	default:
+		size = HarnessPlogBuildL4Frame(c->Kind, frame, sizeof(frame));
+
+		if (size == 0)
+		{
+			return 0;
+		}
+
+		if (c->V6 == false)
+		{
+			if (size > buf_size)
+			{
+				return 0;
+			}
+
+			Copy(buf, frame, size);
+
+			return size;
+		}
+
+		return HarnessPlogWrap(buf, buf_size, true, frame[14 + 9], frame + HARNESS_PLOG_L3, size - HARNESS_PLOG_L3);
+	}
+
+	return HarnessPlogWrap(buf, buf_size, c->V6, protocol, l4, l4_size);
+}
+
+// The packet log line of a frame as PacketLog makes the record: a clone of the parsed frame (with its data for a
+// case of level ALL), the session name of A and no destination session. NULL if the frame does not parse
+static char *HarnessPlogLine(HARNESS_PLOG_CASE *c, CEDAR *cedar, UCHAR *frame, UINT size)
+{
+	PKT *p = ParsePacketEx5(frame, size, false, 0, true, false, false, false, false);
+	PACKET_LOG *pl;
+	RECORD rec;
+	char *ret;
+
+	if (p == NULL)
+	{
+		return NULL;
+	}
+
+	pl = ZeroMalloc(sizeof(PACKET_LOG));
+	pl->Cedar = cedar;
+	pl->Packet = ClonePacket(p, c->Data);
+	pl->SrcSessionName = CopyStr("sess-a");
+	pl->DestSessionName = CopyStr("");
+
+	if (c->Physical)
+	{
+		pl->WritePhysicalIP = true;
+		StrCpy(pl->SrcPhysicalIP, sizeof(pl->SrcPhysicalIP), "192.0.2.1");
+		StrCpy(pl->DestPhysicalIP, sizeof(pl->DestPhysicalIP), "192.0.2.2");
+	}
+
+	FreePacket(p);
+
+	Zero(&rec, sizeof(rec));
+	rec.Data = pl;
+
+	// The parse proc releases the record
+	ret = PacketLogParseProc(&rec);
+
+	return ret;
+}
+
+static void HarnessPlogWriteLine(BUF *b, char *name, char *sep, char *text)
+{
+	WriteBuf(b, name, StrLen(name));
+	WriteBuf(b, sep, StrLen(sep));
+	WriteBuf(b, text, StrLen(text));
+	WriteBuf(b, "\n", 1);
+}
+
+// The packet log lines and the packet log levels of all cases, compared with packetlog.txt
+static void HarnessPacketLogGolden(HARNESS *h)
+{
+	char out_dir[MAX_SIZE];
+	char golden_dir[MAX_SIZE];
+	char tmp[MAX_SIZE];
+	bool update;
+	CEDAR *cedar = ZeroMalloc(sizeof(CEDAR));
+	HUB *hub = ZeroMalloc(sizeof(HUB));
+	BUF *b = NewBuf();
+	char *actual;
+	UINT i, j;
+
+	Print("[packetlog]\n");
+	HarnessSetPhase("packetlog", NULL);
+
+	HarnessGetDirs(out_dir, sizeof(out_dir), golden_dir, sizeof(golden_dir), &update);
+	MakeDirEx(out_dir);
+
+	cedar->NetSvcList = NewList(HarnessPlogCompareSvc);
+	HarnessPlogAddSvc(cedar, true, 53, "domain");
+	HarnessPlogAddSvc(cedar, true, 500, "isakmp");
+	HarnessPlogAddSvc(cedar, false, 80, "http");
+
+	HarnessPlogWriteLine(b, "# packet log lines (PacketLogParseProc): session sess-a, no destination session", "", "");
+
+	for (i = 0;i < sizeof(harness_plog_cases) / sizeof(harness_plog_cases[0]);i++)
+	{
+		HARNESS_PLOG_CASE *c = &harness_plog_cases[i];
+		UCHAR frame[HARNESS_PLOG_FRAME];
+		UINT size = HarnessPlogBuild(c, frame, sizeof(frame));
+		char *line = (size != 0 ? HarnessPlogLine(c, cedar, frame, size) : NULL);
+
+		if (line == NULL)
+		{
+			Format(tmp, sizeof(tmp), "packet log case %s: the frame is built and parsed", c->Name);
+			HarnessCheck(h, false, tmp);
+			continue;
+		}
+
+		HarnessPlogWriteLine(b, c->Name, ": ", line);
+		Free(line);
+	}
+
+	HarnessPlogWriteLine(b, "# packet log levels (CalcPacketLoggingLevel), the level when only one entry is ALL: "
+		"TCP_CONN TCP DHCP UDP ICMP IP ARP ETHERNET", "", "");
+
+	for (i = 0;i < sizeof(harness_plog_cases) / sizeof(harness_plog_cases[0]);i++)
+	{
+		HARNESS_PLOG_CASE *c = &harness_plog_cases[i];
+		UCHAR frame[HARNESS_PLOG_FRAME];
+		UINT size = HarnessPlogBuild(c, frame, sizeof(frame));
+		PKT *p = (size != 0 ? ParsePacketEx5(frame, size, false, 0, true, false, false, false, false) : NULL);
+
+		if (p == NULL)
+		{
+			continue;
+		}
+
+		tmp[0] = 0;
+
+		for (j = PACKET_LOG_TCP_CONN;j <= PACKET_LOG_ETHERNET;j++)
+		{
+			char num[16];
+
+			Zero(hub->LogSetting.PacketLogConfig, sizeof(hub->LogSetting.PacketLogConfig));
+			hub->LogSetting.PacketLogConfig[j] = PACKET_LOG_ALL;
+
+			Format(num, sizeof(num), " %u", CalcPacketLoggingLevel(hub, p));
+			StrCat(tmp, sizeof(tmp), num);
+		}
+
+		HarnessPlogWriteLine(b, c->Name, "", tmp);
+		FreePacket(p);
+	}
+
+	actual = HarnessBufToStr(b);
+	HarnessCompareGolden(h, out_dir, golden_dir, HARNESS_PLOG_FILE, actual, update);
+
+	Free(actual);
+	FreeBuf(b);
+	Free(hub);
+
+	for (i = 0;i < LIST_NUM(cedar->NetSvcList);i++)
+	{
+		Free(LIST_DATA(cedar->NetSvcList, i));
+	}
+
+	ReleaseList(cedar->NetSvcList);
+	Free(cedar);
+}
+
+////////////////////////////
 // Entry points
 
 // "harness": in-process server, two hubs, cascade, frames, vpncmd golden outputs and configuration round-trips
@@ -6555,6 +7041,7 @@ void harness_test(UINT num, char **arg)
 		HarnessSetPhase("frames", NULL);
 		HarnessFrames(h);
 		HarnessGolden(h);
+		HarnessPacketLogGolden(h);
 		HarnessSetPhase("pack", NULL);
 		HarnessPackGolden(h);
 		HarnessSetPhase("zerokey", NULL);
