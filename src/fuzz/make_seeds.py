@@ -85,6 +85,21 @@ def make_pack_seeds():
     ]))
 
 
+def pack_one_element(vtype, num_value, payload):
+    # A PACK of one element "a" that claims num_value values; payload is the bytes that follow
+    return struct.pack('>I', 1) + buf_str('a') + struct.pack('>II', vtype, num_value) + payload
+
+
+def make_pack_bad_seeds():
+    # Malformed PACKs the decoder rejects before it allocates (FND-42 #114, vpntest pack_decode_bounds)
+    write_seed('fuzz_pack', 'bad_int_count_huge.bin', pack_one_element(VALUE_INT, 262144, b''))
+    write_seed('fuzz_pack', 'bad_unknown_type.bin', pack_one_element(7, 1, struct.pack('>I', 0)))
+    write_seed('fuzz_pack', 'bad_data_size_huge.bin',
+               pack_one_element(VALUE_DATA, 1, struct.pack('>I', 0x10000000) + b'abcd'))
+    write_seed('fuzz_pack', 'bad_str_truncated.bin',
+               pack_one_element(VALUE_STR, 2, pack_value(VALUE_STR, 'abc') + struct.pack('>I', 10) + b'abc'))
+
+
 # ---------------------------------------------------------------------------
 # Configuration (Mayaqua/Cfg.c): text and binary
 # ---------------------------------------------------------------------------
@@ -444,6 +459,7 @@ def make_http_seeds():
 if __name__ == '__main__':
     assert sha0(b'abc').hex() == '0164b8a914cd2a5e74c4f7ff082c4d97f1edf880'
     make_pack_seeds()
+    make_pack_bad_seeds()
     make_cfg_seeds()
     make_tcpip_seeds()
     make_x509_seeds()

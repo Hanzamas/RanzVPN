@@ -42,6 +42,9 @@ target_sources(vpntest PRIVATE consoleline.c)
 # Named temp directory and string table test of SEC-8 (#96)
 target_sources(vpntest PRIVATE tempdir.c)
 
+# Named PACK decoder bounds test of FND-42 (#114)
+target_sources(vpntest PRIVATE packdecode.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
