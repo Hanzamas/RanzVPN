@@ -1,0 +1,56 @@
+name: devkit
+
+# Packs what a local compile check needs (no link, no tests): the CI's clang-cl with its own headers,
+# the MSVC and Windows SDK C headers (ucrt, um, shared), the generated build headers, the OpenSSL
+# headers and compile_commands.json. Download the ranz-devkit artifact and run devcheck.py against it.
+on:
+  push:
+    branches: [devkit]
+
+permissions:
+  contents: read
+
+env:
+  VCPKG_BINCACHE: ${{ github.workspace }}\vcpkg-bincache
+  VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\vcpkg-bincache,readwrite
+
+jobs:
+  devkit:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Restore vcpkg binary cache
+      uses: actions/cache/restore@v4
+      with:
+        path: vcpkg-bincache
+        key: vcpkg-bin-x64-windows-static-none
+        restore-keys: vcpkg-bin-x64-windows-static-
+    - name: Configure and build x64 with compile_commands.json
+      shell: cmd
+      run: |
+        if not exist "%VCPKG_BINCACHE%" mkdir "%VCPKG_BINCACHE%"
+        for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set "VSINSTALL=%%i"
+        call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
+        set "CC_PATH=%VSINSTALL%\VC\Tools\Llvm\x64\bin\clang-cl.exe"
+        mkdir build
+        cd build
+        cmake -G "Ninja" -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER="%CC_PATH%" -DCMAKE_CXX_COMPILER="%CC_PATH%" -DBUILD_NUMBER=0 -DRANZ_UNUSED_WARNINGS=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON ..
+        if errorlevel 1 exit /b 1
+        cmake --build .
+        if errorlevel 1 exit /b 1
+        > ..\devkit-env.txt echo INCLUDE=%INCLUDE%
+        >> ..\devkit-env.txt echo CC_PATH=%CC_PATH%
+    - name: Pack the devkit
+      shell: pwsh
+      run: |
+        python .github/scripts/pack-devkit.py --workspace "$env:GITHUB_WORKSPACE" --env devkit-env.txt --out devkit
+        if ($LASTEXITCODE -ne 0) { throw "pack-devkit failed" }
+        7z a -tzip -mx=7 ranz-devkit.zip .\devkit\* | Out-Null
+        "ranz-devkit.zip: {0:N1} MB" -f ((Get-Item ranz-devkit.zip).Length / 1MB)
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ranz-devkit
+        path: ranz-devkit.zip
+        retention-days: 30
