@@ -28,10 +28,12 @@
 #include "Cedar/Cedar.h"
 #include "Cedar/Connection.h"
 #include "Cedar/Hub.h"
+#include "Cedar/Protocol.h"
 #include "Cedar/Server.h"
 
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
+#include "Mayaqua/HTTP.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Network.h"
@@ -1843,4 +1845,107 @@ void HarnessPackGolden(HARNESS *h)
 
 	Print("TIME pack_golden %I64u ms (%u cases)\n", Tick64() - start,
 		(UINT)(sizeof(harness_pack_cases) / sizeof(harness_pack_cases[0])));
+}
+
+////////////////////////////
+// Raw-pack client of the named login tests (login.c)
+//
+// The steps of ClientConnect up to the request Pack, on a connection to the harness listener, so that a test sends
+// requests that the client code never builds (an unknown authtype, the 'password' method) and reads the error of the
+// answer.
+
+#define	HARNESS_RAW_TIMEOUT			15000					// Send and receive timeout of a raw connection (ms)
+#define	HARNESS_RAW_CLIENT_STR		"Ranz harness raw login"	// "client_str" and "hello" of a raw login Pack
+
+// Close and release a raw connection
+void HarnessRawClose(SOCK *s)
+{
+	if (s == NULL)
+	{
+		return;
+	}
+
+	Disconnect(s);
+	ReleaseSock(s);
+}
+
+// Connect to the harness listener as ClientConnect does: TCP, TLS without a certificate check, the signature POST and
+// the hello Pack. random gets the random of the hello, the challenge of a secure password. Returns NULL when a step
+// fails.
+SOCK *HarnessRawConnect(UCHAR *random)
+{
+	SOCK *s = Connect("127.0.0.1", HARNESS_PORT);
+	PACK *p;
+	char server_str[MAX_SIZE];
+	UINT ver, build;
+	bool ok = false;
+
+	if (s == NULL)
+	{
+		return NULL;
+	}
+
+	SetTimeout(s, HARNESS_RAW_TIMEOUT);
+
+	if (StartSSLEx(s, NULL, NULL, 0, NULL) && ClientUploadSignature(s))
+	{
+		p = HttpClientRecvEx(s, HTTP_PACK_MAX_SIZE);
+		ok = (p != NULL && GetErrorFromPack(p) == ERR_NO_ERROR &&
+			GetHello(p, random, &ver, &build, server_str, sizeof(server_str)));
+		FreePack(p);
+	}
+
+	if (ok == false)
+	{
+		HarnessRawClose(s);
+		return NULL;
+	}
+
+	return s;
+}
+
+// Login Pack of ClientUploadAuth for authtype, without a credential (the caller adds "secure_password" or
+// "plain_password"): the elements that ServerAccept reads before the authentication.
+PACK *HarnessRawLoginPack(char *hubname, char *username, UINT authtype)
+{
+	PACK *p = NewPack();
+
+	PackAddStr(p, "method", "login");
+	PackAddStr(p, "hubname", hubname);
+	PackAddStr(p, "username", username);
+	PackAddInt(p, "authtype", authtype);
+
+	PackAddStr(p, "client_str", HARNESS_RAW_CLIENT_STR);
+	PackAddStr(p, "hello", HARNESS_RAW_CLIENT_STR);
+	PackAddInt(p, "protocol", CONNECTION_TCP);
+	PackAddInt(p, "max_connection", 1);
+	PackAddInt(p, "use_encrypt", 1);
+	PackAddInt(p, "use_compress", 0);
+	PackAddInt(p, "half_connection", 0);
+
+	return p;
+}
+
+// Send a request Pack on a connection of HarnessRawConnect and read the first answer Pack. Returns its "error"
+// (ERR_NO_ERROR for a welcome Pack), or ERR_DISCONNECTED when no answer comes. p stays with the caller.
+UINT HarnessRawRequest(SOCK *s, PACK *p)
+{
+	PACK *ret;
+	UINT err;
+
+	if (s == NULL || p == NULL || HttpClientSend(s, p) == false)
+	{
+		return ERR_DISCONNECTED;
+	}
+
+	ret = HttpClientRecvEx(s, CLIENT_WELCOME_PACK_MAX_SIZE);
+	if (ret == NULL)
+	{
+		return ERR_DISCONNECTED;
+	}
+
+	err = GetErrorFromPack(ret);
+	FreePack(ret);
+
+	return err;
 }
