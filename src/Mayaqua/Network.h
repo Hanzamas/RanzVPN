@@ -132,6 +132,7 @@ struct SOCK
 	SOCK_EVENT *SockEvent;
 	bool CancelAccept;
 	bool AcceptCanceled;
+	UINT AcceptError;			// WSA error code of the last failed Accept() of this listening socket, 0 if none (read it only while CancelAccept is false)
 	bool UdpBroadcast;
 	bool IPv6;
 	bool IsRawSocket;
@@ -291,6 +292,7 @@ SOCK *ListenEx6(UINT port, bool local_only);
 SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip);
 SOCK *Accept(SOCK *sock);
 SOCK *Accept6(SOCK *sock);
+bool IsTransientAcceptError(UINT err);
 UINT Send(SOCK *sock, void *data, UINT size, bool secure);
 UINT Recv(SOCK *sock, void *data, UINT size, bool secure);
 bool StartSSL(SOCK *sock, X *x, K *priv);

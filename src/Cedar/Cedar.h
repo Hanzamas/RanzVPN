@@ -230,6 +230,8 @@
 #define	LISTEN_RETRY_TIME			(2 * 1000)
 #define LISTEN_RETRY_TIME_NOIPV6	(60 * 1000)
 #define	LISTENER_BIND_WAIT_TIME		(5 * 1000)		// ListenerCreate / ListenerEnable wait at most this for the bind attempt
+#define	ACCEPT_RETRY_TIME			100				// Back-off of a TCP listener after a transient accept() error
+#define	ACCEPT_ERROR_LOG_INTERVAL	(60 * 1000)		// A TCP listener logs transient accept() errors at most once per interval
 
 #define	DOS_TABLE_EXPIRES_FIRST		250
 #define	DOS_TABLE_EXPIRES_MAX		1000

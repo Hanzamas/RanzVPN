@@ -436,6 +436,25 @@ STOP:
 	}
 }
 
+// A transient accept() error (IsTransientAcceptError) keeps the listening socket: log it at most once per
+// ACCEPT_ERROR_LOG_INTERVAL with the number of errors since the last log, then wait ACCEPT_RETRY_TIME
+// (StopListener sets r->Event and ends the wait)
+static void ListenerAcceptRetry(LISTENER *r, UINT err)
+{
+	UINT64 now = Tick64();
+
+	r->NumAcceptErrors++;
+
+	if (r->AcceptErrorLogTick == 0 || (r->AcceptErrorLogTick + (UINT64)ACCEPT_ERROR_LOG_INTERVAL) <= now)
+	{
+		SLog(r->Cedar, "LS_LISTENER_ACCEPT_RETRY", r->Port, err, r->NumAcceptErrors);
+		r->AcceptErrorLogTick = now;
+		r->NumAcceptErrors = 0;
+	}
+
+	Wait(r->Event, ACCEPT_RETRY_TIME);
+}
+
 static void ListenerTCPMainLoop(LISTENER *r)
 {
 	SOCK *new_sock;
@@ -551,6 +570,11 @@ static void ListenerTCPMainLoop(LISTENER *r)
 			{
 				TCPAccepted(r, new_sock);
 				ReleaseSock(new_sock);
+			}
+			else if (r->Halt == false && s->CancelAccept == false && IsTransientAcceptError(s->AcceptError))
+			{
+				// The peer left before the accept, or buffers or descriptors ran short: the listening socket and its backlog stay
+				ListenerAcceptRetry(r, s->AcceptError);
 			}
 			else
 			{

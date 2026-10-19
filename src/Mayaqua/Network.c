@@ -466,6 +466,8 @@ L_LOOP:
 		{
 			goto L_LOOP;
 		}
+
+		sock->AcceptError = err;
 	}
 	else
 	{
@@ -3733,6 +3735,24 @@ void AcceptInitEx(SOCK *s, bool no_lookup_hostname)
 	s->RemoteHostname = CopyStr(tmp);
 }
 
+// True when a failed accept() of a listening socket may succeed on the next call: the peer reset or aborted the
+// connection before it was accepted, or the process ran short of buffers or descriptors. Any other error, and a
+// canceled accept (err 0), means that the listening socket must be rebuilt.
+bool IsTransientAcceptError(UINT err)
+{
+	switch (err)
+	{
+	case WSAECONNRESET:
+	case WSAECONNABORTED:
+	case WSAENOBUFS:
+	case WSAEMFILE:
+		return true;
+
+	default:
+		return false;
+	}
+}
+
 SOCK *Accept(SOCK *sock)
 {
 	SOCK *ret;
@@ -3744,6 +3764,7 @@ SOCK *Accept(SOCK *sock)
 	{
 		return NULL;
 	}
+	sock->AcceptError = 0;
 	if (sock->ListenMode == false || sock->Type != SOCK_TCP || sock->ServerMode == false)
 	{
 		return NULL;
@@ -3772,6 +3793,10 @@ SOCK *Accept(SOCK *sock)
 	else
 	{
 		new_socket = accept(s, (struct sockaddr *)&addr,(int *)&size);
+		if (new_socket == INVALID_SOCKET)
+		{
+			sock->AcceptError = WSAGetLastError();
+		}
 	}
 
 	if (new_socket == INVALID_SOCKET)
@@ -3836,6 +3861,7 @@ SOCK *Accept6(SOCK *sock)
 	{
 		return NULL;
 	}
+	sock->AcceptError = 0;
 	if (sock->ListenMode == false || sock->Type != SOCK_TCP || sock->ServerMode == false)
 	{
 		return NULL;
@@ -3864,6 +3890,10 @@ SOCK *Accept6(SOCK *sock)
 	else
 	{
 		new_socket = accept(s, (struct sockaddr *)&addr,(int *)&size);
+		if (new_socket == INVALID_SOCKET)
+		{
+			sock->AcceptError = WSAGetLastError();
+		}
 	}
 
 	if (new_socket == INVALID_SOCKET)

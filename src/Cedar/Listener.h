@@ -37,6 +37,9 @@ struct LISTENER
 	LIST *DosList;
 	UINT64 DosListLastRefreshTime;
 
+	UINT64 AcceptErrorLogTick;	// Tick64 of the last log of a transient accept() error, 0 if none yet
+	UINT NumAcceptErrors;		// Transient accept() errors since that log
+
 	THREAD_PROC *ThreadProc;
 	bool LocalOnly;
 	bool ShadowIPv6;

@@ -885,6 +885,7 @@ LS_LISTENER_ACCEPT		On the TCP Listener (Port %u), a Client (IP address %S, Host
 LS_LISTENER_DISCONNECT	The connection with the client (IP address %S, Port number %u) has been disconnected.
 LS_LISTENER_DOS			A DoS attack on the TCP Listener (port %u) has been detected. The connecting source IP address is %S, port number is %u. This connection will be forcefully disconnected now.
 LS_LISTENER_MAXUEC		The TCP listener is temporary suspending to accept new inward connections because of the number of pending TCP connections exceeded %u. (Current value = %u)
+LS_LISTENER_ACCEPT_RETRY	The TCP Listener (port %u) failed to accept a connection (error %u, %u time(s) since the last report). The listener keeps the port and retries.
 LS_LISTENER_STOP_1		TCP Listener (port %u) is stopping.
 LS_LISTENER_STOP_2		TCP Listener (port %u) has stopped.
 LS_HUB_START			Virtual Hub "%S" has been started.
