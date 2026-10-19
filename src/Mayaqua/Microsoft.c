@@ -54,10 +54,9 @@ static MS_ADAPTER_LIST *last_adapter_list = NULL;
 
 static SERVICE_STATUS_HANDLE ssh = NULL;
 static SERVICE_STATUS status = { 0 };
+// The control handler and the service thread both report the status: status_lock guards status
+static CRITICAL_SECTION status_lock;
 static HANDLE service_stop_event = NULL;
-static BOOL (WINAPI *_StartServiceCtrlDispatcher)(CONST LPSERVICE_TABLE_ENTRY) = NULL;
-static SERVICE_STATUS_HANDLE (WINAPI *_RegisterServiceCtrlHandler)(LPCTSTR, LPHANDLER_FUNCTION) = NULL;
-static BOOL (WINAPI *_SetServiceStatus)(SERVICE_STATUS_HANDLE, LPSERVICE_STATUS) = NULL;
 static char g_service_name[MAX_SIZE];
 static SERVICE_FUNCTION *g_start, *g_stop;
 static bool exiting = false;
@@ -1303,6 +1302,32 @@ static void MsWriteServiceEvent(UINT type, UINT event_id, char *what, UINT error
 	MsWriteEventLog(g_service_name, type, event_id, msg);
 }
 
+// Report the state to the SCM under status_lock. A pending state advances the checkpoint and accepts
+// no control; the running service accepts STOP and PRESHUTDOWN.
+static void MsSetServiceState(DWORD state, DWORD wait_hint, DWORD exit_code)
+{
+	EnterCriticalSection(&status_lock);
+
+	status.dwCurrentState = state;
+	status.dwWin32ExitCode = exit_code;
+	status.dwWaitHint = wait_hint;
+
+	if (state == SERVICE_START_PENDING || state == SERVICE_STOP_PENDING)
+	{
+		status.dwCheckPoint++;
+		status.dwControlsAccepted = 0;
+	}
+	else
+	{
+		status.dwCheckPoint = 0;
+		status.dwControlsAccepted = (state == SERVICE_RUNNING ? SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_PRESHUTDOWN : 0);
+	}
+
+	SetServiceStatus(ssh, &status);
+
+	LeaveCriticalSection(&status_lock);
+}
+
 static void MsServiceStoperMainThread(THREAD *t, void *p)
 {
 	g_stop();
@@ -1323,11 +1348,7 @@ static bool MsServiceStopProc()
 			ret = false;
 			break;
 		}
-		status.dwWin32ExitCode = 0;
-		status.dwWaitHint = 100000;
-		status.dwCheckPoint++;
-		status.dwCurrentState = SERVICE_STOP_PENDING;
-		_SetServiceStatus(ssh, &status);
+		MsSetServiceState(SERVICE_STOP_PENDING, 100000, NO_ERROR);
 	}
 
 	// The entry goes out before SERVICE_STOPPED: once that is reported, the process may end at any time
@@ -1341,11 +1362,7 @@ static bool MsServiceStopProc()
 			"did not stop within the self-kill timeout and is terminated", 0);
 	}
 
-	status.dwWin32ExitCode = 0;
-	status.dwWaitHint = 0;
-	status.dwCheckPoint = 0;
-	status.dwCurrentState = SERVICE_STOPPED;
-	_SetServiceStatus(ssh, &status);
+	MsSetServiceState(SERVICE_STOPPED, 0, ret ? NO_ERROR : ERROR_TIMEOUT);
 
 	if (ret == false)
 	{
@@ -1360,56 +1377,54 @@ static bool MsServiceStopProc()
 	return ret;
 }
 
-static void CALLBACK MsServiceHandler(DWORD opcode)
+// Control handler (HandlerEx), run on the thread of StartServiceCtrlDispatcherW. STOP and PRESHUTDOWN
+// both stop the server, and g_stop() saves the configuration: PRESHUTDOWN gives that the pre-shutdown
+// window of an OS shutdown instead of the short SHUTDOWN one.
+static DWORD WINAPI MsServiceHandler(DWORD control, DWORD event_type, LPVOID event_data, LPVOID context)
 {
-	switch (opcode)
+	switch (control)
 	{
-	case SERVICE_CONTROL_SHUTDOWN:
 	case SERVICE_CONTROL_STOP:
-		status.dwWin32ExitCode = 0;
-		status.dwWaitHint = 100000;
-		status.dwCheckPoint = 0;
-		status.dwCurrentState = SERVICE_STOP_PENDING;
+	case SERVICE_CONTROL_PRESHUTDOWN:
+		MsSetServiceState(SERVICE_STOP_PENDING, 100000, NO_ERROR);
+		SetEvent(service_stop_event);
+		return NO_ERROR;
 
-		if (service_stop_event != NULL)
-		{
-			SetEvent(service_stop_event);
-		}
-		break;
+	case SERVICE_CONTROL_INTERROGATE:
+		return NO_ERROR;
 	}
 
-	_SetServiceStatus(ssh, &status);
+	return ERROR_CALL_NOT_IMPLEMENTED;
 }
 
-static void CALLBACK MsServiceDispatcher(DWORD argc, LPTSTR *argv)
+// Service main, run on its own thread by StartServiceCtrlDispatcherW. The service is START_PENDING
+// while Mayaqua and the server start and RUNNING once g_start() has returned; no control is accepted
+// before that, so the handler never sees a NULL service_stop_event.
+static void WINAPI MsServiceDispatcher(DWORD argc, LPWSTR *argv)
 {
-	service_stop_event = CreateEventA(NULL, true, false, NULL);
-
-	Zero(&status, sizeof(status));
-	status.dwServiceType = SERVICE_WIN32;
-	status.dwCurrentState = SERVICE_START_PENDING;
-	status.dwControlsAccepted = SERVICE_ACCEPT_STOP | SERVICE_ACCEPT_SHUTDOWN;
-
-	ssh = _RegisterServiceCtrlHandler(g_service_name, MsServiceHandler);
+	// An own-process service may register under any name; argv[0] is the one the SCM started
+	ssh = RegisterServiceCtrlHandlerExW(argc >= 1 ? argv[0] : L"", MsServiceHandler, NULL);
 
 	if (ssh == NULL)
 	{
 		MsWriteServiceEvent(EVENTLOG_ERROR_TYPE, MS_EVENT_SERVICE_FAILED,
-			"could not start: RegisterServiceCtrlHandler() failed", GetLastError());
-		MessageBox(NULL, "RegisterServiceCtrlHandler() Failed.", "MsServiceDispatcher()", MB_SETFOREGROUND | MB_TOPMOST | MB_SERVICE_NOTIFICATION | MB_OK | MB_ICONEXCLAMATION);
+			"could not start: RegisterServiceCtrlHandlerExW() failed", GetLastError());
 		return;
 	}
 
-	status.dwWaitHint = 300000;
-	status.dwCheckPoint = 0;
-	status.dwCheckPoint++;
-	status.dwCurrentState = SERVICE_START_PENDING;
-	_SetServiceStatus(ssh, &status);
+	status.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
+	MsSetServiceState(SERVICE_START_PENDING, 300000, NO_ERROR);
 
-	status.dwWaitHint = 0;
-	status.dwCheckPoint = 0;
-	status.dwCurrentState = SERVICE_RUNNING;
-	_SetServiceStatus(ssh, &status);
+	service_stop_event = CreateEventW(NULL, true, false, NULL);
+	if (service_stop_event == NULL)
+	{
+		DWORD error = GetLastError();
+
+		MsWriteServiceEvent(EVENTLOG_ERROR_TYPE, MS_EVENT_SERVICE_FAILED,
+			"could not start: CreateEventW() failed", error);
+		MsSetServiceState(SERVICE_STOPPED, 0, error);
+		return;
+	}
 
 #ifdef	_DEBUG	// Debug configuration: the debug CRT (/MTd) defines _DEBUG
 	// memcheck = true logs every malloc/realloc/free to find leaks, but is very slow.
@@ -1418,7 +1433,12 @@ static void CALLBACK MsServiceDispatcher(DWORD argc, LPTSTR *argv)
 	InitMayaqua(false, false, 0, NULL);
 #endif
 
+	MsSetServiceState(SERVICE_START_PENDING, 300000, NO_ERROR);
+
 	g_start();
+
+	// RUNNING goes out before the entry: whoever waits for "started" can stop the service at once
+	MsSetServiceState(SERVICE_RUNNING, 0, NO_ERROR);
 	MsWriteServiceEvent(EVENTLOG_INFORMATION_TYPE, MS_EVENT_SERVICE_STARTED, "started", 0);
 	MsUpdateServiceConfig(g_service_name);
 
@@ -1509,7 +1529,6 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 	char tmp[MAX_SIZE];
 	bool restoreReg = false;
 	bool silent = false;
-	bool is_win32_service_mode = false;
 	if (name == NULL || start == NULL || stop == NULL)
 	{
 		return ret;
@@ -1522,51 +1541,25 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 
 	if (cmd_line != NULL && lstrcmpiA(cmd_line, SVC_ARG_SERVICE) == 0)
 	{
-		HINSTANCE h_advapi32 = LoadLibraryA("advapi32.dll");
-
-		if (h_advapi32 != NULL)
+		// An own-process service: the name in the table is ignored, but must not be NULL
+		SERVICE_TABLE_ENTRYW dispatch_table[] =
 		{
-			_StartServiceCtrlDispatcher =
-				(BOOL (__stdcall *)(const LPSERVICE_TABLE_ENTRY))
-				GetProcAddress(h_advapi32, "StartServiceCtrlDispatcherW");
-
-			_RegisterServiceCtrlHandler =
-				(SERVICE_STATUS_HANDLE (__stdcall *)(LPCTSTR,LPHANDLER_FUNCTION))
-				GetProcAddress(h_advapi32, "RegisterServiceCtrlHandlerW");
-
-			_SetServiceStatus =
-				(BOOL (__stdcall *)(SERVICE_STATUS_HANDLE,LPSERVICE_STATUS))
-				GetProcAddress(h_advapi32, "SetServiceStatus");
-
-			if (_StartServiceCtrlDispatcher != NULL &&
-				_RegisterServiceCtrlHandler != NULL && 
-				_SetServiceStatus != NULL)
-			{
-				is_win32_service_mode = true;
-			}
-		}
-	}
-
-	if (is_win32_service_mode)
-	{
-		SERVICE_TABLE_ENTRY dispatch_table[] =
-		{
-			{"", MsServiceDispatcher},
+			{L"", MsServiceDispatcher},
 			{NULL, NULL},
 		};
 
 		SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+		InitializeCriticalSection(&status_lock);
 
-		if (_StartServiceCtrlDispatcher(dispatch_table) == false)
+		if (StartServiceCtrlDispatcherW(dispatch_table) == false)
 		{
+			// Not started by the SCM (for example /service from a console): nothing ran, so exit 1
 			MsWriteServiceEvent(EVENTLOG_ERROR_TYPE, MS_EVENT_SERVICE_FAILED,
-				"could not start: StartServiceCtrlDispatcher() failed", GetLastError());
-			MessageBox(NULL, "StartServiceCtrlDispatcher() Failed.", "MsServiceMode()", MB_SETFOREGROUND | MB_TOPMOST | MB_SERVICE_NOTIFICATION | MB_OK | MB_ICONEXCLAMATION);
+				"could not start: StartServiceCtrlDispatcherW() failed", GetLastError());
+			return 1;
 		}
-		else
-		{
-			MsUpdateServiceConfig(g_service_name);
-		}
+
+		MsUpdateServiceConfig(g_service_name);
 
 		_exit(0);
 		return 0;
@@ -1850,7 +1843,7 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 
 	FreeMayaqua();
 
-	return 0;
+	return ret;
 }
 
 // Wait up to 10 s, polling every 250 ms, until the service is running (running == true) or no longer
