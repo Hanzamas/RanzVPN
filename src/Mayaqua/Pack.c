@@ -10,6 +10,28 @@
 #include "Network.h"
 #include "Str.h"
 
+// Smallest element on the wire: name length (the name may be empty), type, value count, one value
+#define	PACK_ELEMENT_MIN_WIRE_SIZE		(4 + 4 + 4 + 4)
+
+static void FreeValue(VALUE *v, UINT type);
+
+// Smallest value of the type on the wire: the value, or the length before it; 0 for an unknown type
+static UINT PackValueMinWireSize(UINT type)
+{
+	switch (type)
+	{
+	case VALUE_INT:
+	case VALUE_DATA:
+	case VALUE_STR:
+	case VALUE_UNISTR:
+		return 4;
+	case VALUE_INT64:
+		return 8;
+	}
+
+	return 0;
+}
+
 PACK *BufToPack(BUF *b)
 {
 	PACK *p;
@@ -51,7 +73,8 @@ bool ReadPack(BUF *b, PACK *p)
 	}
 
 	num = ReadBufInt(b);
-	if (num > MAX_ELEMENT_NUM)
+	// The peer claims the count: no more elements than the bytes present can hold
+	if (num > MAX_ELEMENT_NUM || num > ReadBufRemainSize(b) / PACK_ELEMENT_MIN_WIRE_SIZE)
 	{
 		return false;
 	}
@@ -88,9 +111,9 @@ void WritePack(BUF *b, PACK *p)
 
 ELEMENT *ReadElement(BUF *b)
 {
-	UINT i;
+	UINT i, j;
 	char name[MAX_ELEMENT_NAME_LEN + 1];
-	UINT type, num_value;
+	UINT type, num_value, value_size;
 	VALUE **values;
 	ELEMENT *e;
 	if (b == NULL)
@@ -103,10 +126,19 @@ ELEMENT *ReadElement(BUF *b)
 		return NULL;
 	}
 
+	// The type and the value count must be there: ReadBufInt() reads 0 past the end
+	if (ReadBufRemainSize(b) < 8)
+	{
+		return NULL;
+	}
+
 	type = ReadBufInt(b);
 
 	num_value = ReadBufInt(b);
-	if (num_value > MAX_VALUE_NUM)
+
+	// A known type, and no more values than the bytes present can hold, before anything is allocated
+	value_size = PackValueMinWireSize(type);
+	if (value_size == 0 || num_value == 0 || num_value > MAX_VALUE_NUM || num_value > ReadBufRemainSize(b) / value_size)
 	{
 		return NULL;
 	}
@@ -115,6 +147,17 @@ ELEMENT *ReadElement(BUF *b)
 	for (i = 0;i < num_value;i++)
 	{
 		values[i] = ReadValue(b, type);
+		if (values[i] == NULL)
+		{
+			// A value that cannot be read fails the element: no ELEMENT holds a NULL value
+			for (j = 0;j < i;j++)
+			{
+				FreeValue(values[j], type);
+			}
+			Free(values);
+
+			return NULL;
+		}
 	}
 
 	e = NewElement(name, type, num_value, values);
@@ -152,12 +195,21 @@ VALUE *ReadValue(BUF *b, UINT type)
 	UINT unistr_size;
 	UINT size;
 	UINT u_size;
+	UINT min_size;
 	VALUE *v = NULL;
 	if (b == NULL)
 	{
 		return NULL;
 	}
 
+	// The value, or the length before it, must be there: ReadBufInt() reads 0 past the end
+	min_size = PackValueMinWireSize(type);
+	if (min_size == 0 || ReadBufRemainSize(b) < min_size)
+	{
+		return NULL;
+	}
+
+	// A length is checked against the bytes present before the block is allocated
 	switch (type)
 	{
 	case VALUE_INT:
@@ -168,7 +220,7 @@ VALUE *ReadValue(BUF *b, UINT type)
 		break;
 	case VALUE_DATA:
 		size = ReadBufInt(b);
-		if (size > MAX_VALUE_SIZE)
+		if (size > MAX_VALUE_SIZE || size > ReadBufRemainSize(b))
 		{
 			break;
 		}
@@ -183,7 +235,7 @@ VALUE *ReadValue(BUF *b, UINT type)
 		break;
 	case VALUE_STR:
 		len = ReadBufInt(b);
-		if (len > (MAX_VALUE_SIZE - 1))
+		if (len > (MAX_VALUE_SIZE - 1) || len > ReadBufRemainSize(b))
 		{
 			break;
 		}
@@ -199,7 +251,7 @@ VALUE *ReadValue(BUF *b, UINT type)
 		break;
 	case VALUE_UNISTR:
 		u_size = ReadBufInt(b);
-		if (u_size > MAX_VALUE_SIZE)
+		if (u_size > MAX_VALUE_SIZE || u_size > ReadBufRemainSize(b))
 		{
 			break;
 		}
