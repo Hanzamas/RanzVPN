@@ -5,17 +5,19 @@
 // the sum, so the read was not clamped and Current moved backwards (with a destination, Copy()
 // ran for about 4 GB). ReadBufStr() skips the tail of an over-long string with
 // ReadBuf(b, NULL, ...), so a string length of 0xFFFFFFFF rewound the cursor and the parser read
-// its own bytes again. WriteBuf() wrapped Current + size the same way and copied past its block.
+// its own bytes again. WriteBuf() wrapped Current + size the same way and copied past its block,
+// and a write after SeekBuf() set Size to Current + size, which cut the buffer (FND-41 #114).
 // CfgReadNextFolderBin() trusted the folder and item counts and the item sizes of a binary
 // configuration: a count beyond the bytes left made folders with an uninitialised name, a string
 // size of 0xFFFFFFFF wrapped ZeroMalloc(size + 1) to an empty block that ReadBuf() overran, and a
 // byte size near 2^32 reached MallocEx(), which ends the process.
 //
-// This test pins the clamped reads, the WriteBuf() guard and CfgBufBinToFolder() returning NULL
-// for each malformed input, while a valid binary configuration still loads unchanged. The
-// WriteBuf() guard ends the process (AbortExitEx), so that case runs in a child process,
-// "vpntest bufbounds writewrap". The cases that crashed or ended the old code run last. Prints
-// "BUFBOUNDS TEST OK" only when every check passes, and frees everything it allocates.
+// This test pins the clamped reads, the WriteBuf() guard, a WriteBuf() inside the buffer that keeps
+// its size, and CfgBufBinToFolder() returning NULL for each malformed input, while a valid binary
+// configuration still loads unchanged. The WriteBuf() guard ends the process (AbortExitEx), so that
+// case runs in a child process, "vpntest bufbounds writewrap". The cases that crashed or ended the
+// old code run last. Prints "BUFBOUNDS TEST OK" only when every check passes, and frees everything
+// it allocates.
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/Encrypt.h"
@@ -163,6 +165,29 @@ static void BufBoundsTestReadBufStr(BUFBOUNDS_CTX *ctx)
 	SeekBufToBegin(b);
 	ret = ReadBufStr(b, str, sizeof(str));
 	BufBoundsCheck(ctx, ret == false, "ReadBufStr of a string cut short fails");
+	FreeBuf(b);
+}
+
+// WriteBuf inside the buffer: a write after SeekBuf() overwrites the bytes there and keeps the bytes
+// after them; a write past the end grows the buffer to the new end
+static void BufBoundsTestWriteBufInside(BUFBOUNDS_CTX *ctx)
+{
+	BUF *b = BufBoundsNewBuf(100);
+	UCHAR data[4] = {0xAA, 0xBB, 0xCC, 0xDD};
+	UCHAR *p;
+
+	SeekBuf(b, 0, 0);
+	WriteBuf(b, data, sizeof(data));
+	p = (UCHAR *)b->Buf;
+	BufBoundsCheck(ctx, b->Size == 100 && b->Current == 4 && Cmp(p, data, sizeof(data)) == 0 && p[4] == 4 && p[99] == 99,
+		"WriteBuf of 4 bytes at offset 0 of 100 bytes overwrites them and keeps Size at 100 (it was cut to 4 before)");
+
+	SeekBuf(b, 98, 0);
+	WriteBuf(b, data, sizeof(data));
+	p = (UCHAR *)b->Buf;
+	BufBoundsCheck(ctx, b->Size == 102 && b->Current == 102 && p[97] == 97 && p[98] == 0xAA && p[101] == 0xDD,
+		"WriteBuf of 4 bytes at offset 98 of 100 bytes grows the buffer to 102");
+
 	FreeBuf(b);
 }
 
@@ -459,6 +484,7 @@ void bufbounds_test(UINT num, char **arg)
 
 	BufBoundsTestReadBuf(&ctx);
 	BufBoundsTestReadBufStr(&ctx);
+	BufBoundsTestWriteBufInside(&ctx);
 	BufBoundsTestWriteBuf(&ctx);
 	BufBoundsTestCfg(&ctx);
 
