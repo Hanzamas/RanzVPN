@@ -98,11 +98,30 @@ static HARNESS_CMD_STEP harness_cmd_access_portrange[] =
 	{NULL},
 };
 
+// SyslogEnableBadHost (FND-6 #106): /HOST without a port takes the syslog port 514, a host and port are stored as
+// typed; an empty /HOST, port 0 and a port that is no number fail with CMD_HOSTPORT_EVAL_FAILED and change nothing.
+// The server is left with syslog sending disabled.
+static HARNESS_CMD_STEP harness_cmd_syslog_badhost[] =
+{
+	{"SyslogEnable 1 /HOST:127.0.0.1", ERR_NO_ERROR},
+	{"SyslogGet", ERR_NO_ERROR, NULL, true},
+	{"SyslogEnable 2 /HOST:127.0.0.1:5140", ERR_NO_ERROR},
+	{"SyslogGet", ERR_NO_ERROR, NULL, true},
+	{"SyslogEnable 1 /HOST:none", ERR_INVALID_PARAMETER, "CMD_HOSTPORT_EVAL_FAILED"},
+	{"SyslogEnable 1 /HOST:127.0.0.1:0", ERR_INVALID_PARAMETER, "CMD_HOSTPORT_EVAL_FAILED"},
+	{"SyslogEnable 1 /HOST:127.0.0.1:abc", ERR_INVALID_PARAMETER, "CMD_HOSTPORT_EVAL_FAILED"},
+	{"SyslogGet", ERR_NO_ERROR, NULL, true},
+	{"SyslogDisable", ERR_NO_ERROR},
+	{"SyslogGet", ERR_NO_ERROR, NULL, true},
+	{NULL},
+};
+
 // The cases, in run order
 static HARNESS_CMD_CASE harness_cmd_cases[] =
 {
 	{"AccessAddTcpState", "HARNESS_CMD_TCPSTATE", harness_cmd_access_tcpstate},
 	{"AccessAddPortRange", "HARNESS_CMD_PORTRANGE", harness_cmd_access_portrange},
+	{"SyslogEnableBadHost", NULL, harness_cmd_syslog_badhost},
 };
 
 static BUF *HarnessCmdRun(char *hub, char *command, UINT *ret);
