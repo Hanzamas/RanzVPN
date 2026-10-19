@@ -4533,12 +4533,42 @@ void DeleteOldIpTableEntry(LIST *o)
 }
 
 
+// Drop the storm list entry whose check window started first: the flow that has been quiet the longest
+static void DeleteOldestStorm(LIST *o)
+{
+	STORM *oldest = NULL;
+	UINT i;
+
+	for (i = 0;i < LIST_NUM(o);i++)
+	{
+		STORM *s = LIST_DATA(o, i);
+
+		if (oldest == NULL || s->CheckStartTick < oldest->CheckStartTick)
+		{
+			oldest = s;
+		}
+	}
+
+	if (oldest != NULL)
+	{
+		Delete(o, oldest);
+		Free(oldest);
+	}
+}
+
 STORM *AddStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, bool strict)
 {
 	STORM *s;
 	if (pa == NULL || mac_address == NULL)
 	{
 		return NULL;
+	}
+
+	// One entry per source MAC, source IP and destination IP: a session that varies its addresses would
+	// grow the list without bound, so a full list makes room first
+	if (LIST_NUM(pa->StormList) >= MAX_STORM_LIST_ENTRIES)
+	{
+		DeleteOldestStorm(pa->StormList);
 	}
 
 	s = ZeroMalloc(sizeof(STORM));
