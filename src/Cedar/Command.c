@@ -4240,6 +4240,20 @@ static UINT PsHubDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
+// Total bytes sent and received, broadcast and unicast
+static UINT64 TrafficTotalBytes(const TRAFFIC *t)
+{
+	return t->Recv.BroadcastBytes + t->Recv.UnicastBytes +
+		t->Send.BroadcastBytes + t->Send.UnicastBytes;
+}
+
+// Total packets sent and received, broadcast and unicast
+static UINT64 TrafficTotalPackets(const TRAFFIC *t)
+{
+	return t->Recv.BroadcastCount + t->Recv.UnicastCount +
+		t->Send.BroadcastCount + t->Send.UnicastCount;
+}
+
 static UINT PsHubList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
 	LIST *o;
@@ -4322,13 +4336,9 @@ static UINT PsHubList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			}
 			else
 			{
-				UniToStr3(s9, sizeof(s9),
-					e->Traffic.Recv.BroadcastBytes + e->Traffic.Recv.UnicastBytes +
-					e->Traffic.Send.BroadcastBytes + e->Traffic.Send.UnicastBytes);
+				UniToStr3(s9, sizeof(s9), TrafficTotalBytes(&e->Traffic));
 
-				UniToStr3(s10, sizeof(s10),
-					e->Traffic.Recv.BroadcastCount + e->Traffic.Recv.UnicastCount +
-					e->Traffic.Send.BroadcastCount + e->Traffic.Send.UnicastCount);
+				UniToStr3(s10, sizeof(s10), TrafficTotalPackets(&e->Traffic));
 			}
 
 			StrToUni(name, sizeof(name), e->HubName);
@@ -4981,7 +4991,7 @@ static UINT PsLogEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	{
 		c->Write(c, _UU("CMD_LogEnable_Prompt_Error"));
 		FreeParamValueList(o);
-		return ret;
+		return ERR_INVALID_PARAMETER;
 	}
 
 	Zero(&t, sizeof(t));
@@ -7843,7 +7853,7 @@ static UINT PsCascadePolicySet(CONSOLE *c, char *cmd_name, wchar_t *str, void *p
 		{
 			FreeRpcCreateLink(&t);
 			FreeParamValueList(o);
-			return ERR_INTERNAL_ERROR;
+			return ERR_INVALID_PARAMETER;
 		}
 
 		ret = ScSetLink(ps->Rpc, &t);
@@ -9363,13 +9373,9 @@ UINT PsUserList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			}
 			else
 			{
-				UniToStr3(num1, sizeof(num1),
-					e->Traffic.Recv.BroadcastBytes + e->Traffic.Recv.UnicastBytes +
-					e->Traffic.Send.BroadcastBytes + e->Traffic.Send.UnicastBytes);
+				UniToStr3(num1, sizeof(num1), TrafficTotalBytes(&e->Traffic));
 
-				UniToStr3(num2, sizeof(num2),
-					e->Traffic.Recv.BroadcastCount + e->Traffic.Recv.UnicastCount +
-					e->Traffic.Send.BroadcastBytes + e->Traffic.Send.UnicastCount);
+				UniToStr3(num2, sizeof(num2), TrafficTotalPackets(&e->Traffic));
 			}
 
 			CtInsert(ct,
@@ -10885,9 +10891,8 @@ UINT PsGroupPolicySet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		if (EditPolicy(c, t.Policy, GetParamStr(o, "NAME"), GetParamStr(o, "VALUE"), false) == false)
 		{
 			FreeRpcSetGroup(&t);
-			CmdPrintError(c, ret);
 			FreeParamValueList(o);
-			return ERR_INTERNAL_ERROR;
+			return ERR_INVALID_PARAMETER;
 		}
 
 		ret = ScSetGroup(ps->Rpc, &t);
