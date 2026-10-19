@@ -2869,26 +2869,24 @@ static void AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx)
 
 bool AddChainSslCert(struct ssl_ctx_st *ctx, X *x)
 {
-	bool ret = false;
-	X *x_copy;
-	if (ctx == NULL || x == NULL)
+	if (ctx == NULL || x == NULL || x->x509 == NULL)
 	{
-		return ret;
+		return false;
 	}
 
-	x_copy = CloneX(x);
-
-	if (x_copy != NULL)
+	// The context takes over the reference when it succeeds
+	if (X509_up_ref(x->x509) != 1)
 	{
-		SSL_CTX_add_extra_chain_cert(ctx, x_copy->x509);
-		x_copy->do_not_free = true;
-
-		ret = true;
-
-		FreeX(x_copy);
+		return false;
 	}
 
-	return ret;
+	if (SSL_CTX_add_extra_chain_cert(ctx, x->x509) != 1)
+	{
+		X509_free(x->x509);
+		return false;
+	}
+
+	return true;
 }
 
 bool StartSSL(SOCK *sock, X *x, K *priv)

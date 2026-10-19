@@ -630,51 +630,76 @@ void GetAllNameFromNameEx(wchar_t *str, UINT size, NAME *name)
 	}
 }
 
+// The clone holds its own reference to the key, FreeK releases exactly one. A key is never changed
+// after it is loaded or generated, so sharing the EVP_PKEY is safe across threads.
 K *CloneK(K *k)
 {
-	BUF *b;
 	K *ret;
-	if (k == NULL)
+	if (k == NULL || k->pkey == NULL)
 	{
 		return NULL;
 	}
 
-	b = KToBuf(k, false, NULL);
-	if (b == NULL)
+	if (EVP_PKEY_up_ref(k->pkey) != 1)
 	{
 		return NULL;
 	}
 
-	ret = BufToK(b, k->private_key, false, NULL);
-	FreeBuf(b);
+	ret = ZeroMalloc(sizeof(K));
+	ret->pkey = k->pkey;
+	ret->private_key = k->private_key;
 
 	return ret;
 }
 
+static NAME *CloneName(NAME *n)
+{
+	NAME *ret;
+	if (n == NULL)
+	{
+		return NULL;
+	}
+
+	ret = ZeroMalloc(sizeof(NAME));
+	ret->CommonName = CopyUniStr(n->CommonName);
+	ret->Organization = CopyUniStr(n->Organization);
+	ret->Unit = CopyUniStr(n->Unit);
+	ret->Country = CopyUniStr(n->Country);
+	ret->State = CopyUniStr(n->State);
+	ret->Local = CopyUniStr(n->Local);
+
+	return ret;
+}
+
+// The clone holds its own reference to the certificate, FreeX releases exactly one. The parsed
+// fields are copied. NewX/NewRootX change an X509 only before they wrap it, so a shared X509 is
+// read only.
 X *CloneX(X *x)
 {
-	BUF *b;
 	X *ret;
-	if (x == NULL)
+	if (x == NULL || x->x509 == NULL)
 	{
 		return NULL;
 	}
 
-	b = XToBuf(x, false);
-	if (b == NULL)
+	if (X509_up_ref(x->x509) != 1)
 	{
 		return NULL;
 	}
 
-	ret = BufToX(b, false);
-	FreeBuf(b);
+	ret = ZeroMalloc(sizeof(X));
+	*ret = *x;
+	ret->issuer_name = CloneName(x->issuer_name);
+	ret->subject_name = CloneName(x->subject_name);
+	ret->serial = CloneXSerial(x->serial);
+	// The reference above is the clone's own, also when the original does not free its certificate
+	ret->do_not_free = false;
 
 	return ret;
 }
 
 LIST *CloneXList(LIST *chain)
 {
-	BUF *b;
 	X *x;
 	LIST *ret;
 	if (chain == NULL)
@@ -688,16 +713,11 @@ LIST *CloneXList(LIST *chain)
 		UINT i;
 		for (i = 0;i < LIST_NUM(chain);i++)
 		{
-			x = LIST_DATA(chain, i);
-			b = XToBuf(x, false);
-			if (b == NULL)
+			x = CloneX(LIST_DATA(chain, i));
+			if (x != NULL)
 			{
-				continue;
+				Add(ret, x);
 			}
-
-			x = BufToX(b, false);
-			Add(ret, x);
-			FreeBuf(b);
 		}
 	}
 	UnlockList(chain);
@@ -869,7 +889,7 @@ X *NewX(K *pub, K *priv, X *ca, NAME *name, UINT days, X_SERIAL *serial)
 X *NewRootX(K *pub, K *priv, NAME *name, UINT days, X_SERIAL *serial)
 {
 	X509 *x509;
-	X *x, *x2;
+	X *x;
 	if (pub == NULL || priv == NULL || name == NULL)
 	{
 		return NULL;
@@ -888,10 +908,7 @@ X *NewRootX(K *pub, K *priv, NAME *name, UINT days, X_SERIAL *serial)
 		return NULL;
 	}
 
-	x2 = CloneX(x);
-	FreeX(x);
-
-	return x2;
+	return x;
 }
 
 static void AddKeyUsageX509(EXTENDED_KEY_USAGE *ex, int nid)
