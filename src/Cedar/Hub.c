@@ -860,11 +860,6 @@ bool IsValidCertInHub(HUB *h, X *x)
 		return false;
 	}
 
-	if (h->HubDb == NULL)
-	{
-		return false;
-	}
-
 	LockList(h->HubDb->CrlList);
 	{
 		ret = IsCertMatchCrlList(x, h->HubDb->CrlList);
