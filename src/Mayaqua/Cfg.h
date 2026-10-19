@@ -95,7 +95,7 @@ void CfgOutputFolderText(BUF *b, FOLDER *f, UINT depth);
 void CfgAddLine(BUF *b, char *str, UINT depth);
 void CfgAddDeclare(BUF *b, char *name, UINT depth);
 void CfgAddEnd(BUF *b, UINT depth);
-void CfgAddData(BUF *b, UINT type, char *name, char *data, char *sub, UINT depth);
+void CfgAddData(BUF *b, UINT type, char *name, char *data, UINT depth);
 char *CfgTypeToStr(UINT type);
 void CfgAddItemText(BUF *b, ITEM *t, UINT depth);
 FOLDER *CfgBufTextToFolder(BUF *b);

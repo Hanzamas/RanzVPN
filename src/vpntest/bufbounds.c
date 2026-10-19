@@ -435,6 +435,86 @@ static void BufBoundsTestCfgValid(BUFBOUNDS_CTX *ctx)
 	CfgDeleteFolder(f);
 }
 
+// The Name of entry i of an Items list (folders false) or a Folders list (folders true)
+static char *BufBoundsCfgEntryName(LIST *o, UINT i, bool folders)
+{
+	if (folders)
+	{
+		return ((FOLDER *)LIST_DATA(o, i))->Name;
+	}
+
+	return ((ITEM *)LIST_DATA(o, i))->Name;
+}
+
+// True when the names of list o are sorted case-insensitively, as CfgCmpName orders them
+static bool BufBoundsCfgListSorted(LIST *o, bool folders)
+{
+	UINT i;
+
+	for (i = 1;i < LIST_NUM(o);i++)
+	{
+		if (StrCmpi(BufBoundsCfgEntryName(o, i - 1, folders), BufBoundsCfgEntryName(o, i, folders)) > 0)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+// True when every name of t comes after the one before it, case-insensitively: sorted, each once
+static bool BufBoundsCfgTokensUnique(TOKEN_LIST *t)
+{
+	UINT i;
+
+	for (i = 1;i < t->NumTokens;i++)
+	{
+		if (StrCmpi(t->Token[i - 1], t->Token[i]) >= 0)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+// CfgEnumItemToTokenList and CfgEnumFolderToTokenList drop duplicates in one pass (FND-58): the
+// Items and Folders lists are sorted when enumerated, and two names differing only in case
+// enumerate once
+static void BufBoundsTestCfgEnum(BUFBOUNDS_CTX *ctx)
+{
+	FOLDER *f = CfgCreateFolder(NULL, TAG_ROOT);
+	FOLDER *sub;
+	TOKEN_LIST *items, *folders;
+
+	CfgAddInt(f, "Zeta", 1);
+	CfgAddInt(f, "alpha", 2);
+	CfgAddInt(f, "Mid", 3);
+	CfgAddInt(f, "ALPHA", 4);
+	CfgAddInt(f, "Beta", 5);
+	CfgCreateFolder(f, "zeta");
+	CfgCreateFolder(f, "Beta");
+	CfgCreateFolder(f, "BETA");
+	CfgCreateFolder(f, "Alpha");
+	CfgCreateFolder(f, "beta");
+
+	sub = CfgFindFolder(f, "BeTa");
+	items = CfgEnumItemToTokenList(f);
+	folders = CfgEnumFolderToTokenList(f);
+
+	BufBoundsCheck(ctx, BufBoundsCfgListSorted(f->Items, false) && BufBoundsCfgListSorted(f->Folders, true),
+		"the Items and Folders lists are sorted case-insensitively when enumerated");
+	BufBoundsCheck(ctx, items->NumTokens == 4 && folders->NumTokens == 3 &&
+		BufBoundsCfgTokensUnique(items) && BufBoundsCfgTokensUnique(folders),
+		"names differing only in case enumerate once, in sorted order");
+	BufBoundsCheck(ctx, sub != NULL && StrCmpi(sub->Name, "beta") == 0 && CfgGetInt(f, "MID") == 3,
+		"a lookup by name ignores case");
+
+	FreeToken(items);
+	FreeToken(folders);
+	CfgDeleteFolder(f);
+}
+
 // CfgBufBinToFolder: every count and size is checked against the bytes left
 static void BufBoundsTestCfg(BUFBOUNDS_CTX *ctx)
 {
@@ -442,6 +522,7 @@ static void BufBoundsTestCfg(BUFBOUNDS_CTX *ctx)
 	UINT i;
 
 	BufBoundsTestCfgValid(ctx);
+	BufBoundsTestCfgEnum(ctx);
 
 	b = NewBuf();
 	WriteBufStr(b, TAG_ROOT);

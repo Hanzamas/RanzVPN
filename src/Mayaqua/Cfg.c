@@ -936,7 +936,6 @@ void CfgOutputFolderText(BUF *b, FOLDER *f, UINT depth)
 void CfgAddItemText(BUF *b, ITEM *t, UINT depth)
 {
 	char *data;
-	char *sub = NULL;
 	UINT size;
 	char *utf8;
 	UINT utf8_size;
@@ -970,7 +969,6 @@ void CfgAddItemText(BUF *b, ITEM *t, UINT depth)
 		utf8 = ZeroMalloc(utf8_size);
 		utf8[0] = 0;
 		UniToUtf8(utf8, utf8_size, string);
-		size = utf8_size;
 		data = utf8;
 		break;
 
@@ -992,17 +990,16 @@ void CfgAddItemText(BUF *b, ITEM *t, UINT depth)
 		return;
 	}
 
-	CfgAddData(b, t->Type, t->Name, data, sub, depth);
+	CfgAddData(b, t->Type, t->Name, data, depth);
 
 	Free(data);
 }
 
-void CfgAddData(BUF *b, UINT type, char *name, char *data, char *sub, UINT depth)
+void CfgAddData(BUF *b, UINT type, char *name, char *data, UINT depth)
 {
 	char *tmp;
 	char *name2;
 	char *data2;
-	char *sub2 = NULL;
 	UINT tmp_size;
 	if (b == NULL || type == 0 || name == NULL || data == NULL)
 	{
@@ -1011,39 +1008,18 @@ void CfgAddData(BUF *b, UINT type, char *name, char *data, char *sub, UINT depth
 
 	name2 = CfgEscape(name);
 	data2 = CfgEscape(data);
-	if (sub != NULL)
-	{
-		sub2 = CfgEscape(sub);
-	}
 
 	tmp_size = StrLen(name2) + StrLen(data2) + 2 + 64 + 1;
 	tmp = Malloc(tmp_size);
 
-	if (sub2 != NULL)
-	{
-		StrCpy(tmp, tmp_size, CfgTypeToStr(type));
-		StrCat(tmp, tmp_size, " ");
-		StrCat(tmp, tmp_size, name2);
-		StrCat(tmp, tmp_size, " ");
-		StrCat(tmp, tmp_size, data2);
-		StrCat(tmp, tmp_size, " ");
-		StrCat(tmp, tmp_size, sub2);
-	}
-	else
-	{
-		StrCpy(tmp, tmp_size, CfgTypeToStr(type));
-		StrCat(tmp, tmp_size, " ");
-		StrCat(tmp, tmp_size, name2);
-		StrCat(tmp, tmp_size, " ");
-		StrCat(tmp, tmp_size, data2);
-	}
+	StrCpy(tmp, tmp_size, CfgTypeToStr(type));
+	StrCat(tmp, tmp_size, " ");
+	StrCat(tmp, tmp_size, name2);
+	StrCat(tmp, tmp_size, " ");
+	StrCat(tmp, tmp_size, data2);
 
 	Free(name2);
 	Free(data2);
-	if (sub2 != NULL)
-	{
-		Free(sub2);
-	}
 	CfgAddLine(b, tmp, depth);
 	Free(tmp);
 }
@@ -1354,124 +1330,93 @@ UINT CfgGetByte(FOLDER *f, char *name, void *buf, UINT size)
 	}
 }
 
-UINT64 CfgGetInt64(FOLDER *f, char *name)
+// The value of the item called name when it has the given type and size, else NULL
+static void *CfgFindValue(FOLDER *f, char *name, UINT type, UINT size)
 {
 	ITEM *t;
-	UINT64 *ret;
 	if (f == NULL || name == NULL)
 	{
-		return 0;
+		return NULL;
 	}
 
 	t = CfgFindItem(f, name);
-	if (t == NULL)
+	if (t == NULL || t->Type != type || t->size != size)
 	{
-		return 0;
+		return NULL;
 	}
-	if (t->Type != ITEM_TYPE_INT64)
-	{
-		return 0;
-	}
-	if (t->size != sizeof(UINT64))
+
+	return t->Buf;
+}
+
+UINT64 CfgGetInt64(FOLDER *f, char *name)
+{
+	UINT64 *ret = CfgFindValue(f, name, ITEM_TYPE_INT64, sizeof(UINT64));
+	if (ret == NULL)
 	{
 		return 0;
 	}
 
-	ret = (UINT64 *)t->Buf;
 	return *ret;
 }
 
 bool CfgGetBool(FOLDER *f, char *name)
 {
-	ITEM *t;
-	bool *ret;
-	if (f == NULL || name == NULL)
-	{
-		return 0;
-	}
-
-	t = CfgFindItem(f, name);
-	if (t == NULL)
-	{
-		return 0;
-	}
-	if (t->Type != ITEM_TYPE_BOOL)
-	{
-		return 0;
-	}
-	if (t->size != sizeof(bool))
-	{
-		return 0;
-	}
-
-	ret = (bool *)t->Buf;
-	if (*ret == false)
+	bool *ret = CfgFindValue(f, name, ITEM_TYPE_BOOL, sizeof(bool));
+	if (ret == NULL || *ret == false)
 	{
 		return false;
 	}
-	else
-	{
-		return true;
-	}
+
+	return true;
 }
 
 UINT CfgGetInt(FOLDER *f, char *name)
 {
-	ITEM *t;
-	UINT *ret;
-	if (f == NULL || name == NULL)
+	UINT *ret = CfgFindValue(f, name, ITEM_TYPE_INT, sizeof(UINT));
+	if (ret == NULL)
 	{
 		return 0;
 	}
 
-	t = CfgFindItem(f, name);
-	if (t == NULL)
-	{
-		return 0;
-	}
-	if (t->Type != ITEM_TYPE_INT)
-	{
-		return 0;
-	}
-	if (t->size != sizeof(UINT))
-	{
-		return 0;
-	}
-
-	ret = (UINT *)t->Buf;
 	return *ret;
+}
+
+// The entry called name in an Items or Folders list. The key is a char * that CfgCmpName reads
+// as it reads the Name, the first member of an ITEM and a FOLDER.
+static void *CfgFindByName(LIST *o, char *name)
+{
+	char *key;
+	void *ret;
+	if (o == NULL || name == NULL)
+	{
+		return NULL;
+	}
+
+	key = CopyStr(name);
+	ret = Search(o, &key);
+	Free(key);
+
+	return ret;
 }
 
 ITEM *CfgFindItem(FOLDER *parent, char *name)
 {
-	ITEM *t, tt;
-	if (parent == NULL || name == NULL)
+	if (parent == NULL)
 	{
 		return NULL;
 	}
 
-	tt.Name = ZeroMalloc(StrLen(name) + 1);
-	StrCpy(tt.Name, 0, name);
-	t = Search(parent->Items, &tt);
-	Free(tt.Name);
-
-	return t;
+	return CfgFindByName(parent->Items, name);
 }
 
 FOLDER *CfgFindFolder(FOLDER *parent, char *name)
 {
-	FOLDER *f, ff;
-	if (parent == NULL || name == NULL)
+	if (parent == NULL)
 	{
 		return NULL;
 	}
 
-	ff.Name = ZeroMalloc(StrLen(name) + 1);
-	StrCpy(ff.Name, 0, name);
-	f = Search(parent->Folders, &ff);
-	Free(ff.Name);
-
-	return f;
+	return CfgFindByName(parent->Folders, name);
 }
 
 ITEM *CfgAddStr(FOLDER *f, char *name, char *str)
@@ -1654,36 +1599,28 @@ ITEM *CfgAddBool(FOLDER *f, char *name, bool b)
 	return CfgCreateItem(f, name, ITEM_TYPE_BOOL, &b, sizeof(bool));
 }
 
-static int CmpItemName(void *p1, void *p2)
+// The Name of an entry of an Items or Folders list. Name is the first member of both ITEM and
+// FOLDER, and a pointer to a structure points to its first member, so this reads either.
+static char *CfgEntryName(void *p)
 {
-	ITEM *f1, *f2;
-	if (p1 == NULL || p2 == NULL)
-	{
-		return 0;
-	}
-	f1 = *(ITEM **)p1;
-	f2 = *(ITEM **)p2;
-	if (f1 == NULL || f2 == NULL)
-	{
-		return 0;
-	}
-	return StrCmpi(f1->Name, f2->Name);
+	return *(char **)p;
 }
 
-static int CmpFolderName(void *p1, void *p2)
+// Comparator of the Items and the Folders lists: case-insensitive by Name
+static int CfgCmpName(void *p1, void *p2)
 {
-	FOLDER *f1, *f2;
+	void *e1, *e2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	f1 = *(FOLDER **)p1;
-	f2 = *(FOLDER **)p2;
-	if (f1 == NULL || f2 == NULL)
+	e1 = *(void **)p1;
+	e2 = *(void **)p2;
+	if (e1 == NULL || e2 == NULL)
 	{
 		return 0;
 	}
-	return StrCmpi(f1->Name, f2->Name);
+	return StrCmpi(CfgEntryName(e1), CfgEntryName(e2));
 }
 
 void CfgEnumItem(FOLDER *f, ENUM_ITEM proc, void *param)
@@ -1704,54 +1641,51 @@ void CfgEnumItem(FOLDER *f, ENUM_ITEM proc, void *param)
 	}
 }
 
+// The names of an Items or Folders list, each case-insensitive name once. Insert() keeps the list
+// sorted by CfgCmpName, so names equal but for case are adjacent: one pass against the last kept
+// name drops them and keeps the first, as the old O(N^2) scan did.
+static TOKEN_LIST *CfgNamesToTokenList(LIST *o)
+{
+	TOKEN_LIST *t;
+	char *last = NULL;
+	UINT i;
+
+	t = ZeroMalloc(sizeof(TOKEN_LIST));
+	t->Token = ZeroMalloc(sizeof(char *) * LIST_NUM(o));
+
+	for (i = 0;i < LIST_NUM(o);i++)
+	{
+		char *name = CfgEntryName(LIST_DATA(o, i));
+		if (last != NULL && StrCmpi(last, name) == 0)
+		{
+			continue;
+		}
+
+		t->Token[t->NumTokens++] = CopyStr(name);
+		last = name;
+	}
+
+	return t;
+}
+
 TOKEN_LIST *CfgEnumFolderToTokenList(FOLDER *f)
 {
-	TOKEN_LIST *t, *ret;
-	UINT i;
 	if (f == NULL)
 	{
 		return NULL;
 	}
 
-	t = ZeroMalloc(sizeof(TOKEN_LIST));
-	t->NumTokens = LIST_NUM(f->Folders);
-	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
-
-	for (i = 0;i < t->NumTokens;i++)
-	{
-		FOLDER *ff = LIST_DATA(f->Folders, i);
-		t->Token[i] = CopyStr(ff->Name);
-	}
-
-	ret = UniqueToken(t);
-	FreeToken(t);
-
-	return ret;
+	return CfgNamesToTokenList(f->Folders);
 }
 
 TOKEN_LIST *CfgEnumItemToTokenList(FOLDER *f)
 {
-	TOKEN_LIST *t, *ret;
-	UINT i;
 	if (f == NULL)
 	{
 		return NULL;
 	}
 
-	t = ZeroMalloc(sizeof(TOKEN_LIST));
-	t->NumTokens = LIST_NUM(f->Items);
-	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
-
-	for (i = 0;i < t->NumTokens;i++)
-	{
-		FOLDER *ff = LIST_DATA(f->Items, i);
-		t->Token[i] = CopyStr(ff->Name);
-	}
-
-	ret = UniqueToken(t);
-	FreeToken(t);
-
-	return ret;
+	return CfgNamesToTokenList(f->Items);
 }
 
 void CfgEnumFolder(FOLDER *f, ENUM_FOLDER proc, void *param)
@@ -1879,8 +1813,8 @@ FOLDER *CfgCreateFolder(FOLDER *parent, char *name)
 	size = StrLen(name) + 1;
 
 	f = ZeroMalloc(sizeof(FOLDER));
-	f->Items = NewListFast(CmpItemName);
-	f->Folders = NewListFast(CmpFolderName);
+	f->Items = NewListFast(CfgCmpName);
+	f->Folders = NewListFast(CfgCmpName);
 	f->Name = ZeroMalloc(size);
 	StrCpy(f->Name, 0, name);
 	f->Parent = parent;
