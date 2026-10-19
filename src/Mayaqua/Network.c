@@ -5342,7 +5342,8 @@ bool GetNetBiosName(char *name, UINT size, IP *ip)
 		}
 		else
 		{
-			if (ret >= sizeof(NBTRESPONSE))
+			// Only a reply from the queried host's NetBIOS port counts; anything else may be spoofed
+			if (ret >= sizeof(NBTRESPONSE) && src_port == 137 && CmpIpAddr(&src_ip, ip) == 0)
 			{
 				NBTRESPONSE *r = (NBTRESPONSE *)buf;
 				bool b = false;
