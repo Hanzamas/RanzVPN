@@ -2683,10 +2683,12 @@ LIST *BioToXList(BIO *bio, bool text)
 		{
 			xi = sk_X509_INFO_shift(sk);
 			x = X509ToX(xi->x509);
+			// X509ToX owns the certificate now, also when it fails (it freed it then), so
+			// X509_INFO_free must not free it again
+			xi->x509 = NULL;
 			if (x != NULL)
 			{
 				Add(chain, x);
-				xi->x509 = NULL;
 			}
 			X509_INFO_free(xi);
 		}
@@ -2698,6 +2700,7 @@ LIST *BioToXList(BIO *bio, bool text)
 	return chain;
 }
 
+// Takes ownership of x509: it is freed with the returned X, or here when the conversion fails
 X *X509ToX(X509 *x509)
 {
 	X *x;
