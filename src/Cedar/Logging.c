@@ -762,7 +762,8 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 					{
 						if (IPToUINT(&s->Syslog->DestIp) == packet->L3.IPv4Header->DstIP)
 						{
-							if (Endian32(packet->L4.UDPHeader->DstPort) == s->Syslog->DestPort)
+							// DstPort is a 16-bit field in network order, DestPort a port in host order
+							if (Endian16(packet->L4.UDPHeader->DstPort) == (USHORT)s->Syslog->DestPort)
 							{
 								self_syslog_packet = true;
 							}
