@@ -21,6 +21,9 @@ target_sources(vpntest PRIVATE machineid.c)
 # Named VM detection test of FIX-7 (#103)
 target_sources(vpntest PRIVATE vmdetect.c)
 
+# Named StorePacket test of SEC-5 (#96)
+target_sources(vpntest PRIVATE storepacket.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
