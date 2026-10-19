@@ -74,7 +74,7 @@ $named | % {
 	# The harness must compare its golden files: a missing or empty golden directory switches a family to update
 	# mode, which passes without comparing. RANZ_UPDATE_GOLDEN=1 is the deliberate way to record new files.
 	if ($test -eq 'harness' -and $env:RANZ_UPDATE_GOLDEN -ne '1') {
-		$missing = @('HARNESS GOLDEN MODE compare', 'HARNESS GOLDEN MODE pack compare') | ? {
+		$missing = @('HARNESS GOLDEN MODE compare', 'HARNESS GOLDEN MODE pack compare', 'HARNESS GOLDEN MODE cmd compare') | ? {
 			($full | Select-String -Pattern $_ -SimpleMatch -CaseSensitive).Count -ne 1
 		}
 		if ($missing) {

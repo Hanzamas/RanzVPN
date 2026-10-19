@@ -55,6 +55,9 @@ typedef struct HARNESS
 	UINT NumFail;				// Failed checks
 } HARNESS;
 
+// Normalisation rules of the vpncmd golden outputs (harness.c)
+typedef struct HARNESS_NORM HARNESS_NORM;
+
 // harness.c
 bool HarnessCheck(HARNESS *h, bool ok, char *what);
 bool HarnessCheckErr(HARNESS *h, UINT err, char *what);
@@ -65,8 +68,14 @@ bool HarnessDirHasFiles(char *dir);
 void HarnessGetFamilyDirs(char *family, char *out_dir, UINT out_size, char *golden_dir, UINT golden_size, bool *update);
 void HarnessCompareGolden(HARNESS *h, char *out_dir, char *golden_dir, char *file_name, char *actual, bool update);
 bool HarnessFindSession(HARNESS *h, char *hubname, char *username, bool link_mode, char *name, UINT name_size);
+HARNESS_NORM *HarnessNewNorm();
+void HarnessFreeNorm(HARNESS_NORM *n);
+char *HarnessNormalizeVpncmd(HARNESS_NORM *n, BUF *raw);
 
 // harness_pack.c
 void HarnessPackGolden(HARNESS *h);
+
+// harness_cmd.c
+void HarnessCmdCases(HARNESS *h);
 
 #endif	// HARNESS_INT_H
