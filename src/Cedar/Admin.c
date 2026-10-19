@@ -1736,7 +1736,7 @@ static UINT StGetConfig(ADMIN *a, RPC_CONFIG *t)
 		FOLDER *f = SiWriteConfigurationToCfg(s);
 		BUF *b = CfgFolderToBuf(f, true);
 
-		StrCpy(t->FileName, sizeof(t->FileName), s->CfgRw->FileName + (s->CfgRw->FileName[0] == '@' ? 1 : 0));
+		CfgGetDisplayFileName(s->CfgRw, t->FileName, sizeof(t->FileName));
 
 		t->FileData = ZeroMalloc(b->Size + 1);
 		Copy(t->FileData, b->Buf, b->Size);
@@ -1755,8 +1755,6 @@ static UINT StGetConfig(ADMIN *a, RPC_CONFIG *t)
 static UINT StSetConfig(ADMIN *a, RPC_CONFIG *t)
 {
 	SERVER *s;
-	IO *o;
-	char filename[MAX_PATH];
 
 	SERVER_ADMIN_ONLY;
 
@@ -1766,15 +1764,7 @@ static UINT StSetConfig(ADMIN *a, RPC_CONFIG *t)
 		return ERR_INTERNAL_ERROR;
 	}
 
-	Format(filename, sizeof(filename), "%s.new", s->CfgRw->FileName);
-
-	o = FileCreate(filename);
-
-	FileWrite(o, t->FileData, StrLen(t->FileData));
-
-	FileClose(o);
-
-	IncrementServerConfigRevision(s);
+	SiStageConfiguration(s, t->FileData, StrLen(t->FileData));
 
 	ALog(a, NULL, "LA_SET_CONFIG");
 

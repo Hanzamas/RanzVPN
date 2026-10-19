@@ -2046,6 +2046,24 @@ void IncrementServerConfigRevision(SERVER *s)
 	s->ConfigRevision++;
 }
 
+// Stages an uploaded configuration that the next start loads in place of the live file
+bool SiStageConfiguration(SERVER *s, char *data, UINT size)
+{
+	if (s == NULL || s->CfgRw == NULL || data == NULL)
+	{
+		return false;
+	}
+
+	if (CfgStageNewFile(s->CfgRw, data, size) == false)
+	{
+		return false;
+	}
+
+	IncrementServerConfigRevision(s);
+
+	return true;
+}
+
 FOLDER *SiWriteConfigurationToCfg(SERVER *s)
 {
 	FOLDER *root;

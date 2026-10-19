@@ -110,6 +110,8 @@ bool CfgSaveExW(CFG_RW *rw, FOLDER *f, wchar_t *name);
 bool CfgSaveExW2(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size);
 bool CfgSaveExW3(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size, bool write_binary);
 FOLDER *CfgReadW(wchar_t *name);
+bool CfgStageNewFile(CFG_RW *rw, void *data, UINT size);
+void CfgGetDisplayFileName(CFG_RW *rw, char *dst, UINT size);
 CFG_RW *NewCfgRwEx2W(FOLDER **root, wchar_t *cfg_name, bool dont_backup, wchar_t *template_name);
 CFG_RW *NewCfgRwEx2A(FOLDER **root, char *cfg_name_a, bool dont_backup, char *template_name_a);
 UINT SaveCfgRwEx(CFG_RW *rw, FOLDER *f, UINT revision_number);

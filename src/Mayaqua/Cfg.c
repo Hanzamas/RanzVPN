@@ -228,32 +228,74 @@ bool FileCopyExW(wchar_t *src, wchar_t *dst, bool read_lock)
 
 	return ret;
 }
-static bool FileCopyExWithEofW(wchar_t *src, wchar_t *dst, bool read_lock)
+// Writes data to <name>.tmp in the same directory, flushes it to disk and replaces name with it
+// in one step, so a reader sees either the old file or the whole new one
+static bool CfgWriteFileReplace(wchar_t *name, void *data, UINT size)
 {
-	BUF *b;
-	bool ret = false;
-	if (src == NULL || dst == NULL)
+	wchar_t tmp[MAX_SIZE];
+	wchar_t inner_tmp[MAX_SIZE];
+	wchar_t inner_name[MAX_SIZE];
+	IO *o;
+	bool ok;
+	if (name == NULL || data == NULL)
 	{
 		return false;
 	}
 
-	b = ReadDumpExW(src, false);
-	if (b == NULL)
+	UniFormat(tmp, sizeof(tmp), L"%s.tmp", name);
+
+	o = FileCreateW(tmp);
+	if (o == NULL)
+	{
+		return false;
+	}
+	ok = FileWrite(o, data, size);
+	// FileClose flushes a writer with FlushFileBuffers
+	FileClose(o);
+
+	if (ok)
+	{
+		InnerFilePathW(inner_tmp, sizeof(inner_tmp), tmp);
+		InnerFilePathW(inner_name, sizeof(inner_name), name);
+		ok = MoveFileExW(inner_tmp, inner_name, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
+	}
+
+	if (ok == false)
+	{
+		FileDeleteW(tmp);
+	}
+
+	return ok;
+}
+
+bool CfgStageNewFile(CFG_RW *rw, void *data, UINT size)
+{
+	wchar_t newfile[MAX_SIZE];
+	if (rw == NULL || data == NULL)
 	{
 		return false;
 	}
 
-	SeekBuf(b, b->Size, 0);
+	// CfgReadW loads <name>.new in place of the live file on the next read
+	UniFormat(newfile, sizeof(newfile), L"%s.new", rw->FileNameW);
 
-	WriteBufChar(b, 0x1A);
+	return CfgWriteFileReplace(newfile, data, size);
+}
 
-	SeekBuf(b, 0, 0);
+void CfgGetDisplayFileName(CFG_RW *rw, char *dst, UINT size)
+{
+	if (dst == NULL)
+	{
+		return;
+	}
+	if (rw == NULL)
+	{
+		ClearStr(dst, size);
+		return;
+	}
 
-	ret = DumpBufW(b, dst);
-
-	FreeBuf(b);
-
-	return ret;
+	// A leading '@' only marks a path relative to the executable directory
+	StrCpy(dst, size, rw->FileName + (rw->FileName[0] == '@' ? 1 : 0));
 }
 
 void CfgSaveW(FOLDER *f, wchar_t *name)
@@ -270,11 +312,9 @@ bool CfgSaveExW2(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size)
 }
 bool CfgSaveExW3(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size, bool write_binary)
 {
-	wchar_t tmp[MAX_SIZE];
 	bool text = !write_binary;
 	UCHAR hash[SHA1_SIZE];
 	BUF *b;
-	IO *o;
 	bool ret = true;
 	UINT dummy_int = 0;
 	if (name == NULL || f == NULL)
@@ -307,38 +347,18 @@ bool CfgSaveExW3(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size, bool 
 
 	if (ret || OS_IS_UNIX(GetOsInfo()->OsType))
 	{
-		UniFormat(tmp, sizeof(tmp), L"%s.log", name);
-		FileCopyExWithEofW(name, tmp, true);
-
-		o = FileCreateW(name);
-		if (o != NULL)
+		// A failed write keeps the live file; the next save writes again
+		if (CfgWriteFileReplace(name, b->Buf, b->Size))
 		{
-			if (FileWrite(o, b->Buf, b->Size) == false)
-			{
-				FileClose(o);
-				FileDeleteW(name);
-				FileRenameW(tmp, name);
+			wchar_t log_name[MAX_SIZE];
 
-				if (rw != NULL)
-				{
-					Zero(rw->LashHash, sizeof(rw->LashHash));
-				}
-			}
-			else
-			{
-				FileClose(o);
-
-				FileDeleteW(tmp);
-			}
+			// CfgReadW prefers a <name>.log left by an older save; the new file supersedes it
+			UniFormat(log_name, sizeof(log_name), L"%s.log", name);
+			FileDeleteW(log_name);
 		}
-		else
+		else if (rw != NULL)
 		{
-			FileRenameW(tmp, name);
-
-			if (rw != NULL)
-			{
-				Zero(rw->LashHash, sizeof(rw->LashHash));
-			}
+			Zero(rw->LashHash, sizeof(rw->LashHash));
 		}
 	}
 
