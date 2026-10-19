@@ -552,6 +552,31 @@ static void NodeInfoToStr(wchar_t *str, UINT size, NODE_INFO *info)
 		info->HubName, unique_id);
 }
 
+// Whether the access list of hub (source IP address limit) admits the client of c. A denied client is logged
+// (LS_IP_DENIED); the caller refuses the request with ERR_IP_ADDRESS_DENIED before any credential check.
+static bool ServerCheckHubAccess(CONNECTION *c, HUB *hub)
+{
+	IP ip;
+	char ip_str[64];
+
+	if (GetGlobalServerFlag(GSF_DISABLE_AC) != 0 || hub->HubDb == NULL || c->FirstSock == NULL)
+	{
+		return true;
+	}
+
+	Copy(&ip, &c->FirstSock->RemoteIP, sizeof(IP));
+
+	if (IsIpDeniedByAcList(&ip, hub->HubDb->AcList) == false)
+	{
+		return true;
+	}
+
+	IPToStr(ip_str, sizeof(ip_str), &ip);
+	SLog(c->Cedar, "LS_IP_DENIED", c->Name, ip_str);
+
+	return false;
+}
+
 static UINT ChangePasswordAccept(CONNECTION *c, PACK *p)
 {
 	CEDAR *cedar;
@@ -598,6 +623,12 @@ static UINT ChangePasswordAccept(CONNECTION *c, PACK *p)
 	else
 	{
 		char tmp[MAX_SIZE];
+
+		if (ServerCheckHubAccess(c, hub) == false)
+		{
+			ReleaseHub(hub);
+			return ERR_IP_ADDRESS_DENIED;
+		}
 
 		if (GetHubAdminOption(hub, "deny_change_user_password") != 0)
 		{
@@ -935,26 +966,13 @@ bool ServerAccept(CONNECTION *c)
 			goto CLEANUP;
 		}
 
-		if (GetGlobalServerFlag(GSF_DISABLE_AC) == 0)
+		if (ServerCheckHubAccess(c, hub) == false)
 		{
-			if (hub->HubDb != NULL && c->FirstSock != NULL)
-			{
-				IP ip;
-
-				Copy(&ip, &c->FirstSock->RemoteIP, sizeof(IP));
-
-				if (IsIpDeniedByAcList(&ip, hub->HubDb->AcList))
-				{
-					char ip_str[64];
-					ReleaseHub(hub);
-					hub = NULL;
-					FreePack(p);
-					c->Err = ERR_IP_ADDRESS_DENIED;
-					IPToStr(ip_str, sizeof(ip_str), &ip);
-					SLog(c->Cedar, "LS_IP_DENIED", c->Name, ip_str);
-					goto CLEANUP;
-				}
-			}
+			ReleaseHub(hub);
+			hub = NULL;
+			FreePack(p);
+			c->Err = ERR_IP_ADDRESS_DENIED;
+			goto CLEANUP;
 		}
 
 		Lock(hub->lock);
