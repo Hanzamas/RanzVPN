@@ -99,6 +99,10 @@ static void BufBoundsTestReadBuf(BUFBOUNDS_CTX *ctx)
 	ret = ReadBuf(b, tmp, 1);
 	BufBoundsCheck(ctx, ret == 0 && b->Current == 100, "ReadBuf at the end reads nothing and stays at the end");
 
+	BufBoundsCheck(ctx, ReadBufRemainSize(b) == 0 && ReadBufRemainSize(NULL) == 0, "ReadBufRemainSize is 0 at the end and for NULL");
+	SeekBuf(b, 10, 0);
+	BufBoundsCheck(ctx, ReadBufRemainSize(b) == 90, "ReadBufRemainSize at offset 10 of 100 bytes is 90");
+
 	FreeBuf(b);
 }
 

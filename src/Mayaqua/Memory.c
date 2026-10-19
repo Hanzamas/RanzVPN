@@ -1962,6 +1962,12 @@ void WriteBuf(BUF *b, void *buf, UINT size)
 		return;
 	}
 
+	// Current + size must not wrap: a wrapped size would keep the block and copy past its end
+	if (size > 0xFFFFFFFF - b->Current)
+	{
+		AbortExitEx("WriteBuf(): too large buffer size");
+	}
+
 	new_size = b->Current + size;
 	if (new_size > b->Size)
 	{
@@ -2022,11 +2028,16 @@ bool ReadBufStr(BUF *b, char *str, UINT size)
 	{
 		return false;
 	}
+	str[read_size] = 0;
+
+	// Skip the part that does not fit; it must be there too
 	if (read_size < len)
 	{
-		ReadBuf(b, NULL, len - read_size);
+		if (ReadBuf(b, NULL, len - read_size) != (len - read_size))
+		{
+			return false;
+		}
 	}
-	str[read_size] = 0;
 
 	return true;
 }
@@ -2139,9 +2150,10 @@ UINT ReadBuf(BUF *b, void *buf, UINT size)
 		return 0;
 	}
 	size_read = size;
-	if ((b->Current + size) >= b->Size)
+	// Against the bytes left: Current + size wraps for a size near 2^32
+	if (size > ReadBufRemainSize(b))
 	{
-		size_read = b->Size - b->Current;
+		size_read = ReadBufRemainSize(b);
 		if (buf != NULL)
 		{
 			Zero((UCHAR *)buf + size_read, size - size_read);
@@ -2158,6 +2170,17 @@ UINT ReadBuf(BUF *b, void *buf, UINT size)
 	KS_INC(KS_READ_BUF_COUNT);
 
 	return size_read;
+}
+
+// Bytes left to read from the current position; a reader bounds a length by it before it allocates
+UINT ReadBufRemainSize(BUF *b)
+{
+	if (b == NULL || b->Current >= b->Size)
+	{
+		return 0;
+	}
+
+	return b->Size - b->Current;
 }
 
 void AdjustBufSize(BUF *b, UINT new_size)
