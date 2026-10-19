@@ -228,9 +228,10 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 				UniStrCmpi(data_w.cFileName, L".") != 0)
 			{
 				DIRENT *f = ZeroMalloc(sizeof(DIRENT));
-				SYSTEMTIME t1, t2;
+				SYSTEMTIME t2;
 				wchar_t fullpath[MAX_SIZE];
 				bool ok = false;
+				HANDLE hfile;
 
 				f->FileNameW = UniCopyStr(data_w.cFileName);
 				f->FileName = CopyUniToStr(f->FileNameW);
@@ -238,46 +239,37 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 
 				CombinePathW(fullpath, sizeof(fullpath), dirname2, f->FileNameW);
 
-				if (true)
+				hfile = CreateFileW(fullpath, 0,
+					FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
+					NULL, OPEN_EXISTING, 0, NULL);
+
+				if (hfile != INVALID_HANDLE_VALUE)
 				{
-					HANDLE h = CreateFileW(fullpath, 0,
-						FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
-						NULL, OPEN_EXISTING, 0, NULL);
+					BY_HANDLE_FILE_INFORMATION info;
 
-					if (h != INVALID_HANDLE_VALUE)
+					Zero(&info, sizeof(info));
+
+					if (GetFileInformationByHandle(hfile, &info))
 					{
-						BY_HANDLE_FILE_INFORMATION info;
+						Zero(&t2, sizeof(t2));
+						FileTimeToSystemTime(&info.ftLastWriteTime, &t2);
+						f->UpdateDate = SystemToUINT64(&t2);
 
-						Zero(&info, sizeof(info));
-
-						if (MsGetFileInformation(h, &info))
+						if (f->Folder == false)
 						{
-							Zero(&t1, sizeof(t1));
-							Zero(&t2, sizeof(t2));
-							FileTimeToSystemTime(&info.ftCreationTime, &t1);
-							FileTimeToSystemTime(&info.ftLastWriteTime, &t2);
-							f->CreateDate = SystemToUINT64(&t1);
-							f->UpdateDate = SystemToUINT64(&t2);
-
-							if (f->Folder == false)
-							{
-								f->FileSize = ((UINT64)info.nFileSizeHigh * (UINT64)((UINT64)MAXDWORD + (UINT64)1)) + (UINT64)info.nFileSizeLow;
-							}
-
-							ok = true;
+							f->FileSize = ((UINT64)info.nFileSizeHigh * (UINT64)((UINT64)MAXDWORD + (UINT64)1)) + (UINT64)info.nFileSizeLow;
 						}
 
-						CloseHandle(h);
+						ok = true;
 					}
+
+					CloseHandle(hfile);
 				}
 
 				if (ok == false)
 				{
-					Zero(&t1, sizeof(t1));
 					Zero(&t2, sizeof(t2));
-					FileTimeToSystemTime(&data_w.ftCreationTime, &t1);
 					FileTimeToSystemTime(&data_w.ftLastWriteTime, &t2);
-					f->CreateDate = SystemToUINT64(&t1);
 					f->UpdateDate = SystemToUINT64(&t2);
 
 					if (f->Folder == false)
@@ -521,6 +513,8 @@ void Win32GetOsInfo(OS_INFO *info)
 	UINT type = Win32GetOsType();
 	OSVERSIONINFOEX os;
 	char tmp[MAX_SIZE];
+	char *s;
+	char *keyname = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
 	if (info == NULL)
 	{
 		return;
@@ -532,44 +526,39 @@ void Win32GetOsInfo(OS_INFO *info)
 
 	info->OsType = Win32GetOsType();
 	info->OsServicePack = os.wServicePackMajor;
-	if (true)
+	info->OsSystemName = CopyStr("Windows NT");
+	Format(tmp, sizeof(tmp), "Build %u", os.dwBuildNumber);
+	if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "CurrentType"))
 	{
-		char *s;
-		char *keyname = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
-		info->OsSystemName = CopyStr("Windows NT");
-		Format(tmp, sizeof(tmp), "Build %u", os.dwBuildNumber);
-		if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "CurrentType"))
-		{
-			char str[MAX_SIZE];
-			Format(str, sizeof(str), ", %s", s);
-			StrCat(tmp, sizeof(tmp), str);
-			Free(s);
-		}
-		if (os.wServicePackMajor != 0)
-		{
-			char str[MAX_SIZE];
-			Format(str, sizeof(str), ", Service Pack %u", os.wServicePackMajor);
-			StrCat(tmp, sizeof(tmp), str);
-		}
-		if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "BuildLab"))
-		{
-			char str[MAX_SIZE];
-			Format(str, sizeof(str), " (%s)", s);
-			StrCat(tmp, sizeof(tmp), str);
-			Free(s);
-		}
-		info->OsVersion = CopyStr(tmp);
-		info->KernelName = CopyStr("NTOS Kernel");
-		Format(tmp, sizeof(tmp), "Build %u", os.dwBuildNumber);
-		if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "CurrentType"))
-		{
-			char str[MAX_SIZE];
-			Format(str, sizeof(str), " %s", s);
-			StrCat(tmp, sizeof(tmp), str);
-			Free(s);
-		}
-		info->KernelVersion = CopyStr(tmp);
+		char str[MAX_SIZE];
+		Format(str, sizeof(str), ", %s", s);
+		StrCat(tmp, sizeof(tmp), str);
+		Free(s);
 	}
+	if (os.wServicePackMajor != 0)
+	{
+		char str[MAX_SIZE];
+		Format(str, sizeof(str), ", Service Pack %u", os.wServicePackMajor);
+		StrCat(tmp, sizeof(tmp), str);
+	}
+	if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "BuildLab"))
+	{
+		char str[MAX_SIZE];
+		Format(str, sizeof(str), " (%s)", s);
+		StrCat(tmp, sizeof(tmp), str);
+		Free(s);
+	}
+	info->OsVersion = CopyStr(tmp);
+	info->KernelName = CopyStr("NTOS Kernel");
+	Format(tmp, sizeof(tmp), "Build %u", os.dwBuildNumber);
+	if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "CurrentType"))
+	{
+		char str[MAX_SIZE];
+		Format(str, sizeof(str), " %s", s);
+		StrCat(tmp, sizeof(tmp), str);
+		Free(s);
+	}
+	info->KernelVersion = CopyStr(tmp);
 
 	info->OsProductName = CopyStr(OsTypeToStr(info->OsType));
 	info->OsVendorName = CopyStr("Microsoft Corporation");
@@ -1291,14 +1280,13 @@ bool Win32InputW(wchar_t *str, UINT size)
 		size = 0x7fffffff;
 	}
 
-	if (str == NULL || size <= sizeof(wchar_t))
+	if (size <= sizeof(wchar_t))
 	{
-		if (str != NULL)
-		{
-			Zero(str, size);
-		}
+		Zero(str, size);
 
-		return Win32InputFromFileW(NULL, 0);
+		Win32InputDiscardLine();
+
+		return false;
 	}
 
 	if (ReadConsoleW(hstdin, str, (size / sizeof(wchar_t)) - 1, &read_size, NULL))
@@ -1316,13 +1304,19 @@ bool Win32InputW(wchar_t *str, UINT size)
 
 	return ret;
 }
+
+void Win32InputDiscardLine()
+{
+	char *a = Win32InputFromFileLineA();
+
+	Free(a);
+}
+
 bool Win32InputFromFileW(wchar_t *str, UINT size)
 {
 	char *a;
 	if (str == NULL)
 	{
-		wchar_t tmp[MAX_SIZE];
-		Win32InputFromFileW(tmp, sizeof(tmp));
 		return false;
 	}
 

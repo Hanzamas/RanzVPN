@@ -363,17 +363,6 @@ static void *MsOpenOrCreateGlobalPulse(char *name)
 	return (void *)h;
 }
 
-
-bool MsGetFileInformation(void *h, void *info)
-{
-	if (h == INVALID_HANDLE_VALUE || info == NULL)
-	{
-		return false;
-	}
-
-	return GetFileInformationByHandle(h, info);
-}
-
 double MsGetHiResTimeSpan(UINT64 diff)
 {
 	LARGE_INTEGER t;

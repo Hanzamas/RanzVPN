@@ -1749,6 +1749,8 @@ UNI_TOKEN_LIST *UniGetLines(wchar_t *str)
 {
 	UINT i, len;
 	BUF *b = NULL;
+	wchar_t zero = 0;
+	wchar_t *s;
 	LIST *o;
 	UNI_TOKEN_LIST *ret;
 	if (str == NULL)
@@ -1782,8 +1784,6 @@ UNI_TOKEN_LIST *UniGetLines(wchar_t *str)
 
 		if (f)
 		{
-			wchar_t zero = 0;
-			wchar_t *s;
 			WriteBuf(b, &zero, sizeof(wchar_t));
 
 			s = (wchar_t *)b->Buf;
@@ -1798,18 +1798,13 @@ UNI_TOKEN_LIST *UniGetLines(wchar_t *str)
 		}
 	}
 
-	if (true)
-	{
-		wchar_t zero = 0;
-		wchar_t *s;
-		WriteBuf(b, &zero, sizeof(wchar_t));
+	WriteBuf(b, &zero, sizeof(wchar_t));
 
-		s = (wchar_t *)b->Buf;
+	s = (wchar_t *)b->Buf;
 
-		Add(o, UniCopyStr(s));
+	Add(o, UniCopyStr(s));
 
-		ClearBuf(b);
-	}
+	ClearBuf(b);
 
 	FreeBuf(b);
 
