@@ -21,12 +21,6 @@
 #define	TRAFFIC_VER_STR_SIZE		16
 #define	TRAFFIC_VER_STR				"TrafficServer\r\n"
 
-#define	VPNCMD_BOOTSTRAP_REG_KEYNAME	"Software\\" GC_REG_COMPANY_NAME "\\VPN Command Line Utility"
-#define	VPNCMD_BOOTSTRAP_REG_VALUENAME_VER	"InstalledVersion"
-#define	VPNCMD_BOOTSTRAP_REG_VALUENAME_PATH	"InstalledPath"
-#define	VPNCMD_BOOTSTRAP_FILENAME		"|vpncmdsys.exe"
-
-
 struct TT_RESULT
 {
 	bool Raw;

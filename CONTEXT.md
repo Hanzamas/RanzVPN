@@ -9,7 +9,7 @@ A module is one `X.c` / `X.h` pair under `src/Cedar` or `src/Mayaqua`. Edges bel
 - The low-level Mayaqua modules (OS, Win32, Memory, Object, Kernel, Str, Internat, FileIO, Tracking, Tick64, Mayaqua) call each other in cycles. They are one layer, not a chain. `InitMayaqua` brings them up in this order: OS, FIFO, kernel status, Tracking, threading, string library, crypto, Tick64, Network, exe name and command line, OS info, Microsoft (`MsInit`), hamcore, string table.
 - The Cedar core (Hub, Session, Connection, Protocol, Server, Admin, Account, Logging) is also one cycle. Only the leaves listed as "none in Cedar" below are independent.
 
-Executables: `vpnserver` uses Cedar/Server (`StInit`, `StStartServer`) and `MsService`; `vpncmd` uses Cedar/Command (`CommandMain`); `vpncmdsys` uses Cedar and Mayaqua init only; `vpntest` uses Account, Admin, Command, Connection, Listener, MsChapV2, Server, Session, WaterMark and many Mayaqua modules; `fuzz` uses Mayaqua only (Cfg, Encrypt, HTTP, Pack, TcpIp).
+Executables: `vpnserver` uses Cedar/Server (`StInit`, `StStartServer`) and `MsService`; `vpncmd` uses Cedar/Command (`CommandMain`); `vpntest` uses Account, Admin, Command, Connection, Listener, MsChapV2, Server, Session, WaterMark and many Mayaqua modules; `fuzz` uses Mayaqua only (Cfg, Encrypt, HTTP, Pack, TcpIp).
 
 ### Mayaqua (`src/Mayaqua`)
 

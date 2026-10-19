@@ -178,29 +178,6 @@ LABEL_CONTINUE:
 	return rw;
 }
 
-bool FileCopy(char *src, char *dst)
-{
-	BUF *b;
-	bool ret = false;
-	if (src == NULL || dst == NULL)
-	{
-		return false;
-	}
-
-	b = ReadDump(src);
-	if (b == NULL)
-	{
-		return false;
-	}
-
-	SeekBuf(b, 0, 0);
-
-	ret = DumpBuf(b, dst);
-
-	FreeBuf(b);
-
-	return ret;
-}
 bool FileCopyW(wchar_t *src, wchar_t *dst)
 {
 	return FileCopyExW(src, dst, true);

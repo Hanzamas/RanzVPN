@@ -118,7 +118,6 @@ ITEM *CfgAddIp32(FOLDER *f, char *name, UINT ip);
 UINT CfgGetIp32(FOLDER *f, char *name);
 bool CfgGetIp6Addr(FOLDER *f, char *name, IPV6_ADDR *addr);
 ITEM *CfgAddIp6Addr(FOLDER *f, char *name, IPV6_ADDR *addr);
-bool FileCopy(char *src, char *dst);
 bool FileCopyW(wchar_t *src, wchar_t *dst);
 bool FileCopyExW(wchar_t *src, wchar_t *dst, bool read_lock);
 
