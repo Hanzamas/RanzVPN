@@ -34,11 +34,9 @@ struct LANGLIST
 	wchar_t TitleEnglish[128];
 	wchar_t TitleLocal[128];
 	LIST *LcidList;
-	LIST *LangList;
 };
 
 bool LoadTable(char *filename);
-bool LoadTableW(wchar_t *filename);
 void FreeTable();
 void UnescapeStr(char *src);
 TABLE *FindTable(char *name);
@@ -57,9 +55,7 @@ LANGLIST *GetBestLangByLcid(LIST *o, UINT lcid);
 LANGLIST *GetBestLangForCurrentEnvironment(LIST *o);
 
 bool LoadLangConfig(wchar_t *filename, char *str, UINT str_size);
-bool LoadLangConfigCurrentDir(char *str, UINT str_size);
 bool SaveLangConfig(wchar_t *filename, char *str);
-bool SaveLangConfigCurrentDir(char *str);
 
 UINT GetCurrentLangId();
 

@@ -1976,7 +1976,8 @@ void WriteBuf(BUF *b, void *buf, UINT size)
 		Copy((UCHAR *)b->Buf + b->Current, buf, size);
 	}
 	b->Current += size;
-	b->Size = new_size;
+	// A write inside the buffer (after SeekBuf) keeps the bytes after it
+	b->Size = MAX(b->Size, new_size);
 
 	KS_INC(KS_WRITE_BUF_COUNT);
 }

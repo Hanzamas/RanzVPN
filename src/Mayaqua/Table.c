@@ -14,16 +14,13 @@
 #include <stdlib.h>
 
 static LIST *TableList = NULL;
-static wchar_t old_table_name[MAX_SIZE] = {0};
 static LANGLIST current_lang = {0};
-static LANGLIST current_os_lang = {0};
 
 void InitTable()
 {
 	LIST *o;
 	char tmp[MAX_SIZE];
 	LANGLIST *e = NULL;
-	LANGLIST *os_lang = NULL;
 	char table_name[MAX_SIZE];
 	if (MayaquaIsMinimalMode())
 	{
@@ -39,16 +36,14 @@ LABEL_FATAL_ERROR:
 		return;
 	}
 
-	if (LoadLangConfigCurrentDir(tmp, sizeof(tmp)))
+	if (LoadLangConfig(LANG_CONFIG_FILENAME, tmp, sizeof(tmp)))
 	{
 		e = GetBestLangByName(o, tmp);
 	}
 
-	os_lang = GetBestLangForCurrentEnvironment(o);
-
 	if (e == NULL)
 	{
-		e = os_lang;
+		e = GetBestLangForCurrentEnvironment(o);
 	}
 
 	if (e == NULL)
@@ -56,13 +51,11 @@ LABEL_FATAL_ERROR:
 		goto LABEL_FATAL_ERROR;
 	}
 
-	SaveLangConfigCurrentDir(e->Name);
+	SaveLangConfig(LANG_CONFIG_FILENAME, e->Name);
 
 	Copy(&current_lang, e, sizeof(LANGLIST));
-	Copy(&current_os_lang, os_lang, sizeof(LANGLIST));
 
-	current_lang.LangList = current_lang.LcidList = NULL;
-	current_os_lang.LangList = current_os_lang.LcidList = NULL;
+	current_lang.LcidList = NULL;
 
 	Format(table_name, sizeof(table_name), "|strtable_%s.stb", current_lang.Name);
 	if (LoadTable(table_name) == false)
@@ -92,16 +85,6 @@ UINT GetCurrentLangId()
 	GetCurrentLang(&e);
 
 	return e.Id;
-}
-
-bool SaveLangConfigCurrentDir(char *str)
-{
-	if (str == NULL)
-	{
-		return false;
-	}
-
-	return SaveLangConfig(LANG_CONFIG_FILENAME, str);
 }
 
 bool SaveLangConfig(wchar_t *filename, char *str)
@@ -152,16 +135,6 @@ bool SaveLangConfig(wchar_t *filename, char *str)
 	FreeBuf(b);
 
 	return ret;
-}
-
-bool LoadLangConfigCurrentDir(char *str, UINT str_size)
-{
-	if (str == NULL)
-	{
-		return false;
-	}
-
-	return LoadLangConfig(LANG_CONFIG_FILENAME, str, str_size);
 }
 
 bool LoadLangConfig(wchar_t *filename, char *str, UINT str_size)
@@ -301,7 +274,6 @@ void FreeLangList(LIST *o)
 	{
 		LANGLIST *e = LIST_DATA(o, i);
 
-		FreeStrList(e->LangList);
 		ReleaseIntList(e->LcidList);
 
 		Free(e);
@@ -367,21 +339,6 @@ LIST *LoadLangList()
 							UINT id = ToInt(t2->Token[i]);
 
 							AddIntDistinct(e->LcidList, id);
-						}
-
-						FreeToken(t2);
-					}
-
-					e->LangList = NewListFast(NULL);
-
-					t2 = ParseToken(t->Token[5], ",");
-					if (t2 != NULL)
-					{
-						UINT i;
-
-						for (i = 0;i < t2->NumTokens;i++)
-						{
-							Add(e->LangList, CopyStr(t2->Token[i]));
 						}
 
 						FreeToken(t2);
@@ -766,8 +723,6 @@ void FreeTable()
 	ReleaseList(TableList);
 	TableList = NULL;
 	Free(tables);
-
-	Zero(old_table_name, sizeof(old_table_name));
 }
 
 static bool LoadTableFromBuf(BUF *b)
@@ -857,7 +812,9 @@ static bool LoadTableFromBuf(BUF *b)
 	return true;
 }
 
-static bool LoadTableMain(wchar_t *filename)
+// Load the string table from the file, '|' names a resource. Parsed at every load: no cache file in %TEMP%,
+// which other users can write (SEC-8), and no override file beside the exe naming another table (FND-43)
+bool LoadTable(char *filename)
 {
 	BUF *b;
 	if (filename == NULL)
@@ -870,12 +827,7 @@ static bool LoadTableMain(wchar_t *filename)
 		return true;
 	}
 
-	if (UniStrCmpi(old_table_name, filename) == 0)
-	{
-		return true;
-	}
-
-	b = ReadDumpW(filename);
+	b = ReadDump(filename);
 	if (b == NULL)
 	{
 		char tmp[MAX_SIZE];
@@ -885,7 +837,6 @@ static bool LoadTableMain(wchar_t *filename)
 		return false;
 	}
 
-	// Parsed from the resource at every load: no cache file in %TEMP%, which other users can write (SEC-8)
 	if (LoadTableFromBuf(b) == false)
 	{
 		FreeBuf(b);
@@ -895,8 +846,6 @@ static bool LoadTableMain(wchar_t *filename)
 	FreeBuf(b);
 
 	SetLocale(_UU("DEFAULT_LOCALE"));
-
-	UniStrCpy(old_table_name, sizeof(old_table_name), filename);
 
 	if (StrCmpi(_SS("STRTABLE_ID"), STRTABLE_ID) != 0)
 	{
@@ -909,42 +858,4 @@ static bool LoadTableMain(wchar_t *filename)
 	}
 
 	return true;
-}
-bool LoadTable(char *filename)
-{
-	wchar_t *filename_a = CopyStrToUni(filename);
-	bool ret = LoadTableW(filename_a);
-
-	Free(filename_a);
-
-	return ret;
-}
-bool LoadTableW(wchar_t *filename)
-{
-	bool ret;
-	BUF *b;
-	wchar_t replace_name[MAX_PATH];
-
-	Zero(replace_name, sizeof(replace_name));
-
-	b = ReadDump("@table_name.txt");
-	if (b != NULL)
-	{
-		char *s = CfgReadNextLine(b);
-		if (s != NULL)
-		{
-			if (IsEmptyStr(s) == false)
-			{
-				StrToUni(replace_name, sizeof(replace_name), s);
-				filename = replace_name;
-			}
-
-			Free(s);
-		}
-		FreeBuf(b);
-	}
-
-	ret = LoadTableMain(filename);
-
-	return ret;
 }

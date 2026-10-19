@@ -15,9 +15,10 @@ static void FuzzPack(const uint8_t *data, size_t size)
 
 	if (p != NULL)
 	{
-		// Encode the decoded PACK and decode the result again. No equality check: ReadElement()
-		// keeps NULL values for items it cannot decode and WriteValue() skips them, so the second
-		// decode may legitimately differ or fail.
+		// Encode the decoded PACK and decode the result again. No equality check: the decoder trims
+		// strings and ends names at a NUL byte, so the second encoding may differ from the input.
+		// ReadElement() rejects an element with a value it cannot read (FND-42 #114), so no NULL
+		// value is encoded.
 		BUF *b2 = PackToBuf(p);
 		PACK *p2;
 

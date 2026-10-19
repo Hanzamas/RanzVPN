@@ -508,6 +508,12 @@ void sigleak_test(UINT num, char **arg);
 void pktparse_test(UINT num, char **arg);
 void vlantpid_test(UINT num, char **arg);
 
+// Named PACK decoder bounds test of FND-42, #114 (packdecode.c)
+void pack_decode_bounds_test(UINT num, char **arg);
+
+// Named string table loader test of FND-43, #114 (tablecache.c)
+void tablecache_test(UINT num, char **arg);
+
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
 char *watermark_expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
@@ -637,6 +643,8 @@ TEST_LIST test_list[] =
 	{"sigleak", sigleak_test, "Signature POST: a body that is not the watermark gets 403 and is freed; the request after the last one gets no answer."},
 	{"pktparse", pktparse_test, "Packet parsers: DNS opcode mask and label limits, DHCP Pad and whole option bodies, the DHCP cookie at offset 236."},
 	{"vlantpid", vlantpid_test, "VLAN TPID: frames tagged with the hub's VlanTypeId reach layer 3 and 4, the access list of such a hub sees their IPv4."},
+	{"pack_decode_bounds", pack_decode_bounds_test, "PACK decoder: value counts and sizes past the bytes present, unknown types and values cut short are rejected before they allocate."},
+	{"tablecache", tablecache_test, "String table: loaded from the resource only, a planted table_name.txt beside the exe is ignored, no cache file is written."},
 };
 
 // Test function
