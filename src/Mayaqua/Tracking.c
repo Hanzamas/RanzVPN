@@ -9,17 +9,11 @@
 #include "Str.h"
 
 static LOCK *obj_lock;
-static LOCK *obj_id_lock;
-static UINT obj_id;
+static volatile LONG obj_id;
 static LOCK *cs_lock;
 static TRACKING_LIST **hashlist;
 
 static bool do_not_get_callstack;
-
-bool IsTrackingEnabled()
-{
-	return (IsDebug() || IsMemCheck()) && kernel_status_inited;
-}
 
 void MemoryDebugMenu()
 {
@@ -320,11 +314,7 @@ void TrackNewObj(UINT64 addr, char *name, UINT size)
 		return;
 	}
 
-	OSLock(obj_id_lock);
-	{
-		new_id = ++obj_id;
-	}
-	OSUnlock(obj_id_lock);
+	new_id = (UINT)InterlockedIncrement(&obj_id);
 
 	o = OSMemoryAlloc(sizeof(TRACKING_OBJECT));
 	o->Id = new_id;
@@ -541,7 +531,6 @@ void InitTracking()
 	obj_id = 0;
 
 	obj_lock = OSNewLock();
-	obj_id_lock = OSNewLock();
 	cs_lock = OSNewLock();
 
 	s = GetCallStack();
@@ -560,10 +549,8 @@ void FreeTracking()
 {
 	UINT i;
 	OSDeleteLock(obj_lock);
-	OSDeleteLock(obj_id_lock);
 	OSDeleteLock(cs_lock);
 	cs_lock = NULL;
-	obj_id_lock = NULL;
 	obj_lock = NULL;
 
 	for (i = 0;i < TRACKING_NUM_ARRAY;i++)

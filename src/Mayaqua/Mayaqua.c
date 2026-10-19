@@ -23,9 +23,8 @@
 
 bool g_memcheck;
 bool g_debug;
-UINT64 kernel_status[NUM_KERNEL_STATUS];
-UINT64 kernel_status_max[NUM_KERNEL_STATUS];
-static LOCK *kernel_status_lock[NUM_KERNEL_STATUS];
+volatile LONG64 kernel_status[NUM_KERNEL_STATUS];
+volatile LONG64 kernel_status_max[NUM_KERNEL_STATUS];
 bool kernel_status_inited = false;
 bool g_little_endian = true;
 char *cmdline = NULL;
@@ -633,12 +632,10 @@ void InitKernelStatus()
 {
 	UINT i;
 
-	Zero(kernel_status, sizeof(kernel_status));
-	Zero(kernel_status_max, sizeof(kernel_status_max));
-
 	for (i = 0;i < NUM_KERNEL_STATUS;i++)
 	{
-		kernel_status_lock[i] = OSNewLock();
+		kernel_status[i] = 0;
+		kernel_status_max[i] = 0;
 	}
 
 	kernel_status_inited = true;
@@ -646,34 +643,7 @@ void InitKernelStatus()
 
 void FreeKernelStatus()
 {
-	UINT i;
-
 	kernel_status_inited = false;
-
-	for (i = 0;i < NUM_KERNEL_STATUS;i++)
-	{
-		OSDeleteLock(kernel_status_lock[i]);
-	}
-}
-
-void LockKernelStatus(UINT id)
-{
-	if (id >= NUM_KERNEL_STATUS)
-	{
-		return;
-	}
-
-	OSLock(kernel_status_lock[id]);
-}
-
-void UnlockKernelStatus(UINT id)
-{
-	if (id >= NUM_KERNEL_STATUS)
-	{
-		return;
-	}
-
-	OSUnlock(kernel_status_lock[id]);
 }
 
 void PrintDebugInformation()
