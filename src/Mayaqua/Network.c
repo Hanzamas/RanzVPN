@@ -23,6 +23,7 @@
 
 #include <iphlpapi.h>
 #include <WS2tcpip.h>
+#include <MSWSock.h>
 #include <wincrypt.h>
 #include <IcmpAPI.h>
 
@@ -2431,6 +2432,26 @@ SOCK *NewUDPEx3(UINT port, IP *ip)
 		return NewUDPEx2(port, true, ip);
 	}
 }
+
+// Winsock reports an ICMP port or network unreachable, caused by an earlier datagram of a UDP socket, as
+// WSAECONNRESET or WSAENETRESET on the next recvfrom() or sendto() of the socket. The error says nothing about
+// the datagram at hand and every caller only skips it, so both reports are switched off.
+static void DisableUdpReset(SOCKET s)
+{
+	BOOL off = FALSE;
+	DWORD ret_size = 0;
+
+	if (WSAIoctl(s, SIO_UDP_CONNRESET, &off, sizeof(off), NULL, 0, &ret_size, NULL, NULL) != 0)
+	{
+		Debug("DisableUdpReset(): SIO_UDP_CONNRESET failed with error: %u\n", WSAGetLastError());
+	}
+
+	if (WSAIoctl(s, SIO_UDP_NETRESET, &off, sizeof(off), NULL, 0, &ret_size, NULL, NULL) != 0)
+	{
+		Debug("DisableUdpReset(): SIO_UDP_NETRESET failed with error: %u\n", WSAGetLastError());
+	}
+}
+
 SOCK *NewUDP4(UINT port, IP *ip)
 {
 	SOCK *sock;
@@ -2516,6 +2537,11 @@ SOCK *NewUDP4(UINT port, IP *ip)
 	sock->socket = s;
 
 	InitUdpSocketBufferSize((int)s);
+
+	if (IS_SPECIAL_PORT(port) == false)
+	{
+		DisableUdpReset(s);
+	}
 
 	if (IS_SPECIAL_PORT(port))
 	{
@@ -2613,6 +2639,11 @@ SOCK *NewUDP6(UINT port, IP *ip)
 	sock->socket = s;
 
 	InitUdpSocketBufferSize(s);
+
+	if (IS_SPECIAL_PORT(port) == false)
+	{
+		DisableUdpReset(s);
+	}
 
 	if (IS_SPECIAL_PORT(port))
 	{
