@@ -3230,6 +3230,10 @@ BUF *DhcpModifyIPv4(DHCP_MODIFY_OPTION *m, void *data, UINT size)
 	return ret;
 }
 
+// Offset of the DHCP magic cookie (RFC 2131): the fixed header, then sname (64 bytes) and file
+// (128 bytes). The options follow the cookie.
+#define	DHCP_MAGIC_COOKIE_OFFSET	(sizeof(DHCPV4_HEADER) + 64 + 128)
+
 BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size)
 {
 	DHCPV4_HEADER *dhcp_header;
@@ -3238,7 +3242,6 @@ BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size)
 	BUF *ret = NULL;
 	BUF *opt_buf = NULL;
 	UINT magic_cookie = Endian32(DHCP_MAGIC_COOKIE);
-	bool ok = false;
 	DHCP_OPTION_LIST *opt = NULL;
 	LIST *opt_list = NULL;
 	LIST *opt_list2 = NULL;
@@ -3252,32 +3255,23 @@ BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size)
 
 	data_ptr = (UCHAR *)data;
 
-	if (size < sizeof(DHCPV4_HEADER))
+	// The magic cookie is read only at its fixed offset, and only when it is inside the payload
+	if (size < DHCP_MAGIC_COOKIE_OFFSET + sizeof(UINT))
 	{
 		goto LABEL_CLEANUP;
 	}
 
 	dhcp_header = (DHCPV4_HEADER *)data_ptr;
-	data_ptr += sizeof(DHCPV4_HEADER);
+	data_ptr += DHCP_MAGIC_COOKIE_OFFSET;
+	size -= DHCP_MAGIC_COOKIE_OFFSET;
 
-	while (size >= 5)
-	{
-		if (Cmp(data_ptr, &magic_cookie, sizeof(UINT)) == 0)
-		{
-			data_ptr += sizeof(UINT);
-			size -= sizeof(UINT);
-			ok = true;
-			break;
-		}
-
-		data_ptr++;
-		size--;
-	}
-
-	if (ok == false)
+	if (Cmp(data_ptr, &magic_cookie, sizeof(UINT)) != 0)
 	{
 		goto LABEL_CLEANUP;
 	}
+
+	data_ptr += sizeof(UINT);
+	size -= sizeof(UINT);
 
 	ret = NewBuf();
 	WriteBuf(ret, data, (UINT)(data_ptr - ((UCHAR *)data)));
