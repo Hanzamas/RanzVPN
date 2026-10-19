@@ -56,6 +56,7 @@
 #include "Cedar/Hub.h"
 #include "Cedar/Listener.h"
 #include "Cedar/Protocol.h"
+#include "Cedar/Remote.h"
 #include "Cedar/Server.h"
 #include "Cedar/Session.h"
 
