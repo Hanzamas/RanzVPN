@@ -2,7 +2,7 @@
 // Named client Pack size cap test of vpntest ("packcap" command, SEC-4 #96)
 //
 // Before the authentication the server side reads a Pack of at most HTTP_PACK_MAX_SIZE
-// (HttpServerRecvEx). The client side read whatever the server announced in Content-Length, up to
+// (HttpServerRecv). The client side read whatever the server announced in Content-Length, up to
 // MAX_PACK_SIZE (512 MiB), allocated it at once and parsed it: a hostile server, or the target of a
 // cascade Link that retries every few seconds, made the client allocate and parse hundreds of MiB
 // per attempt. A loopback peer in the test plays the server: it answers one connection with one
