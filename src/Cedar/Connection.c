@@ -723,11 +723,6 @@ SEND_START:
 						{
 							datas[i] = block->Buf;
 							sizes[i] = block->Size;
-
-							if (block->Size > 1514)
-							{
-								NormalizeEthMtu(b, c, block->Size);
-							}
 						}
 
 						c->CurrentSendQueueSize -= block->Size;
@@ -1320,7 +1315,7 @@ DISCONNECT_THIS_TCP:
 			void *data;
 			UINT ret;
 			UINT num = 0;
-			bool check_device_num = false;
+			bool device_changed = false;
 			UINT time = SELECT_TIME;
 			UINT next_delay_packet_diff = 0;
 
@@ -1339,13 +1334,13 @@ DISCONNECT_THIS_TCP:
 
 			if ((b->LastNumDeviceCheck + BRIDGE_NUM_DEVICE_CHECK_SPAN) <= Tick64())
 			{
-				check_device_num = true;
+				device_changed = (b->LastNumDevice != GetEthDeviceHash());
 				b->LastNumDeviceCheck = Tick64();
 			}
 
 			while (true)
 			{
-				if (check_device_num && b->LastNumDevice != GetEthDeviceHash())
+				if (device_changed)
 				{
 					ret = INFINITE;
 				}
@@ -1380,12 +1375,6 @@ DISCONNECT_THIS_TCP:
 					else
 					{
 						BLOCK *block = NewBlock(data, ret, 0);
-
-
-						if (ret > 1514)
-						{
-							NormalizeEthMtu(b, c, ret);
-						}
 
 						if (block->Size > MAX_PACKET_SIZE)
 						{
@@ -1435,45 +1424,6 @@ DISCONNECT_THIS_TCP:
 					HLog(c->Session->Hub, "LH_BRIDGE_1", c->Session->Name, b->Name);
 
 					s->Cancel2 = EthGetCancel(b->Eth);
-				}
-			}
-		}
-	}
-}
-
-void NormalizeEthMtu(BRIDGE *b, CONNECTION *c, UINT packet_size)
-{
-	if (packet_size == 0 || b == NULL || c == NULL)
-	{
-		return;
-	}
-
-	if (EthIsChangeMtuSupported(b->Eth))
-	{
-		UINT currentMtu = EthGetMtu(b->Eth);
-		if (currentMtu != 0)
-		{
-			if (packet_size > currentMtu)
-			{
-				bool ok = EthSetMtu(b->Eth, packet_size);
-
-				if (ok)
-				{
-					HLog(c->Session->Hub, "LH_SET_MTU", c->Session->Name,
-						b->Name, currentMtu, packet_size, packet_size);
-				}
-				else
-				{
-					UINT64 now = Tick64();
-
-					if (b->LastChangeMtuError == 0 ||
-						now >= (b->LastChangeMtuError + 60000ULL))
-					{
-						HLog(c->Session->Hub, "LH_SET_MTU_ERROR", c->Session->Name,
-							b->Name, currentMtu, packet_size, packet_size);
-
-						b->LastChangeMtuError = now;
-					}
 				}
 			}
 		}

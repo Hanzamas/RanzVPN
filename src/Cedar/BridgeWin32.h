@@ -40,9 +40,6 @@ CANCEL *EthGetCancel(ETH *e);
 UINT EthGetPacket(ETH *e, void **data);
 void EthPutPackets(ETH *e, UINT num, void **datas, UINT *sizes);
 void GetEthNetworkConnectionName(wchar_t *dst, UINT size, char *device_name);
-UINT EthGetMtu(ETH *e);
-bool EthSetMtu(ETH *e, UINT mtu);
-bool EthIsChangeMtuSupported(ETH *e);
 
 bool Win32EthIsSuSupported();
 bool Win32EthInstallSu();

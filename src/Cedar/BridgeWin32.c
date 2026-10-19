@@ -74,21 +74,6 @@ static int CmpRpcEnumEthVLan(void *p1, void *p2)
 	return StrCmpi(v1->DeviceName, v2->DeviceName);
 }
 
-UINT EthGetMtu(ETH *e)
-{
-	return 0;
-}
-
-bool EthSetMtu(ETH *e, UINT mtu)
-{
-	return false;
-}
-
-bool EthIsChangeMtuSupported(ETH *e)
-{
-	return false;
-}
-
 bool SetVLanEnableStatus(char *title, bool enable)
 {
 	RPC_ENUM_ETH_VLAN t;

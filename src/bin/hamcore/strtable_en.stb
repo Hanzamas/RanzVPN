@@ -944,8 +944,6 @@ LH_NO_DHCP				Session "%S": Although host %S on this session sent a packet that 
 LH_REGIST_DHCP			Session "%S": The DHCP server of host "%S" (%S) on this session allocated, for host "%S" on another session "%S", the new IP address %S.
 LH_BRIDGE_1				Session "%S": A Local Bridge connection to physical Ethernet interface "%S" was started.
 LH_BRIDGE_2				Session "%S": Because communication has failed to be established with physical Ethernet interface "%S", the Local Bridge has stopped.
-LH_SET_MTU				Session "%S": The physical Ethernet interface "%S" has an MTU value set to %u. It is necessary to send and receive an Ethernet packet which has %u bytes. The MTU is now changed to %u.
-LH_SET_MTU_ERROR		Session "%S": The physical Ethernet interface "%S" has an MTU value set to %u. It is necessary to send and receive an Ethernet packet which has %u bytes. However, changing the MTU to %u failed. This physical Ethernet interface or device driver might be unable to process an Ethernet packet which has more 1,514 bytes (payload size: 1,500 bytes). In such case, the larger tagged-VLAN packets than 1,514 bytes cannot be transmitted. You should replace the current physical Ethernet adapter to another which supports Jumbo Frames. You can also try to update the device driver. Another possible method is to enable Jumbo Frames on the operating system or device driver settings.
 LH_START_BRIDGE			The Local Bridge connection "%S" has started. The bridge session "%S" was created.
 LH_STOP_BRIDGE			The Local Bridge connection "%S" has stopped.
 LH_LINK_START			The Cascade Connection "%s" has been established. The Cascade session "%S" was created.
