@@ -1,14 +1,10 @@
 file(GLOB SOURCES_CEDAR "*.c")
 file(GLOB HEADERS_CEDAR "*.h")
 
-if(WIN32)
-  enable_language(CXX)
-  file(GLOB SOURCES_CEDAR_CPP "*.cpp")
-endif()
+enable_language(CXX)
+file(GLOB SOURCES_CEDAR_CPP "*.cpp")
 
-if(WIN32)
-  add_library(cedar STATIC ${SOURCES_CEDAR} ${SOURCES_CEDAR_CPP} ${HEADERS_CEDAR})
-endif()
+add_library(cedar STATIC ${SOURCES_CEDAR} ${SOURCES_CEDAR_CPP} ${HEADERS_CEDAR})
 
 if(MSVC)
   target_compile_options(cedar PRIVATE /EHsc)
@@ -28,23 +24,19 @@ set_target_properties(cedar
 
 target_link_libraries(cedar PUBLIC mayaqua)
 
-if(WIN32)
-  set_target_properties(cedar
-    PROPERTIES
-    COMPILE_PDB_NAME "cedar"
-    COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
-  )
+set_target_properties(cedar
+  PROPERTIES
+  COMPILE_PDB_NAME "cedar"
+  COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+)
 
-  target_link_libraries(cedar PRIVATE comctl32.lib urlmon.lib winhttp.lib)
-endif()
+target_link_libraries(cedar PRIVATE comctl32.lib urlmon.lib winhttp.lib)
 
 # Version
 target_compile_definitions(cedar PRIVATE CEDAR_VERSION_MAJOR=${PROJECT_VERSION_MAJOR} CEDAR_VERSION_MINOR=${PROJECT_VERSION_MINOR} CEDAR_VERSION_BUILD=${PROJECT_VERSION_PATCH})
 
 # Builder
-if(WIN32)
-  target_compile_definitions(cedar PRIVATE BUILDER_NAME="$ENV{USERNAME}")
-endif()
+target_compile_definitions(cedar PRIVATE BUILDER_NAME="$ENV{USERNAME}")
 
 cmake_host_system_information(RESULT BUILDER_HOSTNAME QUERY HOSTNAME)
 

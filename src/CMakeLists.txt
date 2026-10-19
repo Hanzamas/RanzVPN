@@ -2,30 +2,31 @@
 # ranz_options (cmake/RanzOptions.cmake) and the src root that mayaqua exports
 # (src/Mayaqua/CMakeLists.txt), so the vendored targets get neither
 
+if(NOT WIN32)
+  message(FATAL_ERROR "Ranz VPN builds on Windows only")
+endif()
+
 if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
   message(FATAL_ERROR "Ranz VPN builds for x64 and arm64 only")
 endif()
 
-if(WIN32)
-  if(IS_CROSS_COMPILATION MATCHES "arm64-on-x64")
-    set(CMAKE_SYSTEM_PROCESSOR "arm64")
-  else()
-    message("Setting QSPECTRE")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Qspectre")
-  endif()
-
-  #
-  # https://msrc-blog.microsoft.com/2020/08/17/control-flow-guard-for-clang-llvm-and-rust/
-  #
-
-  message("Setting CONTROL FLOW GUARD") 
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /guard:cf")
-  set(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} /guard:cf /DYNAMICBASE")
-
-  message("Setting CETCOMPAT")
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /CETCOMPAT")
-
+if(IS_CROSS_COMPILATION MATCHES "arm64-on-x64")
+  set(CMAKE_SYSTEM_PROCESSOR "arm64")
+else()
+  message("Setting QSPECTRE")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Qspectre")
 endif()
+
+#
+# https://msrc-blog.microsoft.com/2020/08/17/control-flow-guard-for-clang-llvm-and-rust/
+#
+
+message("Setting CONTROL FLOW GUARD") 
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /guard:cf")
+set(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} /guard:cf /DYNAMICBASE")
+
+message("Setting CETCOMPAT")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /CETCOMPAT")
 
 # Cedar communication module
 add_subdirectory(Cedar)

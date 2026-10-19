@@ -70,27 +70,25 @@ set_target_properties(vpntest
   RUNTIME_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
 )
 
-if(WIN32)
-  set_target_properties(vpntest
-    PROPERTIES
-    PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
-  )
+set_target_properties(vpntest
+  PROPERTIES
+  PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+)
 
-  get_filename_component(COMPONENT_FILE_NAME vpntest NAME)
-  set(COMPONENT_FILE_NAME "${COMPONENT_FILE_NAME}.exe")
+get_filename_component(COMPONENT_FILE_NAME vpntest NAME)
+set(COMPONENT_FILE_NAME "${COMPONENT_FILE_NAME}.exe")
 
-  configure_file("${TOP_DIRECTORY}/src/BuildFiles/VerScript/ver.rc" "${CMAKE_CURRENT_BINARY_DIR}/ver.rc")
+configure_file("${TOP_DIRECTORY}/src/BuildFiles/VerScript/ver.rc" "${CMAKE_CURRENT_BINARY_DIR}/ver.rc")
 
-  target_sources(vpntest PRIVATE
-    "vpntest.rc"
-    "ver.rc"
+target_sources(vpntest PRIVATE
+  "vpntest.rc"
+  "ver.rc"
 
-    "${TOP_DIRECTORY}/src/BuildFiles/Manifests/common.manifest"
-  )
+  "${TOP_DIRECTORY}/src/BuildFiles/Manifests/common.manifest"
+)
 
-  # The hamcore files, as resources (cmake/RanzResources.cmake)
-  ranz_hamcore_resources(vpntest)
-endif()
+# The hamcore files, as resources (cmake/RanzResources.cmake)
+ranz_hamcore_resources(vpntest)
 
 target_link_libraries(vpntest cedar)
 

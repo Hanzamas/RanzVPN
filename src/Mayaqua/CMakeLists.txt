@@ -1,9 +1,7 @@
 file(GLOB SOURCES_MAYAQUA "*.c" "Crypto/*.c")
 file(GLOB HEADERS_MAYAQUA "*.h" "Crypto/*.h")
 
-if(WIN32)
-  add_library(mayaqua STATIC ${SOURCES_MAYAQUA} ${HEADERS_MAYAQUA})
-endif()
+add_library(mayaqua STATIC ${SOURCES_MAYAQUA} ${HEADERS_MAYAQUA})
 
 # The src root only: every unit includes "Mayaqua/X.h", "Cedar/X.h" and "GlobalConst.h" from
 # there; a Mayaqua unit includes the headers of its own directory by their plain names
@@ -92,25 +90,23 @@ target_link_libraries(mayaqua
     ZLIB::ZLIB
 )
 
-if(WIN32)
-  set_target_properties(mayaqua
-    PROPERTIES
-    COMPILE_PDB_NAME "mayaqua"
-    COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
-  )
+set_target_properties(mayaqua
+  PROPERTIES
+  COMPILE_PDB_NAME "mayaqua"
+  COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+)
 
-  target_link_libraries(mayaqua
-    PRIVATE
-      "bcrypt.lib"
-      "crypt32.lib"
-      "DbgHelp.Lib"
-      "dwmapi.lib"
-      "iphlpapi.lib"
-      "Psapi.Lib"
-      "Secur32.Lib"
-      "setupapi.lib"
-      "winmm.lib"
-      "ws2_32.lib"
-      "WtsApi32.Lib"
-    )
-endif()
+target_link_libraries(mayaqua
+  PRIVATE
+    "bcrypt.lib"
+    "crypt32.lib"
+    "DbgHelp.Lib"
+    "dwmapi.lib"
+    "iphlpapi.lib"
+    "Psapi.Lib"
+    "Secur32.Lib"
+    "setupapi.lib"
+    "winmm.lib"
+    "ws2_32.lib"
+    "WtsApi32.Lib"
+  )
