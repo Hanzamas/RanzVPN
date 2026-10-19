@@ -493,6 +493,12 @@ void consoleline_test(UINT num, char **arg);
 // Named temp directory and string table test of SEC-8, #96 (tempdir.c)
 void tempdir_test(UINT num, char **arg);
 
+// Named log writer, syslog and eraser tests of PKG-4, #108 (logtest.c)
+void logwriter_test(UINT num, char **arg);
+void logbound_test(UINT num, char **arg);
+void slog_test(UINT num, char **arg);
+void eraser_test(UINT num, char **arg);
+
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
 char *watermark_expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
@@ -613,6 +619,10 @@ TEST_LIST test_list[] =
 	{"consoleline", consoleline_test, "Console input: a prompt line longer than its buffer, Ctrl+D and Ctrl+Z, the /IN file reader, UniToInt on a long string."},
 	{"tempdir", tempdir_test, "Temp directory: 64-bit random name, protected DACL; loading a string table writes no cache file."},
 	{"adminaudit", adminaudit_test, "Admin audit: audit lines only after a successful call and with the right key, the configuration revision only after a change."},
+	{"logwriter", logwriter_test, "Log writer: one file open per LOG for 1000 records, every record in order, one size switch named as before."},
+	{"logbound", logbound_test, "Log writer without a file: bounded record queue and buffer, dropped records released and counted in one line."},
+	{"slog", slog_test, "Syslog: the next resolve is a tick deadline, a second sender does not wait for a slow resolve, datagram content."},
+	{"eraser", eraser_test, "Eraser: a check interval of 1 s gives at most 4 free space checks in 3 s; the configuration keeps seconds."},
 };
 
 // Test function

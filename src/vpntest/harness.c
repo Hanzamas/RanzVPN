@@ -48,6 +48,8 @@
 //   and hub security log) at a loopback UDP receiver of the test. Each step is one admin RPC, then GetConfig, whose
 //   LA_GET_CONFIG line ends the step: the lines before it are the audit lines of the call. The step also compares
 //   ConfigRevision of the in-process server before and after.
+// - The log cases of PKG-4 (#108) run after the vpncmd command cases and restore every setting they change.
+//   Syslog datagrams go to a loopback UDP socket of the test on an ephemeral port.
 
 #include "harness.h"
 #include "harness_int.h"
@@ -6053,6 +6055,484 @@ static void AdminAuditCa(ADMINAUDIT *a)
 }
 
 ////////////////////////////
+// Log records of untrusted text (PKG-4, #108)
+
+#define	HARNESS_LOG_TIMEOUT			5000				// A record reaches its log file or its syslog datagram
+
+// Lines of a log text with the marker of a case and with its forged text (the text after an injected CR LF)
+typedef struct HARNESS_LOG_SCAN
+{
+	UINT NumMarker;				// Lines with the marker
+	UINT NumForged;				// Lines with the forged text
+	UINT NumBoth;				// Lines with both
+	UINT NumCr;					// Lines with either that still hold a CR
+} HARNESS_LOG_SCAN;
+
+// Text of every .log file in a log folder of the server (HUB_SECURITY_LOG_FILE_NAME or HUB_PACKET_LOG_FILE_NAME
+// of a hub), joined. The server keeps its current file open, so the files are read with write sharing
+static char *HarnessReadLogDir(char *dir_fmt, char *hubname)
+{
+	char dir[MAX_PATH];
+	wchar_t *dir_w;
+	wchar_t full[MAX_SIZE];
+	wchar_t path[MAX_SIZE];
+	DIRLIST *d;
+	BUF *b = NewBuf();
+	char *ret;
+	UINT i;
+
+	Format(dir, sizeof(dir), dir_fmt, hubname);
+	dir_w = CopyStrToUni(dir);
+	InnerFilePathW(full, sizeof(full), dir_w);
+	Free(dir_w);
+
+	// EnumDirW does not resolve the '@' prefix: use the full path
+	d = EnumDirW(full);
+	if (d != NULL)
+	{
+		for (i = 0;i < d->NumFiles;i++)
+		{
+			DIRENT *e = d->File[i];
+
+			if (e->Folder == false && UniEndWith(e->FileNameW, L".log"))
+			{
+				BUF *f;
+
+				CombinePathW(path, sizeof(path), full, e->FileNameW);
+				f = ReadDumpExW(path, false);
+				if (f != NULL)
+				{
+					WriteBuf(b, f->Buf, f->Size);
+					WriteBuf(b, "\r\n", 2);
+					FreeBuf(f);
+				}
+			}
+		}
+
+		FreeDir(d);
+	}
+
+	ret = HarnessBufToStr(b);
+	FreeBuf(b);
+
+	return ret;
+}
+
+// Whether a string holds a CR or an LF (InStr trims its keyword, so it cannot look for them)
+static bool HarnessHasLineBreak(char *s)
+{
+	for (;*s != 0;s++)
+	{
+		if (*s == '\r' || *s == '\n')
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+// Count the lines of a log text with the marker and with the forged text
+static void HarnessScanLog(char *text, char *marker, char *forged, HARNESS_LOG_SCAN *r)
+{
+	LIST *lines = HarnessSplitLines(text);
+	UINT i;
+
+	Zero(r, sizeof(HARNESS_LOG_SCAN));
+
+	for (i = 0;i < LIST_NUM(lines);i++)
+	{
+		char *line = LIST_DATA(lines, i);
+		bool has_marker = InStrEx(line, marker, true);
+		bool has_forged = InStrEx(line, forged, true);
+
+		if (has_marker)
+		{
+			r->NumMarker++;
+		}
+		if (has_forged)
+		{
+			r->NumForged++;
+		}
+		if (has_marker && has_forged)
+		{
+			r->NumBoth++;
+		}
+		if ((has_marker || has_forged) && HarnessHasLineBreak(line))
+		{
+			r->NumCr++;
+		}
+	}
+
+	HarnessFreeLines(lines);
+}
+
+// Wait until a log folder of a hub holds a line with the marker (or HARNESS_LOG_TIMEOUT), then count its lines
+static void HarnessWaitLog(char *dir_fmt, char *hubname, char *marker, char *forged, HARNESS_LOG_SCAN *r)
+{
+	UINT64 end = Tick64() + HARNESS_LOG_TIMEOUT;
+
+	while (true)
+	{
+		char *text = HarnessReadLogDir(dir_fmt, hubname);
+
+		HarnessScanLog(text, marker, forged, r);
+		Free(text);
+
+		if (r->NumMarker != 0 || Tick64() >= end)
+		{
+			break;
+		}
+
+		SleepThread(100);
+	}
+}
+
+// Next datagram on the syslog socket of the test as a string, NULL when none arrives within timeout ms
+static char *HarnessRecvSyslog(SOCK *s, UINT timeout)
+{
+	UINT64 end = Tick64() + (UINT64)timeout;
+	UCHAR buf[2048];
+
+	while (true)
+	{
+		SOCKSET set;
+		IP src_ip;
+		UINT src_port;
+		UINT size;
+		UINT64 now = Tick64();
+
+		// Select() also puts the socket in non-blocking mode for RecvFrom()
+		InitSockSet(&set);
+		AddSockSet(&set, s);
+		Select(&set, (UINT)(now < end ? MIN(end - now, 100) : 0), NULL, NULL);
+
+		size = RecvFrom(s, &src_ip, &src_port, buf, sizeof(buf) - 1);
+		if (size != 0 && size != SOCK_LATER)
+		{
+			char *ret = ZeroMalloc(size + 1);
+
+			Copy(ret, buf, size);
+
+			return ret;
+		}
+
+		if (Tick64() >= end)
+		{
+			return NULL;
+		}
+	}
+}
+
+// Next syslog datagram with the marker (others are skipped), NULL when none arrives within HARNESS_LOG_TIMEOUT
+static char *HarnessRecvSyslogWith(SOCK *s, char *marker)
+{
+	UINT64 end = Tick64() + HARNESS_LOG_TIMEOUT;
+
+	while (true)
+	{
+		UINT64 now = Tick64();
+		char *d;
+
+		if (now >= end)
+		{
+			return NULL;
+		}
+
+		d = HarnessRecvSyslog(s, (UINT)(end - now));
+		if (d == NULL)
+		{
+			return NULL;
+		}
+
+		if (InStrEx(d, marker, true))
+		{
+			return d;
+		}
+
+		Free(d);
+	}
+}
+
+// Send the syslog of the server to the loopback socket of the test with save_type; old gets the setting before
+static bool HarnessSetSyslog(HARNESS *h, UINT save_type, UINT port, SYSLOG_SETTING *old)
+{
+	SYSLOG_SETTING t;
+	UINT err;
+
+	Zero(old, sizeof(SYSLOG_SETTING));
+	err = ScGetSysLog(h->Rpc, old);
+	if (HarnessCheckErr(h, err, "GetSysLog") == false)
+	{
+		return false;
+	}
+
+	Zero(&t, sizeof(t));
+	t.SaveType = save_type;
+	StrCpy(t.Hostname, sizeof(t.Hostname), "127.0.0.1");
+	t.Port = port;
+
+	err = ScSetSysLog(h->Rpc, &t);
+
+	return HarnessCheckErr(h, err, "SetSysLog to the loopback socket of the test");
+}
+
+// Restore the syslog setting saved by HarnessSetSyslog
+static void HarnessRestoreSyslog(HARNESS *h, SYSLOG_SETTING *old)
+{
+	HarnessCheckErr(h, ScSetSysLog(h->Rpc, old), "SetSysLog restores the setting");
+}
+
+// A login to hub HARNESS_HUB_A with a user name that does not exist: the hub logs the connection and the failed
+// authentication, both with the user name. Stop it with HarnessStopSession and HarnessFreePa
+static HARNESS_PA *HarnessStartLogin(HARNESS *h, char *username)
+{
+	HARNESS_PA *p = HarnessNewPa("login");
+
+	HarnessStartSession(h, p, HARNESS_HUB_A, username);
+
+	return p;
+}
+
+// LOGINJECT (FND-17): a login with a CR LF in the user name, and a DNS query with a CR LF in the query name. The
+// security log, the packet log and the syslog datagram keep the forged text on the line of its record
+static void HarnessLogInject(HARNESS *h)
+{
+	char tag[16];
+	char marker[64];
+	char forged[64];
+	char text[MAX_SIZE];
+	UCHAR query[256];
+	UCHAR frame[512];
+	UINT query_size, frame_size;
+	HARNESS_LOG_SCAN scan;
+	HARNESS_PA *login;
+	SYSLOG_SETTING old;
+	IP localhost;
+	SOCK *s;
+	char *d;
+
+	Print("[logs: LOGINJECT]\n");
+
+	// Security log file (syslog off): the user name of a login
+	Format(tag, sizeof(tag), "%08X", Rand32());
+	Format(marker, sizeof(marker), "inject%s", tag);
+	Format(forged, sizeof(forged), "FORGED%s", tag);
+	Format(text, sizeof(text), "%s\r\n%s", marker, forged);
+
+	login = HarnessStartLogin(h, text);
+	HarnessWaitLog(HUB_SECURITY_LOG_FILE_NAME, HARNESS_HUB_A, marker, forged, &scan);
+	HarnessStopSession(login);
+	HarnessFreePa(login);
+
+	HarnessCheck(h, scan.NumMarker >= 1 && scan.NumBoth >= 1 && scan.NumForged == scan.NumBoth && scan.NumCr == 0,
+		"LOGINJECT: a CR LF in the user name of a login forges no line in the security log");
+
+	// Packet log file: the query name of a DNS frame from test session A
+	Format(marker, sizeof(marker), "dns%s", tag);
+	Format(text, sizeof(text), "%s\r\n%s.example", marker, forged);
+	query_size = HarnessBuildDnsQuery(query, sizeof(query), text);
+	frame_size = HarnessBuildIpFrame(frame, sizeof(frame), IP_PROTO_UDP, 53, query, query_size);
+	HarnessPaSend(h->PaA, frame, frame_size);
+
+	HarnessWaitLog(HUB_PACKET_LOG_FILE_NAME, HARNESS_HUB_A, marker, forged, &scan);
+	HarnessCheck(h, scan.NumMarker == 1 && scan.NumBoth == 1 && scan.NumForged == 1 && scan.NumCr == 0,
+		"LOGINJECT: one CSV record in the packet log for a DNS frame with a CR LF in the query name");
+
+	// Syslog datagram: the security log goes to the syslog socket of the test
+	SetIP(&localhost, 127, 0, 0, 1);
+	s = NewUDPEx2(0, false, &localhost);
+	if (HarnessCheck(h, s != NULL, "LOGINJECT: loopback UDP socket for the syslog datagrams") == false)
+	{
+		return;
+	}
+
+	if (HarnessSetSyslog(h, SYSLOG_SERVER_AND_HUB_SECURITY_LOG, s->LocalPort, &old))
+	{
+		Format(tag, sizeof(tag), "%08X", Rand32());
+		Format(marker, sizeof(marker), "inject%s", tag);
+		Format(forged, sizeof(forged), "FORGED%s", tag);
+		Format(text, sizeof(text), "%s\r\n%s", marker, forged);
+
+		login = HarnessStartLogin(h, text);
+		d = HarnessRecvSyslogWith(s, marker);
+		HarnessStopSession(login);
+		HarnessFreePa(login);
+
+		HarnessCheck(h, d != NULL && InStrEx(d, forged, true) && HarnessHasLineBreak(d) == false,
+			"LOGINJECT: a CR LF in the user name of a login stays out of the syslog datagram");
+
+		Free(d);
+
+		HarnessRestoreSyslog(h, &old);
+	}
+
+	ReleaseSock(s);
+}
+
+#define	HARNESS_SELF_SRC_PORT		39611				// Source port of the frame to the syslog address
+#define	HARNESS_OTHER_SRC_PORT		39612				// Source port of the frame to another port
+
+// UDP frame of test session A from 10.0.0.1:src_port to 127.0.0.1:dst_port, 8 bytes of data (no UDP
+// checksum). Returns its size
+static UINT HarnessBuildLoopbackUdp(UCHAR *buf, USHORT src_port, USHORT dst_port)
+{
+	UCHAR *ip = buf + 14;
+	UCHAR *udp = ip + 20;
+	UINT udp_size = 8 + 8;
+	UINT ip_size = 20 + udp_size;
+	USHORT sum;
+	UINT i;
+
+	Zero(buf, 14 + ip_size);
+
+	Copy(buf, harness_mac_b, 6);
+	Copy(buf + 6, harness_mac_a, 6);
+	buf[12] = 0x08;								// IPv4
+	buf[13] = 0x00;
+
+	ip[0] = 0x45;								// Version 4, 20-byte header
+	ip[2] = (UCHAR)(ip_size >> 8);
+	ip[3] = (UCHAR)(ip_size & 0xFF);
+	ip[8] = 64;									// TTL
+	ip[9] = IP_PROTO_UDP;
+	ip[12] = 10;								// 10.0.0.1
+	ip[15] = 1;
+	ip[16] = 127;								// 127.0.0.1
+	ip[19] = 1;
+	sum = IpChecksum(ip, 20);
+	Copy(ip + 10, &sum, sizeof(USHORT));
+
+	udp[0] = (UCHAR)(src_port >> 8);
+	udp[1] = (UCHAR)(src_port & 0xFF);
+	udp[2] = (UCHAR)(dst_port >> 8);
+	udp[3] = (UCHAR)(dst_port & 0xFF);
+	udp[5] = (UCHAR)udp_size;					// Length
+
+	for (i = 0;i < 8;i++)
+	{
+		udp[8 + i] = (UCHAR)(0x50 + i);
+	}
+
+	return 14 + ip_size;
+}
+
+// Count the PACKET_LOG syslog datagrams of the two frames of SYSLOG_SELF that arrive within timeout ms; stop at
+// the first one of the frame to the other port when stop_at_other is set
+static void HarnessCountSelfDatagrams(SOCK *s, UINT timeout, bool stop_at_other, UINT *num_self, UINT *num_other)
+{
+	UINT64 end = Tick64() + (UINT64)timeout;
+	char self_marker[32];
+	char other_marker[32];
+
+	Format(self_marker, sizeof(self_marker), ",%u,", HARNESS_SELF_SRC_PORT);
+	Format(other_marker, sizeof(other_marker), ",%u,", HARNESS_OTHER_SRC_PORT);
+
+	while (true)
+	{
+		UINT64 now = Tick64();
+		bool other = false;
+		char *d;
+
+		if (now >= end)
+		{
+			return;
+		}
+
+		d = HarnessRecvSyslog(s, (UINT)(end - now));
+		if (d == NULL)
+		{
+			return;
+		}
+
+		if (InStrEx(d, "<PACKET_LOG>", true))
+		{
+			if (InStrEx(d, self_marker, true))
+			{
+				(*num_self)++;
+			}
+			if (InStrEx(d, other_marker, true))
+			{
+				(*num_other)++;
+				other = true;
+			}
+		}
+
+		Free(d);
+
+		if (other && stop_at_other)
+		{
+			return;
+		}
+	}
+}
+
+// SYSLOG_SELF (FND-19): every log goes to the syslog socket of the test, UDP packet logging is on in HARNESS_A.
+// A frame to the syslog address and port is the server's own syslog traffic: it gives no PACKET_LOG datagram; a
+// frame to another port gives one
+static void HarnessSyslogSelf(HARNESS *h)
+{
+	RPC_HUB_LOG old_log;
+	RPC_HUB_LOG t;
+	SYSLOG_SETTING old_syslog;
+	IP localhost;
+	SOCK *s;
+	UCHAR frame[128];
+	UINT frame_size;
+	UINT num_self = 0;
+	UINT num_other = 0;
+	UINT err;
+	char tmp[MAX_SIZE];
+
+	Print("[logs: SYSLOG_SELF]\n");
+
+	Zero(&old_log, sizeof(old_log));
+	StrCpy(old_log.HubName, sizeof(old_log.HubName), HARNESS_HUB_A);
+	err = ScGetHubLog(h->Rpc, &old_log);
+	if (HarnessCheckErr(h, err, "SYSLOG_SELF: GetHubLog " HARNESS_HUB_A) == false)
+	{
+		return;
+	}
+
+	Copy(&t, &old_log, sizeof(t));
+	t.LogSetting.SavePacketLog = true;
+	t.LogSetting.PacketLogConfig[PACKET_LOG_UDP] = PACKET_LOG_HEADER;
+	err = ScSetHubLog(h->Rpc, &t);
+	if (HarnessCheckErr(h, err, "SYSLOG_SELF: SetHubLog " HARNESS_HUB_A " logs UDP packet headers") == false)
+	{
+		return;
+	}
+
+	SetIP(&localhost, 127, 0, 0, 1);
+	s = NewUDPEx2(0, false, &localhost);
+
+	if (HarnessCheck(h, s != NULL, "SYSLOG_SELF: loopback UDP socket for the syslog datagrams") &&
+		HarnessSetSyslog(h, SYSLOG_SERVER_AND_HUB_ALL_LOG, s->LocalPort, &old_syslog))
+	{
+		frame_size = HarnessBuildLoopbackUdp(frame, HARNESS_SELF_SRC_PORT, (USHORT)s->LocalPort);
+		HarnessPaSend(h->PaA, frame, frame_size);
+
+		frame_size = HarnessBuildLoopbackUdp(frame, HARNESS_OTHER_SRC_PORT, SYSLOG_PORT);
+		HarnessPaSend(h->PaA, frame, frame_size);
+
+		// The frames are logged in order: once the datagram of the second one is in, a datagram of the first one
+		// would be too; then a quiet time catches late or doubled datagrams
+		HarnessCountSelfDatagrams(s, HARNESS_LOG_TIMEOUT, true, &num_self, &num_other);
+		HarnessCountSelfDatagrams(s, HARNESS_SETTLE_TIME, false, &num_self, &num_other);
+
+		Format(tmp, sizeof(tmp), "SYSLOG_SELF: a frame to the syslog address and port gives no PACKET_LOG datagram, "
+			"a frame to another port gives one (%u and %u)", num_self, num_other);
+		HarnessCheck(h, num_self == 0 && num_other == 1, tmp);
+
+		HarnessRestoreSyslog(h, &old_syslog);
+	}
+
+	ReleaseSock(s);
+
+	HarnessCheckErr(h, ScSetHubLog(h->Rpc, &old_log), "SYSLOG_SELF: SetHubLog restores the log setting of " HARNESS_HUB_A);
+}
+
+////////////////////////////
 // Entry points
 
 // "harness": in-process server, two hubs, cascade, frames, vpncmd golden outputs and configuration round-trips
@@ -6086,6 +6566,9 @@ void harness_test(UINT num, char **arg)
 		HarnessSetPhase("adminreconnect", NULL);
 		HarnessAdminReconnect(h);
 		HarnessCmdCases(h);
+		HarnessSetPhase("logs", NULL);
+		HarnessLogInject(h);
+		HarnessSyslogSelf(h);
 		HarnessSetPhase("config", NULL);
 		HarnessConfigApiRoundTrip(h);
 	}

@@ -39,12 +39,51 @@ static char *delete_targets[] =
 static UINT eraser_check_interval = DISK_FREE_CHECK_INTERVAL_DEFAULT;
 static UINT64 logger_max_log_size = MAX_LOG_SIZE_DEFAULT;
 
-static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *log_date_changed, char *current_logfile_datename, char *current_file_name);
+// State of the writer thread of a LOG (LogThread): the open file, the records not yet written,
+// the name of the open file and the date part of the current file name
+typedef struct LOG_WRITER
+{
+	IO *Io;								// Open log file, NULL while none is open
+	BUF *Buffer;						// Records not yet written to the file
+	char FileName[MAX_SIZE];			// Name of the open file (while none is open: of the file to open)
+	char DateName[MAX_SIZE];			// Date part of the current file name
+	UINT RetryWait;						// Milliseconds waited after the last failed open, 0 after a successful one
+	UINT64 RetryTick;					// No new try to open the file before this tick
+} LOG_WRITER;
+
+static bool LogThreadWriteGeneral(LOG *log_object, LOG_WRITER *w);
+static UINT LogWriterWaitTime(LOG_WRITER *w);
+
+// Map the control characters of size bytes of UTF-8 text (bytes below 0x20 and 0x7F, never part of a
+// multi-byte sequence) to '?': a CR or LF from untrusted input cannot start a forged log line or syslog message
+static void LogMapControlChars(UCHAR *s, UINT size)
+{
+	UINT i;
+
+	for (i = 0;i < size;i++)
+	{
+		if (s[i] < 0x20 || s[i] == 0x7F)
+		{
+			s[i] = '?';
+		}
+	}
+}
+
+// Send one syslog datagram to the current address (g->lock held)
+static void SendSysLogLocked(SLOG *g, UCHAR *buf, UINT size)
+{
+	if (g->DestPort != 0 && IsZeroIp(&g->DestIp) == false)
+	{
+		SendTo(g->Udp, &g->DestIp, g->DestPort, buf, size);
+	}
+}
 
 void SendSysLog(SLOG *g, wchar_t *str)
 {
 	UCHAR *buf;
 	UINT buf_size;
+	char hostname[MAX_HOST_NAME_LEN + 1];
+	bool poll = false;
 	if (g == NULL || str == NULL)
 	{
 		return;
@@ -53,6 +92,7 @@ void SendSysLog(SLOG *g, wchar_t *str)
 	buf_size = CalcUniToUtf8(str);
 	buf = ZeroMalloc(buf_size);
 	UniToUtf8(buf, buf_size, str);
+	LogMapControlChars(buf, buf_size);
 
 	if (buf_size >= 1024)
 	{
@@ -63,25 +103,44 @@ void SendSysLog(SLOG *g, wchar_t *str)
 	{
 		if (Tick64() >= g->NextPollIp)
 		{
-			IP ip;
-
-			if (GetIP(&ip, g->HostName))
-			{
-				g->NextPollIp = Tick64() + SYSLOG_POLL_IP_INTERVAL;
-				Copy(&g->DestIp, &ip, sizeof(IP));
-			}
-			else
-			{
-				g->NextPollIp = Tick64() + SYSLOG_POLL_IP_INTERVAL_NG;
-			}
+			// This sender resolves the host again; the others use the current address meanwhile
+			g->NextPollIp = Tick64() + SYSLOG_POLL_IP_INTERVAL_NG;
+			StrCpy(hostname, sizeof(hostname), g->HostName);
+			poll = true;
 		}
-
-		if (g->DestPort != 0 && IsZeroIp(&g->DestIp) == false)
+		else
 		{
-			SendTo(g->Udp, &g->DestIp, g->DestPort, buf, buf_size);
+			SendSysLogLocked(g, buf, buf_size);
 		}
 	}
 	Unlock(g->lock);
+
+	if (poll)
+	{
+		// The resolve can take seconds: it runs outside the lock, which every logging thread takes
+		IP ip;
+		bool resolved = GetIP(&ip, hostname);
+
+		Lock(g->lock);
+		{
+			// A SetSysLog with another host meanwhile has resolved that host already
+			if (StrCmp(g->HostName, hostname) == 0)
+			{
+				if (resolved)
+				{
+					g->NextPollIp = Tick64() + SYSLOG_POLL_IP_INTERVAL;
+					Copy(&g->DestIp, &ip, sizeof(IP));
+				}
+				else
+				{
+					g->NextPollIp = Tick64() + SYSLOG_POLL_IP_INTERVAL_NG;
+				}
+			}
+
+			SendSysLogLocked(g, buf, buf_size);
+		}
+		Unlock(g->lock);
+	}
 
 	Free(buf);
 }
@@ -123,7 +182,7 @@ void SetSysLog(SLOG *g, char *hostname, UINT port)
 		Copy(&g->DestIp, &ip, sizeof(IP));
 		g->DestPort = port;
 		StrCpy(g->HostName, sizeof(g->HostName), hostname);
-		g->NextPollIp = Tick64() + IsZeroIp(&ip) ? SYSLOG_POLL_IP_INTERVAL_NG : SYSLOG_POLL_IP_INTERVAL;
+		g->NextPollIp = Tick64() + (IsZeroIp(&ip) ? SYSLOG_POLL_IP_INTERVAL_NG : SYSLOG_POLL_IP_INTERVAL);
 	}
 	Unlock(g->lock);
 }
@@ -331,8 +390,10 @@ static void EraserThread(THREAD *t, void *p)
 	while (e->Halt == false)
 	{
 		EraserMain(e);
+		e->NumChecks++;
 
-		Wait(e->HaltEvent, GetEraserCheckInterval());
+		// The interval in milliseconds (at least 1 s, as the seconds of GetEraserCheckInterval for the configuration)
+		Wait(e->HaltEvent, MAX(eraser_check_interval, 1000));
 	}
 }
 
@@ -703,7 +764,8 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 					{
 						if (IPToUINT(&s->Syslog->DestIp) == packet->L3.IPv4Header->DstIP)
 						{
-							if (Endian32(packet->L4.UDPHeader->DstPort) == s->Syslog->DestPort)
+							// DstPort is a 16-bit field in network order, DestPort a port in host order
+							if (Endian16(packet->L4.UDPHeader->DstPort) == (USHORT)s->Syslog->DestPort)
 							{
 								self_syslog_packet = true;
 							}
@@ -1212,7 +1274,9 @@ char *PacketLogParseProc(RECORD *rec)
 				case L7_DNS:
 					t->Token[6] = CopyStr("DNSv4");
 					t->Token[7] = CopyStr("DNS_Query");
+					// The query name holds raw label bytes from the wire
 					t->Token[14] = CopyStr(p->DnsQueryHost);
+					MakeSafeLogStr(t->Token[14]);
 					break;
 
 				default:
@@ -1467,7 +1531,9 @@ char *PacketLogParseProc(RECORD *rec)
 				case L7_DNS:
 					t->Token[6] = CopyStr("DNSv6");
 					t->Token[7] = CopyStr("DNS_Query");
+					// The query name holds raw label bytes from the wire
 					t->Token[14] = CopyStr(p->DnsQueryHost);
+					MakeSafeLogStr(t->Token[14]);
 					break;
 
 				default:
@@ -1667,9 +1733,10 @@ void ReplaceForCsv(char *str)
 
 	len = StrLen(str);
 
+	// A comma, a CR, an LF or another control character would split the record (a NUL ends the token)
 	for (i = 0; i < len; i++)
 	{
-		if (str[i] == ',')
+		if (str[i] == ',' || (UCHAR)str[i] < 0x20 || (UCHAR)str[i] == 0x7F)
 		{
 			str[i] = '_';
 		}
@@ -1726,13 +1793,23 @@ void InsertStringRecord(LOG *g, char *str)
 	}
 
 	str_copy = CopyStr(str);
+	LogMapControlChars((UCHAR *)str_copy, StrLen(str_copy));
 
 	InsertRecord(g, str_copy, StringRecordParseProc);
+}
+
+// Release a record that is not written: its parse procedure frees its data (a packet log record also
+// gives back its session reference and its logging record count)
+static void FreeRecord(RECORD *rec)
+{
+	Free(rec->ParseProc(rec));
+	Free(rec);
 }
 
 void InsertRecord(LOG *g, void *data, RECORD_PARSE_PROC *proc)
 {
 	RECORD *rec;
+	bool dropped = false;
 	if (g == NULL || data == NULL || proc == NULL)
 	{
 		return;
@@ -1745,9 +1822,23 @@ void InsertRecord(LOG *g, void *data, RECORD_PARSE_PROC *proc)
 
 	LockQueue(g->RecordQueue);
 	{
-		InsertQueue(g->RecordQueue, rec);
+		if (g->RecordQueue->num_item >= LOG_ENGINE_MAX_QUEUE)
+		{
+			// The writer is too far behind: the new record is dropped and counted
+			g->NumDropped++;
+			dropped = true;
+		}
+		else
+		{
+			InsertQueue(g->RecordQueue, rec);
+		}
 	}
 	UnlockQueue(g->RecordQueue);
+
+	if (dropped)
+	{
+		FreeRecord(rec);
+	}
 
 	Set(g->Event);
 }
@@ -1830,7 +1921,8 @@ static void MakeLogFileNameStringFromTick(LOG *g, char *str, UINT size, UINT64 t
 	StrCpy(g->LastStr, sizeof(g->LastStr), str);
 }
 
-static bool MakeLogFileName(LOG *g, char *name, UINT size, char *dir, char *prefix, UINT64 tick, UINT switch_type, UINT num, char *old_datestr)
+static bool MakeLogFileName(LOG *g, char *name, UINT size, char *dir, char *prefix, UINT64 tick, UINT switch_type, UINT num,
+	char *old_datestr, UINT old_datestr_size)
 {
 	char tmp[MAX_SIZE];
 	char tmp2[64];
@@ -1896,7 +1988,7 @@ static bool MakeLogFileName(LOG *g, char *name, UINT size, char *dir, char *pref
 	if (StrCmp(old_datestr, tmp) != 0)
 	{
 		ret = true;
-		StrCpy(old_datestr, MAX_SIZE, tmp);
+		StrCpy(old_datestr, old_datestr_size, tmp);
 	}
 
 	snprintf(name, size, "%s%s%s%s%s.log", dir,
@@ -1957,24 +2049,18 @@ UINT64 GetMaxLogSize()
 static void LogThread(THREAD *thread, void *param)
 {
 	LOG *g;
-	IO *io;
-	BUF *b;
+	LOG_WRITER w;
 	bool flag = false;
-	char current_file_name[MAX_SIZE];
-	char current_logfile_datename[MAX_SIZE];
-	bool log_date_changed = false;
 	if (thread == NULL || param == NULL)
 	{
 		return;
 	}
 
-	Zero(current_file_name, sizeof(current_file_name));
-	Zero(current_logfile_datename, sizeof(current_logfile_datename));
+	Zero(&w, sizeof(w));
 
 	g = (LOG *)param;
 
-	io = NULL;
-	b = NewBuf();
+	w.Buffer = NewBuf();
 
 
 	MsSetThreadPriorityIdle();
@@ -1984,11 +2070,9 @@ static void LogThread(THREAD *thread, void *param)
 
 	while (true)
 	{
-		UINT64 s = Tick64();
-
 		while (true)
 		{
-			if (! LogThreadWriteGeneral(g, b, &io, &log_date_changed, current_logfile_datename, current_file_name))
+			if (! LogThreadWriteGeneral(g, &w))
 			{
 				break;
 			}
@@ -2003,6 +2087,13 @@ static void LogThread(THREAD *thread, void *param)
 			{
 				MsSetThreadPriorityRealtime();
 				flag = true;
+
+				if (w.Io == NULL && w.Buffer->Size != 0)
+				{
+					// One more try at once to write what was buffered while no file could be opened
+					w.RetryTick = 0;
+					continue;
+				}
 			}
 
 			LockQueue(g->RecordQueue);
@@ -2011,30 +2102,143 @@ static void LogThread(THREAD *thread, void *param)
 			}
 			UnlockQueue(g->RecordQueue);
 
-			if (num == 0 || io == NULL)
+			if (num == 0 || w.Io == NULL)
 			{
 				break;
 			}
 		}
 		else
 		{
-			Wait(g->Event, 9821);
+			Wait(g->Event, LogWriterWaitTime(&w));
 		}
 	}
 
-	if (io != NULL)
+	if (w.Io != NULL)
 	{
-		FileCloseEx(io, true);
+		FileCloseEx(w.Io, true);
+	}
+
+	FreeBuf(w.Buffer);
+}
+
+// Milliseconds the writer thread waits for a new record: while records wait in the buffer for a file that
+// could not be opened, only until the next try to open it
+static UINT LogWriterWaitTime(LOG_WRITER *w)
+{
+	UINT64 now;
+
+	if (w->Io != NULL || w->Buffer->Size == 0 || IsEmptyStr(w->FileName))
+	{
+		return 9821;
+	}
+
+	now = Tick64();
+	if (w->RetryTick <= now)
+	{
+		return 1;
+	}
+
+	return (UINT)MIN(w->RetryTick - now, 9821);
+}
+
+// Open the log file file_name to append to it, or create it (and its directory). After a failed try the next
+// one waits LOG_ENGINE_RETRY_MIN ms, then twice the last wait after each further failure, at most
+// LOG_ENGINE_RETRY_MAX ms
+static void LogWriterOpen(LOG *g, LOG_WRITER *w, char *file_name)
+{
+	StrCpy(w->FileName, sizeof(w->FileName), file_name);
+
+	w->Io = FileOpen(file_name, true);
+	if (w->Io == NULL)
+	{
+		LockLog(g);
+		{
+			// MakeDir also fails on an existing directory: the create tells whether the file can be written
+			MakeDir(g->DirName);
+
+			Win32SetFolderCompress(g->DirName, true);
+		}
+		UnlockLog(g);
+		w->Io = FileCreate(file_name);
+		g->CurrentFilePointer = 0;
+	}
+	else
+	{
+		g->CurrentFilePointer = FileSize64(w->Io);
+		FileSeek(w->Io, SEEK_END, 0);
+	}
+
+	if (w->Io != NULL)
+	{
+		w->RetryWait = 0;
+	}
+	else
+	{
+		w->RetryWait = (w->RetryWait == 0 ? LOG_ENGINE_RETRY_MIN : MIN(w->RetryWait * 2, LOG_ENGINE_RETRY_MAX));
+		w->RetryTick = Tick64() + (UINT64)w->RetryWait;
+	}
+}
+
+// Put the line that reports the dropped records into the buffer, in front of the next record (a file is open)
+static void LogWriterAddDropped(LOG *g, LOG_WRITER *w)
+{
+	UINT64 num;
+	RECORD r;
+	char tmp[MAX_SIZE];
+
+	LockQueue(g->RecordQueue);
+	{
+		num = g->NumDropped;
+		g->NumDropped = 0;
+	}
+	UnlockQueue(g->RecordQueue);
+
+	if (num == 0)
+	{
+		return;
+	}
+
+	Format(tmp, sizeof(tmp), LOG_DROPPED_RECORDS_FORMAT, num);
+
+	Zero(&r, sizeof(r));
+	r.Tick = Tick64();
+	r.ParseProc = StringRecordParseProc;
+	r.Data = CopyStr(tmp);
+
+	WriteRecordToBuffer(w->Buffer, &r);
+}
+
+// No file is open: keep the record in the buffer while the buffer stays within the smaller of
+// LOG_ENGINE_BUFFER_NO_FILE_MAX and the maximum log size, drop and count it otherwise. Either way its data is released
+static void LogWriterKeep(LOG *g, LOG_WRITER *w, RECORD *rec)
+{
+	BUF *b = NewBuf();
+
+	WriteRecordToBuffer(b, rec);
+
+	if ((UINT64)w->Buffer->Size + (UINT64)b->Size <= MIN((UINT64)LOG_ENGINE_BUFFER_NO_FILE_MAX, GetMaxLogSize()))
+	{
+		WriteBuf(w->Buffer, b->Buf, b->Size);
+	}
+	else
+	{
+		LockQueue(g->RecordQueue);
+		{
+			g->NumDropped++;
+		}
+		UnlockQueue(g->RecordQueue);
 	}
 
 	FreeBuf(b);
 }
 
-static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *log_date_changed, char *current_logfile_datename, char *current_file_name)
+static bool LogThreadWriteGeneral(LOG *log_object, LOG_WRITER *w)
 {
 	RECORD *rec;
 	char file_name[MAX_SIZE];
 	UINT num;
+	bool log_date_changed;
+	BUF *buffer = w->Buffer;
 
 	LockQueue(log_object->RecordQueue);
 	{
@@ -2058,9 +2262,25 @@ static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *l
 		ClearBuf(buffer);
 	}
 
+	if (rec == NULL && w->Io == NULL && buffer->Size != 0 && IsEmptyStr(w->FileName) == false &&
+		Tick64() >= w->RetryTick)
+	{
+		// No new record, but buffered records wait for a file that could not be opened: try it again
+		char last_name[MAX_SIZE];
+
+		StrCpy(last_name, sizeof(last_name), w->FileName);
+		LogWriterOpen(log_object, w, last_name);
+		log_object->log_number_incremented = false;
+
+		if (w->Io != NULL)
+		{
+			LogWriterAddDropped(log_object, w);
+		}
+	}
+
 	if (buffer->Size >= LOG_ENGINE_BUFFER_CACHE_SIZE_MAX)
 	{
-		if (*io != NULL)
+		if (w->Io != NULL)
 		{
 			if ((log_object->CurrentFilePointer + (UINT64)buffer->Size) > GetMaxLogSize())
 			{
@@ -2072,12 +2292,12 @@ static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *l
 			}
 			else
 			{
-				if (FileWrite(*io, buffer->Buf, buffer->Size) == false)
+				if (FileWrite(w->Io, buffer->Buf, buffer->Size) == false)
 				{
-					FileCloseEx(*io, true);
+					FileCloseEx(w->Io, true);
 					// On write failure, drop the buffer and give up
 					ClearBuf(buffer);
-					*io = NULL;
+					w->Io = NULL;
 				}
 				else
 				{
@@ -2092,7 +2312,7 @@ static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *l
 	{
 		if (buffer->Size != 0)
 		{
-			if (*io != NULL)
+			if (w->Io != NULL)
 			{
 				if ((log_object->CurrentFilePointer + (UINT64)buffer->Size) > GetMaxLogSize())
 				{
@@ -2104,12 +2324,12 @@ static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *l
 				}
 				else
 				{
-					if (FileWrite(*io, buffer->Buf, buffer->Size) == false)
+					if (FileWrite(w->Io, buffer->Buf, buffer->Size) == false)
 					{
-						FileCloseEx(*io, true);
+						FileCloseEx(w->Io, true);
 						// On write failure, drop the buffer and give up
 						ClearBuf(buffer);
-						*io = NULL;
+						w->Io = NULL;
 					}
 					else
 					{
@@ -2126,21 +2346,22 @@ static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *l
 
 	LockLog(log_object);
 	{
-		*log_date_changed = MakeLogFileName(log_object, file_name, sizeof(file_name),
-		                                    log_object->DirName, log_object->Prefix, rec->Tick, log_object->SwitchType, log_object->CurrentLogNumber, current_logfile_datename);
+		log_date_changed = MakeLogFileName(log_object, file_name, sizeof(file_name),
+		                                   log_object->DirName, log_object->Prefix, rec->Tick, log_object->SwitchType, log_object->CurrentLogNumber,
+		                                   w->DateName, sizeof(w->DateName));
 
-		if (*log_date_changed)
+		if (log_date_changed)
 		{
 			UINT i;
 
 			log_object->CurrentLogNumber = 0;
 			MakeLogFileName(log_object, file_name, sizeof(file_name),
-			                log_object->DirName, log_object->Prefix, rec->Tick, log_object->SwitchType, 0, current_logfile_datename);
+			                log_object->DirName, log_object->Prefix, rec->Tick, log_object->SwitchType, 0, w->DateName, sizeof(w->DateName));
 			for (i = 0;; i++)
 			{
 				char tmp[MAX_SIZE];
 				MakeLogFileName(log_object, tmp, sizeof(tmp),
-				                log_object->DirName, log_object->Prefix, rec->Tick, log_object->SwitchType, i, current_logfile_datename);
+				                log_object->DirName, log_object->Prefix, rec->Tick, log_object->SwitchType, i, w->DateName, sizeof(w->DateName));
 
 				if (IsFileExists(tmp) == false)
 				{
@@ -2153,22 +2374,22 @@ static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *l
 	}
 	UnlockLog(log_object);
 
-	if (*io != NULL)
+	if (w->Io != NULL)
 	{
-		if (StrCmp(current_file_name, file_name) != 0)
+		if (StrCmp(w->FileName, file_name) != 0)
 		{
 			// Switching to another log file: flush the buffer and close the current file first
-			if (*io != NULL)
+			if (w->Io != NULL)
 			{
-				if (*log_date_changed)
+				if (log_date_changed)
 				{
 					if ((log_object->CurrentFilePointer + (UINT64)buffer->Size) <= GetMaxLogSize())
 					{
-						if (FileWrite(*io, buffer->Buf, buffer->Size) == false)
+						if (FileWrite(w->Io, buffer->Buf, buffer->Size) == false)
 						{
-							FileCloseEx(*io, true);
+							FileCloseEx(w->Io, true);
 							ClearBuf(buffer);
-							*io = NULL;
+							w->Io = NULL;
 						}
 						else
 						{
@@ -2177,65 +2398,42 @@ static bool LogThreadWriteGeneral(LOG *log_object, BUF *buffer, IO **io, bool *l
 						}
 					}
 				}
-				FileCloseEx(*io, true);
+				FileCloseEx(w->Io, true);
 			}
 
 			log_object->log_number_incremented = false;
 
-			StrCpy(current_file_name, sizeof(current_file_name), file_name);
-			*io = FileOpen(file_name, true);
-			if (*io == NULL)
-			{
-				LockLog(log_object);
-				{
-					MakeDir(log_object->DirName);
-
-					Win32SetFolderCompress(log_object->DirName, true);
-				}
-				UnlockLog(log_object);
-				*io = FileCreate(file_name);
-				log_object->CurrentFilePointer = 0;
-			}
-			else
-			{
-				log_object->CurrentFilePointer = FileSize64(*io);
-				FileSeek(*io, SEEK_END, 0);
-			}
+			LogWriterOpen(log_object, w, file_name);
 		}
 	}
 	else
 	{
-		StrCpy(current_file_name, sizeof(current_file_name), file_name);
-		*io = FileOpen(file_name, true);
-		if (*io == NULL)
+		if (Tick64() >= w->RetryTick)
 		{
-			LockLog(log_object);
-			{
-				MakeDir(log_object->DirName);
-				Win32SetFolderCompress(log_object->DirName, true);
-			}
-			UnlockLog(log_object);
-			*io = FileCreate(file_name);
-			log_object->CurrentFilePointer = 0;
-			if (*io == NULL)
-			{
-				SleepThread(30);
-			}
+			LogWriterOpen(log_object, w, file_name);
 		}
 		else
 		{
-			log_object->CurrentFilePointer = FileSize64(*io);
-			FileSeek(*io, SEEK_END, 0);
+			// Before the next try: a later record, or the writer thread once the wait is over, opens this file
+			StrCpy(w->FileName, sizeof(w->FileName), file_name);
 		}
 
 		log_object->log_number_incremented = false;
 	}
 
-	WriteRecordToBuffer(buffer, rec);
+	if (w->Io != NULL)
+	{
+		LogWriterAddDropped(log_object, w);
+		WriteRecordToBuffer(buffer, rec);
+	}
+	else
+	{
+		LogWriterKeep(log_object, w, rec);
+	}
 
 	Free(rec);
 
-	return (*io != NULL);
+	return true;
 }
 
 void WriteRecordToBuffer(BUF *b, RECORD *r)
@@ -2297,9 +2495,7 @@ void FreeLog(LOG *g)
 	// Free any leftover records (there should be none)
 	while (rec = GetNext(g->RecordQueue))
 	{
-		char *s = rec->ParseProc(rec);
-		Free(s);
-		Free(rec);
+		FreeRecord(rec);
 	}
 	ReleaseQueue(g->RecordQueue);
 

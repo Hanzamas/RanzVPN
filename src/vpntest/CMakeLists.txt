@@ -45,6 +45,9 @@ target_sources(vpntest PRIVATE tempdir.c)
 # vpncmd command cases of the harness (golden family "cmd"), PKG-2 (#106)
 target_sources(vpntest PRIVATE harness_cmd.c)
 
+# Named log writer, syslog and eraser tests of PKG-4 (#108)
+target_sources(vpntest PRIVATE logtest.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
