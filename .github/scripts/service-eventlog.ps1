@@ -1,3 +1,5 @@
+param([string] $BuildDir = 'build')
+
 $ErrorActionPreference = 'Stop'
 
 # Service events in the Windows Event Log (ticket #92). vpnserver installed and started as a Windows
@@ -6,13 +8,7 @@ $ErrorActionPreference = 'Stop'
 # The event IDs are MS_EVENT_SERVICE_* in src/Mayaqua/Microsoft.h; the entries are written by
 # MsServiceDispatcher and MsServiceStopProc in src/Mayaqua/Microsoft.c.
 
-if (Test-Path "env:BUILD_BINARIESDIRECTORY") {
-	$BUILD_BINARIESDIRECTORY = $env:BUILD_BINARIESDIRECTORY
-} else {
-	$BUILD_BINARIESDIRECTORY = "build"
-}
-
-$exe = (Resolve-Path (Join-Path $BUILD_BINARIESDIRECTORY 'vpnserver.exe')).Path
+$exe = (Resolve-Path (Join-Path $BuildDir 'vpnserver.exe')).Path
 
 # SVC_SEVPNSERVERDEV_NAME (src/bin/hamcore/strtable_en.stb): the service name and the event source
 $service = 'sevpnserverdev'
@@ -50,7 +46,7 @@ function Show-Diagnostics {
 			Write-Host ("  {0:u} id {1}: {2}" -f $_.TimeCreated, $_.Id, $_.Message)
 		}
 	Get-Service -Name $service -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "service ${service}: $($_.Status)" }
-	$log = Get-ChildItem -Path (Join-Path $BUILD_BINARIESDIRECTORY 'server_log') -Filter '*.log' -ErrorAction SilentlyContinue |
+	$log = Get-ChildItem -Path (Join-Path $BuildDir 'server_log') -Filter '*.log' -ErrorAction SilentlyContinue |
 		Sort-Object LastWriteTime | Select-Object -Last 1
 	if ($log) {
 		Write-Host "last lines of $($log.FullName):"
