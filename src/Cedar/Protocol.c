@@ -1239,7 +1239,7 @@ bool ServerAccept(CONNECTION *c)
 											sign_size == (x->bits / 8))
 										{
 											K *k = GetKFromX(x);
-											if (RsaVerifyEx(c->Random, SHA1_SIZE, sign, k, x->bits))
+											if (RsaVerifyEx(c->Random, SHA1_SIZE, sign, sign_size, k))
 											{
 												// A matching signature proves the client holds this certificate.
 												auth_ret = SamAuthUserByCert(hub, username, x);
@@ -3516,7 +3516,7 @@ bool ClientUploadAuth(CONNECTION *c)
 		if (a->ClientX != NULL && a->ClientX->is_compatible_bit &&
 			a->ClientX->bits != 0 && (a->ClientX->bits / 8) <= sizeof(sign))
 		{
-			if (RsaSignEx(sign, c->Random, SHA1_SIZE, a->ClientK, a->ClientX->bits))
+			if (RsaSignEx(sign, sizeof(sign), c->Random, SHA1_SIZE, a->ClientK))
 			{
 				p = PackLoginWithCert(o->HubName, a->Username, a->ClientX, sign, a->ClientX->bits / 8);
 				c->ClientX = CloneX(a->ClientX);
@@ -3528,7 +3528,7 @@ bool ClientUploadAuth(CONNECTION *c)
 		if (a->ClientX != NULL && a->ClientX->is_compatible_bit &&
 			a->ClientX->bits != 0 && (a->ClientX->bits / 8) <= sizeof(sign))
 		{
-			if (RsaSignEx(sign, c->Random, SHA1_SIZE, a->ClientK, a->ClientX->bits))
+			if (RsaSignEx(sign, sizeof(sign), c->Random, SHA1_SIZE, a->ClientK))
 			{
 				p = PackLoginWithCert(o->HubName, a->Username, a->ClientX, sign, a->ClientX->bits / 8);
 				c->ClientX = CloneX(a->ClientX);

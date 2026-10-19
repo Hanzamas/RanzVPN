@@ -7095,3 +7095,180 @@ UINT HarnessCloseServer(HARNESS *h)
 
 	return num_fail;
 }
+
+// "ptrkey" (FND-84 #127): POINTER_TO_KEY (HashPtrToUINT) keys a block by its address. It hashed the first
+// pointer-size bytes the block holds instead, so blocks with the same leading bytes got the same key and the key
+// of a block changed with its content. The admin RPC hands these keys out as ids (access list UniqueId; CRL, CA,
+// MAC and IP table keys) and finds the entry again by them. An access list entry begins with its Id, and the Ids
+// are renumbered in priority order on every add: on the old code the UniqueId an earlier AccessList gave an entry
+// named another entry after an add, and AccessDelete by it removed that one. Uses the in-process server of the
+// harness on TCP 39555 with its own hub.
+#define	PTRKEY_WATCHDOG_LIMIT		60000				// "ptrkey" process aborted after this
+#define	PTRKEY_HUB					"PTRKEY"			// Hub of the access list checks
+#define	PTRKEY_NOTE					L"ptrkey entry"		// Note of every access list entry (equal leading bytes)
+#define	PTRKEY_BLOCK				64					// Bytes of the blocks of the key checks
+
+// Two blocks with equal content: a key each, found again by it, unchanged when the content changes
+static void PtrKeyBlocks(HARNESS *h)
+{
+	UCHAR *a = ZeroMalloc(PTRKEY_BLOCK);
+	UCHAR *b = ZeroMalloc(PTRKEY_BLOCK);
+	LIST *o = NewListFast(NULL);
+	UINT key_a = POINTER_TO_KEY(a);
+	UINT key_b = POINTER_TO_KEY(b);
+	UINT i;
+
+	HarnessCheck(h, key_a != 0 && key_b != 0, "two zeroed blocks get a key");
+	HarnessCheck(h, key_a != key_b, "two blocks with equal content get different keys");
+
+	Add(o, a);
+	Add(o, b);
+	HarnessCheck(h, ListKeyToPointer(o, key_a) == a && ListKeyToPointer(o, key_b) == b,
+		"ListKeyToPointer finds each of the two blocks by its own key");
+
+	for (i = 0;i < PTRKEY_BLOCK;i++)
+	{
+		a[i] = (UCHAR)(0x5A + i);
+	}
+	HarnessCheck(h, POINTER_TO_KEY(a) == key_a, "the key of a block stays the same when its content changes");
+
+	ReleaseList(o);
+	Free(b);
+	Free(a);
+}
+
+// Add a passing access list entry with the note of the test to the test hub
+static bool PtrKeyAddAccess(HARNESS *h, UINT priority)
+{
+	RPC_ADD_ACCESS t;
+	char tmp[MAX_SIZE];
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), PTRKEY_HUB);
+	UniStrCpy(t.Access.Note, sizeof(t.Access.Note), PTRKEY_NOTE);
+	t.Access.Active = true;
+	t.Access.Priority = priority;
+
+	Format(tmp, sizeof(tmp), "AccessAdd " PTRKEY_HUB " priority %u", priority);
+
+	return HarnessCheckErr(h, ScAddAccess(h->Rpc, &t), tmp);
+}
+
+// AccessList of the test hub: the UniqueId of the entry with this priority (0 when there is none) and the
+// priorities in list order, comma separated
+static UINT PtrKeyEnumAccess(HARNESS *h, UINT priority, char *priorities, UINT priorities_size)
+{
+	RPC_ENUM_ACCESS_LIST t;
+	UINT ret = 0;
+	UINT i;
+
+	StrCpy(priorities, priorities_size, "");
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), PTRKEY_HUB);
+	if (HarnessCheckErr(h, ScEnumAccess(h->Rpc, &t), "AccessList " PTRKEY_HUB) == false)
+	{
+		return 0;
+	}
+
+	for (i = 0;i < t.NumAccess;i++)
+	{
+		ACCESS *a = &t.Accesses[i];
+		char tmp[MAX_SIZE];
+
+		Format(tmp, sizeof(tmp), "%s%u", (i == 0 ? "" : ","), a->Priority);
+		StrCat(priorities, priorities_size, tmp);
+
+		if (a->Priority == priority)
+		{
+			ret = a->UniqueId;
+		}
+	}
+
+	FreeRpcEnumAccessList(&t);
+
+	return ret;
+}
+
+// AccessDelete by the UniqueId of an earlier AccessList, after an add renumbered the Ids
+static void PtrKeyAccessList(HARNESS *h)
+{
+	RPC_DELETE_ACCESS d;
+	RPC_DELETE_HUB dh;
+	UINT id_20;
+	char priorities[MAX_SIZE];
+	char tmp[MAX_SIZE];
+
+	if (HarnessCreateHub(h, PTRKEY_HUB) == false)
+	{
+		return;
+	}
+
+	// Priorities 10 and 20: Ids 1 and 2
+	if (PtrKeyAddAccess(h, 10) && PtrKeyAddAccess(h, 20))
+	{
+		id_20 = PtrKeyEnumAccess(h, 20, priorities, sizeof(priorities));
+		// AccessDelete takes an Id below MAX_ACCESSLISTS as the entry Id, from it as a UniqueId
+		HarnessCheck(h, id_20 >= MAX_ACCESSLISTS, "AccessList gives the priority 20 entry a UniqueId from MAX_ACCESSLISTS up");
+
+		// Priority 5 sorts first: the Ids become 1, 2 and 3 for priorities 5, 10 and 20
+		if (PtrKeyAddAccess(h, 5))
+		{
+			HarnessCheck(h, PtrKeyEnumAccess(h, 20, priorities, sizeof(priorities)) == id_20,
+				"the priority 20 entry keeps its UniqueId after an add renumbers the Ids");
+
+			Zero(&d, sizeof(d));
+			StrCpy(d.HubName, sizeof(d.HubName), PTRKEY_HUB);
+			d.Id = id_20;
+			HarnessCheckErr(h, ScDeleteAccess(h->Rpc, &d), "AccessDelete " PTRKEY_HUB " by the first UniqueId of priority 20");
+
+			PtrKeyEnumAccess(h, 0, priorities, sizeof(priorities));
+			Format(tmp, sizeof(tmp), "AccessDelete removed the priority 20 entry: priorities 5,10 left (left: %s)",
+				priorities);
+			HarnessCheck(h, StrCmp(priorities, "5,10") == 0, tmp);
+		}
+	}
+
+	Zero(&dh, sizeof(dh));
+	StrCpy(dh.HubName, sizeof(dh.HubName), PTRKEY_HUB);
+	HarnessCheckErr(h, ScDeleteHub(h->Rpc, &dh), "DeleteHub " PTRKEY_HUB);
+}
+
+// "ptrkey": POINTER_TO_KEY keys a block by its address; access list delete by UniqueId
+void ptrkey_test(UINT num, char **arg)
+{
+	HARNESS *h = HarnessNew();
+	HARNESS_WATCHDOG *wd = HarnessStartWatchdog("PTRKEY", PTRKEY_WATCHDOG_LIMIT);
+
+	Print("Ranz ptrkey: POINTER_TO_KEY keys a block by its address; AccessDelete by UniqueId after the Ids are "
+		"renumbered, hub %s on TCP %u\n", PTRKEY_HUB, HARNESS_PORT);
+
+	Print("[blocks]\n");
+	HarnessSetPhase("ptrkey", "blocks");
+	PtrKeyBlocks(h);
+
+	Print("[setup]\n");
+	if (HarnessStartServer(h))
+	{
+		Print("[access list]\n");
+		HarnessSetPhase("ptrkey", "access list");
+		PtrKeyAccessList(h);
+	}
+
+	HarnessSetPhase("teardown", NULL);
+	Print("[teardown]\n");
+	HarnessStopServer(h);
+
+	HarnessStopWatchdog(wd);
+
+	if (h->NumFail == 0)
+	{
+		Print("PTRKEY TEST OK\n");
+	}
+	else
+	{
+		Print("PTRKEY TEST FAILED (%u failed checks)\n", h->NumFail);
+	}
+
+	HarnessFree(h);
+}
