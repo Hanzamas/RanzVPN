@@ -19,10 +19,19 @@ extern "C"
 #include <netcfgn.h>
 #include <SetupAPI.h>
 
+// Report a failed INetCfg or setup step of InstallNdisProtocolDriver and its HRESULT to the debug log
+static void NetCfgDebugHr(const char *step, HRESULT hr)
+{
+	char fmt[] = "InstallNdisProtocolDriver: %s failed, HRESULT 0x%X\n";
+
+	Debug(fmt, step, (UINT)hr);
+}
+
 // Install the SeLow NDIS protocol driver (SL_PROTOCOL_NAME) from the package whose INF is inf_path
 bool InstallNdisProtocolDriver(wchar_t *inf_path)
 {
 	bool ret = false;
+	bool com_initialized = false;
 	HRESULT hr;
 	INetCfg *pNetCfg;
 	HINSTANCE hSetupApiDll = NULL;
@@ -54,6 +63,19 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path)
 		goto LABEL_CLEANUP;
 	}
 
+	// COM for this call only: S_OK and S_FALSE both take a reference that CoUninitialize returns.
+	// RPC_E_CHANGED_MODE means the thread already runs in another apartment, which stays as it is.
+	hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+	if (SUCCEEDED(hr))
+	{
+		com_initialized = true;
+	}
+	else if (hr != RPC_E_CHANGED_MODE)
+	{
+		NetCfgDebugHr("CoInitializeEx", hr);
+		goto LABEL_CLEANUP;
+	}
+
 	hr = CoCreateInstance(CLSID_CNetCfg, NULL, CLSCTX_INPROC_SERVER, IID_INetCfg, (void **)&pNetCfg);
 
 	if (SUCCEEDED(hr))
@@ -64,11 +86,17 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path)
 
 		if (SUCCEEDED(hr))
 		{
-			LPWSTR locked_by;
+			LPWSTR locked_by = NULL;
 
 			hr = pLock->AcquireWriteLock(SL_USER_INSTALL_LOCK_TIMEOUT, L"Ranz VPN", &locked_by);
 
-			if (SUCCEEDED(hr))
+			// S_FALSE: another client (locked_by) holds the write lock, so nothing may be installed
+			if (locked_by != NULL)
+			{
+				CoTaskMemFree(locked_by);
+			}
+
+			if (hr == S_OK)
 			{
 				hr = pNetCfg->Initialize(NULL);
 
@@ -87,7 +115,7 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path)
 						if (SUCCEEDED(hr))
 						{
 							OBO_TOKEN token;
-							INetCfgComponent *pComponent;
+							INetCfgComponent *pComponent = NULL;
 
 							Zero(&token, sizeof(token));
 
@@ -97,20 +125,32 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path)
 
 							if (SUCCEEDED(hr))
 							{
-								pNetCfg->Apply();
+								if (pComponent != NULL)
+								{
+									pComponent->Release();
+								}
 
-								ret = true;
+								hr = pNetCfg->Apply();
+
+								if (SUCCEEDED(hr))
+								{
+									ret = true;
+								}
+								else
+								{
+									NetCfgDebugHr("INetCfg::Apply", hr);
+								}
 							}
 							else
 							{
-								WHERE;
+								NetCfgDebugHr("INetCfgClassSetup::Install", hr);
 							}
 
 							pSetup->Release();
 						}
 						else
 						{
-							WHERE;
+							NetCfgDebugHr("INetCfg::QueryNetCfgClass", hr);
 						}
 
 						if (ret == false)
@@ -128,29 +168,45 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path)
 					}
 					else
 					{
-						WHERE;
+						NetCfgDebugHr("SetupCopyOEMInfW", HRESULT_FROM_WIN32(GetLastError()));
+					}
+
+					hr = pNetCfg->Uninitialize();
+
+					if (FAILED(hr))
+					{
+						NetCfgDebugHr("INetCfg::Uninitialize", hr);
 					}
 				}
 				else
 				{
-					WHERE;
+					NetCfgDebugHr("INetCfg::Initialize", hr);
 				}
 
 				pLock->ReleaseWriteLock();
 			}
 			else
 			{
-				WHERE;
+				NetCfgDebugHr("INetCfgLock::AcquireWriteLock", hr);
 			}
 
 			pLock->Release();
+		}
+		else
+		{
+			NetCfgDebugHr("QueryInterface(INetCfgLock)", hr);
 		}
 
 		pNetCfg->Release();
 	}
 	else
 	{
-		WHERE;
+		NetCfgDebugHr("CoCreateInstance(CNetCfg)", hr);
+	}
+
+	if (com_initialized)
+	{
+		CoUninitialize();
 	}
 
 LABEL_CLEANUP:
