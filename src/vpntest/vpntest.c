@@ -496,6 +496,7 @@ void tempdir_test(UINT num, char **arg);
 // Named log writer tests of PKG-4, #108 (logtest.c)
 void logwriter_test(UINT num, char **arg);
 void logbound_test(UINT num, char **arg);
+void slog_test(UINT num, char **arg);
 
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
@@ -618,6 +619,7 @@ TEST_LIST test_list[] =
 	{"tempdir", tempdir_test, "Temp directory: 64-bit random name, protected DACL; loading a string table writes no cache file."},
 	{"logwriter", logwriter_test, "Log writer: one file open per LOG for 1000 records, every record in order, one size switch named as before."},
 	{"logbound", logbound_test, "Log writer without a file: bounded record queue and buffer, dropped records released and counted in one line."},
+	{"slog", slog_test, "Syslog: the next resolve is a tick deadline, a second sender does not wait for a slow resolve, datagram content."},
 };
 
 // Test function

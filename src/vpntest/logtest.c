@@ -18,12 +18,20 @@
 // (at most LOG_ENGINE_BUFFER_NO_FILE_MAX bytes, in order), then one dropped-records line whose count
 // makes up the rest, then the records inserted after the unblock.
 //
+// "slog" (FND-18): SetSysLog stored Tick64() + IsZeroIp(&ip) ? NG : OK, the bare interval, so the first message
+// after it resolved the host again; SendSysLog resolved the host while it held the lock of the SLOG, so every other
+// sender waited for the resolver. The next resolve is a tick deadline (SYSLOG_POLL_IP_INTERVAL after a resolved
+// host, SYSLOG_POLL_IP_INTERVAL_NG after an empty one); while a first sender resolves an unknown single-label host
+// name, a second sender returns within LOGTEST_SLOG_SECOND_LIMIT ms; a datagram holds the UTF-8 text, at most
+// 1023 bytes of it.
+//
 // Each test prints "<NAME> TEST OK" only when every check passes, and frees everything it allocates.
 
 #include "Cedar/Cedar.h"
 #include "Cedar/Logging.h"
 #include "Cedar/Session.h"
 
+#include "Mayaqua/DNS.h"
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
@@ -31,6 +39,7 @@
 #include "Mayaqua/Mayaqua.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
+#include "Mayaqua/Network.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/TcpIp.h"
@@ -61,6 +70,14 @@
 #define	LOGTEST_BOUND_DRAIN_WAIT		10000				// Milliseconds waited for the writer to take every queued record
 #define	LOGTEST_BOUND_OPEN_WAIT			(LOG_ENGINE_RETRY_MAX + 10000)	// Milliseconds waited for the log file after the unblock
 #define	LOGTEST_BOUND_FRAME_SIZE		64					// Frame of the packet log records (EtherType 0x88B5, no IP)
+
+#define	LOGTEST_SLOG_TEXT				L"slog datagram caf\x00e9"	// Message of the content check
+#define	LOGTEST_SLOG_TEXT_UTF8			"slog datagram caf\xc3\xa9"	// Its datagram
+#define	LOGTEST_SLOG_LONG				2000				// Characters of the long message
+#define	LOGTEST_SLOG_DATAGRAM_MAX		1023				// Bytes of a message SendSysLog sends at most
+#define	LOGTEST_SLOG_RECV_WAIT			2000				// Milliseconds waited for a datagram
+#define	LOGTEST_SLOG_RESOLVE_WAIT		3000				// Milliseconds waited for the first sender to start resolving
+#define	LOGTEST_SLOG_SECOND_LIMIT		100					// Milliseconds a second sender may take meanwhile
 
 // Run state of a test
 typedef struct LOGTEST_CTX
@@ -681,4 +698,178 @@ void logbound_test(UINT num, char **arg)
 	LogTestDeleteDir(dir);
 
 	LogTestEnd(&ctx, "LOGBOUND");
+}
+
+////////////////////////////
+// slog (FND-18)
+
+// Next datagram on a loopback UDP socket of the test within timeout ms: its size, 0 when none arrives
+static UINT LogTestRecvDatagram(SOCK *s, UCHAR *buf, UINT size, UINT timeout)
+{
+	UINT64 end = Tick64() + (UINT64)timeout;
+
+	while (true)
+	{
+		SOCKSET set;
+		IP src_ip;
+		UINT src_port;
+		UINT ret;
+		UINT64 now = Tick64();
+
+		// Select() also puts the socket in non-blocking mode for RecvFrom()
+		InitSockSet(&set);
+		AddSockSet(&set, s);
+		Select(&set, (UINT)(now < end ? MIN(end - now, 100) : 0), NULL, NULL);
+
+		ret = RecvFrom(s, &src_ip, &src_port, buf, size);
+		if (ret != 0 && ret != SOCK_LATER)
+		{
+			return ret;
+		}
+
+		if (Tick64() >= end)
+		{
+			return 0;
+		}
+	}
+}
+
+// Tick of the next resolve of the host of an SLOG
+static UINT64 SlogNextPoll(SLOG *g)
+{
+	UINT64 ret;
+
+	Lock(g->lock);
+	{
+		ret = g->NextPollIp;
+	}
+	Unlock(g->lock);
+
+	return ret;
+}
+
+// The first sender of the slow resolve case: its message is due to resolve the host again
+static void SlogFirstSenderThread(THREAD *thread, void *param)
+{
+	SendSysLog((SLOG *)param, L"slog first sender");
+}
+
+// "slog": tick deadline of the next resolve, a second sender while the first one resolves, unchanged datagrams
+void slog_test(UINT num, char **arg)
+{
+	LOGTEST_CTX ctx;
+	IP localhost;
+	SOCK *s;
+	SLOG *g;
+	THREAD *t;
+	UINT64 before, after, next;
+	UINT64 elapsed = 0;
+	UCHAR buf[2048];
+	wchar_t *long_text;
+	char host[64];
+	UINT base;
+	UINT size;
+	UINT i;
+	bool in_flight;
+	bool still_in_flight = false;
+	bool all_a;
+
+	Zero(&ctx, sizeof(ctx));
+
+	Print("Syslog test: next resolve deadline, a second sender during a slow resolve, datagram content\n");
+
+	SetIP(&localhost, 127, 0, 0, 1);
+	s = NewUDPEx2(0, false, &localhost);
+	if (LogTestCheck(&ctx, s != NULL, "loopback UDP socket of the test", "NewUDPEx2 failed") == false)
+	{
+		LogTestEnd(&ctx, "SLOG");
+		return;
+	}
+
+	// A host that resolves: the next resolve is SYSLOG_POLL_IP_INTERVAL from now
+	before = Tick64();
+	g = NewSysLog("127.0.0.1", s->LocalPort, NULL);
+	after = Tick64();
+	next = SlogNextPoll(g);
+	LogTestCheck(&ctx, next >= before + SYSLOG_POLL_IP_INTERVAL && next <= after + SYSLOG_POLL_IP_INTERVAL,
+		"SetSysLog with a resolved host: the next resolve is SYSLOG_POLL_IP_INTERVAL ms from now (it was the bare interval)",
+		"NextPollIp %I64u, set between ticks %I64u and %I64u", next, before, after);
+
+	// No host: the next resolve is SYSLOG_POLL_IP_INTERVAL_NG from now
+	before = Tick64();
+	SetSysLog(g, "", s->LocalPort);
+	after = Tick64();
+	next = SlogNextPoll(g);
+	LogTestCheck(&ctx, next >= before + SYSLOG_POLL_IP_INTERVAL_NG && next <= after + SYSLOG_POLL_IP_INTERVAL_NG,
+		"SetSysLog without an address: the next resolve is SYSLOG_POLL_IP_INTERVAL_NG ms from now",
+		"NextPollIp %I64u, set between ticks %I64u and %I64u", next, before, after);
+
+	SetSysLog(g, "127.0.0.1", s->LocalPort);
+
+	// A datagram holds the UTF-8 text of the message, at most LOGTEST_SLOG_DATAGRAM_MAX bytes of it
+	SendSysLog(g, LOGTEST_SLOG_TEXT);
+	size = LogTestRecvDatagram(s, buf, sizeof(buf), LOGTEST_SLOG_RECV_WAIT);
+	LogTestCheck(&ctx, size == StrLen(LOGTEST_SLOG_TEXT_UTF8) && Cmp(buf, LOGTEST_SLOG_TEXT_UTF8, size) == 0,
+		"a syslog datagram holds the UTF-8 text of its message", "%u bytes received", size);
+
+	long_text = ZeroMalloc(sizeof(wchar_t) * (LOGTEST_SLOG_LONG + 1));
+	for (i = 0;i < LOGTEST_SLOG_LONG;i++)
+	{
+		long_text[i] = L'a';
+	}
+
+	SendSysLog(g, long_text);
+	Free(long_text);
+
+	size = LogTestRecvDatagram(s, buf, sizeof(buf), LOGTEST_SLOG_RECV_WAIT);
+	all_a = true;
+	for (i = 0;i < size;i++)
+	{
+		if (buf[i] != 'a')
+		{
+			all_a = false;
+		}
+	}
+	LogTestCheck(&ctx, size == LOGTEST_SLOG_DATAGRAM_MAX && all_a,
+		"a longer message is cut to its first 1023 bytes", "%u bytes received", size);
+
+	// A host name that is not in DNS, single-label so that the resolver also asks LLMNR and NetBIOS: the
+	// first sender resolves it, a second sender must not wait for that
+	Format(host, sizeof(host), "ranzslog%08x%08x", Rand32(), Rand32());
+	Lock(g->lock);
+	{
+		StrCpy(g->HostName, sizeof(g->HostName), host);
+		g->NextPollIp = 0;
+	}
+	Unlock(g->lock);
+
+	base = DnsThreadNum();
+	t = NewThread(SlogFirstSenderThread, g);
+
+	before = Tick64();
+	while ((in_flight = (DnsThreadNum() > base)) == false && Tick64() < before + LOGTEST_SLOG_RESOLVE_WAIT)
+	{
+		SleepThread(0);
+	}
+
+	if (in_flight)
+	{
+		before = TickHighres64();
+		SendSysLog(g, L"slog second sender");
+		elapsed = TickHighres64() - before;
+		still_in_flight = (DnsThreadNum() > base);
+	}
+
+	LogTestCheck(&ctx, in_flight && still_in_flight && elapsed < LOGTEST_SLOG_SECOND_LIMIT,
+		"a second sender returns at once while the first one resolves the host (it waited for the resolver)",
+		"first sender resolving: %s, second sender took %I64u ms, the resolve %s when it returned",
+		in_flight ? "yes" : "never seen", elapsed, still_in_flight ? "was still running" : "had ended");
+
+	WaitThread(t, INFINITE);
+	ReleaseThread(t);
+
+	FreeSysLog(g);
+	ReleaseSock(s);
+
+	LogTestEnd(&ctx, "SLOG");
 }
