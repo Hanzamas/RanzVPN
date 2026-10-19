@@ -628,7 +628,7 @@ bool Win32GetVersionExInternalForWindows81orLater(void *info)
 	str = MsRegReadStrEx2(REG_LOCAL_MACHINE,
 		"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
 		"CurrentVersion",
-		false, true);
+		false);
 
 	if (IsEmptyStr(str) == false)
 	{
@@ -647,11 +647,11 @@ bool Win32GetVersionExInternalForWindows81orLater(void *info)
 
 	major2 = MsRegReadIntEx2(REG_LOCAL_MACHINE,
 		"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
-		"CurrentMajorVersionNumber", false, true);
+		"CurrentMajorVersionNumber", false);
 
 	minor2 = MsRegReadIntEx2(REG_LOCAL_MACHINE,
 		"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
-		"CurrentMinorVersionNumber", false, true);
+		"CurrentMinorVersionNumber", false);
 
 	if ((major1 * 10000 + minor1) > (major2 * 10000 + minor2))
 	{

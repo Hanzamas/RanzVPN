@@ -208,37 +208,34 @@ typedef struct ENUM_CHILD_WINDOW_PARAM
 void MsInit();
 void MsFree();
 
-bool MsRegIsKeyEx2(UINT root, char *name, bool force32bit, bool force64bit);
+bool MsRegIsKeyEx2(UINT root, char *name, bool force32bit);
 
 bool MsRegIsValue(UINT root, char *keyname, char *valuename);
-bool MsRegIsValueEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
-
-bool MsRegReadValueEx2(UINT root, char *keyname, char *valuename, void **data, DWORD *type, DWORD *size, bool force32bit, bool force64bit);
-bool MsRegReadValueEx2W(UINT root, char *keyname, char *valuename, void **data, DWORD *type, DWORD *size, bool force32bit, bool force64bit);
+bool MsRegIsValueEx2(UINT root, char *keyname, char *valuename, bool force32bit);
 
 char *MsRegReadStr(UINT root, char *keyname, char *valuename);
-char *MsRegReadStrEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
-wchar_t *MsRegReadStrEx2W(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
+char *MsRegReadStrEx2(UINT root, char *keyname, char *valuename, bool force32bit);
+wchar_t *MsRegReadStrEx2W(UINT root, char *keyname, char *valuename, bool force32bit);
 
 UINT MsRegReadInt(UINT root, char *keyname, char *valuename);
-UINT MsRegReadIntEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
+UINT MsRegReadIntEx2(UINT root, char *keyname, char *valuename, bool force32bit);
 
-bool MsRegNewKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit);
+bool MsRegNewKeyEx2(UINT root, char *keyname, bool force32bit);
 
-bool MsRegWriteValueEx2(UINT root, char *keyname, char *valuename, UINT type, void *data, UINT size, bool force32bit, bool force64bit);
+bool MsRegWriteValueEx2(UINT root, char *keyname, char *valuename, UINT type, void *data, UINT size, bool force32bit);
 
 bool MsRegWriteStr(UINT root, char *keyname, char *valuename, char *str);
-bool MsRegWriteStrEx2(UINT root, char *keyname, char *valuename, char *str, bool force32bit, bool force64bit);
+bool MsRegWriteStrEx2(UINT root, char *keyname, char *valuename, char *str, bool force32bit);
 
 bool MsRegWriteInt(UINT root, char *keyname, char *valuename, UINT value);
-bool MsRegWriteIntEx2(UINT root, char *keyname, char *valuename, UINT value, bool force32bit, bool force64bit);
+bool MsRegWriteIntEx2(UINT root, char *keyname, char *valuename, UINT value, bool force32bit);
 
 TOKEN_LIST *MsRegEnumKey(UINT root, char *keyname);
-TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit);
+TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit);
 
-bool MsRegDeleteKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit);
+bool MsRegDeleteKeyEx2(UINT root, char *keyname, bool force32bit);
 bool MsRegDeleteValue(UINT root, char *keyname, char *valuename);
-bool MsRegDeleteValueEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
+bool MsRegDeleteValueEx2(UINT root, char *keyname, char *valuename, bool force32bit);
 
 bool MsRegLoadHive(UINT root, wchar_t *keyname, wchar_t *filename);
 
