@@ -38,6 +38,8 @@
 // - Phase "setlink" (FND-13 #107) runs after "iptablelock": SetLink on an offline cascade HARNESS_SETLINK of hub
 //   HARNESS_HUB_A refuses an unsupported authentication type and stores the cascade policy that NewLink stores. The
 //   phase deletes the cascade again.
+// - Phase "adminreconnect" (FND-14 #107) runs after "setlink": a second admin RPC loses its connection
+//   (DisconnectConnection through the first one), reconnects inside the next call and keeps no socket timeout.
 
 #include "harness.h"
 #include "harness_int.h"
@@ -468,6 +470,8 @@ static UINT HarnessSetLinkGet(HARNESS *h, RPC_CREATE_LINK *t);
 static void HarnessSetLinkAuthType(HARNESS *h);
 static void HarnessSetLinkPolicy(HARNESS *h);
 static void HarnessSetLink(HARNESS *h);
+static bool HarnessFindAdminConnection(HARNESS *h, UINT port, char *name, UINT name_size);
+static void HarnessAdminReconnect(HARNESS *h);
 static void HarnessDeleteObjects(HARNESS *h, bool check);
 static void HarnessDeleteConfigFiles();
 static void HarnessTeardown(HARNESS *h, bool check);
@@ -3403,6 +3407,95 @@ static void HarnessSetLink(HARNESS *h)
 }
 
 ////////////////////////////
+// Admin RPC reconnect keeps the infinite socket timeout (FND-14 #107)
+
+// Name of the server's admin RPC connection whose client port is port (EnumConnection); false when none is listed
+static bool HarnessFindAdminConnection(HARNESS *h, UINT port, char *name, UINT name_size)
+{
+	RPC_ENUM_CONNECTION t;
+	UINT i;
+	bool ret = false;
+
+	Zero(&t, sizeof(t));
+	if (ScEnumConnection(h->Rpc, &t) != ERR_NO_ERROR)
+	{
+		return false;
+	}
+
+	for (i = 0;i < t.NumConnection;i++)
+	{
+		RPC_ENUM_CONNECTION_ITEM *e = &t.Connections[i];
+
+		if (e->Type == CONNECTION_TYPE_ADMIN_RPC && e->Port == port)
+		{
+			StrCpy(name, name_size, e->Name);
+			ret = true;
+			break;
+		}
+	}
+
+	FreeRpcEnumConnection(&t);
+
+	return ret;
+}
+
+// AdminReconnectKeepsInfiniteTimeout: a second admin RPC (AdminConnectEx) loses its connection on the server side;
+// the next call fails on it, RpcCall reconnects once through AdminReconnect and repeats the call, and the new
+// socket has no timeout as the first one. With the connect timeout left on it, every call over 15 s on the new
+// connection (SetConfig, a large EnumSession or EnumLogFile) timed out again
+static void HarnessAdminReconnect(HARNESS *h)
+{
+	RPC *rpc;
+	RPC_DISCONNECT_CONNECTION d;
+	RPC_SERVER_INFO info;
+	UINT old_port;
+	UINT err = ERR_NO_ERROR;
+	char name[MAX_SIZE];
+	char tmp[MAX_SIZE];
+
+	Print("[adminreconnect: the admin RPC reconnects with no socket timeout]\n");
+
+	rpc = HarnessAdminConnect(h->ClientCedar, HARNESS_START_TIMEOUT, &err);
+	if (HarnessCheckErr(h, (rpc != NULL ? ERR_NO_ERROR : err),
+		"AdminReconnectKeepsInfiniteTimeout: second admin RPC connected (AdminConnectEx)") == false)
+	{
+		return;
+	}
+
+	HarnessCheck(h, GetTimeout(rpc->Sock) == TIMEOUT_INFINITE,
+		"AdminReconnectKeepsInfiniteTimeout: the first connection has no socket timeout");
+
+	old_port = rpc->Sock->LocalPort;
+
+	if (HarnessCheck(h, HarnessFindAdminConnection(h, old_port, name, sizeof(name)),
+		"AdminReconnectKeepsInfiniteTimeout: EnumConnection lists the admin connection of the second admin RPC"))
+	{
+		Zero(&d, sizeof(d));
+		StrCpy(d.Name, sizeof(d.Name), name);
+		HarnessCheckErr(h, ScDisconnectConnection(h->Rpc, &d),
+			"AdminReconnectKeepsInfiniteTimeout: DisconnectConnection drops the server side of the second admin RPC");
+
+		Zero(&info, sizeof(info));
+		err = ScGetServerInfo(rpc, &info);
+		if (err == ERR_NO_ERROR)
+		{
+			FreeRpcServerInfo(&info);
+		}
+		HarnessCheckErr(h, err, "AdminReconnectKeepsInfiniteTimeout: GetServerInfo on the second admin RPC succeeds "
+			"through the reconnect");
+
+		HarnessCheck(h, rpc->Sock != NULL && rpc->Sock->LocalPort != old_port,
+			"AdminReconnectKeepsInfiniteTimeout: the second admin RPC uses a new connection");
+
+		Format(tmp, sizeof(tmp), "AdminReconnectKeepsInfiniteTimeout: the new connection has no socket timeout "
+			"(timeout %u ms)", GetTimeout(rpc->Sock));
+		HarnessCheck(h, rpc->Sock != NULL && GetTimeout(rpc->Sock) == TIMEOUT_INFINITE, tmp);
+	}
+
+	AdminDisconnect(rpc);
+}
+
+////////////////////////////
 // Teardown
 
 // Delete the cascade, the users and the hubs through the admin RPC, then verify the hub list
@@ -5229,6 +5322,8 @@ void harness_test(UINT num, char **arg)
 		HarnessIpTableLock(h);
 		HarnessSetPhase("setlink", NULL);
 		HarnessSetLink(h);
+		HarnessSetPhase("adminreconnect", NULL);
+		HarnessAdminReconnect(h);
 		HarnessSetPhase("config", NULL);
 		HarnessConfigApiRoundTrip(h);
 	}
