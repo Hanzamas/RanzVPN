@@ -178,7 +178,7 @@ struct CONNECTION
 };
 
 
-CONNECTION *NewClientConnectionEx(SESSION *s, char *client_str, UINT client_ver, UINT client_build);
+CONNECTION *NewClientConnectionEx(SESSION *s, char *client_str);
 CONNECTION *NewServerConnection(CEDAR *cedar, SOCK *s, THREAD *t);
 void ReleaseConnection(CONNECTION *c);
 int CompareConnection(void *p1, void *p2);
@@ -193,6 +193,7 @@ TCPSOCK *NewTcpSock(SOCK *s);
 void FreeTcpSock(TCPSOCK *ts);
 BLOCK *NewBlock(void *data, UINT size, int compress);
 void FreeBlock(BLOCK *b);
+void FreeBlockQueue(QUEUE *q);
 void StopAllAdditionalConnectThread(CONNECTION *c);
 UINT GenNextKeepAliveSpan(CONNECTION *c);
 void DisconnectUDPSockets(CONNECTION *c);

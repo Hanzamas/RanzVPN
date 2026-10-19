@@ -249,17 +249,7 @@ static void LinkPaFree(SESSION *s)
 	StopSession(k->ServerSession);
 	ReleaseSession(k->ServerSession);
 
-	LockQueue(k->SendPacketQueue);
-	{
-		BLOCK *block;
-		while (block = GetNext(k->SendPacketQueue))
-		{
-			FreeBlock(block);
-		}
-	}
-	UnlockQueue(k->SendPacketQueue);
-
-	ReleaseQueue(k->SendPacketQueue);
+	FreeBlockQueue(k->SendPacketQueue);
 
 	k->CurrentSendPacketQueueSize = 0;
 }
