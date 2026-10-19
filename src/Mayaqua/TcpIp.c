@@ -228,6 +228,8 @@ bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss)
 	UINT tcp_header_size;
 	UCHAR *options;
 	UINT options_size;
+	UCHAR *mss_option = NULL;
+	UINT i;
 	IPV4_HEADER *ip = NULL;
 	IPV6_HEADER *ip6 = NULL;
 	if (src == NULL || src_size == 0 || mss == 0)
@@ -365,6 +367,47 @@ bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss)
 	options = ((UCHAR *)tcp) + sizeof(TCP_HEADER);
 	options_size = tcp_header_size - sizeof(TCP_HEADER);
 
+	// Find the MSS option (kind 2, length 4) wherever it is in the option list (RFC 9293 3.1):
+	// End of Option List (kind 0) ends the list, No-Operation (kind 1) is one byte, and every other
+	// option has a length byte of at least 2 that keeps it inside the options. A list that does not
+	// keep to that is left alone.
+	i = 0;
+	while (i < options_size)
+	{
+		UCHAR kind = options[i];
+		UINT len;
+
+		if (kind == 0x00)
+		{
+			break;
+		}
+
+		if (kind == 0x01)
+		{
+			i++;
+			continue;
+		}
+
+		if ((options_size - i) < 2)
+		{
+			break;
+		}
+
+		len = options[i + 1];
+		if (len < 2 || len > (options_size - i))
+		{
+			break;
+		}
+
+		if (kind == 0x02 && len == 4)
+		{
+			mss_option = options + i;
+			break;
+		}
+
+		i += len;
+	}
+
 	if (ip6 != NULL)
 	{
 		// Reduce MSS by 20 since an IP header for IPv6 is 20 bytes larger than IPv4
@@ -377,9 +420,9 @@ bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss)
 	// MSS should be at least 64
 	mss = MAX(mss, 64);
 
-	if (options_size >= 4 && options[0] == 0x02 && options[1] == 0x04)
+	if (mss_option != NULL)
 	{
-		USHORT current_mss = READ_USHORT(((UCHAR *)options) + 2);
+		USHORT current_mss = READ_USHORT(mss_option + 2);
 
 		if (current_mss <= mss)
 		{
@@ -388,7 +431,7 @@ bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss)
 		}
 		else
 		{
-			WRITE_USHORT(((UCHAR *)options) + 2, mss);
+			WRITE_USHORT(mss_option + 2, mss);
 
 			tcp->Checksum = 0;
 
