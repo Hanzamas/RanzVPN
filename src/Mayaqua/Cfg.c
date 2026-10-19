@@ -305,7 +305,7 @@ bool CfgSaveExW3(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size, bool 
 		}
 	}
 
-	if (ret || OS_IS_UNIX(GetOsInfo()->OsType))
+	if (ret)
 	{
 		UniFormat(tmp, sizeof(tmp), L"%s.log", name);
 		FileCopyExWithEofW(name, tmp, true);

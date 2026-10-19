@@ -192,29 +192,6 @@ UINT GetNumberOfCpu()
 	return ret;
 }
 
-void GetHomeDirW(wchar_t *path, UINT size)
-{
-	if (path == NULL)
-	{
-		return;
-	}
-
-	if (GetEnvW(L"HOME", path, size) == false)
-	{
-		wchar_t drive[MAX_SIZE];
-		wchar_t hpath[MAX_SIZE];
-		if (GetEnvW(L"HOMEDRIVE", drive, sizeof(drive)) &&
-			GetEnvW(L"HOMEPATH", hpath, sizeof(hpath)))
-		{
-			UniFormat(path, size, L"%s%s", drive, hpath);
-		}
-		else
-		{
-			Win32GetCurrentDirW(path, size);
-		}
-	}
-}
-
 bool GetEnv(char *name, char *data, UINT size)
 {
 	char *ret;
@@ -232,26 +209,6 @@ bool GetEnv(char *name, char *data, UINT size)
 	}
 
 	StrCpy(data, size, ret);
-
-	return true;
-}
-bool GetEnvW(wchar_t *name, wchar_t *data, UINT size)
-{
-	wchar_t *ret;
-	if (name == NULL || data == NULL)
-	{
-		return false;
-	}
-
-	UniStrCpy(data, size, L"");
-
-	ret = _wgetenv(name);
-	if (ret == NULL)
-	{
-		return false;
-	}
-
-	UniStrCpy(data, size, ret);
 
 	return true;
 }

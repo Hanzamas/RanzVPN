@@ -3213,22 +3213,9 @@ bool MsCheckLogon(wchar_t *username, char *password)
 
 	StrToUni(password_unicode, sizeof(password_unicode), password);
 
-	if (GET_KETA(GetOsInfo()->OsType, 100) >= 2)
+	if (LogonUserW(username, NULL, password_unicode, LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT, &h) == false)
 	{
-		if (LogonUserW(username, NULL, password_unicode, LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT, &h) == false)
-		{
-			return false;
-		}
-	}
-	else
-	{
-		char username_ansi[MAX_SIZE];
-		UniToStr(username_ansi, sizeof(username_ansi), username);
-
-		if (LogonUserA(username_ansi, NULL, password, LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT, &h) == false)
-		{
-			return false;
-		}
+		return false;
 	}
 
 	CloseHandle(h);

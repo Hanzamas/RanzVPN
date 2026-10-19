@@ -14,8 +14,8 @@
 
 #include <stdlib.h>
 
-static char exe_file_name[MAX_SIZE] = "/tmp/a.out";
-static wchar_t exe_file_name_w[MAX_SIZE] = L"/tmp/a.out";
+static char exe_file_name[MAX_SIZE];
+static wchar_t exe_file_name_w[MAX_SIZE];
 
 // File I/O data of a disk file (IO pData), from the raw OS allocator
 typedef struct WIN32IO
@@ -710,15 +710,6 @@ void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 		}
 
 		UniStrCpy(tmp, sizeof(tmp), cd);
-	}
-
-	if (UniStartWith(tmp, L"~/") || UniStartWith(tmp, L"~\\"))
-	{
-		wchar_t tmp2[MAX_SIZE];
-		GetHomeDirW(tmp2, sizeof(tmp2));
-		UniStrCat(tmp2, sizeof(tmp2), L"/");
-		UniStrCat(tmp2, sizeof(tmp2), tmp + 2);
-		UniStrCpy(tmp, sizeof(tmp), tmp2);
 	}
 
 	if (UniStartWith(tmp, L"//") || UniStartWith(tmp, L"\\\\"))

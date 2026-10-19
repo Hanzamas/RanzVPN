@@ -1182,12 +1182,6 @@ void Win32Init()
 	use_heap_api = false;
 #endif
 
-	if (MayaquaIsDotNetMode())
-	{
-		// The heap API can crash when called in .NET mode
-		use_heap_api = false;
-	}
-
 	if (use_heap_api)
 	{
 		heap_handle = HeapCreate(0, 0, 0);

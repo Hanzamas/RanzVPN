@@ -25,12 +25,6 @@ int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 #define	IsBigEndian()		(g_little_endian ? false : true)
 #define	IsLittleEndian()	(g_little_endian)
 
-#define	GCC_PACKED
-
-#define	WHERE			if (IsDebug()){printf("%s: %u\n", __FILE__, __LINE__); SleepThread(10);}
-
-#define	PROBE_DATA2(str, data, size)
-
 extern bool g_memcheck;
 extern bool g_debug;
 extern char *cmdline;
@@ -165,9 +159,6 @@ static inline void KsAdd(UINT id, LONG64 n)
 
 void InitMayaqua(bool memcheck, bool debug, int argc, char **argv);
 void FreeMayaqua();
-bool MayaquaIsDotNetMode();
-void MayaquaMinimalMode();
-bool MayaquaIsMinimalMode();
 void InitKernelStatus();
 void FreeKernelStatus();
 void PrintDebugInformation();
@@ -183,10 +174,13 @@ void InitOsInfo();
 void FreeOsInfo();
 void Alert(char *msg, char *caption);
 OS_INFO *GetOsInfo();
-void CheckUnixTempDir();
+void EnableProbe(bool enable);
+
+// Test hooks (harness and fuzzer only)
 void SetHamMode();
 bool IsHamMode();
-void EnableProbe(bool enable);
+void MayaquaMinimalMode();
+bool MayaquaIsMinimalMode();
 
 
 #endif

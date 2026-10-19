@@ -57,7 +57,7 @@ struct IP
 struct IPV6_ADDR
 {
 	UCHAR Value[16];
-} GCC_PACKED;
+};
 
 #define IPV6_ADDR_UNICAST						1
 #define IPV6_ADDR_LOCAL_UNICAST					2

@@ -35,9 +35,6 @@ static wchar_t *exename_w = NULL;
 static TOKEN_LIST *cmdline_token = NULL;
 static UNI_TOKEN_LIST *cmdline_uni_token = NULL;
 static OS_INFO *os_info = NULL;
-static bool dot_net_mode = false;
-static bool minimal_mode = false;
-static bool is_ham_mode = false;
 static UINT init_mayaqua_counter = 0;
 static BUF *probe_buf = NULL;
 static LOCK *probe_lock = NULL;
@@ -96,6 +93,12 @@ void EnableProbe(bool enable)
 	probe_enabled = enable;
 }
 
+// Test hooks: set only by the test harness (ham mode) and the fuzzer (minimal mode),
+// never by the shipped binaries.
+static bool is_ham_mode = false;
+static bool minimal_mode = false;
+
+// vpntest: the server starts without registering itself in the Windows firewall
 void SetHamMode()
 {
 	is_ham_mode = true;
@@ -106,9 +109,15 @@ bool IsHamMode()
 	return is_ham_mode;
 }
 
-bool MayaquaIsDotNetMode()
+// fuzzer: start without the hamcore archive and the string table
+void MayaquaMinimalMode()
 {
-	return dot_net_mode;
+	minimal_mode = true;
+}
+
+bool MayaquaIsMinimalMode()
+{
+	return minimal_mode;
 }
 
 static void CheckEndian()
@@ -128,15 +137,6 @@ static void CheckEndian()
 	}
 }
 
-void MayaquaMinimalMode()
-{
-	minimal_mode = true;
-}
-bool MayaquaIsMinimalMode()
-{
-	return minimal_mode;
-}
-
 void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 {
 	wchar_t tmp[MAX_PATH];
@@ -152,11 +152,7 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 	g_memcheck = memcheck;
 	g_debug = debug;
 	cmdline = NULL;
-	if (dot_net_mode == false)
-	{
-		// This fails in .NET mode
-		setbuf(stdout, NULL);
-	}
+	setbuf(stdout, NULL);
 
 	CheckEndian();
 
@@ -235,8 +231,6 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 		_exit(0);
 	}
 
-	CheckUnixTempDir();
-
 	InitProbe();
 
 	GetCurrentMachineIpProcessHash(hash);
@@ -297,37 +291,6 @@ void FreeMayaqua()
 	FreeTrace();
 
 	OSFree();
-}
-
-void CheckUnixTempDir()
-{
-	if (OS_IS_UNIX(GetOsInfo()->OsType))
-	{
-		char tmp[128], tmp2[64];
-		UINT64 now = SystemTime64();
-		IO *o;
-
-		MakeDir("/tmp");
-
-		Format(tmp2, sizeof(tmp2), "%I64u", now);
-
-		Format(tmp, sizeof(tmp), "/tmp/.%s", tmp2);
-
-		o = FileCreate(tmp);
-		if (o == NULL)
-		{
-			o = FileOpen(tmp, false);
-			if (o == NULL)
-			{
-				Print("Unable to use /tmp.\n\n");
-				exit(0);
-			}
-		}
-
-		FileClose(o);
-
-		FileDelete(tmp);
-	}
 }
 
 void Alert(char *msg, char *caption)

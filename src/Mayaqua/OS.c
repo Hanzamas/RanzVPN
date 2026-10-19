@@ -19,18 +19,6 @@ char *OsTypeToStr(UINT type)
 		return "Newer than Windows 10\0\n";
 	case OSTYPE_WINDOWS_SERVER_11:
 		return "Newer than Windows Server 2016\0\n";
-	case OSTYPE_UNIX_UNKNOWN:
-		return "UNIX System\0\n";
-	case OSTYPE_LINUX:
-		return "Linux\0\n";
-	case OSTYPE_SOLARIS:
-		return "Sun Solaris\0\n";
-	case OSTYPE_CYGWIN:
-		return "Gnu Cygwin\0\n";
-	case OSTYPE_BSD:
-		return "BSD System\0\n";
-	case OSTYPE_MACOS_X:
-		return "Mac OS X\0\n";
 	}
 
 	return "Unknown OS";
