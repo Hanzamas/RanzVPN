@@ -908,20 +908,19 @@ static void AddKeyUsageX509(EXTENDED_KEY_USAGE *ex, int nid)
 		sk_ASN1_OBJECT_push(ex, obj);
 	}
 }
+// Extended key usage of a generated certificate: TLS server and TLS client only
 static X509_EXTENSION *NewExtendedKeyUsageForX509()
 {
 	EXTENDED_KEY_USAGE *ex = sk_ASN1_OBJECT_new_null();
 	X509_EXTENSION *ret;
 
+	if (ex == NULL)
+	{
+		return NULL;
+	}
+
 	AddKeyUsageX509(ex, NID_server_auth);
 	AddKeyUsageX509(ex, NID_client_auth);
-	AddKeyUsageX509(ex, NID_code_sign);
-	AddKeyUsageX509(ex, NID_email_protect);
-	AddKeyUsageX509(ex, NID_ipsecEndSystem);
-	AddKeyUsageX509(ex, NID_ipsecTunnel);
-	AddKeyUsageX509(ex, NID_ipsecUser);
-	AddKeyUsageX509(ex, NID_time_stamp);
-	AddKeyUsageX509(ex, NID_OCSP_sign);
 
 	ret = X509V3_EXT_i2d(NID_ext_key_usage, 0, ex);
 
@@ -938,7 +937,9 @@ static void BitStringSetBit(ASN1_BIT_STRING *str, int bit)
 
 	ASN1_BIT_STRING_set_bit(str, bit, 1);
 }
-static X509_EXTENSION *NewBasicKeyUsageForX509()
+// Key usage of a generated certificate. Only a CA certificate may sign certificates and CRLs
+// (RFC 5280 4.2.1.3: keyCertSign needs CA:TRUE).
+static X509_EXTENSION *NewBasicKeyUsageForX509(bool ca)
 {
 	X509_EXTENSION *ret = NULL;
 	ASN1_BIT_STRING *str;
@@ -950,13 +951,141 @@ static X509_EXTENSION *NewBasicKeyUsageForX509()
 		BitStringSetBit(str, 1);	// KU_NON_REPUDIATION
 		BitStringSetBit(str, 2);	// KU_KEY_ENCIPHERMENT
 		BitStringSetBit(str, 3);	// KU_DATA_ENCIPHERMENT
-		BitStringSetBit(str, 5);	// KU_KEY_CERT_SIGN
-		BitStringSetBit(str, 6);	// KU_CRL_SIGN
+		if (ca)
+		{
+			BitStringSetBit(str, 5);	// KU_KEY_CERT_SIGN
+			BitStringSetBit(str, 6);	// KU_CRL_SIGN
+		}
 
 		ret = X509V3_EXT_i2d(NID_key_usage, 0, str);
 
 		ASN1_BIT_STRING_free(str);
 	}
+
+	return ret;
+}
+
+// Adds an extension made for a new certificate and frees it. False when it is NULL or cannot be added.
+static bool AddNewExtToX509(X509 *x509, X509_EXTENSION *ex)
+{
+	bool ret;
+
+	if (ex == NULL)
+	{
+		return false;
+	}
+
+	ret = (X509_add_ext(x509, ex, -1) == 1);
+	X509_EXTENSION_free(ex);
+
+	return ret;
+}
+
+// Serial number of a new certificate: the given one, or a random positive 127-bit number. RFC 5280
+// 4.1.2.2 asks for a positive serial that is unique per issuer, so a fixed 0 is not used.
+static bool SetSerialForNewX509(X509 *x509, X_SERIAL *serial)
+{
+	ASN1_INTEGER *s = X509_get_serialNumber(x509);
+	BIGNUM *bn;
+	bool ret;
+
+	if (s == NULL)
+	{
+		return false;
+	}
+
+	if (serial != NULL)
+	{
+		bn = BN_bin2bn(serial->data, serial->size, NULL);
+	}
+	else
+	{
+		UCHAR random_serial[16];
+
+		// Top bit clear (no sign octet in DER), next bit set (never zero, always 16 octets)
+		Rand(random_serial, sizeof(random_serial));
+		random_serial[0] = (random_serial[0] & 0x7f) | 0x40;
+
+		bn = BN_bin2bn(random_serial, sizeof(random_serial), NULL);
+	}
+
+	if (bn == NULL)
+	{
+		return false;
+	}
+
+	ret = (BN_to_ASN1_INTEGER(bn, s) != NULL);
+	BN_free(bn);
+
+	return ret;
+}
+
+// Subject alternative name of a new certificate: the common name as one DNS name. The name is built as a
+// single GENERAL_NAME, so a ',' or "DNS:" in the common name cannot add further entries. A common name
+// that is not printable ASCII without spaces gets no SAN; that is not an error.
+static bool AddDnsAltNameToX509(X509 *x509, wchar_t *common_name)
+{
+	char dns[MAX_PATH];
+	UINT i, len;
+	GENERAL_NAMES *names;
+	GENERAL_NAME *gn;
+	ASN1_IA5STRING *ia5;
+	bool ret = false;
+
+	if (UniIsEmptyStr(common_name))
+	{
+		return true;
+	}
+
+	UniToStr(dns, sizeof(dns), common_name);
+	len = StrLen(dns);
+	if (len == 0 || len != UniStrLen(common_name))
+	{
+		return true;
+	}
+	for (i = 0;i < len;i++)
+	{
+		if (dns[i] <= ' ' || dns[i] > '~')
+		{
+			return true;
+		}
+	}
+
+	names = GENERAL_NAMES_new();
+	gn = GENERAL_NAME_new();
+	ia5 = ASN1_IA5STRING_new();
+	if (names != NULL && gn != NULL && ia5 != NULL && ASN1_STRING_set(ia5, dns, (int)len) == 1)
+	{
+		GENERAL_NAME_set0_value(gn, GEN_DNS, ia5);
+		ia5 = NULL;
+
+		if (sk_GENERAL_NAME_push(names, gn) > 0)
+		{
+			gn = NULL;
+			ret = (X509_add1_ext_i2d(x509, NID_subject_alt_name, names, 0, X509V3_ADD_DEFAULT) == 1);
+		}
+	}
+
+	ASN1_IA5STRING_free(ia5);
+	GENERAL_NAME_free(gn);
+	GENERAL_NAMES_free(names);
+
+	return ret;
+}
+
+// Sets the public key and signs a new certificate with SHA-256. False when either step fails.
+static bool SignNewX509(X509 *x509, K *pub, K *priv)
+{
+	bool ret = false;
+
+	Lock(openssl_lock);
+	{
+		if (X509_set_pubkey(x509, pub->pkey) == 1 && X509_sign(x509, priv->pkey, EVP_sha256()) > 0)
+		{
+			ret = true;
+		}
+	}
+	Unlock(openssl_lock);
 
 	return ret;
 }
@@ -967,11 +1096,7 @@ X509 *NewX509(K *pub, K *priv, X *ca, NAME *name, UINT days, X_SERIAL *serial)
 	UINT64 notBefore, notAfter;
 	const ASN1_TIME *t1, *t2;
 	X509_NAME *subject_name, *issuer_name;
-	X509_EXTENSION *ex = NULL;
-	X509_EXTENSION *eku = NULL;
-	X509_EXTENSION *busage = NULL;
-	ASN1_INTEGER *s;
-	if (pub == NULL || name == NULL || ca == NULL)
+	if (pub == NULL || priv == NULL || name == NULL || ca == NULL)
 	{
 		return NULL;
 	}
@@ -1027,53 +1152,16 @@ X509 *NewX509(K *pub, K *priv, X *ca, NAME *name, UINT days, X_SERIAL *serial)
 
 	FreeX509Name(subject_name);
 
-	s = X509_get_serialNumber(x509);
-	if (serial == NULL)
+	if (SetSerialForNewX509(x509, serial) == false ||
+		AddNewExtToX509(x509, X509V3_EXT_conf_nid(NULL, NULL, NID_basic_constraints, "critical,CA:FALSE")) == false ||
+		AddNewExtToX509(x509, NewBasicKeyUsageForX509(false)) == false ||
+		AddNewExtToX509(x509, NewExtendedKeyUsageForX509()) == false ||
+		AddDnsAltNameToX509(x509, name->CommonName) == false ||
+		SignNewX509(x509, pub, priv) == false)
 	{
-		ASN1_INTEGER_set(s, 0);
+		FreeX509(x509);
+		return NULL;
 	}
-	else
-	{
-		BIGNUM *bn = BN_bin2bn(serial->data, serial->size, NULL);
-		if (bn != NULL)
-		{
-			BN_to_ASN1_INTEGER(bn, s);
-			BN_free(bn);
-		}
-	}
-
-	busage = NewBasicKeyUsageForX509();
-	if (busage != NULL)
-	{
-		X509_add_ext(x509, busage, -1);
-		X509_EXTENSION_free(busage);
-	}
-
-	eku = NewExtendedKeyUsageForX509();
-	if (eku != NULL)
-	{
-		X509_add_ext(x509, eku, -1);
-		X509_EXTENSION_free(eku);
-	}
-
-	if (UniIsEmptyStr(name->CommonName) == false)
-	{
-		char alt_dns[MAX_PATH];
-
-		Format(alt_dns, sizeof(alt_dns), "DNS.1:%S", name->CommonName);
-
-		ex = X509V3_EXT_conf_nid(NULL, NULL, NID_subject_alt_name,	alt_dns);
-		X509_add_ext(x509, ex, -1);
-		X509_EXTENSION_free(ex);
-	}
-
-	Lock(openssl_lock);
-	{
-		X509_set_pubkey(x509, pub->pkey);
-
-		X509_sign(x509, priv->pkey, EVP_sha256());
-	}
-	Unlock(openssl_lock);
 
 	return x509;
 }
@@ -1084,10 +1172,6 @@ X509 *NewRootX509(K *pub, K *priv, NAME *name, UINT days, X_SERIAL *serial)
 	UINT64 notBefore, notAfter;
 	const ASN1_TIME *t1, *t2;
 	X509_NAME *subject_name, *issuer_name;
-	X509_EXTENSION *ex = NULL;
-	X509_EXTENSION *eku = NULL;
-	X509_EXTENSION *busage = NULL;
-	ASN1_INTEGER *s;
 	if (pub == NULL || name == NULL || priv == NULL)
 	{
 		return NULL;
@@ -1149,46 +1233,15 @@ X509 *NewRootX509(K *pub, K *priv, NAME *name, UINT days, X_SERIAL *serial)
 	FreeX509Name(subject_name);
 	FreeX509Name(issuer_name);
 
-	s = X509_get_serialNumber(x509);
-	if (serial == NULL)
+	if (SetSerialForNewX509(x509, serial) == false ||
+		AddNewExtToX509(x509, X509V3_EXT_conf_nid(NULL, NULL, NID_basic_constraints, "critical,CA:TRUE")) == false ||
+		AddNewExtToX509(x509, NewBasicKeyUsageForX509(true)) == false ||
+		AddNewExtToX509(x509, NewExtendedKeyUsageForX509()) == false ||
+		SignNewX509(x509, pub, priv) == false)
 	{
-		ASN1_INTEGER_set(s, 0);
+		FreeX509(x509);
+		return NULL;
 	}
-	else
-	{
-		BIGNUM *bn = BN_bin2bn(serial->data, serial->size, NULL);
-		if (bn != NULL)
-		{
-			BN_to_ASN1_INTEGER(bn, s);
-			BN_free(bn);
-		}
-	}
-
-	ex = X509V3_EXT_conf_nid(NULL, NULL, NID_basic_constraints,	"critical,CA:TRUE");
-	X509_add_ext(x509, ex, -1);
-	X509_EXTENSION_free(ex);
-
-	busage = NewBasicKeyUsageForX509();
-	if (busage != NULL)
-	{
-		X509_add_ext(x509, busage, -1);
-		X509_EXTENSION_free(busage);
-	}
-
-	eku = NewExtendedKeyUsageForX509();
-	if (eku != NULL)
-	{
-		X509_add_ext(x509, eku, -1);
-		X509_EXTENSION_free(eku);
-	}
-
-	Lock(openssl_lock);
-	{
-		X509_set_pubkey(x509, pub->pkey);
-
-		X509_sign(x509, priv->pkey, EVP_sha256());
-	}
-	Unlock(openssl_lock);
 
 	return x509;
 }
