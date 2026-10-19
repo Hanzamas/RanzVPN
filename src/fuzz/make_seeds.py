@@ -163,7 +163,7 @@ def sha0(data):
 
 
 def cfg_bin_folder(name, folders, items):
-    # CfgOutputFolderBin: name, subfolder count, subfolders, item count, items
+    # As CfgReadNextFolderBin reads it: name, subfolder count, subfolders, item count, items
     out = buf_str(name) + struct.pack('>I', len(folders))
     for sub in folders:
         out += cfg_bin_folder(*sub)
@@ -181,7 +181,7 @@ def cfg_bin_folder(name, folders, items):
 
 
 def cfg_bin_file(body):
-    # CfgFolderToBufBin: "SEVPN_DB", SHA-0 of the body, body
+    # As CfgReadW reads it: "SEVPN_DB", SHA-0 of the body, body
     return b'SEVPN_DB' + sha0(body) + body
 
 

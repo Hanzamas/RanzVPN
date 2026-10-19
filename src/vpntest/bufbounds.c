@@ -385,13 +385,44 @@ static void BufBoundsTestCfgValid(BUFBOUNDS_CTX *ctx)
 	CfgAddUniStr(sub, "Empty", L"");
 	CfgCreateFolder(sub, "DEFAULT");
 
-	text1 = CfgFolderToBuf(f, true);
-	bin = CfgFolderToBuf(f, false);
-	SeekBuf(bin, 8 + SHA1_SIZE, 0);
+	// The same tree as a binary body, written by hand (Ranz VPN writes text only)
+	bin = NewBuf();
+	WriteBufStr(bin, TAG_ROOT);
+	WriteBufInt(bin, 1);			// Subfolders
+	WriteBufStr(bin, "VirtualHUB");
+	WriteBufInt(bin, 1);			// Subfolders
+	WriteBufStr(bin, "DEFAULT");
+	WriteBufInt(bin, 0);			// Subfolders
+	WriteBufInt(bin, 0);			// Items
+	WriteBufInt(bin, 3);			// Items
+	WriteBufStr(bin, "HashedPassword");
+	WriteBufInt(bin, ITEM_TYPE_BYTE);
+	WriteBufInt(bin, sizeof(bytes));
+	WriteBuf(bin, bytes, sizeof(bytes));
+	WriteBufStr(bin, "ServerName");
+	WriteBufInt(bin, ITEM_TYPE_STRING);
+	WriteBufInt(bin, 14);
+	WriteBuf(bin, "Ranz VPN \xc3\xa9\xe6\x97\xa5", 14);
+	WriteBufStr(bin, "Empty");
+	WriteBufInt(bin, ITEM_TYPE_STRING);
+	WriteBufInt(bin, 0);
+	WriteBufInt(bin, 3);			// Items
+	WriteBufStr(bin, "ConfigRevision");
+	WriteBufInt(bin, ITEM_TYPE_INT);
+	WriteBufInt(bin, 3);
+	WriteBufStr(bin, "AutoDeleteCheckDiskFreeSpaceMin");
+	WriteBufInt(bin, ITEM_TYPE_INT64);
+	WriteBufInt64(bin, 104857600);
+	WriteBufStr(bin, "IPsecMessageDisplayed");
+	WriteBufInt(bin, ITEM_TYPE_BOOL);
+	WriteBufInt(bin, 1);
+
+	text1 = CfgFolderToBuf(f);
+	SeekBufToBegin(bin);
 	f2 = CfgBufBinToFolder(bin);
 	if (f2 != NULL)
 	{
-		text2 = CfgFolderToBuf(f2, true);
+		text2 = CfgFolderToBuf(f2);
 	}
 
 	BufBoundsCheck(ctx, f2 != NULL && CompareBuf(text1, text2),

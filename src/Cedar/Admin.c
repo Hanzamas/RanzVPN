@@ -1734,7 +1734,7 @@ static UINT StGetConfig(ADMIN *a, RPC_CONFIG *t)
 	if (s->CfgRw != NULL)
 	{
 		FOLDER *f = SiWriteConfigurationToCfg(s);
-		BUF *b = CfgFolderToBuf(f, true);
+		BUF *b = CfgFolderToBuf(f);
 
 		StrCpy(t->FileName, sizeof(t->FileName), s->CfgRw->FileName + (s->CfgRw->FileName[0] == '@' ? 1 : 0));
 

@@ -57,7 +57,7 @@ static void BackupCfgWEx(CFG_RW *rw, FOLDER *f, wchar_t *original, UINT revision
 	MakeDirW(dirname);
 
 	UniFormat(fullpath, sizeof(fullpath), L"%s/%s", dirname, filename);
-	CfgSaveW(f, fullpath);
+	CfgSaveExW(NULL, f, fullpath, NULL);
 }
 
 void FreeCfgRw(CFG_RW *rw)
@@ -94,7 +94,7 @@ UINT SaveCfgRwEx(CFG_RW *rw, FOLDER *f, UINT revision_number)
 			rw->Io = NULL;
 		}
 
-		if (CfgSaveExW2(rw, f, rw->FileNameW, &ret))
+		if (CfgSaveExW(rw, f, rw->FileNameW, &ret))
 		{
 			if (rw->DontBackup == false)
 			{
@@ -260,22 +260,11 @@ static bool FileCopyExWithEofW(wchar_t *src, wchar_t *dst, bool read_lock)
 	return ret;
 }
 
-void CfgSaveW(FOLDER *f, wchar_t *name)
-{
-	CfgSaveExW(NULL, f, name);
-}
-bool CfgSaveExW(CFG_RW *rw, FOLDER *f, wchar_t *name)
-{
-	return CfgSaveExW2(rw, f, name, NULL);
-}
-bool CfgSaveExW2(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size)
-{
-	return CfgSaveExW3(rw, f, name, written_size, IsFileExistsW(SAVE_BINARY_FILE_NAME_SWITCH));
-}
-bool CfgSaveExW3(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size, bool write_binary)
+// Save the folder as a text configuration file. With rw, an unchanged tree (same hash as the
+// last save) is not written again and false is returned.
+bool CfgSaveExW(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size)
 {
 	wchar_t tmp[MAX_SIZE];
-	bool text = !write_binary;
 	UCHAR hash[SHA1_SIZE];
 	BUF *b;
 	IO *o;
@@ -290,7 +279,7 @@ bool CfgSaveExW3(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size, bool 
 		written_size = &dummy_int;
 	}
 
-	b = CfgFolderToBuf(f, text);
+	b = CfgFolderToBuf(f);
 	if (b == NULL)
 	{
 		return false;
@@ -309,7 +298,7 @@ bool CfgSaveExW3(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size, bool 
 		}
 	}
 
-	if (ret || OS_IS_UNIX(GetOsInfo()->OsType))
+	if (ret)
 	{
 		UniFormat(tmp, sizeof(tmp), L"%s.log", name);
 		FileCopyExWithEofW(name, tmp, true);
@@ -888,49 +877,6 @@ FOLDER *CfgBufBinToFolder(BUF *b)
 	return f;
 }
 
-static BUF *CfgFolderToBufBin(FOLDER *f)
-{
-	BUF *b;
-	UCHAR hash[SHA1_SIZE];
-	if (f == NULL)
-	{
-		return NULL;
-	}
-
-	b = NewBuf();
-
-	WriteBuf(b, TAG_BINARY, 8);
-
-	Zero(hash, sizeof(hash));
-	WriteBuf(b, hash, sizeof(hash));
-
-	CfgOutputFolderBin(b, f);
-
-	Sha0(((UCHAR *)b->Buf) + 8, ((UCHAR *)b->Buf) + 8 + SHA1_SIZE, b->Size - 8 - SHA1_SIZE);
-
-	return b;
-}
-
-static BUF *CfgFolderToBufTextEx(FOLDER *f, bool no_banner)
-{
-	BUF *b;
-	if (f == NULL)
-	{
-		return NULL;
-	}
-
-	b = NewBuf();
-
-	if (no_banner == false)
-	{
-		WriteBuf(b, TAG_CPYRIGHT, StrLen(TAG_CPYRIGHT));
-	}
-
-	CfgOutputFolderText(b, f, 0);
-
-	return b;
-}
-
 static bool CfgEnumFolderProc(FOLDER *f, void *param)
 {
 	CFG_ENUM_PARAM *p;
@@ -957,79 +903,6 @@ static bool CfgEnumItemProc(ITEM *t, void *param)
 	CfgAddItemText(p->b, t, p->depth);
 
 	return true;
-}
-
-void CfgOutputFolderBin(BUF *b, FOLDER *f)
-{
-	UINT i;
-	if (b == NULL || f == NULL)
-	{
-		return;
-	}
-
-	WriteBufStr(b, f->Name);
-
-	WriteBufInt(b, LIST_NUM(f->Folders));
-
-	for (i = 0;i < LIST_NUM(f->Folders);i++)
-	{
-		FOLDER *sub = LIST_DATA(f->Folders, i);
-		CfgOutputFolderBin(b, sub);
-
-		if ((i % 100) == 99)
-		{
-			YieldCpu();
-		}
-	}
-
-	WriteBufInt(b, LIST_NUM(f->Items));
-
-	for (i = 0;i < LIST_NUM(f->Items);i++)
-	{
-		char *utf8;
-		UINT utf8_size;
-		ITEM *t = LIST_DATA(f->Items, i);
-
-		WriteBufStr(b, t->Name);
-
-		WriteBufInt(b, t->Type);
-
-		switch (t->Type)
-		{
-		case ITEM_TYPE_INT:
-			WriteBufInt(b, *((UINT *)t->Buf));
-			break;
-
-		case ITEM_TYPE_INT64:
-			WriteBufInt64(b, *((UINT64 *)t->Buf));
-			break;
-
-		case ITEM_TYPE_BYTE:
-			WriteBufInt(b, t->size);
-			WriteBuf(b, t->Buf, t->size);
-			break;
-
-		case ITEM_TYPE_STRING:
-			utf8_size = CalcUniToUtf8((wchar_t *)t->Buf) + 1;
-			utf8 = ZeroMalloc(utf8_size);
-			UniToUtf8(utf8, utf8_size, (wchar_t *)t->Buf);
-			WriteBufInt(b, StrLen(utf8));
-			WriteBuf(b, utf8, StrLen(utf8));
-			Free(utf8);
-			break;
-
-		case ITEM_TYPE_BOOL:
-			if (*((bool *)t->Buf) == false)
-			{
-				WriteBufInt(b, 0);
-			}
-			else
-			{
-				WriteBufInt(b, 1);
-			}
-			break;
-		}
-	}
 }
 
 void CfgOutputFolderText(BUF *b, FOLDER *f, UINT depth)
@@ -1241,25 +1114,22 @@ void CfgAddLine(BUF *b, char *str, UINT depth)
 	WriteBuf(b, "\r\n", 2);
 }
 
-BUF *CfgFolderToBuf(FOLDER *f, bool textmode)
+// Write the folder as a text configuration: the banner, then the tree
+BUF *CfgFolderToBuf(FOLDER *f)
 {
-	return CfgFolderToBufEx(f, textmode, false);
-}
-BUF *CfgFolderToBufEx(FOLDER *f, bool textmode, bool no_banner)
-{
+	BUF *b;
 	if (f == NULL)
 	{
 		return NULL;
 	}
 
-	if (textmode)
-	{
-		return CfgFolderToBufTextEx(f, no_banner);
-	}
-	else
-	{
-		return CfgFolderToBufBin(f);;
-	}
+	b = NewBuf();
+
+	WriteBuf(b, TAG_CPYRIGHT, StrLen(TAG_CPYRIGHT));
+
+	CfgOutputFolderText(b, f, 0);
+
+	return b;
 }
 
 char *CfgUnescape(char *str)
