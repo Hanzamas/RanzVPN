@@ -11,6 +11,7 @@
 // It also pins snprintf as a unit that includes Mayaqua.h sees it: the C99 snprintf of the CRT,
 // which ends a truncated result in NUL (FND-2, #105).
 
+#include "Mayaqua/Internat.h"
 #include "Mayaqua/Mayaqua.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Str.h"
@@ -397,6 +398,31 @@ static void StrTestSearch(STRTEST_CTX *ctx)
 	StrTestUint(ctx, "SearchStrEx keeps the case when asked", SearchStrEx("aBcAbC", "abc", 0, true), INFINITE);
 	StrTestUint(ctx, "SearchStrEx folds only letters", SearchStrEx("x_Y", "_y", 0, false), 1);
 	StrTestUint(ctx, "SearchStrEx folds only ASCII letters, not bytes above 127", SearchStrEx("\xe9X", "\xc9x", 0, false), INFINITE);
+
+	// search_str_parity: UniSearchStrEx gives what SearchStrEx gives (FND-124)
+	{
+		static char *cases[][2] = {{"abc", "abc"}, {"abc", "ABC"}, {"abc", "abcd"}, {"abc", ""}, {"abcabc", "bc"}};
+		UINT i, start, cs;
+
+		for (i = 0;i < sizeof(cases) / sizeof(cases[0]);i++)
+		{
+			for (start = 0;start <= 1;start++)
+			{
+				for (cs = 0;cs <= 1;cs++)
+				{
+					wchar_t ws[16], wk[16];
+					UINT a, w;
+
+					StrToUni(ws, sizeof(ws), cases[i][0]);
+					StrToUni(wk, sizeof(wk), cases[i][1]);
+					a = SearchStrEx(cases[i][0], cases[i][1], start, cs != 0);
+					w = UniSearchStrEx(ws, wk, start, cs != 0);
+					StrTestCheck(ctx, a == w, "search_str_parity: UniSearchStrEx agrees with SearchStrEx",
+						"\"%s\" in \"%s\" from %u, case %u: %u and %u", cases[i][1], cases[i][0], start, cs, a, w);
+				}
+			}
+		}
+	}
 
 	StrTestCheck(ctx, InStr("Hello World", "WORLD"), "InStr ignores the case", "returned false");
 	StrTestCheck(ctx, InStrEx("Hello World", "WORLD", true) == false, "InStrEx keeps the case when asked", "returned true");

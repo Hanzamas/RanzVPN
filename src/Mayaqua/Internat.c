@@ -1388,32 +1388,6 @@ UINT UniSearchStrEx(wchar_t *string, wchar_t *keyword, UINT start, bool case_sen
 		return INFINITE;
 	}
 
-	if (len_string == len_keyword)
-	{
-		if (case_sensitive)
-		{
-			if (UniStrCmp(string, keyword) == 0)
-			{
-				return 0;
-			}
-			else
-			{
-				return INFINITE;
-			}
-		}
-		else
-		{
-			if (UniStrCmpi(string, keyword) == 0)
-			{
-				return 0;
-			}
-			else
-			{
-				return INFINITE;
-			}
-		}
-	}
-
 	if (case_sensitive)
 	{
 		cmp_string = string;
