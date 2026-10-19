@@ -2035,20 +2035,21 @@ static UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t)
 		return ERR_NOT_ENOUGH_RIGHT;
 	}
 
-	LockList(h->IpTable);
+	LockHashList(h->MacHashTable);
 	{
-		if (IsInListKey(h->IpTable, t->Key))
-		{
-			IP_TABLE_ENTRY *e = ListKeyToPointer(h->IpTable, t->Key);
-			Free(e);
-			Delete(h->IpTable, e);
-		}
-		else
+		IP_TABLE_ENTRY *e = ListKeyToPointer(h->IpTable, t->Key);
+
+		if (e == NULL)
 		{
 			ret = ERR_OBJECT_NOT_FOUND;
 		}
+		else
+		{
+			Delete(h->IpTable, e);
+			Free(e);
+		}
 	}
-	UnlockList(h->IpTable);
+	UnlockHashList(h->MacHashTable);
 
 	ReleaseHub(h);
 
@@ -2080,7 +2081,7 @@ static UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t)
 
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 
-	LockList(h->IpTable);
+	LockHashList(h->MacHashTable);
 	{
 		t->NumIpTable = LIST_NUM(h->IpTable);
 		t->IpTables = ZeroMalloc(sizeof(RPC_ENUM_IP_TABLE_ITEM) * t->NumIpTable);
@@ -2100,7 +2101,7 @@ static UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t)
 			e->UpdatedTime = Tick64ToTime64(table->UpdatedTime);
 		}
 	}
-	UnlockList(h->IpTable);
+	UnlockHashList(h->MacHashTable);
 
 	ReleaseHub(h);
 
@@ -4956,14 +4957,9 @@ static UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 				LockHashList(h->MacHashTable);
 				{
 					e->NumMacTables = HASH_LIST_NUM(h->MacHashTable);
-				}
-				UnlockHashList(h->MacHashTable);
-
-				LockList(h->IpTable);
-				{
 					e->NumIpTables = LIST_NUM(h->IpTable);
 				}
-				UnlockList(h->IpTable);
+				UnlockHashList(h->MacHashTable);
 
 				if (h->HubDb != NULL)
 				{
