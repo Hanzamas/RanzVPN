@@ -2208,15 +2208,15 @@ static void LogWriterAddDropped(LOG *g, LOG_WRITER *w)
 	WriteRecordToBuffer(w->Buffer, &r);
 }
 
-// No file is open: keep the record in the buffer while the buffer stays within LOG_ENGINE_BUFFER_NO_FILE_MAX
-// bytes, drop and count it otherwise. Either way its data is released
+// No file is open: keep the record in the buffer while the buffer stays within the smaller of
+// LOG_ENGINE_BUFFER_NO_FILE_MAX and the maximum log size, drop and count it otherwise. Either way its data is released
 static void LogWriterKeep(LOG *g, LOG_WRITER *w, RECORD *rec)
 {
 	BUF *b = NewBuf();
 
 	WriteRecordToBuffer(b, rec);
 
-	if ((UINT64)w->Buffer->Size + (UINT64)b->Size <= LOG_ENGINE_BUFFER_NO_FILE_MAX)
+	if ((UINT64)w->Buffer->Size + (UINT64)b->Size <= MIN((UINT64)LOG_ENGINE_BUFFER_NO_FILE_MAX, GetMaxLogSize()))
 	{
 		WriteBuf(w->Buffer, b->Buf, b->Size);
 	}
