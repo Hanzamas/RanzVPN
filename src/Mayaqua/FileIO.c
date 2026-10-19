@@ -429,7 +429,7 @@ void InitGetExeName(char *arg)
 
 	arg_w = CopyUtfToUni(arg);
 
-	Win32GetExeNameW(exe_file_name_w, sizeof(exe_file_name_w));
+	Win32GetExeNameW(exe_file_name_w, ARRAYSIZE(exe_file_name_w));
 
 	UniToStr(exe_file_name, sizeof(exe_file_name), exe_file_name_w);
 
@@ -696,7 +696,7 @@ void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 		wchar_t cd[MAX_SIZE];
 		Zero(cd, sizeof(cd));
 
-		Win32GetCurrentDirW(cd, sizeof(cd));
+		Win32GetCurrentDirW(cd, ARRAYSIZE(cd));
 
 		if (UniStartWith(tmp, L".."))
 		{

@@ -309,26 +309,38 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 	return d;
 }
 
-void Win32GetExeNameW(wchar_t *name, UINT size)
+// The path of the executable; num_chars counts wide characters, not bytes. Empty when it fails or
+// does not fit.
+void Win32GetExeNameW(wchar_t *name, UINT num_chars)
 {
-	if (name == NULL)
+	DWORD ret;
+	if (name == NULL || num_chars == 0)
 	{
 		return;
 	}
 
-	UniStrCpy(name, size, L"");
-
-	GetModuleFileNameW(NULL, name, size);
+	ret = GetModuleFileNameW(NULL, name, num_chars);
+	if (ret == 0 || ret >= num_chars)
+	{
+		name[0] = 0;
+	}
 }
 
-void Win32GetCurrentDirW(wchar_t *dir, UINT size)
+// The current directory; num_chars counts wide characters, not bytes. Empty when it fails or does
+// not fit.
+void Win32GetCurrentDirW(wchar_t *dir, UINT num_chars)
 {
-	if (dir == NULL)
+	DWORD ret;
+	if (dir == NULL || num_chars == 0)
 	{
 		return;
 	}
 
-	GetCurrentDirectoryW(size, dir);
+	ret = GetCurrentDirectoryW(num_chars, dir);
+	if (ret == 0 || ret >= num_chars)
+	{
+		dir[0] = 0;
+	}
 }
 
 void Win32Yield()

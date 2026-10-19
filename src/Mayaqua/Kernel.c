@@ -210,7 +210,7 @@ void GetHomeDirW(wchar_t *path, UINT size)
 		}
 		else
 		{
-			Win32GetCurrentDirW(path, size);
+			Win32GetCurrentDirW(path, size / sizeof(wchar_t));
 		}
 	}
 }
