@@ -25,6 +25,11 @@
 // name, a second sender returns within LOGTEST_SLOG_SECOND_LIMIT ms; a datagram holds the UTF-8 text, at most
 // 1023 bytes of it.
 //
+// "eraser" (FND-20): EraserThread waited GetEraserCheckInterval() milliseconds, the interval in seconds, so the
+// 5-minute default became 300 ms and a 1-second interval 1 ms. An eraser with a check interval of 1 s and a free
+// space threshold of DISK_FREE_SPACE_MIN (nothing is deleted) makes at most LOGTEST_ERASER_MAX_CHECKS checks in
+// LOGTEST_ERASER_SPAN ms; the interval keeps its seconds in the configuration (AutoDeleteCheckIntervalSecs).
+//
 // Each test prints "<NAME> TEST OK" only when every check passes, and frees everything it allocates.
 
 #include "Cedar/Cedar.h"
@@ -78,6 +83,11 @@
 #define	LOGTEST_SLOG_RECV_WAIT			2000				// Milliseconds waited for a datagram
 #define	LOGTEST_SLOG_RESOLVE_WAIT		3000				// Milliseconds waited for the first sender to start resolving
 #define	LOGTEST_SLOG_SECOND_LIMIT		100					// Milliseconds a second sender may take meanwhile
+
+#define	LOGTEST_ERASER_INTERVAL			1					// Check interval of the eraser (seconds)
+#define	LOGTEST_ERASER_SPAN				3000				// Milliseconds the eraser runs
+#define	LOGTEST_ERASER_MAX_CHECKS		4					// Checks at 0, 1, 2 and 3 s at most
+#define	LOGTEST_ERASER_CONFIG_SECS		7					// A check interval through the configuration getter
 
 // Run state of a test
 typedef struct LOGTEST_CTX
@@ -872,4 +882,44 @@ void slog_test(UINT num, char **arg)
 	ReleaseSock(s);
 
 	LogTestEnd(&ctx, "SLOG");
+}
+
+////////////////////////////
+// eraser (FND-20)
+
+// "eraser": the eraser thread waits its check interval in milliseconds; the configuration keeps seconds
+void eraser_test(UINT num, char **arg)
+{
+	LOGTEST_CTX ctx;
+	ERASER *e;
+	UINT checks;
+	UINT secs;
+
+	Zero(&ctx, sizeof(ctx));
+
+	Print("Eraser test: check interval %u s for %u ms\n", LOGTEST_ERASER_INTERVAL, LOGTEST_ERASER_SPAN);
+
+	// AutoDeleteCheckIntervalSecs goes through SetEraserCheckInterval and GetEraserCheckInterval in seconds
+	SetEraserCheckInterval(LOGTEST_ERASER_CONFIG_SECS);
+	secs = GetEraserCheckInterval();
+	LogTestCheck(&ctx, secs == LOGTEST_ERASER_CONFIG_SECS, "the check interval goes in and out of the configuration in seconds",
+		"set %u s, got %u", LOGTEST_ERASER_CONFIG_SECS, secs);
+
+	// The threshold of DISK_FREE_SPACE_MIN is met on any test machine: the eraser only checks, it deletes nothing
+	SetEraserCheckInterval(LOGTEST_ERASER_INTERVAL);
+	e = NewEraser(NULL, DISK_FREE_SPACE_MIN);
+	SleepThread(LOGTEST_ERASER_SPAN);
+	checks = e->NumChecks;
+	FreeEraser(e);
+
+	LogTestCheck(&ctx, checks >= 1 && checks <= LOGTEST_ERASER_MAX_CHECKS,
+		"a check interval of 1 s gives at most 4 free space checks in 3 s (it waited 1 ms)",
+		"%u checks", checks);
+
+	SetEraserCheckInterval(0);
+	secs = GetEraserCheckInterval();
+	LogTestCheck(&ctx, secs == DISK_FREE_CHECK_INTERVAL_DEFAULT / 1000, "an interval of 0 restores the default of 300 s",
+		"got %u s", secs);
+
+	LogTestEnd(&ctx, "ERASER");
 }

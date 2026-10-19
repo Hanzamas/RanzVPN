@@ -82,6 +82,7 @@ struct ERASER
 	THREAD *Thread;
 	bool LastFailed;
 	EVENT *HaltEvent;
+	volatile UINT NumChecks;			// Free space checks made so far (EraserMain passes)
 };
 
 typedef struct ERASE_FILE

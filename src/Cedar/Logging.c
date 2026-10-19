@@ -390,6 +390,7 @@ static void EraserThread(THREAD *t, void *p)
 	while (e->Halt == false)
 	{
 		EraserMain(e);
+		e->NumChecks++;
 
 		Wait(e->HaltEvent, GetEraserCheckInterval());
 	}
