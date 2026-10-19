@@ -21,6 +21,9 @@ target_sources(vpntest PRIVATE machineid.c)
 # Named VM detection test of FIX-7 (#103)
 target_sources(vpntest PRIVATE vmdetect.c)
 
+# Named keepalive span and client Pack size cap tests of SEC-4 (#96)
+target_sources(vpntest PRIVATE keepalive.c packcap.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"

@@ -471,6 +471,10 @@ void machineid_test(UINT num, char **arg);
 // Named VM detection test of FIX-7, #103 (vmdetect.c)
 void vmdetect_test(UINT num, char **arg);
 
+// Named keepalive span and client Pack size cap tests of SEC-4, #96 (keepalive.c, packcap.c)
+void keepalive_test(UINT num, char **arg);
+void packcap_test(UINT num, char **arg);
+
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
 char *watermark_expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
@@ -582,6 +586,8 @@ TEST_LIST test_list[] =
 	{"dllsearch", dllsearch_test, "DLL search order: next to the executable, System32 and AddDllDirectory, never the current directory or PATH."},
 	{"machineid", machineid_test, "Machine identity: MachineGuid and the configuration salt, known answers, separate salts, the salt in the config."},
 	{"vmdetect", vmdetect_test, "VM detection: MsIsInVm writes no script, starts no process, answers at once, reports a VM on a GitHub-hosted runner."},
+	{"keepalive", keepalive_test, "Keepalive span: a session timeout out of bounds, also 0 or 1 from a server, gives the span of the clamped timeout."},
+	{"packcap", packcap_test, "Client Pack size cap: ClientDownloadHello refuses a 1 MiB hello Pack from a loopback peer."},
 };
 
 // Test function
