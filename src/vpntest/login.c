@@ -4,9 +4,12 @@
 // Every test runs the in-process server of the harness (HarnessOpenServer: TCP 39555, a fresh configuration, the hub
 // LOGIN_HUB with the password user LOGIN_USER) and talks to it through the raw-pack client of harness_pack.c, which
 // sends Packs that the client code never builds.
-// - "authtype" (FND-26): a login with authtype 96, the former external authentication of the removed IPC client, passed
-//   without a credential as any existing user. It must get ERR_AUTHTYPE_NOT_SUPPORTED and create no session, like
-//   any other unknown authtype; authtypes 0 to 2 keep their results.
+// - "authtype" (FND-26): a login with authtype 96, the former external authentication of the removed IPC client,
+//   passed without a credential as any existing user. It must get ERR_AUTHTYPE_NOT_SUPPORTED and create no session,
+//   like any other unknown authtype; authtypes 0 to 2 keep their results.
+// - "acpassword" (FND-27): the access list of the hub (source IP address limit) applies to the 'password' method as
+//   it does to a login. From a denied address the method gets ERR_IP_ADDRESS_DENIED before the old password is
+//   checked, so it neither changes the password nor tells a right old password from a wrong one.
 // A test prints "<NAME> TEST OK" only when every check passes.
 
 #include "harness_int.h"
@@ -14,6 +17,7 @@
 #include "Cedar/Account.h"
 #include "Cedar/Admin.h"
 #include "Cedar/Cedar.h"
+#include "Cedar/Hub.h"
 #include "Cedar/Sam.h"
 #include "Cedar/Server.h"
 
@@ -28,6 +32,7 @@
 #define	LOGIN_HUB					"HARNESS_LOGIN"		// Hub of the login tests
 #define	LOGIN_USER					"tester_login"		// Password user of LOGIN_HUB, password HARNESS_PASSWORD
 #define	LOGIN_WRONG_PASSWORD		"Harness-Pass-2"	// Not the password of LOGIN_USER
+#define	LOGIN_NEW_PASSWORD			"Harness-Pass-3"	// Password that "acpassword" sets through the 'password' method
 #define	LOGIN_AUTHTYPE_96			96					// Former external authentication, sent only by the removed IPC client
 #define	LOGIN_AUTHTYPE_UNKNOWN		97					// An authtype that never existed
 #define	LOGIN_WATCHDOG_LIMIT		120000				// A login test process is aborted after this (ms)
@@ -209,4 +214,166 @@ void authtype_test(UINT num, char **arg)
 	}
 
 	LoginReport("AUTHTYPE", HarnessCloseServer(h));
+}
+
+// Set the access list of LOGIN_HUB through the admin RPC: one rule that denies 127.0.0.1, the address of the raw
+// connections (deny), or no rule
+static UINT LoginSetDenyLocal(HARNESS *h, bool deny)
+{
+	RPC_AC_LIST t;
+	AC ac;
+	UINT err;
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), LOGIN_HUB);
+	t.o = NewList(CmpAc);
+
+	if (deny)
+	{
+		Zero(&ac, sizeof(ac));
+		ac.Deny = true;
+		ac.Priority = 1;
+		SetIP(&ac.IpAddress, 127, 0, 0, 1);
+		AddAc(t.o, &ac);
+	}
+
+	err = ScSetAcList(h->Rpc, &t);
+	FreeRpcAcList(&t);
+
+	return err;
+}
+
+// Whether the stored password hash of LOGIN_USER (GetUser) is the hash of password
+static bool LoginHasPassword(HARNESS *h, char *password)
+{
+	RPC_SET_USER t;
+	UCHAR hashed_password[SHA1_SIZE];
+	bool ret = false;
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), LOGIN_HUB);
+	StrCpy(t.Name, sizeof(t.Name), LOGIN_USER);
+
+	if (ScGetUser(h->Rpc, &t) != ERR_NO_ERROR)
+	{
+		return false;
+	}
+
+	HashPassword(hashed_password, LOGIN_USER, password);
+
+	if (t.AuthType == AUTHTYPE_PASSWORD && t.AuthData != NULL)
+	{
+		AUTHPASSWORD *pw = (AUTHPASSWORD *)t.AuthData;
+
+		ret = (Cmp(pw->HashedKey, hashed_password, SHA1_SIZE) == 0);
+	}
+
+	FreeRpcSetUser(&t);
+
+	return ret;
+}
+
+// One request of the 'password' method on a raw connection, as a client that changes the password of LOGIN_USER from
+// old_password to new_password sends it. Returns the error of the answer.
+static UINT LoginChangePassword(HARNESS *h, char *old_password, char *new_password)
+{
+	UCHAR random[SHA1_SIZE];
+	UCHAR hashed_old_password[SHA1_SIZE];
+	UCHAR secure_old_password[SHA1_SIZE];
+	UCHAR new_password_hash[SHA1_SIZE];
+	SOCK *s = HarnessRawConnect(random);
+	PACK *p;
+	UINT err;
+
+	if (s == NULL)
+	{
+		HarnessCheck(h, false, "raw connection to the test listener: TLS, signature and hello");
+		return ERR_DISCONNECTED;
+	}
+
+	HashPassword(hashed_old_password, LOGIN_USER, old_password);
+	SecurePassword(secure_old_password, hashed_old_password, random);
+	HashPassword(new_password_hash, LOGIN_USER, new_password);
+
+	p = NewPack();
+	PackAddStr(p, "method", "password");
+	PackAddStr(p, "hubname", LOGIN_HUB);
+	PackAddStr(p, "username", LOGIN_USER);
+	PackAddData(p, "secure_old_password", secure_old_password, SHA1_SIZE);
+	PackAddData(p, "new_password", new_password_hash, SHA1_SIZE);
+
+	err = HarnessRawRequest(s, p);
+	FreePack(p);
+
+	HarnessRawClose(s);
+
+	return err;
+}
+
+// Check the error of a 'password' request and which password LOGIN_USER has afterwards
+static void LoginExpectPassword(HARNESS *h, char *what, UINT err, UINT expected_err, char *expected_password)
+{
+	bool has = LoginHasPassword(h, expected_password);
+	char tmp[MAX_SIZE];
+
+	if (err == expected_err && has)
+	{
+		HarnessCheck(h, true, what);
+		return;
+	}
+
+	Format(tmp, sizeof(tmp), "%s (error %u, expected %u; the stored hash %s %s)", what, err, expected_err,
+		has ? "is the one of" : "is not the one of", expected_password);
+	HarnessCheck(h, false, tmp);
+}
+
+// "acpassword": the access list of the hub applies to the 'password' method (FND-27)
+void acpassword_test(UINT num, char **arg)
+{
+	HARNESS *h;
+	bool ok;
+	UINT err;
+	UINT num_sessions;
+
+	Print("Access list on the 'password' method: in-process server on TCP %u, hub %s, user %s\n", HARNESS_PORT,
+		LOGIN_HUB, LOGIN_USER);
+
+	h = HarnessOpenServer("ACPASSWORD", LOGIN_WATCHDOG_LIMIT, LOGIN_HUB, LOGIN_USER, &ok);
+
+	if (HarnessCheck(h, ok, "server, hub " LOGIN_HUB " and user " LOGIN_USER " ready"))
+	{
+		Print("[127.0.0.1 denied]\n");
+		HarnessSetPhase("acpassword", "deny");
+		HarnessCheckErr(h, LoginSetDenyLocal(h, true), "SetAcList: deny 127.0.0.1 on " LOGIN_HUB);
+
+		err = LoginChangePassword(h, HARNESS_PASSWORD, LOGIN_NEW_PASSWORD);
+		LoginExpectPassword(h, "'password' with the right old password: ERR_IP_ADDRESS_DENIED, password unchanged",
+			err, ERR_IP_ADDRESS_DENIED, HARNESS_PASSWORD);
+
+		err = LoginChangePassword(h, LOGIN_WRONG_PASSWORD, LOGIN_NEW_PASSWORD);
+		LoginExpectPassword(h, "'password' with a wrong old password: ERR_IP_ADDRESS_DENIED, no old password check",
+			err, ERR_IP_ADDRESS_DENIED, HARNESS_PASSWORD);
+
+		err = LoginTry(h, CLIENT_AUTHTYPE_PASSWORD, HARNESS_PASSWORD, &num_sessions);
+		LoginExpect(h, "login with the password: ERR_IP_ADDRESS_DENIED, no session",
+			err, ERR_IP_ADDRESS_DENIED, num_sessions, 0);
+
+		Print("[no access list]\n");
+		HarnessSetPhase("acpassword", "allow");
+		HarnessCheckErr(h, LoginSetDenyLocal(h, false), "SetAcList: no rule on " LOGIN_HUB);
+
+		err = LoginChangePassword(h, LOGIN_WRONG_PASSWORD, LOGIN_NEW_PASSWORD);
+		LoginExpectPassword(h, "'password' with a wrong old password: ERR_OLD_PASSWORD_WRONG, password unchanged",
+			err, ERR_OLD_PASSWORD_WRONG, HARNESS_PASSWORD);
+
+		err = LoginChangePassword(h, HARNESS_PASSWORD, LOGIN_NEW_PASSWORD);
+		LoginExpectPassword(h, "'password' with the right old password: changed to the new password",
+			err, ERR_NO_ERROR, LOGIN_NEW_PASSWORD);
+
+		err = LoginTry(h, CLIENT_AUTHTYPE_PASSWORD, LOGIN_NEW_PASSWORD, &num_sessions);
+		LoginExpect(h, "login with the new password: welcome Pack, one session",
+			err, ERR_NO_ERROR, num_sessions, 1);
+	}
+
+	LoginReport("ACPASSWORD", HarnessCloseServer(h));
 }
