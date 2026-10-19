@@ -11,6 +11,7 @@
 #include "Win32Com.h"
 
 #include "Mayaqua/Cfg.h"
+#include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Microsoft.h"
@@ -18,6 +19,7 @@
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Tick64.h"
 
+#include <sddl.h>
 #include <winioctl.h>
 
 static SU *SuInitMain(UINT wait_for_bind_complete_tick, bool start_service, bool install);
@@ -146,41 +148,128 @@ void SuSetInstallProc(SU_INSTALL_PROC *proc)
 	su_install_tried = false;
 }
 
+// Remove a staging directory made by SuStageDriverPackage and everything in it
+void SuUnstageDriverPackage(wchar_t *dir)
+{
+	if (UniIsEmptyStr(dir))
+	{
+		return;
+	}
+
+	MsDeleteAllFileW(dir);
+
+	if (RemoveDirectoryW(dir) == FALSE)
+	{
+		Debug("SuUnstageDriverPackage: RemoveDirectoryW(%S) failed: %u\n", dir, GetLastError());
+	}
+}
+
+// Stage the driver package for one install attempt: make a new directory with a random name under
+// %WINDIR%\Temp that only SYSTEM and Administrators can open, and copy the package files into it.
+// CreateDirectoryW fails on a name that exists, so nothing is ever written through a directory or
+// junction that someone else planted there. dir receives the path. On failure nothing stays behind
+bool SuStageDriverPackage(wchar_t *dir, UINT dir_size)
+{
+	wchar_t *files[] = {SU_PACKAGE_SYS, SU_PACKAGE_CAT, SU_PACKAGE_INF};
+	wchar_t temp_dir[MAX_PATH];
+	wchar_t name[SU_STAGE_RANDOM_SIZE * 2 + 1];
+	UCHAR random[SU_STAGE_RANDOM_SIZE];
+	SECURITY_ATTRIBUTES sa;
+	PSECURITY_DESCRIPTOR sd = NULL;
+	bool created = false;
+	UINT err = 0;
+	UINT i;
+
+	if (dir == NULL || dir_size == 0)
+	{
+		return false;
+	}
+
+	dir[0] = 0;
+
+	if (ConvertStringSecurityDescriptorToSecurityDescriptorW(SU_STAGE_DIR_SDDL, SDDL_REVISION_1, &sd, NULL) == FALSE)
+	{
+		Debug("SuStageDriverPackage: ConvertStringSecurityDescriptorToSecurityDescriptorW failed: %u\n", GetLastError());
+		return false;
+	}
+
+	Zero(&sa, sizeof(sa));
+	sa.nLength = sizeof(sa);
+	sa.lpSecurityDescriptor = sd;
+	sa.bInheritHandle = FALSE;
+
+	CombinePathW(temp_dir, sizeof(temp_dir), MsGetWindowsDirW(), L"Temp");
+
+	for (i = 0;i < SU_STAGE_MAX_TRIES;i++)
+	{
+		Rand(random, sizeof(random));
+		BinToStrW(name, sizeof(name), random, sizeof(random));
+		UniFormat(dir, dir_size, L"%s\\selow_%s", temp_dir, name);
+
+		if (CreateDirectoryW(dir, &sa))
+		{
+			created = true;
+			break;
+		}
+
+		// Only a name clash is worth another name
+		err = GetLastError();
+		if (err != ERROR_ALREADY_EXISTS)
+		{
+			break;
+		}
+	}
+
+	LocalFree(sd);
+
+	if (created == false)
+	{
+		Debug("SuStageDriverPackage: CreateDirectoryW(%S) failed: %u\n", dir, err);
+		dir[0] = 0;
+		return false;
+	}
+
+	for (i = 0;i < sizeof(files) / sizeof(files[0]);i++)
+	{
+		wchar_t src[MAX_PATH];
+		wchar_t dst[MAX_PATH];
+
+		UniFormat(src, sizeof(src), L"%s\\%s", SU_PACKAGE_DIR, files[i]);
+		UniFormat(dst, sizeof(dst), L"%s\\%s", dir, files[i]);
+
+		if (FileCopyW(src, dst) == false)
+		{
+			Debug("SuStageDriverPackage: FileCopyW(%S, %S) failed\n", src, dst);
+			SuUnstageDriverPackage(dir);
+			dir[0] = 0;
+			return false;
+		}
+	}
+
+	return true;
+}
+
 bool SuInstallDriverInner()
 {
 	wchar_t sys_fullpath[MAX_PATH];
 	bool ret = false;
-	wchar_t *src_cat = SU_PACKAGE_DIR L"\\" SU_PACKAGE_CAT;
-	wchar_t *src_inf = SU_PACKAGE_DIR L"\\" SU_PACKAGE_INF;
 	wchar_t *src_sys = SU_PACKAGE_DIR L"\\" SU_PACKAGE_SYS;
-	wchar_t dst_cat[MAX_PATH];
+	wchar_t stage_dir[MAX_PATH];
 	wchar_t dst_inf[MAX_PATH];
-	wchar_t dst_sys[MAX_PATH];
-	wchar_t tmp_dir[MAX_PATH];
 
 	if (SuIsSupportedOs() == false)
 	{
 		return false;
 	}
 
-	CombinePathW(tmp_dir, sizeof(tmp_dir), MsGetWindowsDirW(), L"Temp");
-	MakeDirExW(tmp_dir);
-
-	UniStrCat(tmp_dir, sizeof(tmp_dir), L"\\selowtmp");
-	MakeDirExW(tmp_dir);
-
 	// Where the installed driver lives; SuCopySysFile also copies it there by hand
 	CombinePathW(sys_fullpath, sizeof(sys_fullpath), MsGetSystem32DirW(), L"drivers\\" SU_PACKAGE_SYS);
 
-	UniFormat(dst_sys, sizeof(dst_sys), L"%s\\%s", tmp_dir, SU_PACKAGE_SYS);
-	UniFormat(dst_cat, sizeof(dst_cat), L"%s\\%s", tmp_dir, SU_PACKAGE_CAT);
-	UniFormat(dst_inf, sizeof(dst_inf), L"%s\\%s", tmp_dir, SU_PACKAGE_INF);
-
-	if (FileCopyW(src_sys, dst_sys) &&
-		FileCopyW(src_cat, dst_cat) &&
-		FileCopyW(src_inf, dst_inf))
+	if (SuStageDriverPackage(stage_dir, sizeof(stage_dir)))
 	{
 		NO_WARNING *nw;
+
+		UniFormat(dst_inf, sizeof(dst_inf), L"%s\\%s", stage_dir, SU_PACKAGE_INF);
 
 		nw = MsInitNoWarningEx(SL_USER_AUTO_PUSH_TIMER);
 
@@ -204,6 +293,9 @@ bool SuInstallDriverInner()
 		}
 
 		MsFreeNoWarning(nw);
+
+		// The driver store holds its own copy now: the staged one is no longer needed
+		SuUnstageDriverPackage(stage_dir);
 	}
 
 	// Wait for the new driver to bind: it may start the service, it never installs again

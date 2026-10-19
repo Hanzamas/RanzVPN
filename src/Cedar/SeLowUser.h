@@ -22,6 +22,12 @@
 #define	SU_PACKAGE_CAT		L"SeLow_Win10_x64.cat"		// Windows 10 uses WHQL catalog files
 #define	SU_PACKAGE_INF		L"SeLow_x64.inf"
 
+// The per-attempt staging directory (SuStageDriverPackage): protected DACL, SYSTEM and
+// Administrators only, random name of SU_STAGE_RANDOM_SIZE bytes in hex
+#define	SU_STAGE_DIR_SDDL		L"D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+#define	SU_STAGE_RANDOM_SIZE	8
+#define	SU_STAGE_MAX_TRIES		100
+
 // Driver install step (SuInstallDriver); a test replaces it with SuSetInstallProc
 typedef bool (SU_INSTALL_PROC)(void);
 
@@ -69,6 +75,8 @@ LIST *SuGetAdapterList(SU *u);
 void SuFreeAdapterList(LIST *o);
 int SuCmpAdapterList(void *p1, void *p2);
 
+bool SuStageDriverPackage(wchar_t *dir, UINT dir_size);
+void SuUnstageDriverPackage(wchar_t *dir);
 bool SuInstallDriverInner();
 void SuSetInstallProc(SU_INSTALL_PROC *proc);
 bool SuIsSupportedOs();
