@@ -961,7 +961,7 @@ static void CleanupSession(SESSION *s)
 		{
 			FreeX(s->ClientAuth->ClientX);
 		}
-		if (s->ClientAuth->ClientX != NULL)
+		if (s->ClientAuth->ClientK != NULL)
 		{
 			FreeK(s->ClientAuth->ClientK);
 		}
