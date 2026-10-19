@@ -1924,7 +1924,7 @@ wchar_t *GetUniStrFromX509Name(void *xn, int nid)
 {
 	UCHAR txt[1024];
 	UINT i, size;
-	int index;
+	int index, len;
 	bool unicode = false;
 	bool is_utf_8 = false;
 	ASN1_OBJECT *obj;
@@ -1935,7 +1935,8 @@ wchar_t *GetUniStrFromX509Name(void *xn, int nid)
 	}
 
 	Zero(txt, sizeof(txt));
-	if (X509_NAME_get_text_by_NID(xn, nid, (char *)txt, sizeof(txt) - 2) <= 0)
+	len = X509_NAME_get_text_by_NID(xn, nid, (char *)txt, sizeof(txt) - 2);
+	if (len <= 0)
 	{
 		return NULL;
 	}
@@ -1964,7 +1965,9 @@ wchar_t *GetUniStrFromX509Name(void *xn, int nid)
 		is_utf_8 = true;
 	}
 
-	size = UniStrLen((wchar_t *)txt) * 4 + 8;
+	// Scan only the bytes X509_NAME_get_text_by_NID copied (at most sizeof(txt) - 3): the field
+	// comes from the peer's certificate, and a scan sized from it ran past txt
+	size = (UINT)len;
 	for (i = 0;i < size;i++)
 	{
 		if (txt[i] >= 0x80)
