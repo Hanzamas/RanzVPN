@@ -857,6 +857,7 @@ X *NewX(K *pub, K *priv, X *ca, NAME *name, UINT days, X_SERIAL *serial)
 
 	if (x == NULL)
 	{
+		FreeX509(x509);
 		return NULL;
 	}
 
@@ -881,6 +882,7 @@ X *NewRootX(K *pub, K *priv, NAME *name, UINT days, X_SERIAL *serial)
 	x = X509ToX(x509);
 	if (x == NULL)
 	{
+		FreeX509(x509);
 		return NULL;
 	}
 
@@ -2555,6 +2557,7 @@ void FreeX509(X509 *x509)
 	Unlock(openssl_lock);
 }
 
+// The caller keeps b and frees it, also when this fails
 X *BufToX(BUF *b, bool text)
 {
 	X *x;
@@ -2567,7 +2570,6 @@ X *BufToX(BUF *b, bool text)
 	bio = BufToBio(b);
 	if (bio == NULL)
 	{
-		FreeBuf(b);
 		return NULL;
 	}
 
@@ -2578,6 +2580,7 @@ X *BufToX(BUF *b, bool text)
 	return x;
 }
 
+// The caller keeps b and frees it, also when this fails
 LIST *BufToXList(BUF *b, bool text)
 {
 	LIST *chain;
@@ -2590,7 +2593,6 @@ LIST *BufToXList(BUF *b, bool text)
 	bio = BufToBio(b);
 	if (bio == NULL)
 	{
-		FreeBuf(b);
 		return NULL;
 	}
 
@@ -2651,6 +2653,7 @@ X *BioToX(BIO *bio, bool text)
 
 	if (x == NULL)
 	{
+		FreeX509(x509);
 		return NULL;
 	}
 
@@ -2674,6 +2677,7 @@ LIST *BioToXList(BIO *bio, bool text)
 		sk = PEM_X509_INFO_read_bio(bio, NULL, NULL, NULL);
 		if (sk == NULL)
 		{
+			Unlock(openssl_lock);
 			return NULL;
 		}
 
@@ -2683,13 +2687,13 @@ LIST *BioToXList(BIO *bio, bool text)
 		{
 			xi = sk_X509_INFO_shift(sk);
 			x = X509ToX(xi->x509);
-			// X509ToX owns the certificate now, also when it fails (it freed it then), so
-			// X509_INFO_free must not free it again
-			xi->x509 = NULL;
 			if (x != NULL)
 			{
+				// The X owns the certificate now
+				xi->x509 = NULL;
 				Add(chain, x);
 			}
+			// Also frees a certificate X509ToX refused, once
 			X509_INFO_free(xi);
 		}
 
@@ -2700,13 +2704,12 @@ LIST *BioToXList(BIO *bio, bool text)
 	return chain;
 }
 
-// Takes ownership of x509: it is freed with the returned X, or here when the conversion fails
+// Takes ownership of x509 only when it succeeds: the certificate is then freed with the returned X.
+// A certificate it refuses (NULL) stays the caller's, who frees it or leaves it to its owner.
 X *X509ToX(X509 *x509)
 {
 	X *x;
 	K *k;
-	BUF *b;
-	UINT size;
 	UINT type;
 	ASN1_INTEGER *s;
 	if (x509 == NULL)
@@ -2721,12 +2724,14 @@ X *X509ToX(X509 *x509)
 
 	LoadXDates(x);
 
+	// A root certificate is self-issued and verifies with its own key: equal names alone (with the
+	// key matching itself, which always holds) let a certificate with a bad self-signature end a chain
 	if (CompareName(x->issuer_name, x->subject_name))
 	{
 		K *pubkey = GetKFromX(x);
 		if (pubkey != NULL)
 		{
-			if (CheckXandK(x, pubkey))
+			if (CheckSignature(x, pubkey))
 			{
 				x->root_cert = true;
 			}
@@ -2780,17 +2785,14 @@ X *X509ToX(X509 *x509)
 	k = GetKFromX(x);
 	if (k == NULL)
 	{
+		// The certificate stays the caller's
+		x->x509 = NULL;
 		FreeX(x);
 		return NULL;
 	}
 
-	b = KToBuf(k, false, NULL);
-
-	size = b->Size;
 	type = EVP_PKEY_base_id(k->pkey);
 
-	FreeBuf(b);
-	
 	x->bits = EVP_PKEY_bits(k->pkey);
 	
 	FreeK(k);

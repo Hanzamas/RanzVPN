@@ -40,7 +40,7 @@ static void FuzzX509(const uint8_t *data, size_t size)
 
 	// Callers pass text = false (DER) or text = IsBase64(b) (PEM); try both on every input,
 	// except PEM when the input could hold an encrypted PEM header (see above).
-	// BufToX() frees b only when it cannot allocate an OpenSSL BIO, which does not happen here.
+	// BufToX() and BufToXList() never free b.
 	for (i = 0;i < num_passes;i++)
 	{
 		X *x = BufToX(b, i == 1);
