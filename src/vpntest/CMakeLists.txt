@@ -45,6 +45,9 @@ target_sources(vpntest PRIVATE tempdir.c)
 # Named PACK decoder bounds test of FND-42 (#114)
 target_sources(vpntest PRIVATE packdecode.c)
 
+# Named string table loader test of FND-43 (#114)
+target_sources(vpntest PRIVATE tablecache.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
