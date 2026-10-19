@@ -490,8 +490,6 @@ struct CEDAR
 	UINT ClientId;
 	UINT64 BuiltDate;
 	LIST *UdpPortList;
-	LOCK *CurrentRegionLock;
-	char CurrentRegion[128];
 	UINT CurrentTcpQueueSize;						// Changed only with InterlockedExchangeAdd
 	COUNTER *CurrentActiveLinks;
 	LOCK *QueueBudgetLock;

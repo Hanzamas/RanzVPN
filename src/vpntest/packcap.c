@@ -38,7 +38,6 @@
 #define	PACKCAP_SERVER_VER		444					// "version" of the peer
 #define	PACKCAP_SERVER_BUILD	9999				// "build" of the peer
 #define	PACKCAP_WINVER_MSG_LEN	3800				// Characters of each Windows version notice of ServerAccept (its buffer)
-#define	PACKCAP_OSS_MSG_LEN		1200				// ASCII characters of the OSS_MSG notice of ServerAccept, rounded up
 
 // Run state of the test
 typedef struct PACKCAP_TEST
@@ -167,8 +166,8 @@ static PACK *PackCapHello(UINT pad_size)
 }
 
 // Welcome Pack with the elements of PackWelcome and the longest "Msg" that ServerAccept can make:
-// the OSS_MSG notice in ASCII, then both Windows version notices and a hub message of HUB_MAXMSG_LEN
-// characters, each character 3 bytes in UTF-8. *msg_size gets the size of "Msg". pad_size bytes of
+// both Windows version notices and a hub message of HUB_MAXMSG_LEN characters, each character 3 bytes
+// in UTF-8. *msg_size gets the size of "Msg". pad_size bytes of
 // padding are added when pad_size is not 0.
 static PACK *PackCapWelcome(UINT pad_size, UINT *msg_size)
 {
@@ -191,11 +190,6 @@ static PACK *PackCapWelcome(UINT pad_size, UINT *msg_size)
 	PackAddInt(p, "session_key_32", Rand32());
 	PackAddPolicy(p, policy);
 	PackAddInt(p, "vlan_id", 0);
-
-	for (i = 0;i < PACKCAP_OSS_MSG_LEN;i++)
-	{
-		WriteBuf(msg, "A", 1);
-	}
 
 	for (i = 0;i < PACKCAP_WINVER_MSG_LEN * 2 + HUB_MAXMSG_LEN;i++)
 	{

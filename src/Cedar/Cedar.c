@@ -879,8 +879,6 @@ static void CleanupCedar(CEDAR *c)
 
 	ReleaseIntList(c->UdpPortList);
 
-	DeleteLock(c->CurrentRegionLock);
-
 	DeleteLock(c->QueueBudgetLock);
 	DeleteLock(c->FifoBudgetLock);
 
@@ -1111,8 +1109,6 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 	c->AcceptingSockets = NewCounter();
 
 	c->CedarSuperLock = NewLock();
-
-	c->CurrentRegionLock = NewLock();
 
 	InitNoSslList(c);
 

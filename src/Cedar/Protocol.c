@@ -559,7 +559,7 @@ static bool ServerCheckHubAccess(CONNECTION *c, HUB *hub)
 	IP ip;
 	char ip_str[64];
 
-	if (GetGlobalServerFlag(GSF_DISABLE_AC) != 0 || hub->HubDb == NULL || c->FirstSock == NULL)
+	if (hub->HubDb == NULL || c->FirstSock == NULL)
 	{
 		return true;
 	}
@@ -1178,16 +1178,7 @@ bool ServerAccept(CONNECTION *c)
 
 						if (auth_ret == false)
 						{
-							bool fail_ext_user_auth = false;
-							if (GetGlobalServerFlag(GSF_DISABLE_RADIUS_AUTH) != 0)
-							{
-								fail_ext_user_auth = true;
-							}
-
-							if (fail_ext_user_auth == false)
-							{
-								auth_ret = SamAuthUserByPlainPassword(c, hub, username, plain_password, true);
-							}
+							auth_ret = SamAuthUserByPlainPassword(c, hub, username, plain_password, true);
 
 							if (auth_ret && pol == NULL)
 							{
@@ -1210,59 +1201,46 @@ bool ServerAccept(CONNECTION *c)
 					break;
 
 				case CLIENT_AUTHTYPE_CERT:
-					if (GetGlobalServerFlag(GSF_DISABLE_CERT_AUTH) == 0)
+					cert_size = PackGetDataSize(p, "cert");
+					if (cert_size >= 1 && cert_size <= 100000)
 					{
-						cert_size = PackGetDataSize(p, "cert");
-						if (cert_size >= 1 && cert_size <= 100000)
+						cert_buf = ZeroMalloc(cert_size);
+						if (PackGetData(p, "cert", cert_buf))
 						{
-							cert_buf = ZeroMalloc(cert_size);
-							if (PackGetData(p, "cert", cert_buf))
+							UCHAR sign[4096 / 8];
+							UINT sign_size = PackGetDataSize(p, "sign");
+							if (sign_size <= sizeof(sign) && sign_size >= 1)
 							{
-								UCHAR sign[4096 / 8];
-								UINT sign_size = PackGetDataSize(p, "sign");
-								if (sign_size <= sizeof(sign) && sign_size >= 1)
+								if (PackGetData(p, "sign", sign))
 								{
-									if (PackGetData(p, "sign", sign))
+									BUF *b = NewBuf();
+									X *x;
+									WriteBuf(b, cert_buf, cert_size);
+									x = BufToX(b, false);
+									if (x != NULL && x->is_compatible_bit &&
+										sign_size == (x->bits / 8))
 									{
-										BUF *b = NewBuf();
-										X *x;
-										WriteBuf(b, cert_buf, cert_size);
-										x = BufToX(b, false);
-										if (x != NULL && x->is_compatible_bit &&
-											sign_size == (x->bits / 8))
+										K *k = GetKFromX(x);
+										if (RsaVerifyEx(c->Random, SHA1_SIZE, sign, sign_size, k))
 										{
-											K *k = GetKFromX(x);
-											if (RsaVerifyEx(c->Random, SHA1_SIZE, sign, sign_size, k))
+											// A matching signature proves the client holds this certificate.
+											auth_ret = SamAuthUserByCert(hub, username, x);
+											if (auth_ret)
 											{
-												// A matching signature proves the client holds this certificate.
-												auth_ret = SamAuthUserByCert(hub, username, x);
-												if (auth_ret)
-												{
-													c->ClientX = CloneX(x);
-												}
+												c->ClientX = CloneX(x);
 											}
-											else
-											{
-											}
-											FreeK(k);
 										}
-										FreeX(x);
-										FreeBuf(b);
+										else
+										{
+										}
+										FreeK(k);
 									}
+									FreeX(x);
+									FreeBuf(b);
 								}
 							}
-							Free(cert_buf);
 						}
-					}
-					else
-					{
-						// Certificate authentication is not supported in the open source version
-						HLog(hub, "LH_AUTH_CERT_NOT_SUPPORT_ON_OPEN_SOURCE", c->Name, username);
-						Unlock(hub->lock);
-						ReleaseHub(hub);
-						FreePack(p);
-						c->Err = ERR_AUTHTYPE_NOT_SUPPORTED;
-						goto CLEANUP;
+						Free(cert_buf);
 					}
 					break;
 
@@ -2010,18 +1988,8 @@ bool ServerAccept(CONNECTION *c)
 
 			if (IsURLMsg(msg, NULL, 0) == false)
 			{
-
-				{
-					if (GetGlobalServerFlag(GSF_SHOW_OSS_MSG) != 0)
-					{
-						UniStrCat(tmp, tmpsize, _UU("OSS_MSG"));
-					}
-				}
-
-				{
-					UniStrCat(tmp, tmpsize, winver_msg_client);
-					UniStrCat(tmp, tmpsize, winver_msg_server);
-				}
+				UniStrCat(tmp, tmpsize, winver_msg_client);
+				UniStrCat(tmp, tmpsize, winver_msg_server);
 			}
 			UniStrCat(tmp, tmpsize, msg);
 			

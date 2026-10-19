@@ -462,11 +462,6 @@ void SiWriteSysLog(SERVER *s, char *typestr, char *hubname, wchar_t *message)
 		return;
 	}
 
-	if (GetGlobalServerFlag(GSF_DISABLE_SYSLOG) != 0)
-	{
-		return;
-	}
-
 	GetMachineName(machinename, sizeof(machinename));
 
 	LocalTime(&st);
@@ -798,24 +793,6 @@ static void DestroyServerCapsCache(SERVER *s)
 	Unlock(s->CapsCacheLock);
 }
 
-static void FlushServerCaps(SERVER *s)
-{
-	CAPSLIST t;
-	if (s == NULL)
-	{
-		return;
-	}
-
-	Lock(s->CapsCacheLock);
-	{
-		DestroyServerCapsCache(s);
-
-		Zero(&t, sizeof(t));
-		GetServerCaps(s, &t);
-	}
-	Unlock(s->CapsCacheLock);
-}
-
 void GetServerCaps(SERVER *s, CAPSLIST *t)
 {
 	if (s == NULL || t == NULL)
@@ -835,23 +812,6 @@ void GetServerCaps(SERVER *s, CAPSLIST *t)
 		Copy(t, s->CapsListCache, sizeof(CAPSLIST));
 	}
 	Unlock(s->CapsCacheLock);
-}
-
-static void UpdateGlobalServerFlags(SERVER *s, CAPSLIST *t)
-{
-	bool is_restricted = false;
-	if (s == NULL || t == NULL)
-	{
-		return;
-	}
-
-	is_restricted = SiIsEnterpriseFunctionsRestrictedOnOpenSource(s->Cedar);
-
-	SetGlobalServerFlag(GSF_DISABLE_RADIUS_AUTH, is_restricted);
-	SetGlobalServerFlag(GSF_DISABLE_CERT_AUTH, is_restricted);
-	SetGlobalServerFlag(GSF_DISABLE_DEEP_LOGGING, is_restricted);
-	SetGlobalServerFlag(GSF_DISABLE_AC, is_restricted);
-	SetGlobalServerFlag(GSF_DISABLE_SYSLOG, is_restricted);
 }
 
 void SetGlobalServerFlag(UINT index, UINT value)
@@ -999,9 +959,6 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 	AddCapsBool(t, "b_vpn3", true);
 
 	AddCapsBool(t, "b_vpn4", true);
-
-
-	UpdateGlobalServerFlags(s, t);
 }
 
 static const RPC_FIELD rpc_syslog_setting_fields[] =
@@ -1970,17 +1927,12 @@ void IncrementServerConfigRevision(SERVER *s)
 FOLDER *SiWriteConfigurationToCfg(SERVER *s)
 {
 	FOLDER *root;
-	char region[128];
 	if (s == NULL)
 	{
 		return NULL;
 	}
 
 	root = CfgCreateFolder(NULL, TAG_ROOT);
-
-	SiGetCurrentRegion(s->Cedar, region, sizeof(region));
-
-	CfgAddStr(root, "Region", region);
 
 	CfgAddInt(root, "ConfigRevision", s->ConfigRevision);
 
@@ -4532,86 +4484,6 @@ void SiReleaseServer(SERVER *s)
 	}
 }
 
-void SiGetCurrentRegion(CEDAR *c, char *region, UINT region_size)
-{
-	ClearStr(region, region_size);
-	if (c == NULL || region == NULL)
-	{
-		return;
-	}
-
-	Lock(c->CurrentRegionLock);
-	{
-		StrCpy(region, region_size, c->CurrentRegion);
-	}
-	Unlock(c->CurrentRegionLock);
-
-	if (IsEmptyStr(region))
-	{
-		if (GetCurrentLangId() == SE_LANG_JAPANESE)
-		{
-			StrCpy(region, region_size, "JP");
-		}
-		else if (GetCurrentLangId() == SE_LANG_CHINESE_ZH)
-		{
-			StrCpy(region, region_size, "CN");
-		}
-	}
-}
-
-// Upstream disables these functions in Japan and China for licensing reasons.
-bool SiIsEnterpriseFunctionsRestrictedOnOpenSource(CEDAR *c)
-{
-	char region[128];
-	bool ret = false;
-	if (c == NULL)
-	{
-		return false;
-	}
-
-
-	SiGetCurrentRegion(c, region, sizeof(region));
-
-	if (StrCmpi(region, "JP") == 0 || StrCmpi(region, "CN") == 0)
-	{
-		ret = true;
-	}
-
-	return ret;
-}
-
-static void SiUpdateCurrentRegion(CEDAR *c, char *region, bool force_update)
-{
-	bool changed = false;
-	if (c == NULL)
-	{
-		return;
-	}
-
-	if (IsEmptyStr(region) == false)
-	{
-		Lock(c->CurrentRegionLock);
-		{
-			if (StrCmpi(c->CurrentRegion, region) != 0)
-			{
-				StrCpy(c->CurrentRegion, sizeof(c->CurrentRegion), region);
-				changed = true;
-			}
-		}
-		Unlock(c->CurrentRegionLock);
-	}
-
-	if (force_update)
-	{
-		changed = true;
-	}
-
-	if (changed)
-	{
-		FlushServerCaps(c->Server);
-	}
-}
-
 SERVER *SiNewServer(void)
 {
 	SERVER *s;
@@ -4672,8 +4544,6 @@ SERVER *SiNewServer(void)
 	}
 
 	SiInitDeadLockCheck(s);
-
-	SiUpdateCurrentRegion(s->Cedar, "", true);
 
 	return s;
 }

@@ -795,11 +795,6 @@ static UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t)
 
 	tmp = ZeroMalloc(tmpsize);
 
-	if (GetGlobalServerFlag(GSF_SHOW_OSS_MSG) != 0)
-	{
-		UniStrCat(tmp, tmpsize, _UU("OSS_MSG"));
-	}
-
 	UniStrCat(tmp, tmpsize, winver_msg_client);
 	UniStrCat(tmp, tmpsize, winver_msg_server);
 
@@ -1103,11 +1098,6 @@ static UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t)
 	HUB *h;
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
-
-	if (GetGlobalServerFlag(GSF_DISABLE_AC) != 0 && LIST_NUM(t->o) >= 1)
-	{
-		return ERR_NOT_SUPPORTED_FUNCTION_ON_OPENSOURCE;
-	}
 
 	CHECK_RIGHT;
 	StrCpy(hubname, sizeof(hubname), t->HubName);
@@ -1911,11 +1901,6 @@ static UINT StSetSysLog(ADMIN *a, SYSLOG_SETTING *t)
 	SERVER *s = a->Server;
 
 	SERVER_ADMIN_ONLY;
-
-	if (GetGlobalServerFlag(GSF_DISABLE_SYSLOG) != 0 && t->SaveType != SYSLOG_NONE)
-	{
-		return ERR_NOT_SUPPORTED_FUNCTION_ON_OPENSOURCE;
-	}
 
 	if (GetServerCapsBool(s, "b_support_syslog") == false)
 	{
@@ -2944,14 +2929,6 @@ static UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
 
 	CHECK_RIGHT;
 
-	if (GetGlobalServerFlag(GSF_DISABLE_RADIUS_AUTH) != 0)
-	{
-		if (t->AuthType == AUTHTYPE_USERCERT || t->AuthType == AUTHTYPE_ROOTCERT || t->AuthType == AUTHTYPE_NT)
-		{
-			return ERR_NOT_SUPPORTED_AUTH_ON_OPENSOURCE;
-		}
-	}
-
 	if (StrCmpi(t->Name, "*") == 0)
 	{
 		if (t->AuthType != AUTHTYPE_NT)
@@ -3080,14 +3057,6 @@ static UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
 	}
 
 	CHECK_RIGHT;
-
-	if (GetGlobalServerFlag(GSF_DISABLE_RADIUS_AUTH) != 0)
-	{
-		if (t->AuthType == AUTHTYPE_USERCERT || t->AuthType == AUTHTYPE_ROOTCERT || t->AuthType == AUTHTYPE_NT)
-		{
-			return ERR_NOT_SUPPORTED_AUTH_ON_OPENSOURCE;
-		}
-	}
 
 	if (t->AuthType == AUTHTYPE_USERCERT)
 	{

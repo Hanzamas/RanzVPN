@@ -239,7 +239,6 @@ WINVER_ERROR_PC_REMOTE	the remote server
 
 
 # Warning for Open-source Version
-OSS_MSG					Welcome to the SoftEther VPN Server Academic Version!\r\n\r\n\r\nThis VPN Server is open-source free software developed as academic research at University of Tsukuba, Japan, and distributed from the SoftEther VPN Project (http://www.softether.org/), for free of charge for the public interests.\r\n\r\nSoftEther VPN software is distributed to public as a part of the joint-research contract between University of Tsukuba and SoftEther VPN Project. SoftEther VPN software is developed and published for JUST AN ACADEMIC RESEARCH PURPOSE. Therefore no support service are provided about SoftEther VPN software even if it contains bugs or vulnerabilities. A user will be liable for the result of use SoftEther VPN. The developers and publishers of SoftEther VPN will never be liable for either any consequences or damages.\r\n\r\nEnjoy using VPN with SoftEther VPN Server.\r\n\r\nFor more details of SoftEther VPN, visit http://www.softether.org/.\r\n\r\n
 
 
 # Virtual HUB Admin Options
@@ -910,7 +909,6 @@ LH_AUTH_ANONYMOUS		Anonymous authentication
 LH_AUTH_PASSWORD		Password authentication
 LH_AUTH_PLAIN_PASSWORD	External server authentication
 LH_AUTH_CERT			Certificate authentication
-LH_AUTH_CERT_NOT_SUPPORT_ON_OPEN_SOURCE	Connection "%S": The authentication method of the user "%S" has been specified as Certificate Authentication. However, the Certificate Authentication function hasn't been implemented on the Open-Source version of Ranz VPN yet. The connection will be denied.
 LH_AUTH_OK				Connection "%S": Successfully authenticated as user "%S".
 LH_AUTH_OK_CERT			The Virtual Hub's Security Account Manager has received the following certificate from the VPN Client and accepted its contents as the certificate for when user "%S" logs in: %s
 LH_AUTH_NG_CERT			Although the Virtual Hub's Security Account Manager has received the following certificate, has refused its contents as the certificate for when user "%S" logs in because this certificate's contents matches the contents that are registered in the Virtual Hub's certificates revocation list: %s
@@ -961,7 +959,6 @@ LH_CONNECT_ERROR		The connection for Cascade Connection "%s" has been either dis
 LH_POLICY_MONITOR_MODE	Connection "%S": Because of a user whose security policy denies permission for Monitoring Mode requested that Monitoring Mode be enabled and attempted to connect to a Virtual Hub, the connection has been denied.
 LH_POLICY_BRIDGE_MODE	Connection "%S": Because of a user whose security policy denies both bridge connections and routing operations requested that bridge connections or routing operations be enabled and attempted to connect to the Virtual Hub, the connection has been denied.
 LH_TOO_MANY_MULTILOGINS	Connection "%S": Although the user "%S" made a login attempt, the security policy that applies to this user limits the maximum number of multiple logins to %u sessions. Currently the number of logins by this user is %u sessions and therefore the user has denied permission for a new VPN connection.
-LH_PACKET_LOG_NO_LOG_OSS	The VPN Server is either Open-Source or Free version. It hasn't implemented the IP Address or TCP/UDP header data logging function. No IP address nor TCP/UDP header data are not be recorded here.
 
 
 # (Administration log)

@@ -146,12 +146,6 @@ struct LOG_FILE
 
 
 #define	NUM_GLOBAL_SERVER_FLAGS			128
-#define	GSF_DISABLE_RADIUS_AUTH			2
-#define	GSF_DISABLE_CERT_AUTH			3
-#define	GSF_DISABLE_DEEP_LOGGING		4
-#define	GSF_DISABLE_AC					5
-#define	GSF_DISABLE_SYSLOG				6
-#define	GSF_SHOW_OSS_MSG				7
 #define	GSF_DISABLE_SESSION_RECONNECT	9
 
 #define	NUM_GLOBAL_PARAMS					128
@@ -282,9 +276,6 @@ UINT GetGlobalServerFlag(UINT index);
 bool IsAdminPackSupportedServerProduct(char *name);
 
 bool SiTooManyUserObjectsInServer(SERVER *s, bool oneMore);
-
-void SiGetCurrentRegion(CEDAR *c, char *region, UINT region_size);
-bool SiIsEnterpriseFunctionsRestrictedOnOpenSource(CEDAR *c);
 
 #endif
 

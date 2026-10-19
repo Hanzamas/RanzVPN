@@ -32,7 +32,6 @@ struct PACKET_LOG
 	bool PurePacket;
 	bool PurePacketNoPayload;
 	SESSION *SrcSession;
-	bool NoLog;
 };
 
 struct HUB_LOG
