@@ -20,21 +20,27 @@
 //   The user name in the <INFO> text is percent-encoded (the old reply pasted CR, LF and '|' as they
 //   are) and the hash covers the encoded text. A URL with a space or LF gets no redirect, and no reply
 //   frame exceeds MAX_PACKET_SIZE.
+// - NoServer ports (FND-25 #109): under the NoServer and NoServerV6 policies a SYN+ACK of the sender is
+//   dropped, and its security log line names both TCP ports in host order. The old line printed them
+//   big-endian: port 443 as 47873.
 // Prints "STOREPACKET TEST OK" only when every check passes, and frees everything it allocates.
 
 #include "Cedar/Account.h"
 #include "Cedar/Cedar.h"
 #include "Cedar/Connection.h"
 #include "Cedar/Hub.h"
+#include "Cedar/Logging.h"
 #include "Cedar/Server.h"
 #include "Cedar/Session.h"
 
 #include "Mayaqua/Encrypt.h"
+#include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Network.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
+#include "Mayaqua/Table.h"
 #include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
 
@@ -77,6 +83,8 @@
 #define	STOREPACKET_TEST_LF_URL			"http://portal.test/a\nb"
 #define	STOREPACKET_TEST_LONG_URL_HEAD	"http://portal.test/"
 #define	STOREPACKET_TEST_LONG_URL_TAIL	"?i=" ACCESS_LIST_URL_INFO_TAG "|" STOREPACKET_TEST_INFO_SECRET
+#define	STOREPACKET_TEST_SERVER_PORT	443		// The sender's port as a TCP server (NoServer case)
+#define	STOREPACKET_TEST_LOG_MAX		2048	// Buffer of one security log line (UTF-8)
 
 // Run state of the test
 typedef struct STOREPACKET_TEST
@@ -1053,6 +1061,107 @@ static void StorePacketTestRedirectCases(STOREPACKET_TEST *t)
 		"%u replies, the first %u bytes", num, frame_size);
 }
 
+// NoServer policy: a SYN+ACK of the sender from port 443 to the peer's port 40000, over IPv4 and IPv6, is
+// dropped, and the security log line is LH_NO_SERVER with both ports in host order (the old line printed them
+// big-endian: 443 as 47873, 40000 as 16540). The hub's security logger is swapped for a LOG with a record queue
+// and no log thread: InsertRecord only queues the line and sets the event, so the test reads it from the queue
+static void StorePacketTestNoServerPort(STOREPACKET_TEST *t)
+{
+	LOG *old_logger = t->Hub->SecurityLogger;
+	bool old_save = t->Hub->LogSetting.SaveSecurityLog;
+	POLICY *pol = t->Sender->Policy;
+	bool old_no_server = pol->NoServer;
+	bool old_no_server_v6 = pol->NoServerV6;
+	bool has_string = (UniIsEmptyStr(_UU("LH_NO_SERVER")) == false);
+	UINT v;
+
+	pol->NoServer = true;
+	pol->NoServerV6 = true;
+	t->Hub->LogSetting.SaveSecurityLog = true;
+
+	for (v = 0;v < 2;v++)
+	{
+		bool ipv6 = (v != 0);
+		UCHAR frame[STOREPACKET_TEST_FRAME_MAX];
+		char sender_ip[MAX_SIZE], peer_ip[MAX_SIZE];
+		wchar_t expected_uni[STOREPACKET_TEST_LOG_MAX];
+		char expected[STOREPACKET_TEST_LOG_MAX];
+		char first[STOREPACKET_TEST_LOG_MAX];
+		char what[MAX_SIZE];
+		LOG *capture = ZeroMalloc(sizeof(LOG));
+		RECORD *rec;
+		UINT size, num_recv;
+		UINT num_lines = 0;
+		bool found = false;
+
+		capture->RecordQueue = NewQueue();
+		capture->Event = NewEvent();
+		t->Hub->SecurityLogger = capture;
+
+		size = StorePacketTestTcpFrame(frame, ipv6, STOREPACKET_TEST_SERVER_PORT, STOREPACKET_TEST_CLIENT_PORT,
+			TCP_SYN | TCP_ACK, NULL);
+		StorePacketTestDrainFrom(t->Receiver);
+		StorePacketTestSendFrom(t->Sender, frame, size);
+		num_recv = StorePacketTestDrainFrom(t->Receiver);
+		StorePacketTestDrainFrom(t->Sender);
+
+		t->Hub->SecurityLogger = old_logger;
+
+		if (ipv6)
+		{
+			IPV6_HEADER *ip = (IPV6_HEADER *)(frame + 14);
+
+			IP6AddrToStr(sender_ip, sizeof(sender_ip), &ip->SrcAddress);
+			IP6AddrToStr(peer_ip, sizeof(peer_ip), &ip->DestAddress);
+		}
+		else
+		{
+			IPV4_HEADER *ip = (IPV4_HEADER *)(frame + 14);
+
+			IPToStr32(sender_ip, sizeof(sender_ip), ip->SrcIP);
+			IPToStr32(peer_ip, sizeof(peer_ip), ip->DstIP);
+		}
+
+		// The connection request came from the peer's port to the sender's port
+		UniFormat(expected_uni, sizeof(expected_uni), _UU("LH_NO_SERVER"), t->Sender->Name, peer_ip,
+			(UINT)STOREPACKET_TEST_CLIENT_PORT, sender_ip, (UINT)STOREPACKET_TEST_SERVER_PORT);
+		UniToUtf8((BYTE *)expected, sizeof(expected), expected_uni);
+
+		StrCpy(first, sizeof(first), "(none)");
+
+		while ((rec = GetNext(capture->RecordQueue)) != NULL)
+		{
+			char *line = (char *)rec->Data;
+
+			if (num_lines++ == 0)
+			{
+				StrCpy(first, sizeof(first), line);
+			}
+
+			if (StrCmp(line, expected) == 0)
+			{
+				found = true;
+			}
+
+			Free(rec->Data);
+			Free(rec);
+		}
+
+		ReleaseQueue(capture->RecordQueue);
+		ReleaseEvent(capture->Event);
+		Free(capture);
+
+		Format(what, sizeof(what), "NoServer%s: the SYN+ACK is dropped, the security log shows ports %u and %u (the old line printed them big-endian)",
+			(ipv6 ? "V6" : ""), STOREPACKET_TEST_CLIENT_PORT, STOREPACKET_TEST_SERVER_PORT);
+		StorePacketTestCheck(t, has_string && found && num_recv == 0, what, "%u delivered, %u log lines, the first: '%s'",
+			num_recv, num_lines, first);
+	}
+
+	t->Hub->LogSetting.SaveSecurityLog = old_save;
+	pol->NoServer = old_no_server;
+	pol->NoServerV6 = old_no_server_v6;
+}
+
 // storepacket: bounded broadcast storm list, access list delay and jitter without a divide by zero
 void storepacket_test(UINT num, char **arg)
 {
@@ -1089,6 +1198,7 @@ void storepacket_test(UINT num, char **arg)
 	// Before the access list entry of the delay cases, which would hold these frames back
 	StorePacketTestDLinkMac(&t);
 	StorePacketTestRedirectCases(&t);
+	StorePacketTestNoServerPort(&t);
 
 	Zero(&a, sizeof(a));
 	a.Active = true;
