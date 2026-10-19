@@ -493,8 +493,9 @@ void consoleline_test(UINT num, char **arg);
 // Named temp directory and string table test of SEC-8, #96 (tempdir.c)
 void tempdir_test(UINT num, char **arg);
 
-// Named packet parser test of FND-38, #113 (pkttest.c)
+// Named packet parser tests of FND-38 and FND-39, #113 (pkttest.c)
 void pktparse_test(UINT num, char **arg);
+void vlantpid_test(UINT num, char **arg);
 
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
@@ -616,6 +617,7 @@ TEST_LIST test_list[] =
 	{"consoleline", consoleline_test, "Console input: a prompt line longer than its buffer, Ctrl+D and Ctrl+Z, the /IN file reader, UniToInt on a long string."},
 	{"tempdir", tempdir_test, "Temp directory: 64-bit random name, protected DACL; loading a string table writes no cache file."},
 	{"pktparse", pktparse_test, "Packet parsers: DNS opcode mask and label limits, DHCP Pad and whole option bodies, the DHCP cookie at offset 236."},
+	{"vlantpid", vlantpid_test, "VLAN TPID: frames tagged with the hub's VlanTypeId reach layer 3 and 4, the access list of such a hub sees their IPv4."},
 };
 
 // Test function

@@ -1,5 +1,6 @@
 // pkttest.c
-// Named packet parser test of vpntest ("pktparse" command, FND-38 #113)
+// Named packet parser tests of vpntest ("pktparse" command, FND-38 #113; "vlantpid" command,
+// FND-39 #113)
 //
 // pktparse pins the parsers of Mayaqua/TcpIp.c that read the DNS and DHCP traffic of VPN clients
 // for the packet log and the IP table of the hub:
@@ -15,10 +16,27 @@
 //   zeros.
 // - ParseDHCPv4Data (PKT.DhcpOpCode of ParsePacket) reads the magic cookie only at offset 236.
 //   The old code took the first cookie bytes anywhere in the payload, also in sname or file.
+//
+// vlantpid pins the VLAN TPID of the packet parser. A hub with VlanTypeId set (here 0x88A8, the
+// TPID of 802.1ad) tags and untags the frames of its VLAN sessions with that TPID, and
+// ParsePacketEx5 parses a frame tagged with it through ParsePacketTAGVLAN into layers 3 and 4, as
+// it does a frame tagged with 0x8100. The old parser compared 0x8100 only and left such a frame at
+// L3_UNKNOWN, so the access list, the ARP, IP, DHCP and RA policy filters and the packet log of the
+// hub saw no layer 3 in it. The check on a hub runs frames through the hub packet adapter of two
+// in-process sessions, as the storepacket test does.
+//
 // Every frame and option list is in a heap block of exactly its size, so AddressSanitizer reports
-// a read past its end. Prints "PKTPARSE TEST OK" only when every check passes, and frees
-// everything it allocates. The [PASS] lines carry no values; the [FAIL] details do.
+// a read past its end. Each command prints "<COMMAND> TEST OK" only when every check passes, and
+// frees everything it allocates. The [PASS] lines carry no values; the [FAIL] details do.
 
+#include "Cedar/Account.h"
+#include "Cedar/Cedar.h"
+#include "Cedar/Connection.h"
+#include "Cedar/Hub.h"
+#include "Cedar/Server.h"
+#include "Cedar/Session.h"
+
+#include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/TcpIp.h"
@@ -32,6 +50,8 @@
 #define	PKTTEST_DNS_PORT			53		// Destination port of the DNS queries
 #define	PKTTEST_DNS_CLIENT_PORT		53000	// Source port of the DNS queries
 #define	PKTTEST_VLAN_ID				10		// VLAN ID of the tagged frames
+#define	PKTTEST_TPID_8021AD			0x88A8	// TPID of 802.1ad, the VlanTypeId of the vlantpid cases
+#define	PKTTEST_HUB_NAME			"PKTTEST_VLANTPID"	// Hub of the vlantpid case with an access list
 #define	PKTTEST_NUM(a)				(sizeof(a) / sizeof((a)[0]))
 
 // Run state of the test
@@ -480,5 +500,237 @@ void pktparse_test(UINT num, char **arg)
 	else
 	{
 		Print("PKTPARSE TEST FAILED (%u of %u checks failed)\n", ctx.NumFailed, ctx.NumChecks);
+	}
+}
+
+// Hub of the vlantpid case with an access list: two in-process sessions, no server
+typedef struct PKTTEST_HUB
+{
+	CEDAR *Cedar;						// Owner of the hub
+	HUB *Hub;							// Hub of the two sessions (not in the hub list of the Cedar)
+	THREAD *Thread;						// Owner of the session connections; it has nothing to run
+	SESSION *Sender;					// Stores every frame of the case into the hub
+	SESSION *Receiver;					// Takes the frames the hub floods
+} PKTTEST_HUB;
+
+// ARP request of the client (10.0.0.1 asks for 10.0.0.2) in a broadcast frame, tagged as
+// PktTestEthernet does, in a heap block of exactly its size (*size)
+static UCHAR *PktTestArpFrame(USHORT tpid, UINT *size)
+{
+	UCHAR l2[18];
+	UINT l2_size = PktTestEthernet(l2, pkttest_mac_broadcast, pkttest_mac_client, tpid, MAC_PROTO_ARPV4);
+	UCHAR *buf;
+	UCHAR *arp;
+
+	*size = l2_size + 28;
+	buf = ZeroMalloc(*size);
+	Copy(buf, l2, l2_size);
+	arp = buf + l2_size;
+
+	arp[1] = 1;									// Hardware type: Ethernet
+	arp[2] = 0x08;								// Protocol type: IPv4
+	arp[4] = 6;									// Size of a hardware address
+	arp[5] = 4;									// Size of a protocol address
+	arp[7] = 1;									// Request
+	Copy(arp + 8, pkttest_mac_client, 6);		// Sender: the client, 10.0.0.1
+	arp[14] = 10;
+	arp[17] = 1;
+	arp[24] = 10;								// Target: 10.0.0.2, MAC address unknown (zero)
+	arp[27] = 2;
+
+	return buf;
+}
+
+// One parse case: ParsePacketEx4 with the VLAN TPID of a hub (vlan_type_id, 0 for the default
+// 0x8100) must give the layer 3 type expect_l3 and the VLAN ID expect_vlan; for L3_IPV4 also the
+// DHCP DISCOVER of the frame (L4_UDP, L7_DHCPV4, message type DISCOVER)
+static void PktTestTpidCase(PKTTEST_CTX *ctx, char *what, UCHAR *frame, UINT size, UINT vlan_type_id,
+	UINT expect_l3, UINT expect_vlan)
+{
+	PKT *p = ParsePacketEx4(frame, size, false, vlan_type_id, true, false, false);
+	bool ok = (p != NULL && p->TypeL3 == expect_l3 && p->VlanId == expect_vlan);
+
+	if (ok && expect_l3 == L3_IPV4)
+	{
+		ok = (p->TypeL4 == L4_UDP && p->TypeL7 == L7_DHCPV4 && p->DhcpOpCode == DHCP_DISCOVER);
+	}
+
+	PktTestCheck(ctx, ok, what, "%s, layer 3 type %u, VLAN ID %u, layer 7 type %u, message type %u; expected layer 3 type %u, VLAN ID %u",
+		p == NULL ? "frame not parsed" : "frame parsed", p == NULL ? 0 : p->TypeL3, p == NULL ? 0 : p->VlanId,
+		p == NULL ? 0 : p->TypeL7, p == NULL ? 0 : p->DhcpOpCode, expect_l3, expect_vlan);
+
+	FreePacket(p);
+}
+
+// ParsePacketEx4 (ParsePacketEx5, as the hub calls it) with the default and a custom VLAN TPID
+static void PktTestTpidParse(PKTTEST_CTX *ctx)
+{
+	UCHAR discover[] = {53, 1, 1, 255};
+	UCHAR *payload = PktTestDhcpRequest(discover, sizeof(discover));
+	UCHAR *dhcp_8021ad, *dhcp_8021q, *dhcp_untagged, *arp_8021ad;
+	UINT dhcp_8021ad_size, dhcp_8021q_size, dhcp_untagged_size, arp_8021ad_size;
+
+	dhcp_8021ad = PktTestDhcpFrame(PKTTEST_TPID_8021AD, payload, &dhcp_8021ad_size);
+	dhcp_8021q = PktTestDhcpFrame(MAC_PROTO_TAGVLAN, payload, &dhcp_8021q_size);
+	dhcp_untagged = PktTestDhcpFrame(0, payload, &dhcp_untagged_size);
+	arp_8021ad = PktTestArpFrame(PKTTEST_TPID_8021AD, &arp_8021ad_size);
+
+	PktTestTpidCase(ctx, "TPID 0x88A8: a 0x88A8-tagged DHCP DISCOVER is IPv4, UDP and DHCP with its VLAN ID (the old parser left it at L3_UNKNOWN)",
+		dhcp_8021ad, dhcp_8021ad_size, PKTTEST_TPID_8021AD, L3_IPV4, PKTTEST_VLAN_ID);
+	PktTestTpidCase(ctx, "TPID 0x88A8: a 0x88A8-tagged ARP request is ARP with its VLAN ID (the old parser left it at L3_UNKNOWN)",
+		arp_8021ad, arp_8021ad_size, PKTTEST_TPID_8021AD, L3_ARPV4, PKTTEST_VLAN_ID);
+	PktTestTpidCase(ctx, "default TPID: a 0x8100-tagged DHCP DISCOVER is parsed as before",
+		dhcp_8021q, dhcp_8021q_size, 0, L3_IPV4, PKTTEST_VLAN_ID);
+	PktTestTpidCase(ctx, "TPID 0x88A8: a 0x8100-tagged DHCP DISCOVER is still parsed as before",
+		dhcp_8021q, dhcp_8021q_size, PKTTEST_TPID_8021AD, L3_IPV4, PKTTEST_VLAN_ID);
+	PktTestTpidCase(ctx, "default TPID: a 0x88A8-tagged frame is no VLAN frame",
+		dhcp_8021ad, dhcp_8021ad_size, 0, L3_UNKNOWN, 0);
+	PktTestTpidCase(ctx, "TPID 0x0800 (IPv4): an untagged IPv4 frame is still IPv4",
+		dhcp_untagged, dhcp_untagged_size, MAC_PROTO_IPV4, L3_IPV4, 0);
+
+	Free(arp_8021ad);
+	Free(dhcp_untagged);
+	Free(dhcp_8021q);
+	Free(dhcp_8021ad);
+	Free(payload);
+}
+
+// The session connections have nothing to run
+static void PktTestIdleThread(THREAD *thread, void *param)
+{
+}
+
+// In-process server session on the hub of the case with the hub packet adapter and the default
+// policy, made like the sessions of the storepacket test
+static SESSION *PktTestNewSession(PKTTEST_HUB *h, char *username)
+{
+	CONNECTION *c;
+	SESSION *s;
+	POLICY *policy = ClonePolicy(GetDefaultPolicy());
+
+	c = NewServerConnection(h->Cedar, NULL, h->Thread);
+	s = NewServerSession(h->Cedar, c, h->Hub, username, policy);
+	c->Session = s;
+	ReleaseConnection(c);
+
+	s->Username = CopyStr(username);
+
+	s->PacketAdapter->Init(s);
+
+	return s;
+}
+
+// Release a session in the order of the end of SessionMain: leave the hub, free the packet adapter, release
+static void PktTestFreeSession(SESSION *s)
+{
+	DelSession(s->Hub, s);
+	s->PacketAdapter->Free(s);
+	ReleaseSession(s);
+}
+
+// One hub case: the sender stores a broadcast IPv4 UDP frame from 10.5.0.1 to dst, tagged with tpid
+// (VLAN ID PKTTEST_VLAN_ID), into the hub. With pass true the receiver must get it once and
+// unchanged, with pass false not at all
+static void PktTestHubCase(PKTTEST_CTX *ctx, PKTTEST_HUB *h, char *what, USHORT tpid, UCHAR *dst, bool pass)
+{
+	UCHAR src[4] = {10, 5, 0, 1};
+	UCHAR data[8] = {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7};
+	SESSION *r = h->Receiver;
+	UINT size;
+	UCHAR *frame = PktTestUdpFrame(pkttest_mac_broadcast, pkttest_mac_client, tpid, src, dst, 40000, 40001,
+		data, sizeof(data), &size);
+	void *recv;
+	UINT recv_size;
+	UINT num_recv = 0;
+	UINT num_equal = 0;
+
+	// The hub owns the copy; a send without data ends the receive loop of the sender
+	h->Sender->PacketAdapter->PutPacket(h->Sender, Clone(frame, size), size);
+	h->Sender->PacketAdapter->PutPacket(h->Sender, NULL, 0);
+
+	while ((recv_size = r->PacketAdapter->GetNextPacket(r, &recv)) != 0)
+	{
+		if (recv_size == size && Cmp(recv, frame, size) == 0)
+		{
+			num_equal++;
+		}
+
+		Free(recv);
+		num_recv++;
+	}
+
+	PktTestCheck(ctx, pass ? (num_recv == 1 && num_equal == 1) : (num_recv == 0), what,
+		"%u frames delivered (%u unchanged); expected %u", num_recv, num_equal, pass ? 1 : 0);
+
+	Free(frame);
+}
+
+// A hub with VlanTypeId 0x88A8 and an access list entry that discards every IPv4 frame to 192.0.2.99
+static void PktTestTpidHub(PKTTEST_CTX *ctx)
+{
+	PKTTEST_HUB h;
+	HUB_OPTION o;
+	ACCESS a;
+	UCHAR denied[4] = {192, 0, 2, 99};
+	UCHAR allowed[4] = {192, 0, 2, 100};
+
+	Zero(&h, sizeof(h));
+
+	h.Cedar = NewCedar(NULL, NULL);
+
+	// The defaults of a new hub with the 802.1ad TPID; no watchdog thread (ARP and neighbor polling), no log files
+	Zero(&o, sizeof(o));
+	SiSetDefaultHubOption(&o);
+	o.NoArpPolling = true;
+	o.VlanTypeId = PKTTEST_TPID_8021AD;
+	h.Hub = NewHub(h.Cedar, PKTTEST_HUB_NAME, &o);
+	h.Hub->LogSetting.SavePacketLog = false;
+	h.Hub->LogSetting.SaveSecurityLog = false;
+
+	h.Thread = NewThread(PktTestIdleThread, NULL);
+	h.Sender = PktTestNewSession(&h, "vlantpid-sender");
+	h.Receiver = PktTestNewSession(&h, "vlantpid-receiver");
+
+	Zero(&a, sizeof(a));
+	a.Active = true;
+	a.Priority = 1;
+	a.Discard = true;
+	Copy(&a.DestIpAddress, denied, sizeof(denied));
+	a.DestSubnetMask = 0xFFFFFFFF;
+	AddAccessListEx(h.Hub, &a, false, false);
+
+	PktTestHubCase(ctx, &h, "hub with VlanTypeId 0x88A8: the access list drops a 0x88A8-tagged frame to the denied IPv4 address (the old parser saw no IPv4 in it)",
+		PKTTEST_TPID_8021AD, denied, false);
+	PktTestHubCase(ctx, &h, "hub with VlanTypeId 0x88A8: a 0x88A8-tagged frame to another IPv4 address passes unchanged",
+		PKTTEST_TPID_8021AD, allowed, true);
+	PktTestHubCase(ctx, &h, "hub with VlanTypeId 0x88A8: the access list drops a 0x8100-tagged frame to the denied IPv4 address, as before",
+		MAC_PROTO_TAGVLAN, denied, false);
+
+	PktTestFreeSession(h.Receiver);
+	PktTestFreeSession(h.Sender);
+	ReleaseThread(h.Thread);
+	ReleaseHub(h.Hub);
+	ReleaseCedar(h.Cedar);
+}
+
+// vlantpid: the parser honours the VLAN TPID of the hub, the access list of a hub with a custom TPID
+void vlantpid_test(UINT num, char **arg)
+{
+	PKTTEST_CTX ctx;
+
+	Zero(&ctx, sizeof(ctx));
+
+	Print("VLAN TPID test\n");
+
+	PktTestTpidParse(&ctx);
+	PktTestTpidHub(&ctx);
+
+	if (ctx.NumFailed == 0)
+	{
+		Print("VLANTPID TEST OK\n");
+	}
+	else
+	{
+		Print("VLANTPID TEST FAILED (%u of %u checks failed)\n", ctx.NumFailed, ctx.NumChecks);
 	}
 }
