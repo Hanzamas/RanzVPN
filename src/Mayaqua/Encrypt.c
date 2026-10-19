@@ -1789,21 +1789,21 @@ bool CheckXEx(X *x, X *x_issuer, bool check_name, bool check_date)
 
 bool CheckSignature(X *x, K *k)
 {
+	bool ret;
 	if (x == NULL || k == NULL)
 	{
 		return false;
 	}
 
+	// X509_verify() returns 1 for a valid signature, 0 for a bad one and a negative value when it
+	// cannot check it (unknown signature algorithm, bad BIT STRING): only 1 is a valid signature
 	Lock(openssl_lock);
 	{
-		if (X509_verify(x->x509, k->pkey) == 0)
-		{
-			Unlock(openssl_lock);
-			return false;
-		}
+		ret = (X509_verify(x->x509, k->pkey) == 1);
 	}
 	Unlock(openssl_lock);
-	return true;
+
+	return ret;
 }
 
 K *GetKFromX(X *x)
