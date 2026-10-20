@@ -195,277 +195,6 @@ void UniToStr3(wchar_t *str, UINT size, UINT64 value)
 	StrToUni(str, size, tmp);
 }
 
-wchar_t *InternalFormatArgs(wchar_t *fmt, va_list args, bool ansi_mode)
-{
-	UINT i, len;
-	wchar_t *tmp;
-	UINT tmp_size;
-	LIST *o;
-	UINT mode = 0;
-	UINT wp;
-	UINT total_size;
-	wchar_t *ret;
-	if (fmt == NULL)
-	{
-		return NULL;
-	}
-
-	len = UniStrLen(fmt);
-	tmp_size = UniStrSize(fmt);
-	tmp = Malloc(tmp_size);
-
-	o = NewListFast(NULL);
-
-	mode = 0;
-
-	wp = 0;
-
-	for (i = 0;i < len;i++)
-	{
-		wchar_t c = fmt[i];
-
-		if (mode == 0)
-		{
-			switch (c)
-			{
-			case L'%':
-				if (fmt[i + 1] == L'%')
-				{
-					// %% outputs a literal %
-					i++;
-					tmp[wp++] = c;
-				}
-				else
-				{
-					mode = 1;
-					tmp[wp++] = 0;
-					wp = 0;
-					Add(o, CopyUniStr(tmp));
-					tmp[wp++] = c;
-				}
-				break;
-			default:
-				tmp[wp++] = c;
-				break;
-			}
-		}
-		else
-		{
-			char *tag;
-			char dst[MAX_SIZE];
-			wchar_t *target_str;
-			wchar_t *padding_str;
-			bool left_padding;
-			UINT target_str_len;
-			UINT total_len;
-			wchar_t *output_str;
-			UINT padding;
-			switch (c)
-			{
-			case L'c':
-			case L'C':
-			case L'd':
-			case L'i':
-			case L'o':
-			case L'u':
-			case L'x':
-			case L'X':
-				tmp[wp++] = c;
-				tmp[wp++] = 0;
-				tag = CopyUniToStr(tmp);
-
-					ReplaceStrEx(tag, 0, tag, "ll", "I64", false);
-
-				if ((UniStrLen(tmp) >= 5 && tmp[UniStrLen(tmp) - 4] == L'I' &&
-					tmp[UniStrLen(tmp) - 3] == L'6' &&
-					tmp[UniStrLen(tmp) - 2] == L'4') ||
-					(
-					UniStrLen(tmp) >= 4 && tmp[UniStrLen(tmp) - 3] == L'l' &&
-					tmp[UniStrLen(tmp) - 2] == L'l'))
-				{
-						snprintf(dst, sizeof(dst), tag, va_arg(args, UINT64));
-				}
-				else
-				{
-						snprintf(dst, sizeof(dst), tag, va_arg(args, int));
-				}
-
-				Free(tag);
-				Add(o, CopyStrToUni(dst));
-
-				wp = 0;
-				mode = 0;
-				break;
-			case L'e':
-			case L'E':
-			case L'f':
-			case L'g':
-			case L'G':
-				tmp[wp++] = c;
-				tmp[wp++] = 0;
-				tag = CopyUniToStr(tmp);
-
-					snprintf(dst, sizeof(dst), tag, va_arg(args, double));
-
-				Free(tag);
-				Add(o, CopyStrToUni(dst));
-
-				wp = 0;
-				mode = 0;
-				break;
-			case L'n':
-			case L'p':
-				tmp[wp++] = c;
-				tmp[wp++] = 0;
-				tag = ZeroMalloc(UniStrSize(tmp) + 32);
-				UniToStr(tag, 0, tmp);
-
-					snprintf(dst, sizeof(dst), tag, va_arg(args, void *));
-
-				Free(tag);
-				Add(o, CopyStrToUni(dst));
-
-				wp = 0;
-				mode = 0;
-				break;
-			case L'r':
-			case L'R':
-				tmp[wp++] = c;
-				tmp[wp++] = 0;
-
-				Zero(dst, sizeof(dst));
-				IPToStr(dst, sizeof(dst), va_arg(args, void *));
-
-				Add(o, CopyStrToUni(dst));
-
-				wp = 0;
-				mode = 0;
-				break;
-
-			case L's':
-			case L'S':
-				tmp[wp++] = c;
-				tmp[wp++] = 0;
-
-				if (ansi_mode == false)
-				{
-					if (c == L'S')
-					{
-						c = L's';
-					}
-					else
-					{
-						c = L'S';
-					}
-				}
-
-				if (c == L's')
-				{
-					target_str = CopyStrToUni(va_arg(args, char *));
-				}
-				else
-				{
-					target_str = CopyUniStr(va_arg(args, wchar_t *));
-				}
-
-				if (target_str == NULL)
-				{
-					target_str = CopyUniStr(L"(null)");
-				}
-
-				padding = 0;
-				left_padding = false;
-				if (tmp[1] == L'-')
-				{
-					if (UniStrLen(tmp) >= 3)
-					{
-						padding = UniToInt(&tmp[2]);
-					}
-					left_padding = true;
-				}
-				else
-				{
-					if (UniStrLen(tmp) >= 2)
-					{
-						padding = UniToInt(&tmp[1]);
-					}
-				}
-
-				target_str_len = UniStrWidth(target_str);
-
-				if (padding > target_str_len)
-				{
-					UINT len = padding - target_str_len;
-					UINT i;
-					padding_str = ZeroMalloc(sizeof(wchar_t) * (len + 1));
-					for (i = 0;i < len;i++)
-					{
-						padding_str[i] = L' ';
-					}
-				}
-				else
-				{
-					padding_str = ZeroMalloc(sizeof(wchar_t));
-				}
-
-				total_len = sizeof(wchar_t) * (UniStrLen(padding_str) + UniStrLen(target_str) + 1);
-				output_str = ZeroMalloc(total_len);
-				output_str[0] = 0;
-
-				if (left_padding == false)
-				{
-					UniStrCat(output_str, total_len, padding_str);
-				}
-				UniStrCat(output_str, total_len, target_str);
-				if (left_padding)
-				{
-					UniStrCat(output_str, total_len, padding_str);
-				}
-
-				Add(o, output_str);
-
-				Free(target_str);
-				Free(padding_str);
-
-				wp = 0;
-				mode = 0;
-				break;
-			default:
-				tmp[wp++] = c;
-				break;
-			}
-		}
-	}
-	tmp[wp++] = 0;
-	wp = 0;
-
-	if (UniStrLen(tmp) >= 1)
-	{
-		Add(o, CopyUniStr(tmp));
-	}
-
-	total_size = sizeof(wchar_t);
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		wchar_t *s = LIST_DATA(o, i);
-		total_size += UniStrLen(s) * sizeof(wchar_t);
-	}
-
-	ret = ZeroMalloc(total_size);
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		wchar_t *s = LIST_DATA(o, i);
-		UniStrCat(ret, total_size, s);
-		Free(s);
-	}
-
-	ReleaseList(o);
-
-	Free(tmp);
-
-	return ret;
-}
-
 UINT UniStrWidth(wchar_t *str)
 {
 	UINT i, len, ret;
@@ -1388,32 +1117,6 @@ UINT UniSearchStrEx(wchar_t *string, wchar_t *keyword, UINT start, bool case_sen
 		return INFINITE;
 	}
 
-	if (len_string == len_keyword)
-	{
-		if (case_sensitive)
-		{
-			if (UniStrCmp(string, keyword) == 0)
-			{
-				return 0;
-			}
-			else
-			{
-				return INFINITE;
-			}
-		}
-		else
-		{
-			if (UniStrCmpi(string, keyword) == 0)
-			{
-				return 0;
-			}
-			else
-			{
-				return INFINITE;
-			}
-		}
-	}
-
 	if (case_sensitive)
 	{
 		cmp_string = string;
@@ -1830,15 +1533,27 @@ void UniPrintStr(wchar_t *string)
 	Win32PrintW(string);
 }
 
+// The CRT formats the whole message into a heap buffer, which goes to the console as it is
 static void UniPrintArgs(wchar_t *fmt, va_list args)
 {
+	va_list count_args;
 	wchar_t *str;
+	int len;
 	if (fmt == NULL)
 	{
 		return;
 	}
 
-	str = InternalFormatArgs(fmt, args, false);
+	va_copy(count_args, args);
+	len = _vscwprintf(fmt, count_args);
+	va_end(count_args);
+	if (len < 0)
+	{
+		return;
+	}
+
+	str = Malloc(((UINT)len + 1) * (UINT)sizeof(wchar_t));
+	_vsnwprintf_s(str, (size_t)len + 1, _TRUNCATE, fmt, args);
 
 	UniPrintStr(str);
 
@@ -1858,9 +1573,12 @@ void UniPrint(wchar_t *fmt, ...)
 	va_end(args);
 }
 
+// The CRT formatter (wide: %s is a wchar_t string, %S a char string). size is in bytes: 0 means
+// the buffer holds the whole result, 1 leaves buf as it is, and a longer result keeps
+// size / sizeof(wchar_t) - 1 characters and the terminator. buf must not be an argument or fmt
 void UniFormatArgs(wchar_t *buf, UINT size, wchar_t *fmt, va_list args)
 {
-	wchar_t *ret;
+	size_t count = size / sizeof(wchar_t);
 	if (buf == NULL || fmt == NULL)
 	{
 		return;
@@ -1872,11 +1590,23 @@ void UniFormatArgs(wchar_t *buf, UINT size, wchar_t *fmt, va_list args)
 
 	KS_INC(KS_FORMAT_COUNT);
 
-	ret = InternalFormatArgs(fmt, args, false);
+	if (size == 0)
+	{
+		va_list count_args;
+		int len;
 
-	UniStrCpy(buf, size, ret);
+		va_copy(count_args, args);
+		len = _vscwprintf(fmt, count_args);
+		va_end(count_args);
+		if (len < 0)
+		{
+			buf[0] = 0;
+			return;
+		}
+		count = (size_t)len + 1;
+	}
 
-	Free(ret);
+	_vsnwprintf_s(buf, count, _TRUNCATE, fmt, args);
 }
 
 void UniFormat(wchar_t *buf, UINT size, wchar_t *fmt, ...)

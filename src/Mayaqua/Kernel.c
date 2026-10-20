@@ -1179,18 +1179,19 @@ bool DateTimeStrRFC3339ToSystemTime(SYSTEMTIME *st, char *str)
 void GetSpanStrMilli(char *str, UINT size, UINT64 sec64)
 {
 	char tmp[MAX_SIZE];
+	char days[MAX_SIZE];
 	if (str == NULL)
 	{
 		return;
 	}
 
-	StrCpy(tmp, sizeof(tmp), "");
+	StrCpy(days, sizeof(days), "");
 	if (sec64 >= (UINT64)(1000 * 3600 * 24))
 	{
-		Format(tmp, sizeof(tmp), "%u:", (UINT)(sec64 / (UINT64)(1000 * 3600 * 24)));
+		Format(days, sizeof(days), "%u:", (UINT)(sec64 / (UINT64)(1000 * 3600 * 24)));
 	}
 
-	Format(tmp, sizeof(tmp), "%s%02u:%02u:%02u.%03u", tmp,
+	Format(tmp, sizeof(tmp), "%s%02u:%02u:%02u.%03u", days,
 		(UINT)(sec64 % (UINT64)(1000 * 60 * 60 * 24)) / (1000 * 60 * 60),
 		(UINT)(sec64 % (UINT64)(1000 * 60 * 60)) / (1000 * 60),
 		(UINT)(sec64 % (UINT64)(1000 * 60)) / 1000,

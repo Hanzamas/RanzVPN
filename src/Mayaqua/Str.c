@@ -1595,38 +1595,57 @@ UINT ToInt(char *str)
 	return (UINT)strtoul(str, NULL, 0);
 }
 
-static void PrintStr(char *str)
+// Format a narrow format string into a new wide heap string (Free) with the CRT. The conversions
+// mean what they mean in Format (%s is a char string, %S a wchar_t string): the wide formatter
+// runs without the legacy wide specifiers, so a wchar_t argument keeps every character instead
+// of a round trip through the ANSI code page. NULL when the CRT cannot format the arguments
+wchar_t *CopyFormatArgsToUni(char *fmt, va_list args)
 {
-	wchar_t *unistr = NULL;
-	if (str == NULL)
+	unsigned __int64 options = _CRT_INTERNAL_LOCAL_PRINTF_OPTIONS & ~(unsigned __int64)_CRT_INTERNAL_PRINTF_LEGACY_WIDE_SPECIFIERS;
+	va_list count_args;
+	wchar_t *fmt_w;
+	wchar_t *ret;
+	int len;
+	if (fmt == NULL)
 	{
-		return;
+		return NULL;
 	}
 
-	unistr = CopyStrToUni(str);
-	UniPrintStr(unistr);
-	Free(unistr);
+	fmt_w = CopyStrToUni(fmt);
+
+	va_copy(count_args, args);
+	len = __stdio_common_vswprintf(options | _CRT_INTERNAL_PRINTF_STANDARD_SNPRINTF_BEHAVIOR, NULL, 0, fmt_w, NULL, count_args);
+	va_end(count_args);
+	if (len < 0)
+	{
+		Free(fmt_w);
+		return NULL;
+	}
+
+	ret = Malloc(((UINT)len + 1) * (UINT)sizeof(wchar_t));
+	__stdio_common_vswprintf(options | _CRT_INTERNAL_PRINTF_STANDARD_SNPRINTF_BEHAVIOR, ret, (size_t)len + 1, fmt_w, NULL, args);
+	Free(fmt_w);
+
+	return ret;
 }
 
+// The message goes to the console as a wide string, without a hop through the ANSI code page
 static void PrintArgs(char *fmt, va_list args)
 {
-	wchar_t *ret;
-	wchar_t *fmt_wchar;
-	char *tmp;
+	wchar_t *str;
 	if (fmt == NULL)
 	{
 		return;
 	}
 
-	fmt_wchar = CopyStrToUni(fmt);
-	ret = InternalFormatArgs(fmt_wchar, args, true);
+	str = CopyFormatArgsToUni(fmt, args);
+	if (str == NULL)
+	{
+		return;
+	}
 
-	tmp = CopyUniToStr(ret);
-	PrintStr(tmp);
-	Free(tmp);
-
-	Free(ret);
-	Free(fmt_wchar);
+	UniPrintStr(str);
+	Free(str);
 }
 
 void Print(char *fmt, ...)
@@ -1697,21 +1716,34 @@ void Format(char *buf, UINT size, char *fmt, ...)
 	va_end(args);
 }
 
+// The CRT formatter (narrow: %s is a char string, %S a wchar_t string). size 0 means the buffer
+// holds the whole result; otherwise a longer result keeps size - 1 characters and the
+// terminator. buf must not be an argument or fmt
 void FormatArgs(char *buf, UINT size, char *fmt, va_list args)
 {
-	wchar_t *tag;
-	wchar_t *ret;
+	size_t count = size;
 	if (buf == NULL || fmt == NULL)
 	{
 		return;
 	}
 
-	tag = CopyStrToUni(fmt);
-	ret = InternalFormatArgs(tag, args, true);
+	if (size == 0)
+	{
+		va_list count_args;
+		int len;
 
-	UniToStr(buf, size, ret);
-	Free(ret);
-	Free(tag);
+		va_copy(count_args, args);
+		len = _vscprintf(fmt, count_args);
+		va_end(count_args);
+		if (len < 0)
+		{
+			buf[0] = 0;
+			return;
+		}
+		count = (size_t)len + 1;
+	}
+
+	_vsnprintf_s(buf, count, _TRUNCATE, fmt, args);
 }
 
 int StrCmpi(char *str1, char *str2)
