@@ -13,7 +13,6 @@
 
 typedef bool (CHECK_CERT_PROC)(SESSION *s, CONNECTION *c, X *server_x, bool *expired);
 
-// Do not change item size or order and only add new items at the end!
 struct CLIENT_OPTION
 {
 	wchar_t AccountName[MAX_ACCOUNT_NAME_LEN + 1];
@@ -30,31 +29,19 @@ struct CLIENT_OPTION
 	char HubName[MAX_HUBNAME_LEN + 1];
 	UINT MaxConnection;
 	bool UseEncrypt;
-	char pad1[3];
 	bool UseCompress;
-	char pad2[3];
 	bool HalfConnection;
-	char pad3[3];
 	bool NoRoutingTracking;
-	char pad4[3];
 	char DeviceName[MAX_DEVICE_NAME_LEN + 1];
 	UINT AdditionalConnectionInterval;
 	UINT ConnectionDisconnectSpan;
 	bool HideStatusWindow;
-	char pad5[3];
 	bool HideNicInfoWindow;
-	char pad6[3];
 	bool RequireMonitorMode;
-	char pad7[3];
 	bool RequireBridgeRoutingMode;
-	char pad8[3];
 	bool DisableQoS;
-	char pad9[3];
 	bool FromAdminPack;
-	char pad10[3];
-	char pad11[4];											// Removed bool
 	bool NoUdpAcceleration;
-	char pad12[3];
 	UCHAR HostUniqueKey[SHA1_SIZE];
 	char CustomHttpHeader[HTTP_CUSTOM_HEADER_MAX_SIZE];
 	IP   BindLocalIP;
@@ -85,14 +72,10 @@ struct TCPSOCK
 	UINT NextBlockSize;
 	UINT CurrentPacketNum;
 	UINT64 LastCommTime;
-	UINT64 LastRecvTime;
 	UINT LateCount;
 	UINT Direction;
 	UINT64 NextKeepAliveTime;
-	CRYPT *SendKey;
-	CRYPT *RecvKey;
 	UINT64 DisconnectTick;
-	UINT64 EstablishedTick;
 };
 
 struct TCP
@@ -118,7 +101,6 @@ struct BLOCK
 	UINT SizeofData;
 	UCHAR *Buf;
 	bool PriorityQoS;
-	UINT Param1;
 	bool IsFlooding;
 };
 
@@ -174,7 +156,6 @@ struct CONNECTION
 	UINT LastPacketQueueSize;
 	UINT LastRecvFifoTotalSize;
 	UINT LastRecvBlocksNum;
-	LISTENER *Listener;
 };
 
 

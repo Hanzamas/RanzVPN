@@ -68,7 +68,7 @@ bool ParseWelcomeFromPack(PACK *p, char *session_name, UINT session_name_size,
 						  POLICY **policy);
 
 
-bool ClientAdditionalConnect(CONNECTION *c, THREAD *t);
+bool ClientAdditionalConnect(CONNECTION *c);
 bool ClientUploadAuth2(CONNECTION *c, SOCK *s);
 bool GetSessionKeyFromPack(PACK *p, UCHAR *session_key, UINT *session_key_32);
 

@@ -73,9 +73,9 @@ CLIENT_AUTH *CopyClientAuth(CLIENT_AUTH *a)
 	return ret;
 }
 
-static void WriteSendFifo(SESSION *s, TCPSOCK *ts, void *data, UINT size)
+static void WriteSendFifo(TCPSOCK *ts, void *data, UINT size)
 {
-	if (s == NULL || ts == NULL || data == NULL)
+	if (ts == NULL || data == NULL)
 	{
 		return;
 	}
@@ -83,9 +83,9 @@ static void WriteSendFifo(SESSION *s, TCPSOCK *ts, void *data, UINT size)
 	WriteFifo(ts->SendFifo, data, size);
 }
 
-static void WriteRecvFifo(SESSION *s, TCPSOCK *ts, void *data, UINT size)
+static void WriteRecvFifo(TCPSOCK *ts, void *data, UINT size)
 {
-	if (s == NULL || ts == NULL || data == NULL)
+	if (ts == NULL || data == NULL)
 	{
 		return;
 	}
@@ -327,9 +327,9 @@ static void SendKeepAlive(CONNECTION *c, TCPSOCK *ts)
 
 	num = Endian32(num);
 	size_be = Endian32(size);
-	WriteSendFifo(c->Session, ts, &num, sizeof(UINT));
-	WriteSendFifo(c->Session, ts, &size_be, sizeof(UINT));
-	WriteSendFifo(c->Session, ts, buf, size);
+	WriteSendFifo(ts, &num, sizeof(UINT));
+	WriteSendFifo(ts, &size_be, sizeof(UINT));
+	WriteSendFifo(ts, buf, size);
 
 	c->Session->TotalSendSize += sizeof(UINT) * 2 + size;
 	c->Session->TotalSendSizeReal += sizeof(UINT) * 2 + size;
@@ -510,7 +510,7 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 						{
 							bool update_keepalive_timer = false;
 							num_data = Endian32(q->num_item);
-							WriteSendFifo(s, tss, &num_data, sizeof(UINT));
+							WriteSendFifo(tss, &num_data, sizeof(UINT));
 
 							s->TotalSendSize += sizeof(UINT);
 							s->TotalSendSizeReal += sizeof(UINT);
@@ -519,14 +519,14 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 							{
 								UINT size_data;
 								size_data = Endian32(b->Size);
-								WriteSendFifo(s, tss, &size_data, sizeof(UINT));
+								WriteSendFifo(tss, &size_data, sizeof(UINT));
 
 								c->CurrentSendQueueSize -= b->Size;
 
 								s->TotalSendSize += sizeof(UINT);
 								s->TotalSendSizeReal += sizeof(UINT);
 
-								WriteSendFifo(s, tss, b->Buf, b->Size);
+								WriteSendFifo(tss, b->Buf, b->Size);
 
 								s->TotalSendSize += b->SizeofData;
 								s->TotalSendSizeReal += b->Size;
@@ -655,7 +655,6 @@ SEND_START:
 					else
 					{
 						num_blocks++;
-						k->CurrentSendPacketQueueSize += block->Size;
 						InsertQueue(k->SendPacketQueue, block);
 					}
 				}
@@ -964,7 +963,6 @@ RECV_START:
 			{
 DISCONNECT_THIS_TCP:
 				s->LastTryAddConnectTime = Tick64();
-				s->NumDisconnected++;
 				LockList(tcp->TcpSockList);
 				{
 					Delete(tcp->TcpSockList, ts);
@@ -996,12 +994,11 @@ DISCONNECT_THIS_TCP:
 				}
 
 				UPDATE_LAST_COMM_TIME(c->Session->LastCommTime, now);
-				UPDATE_LAST_COMM_TIME(ts->LastRecvTime, now);
 
 				CedarAddFifoBudget(c->Cedar, (int)size);
 				recv_fifo_size_middle_update += (int)size;
 
-				WriteRecvFifo(s, ts, buf, size);
+				WriteRecvFifo(ts, buf, size);
 
 				if (ts->RecvFifo->size < fifo_size_limit)
 				{
@@ -1487,7 +1484,7 @@ BLOCK *NewBlock(void *data, UINT size, int compress)
 
 	b->IsFlooding = false;
 
-	b->PriorityQoS = b->Param1 = 0;
+	b->PriorityQoS = false;
 
 	if (compress == 0)
 	{
@@ -1539,7 +1536,7 @@ TCPSOCK *NewTcpSock(SOCK *s)
 
 	ts->RecvFifo = NewFifo();
 	ts->SendFifo = NewFifo();
-	ts->EstablishedTick = ts->LastRecvTime = ts->LastCommTime = Tick64();
+	ts->LastCommTime = Tick64();
 
 	SetTimeout(s, TIMEOUT_INFINITE);
 
@@ -1557,15 +1554,6 @@ void FreeTcpSock(TCPSOCK *ts)
 	ReleaseSock(ts->Sock);
 	ReleaseFifo(ts->RecvFifo);
 	ReleaseFifo(ts->SendFifo);
-
-	if (ts->SendKey)
-	{
-		FreeCrypt(ts->SendKey);
-	}
-	if (ts->RecvKey)
-	{
-		FreeCrypt(ts->RecvKey);
-	}
 
 	Free(ts);
 }

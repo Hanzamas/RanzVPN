@@ -31,12 +31,10 @@ void SessionMain(SESSION *s)
 	bool pa_inited = false;
 	UINT packet_size;
 	void *packet;
-	bool packet_put;
 	bool pa_fail = false;
 	bool update_hub_last_comm = false;
 	UINT err = ERR_SESSION_TIMEOUT;
 	UINT64 next_update_hub_last_comm = 0;
-	bool block_all_packets = false;
 	TRAFFIC t;
 	int packet_queue_diff;
 	bool is_server_session = false;
@@ -52,12 +50,9 @@ void SessionMain(SESSION *s)
 	// cascade connection to the log of the local hub of the cascade
 	udp_accel_log_hub = (s->Hub != NULL ? s->Hub : (s->Link != NULL ? s->Link->Hub : NULL));
 
-	BinToStr(s->SessionKeyStr, sizeof(s->SessionKeyStr), s->SessionKey, sizeof(s->SessionKey));
-
 	s->CurrentRetryCount = 0;
 	s->ConnectSucceed = true;
 	s->SessionTimeOuted = false;
-	s->NumDisconnected = 0;
 
 	c = s->Connection;
 	policy = s->Policy;
@@ -195,7 +190,6 @@ void SessionMain(SESSION *s)
 		}
 		{
 			BLOCK *b;
-			packet_put = false;
 			while (true)
 			{
 				b = GetNext(c->ReceivedBlocks);
@@ -210,7 +204,6 @@ void SessionMain(SESSION *s)
 
 				TrafficCountFrame(is_server_session ? &t.Send : &t.Recv, b->Buf, b->Size);
 
-				packet_put = true;
 				PROBE_DATA2("pa->PutPacket", b->Buf, b->Size);
 				if (pa->PutPacket(s, b->Buf, b->Size) == false)
 				{
@@ -248,8 +241,7 @@ void SessionMain(SESSION *s)
 
 				update_hub_last_comm = true;
 
-				if ((c->CurrentSendQueueSize > MAX_BUFFERING_PACKET_SIZE) ||
-					block_all_packets)
+				if (c->CurrentSendQueueSize > MAX_BUFFERING_PACKET_SIZE)
 				{
 					Free(packet);
 				}
@@ -712,9 +704,7 @@ static void ClientAdditionalThread(THREAD *t, void *param)
 
 	NoticeThreadInit(t);
 
-	Debug("Additional Connection #%u\n", Count(c->CurrentNumConnection));
-
-	if (ClientAdditionalConnect(c, t) == false)
+	if (ClientAdditionalConnect(c) == false)
 	{
 		Dec(c->CurrentNumConnection);
 
@@ -997,18 +987,9 @@ void ReleaseSession(SESSION *s)
 	}
 }
 
-void PrintSessionTotalDataSize(SESSION *s)
-{
-	if (s == NULL)
-	{
-		return;
-	}
-}
-
 static void ClientThread(THREAD *t, void *param)
 {
 	SESSION *s;
-	CEDAR *cedar;
 	if (t == NULL || param == NULL)
 	{
 		return;
@@ -1020,8 +1001,6 @@ static void ClientThread(THREAD *t, void *param)
 	AddRef(t->ref);
 
 	NoticeThreadInit(t);
-
-	cedar = s->Cedar;
 
 	s->ClientStatus = CLIENT_STATUS_CONNECTING;
 	s->RetryFlag = true;
@@ -1054,8 +1033,6 @@ static void ClientThread(THREAD *t, void *param)
 		{
 			s->Err = ERR_USER_CANCEL;
 		}
-
-		PrintSessionTotalDataSize(s);
 
 		if (s->LinkModeClient && s->Link != NULL)
 		{
@@ -1355,9 +1332,9 @@ SESSION *GetSessionFromKey(CEDAR *cedar, UCHAR *session_key)
 	return NULL;
 }
 
-static void NewSessionKey(CEDAR *cedar, UCHAR *session_key, UINT *session_key_32)
+static void NewSessionKey(UCHAR *session_key, UINT *session_key_32)
 {
-	if (cedar == NULL || session_key == NULL || session_key_32 == NULL)
+	if (session_key == NULL || session_key_32 == NULL)
 	{
 		return;
 	}
@@ -1406,7 +1383,7 @@ SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, P
 
 	AddSession(h, s);
 
-	NewSessionKey(cedar, s->SessionKey, &s->SessionKey32);
+	NewSessionKey(s->SessionKey, &s->SessionKey32);
 
 	return s;
 }

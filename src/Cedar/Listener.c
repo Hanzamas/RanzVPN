@@ -131,9 +131,6 @@ static void TCPAcceptedThread(THREAD *t, void *param)
 
 	c = NewServerConnection(r->Cedar, s, t);
 
-	AddRef(r->ref);
-	c->Listener = r;
-
 	AddConnection(c->Cedar, c);
 
 	NoticeThreadInit(t);
@@ -150,8 +147,6 @@ static void TCPAcceptedThread(THREAD *t, void *param)
 	flag1 = c->flag1;
 
 	SLog(r->Cedar, "LS_CONNECTION_END_1", c->Name);
-	ReleaseListener(c->Listener);
-	c->Listener = NULL;
 	ReleaseConnection(c);
 
 	if (flag1 == false)

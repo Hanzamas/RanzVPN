@@ -77,7 +77,6 @@ static bool LinkPaInit(SESSION *s)
 	WaitThreadInit(t);
 
 	k->LastServerConnectionReceivedBlocksNum = 0;
-	k->CurrentSendPacketQueueSize = 0;
 
 	ReleaseThread(t);
 
@@ -86,12 +85,6 @@ static bool LinkPaInit(SESSION *s)
 
 static CANCEL *LinkPaGetCancel(SESSION *s)
 {
-	LINK *k;
-	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
-	{
-		return NULL;
-	}
-
 	return NULL;
 }
 
@@ -116,8 +109,6 @@ static UINT LinkPaGetNextPacket(SESSION *s, void **data)
 		{
 			*data = block->Buf;
 			ret = block->Size;
-
-			k->CurrentSendPacketQueueSize -= block->Size;
 
 			Free(block);
 		}
@@ -255,8 +246,6 @@ static void LinkPaFree(SESSION *s)
 	ReleaseSession(k->ServerSession);
 
 	FreeBlockQueue(k->SendPacketQueue);
-
-	k->CurrentSendPacketQueueSize = 0;
 }
 
 static PACKET_ADAPTER *LinkGetPacketAdapter()

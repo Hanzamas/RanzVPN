@@ -24,7 +24,6 @@ struct LINK
 	CLIENT_AUTH *Auth;
 	POLICY *Policy;
 	QUEUE *SendPacketQueue;
-	UINT CurrentSendPacketQueueSize;
 	UINT LastError;
 	bool CheckServerCert;
 	bool AddDefaultCA;

@@ -450,7 +450,6 @@ struct CEDAR
 	LOCK *lock;
 	REF *ref;
 	COUNTER *AcceptingSockets;
-	UINT Type;
 	LIST *ListenerList;
 	LIST *HubList;
 	LIST *ConnectionList;

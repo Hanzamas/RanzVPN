@@ -2126,8 +2126,6 @@ bool ServerAccept(CONNECTION *c)
 		}
 		Unlock(s->Hub->lock);
 
-		PrintSessionTotalDataSize(s);
-
 		HLog(s->Hub, "LH_END_SESSION", s->Name, s->TotalSendSizeReal, s->TotalRecvSizeReal);
 
 		if (s->UdpAccel != NULL)
@@ -2544,7 +2542,7 @@ static SOCK *ClientAdditionalConnectToServer(CONNECTION *c)
 	return s;
 }
 
-bool ClientAdditionalConnect(CONNECTION *c, THREAD *t)
+bool ClientAdditionalConnect(CONNECTION *c)
 {
 	SOCK *s;
 	PACK *p;
