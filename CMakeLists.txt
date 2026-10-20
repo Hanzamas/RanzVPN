@@ -43,15 +43,12 @@ if(WIN32 AND VCPKG_TARGET_TRIPLET AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
   message (FATAL_ERROR "vcpkg not installed or integrated with Visual Studio. Install it and run\n\tvcpkg integrate install")
 endif()
 
-# Date and time
-string(TIMESTAMP DATE_DAY "%d" UTC)
-string(TIMESTAMP DATE_MONTH "%m" UTC)
-string(TIMESTAMP DATE_YEAR "%Y" UTC)
-string(TIMESTAMP TIME_HOUR "%H" UTC)
-string(TIMESTAMP TIME_MINUTE "%M" UTC)
-string(TIMESTAMP TIME_SECOND "%S" UTC)
+# Build time: one UTC stamp, so its parts cannot straddle a second rollover. string(TIMESTAMP) uses
+# SOURCE_DATE_EPOCH when that is set, which makes the stamp reproducible. src/Cedar turns it into
+# BuildInfo.h; the version resources (ver.rc) read DATE_YEAR.
+string(TIMESTAMP BUILD_STAMP "%Y-%m-%d %H:%M:%S" UTC)
+string(SUBSTRING "${BUILD_STAMP}" 0 4 DATE_YEAR)
 
-message(STATUS "Build date: ${DATE_DAY}/${DATE_MONTH}/${DATE_YEAR}")
-message(STATUS "Build time: ${TIME_HOUR}:${TIME_MINUTE}:${TIME_SECOND}")
+message(STATUS "Build time (UTC): ${BUILD_STAMP}")
 
 add_subdirectory(src)

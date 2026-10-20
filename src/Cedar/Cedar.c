@@ -5,6 +5,7 @@
 
 #include "Admin.h"
 #include "Bridge.h"
+#include "BuildInfo.h"
 #include "Connection.h"
 #include "Link.h"
 #include "Listener.h"

@@ -22,7 +22,6 @@ struct BRIDGE
 	UCHAR TapMacAddress[6];
 	UINT LastNumDevice;
 	UINT64 LastNumDeviceCheck;
-	UINT64 LastChangeMtuError;
 	LOCALBRIDGE *ParentLocalBridge;
 };
 

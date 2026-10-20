@@ -33,6 +33,7 @@ struct SU_ADAPTER
 	void *hEvent;
 	bool Halt;
 	UINT CurrentPacketCount;
+	bool LastGetHadPacket;		// The previous SuGetNextPacket call returned a frame
 	UCHAR GetBuffer[SL_EXCHANGE_BUFFER_SIZE];
 	UCHAR PutBuffer[SL_EXCHANGE_BUFFER_SIZE];
 };
@@ -54,6 +55,7 @@ void SuCloseAdapter(SU_ADAPTER *a);
 void SuCloseAdapterHandleInner(SU_ADAPTER *a);
 bool SuGetPacketsFromDriver(SU_ADAPTER *a);
 bool SuGetNextPacket(SU_ADAPTER *a, void **buf, UINT *size);
+bool SuHasPendingPackets(SU_ADAPTER *a);
 bool SuPutPacketsToDriver(SU_ADAPTER *a);
 bool SuPutPacket(SU_ADAPTER *a, void *buf, UINT size);
 

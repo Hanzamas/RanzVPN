@@ -74,21 +74,6 @@ static int CmpRpcEnumEthVLan(void *p1, void *p2)
 	return StrCmpi(v1->DeviceName, v2->DeviceName);
 }
 
-UINT EthGetMtu(ETH *e)
-{
-	return 0;
-}
-
-bool EthSetMtu(ETH *e, UINT mtu)
-{
-	return false;
-}
-
-bool EthIsChangeMtuSupported(ETH *e)
-{
-	return false;
-}
-
 bool SetVLanEnableStatus(char *title, bool enable)
 {
 	RPC_ENUM_ETH_VLAN t;
@@ -655,6 +640,17 @@ UINT EthGetPacket(ETH *e, void **data)
 	return size;
 }
 
+// Frames EthGetPacket can return without waiting for the cancel event
+bool EthHasPendingFrames(ETH *e)
+{
+	if (e == NULL || e->HasFatalError)
+	{
+		return false;
+	}
+
+	return SuHasPendingPackets(e->SuAdapter);
+}
+
 CANCEL *EthGetCancel(ETH *e)
 {
 	if (e == NULL)
@@ -761,7 +757,6 @@ static ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
 	ETH *e;
 	HANDLE h;
 	CANCEL *c;
-	MS_ADAPTER *ms;
 	char name_with_id[MAX_SIZE];
 	SU *su = NULL;
 	SU_ADAPTER *su_adapter = NULL;
@@ -819,16 +814,7 @@ static ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
 	c = NewCancelSpecial(h);
 	e->Cancel = c;
 
-	ms = MsGetAdapterByGuid(t->Guid);
-	if (ms != NULL)
-	{
-		if (ms->AddressSize == 6)
-		{
-			Copy(e->MacAddress, ms->Address, 6);
-		}
-
-		MsFreeAdapter(ms);
-	}
+	Copy(e->MacAddress, t->MacAddress, sizeof(e->MacAddress));
 
 	Unlock(eth_list_lock);
 
@@ -968,47 +954,20 @@ static TOKEN_LIST *GetEthListEx(UINT *total_num_including_hidden, bool enum_norm
 	{
 		char tmp[MAX_SIZE];
 		WP_ADAPTER *a = LIST_DATA(eth_list, i);
-		MS_ADAPTER *msa = NULL;
 		bool show = true;
 
 		if (Win32EthGetShowAllIf() == false)
 		{
-			msa = MsGetAdapterByGuidFromList(adapter_list, a->Guid);
+			// Hidden by the interface type that the OS reports, not by words in the title; an
+			// adapter that the OS does not list cannot be classified and stays listed
+			MS_ADAPTER *msa = MsGetAdapterByGuidFromList(adapter_list, a->Guid);
 
-			if (InStr(a->Title, "vpn client adapter"))
+			if (msa != NULL)
 			{
-				show = false;
-			}
+				show = msa->IsBridgeable;
 
-			if (InStr(a->Title, "tunnel adapter"))
-			{
-				show = false;
+				MsFreeAdapter(msa);
 			}
-
-			if (InStr(a->Title, "teredo tunnel"))
-			{
-				show = false;
-			}
-
-			if (InStr(a->Title, "MS Tunnel Interface"))
-			{
-				show = false;
-			}
-
-			if (InStr(a->Title, "pseudo-interface"))
-			{
-				show = false;
-			}
-		}
-
-		if (msa != NULL)
-		{
-			if (msa->IsNotEthernetLan)
-			{
-				show = false;
-			}
-
-			MsFreeAdapter(msa);
 		}
 
 		Win32EthMakeCombinedName(tmp, sizeof(tmp), a->Title, a->Guid);
@@ -1114,6 +1073,7 @@ static LIST *GetEthAdapterListInternal()
 			StrCpy(a->Name, sizeof(a->Name), t->Name);
 			StrCpy(a->Guid, sizeof(a->Guid), t->Guid);
 			StrCpy(a->Title, sizeof(a->Title), t->Info.FriendlyName);
+			Copy(a->MacAddress, t->Info.MacAddress, sizeof(a->MacAddress));
 
 			TrimCrlf(a->Title);
 			Trim(a->Title);
@@ -1144,66 +1104,42 @@ static LIST *GetEthAdapterListInternal()
 	for (i = 0;i < LIST_NUM(o);i++)
 	{
 		WP_ADAPTER *a = LIST_DATA(o, i);
-		bool is_ethernet = false;
-		bool ok = false;
+		char tmp[MAX_SIZE];
+		UINT k;
 
-		if (SearchStrEx(a->Title, "ppp", 0, false) != INFINITE ||
-			SearchStrEx(a->Title, "wan", 0, false) != INFINITE ||
-			SearchStrEx(a->Title, "dialup", 0, false) != INFINITE ||
-			SearchStrEx(a->Title, "pptp", 0, false) != INFINITE ||
-			SearchStrEx(a->Title, "telepho", 0, false) != INFINITE ||
-			SearchStrEx(a->Title, "modem", 0, false) != INFINITE ||
-			SearchStrEx(a->Title, "ras", 0, false) != INFINITE)
+		// Every SeLow adapter is listed here; GetEthListEx hides the ones that are no wired LAN
+		for (k = 0;;k++)
 		{
-			Free(a);
-			continue;
-		}
+			bool ok;
 
-		is_ethernet = true;
-
-		if (is_ethernet)
-		{
-			char tmp[MAX_SIZE];
-			UINT k;
-
-			StrCpy(tmp, sizeof(tmp), a->Title);
-
-			for (k = 0;;k++)
+			if (k == 0)
 			{
-				if (k == 0)
-				{
-					StrCpy(tmp, sizeof(tmp), a->Title);
-				}
-				else
-				{
-					Format(tmp, sizeof(tmp), "%s(%u)", a->Title, k + 1);
-				}
+				StrCpy(tmp, sizeof(tmp), a->Title);
+			}
+			else
+			{
+				Format(tmp, sizeof(tmp), "%s(%u)", a->Title, k + 1);
+			}
 
-				ok = true;
-				for (j = 0;j < LIST_NUM(ret);j++)
+			ok = true;
+			for (j = 0;j < LIST_NUM(ret);j++)
+			{
+				WP_ADAPTER *aa = LIST_DATA(ret, j);
+				if (StrCmpi(aa->Title, tmp) == 0)
 				{
-					WP_ADAPTER *aa = LIST_DATA(ret, j);
-					if (StrCmpi(aa->Title, tmp) == 0)
-					{
-						ok = false;
-					}
-				}
-
-				if (ok)
-				{
-					break;
+					ok = false;
 				}
 			}
 
-			StrCpy(a->Title, sizeof(a->Title), tmp);
-			a->Id = Win32EthGenIdFromGuid(a->Guid);
-			Add(ret, a);
+			if (ok)
+			{
+				break;
+			}
 		}
 
-		if (ok == false)
-		{
-			Free(a);
-		}
+		StrCpy(a->Title, sizeof(a->Title), tmp);
+		a->Id = Win32EthGenIdFromGuid(a->Guid);
+		Add(ret, a);
 	}
 
 	Sort(ret);

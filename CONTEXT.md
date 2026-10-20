@@ -34,8 +34,8 @@ Executables: `vpnserver` uses Cedar/Server (`StInit`, `StStartServer`) and `MsSe
 | Network | Sockets (TCP, UDP, SSL), listen/accept/connect, IP types, cancel objects, socket sets | `SOCK`, `SOCKSET`, `CANCEL`, `IP`, `IPV6_ADDR`, `SSL_ACCEPT_SETTINGS` | Object, Encrypt, OS, FileIO, Microsoft, DNS, Pack | DNS, HTTP, Proxy, Stun, TcpIp, Pack, Cfg, Table, 15 Cedar modules |
 | DNS | Resolver with forward and reverse caches | `DNS_CACHE`, `DNS_RESOLVER` | Network, Object, Kernel, Tick64 | Network, Stun, Table, Logging, Protocol, Server |
 | TcpIp | Wire-format headers and parse/build for Ethernet, ARP, IPv4/IPv6, ICMP, UDP, TCP, DHCP | `PKT`, `MAC_HEADER`, `IPV4_HEADER`, `DHCPV4_DATA` | Memory, Network, Encrypt | Hub (frame inspection), Logging, Bridge, Command, Connection, Server, UdpAccel |
-| HTTP | HTTP header parse and send | `HTTP_HEADER`, `HTTP_VALUE` | Pack, Network, Kernel | Proxy, Cedar/Protocol, Wpc, Admin, Command, Cedar |
-| Proxy | Outbound HTTP CONNECT, SOCKS4 and SOCKS5 connectors | `PROXY_PARAM_IN`, `PROXY_PARAM_OUT` | Network, HTTP | Protocol, Wpc |
+| HTTP | HTTP header parse and send | `HTTP_HEADER`, `HTTP_VALUE` | Pack, Network, Kernel | Proxy, Cedar/Protocol, Admin, Command, Cedar |
+| Proxy | Outbound HTTP CONNECT, SOCKS4 and SOCKS5 connectors | `PROXY_PARAM_IN`, `PROXY_PARAM_OUT` | Network, HTTP | Protocol |
 | Stun | STUN binding request/response (mapped address discovery) | none | Network, DNS, Tick64, Encrypt | Cedar/UdpAccel, vpntest |
 | Pack | PACK serialisation | `PACK`, `ELEMENT`, `VALUE` | Memory, Encrypt, Network, Internat | HTTP, Network, Protocol, Admin, Account, Command, Remote, Server |
 | Microsoft | Windows services, registry, privileges, process list, adapter info, `MsService` | `MS`, `MS_ADAPTER`, `MS_TCP`, `MS_PROCESS` | Internat, Table, FileIO, Kernel, Win32 | Win32, Mayaqua, Network, Table, Tick64, Admin, Bridge, BridgeWin32, Cedar, Command, Console, Logging, SeLowUser, Server, `vpnserver` |
@@ -51,7 +51,7 @@ Executables: `vpnserver` uses Cedar/Server (`StInit`, `StStartServer`) and `MsSe
 | Server | Process-level `SERVER`: config load/save (`$ranz_server.config`), hub creation from config, autosave thread, syslog, capability list, `StInit`/`StStartServer`/`StStopServer` | `SERVER`, `SERVER_LISTENER`, `CAPS`, `SYSLOG_SETTING` | Account, Logging, Hub, Listener, Sam, Bridge, BridgeWin32, Link | Admin, Command, Hub, Logging, Protocol, Sam, Session |
 | Listener | TCP and UDP listeners, accept threads, DoS protection, UDP entry table | `LISTENER`, `DOS`, `UDP_ENTRY` | Logging, Connection, Session | Cedar, Connection, Server |
 | Connection | Transport state: sockets, TCP half-connections, send/receive block queues, client options | `CONNECTION`, `TCP`, `TCPSOCK`, `UDP`, `BLOCK`, `CLIENT_OPTION`, `CLIENT_AUTH` | UdpAccel, BridgeWin32, Logging, Session, Listener | Admin, Bridge, Cedar, Hub, Link, Listener, Protocol, Session, UdpAccel |
-| Protocol | SE-VPN handshake (signature, hello, login PACKs), `ServerAccept`, `ClientConnect`, additional connections, certificate checks | `CHECK_CERT_THREAD_PROC` | Hub, Logging, UdpAccel, Session, Account, Server, Sam, Admin, Wpc, MsChapV2 | Account, Admin, Hub, Session |
+| Protocol | SE-VPN handshake (signature, hello, login PACKs), `ServerAccept`, `ClientConnect`, additional connections, certificate checks | `CHECK_CERT_THREAD_PROC` | Hub, Logging, UdpAccel, Session, Account, Server, Sam, Admin, MsChapV2 | Account, Admin, Hub, Session |
 | Session | Session state machine (`SessionMain`, `NewClientSession`, `NewServerSession`), packet adapters, keep-alive | `SESSION`, `PACKET_ADAPTER`, `NODE_INFO` | Connection, Protocol, Server, Account, Hub, Logging | Admin, Bridge, Connection, Hub, Link, Listener, Protocol |
 | Hub | Virtual switch: MAC and IP tables, frame forwarding and filtering, traffic limits, user database, CA and CRL lists, hub log, watchdog | `HUB`, `HUBDB`, `HUB_OPTION`, `ACCESS`, `MAC_TABLE_ENTRY`, `IP_TABLE_ENTRY`, `HUB_PA` | Logging, Session, Account, Server, Connection, Link, Protocol, Bridge | Admin, Bridge, Cedar, Command, Protocol, Sam, Server, Session |
 | Account | Users, groups, policies, authentication method records | `USER`, `USERGROUP`, `POLICY`, `AUTHPASSWORD`, `AUTHUSERCERT`, `AUTHROOTCERT`, `AUTHNT` | Protocol, Hub, Session, Connection (mostly header level) | Admin, Bridge, Command, Hub, Protocol, Sam, Server, Session |
@@ -67,7 +67,6 @@ Executables: `vpnserver` uses Cedar/Server (`StInit`, `StStartServer`) and `MsSe
 | Command | `vpncmd`: `CommandMain`, server-admin commands (`Ps*`), tools (`Pt*`), traffic test (`Tt*`), table output (`CT`) | `PS`, `PT`, `CT`, `TTC`, `TTS`, `TT_RESULT` | Console, Admin, Account, Server, Hub, Sam, Database | `vpncmd`, `vpntest` |
 | Console | Console abstraction, command-line parameter parser, command tables, prompts | `CONSOLE`, `PARAM`, `CMD`, `LOCAL_CONSOLE_PARAM` | none in Cedar | Command |
 | Logging | Threaded rotating file logger, packet and hub logs, log eraser, syslog | `LOG`, `PACKET_LOG`, `HUB_LOG`, `ERASER`, `SLOG` | Server | Admin, Bridge, Cedar, Connection, Hub, Link, Listener, Protocol, Sam, Server, Session |
-| Wpc | HTTP(S) fetch helper with optional proxy | `URL_DATA`, `INTERNET_SETTING`, `WPC_CONNECT` | none in Cedar | Protocol |
 | WaterMark | GIF "digital watermark" blob (from hamcore `watermark.bin`) the client uploads in the signature step and the server checks | none | none | Cedar (init), Protocol |
 | Database | Vestigial: one function, `LiGetLicenseStatusStr` | none | none | Command |
 
