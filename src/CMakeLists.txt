@@ -27,6 +27,24 @@ if(WIN32)
   message("Setting CETCOMPAT")
   set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /CETCOMPAT")
 
+  # Optimised linking of the executables: /OPT:REF drops unreferenced functions and data, /OPT:ICF
+  # folds identical ones. /DEBUG, which the RelWithDebInfo flags keep for the PDBs, turns both off
+  # unless they are named. CMake's /INCREMENTAL becomes /INCREMENTAL:NO, as in
+  # cmake/RanzSanitizers.cmake: the linker ignores it next to /OPT:REF, with a warning.
+  # Debug builds keep CMake's flags. So do ASan builds (RANZ_ASAN): /OPT:ICF could fold two
+  # instrumented globals into one address that ASan then registers twice.
+  # /OPT:ICF gives identical functions one address. The only comparisons of a function pointer
+  # against a named function, r->ThreadProc == TCPAcceptedThread (Listener.c) and
+  # r->ParseProc != PacketLogParseProc (Logging.c), name functions whose bodies are unique.
+  if(NOT RANZ_ASAN)
+    message("Setting /OPT:REF /OPT:ICF /INCREMENTAL:NO")
+    foreach(_ranz_config RELWITHDEBINFO RELEASE MINSIZEREL)
+      set(_ranz_var "CMAKE_EXE_LINKER_FLAGS_${_ranz_config}")
+      string(REGEX REPLACE " */INCREMENTAL(:NO|:YES)?" "" ${_ranz_var} "${${_ranz_var}}")
+      set(${_ranz_var} "${${_ranz_var}} /INCREMENTAL:NO /OPT:REF /OPT:ICF")
+    endforeach()
+  endif()
+
 endif()
 
 # Cedar communication module

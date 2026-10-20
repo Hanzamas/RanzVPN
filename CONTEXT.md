@@ -64,11 +64,10 @@ Executables: `vpnserver` uses Cedar/Server (`StInit`, `StStartServer`) and `MsSe
 | UdpAccel | UDP acceleration: key and cookie exchange, encrypted UDP send and receive, optional STUN discovery | `UDP_ACCEL` | Connection | Connection, Protocol |
 | Remote | RPC transport over a socket: request/response PACKs | `RPC`, `RPC_DISPATCHER` | none in Cedar (Pack, Network) | Admin |
 | Admin | Admin RPC: `AdminAccept`, `AdminDispatch` table of `St*` handlers, `Sc*` client calls, `InRpc*`/`OutRpc*` converters | `ADMIN`, about 70 `RPC_*` structs | Hub, Server, Account, Logging, Sam, Link, Session, Bridge, Remote | Command, Protocol |
-| Command | `vpncmd`: `CommandMain`, server-admin commands (`Ps*`), tools (`Pt*`), traffic test (`Tt*`), table output (`CT`) | `PS`, `PT`, `CT`, `TTC`, `TTS`, `TT_RESULT` | Console, Admin, Account, Server, Hub, Sam, Database | `vpncmd`, `vpntest` |
+| Command | `vpncmd`: `CommandMain`, server-admin commands (`Ps*`), tools (`Pt*`), traffic test (`Tt*`), table output (`CT`) | `PS`, `PT`, `CT`, `TTC`, `TTS`, `TT_RESULT` | Console, Admin, Account, Server, Hub, Sam | `vpncmd`, `vpntest` |
 | Console | Console abstraction, command-line parameter parser, command tables, prompts | `CONSOLE`, `PARAM`, `CMD`, `LOCAL_CONSOLE_PARAM` | none in Cedar | Command |
 | Logging | Threaded rotating file logger, packet and hub logs, log eraser, syslog | `LOG`, `PACKET_LOG`, `HUB_LOG`, `ERASER`, `SLOG` | Server | Admin, Bridge, Cedar, Connection, Hub, Link, Listener, Protocol, Sam, Server, Session |
 | WaterMark | GIF "digital watermark" blob (from hamcore `watermark.bin`) the client uploads in the signature step and the server checks | none | none | Cedar (init), Protocol |
-| Database | Vestigial: one function, `LiGetLicenseStatusStr` | none | none | Command |
 
 ## Language
 
@@ -115,7 +114,7 @@ _Avoid_: resource strings, locale file
 An optional encrypted UDP data path set up inside a Session (`UDP_ACCEL`), with an optional STUN lookup of the mapped address.
 
 **Config file**:
-The server's text configuration tree (`$ranz_server.config`, `FOLDER`/`ITEM`), loaded and autosaved by `Server.c` through `CFG_RW`. Its format is frozen.
+The server's text configuration tree (`$ranz_server.config`, `FOLDER`/`ITEM`), loaded and autosaved by `Server.c` through `CFG_RW`. Its format is frozen. A Config file that exists but cannot be read (no parse, a bad binary hash, or no `ServerConfiguration` folder) is renamed to `<name>.bad` and the server starts with the initial settings (FND-115 start policy); while the rename fails, no save writes over the file. A failed save is logged (`LS_SAVE_CONFIG_FAILED`) and retried from 1 s, doubling up to the autosave span.
 
 **Machine identity**:
 The 20 bytes that `GenerateMachineUniqueHash` returns for a server: a hash of the Windows MachineGuid and the `MachineIdSalt` of the Config file, kept in the `CEDAR`. It sets the MAC address and the 172.31.x.x address of every Hub and the `unique_id` of a Cascade login. It stays the same across restarts, renames and IP changes; servers cloned from one image differ only when each has its own config file, and so its own salt (FIX-5, `docs/upgrade-notes.md`).
