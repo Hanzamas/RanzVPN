@@ -70,8 +70,6 @@ void SuSetInstallProc(SU_INSTALL_PROC *proc);
 bool SuIsSupportedOs(bool on_install);
 bool SuCopySysFile(wchar_t *src, wchar_t *dst);
 
-void SuDeleteGarbageInfsInner();
-
 #endif	// SELOWUSER_H
 
 

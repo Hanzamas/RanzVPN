@@ -19,104 +19,87 @@
 #include "Mayaqua/Tick64.h"
 
 #include <winioctl.h>
+#include <SetupAPI.h>
 
 static SU *SuInitMain(UINT wait_for_bind_complete_tick, bool start_service, bool install);
 
-static bool SuLoadDriversHive()
+// True if the published INF oem_name (an oemNN.inf in %windir%\inf) is a copy
+// of a SoftEther SeLow INF: its original name starts with "selow" and its
+// provider contains "softether"
+static bool SuIsSeLowOemInf(wchar_t *oem_name)
 {
-	wchar_t config_dir[MAX_PATH];
-	wchar_t filename[MAX_PATH];
+	HINF inf;
+	SP_INF_INFORMATION *info;
+	SP_ORIGINAL_FILE_INFO_W original;
+	INFCONTEXT ctx;
+	wchar_t provider[MAX_SIZE];
+	DWORD info_size = 0;
+	bool ret = false;
 
-	MsEnablePrivilege(SE_RESTORE_NAME, true);
-	MsEnablePrivilege(SE_BACKUP_NAME, true);
+	inf = SetupOpenInfFileW(oem_name, NULL, INF_STYLE_WIN4, NULL);
+	if (inf == INVALID_HANDLE_VALUE)
+	{
+		return false;
+	}
 
-	CombinePathW(config_dir, sizeof(config_dir), MsGetSystem32DirW(), L"config");
-	CombinePathW(filename, sizeof(filename), config_dir, L"DRIVERS");
+	if (SetupGetInfInformationW(inf, INFINFO_INF_SPEC_IS_HINF, NULL, 0, &info_size) && info_size != 0)
+	{
+		info = ZeroMalloc(info_size);
 
-	return MsRegLoadHive(REG_LOCAL_MACHINE, L"DRIVERS", filename);
+		Zero(&original, sizeof(original));
+		original.cbSize = sizeof(original);
+
+		if (SetupGetInfInformationW(inf, INFINFO_INF_SPEC_IS_HINF, info, info_size, NULL) &&
+			SetupQueryInfOriginalFileInformationW(info, 0, NULL, &original) &&
+			UniStartWith(original.OriginalInfName, L"selow") &&
+			SetupFindFirstLineW(inf, L"Version", L"Provider", &ctx) &&
+			SetupGetStringFieldW(&ctx, 1, provider, sizeof(provider) / sizeof(wchar_t), NULL) &&
+			UniSearchStrEx(provider, L"softether", 0, false) != INFINITE)
+		{
+			ret = true;
+		}
+
+		Free(info);
+	}
+
+	SetupCloseInfFile(inf);
+
+	return ret;
 }
 
+// Remove the stale oemNN.inf copies of SeLow from the driver store
 static void SuDeleteGarbageInfs()
 {
 	void *wow;
-	bool load_hive = false;
+	wchar_t *list;
+	wchar_t *name;
+	DWORD list_size = 0;
 
 	wow = MsDisableWow64FileSystemRedirection();
 
-	load_hive = SuLoadDriversHive();
+	if (SetupGetInfFileListW(NULL, INF_STYLE_WIN4, NULL, 0, &list_size) && list_size != 0)
+	{
+		list = ZeroMalloc(list_size * sizeof(wchar_t));
 
-	SuDeleteGarbageInfsInner();
+		if (SetupGetInfFileListW(NULL, INF_STYLE_WIN4, list, list_size, NULL))
+		{
+			for (name = list; name < list + list_size && *name != 0; name += UniStrLen(name) + 1)
+			{
+				if (UniStartWith(name, L"oem") && SuIsSeLowOemInf(name))
+				{
+					BOOL deleted;
+
+					deleted = SetupUninstallOEMInfW(name, SUOI_FORCEDELETE, NULL);
+
+					Debug("Delete OEM INF %S: %u\n", name, deleted);
+				}
+			}
+		}
+
+		Free(list);
+	}
 
 	MsRestoreWow64FileSystemRedirection(wow);
-}
-void SuDeleteGarbageInfsInner()
-{
-	char *base_key_name = "DRIVERS\\DriverDatabase\\DriverPackages";
-	TOKEN_LIST *keys;
-	HINSTANCE hSetupApiDll = NULL;
-	BOOL (WINAPI *_SetupUninstallOEMInfA)(PCSTR, DWORD, PVOID) = NULL;
-
-	hSetupApiDll = LoadLibraryA("setupapi.dll");
-	if (hSetupApiDll == NULL)
-	{
-		return;
-	}
-
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wincompatible-function-pointer-types"
-	_SetupUninstallOEMInfA =
-		(UINT (__stdcall *)(PCSTR,DWORD,PVOID))
-		GetProcAddress(hSetupApiDll, "SetupUninstallOEMInfA");
-    #pragma clang diagnostic pop
-
-	if (_SetupUninstallOEMInfA != NULL)
-	{
-		keys = MsRegEnumKeyEx2(REG_LOCAL_MACHINE, base_key_name, false, true);
-
-		if (keys != NULL)
-		{
-			char full_key[MAX_PATH];
-			UINT i;
-
-			for (i = 0;i < keys->NumTokens;i++)
-			{
-				char *oem_name, *inf_name, *provider;
-
-				Format(full_key, sizeof(full_key), "%s\\%s", base_key_name, keys->Token[i]);
-
-				oem_name = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "", false, true);
-				inf_name = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "InfName", false, true);
-				provider = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "Provider", false, true);
-
-				if (IsEmptyStr(oem_name) == false && IsEmptyStr(inf_name) == false)
-				{
-					if (StartWith(oem_name, "oem"))
-					{
-						if (StartWith(inf_name, "selow"))
-						{
-							if (InStr(provider, "softether"))
-							{
-								Debug("Delete OEM INF %s (%s): %u\n",
-									oem_name, inf_name,
-									_SetupUninstallOEMInfA(oem_name, 0x00000001, NULL));
-							}
-						}
-					}
-				}
-
-				Free(oem_name);
-				Free(inf_name);
-				Free(provider);
-			}
-
-			FreeToken(keys);
-		}
-	}
-
-	if (hSetupApiDll != NULL)
-	{
-		FreeLibrary(hSetupApiDll);
-	}
 }
 
 static bool SuInstallDriver(bool force)

@@ -219,8 +219,6 @@ bool MsRegDeleteKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bi
 bool MsRegDeleteValue(UINT root, char *keyname, char *valuename);
 bool MsRegDeleteValueEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
 
-bool MsRegLoadHive(UINT root, wchar_t *keyname, wchar_t *filename);
-
 bool MsIsAdmin();
 bool MsEnablePrivilege(char *name, bool enable);
 UINT MsGetCurrentProcessId();
