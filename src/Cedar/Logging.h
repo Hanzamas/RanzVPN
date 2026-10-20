@@ -29,8 +29,6 @@ struct PACKET_LOG
 	bool WritePhysicalIP;
 	char SrcPhysicalIP[64];
 	char DestPhysicalIP[64];
-	bool PurePacket;
-	bool PurePacketNoPayload;
 	SESSION *SrcSession;
 };
 
@@ -112,7 +110,7 @@ void WriteRecordToBuffer(BUF *b, RECORD *r);
 void SetLogSwitchType(LOG *g, UINT switch_type);
 bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packet, UINT64 now);
 char *PacketLogParseProc(RECORD *rec);
-UINT CalcPacketLoggingLevel(HUB *hub, PKT *packet);
+UINT CalcPacketLoggingLevel(HUB_LOG *g, PKT *packet);
 char *GenCsvLine(TOKEN_LIST *t);
 void ReplaceForCsv(char *str);
 char *PortStr(CEDAR *cedar, UINT port, bool udp);
