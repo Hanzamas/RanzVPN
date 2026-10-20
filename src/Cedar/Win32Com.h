@@ -7,7 +7,7 @@
 
 #include "Mayaqua/MayaType.h"
 
-bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout);
+bool InstallNdisProtocolDriver(wchar_t *inf_path);
 
 #endif // WIN32COM_H
 

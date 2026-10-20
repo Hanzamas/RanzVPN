@@ -7,6 +7,8 @@
 
 #include "Win32Com.h"
 
+#include "SeLowUser.h"
+
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Mayaqua.h"
@@ -17,13 +19,34 @@
 #include <netcfgn.h>
 #include <SetupAPI.h>
 
-bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout)
+// Report a failed INetCfg or setup step of InstallNdisProtocolDriver and its HRESULT to the debug log
+static void NetCfgDebugHr(char *step, HRESULT hr)
+{
+	Debug("InstallNdisProtocolDriver: %s failed, HRESULT 0x%X\n", step, (UINT)hr);
+}
+
+// Install the SeLow NDIS protocol driver (SL_PROTOCOL_NAME) from the package whose INF is inf_path
+bool InstallNdisProtocolDriver(wchar_t *inf_path)
 {
 	bool ret = false;
+	bool com_initialized = false;
 	HRESULT hr;
 	INetCfg *pNetCfg;
-	if (inf_path == NULL || id == NULL)
+	if (inf_path == NULL)
 	{
+		return false;
+	}
+
+	// COM for this call only: S_OK and S_FALSE both take a reference that CoUninitialize returns.
+	// RPC_E_CHANGED_MODE means the thread already runs in another apartment, which stays as it is.
+	hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+	if (SUCCEEDED(hr))
+	{
+		com_initialized = true;
+	}
+	else if (hr != RPC_E_CHANGED_MODE)
+	{
+		NetCfgDebugHr("CoInitializeEx", hr);
 		return false;
 	}
 
@@ -37,11 +60,17 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout
 
 		if (SUCCEEDED(hr))
 		{
-			LPWSTR locked_by;
+			LPWSTR locked_by = NULL;
 
-			hr = INetCfgLock_AcquireWriteLock(pLock, lock_timeout, L"Ranz VPN", &locked_by);
+			hr = INetCfgLock_AcquireWriteLock(pLock, SL_USER_INSTALL_LOCK_TIMEOUT, L"Ranz VPN", &locked_by);
 
-			if (SUCCEEDED(hr))
+			// S_FALSE: another client (locked_by) holds the write lock, so nothing may be installed
+			if (locked_by != NULL)
+			{
+				CoTaskMemFree(locked_by);
+			}
+
+			if (hr == S_OK)
 			{
 				hr = INetCfg_Initialize(pNetCfg, NULL);
 
@@ -60,30 +89,42 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout
 						if (SUCCEEDED(hr))
 						{
 							OBO_TOKEN token;
-							INetCfgComponent *pComponent;
+							INetCfgComponent *pComponent = NULL;
 
 							Zero(&token, sizeof(token));
 
 							token.Type = OBO_USER;
 
-							hr = INetCfgClassSetup_Install(pSetup, id, &token, 0, 0, NULL, NULL, &pComponent);
+							hr = INetCfgClassSetup_Install(pSetup, L"" SL_PROTOCOL_NAME, &token, 0, 0, NULL, NULL, &pComponent);
 
 							if (SUCCEEDED(hr))
 							{
-								INetCfg_Apply(pNetCfg);
+								if (pComponent != NULL)
+								{
+									INetCfgComponent_Release(pComponent);
+								}
 
-								ret = true;
+								hr = INetCfg_Apply(pNetCfg);
+
+								if (SUCCEEDED(hr))
+								{
+									ret = true;
+								}
+								else
+								{
+									NetCfgDebugHr("INetCfg::Apply", hr);
+								}
 							}
 							else
 							{
-								WHERE;
+								NetCfgDebugHr("INetCfgClassSetup::Install", hr);
 							}
 
 							INetCfgClassSetup_Release(pSetup);
 						}
 						else
 						{
-							WHERE;
+							NetCfgDebugHr("INetCfg::QueryNetCfgClass", hr);
 						}
 
 						if (ret == false)
@@ -101,29 +142,45 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout
 					}
 					else
 					{
-						WHERE;
+						NetCfgDebugHr("SetupCopyOEMInfW", HRESULT_FROM_WIN32(GetLastError()));
+					}
+
+					hr = INetCfg_Uninitialize(pNetCfg);
+
+					if (FAILED(hr))
+					{
+						NetCfgDebugHr("INetCfg::Uninitialize", hr);
 					}
 				}
 				else
 				{
-					WHERE;
+					NetCfgDebugHr("INetCfg::Initialize", hr);
 				}
 
 				INetCfgLock_ReleaseWriteLock(pLock);
 			}
 			else
 			{
-				WHERE;
+				NetCfgDebugHr("INetCfgLock::AcquireWriteLock", hr);
 			}
 
 			INetCfgLock_Release(pLock);
+		}
+		else
+		{
+			NetCfgDebugHr("QueryInterface(INetCfgLock)", hr);
 		}
 
 		INetCfg_Release(pNetCfg);
 	}
 	else
 	{
-		WHERE;
+		NetCfgDebugHr("CoCreateInstance(CNetCfg)", hr);
+	}
+
+	if (com_initialized)
+	{
+		CoUninitialize();
 	}
 
 	return ret;
