@@ -2086,80 +2086,132 @@ void Cancel(CANCEL *c)
 	Win32Cancel(c);
 }
 
-UINT RecvFrom(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
+// Fill a sockaddr for a UDP socket of the given family and return its length, 0 if the IP is not of that
+// family. A NULL or zero IP gives the any-address, which is what bind wants.
+static int UdpSockAddr(struct sockaddr_storage *sa, bool ipv6, IP *ip, UINT port)
 {
-	struct sockaddr_in addr;
-	int ret = 0;
-	int socklen = sizeof(addr);
+	Zero(sa, sizeof(*sa));
 
-	if (sock != NULL)
+	if (ipv6)
 	{
-		if (sock->IPv6)
+		struct sockaddr_in6 *a6 = (struct sockaddr_in6 *)sa;
+
+		if (ip != NULL && IsIP6(ip) == false)
 		{
-			return RecvFrom6(sock, src_addr, src_port, data, size);
+			return 0;
 		}
 
-		sock->IgnoreRecvErr = false;
+		a6->sin6_family = AF_INET6;
+		a6->sin6_port = htons((USHORT)port);
+
+		if (ip != NULL && IsZeroIP(ip) == false)
+		{
+			IPToInAddr6(&a6->sin6_addr, ip);
+			a6->sin6_scope_id = ip->ipv6_scope_id;
+		}
+
+		return sizeof(*a6);
 	}
 	else
 	{
-		return 0;
-	}
+		struct sockaddr_in *a4 = (struct sockaddr_in *)sa;
 
-	if (src_addr == NULL || src_port == NULL || data == NULL || size == 0)
-	{
-		return 0;
-	}
-
-	if (sock->Type != SOCK_UDP || sock->socket == INVALID_SOCKET)
-	{
-		return 0;
-	}
-
-	ret = recvfrom(sock->socket, data, size, 0, (struct sockaddr *)&addr, &socklen);
-	if (ret > 0)
-	{
-		InAddrToIP(src_addr, &addr.sin_addr);
-		*src_port = (UINT)ntohs(addr.sin_port);
-
-		return (UINT)ret;
-	}
-	else if (ret == 0)
-	{
-		return SOCK_LATER;
-	}
-	else
-	{
-		if (WSAGetLastError() == WSAECONNRESET || WSAGetLastError() == WSAENETRESET || WSAGetLastError() == WSAEMSGSIZE || WSAGetLastError() == WSAENETUNREACH ||
-		        WSAGetLastError() == WSAENOBUFS || WSAGetLastError() == WSAEHOSTUNREACH || WSAGetLastError() == WSAEUSERS || WSAGetLastError() == WSAEADDRNOTAVAIL || WSAGetLastError() == WSAEADDRNOTAVAIL)
+		if (ip != NULL && IsIP4(ip) == false)
 		{
-			sock->IgnoreRecvErr = true;
+			return 0;
 		}
-		else if (WSAGetLastError() == WSAEWOULDBLOCK || WSAGetLastError() == WSAEINPROGRESS)
+
+		a4->sin_family = AF_INET;
+		a4->sin_port = htons((USHORT)port);
+
+		if (ip != NULL && IsZeroIP(ip) == false)
 		{
-			return SOCK_LATER;
+			IPToInAddr(&a4->sin_addr, ip);
 		}
-		else
-		{
-			Debug("RecvFrom(): recvfrom() failed with error: %u\n", WSAGetLastError());
-		}
-		return 0;
+
+		return sizeof(*a4);
 	}
 }
-UINT RecvFrom6(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
-{
-	struct sockaddr_in6 addr;
-	int ret = 0;
-	int socklen = sizeof(addr);
 
-	if (sock != NULL)
+// Read the source IP and port from the sockaddr that recvfrom filled in
+static void UdpSockAddrToIP(IP *ip, UINT *port, struct sockaddr_storage *sa, bool ipv6)
+{
+	if (ipv6)
 	{
-		sock->IgnoreRecvErr = false;
+		struct sockaddr_in6 *a6 = (struct sockaddr_in6 *)sa;
+
+		InAddrToIP6(ip, &a6->sin6_addr);
+		ip->ipv6_scope_id = a6->sin6_scope_id;
+		*port = (UINT)ntohs(a6->sin6_port);
 	}
 	else
 	{
+		struct sockaddr_in *a4 = (struct sockaddr_in *)sa;
+
+		InAddrToIP(ip, &a4->sin_addr);
+		*port = (UINT)ntohs(a4->sin_port);
+	}
+}
+
+// Whether a datagram to this address needs SO_BROADCAST: the IPv4 limited broadcast, or a multicast address
+static bool UdpNeedsBroadcast(bool ipv6, IP *ip)
+{
+	const BYTE *ipv4;
+
+	if (ipv6)
+	{
+		return (GetIPAddrType6(ip) & IPV6_ADDR_MULTICAST) != 0;
+	}
+
+	ipv4 = IPV4(ip->address);
+
+	return (ipv4[0] == 255 && ipv4[1] == 255 && ipv4[2] == 255 && ipv4[3] == 255) ||
+		(ipv4[0] >= 224 && ipv4[0] <= 239);
+}
+
+// The result of a failed recvfrom (send == false) or sendto (send == true): SOCK_LATER when the call would
+// block, else 0. An error that only means "the datagram was lost" sets the Ignore flag of that direction.
+static UINT UdpIoFailed(SOCK *sock, bool send)
+{
+	UINT e = (UINT)WSAGetLastError();
+
+	if (e == WSAECONNRESET || e == WSAENETRESET || e == WSAEMSGSIZE || e == WSAENETUNREACH ||
+	        e == WSAENOBUFS || e == WSAEHOSTUNREACH || e == WSAEUSERS || e == WSAEADDRNOTAVAIL ||
+	        (send && e == WSAEINVAL))
+	{
+		if (send)
+		{
+			sock->IgnoreSendErr = true;
+		}
+		else
+		{
+			sock->IgnoreRecvErr = true;
+		}
+	}
+	else if (e == WSAEWOULDBLOCK || e == WSAEINPROGRESS)
+	{
+		return SOCK_LATER;
+	}
+	else if (send == false)
+	{
+		Debug("RecvFrom(): recvfrom() failed with error: %u\n", e);
+	}
+
+	return 0;
+}
+
+UINT RecvFrom(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
+{
+	struct sockaddr_storage addr;
+	int ret = 0;
+	int socklen = sizeof(addr);
+
+	if (sock == NULL)
+	{
 		return 0;
 	}
+
+	sock->IgnoreRecvErr = false;
 
 	if (src_addr == NULL || src_port == NULL || data == NULL || size == 0)
 	{
@@ -2171,13 +2223,10 @@ UINT RecvFrom6(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 		return 0;
 	}
 
-
 	ret = recvfrom(sock->socket, data, size, 0, (struct sockaddr *)&addr, &socklen);
 	if (ret > 0)
 	{
-		InAddrToIP6(src_addr, &addr.sin6_addr);
-		src_addr->ipv6_scope_id = addr.sin6_scope_id;
-		*src_port = (UINT)ntohs(addr.sin6_port);
+		UdpSockAddrToIP(src_addr, src_port, &addr, sock->IPv6);
 
 		return (UINT)ret;
 	}
@@ -2185,34 +2234,16 @@ UINT RecvFrom6(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 	{
 		return SOCK_LATER;
 	}
-	else
-	{
-		if (WSAGetLastError() == WSAECONNRESET || WSAGetLastError() == WSAENETRESET || WSAGetLastError() == WSAEMSGSIZE || WSAGetLastError() == WSAENETUNREACH ||
-		        WSAGetLastError() == WSAENOBUFS || WSAGetLastError() == WSAEHOSTUNREACH || WSAGetLastError() == WSAEUSERS || WSAGetLastError() == WSAEADDRNOTAVAIL || WSAGetLastError() == WSAEADDRNOTAVAIL)
-		{
-			sock->IgnoreRecvErr = true;
-		}
-		else if (WSAGetLastError() == WSAEWOULDBLOCK || WSAGetLastError() == WSAEINPROGRESS)
-		{
-			return SOCK_LATER;
-		}
-		else
-		{
-			Debug("RecvFrom(): recvfrom() failed with error: %u\n", WSAGetLastError());
-		}
-		return 0;
-	}
+
+	return UdpIoFailed(sock, false);
 }
 
 UINT SendTo(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size)
 {
-	return SendToEx(sock, dest_addr, dest_port, data, size, false);
-}
-UINT SendToEx(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size, bool broadcast)
-{
-	SOCKET s;
+	struct sockaddr_storage addr;
+	int addrlen;
 	int ret;
-	struct sockaddr_in addr;
+
 	if (sock != NULL)
 	{
 		sock->IgnoreSendErr = false;
@@ -2234,128 +2265,25 @@ UINT SendToEx(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size, 
 		return 0;
 	}
 
-	if (sock->IPv6)
-	{
-		return SendTo6Ex(sock, dest_addr, dest_port, data, size, broadcast);
-	}
-
-	if (IsIP4(dest_addr) == false)
+	addrlen = UdpSockAddr(&addr, sock->IPv6, dest_addr, dest_port);
+	if (addrlen == 0)
 	{
 		return 0;
 	}
 
-	s = sock->socket;
-	Zero(&addr, sizeof(addr));
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons((USHORT)dest_port);
-	IPToInAddr(&addr.sin_addr, dest_addr);
-
-	const BYTE *ipv4 = IPV4(dest_addr->address);
-	if ((ipv4[0] == 255 && ipv4[1] == 255 && ipv4[2] == 255 && ipv4[3] == 255) ||
-		(ipv4[0] >= 224 && ipv4[0] <= 239) ||
-		broadcast)
+	if (sock->UdpBroadcast == false && UdpNeedsBroadcast(sock->IPv6, dest_addr))
 	{
-		if (sock->UdpBroadcast == false)
-		{
-			UINT yes = 1;
+		UINT yes = 1;
 
-			sock->UdpBroadcast = true;
+		sock->UdpBroadcast = true;
 
-			(void)setsockopt(s, SOL_SOCKET, SO_BROADCAST, (char *)&yes, sizeof(yes));
-		}
+		(void)setsockopt(sock->socket, SOL_SOCKET, SO_BROADCAST, (char *)&yes, sizeof(yes));
 	}
 
-	ret = sendto(s, data, size, 0, (struct sockaddr *)&addr, sizeof(addr));
+	ret = sendto(sock->socket, data, size, 0, (struct sockaddr *)&addr, addrlen);
 	if (ret != (int)size)
 	{
-		sock->IgnoreSendErr = false;
-
-		if (WSAGetLastError() == WSAECONNRESET || WSAGetLastError() == WSAENETRESET || WSAGetLastError() == WSAEMSGSIZE || WSAGetLastError() == WSAENETUNREACH ||
-		        WSAGetLastError() == WSAENOBUFS || WSAGetLastError() == WSAEHOSTUNREACH || WSAGetLastError() == WSAEUSERS || WSAGetLastError() == WSAEINVAL || WSAGetLastError() == WSAEADDRNOTAVAIL)
-		{
-			sock->IgnoreSendErr = true;
-		}
-		else if (WSAGetLastError() == WSAEWOULDBLOCK || WSAGetLastError() == WSAEINPROGRESS)
-		{
-			return SOCK_LATER;
-		}
-		else
-		{
-			UINT e = WSAGetLastError();
-		}
-		return 0;
-	}
-
-	return ret;
-}
-UINT SendTo6Ex(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size, bool broadcast)
-{
-	SOCKET s;
-	int ret;
-	struct sockaddr_in6 addr;
-	UINT type;
-	if (sock != NULL)
-	{
-		sock->IgnoreSendErr = false;
-	}
-	if (sock == NULL || dest_addr == NULL || dest_port == 0 || data == NULL)
-	{
-		return 0;
-	}
-	if (dest_port >= 65536)
-	{
-		return 0;
-	}
-	if (sock->Type != SOCK_UDP || sock->socket == INVALID_SOCKET)
-	{
-		return 0;
-	}
-	if (size == 0)
-	{
-		return 0;
-	}
-
-	if (IsIP6(dest_addr) == false)
-	{
-		return 0;
-	}
-
-	s = sock->socket;
-	Zero(&addr, sizeof(addr));
-	addr.sin6_family = AF_INET6;
-	addr.sin6_port = htons((USHORT)dest_port);
-	IPToInAddr6(&addr.sin6_addr, dest_addr);
-	addr.sin6_scope_id = dest_addr->ipv6_scope_id;
-
-	type = GetIPAddrType6(dest_addr);
-
-	if ((type & IPV6_ADDR_MULTICAST) || broadcast)
-	{
-		if (sock->UdpBroadcast == false)
-		{
-			UINT yes = 1;
-
-			sock->UdpBroadcast = true;
-
-			(void)setsockopt(s, SOL_SOCKET, SO_BROADCAST, (char *)&yes, sizeof(yes));
-		}
-	}
-
-	ret = sendto(s, data, size, 0, (struct sockaddr *)&addr, sizeof(addr));
-	if (ret != (int)size)
-	{
-		sock->IgnoreSendErr = false;
-
-		if (WSAGetLastError() == WSAECONNRESET || WSAGetLastError() == WSAENETRESET || WSAGetLastError() == WSAEMSGSIZE || WSAGetLastError() == WSAENETUNREACH ||
-		        WSAGetLastError() == WSAENOBUFS || WSAGetLastError() == WSAEHOSTUNREACH || WSAGetLastError() == WSAEUSERS || WSAGetLastError() == WSAEINVAL || WSAGetLastError() == WSAEADDRNOTAVAIL)
-		{
-			sock->IgnoreSendErr = true;
-		}
-		else if (WSAGetLastError() == WSAEWOULDBLOCK || WSAGetLastError() == WSAEINPROGRESS)
-		{
-			return SOCK_LATER;
-		}
-		return 0;
+		return UdpIoFailed(sock, true);
 	}
 
 	return ret;
@@ -2367,82 +2295,37 @@ SOCK *NewUDP(UINT port)
 }
 SOCK *NewUDPEx2(UINT port, bool ipv6, IP *ip)
 {
-	if (ipv6 == false)
-	{
-		return NewUDP4(port, ip);
-	}
-	else
-	{
-		return NewUDP6(port, ip);
-	}
-}
-SOCK *NewUDPEx3(UINT port, IP *ip)
-{
-	if (ip == NULL)
-	{
-		return NewUDPEx2(port, false, NULL);
-	}
-
-	if (IsIP4(ip))
-	{
-		return NewUDPEx2(port, false, ip);
-	}
-	else
-	{
-		return NewUDPEx2(port, true, ip);
-	}
-}
-SOCK *NewUDP4(UINT port, IP *ip)
-{
 	SOCK *sock;
 	SOCKET s;
-	struct sockaddr_in addr;
-	if (ip != NULL && IsIP4(ip) == false)
+	struct sockaddr_storage addr;
+	int addrlen;
+	UINT true_flag = 1;
+
+	addrlen = UdpSockAddr(&addr, ipv6, ip, port);
+	if (addrlen == 0)
 	{
 		return NULL;
 	}
 
-	s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	s = socket(ipv6 ? AF_INET6 : AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (s == INVALID_SOCKET)
 	{
 		return NULL;
 	}
 
-	Zero(&addr, sizeof(addr));
-	addr.sin_family = AF_INET;
-
-	if (ip == NULL || IsZeroIP(ip))
-	{
-		addr.sin_addr.s_addr = htonl(INADDR_ANY);
-	}
-	else
-	{
-		IPToInAddr(&addr.sin_addr, ip);
-	}
-
-	if (port == 0)
-	{
-		addr.sin_port = 0;
-	}
-	else
-	{
-		addr.sin_port = htons((USHORT)port);
-	}
-
-	if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
+	if (bind(s, (struct sockaddr *)&addr, addrlen) != 0)
 	{
 		if (port != 0)
 		{
-			UINT true_flag = 1;
 			(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&true_flag, sizeof(true_flag));
-			if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
+			if (bind(s, (struct sockaddr *)&addr, addrlen) != 0)
 			{
 				UINT false_flag = 0;
 				(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&false_flag, sizeof(false_flag));
 #ifdef	SO_EXCLUSIVEADDRUSE
 				(void)setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (char *)&true_flag, sizeof(true_flag));
 #endif
-				if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
+				if (bind(s, (struct sockaddr *)&addr, addrlen) != 0)
 				{
 					closesocket(s);
 					return NULL;
@@ -2462,87 +2345,7 @@ SOCK *NewUDP4(UINT port, IP *ip)
 	sock->Connected = false;
 	sock->AsyncMode = false;
 	sock->ServerMode = false;
-	if (port != 0)
-	{
-		sock->ServerMode = true;
-	}
-
-	sock->socket = s;
-
-	InitUdpSocketBufferSize((int)s);
-
-	QuerySocketInformation(sock);
-
-	return sock;
-}
-SOCK *NewUDP6(UINT port, IP *ip)
-{
-	SOCK *sock;
-	SOCKET s;
-	struct sockaddr_in6 addr;
-	if (ip != NULL && IsIP6(ip) == false)
-	{
-		return NULL;
-	}
-
-	s = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
-	if (s == INVALID_SOCKET)
-	{
-		return NULL;
-	}
-
-	Zero(&addr, sizeof(addr));
-	addr.sin6_family = AF_INET6;
-	if (port == 0)
-	{
-		addr.sin6_port = 0;
-	}
-	else
-	{
-		addr.sin6_port = htons((USHORT)port);
-	}
-
-	if (ip != NULL && IsZeroIP(ip) == false)
-	{
-		IPToInAddr6(&addr.sin6_addr, ip);
-		addr.sin6_scope_id = ip->ipv6_scope_id;
-	}
-
-	UINT true_flag = 1;
-	UINT false_flag = 0;
-
-	if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
-	{
-		if (port != 0)
-		{
-			(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&true_flag, sizeof(true_flag));
-			if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
-			{
-				(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&false_flag, sizeof(false_flag));
-#ifdef	SO_EXCLUSIVEADDRUSE
-				(void)setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (char *)&true_flag, sizeof(true_flag));
-#endif
-				if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
-				{
-					closesocket(s);
-					return NULL;
-				}
-			}
-		}
-		else
-		{
-			closesocket(s);
-			return NULL;
-		}
-	}
-
-	sock = NewSock();
-
-	sock->Type = SOCK_UDP;
-	sock->Connected = false;
-	sock->AsyncMode = false;
-	sock->ServerMode = false;
-	sock->IPv6 = true;
+	sock->IPv6 = ipv6;
 	if (port != 0)
 	{
 		sock->ServerMode = true;
@@ -2555,6 +2358,10 @@ SOCK *NewUDP6(UINT port, IP *ip)
 	QuerySocketInformation(sock);
 
 	return sock;
+}
+SOCK *NewUDPEx3(UINT port, IP *ip)
+{
+	return NewUDPEx2(port, ip != NULL && IsIP4(ip) == false, ip);
 }
 
 void Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2)
