@@ -24,7 +24,6 @@ typedef struct AUTHNT AUTHNT;
 typedef struct DOS DOS;
 typedef struct LISTENER LISTENER;
 typedef struct TCP_ACCEPTED_PARAM TCP_ACCEPTED_PARAM;
-typedef struct UDP_ENTRY UDP_ENTRY;
 
 
 typedef struct PACKET_LOG PACKET_LOG;
@@ -39,7 +38,6 @@ typedef struct CLIENT_OPTION CLIENT_OPTION;
 typedef struct CLIENT_AUTH CLIENT_AUTH;
 typedef struct TCPSOCK TCPSOCK;
 typedef struct TCP TCP;
-typedef struct UDP UDP;
 typedef struct BLOCK BLOCK;
 typedef struct CONNECTION CONNECTION;
 
@@ -54,6 +52,7 @@ typedef struct TRAFFIC_LIMITER TRAFFIC_LIMITER;
 typedef struct STORM STORM;
 typedef struct HUB_PA HUB_PA;
 typedef struct HUB_OPTION HUB_OPTION;
+typedef struct HUB_OPTION_FIELD HUB_OPTION_FIELD;
 typedef struct MAC_TABLE_ENTRY MAC_TABLE_ENTRY;
 typedef struct IP_TABLE_ENTRY IP_TABLE_ENTRY;
 typedef struct ACCESS ACCESS;

@@ -9,6 +9,7 @@
 #include "Connection.h"
 #include "Link.h"
 #include "Listener.h"
+#include "Logging.h"
 #include "Protocol.h"
 #include "Sam.h"
 #include "Session.h"
@@ -28,6 +29,7 @@
 #include "Mayaqua/Win32.h"
 
 static void DeleteOldNoSsl(CEDAR *c);
+static void MakeRoomInNoSslList(CEDAR *c);
 static NON_SSL *SearchNoSslList(CEDAR *c, IP *ip);
 static void FreeNetSvcList(CEDAR *cedar);
 
@@ -339,8 +341,13 @@ bool AddNoSsl(CEDAR *c, IP *ip)
 
 		if (n == NULL)
 		{
+			if (LIST_NUM(c->NonSslList) >= RATE_LIMIT_TABLE_MAX)
+			{
+				MakeRoomInNoSslList(c);
+			}
+
 			n = ZeroMalloc(sizeof(NON_SSL));
-			Copy(&n->IpAddress, ip, sizeof(IP));
+			GetRateLimitKey(&n->IpAddress, ip);
 			n->Count = 0;
 
 			Add(c->NonSslList, n);
@@ -392,6 +399,35 @@ static void DeleteOldNoSsl(CEDAR *c)
 	ReleaseList(o);
 }
 
+// NonSslList is full after DeleteOldNoSsl: drop the least recently seen entry; log the first time
+static void MakeRoomInNoSslList(CEDAR *c)
+{
+	NON_SSL *oldest = NULL;
+	UINT i;
+
+	for (i = 0;i < LIST_NUM(c->NonSslList);i++)
+	{
+		NON_SSL *n = LIST_DATA(c->NonSslList, i);
+
+		if (oldest == NULL || n->EntryExpires < oldest->EntryExpires)
+		{
+			oldest = n;
+		}
+	}
+
+	if (oldest != NULL)
+	{
+		Delete(c->NonSslList, oldest);
+		Free(oldest);
+	}
+
+	if (c->NonSslListFullLogged == false)
+	{
+		c->NonSslListFullLogged = true;
+		SLog(c, "LS_NON_SSL_TABLE_FULL", (UINT)RATE_LIMIT_TABLE_MAX);
+	}
+}
+
 static NON_SSL *SearchNoSslList(CEDAR *c, IP *ip)
 {
 	NON_SSL *n, t;
@@ -401,7 +437,7 @@ static NON_SSL *SearchNoSslList(CEDAR *c, IP *ip)
 	}
 
 	Zero(&t, sizeof(t));
-	Copy(&t.IpAddress, ip, sizeof(IP));
+	GetRateLimitKey(&t.IpAddress, ip);
 
 	n = Search(c->NonSslList, &t);
 
@@ -692,20 +728,28 @@ static void StopAllListener(CEDAR *c)
 	Free(array);
 }
 
-void CedarAddQueueBudget(CEDAR *c, int diff)
+// Both budgets are plain counters shared by every connection and link of the Cedar, so one atomic add
+// replaces the lock each of them had. Callers keep the queue budget in step through CedarSyncQueueBudget
+static void CedarAddQueueBudget(CEDAR *c, int diff)
 {
 	if (c == NULL || diff == 0)
 	{
 		return;
 	}
 
-	Lock(c->QueueBudgetLock);
+	InterlockedExchangeAdd((volatile LONG *)&c->QueueBudget, (LONG)diff);
+}
+// Moves the queue budget by how much one queue's block count changed since its last sync, and records
+// the new count. A count of 0 hands back everything that queue still holds in the budget
+void CedarSyncQueueBudget(CEDAR *c, UINT current, UINT *last)
+{
+	if (last == NULL)
 	{
-		int v = (int)c->QueueBudget;
-		v += diff;
-		c->QueueBudget = (UINT)v;
+		return;
 	}
-	Unlock(c->QueueBudgetLock);
+
+	CedarAddQueueBudget(c, (int)current - (int)(*last));
+	*last = current;
 }
 void CedarAddFifoBudget(CEDAR *c, int diff)
 {
@@ -714,13 +758,7 @@ void CedarAddFifoBudget(CEDAR *c, int diff)
 		return;
 	}
 
-	Lock(c->FifoBudgetLock);
-	{
-		int v = (int)c->FifoBudget;
-		v += diff;
-		c->FifoBudget = (UINT)v;
-	}
-	Unlock(c->FifoBudgetLock);
+	InterlockedExchangeAdd((volatile LONG *)&c->FifoBudget, (LONG)diff);
 }
 UINT CedarGetQueueBudgetConsuming(CEDAR *c)
 {
@@ -729,7 +767,8 @@ UINT CedarGetQueueBudgetConsuming(CEDAR *c)
 		return 0;
 	}
 
-	return c->QueueBudget;
+	// Barrier read of the atomically changed counter
+	return (UINT)InterlockedCompareExchange((volatile LONG *)&c->QueueBudget, 0, 0);
 }
 UINT CedarGetFifoBudgetConsuming(CEDAR *c)
 {
@@ -738,7 +777,8 @@ UINT CedarGetFifoBudgetConsuming(CEDAR *c)
 		return 0;
 	}
 
-	return c->FifoBudget;
+	// Barrier read of the atomically changed counter
+	return (UINT)InterlockedCompareExchange((volatile LONG *)&c->FifoBudget, 0, 0);
 }
 UINT CedarGetQueueBudgetBalance(CEDAR *c)
 {
@@ -821,7 +861,6 @@ static void CleanupCedar(CEDAR *c)
 	ReleaseList(c->ListenerList);
 	ReleaseList(c->HubList);
 	ReleaseList(c->ConnectionList);
-	ReleaseList(c->UDPEntryList);
 	DeleteLock(c->lock);
 	DeleteCounter(c->ConnectionIncrement);
 	DeleteCounter(c->CurrentSessions);
@@ -880,9 +919,6 @@ static void CleanupCedar(CEDAR *c)
 	ReleaseIntList(c->UdpPortList);
 
 	DeleteLock(c->CurrentRegionLock);
-
-	DeleteLock(c->QueueBudgetLock);
-	DeleteLock(c->FifoBudgetLock);
 
 	DeleteCounter(c->CurrentActiveLinks);
 
@@ -1132,9 +1168,6 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 	c->AssignedBridgeLicense = NewCounter();
 	c->AssignedClientLicense = NewCounter();
 
-	c->QueueBudgetLock = NewLock();
-	c->FifoBudgetLock = NewLock();
-
 	Rand(c->UniqueId, sizeof(c->UniqueId));
 
 	// Machine identity (FIX-5): a fresh salt; a server replaces it with the salt of its config file
@@ -1153,7 +1186,6 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 	c->CurrentTcpConnections = GetNumTcpConnectionsCounter();
 
 	c->ListenerList = NewList(CompareListener);
-	c->UDPEntryList = NewList(CompareUDPEntry);
 	c->HubList = NewList(CompareHub);
 	c->ConnectionList = NewList(CompareConnection);
 
@@ -1196,8 +1228,7 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 
 	beta_str = "Release Candidate";
 
-	ToStr(tmp2, c->Beta);
-	Format(tmp2, sizeof(tmp2), " %s %s ", beta_str, tmp2);
+	Format(tmp2, sizeof(tmp2), " %s %u ", beta_str, c->Beta);
 
 	Format(tmp, sizeof(tmp),
 		"Version %u.%u.%u"

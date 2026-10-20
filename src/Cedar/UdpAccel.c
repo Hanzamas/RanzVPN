@@ -828,6 +828,22 @@ bool UdpAccelLogDrops(UDP_ACCEL *a, HUB *h, char *session_name, bool final)
 	return true;
 }
 
+// Draw the cookie pair of a new UDP_ACCEL from rand32: both are non-zero and differ from each other
+void UdpAccelNewCookies(UINT *my_cookie, UINT *your_cookie, UINT (*rand32)(void))
+{
+	do
+	{
+		*my_cookie = rand32();
+	}
+	while (*my_cookie == 0);
+
+	do
+	{
+		*your_cookie = rand32();
+	}
+	while (*your_cookie == 0 || *my_cookie == *your_cookie);
+}
+
 UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port)
 {
 	UDP_ACCEL *a;
@@ -911,17 +927,7 @@ UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port)
 	Rand(a->NextIv, sizeof(a->NextIv));
 	Rand(a->NextIv_V2, sizeof(a->NextIv_V2));
 
-	do
-	{
-		a->MyCookie = Rand32();
-	}
-	while (a->MyCookie == 0);
-
-	do
-	{
-		a->YourCookie = Rand32();
-	}
-	while (a->MyCookie == 0 || a->MyCookie == a->YourCookie);
+	UdpAccelNewCookies(&a->MyCookie, &a->YourCookie, Rand32);
 
 	max_udp_size = MTU_FOR_PPPOE;
 
