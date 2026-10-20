@@ -829,6 +829,7 @@ LS_LOAD_CONFIG_2		The configuration file has been loaded.
 LS_LOAD_CONFIG_3		Configuration file does not exist. Attempting to start using initial settings.
 LS_INIT_SAVE_THREAD		Starting the automatically saving background task. The interval between auto-saves is %u seconds. You can change the interval by changing the parameter AutoSaveConfigSpan in the configuration file.
 LS_BAD_CONFIG			The contents of the configuration file is invalid. The loading process has been terminated.
+LS_DEFAULT_CERT_FAILED		The default server certificate could not be generated. The server has no certificate, so TLS connections will be refused until one is installed.
 LS_CONFIG_SET_ASIDE		The configuration file "%s" could not be read. It is kept as "%s.bad", and the server starts with the initial settings.
 LS_CONFIG_SET_ASIDE_FAILED	The configuration file "%s" could not be read, and renaming it to "%s.bad" failed. The server starts with the initial settings and does not save over the file until the rename succeeds.
 LS_SAVE_CONFIG_FAILED	Saving the configuration file "%s" failed. The save will be retried.

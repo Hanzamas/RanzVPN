@@ -829,6 +829,7 @@ LS_LOAD_CONFIG_2		File konfigurasi telah dimuat.
 LS_LOAD_CONFIG_3		File konfigurasi tidak ada. Mencoba untuk memulai menggunakan pengaturan awal.
 LS_INIT_SAVE_THREAD		Memulai tugas latar belakang penyimpanan otomatis. Interval antara penyimpanan otomatis adalah %u detik. Anda dapat mengubah interval dengan mengubah parameter AutoSaveConfigSpan dalam file konfigurasi.
 LS_BAD_CONFIG			Konten file konfigurasi tidak valid. Proses pemuatan dihentikan.
+LS_DEFAULT_CERT_FAILED		Sertifikat server bawaan tidak dapat dibuat. Server tidak memiliki sertifikat, sehingga koneksi TLS akan ditolak sampai sertifikat dipasang.
 LS_CONFIG_SET_ASIDE		File konfigurasi "%s" tidak dapat dibaca. File disimpan sebagai "%s.bad", dan server dimulai dengan pengaturan awal.
 LS_CONFIG_SET_ASIDE_FAILED	File konfigurasi "%s" tidak dapat dibaca, dan penggantian namanya menjadi "%s.bad" gagal. Server dimulai dengan pengaturan awal dan tidak menyimpan di atas file tersebut sampai penggantian nama berhasil.
 LS_SAVE_CONFIG_FAILED	Penyimpanan file konfigurasi "%s" gagal. Penyimpanan akan dicoba lagi.
