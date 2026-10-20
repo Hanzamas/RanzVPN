@@ -67,17 +67,14 @@ struct TTC
 	UINT64 Span;
 	UINT64 RealSpan;
 	THREAD *Thread;
-	volatile bool Halt;
-	bool *Cancel;
 	LIST *ItcSockList;
 	TT_RESULT Result;
 	UINT ErrorCode;
 	bool AbnormalTerminated;
-	EVENT *StartEvent;
 	EVENT *InitedEvent;
 	LIST *WorkerThreadList;
 
-	UINT flag1, flag2;
+	UINT flag2;
 
 	UINT64 session_id;
 	UINT64 end_tick;

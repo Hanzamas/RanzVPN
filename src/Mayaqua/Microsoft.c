@@ -621,38 +621,6 @@ void MsRegistWindowsFirewallEx(char *title, char *exe)
 	Free(tmp);
 }
 
-UINT MsSetConsoleWidth(UINT size)
-{
-	HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
-	CONSOLE_SCREEN_BUFFER_INFO info;
-	COORD c;
-	UINT old_x, old_y;
-	if (size == 0)
-	{
-		return 0;
-	}
-	if (h == INVALID_HANDLE_VALUE)
-	{
-		return 0;
-	}
-
-	Zero(&info, sizeof(info));
-	if (GetConsoleScreenBufferInfo(h, &info) == false)
-	{
-		return 0;
-	}
-
-	old_x = info.dwSize.X;
-	old_y = info.dwSize.Y;
-
-	c.X = size;
-	c.Y = old_y;
-
-	SetConsoleScreenBufferSize(h, c);
-
-	return old_x;
-}
-
 UINT MsGetConsoleWidth()
 {
 	HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);

@@ -272,7 +272,6 @@ void MsSetTcpConfig(MS_TCP *tcp);
 bool MsLoadTcpConfigReg(MS_TCP *tcp);
 
 UINT MsGetConsoleWidth();
-UINT MsSetConsoleWidth(UINT size);
 NO_WARNING *MsInitNoWarningEx(UINT start_timer);
 void MsFreeNoWarning(NO_WARNING *nw);
 int CmpWindowList(void *p1, void *p2);

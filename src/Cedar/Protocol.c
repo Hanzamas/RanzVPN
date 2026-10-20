@@ -3749,7 +3749,7 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 
 			if ((data_size > MAX_WATERMARK_SIZE || data_size < WaterMarkSize) && (data_size != StrLen(HTTP_VPN_TARGET_POSTDATA)))
 			{
-				HttpSendForbidden(s, h->Target, NULL);
+				HttpSendDecoyPage(s, 403, h);
 				FreeHttpHeader(h);
 				c->Err = ERR_CLIENT_IS_NOT_VPN;
 				*error_detail_str = "POST_Recv_TooLong";
@@ -3766,7 +3766,7 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 			}
 			if ((StrCmpi(h->Target, vpn_http_target) != 0) || not_found_error)
 			{
-				HttpSendNotFound(s, h->Target);
+				HttpSendDecoyPage(s, 404, h);
 				*error_detail_str = "POST_Target_Wrong";
 			}
 			else
@@ -3778,7 +3778,7 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 				}
 				else
 				{
-					HttpSendForbidden(s, h->Target, NULL);
+					HttpSendDecoyPage(s, 403, h);
 					*error_detail_str = "POST_WaterMark_Error";
 				}
 			}
@@ -3798,7 +3798,7 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 			if (StrCmpi(h->Method, "GET") != 0 && StrCmpi(h->Method, "HEAD") != 0
 				 && StrCmpi(h->Method, "POST") != 0)
 			{
-				HttpSendNotImplemented(s, h->Method, h->Target, h->Version);
+				HttpSendDecoyPage(s, 501, h);
 				*error_detail_str = "HTTP_BAD_METHOD";
 			}
 			else
@@ -3807,11 +3807,11 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 				{
 					*error_detail_str = "HTTP_ROOT";
 
-					HttpSendForbidden(c->FirstSock, h->Target, "");
+					HttpSendDecoyPage(s, 403, h);
 				}
 				else
 				{
-					HttpSendNotFound(s, h->Target);
+					HttpSendDecoyPage(s, 404, h);
 
 					*error_detail_str = "HTTP_NOT_FOUND";
 				}
@@ -4085,21 +4085,8 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 		UniFormat(tmp, sizeof(tmp), _UU("STATUS_2"), in.TargetHostname, in.Hostname);
 		PrintStatus(sess, tmp);
 
-		switch (o->ProxyType)
-		{
-		case PROXY_HTTP:
-			ret = BindProxyHttpConnect(&out, &in, cancel_flag);
-			break;
-		case PROXY_SOCKS:
-			ret = BindProxySocks4Connect(&out, &in, cancel_flag);
-			break;
-		case PROXY_SOCKS5:
-			ret = BindProxySocks5Connect(&out, &in, cancel_flag);
-			break;
-		default:
-			c->Err = ERR_INTERNAL_ERROR;
-			return NULL;
-		}
+		// An unknown proxy type gives PROXY_ERROR_PARAMETER, which is ERR_INTERNAL_ERROR
+		ret = ProxyConnect(o->ProxyType, &out, &in, cancel_flag);
 
 		c->Err = ProxyCodeToCedar(ret);
 
