@@ -476,11 +476,10 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 
 	AddCapsBool(t, "b_local_bridge", IsBridgeSupported());
 
-	if (IsBridgeSupported())
-	{
-		// No TAP device on Windows; the cap stays for admin clients that read it
-		AddCapsBool(t, "b_tap_supported", false);
-	}
+	// No TAP device on Windows; the cap is reported on every architecture so that admin clients
+	// read the same caps set whether or not the local bridge is supported (b_local_bridge above
+	// already reports bridge support, which is x64 only)
+	AddCapsBool(t, "b_tap_supported", false);
 
 	AddCapsBool(t, "b_support_cascade", true);
 
@@ -510,10 +509,9 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 
 	AddCapsBool(t, "b_is_in_vm", s->IsInVm);
 
-	if (IsBridgeSupported())
-	{
-		AddCapsBool(t, "b_support_network_connection_name", true);
-	}
+	// Reported on every architecture, with its value tracking bridge support, so the caps set is
+	// the same on x64 and arm64 (the live harness golden is one shared file)
+	AddCapsBool(t, "b_support_network_connection_name", IsBridgeSupported());
 
 	AddCapsBool(t, "b_support_check_mac", true);
 
