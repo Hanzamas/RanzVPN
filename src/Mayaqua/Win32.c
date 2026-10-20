@@ -74,22 +74,7 @@ void Win32SetThreadName(UINT thread_id, char *name)
 
 void Win32InitNewThread()
 {
-	static HINSTANCE hDll = NULL;
-	static bool (WINAPI *_SetThreadLocale)(LCID) = NULL;
-
-	if (hDll == NULL)
-	{
-		hDll = LoadLibrary("kernel32.dll");
-
-		_SetThreadLocale =
-			(bool (__stdcall *)(LCID))
-			GetProcAddress(hDll, "SetThreadLocale");
-	}
-
-	if (_SetThreadLocale != NULL)
-	{
-		_SetThreadLocale(LOCALE_USER_DEFAULT);
-	}
+	SetThreadLocale(LOCALE_USER_DEFAULT);
 }
 
 bool Win32SetFolderCompress(char *path, bool compressed)
@@ -269,8 +254,7 @@ void Win32Yield()
 
 void Win32GetMemInfo(MEMINFO *info)
 {
-	static HINSTANCE hDll = NULL;
-	static bool (WINAPI *_GlobalMemoryStatusEx)(LPMEMORYSTATUSEX) = NULL;
+	MEMORYSTATUSEX st;
 	if (info == NULL)
 	{
 		return;
@@ -278,52 +262,21 @@ void Win32GetMemInfo(MEMINFO *info)
 
 	Zero(info, sizeof(MEMINFO));
 
-	if (hDll == NULL)
+	Zero(&st, sizeof(st));
+	st.dwLength = sizeof(st);
+
+	if (GlobalMemoryStatusEx(&st) == false)
 	{
-		hDll = LoadLibrary("kernel32.dll");
-	}
-	if (hDll != NULL)
-	{
-		if (_GlobalMemoryStatusEx == NULL)
-		{
-			_GlobalMemoryStatusEx =
-				(bool (__stdcall *)(LPMEMORYSTATUSEX))GetProcAddress(hDll, "GlobalMemoryStatusEx");
-		}
+		return;
 	}
 
+	info->TotalMemory = st.ullTotalPageFile;
+	info->FreeMemory = st.ullAvailPageFile;
+	info->UsedMemory = info->TotalMemory - info->FreeMemory;
 
-	if (_GlobalMemoryStatusEx == NULL)
-	{
-		MEMORYSTATUS st;
-		Zero(&st, sizeof(st));
-		st.dwLength = sizeof(st);
-
-		GlobalMemoryStatus(&st);
-
-		info->TotalMemory = (UINT64)st.dwTotalPageFile;
-		info->FreeMemory = (UINT64)st.dwAvailPageFile;
-		info->UsedMemory = info->TotalMemory - info->FreeMemory;
-
-		info->TotalPhys = (UINT64)st.dwTotalPhys;
-		info->FreePhys = (UINT64)st.dwAvailPhys;
-		info->UsedPhys = info->TotalPhys - info->FreePhys;
-	}
-	else
-	{
-		MEMORYSTATUSEX st;
-		Zero(&st, sizeof(st));
-		st.dwLength = sizeof(st);
-
-		_GlobalMemoryStatusEx(&st);
-
-		info->TotalMemory = st.ullTotalPageFile;
-		info->FreeMemory = st.ullAvailPageFile;
-		info->UsedMemory = info->TotalMemory - info->FreeMemory;
-
-		info->TotalPhys = st.ullTotalPhys;
-		info->FreePhys = st.ullAvailPhys;
-		info->UsedPhys = info->TotalPhys - info->FreePhys;
-	}
+	info->TotalPhys = st.ullTotalPhys;
+	info->FreePhys = st.ullAvailPhys;
+	info->UsedPhys = info->TotalPhys - info->FreePhys;
 }
 
 void *Win32NewSingleInstance(char *instance_name)
@@ -389,45 +342,10 @@ char* Win32GetProductId()
 	return CopyStr("--");
 }
 
+// InitMayaqua() ends the process through MayaFatalExit() when this is false
 bool Win32IsSupportedOs()
 {
-	if (Win32GetOsType() == 0)
-	{
-		Win32Alert(
-			CEDAR_PRODUCT_STR " VPN doesn't support this Windows Operating System.\n"
-			CEDAR_PRODUCT_STR " VPN requires " SUPPORTED_WINDOWS_LIST ".\n\n"
-			"Please contact your system administrator.", NULL);
-		return false;
-	}
-
-	return true;
-}
-
-void Win32AlertW(wchar_t *msg, wchar_t *caption)
-{
-	if (msg == NULL)
-	{
-		msg = L"Alert";
-	}
-	if (caption == NULL)
-	{
-		caption = CEDAR_PRODUCT_STR_W L" VPN Kernel";
-	}
-
-	MessageBoxW(NULL, msg, caption, MB_SETFOREGROUND | MB_TOPMOST | MB_SERVICE_NOTIFICATION | MB_OK | MB_ICONEXCLAMATION);
-}
-void Win32Alert(char *msg, char *caption)
-{
-	if (msg == NULL)
-	{
-		msg = "Alert";
-	}
-	if (caption == NULL)
-	{
-		caption = CEDAR_PRODUCT_STR " VPN Kernel";
-	}
-
-	MessageBox(NULL, msg, caption, MB_SETFOREGROUND | MB_TOPMOST | MB_SERVICE_NOTIFICATION | MB_OK | MB_ICONEXCLAMATION);
+	return Win32GetOsType() != 0;
 }
 
 UINT Win32GetNumberOfCpuInner()
@@ -556,7 +474,7 @@ bool Win32GetVersionExInternalForWindows81orLater(void *info)
 	str = MsRegReadStrEx2(REG_LOCAL_MACHINE,
 		"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
 		"CurrentVersion",
-		false, true);
+		false);
 
 	if (IsEmptyStr(str) == false)
 	{
@@ -575,11 +493,11 @@ bool Win32GetVersionExInternalForWindows81orLater(void *info)
 
 	major2 = MsRegReadIntEx2(REG_LOCAL_MACHINE,
 		"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
-		"CurrentMajorVersionNumber", false, true);
+		"CurrentMajorVersionNumber", false);
 
 	minor2 = MsRegReadIntEx2(REG_LOCAL_MACHINE,
 		"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
-		"CurrentMinorVersionNumber", false, true);
+		"CurrentMinorVersionNumber", false);
 
 	if ((major1 * 10000 + minor1) > (major2 * 10000 + minor2))
 	{
@@ -862,44 +780,6 @@ void Win32NukuEn(char *dst, UINT size, char *src)
 	StrCpy(dst, size, str);
 }
 
-void Win32GetDirFromPathW(wchar_t *dst, UINT size, wchar_t *src)
-{
-	wchar_t str[MAX_SIZE];
-	int i,len;
-	wchar_t c;
-	wchar_t tmp[MAX_SIZE];
-	int wp;
-	if (src)
-	{
-		UniStrCpy(str, sizeof(str), src);
-	}
-	else
-	{
-		UniStrCpy(str, sizeof(str), dst);
-	}
-	Win32NukuEnW(str, sizeof(str), NULL);
-	wp = 0;
-	len = UniStrLen(str);
-	dst[0] = 0;
-	for (i = 0;i < len;i++)
-	{
-		c = str[i];
-		switch (c)
-		{
-		case L'\\':
-			tmp[wp] = 0;
-			wp = 0;
-			UniStrCat(dst, size, tmp);
-			UniStrCat(dst, size, L"\\");
-			break;
-		default:
-			tmp[wp] = c;
-			wp++;
-			break;
-		}
-	}
-	Win32NukuEnW(dst, size, NULL);
-}
 void Win32GetDirFromPath(char *dst, UINT size, char *src)
 {
 	char str[MAX_SIZE];
@@ -1092,12 +972,6 @@ void Win32Init()
 #else
 	use_heap_api = false;
 #endif
-
-	if (MayaquaIsDotNetMode())
-	{
-		// The heap API can crash when called in .NET mode
-		use_heap_api = false;
-	}
 
 	if (use_heap_api)
 	{

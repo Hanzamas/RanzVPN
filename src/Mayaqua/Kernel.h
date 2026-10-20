@@ -104,10 +104,8 @@ void FreeSingleInstance(INSTANCE *inst);
 void GetSpanStrMilli(char *str, UINT size, UINT64 sec64);
 void GetMemInfo(MEMINFO *info);
 bool GetEnv(char *name, char *data, UINT size);
-bool GetEnvW(wchar_t *name, wchar_t *data, UINT size);
-void GetHomeDirW(wchar_t *path, UINT size);
-void AbortExit();
-void AbortExitEx(char *msg);
+__declspec(noreturn) void AbortExit();
+__declspec(noreturn) void AbortExitEx(char *msg);
 void YieldCpu();
 UINT GetNumberOfCpu();
 

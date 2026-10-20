@@ -892,43 +892,6 @@ static UINT PtConnect(CONSOLE *c, wchar_t *cmdline)
 	return ret;
 }
 
-static void VpnCmdInitBootPath()
-{
-	char exe_path[MAX_PATH];
-	char tmp[MAX_PATH];
-	GetExeName(exe_path, sizeof(exe_path));
-
-	if (SearchStrEx(exe_path, "ham.exe", 0, false) != INFINITE)
-	{
-		return;
-	}
-
-	if (MsIsAdmin())
-	{
-		UINT current_ver;
-
-		current_ver = MsRegReadInt(REG_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, VPNCMD_BOOTSTRAP_REG_VALUENAME_VER);
-
-		if ((CEDAR_VERSION_BUILD >= current_ver) ||
-			MsRegIsValue(REG_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, VPNCMD_BOOTSTRAP_REG_VALUENAME_PATH) == false)
-		{
-			bool b = false;
-			Format(tmp, sizeof(tmp), "%s\\vpncmd.exe", MsGetSystem32Dir());
-
-			if (IsFile(tmp) == false || (CEDAR_VERSION_BUILD > current_ver) || MsRegIsValue(REG_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, VPNCMD_BOOTSTRAP_REG_VALUENAME_PATH) == false)
-			{
-				b = FileCopy(VPNCMD_BOOTSTRAP_FILENAME, tmp);
-			}
-
-			MsRegWriteStrEx2(REG_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, VPNCMD_BOOTSTRAP_REG_VALUENAME_PATH, exe_path, true, false);
-			MsRegWriteIntEx2(REG_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, VPNCMD_BOOTSTRAP_REG_VALUENAME_VER, CEDAR_VERSION_BUILD, true, false);
-
-			MsRegWriteStrEx2(REG_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, VPNCMD_BOOTSTRAP_REG_VALUENAME_PATH, exe_path, false, true);
-			MsRegWriteIntEx2(REG_LOCAL_MACHINE, VPNCMD_BOOTSTRAP_REG_KEYNAME, VPNCMD_BOOTSTRAP_REG_VALUENAME_VER, CEDAR_VERSION_BUILD, false, true);
-		}
-	}
-}
-
 static void TtPrint(void *param, TT_PRINT_PROC *print_proc, wchar_t *str)
 {
 	if (print_proc == NULL || str == NULL)
@@ -5649,8 +5612,6 @@ static UINT PsCascadeCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *para
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
 
-	t.Online = false;
-
 	Copy(&t.Policy, GetDefaultPolicy(), sizeof(POLICY));
 
 	t.ClientOption = ZeroMalloc(sizeof(CLIENT_OPTION));
@@ -5658,12 +5619,9 @@ static UINT PsCascadeCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *para
 	t.ClientOption->Port = port;
 	StrCpy(t.ClientOption->Hostname, sizeof(t.ClientOption->Hostname), host);
 	StrCpy(t.ClientOption->HubName, sizeof(t.ClientOption->HubName), GetParamStr(o, "HUB"));
-	t.ClientOption->NumRetry = INFINITE;
-	t.ClientOption->RetryInterval = 15;
 	t.ClientOption->MaxConnection = 8;
 	t.ClientOption->UseEncrypt = true;
 	t.ClientOption->AdditionalConnectionInterval = 1;
-	t.ClientOption->RequireBridgeRoutingMode = true;
 
 	t.ClientAuth = ZeroMalloc(sizeof(CLIENT_AUTH));
 	t.ClientAuth->AuthType = CLIENT_AUTHTYPE_ANONYMOUS;
@@ -13711,11 +13669,6 @@ static UINT VpnCmdProc(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		{"CSV", NULL, NULL, NULL, NULL},
 		{"PROGRAMMING", NULL, NULL, NULL, NULL},
 	};
-
-	if (c->ConsoleType == CONSOLE_LOCAL)
-	{
-		VpnCmdInitBootPath();
-	}
 
 	if(c->ConsoleType != CONSOLE_CSV)
 	{

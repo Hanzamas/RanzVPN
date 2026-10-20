@@ -161,7 +161,7 @@ void registry_test(UINT num, char **arg)
 	RegistryCheck(&ctx, RegistryStrIs(s, "ranz"), "MsRegReadStr reads it back");
 	Free(s);
 
-	w = MsRegReadStrEx2W(REG_CURRENT_USER, key, "str", false, false);
+	w = MsRegReadStrEx2W(REG_CURRENT_USER, key, "str", false);
 	RegistryCheck(&ctx, RegistryUniIs(w, L"ranz"), "MsRegReadStrEx2W reads it back");
 	Free(w);
 
@@ -172,11 +172,11 @@ void registry_test(UINT num, char **arg)
 	RegistryCheck(&ctx, RegistrySetRaw(key, L"empty", REG_SZ, L"", 0) && RegistrySetRaw(key, L"onebyte", REG_SZ, "A", 1),
 		"An empty and a 1-byte REG_SZ are written");
 
-	w = MsRegReadStrEx2W(REG_CURRENT_USER, key, "empty", false, false);
+	w = MsRegReadStrEx2W(REG_CURRENT_USER, key, "empty", false);
 	RegistryCheck(&ctx, RegistryUniIs(w, L""), "MsRegReadStrEx2W reads an empty REG_SZ as an empty string (was ret[-1])");
 	Free(w);
 
-	w = MsRegReadStrEx2W(REG_CURRENT_USER, key, "onebyte", false, false);
+	w = MsRegReadStrEx2W(REG_CURRENT_USER, key, "onebyte", false);
 	RegistryCheck(&ctx, RegistryUniIs(w, L""), "MsRegReadStrEx2W reads a 1-byte REG_SZ as an empty string (was ret[-1])");
 	Free(w);
 
@@ -190,7 +190,7 @@ void registry_test(UINT num, char **arg)
 	RegistryCheck(&ctx, RegistrySetRaw(key, L"noterm", REG_SZ, no_term, sizeof(no_term)) &&
 		RegistrySetRaw(key, L"multi", REG_MULTI_SZ, multi, sizeof(multi)), "A REG_SZ without a terminator and a REG_MULTI_SZ are written");
 
-	w = MsRegReadStrEx2W(REG_CURRENT_USER, key, "noterm", false, false);
+	w = MsRegReadStrEx2W(REG_CURRENT_USER, key, "noterm", false);
 	RegistryCheck(&ctx, w == NULL || RegistryUniIs(w, L"AB"), "MsRegReadStrEx2W reads a REG_SZ without a terminator as NULL or as exactly its text");
 	Free(w);
 
@@ -225,7 +225,7 @@ void registry_test(UINT num, char **arg)
 	// (5) Nothing left behind
 	RegistryDeleteKeys(key, restricted);
 
-	RegistryCheck(&ctx, MsRegIsKeyEx2(REG_CURRENT_USER, key, false, false) == false, "The keys of the test are deleted");
+	RegistryCheck(&ctx, MsRegIsKeyEx2(REG_CURRENT_USER, key, false) == false, "The keys of the test are deleted");
 
 	if (ctx.NumFailed == 0)
 	{

@@ -687,26 +687,6 @@ TOKEN_LIST *NullToken()
 	return ret;
 }
 
-TOKEN_LIST *CopyToken(TOKEN_LIST *src)
-{
-	TOKEN_LIST *ret;
-	UINT i;
-	if (src == NULL)
-	{
-		return NULL;
-	}
-
-	ret = ZeroMalloc(sizeof(TOKEN_LIST));
-	ret->NumTokens = src->NumTokens;
-	ret->Token = ZeroMalloc(sizeof(char *) * ret->NumTokens);
-	for (i = 0;i < ret->NumTokens;i++)
-	{
-		ret->Token[i] = CopyStr(src->Token[i]);
-	}
-
-	return ret;
-}
-
 TOKEN_LIST *ParseCmdLine(char *str)
 {
 	TOKEN_LIST *t;
@@ -1243,8 +1223,7 @@ void InitStringLibrary()
 {
 	if (CheckStringLibrary() == false)
 	{
-		Alert("String Library Init Failed.\r\nPlease check your locale settings.", NULL);
-		exit(0);
+		MayaFatalExit(1, "String Library Init Failed.\r\nPlease check your locale settings.");
 	}
 }
 

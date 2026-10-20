@@ -9,7 +9,7 @@ A module is one `X.c` / `X.h` pair under `src/Cedar` or `src/Mayaqua`. Edges bel
 - The low-level Mayaqua modules (OS, Win32, Memory, Object, Kernel, Str, Internat, FileIO, Tracking, Tick64, Mayaqua) call each other in cycles. They are one layer, not a chain. `InitMayaqua` brings them up in this order: OS, FIFO, kernel status, Tracking, threading, string library, crypto, Tick64, Network, exe name and command line, OS info, Microsoft (`MsInit`), hamcore, string table.
 - The Cedar core (Hub, Session, Connection, Protocol, Server, Admin, Account, Logging) is also one cycle. Only the leaves listed as "none in Cedar" below are independent.
 
-Executables: `vpnserver` uses Cedar/Server (`StInit`, `StStartServer`) and `MsService`; `vpncmd` uses Cedar/Command (`CommandMain`); `vpncmdsys` uses Cedar and Mayaqua init only; `vpntest` uses Account, Admin, Command, Connection, Listener, MsChapV2, Server, Session, WaterMark and many Mayaqua modules; `fuzz` uses Mayaqua only (Cfg, Encrypt, HTTP, Pack, TcpIp).
+Executables: `vpnserver` uses Cedar/Server (`StInit`, `StStartServer`) and `MsService`; `vpncmd` uses Cedar/Command (`CommandMain`); `vpntest` uses Account, Admin, Command, Connection, Listener, MsChapV2, Server, Session, WaterMark and many Mayaqua modules; `fuzz` uses Mayaqua only (Cfg, Encrypt, HTTP, Pack, TcpIp).
 
 ### Mayaqua (`src/Mayaqua`)
 
@@ -38,7 +38,7 @@ Executables: `vpnserver` uses Cedar/Server (`StInit`, `StStartServer`) and `MsSe
 | Proxy | Outbound HTTP CONNECT, SOCKS4 and SOCKS5 connectors | `PROXY_PARAM_IN`, `PROXY_PARAM_OUT` | Network, HTTP | Protocol |
 | Stun | STUN binding request/response (mapped address discovery) | none | Network, DNS, Tick64, Encrypt | Cedar/UdpAccel, vpntest |
 | Pack | PACK serialisation | `PACK`, `ELEMENT`, `VALUE` | Memory, Encrypt, Network, Internat | HTTP, Network, Protocol, Admin, Account, Command, Remote, Server |
-| Microsoft | Windows services, registry, privileges, process list, adapter info, `MsService` | `MS`, `MS_ADAPTER`, `MS_TCP`, `MS_PROCESS` | Internat, Table, FileIO, Kernel, Win32 | Win32, Mayaqua, Network, Table, Tick64, Admin, Bridge, BridgeWin32, Cedar, Command, Console, Logging, SeLowUser, Server, `vpnserver` |
+| Microsoft | Windows services, registry, privileges, adapter info, `MsService` | `MS`, `MS_ADAPTER`, `MS_TCP` | Internat, Table, FileIO, Kernel, Win32 | Win32, Mayaqua, Network, Table, Tick64, Admin, Bridge, BridgeWin32, Cedar, Command, Console, Logging, SeLowUser, Server, `vpnserver` |
 
 `Crypto/Key.c`, `Crypto/Key.h` and `Crypto/Types.h` hold no code (7, 6 and 4 lines); `MayaType.h` includes `Types.h`.
 

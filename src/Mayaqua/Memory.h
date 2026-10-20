@@ -82,6 +82,7 @@ struct SK
 #define	HASH_LIST_NUM(o)	(((o) != NULL) ? (o)->NumItems : 0)
 
 typedef UINT (GET_HASH)(void *p);
+typedef bool (HASH_LIST_TAKE_PROC)(void *p, void *param);
 
 struct HASH_LIST
 {
@@ -99,6 +100,7 @@ void ReleaseHashList(HASH_LIST *h);
 void CleanupHashList(HASH_LIST *h);
 void AddHash(HASH_LIST *h, void *p);
 bool DeleteHash(HASH_LIST *h, void *p);
+UINT DeleteHashIf(HASH_LIST *h, HASH_LIST_TAKE_PROC *proc, void *param);
 void *SearchHash(HASH_LIST *h, void *t);
 UINT CalcHashForHashList(HASH_LIST *h, void *p);
 void **HashListToArray(HASH_LIST *h, UINT *num);

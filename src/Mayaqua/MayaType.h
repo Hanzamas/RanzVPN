@@ -34,6 +34,8 @@ typedef int (COMPARE)(void *p1, void *p2);
 #undef	MIN
 #endif
 
+// MIN/MAX (and LESS, MORE, MAKESURE, COMPARE_RET below) evaluate an argument twice: never
+// pass one with a side effect (++, --, an assignment or a call that changes state)
 #define	MIN(a, b)			((a) >= (b) ? (b) : (a))
 #define	MAX(a, b)			((a) >= (b) ? (a) : (b))
 
@@ -118,17 +120,6 @@ typedef int64_t time_64t;
 #define	OSTYPE_WINDOWS_SERVER_10				2712
 #define	OSTYPE_WINDOWS_11						2800
 #define	OSTYPE_WINDOWS_SERVER_11				2810
-#define	OSTYPE_UNIX_UNKNOWN						3000
-#define	OSTYPE_LINUX							3100
-#define	OSTYPE_SOLARIS							3200
-#define	OSTYPE_CYGWIN							3300
-#define	OSTYPE_BSD								3400
-#define	OSTYPE_MACOS_X							3500
-
-
-#define	GET_KETA(t, i)			(((t) % (i * 10)) / i)
-#define	OS_IS_WINDOWS(t)		((GET_KETA(t, 1000) == 1) || (GET_KETA(t, 1000) == 2))
-#define	OS_IS_UNIX(t)			(GET_KETA(t, 1000) == 3)
 
 
 typedef struct OS_INFO

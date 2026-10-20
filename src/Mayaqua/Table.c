@@ -31,9 +31,7 @@ void InitTable()
 	if (o == NULL)
 	{
 LABEL_FATAL_ERROR:
-		Alert("Fatal Error: The hamcore files are missing or broken.\r\nPlease check the hamcore files: the resources of the executable, and a hamcore folder next to it.\r\n\r\n(First, reboot the computer. If this problem occurs again, please reinstall VPN software files.)", NULL);
-		exit(-1);
-		return;
+		MayaFatalExit(1, "Fatal Error: The hamcore files are missing or broken.\r\nPlease check the hamcore files: the resources of the executable, and a hamcore folder next to it.\r\n\r\n(First, reboot the computer. If this problem occurs again, please reinstall VPN software files.)");
 	}
 
 	if (LoadLangConfig(LANG_CONFIG_FILENAME, tmp, sizeof(tmp)))
@@ -830,11 +828,7 @@ bool LoadTable(char *filename)
 	b = ReadDump(filename);
 	if (b == NULL)
 	{
-		char tmp[MAX_SIZE];
-		StrCpy(tmp, sizeof(tmp), "Error: Can't read string tables (file not found).\r\nPlease check the hamcore files: the resources of the executable, and a hamcore folder next to it.\r\n\r\n(First, reboot the computer. If this problem occurs again, please reinstall VPN software files.)");
-		Alert(tmp, NULL);
-		exit(-1);
-		return false;
+		MayaFatalExit(1, "Error: Can't read string tables (file not found).\r\nPlease check the hamcore files: the resources of the executable, and a hamcore folder next to it.\r\n\r\n(First, reboot the computer. If this problem occurs again, please reinstall VPN software files.)");
 	}
 
 	if (LoadTableFromBuf(b) == false)
@@ -852,9 +846,7 @@ bool LoadTable(char *filename)
 		char tmp[MAX_SIZE];
 		Format(tmp, sizeof(tmp), "Error: Can't read string tables (invalid version: '%s'!='%s').\r\nPlease check the hamcore files: the resources of the executable, and a hamcore folder next to it.\r\n\r\n(First, reboot the computer. If this problem occurs again, please reinstall VPN software files.)",
 			_SS("STRTABLE_ID"), STRTABLE_ID);
-		Alert(tmp, NULL);
-		exit(-1);
-		return false;
+		MayaFatalExit(1, tmp);
 	}
 
 	return true;

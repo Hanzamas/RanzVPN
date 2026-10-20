@@ -285,6 +285,39 @@ bool IsUserName(char *name)
 	return true;
 }
 
+// Check the authentication data of a user the admin RPC creates or changes.
+// Returns ERR_NO_ERROR, or the error code to send back
+UINT CheckUserAuthData(UINT auth_type, void *auth_data)
+{
+	if (auth_type == AUTHTYPE_USERCERT)
+	{
+		AUTHUSERCERT *c = auth_data;
+
+		if (c != NULL && c->UserX != NULL &&
+			c->UserX->is_compatible_bit == false)
+		{
+			return ERR_NOT_RSA_1024;
+		}
+		if (c == NULL || c->UserX == NULL)
+		{
+			return ERR_INVALID_PARAMETER;
+		}
+	}
+
+	// A password user needs a password hash: a missing or all-zero HashedKey is refused
+	if (auth_type == AUTHTYPE_PASSWORD)
+	{
+		AUTHPASSWORD *pw = auth_data;
+
+		if (pw == NULL || IsZero(pw->HashedKey, sizeof(pw->HashedKey)))
+		{
+			return ERR_INVALID_PARAMETER;
+		}
+	}
+
+	return ERR_NO_ERROR;
+}
+
 POLICY *ClonePolicy(POLICY *policy)
 {
 	POLICY *ret;

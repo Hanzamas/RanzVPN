@@ -244,6 +244,53 @@ bool DeleteHash(HASH_LIST *h, void *p)
 	return ret;
 }
 
+// Take out every item for which proc returns true, in one pass over the buckets: no array copy and no search per
+// item. The kept items keep their order. proc may free an item it takes out: the item is not touched after that.
+// Returns the number of items taken out.
+UINT DeleteHashIf(HASH_LIST *h, HASH_LIST_TAKE_PROC *proc, void *param)
+{
+	UINT i, num_taken = 0;
+	if (h == NULL || proc == NULL)
+	{
+		return 0;
+	}
+
+	for (i = 0;i < h->Size;i++)
+	{
+		LIST *o = h->Entries[i];
+		UINT j, num, num_kept = 0;
+
+		if (o == NULL)
+		{
+			continue;
+		}
+
+		num = LIST_NUM(o);
+
+		for (j = 0;j < num;j++)
+		{
+			void *p = LIST_DATA(o, j);
+
+			if (proc(p, param) == false)
+			{
+				o->p[num_kept++] = p;
+			}
+		}
+
+		o->num_item = num_kept;
+		h->NumItems -= (num - num_kept);
+		num_taken += (num - num_kept);
+
+		if (num_kept == 0)
+		{
+			ReleaseList(o);
+			h->Entries[i] = NULL;
+		}
+	}
+
+	return num_taken;
+}
+
 void AddHash(HASH_LIST *h, void *p)
 {
 	UINT r;

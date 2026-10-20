@@ -18,18 +18,17 @@
 
 void SecurePassword(void *secure_password, void *password, void *random)
 {
-	BUF *b;
+	UCHAR tmp[2 * SHA1_SIZE];
 	if (secure_password == NULL || password == NULL || random == NULL)
 	{
 		return;
 	}
 
-	b = NewBuf();
-	WriteBuf(b, password, SHA1_SIZE);
-	WriteBuf(b, random, SHA1_SIZE);
-	Sha0(secure_password, b->Buf, b->Size);
+	Copy(tmp, password, SHA1_SIZE);
+	Copy(tmp + SHA1_SIZE, random, SHA1_SIZE);
+	Sha0(secure_password, tmp, sizeof(tmp));
 
-	FreeBuf(b);
+	Zero(tmp, sizeof(tmp));
 }
 
 bool SamAuthUserByAnonymous(HUB *h, char *username)
@@ -61,28 +60,21 @@ bool SamAuthUserByAnonymous(HUB *h, char *username)
 	return b;
 }
 
-bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *password, bool ast)
+bool SamAuthUserByPlainPassword(HUB *hub, char *username, char *password)
 {
 	bool b = false;
 	wchar_t *name = NULL;
-	wchar_t *groupname = NULL;
-	UINT timeout = 90;
-	HUB *h;
-	if (hub == NULL || c == NULL || username == NULL || password == NULL)
+	if (hub == NULL || username == NULL || password == NULL)
 	{
 		return false;
 	}
-
-	h = hub;
-
-	AddRef(h->ref);
 
 	AcLock(hub);
 	{
 		USER *u;
 
 		u = AcGetUser(hub, username);
-		if (u == NULL && ast)
+		if (u == NULL)
 		{
 			u = AcGetUser(hub, "*");
 		}
@@ -102,13 +94,6 @@ bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *p
 					{
 						name = CopyUniStr(auth->NtUsername);
 					}
-
-					groupname = CopyStrToUni(u->GroupName);
-					
-					if (u->Policy)
-					{
-						timeout = u->Policy->TimeOut;
-					}
 				}
 			}
 			Unlock(u->lock);
@@ -125,12 +110,8 @@ bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *p
 
 		Lock(hub->lock);
 
-		if( groupname != NULL )
-			Free(groupname);
 		Free(name);
 	}
-
-	ReleaseHub(h);
 
 	return b;
 }
@@ -343,14 +324,7 @@ bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_pa
 	if (StrCmpi(username, ADMINISTRATOR_USERNAME) == 0)
 	{
 		SecurePassword(secure_password_check, h->SecurePassword, random);
-		if (Cmp(secure_password_check, secure_password, SHA1_SIZE) == 0)
-		{
-			return true;
-		}
-		else
-		{
-			return false;
-		}
+		return (Cmp(secure_password_check, secure_password, SHA1_SIZE) == 0);
 	}
 
 	AcLock(h);
@@ -368,10 +342,7 @@ bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_pa
 					if (is_mschap == false)
 					{
 						SecurePassword(secure_password_check, auth->HashedKey, random);
-						if (Cmp(secure_password_check, secure_password, SHA1_SIZE) == 0)
-						{
-							b = true;
-						}
+						b = (Cmp(secure_password_check, secure_password, SHA1_SIZE) == 0);
 					}
 					else
 					{
