@@ -1313,9 +1313,8 @@ void HubWatchDogThread(THREAD *t, void *param)
 
 								if (IPToIPv6Addr(&ip6addr, &e->Ip))
 								{
-									buf = BuildICMPv6NeighborSoliciation(&hub->HubIpV6,
-										&ip6addr,
-										hub->HubMacAddr, ++hub->HubIP6Id, false);
+									buf = BuildNeighborSolicitation(&hub->HubIpV6, &ip6addr,
+										hub->HubMacAddr);
 
 									if (buf != NULL)
 									{
@@ -3072,7 +3071,7 @@ static bool HubPaPutPacket(SESSION *s, void *data, UINT size)
 	}
 
 LABEL_TRY_AGAIN:
-	packet = ParsePacketEx5(data, size, no_l3, vlan_type_id, !no_look_bpdu_bridge_id, no_http || no_l7, !no_correct_checksum, false, no_l7);
+	packet = ParsePacketEx5(data, size, no_l3, vlan_type_id, !no_look_bpdu_bridge_id, no_http || no_l7, !no_correct_checksum, no_l7);
 
 	if (packet != NULL)
 	{
