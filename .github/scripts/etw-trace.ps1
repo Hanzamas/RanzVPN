@@ -1,3 +1,5 @@
+param([string] $BuildDir = 'build')
+
 $ErrorActionPreference = 'Stop'
 
 # ETW trace check (ticket #92). Debug() hands its messages to the TraceLogging provider of
@@ -9,12 +11,6 @@ $ErrorActionPreference = 'Stop'
 # Each run must print the probe sent with debug output on, not the one sent with it off, and end
 # with "TRACE TEST OK" and "NO MEMORY LEAKS". The .etl file stays in harness-out.
 
-if (Test-Path "env:BUILD_BINARIESDIRECTORY") {
-	$BUILD_BINARIESDIRECTORY = $env:BUILD_BINARIESDIRECTORY
-} else {
-	$BUILD_BINARIESDIRECTORY = "build"
-}
-
 # Provider of TRACELOGGING_DEFINE_PROVIDER in src/Mayaqua/Trace.c: the GUID is the EventSource
 # hash of its name "Ranz.VPN"
 $providerGuid = '{75b1770a-b78d-5167-6ab6-c837a52a76a2}'
@@ -24,7 +20,7 @@ $session = 'RanzVpnTraceCheck'
 $probeOn = 'RANZ TRACE PROBE 92 debug-on'
 $probeOff = 'RANZ TRACE PROBE 92 debug-off'
 
-$outDir = Join-Path $BUILD_BINARIESDIRECTORY 'harness-out'
+$outDir = Join-Path $BuildDir 'harness-out'
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 $etl = Join-Path (Resolve-Path $outDir).Path 'trace.etl'
 if (Test-Path $etl) { Remove-Item $etl }
@@ -38,7 +34,7 @@ function Invoke-TraceTest([string[]] $testArgs) {
 	$name = 'vpntest ' + ($testArgs -join ' ')
 	Write-Host "testing: $name"
 
-	$full = @(Write-Output "q\n" | & "$BUILD_BINARIESDIRECTORY\vpntest.exe" @testArgs)
+	$full = @(Write-Output "q\n" | & "$BuildDir\vpntest.exe" @testArgs)
 
 	$failed = @()
 	if ((Get-LineCount $full 'TRACE TEST OK') -ne 1) { $failed += "no 'TRACE TEST OK'" }

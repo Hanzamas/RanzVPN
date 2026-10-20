@@ -31,6 +31,7 @@ jobs:
         ]
     runs-on: ${{ matrix.platform.RUNNER }}
     name: ${{ matrix.platform.ARCHITECTURE }}
+    timeout-minutes: 60
     steps:
     - uses: actions/checkout@v4
       with:
@@ -121,7 +122,7 @@ jobs:
         if ($LASTEXITCODE -ne 0) { throw "stbchecker reported differences between the string tables (exit code $LASTEXITCODE)" }
     - name: Test
       timeout-minutes: 10
-      shell: powershell
+      shell: pwsh
       env:
         # Names build/harness-out/bench-<arch>.txt (the BENCH lines of vpntest bench)
         ARCHITECTURE: ${{ matrix.platform.ARCHITECTURE }}
@@ -171,6 +172,7 @@ jobs:
   fuzz-asan:
     runs-on: windows-latest
     name: fuzz-asan
+    timeout-minutes: 45
     steps:
     - uses: actions/checkout@v4
       with:
@@ -242,13 +244,11 @@ jobs:
         # certdl has time windows too (it measures the client timeouts); it also runs in build_and_test only.
         RANZ_SMOKE_TESTS: mschapv2,crypto,stun,watermark,stress,tickorigin,timeenc,nullsafe,charset,fileio,resources,threadpool,dns,trace,eventlog,str,udpaccel,selow,dllsearch,machineid,vmdetect,tcpip,x509,bufbounds,keepalive,packcap,storepacket,consoleline,tempdir,logwriter,logbound,slog,eraser,authtype,acpassword,sigleak,pktparse,vlantpid,pack_decode_bounds,tablecache,registry,certsig,x509root,rsasig
       run: |
-        # The smoke test script of build_and_test itself, so both jobs run the same test list:
-        # its new path (.github/scripts) first, its old one second. Its output and the vpntest
-        # stderr (AddressSanitizer reports) are captured, to also catch a report printed after
-        # "NO MEMORY LEAKS".
-        $script = @('.github/scripts/vpntest.ps1', '.ci/appveyor-vpntest.ps1') | Where-Object { Test-Path $_ } | Select-Object -First 1
-        if (-not $script) { throw 'vpntest smoke test script not found' }
-        $out = (cmd /c "powershell -NoProfile -ExecutionPolicy Bypass -File $script 2>&1") | Out-String
+        # The smoke test script of build_and_test itself, so both jobs run the same test list. Its output
+        # and the vpntest stderr (AddressSanitizer reports) are captured, to also catch a report printed
+        # after "NO MEMORY LEAKS".
+        $script = '.github/scripts/vpntest.ps1'
+        $out = (cmd /c "pwsh -NoProfile -ExecutionPolicy Bypass -File $script -BuildDir build 2>&1") | Out-String
         $code = $LASTEXITCODE
         Write-Host $out
         if ($code -ne 0) { throw "$script failed under AddressSanitizer (exit code $code)" }
@@ -300,6 +300,7 @@ jobs:
         ]
     runs-on: ${{ matrix.platform.RUNNER }}
     name: ${{ matrix.platform.ARCHITECTURE }} Debug (build only)
+    timeout-minutes: 30
     steps:
     - uses: actions/checkout@v4
       with:

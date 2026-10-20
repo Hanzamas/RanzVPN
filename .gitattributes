@@ -1,2 +1,10 @@
 * text=auto
+*.sys binary
+*.cat binary
+*.bin binary
+*.dat binary
+# hamcore files are embedded into the executables byte for byte (cmake/RanzResources.cmake): no EOL
+# conversion on checkout or commit, so the embedded bytes do not depend on core.autocrlf. The files
+# are stored as they are embedded (text files with CRLF).
+src/bin/hamcore/** -text
 tests/golden/** -text
