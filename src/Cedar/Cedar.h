@@ -8,6 +8,7 @@
 #include "GlobalConst.h"
 
 #include "Mayaqua/Network.h"
+#include "Mayaqua/Proxy.h"	// PROXY_DIRECT, PROXY_HTTP, PROXY_SOCKS, PROXY_SOCKS5
 
 #ifndef	CEDAR_VERSION_MAJOR
 #define	CEDAR_VERSION_MAJOR		0
@@ -165,11 +166,6 @@
 #define	SYSLOG_POLL_IP_INTERVAL_NG	(UINT64)(60 * 1000)
 
 #define	RECV_BUF_SIZE				65536
-
-#define	PROXY_DIRECT			0
-#define	PROXY_HTTP				1
-#define	PROXY_SOCKS				2
-#define	PROXY_SOCKS5			3
 
 #define	TCP_BOTH				0
 #define	TCP_SERVER_TO_CLIENT	1

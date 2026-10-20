@@ -5120,7 +5120,7 @@ static void CertDlConnThread(THREAD *thread, void *param)
 
 	SetTimeout(s, CERTDL_CONN_TIMEOUT);
 
-	if (mode == CERTDL_MODE_TLS && StartSSLEx(s, srv->TlsCert, srv->TlsKey, 0, NULL) == false)
+	if (mode == CERTDL_MODE_TLS && StartSSLEx(s, srv->TlsCert, srv->TlsKey, NULL) == false)
 	{
 		Disconnect(s);
 		return;

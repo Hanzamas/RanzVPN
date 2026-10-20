@@ -1,36 +1,70 @@
 #include "HTTP.h"
 
+#include "Internat.h"
 #include "Kernel.h"
 #include "Memory.h"
 #include "Network.h"
 #include "Pack.h"
 #include "Str.h"
 
+#include <winhttp.h>
+
 static char http_404_str[] = "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\r\n<HTML><HEAD>\r\n<TITLE>404 Not Found</TITLE>\r\n</HEAD><BODY>\r\n<H1>Not Found</H1>\r\nThe requested URL $TARGET$ was not found on this server.<P>\r\n<HR>\r\n<ADDRESS>HTTP Server at $HOST$ Port $PORT$</ADDRESS>\r\n</BODY></HTML>\r\n";
 static char http_403_str[] = "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\r\n<HTML><HEAD>\r\n<TITLE>403 Forbidden</TITLE>\r\n</HEAD><BODY>\r\n<H1>Forbidden</H1>\r\nYou don't have permission to access $TARGET$\r\non this server.<P>\r\n<HR>\r\n<ADDRESS>HTTP Server at $HOST$ Port $PORT$</ADDRESS>\r\n</BODY></HTML>\r\n";
 static char http_501_str[] = "<!DOCTYPE HTML PUBLIC \"-//IETF//DTD HTML 2.0//EN\">\r\n<HTML><HEAD>\r\n<TITLE>501 Method Not Implemented</TITLE>\r\n</HEAD><BODY>\r\n<H1>Method Not Implemented</H1>\r\n$METHOD$ to $TARGET$ not supported.<P>\r\nInvalid method in request $METHOD$ $TARGET$ $VERSION$<P>\r\n<HR>\r\n<ADDRESS>HTTP Server at $HOST$ Port $PORT$</ADDRESS>\r\n</BODY></HTML>\r\n";
 
+// A decoy page: what a plain web server answers to an HTTP client that is not a VPN client
+typedef struct HTTP_DECOY_PAGE
+{
+	UINT Code;
+	char *Reason;
+	char *Template;
+	bool NamesMethod;		// The page names the method and the version of the request
+} HTTP_DECOY_PAGE;
+
+static HTTP_DECOY_PAGE http_decoy_pages[] =
+{
+	{403, "Forbidden", http_403_str, false},
+	{404, "Not Found", http_404_str, false},
+	{501, "Method Not Implemented", http_501_str, true},
+};
+
+// The HTTP date of t (system time) for a Date header, as "Sun, 06 Nov 1994 08:49:37 GMT"
 static void GetHttpDateStr(char *str, UINT size, UINT64 t)
 {
-	SYSTEMTIME s;
-	static char *wday[] =
+	SYSTEMTIME st;
+	wchar_t tmp[WINHTTP_TIME_FORMAT_BUFSIZE / sizeof(wchar_t)];
+
+	UINT64ToSystem(&st, t);
+	if (WinHttpTimeFromSystemTime(&st, tmp) == FALSE)
 	{
-		"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat",
-	};
-	static char *month[] =
-	{
-		"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
-		"Nov", "Dec",
-	};
-	if (str == NULL)
-	{
+		StrCpy(str, size, "");
 		return;
 	}
-	UINT64ToSystem(&s, t);
 
-	Format(str, size, "%s, %02u %s %04u %02u:%02u:%02u GMT",
-		wday[s.wDayOfWeek], s.wDay, month[s.wMonth - 1], s.wYear,
-		s.wHour, s.wMinute, s.wSecond);
+	UniToStr(str, size, tmp);
+}
+
+// A new HTTP header with the given start line and the headers every message of the VPN server and client
+// carries: Date, Host when host is not NULL, Keep-Alive, Connection and Content-Type
+static HTTP_HEADER *NewHttpHeaderKeepAlive(char *method, char *target, char *version, char *host, char *content_type)
+{
+	HTTP_HEADER *h;
+	char date_str[MAX_SIZE];
+
+	h = NewHttpHeader(method, target, version);
+
+	GetHttpDateStr(date_str, sizeof(date_str), SystemTime64());
+	AddHttpValue(h, NewHttpValue("Date", date_str));
+	if (host != NULL)
+	{
+		AddHttpValue(h, NewHttpValue("Host", host));
+	}
+	AddHttpValue(h, NewHttpValue("Keep-Alive", HTTP_KEEP_ALIVE));
+	AddHttpValue(h, NewHttpValue("Connection", "Keep-Alive"));
+	AddHttpValue(h, NewHttpValue("Content-Type", content_type));
+
+	return h;
 }
 
 static void ReplaceUnsafeCharInHttpTarget(char *target)
@@ -46,10 +80,6 @@ static void ReplaceUnsafeCharInHttpTarget(char *target)
 
 HTTP_HEADER *NewHttpHeader(char *method, char *target, char *version)
 {
-	return NewHttpHeaderEx(method, target, version, false);
-}
-HTTP_HEADER *NewHttpHeaderEx(char *method, char *target, char *version, bool no_sort)
-{
 	HTTP_HEADER *header;
 	if (method == NULL || target == NULL || version == NULL)
 	{
@@ -61,7 +91,7 @@ HTTP_HEADER *NewHttpHeaderEx(char *method, char *target, char *version, bool no_
 	header->Method = CopyStr(method);
 	header->Target = CopyStr(target);
 	header->Version = CopyStr(version);
-	header->ValueList = NewListFast(no_sort ? NULL : CompareHttpValue);
+	header->ValueList = NewListFast(CompareHttpValue);
 
 	return header;
 }
@@ -328,18 +358,78 @@ bool SendHttpHeader(SOCK *s, HTTP_HEADER *header)
 	return ret;
 }
 
-// src/fuzz/fuzz_http.c repeats this loop (and RecvLine) over a buffer: change it with this function
-HTTP_HEADER *RecvHttpHeader(SOCK *s)
+// Line source over a SOCK (param): RecvLine()
+static char *HttpSockLineSource(void *param, UINT max_size)
 {
-	TOKEN_LIST *token = NULL;
-	char *str = NULL;
-	HTTP_HEADER *header = NULL;
-	if (s == NULL)
+	return RecvLine((SOCK *)param, max_size);
+}
+
+// Line source over a BUF (param), read from b->Current on: the next line exactly as RecvLine()
+// returns it when the peer sends the remaining bytes and then closes. The bytes up to '\n',
+// without the '\n' and without one '\r' before it, in a Malloc() block. NULL at the end of the
+// buffer before '\n', and when more than max_size bytes, '\n' included, were consumed without
+// completing the line.
+char *HttpBufLineSource(void *param, UINT max_size)
+{
+	BUF *b = (BUF *)param;
+	UCHAR *data;
+	UINT start;
+	UINT i;
+	if (b == NULL || max_size == 0)
 	{
 		return NULL;
 	}
 
-	str = RecvLine(s, HTTP_HEADER_LINE_MAX_SIZE);
+	data = (UCHAR *)b->Buf;
+	start = b->Current;
+
+	for (i = start;i < b->Size;i++)
+	{
+		UINT consumed = i - start + 1;
+
+		if (consumed > max_size)
+		{
+			b->Current = i + 1;
+			return NULL;
+		}
+
+		if (data[i] == '\n')
+		{
+			UINT len = consumed - 1;
+			char *str;
+
+			if (len >= 1 && data[start + len - 1] == '\r')
+			{
+				len--;
+			}
+
+			str = Malloc(len + 1);
+			Copy(str, data + start, len);
+			str[len] = 0;
+
+			b->Current = i + 1;
+			return str;
+		}
+	}
+
+	b->Current = b->Size;
+	return NULL;
+}
+
+// Parses an HTTP header from the lines that source returns: the request or status line, then
+// the header lines up to the blank line (none for HTTP/0.9). NULL when a line cannot be read
+// (a NULL line is not the blank line that ends the header) or does not parse.
+HTTP_HEADER *HttpParseHeaderLines(HTTP_LINE_SOURCE *source, void *param)
+{
+	TOKEN_LIST *token = NULL;
+	char *str = NULL;
+	HTTP_HEADER *header = NULL;
+	if (source == NULL)
+	{
+		return NULL;
+	}
+
+	str = source(param, HTTP_HEADER_LINE_MAX_SIZE);
 	if (str == NULL)
 	{
 		return NULL;
@@ -348,6 +438,11 @@ HTTP_HEADER *RecvHttpHeader(SOCK *s)
 	token = ParseToken(str, " ");
 
 	FreeSafe(PTR_TO_PTR(str));
+
+	if (token == NULL)
+	{
+		return NULL;
+	}
 
 	if (token->NumTokens < 3)
 	{
@@ -365,7 +460,14 @@ HTTP_HEADER *RecvHttpHeader(SOCK *s)
 
 	while (true)
 	{
-		str = RecvLine(s, HTTP_HEADER_LINE_MAX_SIZE);
+		str = source(param, HTTP_HEADER_LINE_MAX_SIZE);
+		if (str == NULL)
+		{
+			// Socket error, timeout or an oversized line: not the blank line that ends the header
+			FreeHttpHeader(header);
+			return NULL;
+		}
+
 		Trim(str);
 		if (IsEmptyStr(str))
 		{
@@ -387,20 +489,22 @@ HTTP_HEADER *RecvHttpHeader(SOCK *s)
 	return header;
 }
 
-bool HttpClientSend(SOCK *s, PACK *p)
+HTTP_HEADER *RecvHttpHeader(SOCK *s)
+{
+	if (s == NULL)
+	{
+		return NULL;
+	}
+
+	return HttpParseHeaderLines(HttpSockLineSource, s);
+}
+
+// Send p as the body of an HTTP message with the given start line; host, when not NULL, goes in a Host header
+static bool HttpSendPack(SOCK *s, PACK *p, char *method, char *target, char *version, char *host)
 {
 	BUF *b;
 	bool ret;
 	HTTP_HEADER *h;
-	char date_str[MAX_SIZE];
-	char ip_str[MAX_SIZE];
-
-	if (s == NULL || p == NULL)
-	{
-		return false;
-	}
-
-	IPToStr(ip_str, sizeof(ip_str), &s->RemoteIP);
 
 	CreateDummyValue(p);
 
@@ -410,14 +514,7 @@ bool HttpClientSend(SOCK *s, PACK *p)
 		return false;
 	}
 
-	h = NewHttpHeader("POST", HTTP_VPN_TARGET, "HTTP/1.1");
-
-	GetHttpDateStr(date_str, sizeof(date_str), SystemTime64());
-	AddHttpValue(h, NewHttpValue("Date", date_str));
-	AddHttpValue(h, NewHttpValue("Host", ip_str));
-	AddHttpValue(h, NewHttpValue("Keep-Alive", HTTP_KEEP_ALIVE));
-	AddHttpValue(h, NewHttpValue("Connection", "Keep-Alive"));
-	AddHttpValue(h, NewHttpValue("Content-Type", HTTP_CONTENT_TYPE2));
+	h = NewHttpHeaderKeepAlive(method, target, version, host, HTTP_CONTENT_TYPE2);
 
 	ret = PostHttp(s, h, b->Buf, b->Size);
 
@@ -425,6 +522,63 @@ bool HttpClientSend(SOCK *s, PACK *p)
 	FreeBuf(b);
 
 	return ret;
+}
+
+// Read the Pack body of a received HTTP message whose start line the caller has checked, and free h. A
+// Content-Type other than HTTP_CONTENT_TYPE2, an empty body or a Content-Length above max_data_size is
+// refused before the body is read or anything is allocated for it.
+static PACK *HttpRecvPackBody(SOCK *s, HTTP_HEADER *h, UINT max_data_size)
+{
+	BUF *b;
+	PACK *p;
+	UINT size;
+	UCHAR *tmp;
+	HTTP_VALUE *v;
+
+	v = GetHttpValue(h, "Content-Type");
+	if (v == NULL || StrCmpi(v->Data, HTTP_CONTENT_TYPE2) != 0)
+	{
+		FreeHttpHeader(h);
+		return NULL;
+	}
+
+	size = GetContentLength(h);
+	FreeHttpHeader(h);
+	if (size == 0 || size > max_data_size)
+	{
+		return NULL;
+	}
+
+	tmp = MallocEx(size, true);
+	if (RecvAll(s, tmp, size, s->SecureMode) == false)
+	{
+		Free(tmp);
+		return NULL;
+	}
+
+	b = NewBuf();
+	WriteBuf(b, tmp, size);
+	Free(tmp);
+
+	SeekBuf(b, 0, 0);
+	p = BufToPack(b);
+	FreeBuf(b);
+
+	return p;
+}
+
+bool HttpClientSend(SOCK *s, PACK *p)
+{
+	char ip_str[MAX_SIZE];
+
+	if (s == NULL || p == NULL)
+	{
+		return false;
+	}
+
+	IPToStr(ip_str, sizeof(ip_str), &s->RemoteIP);
+
+	return HttpSendPack(s, p, "POST", HTTP_VPN_TARGET, "HTTP/1.1", ip_str);
 }
 
 // Receive a Pack of up to MAX_PACK_SIZE from the server (the answer to the admin RPC login)
@@ -437,12 +591,8 @@ PACK *HttpClientRecv(SOCK *s)
 // read or anything is allocated for it.
 PACK *HttpClientRecvEx(SOCK *s, UINT max_data_size)
 {
-	BUF *b;
 	PACK *p;
 	HTTP_HEADER *h;
-	UINT size;
-	UCHAR *tmp;
-	HTTP_VALUE *v;
 	UINT num_noop = 0;
 	if (s == NULL)
 	{
@@ -463,36 +613,11 @@ START:
 		return NULL;
 	}
 
-	v = GetHttpValue(h, "Content-Type");
-	if (v == NULL || StrCmpi(v->Data, HTTP_CONTENT_TYPE2) != 0)
+	p = HttpRecvPackBody(s, h, max_data_size);
+	if (p == NULL)
 	{
-		FreeHttpHeader(h);
 		return NULL;
 	}
-
-	size = GetContentLength(h);
-	if (size == 0 || size > max_data_size)
-	{
-		FreeHttpHeader(h);
-		return NULL;
-	}
-
-	tmp = MallocEx(size, true);
-	if (RecvAll(s, tmp, size, s->SecureMode) == false)
-	{
-		Free(tmp);
-		FreeHttpHeader(h);
-		return NULL;
-	}
-
-	b = NewBuf();
-	WriteBuf(b, tmp, size);
-	Free(tmp);
-	FreeHttpHeader(h);
-
-	SeekBuf(b, 0, 0);
-	p = BufToPack(b);
-	FreeBuf(b);
 
 	// Client shouldn't receive a noop other than NOOP_IGNORE
 	// because it can't respond without a full new HTTP request
@@ -514,53 +639,20 @@ START:
 
 bool HttpServerSend(SOCK *s, PACK *p)
 {
-	BUF *b;
-	bool ret;
-	HTTP_HEADER *h;
-	char date_str[MAX_SIZE];
 	if (s == NULL || p == NULL)
 	{
 		return false;
 	}
 
-	CreateDummyValue(p);
-
-	b = PackToBuf(p);
-	if (b == NULL)
-	{
-		return false;
-	}
-
-	h = NewHttpHeader("HTTP/1.1", "200", "OK");
-
-	GetHttpDateStr(date_str, sizeof(date_str), SystemTime64());
-	AddHttpValue(h, NewHttpValue("Date", date_str));
-	AddHttpValue(h, NewHttpValue("Keep-Alive", HTTP_KEEP_ALIVE));
-	AddHttpValue(h, NewHttpValue("Connection", "Keep-Alive"));
-	AddHttpValue(h, NewHttpValue("Content-Type", HTTP_CONTENT_TYPE2));
-
-	ret = PostHttp(s, h, b->Buf, b->Size);
-
-	FreeHttpHeader(h);
-	FreeBuf(b);
-
-	return ret;
+	return HttpSendPack(s, p, "HTTP/1.1", "200", "OK", NULL);
 }
 
+// Receive a Pack of up to HTTP_PACK_MAX_SIZE from the client
 PACK *HttpServerRecv(SOCK *s)
 {
-	return HttpServerRecvEx(s, 0);
-}
-PACK *HttpServerRecvEx(SOCK *s, UINT max_data_size)
-{
-	BUF *b;
 	PACK *p;
 	HTTP_HEADER *h;
-	UINT size;
-	UCHAR *tmp;
-	HTTP_VALUE *v;
 	UINT num_noop = 0;
-	if (max_data_size == 0) max_data_size = HTTP_PACK_MAX_SIZE;
 	if (s == NULL)
 	{
 		return NULL;
@@ -570,7 +662,7 @@ START:
 	h = RecvHttpHeader(s);
 	if (h == NULL)
 	{
-		goto BAD_REQUEST;
+		return NULL;
 	}
 
 	if (StrCmpi(h->Method, "POST") != 0 ||
@@ -578,39 +670,14 @@ START:
 		StrCmpi(h->Version, "HTTP/1.1") != 0)
 	{
 		FreeHttpHeader(h);
-		goto BAD_REQUEST;
-	}
-
-	v = GetHttpValue(h, "Content-Type");
-	if (v == NULL || StrCmpi(v->Data, HTTP_CONTENT_TYPE2) != 0)
-	{
-		FreeHttpHeader(h);
-		goto BAD_REQUEST;
-	}
-
-	size = GetContentLength(h);
-	if (size == 0 || (size > max_data_size))
-	{
-		FreeHttpHeader(h);
-		goto BAD_REQUEST;
-	}
-
-	tmp = MallocEx(size, true);
-	if (RecvAll(s, tmp, size, s->SecureMode) == false)
-	{
-		Free(tmp);
-		FreeHttpHeader(h);
 		return NULL;
 	}
 
-	b = NewBuf();
-	WriteBuf(b, tmp, size);
-	Free(tmp);
-	FreeHttpHeader(h);
-
-	SeekBuf(b, 0, 0);
-	p = BufToPack(b);
-	FreeBuf(b);
+	p = HttpRecvPackBody(s, h, HTTP_PACK_MAX_SIZE);
+	if (p == NULL)
+	{
+		return NULL;
+	}
 
 	UINT noop = PackGetInt(p, "noop");
 	if (noop == NOOP)
@@ -642,150 +709,68 @@ START:
 	}
 
 	return p;
-
-BAD_REQUEST:
-	return NULL;
 }
 
-bool HttpSendForbidden(SOCK *s, char *target, char *server_id)
+// Send the decoy page of the given status code (403, 404 or 501) as the answer to request. The page names
+// the requested target, with its '<' and '>' replaced in request, and the 501 page also the method and
+// the version.
+bool HttpSendDecoyPage(SOCK *s, UINT code, HTTP_HEADER *request)
 {
+	HTTP_DECOY_PAGE *page = NULL;
 	HTTP_HEADER *h;
-	char date_str[MAX_SIZE];
+	char code_str[MAX_SIZE];
 	char *str;
 	UINT str_size;
 	char port_str[MAX_SIZE];
 	bool ret;
 	char host[MAX_SIZE];
-	UINT port;
-	if (s == NULL || target == NULL)
+	UINT i;
+	if (s == NULL || request == NULL)
+	{
+		return false;
+	}
+
+	for (i = 0; i < sizeof(http_decoy_pages) / sizeof(http_decoy_pages[0]); i++)
+	{
+		if (http_decoy_pages[i].Code == code)
+		{
+			page = &http_decoy_pages[i];
+			break;
+		}
+	}
+	if (page == NULL)
 	{
 		return false;
 	}
 
 	Zero(host, sizeof(host));
 	IPToStr(host, sizeof(host), &s->LocalIP);
-	port = s->LocalPort;
 
-	GetHttpDateStr(date_str, sizeof(date_str), SystemTime64());
+	ToStr(code_str, code);
+	h = NewHttpHeaderKeepAlive("HTTP/1.1", code_str, page->Reason, NULL, HTTP_CONTENT_TYPE);
 
-	h = NewHttpHeader("HTTP/1.1", "403", "Forbidden");
-
-	AddHttpValue(h, NewHttpValue("Date", date_str));
-	AddHttpValue(h, NewHttpValue("Keep-Alive", HTTP_KEEP_ALIVE));
-	AddHttpValue(h, NewHttpValue("Connection", "Keep-Alive"));
-	AddHttpValue(h, NewHttpValue("Content-Type", HTTP_CONTENT_TYPE));
-
-	str_size = sizeof(http_403_str) * 2 + StrLen(target) + StrLen(host);
-	str = Malloc(str_size);
-	StrCpy(str, str_size, http_403_str);
-
-	ReplaceUnsafeCharInHttpTarget(target);
-	ReplaceStri(str, str_size, str, "$TARGET$", target);
-
-	ReplaceStri(str, str_size, str, "$HOST$", host);
-
-	ToStr(port_str, port);
-	ReplaceStri(str, str_size, str, "$PORT$", port_str);
-
-	ret = PostHttp(s, h, str, StrLen(str));
-
-	FreeHttpHeader(h);
-	Free(str);
-
-	return ret;
-}
-
-bool HttpSendNotFound(SOCK *s, char *target)
-{
-	HTTP_HEADER *h;
-	char date_str[MAX_SIZE];
-	char *str;
-	UINT str_size;
-	char port_str[MAX_SIZE];
-	bool ret;
-	char host[MAX_SIZE];
-	UINT port;
-	if (s == NULL || target == NULL)
+	str_size = (StrLen(page->Template) + 1) * 2 + StrLen(request->Target) + StrLen(host);
+	if (page->NamesMethod)
 	{
-		return false;
+		str_size += StrLen(request->Method) + StrLen(request->Version);
 	}
-
-	Zero(host, sizeof(host));
-	IPToStr(host, sizeof(host), &s->LocalIP);
-	port = s->LocalPort;
-
-	GetHttpDateStr(date_str, sizeof(date_str), SystemTime64());
-
-	h = NewHttpHeader("HTTP/1.1", "404", "Not Found");
-
-	AddHttpValue(h, NewHttpValue("Date", date_str));
-	AddHttpValue(h, NewHttpValue("Keep-Alive", HTTP_KEEP_ALIVE));
-	AddHttpValue(h, NewHttpValue("Connection", "Keep-Alive"));
-	AddHttpValue(h, NewHttpValue("Content-Type", HTTP_CONTENT_TYPE));
-
-	str_size = sizeof(http_404_str) * 2 + StrLen(target) + StrLen(host);
 	str = Malloc(str_size);
-	StrCpy(str, str_size, http_404_str);
+	StrCpy(str, str_size, page->Template);
 
-	ReplaceUnsafeCharInHttpTarget(target);
-	ReplaceStri(str, str_size, str, "$TARGET$", target);
+	ReplaceUnsafeCharInHttpTarget(request->Target);
+	ReplaceStri(str, str_size, str, "$TARGET$", request->Target);
 
 	ReplaceStri(str, str_size, str, "$HOST$", host);
 
-	ToStr(port_str, port);
+	ToStr(port_str, s->LocalPort);
 	ReplaceStri(str, str_size, str, "$PORT$", port_str);
 
-	ret = PostHttp(s, h, str, StrLen(str));
-
-	FreeHttpHeader(h);
-	Free(str);
-
-	return ret;
-}
-
-bool HttpSendNotImplemented(SOCK *s, char *method, char *target, char *version)
-{
-	HTTP_HEADER *h;
-	char date_str[MAX_SIZE];
-	char *str;
-	UINT str_size;
-	char port_str[MAX_SIZE];
-	bool ret;
-	char host[MAX_SIZE];
-	UINT port;
-	if (s == NULL || target == NULL)
+	if (page->NamesMethod)
 	{
-		return false;
+		ReplaceStri(str, str_size, str, "$METHOD$", request->Method);
+
+		ReplaceStri(str, str_size, str, "$VERSION$", request->Version);
 	}
-
-	Zero(host, sizeof(host));
-	IPToStr(host, sizeof(host), &s->LocalIP);
-	port = s->LocalPort;
-
-	GetHttpDateStr(date_str, sizeof(date_str), SystemTime64());
-
-	h = NewHttpHeader("HTTP/1.1", "501", "Method Not Implemented");
-
-	AddHttpValue(h, NewHttpValue("Date", date_str));
-	AddHttpValue(h, NewHttpValue("Keep-Alive", HTTP_KEEP_ALIVE));
-	AddHttpValue(h, NewHttpValue("Connection", "Keep-Alive"));
-	AddHttpValue(h, NewHttpValue("Content-Type", HTTP_CONTENT_TYPE));
-
-	str_size = sizeof(http_501_str) * 2 + StrLen(target) + StrLen(host) + StrLen(method) + StrLen(version);
-	str = Malloc(str_size);
-	StrCpy(str, str_size, http_501_str);
-
-	ReplaceUnsafeCharInHttpTarget(target);
-	ReplaceStri(str, str_size, str, "$TARGET$", target);
-
-	ReplaceStri(str, str_size, str, "$HOST$", host);
-
-	ToStr(port_str, port);
-	ReplaceStri(str, str_size, str, "$PORT$", port_str);
-
-	ReplaceStri(str, str_size, str, "$METHOD$", method);
-
-	ReplaceStri(str, str_size, str, "$VERSION$", version);
 
 	ret = PostHttp(s, h, str, StrLen(str));
 

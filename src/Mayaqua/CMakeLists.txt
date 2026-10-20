@@ -109,6 +109,7 @@ if(WIN32)
       "Psapi.Lib"
       "Secur32.Lib"
       "setupapi.lib"
+      "winhttp.lib"
       "winmm.lib"
       "ws2_32.lib"
       "WtsApi32.Lib"

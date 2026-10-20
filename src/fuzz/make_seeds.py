@@ -472,6 +472,17 @@ def make_http_seeds():
         b'Accept: */*\r\n'
         b'\r\n'))
     write_seed('fuzz_http', 'http09.txt', b'GET / HTTP/0.9\r\n')
+    # The peer closes after one header line: no blank line, so no header
+    write_seed('fuzz_http', 'truncated_header.txt', (
+        b'POST /vpnsvc/connect.cgi HTTP/1.1\r\n'
+        b'Host: 192.0.2.1\r\n'))
+    # A header line longer than HTTP_HEADER_LINE_MAX_SIZE (4096) after Content-Length: no header
+    write_seed('fuzz_http', 'oversized_line.txt', (
+        b'POST /vpnsvc/vpn.cgi HTTP/1.1\r\n'
+        b'Content-Type: application/octet-stream\r\n'
+        b'Content-Length: 16\r\n'
+        b'X-Pad: ' + b'A' * 4200 + b'\r\n'
+        b'\r\n'))
 
 
 if __name__ == '__main__':
