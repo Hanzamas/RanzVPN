@@ -6901,7 +6901,7 @@ static UINT HarnessPlogBuild(HARNESS_PLOG_CASE *c, UCHAR *buf, UINT buf_size)
 // case of level ALL), the session name of A and no destination session. NULL if the frame does not parse
 static char *HarnessPlogLine(HARNESS_PLOG_CASE *c, CEDAR *cedar, UCHAR *frame, UINT size)
 {
-	PKT *p = ParsePacketEx5(frame, size, false, 0, true, false, false, false, false);
+	PKT *p = ParsePacketEx5(frame, size, false, 0, true, false, false, false);
 	PACKET_LOG *pl;
 	RECORD rec;
 	char *ret;
@@ -6995,7 +6995,7 @@ static void HarnessPacketLogGolden(HARNESS *h)
 		HARNESS_PLOG_CASE *c = &harness_plog_cases[i];
 		UCHAR frame[HARNESS_PLOG_FRAME];
 		UINT size = HarnessPlogBuild(c, frame, sizeof(frame));
-		PKT *p = (size != 0 ? ParsePacketEx5(frame, size, false, 0, true, false, false, false, false) : NULL);
+		PKT *p = (size != 0 ? ParsePacketEx5(frame, size, false, 0, true, false, false, false) : NULL);
 
 		if (p == NULL)
 		{
