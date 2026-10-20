@@ -997,7 +997,7 @@ static void TtsWorkerThread(THREAD *thread, void *param)
 
 	o = NewList(NULL);
 
-	while (tts->Halt == false)
+	while (FlagRead(&tts->Halt) == false)
 	{
 		UINT64 now = Tick64();
 
@@ -1236,7 +1236,7 @@ static void TtsWorkerThread(THREAD *thread, void *param)
 					DeleteAll(o);
 				}
 
-				if (w->NewSocketArrived || tts->Halt)
+				if (w->NewSocketArrived || FlagRead(&tts->Halt))
 				{
 					w->NewSocketArrived = false;
 					all_sockets_blocked = true;
@@ -1291,14 +1291,14 @@ static void TtsAcceptProc(TTS *tts, SOCK *listen_socket)
 		return;
 	}
 
-	while (tts->Halt == false)
+	while (FlagRead(&tts->Halt) == false)
 	{
 		SOCK *s;
 		s = Accept(listen_socket);
 
 		if (s == NULL)
 		{
-			if (tts->Halt == false)
+			if (FlagRead(&tts->Halt) == false)
 			{
 				SleepThread(10);
 			}
@@ -2117,7 +2117,7 @@ static UINT FreeTts(TTS *tts)
 
 	TtPrint(tts->Param, tts->Print, _UU("TTS_STOP_INIT"));
 
-	tts->Halt = true;
+	FlagWrite(&tts->Halt, true);
 	Disconnect(tts->ListenSocket);
 	ReleaseSock(tts->ListenSocket);
 	Disconnect(tts->ListenSocketV6);

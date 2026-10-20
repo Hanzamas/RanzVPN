@@ -2640,7 +2640,7 @@ bool ClientAdditionalConnect(CONNECTION *c)
 		return false;
 	}
 
-	if (c->Halt)
+	if (FlagRead(&c->Halt))
 	{
 		goto CLEANUP;
 	}
@@ -2650,7 +2650,7 @@ bool ClientAdditionalConnect(CONNECTION *c)
 		goto CLEANUP;
 	}
 
-	if (c->Halt)
+	if (FlagRead(&c->Halt))
 	{
 		goto CLEANUP;
 	}
@@ -2660,7 +2660,7 @@ bool ClientAdditionalConnect(CONNECTION *c)
 		goto CLEANUP;
 	}
 
-	if (c->Halt)
+	if (FlagRead(&c->Halt))
 	{
 		goto CLEANUP;
 	}
@@ -2884,7 +2884,7 @@ bool ClientConnect(CONNECTION *c)
 
 	Copy(&server_ip, &s->RemoteIP, sizeof(IP));
 
-	if (c->Halt)
+	if (FlagRead(&c->Halt))
 	{
 		c->Err = ERR_USER_CANCEL;
 		goto CLEANUP;
@@ -2914,7 +2914,7 @@ bool ClientConnect(CONNECTION *c)
 		goto CLEANUP;
 	}
 
-	if (c->Halt)
+	if (FlagRead(&c->Halt))
 	{
 		c->Err = ERR_USER_CANCEL;
 		goto CLEANUP;
@@ -2925,7 +2925,7 @@ bool ClientConnect(CONNECTION *c)
 		goto CLEANUP;
 	}
 
-	if (c->Halt)
+	if (FlagRead(&c->Halt))
 	{
 		c->Err = ERR_USER_CANCEL;
 		goto CLEANUP;
@@ -2941,7 +2941,7 @@ bool ClientConnect(CONNECTION *c)
 		goto CLEANUP;
 	}
 
-	if (c->Halt)
+	if (FlagRead(&c->Halt))
 	{
 		c->Err = ERR_USER_CANCEL;
 		goto CLEANUP;
@@ -3850,7 +3850,7 @@ SOCK *ClientConnectToServer(CONNECTION *c)
 		return NULL;
 	}
 
-	if (c->Halt)
+	if (FlagRead(&c->Halt))
 	{
 		c->Err = ERR_USER_CANCEL;
 		return NULL;
@@ -3865,7 +3865,7 @@ SOCK *ClientConnectToServer(CONNECTION *c)
 	// StopConnection reads c->FirstSock and takes its ref under c->lock
 	ClientSetFirstSock(c, s);
 
-	if (c->Halt)
+	if (FlagRead(&c->Halt))
 	{
 		c->Err = ERR_USER_CANCEL;
 		ClientSetFirstSock(c, NULL);
