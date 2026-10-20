@@ -526,8 +526,6 @@ bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address);
 
 USHORT IpChecksum(void *buf, UINT size);
 
-void GenMacAddress(UCHAR *mac);
-
 DHCP_OPTION *GetDhcpOption(LIST *o, UINT id);
 void FreeDhcpOptions(LIST *o);
 LIST *ParseDhcpOptions(void *data, UINT size);

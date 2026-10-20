@@ -24,7 +24,7 @@ void server_test(UINT num, char **arg)
 
 	StInit();
 
-	StStartServer(false);
+	StStartServer();
 
 	GetLine(NULL, 0);
 

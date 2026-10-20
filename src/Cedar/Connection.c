@@ -1019,7 +1019,7 @@ DISCONNECT_THIS_TCP:
 			{
 				b->LastBridgeTry = Tick64();
 
-				e = OpenEth(b->Name, b->Local, b->TapMode, b->TapMacAddress);
+				e = OpenEth(b->Name);
 				if (e != NULL)
 				{
 					b->Eth = e;
