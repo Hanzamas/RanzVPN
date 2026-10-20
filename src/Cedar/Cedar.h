@@ -490,10 +490,8 @@ struct CEDAR
 	char CurrentRegion[128];
 	UINT CurrentTcpQueueSize;						// Changed only with InterlockedExchangeAdd
 	COUNTER *CurrentActiveLinks;
-	LOCK *QueueBudgetLock;
-	UINT QueueBudget;
-	LOCK *FifoBudgetLock;
-	UINT FifoBudget;
+	UINT QueueBudget;								// Changed only with InterlockedExchangeAdd
+	UINT FifoBudget;								// Changed only with InterlockedExchangeAdd
 	SSL_ACCEPT_SETTINGS SslAcceptSettings;
 	UINT DhParamBits;
 	char StunServer[MAX_HOST_NAME_LEN + 1];	// STUN server (host[:port]) for UDP acceleration, empty = STUN disabled
@@ -534,7 +532,7 @@ bool IsSupportedWinVer(RPC_WINVER *v);
 UINT GetCedarVersionNumber();
 void CedarAddCurrentTcpQueueSize(CEDAR *c, int diff);
 UINT CedarGetCurrentTcpQueueSize(CEDAR *c);
-void CedarAddQueueBudget(CEDAR *c, int diff);
+void CedarSyncQueueBudget(CEDAR *c, UINT current, UINT *last);
 void CedarAddFifoBudget(CEDAR *c, int diff);
 UINT CedarGetQueueBudgetConsuming(CEDAR *c);
 UINT CedarGetFifoBudgetConsuming(CEDAR *c);

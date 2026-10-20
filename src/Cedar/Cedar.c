@@ -692,20 +692,28 @@ static void StopAllListener(CEDAR *c)
 	Free(array);
 }
 
-void CedarAddQueueBudget(CEDAR *c, int diff)
+// Both budgets are plain counters shared by every connection and link of the Cedar, so one atomic add
+// replaces the lock each of them had. Callers keep the queue budget in step through CedarSyncQueueBudget
+static void CedarAddQueueBudget(CEDAR *c, int diff)
 {
 	if (c == NULL || diff == 0)
 	{
 		return;
 	}
 
-	Lock(c->QueueBudgetLock);
+	InterlockedExchangeAdd((volatile LONG *)&c->QueueBudget, (LONG)diff);
+}
+// Moves the queue budget by how much one queue's block count changed since its last sync, and records
+// the new count. A count of 0 hands back everything that queue still holds in the budget
+void CedarSyncQueueBudget(CEDAR *c, UINT current, UINT *last)
+{
+	if (last == NULL)
 	{
-		int v = (int)c->QueueBudget;
-		v += diff;
-		c->QueueBudget = (UINT)v;
+		return;
 	}
-	Unlock(c->QueueBudgetLock);
+
+	CedarAddQueueBudget(c, (int)current - (int)(*last));
+	*last = current;
 }
 void CedarAddFifoBudget(CEDAR *c, int diff)
 {
@@ -714,13 +722,7 @@ void CedarAddFifoBudget(CEDAR *c, int diff)
 		return;
 	}
 
-	Lock(c->FifoBudgetLock);
-	{
-		int v = (int)c->FifoBudget;
-		v += diff;
-		c->FifoBudget = (UINT)v;
-	}
-	Unlock(c->FifoBudgetLock);
+	InterlockedExchangeAdd((volatile LONG *)&c->FifoBudget, (LONG)diff);
 }
 UINT CedarGetQueueBudgetConsuming(CEDAR *c)
 {
@@ -729,7 +731,8 @@ UINT CedarGetQueueBudgetConsuming(CEDAR *c)
 		return 0;
 	}
 
-	return c->QueueBudget;
+	// Barrier read of the atomically changed counter
+	return (UINT)InterlockedCompareExchange((volatile LONG *)&c->QueueBudget, 0, 0);
 }
 UINT CedarGetFifoBudgetConsuming(CEDAR *c)
 {
@@ -738,7 +741,8 @@ UINT CedarGetFifoBudgetConsuming(CEDAR *c)
 		return 0;
 	}
 
-	return c->FifoBudget;
+	// Barrier read of the atomically changed counter
+	return (UINT)InterlockedCompareExchange((volatile LONG *)&c->FifoBudget, 0, 0);
 }
 UINT CedarGetQueueBudgetBalance(CEDAR *c)
 {
@@ -879,9 +883,6 @@ static void CleanupCedar(CEDAR *c)
 	ReleaseIntList(c->UdpPortList);
 
 	DeleteLock(c->CurrentRegionLock);
-
-	DeleteLock(c->QueueBudgetLock);
-	DeleteLock(c->FifoBudgetLock);
 
 	DeleteCounter(c->CurrentActiveLinks);
 
@@ -1130,9 +1131,6 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 
 	c->AssignedBridgeLicense = NewCounter();
 	c->AssignedClientLicense = NewCounter();
-
-	c->QueueBudgetLock = NewLock();
-	c->FifoBudgetLock = NewLock();
 
 	Rand(c->UniqueId, sizeof(c->UniqueId));
 

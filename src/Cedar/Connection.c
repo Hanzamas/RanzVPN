@@ -119,6 +119,30 @@ void InsertReceivedBlockToQueue(CONNECTION *c, BLOCK *block)
 	}
 }
 
+// Queues one block received from the peer, or drops it when it is oversized or the Cedar queue budget is
+// spent. A queued block then syncs the queue budget: every block when packet_index is NULL, else every
+// 32nd block counted through *packet_index
+static void ConnectionEnqueueReceivedBlock(CONNECTION *c, BLOCK *b, UINT *packet_index)
+{
+	if (b->Size > MAX_PACKET_SIZE || CedarGetQueueBudgetBalance(c->Cedar) == 0)
+	{
+		FreeBlock(b);
+		return;
+	}
+
+	InsertReceivedBlockToQueue(c, b);
+
+	if (packet_index == NULL || (*packet_index % 32) == 0)
+	{
+		CedarSyncQueueBudget(c->Cedar, c->ReceivedBlocks->num_item, &c->LastRecvBlocksNum);
+	}
+
+	if (packet_index != NULL)
+	{
+		(*packet_index)++;
+	}
+}
+
 // Randomize the Keep-Alive interval to spread network load.
 UINT GenNextKeepAliveSpan(CONNECTION *c)
 {
@@ -701,7 +725,6 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 
 			while (true)
 			{
-				UINT current_packet_index = 0;
 				BLOCK *b = GetNext(s->UdpAccel->RecvBlockQueue);
 
 				if (b == NULL)
@@ -709,33 +732,7 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 					break;
 				}
 
-				if (b->Size > MAX_PACKET_SIZE)
-				{
-					FreeBlock(b);
-				}
-				else
-				{
-					if (CedarGetQueueBudgetBalance(c->Cedar) == 0)
-					{
-						FreeBlock(b);
-					}
-					else
-					{
-						InsertReceivedBlockToQueue(c, b);
-
-						if ((current_packet_index % 32) == 0)
-						{
-							UINT current_recv_block_num = c->ReceivedBlocks->num_item;
-							int diff = (int)current_recv_block_num - (int)c->LastRecvBlocksNum;
-
-							CedarAddQueueBudget(c->Cedar, diff);
-
-							c->LastRecvBlocksNum = current_recv_block_num;
-						}
-
-						current_packet_index++;
-					}
-				}
+				ConnectionEnqueueReceivedBlock(c, b, NULL);
 			}
 		}
 
@@ -907,33 +904,7 @@ DISCONNECT_THIS_TCP:
 					UPDATE_LAST_COMM_TIME(c->Session->LastCommTime, now);
 					UPDATE_LAST_COMM_TIME(ts->LastCommTime, now);
 
-					if (block->Size > MAX_PACKET_SIZE)
-					{
-						FreeBlock(block);
-					}
-					else
-					{
-						if (CedarGetQueueBudgetBalance(c->Cedar) == 0)
-						{
-							FreeBlock(block);
-						}
-						else
-						{
-							InsertReceivedBlockToQueue(c, block);
-
-							if ((current_packet_index % 32) == 0)
-							{
-								UINT current_recv_block_num = c->ReceivedBlocks->num_item;
-								int diff = (int)current_recv_block_num - (int)c->LastRecvBlocksNum;
-
-								CedarAddQueueBudget(c->Cedar, diff);
-
-								c->LastRecvBlocksNum = current_recv_block_num;
-							}
-
-							current_packet_index++;
-						}
-					}
+					ConnectionEnqueueReceivedBlock(c, block, &current_packet_index);
 
 					if (ts->CurrentPacketNum >= ts->NextBlockNum)
 					{
@@ -996,15 +967,7 @@ DISCONNECT_THIS_TCP:
 			c->LastRecvFifoTotalSize = current_recv_fifo_size;
 		}
 
-		if (true)
-		{
-			UINT current_recv_block_num = c->ReceivedBlocks->num_item;
-			int diff = (int)current_recv_block_num - (int)c->LastRecvBlocksNum;
-
-			CedarAddQueueBudget(c->Cedar, diff);
-
-			c->LastRecvBlocksNum = current_recv_block_num;
-		}
+		CedarSyncQueueBudget(c->Cedar, c->ReceivedBlocks->num_item, &c->LastRecvBlocksNum);
 
 		Free(tcpsocks);
 	}
@@ -1551,11 +1514,7 @@ static void CleanupConnection(CONNECTION *c)
 		c->LastRecvFifoTotalSize = 0;
 	}
 
-	if (c->LastRecvBlocksNum != 0)
-	{
-		CedarAddQueueBudget(c->Cedar, -((int)c->LastRecvBlocksNum));
-		c->LastRecvBlocksNum = 0;
-	}
+	CedarSyncQueueBudget(c->Cedar, 0, &c->LastRecvBlocksNum);
 
 	if (c->LastTcpQueueSize != 0)
 	{

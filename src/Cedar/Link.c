@@ -149,16 +149,7 @@ static bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 	if ((k->Flag1 % 32) == 0)
 	{
 		// Only every 32nd call, for speed
-		UINT current_num;
-		int diff;
-
-		current_num = GetQueueNum(server_connection->ReceivedBlocks);
-
-		diff = (int)current_num - (int)k->LastServerConnectionReceivedBlocksNum;
-
-		k->LastServerConnectionReceivedBlocksNum = current_num;
-
-		CedarAddQueueBudget(k->Cedar, diff);
+		CedarSyncQueueBudget(k->Cedar, GetQueueNum(server_connection->ReceivedBlocks), &k->LastServerConnectionReceivedBlocksNum);
 	}
 
 	// The packet came from the link destination HUB,
@@ -172,19 +163,10 @@ static bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 
 		if (k->LockFlag == false)
 		{
-			UINT current_num;
-			int diff;
-
 			k->LockFlag = true;
 			LockQueue(server_connection->ReceivedBlocks);
 
-			current_num = GetQueueNum(server_connection->ReceivedBlocks);
-
-			diff = (int)current_num - (int)k->LastServerConnectionReceivedBlocksNum;
-
-			k->LastServerConnectionReceivedBlocksNum = current_num;
-
-			CedarAddQueueBudget(k->Cedar, diff);
+			CedarSyncQueueBudget(k->Cedar, GetQueueNum(server_connection->ReceivedBlocks), &k->LastServerConnectionReceivedBlocksNum);
 		}
 
 		if (halting == false)
@@ -201,16 +183,7 @@ static bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 	}
 	else
 	{
-		UINT current_num;
-		int diff;
-
-		current_num = GetQueueNum(server_connection->ReceivedBlocks);
-
-		diff = (int)current_num - (int)k->LastServerConnectionReceivedBlocksNum;
-
-		k->LastServerConnectionReceivedBlocksNum = current_num;
-
-		CedarAddQueueBudget(k->Cedar, diff);
+		CedarSyncQueueBudget(k->Cedar, GetQueueNum(server_connection->ReceivedBlocks), &k->LastServerConnectionReceivedBlocksNum);
 
 		if (k->LockFlag)
 		{
@@ -221,7 +194,7 @@ static bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 		// data == NULL means all packets are stored, so issue the Cancel
 		Cancel(server_session->Cancel1);
 
-		if (k->Hub != NULL && k->Hub->Option != NULL && k->Hub->Option->YieldAfterStorePacket)
+		if (k->Hub->Option->YieldAfterStorePacket)
 		{
 			YieldCpu();
 		}
@@ -243,8 +216,7 @@ static void LinkPaFree(SESSION *s)
 		return;
 	}
 
-	CedarAddQueueBudget(k->Cedar, -((int)k->LastServerConnectionReceivedBlocksNum));
-	k->LastServerConnectionReceivedBlocksNum = 0;
+	CedarSyncQueueBudget(k->Cedar, 0, &k->LastServerConnectionReceivedBlocksNum);
 
 	StopSession(k->ServerSession);
 	ReleaseSession(k->ServerSession);
