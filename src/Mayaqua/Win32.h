@@ -29,6 +29,7 @@ void *Win32NewSingleInstance(char *instance_name);
 void Win32FreeSingleInstance(void *data);
 void Win32GetMemInfo(MEMINFO *info);
 
+const OSVERSIONINFOEXW *Win32GetOsVersion();
 UINT Win32GetOsType();
 void Win32NukuEn(char *dst, UINT size, char *src);
 void Win32NukuEnW(wchar_t *dst, UINT size, wchar_t *src);
@@ -44,8 +45,6 @@ bool Win32InputFromFileW(wchar_t *str, UINT size);
 char *Win32InputFromFileLineA();
 void Win32PrintW(wchar_t *str);
 void Win32PrintToFileW(wchar_t *str);
-bool Win32GetVersionExInternal(void *info);
-bool Win32GetVersionExInternalForWindows81orLater(void *info);
 UINT Win32GetNumberOfCpuInner();
 
 

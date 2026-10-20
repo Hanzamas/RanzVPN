@@ -538,206 +538,102 @@ static char *OsTypeToStr(UINT type)
 	return "Unknown OS";
 }
 
+// The real OS version, read once per process. RtlGetVersion is not subject to the GetVersionEx
+// compatibility shim, so it needs no manifest and no registry workaround.
+static INIT_ONCE os_version_once = INIT_ONCE_STATIC_INIT;
+static OSVERSIONINFOEXW os_version;
+
+// INIT_ONCE callback of Win32GetOsVersion(); a failed query leaves the version zero (unsupported)
+static BOOL CALLBACK Win32ReadOsVersion(PINIT_ONCE once, PVOID param, PVOID *context)
+{
+	LONG (WINAPI *rtl_get_version)(OSVERSIONINFOEXW *) =
+		(LONG (WINAPI *)(OSVERSIONINFOEXW *))
+		GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "RtlGetVersion");
+
+	os_version.dwOSVersionInfoSize = sizeof(os_version);
+
+	if (rtl_get_version == NULL || rtl_get_version(&os_version) != 0)
+	{
+		Zero(&os_version, sizeof(os_version));
+	}
+
+	return TRUE;
+}
+
+const OSVERSIONINFOEXW *Win32GetOsVersion()
+{
+	InitOnceExecuteOnce(&os_version_once, Win32ReadOsVersion, NULL, NULL);
+
+	return &os_version;
+}
+
 void Win32GetOsInfo(OS_INFO *info)
 {
-	UINT type = Win32GetOsType();
-	OSVERSIONINFOEX os;
+	const OSVERSIONINFOEXW *os = Win32GetOsVersion();
+	char *keyname = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
+	char *current_type;
+	char *build_lab;
 	char tmp[MAX_SIZE];
 	if (info == NULL)
 	{
 		return;
 	}
 
-	Zero(&os, sizeof(os));
-	os.dwOSVersionInfoSize = sizeof(os);
-	Win32GetVersionExInternal((LPOSVERSIONINFOA)&os);
+	current_type = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "CurrentType");
+	build_lab = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "BuildLab");
 
 	info->OsType = Win32GetOsType();
-	info->OsServicePack = os.wServicePackMajor;
-	if (true)
-	{
-		char *s;
-		char *keyname = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
-		info->OsSystemName = CopyStr("Windows NT");
-		Format(tmp, sizeof(tmp), "Build %u", os.dwBuildNumber);
-		if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "CurrentType"))
-		{
-			char str[MAX_SIZE];
-			Format(str, sizeof(str), ", %s", s);
-			StrCat(tmp, sizeof(tmp), str);
-			Free(s);
-		}
-		if (os.wServicePackMajor != 0)
-		{
-			char str[MAX_SIZE];
-			Format(str, sizeof(str), ", Service Pack %u", os.wServicePackMajor);
-			StrCat(tmp, sizeof(tmp), str);
-		}
-		if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "BuildLab"))
-		{
-			char str[MAX_SIZE];
-			Format(str, sizeof(str), " (%s)", s);
-			StrCat(tmp, sizeof(tmp), str);
-			Free(s);
-		}
-		info->OsVersion = CopyStr(tmp);
-		info->KernelName = CopyStr("NTOS Kernel");
-		Format(tmp, sizeof(tmp), "Build %u", os.dwBuildNumber);
-		if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "CurrentType"))
-		{
-			char str[MAX_SIZE];
-			Format(str, sizeof(str), " %s", s);
-			StrCat(tmp, sizeof(tmp), str);
-			Free(s);
-		}
-		info->KernelVersion = CopyStr(tmp);
-	}
-
+	info->OsServicePack = os->wServicePackMajor;
+	info->OsSystemName = CopyStr("Windows NT");
 	info->OsProductName = CopyStr(OsTypeToStr(info->OsType));
 	info->OsVendorName = CopyStr("Microsoft Corporation");
+	info->KernelName = CopyStr("NTOS Kernel");
+
+	// "Build <n>, <CurrentType> (<BuildLab>)"
+	Format(tmp, sizeof(tmp), "Build %u", os->dwBuildNumber);
+	if (current_type != NULL)
+	{
+		StrCat(tmp, sizeof(tmp), ", ");
+		StrCat(tmp, sizeof(tmp), current_type);
+	}
+	if (build_lab != NULL)
+	{
+		StrCat(tmp, sizeof(tmp), " (");
+		StrCat(tmp, sizeof(tmp), build_lab);
+		StrCat(tmp, sizeof(tmp), ")");
+	}
+	info->OsVersion = CopyStr(tmp);
+
+	// "Build <n> <CurrentType>"
+	Format(tmp, sizeof(tmp), "Build %u", os->dwBuildNumber);
+	if (current_type != NULL)
+	{
+		StrCat(tmp, sizeof(tmp), " ");
+		StrCat(tmp, sizeof(tmp), current_type);
+	}
+	info->KernelVersion = CopyStr(tmp);
+
+	Free(current_type);
+	Free(build_lab);
 }
 
-// GetVersionExA reports 6.2 on Windows 8.1 and later; read the real version from the registry
-bool Win32GetVersionExInternal(void *info)
-{
-	OSVERSIONINFOA os;
-	if (info == NULL)
-	{
-		return false;
-	}
-
-	Zero(&os, sizeof(os));
-	os.dwOSVersionInfoSize = sizeof(os);
-
-	if (GetVersionExA(&os))
-	{
-		if (os.dwPlatformId == VER_PLATFORM_WIN32_NT)
-		{
-			if ((os.dwMajorVersion == 6 && os.dwMinorVersion >= 2) ||
-				(os.dwMajorVersion >= 7))
-			{
-				return Win32GetVersionExInternalForWindows81orLater(info);
-			}
-		}
-	}
-
-	return GetVersionExA(info);
-}
-
-bool Win32GetVersionExInternalForWindows81orLater(void *info)
-{
-	OSVERSIONINFOEXA *ex = (OSVERSIONINFOEXA *)info;
-	char *str;
-	UINT major1 = 0, major2 = 0;
-	UINT minor1 = 0, minor2 = 0;
-	UINT major = 0, minor = 0;
-	if (info == NULL)
-	{
-		return false;
-	}
-
-	if (ex->dwOSVersionInfoSize != sizeof(OSVERSIONINFOEXA) &&
-		ex->dwOSVersionInfoSize != sizeof(OSVERSIONINFOA))
-	{
-		return GetVersionExA(info);
-	}
-
-	if (GetVersionExA(info) == false)
-	{
-		return false;
-	}
-
-	str = MsRegReadStrEx2(REG_LOCAL_MACHINE,
-		"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
-		"CurrentVersion",
-		false, true);
-
-	if (IsEmptyStr(str) == false)
-	{
-		TOKEN_LIST *t = ParseToken(str, ".");
-
-		if (t != NULL && t->NumTokens == 2)
-		{
-			major1 = ToInt(t->Token[0]);
-			minor1 = ToInt(t->Token[1]);
-		}
-
-		FreeToken(t);
-	}
-
-	Free(str);
-
-	major2 = MsRegReadIntEx2(REG_LOCAL_MACHINE,
-		"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
-		"CurrentMajorVersionNumber", false, true);
-
-	minor2 = MsRegReadIntEx2(REG_LOCAL_MACHINE,
-		"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion",
-		"CurrentMinorVersionNumber", false, true);
-
-	if ((major1 * 10000 + minor1) > (major2 * 10000 + minor2))
-	{
-		major = major1;
-		minor = minor1;
-	}
-	else
-	{
-		major = major2;
-		minor = minor2;
-	}
-
-	if (major >= 6)
-	{
-		ex->dwMajorVersion = major;
-		ex->dwMinorVersion = minor;
-	}
-
-	return true;
-}
-
+// OS type of the running Windows; 0 when it is older than Windows 10 or the version query failed
 UINT Win32GetOsType()
 {
-	OSVERSIONINFOEX os;
-	Zero(&os, sizeof(os));
-	os.dwOSVersionInfoSize = sizeof(os);
+	const OSVERSIONINFOEXW *os = Win32GetOsVersion();
+	bool workstation = (os->wProductType == VER_NT_WORKSTATION);
 
-	if (Win32GetVersionExInternal((LPOSVERSIONINFOA)&os) == FALSE)
+	if (os->dwMajorVersion < 10)
 	{
 		return 0;
 	}
 
-	if (os.dwPlatformId != VER_PLATFORM_WIN32_NT)
+	if (os->dwMajorVersion == 10 && os->dwMinorVersion == 0)
 	{
-		return 0;
+		return workstation ? OSTYPE_WINDOWS_10 : OSTYPE_WINDOWS_SERVER_10;
 	}
 
-	if (os.dwMajorVersion < 6 || (os.dwMajorVersion == 6 && os.dwMinorVersion < 4))
-	{
-		return 0;
-	}
-
-	if ((os.dwMajorVersion == 6 && os.dwMinorVersion == 4) || (os.dwMajorVersion == 10 && os.dwMinorVersion == 0))
-	{
-		if (os.wProductType == VER_NT_WORKSTATION)
-		{
-			return OSTYPE_WINDOWS_10;
-		}
-		else
-		{
-			return OSTYPE_WINDOWS_SERVER_10;
-		}
-	}
-	else
-	{
-		if (os.wProductType == VER_NT_WORKSTATION)
-		{
-			return OSTYPE_WINDOWS_11;
-		}
-		else
-		{
-			return OSTYPE_WINDOWS_SERVER_11;
-		}
-	}
+	return workstation ? OSTYPE_WINDOWS_11 : OSTYPE_WINDOWS_SERVER_11;
 }
 
 void Win32CloseProcess(void *handle)
