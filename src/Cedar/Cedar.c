@@ -9,6 +9,7 @@
 #include "Connection.h"
 #include "Link.h"
 #include "Listener.h"
+#include "Logging.h"
 #include "Protocol.h"
 #include "Sam.h"
 #include "Server.h"
@@ -29,6 +30,7 @@
 #include "Mayaqua/Win32.h"
 
 static void DeleteOldNoSsl(CEDAR *c);
+static void MakeRoomInNoSslList(CEDAR *c);
 static NON_SSL *SearchNoSslList(CEDAR *c, IP *ip);
 static void FreeNetSvcList(CEDAR *cedar);
 
@@ -340,8 +342,13 @@ bool AddNoSsl(CEDAR *c, IP *ip)
 
 		if (n == NULL)
 		{
+			if (LIST_NUM(c->NonSslList) >= RATE_LIMIT_TABLE_MAX)
+			{
+				MakeRoomInNoSslList(c);
+			}
+
 			n = ZeroMalloc(sizeof(NON_SSL));
-			Copy(&n->IpAddress, ip, sizeof(IP));
+			GetRateLimitKey(&n->IpAddress, ip);
 			n->Count = 0;
 
 			Add(c->NonSslList, n);
@@ -393,6 +400,35 @@ static void DeleteOldNoSsl(CEDAR *c)
 	ReleaseList(o);
 }
 
+// NonSslList is full after DeleteOldNoSsl: drop the least recently seen entry; log the first time
+static void MakeRoomInNoSslList(CEDAR *c)
+{
+	NON_SSL *oldest = NULL;
+	UINT i;
+
+	for (i = 0;i < LIST_NUM(c->NonSslList);i++)
+	{
+		NON_SSL *n = LIST_DATA(c->NonSslList, i);
+
+		if (oldest == NULL || n->EntryExpires < oldest->EntryExpires)
+		{
+			oldest = n;
+		}
+	}
+
+	if (oldest != NULL)
+	{
+		Delete(c->NonSslList, oldest);
+		Free(oldest);
+	}
+
+	if (c->NonSslListFullLogged == false)
+	{
+		c->NonSslListFullLogged = true;
+		SLog(c, "LS_NON_SSL_TABLE_FULL", (UINT)RATE_LIMIT_TABLE_MAX);
+	}
+}
+
 static NON_SSL *SearchNoSslList(CEDAR *c, IP *ip)
 {
 	NON_SSL *n, t;
@@ -402,7 +438,7 @@ static NON_SSL *SearchNoSslList(CEDAR *c, IP *ip)
 	}
 
 	Zero(&t, sizeof(t));
-	Copy(&t.IpAddress, ip, sizeof(IP));
+	GetRateLimitKey(&t.IpAddress, ip);
 
 	n = Search(c->NonSslList, &t);
 

@@ -183,6 +183,67 @@ static void TCPAccepted(LISTENER *r, SOCK *s)
 	ReleaseThread(t);
 }
 
+// Drop the DoS entries whose expire span or total lifetime has run out
+static void DeleteExpiredDos(LISTENER *r)
+{
+	UINT i;
+	LIST *o;
+
+	o = NewListFast(NULL);
+	for (i = 0;i < LIST_NUM(r->DosList);i++)
+	{
+		DOS *d = LIST_DATA(r->DosList, i);
+		if ((d->LastConnectedTick + d->CurrentExpireSpan) <= Tick64() ||
+			(d->DeleteEntryTick <= Tick64()))
+		{
+			Add(o, d);
+		}
+	}
+
+	for (i = 0;i < LIST_NUM(o);i++)
+	{
+		DOS *d = LIST_DATA(o, i);
+		Delete(r->DosList, d);
+		Free(d);
+	}
+
+	ReleaseList(o);
+}
+
+// The DoS table is full: drop the expired entries, else the least recently seen one; log the first time
+static void MakeRoomInDosList(LISTENER *r)
+{
+	DeleteExpiredDos(r);
+
+	if (LIST_NUM(r->DosList) >= RATE_LIMIT_TABLE_MAX)
+	{
+		DOS *oldest = NULL;
+		UINT i;
+
+		for (i = 0;i < LIST_NUM(r->DosList);i++)
+		{
+			DOS *d = LIST_DATA(r->DosList, i);
+
+			if (oldest == NULL || d->LastConnectedTick < oldest->LastConnectedTick)
+			{
+				oldest = d;
+			}
+		}
+
+		if (oldest != NULL)
+		{
+			Delete(r->DosList, oldest);
+			Free(oldest);
+		}
+	}
+
+	if (r->DosListFullLogged == false)
+	{
+		r->DosListFullLogged = true;
+		SLog(r->Cedar, "LS_LISTENER_DOS_TABLE_FULL", r->Port, (UINT)RATE_LIMIT_TABLE_MAX);
+	}
+}
+
 bool CheckDosAttack(LISTENER *r, SOCK *s)
 {
 	DOS *d;
@@ -210,12 +271,17 @@ bool CheckDosAttack(LISTENER *r, SOCK *s)
 		}
 		else
 		{
+			if (LIST_NUM(r->DosList) >= RATE_LIMIT_TABLE_MAX)
+			{
+				MakeRoomInDosList(r);
+			}
+
 			d = ZeroMalloc(sizeof(DOS));
 			d->CurrentExpireSpan = (UINT64)DOS_TABLE_EXPIRES_FIRST;
 			d->FirstConnectedTick = d->LastConnectedTick = Tick64();
 			d->AccessCount = 1;
 			d->DeleteEntryTick = d->FirstConnectedTick + (UINT64)DOS_TABLE_EXPIRES_TOTAL;
-			Copy(&d->IpAddress, &s->RemoteIP, sizeof(IP));
+			GetRateLimitKey(&d->IpAddress, &s->RemoteIP);
 			Add(r->DosList, d);
 		}
 	}
@@ -234,29 +300,9 @@ void RefreshDosList(LISTENER *r)
 	if (r->DosListLastRefreshTime == 0 ||
 		(r->DosListLastRefreshTime + (UINT64)DOS_TABLE_REFRESH_INTERVAL) <= Tick64())
 	{
-		UINT i;
-		LIST *o;
 		r->DosListLastRefreshTime = Tick64();
 
-		o = NewListFast(NULL);
-		for (i = 0;i < LIST_NUM(r->DosList);i++)
-		{
-			DOS *d = LIST_DATA(r->DosList, i);
-			if ((d->LastConnectedTick + d->CurrentExpireSpan) <= Tick64() ||
-				(d->DeleteEntryTick <= Tick64()))
-			{
-				Add(o, d);
-			}
-		}
-
-		for (i = 0;i < LIST_NUM(o);i++)
-		{
-			DOS *d = LIST_DATA(o, i);
-			Delete(r->DosList, d);
-			Free(d);
-		}
-
-		ReleaseList(o);
+		DeleteExpiredDos(r);
 	}
 }
 
@@ -268,7 +314,7 @@ DOS *SearchDosList(LISTENER *r, IP *ip)
 		return NULL;
 	}
 
-	Copy(&t.IpAddress, ip, sizeof(IP));
+	GetRateLimitKey(&t.IpAddress, ip);
 
 	d = Search(r->DosList, &t);
 
@@ -310,6 +356,25 @@ static void ListenerBindTried(LISTENER *r)
 	{
 		SetEvent((HANDLE)r->BindEvent);
 	}
+}
+
+// A transient accept() error (IsTransientAcceptError) keeps the listening socket: log it at most once per
+// ACCEPT_ERROR_LOG_INTERVAL with the number of errors since the last log, then wait ACCEPT_RETRY_TIME
+// (StopListener sets r->Event and ends the wait)
+static void ListenerAcceptRetry(LISTENER *r, UINT err)
+{
+	UINT64 now = Tick64();
+
+	r->NumAcceptErrors++;
+
+	if (r->AcceptErrorLogTick == 0 || (r->AcceptErrorLogTick + (UINT64)ACCEPT_ERROR_LOG_INTERVAL) <= now)
+	{
+		SLog(r->Cedar, "LS_LISTENER_ACCEPT_RETRY", r->Port, err, r->NumAcceptErrors);
+		r->AcceptErrorLogTick = now;
+		r->NumAcceptErrors = 0;
+	}
+
+	Wait(r->Event, ACCEPT_RETRY_TIME);
 }
 
 static void ListenerTCPMainLoop(LISTENER *r)
@@ -427,6 +492,11 @@ static void ListenerTCPMainLoop(LISTENER *r)
 			{
 				TCPAccepted(r, new_sock);
 				ReleaseSock(new_sock);
+			}
+			else if (r->Halt == false && s->CancelAccept == false && IsTransientAcceptError(s->AcceptError))
+			{
+				// The peer left before the accept, or buffers or descriptors ran short: the listening socket and its backlog stay
+				ListenerAcceptRetry(r, s->AcceptError);
 			}
 			else
 			{

@@ -885,6 +885,9 @@ LS_LISTENER_ACCEPT		Pada Pendengar TCP (Port %u), sebuah Klien (alamat IP %S, Na
 LS_LISTENER_DISCONNECT	Koneksi dengan klien (alamat IP %S, Nomor port %u) telah diputuskan.
 LS_LISTENER_DOS			Sebuah serangan DoS pada Pendengar TCP (port %u) telah terdeteksi. Alamat IP sumber yang terhubung adalah %S, nomor port %u. Koneksi ini akan diputuskan paksa sekarang.
 LS_LISTENER_MAXUEC		Pendengar TCP sementara menghentikan penerimaan koneksi masuk baru karena jumlah koneksi TCP yang tertunda melebihi %u. (Nilai saat ini = %u)
+LS_LISTENER_ACCEPT_RETRY	Pendengar TCP (port %u) gagal menerima koneksi (galat %u, %u kali sejak laporan terakhir). Pendengar tetap memegang port dan mencoba lagi.
+LS_LISTENER_DOS_TABLE_FULL	Tabel perlindungan DoS pada Pendengar TCP (port %u) telah mencapai batas %u alamat sumber. Mulai sekarang sumber yang paling lama tidak terlihat dihapus untuk memberi tempat bagi sumber baru.
+LS_NON_SSL_TABLE_FULL	Tabel sumber yang mengirim data non-SSL telah mencapai batas %u alamat sumber. Mulai sekarang sumber yang paling lama tidak terlihat dihapus untuk memberi tempat bagi sumber baru.
 LS_LISTENER_STOP_1		Pendengar TCP (port %u) sedang dihentikan.
 LS_LISTENER_STOP_2		Pendengar TCP (port %u) telah dihentikan.
 LS_HUB_START			Virtual Hub "%S" telah dimulai.
