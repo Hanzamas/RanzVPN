@@ -878,6 +878,10 @@ LS_LOAD_CONFIG_2		File konfigurasi telah dimuat.
 LS_LOAD_CONFIG_3		File konfigurasi tidak ada. Mencoba untuk memulai menggunakan pengaturan awal.
 LS_INIT_SAVE_THREAD		Memulai tugas latar belakang penyimpanan otomatis. Interval antara penyimpanan otomatis adalah %u detik. Anda dapat mengubah interval dengan mengubah parameter AutoSaveConfigSpan dalam file konfigurasi.
 LS_BAD_CONFIG			Konten file konfigurasi tidak valid. Proses pemuatan dihentikan.
+LS_CONFIG_SET_ASIDE		File konfigurasi "%s" tidak dapat dibaca. File disimpan sebagai "%s.bad", dan server dimulai dengan pengaturan awal.
+LS_CONFIG_SET_ASIDE_FAILED	File konfigurasi "%s" tidak dapat dibaca, dan penggantian namanya menjadi "%s.bad" gagal. Server dimulai dengan pengaturan awal dan tidak menyimpan di atas file tersebut sampai penggantian nama berhasil.
+LS_SAVE_CONFIG_FAILED	Penyimpanan file konfigurasi "%s" gagal. Penyimpanan akan dicoba lagi.
+LS_SAVE_CONFIG_RESTORED	File konfigurasi "%s" telah tersimpan kembali setelah penyimpanan yang gagal.
 LS_LISTENER_START_1		Pendengar TCP (port %u) sedang dimulai.
 LS_LISTENER_START_2		Pendengar TCP (port %u) telah dimulai. Sekarang mendengarkan koneksi dari klien.
 LS_LISTENER_START_3		Tidak dapat mengatur port untuk status Dengar untuk Pendengar TCP (port %u). Mencoba pada interval tetap sampai berhasil.

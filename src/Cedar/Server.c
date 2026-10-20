@@ -1725,6 +1725,21 @@ static bool SiLoadConfigurationFileMain(SERVER *s, FOLDER *root)
 	return SiLoadConfigurationCfg(s, root);
 }
 
+// Log what happened to a configuration file that could not be read: renamed to .bad, or still in place
+static void SiLogBadConfigurationFile(SERVER *s)
+{
+	CFG_RW *rw = s->CfgRw;
+
+	if (rw->BadFileRenamed)
+	{
+		SLog(s->Cedar, "LS_CONFIG_SET_ASIDE", rw->FileNameW, rw->FileNameW);
+	}
+	else if (rw->BadFilePending)
+	{
+		SLog(s->Cedar, "LS_CONFIG_SET_ASIDE_FAILED", rw->FileNameW, rw->FileNameW);
+	}
+}
+
 static bool SiLoadConfigurationFile(SERVER *s)
 {
 	bool ret = false;
@@ -1739,6 +1754,8 @@ static bool SiLoadConfigurationFile(SERVER *s)
 	s->CfgRw = NewCfgRwEx2A(&root,
 		s->Cedar->Bridge == false ? server_config_filename : BRIDGE_CONFIG_FILE_NAME, false,
 		s->Cedar->Bridge == false ? SERVER_CONFIG_TEMPLATE_NAME : BRIDGE_CONFIG_TEMPLATE_NAME);
+
+	SiLogBadConfigurationFile(s);
 
 	if (server_reset_setting)
 	{
@@ -1755,6 +1772,14 @@ static bool SiLoadConfigurationFile(SERVER *s)
 	ret = SiLoadConfigurationFileMain(s, root);
 
 	CfgDeleteFolder(root);
+
+	if (ret == false && s->CfgRw->BadFileRenamed == false)
+	{
+		// A parsed file without a server configuration: keep it as .bad, the server starts with the initial
+		// settings
+		CfgRwSetAsideBadFile(s->CfgRw);
+		SiLogBadConfigurationFile(s);
+	}
 
 	return ret;
 }
@@ -4352,41 +4377,19 @@ void SiWriteTrafficInner(FOLDER *parent, char *name, TRAFFIC_ENTRY *e)
 	CfgAddInt64(f, "UnicastBytes", e->UnicastBytes);
 }
 
-void SiSaverThread(THREAD *thread, void *param)
-{
-	SERVER *s = (SERVER *)param;
-	if (thread == NULL || param == NULL)
-	{
-		return;
-	}
-
-	while (s->Halt == false)
-	{
-		if (s->NoMoreSave == false)
-		{
-			SiWriteConfigurationFile(s);
-		}
-
-		Wait(s->SaveHaltEvent, s->AutoSaveConfigSpan);
-	}
-}
-
-UINT SiWriteConfigurationFile(SERVER *s)
+// Save the configuration file; false when the file could not be written. *size gets the written size (0 when
+// nothing changed). A failure, and the first success after one, go to the server log
+static bool SiSaveConfiguration(SERVER *s, UINT *size)
 {
 	UINT ret;
-	if (s == NULL)
-	{
-		return 0;
-	}
+	bool failed;
+	bool was_failing;
 
-	if (s->CfgRw == NULL)
-	{
-		return 0;
-	}
+	*size = 0;
 
-	if (s->NoMoreSave)
+	if (s->CfgRw == NULL || s->NoMoreSave)
 	{
-		return 0;
+		return true;
 	}
 
 	Lock(s->SaveCfgLock);
@@ -4396,22 +4399,97 @@ UINT SiWriteConfigurationFile(SERVER *s)
 		f = SiWriteConfigurationToCfg(s);
 
 		ret = SaveCfgRwEx(s->CfgRw, f, s->BackupConfigOnlyWhenModified ? s->ConfigRevision : INFINITE);
+		failed = s->CfgRw->SaveFailed;
 
 		CfgDeleteFolder(f);
+
+		was_failing = s->ConfigSaveFailing;
+		s->ConfigSaveFailing = failed;
 	}
 	Unlock(s->SaveCfgLock);
 
-	return ret;
+	if (failed)
+	{
+		SLog(s->Cedar, "LS_SAVE_CONFIG_FAILED", s->CfgRw->FileNameW);
+	}
+	else if (was_failing)
+	{
+		SLog(s->Cedar, "LS_SAVE_CONFIG_RESTORED", s->CfgRw->FileNameW);
+	}
+
+	*size = ret;
+
+	return failed == false;
+}
+
+void SiSaverThread(THREAD *thread, void *param)
+{
+	SERVER *s = (SERVER *)param;
+	UINT retry_span = 0;
+	UINT size;
+	if (thread == NULL || param == NULL)
+	{
+		return;
+	}
+
+	while (s->Halt == false)
+	{
+		UINT span = s->AutoSaveConfigSpan;
+
+		if (s->NoMoreSave == false)
+		{
+			if (SiSaveConfiguration(s, &size))
+			{
+				retry_span = 0;
+			}
+			else
+			{
+				// Back off: the first retry after SERVER_FILE_SAVE_RETRY_MIN, each next one twice as late
+				retry_span = (retry_span == 0 ? SERVER_FILE_SAVE_RETRY_MIN : retry_span * 2);
+				retry_span = MIN(retry_span, span);
+				span = retry_span;
+			}
+		}
+
+		Wait(s->SaveHaltEvent, span);
+	}
+}
+
+UINT SiWriteConfigurationFile(SERVER *s)
+{
+	UINT size;
+	if (s == NULL)
+	{
+		return 0;
+	}
+
+	SiSaveConfiguration(s, &size);
+
+	return size;
 }
 
 static void SiFreeConfiguration(SERVER *s)
 {
+	UINT size;
+	UINT i;
 	if (s == NULL)
 	{
 		return;
 	}
 
-	SiWriteConfigurationFile(s);
+	// The last save: a short retry for a file that another process holds locked for a moment
+	for (i = 0; i < SERVER_FILE_SAVE_FINAL_TRIES; i++)
+	{
+		if (i != 0)
+		{
+			SleepThread(SERVER_FILE_SAVE_RETRY_MIN * i);
+		}
+
+		if (SiSaveConfiguration(s, &size))
+		{
+			break;
+		}
+	}
 
 	s->NoMoreSave = true;
 	s->Halt = true;
