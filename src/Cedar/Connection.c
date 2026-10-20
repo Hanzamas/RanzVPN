@@ -215,11 +215,8 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 
 	s = c->Session;
 
-	if (s != NULL)
-	{
-		hub = s->Hub;
-		use_qos = s->QoS;
-	}
+	hub = s->Hub;
+	use_qos = s->QoS;
 
 	if (c->Protocol == CONNECTION_TCP)
 	{
@@ -245,7 +242,7 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 		for (i = 0;i < num;i++)
 		{
 			TCPSOCK *tcpsock = tcpsocks[i];
-			if (s != NULL && tcpsock->Sock->Connected && tcpsock->Sock->AsyncMode &&
+			if (tcpsock->Sock->Connected && tcpsock->Sock->AsyncMode &&
 				IS_SEND_TCP_SOCK(tcpsock))
 			{
 				if (now >= tcpsock->NextKeepAliveTime || tcpsock->NextKeepAliveTime == 0)
@@ -319,7 +316,7 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 			UINT j;
 			QUEUE *q;
 
-			if (s != NULL && s->UdpAccel != NULL)
+			if (s->UdpAccel != NULL)
 			{
 				UdpAccelSetTick(s->UdpAccel, now);
 			}
@@ -527,7 +524,7 @@ SEND_START:
 					i = 0;
 					while (block = GetNext(c->SendBlocks))
 					{
-						if (hub != NULL && hub->Option != NULL && hub->Option->DisableUdpFilterForLocalBridgeNic == false &&
+						if (hub != NULL && hub->Option->DisableUdpFilterForLocalBridgeNic == false &&
 							b->Eth != NULL && IsDhcpPacketForSpecificMac(block->Buf, block->Size, b->Eth->MacAddress))
 						{
 							datas[i] = NULL;
@@ -577,10 +574,7 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 
 	s = c->Session;
 
-	if (s != NULL)
-	{
-		hub = s->Hub;
-	}
+	hub = s->Hub;
 
 	if (hub != NULL)
 	{
@@ -951,7 +945,6 @@ DISCONNECT_THIS_TCP:
 			ShrinkFifoMemory(ts->RecvFifo);
 		}
 
-		if (true)
 		{
 			int diff;
 
@@ -1054,7 +1047,7 @@ DISCONNECT_THIS_TCP:
 				}
 				else
 				{
-					if (hub != NULL && hub->Option != NULL && hub->Option->DisableUdpFilterForLocalBridgeNic == false &&
+					if (hub != NULL && hub->Option->DisableUdpFilterForLocalBridgeNic == false &&
 						b->Eth != NULL && IsDhcpPacketForSpecificMac(data, ret, b->Eth->MacAddress))
 					{
 						Free(data);
@@ -1297,14 +1290,11 @@ void ConnectionAccept(CONNECTION *c)
 	LIST *chain;
 	char tmp[128];
 	UINT initial_timeout = CONNECTING_TIMEOUT;
-	UCHAR ctoken_hash[SHA1_SIZE];
 
 	if (c == NULL)
 	{
 		return;
 	}
-
-	Zero(ctoken_hash, sizeof(ctoken_hash));
 
 	s = c->FirstSock;
 	AddRef(s->ref);
@@ -1353,11 +1343,7 @@ void ConnectionAccept(CONNECTION *c)
 
 	SLog(c->Cedar, "LS_SSL_START", c->Name, s->SslVersion, s->CipherName);
 
-	Copy(c->CToken_Hash, ctoken_hash, SHA1_SIZE);
-
-	if (ServerAccept(c) == false)
-	{
-	}
+	ServerAccept(c);
 
 FINAL:
 	if (c->flag1 == false)
