@@ -34,7 +34,7 @@ struct ETH
 
 void InitEth();
 void FreeEth();
-TOKEN_LIST *GetEthList();
+TOKEN_LIST *GetEthList(void);
 bool EnumEthWin32(RPC_ENUM_ETH *t);
 ETH *OpenEth(char *name);
 void CloseEth(ETH *e);

@@ -2175,23 +2175,6 @@ static UINT MsRegViewMask(bool force32bit)
 	return force32bit ? KEY_WOW64_32KEY : 0;
 }
 
-bool MsRegLoadHive(UINT root, wchar_t *keyname, wchar_t *filename)
-{
-	LONG ret;
-	if (keyname == NULL || filename == NULL)
-	{
-		return false;
-	}
-	ret = RegLoadKeyW(MsGetRootKeyFromInt(root), keyname, filename);
-
-	if (ret != ERROR_SUCCESS)
-	{
-		return false;
-	}
-
-	return true;
-}
-
 bool MsRegDeleteValue(UINT root, char *keyname, char *valuename)
 {
 	return MsRegDeleteValueEx2(root, keyname, valuename, false);

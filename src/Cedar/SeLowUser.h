@@ -38,8 +38,6 @@ struct SU
 
 struct SU_ADAPTER
 {
-	char AdapterId[MAX_PATH];
-	char DeviceName[MAX_PATH];
 	void *hFile;
 	void *hEvent;
 	bool Halt;
@@ -51,7 +49,8 @@ struct SU_ADAPTER
 
 struct SU_ADAPTER_LIST
 {
-	SL_ADAPTER_INFO Info;
+	char FriendlyName[256];			// SL_ADAPTER_INFO.FriendlyName
+	UCHAR MacAddress[6];			// SL_ADAPTER_INFO.MacAddress
 	char Guid[128];
 	char Name[MAX_SIZE];
 	char SortKey[MAX_SIZE];
@@ -61,9 +60,8 @@ struct SU_ADAPTER_LIST
 SU *SuInitEx(UINT wait_for_bind_complete_tick);
 SU *SuInitInstall();
 void SuFree(SU *u);
-SU_ADAPTER *SuOpenAdapter(SU *u, char *adapter_id);
+SU_ADAPTER *SuOpenAdapter(char *adapter_id);
 void SuCloseAdapter(SU_ADAPTER *a);
-void SuCloseAdapterHandleInner(SU_ADAPTER *a);
 bool SuGetPacketsFromDriver(SU_ADAPTER *a);
 bool SuGetNextPacket(SU_ADAPTER *a, void **buf, UINT *size);
 bool SuHasPendingPackets(SU_ADAPTER *a);

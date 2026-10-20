@@ -26,80 +26,93 @@
 static SU *SuInitMain(UINT wait_for_bind_complete_tick, bool start_service, bool install);
 static bool SuInstallDriver();
 
-static bool SuLoadDriversHive()
+// True if the published INF oem_name (an oemNN.inf in %windir%\inf) is a copy
+// of a SoftEther SeLow INF: its original name starts with "selow" and its
+// provider contains "softether"
+static bool SuIsSeLowOemInf(wchar_t *oem_name)
 {
-	wchar_t config_dir[MAX_PATH];
-	wchar_t filename[MAX_PATH];
+	HINF inf;
+	SP_INF_INFORMATION *info;
+	SP_ORIGINAL_FILE_INFO_W original;
+	INFCONTEXT ctx;
+	wchar_t provider[MAX_SIZE];
+	DWORD info_size = 0;
+	bool ret = false;
 
-	MsEnablePrivilege(SE_RESTORE_NAME, true);
-	MsEnablePrivilege(SE_BACKUP_NAME, true);
-
-	CombinePathW(config_dir, sizeof(config_dir), MsGetSystem32DirW(), L"config");
-	CombinePathW(filename, sizeof(filename), config_dir, L"DRIVERS");
-
-	return MsRegLoadHive(REG_LOCAL_MACHINE, L"DRIVERS", filename);
-}
-
-static void SuDeleteGarbageInfs()
-{
-	char *base_key_name = "DRIVERS\\DriverDatabase\\DriverPackages";
-	TOKEN_LIST *keys;
-
-	SuLoadDriversHive();
-
-	keys =MsRegEnumKeyEx2(REG_LOCAL_MACHINE, base_key_name, false);
-
-	if (keys != NULL)
+	inf = SetupOpenInfFileW(oem_name, NULL, INF_STYLE_WIN4, NULL);
+	if (inf == INVALID_HANDLE_VALUE)
 	{
-		char full_key[MAX_PATH];
-		UINT i;
+		return false;
+	}
 
-		for (i = 0;i < keys->NumTokens;i++)
+	if (SetupGetInfInformationW(inf, INFINFO_INF_SPEC_IS_HINF, NULL, 0, &info_size) && info_size != 0)
+	{
+		info = ZeroMalloc(info_size);
+
+		Zero(&original, sizeof(original));
+		original.cbSize = sizeof(original);
+
+		if (SetupGetInfInformationW(inf, INFINFO_INF_SPEC_IS_HINF, info, info_size, NULL) &&
+			SetupQueryInfOriginalFileInformationW(info, 0, NULL, &original) &&
+			UniStartWith(original.OriginalInfName, L"selow") &&
+			SetupFindFirstLineW(inf, L"Version", L"Provider", &ctx) &&
+			SetupGetStringFieldW(&ctx, 1, provider, sizeof(provider) / sizeof(wchar_t), NULL) &&
+			UniSearchStrEx(provider, L"softether", 0, false) != INFINITE)
 		{
-			char *oem_name, *inf_name, *provider;
-
-			Format(full_key, sizeof(full_key), "%s\\%s", base_key_name, keys->Token[i]);
-
-			oem_name = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "", false);
-			inf_name = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "InfName", false);
-			provider = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "Provider", false);
-
-			if (IsEmptyStr(oem_name) == false && IsEmptyStr(inf_name) == false)
-			{
-				if (StartWith(oem_name, "oem"))
-				{
-					if (StartWith(inf_name, "selow"))
-					{
-						if (InStr(provider, "softether"))
-						{
-							Debug("Delete OEM INF %s (%s): %u\n",
-								oem_name, inf_name,
-								SetupUninstallOEMInfA(oem_name, SUOI_FORCEDELETE, NULL));
-						}
-					}
-				}
-			}
-
-			Free(oem_name);
-			Free(inf_name);
-			Free(provider);
+			ret = true;
 		}
 
-		FreeToken(keys);
+		Free(info);
+	}
+
+	SetupCloseInfFile(inf);
+
+	return ret;
+}
+
+// Remove the stale oemNN.inf copies of SeLow from the driver store
+static void SuDeleteGarbageInfs()
+{
+	wchar_t *list;
+	wchar_t *name;
+	DWORD list_size = 0;
+
+	if (SetupGetInfFileListW(NULL, INF_STYLE_WIN4, NULL, 0, &list_size) && list_size != 0)
+	{
+		list = ZeroMalloc(list_size * sizeof(wchar_t));
+
+		if (SetupGetInfFileListW(NULL, INF_STYLE_WIN4, list, list_size, NULL))
+		{
+			for (name = list; name < list + list_size && *name != 0; name += UniStrLen(name) + 1)
+			{
+				if (UniStartWith(name, L"oem") && SuIsSeLowOemInf(name))
+				{
+					BOOL deleted;
+
+					deleted = SetupUninstallOEMInfW(name, SUOI_FORCEDELETE, NULL);
+
+					Debug("Delete OEM INF %S: %u\n", name, deleted);
+				}
+			}
+		}
+
+		Free(list);
 	}
 }
 
 // Driver install step: SuInstallDriver, or the stub that a test sets with SuSetInstallProc
 static SU_INSTALL_PROC *su_install_proc = SuInstallDriver;
-// The install step already ran in this process: it runs at most once per process
-static bool su_install_tried = false;
+// Nonzero once the install step ran in this process: it runs at most once per process, also
+// after a failed install. Local Bridge session threads and the RPC threads race on it, so it is
+// taken only with InterlockedCompareExchange
+static volatile LONG su_install_tried = 0;
 
 // Test seam (vpntest selow): replace the driver install step with proc; NULL restores
 // SuInstallDriver. Also forgets an earlier install attempt, so the next one runs the step again
 void SuSetInstallProc(SU_INSTALL_PROC *proc)
 {
 	su_install_proc = (proc != NULL ? proc : SuInstallDriver);
-	su_install_tried = false;
+	InterlockedExchange(&su_install_tried, 0);
 }
 
 // Remove a staging directory made by SuStageDriverPackage and everything in it
@@ -223,19 +236,14 @@ static bool SuInstallDriver()
 	{
 		UniFormat(dst_inf, sizeof(dst_inf), L"%s\\%s", stage_dir, SU_PACKAGE_INF);
 
-		if (MsIsServiceInstalled(SL_PROTOCOL_NAME) == false && MsIsServiceRunning(SL_PROTOCOL_NAME) == false)
-		{
-		}
-
 		SuDeleteGarbageInfs();
 
-		if (InstallNdisProtocolDriver(dst_inf) == false)
-		{
-		}
-		else
+		if (InstallNdisProtocolDriver(dst_inf))
 		{
 			// Also copy by hand: the installer sometimes fails to copy the .sys file
-			Debug("SuCopySysFile from %S to %S: ret = %u\n", src_sys, sys_fullpath, SuCopySysFile(src_sys, sys_fullpath));
+			bool copied = SuCopySysFile(src_sys, sys_fullpath);
+
+			Debug("SuCopySysFile from %S to %S: ret = %u\n", src_sys, sys_fullpath, copied);
 
 			ret = true;
 
@@ -389,8 +397,6 @@ bool SuPutPacketsToDriver(SU_ADAPTER *a)
 	if (WriteFile(a->hFile, a->PutBuffer, SL_EXCHANGE_BUFFER_SIZE, &write_size, NULL) == false)
 	{
 		a->Halt = true;
-
-		SuCloseAdapterHandleInner(a);
 		return false;
 	}
 
@@ -490,8 +496,6 @@ bool SuGetPacketsFromDriver(SU_ADAPTER *a)
 	if (ReadFile(a->hFile, a->GetBuffer, SL_EXCHANGE_BUFFER_SIZE, &read_size, NULL) == false)
 	{
 		a->Halt = true;
-
-		SuCloseAdapterHandleInner(a);
 		return false;
 	}
 
@@ -525,19 +529,14 @@ void SuCloseAdapter(SU_ADAPTER *a)
 	Free(a);
 }
 
-void SuCloseAdapterHandleInner(SU_ADAPTER *a)
-{
-	return;
-}
-
-SU_ADAPTER *SuOpenAdapter(SU *u, char *adapter_id)
+SU_ADAPTER *SuOpenAdapter(char *adapter_id)
 {
 	char filename[MAX_PATH];
 	void *h;
 	SU_ADAPTER *a;
 	SL_IOCTL_EVENT_NAME t;
 	DWORD read_size;
-	if (u == NULL || adapter_id == NULL)
+	if (adapter_id == NULL)
 	{
 		return NULL;
 	}
@@ -553,9 +552,6 @@ SU_ADAPTER *SuOpenAdapter(SU *u, char *adapter_id)
 	}
 
 	a = ZeroMalloc(sizeof(SU_ADAPTER));
-
-	StrCpy(a->AdapterId, sizeof(a->AdapterId), adapter_id);
-	StrCpy(a->DeviceName, sizeof(a->DeviceName), filename);
 
 	a->hFile = h;
 
@@ -712,7 +708,8 @@ SU_ADAPTER_LIST *SuAdapterInfoToAdapterList(SL_ADAPTER_INFO *info, LIST *netclas
 	}
 
 	Zero(&t, sizeof(t));
-	Copy(&t.Info, info, sizeof(SL_ADAPTER_INFO));
+	StrCpy(t.FriendlyName, sizeof(t.FriendlyName), info->FriendlyName);
+	Copy(t.MacAddress, info->MacAddress, sizeof(t.MacAddress));
 
 	UniToStr(tmp, sizeof(tmp), info->AdapterId);
 	// List the NIC in Local Bridge settings even when its FriendlyName is empty.
@@ -777,10 +774,9 @@ LABEL_RETRY:
 		{
 			if (MsStartService(SL_PROTOCOL_NAME) == false)
 			{
-				if (install && su_install_tried == false)
+				// Exactly one caller per process wins the latch and runs the install step
+				if (install && InterlockedCompareExchange(&su_install_tried, 1, 0) == 0)
 				{
-					su_install_tried = true;
-
 					if (su_install_proc())
 					{
 						goto LABEL_RETRY;
