@@ -1,8 +1,6 @@
 // vpntest.c
 // VPN Server test program
 
-#define VPN_EXE
-
 #include "harness.h"
 #include "Cedar/Command.h"
 #include "Cedar/MsChapV2.h"
