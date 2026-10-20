@@ -372,7 +372,6 @@ CT_b_support_license	Pengelolaan Lisensi Didukung
 CT_b_support_limit_multilogin	Batasan untuk Login Ganda oleh Pengguna yang Sama Didukung
 CT_b_support_qos		Fungsi VoIP / QoS Didukung
 CT_b_support_syslog		Fungsi Pengiriman Syslog Didukung
-CT_b_beta_version		Versi Beta (Build Pra-rilis)
 CT_b_support_check_mac	Penentuan Alamat MAC dalam Daftar Akses Didukung
 CT_b_support_check_tcp_state	Pemeriksaan Penyaringan Status Koneksi TCP Didukung
 CT_b_support_network_connection_name	Penentuan Nama Ramah Jaringan Didukung

@@ -26,6 +26,8 @@
 #define	MS_EVENT_SERVICE_STARTED	1
 #define	MS_EVENT_SERVICE_STOPPED	2
 #define	MS_EVENT_SERVICE_FAILED		3
+// MayaFatalExit() (Mayaqua.c), under the source "Ranz VPN"
+#define	MS_EVENT_FATAL_ERROR		4
 
 #define	SVC_RUN_COMMANDLINE			L"\"%s\" /service"
 
@@ -49,90 +51,27 @@
 
 #define	SOFTETHER_FW_SCRIPT_HASH	"Software\\" GC_REG_COMPANY_NAME "\\PacketiX VPN\\FW ScriptHash"
 
-#define	MS_REG_TCP_SETTING_KEY		"Software\\" GC_REG_COMPANY_NAME "\\Network Settings"
-
-
 #ifdef	MICROSOFT_C
 typedef struct MS
 {
 	HINSTANCE hInst;
-	HINSTANCE hKernel32;
 	bool IsAdmin;
 	HANDLE hCurrentProcess;
 	UINT CurrentProcessId;
-	bool MiniDumpEnabled;
-	char *ExeFileName;
 	char *ExeFileDir;
-	char *WindowsDir;
 	char *System32Dir;
 	char *TempDir;
-	char *WinTempDir;
-	char *WindowsDrive;
-	char *ProgramFilesDir;
-	char *ProgramFilesDirX86;
-	char *ProgramFilesDirX64;
-	char *CommonStartMenuDir;
-	char *CommonProgramsDir;
-	char *CommonStartupDir;
-	char *CommonAppDataDir;
-	char *CommonDesktopDir;
-	char *PersonalStartMenuDir;
-	char *PersonalProgramsDir;
-	char *PersonalStartupDir;
-	char *PersonalAppDataDir;
-	char *PersonalDesktopDir;
-	char *MyDocumentsDir;
-	char *LocalAppDataDir;
 	char *MyTempDir;
-	char *UserName;
-	char *UserNameEx;
 	wchar_t *ExeFileNameW;
-	wchar_t *ExeFileDirW;
 	wchar_t *WindowsDirW;
 	wchar_t *System32DirW;
 	wchar_t *TempDirW;
-	wchar_t *WinTempDirW;
-	wchar_t *WindowsDriveW;
-	wchar_t *ProgramFilesDirW;
-	wchar_t *ProgramFilesDirX86W;
-	wchar_t *ProgramFilesDirX64W;
-	wchar_t *CommonStartMenuDirW;
-	wchar_t *CommonProgramsDirW;
-	wchar_t *CommonStartupDirW;
-	wchar_t *CommonAppDataDirW;
-	wchar_t *CommonDesktopDirW;
-	wchar_t *PersonalStartMenuDirW;
-	wchar_t *PersonalProgramsDirW;
-	wchar_t *PersonalStartupDirW;
-	wchar_t *PersonalAppDataDirW;
-	wchar_t *PersonalDesktopDirW;
-	wchar_t *MyDocumentsDirW;
-	wchar_t *LocalAppDataDirW;
 	wchar_t *MyTempDirW;
 	wchar_t *UserNameW;
-	wchar_t *UserNameExW;
-	wchar_t *MinidumpBaseFileNameW;
 	IO *LockFile;
 } MS;
 
-typedef struct MS_USERMODE_SVC_PULSE_THREAD_PARAM
-{
-	void *hWnd;
-	void *GlobalPulse;
-	volatile bool Halt;
-} MS_USERMODE_SVC_PULSE_THREAD_PARAM;
-
 #endif	// MICROSOFT_C
-
-typedef struct NO_WARNING
-{
-	UINT ThreadId;
-	THREAD *NoWarningThread;
-	EVENT *HaltEvent;
-	volatile bool Halt;
-	UINT64 StartTimer;
-	UINT64 StartTick;
-} NO_WARNING;
 
 #define	REG_CLASSES_ROOT		0
 #define	REG_LOCAL_MACHINE		1
@@ -140,13 +79,6 @@ typedef struct NO_WARNING
 #define	REG_USERS				3
 
 typedef void (SERVICE_FUNCTION)();
-
-typedef struct MS_PROCESS
-{
-	char ExeFilename[MAX_PATH];
-	wchar_t ExeFilenameW[MAX_PATH];
-	UINT ProcessId;
-} MS_PROCESS;
 
 typedef struct MS_ADAPTER
 {
@@ -170,54 +102,38 @@ typedef struct MS_ADAPTER_LIST
 	MS_ADAPTER **Adapters;
 } MS_ADAPTER_LIST;
 
-typedef struct MS_TCP
-{
-	UINT RecvWindowSize;
-	UINT SendWindowSize;
-} MS_TCP;
-
-typedef struct ENUM_CHILD_WINDOW_PARAM
-{
-	LIST *o;
-	bool no_recursion;
-	bool include_ipcontrol;
-} ENUM_CHILD_WINDOW_PARAM;
-
 
 void MsInit();
 void MsFree();
 
-bool MsRegIsKeyEx2(UINT root, char *name, bool force32bit, bool force64bit);
+bool MsRegIsKeyEx2(UINT root, char *name, bool force32bit);
 
 bool MsRegIsValue(UINT root, char *keyname, char *valuename);
-bool MsRegIsValueEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
-
-bool MsRegReadValueEx2(UINT root, char *keyname, char *valuename, void **data, DWORD *type, DWORD *size, bool force32bit, bool force64bit);
-bool MsRegReadValueEx2W(UINT root, char *keyname, char *valuename, void **data, DWORD *type, DWORD *size, bool force32bit, bool force64bit);
+bool MsRegIsValueEx2(UINT root, char *keyname, char *valuename, bool force32bit);
 
 char *MsRegReadStr(UINT root, char *keyname, char *valuename);
-char *MsRegReadStrEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
-wchar_t *MsRegReadStrEx2W(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
+char *MsRegReadStrEx2(UINT root, char *keyname, char *valuename, bool force32bit);
+wchar_t *MsRegReadStrEx2W(UINT root, char *keyname, char *valuename, bool force32bit);
 
 UINT MsRegReadInt(UINT root, char *keyname, char *valuename);
-UINT MsRegReadIntEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
+UINT MsRegReadIntEx2(UINT root, char *keyname, char *valuename, bool force32bit);
 
-bool MsRegNewKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit);
+bool MsRegNewKeyEx2(UINT root, char *keyname, bool force32bit);
 
-bool MsRegWriteValueEx2(UINT root, char *keyname, char *valuename, UINT type, void *data, UINT size, bool force32bit, bool force64bit);
+bool MsRegWriteValueEx2(UINT root, char *keyname, char *valuename, UINT type, void *data, UINT size, bool force32bit);
 
 bool MsRegWriteStr(UINT root, char *keyname, char *valuename, char *str);
-bool MsRegWriteStrEx2(UINT root, char *keyname, char *valuename, char *str, bool force32bit, bool force64bit);
+bool MsRegWriteStrEx2(UINT root, char *keyname, char *valuename, char *str, bool force32bit);
 
 bool MsRegWriteInt(UINT root, char *keyname, char *valuename, UINT value);
-bool MsRegWriteIntEx2(UINT root, char *keyname, char *valuename, UINT value, bool force32bit, bool force64bit);
+bool MsRegWriteIntEx2(UINT root, char *keyname, char *valuename, UINT value, bool force32bit);
 
 TOKEN_LIST *MsRegEnumKey(UINT root, char *keyname);
-TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit);
+TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit);
 
-bool MsRegDeleteKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit);
+bool MsRegDeleteKeyEx2(UINT root, char *keyname, bool force32bit);
 bool MsRegDeleteValue(UINT root, char *keyname, char *valuename);
-bool MsRegDeleteValueEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
+bool MsRegDeleteValueEx2(UINT root, char *keyname, char *valuename, bool force32bit);
 
 bool MsRegLoadHive(UINT root, wchar_t *keyname, wchar_t *filename);
 
@@ -225,6 +141,7 @@ bool MsIsAdmin();
 bool MsEnablePrivilege(char *name, bool enable);
 UINT MsGetCurrentProcessId();
 char *MsGetExeDirName();
+wchar_t *MsCopyProcessArgsW();
 
 bool MsCheckLogon(wchar_t *username, char *password);
 wchar_t *MsGetNetworkConnectionName(char *guid);
@@ -232,7 +149,6 @@ wchar_t *MsGetNetworkConnectionName(char *guid);
 void MsGenLockFile(wchar_t *name, UINT size, wchar_t *temp_dir);
 void MsDeleteAllFileW(wchar_t *dir);
 
-void MsInitGlobalNetworkConfig();
 void MsSetThreadPriorityIdle();
 void MsSetThreadPriorityRealtime();
 void MsRestoreThreadPriority();
@@ -254,11 +170,6 @@ bool MsIsServiceRunning(char *name);
 UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line);
 bool MsWriteEventLog(char *source, UINT type, UINT event_id, char *message);
 bool MsIsUserMode();
-LIST *MsGetProcessList();
-void MsFreeProcessList(LIST *o);
-
-void MsGenerateUserModeSvcGlobalPulseName(char *name, UINT size, char *svc_name);
-void MsUserModeGlobalPulseRecvThread(THREAD *thread, void *param);
 
 void MsFreeAdapter(MS_ADAPTER *a);
 void MsFreeAdapterList(MS_ADAPTER_LIST *o);
@@ -268,30 +179,18 @@ MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid);
 bool MsIsBridgeableIf(UINT type, UINT media_type, UINT physical_medium_type, bool hardware_interface);
 UINT ConvertMidStatusVistaToXp(UINT st);
 
-void MsSetTcpConfig(MS_TCP *tcp);
-bool MsLoadTcpConfigReg(MS_TCP *tcp);
-
 UINT MsGetConsoleWidth();
-NO_WARNING *MsInitNoWarningEx(UINT start_timer);
-void MsFreeNoWarning(NO_WARNING *nw);
-int CmpWindowList(void *p1, void *p2);
-void AddWindow(LIST *o, HWND hWnd);
 
 void MsRegistWindowsFirewallEx(char *title, char *exe);
 void MsRegistWindowsFirewallEx2(char *title, char *exe, char *dir);
 void *MsDisableWow64FileSystemRedirection();
 void MsRestoreWow64FileSystemRedirection(void *p);
 
-bool MsGetProcessExeName(char *path, UINT size, UINT id);
-
 void MsGetComputerName(char *name, UINT size);
 void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache);
 
-bool MsUniMakeDir(wchar_t *name);
 UINT64 MsGetHiResCounter();
 double MsGetHiResTimeSpan(UINT64 diff);
-void MsSetEnableMinidump(bool enabled);
-void MsWriteMinidump(wchar_t *filename, void *ex);
 
 
 UINT MsGetUserLocaleId();
@@ -301,7 +200,6 @@ bool MsIsInVm();
 void MsInitProcessCallOnce();
 
 #ifdef MICROSOFT_C
-LONG CALLBACK MsExceptionHandler(struct _EXCEPTION_POINTERS *ExceptionInfo);
 HKEY MsGetRootKeyFromInt(UINT root);
 #endif // MICROSOFT_C
 

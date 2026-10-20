@@ -14,7 +14,6 @@
 #include <SeLow/SeLowCommon.h>
 
 #define	SL_USER_INSTALL_LOCK_TIMEOUT		60000		// Lock acquisition timeout
-#define	SL_USER_AUTO_PUSH_TIMER				60000		// Timer to start the installation automatically
 
 // The SeLow driver package in hamcore. Only an x64 package exists (see SuIsSupportedOs)
 #define	SU_PACKAGE_DIR		L"|DriverPackages\\SeLow_Win10\\x64"

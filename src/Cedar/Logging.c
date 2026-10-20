@@ -446,14 +446,7 @@ ERASER *NewEraser(LOG *log, UINT64 min_size)
 
 	if (min_size == 0)
 	{
-		if (OS_IS_WINDOWS(GetOsInfo()->OsType))
-		{
-			min_size = DISK_FREE_SPACE_DEFAULT_WINDOWS;
-		}
-		else
-		{
-			min_size = DISK_FREE_SPACE_DEFAULT;
-		}
+		min_size = DISK_FREE_SPACE_DEFAULT_WINDOWS;
 	}
 
 	if (min_size < DISK_FREE_SPACE_MIN)

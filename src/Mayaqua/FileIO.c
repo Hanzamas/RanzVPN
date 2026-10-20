@@ -14,8 +14,8 @@
 
 #include <stdlib.h>
 
-static char exe_file_name[MAX_SIZE] = "/tmp/a.out";
-static wchar_t exe_file_name_w[MAX_SIZE] = L"/tmp/a.out";
+static char exe_file_name[MAX_SIZE];
+static wchar_t exe_file_name_w[MAX_SIZE];
 
 // File I/O data of a disk file (IO pData), from the raw OS allocator
 typedef struct WIN32IO
@@ -343,8 +343,7 @@ void InitHamcore()
 		}
 		StrCat(tmp, sizeof(tmp), "\r\nThe build embeds src/bin/hamcore with cmake/RanzResources.cmake.\r\n\r\n(If this problem occurs again, please reinstall VPN software files.)");
 
-		Alert(tmp, NULL);
-		exit(-1);
+		MayaFatalExit(1, tmp);
 	}
 }
 
@@ -407,21 +406,11 @@ void GetExeNameW(wchar_t *name, UINT size)
 	UniStrCpy(name, size, exe_file_name_w);
 }
 
-void InitGetExeName(char *arg)
+void InitGetExeName()
 {
-	wchar_t *arg_w = NULL;
-	if (arg == NULL)
-	{
-		arg = "./a.out";
-	}
-
-	arg_w = CopyUtfToUni(arg);
-
 	Win32GetExeNameW(exe_file_name_w, ARRAYSIZE(exe_file_name_w));
 
 	UniToStr(exe_file_name, sizeof(exe_file_name), exe_file_name_w);
-
-	Free(arg_w);
 }
 
 void GetFileNameFromFilePath(char *dst, UINT size, char *filepath)
@@ -701,15 +690,6 @@ void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 		}
 
 		UniStrCpy(tmp, sizeof(tmp), cd);
-	}
-
-	if (UniStartWith(tmp, L"~/") || UniStartWith(tmp, L"~\\"))
-	{
-		wchar_t tmp2[MAX_SIZE];
-		GetHomeDirW(tmp2, sizeof(tmp2));
-		UniStrCat(tmp2, sizeof(tmp2), L"/");
-		UniStrCat(tmp2, sizeof(tmp2), tmp + 2);
-		UniStrCpy(tmp, sizeof(tmp), tmp2);
 	}
 
 	if (UniStartWith(tmp, L"//") || UniStartWith(tmp, L"\\\\"))

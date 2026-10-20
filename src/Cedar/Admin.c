@@ -634,8 +634,6 @@ static UINT StCrash(ADMIN *a, RPC_TEST *t)
 {
 	SERVER_ADMIN_ONLY;
 
-	MsSetEnableMinidump(false);
-
 	CrashNow();
 
 	return ERR_NO_ERROR;
@@ -1591,21 +1589,10 @@ static UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t)
 		return err;
 	}
 
-	LockHashList(h->MacHashTable);
+	if (IpTableDeleteByKey(h, t->Key) == false)
 	{
-		IP_TABLE_ENTRY *e = ListKeyToPointer(h->IpTable, t->Key);
-
-		if (e == NULL)
-		{
-			ret = ERR_OBJECT_NOT_FOUND;
-		}
-		else
-		{
-			Delete(h->IpTable, e);
-			Free(e);
-		}
+		ret = ERR_OBJECT_NOT_FOUND;
 	}
-	UnlockHashList(h->MacHashTable);
 
 	ReleaseHub(h);
 
@@ -1630,15 +1617,15 @@ static UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t)
 
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 
-	LockHashList(h->MacHashTable);
+	HubLockTables(h);
 	{
-		t->NumIpTable = LIST_NUM(h->IpTable);
+		t->NumIpTable = HubIpTableNum(h);
 		t->IpTables = ZeroMalloc(sizeof(RPC_ENUM_IP_TABLE_ITEM) * t->NumIpTable);
 
 		for (i = 0;i < t->NumIpTable;i++)
 		{
 			RPC_ENUM_IP_TABLE_ITEM *e = &t->IpTables[i];
-			IP_TABLE_ENTRY *table = LIST_DATA(h->IpTable, i);
+			IP_TABLE_ENTRY *table = IpTableGet(h, i);
 
 			e->Key = POINTER_TO_KEY(table);
 			StrCpy(e->SessionName, sizeof(e->SessionName), table->Session->Name);
@@ -1650,7 +1637,7 @@ static UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t)
 			e->UpdatedTime = Tick64ToTime64(table->UpdatedTime);
 		}
 	}
-	UnlockHashList(h->MacHashTable);
+	HubUnlockTables(h);
 
 	ReleaseHub(h);
 
@@ -1684,20 +1671,10 @@ static UINT StDeleteMacTable(ADMIN *a, RPC_DELETE_TABLE *t)
 		return err;
 	}
 
-	LockHashList(h->MacHashTable);
+	if (MacTableDeleteByKey(h, t->Key) == false)
 	{
-		if (IsInHashListKey(h->MacHashTable, t->Key))
-		{
-			MAC_TABLE_ENTRY *e = HashListKeyToPointer(h->MacHashTable, t->Key);
-			DeleteHash(h->MacHashTable, e);
-			Free(e);
-		}
-		else
-		{
-			ret = ERR_OBJECT_NOT_FOUND;
-		}
+		ret = ERR_OBJECT_NOT_FOUND;
 	}
-	UnlockHashList(h->MacHashTable);
 
 	ReleaseHub(h);
 
@@ -1722,9 +1699,9 @@ static UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t)
 
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 
-	LockHashList(h->MacHashTable);
+	HubLockTables(h);
 	{
-		MAC_TABLE_ENTRY **pp = (MAC_TABLE_ENTRY **)HashListToArray(h->MacHashTable, &t->NumMacTable);
+		MAC_TABLE_ENTRY **pp = MacTableEnum(h, &t->NumMacTable);
 		t->MacTables = ZeroMalloc(sizeof(RPC_ENUM_MAC_TABLE_ITEM) * t->NumMacTable);
 
 		for (i = 0;i < t->NumMacTable;i++)
@@ -1742,7 +1719,7 @@ static UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t)
 
 		Free(pp);
 	}
-	UnlockHashList(h->MacHashTable);
+	HubUnlockTables(h);
 
 	ReleaseHub(h);
 
@@ -1887,13 +1864,18 @@ static UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
 	return ret;
 }
 
-void SiEnumSessionMain(SERVER *s, RPC_ENUM_SESSION *t)
+static UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t)
 {
+	SERVER *s = a->Server;
+	HUB *h = NULL;
+	UINT err;
+	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
-	UINT num;
-	if (s == NULL || t == NULL)
+
+	h = AdminGetHub(a, t->HubName, "no_enum_session", &err);
+	if (h == NULL)
 	{
-		return;
+		return err;
 	}
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
@@ -1902,25 +1884,7 @@ void SiEnumSessionMain(SERVER *s, RPC_ENUM_SESSION *t)
 	Zero(t, sizeof(RPC_ENUM_SESSION));
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 
-	num = 0;
 	SiEnumLocalSession(s, hubname, t);
-
-}
-
-static UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t)
-{
-	SERVER *s = a->Server;
-	HUB *h = NULL;
-	UINT err;
-	UINT ret = ERR_NO_ERROR;
-
-	h = AdminGetHub(a, t->HubName, "no_enum_session", &err);
-	if (h == NULL)
-	{
-		return err;
-	}
-
-	SiEnumSessionMain(s, t);
 
 	ReleaseHub(h);
 
@@ -3492,8 +3456,8 @@ static UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
 		t->NumUsers = LIST_NUM(h->HubDb->UserList);
 		t->NumGroups = LIST_NUM(h->HubDb->GroupList);
 
-		t->NumMacTables = HASH_LIST_NUM(h->MacHashTable);
-		t->NumIpTables = LIST_NUM(h->IpTable);
+		t->NumMacTables = HubMacTableNum(h);
+		t->NumIpTables = HubIpTableNum(h);
 
 		Lock(h->TrafficLock);
 		{
@@ -3776,12 +3740,12 @@ static UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 
 				e->NumSessions = LIST_NUM(h->SessionList);
 
-				LockHashList(h->MacHashTable);
+				HubLockTables(h);
 				{
-					e->NumMacTables = HASH_LIST_NUM(h->MacHashTable);
-					e->NumIpTables = LIST_NUM(h->IpTable);
+					e->NumMacTables = HubMacTableNum(h);
+					e->NumIpTables = HubIpTableNum(h);
 				}
-				UnlockHashList(h->MacHashTable);
+				HubUnlockTables(h);
 
 				LockList(h->HubDb->UserList);
 				{
@@ -4400,8 +4364,8 @@ static UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 				t->NumHubStandalone++;
 			}
 
-			t->NumMacTables += HASH_LIST_NUM(h->MacHashTable);
-			t->NumIpTables += LIST_NUM(h->IpTable);
+			t->NumMacTables += HubMacTableNum(h);
+			t->NumIpTables += HubIpTableNum(h);
 
 			t->NumUsers += LIST_NUM(h->HubDb->UserList);
 			t->NumGroups += LIST_NUM(h->HubDb->GroupList);

@@ -19,18 +19,6 @@ char *OsTypeToStr(UINT type)
 		return "Newer than Windows 10\0\n";
 	case OSTYPE_WINDOWS_SERVER_11:
 		return "Newer than Windows Server 2016\0\n";
-	case OSTYPE_UNIX_UNKNOWN:
-		return "UNIX System\0\n";
-	case OSTYPE_LINUX:
-		return "Linux\0\n";
-	case OSTYPE_SOLARIS:
-		return "Sun Solaris\0\n";
-	case OSTYPE_CYGWIN:
-		return "Gnu Cygwin\0\n";
-	case OSTYPE_BSD:
-		return "BSD System\0\n";
-	case OSTYPE_MACOS_X:
-		return "Mac OS X\0\n";
 	}
 
 	return "Unknown OS";
@@ -94,15 +82,6 @@ bool OSIsSupportedOs()
 void OSGetOsInfo(OS_INFO *info)
 {
 	Win32GetOsInfo(info);
-}
-
-void OSAlert(char *msg, char *caption)
-{
-	Win32Alert(msg, caption);
-}
-void OSAlertW(wchar_t *msg, wchar_t *caption)
-{
-	Win32AlertW(msg, caption);
 }
 
 bool OSRun(char *filename, char *arg, bool hide, bool wait)

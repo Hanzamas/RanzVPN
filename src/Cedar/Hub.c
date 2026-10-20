@@ -1246,12 +1246,12 @@ void HubWatchDogThread(THREAD *t, void *param)
 		o = NewListFast(NULL);
 		o2 = NewListFast(NULL);
 
-		LockHashList(hub->MacHashTable);
+		HubLockTables(hub);
 		{
-			num = LIST_NUM(hub->IpTable);
-			for (i = 0;i < LIST_NUM(hub->IpTable);i++)
+			num = HubIpTableNum(hub);
+			for (i = 0;i < num;i++)
 			{
-				IP_TABLE_ENTRY *e = LIST_DATA(hub->IpTable, i);
+				IP_TABLE_ENTRY *e = IpTableGet(hub, i);
 
 				if (e == NULL) continue;
 
@@ -1327,7 +1327,7 @@ void HubWatchDogThread(THREAD *t, void *param)
 				}
 			}
 		}
-		UnlockHashList(hub->MacHashTable);
+		HubUnlockTables(hub);
 
 		if ((LIST_NUM(o) + LIST_NUM(o2)) != 0)
 		{
@@ -2739,6 +2739,49 @@ SESSION *GetSessionByName(HUB *hub, char *name)
 	return NULL;
 }
 
+// Count the hub's sessions that count against the multi-login limit of username:
+// not bridge, not cascade server side, at least one TCP connection, and a UniqueId
+// that is zero or different from unique_id.
+// Lock order: hub->lock, then SessionList, then s->lock, then the TcpSockList lock.
+// The caller must not hold hub->lock (ServerAccept unlocks it around this call).
+UINT HubCountUserSessions(HUB *h, char *username, UCHAR *unique_id)
+{
+	UINT num = 0;
+	if (h == NULL || username == NULL || unique_id == NULL)
+	{
+		return 0;
+	}
+
+	LockList(h->SessionList);
+	{
+		UINT i;
+		for (i = 0;i < LIST_NUM(h->SessionList);i++)
+		{
+			SESSION *s = LIST_DATA(h->SessionList, i);
+			Lock(s->lock);
+			{
+				UINT num_tcp;
+				LockList(s->Connection->Tcp->TcpSockList);
+				{
+					num_tcp = s->Connection->Tcp->TcpSockList->num_item;
+				}
+				UnlockList(s->Connection->Tcp->TcpSockList);
+
+				if (s->BridgeMode == false && s->LinkModeServer == false && num_tcp != 0 &&
+					StrCmpi(s->Username, username) == 0 &&
+					(IsZero(s->NodeInfo.UniqueId, 16) || Cmp(s->NodeInfo.UniqueId, unique_id, 16) != 0))
+				{
+					num++;
+				}
+			}
+			Unlock(s->lock);
+		}
+	}
+	UnlockList(h->SessionList);
+
+	return num;
+}
+
 static int CompareStormList(void *p1, void *p2)
 {
 	STORM *s1, *s2;
@@ -2779,6 +2822,286 @@ static int CompareStormList(void *p1, void *p2)
 	}
 	r = Cmp(s1->MacAddress, s2->MacAddress, 6);
 	return r;
+}
+
+// The MAC table and the IP table of a hub. One lock guards both: the lock of MacHashTable. The functions below
+// that take no lock themselves expect the caller to hold it (HubLockTables).
+void HubLockTables(HUB *h)
+{
+	LockHashList(h->MacHashTable);
+}
+
+void HubUnlockTables(HUB *h)
+{
+	UnlockHashList(h->MacHashTable);
+}
+
+// Entry counts for status RPCs. Without the table lock the count may be stale, as it always was.
+UINT HubMacTableNum(HUB *h)
+{
+	return HASH_LIST_NUM(h->MacHashTable);
+}
+
+UINT HubIpTableNum(HUB *h)
+{
+	return LIST_NUM(h->IpTable);
+}
+
+MAC_TABLE_ENTRY *MacTableLookup(HUB *h, UCHAR *mac, UINT vlan_id)
+{
+	MAC_TABLE_ENTRY t;
+
+	Copy(t.MacAddress, mac, 6);
+	t.VlanId = vlan_id;
+
+	return SearchHash(h->MacHashTable, &t);
+}
+
+// Learn mac on vlan_id for session s, which has no entry for it yet. NULL when the table is full (MAX_MAC_TABLES)
+MAC_TABLE_ENTRY *MacTableLearn(HUB *h, SESSION *s, UCHAR *mac, UINT vlan_id, UINT64 now)
+{
+	MAC_TABLE_ENTRY *e;
+
+	if (HASH_LIST_NUM(h->MacHashTable) >= MAX_MAC_TABLES)
+	{
+		return NULL;
+	}
+
+	e = ZeroMalloc(sizeof(MAC_TABLE_ENTRY));
+	e->HubPa = (HUB_PA *)s->PacketAdapter->Param;
+	Copy(e->MacAddress, mac, 6);
+	e->VlanId = vlan_id;
+	e->Session = s;
+	e->UpdatedTime = e->CreatedTime = now;
+
+	AddHash(h->MacHashTable, e);
+
+	return e;
+}
+
+static bool MacTableTakeSessionEntry(void *p, void *param)
+{
+	MAC_TABLE_ENTRY *e = (MAC_TABLE_ENTRY *)p;
+
+	if (e->Session != (SESSION *)param)
+	{
+		return false;
+	}
+
+	Free(e);
+
+	return true;
+}
+
+// Drop every MAC table entry of session s, in one walk over the hash buckets
+void MacTableFlushSession(HUB *h, SESSION *s)
+{
+	DeleteHashIf(h->MacHashTable, MacTableTakeSessionEntry, s);
+}
+
+// All MAC table entries; Free() the array. The entries stay valid while the caller holds the table lock
+MAC_TABLE_ENTRY **MacTableEnum(HUB *h, UINT *num)
+{
+	return (MAC_TABLE_ENTRY **)HashListToArray(h->MacHashTable, num);
+}
+
+// Drop the MAC table entry of an admin RPC key (POINTER_TO_KEY). Takes the table lock. False when no entry has it
+bool MacTableDeleteByKey(HUB *h, UINT key)
+{
+	bool ret = false;
+
+	HubLockTables(h);
+	{
+		if (IsInHashListKey(h->MacHashTable, key))
+		{
+			MAC_TABLE_ENTRY *e = HashListKeyToPointer(h->MacHashTable, key);
+			DeleteHash(h->MacHashTable, e);
+			Free(e);
+			ret = true;
+		}
+	}
+	HubUnlockTables(h);
+
+	return ret;
+}
+
+IP_TABLE_ENTRY *IpTableLookup(HUB *h, IP *ip)
+{
+	IP_TABLE_ENTRY t;
+
+	Copy(&t.Ip, ip, sizeof(IP));
+
+	return Search(h->IpTable, &t);
+}
+
+// Entry index of the IP table, sorted by address (0 to HubIpTableNum - 1)
+IP_TABLE_ENTRY *IpTableGet(HUB *h, UINT index)
+{
+	return LIST_DATA(h->IpTable, index);
+}
+
+static void IpTableSetEntry(IP_TABLE_ENTRY *e, SESSION *s, IP *ip, UCHAR *mac, bool dhcp_allocated, UINT64 now)
+{
+	e->CreatedTime = e->UpdatedTime = now;
+	e->DhcpAllocated = dhcp_allocated;
+	Copy(&e->Ip, ip, sizeof(IP));
+	Copy(e->MacAddress, mac, 6);
+	e->Session = s;
+}
+
+// The table is sorted by address, so the last entry has the highest one: the entry a full table evicts. O(1)
+static void DeleteHighestIpTableEntry(LIST *o)
+{
+	IP_TABLE_ENTRY *e;
+
+	if (LIST_NUM(o) == 0)
+	{
+		return;
+	}
+
+	e = LIST_DATA(o, LIST_NUM(o) - 1);
+	o->num_item--;
+	Free(e);
+}
+
+// The one place that creates an IP table entry: drop the expired entries, evict the highest address when the
+// table is full (MAX_IP_TABLES), then insert the new entry for ip
+void IpTableAddEntry(HUB *h, SESSION *s, IP *ip, UCHAR *mac, bool dhcp_allocated, UINT64 now)
+{
+	IP_TABLE_ENTRY *e = ZeroMalloc(sizeof(IP_TABLE_ENTRY));
+
+	IpTableSetEntry(e, s, ip, mac, dhcp_allocated, now);
+
+	DeleteExpiredIpTableEntry(h->IpTable);
+
+	if (LIST_NUM(h->IpTable) >= MAX_IP_TABLES)
+	{
+		DeleteHighestIpTableEntry(h->IpTable);
+	}
+
+	Insert(h->IpTable, e);
+}
+
+// IPv6 (v6) or IPv4 addresses that session s holds in the IP table
+UINT CountSessionIps(HUB *h, SESSION *s, bool v6)
+{
+	UINT i, num = 0;
+
+	for (i = 0;i < LIST_NUM(h->IpTable);i++)
+	{
+		IP_TABLE_ENTRY *e = LIST_DATA(h->IpTable, i);
+
+		if (e->Session == s && (v6 ? IsIP6(&e->Ip) : IsIP4(&e->Ip)))
+		{
+			num++;
+		}
+	}
+
+	return num;
+}
+
+// True when session s may not learn one more IPv6 (v6) or IPv4 address: it holds the cap of its policy
+// (NoRouting / NoRoutingV6, MaxIP / MaxIPv6). Logs LH_IP_LIMIT or LH_ROUTING_LIMIT for ip then. no_cap lifts the
+// cap (DHCPv6 and router discovery packets).
+static bool IpTableSessionAtLimit(HUB *h, SESSION *s, IP *ip, bool v6, bool no_cap, bool no_heavy)
+{
+	bool no_routing = v6 ? s->Policy->NoRoutingV6 : s->Policy->NoRouting;
+	UINT max_ip = v6 ? s->Policy->MaxIPv6 : s->Policy->MaxIP;
+	UINT num_ip_for_me;
+	UINT limited_count = 0xffffffff;
+	char tmp[64];
+
+	if (no_routing == false && max_ip == 0)
+	{
+		return false;
+	}
+
+	num_ip_for_me = CountSessionIps(h, s, v6);
+
+	if (no_routing)
+	{
+		limited_count = MIN(limited_count, v6 ? IP_LIMIT_WHEN_NO_ROUTING_V6 : IP_MIN_LIMIT_COUNT);
+	}
+	if (max_ip != 0)
+	{
+		limited_count = MIN(limited_count, max_ip);
+	}
+	limited_count = MAX(limited_count, v6 ? IP_MIN_LIMIT_COUNT_V6 : IP_MIN_LIMIT_COUNT);
+
+	if (no_cap)
+	{
+		limited_count = 0xffffffff;
+	}
+
+	if (num_ip_for_me < limited_count)
+	{
+		return false;
+	}
+
+	if (no_heavy == false)
+	{
+		IPToStr(tmp, sizeof(tmp), ip);
+		HLog(h, no_routing ? "LH_ROUTING_LIMIT" : "LH_IP_LIMIT", s->Name, tmp, num_ip_for_me, limited_count);
+	}
+
+	return true;
+}
+
+// Session s sent from ip while the IP table gives ip to the other session of entry e
+void LogIpConflict(HUB *h, SESSION *s, IP *ip, IP_TABLE_ENTRY *e, UINT64 now)
+{
+	char ip_address[32];
+	char mac_str[48];
+
+	IPToStr(ip_address, sizeof(ip_address), ip);
+	MacToStr(mac_str, sizeof(mac_str), e->MacAddress);
+
+	HLog(h, "LH_IP_CONFLICT", s->Name, ip_address, e->Session->Name, mac_str,
+		e->CreatedTime, e->UpdatedTime, e->DhcpAllocated, now);
+}
+
+// Drop every IP table entry of session s in one pass that keeps the order of the others
+void IpTableFlushSession(HUB *h, SESSION *s)
+{
+	LIST *o = h->IpTable;
+	UINT i, num_kept = 0;
+
+	for (i = 0;i < LIST_NUM(o);i++)
+	{
+		IP_TABLE_ENTRY *e = LIST_DATA(o, i);
+
+		if (e->Session == s)
+		{
+			Free(e);
+		}
+		else
+		{
+			o->p[num_kept++] = e;
+		}
+	}
+
+	o->num_item = num_kept;
+}
+
+// Drop the IP table entry of an admin RPC key (POINTER_TO_KEY). Takes the table lock. False when no entry has it
+bool IpTableDeleteByKey(HUB *h, UINT key)
+{
+	bool ret = false;
+
+	HubLockTables(h);
+	{
+		IP_TABLE_ENTRY *e = ListKeyToPointer(h->IpTable, key);
+
+		if (e != NULL)
+		{
+			Delete(h->IpTable, e);
+			Free(e);
+			ret = true;
+		}
+	}
+	HubUnlockTables(h);
+
+	return ret;
 }
 
 static bool HubPaInit(SESSION *s)
@@ -2822,50 +3145,12 @@ static void HubPaFree(SESSION *s)
 		UnlockList(s->Hub->MonitorList);
 	}
 
-	LockHashList(hub->MacHashTable);
+	HubLockTables(hub);
 	{
-		UINT i, num;
-		MAC_TABLE_ENTRY **pp;
-		LIST *o = NewListFast(NULL);
-
-		pp = (MAC_TABLE_ENTRY **)HashListToArray(hub->MacHashTable, &num);
-		for (i = 0;i < num;i++)
-		{
-			MAC_TABLE_ENTRY *e = (MAC_TABLE_ENTRY *)pp[i];
-			if (e->Session == s)
-			{
-				Add(o, e);
-			}
-		}
-		for (i = 0;i < LIST_NUM(o);i++)
-		{
-			MAC_TABLE_ENTRY *e = (MAC_TABLE_ENTRY *)LIST_DATA(o, i);
-			DeleteHash(hub->MacHashTable, e);
-			Free(e);
-		}
-		ReleaseList(o);
-		Free(pp);
+		MacTableFlushSession(hub, s);
+		IpTableFlushSession(hub, s);
 	}
-	{
-		UINT i, num = LIST_NUM(hub->IpTable);
-		LIST *o = NewListFast(NULL);
-		for (i = 0;i < num;i++)
-		{
-			IP_TABLE_ENTRY *e = LIST_DATA(hub->IpTable, i);
-			if (e->Session == s)
-			{
-				Add(o, e);
-			}
-		}
-		for (i = 0;i < LIST_NUM(o);i++)
-		{
-			IP_TABLE_ENTRY *e = LIST_DATA(o, i);
-			Delete(hub->IpTable, e);
-			Free(e);
-		}
-		ReleaseList(o);
-	}
-	UnlockHashList(hub->MacHashTable);
+	HubUnlockTables(hub);
 
 	LockList(pa->StormList);
 	{
@@ -3374,7 +3659,7 @@ static bool PolicyDropsPacket(POLICY *pol, PKT *p)
 void StorePacket(HUB *hub, SESSION *s, PKT *packet)
 {
 	MAC_TABLE_ENTRY *entry = NULL;
-	MAC_TABLE_ENTRY t;
+	UINT vlan_id;
 	void *data;
 	UINT size;
 	bool broadcast_mode;
@@ -3426,7 +3711,7 @@ void StorePacket(HUB *hub, SESSION *s, PKT *packet)
 		}
 	}
 
-	LockHashList(hub->MacHashTable);
+	HubLockTables(hub);
 	{
 		if (s != NULL && (packet->DelayedForwardTick == 0 && StorePacketFilter(s, packet) == false))
 		{
@@ -3496,16 +3781,15 @@ DISCARD_PACKET:
 				// With a session, a frame from the hub's own MAC address is gone by now
 				if (s != NULL)
 				{
-					Copy(t.MacAddress, packet->MacAddressSrc, 6);
 					if (hub->Option->NoManageVlanId == false)
 					{
-						t.VlanId = packet->VlanId;
+						vlan_id = packet->VlanId;
 					}
 					else
 					{
-						t.VlanId = 0;
+						vlan_id = 0;
 					}
-					entry = SearchHash(hub->MacHashTable, &t);
+					entry = MacTableLookup(hub, packet->MacAddressSrc, vlan_id);
 
 					if (entry == NULL)
 					{
@@ -3571,26 +3855,11 @@ DISCARD_PACKET:
 							}
 						}
 
-						if (HASH_LIST_NUM(hub->MacHashTable) >= MAX_MAC_TABLES)
+						entry = MacTableLearn(hub, s, packet->MacAddressSrc, vlan_id, now);
+						if (entry == NULL)
 						{
 							goto DISCARD_PACKET;
 						}
-
-						entry = ZeroMalloc(sizeof(MAC_TABLE_ENTRY));
-						entry->HubPa = (HUB_PA *)s->PacketAdapter->Param;
-						Copy(entry->MacAddress, packet->MacAddressSrc, 6);
-						if (hub->Option->NoManageVlanId == false)
-						{
-							entry->VlanId = packet->VlanId;
-						}
-						else
-						{
-							entry->VlanId = 0;
-						}
-						entry->Session = s;
-						entry->UpdatedTime = entry->CreatedTime = now;
-
-						AddHash(hub->MacHashTable, entry);
 
 						if (hub->Option->NoMacAddressLog == false && no_heavy == false)
 						{
@@ -3672,16 +3941,15 @@ UPDATE_FDB:
 				}
 				else
 				{
-					Copy(t.MacAddress, packet->MacAddressDest, 6);
 					if (hub->Option->NoManageVlanId == false)
 					{
-						t.VlanId = packet->VlanId;
+						vlan_id = packet->VlanId;
 					}
 					else
 					{
-						t.VlanId = 0;
+						vlan_id = 0;
 					}
-					entry = SearchHash(hub->MacHashTable, &t);
+					entry = MacTableLookup(hub, packet->MacAddressDest, vlan_id);
 
 					if (entry == NULL)
 					{
@@ -3743,86 +4011,18 @@ UPDATE_FDB:
 
 						if (b)
 						{
-							IP_TABLE_ENTRY t, *e;
-
-							Copy(&t.Ip, &ip, sizeof(IP));
-
-							e = Search(hub->IpTable, &t);
+							IP_TABLE_ENTRY *e = IpTableLookup(hub, &ip);
 
 							if (e == NULL)
 							{
-								if (s->Policy->NoRoutingV6 || s->Policy->MaxIPv6 != 0)
+								if (IpTableSessionAtLimit(hub, s, &ip, true, dhcp_or_ra, no_heavy))
 								{
-									UINT i, num_ip_for_me = 0;
-									UINT limited_count = 0xffffffff;
-
-									for (i = 0;i < LIST_NUM(hub->IpTable);i++)
-									{
-										IP_TABLE_ENTRY *e = LIST_DATA(hub->IpTable, i);
-
-										if (e->Session == s)
-										{
-											if (IsIP6(&e->Ip))
-											{
-												num_ip_for_me++;
-											}
-										}
-									}
-
-									if (s->Policy->NoRoutingV6)
-									{
-										limited_count = MIN(limited_count, IP_LIMIT_WHEN_NO_ROUTING_V6);
-									}
-									if (s->Policy->MaxIPv6 != 0)
-									{
-										limited_count = MIN(limited_count, s->Policy->MaxIPv6);
-									}
-									limited_count = MAX(limited_count, IP_MIN_LIMIT_COUNT_V6);
-
-									if (dhcp_or_ra)
-									{
-										limited_count = 0xffffffff;
-									}
-
-									if (num_ip_for_me >= limited_count)
-									{
-										char tmp[64];
-										IPToStr(tmp, sizeof(tmp), &ip);
-										if (s->Policy->NoRoutingV6 == false)
-										{
-											if (no_heavy == false)
-											{
-												HLog(hub, "LH_IP_LIMIT", s->Name, tmp, num_ip_for_me, limited_count);
-											}
-										}
-										else
-										{
-											if (no_heavy == false)
-											{
-												HLog(hub, "LH_ROUTING_LIMIT", s->Name, tmp, num_ip_for_me, limited_count);
-											}
-										}
-										goto DISCARD_PACKET;
-									}
+									goto DISCARD_PACKET;
 								}
 
 								if (IsIPManagementTargetForHUB(&ip, hub))
 								{
-									e = ZeroMalloc(sizeof(IP_TABLE_ENTRY));
-									e->CreatedTime = e->UpdatedTime = now;
-									e->DhcpAllocated = false;
-									Copy(&e->Ip, &ip, sizeof(IP));
-									Copy(e->MacAddress, packet->MacAddressSrc, 6);
-									e->Session = s;
-
-									DeleteExpiredIpTableEntry(hub->IpTable);
-
-									if (LIST_NUM(hub->IpTable) >= MAX_IP_TABLES)
-									{
-										DeleteOldIpTableEntry(hub->IpTable);
-									}
-
-									Insert(hub->IpTable, e);
+									IpTableAddEntry(hub, s, &ip, packet->MacAddressSrc, false, now);
 								}
 							}
 							else
@@ -3837,17 +4037,9 @@ UPDATE_FDB:
 									if ((s->Policy->CheckIPv6) &&
 										((e->UpdatedTime + IP_TABLE_EXCLUSIVE_TIME) >= now))
 									{
-										char ip_address[32];
-										char mac_str[48];
-										IPToStr(ip_address, sizeof(ip_address), &ip);
-
-
-										MacToStr(mac_str, sizeof(mac_str), e->MacAddress);
-
 										if (no_heavy == false)
 										{
-											HLog(hub, "LH_IP_CONFLICT", s->Name, ip_address, e->Session->Name, mac_str,
-												e->CreatedTime, e->UpdatedTime, e->DhcpAllocated, now);
+											LogIpConflict(hub, s, &ip, e, now);
 										}
 
 										goto DISCARD_PACKET;
@@ -3872,7 +4064,7 @@ UPDATE_FDB:
 					)
 					)
 				{
-					IP_TABLE_ENTRY t, *e;
+					IP_TABLE_ENTRY *e;
 					IP ip;
 					UINT uint_ip = 0;
 
@@ -3888,9 +4080,8 @@ UPDATE_FDB:
 					if (uint_ip != 0 && uint_ip != 0xffffffff && !(IsHubIpAddress32(uint_ip) && IsHubMacAddress(packet->MacAddressSrc)))
 					{
 						UINTToIP(&ip, uint_ip);
-						Copy(&t.Ip, &ip, sizeof(IP));
 
-						e = Search(hub->IpTable, &t);
+						e = IpTableLookup(hub, &ip);
 
 						if (e == NULL)
 						{
@@ -3906,75 +4097,14 @@ UPDATE_FDB:
 								goto DISCARD_PACKET;
 							}
 
+							if (IpTableSessionAtLimit(hub, s, &ip, false, false, no_heavy))
 							{
-								if (s->Policy->NoRouting || s->Policy->MaxIP != 0)
-								{
-									UINT i, num_ip_for_me = 0;
-									UINT limited_count = 0xffffffff;
+								goto DISCARD_PACKET;
+							}
 
-									for (i = 0;i < LIST_NUM(hub->IpTable);i++)
-									{
-										IP_TABLE_ENTRY *e = LIST_DATA(hub->IpTable, i);
-
-										if (e->Session == s)
-										{
-											if (IsIP4(&e->Ip))
-											{
-												num_ip_for_me++;
-											}
-										}
-									}
-
-									if (s->Policy->NoRouting)
-									{
-										limited_count = MIN(limited_count, IP_MIN_LIMIT_COUNT);
-									}
-									if (s->Policy->MaxIP != 0)
-									{
-										limited_count = MIN(limited_count, s->Policy->MaxIP);
-									}
-									limited_count = MAX(limited_count, IP_MIN_LIMIT_COUNT);
-
-									if (num_ip_for_me >= limited_count)
-									{
-										char tmp[64];
-										IPToStr32(tmp, sizeof(tmp), uint_ip);
-										if (s->Policy->NoRouting == false)
-										{
-											if (no_heavy == false)
-											{
-												HLog(hub, "LH_IP_LIMIT", s->Name, tmp, num_ip_for_me, limited_count);
-											}
-										}
-										else
-										{
-											if (no_heavy == false)
-											{
-												HLog(hub, "LH_ROUTING_LIMIT", s->Name, tmp, num_ip_for_me, limited_count);
-											}
-										}
-										goto DISCARD_PACKET;
-									}
-								}
-
-								if (IsIPManagementTargetForHUB(&ip, hub))
-								{
-									e = ZeroMalloc(sizeof(IP_TABLE_ENTRY));
-									e->CreatedTime = e->UpdatedTime = now;
-									e->DhcpAllocated = false;
-									Copy(&e->Ip, &ip, sizeof(IP));
-									Copy(e->MacAddress, packet->MacAddressSrc, 6);
-									e->Session = s;
-
-									DeleteExpiredIpTableEntry(hub->IpTable);
-
-									if (LIST_NUM(hub->IpTable) >= MAX_IP_TABLES)
-									{
-										DeleteOldIpTableEntry(hub->IpTable);
-									}
-
-									Insert(hub->IpTable, e);
-								}
+							if (IsIPManagementTargetForHUB(&ip, hub))
+							{
+								IpTableAddEntry(hub, s, &ip, packet->MacAddressSrc, false, now);
 							}
 						}
 						else
@@ -3989,17 +4119,9 @@ UPDATE_FDB:
 								if ((s->Policy->CheckIP || s->Policy->DHCPForce) &&
 									((e->UpdatedTime + IP_TABLE_EXCLUSIVE_TIME) >= now))
 								{
-									char ip_address[32];
-									char mac_str[48];
-									IPToStr(ip_address, sizeof(ip_address), &ip);
-
-
-									MacToStr(mac_str, sizeof(mac_str), e->MacAddress);
-
 									if (no_heavy == false)
 									{
-										HLog(hub, "LH_IP_CONFLICT", s->Name, ip_address, e->Session->Name, mac_str,
-											e->CreatedTime, e->UpdatedTime, e->DhcpAllocated, now);
+										LogIpConflict(hub, s, &ip, e, now);
 									}
 
 									goto DISCARD_PACKET;
@@ -4256,7 +4378,7 @@ DISCARD_BROADCAST_PACKET:
 			}
 		}
 	}
-	UnlockHashList(hub->MacHashTable);
+	HubUnlockTables(hub);
 }
 
 bool CheckMaxLoggedPacketsPerMinute(SESSION *s, UINT max_packets, UINT64 now)
@@ -4320,28 +4442,6 @@ bool IsIPManagementTargetForHUB(IP *ip, HUB *hub)
 	}
 
 	return true;
-}
-
-void DeleteOldIpTableEntry(LIST *o)
-{
-	UINT i;
-	IP_TABLE_ENTRY *old = NULL;
-	if (o == NULL)
-	{
-		return;
-	}
-
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		IP_TABLE_ENTRY *e = LIST_DATA(o, i);
-		old = e;
-	}
-
-	if (old != NULL)
-	{
-		Delete(o, old);
-		Free(old);
-	}
 }
 
 
@@ -4801,62 +4901,40 @@ static bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
 					{
 						UINT ip_uint = h->YourIP;
 						IP ip;
-						IP_TABLE_ENTRY *e, t;
-						MAC_TABLE_ENTRY *mac_table, mt;
-						mt.VlanId = 0;
-						Copy(&mt.MacAddress, &h->ClientMacAddress, 6);
-						mac_table = SearchHash(hub->MacHashTable, &mt);
+						IP_TABLE_ENTRY *e;
+						MAC_TABLE_ENTRY *mac_table = MacTableLookup(hub, h->ClientMacAddress, 0);
 
 						if (mac_table != NULL)
 						{
-							bool new_entry = true;
 							UINTToIP(&ip, ip_uint);
-							Copy(&t.Ip, &ip, sizeof(IP));
 
-							e = Search(hub->IpTable, &t);
-							if (e == NULL)
+							e = IpTableLookup(hub, &ip);
+							if (e != NULL)
 							{
-								e = ZeroMalloc(sizeof(IP_TABLE_ENTRY));
-UPDATE_DHCP_ALLOC_ENTRY:
-								e->CreatedTime = e->UpdatedTime = Tick64();
-								e->DhcpAllocated = true;
-								Copy(&e->Ip, &ip, sizeof(IP));
-								e->Session = mac_table->Session;
-								Copy(e->MacAddress, p->MacAddressDest, 6);
-
-								if (new_entry)
-								{
-									DeleteExpiredIpTableEntry(hub->IpTable);
-									if (LIST_NUM(hub->IpTable) >= MAX_IP_TABLES)
-									{
-										DeleteOldIpTableEntry(hub->IpTable);
-									}
-									Insert(hub->IpTable, e);
-
-								
-									if ((hub->Option->NoDhcpPacketLogOutsideHub == false) || mac_table->Session != s)
-									{
-										char dhcp_mac_addr[64];
-										char dest_mac_addr[64];
-										char dest_ip_addr[64];
-										char server_ip_addr[64];
-										MacToStr(dhcp_mac_addr, sizeof(dhcp_mac_addr), p->MacAddressSrc);
-										MacToStr(dest_mac_addr, sizeof(dest_mac_addr), h->ClientMacAddress);
-										IPToStr(dest_ip_addr, sizeof(dest_ip_addr), &ip);
-										IPToStr32(server_ip_addr, sizeof(server_ip_addr), p->L3.IPv4Header->SrcIP);
-
-										if (no_heavy == false)
-										{
-											HLog(s->Hub, "LH_REGIST_DHCP", s->Name, dhcp_mac_addr, server_ip_addr,
-												mac_table->Session->Name, dest_mac_addr, dest_ip_addr);
-										}
-									}
-								}
+								// A lease the table holds already: the ACK gives it to this client again
+								IpTableSetEntry(e, mac_table->Session, &ip, p->MacAddressDest, true, Tick64());
 							}
 							else
 							{
-								new_entry = false;
-								goto UPDATE_DHCP_ALLOC_ENTRY;
+								IpTableAddEntry(hub, mac_table->Session, &ip, p->MacAddressDest, true, Tick64());
+
+								if ((hub->Option->NoDhcpPacketLogOutsideHub == false) || mac_table->Session != s)
+								{
+									char dhcp_mac_addr[64];
+									char dest_mac_addr[64];
+									char dest_ip_addr[64];
+									char server_ip_addr[64];
+									MacToStr(dhcp_mac_addr, sizeof(dhcp_mac_addr), p->MacAddressSrc);
+									MacToStr(dest_mac_addr, sizeof(dest_mac_addr), h->ClientMacAddress);
+									IPToStr(dest_ip_addr, sizeof(dest_ip_addr), &ip);
+									IPToStr32(server_ip_addr, sizeof(server_ip_addr), p->L3.IPv4Header->SrcIP);
+
+									if (no_heavy == false)
+									{
+										HLog(s->Hub, "LH_REGIST_DHCP", s->Name, dhcp_mac_addr, server_ip_addr,
+											mac_table->Session->Name, dest_mac_addr, dest_ip_addr);
+									}
+								}
 							}
 						}
 					}
@@ -4916,7 +4994,7 @@ void DeleteExpiredIpTableEntry(LIST *o)
 	// This runs on every new IP entry, under the hub-wide MacHashTable lock. Read the clock once (Tick64 takes
 	// a global lock) and compact the array in one pass: a Delete per expired entry searched and shifted the
 	// whole array each time, O(n * expired). The kept entries keep their order, so a sorted table stays sorted
-	// and DeleteOldIpTableEntry still evicts the same entry.
+	// and DeleteHighestIpTableEntry still evicts the same entry.
 	now = Tick64();
 
 	for (i = 0;i < LIST_NUM(o);i++)
