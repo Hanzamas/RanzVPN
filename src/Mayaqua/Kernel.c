@@ -215,9 +215,11 @@ void GetHomeDirW(wchar_t *path, UINT size)
 	}
 }
 
+// A value longer than the buffer is truncated
 bool GetEnv(char *name, char *data, UINT size)
 {
-	char *ret;
+	DWORD len;
+	char *tmp;
 	if (name == NULL || data == NULL)
 	{
 		return false;
@@ -225,19 +227,26 @@ bool GetEnv(char *name, char *data, UINT size)
 
 	StrCpy(data, size, "");
 
-	ret = getenv(name);
-	if (ret == NULL)
+	// The size with the terminating null; 0 when the variable is not set
+	len = GetEnvironmentVariableA(name, NULL, 0);
+	if (len == 0)
 	{
 		return false;
 	}
 
-	StrCpy(data, size, ret);
+	tmp = ZeroMalloc(len);
+	if (GetEnvironmentVariableA(name, tmp, len) < len)
+	{
+		StrCpy(data, size, tmp);
+	}
+	Free(tmp);
 
 	return true;
 }
 bool GetEnvW(wchar_t *name, wchar_t *data, UINT size)
 {
-	wchar_t *ret;
+	DWORD len;
+	wchar_t *tmp;
 	if (name == NULL || data == NULL)
 	{
 		return false;
@@ -245,13 +254,19 @@ bool GetEnvW(wchar_t *name, wchar_t *data, UINT size)
 
 	UniStrCpy(data, size, L"");
 
-	ret = _wgetenv(name);
-	if (ret == NULL)
+	// The length in characters with the terminating null; 0 when the variable is not set
+	len = GetEnvironmentVariableW(name, NULL, 0);
+	if (len == 0)
 	{
 		return false;
 	}
 
-	UniStrCpy(data, size, ret);
+	tmp = ZeroMalloc(len * sizeof(wchar_t));
+	if (GetEnvironmentVariableW(name, tmp, len) < len)
+	{
+		UniStrCpy(data, size, tmp);
+	}
+	Free(tmp);
 
 	return true;
 }

@@ -75,22 +75,7 @@ void Win32SetThreadName(UINT thread_id, char *name)
 
 void Win32InitNewThread()
 {
-	static HINSTANCE hDll = NULL;
-	static bool (WINAPI *_SetThreadLocale)(LCID) = NULL;
-
-	if (hDll == NULL)
-	{
-		hDll = LoadLibrary("kernel32.dll");
-
-		_SetThreadLocale =
-			(bool (__stdcall *)(LCID))
-			GetProcAddress(hDll, "SetThreadLocale");
-	}
-
-	if (_SetThreadLocale != NULL)
-	{
-		_SetThreadLocale(LOCALE_USER_DEFAULT);
-	}
+	SetThreadLocale(LOCALE_USER_DEFAULT);
 }
 
 bool Win32SetFolderCompress(char *path, bool compressed)
@@ -338,8 +323,7 @@ void Win32Yield()
 
 void Win32GetMemInfo(MEMINFO *info)
 {
-	static HINSTANCE hDll = NULL;
-	static bool (WINAPI *_GlobalMemoryStatusEx)(LPMEMORYSTATUSEX) = NULL;
+	MEMORYSTATUSEX st;
 	if (info == NULL)
 	{
 		return;
@@ -347,52 +331,21 @@ void Win32GetMemInfo(MEMINFO *info)
 
 	Zero(info, sizeof(MEMINFO));
 
-	if (hDll == NULL)
+	Zero(&st, sizeof(st));
+	st.dwLength = sizeof(st);
+
+	if (GlobalMemoryStatusEx(&st) == false)
 	{
-		hDll = LoadLibrary("kernel32.dll");
-	}
-	if (hDll != NULL)
-	{
-		if (_GlobalMemoryStatusEx == NULL)
-		{
-			_GlobalMemoryStatusEx =
-				(bool (__stdcall *)(LPMEMORYSTATUSEX))GetProcAddress(hDll, "GlobalMemoryStatusEx");
-		}
+		return;
 	}
 
+	info->TotalMemory = st.ullTotalPageFile;
+	info->FreeMemory = st.ullAvailPageFile;
+	info->UsedMemory = info->TotalMemory - info->FreeMemory;
 
-	if (_GlobalMemoryStatusEx == NULL)
-	{
-		MEMORYSTATUS st;
-		Zero(&st, sizeof(st));
-		st.dwLength = sizeof(st);
-
-		GlobalMemoryStatus(&st);
-
-		info->TotalMemory = (UINT64)st.dwTotalPageFile;
-		info->FreeMemory = (UINT64)st.dwAvailPageFile;
-		info->UsedMemory = info->TotalMemory - info->FreeMemory;
-
-		info->TotalPhys = (UINT64)st.dwTotalPhys;
-		info->FreePhys = (UINT64)st.dwAvailPhys;
-		info->UsedPhys = info->TotalPhys - info->FreePhys;
-	}
-	else
-	{
-		MEMORYSTATUSEX st;
-		Zero(&st, sizeof(st));
-		st.dwLength = sizeof(st);
-
-		_GlobalMemoryStatusEx(&st);
-
-		info->TotalMemory = st.ullTotalPageFile;
-		info->FreeMemory = st.ullAvailPageFile;
-		info->UsedMemory = info->TotalMemory - info->FreeMemory;
-
-		info->TotalPhys = st.ullTotalPhys;
-		info->FreePhys = st.ullAvailPhys;
-		info->UsedPhys = info->TotalPhys - info->FreePhys;
-	}
+	info->TotalPhys = st.ullTotalPhys;
+	info->FreePhys = st.ullAvailPhys;
+	info->UsedPhys = info->TotalPhys - info->FreePhys;
 }
 
 void *Win32NewSingleInstance(char *instance_name)

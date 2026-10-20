@@ -406,49 +406,6 @@ UINT64 MsGetHiResCounter()
 	return ret;
 }
 
-static void MsUniMakeDirEx(wchar_t *name)
-{
-	UINT wp;
-	wchar_t *tmp;
-	UINT i, len;
-	if (name == NULL)
-	{
-		return;
-	}
-
-	tmp = ZeroMalloc(UniStrSize(name) * 2);
-	wp = 0;
-	len = UniStrLen(name);
-	for (i = 0;i < len;i++)
-	{
-		wchar_t c = name[i];
-
-		if (c == '\\')
-		{
-			if (UniStrCmpi(tmp, L"\\\\") != 0 && UniStrCmpi(tmp, L"\\") != 0)
-			{
-				MsUniMakeDir(tmp);
-			}
-		}
-
-		tmp[wp++] = c;
-	}
-
-	Free(tmp);
-
-	MsUniMakeDir(name);
-}
-
-bool MsUniMakeDir(wchar_t *name)
-{
-	if (name == NULL)
-	{
-		return false;
-	}
-
-	return CreateDirectoryW(name, NULL);
-}
-
 static wchar_t ms_computer_name_full_cache[MAX_SIZE] = {0};
 
 void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache)
@@ -3847,45 +3804,6 @@ char *MsGetExeDirName()
 	return ms->ExeFileDir;
 }
 
-static char *MsGetSpecialDir(int id)
-{
-	LPITEMIDLIST t = NULL;
-	char tmp[MAX_PATH];
-
-	if (SHGetSpecialFolderLocation(NULL, id, &t) != S_OK)
-	{
-		return CopyStr(ms->ExeFileDir);
-	}
-
-	if (SHGetPathFromIDList(t, tmp) == false)
-	{
-		return CopyStr(ms->ExeFileDir);
-	}
-
-	Win32NukuEn(tmp, sizeof(tmp), tmp);
-
-	return CopyStr(tmp);
-}
-static wchar_t *MsGetSpecialDirW(int id)
-{
-	LPITEMIDLIST t = NULL;
-	wchar_t tmp[MAX_PATH];
-
-	if (SHGetSpecialFolderLocation(NULL, id, &t) != S_OK)
-	{
-		return UniCopyStr(ms->ExeFileDirW);
-	}
-
-	if (SHGetPathFromIDListW(t, tmp) == false)
-	{
-		return UniCopyStr(ms->ExeFileDirW);
-	}
-
-	Win32NukuEnW(tmp, sizeof(tmp), tmp);
-
-	return UniCopyStr(tmp);
-}
-
 static void MsGetSpecialDirs()
 {
 	char tmp[MAX_PATH];
@@ -3898,17 +3816,7 @@ static void MsGetSpecialDirs()
 	// The Windows directory is parent of the System32 directory
 	Win32GetDirFromPath(tmp, sizeof(tmp), tmp);
 	Win32NukuEn(tmp, sizeof(tmp), tmp);
-	ms->WindowsDir = CopyStr(tmp);
 	ms->WindowsDirW = CopyStrToUni(tmp);
-
-	Format(tmp, sizeof(tmp), "%s\\Temp", ms->WindowsDir);
-	ms->WinTempDir = CopyStr(tmp);
-	ms->WinTempDirW = CopyStrToUni(tmp);
-	MsUniMakeDirEx(ms->WinTempDirW);
-
-	tmp[2] = 0;
-	ms->WindowsDrive = CopyStr(tmp);
-	ms->WindowsDriveW = CopyStrToUni(tmp);
 
 	GetTempPath(MAX_PATH, tmp);
 	Win32NukuEn(tmp, sizeof(tmp), tmp);
@@ -3924,67 +3832,6 @@ static void MsGetSpecialDirs()
 	}
 	MakeDirExW(ms->TempDirW);
 	MakeDirEx(ms->TempDir);
-
-	ms->ProgramFilesDir = MsGetSpecialDir(CSIDL_PROGRAM_FILES);
-	if (StrCmpi(ms->ProgramFilesDir, ms->ExeFileDir) == 0)
-	{
-		char tmp[MAX_PATH];
-		Format(tmp, sizeof(tmp), "%s\\Program Files", ms->WindowsDrive);
-
-		Free(ms->ProgramFilesDir);
-		ms->ProgramFilesDir = CopyStr(tmp);
-	}
-
-	ms->ProgramFilesDirW = MsGetSpecialDirW(CSIDL_PROGRAM_FILES);
-	if (UniStrCmpi(ms->ProgramFilesDirW, ms->ExeFileDirW) == 0)
-	{
-		wchar_t tmp[MAX_PATH];
-		UniFormat(tmp, sizeof(tmp), L"%s\\Program Files", ms->WindowsDriveW);
-
-		Free(ms->ProgramFilesDirW);
-		ms->ProgramFilesDirW = UniCopyStr(tmp);
-	}
-
-	ms->ProgramFilesDirX86 = MsGetSpecialDir(CSIDL_PROGRAM_FILESX86);
-	if (StrCmpi(ms->ProgramFilesDirX86, ms->ExeFileDir) == 0)
-	{
-		char tmp[MAX_PATH];
-		Format(tmp, sizeof(tmp), "%s\\Program Files (x86)", ms->WindowsDrive);
-
-		Free(ms->ProgramFilesDirX86);
-		ms->ProgramFilesDirX86 = CopyStr(tmp);
-	}
-
-	ms->ProgramFilesDirX86W = MsGetSpecialDirW(CSIDL_PROGRAM_FILESX86);
-	if (UniStrCmpi(ms->ProgramFilesDirX86W, ms->ExeFileDirW) == 0)
-	{
-		wchar_t tmp[MAX_PATH];
-		UniFormat(tmp, sizeof(tmp), L"%s\\Program Files (x86)", ms->WindowsDriveW);
-
-		Free(ms->ProgramFilesDirX86W);
-		ms->ProgramFilesDirX86W = UniCopyStr(tmp);
-	}
-
-	ms->ProgramFilesDirX64 = CopyStr(ms->ProgramFilesDir);
-	ms->ProgramFilesDirX64W = CopyUniStr(ms->ProgramFilesDirW);
-
-	ms->CommonStartMenuDir = MsGetSpecialDir(CSIDL_COMMON_STARTMENU);
-	ms->CommonStartMenuDirW = MsGetSpecialDirW(CSIDL_COMMON_STARTMENU);
-
-	ms->CommonProgramsDir = MsGetSpecialDir(CSIDL_COMMON_PROGRAMS);
-	ms->CommonProgramsDirW = MsGetSpecialDirW(CSIDL_COMMON_PROGRAMS);
-
-	ms->CommonStartupDir = MsGetSpecialDir(CSIDL_COMMON_STARTUP);
-	ms->CommonStartupDirW = MsGetSpecialDirW(CSIDL_COMMON_STARTUP);
-
-	ms->CommonAppDataDir = MsGetSpecialDir(CSIDL_COMMON_APPDATA);
-	ms->CommonAppDataDirW = MsGetSpecialDirW(CSIDL_COMMON_APPDATA);
-
-	ms->CommonDesktopDir = MsGetSpecialDir(CSIDL_COMMON_DESKTOPDIRECTORY);
-	ms->CommonDesktopDirW = MsGetSpecialDirW(CSIDL_COMMON_DESKTOPDIRECTORY);
-
-	ms->LocalAppDataDir = MsGetSpecialDir(CSIDL_LOCAL_APPDATA);
-	ms->LocalAppDataDirW = MsGetSpecialDirW(CSIDL_LOCAL_APPDATA);
 }
 
 static bool MsCheckIsAdmin()
@@ -4040,8 +3887,6 @@ void MsInit()
 
 	ms->hInst = GetModuleHandle(NULL);
 
-	ms->hKernel32 = LoadLibrary("kernel32.dll");
-
 	str_ansi = CopyStr(GetCommandLineA());
 	Trim(str_ansi);
 	str_unicode = UniCopyStr(GetCommandLineW());
@@ -4059,7 +3904,6 @@ void MsInit()
 	ms->CurrentProcessId = GetCurrentProcessId();
 
 	GetModuleFileName(NULL, tmp, sizeof(tmp));
-	ms->ExeFileName = CopyStr(tmp);
 	Win32GetDirFromPath(tmp, sizeof(tmp), tmp);
 	ms->ExeFileDir = CopyStr(tmp);
 
@@ -4077,37 +3921,13 @@ void MsInit()
 
 	MsInitTempDir();
 
-	size = sizeof(tmp);
-	GetUserName(tmp, &size);
-	ms->UserName = CopyStr(tmp);
-
 	wchar_t tmp_w[MAX_PATH];
 
-	size = sizeof(tmp_w);
+	// GetUserNameW takes the size in characters
+	size = sizeof(tmp_w) / sizeof(wchar_t);
 
 	GetUserNameW(tmp_w, &size);
 	ms->UserNameW = CopyUniStr(tmp_w);
-
-	size = sizeof(tmp);
-	if (GetUserNameExA(NameSamCompatible, tmp, &size))
-	{
-		ms->UserNameEx = CopyStr(tmp);
-	}
-
-	size = sizeof(tmp_w);
-	if (GetUserNameExW(NameSamCompatible, tmp_w, &size))
-	{
-		ms->UserNameExW = CopyUniStr(tmp_w);
-	}
-
-	if (ms->UserNameEx == NULL)
-	{
-		ms->UserNameEx = CopyStr(ms->UserName);
-	}
-	if (ms->UserNameExW == NULL)
-	{
-		ms->UserNameExW = CopyUniStr(ms->UserNameW);
-	}
 
 	MsInitAdapterListModule();
 
@@ -4266,55 +4086,16 @@ void MsFree()
 
 	MsFreeTempDir();
 
-	Free(ms->WindowsDir);
 	Free(ms->System32Dir);
 	Free(ms->TempDir);
-	Free(ms->WinTempDir);
-	Free(ms->WindowsDrive);
-	Free(ms->ProgramFilesDir);
-	Free(ms->CommonStartMenuDir);
-	Free(ms->CommonProgramsDir);
-	Free(ms->CommonStartupDir);
-	Free(ms->CommonAppDataDir);
-	Free(ms->CommonDesktopDir);
-	Free(ms->PersonalStartMenuDir);
-	Free(ms->PersonalProgramsDir);
-	Free(ms->PersonalStartupDir);
-	Free(ms->PersonalAppDataDir);
-	Free(ms->PersonalDesktopDir);
-	Free(ms->MyDocumentsDir);
 	Free(ms->ExeFileDir);
-	Free(ms->ExeFileName);
-	Free(ms->UserName);
-	Free(ms->UserNameEx);
-	Free(ms->LocalAppDataDir);
-	Free(ms->ProgramFilesDirX86);
-	Free(ms->ProgramFilesDirX64);
 	Free(ms->WindowsDirW);
 	Free(ms->System32DirW);
 	Free(ms->TempDirW);
-	Free(ms->WinTempDirW);
-	Free(ms->WindowsDriveW);
-	Free(ms->ProgramFilesDirW);
-	Free(ms->CommonStartMenuDirW);
-	Free(ms->CommonProgramsDirW);
-	Free(ms->CommonStartupDirW);
-	Free(ms->CommonAppDataDirW);
-	Free(ms->CommonDesktopDirW);
-	Free(ms->PersonalStartMenuDirW);
-	Free(ms->PersonalProgramsDirW);
-	Free(ms->PersonalStartupDirW);
-	Free(ms->PersonalAppDataDirW);
-	Free(ms->PersonalDesktopDirW);
-	Free(ms->MyDocumentsDirW);
 	Free(ms->ExeFileDirW);
 	Free(ms->ExeFileNameW);
 	Free(ms->UserNameW);
-	Free(ms->UserNameExW);
-	Free(ms->LocalAppDataDirW);
 	Free(ms->MinidumpBaseFileNameW);
-	Free(ms->ProgramFilesDirX86W);
-	Free(ms->ProgramFilesDirX64W);
 
 	Free(ms);
 	ms = NULL;
