@@ -116,8 +116,6 @@ struct HUB_OPTION
 	UINT FloodingSendQueueBufferQuota;
 	UINT DetectDormantSessionInterval;
 	bool NoPhysicalIPOnPacketLog;
-	bool UseHubNameAsDhcpUserClassOption;
-	bool AllowEapMatchUserByCert;
 	UINT DhcpDiscoverTimeoutMs;
 };
 

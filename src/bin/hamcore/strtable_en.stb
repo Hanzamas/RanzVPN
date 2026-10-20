@@ -264,9 +264,6 @@ HUB_AO_deny_qos							If you set this option to non-zero value, then every VPN S
 HUB_AO_deny_change_user_password		If you set this option to non-zero value, then any users on the Virtual Hub will be forbidden to change its password by VPN Client's password-changing function.
 HUB_AO_no_change_users					If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to add, edit or remove a user.
 HUB_AO_no_change_groups					If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to add, edit or remove a group.
-HUB_AO_no_securenat						If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to enable or disable the SecureNAT function.
-HUB_AO_no_securenat_enablenat			If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to enable or disable the Virtual NAT function in the SecureNAT function.
-HUB_AO_no_securenat_enabledhcp			If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to enable or disable the Virtual DHCP Server function in the SecureNAT function.
 HUB_AO_no_cascade						If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to add, edit, remove or change the online status of a cascade connection.
 HUB_AO_no_online						If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to change the offline Virtual Hub to the online state.
 HUB_AO_no_offline						If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to change the online Virtual Hub to the offline state.
@@ -336,8 +333,6 @@ HUB_AO_SuppressClientUpdateNotification		Suppress the update notification screen
 HUB_AO_FloodingSendQueueBufferQuota			Specify the quota limitation value (in bytes) of the sending queue buffer size which the flooding operation on the Virtual Hub can consume. The quota value is applied on the total length of sending queues of all active VPN sessions. Specify '0' to disable the quota. This option is effective to solve the out-of-memory problem on the network where there are many flooding packets.
 HUB_AO_DetectDormantSessionInterval			If you set this option to non-zero value, then the Virtual Hub will treat the VPN sessions, which have transmitted no packets for the last specified intervals (in seconds), as Dormant Sessions. The Virtual Hub will not flood packets, which should be flood, to any Dormant Sessions.
 HUB_AO_NoPhysicalIPOnPacketLog				If you set this option to non-zero value, then the physical IP addresses of VPN clients of either the source VPN session or the destination VPN session will not be recorded on the packet log file.
-HUB_AO_UseHubNameAsDhcpUserClassOption		If you set this option to non-zero value, then the Virtual Hub Name will be added to a DHCP request to an external DHCP server as the "User-Class" option. This allows to use separate pools of IP addresses for each Virtual Hub. (For only L2TP/IPsec and OpenVPN sessions.)
-HUB_AO_AllowEapMatchUserByCert				If you enable (set to 1) this option, the Virtual Hub will attempt to match the EAP Identity not only with usernames, but also with user certificates during the PPP EAP authentication flow.
 
 
 # Concerning protocols

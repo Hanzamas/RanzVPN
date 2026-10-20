@@ -51,9 +51,6 @@ ADMIN_OPTION admin_options[] =
 	{"deny_change_user_password", 0},
 	{"no_change_users", 0},
 	{"no_change_groups", 0},
-	{"no_securenat", 0},
-	{"no_securenat_enablenat", 0},
-	{"no_securenat_enabledhcp", 0},
 	{"no_cascade", 0},
 	{"no_online", 0},
 	{"no_offline", 0},
@@ -462,8 +459,6 @@ void DataToHubOptionStruct(HUB_OPTION *o, RPC_ADMIN_OPTION *ao)
 	GetHubAdminOptionDataAndSet(ao, "FloodingSendQueueBufferQuota", o->FloodingSendQueueBufferQuota);
 	GetHubAdminOptionDataAndSet(ao, "DetectDormantSessionInterval", o->DetectDormantSessionInterval);
 	GetHubAdminOptionDataAndSet(ao, "NoPhysicalIPOnPacketLog", o->NoPhysicalIPOnPacketLog);
-	GetHubAdminOptionDataAndSet(ao, "UseHubNameAsDhcpUserClassOption", o->UseHubNameAsDhcpUserClassOption);
-	GetHubAdminOptionDataAndSet(ao, "AllowEapMatchUserByCert", o->AllowEapMatchUserByCert);
 	GetHubAdminOptionDataAndSet(ao, "DhcpDiscoverTimeoutMs", o->DhcpDiscoverTimeoutMs);
 }
 
@@ -524,8 +519,6 @@ void HubOptionStructToData(RPC_ADMIN_OPTION *ao, HUB_OPTION *o, char *hub_name)
 	Add(aol, NewAdminOption("FloodingSendQueueBufferQuota", o->FloodingSendQueueBufferQuota));
 	Add(aol, NewAdminOption("DetectDormantSessionInterval", o->DetectDormantSessionInterval));
 	Add(aol, NewAdminOption("NoPhysicalIPOnPacketLog", o->NoPhysicalIPOnPacketLog));
-	Add(aol, NewAdminOption("UseHubNameAsDhcpUserClassOption", o->UseHubNameAsDhcpUserClassOption));
-	Add(aol, NewAdminOption("AllowEapMatchUserByCert", o->AllowEapMatchUserByCert));
 	Add(aol, NewAdminOption("DhcpDiscoverTimeoutMs", o->DhcpDiscoverTimeoutMs));
 
 	Zero(ao, sizeof(RPC_ADMIN_OPTION));
@@ -5935,10 +5928,6 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 	{
 		h->Option->VlanTypeId = MAC_PROTO_TAGVLAN;
 	}
-
-	h->Option->DropBroadcastsInPrivacyFilterMode = true;
-	h->Option->DropArpInPrivacyFilterMode = true;
-	h->Option->AllowSameUserInPrivacyFilterMode = false;
 
 	Rand(h->HubSignature, sizeof(h->HubSignature));
 

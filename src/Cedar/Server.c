@@ -1633,6 +1633,8 @@ void SiSetDefaultHubOption(HUB_OPTION *o)
 	o->RemoveDefGwOnDhcpForLocalhost = true;
 	o->FloodingSendQueueBufferQuota = DEFAULT_FLOODING_QUEUE_LENGTH;
 	o->DhcpDiscoverTimeoutMs = DEFAULT_DHCP_DISCOVER_TIMEOUT;
+	o->DropBroadcastsInPrivacyFilterMode = true;
+	o->DropArpInPrivacyFilterMode = true;
 }
 
 static void SiInitDefaultHubList(SERVER *s)
@@ -2728,8 +2730,6 @@ static void SiLoadHubOptionCfg(FOLDER *f, HUB_OPTION *o)
 	o->SuppressClientUpdateNotification = CfgGetBool(f, "SuppressClientUpdateNotification");
 	o->DetectDormantSessionInterval = CfgGetInt(f, "DetectDormantSessionInterval");
 	o->NoPhysicalIPOnPacketLog = CfgGetBool(f, "NoPhysicalIPOnPacketLog");
-	o->UseHubNameAsDhcpUserClassOption = CfgGetBool(f, "UseHubNameAsDhcpUserClassOption");
-	o->AllowEapMatchUserByCert = CfgGetBool(f, "AllowEapMatchUserByCert");
 	o->DhcpDiscoverTimeoutMs = CfgGetInt(f, "DhcpDiscoverTimeoutMs");
 	if (o->DhcpDiscoverTimeoutMs == 0)
 	{
@@ -2823,8 +2823,6 @@ static void SiWriteHubOptionCfg(FOLDER *f, HUB_OPTION *o)
 	CfgAddInt(f, "AccessListIncludeFileCacheLifetime", o->AccessListIncludeFileCacheLifetime);
 	CfgAddBool(f, "DisableCheckMacOnLocalBridge", o->DisableCheckMacOnLocalBridge);
 	CfgAddBool(f, "DisableCorrectIpOffloadChecksum", o->DisableCorrectIpOffloadChecksum);
-	CfgAddBool(f, "UseHubNameAsDhcpUserClassOption", o->UseHubNameAsDhcpUserClassOption);
-	CfgAddBool(f, "AllowEapMatchUserByCert", o->AllowEapMatchUserByCert);
 	CfgAddInt(f, "DhcpDiscoverTimeoutMs", o->DhcpDiscoverTimeoutMs);
 }
 
