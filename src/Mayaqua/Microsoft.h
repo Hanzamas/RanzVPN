@@ -12,8 +12,6 @@
 #define	SVC_ARG_STOP				"/stop"
 #define	SVC_ARG_TEST				"/test"
 #define	SVC_ARG_USERMODE			"/usermode"
-#define	SVC_ARG_USERMODE_SHOWTRAY	"/usermode_showtray"
-#define	SVC_ARG_USERMODE_HIDETRAY	"/usermode_hidetray"
 #define	SVC_ARG_SERVICE				"/service"
 #define	SVC_ARG_SETUP_INSTALL		"/setup_install"
 #define	SVC_ARG_SETUP_UNINSTALL		"/setup_uninstall"
@@ -141,6 +139,13 @@ typedef struct NO_WARNING
 
 typedef void (SERVICE_FUNCTION)();
 
+// One command line argument of MsService and the mode it selects; SVC_HELP lists exactly these
+typedef struct MS_SVC_ARG
+{
+	char *Arg;								// Argument, compared without case
+	UINT Mode;								// SVC_MODE_* that the argument selects
+} MS_SVC_ARG;
+
 typedef struct MS_PROCESS
 {
 	char ExeFilename[MAX_PATH];
@@ -252,6 +257,8 @@ bool MsStartService(char *name);
 bool MsStopService(char *name);
 bool MsIsServiceRunning(char *name);
 UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line);
+const MS_SVC_ARG *MsSvcArgs(UINT *num);
+UINT MsSvcArgToMode(char *arg);
 bool MsWriteEventLog(char *source, UINT type, UINT event_id, char *message);
 bool MsIsUserMode();
 LIST *MsGetProcessList();

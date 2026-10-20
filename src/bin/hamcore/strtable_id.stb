@@ -559,7 +559,7 @@ CM_CERT_COLUMN_3		Kadaluarsa
 
 
 # Concerning services (Win32)
-SVC_HELP				*** Argumen Baris Perintah dari %s (%S) ***\r\n\r\nProgram ini (%s) adalah sebuah proses yang berjalan sebagai tugas latar belakang. Mulailah program dengan menentukan argumen berikut pada baris perintah.\r\n\r\n\r\n/install : Menginstal layanan %s (nama layanan: %S) di Windows. Setelah ini, layanan akan otomatis dimulai.\r\n\r\n/uninstall... Menghapus instalasi layanan %s (nama layanan: %S) dari Windows.\r\n\r\n/start : Memulai layanan %s (nama layanan: %S).\r\n\r\n/stop : Menghentikan layanan %s (nama layanan: %S).\r\n\r\n/test : Memulai program %s dalam mode uji. (Untuk debug)\r\n\r\n/usermode : Memulai program %s dalam mode pengguna. (Jika memungkinkan)\r\n\r\n/usermode_showtray : Ketika memulai dalam mode pengguna, ini digunakan untuk menampilkan ikon task tray ketika sebelumnya diset untuk disembunyikan.\r\n\r\n/usermode_hidetray : Ketika memulai dalam mode pengguna, ini menyembunyikan ikon task tray.\r\n\r\n\r\nCatatan: Perintah terkait operasi layanan selain /test dan /usermode hanya dapat dijalankan pada Windows NT / XP / Server 2003 / Vista / Server 2008.
+SVC_HELP				*** Argumen Baris Perintah dari %s (%S) ***\r\n\r\nProgram ini (%s) berjalan sebagai tugas latar belakang. Mulailah program dengan salah satu argumen berikut pada baris perintah.\r\n\r\n\r\n/install : Menginstal layanan %s (nama layanan: %S) di Windows. Setelah ini, layanan akan otomatis dimulai.\r\n\r\n/uninstall : Menghapus instalasi layanan %s (nama layanan: %S) dari Windows.\r\n\r\n/start : Memulai layanan %s (nama layanan: %S).\r\n\r\n/stop : Menghentikan layanan %s (nama layanan: %S).\r\n\r\n/test : Memulai program %s dalam mode uji. (Untuk debug)\r\n\r\n/usermode : Memulai program %s dalam mode pengguna, tanpa layanan.\r\n\r\n/setup_install : Dipakai oleh penginstal. Mengganti layanan %s (nama layanan: %S) dengan program ini lalu memulainya.\r\n\r\n/setup_uninstall : Dipakai oleh penginstal. Menghentikan dan menghapus instalasi layanan %s (nama layanan: %S).\r\n\r\n/service : Dipakai oleh Windows. Menjalankan program %s sebagai layanan.
 SVC_ALREADY_INSTALLED	Layanan "%s" (nama layanan: %S) sudah terinstal di komputer ini. Apakah Anda ingin menghapus instalasi dan menginstalnya kembali?
 SVC_INSTALL_OK			Layanan "%s" (Nama Layanan: %S) telah berhasil diinstal.\r\n\r\n(Jalur Eksekusi: %s)\r\n\r\nLayanan telah dimulai.
 SVC_INSTALL_FAILED		Instalasi layanan "%s" (nama layanan: %S) gagal.
@@ -578,12 +578,6 @@ SVC_NOT_ADMIN			Untuk menginstal, menghapus instalasi, memulai atau menghentikan
 SVC_TEST_MSG			Layanan "%s" telah dimulai dalam mode uji.\r\n\r\nKlik OK untuk keluar dari layanan.
 SVC_TEST_MUTEX			File eksekusi %s sudah dimulai.
 SVC_USERMODE_MUTEX		Proses lain dari %s sudah dimulai.
-
-
-# Service Definition (Ranz VPN Server)
-SVC_VPNSERVER_NAME		vpnserver
-SVC_VPNSERVER_TITLE		Ranz VPN Server
-SVC_VPNSERVER_DESCRIPT	Layanan ini mengelola proses server dari Ranz VPN Server. Ranz VPN Server menyediakan fungsi server Ranz VPN berkinerja tinggi melalui protokol TCP/IP. Ketika layanan ini dihentikan, Ranz VPN Server di komputer ini akan berhenti dan Ranz VPN Client tidak akan dapat membangun koneksi VPN dengan komputer ini.
 
 
 # Service Definition (Ranz VPN Server)

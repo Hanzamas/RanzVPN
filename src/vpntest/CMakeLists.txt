@@ -69,6 +69,9 @@ target_sources(vpntest PRIVATE tablecache.c)
 # Named registry test of FND-64 (#121)
 target_sources(vpntest PRIVATE registry.c)
 
+# Named service argument test of FND-205 (#167)
+target_sources(vpntest PRIVATE svcargs.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"

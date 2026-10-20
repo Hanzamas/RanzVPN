@@ -633,12 +633,12 @@ void GetCallStackStr(char *str, UINT size, CALLSTACK_DATA *s)
 
 			if (s->name == NULL)
 			{
-				Format(tmp, sizeof(tmp), "0x%02x ---", UINT64_TO_POINTER(s->offset));
+				Format(tmp, sizeof(tmp), "0x%02x ---", (UINT)s->offset);
 			}
 			else
 			{
 				Format(tmp, sizeof(tmp), "0x%p %s() + 0x%02x",
-					(void *)s->offset, s->name, UINT64_TO_POINTER(s->disp));
+					(void *)s->offset, s->name, (UINT)s->disp);
 			}
 			for (i = 0;i < num;i++)
 			{
