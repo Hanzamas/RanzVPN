@@ -3156,11 +3156,6 @@ bool MsRegWriteIntEx2(UINT root, char *keyname, char *valuename, UINT value, boo
 		return false;
 	}
 
-	if (IsBigEndian())
-	{
-		value = Swap32(value);
-	}
-
 	return MsRegWriteValueEx2(root, keyname, valuename, REG_DWORD_LITTLE_ENDIAN, &value, sizeof(UINT), force32bit, force64bit);
 }
 
@@ -3240,23 +3235,10 @@ UINT MsRegReadIntEx2(UINT root, char *keyname, char *valuename, bool force32bit,
 
 	Free(ret);
 
-	if (IsLittleEndian())
+	// The host is little-endian: only a REG_DWORD_BIG_ENDIAN value needs a swap
+	if (type == REG_DWORD_BIG_ENDIAN)
 	{
-#ifdef	REG_DWORD_BIG_ENDIAN
-		if (type == REG_DWORD_BIG_ENDIAN)
-		{
-			value = Swap32(value);
-		}
-#endif	// REG_DWORD_BIG_ENDIAN
-	}
-	else
-	{
-#ifdef	REG_DWORD_LITTLE_ENDIAN_FLAG
-		if (type == REG_DWORD_LITTLE_ENDIAN_FLAG)
-		{
-			value = Swap32(value);
-		}
-#endif	// REG_DWORD_LITTLE_ENDIAN_FLAG
+		value = Endian32(value);
 	}
 
 	return value;

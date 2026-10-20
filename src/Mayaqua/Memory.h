@@ -6,10 +6,6 @@
 
 #include "MayaType.h"
 
-// No separate fast allocator: plain aliases
-#define	MallocFast		Malloc
-#define	ZeroMallocFast	ZeroMalloc
-
 #define MAX_MALLOC_MEM_SIZE					(0xffffffff - 64)
 
 // Memory size that can be passed to the kernel at a time
@@ -52,9 +48,6 @@ struct FIFO
 	LOCK *lock;
 	void *p;
 	UINT pos, size, memsize;
-	UINT64 total_read_size;
-	UINT64 total_write_size;
-	bool fixed;
 };
 
 struct LIST
@@ -82,7 +75,6 @@ struct SK
 	UINT num_item, num_reserved;
 	void **p;
 	LOCK *lock;
-	bool no_compact;
 };
 
 #define	LIST_DATA(o, i)		(((o) != NULL) ? ((o)->p[(i)]) : NULL)
@@ -100,10 +92,9 @@ struct HASH_LIST
 	REF *Ref;
 	LIST **Entries;
 	UINT NumItems;
-	LIST *AllList;
 };
 
-HASH_LIST *NewHashList(GET_HASH *get_hash_proc, COMPARE *compare_proc, UINT bits, bool make_list);
+HASH_LIST *NewHashList(GET_HASH *get_hash_proc, COMPARE *compare_proc, UINT bits);
 void ReleaseHashList(HASH_LIST *h);
 void CleanupHashList(HASH_LIST *h);
 void AddHash(HASH_LIST *h, void *p);
@@ -140,13 +131,6 @@ void *Clone(void *addr, UINT size);
 void *Base64FromBin(UINT *out_size, const void *src, const UINT size);
 void *Base64ToBin(UINT *out_size, const void *src, const UINT size);
 
-USHORT Swap16(USHORT value);
-UINT Swap32(UINT value);
-UINT64 Swap64(UINT64 value);
-USHORT Endian16(USHORT src);
-UINT Endian32(UINT src);
-UINT64 Endian64(UINT64 src);
-UINT LittleEndian32(UINT src);
 void EndianUnicode(wchar_t *str);
 
 BUF *NewBuf();
@@ -190,8 +174,7 @@ void ReleaseFifo(FIFO *f);
 void CleanupFifo(FIFO *f);
 FIFO *NewFifo();
 FIFO *NewFifoFast();
-FIFO *NewFifoEx2(bool fast, bool fixed);
-void InitFifo();
+FIFO *NewFifoEx2(bool fast);
 void SetFifoCurrentReallocMemSize(UINT size);
 
 void *Search(LIST *o, void *target);
@@ -206,7 +189,7 @@ void ReleaseList(LIST *o);
 void CleanupList(LIST *o);
 LIST *NewList(COMPARE *cmp);
 LIST *NewListFast(COMPARE *cmp);
-LIST *NewListEx2(COMPARE *cmp, bool fast, bool fast_malloc);
+LIST *NewListEx2(COMPARE *cmp, bool fast);
 void *ToArray(LIST *o);
 void *ToArrayEx(LIST *o, bool fast);
 int CompareStr(void *p1, void *p2);
@@ -222,8 +205,8 @@ void ReleaseIntList(LIST *o);
 void ReleaseInt64List(LIST *o);
 bool IsIntInList(LIST *o, UINT i);
 bool IsInt64InList(LIST *o, UINT64 i);
-LIST *NewIntList(bool sorted);
-LIST *NewInt64List(bool sorted);
+LIST *NewIntList();
+LIST *NewInt64List();
 int CompareInt(void *p1, void *p2);
 int CompareInt64(void *p1, void *p2);
 
@@ -239,7 +222,6 @@ QUEUE *NewQueueFast();
 UINT GetQueueNum(QUEUE *q);
 
 SK *NewSk();
-SK *NewSkEx(bool no_compact);
 void ReleaseSk(SK *s);
 void CleanupSk(SK *s);
 void LockSk(SK *s);
@@ -249,19 +231,17 @@ void *Pop(SK *s);
 
 UINT Uncompress(void *dst, UINT dst_size, void *src, UINT src_size);
 UINT Compress(void *dst, UINT dst_size, void *src, UINT src_size);
-UINT CompressEx(void *dst, UINT dst_size, void *src, UINT src_size, UINT level);
 UINT CalcCompress(UINT src_size);
 
 bool IsZero(void *data, UINT size);
 
-UINT SearchBin(void *data, UINT data_start, UINT data_size, void *key, UINT key_size);
+UINT SearchBin(void *data, UINT data_size, void *key, UINT key_size);
 void CrashNow();
-UINT Power(UINT a, UINT b);
 
 void AppendBufUtf8(BUF *b, wchar_t *str);
 void AppendBufStr(BUF *b, char *str);
 
-#define NUM_CANARY_RAND					32
+#define NUM_CANARY_RAND					2
 #define CANARY_RAND_ID_MEMTAG_MAGIC		0
 #define CANARY_RAND_SIZE				20
 

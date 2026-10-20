@@ -951,10 +951,9 @@ static void TtGenerateRandomData(UCHAR **buf, UINT *size)
 
 	sz = TRAFFIC_BUF_SIZE;
 	tmp = Malloc(sz);
+	Rand(tmp, sz);
 	for (i = 0;i < sz;i++)
 	{
-		tmp[i] = rand() % 256;
-
 		if (tmp[i] == '!')
 		{
 			tmp[i] = '_';
