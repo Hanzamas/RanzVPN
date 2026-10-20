@@ -2126,13 +2126,6 @@ UINT RecvFrom(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 			*src_port = sock->LocalPort;
 		}
 
-		Lock(sock->lock);
-		{
-			sock->RecvNum++;
-			sock->RecvSize += (UINT64)ret;
-		}
-		Unlock(sock->lock);
-
 		return (UINT)ret;
 	}
 	else if (ret == 0)
@@ -2193,13 +2186,6 @@ UINT RecvFrom6(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 		{
 			*src_port = sock->LocalPort;
 		}
-
-		Lock(sock->lock);
-		{
-			sock->RecvNum++;
-			sock->RecvSize += (UINT64)ret;
-		}
-		Unlock(sock->lock);
 
 		return (UINT)ret;
 	}
@@ -2311,13 +2297,6 @@ UINT SendToEx(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size, 
 		return 0;
 	}
 
-	Lock(sock->lock);
-	{
-		sock->SendSize += (UINT64)size;
-		sock->SendNum++;
-	}
-	Unlock(sock->lock);
-
 	return ret;
 }
 UINT SendTo6Ex(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size, bool broadcast)
@@ -2392,13 +2371,6 @@ UINT SendTo6Ex(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size,
 		}
 		return 0;
 	}
-
-	Lock(sock->lock);
-	{
-		sock->SendSize += (UINT64)size;
-		sock->SendNum++;
-	}
-	Unlock(sock->lock);
 
 	return ret;
 }
@@ -3247,29 +3219,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 		}
 	}
 
-	x509 = SSL_get_certificate(sock->ssl);
-
-	if (x509 == NULL)
-	{
-		sock->LocalX = NULL;
-	}
-	else
-	{
-		// The certificate belongs to the SSL object: neither X509ToX (when it refuses it) nor the X frees it
-		X *local_x;
-		local_x = X509ToX(x509);
-		if (local_x == NULL)
-		{
-			sock->LocalX = NULL;
-		}
-		else
-		{
-			local_x->do_not_free = true;
-			sock->LocalX = CloneX(local_x);
-			FreeX(local_x);
-		}
-	}
-
 	SSL_set_mode(sock->ssl, SSL_MODE_AUTO_RETRY);
 
 	SSL_set_mode(sock->ssl, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
@@ -3390,13 +3339,6 @@ static UINT SecureRecv(SOCK *sock, void *data, UINT size)
 
 	if (ret > 0)
 	{
-		Lock(sock->lock);
-		{
-			sock->RecvSize += (UINT64)ret;
-			sock->RecvNum++;
-		}
-		Unlock(sock->lock);
-
 		return (UINT)ret;
 	}
 
@@ -3445,12 +3387,6 @@ static UINT SecureSend(SOCK *sock, void *data, UINT size)
 
 	if (ret > 0)
 	{
-		Lock(sock->lock);
-		{
-			sock->SendSize += (UINT64)ret;
-			sock->SendNum++;
-		}
-		Unlock(sock->lock);
 		return (UINT)ret;
 	}
 
@@ -3498,12 +3434,6 @@ UINT Recv(SOCK *sock, void *data, UINT size, bool secure)
 
 	if (ret > 0)
 	{
-		Lock(sock->lock);
-		{
-			sock->RecvSize += (UINT64)ret;
-			sock->RecvNum++;
-		}
-		Unlock(sock->lock);
 		return (UINT)ret;
 	}
 
@@ -3538,12 +3468,6 @@ UINT Send(SOCK *sock, void *data, UINT size, bool secure)
 	ret = send(s, data, size, 0);
 	if (ret > 0)
 	{
-		Lock(sock->lock);
-		{
-			sock->SendSize += (UINT64)ret;
-			sock->SendNum++;
-		}
-		Unlock(sock->lock);
 		return (UINT)ret;
 	}
 
@@ -3580,12 +3504,17 @@ void SetTimeout(SOCK *sock, UINT timeout)
 		timeout = TIMEOUT_INFINITE;
 	}
 
-	sock->TimeOut = timeout;
+	// Same value again, or "no limit" on a socket whose timeouts were never set (the OS default): nothing to change
+	if (timeout == sock->TimeOut || (timeout == TIMEOUT_INFINITE && sock->TimeOut == 0))
+	{
+		sock->TimeOut = timeout;
+		return;
+	}
 
+	sock->TimeOut = timeout;
 
 	setsockopt(sock->socket, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(UINT));
 	setsockopt(sock->socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(UINT));
-
 }
 
 void DisableGetHostNameWhenAcceptInit()
@@ -4915,8 +4844,6 @@ void QuerySocketInformation(SOCK *sock)
 		struct sockaddr_in6 sockaddr6;
 		struct in6_addr *addr6;
 		int size;
-		UINT dw;
-		UINT opt_value = 0;
 
 		if (sock->Type == SOCK_TCP)
 		{
@@ -4970,40 +4897,6 @@ void QuerySocketInformation(SOCK *sock)
 			sock->LocalPort = sock->RemotePort = MAKE_SPECIAL_PORT(sock->RawSocketIPProtocol);
 		}
 
-		if (sock->Type == SOCK_UDP)
-		{
-			if (true)
-			{
-				UINT max_value = 0;
-				int len = sizeof(UINT);
-
-				if (getsockopt(sock->socket, SOL_SOCKET, SO_MAX_MSG_SIZE, (char *)&max_value, &len) == 0)
-				{
-				}
-			}
-		}
-
-		if (sock->IPv6)
-		{
-#ifdef	IPV6_UNICAST_HOPS
-			opt_value = IPV6_UNICAST_HOPS;
-#endif
-		}
-		else
-		{
-#ifdef	IP_TTL
-			opt_value = IP_TTL;
-#endif
-		}
-
-		size = sizeof(UINT);
-		if (opt_value == 0 ||
-		        getsockopt(sock->socket, (sock->IPv6 ? IPPROTO_IPV6 : IPPROTO_IP), opt_value, (char *)&dw, &size) != 0)
-		{
-		}
-		else
-		{
-		}
 	}
 	Unlock(sock->lock);
 }
@@ -5017,10 +4910,6 @@ void ReleaseSock(SOCK *s)
 
 	if (Release(s->ref) == 0)
 	{
-		if (s->ListenMode == false && s->ServerMode)
-		{
-			Print("");
-		}
 		CleanupSock(s);
 	}
 }
@@ -5052,11 +4941,6 @@ void CleanupSock(SOCK *s)
 	{
 		FreeX(s->RemoteX);
 		s->RemoteX = NULL;
-	}
-	if (s->LocalX != NULL)
-	{
-		FreeX(s->LocalX);
-		s->LocalX = NULL;
 	}
 
 	if (s->CipherName != NULL)

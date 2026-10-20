@@ -118,12 +118,7 @@ struct SOCK
 	char *RemoteHostname;
 	UINT RemotePort;
 	UINT LocalPort;
-	UINT64 SendSize;
-	UINT64 RecvSize;
-	UINT64 SendNum;
-	UINT64 RecvNum;
 	X *RemoteX;
-	X *LocalX;
 	char *CipherName;
 	char *WaitToUseCipher;
 	bool IgnoreRecvErr;
