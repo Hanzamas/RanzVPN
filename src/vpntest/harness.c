@@ -4598,7 +4598,7 @@ static UINT HarnessBuildDnsQuery(UCHAR *buf, UINT buf_size, char *host)
 // log is off, so HTTP, TLS SNI and DNS are not parsed
 static PKT *HarnessParseLikeHub(HARNESS_PARSE_FRAME *f, bool no_log)
 {
-	return ParsePacketEx5(f->Data, f->Size, false, 0, true, no_log, true, false, no_log);
+	return ParsePacketEx5(f->Data, f->Size, false, 0, true, no_log, true, no_log);
 }
 
 // The parser reached the layer the frame was built for (no_log: and stopped before layer 7)
