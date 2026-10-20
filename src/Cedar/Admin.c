@@ -221,6 +221,41 @@ static bool SiIsEmptyPassword(void *hash_password);
 	if (a->Server->Cedar->Bridge)										\
 		return ERR_NOT_SUPPORTED;
 
+// Hub lookup for the admin handlers: the access check, the lookup and the hub
+// admin option check, in that order. Returns a referenced HUB, or NULL with *err set.
+static HUB *AdminGetHub(ADMIN *a, char *hubname, char *denied_option, UINT *err)
+{
+	HUB *h;
+
+	if (a->ServerAdmin == false && StrCmpi(a->HubName, hubname) != 0)
+	{
+		*err = ERR_NOT_ENOUGH_RIGHT;
+		return NULL;
+	}
+
+	if (IsEmptyStr(hubname))
+	{
+		*err = ERR_INVALID_PARAMETER;
+		return NULL;
+	}
+
+	h = GetHub(a->Server->Cedar, hubname);
+	if (h == NULL)
+	{
+		*err = ERR_HUB_NOT_FOUND;
+		return NULL;
+	}
+
+	if (denied_option != NULL && a->ServerAdmin == false && GetHubAdminOption(h, denied_option) != 0)
+	{
+		ReleaseHub(h);
+		*err = ERR_NOT_ENOUGH_RIGHT;
+		return NULL;
+	}
+
+	return h;
+}
+
 CAPSLIST *ScGetCapsEx(RPC *rpc)
 {
 	RPC_SERVER_INFO info;
@@ -629,10 +664,8 @@ static UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t)
 static UINT StSetHubMsg(ADMIN *a, RPC_MSG *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
-	UINT ret = ERR_NO_ERROR;
-	char hubname[MAX_HUBNAME_LEN + 1];
+	UINT err;
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
@@ -641,63 +674,43 @@ static UINT StSetHubMsg(ADMIN *a, RPC_MSG *t)
 		return ERR_MEMORY_NOT_ENOUGH;
 	}
 
-	StrCpy(hubname, sizeof(hubname), t->HubName);
-
-	h = GetHub(c, hubname);
-
+	h = AdminGetHub(a, t->HubName, "no_change_msg", &err);
 	if (h == NULL)
 	{
-		ret = ERR_HUB_NOT_FOUND;
-	}
-	else
-	{
-		if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_msg") != 0)
-		{
-			ret = ERR_NOT_ENOUGH_RIGHT;
-		}
-		else
-		{
-			SetHubMsg(h, t->Msg);
-
-			IncrementServerConfigRevision(s);
-		}
-
-		ReleaseHub(h);
+		return err;
 	}
 
-	return ret;
+	SetHubMsg(h, t->Msg);
+
+	IncrementServerConfigRevision(s);
+
+	ReleaseHub(h);
+
+	return ERR_NO_ERROR;
 }
 
 static UINT StGetHubMsg(ADMIN *a, RPC_MSG *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
-	UINT ret = ERR_NO_ERROR;
-	char hubname[MAX_HUBNAME_LEN + 1];
+	UINT err;
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
 
-	StrCpy(hubname, sizeof(hubname), t->HubName);
-
-	h = GetHub(c, hubname);
-
+	h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
-		ret = ERR_HUB_NOT_FOUND;
-	}
-	else
-	{
-		FreeRpcMsg(t);
-		Zero(t, sizeof(RPC_MSG));
-
-		t->Msg = GetHubMsg(h);
-
-		ReleaseHub(h);
+		return err;
 	}
 
-	return ret;
+	FreeRpcMsg(t);
+	Zero(t, sizeof(RPC_MSG));
+
+	t->Msg = GetHubMsg(h);
+
+	ReleaseHub(h);
+
+	return ERR_NO_ERROR;
 }
 
 static UINT StDebug(ADMIN *a, RPC_TEST *t)
@@ -1070,10 +1083,9 @@ static UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t)
 
 static UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
-	UINT ret = ERR_NO_ERROR;
+	HUBDB *db;
+	UINT err;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
@@ -1085,27 +1097,24 @@ static UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t)
 	Zero(t, sizeof(RPC_AC_LIST));
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 
-	h = GetHub(c, hubname);
-
+	h = AdminGetHub(a, hubname, NULL, &err);
 	if (h == NULL)
 	{
-		ret = ERR_HUB_NOT_FOUND;
+		return err;
 	}
-	else
+
+	db = h->HubDb;
+
+	LockList(db->AcList);
 	{
-		HUBDB *db = h->HubDb;
+		t->o = NewList(CmpAc);
 
-		LockList(db->AcList);
-		{
-			t->o = NewList(CmpAc);
-
-			SetAcList(t->o, db->AcList);
-		}
-		UnlockList(db->AcList);
-		ReleaseHub(h);
+		SetAcList(t->o, db->AcList);
 	}
+	UnlockList(db->AcList);
+	ReleaseHub(h);
 
-	return ret;
+	return ERR_NO_ERROR;
 }
 
 static UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t)
@@ -1113,8 +1122,8 @@ static UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t)
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	HUB *h;
-	UINT ret = ERR_NO_ERROR;
-	char hubname[MAX_HUBNAME_LEN + 1];
+	HUBDB *db;
+	UINT err;
 
 
 	if (c->Bridge)
@@ -1129,103 +1138,75 @@ static UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t)
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	StrCpy(hubname, sizeof(hubname), t->HubName);
 
-	h = GetHub(c, hubname);
-
+	h = AdminGetHub(a, t->HubName, "no_change_access_control_list", &err);
 	if (h == NULL)
 	{
-		ret = ERR_HUB_NOT_FOUND;
+		return err;
 	}
-	else
+
+	db = h->HubDb;
+
+	LockList(db->AcList);
 	{
-		if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_access_control_list") != 0)
+		SetAcList(db->AcList, t->o);
+
 		{
-			ret = ERR_NOT_ENOUGH_RIGHT;
+			ALog(a, h, "LA_SET_AC_LIST", LIST_NUM(t->o));
+
+			IncrementServerConfigRevision(s);
 		}
-		else
-		{
-			HUBDB *db = h->HubDb;
-
-			LockList(db->AcList);
-			{
-				SetAcList(db->AcList, t->o);
-
-				{
-					ALog(a, h, "LA_SET_AC_LIST", LIST_NUM(t->o));
-
-					IncrementServerConfigRevision(s);
-				}
-			}
-			UnlockList(db->AcList);
-		}
-		ReleaseHub(h);
 	}
+	UnlockList(db->AcList);
+	ReleaseHub(h);
 
-	return ret;
+	return ERR_NO_ERROR;
 }
 
 static UINT StSetCrl(ADMIN *a, RPC_CRL *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
 	UINT ret = ERR_NO_ERROR;
-	UINT key;
-	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	StrCpy(hubname, sizeof(hubname), t->HubName);
-	key = t->Key;
 
-	h = GetHub(c, hubname);
-
+	h = AdminGetHub(a, t->HubName, "no_change_crl_list", &ret);
 	if (h == NULL)
 	{
-		ret = ERR_HUB_NOT_FOUND;
+		return ret;
 	}
-	else
+
+	LockList(h->HubDb->CrlList);
 	{
-		if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_crl_list") != 0)
+		CRL *crl = ListKeyToPointer(h->HubDb->CrlList, t->Key);
+
+		if (crl == NULL)
 		{
-			ret = ERR_NOT_ENOUGH_RIGHT;
+			ret = ERR_OBJECT_NOT_FOUND;
 		}
 		else
 		{
-			LockList(h->HubDb->CrlList);
+			CRL *new_crl = CopyCrl(t->Crl);
+			if (ReplaceListPointer(h->HubDb->CrlList, crl, new_crl))
 			{
-				CRL *crl = ListKeyToPointer(h->HubDb->CrlList, t->Key);
+				ALog(a, h, "LA_SET_CRL");
+				FreeCrl(crl);
 
-				if (crl == NULL)
-				{
-					ret = ERR_OBJECT_NOT_FOUND;
-				}
-				else
-				{
-					CRL *new_crl = CopyCrl(t->Crl);
-					if (ReplaceListPointer(h->HubDb->CrlList, crl, new_crl))
-					{
-						ALog(a, h, "LA_SET_CRL");
-						FreeCrl(crl);
-
-						IncrementServerConfigRevision(s);
-					}
-				}
+				IncrementServerConfigRevision(s);
 			}
-			UnlockList(h->HubDb->CrlList);
 		}
-
-		ReleaseHub(h);
 	}
+	UnlockList(h->HubDb->CrlList);
+
+	ReleaseHub(h);
 
 	return ret;
 }
 
 static UINT StGetCrl(ADMIN *a, RPC_CRL *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
 	UINT ret = ERR_NO_ERROR;
 	UINT key;
@@ -1241,31 +1222,28 @@ static UINT StGetCrl(ADMIN *a, RPC_CRL *t)
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 	t->Key = key;
 
-	h = GetHub(c, hubname);
-
+	h = AdminGetHub(a, hubname, NULL, &ret);
 	if (h == NULL)
 	{
-		ret = ERR_HUB_NOT_FOUND;
+		return ret;
 	}
-	else
+
+	LockList(h->HubDb->CrlList);
 	{
-		LockList(h->HubDb->CrlList);
+		CRL *crl = ListKeyToPointer(h->HubDb->CrlList, t->Key);
+
+		if (crl == NULL)
 		{
-			CRL *crl = ListKeyToPointer(h->HubDb->CrlList, t->Key);
-
-			if (crl == NULL)
-			{
-				ret = ERR_OBJECT_NOT_FOUND;
-			}
-			else
-			{
-				t->Crl = CopyCrl(crl);
-			}
+			ret = ERR_OBJECT_NOT_FOUND;
 		}
-		UnlockList(h->HubDb->CrlList);
-
-		ReleaseHub(h);
+		else
+		{
+			t->Crl = CopyCrl(crl);
+		}
 	}
+	UnlockList(h->HubDb->CrlList);
+
+	ReleaseHub(h);
 
 	return ret;
 }
@@ -1273,51 +1251,38 @@ static UINT StGetCrl(ADMIN *a, RPC_CRL *t)
 static UINT StDelCrl(ADMIN *a, RPC_CRL *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
 	UINT ret = ERR_NO_ERROR;
-	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	StrCpy(hubname, sizeof(hubname), t->HubName);
 
-	h = GetHub(c, hubname);
-
+	h = AdminGetHub(a, t->HubName, "no_change_crl_list", &ret);
 	if (h == NULL)
 	{
-		ret = ERR_HUB_NOT_FOUND;
+		return ret;
 	}
-	else
+
+	LockList(h->HubDb->CrlList);
 	{
-		if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_crl_list") != 0)
+		CRL *crl = ListKeyToPointer(h->HubDb->CrlList, t->Key);
+
+		if (crl == NULL)
 		{
-			ret = ERR_NOT_ENOUGH_RIGHT;
+			ret = ERR_OBJECT_NOT_FOUND;
 		}
 		else
 		{
-			LockList(h->HubDb->CrlList);
-			{
-				CRL *crl = ListKeyToPointer(h->HubDb->CrlList, t->Key);
+			ALog(a, h, "LA_DEL_CRL");
+			FreeCrl(crl);
+			Delete(h->HubDb->CrlList, crl);
 
-				if (crl == NULL)
-				{
-					ret = ERR_OBJECT_NOT_FOUND;
-				}
-				else
-				{
-					ALog(a, h, "LA_DEL_CRL");
-					FreeCrl(crl);
-					Delete(h->HubDb->CrlList, crl);
-
-					IncrementServerConfigRevision(s);
-				}
-			}
-			UnlockList(h->HubDb->CrlList);
+			IncrementServerConfigRevision(s);
 		}
-
-		ReleaseHub(h);
 	}
+	UnlockList(h->HubDb->CrlList);
+
+	ReleaseHub(h);
 
 	return ret;
 }
@@ -1327,8 +1292,7 @@ static UINT StAddCrl(ADMIN *a, RPC_CRL *t)
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	HUB *h;
-	UINT ret = ERR_NO_ERROR;
-	char hubname[MAX_HUBNAME_LEN + 1];
+	UINT err;
 
 	if (c->Bridge)
 	{
@@ -1337,48 +1301,35 @@ static UINT StAddCrl(ADMIN *a, RPC_CRL *t)
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	StrCpy(hubname, sizeof(hubname), t->HubName);
 
-	h = GetHub(c, hubname);
-
+	h = AdminGetHub(a, t->HubName, "no_change_crl_list", &err);
 	if (h == NULL)
 	{
-		ret = ERR_HUB_NOT_FOUND;
+		return err;
 	}
-	else
+
+	LockList(h->HubDb->CrlList);
 	{
-		if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_crl_list") != 0)
+		if (LIST_NUM(h->HubDb->CrlList) < MAX_HUB_CRLS)
 		{
-			ret = ERR_NOT_ENOUGH_RIGHT;
+			CRL *crl = CopyCrl(t->Crl);
+
+			Insert(h->HubDb->CrlList, crl);
+
+			ALog(a, h, "LA_ADD_CRL");
+
+			IncrementServerConfigRevision(s);
 		}
-		else
-		{
-			LockList(h->HubDb->CrlList);
-			{
-				if (LIST_NUM(h->HubDb->CrlList) < MAX_HUB_CRLS)
-				{
-					CRL *crl = CopyCrl(t->Crl);
-
-					Insert(h->HubDb->CrlList, crl);
-
-					ALog(a, h, "LA_ADD_CRL");
-
-					IncrementServerConfigRevision(s);
-				}
-			}
-			UnlockList(h->HubDb->CrlList);
-		}
-
-		ReleaseHub(h);
 	}
+	UnlockList(h->HubDb->CrlList);
 
-	return ret;
+	ReleaseHub(h);
+
+	return ERR_NO_ERROR;
 }
 
 static UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
@@ -1391,36 +1342,33 @@ static UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t)
 
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 
-	h = GetHub(c, hubname);
-
+	h = AdminGetHub(a, hubname, NULL, &ret);
 	if (h == NULL)
 	{
-		ret = ERR_HUB_NOT_FOUND;
+		return ret;
 	}
-	else
+
+	LockList(h->HubDb->CrlList);
 	{
-		LockList(h->HubDb->CrlList);
+		UINT i;
+
+		t->NumItem = LIST_NUM(h->HubDb->CrlList);
+		t->Items = ZeroMalloc(sizeof(RPC_ENUM_CRL_ITEM) * t->NumItem);
+
+		for (i = 0;i < LIST_NUM(h->HubDb->CrlList);i++)
 		{
-			UINT i;
+			CRL *crl = LIST_DATA(h->HubDb->CrlList, i);
+			wchar_t *info = GenerateCrlStr(crl);
 
-			t->NumItem = LIST_NUM(h->HubDb->CrlList);
-			t->Items = ZeroMalloc(sizeof(RPC_ENUM_CRL_ITEM) * t->NumItem);
+			UniStrCpy(t->Items[i].CrlInfo, sizeof(t->Items[i].CrlInfo), info);
+			Free(info);
 
-			for (i = 0;i < LIST_NUM(h->HubDb->CrlList);i++)
-			{
-				CRL *crl = LIST_DATA(h->HubDb->CrlList, i);
-				wchar_t *info = GenerateCrlStr(crl);
-
-				UniStrCpy(t->Items[i].CrlInfo, sizeof(t->Items[i].CrlInfo), info);
-				Free(info);
-
-				t->Items[i].Key = POINTER_TO_KEY(crl);
-			}
+			t->Items[i].Key = POINTER_TO_KEY(crl);
 		}
-		UnlockList(h->HubDb->CrlList);
-
-		ReleaseHub(h);
 	}
+	UnlockList(h->HubDb->CrlList);
+
+	ReleaseHub(h);
 
 	return ret;
 }
@@ -1428,40 +1376,18 @@ static UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t)
 static UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
-
-	bool not_server_admin = false;
+	UINT err;
 
 	if (t->NumItem > MAX_HUB_ADMIN_OPTIONS)
 	{
 		return ERR_TOO_MANT_ITEMS;
 	}
 
-
-	CHECK_RIGHT;
-
-	if (a->ServerAdmin == false)
-	{
-		not_server_admin = true;
-	}
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "deny_hub_admin_change_ext_option", &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (GetHubAdminOption(h, "deny_hub_admin_change_ext_option") && not_server_admin)
-	{
-		ReleaseHub(h);
-
-		return ERR_NOT_ENOUGH_RIGHT;
+		return err;
 	}
 
 	Lock(h->lock);
@@ -1481,21 +1407,13 @@ static UINT StSetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 
 static UINT StGetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return err;
 	}
 
 	FreeRpcAdminOption(t);
@@ -1518,11 +1436,8 @@ static UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
 	UINT i;
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
-
-	bool not_server_admin = false;
-
+	UINT err;
 
 	if (t->NumItem > MAX_HUB_ADMIN_OPTIONS)
 	{
@@ -1530,26 +1445,15 @@ static UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	}
 
 	NO_SUPPORT_FOR_BRIDGE;
-	CHECK_RIGHT;
 
-	if (a->ServerAdmin == false)
-	{
-		not_server_admin = true;
-	}
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return err;
 	}
 
 	if (GetHubAdminOption(h, "allow_hub_admin_change_option") == false
-		&& not_server_admin)
+		&& a->ServerAdmin == false)
 	{
 		ReleaseHub(h);
 
@@ -1587,22 +1491,16 @@ static UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 static UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
 	UINT i;
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 
 	CHECK_RIGHT;
 
 	NO_SUPPORT_FOR_BRIDGE;
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return err;
 	}
 
 	FreeRpcAdminOption(t);
@@ -1925,28 +1823,14 @@ static UINT StGetSysLog(ADMIN *a, SYSLOG_SETTING *t)
 
 static UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
+	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "no_delete_iptable", &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_delete_iptable") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
+		return err;
 	}
 
 	LockHashList(h->MacHashTable);
@@ -1972,7 +1856,6 @@ static UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t)
 
 static UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t)
 {
-	CEDAR *c;
 	UINT i;
 	HUB *h = NULL;
 	if (s == NULL || hubname == NULL || t == NULL)
@@ -1980,13 +1863,7 @@ static UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t)
 		return ERR_INTERNAL_ERROR;
 	}
 
-	c = s->Cedar;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, hubname);
-	}
-	UnlockHubList(c);
+	h = GetHub(s->Cedar, hubname);
 
 	if (h == NULL)
 	{
@@ -2039,28 +1916,14 @@ static UINT StEnumIpTable(ADMIN *a, RPC_ENUM_IP_TABLE *t)
 
 static UINT StDeleteMacTable(ADMIN *a, RPC_DELETE_TABLE *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
+	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "no_delete_mactable", &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_delete_mactable") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
+		return err;
 	}
 
 	LockHashList(h->MacHashTable);
@@ -2085,7 +1948,6 @@ static UINT StDeleteMacTable(ADMIN *a, RPC_DELETE_TABLE *t)
 
 static UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t)
 {
-	CEDAR *c;
 	UINT i;
 	HUB *h = NULL;
 	if (s == NULL || hubname == NULL || t == NULL)
@@ -2093,13 +1955,7 @@ static UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t)
 		return ERR_INTERNAL_ERROR;
 	}
 
-	c = s->Cedar;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, hubname);
-	}
-	UnlockHubList(c);
+	h = GetHub(s->Cedar, hubname);
 
 	if (h == NULL)
 	{
@@ -2151,11 +2007,9 @@ static UINT StEnumMacTable(ADMIN *a, RPC_ENUM_MAC_TABLE *t)
 
 static UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
+	UINT err;
 	UINT ret = ERR_NO_ERROR;
-	char hubname[MAX_HUBNAME_LEN + 1];
 	char name[MAX_SESSION_NAME_LEN + 1];
 	SESSION *sess;
 
@@ -2164,26 +2018,12 @@ static UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	StrCpy(hubname, sizeof(hubname), t->HubName);
 	StrCpy(name, sizeof(name), t->Name);
 
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "no_disconnect_session", &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_disconnect_session") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
+		return err;
 	}
 
 	sess = GetSessionByName(h, name);
@@ -2221,9 +2061,8 @@ static UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t)
 
 static UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
+	UINT err;
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 	char name[MAX_SESSION_NAME_LEN + 1];
@@ -2237,23 +2076,10 @@ static UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "no_query_session", &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_query_session") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
+		return err;
 	}
 
 	FreeRpcSessionStatus(t);
@@ -2326,27 +2152,14 @@ void SiEnumSessionMain(SERVER *s, RPC_ENUM_SESSION *t)
 static UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
+	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "no_enum_session", &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_enum_session") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
+		return err;
 	}
 
 	SiEnumSessionMain(s, t);
@@ -2358,9 +2171,8 @@ static UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t)
 
 static UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
+	UINT err;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
@@ -2369,15 +2181,10 @@ static UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 
 	NO_SUPPORT_FOR_BRIDGE;
 
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return err;
 	}
 
 	AcLock(h);
@@ -2443,8 +2250,8 @@ static UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 static UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
+	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
 	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false)
@@ -2455,21 +2262,10 @@ static UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t)
 	CHECK_RIGHT;
 
 	NO_SUPPORT_FOR_BRIDGE;
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "no_change_groups", &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_groups") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
+		return err;
 	}
 
 	AcLock(h);
@@ -2495,8 +2291,6 @@ static UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t)
 
 static UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
@@ -2510,15 +2304,10 @@ static UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t)
 	NO_SUPPORT_FOR_BRIDGE;
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, NULL, &ret);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return ret;
 	}
 
 	AcLock(h);
@@ -2560,8 +2349,8 @@ static UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t)
 static UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
+	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
 	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false)
@@ -2571,21 +2360,10 @@ static UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t)
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "no_change_groups", &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_groups") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
+		return err;
 	}
 
 	AcLock(h);
@@ -2625,8 +2403,8 @@ static UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t)
 static UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
+	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
 	if (IsEmptyStr(t->Name) || IsSafeStr(t->Name) == false)
@@ -2637,21 +2415,10 @@ static UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t)
 	CHECK_RIGHT;
 
 	NO_SUPPORT_FOR_BRIDGE;
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "no_change_groups", &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_groups") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
+		return err;
 	}
 
 	AcLock(h);
@@ -2694,23 +2461,17 @@ static UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t)
 
 static UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
+	UINT err;
 	char hubname[MAX_HUBNAME_LEN + 1];
 	UINT i, num;
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return err;
 	}
 
 	FreeRpcEnumUser(t);
@@ -2767,8 +2528,8 @@ static UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
 static UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
+	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
 
@@ -2779,21 +2540,10 @@ static UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t)
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "no_change_users", &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_users") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
+		return err;
 	}
 
 	AcLock(h);
@@ -2819,8 +2569,6 @@ static UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t)
 
 static UINT StGetUser(ADMIN *a, RPC_SET_USER *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
 	UINT ret = ERR_NO_ERROR;
 	USER *u = NULL;
@@ -2841,15 +2589,10 @@ static UINT StGetUser(ADMIN *a, RPC_SET_USER *t)
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 	StrCpy(t->Name, sizeof(t->Name), name);
 
-	LockHubList(c);
-	{
-		h = GetHub(c, hubname);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, hubname, NULL, &ret);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return ret;
 	}
 
 	AcLock(h);
@@ -2894,7 +2637,6 @@ static UINT StGetUser(ADMIN *a, RPC_SET_USER *t)
 static UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
 	UINT ret = ERR_NO_ERROR;
 	USER *u = NULL;
@@ -2950,21 +2692,10 @@ static UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
 		}
 	}
 
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "no_change_users", &ret);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_users") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
+		return ret;
 	}
 
 	AcLock(h);
@@ -3032,7 +2763,6 @@ static UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
 static UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
 	UINT ret = ERR_NO_ERROR;
 	USER *u;
@@ -3093,21 +2823,10 @@ static UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
 		}
 	}
 
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "no_change_users", &ret);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_users") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
+		return ret;
 	}
 
 	u = NewUser(t->Name, t->Realname, t->Note, t->AuthType, CopyAuthData(t->AuthData, t->AuthType));
@@ -3174,23 +2893,17 @@ static UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
 
 static UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 	UINT i;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return err;
 	}
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
@@ -3220,8 +2933,8 @@ static UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 static UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 	UINT i;
 	bool exists;
 
@@ -3229,21 +2942,10 @@ static UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t)
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
 
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "no_change_access_list", &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_access_list") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
+		return err;
 	}
 
 	exists = false;
@@ -3285,8 +2987,8 @@ static UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t)
 static UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 	UINT i;
 	bool no_jitter = false;
 	bool no_include = false;
@@ -3299,25 +3001,14 @@ static UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 		return ERR_TOO_MANY_ACCESS_LIST;
 	}
 
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "no_change_access_list", &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return err;
 	}
 
 	no_jitter = GetHubAdminOption(h, "no_delay_jitter_packet_loss");
 	no_include = GetHubAdminOption(h, "no_access_list_include_file");
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_access_list") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
-	}
 
 	if (a->ServerAdmin == false && GetHubAdminOption(h, "max_accesslists") != 0 &&
 		t->NumAccess > GetHubAdminOption(h, "max_accesslists"))
@@ -3384,34 +3075,22 @@ static UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 static UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 	bool no_jitter = false;
 	bool no_include = false;
 
 
 	NO_SUPPORT_FOR_BRIDGE;
-	CHECK_RIGHT;
 
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "no_change_access_list", &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return err;
 	}
 
 	no_jitter = GetHubAdminOption(h, "no_delay_jitter_packet_loss");
 	no_include = GetHubAdminOption(h, "no_access_list_include_file");
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_access_list") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
-	}
 
 	if ((LIST_NUM(h->AccessList) >= GetServerCapsInt(a->Server, "i_max_access_lists") ||
 		(GetHubAdminOption(h, "max_accesslists") != 0) && (LIST_NUM(h->AccessList) >= GetHubAdminOption(h, "max_accesslists"))))
@@ -3455,7 +3134,6 @@ static UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
 {
 	UINT i;
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
 	UINT ret = ERR_NO_ERROR;
 	LINK *k;
@@ -3473,17 +3151,10 @@ static UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
 		return ERR_NO_ERROR;
 	}
 
-	h = GetHub(c, t->HubName);
-
+	h = AdminGetHub(a, t->HubName, "no_cascade", &ret);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_cascade") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
+		return ret;
 	}
 
 	k = NULL;
@@ -3559,10 +3230,9 @@ static UINT StDeleteLink(ADMIN *a, RPC_LINK *t)
 {
 	UINT i;
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 	UINT ret = ERR_NO_ERROR;
-	char hubname[MAX_HUBNAME_LEN + 1];
 	wchar_t accountname[MAX_ACCOUNT_NAME_LEN + 1];
 	LINK *k;
 
@@ -3571,26 +3241,12 @@ static UINT StDeleteLink(ADMIN *a, RPC_LINK *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "no_cascade", &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return err;
 	}
 
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_cascade") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
-	}
-
-	StrCpy(hubname, sizeof(hubname), t->HubName);
 	UniStrCpy(accountname, sizeof(accountname), t->AccountName);
 	k = NULL;
 
@@ -3644,10 +3300,9 @@ static UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t)
 {
 	UINT i;
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 	UINT ret = ERR_NO_ERROR;
-	char hubname[MAX_HUBNAME_LEN + 1];
 	wchar_t accountname[MAX_ACCOUNT_NAME_LEN + 1];
 	LINK *k;
 
@@ -3657,26 +3312,12 @@ static UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "no_cascade", &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return err;
 	}
 
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_cascade") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
-	}
-
-	StrCpy(hubname, sizeof(hubname), t->HubName);
 	UniStrCpy(accountname, sizeof(accountname), t->AccountName);
 	k = NULL;
 
@@ -3726,10 +3367,9 @@ static UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t)
 {
 	UINT i;
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 	UINT ret = ERR_NO_ERROR;
-	char hubname[MAX_HUBNAME_LEN + 1];
 	wchar_t accountname[MAX_ACCOUNT_NAME_LEN + 1];
 	LINK *k;
 
@@ -3739,26 +3379,12 @@ static UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "no_cascade", &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return err;
 	}
 
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_cascade") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
-	}
-
-	StrCpy(hubname, sizeof(hubname), t->HubName);
 	UniStrCpy(accountname, sizeof(accountname), t->AccountName);
 	k = NULL;
 
@@ -3807,9 +3433,8 @@ static UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t)
 static UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t)
 {
 	UINT i;
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 	wchar_t accountname[MAX_ACCOUNT_NAME_LEN + 1];
@@ -3821,17 +3446,10 @@ static UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return err;
 	}
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
@@ -3901,23 +3519,15 @@ static UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t)
 
 static UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 	char hubname[MAX_HUBNAME_LEN + 1];
 	UINT i;
 
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return err;
 	}
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
@@ -3964,25 +3574,17 @@ static UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t)
 
 static UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 	UINT ret = ERR_NO_ERROR;
 	UINT i;
 	char hubname[MAX_SIZE];
 	LINK *k;
 
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return err;
 	}
 
 	k = NULL;
@@ -4044,8 +3646,8 @@ static UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t)
 static UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 	UINT ret = ERR_NO_ERROR;
 	UINT i;
 	LINK *k;
@@ -4056,23 +3658,10 @@ static UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "no_cascade", &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_cascade") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
+		return err;
 	}
 
 	k = NULL;
@@ -4155,28 +3744,15 @@ static UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t)
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 	UINT ret = ERR_NO_ERROR;
 	UINT i;
 	LINK *k;
 
-	CHECK_RIGHT;
-
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "no_cascade", &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_cascade") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
+		return err;
 	}
 
 	k = NULL;
@@ -4240,28 +3816,15 @@ static UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t)
 static UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
 	NO_SUPPORT_FOR_BRIDGE;
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "no_change_cert_list", &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_cert_list") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
+		return err;
 	}
 
 	LockList(h->HubDb->RootCertList);
@@ -4290,9 +3853,8 @@ static UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t)
 
 static UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 	UINT key;
@@ -4307,17 +3869,10 @@ static UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t)
 	t->Key = key;
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return err;
 	}
 
 	LockList(h->HubDb->RootCertList);
@@ -4342,9 +3897,8 @@ static UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t)
 
 static UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 	char hubname[MAX_HUBNAME_LEN + 1];
 	UINT i;
 
@@ -4356,17 +3910,10 @@ static UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
 	Zero(t, sizeof(RPC_HUB_ENUM_CA));
 
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, hubname);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return err;
 	}
 
 	LockList(h->HubDb->RootCertList);
@@ -4397,6 +3944,7 @@ static UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t)
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 
 	if (c->Bridge)
 	{
@@ -4408,23 +3956,10 @@ static UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "no_change_cert_list", &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_cert_list") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
+		return err;
 	}
 
 	// The hub ignores a certificate it already trusts and one over MAX_HUB_CERTS; the call still succeeds
@@ -4442,21 +3977,13 @@ static UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t)
 
 static UINT StGetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return err;
 	}
 
 	GetHubLogSetting(h, &t->LogSetting);
@@ -4469,27 +3996,13 @@ static UINT StGetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 static UINT StSetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 
-	CHECK_RIGHT;
-
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, "no_change_log_config", &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
-	}
-
-	if (a->ServerAdmin == false && GetHubAdminOption(h, "no_change_log_config") != 0)
-	{
-		ReleaseHub(h);
-		return ERR_NOT_ENOUGH_RIGHT;
+		return err;
 	}
 
 	ALog(a, h, "LA_SET_HUB_LOG");
@@ -4506,21 +4019,13 @@ static UINT StSetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 
 static UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return err;
 	}
 
 	Zero(t, sizeof(RPC_HUB_STATUS));
@@ -4561,23 +4066,16 @@ static UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
 static UINT StSetHubOnline(ADMIN *a, RPC_SET_HUB_ONLINE *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 
 
 	NO_SUPPORT_FOR_BRIDGE;
 
-	CHECK_RIGHT;
-
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return err;
 	}
 
 	if (a->ServerAdmin == false && t->Online && GetHubAdminOption(h, "no_online") != 0)
@@ -4778,11 +4276,7 @@ static UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t)
 
 	SERVER_ADMIN_ONLY;
 
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
+	h = GetHub(c, t->HubName);
 
 	if (h == NULL)
 	{
@@ -4878,8 +4372,6 @@ static UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 
 static UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	UINT ret = ERR_NO_ERROR;
 	HUB *h;
 
@@ -4889,19 +4381,14 @@ static UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t)
 	}
 
 	NO_SUPPORT_FOR_BRIDGE;
-	CHECK_RIGHT;
 
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
+	h = AdminGetHub(a, t->HubName, NULL, &ret);
 
 	Zero(t, sizeof(RPC_CREATE_HUB));
 
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return ret;
 	}
 
 	Lock(h->lock);
@@ -4921,8 +4408,8 @@ static UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t)
 static UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 {
 	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
 	HUB *h;
+	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
 	if (IsEmptyStr(t->HubName) || IsSafeStr(t->HubName) == false)
@@ -4933,15 +4420,10 @@ static UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 	CHECK_RIGHT;
 	NO_SUPPORT_FOR_BRIDGE;
 
-	LockHubList(c);
-	{
-		h = GetHub(c, t->HubName);
-	}
-	UnlockHubList(c);
-
+	h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
-		return ERR_HUB_NOT_FOUND;
+		return err;
 	}
 
 	// For JSON-RPC
@@ -6220,9 +5702,7 @@ static void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t)
 		return;
 	}
 
-	LockHubList(s->Cedar);
 	h = GetHub(s->Cedar, hubname);
-	UnlockHubList(s->Cedar);
 
 	if (h == NULL)
 	{
@@ -8484,13 +7964,7 @@ static UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, ch
 	}
 	else
 	{
-		HUB *h;
-
-		LockHubList(c);
-		{
-			h = GetHub(c, hubname);
-		}
-		UnlockHubList(c);
+		HUB *h = GetHub(c, hubname);
 
 		if (h == NULL)
 		{
