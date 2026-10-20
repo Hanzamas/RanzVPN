@@ -74,6 +74,76 @@ void FreeCfgRw(CFG_RW *rw)
 	Free(rw);
 }
 
+// True when the file exists and is not empty, also when another process holds it locked
+static bool CfgFileHasDataW(wchar_t *name)
+{
+	wchar_t tmp[MAX_SIZE];
+	WIN32_FILE_ATTRIBUTE_DATA data;
+
+	InnerFilePathW(tmp, sizeof(tmp), name);
+
+	if (GetFileAttributesExW(tmp, GetFileExInfoStandard, &data) == FALSE)
+	{
+		return false;
+	}
+
+	return data.nFileSizeHigh != 0 || data.nFileSizeLow != 0;
+}
+
+// Rename a pending unreadable file to <name>.bad, replacing an older one. False while the file stays in place
+static bool CfgRwRenameBadFile(CFG_RW *rw)
+{
+	wchar_t bad[MAX_SIZE];
+	wchar_t src[MAX_SIZE];
+	wchar_t dst[MAX_SIZE];
+
+	if (rw->BadFilePending == false)
+	{
+		return true;
+	}
+
+	if (CfgFileHasDataW(rw->FileNameW))
+	{
+		UniFormat(bad, sizeof(bad), L"%s.bad", rw->FileNameW);
+		InnerFilePathW(src, sizeof(src), rw->FileNameW);
+		InnerFilePathW(dst, sizeof(dst), bad);
+
+		if (MoveFileExW(src, dst, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == FALSE)
+		{
+			return false;
+		}
+
+		rw->BadFileRenamed = true;
+	}
+
+	rw->BadFilePending = false;
+
+	return true;
+}
+
+// The file of rw exists but holds no usable configuration: rename it to <name>.bad before anything writes the
+// file. When the rename fails, every save tries it again and writes nothing until it succeeds
+void CfgRwSetAsideBadFile(CFG_RW *rw)
+{
+	if (rw == NULL)
+	{
+		return;
+	}
+
+	Lock(rw->lock);
+	{
+		if (rw->Io != NULL)
+		{
+			FileClose(rw->Io);
+			rw->Io = NULL;
+		}
+
+		rw->BadFilePending = true;
+		CfgRwRenameBadFile(rw);
+	}
+	Unlock(rw->lock);
+}
+
 UINT SaveCfgRwEx(CFG_RW *rw, FOLDER *f, UINT revision_number)
 {
 	UINT ret = 0;
@@ -90,7 +160,14 @@ UINT SaveCfgRwEx(CFG_RW *rw, FOLDER *f, UINT revision_number)
 			rw->Io = NULL;
 		}
 
-		if (CfgSaveExW2(rw, f, rw->FileNameW, &ret))
+		rw->SaveFailed = false;
+
+		if (CfgRwRenameBadFile(rw) == false)
+		{
+			// The unreadable file is still in place: write nothing over it
+			rw->SaveFailed = true;
+		}
+		else if (CfgSaveExW2(rw, f, rw->FileNameW, &ret))
 		{
 			if (rw->DontBackup == false)
 			{
@@ -126,54 +203,42 @@ CFG_RW *NewCfgRwEx2W(FOLDER **root, wchar_t *cfg_name, bool dont_backup, wchar_t
 {
 	CFG_RW *rw;
 	FOLDER *f;
-	bool loaded_from_template = false;
 	if (cfg_name == NULL || root == NULL)
 	{
 		return NULL;
 	}
 
 	f = CfgReadW(cfg_name);
-	if (f == NULL)
+
+	rw = ZeroMalloc(sizeof(CFG_RW));
+	rw->lock = NewLock();
+	rw->FileNameW = CopyUniStr(cfg_name);
+	rw->FileName = CopyUniToStr(cfg_name);
+	rw->DontBackup = dont_backup;
+
+	if (f != NULL)
 	{
-		if (UniIsEmptyStr(template_name) == false)
-		{
-			f = CfgReadW(template_name);
-			if (f != NULL)
-			{
-				loaded_from_template = true;
-
-				goto LABEL_CONTINUE;
-			}
-		}
-
-		rw = ZeroMalloc(sizeof(CFG_RW));
-		rw->lock = NewLock();
-		rw->FileNameW = CopyUniStr(cfg_name);
-		rw->FileName = CopyUniToStr(cfg_name);
-		rw->Io = FileCreateW(cfg_name);
-		*root = NULL;
-		rw->DontBackup = dont_backup;
+		rw->Io = FileOpenW(cfg_name, false);
+		*root = f;
 
 		return rw;
 	}
 
-LABEL_CONTINUE:
-	rw = ZeroMalloc(sizeof(CFG_RW));
-	rw->FileNameW = CopyUniStr(cfg_name);
-	rw->FileName = CopyUniToStr(cfg_name);
-	if (loaded_from_template == false)
+	// A file with data that could not be read is renamed to <name>.bad before anything creates the file
+	rw->BadFilePending = true;
+	CfgRwRenameBadFile(rw);
+
+	if (UniIsEmptyStr(template_name) == false)
 	{
-		rw->Io = FileOpenW(cfg_name, false);
+		f = CfgReadW(template_name);
 	}
-	else
+
+	if (rw->BadFilePending == false)
 	{
 		rw->Io = FileCreateW(cfg_name);
 	}
-	rw->lock = NewLock();
 
 	*root = f;
-
-	rw->DontBackup = dont_backup;
 
 	return rw;
 }
@@ -356,9 +421,15 @@ bool CfgSaveExW3(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size, bool 
 			UniFormat(log_name, sizeof(log_name), L"%s.log", name);
 			FileDeleteW(log_name);
 		}
-		else if (rw != NULL)
+		else
 		{
-			Zero(rw->LashHash, sizeof(rw->LashHash));
+			ret = false;
+
+			if (rw != NULL)
+			{
+				Zero(rw->LashHash, sizeof(rw->LashHash));
+				rw->SaveFailed = true;
+			}
 		}
 	}
 
