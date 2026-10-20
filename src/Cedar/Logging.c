@@ -192,7 +192,7 @@ SLOG *NewSysLog(char *hostname, UINT port, IP *ip)
 	SLOG *g = ZeroMalloc(sizeof(SLOG));
 
 	g->lock = NewLock();
-	// The socket is IPv4: NewUDP4 refuses an address that is not IPv4, and an unset ListenIP is the all-zero
+	// The socket is IPv4: NewUDPEx2 refuses an address that is not IPv4, and an unset ListenIP is the all-zero
 	// IPv6 address, so only an IPv4 address is bound; otherwise the socket binds to any address
 	g->Udp = NewUDPEx2(0, false, (ip != NULL && IsIP4(ip)) ? ip : NULL);
 

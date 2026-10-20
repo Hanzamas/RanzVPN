@@ -86,10 +86,7 @@ static void TCPAcceptedThread(THREAD *t, void *param)
 	AcceptInit(s);
 	StrCpy(c->ClientHostname, sizeof(c->ClientHostname), s->RemoteHostname);
 	IPToStr(tmp, sizeof(tmp), &s->RemoteIP);
-	if (IS_SPECIAL_PORT(s->RemotePort) == false)
-	{
-		SLog(r->Cedar, "LS_LISTENER_ACCEPT", r->Port, tmp, s->RemoteHostname, s->RemotePort);
-	}
+	SLog(r->Cedar, "LS_LISTENER_ACCEPT", r->Port, tmp, s->RemoteHostname, s->RemotePort);
 
 	ConnectionAccept(c);
 	flag1 = c->flag1;
@@ -101,10 +98,7 @@ static void TCPAcceptedThread(THREAD *t, void *param)
 	{
 		IPToStr(tmp, sizeof(tmp), &s->RemoteIP);
 
-		if (IS_SPECIAL_PORT(s->RemotePort) == false)
-		{
-			SLog(r->Cedar, "LS_LISTENER_DISCONNECT", tmp, s->RemotePort);
-		}
+		SLog(r->Cedar, "LS_LISTENER_DISCONNECT", tmp, s->RemotePort);
 		Disconnect(s);
 	}
 	ReleaseSock(s);
