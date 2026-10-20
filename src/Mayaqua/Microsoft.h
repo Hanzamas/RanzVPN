@@ -24,6 +24,8 @@
 #define	MS_EVENT_SERVICE_STARTED	1
 #define	MS_EVENT_SERVICE_STOPPED	2
 #define	MS_EVENT_SERVICE_FAILED		3
+// MayaFatalExit() (Mayaqua.c), under the source "Ranz VPN"
+#define	MS_EVENT_FATAL_ERROR		4
 
 #define	SVC_RUN_COMMANDLINE			L"\"%s\" /service"
 
@@ -54,62 +56,19 @@
 typedef struct MS
 {
 	HINSTANCE hInst;
-	HINSTANCE hKernel32;
 	bool IsAdmin;
 	HANDLE hCurrentProcess;
 	UINT CurrentProcessId;
-	bool MiniDumpEnabled;
-	char *ExeFileName;
 	char *ExeFileDir;
-	char *WindowsDir;
 	char *System32Dir;
 	char *TempDir;
-	char *WinTempDir;
-	char *WindowsDrive;
-	char *ProgramFilesDir;
-	char *ProgramFilesDirX86;
-	char *ProgramFilesDirX64;
-	char *CommonStartMenuDir;
-	char *CommonProgramsDir;
-	char *CommonStartupDir;
-	char *CommonAppDataDir;
-	char *CommonDesktopDir;
-	char *PersonalStartMenuDir;
-	char *PersonalProgramsDir;
-	char *PersonalStartupDir;
-	char *PersonalAppDataDir;
-	char *PersonalDesktopDir;
-	char *MyDocumentsDir;
-	char *LocalAppDataDir;
 	char *MyTempDir;
-	char *UserName;
-	char *UserNameEx;
 	wchar_t *ExeFileNameW;
-	wchar_t *ExeFileDirW;
 	wchar_t *WindowsDirW;
 	wchar_t *System32DirW;
 	wchar_t *TempDirW;
-	wchar_t *WinTempDirW;
-	wchar_t *WindowsDriveW;
-	wchar_t *ProgramFilesDirW;
-	wchar_t *ProgramFilesDirX86W;
-	wchar_t *ProgramFilesDirX64W;
-	wchar_t *CommonStartMenuDirW;
-	wchar_t *CommonProgramsDirW;
-	wchar_t *CommonStartupDirW;
-	wchar_t *CommonAppDataDirW;
-	wchar_t *CommonDesktopDirW;
-	wchar_t *PersonalStartMenuDirW;
-	wchar_t *PersonalProgramsDirW;
-	wchar_t *PersonalStartupDirW;
-	wchar_t *PersonalAppDataDirW;
-	wchar_t *PersonalDesktopDirW;
-	wchar_t *MyDocumentsDirW;
-	wchar_t *LocalAppDataDirW;
 	wchar_t *MyTempDirW;
 	wchar_t *UserNameW;
-	wchar_t *UserNameExW;
-	wchar_t *MinidumpBaseFileNameW;
 	IO *LockFile;
 } MS;
 
@@ -192,37 +151,34 @@ typedef struct ENUM_CHILD_WINDOW_PARAM
 void MsInit();
 void MsFree();
 
-bool MsRegIsKeyEx2(UINT root, char *name, bool force32bit, bool force64bit);
+bool MsRegIsKeyEx2(UINT root, char *name, bool force32bit);
 
 bool MsRegIsValue(UINT root, char *keyname, char *valuename);
-bool MsRegIsValueEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
-
-bool MsRegReadValueEx2(UINT root, char *keyname, char *valuename, void **data, DWORD *type, DWORD *size, bool force32bit, bool force64bit);
-bool MsRegReadValueEx2W(UINT root, char *keyname, char *valuename, void **data, DWORD *type, DWORD *size, bool force32bit, bool force64bit);
+bool MsRegIsValueEx2(UINT root, char *keyname, char *valuename, bool force32bit);
 
 char *MsRegReadStr(UINT root, char *keyname, char *valuename);
-char *MsRegReadStrEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
-wchar_t *MsRegReadStrEx2W(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
+char *MsRegReadStrEx2(UINT root, char *keyname, char *valuename, bool force32bit);
+wchar_t *MsRegReadStrEx2W(UINT root, char *keyname, char *valuename, bool force32bit);
 
 UINT MsRegReadInt(UINT root, char *keyname, char *valuename);
-UINT MsRegReadIntEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
+UINT MsRegReadIntEx2(UINT root, char *keyname, char *valuename, bool force32bit);
 
-bool MsRegNewKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit);
+bool MsRegNewKeyEx2(UINT root, char *keyname, bool force32bit);
 
-bool MsRegWriteValueEx2(UINT root, char *keyname, char *valuename, UINT type, void *data, UINT size, bool force32bit, bool force64bit);
+bool MsRegWriteValueEx2(UINT root, char *keyname, char *valuename, UINT type, void *data, UINT size, bool force32bit);
 
 bool MsRegWriteStr(UINT root, char *keyname, char *valuename, char *str);
-bool MsRegWriteStrEx2(UINT root, char *keyname, char *valuename, char *str, bool force32bit, bool force64bit);
+bool MsRegWriteStrEx2(UINT root, char *keyname, char *valuename, char *str, bool force32bit);
 
 bool MsRegWriteInt(UINT root, char *keyname, char *valuename, UINT value);
-bool MsRegWriteIntEx2(UINT root, char *keyname, char *valuename, UINT value, bool force32bit, bool force64bit);
+bool MsRegWriteIntEx2(UINT root, char *keyname, char *valuename, UINT value, bool force32bit);
 
 TOKEN_LIST *MsRegEnumKey(UINT root, char *keyname);
-TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit);
+TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit);
 
-bool MsRegDeleteKeyEx2(UINT root, char *keyname, bool force32bit, bool force64bit);
+bool MsRegDeleteKeyEx2(UINT root, char *keyname, bool force32bit);
 bool MsRegDeleteValue(UINT root, char *keyname, char *valuename);
-bool MsRegDeleteValueEx2(UINT root, char *keyname, char *valuename, bool force32bit, bool force64bit);
+bool MsRegDeleteValueEx2(UINT root, char *keyname, char *valuename, bool force32bit);
 
 bool MsRegLoadHive(UINT root, wchar_t *keyname, wchar_t *filename);
 
@@ -230,6 +186,7 @@ bool MsIsAdmin();
 bool MsEnablePrivilege(char *name, bool enable);
 UINT MsGetCurrentProcessId();
 char *MsGetExeDirName();
+wchar_t *MsCopyProcessArgsW();
 
 bool MsCheckLogon(wchar_t *username, char *password);
 wchar_t *MsGetNetworkConnectionName(char *guid);
@@ -294,11 +251,8 @@ bool MsGetProcessExeName(char *path, UINT size, UINT id);
 void MsGetComputerName(char *name, UINT size);
 void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache);
 
-bool MsUniMakeDir(wchar_t *name);
 UINT64 MsGetHiResCounter();
 double MsGetHiResTimeSpan(UINT64 diff);
-void MsSetEnableMinidump(bool enabled);
-void MsWriteMinidump(wchar_t *filename, void *ex);
 
 
 UINT MsGetUserLocaleId();
@@ -308,7 +262,6 @@ bool MsIsInVm();
 void MsInitProcessCallOnce();
 
 #ifdef MICROSOFT_C
-LONG CALLBACK MsExceptionHandler(struct _EXCEPTION_POINTERS *ExceptionInfo);
 HKEY MsGetRootKeyFromInt(UINT root);
 #endif // MICROSOFT_C
 

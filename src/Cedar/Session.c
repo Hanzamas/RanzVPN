@@ -198,13 +198,10 @@ void SessionMain(SESSION *s)
 					break;
 				}
 
-				PROBE_DATA2("GetNext", b->Buf, b->Size);
-
 				update_hub_last_comm = true;
 
 				TrafficCountFrame(is_server_session ? &t.Send : &t.Recv, b->Buf, b->Size);
 
-				PROBE_DATA2("pa->PutPacket", b->Buf, b->Size);
 				if (pa->PutPacket(s, b->Buf, b->Size) == false)
 				{
 					pa_fail = true;
@@ -214,7 +211,6 @@ void SessionMain(SESSION *s)
 				Free(b);
 			}
 
-			PROBE_DATA2("pa->PutPacket", NULL, 0);
 			if (pa->PutPacket(s, NULL, 0) == false)
 			{
 				pa_fail = true;
@@ -347,7 +343,6 @@ void SessionMain(SESSION *s)
 			if ((now > s->LastCommTime) && ((now - s->LastCommTime) >= ((UINT64)s->Timeout)))
 			{
 				timeouted = true;
-				WHERE;
 			}
 
 			if (c->Protocol == CONNECTION_TCP)
@@ -372,7 +367,6 @@ void SessionMain(SESSION *s)
 						<= Tick64())
 					{
 						timeouted = true;
-						WHERE;
 					}
 
 					UINT num_tcp_conn = LIST_NUM(s->Connection->Tcp->TcpSockList);
@@ -384,7 +378,6 @@ void SessionMain(SESSION *s)
 						if (s->ClientOption->BindLocalPort != 0 || num_tcp_conn == 0)
 						{
 							timeouted = true;
-							WHERE;
 						}
 					}
 
@@ -1329,7 +1322,7 @@ SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, P
 	s->CancelList = NewList(NULL);
 	s->Thread = c->Thread;
 	s->OldTraffic = NewTraffic();
-	s->QoS = GetServerCapsBool(cedar->Server, "b_support_qos");
+	s->QoS = true;
 	AddRef(s->Thread->ref);
 	s->Hub = h;
 	s->ClientStatus = CLIENT_STATUS_ESTABLISHED;

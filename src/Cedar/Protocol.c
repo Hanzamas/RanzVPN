@@ -783,7 +783,7 @@ static void GetMachineGuid(char *guid, UINT size)
 		return;
 	}
 
-	s = MsRegReadStrEx2(REG_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Cryptography", "MachineGuid", false, true);
+	s = MsRegReadStrEx2(REG_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Cryptography", "MachineGuid", false);
 
 	StrCpy(guid, size, s);
 
@@ -849,7 +849,7 @@ static bool ServerCheckHubAccess(CONNECTION *c, HUB *hub)
 	IP ip;
 	char ip_str[64];
 
-	if (GetGlobalServerFlag(GSF_DISABLE_AC) != 0 || hub->HubDb == NULL || c->FirstSock == NULL)
+	if (hub->HubDb == NULL || c->FirstSock == NULL)
 	{
 		return true;
 	}
@@ -1002,70 +1002,23 @@ static UINT ChangePasswordAccept(CONNECTION *c, PACK *p)
 	return ret;
 }
 
-// Adds the login message to the Welcome pack: the OS support warnings of both ends, then msg
+// Adds the login message to the Welcome pack: the OS support warning for the client, then msg
 static void PackAddWelcomeMsg(PACK *p, RPC_WINVER *client_winver, wchar_t *msg)
 {
 	char *utf;
 	wchar_t winver_msg_client[3800];
-	wchar_t winver_msg_server[3800];
 	UINT tmpsize;
 	wchar_t *tmp;
-	RPC_WINVER server_winver;
 
-	GetWinVer(&server_winver);
+	FormatUnsupportedWinVerMsg(winver_msg_client, sizeof(winver_msg_client), client_winver);
 
-	Zero(winver_msg_client, sizeof(winver_msg_client));
-	Zero(winver_msg_server, sizeof(winver_msg_server));
-
-	if (IsSupportedWinVer(client_winver) == false)
-	{
-		SYSTEMTIME st;
-
-		LocalTime(&st);
-
-		UniFormat(winver_msg_client, sizeof(winver_msg_client), _UU("WINVER_ERROR_FORMAT"),
-			_UU("WINVER_ERROR_PC_LOCAL"),
-			client_winver->Title,
-			_UU("WINVER_ERROR_VPNSERVER"),
-			SUPPORTED_WINDOWS_LIST,
-			_UU("WINVER_ERROR_PC_LOCAL"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			st.wYear, st.wMonth);
-	}
-
-	if (IsSupportedWinVer(&server_winver) == false)
-	{
-		SYSTEMTIME st;
-
-		LocalTime(&st);
-
-		UniFormat(winver_msg_server, sizeof(winver_msg_server), _UU("WINVER_ERROR_FORMAT"),
-			_UU("WINVER_ERROR_PC_REMOTE"),
-			server_winver.Title,
-			_UU("WINVER_ERROR_VPNSERVER"),
-			SUPPORTED_WINDOWS_LIST,
-			_UU("WINVER_ERROR_PC_REMOTE"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			st.wYear, st.wMonth);
-	}
-
-	tmpsize = UniStrSize(winver_msg_client) + UniStrSize(winver_msg_server) + UniStrSize(msg) + (16000 + 3000) * sizeof(wchar_t);
+	tmpsize = UniStrSize(winver_msg_client) + UniStrSize(msg) + (16000 + 3000) * sizeof(wchar_t);
 
 	tmp = ZeroMalloc(tmpsize);
 
 	if (IsURLMsg(msg, NULL, 0) == false)
 	{
-		if (GetGlobalServerFlag(GSF_SHOW_OSS_MSG) != 0)
-		{
-			UniStrCat(tmp, tmpsize, _UU("OSS_MSG"));
-		}
-
 		UniStrCat(tmp, tmpsize, winver_msg_client);
-		UniStrCat(tmp, tmpsize, winver_msg_server);
 	}
 	UniStrCat(tmp, tmpsize, msg);
 
@@ -1260,11 +1213,6 @@ UINT HubResolveSessionPolicy(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN 
 		{
 			qos = false;
 		}
-		if (GetServerCapsBool(c->Cedar->Server, "b_support_qos") == false)
-		{
-			qos = false;
-			policy->NoQoS = true;
-		}
 		if (GetHubAdminOption(hub, "deny_qos") != 0)
 		{
 			qos = false;
@@ -1417,7 +1365,6 @@ UINT HubResolveSessionPolicy(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN 
 // log after hub->lock is released, so on an error hub->lock is no longer held and login->Policy is freed.
 UINT HubAdmitSession(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN *login, HUB_SESSION_SLOT *slot)
 {
-	SERVER *server;
 	POLICY *policy;
 	bool use_client_license = false, use_bridge_license = false;
 
@@ -1433,7 +1380,6 @@ UINT HubAdmitSession(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN *login, 
 
 	Zero(slot, sizeof(HUB_SESSION_SLOT));
 
-	server = c->Cedar->Server;
 	policy = login->Policy;
 
 	if (login->LocalHostSession == false)
@@ -1450,10 +1396,8 @@ UINT HubAdmitSession(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN *login, 
 	}
 
 
-	if (GetServerCapsBool(hub->Cedar->Server, "b_support_limit_multilogin"))
 	{
-		RPC_ENUM_SESSION t;
-		UINT i, num;
+		UINT num;
 		UINT max_logins = policy->MultiLogins;
 		UINT ao = GetHubAdminOption(hub, "max_multilogins_per_user");
 
@@ -1471,32 +1415,13 @@ UINT HubAdmitSession(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN *login, 
 
 		if (max_logins != 0)
 		{
-			Zero(&t, sizeof(t));
-			StrCpy(t.HubName, sizeof(t.HubName), hub->Name);
-
+			// Lock order is hub->lock, SessionList, s->lock: release hub->lock
+			// while the session list is walked, as before
 			Unlock(hub->lock);
 
-			SiEnumSessionMain(server, &t);
+			num = HubCountUserSessions(hub, req->Username, req->NodeInfo.UniqueId);
 
 			Lock(hub->lock);
-
-			num = 0;
-
-			for (i = 0;i < t.NumSession;i++)
-			{
-				RPC_ENUM_SESSION_ITEM *e = &t.Sessions[i];
-
-				if (e->BridgeMode == false && e->LinkMode == false && e->CurrentNumTcp != 0)
-				{
-					if (StrCmpi(e->Username, req->Username) == 0 &&
-						(IsZero(e->UniqueId, 16) || Cmp(e->UniqueId, req->NodeInfo.UniqueId, 16) != 0))
-					{
-						num++;
-					}
-				}
-			}
-
-			FreeRpcEnumSession(&t);
 
 			if (num >= max_logins)
 			{
@@ -1588,11 +1513,11 @@ UINT HubAdmitSession(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN *login, 
 		}
 	}
 
-	if (Count(hub->Cedar->CurrentSessions) >= GetServerCapsInt(hub->Cedar->Server, "i_max_sessions"))
+	if (Count(hub->Cedar->CurrentSessions) >= SERVER_MAX_SESSIONS)
 	{
 		Unlock(hub->lock);
 
-		HLog(hub, "LH_MAX_SESSION_2", c->Name, GetServerCapsInt(hub->Cedar->Server, "i_max_sessions"));
+		HLog(hub, "LH_MAX_SESSION_2", c->Name, SERVER_MAX_SESSIONS);
 
 		Free(policy);
 		login->Policy = NULL;
@@ -1618,11 +1543,10 @@ UINT HubAdmitSession(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN *login, 
 	return ERR_NO_ERROR;
 }
 
-// Takes the licence counters of an admitted session's slot on Cedar and updates the server's licence totals
+// Takes the licence counters of an admitted session's slot on Cedar
 void HubAssignSessionLicense(HUB_SESSION_SLOT *slot)
 {
 	CEDAR *cedar;
-	SERVER *server;
 
 	if (slot == NULL || slot->Hub == NULL)
 	{
@@ -1630,7 +1554,6 @@ void HubAssignSessionLicense(HUB_SESSION_SLOT *slot)
 	}
 
 	cedar = slot->Hub->Cedar;
-	server = cedar->Server;
 
 	if (slot->UseBridgeLicense)
 	{
@@ -1642,9 +1565,6 @@ void HubAssignSessionLicense(HUB_SESSION_SLOT *slot)
 		Inc(cedar->AssignedClientLicense);
 	}
 
-	server->CurrentAssignedClientLicense = Count(cedar->AssignedClientLicense);
-	server->CurrentAssignedBridgeLicense = Count(cedar->AssignedBridgeLicense);
-
 	slot->LicenseAssigned = true;
 }
 
@@ -1654,7 +1574,6 @@ void HubReleaseSessionSlot(HUB_SESSION_SLOT *slot)
 {
 	HUB *hub;
 	CEDAR *cedar;
-	SERVER *server;
 
 	if (slot == NULL || slot->Hub == NULL)
 	{
@@ -1663,7 +1582,6 @@ void HubReleaseSessionSlot(HUB_SESSION_SLOT *slot)
 
 	hub = slot->Hub;
 	cedar = hub->Cedar;
-	server = cedar->Server;
 
 	Lock(hub->lock);
 	{
@@ -1692,9 +1610,6 @@ void HubReleaseSessionSlot(HUB_SESSION_SLOT *slot)
 				Dec(cedar->AssignedClientLicense);
 			}
 		}
-
-		server->CurrentAssignedClientLicense = Count(cedar->AssignedClientLicense);
-		server->CurrentAssignedBridgeLicense = Count(cedar->AssignedBridgeLicense);
 	}
 	Unlock(hub->lock);
 
@@ -1876,9 +1791,7 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 	bool no_save_password = false;
 	wchar_t *msg = NULL;
 	bool suppress_client_update_notification = false;
-	CEDAR *cedar;
 	RPC_WINVER winver;
-	bool no_more_users_in_server = false;
 	UCHAR mschap_v2_server_response_20[20];
 	UINT ms_chap_error = 0;
 	bool is_empty_password = false;
@@ -1895,11 +1808,6 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 	Zero(mschap_v2_server_response_20, sizeof(mschap_v2_server_response_20));
 
 	Zero(&winver, sizeof(winver));
-
-	cedar = c->Cedar;
-
-
-	no_more_users_in_server = SiTooManyUserObjectsInServer(cedar->Server, true);
 
 	c->Status = CONNECTION_STATUS_NEGOTIATION;
 
@@ -1937,19 +1845,6 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 		goto CLEANUP;
 	}
 
-	{
-		char tmp[20];
-		char *branded_ctos = _SS("BRANDED_C_TO_S");
-		PackGetStr(p, "branded_ctos", tmp, sizeof(tmp));
-
-		if(StrCmpi(method, "login") == 0 && StrLen(branded_ctos) > 0 && StrCmpi(branded_ctos, tmp) != 0)
-		{
-			FreePack(p);
-			c->Err = ERR_BRANDED_C_TO_S;
-			goto CLEANUP;
-		}
-	}
-
 	PackGetStr(p, "client_str", c->ClientStr, sizeof(c->ClientStr));
 	c->ClientVer = PackGetInt(p, "client_ver");
 	c->ClientBuild = PackGetInt(p, "client_build");
@@ -1972,26 +1867,12 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 
 		c->Type = CONNECTION_TYPE_LOGIN;
 
-		if (no_more_users_in_server)
-		{
-			FreePack(p);
-			c->Err = ERR_TOO_MANY_USER;
-			goto CLEANUP;
-		}
-
 		if (PackGetStr(p, "hello", c->ClientStr, sizeof(c->ClientStr)) == false)
 		{
 			StrCpy(c->ClientStr, sizeof(c->ClientStr), "Unknown");
 		}
 
 		c->Protocol = GetProtocolFromPack(p);
-
-		if (GetServerCapsBool(c->Cedar->Server, "b_vpn_client_connect") == false)
-		{
-			FreePack(p);
-			c->Err = ERR_NOT_SUPPORTED;
-			goto CLEANUP;
-		}
 
 		if (ParseLoginRequest(p, &req) == false)
 		{
@@ -2180,16 +2061,7 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 
 						if (auth_ret == false)
 						{
-							bool fail_ext_user_auth = false;
-							if (GetGlobalServerFlag(GSF_DISABLE_RADIUS_AUTH) != 0)
-							{
-								fail_ext_user_auth = true;
-							}
-
-							if (fail_ext_user_auth == false)
-							{
-								auth_ret = SamAuthUserByPlainPassword(c, hub, username, plain_password, true);
-							}
+							auth_ret = SamAuthUserByPlainPassword(hub, username, plain_password);
 
 							if (auth_ret && pol == NULL)
 							{
@@ -2212,56 +2084,43 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 					break;
 
 				case CLIENT_AUTHTYPE_CERT:
-					if (GetGlobalServerFlag(GSF_DISABLE_CERT_AUTH) == 0)
+					cert_size = PackGetDataSize(p, "cert");
+					if (cert_size >= 1 && cert_size <= 100000)
 					{
-						cert_size = PackGetDataSize(p, "cert");
-						if (cert_size >= 1 && cert_size <= 100000)
+						cert_buf = ZeroMalloc(cert_size);
+						if (PackGetData(p, "cert", cert_buf))
 						{
-							cert_buf = ZeroMalloc(cert_size);
-							if (PackGetData(p, "cert", cert_buf))
+							UCHAR sign[4096 / 8];
+							UINT sign_size = PackGetDataSize(p, "sign");
+							if (sign_size <= sizeof(sign) && sign_size >= 1)
 							{
-								UCHAR sign[4096 / 8];
-								UINT sign_size = PackGetDataSize(p, "sign");
-								if (sign_size <= sizeof(sign) && sign_size >= 1)
+								if (PackGetData(p, "sign", sign))
 								{
-									if (PackGetData(p, "sign", sign))
+									BUF *b = NewBuf();
+									X *x;
+									WriteBuf(b, cert_buf, cert_size);
+									x = BufToX(b, false);
+									if (x != NULL && x->is_compatible_bit &&
+										sign_size == (x->bits / 8))
 									{
-										BUF *b = NewBuf();
-										X *x;
-										WriteBuf(b, cert_buf, cert_size);
-										x = BufToX(b, false);
-										if (x != NULL && x->is_compatible_bit &&
-											sign_size == (x->bits / 8))
+										K *k = GetKFromX(x);
+										if (RsaVerifyEx(c->Random, SHA1_SIZE, sign, sign_size, k))
 										{
-											K *k = GetKFromX(x);
-											if (RsaVerifyEx(c->Random, SHA1_SIZE, sign, sign_size, k))
+											// A matching signature proves the client holds this certificate.
+											auth_ret = SamAuthUserByCert(hub, username, x);
+											if (auth_ret)
 											{
-												// A matching signature proves the client holds this certificate.
-												auth_ret = SamAuthUserByCert(hub, username, x);
-												if (auth_ret)
-												{
-													c->ClientX = CloneX(x);
-												}
+												c->ClientX = CloneX(x);
 											}
-											FreeK(k);
 										}
-										FreeX(x);
-										FreeBuf(b);
+										FreeK(k);
 									}
+									FreeX(x);
+									FreeBuf(b);
 								}
 							}
-							Free(cert_buf);
 						}
-					}
-					else
-					{
-						// Certificate authentication is not supported in the open source version
-						HLog(hub, "LH_AUTH_CERT_NOT_SUPPORT_ON_OPEN_SOURCE", c->Name, username);
-						Unlock(hub->lock);
-						ReleaseHub(hub);
-						FreePack(p);
-						c->Err = ERR_AUTHTYPE_NOT_SUPPORTED;
-						goto CLEANUP;
+						Free(cert_buf);
 					}
 					break;
 
@@ -2422,14 +2281,6 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 		PackAddWelcomeMsg(p, &winver, msg);
 
 		Free(msg);
-
-		{
-			char *branded_cfroms = _SS("BRANDED_C_FROM_S");
-			if(StrLen(branded_cfroms) > 0)
-			{
-				PackAddStr(p, "branded_cfroms", branded_cfroms);
-			}
-		}
 
 		HttpServerSend(c->FirstSock, p);
 		FreePack(p);
@@ -3207,15 +3058,6 @@ bool ClientConnect(CONNECTION *c)
 		goto CLEANUP;
 	}
 
-	if (c->Session->ClientOption != NULL && c->Session->ClientOption->FromAdminPack)
-	{
-		if (IsAdminPackSupportedServerProduct(c->ServerStr) == false)
-		{
-			c->Err = ERR_NOT_ADMINPACK_SERVER;
-			goto CLEANUP;
-		}
-	}
-
 	if (c->Halt)
 	{
 		c->Err = ERR_USER_CANCEL;
@@ -3251,18 +3093,6 @@ bool ClientConnect(CONNECTION *c)
 		c->Err = err;
 		c->ClientConnectError_NoSavePassword = PackGetBool(p, "no_save_password");
 		goto CLEANUP;
-	}
-
-	{
-		char tmp[20];
-		char *branded_cfroms = _SS("BRANDED_C_FROM_S");
-		PackGetStr(p, "branded_cfroms", tmp, sizeof(tmp));
-
-		if(StrLen(branded_cfroms) > 0 && StrCmpi(branded_cfroms, tmp) != 0)
-		{
-			c->Err = ERR_BRANDED_C_FROM_S;
-			goto CLEANUP;
-		}
 	}
 
 	utf_size = PackGetDataSize(p, "Msg");
@@ -3864,7 +3694,7 @@ bool ClientUploadAuth(CONNECTION *c)
 	PackAddStr(p, "hello", c->ClientStr);
 	PackAddInt(p, "version", c->ClientVer);
 	PackAddInt(p, "build", c->ClientBuild);
-	PackAddInt(p, "client_id", c->Cedar->ClientId);
+	PackAddInt(p, "client_id", 0);
 
 	PackAddInt(p, "max_connection", o->MaxConnection);
 	PackAddInt(p, "use_encrypt", o->UseEncrypt == false ? 0 : 1);
@@ -3909,14 +3739,6 @@ bool ClientUploadAuth(CONNECTION *c)
 		PackAddBool(p, "support_hmac_on_udp_acceleration", true);
 		PackAddBool(p, "support_udp_accel_fast_disconnect_detect", true);
 		PackAddInt(p, "udp_acceleration_max_version", 2);
-	}
-
-	{
-		char *branded_ctos = _SS("BRANDED_C_TO_S");
-		if(StrLen(branded_ctos) > 0)
-		{
-			PackAddStr(p, "branded_ctos", branded_ctos);
-		}
 	}
 
 	CreateNodeInfo(&info, c);

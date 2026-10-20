@@ -40,6 +40,8 @@ typedef int (COMPARE)(void *p1, void *p2);
 #undef	MIN
 #endif
 
+// MIN/MAX (and LESS, MORE, MAKESURE, COMPARE_RET below) evaluate an argument twice: never
+// pass one with a side effect (++, --, an assignment or a call that changes state)
 #define	MIN(a, b)			((a) >= (b) ? (b) : (a))
 #define	MAX(a, b)			((a) >= (b) ? (a) : (b))
 
@@ -63,10 +65,44 @@ typedef int (COMPARE)(void *p1, void *p2);
 #define	READ_UINT(buf)			(UINT)((((UINT)((UCHAR *)(buf))[0]) << 24) | (((UINT)((UCHAR *)(buf))[1]) << 16) | (((UINT)((UCHAR *)(buf))[2]) << 8) | (((UINT)((UCHAR *)(buf))[3])))
 #define	READ_UINT64(buf)		(UINT64)((((UINT64)((UCHAR *)(buf))[0]) << 56) | (((UINT64)((UCHAR *)(buf))[1]) << 48) | (((UINT64)((UCHAR *)(buf))[2]) << 40) | (((UINT64)((UCHAR *)(buf))[3]) << 32) | (((UINT64)((UCHAR *)(buf))[4]) << 24) | (((UINT64)((UCHAR *)(buf))[5]) << 16) | (((UINT64)((UCHAR *)(buf))[6]) << 8) | (((UINT64)((UCHAR *)(buf))[7])))
 
-// Big-endian writes that work on unaligned buffers
-#define	WRITE_USHORT(buf, i)	(((UCHAR *)(buf))[0]) = ((((USHORT)(i)) >> 8) & 0xFF); (((UCHAR *)(buf))[1]) = ((((USHORT)(i))) & 0xFF)
-#define	WRITE_UINT(buf, i)		(((UCHAR *)(buf))[0]) = ((((UINT)(i)) >> 24) & 0xFF); (((UCHAR *)(buf))[1]) = ((((UINT)(i)) >> 16) & 0xFF); (((UCHAR *)(buf))[2]) = ((((UINT)(i)) >> 8) & 0xFF); (((UCHAR *)(buf))[3]) = ((((UINT)(i))) & 0xFF)
-#define	WRITE_UINT64(buf, i)	(((UCHAR *)(buf))[0]) = ((((UINT64)(i)) >> 56) & 0xFF); (((UCHAR *)(buf))[1]) = ((((UINT64)(i)) >> 48) & 0xFF); (((UCHAR *)(buf))[2]) = ((((UINT64)(i)) >> 40) & 0xFF); (((UCHAR *)(buf))[3]) = ((((UINT64)(i)) >> 32) & 0xFF); (((UCHAR *)(buf))[4]) = ((((UINT64)(i)) >> 24) & 0xFF); (((UCHAR *)(buf))[5]) = ((((UINT64)(i)) >> 16) & 0xFF); (((UCHAR *)(buf))[6]) = ((((UINT64)(i)) >> 8) & 0xFF); (((UCHAR *)(buf))[7]) = ((((UINT64)(i))) & 0xFF)
+// Big-endian writes that work on unaligned buffers. Functions, so each WRITE_* is one
+// statement (safe in an unbraced if/else) and evaluates buf and i once; the macros keep the
+// explicit narrowing cast of the call sites
+static inline void WriteBeUshort(void *buf, USHORT i)
+{
+	UCHAR *p = (UCHAR *)buf;
+
+	p[0] = (UCHAR)(i >> 8);
+	p[1] = (UCHAR)i;
+}
+
+static inline void WriteBeUint(void *buf, UINT i)
+{
+	UCHAR *p = (UCHAR *)buf;
+
+	p[0] = (UCHAR)(i >> 24);
+	p[1] = (UCHAR)(i >> 16);
+	p[2] = (UCHAR)(i >> 8);
+	p[3] = (UCHAR)i;
+}
+
+static inline void WriteBeUint64(void *buf, UINT64 i)
+{
+	UCHAR *p = (UCHAR *)buf;
+
+	p[0] = (UCHAR)(i >> 56);
+	p[1] = (UCHAR)(i >> 48);
+	p[2] = (UCHAR)(i >> 40);
+	p[3] = (UCHAR)(i >> 32);
+	p[4] = (UCHAR)(i >> 24);
+	p[5] = (UCHAR)(i >> 16);
+	p[6] = (UCHAR)(i >> 8);
+	p[7] = (UCHAR)i;
+}
+
+#define	WRITE_USHORT(buf, i)	WriteBeUshort((buf), (USHORT)(i))
+#define	WRITE_UINT(buf, i)		WriteBeUint((buf), (UINT)(i))
+#define	WRITE_UINT64(buf, i)	WriteBeUint64((buf), (UINT64)(i))
 
 typedef int64_t time_64t;
 
@@ -74,17 +110,6 @@ typedef int64_t time_64t;
 #define	OSTYPE_WINDOWS_SERVER_10				2712
 #define	OSTYPE_WINDOWS_11						2800
 #define	OSTYPE_WINDOWS_SERVER_11				2810
-#define	OSTYPE_UNIX_UNKNOWN						3000
-#define	OSTYPE_LINUX							3100
-#define	OSTYPE_SOLARIS							3200
-#define	OSTYPE_CYGWIN							3300
-#define	OSTYPE_BSD								3400
-#define	OSTYPE_MACOS_X							3500
-
-
-#define	GET_KETA(t, i)			(((t) % (i * 10)) / i)
-#define	OS_IS_WINDOWS(t)		((GET_KETA(t, 1000) == 1) || (GET_KETA(t, 1000) == 2))
-#define	OS_IS_UNIX(t)			(GET_KETA(t, 1000) == 3)
 
 
 typedef struct OS_INFO

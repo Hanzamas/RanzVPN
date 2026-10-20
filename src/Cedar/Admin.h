@@ -595,7 +595,6 @@ UINT AdminReconnect(RPC *rpc);
 CAPSLIST *ScGetCapsEx(RPC *rpc);
 typedef bool (DOWNLOAD_PROC)(DOWNLOAD_PROGRESS *progress);
 BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PROC *proc, void *param);
-void SiEnumSessionMain(SERVER *s, RPC_ENUM_SESSION *t);
 
 UINT ScGetServerInfo(RPC *r, RPC_SERVER_INFO *t);
 UINT ScGetServerStatus(RPC *r, RPC_SERVER_STATUS *t);
@@ -680,7 +679,6 @@ UINT ScSetSysLog(RPC *r, SYSLOG_SETTING *t);
 UINT ScGetSysLog(RPC *r, SYSLOG_SETTING *t);
 UINT ScCrash(RPC *r, RPC_TEST *t);
 UINT ScFlush(RPC *r, RPC_TEST *t);
-UINT ScDebug(RPC *r, RPC_TEST *t);
 UINT ScRegenerateServerCert(RPC *r, RPC_TEST *t);
 
 void FreeRpcTest(RPC_TEST *t);

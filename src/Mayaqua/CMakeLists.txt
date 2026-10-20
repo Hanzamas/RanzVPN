@@ -110,6 +110,7 @@ if(WIN32)
       "ntdll.lib"
       "Psapi.Lib"
       "Secur32.Lib"
+      "shlwapi.lib"
       "winhttp.lib"
       "winmm.lib"
       "ws2_32.lib"

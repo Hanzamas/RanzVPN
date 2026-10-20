@@ -12,7 +12,7 @@ static void StartProcess()
 {
 	InitCedar();
 	StInit();
-	StStartServer(false);
+	StStartServer();
 }
 
 static void StopProcess()

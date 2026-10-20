@@ -74,32 +74,11 @@ UINT GetNumberOfCpu()
 	return ret;
 }
 
-void GetHomeDirW(wchar_t *path, UINT size)
-{
-	if (path == NULL)
-	{
-		return;
-	}
-
-	if (GetEnvW(L"HOME", path, size) == false)
-	{
-		wchar_t drive[MAX_SIZE];
-		wchar_t hpath[MAX_SIZE];
-		if (GetEnvW(L"HOMEDRIVE", drive, sizeof(drive)) &&
-			GetEnvW(L"HOMEPATH", hpath, sizeof(hpath)))
-		{
-			UniFormat(path, size, L"%s%s", drive, hpath);
-		}
-		else
-		{
-			Win32GetCurrentDirW(path, size / sizeof(wchar_t));
-		}
-	}
-}
-
+// A value longer than the buffer is truncated
 bool GetEnv(char *name, char *data, UINT size)
 {
-	char *ret;
+	DWORD len;
+	char *tmp;
 	if (name == NULL || data == NULL)
 	{
 		return false;
@@ -107,33 +86,19 @@ bool GetEnv(char *name, char *data, UINT size)
 
 	StrCpy(data, size, "");
 
-	ret = getenv(name);
-	if (ret == NULL)
+	// The size with the terminating null; 0 when the variable is not set
+	len = GetEnvironmentVariableA(name, NULL, 0);
+	if (len == 0)
 	{
 		return false;
 	}
 
-	StrCpy(data, size, ret);
-
-	return true;
-}
-bool GetEnvW(wchar_t *name, wchar_t *data, UINT size)
-{
-	wchar_t *ret;
-	if (name == NULL || data == NULL)
+	tmp = ZeroMalloc(len);
+	if (GetEnvironmentVariableA(name, tmp, len) < len)
 	{
-		return false;
+		StrCpy(data, size, tmp);
 	}
-
-	UniStrCpy(data, size, L"");
-
-	ret = _wgetenv(name);
-	if (ret == NULL)
-	{
-		return false;
-	}
-
-	UniStrCpy(data, size, ret);
+	Free(tmp);
 
 	return true;
 }
@@ -850,20 +815,14 @@ void GetDateTimeStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale)
 
 void GetTimeStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale)
 {
-	wchar_t *tag = L"%02u%s%02u%s%02u%s";
 	if (str == NULL || st == NULL)
 	{
 		return;
 	}
 
-	if (_GETLANG() == SE_LANG_JAPANESE || _GETLANG() == SE_LANG_CHINESE_ZH)
-	{
-		tag = L"%2u%s%2u%s%2u%s";
-	}
-
 	locale = (locale != NULL ? locale : &current_locale);
 	UniFormat(str, size,
-		tag,
+		L"%02u%s%02u%s%02u%s",
 		st->wHour, locale->HourStr,
 		st->wMinute, locale->MinuteStr,
 		st->wSecond, locale->SecondStr);
@@ -871,20 +830,14 @@ void GetTimeStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale)
 
 void GetDateStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale)
 {
-	wchar_t *tag = L"%04u%s%02u%s%02u%s (%s)";
 	if (str == NULL || st == NULL)
 	{
 		return;
 	}
 
-	if (_GETLANG() == SE_LANG_JAPANESE || _GETLANG() == SE_LANG_CHINESE_ZH)
-	{
-		tag = L"%4u%s%2u%s%2u%s(%s)";
-	}
-
 	locale = (locale != NULL ? locale : &current_locale);
 	UniFormat(str, size,
-		tag,
+		L"%04u%s%02u%s%02u%s (%s)",
 		st->wYear, locale->YearStr,
 		st->wMonth, locale->MonthStr,
 		st->wDay, locale->DayStr,
@@ -1410,9 +1363,10 @@ void AbortExit()
 }
 
 
+// The log goes beside the executable, not into the working directory (System32 for a service).
+// Plain CRT and Win32 calls only: the caller may be out of memory.
 void AbortExitEx(char *msg)
 {
-	FILE *f;
 	if (msg == NULL)
 	{
 		msg = "Unknown Error";
@@ -1428,9 +1382,22 @@ void AbortExitEx(char *msg)
 	fflush(stdout);
 	_set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
 	abort();
-#endif
+#else	// RANZ_FUZZING
+	FILE *f = NULL;
+	wchar_t log_name[MAX_PATH + 32];
+	DWORD len;
 
-	f = fopen("abort_error_log.txt", "w");
+	len = GetModuleFileNameW(NULL, log_name, MAX_PATH);
+	if (len != 0 && len < MAX_PATH)
+	{
+		wchar_t *sep = wcsrchr(log_name, L'\\');
+		if (sep != NULL)
+		{
+			sep[1] = 0;
+			wcscat_s(log_name, sizeof(log_name) / sizeof(wchar_t), L"abort_error_log.txt");
+			f = _wfopen(log_name, L"w");
+		}
+	}
 	if (f != NULL)
 	{
 		SYSTEMTIME time = { 0 };
@@ -1464,8 +1431,10 @@ void AbortExitEx(char *msg)
 	fputs("Fatal Error: ", stdout);
 	fputs(msg, stdout);
 	fputs("\r\n", stdout);
+	fflush(stdout);
 
 	_exit(1);
+#endif	// RANZ_FUZZING
 }
 
 

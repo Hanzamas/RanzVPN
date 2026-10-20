@@ -67,6 +67,4 @@ void DebugPrintAllObjects();
 void DebugPrintCommandList();
 void DebugPrintObjectInfo(UINT id);
 
-bool IsTrackingEnabled();
-
 #endif	// TRACKING_H

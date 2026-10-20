@@ -252,13 +252,13 @@ static void SelowTestInstall(SELOWTEST_CTX *ctx, bool supported)
 
 	// The queries before did not use up the one install attempt of the process
 	selowtest_num_install = 0;
-	e = OpenEth(SELOWTEST_DEVICE, false, false, NULL);
+	e = OpenEth(SELOWTEST_DEVICE);
 	SelowTestCheck(ctx, e == NULL && selowtest_num_install == 1, "Creating a Local Bridge without SeLow reaches the driver install",
 		"OpenEth returned %s, install step ran %u times", e == NULL ? "NULL" : "an ETH", selowtest_num_install);
 	CloseEth(e);
 
 	// As before, the install step runs at most once per process
-	e = OpenEth(SELOWTEST_DEVICE, false, false, NULL);
+	e = OpenEth(SELOWTEST_DEVICE);
 	SelowTestCheck(ctx, e == NULL && selowtest_num_install == 1, "The driver install runs at most once per process",
 		"OpenEth returned %s, install step ran %u times", e == NULL ? "NULL" : "an ETH", selowtest_num_install);
 	CloseEth(e);

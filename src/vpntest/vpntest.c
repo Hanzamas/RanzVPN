@@ -24,7 +24,7 @@ void server_test(UINT num, char **arg)
 
 	StInit();
 
-	StStartServer(false);
+	StStartServer();
 
 	GetLine(NULL, 0);
 
@@ -693,8 +693,6 @@ int TestMain(char *cmd)
 	Print("Enter 'q' or 'exit' to exit the process.\n\n");
 	Print("   - In Jurassic Park: \"It's a UNIX system! I know this!\"\n\n");
 
-	MsSetEnableMinidump(true);
-
 	while (true)
 	{
 		Print("TEST>");
@@ -804,6 +802,8 @@ int main(int argc, char *argv[])
 	UINT i;
 	char cmd[MAX_SIZE];
 	char *s;
+	wchar_t *args_w;
+	char *args;
 	int status = 0;
 
 	InitProcessCallOnce();
@@ -828,11 +828,15 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	InitMayaqua(memchk, true, argc, argv);
+	InitMayaqua(memchk, true);
 	EnableProbe(true);
 	InitCedar();
 	SetHamMode();
-	status = TestMain(cmdline);
+	args_w = MsCopyProcessArgsW();
+	args = CopyUniToStr(args_w);
+	status = TestMain(args);
+	Free(args);
+	Free(args_w);
 	FreeCedar();
 	FreeMayaqua();
 

@@ -86,7 +86,7 @@ void CombinePathW(wchar_t *dst, UINT size, wchar_t *dirname, wchar_t *filename);
 void GetDirNameFromFilePath(char *dst, UINT size, char *filepath);
 void GetDirNameFromFilePathW(wchar_t *dst, UINT size, wchar_t *filepath);
 void GetFileNameFromFilePath(char *dst, UINT size, char *filepath);
-void InitGetExeName(char *arg);
+void InitGetExeName();
 void GetExeName(char *name, UINT size);
 void GetExeNameW(wchar_t *name, UINT size);
 void GetExeDir(char *name, UINT size);

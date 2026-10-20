@@ -13,7 +13,6 @@ extern char *SERVER_CONFIG_FILE_NAME;
 // An invalid cipher spec makes the server fall back to its built-in list of modern ciphers.
 #define	SERVER_DEFAULT_CIPHER_NAME		"~DEFAULT~"
 #define	SERVER_DEFAULT_HUB_NAME			"DEFAULT"
-#define	SERVER_DEFAULT_BRIDGE_NAME		"BRIDGE"
 
 #define	SERVER_FILE_SAVE_INTERVAL_DEFAULT	(5 * 60 * 1000)
 #define	SERVER_FILE_SAVE_INTERVAL_MIN		(5 * 1000)
@@ -81,16 +80,10 @@ struct SERVER
 	bool Led;
 	bool LedSpecial;
 
-	UINT CurrentAssignedClientLicense;
-	UINT CurrentAssignedBridgeLicense;
-
 
 	LOCK *SyslogLock;
 	SYSLOG_SETTING SyslogSetting;
 	SLOG *Syslog;
-
-	LOCK *CapsCacheLock;
-	CAPSLIST *CapsListCache;
 
 	THREAD *DeadLockCheckThread;
 	volatile bool HaltDeadLockThread;
@@ -152,12 +145,6 @@ struct LOG_FILE
 
 
 #define	NUM_GLOBAL_SERVER_FLAGS			128
-#define	GSF_DISABLE_RADIUS_AUTH			2
-#define	GSF_DISABLE_CERT_AUTH			3
-#define	GSF_DISABLE_DEEP_LOGGING		4
-#define	GSF_DISABLE_AC					5
-#define	GSF_DISABLE_SYSLOG				6
-#define	GSF_SHOW_OSS_MSG				7
 #define	GSF_DISABLE_SESSION_RECONNECT	9
 
 #define	NUM_GLOBAL_PARAMS					128
@@ -194,10 +181,9 @@ struct SERVER_HUB_CREATE_HISTORY
 	UINT64 CreatedTime;
 };
 
-SERVER *SiNewServer(bool bridge);
-SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_server);
+SERVER *SiNewServer(void);
 void SiReleaseServer(SERVER *s);
-void StStartServer(bool bridge);
+void StStartServer(void);
 void StStopServer();
 UINT SiWriteConfigurationFile(SERVER *s);
 void SiGenerateDefaultCertEx(X **server_x, K **server_k, char *common_name);
@@ -224,12 +210,10 @@ void SiWriteTrafficInner(FOLDER *parent, char *name, TRAFFIC_ENTRY *e);
 void SiLoadTrafficInner(FOLDER *parent, char *name, TRAFFIC_ENTRY *e);
 void SiLoadTraffic(FOLDER *parent, char *name, TRAFFIC *t);
 void SiSaverThread(THREAD *thread, void *param);
-void SiLoadLicenseManager(SERVER *s, FOLDER *f);
-void SiWriteLicenseManager(FOLDER *f, SERVER *s);
 void SiWriteHubs(FOLDER *f, SERVER *s);
 void SiLoadHubs(SERVER *s, FOLDER *f);
 void SiWriteHubLogCfgEx(FOLDER *f, HUB_LOG *g, bool el_mode);
-void SiRebootServerEx(bool bridge, bool reset_setting);
+void SiRebootServerEx(bool reset_setting);
 void StInit();
 void StFree();
 int CmpLogFile(void *p1, void *p2);
@@ -240,7 +224,6 @@ bool CheckLogFileNameFromEnumList(LIST *o, char *name);
 void IncrementServerConfigRevision(SERVER *s);
 UINT SiStageConfiguration(SERVER *s, char *data, UINT size);
 void GetServerProductName(SERVER *s, char *name, UINT size);
-void GetServerProductNameInternal(SERVER *s, char *name, UINT size);
 
 
 void SiSetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting);
@@ -248,18 +231,6 @@ void SiGetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting);
 void SiWriteSysLog(SERVER *s, char *typestr, char *hubname, wchar_t *message);
 UINT SiGetSysLogSaveStatus(SERVER *s);
 void SiDebugLog(SERVER *s, char *msg);
-UINT SiDebug(SERVER *s, RPC_TEST *ret, UINT i, char *str);
-UINT SiDebugProcHelloWorld(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcExit(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcDump(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcRestorePriority(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcSetHighPriority(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcGetExeFileName(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcCrash(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcGetCurrentTcpSendQueueLength(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcGetCurrentGetIPThreadCount(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-
-typedef UINT (SI_DEBUG_PROC)(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
 
 CAPS *NewCaps(char *name, UINT value);
 void FreeCaps(CAPS *c);
@@ -279,21 +250,10 @@ void InitCapsList(CAPSLIST *t);
 void InRpcSysLogSetting(SYSLOG_SETTING *t, PACK *p);
 void OutRpcSysLogSetting(PACK *p, SYSLOG_SETTING *t);
 
-void GetServerCaps(SERVER *s, CAPSLIST *t);
-bool GetServerCapsBool(SERVER *s, char *name);
-UINT GetServerCapsInt(SERVER *s, char *name);
 void GetServerCapsMain(SERVER *s, CAPSLIST *t);
 
 void SetGlobalServerFlag(UINT index, UINT value);
 UINT GetGlobalServerFlag(UINT index);
-
-
-bool IsAdminPackSupportedServerProduct(char *name);
-
-bool SiTooManyUserObjectsInServer(SERVER *s, bool oneMore);
-
-void SiGetCurrentRegion(CEDAR *c, char *region, UINT region_size);
-bool SiIsEnterpriseFunctionsRestrictedOnOpenSource(CEDAR *c);
 
 #endif
 

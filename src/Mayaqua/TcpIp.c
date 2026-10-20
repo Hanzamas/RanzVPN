@@ -2718,34 +2718,3 @@ LABEL_CLEANUP:
 		return NULL;
 	}
 }
-
-void GenMacAddress(UCHAR *mac)
-{
-	UCHAR rand_data[32];
-	UINT64 now;
-	BUF *b;
-	UCHAR hash[SHA1_SIZE];
-	if (mac == NULL)
-	{
-		return;
-	}
-
-	now = SystemTime64();
-
-	Rand(rand_data, sizeof(rand_data));
-
-	b = NewBuf();
-	WriteBuf(b, &now, sizeof(now));
-	WriteBuf(b, rand_data, sizeof(rand_data));
-
-	Sha0(hash, b->Buf, b->Size);
-
-	mac[0] = 0x5E;
-	mac[1] = hash[0];
-	mac[2] = hash[1];
-	mac[3] = hash[2];
-	mac[4] = hash[3];
-	mac[5] = hash[4];
-
-	FreeBuf(b);
-}

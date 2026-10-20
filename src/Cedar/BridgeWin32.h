@@ -35,7 +35,7 @@ struct ETH
 void InitEth();
 void FreeEth();
 TOKEN_LIST *GetEthList();
-ETH *OpenEth(char *name, bool local, bool tapmode, char *tapaddr);
+ETH *OpenEth(char *name);
 void CloseEth(ETH *e);
 CANCEL *EthGetCancel(ETH *e);
 UINT EthGetPacket(ETH *e, void **data);
