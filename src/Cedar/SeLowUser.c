@@ -245,11 +245,7 @@ bool SuInstallDriverInner()
 
 	if (SuStageDriverPackage(stage_dir, sizeof(stage_dir)))
 	{
-		NO_WARNING *nw;
-
 		UniFormat(dst_inf, sizeof(dst_inf), L"%s\\%s", stage_dir, SU_PACKAGE_INF);
-
-		nw = MsInitNoWarningEx(SL_USER_AUTO_PUSH_TIMER);
 
 		if (MsIsServiceInstalled(SL_PROTOCOL_NAME) == false && MsIsServiceRunning(SL_PROTOCOL_NAME) == false)
 		{
@@ -269,8 +265,6 @@ bool SuInstallDriverInner()
 
 			MsRegWriteIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "Start", SERVICE_SYSTEM_START, false);
 		}
-
-		MsFreeNoWarning(nw);
 
 		// The driver store holds its own copy now: the staged one is no longer needed
 		SuUnstageDriverPackage(stage_dir);

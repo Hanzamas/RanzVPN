@@ -372,7 +372,6 @@ CT_b_support_license	Management of Licenses is Supported
 CT_b_support_limit_multilogin	Limits for Multiple Login by Same User is Supported
 CT_b_support_qos		VoIP / QoS Functions is Supported
 CT_b_support_syslog		Syslog Sending Functions is Supported
-CT_b_beta_version		Beta Version (Pre-release build)
 CT_b_support_check_mac	Specifing MAC Address in Access Lists is Supported
 CT_b_support_check_tcp_state	Checking TCP Connection State Filtering is Supported
 CT_b_support_network_connection_name	Getting Network Friendly Name is Supported

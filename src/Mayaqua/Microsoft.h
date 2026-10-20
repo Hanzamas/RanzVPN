@@ -49,9 +49,6 @@
 
 #define	SOFTETHER_FW_SCRIPT_HASH	"Software\\" GC_REG_COMPANY_NAME "\\PacketiX VPN\\FW ScriptHash"
 
-#define	MS_REG_TCP_SETTING_KEY		"Software\\" GC_REG_COMPANY_NAME "\\Network Settings"
-
-
 #ifdef	MICROSOFT_C
 typedef struct MS
 {
@@ -72,24 +69,7 @@ typedef struct MS
 	IO *LockFile;
 } MS;
 
-typedef struct MS_USERMODE_SVC_PULSE_THREAD_PARAM
-{
-	void *hWnd;
-	void *GlobalPulse;
-	volatile bool Halt;
-} MS_USERMODE_SVC_PULSE_THREAD_PARAM;
-
 #endif	// MICROSOFT_C
-
-typedef struct NO_WARNING
-{
-	UINT ThreadId;
-	THREAD *NoWarningThread;
-	EVENT *HaltEvent;
-	volatile bool Halt;
-	UINT64 StartTimer;
-	UINT64 StartTick;
-} NO_WARNING;
 
 #define	REG_CLASSES_ROOT		0
 #define	REG_LOCAL_MACHINE		1
@@ -104,13 +84,6 @@ typedef struct MS_SVC_ARG
 	char *Arg;								// Argument, compared without case
 	UINT Mode;								// SVC_MODE_* that the argument selects
 } MS_SVC_ARG;
-
-typedef struct MS_PROCESS
-{
-	char ExeFilename[MAX_PATH];
-	wchar_t ExeFilenameW[MAX_PATH];
-	UINT ProcessId;
-} MS_PROCESS;
 
 typedef struct MS_ADAPTER
 {
@@ -133,19 +106,6 @@ typedef struct MS_ADAPTER_LIST
 	UINT Num;
 	MS_ADAPTER **Adapters;
 } MS_ADAPTER_LIST;
-
-typedef struct MS_TCP
-{
-	UINT RecvWindowSize;
-	UINT SendWindowSize;
-} MS_TCP;
-
-typedef struct ENUM_CHILD_WINDOW_PARAM
-{
-	LIST *o;
-	bool no_recursion;
-	bool include_ipcontrol;
-} ENUM_CHILD_WINDOW_PARAM;
 
 
 void MsInit();
@@ -194,7 +154,6 @@ wchar_t *MsGetNetworkConnectionName(char *guid);
 void MsGenLockFile(wchar_t *name, UINT size, wchar_t *temp_dir);
 void MsDeleteAllFileW(wchar_t *dir);
 
-void MsInitGlobalNetworkConfig();
 void MsSetThreadPriorityIdle();
 void MsSetThreadPriorityRealtime();
 void MsRestoreThreadPriority();
@@ -218,11 +177,6 @@ const MS_SVC_ARG *MsSvcArgs(UINT *num);
 UINT MsSvcArgToMode(char *arg);
 bool MsWriteEventLog(char *source, UINT type, UINT event_id, char *message);
 bool MsIsUserMode();
-LIST *MsGetProcessList();
-void MsFreeProcessList(LIST *o);
-
-void MsGenerateUserModeSvcGlobalPulseName(char *name, UINT size, char *svc_name);
-void MsUserModeGlobalPulseRecvThread(THREAD *thread, void *param);
 
 void MsFreeAdapter(MS_ADAPTER *a);
 void MsFreeAdapterList(MS_ADAPTER_LIST *o);
@@ -232,21 +186,12 @@ MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid);
 bool MsIsBridgeableIf(UINT type, UINT media_type, UINT physical_medium_type, bool hardware_interface);
 UINT ConvertMidStatusVistaToXp(UINT st);
 
-void MsSetTcpConfig(MS_TCP *tcp);
-bool MsLoadTcpConfigReg(MS_TCP *tcp);
-
 UINT MsGetConsoleWidth();
-NO_WARNING *MsInitNoWarningEx(UINT start_timer);
-void MsFreeNoWarning(NO_WARNING *nw);
-int CmpWindowList(void *p1, void *p2);
-void AddWindow(LIST *o, HWND hWnd);
 
 void MsRegistWindowsFirewallEx(char *title, char *exe);
 void MsRegistWindowsFirewallEx2(char *title, char *exe, char *dir);
 void *MsDisableWow64FileSystemRedirection();
 void MsRestoreWow64FileSystemRedirection(void *p);
-
-bool MsGetProcessExeName(char *path, UINT size, UINT id);
 
 void MsGetComputerName(char *name, UINT size);
 void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache);
