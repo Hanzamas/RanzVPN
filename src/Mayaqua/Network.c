@@ -2575,9 +2575,7 @@ SOCK *NewUDP4(UINT port, IP *ip)
 			{
 				UINT false_flag = 0;
 				(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&false_flag, sizeof(false_flag));
-#ifdef	SO_EXCLUSIVEADDRUSE
 				(void)setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (char *)&true_flag, sizeof(true_flag));
-#endif
 				if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
 				{
 					closesocket(s);
@@ -2676,9 +2674,7 @@ SOCK *NewUDP6(UINT port, IP *ip)
 			if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
 			{
 				(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&false_flag, sizeof(false_flag));
-#ifdef	SO_EXCLUSIVEADDRUSE
 				(void)setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (char *)&true_flag, sizeof(true_flag));
-#endif
 				if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
 				{
 					closesocket(s);
@@ -2717,9 +2713,7 @@ SOCK *NewUDP6(UINT port, IP *ip)
 	if (IS_SPECIAL_PORT(port))
 	{
 		UINT no = 0;
-#ifdef	IPV6_HDRINCL
 		(void)setsockopt(sock->socket, IPPROTO_IP, IPV6_HDRINCL, (char *)&no, sizeof(no));
-#endif
 		(void)setsockopt(sock->socket, IPPROTO_IP, IP_HDRINCL, (char *)&no, sizeof(no));
 
 		sock->IsRawSocket = true;
@@ -2869,49 +2863,96 @@ bool SendAll(SOCK *sock, void *data, UINT size, bool secure)
 	}
 }
 
-void SetWantToUseCipher(SOCK *sock, char *name)
+// Certificates of the chain_certs folder next to the exe, deduplicated by SHA-1 digest. The cache is scanned
+// once and again only after the folder changed (a change notification) or InvalidateChainCertCache() was called
+static LOCK *chain_cert_lock = NULL;
+static LIST *chain_cert_list = NULL;				// X of the folder, each digest once
+static HANDLE chain_cert_notify = INVALID_HANDLE_VALUE;	// Change notification of the folder
+static bool chain_cert_valid = false;				// chain_cert_list is current
+static UINT chain_cert_scans = 0;					// Scans of the folder so far
+
+// Get the folder of the chain certificates
+static void GetChainCertDirW(wchar_t *dirname, UINT size)
 {
-	if (sock == NULL || name == NULL)
-	{
-		return;
-	}
-
-	if (sock->WaitToUseCipher)
-	{
-		Free(sock->WaitToUseCipher);
-	}
-
-	sock->WaitToUseCipher = CopyStr(name);
-}
-
-static void AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx)
-{
-	wchar_t dirname[MAX_SIZE];
 	wchar_t exedir[MAX_SIZE];
-	wchar_t txtname[MAX_SIZE];
-	DIRLIST *dir;
-	LIST *o;
-	UINT i;
-
-	if (ctx == NULL)
-	{
-		return;
-	}
-
-	o = NewListFast(NULL);
 
 	GetExeDirW(exedir, sizeof(exedir));
 
-	CombinePathW(dirname, sizeof(dirname), exedir, L"chain_certs");
+	CombinePathW(dirname, size, exedir, L"chain_certs");
+}
+
+// Create the folder of the chain certificates (once, at server start)
+void PrepareChainCertDir()
+{
+	wchar_t dirname[MAX_SIZE];
+
+	GetChainCertDirW(dirname, sizeof(dirname));
 
 	MakeDirExW(dirname);
+}
 
-	CombinePathW(txtname, sizeof(txtname), dirname, L"Readme_Chain_Certs.txt");
-
-	if (IsFileExistsW(txtname) == false)
+// Mark the cached chain certificates as out of date: the next connection scans the folder again
+void InvalidateChainCertCache()
+{
+	if (chain_cert_lock == NULL)
 	{
-		FileCopyW(L"|chain_certs.txt", txtname);
+		return;
 	}
+
+	Lock(chain_cert_lock);
+	{
+		chain_cert_valid = false;
+	}
+	Unlock(chain_cert_lock);
+}
+
+// Number of scans of the chain_certs folder so far
+UINT GetChainCertScanCount()
+{
+	UINT ret;
+
+	if (chain_cert_lock == NULL)
+	{
+		return 0;
+	}
+
+	Lock(chain_cert_lock);
+	{
+		ret = chain_cert_scans;
+	}
+	Unlock(chain_cert_lock);
+
+	return ret;
+}
+
+// Release the cache and the change notification
+static void FreeChainCertCache()
+{
+	if (chain_cert_list != NULL)
+	{
+		FreeXList(chain_cert_list);
+		chain_cert_list = NULL;
+	}
+
+	if (chain_cert_notify != INVALID_HANDLE_VALUE)
+	{
+		FindCloseChangeNotification(chain_cert_notify);
+		chain_cert_notify = INVALID_HANDLE_VALUE;
+	}
+
+	chain_cert_valid = false;
+}
+
+// Read the folder into the cache. chain_cert_lock is held
+static void ScanChainCertDir(wchar_t *dirname)
+{
+	DIRLIST *dir;
+	LIST *o;
+	LIST *hashes;
+	UINT i;
+
+	o = NewListFast(NULL);
+	hashes = NewListFast(NULL);
 
 	dir = EnumDirW(dirname);
 
@@ -2938,24 +2979,26 @@ static void AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx)
 
 					GetXDigest(x, hash, true);
 
-					for (j = 0; j < LIST_NUM(o); j++)
+					for (j = 0; j < LIST_NUM(hashes); j++)
 					{
-						UCHAR *hash2 = LIST_DATA(o, j);
+						UCHAR *hash2 = LIST_DATA(hashes, j);
 
 						if (Cmp(hash, hash2, SHA1_SIZE) == 0)
 						{
 							exists = true;
+							break;
 						}
 					}
 
 					if (exists == false)
 					{
-						AddChainSslCert(ctx, x);
-
-						Add(o, Clone(hash, SHA1_SIZE));
+						Add(hashes, Clone(hash, SHA1_SIZE));
+						Add(o, x);
 					}
-
-					FreeX(x);
+					else
+					{
+						FreeX(x);
+					}
 				}
 			}
 		}
@@ -2963,38 +3006,129 @@ static void AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx)
 		FreeDir(dir);
 	}
 
-	for (i = 0; i < LIST_NUM(o); i++)
+	for (i = 0; i < LIST_NUM(hashes); i++)
 	{
-		UCHAR *hash = LIST_DATA(o, i);
-
-		Free(hash);
+		Free(LIST_DATA(hashes, i));
 	}
 
-	ReleaseList(o);
+	ReleaseList(hashes);
+
+	chain_cert_list = o;
+	chain_cert_scans++;
+}
+
+// Bring the cache up to date: read the folder again when it changed or was invalidated. chain_cert_lock is held
+static void RefreshChainCertCache()
+{
+	if (chain_cert_valid && chain_cert_notify != INVALID_HANDLE_VALUE &&
+		WaitForSingleObject(chain_cert_notify, 0) == WAIT_OBJECT_0)
+	{
+		// The folder changed: arm the notification again before the scan so that a change during it is seen
+		if (FindNextChangeNotification(chain_cert_notify) == false)
+		{
+			FindCloseChangeNotification(chain_cert_notify);
+			chain_cert_notify = INVALID_HANDLE_VALUE;
+		}
+
+		chain_cert_valid = false;
+	}
+
+	if (chain_cert_valid == false)
+	{
+		wchar_t dirname[MAX_SIZE];
+
+		GetChainCertDirW(dirname, sizeof(dirname));
+
+		if (chain_cert_list != NULL)
+		{
+			FreeXList(chain_cert_list);
+			chain_cert_list = NULL;
+		}
+
+		// The notification is opened before the scan so that no change between them is lost
+		if (chain_cert_notify == INVALID_HANDLE_VALUE)
+		{
+			chain_cert_notify = FindFirstChangeNotificationW(dirname, FALSE,
+				FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_LAST_WRITE);
+		}
+
+		ScanChainCertDir(dirname);
+
+		// Without a notification (no folder) every call scans
+		chain_cert_valid = (chain_cert_notify != INVALID_HANDLE_VALUE);
+	}
+}
+
+// Generation of the chain certificates: it changes each time the cached list is read again. The cache is brought
+// up to date first, so a context built after this call has the certificates of this generation (or newer ones)
+UINT GetChainCertGeneration()
+{
+	UINT ret;
+
+	if (chain_cert_lock == NULL)
+	{
+		return 0;
+	}
+
+	Lock(chain_cert_lock);
+	{
+		RefreshChainCertCache();
+
+		ret = chain_cert_scans;
+	}
+	Unlock(chain_cert_lock);
+
+	return ret;
+}
+
+// Add the certificates of the chain_certs folder to the chain of ctx. Returns the number added
+UINT AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx)
+{
+	UINT i;
+	UINT ret = 0;
+
+	if (ctx == NULL || chain_cert_lock == NULL)
+	{
+		return 0;
+	}
+
+	Lock(chain_cert_lock);
+	{
+		RefreshChainCertCache();
+
+		for (i = 0; i < LIST_NUM(chain_cert_list); i++)
+		{
+			if (AddChainSslCert(ctx, LIST_DATA(chain_cert_list, i)))
+			{
+				ret++;
+			}
+		}
+	}
+	Unlock(chain_cert_lock);
+
+	return ret;
 }
 
 bool AddChainSslCert(struct ssl_ctx_st *ctx, X *x)
 {
-	bool ret = false;
-	X *x_copy;
-	if (ctx == NULL || x == NULL)
+	if (ctx == NULL || x == NULL || x->x509 == NULL)
 	{
-		return ret;
+		return false;
 	}
 
-	x_copy = CloneX(x);
-
-	if (x_copy != NULL)
+	// The context takes over the reference when it succeeds
+	if (X509_up_ref(x->x509) != 1)
 	{
-		SSL_CTX_add_extra_chain_cert(ctx, x_copy->x509);
-		x_copy->do_not_free = true;
-
-		ret = true;
-
-		FreeX(x_copy);
+		return false;
 	}
 
-	return ret;
+	if (SSL_CTX_add_extra_chain_cert(ctx, x->x509) != 1)
+	{
+		X509_free(x->x509);
+		return false;
+	}
+
+	return true;
 }
 
 // Drain the OpenSSL error queue of a failed SSL_accept or SSL_connect into the ssl_err code (call under openssl_lock)
@@ -3074,6 +3208,103 @@ static void AddSslRootCerts(X509_STORE *store)
 	}
 }
 
+static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err);
+
+// A server context with every setting that does not depend on the connection applied: version flags, security
+// level, certificate chain, certificate and key, cipher list and groups. x and priv may be NULL (no certificate),
+// chain NULL takes the certificates of the chain_certs folder, cipher_list NULL keeps the OpenSSL default and
+// settings NULL overrides nothing. Connections take the context by reference (ShareSSLCtx, FreeSSLCtx)
+struct ssl_ctx_st *NewServerSSLCtx(X *x, K *priv, LIST *chain, char *cipher_list, SSL_ACCEPT_SETTINGS *settings)
+{
+	SSL_CTX *ctx;
+	SSL_ACCEPT_SETTINGS none;
+	bool use_cert = (x != NULL && priv != NULL && CheckXandK(x, priv));
+
+	ctx = NewSSLCtx(true);
+	if (ctx == NULL)
+	{
+		return NULL;
+	}
+
+	if (settings == NULL)
+	{
+		Zero(&none, sizeof(none));
+		settings = &none;
+	}
+
+	Lock(openssl_lock);
+	{
+		if (settings->Tls_Disable1_0)
+		{
+			SSL_CTX_set_options(ctx, SSL_OP_NO_TLSv1);
+		}
+
+		if (settings->Tls_Disable1_1)
+		{
+			SSL_CTX_set_options(ctx, SSL_OP_NO_TLSv1_1);
+		}
+
+		if (settings->Tls_Disable1_2)
+		{
+			SSL_CTX_set_options(ctx, SSL_OP_NO_TLSv1_2);
+		}
+
+		if (settings->Tls_Disable1_3)
+		{
+			SSL_CTX_set_options(ctx, SSL_OP_NO_TLSv1_3);
+		}
+	}
+	Unlock(openssl_lock);
+
+	if (chain == NULL)
+	{
+		AddChainSslCertOnDirectory(ctx);
+	}
+	else
+	{
+		UINT i;
+
+		LockList(chain);
+		{
+			for (i = 0;i < LIST_NUM(chain);i++)
+			{
+				AddChainSslCert(ctx, LIST_DATA(chain, i));
+			}
+		}
+		UnlockList(chain);
+	}
+
+	Lock(openssl_lock);
+	{
+		if (settings->Override_Security_Level)
+		{
+			SSL_CTX_set_security_level(ctx, settings->Override_Security_Level_Value);
+		}
+
+		if (use_cert)
+		{
+			SSL_CTX_use_certificate(ctx, x->x509);
+			SSL_CTX_use_PrivateKey(ctx, priv->pkey);
+		}
+
+		if (cipher_list != NULL)
+		{
+			if (SSL_CTX_set_cipher_list(ctx, cipher_list) == 0)
+			{
+				SSL_CTX_set_cipher_list(ctx, DEFAULT_CIPHER_LIST);
+			}
+		}
+
+		SSL_CTX_set1_groups_list(ctx, PQ_GROUP_LIST);
+
+		// A context that lives for many connections must not resume sessions: a fresh context per connection never did
+		SSL_CTX_set_session_cache_mode(ctx, SSL_SESS_CACHE_OFF);
+	}
+	Unlock(openssl_lock);
+
+	return ctx;
+}
+
 bool StartSSL(SOCK *sock, X *x, K *priv)
 {
 	return StartSSLEx(sock, x, priv, NULL);
@@ -3083,6 +3314,22 @@ bool StartSSLEx(SOCK *sock, X *x, K *priv, char *sni_hostname)
 	return StartSSLEx3(sock, x, priv, NULL, sni_hostname, NULL, NULL);
 }
 bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err)
+{
+	return StartSSLMain(sock, NULL, x, priv, chain, sni_hostname, ssl_option, ssl_err);
+}
+// Start TLS on an accepted connection with a server context that is shared by many connections (NewServerSSLCtx).
+// The caller keeps its own reference of ctx
+bool StartSSLServer(SOCK *sock, struct ssl_ctx_st *ctx, UINT *ssl_err)
+{
+	if (ctx == NULL)
+	{
+		return false;
+	}
+
+	return StartSSLMain(sock, ctx, NULL, NULL, NULL, NULL, NULL, ssl_err);
+}
+// server_ctx NULL: a context of this call (a client context, or a server one built from x, priv and chain)
+static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err)
 {
 	X509 *x509;
 	EVP_PKEY *key;
@@ -3109,6 +3356,10 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 	{
 		return false;
 	}
+	if (server_ctx != NULL && sock->ServerMode == false)
+	{
+		return false;
+	}
 
 	if (sock->SecureMode)
 	{
@@ -3122,7 +3373,19 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 		return true;
 	}
 
-	ssl_ctx = NewSSLCtx(sock->ServerMode);
+	if (server_ctx != NULL)
+	{
+		ShareSSLCtx(server_ctx);
+		ssl_ctx = server_ctx;
+	}
+	else if (sock->ServerMode)
+	{
+		ssl_ctx = NewServerSSLCtx(x, priv, chain, NULL, NULL);
+	}
+	else
+	{
+		ssl_ctx = NewSSLCtx(false);
+	}
 	if (ssl_ctx == NULL)
 	{
 		goto FAIL;
@@ -3130,58 +3393,7 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 
 	Lock(openssl_lock);
 	{
-		if (sock->ServerMode)
-		{
-#ifdef	SSL_OP_NO_TLSv1
-			if (sock->SslAcceptSettings.Tls_Disable1_0)
-			{
-				SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1);
-			}
-#endif
-
-#ifdef	SSL_OP_NO_TLSv1_1
-			if (sock->SslAcceptSettings.Tls_Disable1_1)
-			{
-				SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_1);
-			}
-#endif
-
-#ifdef	SSL_OP_NO_TLSv1_2
-			if (sock->SslAcceptSettings.Tls_Disable1_2)
-			{
-				SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_2);
-			}
-#endif
-
-#ifdef	SSL_OP_NO_TLSv1_3
-			if (sock->SslAcceptSettings.Tls_Disable1_3)
-			{
-				SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_3);
-			}
-#endif
-
-			Unlock(openssl_lock);
-			if (chain == NULL)
-			{
-				AddChainSslCertOnDirectory(ssl_ctx);
-			}
-			else
-			{
-				UINT i;
-				X *x;
-				LockList(chain);
-				{
-					for (i = 0;i < LIST_NUM(chain);i++)
-					{
-						x = LIST_DATA(chain, i);
-						AddChainSslCert(ssl_ctx, x);
-					}
-				}
-				UnlockList(chain);
-			}
-			Lock(openssl_lock);
-		}
-		else
+		if (sock->ServerMode == false)
 		{
 			if (ssl_option != NULL && ssl_option->VerifyPeer)
 			{
@@ -3209,13 +3421,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 			}
 		}
 
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) ||  LIBRESSL_VERSION_NUMBER >= 0x3060000L
-		if (sock->SslAcceptSettings.Override_Security_Level)
-		{
-			SSL_CTX_set_security_level(ssl_ctx, sock->SslAcceptSettings.Override_Security_Level_Value);
-		}
-#endif
-
 		sock->ssl = SSL_new(ssl_ctx);
 
 		if (sock->ssl == NULL)
@@ -3226,7 +3431,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 
 		SSL_set_fd(sock->ssl, (int)sock->socket);
 
-#ifdef	SSL_CTRL_SET_TLSEXT_HOSTNAME
 		if (sock->ServerMode == false)
 		{
 			if (IsEmptyStr(sni_hostname) == false)
@@ -3234,41 +3438,32 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 				SSL_set_tlsext_host_name(sock->ssl, sni_hostname);
 			}
 		}
-#endif
 
 	}
 	Unlock(openssl_lock);
 
-	if (x != NULL)
+	if (sock->ServerMode == false)
 	{
-		if (CheckXandK(x, priv))
+		// A client: certificate and groups of this connection (a server has them in its context)
+		if (x != NULL)
 		{
-			x509 = x->x509;
-			key = priv->pkey;
-
-			Lock(openssl_lock);
+			if (CheckXandK(x, priv))
 			{
-				SSL_use_certificate(sock->ssl, x509);
-				SSL_use_PrivateKey(sock->ssl, key);
+				x509 = x->x509;
+				key = priv->pkey;
+
+				Lock(openssl_lock);
+				{
+					SSL_use_certificate(sock->ssl, x509);
+					SSL_use_PrivateKey(sock->ssl, key);
+				}
+				Unlock(openssl_lock);
 			}
-			Unlock(openssl_lock);
 		}
-	}
 
-	if (sock->WaitToUseCipher != NULL)
-	{
-		Lock(openssl_lock);
-		{
-			if (SSL_set_cipher_list(sock->ssl, sock->WaitToUseCipher) == 0)
-				SSL_set_cipher_list(sock->ssl, DEFAULT_CIPHER_LIST);
-		}
-		Unlock(openssl_lock);
-	}
-
-	#if OPENSSL_VERSION_NUMBER >= 0x30000000L
 		SSL_set1_groups_list(sock->ssl, PQ_GROUP_LIST);
-	#endif
-	
+	}
+
 	if (sock->ServerMode)
 	{
 		handshake_ret = SSL_accept(sock->ssl);
@@ -3294,8 +3489,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 	if (sock->ServerMode)
 	{
 
-#ifdef	SSL_CTRL_SET_TLSEXT_HOSTNAME
-#ifdef	TLSEXT_NAMETYPE_host_name
 		if (true)
 		{
 			const char *sni_recv_hostname = SSL_get_servername(sock->ssl, TLSEXT_NAMETYPE_host_name);
@@ -3305,8 +3498,7 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 				StrCpy(sock->SniHostname, sizeof(sock->SniHostname), (char *)sni_recv_hostname);
 			}
 		}
-#endif
-#endif
+
 	}
 
 	Lock(openssl_lock);
@@ -3483,15 +3675,8 @@ static UINT SecureRecv(SOCK *sock, void *data, UINT size)
 			}
 		}
 		Unlock(sock->ssl_lock);
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-		// OpenSSL 3: both 0 and negative values may be retryable; use SSL_get_error().
+		// Both 0 and negative values may be retryable: use SSL_get_error().
 		// See: https://github.com/openssl/openssl/blob/435981cbadad2c58c35bacd30ca5d8b4c9bea72f/doc/man3/SSL_read.pod
-		if (ret == 0)
-		{
-			Disconnect(sock);
-			return 0;
-		}
-#endif
 		if (ret <= 0 && (e == SSL_ERROR_WANT_READ || e == SSL_ERROR_WANT_WRITE || e == SSL_ERROR_SSL))
 		{
 			return SslFailResult(sock, e);
@@ -3509,11 +3694,7 @@ static UINT SecureRecv(SOCK *sock, void *data, UINT size)
 		ERR_clear_error();
 		ret = SSL_read(sock->ssl, data, size);
 
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-		if (ret < 0)
-#else
 		if (ret <= 0)
-#endif
 		{
 			e = SSL_get_error(sock->ssl, ret);
 		}
@@ -3532,16 +3713,6 @@ static UINT SecureRecv(SOCK *sock, void *data, UINT size)
 
 		return (UINT)ret;
 	}
-
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-	// OpenSSL 3: both 0 and negative values may be retryable; use SSL_get_error().
-	// See: https://github.com/openssl/openssl/blob/435981cbadad2c58c35bacd30ca5d8b4c9bea72f/doc/man3/SSL_read.pod
-	if (ret == 0)
-	{
-		Disconnect(sock);
-		return 0;
-	}
-#endif
 
 	return SslFailResult(sock, e);
 }
@@ -3565,11 +3736,7 @@ static UINT SecureSend(SOCK *sock, void *data, UINT size)
 
 		ERR_clear_error();
 		ret = SSL_write(sock->ssl, data, size);
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-		if (ret < 0)
-#else
 		if (ret <= 0)
-#endif
 		{
 			e = SSL_get_error(sock->ssl, ret);
 		}
@@ -3586,14 +3753,6 @@ static UINT SecureSend(SOCK *sock, void *data, UINT size)
 		Unlock(sock->lock);
 		return (UINT)ret;
 	}
-
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-	if (ret == 0)
-	{
-		Disconnect(sock);
-		return 0;
-	}
-#endif
 
 	return SslFailResult(sock, e);
 }
@@ -4188,13 +4347,8 @@ void Disconnect(SOCK *sock)
 	{
 		if (sock->socket != INVALID_SOCKET)
 		{
-#ifdef	SO_DONTLINGER
 			UINT true_flag = 1;
 			(void)setsockopt(sock->socket, SOL_SOCKET, SO_DONTLINGER, (char *)&true_flag, sizeof(true_flag));
-#else
-			UINT false_flag = 0;
-			(void)setsockopt(sock->socket, SOL_SOCKET, SO_LINGER, (char *)&false_flag, sizeof(false_flag));
-#endif
 		}
 
 		Lock(sock->lock);
@@ -4454,9 +4608,7 @@ static void SetSockTos(SOCK *s, int tos)
 		return;
 	}
 
-#ifdef	IP_TOS
 	(void)setsockopt(s->socket, IPPROTO_IP, IP_TOS, (char *)&tos, sizeof(int));
-#endif
 
 	s->CurrentTos = tos;
 }
@@ -4754,12 +4906,7 @@ SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname
 	Zero(&ling, sizeof(ling));
 
 	UINT true_flag = 1;
-#ifdef	SO_DONTLINGER
 	(void)setsockopt(sock->socket, SOL_SOCKET, SO_DONTLINGER, (char *)&true_flag, sizeof(true_flag));
-#else
-	UINT false_flag = 0;
-	(void)setsockopt(sock->socket, SOL_SOCKET, SO_LINGER, (char *)&false_flag, sizeof(false_flag));
-#endif
 
 	(void)setsockopt(sock->socket, IPPROTO_TCP, TCP_NODELAY, (char *)&true_flag, sizeof(true_flag));
 
@@ -5156,15 +5303,11 @@ void QuerySocketInformation(SOCK *sock)
 
 		if (sock->IPv6)
 		{
-#ifdef	IPV6_UNICAST_HOPS
 			opt_value = IPV6_UNICAST_HOPS;
-#endif
 		}
 		else
 		{
-#ifdef	IP_TTL
 			opt_value = IP_TTL;
-#endif
 		}
 
 		size = sizeof(UINT);
@@ -5236,7 +5379,6 @@ void CleanupSock(SOCK *s)
 		s->CipherName = NULL;
 	}
 
-	Free(s->WaitToUseCipher);
 	DeleteLock(s->lock);
 	DeleteLock(s->ssl_lock);
 	DeleteLock(s->disconnect_lock);
@@ -5714,42 +5856,35 @@ static DH *TmpDhCallback(SSL *ssl, int is_export, int keylength)
 
 struct ssl_ctx_st *NewSSLCtx(bool server_mode)
 {
-	struct ssl_ctx_st *ctx = SSL_CTX_new(SSLv23_method());
+	struct ssl_ctx_st *ctx = SSL_CTX_new(server_mode ? TLS_server_method() : TLS_client_method());
 	if(ctx == NULL)
 	{
 		return NULL;
 	}
-	if (server_mode)
-	{
-		SSL_CTX_set_ssl_version(ctx, SSLv23_server_method());
-	}
-	else
-	{
-		SSL_CTX_set_ssl_version(ctx, SSLv23_client_method());
-	}
 
-#ifdef	SSL_OP_NO_SSLv3
 	SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv3);
-#endif
 
-#ifdef	SSL_OP_NO_TICKET
 	SSL_CTX_set_options(ctx, SSL_OP_NO_TICKET);
-#endif
 
-#ifdef	SSL_OP_CIPHER_SERVER_PREFERENCE
 	if (server_mode)
 	{
 		SSL_CTX_set_options(ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
 	}
-#endif
 
 	SSL_CTX_set_tmp_dh_callback(ctx, TmpDhCallback);
 
-#ifdef	SSL_CTX_set_ecdh_auto
-	SSL_CTX_set_ecdh_auto(ctx, 1);
-#endif
-
 	return ctx;
+}
+
+// Take one more reference of ctx: each holder calls FreeSSLCtx once
+void ShareSSLCtx(struct ssl_ctx_st *ctx)
+{
+	if (ctx == NULL)
+	{
+		return;
+	}
+
+	SSL_CTX_up_ref(ctx);
 }
 
 void FreeSSLCtx(struct ssl_ctx_st *ctx)
@@ -5765,7 +5900,7 @@ void FreeSSLCtx(struct ssl_ctx_st *ctx)
 UINT GetOSSecurityLevel()
 {
 	UINT security_level_new = 0, security_level_set_ssl_version = 0;
-	struct ssl_ctx_st *ctx = SSL_CTX_new(SSLv23_method());
+	struct ssl_ctx_st *ctx = SSL_CTX_new(TLS_method());
 
 	if (ctx == NULL)
 	{
@@ -5773,11 +5908,9 @@ UINT GetOSSecurityLevel()
 	}
 
 
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || LIBRESSL_VERSION_NUMBER >= 0x3060000L
 	security_level_new = SSL_CTX_get_security_level(ctx);
-#endif
 
-	security_level_set_ssl_version = SSL_CTX_set_ssl_version(ctx, SSLv23_server_method());
+	security_level_set_ssl_version = SSL_CTX_set_ssl_version(ctx, TLS_server_method());
 
 	FreeSSLCtx(ctx);
 
@@ -5817,6 +5950,8 @@ void InitNetwork()
 
 	current_global_ip_lock = NewLock();
 	current_global_ip_set = false;
+
+	chain_cert_lock = NewLock();
 }
 
 TOKEN_LIST *GetCipherList()
@@ -6132,6 +6267,10 @@ void FreeNetwork()
 	ssl_root_certs = NULL;
 
 	FreeWaitThread();
+
+	FreeChainCertCache();
+	DeleteLock(chain_cert_lock);
+	chain_cert_lock = NULL;
 
 	DeleteLock(machine_name_lock);
 	DeleteLock(disconnect_function_lock);

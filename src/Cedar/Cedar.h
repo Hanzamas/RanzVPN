@@ -447,6 +447,9 @@ struct CEDAR
 	UINT QueueBudget;								// Changed only with InterlockedExchangeAdd
 	UINT FifoBudget;								// Changed only with InterlockedExchangeAdd
 	SSL_ACCEPT_SETTINGS SslAcceptSettings;
+	struct ssl_ctx_st *ServerSslCtx;				// The one server SSL_CTX of all accepted connections (GetCedarServerSslCtx), NULL until the first one
+	SSL_ACCEPT_SETTINGS ServerSslCtxSettings;		// SslAcceptSettings that ServerSslCtx was built with
+	UINT ServerSslCtxChainGen;						// Generation of the chain_certs folder that ServerSslCtx was built with (ServerChain NULL)
 	UINT DhParamBits;
 	char StunServer[MAX_HOST_NAME_LEN + 1];	// STUN server (host[:port]) for UDP acceleration, empty = STUN disabled
 	UCHAR MachineIdSalt[MACHINE_ID_SALT_SIZE];	// Machine identity salt: random from NewCedar, then the one of the config file
@@ -469,6 +472,7 @@ void AddConnection(CEDAR *cedar, CONNECTION *c);
 UINT GetUnestablishedConnections(CEDAR *cedar);
 void DelConnection(CEDAR *cedar, CONNECTION *c);
 void SetCedarCipherList(CEDAR *cedar, char *name);
+struct ssl_ctx_st *GetCedarServerSslCtx(CEDAR *c);
 void InitCedar();
 void FreeCedar();
 char *GetSvcName(CEDAR *cedar, bool udp, UINT port);

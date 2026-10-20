@@ -4663,6 +4663,8 @@ SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_serve
 	s->ServerListenerList = NewList(CompareServerListener);
 	s->StartTime = SystemTime64();
 
+	PrepareChainCertDir();
+
 	if (bridge)
 	{
 		SetCedarVpnBridge(s->Cedar);

@@ -155,6 +155,12 @@ bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x)
 
 	FreeCertList(current_chain_dir);
 
+	if (ret && auto_save)
+	{
+		// The folder was changed: the next connection of the server scans it again
+		InvalidateChainCertCache();
+	}
+
 	return ret;
 }
 
