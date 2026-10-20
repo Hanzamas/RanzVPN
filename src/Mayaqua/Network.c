@@ -23,6 +23,7 @@
 
 #include <iphlpapi.h>
 #include <WS2tcpip.h>
+#include <mstcpip.h>
 #include <wincrypt.h>
 #include <IcmpAPI.h>
 
@@ -822,122 +823,35 @@ void IPToStr6Array(char *str, UINT size, UCHAR *bytes)
 }
 void IPToStr6(char *str, UINT size, IP *ip)
 {
-	char tmp[MAX_SIZE];
-
-	IPToStr6Inner(tmp, ip);
-
-	StrCpy(str, size, tmp);
-}
-void IPToStr6Inner(char *str, IP *ip)
-{
-	UINT i;
-	USHORT values[8];
-	UINT zero_started_index;
-	UINT max_zero_len;
-	UINT max_zero_start;
-	IP a;
+	IN6_ADDR addr;
+	char tmp[INET6_ADDRSTRLEN];
+	ULONG len = sizeof(tmp);
 	if (str == NULL || ip == NULL)
 	{
 		return;
 	}
 
-	Copy(&a, ip, sizeof(IP));
+	Copy(&addr, ip->address, sizeof(addr));
 
-	for (i = 0; i < 8; i++)
+	// RFC 5952 text, with "%" and the scope ID when the scope ID is not zero
+	if (RtlIpv6AddressToStringExA(&addr, ip->ipv6_scope_id, 0, tmp, &len) != 0)
 	{
-		Copy(&values[i], &a.address[i * 2], sizeof(USHORT));
-		values[i] = Endian16(values[i]);
+		tmp[0] = 0;
 	}
 
-	zero_started_index = INFINITE;
-	max_zero_len = 0;
-	max_zero_start = INFINITE;
-	for (i = 0; i < 9; i++)
-	{
-		USHORT v = (i != 8 ? values[i] : 1);
-
-		if (v == 0)
-		{
-			if (zero_started_index == INFINITE)
-			{
-				zero_started_index = i;
-			}
-		}
-		else
-		{
-			UINT zero_len;
-
-			if (zero_started_index != INFINITE)
-			{
-				zero_len = i - zero_started_index;
-				if (zero_len >= 2)
-				{
-					if (max_zero_len < zero_len)
-					{
-						max_zero_start = zero_started_index;
-						max_zero_len = zero_len;
-					}
-				}
-
-				zero_started_index = INFINITE;
-			}
-		}
-	}
-
-	StrCpy(str, 0, "");
-	for (i = 0; i < 8; i++)
-	{
-		char tmp[16];
-
-		ToHex(tmp, values[i]);
-		StrLower(tmp);
-
-		if (i == max_zero_start)
-		{
-			if (i == 0)
-			{
-				StrCat(str, 0, "::");
-			}
-			else
-			{
-				StrCat(str, 0, ":");
-			}
-			i += max_zero_len - 1;
-		}
-		else
-		{
-			StrCat(str, 0, tmp);
-			if (i != 7)
-			{
-				StrCat(str, 0, ":");
-			}
-		}
-	}
-
-	if (ip->ipv6_scope_id != 0)
-	{
-		char tmp[64];
-
-		StrCat(str, 0, "%");
-		ToStr(tmp, ip->ipv6_scope_id);
-
-		StrCat(str, 0, tmp);
-	}
+	StrCpy(str, size, tmp);
 }
 
 bool StrToIP6(IP *ip, char *str)
 {
-	TOKEN_LIST *t;
 	char tmp[MAX_PATH];
-	IP a;
-	UINT i;
-	UINT scope_id = 0;
+	IN6_ADDR addr;
+	ULONG scope_id;
+	USHORT port;
 	if (str == NULL || ip == NULL)
 	{
 		return false;
 	}
-
-	Zero(&a, sizeof(a));
 
 	StrCpy(tmp, sizeof(tmp), str);
 	Trim(tmp);
@@ -952,176 +866,20 @@ bool StrToIP6(IP *ip, char *str)
 		}
 	}
 
-	i = SearchStrEx(tmp, "%", 0, false);
-	if (i != INFINITE)
+	// The whole text is the address and an optional decimal "%scope": no brackets and so no port
+	if (InStr(tmp, "[") || InStr(tmp, "]"))
 	{
-		char ss[MAX_PATH];
-
-		StrCpy(ss, sizeof(ss), &tmp[i + 1]);
-
-		tmp[i] = 0;
-
-		Trim(tmp);
-
-		Trim(ss);
-
-		scope_id = ToInt(ss);
-	}
-
-	t = ParseTokenWithNullStr(tmp, ":");
-	if (t->NumTokens >= 3 && t->NumTokens <= 8)
-	{
-		UINT i, n;
-		bool b = true;
-		UINT k = 0;
-
-		n = 0;
-
-		for (i = 0; i < t->NumTokens; i++)
-		{
-			char *str = t->Token[i];
-
-			if (i != 0 && i != (t->NumTokens - 1) && StrLen(str) == 0)
-			{
-				n++;
-				if (n == 1)
-				{
-					k += 2 * (8 - t->NumTokens + 1);
-				}
-				else
-				{
-					b = false;
-					break;
-				}
-			}
-			else
-			{
-				UCHAR chars[2];
-
-				if (CheckIPItemStr6(str) == false)
-				{
-					b = false;
-					break;
-				}
-
-				IPItemStrToChars6(chars, str);
-
-				a.address[k++] = chars[0];
-				a.address[k++] = chars[1];
-			}
-		}
-
-		if (n != 0 && n != 1)
-		{
-			b = false;
-		}
-		else if (n == 0 && t->NumTokens != 8)
-		{
-			b = false;
-		}
-
-		if (b == false)
-		{
-			FreeToken(t);
-			return false;
-		}
-	}
-	else
-	{
-		FreeToken(t);
 		return false;
 	}
 
-	FreeToken(t);
+	if (RtlIpv6StringToAddressExA(tmp, &addr, &scope_id, &port) != 0)
+	{
+		return false;
+	}
 
-	Copy(ip, &a, sizeof(IP));
-
+	Zero(ip, sizeof(IP));
+	Copy(ip->address, &addr, sizeof(ip->address));
 	ip->ipv6_scope_id = scope_id;
-
-	return true;
-}
-
-void IPItemStrToChars6(UCHAR *chars, char *str)
-{
-	char tmp[5];
-	BUF *b;
-	UINT len;
-	if (chars == NULL)
-	{
-		return;
-	}
-
-	Zero(tmp, sizeof(tmp));
-
-	len = StrLen(str);
-	switch (len)
-	{
-	case 0:
-		tmp[0] = tmp[1] = tmp[2] = tmp[3] = '0';
-		break;
-
-	case 1:
-		tmp[0] = tmp[1] = tmp[2] = '0';
-		tmp[3] = str[0];
-		break;
-
-	case 2:
-		tmp[0] = tmp[1] = '0';
-		tmp[2] = str[0];
-		tmp[3] = str[1];
-		break;
-
-	case 3:
-		tmp[0] = '0';
-		tmp[1] = str[0];
-		tmp[2] = str[1];
-		tmp[3] = str[2];
-		break;
-
-	case 4:
-		tmp[0] = str[0];
-		tmp[1] = str[1];
-		tmp[2] = str[2];
-		tmp[3] = str[3];
-		break;
-	}
-
-	b = StrToBin(tmp);
-
-	chars[0] = ((UCHAR *)b->Buf)[0];
-	chars[1] = ((UCHAR *)b->Buf)[1];
-
-	FreeBuf(b);
-}
-
-bool CheckIPItemStr6(char *str)
-{
-	UINT i, len;
-	if (str == NULL)
-	{
-		return false;
-	}
-
-	len = StrLen(str);
-	if (len >= 5)
-	{
-		return false;
-	}
-
-	for (i = 0; i < len; i++)
-	{
-		char c = str[i];
-
-		if ((c >= 'a' && c <= 'f') ||
-		        (c >= 'A' && c <= 'F') ||
-		        (c >= '0' && c <= '9'))
-		{
-		}
-		else
-		{
-			return false;
-		}
-	}
 
 	return true;
 }
@@ -5357,15 +5115,22 @@ void IPToStr(char *str, UINT size, IP *ip)
 	}
 	else
 	{
-		const BYTE *ipv4 = IPV4(ip->address);
-		Format(str, size, "%hhu.%hhu.%hhu.%hhu", ipv4[0], ipv4[1], ipv4[2], ipv4[3]);
+		IN_ADDR addr;
+		char tmp[INET_ADDRSTRLEN];
+
+		Copy(&addr, IPV4(ip->address), sizeof(addr));
+		RtlIpv4AddressToStringA(&addr, tmp);
+
+		StrCpy(str, size, tmp);
 	}
 }
 
 bool StrToIP(IP *ip, char *str)
 {
-	TOKEN_LIST *token;
 	char *tmp;
+	PCSTR end;
+	IN_ADDR addr;
+	bool ok;
 	if (ip == NULL || str == NULL)
 	{
 		return false;
@@ -5378,33 +5143,18 @@ bool StrToIP(IP *ip, char *str)
 
 	ZeroIP4(ip);
 
+	// Strict four-part dotted decimal, and nothing after it
 	tmp = CopyStr(str);
 	Trim(tmp);
-	token = ParseToken(tmp, ".");
+	ok = (RtlIpv4StringToAddressA(tmp, TRUE, &end, &addr) == 0 && *end == 0);
 	Free(tmp);
 
-	if (token->NumTokens != 4)
+	if (ok == false)
 	{
-		FreeToken(token);
 		return false;
 	}
-	for (BYTE i = 0; i < IPV4_SIZE; ++i)
-	{
-		char *s = token->Token[i];
-		if (s[0] < '0' || s[0] > '9' ||
-		        (ToInt(s) >= 256))
-		{
-			FreeToken(token);
-			return false;
-		}
-	}
 
-	for (BYTE i = 0; i < IPV4_SIZE; ++i)
-	{
-		IPV4(ip->address)[i] = (BYTE)ToInt(token->Token[i]);
-	}
-
-	FreeToken(token);
+	Copy(IPV4(ip->address), &addr, IPV4_SIZE);
 
 	return true;
 }
