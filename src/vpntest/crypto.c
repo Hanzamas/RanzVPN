@@ -1,13 +1,13 @@
 // crypto.c
 // Known-answer tests of the Mayaqua hash, cipher and random primitives ("crypto" command of vpntest)
 //
-// Pins the outputs that ticket #87 must keep when MD4, MD5, SHA-1, RC4, DES and the random
+// Pins the outputs that ticket #87 must keep when MD4, MD5, SHA-1, RC4 and the random
 // generator move from OpenSSL to CNG, plus SHA-0 (own code: CNG has no SHA-0) and SHA-256
 // (stays on OpenSSL). The hash vectors are the RFC 1320 and RFC 1321 test suites and the FIPS 180
-// messages, the RC4 vectors come from RFC 6229 and the DES vectors from FIPS 81 and the DES
-// literature; a value marked "computed" was made with two independent implementations. All of
-// them hold for the OpenSSL code and for CNG alike, so the test runs against both. The one
-// exception is the 65-byte RC4 key, which pins the CNG code: Encrypt() writes zeros for it.
+// messages and the RC4 vectors come from RFC 6229; a value marked "computed" was made with two
+// independent implementations. All of them hold for the OpenSSL code and for CNG alike, so the
+// test runs against both. The one exception is the 65-byte RC4 key, which pins the CNG code:
+// Encrypt() writes zeros for it.
 // The test prints "CRYPTO TEST OK" only when every check passes, and frees everything it
 // allocates, so that the run still ends with "NO MEMORY LEAKS". The [PASS] lines carry only
 // fixed values; the [FAIL] details show what was computed.
@@ -436,60 +436,6 @@ static void KatRc4(KAT_CTX *ctx)
 	KatCheck(ctx, KatAllBytes(out, sizeof(out), 0), "RC4 with a 65-byte key writes zeros", "got %s", got);
 }
 
-// One DES vector: DesEcbEncrypt() takes the 56 key bits without the parity bits, 7 bytes
-static void KatDes(KAT_CTX *ctx, char *key56_hex, char *key64_hex, char *plain_hex, char *expect_hex, char *source)
-{
-	BUF *key = StrToBin(key56_hex);
-	BUF *plain = StrToBin(plain_hex);
-	UCHAR out[8 + KAT_GUARD];
-	char got[8 * 2 + 1];
-	char what[MAX_SIZE];
-
-	Zero(out, sizeof(out));
-	memset(out + 8, KAT_GUARD_BYTE, KAT_GUARD);
-
-	DesEcbEncrypt(out, plain->Buf, key->Buf);
-
-	Format(what, sizeof(what), "DES-ECB key %s (%s), block %s = %s (%s)", key56_hex, key64_hex, plain_hex, expect_hex, source);
-	KatCheck(ctx, KatHexEq(out, 8, expect_hex, got, sizeof(got)) && KatAllBytes(out + 8, KAT_GUARD, KAT_GUARD_BYTE),
-		what, "got %s", got);
-
-	FreeBuf(plain);
-	FreeBuf(key);
-}
-
-// The DES checks
-static void KatDesSuite(KAT_CTX *ctx)
-{
-	BUF *key = StrToBin("12695BC9B7B7F8");
-	BUF *plain = StrToBin("0123456789ABCDEF");
-	UCHAR buf[8];
-	UCHAR before[8];
-	char got[sizeof(buf) * 2 + 1];
-
-	KatDes(ctx, "00451338957377", "0123456789ABCDEF", "4E6F772069732074", "3FA40E8A984D4815", "FIPS 81, \"Now is t\"");
-	KatDes(ctx, "12695BC9B7B7F8", "133457799BBCDFF1", "0123456789ABCDEF", "85E813540F0AB405", "published worked example");
-	KatDes(ctx, "0E66499EAD8339", "0E329232EA6D0D73", "8787878787878787", "0000000000000000", "published");
-
-	// The weak key 0101010101010101: the third MS-CHAPv2 key when the NT hash ends in 00 00
-	KatDes(ctx, "00000000000000", "0101010101010101", "0000000000000000", "8CA64DE9C1B123A7", "published, weak key");
-
-	// Destination and source in the same buffer
-	Copy(buf, plain->Buf, sizeof(buf));
-	DesEcbEncrypt(buf, buf, key->Buf);
-	KatCheck(ctx, KatHexEq(buf, sizeof(buf), "85E813540F0AB405", got, sizeof(got)), "DES-ECB in place", "got %s", got);
-
-	// Missing arguments are ignored
-	Copy(before, buf, sizeof(buf));
-	DesEcbEncrypt(NULL, plain->Buf, key->Buf);
-	DesEcbEncrypt(buf, NULL, key->Buf);
-	DesEcbEncrypt(buf, plain->Buf, NULL);
-	KatCheck(ctx, Cmp(buf, before, sizeof(buf)) == 0, "DES-ECB with a missing argument writes nothing", "destination was written");
-
-	FreeBuf(plain);
-	FreeBuf(key);
-}
-
 // Number of 1 bits in a byte
 static UINT KatBits(UCHAR b)
 {
@@ -627,7 +573,7 @@ void crypto_test(UINT num, char **arg)
 	Zero(&ctx, sizeof(ctx));
 	memset(million, 'a', KAT_MILLION);
 
-	Print("Crypto known-answer test (MD4, MD5, SHA-0, SHA-1, SHA-256, RC4, DES, random generator, RSA signature)\n");
+	Print("Crypto known-answer test (MD4, MD5, SHA-0, SHA-1, SHA-256, RC4, random generator, RSA signature)\n");
 
 	KatHashSuite(&ctx, "HashMd4", HashMd4, KAT_MD4_SIZE, kat_md4, million);
 	KatHashSuite(&ctx, "Md5", Md5, MD5_SIZE, kat_md5, million);
@@ -640,7 +586,6 @@ void crypto_test(UINT num, char **arg)
 	KatHashPassword(&ctx, "Admin", "secret", "E42FD00C3851B20799272935805AF344FFAB5D59");
 
 	KatRc4(&ctx);
-	KatDesSuite(&ctx);
 	KatRand(&ctx);
 	KatRsaSign(&ctx);
 

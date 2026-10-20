@@ -8,7 +8,6 @@
 #include "Connection.h"
 #include "Link.h"
 #include "Listener.h"
-#include "MsChapV2.h"
 #include "Remote.h"
 #include "RpcField.h"
 #include "Protocol.h"

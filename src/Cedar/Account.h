@@ -156,6 +156,7 @@ void *NewUserCertAuthData(X *x);
 void *NewRootCertAuthData(X_SERIAL *serial, wchar_t *common_name);
 void *NewNTAuthData(wchar_t *username);
 void HashPassword(void *dst, char *username, char *password);
+void GenerateNtPasswordHash(UCHAR *dst, char *password);
 POLICY *GetDefaultPolicy();
 POLICY *ClonePolicy(POLICY *policy);
 void SetUserPolicy(USER *u, POLICY *policy);

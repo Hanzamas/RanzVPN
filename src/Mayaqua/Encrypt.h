@@ -263,8 +263,6 @@ bool RsaCheckEx();
 bool RsaSignEx(void *dst, UINT dst_size, void *src, UINT src_size, K *k);
 bool RsaVerifyEx(void *data, UINT data_size, void *sign, UINT sign_size, K *k);
 
-void DesEcbEncrypt(void *dst, void *src, void *key_7bytes);
-
 DH_CTX *DhNewFromBits(UINT bits);
 DH_CTX *DhNew(char *prime, UINT g);
 void DhFree(DH_CTX *dh);

@@ -5,11 +5,11 @@
 
 #include "Connection.h"
 #include "Hub.h"
-#include "MsChapV2.h"
 #include "Protocol.h"
 #include "RpcField.h"
 
 #include "Mayaqua/Cfg.h"
+#include "Mayaqua/Encrypt.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
@@ -493,6 +493,31 @@ void HashPassword(void *dst, char *username, char *password)
 
 	FreeBuf(b);
 	Free(username_upper);
+}
+
+void GenerateNtPasswordHash(UCHAR *dst, char *password)
+{
+	UCHAR *tmp;
+	UINT tmp_size;
+	UINT i, len;
+	if (dst == NULL || password == NULL)
+	{
+		return;
+	}
+
+	len = StrLen(password);
+	tmp_size = len * 2;
+
+	tmp = ZeroMalloc(tmp_size);
+
+	for (i = 0; i < len; i++)
+	{
+		tmp[i * 2] = password[i];
+	}
+
+	HashMd4(dst, tmp, tmp_size);
+
+	Free(tmp);
 }
 
 void *NewPasswordAuthData(char *username, char *password)

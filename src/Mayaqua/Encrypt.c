@@ -68,7 +68,7 @@ typedef struct CB_PARAM
 // but then produces a keystream that is not RC4, so NewCrypt() does not give it those.
 #define	RC4_MAX_KEY_SIZE	64
 
-// CNG algorithm providers of MD4, MD5, SHA-1, RC4 and DES, which run on CNG instead of OpenSSL.
+// CNG algorithm providers of MD4, MD5, SHA-1 and RC4, which run on CNG instead of OpenSSL.
 // They are opened once, on first use, and kept for the life of the process, as the CNG
 // pseudo-handles are (MayaType.h selects the Vista SDK level, which does not declare those).
 // A provider that failed to open stays NULL.
@@ -77,7 +77,6 @@ static BCRYPT_ALG_HANDLE cng_md4 = NULL;
 static BCRYPT_ALG_HANDLE cng_md5 = NULL;
 static BCRYPT_ALG_HANDLE cng_sha1 = NULL;
 static BCRYPT_ALG_HANDLE cng_rc4 = NULL;
-static BCRYPT_ALG_HANDLE cng_des_ecb = NULL;
 
 // Open one CNG algorithm provider; NULL on failure
 static BCRYPT_ALG_HANDLE CngOpenAlg(LPCWSTR alg_id)
@@ -95,25 +94,10 @@ static BCRYPT_ALG_HANDLE CngOpenAlg(LPCWSTR alg_id)
 // INIT_ONCE callback of CngInit(): open every provider
 static BOOL CALLBACK CngOpenAll(PINIT_ONCE once, PVOID param, PVOID *context)
 {
-	BCRYPT_ALG_HANDLE des = CngOpenAlg(BCRYPT_DES_ALGORITHM);
-
 	cng_md4 = CngOpenAlg(BCRYPT_MD4_ALGORITHM);
 	cng_md5 = CngOpenAlg(BCRYPT_MD5_ALGORITHM);
 	cng_sha1 = CngOpenAlg(BCRYPT_SHA1_ALGORITHM);
 	cng_rc4 = CngOpenAlg(BCRYPT_RC4_ALGORITHM);
-
-	// DesEcbEncrypt() encrypts single blocks, without chaining
-	if (des != NULL)
-	{
-		if (CNG_SUCCESS(BCryptSetProperty(des, BCRYPT_CHAINING_MODE, (PUCHAR)BCRYPT_CHAIN_MODE_ECB, sizeof(BCRYPT_CHAIN_MODE_ECB), 0)))
-		{
-			cng_des_ecb = des;
-		}
-		else
-		{
-			BCryptCloseAlgorithmProvider(des, 0);
-		}
-	}
 
 	return TRUE;
 }
@@ -3007,68 +2991,6 @@ void Encrypt(CRYPT *c, void *dst, void *src, UINT size)
 	{
 		Zero(dst, size);
 	}
-}
-
-// DES-ECB of one 8-byte block with a 56-bit key given as 7 bytes; dst may be src.
-// Should CNG fail, the output block is all zero.
-void DesEcbEncrypt(void *dst, void *src, void *key_7bytes)
-{
-	UCHAR *key_56;
-	UCHAR key[8];
-	UCHAR block[8];
-	BCRYPT_KEY_HANDLE k = NULL;
-	ULONG done = 0;
-	bool ok = false;
-	UINT i, j, ones;
-	if (dst == NULL || src == NULL || key_7bytes == NULL)
-	{
-		return;
-	}
-
-	key_56 = (UCHAR *)key_7bytes;
-
-	Zero(key, sizeof(key));
-	Copy(block, src, sizeof(block));
-
-	key[0] = key_56[0];
-	key[1] = (unsigned char)(((key_56[0] << 7) & 0xFF) | (key_56[1] >> 1));
-	key[2] = (unsigned char)(((key_56[1] << 6) & 0xFF) | (key_56[2] >> 2));
-	key[3] = (unsigned char)(((key_56[2] << 5) & 0xFF) | (key_56[3] >> 3));
-	key[4] = (unsigned char)(((key_56[3] << 4) & 0xFF) | (key_56[4] >> 4));
-	key[5] = (unsigned char)(((key_56[4] << 3) & 0xFF) | (key_56[5] >> 5));
-	key[6] = (unsigned char)(((key_56[5] << 2) & 0xFF) | (key_56[6] >> 6));
-	key[7] = (unsigned char) ((key_56[6] << 1) & 0xFF);
-
-	// Odd parity in the low bit of each key byte (DES itself ignores the parity bits)
-	for (i = 0;i < sizeof(key);i++)
-	{
-		ones = 0;
-		for (j = 1;j < 8;j++)
-		{
-			ones += (key[i] >> j) & 1;
-		}
-		key[i] = (UCHAR)((key[i] & 0xFE) | ((ones % 2) == 0 ? 1 : 0));
-	}
-
-	CngInit();
-
-	// Weak keys go to CNG as they are: the third MS-CHAPv2 key can be 0101010101010101 (crypto test)
-	if (cng_des_ecb != NULL &&
-		CNG_SUCCESS(BCryptGenerateSymmetricKey(cng_des_ecb, &k, NULL, 0, key, sizeof(key), 0)))
-	{
-		ok = (CNG_SUCCESS(BCryptEncrypt(k, block, sizeof(block), NULL, NULL, 0, (PUCHAR)dst, sizeof(block), &done, 0)) &&
-			done == sizeof(block));
-
-		BCryptDestroyKey(k);
-	}
-
-	if (ok == false)
-	{
-		Zero(dst, sizeof(block));
-	}
-
-	Zero(key, sizeof(key));
-	Zero(block, sizeof(block));
 }
 
 bool IsAesNiSupported()

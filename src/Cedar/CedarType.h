@@ -187,9 +187,6 @@ typedef struct TTC_SOCK TTC_SOCK;
 typedef struct PT PT;
 
 
-typedef struct IPC_MSCHAP_V2_AUTHINFO IPC_MSCHAP_V2_AUTHINFO;
-
-
 typedef struct UDP_ACCEL UDP_ACCEL;
 
 

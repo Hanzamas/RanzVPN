@@ -247,7 +247,7 @@ jobs:
       env:
         # harness and bench have time budgets that AddressSanitizer would exceed; run them in build_and_test only.
         # certdl has time windows too (it measures the client timeouts); it also runs in build_and_test only.
-        RANZ_SMOKE_TESTS: mschapv2,crypto,stun,watermark,stress,tickorigin,timeenc,nullsafe,charset,fileio,resources,threadpool,dns,trace,eventlog,str,udpaccel,selow,dllsearch,machineid,vmdetect,tcpip,x509,bufbounds,keepalive,packcap,storepacket,consoleline,tempdir,logwriter,logbound,slog,eraser,authtype,acpassword,sigleak,pktparse,vlantpid,pack_decode_bounds,tablecache,registry,certsig,x509root,rsasig
+        RANZ_SMOKE_TESTS: nthash,crypto,stun,watermark,stress,tickorigin,timeenc,nullsafe,charset,fileio,resources,threadpool,dns,trace,eventlog,str,udpaccel,selow,dllsearch,machineid,vmdetect,tcpip,x509,bufbounds,keepalive,packcap,storepacket,consoleline,tempdir,logwriter,logbound,slog,eraser,authtype,acpassword,sigleak,pktparse,vlantpid,pack_decode_bounds,tablecache,registry,certsig,x509root,rsasig
       run: |
         # The smoke test script of build_and_test itself, so both jobs run the same test list:
         # its new path (.github/scripts) first, its old one second. Its output and the vpntest

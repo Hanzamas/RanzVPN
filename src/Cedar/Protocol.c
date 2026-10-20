@@ -8,7 +8,6 @@
 #include "Hub.h"
 #include "Link.h"
 #include "Logging.h"
-#include "MsChapV2.h"
 #include "Sam.h"
 #include "Server.h"
 #include "UdpAccel.h"
@@ -27,6 +26,9 @@
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 #include "Mayaqua/Tick64.h"
+
+// A plain password that starts with this tag is dropped: it used to select the MS-CHAPv2 path of IPC sessions
+#define	PLAIN_PASSWORD_RETIRED_MSCHAPV2_TAG	"xH7DiNlurDhcYV4a:"
 
 bool DownloadAndSaveIntermediateCertificatesIfNecessary(X *x)
 {
@@ -766,8 +768,6 @@ bool ServerAccept(CONNECTION *c)
 	RPC_WINVER winver;
 	UINT client_id;
 	bool no_more_users_in_server = false;
-	UCHAR mschap_v2_server_response_20[20];
-	UINT ms_chap_error = 0;
 	bool is_empty_password = false;
 	char *error_detail = NULL;
 	char *error_detail_2 = NULL;
@@ -781,8 +781,6 @@ bool ServerAccept(CONNECTION *c)
 	GenerateMachineUniqueHash(c->Cedar, unique2);
 
 	Zero(ctoken_hash_str, sizeof(ctoken_hash_str));
-
-	Zero(mschap_v2_server_response_20, sizeof(mschap_v2_server_response_20));
 
 	Zero(&udp_acceleration_client_ip, sizeof(udp_acceleration_client_ip));
 	udp_acceleration_client_port = 0;
@@ -1125,7 +1123,7 @@ bool ServerAccept(CONNECTION *c)
 						{
 							PackGetData(p, "secure_password", secure_password);
 						}
-						auth_ret = SamAuthUserByPassword(hub, username, c->Random, secure_password, NULL, NULL, NULL);
+						auth_ret = SamAuthUserByPassword(hub, username, c->Random, secure_password);
 
 						pol = SamGetUserPolicy(hub, username);
 						if (pol != NULL)
@@ -1149,38 +1147,24 @@ bool ServerAccept(CONNECTION *c)
 				case CLIENT_AUTHTYPE_PLAIN_PASSWORD:
 					{
 						POLICY *pol = NULL;
+						UCHAR secure_password[SHA1_SIZE];
+						UCHAR hash_password[SHA1_SIZE];
 
 						Zero(plain_password, sizeof(plain_password));
 						PackGetStr(p, "plain_password", plain_password, sizeof(plain_password));
-						if (StartWith(plain_password, IPC_PASSWORD_MSCHAPV2_TAG))
+						if (StartWith(plain_password, PLAIN_PASSWORD_RETIRED_MSCHAPV2_TAG))
 						{
 							// Do not allow the MS-CHAPv2 authentication (it was only available to IPC sessions)
 							Zero(plain_password, sizeof(plain_password));
 						}
 
-						if (auth_ret == false)
+						HashPassword(hash_password, username, plain_password);
+						SecurePassword(secure_password, hash_password, c->Random);
+						auth_ret = SamAuthUserByPassword(hub, username, c->Random, secure_password);
+
+						if (auth_ret)
 						{
-							UCHAR secure_password[SHA1_SIZE];
-							UCHAR hash_password[SHA1_SIZE];
-							bool is_mschap = StartWith(plain_password, IPC_PASSWORD_MSCHAPV2_TAG);
-
-							HashPassword(hash_password, username, plain_password);
-							SecurePassword(secure_password, hash_password, c->Random);
-
-							if (is_mschap == false)
-							{
-								auth_ret = SamAuthUserByPassword(hub, username, c->Random, secure_password, NULL, NULL, NULL);
-							}
-							else
-							{
-								auth_ret = SamAuthUserByPassword(hub, username, c->Random, secure_password,
-									plain_password, mschap_v2_server_response_20, &ms_chap_error);
-							}
-
-							if (auth_ret && pol == NULL)
-							{
-								pol = SamGetUserPolicy(hub, username);
-							}
+							pol = SamGetUserPolicy(hub, username);
 						}
 
 						if (auth_ret == false)
@@ -1196,7 +1180,7 @@ bool ServerAccept(CONNECTION *c)
 								auth_ret = SamAuthUserByPlainPassword(c, hub, username, plain_password, true);
 							}
 
-							if (auth_ret && pol == NULL)
+							if (auth_ret)
 							{
 								pol = SamGetUserPolicy(hub, username);
 							}
@@ -1293,10 +1277,6 @@ bool ServerAccept(CONNECTION *c)
 				ReleaseHub(hub);
 				FreePack(p);
 				c->Err = ERR_AUTH_FAILED;
-				if (ms_chap_error != 0)
-				{
-					c->Err = ms_chap_error;
-				}
 				error_detail = "ERR_AUTH_FAILED";
 				goto CLEANUP;
 			}
