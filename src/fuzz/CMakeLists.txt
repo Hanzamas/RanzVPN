@@ -14,21 +14,14 @@ set(RANZ_FUZZ_TARGETS
   fuzz_stun
 )
 
+# Console executables without an icon or the hamcore resources (cmake/RanzExecutable.cmake)
 foreach(fuzz_target IN LISTS RANZ_FUZZ_TARGETS)
-  add_executable(${fuzz_target}
-    "${fuzz_target}.c"
-    "fuzz_common.c"
-    "fuzz_common.h"
-
-    "${TOP_DIRECTORY}/src/BuildFiles/Manifests/common.manifest"
+  ranz_add_executable(${fuzz_target}
+    DESCRIPTION "Fuzz Target ${fuzz_target}"
+    SOURCES
+      "${fuzz_target}.c"
+      "fuzz_common.c"
+      "fuzz_common.h"
+    LINK_OPTIONS ${RANZ_FUZZER_LINK_OPTIONS}
   )
-
-  set_target_properties(${fuzz_target}
-    PROPERTIES
-    RUNTIME_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
-    PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
-  )
-
-  target_link_libraries(${fuzz_target} PRIVATE cedar)
-  target_link_options(${fuzz_target} PRIVATE ${RANZ_FUZZER_LINK_OPTIONS})
 endforeach()

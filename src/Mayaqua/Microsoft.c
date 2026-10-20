@@ -22,7 +22,6 @@
 
 #include <AclAPI.h>
 #include <DbgHelp.h>
-#include <dwmapi.h>
 #include <iphlpapi.h>
 #include <mmsystem.h>
 #include <Msi.h>
@@ -34,7 +33,6 @@
 #include <shellapi.h>
 #include <ShlObj.h>
 #include <SoftPub.h>
-#include <WtsApi32.h>
 
 #if defined(_M_X64) || defined(_M_IX86)
 #include <intrin.h>		// __cpuid() of the VM detection
