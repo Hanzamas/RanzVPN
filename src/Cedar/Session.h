@@ -53,7 +53,6 @@ struct PACKET_ADAPTER
 	PA_PUTPACKET *PutPacket;
 	PA_FREE *Free;
 	void *Param;
-	UINT Id;
 };
 
 struct SESSION
@@ -118,14 +117,12 @@ struct SESSION
 	POLICY *Policy;
 	UCHAR SessionKey[SHA1_SIZE];
 	UINT SessionKey32;
-	char SessionKeyStr[64];
 	UINT MaxConnection;
 	bool UseEncrypt;
 	bool UseCompress;
 	bool HalfConnection;
 	bool QoS;
 	bool NoSendSignature;
-	UINT NumDisconnected;
 	char UnderlayProtocol[64];
 	char ProtocolDetails[256];
 	/* !!! Do not correct the spelling to keep the backward protocol compatibility !!!  */
@@ -180,7 +177,6 @@ void SessionMain(SESSION *s);
 SESSION *GetSessionFromKey(CEDAR *cedar, UCHAR *session_key);
 void ClientAdditionalConnectChance(SESSION *s);
 void SessionAdditionalConnect(SESSION *s);
-void PrintSessionTotalDataSize(SESSION *s);
 void AddTrafficForSession(SESSION *s, TRAFFIC *t);
 void IncrementUserTraffic(HUB *hub, char *username, SESSION *s);
 void PrintStatus(SESSION *s, wchar_t *str);
