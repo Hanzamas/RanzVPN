@@ -11,9 +11,12 @@ permissions:
   contents: read
 
 # vcpkg binary caching: built packages (OpenSSL) are stored as zip files keyed by their ABI hash in
-# VCPKG_BINCACHE and kept between runs with actions/cache. A package whose ABI hash is unchanged is
-# restored instead of rebuilt; a runner-image or vcpkg.json change rebuilds only what changed.
+# VCPKG_BINCACHE and kept between runs with actions/cache. The cache key carries the hash of
+# vcpkg.json: its builtin-baseline pins the ports tree (the same OpenSSL and zlib on every runner),
+# and a change of vcpkg.json is a cache miss, so the new versions are built, never mixed with old ones.
+# VCPKG_ROOT is the vcpkg checkout of the runner image: CMakePresets.json takes the toolchain file from it.
 env:
+  VCPKG_ROOT: C:\vcpkg
   VCPKG_BINCACHE: ${{ github.workspace }}\vcpkg-bincache
   VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\vcpkg-bincache,readwrite
 
@@ -23,11 +26,12 @@ jobs:
       fail-fast: false
       matrix:
         platform: [
-          { ARCHITECTURE: x64, VCPKG_TRIPLET: "x64-windows-static", RUNNER: "windows-latest", CMAKE_EXTRA_FLAGS: ""},
-          { ARCHITECTURE: arm64, VCPKG_TRIPLET: "arm64-windows-static", RUNNER: "windows-11-arm", CMAKE_EXTRA_FLAGS: "-DOQS_PERMIT_UNSUPPORTED_ARCHITECTURE=ON"}
+          { ARCHITECTURE: x64, VCPKG_TRIPLET: "x64-windows-static", RUNNER: "windows-latest"},
+          { ARCHITECTURE: arm64, VCPKG_TRIPLET: "arm64-windows-static", RUNNER: "windows-11-arm"}
         ]
     runs-on: ${{ matrix.platform.RUNNER }}
     name: ${{ matrix.platform.ARCHITECTURE }}
+    timeout-minutes: 60
     steps:
     - uses: actions/checkout@v4
       with:
@@ -36,23 +40,13 @@ jobs:
       uses: actions/cache/restore@v4
       with:
         path: vcpkg-bincache
-        key: vcpkg-bin-${{ matrix.platform.VCPKG_TRIPLET }}-none
-        restore-keys: vcpkg-bin-${{ matrix.platform.VCPKG_TRIPLET }}-
-    - name: Set version variables
-      run: |
-        $v = python version.py
-        echo "VERSION=$v" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
-      shell: pwsh
+        key: vcpkg-bin-${{ matrix.platform.VCPKG_TRIPLET }}-${{ hashFiles('vcpkg.json') }}-none
+        restore-keys: vcpkg-bin-${{ matrix.platform.VCPKG_TRIPLET }}-${{ hashFiles('vcpkg.json') }}-
     - name: Build
       env:
         ARCHITECTURE: ${{ matrix.platform.ARCHITECTURE }}
-        VCPKG_TRIPLET: ${{ matrix.platform.VCPKG_TRIPLET }}
-        CMAKE_EXTRA_FLAGS: ${{ matrix.platform.CMAKE_EXTRA_FLAGS }}
       run: |
-        set BUILD_NUMBER=%GITHUB_RUN_NUMBER%
         if not exist "%VCPKG_BINCACHE%" mkdir "%VCPKG_BINCACHE%"
-        mkdir build
-        cd build
 
         for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set "VSINSTALL=%%i"
         if "%VSINSTALL%"=="" (
@@ -72,14 +66,32 @@ jobs:
         )
 
         call "%VCVARS_PATH%"
-        cmake -G "Ninja" -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=%VCPKG_TRIPLET% -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER="%COMPILER_PATH%" -DCMAKE_CXX_COMPILER="%COMPILER_PATH%" -DBUILD_NUMBER=%BUILD_NUMBER% -DRANZ_UNUSED_WARNINGS=ON %CMAKE_EXTRA_FLAGS% ..
+        rem The preset is named after the architecture (CMakePresets.json); the compiler path of this
+        rem runner and the run number are the only values a job adds to it
+        cmake --preset %ARCHITECTURE% -DCMAKE_C_COMPILER="%COMPILER_PATH%" -DBUILD_NUMBER=%GITHUB_RUN_NUMBER%
         if errorlevel 1 exit /b 1
 
-        rem The compiler output goes to build-log.txt for the unused-code report step, then to the job log
-        cmake --build . > build-log.txt 2>&1
+        rem The compiler output goes to build\build-log.txt for the unused-code report step, then to the job log
+        cmake --build --preset %ARCHITECTURE% > build\build-log.txt 2>&1
         set BUILD_EXIT=%ERRORLEVEL%
-        type build-log.txt
-        exit /b %BUILD_EXIT%
+        type build\build-log.txt
+        if not "%BUILD_EXIT%"=="0" exit /b %BUILD_EXIT%
+
+        rem The linker's report of what /OPT:REF discarded and /OPT:ICF folded (src/CMakeLists.txt) for
+        rem vpnserver and vpncmd, uploaded as link-verbose-<arch>: each one is linked again with /VERBOSE,
+        rem passed in _LINK_, which lld-link and link.exe add to their arguments. lld-link has no
+        rem /VERBOSE:REF; its /VERBOSE lists the discarded sections and the folded functions.
+        set "_LINK_=/VERBOSE"
+        for %%t in (vpnserver vpncmd) do (
+          del build\%%t.exe
+          cmake --build --preset %ARCHITECTURE% --target %%t > build\link-verbose-%%t.txt 2>&1
+          if errorlevel 1 (
+            type build\link-verbose-%%t.txt
+            exit /b 1
+          )
+        )
+        set "_LINK_="
+        exit /b 0
       shell: cmd
     # The key is the content hash of the cache directory, so a run that built nothing new finds the key
     # taken and saves nothing (a warning, not a failure).
@@ -88,7 +100,7 @@ jobs:
       uses: actions/cache/save@v4
       with:
         path: vcpkg-bincache
-        key: vcpkg-bin-${{ matrix.platform.VCPKG_TRIPLET }}-${{ hashFiles('vcpkg-bincache/**') }}
+        key: vcpkg-bin-${{ matrix.platform.VCPKG_TRIPLET }}-${{ hashFiles('vcpkg.json') }}-${{ hashFiles('vcpkg-bincache/**') }}
     # Every unused or unreachable code warning of the build (cmake/RanzWarnings.cmake), de-duplicated:
     # in the job log under "=== unused-code report ===", in the job summary and as an artifact.
     # The kinds in RANZ_UNUSED_ERROR_FLAGS are errors and fail the Build step; the rest are informational.
@@ -106,6 +118,13 @@ jobs:
         path: |
           build/unused-report.txt
           build/build-log.txt
+    - name: Upload linker report (vpnserver and vpncmd)
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        if-no-files-found: warn
+        name: link-verbose-${{ matrix.platform.ARCHITECTURE }}
+        path: build/link-verbose-*.txt
     # Source lines per directory and executable sizes, in the job log and the job summary. Never a gate.
     - name: Size metrics
       if: ${{ !cancelled() }}
@@ -126,7 +145,7 @@ jobs:
         if ($LASTEXITCODE -ne 0) { throw "stbchecker reported differences between the string tables (exit code $LASTEXITCODE)" }
     - name: Test
       timeout-minutes: 10
-      shell: powershell
+      shell: pwsh
       env:
         # Names build/harness-out/bench-<arch>.txt (the BENCH lines of vpntest bench)
         ARCHITECTURE: ${{ matrix.platform.ARCHITECTURE }}
@@ -176,6 +195,7 @@ jobs:
   fuzz-asan:
     runs-on: windows-latest
     name: fuzz-asan
+    timeout-minutes: 45
     steps:
     - uses: actions/checkout@v4
       with:
@@ -184,8 +204,8 @@ jobs:
       uses: actions/cache/restore@v4
       with:
         path: vcpkg-bincache
-        key: vcpkg-bin-x64-windows-static-none
-        restore-keys: vcpkg-bin-x64-windows-static-
+        key: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg.json') }}-none
+        restore-keys: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg.json') }}-
     - name: Pick clang-cl with the one-DLL ASan runtime and libFuzzer
       shell: pwsh
       run: |
@@ -219,10 +239,7 @@ jobs:
         throw 'No clang-cl with the one-DLL ASan runtime (LLVM 20 or later) and libFuzzer found'
     - name: Build (RANZ_ASAN=ON, RANZ_FUZZ=ON)
       run: |
-        set BUILD_NUMBER=0
         if not exist "%VCPKG_BINCACHE%" mkdir "%VCPKG_BINCACHE%"
-        mkdir build
-        cd build
 
         for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set "VSINSTALL=%%i"
         if "%VSINSTALL%"=="" (
@@ -231,31 +248,30 @@ jobs:
         )
 
         call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
-        cmake -G "Ninja" -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER="%COMPILER_PATH%" -DCMAKE_CXX_COMPILER="%COMPILER_PATH%" -DBUILD_NUMBER=%BUILD_NUMBER% -DRANZ_ASAN=ON -DRANZ_FUZZ=ON ..
+        rem COMPILER_PATH is the clang-cl picked by the step above
+        cmake --preset asan -DCMAKE_C_COMPILER="%COMPILER_PATH%"
         if errorlevel 1 exit /b 1
-        cmake --build .
+        cmake --build --preset asan
       shell: cmd
     - name: Save vcpkg binary cache
       if: ${{ !cancelled() }}
       uses: actions/cache/save@v4
       with:
         path: vcpkg-bincache
-        key: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg-bincache/**') }}
+        key: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg.json') }}-${{ hashFiles('vcpkg-bincache/**') }}
     - name: vpntest smoke test under ASan
       shell: pwsh
       timeout-minutes: 10
       env:
         # harness and bench have time budgets that AddressSanitizer would exceed; run them in build_and_test only.
         # certdl has time windows too (it measures the client timeouts); it also runs in build_and_test only.
-        RANZ_SMOKE_TESTS: mschapv2,crypto,stun,watermark,stress,tickorigin,timeenc,nullsafe,charset,fileio,resources,threadpool,dns,trace,eventlog,str,udpaccel,selow,dllsearch,machineid,vmdetect,tcpip,x509,bufbounds,keepalive,packcap,storepacket,consoleline,tempdir,logwriter,logbound,slog,eraser,authtype,acpassword,sigleak,pktparse,vlantpid,icmpv6ns,pack_decode_bounds,tablecache,registry,certsig,x509root,rsasig
+        RANZ_SMOKE_TESTS: mschapv2,crypto,stun,watermark,stress,tickorigin,timeenc,nullsafe,charset,fileio,resources,threadpool,dns,trace,eventlog,str,udpaccel,selow,dllsearch,machineid,vmdetect,tcpip,x509,bufbounds,keepalive,packcap,storepacket,consoleline,tempdir,logwriter,logbound,slog,eraser,authtype,acpassword,sigleak,pktparse,vlantpid,icmpv6ns,pack_decode_bounds,tablecache,registry,certsig,x509root,rsasig,chaincerts,tlsctx
       run: |
-        # The smoke test script of build_and_test itself, so both jobs run the same test list:
-        # its new path (.github/scripts) first, its old one second. Its output and the vpntest
-        # stderr (AddressSanitizer reports) are captured, to also catch a report printed after
-        # "NO MEMORY LEAKS".
-        $script = @('.github/scripts/vpntest.ps1', '.ci/appveyor-vpntest.ps1') | Where-Object { Test-Path $_ } | Select-Object -First 1
-        if (-not $script) { throw 'vpntest smoke test script not found' }
-        $out = (cmd /c "powershell -NoProfile -ExecutionPolicy Bypass -File $script 2>&1") | Out-String
+        # The smoke test script of build_and_test itself, so both jobs run the same test list. Its output
+        # and the vpntest stderr (AddressSanitizer reports) are captured, to also catch a report printed
+        # after "NO MEMORY LEAKS".
+        $script = '.github/scripts/vpntest.ps1'
+        $out = (cmd /c "pwsh -NoProfile -ExecutionPolicy Bypass -File $script -BuildDir build 2>&1") | Out-String
         $code = $LASTEXITCODE
         Write-Host $out
         if ($code -ne 0) { throw "$script failed under AddressSanitizer (exit code $code)" }
@@ -302,11 +318,12 @@ jobs:
       fail-fast: false
       matrix:
         platform: [
-          { ARCHITECTURE: x64, VCPKG_TRIPLET: "x64-windows-static", RUNNER: "windows-latest", CMAKE_EXTRA_FLAGS: ""},
-          { ARCHITECTURE: arm64, VCPKG_TRIPLET: "arm64-windows-static", RUNNER: "windows-11-arm", CMAKE_EXTRA_FLAGS: "-DOQS_PERMIT_UNSUPPORTED_ARCHITECTURE=ON"}
+          { ARCHITECTURE: x64, VCPKG_TRIPLET: "x64-windows-static", RUNNER: "windows-latest", PRESET: "debug"},
+          { ARCHITECTURE: arm64, VCPKG_TRIPLET: "arm64-windows-static", RUNNER: "windows-11-arm", PRESET: "debug-arm64"}
         ]
     runs-on: ${{ matrix.platform.RUNNER }}
     name: ${{ matrix.platform.ARCHITECTURE }} Debug (build only)
+    timeout-minutes: 30
     steps:
     - uses: actions/checkout@v4
       with:
@@ -315,18 +332,14 @@ jobs:
       uses: actions/cache/restore@v4
       with:
         path: vcpkg-bincache
-        key: vcpkg-bin-${{ matrix.platform.VCPKG_TRIPLET }}-none
-        restore-keys: vcpkg-bin-${{ matrix.platform.VCPKG_TRIPLET }}-
+        key: vcpkg-bin-${{ matrix.platform.VCPKG_TRIPLET }}-${{ hashFiles('vcpkg.json') }}-none
+        restore-keys: vcpkg-bin-${{ matrix.platform.VCPKG_TRIPLET }}-${{ hashFiles('vcpkg.json') }}-
     - name: Build (Debug)
       env:
         ARCHITECTURE: ${{ matrix.platform.ARCHITECTURE }}
-        VCPKG_TRIPLET: ${{ matrix.platform.VCPKG_TRIPLET }}
-        CMAKE_EXTRA_FLAGS: ${{ matrix.platform.CMAKE_EXTRA_FLAGS }}
+        PRESET: ${{ matrix.platform.PRESET }}
       run: |
-        set BUILD_NUMBER=0
         if not exist "%VCPKG_BINCACHE%" mkdir "%VCPKG_BINCACHE%"
-        mkdir build
-        cd build
 
         for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set "VSINSTALL=%%i"
         if "%VSINSTALL%"=="" (
@@ -346,7 +359,8 @@ jobs:
         )
 
         call "%VCVARS_PATH%"
-        cmake -G "Ninja" -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=%VCPKG_TRIPLET% -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER="%COMPILER_PATH%" -DCMAKE_CXX_COMPILER="%COMPILER_PATH%" -DBUILD_NUMBER=%BUILD_NUMBER% -DRANZ_UNUSED_WARNINGS=ON %CMAKE_EXTRA_FLAGS% ..
+        rem PRESET is the Debug preset of the architecture (CMakePresets.json: debug, debug-arm64)
+        cmake --preset %PRESET% -DCMAKE_C_COMPILER="%COMPILER_PATH%"
         if errorlevel 1 exit /b 1
-        cmake --build .
+        cmake --build --preset %PRESET%
       shell: cmd

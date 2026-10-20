@@ -47,14 +47,15 @@ into it. So that is what will be described below.
 
 - vcpkg
 
-  You are recommended to update vcpkg from time to time, so that the latest libraries are used in the build.
-
-  Go to the installation path, pull the latest repo and the binary:
+  The OpenSSL and zlib versions come from the `builtin-baseline` commit in `vcpkg.json`, not from whatever your vcpkg checkout holds, so CI and every developer build the same libraries.
+  Your vcpkg checkout only has to contain that commit: if the configure step says it cannot find it, pull the latest repo and the binary:
 
   ```
   C:\vcpkg> git pull
   C:\vcpkg> bootstrap-vcpkg.bat
   ```
+
+  To take newer library versions, move the baseline with `vcpkg x-update-baseline` and commit the changed `vcpkg.json`; CI then rebuilds the libraries (its cache key holds the hash of `vcpkg.json`).
   
 ## Building
 
@@ -70,29 +71,25 @@ into it. So that is what will be described below.
 
 1. Switch to folder view in the solution explorer
 
-1. Select a configuration from the dropdown menu below the search box. The default configurations are:
+1. Set the environment variable `VCPKG_ROOT` to your vcpkg checkout (for example `C:\vcpkg`), then select a configuration preset from the dropdown menu below the search box. The presets are defined in `CMakePresets.json`:
 
-   - x64-native
+   - x64
 
-     Build x64 executables with 64-bit compiler (most common)
+     Build x64 executables (RelWithDebInfo, most common)
 
-   - x64-on-x86
+   - arm64
 
-     Cross compile x64 executables with 32-bit compiler
+     Build arm64 executables on a Windows ARM64 host: [BUILD_WinArm64.md](BUILD_WinArm64.md)
 
-   - x86-native
+   - asan
 
-     Build x86 executables with 32-bit compiler
+     x64 with AddressSanitizer and the libFuzzer targets
 
-   - x86-on-x64
+   - debug
 
-     Cross compile x86 executables with 64-bit compiler
-    
-    - arm64-on-x64
+     x64 Debug build
 
-     Cross compile arm64 executables with x64t compiler
-
-   On 64-bit Windows, all four configurations can be used. 32-bit platforms can only use 32-bit compiler.
+   From a developer prompt the same presets work with `cmake --preset <name>` and `cmake --build --preset <name>`. Ranz VPN builds for x64 and arm64 only.
 
 1. Visual Studio will try generating CMake cache. If not, click **Project -> Configure Cache** or **Generate Cache**.
 
@@ -112,7 +109,7 @@ into it. So that is what will be described below.
 
 1. Build number
 
-   You can change the build number in `CMakeSettings.json`. The build number becomes the third version component (0.1.N); CI uses the GitHub run number.
+   Pass `-DBUILD_NUMBER=N` to the configure command (or set `BUILD_NUMBER` in a `CMakeUserPresets.json` of your own). The build number becomes the third version component (0.1.N); CI uses the GitHub run number.
 
    Delete and regenerate CMake cache after the change.
 

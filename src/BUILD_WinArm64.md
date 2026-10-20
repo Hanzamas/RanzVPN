@@ -1,26 +1,22 @@
-# How to build SoftEther VPN on Windows ARM64
+# How to build Ranz VPN on Windows ARM64
 
-This document describes how to build SoftEther VPN for Windows ARM64.
+This document describes how to build Ranz VPN for Windows ARM64.
 
 
 ## Requirements
 
 
-- Build host: Windows x64
+- Build host: Windows on ARM64 (CI builds natively on a windows-11-arm runner; there is no cross-compile preset)
 
-- Target device: Windows 10 / Windows 11 ARM64
+- Target device: Windows 11 ARM64
 
 
-## Building 
- 
-    **Notes before building**: ARM64 builds are cross-compiled from an x64 Windows host. The hamcore files are compiled into each executable as resources, so the ARM64 build needs no x64-native build first.
-1. Follow [BUILD_WINDOWS.md](BUILD_WINDOWS.md##Building)
+## Building
 
-1. Build x64 (Native): From the build menu, select x64-on-x64. Complete the build successfully.
+The hamcore files are compiled into each executable as resources, so the ARM64 build needs no x64 build first.
 
-1. Build ARM64 (Cross-Compiled): From the same build menu, select arm64-on-x64. 
-Build the ARM64 version of SoftEther VPN.
+1. Follow [BUILD_WINDOWS.md](BUILD_WINDOWS.md) up to the choice of the configuration.
 
-# Summary
+1. Select the arm64 preset in Visual Studio, or in an ARM64 developer prompt run `cmake --preset arm64` and `cmake --build --preset arm64`.
 
-SoftEther VPN can be cross-compiled for Windows ARM64 on an x64 host
+The preset sets the arm64-windows-static vcpkg triplet. `src/Mayaqua/CMakeLists.txt` turns on `OQS_PERMIT_UNSUPPORTED_ARCHITECTURE` of liboqs for ARM64, so no extra configure flag is needed.

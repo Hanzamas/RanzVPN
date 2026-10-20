@@ -565,41 +565,6 @@ struct DOWNLOAD_PROGRESS
 	UINT ProgressPercent;
 };
 
-struct RPC_ENUM_LICENSE_KEY_ITEM
-{
-	UINT Id;
-	char LicenseKey[LICENSE_KEYSTR_LEN + 1];
-	char LicenseId[LICENSE_LICENSEID_STR_LEN + 1];
-	char LicenseName[LICENSE_MAX_PRODUCT_NAME_LEN + 1];
-	UINT64 Expires;
-	UINT Status;
-	UINT ProductId;
-	UINT64 SystemId;
-	UINT SerialId;
-};
-struct RPC_ENUM_LICENSE_KEY
-{
-	UINT NumItem;
-	RPC_ENUM_LICENSE_KEY_ITEM *Items;
-};
-
-struct RPC_LICENSE_STATUS
-{
-	UINT EditionId;
-	char EditionStr[LICENSE_MAX_PRODUCT_NAME_LEN + 1];
-	UINT64 SystemId;
-	UINT64 SystemExpires;
-	UINT NumClientConnectLicense;
-	UINT NumBridgeConnectLicense;
-
-	bool NeedSubscription;
-	UINT64 SubscriptionExpires;
-	bool IsSubscriptionExpired;
-	UINT NumUserCreationLicense;
-	bool AllowEnterpriseFunction;
-	UINT64 ReleaseDate;
-};
-
 struct RPC_ENUM_ETH_VLAN_ITEM
 {
 	char DeviceName[MAX_SIZE];
@@ -711,10 +676,6 @@ UINT ScSetAcList(RPC *r, RPC_AC_LIST *t);
 UINT ScGetAcList(RPC *r, RPC_AC_LIST *t);
 UINT ScEnumLogFile(RPC *r, RPC_ENUM_LOG_FILE *t);
 UINT ScReadLogFile(RPC *r, RPC_READ_LOG_FILE *t);
-UINT ScAddLicenseKey(RPC *r, RPC_TEST *t);
-UINT ScDelLicenseKey(RPC *r, RPC_TEST *t);
-UINT ScEnumLicenseKey(RPC *r, RPC_ENUM_LICENSE_KEY *t);
-UINT ScGetLicenseStatus(RPC *r, RPC_LICENSE_STATUS *t);
 UINT ScSetSysLog(RPC *r, SYSLOG_SETTING *t);
 UINT ScGetSysLog(RPC *r, SYSLOG_SETTING *t);
 UINT ScCrash(RPC *r, RPC_TEST *t);
@@ -756,7 +717,6 @@ void FreeRpcCrl(RPC_CRL *t);
 void FreeRpcEnumCrl(RPC_ENUM_CRL *t);
 void FreeRpcAcList(RPC_AC_LIST *t);
 void FreeRpcEnumLogFile(RPC_ENUM_LOG_FILE *t);
-void FreeRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t);
 void FreeRpcEnumEthVLan(RPC_ENUM_ETH_VLAN *t);
 void InRpcWinVer(RPC_WINVER *t, PACK *p);
 void OutRpcWinVer(PACK *p, RPC_WINVER *t);
@@ -782,10 +742,6 @@ void InRpcLocalBridge(RPC_LOCALBRIDGE *t, PACK *p);
 void OutRpcLocalBridge(PACK *p, RPC_LOCALBRIDGE *t);
 void InRpcEnumLocalBridge(RPC_ENUM_LOCALBRIDGE *t, PACK *p);
 void OutRpcEnumLocalBridge(PACK *p, RPC_ENUM_LOCALBRIDGE *t);
-void InRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t, PACK *p);
-void OutRpcEnumLicenseKey(PACK *p, RPC_ENUM_LICENSE_KEY *t);
-void InRpcLicenseStatus(RPC_LICENSE_STATUS *t, PACK *p);
-void OutRpcLicenseStatus(PACK *p, RPC_LICENSE_STATUS *t);
 void InRpcAdminOption(RPC_ADMIN_OPTION *t, PACK *p);
 void OutRpcAdminOption(PACK *p, RPC_ADMIN_OPTION *t);
 void InRpcConfig(RPC_CONFIG *t, PACK *p);

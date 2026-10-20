@@ -143,6 +143,7 @@ bool IsSupportedWinVer(RPC_WINVER *v)
 
 static void Win32GetWinVer(RPC_WINVER *v)
 {
+	OSVERSIONINFOEX os;
 	if (v == NULL)
 	{
 		return;
@@ -152,41 +153,37 @@ static void Win32GetWinVer(RPC_WINVER *v)
 
 	v->IsWindows = true;
 
-	if (true)
+	Zero(&os, sizeof(os));
+	os.dwOSVersionInfoSize = sizeof(os);
+	Win32GetVersionExInternal((LPOSVERSIONINFOA)&os);
+
+	v->IsNT = true;
+	v->Build = os.dwBuildNumber;
+	v->ServicePack = os.wServicePackMajor;
+
+	if (os.wProductType != VER_NT_WORKSTATION)
 	{
-		OSVERSIONINFOEX os;
-		Zero(&os, sizeof(os));
-		os.dwOSVersionInfoSize = sizeof(os);
-		Win32GetVersionExInternal((LPOSVERSIONINFOA)&os);
+		v->IsServer = true;
+	}
+	v->VerMajor = os.dwMajorVersion;
+	v->VerMinor = os.dwMinorVersion;
 
-		v->IsNT = true;
-		v->Build = os.dwBuildNumber;
-		v->ServicePack = os.wServicePackMajor;
+	if (GetOsInfo()->OsServicePack == 0)
+	{
+		StrCpy(v->Title, sizeof(v->Title), GetOsInfo()->OsProductName);
+	}
+	else
+	{
+		Format(v->Title, sizeof(v->Title), "%s Service Pack %u",
+			GetOsInfo()->OsProductName,
+			GetOsInfo()->OsServicePack);
+	}
+	Trim(v->Title);
 
-		if (os.wProductType != VER_NT_WORKSTATION)
-		{
-			v->IsServer = true;
-		}
-		v->VerMajor = os.dwMajorVersion;
-		v->VerMinor = os.dwMinorVersion;
-
-		if (GetOsInfo()->OsServicePack == 0)
-		{
-			StrCpy(v->Title, sizeof(v->Title), GetOsInfo()->OsProductName);
-		}
-		else
-		{
-			Format(v->Title, sizeof(v->Title), "%s Service Pack %u",
-				GetOsInfo()->OsProductName,
-				GetOsInfo()->OsServicePack);
-		}
-		Trim(v->Title);
-
-		if (InStr(GetOsInfo()->OsVersion, "rc") ||
-			InStr(GetOsInfo()->OsVersion, "beta"))
-		{
-			v->IsBeta = true;
-		}
+	if (InStr(GetOsInfo()->OsVersion, "rc") ||
+		InStr(GetOsInfo()->OsVersion, "beta"))
+	{
+		v->IsBeta = true;
 	}
 }
 
@@ -889,6 +886,8 @@ static void CleanupCedar(CEDAR *c)
 		Free(c->CipherList);
 	}
 
+	FreeSSLCtx(c->ServerSslCtx);
+
 	Free(c->ServerStr);
 	Free(c->MachineName);
 
@@ -939,6 +938,57 @@ void ReleaseCedar(CEDAR *c)
 	}
 }
 
+// Release the shared server SSL_CTX: the next accepted connection builds it again. Connections that already
+// have it keep it until they end (reference count). c->lock is held
+static void ResetCedarServerSslCtx(CEDAR *c)
+{
+	FreeSSLCtx(c->ServerSslCtx);
+	c->ServerSslCtx = NULL;
+}
+
+// The server SSL_CTX shared by all accepted connections: certificate, key, chain, cipher list and the
+// SslAcceptSettings are applied once, when it is built. It is built again when one of them changed
+// (SetCedarCertAndChain, SetCedarCipherList, SslAcceptSettings) or, with no ServerChain, when the chain_certs
+// folder changed. The caller releases the reference it gets with FreeSSLCtx
+struct ssl_ctx_st *GetCedarServerSslCtx(CEDAR *c)
+{
+	struct ssl_ctx_st *ret;
+	UINT chain_gen = 0;
+
+	if (c == NULL)
+	{
+		return NULL;
+	}
+
+	Lock(c->lock);
+	{
+		if (c->ServerChain == NULL)
+		{
+			chain_gen = GetChainCertGeneration();
+		}
+
+		if (c->ServerSslCtx != NULL &&
+			(Cmp(&c->ServerSslCtxSettings, &c->SslAcceptSettings, sizeof(SSL_ACCEPT_SETTINGS)) != 0 ||
+			(c->ServerChain == NULL && c->ServerSslCtxChainGen != chain_gen)))
+		{
+			ResetCedarServerSslCtx(c);
+		}
+
+		if (c->ServerSslCtx == NULL)
+		{
+			c->ServerSslCtx = NewServerSSLCtx(c->ServerX, c->ServerK, c->ServerChain, c->CipherList, &c->SslAcceptSettings);
+			Copy(&c->ServerSslCtxSettings, &c->SslAcceptSettings, sizeof(SSL_ACCEPT_SETTINGS));
+			c->ServerSslCtxChainGen = chain_gen;
+		}
+
+		ret = c->ServerSslCtx;
+		ShareSSLCtx(ret);
+	}
+	Unlock(c->lock);
+
+	return ret;
+}
+
 void SetCedarCipherList(CEDAR *cedar, char *name)
 {
 	if (cedar == NULL)
@@ -946,18 +996,24 @@ void SetCedarCipherList(CEDAR *cedar, char *name)
 		return;
 	}
 
-	if (cedar->CipherList != NULL)
+	Lock(cedar->lock);
 	{
-		Free(cedar->CipherList);
+		if (cedar->CipherList != NULL)
+		{
+			Free(cedar->CipherList);
+		}
+		if (name != NULL)
+		{
+			cedar->CipherList = CopyStr(name);
+		}
+		else
+		{
+			cedar->CipherList = NULL;
+		}
+
+		ResetCedarServerSslCtx(cedar);
 	}
-	if (name != NULL)
-	{
-		cedar->CipherList = CopyStr(name);
-	}
-	else
-	{
-		cedar->CipherList = NULL;
-	}
+	Unlock(cedar->lock);
 }
 
 static int CompareNetSvc(void *p1, void *p2)
@@ -1108,6 +1164,8 @@ void SetCedarCertAndChain(CEDAR *c, X *server_x, K *server_k, LIST *server_chain
 		c->ServerX = CloneX(server_x);
 		c->ServerK = CloneK(server_k);
 		c->ServerChain = CloneXList(server_chain);
+
+		ResetCedarServerSslCtx(c);
 	}
 	Unlock(c->lock);
 }
@@ -1136,10 +1194,6 @@ void RegistWindowsFirewallAll()
 	MsRegistWindowsFirewallEx2(CEDAR_PRODUCT_STR, "vpntest.exe", exedir);
 }
 
-static void CedarForceLink()
-{
-}
-
 UINT GetCedarVersionNumber()
 {
 	return CEDAR_WIRE_VER;
@@ -1151,8 +1205,7 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 	char tmp[MAX_SIZE];
 	char tmp2[MAX_SIZE];
 	char *beta_str;
-
-	CedarForceLink();
+	SYSTEMTIME st;
 
 	c = ZeroMalloc(sizeof(CEDAR));
 
@@ -1240,17 +1293,13 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 		_SS("LANGSTR"));
 	Trim(tmp);
 
-	if (true)
-	{
-		SYSTEMTIME st;
-		Zero(&st, sizeof(st));
+	Zero(&st, sizeof(st));
 
-		st.wYear = BUILD_DATE_Y;
-		st.wMonth = BUILD_DATE_M;
-		st.wDay = BUILD_DATE_D;
+	st.wYear = BUILD_DATE_Y;
+	st.wMonth = BUILD_DATE_M;
+	st.wDay = BUILD_DATE_D;
 
-		c->BuiltDate = SystemToUINT64(&st);
-	}
+	c->BuiltDate = SystemToUINT64(&st);
 
 	c->VerString = CopyStr(tmp);
 
@@ -1278,6 +1327,45 @@ void AddTraffic(TRAFFIC *dst, TRAFFIC *diff)
 	dst->Send.BroadcastCount += diff->Send.BroadcastCount;
 	dst->Send.UnicastBytes += diff->Send.UnicastBytes;
 	dst->Send.UnicastCount += diff->Send.UnicastCount;
+}
+
+// dst = a - b
+void SubTraffic(TRAFFIC *dst, TRAFFIC *a, TRAFFIC *b)
+{
+	if (dst == NULL || a == NULL || b == NULL)
+	{
+		return;
+	}
+
+	dst->Send.BroadcastBytes = a->Send.BroadcastBytes - b->Send.BroadcastBytes;
+	dst->Send.BroadcastCount = a->Send.BroadcastCount - b->Send.BroadcastCount;
+	dst->Send.UnicastBytes = a->Send.UnicastBytes - b->Send.UnicastBytes;
+	dst->Send.UnicastCount = a->Send.UnicastCount - b->Send.UnicastCount;
+
+	dst->Recv.BroadcastBytes = a->Recv.BroadcastBytes - b->Recv.BroadcastBytes;
+	dst->Recv.BroadcastCount = a->Recv.BroadcastCount - b->Recv.BroadcastCount;
+	dst->Recv.UnicastBytes = a->Recv.UnicastBytes - b->Recv.UnicastBytes;
+	dst->Recv.UnicastCount = a->Recv.UnicastCount - b->Recv.UnicastCount;
+}
+
+// Counts one Ethernet frame as broadcast or unicast; a frame shorter than an Ethernet header is not counted
+void TrafficCountFrame(TRAFFIC_ENTRY *e, UCHAR *buf, UINT size)
+{
+	if (e == NULL || buf == NULL || size < 14)
+	{
+		return;
+	}
+
+	if (buf[0] & 0x01)
+	{
+		e->BroadcastCount++;
+		e->BroadcastBytes += (UINT64)size;
+	}
+	else
+	{
+		e->UnicastCount++;
+		e->UnicastBytes += (UINT64)size;
+	}
 }
 
 TRAFFIC *NewTraffic()

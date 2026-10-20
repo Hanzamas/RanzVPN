@@ -1,20 +1,8 @@
 file(GLOB SOURCES_CEDAR "*.c")
 file(GLOB HEADERS_CEDAR "*.h")
 
-enable_language(CXX)
-file(GLOB SOURCES_CEDAR_CPP "*.cpp")
+add_library(cedar STATIC ${SOURCES_CEDAR} ${HEADERS_CEDAR})
 
-add_library(cedar STATIC ${SOURCES_CEDAR} ${SOURCES_CEDAR_CPP} ${HEADERS_CEDAR})
-
-if(MSVC)
-  target_compile_options(cedar PRIVATE /EHsc)
-elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-  if(CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
-    target_compile_options(cedar PRIVATE /EHsc)
-  else()
-    target_compile_options(cedar PRIVATE -fexceptions)
-  endif()
-endif()
 set_target_properties(cedar
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
@@ -24,13 +12,18 @@ set_target_properties(cedar
 
 target_link_libraries(cedar PUBLIC mayaqua)
 
+# The warning flags of the project's own code (cmake/RanzWarnings.cmake); PRIVATE: they stay on Cedar
+target_link_libraries(cedar PRIVATE ranz_warnings)
+
 set_target_properties(cedar
   PROPERTIES
   COMPILE_PDB_NAME "cedar"
   COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
 )
 
-target_link_libraries(cedar PRIVATE comctl32.lib urlmon.lib winhttp.lib)
+# setupapi.lib: SetupCopyOEMInfW and SetupUninstallOEMInf* (SeLowUser.c, Win32Com.c);
+# ole32.lib and uuid.lib: CoCreateInstance and the INetCfg GUIDs (Win32Com.c)
+target_link_libraries(cedar PRIVATE comctl32.lib ole32.lib setupapi.lib uuid.lib winhttp.lib)
 
 # Build identity: version, build time and builder in one generated BuildInfo.h. Only the files that
 # print it include it (Cedar.c, Admin.c, Server.c, Command.c), so a new stamp rebuilds those four
