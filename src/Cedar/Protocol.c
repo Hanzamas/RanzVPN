@@ -1277,7 +1277,7 @@ bool ServerAccept(CONNECTION *c)
 				}
 				else
 				{
-					if (IsZeroIp(&udp_acceleration_client_ip))
+					if (IsZeroIP(&udp_acceleration_client_ip))
 					{
 						Copy(&udp_acceleration_client_ip, &c->FirstSock->RemoteIP, sizeof(IP));
 					}
@@ -3036,7 +3036,7 @@ bool ClientConnect(CONNECTION *c)
 				{
 					UINT udp_acceleration_server_port = PackGetInt(p, "udp_acceleration_server_port");
 
-					if (IsZeroIp(&udp_acceleration_server_ip))
+					if (IsZeroIP(&udp_acceleration_server_ip))
 					{
 						Copy(&udp_acceleration_server_ip, &s->RemoteIP, sizeof(IP));
 					}

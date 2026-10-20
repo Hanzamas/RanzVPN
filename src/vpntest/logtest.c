@@ -18,7 +18,7 @@
 // (at most LOG_ENGINE_BUFFER_NO_FILE_MAX bytes, in order), then one dropped-records line whose count
 // makes up the rest, then the records inserted after the unblock.
 //
-// "slog" (FND-18): SetSysLog stored Tick64() + IsZeroIp(&ip) ? NG : OK, the bare interval, so the first message
+// "slog" (FND-18): SetSysLog stored Tick64() + IsZeroIP(&ip) ? NG : OK, the bare interval, so the first message
 // after it resolved the host again; SendSysLog resolved the host while it held the lock of the SLOG, so every other
 // sender waited for the resolver. The next resolve is a tick deadline (SYSLOG_POLL_IP_INTERVAL after a resolved
 // host, SYSLOG_POLL_IP_INTERVAL_NG after an empty one); while a first sender resolves an unknown single-label host

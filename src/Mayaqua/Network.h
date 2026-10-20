@@ -9,11 +9,6 @@
 
 #include <openssl/ssl.h> // This is needed only for the SSL/TLS version defines
 
-struct DYN_VALUE
-{
-	char Name[256];
-};
-
 #define	MAX_HOST_NAME_LEN			255
 
 #define	TIMEOUT_INFINITE			(0x7fffffff)
@@ -50,7 +45,6 @@ struct IP
 #define	CmpIpAddr(ip1, ip2)			(Cmp((ip1)->address, (ip2)->address, sizeof((ip1)->address)))
 
 #define	IsIP6(ip)					(ip && IsIP4(ip) == false)
-#define	IsZeroIp(ip)				(IsZeroIP(ip))
 
 struct IPV6_ADDR
 {
@@ -105,7 +99,6 @@ struct SOCK
 	SOCKET socket;
 	SSL *ssl;
 	struct ssl_ctx_st *ssl_ctx;
-	char SniHostname[256];
 	UINT Type;
 	bool Connected;
 	bool ServerMode;
@@ -139,7 +132,6 @@ struct SOCK
 	bool IsRawSocket;
 	const char *SslVersion;
 	UINT RawSocketIPProtocol;
-	int CurrentTos;
 	char UnderlayProtocol[64];
 	char ProtocolDetails[256];
 
@@ -209,7 +201,6 @@ struct CONNECT_SERIAL_PARAM
 	SOCK *Sock;
 	bool Finished;
 	bool Ok;
-	UINT64 FinishedTick;
 	EVENT *FinishEvent;
 	UINT Delay;
 	UINT RetryDelay;
@@ -228,7 +219,6 @@ struct SSL_VERIFY_OPTION
 
 struct NIC_ENTRY
 {
-	char IfName[MAX_SIZE];
 	UCHAR MacAddress[6];
 };
 
@@ -348,7 +338,6 @@ void IntToSubnetMask4(IP *ip, UINT i);
 bool GetNetBiosName(char *name, UINT size, IP *ip);
 bool IsIPv6Supported();
 bool HasIPv6Address();
-void SetSockHighPriority(SOCK *s, bool flag);
 int CompareIpClientList(void *p1, void *p2);
 IP_CLIENT *SearchIpClient(IP *ip);
 UINT GetNumIpClient(IP *ip);
@@ -368,7 +357,6 @@ void ZeroIP4(IP *ip);
 bool StrToIP6(IP *ip, char *str);
 void IPToStr6(char *str, UINT size, IP *ip);
 void IP6AddrToStr(char *str, UINT size, IPV6_ADDR *addr);
-void IPToStr6Array(char *str, UINT size, UCHAR *bytes);
 void IntToSubnetMask6(IP *ip, UINT i);
 void IPAnd6(IP *dst, IP *a, IP *b);
 void GetAllRouterMulticastAddress6(IP *ip);

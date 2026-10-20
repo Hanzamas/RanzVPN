@@ -111,7 +111,7 @@ void UdpAccelPoll(UDP_ACCEL *a)
 
 			a->NextSendKeepAlive = a->Now + (UINT64)rand_interval;
 
-			UdpAccelSend(a, NULL, 0, false, 1000, false);
+			UdpAccelSend(a, NULL, 0, false, 1000);
 		}
 	}
 }
@@ -123,7 +123,7 @@ void UdpAccelSendBlock(UDP_ACCEL *a, BLOCK *b)
 		return;
 	}
 
-	UdpAccelSend(a, b->Buf, b->Size, b->Compressed ? 1 : 0, a->MaxUdpPacketSize, b->PriorityQoS);
+	UdpAccelSend(a, b->Buf, b->Size, b->Compressed ? 1 : 0, a->MaxUdpPacketSize);
 }
 
 UINT UdpAccelCalcMss(UDP_ACCEL *a)
@@ -177,7 +177,7 @@ UINT UdpAccelCalcMss(UDP_ACCEL *a)
 	return ret;
 }
 
-void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT max_size, bool high_priority)
+void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT max_size)
 {
 	UCHAR buffer[UDP_ACCELERATION_TMP_BUF_SIZE];
 	UCHAR *buf = buffer;
@@ -295,8 +295,6 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 		}
 	}
 
-	SetSockHighPriority(a->UdpSock, high_priority);
-
 	if (SendTo(a->UdpSock, &a->YourIp, a->YourPort, buffer, size) == 0)
 	{
 		if (a->UdpSock->IgnoreSendErr == false)
@@ -373,7 +371,7 @@ bool UdpAccelIsSendReady(UDP_ACCEL *a, bool check_keepalive)
 		return false;
 	}
 
-	if (IsZeroIp(&a->YourIp))
+	if (IsZeroIP(&a->YourIp))
 	{
 		return false;
 	}

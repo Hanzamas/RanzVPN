@@ -28,7 +28,6 @@
 #include <wincrypt.h>
 #include <IcmpAPI.h>
 
-static LOCK *machine_name_lock = NULL;
 static LOCK *disconnect_function_lock = NULL;
 extern LOCK *openssl_lock;
 static COUNTER *num_tcp_connections = NULL;
@@ -66,34 +65,6 @@ typedef struct PRIVATE_IP_SUBNET
 
 static LIST *g_private_ip_list = NULL;
 
-
-static LIST *g_dyn_value_list = NULL;
-
-
-static void InitDynList()
-{
-	g_dyn_value_list = NewList(NULL);
-}
-
-static void FreeDynList()
-{
-	UINT i;
-	if (g_dyn_value_list == NULL)
-	{
-		return;
-	}
-
-	for (i = 0; i < LIST_NUM(g_dyn_value_list); i++)
-	{
-		DYN_VALUE *d = LIST_DATA(g_dyn_value_list, i);
-
-		Free(d);
-	}
-
-	ReleaseList(g_dyn_value_list);
-
-	g_dyn_value_list = NULL;
-}
 
 int GetCurrentTimezone()
 {
@@ -246,7 +217,6 @@ LIST *Win32GetNicList()
 
 			NIC_ENTRY *e = ZeroMalloc(sizeof(NIC_ENTRY));
 
-			StrCpy(e->IfName, sizeof(e->IfName), a->Title);
 			Copy(e->MacAddress, a->Address, 6);
 
 			Add(o, e);
@@ -811,22 +781,13 @@ void IntToSubnetMask6(IP *ip, UINT i)
 
 void IP6AddrToStr(char *str, UINT size, IPV6_ADDR *addr)
 {
+	IP ip;
 	if (str == NULL || addr == NULL)
 	{
 		return;
 	}
 
-	IPToStr6Array(str, size, addr->Value);
-}
-void IPToStr6Array(char *str, UINT size, UCHAR *bytes)
-{
-	IP ip;
-	if (str == NULL || bytes == NULL)
-	{
-		return;
-	}
-
-	SetIP6(&ip, bytes);
+	SetIP6(&ip, addr->Value);
 
 	IPToStr6(str, size, &ip);
 }
@@ -3105,21 +3066,6 @@ static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *pri
 		goto FAIL;
 	}
 
-	if (sock->ServerMode)
-	{
-
-		if (true)
-		{
-			const char *sni_recv_hostname = SSL_get_servername(sock->ssl, TLSEXT_NAMETYPE_host_name);
-
-			if (IsEmptyStr((char *)sni_recv_hostname) == false)
-			{
-				StrCpy(sock->SniHostname, sizeof(sock->SniHostname), (char *)sni_recv_hostname);
-			}
-		}
-
-	}
-
 	Lock(openssl_lock);
 	{
 		x509 = SSL_get_peer_certificate(sock->ssl);
@@ -3261,11 +3207,7 @@ static UINT SslFailResult(SOCK *sock, int e)
 {
 	if (sock->AsyncMode && e == SSL_ERROR_SSL)
 	{
-		UINT ssl_err_no;
-		while ((ssl_err_no = ERR_get_error()) != 0)
-		{
-			Debug("%s %u SSL_ERROR_SSL on ASYNC socket !!! ssl_err_no = %u: '%s'\n", __FILE__, __LINE__, ssl_err_no, ERR_error_string(ssl_err_no, NULL));
-		}
+		DrainCryptErrors("SSL_ERROR_SSL on ASYNC socket");
 	}
 
 	return SockFailResult(sock, sock->AsyncMode && (e == SSL_ERROR_WANT_READ || e == SSL_ERROR_WANT_WRITE));
@@ -3638,7 +3580,7 @@ SOCK *Accept(SOCK *sock)
 		AddIpClient(&ret->RemoteIP);
 	}
 
-	if (IsZeroIp(&sock->LocalIP) == false && IsLocalHostIP(&sock->LocalIP) == false)
+	if (IsZeroIP(&sock->LocalIP) == false && IsLocalHostIP(&sock->LocalIP) == false)
 	{
 		IP current_ip;
 
@@ -3735,7 +3677,7 @@ SOCK *Accept6(SOCK *sock)
 		ret->IpClientAdded = true;
 		AddIpClient(&ret->RemoteIP);
 	}
-	if (IsZeroIp(&sock->LocalIP) == false && IsLocalHostIP(&sock->LocalIP) == false)
+	if (IsZeroIP(&sock->LocalIP) == false && IsLocalHostIP(&sock->LocalIP) == false)
 	{
 		IP current_ip;
 
@@ -4215,33 +4157,6 @@ static int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeou
 	}
 }
 
-static void SetSockTos(SOCK *s, int tos)
-{
-	if (s == NULL)
-	{
-		return;
-	}
-
-	if (s->CurrentTos == tos)
-	{
-		return;
-	}
-
-	(void)setsockopt(s->socket, IPPROTO_IP, IP_TOS, (char *)&tos, sizeof(int));
-
-	s->CurrentTos = tos;
-}
-
-void SetSockHighPriority(SOCK *s, bool flag)
-{
-	if (s == NULL)
-	{
-		return;
-	}
-
-	SetSockTos(s, (flag ? 16 : 0));
-}
-
 static int bind_sock(SOCKET sock, IP *ip, UINT port)
 {
 
@@ -4352,7 +4267,7 @@ static void BindConnectThreadForIPv4(THREAD *thread, void *param)
 	{
 		IP *ip = LIST_DATA(p->IpList, i);
 
-		if (IsZeroIp(ip))
+		if (IsZeroIP(ip))
 		{
 			continue;
 		}
@@ -4384,7 +4299,6 @@ static void BindConnectThreadForIPv4(THREAD *thread, void *param)
 	}
 
 	p->Ok = (p->Sock == NULL ? false : true);
-	p->FinishedTick = Tick64();
 	p->Finished = true;
 
 	Set(p->FinishEvent);
@@ -4412,7 +4326,7 @@ static void BindConnectThreadForIPv6(THREAD* thread, void* param)
 	{
 		IP *ip = LIST_DATA(p->IpList, i);
 
-		if (IsZeroIp(ip))
+		if (IsZeroIP(ip))
 		{
 			continue;
 		}
@@ -4488,7 +4402,6 @@ static void BindConnectThreadForIPv6(THREAD* thread, void* param)
 	}
 
 	p->Ok = (p->Sock == NULL ? false : true);
-	p->FinishedTick = Tick64();
 	p->Finished = true;
 
 	Set(p->FinishEvent);
@@ -4533,7 +4446,7 @@ SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname
 
 	QuerySocketInformation(sock);
 
-	if (IsZeroIp(&sock->LocalIP) == false && IsLocalHostIP(&sock->LocalIP) == false)
+	if (IsZeroIP(&sock->LocalIP) == false && IsLocalHostIP(&sock->LocalIP) == false)
 	{
 		IP current_ip;
 
@@ -4586,7 +4499,7 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 	LIST *iplist_v6 = NULL;
 	LIST *iplist_v4 = NULL;
 
-	if (IsZeroIp(ret_ip) == false)
+	if (IsZeroIP(ret_ip) == false)
 	{
 		if (IsIP6(ret_ip))
 		{
@@ -5080,40 +4993,20 @@ void GetMachineHostName(char *name, UINT size)
 
 void GetMachineName(char *name, UINT size)
 {
-	static char name_cache[MAX_SIZE];
-	static bool name_cached = false;
 	char tmp[MAX_SIZE];
+	DWORD tmp_size = sizeof(tmp);
 	if (name == NULL)
 	{
 		return;
 	}
 
-	Lock(machine_name_lock);
+	if (GetComputerNameExA(ComputerNameDnsHostname, tmp, &tmp_size) == false)
 	{
-		if (name_cached != false)
-		{
-			StrCpy(name, size, name_cache);
-			Unlock(machine_name_lock);
-			return;
-		}
-		ClearStr(tmp, sizeof(tmp));
-		if (gethostname(tmp, MAX_SIZE) != 0)
-		{
-			StrCpy(name, size, "Unknown");
-			Unlock(machine_name_lock);
-			return;
-		}
-		ClearStr(name, size);
-		StrCpy(name, size, tmp);
-		if (IsEmptyStr(name) || StartWith(name, "localhost"))
-		{
-			ClearStr(name, size);
-			MsGetComputerName(name, size);
-		}
-		StrCpy(name_cache, sizeof(name_cache), name);
-		name_cached = true;
+		StrCpy(name, size, "Unknown");
+		return;
 	}
-	Unlock(machine_name_lock);
+
+	StrCpy(name, size, tmp);
 }
 
 bool GetHostName(char *hostname, UINT size, IP *ip)
@@ -5320,7 +5213,7 @@ void IPToStr4or6(char *str, UINT size, UINT ip_4_uint, UCHAR *ip_6_bytes)
 	UINTToIP(&ip4, ip_4_uint);
 	SetIP6(&ip6, ip_6_bytes);
 
-	if (IsIP6(&ip4) || (IsZeroIp(&ip4) && (IsZeroIp(&ip6) == false)))
+	if (IsIP6(&ip4) || (IsZeroIP(&ip4) && (IsZeroIP(&ip6) == false)))
 	{
 		Copy(&ip, &ip6, sizeof(IP));
 	}
@@ -5538,9 +5431,6 @@ void InitNetwork()
 	disable_gethostname_by_accept = false;
 
 
-	InitDynList();
-
-
 	host_ip_address_list_cache_lock = NewLock();
 	host_ip_address_list_cache_last = 0;
 
@@ -5554,7 +5444,6 @@ void InitNetwork()
 
 	DnsInit();
 
-	machine_name_lock = NewLock();
 	disconnect_function_lock = NewLock();
 	machine_ip_process_hash_lock = NewLock();
 	local_mac_list_lock = NewLock();
@@ -5665,7 +5554,7 @@ bool IsIPMyHost(IP *ip)
 		return false;
 	}
 
-	if (IsZeroIp(ip))
+	if (IsZeroIP(ip))
 	{
 		return false;
 	}
@@ -5844,7 +5733,7 @@ void SetCurrentGlobalIP(IP *ip, bool ipv6)
 		return;
 	}
 
-	if (IsZeroIp(ip))
+	if (IsZeroIP(ip))
 	{
 		return;
 	}
@@ -5883,10 +5772,9 @@ void FreeNetwork()
 	DeleteLock(chain_cert_lock);
 	chain_cert_lock = NULL;
 
-	DeleteLock(machine_name_lock);
 	DeleteLock(disconnect_function_lock);
 	DeleteLock(machine_ip_process_hash_lock);
-	machine_name_lock = disconnect_function_lock = machine_ip_process_hash_lock = NULL;
+	disconnect_function_lock = machine_ip_process_hash_lock = NULL;
 
 	DnsFree();
 
@@ -5914,8 +5802,6 @@ void FreeNetwork()
 
 	FreeHostIPAddressList(host_ip_address_cache);
 	host_ip_address_cache = NULL;
-
-	FreeDynList();
 }
 
 static bool ParseIpAndSubnetMask46(char *src, IP *ip, IP *mask)
@@ -6316,6 +6202,8 @@ LIST *GetHostIPAddressListInternal()
 	LIST *o;
 	IP any6, any4;
 	IP local6, local4;
+	struct addrinfo hint;
+	struct addrinfo *info;
 	bool is_v6_supported = IsIPv6Supported();
 
 	GetLocalHostIP4(&local4);
@@ -6342,78 +6230,43 @@ LIST *GetHostIPAddressListInternal()
 		AddHostIPAddressToList(o, &local6);
 	}
 
-	if (true)
+	Zero(&hint, sizeof(hint));
+	hint.ai_family = AF_UNSPEC;
+	hint.ai_socktype = SOCK_DGRAM;
+	hint.ai_protocol = IPPROTO_UDP;
+	info = NULL;
+
+	if (getaddrinfo(hostname, NULL, &hint, &info) == 0)
 	{
-		struct sockaddr_in in;
-		struct in_addr addr;
-		struct addrinfo hint;
-		struct addrinfo *info;
+		struct addrinfo *current;
 
-		Zero(&hint, sizeof(hint));
-		hint.ai_family = AF_INET;
-		hint.ai_socktype = SOCK_DGRAM;
-		hint.ai_protocol = IPPROTO_UDP;
-		info = NULL;
-
-		if (getaddrinfo(hostname, NULL, &hint, &info) == 0)
+		for (current = info; current != NULL; current = current->ai_next)
 		{
-			if (info->ai_family == AF_INET)
+			IP ip;
+
+			if (current->ai_family == AF_INET)
 			{
-				struct addrinfo *current = info;
-				while (current != NULL)
-				{
-					IP ip;
+				struct sockaddr_in in;
 
-					Copy(&in, current->ai_addr, sizeof(in));
-					Copy(&addr, &in.sin_addr, sizeof(addr));
+				Copy(&in, current->ai_addr, sizeof(in));
 
-					InAddrToIP(&ip, &addr);
-					AddHostIPAddressToList(o, &ip);
-
-					current = current->ai_next;
-				}
+				InAddrToIP(&ip, &in.sin_addr);
+				AddHostIPAddressToList(o, &ip);
 			}
-
-			freeaddrinfo(info);
-		}
-	}
-
-	if (is_v6_supported)
-	{
-		struct sockaddr_in6 in;
-		struct in6_addr addr;
-		struct addrinfo hint;
-		struct addrinfo *info;
-
-		Zero(&hint, sizeof(hint));
-		hint.ai_family = AF_INET6;
-		hint.ai_socktype = SOCK_DGRAM;
-		hint.ai_protocol = IPPROTO_UDP;
-		info = NULL;
-
-		if (getaddrinfo(hostname, NULL, &hint, &info) == 0)
-		{
-			if (info->ai_family == AF_INET6)
+			else if (current->ai_family == AF_INET6 && is_v6_supported)
 			{
-				struct addrinfo *current = info;
-				while (current != NULL)
-				{
-					IP ip;
+				struct sockaddr_in6 in;
 
-					Copy(&in, current->ai_addr, sizeof(in));
-					Copy(&addr, &in.sin6_addr, sizeof(addr));
+				Copy(&in, current->ai_addr, sizeof(in));
 
-					InAddrToIP6(&ip, &addr);
-					ip.ipv6_scope_id = in.sin6_scope_id;
+				InAddrToIP6(&ip, &in.sin6_addr);
+				ip.ipv6_scope_id = in.sin6_scope_id;
 
-					AddHostIPAddressToList(o, &ip);
-
-					current = current->ai_next;
-				}
+				AddHostIPAddressToList(o, &ip);
 			}
-
-			freeaddrinfo(info);
 		}
+
+		freeaddrinfo(info);
 	}
 
 	return o;
