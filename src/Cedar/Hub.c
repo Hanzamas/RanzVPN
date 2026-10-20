@@ -2896,6 +2896,49 @@ SESSION *GetSessionByName(HUB *hub, char *name)
 	return NULL;
 }
 
+// Count the hub's sessions that count against the multi-login limit of username:
+// not bridge, not cascade server side, at least one TCP connection, and a UniqueId
+// that is zero or different from unique_id.
+// Lock order: hub->lock, then SessionList, then s->lock, then the TcpSockList lock.
+// The caller must not hold hub->lock (ServerAccept unlocks it around this call).
+UINT HubCountUserSessions(HUB *h, char *username, UCHAR *unique_id)
+{
+	UINT num = 0;
+	if (h == NULL || username == NULL || unique_id == NULL)
+	{
+		return 0;
+	}
+
+	LockList(h->SessionList);
+	{
+		UINT i;
+		for (i = 0;i < LIST_NUM(h->SessionList);i++)
+		{
+			SESSION *s = LIST_DATA(h->SessionList, i);
+			Lock(s->lock);
+			{
+				UINT num_tcp;
+				LockList(s->Connection->Tcp->TcpSockList);
+				{
+					num_tcp = s->Connection->Tcp->TcpSockList->num_item;
+				}
+				UnlockList(s->Connection->Tcp->TcpSockList);
+
+				if (s->BridgeMode == false && s->LinkModeServer == false && num_tcp != 0 &&
+					StrCmpi(s->Username, username) == 0 &&
+					(IsZero(s->NodeInfo.UniqueId, 16) || Cmp(s->NodeInfo.UniqueId, unique_id, 16) != 0))
+				{
+					num++;
+				}
+			}
+			Unlock(s->lock);
+		}
+	}
+	UnlockList(h->SessionList);
+
+	return num;
+}
+
 static int CompareStormList(void *p1, void *p2)
 {
 	STORM *s1, *s2;

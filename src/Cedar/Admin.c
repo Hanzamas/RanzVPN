@@ -2380,32 +2380,13 @@ static UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
 	return ret;
 }
 
-void SiEnumSessionMain(SERVER *s, RPC_ENUM_SESSION *t)
-{
-	char hubname[MAX_HUBNAME_LEN + 1];
-	UINT num;
-	if (s == NULL || t == NULL)
-	{
-		return;
-	}
-
-	StrCpy(hubname, sizeof(hubname), t->HubName);
-
-	FreeRpcEnumSession(t);
-	Zero(t, sizeof(RPC_ENUM_SESSION));
-	StrCpy(t->HubName, sizeof(t->HubName), hubname);
-
-	num = 0;
-	SiEnumLocalSession(s, hubname, t);
-
-}
-
 static UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	HUB *h = NULL;
 	UINT ret = ERR_NO_ERROR;
+	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
 
@@ -2426,7 +2407,13 @@ static UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t)
 		return ERR_NOT_ENOUGH_RIGHT;
 	}
 
-	SiEnumSessionMain(s, t);
+	StrCpy(hubname, sizeof(hubname), t->HubName);
+
+	FreeRpcEnumSession(t);
+	Zero(t, sizeof(RPC_ENUM_SESSION));
+	StrCpy(t->HubName, sizeof(t->HubName), hubname);
+
+	SiEnumLocalSession(s, hubname, t);
 
 	ReleaseHub(h);
 

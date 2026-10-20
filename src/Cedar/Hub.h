@@ -300,6 +300,7 @@ void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *
 void SetHubOnline(HUB *h);
 void SetHubOffline(HUB *h);
 SESSION *GetSessionByName(HUB *hub, char *name);
+UINT HubCountUserSessions(HUB *h, char *username, UCHAR *unique_id);
 void DeleteIPv6DefaultRouterInRA(PKT *p);
 void IntoTrafficLimiter(TRAFFIC_LIMITER *tr, PKT *p);
 bool IsMostHighestPriorityPacket(SESSION *s, PKT *p);
