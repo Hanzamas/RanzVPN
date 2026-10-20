@@ -155,6 +155,12 @@ bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x)
 
 	FreeCertList(current_chain_dir);
 
+	if (ret && auto_save)
+	{
+		// The folder was changed: the next connection of the server scans it again
+		InvalidateChainCertCache();
+	}
+
 	return ret;
 }
 
@@ -996,11 +1002,41 @@ static UINT ChangePasswordAccept(CONNECTION *c, PACK *p)
 	return ret;
 }
 
+// Adds the login message to the Welcome pack: the OS support warning for the client, then msg
+static void PackAddWelcomeMsg(PACK *p, RPC_WINVER *client_winver, wchar_t *msg)
+{
+	char *utf;
+	wchar_t winver_msg_client[3800];
+	UINT tmpsize;
+	wchar_t *tmp;
+
+	FormatUnsupportedWinVerMsg(winver_msg_client, sizeof(winver_msg_client), client_winver);
+
+	tmpsize = UniStrSize(winver_msg_client) + UniStrSize(msg) + (16000 + 3000) * sizeof(wchar_t);
+
+	tmp = ZeroMalloc(tmpsize);
+
+	if (IsURLMsg(msg, NULL, 0) == false)
+	{
+		UniStrCat(tmp, tmpsize, winver_msg_client);
+	}
+	UniStrCat(tmp, tmpsize, msg);
+
+	utf = CopyUniToUtf(tmp);
+
+	PackAddData(p, "Msg", utf, StrLen(utf));
+
+	Free(tmp);
+	Free(utf);
+}
+
 bool ServerAccept(CONNECTION *c)
 {
 	bool ret = false;
 	UINT err;
 	PACK *p;
+	char ip1[64], verstr[64];
+	wchar_t *authtype_str;
 	char username_real[MAX_SIZE];
 	char method[MAX_SIZE];
 	char hubname[MAX_SIZE];
@@ -1274,32 +1310,28 @@ bool ServerAccept(CONNECTION *c)
 				PackGetData(p, "unique_id", unique);
 			}
 
+			authtype_str = _UU("LH_AUTH_UNKNOWN");
+			switch (authtype)
 			{
-				char ip1[64], ip2[64], verstr[64];
-				wchar_t *authtype_str = _UU("LH_AUTH_UNKNOWN");
-				switch (authtype)
-				{
-				case CLIENT_AUTHTYPE_ANONYMOUS:
-					authtype_str = _UU("LH_AUTH_ANONYMOUS");
-					break;
-				case CLIENT_AUTHTYPE_PASSWORD:
-					authtype_str = _UU("LH_AUTH_PASSWORD");
-					break;
-				case CLIENT_AUTHTYPE_PLAIN_PASSWORD:
-					authtype_str = _UU("LH_AUTH_PLAIN_PASSWORD");
-					break;
-				case CLIENT_AUTHTYPE_CERT:
-					authtype_str = _UU("LH_AUTH_CERT");
-					break;
-				}
-				IPToStr(ip1, sizeof(ip1), &c->FirstSock->RemoteIP);
-				IPToStr(ip2, sizeof(ip2), &c->FirstSock->LocalIP);
-
-				Format(verstr, sizeof(verstr), "%u.%02u", c->ClientVer / 100, c->ClientVer % 100);
-
-				HLog(hub, "LH_CONNECT_CLIENT", c->Name, ip1, c->FirstSock->RemoteHostname, c->FirstSock->RemotePort,
-					c->ClientStr, verstr, c->ClientBuild, authtype_str, username);
+			case CLIENT_AUTHTYPE_ANONYMOUS:
+				authtype_str = _UU("LH_AUTH_ANONYMOUS");
+				break;
+			case CLIENT_AUTHTYPE_PASSWORD:
+				authtype_str = _UU("LH_AUTH_PASSWORD");
+				break;
+			case CLIENT_AUTHTYPE_PLAIN_PASSWORD:
+				authtype_str = _UU("LH_AUTH_PLAIN_PASSWORD");
+				break;
+			case CLIENT_AUTHTYPE_CERT:
+				authtype_str = _UU("LH_AUTH_CERT");
+				break;
 			}
+			IPToStr(ip1, sizeof(ip1), &c->FirstSock->RemoteIP);
+
+			Format(verstr, sizeof(verstr), "%u.%02u", c->ClientVer / 100, c->ClientVer % 100);
+
+			HLog(hub, "LH_CONNECT_CLIENT", c->Name, ip1, c->FirstSock->RemoteHostname, c->FirstSock->RemotePort,
+				c->ClientStr, verstr, c->ClientBuild, authtype_str, username);
 
 			auth_ret = SamAuthUserByAnonymous(hub, username);
 			if (auth_ret)
@@ -2107,31 +2139,7 @@ bool ServerAccept(CONNECTION *c)
 
 		PackAddBool(p, "suppress_client_update_notification", suppress_client_update_notification);
 
-		{
-			char *utf;
-			wchar_t winver_msg_client[3800];
-			UINT tmpsize;
-			wchar_t *tmp;
-
-			FormatUnsupportedWinVerMsg(winver_msg_client, sizeof(winver_msg_client), &winver);
-
-			tmpsize = UniStrSize(winver_msg_client) + UniStrSize(msg) + (16000 + 3000) * sizeof(wchar_t);
-
-			tmp = ZeroMalloc(tmpsize);
-
-			if (IsURLMsg(msg, NULL, 0) == false)
-			{
-				UniStrCat(tmp, tmpsize, winver_msg_client);
-			}
-			UniStrCat(tmp, tmpsize, msg);
-			
-			utf = CopyUniToUtf(tmp);
-
-			PackAddData(p, "Msg", utf, StrLen(utf));
-
-			Free(tmp);
-			Free(utf);
-		}
+		PackAddWelcomeMsg(p, &winver, msg);
 
 		Free(msg);
 
@@ -2204,8 +2212,6 @@ bool ServerAccept(CONNECTION *c)
 			}
 		}
 		Unlock(s->Hub->lock);
-
-		PrintSessionTotalDataSize(s);
 
 		HLog(s->Hub, "LH_END_SESSION", s->Name, s->TotalSendSizeReal, s->TotalRecvSizeReal);
 
@@ -2445,6 +2451,8 @@ static void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
 	OS_INFO *os;
 	char *product_id;
 	IP ip;
+	wchar_t namew[256];
+	char namea[256];
 	if (c == NULL)
 	{
 		return;
@@ -2470,24 +2478,19 @@ static void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
 	StrCpy(info->ClientOsProductId, sizeof(info->ClientOsProductId), product_id);
 	Free(product_id);
 
+	Zero(namew, sizeof(namew));
+	MsGetComputerNameFullEx(namew, sizeof(namew), true);
+
+	Zero(namea, sizeof(namea));
+	UniToStr(namea, sizeof(namea), namew);
+
+	if (IsEmptyStr(namea))
 	{
-		wchar_t namew[256];
-		char namea[256];
-
-		Zero(namew, sizeof(namew));
-		MsGetComputerNameFullEx(namew, sizeof(namew), true);
-
-		Zero(namea, sizeof(namea));
-		UniToStr(namea, sizeof(namea), namew);
-
-		if (IsEmptyStr(namea))
-		{
-			GetMachineName(namea, sizeof(namea));
-		}
-
-		StrCpy(info->ClientHostname, sizeof(info->ClientHostname), namea);
-
+		GetMachineName(namea, sizeof(namea));
 	}
+
+	StrCpy(info->ClientHostname, sizeof(info->ClientHostname), namea);
+
 	if (IsIP6(&c->FirstSock->LocalIP) == false)
 	{
 		info->ClientIpAddress = IPToUINT(&c->FirstSock->LocalIP);
@@ -2618,7 +2621,7 @@ static SOCK *ClientAdditionalConnectToServer(CONNECTION *c)
 	return s;
 }
 
-bool ClientAdditionalConnect(CONNECTION *c, THREAD *t)
+bool ClientAdditionalConnect(CONNECTION *c)
 {
 	SOCK *s;
 	PACK *p;
@@ -2705,10 +2708,6 @@ bool ClientAdditionalConnect(CONNECTION *c, THREAD *t)
 		Add(c->Tcp->TcpSockList, ts);
 	}
 	UnlockList(c->Tcp->TcpSockList);
-
-	if (c->Session->HalfConnection)
-	{
-	}
 
 	Cancel(c->Session->Cancel1);
 
@@ -2834,6 +2833,9 @@ bool ClientConnect(CONNECTION *c)
 	POLICY *policy;
 	bool expired = false;
 	IP server_ip;
+	UINT utf_size;
+	char *utf;
+	wchar_t *msg;
 	if (c == NULL)
 	{
 		return false;
@@ -2960,33 +2962,27 @@ bool ClientConnect(CONNECTION *c)
 		goto CLEANUP;
 	}
 
+	utf_size = PackGetDataSize(p, "Msg");
+	utf = ZeroMalloc(utf_size + 8);
+	PackGetData(p, "Msg", utf);
+
+	msg = CopyUtfToUni(utf);
+
+	if (IsEmptyUniStr(msg) == false)
 	{
-		UINT utf_size;
-		char *utf;
-		wchar_t *msg;
-
-		utf_size = PackGetDataSize(p, "Msg");
-		utf = ZeroMalloc(utf_size + 8);
-		PackGetData(p, "Msg", utf);
-
-		msg = CopyUtfToUni(utf);
-
-		if (IsEmptyUniStr(msg) == false)
+		if (c->Session->Client_Message != NULL)
 		{
-			if (c->Session->Client_Message != NULL)
-			{
-				Free(c->Session->Client_Message);
-			}
-
-			c->Session->Client_Message = msg;
-		}
-		else
-		{
-			Free(msg);
+			Free(c->Session->Client_Message);
 		}
 
-		Free(utf);
+		c->Session->Client_Message = msg;
 	}
+	else
+	{
+		Free(msg);
+	}
+
+	Free(utf);
 
 	PrintStatus(sess, _UU("STATUS_7"));
 
@@ -3094,10 +3090,7 @@ bool ClientConnect(CONNECTION *c)
 							if (UdpAccelInitClient(sess->UdpAccel,
 								sess->UdpAccel->Version == 2 ? udp_acceleration_server_key_v2 : udp_acceleration_server_key,
 								&remote_ip, &udp_acceleration_server_ip, udp_acceleration_server_port,
-								server_cookie, client_cookie) == false)
-							{
-							}
-							else
+								server_cookie, client_cookie))
 							{
 								sess->UseUdpAcceleration = true;
 
@@ -3542,17 +3535,6 @@ bool ClientUploadAuth(CONNECTION *c)
 		break;
 
 	case CLIENT_AUTHTYPE_CERT:
-		if (a->ClientX != NULL && a->ClientX->is_compatible_bit &&
-			a->ClientX->bits != 0 && (a->ClientX->bits / 8) <= sizeof(sign))
-		{
-			if (RsaSignEx(sign, sizeof(sign), c->Random, SHA1_SIZE, a->ClientK))
-			{
-				p = PackLoginWithCert(o->HubName, a->Username, a->ClientX, sign, a->ClientX->bits / 8);
-				c->ClientX = CloneX(a->ClientX);
-			}
-		}
-		break;
-
 	case CLIENT_AUTHTYPE_OPENSSLENGINE:
 		if (a->ClientX != NULL && a->ClientX->is_compatible_bit &&
 			a->ClientX->bits != 0 && (a->ClientX->bits / 8) <= sizeof(sign))
@@ -3931,7 +3913,6 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 {
 	volatile bool *cancel_flag = NULL;
 	char hostname[MAX_HOST_NAME_LEN];
-	char localaddr[MAX_HOST_NAME_LEN];
 
 	bool save_resolved_ip = false;
 	CLIENT_OPTION *o;
@@ -4102,16 +4083,8 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 		Copy(&c->Session->ServerIP_CacheForNextConnect, &resolved_ip, sizeof(c->Session->ServerIP_CacheForNextConnect));
 	}
 
-	IPToStr(localaddr, sizeof(localaddr), &sock->LocalIP);
-
 	if (additional_connect == false) {
 		c->Session->LocalIP_CacheForNextConnect = sock->LocalIP;
-	}
-	else {
-		if (memcmp(sock->LocalIP.address, c->Session->LocalIP_CacheForNextConnect.address, sizeof(sock->LocalIP.address)) == 0) {
-		}
-		else {
-		}
 	}
 
 	return sock;

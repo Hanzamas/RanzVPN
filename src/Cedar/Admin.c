@@ -37,9 +37,6 @@ static UINT StCrash(ADMIN *a, RPC_TEST *t);
 static UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t);
 static UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t);
 static UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t);
-static UINT StGetLicenseStatus(ADMIN *a, RPC_LICENSE_STATUS *t);
-static UINT StEnumLicenseKey(ADMIN *a, RPC_ENUM_LICENSE_KEY *t);
-static UINT StAddLicenseKey(ADMIN *a, RPC_TEST *t);
 static UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t);
 static UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t);
 static UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t);
@@ -390,10 +387,6 @@ static PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 	DECLARE_RPC_EX("GetAcList", RPC_AC_LIST, StGetAcList, InRpcAcList, OutRpcAcList, FreeRpcAcList)
 	DECLARE_RPC_EX("EnumLogFile", RPC_ENUM_LOG_FILE, StEnumLogFile, InRpcEnumLogFile, OutRpcEnumLogFile, FreeRpcEnumLogFile)
 	DECLARE_RPC_EX("ReadLogFile", RPC_READ_LOG_FILE, StReadLogFile, InRpcReadLogFile, OutRpcReadLogFile, FreeRpcReadLogFile)
-	DECLARE_RPC("AddLicenseKey", RPC_TEST, StAddLicenseKey, InRpcTest, OutRpcTest)
-	DECLARE_RPC("DelLicenseKey", RPC_TEST, StAddLicenseKey, InRpcTest, OutRpcTest)
-	DECLARE_RPC_EX("EnumLicenseKey", RPC_ENUM_LICENSE_KEY, StEnumLicenseKey, InRpcEnumLicenseKey, OutRpcEnumLicenseKey, FreeRpcEnumLicenseKey)
-	DECLARE_RPC("GetLicenseStatus", RPC_LICENSE_STATUS, StGetLicenseStatus, InRpcLicenseStatus, OutRpcLicenseStatus)
 	DECLARE_RPC("SetSysLog", SYSLOG_SETTING, StSetSysLog, InRpcSysLogSetting, OutRpcSysLogSetting)
 	DECLARE_RPC("GetSysLog", SYSLOG_SETTING, StGetSysLog, InRpcSysLogSetting, OutRpcSysLogSetting)
 	DECLARE_RPC_EX("EnumEthVLan", RPC_ENUM_ETH_VLAN, StEnumEthVLan, InRpcEnumEthVLan, OutRpcEnumEthVLan, FreeRpcEnumEthVLan)
@@ -519,10 +512,6 @@ DECLARE_SC_EX("SetAcList", RPC_AC_LIST, ScSetAcList, InRpcAcList, OutRpcAcList, 
 DECLARE_SC_EX("GetAcList", RPC_AC_LIST, ScGetAcList, InRpcAcList, OutRpcAcList, FreeRpcAcList)
 DECLARE_SC_EX("EnumLogFile", RPC_ENUM_LOG_FILE, ScEnumLogFile, InRpcEnumLogFile, OutRpcEnumLogFile, FreeRpcEnumLogFile)
 DECLARE_SC_EX("ReadLogFile", RPC_READ_LOG_FILE, ScReadLogFile, InRpcReadLogFile, OutRpcReadLogFile, FreeRpcReadLogFile)
-DECLARE_SC("AddLicenseKey", RPC_TEST, ScAddLicenseKey, InRpcTest, OutRpcTest)
-DECLARE_SC("DelLicenseKey", RPC_TEST, ScDelLicenseKey, InRpcTest, OutRpcTest)
-DECLARE_SC_EX("EnumLicenseKey", RPC_ENUM_LICENSE_KEY, ScEnumLicenseKey, InRpcEnumLicenseKey, OutRpcEnumLicenseKey, FreeRpcEnumLicenseKey)
-DECLARE_SC("GetLicenseStatus", RPC_LICENSE_STATUS, ScGetLicenseStatus, InRpcLicenseStatus, OutRpcLicenseStatus)
 DECLARE_SC("SetSysLog", SYSLOG_SETTING, ScSetSysLog, InRpcSysLogSetting, OutRpcSysLogSetting)
 DECLARE_SC("GetSysLog", SYSLOG_SETTING, ScGetSysLog, InRpcSysLogSetting, OutRpcSysLogSetting)
 DECLARE_SC("Crash", RPC_TEST, ScCrash, InRpcTest, OutRpcTest)
@@ -707,21 +696,6 @@ static UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t)
 	}
 
 	return ret;
-}
-
-static UINT StGetLicenseStatus(ADMIN *a, RPC_LICENSE_STATUS *t)
-{
-	return ERR_NOT_SUPPORTED;
-}
-
-static UINT StEnumLicenseKey(ADMIN *a, RPC_ENUM_LICENSE_KEY *t)
-{
-	return ERR_NOT_SUPPORTED;
-}
-
-static UINT StAddLicenseKey(ADMIN *a, RPC_TEST *t)
-{
-	return ERR_NOT_SUPPORTED;
 }
 
 BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PROC *proc, void *param)
@@ -1528,7 +1502,7 @@ static UINT StGetConfig(ADMIN *a, RPC_CONFIG *t)
 		FOLDER *f = SiWriteConfigurationToCfg(s);
 		BUF *b = CfgFolderToBuf(f);
 
-		StrCpy(t->FileName, sizeof(t->FileName), s->CfgRw->FileName + (s->CfgRw->FileName[0] == '@' ? 1 : 0));
+		CfgGetDisplayFileName(s->CfgRw, t->FileName, sizeof(t->FileName));
 
 		t->FileData = ZeroMalloc(b->Size + 1);
 		Copy(t->FileData, b->Buf, b->Size);
@@ -1547,8 +1521,7 @@ static UINT StGetConfig(ADMIN *a, RPC_CONFIG *t)
 static UINT StSetConfig(ADMIN *a, RPC_CONFIG *t)
 {
 	SERVER *s;
-	IO *o;
-	char filename[MAX_PATH];
+	UINT ret;
 
 	SERVER_ADMIN_ONLY;
 
@@ -1558,15 +1531,12 @@ static UINT StSetConfig(ADMIN *a, RPC_CONFIG *t)
 		return ERR_INTERNAL_ERROR;
 	}
 
-	Format(filename, sizeof(filename), "%s.new", s->CfgRw->FileName);
-
-	o = FileCreate(filename);
-
-	FileWrite(o, t->FileData, StrLen(t->FileData));
-
-	FileClose(o);
-
-	IncrementServerConfigRevision(s);
+	// A bad upload or a failed write keeps the live configuration and the server running
+	ret = SiStageConfiguration(s, t->FileData, StrLen(t->FileData));
+	if (ret != ERR_NO_ERROR)
+	{
+		return ret;
+	}
 
 	ALog(a, NULL, "LA_SET_CONFIG");
 
@@ -3870,9 +3840,8 @@ static UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t)
 	Lock(k->lock);
 	{
 		t->Online = k->Offline ? false : true;
-		t->ClientOption = ZeroMalloc(sizeof(CLIENT_OPTION));
-		Copy(t->ClientOption, k->Option, sizeof(CLIENT_OPTION));
-		t->ClientAuth = CopyClientAuth(k->Auth);
+		t->ClientOption = ClientOptionClone(k->Option);
+		t->ClientAuth = ClientAuthClone(k->Auth);
 		Copy(&t->Policy, k->Policy, sizeof(POLICY));
 
 		t->CheckServerCert = k->CheckServerCert;
@@ -3967,8 +3936,8 @@ static UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 		k->Option->NumRetry = INFINITE;
 		k->Option->RetryInterval = 10;
 		k->Option->NoRoutingTracking = true;
-		CiFreeClientAuth(k->Auth);
-		k->Auth = CopyClientAuth(t->ClientAuth);
+		ClientAuthFree(k->Auth);
+		k->Auth = ClientAuthClone(t->ClientAuth);
 
 		if (t->Policy.Ver3 == false)
 		{
@@ -6195,70 +6164,6 @@ static void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t)
 	ReleaseHub(h);
 }
 
-static const RPC_FIELD rpc_enum_license_key_item_fields[] =
-{
-	RPC_ROW_INT(RPC_ENUM_LICENSE_KEY_ITEM, Id, "Id"),
-	RPC_ROW_STR(RPC_ENUM_LICENSE_KEY_ITEM, LicenseKey, "LicenseKey"),
-	RPC_ROW_STR(RPC_ENUM_LICENSE_KEY_ITEM, LicenseId, "LicenseId"),
-	RPC_ROW_STR(RPC_ENUM_LICENSE_KEY_ITEM, LicenseName, "LicenseName"),
-	RPC_ROW_TIME64(RPC_ENUM_LICENSE_KEY_ITEM, Expires, "Expires"),
-	RPC_ROW_INT(RPC_ENUM_LICENSE_KEY_ITEM, Status, "Status"),
-	RPC_ROW_INT(RPC_ENUM_LICENSE_KEY_ITEM, ProductId, "ProductId"),
-	RPC_ROW_INT64(RPC_ENUM_LICENSE_KEY_ITEM, SystemId, "SystemId"),
-	RPC_ROW_INT(RPC_ENUM_LICENSE_KEY_ITEM, SerialId, "SerialId"),
-	RPC_ROW_END
-};
-RPC_TABLE_DEF(rpc_enum_license_key_item_table, RPC_ENUM_LICENSE_KEY_ITEM, rpc_enum_license_key_item_fields);
-
-static const RPC_FIELD rpc_enum_license_key_fields[] =
-{
-	RPC_ROW_COUNT(RPC_ENUM_LICENSE_KEY, NumItem),
-	RPC_ROW_ARRAY(RPC_ENUM_LICENSE_KEY, Items, NumItem, &rpc_enum_license_key_item_table, "Id", RPC_FF_READ_NUMITEM),
-	RPC_ROW_END
-};
-RPC_TABLE_DEF(rpc_enum_license_key_table, RPC_ENUM_LICENSE_KEY, rpc_enum_license_key_fields);
-
-void InRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t, PACK *p)
-{
-	RpcFieldIn(&rpc_enum_license_key_table, t, p);
-}
-void OutRpcEnumLicenseKey(PACK *p, RPC_ENUM_LICENSE_KEY *t)
-{
-	RpcFieldOut(&rpc_enum_license_key_table, p, t);
-}
-void FreeRpcEnumLicenseKey(RPC_ENUM_LICENSE_KEY *t)
-{
-	RpcFieldFree(&rpc_enum_license_key_table, t);
-}
-
-static const RPC_FIELD rpc_license_status_fields[] =
-{
-	RPC_ROW_INT(RPC_LICENSE_STATUS, EditionId, "EditionId"),
-	RPC_ROW_STR(RPC_LICENSE_STATUS, EditionStr, "EditionStr"),
-	RPC_ROW_INT64(RPC_LICENSE_STATUS, SystemId, "SystemId"),
-	RPC_ROW_TIME64(RPC_LICENSE_STATUS, SystemExpires, "SystemExpires"),
-	RPC_ROW_INT(RPC_LICENSE_STATUS, NumClientConnectLicense, "NumClientConnectLicense"),
-	RPC_ROW_INT(RPC_LICENSE_STATUS, NumBridgeConnectLicense, "NumBridgeConnectLicense"),
-
-	RPC_ROW_BOOL(RPC_LICENSE_STATUS, NeedSubscription, "NeedSubscription"),
-	RPC_ROW_BOOL(RPC_LICENSE_STATUS, AllowEnterpriseFunction, "AllowEnterpriseFunction"),
-	RPC_ROW_TIME64(RPC_LICENSE_STATUS, SubscriptionExpires, "SubscriptionExpires"),
-	RPC_ROW_BOOL(RPC_LICENSE_STATUS, IsSubscriptionExpired, "IsSubscriptionExpired"),
-	RPC_ROW_INT(RPC_LICENSE_STATUS, NumUserCreationLicense, "NumUserCreationLicense"),
-	RPC_ROW_TIME64(RPC_LICENSE_STATUS, ReleaseDate, "ReleaseDate"),
-	RPC_ROW_END
-};
-RPC_TABLE_DEF(rpc_license_status_table, RPC_LICENSE_STATUS, rpc_license_status_fields);
-
-void InRpcLicenseStatus(RPC_LICENSE_STATUS *t, PACK *p)
-{
-	RpcFieldIn(&rpc_license_status_table, t, p);
-}
-void OutRpcLicenseStatus(PACK *p, RPC_LICENSE_STATUS *t)
-{
-	RpcFieldOut(&rpc_license_status_table, p, t);
-}
-
 static const RPC_FIELD rpc_admin_option_item_fields[] =
 {
 	RPC_ROW_STR(ADMIN_OPTION, Name, "Name"),
@@ -7045,7 +6950,7 @@ static void RpcCreateLinkClientAuthIn(const RPC_FIELD *f, void *base, PACK *p, U
 }
 static void RpcCreateLinkClientAuthFree(const RPC_FIELD *f, void *base)
 {
-	CiFreeClientAuth(*(CLIENT_AUTH **)((UCHAR *)base + f->Offset));
+	ClientAuthFree(*(CLIENT_AUTH **)((UCHAR *)base + f->Offset));
 }
 static const RPC_HOOK rpc_create_link_client_auth_hook = {RpcCreateLinkClientAuthOut, RpcCreateLinkClientAuthIn, RpcCreateLinkClientAuthFree};
 

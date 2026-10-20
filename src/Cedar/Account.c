@@ -1554,7 +1554,7 @@ void CiFreeClientGetConnectionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st)
 	}
 }
 
-void CiFreeClientAuth(CLIENT_AUTH *auth)
+void ClientAuthFree(CLIENT_AUTH *auth)
 {
 	if (auth == NULL)
 	{
@@ -1571,6 +1571,63 @@ void CiFreeClientAuth(CLIENT_AUTH *auth)
 	}
 
 	Free(auth);
+}
+
+CLIENT_AUTH *ClientAuthClone(CLIENT_AUTH *a)
+{
+	CLIENT_AUTH *ret;
+	if (a == NULL)
+	{
+		return NULL;
+	}
+
+	ret = ZeroMallocEx(sizeof(CLIENT_AUTH), true);
+
+	ret->AuthType = a->AuthType;
+	StrCpy(ret->Username, sizeof(ret->Username), a->Username);
+	ret->CheckCertProc = a->CheckCertProc;
+
+	switch (a->AuthType)
+	{
+	case CLIENT_AUTHTYPE_ANONYMOUS:
+		break;
+
+	case CLIENT_AUTHTYPE_PASSWORD:
+		Copy(ret->HashedPassword, a->HashedPassword, SHA1_SIZE);
+		break;
+
+	case CLIENT_AUTHTYPE_PLAIN_PASSWORD:
+		StrCpy(ret->PlainPassword, sizeof(ret->PlainPassword), a->PlainPassword);
+		break;
+
+	case CLIENT_AUTHTYPE_CERT:
+		ret->ClientX = CloneX(a->ClientX);
+		ret->ClientK = CloneK(a->ClientK);
+		break;
+
+	case CLIENT_AUTHTYPE_OPENSSLENGINE:
+		ret->ClientX = CloneX(a->ClientX);
+		StrCpy(ret->OpensslEnginePrivateKeyName, sizeof(ret->OpensslEnginePrivateKeyName), a->OpensslEnginePrivateKeyName);
+		StrCpy(ret->OpensslEngineName, sizeof(ret->OpensslEngineName), a->OpensslEngineName);
+		ret->ClientK = OpensslEngineToK(ret->OpensslEnginePrivateKeyName, ret->OpensslEngineName);
+		break;
+	}
+
+	return ret;
+}
+
+CLIENT_OPTION *ClientOptionClone(CLIENT_OPTION *o)
+{
+	CLIENT_OPTION *ret;
+	if (o == NULL)
+	{
+		return NULL;
+	}
+
+	ret = ZeroMalloc(sizeof(CLIENT_OPTION));
+	Copy(ret, o, sizeof(CLIENT_OPTION));
+
+	return ret;
 }
 
 CLIENT_AUTH *CiLoadClientAuth(FOLDER *f)

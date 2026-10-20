@@ -78,6 +78,76 @@ void FreeCfgRw(CFG_RW *rw)
 	Free(rw);
 }
 
+// True when the file exists and is not empty, also when another process holds it locked
+static bool CfgFileHasDataW(wchar_t *name)
+{
+	wchar_t tmp[MAX_SIZE];
+	WIN32_FILE_ATTRIBUTE_DATA data;
+
+	InnerFilePathW(tmp, sizeof(tmp), name);
+
+	if (GetFileAttributesExW(tmp, GetFileExInfoStandard, &data) == FALSE)
+	{
+		return false;
+	}
+
+	return data.nFileSizeHigh != 0 || data.nFileSizeLow != 0;
+}
+
+// Rename a pending unreadable file to <name>.bad, replacing an older one. False while the file stays in place
+static bool CfgRwRenameBadFile(CFG_RW *rw)
+{
+	wchar_t bad[MAX_SIZE];
+	wchar_t src[MAX_SIZE];
+	wchar_t dst[MAX_SIZE];
+
+	if (rw->BadFilePending == false)
+	{
+		return true;
+	}
+
+	if (CfgFileHasDataW(rw->FileNameW))
+	{
+		UniFormat(bad, sizeof(bad), L"%s.bad", rw->FileNameW);
+		InnerFilePathW(src, sizeof(src), rw->FileNameW);
+		InnerFilePathW(dst, sizeof(dst), bad);
+
+		if (MoveFileExW(src, dst, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) == FALSE)
+		{
+			return false;
+		}
+
+		rw->BadFileRenamed = true;
+	}
+
+	rw->BadFilePending = false;
+
+	return true;
+}
+
+// The file of rw exists but holds no usable configuration: rename it to <name>.bad before anything writes the
+// file. When the rename fails, every save tries it again and writes nothing until it succeeds
+void CfgRwSetAsideBadFile(CFG_RW *rw)
+{
+	if (rw == NULL)
+	{
+		return;
+	}
+
+	Lock(rw->lock);
+	{
+		if (rw->Io != NULL)
+		{
+			FileClose(rw->Io);
+			rw->Io = NULL;
+		}
+
+		rw->BadFilePending = true;
+		CfgRwRenameBadFile(rw);
+	}
+	Unlock(rw->lock);
+}
+
 UINT SaveCfgRwEx(CFG_RW *rw, FOLDER *f, UINT revision_number)
 {
 	UINT ret = 0;
@@ -94,7 +164,14 @@ UINT SaveCfgRwEx(CFG_RW *rw, FOLDER *f, UINT revision_number)
 			rw->Io = NULL;
 		}
 
-		if (CfgSaveExW(rw, f, rw->FileNameW, &ret))
+		rw->SaveFailed = false;
+
+		if (CfgRwRenameBadFile(rw) == false)
+		{
+			// The unreadable file is still in place: write nothing over it
+			rw->SaveFailed = true;
+		}
+		else if (CfgSaveExW(rw, f, rw->FileNameW, &ret))
 		{
 			if (rw->DontBackup == false)
 			{
@@ -130,54 +207,42 @@ CFG_RW *NewCfgRwEx2W(FOLDER **root, wchar_t *cfg_name, bool dont_backup, wchar_t
 {
 	CFG_RW *rw;
 	FOLDER *f;
-	bool loaded_from_template = false;
 	if (cfg_name == NULL || root == NULL)
 	{
 		return NULL;
 	}
 
 	f = CfgReadW(cfg_name);
-	if (f == NULL)
+
+	rw = ZeroMalloc(sizeof(CFG_RW));
+	rw->lock = NewLock();
+	rw->FileNameW = CopyUniStr(cfg_name);
+	rw->FileName = CopyUniToStr(cfg_name);
+	rw->DontBackup = dont_backup;
+
+	if (f != NULL)
 	{
-		if (UniIsEmptyStr(template_name) == false)
-		{
-			f = CfgReadW(template_name);
-			if (f != NULL)
-			{
-				loaded_from_template = true;
-
-				goto LABEL_CONTINUE;
-			}
-		}
-
-		rw = ZeroMalloc(sizeof(CFG_RW));
-		rw->lock = NewLock();
-		rw->FileNameW = CopyUniStr(cfg_name);
-		rw->FileName = CopyUniToStr(cfg_name);
-		rw->Io = FileCreateW(cfg_name);
-		*root = NULL;
-		rw->DontBackup = dont_backup;
+		rw->Io = FileOpenW(cfg_name, false);
+		*root = f;
 
 		return rw;
 	}
 
-LABEL_CONTINUE:
-	rw = ZeroMalloc(sizeof(CFG_RW));
-	rw->FileNameW = CopyUniStr(cfg_name);
-	rw->FileName = CopyUniToStr(cfg_name);
-	if (loaded_from_template == false)
+	// A file with data that could not be read is renamed to <name>.bad before anything creates the file
+	rw->BadFilePending = true;
+	CfgRwRenameBadFile(rw);
+
+	if (UniIsEmptyStr(template_name) == false)
 	{
-		rw->Io = FileOpenW(cfg_name, false);
+		f = CfgReadW(template_name);
 	}
-	else
+
+	if (rw->BadFilePending == false)
 	{
 		rw->Io = FileCreateW(cfg_name);
 	}
-	rw->lock = NewLock();
 
 	*root = f;
-
-	rw->DontBackup = dont_backup;
 
 	return rw;
 }
@@ -232,42 +297,82 @@ bool FileCopyExW(wchar_t *src, wchar_t *dst, bool read_lock)
 
 	return ret;
 }
-static bool FileCopyExWithEofW(wchar_t *src, wchar_t *dst, bool read_lock)
+// Writes data to <name>.tmp in the same directory, flushes it to disk and replaces name with it
+// in one step, so a reader sees either the old file or the whole new one
+static bool CfgWriteFileReplace(wchar_t *name, void *data, UINT size)
 {
-	BUF *b;
-	bool ret = false;
-	if (src == NULL || dst == NULL)
+	wchar_t tmp[MAX_SIZE];
+	wchar_t inner_tmp[MAX_SIZE];
+	wchar_t inner_name[MAX_SIZE];
+	IO *o;
+	bool ok;
+	if (name == NULL || data == NULL)
 	{
 		return false;
 	}
 
-	b = ReadDumpExW(src, false);
-	if (b == NULL)
+	UniFormat(tmp, sizeof(tmp), L"%s.tmp", name);
+
+	o = FileCreateW(tmp);
+	if (o == NULL)
+	{
+		return false;
+	}
+	ok = FileWrite(o, data, size);
+	// FileClose flushes a writer with FlushFileBuffers
+	FileClose(o);
+
+	if (ok)
+	{
+		InnerFilePathW(inner_tmp, sizeof(inner_tmp), tmp);
+		InnerFilePathW(inner_name, sizeof(inner_name), name);
+		ok = MoveFileExW(inner_tmp, inner_name, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
+	}
+
+	if (ok == false)
+	{
+		FileDeleteW(tmp);
+	}
+
+	return ok;
+}
+
+bool CfgStageNewFile(CFG_RW *rw, void *data, UINT size)
+{
+	wchar_t newfile[MAX_SIZE];
+	if (rw == NULL || data == NULL)
 	{
 		return false;
 	}
 
-	SeekBuf(b, b->Size, 0);
+	// CfgReadW loads <name>.new in place of the live file on the next read
+	UniFormat(newfile, sizeof(newfile), L"%s.new", rw->FileNameW);
 
-	WriteBufChar(b, 0x1A);
+	return CfgWriteFileReplace(newfile, data, size);
+}
 
-	SeekBuf(b, 0, 0);
+void CfgGetDisplayFileName(CFG_RW *rw, char *dst, UINT size)
+{
+	if (dst == NULL)
+	{
+		return;
+	}
+	if (rw == NULL)
+	{
+		ClearStr(dst, size);
+		return;
+	}
 
-	ret = DumpBufW(b, dst);
-
-	FreeBuf(b);
-
-	return ret;
+	// A leading '@' only marks a path relative to the executable directory
+	StrCpy(dst, size, rw->FileName + (rw->FileName[0] == '@' ? 1 : 0));
 }
 
 // Save the folder as a text configuration file. With rw, an unchanged tree (same hash as the
 // last save) is not written again and false is returned.
 bool CfgSaveExW(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size)
 {
-	wchar_t tmp[MAX_SIZE];
 	UCHAR hash[SHA1_SIZE];
 	BUF *b;
-	IO *o;
 	bool ret = true;
 	UINT dummy_int = 0;
 	if (name == NULL || f == NULL)
@@ -300,37 +405,23 @@ bool CfgSaveExW(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size)
 
 	if (ret)
 	{
-		UniFormat(tmp, sizeof(tmp), L"%s.log", name);
-		FileCopyExWithEofW(name, tmp, true);
-
-		o = FileCreateW(name);
-		if (o != NULL)
+		// A failed write keeps the live file; the next save writes again
+		if (CfgWriteFileReplace(name, b->Buf, b->Size))
 		{
-			if (FileWrite(o, b->Buf, b->Size) == false)
-			{
-				FileClose(o);
-				FileDeleteW(name);
-				FileRenameW(tmp, name);
+			wchar_t log_name[MAX_SIZE];
 
-				if (rw != NULL)
-				{
-					Zero(rw->LashHash, sizeof(rw->LashHash));
-				}
-			}
-			else
-			{
-				FileClose(o);
-
-				FileDeleteW(tmp);
-			}
+			// CfgReadW prefers a <name>.log left by an older save; the new file supersedes it
+			UniFormat(log_name, sizeof(log_name), L"%s.log", name);
+			FileDeleteW(log_name);
 		}
 		else
 		{
-			FileRenameW(tmp, name);
+			ret = false;
 
 			if (rw != NULL)
 			{
 				Zero(rw->LashHash, sizeof(rw->LashHash));
+				rw->SaveFailed = true;
 			}
 		}
 	}
@@ -352,8 +443,6 @@ FOLDER *CfgReadW(wchar_t *name)
 	bool read_ok;
 	FOLDER *f;
 	bool delete_new = false;
-	bool binary_file = false;
-	UCHAR header[8];
 	bool has_eof = false;
 	if (name == NULL)
 	{
@@ -433,39 +522,7 @@ FOLDER *CfgReadW(wchar_t *name)
 		FileDeleteW(newfile);
 	}
 
-	// A buffer starting with "SEVPN_DB" is the binary format: its SHA-0 must be there and match
-	if (ReadBuf(b, header, sizeof(header)) == sizeof(header) && Cmp(header, TAG_BINARY, 8) == 0)
-	{
-		UCHAR hash1[SHA1_SIZE], hash2[SHA1_SIZE];
-		binary_file = true;
-
-		if (b->Size < 8 + SHA1_SIZE)
-		{
-			FreeBuf(b);
-			return NULL;
-		}
-
-		ReadBuf(b, hash1, sizeof(hash1));
-
-		Sha0(hash2, ((UCHAR *)b->Buf) + 8 + SHA1_SIZE, b->Size - 8 - SHA1_SIZE);
-
-		if (Cmp(hash1, hash2, SHA1_SIZE) != 0)
-		{
-			FreeBuf(b);
-			return NULL;
-		}
-	}
-
-	if (binary_file)
-	{
-		SeekBuf(b, 8 + SHA1_SIZE, 0);
-		f = CfgBufBinToFolder(b);
-	}
-	else
-	{
-		SeekBuf(b, 0, 0);
-		f = CfgBufTextToFolder(b);
-	}
+	f = CfgBufToFolder(b, false);
 
 	FreeBuf(b);
 
@@ -526,8 +583,9 @@ char *CfgReadNextLine(BUF *b)
 }
 
 // Read one line of the text format into current, a folder depth levels below the top. false at
-// the end of the folder or of the data; *error set when a folder nests deeper than CFG_MAX_DEPTH
-static bool CfgReadNextTextBUF(BUF *b, FOLDER *current, UINT depth, bool *error)
+// the closing brace of current or at the end of the data; *error set when a folder nests deeper
+// than CFG_MAX_DEPTH. *open counts the declared folders whose closing brace has not been read yet.
+static bool CfgReadNextTextBUF(BUF *b, FOLDER *current, UINT depth, bool *error, UINT *open)
 {
 	char *buf;
 	TOKEN_LIST *token;
@@ -537,7 +595,7 @@ static bool CfgReadNextTextBUF(BUF *b, FOLDER *current, UINT depth, bool *error)
 	bool ret;
 	FOLDER *f;
 
-	if (b == NULL || current == NULL || error == NULL)
+	if (b == NULL || current == NULL || error == NULL || open == NULL)
 	{
 		return false;
 	}
@@ -572,10 +630,11 @@ static bool CfgReadNextTextBUF(BUF *b, FOLDER *current, UINT depth, bool *error)
 					name = CfgUnescape(token->Token[1]);
 
 					f = CfgCreateFolder(current, name);
+					(*open)++;
 
 					while (true)
 					{
-						if (CfgReadNextTextBUF(b, f, depth + 1, error) == false)
+						if (CfgReadNextTextBUF(b, f, depth + 1, error, open) == false)
 						{
 							break;
 						}
@@ -594,6 +653,10 @@ static bool CfgReadNextTextBUF(BUF *b, FOLDER *current, UINT depth, bool *error)
 		}
 		if (!StrCmpi(token->Token[0], "}"))
 		{
+			if (*open != 0)
+			{
+				(*open)--;
+			}
 			ret = false;
 		}
 		if (token->NumTokens >= 3)
@@ -664,9 +727,12 @@ static bool CfgReadNextTextBUF(BUF *b, FOLDER *current, UINT depth, bool *error)
 	return ret;
 }
 
-FOLDER *CfgBufTextToFolder(BUF *b)
+// Parse a text configuration. With require_closed, a folder whose closing brace is missing, as in a
+// truncated file, gives NULL.
+static FOLDER *CfgBufTextToFolderEx(BUF *b, bool require_closed)
 {
 	FOLDER *f, *c;
+	UINT open = 0;
 	bool error = false;
 	if (b == NULL)
 	{
@@ -677,7 +743,7 @@ FOLDER *CfgBufTextToFolder(BUF *b)
 
 	while (true)
 	{
-		if (CfgReadNextTextBUF(b, c, 0, &error) == false)
+		if (CfgReadNextTextBUF(b, c, 0, &error, &open) == false)
 		{
 			break;
 		}
@@ -690,7 +756,7 @@ FOLDER *CfgBufTextToFolder(BUF *b)
 	}
 
 	f = CfgFindFolder(c, TAG_ROOT);
-	if (f == NULL)
+	if (f == NULL || (require_closed && open != 0))
 	{
 		CfgDeleteFolder(c);
 		return NULL;
@@ -702,6 +768,43 @@ FOLDER *CfgBufTextToFolder(BUF *b)
 	CfgDeleteFolder(c);
 
 	return f;
+}
+
+FOLDER *CfgBufTextToFolder(BUF *b)
+{
+	return CfgBufTextToFolderEx(b, false);
+}
+
+// Parse a configuration in either format. A buffer starting with "SEVPN_DB" is the binary format,
+// whose stored SHA-0 must match the body; anything else is text, where require_closed rejects a
+// truncated file. NULL when it does not parse.
+FOLDER *CfgBufToFolder(BUF *b, bool require_closed)
+{
+	UCHAR hash[SHA1_SIZE];
+	if (b == NULL)
+	{
+		return NULL;
+	}
+
+	if (b->Size < 8 || Cmp(b->Buf, TAG_BINARY, 8) != 0)
+	{
+		SeekBuf(b, 0, 0);
+		return CfgBufTextToFolderEx(b, require_closed);
+	}
+
+	if (b->Size < 8 + SHA1_SIZE)
+	{
+		return NULL;
+	}
+
+	Sha0(hash, ((UCHAR *)b->Buf) + 8 + SHA1_SIZE, b->Size - 8 - SHA1_SIZE);
+	if (Cmp(((UCHAR *)b->Buf) + 8, hash, SHA1_SIZE) != 0)
+	{
+		return NULL;
+	}
+
+	SeekBuf(b, 8 + SHA1_SIZE, 0);
+	return CfgBufBinToFolder(b);
 }
 
 // Smallest encoding of one folder or one item in the binary format: a folder is a name length and

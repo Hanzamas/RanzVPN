@@ -12,6 +12,9 @@ target_include_directories(mayaqua PUBLIC "${TOP_DIRECTORY}/src")
 # The project's build options (cmake/RanzOptions.cmake), for Mayaqua and every target built on it
 target_link_libraries(mayaqua PUBLIC ranz_options)
 
+# The warning flags of the project's own code (cmake/RanzWarnings.cmake); PRIVATE: they stay on Mayaqua
+target_link_libraries(mayaqua PRIVATE ranz_warnings)
+
 set_target_properties(mayaqua
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
@@ -19,12 +22,12 @@ set_target_properties(mayaqua
   RUNTIME_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
 )
 
-find_package(OpenSSL REQUIRED)
+find_package(OpenSSL 3.0 REQUIRED)
 
-if(OPENSSL_VERSION VERSION_GREATER_EQUAL "3.0.0" AND OPENSSL_VERSION VERSION_LESS "4.0.0")
+if(OPENSSL_VERSION VERSION_LESS "4.0.0")
   set(OQS_ENABLE ON CACHE BOOL "By setting this to OFF, Open Quantum Safe algorithms will not be built in")
 else()
-  # Disable oqsprovider when OpenSSL version < 3
+  # oqsprovider is built against OpenSSL 3 only
   set(OQS_ENABLE OFF)
 endif()
 
@@ -53,6 +56,21 @@ if(OQS_ENABLE)
   set(OQS_ENABLE_SIG_SNOVA OFF)
   set(OQS_ENABLE_SIG_SLH_DSA OFF)
 
+  if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND MSVC)
+    # clang-cl: liboqs puts -g3 and -fno-omit-frame-pointer in its flags (it treats clang-cl as
+    # GNU-style clang), and clang-cl ignores both with a warning for every liboqs source file.
+    # The vendored code is not ours to change, so the two warnings are off for liboqs and
+    # oqs-provider; the option is directory-wide and applies to targets created after this line
+    add_compile_options(-Wno-unknown-argument -Wno-unused-command-line-argument)
+  endif()
+
+  # liboqs refuses to configure for an architecture it has no optimised code for unless
+  # OQS_PERMIT_UNSUPPORTED_ARCHITECTURE is ON; Windows on ARM64 is such a target (the workflow
+  # used to pass the flag on the command line, so a local ARM64 configure failed)
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|arm64|aarch64)$" OR CMAKE_C_COMPILER_ARCHITECTURE_ID MATCHES "ARM" OR VCPKG_TARGET_TRIPLET MATCHES "^arm64")
+    set(OQS_PERMIT_UNSUPPORTED_ARCHITECTURE ON CACHE BOOL "Permit building liboqs for an architecture without optimised code")
+  endif()
+
   add_subdirectory(3rdparty/liboqs)
   add_subdirectory(3rdparty/oqs-provider)
 
@@ -62,23 +80,6 @@ if(OQS_ENABLE)
 else()
   target_compile_definitions(mayaqua PRIVATE SKIP_OQS_PROVIDER)
 endif()
-
-include(CheckSymbolExists)
-
-set(CMAKE_REQUIRED_INCLUDES ${OPENSSL_INCLUDE_DIR})
-set(CMAKE_REQUIRED_LIBRARIES OpenSSL::Crypto)
-set(CMAKE_REQUIRED_LIBRARIES OpenSSL::SSL)
-
-check_symbol_exists(EVP_PKEY_get_raw_public_key "openssl/evp.h" HAVE_EVP_PKEY_GET_RAW_PUBLIC_KEY)
-
-unset(CMAKE_REQUIRED_INCLUDES)
-unset(CMAKE_REQUIRED_LIBRARIES)
-
-if(NOT HAVE_EVP_PKEY_GET_RAW_PUBLIC_KEY)
-  message(FATAL_ERROR "Required EVP_PKEY_get_raw_public_key() not found in OpenSSL library!")
-endif()
-
-
 
 find_package(ZLIB REQUIRED)
 
@@ -106,9 +107,9 @@ if(WIN32)
       "DbgHelp.Lib"
       "dwmapi.lib"
       "iphlpapi.lib"
+      "ntdll.lib"
       "Psapi.Lib"
       "Secur32.Lib"
-      "setupapi.lib"
       "winhttp.lib"
       "winmm.lib"
       "ws2_32.lib"

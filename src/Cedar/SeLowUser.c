@@ -11,6 +11,7 @@
 #include "Win32Com.h"
 
 #include "Mayaqua/Cfg.h"
+#include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Microsoft.h"
@@ -18,6 +19,8 @@
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Tick64.h"
 
+#include <SetupAPI.h>
+#include <sddl.h>
 #include <winioctl.h>
 
 static SU *SuInitMain(UINT wait_for_bind_complete_tick, bool start_service, bool install);
@@ -53,80 +56,57 @@ void SuDeleteGarbageInfsInner()
 {
 	char *base_key_name = "DRIVERS\\DriverDatabase\\DriverPackages";
 	TOKEN_LIST *keys;
-	HINSTANCE hSetupApiDll = NULL;
-	BOOL (WINAPI *_SetupUninstallOEMInfA)(PCSTR, DWORD, PVOID) = NULL;
 
-	hSetupApiDll = LoadLibraryA("setupapi.dll");
-	if (hSetupApiDll == NULL)
+	keys = MsRegEnumKeyEx2(REG_LOCAL_MACHINE, base_key_name, false, true);
+
+	if (keys != NULL)
 	{
-		return;
-	}
+		char full_key[MAX_PATH];
+		UINT i;
 
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wincompatible-function-pointer-types"
-	_SetupUninstallOEMInfA =
-		(UINT (__stdcall *)(PCSTR,DWORD,PVOID))
-		GetProcAddress(hSetupApiDll, "SetupUninstallOEMInfA");
-    #pragma clang diagnostic pop
-
-	if (_SetupUninstallOEMInfA != NULL)
-	{
-		keys = MsRegEnumKeyEx2(REG_LOCAL_MACHINE, base_key_name, false, true);
-
-		if (keys != NULL)
+		for (i = 0;i < keys->NumTokens;i++)
 		{
-			char full_key[MAX_PATH];
-			UINT i;
+			char *oem_name, *inf_name, *provider;
 
-			for (i = 0;i < keys->NumTokens;i++)
+			Format(full_key, sizeof(full_key), "%s\\%s", base_key_name, keys->Token[i]);
+
+			oem_name = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "", false, true);
+			inf_name = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "InfName", false, true);
+			provider = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "Provider", false, true);
+
+			if (IsEmptyStr(oem_name) == false && IsEmptyStr(inf_name) == false)
 			{
-				char *oem_name, *inf_name, *provider;
-
-				Format(full_key, sizeof(full_key), "%s\\%s", base_key_name, keys->Token[i]);
-
-				oem_name = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "", false, true);
-				inf_name = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "InfName", false, true);
-				provider = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "Provider", false, true);
-
-				if (IsEmptyStr(oem_name) == false && IsEmptyStr(inf_name) == false)
+				if (StartWith(oem_name, "oem"))
 				{
-					if (StartWith(oem_name, "oem"))
+					if (StartWith(inf_name, "selow"))
 					{
-						if (StartWith(inf_name, "selow"))
+						if (InStr(provider, "softether"))
 						{
-							if (InStr(provider, "softether"))
-							{
-								Debug("Delete OEM INF %s (%s): %u\n",
-									oem_name, inf_name,
-									_SetupUninstallOEMInfA(oem_name, 0x00000001, NULL));
-							}
+							Debug("Delete OEM INF %s (%s): %u\n",
+								oem_name, inf_name,
+								SetupUninstallOEMInfA(oem_name, SUOI_FORCEDELETE, NULL));
 						}
 					}
 				}
-
-				Free(oem_name);
-				Free(inf_name);
-				Free(provider);
 			}
 
-			FreeToken(keys);
+			Free(oem_name);
+			Free(inf_name);
+			Free(provider);
 		}
-	}
 
-	if (hSetupApiDll != NULL)
-	{
-		FreeLibrary(hSetupApiDll);
+		FreeToken(keys);
 	}
 }
 
-static bool SuInstallDriver(bool force)
+static bool SuInstallDriver()
 {
 	bool ret;
 	void *wow;
 
 	wow = MsDisableWow64FileSystemRedirection();
 
-	ret = SuInstallDriverInner(force);
+	ret = SuInstallDriverInner();
 
 	MsRestoreWow64FileSystemRedirection(wow);
 
@@ -146,76 +126,128 @@ void SuSetInstallProc(SU_INSTALL_PROC *proc)
 	su_install_tried = false;
 }
 
-bool SuInstallDriverInner(bool force)
+// Remove a staging directory made by SuStageDriverPackage and everything in it
+void SuUnstageDriverPackage(wchar_t *dir)
 {
-	wchar_t sys_name[MAX_PATH];
-	wchar_t sys_fullpath[MAX_PATH];
-	UINT current_sl_ver = 0;
-	bool ret = false;
-	wchar_t src_cat[MAX_PATH];
-	wchar_t src_inf[MAX_PATH];
-	wchar_t src_sys[MAX_PATH];
-	wchar_t dst_cat[MAX_PATH];
-	wchar_t dst_inf[MAX_PATH];
-	wchar_t dst_sys[MAX_PATH];
-	wchar_t tmp_dir[MAX_PATH];
-	char *cpu_type = MsIsX64() ? "x64" : "x86";
+	if (UniIsEmptyStr(dir))
+	{
+		return;
+	}
 
-	if (SuIsSupportedOs(true) == false)
+	MsDeleteAllFileW(dir);
+
+	if (RemoveDirectoryW(dir) == FALSE)
+	{
+		Debug("SuUnstageDriverPackage: RemoveDirectoryW(%S) failed: %u\n", dir, GetLastError());
+	}
+}
+
+// Stage the driver package for one install attempt: make a new directory with a random name under
+// %WINDIR%\Temp that only SYSTEM and Administrators can open, and copy the package files into it.
+// CreateDirectoryW fails on a name that exists, so nothing is ever written through a directory or
+// junction that someone else planted there. dir receives the path. On failure nothing stays behind
+bool SuStageDriverPackage(wchar_t *dir, UINT dir_size)
+{
+	wchar_t *files[] = {SU_PACKAGE_SYS, SU_PACKAGE_CAT, SU_PACKAGE_INF};
+	wchar_t temp_dir[MAX_PATH];
+	wchar_t name[SU_STAGE_RANDOM_SIZE * 2 + 1];
+	UCHAR random[SU_STAGE_RANDOM_SIZE];
+	SECURITY_ATTRIBUTES sa;
+	PSECURITY_DESCRIPTOR sd = NULL;
+	bool created = false;
+	UINT err = 0;
+	UINT i;
+
+	if (dir == NULL || dir_size == 0)
 	{
 		return false;
 	}
 
-	CombinePathW(tmp_dir, sizeof(tmp_dir), MsGetWindowsDirW(), L"Temp");
-	MakeDirExW(tmp_dir);
+	dir[0] = 0;
 
-	UniStrCat(tmp_dir, sizeof(tmp_dir), L"\\selowtmp");
-	MakeDirExW(tmp_dir);
-
-	UniFormat(sys_name, sizeof(sys_name), L"drivers\\SeLow_%S.sys", cpu_type);
-	CombinePathW(sys_fullpath, sizeof(sys_fullpath), MsGetSystem32DirW(), sys_name);
-
-	if (IsFileExistsW(sys_fullpath))
+	if (ConvertStringSecurityDescriptorToSecurityDescriptorW(SU_STAGE_DIR_SDDL, SDDL_REVISION_1, &sd, NULL) == FALSE)
 	{
-		char *path;
+		Debug("SuStageDriverPackage: ConvertStringSecurityDescriptorToSecurityDescriptorW failed: %u\n", GetLastError());
+		return false;
+	}
 
-		current_sl_ver = MsRegReadIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME,
-			SL_REG_VER_VALUE_WIN10,
-			false, true);
+	Zero(&sa, sizeof(sa));
+	sa.nLength = sizeof(sa);
+	sa.lpSecurityDescriptor = sd;
+	sa.bInheritHandle = FALSE;
 
-		path = MsRegReadStrEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "ImagePath", false, true);
+	CombinePathW(temp_dir, sizeof(temp_dir), MsGetWindowsDirW(), L"Temp");
 
-		if (IsEmptyStr(path) || IsFileExists(path) == false || MsIsServiceInstalled(SL_PROTOCOL_NAME) == false)
+	for (i = 0;i < SU_STAGE_MAX_TRIES;i++)
+	{
+		Rand(random, sizeof(random));
+		BinToStrW(name, sizeof(name), random, sizeof(random));
+		UniFormat(dir, dir_size, L"%s\\selow_%s", temp_dir, name);
+
+		if (CreateDirectoryW(dir, &sa))
 		{
-			current_sl_ver = 0;
+			created = true;
+			break;
 		}
 
-		Free(path);
+		// Only a name clash is worth another name
+		err = GetLastError();
+		if (err != ERROR_ALREADY_EXISTS)
+		{
+			break;
+		}
 	}
 
-	if (force == false && current_sl_ver >= SL_VER)
+	LocalFree(sd);
+
+	if (created == false)
 	{
-		return true;
+		Debug("SuStageDriverPackage: CreateDirectoryW(%S) failed: %u\n", dir, err);
+		dir[0] = 0;
+		return false;
 	}
 
-	UniFormat(src_sys, sizeof(src_sys), L"|DriverPackages\\SeLow_Win10\\%S\\SeLow_%S.sys",
-		cpu_type, cpu_type);
-	// Windows 10 uses WHQL catalog files
-	UniFormat(src_cat, sizeof(src_cat), L"|DriverPackages\\SeLow_Win10\\%S\\SeLow_Win10_%S.cat", cpu_type, cpu_type);
-	UniFormat(src_inf, sizeof(src_inf), L"|DriverPackages\\SeLow_Win10\\%S\\SeLow_%S.inf",
-		cpu_type, cpu_type);
+	for (i = 0;i < sizeof(files) / sizeof(files[0]);i++)
+	{
+		wchar_t src[MAX_PATH];
+		wchar_t dst[MAX_PATH];
 
-	UniFormat(dst_sys, sizeof(dst_cat), L"%s\\SeLow_%S.sys", tmp_dir, cpu_type);
-	UniFormat(dst_cat, sizeof(dst_cat), L"%s\\SeLow_Win10_%S.cat", tmp_dir,
-		cpu_type);
+		UniFormat(src, sizeof(src), L"%s\\%s", SU_PACKAGE_DIR, files[i]);
+		UniFormat(dst, sizeof(dst), L"%s\\%s", dir, files[i]);
 
-	UniFormat(dst_inf, sizeof(dst_inf), L"%s\\SeLow_%S.inf", tmp_dir, cpu_type);
+		if (FileCopyW(src, dst) == false)
+		{
+			Debug("SuStageDriverPackage: FileCopyW(%S, %S) failed\n", src, dst);
+			SuUnstageDriverPackage(dir);
+			dir[0] = 0;
+			return false;
+		}
+	}
 
-	if (FileCopyW(src_sys, dst_sys) &&
-		FileCopyW(src_cat, dst_cat) &&
-		FileCopyW(src_inf, dst_inf))
+	return true;
+}
+
+bool SuInstallDriverInner()
+{
+	wchar_t sys_fullpath[MAX_PATH];
+	bool ret = false;
+	wchar_t *src_sys = SU_PACKAGE_DIR L"\\" SU_PACKAGE_SYS;
+	wchar_t stage_dir[MAX_PATH];
+	wchar_t dst_inf[MAX_PATH];
+
+	if (SuIsSupportedOs() == false)
+	{
+		return false;
+	}
+
+	// Where the installed driver lives; SuCopySysFile also copies it there by hand
+	CombinePathW(sys_fullpath, sizeof(sys_fullpath), MsGetSystem32DirW(), L"drivers\\" SU_PACKAGE_SYS);
+
+	if (SuStageDriverPackage(stage_dir, sizeof(stage_dir)))
 	{
 		NO_WARNING *nw;
+
+		UniFormat(dst_inf, sizeof(dst_inf), L"%s\\%s", stage_dir, SU_PACKAGE_INF);
 
 		nw = MsInitNoWarningEx(SL_USER_AUTO_PUSH_TIMER);
 
@@ -225,7 +257,7 @@ bool SuInstallDriverInner(bool force)
 
 		SuDeleteGarbageInfs();
 
-		if (InstallNdisProtocolDriver(dst_inf, L"SeLow", SL_USER_INSTALL_LOCK_TIMEOUT) == false)
+		if (InstallNdisProtocolDriver(dst_inf) == false)
 		{
 		}
 		else
@@ -235,14 +267,13 @@ bool SuInstallDriverInner(bool force)
 
 			ret = true;
 
-			MsRegWriteIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME,
-				SL_REG_VER_VALUE_WIN10,
-				SL_VER, false, true);
-
 			MsRegWriteIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "Start", SERVICE_SYSTEM_START, false, true);
 		}
 
 		MsFreeNoWarning(nw);
+
+		// The driver store holds its own copy now: the staged one is no longer needed
+		SuUnstageDriverPackage(stage_dir);
 	}
 
 	// Wait for the new driver to bind: it may start the service, it never installs again
@@ -311,8 +342,14 @@ bool SuCopySysFile(wchar_t *src, wchar_t *dst)
 	return false;
 }
 
-bool SuIsSupportedOs(bool on_install)
+// SeLow is usable on this build and machine. Only an x64 driver package exists (hamcore
+// DriverPackages\SeLow_Win10\x64), so on arm64 it never is: no service start, no staging and no
+// install is tried there
+bool SuIsSupportedOs()
 {
+#if defined(_M_ARM64)
+	return false;
+#else	// defined(_M_ARM64)
 	if (MsRegReadIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "EnableSeLow", false, true) != 0)
 	{
 		return true;
@@ -324,6 +361,7 @@ bool SuIsSupportedOs(bool on_install)
 	}
 
 	return true;
+#endif	// defined(_M_ARM64)
 }
 
 bool SuPutPacket(SU_ADAPTER *a, void *buf, UINT size)
@@ -746,7 +784,7 @@ static SU *SuInitMain(UINT wait_for_bind_complete_tick, bool start_service, bool
 	bool flag = false;
 	UINT64 giveup_tick = 0;
 
-	if (SuIsSupportedOs(false) == false)
+	if (SuIsSupportedOs() == false)
 	{
 		return NULL;
 	}
@@ -766,7 +804,7 @@ LABEL_RETRY:
 				{
 					su_install_tried = true;
 
-					if (su_install_proc(true))
+					if (su_install_proc())
 					{
 						goto LABEL_RETRY;
 					}

@@ -952,19 +952,7 @@ void FreeUdpAccel(UDP_ACCEL *a)
 		return;
 	}
 
-	while (true)
-	{
-		BLOCK *b = GetNext(a->RecvBlockQueue);
-
-		if (b == NULL)
-		{
-			break;
-		}
-
-		FreeBlock(b);
-	}
-
-	ReleaseQueue(a->RecvBlockQueue);
+	FreeBlockQueue(a->RecvBlockQueue);
 
 	ReleaseSock(a->UdpSock);
 

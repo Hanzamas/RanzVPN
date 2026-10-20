@@ -267,23 +267,6 @@
 
 
 
-#define	LICENSE_EDITION_VPN3_NO_LICENSE					0
-
-#define	LICENSE_MAX_PRODUCT_NAME_LEN	255
-#define	LICENSE_KEYSTR_LEN				41
-#define	LICENSE_LICENSEID_STR_LEN		33
-
-#define	LICENSE_STATUS_OK				0
-#define	LICENSE_STATUS_EXPIRED			1
-#define	LICENSE_STATUS_ID_DIFF			2
-#define	LICENSE_STATUS_DUP				3
-#define	LICENSE_STATUS_INSUFFICIENT		4
-#define	LICENSE_STATUS_COMPETITION		5
-#define	LICENSE_STATUS_NONSENSE			6
-#define	LICENSE_STATUS_CPU				7
-
-
-
 #define	ERR_NO_ERROR					0
 #define	ERR_CONNECT_FAILED				1
 #define	ERR_SERVER_IS_NOT_VPN			2
@@ -394,7 +377,6 @@ struct CEDAR
 	LOCK *lock;
 	REF *ref;
 	COUNTER *AcceptingSockets;
-	UINT Type;
 	LIST *ListenerList;
 	LIST *HubList;
 	LIST *ConnectionList;
@@ -430,6 +412,9 @@ struct CEDAR
 	UINT QueueBudget;								// Changed only with InterlockedExchangeAdd
 	UINT FifoBudget;								// Changed only with InterlockedExchangeAdd
 	SSL_ACCEPT_SETTINGS SslAcceptSettings;
+	struct ssl_ctx_st *ServerSslCtx;				// The one server SSL_CTX of all accepted connections (GetCedarServerSslCtx), NULL until the first one
+	SSL_ACCEPT_SETTINGS ServerSslCtxSettings;		// SslAcceptSettings that ServerSslCtx was built with
+	UINT ServerSslCtxChainGen;						// Generation of the chain_certs folder that ServerSslCtx was built with (ServerChain NULL)
 	UINT DhParamBits;
 	char StunServer[MAX_HOST_NAME_LEN + 1];	// STUN server (host[:port]) for UDP acceleration, empty = STUN disabled
 	UCHAR MachineIdSalt[MACHINE_ID_SALT_SIZE];	// Machine identity salt: random from NewCedar, then the one of the config file
@@ -445,12 +430,15 @@ void ReleaseCedar(CEDAR *c);
 void StopCedar(CEDAR *c);
 void AddListener(CEDAR *c, LISTENER *r);
 void AddTraffic(TRAFFIC *dst, TRAFFIC *diff);
+void SubTraffic(TRAFFIC *dst, TRAFFIC *a, TRAFFIC *b);
+void TrafficCountFrame(TRAFFIC_ENTRY *e, UCHAR *buf, UINT size);
 void AddHub(CEDAR *c, HUB *h);
 void DelHub(CEDAR *c, HUB *h);
 void AddConnection(CEDAR *cedar, CONNECTION *c);
 UINT GetUnestablishedConnections(CEDAR *cedar);
 void DelConnection(CEDAR *cedar, CONNECTION *c);
 void SetCedarCipherList(CEDAR *cedar, char *name);
+struct ssl_ctx_st *GetCedarServerSslCtx(CEDAR *c);
 void InitCedar();
 void FreeCedar();
 char *GetSvcName(CEDAR *cedar, bool udp, UINT port);

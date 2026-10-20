@@ -22,7 +22,7 @@ struct DEADCHECK
 // at call sites that include this header, while an inline function named Unlock
 // collides with the SDK. These macros live here (Object.h), not in the leaf
 // Native.h that Kernel.h pulls into every unit, so they never reach the Windows
-// COM/security headers of units that do not include Object.h (e.g. Win32Com.cpp).
+// COM/security headers of units that do not include Object.h (e.g. Win32Com.c).
 // The same expressions in every configuration: Lock() returns the bool of LockInner().
 #define	Lock(lock)		LockInner((lock))
 #define	Unlock(lock)	UnlockInner((lock))

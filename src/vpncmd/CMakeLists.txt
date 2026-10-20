@@ -32,4 +32,4 @@ if(WIN32)
   ranz_hamcore_resources(vpncmd)
 endif()
 
-target_link_libraries(vpncmd cedar)
+target_link_libraries(vpncmd PRIVATE cedar ranz_warnings)

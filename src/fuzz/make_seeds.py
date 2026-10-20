@@ -495,6 +495,167 @@ def make_http_seeds():
         b'\r\n'))
 
 
+# ---------------------------------------------------------------------------
+# DHCP replies (Mayaqua/TcpIp.c DhcpModifyIPv4, DhcpModify, ParseDhcpOptions)
+# ---------------------------------------------------------------------------
+DHCP_COOKIE = b'\x63\x82\x53\x63'
+
+# Options of a DHCP ACK: the router, DNS, domain name and WINS options are the ones DhcpModify removes
+DHCP_ACK_OPTIONS = (b'\x35\x01\x05' +                       # Message type: ACK
+                    b'\x01\x04\xff\xff\xff\x00' +           # Subnet mask
+                    b'\x03\x04\xc0\xa8\x1e\x01' +           # Router
+                    b'\x06\x04\xc0\xa8\x1e\x01' +           # DNS server
+                    b'\x0f\x03lan' +                        # Domain name
+                    b'\x2c\x04\xc0\xa8\x1e\x02' +           # WINS server
+                    b'\x33\x04\x00\x00\x0e\x10' +           # Lease time: 3600 s
+                    b'\xff')                                # End
+
+
+def bootp(op, chaddr, yiaddr, siaddr, options, sname=b''):
+    # BOOTP fixed header (236 bytes, op to file), the magic cookie at offset 236, then the options,
+    # padded to DHCP_MIN_SIZE (300) like the replies of a real server
+    hdr = struct.pack('>BBBBIHH', op, 1, 6, 0, 0x2A2B2C2D, 0, 0x8000)
+    hdr += b'\0' * 4 + bytes(yiaddr) + bytes(siaddr) + b'\0' * 4     # ciaddr, yiaddr, siaddr, giaddr
+    hdr += chaddr + b'\0' * 10                                         # chaddr (16 bytes)
+    hdr += sname.ljust(64, b'\0') + b'\0' * 128                        # sname, file
+    assert len(hdr) == 236
+    payload = hdr + DHCP_COOKIE + options
+    return payload.ljust(300, b'\0')
+
+
+def make_dhcp_seeds():
+    server, client = [192, 168, 30, 1], [192, 168, 30, 10]
+    ack = bootp(2, MAC_A, client, server, DHCP_ACK_OPTIONS)
+
+    # The ACK in its frame, from the server port 67 to the client port 68: the path of StorePacket()
+    write_seed('fuzz_dhcp', 'ack_frame.bin',
+               eth(MAC_A, MAC_B, 0x0800, ipv4(server, client, 17, udp(server, client, 67, 68, ack), 6)))
+    # The ACK as the DHCP payload of DhcpModify, and its options as the input of ParseDhcpOptions
+    write_seed('fuzz_dhcp', 'ack_payload.bin', ack)
+    write_seed('fuzz_dhcp', 'ack_options.bin', DHCP_ACK_OPTIONS)
+
+    # An OFFER whose domain name is longer than 255 bytes: option 250 continues the option before it
+    # (BuildDhcpOptionsBuf splits it that way), with Pad bytes between the options
+    domain = b'd' * 300
+    offer_options = (b'\x35\x01\x02' + b'\x00\x00' + b'\x03\x04\xc0\xa8\x1e\x01' +
+                     b'\x0f\xff' + domain[:255] + b'\xfa' + bytes([len(domain) - 255]) + domain[255:] + b'\xff')
+    write_seed('fuzz_dhcp', 'offer_option_continued.bin', bootp(2, MAC_A, client, server, offer_options))
+
+    # The DHCP fixes of SEC-1 (#96) and FND-38 (#113): no cookie at offset 236 (the old code searched
+    # the payload for one), cookie bytes with REQUEST options in sname in front of the real cookie, a
+    # payload that ends inside the cookie, and an option whose body runs past the end of the payload
+    no_cookie = bytearray(ack)
+    no_cookie[236:240] = b'\0\0\0\0'
+    write_seed('fuzz_dhcp', 'no_cookie.bin', bytes(no_cookie))
+    write_seed('fuzz_dhcp', 'cookie_in_sname.bin',
+               bootp(2, MAC_A, client, server, DHCP_ACK_OPTIONS, sname=DHCP_COOKIE + b'\x35\x01\x03\xff'))
+    write_seed('fuzz_dhcp', 'short_in_cookie.bin', ack[:239])
+    write_seed('fuzz_dhcp', 'option_past_end.bin',
+               bootp(2, MAC_A, client, server, b'')[:240] + b'\x35\x01\x05' + b'\x06\x08\xc0\xa8')
+
+
+# ---------------------------------------------------------------------------
+# TLS ClientHello (Mayaqua/Network.c GetSniNameFromSslPacket) and address text (StrToIP,
+# ParseIpAndMask46 and the parsers built on them)
+# ---------------------------------------------------------------------------
+def client_hello(extensions):
+    # TLS 1.0 record, ClientHello with client version TLS 1.2, one cipher suite, null compression
+    body = (b'\x03\x03' + bytes((i * 11 + 1) & 0xFF for i in range(32)) + b'\x00' +
+            b'\x00\x02\x13\x01' + b'\x01\x00' + struct.pack('>H', len(extensions)) + extensions)
+    handshake = b'\x01' + struct.pack('>I', len(body))[1:] + body
+    return b'\x16\x03\x01' + struct.pack('>H', len(handshake)) + handshake
+
+
+def sni_extension(name):
+    entry = b'\x00' + struct.pack('>H', len(name)) + name
+    data = struct.pack('>H', len(entry)) + entry
+    return struct.pack('>HH', 0, len(data)) + data
+
+
+def make_net_seeds():
+    # supported_versions (43) with TLS 1.3, an extension the parser skips
+    versions = struct.pack('>HHB', 43, 3, 2) + b'\x03\x04'
+    write_seed('fuzz_net', 'client_hello_sni.bin', client_hello(sni_extension(b'vpn.example.invalid')))
+    write_seed('fuzz_net', 'client_hello_sni_after_versions.bin',
+               client_hello(versions + sni_extension(b'vpn.example.invalid')))
+    # A name longer than the MAX_PATH (260) buffer of ParseHttpsAccessLog
+    write_seed('fuzz_net', 'client_hello_sni_long.bin', client_hello(sni_extension(b'a' * 300 + b'.invalid')))
+    write_seed('fuzz_net', 'client_hello_no_sni.bin', client_hello(versions))
+
+    texts = {
+        'ipv4.txt': b'192.0.2.1',
+        'ipv4_trailing_text.txt': b'1.2.3.4abc',
+        'ipv4_octet_256.txt': b'256.1.1.1',
+        'ipv6.txt': b'2001:db8::1',
+        'ipv6_full.txt': b'2001:0db8:0000:0000:0000:ff00:0042:8329',
+        'ipv6_v4_mapped.txt': b'::ffff:1.2.3.4',
+        'ipv6_scope_id.txt': b'fe80::1%12',
+        'ipv6_bad.txt': b'2001:db8:::1',
+        'ipv4_prefix.txt': b'192.168.0.0/24',
+        'ipv4_prefix_33.txt': b'192.168.0.0/33',
+        'ipv4_mask.txt': b'10.0.0.0/255.255.0.0',
+        'ipv4_mask_not_contiguous.txt': b'10.0.0.0/255.0.255.0',
+        'ipv6_prefix.txt': b'2001:db8::/32',
+        'ipv6_mask.txt': b'fd00::/ffff:ffff:ffff:ffff::',
+    }
+    for name, text in texts.items():
+        write_seed('fuzz_net', name, text)
+
+
+# ---------------------------------------------------------------------------
+# STUN (Mayaqua/Stun.c StunParseBindingResponse, StunParseServerStr; RFC 5389, RFC 5769)
+# ---------------------------------------------------------------------------
+STUN_COOKIE = 0x2112A442
+STUN_TID = bytes.fromhex('b7e7a701bc34d686fa87dfae')       # Transaction ID of RFC 5769 section 2.2
+
+
+def stun_attr(attr_type, value):
+    # The value is padded to a multiple of 4 bytes; the length is the unpadded one
+    return struct.pack('>HH', attr_type, len(value)) + value + b'\0' * (-len(value) % 4)
+
+
+def stun_response(attrs):
+    return struct.pack('>HHI', 0x0101, len(attrs), STUN_COOKIE) + STUN_TID + attrs
+
+
+def stun_address(family, port, addr, xor):
+    if xor:
+        key = struct.pack('>I', STUN_COOKIE) + STUN_TID
+        port ^= STUN_COOKIE >> 16
+        addr = bytes(a ^ k for a, k in zip(addr, key))
+    return struct.pack('>BBH', 0, family, port) + addr
+
+
+def make_stun_seeds():
+    ipv4 = bytes([192, 0, 2, 1])
+    ipv6 = bytes.fromhex('20010db8123456780011223344556677')
+    software = stun_attr(0x8022, b'STUN test client')     # Comprehension-optional, skipped
+    write_seed('fuzz_stun', 'response_xor_ipv4.bin',
+               stun_response(software + stun_attr(0x0020, stun_address(1, 32853, ipv4, True))))
+    write_seed('fuzz_stun', 'response_xor_ipv6.bin',
+               stun_response(software + stun_attr(0x0020, stun_address(2, 32853, ipv6, True))))
+    # RFC 3489 server: MAPPED-ADDRESS only, behind an unknown attribute with padding
+    write_seed('fuzz_stun', 'response_mapped_only.bin',
+               stun_response(stun_attr(0x8023, b'ABCDE') +
+                             stun_attr(0x0001, stun_address(1, 3478, bytes([203, 0, 113, 7]), False))))
+    write_seed('fuzz_stun', 'response_mapped_and_xor.bin',
+               stun_response(stun_attr(0x0001, stun_address(1, 3478, bytes([203, 0, 113, 7]), False)) +
+                             stun_attr(0x0020, stun_address(1, 32853, ipv4, True))))
+    # XOR-MAPPED-ADDRESS whose length (12) runs past the end of the message
+    whole = stun_response(stun_attr(0x0020, stun_address(1, 32853, ipv4, True)))
+    write_seed('fuzz_stun', 'response_attr_past_end.bin', whole[:22] + b'\x00\x0c' + whole[24:])
+
+    texts = {
+        'server_host.txt': b'stun.example.invalid',
+        'server_host_port.txt': b'stun.example.invalid:19302',
+        'server_ipv6_bracket_port.txt': b'[2001:db8::1]:3478',
+        'server_ipv6_bare.txt': b'2001:db8::1',
+        'server_port_too_large.txt': b'stun.example.invalid:99999',
+    }
+    for name, text in texts.items():
+        write_seed('fuzz_stun', name, text)
+
+
 if __name__ == '__main__':
     assert sha0(b'abc').hex() == '0164b8a914cd2a5e74c4f7ff082c4d97f1edf880'
     make_pack_seeds()
@@ -503,3 +664,6 @@ if __name__ == '__main__':
     make_tcpip_seeds()
     make_x509_seeds()
     make_http_seeds()
+    make_dhcp_seeds()
+    make_net_seeds()
+    make_stun_seeds()
