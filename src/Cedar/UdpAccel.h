@@ -76,13 +76,11 @@ struct UDP_ACCEL
 	bool Inited;
 	UINT MaxUdpPacketSize;
 	bool FatalError;
-	UINT64 CreatedTick;
 	bool FastDetect;
 	UINT64 FirstStableReceiveTick;
 	UINT Version;
 	UCHAR MyKey_V2[UDP_ACCELERATION_COMMON_KEY_SIZE_V2];
 	UCHAR NextIv_V2[UDP_ACCELERATION_PACKET_IV_SIZE_V2];
-	bool ReadRawFlagMode;
 	bool UseStun;
 	IP StunIp;
 	USHORT StunPort;
@@ -95,7 +93,7 @@ struct UDP_ACCEL
 	UINT64 LogDropNum;					// Dropped datagrams (NumDropShort + NumDropInvalid) at the last log entry
 };
 
-UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port);
+UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode);
 void FreeUdpAccel(UDP_ACCEL *a);
 bool UdpAccelInitClient(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, IP *reported_ip, USHORT port, UINT cookie, UINT my_cookie);
 bool UdpAccelInitServer(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, IP *reported_ip, USHORT port);
@@ -107,6 +105,7 @@ bool UdpAccelIsSendReady(UDP_ACCEL *a, bool check_keepalive);
 void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT max_size, bool high_priority);
 void UdpAccelSendBlock(UDP_ACCEL *a, BLOCK *b);
 UINT UdpAccelCalcMss(UDP_ACCEL *a);
+void UdpAccelAddProtocolDetails(UDP_ACCEL *a, char *dst, UINT dst_size);
 void UdpAccelQueryStun(UDP_ACCEL *a, IP *peer_ip);
 bool UdpAccelLogDrops(UDP_ACCEL *a, HUB *h, char *session_name, bool final);
 bool UdpAccelIsRecvBudgetSpent(UDP_ACCEL *a);

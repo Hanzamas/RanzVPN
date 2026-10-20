@@ -94,8 +94,8 @@ static bool UdpAccelTestOpen(UDPACCEL_TEST *t, UINT version, bool plain_text)
 {
 	SOCKSET set;
 
-	t->Recv = NewUdpAccel(t->Cedar, &t->Localhost, true, true);
-	t->Peer = NewUdpAccel(t->Cedar, &t->Localhost, true, true);
+	t->Recv = NewUdpAccel(t->Cedar, &t->Localhost, true);
+	t->Peer = NewUdpAccel(t->Cedar, &t->Localhost, true);
 	t->Flood = NewUDPEx3(0, &t->Localhost);
 	if (t->Recv == NULL || t->Peer == NULL || t->Flood == NULL)
 	{

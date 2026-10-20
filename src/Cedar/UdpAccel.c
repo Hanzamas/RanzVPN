@@ -8,6 +8,7 @@
 
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
+#include "Mayaqua/Network.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Stun.h"
@@ -126,6 +127,12 @@ void UdpAccelSendBlock(UDP_ACCEL *a, BLOCK *b)
 	UdpAccelSend(a, b->Buf, b->Size, b->Compressed ? 1 : 0, a->MaxUdpPacketSize, b->PriorityQoS);
 }
 
+// The largest UDP payload that fits in MTU_FOR_PPPOE: the MTU less the IP and UDP headers
+static UINT UdpAccelMaxPacketSize(bool is_ipv6)
+{
+	return MTU_FOR_PPPOE - (is_ipv6 ? 40 : 20) - 8;
+}
+
 UINT UdpAccelCalcMss(UDP_ACCEL *a)
 {
 	UINT ret;
@@ -135,18 +142,7 @@ UINT UdpAccelCalcMss(UDP_ACCEL *a)
 		return 0;
 	}
 
-	ret = MTU_FOR_PPPOE;
-
-	if (a->IsIPv6)
-	{
-		ret -= 40;
-	}
-	else
-	{
-		ret -= 20;
-	}
-
-	ret -= 8;
+	ret = UdpAccelMaxPacketSize(a->IsIPv6);
 
 	if (a->PlainTextMode == false)
 	{
@@ -435,7 +431,6 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 	UINT inner_size;
 	UCHAR *inner_data = NULL;
 	bool compress_flag;
-	UCHAR raw_flag;
 	BLOCK *b = NULL;
 	UINT cookie;
 	if (a == NULL || buf == NULL || size == 0 || src_ip == NULL)
@@ -536,14 +531,7 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 	{
 		goto DROP;
 	}
-	if (a->ReadRawFlagMode == false)
-	{
-		compress_flag = *((UCHAR *)buf);
-	}
-	else
-	{
-		raw_flag = *((UCHAR *)buf);
-	}
+	compress_flag = *((UCHAR *)buf);
 
 	buf += sizeof(UCHAR);
 	size -= sizeof(UCHAR);
@@ -600,7 +588,7 @@ BLOCK *UdpAccelProcessRecvPacket(UDP_ACCEL *a, UCHAR *buf, UINT size, IP *src_ip
 
 	if (inner_size >= 1)
 	{
-		b = NewBlock(Clone(inner_data, inner_size), inner_size, a->ReadRawFlagMode == false ? (compress_flag ? -1 : 0) : 0);
+		b = NewBlock(Clone(inner_data, inner_size), inner_size, compress_flag ? -1 : 0);
 	}
 
 	if (a->LastSetSrcIpAndPortTick < a->LastRecvYourTick)
@@ -656,7 +644,8 @@ void UdpAccelSetTick(UDP_ACCEL *a, UINT64 tick64)
 	a->Now = tick64;
 }
 
-bool UdpAccelInitServer(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, IP *reported_ip, USHORT port)
+// The init of both roles: the key and the endpoint of the peer
+static bool UdpAccelInit(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, IP *reported_ip, USHORT port)
 {
 	if (a == NULL || key == NULL || detected_ip == NULL || port == 0)
 	{
@@ -693,44 +682,37 @@ bool UdpAccelInitServer(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, IP *reported_
 	return true;
 }
 
+bool UdpAccelInitServer(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, IP *reported_ip, USHORT port)
+{
+	return UdpAccelInit(a, key, detected_ip, reported_ip, port);
+}
+
 bool UdpAccelInitClient(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, IP *reported_ip, USHORT port, UINT cookie, UINT my_cookie)
 {
-	if (a == NULL || key == NULL || detected_ip == NULL || port == 0)
+	if (UdpAccelInit(a, key, detected_ip, reported_ip, port) == false)
 	{
 		return false;
 	}
-
-	if (IsIP6(detected_ip) != a->IsIPv6)
-	{
-		return false;
-	}
-
-	if (a->Version > 1)
-	{
-		a->CipherEncrypt = NewCipher("ChaCha20-Poly1305");
-		a->CipherDecrypt = NewCipher("ChaCha20-Poly1305");
-
-		SetCipherKey(a->CipherEncrypt, a->MyKey_V2, true);
-		SetCipherKey(a->CipherDecrypt, key, false);
-	}
-	else
-	{
-		Copy(a->YourKey, key, sizeof(a->YourKey));
-	}
-
-	Copy(&a->YourIp, detected_ip, sizeof(a->YourIp));
-	Copy(&a->YourIpReported, reported_ip, sizeof(a->YourIpReported));
-
-	a->YourPort = a->YourPortReported = port;
-
-	a->Now = Tick64();
 
 	a->MyCookie = my_cookie;
 	a->YourCookie = cookie;
 
-	a->Inited = true;
-
 	return true;
+}
+
+// Add the version, the cipher and the MSS of the session to its protocol details
+void UdpAccelAddProtocolDetails(UDP_ACCEL *a, char *dst, UINT dst_size)
+{
+	if (a == NULL || dst == NULL)
+	{
+		return;
+	}
+
+	AddProtocolDetailsKeyValueInt(dst, dst_size, "UDPAccel_Ver", a->Version);
+
+	AddProtocolDetailsStr(dst, dst_size, a->Version > 1 ? "ChaCha20-Poly1305" : "RC4");
+
+	AddProtocolDetailsKeyValueInt(dst, dst_size, "UDPAccel_MSS", UdpAccelCalcMss(a));
 }
 
 // Learn the public endpoint of the UDP socket by STUN if a STUN server is configured.
@@ -828,11 +810,10 @@ bool UdpAccelLogDrops(UDP_ACCEL *a, HUB *h, char *session_name, bool final)
 	return true;
 }
 
-UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port)
+UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode)
 {
 	UDP_ACCEL *a;
 	SOCK *s;
-	UINT max_udp_size;
 	bool is_in_cedar_port_list = false;
 
 	if (IsZeroIP(ip))
@@ -840,7 +821,7 @@ UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port)
 		ip = NULL;
 	}
 
-	if (client_mode || random_port)
+	if (client_mode)
 	{
 		s = NewUDPEx3(0, ip);
 	}
@@ -891,8 +872,6 @@ UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port)
 
 	a->Version = 1;
 
-	a->CreatedTick = Tick64();
-
 	a->IsInCedarPortList = is_in_cedar_port_list;
 
 	a->Now = Tick64();
@@ -923,20 +902,7 @@ UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port)
 	}
 	while (a->MyCookie == 0 || a->MyCookie == a->YourCookie);
 
-	max_udp_size = MTU_FOR_PPPOE;
-
-	if (a->IsIPv6 == false)
-	{
-		max_udp_size -= 20;
-	}
-	else
-	{
-		max_udp_size -= 40;
-	}
-
-	max_udp_size -= 8;
-
-	a->MaxUdpPacketSize = max_udp_size;
+	a->MaxUdpPacketSize = UdpAccelMaxPacketSize(a->IsIPv6);
 
 	return a;
 }

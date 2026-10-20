@@ -2124,7 +2124,7 @@ bool ServerAccept(CONNECTION *c)
 
 			if (s->UseUdpAcceleration)
 			{
-				s->UdpAccel = NewUdpAccel(c->Cedar, &c->FirstSock->LocalIP, false, false);
+				s->UdpAccel = NewUdpAccel(c->Cedar, &c->FirstSock->LocalIP, false);
 				if (s->UdpAccel == NULL)
 				{
 					s->UseUdpAcceleration = false;
@@ -2149,11 +2149,7 @@ bool ServerAccept(CONNECTION *c)
 
 					s->UdpAccel->UseHMac = use_hmac_on_udp_acceleration;
 
-					AddProtocolDetailsKeyValueInt(s->ProtocolDetails, sizeof(s->ProtocolDetails), "UDPAccel_Ver", s->UdpAccel->Version);
-
-					AddProtocolDetailsStr(s->ProtocolDetails, sizeof(s->ProtocolDetails), s->UdpAccel->Version > 1 ? "ChaCha20-Poly1305" : "RC4");
-
-					AddProtocolDetailsKeyValueInt(s->ProtocolDetails, sizeof(s->ProtocolDetails), "UDPAccel_MSS", UdpAccelCalcMss(s->UdpAccel));
+					UdpAccelAddProtocolDetails(s->UdpAccel, s->ProtocolDetails, sizeof(s->ProtocolDetails));
 				}
 			}
 
@@ -3072,7 +3068,7 @@ bool ClientConnect(CONNECTION *c)
 			{
 				if (sess->UdpAccel == NULL)
 				{
-					sess->UdpAccel = NewUdpAccel(c->Cedar, &s->LocalIP, true, true);
+					sess->UdpAccel = NewUdpAccel(c->Cedar, &s->LocalIP, true);
 
 					UdpAccelQueryStun(sess->UdpAccel, &s->RemoteIP);
 				}
@@ -3314,11 +3310,7 @@ bool ClientConnect(CONNECTION *c)
 
 								sess->UdpAccel->UseHMac = PackGetBool(p, "use_hmac_on_udp_acceleration");
 
-								AddProtocolDetailsKeyValueInt(sess->ProtocolDetails, sizeof(sess->ProtocolDetails), "UDPAccel_Ver", sess->UdpAccel->Version);
-
-								AddProtocolDetailsStr(sess->ProtocolDetails, sizeof(sess->ProtocolDetails), sess->UdpAccel->Version > 1 ? "ChaCha20-Poly1305" : "RC4");
-
-								AddProtocolDetailsKeyValueInt(sess->ProtocolDetails, sizeof(sess->ProtocolDetails), "UDPAccel_MSS", UdpAccelCalcMss(sess->UdpAccel));
+								UdpAccelAddProtocolDetails(sess->UdpAccel, sess->ProtocolDetails, sizeof(sess->ProtocolDetails));
 							}
 						}
 					}
