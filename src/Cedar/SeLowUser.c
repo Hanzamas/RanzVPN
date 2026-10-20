@@ -131,6 +131,7 @@ void SuSetInstallProc(SU_INSTALL_PROC *proc)
 
 bool SuInstallDriverInner(bool force)
 {
+	wchar_t sys_name[MAX_PATH];
 	wchar_t sys_fullpath[MAX_PATH];
 	UINT current_sl_ver = 0;
 	bool ret = false;
@@ -154,8 +155,8 @@ bool SuInstallDriverInner(bool force)
 	UniStrCat(tmp_dir, sizeof(tmp_dir), L"\\selowtmp");
 	MakeDirExW(tmp_dir);
 
-	CombinePathW(sys_fullpath, sizeof(sys_fullpath), MsGetSystem32DirW(), L"drivers\\SeLow_%S.sys");
-	UniFormat(sys_fullpath, sizeof(sys_fullpath), sys_fullpath, cpu_type);
+	UniFormat(sys_name, sizeof(sys_name), L"drivers\\SeLow_%S.sys", cpu_type);
+	CombinePathW(sys_fullpath, sizeof(sys_fullpath), MsGetSystem32DirW(), sys_name);
 
 	if (IsFileExistsW(sys_fullpath))
 	{
@@ -187,7 +188,7 @@ bool SuInstallDriverInner(bool force)
 	UniFormat(src_inf, sizeof(src_inf), L"|DriverPackages\\SeLow_Win10\\%S\\SeLow_%S.inf",
 		cpu_type, cpu_type);
 
-	UniFormat(dst_sys, sizeof(dst_cat), L"%s\\SeLow_%S.sys", tmp_dir, cpu_type);
+	UniFormat(dst_sys, sizeof(dst_sys), L"%s\\SeLow_%S.sys", tmp_dir, cpu_type);
 	UniFormat(dst_cat, sizeof(dst_cat), L"%s\\SeLow_Win10_%S.cat", tmp_dir,
 		cpu_type);
 
@@ -201,19 +202,14 @@ bool SuInstallDriverInner(bool force)
 
 		nw = MsInitNoWarningEx(SL_USER_AUTO_PUSH_TIMER);
 
-		if (MsIsServiceInstalled(SL_PROTOCOL_NAME) == false && MsIsServiceRunning(SL_PROTOCOL_NAME) == false)
-		{
-		}
-
 		SuDeleteGarbageInfs();
 
-		if (InstallNdisProtocolDriver(dst_inf, L"SeLow", SL_USER_INSTALL_LOCK_TIMEOUT) == false)
-		{
-		}
-		else
+		if (InstallNdisProtocolDriver(dst_inf, L"SeLow", SL_USER_INSTALL_LOCK_TIMEOUT))
 		{
 			// Also copy by hand: the installer sometimes fails to copy the .sys file
-			Debug("SuCopySysFile from %S to %s: ret = %u\n", src_sys, sys_fullpath, SuCopySysFile(src_sys, sys_fullpath));
+			bool copied = SuCopySysFile(src_sys, sys_fullpath);
+
+			Debug("SuCopySysFile from %S to %S: ret = %u\n", src_sys, sys_fullpath, copied);
 
 			ret = true;
 
@@ -363,8 +359,6 @@ bool SuPutPacketsToDriver(SU_ADAPTER *a)
 	if (WriteFile(a->hFile, a->PutBuffer, SL_EXCHANGE_BUFFER_SIZE, &write_size, NULL) == false)
 	{
 		a->Halt = true;
-
-		SuCloseAdapterHandleInner(a);
 		return false;
 	}
 
@@ -464,8 +458,6 @@ bool SuGetPacketsFromDriver(SU_ADAPTER *a)
 	if (ReadFile(a->hFile, a->GetBuffer, SL_EXCHANGE_BUFFER_SIZE, &read_size, NULL) == false)
 	{
 		a->Halt = true;
-
-		SuCloseAdapterHandleInner(a);
 		return false;
 	}
 
@@ -499,19 +491,14 @@ void SuCloseAdapter(SU_ADAPTER *a)
 	Free(a);
 }
 
-void SuCloseAdapterHandleInner(SU_ADAPTER *a)
-{
-	return;
-}
-
-SU_ADAPTER *SuOpenAdapter(SU *u, char *adapter_id)
+SU_ADAPTER *SuOpenAdapter(char *adapter_id)
 {
 	char filename[MAX_PATH];
 	void *h;
 	SU_ADAPTER *a;
 	SL_IOCTL_EVENT_NAME t;
 	DWORD read_size;
-	if (u == NULL || adapter_id == NULL)
+	if (adapter_id == NULL)
 	{
 		return NULL;
 	}
@@ -527,9 +514,6 @@ SU_ADAPTER *SuOpenAdapter(SU *u, char *adapter_id)
 	}
 
 	a = ZeroMalloc(sizeof(SU_ADAPTER));
-
-	StrCpy(a->AdapterId, sizeof(a->AdapterId), adapter_id);
-	StrCpy(a->DeviceName, sizeof(a->DeviceName), filename);
 
 	a->hFile = h;
 
@@ -682,7 +666,8 @@ SU_ADAPTER_LIST *SuAdapterInfoToAdapterList(SL_ADAPTER_INFO *info)
 	}
 
 	Zero(&t, sizeof(t));
-	Copy(&t.Info, info, sizeof(SL_ADAPTER_INFO));
+	StrCpy(t.FriendlyName, sizeof(t.FriendlyName), info->FriendlyName);
+	Copy(t.MacAddress, info->MacAddress, sizeof(t.MacAddress));
 
 	UniToStr(tmp, sizeof(tmp), info->AdapterId);
 	// List the NIC in Local Bridge settings even when its FriendlyName is empty.

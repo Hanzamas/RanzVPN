@@ -24,15 +24,17 @@ static RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, char *name)
 static ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr);
 static void Win32EthMakeCombinedName(char *dst, UINT dst_size, char *nicname, char *guid);
 static UINT Win32EthGenIdFromGuid(char *guid);
-static TOKEN_LIST *GetEthListEx(UINT *total_num_including_hidden, bool enum_normal, bool enum_rawip);
-static LIST *GetEthAdapterListInternal();
+static LIST *GetEthAdapterListInternal(bool *using_selow);
 static void InitEthAdaptersList();
 static void FreeEthAdaptersList();
 
 static LIST *eth_list = NULL;
 
 static LOCK *eth_list_lock = NULL;
+// The last adapter enumeration listed the SeLow adapters (the b_using_selow_driver cap)
 static bool is_using_selow = false;
+// EnableSoftEtherKernelModeDriver: false turns the Local Bridge off. SeLow then reports
+// unsupported and is never opened or installed
 static bool enable_selow = true;
 
 static bool g_bridge_win32_show_all_if = false;
@@ -515,7 +517,7 @@ bool EnumEthVLanWin32(RPC_ENUM_ETH_VLAN *t)
 	}
 
 	t->NumItem = LIST_NUM(o);
-	t->Items = ZeroMalloc(sizeof(RPC_ENUM_ETH_VLAN_ITEM) * i);
+	t->Items = ZeroMalloc(sizeof(RPC_ENUM_ETH_VLAN_ITEM) * t->NumItem);
 
 	for (i = 0;i < LIST_NUM(o);i++)
 	{
@@ -789,7 +791,7 @@ static ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
 		return NULL;
 	}
 
-	su_adapter = SuOpenAdapter(su, t->Name);
+	su_adapter = SuOpenAdapter(t->Name);
 
 	if (su_adapter == NULL)
 	{
@@ -797,8 +799,6 @@ static ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
 		Unlock(eth_list_lock);
 		return NULL;
 	}
-
-	is_using_selow = true;
 
 	e = ZeroMalloc(sizeof(ETH));
 	e->Name = CopyStr(t->Name);
@@ -843,12 +843,16 @@ UINT Win32EthGetNameAndIdFromCombinedName(char *name, UINT name_size, char *str)
 	UINT ret = 0;
 	char id_str[MAX_SIZE];
 	UINT len;
-	ClearStr(name, name_size);
-	StrCpy(name, name_size, str);
-	if (name == NULL || str == NULL)
+	if (name == NULL)
 	{
 		return 0;
 	}
+	ClearStr(name, name_size);
+	if (str == NULL)
+	{
+		return 0;
+	}
+	StrCpy(name, name_size, str);
 
 	len = StrLen(str);
 
@@ -908,18 +912,11 @@ static UINT Win32EthGenIdFromGuid(char *guid)
 	return i;
 }
 
-TOKEN_LIST *GetEthList()
-{
-	UINT v;
-
-	return GetEthListEx(&v, true, false);
-}
-static TOKEN_LIST *GetEthListEx(UINT *total_num_including_hidden, bool enum_normal, bool enum_rawip)
+TOKEN_LIST *GetEthList(void)
 {
 	TOKEN_LIST *ret;
 	UINT i;
 	UINT j;
-	UINT dummy_int;
 	MS_ADAPTER_LIST *adapter_list;
 
 	// Listing the devices for a Local Bridge is the first step of creating one: install SeLow when needed
@@ -927,18 +924,6 @@ static TOKEN_LIST *GetEthListEx(UINT *total_num_including_hidden, bool enum_norm
 	{
 		return NULL;
 	}
-
-	if (enum_normal == false)
-	{
-		return NullToken();
-	}
-
-	if (total_num_including_hidden == NULL)
-	{
-		total_num_including_hidden = &dummy_int;
-	}
-
-	*total_num_including_hidden = 0;
 
 	Lock(eth_list_lock);
 
@@ -978,8 +963,6 @@ static TOKEN_LIST *GetEthListEx(UINT *total_num_including_hidden, bool enum_norm
 		}
 	}
 
-	*total_num_including_hidden = ret->NumTokens;
-
 	ret->NumTokens = j;
 
 	Unlock(eth_list_lock);
@@ -1012,59 +995,50 @@ bool Win32IsUsingSeLow()
 	return is_using_selow;
 }
 
-static LIST *GetEthAdapterList()
+static LIST *GetEthAdapterList(bool *using_selow)
 {
 	void *p;
 	LIST *o;
 
 	p = MsDisableWow64FileSystemRedirection();
 
-	o = GetEthAdapterListInternal();
+	o = GetEthAdapterListInternal(using_selow);
 
 	MsRestoreWow64FileSystemRedirection(p);
 
 	return o;
 }
-static LIST *GetEthAdapterListInternal()
+
+// Strip line breaks and blanks from both ends of an adapter title
+static void Win32EthTrimTitle(char *title)
+{
+	TrimCrlf(title);
+	Trim(title);
+	TrimCrlf(title);
+	Trim(title);
+}
+
+// List the SeLow adapters; *using_selow says whether SeLow returned an adapter list
+static LIST *GetEthAdapterListInternal(bool *using_selow)
 {
 	LIST *o;
 	LIST *ret;
 	UINT i, j;
 	char *qos_tag = "(Microsoft's Packet Scheduler)";
-	SU *su = NULL;
+	SU *su = SuInitEx(0);
 	LIST *su_adapter_list = NULL;
-
-	if (enable_selow)
-	{
-		su = SuInitEx(0);
-	}
-
-	o = NewListFast(CompareWpAdapter);
 
 	if (su != NULL)
 	{
 		su_adapter_list = SuGetAdapterList(su);
+	}
 
-		if (su_adapter_list == NULL)
-		{
-			SuFree(su);
-			su = NULL;
-			is_using_selow = false;
-		}
-		else
-		{
-			is_using_selow = true;
-		}
-	}
-	else
-	{
-		is_using_selow = false;
-	}
+	*using_selow = (su_adapter_list != NULL);
+
+	o = NewListFast(CompareWpAdapter);
 
 	if (su_adapter_list != NULL)
 	{
-		UINT i;
-
 		for (i = 0;i < LIST_NUM(su_adapter_list);i++)
 		{
 			SU_ADAPTER_LIST *t = LIST_DATA(su_adapter_list, i);
@@ -1072,32 +1046,27 @@ static LIST *GetEthAdapterListInternal()
 
 			StrCpy(a->Name, sizeof(a->Name), t->Name);
 			StrCpy(a->Guid, sizeof(a->Guid), t->Guid);
-			StrCpy(a->Title, sizeof(a->Title), t->Info.FriendlyName);
-			Copy(a->MacAddress, t->Info.MacAddress, sizeof(a->MacAddress));
+			StrCpy(a->Title, sizeof(a->Title), t->FriendlyName);
+			Copy(a->MacAddress, t->MacAddress, sizeof(a->MacAddress));
 
-			TrimCrlf(a->Title);
-			Trim(a->Title);
-			TrimCrlf(a->Title);
-			Trim(a->Title);
+			Win32EthTrimTitle(a->Title);
 
 			if (EndWith(a->Title, qos_tag))
 			{
 				a->Title[StrLen(a->Title) - StrLen(qos_tag)] = 0;
-				TrimCrlf(a->Title);
-				Trim(a->Title);
-				TrimCrlf(a->Title);
-				Trim(a->Title);
+				Win32EthTrimTitle(a->Title);
 			}
 
 			Add(o, a);
 		}
-	}
 
-	if (su_adapter_list != NULL)
-	{
 		// SeLow already returns the adapter list sorted
 		Sort(o);
+
+		SuFreeAdapterList(su_adapter_list);
 	}
+
+	SuFree(su);
 
 	ret = NewListFast(CompareWpAdapter);
 
@@ -1107,7 +1076,7 @@ static LIST *GetEthAdapterListInternal()
 		char tmp[MAX_SIZE];
 		UINT k;
 
-		// Every SeLow adapter is listed here; GetEthListEx hides the ones that are no wired LAN
+		// Every SeLow adapter is listed here; GetEthList hides the ones that are no wired LAN
 		for (k = 0;;k++)
 		{
 			bool ok;
@@ -1146,24 +1115,20 @@ static LIST *GetEthAdapterListInternal()
 
 	ReleaseList(o);
 
-	if (su != NULL)
-	{
-		SuFreeAdapterList(su_adapter_list);
-
-		SuFree(su);
-	}
-
 	return ret;
 }
 
 static void InitEthAdaptersList()
 {
+	bool using_selow;
+
 	if (eth_list != NULL)
 	{
 		FreeEthAdaptersList();
 		eth_list = NULL;
 	}
-	eth_list = GetEthAdapterList();
+	eth_list = GetEthAdapterList(&using_selow);
+	is_using_selow = using_selow;
 }
 
 static void FreeEthAdaptersList()
@@ -1187,7 +1152,14 @@ static void FreeEthAdaptersList()
 bool Win32EthIsSuSupported()
 {
 	bool ret = false;
-	SU *su = SuInitEx(0);
+	SU *su;
+
+	if (Win32GetEnableSeLow() == false)
+	{
+		return false;
+	}
+
+	su = SuInitEx(0);
 
 	if (su != NULL)
 	{
@@ -1205,7 +1177,14 @@ bool Win32EthIsSuSupported()
 bool Win32EthInstallSu()
 {
 	bool ret = false;
-	SU *su = SuInitInstall();
+	SU *su;
+
+	if (Win32GetEnableSeLow() == false)
+	{
+		return false;
+	}
+
+	su = SuInitInstall();
 
 	if (su != NULL)
 	{
