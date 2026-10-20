@@ -1,10 +1,6 @@
-$ErrorActionPreference = 'Stop'
+param([string] $BuildDir = 'build')
 
-if (Test-Path "env:BUILD_BINARIESDIRECTORY") {
-	$BUILD_BINARIESDIRECTORY = $env:BUILD_BINARIESDIRECTORY
-} else {
-	$BUILD_BINARIESDIRECTORY = "build"
-}
+$ErrorActionPreference = 'Stop'
 
 # Benchmark results: every "BENCH ..." line of the named tests is printed, also when the test passes, and
 # saved to harness-out\bench-<arch>.txt (uploaded with the harness-out artifact). Informational, never a gate.
@@ -21,7 +17,7 @@ switch ($benchArch) {
 	'ARM64' { $benchArch = 'arm64' }
 }
 if (-not $benchArch) { $benchArch = 'unknown' }
-$benchDir = Join-Path $BUILD_BINARIESDIRECTORY 'harness-out'
+$benchDir = Join-Path $BuildDir 'harness-out'
 $benchFile = Join-Path $benchDir ('bench-' + $benchArch.ToLower() + '.txt')
 if (Test-Path $benchFile) { Remove-Item $benchFile }
 
@@ -31,7 +27,7 @@ if (Test-Path $benchFile) { Remove-Item $benchFile }
 	[String] $mode = $_
 	Write-Host "testing: $mode"
 
-	$full = (Write-Output "q\n" | & "$BUILD_BINARIESDIRECTORY\vpntest.exe" $mode)
+	$full = (Write-Output "q\n" | & "$BuildDir\vpntest.exe" $mode)
 	$t = ($full | Select-String -Pattern 'NO MEMORY LEAKS' -CaseSensitive)
 
 	if (($t).Count -ne 1) {
@@ -51,7 +47,7 @@ $named | % {
 	[String] $test = $_
 	Write-Host "testing: $test"
 
-	$full = (Write-Output "q\n" | & "$BUILD_BINARIESDIRECTORY\vpntest.exe" $test)
+	$full = (Write-Output "q\n" | & "$BuildDir\vpntest.exe" $test)
 
 	# Benchmark lines before the result check, so a failed test still shows and saves them
 	$bench = @($full | ? { $_ -cmatch '^BENCH ' -and $_ -cnotmatch '^BENCH TEST ' })

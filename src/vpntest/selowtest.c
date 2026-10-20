@@ -46,7 +46,7 @@ typedef struct SELOWTEST_CTX
 static UINT selowtest_num_install = 0;
 
 // Install step stub: counts the call and installs nothing
-static bool SelowTestInstallProc(bool force)
+static bool SelowTestInstallProc()
 {
 	selowtest_num_install++;
 
@@ -231,9 +231,16 @@ static void SelowTestInstall(SELOWTEST_CTX *ctx, bool supported)
 		return;
 	}
 
-	if (SuIsSupportedOs(false) == false)
+	if (SuIsSupportedOs() == false)
 	{
-		Print("  [SKIP] Install step: SeLow is turned off by the DisableSeLow registry value\n");
+#if defined(_M_ARM64)
+		// No SeLow package exists for arm64: even adding a Local Bridge never reaches the install step
+		selowtest_num_install = 0;
+		ok = Win32EthInstallSu();
+		SelowTestCheck(ctx, ok == false && selowtest_num_install == 0, "On arm64, adding a Local Bridge never reaches the driver install",
+			"returned %u, install step ran %u times", ok, selowtest_num_install);
+#endif	// defined(_M_ARM64)
+		Print("  [SKIP] Install step: SeLow is not supported (arm64, or the DisableSeLow registry value)\n");
 		return;
 	}
 
@@ -245,13 +252,13 @@ static void SelowTestInstall(SELOWTEST_CTX *ctx, bool supported)
 
 	// The queries before did not use up the one install attempt of the process
 	selowtest_num_install = 0;
-	e = OpenEth(SELOWTEST_DEVICE, false, false, NULL);
+	e = OpenEth(SELOWTEST_DEVICE);
 	SelowTestCheck(ctx, e == NULL && selowtest_num_install == 1, "Creating a Local Bridge without SeLow reaches the driver install",
 		"OpenEth returned %s, install step ran %u times", e == NULL ? "NULL" : "an ETH", selowtest_num_install);
 	CloseEth(e);
 
 	// As before, the install step runs at most once per process
-	e = OpenEth(SELOWTEST_DEVICE, false, false, NULL);
+	e = OpenEth(SELOWTEST_DEVICE);
 	SelowTestCheck(ctx, e == NULL && selowtest_num_install == 1, "The driver install runs at most once per process",
 		"OpenEth returned %s, install step ran %u times", e == NULL ? "NULL" : "an ETH", selowtest_num_install);
 	CloseEth(e);

@@ -413,7 +413,6 @@ static char *harness_drop_caps[] =
 	"b_local_bridge",
 	"b_tap_supported",
 	"b_support_network_connection_name",
-	"b_beta_version",
 	"b_is_in_vm",
 	"b_support_aes_ni",
 	"b_using_selow_driver",
@@ -1796,7 +1795,7 @@ static bool HarnessStartServer(HARNESS *h)
 	h->ClientCedar = NewCedar(NULL, NULL);
 
 	// Same server object as the "s" mode (StStartServer is a wrapper of SiNewServer)
-	h->Server = SiNewServer(false);
+	h->Server = SiNewServer();
 	if (HarnessCheck(h, h->Server != NULL, "server started in-process from a fresh " HARNESS_CONFIG_FILE) == false)
 	{
 		return false;
@@ -3067,7 +3066,7 @@ static void HarnessReload(HARNESS *h)
 	SiReleaseServer(h->Server);
 	h->Server = NULL;
 
-	h->Server = SiNewServer(false);
+	h->Server = SiNewServer();
 	if (HarnessCheck(h, h->Server != NULL, "server restarted from the saved " HARNESS_CONFIG_FILE) &&
 		HarnessWaitListener(h, HARNESS_LISTEN_TIMEOUT))
 	{

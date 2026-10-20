@@ -815,20 +815,14 @@ void GetDateTimeStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale)
 
 void GetTimeStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale)
 {
-	wchar_t *tag = L"%02u%s%02u%s%02u%s";
 	if (str == NULL || st == NULL)
 	{
 		return;
 	}
 
-	if (_GETLANG() == SE_LANG_JAPANESE || _GETLANG() == SE_LANG_CHINESE_ZH)
-	{
-		tag = L"%2u%s%2u%s%2u%s";
-	}
-
 	locale = (locale != NULL ? locale : &current_locale);
 	UniFormat(str, size,
-		tag,
+		L"%02u%s%02u%s%02u%s",
 		st->wHour, locale->HourStr,
 		st->wMinute, locale->MinuteStr,
 		st->wSecond, locale->SecondStr);
@@ -836,20 +830,14 @@ void GetTimeStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale)
 
 void GetDateStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale)
 {
-	wchar_t *tag = L"%04u%s%02u%s%02u%s (%s)";
 	if (str == NULL || st == NULL)
 	{
 		return;
 	}
 
-	if (_GETLANG() == SE_LANG_JAPANESE || _GETLANG() == SE_LANG_CHINESE_ZH)
-	{
-		tag = L"%4u%s%2u%s%2u%s(%s)";
-	}
-
 	locale = (locale != NULL ? locale : &current_locale);
 	UniFormat(str, size,
-		tag,
+		L"%04u%s%02u%s%02u%s (%s)",
 		st->wYear, locale->YearStr,
 		st->wMonth, locale->MonthStr,
 		st->wDay, locale->DayStr,
@@ -1379,9 +1367,6 @@ void AbortExit()
 // Plain CRT and Win32 calls only: the caller may be out of memory.
 void AbortExitEx(char *msg)
 {
-	FILE *f = NULL;
-	wchar_t log_name[MAX_PATH + 32];
-	DWORD len;
 	if (msg == NULL)
 	{
 		msg = "Unknown Error";
@@ -1397,7 +1382,10 @@ void AbortExitEx(char *msg)
 	fflush(stdout);
 	_set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
 	abort();
-#endif
+#else	// RANZ_FUZZING
+	FILE *f = NULL;
+	wchar_t log_name[MAX_PATH + 32];
+	DWORD len;
 
 	len = GetModuleFileNameW(NULL, log_name, MAX_PATH);
 	if (len != 0 && len < MAX_PATH)
@@ -1446,6 +1434,7 @@ void AbortExitEx(char *msg)
 	fflush(stdout);
 
 	_exit(1);
+#endif	// RANZ_FUZZING
 }
 
 

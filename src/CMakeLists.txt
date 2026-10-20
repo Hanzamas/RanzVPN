@@ -7,11 +7,13 @@ if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
 endif()
 
 if(WIN32)
-  if(IS_CROSS_COMPILATION MATCHES "arm64-on-x64")
-    set(CMAKE_SYSTEM_PROCESSOR "arm64")
-  else()
+  if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+    # cl.exe only. clang-cl takes /Qspectre and ignores it with a warning, so it is not set for
+    # clang-cl: docs/adr/0024-clang-cl-spectre.md
     message("Setting QSPECTRE")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Qspectre")
+  else()
+    message(STATUS "No /Qspectre with ${CMAKE_C_COMPILER_ID}: docs/adr/0024-clang-cl-spectre.md")
   endif()
 
   #
@@ -59,9 +61,6 @@ add_subdirectory(vpncmd)
 
 # vpntest
 add_subdirectory(vpntest)
-
-# Unused-code warnings (RANZ_UNUSED_WARNINGS=ON, cmake/RanzWarnings.cmake): the project's own targets only
-ranz_unused_warnings(cedar mayaqua vpnserver vpncmd vpntest)
 
 # libFuzzer targets (RANZ_FUZZ=ON only)
 if(RANZ_FUZZ)

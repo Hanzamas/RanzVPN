@@ -8,7 +8,6 @@
 #define	CEDAR_PRODUCT_STR			"Ranz"
 #define	CEDAR_PRODUCT_STR_W			L"Ranz"
 #define	CEDAR_SERVER_STR			"Ranz VPN Server"
-#define	CEDAR_BRIDGE_STR			"Ranz VPN Bridge"
 #define	CEDAR_MANAGER_STR			"Ranz VPN Server Manager"
 #define	CEDAR_CUI_STR				"Ranz VPN Command-Line Admin Tool"
 #define	CEDAR_CLIENT_STR			"Ranz VPN Client"

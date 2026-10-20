@@ -849,7 +849,7 @@ static bool ServerCheckHubAccess(CONNECTION *c, HUB *hub)
 	IP ip;
 	char ip_str[64];
 
-	if (GetGlobalServerFlag(GSF_DISABLE_AC) != 0 || hub->HubDb == NULL || c->FirstSock == NULL)
+	if (hub->HubDb == NULL || c->FirstSock == NULL)
 	{
 		return true;
 	}
@@ -1002,70 +1002,23 @@ static UINT ChangePasswordAccept(CONNECTION *c, PACK *p)
 	return ret;
 }
 
-// Adds the login message to the Welcome pack: the OS support warnings of both ends, then msg
+// Adds the login message to the Welcome pack: the OS support warning for the client, then msg
 static void PackAddWelcomeMsg(PACK *p, RPC_WINVER *client_winver, wchar_t *msg)
 {
 	char *utf;
 	wchar_t winver_msg_client[3800];
-	wchar_t winver_msg_server[3800];
 	UINT tmpsize;
 	wchar_t *tmp;
-	RPC_WINVER server_winver;
 
-	GetWinVer(&server_winver);
+	FormatUnsupportedWinVerMsg(winver_msg_client, sizeof(winver_msg_client), client_winver);
 
-	Zero(winver_msg_client, sizeof(winver_msg_client));
-	Zero(winver_msg_server, sizeof(winver_msg_server));
-
-	if (IsSupportedWinVer(client_winver) == false)
-	{
-		SYSTEMTIME st;
-
-		LocalTime(&st);
-
-		UniFormat(winver_msg_client, sizeof(winver_msg_client), _UU("WINVER_ERROR_FORMAT"),
-			_UU("WINVER_ERROR_PC_LOCAL"),
-			client_winver->Title,
-			_UU("WINVER_ERROR_VPNSERVER"),
-			SUPPORTED_WINDOWS_LIST,
-			_UU("WINVER_ERROR_PC_LOCAL"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			st.wYear, st.wMonth);
-	}
-
-	if (IsSupportedWinVer(&server_winver) == false)
-	{
-		SYSTEMTIME st;
-
-		LocalTime(&st);
-
-		UniFormat(winver_msg_server, sizeof(winver_msg_server), _UU("WINVER_ERROR_FORMAT"),
-			_UU("WINVER_ERROR_PC_REMOTE"),
-			server_winver.Title,
-			_UU("WINVER_ERROR_VPNSERVER"),
-			SUPPORTED_WINDOWS_LIST,
-			_UU("WINVER_ERROR_PC_REMOTE"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			st.wYear, st.wMonth);
-	}
-
-	tmpsize = UniStrSize(winver_msg_client) + UniStrSize(winver_msg_server) + UniStrSize(msg) + (16000 + 3000) * sizeof(wchar_t);
+	tmpsize = UniStrSize(winver_msg_client) + UniStrSize(msg) + (16000 + 3000) * sizeof(wchar_t);
 
 	tmp = ZeroMalloc(tmpsize);
 
 	if (IsURLMsg(msg, NULL, 0) == false)
 	{
-		if (GetGlobalServerFlag(GSF_SHOW_OSS_MSG) != 0)
-		{
-			UniStrCat(tmp, tmpsize, _UU("OSS_MSG"));
-		}
-
 		UniStrCat(tmp, tmpsize, winver_msg_client);
-		UniStrCat(tmp, tmpsize, winver_msg_server);
 	}
 	UniStrCat(tmp, tmpsize, msg);
 
@@ -1127,10 +1080,8 @@ bool ServerAccept(CONNECTION *c)
 	bool suppress_client_update_notification = false;
 	USER *loggedin_user_object = NULL;
 	UCHAR unique[SHA1_SIZE], unique2[SHA1_SIZE];
-	CEDAR *cedar;
 	RPC_WINVER winver;
 	UINT client_id;
-	bool no_more_users_in_server = false;
 	UCHAR mschap_v2_server_response_20[20];
 	UINT ms_chap_error = 0;
 	bool is_empty_password = false;
@@ -1153,11 +1104,6 @@ bool ServerAccept(CONNECTION *c)
 
 	StrCpy(groupname, sizeof(groupname), "");
 	StrCpy(sessionname, sizeof(sessionname), "");
-
-	cedar = c->Cedar;
-
-
-	no_more_users_in_server = SiTooManyUserObjectsInServer(cedar->Server, true);
 
 	c->Status = CONNECTION_STATUS_NEGOTIATION;
 
@@ -1195,19 +1141,6 @@ bool ServerAccept(CONNECTION *c)
 		goto CLEANUP;
 	}
 
-	{
-		char tmp[20];
-		char *branded_ctos = _SS("BRANDED_C_TO_S");
-		PackGetStr(p, "branded_ctos", tmp, sizeof(tmp));
-
-		if(StrCmpi(method, "login") == 0 && StrLen(branded_ctos) > 0 && StrCmpi(branded_ctos, tmp) != 0)
-		{
-			FreePack(p);
-			c->Err = ERR_BRANDED_C_TO_S;
-			goto CLEANUP;
-		}
-	}
-
 	PackGetStr(p, "client_str", c->ClientStr, sizeof(c->ClientStr));
 	c->ClientVer = PackGetInt(p, "client_ver");
 	c->ClientBuild = PackGetInt(p, "client_build");
@@ -1230,13 +1163,6 @@ bool ServerAccept(CONNECTION *c)
 
 		c->Type = CONNECTION_TYPE_LOGIN;
 
-		if (no_more_users_in_server)
-		{
-			FreePack(p);
-			c->Err = ERR_TOO_MANY_USER;
-			goto CLEANUP;
-		}
-
 		if (PackGetStr(p, "hello", c->ClientStr, sizeof(c->ClientStr)) == false)
 		{
 			StrCpy(c->ClientStr, sizeof(c->ClientStr), "Unknown");
@@ -1246,13 +1172,6 @@ bool ServerAccept(CONNECTION *c)
 		InRpcNodeInfo(&node, p);
 
 		c->Protocol = GetProtocolFromPack(p);
-
-		if (GetServerCapsBool(c->Cedar->Server, "b_vpn_client_connect") == false)
-		{
-			FreePack(p);
-			c->Err = ERR_NOT_SUPPORTED;
-			goto CLEANUP;
-		}
 
 		authtype = GetAuthTypeFromPack(p);
 		if (GetHubnameAndUsernameFromPack(p, username, sizeof(username), hubname, sizeof(hubname)) == false)
@@ -1494,16 +1413,7 @@ bool ServerAccept(CONNECTION *c)
 
 						if (auth_ret == false)
 						{
-							bool fail_ext_user_auth = false;
-							if (GetGlobalServerFlag(GSF_DISABLE_RADIUS_AUTH) != 0)
-							{
-								fail_ext_user_auth = true;
-							}
-
-							if (fail_ext_user_auth == false)
-							{
-								auth_ret = SamAuthUserByPlainPassword(hub, username, plain_password);
-							}
+							auth_ret = SamAuthUserByPlainPassword(hub, username, plain_password);
 
 							if (auth_ret && pol == NULL)
 							{
@@ -1526,56 +1436,43 @@ bool ServerAccept(CONNECTION *c)
 					break;
 
 				case CLIENT_AUTHTYPE_CERT:
-					if (GetGlobalServerFlag(GSF_DISABLE_CERT_AUTH) == 0)
+					cert_size = PackGetDataSize(p, "cert");
+					if (cert_size >= 1 && cert_size <= 100000)
 					{
-						cert_size = PackGetDataSize(p, "cert");
-						if (cert_size >= 1 && cert_size <= 100000)
+						cert_buf = ZeroMalloc(cert_size);
+						if (PackGetData(p, "cert", cert_buf))
 						{
-							cert_buf = ZeroMalloc(cert_size);
-							if (PackGetData(p, "cert", cert_buf))
+							UCHAR sign[4096 / 8];
+							UINT sign_size = PackGetDataSize(p, "sign");
+							if (sign_size <= sizeof(sign) && sign_size >= 1)
 							{
-								UCHAR sign[4096 / 8];
-								UINT sign_size = PackGetDataSize(p, "sign");
-								if (sign_size <= sizeof(sign) && sign_size >= 1)
+								if (PackGetData(p, "sign", sign))
 								{
-									if (PackGetData(p, "sign", sign))
+									BUF *b = NewBuf();
+									X *x;
+									WriteBuf(b, cert_buf, cert_size);
+									x = BufToX(b, false);
+									if (x != NULL && x->is_compatible_bit &&
+										sign_size == (x->bits / 8))
 									{
-										BUF *b = NewBuf();
-										X *x;
-										WriteBuf(b, cert_buf, cert_size);
-										x = BufToX(b, false);
-										if (x != NULL && x->is_compatible_bit &&
-											sign_size == (x->bits / 8))
+										K *k = GetKFromX(x);
+										if (RsaVerifyEx(c->Random, SHA1_SIZE, sign, sign_size, k))
 										{
-											K *k = GetKFromX(x);
-											if (RsaVerifyEx(c->Random, SHA1_SIZE, sign, sign_size, k))
+											// A matching signature proves the client holds this certificate.
+											auth_ret = SamAuthUserByCert(hub, username, x);
+											if (auth_ret)
 											{
-												// A matching signature proves the client holds this certificate.
-												auth_ret = SamAuthUserByCert(hub, username, x);
-												if (auth_ret)
-												{
-													c->ClientX = CloneX(x);
-												}
+												c->ClientX = CloneX(x);
 											}
-											FreeK(k);
 										}
-										FreeX(x);
-										FreeBuf(b);
+										FreeK(k);
 									}
+									FreeX(x);
+									FreeBuf(b);
 								}
 							}
-							Free(cert_buf);
 						}
-					}
-					else
-					{
-						// Certificate authentication is not supported in the open source version
-						HLog(hub, "LH_AUTH_CERT_NOT_SUPPORT_ON_OPEN_SOURCE", c->Name, username);
-						Unlock(hub->lock);
-						ReleaseHub(hub);
-						FreePack(p);
-						c->Err = ERR_AUTHTYPE_NOT_SUPPORTED;
-						goto CLEANUP;
+						Free(cert_buf);
 					}
 					break;
 
@@ -1723,11 +1620,6 @@ bool ServerAccept(CONNECTION *c)
 				if (policy->NoQoS)
 				{
 					qos = false;
-				}
-				if (GetServerCapsBool(c->Cedar->Server, "b_support_qos") == false)
-				{
-					qos = false;
-					policy->NoQoS = true;
 				}
 				if (GetHubAdminOption(hub, "deny_qos") != 0)
 				{
@@ -1899,7 +1791,6 @@ bool ServerAccept(CONNECTION *c)
 			}
 
 
-			if (GetServerCapsBool(hub->Cedar->Server, "b_support_limit_multilogin"))
 			{
 				UINT num;
 				UINT max_logins = policy->MultiLogins;
@@ -2022,11 +1913,11 @@ bool ServerAccept(CONNECTION *c)
 				}
 			}
 
-			if (Count(hub->Cedar->CurrentSessions) >= GetServerCapsInt(hub->Cedar->Server, "i_max_sessions"))
+			if (Count(hub->Cedar->CurrentSessions) >= SERVER_MAX_SESSIONS)
 			{
 				Unlock(hub->lock);
 
-				HLog(hub, "LH_MAX_SESSION_2", c->Name, GetServerCapsInt(hub->Cedar->Server, "i_max_sessions"));
+				HLog(hub, "LH_MAX_SESSION_2", c->Name, SERVER_MAX_SESSIONS);
 
 				ReleaseHub(hub);
 				c->Err = ERR_HUB_IS_BUSY;
@@ -2090,7 +1981,7 @@ bool ServerAccept(CONNECTION *c)
 
 			AddProtocolDetailsStr(s->ProtocolDetails, sizeof(s->ProtocolDetails), c->FirstSock->ProtocolDetails);
 
-			s->NoSendSignature = cedar->Server->NoSendSignature;
+			s->NoSendSignature = c->Cedar->Server->NoSendSignature;
 
 			if (use_udp_acceleration_client)
 			{
@@ -2177,9 +2068,6 @@ bool ServerAccept(CONNECTION *c)
 				Inc(s->Cedar->AssignedClientLicense);
 			}
 
-			cedar->Server->CurrentAssignedClientLicense = Count(s->Cedar->AssignedClientLicense);
-			cedar->Server->CurrentAssignedBridgeLicense = Count(s->Cedar->AssignedBridgeLicense);
-
 			if (StrLen(sessionname) != 0)
 			{
 				Free(s->Name);
@@ -2234,14 +2122,6 @@ bool ServerAccept(CONNECTION *c)
 		PackAddWelcomeMsg(p, &winver, msg);
 
 		Free(msg);
-
-		{
-			char *branded_cfroms = _SS("BRANDED_C_FROM_S");
-			if(StrLen(branded_cfroms) > 0)
-			{
-				PackAddStr(p, "branded_cfroms", branded_cfroms);
-			}
-		}
 
 		HttpServerSend(c->FirstSock, p);
 		FreePack(p);
@@ -2310,9 +2190,6 @@ bool ServerAccept(CONNECTION *c)
 			{
 				Dec(s->Cedar->AssignedClientLicense);
 			}
-
-			cedar->Server->CurrentAssignedClientLicense = Count(s->Cedar->AssignedClientLicense);
-			cedar->Server->CurrentAssignedBridgeLicense = Count(s->Cedar->AssignedBridgeLicense);
 		}
 		Unlock(s->Hub->lock);
 
@@ -3028,15 +2905,6 @@ bool ClientConnect(CONNECTION *c)
 		goto CLEANUP;
 	}
 
-	if (c->Session->ClientOption != NULL && c->Session->ClientOption->FromAdminPack)
-	{
-		if (IsAdminPackSupportedServerProduct(c->ServerStr) == false)
-		{
-			c->Err = ERR_NOT_ADMINPACK_SERVER;
-			goto CLEANUP;
-		}
-	}
-
 	if (c->Halt)
 	{
 		c->Err = ERR_USER_CANCEL;
@@ -3072,18 +2940,6 @@ bool ClientConnect(CONNECTION *c)
 		c->Err = err;
 		c->ClientConnectError_NoSavePassword = PackGetBool(p, "no_save_password");
 		goto CLEANUP;
-	}
-
-	{
-		char tmp[20];
-		char *branded_cfroms = _SS("BRANDED_C_FROM_S");
-		PackGetStr(p, "branded_cfroms", tmp, sizeof(tmp));
-
-		if(StrLen(branded_cfroms) > 0 && StrCmpi(branded_cfroms, tmp) != 0)
-		{
-			c->Err = ERR_BRANDED_C_FROM_S;
-			goto CLEANUP;
-		}
 	}
 
 	utf_size = PackGetDataSize(p, "Msg");
@@ -3685,7 +3541,7 @@ bool ClientUploadAuth(CONNECTION *c)
 	PackAddStr(p, "hello", c->ClientStr);
 	PackAddInt(p, "version", c->ClientVer);
 	PackAddInt(p, "build", c->ClientBuild);
-	PackAddInt(p, "client_id", c->Cedar->ClientId);
+	PackAddInt(p, "client_id", 0);
 
 	PackAddInt(p, "max_connection", o->MaxConnection);
 	PackAddInt(p, "use_encrypt", o->UseEncrypt == false ? 0 : 1);
@@ -3730,14 +3586,6 @@ bool ClientUploadAuth(CONNECTION *c)
 		PackAddBool(p, "support_hmac_on_udp_acceleration", true);
 		PackAddBool(p, "support_udp_accel_fast_disconnect_detect", true);
 		PackAddInt(p, "udp_acceleration_max_version", 2);
-	}
-
-	{
-		char *branded_ctos = _SS("BRANDED_C_TO_S");
-		if(StrLen(branded_ctos) > 0)
-		{
-			PackAddStr(p, "branded_ctos", branded_ctos);
-		}
 	}
 
 	CreateNodeInfo(&info, c);

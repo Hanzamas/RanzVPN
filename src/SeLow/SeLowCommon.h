@@ -51,7 +51,6 @@ typedef struct SL_IOCTL_EVENT_NAME
 // Registry key
 #define	SL_REG_KEY_NAME					"SYSTEM\\CurrentControlSet\\services\\SeLow"
 #define	SL_REG_VER_VALUE				"SlVersion"
-#define	SL_REG_VER_VALUE_WIN10			"SlVersion_Win10"
 
 // Adapter data
 #define	SL_ADAPTER_ID_LEN				64

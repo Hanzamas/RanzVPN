@@ -98,7 +98,7 @@ if(WIN32)
   ranz_hamcore_resources(vpntest)
 endif()
 
-target_link_libraries(vpntest cedar)
+target_link_libraries(vpntest PRIVATE cedar ranz_warnings)
 
 # The resources test (runtime.c) compares every hamcore file the executable serves with its source
 # file. A source property, so the resource scripts of vpntest do not get the quoted path.

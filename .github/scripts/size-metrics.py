@@ -1,7 +1,7 @@
 # Size metrics of a build: source lines per directory and the size of each executable.
 #
 # Informational only (spec #24, ADR-0003 item 13): it prints to the job log and to
-# $GITHUB_STEP_SUMMARY and never fails the job on a value. Lines are counted in the C and C++
+# $GITHUB_STEP_SUMMARY and never fails the job on a value. Lines are counted in the C
 # sources that git tracks under each directory, third-party code excluded; executables are the
 # *.exe files directly in the build directory.
 
@@ -12,7 +12,7 @@ import subprocess
 import sys
 
 DIRS = ['src/Cedar', 'src/Mayaqua', 'src/vpnserver', 'src/vpncmd', 'src/vpntest']
-EXTS = ('.c', '.h', '.cpp')
+EXTS = ('.c', '.h')
 
 
 def count_lines(path):

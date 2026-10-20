@@ -32,7 +32,6 @@
 static UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t);
 static UINT StSetHubMsg(ADMIN *a, RPC_MSG *t);
 static UINT StGetHubMsg(ADMIN *a, RPC_MSG *t);
-static UINT StDebug(ADMIN *a, RPC_TEST *t);
 static UINT StFlush(ADMIN *a, RPC_TEST *t);
 static UINT StCrash(ADMIN *a, RPC_TEST *t);
 static UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t);
@@ -129,7 +128,6 @@ static void InRpcAccess(ACCESS *a, PACK *p);
 static void OutRpcAccess(PACK *p, ACCESS *a);
 static void InRpcAccessEx(ACCESS *a, PACK *p, UINT index);
 static void OutRpcAccessEx(PACK *p, ACCESS *a, UINT index, UINT total);
-static UINT StTest(ADMIN *a, RPC_TEST *t);
 static UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hubname, bool accept_empty_password, bool *is_password_empty);
 static void HashAdminPassword(void *hash, char *password);
 static RPC *AdminConnectEx2(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name, void *hWnd);
@@ -214,124 +212,41 @@ static bool SiIsEmptyPassword(void *hash_password);
 #define	SERVER_ADMIN_ONLY												\
 	if (a->ServerAdmin == false)										\
 		return ERR_NOT_ENOUGH_RIGHT;
-#define	NO_SUPPORT_FOR_BRIDGE											\
-	if (a->Server->Cedar->Bridge)										\
-		return ERR_NOT_SUPPORTED;
 
 CAPSLIST *ScGetCapsEx(RPC *rpc)
 {
-	RPC_SERVER_INFO info;
 	CAPSLIST *t;
-	bool is_bridge = false;
+	TOKEN_LIST *names;
 	if (rpc == NULL)
 	{
 		return NULL;
 	}
 
-	Zero(&info, sizeof(info));
-	ScGetServerInfo(rpc, &info);
-
 	t = ZeroMalloc(sizeof(CAPSLIST));
 
 	if (ScGetCaps(rpc, t) != ERR_NO_ERROR)
 	{
-		UINT build;
-
 		Free(t);
-		t = NewCapsList();
-
-		// Caps RPC failed: fall back to guessing from the build number
-		build = info.ServerBuildInt;
-
-		is_bridge = (SearchStrEx(info.ServerProductName, "bridge", 0, false) == INFINITE) ? false : true;
-
-		AddCapsInt(t, "i_max_packet_size", 1514);
-
-		if (is_bridge == false)
-		{
-			AddCapsInt(t, "i_max_hubs", 4096);
-			AddCapsInt(t, "i_max_sessions", 4096);
-
-			AddCapsInt(t, "i_max_users_per_hub", 10000);
-			AddCapsInt(t, "i_max_groups_per_hub", 10000);
-			AddCapsInt(t, "i_max_access_lists", 4096);
-		}
-		else
-		{
-			AddCapsInt(t, "i_max_hubs", 0);
-			AddCapsInt(t, "i_max_sessions", 0);
-			AddCapsInt(t, "i_max_users_per_hub", 0);
-			AddCapsInt(t, "i_max_groups_per_hub", 0);
-			AddCapsInt(t, "i_max_access_lists", 0);
-		}
-
-		AddCapsInt(t, "i_max_mac_tables", 10000);
-		AddCapsInt(t, "i_max_ip_tables", 10000);
-
-		if (is_bridge)
-		{
-			AddCapsBool(t, "b_bridge", true);
-		}
-		else
-		{
-			AddCapsBool(t, "b_standalone", true);
-		}
-
-		AddCapsBool(t, "b_support_config_hub", is_bridge == false);
-
-		AddCapsBool(t, "b_vpn_client_connect", is_bridge == false ? true : false);
-
-		if (build >= 3600)
-		{
-			RPC_BRIDGE_SUPPORT b;
-			Zero(&b, sizeof(b));
-			if (ScGetBridgeSupport(rpc, &b) == ERR_NO_ERROR)
-			{
-				AddCapsBool(t, "b_local_bridge", b.IsBridgeSupportedOs);
-			}
-			else
-			{
-				AddCapsBool(t, "b_local_bridge", false);
-			}
-		}
-		else
-		{
-			AddCapsBool(t, "b_local_bridge", false);
-		}
-
-		AddCapsBool(t, "b_tap_supported", false);
-
-		AddCapsBool(t, "b_support_cascade", true);
-
-		AddCapsBool(t, "b_support_cascade_cert", false);
-		AddCapsBool(t, "b_support_config_log", true);
-		AddCapsBool(t, "b_support_autodelete", false);
+		return NULL;
 	}
 
-	if (true)
+	// Caps the server did not report default to false
+	names = GetTableNameStartWith("CT_b_");
+	if (names != NULL)
 	{
-		TOKEN_LIST *names;
-
-		// Caps the server did not report default to false
-		names = GetTableNameStartWith("CT_b_");
-		if (names != NULL)
+		UINT i;
+		for (i = 0;i < names->NumTokens;i++)
 		{
-			UINT i;
-			for (i = 0;i < names->NumTokens;i++)
+			char *name = names->Token[i] + 3;
+
+			if (GetCaps(t, name) == NULL)
 			{
-				char *name = names->Token[i] + 3;
-
-				if (GetCaps(t, name) == NULL)
-				{
-					AddCapsBool(t, name, false);
-				}
+				AddCapsBool(t, name, false);
 			}
-
-			FreeToken(names);
 		}
-	}
 
-	FreeRpcServerInfo(&info);
+		FreeToken(names);
+	}
 
 	return t;
 }
@@ -391,7 +306,6 @@ static PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 
 	if (0) {}
 
-	DECLARE_RPC_EX("Test", RPC_TEST, StTest, InRpcTest, OutRpcTest, FreeRpcTest)
 	DECLARE_RPC_EX("GetServerInfo", RPC_SERVER_INFO, StGetServerInfo, InRpcServerInfo, OutRpcServerInfo, FreeRpcServerInfo)
 	DECLARE_RPC("GetServerStatus", RPC_SERVER_STATUS, StGetServerStatus, InRpcServerStatus, OutRpcServerStatus)
 	DECLARE_RPC("CreateListener", RPC_LISTENER, StCreateListener, InRpcListener, OutRpcListener)
@@ -482,7 +396,6 @@ static PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 	DECLARE_RPC("Crash", RPC_TEST, StCrash, InRpcTest, OutRpcTest)
 	DECLARE_RPC_EX("GetAdminMsg", RPC_MSG, StGetAdminMsg, InRpcMsg, OutRpcMsg, FreeRpcMsg)
 	DECLARE_RPC("Flush", RPC_TEST, StFlush, InRpcTest, OutRpcTest)
-	DECLARE_RPC("Debug", RPC_TEST, StDebug, InRpcTest, OutRpcTest)
 	DECLARE_RPC("RegenerateServerCert", RPC_TEST, StRegenerateServerCert, InRpcTest, OutRpcTest)
 
 	if (ok == false)
@@ -603,7 +516,6 @@ DECLARE_SC("SetSysLog", SYSLOG_SETTING, ScSetSysLog, InRpcSysLogSetting, OutRpcS
 DECLARE_SC("GetSysLog", SYSLOG_SETTING, ScGetSysLog, InRpcSysLogSetting, OutRpcSysLogSetting)
 DECLARE_SC("Crash", RPC_TEST, ScCrash, InRpcTest, OutRpcTest)
 DECLARE_SC("Flush", RPC_TEST, ScFlush, InRpcTest, OutRpcTest)
-DECLARE_SC("Debug", RPC_TEST, ScDebug, InRpcTest, OutRpcTest)
 DECLARE_SC("RegenerateServerCert", RPC_TEST, ScRegenerateServerCert, InRpcTest, OutRpcTest)
 
 static UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t)
@@ -638,7 +550,6 @@ static UINT StSetHubMsg(ADMIN *a, RPC_MSG *t)
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	if (UniStrLen(t->Msg) > HUB_MAXMSG_LEN)
 	{
 		return ERR_MEMORY_NOT_ENOUGH;
@@ -680,7 +591,6 @@ static UINT StGetHubMsg(ADMIN *a, RPC_MSG *t)
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
@@ -698,30 +608,6 @@ static UINT StGetHubMsg(ADMIN *a, RPC_MSG *t)
 		t->Msg = GetHubMsg(h);
 
 		ReleaseHub(h);
-	}
-
-	return ret;
-}
-
-static UINT StDebug(ADMIN *a, RPC_TEST *t)
-{
-	SERVER *s = a->Server;
-	UINT ret = ERR_NO_ERROR;
-	RPC_TEST t2;
-
-	SERVER_ADMIN_ONLY;
-
-	Zero(&t2, sizeof(t2));
-
-	ret = SiDebug(s, &t2, t->IntValue, t->StrValue);
-
-	if (ret == ERR_NO_ERROR)
-	{
-		Copy(t, &t2, sizeof(RPC_TEST));
-	}
-	else
-	{
-		Zero(t, sizeof(RPC_TEST));
 	}
 
 	return ret;
@@ -752,75 +638,20 @@ static UINT StCrash(ADMIN *a, RPC_TEST *t)
 
 static UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t)
 {
-	SERVER *s = a->Server;
-	CEDAR *c = s->Cedar;
-	RPC_WINVER server_ver;
-	RPC_WINVER client_ver;
 	wchar_t winver_msg_client[3800];
-	wchar_t winver_msg_server[3800];
 	UINT tmpsize;
 	wchar_t *tmp;
 
 	FreeRpcMsg(t);
 	Zero(t, sizeof(RPC_MSG));
 
-	GetWinVer(&server_ver);
-	Copy(&client_ver, &a->ClientWinVer, sizeof(RPC_WINVER));
+	FormatUnsupportedWinVerMsg(winver_msg_client, sizeof(winver_msg_client), &a->ClientWinVer);
 
-	Zero(winver_msg_client, sizeof(winver_msg_client));
-	Zero(winver_msg_server, sizeof(winver_msg_server));
-
-	if (IsSupportedWinVer(&client_ver) == false)
-	{
-		SYSTEMTIME st;
-
-		LocalTime(&st);
-
-		UniFormat(winver_msg_client, sizeof(winver_msg_client), _UU("WINVER_ERROR_FORMAT"),
-			_UU("WINVER_ERROR_PC_LOCAL"),
-			client_ver.Title,
-			_UU("WINVER_ERROR_VPNSERVER"),
-			SUPPORTED_WINDOWS_LIST,
-			_UU("WINVER_ERROR_PC_LOCAL"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			st.wYear, st.wMonth);
-	}
-
-	if (IsSupportedWinVer(&server_ver) == false)
-	{
-		SYSTEMTIME st;
-
-		LocalTime(&st);
-
-		UniFormat(winver_msg_server, sizeof(winver_msg_server), _UU("WINVER_ERROR_FORMAT"),
-			_UU("WINVER_ERROR_PC_REMOTE"),
-			server_ver.Title,
-			_UU("WINVER_ERROR_VPNSERVER"),
-			SUPPORTED_WINDOWS_LIST,
-			_UU("WINVER_ERROR_PC_REMOTE"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			st.wYear, st.wMonth);
-	}
-
-	tmpsize = UniStrSize(winver_msg_client) + UniStrSize(winver_msg_server) + 10000;
+	tmpsize = UniStrSize(winver_msg_client) + 10000;
 
 	tmp = ZeroMalloc(tmpsize);
 
-	if (
-		c->Bridge == false)
-	{
-		if (GetGlobalServerFlag(GSF_SHOW_OSS_MSG) != 0)
-		{
-			UniStrCat(tmp, tmpsize, _UU("OSS_MSG"));
-		}
-	}
-
 	UniStrCat(tmp, tmpsize, winver_msg_client);
-	UniStrCat(tmp, tmpsize, winver_msg_server);
 
 	t->Msg = tmp;
 
@@ -829,24 +660,16 @@ static UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t)
 
 static UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t)
 {
-	SERVER *s = a->Server;
 	UINT ret = ERR_NO_ERROR;
 
 	SERVER_ADMIN_ONLY;
 
-	if (GetServerCapsBool(s, "b_support_eth_vlan") == false)
-	{
-		ret = ERR_NOT_SUPPORTED;
-	}
-	else
-	{
-		FreeRpcEnumEthVLan(t);
-		Zero(t, sizeof(RPC_ENUM_ETH_VLAN));
+	FreeRpcEnumEthVLan(t);
+	Zero(t, sizeof(RPC_ENUM_ETH_VLAN));
 
-		if (EnumEthVLanWin32(t) == false)
-		{
-			ret = ERR_INTERNAL_ERROR;
-		}
+	if (EnumEthVLanWin32(t) == false)
+	{
+		ret = ERR_INTERNAL_ERROR;
 	}
 
 	return ret;
@@ -854,16 +677,11 @@ static UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t)
 
 static UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t)
 {
-	SERVER *s = a->Server;
 	UINT ret = ERR_NO_ERROR;
 
 	SERVER_ADMIN_ONLY;
 
-	if (GetServerCapsBool(s, "b_support_eth_vlan") == false)
-	{
-		ret = ERR_NOT_SUPPORTED;
-	}
-	else if (MsIsAdmin() == false)
+	if (MsIsAdmin() == false)
 	{
 		ret = ERR_NOT_ENOUGH_RIGHT;
 	}
@@ -1063,7 +881,6 @@ static UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t)
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
@@ -1109,19 +926,7 @@ static UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t)
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
-
-	if (c->Bridge)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
-	if (GetGlobalServerFlag(GSF_DISABLE_AC) != 0 && LIST_NUM(t->o) >= 1)
-	{
-		return ERR_NOT_SUPPORTED_FUNCTION_ON_OPENSOURCE;
-	}
-
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
 	h = GetHub(c, hubname);
@@ -1175,7 +980,6 @@ static UINT StSetCrl(ADMIN *a, RPC_CRL *t)
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 	key = t->Key;
 
@@ -1239,7 +1043,6 @@ static UINT StGetCrl(ADMIN *a, RPC_CRL *t)
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 	key = t->Key;
 
@@ -1293,7 +1096,6 @@ static UINT StDelCrl(ADMIN *a, RPC_CRL *t)
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
 	h = GetHub(c, hubname);
@@ -1351,13 +1153,7 @@ static UINT StAddCrl(ADMIN *a, RPC_CRL *t)
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
-	if (c->Bridge)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
 	h = GetHub(c, hubname);
@@ -1412,7 +1208,6 @@ static UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t)
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 	FreeRpcEnumCrl(t);
 	Zero(t, sizeof(RPC_ENUM_CRL));
@@ -1564,7 +1359,6 @@ static UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 		return ERR_TOO_MANT_ITEMS;
 	}
 
-	NO_SUPPORT_FOR_BRIDGE;
 	CHECK_RIGHT;
 
 	if (a->ServerAdmin == false)
@@ -1628,7 +1422,6 @@ static UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 
 	CHECK_RIGHT;
 
-	NO_SUPPORT_FOR_BRIDGE;
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -1671,7 +1464,6 @@ static UINT StGetDefaultHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
 	UINT i;
 
-	NO_SUPPORT_FOR_BRIDGE;
 	FreeRpcAdminOption(t);
 	Zero(t, sizeof(RPC_ADMIN_OPTION));
 
@@ -1746,7 +1538,7 @@ static UINT StSetConfig(ADMIN *a, RPC_CONFIG *t)
 
 	ALog(a, NULL, "LA_SET_CONFIG");
 
-	SiRebootServerEx(s->Cedar->Bridge, false);
+	SiRebootServerEx(false);
 
 	return ERR_NO_ERROR;
 }
@@ -1767,7 +1559,7 @@ static UINT StRebootServer(ADMIN *a, RPC_TEST *t)
 
 	ALog(a, NULL, "LA_REBOOT_SERVER");
 
-	SiRebootServerEx(a->Server->Cedar->Bridge, t->IntValue);
+	SiRebootServerEx(t->IntValue);
 
 	return ERR_NO_ERROR;
 }
@@ -1833,7 +1625,6 @@ static UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 		return ERR_LOCAL_BRIDGE_UNSUPPORTED;
 	}
 
-	if (true)
 	{
 		char tmp[MAX_SIZE];
 		UINT id = Win32EthGetNameAndIdFromCombinedName(tmp, sizeof(tmp), t->DeviceName);
@@ -1845,7 +1636,8 @@ static UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 		}
 	}
 
-	AddLocalBridge(a->Server->Cedar, t->HubName, t->DeviceName, false, false, t->TapMode, NULL, false);
+	// The RPC TapMode field is ignored: there is no TAP device on Windows
+	AddLocalBridge(a->Server->Cedar, t->HubName, t->DeviceName, false, false, false);
 
 	ALog(a, NULL, "LA_ADD_BRIDGE", t->HubName, t->DeviceName);
 
@@ -1879,6 +1671,8 @@ static UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t)
 {
 	UINT i;
 	CEDAR *c;
+
+	SERVER_ADMIN_ONLY;
 
 	if (Win32EthIsSuSupported() == false)
 	{
@@ -1919,7 +1713,7 @@ static UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t)
 			StrCpy(e->DeviceName, sizeof(e->DeviceName), br->DeviceName);
 			StrCpy(e->HubName, sizeof(e->HubName), br->HubName);
 
-			e->TapMode = br->TapMode;
+			// TapMode stays false (zeroed above): no TAP device on Windows
 		}
 	}
 	UnlockList(c->LocalBridgeList);
@@ -1932,16 +1726,6 @@ static UINT StSetSysLog(ADMIN *a, SYSLOG_SETTING *t)
 	SERVER *s = a->Server;
 
 	SERVER_ADMIN_ONLY;
-
-	if (GetGlobalServerFlag(GSF_DISABLE_SYSLOG) != 0 && t->SaveType != SYSLOG_NONE)
-	{
-		return ERR_NOT_SUPPORTED_FUNCTION_ON_OPENSOURCE;
-	}
-
-	if (GetServerCapsBool(s, "b_support_syslog") == false)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
 
 	SiSetSysLogSetting(s, t);
 
@@ -2399,8 +2183,6 @@ static UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 
 	CHECK_RIGHT;
 
-	NO_SUPPORT_FOR_BRIDGE;
-
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -2486,7 +2268,6 @@ static UINT StDeleteGroup(ADMIN *a, RPC_DELETE_USER *t)
 
 	CHECK_RIGHT;
 
-	NO_SUPPORT_FOR_BRIDGE;
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -2539,7 +2320,6 @@ static UINT StGetGroup(ADMIN *a, RPC_SET_GROUP *t)
 	}
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
 	LockHubList(c);
@@ -2602,7 +2382,6 @@ static UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t)
 	}
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -2668,7 +2447,6 @@ static UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t)
 
 	CHECK_RIGHT;
 
-	NO_SUPPORT_FOR_BRIDGE;
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -2697,7 +2475,7 @@ static UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t)
 			USERGROUP *g = NewGroup(t->Name, t->Realname, t->Note);
 			SetGroupPolicy(g, t->Policy);
 
-			if ((LIST_NUM(h->HubDb->GroupList) >= GetServerCapsInt(a->Server, "i_max_users_per_hub")) ||
+			if ((LIST_NUM(h->HubDb->GroupList) >= MAX_USERS) ||
 				((GetHubAdminOption(h, "max_groups") != 0) && (LIST_NUM(h->HubDb->GroupList) >= GetHubAdminOption(h, "max_groups"))))
 			{
 				ret = ERR_TOO_MANY_GROUP;
@@ -2733,7 +2511,6 @@ static UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
 	UINT i, num;
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -2810,7 +2587,6 @@ static UINT StDeleteUser(ADMIN *a, RPC_DELETE_USER *t)
 	}
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -2867,7 +2643,6 @@ static UINT StGetUser(ADMIN *a, RPC_SET_USER *t)
 	}
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	FreeRpcSetUser(t);
 	Zero(t, sizeof(RPC_SET_USER));
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
@@ -2938,16 +2713,7 @@ static UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	NO_SUPPORT_FOR_BRIDGE;
 	CHECK_RIGHT;
-
-	if (GetGlobalServerFlag(GSF_DISABLE_RADIUS_AUTH) != 0)
-	{
-		if (t->AuthType == AUTHTYPE_USERCERT || t->AuthType == AUTHTYPE_ROOTCERT || t->AuthType == AUTHTYPE_NT)
-		{
-			return ERR_NOT_SUPPORTED_AUTH_ON_OPENSOURCE;
-		}
-	}
 
 	if (StrCmpi(t->Name, "*") == 0)
 	{
@@ -3076,16 +2842,7 @@ static UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	NO_SUPPORT_FOR_BRIDGE;
 	CHECK_RIGHT;
-
-	if (GetGlobalServerFlag(GSF_DISABLE_RADIUS_AUTH) != 0)
-	{
-		if (t->AuthType == AUTHTYPE_USERCERT || t->AuthType == AUTHTYPE_ROOTCERT || t->AuthType == AUTHTYPE_NT)
-		{
-			return ERR_NOT_SUPPORTED_AUTH_ON_OPENSOURCE;
-		}
-	}
 
 	if (t->AuthType == AUTHTYPE_USERCERT)
 	{
@@ -3155,15 +2912,10 @@ static UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
 
 	AcLock(h);
 	{
-		if ((LIST_NUM(h->HubDb->UserList) >= GetServerCapsInt(a->Server, "i_max_users_per_hub")) ||
+		if ((LIST_NUM(h->HubDb->UserList) >= MAX_USERS) ||
 			((GetHubAdminOption(h, "max_users") != 0) && (LIST_NUM(h->HubDb->UserList) >= GetHubAdminOption(h, "max_users"))))
 		{
 			ret = ERR_TOO_MANY_USER;
-		}
-		else if (SiTooManyUserObjectsInServer(s, false))
-		{
-			ret = ERR_TOO_MANY_USERS_CREATED;
-			ALog(a, h, "ERR_128");
 		}
 		else if (AcIsUser(h, t->Name))
 		{
@@ -3213,7 +2965,6 @@ static UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 	LockHubList(c);
 	{
 		h = GetHub(c, t->HubName);
@@ -3259,7 +3010,6 @@ static UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t)
 
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 
 	LockHubList(c);
 	{
@@ -3323,10 +3073,9 @@ static UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 	bool no_jitter = false;
 	bool no_include = false;
 
-	NO_SUPPORT_FOR_BRIDGE;
 	CHECK_RIGHT;
 
-	if (t->NumAccess > GetServerCapsInt(a->Server, "i_max_access_lists"))
+	if (t->NumAccess > MAX_ACCESSLISTS)
 	{
 		return ERR_TOO_MANY_ACCESS_LIST;
 	}
@@ -3422,7 +3171,6 @@ static UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t)
 	bool no_include = false;
 
 
-	NO_SUPPORT_FOR_BRIDGE;
 	CHECK_RIGHT;
 
 	LockHubList(c);
@@ -3445,7 +3193,7 @@ static UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t)
 		return ERR_NOT_ENOUGH_RIGHT;
 	}
 
-	if ((LIST_NUM(h->AccessList) >= GetServerCapsInt(a->Server, "i_max_access_lists") ||
+	if ((LIST_NUM(h->AccessList) >= MAX_ACCESSLISTS ||
 		(GetHubAdminOption(h, "max_accesslists") != 0) && (LIST_NUM(h->AccessList) >= GetHubAdminOption(h, "max_accesslists"))))
 	{
 		ReleaseHub(h);
@@ -4275,7 +4023,6 @@ static UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t)
 	HUB *h;
 	UINT ret = ERR_NO_ERROR;
 
-	NO_SUPPORT_FOR_BRIDGE;
 	CHECK_RIGHT;
 
 	LockHubList(c);
@@ -4328,8 +4075,6 @@ static UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t)
 	char hubname[MAX_HUBNAME_LEN + 1];
 	UINT key;
 
-	NO_SUPPORT_FOR_BRIDGE;
-
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 	key = t->Key;
 
@@ -4378,8 +4123,6 @@ static UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
 	HUB *h;
 	char hubname[MAX_HUBNAME_LEN + 1];
 	UINT i;
-
-	NO_SUPPORT_FOR_BRIDGE;
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
@@ -4434,11 +4177,6 @@ static UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t)
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	HUB *h;
-
-	if (c->Bridge)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
 
 	if (t->Cert == NULL)
 	{
@@ -4604,8 +4342,6 @@ static UINT StSetHubOnline(ADMIN *a, RPC_SET_HUB_ONLINE *t)
 	CEDAR *c = s->Cedar;
 	HUB *h;
 
-
-	NO_SUPPORT_FOR_BRIDGE;
 
 	CHECK_RIGHT;
 
@@ -4814,8 +4550,6 @@ static UINT StDeleteHub(ADMIN *a, RPC_DELETE_HUB *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	NO_SUPPORT_FOR_BRIDGE;
-
 	SERVER_ADMIN_ONLY;
 
 	LockHubList(c);
@@ -4952,7 +4686,6 @@ static UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	NO_SUPPORT_FOR_BRIDGE;
 	CHECK_RIGHT;
 
 	LockHubList(c);
@@ -4995,7 +4728,6 @@ static UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 	}
 
 	CHECK_RIGHT;
-	NO_SUPPORT_FOR_BRIDGE;
 
 	LockHubList(c);
 	{
@@ -5093,8 +4825,6 @@ static UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	NO_SUPPORT_FOR_BRIDGE;
-
 	SERVER_ADMIN_ONLY;
 
 	Trim(t->HubName);
@@ -5119,7 +4849,7 @@ static UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
 	}
 	UnlockList(c->HubList);
 
-	if (current_hub_num > GetServerCapsInt(a->Server, "i_max_hubs"))
+	if (current_hub_num > SERVER_MAX_SESSIONS)
 	{
 		return ERR_TOO_MANY_HUBS;
 	}
@@ -5432,6 +5162,8 @@ static UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t)
 {
 	UINT i;
 
+	SERVER_ADMIN_ONLY;
+
 	FreeRpcListenerList(t);
 	Zero(t, sizeof(RPC_LISTENER_LIST));
 
@@ -5512,7 +5244,11 @@ static UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 	}
 	Unlock(c->TrafficLock);
 
-	GetMemInfo(&t->MemInfo);
+	// Hide the memory figures of the host from hub administrators
+	if (a->ServerAdmin)
+	{
+		GetMemInfo(&t->MemInfo);
+	}
 
 	t->NumTcpConnections = t->NumTcpConnectionsLocal = 0;
 	t->NumSessionsTotal = t->NumSessionsLocal = 0;
@@ -5556,8 +5292,8 @@ static UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 	t->AssignedBridgeLicenses = Count(c->AssignedBridgeLicense);
 	t->AssignedClientLicenses = Count(c->AssignedClientLicense);
 
-	t->AssignedBridgeLicensesTotal = a->Server->CurrentAssignedBridgeLicense;
-	t->AssignedClientLicensesTotal = a->Server->CurrentAssignedClientLicense;
+	t->AssignedBridgeLicensesTotal = t->AssignedBridgeLicenses;
+	t->AssignedClientLicensesTotal = t->AssignedClientLicenses;
 
 	t->CurrentTick = Tick64();
 	t->CurrentTime = SystemTime64();
@@ -5588,7 +5324,6 @@ static UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t)
 	StrCpy(t->ServerBuildInfoString, sizeof(t->ServerBuildInfoString), c->BuildInfo);
 	t->ServerVerInt = c->Version;
 	t->ServerBuildInt = c->Build;
-	GetMachineName(t->ServerHostName, sizeof(t->ServerHostName));
 
 	Zero(&st, sizeof(st));
 	st.wYear = BUILD_DATE_Y;
@@ -5600,10 +5335,27 @@ static UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t)
 
 	t->ServerBuildDate = SystemToUINT64(&st);
 
-	info = GetOsInfo();
-	if (info != NULL)
+	if (a->ServerAdmin)
 	{
-		CopyOsInfo(&t->OsInfo, info);
+		GetMachineName(t->ServerHostName, sizeof(t->ServerHostName));
+
+		info = GetOsInfo();
+		if (info != NULL)
+		{
+			CopyOsInfo(&t->OsInfo, info);
+		}
+	}
+	else
+	{
+		// Hide the host name and the OS from hub administrators; the empty
+		// strings keep the reply's Pack layout the same
+		OS_INFO hidden;
+
+		Zero(&hidden, sizeof(hidden));
+		hidden.OsSystemName = hidden.OsProductName = hidden.OsVendorName = "";
+		hidden.OsVersion = hidden.KernelName = hidden.KernelVersion = "";
+
+		CopyOsInfo(&t->OsInfo, &hidden);
 	}
 
 	return ERR_NO_ERROR;
@@ -8184,13 +7936,6 @@ void InRpcDeleteTable(RPC_DELETE_TABLE *t, PACK *p)
 void OutRpcDeleteTable(PACK *p, RPC_DELETE_TABLE *t)
 {
 	RpcFieldOut(&rpc_delete_table_table, p, t);
-}
-
-static UINT StTest(ADMIN *a, RPC_TEST *t)
-{
-	Format(t->StrValue, sizeof(t->StrValue), "%u", t->IntValue);
-
-	return ERR_NO_ERROR;
 }
 
 static const RPC_FIELD rpc_test_fields[] =
