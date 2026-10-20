@@ -1280,7 +1280,7 @@ static void AddIpClient(IP *ip)
 			Copy(&c->IpAddress, ip, sizeof(IP));
 			c->NumConnections = 0;
 
-			Add(ip_clients, c);
+			Insert(ip_clients, c);
 		}
 
 		c->NumConnections++;

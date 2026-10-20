@@ -199,6 +199,7 @@ void Sort(LIST *o);
 void Add(LIST *o, void *p);
 void Insert(LIST *o, void *p);
 bool Delete(LIST *o, void *p);
+UINT DeleteAndFreeIf(LIST *o, bool (*is_dead)(void *p, void *param), void *param);
 void DeleteAll(LIST *o);
 void LockList(LIST *o);
 void UnlockList(LIST *o);

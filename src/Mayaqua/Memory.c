@@ -898,7 +898,6 @@ void Insert(LIST *o, void *p)
 {
 	int low, high, middle;
 	UINT pos;
-	int i;
 	if (o == NULL || p == NULL)
 	{
 		return;
@@ -954,13 +953,7 @@ void Insert(LIST *o, void *p)
 		o->p = ReAlloc(o->p, sizeof(void *) * o->num_reserved);
 	}
 
-	if (LIST_NUM(o) >= 2)
-	{
-		for (i = (LIST_NUM(o) - 2);i >= (int)pos;i--)
-		{
-			o->p[i + 1] = o->p[i];
-		}
-	}
+	memmove(&o->p[pos + 1], &o->p[pos], sizeof(void *) * (LIST_NUM(o) - 1 - pos));
 
 	o->p[pos] = p;
 
@@ -1085,7 +1078,7 @@ void Add(LIST *o, void *p)
 
 bool Delete(LIST *o, void *p)
 {
-	UINT i, n;
+	UINT i;
 	if (o == NULL || p == NULL)
 	{
 		return false;
@@ -1103,11 +1096,7 @@ bool Delete(LIST *o, void *p)
 		return false;
 	}
 
-	n = i;
-	for (i = n;i < (o->num_item - 1);i++)
-	{
-		o->p[i] = o->p[i + 1];
-	}
+	memmove(&o->p[i], &o->p[i + 1], sizeof(void *) * (o->num_item - 1 - i));
 	o->num_item--;
 	if ((o->num_item * 2) <= o->num_reserved)
 	{
@@ -1121,6 +1110,60 @@ bool Delete(LIST *o, void *p)
 	KS_INC(KS_DELETE_COUNT);
 
 	return true;
+}
+
+// Removes and Free()s every item for which is_dead returns true, in one pass that keeps the order of the others,
+// so a sorted list stays sorted. The caller holds the list lock; is_dead must not change the list.
+// Returns the number of items removed
+UINT DeleteAndFreeIf(LIST *o, bool (*is_dead)(void *p, void *param), void *param)
+{
+	UINT i, keep, num;
+	if (o == NULL || is_dead == NULL)
+	{
+		return 0;
+	}
+
+	num = o->num_item;
+	keep = 0;
+
+	for (i = 0;i < num;i++)
+	{
+		void *p = o->p[i];
+
+		if (is_dead(p, param))
+		{
+			Free(p);
+		}
+		else
+		{
+			o->p[keep++] = p;
+		}
+	}
+
+	o->num_item = keep;
+
+	if (keep != num)
+	{
+		UINT shrunk = o->num_reserved;
+
+		while ((o->num_item * 2) <= shrunk && shrunk > (INIT_NUM_RESERVED * 2))
+		{
+			shrunk = shrunk / 2;
+		}
+
+		if (shrunk != o->num_reserved)
+		{
+			o->num_reserved = shrunk;
+			o->p = ReAlloc(o->p, sizeof(void *) * o->num_reserved);
+		}
+
+		for (i = keep;i < num;i++)
+		{
+			KS_INC(KS_DELETE_COUNT);
+		}
+	}
+
+	return num - keep;
 }
 
 void DeleteAll(LIST *o)

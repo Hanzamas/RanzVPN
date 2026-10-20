@@ -70,6 +70,7 @@ void SetMaxConnectionsPerIp(UINT num);
 UINT GetMaxUnestablishedConnections();
 void SetMaxUnestablishedConnections(UINT num);
 
+int CompareDos(void *p1, void *p2);
 DOS *SearchDosList(LISTENER *r, IP *ip);
 void RefreshDosList(LISTENER *r);
 bool CheckDosAttack(LISTENER *r, SOCK *s);

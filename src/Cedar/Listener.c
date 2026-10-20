@@ -263,12 +263,20 @@ bool CheckDosAttack(LISTENER *r, SOCK *s)
 			d->AccessCount = 1;
 			d->DeleteEntryTick = d->FirstConnectedTick + (UINT64)DOS_TABLE_EXPIRES_TOTAL;
 			Copy(&d->IpAddress, &s->RemoteIP, sizeof(IP));
-			Add(r->DosList, d);
+			Insert(r->DosList, d);
 		}
 	}
 	UnlockList(r->DosList);
 
 	return ok;
+}
+
+static bool IsDosExpired(void *p, void *param)
+{
+	DOS *d = p;
+	UINT64 now = *(UINT64 *)param;
+
+	return ((d->LastConnectedTick + d->CurrentExpireSpan) <= now || d->DeleteEntryTick <= now);
 }
 
 void RefreshDosList(LISTENER *r)
@@ -281,29 +289,10 @@ void RefreshDosList(LISTENER *r)
 	if (r->DosListLastRefreshTime == 0 ||
 		(r->DosListLastRefreshTime + (UINT64)DOS_TABLE_REFRESH_INTERVAL) <= Tick64())
 	{
-		UINT i;
-		LIST *o;
-		r->DosListLastRefreshTime = Tick64();
+		UINT64 now = Tick64();
+		r->DosListLastRefreshTime = now;
 
-		o = NewListFast(NULL);
-		for (i = 0;i < LIST_NUM(r->DosList);i++)
-		{
-			DOS *d = LIST_DATA(r->DosList, i);
-			if ((d->LastConnectedTick + d->CurrentExpireSpan) <= Tick64() ||
-				(d->DeleteEntryTick <= Tick64()))
-			{
-				Add(o, d);
-			}
-		}
-
-		for (i = 0;i < LIST_NUM(o);i++)
-		{
-			DOS *d = LIST_DATA(o, i);
-			Delete(r->DosList, d);
-			Free(d);
-		}
-
-		ReleaseList(o);
+		DeleteAndFreeIf(r->DosList, IsDosExpired, &now);
 	}
 }
 
@@ -321,8 +310,9 @@ DOS *SearchDosList(LISTENER *r, IP *ip)
 
 	if (d != NULL)
 	{
-		if ((d->LastConnectedTick + d->CurrentExpireSpan) <= Tick64() ||
-			(d->DeleteEntryTick <= Tick64()))
+		UINT64 now = Tick64();
+
+		if (IsDosExpired(d, &now))
 		{
 			Delete(r->DosList, d);
 			Free(d);
@@ -333,7 +323,7 @@ DOS *SearchDosList(LISTENER *r, IP *ip)
 	return d;
 }
 
-static int CompareDos(void *p1, void *p2)
+int CompareDos(void *p1, void *p2)
 {
 	DOS *d1, *d2;
 	if (p1 == NULL || p2 == NULL)

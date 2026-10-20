@@ -25,7 +25,8 @@
 //   cases without TLS, one per hot spot of spec #31: flood_fps_<n> (one session floods broadcast frames to
 //   n sessions of hub HARNESS_FLOOD through the hub packet adapter, no SessionMain thread), parse_packet_<kind>
 //   (the parse of HubPaPutPacket; _nolog: hub packet log off), pack_<encode|decode>_names_<n> (a Pack with n distinct element
-//   names) and ip_table_expire_<n> (one DeleteExpiredIpTableEntry pass). A wrong result of these cases prints a
+//   names), ip_table_expire_<n> (one DeleteExpiredIpTableEntry pass) and accept_table_<n> (n first connections
+//   from n distinct addresses to the DoS table of a listener, FND-127). A wrong result of these cases prints a
 //   "BENCH WARNING" line and skips the case; it does not fail the test.
 // - Files left after a run: the server_log, security_log and packet_log folders (as in the "s"
 //   mode). The configuration file and its backup folder are deleted at the start and at the end.
@@ -544,6 +545,7 @@ static bool HarnessOpParseOne(void *param);
 static bool HarnessOpParseMix(void *param);
 static void HarnessBenchParse();
 static void HarnessBenchIpTableExpire(UINT num);
+static void HarnessBenchAcceptTable(UINT num);
 static bool HarnessStartServer(HARNESS *h);
 static void HarnessStopServer(HARNESS *h);
 static X *CertDlPemToX(char *pem);
@@ -4795,6 +4797,82 @@ static void HarnessBenchIpTableExpire(UINT num)
 	}
 }
 
+// accept_table_<n>: microseconds for n first connections from n distinct source addresses to the DoS table of a
+// listener (CheckDosAttack: expiry pass, search, insert), the addresses in scrambled order. Afterwards the table must
+// hold the n entries in the order of a list built with Add and one Sort, and must not need a sort before a Search
+static void HarnessBenchAcceptTable(UINT num)
+{
+	UINT64 runs[HARNESS_BENCH_RUNS];
+	UINT r, i;
+	bool ok = true;
+	char name[MAX_SIZE];
+	LISTENER *l = ZeroMalloc(sizeof(LISTENER));
+	SOCK *s = ZeroMalloc(sizeof(SOCK));
+
+	Format(name, sizeof(name), "accept_table_%u", num);
+
+	for (r = 0;r < HARNESS_BENCH_RUNS;r++)
+	{
+		LIST *ref = NewListFast(CompareDos);
+		UINT64 start;
+
+		l->DosList = NewList(CompareDos);
+		l->DosListLastRefreshTime = 0;
+
+		start = HarnessNowNs();
+		for (i = 0;i < num;i++)
+		{
+			// An odd multiplier modulo 2^24 gives every i another address, in no particular order
+			UINT v = (i * 2654435761U) & 0xFFFFFF;
+
+			SetIP(&s->RemoteIP, 10, (UCHAR)(v >> 16), (UCHAR)(v >> 8), (UCHAR)v);
+
+			if (CheckDosAttack(l, s) == false)
+			{
+				ok = false;
+			}
+		}
+		runs[r] = (HarnessNowNs() - start) / 1000ULL;
+
+		if (LIST_NUM(l->DosList) != num || l->DosList->sorted == false)
+		{
+			ok = false;
+		}
+
+		for (i = 0;i < LIST_NUM(l->DosList);i++)
+		{
+			Add(ref, LIST_DATA(l->DosList, i));
+		}
+		Sort(ref);
+
+		for (i = 0;i < LIST_NUM(ref) && i < LIST_NUM(l->DosList);i++)
+		{
+			if (LIST_DATA(ref, i) != LIST_DATA(l->DosList, i))
+			{
+				ok = false;
+			}
+		}
+
+		for (i = 0;i < LIST_NUM(l->DosList);i++)
+		{
+			Free(LIST_DATA(l->DosList, i));
+		}
+		ReleaseList(l->DosList);
+		l->DosList = NULL;
+		ReleaseList(ref);
+	}
+
+	Free(s);
+	Free(l);
+
+	HarnessBenchReport(name, runs, HARNESS_BENCH_RUNS, "us", false);
+
+	if (ok == false)
+	{
+		Print("BENCH WARNING %s: the table is not the n entries in sorted order\n", name);
+	}
+}
+
 ////////////////////////////
 // Intermediate certificate download ("certdl")
 //
@@ -6654,6 +6732,10 @@ void bench_test(UINT num, char **arg)
 	HarnessBenchIpTableExpire(1024);
 	HarnessBenchIpTableExpire(4096);
 	HarnessBenchIpTableExpire(16384);
+	HarnessSetPhase("bench_accept_table", NULL);
+	HarnessBenchAcceptTable(1024);
+	HarnessBenchAcceptTable(4096);
+	HarnessBenchAcceptTable(16384);
 
 	HarnessSetPhase("teardown", NULL);
 	HarnessTeardown(h, ok);
