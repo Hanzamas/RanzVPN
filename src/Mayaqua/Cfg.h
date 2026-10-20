@@ -52,6 +52,9 @@ struct CFG_RW
 	UCHAR LashHash[SHA1_SIZE];
 	bool DontBackup;
 	wchar_t LastSavedDateStr[MAX_SIZE];
+	bool SaveFailed;			// The last SaveCfgRwEx could not write the file
+	bool BadFilePending;		// An unreadable file is still in place: no save writes over it
+	bool BadFileRenamed;		// An unreadable file has been renamed to <name>.bad
 };
 
 typedef bool (*ENUM_FOLDER)(FOLDER *f, void *param);
@@ -100,12 +103,16 @@ char *CfgTypeToStr(UINT type);
 void CfgAddItemText(BUF *b, ITEM *t, UINT depth);
 FOLDER *CfgBufTextToFolder(BUF *b);
 FOLDER *CfgBufBinToFolder(BUF *b);
+FOLDER *CfgBufToFolder(BUF *b, bool require_closed);
 char *CfgReadNextLine(BUF *b);
 bool CfgSaveExW(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size);
 FOLDER *CfgReadW(wchar_t *name);
+bool CfgStageNewFile(CFG_RW *rw, void *data, UINT size);
+void CfgGetDisplayFileName(CFG_RW *rw, char *dst, UINT size);
 CFG_RW *NewCfgRwEx2W(FOLDER **root, wchar_t *cfg_name, bool dont_backup, wchar_t *template_name);
 CFG_RW *NewCfgRwEx2A(FOLDER **root, char *cfg_name_a, bool dont_backup, char *template_name_a);
 UINT SaveCfgRwEx(CFG_RW *rw, FOLDER *f, UINT revision_number);
+void CfgRwSetAsideBadFile(CFG_RW *rw);
 void FreeCfgRw(CFG_RW *rw);
 ITEM *CfgAddIp32(FOLDER *f, char *name, UINT ip);
 UINT CfgGetIp32(FOLDER *f, char *name);

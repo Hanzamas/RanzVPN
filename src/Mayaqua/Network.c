@@ -23,6 +23,7 @@
 
 #include <iphlpapi.h>
 #include <WS2tcpip.h>
+#include <mstcpip.h>
 #include <MSWSock.h>
 #include <wincrypt.h>
 #include <IcmpAPI.h>
@@ -502,49 +503,96 @@ bool IsStrIPv6Address(char *str)
 	return true;
 }
 
-UINT SubnetMaskToInt6(IP *a)
+// Subnet mask of 'size' bytes with a prefix of 'len' bits: one bits from the most significant bit
+// of the first byte, then zero bits. A length beyond the mask gives all one bits
+static void PrefixLenToMask(UCHAR *mask, UINT size, UINT len)
 {
 	UINT i;
+
+	for (i = 0; i < size; i++)
+	{
+		if (len >= 8)
+		{
+			mask[i] = 0xFF;
+			len -= 8;
+		}
+		else
+		{
+			// 0 to 7 leading one bits; every byte after this one is zero
+			mask[i] = (UCHAR)(0xFF00 >> len);
+			len = 0;
+		}
+	}
+}
+
+// Prefix length of a subnet mask of 'size' bytes: the number of its leading one bits. INFINITE when
+// a one bit follows a zero bit (not a subnet mask)
+static UINT MaskToPrefixLen(UCHAR *mask, UINT size)
+{
+	UINT len = 0;
+	UINT i = 0;
+	UCHAR rest;
+
+	while (i < size && mask[i] == 0xFF)
+	{
+		len += 8;
+		i++;
+	}
+
+	if (i == size)
+	{
+		return len;
+	}
+
+	// The first byte with a zero bit: its leading one bits count, the bits behind them must be zero
+	rest = mask[i];
+	while ((rest & 0x80) != 0)
+	{
+		len++;
+		rest = (UCHAR)(rest << 1);
+	}
+
+	if (rest != 0)
+	{
+		return INFINITE;
+	}
+
+	// Every byte behind it must be zero
+	for (i++; i < size; i++)
+	{
+		if (mask[i] != 0)
+		{
+			return INFINITE;
+		}
+	}
+
+	return len;
+}
+
+// Prefix length of an IPv6 subnet mask; 0 for an IPv4 address or a mask that is not contiguous
+UINT SubnetMaskToInt6(IP *a)
+{
+	UINT len;
 	if (IsIP6(a) == false)
 	{
 		return 0;
 	}
 
-	for (i = 0; i <= 128; i++)
-	{
-		IP tmp;
+	len = MaskToPrefixLen(a->address, sizeof(a->address));
 
-		IntToSubnetMask6(&tmp, i);
-
-		if (CmpIpAddr(a, &tmp) == 0)
-		{
-			return i;
-		}
-	}
-
-	return 0;
+	return (len == INFINITE ? 0 : len);
 }
 static UINT SubnetMaskToInt4(IP *a)
 {
-	UINT i;
+	UINT len;
 	if (IsIP4(a) == false)
 	{
 		return 0;
 	}
 
-	for (i = 0; i <= 32; i++)
-	{
-		IP tmp;
+	len = MaskToPrefixLen(IPV4(a->address), IPV4_SIZE);
 
-		IntToSubnetMask4(&tmp, i);
-
-		if (CmpIpAddr(a, &tmp) == 0)
-		{
-			return i;
-		}
-	}
-
-	return 0;
+	return (len == INFINITE ? 0 : len);
 }
 static UINT SubnetMaskToInt(IP *a)
 {
@@ -560,25 +608,12 @@ static UINT SubnetMaskToInt(IP *a)
 
 static bool IsSubnetMask6(IP *a)
 {
-	UINT i;
 	if (IsIP6(a) == false)
 	{
 		return false;
 	}
 
-	for (i = 0; i <= 128; i++)
-	{
-		IP tmp;
-
-		IntToSubnetMask6(&tmp, i);
-
-		if (CmpIpAddr(a, &tmp) == 0)
-		{
-			return true;
-		}
-	}
-
-	return false;
+	return (MaskToPrefixLen(a->address, sizeof(a->address)) != INFINITE);
 }
 
 void GenerateEui64LocalAddress(IP *a, UCHAR *mac)
@@ -764,26 +799,14 @@ void IPAnd6(IP *dst, IP *a, IP *b)
 
 void IntToSubnetMask6(IP *ip, UINT i)
 {
-	UINT j = i / 8;
-	UINT k = i % 8;
-	UINT z;
-	IP a;
-
-	Zero(&a, sizeof(IP));
-
-	for (z = 0; z < sizeof(a.address); ++z)
+	if (ip == NULL)
 	{
-		if (z < j)
-		{
-			a.address[z] = 0xff;
-		}
-		else if (z == j)
-		{
-			a.address[z] = ~(0xff >> k);
-		}
+		return;
 	}
 
-	Copy(ip, &a, sizeof(IP));
+	Zero(ip, sizeof(IP));
+
+	PrefixLenToMask(ip->address, sizeof(ip->address), i);
 }
 
 void IP6AddrToStr(char *str, UINT size, IPV6_ADDR *addr)
@@ -809,122 +832,35 @@ void IPToStr6Array(char *str, UINT size, UCHAR *bytes)
 }
 void IPToStr6(char *str, UINT size, IP *ip)
 {
-	char tmp[MAX_SIZE];
-
-	IPToStr6Inner(tmp, ip);
-
-	StrCpy(str, size, tmp);
-}
-void IPToStr6Inner(char *str, IP *ip)
-{
-	UINT i;
-	USHORT values[8];
-	UINT zero_started_index;
-	UINT max_zero_len;
-	UINT max_zero_start;
-	IP a;
+	IN6_ADDR addr;
+	char tmp[INET6_ADDRSTRLEN];
+	ULONG len = sizeof(tmp);
 	if (str == NULL || ip == NULL)
 	{
 		return;
 	}
 
-	Copy(&a, ip, sizeof(IP));
+	Copy(&addr, ip->address, sizeof(addr));
 
-	for (i = 0; i < 8; i++)
+	// RFC 5952 text, with "%" and the scope ID when the scope ID is not zero
+	if (RtlIpv6AddressToStringExA(&addr, ip->ipv6_scope_id, 0, tmp, &len) != 0)
 	{
-		Copy(&values[i], &a.address[i * 2], sizeof(USHORT));
-		values[i] = Endian16(values[i]);
+		tmp[0] = 0;
 	}
 
-	zero_started_index = INFINITE;
-	max_zero_len = 0;
-	max_zero_start = INFINITE;
-	for (i = 0; i < 9; i++)
-	{
-		USHORT v = (i != 8 ? values[i] : 1);
-
-		if (v == 0)
-		{
-			if (zero_started_index == INFINITE)
-			{
-				zero_started_index = i;
-			}
-		}
-		else
-		{
-			UINT zero_len;
-
-			if (zero_started_index != INFINITE)
-			{
-				zero_len = i - zero_started_index;
-				if (zero_len >= 2)
-				{
-					if (max_zero_len < zero_len)
-					{
-						max_zero_start = zero_started_index;
-						max_zero_len = zero_len;
-					}
-				}
-
-				zero_started_index = INFINITE;
-			}
-		}
-	}
-
-	StrCpy(str, 0, "");
-	for (i = 0; i < 8; i++)
-	{
-		char tmp[16];
-
-		ToHex(tmp, values[i]);
-		StrLower(tmp);
-
-		if (i == max_zero_start)
-		{
-			if (i == 0)
-			{
-				StrCat(str, 0, "::");
-			}
-			else
-			{
-				StrCat(str, 0, ":");
-			}
-			i += max_zero_len - 1;
-		}
-		else
-		{
-			StrCat(str, 0, tmp);
-			if (i != 7)
-			{
-				StrCat(str, 0, ":");
-			}
-		}
-	}
-
-	if (ip->ipv6_scope_id != 0)
-	{
-		char tmp[64];
-
-		StrCat(str, 0, "%");
-		ToStr(tmp, ip->ipv6_scope_id);
-
-		StrCat(str, 0, tmp);
-	}
+	StrCpy(str, size, tmp);
 }
 
 bool StrToIP6(IP *ip, char *str)
 {
-	TOKEN_LIST *t;
 	char tmp[MAX_PATH];
-	IP a;
-	UINT i;
-	UINT scope_id = 0;
+	IN6_ADDR addr;
+	ULONG scope_id;
+	USHORT port;
 	if (str == NULL || ip == NULL)
 	{
 		return false;
 	}
-
-	Zero(&a, sizeof(a));
 
 	StrCpy(tmp, sizeof(tmp), str);
 	Trim(tmp);
@@ -939,176 +875,20 @@ bool StrToIP6(IP *ip, char *str)
 		}
 	}
 
-	i = SearchStrEx(tmp, "%", 0, false);
-	if (i != INFINITE)
+	// The whole text is the address and an optional decimal "%scope": no brackets and so no port
+	if (InStr(tmp, "[") || InStr(tmp, "]"))
 	{
-		char ss[MAX_PATH];
-
-		StrCpy(ss, sizeof(ss), &tmp[i + 1]);
-
-		tmp[i] = 0;
-
-		Trim(tmp);
-
-		Trim(ss);
-
-		scope_id = ToInt(ss);
-	}
-
-	t = ParseTokenWithNullStr(tmp, ":");
-	if (t->NumTokens >= 3 && t->NumTokens <= 8)
-	{
-		UINT i, n;
-		bool b = true;
-		UINT k = 0;
-
-		n = 0;
-
-		for (i = 0; i < t->NumTokens; i++)
-		{
-			char *str = t->Token[i];
-
-			if (i != 0 && i != (t->NumTokens - 1) && StrLen(str) == 0)
-			{
-				n++;
-				if (n == 1)
-				{
-					k += 2 * (8 - t->NumTokens + 1);
-				}
-				else
-				{
-					b = false;
-					break;
-				}
-			}
-			else
-			{
-				UCHAR chars[2];
-
-				if (CheckIPItemStr6(str) == false)
-				{
-					b = false;
-					break;
-				}
-
-				IPItemStrToChars6(chars, str);
-
-				a.address[k++] = chars[0];
-				a.address[k++] = chars[1];
-			}
-		}
-
-		if (n != 0 && n != 1)
-		{
-			b = false;
-		}
-		else if (n == 0 && t->NumTokens != 8)
-		{
-			b = false;
-		}
-
-		if (b == false)
-		{
-			FreeToken(t);
-			return false;
-		}
-	}
-	else
-	{
-		FreeToken(t);
 		return false;
 	}
 
-	FreeToken(t);
+	if (RtlIpv6StringToAddressExA(tmp, &addr, &scope_id, &port) != 0)
+	{
+		return false;
+	}
 
-	Copy(ip, &a, sizeof(IP));
-
+	Zero(ip, sizeof(IP));
+	Copy(ip->address, &addr, sizeof(ip->address));
 	ip->ipv6_scope_id = scope_id;
-
-	return true;
-}
-
-void IPItemStrToChars6(UCHAR *chars, char *str)
-{
-	char tmp[5];
-	BUF *b;
-	UINT len;
-	if (chars == NULL)
-	{
-		return;
-	}
-
-	Zero(tmp, sizeof(tmp));
-
-	len = StrLen(str);
-	switch (len)
-	{
-	case 0:
-		tmp[0] = tmp[1] = tmp[2] = tmp[3] = '0';
-		break;
-
-	case 1:
-		tmp[0] = tmp[1] = tmp[2] = '0';
-		tmp[3] = str[0];
-		break;
-
-	case 2:
-		tmp[0] = tmp[1] = '0';
-		tmp[2] = str[0];
-		tmp[3] = str[1];
-		break;
-
-	case 3:
-		tmp[0] = '0';
-		tmp[1] = str[0];
-		tmp[2] = str[1];
-		tmp[3] = str[2];
-		break;
-
-	case 4:
-		tmp[0] = str[0];
-		tmp[1] = str[1];
-		tmp[2] = str[2];
-		tmp[3] = str[3];
-		break;
-	}
-
-	b = StrToBin(tmp);
-
-	chars[0] = ((UCHAR *)b->Buf)[0];
-	chars[1] = ((UCHAR *)b->Buf)[1];
-
-	FreeBuf(b);
-}
-
-bool CheckIPItemStr6(char *str)
-{
-	UINT i, len;
-	if (str == NULL)
-	{
-		return false;
-	}
-
-	len = StrLen(str);
-	if (len >= 5)
-	{
-		return false;
-	}
-
-	for (i = 0; i < len; i++)
-	{
-		char c = str[i];
-
-		if ((c >= 'a' && c <= 'f') ||
-		        (c >= 'A' && c <= 'F') ||
-		        (c >= '0' && c <= '9'))
-		{
-		}
-		else
-		{
-			return false;
-		}
-	}
 
 	return true;
 }
@@ -1550,131 +1330,16 @@ bool IsZeroIP6Addr(IPV6_ADDR *addr)
 	return IsZero(addr, sizeof(IPV6_ADDR));
 }
 
-static UINT IntToSubnetMask32(UINT i)
-{
-	UINT ret = 0xFFFFFFFF;
-
-	switch (i)
-	{
-	case 0:
-		ret = 0x00000000;
-		break;
-	case 1:
-		ret = 0x80000000;
-		break;
-	case 2:
-		ret = 0xC0000000;
-		break;
-	case 3:
-		ret = 0xE0000000;
-		break;
-	case 4:
-		ret = 0xF0000000;
-		break;
-	case 5:
-		ret = 0xF8000000;
-		break;
-	case 6:
-		ret = 0xFC000000;
-		break;
-	case 7:
-		ret = 0xFE000000;
-		break;
-	case 8:
-		ret = 0xFF000000;
-		break;
-	case 9:
-		ret = 0xFF800000;
-		break;
-	case 10:
-		ret = 0xFFC00000;
-		break;
-	case 11:
-		ret = 0xFFE00000;
-		break;
-	case 12:
-		ret = 0xFFF00000;
-		break;
-	case 13:
-		ret = 0xFFF80000;
-		break;
-	case 14:
-		ret = 0xFFFC0000;
-		break;
-	case 15:
-		ret = 0xFFFE0000;
-		break;
-	case 16:
-		ret = 0xFFFF0000;
-		break;
-	case 17:
-		ret = 0xFFFF8000;
-		break;
-	case 18:
-		ret = 0xFFFFC000;
-		break;
-	case 19:
-		ret = 0xFFFFE000;
-		break;
-	case 20:
-		ret = 0xFFFFF000;
-		break;
-	case 21:
-		ret = 0xFFFFF800;
-		break;
-	case 22:
-		ret = 0xFFFFFC00;
-		break;
-	case 23:
-		ret = 0xFFFFFE00;
-		break;
-	case 24:
-		ret = 0xFFFFFF00;
-		break;
-	case 25:
-		ret = 0xFFFFFF80;
-		break;
-	case 26:
-		ret = 0xFFFFFFC0;
-		break;
-	case 27:
-		ret = 0xFFFFFFE0;
-		break;
-	case 28:
-		ret = 0xFFFFFFF0;
-		break;
-	case 29:
-		ret = 0xFFFFFFF8;
-		break;
-	case 30:
-		ret = 0xFFFFFFFC;
-		break;
-	case 31:
-		ret = 0xFFFFFFFE;
-		break;
-	case 32:
-		ret = 0xFFFFFFFF;
-		break;
-	}
-
-	if (IsLittleEndian())
-	{
-		ret = Swap32(ret);
-	}
-
-	return ret;
-}
 void IntToSubnetMask4(IP *ip, UINT i)
 {
-	UINT m;
 	if (ip == NULL)
 	{
 		return;
 	}
 
-	m = IntToSubnetMask32(i);
+	ZeroIP4(ip);
 
-	UINTToIP(ip, m);
+	PrefixLenToMask(IPV4(ip->address), IPV4_SIZE, i);
 }
 
 static bool IsSubnetMask(IP *ip)
@@ -1690,7 +1355,6 @@ static bool IsSubnetMask(IP *ip)
 }
 bool IsSubnetMask4(IP *ip)
 {
-	UINT i;
 	if (ip == NULL)
 	{
 		return false;
@@ -1701,52 +1365,7 @@ bool IsSubnetMask4(IP *ip)
 		return false;
 	}
 
-	i = IPToUINT(ip);
-
-	if (IsLittleEndian())
-	{
-		i = Swap32(i);
-	}
-
-	switch (i)
-	{
-	case 0x00000000:
-	case 0x80000000:
-	case 0xC0000000:
-	case 0xE0000000:
-	case 0xF0000000:
-	case 0xF8000000:
-	case 0xFC000000:
-	case 0xFE000000:
-	case 0xFF000000:
-	case 0xFF800000:
-	case 0xFFC00000:
-	case 0xFFE00000:
-	case 0xFFF00000:
-	case 0xFFF80000:
-	case 0xFFFC0000:
-	case 0xFFFE0000:
-	case 0xFFFF0000:
-	case 0xFFFF8000:
-	case 0xFFFFC000:
-	case 0xFFFFE000:
-	case 0xFFFFF000:
-	case 0xFFFFF800:
-	case 0xFFFFFC00:
-	case 0xFFFFFE00:
-	case 0xFFFFFF00:
-	case 0xFFFFFF80:
-	case 0xFFFFFFC0:
-	case 0xFFFFFFE0:
-	case 0xFFFFFFF0:
-	case 0xFFFFFFF8:
-	case 0xFFFFFFFC:
-	case 0xFFFFFFFE:
-	case 0xFFFFFFFF:
-		return true;
-	}
-
-	return false;
+	return (MaskToPrefixLen(IPV4(ip->address), IPV4_SIZE) != INFINITE);
 }
 
 
@@ -5584,15 +5203,22 @@ void IPToStr(char *str, UINT size, IP *ip)
 	}
 	else
 	{
-		const BYTE *ipv4 = IPV4(ip->address);
-		Format(str, size, "%hhu.%hhu.%hhu.%hhu", ipv4[0], ipv4[1], ipv4[2], ipv4[3]);
+		IN_ADDR addr;
+		char tmp[INET_ADDRSTRLEN];
+
+		Copy(&addr, IPV4(ip->address), sizeof(addr));
+		RtlIpv4AddressToStringA(&addr, tmp);
+
+		StrCpy(str, size, tmp);
 	}
 }
 
 bool StrToIP(IP *ip, char *str)
 {
-	TOKEN_LIST *token;
 	char *tmp;
+	PCSTR end;
+	IN_ADDR addr;
+	bool ok;
 	if (ip == NULL || str == NULL)
 	{
 		return false;
@@ -5605,33 +5231,18 @@ bool StrToIP(IP *ip, char *str)
 
 	ZeroIP4(ip);
 
+	// Strict four-part dotted decimal, and nothing after it
 	tmp = CopyStr(str);
 	Trim(tmp);
-	token = ParseToken(tmp, ".");
+	ok = (RtlIpv4StringToAddressA(tmp, TRUE, &end, &addr) == 0 && *end == 0);
 	Free(tmp);
 
-	if (token->NumTokens != 4)
+	if (ok == false)
 	{
-		FreeToken(token);
 		return false;
 	}
-	for (BYTE i = 0; i < IPV4_SIZE; ++i)
-	{
-		char *s = token->Token[i];
-		if (s[0] < '0' || s[0] > '9' ||
-		        (ToInt(s) >= 256))
-		{
-			FreeToken(token);
-			return false;
-		}
-	}
 
-	for (BYTE i = 0; i < IPV4_SIZE; ++i)
-	{
-		IPV4(ip->address)[i] = (BYTE)ToInt(token->Token[i]);
-	}
-
-	FreeToken(token);
+	Copy(IPV4(ip->address), &addr, IPV4_SIZE);
 
 	return true;
 }
@@ -6756,15 +6367,78 @@ char *RecvLine(SOCK *s, UINT max_size)
 	}
 }
 
+// Read cursor over a byte range: a read that does not fit fails and moves nothing
+typedef struct PKT_CURSOR
+{
+	UCHAR *Pos;
+	UINT Left;
+} PKT_CURSOR;
+
+static void PktCursorInit(PKT_CURSOR *c, UCHAR *buf, UINT size)
+{
+	c->Pos = buf;
+	c->Left = size;
+}
+
+// Takes the next size bytes as a cursor of their own; sub NULL skips them
+static bool PktCursorTake(PKT_CURSOR *c, UINT size, PKT_CURSOR *sub)
+{
+	if (size > c->Left)
+	{
+		return false;
+	}
+
+	if (sub != NULL)
+	{
+		PktCursorInit(sub, c->Pos, size);
+	}
+
+	c->Pos += size;
+	c->Left -= size;
+
+	return true;
+}
+
+static bool PktCursorU8(PKT_CURSOR *c, UCHAR *v)
+{
+	UCHAR *p = c->Pos;
+
+	if (PktCursorTake(c, 1, NULL) == false)
+	{
+		return false;
+	}
+
+	*v = p[0];
+
+	return true;
+}
+
+// Big-endian
+static bool PktCursorU16(PKT_CURSOR *c, USHORT *v)
+{
+	UCHAR *p = c->Pos;
+
+	if (PktCursorTake(c, 2, NULL) == false)
+	{
+		return false;
+	}
+
+	*v = (USHORT)((p[0] << 8) | p[1]);
+
+	return true;
+}
+
+// Host name from the server_name extension of a TLS ClientHello at the start of a TCP payload, read in
+// place. The handshake fields are bounded by the record length (not by the handshake length), each
+// extension by the extensions length. The first host_name entry that is not empty up to its first NUL
+// ends the search: it is cut to sni_size - 1 bytes, then spaces and tabs at both ends are dropped.
 bool GetSniNameFromSslPacket(UCHAR *packet_buf, UINT packet_size, char *sni, UINT sni_size)
 {
-	BUF *buf;
-	bool ret = false;
-	UCHAR content_type;
-	USHORT version;
-	USHORT handshake_length;
+	PKT_CURSOR rec, hello, exts, data, name;
+	USHORT version, record_len, hello_type, hello_len, len16, type;
+	UCHAR len8;
 
-	if (packet_buf == NULL || packet_size <= 11)
+	if (packet_buf == NULL || packet_size <= 11 || sni == NULL || sni_size == 0)
 	{
 		return false;
 	}
@@ -6776,189 +6450,74 @@ bool GetSniNameFromSslPacket(UCHAR *packet_buf, UINT packet_size, char *sni, UIN
 		return false;
 	}
 
-	buf = NewBufFromMemory(packet_buf, packet_size);
-
-	if (ReadBuf(buf, &content_type, sizeof(UCHAR)) == sizeof(UCHAR) &&
-	        ReadBuf(buf, &version, sizeof(USHORT)) == sizeof(USHORT) &&
-	        ReadBuf(buf, &handshake_length, sizeof(USHORT)) == sizeof(USHORT))
+	// Record header: content type 0x16 (checked above), version, length
+	PktCursorInit(&rec, packet_buf, packet_size);
+	if (PktCursorTake(&rec, 1, NULL) == false || PktCursorU16(&rec, &version) == false ||
+	        PktCursorU16(&rec, &record_len) == false || version < 0x0301 ||
+	        PktCursorTake(&rec, record_len, &hello) == false)
 	{
-		version = Endian16(version);
-		handshake_length = Endian16(handshake_length);
-
-		if (content_type == 0x16 && version >= 0x0301)
-		{
-			UCHAR *handshake_data = Malloc(handshake_length);
-
-			if (ReadBuf(buf, handshake_data, handshake_length) == handshake_length)
-			{
-				BUF *buf2 = NewBufFromMemory(handshake_data, handshake_length);
-				USHORT handshake_type;
-				USHORT handshake_length_2;
-
-				if (ReadBuf(buf2, &handshake_type, sizeof(USHORT)) == sizeof(USHORT) &&
-				        ReadBuf(buf2, &handshake_length_2, sizeof(USHORT)) == sizeof(USHORT))
-				{
-					handshake_type = Endian16(handshake_type);
-					handshake_length_2 = Endian16(handshake_length_2);
-
-					if (handshake_type == 0x0100 && handshake_length_2 <= (handshake_length - 4))
-					{
-						USHORT version2;
-
-						if (ReadBuf(buf2, &version2, sizeof(USHORT)) == sizeof(USHORT))
-						{
-							version2 = Endian16(version2);
-
-							if (version2 >= 0x0301)
-							{
-								UCHAR rand[32];
-
-								if (ReadBuf(buf2, rand, sizeof(rand)) == sizeof(rand))
-								{
-									UCHAR session_id_len;
-
-									if (ReadBuf(buf2, &session_id_len, sizeof(UCHAR)) == sizeof(UCHAR))
-									{
-										if (ReadBuf(buf2, NULL, session_id_len) == session_id_len)
-										{
-											USHORT cipher_len;
-
-											if (ReadBuf(buf2, &cipher_len, sizeof(USHORT)) == sizeof(USHORT))
-											{
-												cipher_len = Endian16(cipher_len);
-
-												if (ReadBuf(buf2, NULL, cipher_len) == cipher_len)
-												{
-													UCHAR comps_len;
-
-													if (ReadBuf(buf2, &comps_len, sizeof(UCHAR)) == sizeof(UCHAR))
-													{
-														if (ReadBuf(buf2, NULL, comps_len) == comps_len)
-														{
-															USHORT ext_length;
-
-															if (ReadBuf(buf2, &ext_length, sizeof(USHORT)) == sizeof(USHORT))
-															{
-																UCHAR *ext_buf;
-
-																ext_length = Endian16(ext_length);
-
-																ext_buf = Malloc(ext_length);
-
-																if (ReadBuf(buf2, ext_buf, ext_length) == ext_length)
-																{
-																	BUF *ebuf = NewBufFromMemory(ext_buf, ext_length);
-
-																	while (ret == false)
-																	{
-																		USHORT type;
-																		USHORT data_len;
-																		UCHAR *data;
-
-																		if (ReadBuf(ebuf, &type, sizeof(USHORT)) != sizeof(USHORT))
-																		{
-																			break;
-																		}
-
-																		if (ReadBuf(ebuf, &data_len, sizeof(USHORT)) != sizeof(USHORT))
-																		{
-																			break;
-																		}
-
-																		type = Endian16(type);
-																		data_len = Endian16(data_len);
-
-																		data = Malloc(data_len);
-
-																		if (ReadBuf(ebuf, data, data_len) != data_len)
-																		{
-																			Free(data);
-																			break;
-																		}
-
-																		if (type == 0x0000)
-																		{
-																			BUF *dbuf = NewBufFromMemory(data, data_len);
-
-																			USHORT total_len;
-
-																			if (ReadBuf(dbuf, &total_len, sizeof(USHORT)) == sizeof(USHORT))
-																			{
-																				UCHAR c;
-																				total_len = Endian16(total_len);
-
-																				if (ReadBuf(dbuf, &c, sizeof(UCHAR)) == sizeof(UCHAR))
-																				{
-																					if (c == 0)
-																					{
-																						USHORT name_len;
-
-																						if (ReadBuf(dbuf, &name_len, sizeof(USHORT)) == sizeof(USHORT))
-																						{
-																							char *name_buf;
-																							name_len = Endian16(name_len);
-
-																							name_buf = ZeroMalloc(name_len + 1);
-
-																							if (ReadBuf(dbuf, name_buf, name_len) == name_len)
-																							{
-																								if (StrLen(name_buf) >= 1)
-																								{
-																									ret = true;
-
-																									StrCpy(sni, sni_size, name_buf);
-																								}
-																							}
-
-																							Free(name_buf);
-																						}
-																					}
-																				}
-																			}
-
-																			FreeBuf(dbuf);
-																		}
-
-																		Free(data);
-																	}
-
-																	FreeBuf(ebuf);
-																}
-
-																Free(ext_buf);
-															}
-														}
-													}
-												}
-											}
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-
-				FreeBuf(buf2);
-			}
-
-			Free(handshake_data);
-		}
+		return false;
 	}
 
-	FreeBuf(buf);
-
-	if (ret)
+	// Handshake type 1 with the top length byte 0, then a 16-bit length that fits in the record
+	if (PktCursorU16(&hello, &hello_type) == false || PktCursorU16(&hello, &hello_len) == false ||
+	        hello_type != 0x0100 || hello_len > record_len - 4)
 	{
-		Trim(sni);
-
-		if (IsEmptyStr(sni))
-		{
-			ret = false;
-		}
+		return false;
 	}
 
-	return ret;
+	// client_version, random, session_id, cipher_suites, compression_methods, extensions
+	if (PktCursorU16(&hello, &version) == false || version < 0x0301 ||
+	        PktCursorTake(&hello, 32, NULL) == false ||
+	        PktCursorU8(&hello, &len8) == false || PktCursorTake(&hello, len8, NULL) == false ||
+	        PktCursorU16(&hello, &len16) == false || PktCursorTake(&hello, len16, NULL) == false ||
+	        PktCursorU8(&hello, &len8) == false || PktCursorTake(&hello, len8, NULL) == false ||
+	        PktCursorU16(&hello, &len16) == false || PktCursorTake(&hello, len16, &exts) == false)
+	{
+		return false;
+	}
+
+	while (PktCursorU16(&exts, &type) && PktCursorU16(&exts, &len16) && PktCursorTake(&exts, len16, &data))
+	{
+		UINT n, start, end;
+
+		// server_name: list length (not checked), name type 0 (host_name), name length, name
+		if (type != 0x0000 || PktCursorTake(&data, 2, NULL) == false ||
+		        PktCursorU8(&data, &len8) == false || len8 != 0 ||
+		        PktCursorU16(&data, &len16) == false || PktCursorTake(&data, len16, &name) == false)
+		{
+			continue;
+		}
+
+		n = 0;
+		while (n < name.Left && name.Pos[n] != 0)
+		{
+			n++;
+		}
+
+		if (n == 0)
+		{
+			continue;
+		}
+
+		end = MIN(n, sni_size - 1);
+		start = 0;
+		while (start < end && (name.Pos[start] == ' ' || name.Pos[start] == '\t'))
+		{
+			start++;
+		}
+		while (end > start && (name.Pos[end - 1] == ' ' || name.Pos[end - 1] == '\t'))
+		{
+			end--;
+		}
+
+		Copy(sni, name.Pos + start, end - start);
+		sni[end - start] = '\0';
+
+		return end != start;
+	}
+
+	return false;
 }
 
 void SetDhParam(DH_CTX *dh)

@@ -18,6 +18,11 @@ extern char *SERVER_CONFIG_FILE_NAME;
 #define	SERVER_FILE_SAVE_INTERVAL_MAX		(3600 * 1000)
 #define	SERVER_FILE_SAVE_INTERVAL_USERMODE	(1 * 60 * 1000)
 
+// A failed configuration save is retried after this span, doubled per failure up to the autosave span
+#define	SERVER_FILE_SAVE_RETRY_MIN			(1 * 1000)
+// Tries of the last save when the server stops
+#define	SERVER_FILE_SAVE_FINAL_TRIES		3
+
 #define SERVER_DEADLOCK_CHECK_SPAN		(2 * 60 * 1000)
 #define SERVER_DEADLOCK_CHECK_TIMEOUT	(10 * 60 * 1000)
 
@@ -60,6 +65,7 @@ struct SERVER
 	CEDAR *Cedar;
 	CFG_RW *CfgRw;
 	LOCK *SaveCfgLock;
+	bool ConfigSaveFailing;		// The last configuration save failed (under SaveCfgLock)
 	EVENT *SaveHaltEvent;
 	THREAD *SaveThread;
 
@@ -187,6 +193,7 @@ void EnumLogFileDir(LIST *o, char *dirname);
 void FreeEnumLogFile(LIST *o);
 bool CheckLogFileNameFromEnumList(LIST *o, char *name);
 void IncrementServerConfigRevision(SERVER *s);
+UINT SiStageConfiguration(SERVER *s, char *data, UINT size);
 void GetServerProductName(SERVER *s, char *name, UINT size);
 void GetServerProductNameInternal(SERVER *s, char *name, UINT size);
 

@@ -174,8 +174,6 @@ HARNESS_PACK_TYPE_DEF(RPC_CRL, InRpcCrl, OutRpcCrl, FreeRpcCrl)
 HARNESS_PACK_TYPE_DEF(RPC_AC_LIST, InRpcAcList, OutRpcAcList, FreeRpcAcList)
 HARNESS_PACK_TYPE_DEF(RPC_ENUM_LOG_FILE, InRpcEnumLogFile, OutRpcEnumLogFile, FreeRpcEnumLogFile)
 HARNESS_PACK_TYPE_DEF(RPC_READ_LOG_FILE, InRpcReadLogFile, OutRpcReadLogFile, FreeRpcReadLogFile)
-HARNESS_PACK_TYPE_DEF(RPC_ENUM_LICENSE_KEY, InRpcEnumLicenseKey, OutRpcEnumLicenseKey, FreeRpcEnumLicenseKey)
-HARNESS_PACK_TYPE_DEF_NOFREE(RPC_LICENSE_STATUS, InRpcLicenseStatus, OutRpcLicenseStatus)
 HARNESS_PACK_TYPE_DEF_NOFREE(SYSLOG_SETTING, InRpcSysLogSetting, OutRpcSysLogSetting)
 HARNESS_PACK_TYPE_DEF(RPC_ENUM_ETH_VLAN, InRpcEnumEthVLan, OutRpcEnumEthVLan, FreeRpcEnumEthVLan)
 HARNESS_PACK_TYPE_DEF(RPC_MSG, InRpcMsg, OutRpcMsg, FreeRpcMsg)
@@ -1111,14 +1109,6 @@ static void HarnessPackPrepReadLogFileBuffer(HARNESS *h, void *p)
 	WriteBuf(t->Buffer, data, sizeof(data));
 }
 
-static void HarnessPackPrepEnumLicenseKey(HARNESS *h, void *p)
-{
-	RPC_ENUM_LICENSE_KEY *t = p;
-
-	t->NumItem = 2;
-	t->Items = ZeroMalloc(sizeof(RPC_ENUM_LICENSE_KEY_ITEM) * t->NumItem);
-}
-
 static void HarnessPackPrepEnumEthVLan(HARNESS *h, void *p)
 {
 	RPC_ENUM_ETH_VLAN *t = p;
@@ -1356,7 +1346,7 @@ static PACK *HarnessPackBuildStrMissing(void)
 }
 
 // NumItem whose item array does not fit in 32 bits: the table engine reads no item (count 0)
-static PACK *HarnessPackBuildEnumLicenseKeyNumItemOverflow(void)
+static PACK *HarnessPackBuildEnumLogFileNumItemOverflow(void)
 {
 	PACK *p = NewPack();
 
@@ -1454,8 +1444,6 @@ static HARNESS_PACK_CASE harness_pack_cases[] =
 	HARNESS_PACK_SYN_CASE("RPC_ENUM_LOG_FILE", RPC_ENUM_LOG_FILE, HarnessPackPrepEnumLogFile),
 	HARNESS_PACK_SYN_CASE("RPC_READ_LOG_FILE_buffer", RPC_READ_LOG_FILE, HarnessPackPrepReadLogFileBuffer),
 	HARNESS_PACK_SYN_CASE("RPC_READ_LOG_FILE_nobuffer", RPC_READ_LOG_FILE, NULL),
-	HARNESS_PACK_SYN_CASE("RPC_ENUM_LICENSE_KEY", RPC_ENUM_LICENSE_KEY, HarnessPackPrepEnumLicenseKey),
-	HARNESS_PACK_SYN_CASE("RPC_LICENSE_STATUS", RPC_LICENSE_STATUS, NULL),
 	HARNESS_PACK_SYN_CASE("SYSLOG_SETTING", SYSLOG_SETTING, NULL),
 	HARNESS_PACK_SYN_CASE("RPC_ENUM_ETH_VLAN", RPC_ENUM_ETH_VLAN, HarnessPackPrepEnumEthVLan),
 	HARNESS_PACK_SYN_CASE("RPC_MSG", RPC_MSG, HarnessPackPrepMsg),
@@ -1500,8 +1488,8 @@ static HARNESS_PACK_CASE harness_pack_cases[] =
 	HARNESS_PACK_IN_CASE("RPC_STR_in_missing", RPC_STR, HarnessPackBuildStrMissing),
 
 	// IN: intended change of the table engine (spec #28, unchecked NumItem option b)
-	HARNESS_PACK_IN_CASE("RPC_ENUM_LICENSE_KEY_in_numitem_overflow", RPC_ENUM_LICENSE_KEY,
-		HarnessPackBuildEnumLicenseKeyNumItemOverflow),
+	HARNESS_PACK_IN_CASE("RPC_ENUM_LOG_FILE_in_numitem_overflow", RPC_ENUM_LOG_FILE,
+		HarnessPackBuildEnumLogFileNumItemOverflow),
 
 	// IN: intended change of the table engine (SEC-6 #96, NumItem capped at the values of the sentinel key)
 	HARNESS_PACK_IN_CASE("RPC_ENUM_LOG_FILE_in_numitem_huge", RPC_ENUM_LOG_FILE, HarnessPackBuildEnumLogFileNumItemHuge),
