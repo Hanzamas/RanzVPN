@@ -27,8 +27,6 @@
 #include <IcmpAPI.h>
 
 static LOCK *machine_name_lock = NULL;
-static LOCK *disconnect_function_lock = NULL;
-extern LOCK *openssl_lock;
 static COUNTER *num_tcp_connections = NULL;
 static LIST *WaitThreadList = NULL;
 static UCHAR machine_ip_process_hash[SHA1_SIZE];
@@ -51,7 +49,7 @@ static LOCK *local_mac_list_lock = NULL;
 
 static DH_CTX *dh_param = NULL;
 
-// Decoded copy of the Windows ROOT store, for the client's peer verification (guarded by openssl_lock)
+// Decoded copy of the Windows ROOT store, for the client's peer verification
 #define	SSL_ROOT_CERTS_REFRESH_SPAN		(10 * 60 * 1000ULL)
 static STACK_OF(X509) *ssl_root_certs = NULL;
 static UINT64 ssl_root_certs_tick = 0;
@@ -2902,7 +2900,7 @@ bool AddChainSslCert(struct ssl_ctx_st *ctx, X *x)
 	return ret;
 }
 
-// Drain the OpenSSL error queue of a failed SSL_accept or SSL_connect into the ssl_err code (call under openssl_lock)
+// Drain the OpenSSL error queue of a failed SSL_accept or SSL_connect into the ssl_err code
 static void SslHandshakeError(bool server_mode, UINT *ssl_err)
 {
 	unsigned long err;
@@ -2935,7 +2933,7 @@ static void SslHandshakeError(bool server_mode, UINT *ssl_err)
 	}
 }
 
-// Add the Windows ROOT store's certificates to a client's verification store (caller holds openssl_lock)
+// Add the Windows ROOT store's certificates to a client's verification store
 static void AddSslRootCerts(X509_STORE *store)
 {
 	UINT64 now = Tick64();
@@ -3033,116 +3031,108 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 		goto FAIL;
 	}
 
-	Lock(openssl_lock);
+	if (sock->ServerMode)
 	{
-		if (sock->ServerMode)
-		{
 #ifdef	SSL_OP_NO_TLSv1
-			if (sock->SslAcceptSettings.Tls_Disable1_0)
-			{
-				SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1);
-			}
+		if (sock->SslAcceptSettings.Tls_Disable1_0)
+		{
+			SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1);
+		}
 #endif
 
 #ifdef	SSL_OP_NO_TLSv1_1
-			if (sock->SslAcceptSettings.Tls_Disable1_1)
-			{
-				SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_1);
-			}
+		if (sock->SslAcceptSettings.Tls_Disable1_1)
+		{
+			SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_1);
+		}
 #endif
 
 #ifdef	SSL_OP_NO_TLSv1_2
-			if (sock->SslAcceptSettings.Tls_Disable1_2)
-			{
-				SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_2);
-			}
+		if (sock->SslAcceptSettings.Tls_Disable1_2)
+		{
+			SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_2);
+		}
 #endif
 
 #ifdef	SSL_OP_NO_TLSv1_3
-			if (sock->SslAcceptSettings.Tls_Disable1_3)
-			{
-				SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_3);
-			}
+		if (sock->SslAcceptSettings.Tls_Disable1_3)
+		{
+			SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_3);
+		}
 #endif
 
-			Unlock(openssl_lock);
-			if (chain == NULL)
-			{
-				AddChainSslCertOnDirectory(ssl_ctx);
-			}
-			else
-			{
-				UINT i;
-				X *x;
-				LockList(chain);
-				{
-					for (i = 0;i < LIST_NUM(chain);i++)
-					{
-						x = LIST_DATA(chain, i);
-						AddChainSslCert(ssl_ctx, x);
-					}
-				}
-				UnlockList(chain);
-			}
-			Lock(openssl_lock);
+		if (chain == NULL)
+		{
+			AddChainSslCertOnDirectory(ssl_ctx);
 		}
 		else
 		{
-			if (ssl_option != NULL && ssl_option->VerifyPeer)
+			UINT i;
+			X *x;
+			LockList(chain);
 			{
-				X509_STORE* store = SSL_CTX_get_cert_store(ssl_ctx);
-				if (ssl_option->AddDefaultCA)
+				for (i = 0;i < LIST_NUM(chain);i++)
 				{
-					AddSslRootCerts(store);
-				}
-
-				UINT i;
-				for (i = 0; i < LIST_NUM(ssl_option->CaList); ++i)
-				{
-					X *ca = LIST_DATA(ssl_option->CaList, i);
-					X509_STORE_add_cert(store, ca->x509);
-				}
-
-				X509_VERIFY_PARAM *vpm = SSL_CTX_get0_param(ssl_ctx);
-				X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_PARTIAL_CHAIN);
-
-				// Enable hostname verification (by default CN is only checked if SAN is not available)
-				if (ssl_option->VerifyHostname && IsEmptyStr(sni_hostname) == false)
-				{
-					X509_VERIFY_PARAM_set1_host(vpm, sni_hostname, StrLen(sni_hostname));
+					x = LIST_DATA(chain, i);
+					AddChainSslCert(ssl_ctx, x);
 				}
 			}
+			UnlockList(chain);
 		}
+	}
+	else
+	{
+		if (ssl_option != NULL && ssl_option->VerifyPeer)
+		{
+			X509_STORE* store = SSL_CTX_get_cert_store(ssl_ctx);
+			if (ssl_option->AddDefaultCA)
+			{
+				AddSslRootCerts(store);
+			}
+
+			UINT i;
+			for (i = 0; i < LIST_NUM(ssl_option->CaList); ++i)
+			{
+				X *ca = LIST_DATA(ssl_option->CaList, i);
+				X509_STORE_add_cert(store, ca->x509);
+			}
+
+			X509_VERIFY_PARAM *vpm = SSL_CTX_get0_param(ssl_ctx);
+			X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_PARTIAL_CHAIN);
+
+			// Enable hostname verification (by default CN is only checked if SAN is not available)
+			if (ssl_option->VerifyHostname && IsEmptyStr(sni_hostname) == false)
+			{
+				X509_VERIFY_PARAM_set1_host(vpm, sni_hostname, StrLen(sni_hostname));
+			}
+		}
+	}
 
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) ||  LIBRESSL_VERSION_NUMBER >= 0x3060000L
-		if (sock->SslAcceptSettings.Override_Security_Level)
-		{
-			SSL_CTX_set_security_level(ssl_ctx, sock->SslAcceptSettings.Override_Security_Level_Value);
-		}
+	if (sock->SslAcceptSettings.Override_Security_Level)
+	{
+		SSL_CTX_set_security_level(ssl_ctx, sock->SslAcceptSettings.Override_Security_Level_Value);
+	}
 #endif
 
-		sock->ssl = SSL_new(ssl_ctx);
+	sock->ssl = SSL_new(ssl_ctx);
 
-		if (sock->ssl == NULL)
-		{
-			Unlock(openssl_lock);
-			goto FAIL;
-		}
+	if (sock->ssl == NULL)
+	{
+		goto FAIL;
+	}
 
-		SSL_set_fd(sock->ssl, (int)sock->socket);
+	SSL_set_fd(sock->ssl, (int)sock->socket);
 
 #ifdef	SSL_CTRL_SET_TLSEXT_HOSTNAME
-		if (sock->ServerMode == false)
+	if (sock->ServerMode == false)
+	{
+		if (IsEmptyStr(sni_hostname) == false)
 		{
-			if (IsEmptyStr(sni_hostname) == false)
-			{
-				SSL_set_tlsext_host_name(sock->ssl, sni_hostname);
-			}
+			SSL_set_tlsext_host_name(sock->ssl, sni_hostname);
 		}
-#endif
-
 	}
-	Unlock(openssl_lock);
+#endif
 
 	if (x != NULL)
 	{
@@ -3151,23 +3141,15 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 			x509 = x->x509;
 			key = priv->pkey;
 
-			Lock(openssl_lock);
-			{
-				SSL_use_certificate(sock->ssl, x509);
-				SSL_use_PrivateKey(sock->ssl, key);
-			}
-			Unlock(openssl_lock);
+			SSL_use_certificate(sock->ssl, x509);
+			SSL_use_PrivateKey(sock->ssl, key);
 		}
 	}
 
 	if (sock->WaitToUseCipher != NULL)
 	{
-		Lock(openssl_lock);
-		{
-			if (SSL_set_cipher_list(sock->ssl, sock->WaitToUseCipher) == 0)
-				SSL_set_cipher_list(sock->ssl, DEFAULT_CIPHER_LIST);
-		}
-		Unlock(openssl_lock);
+		if (SSL_set_cipher_list(sock->ssl, sock->WaitToUseCipher) == 0)
+			SSL_set_cipher_list(sock->ssl, DEFAULT_CIPHER_LIST);
 	}
 
 	#if OPENSSL_VERSION_NUMBER >= 0x30000000L
@@ -3188,11 +3170,7 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 
 	if (handshake_ret <= 0)
 	{
-		Lock(openssl_lock);
-		{
-			SslHandshakeError(sock->ServerMode, ssl_err);
-		}
-		Unlock(openssl_lock);
+		SslHandshakeError(sock->ServerMode, ssl_err);
 		goto FAIL;
 	}
 
@@ -3214,13 +3192,9 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 #endif
 	}
 
-	Lock(openssl_lock);
-	{
-		x509 = SSL_get_peer_certificate(sock->ssl);
-		ssl_verify_err = SSL_get_verify_result(sock->ssl);
-		sock->SslVersion = SSL_get_version(sock->ssl);
-	}
-	Unlock(openssl_lock);
+	x509 = SSL_get_peer_certificate(sock->ssl);
+	ssl_verify_err = SSL_get_verify_result(sock->ssl);
+	sock->SslVersion = SSL_get_version(sock->ssl);
 
 	if (x509 == NULL)
 	{
@@ -3273,11 +3247,7 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 		}
 	}
 
-	Lock(openssl_lock);
-	{
-		x509 = SSL_get_certificate(sock->ssl);
-	}
-	Unlock(openssl_lock);
+	x509 = SSL_get_certificate(sock->ssl);
 
 	if (x509 == NULL)
 	{
@@ -3306,11 +3276,7 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 
 	sock->ssl_ctx = ssl_ctx;
 
-	Lock(openssl_lock);
-	{
-		sock->CipherName = CopyStr((char *)SSL_get_cipher(sock->ssl));
-	}
-	Unlock(openssl_lock);
+	sock->CipherName = CopyStr((char *)SSL_get_cipher(sock->ssl));
 
 	// The only success point: Recv/Send(secure) and Disconnect see SecureMode with a live ssl and ssl_ctx
 	sock->SecureMode = true;
@@ -3323,11 +3289,7 @@ FAIL:
 	// The one failure exit: no SSL object, no context, no lock held, not secure
 	if (sock->ssl != NULL)
 	{
-		Lock(openssl_lock);
-		{
-			SSL_free(sock->ssl);
-		}
-		Unlock(openssl_lock);
+		SSL_free(sock->ssl);
 		sock->ssl = NULL;
 	}
 	FreeSSLCtx(ssl_ctx);
@@ -4057,8 +4019,6 @@ void Disconnect(SOCK *sock)
 		}
 	}
 
-	Lock(disconnect_function_lock);
-
 	Lock(sock->disconnect_lock);
 
 	if (sock->Type == SOCK_TCP)
@@ -4080,7 +4040,6 @@ void Disconnect(SOCK *sock)
 			{
 				Unlock(sock->lock);
 				Unlock(sock->disconnect_lock);
-				Unlock(disconnect_function_lock);
 				return;
 			}
 			s = sock->socket;
@@ -4102,12 +4061,8 @@ void Disconnect(SOCK *sock)
 				{
 					if (sock->ssl != NULL)
 					{
-						Lock(openssl_lock);
-						{
-							SSL_free(sock->ssl);
-							FreeSSLCtx(sock->ssl_ctx);
-						}
-						Unlock(openssl_lock);
+						SSL_free(sock->ssl);
+						FreeSSLCtx(sock->ssl_ctx);
 						sock->ssl = NULL;
 						sock->ssl_ctx = NULL;
 					}
@@ -4140,7 +4095,6 @@ void Disconnect(SOCK *sock)
 			{
 				Unlock(sock->lock);
 				Unlock(sock->disconnect_lock);
-				Unlock(disconnect_function_lock);
 				return;
 			}
 
@@ -4158,8 +4112,6 @@ void Disconnect(SOCK *sock)
 		Unlock(sock->lock);
 	}
 	Unlock(sock->disconnect_lock);
-
-	Unlock(disconnect_function_lock);
 }
 
 bool CheckTCPPortEx(char *hostname, UINT port, UINT timeout)
@@ -5688,7 +5640,6 @@ void InitNetwork()
 	DnsInit();
 
 	machine_name_lock = NewLock();
-	disconnect_function_lock = NewLock();
 	machine_ip_process_hash_lock = NewLock();
 	local_mac_list_lock = NewLock();
 
@@ -6011,9 +5962,8 @@ void FreeNetwork()
 	FreeWaitThread();
 
 	DeleteLock(machine_name_lock);
-	DeleteLock(disconnect_function_lock);
 	DeleteLock(machine_ip_process_hash_lock);
-	machine_name_lock = disconnect_function_lock = machine_ip_process_hash_lock = NULL;
+	machine_name_lock = machine_ip_process_hash_lock = NULL;
 
 	DnsFree();
 

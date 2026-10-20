@@ -41,8 +41,6 @@
 
 	#include <intrin.h> // For __cpuid()
 
-LOCK *openssl_lock = NULL;
-
 static int ssl_clientcert_index = 0;
 
 static OSSL_PROVIDER *ossl_provider_legacy = NULL;
@@ -453,14 +451,6 @@ BUF *BigNumToBuf(const BIGNUM *bn)
 	SeekBuf(b, 0, 0);
 
 	return b;
-}
-
-static void OpenSSL_InitLock()
-{
-}
-
-static void OpenSSL_FreeLock()
-{
 }
 
 void GetPrintNameFromX(wchar_t *str, UINT size, X *x)
@@ -1067,13 +1057,9 @@ X509 *NewX509(K *pub, K *priv, X *ca, NAME *name, UINT days, X_SERIAL *serial)
 		X509_EXTENSION_free(ex);
 	}
 
-	Lock(openssl_lock);
-	{
-		X509_set_pubkey(x509, pub->pkey);
+	X509_set_pubkey(x509, pub->pkey);
 
-		X509_sign(x509, priv->pkey, EVP_sha256());
-	}
-	Unlock(openssl_lock);
+	X509_sign(x509, priv->pkey, EVP_sha256());
 
 	return x509;
 }
@@ -1182,13 +1168,9 @@ X509 *NewRootX509(K *pub, K *priv, NAME *name, UINT days, X_SERIAL *serial)
 		X509_EXTENSION_free(eku);
 	}
 
-	Lock(openssl_lock);
-	{
-		X509_set_pubkey(x509, pub->pkey);
+	X509_set_pubkey(x509, pub->pkey);
 
-		X509_sign(x509, priv->pkey, EVP_sha256());
-	}
-	Unlock(openssl_lock);
+	X509_sign(x509, priv->pkey, EVP_sha256());
 
 	return x509;
 }
@@ -1243,11 +1225,7 @@ bool AddX509Name(void *xn, int nid, wchar_t *str)
 	}
 
 	x509_name = (X509_NAME *)xn;
-	Lock(openssl_lock);
-	{
-		X509_NAME_add_entry_by_NID(x509_name, nid, encoding_type, utf8, utf8_size, -1, 0);
-	}
-	Unlock(openssl_lock);
+	X509_NAME_add_entry_by_NID(x509_name, nid, encoding_type, utf8, utf8_size, -1, 0);
 	Free(utf8);
 
 	return true;
@@ -1601,13 +1579,9 @@ bool RsaCheck()
 		return false;
 	}
 
-	Lock(openssl_lock);
-	{
-		rsa = RSA_new();
-		ret = RSA_generate_key_ex(rsa, bit, e, NULL);
-		BN_free(e);
-	}
-	Unlock(openssl_lock);
+	rsa = RSA_new();
+	ret = RSA_generate_key_ex(rsa, bit, e, NULL);
+	BN_free(e);
 	if (ret == 0)
 	{
 		Debug("RSA_generate_key_ex: err=%s\n", ERR_error_string(ERR_get_error(), errbuf));
@@ -1615,21 +1589,13 @@ bool RsaCheck()
 	}
 
 	bio = BIO_new(BIO_s_mem());
-	Lock(openssl_lock);
-	{
-		i2d_RSAPrivateKey_bio(bio, rsa);
-	}
-	Unlock(openssl_lock);
+	i2d_RSAPrivateKey_bio(bio, rsa);
 	BIO_seek(bio, 0);
 	priv_key = BioToK(bio, true, false, NULL);
 	FreeBio(bio);
 
 	bio = BIO_new(BIO_s_mem());
-	Lock(openssl_lock);
-	{
-		i2d_RSA_PUBKEY_bio(bio, rsa);
-	}
-	Unlock(openssl_lock);
+	i2d_RSA_PUBKEY_bio(bio, rsa);
 	BIO_seek(bio, 0);
 	pub_key = BioToK(bio, false, false, NULL);
 	FreeBio(bio);
@@ -1679,13 +1645,9 @@ bool RsaGen(K **priv, K **pub, UINT bit)
 		return false;
 	}
 
-	Lock(openssl_lock);
-	{
-		rsa = RSA_new();
-		ret = RSA_generate_key_ex(rsa, bit, e, NULL);
-		BN_free(e);
-	}
-	Unlock(openssl_lock);
+	rsa = RSA_new();
+	ret = RSA_generate_key_ex(rsa, bit, e, NULL);
+	BN_free(e);
 	if (ret == 0)
 	{
 		Debug("RSA_generate_key_ex: err=%s\n", ERR_error_string(ERR_get_error(), errbuf));
@@ -1693,21 +1655,13 @@ bool RsaGen(K **priv, K **pub, UINT bit)
 	}
 
 	bio = BIO_new(BIO_s_mem());
-	Lock(openssl_lock);
-	{
-		i2d_RSAPrivateKey_bio(bio, rsa);
-	}
-	Unlock(openssl_lock);
+	i2d_RSAPrivateKey_bio(bio, rsa);
 	BIO_seek(bio, 0);
 	priv_key = BioToK(bio, true, false, NULL);
 	FreeBio(bio);
 
 	bio = BIO_new(BIO_s_mem());
-	Lock(openssl_lock);
-	{
-		i2d_RSA_PUBKEY_bio(bio, rsa);
-	}
-	Unlock(openssl_lock);
+	i2d_RSA_PUBKEY_bio(bio, rsa);
 	BIO_seek(bio, 0);
 	pub_key = BioToK(bio, false, false, NULL);
 	FreeBio(bio);
@@ -1781,11 +1735,7 @@ bool CheckSignature(X *x, K *k)
 
 	// X509_verify() returns 1 for a valid signature, 0 for a bad one and a negative value when it
 	// cannot check it (unknown signature algorithm, bad BIT STRING): only 1 is a valid signature
-	Lock(openssl_lock);
-	{
-		ret = (X509_verify(x->x509, k->pkey) == 1);
-	}
-	Unlock(openssl_lock);
+	ret = (X509_verify(x->x509, k->pkey) == 1);
 
 	return ret;
 }
@@ -1799,11 +1749,7 @@ K *GetKFromX(X *x)
 		return NULL;
 	}
 
-	Lock(openssl_lock);
-	{
-		pkey = X509_get_pubkey(x->x509);
-	}
-	Unlock(openssl_lock);
+	pkey = X509_get_pubkey(x->x509);
 	if (pkey == NULL)
 	{
 		return NULL;
@@ -1989,17 +1935,7 @@ bool CompareX(X *x1, X *x2)
 		return false;
 	}
 
-	Lock(openssl_lock);
-	if (X509_cmp(x1->x509, x2->x509) == 0)
-	{
-		Unlock(openssl_lock);
-		return true;
-	}
-	else
-	{
-		Unlock(openssl_lock);
-		return false;
-	}
+	return (X509_cmp(x1->x509, x2->x509) == 0);
 }
 
 bool CheckXandK(X *x, K *k)
@@ -2009,15 +1945,12 @@ bool CheckXandK(X *x, K *k)
 		return false;
 	}
 
-	Lock(openssl_lock);
 	if (X509_check_private_key(x->x509, k->pkey) != 0)
 	{
-		Unlock(openssl_lock);
 		return true;
 	}
 	else
 	{
-		Unlock(openssl_lock);
 		return false;
 	}
 }
@@ -2155,32 +2088,20 @@ BIO *KToBio(K *k, bool text, char *password)
 	{
 		if (text == false)
 		{
-			Lock(openssl_lock);
-			{
-				i2d_PrivateKey_bio(bio, k->pkey);
-			}
-			Unlock(openssl_lock);
+			i2d_PrivateKey_bio(bio, k->pkey);
 		}
 		else
 		{
 			if (password == 0 || StrLen(password) == 0)
 			{
-				Lock(openssl_lock);
-				{
-					PEM_write_bio_PrivateKey(bio, k->pkey, NULL, NULL, 0, NULL, NULL);
-				}
-				Unlock(openssl_lock);
+				PEM_write_bio_PrivateKey(bio, k->pkey, NULL, NULL, 0, NULL, NULL);
 			}
 			else
 			{
 				CB_PARAM cb;
 				cb.password = password;
-				Lock(openssl_lock);
-				{
-					PEM_write_bio_PrivateKey(bio, k->pkey, EVP_des_ede3_cbc(),
-						NULL, 0, (pem_password_cb *)PKeyPasswordCallbackFunction, &cb);
-				}
-				Unlock(openssl_lock);
+				PEM_write_bio_PrivateKey(bio, k->pkey, EVP_des_ede3_cbc(),
+					NULL, 0, (pem_password_cb *)PKeyPasswordCallbackFunction, &cb);
 			}
 		}
 	}
@@ -2188,19 +2109,11 @@ BIO *KToBio(K *k, bool text, char *password)
 	{
 		if (text == false)
 		{
-			Lock(openssl_lock);
-			{
-				i2d_PUBKEY_bio(bio, k->pkey);
-			}
-			Unlock(openssl_lock);
+			i2d_PUBKEY_bio(bio, k->pkey);
 		}
 		else
 		{
-			Lock(openssl_lock);
-			{
-				PEM_write_bio_PUBKEY(bio, k->pkey);
-			}
-			Unlock(openssl_lock);
+			PEM_write_bio_PUBKEY(bio, k->pkey);
 		}
 	}
 
@@ -2371,11 +2284,7 @@ K *BioToK(BIO *bio, bool private_key, bool text, char *password)
 		{
 			CB_PARAM cb;
 			cb.password = password;
-			Lock(openssl_lock);
-			{
-				pkey = PEM_read_bio_PUBKEY(bio, NULL, (pem_password_cb *)PKeyPasswordCallbackFunction, &cb);
-			}
-			Unlock(openssl_lock);
+			pkey = PEM_read_bio_PUBKEY(bio, NULL, (pem_password_cb *)PKeyPasswordCallbackFunction, &cb);
 			if (pkey == NULL)
 			{
 				return NULL;
@@ -2386,11 +2295,7 @@ K *BioToK(BIO *bio, bool private_key, bool text, char *password)
 	{
 		if (text == false)
 		{
-			Lock(openssl_lock);
-			{
-				pkey = d2i_PrivateKey_bio(bio, NULL);
-			}
-			Unlock(openssl_lock);
+			pkey = d2i_PrivateKey_bio(bio, NULL);
 			if (pkey == NULL)
 			{
 				return NULL;
@@ -2400,11 +2305,7 @@ K *BioToK(BIO *bio, bool private_key, bool text, char *password)
 		{
 			CB_PARAM cb;
 			cb.password = password;
-			Lock(openssl_lock);
-			{
-				pkey = PEM_read_bio_PrivateKey(bio, NULL, (pem_password_cb *)PKeyPasswordCallbackFunction, &cb);
-			}
-			Unlock(openssl_lock);
+			pkey = PEM_read_bio_PrivateKey(bio, NULL, (pem_password_cb *)PKeyPasswordCallbackFunction, &cb);
 			if (pkey == NULL)
 			{
 				return NULL;
@@ -2469,18 +2370,14 @@ BIO *XToBio(X *x, bool text)
 
 	bio = BIO_new(BIO_s_mem());
 
-	Lock(openssl_lock);
+	if (text == false)
 	{
-		if (text == false)
-		{
-			i2d_X509_bio(bio, x->x509);
-		}
-		else
-		{
-			PEM_write_bio_X509(bio, x->x509);
-		}
+		i2d_X509_bio(bio, x->x509);
 	}
-	Unlock(openssl_lock);
+	else
+	{
+		PEM_write_bio_X509(bio, x->x509);
+	}
 
 	return bio;
 }
@@ -2532,11 +2429,7 @@ void FreeX509(X509 *x509)
 		return;
 	}
 
-	Lock(openssl_lock);
-	{
-		X509_free(x509);
-	}
-	Unlock(openssl_lock);
+	X509_free(x509);
 }
 
 // The caller keeps b and frees it, also when this fails
@@ -2613,18 +2506,14 @@ X *BioToX(BIO *bio, bool text)
 		return NULL;
 	}
 
-	Lock(openssl_lock);
+	if (text == false)
 	{
-		if (text == false)
-		{
-			x509 = d2i_X509_bio(bio, NULL);
-		}
-		else
-		{
-			x509 = PEM_read_bio_X509(bio, NULL, NULL, NULL);
-		}
+		x509 = d2i_X509_bio(bio, NULL);
 	}
-	Unlock(openssl_lock);
+	else
+	{
+		x509 = PEM_read_bio_X509(bio, NULL, NULL, NULL);
+	}
 
 	if (x509 == NULL)
 	{
@@ -2654,34 +2543,29 @@ LIST *BioToXList(BIO *bio, bool text)
 		return NULL;
 	}
 
-	Lock(openssl_lock);
+	sk = PEM_X509_INFO_read_bio(bio, NULL, NULL, NULL);
+	if (sk == NULL)
 	{
-		sk = PEM_X509_INFO_read_bio(bio, NULL, NULL, NULL);
-		if (sk == NULL)
-		{
-			Unlock(openssl_lock);
-			return NULL;
-		}
-
-		chain = NewList(NULL);
-
-		while (sk_X509_INFO_num(sk))
-		{
-			xi = sk_X509_INFO_shift(sk);
-			x = X509ToX(xi->x509);
-			if (x != NULL)
-			{
-				// The X owns the certificate now
-				xi->x509 = NULL;
-				Add(chain, x);
-			}
-			// Also frees a certificate X509ToX refused, once
-			X509_INFO_free(xi);
-		}
-
-		sk_X509_INFO_free(sk);
+		return NULL;
 	}
-	Unlock(openssl_lock);
+
+	chain = NewList(NULL);
+
+	while (sk_X509_INFO_num(sk))
+	{
+		xi = sk_X509_INFO_shift(sk);
+		x = X509ToX(xi->x509);
+		if (x != NULL)
+		{
+			// The X owns the certificate now
+			xi->x509 = NULL;
+			Add(chain, x);
+		}
+		// Also frees a certificate X509ToX refused, once
+		X509_INFO_free(xi);
+	}
+
+	sk_X509_INFO_free(sk);
 
 	return chain;
 }
@@ -2837,18 +2721,13 @@ BIO *BufToBio(BUF *b)
 		return NULL;
 	}
 
-	Lock(openssl_lock);
+	bio = BIO_new(BIO_s_mem());
+	if (bio == NULL)
 	{
-		bio = BIO_new(BIO_s_mem());
-		if (bio == NULL)
-		{
-			Unlock(openssl_lock);
-			return NULL;
-		}
-		BIO_write(bio, b->Buf, b->Size);
-		BIO_seek(bio, 0);
+		return NULL;
 	}
-	Unlock(openssl_lock);
+	BIO_write(bio, b->Buf, b->Size);
+	BIO_seek(bio, 0);
 
 	return bio;
 }
@@ -2908,9 +2787,6 @@ void FreeOpenSSLThreadState()
 
 void FreeCryptLibrary()
 {
-	DeleteLock(openssl_lock);
-	openssl_lock = NULL;
-	OpenSSL_FreeLock();
 	if (ossl_provider_default != NULL)
 	{
 		OSSL_PROVIDER_unload(ossl_provider_default);
@@ -2953,7 +2829,6 @@ void InitCryptLibrary()
 	CngInit();
 
 	Rand(tmp, sizeof(tmp));
-	OpenSSL_InitLock();
 }
 
 // RC4 key: a CNG key object, which keeps the keystream position from one Encrypt() call to the next.
