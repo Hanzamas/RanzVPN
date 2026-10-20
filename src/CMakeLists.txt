@@ -7,9 +7,7 @@ if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
 endif()
 
 if(WIN32)
-  if(IS_CROSS_COMPILATION MATCHES "arm64-on-x64")
-    set(CMAKE_SYSTEM_PROCESSOR "arm64")
-  elseif(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+  if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
     # cl.exe only. clang-cl takes /Qspectre and ignores it with a warning, so it is not set for
     # clang-cl: docs/adr/0024-clang-cl-spectre.md
     message("Setting QSPECTRE")

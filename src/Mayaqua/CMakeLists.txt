@@ -64,6 +64,13 @@ if(OQS_ENABLE)
     add_compile_options(-Wno-unknown-argument -Wno-unused-command-line-argument)
   endif()
 
+  # liboqs refuses to configure for an architecture it has no optimised code for unless
+  # OQS_PERMIT_UNSUPPORTED_ARCHITECTURE is ON; Windows on ARM64 is such a target (the workflow
+  # used to pass the flag on the command line, so a local ARM64 configure failed)
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|arm64|aarch64)$" OR CMAKE_C_COMPILER_ARCHITECTURE_ID MATCHES "ARM" OR VCPKG_TARGET_TRIPLET MATCHES "^arm64")
+    set(OQS_PERMIT_UNSUPPORTED_ARCHITECTURE ON CACHE BOOL "Permit building liboqs for an architecture without optimised code")
+  endif()
+
   add_subdirectory(3rdparty/liboqs)
   add_subdirectory(3rdparty/oqs-provider)
 
