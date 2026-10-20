@@ -57,7 +57,7 @@ static void InitProbe()
 
 	probe_start = 0;
 
-	probe_start = MsGetHiResCounter();
+	probe_start = TickHighres64();
 }
 
 static void FreeProbe()

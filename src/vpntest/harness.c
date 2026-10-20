@@ -3927,7 +3927,7 @@ static void HarnessFree(HARNESS *h)
 // Monotonic time in nanoseconds from the high-resolution counter (Tick64 steps in whole milliseconds)
 static UINT64 HarnessNowNs()
 {
-	return TickHighresNano64(false);
+	return TickHighresNano64();
 }
 
 // One bench value as text; centi: the value is in hundredths and gets two decimals

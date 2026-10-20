@@ -280,38 +280,6 @@ UINT MsGetUserLocaleId()
 	return lcid_cache;
 }
 
-double MsGetHiResTimeSpan(UINT64 diff)
-{
-	LARGE_INTEGER t;
-	UINT64 freq;
-
-	if (QueryPerformanceFrequency(&t) == false)
-	{
-		freq = 1000ULL;
-	}
-	else
-	{
-		Copy(&freq, &t, sizeof(UINT64));
-	}
-
-	return (double)diff / (double)freq;
-}
-
-UINT64 MsGetHiResCounter()
-{
-	LARGE_INTEGER t;
-	UINT64 ret;
-
-	if (QueryPerformanceCounter(&t) == false)
-	{
-		return Tick64();
-	}
-
-	Copy(&ret, &t, sizeof(UINT64));
-
-	return ret;
-}
-
 static wchar_t ms_computer_name_full_cache[MAX_SIZE] = {0};
 
 void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache)
