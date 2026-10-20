@@ -2086,6 +2086,7 @@ FOLDER *SiWriteConfigurationToCfg(SERVER *s)
 
 static void SiLoadPolicyCfg(POLICY *p, FOLDER *f)
 {
+	UINT i;
 	if (f == NULL || p == NULL)
 	{
 		return;
@@ -2093,126 +2094,40 @@ static void SiLoadPolicyCfg(POLICY *p, FOLDER *f)
 
 	Zero(p, sizeof(POLICY));
 
-	p->Access = CfgGetBool(f, "Access");
-	p->DHCPFilter = CfgGetBool(f, "DHCPFilter");
-	p->DHCPNoServer = CfgGetBool(f, "DHCPNoServer");
-	p->DHCPForce = CfgGetBool(f, "DHCPForce");
-	p->NoBridge = CfgGetBool(f, "NoBridge");
-	p->NoRouting = CfgGetBool(f, "NoRouting");
-	p->CheckMac = CfgGetBool(f, "CheckMac");
-	p->CheckIP = CfgGetBool(f, "CheckIP");
-	p->ArpDhcpOnly = CfgGetBool(f, "ArpDhcpOnly");
-	p->PrivacyFilter = CfgGetBool(f, "PrivacyFilter");
-	p->NoServer = CfgGetBool(f, "NoServer");
-	p->NoBroadcastLimiter = CfgGetBool(f, "NoBroadcastLimiter");
-	p->MonitorPort = CfgGetBool(f, "MonitorPort");
-	p->MaxConnection = CfgGetInt(f, "MaxConnection");
-	p->TimeOut = CfgGetInt(f, "TimeOut");
-	p->MaxMac = CfgGetInt(f, "MaxMac");
-	p->MaxIP = CfgGetInt(f, "MaxIP");
-	p->MaxUpload = CfgGetInt(f, "MaxUpload");
-	p->MaxDownload = CfgGetInt(f, "MaxDownload");
-	p->FixPassword = CfgGetBool(f, "FixPassword");
-	p->MultiLogins = CfgGetInt(f, "MultiLogins");
-	p->NoQoS = CfgGetBool(f, "NoQoS");
+	for (i = 0;i < NUM_POLICY_ITEM;i++)
+	{
+		POLICY_ITEM *item = &policy_item[i];
 
-	p->RSandRAFilter = CfgGetBool(f, "RSandRAFilter");
-	p->RAFilter = CfgGetBool(f, "RAFilter");
-	p->DHCPv6Filter = CfgGetBool(f, "DHCPv6Filter");
-	p->DHCPv6NoServer = CfgGetBool(f, "DHCPv6NoServer");
-	p->NoRoutingV6 = CfgGetBool(f, "NoRoutingV6");
-	p->CheckIPv6 = CfgGetBool(f, "CheckIPv6");
-	p->NoServerV6 = CfgGetBool(f, "NoServerV6");
-	p->MaxIPv6 = CfgGetInt(f, "MaxIPv6");
-	p->NoSavePassword = CfgGetBool(f, "NoSavePassword");
-	p->AutoDisconnect = CfgGetInt(f, "AutoDisconnect");
-	p->FilterIPv4 = CfgGetBool(f, "FilterIPv4");
-	p->FilterIPv6 = CfgGetBool(f, "FilterIPv6");
-	p->FilterNonIP = CfgGetBool(f, "FilterNonIP");
-	p->NoIPv6DefaultRouterInRA = CfgGetBool(f, "NoIPv6DefaultRouterInRA");
-	p->NoIPv6DefaultRouterInRAWhenIPv6 = CfgGetBool(f, "NoIPv6DefaultRouterInRAWhenIPv6");
-	p->VLanId = CfgGetInt(f, "VLanId");
+		SetPolicyValue(p, i, item->TypeInt ? CfgGetInt(f, item->Name) : CfgGetBool(f, item->Name));
+	}
 }
 
 static void SiWritePolicyCfg(FOLDER *f, POLICY *p, bool cascade_mode)
 {
+	UINT i;
 	if (f == NULL || p == NULL)
 	{
 		return;
 	}
 
-	if (cascade_mode == false)
+	for (i = 0;i < NUM_POLICY_ITEM;i++)
 	{
-		CfgAddBool(f, "Access", p->Access);
+		POLICY_ITEM *item = &policy_item[i];
+
+		if (cascade_mode && item->CascadeCfg == false)
+		{
+			continue;
+		}
+
+		if (item->TypeInt)
+		{
+			CfgAddInt(f, item->Name, GetPolicyValue(p, i));
+		}
+		else
+		{
+			CfgAddBool(f, item->Name, GetPolicyValue(p, i) != 0);
+		}
 	}
-
-	CfgAddBool(f, "DHCPFilter", p->DHCPFilter);
-	CfgAddBool(f, "DHCPNoServer", p->DHCPNoServer);
-	CfgAddBool(f, "DHCPForce", p->DHCPForce);
-
-	if (cascade_mode == false)
-	{
-		CfgAddBool(f, "NoBridge", p->NoBridge);
-		CfgAddBool(f, "NoRouting", p->NoRouting);
-	}
-
-	CfgAddBool(f, "CheckMac", p->CheckMac);
-	CfgAddBool(f, "CheckIP", p->CheckIP);
-	CfgAddBool(f, "ArpDhcpOnly", p->ArpDhcpOnly);
-
-	if (cascade_mode == false)
-	{
-		CfgAddBool(f, "PrivacyFilter", p->PrivacyFilter);
-	}
-
-	CfgAddBool(f, "NoServer", p->NoServer);
-	CfgAddBool(f, "NoBroadcastLimiter", p->NoBroadcastLimiter);
-
-	if (cascade_mode == false)
-	{
-		CfgAddBool(f, "MonitorPort", p->MonitorPort);
-		CfgAddInt(f, "MaxConnection", p->MaxConnection);
-		CfgAddInt(f, "TimeOut", p->TimeOut);
-	}
-
-	CfgAddInt(f, "MaxMac", p->MaxMac);
-	CfgAddInt(f, "MaxIP", p->MaxIP);
-	CfgAddInt(f, "MaxUpload", p->MaxUpload);
-	CfgAddInt(f, "MaxDownload", p->MaxDownload);
-
-	if (cascade_mode == false)
-	{
-		CfgAddBool(f, "FixPassword", p->FixPassword);
-		CfgAddInt(f, "MultiLogins", p->MultiLogins);
-		CfgAddBool(f, "NoQoS", p->NoQoS);
-	}
-
-	CfgAddBool(f, "RSandRAFilter", p->RSandRAFilter);
-	CfgAddBool(f, "RAFilter", p->RAFilter);
-	CfgAddBool(f, "DHCPv6Filter", p->DHCPv6Filter);
-	CfgAddBool(f, "DHCPv6NoServer", p->DHCPv6NoServer);
-
-	if (cascade_mode == false)
-	{
-		CfgAddBool(f, "NoRoutingV6", p->NoRoutingV6);
-	}
-
-	CfgAddBool(f, "CheckIPv6", p->CheckIPv6);
-	CfgAddBool(f, "NoServerV6", p->NoServerV6);
-	CfgAddInt(f, "MaxIPv6", p->MaxIPv6);
-
-	if (cascade_mode == false)
-	{
-		CfgAddBool(f, "NoSavePassword", p->NoSavePassword);
-		CfgAddInt(f, "AutoDisconnect", p->AutoDisconnect);
-	}
-
-	CfgAddBool(f, "FilterIPv4", p->FilterIPv4);
-	CfgAddBool(f, "FilterIPv6", p->FilterIPv6);
-	CfgAddBool(f, "FilterNonIP", p->FilterNonIP);
-	CfgAddBool(f, "NoIPv6DefaultRouterInRA", p->NoIPv6DefaultRouterInRA);
-	CfgAddBool(f, "NoIPv6DefaultRouterInRAWhenIPv6", p->NoIPv6DefaultRouterInRAWhenIPv6);
-	CfgAddInt(f, "VLanId", p->VLanId);
 }
 
 static void SiWriteHubLinkCfg(FOLDER *f, LINK *k)

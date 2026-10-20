@@ -3155,15 +3155,6 @@ PACK *PackWelcome(SESSION *s)
 	return p;
 }
 
-#define	PACK_ADD_POLICY_BOOL(name, value)	\
-	PackAddBool(p, "policy:" name, y->value == false ? 0 : 1)
-#define	PACK_ADD_POLICY_UINT(name, value)	\
-	PackAddInt(p, "policy:" name, y->value)
-#define	PACK_GET_POLICY_BOOL(name, value)	\
-	y->value = (PackGetBool(p, "policy:" name))
-#define	PACK_GET_POLICY_UINT(name, value)	\
-	y->value = PackGetInt(p, "policy:" name)
-
 bool GetSessionKeyFromPack(PACK *p, UCHAR *session_key, UINT *session_key_32)
 {
 	if (p == NULL || session_key == NULL || session_key_32 == NULL)
@@ -3187,6 +3178,7 @@ bool GetSessionKeyFromPack(PACK *p, UCHAR *session_key, UINT *session_key_32)
 POLICY *PackGetPolicy(PACK *p)
 {
 	POLICY *y;
+	UINT i;
 	if (p == NULL)
 	{
 		return NULL;
@@ -3194,106 +3186,46 @@ POLICY *PackGetPolicy(PACK *p)
 
 	y = ZeroMalloc(sizeof(POLICY));
 
-	// Ver 2
-	PACK_GET_POLICY_BOOL("Access", Access);
-	PACK_GET_POLICY_BOOL("DHCPFilter", DHCPFilter);
-	PACK_GET_POLICY_BOOL("DHCPNoServer", DHCPNoServer);
-	PACK_GET_POLICY_BOOL("DHCPForce", DHCPForce);
-	PACK_GET_POLICY_BOOL("NoBridge", NoBridge);
-	PACK_GET_POLICY_BOOL("NoRouting", NoRouting);
-	PACK_GET_POLICY_BOOL("PrivacyFilter", PrivacyFilter);
-	PACK_GET_POLICY_BOOL("NoServer", NoServer);
-	PACK_GET_POLICY_BOOL("CheckMac", CheckMac);
-	PACK_GET_POLICY_BOOL("CheckIP", CheckIP);
-	PACK_GET_POLICY_BOOL("ArpDhcpOnly", ArpDhcpOnly);
-	PACK_GET_POLICY_BOOL("MonitorPort", MonitorPort);
-	PACK_GET_POLICY_BOOL("NoBroadcastLimiter", NoBroadcastLimiter);
-	PACK_GET_POLICY_BOOL("FixPassword", FixPassword);
-	PACK_GET_POLICY_BOOL("NoQoS", NoQoS);
-	// Ver 3
-	PACK_GET_POLICY_BOOL("RSandRAFilter", RSandRAFilter);
-	PACK_GET_POLICY_BOOL("RAFilter", RAFilter);
-	PACK_GET_POLICY_BOOL("DHCPv6Filter", DHCPv6Filter);
-	PACK_GET_POLICY_BOOL("DHCPv6NoServer", DHCPv6NoServer);
-	PACK_GET_POLICY_BOOL("NoRoutingV6", NoRoutingV6);
-	PACK_GET_POLICY_BOOL("CheckIPv6", CheckIPv6);
-	PACK_GET_POLICY_BOOL("NoServerV6", NoServerV6);
-	PACK_GET_POLICY_BOOL("NoSavePassword", NoSavePassword);
-	PACK_GET_POLICY_BOOL("FilterIPv4", FilterIPv4);
-	PACK_GET_POLICY_BOOL("FilterIPv6", FilterIPv6);
-	PACK_GET_POLICY_BOOL("FilterNonIP", FilterNonIP);
-	PACK_GET_POLICY_BOOL("NoIPv6DefaultRouterInRA", NoIPv6DefaultRouterInRA);
-	PACK_GET_POLICY_BOOL("NoIPv6DefaultRouterInRAWhenIPv6", NoIPv6DefaultRouterInRAWhenIPv6);
+	for (i = 0;i < NUM_POLICY_ITEM;i++)
+	{
+		POLICY_ITEM *item = &policy_item[i];
+		char name[MAX_SIZE];
 
-	// Ver 2
-	PACK_GET_POLICY_UINT("MaxConnection", MaxConnection);
-	PACK_GET_POLICY_UINT("TimeOut", TimeOut);
-	PACK_GET_POLICY_UINT("MaxMac", MaxMac);
-	PACK_GET_POLICY_UINT("MaxIP", MaxIP);
-	PACK_GET_POLICY_UINT("MaxUpload", MaxUpload);
-	PACK_GET_POLICY_UINT("MaxDownload", MaxDownload);
-	PACK_GET_POLICY_UINT("MultiLogins", MultiLogins);
-	// Ver 3
-	PACK_GET_POLICY_UINT("MaxIPv6", MaxIPv6);
-	PACK_GET_POLICY_UINT("AutoDisconnect", AutoDisconnect);
-	PACK_GET_POLICY_UINT("VLanId", VLanId);
+		Format(name, sizeof(name), "policy:%s", item->Name);
+
+		SetPolicyValue(y, i, item->TypeInt ? PackGetInt(p, name) : PackGetBool(p, name));
+	}
 
 	// Ver 3 flag
-	PACK_GET_POLICY_BOOL("Ver3", Ver3);
+	y->Ver3 = PackGetBool(p, "policy:Ver3");
 
 	return y;
 }
 
 void PackAddPolicy(PACK *p, POLICY *y)
 {
+	UINT i;
 	if (p == NULL || y == NULL)
 	{
 		return;
 	}
 
-	// Ver 2
-	PACK_ADD_POLICY_BOOL("Access", Access);
-	PACK_ADD_POLICY_BOOL("DHCPFilter", DHCPFilter);
-	PACK_ADD_POLICY_BOOL("DHCPNoServer", DHCPNoServer);
-	PACK_ADD_POLICY_BOOL("DHCPForce", DHCPForce);
-	PACK_ADD_POLICY_BOOL("NoBridge", NoBridge);
-	PACK_ADD_POLICY_BOOL("NoRouting", NoRouting);
-	PACK_ADD_POLICY_BOOL("PrivacyFilter", PrivacyFilter);
-	PACK_ADD_POLICY_BOOL("NoServer", NoServer);
-	PACK_ADD_POLICY_BOOL("CheckMac", CheckMac);
-	PACK_ADD_POLICY_BOOL("CheckIP", CheckIP);
-	PACK_ADD_POLICY_BOOL("ArpDhcpOnly", ArpDhcpOnly);
-	PACK_ADD_POLICY_BOOL("MonitorPort", MonitorPort);
-	PACK_ADD_POLICY_BOOL("NoBroadcastLimiter", NoBroadcastLimiter);
-	PACK_ADD_POLICY_BOOL("FixPassword", FixPassword);
-	PACK_ADD_POLICY_BOOL("NoQoS", NoQoS);
-	// Ver 3
-	PACK_ADD_POLICY_BOOL("RSandRAFilter", RSandRAFilter);
-	PACK_ADD_POLICY_BOOL("RAFilter", RAFilter);
-	PACK_ADD_POLICY_BOOL("DHCPv6Filter", DHCPv6Filter);
-	PACK_ADD_POLICY_BOOL("DHCPv6NoServer", DHCPv6NoServer);
-	PACK_ADD_POLICY_BOOL("NoRoutingV6", NoRoutingV6);
-	PACK_ADD_POLICY_BOOL("CheckIPv6", CheckIPv6);
-	PACK_ADD_POLICY_BOOL("NoServerV6", NoServerV6);
-	PACK_ADD_POLICY_BOOL("NoSavePassword", NoSavePassword);
-	PACK_ADD_POLICY_BOOL("FilterIPv4", FilterIPv4);
-	PACK_ADD_POLICY_BOOL("FilterIPv6", FilterIPv6);
-	PACK_ADD_POLICY_BOOL("FilterNonIP", FilterNonIP);
-	PACK_ADD_POLICY_BOOL("NoIPv6DefaultRouterInRA", NoIPv6DefaultRouterInRA);
-	PACK_ADD_POLICY_BOOL("NoIPv6DefaultRouterInRAWhenIPv6", NoIPv6DefaultRouterInRAWhenIPv6);
+	for (i = 0;i < NUM_POLICY_ITEM;i++)
+	{
+		POLICY_ITEM *item = &policy_item[i];
+		char name[MAX_SIZE];
 
-	// Ver 2
-	PACK_ADD_POLICY_UINT("MaxConnection", MaxConnection);
-	PACK_ADD_POLICY_UINT("TimeOut", TimeOut);
-	PACK_ADD_POLICY_UINT("MaxMac", MaxMac);
-	PACK_ADD_POLICY_UINT("MaxIP", MaxIP);
-	PACK_ADD_POLICY_UINT("MaxUpload", MaxUpload);
-	PACK_ADD_POLICY_UINT("MaxDownload", MaxDownload);
-	PACK_ADD_POLICY_UINT("MultiLogins", MultiLogins);
-	// Ver 3
-	PACK_ADD_POLICY_UINT("MaxIPv6", MaxIPv6);
-	PACK_ADD_POLICY_UINT("AutoDisconnect", AutoDisconnect);
-	PACK_ADD_POLICY_UINT("VLanId", VLanId);
+		Format(name, sizeof(name), "policy:%s", item->Name);
+
+		if (item->TypeInt)
+		{
+			PackAddInt(p, name, GetPolicyValue(y, i));
+		}
+		else
+		{
+			PackAddBool(p, name, GetPolicyValue(y, i) != 0);
+		}
+	}
 
 	// Ver 3 flag
 	PackAddBool(p, "policy:Ver3", true);

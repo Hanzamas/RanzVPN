@@ -19,6 +19,10 @@ struct POLICY_ITEM
 	UINT DefaultValue;
 	char *FormatStr;
 	UINT Offset;
+	char *Name;						// Name in the config file and in the Pack ("policy:" prefix)
+	bool Ver3;						// Added in Ver 3.0
+	bool CascadeCmd;				// Can be set from the cascade commands
+	bool CascadeCfg;				// Written to the config of a cascade connection
 };
 
 struct POLICY
@@ -122,9 +126,10 @@ struct AUTHNT
 };
 
 
-#define	NUM_POLICY_ITEM_FOR_VER2	22
-#define	NUM_POLICY_ITEM_FOR_VER3	38
-#define	NUM_POLICY_ITEM				NUM_POLICY_ITEM_FOR_VER3
+#define	NUM_POLICY_ITEM				38
+
+// Size of the Ver 2.0 part of POLICY: the Ver 3.0 fields start at RSandRAFilter
+#define	POLICY_VER2_SIZE			offsetof(POLICY, RSandRAFilter)
 
 extern POLICY_ITEM policy_item[];
 
@@ -169,6 +174,8 @@ bool PolicyIsSupportedForCascade(UINT i);
 UINT PolicyStrToId(char *name);
 char *PolicyIdToStr(UINT i);
 POLICY_ITEM *GetPolicyItem(UINT id);
+UINT GetPolicyValue(POLICY *p, UINT id);
+void SetPolicyValue(POLICY *p, UINT id, UINT value);
 void GetPolicyValueRangeStr(wchar_t *str, UINT size, UINT id);
 void FormatPolicyValue(wchar_t *str, UINT size, UINT id, UINT value);
 

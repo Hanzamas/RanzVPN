@@ -4223,7 +4223,7 @@ static UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 
 		if (t->Policy.Ver3 == false)
 		{
-			Copy(k->Policy, &t->Policy, policy_item[NUM_POLICY_ITEM_FOR_VER2].Offset);
+			Copy(k->Policy, &t->Policy, POLICY_VER2_SIZE);
 		}
 		else
 		{
