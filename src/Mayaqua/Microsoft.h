@@ -49,9 +49,6 @@
 
 #define	SOFTETHER_FW_SCRIPT_HASH	"Software\\" GC_REG_COMPANY_NAME "\\PacketiX VPN\\FW ScriptHash"
 
-#define	MS_REG_TCP_SETTING_KEY		"Software\\" GC_REG_COMPANY_NAME "\\Network Settings"
-
-
 #ifdef	MICROSOFT_C
 typedef struct MS
 {
@@ -115,13 +112,6 @@ typedef struct MS
 	IO *LockFile;
 } MS;
 
-typedef struct MS_USERMODE_SVC_PULSE_THREAD_PARAM
-{
-	void *hWnd;
-	void *GlobalPulse;
-	volatile bool Halt;
-} MS_USERMODE_SVC_PULSE_THREAD_PARAM;
-
 #endif	// MICROSOFT_C
 
 typedef struct NO_WARNING
@@ -169,12 +159,6 @@ typedef struct MS_ADAPTER_LIST
 	UINT Num;
 	MS_ADAPTER **Adapters;
 } MS_ADAPTER_LIST;
-
-typedef struct MS_TCP
-{
-	UINT RecvWindowSize;
-	UINT SendWindowSize;
-} MS_TCP;
 
 typedef struct ENUM_CHILD_WINDOW_PARAM
 {
@@ -232,7 +216,6 @@ wchar_t *MsGetNetworkConnectionName(char *guid);
 void MsGenLockFile(wchar_t *name, UINT size, wchar_t *temp_dir);
 void MsDeleteAllFileW(wchar_t *dir);
 
-void MsInitGlobalNetworkConfig();
 void MsSetThreadPriorityIdle();
 void MsSetThreadPriorityRealtime();
 void MsRestoreThreadPriority();
@@ -257,9 +240,6 @@ bool MsIsUserMode();
 LIST *MsGetProcessList();
 void MsFreeProcessList(LIST *o);
 
-void MsGenerateUserModeSvcGlobalPulseName(char *name, UINT size, char *svc_name);
-void MsUserModeGlobalPulseRecvThread(THREAD *thread, void *param);
-
 void MsFreeAdapter(MS_ADAPTER *a);
 void MsFreeAdapterList(MS_ADAPTER_LIST *o);
 MS_ADAPTER *MsCloneAdapter(MS_ADAPTER *a);
@@ -267,9 +247,6 @@ MS_ADAPTER_LIST *MsCreateAdapterList();
 MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid);
 bool MsIsBridgeableIf(UINT type, UINT media_type, UINT physical_medium_type, bool hardware_interface);
 UINT ConvertMidStatusVistaToXp(UINT st);
-
-void MsSetTcpConfig(MS_TCP *tcp);
-bool MsLoadTcpConfigReg(MS_TCP *tcp);
 
 UINT MsGetConsoleWidth();
 NO_WARNING *MsInitNoWarningEx(UINT start_timer);
