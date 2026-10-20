@@ -43,7 +43,6 @@ Errors as following will be displayed, and the program returns `non-zero` values
 ```
 Comparing 'strtable_ko.stb' to 'strtable_cn.stb'...
 File2: Error: Missing 'HUB_AO_DenyAllRadiusLoginWithNoVlanAssign'
-File2: Error: Missing 'HUB_AO_UseHubNameAsDhcpUserClassOption'
 File2: Error: Missing 'HUB_AO_UseHubNameAsRadiusNasId'
 File2: Error: Missing 'CM_VLAN_REINSTALL_MSG'
 --- Results ---

@@ -240,9 +240,6 @@ HUB_AO_deny_qos							Jika Anda mengatur opsi ini ke nilai non-nol, maka setiap 
 HUB_AO_deny_change_user_password		Jika Anda mengatur opsi ini ke nilai non-nol, maka pengguna di Virtual Hub akan dilarang untuk mengubah kata sandi mereka menggunakan fungsi pengubahan kata sandi dari VPN Client.\r\n
 HUB_AO_no_change_users					Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk menambahkan, mengedit, atau menghapus pengguna.\r\n
 HUB_AO_no_change_groups					Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk menambahkan, mengedit, atau menghapus grup.\r\n
-HUB_AO_no_securenat						Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengaktifkan atau menonaktifkan fungsi SecureNAT.\r\n
-HUB_AO_no_securenat_enablenat			Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengaktifkan atau menonaktifkan fungsi Virtual NAT dalam fungsi SecureNAT.\r\n
-HUB_AO_no_securenat_enabledhcp			Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengaktifkan atau menonaktifkan fungsi Virtual DHCP Server dalam fungsi SecureNAT.\r\n
 HUB_AO_no_cascade						Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk menambahkan, mengedit, menghapus, atau mengubah status online dari koneksi cascade.\r\n
 HUB_AO_no_online						Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengubah Virtual Hub yang offline menjadi status online.\r\n
 HUB_AO_no_offline						Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengubah Virtual Hub yang online menjadi status offline.\r\n
@@ -312,8 +309,6 @@ HUB_AO_SuppressClientUpdateNotification		Tekan tampilan pemberitahuan pembaruan 
 HUB_AO_FloodingSendQueueBufferQuota			Tentukan nilai batas kuota (dalam byte) ukuran buffer antrean pengiriman yang dapat dikonsumsi oleh operasi banjir pada Virtual Hub. Nilai kuota diterapkan pada total panjang antrean pengiriman dari semua sesi VPN aktif. Tentukan '0' untuk menonaktifkan kuota ini. Opsi ini efektif untuk mengatasi masalah kehabisan memori pada jaringan yang memiliki banyak paket banjir.\r\n
 HUB_AO_DetectDormantSessionInterval			Jika Anda mengatur opsi ini ke nilai non-nol, maka Virtual Hub akan menganggap sesi VPN yang tidak mengirimkan paket selama interval waktu tertentu (dalam detik) sebagai Sesi Dorman. Virtual Hub tidak akan membanjiri paket yang seharusnya dibanjiri ke Sesi Dorman.\r\n
 HUB_AO_NoPhysicalIPOnPacketLog				Jika Anda mengatur opsi ini ke nilai non-nol, maka alamat IP fisik dari VPN client, baik untuk sesi VPN sumber maupun sesi VPN tujuan, tidak akan dicatat pada file log paket.\r\n
-HUB_AO_UseHubNameAsDhcpUserClassOption		Jika Anda mengatur opsi ini ke nilai non-nol, maka Nama Virtual Hub akan ditambahkan ke permintaan DHCP ke server DHCP eksternal sebagai opsi "User-Class". Ini memungkinkan penggunaan kumpulan alamat IP terpisah untuk setiap Virtual Hub. (Hanya untuk sesi L2TP/IPsec dan OpenVPN.)\r\n
-HUB_AO_AllowEapMatchUserByCert				Jika Anda mengaktifkan (atur ke 1) opsi ini, Virtual Hub akan mencoba mencocokkan Identitas EAP tidak hanya dengan nama pengguna, tetapi juga dengan sertifikat pengguna selama alur otentikasi PPP EAP.\r\n
 
 
 # Concerning protocols
@@ -546,7 +541,7 @@ CM_CERT_COLUMN_3		Kadaluarsa
 
 
 # Concerning services (Win32)
-SVC_HELP				*** Argumen Baris Perintah dari %s (%S) ***\r\n\r\nProgram ini (%s) adalah sebuah proses yang berjalan sebagai tugas latar belakang. Mulailah program dengan menentukan argumen berikut pada baris perintah.\r\n\r\n\r\n/install : Menginstal layanan %s (nama layanan: %S) di Windows. Setelah ini, layanan akan otomatis dimulai.\r\n\r\n/uninstall... Menghapus instalasi layanan %s (nama layanan: %S) dari Windows.\r\n\r\n/start : Memulai layanan %s (nama layanan: %S).\r\n\r\n/stop : Menghentikan layanan %s (nama layanan: %S).\r\n\r\n/test : Memulai program %s dalam mode uji. (Untuk debug)\r\n\r\n/usermode : Memulai program %s dalam mode pengguna. (Jika memungkinkan)\r\n\r\n/usermode_showtray : Ketika memulai dalam mode pengguna, ini digunakan untuk menampilkan ikon task tray ketika sebelumnya diset untuk disembunyikan.\r\n\r\n/usermode_hidetray : Ketika memulai dalam mode pengguna, ini menyembunyikan ikon task tray.\r\n\r\n\r\nCatatan: Perintah terkait operasi layanan selain /test dan /usermode hanya dapat dijalankan pada Windows NT / XP / Server 2003 / Vista / Server 2008.
+SVC_HELP				*** Argumen Baris Perintah dari %s (%S) ***\r\n\r\nProgram ini (%s) berjalan sebagai tugas latar belakang. Mulailah program dengan salah satu argumen berikut pada baris perintah.\r\n\r\n\r\n/install : Menginstal layanan %s (nama layanan: %S) di Windows. Setelah ini, layanan akan otomatis dimulai.\r\n\r\n/uninstall : Menghapus instalasi layanan %s (nama layanan: %S) dari Windows.\r\n\r\n/start : Memulai layanan %s (nama layanan: %S).\r\n\r\n/stop : Menghentikan layanan %s (nama layanan: %S).\r\n\r\n/test : Memulai program %s dalam mode uji. (Untuk debug)\r\n\r\n/usermode : Memulai program %s dalam mode pengguna, tanpa layanan.\r\n\r\n/setup_install : Dipakai oleh penginstal. Mengganti layanan %s (nama layanan: %S) dengan program ini lalu memulainya.\r\n\r\n/setup_uninstall : Dipakai oleh penginstal. Menghentikan dan menghapus instalasi layanan %s (nama layanan: %S).\r\n\r\n/service : Dipakai oleh Windows. Menjalankan program %s sebagai layanan.
 SVC_ALREADY_INSTALLED	Layanan "%s" (nama layanan: %S) sudah terinstal di komputer ini. Apakah Anda ingin menghapus instalasi dan menginstalnya kembali?
 SVC_INSTALL_OK			Layanan "%s" (Nama Layanan: %S) telah berhasil diinstal.\r\n\r\n(Jalur Eksekusi: %s)\r\n\r\nLayanan telah dimulai.
 SVC_INSTALL_FAILED		Instalasi layanan "%s" (nama layanan: %S) gagal.
@@ -565,12 +560,6 @@ SVC_NOT_ADMIN			Untuk menginstal, menghapus instalasi, memulai atau menghentikan
 SVC_TEST_MSG			Layanan "%s" telah dimulai dalam mode uji.\r\n\r\nKlik OK untuk keluar dari layanan.
 SVC_TEST_MUTEX			File eksekusi %s sudah dimulai.
 SVC_USERMODE_MUTEX		Proses lain dari %s sudah dimulai.
-
-
-# Service Definition (Ranz VPN Server)
-SVC_VPNSERVER_NAME		vpnserver
-SVC_VPNSERVER_TITLE		Ranz VPN Server
-SVC_VPNSERVER_DESCRIPT	Layanan ini mengelola proses server dari Ranz VPN Server. Ranz VPN Server menyediakan fungsi server Ranz VPN berkinerja tinggi melalui protokol TCP/IP. Ketika layanan ini dihentikan, Ranz VPN Server di komputer ini akan berhenti dan Ranz VPN Client tidak akan dapat membangun koneksi VPN dengan komputer ini.
 
 
 # Service Definition (Ranz VPN Server)

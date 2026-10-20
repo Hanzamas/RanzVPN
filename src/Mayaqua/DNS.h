@@ -3,6 +3,8 @@
 
 #include "Network.h"
 
+#define DNS_CACHE_EXPIRATION (10 * 60 * 1000)
+
 #define DNS_THREAD_DEFAULT_NUM_MAX (512)
 
 #define DNS_RESOLVE_DEFAULT_TIMEOUT (2300)
@@ -56,7 +58,7 @@ void DnsThreadNumMaxSet(const UINT num);
 
 void DnsCacheToggle(const bool enabled);
 
-DNS_CACHE_REVERSE *DnsCacheReverseUpdate(const IP *ip, const char *hostname);
+void DnsCacheReverseUpdate(const IP *ip, const char *hostname);
 
 bool DnsResolve(IP *ipv6, IP *ipv4, const char *hostname, UINT timeout, volatile const bool *cancel_flag);
 bool DnsResolveEx(LIST **iplist_v6, LIST **iplist_v4, const char *hostname, UINT timeout, volatile const bool *cancel_flag);

@@ -3034,6 +3034,29 @@ static bool HarnessGetMachineId(HARNESS *h, UCHAR *id, UCHAR *hub_mac, IP *hub_i
 	return true;
 }
 
+// HUBIP: the hub MAC address and address computed independently from the machine identity and the hub
+// name; the address takes the last octet from the second hash byte (FND-145, #147)
+static void HarnessCheckHubAddr(HARNESS *h, UCHAR *id, UCHAR *hub_mac, IP *hub_ip)
+{
+	char tmp[MAX_SIZE];
+	UCHAR hash[SHA1_SIZE];
+	UCHAR mac[6];
+	IP ip;
+
+	BinToStr(tmp, sizeof(tmp), id, SHA1_SIZE);
+	StrCat(tmp, sizeof(tmp), HARNESS_HUB_A);
+	StrUpper(tmp);
+	Sha0(hash, tmp, StrLen(tmp));
+
+	mac[0] = 0x00;
+	mac[1] = SE_HUB_MAC_ADDR_SIGN;
+	Copy(mac + 2, hash, 4);
+	SetIP(&ip, 172, 31, hash[0] % 254 + 1, hash[1] % 254 + 1);
+
+	HarnessCheck(h, Cmp(mac, hub_mac, sizeof(mac)) == 0, "HUBIP: hub MAC address from the name hash");
+	HarnessCheck(h, CmpIpAddr(&ip, hub_ip) == 0, "HUBIP: hub address from the name hash, last octet from hash[1]");
+}
+
 // Save the configuration, restart the server from the saved file and compare the reloaded configuration
 static void HarnessReload(HARNESS *h)
 {
@@ -3060,6 +3083,10 @@ static void HarnessReload(HARNESS *h)
 	FreeRpcConfig(&c);
 
 	have_id1 = HarnessCheck(h, HarnessGetMachineId(h, id1, mac1, &ip1), "GetHub " HARNESS_HUB_A " before the restart");
+	if (have_id1)
+	{
+		HarnessCheckHubAddr(h, id1, mac1, &ip1);
+	}
 
 	// SiReleaseServer writes the configuration file, SiNewServer loads it again
 	AdminDisconnect(h->Rpc);
@@ -5197,7 +5224,7 @@ static void CertDlAcceptThread(THREAD *thread, void *param)
 static CERTDL_SERVER *CertDlStartServer(X *issuer, X *tls_cert, K *tls_key)
 {
 	CERTDL_SERVER *srv;
-	SOCK *s = ListenEx(CERTDL_PORT, true);
+	SOCK *s = ListenEx2(CERTDL_PORT, true, false, NULL, false);
 
 	if (s == NULL)
 	{
@@ -7374,7 +7401,7 @@ void listenerbind_test(UINT num, char **arg)
 	HarnessSetPhase("setup", "held port");
 	// The bind of the server's listener (any address, no address reuse): the server cannot bind the port while
 	// this socket is open
-	held = ListenEx2(LISTENBIND_PORT_HELD, false, false, NULL);
+	held = ListenEx2(LISTENBIND_PORT_HELD, false, false, NULL, false);
 	Format(tmp, sizeof(tmp), "the test holds TCP %u", LISTENBIND_PORT_HELD);
 	ok = HarnessCheck(h, held != NULL, tmp);
 

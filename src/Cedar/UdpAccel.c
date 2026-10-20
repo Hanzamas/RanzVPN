@@ -14,8 +14,6 @@
 #include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
 
-#include <stdlib.h>
-
 void UdpAccelPoll(UDP_ACCEL *a)
 {
 	UINT num_ignore_errors = 0;
@@ -102,16 +100,16 @@ void UdpAccelPoll(UDP_ACCEL *a)
 
 			if (a->FastDetect == false)
 			{
-				rand_interval = rand() % (UDP_ACCELERATION_KEEPALIVE_INTERVAL_MAX - UDP_ACCELERATION_KEEPALIVE_INTERVAL_MIN) + UDP_ACCELERATION_KEEPALIVE_INTERVAL_MIN;
+				rand_interval = Rand32() % (UDP_ACCELERATION_KEEPALIVE_INTERVAL_MAX - UDP_ACCELERATION_KEEPALIVE_INTERVAL_MIN) + UDP_ACCELERATION_KEEPALIVE_INTERVAL_MIN;
 			}
 			else
 			{
-				rand_interval = rand() % (UDP_ACCELERATION_KEEPALIVE_INTERVAL_MAX_FAST - UDP_ACCELERATION_KEEPALIVE_INTERVAL_MIN_FAST) + UDP_ACCELERATION_KEEPALIVE_INTERVAL_MIN_FAST;
+				rand_interval = Rand32() % (UDP_ACCELERATION_KEEPALIVE_INTERVAL_MAX_FAST - UDP_ACCELERATION_KEEPALIVE_INTERVAL_MIN_FAST) + UDP_ACCELERATION_KEEPALIVE_INTERVAL_MIN_FAST;
 			}
 
 			a->NextSendKeepAlive = a->Now + (UINT64)rand_interval;
 
-			UdpAccelSend(a, NULL, 0, false, 1000, false);
+			UdpAccelSend(a, NULL, 0, false, 1000);
 		}
 	}
 }
@@ -123,7 +121,7 @@ void UdpAccelSendBlock(UDP_ACCEL *a, BLOCK *b)
 		return;
 	}
 
-	UdpAccelSend(a, b->Buf, b->Size, b->Compressed ? 1 : 0, a->MaxUdpPacketSize, b->PriorityQoS);
+	UdpAccelSend(a, b->Buf, b->Size, b->Compressed ? 1 : 0, a->MaxUdpPacketSize);
 }
 
 UINT UdpAccelCalcMss(UDP_ACCEL *a)
@@ -177,7 +175,7 @@ UINT UdpAccelCalcMss(UDP_ACCEL *a)
 	return ret;
 }
 
-void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT max_size, bool high_priority)
+void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT max_size)
 {
 	UCHAR buffer[UDP_ACCELERATION_TMP_BUF_SIZE];
 	UCHAR *buf = buffer;
@@ -247,11 +245,9 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 		const UINT current_total_size = size + (a->Version > 1 ? UDP_ACCELERATION_PACKET_MAC_SIZE_V2 : UDP_ACCELERATION_PACKET_IV_SIZE_V1);
 		if (current_total_size < max_size)
 		{
-			UCHAR pad[UDP_ACCELERATION_MAX_PADDING_SIZE];
 			UINT pad_size = MIN(max_size - current_total_size, UDP_ACCELERATION_MAX_PADDING_SIZE);
-			pad_size = rand() % pad_size;
-			Zero(pad, sizeof(pad));
-			Copy(buf, pad, pad_size);
+			pad_size = Rand32() % pad_size;
+			Zero(buf, pad_size);
 			buf += pad_size;
 			size += pad_size;
 		}
@@ -294,8 +290,6 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 			Copy(a->NextIv, buf - UDP_ACCELERATION_PACKET_IV_SIZE_V1, UDP_ACCELERATION_PACKET_IV_SIZE_V1);
 		}
 	}
-
-	SetSockHighPriority(a->UdpSock, high_priority);
 
 	if (SendTo(a->UdpSock, &a->YourIp, a->YourPort, buffer, size) == 0)
 	{
@@ -373,7 +367,7 @@ bool UdpAccelIsSendReady(UDP_ACCEL *a, bool check_keepalive)
 		return false;
 	}
 
-	if (IsZeroIp(&a->YourIp))
+	if (IsZeroIP(&a->YourIp))
 	{
 		return false;
 	}

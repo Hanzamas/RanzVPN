@@ -64,7 +64,7 @@ static void LogMapControlChars(UCHAR *s, UINT size)
 // Send one syslog datagram to the current address (g->lock held)
 static void SendSysLogLocked(SLOG *g, UCHAR *buf, UINT size)
 {
-	if (g->DestPort != 0 && IsZeroIp(&g->DestIp) == false)
+	if (g->DestPort != 0 && IsZeroIP(&g->DestIp) == false)
 	{
 		SendTo(g->Udp, &g->DestIp, g->DestPort, buf, size);
 	}
@@ -174,7 +174,7 @@ void SetSysLog(SLOG *g, char *hostname, UINT port)
 		Copy(&g->DestIp, &ip, sizeof(IP));
 		g->DestPort = port;
 		StrCpy(g->HostName, sizeof(g->HostName), hostname);
-		g->NextPollIp = Tick64() + (IsZeroIp(&ip) ? SYSLOG_POLL_IP_INTERVAL_NG : SYSLOG_POLL_IP_INTERVAL);
+		g->NextPollIp = Tick64() + (IsZeroIP(&ip) ? SYSLOG_POLL_IP_INTERVAL_NG : SYSLOG_POLL_IP_INTERVAL);
 	}
 	Unlock(g->lock);
 }
@@ -184,7 +184,7 @@ SLOG *NewSysLog(char *hostname, UINT port, IP *ip)
 	SLOG *g = ZeroMalloc(sizeof(SLOG));
 
 	g->lock = NewLock();
-	// The socket is IPv4: NewUDP4 refuses an address that is not IPv4, and an unset ListenIP is the all-zero
+	// The socket is IPv4: NewUDPEx2 refuses an address that is not IPv4, and an unset ListenIP is the all-zero
 	// IPv6 address, so only an IPv4 address is bound; otherwise the socket binds to any address
 	g->Udp = NewUDPEx2(0, false, (ip != NULL && IsIP4(ip)) ? ip : NULL);
 
@@ -773,7 +773,7 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 			{
 				Lock(s->Syslog->lock);
 				{
-					if (IsZeroIp(&s->Syslog->DestIp) == false && s->Syslog->DestPort != 0)
+					if (IsZeroIP(&s->Syslog->DestIp) == false && s->Syslog->DestPort != 0)
 					{
 						if (IPToUINT(&s->Syslog->DestIp) == packet->L3.IPv4Header->DstIP)
 						{

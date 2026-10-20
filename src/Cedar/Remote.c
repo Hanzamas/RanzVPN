@@ -244,7 +244,7 @@ RPC *NewRpc(SOCK *s, RPC_DISPATCHER *dispatch, void *param)
 
 	r->Dispatch = dispatch;
 
-	Format(r->Name, sizeof(r->Name), "RPC-%u", s->socket);
+	Format(r->Name, sizeof(r->Name), "RPC-%u", (UINT)s->socket);
 
 	return r;
 }

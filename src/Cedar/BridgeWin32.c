@@ -300,22 +300,22 @@ static void GetVLanSupportStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
 		char marvell2[] = "S\0k\0D\0i\0s\0a\0b\0l\0e\0V\0l\0a\0n\0S\0t\0r\0i\0p";
 		char *driver_type = "";
 
-		if (SearchBin(b->Buf, 0, b->Size, intel1, sizeof(intel1)) != INFINITE
-			|| SearchBin(b->Buf, 0, b->Size, intel2, sizeof(intel2)) != INFINITE
-			|| SearchBin(b->Buf, 0, b->Size, intel3, sizeof(intel3)) != INFINITE
-			|| SearchBin(b->Buf, 0, b->Size, intel4, sizeof(intel4)) != INFINITE
-			|| SearchBin(b->Buf, 0, b->Size, intel5, sizeof(intel5)) != INFINITE
-			|| SearchBin(b->Buf, 0, b->Size, intel6, sizeof(intel6)) != INFINITE)
+		if (SearchBin(b->Buf, b->Size, intel1, sizeof(intel1)) != INFINITE
+			|| SearchBin(b->Buf, b->Size, intel2, sizeof(intel2)) != INFINITE
+			|| SearchBin(b->Buf, b->Size, intel3, sizeof(intel3)) != INFINITE
+			|| SearchBin(b->Buf, b->Size, intel4, sizeof(intel4)) != INFINITE
+			|| SearchBin(b->Buf, b->Size, intel5, sizeof(intel5)) != INFINITE
+			|| SearchBin(b->Buf, b->Size, intel6, sizeof(intel6)) != INFINITE)
 		{
 			driver_type = "Intel";
 		}
-		else if (SearchBin(b->Buf, 0, b->Size, broadcom1, sizeof(broadcom1)) != INFINITE
-			|| SearchBin(b->Buf, 0, b->Size, broadcom2, sizeof(broadcom2)) != INFINITE)
+		else if (SearchBin(b->Buf, b->Size, broadcom1, sizeof(broadcom1)) != INFINITE
+			|| SearchBin(b->Buf, b->Size, broadcom2, sizeof(broadcom2)) != INFINITE)
 		{
 			driver_type = "Broadcom";
 		}
-		else if (SearchBin(b->Buf, 0, b->Size, marvell1, sizeof(marvell1)) != INFINITE
-			|| SearchBin(b->Buf, 0, b->Size, marvell2, sizeof(marvell2)) != INFINITE)
+		else if (SearchBin(b->Buf, b->Size, marvell1, sizeof(marvell1)) != INFINITE
+			|| SearchBin(b->Buf, b->Size, marvell2, sizeof(marvell2)) != INFINITE)
 		{
 			driver_type = "Marvell";
 		}

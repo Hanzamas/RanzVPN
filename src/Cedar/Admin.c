@@ -27,6 +27,7 @@
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 #include "Mayaqua/Tick64.h"
+#include "Mayaqua/Win32.h"
 
 static UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t);
 static UINT StSetHubMsg(ADMIN *a, RPC_MSG *t);
@@ -4339,7 +4340,7 @@ static UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 	// Hide the memory figures of the host from hub administrators
 	if (a->ServerAdmin)
 	{
-		GetMemInfo(&t->MemInfo);
+		Win32GetMemInfo(&t->MemInfo);
 	}
 
 	t->NumTcpConnections = t->NumTcpConnectionsLocal = 0;
@@ -6789,19 +6790,19 @@ void InRpcNodeInfo(NODE_INFO *t, PACK *p)
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	PackGetData2(p, "UniqueId", t->UniqueId, sizeof(t->UniqueId));
 
-	t->ClientProductVer = LittleEndian32(PackGetInt(p, "ClientProductVer"));
-	t->ClientProductBuild = LittleEndian32(PackGetInt(p, "ClientProductBuild"));
-	t->ServerProductVer = LittleEndian32(PackGetInt(p, "ServerProductVer"));
-	t->ServerProductBuild = LittleEndian32(PackGetInt(p, "ServerProductBuild"));
+	t->ClientProductVer = PackGetInt(p, "ClientProductVer");
+	t->ClientProductBuild = PackGetInt(p, "ClientProductBuild");
+	t->ServerProductVer = PackGetInt(p, "ServerProductVer");
+	t->ServerProductBuild = PackGetInt(p, "ServerProductBuild");
 	t->ClientIpAddress = PackGetIp32(p, "ClientIpAddress");
 	PackGetData2(p, "ClientIpAddress6", t->ClientIpAddress6, sizeof(t->ClientIpAddress6));
-	t->ClientPort = LittleEndian32(PackGetInt(p, "ClientPort"));
+	t->ClientPort = PackGetInt(p, "ClientPort");
 	t->ServerIpAddress = PackGetIp32(p, "ServerIpAddress");
 	PackGetData2(p, "ServerIpAddress6", t->ServerIpAddress6, sizeof(t->ServerIpAddress6));
-	t->ServerPort = LittleEndian32(PackGetInt(p, "ServerPort2"));
+	t->ServerPort = PackGetInt(p, "ServerPort2");
 	t->ProxyIpAddress = PackGetIp32(p, "ProxyIpAddress");
 	PackGetData2(p, "ProxyIpAddress6", t->ProxyIpAddress6, sizeof(t->ProxyIpAddress6));
-	t->ProxyPort = LittleEndian32(PackGetInt(p, "ProxyPort"));
+	t->ProxyPort = PackGetInt(p, "ProxyPort");
 }
 void OutRpcNodeInfo(PACK *p, NODE_INFO *t)
 {
@@ -6821,19 +6822,19 @@ void OutRpcNodeInfo(PACK *p, NODE_INFO *t)
 	PackAddStr(p, "HubName", t->HubName);
 	PackAddData(p, "UniqueId", t->UniqueId, sizeof(t->UniqueId));
 
-	PackAddInt(p, "ClientProductVer", LittleEndian32(t->ClientProductVer));
-	PackAddInt(p, "ClientProductBuild", LittleEndian32(t->ClientProductBuild));
-	PackAddInt(p, "ServerProductVer", LittleEndian32(t->ServerProductVer));
-	PackAddInt(p, "ServerProductBuild", LittleEndian32(t->ServerProductBuild));
+	PackAddInt(p, "ClientProductVer", t->ClientProductVer);
+	PackAddInt(p, "ClientProductBuild", t->ClientProductBuild);
+	PackAddInt(p, "ServerProductVer", t->ServerProductVer);
+	PackAddInt(p, "ServerProductBuild", t->ServerProductBuild);
 	PackAddIp32(p, "ClientIpAddress", t->ClientIpAddress);
 	PackAddData(p, "ClientIpAddress6", t->ClientIpAddress6, sizeof(t->ClientIpAddress6));
-	PackAddInt(p, "ClientPort", LittleEndian32(t->ClientPort));
+	PackAddInt(p, "ClientPort", t->ClientPort);
 	PackAddIp32(p, "ServerIpAddress", t->ServerIpAddress);
 	PackAddData(p, "ServerIpAddress6", t->ServerIpAddress6, sizeof(t->ServerIpAddress6));
-	PackAddInt(p, "ServerPort2", LittleEndian32(t->ServerPort));
+	PackAddInt(p, "ServerPort2", t->ServerPort);
 	PackAddIp32(p, "ProxyIpAddress", t->ProxyIpAddress);
 	PackAddData(p, "ProxyIpAddress6", t->ProxyIpAddress6, sizeof(t->ProxyIpAddress6));
-	PackAddInt(p, "ProxyPort", LittleEndian32(t->ProxyPort));
+	PackAddInt(p, "ProxyPort", t->ProxyPort);
 }
 
 // Embedded connection status, through its own entry points (Free releases its certificates)

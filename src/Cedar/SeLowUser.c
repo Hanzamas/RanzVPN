@@ -114,7 +114,7 @@ void SuUnstageDriverPackage(wchar_t *dir)
 
 	if (RemoveDirectoryW(dir) == FALSE)
 	{
-		Debug("SuUnstageDriverPackage: RemoveDirectoryW(%S) failed: %u\n", dir, GetLastError());
+		Debug("SuUnstageDriverPackage: RemoveDirectoryW(%S) failed: %u\n", dir, (UINT)GetLastError());
 	}
 }
 
@@ -143,7 +143,7 @@ bool SuStageDriverPackage(wchar_t *dir, UINT dir_size)
 
 	if (ConvertStringSecurityDescriptorToSecurityDescriptorW(SU_STAGE_DIR_SDDL, SDDL_REVISION_1, &sd, NULL) == FALSE)
 	{
-		Debug("SuStageDriverPackage: ConvertStringSecurityDescriptorToSecurityDescriptorW failed: %u\n", GetLastError());
+		Debug("SuStageDriverPackage: ConvertStringSecurityDescriptorToSecurityDescriptorW failed: %u\n", (UINT)GetLastError());
 		return false;
 	}
 
@@ -235,7 +235,7 @@ static bool SuInstallDriver()
 		else
 		{
 			// Also copy by hand: the installer sometimes fails to copy the .sys file
-			Debug("SuCopySysFile from %S to %s: ret = %u\n", src_sys, sys_fullpath, SuCopySysFile(src_sys, sys_fullpath));
+			Debug("SuCopySysFile from %S to %S: ret = %u\n", src_sys, sys_fullpath, SuCopySysFile(src_sys, sys_fullpath));
 
 			ret = true;
 

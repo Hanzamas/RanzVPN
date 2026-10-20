@@ -6,10 +6,10 @@
 #include "Mayaqua.h"
 #include "Memory.h"
 #include "Kernel.h"
-#include "OS.h"
 #include "Str.h"
 #include "Tick64.h"
 #include "Tracking.h"
+#include "Win32.h"
 
 static void CheckDeadLockThread(THREAD *t, void *param)
 {
@@ -65,6 +65,64 @@ void CheckDeadLock(LOCK *lock, UINT timeout, char *name)
 	ReleaseThread(t);
 }
 
+// Create a raw lock. One heap block from the raw OS allocator
+LOCK *NewRawLock()
+{
+	// Memory allocation
+	LOCK *lock = Win32MemoryAlloc(sizeof(LOCK));
+
+	if (lock == NULL)
+	{
+		return NULL;
+	}
+
+	// Initialize the critical section
+	InitializeCriticalSection(&lock->CriticalSection);
+	lock->Ready = true;
+
+	return lock;
+}
+
+bool RawLock(LOCK *lock)
+{
+	if (lock->Ready == false)
+	{
+		// State is invalid
+		return false;
+	}
+
+	// Enter the critical section
+	EnterCriticalSection(&lock->CriticalSection);
+
+	return true;
+}
+
+void RawUnlock(LOCK *lock)
+{
+	if (lock->Ready == false)
+	{
+		// State is invalid
+		return;
+	}
+
+	// Leave the critical section
+	LeaveCriticalSection(&lock->CriticalSection);
+}
+
+void DeleteRawLock(LOCK *lock)
+{
+	// Reset the Ready flag safely
+	EnterCriticalSection(&lock->CriticalSection);
+	lock->Ready = false;
+	LeaveCriticalSection(&lock->CriticalSection);
+
+	// Delete the critical section
+	DeleteCriticalSection(&lock->CriticalSection);
+
+	// Memory release
+	Win32MemoryFree(lock);
+}
+
 static LOCK *NewLockMain()
 {
 	LOCK *lock;
@@ -74,9 +132,9 @@ static LOCK *NewLockMain()
 	{
 		if ((retry++) > OBJECT_ALLOC__MAX_RETRY)
 		{
-			AbortExitEx("error: OSNewLock() failed.\n\n");
+			AbortExitEx("error: NewRawLock() failed.\n\n");
 		}
-		lock = OSNewLock();
+		lock = NewRawLock();
 		if (lock != NULL)
 		{
 			break;
@@ -106,7 +164,7 @@ void DeleteLock(LOCK *lock)
 	KS_INC(KS_DELETELOCK_COUNT);
 	KS_DEC(KS_CURRENT_LOCK_COUNT);
 
-	OSDeleteLock(lock);
+	DeleteRawLock(lock);
 }
 
 bool LockInner(LOCK *lock)
@@ -119,7 +177,7 @@ bool LockInner(LOCK *lock)
 	KS_INC(KS_LOCK_COUNT);
 	KS_INC(KS_CURRENT_LOCKED_COUNT);
 
-	return OSLock(lock);
+	return RawLock(lock);
 }
 
 void UnlockInner(LOCK *lock)
@@ -132,7 +190,7 @@ void UnlockInner(LOCK *lock)
 	KS_INC(KS_UNLOCK_COUNT);
 	KS_DEC(KS_CURRENT_LOCKED_COUNT);
 
-	OSUnlock(lock);
+	RawUnlock(lock);
 }
 
 COUNTER *NewCounter()
@@ -368,7 +426,7 @@ bool WaitEx(EVENT *e, UINT timeout, volatile bool *cancel)
 
 		interval_to_giveup = MIN(interval_to_giveup, 25);
 
-		if (*cancel)
+		if (FlagRead(cancel))
 		{
 			return false;
 		}

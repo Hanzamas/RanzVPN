@@ -11,12 +11,12 @@
 #include "Microsoft.h"
 #include "Network.h"
 #include "Object.h"
-#include "OS.h"
 #include "Str.h"
 #include "Table.h"
 #include "Tick64.h"
 #include "Trace.h"
 #include "Tracking.h"
+#include "Win32.h"
 
 #include <locale.h>
 #include <stdlib.h>
@@ -26,7 +26,6 @@ bool g_debug;
 volatile LONG64 kernel_status[NUM_KERNEL_STATUS];
 volatile LONG64 kernel_status_max[NUM_KERNEL_STATUS];
 bool kernel_status_inited = false;
-bool g_little_endian = true;
 
 static OS_INFO *os_info = NULL;
 static UINT init_mayaqua_counter = 0;
@@ -114,23 +113,6 @@ bool MayaquaIsMinimalMode()
 	return minimal_mode;
 }
 
-static void CheckEndian()
-{
-	unsigned short test;
-	UCHAR *buf;
-
-	test = 0x1234;
-	buf = (UCHAR *)&test;
-	if (buf[0] == 0x12)
-	{
-		g_little_endian = false;
-	}
-	else
-	{
-		g_little_endian = true;
-	}
-}
-
 void InitMayaqua(bool memcheck, bool debug)
 {
 	wchar_t tmp[MAX_PATH];
@@ -147,20 +129,14 @@ void InitMayaqua(bool memcheck, bool debug)
 	g_debug = debug;
 	setbuf(stdout, NULL);
 
-	CheckEndian();
-
 	_configthreadlocale(_DISABLE_PER_THREAD_LOCALE);
 
 	setlocale(LC_ALL, "");
 
-	OSInit();
+	Win32Init();
 
 	// The ETW provider of Debug() (Trace.c), registered first so that it sees the whole start
 	InitTrace();
-
-	srand((UINT)SystemTime64());
-
-	InitFifo();
 
 	InitKernelStatus();
 
@@ -187,7 +163,7 @@ void InitMayaqua(bool memcheck, bool debug)
 
 	MsInit();
 
-	if (OSIsSupportedOs() == false)
+	if (Win32IsSupportedOs() == false)
 	{
 		MayaFatalExit(1, CEDAR_PRODUCT_STR " VPN doesn't support this Windows Operating System.\r\n"
 			CEDAR_PRODUCT_STR " VPN requires " SUPPORTED_WINDOWS_LIST ".\r\n\r\n"
@@ -242,8 +218,6 @@ void FreeMayaqua()
 
 	FreeTick64();
 
-	FreeStringLibrary();
-
 	FreeThreading();
 
 	FreeCryptLibrary();
@@ -267,7 +241,7 @@ void FreeMayaqua()
 
 	FreeTrace();
 
-	OSFree();
+	Win32Free();
 }
 
 // Whether a person can see a message box: a visible window station (not a service), and either
@@ -341,7 +315,7 @@ void InitOsInfo()
 
 	os_info = ZeroMalloc(sizeof(OS_INFO));
 
-	OSGetOsInfo(os_info);
+	Win32GetOsInfo(os_info);
 }
 
 void FreeOsInfo()

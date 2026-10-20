@@ -136,7 +136,7 @@ static void UdpAccelTestSendValid(UDPACCEL_TEST *t, UCHAR *data, UINT data_size,
 {
 	t->PeerTick++;
 	UdpAccelSetTick(t->Peer, t->PeerTick);
-	UdpAccelSend(t->Peer, data, data_size, 0, max_size, false);
+	UdpAccelSend(t->Peer, data, data_size, 0, max_size);
 }
 
 // Send num datagrams of size bytes that are no packets of Recv from the flood socket

@@ -967,26 +967,8 @@ UINT GetUtf8Type(BYTE *s, UINT size, UINT offset)
 
 UINT GetUniType(wchar_t c)
 {
-	BYTE c1, c2;
-
-	if (IsBigEndian())
-	{
-		if (sizeof(wchar_t) == 2)
-		{
-			c1 = ((BYTE *)&c)[0];
-			c2 = ((BYTE *)&c)[1];
-		}
-		else
-		{
-			c1 = ((BYTE *)&c)[2];
-			c2 = ((BYTE *)&c)[3];
-		}
-	}
-	else
-	{
-		c1 = ((BYTE *)&c)[1];
-		c2 = ((BYTE *)&c)[0];
-	}
+	BYTE c1 = (BYTE)((c >> 8) & 0xFF);
+	BYTE c2 = (BYTE)(c & 0xFF);
 
 	if (c1 == 0)
 	{

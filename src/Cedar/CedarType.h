@@ -63,6 +63,13 @@ typedef struct AC AC;
 typedef struct USERLIST USERLIST;
 
 
+typedef struct LOGIN_REQ LOGIN_REQ;
+typedef struct HUB_LOGIN HUB_LOGIN;
+typedef struct HUB_SESSION_SLOT HUB_SESSION_SLOT;
+typedef struct SERVER_SESSION_PARAMS SERVER_SESSION_PARAMS;
+typedef struct SERVER_LOGIN SERVER_LOGIN;
+
+
 typedef struct LINK LINK;
 
 

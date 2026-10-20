@@ -92,8 +92,6 @@ bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address)
 		return false;
 	}
 	udp = (UDP_HEADER *)data;
-	data += sizeof(UDP_HEADER);
-	size -= sizeof(UDP_HEADER);
 
 	if (is_send)
 	{
@@ -175,7 +173,6 @@ UINT GetIpHeaderSize(UCHAR *src, UINT src_size)
 {
 	UCHAR ip_ver;
 	IPV4_HEADER *ip = NULL;
-	IPV6_HEADER *ip6 = NULL;
 	if (src == NULL || src_size == 0)
 	{
 		return 0;
@@ -215,8 +212,7 @@ UINT GetIpHeaderSize(UCHAR *src, UINT src_size)
 			return 0;
 		}
 
-		ip6 = v6.IPv6Header;
-		if (ip6 == NULL)
+		if (v6.IPv6Header == NULL)
 		{
 			return 0;
 		}
@@ -810,10 +806,10 @@ PKT *ClonePacket(PKT *p, bool copy_data)
 		return NULL;
 	}
 
-	ret = ZeroMallocFast(sizeof(PKT));
+	ret = ZeroMalloc(sizeof(PKT));
 	ret->PacketSize = p->PacketSize;
 
-	ret->MacHeader = MallocFast(sizeof(MAC_HEADER));
+	ret->MacHeader = Malloc(sizeof(MAC_HEADER));
 	Copy(ret->MacHeader, p->MacHeader, sizeof(MAC_HEADER));
 
 	ret->BroadcastPacket = p->BroadcastPacket;
@@ -826,17 +822,17 @@ PKT *ClonePacket(PKT *p, bool copy_data)
 	switch (ret->TypeL3)
 	{
 	case L3_ARPV4:
-		ret->L3.ARPv4Header = MallocFast(sizeof(ARPV4_HEADER));
+		ret->L3.ARPv4Header = Malloc(sizeof(ARPV4_HEADER));
 		Copy(ret->L3.ARPv4Header, p->L3.ARPv4Header, sizeof(ARPV4_HEADER));
 		break;
 
 	case L3_IPV4:
-		ret->L3.IPv4Header = MallocFast(sizeof(IPV4_HEADER));
+		ret->L3.IPv4Header = Malloc(sizeof(IPV4_HEADER));
 		Copy(ret->L3.IPv4Header, p->L3.IPv4Header, sizeof(IPV4_HEADER));
 		break;
 
 	case L3_IPV6:
-		ret->L3.IPv6Header = MallocFast(sizeof(IPV6_HEADER));
+		ret->L3.IPv6Header = Malloc(sizeof(IPV6_HEADER));
 		Copy(ret->L3.IPv6Header, p->L3.IPv6Header, sizeof(IPV6_HEADER));
 
 		ret->IPv6HeaderPacketInfo.IPv6Header = Clone(p->IPv6HeaderPacketInfo.IPv6Header,
@@ -863,12 +859,12 @@ PKT *ClonePacket(PKT *p, bool copy_data)
 	switch (ret->TypeL4)
 	{
 	case L4_ICMPV4:
-		ret->L4.ICMPHeader = MallocFast(sizeof(ICMP_HEADER));
+		ret->L4.ICMPHeader = Malloc(sizeof(ICMP_HEADER));
 		Copy(ret->L4.ICMPHeader, p->L4.ICMPHeader, sizeof(ICMP_HEADER));
 		break;
 
 	case L4_ICMPV6:
-		ret->L4.ICMPHeader = MallocFast(sizeof(ICMP_HEADER));
+		ret->L4.ICMPHeader = Malloc(sizeof(ICMP_HEADER));
 		Copy(ret->L4.ICMPHeader, p->L4.ICMPHeader, sizeof(ICMP_HEADER));
 
 		ret->ICMPv6HeaderPacketInfo.Data = Clone(p->ICMPv6HeaderPacketInfo.Data,
@@ -913,12 +909,12 @@ PKT *ClonePacket(PKT *p, bool copy_data)
 		break;
 
 	case L4_TCP:
-		ret->L4.TCPHeader = MallocFast(sizeof(TCP_HEADER));
+		ret->L4.TCPHeader = Malloc(sizeof(TCP_HEADER));
 		Copy(ret->L4.TCPHeader, p->L4.TCPHeader, sizeof(TCP_HEADER));
 		break;
 
 	case L4_UDP:
-		ret->L4.UDPHeader = MallocFast(sizeof(UDP_HEADER));
+		ret->L4.UDPHeader = Malloc(sizeof(UDP_HEADER));
 		Copy(ret->L4.UDPHeader, p->L4.UDPHeader, sizeof(UDP_HEADER));
 		break;
 	}
@@ -927,12 +923,12 @@ PKT *ClonePacket(PKT *p, bool copy_data)
 	switch (ret->TypeL7)
 	{
 	case L7_DHCPV4:
-		ret->L7.DHCPv4Header = MallocFast(sizeof(DHCPV4_HEADER));
+		ret->L7.DHCPv4Header = Malloc(sizeof(DHCPV4_HEADER));
 		Copy(ret->L7.DHCPv4Header, p->L7.DHCPv4Header, sizeof(DHCPV4_HEADER));
 		break;
 
 	case L7_IKECONN:
-		ret->L7.IkeHeader = MallocFast(sizeof(IKE_HEADER));
+		ret->L7.IkeHeader = Malloc(sizeof(IKE_HEADER));
 		Copy(ret->L7.IkeHeader, p->L7.IkeHeader, sizeof(IKE_HEADER));
 		break;
 
@@ -946,7 +942,7 @@ PKT *ClonePacket(PKT *p, bool copy_data)
 
 	if (copy_data)
 	{
-		ret->PacketData = MallocFast(p->PacketSize);
+		ret->PacketData = Malloc(p->PacketSize);
 		Copy(ret->PacketData, p->PacketData, p->PacketSize);
 	}
 
@@ -1045,7 +1041,7 @@ PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool b
 
 	vlan_type_id_16 = Endian16((USHORT)vlan_type_id);
 
-	p = ZeroMallocFast(sizeof(PKT));
+	p = ZeroMalloc(sizeof(PKT));
 
 	// Drop any garbage after the payload of IPv4 and IPv6 packets, tagged with a VLAN or not
 	if (size >= 24)
@@ -1547,9 +1543,7 @@ bool ParsePacketTAGVLAN(PKT *p, UCHAR *buf, UINT size, bool no_l3)
 	p->VlanId = vlan_ushort;
 
 	proto_ushort = READ_USHORT(p->L3.TagVlanHeader->Protocol);
-	proto_ushort = proto_ushort & 0xFFFF;
 
-	
 	return ParsePacketL3(p, buf, size, proto_ushort, no_l3);
 }
 
@@ -1568,9 +1562,6 @@ bool ParsePacketBPDU(PKT *p, UCHAR *buf, UINT size)
 	p->L3.BpduHeader = (BPDU_HEADER *)buf;
 	p->TypeL3 = L3_BPDU;
 
-	buf += sizeof(BPDU_HEADER);
-	size -= sizeof(BPDU_HEADER);
-
 	return true;
 }
 
@@ -1588,9 +1579,6 @@ bool ParsePacketARPv4(PKT *p, UCHAR *buf, UINT size)
 
 	p->L3.ARPv4Header = (ARPV4_HEADER *)buf;
 	p->TypeL3 = L3_ARPV4;
-
-	buf += sizeof(ARPV4_HEADER);
-	size -= sizeof(ARPV4_HEADER);
 
 	return true;
 }
@@ -1794,18 +1782,12 @@ static bool ParseICMPv6Options(ICMPV6_OPTION_LIST *o, UCHAR *buf, UINT size)
 					}
 				}
 			}
-			else
-			{
-			}
 			break;
 
 		case ICMPV6_OPTION_TYPE_MTU:
 			if (header_total_size >= sizeof(ICMPV6_OPTION_MTU))
 			{
 				o->Mtu = (ICMPV6_OPTION_MTU *)header_pointer;
-			}
-			else
-			{
 			}
 			break;
 		}
@@ -1994,8 +1976,6 @@ bool ParsePacketIPv6(PKT *p, UCHAR *buf, UINT size)
 	default:
 		return true;
 	}
-
-	return true;
 }
 
 bool ParsePacketIPv4(PKT *p, UCHAR *buf, UINT size)
@@ -2068,9 +2048,6 @@ bool ParseICMPv4(PKT *p, UCHAR *buf, UINT size)
 
 	p->L4.ICMPHeader = (ICMP_HEADER *)buf;
 	p->TypeL4 = L4_ICMPV4;
-
-	buf += sizeof(ICMP_HEADER);
-	size -= sizeof(ICMP_HEADER);
 
 	return true;
 }
