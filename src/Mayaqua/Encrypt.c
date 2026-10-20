@@ -783,63 +783,6 @@ X_SERIAL *NewXSerial(void *data, UINT size)
 	return serial;
 }
 
-static UINT GetDaysUntil2038()
-{
-	UINT64 now = SystemTime64();
-	UINT64 target;
-	SYSTEMTIME st;
-
-	Zero(&st, sizeof(st));
-	st.wYear = 2038;
-	st.wMonth = 1;
-	st.wDay = 1;
-
-	target = SystemToUINT64(&st);
-
-	if (now >= target)
-	{
-		return 0;
-	}
-	else
-	{
-		return (UINT)((target - now) / (UINT64)(1000 * 60 * 60 * 24));
-	}
-}
-UINT GetDaysUntil2038Ex()
-{
-	SYSTEMTIME now;
-
-	Zero(&now, sizeof(now));
-	SystemTime(&now);
-
-	if (now.wYear >= 2030)
-	{
-		UINT64 now = SystemTime64();
-		UINT64 target;
-		SYSTEMTIME st;
-
-		Zero(&st, sizeof(st));
-		st.wYear = 2049;
-		st.wMonth = 12;
-		st.wDay = 30;
-
-		target = SystemToUINT64(&st);
-
-		if (now >= target)
-		{
-			return 0;
-		}
-		else
-		{
-			return (UINT)((target - now) / (UINT64)(1000 * 60 * 60 * 24));
-		}
-	}
-	else
-	{
-		return GetDaysUntil2038();
-	}
-}
-
 X *NewX(K *pub, K *priv, X *ca, NAME *name, UINT days, X_SERIAL *serial)
 {
 	X509 *x509;
@@ -908,20 +851,19 @@ static void AddKeyUsageX509(EXTENDED_KEY_USAGE *ex, int nid)
 		sk_ASN1_OBJECT_push(ex, obj);
 	}
 }
+// Extended key usage of a generated certificate: TLS server and TLS client only
 static X509_EXTENSION *NewExtendedKeyUsageForX509()
 {
 	EXTENDED_KEY_USAGE *ex = sk_ASN1_OBJECT_new_null();
 	X509_EXTENSION *ret;
 
+	if (ex == NULL)
+	{
+		return NULL;
+	}
+
 	AddKeyUsageX509(ex, NID_server_auth);
 	AddKeyUsageX509(ex, NID_client_auth);
-	AddKeyUsageX509(ex, NID_code_sign);
-	AddKeyUsageX509(ex, NID_email_protect);
-	AddKeyUsageX509(ex, NID_ipsecEndSystem);
-	AddKeyUsageX509(ex, NID_ipsecTunnel);
-	AddKeyUsageX509(ex, NID_ipsecUser);
-	AddKeyUsageX509(ex, NID_time_stamp);
-	AddKeyUsageX509(ex, NID_OCSP_sign);
 
 	ret = X509V3_EXT_i2d(NID_ext_key_usage, 0, ex);
 
@@ -938,7 +880,9 @@ static void BitStringSetBit(ASN1_BIT_STRING *str, int bit)
 
 	ASN1_BIT_STRING_set_bit(str, bit, 1);
 }
-static X509_EXTENSION *NewBasicKeyUsageForX509()
+// Key usage of a generated certificate. Only a CA certificate may sign certificates and CRLs
+// (RFC 5280 4.2.1.3: keyCertSign needs CA:TRUE).
+static X509_EXTENSION *NewBasicKeyUsageForX509(bool ca)
 {
 	X509_EXTENSION *ret = NULL;
 	ASN1_BIT_STRING *str;
@@ -950,13 +894,141 @@ static X509_EXTENSION *NewBasicKeyUsageForX509()
 		BitStringSetBit(str, 1);	// KU_NON_REPUDIATION
 		BitStringSetBit(str, 2);	// KU_KEY_ENCIPHERMENT
 		BitStringSetBit(str, 3);	// KU_DATA_ENCIPHERMENT
-		BitStringSetBit(str, 5);	// KU_KEY_CERT_SIGN
-		BitStringSetBit(str, 6);	// KU_CRL_SIGN
+		if (ca)
+		{
+			BitStringSetBit(str, 5);	// KU_KEY_CERT_SIGN
+			BitStringSetBit(str, 6);	// KU_CRL_SIGN
+		}
 
 		ret = X509V3_EXT_i2d(NID_key_usage, 0, str);
 
 		ASN1_BIT_STRING_free(str);
 	}
+
+	return ret;
+}
+
+// Adds an extension made for a new certificate and frees it. False when it is NULL or cannot be added.
+static bool AddNewExtToX509(X509 *x509, X509_EXTENSION *ex)
+{
+	bool ret;
+
+	if (ex == NULL)
+	{
+		return false;
+	}
+
+	ret = (X509_add_ext(x509, ex, -1) == 1);
+	X509_EXTENSION_free(ex);
+
+	return ret;
+}
+
+// Serial number of a new certificate: the given one, or a random positive 127-bit number. RFC 5280
+// 4.1.2.2 asks for a positive serial that is unique per issuer, so a fixed 0 is not used.
+static bool SetSerialForNewX509(X509 *x509, X_SERIAL *serial)
+{
+	ASN1_INTEGER *s = X509_get_serialNumber(x509);
+	BIGNUM *bn;
+	bool ret;
+
+	if (s == NULL)
+	{
+		return false;
+	}
+
+	if (serial != NULL)
+	{
+		bn = BN_bin2bn(serial->data, serial->size, NULL);
+	}
+	else
+	{
+		UCHAR random_serial[16];
+
+		// Top bit clear (no sign octet in DER), next bit set (never zero, always 16 octets)
+		Rand(random_serial, sizeof(random_serial));
+		random_serial[0] = (random_serial[0] & 0x7f) | 0x40;
+
+		bn = BN_bin2bn(random_serial, sizeof(random_serial), NULL);
+	}
+
+	if (bn == NULL)
+	{
+		return false;
+	}
+
+	ret = (BN_to_ASN1_INTEGER(bn, s) != NULL);
+	BN_free(bn);
+
+	return ret;
+}
+
+// Subject alternative name of a new certificate: the common name as one DNS name. The name is built as a
+// single GENERAL_NAME, so a ',' or "DNS:" in the common name cannot add further entries. A common name
+// that is not printable ASCII without spaces gets no SAN; that is not an error.
+static bool AddDnsAltNameToX509(X509 *x509, wchar_t *common_name)
+{
+	char dns[MAX_PATH];
+	UINT i, len;
+	GENERAL_NAMES *names;
+	GENERAL_NAME *gn;
+	ASN1_IA5STRING *ia5;
+	bool ret = false;
+
+	if (UniIsEmptyStr(common_name))
+	{
+		return true;
+	}
+
+	UniToStr(dns, sizeof(dns), common_name);
+	len = StrLen(dns);
+	if (len == 0 || len != UniStrLen(common_name))
+	{
+		return true;
+	}
+	for (i = 0;i < len;i++)
+	{
+		if (dns[i] <= ' ' || dns[i] > '~')
+		{
+			return true;
+		}
+	}
+
+	names = GENERAL_NAMES_new();
+	gn = GENERAL_NAME_new();
+	ia5 = ASN1_IA5STRING_new();
+	if (names != NULL && gn != NULL && ia5 != NULL && ASN1_STRING_set(ia5, dns, (int)len) == 1)
+	{
+		GENERAL_NAME_set0_value(gn, GEN_DNS, ia5);
+		ia5 = NULL;
+
+		if (sk_GENERAL_NAME_push(names, gn) > 0)
+		{
+			gn = NULL;
+			ret = (X509_add1_ext_i2d(x509, NID_subject_alt_name, names, 0, X509V3_ADD_DEFAULT) == 1);
+		}
+	}
+
+	ASN1_IA5STRING_free(ia5);
+	GENERAL_NAME_free(gn);
+	GENERAL_NAMES_free(names);
+
+	return ret;
+}
+
+// Sets the public key and signs a new certificate with SHA-256. False when either step fails.
+static bool SignNewX509(X509 *x509, K *pub, K *priv)
+{
+	bool ret = false;
+
+	Lock(openssl_lock);
+	{
+		if (X509_set_pubkey(x509, pub->pkey) == 1 && X509_sign(x509, priv->pkey, EVP_sha256()) > 0)
+		{
+			ret = true;
+		}
+	}
+	Unlock(openssl_lock);
 
 	return ret;
 }
@@ -967,11 +1039,7 @@ X509 *NewX509(K *pub, K *priv, X *ca, NAME *name, UINT days, X_SERIAL *serial)
 	UINT64 notBefore, notAfter;
 	const ASN1_TIME *t1, *t2;
 	X509_NAME *subject_name, *issuer_name;
-	X509_EXTENSION *ex = NULL;
-	X509_EXTENSION *eku = NULL;
-	X509_EXTENSION *busage = NULL;
-	ASN1_INTEGER *s;
-	if (pub == NULL || name == NULL || ca == NULL)
+	if (pub == NULL || priv == NULL || name == NULL || ca == NULL)
 	{
 		return NULL;
 	}
@@ -1027,53 +1095,16 @@ X509 *NewX509(K *pub, K *priv, X *ca, NAME *name, UINT days, X_SERIAL *serial)
 
 	FreeX509Name(subject_name);
 
-	s = X509_get_serialNumber(x509);
-	if (serial == NULL)
+	if (SetSerialForNewX509(x509, serial) == false ||
+		AddNewExtToX509(x509, X509V3_EXT_conf_nid(NULL, NULL, NID_basic_constraints, "critical,CA:FALSE")) == false ||
+		AddNewExtToX509(x509, NewBasicKeyUsageForX509(false)) == false ||
+		AddNewExtToX509(x509, NewExtendedKeyUsageForX509()) == false ||
+		AddDnsAltNameToX509(x509, name->CommonName) == false ||
+		SignNewX509(x509, pub, priv) == false)
 	{
-		ASN1_INTEGER_set(s, 0);
+		FreeX509(x509);
+		return NULL;
 	}
-	else
-	{
-		BIGNUM *bn = BN_bin2bn(serial->data, serial->size, NULL);
-		if (bn != NULL)
-		{
-			BN_to_ASN1_INTEGER(bn, s);
-			BN_free(bn);
-		}
-	}
-
-	busage = NewBasicKeyUsageForX509();
-	if (busage != NULL)
-	{
-		X509_add_ext(x509, busage, -1);
-		X509_EXTENSION_free(busage);
-	}
-
-	eku = NewExtendedKeyUsageForX509();
-	if (eku != NULL)
-	{
-		X509_add_ext(x509, eku, -1);
-		X509_EXTENSION_free(eku);
-	}
-
-	if (UniIsEmptyStr(name->CommonName) == false)
-	{
-		char alt_dns[MAX_PATH];
-
-		Format(alt_dns, sizeof(alt_dns), "DNS.1:%S", name->CommonName);
-
-		ex = X509V3_EXT_conf_nid(NULL, NULL, NID_subject_alt_name,	alt_dns);
-		X509_add_ext(x509, ex, -1);
-		X509_EXTENSION_free(ex);
-	}
-
-	Lock(openssl_lock);
-	{
-		X509_set_pubkey(x509, pub->pkey);
-
-		X509_sign(x509, priv->pkey, EVP_sha256());
-	}
-	Unlock(openssl_lock);
 
 	return x509;
 }
@@ -1084,10 +1115,6 @@ X509 *NewRootX509(K *pub, K *priv, NAME *name, UINT days, X_SERIAL *serial)
 	UINT64 notBefore, notAfter;
 	const ASN1_TIME *t1, *t2;
 	X509_NAME *subject_name, *issuer_name;
-	X509_EXTENSION *ex = NULL;
-	X509_EXTENSION *eku = NULL;
-	X509_EXTENSION *busage = NULL;
-	ASN1_INTEGER *s;
 	if (pub == NULL || name == NULL || priv == NULL)
 	{
 		return NULL;
@@ -1149,46 +1176,15 @@ X509 *NewRootX509(K *pub, K *priv, NAME *name, UINT days, X_SERIAL *serial)
 	FreeX509Name(subject_name);
 	FreeX509Name(issuer_name);
 
-	s = X509_get_serialNumber(x509);
-	if (serial == NULL)
+	if (SetSerialForNewX509(x509, serial) == false ||
+		AddNewExtToX509(x509, X509V3_EXT_conf_nid(NULL, NULL, NID_basic_constraints, "critical,CA:TRUE")) == false ||
+		AddNewExtToX509(x509, NewBasicKeyUsageForX509(true)) == false ||
+		AddNewExtToX509(x509, NewExtendedKeyUsageForX509()) == false ||
+		SignNewX509(x509, pub, priv) == false)
 	{
-		ASN1_INTEGER_set(s, 0);
+		FreeX509(x509);
+		return NULL;
 	}
-	else
-	{
-		BIGNUM *bn = BN_bin2bn(serial->data, serial->size, NULL);
-		if (bn != NULL)
-		{
-			BN_to_ASN1_INTEGER(bn, s);
-			BN_free(bn);
-		}
-	}
-
-	ex = X509V3_EXT_conf_nid(NULL, NULL, NID_basic_constraints,	"critical,CA:TRUE");
-	X509_add_ext(x509, ex, -1);
-	X509_EXTENSION_free(ex);
-
-	busage = NewBasicKeyUsageForX509();
-	if (busage != NULL)
-	{
-		X509_add_ext(x509, busage, -1);
-		X509_EXTENSION_free(busage);
-	}
-
-	eku = NewExtendedKeyUsageForX509();
-	if (eku != NULL)
-	{
-		X509_add_ext(x509, eku, -1);
-		X509_EXTENSION_free(eku);
-	}
-
-	Lock(openssl_lock);
-	{
-		X509_set_pubkey(x509, pub->pkey);
-
-		X509_sign(x509, priv->pkey, EVP_sha256());
-	}
-	Unlock(openssl_lock);
 
 	return x509;
 }
@@ -1338,47 +1334,35 @@ static void LoadXDates(X *x)
 	x->notAfter = Asn1TimeToUINT64((ASN1_TIME *)X509_get0_notAfter(x->x509));
 }
 
+// Writes the system time t into asn1_time. OpenSSL picks the form RFC 5280 section 4.1.2.5 asks for:
+// UTCTime for 1950 to 2049, GeneralizedTime (4-digit year) from 2050, so a later time does not wrap
 bool UINT64ToAsn1Time(void *asn1_time, UINT64 t)
 {
 	SYSTEMTIME st;
+	struct tm tm;
+	time_64t sec;
 	if (asn1_time == NULL)
 	{
 		return false;
 	}
 
 	UINT64ToSystem(&st, t);
-	return SystemToAsn1Time(asn1_time, &st);
-}
 
-bool SystemToAsn1Time(void *asn1_time, SYSTEMTIME *s)
-{
-	char tmp[20];
-	ASN1_TIME *t;
-	if (asn1_time == NULL || s == NULL)
+	Zero(&tm, sizeof(tm));
+	tm.tm_year = st.wYear - 1900;
+	tm.tm_mon = st.wMonth - 1;
+	tm.tm_mday = st.wDay;
+	tm.tm_hour = st.wHour;
+	tm.tm_min = st.wMinute;
+	tm.tm_sec = st.wSecond;
+
+	sec = TmToTime(&tm);
+	if (sec <= 0)
 	{
 		return false;
 	}
 
-	if (SystemToStr(tmp, sizeof(tmp), s) == false)
-	{
-		return false;
-	}
-	t = (ASN1_TIME *)asn1_time;
-	return ASN1_TIME_set_string(t, tmp) != 0;
-}
-
-bool SystemToStr(char *str, UINT size, SYSTEMTIME *s)
-{
-	if (str == NULL || s == NULL)
-	{
-		return false;
-	}
-
-	Format(str, size, "%02u%02u%02u%02u%02u%02uZ",
-		s->wYear % 100, s->wMonth, s->wDay,
-		s->wHour, s->wMinute, s->wSecond);
-
-	return true;
+	return ASN1_TIME_set((ASN1_TIME *)asn1_time, (time_t)sec) != NULL;
 }
 
 UINT64 Asn1TimeToUINT64(void *asn1_time)
@@ -1398,87 +1382,28 @@ UINT64 Asn1TimeToUINT64(void *asn1_time)
 
 bool Asn1TimeToSystem(SYSTEMTIME *s, void *asn1_time)
 {
-	ASN1_TIME *t;
-	char tmp[32];
-	int len;
-	const char *src;
+	struct tm tm;
 	if (s == NULL || asn1_time == NULL)
 	{
 		return false;
 	}
 
-	t = (ASN1_TIME *)asn1_time;
-	len = ASN1_STRING_length((const ASN1_STRING *)t);
-	src = (const char *)ASN1_STRING_get0_data((const ASN1_STRING *)t);
-
-	if (src == NULL || len <= 0 || len >= (int)sizeof(tmp))
+	// UTCTime and GeneralizedTime in a certificate are both UTC ("Z", RFC 5280 section 4.1.2.5):
+	// ASN1_TIME_to_tm reads either form as UTC, so neither is moved by the local time zone
+	Zero(&tm, sizeof(tm));
+	if (ASN1_TIME_to_tm((const ASN1_TIME *)asn1_time, &tm) != 1)
 	{
 		return false;
 	}
 
-	Copy(tmp, src, len);
-	tmp[len] = '\0';
-
-	// UTCTime and GeneralizedTime in a certificate are both UTC ("Z", RFC 5280 section 4.1.2.5),
-	// so neither form is moved by the local time zone
-	return StrToSystem(s, tmp);
-}
-
-bool StrToSystem(SYSTEMTIME *s, char *str)
-{
-	char century[3] = {0, 0, 0};
-	bool fourdigityear = false;
-
-	if (s == NULL || str == NULL)
-	{
-		return false;
-	}
-	if (StrLen(str) != 13)
-	{
-		if (StrLen(str) != 15)
-		{
-			return false;
-		}
-
-		// A 4-digit year: keep the first two digits and parse the rest as a 2-digit year
-		fourdigityear = true;
-		century[0] = str[0];
-		century[1] = str[1];
-		str += 2;
-	}
-	if (str[12] != 'Z')
-	{
-		return false;
-	}
-
-	{
-		char year[3] = {str[0], str[1], 0},
-			month[3] = {str[2], str[3], 0},
-			day[3] = {str[4], str[5], 0},
-			hour[3] = {str[6], str[7], 0},
-			minute[3] = {str[8], str[9], 0},
-			second[3] = {str[10], str[11], 0};
-		Zero(s, sizeof(SYSTEMTIME));
-		s->wYear = ToInt(year);
-		if (fourdigityear)
-		{
-			s->wYear += ToInt(century) * 100;
-		}
-		else if (s->wYear >= 60)
-		{
-			s->wYear += 1900;
-		}
-		else
-		{
-			s->wYear += 2000;
-		}
-		s->wMonth = ToInt(month);
-		s->wDay = ToInt(day);
-		s->wHour = ToInt(hour);
-		s->wMinute = ToInt(minute);
-		s->wSecond = ToInt(second);
-		NormalizeSystem(s);
-	}
+	Zero(s, sizeof(SYSTEMTIME));
+	s->wYear = (USHORT)(tm.tm_year + 1900);
+	s->wMonth = (USHORT)(tm.tm_mon + 1);
+	s->wDay = (USHORT)tm.tm_mday;
+	s->wHour = (USHORT)tm.tm_hour;
+	s->wMinute = (USHORT)tm.tm_min;
+	s->wSecond = (USHORT)tm.tm_sec;
+	NormalizeSystem(s);
 
 	return true;
 }
@@ -1564,94 +1489,8 @@ bool RsaSignEx(void *dst, UINT dst_size, void *src, UINT src_size, K *k)
 	return ret;
 }
 
-bool RsaCheckEx()
-{
-	UINT num = 20;
-	UINT i;
-
-	for (i = 0;i < num;i++)
-	{
-		if (RsaCheck())
-		{
-			return true;
-		}
-
-		SleepThread(100);
-	}
-
-	return false;
-}
-bool RsaCheck()
-{
-	int ret = 0;
-	RSA *rsa = NULL;
-	BIGNUM *e = NULL;
-	K *priv_key, *pub_key;
-	BIO *bio;
-	char errbuf[MAX_SIZE];
-	UINT size = 0;
-	UINT bit = RSA_KEY_SIZE;
-
-	e = BN_new();
-	ret = BN_set_word(e, RSA_F4);
-	if (ret == 0)
-	{
-		BN_free(e);
-		Debug("BN_set_word: err=%s\n", ERR_error_string(ERR_get_error(), errbuf));
-		return false;
-	}
-
-	Lock(openssl_lock);
-	{
-		rsa = RSA_new();
-		ret = RSA_generate_key_ex(rsa, bit, e, NULL);
-		BN_free(e);
-	}
-	Unlock(openssl_lock);
-	if (ret == 0)
-	{
-		Debug("RSA_generate_key_ex: err=%s\n", ERR_error_string(ERR_get_error(), errbuf));
-		return false;
-	}
-
-	bio = BIO_new(BIO_s_mem());
-	Lock(openssl_lock);
-	{
-		i2d_RSAPrivateKey_bio(bio, rsa);
-	}
-	Unlock(openssl_lock);
-	BIO_seek(bio, 0);
-	priv_key = BioToK(bio, true, false, NULL);
-	FreeBio(bio);
-
-	bio = BIO_new(BIO_s_mem());
-	Lock(openssl_lock);
-	{
-		i2d_RSA_PUBKEY_bio(bio, rsa);
-	}
-	Unlock(openssl_lock);
-	BIO_seek(bio, 0);
-	pub_key = BioToK(bio, false, false, NULL);
-	FreeBio(bio);
-
-	RSA_free(rsa);
-
-	size = RsaPublicSize(pub_key);
-
-	if (size != ((bit + 7) / 8))
-	{
-		FreeK(priv_key);
-		FreeK(pub_key);
-
-		return false;
-	}
-
-	FreeK(priv_key);
-	FreeK(pub_key);
-
-	return true;
-}
-
+// Generates an RSA key pair of the given size (RSA_KEY_SIZE for 0). On failure nothing is returned
+// in *priv and *pub, and everything made so far is freed.
 bool RsaGen(K **priv, K **pub, UINT bit)
 {
 	int ret = 0;
@@ -1671,6 +1510,10 @@ bool RsaGen(K **priv, K **pub, UINT bit)
 	}
 
 	e = BN_new();
+	if (e == NULL)
+	{
+		return false;
+	}
 	ret = BN_set_word(e, RSA_F4);
 	if (ret == 0)
 	{
@@ -1682,13 +1525,21 @@ bool RsaGen(K **priv, K **pub, UINT bit)
 	Lock(openssl_lock);
 	{
 		rsa = RSA_new();
-		ret = RSA_generate_key_ex(rsa, bit, e, NULL);
+		if (rsa != NULL)
+		{
+			ret = RSA_generate_key_ex(rsa, bit, e, NULL);
+		}
+		else
+		{
+			ret = 0;
+		}
 		BN_free(e);
 	}
 	Unlock(openssl_lock);
 	if (ret == 0)
 	{
 		Debug("RSA_generate_key_ex: err=%s\n", ERR_error_string(ERR_get_error(), errbuf));
+		RSA_free(rsa);
 		return false;
 	}
 
@@ -1712,20 +1563,28 @@ bool RsaGen(K **priv, K **pub, UINT bit)
 	pub_key = BioToK(bio, false, false, NULL);
 	FreeBio(bio);
 
-	*priv = priv_key;
-	*pub = pub_key;
-
 	RSA_free(rsa);
 
-	size = RsaPublicSize(*pub);
+	if (priv_key == NULL || pub_key == NULL)
+	{
+		FreeK(priv_key);
+		FreeK(pub_key);
+		return false;
+	}
+
+	size = RsaPublicSize(pub_key);
 
 	if (size != ((bit + 7) / 8))
 	{
-		FreeK(*priv);
-		FreeK(*pub);
+		// The modulus came out shorter than asked for: generate again
+		FreeK(priv_key);
+		FreeK(pub_key);
 
 		return RsaGen(priv, pub, bit);
 	}
+
+	*priv = priv_key;
+	*pub = pub_key;
 
 	return true;
 }
