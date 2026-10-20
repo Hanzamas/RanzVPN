@@ -12,6 +12,9 @@ target_include_directories(mayaqua PUBLIC "${TOP_DIRECTORY}/src")
 # The project's build options (cmake/RanzOptions.cmake), for Mayaqua and every target built on it
 target_link_libraries(mayaqua PUBLIC ranz_options)
 
+# The warning flags of the project's own code (cmake/RanzWarnings.cmake); PRIVATE: they stay on Mayaqua
+target_link_libraries(mayaqua PRIVATE ranz_warnings)
+
 set_target_properties(mayaqua
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
@@ -52,6 +55,21 @@ if(OQS_ENABLE)
   set(OQS_ENABLE_SIG_UOV OFF)
   set(OQS_ENABLE_SIG_SNOVA OFF)
   set(OQS_ENABLE_SIG_SLH_DSA OFF)
+
+  if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND MSVC)
+    # clang-cl: liboqs puts -g3 and -fno-omit-frame-pointer in its flags (it treats clang-cl as
+    # GNU-style clang), and clang-cl ignores both with a warning for every liboqs source file.
+    # The vendored code is not ours to change, so the two warnings are off for liboqs and
+    # oqs-provider; the option is directory-wide and applies to targets created after this line
+    add_compile_options(-Wno-unknown-argument -Wno-unused-command-line-argument)
+  endif()
+
+  # liboqs refuses to configure for an architecture it has no optimised code for unless
+  # OQS_PERMIT_UNSUPPORTED_ARCHITECTURE is ON; Windows on ARM64 is such a target (the workflow
+  # used to pass the flag on the command line, so a local ARM64 configure failed)
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|arm64|aarch64)$" OR CMAKE_C_COMPILER_ARCHITECTURE_ID MATCHES "ARM" OR VCPKG_TARGET_TRIPLET MATCHES "^arm64")
+    set(OQS_PERMIT_UNSUPPORTED_ARCHITECTURE ON CACHE BOOL "Permit building liboqs for an architecture without optimised code")
+  endif()
 
   add_subdirectory(3rdparty/liboqs)
   add_subdirectory(3rdparty/oqs-provider)
@@ -108,7 +126,6 @@ if(WIN32)
       "iphlpapi.lib"
       "Psapi.Lib"
       "Secur32.Lib"
-      "setupapi.lib"
       "winhttp.lib"
       "winmm.lib"
       "ws2_32.lib"

@@ -36,9 +36,12 @@ Ranz VPN is built on GitHub Actions via [`.github/workflows/windows.yml`](.githu
 Build steps:
 
 ```
-cmake -G "Ninja" -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_NUMBER=<run number> ..
-cmake --build .
+set VCPKG_ROOT=C:\vcpkg
+cmake --preset x64 -DBUILD_NUMBER=<run number>
+cmake --build --preset x64
 ```
+
+Run them in a Visual Studio developer prompt (clang-cl on the path). The presets of [`CMakePresets.json`](CMakePresets.json) are `x64`, `arm64`, `asan` (AddressSanitizer and libFuzzer, x64 only) and `debug`; CI runs each of its jobs through one of them and Visual Studio reads the same file. `vcpkg.json` pins the vcpkg ports tree with `builtin-baseline`, so OpenSSL and zlib are the same on every machine.
 
 ## License
 

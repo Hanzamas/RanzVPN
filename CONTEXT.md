@@ -60,7 +60,7 @@ Executables: `vpnserver` uses Cedar/Server (`StInit`, `StStartServer`) and `MsSe
 | Link | Cascade: a Hub-owned client Session paired with a server Session on the same Hub | `LINK` | Session, Connection, Logging | Admin, Hub, Server |
 | Bridge | Local Bridge: bridge-mode Session on a Hub joined to a physical adapter; per-Cedar Local Bridge list | `BRIDGE`, `LOCALBRIDGE` | Session, Account, Hub, Connection, Logging, BridgeWin32 | Admin, Cedar, Connection, Hub, Server |
 | BridgeWin32 | Windows NIC access for bridging: open adapter through SeLow, get/put frames, MTU, device enumeration (`Win32Eth*`) | `ETH`, `WP_ADAPTER` | SeLowUser (and Microsoft) | Admin, Bridge, Connection, Server |
-| SeLowUser + Win32Com | User-mode side of the SeLow NDIS driver: adapter list, packet get/put, driver install (`Win32Com.cpp` installs the protocol driver through `INetCfg`) | `SU`, `SU_ADAPTER`, `SU_ADAPTER_LIST` | Microsoft, FileIO, Cfg | BridgeWin32 only |
+| SeLowUser + Win32Com | User-mode side of the SeLow NDIS driver: adapter list, packet get/put, driver install (`Win32Com.c` installs the protocol driver through `INetCfg`) | `SU`, `SU_ADAPTER`, `SU_ADAPTER_LIST` | Microsoft, FileIO, Cfg | BridgeWin32 only |
 | UdpAccel | UDP acceleration: key and cookie exchange, encrypted UDP send and receive, optional STUN discovery | `UDP_ACCEL` | Connection | Connection, Protocol |
 | Remote | RPC transport over a socket: request/response PACKs | `RPC`, `RPC_DISPATCHER` | none in Cedar (Pack, Network) | Admin |
 | Admin | Admin RPC: `AdminAccept`, `AdminDispatch` table of `St*` handlers, `Sc*` client calls, `InRpc*`/`OutRpc*` converters | `ADMIN`, about 70 `RPC_*` structs | Hub, Server, Account, Logging, Sam, Link, Session, Bridge, Remote | Command, Protocol |
