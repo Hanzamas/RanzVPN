@@ -118,15 +118,17 @@ static bool SuInstallDriver(bool force)
 
 // Driver install step: SuInstallDriver, or the stub that a test sets with SuSetInstallProc
 static SU_INSTALL_PROC *su_install_proc = SuInstallDriver;
-// The install step already ran in this process: it runs at most once per process
-static bool su_install_tried = false;
+// Nonzero once the install step ran in this process: it runs at most once per process, also
+// after a failed install. Local Bridge session threads and the RPC threads race on it, so it is
+// taken only with InterlockedCompareExchange
+static volatile LONG su_install_tried = 0;
 
 // Test seam (vpntest selow): replace the driver install step with proc; NULL restores
 // SuInstallDriver. Also forgets an earlier install attempt, so the next one runs the step again
 void SuSetInstallProc(SU_INSTALL_PROC *proc)
 {
 	su_install_proc = (proc != NULL ? proc : SuInstallDriver);
-	su_install_tried = false;
+	InterlockedExchange(&su_install_tried, 0);
 }
 
 bool SuInstallDriverInner(bool force)
@@ -729,10 +731,9 @@ LABEL_RETRY:
 		{
 			if (MsStartService(SL_PROTOCOL_NAME) == false)
 			{
-				if (install && su_install_tried == false)
+				// Exactly one caller per process wins the latch and runs the install step
+				if (install && InterlockedCompareExchange(&su_install_tried, 1, 0) == 0)
 				{
-					su_install_tried = true;
-
 					if (su_install_proc(true))
 					{
 						goto LABEL_RETRY;

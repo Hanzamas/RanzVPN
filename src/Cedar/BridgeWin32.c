@@ -31,32 +31,40 @@ static void FreeEthAdaptersList();
 static LIST *eth_list = NULL;
 
 static LOCK *eth_list_lock = NULL;
+// The shared SeLow flags below are read and written by Local Bridge session threads and RPC
+// threads at the same time, so they are LONGs accessed only through the Interlocked functions
 // The last adapter enumeration listed the SeLow adapters (the b_using_selow_driver cap)
-static bool is_using_selow = false;
-// EnableSoftEtherKernelModeDriver: false turns the Local Bridge off. SeLow then reports
+static volatile LONG is_using_selow = 0;
+// EnableSoftEtherKernelModeDriver: zero turns the Local Bridge off. SeLow then reports
 // unsupported and is never opened or installed
-static bool enable_selow = true;
+static volatile LONG enable_selow = 1;
 
-static bool g_bridge_win32_show_all_if = false;
+static volatile LONG g_bridge_win32_show_all_if = 0;
+
+// Atomic read of a shared flag
+static bool Win32ReadFlag(volatile LONG *flag)
+{
+	return InterlockedCompareExchange(flag, 0, 0) != 0;
+}
 
 void Win32SetEnableSeLow(bool b)
 {
-	enable_selow = b;
+	InterlockedExchange(&enable_selow, b ? 1 : 0);
 }
 
 bool Win32GetEnableSeLow()
 {
-	return enable_selow;
+	return Win32ReadFlag(&enable_selow);
 }
 
 void Win32EthSetShowAllIf(bool b)
 {
-	g_bridge_win32_show_all_if = b;
+	InterlockedExchange(&g_bridge_win32_show_all_if, b ? 1 : 0);
 }
 
 bool Win32EthGetShowAllIf()
 {
-	return g_bridge_win32_show_all_if;
+	return Win32ReadFlag(&g_bridge_win32_show_all_if);
 }
 
 static int CmpRpcEnumEthVLan(void *p1, void *p2)
@@ -992,7 +1000,7 @@ static int CompareWpAdapter(void *p1, void *p2)
 
 bool Win32IsUsingSeLow()
 {
-	return is_using_selow;
+	return Win32ReadFlag(&is_using_selow);
 }
 
 static LIST *GetEthAdapterList(bool *using_selow)
@@ -1128,7 +1136,7 @@ static void InitEthAdaptersList()
 		eth_list = NULL;
 	}
 	eth_list = GetEthAdapterList(&using_selow);
-	is_using_selow = using_selow;
+	InterlockedExchange(&is_using_selow, using_selow ? 1 : 0);
 }
 
 static void FreeEthAdaptersList()
