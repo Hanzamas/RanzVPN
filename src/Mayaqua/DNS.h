@@ -33,7 +33,7 @@ struct DNS_CACHE_REVERSE
 struct DNS_RESOLVER
 {
 	REF *Ref;
-	const char *Hostname;
+	char *Hostname;
 	LIST *IPList_v4;
 	LIST *IPList_v6;
 	bool OK;

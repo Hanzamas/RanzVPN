@@ -130,12 +130,12 @@ void *InternalMalloc(UINT size);
 void *InternalReAlloc(void *addr, UINT size);
 void InternalFree(void *addr);
 
-void Copy(void *dst, void *src, UINT size);
-void Move(void *dst, void *src, UINT size);
-int Cmp(void *p1, void *p2, UINT size);
-int CmpCaseIgnore(void *p1, void *p2, UINT size);
+void Copy(void *dst, const void *src, UINT size);
+void Move(void *dst, const void *src, UINT size);
+int Cmp(const void *p1, const void *p2, UINT size);
+int CmpCaseIgnore(const void *p1, const void *p2, UINT size);
 void Zero(void *addr, UINT size);
-void *Clone(void *addr, UINT size);
+void *Clone(const void *addr, UINT size);
 
 void *Base64FromBin(UINT *out_size, const void *src, const UINT size);
 void *Base64ToBin(UINT *out_size, const void *src, const UINT size);
@@ -152,7 +152,7 @@ void EndianUnicode(wchar_t *str);
 BUF *NewBuf();
 BUF *NewBufFromMemory(void *buf, UINT size);
 void ClearBuf(BUF *b);
-void WriteBuf(BUF *b, void *buf, UINT size);
+void WriteBuf(BUF *b, const void *buf, UINT size);
 void WriteBufBuf(BUF *b, BUF *bb);
 UINT ReadBuf(BUF *b, void *buf, UINT size);
 UINT ReadBufRemainSize(BUF *b);
@@ -179,7 +179,7 @@ BUF *ReadDump(char *filename);
 BUF *ReadDumpWithMaxSize(char *filename, UINT max_size);
 BUF *ReadDumpW(wchar_t *filename);
 BUF *ReadDumpExW(wchar_t *filename, bool read_lock);
-BUF *MemToBuf(void *data, UINT size);
+BUF *MemToBuf(const void *data, UINT size);
 bool CompareBuf(BUF *b1, BUF *b2);
 
 UINT ReadFifo(FIFO *f, void *p, UINT size);
@@ -194,7 +194,7 @@ FIFO *NewFifoEx2(bool fast, bool fixed);
 void InitFifo();
 void SetFifoCurrentReallocMemSize(UINT size);
 
-void *Search(LIST *o, void *target);
+void *Search(LIST *o, const void *target);
 void Sort(LIST *o);
 void Add(LIST *o, void *p);
 void Insert(LIST *o, void *p);
@@ -252,9 +252,9 @@ UINT Compress(void *dst, UINT dst_size, void *src, UINT src_size);
 UINT CompressEx(void *dst, UINT dst_size, void *src, UINT src_size, UINT level);
 UINT CalcCompress(UINT src_size);
 
-bool IsZero(void *data, UINT size);
+bool IsZero(const void *data, UINT size);
 
-UINT SearchBin(void *data, UINT data_start, UINT data_size, void *key, UINT key_size);
+UINT SearchBin(const void *data, UINT data_start, UINT data_size, const void *key, UINT key_size);
 void CrashNow();
 UINT Power(UINT a, UINT b);
 

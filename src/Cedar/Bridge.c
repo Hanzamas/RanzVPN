@@ -108,7 +108,7 @@ bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename)
 	return ret;
 }
 
-void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool monitor, bool tapmode, char *tapaddr, bool limit_broadcast)
+void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool monitor, bool tapmode, const UCHAR *tapaddr, bool limit_broadcast)
 {
 	UINT i;
 	HUB *h = NULL;
@@ -295,7 +295,7 @@ void BrFreeBridge(BRIDGE *b)
 	Free(b);
 }
 
-BRIDGE *BrNewBridge(HUB *h, char *name, POLICY *p, bool local, bool monitor, bool tapmode, char *tapaddr, bool limit_broadcast, LOCALBRIDGE *parent_local_bridge)
+BRIDGE *BrNewBridge(HUB *h, char *name, POLICY *p, bool local, bool monitor, bool tapmode, const UCHAR *tapaddr, bool limit_broadcast, LOCALBRIDGE *parent_local_bridge)
 {
 	BRIDGE *b;
 	POLICY *policy;

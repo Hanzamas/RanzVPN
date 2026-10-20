@@ -37,11 +37,11 @@ struct LOCALBRIDGE
 	BRIDGE *Bridge;
 };
 
-BRIDGE *BrNewBridge(HUB *h, char *name, POLICY *p, bool local, bool monitor, bool tapmode, char *tapaddr, bool limit_broadcast, LOCALBRIDGE *parent_local_bridge);
+BRIDGE *BrNewBridge(HUB *h, char *name, POLICY *p, bool local, bool monitor, bool tapmode, const UCHAR *tapaddr, bool limit_broadcast, LOCALBRIDGE *parent_local_bridge);
 void BrFreeBridge(BRIDGE *b);
 void InitLocalBridgeList(CEDAR *c);
 void FreeLocalBridgeList(CEDAR *c);
-void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool monitor, bool tapmode, char *tapaddr, bool limit_broadcast);
+void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool monitor, bool tapmode, const UCHAR *tapaddr, bool limit_broadcast);
 bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename);
 bool IsBridgeSupported();
 UINT GetEthDeviceHash();

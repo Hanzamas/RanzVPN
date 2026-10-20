@@ -476,7 +476,7 @@ UINT Power(UINT a, UINT b)
 	return ret;
 }
 
-UINT SearchBin(void *data, UINT data_start, UINT data_size, void *key, UINT key_size)
+UINT SearchBin(const void *data, UINT data_start, UINT data_size, const void *key, UINT key_size)
 {
 	UINT i;
 	if (data == NULL || key == NULL || key_size == 0 || data_size == 0 ||
@@ -509,7 +509,7 @@ void CrashNow()
 	}
 }
 
-bool IsZero(void *data, UINT size)
+bool IsZero(const void *data, UINT size)
 {
 	UINT i;
 	UCHAR *c = (UCHAR *)data;
@@ -862,7 +862,7 @@ void *ToArrayEx(LIST *o, bool fast)
 	return p;
 }
 
-void *Search(LIST *o, void *target)
+void *Search(LIST *o, const void *target)
 {
 	void **ret;
 	if (o == NULL || target == NULL)
@@ -1975,7 +1975,7 @@ void ClearBuf(BUF *b)
 	b->Current = 0;
 }
 
-void WriteBuf(BUF *b, void *buf, UINT size)
+void WriteBuf(BUF *b, const void *buf, UINT size)
 {
 	UINT new_size;
 	if (b == NULL || buf == NULL || size == 0)
@@ -2323,7 +2323,7 @@ bool CompareBuf(BUF *b1, BUF *b2)
 	return true;
 }
 
-BUF *MemToBuf(void *data, UINT size)
+BUF *MemToBuf(const void *data, UINT size)
 {
 	BUF *b;
 	if (data == NULL && size != 0)
@@ -2761,7 +2761,7 @@ void *InternalReAlloc(void *addr, UINT size)
 	return new_addr;
 }
 
-void *Clone(void *addr, UINT size)
+void *Clone(const void *addr, UINT size)
 {
 	void *ret;
 	if (addr == NULL)
@@ -2775,7 +2775,7 @@ void *Clone(void *addr, UINT size)
 	return ret;
 }
 
-void Copy(void *dst, void *src, UINT size)
+void Copy(void *dst, const void *src, UINT size)
 {
 	if (dst == NULL || src == NULL || size == 0 || dst == src)
 	{
@@ -2787,7 +2787,7 @@ void Copy(void *dst, void *src, UINT size)
 	memcpy(dst, src, size);
 }
 
-void Move(void *dst, void *src, UINT size)
+void Move(void *dst, const void *src, UINT size)
 {
 	if (dst == NULL || src == NULL || size == 0 || dst == src)
 	{
@@ -2799,7 +2799,7 @@ void Move(void *dst, void *src, UINT size)
 	memmove(dst, src, size);
 }
 
-int Cmp(void *p1, void *p2, UINT size)
+int Cmp(const void *p1, const void *p2, UINT size)
 {
 	if (p1 == NULL || p2 == NULL || size == 0)
 	{
@@ -2809,7 +2809,7 @@ int Cmp(void *p1, void *p2, UINT size)
 	return memcmp(p1, p2, (size_t)size);
 }
 
-int CmpCaseIgnore(void *p1, void *p2, UINT size)
+int CmpCaseIgnore(const void *p1, const void *p2, UINT size)
 {
 	UINT i;
 	if (p1 == NULL || p2 == NULL || size == 0)

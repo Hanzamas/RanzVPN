@@ -21,7 +21,7 @@
 #include <Ws2tcpip.h>
 
 static RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, char *name);
-static ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr);
+static ETH *OpenEthInternal(char *name, bool local, bool tapmode, const UCHAR *tapaddr);
 static void Win32EthMakeCombinedName(char *dst, UINT dst_size, char *nicname, char *guid);
 static UINT Win32EthGenIdFromGuid(char *guid);
 static TOKEN_LIST *GetEthListEx(UINT *total_num_including_hidden, bool enum_normal, bool enum_rawip);
@@ -738,7 +738,7 @@ static struct WP_ADAPTER *Win32EthSearch(char *name)
 	return ret;
 }
 
-ETH *OpenEth(char *name, bool local, bool tapmode, char *tapaddr)
+ETH *OpenEth(char *name, bool local, bool tapmode, const UCHAR *tapaddr)
 {
 	ETH *ret;
 	void *p;
@@ -751,7 +751,7 @@ ETH *OpenEth(char *name, bool local, bool tapmode, char *tapaddr)
 
 	return ret;
 }
-static ETH *OpenEthInternal(char *name, bool local, bool tapmode, char *tapaddr)
+static ETH *OpenEthInternal(char *name, bool local, bool tapmode, const UCHAR *tapaddr)
 {
 	WP_ADAPTER *t;
 	ETH *e;

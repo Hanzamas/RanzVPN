@@ -849,7 +849,7 @@ static bool CfgReadNextFolderBin(BUF *b, FOLDER *parent, UINT depth)
 	UINT n, i;
 	UINT size;
 	UINT value;
-	UCHAR *buf;
+	char *buf;
 	wchar_t *string;
 	if (b == NULL || parent == NULL || depth >= CFG_MAX_DEPTH)
 	{
