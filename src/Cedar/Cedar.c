@@ -1186,7 +1186,7 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 
 	c->ClientId = _II("CLIENT_ID");
 
-	c->UdpPortList = NewIntList(false);
+	c->UdpPortList = NewIntList();
 
 	c->DhParamBits = DH_PARAM_BITS_DEFAULT;
 

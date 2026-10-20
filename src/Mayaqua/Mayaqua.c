@@ -170,8 +170,6 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 	// The ETW provider of Debug() (Trace.c), registered first so that it sees the whole start
 	InitTrace();
 
-	InitFifo();
-
 	InitKernelStatus();
 
 	if (IsTrackingEnabled())
@@ -269,8 +267,6 @@ void FreeMayaqua()
 	FreeNetwork();
 
 	FreeTick64();
-
-	FreeStringLibrary();
 
 	FreeThreading();
 

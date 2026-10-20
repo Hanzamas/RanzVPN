@@ -1104,10 +1104,10 @@ PKT *ClonePacket(PKT *p, bool copy_data)
 		return NULL;
 	}
 
-	ret = ZeroMallocFast(sizeof(PKT));
+	ret = ZeroMalloc(sizeof(PKT));
 	ret->PacketSize = p->PacketSize;
 
-	ret->MacHeader = MallocFast(sizeof(MAC_HEADER));
+	ret->MacHeader = Malloc(sizeof(MAC_HEADER));
 	Copy(ret->MacHeader, p->MacHeader, sizeof(MAC_HEADER));
 
 	ret->BroadcastPacket = p->BroadcastPacket;
@@ -1120,17 +1120,17 @@ PKT *ClonePacket(PKT *p, bool copy_data)
 	switch (ret->TypeL3)
 	{
 	case L3_ARPV4:
-		ret->L3.ARPv4Header = MallocFast(sizeof(ARPV4_HEADER));
+		ret->L3.ARPv4Header = Malloc(sizeof(ARPV4_HEADER));
 		Copy(ret->L3.ARPv4Header, p->L3.ARPv4Header, sizeof(ARPV4_HEADER));
 		break;
 
 	case L3_IPV4:
-		ret->L3.IPv4Header = MallocFast(sizeof(IPV4_HEADER));
+		ret->L3.IPv4Header = Malloc(sizeof(IPV4_HEADER));
 		Copy(ret->L3.IPv4Header, p->L3.IPv4Header, sizeof(IPV4_HEADER));
 		break;
 
 	case L3_IPV6:
-		ret->L3.IPv6Header = MallocFast(sizeof(IPV6_HEADER));
+		ret->L3.IPv6Header = Malloc(sizeof(IPV6_HEADER));
 		Copy(ret->L3.IPv6Header, p->L3.IPv6Header, sizeof(IPV6_HEADER));
 
 		ret->IPv6HeaderPacketInfo.IPv6Header = Clone(p->IPv6HeaderPacketInfo.IPv6Header,
@@ -1157,12 +1157,12 @@ PKT *ClonePacket(PKT *p, bool copy_data)
 	switch (ret->TypeL4)
 	{
 	case L4_ICMPV4:
-		ret->L4.ICMPHeader = MallocFast(sizeof(ICMP_HEADER));
+		ret->L4.ICMPHeader = Malloc(sizeof(ICMP_HEADER));
 		Copy(ret->L4.ICMPHeader, p->L4.ICMPHeader, sizeof(ICMP_HEADER));
 		break;
 
 	case L4_ICMPV6:
-		ret->L4.ICMPHeader = MallocFast(sizeof(ICMP_HEADER));
+		ret->L4.ICMPHeader = Malloc(sizeof(ICMP_HEADER));
 		Copy(ret->L4.ICMPHeader, p->L4.ICMPHeader, sizeof(ICMP_HEADER));
 
 		ret->ICMPv6HeaderPacketInfo.Data = Clone(p->ICMPv6HeaderPacketInfo.Data,
@@ -1207,12 +1207,12 @@ PKT *ClonePacket(PKT *p, bool copy_data)
 		break;
 
 	case L4_TCP:
-		ret->L4.TCPHeader = MallocFast(sizeof(TCP_HEADER));
+		ret->L4.TCPHeader = Malloc(sizeof(TCP_HEADER));
 		Copy(ret->L4.TCPHeader, p->L4.TCPHeader, sizeof(TCP_HEADER));
 		break;
 
 	case L4_UDP:
-		ret->L4.UDPHeader = MallocFast(sizeof(UDP_HEADER));
+		ret->L4.UDPHeader = Malloc(sizeof(UDP_HEADER));
 		Copy(ret->L4.UDPHeader, p->L4.UDPHeader, sizeof(UDP_HEADER));
 		break;
 	}
@@ -1221,12 +1221,12 @@ PKT *ClonePacket(PKT *p, bool copy_data)
 	switch (ret->TypeL7)
 	{
 	case L7_DHCPV4:
-		ret->L7.DHCPv4Header = MallocFast(sizeof(DHCPV4_HEADER));
+		ret->L7.DHCPv4Header = Malloc(sizeof(DHCPV4_HEADER));
 		Copy(ret->L7.DHCPv4Header, p->L7.DHCPv4Header, sizeof(DHCPV4_HEADER));
 		break;
 
 	case L7_IKECONN:
-		ret->L7.IkeHeader = MallocFast(sizeof(IKE_HEADER));
+		ret->L7.IkeHeader = Malloc(sizeof(IKE_HEADER));
 		Copy(ret->L7.IkeHeader, p->L7.IkeHeader, sizeof(IKE_HEADER));
 		break;
 
@@ -1240,7 +1240,7 @@ PKT *ClonePacket(PKT *p, bool copy_data)
 
 	if (copy_data)
 	{
-		ret->PacketData = MallocFast(p->PacketSize);
+		ret->PacketData = Malloc(p->PacketSize);
 		Copy(ret->PacketData, p->PacketData, p->PacketSize);
 	}
 
@@ -1276,7 +1276,7 @@ PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool b
 
 	vlan_type_id_16 = Endian16((USHORT)vlan_type_id);
 
-	p = ZeroMallocFast(sizeof(PKT));
+	p = ZeroMalloc(sizeof(PKT));
 
 	// Drop any garbage after the payload of IPv4 and IPv6 packets
 	if (size >= 24)

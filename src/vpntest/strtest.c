@@ -156,7 +156,7 @@ static void StrTestTokens(STRTEST_CTX *ctx, char *what, TOKEN_LIST *t, UINT expe
 	FreeToken(t);
 }
 
-// StrCpy, StrCpyAllowOverlap, CopyStr, ClearStr and MakeCharArray
+// StrCpy (also over its own source), CopyStr, ClearStr and MakeCharArray
 static void StrTestCopy(STRTEST_CTX *ctx)
 {
 	char *b;
@@ -199,21 +199,13 @@ static void StrTestCopy(STRTEST_CTX *ctx)
 	StrTestCheck(ctx, p == NULL, "CopyStr(NULL) is NULL", "not NULL");
 
 	b = StrTestReset(ctx, "abcdef");
-	StrTestDst(ctx, "StrCpyAllowOverlap copies right over its own source", StrCpyAllowOverlap(b + 2, STRTEST_BUF_SIZE - 2, b), 6, "ababcdef", STRTEST_GUARD_END);
+	StrTestDst(ctx, "StrCpy copies right over its own source", StrCpy(b + 2, STRTEST_BUF_SIZE - 2, b), 6, "ababcdef", STRTEST_GUARD_END);
 	b = StrTestReset(ctx, "abcdef");
-	StrTestDst(ctx, "StrCpyAllowOverlap copies left over its own source", StrCpyAllowOverlap(b, STRTEST_BUF_SIZE, b + 2), 4, "cdef", sizeof("abcdef"));
+	StrTestDst(ctx, "StrCpy copies left over its own source", StrCpy(b, STRTEST_BUF_SIZE, b + 2), 4, "cdef", sizeof("abcdef"));
 	b = StrTestReset(ctx, "abcdef");
-	StrTestDst(ctx, "StrCpyAllowOverlap truncates to size - 1 characters", StrCpyAllowOverlap(b + 1, 4, b), 3, "aabc", sizeof("abcdef"));
-	b = StrTestReset(ctx, NULL);
-	StrTestDst(ctx, "StrCpyAllowOverlap with size 0 copies without a limit", StrCpyAllowOverlap(b, 0, "abcdefghij"), 10, "abcdefghij", STRTEST_GUARD_END);
-	b = StrTestReset(ctx, NULL);
-	StrTestDst(ctx, "StrCpyAllowOverlap with size 0xFFFFFFFF copies without a limit, like size 0", StrCpyAllowOverlap(b, 0xFFFFFFFF, "abcdefghij"), 10, "abcdefghij", STRTEST_GUARD_END);
+	StrTestDst(ctx, "StrCpy over its own source truncates to size - 1 characters", StrCpy(b + 1, 4, b), 3, "aabc", sizeof("abcdef"));
 	b = StrTestReset(ctx, "abc");
-	StrTestDst(ctx, "StrCpyAllowOverlap with size 1 writes only the terminator and returns 0", StrCpyAllowOverlap(b, 1, "xyz"), 0, "", sizeof("abc"));
-	b = StrTestReset(ctx, "xy");
-	StrTestDst(ctx, "StrCpyAllowOverlap of NULL writes the terminator and returns 0", StrCpyAllowOverlap(b, 8, NULL), 0, "", sizeof("xy"));
-	b = StrTestReset(ctx, "hello");
-	StrTestDst(ctx, "StrCpyAllowOverlap onto itself returns the length", StrCpyAllowOverlap(b, 2, b), 5, "hello", STRTEST_GUARD_END);
+	StrTestDst(ctx, "StrCpy with size 1 leaves the rest of the destination as it is", StrCpy(b, 1, "xyz"), 0, "", sizeof("abc"));
 
 	b = StrTestReset(ctx, "abc");
 	ClearStr(b, 8);
@@ -506,6 +498,27 @@ static void StrTestCompare(STRTEST_CTX *ctx)
 	StrTestInt(ctx, "StrCmp(string, NULL) is -1", StrCmp("a", NULL), -1);
 }
 
+// Base64ToBin and Base64FromBin (Memory.c) on RFC 4648 vectors: the encoded size counts the
+// terminator, the decoded data ends in one zero byte that its size does not count
+static void StrTestBase64(STRTEST_CTX *ctx)
+{
+	UINT size = 0;
+	char *s;
+
+	s = Base64FromBin(&size, "foobar", 6);
+	StrTestCheck(ctx, s != NULL && StrCmp(s, "Zm9vYmFy") == 0 && size == 9, "Base64FromBin(\"foobar\") is \"Zm9vYmFy\", size 9", "got \"%s\", size %u", s == NULL ? "(NULL)" : s, size);
+	Free(s);
+	s = Base64FromBin(&size, "fo", 2);
+	StrTestCheck(ctx, s != NULL && StrCmp(s, "Zm8=") == 0 && size == 5, "Base64FromBin(\"fo\") pads to \"Zm8=\", size 5", "got \"%s\", size %u", s == NULL ? "(NULL)" : s, size);
+	Free(s);
+	s = Base64ToBin(&size, "Zm9vYg==", 8);
+	StrTestCheck(ctx, s != NULL && size == 4 && Cmp(s, "foob", 5) == 0, "Base64ToBin(\"Zm9vYg==\") is \"foob\" and a zero byte, size 4", "size %u", size);
+	Free(s);
+	s = Base64ToBin(&size, "Zm9v\r\nYmFy", 10);
+	StrTestCheck(ctx, s != NULL && size == 6 && Cmp(s, "foobar", 7) == 0, "Base64ToBin skips a line break", "size %u", size);
+	Free(s);
+}
+
 // str: truncation and return values of the string functions
 void str_test(UINT num, char **arg)
 {
@@ -524,6 +537,7 @@ void str_test(UINT num, char **arg)
 	StrTestChars(&ctx);
 	StrTestTrim(&ctx);
 	StrTestCompare(&ctx);
+	StrTestBase64(&ctx);
 
 	if (ctx.NumFailed == 0)
 	{

@@ -220,7 +220,7 @@ static bool BufBoundsFileHas(wchar_t *name, char *text)
 		return false;
 	}
 
-	ret = (SearchBin(b->Buf, 0, b->Size, text, StrLen(text)) != INFINITE);
+	ret = (SearchBin(b->Buf, b->Size, text, StrLen(text)) != INFINITE);
 
 	FreeBuf(b);
 

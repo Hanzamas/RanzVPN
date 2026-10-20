@@ -214,7 +214,7 @@ USERLIST *LoadUserList(LIST *o, char *filename)
 
 	StrCpy(u->Filename, sizeof(u->Filename), filename);
 
-	u->UserHashList = NewInt64List(false);
+	u->UserHashList = NewInt64List();
 
 	b = ReadDumpWithMaxSize(filename, ACCESS_LIST_INCLUDE_FILE_MAX_SIZE);
 	if (b != NULL)
@@ -2648,27 +2648,27 @@ bool IsTcpPacketNcsiHttpAccess(PKT *p)
 		return false;
 	}
 
-	if (SearchBin(p->Payload, 0, p->PayloadSize, "NCSI", 4) != INFINITE)
+	if (SearchBin(p->Payload, p->PayloadSize, "NCSI", 4) != INFINITE)
 	{
 		return true;
 	}
 
-	if (SearchBin(p->Payload, 0, p->PayloadSize, ".jpeg", 5) != INFINITE)
+	if (SearchBin(p->Payload, p->PayloadSize, ".jpeg", 5) != INFINITE)
 	{
 		return true;
 	}
 
-	if (SearchBin(p->Payload, 0, p->PayloadSize, ".jpg", 4) != INFINITE)
+	if (SearchBin(p->Payload, p->PayloadSize, ".jpg", 4) != INFINITE)
 	{
 		return true;
 	}
 
-	if (SearchBin(p->Payload, 0, p->PayloadSize, ".gif", 4) != INFINITE)
+	if (SearchBin(p->Payload, p->PayloadSize, ".gif", 4) != INFINITE)
 	{
 		return true;
 	}
 
-	if (SearchBin(p->Payload, 0, p->PayloadSize, ".css", 4) != INFINITE)
+	if (SearchBin(p->Payload, p->PayloadSize, ".css", 4) != INFINITE)
 	{
 		return true;
 	}
@@ -4134,7 +4134,7 @@ UPDATE_FDB:
 
 							if (monitor_session->PacketAdapter->Param != NULL)
 							{
-								data = MallocFast(size);
+								data = Malloc(size);
 								Copy(data, packet->PacketData, size);
 								StorePacketToHubPa((HUB_PA *)monitor_session->PacketAdapter->Param,
 									s, data, size, packet, false, false);
@@ -4475,7 +4475,7 @@ DISCARD_UNICAST_PACKET:
 									if (s == NULL ||
 										ApplyAccessListToForwardPacket(s->Hub, s, dest_pa->Session, packet))
 									{
-										data = MallocFast(packet->PacketSize);
+										data = Malloc(packet->PacketSize);
 										Copy(data, packet->PacketData, packet->PacketSize);
 										size = packet->PacketSize;
 
@@ -5921,7 +5921,7 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 	h->NumSessions = NewCounter();
 	h->NumSessionsClient = NewCounter();
 	h->NumSessionsBridge = NewCounter();
-	h->MacHashTable = NewHashList(GetHashOfMacTable, CompareMacTable, 8, false);
+	h->MacHashTable = NewHashList(GetHashOfMacTable, CompareMacTable, 8);
 	h->IpTable = NewList(CompareIpTable);
 	h->MonitorList = NewList(NULL);
 	h->LinkList = NewList(NULL);

@@ -698,8 +698,8 @@ SEND_START:
 
 				if (num_packet != 0)
 				{
-					void **datas = MallocFast(sizeof(void *) * num_packet);
-					UINT *sizes = MallocFast(sizeof(UINT) * num_packet);
+					void **datas = Malloc(sizeof(void *) * num_packet);
+					UINT *sizes = Malloc(sizeof(UINT) * num_packet);
 					UINT i;
 
 					i = 0;
@@ -1101,7 +1101,7 @@ DISCONNECT_THIS_TCP:
 				case 2:
 					ts->WantSize = sizeof(UINT);
 					ts->CurrentPacketNum++;
-					data = MallocFast(ts->NextBlockSize);
+					data = Malloc(ts->NextBlockSize);
 					Copy(data, buf, ts->NextBlockSize);
 					ReadFifo(ts->RecvFifo, NULL, ts->NextBlockSize);
 					block = NewBlock(data, ts->NextBlockSize, s->UseCompress ? -1 : 0);
@@ -1493,7 +1493,7 @@ BLOCK *NewBlock(void *data, UINT size, int compress)
 		return NULL;
 	}
 
-	b = MallocFast(sizeof(BLOCK));
+	b = Malloc(sizeof(BLOCK));
 
 	b->IsFlooding = false;
 
@@ -1512,7 +1512,7 @@ BLOCK *NewBlock(void *data, UINT size, int compress)
 
 		b->Compressed = true;
 		max_size = CalcCompress(size);
-		b->Buf = MallocFast(max_size);
+		b->Buf = Malloc(max_size);
 		b->Size = Compress(b->Buf, max_size, data, size);
 		b->SizeofData = size;
 
@@ -1524,7 +1524,7 @@ BLOCK *NewBlock(void *data, UINT size, int compress)
 
 		b->Compressed = false;
 		max_size = MAX_PACKET_SIZE;
-		b->Buf = MallocFast(max_size);
+		b->Buf = Malloc(max_size);
 		b->Size = Uncompress(b->Buf, max_size, data, size);
 		b->SizeofData = size;
 
