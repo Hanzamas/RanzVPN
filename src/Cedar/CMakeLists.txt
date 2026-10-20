@@ -1,9 +1,7 @@
 file(GLOB SOURCES_CEDAR "*.c")
 file(GLOB HEADERS_CEDAR "*.h")
 
-if(WIN32)
-  add_library(cedar STATIC ${SOURCES_CEDAR} ${HEADERS_CEDAR})
-endif()
+add_library(cedar STATIC ${SOURCES_CEDAR} ${HEADERS_CEDAR})
 
 set_target_properties(cedar
   PROPERTIES
@@ -17,18 +15,16 @@ target_link_libraries(cedar PUBLIC mayaqua)
 # The warning flags of the project's own code (cmake/RanzWarnings.cmake); PRIVATE: they stay on Cedar
 target_link_libraries(cedar PRIVATE ranz_warnings)
 
-if(WIN32)
-  set_target_properties(cedar
-    PROPERTIES
-    COMPILE_PDB_NAME "cedar"
-    COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
-  )
+set_target_properties(cedar
+  PROPERTIES
+  COMPILE_PDB_NAME "cedar"
+  COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+)
 
-  # A Windows library sits on the target whose sources call it. setupapi.lib: SetupCopyOEMInfW and
-  # SetupUninstallOEMInf* (SeLowUser.c, Win32Com.c); ole32.lib and uuid.lib: CoCreateInstance and the
-  # INetCfg GUIDs (Win32Com.c); winhttp.lib: the HTTP client of Protocol.c
-  target_link_libraries(cedar PRIVATE ole32.lib setupapi.lib uuid.lib winhttp.lib)
-endif()
+# A Windows library sits on the target whose sources call it. setupapi.lib: SetupCopyOEMInfW and
+# SetupUninstallOEMInf* (SeLowUser.c, Win32Com.c); ole32.lib and uuid.lib: CoCreateInstance and the
+# INetCfg GUIDs (Win32Com.c); winhttp.lib: the HTTP client of Protocol.c
+target_link_libraries(cedar PRIVATE ole32.lib setupapi.lib uuid.lib winhttp.lib)
 
 # Build identity: version, build time and builder in one generated BuildInfo.h. Only the files that
 # print it include it (Cedar.c, Admin.c, Server.c, Command.c), so a new stamp rebuilds those four

@@ -14,9 +14,9 @@
 #   - /W3 with every compiler (clang-cl maps it to -Wall)
 #   - clang and clang-cl: -Werror=<family> for the families whose count is zero (RANZ_ERROR_FLAGS),
 #     so that they cannot come back. The families that still have hits stay warnings: parentheses,
-#     pointer-sign, incompatible-pointer-types-discards-qualifiers, deprecated-declarations.
-#     -Werror=incompatible-pointer-types is not among the errors: it contains
-#     incompatible-pointer-types-discards-qualifiers, which has hits.
+#     deprecated-declarations.
+#     A read-only parameter of a Mayaqua helper is const (FND-158), which is what keeps
+#     incompatible-pointer-types-discards-qualifiers and pointer-sign at zero.
 #   - clang and clang-cl, unless RANZ_UNUSED_WARNINGS is OFF: the unused and unreachable code
 #     warnings (spec #24, pass 0). CI's unused-code report step lists every warning of this family
 #     as the compiler's view of dead file-local code. Pass 7 of the sweep made the kinds in
@@ -56,6 +56,8 @@ set(RANZ_ERROR_FLAGS
   -Werror=return-type
   -Werror=incompatible-function-pointer-types
   -Werror=format
+  -Werror=incompatible-pointer-types-discards-qualifiers
+  -Werror=pointer-sign
 )
 
 add_library(ranz_warnings INTERFACE)

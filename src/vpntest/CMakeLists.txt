@@ -59,3 +59,8 @@ ranz_add_executable(vpntest HAMCORE
   C_DEFINITIONS
     "RANZ_HAMCORE_SOURCE_DIR=\"${TOP_DIRECTORY}/src/bin/hamcore\""
 )
+
+# The X.509 test (x509test.c) builds its certificates with the OpenSSL API itself, and the crypto
+# test (crypto.c) checks the DH groups against OpenSSL's own primes; Mayaqua no longer exports the
+# OpenSSL include path, so these files get it
+set_source_files_properties(x509test.c crypto.c PROPERTIES INCLUDE_DIRECTORIES "${OPENSSL_INCLUDE_DIR}")

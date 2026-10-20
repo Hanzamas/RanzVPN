@@ -129,7 +129,7 @@ static void KeepAliveTestThreads(KEEPALIVE_TEST *t)
 		ReleaseThread(th[i]);
 	}
 
-	KeepAliveTestCheck(t, Cmp(d[0].Spans, d[1].Spans, sizeof(d[0].Spans)) == false,
+	KeepAliveTestCheck(t, Cmp(d[0].Spans, d[1].Spans, sizeof(d[0].Spans)) != 0,
 		"two threads: different span sequences", "both threads drew the same %u spans", KEEPALIVE_TEST_DRAWS);
 
 	for (i = 0;i < 2;i++)

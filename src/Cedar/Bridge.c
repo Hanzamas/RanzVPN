@@ -6,6 +6,7 @@
 
 #include "Connection.h"
 #include "Hub.h"
+#include "SeLowUser.h"
 #include "Session.h"
 
 #include "Mayaqua/Memory.h"
@@ -39,14 +40,17 @@ UINT GetEthDeviceHash()
 	return num;
 }
 
+// Whether this machine can run a Local Bridge. SeLow must exist for this OS and architecture
+// (SuIsSupportedOs: no claim where no SeLow driver package exists, such as arm64), and then be
+// usable now or installable by this elevated process (FND-173)
 bool IsBridgeSupported()
 {
-	if (Win32EthIsSuSupported())
+	if (SuIsSupportedOs() == false)
 	{
-		return true;
+		return false;
 	}
 
-	return MsIsAdmin();
+	return Win32EthIsSuSupported() || MsIsAdmin();
 }
 
 bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename)

@@ -571,7 +571,7 @@ static TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *r
 	unistr = Malloc(unistr_size);
 	Utf8ToUni(unistr, unistr_size, &line[string_start], StrLen(&line[string_start]));
 
-	if (UniInChar(unistr, L'$'))
+	if (UniIsCharInStr(unistr, L'$'))
 	{
 		wchar_t *tmp;
 		UINT tmp_size = (UniStrSize(unistr) + 1024) * 2;

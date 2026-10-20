@@ -35,6 +35,7 @@
 #include <nb30.h>
 #include <sddl.h>
 #include <security.h>
+#include <SetupAPI.h>
 #include <shellapi.h>
 #include <ShlObj.h>
 #include <Shlwapi.h>		// PathGetArgsW() of MsCopyProcessArgsW
@@ -598,6 +599,8 @@ MS_ADAPTER_LIST *MsCreateAdapterList()
 
 				a->IsBridgeable = MsIsBridgeableIf(r->Type, r->MediaType, r->PhysicalMediumType,
 					r->InterfaceAndOperStatusFlags.HardwareInterface);
+
+				UniStrCpy(a->Alias, sizeof(a->Alias), r->Alias);
 
 				Add(o, a);
 			}
@@ -1938,19 +1941,168 @@ void MsGenLockFile(wchar_t *name, UINT size, wchar_t *temp_dir)
 	UniFormat(name, size, L"%s\\VPN_Lock.dat", temp_dir);
 }
 
-wchar_t *MsGetNetworkConnectionName(char *guid)
+// GUID_DEVCLASS_NET of devguid.h: the setup class of the network adapters
+static const GUID ms_netclass_guid = {0x4d36e972, 0xe325, 0x11ce, {0xbf, 0xc1, 0x08, 0x00, 0x2b, 0xe1, 0x03, 0x18}};
+
+static int MsNetClassCmp(void *p1, void *p2)
 {
-	wchar_t *ncname = NULL;
-	char tmp[MAX_SIZE];
-	if (guid == NULL)
+	MS_NETCLASS_DEVICE *d1, *d2;
+	if (p1 == NULL || p2 == NULL)
+	{
+		return 0;
+	}
+	d1 = *(MS_NETCLASS_DEVICE **)p1;
+	d2 = *(MS_NETCLASS_DEVICE **)p2;
+	if (d1 == NULL || d2 == NULL)
+	{
+		return 0;
+	}
+
+	return StrCmpi(d1->Guid, d2->Guid);
+}
+
+// A string registry property of a SetupAPI device into dst; empty when the device has none
+static void MsNetClassGetProperty(char *dst, UINT size, HDEVINFO h, SP_DEVINFO_DATA *d, DWORD property)
+{
+	wchar_t tmp[MAX_SIZE];
+	DWORD type = 0;
+
+	ClearStr(dst, size);
+	Zero(tmp, sizeof(tmp));
+
+	if (SetupDiGetDeviceRegistryPropertyW(h, d, property, &type, (BYTE *)tmp, sizeof(tmp) - sizeof(wchar_t), NULL) &&
+		type == REG_SZ)
+	{
+		UniToStr(dst, size, tmp);
+	}
+}
+
+// The present devices of the network adapter setup class in one SetupAPI pass, keyed by their
+// NetCfgInstanceId (FND-174). Each entry has the Class key and short key of its driver, its device
+// instance id, its service and the file name of the service binary. A device without a
+// NetCfgInstanceId or a driver key is left out, and so are the class keys of devices that are not
+// present (phantom devices). Free the table with MsNetClassFree
+LIST *MsNetClassEnum()
+{
+	LIST *o = NewList(MsNetClassCmp);
+	HDEVINFO h;
+	UINT i;
+
+	h = SetupDiGetClassDevsW(&ms_netclass_guid, NULL, NULL, DIGCF_PRESENT);
+	if (h == INVALID_HANDLE_VALUE)
+	{
+		return o;
+	}
+
+	for (i = 0;;i++)
+	{
+		SP_DEVINFO_DATA d;
+		MS_NETCLASS_DEVICE *e;
+		HKEY key;
+		wchar_t tmp[MAX_SIZE];
+
+		Zero(&d, sizeof(d));
+		d.cbSize = sizeof(d);
+
+		if (SetupDiEnumDeviceInfo(h, i, &d) == false)
+		{
+			break;
+		}
+
+		e = ZeroMalloc(sizeof(MS_NETCLASS_DEVICE));
+
+		// NetCfgInstanceId of the driver key: the adapter GUID of NDIS, SeLow and IP Helper
+		key = SetupDiOpenDevRegKey(h, &d, DICS_FLAG_GLOBAL, 0, DIREG_DRV, KEY_READ);
+		if (key != INVALID_HANDLE_VALUE)
+		{
+			DWORD type = 0;
+			DWORD size = sizeof(tmp) - sizeof(wchar_t);
+
+			Zero(tmp, sizeof(tmp));
+			if (RegQueryValueExW(key, L"NetCfgInstanceId", NULL, &type, (BYTE *)tmp, &size) == ERROR_SUCCESS &&
+				type == REG_SZ)
+			{
+				UniToStr(e->Guid, sizeof(e->Guid), tmp);
+			}
+
+			RegCloseKey(key);
+		}
+
+		// The driver key below the Class key, in capitals as the Class subkey enumeration spelled it
+		MsNetClassGetProperty(e->ShortKey, sizeof(e->ShortKey), h, &d, SPDRP_DRIVER);
+		StrUpper(e->ShortKey);
+
+		if (IsEmptyStr(e->Guid) || IsEmptyStr(e->ShortKey))
+		{
+			Free(e);
+			continue;
+		}
+
+		Format(e->ClassKey, sizeof(e->ClassKey), "SYSTEM\\CurrentControlSet\\Control\\Class\\%s", e->ShortKey);
+
+		Zero(tmp, sizeof(tmp));
+		if (SetupDiGetDeviceInstanceIdW(h, &d, tmp, MAX_SIZE - 1, NULL))
+		{
+			UniToStr(e->DeviceInstanceId, sizeof(e->DeviceInstanceId), tmp);
+		}
+
+		MsNetClassGetProperty(e->Service, sizeof(e->Service), h, &d, SPDRP_SERVICE);
+
+		if (IsEmptyStr(e->Service) == false)
+		{
+			char service_key[MAX_SIZE];
+			char *image_path;
+
+			Format(service_key, sizeof(service_key), "SYSTEM\\CurrentControlSet\\services\\%s", e->Service);
+
+			image_path = MsRegReadStr(REG_LOCAL_MACHINE, service_key, "ImagePath");
+
+			if (IsEmptyStr(image_path) == false)
+			{
+				GetFileNameFromFilePath(e->DriverFileName, sizeof(e->DriverFileName), image_path);
+				Trim(e->DriverFileName);
+			}
+
+			Free(image_path);
+		}
+
+		Insert(o, e);
+	}
+
+	SetupDiDestroyDeviceInfoList(h);
+
+	return o;
+}
+
+// The device of the network adapter GUID guid in the table of MsNetClassEnum, or NULL
+MS_NETCLASS_DEVICE *MsNetClassFind(LIST *o, char *guid)
+{
+	MS_NETCLASS_DEVICE t;
+	if (o == NULL || guid == NULL)
 	{
 		return NULL;
 	}
 
-	Format(tmp, sizeof(tmp), "SYSTEM\\CurrentControlSet\\Control\\Network\\{4D36E972-E325-11CE-BFC1-08002BE10318}\\%s\\Connection", guid);
-	ncname = MsRegReadStrEx2W(REG_LOCAL_MACHINE, tmp, "Name", false);
+	Zero(&t, sizeof(t));
+	StrCpy(t.Guid, sizeof(t.Guid), guid);
 
-	return ncname;
+	return Search(o, &t);
+}
+
+void MsNetClassFree(LIST *o)
+{
+	UINT i;
+	if (o == NULL)
+	{
+		return;
+	}
+
+	for (i = 0;i < LIST_NUM(o);i++)
+	{
+		Free(LIST_DATA(o, i));
+	}
+
+	ReleaseList(o);
 }
 
 bool MsCheckLogon(wchar_t *username, char *password)
@@ -2482,11 +2634,11 @@ HKEY MsGetRootKeyFromInt(UINT root)
 // quoted or not, and the one space after it. The caller frees the copy.
 wchar_t *MsCopyProcessArgsW()
 {
-	wchar_t *line = UniCopyStr(GetCommandLineW());
+	wchar_t *line = CopyUniStr(GetCommandLineW());
 	wchar_t *args;
 
 	UniTrim(line);
-	args = UniCopyStr(PathGetArgsW(line));
+	args = CopyUniStr(PathGetArgsW(line));
 	Free(line);
 
 	return args;

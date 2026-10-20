@@ -324,7 +324,7 @@ void FreeCipher(CIPHER *c)
 static BUF *RsaPublicToBuf(K *k)
 {
 	BUF *b;
-	RSA *rsa;
+	const RSA *rsa;
 	const BIGNUM *n;
 	if (k == NULL || k->pkey == NULL)
 	{
@@ -1195,7 +1195,7 @@ bool AddX509Name(void *xn, int nid, wchar_t *str)
 	UniToUtf8(utf8, utf8_size, str);
 	utf8[utf8_size] = 0;
 
-	if (StrLen(utf8) != UniStrLen(str))
+	if (utf8_size != UniStrLen(str))
 	{
 		encoding_type = MBSTRING_UTF8;
 	}
@@ -1691,7 +1691,7 @@ NAME *X509NameToName(void *xn)
 
 wchar_t *GetUniStrFromX509Name(void *xn, int nid)
 {
-	UCHAR txt[1024];
+	char txt[1024];
 	UINT i, size;
 	int index, len;
 	bool unicode = false;
@@ -1704,7 +1704,7 @@ wchar_t *GetUniStrFromX509Name(void *xn, int nid)
 	}
 
 	Zero(txt, sizeof(txt));
-	len = X509_NAME_get_text_by_NID(xn, nid, (char *)txt, sizeof(txt) - 2);
+	len = X509_NAME_get_text_by_NID(xn, nid, txt, sizeof(txt) - 2);
 	if (len <= 0)
 	{
 		return NULL;
@@ -1739,7 +1739,7 @@ wchar_t *GetUniStrFromX509Name(void *xn, int nid)
 	size = (UINT)len;
 	for (i = 0;i < size;i++)
 	{
-		if (txt[i] >= 0x80)
+		if ((UCHAR)txt[i] >= 0x80)
 		{
 			unicode = true;
 			break;
@@ -1760,7 +1760,7 @@ wchar_t *GetUniStrFromX509Name(void *xn, int nid)
 	else if (unicode == false)
 	{
 		wchar_t tmp[1024];
-		StrToUni(tmp, sizeof(tmp), (char *)txt);
+		StrToUni(tmp, sizeof(tmp), txt);
 		return CopyUniStr(tmp);
 	}
 	else

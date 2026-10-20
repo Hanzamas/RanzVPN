@@ -28,6 +28,8 @@
 #include "Mayaqua/Tick64.h"
 #include "Mayaqua/Win32.h"
 
+#include <stdlib.h>
+
 static SERVER *server = NULL;
 static LOCK *server_lock = NULL;
 char *SERVER_CONFIG_FILE_NAME = "$ranz_server.config";
@@ -2865,7 +2867,7 @@ static void SiWriteHubCfg(FOLDER *f, HUB *h)
 	{
 		FOLDER *folder = CfgCreateFolder(f, "Message");
 
-		if (IsEmptyUniStr(h->Msg) == false)
+		if (UniIsEmptyStr(h->Msg) == false)
 		{
 			CfgAddUniStr(folder, "MessageText", h->Msg);
 		}

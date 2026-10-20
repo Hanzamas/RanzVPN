@@ -7,7 +7,7 @@
 
 #include "SeLowUser.h"
 
-#include "BridgeWin32.h"
+#include "Cedar.h"
 #include "Win32Com.h"
 
 #include "Mayaqua/Cfg.h"
@@ -596,7 +596,10 @@ bool SuReadAdapterInfoList(void *h, SL_ADAPTER_INFO_LIST *list)
 	return (list->Signature == SL_SIGNATURE);
 }
 
-LIST *SuGetAdapterList(SU *u)
+// The adapters of the SeLow device u. netclass: the net-class table of the caller (MsNetClassEnum),
+// which gives the Class key of each adapter and the DriverDesc fallback of its name; an adapter
+// that is not a present device of the network class is left out
+LIST *SuGetAdapterList(SU *u, LIST *netclass)
 {
 	LIST *ret;
 	UINT i;
@@ -623,15 +626,15 @@ LIST *SuGetAdapterList(SU *u)
 		{
 			// Some NetAdapterCx drivers do not report FriendlyName in kernel mode,
 			// so fall back to DriverDesc from the NetCfg registry key.
-			char regkey[MAX_PATH] = {0};
-			char tmp[MAX_PATH] = {0};
 			char adapter_guid[MAX_PATH] = {0};
+			MS_NETCLASS_DEVICE *d;
 
 			UniToStr(adapter_guid, sizeof(adapter_guid), info->AdapterId + StrLen(SL_ADAPTER_ID_PREFIX));
 
-			if (GetClassRegKeyWin32(regkey, sizeof(regkey), tmp, sizeof(tmp), adapter_guid))
+			d = MsNetClassFind(netclass, adapter_guid);
+			if (d != NULL)
 			{
-				char *driver_desc = MsRegReadStrEx2(REG_LOCAL_MACHINE, regkey, "DriverDesc", false);
+				char *driver_desc = MsRegReadStrEx2(REG_LOCAL_MACHINE, d->ClassKey, "DriverDesc", false);
 
 				if (driver_desc != NULL)
 				{
@@ -642,7 +645,7 @@ LIST *SuGetAdapterList(SU *u)
 		}
 
 		{
-			SU_ADAPTER_LIST *a = SuAdapterInfoToAdapterList(info);
+			SU_ADAPTER_LIST *a = SuAdapterInfoToAdapterList(info, netclass);
 
 			if (a != NULL)
 			{
@@ -698,10 +701,11 @@ void SuFreeAdapterList(LIST *o)
 	ReleaseList(o);
 }
 
-SU_ADAPTER_LIST *SuAdapterInfoToAdapterList(SL_ADAPTER_INFO *info)
+SU_ADAPTER_LIST *SuAdapterInfoToAdapterList(SL_ADAPTER_INFO *info, LIST *netclass)
 {
 	SU_ADAPTER_LIST t;
 	char tmp[MAX_SIZE];
+	MS_NETCLASS_DEVICE *d;
 	if (info == NULL)
 	{
 		return NULL;
@@ -721,10 +725,13 @@ SU_ADAPTER_LIST *SuAdapterInfoToAdapterList(SL_ADAPTER_INFO *info)
 
 	StrCpy(t.Name, sizeof(t.Name), tmp);
 
-	if (GetClassRegKeyWin32(t.SortKey, sizeof(t.SortKey), tmp, sizeof(tmp), t.Guid) == false)
+	d = MsNetClassFind(netclass, t.Guid);
+	if (d == NULL)
 	{
 		return NULL;
 	}
+
+	StrCpy(t.SortKey, sizeof(t.SortKey), d->ClassKey);
 
 	return Clone(&t, sizeof(t));
 }

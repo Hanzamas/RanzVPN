@@ -1,9 +1,7 @@
 file(GLOB SOURCES_MAYAQUA "*.c" "Crypto/*.c")
 file(GLOB HEADERS_MAYAQUA "*.h" "Crypto/*.h")
 
-if(WIN32)
-  add_library(mayaqua STATIC ${SOURCES_MAYAQUA} ${HEADERS_MAYAQUA})
-endif()
+add_library(mayaqua STATIC ${SOURCES_MAYAQUA} ${HEADERS_MAYAQUA})
 
 # The src root only: every unit includes "Mayaqua/X.h", "Cedar/X.h" and "GlobalConst.h" from
 # there; a Mayaqua unit includes the headers of its own directory by their plain names
@@ -83,8 +81,9 @@ endif()
 
 find_package(ZLIB REQUIRED)
 
-# Required because we include <openssl/opensslv.h> in Encrypt.h.
-target_include_directories(mayaqua PUBLIC ${OPENSSL_INCLUDE_DIR})
+# The OpenSSL headers stay private to Mayaqua: no Mayaqua header includes one, so Cedar, the
+# executables and the fuzz targets build without them
+target_include_directories(mayaqua PRIVATE ${OPENSSL_INCLUDE_DIR})
 
 target_link_libraries(mayaqua
   PRIVATE
@@ -93,26 +92,26 @@ target_link_libraries(mayaqua
     ZLIB::ZLIB
 )
 
-if(WIN32)
-  set_target_properties(mayaqua
-    PROPERTIES
-    COMPILE_PDB_NAME "mayaqua"
-    COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
-  )
+set_target_properties(mayaqua
+  PROPERTIES
+  COMPILE_PDB_NAME "mayaqua"
+  COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+)
 
-  # Only the libraries Mayaqua sources call. EnumProcesses and GetModuleFileNameEx resolve to
-  # the K32 exports of kernel32 (PSAPI_VERSION 2); SetupAPI is linked by Cedar, which calls it.
-  target_link_libraries(mayaqua
-    PRIVATE
-      "bcrypt.lib"
-      "crypt32.lib"
-      "DbgHelp.Lib"
-      "iphlpapi.lib"
-      "ntdll.lib"
-      "Secur32.Lib"
-      "shlwapi.lib"
-      "winhttp.lib"
-      "winmm.lib"
-      "ws2_32.lib"
-    )
-endif()
+# Only the libraries Mayaqua sources call. EnumProcesses and GetModuleFileNameEx resolve to
+# the K32 exports of kernel32 (PSAPI_VERSION 2); setupapi.lib: the net-class table of
+# MsNetClassEnum (Microsoft.c).
+target_link_libraries(mayaqua
+  PRIVATE
+    "bcrypt.lib"
+    "crypt32.lib"
+    "DbgHelp.Lib"
+    "iphlpapi.lib"
+    "ntdll.lib"
+    "Secur32.Lib"
+    "setupapi.lib"
+    "shlwapi.lib"
+    "winhttp.lib"
+    "winmm.lib"
+    "ws2_32.lib"
+  )

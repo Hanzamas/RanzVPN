@@ -149,7 +149,7 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 				bool ok = false;
 				HANDLE hfile;
 
-				f->FileNameW = UniCopyStr(data_w.cFileName);
+				f->FileNameW = CopyUniStr(data_w.cFileName);
 				f->FileName = CopyUniToStr(f->FileNameW);
 				f->Folder = (data_w.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? true : false;
 

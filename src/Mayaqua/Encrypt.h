@@ -6,8 +6,6 @@
 
 #include "MayaType.h"
 
-#include <openssl/opensslv.h>
-
 #define RSA_KEY_SIZE				1024
 
 // IANA definitions taken from IKEv1 Phase 1

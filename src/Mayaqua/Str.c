@@ -49,7 +49,7 @@ void ClearStr(char *str, UINT str_size)
 	StrCpy(str, str_size, "");
 }
 
-UINT SearchAsciiInBinary(void *data, UINT size, char *str, bool case_sensitive)
+UINT SearchAsciiInBinary(const void *data, UINT size, const char *str, bool case_sensitive)
 {
 	UINT ret = INFINITE;
 	char *tmp;
@@ -68,7 +68,7 @@ UINT SearchAsciiInBinary(void *data, UINT size, char *str, bool case_sensitive)
 	return ret;
 }
 
-UINT HexToInt(char *str)
+UINT HexToInt(const char *str)
 {
 	UINT len, i;
 	UINT ret = 0;
@@ -146,7 +146,7 @@ UINT HexTo4Bit(char c)
 }
 
 // A heap copy of the first len characters of str
-static char *CopyStrPrefix(char *str, UINT len)
+static char *CopyStrPrefix(const char *str, UINT len)
 {
 	char *ret = Malloc(len + 1);
 
@@ -157,7 +157,7 @@ static char *CopyStrPrefix(char *str, UINT len)
 
 // The tokenizer of both variants. With keep_empty, each separator and the terminator end a token,
 // also an empty one; without it, a run of separators splits once and no token is empty.
-static TOKEN_LIST *ParseTokenCore(char *str, char *split_chars, bool keep_empty)
+static TOKEN_LIST *ParseTokenCore(const char *str, const char *split_chars, bool keep_empty)
 {
 	LIST *o;
 	UINT i;
@@ -212,21 +212,21 @@ static TOKEN_LIST *ParseTokenCore(char *str, char *split_chars, bool keep_empty)
 	return t;
 }
 
-TOKEN_LIST *ParseTokenWithNullStr(char *str, char *split_chars)
+TOKEN_LIST *ParseTokenWithNullStr(const char *str, const char *split_chars)
 {
 	return ParseTokenCore(str, split_chars, true);
 }
 
-TOKEN_LIST *ParseTokenWithoutNullStr(char *str, char *split_chars)
+TOKEN_LIST *ParseTokenWithoutNullStr(const char *str, const char *split_chars)
 {
 	return ParseTokenCore(str, split_chars, false);
 }
 
-bool InStr(char *str, char *keyword)
+bool InStr(const char *str, const char *keyword)
 {
 	return InStrEx(str, keyword, false);
 }
-bool InStrEx(char *str, char *keyword, bool case_sensitive)
+bool InStrEx(const char *str, const char *keyword, bool case_sensitive)
 {
 	if (IsEmptyStr(str) || IsEmptyStr(keyword))
 	{
@@ -241,7 +241,7 @@ bool InStrEx(char *str, char *keyword, bool case_sensitive)
 	return true;
 }
 
-static bool IsSplitChar(char c, char *split_str)
+static bool IsSplitChar(char c, const char *split_str)
 {
 	UINT i, len;
 	char c_upper = ToUpper(c);
@@ -259,7 +259,7 @@ static bool IsSplitChar(char c, char *split_str)
 	return false;
 }
 
-bool GetKeyAndValue(char *str, char *key, UINT key_size, char *value, UINT value_size, char *split_str)
+bool GetKeyAndValue(const char *str, char *key, UINT key_size, char *value, UINT value_size, const char *split_str)
 {
 	UINT mode = 0;
 	UINT wp1 = 0, wp2 = 0;
@@ -339,7 +339,7 @@ char *MakeCharArray(char c, UINT count)
 	return ret;
 }
 
-UINT StrWidth(char *str)
+UINT StrWidth(const char *str)
 {
 	wchar_t *s;
 	UINT ret;
@@ -355,7 +355,7 @@ UINT StrWidth(char *str)
 	return ret;
 }
 
-bool IsAllUpperStr(char *str)
+bool IsAllUpperStr(const char *str)
 {
 	UINT i, len;
 	if (str == NULL)
@@ -506,7 +506,7 @@ void ToStr3(char *str, UINT size, UINT64 v)
 	StrCpy(str, size, tmp2);
 }
 
-void MacToStr(char *str, UINT size, UCHAR *mac_address)
+void MacToStr(char *str, UINT size, const UCHAR *mac_address)
 {
 	if (str == NULL || mac_address == NULL)
 	{
@@ -522,30 +522,18 @@ void MacToStr(char *str, UINT size, UCHAR *mac_address)
 		mac_address[5]);
 }
 
-bool IsEmptyStr(char *str)
+bool IsEmptyStr(const char *str)
 {
-	char *s;
 	if (str == NULL)
 	{
 		return true;
 	}
 
-	s = CopyStr(str);
-	Trim(s);
-
-	if (StrLen(s) == 0)
-	{
-		Free(s);
-		return true;
-	}
-	else
-	{
-		Free(s);
-		return false;
-	}
+	// Empty when nothing but blanks (the characters Trim removes) precedes the terminator
+	return str[strspn(str, " \t")] == '\0';
 }
 
-TOKEN_LIST *ListToTokenList(LIST *o)
+TOKEN_LIST *ListToTokenList(const LIST *o)
 {
 	UINT i;
 	TOKEN_LIST *t;
@@ -567,58 +555,10 @@ TOKEN_LIST *ListToTokenList(LIST *o)
 
 void FreeStrList(LIST *o)
 {
-	UINT i;
-	if (o == NULL)
-	{
-		return;
-	}
-
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		char *s = LIST_DATA(o, i);
-		Free(s);
-	}
-
-	ReleaseList(o);
+	FreeListItems(o);
 }
 
-LIST *StrToStrList(char *str, UINT size)
-{
-	LIST *o;
-	char *tmp;
-	UINT tmp_size;
-	UINT i;
-	if (str == NULL)
-	{
-		return NULL;
-	}
-
-	o = NewListFast(NULL);
-
-	i = 0;
-	while (true)
-	{
-		if (i >= size)
-		{
-			break;
-		}
-		if (*str == 0)
-		{
-			break;
-		}
-
-		tmp_size = StrSize(str);
-		tmp = ZeroMalloc(tmp_size);
-		StrCpy(tmp, tmp_size, str);
-		Add(o, tmp);
-		str += StrLen(str) + 1;
-		i++;
-	}
-
-	return o;
-}
-
-bool IsNum(char *str)
+bool IsNum(const char *str)
 {
 	char c;
 	UINT i, len;
@@ -687,7 +627,7 @@ TOKEN_LIST *NullToken()
 	return ret;
 }
 
-TOKEN_LIST *ParseCmdLine(char *str)
+TOKEN_LIST *ParseCmdLine(const char *str)
 {
 	TOKEN_LIST *t;
 	LIST *o;
@@ -814,7 +754,7 @@ void ToStr64(char *str, UINT64 value)
 	StringCchPrintfA(str, TOSTR64_SIZE, "%I64u", value);
 }
 
-UINT64 ToInt64(char *str)
+UINT64 ToInt64(const char *str)
 {
 	UINT len, i;
 	UINT64 ret = 0;
@@ -844,7 +784,7 @@ UINT64 ToInt64(char *str)
 }
 
 
-bool EndWith(char *str, char *key)
+bool EndWith(const char *str, const char *key)
 {
 	UINT str_len;
 	UINT key_len;
@@ -870,45 +810,33 @@ bool EndWith(char *str, char *key)
 	}
 }
 
-bool StartWith(char *str, char *key)
+bool StartWith(const char *str, const char *key)
 {
-	UINT str_len;
-	UINT key_len;
-	char *tmp;
-	bool ret;
+	UINT i;
 	if (str == NULL || key == NULL)
 	{
 		return false;
 	}
 
-	str_len = StrLen(str);
-	key_len = StrLen(key);
-	if (str_len < key_len)
+	// An empty str or key never matches
+	if (key[0] == '\0')
 	{
 		return false;
 	}
-	if (str_len == 0 || key_len == 0)
-	{
-		return false;
-	}
-	tmp = CopyStr(str);
-	tmp[key_len] = 0;
 
-	if (StrCmpi(tmp, key) == 0)
+	// Compares in place with the ASCII-only fold of StrCmpi, and stops at the end of str
+	for (i = 0;key[i] != '\0';i++)
 	{
-		ret = true;
-	}
-	else
-	{
-		ret = false;
+		if (str[i] == '\0' || ToUpper(str[i]) != ToUpper(key[i]))
+		{
+			return false;
+		}
 	}
 
-	Free(tmp);
-
-	return ret;
+	return true;
 }
 
-bool StrToMac(UCHAR *mac_address, char *str)
+bool StrToMac(UCHAR *mac_address, const char *str)
 {
 	BUF *b;
 	if (mac_address == NULL || str == NULL)
@@ -935,7 +863,7 @@ bool StrToMac(UCHAR *mac_address, char *str)
 	return true;
 }
 
-BUF *StrToBin(char *str)
+BUF *StrToBin(const char *str)
 {
 	BUF *b;
 	UINT len, i;
@@ -986,7 +914,7 @@ BUF *StrToBin(char *str)
 
 // Upper case hex of data straight into str, with one space between the bytes when spaced. Like
 // StrCpy, it writes at most str_size - 1 characters (no limit for str_size 0) and the terminator.
-static void BinToHexStr(char *str, UINT str_size, UCHAR *data, UINT data_size, bool spaced)
+static void BinToHexStr(char *str, UINT str_size, const UCHAR *data, UINT data_size, bool spaced)
 {
 	static const char hex[] = "0123456789ABCDEF";
 	UINT room = (str_size == 0) ? INFINITE : str_size - 1;
@@ -1016,17 +944,17 @@ static void BinToHexStr(char *str, UINT str_size, UCHAR *data, UINT data_size, b
 	str[wp] = '\0';
 }
 
-void BinToStrEx(char *str, UINT str_size, void *data, UINT data_size)
+void BinToStrEx(char *str, UINT str_size, const void *data, UINT data_size)
 {
 	if (str == NULL || data == NULL)
 	{
 		return;
 	}
 
-	BinToHexStr(str, str_size, (UCHAR *)data, data_size, true);
+	BinToHexStr(str, str_size, (const UCHAR *)data, data_size, true);
 }
 
-void BinToStr(char *str, UINT str_size, void *data, UINT data_size)
+void BinToStr(char *str, UINT str_size, const void *data, UINT data_size)
 {
 	if (str == NULL || data == NULL)
 	{
@@ -1037,9 +965,9 @@ void BinToStr(char *str, UINT str_size, void *data, UINT data_size)
 		return;
 	}
 
-	BinToHexStr(str, str_size, (UCHAR *)data, data_size, false);
+	BinToHexStr(str, str_size, (const UCHAR *)data, data_size, false);
 }
-void BinToStrW(wchar_t *str, UINT str_size, void *data, UINT data_size)
+void BinToStrW(wchar_t *str, UINT str_size, const void *data, UINT data_size)
 {
 	char *tmp;
 	UINT tmp_size;
@@ -1062,7 +990,7 @@ void BinToStrW(wchar_t *str, UINT str_size, void *data, UINT data_size)
 	Free(tmp);
 }
 
-char *CopyStr(char *str)
+char *CopyStr(const char *str)
 {
 	UINT len;
 	char *dst;
@@ -1077,7 +1005,7 @@ char *CopyStr(char *str)
 	return dst;
 }
 
-bool IsSafeStr(char *str)
+bool IsSafeStr(const char *str)
 {
 	UINT i, len;
 	if (str == NULL)
@@ -1227,17 +1155,17 @@ void InitStringLibrary()
 	}
 }
 
-UINT ReplaceStri(char *dst, UINT size, char *string, char *old_keyword, char *new_keyword)
+UINT ReplaceStri(char *dst, UINT size, const char *string, const char *old_keyword, const char *new_keyword)
 {
 	return ReplaceStrEx(dst, size, string, old_keyword, new_keyword, false);
 }
 
-UINT ReplaceStr(char *dst, UINT size, char *string, char *old_keyword, char *new_keyword)
+UINT ReplaceStr(char *dst, UINT size, const char *string, const char *old_keyword, const char *new_keyword)
 {
 	return ReplaceStrEx(dst, size, string, old_keyword, new_keyword, true);
 }
 
-UINT ReplaceStrEx(char *dst, UINT size, char *string, char *old_keyword, char *new_keyword, bool case_sensitive)
+UINT ReplaceStrEx(char *dst, UINT size, const char *string, const char *old_keyword, const char *new_keyword, bool case_sensitive)
 {
 	UINT i, j, num;
 	UINT len_string, len_old, len_new;
@@ -1286,7 +1214,7 @@ UINT ReplaceStrEx(char *dst, UINT size, char *string, char *old_keyword, char *n
 	return num;
 }
 
-UINT CalcReplaceStrEx(char *string, char *old_keyword, char *new_keyword, bool case_sensitive)
+UINT CalcReplaceStrEx(const char *string, const char *old_keyword, const char *new_keyword, bool case_sensitive)
 {
 	UINT i, num;
 	UINT len_string, len_old, len_new;
@@ -1320,17 +1248,18 @@ UINT CalcReplaceStrEx(char *string, char *old_keyword, char *new_keyword, bool c
 	return len_string + len_new * num - len_old * num;
 }
 
-UINT SearchStr(char *string, char *keyword, UINT start)
+UINT SearchStr(const char *string, const char *keyword, UINT start)
 {
 	return SearchStrEx(string, keyword, start, true);
 }
 
 // Returns INFINITE if not found
-UINT SearchStrEx(char *string, char *keyword, UINT start, bool case_sensitive)
+UINT SearchStrEx(const char *string, const char *keyword, UINT start, bool case_sensitive)
 {
 	UINT len_string, len_keyword;
 	UINT ret;
-	char *cmp_string, *cmp_keyword;
+	const char *cmp_string, *cmp_keyword;
+	char *upper_string = NULL, *upper_keyword = NULL;
 	char *found;
 	if (string == NULL || keyword == NULL)
 	{
@@ -1361,10 +1290,12 @@ UINT SearchStrEx(char *string, char *keyword, UINT start, bool case_sensitive)
 	}
 	else
 	{
-		cmp_string = CopyStr(string);
-		cmp_keyword = CopyStr(keyword);
-		StrUpper(cmp_string);
-		StrUpper(cmp_keyword);
+		upper_string = CopyStr(string);
+		upper_keyword = CopyStr(keyword);
+		StrUpper(upper_string);
+		StrUpper(upper_keyword);
+		cmp_string = upper_string;
+		cmp_keyword = upper_keyword;
 	}
 
 	// The first match at or after start
@@ -1373,8 +1304,8 @@ UINT SearchStrEx(char *string, char *keyword, UINT start, bool case_sensitive)
 
 	if (case_sensitive == false)
 	{
-		Free(cmp_keyword);
-		Free(cmp_string);
+		Free(upper_keyword);
+		Free(upper_string);
 	}
 
 	return ret;
@@ -1398,7 +1329,7 @@ void FreeToken(TOKEN_LIST *tokens)
 	Free(tokens);
 }
 
-TOKEN_LIST *ParseToken(char *src, char *separator)
+TOKEN_LIST *ParseToken(const char *src, const char *separator)
 {
 	return ParseTokenWithoutNullStr(src, separator);
 }
@@ -1502,7 +1433,7 @@ void ToStr(char *str, UINT i)
 	StringCchPrintfA(str, TOSTR_SIZE, "%u", i);
 }
 
-int ToInti(char *str)
+int ToInti(const char *str)
 {
 	if (str == NULL)
 	{
@@ -1512,7 +1443,7 @@ int ToInti(char *str)
 	return (int)ToInt(str);
 }
 
-UINT ToInt(char *str)
+UINT ToInt(const char *str)
 {
 	if (str == NULL)
 	{
@@ -1540,7 +1471,7 @@ UINT ToInt(char *str)
 // mean what they mean in Format (%s is a char string, %S a wchar_t string): the wide formatter
 // runs without the legacy wide specifiers, so a wchar_t argument keeps every character instead
 // of a round trip through the ANSI code page. NULL when the CRT cannot format the arguments
-wchar_t *CopyFormatArgsToUni(char *fmt, va_list args)
+wchar_t *CopyFormatArgsToUni(const char *fmt, va_list args)
 {
 	unsigned __int64 options = _CRT_INTERNAL_LOCAL_PRINTF_OPTIONS & ~(unsigned __int64)_CRT_INTERNAL_PRINTF_LEGACY_WIDE_SPECIFIERS;
 	va_list count_args;
@@ -1571,7 +1502,7 @@ wchar_t *CopyFormatArgsToUni(char *fmt, va_list args)
 }
 
 // The message goes to the console as a wide string, without a hop through the ANSI code page
-static void PrintArgs(char *fmt, va_list args)
+static void PrintArgs(const char *fmt, va_list args)
 {
 	wchar_t *str;
 	if (fmt == NULL)
@@ -1589,7 +1520,7 @@ static void PrintArgs(char *fmt, va_list args)
 	Free(str);
 }
 
-void Print(char *fmt, ...)
+void Print(const char *fmt, ...)
 {
 	va_list args;
 	if (fmt == NULL)
@@ -1602,7 +1533,7 @@ void Print(char *fmt, ...)
 	va_end(args);
 }
 
-static void DebugArgs(char *fmt, va_list args)
+static void DebugArgs(const char *fmt, va_list args)
 {
 	if (fmt == NULL)
 	{
@@ -1625,7 +1556,7 @@ static void DebugArgs(char *fmt, va_list args)
 	PrintArgs(fmt, args);
 }
 
-void Debug(char *fmt, ...)
+void Debug(const char *fmt, ...)
 {
 	va_list args;
 	if (fmt == NULL)
@@ -1644,7 +1575,7 @@ void Debug(char *fmt, ...)
 	va_end(args);
 }
 
-void Format(char *buf, UINT size, char *fmt, ...)
+void Format(char *buf, UINT size, const char *fmt, ...)
 {
 	va_list args;
 	if (buf == NULL || fmt == NULL)
@@ -1660,7 +1591,7 @@ void Format(char *buf, UINT size, char *fmt, ...)
 // The CRT formatter (narrow: %s is a char string, %S a wchar_t string). size 0 means the buffer
 // holds the whole result; otherwise a longer result keeps size - 1 characters and the
 // terminator. buf must not be an argument or fmt
-void FormatArgs(char *buf, UINT size, char *fmt, va_list args)
+void FormatArgs(char *buf, UINT size, const char *fmt, va_list args)
 {
 	size_t count = size;
 	if (buf == NULL || fmt == NULL)
@@ -1687,7 +1618,7 @@ void FormatArgs(char *buf, UINT size, char *fmt, va_list args)
 	_vsnprintf_s(buf, count, _TRUNCATE, fmt, args);
 }
 
-int StrCmpi(char *str1, char *str2)
+int StrCmpi(const char *str1, const char *str2)
 {
 	UINT i;
 	if (str1 == NULL && str2 == NULL)
@@ -1725,7 +1656,7 @@ int StrCmpi(char *str1, char *str2)
 	}
 }
 
-int StrCmp(char *str1, char *str2)
+int StrCmp(const char *str1, const char *str2)
 {
 	if (str1 == NULL && str2 == NULL)
 	{
@@ -1803,7 +1734,7 @@ static size_t StrSafeCch(UINT size)
 	return size;
 }
 
-UINT StrCat(char *dst, UINT size, char *src)
+UINT StrCat(char *dst, UINT size, const char *src)
 {
 	size_t cch, len1;
 	char *end;
@@ -1829,7 +1760,7 @@ UINT StrCat(char *dst, UINT size, char *src)
 
 	return (UINT)(end - dst);
 }
-UINT StrCatLeft(char *dst, UINT size, char *src)
+UINT StrCatLeft(char *dst, UINT size, const char *src)
 {
 	char *s;
 	if (dst == NULL || src == NULL)
@@ -1846,7 +1777,7 @@ UINT StrCatLeft(char *dst, UINT size, char *src)
 	return StrLen(dst);
 }
 
-UINT StrCpy(char *dst, UINT size, char *src)
+UINT StrCpy(char *dst, UINT size, const char *src)
 {
 	size_t cch, len;
 	if (dst == src)
@@ -1882,7 +1813,7 @@ UINT StrCpy(char *dst, UINT size, char *src)
 	return (UINT)len;
 }
 
-bool StrCheckLen(char *str, UINT len)
+bool StrCheckLen(const char *str, UINT len)
 {
 	if (str == NULL)
 	{
@@ -1895,7 +1826,7 @@ bool StrCheckLen(char *str, UINT len)
 	return SUCCEEDED(StringCchLengthA(str, (len >= STRSAFE_MAX_CCH) ? STRSAFE_MAX_CCH : (size_t)len + 1, NULL));
 }
 
-UINT StrSize(char *str)
+UINT StrSize(const char *str)
 {
 	if (str == NULL)
 	{
@@ -1905,7 +1836,7 @@ UINT StrSize(char *str)
 	return StrLen(str) + 1;
 }
 
-UINT StrLen(char *str)
+UINT StrLen(const char *str)
 {
 	if (str == NULL)
 	{

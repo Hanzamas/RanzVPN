@@ -28,6 +28,8 @@
 #include <wincrypt.h>
 #include <IcmpAPI.h>
 
+#define PQ_GROUP_LIST				"X25519MLKEM768:p521_kyber1024:x25519_kyber768:P-521:X25519:P-256"
+
 static COUNTER *num_tcp_connections = NULL;
 static LIST *WaitThreadList = NULL;
 static LOCK *host_ip_address_list_cache_lock = NULL;
@@ -328,7 +330,7 @@ static void PrefixLenToMask(UCHAR *mask, UINT size, UINT len)
 
 // Prefix length of a subnet mask of 'size' bytes: the number of its leading one bits. INFINITE when
 // a one bit follows a zero bit (not a subnet mask)
-static UINT MaskToPrefixLen(UCHAR *mask, UINT size)
+static UINT MaskToPrefixLen(const UCHAR *mask, UINT size)
 {
 	UINT len = 0;
 	UINT i = 0;
@@ -371,7 +373,7 @@ static UINT MaskToPrefixLen(UCHAR *mask, UINT size)
 }
 
 // Prefix length of an IPv6 subnet mask; 0 for an IPv4 address or a mask that is not contiguous
-UINT SubnetMaskToInt6(IP *a)
+UINT SubnetMaskToInt6(const IP *a)
 {
 	UINT len;
 	if (IsIP6(a) == false)
@@ -383,7 +385,7 @@ UINT SubnetMaskToInt6(IP *a)
 
 	return (len == INFINITE ? 0 : len);
 }
-static UINT SubnetMaskToInt4(IP *a)
+static UINT SubnetMaskToInt4(const IP *a)
 {
 	UINT len;
 	if (IsIP4(a) == false)
@@ -395,7 +397,7 @@ static UINT SubnetMaskToInt4(IP *a)
 
 	return (len == INFINITE ? 0 : len);
 }
-static UINT SubnetMaskToInt(IP *a)
+static UINT SubnetMaskToInt(const IP *a)
 {
 	if (IsIP6(a))
 	{
@@ -407,7 +409,7 @@ static UINT SubnetMaskToInt(IP *a)
 	}
 }
 
-static bool IsSubnetMask6(IP *a)
+static bool IsSubnetMask6(const IP *a)
 {
 	if (IsIP6(a) == false)
 	{
@@ -450,7 +452,7 @@ void GenerateEui64Address6(UCHAR *dst, UCHAR *mac)
 	dst[0] = ((~(dst[0] & 0x02)) & 0x02) | (dst[0] & 0xfd);
 }
 
-UINT GetIPv6AddrType(IPV6_ADDR *addr)
+UINT GetIPv6AddrType(const IPV6_ADDR *addr)
 {
 	IP ip;
 	if (addr == NULL)
@@ -462,7 +464,7 @@ UINT GetIPv6AddrType(IPV6_ADDR *addr)
 
 	return GetIPAddrType6(&ip);
 }
-UINT GetIPAddrType6(IP *ip)
+UINT GetIPAddrType6(const IP *ip)
 {
 	UINT ret = 0;
 	if (IsIP6(ip) == false)
@@ -572,7 +574,7 @@ void GetAllRouterMulticastAddress6(IP *ip)
 	ip->address[15] = 0x02;
 }
 
-void IPAnd4(IP *dst, IP *a, IP *b)
+void IPAnd4(IP *dst, const IP *a, const IP *b)
 {
 	if (dst == NULL || a == NULL || b == NULL || IsIP4(a) == false || IsIP4(b) == false)
 	{
@@ -583,7 +585,7 @@ void IPAnd4(IP *dst, IP *a, IP *b)
 	UINTToIP(dst, IPToUINT(a) & IPToUINT(b));
 }
 
-void IPAnd6(IP *dst, IP *a, IP *b)
+void IPAnd6(IP *dst, const IP *a, const IP *b)
 {
 	Zero(dst, sizeof(IP));
 
@@ -610,7 +612,7 @@ void IntToSubnetMask6(IP *ip, UINT i)
 	PrefixLenToMask(ip->address, sizeof(ip->address), i);
 }
 
-void IP6AddrToStr(char *str, UINT size, IPV6_ADDR *addr)
+void IP6AddrToStr(char *str, UINT size, const IPV6_ADDR *addr)
 {
 	IP ip;
 	if (str == NULL || addr == NULL)
@@ -622,7 +624,7 @@ void IP6AddrToStr(char *str, UINT size, IPV6_ADDR *addr)
 
 	IPToStr6(str, size, &ip);
 }
-void IPToStr6(char *str, UINT size, IP *ip)
+void IPToStr6(char *str, UINT size, const IP *ip)
 {
 	IN6_ADDR addr;
 	char tmp[INET6_ADDRSTRLEN];
@@ -643,7 +645,7 @@ void IPToStr6(char *str, UINT size, IP *ip)
 	StrCpy(str, size, tmp);
 }
 
-bool StrToIP6(IP *ip, char *str)
+bool StrToIP6(IP *ip, const char *str)
 {
 	char tmp[MAX_PATH];
 	IN6_ADDR addr;
@@ -719,7 +721,7 @@ void GetLocalHostIP4(IP *ip)
 	SetIP(ip, 127, 0, 0, 1);
 }
 
-static bool IsLocalHostIP6(IP *ip)
+static bool IsLocalHostIP6(const IP *ip)
 {
 	IP local;
 	if (ip == NULL)
@@ -740,7 +742,7 @@ static bool IsLocalHostIP6(IP *ip)
 
 	return false;
 }
-static bool IsLocalHostIP4(IP *ip)
+static bool IsLocalHostIP4(const IP *ip)
 {
 	if (ip == NULL)
 	{
@@ -758,7 +760,7 @@ static bool IsLocalHostIP4(IP *ip)
 
 	return false;
 }
-bool IsLocalHostIP(IP *ip)
+bool IsLocalHostIP(const IP *ip)
 {
 	if (ip == NULL)
 	{
@@ -775,7 +777,7 @@ bool IsLocalHostIP(IP *ip)
 	}
 }
 
-void IPv6AddrToIP(IP *ip, IPV6_ADDR *addr)
+void IPv6AddrToIP(IP *ip, const IPV6_ADDR *addr)
 {
 	if (ip == NULL || addr == NULL)
 	{
@@ -785,7 +787,7 @@ void IPv6AddrToIP(IP *ip, IPV6_ADDR *addr)
 	SetIP6(ip, addr->Value);
 }
 
-bool IPToIPv6Addr(IPV6_ADDR *addr, IP *ip)
+bool IPToIPv6Addr(IPV6_ADDR *addr, const IP *ip)
 {
 	UINT i;
 	if (addr == NULL || ip == NULL)
@@ -808,7 +810,7 @@ bool IPToIPv6Addr(IPV6_ADDR *addr, IP *ip)
 	return true;
 }
 
-void SetIP6(IP *ip, UCHAR *value)
+void SetIP6(IP *ip, const UCHAR *value)
 {
 	if (ip == NULL || value == NULL)
 	{
@@ -823,7 +825,7 @@ void SetIP6(IP *ip, UCHAR *value)
 	}
 }
 
-bool IsIP4(IP *ip)
+bool IsIP4(const IP *ip)
 {
 	if (ip == NULL)
 	{
@@ -843,12 +845,12 @@ bool IsIP4(IP *ip)
 	return true;
 }
 
-void CopyIP(IP *dst, IP *src)
+void CopyIP(IP *dst, const IP *src)
 {
 	Copy(dst, src, sizeof(IP));
 }
 
-bool IsValidUnicastIPAddress4(IP *ip)
+bool IsValidUnicastIPAddress4(const IP *ip)
 {
 	if (IsIP4(ip) == false)
 	{
@@ -879,7 +881,7 @@ bool IsValidUnicastIPAddress4(IP *ip)
 	return false;
 }
 
-bool IsValidUnicastIPAddress6(IP *ip)
+bool IsValidUnicastIPAddress6(const IP *ip)
 {
 	UINT ipv6Type;
 
@@ -904,7 +906,7 @@ bool IsValidUnicastIPAddress6(IP *ip)
 	return true;
 }
 
-UINT GetNumIpClient(IP *ip)
+UINT GetNumIpClient(const IP *ip)
 {
 	IP_CLIENT *c;
 	UINT ret = 0;
@@ -929,7 +931,7 @@ UINT GetNumIpClient(IP *ip)
 
 // Map a source address to its per-source rate-limit key: an IPv4 address keeps all 32 bits,
 // an IPv6 address keeps only its /64 prefix, since one host can pick any address inside its /64
-void GetRateLimitKey(IP *key, IP *ip)
+void GetRateLimitKey(IP *key, const IP *ip)
 {
 	if (key == NULL)
 	{
@@ -1041,7 +1043,7 @@ static void DelIpClient(IP *ip)
 
 }
 
-IP_CLIENT *SearchIpClient(IP *ip)
+IP_CLIENT *SearchIpClient(const IP *ip)
 {
 	IP_CLIENT t;
 	if (ip == NULL)
@@ -1093,7 +1095,7 @@ int CompareIpClientList(void *p1, void *p2)
 	return CmpIpAddr(&c1->IpAddress, &c2->IpAddress);
 }
 
-bool IsZeroIP(IP *ip)
+bool IsZeroIP(const IP *ip)
 {
 	if (ip == NULL)
 	{
@@ -1112,7 +1114,7 @@ bool IsZeroIP(IP *ip)
 
 	return false;
 }
-bool IsZeroIP6Addr(IPV6_ADDR *addr)
+bool IsZeroIP6Addr(const IPV6_ADDR *addr)
 {
 	if (addr == NULL)
 	{
@@ -1134,7 +1136,7 @@ void IntToSubnetMask4(IP *ip, UINT i)
 	PrefixLenToMask(IPV4(ip->address), IPV4_SIZE, i);
 }
 
-static bool IsSubnetMask(IP *ip)
+static bool IsSubnetMask(const IP *ip)
 {
 	if (IsIP6(ip))
 	{
@@ -1145,7 +1147,7 @@ static bool IsSubnetMask(IP *ip)
 		return IsSubnetMask4(ip);
 	}
 }
-bool IsSubnetMask4(IP *ip)
+bool IsSubnetMask4(const IP *ip)
 {
 	if (ip == NULL)
 	{
@@ -1566,7 +1568,7 @@ void Cancel(CANCEL *c)
 
 // Fill a sockaddr for a UDP socket of the given family and return its length, 0 if the IP is not of that
 // family. A NULL or zero IP gives the any-address, which is what bind wants.
-static int UdpSockAddr(struct sockaddr_storage *sa, bool ipv6, IP *ip, UINT port)
+static int UdpSockAddr(struct sockaddr_storage *sa, bool ipv6, const IP *ip, UINT port)
 {
 	Zero(sa, sizeof(*sa));
 
@@ -1632,7 +1634,7 @@ static void UdpSockAddrToIP(IP *ip, UINT *port, struct sockaddr_storage *sa, boo
 }
 
 // Whether a datagram to this address needs SO_BROADCAST: the IPv4 limited broadcast, or a multicast address
-static bool UdpNeedsBroadcast(bool ipv6, IP *ip)
+static bool UdpNeedsBroadcast(bool ipv6, const IP *ip)
 {
 	const BYTE *ipv4;
 
@@ -1716,7 +1718,7 @@ UINT RecvFrom(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 	return UdpIoFailed(sock, false);
 }
 
-UINT SendTo(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size)
+UINT SendTo(SOCK *sock, const IP *dest_addr, UINT dest_port, const void *data, UINT size)
 {
 	struct sockaddr_storage addr;
 	int addrlen;
@@ -3930,7 +3932,7 @@ SOCK *NewSock()
 	return s;
 }
 
-UINT IPToUINT(IP *ip)
+UINT IPToUINT(const IP *ip)
 {
 	if (ip == NULL || IsIP6(ip))
 	{
@@ -3980,7 +3982,7 @@ void GetMachineName(char *name, UINT size)
 	StrCpy(name, size, tmp);
 }
 
-bool GetHostName(char *hostname, UINT size, IP *ip)
+bool GetHostName(char *hostname, UINT size, const IP *ip)
 {
 	if (hostname == NULL || size == 0 || ip == NULL)
 	{
@@ -4003,7 +4005,7 @@ bool GetHostName(char *hostname, UINT size, IP *ip)
 
 #define	NUM_NBT_QUERYS_SEND			3
 
-bool GetNetBiosName(char *name, UINT size, IP *ip)
+bool GetNetBiosName(char *name, UINT size, const IP *ip)
 {
 	SOCK *s;
 	UINT i, j;
@@ -4169,7 +4171,7 @@ void IPToStr32(char *str, UINT size, UINT ip)
 	IPToStr(str, size, &ip_st);
 }
 
-void IPToStr4or6(char *str, UINT size, UINT ip_4_uint, UCHAR *ip_6_bytes)
+void IPToStr4or6(char *str, UINT size, UINT ip_4_uint, const UCHAR *ip_6_bytes)
 {
 	IP ip4;
 	IP ip6;
@@ -4196,7 +4198,7 @@ void IPToStr4or6(char *str, UINT size, UINT ip_4_uint, UCHAR *ip_6_bytes)
 	IPToStr(str, size, &ip);
 }
 
-void IPToStr(char *str, UINT size, IP *ip)
+void IPToStr(char *str, UINT size, const IP *ip)
 {
 	if (str == NULL || ip == NULL)
 	{
@@ -4219,7 +4221,7 @@ void IPToStr(char *str, UINT size, IP *ip)
 	}
 }
 
-bool StrToIP(IP *ip, char *str)
+bool StrToIP(IP *ip, const char *str)
 {
 	char *tmp;
 	PCSTR end;
@@ -4253,7 +4255,7 @@ bool StrToIP(IP *ip, char *str)
 	return true;
 }
 
-void IPToInAddr(struct in_addr *addr, IP *ip)
+void IPToInAddr(struct in_addr *addr, const IP *ip)
 {
 	UINT i;
 	if (addr == NULL || IsIP4(ip) == false)
@@ -4270,7 +4272,7 @@ void IPToInAddr(struct in_addr *addr, IP *ip)
 	}
 }
 
-void IPToInAddr6(struct in6_addr *addr, IP *ip)
+void IPToInAddr6(struct in6_addr *addr, const IP *ip)
 {
 	if (addr == NULL || ip == NULL)
 	{
@@ -4285,7 +4287,7 @@ void IPToInAddr6(struct in6_addr *addr, IP *ip)
 	}
 }
 
-void InAddrToIP(IP *ip, struct in_addr *addr)
+void InAddrToIP(IP *ip, const struct in_addr *addr)
 {
 	if (ip == NULL || addr == NULL)
 	{
@@ -4302,7 +4304,7 @@ void InAddrToIP(IP *ip, struct in_addr *addr)
 	}
 }
 
-void InAddrToIP6(IP *ip, struct in6_addr *addr)
+void InAddrToIP6(IP *ip, const struct in6_addr *addr)
 {
 	if (ip == NULL || addr == NULL)
 	{
@@ -4482,7 +4484,7 @@ COUNTER *GetNumTcpConnectionsCounter()
 	return num_tcp_connections;
 }
 
-bool IsIPMyHost(IP *ip)
+bool IsIPMyHost(const IP *ip)
 {
 	LIST *o;
 	UINT i;
@@ -4523,7 +4525,7 @@ bool IsIPMyHost(IP *ip)
 	return ret;
 }
 
-bool IsIPPrivate(IP *ip)
+bool IsIPPrivate(const IP *ip)
 {
 	if (IsIP4(ip) == false)
 	{
@@ -4760,7 +4762,7 @@ bool ParseIpAndSubnetMask4(char *src, UINT *ip, UINT *mask)
 }
 
 
-bool ParseIpAndMask46(char *src, IP *ip, IP *mask)
+bool ParseIpAndMask46(const char *src, IP *ip, IP *mask)
 {
 	TOKEN_LIST *t;
 	char *ipstr;
@@ -4855,7 +4857,7 @@ bool ParseIpAndMask4(char *src, UINT *ip, UINT *mask)
 
 	return true;
 }
-bool ParseIpAndMask6(char *src, IP *ip, IP *mask)
+bool ParseIpAndMask6(const char *src, IP *ip, IP *mask)
 {
 	if (ParseIpAndMask46(src, ip, mask) == false)
 	{
@@ -4871,11 +4873,11 @@ bool ParseIpAndMask6(char *src, IP *ip, IP *mask)
 }
 
 
-void MaskToStr(char *str, UINT size, IP *mask)
+void MaskToStr(char *str, UINT size, const IP *mask)
 {
 	MaskToStrEx(str, size, mask, false);
 }
-void MaskToStrEx(char *str, UINT size, IP *mask, bool always_full_address)
+void MaskToStrEx(char *str, UINT size, const IP *mask, bool always_full_address)
 {
 	if (str == NULL || mask == NULL)
 	{
@@ -4903,7 +4905,7 @@ void MaskToStr32Ex(char *str, UINT size, UINT mask, bool always_full_address)
 
 	MaskToStrEx(str, size, &ip, always_full_address);
 }
-static void Mask6AddrToStrEx(char *str, UINT size, IPV6_ADDR *mask, bool always_full_address)
+static void Mask6AddrToStrEx(char *str, UINT size, const IPV6_ADDR *mask, bool always_full_address)
 {
 	IP ip;
 
@@ -4917,7 +4919,7 @@ static void Mask6AddrToStrEx(char *str, UINT size, IPV6_ADDR *mask, bool always_
 
 	MaskToStrEx(str, size, &ip, always_full_address);
 }
-void Mask6AddrToStr(char *str, UINT size, IPV6_ADDR *mask)
+void Mask6AddrToStr(char *str, UINT size, const IPV6_ADDR *mask)
 {
 	Mask6AddrToStrEx(str, size, mask, false);
 }
@@ -4940,9 +4942,9 @@ void FreeHostIPAddressList(LIST *o)
 	ReleaseList(o);
 }
 
-void AddHostIPAddressToList(LIST *o, IP *ip)
+void AddHostIPAddressToList(LIST *o, const IP *ip)
 {
-	IP *r = NULL;
+	const IP *r = NULL;
 	if (o == NULL || ip == NULL)
 	{
 		return;
@@ -5073,7 +5075,7 @@ LIST *GetHostIPAddressList()
 	return o;
 }
 
-LIST *CloneIPAddressList(LIST *o)
+LIST *CloneIPAddressList(const LIST *o)
 {
 	LIST *ret;
 	UINT i;
