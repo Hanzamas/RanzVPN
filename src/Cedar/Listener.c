@@ -383,7 +383,8 @@ static void ListenerUDPMainLoop(LISTENER *r)
 				return;
 			}
 
-			r->Sock = NewUDPEx2(r->Port, false, &r->Cedar->Server->ListenIP);
+			// An unset ListenIP is the all-zero IPv6 address, which NewUDP4 refuses: bind to any address then
+			r->Sock = NewUDPEx2(r->Port, false, IsZeroIP(&r->Cedar->Server->ListenIP) ? NULL : &r->Cedar->Server->ListenIP);
 			if (r->Sock != NULL)
 			{
 				break;

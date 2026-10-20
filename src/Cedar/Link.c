@@ -142,8 +142,11 @@ static bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 
 	halting = (k->Halting || (*k->StopAllLinkFlag));
 
+	// k->ServerSession is pinned by the link's ref until LinkPaFree, which runs on this thread;
+	// the server session never clears its Connection, so take a ref on it for this call
 	server_session = k->ServerSession;
 	server_connection = server_session->Connection;
+	AddRef(server_connection->ref);
 
 	k->Flag1++;
 	if ((k->Flag1 % 32) == 0)
@@ -231,6 +234,8 @@ static bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 	{
 		ret = false;
 	}
+
+	ReleaseConnection(server_connection);
 
 	return ret;
 }
@@ -477,11 +482,14 @@ void StartLink(LINK *k)
 
 void StopLink(LINK *k)
 {
+	SESSION *s;
 	if (k == NULL)
 	{
 		return;
 	}
 
+	// Read k->ClientSession and take a ref under the link lock, then stop the session
+	// outside it (lock order: see StopSessionEx in Session.c)
 	LockLink(k);
 	{
 		if (k->Started == false)
@@ -493,19 +501,30 @@ void StopLink(LINK *k)
 		k->Halting = true;
 
 		Dec(k->Cedar->CurrentActiveLinks);
+
+		s = k->ClientSession;
+		if (s != NULL)
+		{
+			AddRef(s->ref);
+		}
 	}
 	UnlockLink(k);
 
-	if (k->ClientSession != NULL)
+	if (s != NULL)
 	{
-		StopSession(k->ClientSession);
+		StopSession(s);
 
 		LockLink(k);
 		{
-			ReleaseSession(k->ClientSession);
-			k->ClientSession = NULL;
+			if (k->ClientSession == s)
+			{
+				ReleaseSession(k->ClientSession);
+				k->ClientSession = NULL;
+			}
 		}
 		UnlockLink(k);
+
+		ReleaseSession(s);
 	}
 
 	LockLink(k);
@@ -575,16 +594,12 @@ LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, 
 	LINK *k;
 	CLIENT_AUTH *a;
 	POLICY link_policy;
+	bool added = false;
 	if (cedar == NULL || hub == NULL || option == NULL || auth == NULL || policy == NULL)
 	{
 		return NULL;
 	}
 	if (hub->Halt)
-	{
-		return NULL;
-	}
-
-	if (LIST_NUM(hub->LinkList) >= MAX_HUB_LINKS)
 	{
 		return NULL;
 	}
@@ -629,12 +644,23 @@ LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, 
 	k->Policy = ZeroMalloc(sizeof(POLICY));
 	Copy(k->Policy, &link_policy, sizeof(POLICY));
 
+	// Check MAX_HUB_LINKS under the list lock, where the link is added
 	LockList(hub->LinkList);
 	{
-		Add(hub->LinkList, k);
-		AddRef(k->ref);
+		if (LIST_NUM(hub->LinkList) < MAX_HUB_LINKS)
+		{
+			Add(hub->LinkList, k);
+			AddRef(k->ref);
+			added = true;
+		}
 	}
 	UnlockList(hub->LinkList);
+
+	if (added == false)
+	{
+		ReleaseLink(k);
+		return NULL;
+	}
 
 	return k;
 }

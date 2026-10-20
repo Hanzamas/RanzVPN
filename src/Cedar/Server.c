@@ -5,6 +5,7 @@
 
 #include "Admin.h"
 #include "BridgeWin32.h"
+#include "BuildInfo.h"
 #include "Connection.h"
 #include "Link.h"
 #include "Listener.h"
@@ -1705,6 +1706,10 @@ static void SiLoadInitialConfiguration(SERVER *s)
 	SiInitDefaultServerCert(s);
 
 	s->Cedar->UsernameHubSeparator = DEFAULT_USERNAME_HUB_SEPARATOR;
+
+	// A fresh config does no reverse DNS or NetBIOS probe on the accept path
+	s->DisableGetHostNameWhenAcceptTcp = true;
+	DisableGetHostNameWhenAcceptInit();
 
 	{
 		SiInitDefaultHubList(s);
@@ -4057,7 +4062,12 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 		// Before SiLoadHubs: the hub MAC addresses and addresses come from the machine identity
 		SiLoadMachineIdCfg(c, f);
 
-		s->DisableGetHostNameWhenAcceptTcp = CfgGetBool(f, "DisableGetHostNameWhenAcceptTcp");
+		// Without the key the accept path does no reverse DNS or NetBIOS probe; an explicit false keeps the lookup
+		s->DisableGetHostNameWhenAcceptTcp = true;
+		if (CfgIsItem(f, "DisableGetHostNameWhenAcceptTcp"))
+		{
+			s->DisableGetHostNameWhenAcceptTcp = CfgGetBool(f, "DisableGetHostNameWhenAcceptTcp");
+		}
 
 		if (s->DisableGetHostNameWhenAcceptTcp)
 		{

@@ -5,7 +5,6 @@
 #define	SERVER_H
 
 #include "Account.h"
-#include "Wpc.h"
 
 #define	SERVER_DEF_PORTS_1				443
 #define	SERVER_DEF_PORTS_4				GC_DEFAULT_PORT

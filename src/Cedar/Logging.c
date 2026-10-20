@@ -192,7 +192,9 @@ SLOG *NewSysLog(char *hostname, UINT port, IP *ip)
 	SLOG *g = ZeroMalloc(sizeof(SLOG));
 
 	g->lock = NewLock();
-	g->Udp = NewUDPEx2(0, false, ip);
+	// The socket is IPv4: NewUDP4 refuses an address that is not IPv4, and an unset ListenIP is the all-zero
+	// IPv6 address, so only an IPv4 address is bound; otherwise the socket binds to any address
+	g->Udp = NewUDPEx2(0, false, (ip != NULL && IsIP4(ip)) ? ip : NULL);
 
 	SetSysLog(g, hostname, port);
 
@@ -201,18 +203,34 @@ SLOG *NewSysLog(char *hostname, UINT port, IP *ip)
 
 static bool CheckEraserDiskFreeSpace(ERASER *e)
 {
-	UINT64 s;
+	wchar_t *dir_w;
+	wchar_t dir[MAX_SIZE];
+	UINT len;
+	ULARGE_INTEGER free_size;
 	if (e == NULL)
 	{
 		return true;
 	}
 
-	if (GetDiskFree(e->DirName, &s, NULL, NULL) == false)
+	// Ask the directory's own volume, so a mount point, junction or subst
+	// drive reports its target and not the drive root
+	dir_w = CopyStrToUni(e->DirName);
+	InnerFilePathW(dir, sizeof(dir), dir_w);
+	Free(dir_w);
+
+	// A UNC path needs the trailing backslash
+	len = UniStrLen(dir);
+	if (len != 0 && dir[len - 1] != L'\\')
+	{
+		UniStrCat(dir, sizeof(dir), L"\\");
+	}
+
+	if (GetDiskFreeSpaceExW(dir, &free_size, NULL, NULL) == FALSE)
 	{
 		return true;
 	}
 
-	if (e->MinFreeSpace > s)
+	if (e->MinFreeSpace > free_size.QuadPart)
 	{
 		return false;
 	}

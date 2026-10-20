@@ -1,0 +1,24 @@
+// BuildInfo.h
+// Build identity of Cedar. Generated from BuildInfo.h.in by src/Cedar/CMakeLists.txt; do not edit.
+// Include it only where these values are printed (Cedar.c, Admin.c, Server.c, Command.c).
+
+#ifndef	BUILDINFO_H
+#define	BUILDINFO_H
+
+// The version (major.minor.build) is for display only. Peers receive and compare
+// CEDAR_WIRE_VER and CEDAR_WIRE_BUILD (Cedar.h) instead.
+#define	CEDAR_VERSION_MAJOR		@PROJECT_VERSION_MAJOR@
+#define	CEDAR_VERSION_MINOR		@PROJECT_VERSION_MINOR@
+#define	CEDAR_VERSION_BUILD		@PROJECT_VERSION_PATCH@
+
+#define	BUILDER_NAME			"@BUILD_BUILDER_NAME@"
+#define	BUILD_PLACE				"@BUILD_BUILDER_PLACE@"
+
+#define	BUILD_DATE_Y			@BUILD_YEAR@
+#define	BUILD_DATE_M			@BUILD_MONTH@
+#define	BUILD_DATE_D			@BUILD_DAY@
+#define	BUILD_DATE_HO			@BUILD_HOUR@
+#define	BUILD_DATE_MI			@BUILD_MINUTE@
+#define	BUILD_DATE_SE			@BUILD_SECOND@
+
+#endif	// BUILDINFO_H
