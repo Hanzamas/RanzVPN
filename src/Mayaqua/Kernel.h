@@ -102,9 +102,7 @@ void GetDateTimeStrRFC3339(char *str, UINT size, SYSTEMTIME *st, int timezone_mi
 bool DateTimeStrRFC3339ToSystemTime(SYSTEMTIME *st, char *str);
 bool Run(char *filename, char *arg, bool hide, bool wait);
 void HashInstanceName(char *name, UINT size, char *instance_name);
-void HashInstanceNameLocal(char *name, UINT size, char *instance_name);
 INSTANCE *NewSingleInstance(char *instance_name);
-INSTANCE *NewSingleInstanceEx(char *instance_name, bool user_local);
 void FreeSingleInstance(INSTANCE *inst);
 void GetSpanStrMilli(char *str, UINT size, UINT64 sec64);
 void GetMemInfo(MEMINFO *info);
