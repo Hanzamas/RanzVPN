@@ -6,25 +6,15 @@
 
 #include "Win32.h"
 
-#include "FileIO.h"
-#include "GlobalConst.h"
 #include "Internat.h"
 #include "Mayaqua.h"
-#include "Microsoft.h"
 #include "Memory.h"
-#include "Object.h"
-#include "Str.h"
-#include "Tracking.h"
 
 #include <stdlib.h>
-#include <string.h>
 
 #include <objbase.h>
-#include <timeapi.h>
-#include <winioctl.h>
 
 #ifndef	WIN32_NO_DEBUG_HELP_DLL
-#include <DbgHelp.h>		// The call stacks of Win32GetCallStack and Win32GetCallStackSymbolInfo
 #endif
 
 static HANDLE heap_handle = NULL;
