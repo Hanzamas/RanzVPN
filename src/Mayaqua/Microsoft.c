@@ -364,36 +364,6 @@ void MsGetComputerName(char *name, UINT size)
 	GetComputerName(name, &sz);
 }
 
-void *MsDisableWow64FileSystemRedirection()
-{
-	void *p = NULL;
-	if (Wow64DisableWow64FsRedirection(&p) == false)
-	{
-		return NULL;
-	}
-
-	if (p == NULL)
-	{
-		p = (void *)0x12345678;
-	}
-
-	return p;
-}
-
-void MsRestoreWow64FileSystemRedirection(void *p)
-{
-	if (p == NULL)
-	{
-		return;
-	}
-	if (p == (void *)0x12345678)
-	{
-		p = NULL;
-	}
-
-	Wow64RevertWow64FsRedirection(p);
-}
-
 void MsRegistWindowsFirewallEx2(char *title, char *exe, char *dir)
 {
 	char tmp[MAX_PATH];
@@ -616,9 +586,6 @@ MS_ADAPTER_LIST *MsCreateAdapterList()
 				a->Index = r->InterfaceIndex;
 				a->MediaConnectState = r->MediaConnectState;
 				a->Type = r->Type;
-				a->Status = ConvertMidStatusVistaToXp(r->OperStatus);
-				a->Mtu = r->Mtu;
-				a->Speed = MAX((UINT)r->TransmitLinkSpeed, (UINT)r->ReceiveLinkSpeed);
 				a->AddressSize = MIN(sizeof(a->Address), r->PhysicalAddressLength);
 				Copy(a->Address, r->PhysicalAddress, a->AddressSize);
 
@@ -647,20 +614,6 @@ MS_ADAPTER_LIST *MsCreateAdapterList()
 	FreeMibTable(table);
 
 	return ret;
-}
-
-UINT ConvertMidStatusVistaToXp(UINT st)
-{
-	switch (st)
-	{
-	case IfOperStatusUp:
-		return MIB_IF_OPER_STATUS_CONNECTED;
-
-	case IfOperStatusDown:
-		return MIB_IF_OPER_STATUS_DISCONNECTED;
-	}
-
-	return MIB_IF_OPER_STATUS_NON_OPERATIONAL;
 }
 
 void MsFreeAdapterList(MS_ADAPTER_LIST *o)

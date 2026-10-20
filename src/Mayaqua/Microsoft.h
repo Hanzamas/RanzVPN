@@ -87,9 +87,6 @@ typedef struct MS_ADAPTER
 	UINT Index;
 	UINT MediaConnectState;
 	UINT Type;
-	UINT Status;
-	UINT Mtu;
-	UINT Speed;
 	UINT AddressSize;
 	UCHAR Address[8];
 	char Guid[MAX_SIZE];			// MIB_IF_ROW2.InterfaceGuid as "{XXXXXXXX-...}"
@@ -177,14 +174,11 @@ MS_ADAPTER *MsCloneAdapter(MS_ADAPTER *a);
 MS_ADAPTER_LIST *MsCreateAdapterList();
 MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid);
 bool MsIsBridgeableIf(UINT type, UINT media_type, UINT physical_medium_type, bool hardware_interface);
-UINT ConvertMidStatusVistaToXp(UINT st);
 
 UINT MsGetConsoleWidth();
 
 void MsRegistWindowsFirewallEx(char *title, char *exe);
 void MsRegistWindowsFirewallEx2(char *title, char *exe, char *dir);
-void *MsDisableWow64FileSystemRedirection();
-void MsRestoreWow64FileSystemRedirection(void *p);
 
 void MsGetComputerName(char *name, UINT size);
 void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache);

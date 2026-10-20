@@ -78,12 +78,9 @@ int SuCmpAdapterList(void *p1, void *p2);
 
 bool SuStageDriverPackage(wchar_t *dir, UINT dir_size);
 void SuUnstageDriverPackage(wchar_t *dir);
-bool SuInstallDriverInner();
 void SuSetInstallProc(SU_INSTALL_PROC *proc);
 bool SuIsSupportedOs();
 bool SuCopySysFile(wchar_t *src, wchar_t *dst);
-
-void SuDeleteGarbageInfsInner();
 
 #endif	// SELOWUSER_H
 

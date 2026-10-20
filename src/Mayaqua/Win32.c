@@ -594,20 +594,25 @@ bool Win32WaitProcess(void *h, UINT timeout)
 	return true;
 }
 
-void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id, bool disableWow)
+bool Win32Run(char *filename, char *arg, bool hide, bool wait)
 {
 	STARTUPINFOW info;
 	PROCESS_INFORMATION ret;
 	wchar_t cmdline[MAX_SIZE];
 	wchar_t name[MAX_PATH];
-	void *p;
+	wchar_t arg_w[MAX_SIZE];
 	if (filename == NULL)
 	{
-		return NULL;
+		return false;
 	}
 
-	UniStrCpy(name, sizeof(name), filename);
+	StrToUni(name, sizeof(name), filename);
 	UniTrim(name);
+
+	if (arg != NULL)
+	{
+		StrToUni(arg_w, sizeof(arg_w), arg);
+	}
 
 	// Quote a bare path so CreateProcess does not probe "C:\Program" first; a name that already has quotes goes as is
 	if (UniSearchStr(name, L"\"", 0) == INFINITE)
@@ -618,7 +623,7 @@ void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id,
 		}
 		else
 		{
-			UniFormat(cmdline, sizeof(cmdline), L"\"%s\" %s", name, arg);
+			UniFormat(cmdline, sizeof(cmdline), L"\"%s\" %s", name, arg_w);
 		}
 	}
 	else
@@ -629,7 +634,7 @@ void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id,
 		}
 		else
 		{
-			UniFormat(cmdline, sizeof(cmdline), L"%s %s", name, arg);
+			UniFormat(cmdline, sizeof(cmdline), L"%s %s", name, arg_w);
 		}
 	}
 
@@ -641,85 +646,8 @@ void *Win32RunEx3W(wchar_t *filename, wchar_t *arg, bool hide, UINT *process_id,
 
 	UniTrim(cmdline);
 
-	if (disableWow)
-	{
-		p = MsDisableWow64FileSystemRedirection();
-	}
-
 	// CREATE_NO_WINDOW is ignored together with CREATE_NEW_CONSOLE, so a hidden launch sets it alone
 	if (CreateProcessW(NULL, cmdline, NULL, NULL, FALSE,
-		(hide == false ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW) | NORMAL_PRIORITY_CLASS,
-		NULL, NULL, &info, &ret) == FALSE)
-	{
-		if (disableWow)
-		{
-			MsRestoreWow64FileSystemRedirection(p);
-		}
-		return NULL;
-	}
-
-	if (disableWow)
-	{
-		MsRestoreWow64FileSystemRedirection(p);
-	}
-
-	if (process_id != NULL)
-	{
-		*process_id = ret.dwProcessId;
-	}
-
-	CloseHandle(ret.hThread);
-	return ret.hProcess;
-}
-
-bool Win32Run(char *filename, char *arg, bool hide, bool wait)
-{
-	STARTUPINFO info;
-	PROCESS_INFORMATION ret;
-	char cmdline[MAX_SIZE];
-	char name[MAX_PATH];
-	if (filename == NULL)
-	{
-		return false;
-	}
-
-	StrCpy(name, sizeof(name), filename);
-	Trim(name);
-
-	// Quote a bare path so CreateProcess does not probe "C:\Program" first; a name that already has quotes goes as is
-	if (SearchStr(name, "\"", 0) == INFINITE)
-	{
-		if (arg == NULL)
-		{
-			Format(cmdline, sizeof(cmdline), "\"%s\"", name);
-		}
-		else
-		{
-			Format(cmdline, sizeof(cmdline), "\"%s\" %s", name, arg);
-		}
-	}
-	else
-	{
-		if (arg == NULL)
-		{
-			Format(cmdline, sizeof(cmdline), "%s", name);
-		}
-		else
-		{
-			Format(cmdline, sizeof(cmdline), "%s %s", name, arg);
-		}
-	}
-
-	Zero(&info, sizeof(info));
-	Zero(&ret, sizeof(ret));
-	info.cb = sizeof(info);
-	info.dwFlags = STARTF_USESHOWWINDOW;
-	info.wShowWindow = (hide == false ? SW_SHOWDEFAULT : SW_HIDE);
-
-	Trim(cmdline);
-
-	// CREATE_NO_WINDOW is ignored together with CREATE_NEW_CONSOLE, so a hidden launch sets it alone
-	if (CreateProcess(NULL, cmdline, NULL, NULL, FALSE,
 		(hide == false ? CREATE_NEW_CONSOLE : CREATE_NO_WINDOW) | NORMAL_PRIORITY_CLASS,
 		NULL, NULL, &info, &ret) == FALSE)
 	{

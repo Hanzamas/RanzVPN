@@ -24,6 +24,7 @@
 #include <winioctl.h>
 
 static SU *SuInitMain(UINT wait_for_bind_complete_tick, bool start_service, bool install);
+static bool SuInstallDriver();
 
 static bool SuLoadDriversHive()
 {
@@ -41,23 +42,12 @@ static bool SuLoadDriversHive()
 
 static void SuDeleteGarbageInfs()
 {
-	void *wow;
-	bool load_hive = false;
-
-	wow = MsDisableWow64FileSystemRedirection();
-
-	load_hive = SuLoadDriversHive();
-
-	SuDeleteGarbageInfsInner();
-
-	MsRestoreWow64FileSystemRedirection(wow);
-}
-void SuDeleteGarbageInfsInner()
-{
 	char *base_key_name = "DRIVERS\\DriverDatabase\\DriverPackages";
 	TOKEN_LIST *keys;
 
-	keys = MsRegEnumKeyEx2(REG_LOCAL_MACHINE, base_key_name, false);
+	SuLoadDriversHive();
+
+	keys =MsRegEnumKeyEx2(REG_LOCAL_MACHINE, base_key_name, false);
 
 	if (keys != NULL)
 	{
@@ -97,20 +87,6 @@ void SuDeleteGarbageInfsInner()
 
 		FreeToken(keys);
 	}
-}
-
-static bool SuInstallDriver()
-{
-	bool ret;
-	void *wow;
-
-	wow = MsDisableWow64FileSystemRedirection();
-
-	ret = SuInstallDriverInner();
-
-	MsRestoreWow64FileSystemRedirection(wow);
-
-	return ret;
 }
 
 // Driver install step: SuInstallDriver, or the stub that a test sets with SuSetInstallProc
@@ -227,7 +203,7 @@ bool SuStageDriverPackage(wchar_t *dir, UINT dir_size)
 	return true;
 }
 
-bool SuInstallDriverInner()
+static bool SuInstallDriver()
 {
 	wchar_t sys_fullpath[MAX_PATH];
 	bool ret = false;
