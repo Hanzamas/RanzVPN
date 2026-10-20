@@ -108,7 +108,6 @@ if(WIN32)
       "dwmapi.lib"
       "iphlpapi.lib"
       "ntdll.lib"
-      "Psapi.Lib"
       "Secur32.Lib"
       "shlwapi.lib"
       "winhttp.lib"
