@@ -1035,8 +1035,6 @@ static void PackAddWelcomeMsg(PACK *p, RPC_WINVER *client_winver, wchar_t *msg)
 // Reads the PACK only. False when the PACK has no user name or no hub name.
 bool ParseLoginRequest(PACK *p, LOGIN_REQ *req)
 {
-	bool support_hmac_on_udp_acceleration;
-
 	if (p == NULL || req == NULL)
 	{
 		return false;
@@ -1065,7 +1063,7 @@ bool ParseLoginRequest(PACK *p, LOGIN_REQ *req)
 	{
 		req->UdpAccelMaxVersion = 1;
 	}
-	support_hmac_on_udp_acceleration = PackGetBool(p, "support_hmac_on_udp_acceleration");
+	req->UseHMacOnUdpAcceleration = PackGetBool(p, "support_hmac_on_udp_acceleration");
 	req->UdpAccelFastDisconnectDetect = PackGetBool(p, "support_udp_accel_fast_disconnect_detect");
 
 	if (req->UseUdpAcceleration)
@@ -1085,8 +1083,6 @@ bool ParseLoginRequest(PACK *p, LOGIN_REQ *req)
 				req->UseUdpAcceleration = false;
 			}
 		}
-
-		req->UseHMacOnUdpAcceleration = support_hmac_on_udp_acceleration;
 	}
 
 	req->RequireBridgeRoutingMode = PackGetBool(p, "require_bridge_routing_mode");
@@ -1661,13 +1657,7 @@ SESSION *NewLoginSession(CONNECTION *c, HUB *hub, SERVER_SESSION_PARAMS *prm, HU
 
 	if (s->UseUdpAcceleration)
 	{
-		s->UseHMacOnUdpAcceleration = prm->UseHMacOnUdpAcceleration;
-	}
-
-
-	if (s->UseUdpAcceleration)
-	{
-		s->UdpAccel = NewUdpAccel(c->Cedar, &c->FirstSock->LocalIP, false, false);
+		s->UdpAccel = NewUdpAccel(c->Cedar, &c->FirstSock->LocalIP, false);
 		if (s->UdpAccel == NULL)
 		{
 			s->UseUdpAcceleration = false;
@@ -1689,13 +1679,9 @@ SESSION *NewLoginSession(CONNECTION *c, HUB *hub, SERVER_SESSION_PARAMS *prm, HU
 				s->UdpAccel->PlainTextMode = true;
 			}
 
-			s->UdpAccel->UseHMac = s->UseHMacOnUdpAcceleration;
+			s->UdpAccel->UseHMac = prm->UseHMacOnUdpAcceleration;
 
-			AddProtocolDetailsKeyValueInt(s->ProtocolDetails, sizeof(s->ProtocolDetails), "UDPAccel_Ver", s->UdpAccel->Version);
-
-			AddProtocolDetailsStr(s->ProtocolDetails, sizeof(s->ProtocolDetails), s->UdpAccel->Version > 1 ? "ChaCha20-Poly1305" : "RC4");
-
-			AddProtocolDetailsKeyValueInt(s->ProtocolDetails, sizeof(s->ProtocolDetails), "UDPAccel_MSS", UdpAccelCalcMss(s->UdpAccel));
+			UdpAccelAddProtocolDetails(s->UdpAccel, s->ProtocolDetails, sizeof(s->ProtocolDetails));
 		}
 	}
 
@@ -2557,6 +2543,19 @@ void ServerRunSession(CONNECTION *c, SERVER_LOGIN *login)
 }
 
 
+// An address goes into the IPv4 field of a NODE_INFO, or into its IPv6 field when it is an IPv6 address
+static void NodeInfoSetIp(UINT *ip4, UCHAR *ip6, IP *ip)
+{
+	if (IsIP6(ip) == false)
+	{
+		*ip4 = IPToUINT(ip);
+	}
+	else
+	{
+		Copy(ip6, ip->address, sizeof(ip->address));
+	}
+}
+
 static void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
 {
 	SESSION *s;
@@ -2600,38 +2599,17 @@ static void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
 
 	StrCpy(info->ClientHostname, sizeof(info->ClientHostname), namea);
 
-	if (IsIP6(&c->FirstSock->LocalIP) == false)
-	{
-		info->ClientIpAddress = IPToUINT(&c->FirstSock->LocalIP);
-	}
-	else
-	{
-		Copy(info->ClientIpAddress6, c->FirstSock->LocalIP.address, sizeof(info->ClientIpAddress6));
-	}
+	NodeInfoSetIp(&info->ClientIpAddress, info->ClientIpAddress6, &c->FirstSock->LocalIP);
 	info->ClientPort = Endian32(c->FirstSock->LocalPort);
 
 	StrCpy(info->ServerHostname, sizeof(info->ServerHostname), c->ServerName);
 	if (s->ClientOption->ProxyType == PROXY_DIRECT)
 	{
-		if (IsIP6(&c->FirstSock->RemoteIP) == false)
-		{
-			info->ServerIpAddress = IPToUINT(&c->FirstSock->RemoteIP);
-		}
-		else
-		{
-			Copy(info->ServerIpAddress6, c->FirstSock->RemoteIP.address, sizeof(info->ServerIpAddress6));
-		}
+		NodeInfoSetIp(&info->ServerIpAddress, info->ServerIpAddress6, &c->FirstSock->RemoteIP);
 	}
 	else if (GetIP(&ip, info->ServerHostname))
 	{
-		if (IsIP6(&ip) == false)
-		{
-			info->ServerIpAddress = IPToUINT(&ip);
-		}
-		else
-		{
-			Copy(info->ServerIpAddress6, ip.address, sizeof(info->ServerIpAddress6));
-		}
+		NodeInfoSetIp(&info->ServerIpAddress, info->ServerIpAddress6, &ip);
 	}
 	info->ServerPort = Endian32(c->ServerPort);
 
@@ -2639,14 +2617,7 @@ static void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
 	{
 		StrCpy(info->ProxyHostname, sizeof(info->ProxyHostname), s->ClientOption->ProxyName);
 
-		if (IsIP6(&c->FirstSock->RemoteIP) == false)
-		{
-			info->ProxyIpAddress = IPToUINT(&c->FirstSock->RemoteIP);
-		}
-		else
-		{
-			Copy(&info->ProxyIpAddress6, c->FirstSock->RemoteIP.address, sizeof(info->ProxyIpAddress6));
-		}
+		NodeInfoSetIp(&info->ProxyIpAddress, info->ProxyIpAddress6, &c->FirstSock->RemoteIP);
 
 		info->ProxyPort = Endian32(c->FirstSock->RemotePort);
 	}
@@ -2654,6 +2625,20 @@ static void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
 	StrCpy(info->HubName, sizeof(info->HubName), s->ClientOption->HubName);
 
 	Copy(info->UniqueId, c->Cedar->UniqueId, sizeof(info->UniqueId));
+}
+
+// Take s off c->ConnectingSocks (dropping the ref the list holds) and drop the caller's own ref of s
+static void ConnectingSockRemove(CONNECTION *c, SOCK *s)
+{
+	LockList(c->ConnectingSocks);
+	{
+		if (Delete(c->ConnectingSocks, s))
+		{
+			ReleaseSock(s);
+		}
+	}
+	UnlockList(c->ConnectingSocks);
+	ReleaseSock(s);
 }
 
 static SOCK *ClientAdditionalConnectToServer(CONNECTION *c)
@@ -2680,15 +2665,7 @@ static SOCK *ClientAdditionalConnectToServer(CONNECTION *c)
 	if (c->Session->Halt)
 	{
 		Disconnect(s);
-		LockList(c->ConnectingSocks);
-		{
-			if (Delete(c->ConnectingSocks, s))
-			{
-				ReleaseSock(s);
-			}
-		}
-		UnlockList(c->ConnectingSocks);
-		ReleaseSock(s);
+		ConnectingSockRemove(c, s);
 		return NULL;
 	}
 
@@ -2697,15 +2674,7 @@ static SOCK *ClientAdditionalConnectToServer(CONNECTION *c)
 	if (StartSSLEx(s, NULL, NULL, c->ServerName) == false)
 	{
 		Disconnect(s);
-		LockList(c->ConnectingSocks);
-		{
-			if (Delete(c->ConnectingSocks, s))
-			{
-				ReleaseSock(s);
-			}
-		}
-		UnlockList(c->ConnectingSocks);
-		ReleaseSock(s);
+		ConnectingSockRemove(c, s);
 		return NULL;
 	}
 
@@ -2715,15 +2684,7 @@ static SOCK *ClientAdditionalConnectToServer(CONNECTION *c)
 		// first one: drop the socket and fail, like the other failures above
 		Disconnect(s);
 		c->Session->SessionTimeOuted = true;
-		LockList(c->ConnectingSocks);
-		{
-			if (Delete(c->ConnectingSocks, s))
-			{
-				ReleaseSock(s);
-			}
-		}
-		UnlockList(c->ConnectingSocks);
-		ReleaseSock(s);
+		ConnectingSockRemove(c, s);
 		return NULL;
 	}
 
@@ -2820,29 +2781,12 @@ bool ClientAdditionalConnect(CONNECTION *c)
 
 	Cancel(c->Session->Cancel1);
 
-	LockList(c->ConnectingSocks);
-	{
-		if (Delete(c->ConnectingSocks, s))
-		{
-			ReleaseSock(s);
-		}
-	}
-	UnlockList(c->ConnectingSocks);
-	ReleaseSock(s);
+	ConnectingSockRemove(c, s);
 	return true;
 
 CLEANUP:
 	Disconnect(s);
-	LockList(c->ConnectingSocks);
-	{
-		if (Delete(c->ConnectingSocks, s))
-		{
-			ReleaseSock(s);
-
-		}
-	}
-	UnlockList(c->ConnectingSocks);
-	ReleaseSock(s);
+	ConnectingSockRemove(c, s);
 	return false;
 }
 
@@ -2858,7 +2802,6 @@ bool ClientConnect(CONNECTION *c)
 	char connection_name[MAX_CONNECTION_NAME_LEN + 1];
 	UCHAR session_key[SHA1_SIZE];
 	POLICY *policy;
-	IP server_ip;
 	UINT utf_size;
 	char *utf;
 	wchar_t *msg;
@@ -2883,8 +2826,6 @@ bool ClientConnect(CONNECTION *c)
 		return false;
 	}
 
-	Copy(&server_ip, &s->RemoteIP, sizeof(IP));
-
 	if (FlagRead(&c->Halt))
 	{
 		c->Err = ERR_USER_CANCEL;
@@ -2901,7 +2842,7 @@ bool ClientConnect(CONNECTION *c)
 			{
 				if (sess->UdpAccel == NULL)
 				{
-					sess->UdpAccel = NewUdpAccel(c->Cedar, &s->LocalIP, true, true);
+					sess->UdpAccel = NewUdpAccel(c->Cedar, &s->LocalIP, true);
 
 					UdpAccelQueryStun(sess->UdpAccel, &s->RemoteIP);
 				}
@@ -2957,7 +2898,6 @@ bool ClientConnect(CONNECTION *c)
 	if (err != 0)
 	{
 		c->Err = err;
-		c->ClientConnectError_NoSavePassword = PackGetBool(p, "no_save_password");
 		goto CLEANUP;
 	}
 
@@ -3029,7 +2969,6 @@ bool ClientConnect(CONNECTION *c)
 
 		sess->UseUdpAcceleration = false;
 		sess->IsUsingUdpAcceleration = false;
-		sess->UseHMacOnUdpAcceleration = false;
 
 		if (sess->UdpAccel != NULL)
 		{
@@ -3095,18 +3034,9 @@ bool ClientConnect(CONNECTION *c)
 
 								sess->UdpAccel->PlainTextMode = !encryption;
 
-								sess->UseHMacOnUdpAcceleration = PackGetBool(p, "use_hmac_on_udp_acceleration");
+								sess->UdpAccel->UseHMac = PackGetBool(p, "use_hmac_on_udp_acceleration");
 
-								if (sess->UseHMacOnUdpAcceleration)
-								{
-									sess->UdpAccel->UseHMac = true;
-								}
-
-								AddProtocolDetailsKeyValueInt(sess->ProtocolDetails, sizeof(sess->ProtocolDetails), "UDPAccel_Ver", sess->UdpAccel->Version);
-
-								AddProtocolDetailsStr(sess->ProtocolDetails, sizeof(sess->ProtocolDetails), sess->UdpAccel->Version > 1 ? "ChaCha20-Poly1305" : "RC4");
-
-								AddProtocolDetailsKeyValueInt(sess->ProtocolDetails, sizeof(sess->ProtocolDetails), "UDPAccel_MSS", UdpAccelCalcMss(sess->UdpAccel));
+								UdpAccelAddProtocolDetails(sess->UdpAccel, sess->ProtocolDetails, sizeof(sess->ProtocolDetails));
 							}
 						}
 					}
@@ -3761,8 +3691,6 @@ static void ClientSetFirstSock(CONNECTION *c, SOCK *s)
 SOCK *ClientConnectToServer(CONNECTION *c)
 {
 	SOCK *s = NULL;
-	X *x = NULL;
-	K *k = NULL;
 	if (c == NULL)
 	{
 		return NULL;
@@ -3794,7 +3722,7 @@ SOCK *ClientConnectToServer(CONNECTION *c)
 	SetTimeout(s, CONNECTING_TIMEOUT);
 
 	UINT err = 0;
-	if (StartSSLEx3(s, x, k, NULL, c->ServerName, c->Session->SslOption, &err) == false)
+	if (StartSSLEx3(s, NULL, NULL, NULL, c->ServerName, c->Session->SslOption, &err) == false)
 	{
 		Disconnect(s);
 		ClientSetFirstSock(c, NULL);
@@ -3832,6 +3760,8 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 	SESSION *sess;
 	SOCK *sock = NULL;
 	IP resolved_ip;
+	IP *bind_ip;
+	UINT bind_port;
 	if (c == NULL || c->Session == NULL || c->Session->ClientOption == NULL)
 	{
 		return NULL;
@@ -3843,17 +3773,32 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 
 	Zero(&resolved_ip, sizeof(resolved_ip));
 
-	if (additional_connect == false && c->RestoreServerNameAndPort)
+	// The local address and port to bind, the same for a direct and a proxy connection
+	if (additional_connect == false)
 	{
-		// RestoreServerNameAndPort is currently never true.
-		c->RestoreServerNameAndPort = false;
-
-		if (StrCmpi(c->ServerName, o->Hostname) != 0)
+		if (o->NoRoutingTracking == false || IsZeroIP(&o->BindLocalIP))
 		{
-			StrCpy(c->ServerName, sizeof(c->ServerName), o->Hostname);
+			bind_ip = BIND_LOCALIP_NULL;
 		}
+		else
+		{
+			// A nonzero address is the source IP address to bind, a zero address does not bind
+			bind_ip = &o->BindLocalIP;
+		}
+	}
+	else
+	{
+		// Bind to the local IP address of the first TCP/IP connection
+		bind_ip = &sess->LocalIP_CacheForNextConnect;
+	}
 
-		c->ServerPort = o->Port;
+	if (o->BindLocalPort == 0)
+	{
+		bind_port = BIND_LOCALPORT_NULL;
+	}
+	else
+	{
+		bind_port = o->BindLocalPort + Count(sess->Connection->CurrentNumConnection) - 1;
 	}
 
 	if (additional_connect && IsZeroIP(&sess->ServerIP_CacheForNextConnect) == false)
@@ -3874,39 +3819,8 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 
 	if (o->ProxyType == PROXY_DIRECT)
 	{
-		{
-			IP		*localIP;
-			UINT	localport;
-
-
-			if (additional_connect == false) {
-				if (sess->ClientOption->NoRoutingTracking == false) {
-					localIP = BIND_LOCALIP_NULL;
-				}
-				else {
-					// Nonzero address is for source IP address to bind. Zero address is for dummy not to bind.
-					if (IsZeroIP(&sess->ClientOption->BindLocalIP) == true) {
-						localIP = BIND_LOCALIP_NULL;
-					}
-					else {
-						localIP = &sess->ClientOption->BindLocalIP;
-					}
-				}
-			}
-			else {
-				// Bind to the local IP address of the first TCP/IP connection.
-				localIP = &sess->LocalIP_CacheForNextConnect;
-			}
-			if (sess->ClientOption->BindLocalPort == 0) {
-				localport = BIND_LOCALPORT_NULL;
-			}
-			else {
-				localport = sess->ClientOption->BindLocalPort + Count(sess->Connection->CurrentNumConnection) - 1;
-			}
-
-			sock = BindTcpIpConnectEx(localIP, localport, hostname, c->ServerPort,
-				(bool *)cancel_flag, c->hWndForUI, &resolved_ip);
-		}
+		sock = BindTcpIpConnectEx(bind_ip, bind_port, hostname, c->ServerPort,
+			(bool *)cancel_flag, &resolved_ip);
 
 		if (sock == NULL)
 		{
@@ -3937,28 +3851,8 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 		StrCpy(in.HttpCustomHeader, sizeof(in.HttpCustomHeader), o->CustomHttpHeader);
 		StrCpy(in.HttpUserAgent, sizeof(in.HttpUserAgent), c->Cedar->HttpUserAgent);
 
-		if (additional_connect == false) {
-			if (sess->ClientOption->NoRoutingTracking == false) {
-				in.BindLocalIP = BIND_LOCALIP_NULL;
-			}
-			else {
-				if (IsZeroIP(&sess->ClientOption->BindLocalIP) == true) {
-					in.BindLocalIP = BIND_LOCALIP_NULL;
-				}
-				else {
-					in.BindLocalIP = &sess->ClientOption->BindLocalIP;
-				}
-			}
-		}
-		else {
-			in.BindLocalIP = &sess->LocalIP_CacheForNextConnect;
-		}
-		if (sess->ClientOption->BindLocalPort == 0) {
-			in.BindLocalPort = BIND_LOCALPORT_NULL;
-		}
-		else {
-			in.BindLocalPort = sess->ClientOption->BindLocalPort + Count(sess->Connection->CurrentNumConnection) - 1;
-		}
+		in.BindLocalIP = bind_ip;
+		in.BindLocalPort = bind_port;
 
 		// An unknown proxy type gives PROXY_ERROR_PARAMETER, which is ERR_INTERNAL_ERROR
 		ret = ProxyConnect(o->ProxyType, &out, &in, cancel_flag);
@@ -3988,7 +3882,8 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 		Copy(&c->Session->ServerIP_CacheForNextConnect, &resolved_ip, sizeof(c->Session->ServerIP_CacheForNextConnect));
 	}
 
-	if (additional_connect == false) {
+	if (additional_connect == false)
+	{
 		c->Session->LocalIP_CacheForNextConnect = sock->LocalIP;
 	}
 
@@ -4019,7 +3914,7 @@ UINT ProxyCodeToCedar(UINT code)
 	}
 }
 
-SOCK *BindTcpIpConnectEx(IP *localIP, UINT localport, char *hostname, UINT port, bool *cancel_flag, void *hWnd, IP *ret_ip)
+SOCK *BindTcpIpConnectEx(IP *localIP, UINT localport, char *hostname, UINT port, bool *cancel_flag, IP *ret_ip)
 {
 	SOCK *s = NULL;
 	if (hostname == NULL || port == 0)

@@ -112,7 +112,6 @@ struct CONNECTION
 	char ServerStr[MAX_SERVER_STR_LEN + 1];
 	char ClientStr[MAX_CLIENT_STR_LEN + 1];
 	UINT Err;
-	bool ClientConnectError_NoSavePassword;
 	QUEUE *ReceivedBlocks;
 	QUEUE *SendBlocks;
 	QUEUE *SendBlocks2;
@@ -123,7 +122,6 @@ struct CONNECTION
 	UCHAR *RecvBuf;
 	char ServerName[MAX_HOST_NAME_LEN + 1];
 	UINT ServerPort;
-	bool RestoreServerNameAndPort;
 	UINT CurrentSendQueueSize;
 	X *ServerX;
 	X *ClientX;
@@ -133,7 +131,6 @@ struct CONNECTION
 	IP ClientIp;
 	char ClientHostname[MAX_HOST_NAME_LEN + 1];
 	UINT Type;
-	void *hWndForUI;
 	UINT AdditionalConnectionFailedCounter;
 	UINT64 LastCounterResetTick;
 	UINT LastTcpQueueSize;

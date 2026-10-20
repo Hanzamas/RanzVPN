@@ -1099,7 +1099,7 @@ static SESSION *NewSessionBase(CEDAR *cedar, bool server_mode)
 	return s;
 }
 
-SESSION *NewRpcSessionEx2(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *client_str, void *hWnd)
+SESSION *NewRpcSession(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *client_str)
 {
 	SESSION *s;
 	CONNECTION *c;
@@ -1124,7 +1124,6 @@ SESSION *NewRpcSessionEx2(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *
 	s->UseCompress = option->UseCompress;
 
 	c = s->Connection = NewClientConnectionEx(s, client_str);
-	c->hWndForUI = hWnd;
 
 	sock = ClientConnectToServer(c);
 	if (sock == NULL)
