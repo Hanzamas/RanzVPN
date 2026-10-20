@@ -4122,7 +4122,7 @@ SOCK *BindTcpIpConnectEx(IP *localIP, UINT localport, char *hostname, UINT port,
 		return NULL;
 	}
 
-	s = BindConnectEx4(localIP, localport, hostname, port, 0, cancel_flag, true, ret_ip);
+	s = BindConnectEx4(localIP, localport, hostname, port, 0, cancel_flag, ret_ip);
 	if (s == NULL)
 	{
 		return NULL;
