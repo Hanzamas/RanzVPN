@@ -958,6 +958,69 @@ PKT *ClonePacket(PKT *p, bool copy_data)
 	return ret;
 }
 
+// Cuts a frame down to the length its IPv4 or IPv6 header gives, where l2_len is the size of the
+// Ethernet header (with a VLAN tag if it has one) and the Ethernet type sits just before it. Returns
+// false when the frame carries neither IPv4 nor IPv6. buf holds at least l2_len + 6 bytes
+static bool TrimToIpLength(UCHAR *buf, UINT *size, UINT l2_len)
+{
+	UINT ip_len;
+	UINT frame_size;
+
+	if (buf[l2_len - 2] == 0x08 && buf[l2_len - 1] == 0x00)
+	{
+		// IPv4: the total length counts its own header
+		ip_len = READ_USHORT(&buf[l2_len + 2]);
+		frame_size = ip_len + l2_len;
+	}
+	else if (buf[l2_len - 2] == 0x86 && buf[l2_len - 1] == 0xdd)
+	{
+		// IPv6: the payload length leaves out the 40 byte header
+		ip_len = READ_USHORT(&buf[l2_len + 4]);
+		frame_size = ip_len + l2_len + 40;
+	}
+	else
+	{
+		return false;
+	}
+
+	if (ip_len >= 1 && *size > frame_size)
+	{
+		*size = frame_size;
+	}
+
+	return true;
+}
+
+// Reads the HTTP request or the TLS server name out of the first data segment of a TCP packet to a
+// web proxy or web server port, and keeps it in p->HttpLog
+static void ParseTcpHttpLog(PKT *p)
+{
+	TCP_HEADER *tcp;
+	USHORT port;
+
+	if ((p->TypeL3 != L3_IPV4 && p->TypeL3 != L3_IPV6) || p->TypeL4 != L4_TCP)
+	{
+		return;
+	}
+
+	tcp = p->L4.TCPHeader;
+	if (tcp == NULL || (tcp->Flag & (TCP_SYN | TCP_RST | TCP_FIN)) != 0 || p->PayloadSize == 0)
+	{
+		return;
+	}
+
+	port = tcp->DstPort;
+
+	if (port == Endian16(80) || port == Endian16(8080) || port == Endian16(3128))
+	{
+		p->HttpLog = ParseHttpAccessLog(p);
+	}
+	else if (port == Endian16(443))
+	{
+		p->HttpLog = ParseHttpsAccessLog(p);
+	}
+}
+
 PKT *ParsePacket(UCHAR *buf, UINT size)
 {
 	return ParsePacketEx4(buf, size, false, 0, true, false, false);
@@ -984,71 +1047,12 @@ PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool b
 
 	p = ZeroMallocFast(sizeof(PKT));
 
-	// Drop any garbage after the payload of IPv4 and IPv6 packets
+	// Drop any garbage after the payload of IPv4 and IPv6 packets, tagged with a VLAN or not
 	if (size >= 24)
 	{
-		if (buf[12] == 0x08 && buf[13] == 0x00)
+		if (TrimToIpLength(buf, &size, 14) == false && buf[12] == ((UCHAR *)&vlan_type_id_16)[0] && buf[13] == ((UCHAR *)&vlan_type_id_16)[1])
 		{
-			USHORT ip_total_size2 = READ_USHORT(&buf[16]);
-			UINT mac_packet_size;
-
-			if (ip_total_size2 >= 1)
-			{
-				mac_packet_size = (UINT)ip_total_size2 + 14;
-
-				if (size > mac_packet_size)
-				{
-					size = mac_packet_size;
-				}
-			}
-		}
-		else if (buf[12] == 0x86 && buf[13] == 0xdd)
-		{
-			USHORT ip_payload_size_2 = READ_USHORT(&buf[18]);
-			UINT mac_packet_size;
-
-			if (ip_payload_size_2 >= 1)
-			{
-				mac_packet_size = (UINT)ip_payload_size_2 + 14 + 40;
-
-				if (size > mac_packet_size)
-				{
-					size = mac_packet_size;
-				}
-			}
-		}
-		else if (buf[12] == ((UCHAR *)&vlan_type_id_16)[0] && buf[13] == ((UCHAR *)&vlan_type_id_16)[1])
-		{
-			if (buf[16] == 0x08 && buf[17] == 0x00)
-			{
-				USHORT ip_total_size2 = READ_USHORT(&buf[20]);
-				UINT mac_packet_size;
-
-				if (ip_total_size2 >= 1)
-				{
-					mac_packet_size = (UINT)ip_total_size2 + 14 + 4;
-
-					if (size > mac_packet_size)
-					{
-						size = mac_packet_size;
-					}
-				}
-			}
-			else if (buf[16] == 0x86 && buf[17] == 0xdd)
-			{
-				USHORT ip_payload_size_2 = READ_USHORT(&buf[22]);
-				UINT mac_packet_size;
-
-				if (ip_payload_size_2 >= 1)
-				{
-					mac_packet_size = (UINT)ip_payload_size_2 + 14 + 40 + 4;
-
-					if (size > mac_packet_size)
-					{
-						size = mac_packet_size;
-					}
-				}
-			}
+			TrimToIpLength(buf, &size, 18);
 		}
 	}
 
@@ -1077,31 +1081,7 @@ PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool b
 
 	if (no_http == false)
 	{
-		USHORT port_raw = Endian16(80);
-		USHORT port_raw2 = Endian16(8080);
-		USHORT port_raw3 = Endian16(443);
-		USHORT port_raw4 = Endian16(3128);
-
-		if ((p->TypeL3 == L3_IPV4 || p->TypeL3 == L3_IPV6) && p->TypeL4 == L4_TCP)
-		{
-			TCP_HEADER *tcp = p->L4.TCPHeader;
-			if (tcp != NULL && (tcp->DstPort == port_raw || tcp->DstPort == port_raw2 || tcp->DstPort == port_raw4) &&
-			        (!((tcp->Flag & TCP_SYN) || (tcp->Flag & TCP_RST) || (tcp->Flag & TCP_FIN))))
-			{
-				if (p->PayloadSize >= 1)
-				{
-					p->HttpLog = ParseHttpAccessLog(p);
-				}
-			}
-			if (tcp != NULL && tcp->DstPort == port_raw3 &&
-			        (!((tcp->Flag & TCP_SYN) || (tcp->Flag & TCP_RST) || (tcp->Flag & TCP_FIN))))
-			{
-				if (p->PayloadSize >= 1)
-				{
-					p->HttpLog = ParseHttpsAccessLog(p);
-				}
-			}
-		}
+		ParseTcpHttpLog(p);
 	}
 
 	// DNS query name of a query to UDP port 53. It is parsed here and not in ParseUDP so that a caller can
@@ -1135,8 +1115,64 @@ PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool b
 	return p;
 }
 
+// The checksum of a TCP or UDP segment over the pseudo-header of the packet's IP version, with the
+// size and the real_size of CalcChecksumForIPv4 and CalcChecksumForIPv6
+static USHORT CalcL4Checksum(PKT *p, UCHAR protocol, void *data, UINT size, UINT real_size)
+{
+	if (p->TypeL3 == L3_IPV4)
+	{
+		IPV4_HEADER *v4 = p->L3.IPv4Header;
+
+		return CalcChecksumForIPv4(v4->SrcIP, v4->DstIP, protocol, data, size, real_size);
+	}
+	else
+	{
+		IPV6_HEADER *v6 = p->L3.IPv6Header;
+
+		return CalcChecksumForIPv6(&v6->SrcAddress, &v6->DestAddress, protocol, data, size, real_size);
+	}
+}
+
+// A NIC that offloads the checksum of a segment leaves its field at 0 (TCP only), at the sum of the
+// pseudo-header or at the complement of it. Such a checksum is replaced with the real one over the len
+// bytes of the segment l4. A UDP datagram with checksum 0 has none. When the segment is not complete
+// (complete is false) the field is cleared instead
+static void FixOffloadChecksum(PKT *p, UCHAR protocol, void *l4, void *checksum_field, UINT len, bool complete)
+{
+	USHORT checksum;
+	USHORT offloading_checksum;
+
+	Copy(&checksum, checksum_field, sizeof(checksum));
+
+	if (protocol == IP_PROTO_UDP && checksum == 0)
+	{
+		return;
+	}
+
+	offloading_checksum = CalcL4Checksum(p, protocol, NULL, 0, len);
+
+	if (checksum != 0 && checksum != offloading_checksum && checksum != (USHORT)~offloading_checksum)
+	{
+		return;
+	}
+
+	checksum = 0;
+	Copy(checksum_field, &checksum, sizeof(checksum));
+
+	if (complete)
+	{
+		checksum = CalcL4Checksum(p, protocol, l4, len, 0);
+		Copy(checksum_field, &checksum, sizeof(checksum));
+	}
+}
+
 void CorrectChecksum(PKT *p)
 {
+	UINT payload_size;
+	bool tcp_checked;
+	bool udp_checked;
+	bool last_fragment;
+
 	if (p == NULL)
 	{
 		return;
@@ -1146,123 +1182,61 @@ void CorrectChecksum(PKT *p)
 	{
 		IPV4_HEADER *v4 = p->L3.IPv4Header;
 
-		if (v4 != NULL)
+		if (v4 == NULL)
 		{
-			if (v4->Checksum == 0x0000)
-			{
-				v4->Checksum = IpChecksum(v4, IPV4_GET_HEADER_LEN(v4) * 4);
-			}
-
-			if (p->TypeL4 == L4_TCP)
-			{
-				if (IPV4_GET_OFFSET(v4) == 0 && (IPV4_GET_FLAGS(v4) & 0x01) == 0)
-				{
-					// No TCP checksum for fragmented IP packets
-					TCP_HEADER *tcp = p->L4.TCPHeader;
-
-					if (tcp != NULL)
-					{
-						USHORT tcp_offloading_checksum1 = CalcChecksumForIPv4(v4->SrcIP, v4->DstIP, IP_PROTO_TCP, NULL, 0, p->IPv4PayloadSize);
-						USHORT tcp_offloading_checksum2 = ~tcp_offloading_checksum1;
-
-						if (tcp->Checksum == 0 || tcp->Checksum == tcp_offloading_checksum1 || tcp->Checksum == tcp_offloading_checksum2)
-						{
-							tcp->Checksum = 0;
-							tcp->Checksum = CalcChecksumForIPv4(v4->SrcIP, v4->DstIP, IP_PROTO_TCP, tcp, p->IPv4PayloadSize, 0);
-						}
-					}
-				}
-			}
-
-			if (p->TypeL4 == L4_UDP)
-			{
-				if (IPV4_GET_OFFSET(v4) == 0 || (IPV4_GET_FLAGS(v4) & 0x01) == 0)
-				{
-					UDP_HEADER *udp = p->L4.UDPHeader;
-
-					if (udp != NULL && udp->Checksum != 0)
-					{
-						USHORT udp_len = Endian16(udp->PacketLength);
-						USHORT udp_offloading_checksum1 = CalcChecksumForIPv4(v4->SrcIP, v4->DstIP, IP_PROTO_UDP, NULL, 0, udp_len);
-						USHORT udp_offloading_checksum2 = ~udp_offloading_checksum1;
-
-						if (udp->Checksum == udp_offloading_checksum1 || udp->Checksum == udp_offloading_checksum2)
-						{
-							udp->Checksum = 0;
-
-							if ((IPV4_GET_FLAGS(v4) & 0x01) == 0 && (p->IPv4PayloadSize >= udp_len))
-							{
-								udp->Checksum = CalcChecksumForIPv4(v4->SrcIP, v4->DstIP, IP_PROTO_UDP, udp, udp_len, 0);
-							}
-							else
-							{
-								// First fragment: the data is incomplete, so the checksum is set to 0
-								udp->Checksum = 0;
-							}
-						}
-					}
-				}
-			}
+			return;
 		}
+
+		if (v4->Checksum == 0x0000)
+		{
+			v4->Checksum = IpChecksum(v4, IPV4_GET_HEADER_LEN(v4) * 4);
+		}
+
+		payload_size = p->IPv4PayloadSize;
+		last_fragment = ((IPV4_GET_FLAGS(v4) & 0x01) == 0);
+		// A fragment has no TCP checksum of its own. UDP is passed when either the first or the last
+		// fragment: it has always been an OR here where TCP has an AND
+		tcp_checked = (IPV4_GET_OFFSET(v4) == 0 && last_fragment);
+		udp_checked = (IPV4_GET_OFFSET(v4) == 0 || last_fragment);
 	}
 	else if (p->TypeL3 == L3_IPV6)
 	{
-		IPV6_HEADER *v6 = p->L3.IPv6Header;
 		IPV6_HEADER_PACKET_INFO *v6info = &p->IPv6HeaderPacketInfo;
 
-		if (v6 != NULL)
+		if (p->L3.IPv6Header == NULL)
 		{
-			if (p->TypeL4 == L4_TCP)
-			{
-				if (v6info->IsFragment == false)
-				{
-					if (v6info->FragmentHeader == NULL || ((IPV6_GET_FLAGS(v6info->FragmentHeader) & IPV6_FRAGMENT_HEADER_FLAG_MORE_FRAGMENTS) == 0))
-					{
-						// No TCP checksum for fragmented packets
-						TCP_HEADER *tcp = p->L4.TCPHeader;
+			return;
+		}
 
-						if (tcp != NULL)
-						{
-							USHORT tcp_offloading_checksum1 = CalcChecksumForIPv6(&v6->SrcAddress, &v6->DestAddress, IP_PROTO_TCP, NULL, 0, v6info->PayloadSize);
-							USHORT tcp_offloading_checksum2 = ~tcp_offloading_checksum1;
+		payload_size = v6info->PayloadSize;
+		last_fragment = (v6info->FragmentHeader == NULL || ((IPV6_GET_FLAGS(v6info->FragmentHeader) & IPV6_FRAGMENT_HEADER_FLAG_MORE_FRAGMENTS) == 0));
+		tcp_checked = (v6info->IsFragment == false && last_fragment);
+		udp_checked = (v6info->IsFragment == false);
+	}
+	else
+	{
+		return;
+	}
 
-							if (tcp->Checksum == 0 || tcp->Checksum == tcp_offloading_checksum1 || tcp->Checksum == tcp_offloading_checksum2)
-							{
-								tcp->Checksum = 0;
-								tcp->Checksum = CalcChecksumForIPv6(&v6->SrcAddress, &v6->DestAddress, IP_PROTO_TCP, tcp, v6info->PayloadSize, 0);
-							}
-						}
-					}
-				}
-			}
-			else if (p->TypeL4 == L4_UDP)
-			{
-				if (v6info->IsFragment == false)
-				{
-					UDP_HEADER *udp = p->L4.UDPHeader;
+	if (p->TypeL4 == L4_TCP)
+	{
+		TCP_HEADER *tcp = p->L4.TCPHeader;
 
-					if (udp != NULL && udp->Checksum != 0)
-					{
-						USHORT udp_len = Endian16(udp->PacketLength);
-						USHORT udp_offloading_checksum1 = CalcChecksumForIPv6(&v6->SrcAddress, &v6->DestAddress, IP_PROTO_UDP, NULL, 0, udp_len);
-						USHORT udp_offloading_checksum2 = ~udp_offloading_checksum1;
+		if (tcp_checked && tcp != NULL)
+		{
+			FixOffloadChecksum(p, IP_PROTO_TCP, tcp, &tcp->Checksum, payload_size, true);
+		}
+	}
+	else if (p->TypeL4 == L4_UDP)
+	{
+		UDP_HEADER *udp = p->L4.UDPHeader;
 
-						if (udp->Checksum == udp_offloading_checksum1 || udp->Checksum == udp_offloading_checksum2)
-						{
-							udp->Checksum = 0;
+		if (udp_checked && udp != NULL)
+		{
+			UINT udp_len = Endian16(udp->PacketLength);
 
-							if ((v6info->FragmentHeader == NULL || ((IPV6_GET_FLAGS(v6info->FragmentHeader) & IPV6_FRAGMENT_HEADER_FLAG_MORE_FRAGMENTS) == 0)) && (v6info->PayloadSize >= udp_len))
-							{
-								udp->Checksum = CalcChecksumForIPv6(&v6->SrcAddress, &v6->DestAddress, IP_PROTO_UDP, udp, udp_len, 0);
-							}
-							else
-							{
-								// Fragmented packets cannot be checksummed here
-							}
-						}
-					}
-				}
-			}
+			// The first fragment holds only a part of the data, so it cannot be checksummed
+			FixOffloadChecksum(p, IP_PROTO_UDP, udp, &udp->Checksum, udp_len, last_fragment && payload_size >= udp_len);
 		}
 	}
 }
@@ -1838,12 +1812,26 @@ static bool ParseICMPv6Options(ICMPV6_OPTION_LIST *o, UCHAR *buf, UINT size)
 	}
 }
 
+// The ICMPv6 messages that have a fixed header followed by options, and the size of that header
+static const struct
+{
+	UCHAR Type;
+	UINT HeaderSize;
+} icmpv6_option_messages[] =
+{
+	{ICMPV6_TYPE_ROUTER_SOLICIATION, sizeof(ICMPV6_ROUTER_SOLICIATION_HEADER)},
+	{ICMPV6_TYPE_ROUTER_ADVERTISEMENT, sizeof(ICMPV6_ROUTER_ADVERTISEMENT_HEADER)},
+	{ICMPV6_TYPE_NEIGHBOR_SOLICIATION, sizeof(ICMPV6_NEIGHBOR_SOLICIATION_HEADER)},
+	{ICMPV6_TYPE_NEIGHBOR_ADVERTISEMENT, sizeof(ICMPV6_NEIGHBOR_ADVERTISEMENT_HEADER)},
+};
+
 static bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 {
 	ICMPV6_HEADER_INFO icmp_info;
 	ICMP_HEADER *icmp;
 	ICMP_ECHO *echo;
 	UINT msg_size;
+	UINT i;
 	if (p == NULL || buf == NULL)
 	{
 		return false;
@@ -1865,10 +1853,8 @@ static bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 	icmp_info.Data = ((UCHAR *)buf) + sizeof(ICMP_HEADER);
 	icmp_info.DataSize = msg_size;
 
-	switch (icmp_info.Type)
+	if (icmp_info.Type == ICMPV6_TYPE_ECHO_REQUEST || icmp_info.Type == ICMPV6_TYPE_ECHO_RESPONSE)
 	{
-	case ICMPV6_TYPE_ECHO_REQUEST:
-	case ICMPV6_TYPE_ECHO_RESPONSE:
 		if (icmp_info.DataSize < sizeof(ICMP_ECHO))
 		{
 			return false;
@@ -1880,76 +1866,29 @@ static bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 		icmp_info.EchoHeader.SeqNo = Endian16(echo->SeqNo);
 		icmp_info.EchoData = (UCHAR *)echo + sizeof(ICMP_ECHO);
 		icmp_info.EchoDataSize = icmp_info.DataSize - sizeof(ICMP_ECHO);
+	}
 
-		break;
-
-	case ICMPV6_TYPE_ROUTER_SOLICIATION:
-		if (icmp_info.DataSize < sizeof(ICMPV6_ROUTER_SOLICIATION_HEADER))
+	for (i = 0; i < sizeof(icmpv6_option_messages) / sizeof(icmpv6_option_messages[0]); i++)
+	{
+		if (icmpv6_option_messages[i].Type == icmp_info.Type)
 		{
-			return false;
+			UINT header_size = icmpv6_option_messages[i].HeaderSize;
+
+			if (icmp_info.DataSize < header_size)
+			{
+				return false;
+			}
+
+			icmp_info.Headers.HeaderPointer = icmp_info.Data;
+
+			if (ParseICMPv6Options(&icmp_info.OptionList, ((UCHAR *)icmp_info.Headers.HeaderPointer) + header_size,
+			                       icmp_info.DataSize - header_size) == false)
+			{
+				return false;
+			}
+
+			break;
 		}
-
-		icmp_info.Headers.RouterSoliciationHeader =
-		    (ICMPV6_ROUTER_SOLICIATION_HEADER *)(((UCHAR *)icmp_info.Data));
-
-		if (ParseICMPv6Options(&icmp_info.OptionList, ((UCHAR *)icmp_info.Headers.HeaderPointer) + sizeof(ICMPV6_ROUTER_SOLICIATION_HEADER),
-		                       icmp_info.DataSize - sizeof(ICMPV6_ROUTER_SOLICIATION_HEADER)) == false)
-		{
-			return false;
-		}
-
-		break;
-
-	case ICMPV6_TYPE_ROUTER_ADVERTISEMENT:
-		if (icmp_info.DataSize < sizeof(ICMPV6_ROUTER_ADVERTISEMENT_HEADER))
-		{
-			return false;
-		}
-
-		icmp_info.Headers.RouterAdvertisementHeader =
-		    (ICMPV6_ROUTER_ADVERTISEMENT_HEADER *)(((UCHAR *)icmp_info.Data));
-
-		if (ParseICMPv6Options(&icmp_info.OptionList, ((UCHAR *)icmp_info.Headers.HeaderPointer) + sizeof(ICMPV6_ROUTER_ADVERTISEMENT_HEADER),
-		                       icmp_info.DataSize - sizeof(ICMPV6_ROUTER_ADVERTISEMENT_HEADER)) == false)
-		{
-			return false;
-		}
-
-		break;
-
-	case ICMPV6_TYPE_NEIGHBOR_SOLICIATION:
-		if (icmp_info.DataSize < sizeof(ICMPV6_NEIGHBOR_SOLICIATION_HEADER))
-		{
-			return false;
-		}
-
-		icmp_info.Headers.NeighborSoliciationHeader =
-		    (ICMPV6_NEIGHBOR_SOLICIATION_HEADER *)(((UCHAR *)icmp_info.Data));
-
-		if (ParseICMPv6Options(&icmp_info.OptionList, ((UCHAR *)icmp_info.Headers.HeaderPointer) + sizeof(ICMPV6_NEIGHBOR_SOLICIATION_HEADER),
-		                       icmp_info.DataSize - sizeof(ICMPV6_NEIGHBOR_SOLICIATION_HEADER)) == false)
-		{
-			return false;
-		}
-
-		break;
-
-	case ICMPV6_TYPE_NEIGHBOR_ADVERTISEMENT:
-		if (icmp_info.DataSize < sizeof(ICMPV6_NEIGHBOR_ADVERTISEMENT_HEADER))
-		{
-			return false;
-		}
-
-		icmp_info.Headers.NeighborAdvertisementHeader =
-		    (ICMPV6_NEIGHBOR_ADVERTISEMENT_HEADER *)(((UCHAR *)icmp_info.Data));
-
-		if (ParseICMPv6Options(&icmp_info.OptionList, ((UCHAR *)icmp_info.Headers.HeaderPointer) + sizeof(ICMPV6_NEIGHBOR_ADVERTISEMENT_HEADER),
-		                       icmp_info.DataSize - sizeof(ICMPV6_NEIGHBOR_ADVERTISEMENT_HEADER)) == false)
-		{
-			return false;
-		}
-
-		break;
 	}
 
 	p->TypeL4 = L4_ICMPV6;
