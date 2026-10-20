@@ -286,52 +286,35 @@ CAPSLIST *ScGetCapsEx(RPC *rpc)
 	return t;
 }
 
-// The debug line of one RPC phase: "RPC: RPC-<socket> (<remote IP>): <text>"
-static void AdminDispatchTrace(ADMIN *a, RPC *rpc, char *fmt, ...)
+// Debug log line "RPC: RPC-n (ip): ..." of the session
+static void AdminDispatchTrace(ADMIN *a, char *format, ...)
 {
-	char tmp[MAX_PATH];
-	char text[MAX_PATH];
+	char msg[MAX_PATH];
 	char ip[MAX_PATH];
-	UINT rpc_id = 0;
+	char tmp[MAX_PATH * 2];
 	va_list args;
 
-	StrCpy(ip, sizeof(ip), "Unknown");
+	IPToStr(ip, sizeof(ip), &a->RemoteIP);
 
-	if (rpc->Sock != NULL)
-	{
-		IPToStr(ip, sizeof(ip), &rpc->Sock->RemoteIP);
-		rpc_id = rpc->Sock->socket;
-	}
-
-	va_start(args, fmt);
-	FormatArgs(text, sizeof(text), fmt, args);
+	va_start(args, format);
+	FormatArgs(msg, sizeof(msg), format, args);
 	va_end(args);
 
-	Format(tmp, sizeof(tmp), "RPC: RPC-%u (%s): %s", rpc_id, ip, text);
+	Format(tmp, sizeof(tmp), "RPC: %s (%s): %s", a->Tag, ip, msg);
 
 	SiDebugLog(a->Server, tmp);
 }
 
-static PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
+// Run one admin RPC of the session: take the super lock, trace, dispatch, trace; the Pack of the answer
+PACK *AdminInvoke(ADMIN *a, char *name, PACK *p)
 {
-	ADMIN *a;
 	PACK *ret;
 	UINT err;
 	SERVER *server = NULL;
 	CEDAR *cedar = NULL;
 	bool ok = false;
-	if (rpc == NULL || name == NULL || p == NULL)
+	if (a == NULL || name == NULL || p == NULL)
 	{
-		return NULL;
-	}
-
-	ret = NewPack();
-	err = ERR_NO_ERROR;
-
-	a = (ADMIN *)rpc->Param;
-	if (a == NULL)
-	{
-		FreePack(ret);
 		return NULL;
 	}
 
@@ -342,10 +325,13 @@ static PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 		return NULL;
 	}
 
+	ret = NewPack();
+	err = ERR_NO_ERROR;
+
 	cedar = server->Cedar;
 	Lock(cedar->CedarSuperLock);
 
-	AdminDispatchTrace(a, rpc, "Entering RPC [%s]...", name);
+	AdminDispatchTrace(a, "Entering RPC [%s]...", name);
 
 	if (0) {}
 
@@ -451,7 +437,7 @@ static PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 		PackAddInt(ret, "error", err);
 	}
 
-	AdminDispatchTrace(a, rpc, "Leaving RPC [%s] (Error: %u).", name, err);
+	AdminDispatchTrace(a, "Leaving RPC [%s] (Error: %u).", name, err);
 
 	Unlock(cedar->CedarSuperLock);
 
@@ -1895,6 +1881,29 @@ static UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t)
 	return ret;
 }
 
+typedef struct ENUM_GROUP_COUNT
+{
+	USERGROUP *Group;
+	RPC_ENUM_GROUP_ITEM *Item;
+} ENUM_GROUP_COUNT;
+
+static int CompareEnumGroupCount(void *p1, void *p2)
+{
+	ENUM_GROUP_COUNT *c1, *c2;
+	if (p1 == NULL || p2 == NULL)
+	{
+		return 0;
+	}
+	c1 = *(ENUM_GROUP_COUNT **)p1;
+	c2 = *(ENUM_GROUP_COUNT **)p2;
+	if (c1 == NULL || c2 == NULL)
+	{
+		return 0;
+	}
+
+	return COMPARE_RET(c1->Group, c2->Group);
+}
+
 static UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 {
 	HUB *h = NULL;
@@ -1914,6 +1923,8 @@ static UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 	AcLock(h);
 	{
 		UINT i, j;
+		ENUM_GROUP_COUNT *counts;
+		LIST *index;
 
 		FreeRpcEnumGroup(t);
 		Zero(t, sizeof(RPC_ENUM_GROUP));
@@ -1921,6 +1932,10 @@ static UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 
 		t->NumGroup = LIST_NUM(h->HubDb->GroupList);
 		t->Groups = ZeroMalloc(sizeof(RPC_ENUM_GROUP_ITEM) * t->NumGroup);
+
+		// Group pointer to its item, so the members are counted in one pass over the users
+		counts = ZeroMalloc(sizeof(ENUM_GROUP_COUNT) * t->NumGroup);
+		index = NewListFast(CompareEnumGroupCount);
 
 		for (i = 0;i < t->NumGroup;i++)
 		{
@@ -1944,25 +1959,39 @@ static UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 
 			e->NumUsers = 0;
 
+			counts[i].Group = g;
+			counts[i].Item = e;
+			Add(index, &counts[i]);
+		}
 
-			LockList(h->HubDb->UserList);
+		for (j = 0;j < LIST_NUM(h->HubDb->UserList);j++)
+		{
+			USER *u = LIST_DATA(h->HubDb->UserList, j);
+			USERGROUP *ug;
+
+			Lock(u->lock);
 			{
-				for (j = 0;j < LIST_NUM(h->HubDb->UserList);j++)
-				{
-					USER *u = LIST_DATA(h->HubDb->UserList, j);
+				ug = u->Group;
+			}
+			Unlock(u->lock);
 
-					Lock(u->lock);
-					{
-						if (u->Group == g)
-						{
-							e->NumUsers++;
-						}
-					}
-					Unlock(u->lock);
+			if (ug != NULL)
+			{
+				ENUM_GROUP_COUNT key, *found;
+
+				key.Group = ug;
+				key.Item = NULL;
+
+				found = Search(index, &key);
+				if (found != NULL)
+				{
+					found->Item->NumUsers++;
 				}
 			}
-			UnlockList(h->HubDb->UserList);
 		}
+
+		ReleaseList(index);
+		Free(counts);
 	}
 	AcUnlock(h);
 
@@ -3439,6 +3468,7 @@ static UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
 {
 	HUB *h;
 	UINT err;
+	HUB_STATS st;
 
 	h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
@@ -3448,33 +3478,23 @@ static UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
 
 	Zero(t, sizeof(RPC_HUB_STATUS));
 
-	Lock(h->lock);
-	{
-		StrCpy(t->HubName, sizeof(t->HubName), h->Name);
-		t->Online = h->Offline ? false : true;
-		t->NumSessions = LIST_NUM(h->SessionList);
-		t->NumSessionsClient = Count(h->NumSessionsClient);
-		t->NumSessionsBridge = Count(h->NumSessionsBridge);
-		t->NumAccessLists = LIST_NUM(h->AccessList);
+	HubGetStats(h, &st);
 
-		t->NumUsers = LIST_NUM(h->HubDb->UserList);
-		t->NumGroups = LIST_NUM(h->HubDb->GroupList);
-
-		t->NumMacTables = HubMacTableNum(h);
-		t->NumIpTables = HubIpTableNum(h);
-
-		Lock(h->TrafficLock);
-		{
-			Copy(&t->Traffic, h->Traffic, sizeof(TRAFFIC));
-		}
-		Unlock(h->TrafficLock);
-
-		t->NumLogin = h->NumLogin;
-		t->LastCommTime = h->LastCommTime;
-		t->LastLoginTime = h->LastLoginTime;
-		t->CreatedTime = h->CreatedTime;
-	}
-	Unlock(h->lock);
+	StrCpy(t->HubName, sizeof(t->HubName), h->Name);
+	t->Online = st.Online;
+	t->NumSessions = st.NumSessions;
+	t->NumSessionsClient = st.NumSessionsClient;
+	t->NumSessionsBridge = st.NumSessionsBridge;
+	t->NumAccessLists = st.NumAccessLists;
+	t->NumUsers = st.NumUsers;
+	t->NumGroups = st.NumGroups;
+	t->NumMacTables = st.NumMacTables;
+	t->NumIpTables = st.NumIpTables;
+	Copy(&t->Traffic, &st.Traffic, sizeof(TRAFFIC));
+	t->NumLogin = st.NumLogin;
+	t->LastCommTime = st.LastCommTime;
+	t->LastLoginTime = st.LastLoginTime;
+	t->CreatedTime = st.CreatedTime;
 
 	ReleaseHub(h);
 
@@ -3729,6 +3749,7 @@ static UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 		{
 			HUB *h = LIST_DATA(c->HubList, i);
 			RPC_ENUM_HUB_ITEM *e;
+			HUB_STATS st;
 
 			if (a->ServerAdmin == false && StrCmpi(h->Name, a->HubName) != 0)
 			{
@@ -3737,46 +3758,22 @@ static UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 
 			e = &t->Hubs[t->NumHub++];
 
-			Lock(h->lock);
-			{
-				StrCpy(e->HubName, sizeof(e->HubName), h->Name);
-				e->Online = h->Offline ? false : true;
+			HubGetStats(h, &st);
 
-				e->NumSessions = LIST_NUM(h->SessionList);
+			StrCpy(e->HubName, sizeof(e->HubName), h->Name);
+			e->Online = st.Online;
+			e->NumSessions = st.NumSessions;
+			e->NumMacTables = st.NumMacTables;
+			e->NumIpTables = st.NumIpTables;
+			e->NumUsers = st.NumUsers;
+			e->NumGroups = st.NumGroups;
+			e->LastCommTime = st.LastCommTime;
+			e->LastLoginTime = st.LastLoginTime;
+			e->NumLogin = st.NumLogin;
+			e->CreatedTime = st.CreatedTime;
+			Copy(&e->Traffic, &st.Traffic, sizeof(TRAFFIC));
 
-				HubLockTables(h);
-				{
-					e->NumMacTables = HubMacTableNum(h);
-					e->NumIpTables = HubIpTableNum(h);
-				}
-				HubUnlockTables(h);
-
-				LockList(h->HubDb->UserList);
-				{
-					e->NumUsers = LIST_NUM(h->HubDb->UserList);
-				}
-				UnlockList(h->HubDb->UserList);
-
-				LockList(h->HubDb->GroupList);
-				{
-					e->NumGroups = LIST_NUM(h->HubDb->GroupList);
-				}
-				UnlockList(h->HubDb->GroupList);
-
-				e->LastCommTime = h->LastCommTime;
-				e->LastLoginTime = h->LastLoginTime;
-				e->NumLogin = h->NumLogin;
-				e->CreatedTime = h->CreatedTime;
-
-				Lock(h->TrafficLock);
-				{
-					Copy(&e->Traffic, h->Traffic, sizeof(TRAFFIC));
-				}
-				Unlock(h->TrafficLock);
-
-				e->IsTrafficFilled = true;
-			}
-			Unlock(h->lock);
+			e->IsTrafficFilled = true;
 		}
 	}
 	UnlockHubList(c);
@@ -3861,7 +3858,7 @@ static UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 
 		if (Cmp(t->HashedPassword, hash2, SHA1_SIZE) == 0 || Cmp(t->SecurePassword, hash1, SHA1_SIZE) == 0)
 		{
-			if (a->ServerAdmin == false && IsLocalHostIP(&a->Rpc->Sock->RemoteIP) == false)
+			if (a->ServerAdmin == false && IsLocalHostIP(&a->RemoteIP) == false)
 			{
 				// Refuse a blank hub admin password set from a remote host
 				ReleaseHub(h);
@@ -4354,18 +4351,16 @@ static UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 		for (i = 0;i < LIST_NUM(c->HubList);i++)
 		{
 			HUB *h = LIST_DATA(c->HubList, i);
-			Lock(h->lock);
-			{
-				t->NumHubStandalone++;
-			}
+			HUB_STATS st;
 
-			t->NumMacTables += HubMacTableNum(h);
-			t->NumIpTables += HubIpTableNum(h);
+			HubGetStats(h, &st);
 
-			t->NumUsers += LIST_NUM(h->HubDb->UserList);
-			t->NumGroups += LIST_NUM(h->HubDb->GroupList);
+			t->NumHubStandalone++;
 
-			Unlock(h->lock);
+			t->NumMacTables += st.NumMacTables;
+			t->NumIpTables += st.NumIpTables;
+			t->NumUsers += st.NumUsers;
+			t->NumGroups += st.NumGroups;
 		}
 	}
 	UnlockList(c->HubList);
@@ -7055,12 +7050,12 @@ PACK *AdminCall(RPC *rpc, char *function_name, PACK *p)
 	return RpcCall(rpc, function_name, p);
 }
 
-static bool CheckAdminSourceAddress(SOCK *sock, char *hubname)
+static bool CheckAdminSourceAddress(IP *remote_ip, char *hubname)
 {
 	BUF *b;
 	char *s;
 	bool ok = false;
-	if (sock == NULL)
+	if (remote_ip == NULL)
 	{
 		return false;
 	}
@@ -7111,9 +7106,9 @@ static bool CheckAdminSourceAddress(SOCK *sock, char *hubname)
 				{
 					if (ParseIpAndMask46(t->Token[0], &ip, &mask))
 					{
-						if (IsIP4(&sock->RemoteIP) && IsIP4(&ip))
+						if (IsIP4(remote_ip) && IsIP4(&ip))
 						{
-							IPAnd4(&ip1, &sock->RemoteIP, &mask);
+							IPAnd4(&ip1, remote_ip, &mask);
 							IPAnd4(&ip2, &ip, &mask);
 
 							if (CmpIpAddr(&ip1, &ip2) == 0)
@@ -7121,9 +7116,9 @@ static bool CheckAdminSourceAddress(SOCK *sock, char *hubname)
 								ok = true;
 							}
 						}
-						else if (IsIP6(&sock->RemoteIP) && IsIP6(&ip))
+						else if (IsIP6(remote_ip) && IsIP6(&ip))
 						{
-							IPAnd6(&ip1, &sock->RemoteIP, &mask);
+							IPAnd6(&ip1, remote_ip, &mask);
 							IPAnd6(&ip2, &ip, &mask);
 
 							if (CmpIpAddr(&ip1, &ip2) == 0)
@@ -7134,7 +7129,7 @@ static bool CheckAdminSourceAddress(SOCK *sock, char *hubname)
 					}
 					else if (StrToIP(&ip, t->Token[0]))
 					{
-						if (CmpIpAddr(&sock->RemoteIP, &ip) == 0)
+						if (CmpIpAddr(remote_ip, &ip) == 0)
 						{
 							ok = true;
 						}
@@ -7158,123 +7153,174 @@ static bool CheckAdminSourceAddress(SOCK *sock, char *hubname)
 	return ok;
 }
 
-UINT AdminAccept(CONNECTION *c, PACK *p)
+// Open an admin session: the source address list, the password and the empty-password policy, with the LA_* log lines
+ADMIN *AdminOpen(SERVER *server, ADMIN_LOGIN *login, UINT *err)
 {
 	ADMIN *a;
-	UCHAR secure_password[SHA1_SIZE];
+	CEDAR *cedar;
+	UINT e;
+	bool is_empty_password = false;
+	bool hub_scope;
 	UCHAR null_password[SHA1_SIZE];
 	UCHAR secure_null_password[SHA1_SIZE];
-	char hubname[MAX_HUBNAME_LEN + 1];
-	CEDAR *cedar;
-	SOCK *sock;
-	RPC *rpc;
-	UINT err;
-	SERVER *server = NULL;
-	RPC_WINVER ver;
-	bool accept_empty_password;
-	bool is_empty_password = false;
-	if (c == NULL || p == NULL)
+	UINT dummy;
+	if (err == NULL)
 	{
-		return ERR_INTERNAL_ERROR;
+		err = &dummy;
+	}
+	if (server == NULL || login == NULL)
+	{
+		*err = ERR_INTERNAL_ERROR;
+		return NULL;
 	}
 
-	cedar = c->Cedar;
-	sock = c->FirstSock;
+	cedar = server->Cedar;
+	hub_scope = (StrLen(login->HubName) != 0);
 
-	if (cedar != NULL)
+	if (CheckAdminSourceAddress(&login->RemoteIP, login->HubName) == false)
 	{
-		server = cedar->Server;
+		SLog(cedar, "LA_IP_DENIED", login->ConnName);
+		*err = ERR_IP_ADDRESS_DENIED;
+		return NULL;
 	}
 
-	accept_empty_password = PackGetBool(p, "accept_empty_password");
-
-	InRpcWinVer(&ver, p);
-
-	if (PackGetStr(p, "hubname", hubname, sizeof(hubname)) == false)
+	if (login->HasSecurePassword == false)
 	{
-		StrCpy(hubname, sizeof(hubname), "");
+		*err = ERR_PROTOCOL_ERROR;
+		return NULL;
 	}
 
-	if (CheckAdminSourceAddress(sock, hubname) == false)
+	if (hub_scope == false)
 	{
-		SLog(c->Cedar, "LA_IP_DENIED", c->Name);
-		return ERR_IP_ADDRESS_DENIED;
-	}
-
-	if (PackGetDataSize(p, "secure_password") != SHA1_SIZE)
-	{
-		return ERR_PROTOCOL_ERROR;
-	}
-	PackGetData(p, "secure_password", secure_password);
-
-	if (StrLen(hubname) == 0)
-	{
-		SLog(c->Cedar, "LA_CONNECTED_1", c->Name);
+		SLog(cedar, "LA_CONNECTED_1", login->ConnName);
 	}
 	else
 	{
-		SLog(c->Cedar, "LA_CONNECTED_2", c->Name, hubname);
+		SLog(cedar, "LA_CONNECTED_2", login->ConnName, login->HubName);
 	}
 
-	err = AdminCheckPassword(cedar, c->Random, secure_password,
-		StrLen(hubname) != 0 ? hubname : NULL, accept_empty_password, &is_empty_password);
+	e = AdminCheckPassword(cedar, login->Random, login->SecurePassword,
+		hub_scope ? login->HubName : NULL, login->AcceptEmptyPassword, &is_empty_password);
 
-	if (err != ERR_NO_ERROR)
+	if (e != ERR_NO_ERROR)
 	{
-		SLog(c->Cedar, "LA_ERROR", c->Name, GetUniErrorStr(err), err);
-		return err;
+		SLog(cedar, "LA_ERROR", login->ConnName, GetUniErrorStr(e), e);
+		*err = e;
+		return NULL;
 	}
 
-	SLog(c->Cedar, "LA_OK", c->Name);
+	SLog(cedar, "LA_OK", login->ConnName);
 
 	HashAdminPassword(null_password, "");
-	SecurePassword(secure_null_password, null_password, c->Random);
+	SecurePassword(secure_null_password, null_password, login->Random);
 
-	if (Cmp(secure_null_password, secure_password, SHA1_SIZE) == 0)
+	if (Cmp(secure_null_password, login->SecurePassword, SHA1_SIZE) == 0)
 	{
-		if (IsLocalHostIP(&sock->RemoteIP) == false)
+		if (IsLocalHostIP(&login->RemoteIP) == false)
 		{
 			// Refuse a blank hub admin password from a remote client
-			if (StrLen(hubname) != 0)
+			if (hub_scope)
 			{
-				return ERR_NULL_PASSWORD_LOCAL_ONLY;
+				*err = ERR_NULL_PASSWORD_LOCAL_ONLY;
+				return NULL;
 			}
 		}
 	}
 
-
-	p = NewPack();
-	if (accept_empty_password && is_empty_password)
-	{
-		PackAddBool(p, "empty_password", true);
-	}
-	HttpServerSend(sock, p);
-	FreePack(p);
-
 	a = ZeroMalloc(sizeof(ADMIN));
-	a->ServerAdmin = ((StrLen(hubname) == 0) ? true : false);
-	a->HubName = (StrLen(hubname) != 0 ? hubname : NULL);
-	a->Server = c->Cedar->Server;
+	a->Server = server;
+	a->ServerAdmin = (hub_scope ? false : true);
+	a->HubName = (hub_scope ? CopyStr(login->HubName) : NULL);
+	Copy(&a->RemoteIP, &login->RemoteIP, sizeof(IP));
+	Format(a->Tag, sizeof(a->Tag), "RPC-%u", login->Id);
+	a->EmptyPassword = (login->AcceptEmptyPassword && is_empty_password);
+	Copy(&a->ClientWinVer, &login->ClientWinVer, sizeof(RPC_WINVER));
 
-	Copy(&a->ClientWinVer, &ver, sizeof(RPC_WINVER));
+	*err = ERR_NO_ERROR;
 
-	SetTimeout(sock, INFINITE);
+	return a;
+}
 
-	rpc = NewRpc(sock, AdminDispatch, a);
-
-	a->Rpc = rpc;
-
-	SLog(c->Cedar, "LA_RPC_START", c->Name, rpc->Name);
-
-	RpcServer(rpc);
-	RpcFree(rpc);
+// Free an admin session
+void AdminClose(ADMIN *a)
+{
+	if (a == NULL)
+	{
+		return;
+	}
 
 	if (a->LogFileList != NULL)
 	{
 		FreeEnumLogFile(a->LogFileList);
 	}
 
+	Free(a->HubName);
 	Free(a);
+}
+
+// RPC server dispatcher of the admin connection: the session is the RPC parameter
+static PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
+{
+	if (rpc == NULL)
+	{
+		return NULL;
+	}
+
+	return AdminInvoke((ADMIN *)rpc->Param, name, p);
+}
+
+UINT AdminAccept(CONNECTION *c, PACK *p)
+{
+	ADMIN_LOGIN login;
+	ADMIN *a;
+	SOCK *sock;
+	RPC *rpc;
+	UINT err;
+	if (c == NULL || p == NULL || c->FirstSock == NULL || c->Cedar == NULL || c->Cedar->Server == NULL)
+	{
+		return ERR_INTERNAL_ERROR;
+	}
+
+	sock = c->FirstSock;
+
+	Zero(&login, sizeof(login));
+	StrCpy(login.ConnName, sizeof(login.ConnName), c->Name);
+	Copy(&login.RemoteIP, &sock->RemoteIP, sizeof(IP));
+	login.Id = sock->socket;
+	Copy(login.Random, c->Random, SHA1_SIZE);
+	login.AcceptEmptyPassword = PackGetBool(p, "accept_empty_password");
+	InRpcWinVer(&login.ClientWinVer, p);
+	PackGetStr(p, "hubname", login.HubName, sizeof(login.HubName));
+	if (PackGetDataSize(p, "secure_password") == SHA1_SIZE)
+	{
+		PackGetData(p, "secure_password", login.SecurePassword);
+		login.HasSecurePassword = true;
+	}
+
+	a = AdminOpen(c->Cedar->Server, &login, &err);
+	if (a == NULL)
+	{
+		return err;
+	}
+
+	p = NewPack();
+	if (a->EmptyPassword)
+	{
+		PackAddBool(p, "empty_password", true);
+	}
+	HttpServerSend(sock, p);
+	FreePack(p);
+
+	SetTimeout(sock, INFINITE);
+
+	rpc = NewRpc(sock, AdminDispatch, a);
+
+	SLog(c->Cedar, "LA_RPC_START", c->Name, a->Tag);
+
+	RpcServer(rpc);
+	RpcFree(rpc);
+
+	AdminClose(a);
 
 	return ERR_NO_ERROR;
 }

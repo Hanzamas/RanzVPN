@@ -285,6 +285,25 @@ struct HUB
 	bool ForceDisableComm;
 };
 
+// Counters of one hub, copied by HubGetStats under the hub's own locks
+struct HUB_STATS
+{
+	bool Online;
+	UINT NumSessions;
+	UINT NumSessionsClient;
+	UINT NumSessionsBridge;
+	UINT NumAccessLists;
+	UINT NumUsers;
+	UINT NumGroups;
+	UINT NumMacTables;
+	UINT NumIpTables;
+	TRAFFIC Traffic;
+	UINT64 LastCommTime;
+	UINT64 LastLoginTime;
+	UINT64 CreatedTime;
+	UINT NumLogin;
+};
+
 
 extern ADMIN_OPTION admin_options[];
 extern UINT num_admin_options;
@@ -296,6 +315,7 @@ HUBDB *NewHubDb();
 void DeleteHubDb(HUBDB *d);
 HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option);
 void SetHubMsg(HUB *h, wchar_t *msg);
+void HubGetStats(HUB *h, HUB_STATS *st);
 wchar_t *GetHubMsg(HUB *h);
 bool IsHubIpAddress(IP *ip);
 bool IsHubIpAddress32(UINT ip32);
