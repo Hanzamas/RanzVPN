@@ -42,7 +42,6 @@ void Win32GetDirFromPathW(wchar_t *dst, UINT size, wchar_t *src);
 void Win32GetCurrentDirW(wchar_t *dir, UINT num_chars);
 void Win32GetExeNameW(wchar_t *name, UINT num_chars);
 DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare);
-bool Win32GetDiskFree(char *path, UINT64 *free_size, UINT64 *used_size, UINT64 *total_size);
 bool Win32SetFolderCompress(char *path, bool compressed);
 bool Win32InputW(wchar_t *str, UINT size);
 bool Win32InputFromFileW(wchar_t *str, UINT size);

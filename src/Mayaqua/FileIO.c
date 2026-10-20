@@ -70,19 +70,6 @@ void ConvertSafeFileName(char *dst, UINT size, char *src)
 	}
 }
 
-bool GetDiskFree(char *path, UINT64 *free_size, UINT64 *used_size, UINT64 *total_size)
-{
-	bool ret;
-	if (path == NULL)
-	{
-		path = "./";
-	}
-
-	ret = Win32GetDiskFree(path, free_size, used_size, total_size);
-
-	return ret;
-}
-
 static DIRLIST *EnumDirEx(char *dirname, COMPARE *compare)
 {
 	wchar_t *dirname_w = CopyStrToUni(dirname);

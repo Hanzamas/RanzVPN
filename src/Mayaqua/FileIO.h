@@ -101,7 +101,6 @@ DIRLIST *EnumDirW(wchar_t *dirname);
 DIRLIST *EnumDirExW(wchar_t *dirname, COMPARE *compare);
 void FreeDir(DIRLIST *d);
 int CompareDirListByName(void *p1, void *p2);
-bool GetDiskFree(char *path, UINT64 *free_size, UINT64 *used_size, UINT64 *total_size);
 void ConvertSafeFileName(char *dst, UINT size, char *src);
 bool IsFile(char *name);
 bool IsFileW(wchar_t *name);
