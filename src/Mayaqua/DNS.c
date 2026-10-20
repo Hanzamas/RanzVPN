@@ -115,40 +115,46 @@ void DnsCacheToggle(const bool enabled)
 	cache_enabled = enabled;
 }
 
-static DNS_CACHE *DnsCacheFind(const char *hostname)
+// Copy the unexpired cache entry of hostname into *iplist_v6 and *iplist_v4 under the lock
+static bool DnsCacheFind(const char *hostname, LIST **iplist_v6, LIST **iplist_v4)
 {
 	if (DnsCacheIsEnabled() == false || IsEmptyStr(hostname))
 	{
-		return NULL;
+		return false;
 	}
 
-	DNS_CACHE *entry;
+	bool found = false;
 
 	LockList(cache);
 	{
 		DNS_CACHE t;
 		t.Hostname = hostname;
-		entry = Search(cache, &t);
+		const DNS_CACHE *entry = Search(cache, &t);
+
+		if (entry != NULL && entry->Expiration > Tick64())
+		{
+			*iplist_v6 = CloneIPAddressList(entry->IPList_v6);
+			*iplist_v4 = CloneIPAddressList(entry->IPList_v4);
+			found = true;
+		}
 	}
 	UnlockList(cache);
 
-	return entry;
+	return found;
 }
 
-static DNS_CACHE *DnsCacheUpdateEx(const char *hostname, const LIST *iplist_v6, const LIST *iplist_v4)
+static void DnsCacheUpdateEx(const char *hostname, const LIST *iplist_v6, const LIST *iplist_v4)
 {
 	if (DnsCacheIsEnabled() == false || IsEmptyStr(hostname))
 	{
-		return NULL;
+		return;
 	}
-
-	DNS_CACHE *entry;
 
 	LockList(cache);
 	{
 		DNS_CACHE t;
 		t.Hostname = hostname;
-		entry = Search(cache, &t);
+		DNS_CACHE *entry = Search(cache, &t);
 
 		if (iplist_v6 == NULL && iplist_v4 == NULL)
 		{
@@ -159,7 +165,6 @@ static DNS_CACHE *DnsCacheUpdateEx(const char *hostname, const LIST *iplist_v6, 
 				FreeHostIPAddressList(entry->IPList_v6);
 				FreeHostIPAddressList(entry->IPList_v4);
 				Free(entry);
-				entry = NULL;
 			}
 		}
 		else
@@ -172,7 +177,7 @@ static DNS_CACHE *DnsCacheUpdateEx(const char *hostname, const LIST *iplist_v6, 
 				Add(cache, entry);
 			}
 
-			entry->Expiration = Tick64();
+			entry->Expiration = Tick64() + DNS_CACHE_EXPIRATION;
 
 			FreeHostIPAddressList(entry->IPList_v6);
 			FreeHostIPAddressList(entry->IPList_v4);
@@ -197,52 +202,55 @@ static DNS_CACHE *DnsCacheUpdateEx(const char *hostname, const LIST *iplist_v6, 
 		}
 	}
 	UnlockList(cache);
-
-	return entry;
 }
 
-static DNS_CACHE_REVERSE *DnsCacheReverseFind(const IP *ip)
+// Copy the unexpired cached host name of ip into dst under the lock
+static bool DnsCacheReverseFind(const IP *ip, char *dst, const UINT size)
 {
 	if (DnsCacheIsEnabled() == false || ip == NULL)
 	{
-		return NULL;
+		return false;
 	}
 
-	DNS_CACHE_REVERSE *entry;
+	bool found = false;
 
 	LockList(cache_reverse);
 	{
 		DNS_CACHE_REVERSE t;
 		Copy(&t.IP, ip, sizeof(t.IP));
-		entry = Search(cache_reverse, &t);
+		const DNS_CACHE_REVERSE *entry = Search(cache_reverse, &t);
+
+		if (entry != NULL && entry->Expiration > Tick64())
+		{
+			StrCpy(dst, size, entry->Hostname);
+			found = true;
+		}
 	}
 	UnlockList(cache_reverse);
 
-	return entry;
+	return found;
 }
 
-DNS_CACHE_REVERSE *DnsCacheReverseUpdate(const IP *ip, const char *hostname)
+void DnsCacheReverseUpdate(const IP *ip, const char *hostname)
 {
 	if (DnsCacheIsEnabled() == false || IsZeroIP(ip))
 	{
-		return NULL;
+		return;
 	}
-
-	DNS_CACHE_REVERSE *entry;
 
 	LockList(cache_reverse);
 	{
 		DNS_CACHE_REVERSE t;
 		Copy(&t.IP, ip, sizeof(t.IP));
-		entry = Search(cache_reverse, &t);
+		DNS_CACHE_REVERSE *entry = Search(cache_reverse, &t);
 
 		if (IsEmptyStr(hostname))
 		{
 			if (entry != NULL)
 			{
 				Delete(cache_reverse, entry);
+				Free(entry->Hostname);
 				Free(entry);
-				entry = NULL;
 			}
 		}
 		else
@@ -255,7 +263,7 @@ DNS_CACHE_REVERSE *DnsCacheReverseUpdate(const IP *ip, const char *hostname)
 				Add(cache_reverse, entry);
 			}
 
-			entry->Expiration = Tick64();
+			entry->Expiration = Tick64() + DNS_CACHE_EXPIRATION;
 
 			if (StrCmp(entry->Hostname, hostname) != 0)
 			{
@@ -265,8 +273,6 @@ DNS_CACHE_REVERSE *DnsCacheReverseUpdate(const IP *ip, const char *hostname)
 		}
 	}
 	UnlockList(cache_reverse);
-
-	return entry;
 }
 
 // Wait for a lookup worker until it ends, the timeout passes or *cancel_flag is set; releases the worker
@@ -408,9 +414,8 @@ bool DnsResolveEx(LIST **iplist_v6, LIST **iplist_v4, const char *hostname, UINT
 	resolver->IPList_v4 = NewListFast(NULL);
 	resolver->Hostname = CopyStr(hostname);
 
-	DnsWaitWorker(NewThread(DnsResolver, resolver), timeout, cancel_flag);
-
-	if (resolver->OK)
+	// The lists belong to the worker until it has finished
+	if (DnsWaitWorker(NewThread(DnsResolver, resolver), timeout, cancel_flag) && FlagRead(&resolver->OK))
 	{
 		*iplist_v6 = resolver->IPList_v6;
 		*iplist_v4 = resolver->IPList_v4;
@@ -427,16 +432,7 @@ bool DnsResolveEx(LIST **iplist_v6, LIST **iplist_v4, const char *hostname, UINT
 CACHE:
 	Debug("DnsResolve(): Could not resolve \"%s\". Searching for it in the cache...\n", hostname);
 
-	const DNS_CACHE *cached = DnsCacheFind(hostname);
-	if (cached == NULL || cached->Expiration <= Tick64())
-	{
-		return false;
-	}
-
-	*iplist_v6 = CloneIPAddressList(cached->IPList_v6);
-	*iplist_v4 = CloneIPAddressList(cached->IPList_v4);
-
-	return true;
+	return DnsCacheFind(hostname, iplist_v6, iplist_v4);
 }
 
 void DnsResolver(THREAD *t, void *param)
@@ -516,7 +512,8 @@ void DnsResolver(THREAD *t, void *param)
 			}
 		}
 
-		resolver->OK = true;
+		// Publish OK only after the lists are complete
+		FlagWrite(&resolver->OK, true);
 
 		FreeAddrInfoW(results);
 	}
@@ -556,9 +553,8 @@ bool DnsResolveReverse(char *dst, const UINT size, const IP *ip, UINT timeout, v
 	resolver->Ref = NewRef();
 	Copy(&resolver->IP, ip, sizeof(resolver->IP));
 
-	DnsWaitWorker(NewThread(DnsResolverReverse, resolver), timeout, cancel_flag);
-
-	if (resolver->OK)
+	// The host name belongs to the worker until it has finished
+	if (DnsWaitWorker(NewThread(DnsResolverReverse, resolver), timeout, cancel_flag) && FlagRead(&resolver->OK))
 	{
 		StrCpy(dst, size, resolver->Hostname);
 		DnsCacheReverseUpdate(ip, dst);
@@ -572,15 +568,7 @@ bool DnsResolveReverse(char *dst, const UINT size, const IP *ip, UINT timeout, v
 CACHE:
 	Debug("DnsResolveReverse(): Could not resolve \"%r\". Searching for it in the cache...\n", ip);
 
-	const DNS_CACHE_REVERSE *cached = DnsCacheReverseFind(ip);
-	if (cached == NULL || cached->Expiration <= Tick64())
-	{
-		return false;
-	}
-
-	StrCpy(dst, size, cached->Hostname);
-
-	return true;
+	return DnsCacheReverseFind(ip, dst, size);
 }
 
 void DnsResolverReverse(THREAD *t, void *param)
@@ -611,7 +599,8 @@ void DnsResolverReverse(THREAD *t, void *param)
 		if (WideCharToMultiByte(CP_ACP, 0, tmp_w, -1, tmp, sizeof(tmp), NULL, NULL) != 0)
 		{
 			resolver->Hostname = CopyStr(tmp);
-			resolver->OK = true;
+			// Publish OK only after the host name is set
+			FlagWrite(&resolver->OK, true);
 		}
 		else
 		{
