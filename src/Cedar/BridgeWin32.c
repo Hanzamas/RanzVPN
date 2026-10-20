@@ -22,10 +22,8 @@
 
 static RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, char *name);
 static bool EnumEthVLanMain(RPC_ENUM_ETH_VLAN *t, LIST *netclass);
-static ETH *OpenEthInternal(char *name);
 static void Win32EthMakeCombinedName(char *dst, UINT dst_size, char *nicname, char *guid);
 static UINT Win32EthGenIdFromGuid(char *guid);
-static LIST *GetEthAdapterListInternal(SU *su, LIST *netclass);
 static void InitEthAdaptersList(SU *su, LIST *netclass);
 static void FreeEthAdaptersList();
 
@@ -281,13 +279,10 @@ static void GetVLanSupportStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
 {
 	BUF *b;
 	char filename[MAX_SIZE];
-	void *wow;
 	if (e == NULL)
 	{
 		return;
 	}
-
-	wow = MsDisableWow64FileSystemRedirection();
 
 	ConbinePath(filename, sizeof(filename), MsGetSystem32Dir(), "drivers");
 	ConbinePath(filename, sizeof(filename), filename, e->DriverName);
@@ -336,8 +331,6 @@ static void GetVLanSupportStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
 
 		FreeBuf(b);
 	}
-
-	MsRestoreWow64FileSystemRedirection(wow);
 }
 
 // The VLAN items of the SeLow adapters. netclass is the net-class table of the caller (MsNetClassEnum):
@@ -580,19 +573,6 @@ static struct WP_ADAPTER *Win32EthSearch(char *name)
 }
 
 ETH *OpenEth(char *name)
-{
-	ETH *ret;
-	void *p;
-
-	p = MsDisableWow64FileSystemRedirection();
-
-	ret = OpenEthInternal(name);
-
-	MsRestoreWow64FileSystemRedirection(p);
-
-	return ret;
-}
-static ETH *OpenEthInternal(char *name)
 {
 	WP_ADAPTER *t;
 	ETH *e;
@@ -884,22 +864,9 @@ bool Win32IsUsingSeLow()
 	return is_using_selow;
 }
 
-static LIST *GetEthAdapterList(SU *su, LIST *netclass)
-{
-	void *p;
-	LIST *o;
-
-	p = MsDisableWow64FileSystemRedirection();
-
-	o = GetEthAdapterListInternal(su, netclass);
-
-	MsRestoreWow64FileSystemRedirection(p);
-
-	return o;
-}
 // The adapters of the SeLow device su, which the caller opened and frees; empty when su is NULL or
 // SeLow is turned off. netclass: the net-class table of the caller (MsNetClassEnum)
-static LIST *GetEthAdapterListInternal(SU *su, LIST *netclass)
+static LIST *GetEthAdapterList(SU *su, LIST *netclass)
 {
 	LIST *o;
 	LIST *ret;

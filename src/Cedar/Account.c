@@ -5,11 +5,11 @@
 
 #include "Connection.h"
 #include "Hub.h"
-#include "MsChapV2.h"
 #include "Protocol.h"
 #include "RpcField.h"
 
 #include "Mayaqua/Cfg.h"
+#include "Mayaqua/Encrypt.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
@@ -19,6 +19,9 @@
 #include "Mayaqua/Table.h"
 #include "Mayaqua/Tick64.h"
 
+#define PASSWORD_CRYPT_KEY			"EncryptPassword"
+#define PASSWORD_CRYPT_KEY_SIZE		8
+
 static void CleanupUser(USER *u);
 static void CleanupGroup(USERGROUP *g);
 static char *DecryptPassword(BUF *b);
@@ -26,46 +29,50 @@ static BUF *EncryptPassword(char *password);
 
 POLICY_ITEM policy_item[] =
 {
-//  ID,     Value,  Omittable, Min, Max, Default, Unit name, Offset
-	{0,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, Access)},
-	{1,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, DHCPFilter)},
-	{2,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, DHCPNoServer)},
-	{3,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, DHCPForce)},
-	{4,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoBridge)},
-	{5,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoRouting)},
-	{6,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, CheckMac)},
-	{7,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, CheckIP)},
-	{8,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, ArpDhcpOnly)},
-	{9,		false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, PrivacyFilter)},
-	{10,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoServer)},
-	{11,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoBroadcastLimiter)},
-	{12,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, MonitorPort)},
-	{13,	true,	false,	1,	32,	32,		"POL_INT_COUNT",		offsetof(POLICY, MaxConnection)},
-	{14,	true,	false,	5,	60,	20,		"POL_INT_SEC",			offsetof(POLICY, TimeOut)},
-	{15,	true,	true,	1,	65535,	0,	"POL_INT_COUNT",		offsetof(POLICY, MaxMac)},
-	{16,	true,	true,	1,	65535,	0,	"POL_INT_COUNT",		offsetof(POLICY, MaxIP)},
-	{17,	true,	true,	1,	4294967295UL,	0,	"POL_INT_BPS",	offsetof(POLICY, MaxUpload)},
-	{18,	true,	true,	1,	4294967295UL,	0,	"POL_INT_BPS",	offsetof(POLICY, MaxDownload)},
-	{19,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, FixPassword)},
-	{20,	true,	true,	1,	65535,	0,	"POL_INT_COUNT",		offsetof(POLICY, MultiLogins)},
-	{21,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoQoS)},
-	{22,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, RSandRAFilter)},
-	{23,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, RAFilter)},
-	{24,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, DHCPv6Filter)},
-	{25,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, DHCPv6NoServer)},
-	{26,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoRoutingV6)},
-	{27,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, CheckIPv6)},
-	{28,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoServerV6)},
-	{29,	true,	true,	1,	65535,	0,	"POL_INT_COUNT",		offsetof(POLICY, MaxIPv6)},
-	{30,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoSavePassword)},
-	{31,	true,	true,	1,	4294967295UL,	0,	"POL_INT_SEC",	offsetof(POLICY, AutoDisconnect)},
-	{32,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, FilterIPv4)},
-	{33,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, FilterIPv6)},
-	{34,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, FilterNonIP)},
-	{35,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoIPv6DefaultRouterInRA)},
-	{36,	false,	false,	0,	0,	0,		NULL,		offsetof(POLICY, NoIPv6DefaultRouterInRAWhenIPv6)},
-	{37,	true,	true,	1,	4095,	0,	"POL_INT_VLAN",			offsetof(POLICY, VLanId)},
+//  ID,     Value,  Omittable, Min, Max, Default, Unit name, Offset, Name, Ver3, Cascade cmd, Cascade cfg
+// Cascade cmd: settable from the cascade commands. Cascade cfg: written to the config of a cascade connection.
+	{0,	false,	false,	0,	0,	1,	NULL,	offsetof(POLICY, Access),	"Access",	false,	false,	false},
+	{1,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, DHCPFilter),	"DHCPFilter",	false,	true,	true},
+	{2,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, DHCPNoServer),	"DHCPNoServer",	false,	true,	true},
+	{3,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, DHCPForce),	"DHCPForce",	false,	true,	true},
+	{4,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, NoBridge),	"NoBridge",	false,	false,	false},
+	{5,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, NoRouting),	"NoRouting",	false,	false,	false},
+	{6,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, CheckMac),	"CheckMac",	false,	true,	true},
+	{7,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, CheckIP),	"CheckIP",	false,	true,	true},
+	{8,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, ArpDhcpOnly),	"ArpDhcpOnly",	false,	true,	true},
+	{9,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, PrivacyFilter),	"PrivacyFilter",	false,	true,	true},
+	{10,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, NoServer),	"NoServer",	false,	true,	true},
+	{11,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, NoBroadcastLimiter),	"NoBroadcastLimiter",	false,	true,	true},
+	{12,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, MonitorPort),	"MonitorPort",	false,	false,	false},
+	{13,	true,	false,	1,	32,	32,	"POL_INT_COUNT",	offsetof(POLICY, MaxConnection),	"MaxConnection",	false,	false,	false},
+	{14,	true,	false,	5,	60,	20,	"POL_INT_SEC",	offsetof(POLICY, TimeOut),	"TimeOut",	false,	false,	false},
+	{15,	true,	true,	1,	65535,	0,	"POL_INT_COUNT",	offsetof(POLICY, MaxMac),	"MaxMac",	false,	true,	true},
+	{16,	true,	true,	1,	65535,	0,	"POL_INT_COUNT",	offsetof(POLICY, MaxIP),	"MaxIP",	false,	true,	true},
+	{17,	true,	true,	1,	4294967295UL,	0,	"POL_INT_BPS",	offsetof(POLICY, MaxUpload),	"MaxUpload",	false,	true,	true},
+	{18,	true,	true,	1,	4294967295UL,	0,	"POL_INT_BPS",	offsetof(POLICY, MaxDownload),	"MaxDownload",	false,	true,	true},
+	{19,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, FixPassword),	"FixPassword",	false,	false,	false},
+	{20,	true,	true,	1,	65535,	0,	"POL_INT_COUNT",	offsetof(POLICY, MultiLogins),	"MultiLogins",	false,	false,	false},
+	{21,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, NoQoS),	"NoQoS",	false,	false,	false},
+	{22,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, RSandRAFilter),	"RSandRAFilter",	true,	true,	true},
+	{23,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, RAFilter),	"RAFilter",	true,	true,	true},
+	{24,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, DHCPv6Filter),	"DHCPv6Filter",	true,	true,	true},
+	{25,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, DHCPv6NoServer),	"DHCPv6NoServer",	true,	true,	true},
+	{26,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, NoRoutingV6),	"NoRoutingV6",	true,	false,	false},
+	{27,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, CheckIPv6),	"CheckIPv6",	true,	true,	true},
+	{28,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, NoServerV6),	"NoServerV6",	true,	true,	true},
+	{29,	true,	true,	1,	65535,	0,	"POL_INT_COUNT",	offsetof(POLICY, MaxIPv6),	"MaxIPv6",	true,	true,	true},
+	{30,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, NoSavePassword),	"NoSavePassword",	true,	false,	false},
+	{31,	true,	true,	1,	4294967295UL,	0,	"POL_INT_SEC",	offsetof(POLICY, AutoDisconnect),	"AutoDisconnect",	true,	false,	false},
+	{32,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, FilterIPv4),	"FilterIPv4",	true,	true,	true},
+	{33,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, FilterIPv6),	"FilterIPv6",	true,	true,	true},
+	{34,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, FilterNonIP),	"FilterNonIP",	true,	true,	true},
+	{35,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, NoIPv6DefaultRouterInRA),	"NoIPv6DefaultRouterInRA",	true,	true,	true},
+	{36,	false,	false,	0,	0,	0,	NULL,	offsetof(POLICY, NoIPv6DefaultRouterInRAWhenIPv6),	"NoIPv6DefaultRouterInRAWhenIPv6",	true,	false,	true},
+	{37,	true,	true,	1,	4095,	0,	"POL_INT_VLAN",	offsetof(POLICY, VLanId),	"VLanId",	true,	true,	true},
 };
+
+// The table must have exactly NUM_POLICY_ITEM rows: a negative array size is a compile error
+typedef char policy_item_count_check[(sizeof(policy_item) / sizeof(policy_item[0]) == NUM_POLICY_ITEM) ? 1 : -1];
 
 void FormatPolicyValue(wchar_t *str, UINT size, UINT id, UINT value)
 {
@@ -141,63 +148,72 @@ POLICY_ITEM *GetPolicyItem(UINT id)
 	return &policy_item[id];
 }
 
+// Read one policy field by its table id; a bool field gives 0 or 1
+UINT GetPolicyValue(POLICY *p, UINT id)
+{
+	POLICY_ITEM *item;
+	UCHAR *field;
+	if (p == NULL || id >= NUM_POLICY_ITEM)
+	{
+		return 0;
+	}
+
+	item = &policy_item[id];
+	field = (UCHAR *)p + item->Offset;
+
+	if (item->TypeInt)
+	{
+		UINT value;
+
+		Copy(&value, field, sizeof(UINT));
+
+		return value;
+	}
+
+	return (*(bool *)field) ? 1 : 0;
+}
+
+// Write one policy field by its table id; a bool field takes any non-zero value as true
+void SetPolicyValue(POLICY *p, UINT id, UINT value)
+{
+	POLICY_ITEM *item;
+	UCHAR *field;
+	if (p == NULL || id >= NUM_POLICY_ITEM)
+	{
+		return;
+	}
+
+	item = &policy_item[id];
+	field = (UCHAR *)p + item->Offset;
+
+	if (item->TypeInt)
+	{
+		Copy(field, &value, sizeof(UINT));
+	}
+	else
+	{
+		*(bool *)field = (value != 0);
+	}
+}
+
 bool PolicyIsSupportedForCascade(UINT i)
 {
-	if (i == 0 || i == 4 || i == 5 || i == 12 || i == 13 ||
-		i == 14 || i == 19 || i == 20 || i == 21 || i == 26 || i == 30 || i == 31 || i == 36)
+	if (i >= NUM_POLICY_ITEM)
 	{
 		return false;
 	}
 
-	return true;
+	return policy_item[i].CascadeCmd;
 }
 
 char *PolicyIdToStr(UINT i)
 {
-	switch (i)
+	if (i >= NUM_POLICY_ITEM)
 	{
-	case 0:		return "Access";
-	case 1:		return "DHCPFilter";
-	case 2:		return "DHCPNoServer";
-	case 3:		return "DHCPForce";
-	case 4:		return "NoBridge";
-	case 5:		return "NoRouting";
-	case 6:		return "CheckMac";
-	case 7:		return "CheckIP";
-	case 8:		return "ArpDhcpOnly";
-	case 9:		return "PrivacyFilter";
-	case 10:	return "NoServer";
-	case 11:	return "NoBroadcastLimiter";
-	case 12:	return "MonitorPort";
-	case 13:	return "MaxConnection";
-	case 14:	return "TimeOut";
-	case 15:	return "MaxMac";
-	case 16:	return "MaxIP";
-	case 17:	return "MaxUpload";
-	case 18:	return "MaxDownload";
-	case 19:	return "FixPassword";
-	case 20:	return "MultiLogins";
-	case 21:	return "NoQoS";
-
-	case 22:	return "RSandRAFilter";
-	case 23:	return "RAFilter";
-	case 24:	return "DHCPv6Filter";
-	case 25:	return "DHCPv6NoServer";
-	case 26:	return "NoRoutingV6";
-	case 27:	return "CheckIPv6";
-	case 28:	return "NoServerV6";
-	case 29:	return "MaxIPv6";
-	case 30:	return "NoSavePassword";
-	case 31:	return "AutoDisconnect";
-	case 32:	return "FilterIPv4";
-	case 33:	return "FilterIPv6";
-	case 34:	return "FilterNonIP";
-	case 35:	return "NoIPv6DefaultRouterInRA";
-	case 36:	return "NoIPv6DefaultRouterInRAWhenIPv6";
-	case 37:	return "VLanId";
+		return NULL;
 	}
 
-	return NULL;
+	return policy_item[i].Name;
 }
 
 UINT PolicyStrToId(char *name)
@@ -368,7 +384,7 @@ static void OverwritePolicy(POLICY **target, POLICY *p)
 			}
 			else
 			{
-				Copy(*target, p, policy_item[NUM_POLICY_ITEM_FOR_VER2].Offset);
+				Copy(*target, p, POLICY_VER2_SIZE);
 			}
 		}
 	}
@@ -428,46 +444,25 @@ POLICY *GetGroupPolicy(USERGROUP *g)
 
 POLICY *GetDefaultPolicy()
 {
-	static POLICY def_policy =
+	static POLICY def_policy;
+	static bool ready = false;
+
+	// Built from the policy table on first use; every caller computes the same bytes
+	if (ready == false)
 	{
-		true,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		32,
-		20,
-		0,
-		0,
-		0,
-		0,
-		false,
-		0,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		false,
-		0,
-		false,
-		0,
-		false,
-		false,
-		false,
-		false,
-		false,
-	};
+		POLICY tmp;
+		UINT i;
+
+		Zero(&tmp, sizeof(tmp));
+
+		for (i = 0;i < NUM_POLICY_ITEM;i++)
+		{
+			SetPolicyValue(&tmp, i, policy_item[i].DefaultValue);
+		}
+
+		Copy(&def_policy, &tmp, sizeof(POLICY));
+		ready = true;
+	}
 
 	return &def_policy;
 }
@@ -526,6 +521,31 @@ void HashPassword(void *dst, char *username, char *password)
 
 	FreeBuf(b);
 	Free(username_upper);
+}
+
+void GenerateNtPasswordHash(UCHAR *dst, char *password)
+{
+	UCHAR *tmp;
+	UINT tmp_size;
+	UINT i, len;
+	if (dst == NULL || password == NULL)
+	{
+		return;
+	}
+
+	len = StrLen(password);
+	tmp_size = len * 2;
+
+	tmp = ZeroMalloc(tmp_size);
+
+	for (i = 0; i < len; i++)
+	{
+		tmp[i * 2] = password[i];
+	}
+
+	HashMd4(dst, tmp, tmp_size);
+
+	Free(tmp);
 }
 
 void *NewPasswordAuthData(char *username, char *password)
@@ -651,6 +671,23 @@ void SetUserAuthData(USER *u, UINT authtype, void *authdata)
 	Unlock(u->lock);
 }
 
+// Replace a user's or group's traffic counters under its lock; NULL resets them
+static void SetTrafficLocked(LOCK *lock, TRAFFIC *dst, TRAFFIC *src)
+{
+	Lock(lock);
+	{
+		if (src != NULL)
+		{
+			Copy(dst, src, sizeof(TRAFFIC));
+		}
+		else
+		{
+			Zero(dst, sizeof(TRAFFIC));
+		}
+	}
+	Unlock(lock);
+}
+
 void SetGroupTraffic(USERGROUP *g, TRAFFIC *t)
 {
 	if (g == NULL)
@@ -658,18 +695,7 @@ void SetGroupTraffic(USERGROUP *g, TRAFFIC *t)
 		return;
 	}
 
-	Lock(g->lock);
-	{
-		if (t != NULL)
-		{
-			Copy(g->Traffic, t, sizeof(TRAFFIC));
-		}
-		else
-		{
-			Zero(g->Traffic, sizeof(TRAFFIC));
-		}
-	}
-	Unlock(g->lock);
+	SetTrafficLocked(g->lock, g->Traffic, t);
 }
 
 void SetUserTraffic(USER *u, TRAFFIC *t)
@@ -679,18 +705,7 @@ void SetUserTraffic(USER *u, TRAFFIC *t)
 		return;
 	}
 
-	Lock(u->lock);
-	{
-		if (t != NULL)
-		{
-			Copy(u->Traffic, t, sizeof(TRAFFIC));
-		}
-		else
-		{
-			Zero(u->Traffic, sizeof(TRAFFIC));
-		}
-	}
-	Unlock(u->lock);
+	SetTrafficLocked(u->lock, u->Traffic, t);
 }
 
 void JoinUserToGroup(USER *u, USERGROUP *g)
@@ -700,41 +715,28 @@ void JoinUserToGroup(USER *u, USERGROUP *g)
 		return;
 	}
 
-	if (g != NULL)
+	Lock(u->lock);
 	{
-		Lock(u->lock);
+		if (u->Group != NULL)
+		{
+			ReleaseGroup(u->Group);
+			u->Group = NULL;
+			Free(u->GroupName);
+			u->GroupName = NULL;
+		}
+
+		if (g != NULL)
 		{
 			Lock(g->lock);
 			{
-				if (u->Group != NULL)
-				{
-					ReleaseGroup(u->Group);
-					u->Group = NULL;
-					Free(u->GroupName);
-					u->GroupName = NULL;
-				}
 				u->GroupName = CopyStr(g->Name);
 				u->Group = g;
 				AddRef(g->ref);
 			}
 			Unlock(g->lock);
 		}
-		Unlock(u->lock);
 	}
-	else
-	{
-		Lock(u->lock);
-		{
-			if (u->Group != NULL)
-			{
-				ReleaseGroup(u->Group);
-				u->Group = NULL;
-				Free(u->GroupName);
-				u->GroupName = NULL;
-			}
-		}
-		Unlock(u->lock);
-	}
+	Unlock(u->lock);
 }
 
 bool AcIsGroup(HUB *h, char *name)
@@ -1618,7 +1620,6 @@ CLIENT_AUTH *ClientAuthClone(CLIENT_AUTH *a)
 
 	ret->AuthType = a->AuthType;
 	StrCpy(ret->Username, sizeof(ret->Username), a->Username);
-	ret->CheckCertProc = a->CheckCertProc;
 
 	switch (a->AuthType)
 	{
@@ -1896,10 +1897,16 @@ void CiWriteClientOption(FOLDER *f, CLIENT_OPTION *o)
 	}
 }
 
+// Only the first PASSWORD_CRYPT_KEY_SIZE bytes of the key are used, which is what the stored password blobs were
+// written with: do not change
+static CRYPT *NewPasswordCrypt()
+{
+	return NewCrypt(PASSWORD_CRYPT_KEY, PASSWORD_CRYPT_KEY_SIZE);
+}
+
 static char *DecryptPassword(BUF *b)
 {
 	char *str;
-	char *key = "EncryptPassword";
 	CRYPT *c;
 	if (b == NULL)
 	{
@@ -1907,7 +1914,7 @@ static char *DecryptPassword(BUF *b)
 	}
 
 	str = ZeroMalloc(b->Size + 1);
-	c = NewCrypt(key, sizeof(key)); // Intentional (symmetric cipher), not a bug: do not change
+	c = NewPasswordCrypt();
 	Encrypt(c, str, b->Buf, b->Size);
 	FreeCrypt(c);
 
@@ -1920,7 +1927,6 @@ static BUF *EncryptPassword(char *password)
 {
 	UCHAR *tmp;
 	UINT size;
-	char *key = "EncryptPassword";
 	CRYPT *c;
 	BUF *b;
 	if (password == NULL)
@@ -1931,7 +1937,7 @@ static BUF *EncryptPassword(char *password)
 	size = StrLen(password) + 1;
 	tmp = ZeroMalloc(size);
 
-	c = NewCrypt(key, sizeof(key)); // Intentional, not a bug: do not change
+	c = NewPasswordCrypt();
 	Encrypt(c, tmp, password, size - 1);
 	FreeCrypt(c);
 

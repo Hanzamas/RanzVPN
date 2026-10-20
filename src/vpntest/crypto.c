@@ -1,13 +1,13 @@
 // crypto.c
 // Known-answer tests of the Mayaqua hash, cipher and random primitives ("crypto" command of vpntest)
 //
-// Pins the outputs that ticket #87 must keep when MD4, MD5, SHA-1, RC4, DES and the random
+// Pins the outputs that ticket #87 must keep when MD4, MD5, SHA-1, RC4 and the random
 // generator move from OpenSSL to CNG, plus SHA-0 (own code: CNG has no SHA-0) and SHA-256
 // (stays on OpenSSL). The hash vectors are the RFC 1320 and RFC 1321 test suites and the FIPS 180
-// messages, the RC4 vectors come from RFC 6229 and the DES vectors from FIPS 81 and the DES
-// literature; a value marked "computed" was made with two independent implementations. All of
-// them hold for the OpenSSL code and for CNG alike, so the test runs against both. The one
-// exception is the 65-byte RC4 key, which pins the CNG code: Encrypt() writes zeros for it.
+// messages and the RC4 vectors come from RFC 6229; a value marked "computed" was made with two
+// independent implementations. All of them hold for the OpenSSL code and for CNG alike, so the
+// test runs against both. The one exception is the 65-byte RC4 key, which pins the CNG code:
+// Encrypt() writes zeros for it.
 // The test prints "CRYPTO TEST OK" only when every check passes, and frees everything it
 // allocates, so that the run still ends with "NO MEMORY LEAKS". The [PASS] lines carry only
 // fixed values; the [FAIL] details show what was computed.
@@ -23,6 +23,9 @@
 
 #include <stdarg.h>
 #include <string.h>
+
+#include <openssl/bn.h>
+#include <openssl/dh.h>
 
 // Sizes and limits
 #define	KAT_MD4_SIZE			16			// MD4 digest (bytes)
@@ -436,60 +439,6 @@ static void KatRc4(KAT_CTX *ctx)
 	KatCheck(ctx, KatAllBytes(out, sizeof(out), 0), "RC4 with a 65-byte key writes zeros", "got %s", got);
 }
 
-// One DES vector: DesEcbEncrypt() takes the 56 key bits without the parity bits, 7 bytes
-static void KatDes(KAT_CTX *ctx, char *key56_hex, char *key64_hex, char *plain_hex, char *expect_hex, char *source)
-{
-	BUF *key = StrToBin(key56_hex);
-	BUF *plain = StrToBin(plain_hex);
-	UCHAR out[8 + KAT_GUARD];
-	char got[8 * 2 + 1];
-	char what[MAX_SIZE];
-
-	Zero(out, sizeof(out));
-	memset(out + 8, KAT_GUARD_BYTE, KAT_GUARD);
-
-	DesEcbEncrypt(out, plain->Buf, key->Buf);
-
-	Format(what, sizeof(what), "DES-ECB key %s (%s), block %s = %s (%s)", key56_hex, key64_hex, plain_hex, expect_hex, source);
-	KatCheck(ctx, KatHexEq(out, 8, expect_hex, got, sizeof(got)) && KatAllBytes(out + 8, KAT_GUARD, KAT_GUARD_BYTE),
-		what, "got %s", got);
-
-	FreeBuf(plain);
-	FreeBuf(key);
-}
-
-// The DES checks
-static void KatDesSuite(KAT_CTX *ctx)
-{
-	BUF *key = StrToBin("12695BC9B7B7F8");
-	BUF *plain = StrToBin("0123456789ABCDEF");
-	UCHAR buf[8];
-	UCHAR before[8];
-	char got[sizeof(buf) * 2 + 1];
-
-	KatDes(ctx, "00451338957377", "0123456789ABCDEF", "4E6F772069732074", "3FA40E8A984D4815", "FIPS 81, \"Now is t\"");
-	KatDes(ctx, "12695BC9B7B7F8", "133457799BBCDFF1", "0123456789ABCDEF", "85E813540F0AB405", "published worked example");
-	KatDes(ctx, "0E66499EAD8339", "0E329232EA6D0D73", "8787878787878787", "0000000000000000", "published");
-
-	// The weak key 0101010101010101: the third MS-CHAPv2 key when the NT hash ends in 00 00
-	KatDes(ctx, "00000000000000", "0101010101010101", "0000000000000000", "8CA64DE9C1B123A7", "published, weak key");
-
-	// Destination and source in the same buffer
-	Copy(buf, plain->Buf, sizeof(buf));
-	DesEcbEncrypt(buf, buf, key->Buf);
-	KatCheck(ctx, KatHexEq(buf, sizeof(buf), "85E813540F0AB405", got, sizeof(got)), "DES-ECB in place", "got %s", got);
-
-	// Missing arguments are ignored
-	Copy(before, buf, sizeof(buf));
-	DesEcbEncrypt(NULL, plain->Buf, key->Buf);
-	DesEcbEncrypt(buf, NULL, key->Buf);
-	DesEcbEncrypt(buf, plain->Buf, NULL);
-	KatCheck(ctx, Cmp(buf, before, sizeof(buf)) == 0, "DES-ECB with a missing argument writes nothing", "destination was written");
-
-	FreeBuf(plain);
-	FreeBuf(key);
-}
-
 // Number of 1 bits in a byte
 static UINT KatBits(UCHAR b)
 {
@@ -618,6 +567,60 @@ static void KatRsaSign(KAT_CTX *ctx)
 	FreeK(k);
 }
 
+// Prime sizes of DhNewFromBits and the SHA-256 of the big-endian bytes of the prime each one had as a hex macro
+// in Encrypt.h (FND-178). All primes but the 160-bit one are the RFC 2409 and RFC 3526 MODP groups, with g = 2.
+static struct
+{
+	UINT Bits;				// Argument of DhNewFromBits
+	UINT PrimeBits;			// Bits of the prime it gives
+	char *PrimeSha256;
+} kat_dh[] =
+{
+	{ 160, 160, "4223804f2b9f868b612cc5ca4fce460d5fa9a9341fee7bab79333db5bb45c55c" },
+	{ 768, 768, "b52ba6a3026520a6c49d37e4587601801bee500123b3259b6bf03e7cecc3e63d" },
+	{ 1024, 1024, "3f35a3f5f6c4376a744acad409bb22f8d897f949d2311d885adaa890981b67a0" },
+	{ 1536, 1536, "64fcc83ec403930bf18393dbc883ccaa1fbb08ac876f77f7aa99748ca945019b" },
+	{ 2048, 2048, "d66436f79bbd6b2e38c0ffbd079be904d2641415e2e67140e09448be9a60890e" },
+	{ 3072, 3072, "48cf8b092fbce4359d9871abf74f98e25b6163379eaa15cd9087e800c6d1c55c" },
+	{ 4096, 4096, "4ee95187682bcb230ad26a95205f6920e84708f6251b3894329b09ec23919e33" },
+	{ 12345, 2048, "d66436f79bbd6b2e38c0ffbd079be904d2641415e2e67140e09448be9a60890e" },
+};
+
+// DhNewFromBits known answer: the prime and the generator of each size
+static void KatDhParams(KAT_CTX *ctx)
+{
+	UINT i;
+
+	for (i = 0;i < sizeof(kat_dh) / sizeof(kat_dh[0]);i++)
+	{
+		DH_CTX *d = DhNewFromBits(kat_dh[i].Bits);
+		const BIGNUM *p = NULL, *g = NULL;
+		UCHAR raw[4096 / 8];
+		UCHAR digest[SHA256_SIZE];
+		char got[SHA256_SIZE * 2 + 1];
+		char what[MAX_SIZE];
+		bool same = false;
+
+		got[0] = 0;
+		if (d != NULL && d->dh != NULL)
+		{
+			DH_get0_pqg(d->dh, &p, NULL, &g);
+		}
+		if (p != NULL && g != NULL && BN_num_bits(p) == kat_dh[i].PrimeBits && BN_num_bytes(p) <= (int)sizeof(raw))
+		{
+			UINT size = (UINT)BN_bn2bin(p, raw);
+
+			Sha2_256(digest, raw, size);
+			same = KatHexEq(digest, sizeof(digest), kat_dh[i].PrimeSha256, got, sizeof(got)) && BN_is_word((BIGNUM *)g, 2);
+		}
+
+		Format(what, sizeof(what), "DhNewFromBits(%u): the prime of %u bits and the generator 2 of the old constants", kat_dh[i].Bits, kat_dh[i].PrimeBits);
+		KatCheck(ctx, same, what, "prime hash %s", got);
+
+		DhFree(d);
+	}
+}
+
 // Crypto known-answer test
 void crypto_test(UINT num, char **arg)
 {
@@ -627,7 +630,7 @@ void crypto_test(UINT num, char **arg)
 	Zero(&ctx, sizeof(ctx));
 	memset(million, 'a', KAT_MILLION);
 
-	Print("Crypto known-answer test (MD4, MD5, SHA-0, SHA-1, SHA-256, RC4, DES, random generator, RSA signature)\n");
+	Print("Crypto known-answer test (MD4, MD5, SHA-0, SHA-1, SHA-256, RC4, random generator, RSA signature, DH primes)\n");
 
 	KatHashSuite(&ctx, "HashMd4", HashMd4, KAT_MD4_SIZE, kat_md4, million);
 	KatHashSuite(&ctx, "Md5", Md5, MD5_SIZE, kat_md5, million);
@@ -640,9 +643,9 @@ void crypto_test(UINT num, char **arg)
 	KatHashPassword(&ctx, "Admin", "secret", "E42FD00C3851B20799272935805AF344FFAB5D59");
 
 	KatRc4(&ctx);
-	KatDesSuite(&ctx);
 	KatRand(&ctx);
 	KatRsaSign(&ctx);
+	KatDhParams(&ctx);
 
 	Free(million);
 

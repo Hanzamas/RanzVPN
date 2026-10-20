@@ -8,16 +8,6 @@
 #include "Session.h"
 #include "UdpAccel.h"
 
-struct CHECK_CERT_THREAD_PROC
-{
-	CONNECTION *Connection;
-	X *ServerX;
-	CHECK_CERT_PROC *CheckCertProc;
-	bool UserSelected;
-	bool Expired;
-	bool Ok;
-};
-
 #define	CERT_HTTP_DOWNLOAD_MAXSIZE	65536
 #define	CERT_HTTP_DOWNLOAD_TIMEOUT	(10 * 1000)
 #define	ROOT_CERTS_FILENAME			"|root_certs.dat"

@@ -7,7 +7,6 @@
 #include "Cedar.h"
 #include "Connection.h"
 #include "Hub.h"
-#include "MsChapV2.h"
 #include "Server.h"
 
 #include "Mayaqua/Internat.h"
@@ -299,27 +298,14 @@ POLICY *SamGetUserPolicy(HUB *h, char *username)
 	return ret;
 }
 
-bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_password, char *mschap_v2_password, UCHAR *mschap_v2_server_response_20, UINT *err)
+bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_password)
 {
 	bool b = false;
 	UCHAR secure_password_check[SHA1_SIZE];
-	bool is_mschap = false;
-	IPC_MSCHAP_V2_AUTHINFO mschap;
-	UINT dummy = 0;
 	if (h == NULL || username == NULL || secure_password == NULL)
 	{
 		return false;
 	}
-	if (err == NULL)
-	{
-		err = &dummy;
-	}
-
-	*err = 0;
-
-	Zero(&mschap, sizeof(mschap));
-
-	is_mschap = ParseAndExtractMsChapV2InfoFromPassword(&mschap, mschap_v2_password);
 
 	if (StrCmpi(username, ADMINISTRATOR_USERNAME) == 0)
 	{
@@ -339,40 +325,10 @@ bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_pa
 				{
 					AUTHPASSWORD *auth = (AUTHPASSWORD *)u->AuthData;
 
-					if (is_mschap == false)
+					SecurePassword(secure_password_check, auth->HashedKey, random);
+					if (Cmp(secure_password_check, secure_password, SHA1_SIZE) == 0)
 					{
-						SecurePassword(secure_password_check, auth->HashedKey, random);
-						b = (Cmp(secure_password_check, secure_password, SHA1_SIZE) == 0);
-					}
-					else
-					{
-						UCHAR challenge8[8];
-						UCHAR client_response[24];
-
-						if (IsZero(auth->NtLmSecureHash, MD5_SIZE))
-						{
-							*err = ERR_MSCHAP2_PASSWORD_NEED_RESET;
-						}
-						else
-						{
-							UCHAR nt_pw_hash_hash[16];
-							Zero(challenge8, sizeof(challenge8));
-							Zero(client_response, sizeof(client_response));
-
-							MsChapV2_GenerateChallenge8(challenge8, mschap.MsChapV2_ClientChallenge, mschap.MsChapV2_ServerChallenge,
-								mschap.MsChapV2_PPPUsername);
-
-							MsChapV2Client_GenerateResponse(client_response, challenge8, auth->NtLmSecureHash);
-
-							if (Cmp(client_response, mschap.MsChapV2_ClientResponse, 24) == 0)
-							{
-								b = true;
-
-								GenerateNtPasswordHashHash(nt_pw_hash_hash, auth->NtLmSecureHash);
-								MsChapV2Server_GenerateResponse(mschap_v2_server_response_20, nt_pw_hash_hash,
-									client_response, challenge8);
-							}
-						}
+						b = true;
 					}
 				}
 			}

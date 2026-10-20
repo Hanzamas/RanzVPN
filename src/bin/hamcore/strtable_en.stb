@@ -177,7 +177,6 @@ ERR_134					The specified Dynamic DNS hostname has an invalid characters. Please
 ERR_135					The length of the specified Dynamic DNS hostname is too long. A hostname must be equal or shorter than 31 letters.
 ERR_136					The Dynamic DNS hostname is not specified.
 ERR_137					The length of the specified Dynamic DNS hostname is too short. A hostname must be equal or longer than 3 letters.
-ERR_138					The password of the specified user in the Virtual Hub must be reset before using MS-CHAP v2 authentication. Please ask the administrator of the VPN Server to reset the password by the VPN Server Manager or vpncmd which internal version is 4.0 or greater. Or you can change the password with VPN Client by yourself.
 ERR_139					The connection to the Dynamic DNS server has been disconnected.
 ERR_140					Failed to initialize the ICMP (Ping) protocol. The process of the VPN Server might be running in a normal-user privileges. In such case, run the VPN Server as a system service. (in Linux / UNIX, run it in root privileges.)
 ERR_141					Failed to open the DNS port 53. Make sure that there are no other DNS server program (for example, BIND or Microsoft DNS Server) on the same computer. If there are conflicting services stop them. Or run the VPN Server's process in root privileges on Linux / UNIX/
@@ -207,16 +206,6 @@ PW_TYPE_1				Standard Password Authentication
 PW_TYPE_2				RADIUS or NT Domain Authentication
 PW_TYPE_3				Client Certificate Authentication
 PW_TYPE_5				OpenSSL Engine Authentication
-
-
-# Concerning VPN connection status
-STATUS_1				Initializing...
-STATUS_2				Connecting to VPN Server "%S" via Proxy Server %S...
-STATUS_4				Connecting to VPN Server "%S"...
-STATUS_5				Verifying Server Certificate...
-STATUS_6				Authenticating User...
-STATUS_7				Establishing VPN Session...
-STATUS_9				VPN Session has been established.
 
 
 # Errors about Windows Versions
@@ -251,9 +240,6 @@ HUB_AO_deny_qos							If you set this option to non-zero value, then every VPN S
 HUB_AO_deny_change_user_password		If you set this option to non-zero value, then any users on the Virtual Hub will be forbidden to change its password by VPN Client's password-changing function.
 HUB_AO_no_change_users					If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to add, edit or remove a user.
 HUB_AO_no_change_groups					If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to add, edit or remove a group.
-HUB_AO_no_securenat						If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to enable or disable the SecureNAT function.
-HUB_AO_no_securenat_enablenat			If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to enable or disable the Virtual NAT function in the SecureNAT function.
-HUB_AO_no_securenat_enabledhcp			If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to enable or disable the Virtual DHCP Server function in the SecureNAT function.
 HUB_AO_no_cascade						If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to add, edit, remove or change the online status of a cascade connection.
 HUB_AO_no_online						If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to change the offline Virtual Hub to the online state.
 HUB_AO_no_offline						If you set this option to non-zero value, then the administrator of the Virtual HUB will be forbidden to change the online Virtual Hub to the offline state.
@@ -323,8 +309,6 @@ HUB_AO_SuppressClientUpdateNotification		Suppress the update notification screen
 HUB_AO_FloodingSendQueueBufferQuota			Specify the quota limitation value (in bytes) of the sending queue buffer size which the flooding operation on the Virtual Hub can consume. The quota value is applied on the total length of sending queues of all active VPN sessions. Specify '0' to disable the quota. This option is effective to solve the out-of-memory problem on the network where there are many flooding packets.
 HUB_AO_DetectDormantSessionInterval			If you set this option to non-zero value, then the Virtual Hub will treat the VPN sessions, which have transmitted no packets for the last specified intervals (in seconds), as Dormant Sessions. The Virtual Hub will not flood packets, which should be flood, to any Dormant Sessions.
 HUB_AO_NoPhysicalIPOnPacketLog				If you set this option to non-zero value, then the physical IP addresses of VPN clients of either the source VPN session or the destination VPN session will not be recorded on the packet log file.
-HUB_AO_UseHubNameAsDhcpUserClassOption		If you set this option to non-zero value, then the Virtual Hub Name will be added to a DHCP request to an external DHCP server as the "User-Class" option. This allows to use separate pools of IP addresses for each Virtual Hub. (For only L2TP/IPsec and OpenVPN sessions.)
-HUB_AO_AllowEapMatchUserByCert				If you enable (set to 1) this option, the Virtual Hub will attempt to match the EAP Identity not only with usernames, but also with user certificates during the PPP EAP authentication flow.
 
 
 # Concerning protocols
@@ -834,6 +818,7 @@ LS_LOAD_CONFIG_2		The configuration file has been loaded.
 LS_LOAD_CONFIG_3		Configuration file does not exist. Attempting to start using initial settings.
 LS_INIT_SAVE_THREAD		Starting the automatically saving background task. The interval between auto-saves is %u seconds. You can change the interval by changing the parameter AutoSaveConfigSpan in the configuration file.
 LS_BAD_CONFIG			The contents of the configuration file is invalid. The loading process has been terminated.
+LS_DEFAULT_CERT_FAILED		The default server certificate could not be generated. The server has no certificate, so TLS connections will be refused until one is installed.
 LS_CONFIG_SET_ASIDE		The configuration file "%s" could not be read. It is kept as "%s.bad", and the server starts with the initial settings.
 LS_CONFIG_SET_ASIDE_FAILED	The configuration file "%s" could not be read, and renaming it to "%s.bad" failed. The server starts with the initial settings and does not save over the file until the rename succeeds.
 LS_SAVE_CONFIG_FAILED	Saving the configuration file "%s" failed. The save will be retried.

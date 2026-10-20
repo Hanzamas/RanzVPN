@@ -8,7 +8,6 @@
 #include "Hub.h"
 #include "Link.h"
 #include "Logging.h"
-#include "MsChapV2.h"
 #include "Sam.h"
 #include "Server.h"
 #include "UdpAccel.h"
@@ -22,13 +21,15 @@
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Object.h"
-#include "Mayaqua/OS.h"
 #include "Mayaqua/Pack.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 #include "Mayaqua/Tick64.h"
 
 #include <winhttp.h>
+
+// A plain password that starts with this tag is dropped: it used to select the MS-CHAPv2 path of IPC sessions
+#define	PLAIN_PASSWORD_RETIRED_MSCHAPV2_TAG	"xH7DiNlurDhcYV4a:"
 
 bool DownloadAndSaveIntermediateCertificatesIfNecessary(X *x)
 {
@@ -1792,8 +1793,6 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 	wchar_t *msg = NULL;
 	bool suppress_client_update_notification = false;
 	RPC_WINVER winver;
-	UCHAR mschap_v2_server_response_20[20];
-	UINT ms_chap_error = 0;
 	bool is_empty_password = false;
 
 	if (c == NULL || login == NULL)
@@ -1804,8 +1803,6 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 	Zero(&req, sizeof(req));
 	Zero(&hub_login, sizeof(hub_login));
 	Zero(&slot, sizeof(slot));
-
-	Zero(mschap_v2_server_response_20, sizeof(mschap_v2_server_response_20));
 
 	Zero(&winver, sizeof(winver));
 
@@ -1881,7 +1878,7 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 			goto CLEANUP;
 		}
 
-		if (req.UseUdpAcceleration && IsZeroIp(&req.UdpAccelClientIp))
+		if (req.UseUdpAcceleration && IsZeroIP(&req.UdpAccelClientIp))
 		{
 			Copy(&req.UdpAccelClientIp, &c->FirstSock->RemoteIP, sizeof(IP));
 		}
@@ -2001,7 +1998,7 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 						UCHAR secure_password[SHA1_SIZE];
 						Zero(secure_password, sizeof(secure_password));
 						PackGetData(p, "secure_password", secure_password);
-						auth_ret = SamAuthUserByPassword(hub, username, c->Random, secure_password, NULL, NULL, NULL);
+						auth_ret = SamAuthUserByPassword(hub, username, c->Random, secure_password);
 
 						pol = SamGetUserPolicy(hub, username);
 						if (pol != NULL)
@@ -2025,45 +2022,31 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 				case CLIENT_AUTHTYPE_PLAIN_PASSWORD:
 					{
 						POLICY *pol = NULL;
+						UCHAR secure_password[SHA1_SIZE];
+						UCHAR hash_password[SHA1_SIZE];
 
 						Zero(plain_password, sizeof(plain_password));
 						PackGetStr(p, "plain_password", plain_password, sizeof(plain_password));
-						if (StartWith(plain_password, IPC_PASSWORD_MSCHAPV2_TAG))
+						if (StartWith(plain_password, PLAIN_PASSWORD_RETIRED_MSCHAPV2_TAG))
 						{
 							// Do not allow the MS-CHAPv2 authentication (it was only available to IPC sessions)
 							Zero(plain_password, sizeof(plain_password));
 						}
 
-						if (auth_ret == false)
+						HashPassword(hash_password, username, plain_password);
+						SecurePassword(secure_password, hash_password, c->Random);
+						auth_ret = SamAuthUserByPassword(hub, username, c->Random, secure_password);
+
+						if (auth_ret)
 						{
-							UCHAR secure_password[SHA1_SIZE];
-							UCHAR hash_password[SHA1_SIZE];
-							bool is_mschap = StartWith(plain_password, IPC_PASSWORD_MSCHAPV2_TAG);
-
-							HashPassword(hash_password, username, plain_password);
-							SecurePassword(secure_password, hash_password, c->Random);
-
-							if (is_mschap == false)
-							{
-								auth_ret = SamAuthUserByPassword(hub, username, c->Random, secure_password, NULL, NULL, NULL);
-							}
-							else
-							{
-								auth_ret = SamAuthUserByPassword(hub, username, c->Random, secure_password,
-									plain_password, mschap_v2_server_response_20, &ms_chap_error);
-							}
-
-							if (auth_ret && pol == NULL)
-							{
-								pol = SamGetUserPolicy(hub, username);
-							}
+							pol = SamGetUserPolicy(hub, username);
 						}
 
 						if (auth_ret == false)
 						{
 							auth_ret = SamAuthUserByPlainPassword(hub, username, plain_password);
 
-							if (auth_ret && pol == NULL)
+							if (auth_ret)
 							{
 								pol = SamGetUserPolicy(hub, username);
 							}
@@ -2143,10 +2126,6 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 				ReleaseHub(hub);
 				FreePack(p);
 				c->Err = ERR_AUTH_FAILED;
-				if (ms_chap_error != 0)
-				{
-					c->Err = ms_chap_error;
-				}
 				goto CLEANUP;
 			}
 			else
@@ -2582,7 +2561,6 @@ static void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
 {
 	SESSION *s;
 	OS_INFO *os;
-	char *product_id;
 	IP ip;
 	wchar_t namew[256];
 	char namea[256];
@@ -2607,9 +2585,7 @@ static void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
 
 	StrCpy(info->ClientOsName, sizeof(info->ClientOsName), os->OsProductName);
 	StrCpy(info->ClientOsVer, sizeof(info->ClientOsVer), os->OsVersion);
-	product_id = OSGetProductId();
-	StrCpy(info->ClientOsProductId, sizeof(info->ClientOsProductId), product_id);
-	Free(product_id);
+	StrCpy(info->ClientOsProductId, sizeof(info->ClientOsProductId), "--");
 
 	Zero(namew, sizeof(namew));
 	MsGetComputerNameFullEx(namew, sizeof(namew), true);
@@ -2870,91 +2846,9 @@ CLEANUP:
 	return false;
 }
 
-static void ClientCheckServerCertThread(THREAD *thread, void *param)
-{
-	CHECK_CERT_THREAD_PROC *p = (CHECK_CERT_THREAD_PROC *)param;
-	if (thread == NULL || param == NULL)
-	{
-		return;
-	}
-
-	NoticeThreadInit(thread);
-
-	p->Ok = p->CheckCertProc(p->Connection->Session, p->Connection, p->ServerX, &p->Expired);
-	p->UserSelected = true;
-}
-
-static bool ClientCheckServerCert(CONNECTION *c, bool *expired)
-{
-	CLIENT_AUTH *auth;
-	X *x;
-	CHECK_CERT_THREAD_PROC *p;
-	THREAD *thread;
-	bool ret;
-	UINT64 start;
-	if (c == NULL)
-	{
-		return false;
-	}
-
-	if (expired != NULL)
-	{
-		*expired = false;
-	}
-
-	auth = c->Session->ClientAuth;
-
-	if (auth->CheckCertProc == NULL)
-	{
-		return false;
-	}
-
-	x = CloneX(c->FirstSock->RemoteX);
-	if (x == NULL)
-	{
-		return false;
-	}
-
-	p = ZeroMalloc(sizeof(CHECK_CERT_THREAD_PROC));
-	p->ServerX = x;
-	p->CheckCertProc = auth->CheckCertProc;
-	p->Connection = c;
-
-	thread = NewThread(ClientCheckServerCertThread, p);
-	WaitThreadInit(thread);
-
-	start = Tick64();
-	while (true)
-	{
-		if ((Tick64() - start) > CONNECTING_POOLING_SPAN)
-		{
-			start = Tick64();
-			// No NOOP here: the user is asked before the signature is sent.
-		}
-		if (p->UserSelected)
-		{
-			break;
-		}
-		WaitThread(thread, 500);
-	}
-
-	if (expired != NULL)
-	{
-		*expired = p->Expired;
-	}
-
-	ret = p->Ok;
-	FreeX(p->ServerX);
-	Free(p);
-	ReleaseThread(thread);
-
-	return ret;
-}
-
 bool ClientConnect(CONNECTION *c)
 {
 	bool ret = false;
-	bool ok = false;
 	UINT err;
 	SOCK *s;
 	PACK *p = NULL;
@@ -2964,7 +2858,6 @@ bool ClientConnect(CONNECTION *c)
 	char connection_name[MAX_CONNECTION_NAME_LEN + 1];
 	UCHAR session_key[SHA1_SIZE];
 	POLICY *policy;
-	bool expired = false;
 	IP server_ip;
 	UINT utf_size;
 	char *utf;
@@ -2976,9 +2869,6 @@ bool ClientConnect(CONNECTION *c)
 
 	sess = c->Session;
 
-	PrintStatus(sess, L"init");
-	PrintStatus(sess, _UU("STATUS_1"));
-
 	c->Status = CONNECTION_STATUS_CONNECTING;
 	c->Session->ClientStatus = CLIENT_STATUS_CONNECTING;
 
@@ -2986,33 +2876,11 @@ bool ClientConnect(CONNECTION *c)
 	if (s == NULL)
 	{
 		// Do not retry if untrusted or hostname mismatched
-		if (c->Session->LinkModeClient == false && (c->Err == ERR_CERT_NOT_TRUSTED || c->Err == ERR_HOSTNAME_MISMATCH)
-			&& (c->Session->Account == NULL || ! c->Session->Account->RetryOnServerCert))
+		if (c->Session->LinkModeClient == false && (c->Err == ERR_CERT_NOT_TRUSTED || c->Err == ERR_HOSTNAME_MISMATCH))
 		{
 			c->Session->ForceStopFlag = true;
 		}
-		PrintStatus(sess, L"free");
 		return false;
-	}
-
-	PrintStatus(sess, _UU("STATUS_5"));
-
-	// Prompt user whether to continue on verification errors
-	if ((c->Err == ERR_CERT_NOT_TRUSTED || c->Err == ERR_HOSTNAME_MISMATCH || c->Err == ERR_SERVER_CERT_EXPIRES) && ClientCheckServerCert(c, &expired) == false)
-	{
-		if (expired)
-		{
-			c->Err = ERR_SERVER_CERT_EXPIRES;
-		}
-
-		// Do not retry if untrusted or hostname mismatched
-		if (c->Session->LinkModeClient == false && (c->Err == ERR_CERT_NOT_TRUSTED || c->Err == ERR_HOSTNAME_MISMATCH)
-			&& (c->Session->Account == NULL || ! c->Session->Account->RetryOnServerCert))
-		{
-			c->Session->ForceStopFlag = true;
-		}
-
-		goto CLEANUP;
 	}
 
 	Copy(&server_ip, &s->RemoteIP, sizeof(IP));
@@ -3067,8 +2935,6 @@ bool ClientConnect(CONNECTION *c)
 
 	c->Session->ClientStatus = CLIENT_STATUS_AUTH;
 
-	PrintStatus(sess, _UU("STATUS_6"));
-
 	if (ClientUploadAuth(c) == false)
 	{
 		goto CLEANUP;
@@ -3116,8 +2982,6 @@ bool ClientConnect(CONNECTION *c)
 	}
 
 	Free(utf);
-
-	PrintStatus(sess, _UU("STATUS_7"));
 
 	if (ParseWelcomeFromPack(p, session_name, sizeof(session_name),
 		connection_name, sizeof(connection_name), &policy) == false)
@@ -3189,7 +3053,7 @@ bool ClientConnect(CONNECTION *c)
 				{
 					UINT udp_acceleration_server_port = PackGetInt(p, "udp_acceleration_server_port");
 
-					if (IsZeroIp(&udp_acceleration_server_ip))
+					if (IsZeroIP(&udp_acceleration_server_ip))
 					{
 						Copy(&udp_acceleration_server_ip, &s->RemoteIP, sizeof(IP));
 					}
@@ -3309,7 +3173,6 @@ bool ClientConnect(CONNECTION *c)
 		c->ServerX = CloneX(c->FirstSock->RemoteX);
 	}
 
-	PrintStatus(sess, _UU("STATUS_9"));
 	StartTunnelingMode(c);
 	s = NULL;
 
@@ -3319,16 +3182,12 @@ bool ClientConnect(CONNECTION *c)
 		ts->Direction = TCP_CLIENT_TO_SERVER;
 	}
 
-	PrintStatus(sess, L"free");
-
 	if (c->Session->LinkModeClient && c->Session->Link != NULL)
 	{
 		HLog(c->Session->Link->Hub, "LH_CONNECT_2", c->Session->ClientOption->AccountName, session_name);
 	}
 
 	SessionMain(c->Session);
-
-	ok = true;
 
 	if (c->Err == ERR_USER_CANCEL)
 	{
@@ -3356,12 +3215,6 @@ CLEANUP:
 
 	Disconnect(s);
 	ReleaseSock(s);
-
-
-	if (ok == false)
-	{
-		PrintStatus(sess, L"free");
-	}
 
 	return ret;
 }
@@ -3453,15 +3306,6 @@ PACK *PackWelcome(SESSION *s)
 	return p;
 }
 
-#define	PACK_ADD_POLICY_BOOL(name, value)	\
-	PackAddBool(p, "policy:" name, y->value == false ? 0 : 1)
-#define	PACK_ADD_POLICY_UINT(name, value)	\
-	PackAddInt(p, "policy:" name, y->value)
-#define	PACK_GET_POLICY_BOOL(name, value)	\
-	y->value = (PackGetBool(p, "policy:" name))
-#define	PACK_GET_POLICY_UINT(name, value)	\
-	y->value = PackGetInt(p, "policy:" name)
-
 bool GetSessionKeyFromPack(PACK *p, UCHAR *session_key, UINT *session_key_32)
 {
 	if (p == NULL || session_key == NULL || session_key_32 == NULL)
@@ -3485,6 +3329,7 @@ bool GetSessionKeyFromPack(PACK *p, UCHAR *session_key, UINT *session_key_32)
 POLICY *PackGetPolicy(PACK *p)
 {
 	POLICY *y;
+	UINT i;
 	if (p == NULL)
 	{
 		return NULL;
@@ -3492,106 +3337,46 @@ POLICY *PackGetPolicy(PACK *p)
 
 	y = ZeroMalloc(sizeof(POLICY));
 
-	// Ver 2
-	PACK_GET_POLICY_BOOL("Access", Access);
-	PACK_GET_POLICY_BOOL("DHCPFilter", DHCPFilter);
-	PACK_GET_POLICY_BOOL("DHCPNoServer", DHCPNoServer);
-	PACK_GET_POLICY_BOOL("DHCPForce", DHCPForce);
-	PACK_GET_POLICY_BOOL("NoBridge", NoBridge);
-	PACK_GET_POLICY_BOOL("NoRouting", NoRouting);
-	PACK_GET_POLICY_BOOL("PrivacyFilter", PrivacyFilter);
-	PACK_GET_POLICY_BOOL("NoServer", NoServer);
-	PACK_GET_POLICY_BOOL("CheckMac", CheckMac);
-	PACK_GET_POLICY_BOOL("CheckIP", CheckIP);
-	PACK_GET_POLICY_BOOL("ArpDhcpOnly", ArpDhcpOnly);
-	PACK_GET_POLICY_BOOL("MonitorPort", MonitorPort);
-	PACK_GET_POLICY_BOOL("NoBroadcastLimiter", NoBroadcastLimiter);
-	PACK_GET_POLICY_BOOL("FixPassword", FixPassword);
-	PACK_GET_POLICY_BOOL("NoQoS", NoQoS);
-	// Ver 3
-	PACK_GET_POLICY_BOOL("RSandRAFilter", RSandRAFilter);
-	PACK_GET_POLICY_BOOL("RAFilter", RAFilter);
-	PACK_GET_POLICY_BOOL("DHCPv6Filter", DHCPv6Filter);
-	PACK_GET_POLICY_BOOL("DHCPv6NoServer", DHCPv6NoServer);
-	PACK_GET_POLICY_BOOL("NoRoutingV6", NoRoutingV6);
-	PACK_GET_POLICY_BOOL("CheckIPv6", CheckIPv6);
-	PACK_GET_POLICY_BOOL("NoServerV6", NoServerV6);
-	PACK_GET_POLICY_BOOL("NoSavePassword", NoSavePassword);
-	PACK_GET_POLICY_BOOL("FilterIPv4", FilterIPv4);
-	PACK_GET_POLICY_BOOL("FilterIPv6", FilterIPv6);
-	PACK_GET_POLICY_BOOL("FilterNonIP", FilterNonIP);
-	PACK_GET_POLICY_BOOL("NoIPv6DefaultRouterInRA", NoIPv6DefaultRouterInRA);
-	PACK_GET_POLICY_BOOL("NoIPv6DefaultRouterInRAWhenIPv6", NoIPv6DefaultRouterInRAWhenIPv6);
+	for (i = 0;i < NUM_POLICY_ITEM;i++)
+	{
+		POLICY_ITEM *item = &policy_item[i];
+		char name[MAX_SIZE];
 
-	// Ver 2
-	PACK_GET_POLICY_UINT("MaxConnection", MaxConnection);
-	PACK_GET_POLICY_UINT("TimeOut", TimeOut);
-	PACK_GET_POLICY_UINT("MaxMac", MaxMac);
-	PACK_GET_POLICY_UINT("MaxIP", MaxIP);
-	PACK_GET_POLICY_UINT("MaxUpload", MaxUpload);
-	PACK_GET_POLICY_UINT("MaxDownload", MaxDownload);
-	PACK_GET_POLICY_UINT("MultiLogins", MultiLogins);
-	// Ver 3
-	PACK_GET_POLICY_UINT("MaxIPv6", MaxIPv6);
-	PACK_GET_POLICY_UINT("AutoDisconnect", AutoDisconnect);
-	PACK_GET_POLICY_UINT("VLanId", VLanId);
+		Format(name, sizeof(name), "policy:%s", item->Name);
+
+		SetPolicyValue(y, i, item->TypeInt ? PackGetInt(p, name) : PackGetBool(p, name));
+	}
 
 	// Ver 3 flag
-	PACK_GET_POLICY_BOOL("Ver3", Ver3);
+	y->Ver3 = PackGetBool(p, "policy:Ver3");
 
 	return y;
 }
 
 void PackAddPolicy(PACK *p, POLICY *y)
 {
+	UINT i;
 	if (p == NULL || y == NULL)
 	{
 		return;
 	}
 
-	// Ver 2
-	PACK_ADD_POLICY_BOOL("Access", Access);
-	PACK_ADD_POLICY_BOOL("DHCPFilter", DHCPFilter);
-	PACK_ADD_POLICY_BOOL("DHCPNoServer", DHCPNoServer);
-	PACK_ADD_POLICY_BOOL("DHCPForce", DHCPForce);
-	PACK_ADD_POLICY_BOOL("NoBridge", NoBridge);
-	PACK_ADD_POLICY_BOOL("NoRouting", NoRouting);
-	PACK_ADD_POLICY_BOOL("PrivacyFilter", PrivacyFilter);
-	PACK_ADD_POLICY_BOOL("NoServer", NoServer);
-	PACK_ADD_POLICY_BOOL("CheckMac", CheckMac);
-	PACK_ADD_POLICY_BOOL("CheckIP", CheckIP);
-	PACK_ADD_POLICY_BOOL("ArpDhcpOnly", ArpDhcpOnly);
-	PACK_ADD_POLICY_BOOL("MonitorPort", MonitorPort);
-	PACK_ADD_POLICY_BOOL("NoBroadcastLimiter", NoBroadcastLimiter);
-	PACK_ADD_POLICY_BOOL("FixPassword", FixPassword);
-	PACK_ADD_POLICY_BOOL("NoQoS", NoQoS);
-	// Ver 3
-	PACK_ADD_POLICY_BOOL("RSandRAFilter", RSandRAFilter);
-	PACK_ADD_POLICY_BOOL("RAFilter", RAFilter);
-	PACK_ADD_POLICY_BOOL("DHCPv6Filter", DHCPv6Filter);
-	PACK_ADD_POLICY_BOOL("DHCPv6NoServer", DHCPv6NoServer);
-	PACK_ADD_POLICY_BOOL("NoRoutingV6", NoRoutingV6);
-	PACK_ADD_POLICY_BOOL("CheckIPv6", CheckIPv6);
-	PACK_ADD_POLICY_BOOL("NoServerV6", NoServerV6);
-	PACK_ADD_POLICY_BOOL("NoSavePassword", NoSavePassword);
-	PACK_ADD_POLICY_BOOL("FilterIPv4", FilterIPv4);
-	PACK_ADD_POLICY_BOOL("FilterIPv6", FilterIPv6);
-	PACK_ADD_POLICY_BOOL("FilterNonIP", FilterNonIP);
-	PACK_ADD_POLICY_BOOL("NoIPv6DefaultRouterInRA", NoIPv6DefaultRouterInRA);
-	PACK_ADD_POLICY_BOOL("NoIPv6DefaultRouterInRAWhenIPv6", NoIPv6DefaultRouterInRAWhenIPv6);
+	for (i = 0;i < NUM_POLICY_ITEM;i++)
+	{
+		POLICY_ITEM *item = &policy_item[i];
+		char name[MAX_SIZE];
 
-	// Ver 2
-	PACK_ADD_POLICY_UINT("MaxConnection", MaxConnection);
-	PACK_ADD_POLICY_UINT("TimeOut", TimeOut);
-	PACK_ADD_POLICY_UINT("MaxMac", MaxMac);
-	PACK_ADD_POLICY_UINT("MaxIP", MaxIP);
-	PACK_ADD_POLICY_UINT("MaxUpload", MaxUpload);
-	PACK_ADD_POLICY_UINT("MaxDownload", MaxDownload);
-	PACK_ADD_POLICY_UINT("MultiLogins", MultiLogins);
-	// Ver 3
-	PACK_ADD_POLICY_UINT("MaxIPv6", MaxIPv6);
-	PACK_ADD_POLICY_UINT("AutoDisconnect", AutoDisconnect);
-	PACK_ADD_POLICY_UINT("VLanId", VLanId);
+		Format(name, sizeof(name), "policy:%s", item->Name);
+
+		if (item->TypeInt)
+		{
+			PackAddInt(p, name, GetPolicyValue(y, i));
+		}
+		else
+		{
+			PackAddBool(p, name, GetPolicyValue(y, i) != 0);
+		}
+	}
 
 	// Ver 3 flag
 	PackAddBool(p, "policy:Ver3", true);
@@ -4025,11 +3810,6 @@ SOCK *ClientConnectToServer(CONNECTION *c)
 		return NULL;
 	}
 
-	if (err != 0)
-	{
-		c->Err = err;
-	}
-
 	if (s->RemoteX == NULL)
 	{
 		Disconnect(s);
@@ -4094,10 +3874,6 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 
 	if (o->ProxyType == PROXY_DIRECT)
 	{
-		wchar_t tmp[MAX_SIZE];
-		UniFormat(tmp, sizeof(tmp), _UU("STATUS_4"), hostname);
-		PrintStatus(sess, tmp);
-
 		{
 			IP		*localIP;
 			UINT	localport;
@@ -4141,7 +3917,6 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 	}
 	else
 	{
-		wchar_t tmp[MAX_SIZE];
 		PROXY_PARAM_OUT out;
 		PROXY_PARAM_IN in;
 		UINT ret;
@@ -4184,9 +3959,6 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 		else {
 			in.BindLocalPort = sess->ClientOption->BindLocalPort + Count(sess->Connection->CurrentNumConnection) - 1;
 		}
-
-		UniFormat(tmp, sizeof(tmp), _UU("STATUS_2"), in.TargetHostname, in.Hostname);
-		PrintStatus(sess, tmp);
 
 		// An unknown proxy type gives PROXY_ERROR_PARAMETER, which is ERR_INTERNAL_ERROR
 		ret = ProxyConnect(o->ProxyType, &out, &in, cancel_flag);

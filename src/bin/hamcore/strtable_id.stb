@@ -177,7 +177,6 @@ ERR_134					Nama host DNS Dinamis yang ditentukan mengandung karakter tidak vali
 ERR_135					Panjang nama host DNS Dinamis yang ditentukan terlalu panjang. Nama host harus sama atau lebih pendek dari 31 huruf.
 ERR_136					Nama host DNS Dinamis tidak ditentukan.
 ERR_137					Panjang nama host DNS Dinamis yang ditentukan terlalu panjang. Nama host harus sama atau lebih panjang dari 3 huruf.
-ERR_138					Kata sandi pengguna yang ditentukan di Virtual Hub harus direset sebelum menggunakan otentikasi MS-CHAP v2. Harap minta administrator VPN Server untuk mereset kata sandi dengan VPN Server Manager atau vpncmd yang versi internalnya adalah 4.0 atau lebih besar. Atau Anda dapat mengubah kata sandi dengan VPN Client sendiri.
 ERR_139					Koneksi ke server DNS Dinamis telah terputus.
 ERR_140					Gagal menginisialisasi protokol ICMP (Ping). Proses VPN Server mungkin dijalankan dengan hak akses pengguna biasa. Dalam hal ini, jalankan VPN Server sebagai layanan sistem. (di Linux / UNIX, jalankan dengan hak akses root.)
 ERR_141					Gagal membuka port DNS 53. Pastikan tidak ada program server DNS lain (misalnya, BIND atau Microsoft DNS Server) yang berjalan di komputer yang sama. Jika ada layanan yang bertentangan, hentikan mereka. Atau jalankan proses VPN Server dengan hak akses root di Linux / UNIX.
@@ -207,16 +206,6 @@ PW_TYPE_1				Autentikasi Kata Sandi Standar
 PW_TYPE_2				Autentikasi RADIUS atau NT Domain
 PW_TYPE_3				Autentikasi Sertifikat Klien
 PW_TYPE_5				Autentikasi Mesin OpenSSL
-
-
-# Concerning VPN connection status
-STATUS_1                Menginisialisasi...
-STATUS_2                Menghubungkan ke Server VPN "%S" melalui Server Proxy %S...
-STATUS_4                Menghubungkan ke Server VPN "%S"...
-STATUS_5                Memverifikasi Sertifikat Server...
-STATUS_6                Mengautentikasi Pengguna...
-STATUS_7                Membangun Sesi VPN...
-STATUS_9                Sesi VPN telah berhasil dibangun.
 
 
 # Errors about Windows Versions
@@ -251,9 +240,6 @@ HUB_AO_deny_qos							Jika Anda mengatur opsi ini ke nilai non-nol, maka setiap 
 HUB_AO_deny_change_user_password		Jika Anda mengatur opsi ini ke nilai non-nol, maka pengguna di Virtual Hub akan dilarang untuk mengubah kata sandi mereka menggunakan fungsi pengubahan kata sandi dari VPN Client.\r\n
 HUB_AO_no_change_users					Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk menambahkan, mengedit, atau menghapus pengguna.\r\n
 HUB_AO_no_change_groups					Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk menambahkan, mengedit, atau menghapus grup.\r\n
-HUB_AO_no_securenat						Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengaktifkan atau menonaktifkan fungsi SecureNAT.\r\n
-HUB_AO_no_securenat_enablenat			Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengaktifkan atau menonaktifkan fungsi Virtual NAT dalam fungsi SecureNAT.\r\n
-HUB_AO_no_securenat_enabledhcp			Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengaktifkan atau menonaktifkan fungsi Virtual DHCP Server dalam fungsi SecureNAT.\r\n
 HUB_AO_no_cascade						Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk menambahkan, mengedit, menghapus, atau mengubah status online dari koneksi cascade.\r\n
 HUB_AO_no_online						Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengubah Virtual Hub yang offline menjadi status online.\r\n
 HUB_AO_no_offline						Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengubah Virtual Hub yang online menjadi status offline.\r\n
@@ -323,8 +309,6 @@ HUB_AO_SuppressClientUpdateNotification		Tekan tampilan pemberitahuan pembaruan 
 HUB_AO_FloodingSendQueueBufferQuota			Tentukan nilai batas kuota (dalam byte) ukuran buffer antrean pengiriman yang dapat dikonsumsi oleh operasi banjir pada Virtual Hub. Nilai kuota diterapkan pada total panjang antrean pengiriman dari semua sesi VPN aktif. Tentukan '0' untuk menonaktifkan kuota ini. Opsi ini efektif untuk mengatasi masalah kehabisan memori pada jaringan yang memiliki banyak paket banjir.\r\n
 HUB_AO_DetectDormantSessionInterval			Jika Anda mengatur opsi ini ke nilai non-nol, maka Virtual Hub akan menganggap sesi VPN yang tidak mengirimkan paket selama interval waktu tertentu (dalam detik) sebagai Sesi Dorman. Virtual Hub tidak akan membanjiri paket yang seharusnya dibanjiri ke Sesi Dorman.\r\n
 HUB_AO_NoPhysicalIPOnPacketLog				Jika Anda mengatur opsi ini ke nilai non-nol, maka alamat IP fisik dari VPN client, baik untuk sesi VPN sumber maupun sesi VPN tujuan, tidak akan dicatat pada file log paket.\r\n
-HUB_AO_UseHubNameAsDhcpUserClassOption		Jika Anda mengatur opsi ini ke nilai non-nol, maka Nama Virtual Hub akan ditambahkan ke permintaan DHCP ke server DHCP eksternal sebagai opsi "User-Class". Ini memungkinkan penggunaan kumpulan alamat IP terpisah untuk setiap Virtual Hub. (Hanya untuk sesi L2TP/IPsec dan OpenVPN.)\r\n
-HUB_AO_AllowEapMatchUserByCert				Jika Anda mengaktifkan (atur ke 1) opsi ini, Virtual Hub akan mencoba mencocokkan Identitas EAP tidak hanya dengan nama pengguna, tetapi juga dengan sertifikat pengguna selama alur otentikasi PPP EAP.\r\n
 
 
 # Concerning protocols
@@ -834,6 +818,7 @@ LS_LOAD_CONFIG_2		File konfigurasi telah dimuat.
 LS_LOAD_CONFIG_3		File konfigurasi tidak ada. Mencoba untuk memulai menggunakan pengaturan awal.
 LS_INIT_SAVE_THREAD		Memulai tugas latar belakang penyimpanan otomatis. Interval antara penyimpanan otomatis adalah %u detik. Anda dapat mengubah interval dengan mengubah parameter AutoSaveConfigSpan dalam file konfigurasi.
 LS_BAD_CONFIG			Konten file konfigurasi tidak valid. Proses pemuatan dihentikan.
+LS_DEFAULT_CERT_FAILED		Sertifikat server bawaan tidak dapat dibuat. Server tidak memiliki sertifikat, sehingga koneksi TLS akan ditolak sampai sertifikat dipasang.
 LS_CONFIG_SET_ASIDE		File konfigurasi "%s" tidak dapat dibaca. File disimpan sebagai "%s.bad", dan server dimulai dengan pengaturan awal.
 LS_CONFIG_SET_ASIDE_FAILED	File konfigurasi "%s" tidak dapat dibaca, dan penggantian namanya menjadi "%s.bad" gagal. Server dimulai dengan pengaturan awal dan tidak menyimpan di atas file tersebut sampai penggantian nama berhasil.
 LS_SAVE_CONFIG_FAILED	Penyimpanan file konfigurasi "%s" gagal. Penyimpanan akan dicoba lagi.

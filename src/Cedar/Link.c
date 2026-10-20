@@ -7,7 +7,6 @@
 #include "Connection.h"
 #include "Hub.h"
 #include "Logging.h"
-#include "Server.h"
 #include "Session.h"
 
 #include "Mayaqua/Internat.h"
@@ -627,7 +626,6 @@ LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, 
 	NormalizeLinkOption(o);
 
 	a = ClientAuthClone(auth);
-	a->CheckCertProc = NULL;
 
 	k = ZeroMalloc(sizeof(LINK));
 

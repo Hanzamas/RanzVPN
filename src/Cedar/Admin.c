@@ -9,7 +9,6 @@
 #include "Connection.h"
 #include "Link.h"
 #include "Listener.h"
-#include "MsChapV2.h"
 #include "Remote.h"
 #include "RpcField.h"
 #include "Protocol.h"
@@ -28,6 +27,7 @@
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 #include "Mayaqua/Tick64.h"
+#include "Mayaqua/Win32.h"
 
 static UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t);
 static UINT StSetHubMsg(ADMIN *a, RPC_MSG *t);
@@ -552,7 +552,11 @@ static UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t)
 
 	SERVER_ADMIN_ONLY;
 
-	SiGenerateDefaultCertEx(&x, &k, t->StrValue);
+	if (SiGenerateDefaultCertEx(&x, &k, t->StrValue) == false)
+	{
+		SLog(c, "LS_DEFAULT_CERT_FAILED");
+		return ERR_INTERNAL_ERROR;
+	}
 
 	SetCedarCertAndChain(c, x, k, NULL);
 
@@ -1231,7 +1235,7 @@ static UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 
 	LockList(h->AdminOptionList);
 	{
-		DeleteAllHubAdminOption(h, false);
+		DeleteAllHubAdminOption(h);
 
 		for (i = 0;i < t->NumItem;i++)
 		{
@@ -3151,7 +3155,7 @@ static UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 
 		if (t->Policy.Ver3 == false)
 		{
-			Copy(k->Policy, &t->Policy, policy_item[NUM_POLICY_ITEM_FOR_VER2].Offset);
+			Copy(k->Policy, &t->Policy, POLICY_VER2_SIZE);
 		}
 		else
 		{
@@ -3960,16 +3964,7 @@ static UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
 
 	AddHub(c, h);
 
-	if (t->Online)
-	{
-		h->Offline = true;
-		SetHubOnline(h);
-	}
-	else
-	{
-		h->Offline = false;
-		SetHubOffline(h);
-	}
+	HubApplyInitialState(h, t->Online);
 
 	h->CreatedTime = SystemTime64();
 
@@ -4325,7 +4320,7 @@ static UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 	// Hide the memory figures of the host from hub administrators
 	if (a->ServerAdmin)
 	{
-		GetMemInfo(&t->MemInfo);
+		Win32GetMemInfo(&t->MemInfo);
 	}
 
 	t->NumTcpConnections = t->NumTcpConnectionsLocal = 0;
