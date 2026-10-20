@@ -20,6 +20,14 @@
 
 #define SECURITY_WIN32
 
+// Shlwapi.h only for its path functions: its string macros (StrCpy, StrCat, ...) would replace ours
+#define NO_SHLWAPI_STRFCNS
+#define NO_SHLWAPI_REG
+#define NO_SHLWAPI_STREAM
+#define NO_SHLWAPI_HTTP
+#define NO_SHLWAPI_ISOS
+#define NO_SHLWAPI_GDI
+
 #include <AclAPI.h>
 #include <DbgHelp.h>
 #include <dwmapi.h>
@@ -33,6 +41,7 @@
 #include <security.h>
 #include <shellapi.h>
 #include <ShlObj.h>
+#include <Shlwapi.h>		// PathGetArgsW() of MsCopyProcessArgsW
 #include <SoftPub.h>
 #include <WtsApi32.h>
 
@@ -1528,9 +1537,9 @@ static void CALLBACK MsServiceDispatcher(DWORD argc, LPTSTR *argv)
 
 #ifdef	_DEBUG	// Debug configuration: the debug CRT (/MTd) defines _DEBUG
 	// memcheck = true logs every malloc/realloc/free to find leaks, but is very slow.
-	InitMayaqua(false, true, 0, NULL);
+	InitMayaqua(false, true);
 #else
-	InitMayaqua(false, false, 0, NULL);
+	InitMayaqua(false, false);
 #endif
 
 	g_start();
@@ -1689,9 +1698,9 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 
 #ifdef	_DEBUG	// Debug configuration: the debug CRT (/MTd) defines _DEBUG
 	// memcheck = true logs every malloc/realloc/free to find leaks, but is very slow.
-	InitMayaqua(false, true, 0, NULL);
+	InitMayaqua(false, true);
 #else
-	InitMayaqua(false, false, 0, NULL);
+	InitMayaqua(false, false);
 #endif
 
 	Format(tmp, sizeof(tmp), SVC_NAME, name);
@@ -1708,9 +1717,13 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 	else
 	{
 		wchar_t path[MAX_SIZE];
+		wchar_t *args_w = MsCopyProcessArgsW();
+		char *args = CopyUniToStr(args_w);
 		mode = SVC_MODE_NONE;
 
-		t = GetCommandLineToken();
+		t = ParseCmdLine(args);
+		Free(args);
+		Free(args_w);
 		arg = NULL;
 
 		if (t->NumTokens >= 1)
@@ -3694,104 +3707,18 @@ HKEY MsGetRootKeyFromInt(UINT root)
 	return NULL;
 }
 
-static wchar_t *MsCutExeNameFromUniCommandLine(wchar_t *str)
+// The arguments of this process: its command line (GetCommandLineW) without the program name,
+// quoted or not, and the one space after it. The caller frees the copy.
+wchar_t *MsCopyProcessArgsW()
 {
-	if (str == NULL)
-	{
-		return NULL;
-	}
+	wchar_t *line = UniCopyStr(GetCommandLineW());
+	wchar_t *args;
 
-	if (str[0] != L'\"')
-	{
-		UINT i = UniSearchStrEx(str, L" ", 0, true);
-		if (i == INFINITE)
-		{
-			return str + UniStrLen(str);
-		}
-		else
-		{
-			return str + i + 1;
-		}
-	}
-	else
-	{
-		str++;
-		while (true)
-		{
-			if ((*str) == 0)
-			{
-				return str + UniStrLen(str);
-			}
-			if ((*str) == L'\"')
-			{
-				break;
-			}
-			str++;
-		}
+	UniTrim(line);
+	args = UniCopyStr(PathGetArgsW(line));
+	Free(line);
 
-		while (true)
-		{
-			if ((*str) == 0)
-			{
-				return str + UniStrLen(str);
-			}
-			if ((*str) == L' ')
-			{
-				return str + 1;
-			}
-			str++;
-		}
-	}
-}
-
-static char *MsCutExeNameFromCommandLine(char *str)
-{
-	if (str == NULL)
-	{
-		return NULL;
-	}
-
-	if (str[0] != '\"')
-	{
-		UINT i = SearchStrEx(str, " ", 0, true);
-		if (i == INFINITE)
-		{
-			return str + StrLen(str);
-		}
-		else
-		{
-			return str + i + 1;
-		}
-	}
-	else
-	{
-		str++;
-		while (true)
-		{
-			if ((*str) == 0)
-			{
-				return str + StrLen(str);
-			}
-			if ((*str) == '\"')
-			{
-				break;
-			}
-			str++;
-		}
-
-		while (true)
-		{
-			if ((*str) == 0)
-			{
-				return str + StrLen(str);
-			}
-			if ((*str) == ' ')
-			{
-				return str + 1;
-			}
-			str++;
-		}
-	}
+	return args;
 }
 
 UINT MsGetCurrentProcessId()
@@ -3874,8 +3801,6 @@ static bool MsCheckIsAdmin()
 
 void MsInit()
 {
-	char *str_ansi;
-	wchar_t *str_unicode;
 	char tmp[MAX_SIZE];
 	DWORD size;
 	if (ms != NULL)
@@ -3886,17 +3811,6 @@ void MsInit()
 	ms = ZeroMalloc(sizeof(MS));
 
 	ms->hInst = GetModuleHandle(NULL);
-
-	str_ansi = CopyStr(GetCommandLineA());
-	Trim(str_ansi);
-	str_unicode = UniCopyStr(GetCommandLineW());
-	UniTrim(str_unicode);
-
-	SetCommandLineStr(MsCutExeNameFromCommandLine(str_ansi));
-	SetCommandLineUniStr(MsCutExeNameFromUniCommandLine(str_unicode));
-
-	Free(str_unicode);
-	Free(str_ansi);
 
 	ms->IsAdmin = MsCheckIsAdmin();
 

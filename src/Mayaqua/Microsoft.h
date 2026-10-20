@@ -203,6 +203,7 @@ bool MsIsAdmin();
 bool MsEnablePrivilege(char *name, bool enable);
 UINT MsGetCurrentProcessId();
 char *MsGetExeDirName();
+wchar_t *MsCopyProcessArgsW();
 
 bool MsCheckLogon(wchar_t *username, char *password);
 wchar_t *MsGetNetworkConnectionName(char *guid);

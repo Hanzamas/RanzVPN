@@ -62,7 +62,6 @@ bool EndWith(char *str, char *key);
 UINT64 ToInt64(char *str);
 void ToStr64(char *str, UINT64 value);
 TOKEN_LIST *ParseCmdLine(char *str);
-TOKEN_LIST *CopyToken(TOKEN_LIST *src);
 TOKEN_LIST *NullToken();
 bool IsNum(char *str);
 LIST *StrToStrList(char *str, UINT size);

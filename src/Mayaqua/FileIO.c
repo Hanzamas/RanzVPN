@@ -419,21 +419,11 @@ void GetExeNameW(wchar_t *name, UINT size)
 	UniStrCpy(name, size, exe_file_name_w);
 }
 
-void InitGetExeName(char *arg)
+void InitGetExeName()
 {
-	wchar_t *arg_w = NULL;
-	if (arg == NULL)
-	{
-		arg = "./a.out";
-	}
-
-	arg_w = CopyUtfToUni(arg);
-
 	Win32GetExeNameW(exe_file_name_w, sizeof(exe_file_name_w));
 
 	UniToStr(exe_file_name, sizeof(exe_file_name), exe_file_name_w);
-
-	Free(arg_w);
 }
 
 void GetFileNameFromFilePath(char *dst, UINT size, char *filepath)

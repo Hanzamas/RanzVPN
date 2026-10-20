@@ -28,13 +28,7 @@ UINT64 kernel_status_max[NUM_KERNEL_STATUS];
 static LOCK *kernel_status_lock[NUM_KERNEL_STATUS];
 bool kernel_status_inited = false;
 bool g_little_endian = true;
-char *cmdline = NULL;
-static wchar_t *uni_cmdline = NULL;
 
-static char *exename = NULL;
-static wchar_t *exename_w = NULL;
-static TOKEN_LIST *cmdline_token = NULL;
-static UNI_TOKEN_LIST *cmdline_uni_token = NULL;
 static OS_INFO *os_info = NULL;
 static bool dot_net_mode = false;
 static bool minimal_mode = false;
@@ -138,7 +132,7 @@ bool MayaquaIsMinimalMode()
 	return minimal_mode;
 }
 
-void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
+void InitMayaqua(bool memcheck, bool debug)
 {
 	wchar_t tmp[MAX_PATH];
 	UCHAR hash[SHA1_SIZE];
@@ -152,7 +146,6 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 
 	g_memcheck = memcheck;
 	g_debug = debug;
-	cmdline = NULL;
 	if (dot_net_mode == false)
 	{
 		// This fails in .NET mode
@@ -193,9 +186,7 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 
 	InitNetwork();
 
-	InitGetExeName(argc >= 1 ? argv[0] : NULL);
-
-	InitCommandLineStr(argc, argv);
+	InitGetExeName();
 
 	InitOsInfo();
 
@@ -215,11 +206,6 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 	InitHamcore();
 
 	InitTable();
-
-	if (exename == NULL)
-	{
-		exename = CopyStr("unknown");
-	}
 
 	// Quit if the executable's own file is not found (started from an odd path)
 	GetExeNameW(tmp, sizeof(tmp));
@@ -263,10 +249,6 @@ void FreeMayaqua()
 	FreeOsInfo();
 
 	FreeHamcore();
-
-	FreeCommandLineStr();
-
-	FreeCommandLineTokens();
 
 	FreeNetwork();
 
@@ -369,181 +351,6 @@ void FreeOsInfo()
 	Free(os_info);
 
 	os_info = NULL;
-}
-
-TOKEN_LIST *GetCommandLineToken()
-{
-	if (cmdline_token == NULL)
-	{
-		return NullToken();
-	}
-	else
-	{
-		return CopyToken(cmdline_token);
-	}
-}
-
-static void ParseCommandLineTokens()
-{
-	if (cmdline_token != NULL)
-	{
-		FreeToken(cmdline_token);
-	}
-	cmdline_token = ParseCmdLine(cmdline);
-
-	if (cmdline_uni_token != NULL)
-	{
-		UniFreeToken(cmdline_uni_token);
-	}
-	cmdline_uni_token = UniParseCmdLine(uni_cmdline);
-}
-
-void FreeCommandLineTokens()
-{
-	if (cmdline_token != NULL)
-	{
-		FreeToken(cmdline_token);
-	}
-	cmdline_token = NULL;
-
-	if (cmdline_uni_token != NULL)
-	{
-		UniFreeToken(cmdline_uni_token);
-	}
-	cmdline_uni_token = NULL;
-}
-
-void InitCommandLineStr(int argc, char **argv)
-{
-	if (argc >= 1)
-	{
-		exename = CopyStr(argv[0]);
-		exename_w = CopyStrToUni(exename);
-	}
-	if (argc < 2 || argv == NULL)
-	{
-		SetCommandLineStr(NULL);
-	}
-	else
-	{
-		int i, total_len = 1;
-		char *tmp;
-
-		for (i = 1;i < argc;i++)
-		{
-			total_len += StrLen(argv[i]) * 2 + 32;
-		}
-		tmp = ZeroMalloc(total_len);
-
-		for (i = 1;i < argc;i++)
-		{
-			UINT s_size = StrLen(argv[i]) * 2;
-			char *s = ZeroMalloc(s_size);
-			bool dq = (SearchStrEx(argv[i], " ", 0, true) != INFINITE);
-			ReplaceStrEx(s, s_size, argv[i], "\"", "\"\"", true);
-			if (dq)
-			{
-				StrCat(tmp, total_len, "\"");
-			}
-			StrCat(tmp, total_len, s);
-			if (dq)
-			{
-				StrCat(tmp, total_len, "\"");
-			}
-			StrCat(tmp, total_len, " ");
-			Free(s);
-		}
-
-		Trim(tmp);
-		SetCommandLineStr(tmp);
-		Free(tmp);
-	}
-}
-
-void FreeCommandLineStr()
-{
-	SetCommandLineStr(NULL);
-
-	if (exename != NULL)
-	{
-		Free(exename);
-		exename = NULL;
-	}
-
-	if (exename_w != NULL)
-	{
-		Free(exename_w);
-		exename_w = NULL;
-	}
-}
-
-wchar_t *GetCommandLineUniStr()
-{
-	if (uni_cmdline == NULL)
-	{
-		return UniCopyStr(L"");
-	}
-	else
-	{
-		return UniCopyStr(uni_cmdline);
-	}
-}
-
-void SetCommandLineUniStr(wchar_t *str)
-{
-	if (uni_cmdline != NULL)
-	{
-		Free(uni_cmdline);
-	}
-	if (str == NULL)
-	{
-		uni_cmdline = NULL;
-	}
-	else
-	{
-		uni_cmdline = CopyUniStr(str);
-	}
-
-	ParseCommandLineTokens();
-}
-
-void SetCommandLineStr(char *str)
-{
-	if (str == NULL)
-	{
-		if (cmdline != NULL)
-		{
-			Free(cmdline);
-		}
-		cmdline = NULL;
-	}
-	else
-	{
-		if (cmdline != NULL)
-		{
-			Free(cmdline);
-		}
-		cmdline = CopyStr(str);
-	}
-
-	if (cmdline == NULL)
-	{
-		if (uni_cmdline != NULL)
-		{
-			Free(uni_cmdline);
-			uni_cmdline = NULL;
-		}
-	}
-	else
-	{
-		if (uni_cmdline != NULL)
-		{
-			Free(uni_cmdline);
-		}
-		uni_cmdline = CopyStrToUni(cmdline);
-	}
-
-	ParseCommandLineTokens();
 }
 
 void PrintKernelStatus()

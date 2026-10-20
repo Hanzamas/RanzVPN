@@ -33,7 +33,6 @@ int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 
 extern bool g_memcheck;
 extern bool g_debug;
-extern char *cmdline;
 extern bool g_little_endian;
 
 #define	NUM_KERNEL_STATUS	128
@@ -157,7 +156,7 @@ if (IsTrackingEnabled()) {													\
 #define	IsDebug()		(g_debug)
 #define	IsMemCheck()	(g_memcheck)
 
-void InitMayaqua(bool memcheck, bool debug, int argc, char **argv);
+void InitMayaqua(bool memcheck, bool debug);
 void FreeMayaqua();
 bool MayaquaIsDotNetMode();
 void MayaquaMinimalMode();
@@ -168,13 +167,6 @@ void PrintDebugInformation();
 void LockKernelStatus(UINT id);
 void UnlockKernelStatus(UINT id);
 void PrintKernelStatus();
-void InitCommandLineStr(int argc, char **argv);
-void FreeCommandLineStr();
-void SetCommandLineStr(char *str);
-void SetCommandLineUniStr(wchar_t *str);
-wchar_t *GetCommandLineUniStr();
-void FreeCommandLineTokens();
-TOKEN_LIST *GetCommandLineToken();
 void InitOsInfo();
 void FreeOsInfo();
 void Alert(char *msg, char *caption);
