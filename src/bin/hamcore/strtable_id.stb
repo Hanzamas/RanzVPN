@@ -227,7 +227,6 @@ WINVER_ERROR_PC_REMOTE	server jarak jauh
 
 
 # Warning for Open-source Version
-OSS_MSG					Selamat datang di SoftEther VPN Server Versi Akademik!\r\n\r\n\r\nVPN Server ini adalah perangkat lunak sumber terbuka gratis yang dikembangkan sebagai penelitian akademik di Universitas Tsukuba, Jepang, dan didistribusikan dari Proyek SoftEther VPN (http://www.softether.org/), secara gratis untuk kepentingan publik.\r\n\r\nPerangkat lunak SoftEther VPN didistribusikan kepada publik sebagai bagian dari kontrak penelitian bersama antara Universitas Tsukuba dan Proyek SoftEther VPN. Perangkat lunak SoftEther VPN dikembangkan dan diterbitkan untuk TUJUAN PENELITIAN AKADEMIS SAJA. Oleh karena itu, tidak ada layanan dukungan yang diberikan mengenai perangkat lunak SoftEther VPN meskipun terdapat bug atau kerentanannya. Pengguna akan bertanggung jawab atas hasil penggunaan SoftEther VPN. Pengembang dan penerbit SoftEther VPN tidak akan bertanggung jawab atas konsekuensi atau kerusakan apa pun.\r\n\r\nSelamat menikmati penggunaan VPN dengan SoftEther VPN Server.\r\n\r\nUntuk detail lebih lanjut tentang SoftEther VPN, kunjungi http://www.softether.org/.\r\n\r\n
 
 
 # Virtual HUB Admin Options
@@ -881,7 +880,6 @@ LH_AUTH_ANONYMOUS		Otentikasi anonim
 LH_AUTH_PASSWORD		Otentikasi kata sandi
 LH_AUTH_PLAIN_PASSWORD	Otentikasi server eksternal
 LH_AUTH_CERT			Otentikasi sertifikat
-LH_AUTH_CERT_NOT_SUPPORT_ON_OPEN_SOURCE	Koneksi "%S": Metode otentikasi pengguna "%S" telah ditentukan sebagai Otentikasi Sertifikat. Namun, fungsi Otentikasi Sertifikat belum diimplementasikan pada versi Open-Source dari Ranz VPN. Koneksi akan ditolak.
 LH_AUTH_OK				Koneksi "%S": Berhasil diautentikasi sebagai pengguna "%S".
 LH_AUTH_OK_CERT			Manajer Akun Keamanan Virtual Hub telah menerima sertifikat berikut dari VPN Client dan menerima isinya sebagai sertifikat untuk login pengguna "%S": %s
 LH_AUTH_NG_CERT			Meskipun Manajer Akun Keamanan Virtual Hub telah menerima sertifikat berikut, isinya ditolak sebagai sertifikat untuk login pengguna "%S" karena isi sertifikat ini cocok dengan yang terdaftar di daftar pencabutan sertifikat Virtual Hub: %s
@@ -930,7 +928,6 @@ LH_CONNECT_ERROR		Koneksi untuk Koneksi Cascade "%s" telah terputus atau gagal. 
 LH_POLICY_MONITOR_MODE	Koneksi "%S": Karena seorang pengguna yang kebijakan keamanannya menolak izin untuk Mode Pemantauan meminta agar Mode Pemantauan diaktifkan dan mencoba untuk terhubung ke Virtual Hub, koneksi telah ditolak.
 LH_POLICY_BRIDGE_MODE	Koneksi "%S": Karena seorang pengguna yang kebijakan keamanannya menolak koneksi bridge dan operasi routing meminta agar koneksi bridge atau operasi routing diaktifkan dan mencoba untuk terhubung ke Virtual Hub, koneksi telah ditolak.
 LH_TOO_MANY_MULTILOGINS	Koneksi "%S": Meskipun pengguna "%S" melakukan upaya login, kebijakan keamanan yang berlaku untuk pengguna ini membatasi jumlah maksimum login ganda hingga %u sesi. Saat ini jumlah login pengguna ini adalah %u sesi dan karena itu pengguna tersebut menolak izin untuk koneksi VPN baru.
-LH_PACKET_LOG_NO_LOG_OSS	VPN Server ini adalah versi Open-Source atau Gratis. Fungsi pencatatan data alamat IP atau header TCP/UDP belum diterapkan. Tidak ada alamat IP atau data header TCP/UDP yang akan dicatat di sini.
 
 
 # (Administration log)
@@ -1241,16 +1238,6 @@ CMD_ServerPasswordSet	Setel Kata Sandi Administrator VPN Server
 CMD_ServerPasswordSet_Help	Ini mengatur kata sandi administrator VPN Server. Anda dapat menentukan kata sandi sebagai parameter. Jika kata sandi tidak ditentukan, prompt akan ditampilkan untuk memasukkan kata sandi dan konfirmasi kata sandi. Jika Anda menyertakan kata sandi sebagai parameter, kata sandi ini akan ditampilkan sesaat di layar, yang dapat menimbulkan risiko. Kami menyarankan agar sebisa mungkin, hindari menentukan parameter ini dan masukkan kata sandi menggunakan prompt kata sandi. \nUntuk mengeksekusi perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.
 CMD_ServerPasswordSet_Args	ServerPasswordSet [password]
 CMD_ServerPasswordSet_[password]	Ini menentukan pengaturan kata sandi baru.
-
-
-# Debug command
-CMD_Debug				Jalankan Perintah Debug
-CMD_Debug_Help			Menjalankan perintah debug pada proses VPN Server / Bridge yang sedang berjalan.\nPerintah ini harus dijalankan ketika staf dukungan meminta untuk melakukannya.\nPenyalahgunaan perintah ini dapat menyebabkan kerusakan pada VPN Server / Bridge yang sedang berjalan.
-CMD_Debug_Args			Debug [id] [/ARG:arg]
-CMD_Debug_[id]			Tentukan nomor perintah debug.
-CMD_Debug_ARG			Tentukan string yang akan diteruskan ke perintah debug. Jika string mengandung spasi, masukkan seluruh perintah dalam tanda kutip (" ").
-CMD_Debug_Msg1			Mengirim perintah debug...
-CMD_Debug_Msg2			Perintah debug telah dijalankan.\nHasil: "%S"
 
 
 # Crash command
