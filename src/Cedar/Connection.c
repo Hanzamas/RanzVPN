@@ -93,175 +93,7 @@ static void WriteRecvFifo(SESSION *s, TCPSOCK *ts, void *data, UINT size)
 	WriteFifo(ts->RecvFifo, data, size);
 }
 
-static void SendDataWithUDP(SOCK *s, CONNECTION *c)
-{
-	UCHAR *buf;
-	BUF *b;
-	UCHAR dummy_buf[16];
-	UINT64 now = Tick64();
-	UINT ret;
-	bool force_flag = false;
-	bool packet_sent = false;
-	if (s == NULL || c == NULL)
-	{
-		return;
-	}
-
-	if (c->RecvBuf == NULL)
-	{
-		c->RecvBuf = Malloc(RECV_BUF_SIZE);
-	}
-	buf = c->RecvBuf;
-
-	if (c->Udp->NextKeepAliveTime == 0 || c->Udp->NextKeepAliveTime <= now)
-	{
-		force_flag = true;
-	}
-
-	while ((c->SendBlocks->num_item > 0) || force_flag)
-	{
-		UINT *key32;
-		UINT64 *seq;
-		char *sign;
-
-		force_flag = false;
-
-		b = NewBuf();
-
-		// Reserve 16 bytes for the packet header.
-		WriteBuf(b, dummy_buf, sizeof(dummy_buf));
-
-		while (true)
-		{
-			BLOCK *block;
-
-			if (b->Size > UDP_BUF_SIZE)
-			{
-				break;
-			}
-			block = GetNext(c->SendBlocks);
-			if (block == NULL)
-			{
-				break;
-			}
-
-			if (block->Size != 0)
-			{
-				WriteBufInt(b, block->Size);
-				WriteBuf(b, block->Buf, block->Size);
-
-				c->Session->TotalSendSize += (UINT64)block->SizeofData;
-				c->Session->TotalSendSizeReal += (UINT64)block->Size;
-			}
-
-			FreeBlock(block);
-			break;
-		}
-
-		sign = (char *)(((UCHAR *)b->Buf));
-		key32 = (UINT *)(((UCHAR *)b->Buf + 4));
-		seq = (UINT64 *)(((UCHAR *)b->Buf + 8));
-		Copy(sign, SE_UDP_SIGN, 4);
-		*key32 = Endian32(c->Session->SessionKey32);
-		*seq = Endian64(c->Udp->Seq++);
-
-		packet_sent = true;
-		ret = SendTo(s, &c->Udp->ip, c->Udp->port, b->Buf, b->Size);
-		if (ret == SOCK_LATER)
-		{
-		}
-		if (ret != b->Size)
-		{
-			if (s->IgnoreSendErr == false)
-			{
-			}
-		}
-
-		FreeBuf(b);
-	}
-
-	if (packet_sent)
-	{
-		c->Udp->NextKeepAliveTime = now + (UINT64)GenNextKeepAliveSpan(c);
-	}
-}
-
-void PutUDPPacketData(CONNECTION *c, void *data, UINT size)
-{
-	BUF *b;
-	char sign[4];
-	if (c == NULL || data == NULL)
-	{
-		return;
-	}
-
-	if (c->Protocol != CONNECTION_UDP)
-	{
-		return;
-	}
-
-	b = NewBuf();
-	WriteBuf(b, data, size);
-
-	SeekBuf(b, 0, 0);
-	ReadBuf(b, sign, 4);
-
-	if (Cmp(sign, SE_UDP_SIGN, 4) == 0)
-	{
-		UINT key32;
-
-		key32 = ReadBufInt(b);
-
-		if (c->Session->SessionKey32 == key32)
-		{
-			UINT64 seq;
-
-			ReadBuf(b, &seq, sizeof(seq));
-			seq = Endian64(seq);
-
-			if ((UINT)(seq - c->Udp->RecvSeq - (UINT64)1))
-			{
-			}
-			c->Udp->RecvSeq = seq;
-
-			while (true)
-			{
-				UINT size;
-
-				size = ReadBufInt(b);
-				if (size == 0)
-				{
-					break;
-				}
-				else if (size <= MAX_PACKET_SIZE)
-				{
-					void *tmp;
-					BLOCK *block;
-
-					tmp = Malloc(size);
-					if (ReadBuf(b, tmp, size) != size)
-					{
-						Free(tmp);
-						break;
-					}
-
-					block = NewBlock(tmp, size, 0);
-
-					InsertReceivedBlockToQueue(c, block, false);
-				}
-			}
-
-			c->Session->LastCommTime = Tick64();
-		}
-		else
-		{
-		}
-	}
-
-	FreeBuf(b);
-}
-
-void InsertReceivedBlockToQueue(CONNECTION *c, BLOCK *block, bool no_lock)
+void InsertReceivedBlockToQueue(CONNECTION *c, BLOCK *block)
 {
 	SESSION *s;
 	if (c == NULL || block == NULL)
@@ -277,11 +109,6 @@ void InsertReceivedBlockToQueue(CONNECTION *c, BLOCK *block, bool no_lock)
 		s->TotalRecvSize += block->Size;
 	}
 
-	if (no_lock == false)
-	{
-		LockQueue(c->ReceivedBlocks);
-	}
-
 	if (c->ReceivedBlocks->num_item < MAX_STORED_QUEUE_NUM)
 	{
 		InsertQueue(c->ReceivedBlocks, block);
@@ -290,10 +117,29 @@ void InsertReceivedBlockToQueue(CONNECTION *c, BLOCK *block, bool no_lock)
 	{
 		FreeBlock(block);
 	}
+}
 
-	if (no_lock == false)
+// Queues one block received from the peer, or drops it when it is oversized or the Cedar queue budget is
+// spent. A queued block then syncs the queue budget: every block when packet_index is NULL, else every
+// 32nd block counted through *packet_index
+static void ConnectionEnqueueReceivedBlock(CONNECTION *c, BLOCK *b, UINT *packet_index)
+{
+	if (b->Size > MAX_PACKET_SIZE || CedarGetQueueBudgetBalance(c->Cedar) == 0)
 	{
-		UnlockQueue(c->ReceivedBlocks);
+		FreeBlock(b);
+		return;
+	}
+
+	InsertReceivedBlockToQueue(c, b);
+
+	if (packet_index == NULL || (*packet_index % 32) == 0)
+	{
+		CedarSyncQueueBudget(c->Cedar, c->ReceivedBlocks->num_item, &c->LastRecvBlocksNum);
+	}
+
+	if (packet_index != NULL)
+	{
+		(*packet_index)++;
 	}
 }
 
@@ -626,36 +472,6 @@ SEND_START:
 
 		Free(tcpsocks);
 	}
-	else if (c->Protocol == CONNECTION_UDP)
-	{
-		UDP *udp = c->Udp;
-		SOCK *sock = NULL;
-
-		Lock(c->lock);
-		{
-			sock = udp->s;
-			if (sock != NULL)
-			{
-				AddRef(sock->ref);
-			}
-		}
-		Unlock(c->lock);
-
-		if (sock != NULL)
-		{
-
-			if ((udp->NextKeepAliveTime == 0 || udp->NextKeepAliveTime <= now) ||
-				(c->SendBlocks->num_item != 0) || (udp->BufferQueue->num_item != 0))
-			{
-				SendDataWithUDP(sock, c);
-			}
-		}
-
-		if (sock != NULL)
-		{
-			ReleaseSock(sock);
-		}
-	}
 	else if (c->Protocol == CONNECTION_HUB_LINK_SERVER)
 	{
 		LINK *k = (LINK *)s->Link;
@@ -904,7 +720,6 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 
 			while (true)
 			{
-				UINT current_packet_index = 0;
 				BLOCK *b = GetNext(s->UdpAccel->RecvBlockQueue);
 
 				if (b == NULL)
@@ -912,33 +727,7 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 					break;
 				}
 
-				if (b->Size > MAX_PACKET_SIZE)
-				{
-					FreeBlock(b);
-				}
-				else
-				{
-					if (CedarGetQueueBudgetBalance(c->Cedar) == 0)
-					{
-						FreeBlock(b);
-					}
-					else
-					{
-						InsertReceivedBlockToQueue(c, b, true);
-
-						if ((current_packet_index % 32) == 0)
-						{
-							UINT current_recv_block_num = c->ReceivedBlocks->num_item;
-							int diff = (int)current_recv_block_num - (int)c->LastRecvBlocksNum;
-
-							CedarAddQueueBudget(c->Cedar, diff);
-
-							c->LastRecvBlocksNum = current_recv_block_num;
-						}
-
-						current_packet_index++;
-					}
-				}
+				ConnectionEnqueueReceivedBlock(c, b, NULL);
 			}
 		}
 
@@ -1110,33 +899,7 @@ DISCONNECT_THIS_TCP:
 					UPDATE_LAST_COMM_TIME(c->Session->LastCommTime, now);
 					UPDATE_LAST_COMM_TIME(ts->LastCommTime, now);
 
-					if (block->Size > MAX_PACKET_SIZE)
-					{
-						FreeBlock(block);
-					}
-					else
-					{
-						if (CedarGetQueueBudgetBalance(c->Cedar) == 0)
-						{
-							FreeBlock(block);
-						}
-						else
-						{
-							InsertReceivedBlockToQueue(c, block, true);
-
-							if ((current_packet_index % 32) == 0)
-							{
-								UINT current_recv_block_num = c->ReceivedBlocks->num_item;
-								int diff = (int)current_recv_block_num - (int)c->LastRecvBlocksNum;
-
-								CedarAddQueueBudget(c->Cedar, diff);
-
-								c->LastRecvBlocksNum = current_recv_block_num;
-							}
-
-							current_packet_index++;
-						}
-					}
+					ConnectionEnqueueReceivedBlock(c, block, &current_packet_index);
 
 					if (ts->CurrentPacketNum >= ts->NextBlockNum)
 					{
@@ -1199,91 +962,9 @@ DISCONNECT_THIS_TCP:
 			c->LastRecvFifoTotalSize = current_recv_fifo_size;
 		}
 
-		if (true)
-		{
-			UINT current_recv_block_num = c->ReceivedBlocks->num_item;
-			int diff = (int)current_recv_block_num - (int)c->LastRecvBlocksNum;
-
-			CedarAddQueueBudget(c->Cedar, diff);
-
-			c->LastRecvBlocksNum = current_recv_block_num;
-		}
+		CedarSyncQueueBudget(c->Cedar, c->ReceivedBlocks->num_item, &c->LastRecvBlocksNum);
 
 		Free(tcpsocks);
-	}
-	else if (c->Protocol == CONNECTION_UDP)
-	{
-		UDP *udp = c->Udp;
-		SOCK *sock = NULL;
-
-		if (s->ServerMode == false)
-		{
-			Lock(c->lock);
-			{
-				if (c->Udp->s != NULL)
-				{
-					sock = c->Udp->s;
-					if (sock != NULL)
-					{
-						AddRef(sock->ref);
-					}
-				}
-			}
-			Unlock(c->lock);
-
-			InitSockSet(&set);
-
-			if (sock != NULL)
-			{
-				AddSockSet(&set, sock);
-			}
-
-			Select(&set, SELECT_TIME, c1, c2);
-
-			if (sock != NULL)
-			{
-				IP ip;
-				UINT port;
-				UCHAR *buf;
-				UINT size;
-
-				while (true)
-				{
-					buf = c->RecvBuf;
-					size = RecvFrom(sock, &ip, &port, buf, RECV_BUF_SIZE);
-					if (size == 0 && sock->IgnoreRecvErr == false)
-					{
-						Lock(c->lock);
-						{
-							ReleaseSock(udp->s);
-							udp->s = NULL;
-						}
-						Unlock(c->lock);
-						break;
-					}
-					else if (size == SOCK_LATER)
-					{
-						break;
-					}
-					else
-					{
-						if (size)
-						{
-							PutUDPPacketData(c, buf, size);
-						}
-					}
-				}
-			}
-
-			if (sock != NULL)
-			{
-				Release(sock->ref);
-			}
-		}
-		else
-		{
-			Select(NULL, SELECT_TIME, c1, c2);
-		}
 	}
 	else if (c->Protocol == CONNECTION_HUB_LINK_SERVER)
 	{
@@ -1388,7 +1069,7 @@ DISCONNECT_THIS_TCP:
 						}
 						else
 						{
-							InsertReceivedBlockToQueue(c, block, true);
+							InsertReceivedBlockToQueue(c, block);
 						}
 						num++;
 						if (num >= MAX_SEND_SOCKET_QUEUE_NUM)
@@ -1553,10 +1234,6 @@ void EndTunnelingMode(CONNECTION *c)
 	{
 		DisconnectTcpSockets(c);
 	}
-	else
-	{
-		DisconnectUDPSockets(c);
-	}
 }
 
 void StartTunnelingMode(CONNECTION *c)
@@ -1564,8 +1241,6 @@ void StartTunnelingMode(CONNECTION *c)
 	SOCK *s;
 	TCP *tcp;
 	TCPSOCK *ts;
-	IP ip;
-	UINT port;
 	if (c == NULL)
 	{
 		return;
@@ -1598,36 +1273,6 @@ void StartTunnelingMode(CONNECTION *c)
 		}
 		Unlock(c->lock);
 		ReleaseSock(s);
-	}
-	else
-	{
-		s = c->FirstSock;
-		Copy(&ip, &s->RemoteIP, sizeof(IP));
-		// May disconnect TCP connection at this point
-		Lock(c->lock);
-		{
-			c->FirstSock = NULL;
-		}
-		Unlock(c->lock);
-		Disconnect(s);
-		ReleaseSock(s);
-
-		c->Udp = ZeroMalloc(sizeof(UDP));
-
-		if (c->ServerMode)
-		{
-			AddUDPEntry(c->Cedar, c->Session);
-			c->Udp->s = NULL;
-		}
-		else
-		{
-			port = c->Session->ClientOption->PortUDP;
-			c->Udp->s = NewUDP(0);
-			Copy(&c->Udp->ip, &ip, sizeof(IP));
-			c->Udp->port = port;
-		}
-
-		c->Udp->BufferQueue = NewQueue();
 	}
 }
 
@@ -1795,56 +1440,6 @@ void StopConnection(CONNECTION *c, bool no_wait)
 	}
 }
 
-void DisconnectUDPSockets(CONNECTION *c)
-{
-	SOCK *s;
-	if (c == NULL)
-	{
-		return;
-	}
-	if (c->Protocol != CONNECTION_UDP)
-	{
-		return;
-	}
-
-	if (c->ServerMode)
-	{
-		DelUDPEntry(c->Cedar, c->Session);
-	}
-
-	if (c->Udp != NULL)
-	{
-		if (c->Udp->s != NULL)
-		{
-			ReleaseSock(c->Udp->s);
-		}
-		if (c->Udp->BufferQueue != NULL)
-		{
-			BUF *b;
-			while (b = GetNext(c->Udp->BufferQueue))
-			{
-				FreeBuf(b);
-			}
-			ReleaseQueue(c->Udp->BufferQueue);
-		}
-		Free(c->Udp);
-		c->Udp = NULL;
-	}
-
-	Lock(c->lock);
-	{
-		s = c->FirstSock;
-		c->FirstSock = NULL;
-	}
-	Unlock(c->lock);
-
-	if (s != NULL)
-	{
-		Disconnect(s);
-		ReleaseSock(s);
-	}
-}
-
 void DisconnectTcpSockets(CONNECTION *c)
 {
 	UINT i, num;
@@ -1894,11 +1489,7 @@ static void CleanupConnection(CONNECTION *c)
 		c->LastRecvFifoTotalSize = 0;
 	}
 
-	if (c->LastRecvBlocksNum != 0)
-	{
-		CedarAddQueueBudget(c->Cedar, -((int)c->LastRecvBlocksNum));
-		c->LastRecvBlocksNum = 0;
-	}
+	CedarSyncQueueBudget(c->Cedar, 0, &c->LastRecvBlocksNum);
 
 	if (c->LastTcpQueueSize != 0)
 	{
@@ -1917,15 +1508,7 @@ static void CleanupConnection(CONNECTION *c)
 	DeleteLock(c->lock);
 	ReleaseCedar(c->Cedar);
 
-	switch (c->Protocol)
-	{
-	case CONNECTION_TCP:
-		DisconnectTcpSockets(c);
-		break;
-
-	case CONNECTION_UDP:
-		break;
-	}
+	DisconnectTcpSockets(c);
 
 	ReleaseList(c->Tcp->TcpSockList);
 	Free(c->Tcp);

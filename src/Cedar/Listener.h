@@ -51,12 +51,6 @@ struct TCP_ACCEPTED_PARAM
 	SOCK *s;
 };
 
-struct UDP_ENTRY
-{
-	UINT SessionKey32;
-	SESSION *Session;
-};
-
 LISTENER *NewListener(CEDAR *cedar, UINT proto, UINT port);
 LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only, bool shadow_ipv6, bool enable_ca);
 void ReleaseListener(LISTENER *r);
@@ -65,10 +59,6 @@ bool WaitListenerBind(LISTENER *r, UINT timeout);
 int CompareListener(void *p1, void *p2);
 void EnableDosProtect();
 void DisableDosProtect();
-int CompareUDPEntry(void *p1, void *p2);
-void AddUDPEntry(CEDAR *cedar, SESSION *session);
-void DelUDPEntry(CEDAR *cedar, SESSION *session);
-SESSION *GetSessionFromUDPEntry(CEDAR *cedar, UINT key32);
 UINT GetMaxConnectionsPerIp();
 void SetMaxConnectionsPerIp(UINT num);
 UINT GetMaxUnestablishedConnections();

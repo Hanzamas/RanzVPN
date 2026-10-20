@@ -1202,14 +1202,6 @@ bool ServerAccept(CONNECTION *c)
 		InRpcNodeInfo(&node, p);
 
 		c->Protocol = GetProtocolFromPack(p);
-		if (c->Protocol == CONNECTION_UDP)
-		{
-			if (c->Tcp)
-			{
-				ReleaseList(c->Tcp->TcpSockList);
-				Free(c->Tcp);
-			}
-		}
 
 		if (GetServerCapsBool(c->Cedar->Server, "b_vpn_client_connect") == false)
 		{
@@ -3284,19 +3276,6 @@ bool ClientConnect(CONNECTION *c)
 
 		AddProtocolDetailsStr(c->Session->ProtocolDetails, sizeof(c->Session->ProtocolDetails), s->ProtocolDetails);
 
-		if (c->Protocol == CONNECTION_UDP)
-		{
-			if (PackGetDataSize(p, "udp_send_key") == sizeof(c->Session->UdpSendKey))
-			{
-				PackGetData(p, "udp_send_key", c->Session->UdpSendKey);
-			}
-
-			if (PackGetDataSize(p, "udp_recv_key") == sizeof(c->Session->UdpRecvKey))
-			{
-				PackGetData(p, "udp_recv_key", c->Session->UdpRecvKey);
-			}
-		}
-
 		sess->UseUdpAcceleration = false;
 		sess->IsUsingUdpAcceleration = false;
 		sess->UseHMacOnUdpAcceleration = false;
@@ -3558,15 +3537,6 @@ PACK *PackWelcome(SESSION *s)
 	PackAddPolicy(p, s->Policy);
 
 	PackAddInt(p, "vlan_id", s->VLanId);
-
-	if (s->Connection->Protocol == CONNECTION_UDP)
-	{
-		Rand(s->UdpSendKey, sizeof(s->UdpSendKey));
-		Rand(s->UdpRecvKey, sizeof(s->UdpRecvKey));
-
-		PackAddData(p, "udp_send_key", s->UdpRecvKey, sizeof(s->UdpRecvKey));
-		PackAddData(p, "udp_recv_key", s->UdpSendKey, sizeof(s->UdpSendKey));
-	}
 
 	if (s->NoSendSignature)
 	{
