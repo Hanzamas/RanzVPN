@@ -9,6 +9,7 @@
 #include "FileIO.h"
 #include "GlobalConst.h"
 #include "Internat.h"
+#include "Mayaqua.h"
 #include "Microsoft.h"
 #include "Memory.h"
 #include "Object.h"
