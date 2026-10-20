@@ -19,6 +19,9 @@
 #include "Mayaqua/Table.h"
 #include "Mayaqua/Tick64.h"
 
+#define PASSWORD_CRYPT_KEY			"EncryptPassword"
+#define PASSWORD_CRYPT_KEY_SIZE		8
+
 static void CleanupUser(USER *u);
 static void CleanupGroup(USERGROUP *g);
 static char *DecryptPassword(BUF *b);
@@ -668,6 +671,23 @@ void SetUserAuthData(USER *u, UINT authtype, void *authdata)
 	Unlock(u->lock);
 }
 
+// Replace a user's or group's traffic counters under its lock; NULL resets them
+static void SetTrafficLocked(LOCK *lock, TRAFFIC *dst, TRAFFIC *src)
+{
+	Lock(lock);
+	{
+		if (src != NULL)
+		{
+			Copy(dst, src, sizeof(TRAFFIC));
+		}
+		else
+		{
+			Zero(dst, sizeof(TRAFFIC));
+		}
+	}
+	Unlock(lock);
+}
+
 void SetGroupTraffic(USERGROUP *g, TRAFFIC *t)
 {
 	if (g == NULL)
@@ -675,18 +695,7 @@ void SetGroupTraffic(USERGROUP *g, TRAFFIC *t)
 		return;
 	}
 
-	Lock(g->lock);
-	{
-		if (t != NULL)
-		{
-			Copy(g->Traffic, t, sizeof(TRAFFIC));
-		}
-		else
-		{
-			Zero(g->Traffic, sizeof(TRAFFIC));
-		}
-	}
-	Unlock(g->lock);
+	SetTrafficLocked(g->lock, g->Traffic, t);
 }
 
 void SetUserTraffic(USER *u, TRAFFIC *t)
@@ -696,18 +705,7 @@ void SetUserTraffic(USER *u, TRAFFIC *t)
 		return;
 	}
 
-	Lock(u->lock);
-	{
-		if (t != NULL)
-		{
-			Copy(u->Traffic, t, sizeof(TRAFFIC));
-		}
-		else
-		{
-			Zero(u->Traffic, sizeof(TRAFFIC));
-		}
-	}
-	Unlock(u->lock);
+	SetTrafficLocked(u->lock, u->Traffic, t);
 }
 
 void JoinUserToGroup(USER *u, USERGROUP *g)
@@ -717,41 +715,28 @@ void JoinUserToGroup(USER *u, USERGROUP *g)
 		return;
 	}
 
-	if (g != NULL)
+	Lock(u->lock);
 	{
-		Lock(u->lock);
+		if (u->Group != NULL)
+		{
+			ReleaseGroup(u->Group);
+			u->Group = NULL;
+			Free(u->GroupName);
+			u->GroupName = NULL;
+		}
+
+		if (g != NULL)
 		{
 			Lock(g->lock);
 			{
-				if (u->Group != NULL)
-				{
-					ReleaseGroup(u->Group);
-					u->Group = NULL;
-					Free(u->GroupName);
-					u->GroupName = NULL;
-				}
 				u->GroupName = CopyStr(g->Name);
 				u->Group = g;
 				AddRef(g->ref);
 			}
 			Unlock(g->lock);
 		}
-		Unlock(u->lock);
 	}
-	else
-	{
-		Lock(u->lock);
-		{
-			if (u->Group != NULL)
-			{
-				ReleaseGroup(u->Group);
-				u->Group = NULL;
-				Free(u->GroupName);
-				u->GroupName = NULL;
-			}
-		}
-		Unlock(u->lock);
-	}
+	Unlock(u->lock);
 }
 
 bool AcIsGroup(HUB *h, char *name)
@@ -1912,10 +1897,16 @@ void CiWriteClientOption(FOLDER *f, CLIENT_OPTION *o)
 	}
 }
 
+// Only the first PASSWORD_CRYPT_KEY_SIZE bytes of the key are used, which is what the stored password blobs were
+// written with: do not change
+static CRYPT *NewPasswordCrypt()
+{
+	return NewCrypt(PASSWORD_CRYPT_KEY, PASSWORD_CRYPT_KEY_SIZE);
+}
+
 static char *DecryptPassword(BUF *b)
 {
 	char *str;
-	char *key = "EncryptPassword";
 	CRYPT *c;
 	if (b == NULL)
 	{
@@ -1923,7 +1914,7 @@ static char *DecryptPassword(BUF *b)
 	}
 
 	str = ZeroMalloc(b->Size + 1);
-	c = NewCrypt(key, sizeof(key)); // Intentional (symmetric cipher), not a bug: do not change
+	c = NewPasswordCrypt();
 	Encrypt(c, str, b->Buf, b->Size);
 	FreeCrypt(c);
 
@@ -1936,7 +1927,6 @@ static BUF *EncryptPassword(char *password)
 {
 	UCHAR *tmp;
 	UINT size;
-	char *key = "EncryptPassword";
 	CRYPT *c;
 	BUF *b;
 	if (password == NULL)
@@ -1947,7 +1937,7 @@ static BUF *EncryptPassword(char *password)
 	size = StrLen(password) + 1;
 	tmp = ZeroMalloc(size);
 
-	c = NewCrypt(key, sizeof(key)); // Intentional, not a bug: do not change
+	c = NewPasswordCrypt();
 	Encrypt(c, tmp, password, size - 1);
 	FreeCrypt(c);
 

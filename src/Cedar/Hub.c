@@ -294,15 +294,6 @@ USERLIST *LoadUserList(LIST *o, char *filename)
 		return NULL;
 	}
 
-	u = FindUserList(o, filename);
-
-	if (u != NULL)
-	{
-		Delete(o, u);
-
-		FreeUserListEntry(u);
-	}
-
 	u = ZeroMalloc(sizeof(USERLIST));
 
 	StrCpy(u->Filename, sizeof(u->Filename), filename);
@@ -416,18 +407,12 @@ void DeleteAllUserListCache(LIST *o)
 
 static void FreeUserList(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		USERLIST *u = LIST_DATA(o, i);
-
-		FreeUserListEntry(u);
-	}
+	DeleteAllUserListCache(o);
 
 	ReleaseList(o);
 }
@@ -601,18 +586,12 @@ void DelAllAc(LIST *o)
 
 void FreeAcList(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		AC *ac = LIST_DATA(o, i);
-
-		Free(ac);
-	}
+	DelAllAc(o);
 
 	ReleaseList(o);
 }
@@ -1104,17 +1083,12 @@ void AddHubAdminOptionsDefaults(HUB *h, bool lock)
 	}
 }
 
-void DeleteAllHubAdminOption(HUB *h, bool lock)
+void DeleteAllHubAdminOption(HUB *h)
 {
 	UINT i;
 	if (h == NULL)
 	{
 		return;
-	}
-
-	if (lock)
-	{
-		LockList(h->AdminOptionList);
 	}
 
 	for (i = 0;i < LIST_NUM(h->AdminOptionList);i++)
@@ -1123,11 +1097,6 @@ void DeleteAllHubAdminOption(HUB *h, bool lock)
 	}
 
 	DeleteAll(h->AdminOptionList);
-
-	if (lock)
-	{
-		UnlockList(h->AdminOptionList);
-	}
 }
 
 UINT GetHubAdminOption(HUB *h, char *name)
@@ -2336,7 +2305,7 @@ static void ForceRedirectToUrl(SESSION *src_session, PKT *p, char *redirect_url)
 	WriteBuf(b, tcp_data, tcp_size);
 
 	StorePacketToHubPa((HUB_PA *)src_session->PacketAdapter->Param,
-		NULL, b->Buf, b->Size, NULL, false, false);
+		NULL, b->Buf, b->Size, NULL, false);
 
 	Free(tcp_data);
 	FreeBuf(payload);
@@ -4181,7 +4150,7 @@ UPDATE_FDB:
 								data = Malloc(size);
 								Copy(data, packet->PacketData, size);
 								StorePacketToHubPa((HUB_PA *)monitor_session->PacketAdapter->Param,
-									s, data, size, packet, false, false);
+									s, data, size, packet, false);
 							}
 						}
 					}
@@ -4235,7 +4204,7 @@ UPDATE_FDB:
 							}
 						}
 
-						StorePacketToHubPa(dest_pa, s, packet->PacketData, packet->PacketSize, packet, false, false);
+						StorePacketToHubPa(dest_pa, s, packet->PacketData, packet->PacketSize, packet, false);
 					}
 					else
 					{
@@ -4370,7 +4339,7 @@ DISCARD_UNICAST_PACKET:
 											FreePacket(pkt2);
 										}
 
-										StorePacketToHubPa(dest_pa, s, data, size, packet, true, true);
+										StorePacketToHubPa(dest_pa, s, data, size, packet, true);
 									}
 								}
 							}
@@ -4533,7 +4502,7 @@ STORM *SearchStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, 
 	return s;
 }
 
-void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *packet, bool is_flooding, bool no_check_acl)
+void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *packet, bool from_flood)
 {
 	BLOCK *b;
 	if (dest == NULL || data == NULL)
@@ -4547,7 +4516,8 @@ void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *
 		return;
 	}
 
-	if (no_check_acl == false)
+	// Flooded frames passed the access list once already
+	if (from_flood == false)
 	{
 		if (src != NULL)
 		{
@@ -4647,7 +4617,7 @@ void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *
 		{
 			InsertQueue(dest->PacketQueue, b);
 
-			if (is_flooding)
+			if (from_flood)
 			{
 				if (src != NULL)
 				{
@@ -5310,6 +5280,27 @@ void SetHubOffline(HUB *h)
 	Unlock(h->lock_online);
 }
 
+// Bring a freshly created hub into its configured state. A new hub is neither online nor offline yet, so the flag
+// is set opposite to the wanted state first, which lets the setter do the whole transition
+void HubApplyInitialState(HUB *h, bool online)
+{
+	if (h == NULL)
+	{
+		return;
+	}
+
+	h->Offline = online;
+
+	if (online)
+	{
+		SetHubOnline(h);
+	}
+	else
+	{
+		SetHubOffline(h);
+	}
+}
+
 bool IsHub(CEDAR *cedar, char *name)
 {
 	HUB *h;
@@ -5389,7 +5380,6 @@ void ReleaseHub(HUB *h)
 
 void CleanupHub(HUB *h)
 {
-	UINT i;
 	char name[MAX_SIZE];
 	if (h == NULL)
 	{
@@ -5428,10 +5418,7 @@ void CleanupHub(HUB *h)
 	FreeLog(h->PacketLogger);
 	FreeLog(h->SecurityLogger);
 
-	for (i = 0;i < LIST_NUM(h->AdminOptionList);i++)
-	{
-		Free(LIST_DATA(h->AdminOptionList, i));
-	}
+	DeleteAllHubAdminOption(h);
 	ReleaseList(h->AdminOptionList);
 
 	if (h->Msg != NULL)
@@ -5737,8 +5724,6 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 		h->Option->VlanTypeId = MAC_PROTO_TAGVLAN;
 	}
 
-	Rand(h->HubSignature, sizeof(h->HubSignature));
-
 	GenerateMachineUniqueHash(cedar, machine_hash);
 	HubNameHash(hash, machine_hash, h->Name);
 	GenHubMacAddress(h->HubMacAddr, hash);
@@ -5761,8 +5746,6 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 
 	Format(tmp, sizeof(tmp), HUB_SECURITY_LOG_FILE_NAME, h->Name);
 	h->SecurityLogger = NewLog(tmp, HUB_SECURITY_LOG_PREFIX, h->LogSetting.SecurityLogSwitchType);
-
-	SetHubOnline(h);
 
 	if (h->Option->NoArpPolling == false && h->Option->NoIpTable == false)
 	{
