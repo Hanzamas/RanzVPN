@@ -1866,7 +1866,7 @@ static void TtcThread(THREAD *thread, void *param)
 
 		StrCpy(target_host, sizeof(target_host), ttc->Host);
 
-		if (IsZeroIp(&ip_ret) == false)
+		if (IsZeroIP(&ip_ret) == false)
 		{
 			IPToStr(target_host, sizeof(target_host), &ip_ret);
 		}

@@ -89,8 +89,6 @@ struct TCPSOCK
 	UINT LateCount;
 	UINT Direction;
 	UINT64 NextKeepAliveTime;
-	CRYPT *SendKey;
-	CRYPT *RecvKey;
 	UINT64 DisconnectTick;
 	UINT64 EstablishedTick;
 };

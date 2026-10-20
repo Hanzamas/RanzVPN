@@ -1204,15 +1204,6 @@ void FreeTcpSock(TCPSOCK *ts)
 	ReleaseFifo(ts->RecvFifo);
 	ReleaseFifo(ts->SendFifo);
 
-	if (ts->SendKey)
-	{
-		FreeCrypt(ts->SendKey);
-	}
-	if (ts->RecvKey)
-	{
-		FreeCrypt(ts->RecvKey);
-	}
-
 	Free(ts);
 }
 

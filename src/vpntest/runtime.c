@@ -2894,6 +2894,13 @@ void dns_test(UINT num, char **arg)
 	// The computer name resolves through the resolver thread to at least one address, each in
 	// the list of its family; the thread count is back to its value afterwards
 	GetMachineName(name, sizeof(name));
+	{
+		char host[MAX_SIZE];
+
+		Zero(host, sizeof(host));
+		RtCheck(&ctx, gethostname(host, sizeof(host) - 1) == 0 && StrCmp(name, host) == 0, "GetMachineName equals gethostname()",
+			"GetMachineName gave \"%s\", gethostname() gave \"%s\"", name, host);
+	}
 	threads = DnsThreadNum();
 	v6 = v4 = NULL;
 	ret = DnsResolveEx(&v6, &v4, name, RT_DNS_RESOLVER_TIMEOUT, NULL);

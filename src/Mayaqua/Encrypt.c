@@ -45,8 +45,6 @@
 
 LOCK *openssl_lock = NULL;
 
-static int ssl_clientcert_index = 0;
-
 static OSSL_PROVIDER *ossl_provider_legacy = NULL;
 static OSSL_PROVIDER *ossl_provider_default = NULL;
 static OSSL_PROVIDER *ossl_provider_oqsprovider = NULL;
@@ -2758,8 +2756,6 @@ void InitCryptLibrary()
 		OSSL_PROVIDER_add_builtin(NULL, oqs_provider_name, oqs_provider_init); 
 	#endif
 	ossl_provider_oqsprovider = OSSL_PROVIDER_load(NULL, oqs_provider_name);
-
-	ssl_clientcert_index = SSL_get_ex_new_index(0, "struct SslClientCertInfo *", NULL, NULL, NULL);
 
 	// Seeds OpenSSL's own generator, which TLS, RSA and DH still use; Rand() runs on CNG
 	RAND_poll();

@@ -371,7 +371,7 @@ bool UdpAccelIsSendReady(UDP_ACCEL *a, bool check_keepalive)
 		return false;
 	}
 
-	if (IsZeroIp(&a->YourIp))
+	if (IsZeroIP(&a->YourIp))
 	{
 		return false;
 	}
