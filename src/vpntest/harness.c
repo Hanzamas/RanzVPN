@@ -44,6 +44,8 @@
 //   phase deletes the cascade again.
 // - Phase "adminreconnect" (FND-14 #107) runs after "setlink": a second admin RPC loses its connection
 //   (DisconnectConnection through the first one), reconnects inside the next call and keeps no socket timeout.
+//   The same phase calls AdminInvoke on a session that AdminOpen opened without a socket (FND-130 #142) and compares
+//   its Pack with the one the admin RPC over the socket returns.
 // - "adminaudit" (FND-10 #107) starts its own server with hub HARNESS_A and points the server's syslog (server log
 //   and hub security log) at a loopback UDP receiver of the test. Each step is one admin RPC, then GetConfig, whose
 //   LA_GET_CONFIG line ends the step: the lines before it are the audit lines of the call. The step also compares
@@ -63,6 +65,7 @@
 #include "Cedar/Listener.h"
 #include "Cedar/Protocol.h"
 #include "Cedar/Remote.h"
+#include "Cedar/Sam.h"
 #include "Cedar/Server.h"
 #include "Cedar/Session.h"
 
@@ -512,6 +515,7 @@ static void HarnessSetLinkPolicy(HARNESS *h);
 static void HarnessSetLink(HARNESS *h);
 static bool HarnessFindAdminConnection(HARNESS *h, UINT port, char *name, UINT name_size);
 static void HarnessAdminReconnect(HARNESS *h);
+static void HarnessAdminInvoke(HARNESS *h);
 static void HarnessDeleteObjects(HARNESS *h, bool check);
 static void HarnessDeleteConfigFiles();
 static void HarnessTeardown(HARNESS *h, bool check);
@@ -3643,6 +3647,76 @@ static void HarnessAdminReconnect(HARNESS *h)
 	AdminDisconnect(rpc);
 }
 
+// AdminInvoke: a session that AdminOpen opened from a login with no socket answers the Test RPC with the same Pack
+// as the admin RPC over the socket, and the session tag is RPC-n
+static void HarnessAdminInvoke(HARNESS *h)
+{
+	ADMIN_LOGIN l;
+	ADMIN *a;
+	RPC_TEST t;
+	PACK *req;
+	PACK *local;
+	PACK *remote;
+	BUF *b1;
+	BUF *b2;
+	UCHAR hashed_password[SHA1_SIZE];
+	UINT err = ERR_NO_ERROR;
+
+	Print("[admininvoke: AdminInvoke on an admin session without a socket]\n");
+
+	Zero(&l, sizeof(l));
+	StrCpy(l.ConnName, sizeof(l.ConnName), "HARNESS_INVOKE");
+	SetIP(&l.RemoteIP, 127, 0, 0, 1);
+	l.Id = 4242;
+	Rand(l.Random, sizeof(l.Random));
+	l.AcceptEmptyPassword = true;
+	Sha0(hashed_password, "", 0);
+	SecurePassword(l.SecurePassword, hashed_password, l.Random);
+	l.HasSecurePassword = true;
+
+	a = AdminOpen(h->Server, &l, &err);
+	if (HarnessCheckErr(h, (a != NULL ? ERR_NO_ERROR : err),
+		"AdminInvoke: AdminOpen opens a server session without a socket") == false)
+	{
+		return;
+	}
+
+	HarnessCheck(h, a->ServerAdmin && a->HubName == NULL && StrCmp(a->Tag, "RPC-4242") == 0,
+		"AdminInvoke: the session is a server session tagged RPC-n");
+
+	Zero(&t, sizeof(t));
+	t.IntValue = 4242;
+
+	req = NewPack();
+	OutRpcTest(req, &t);
+	local = AdminInvoke(a, "Test", req);
+	FreePack(req);
+
+	req = NewPack();
+	OutRpcTest(req, &t);
+	remote = AdminCall(h->Rpc, "Test", req);
+
+	if (HarnessCheck(h, local != NULL && remote != NULL, "AdminInvoke: both calls return a Pack"))
+	{
+		b1 = PackToBuf(local);
+		b2 = PackToBuf(remote);
+		HarnessCheck(h, CompareBuf(b1, b2), "AdminInvoke: the Pack equals the Pack over the socket");
+		FreeBuf(b1);
+		FreeBuf(b2);
+	}
+
+	if (local != NULL)
+	{
+		FreePack(local);
+	}
+	if (remote != NULL)
+	{
+		FreePack(remote);
+	}
+
+	AdminClose(a);
+}
+
 ////////////////////////////
 // Teardown
 
@@ -6565,6 +6639,7 @@ void harness_test(UINT num, char **arg)
 		HarnessSetLink(h);
 		HarnessSetPhase("adminreconnect", NULL);
 		HarnessAdminReconnect(h);
+		HarnessAdminInvoke(h);
 		HarnessCmdCases(h);
 		HarnessSetPhase("logs", NULL);
 		HarnessLogInject(h);

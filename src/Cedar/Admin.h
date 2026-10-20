@@ -25,13 +25,30 @@ struct RPC_WINVER
 	char Title[128];
 };
 
+// An admin session that owns everything its RPCs and log lines need: no socket, no RPC object
 struct ADMIN
 {
 	SERVER *Server;
-	bool ServerAdmin;
-	char *HubName;
-	RPC *Rpc;
+	bool ServerAdmin;			// Server scope; otherwise the scope is the hub HubName
+	char *HubName;				// Copy owned by the session, NULL in the server scope
+	IP RemoteIP;
+	char Tag[32];				// "RPC-n", the name of the session in the log lines
+	bool EmptyPassword;			// Logged in with the empty password and the client accepts that
 	LIST *LogFileList;
+	RPC_WINVER ClientWinVer;
+};
+
+// What a client sends to open an admin session, with the facts of its connection
+struct ADMIN_LOGIN
+{
+	char ConnName[MAX_SIZE];	// Connection name in the LA_* log lines
+	IP RemoteIP;
+	UINT Id;					// Number n of the session tag "RPC-n"
+	UCHAR Random[SHA1_SIZE];	// Challenge the connection sent
+	char HubName[MAX_HUBNAME_LEN + 1];	// Empty: server scope
+	bool AcceptEmptyPassword;
+	bool HasSecurePassword;		// A secure_password of SHA1_SIZE bytes came with the request
+	UCHAR SecurePassword[SHA1_SIZE];
 	RPC_WINVER ClientWinVer;
 };
 
@@ -625,6 +642,9 @@ struct RPC_MSG
 
 
 UINT AdminAccept(CONNECTION *c, PACK *p);
+ADMIN *AdminOpen(SERVER *server, ADMIN_LOGIN *login, UINT *err);
+PACK *AdminInvoke(ADMIN *a, char *name, PACK *p);
+void AdminClose(ADMIN *a);
 RPC *AdminConnectEx(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name);
 void AdminDisconnect(RPC *rpc);
 UINT AdminReconnect(RPC *rpc);

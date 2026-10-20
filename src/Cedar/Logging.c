@@ -518,31 +518,28 @@ void ALog(ADMIN *a, HUB *h, char *name, ...)
 	wchar_t buf[MAX_SIZE * 2];
 	wchar_t tmp[MAX_SIZE * 2];
 	va_list args;
-	RPC *r;
 	if (a == NULL || name == NULL)
 	{
 		return;
 	}
-
-	r = a->Rpc;
 
 	va_start(args, name);
 	UniFormatArgs(buf, sizeof(buf), _UU(name), args);
 
 	if (h == NULL)
 	{
-		UniFormat(tmp, sizeof(tmp), _UU("LA_TAG_1"), r->Name);
+		UniFormat(tmp, sizeof(tmp), _UU("LA_TAG_1"), a->Tag);
 	}
 	else
 	{
-		UniFormat(tmp, sizeof(tmp), _UU("LA_TAG_2"), r->Name, h->Name);
+		UniFormat(tmp, sizeof(tmp), _UU("LA_TAG_2"), a->Tag, h->Name);
 	}
 
 	UniStrCat(tmp, sizeof(tmp), buf);
 
 	if (h == NULL)
 	{
-		WriteServerLog(((ADMIN *)r->Param)->Server->Cedar, tmp);
+		WriteServerLog(a->Server->Cedar, tmp);
 	}
 	else
 	{

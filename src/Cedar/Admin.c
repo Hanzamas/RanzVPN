@@ -339,26 +339,35 @@ CAPSLIST *ScGetCapsEx(RPC *rpc)
 	return t;
 }
 
-static PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
+// Debug log line "RPC: RPC-n (ip): ..." of the session
+static void AdminDispatchTrace(ADMIN *a, char *format, ...)
 {
-	ADMIN *a;
+	char msg[MAX_PATH];
+	char ip[MAX_PATH];
+	char tmp[MAX_PATH * 2];
+	va_list args;
+
+	IPToStr(ip, sizeof(ip), &a->RemoteIP);
+
+	va_start(args, format);
+	FormatArgs(msg, sizeof(msg), format, args);
+	va_end(args);
+
+	Format(tmp, sizeof(tmp), "RPC: %s (%s): %s", a->Tag, ip, msg);
+
+	SiDebugLog(a->Server, tmp);
+}
+
+// Run one admin RPC of the session: take the super lock, trace, dispatch, trace; the Pack of the answer
+PACK *AdminInvoke(ADMIN *a, char *name, PACK *p)
+{
 	PACK *ret;
 	UINT err;
 	SERVER *server = NULL;
 	CEDAR *cedar = NULL;
 	bool ok = false;
-	if (rpc == NULL || name == NULL || p == NULL)
+	if (a == NULL || name == NULL || p == NULL)
 	{
-		return NULL;
-	}
-
-	ret = NewPack();
-	err = ERR_NO_ERROR;
-
-	a = (ADMIN *)rpc->Param;
-	if (a == NULL)
-	{
-		FreePack(ret);
 		return NULL;
 	}
 
@@ -369,28 +378,13 @@ static PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 		return NULL;
 	}
 
+	ret = NewPack();
+	err = ERR_NO_ERROR;
+
 	cedar = server->Cedar;
 	Lock(cedar->CedarSuperLock);
 
-	if (true)
-	{
-		char tmp[MAX_PATH];
-		char ip[MAX_PATH];
-		UINT rpc_id = 0;
-
-		StrCpy(ip, sizeof(ip), "Unknown");
-
-		if (rpc->Sock != NULL)
-		{
-			IPToStr(ip, sizeof(ip), &rpc->Sock->RemoteIP);
-			rpc_id = rpc->Sock->socket;
-		}
-
-		Format(tmp, sizeof(tmp), "RPC: RPC-%u (%s): Entering RPC [%s]...",
-			rpc_id, ip, name);
-
-		SiDebugLog(a->Server, tmp);
-	}
+	AdminDispatchTrace(a, "Entering RPC [%s]...", name);
 
 	if (0) {}
 
@@ -502,25 +496,7 @@ static PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 		PackAddInt(ret, "error", err);
 	}
 
-	if (true)
-	{
-		char tmp[MAX_PATH];
-		char ip[MAX_PATH];
-		UINT rpc_id = 0;
-
-		StrCpy(ip, sizeof(ip), "Unknown");
-
-		if (rpc->Sock != NULL)
-		{
-			IPToStr(ip, sizeof(ip), &rpc->Sock->RemoteIP);
-			rpc_id = rpc->Sock->socket;
-		}
-
-		Format(tmp, sizeof(tmp), "RPC: RPC-%u (%s): Leaving RPC [%s] (Error: %u).",
-			rpc_id, ip, name, err);
-
-		SiDebugLog(a->Server, tmp);
-	}
+	AdminDispatchTrace(a, "Leaving RPC [%s] (Error: %u).", name, err);
 
 	Unlock(cedar->CedarSuperLock);
 
@@ -5104,7 +5080,7 @@ static UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 
 		if (Cmp(t->HashedPassword, hash2, SHA1_SIZE) == 0 || Cmp(t->SecurePassword, hash1, SHA1_SIZE) == 0)
 		{
-			if (a->ServerAdmin == false && IsLocalHostIP(&a->Rpc->Sock->RemoteIP) == false)
+			if (a->ServerAdmin == false && IsLocalHostIP(&a->RemoteIP) == false)
 			{
 				// Refuse a blank hub admin password set from a remote host
 				ReleaseHub(h);
@@ -8361,12 +8337,12 @@ PACK *AdminCall(RPC *rpc, char *function_name, PACK *p)
 	return RpcCall(rpc, function_name, p);
 }
 
-static bool CheckAdminSourceAddress(SOCK *sock, char *hubname)
+static bool CheckAdminSourceAddress(IP *remote_ip, char *hubname)
 {
 	BUF *b;
 	char *s;
 	bool ok = false;
-	if (sock == NULL)
+	if (remote_ip == NULL)
 	{
 		return false;
 	}
@@ -8417,9 +8393,9 @@ static bool CheckAdminSourceAddress(SOCK *sock, char *hubname)
 				{
 					if (ParseIpAndMask46(t->Token[0], &ip, &mask))
 					{
-						if (IsIP4(&sock->RemoteIP) && IsIP4(&ip))
+						if (IsIP4(remote_ip) && IsIP4(&ip))
 						{
-							IPAnd4(&ip1, &sock->RemoteIP, &mask);
+							IPAnd4(&ip1, remote_ip, &mask);
 							IPAnd4(&ip2, &ip, &mask);
 
 							if (CmpIpAddr(&ip1, &ip2) == 0)
@@ -8427,9 +8403,9 @@ static bool CheckAdminSourceAddress(SOCK *sock, char *hubname)
 								ok = true;
 							}
 						}
-						else if (IsIP6(&sock->RemoteIP) && IsIP6(&ip))
+						else if (IsIP6(remote_ip) && IsIP6(&ip))
 						{
-							IPAnd6(&ip1, &sock->RemoteIP, &mask);
+							IPAnd6(&ip1, remote_ip, &mask);
 							IPAnd6(&ip2, &ip, &mask);
 
 							if (CmpIpAddr(&ip1, &ip2) == 0)
@@ -8440,7 +8416,7 @@ static bool CheckAdminSourceAddress(SOCK *sock, char *hubname)
 					}
 					else if (StrToIP(&ip, t->Token[0]))
 					{
-						if (CmpIpAddr(&sock->RemoteIP, &ip) == 0)
+						if (CmpIpAddr(remote_ip, &ip) == 0)
 						{
 							ok = true;
 						}
@@ -8464,123 +8440,174 @@ static bool CheckAdminSourceAddress(SOCK *sock, char *hubname)
 	return ok;
 }
 
-UINT AdminAccept(CONNECTION *c, PACK *p)
+// Open an admin session: the source address list, the password and the empty-password policy, with the LA_* log lines
+ADMIN *AdminOpen(SERVER *server, ADMIN_LOGIN *login, UINT *err)
 {
 	ADMIN *a;
-	UCHAR secure_password[SHA1_SIZE];
+	CEDAR *cedar;
+	UINT e;
+	bool is_empty_password = false;
+	bool hub_scope;
 	UCHAR null_password[SHA1_SIZE];
 	UCHAR secure_null_password[SHA1_SIZE];
-	char hubname[MAX_HUBNAME_LEN + 1];
-	CEDAR *cedar;
-	SOCK *sock;
-	RPC *rpc;
-	UINT err;
-	SERVER *server = NULL;
-	RPC_WINVER ver;
-	bool accept_empty_password;
-	bool is_empty_password = false;
-	if (c == NULL || p == NULL)
+	UINT dummy;
+	if (err == NULL)
 	{
-		return ERR_INTERNAL_ERROR;
+		err = &dummy;
+	}
+	if (server == NULL || login == NULL)
+	{
+		*err = ERR_INTERNAL_ERROR;
+		return NULL;
 	}
 
-	cedar = c->Cedar;
-	sock = c->FirstSock;
+	cedar = server->Cedar;
+	hub_scope = (StrLen(login->HubName) != 0);
 
-	if (cedar != NULL)
+	if (CheckAdminSourceAddress(&login->RemoteIP, login->HubName) == false)
 	{
-		server = cedar->Server;
+		SLog(cedar, "LA_IP_DENIED", login->ConnName);
+		*err = ERR_IP_ADDRESS_DENIED;
+		return NULL;
 	}
 
-	accept_empty_password = PackGetBool(p, "accept_empty_password");
-
-	InRpcWinVer(&ver, p);
-
-	if (PackGetStr(p, "hubname", hubname, sizeof(hubname)) == false)
+	if (login->HasSecurePassword == false)
 	{
-		StrCpy(hubname, sizeof(hubname), "");
+		*err = ERR_PROTOCOL_ERROR;
+		return NULL;
 	}
 
-	if (CheckAdminSourceAddress(sock, hubname) == false)
+	if (hub_scope == false)
 	{
-		SLog(c->Cedar, "LA_IP_DENIED", c->Name);
-		return ERR_IP_ADDRESS_DENIED;
-	}
-
-	if (PackGetDataSize(p, "secure_password") != SHA1_SIZE)
-	{
-		return ERR_PROTOCOL_ERROR;
-	}
-	PackGetData(p, "secure_password", secure_password);
-
-	if (StrLen(hubname) == 0)
-	{
-		SLog(c->Cedar, "LA_CONNECTED_1", c->Name);
+		SLog(cedar, "LA_CONNECTED_1", login->ConnName);
 	}
 	else
 	{
-		SLog(c->Cedar, "LA_CONNECTED_2", c->Name, hubname);
+		SLog(cedar, "LA_CONNECTED_2", login->ConnName, login->HubName);
 	}
 
-	err = AdminCheckPassword(cedar, c->Random, secure_password,
-		StrLen(hubname) != 0 ? hubname : NULL, accept_empty_password, &is_empty_password);
+	e = AdminCheckPassword(cedar, login->Random, login->SecurePassword,
+		hub_scope ? login->HubName : NULL, login->AcceptEmptyPassword, &is_empty_password);
 
-	if (err != ERR_NO_ERROR)
+	if (e != ERR_NO_ERROR)
 	{
-		SLog(c->Cedar, "LA_ERROR", c->Name, GetUniErrorStr(err), err);
-		return err;
+		SLog(cedar, "LA_ERROR", login->ConnName, GetUniErrorStr(e), e);
+		*err = e;
+		return NULL;
 	}
 
-	SLog(c->Cedar, "LA_OK", c->Name);
+	SLog(cedar, "LA_OK", login->ConnName);
 
 	HashAdminPassword(null_password, "");
-	SecurePassword(secure_null_password, null_password, c->Random);
+	SecurePassword(secure_null_password, null_password, login->Random);
 
-	if (Cmp(secure_null_password, secure_password, SHA1_SIZE) == 0)
+	if (Cmp(secure_null_password, login->SecurePassword, SHA1_SIZE) == 0)
 	{
-		if (IsLocalHostIP(&sock->RemoteIP) == false)
+		if (IsLocalHostIP(&login->RemoteIP) == false)
 		{
 			// Refuse a blank hub admin password from a remote client
-			if (StrLen(hubname) != 0)
+			if (hub_scope)
 			{
-				return ERR_NULL_PASSWORD_LOCAL_ONLY;
+				*err = ERR_NULL_PASSWORD_LOCAL_ONLY;
+				return NULL;
 			}
 		}
 	}
 
-
-	p = NewPack();
-	if (accept_empty_password && is_empty_password)
-	{
-		PackAddBool(p, "empty_password", true);
-	}
-	HttpServerSend(sock, p);
-	FreePack(p);
-
 	a = ZeroMalloc(sizeof(ADMIN));
-	a->ServerAdmin = ((StrLen(hubname) == 0) ? true : false);
-	a->HubName = (StrLen(hubname) != 0 ? hubname : NULL);
-	a->Server = c->Cedar->Server;
+	a->Server = server;
+	a->ServerAdmin = (hub_scope ? false : true);
+	a->HubName = (hub_scope ? CopyStr(login->HubName) : NULL);
+	Copy(&a->RemoteIP, &login->RemoteIP, sizeof(IP));
+	Format(a->Tag, sizeof(a->Tag), "RPC-%u", login->Id);
+	a->EmptyPassword = (login->AcceptEmptyPassword && is_empty_password);
+	Copy(&a->ClientWinVer, &login->ClientWinVer, sizeof(RPC_WINVER));
 
-	Copy(&a->ClientWinVer, &ver, sizeof(RPC_WINVER));
+	*err = ERR_NO_ERROR;
 
-	SetTimeout(sock, INFINITE);
+	return a;
+}
 
-	rpc = StartRpcServer(sock, AdminDispatch, a);
-
-	a->Rpc = rpc;
-
-	SLog(c->Cedar, "LA_RPC_START", c->Name, rpc->Name);
-
-	RpcServer(rpc);
-	RpcFree(rpc);
+// Free an admin session
+void AdminClose(ADMIN *a)
+{
+	if (a == NULL)
+	{
+		return;
+	}
 
 	if (a->LogFileList != NULL)
 	{
 		FreeEnumLogFile(a->LogFileList);
 	}
 
+	Free(a->HubName);
 	Free(a);
+}
+
+// RPC server dispatcher of the admin connection: the session is the RPC parameter
+static PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
+{
+	if (rpc == NULL)
+	{
+		return NULL;
+	}
+
+	return AdminInvoke((ADMIN *)rpc->Param, name, p);
+}
+
+UINT AdminAccept(CONNECTION *c, PACK *p)
+{
+	ADMIN_LOGIN login;
+	ADMIN *a;
+	SOCK *sock;
+	RPC *rpc;
+	UINT err;
+	if (c == NULL || p == NULL || c->FirstSock == NULL || c->Cedar == NULL || c->Cedar->Server == NULL)
+	{
+		return ERR_INTERNAL_ERROR;
+	}
+
+	sock = c->FirstSock;
+
+	Zero(&login, sizeof(login));
+	StrCpy(login.ConnName, sizeof(login.ConnName), c->Name);
+	Copy(&login.RemoteIP, &sock->RemoteIP, sizeof(IP));
+	login.Id = sock->socket;
+	Copy(login.Random, c->Random, SHA1_SIZE);
+	login.AcceptEmptyPassword = PackGetBool(p, "accept_empty_password");
+	InRpcWinVer(&login.ClientWinVer, p);
+	PackGetStr(p, "hubname", login.HubName, sizeof(login.HubName));
+	if (PackGetDataSize(p, "secure_password") == SHA1_SIZE)
+	{
+		PackGetData(p, "secure_password", login.SecurePassword);
+		login.HasSecurePassword = true;
+	}
+
+	a = AdminOpen(c->Cedar->Server, &login, &err);
+	if (a == NULL)
+	{
+		return err;
+	}
+
+	p = NewPack();
+	if (a->EmptyPassword)
+	{
+		PackAddBool(p, "empty_password", true);
+	}
+	HttpServerSend(sock, p);
+	FreePack(p);
+
+	SetTimeout(sock, INFINITE);
+
+	rpc = StartRpcServer(sock, AdminDispatch, a);
+
+	SLog(c->Cedar, "LA_RPC_START", c->Name, a->Tag);
+
+	RpcServer(rpc);
+	RpcFree(rpc);
+
+	AdminClose(a);
 
 	return ERR_NO_ERROR;
 }
