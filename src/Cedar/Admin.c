@@ -24,10 +24,10 @@
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Pack.h"
+#include "Mayaqua/Platform.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 #include "Mayaqua/Tick64.h"
-#include "Mayaqua/Win32.h"
 
 static UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t);
 static UINT StSetHubMsg(ADMIN *a, RPC_MSG *t);

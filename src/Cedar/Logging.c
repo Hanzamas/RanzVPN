@@ -13,11 +13,11 @@
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Object.h"
+#include "Mayaqua/Platform.h"
 #include "Mayaqua/Tick64.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 #include "Mayaqua/TcpIp.h"
-#include "Mayaqua/Win32.h"
 
 static char *delete_targets[] =
 {

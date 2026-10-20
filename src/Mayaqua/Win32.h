@@ -5,13 +5,12 @@
 #define	WIN32_H
 
 #include "MayaType.h"
+#include "Platform.h"
 
 void Win32SetThreadName(UINT thread_id, char *name);
 void Win32InitNewThread();
-void Win32GetMemInfo(MEMINFO *info);
 void *Win32NewSingleInstance(char *instance_name);
 void Win32FreeSingleInstance(void *data);
-void Win32SetHighPriority();
 void Win32RestorePriority();
 void Win32Init();
 void Win32Free();
@@ -22,7 +21,6 @@ void Win32MemoryFree(void *addr);
 bool Win32IsSupportedOs();
 UINT Win32GetNumberOfCpuInner();
 UINT Win32ClassifyOs(UINT major, UINT build, bool server, char **name);
-const OSVERSIONINFOEXW *Win32GetOsVersion();
 void Win32GetOsInfo(OS_INFO *info);
 UINT Win32GetOsType();
 
@@ -43,7 +41,6 @@ char *Win32InputFromFileLineA();
 void Win32PrintW(wchar_t *str);
 void Win32PrintToFileW(wchar_t *str);
 
-bool Win32SetFolderCompress(char *path, bool compressed);
 DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare);
 void Win32GetExeNameW(wchar_t *name, UINT num_chars);
 void Win32GetCurrentDirW(wchar_t *dir, UINT num_chars);

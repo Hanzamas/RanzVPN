@@ -22,11 +22,11 @@
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Pack.h"
+#include "Mayaqua/Platform.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 #include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
-#include "Mayaqua/Win32.h"
 
 #include <stdlib.h>
 
