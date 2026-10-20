@@ -620,25 +620,13 @@ void MacToStr(char *str, UINT size, UCHAR *mac_address)
 
 bool IsEmptyStr(char *str)
 {
-	char *s;
 	if (str == NULL)
 	{
 		return true;
 	}
 
-	s = CopyStr(str);
-	Trim(s);
-
-	if (StrLen(s) == 0)
-	{
-		Free(s);
-		return true;
-	}
-	else
-	{
-		Free(s);
-		return false;
-	}
+	// Empty when nothing but blanks (the characters Trim removes) precedes the terminator
+	return str[strspn(str, " \t")] == '\0';
 }
 
 TOKEN_LIST *ListToTokenList(LIST *o)
@@ -988,40 +976,28 @@ bool EndWith(char *str, char *key)
 
 bool StartWith(char *str, char *key)
 {
-	UINT str_len;
-	UINT key_len;
-	char *tmp;
-	bool ret;
+	UINT i;
 	if (str == NULL || key == NULL)
 	{
 		return false;
 	}
 
-	str_len = StrLen(str);
-	key_len = StrLen(key);
-	if (str_len < key_len)
+	// An empty str or key never matches
+	if (key[0] == '\0')
 	{
 		return false;
 	}
-	if (str_len == 0 || key_len == 0)
-	{
-		return false;
-	}
-	tmp = CopyStr(str);
-	tmp[key_len] = 0;
 
-	if (StrCmpi(tmp, key) == 0)
+	// Compares in place with the ASCII-only fold of StrCmpi, and stops at the end of str
+	for (i = 0;key[i] != '\0';i++)
 	{
-		ret = true;
-	}
-	else
-	{
-		ret = false;
+		if (str[i] == '\0' || ToUpper(str[i]) != ToUpper(key[i]))
+		{
+			return false;
+		}
 	}
 
-	Free(tmp);
-
-	return ret;
+	return true;
 }
 
 bool StrToMac(UCHAR *mac_address, char *str)
