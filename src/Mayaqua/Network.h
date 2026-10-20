@@ -112,7 +112,6 @@ struct SOCK
 	bool ListenMode;
 	BUF *SendBuf;
 	bool IpClientAdded;
-	bool EnableConditionalAccept;
 	IP RemoteIP;
 	IP LocalIP;
 	char *RemoteHostname;
@@ -142,8 +141,6 @@ struct SOCK
 	char ProtocolDetails[256];
 	UCHAR Ssl_Init_Async_SendAlert[2];
 	SSL_ACCEPT_SETTINGS SslAcceptSettings;
-
-	void *hAcceptEvent;
 
 	void *hEvent;
 };
@@ -284,11 +281,8 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 void InitUdpSocketBufferSize(SOCKET s);
 void QuerySocketInformation(SOCK *sock);
 void Disconnect(SOCK *sock);
-SOCK *Listen(UINT port);
-SOCK *ListenEx(UINT port, bool local_only);
-SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip);
-SOCK *ListenEx6(UINT port, bool local_only);
-SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip);
+SOCK *Listen(UINT port, IP *listen_ip);
+SOCK *Listen6(UINT port, IP *listen_ip);
 SOCK *Accept(SOCK *sock);
 SOCK *Accept6(SOCK *sock);
 UINT Send(SOCK *sock, void *data, UINT size, bool secure);

@@ -393,95 +393,6 @@ void GetCurrentMachineIpProcessHashInternal(void *hash)
 	Free(product_id);
 }
 
-
-typedef struct WIN32_ACCEPT_CHECK_DATA
-{
-	bool Rejected;
-} WIN32_ACCEPT_CHECK_DATA;
-
-static int CALLBACK Win32AcceptCheckCallback(LPWSABUF lpCallerId, LPWSABUF lpCallerData, LPQOS pQos,
-                                      LPQOS lpGQOS, LPWSABUF lpCalleeId, LPWSABUF lpCalleeData,
-                                      GROUP FAR *g, DWORD_PTR dwCallbackData)
-{
-	return CF_ACCEPT;
-}
-
-static SOCKET Win32Accept(SOCK *sock, SOCKET s, struct sockaddr *addr, int *addrlen, bool ipv6)
-{
-	SOCKET ret;
-	WIN32_ACCEPT_CHECK_DATA d;
-	UINT err;
-	int initial_addrlen = *addrlen;
-	UINT num_error = 0;
-	UINT zero = 0;
-	UINT tmp = 0;
-	DWORD ret_size = 0;
-	if (sock == NULL || s == INVALID_SOCKET)
-	{
-		return INVALID_SOCKET;
-	}
-
-	if (sock->hAcceptEvent == NULL)
-	{
-		sock->hAcceptEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-
-		WSAEventSelect(s, sock->hAcceptEvent, FD_ACCEPT | FD_CLOSE);
-	}
-
-L_LOOP:
-
-	if (sock->CancelAccept)
-	{
-		return INVALID_SOCKET;
-	}
-
-	Zero(&d, sizeof(d));
-
-	*addrlen = initial_addrlen;
-	Zero(addr, initial_addrlen);
-	ret = WSAAccept(s, addr, addrlen, Win32AcceptCheckCallback, (DWORD_PTR)&d);
-
-	if (ret == INVALID_SOCKET)
-	{
-		err = WSAGetLastError();
-
-		if (err == WSAEWOULDBLOCK)
-		{
-			UINT wait_ret = WaitForSingleObject(sock->hAcceptEvent, 1234);
-
-			if (wait_ret == WAIT_OBJECT_0 || wait_ret == WAIT_TIMEOUT)
-			{
-				goto L_LOOP;
-			}
-
-			Debug("!!! WaitForSingleObject Error. ret=%u GetLastError=%u\n", wait_ret, GetLastError());
-		}
-
-		num_error++;
-
-		Debug("!!! WSAAccept Error: %u  rej=%u  num=%u  tick=%I64u\n", err, d.Rejected, num_error, Tick64());
-
-		if (d.Rejected && err == WSAECONNREFUSED)
-		{
-			goto L_LOOP;
-		}
-
-		if (err == WSAETIMEDOUT)
-		{
-			goto L_LOOP;
-		}
-	}
-	else
-	{
-		WSAEventSelect(ret, sock->hAcceptEvent, 0);
-
-		WSAIoctl(ret, FIONBIO, &zero, sizeof(zero), &tmp, sizeof(tmp), &ret_size, NULL, NULL);
-	}
-
-	return ret;
-}
-
-
 bool IsStrIPv6Address(char *str)
 {
 	IP ip;
@@ -3698,14 +3609,7 @@ SOCK *Accept(SOCK *sock)
 	Zero(&addr, sizeof(addr));
 	size = sizeof(addr);
 
-	if (sock->EnableConditionalAccept)
-	{
-		new_socket = Win32Accept(sock, s, (struct sockaddr *)&addr,(int *)&size, false);
-	}
-	else
-	{
-		new_socket = accept(s, (struct sockaddr *)&addr,(int *)&size);
-	}
+	new_socket = accept(s, (struct sockaddr *)&addr,(int *)&size);
 
 	if (new_socket == INVALID_SOCKET)
 	{
@@ -3790,14 +3694,7 @@ SOCK *Accept6(SOCK *sock)
 	Zero(&addr, sizeof(addr));
 	size = sizeof(addr);
 
-	if (sock->EnableConditionalAccept)
-	{
-		new_socket = Win32Accept(sock, s, (struct sockaddr *)&addr,(int *)&size, true);
-	}
-	else
-	{
-		new_socket = accept(s, (struct sockaddr *)&addr,(int *)&size);
-	}
+	new_socket = accept(s, (struct sockaddr *)&addr,(int *)&size);
 
 	if (new_socket == INVALID_SOCKET)
 	{
@@ -3851,18 +3748,12 @@ SOCK *Accept6(SOCK *sock)
 	return ret;
 }
 
-SOCK *ListenEx6(UINT port, bool local_only)
-{
-	return ListenEx63(port, local_only, false, NULL);
-}
-SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
+SOCK *Listen6(UINT port, IP *listen_ip)
 {
 	SOCKET s;
 	SOCK *sock;
 	struct sockaddr_in6 addr;
 	struct in6_addr in;
-	IP localhost;
-	UINT backlog = SOMAXCONN;
 	if (port == 0 || port >= 65536)
 	{
 		return NULL;
@@ -3870,7 +3761,6 @@ SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 
 	Zero(&addr, sizeof(addr));
 	Zero(&in, sizeof(in));
-	GetLocalHostIP6(&localhost);
 
 	addr.sin6_port = htons((UINT)port);
 	if (listen_ip == NULL || IsZeroIP(listen_ip))
@@ -3887,19 +3777,11 @@ SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 	}
 	addr.sin6_family = AF_INET6;
 
-	if (local_only)
-	{
-		IPToInAddr6(&addr.sin6_addr, &localhost);
-
-		enable_ca = false;
-	}
-
 	s = socket(AF_INET6, SOCK_STREAM, 0);
 	if (s == INVALID_SOCKET)
 	{
 		return NULL;
 	}
-
 
 	if (bind(s, (struct sockaddr *)&addr, sizeof(struct sockaddr_in6)) != 0)
 	{
@@ -3907,12 +3789,7 @@ SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 		return NULL;
 	}
 
-	if (enable_ca)
-	{
-		backlog = 1;
-	}
-
-	if (listen(s, backlog))
+	if (listen(s, SOMAXCONN))
 	{
 		closesocket(s);
 		return NULL;
@@ -3928,27 +3805,16 @@ SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 	sock->SecureMode = false;
 	sock->LocalPort = port;
 	sock->IPv6 = true;
-	sock->EnableConditionalAccept = enable_ca;
 
 	return sock;
 }
 
-SOCK *Listen(UINT port)
-{
-	return ListenEx(port, false);
-}
-SOCK *ListenEx(UINT port, bool local_only)
-{
-	return ListenEx2(port, local_only, false, NULL);
-}
-SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
+SOCK *Listen(UINT port, IP *listen_ip)
 {
 	SOCKET s;
 	SOCK *sock;
 	struct sockaddr_in addr;
 	struct in_addr in;
-	IP localhost;
-	UINT backlog = SOMAXCONN;
 	if (port == 0 || port >= 65536)
 	{
 		return NULL;
@@ -3956,7 +3822,6 @@ SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 
 	Zero(&addr, sizeof(addr));
 	Zero(&in, sizeof(in));
-	SetIP(&localhost, 127, 0, 0, 1);
 
 	addr.sin_port = htons((UINT)port);
 	if (listen_ip == NULL || IsZeroIP(listen_ip))
@@ -3973,20 +3838,11 @@ SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 	}
 	addr.sin_family = AF_INET;
 
-	if (local_only)
-	{
-		IPToInAddr(&addr.sin_addr, &localhost);
-
-		enable_ca = false;
-	}
-
 	s = socket(AF_INET, SOCK_STREAM, 0);
 	if (s == INVALID_SOCKET)
 	{
 		return NULL;
 	}
-
-	UINT true_flag = 1;
 
 	if (bind(s, (struct sockaddr *)&addr, sizeof(struct sockaddr_in)) != 0)
 	{
@@ -3994,13 +3850,7 @@ SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 		return NULL;
 	}
 
-	if (enable_ca)
-	{
-		setsockopt(s, SOL_SOCKET, SO_CONDITIONAL_ACCEPT, (char *)&true_flag, sizeof(true_flag));
-		backlog = 1;
-	}
-
-	if (listen(s, backlog))
+	if (listen(s, SOMAXCONN))
 	{
 		closesocket(s);
 		return NULL;
@@ -4015,7 +3865,6 @@ SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 	sock->ListenMode = true;
 	sock->SecureMode = false;
 	sock->LocalPort = port;
-	sock->EnableConditionalAccept = enable_ca;
 
 	return sock;
 }
@@ -4030,29 +3879,17 @@ void Disconnect(SOCK *sock)
 
 	if (sock->Type == SOCK_TCP && sock->ListenMode)
 	{
-		bool no_tcp_check_port = false;
-
 		sock->CancelAccept = true;
-
-		if (sock->hAcceptEvent != NULL)
-		{
-			SetEvent(sock->hAcceptEvent);
-
-			no_tcp_check_port = true;
-		}
 
 		if (sock->AcceptCanceled == false)
 		{
-			if (no_tcp_check_port == false)
+			if (sock->IPv6 == false)
 			{
-				if (sock->IPv6 == false)
-				{
-					CheckTCPPortEx("127.0.0.1", sock->LocalPort, TIMEOUT_TCP_PORT_CHECK);
-				}
-				else
-				{
-					CheckTCPPortEx("::1", sock->LocalPort, TIMEOUT_TCP_PORT_CHECK);
-				}
+				CheckTCPPortEx("127.0.0.1", sock->LocalPort, TIMEOUT_TCP_PORT_CHECK);
+			}
+			else
+			{
+				CheckTCPPortEx("::1", sock->LocalPort, TIMEOUT_TCP_PORT_CHECK);
 			}
 		}
 	}
@@ -5090,11 +4927,6 @@ void CleanupSock(SOCK *s)
 		closesocket(s->socket);
 	}
 	Free(s->RemoteHostname);
-
-	if (s->hAcceptEvent != NULL)
-	{
-		CloseHandle(s->hAcceptEvent);
-	}
 
 	if (s->RemoteX != NULL)
 	{

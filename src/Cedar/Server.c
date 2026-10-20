@@ -1525,7 +1525,7 @@ bool SiEnableListener(SERVER *s, UINT port)
 		return true;
 	}
 
-	e->Listener = NewListener(s->Cedar, LISTENER_TCP, e->Port);
+	e->Listener = NewListener(s->Cedar, e->Port);
 	if (e->Listener == NULL)
 	{
 		return false;
@@ -1583,7 +1583,7 @@ bool SiAddListenerEx(SERVER *s, UINT port, bool enabled, bool disable_dos)
 
 	if (e->Enabled)
 	{
-		e->Listener = NewListener(s->Cedar, LISTENER_TCP, e->Port);
+		e->Listener = NewListener(s->Cedar, e->Port);
 		if (e->Listener != NULL)
 		{
 			e->Listener->DisableDos = e->DisableDos;

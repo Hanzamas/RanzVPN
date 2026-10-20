@@ -218,18 +218,13 @@ static void TCPAccepted(LISTENER *r, SOCK *s)
 		}
 	}
 
-	IPToStr(tmp, sizeof(tmp), &s->RemoteIP);
-
 	data = ZeroMalloc(sizeof(TCP_ACCEPTED_PARAM));
 	data->r = r;
 	data->s = s;
 
-	if (r->ThreadProc == TCPAcceptedThread)
-	{
-		Inc(cedar->AcceptingSockets);
-	}
+	Inc(cedar->AcceptingSockets);
 
-	t = NewThread(r->ThreadProc, data);
+	t = NewThread(TCPAcceptedThread, data);
 	WaitThreadInit(t);
 	Free(data);
 	ReleaseThread(t);
@@ -461,32 +456,13 @@ static void ListenerTCPMainLoop(LISTENER *r)
 				return;
 			}
 
-			s = NULL;
-
-			if (r->Protocol == LISTENER_TCP)
+			if (r->ShadowIPv6 == false)
 			{
-				if (r->ShadowIPv6 == false)
-				{
-					if (r->Cedar->Server == NULL)
-					{
-						s = ListenEx2(r->Port, r->LocalOnly, r->EnableConditionalAccept, NULL);
-					}
-					else
-					{
-						s = ListenEx2(r->Port, r->LocalOnly, r->EnableConditionalAccept, &r->Cedar->Server->ListenIP);
-					}
-				}
-				else
-				{
-					if (r->Cedar->Server == NULL)
-					{
-						s = ListenEx6(r->Port, r->LocalOnly);
-					}
-					else
-					{
-						s = ListenEx63(r->Port, r->LocalOnly, false, &r->Cedar->Server->ListenIP);
-					}
-				}
+				s = Listen(r->Port, &r->Cedar->Server->ListenIP);
+			}
+			else
+			{
+				s = Listen6(r->Port, &r->Cedar->Server->ListenIP);
 			}
 
 			if (s != NULL)
@@ -499,7 +475,7 @@ static void ListenerTCPMainLoop(LISTENER *r)
 				}
 				Unlock(r->lock);
 
-				if (r->ShadowIPv6 == false && r->Protocol == LISTENER_TCP)
+				if (r->ShadowIPv6 == false)
 				{
 					SLog(r->Cedar, "LS_LISTENER_START_2", r->Port);
 				}
@@ -509,7 +485,7 @@ static void ListenerTCPMainLoop(LISTENER *r)
 			if (first_failed)
 			{
 				first_failed = false;
-				if (r->ShadowIPv6 == false && r->Protocol == LISTENER_TCP)
+				if (r->ShadowIPv6 == false)
 				{
 					SLog(r->Cedar, "LS_LISTENER_START_3", r->Port, LISTEN_RETRY_TIME / 1000);
 				}
@@ -648,7 +624,7 @@ void StopListener(LISTENER *r)
 
 	port = r->Port;
 
-	if (r->ShadowIPv6 == false && r->Protocol == LISTENER_TCP)
+	if (r->ShadowIPv6 == false)
 	{
 		SLog(r->Cedar, "LS_LISTENER_STOP_1", port);
 	}
@@ -676,7 +652,7 @@ void StopListener(LISTENER *r)
 		}
 	}
 
-	if (r->ShadowIPv6 == false && r->Protocol == LISTENER_TCP)
+	if (r->ShadowIPv6 == false)
 	{
 		SLog(r->Cedar, "LS_LISTENER_STOP_2", port);
 	}
@@ -811,31 +787,23 @@ int CompareListener(void *p1, void *p2)
 	}
 }
 
-LISTENER *NewListener(CEDAR *cedar, UINT proto, UINT port)
-{
-	return NewListenerEx5(cedar, proto, port, TCPAcceptedThread, NULL, false, false, false);
-}
-LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only, bool shadow_ipv6, bool enable_ca)
+// The IPv4 listener (shadow_ipv6 false) creates its IPv6 shadow listener on the same port
+static LISTENER *NewListenerInternal(CEDAR *cedar, UINT port, bool shadow_ipv6)
 {
 	LISTENER *r;
 	THREAD *t;
-	if ((proto == LISTENER_TCP && port == 0) || cedar == NULL)
-	{
-		return NULL;
-	}
-	if (proto != LISTENER_TCP)
+	if (port == 0 || cedar == NULL)
 	{
 		return NULL;
 	}
 
 	r = ZeroMalloc(sizeof(LISTENER));
 
-	r->ThreadProc = proc;
 	r->Cedar = cedar;
 	AddRef(r->Cedar->ref);
 	r->lock = NewLock();
 	r->ref = NewRef();
-	r->Protocol = proto;
+	r->Protocol = LISTENER_TCP;
 	r->Port = port;
 	r->Event = NewEvent();
 	// Manual-reset: every waiter of WaitListenerBind sees the first bind attempt, also after it happened
@@ -843,28 +811,22 @@ LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc,
 
 	r->DosList = NewList(CompareDos);
 
-	r->LocalOnly = local_only;
 	r->ShadowIPv6 = shadow_ipv6;
-	r->EnableConditionalAccept = enable_ca;
 
 	if (r->ShadowIPv6 == false)
 	{
-		if (proto == LISTENER_TCP)
-		{
-			SLog(cedar, "LS_LISTENER_START_1", port);
-		}
+		SLog(cedar, "LS_LISTENER_START_1", port);
 	}
 
 	t = NewThread(ListenerThread, r);
 	WaitThreadInit(t);
 	ReleaseThread(t);
 
-	if (r->ShadowIPv6 == false && proto == LISTENER_TCP)
+	if (r->ShadowIPv6 == false)
 	{
 		if (r->Cedar->DisableIPv6Listener == false)
 		{
-			r->ShadowListener = NewListenerEx5(cedar, proto, port, proc, thread_param,
-				local_only, true, false);
+			r->ShadowListener = NewListenerInternal(cedar, port, true);
 		}
 	}
 
@@ -874,6 +836,11 @@ LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc,
 	}
 
 	return r;
+}
+
+LISTENER *NewListener(CEDAR *cedar, UINT port)
+{
+	return NewListenerInternal(cedar, port, false);
 }
 
 SESSION *GetSessionFromUDPEntry(CEDAR *cedar, UINT key32)

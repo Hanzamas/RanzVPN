@@ -37,12 +37,9 @@ struct LISTENER
 	LIST *DosList;
 	UINT64 DosListLastRefreshTime;
 
-	THREAD_PROC *ThreadProc;
-	bool LocalOnly;
 	bool ShadowIPv6;
 	LISTENER *ShadowListener;
 	bool DisableDos;
-	bool EnableConditionalAccept;
 };
 
 struct TCP_ACCEPTED_PARAM
@@ -57,8 +54,7 @@ struct UDP_ENTRY
 	SESSION *Session;
 };
 
-LISTENER *NewListener(CEDAR *cedar, UINT proto, UINT port);
-LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only, bool shadow_ipv6, bool enable_ca);
+LISTENER *NewListener(CEDAR *cedar, UINT port);
 void ReleaseListener(LISTENER *r);
 void StopListener(LISTENER *r);
 bool WaitListenerBind(LISTENER *r, UINT timeout);

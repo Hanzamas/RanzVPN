@@ -5179,7 +5179,11 @@ static void CertDlAcceptThread(THREAD *thread, void *param)
 static CERTDL_SERVER *CertDlStartServer(X *issuer, X *tls_cert, K *tls_key)
 {
 	CERTDL_SERVER *srv;
-	SOCK *s = ListenEx(CERTDL_PORT, true);
+	IP loopback;
+	SOCK *s;
+
+	GetLocalHostIP4(&loopback);
+	s = Listen(CERTDL_PORT, &loopback);
 
 	if (s == NULL)
 	{
@@ -6834,7 +6838,7 @@ void listenerbind_test(UINT num, char **arg)
 	HarnessSetPhase("setup", "held port");
 	// The bind of the server's listener (any address, no address reuse): the server cannot bind the port while
 	// this socket is open
-	held = ListenEx2(LISTENBIND_PORT_HELD, false, false, NULL);
+	held = Listen(LISTENBIND_PORT_HELD, NULL);
 	Format(tmp, sizeof(tmp), "the test holds TCP %u", LISTENBIND_PORT_HELD);
 	ok = HarnessCheck(h, held != NULL, tmp);
 
