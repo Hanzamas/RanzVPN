@@ -135,7 +135,6 @@ static void OutRpcAccessEx(PACK *p, ACCESS *a, UINT index, UINT total);
 static UINT StTest(ADMIN *a, RPC_TEST *t);
 static UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hubname, bool accept_empty_password, bool *is_password_empty);
 static void HashAdminPassword(void *hash, char *password);
-static RPC *AdminConnectEx2(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name, void *hWnd);
 static bool SiIsEmptyPassword(void *hash_password);
 
 #define	DECLARE_RPC_EX(rpc_name, data_type, function, in_rpc, out_rpc, free_rpc)		\
@@ -8684,14 +8683,14 @@ void AdminDisconnect(RPC *rpc)
 	ReleaseSession(s);
 }
 
-static SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name, void *hWnd, bool *empty_password)
+static SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name, bool *empty_password)
 {
 	UCHAR secure_password[SHA1_SIZE];
 	SESSION *s;
 	SOCK *sock;
 	PACK *p;
 	RPC_WINVER ver;
-	s = NewRpcSessionEx2(cedar, o, err, client_name, hWnd);
+	s = NewRpcSession(cedar, o, err, client_name);
 	if (s == NULL)
 	{
 		return NULL;
@@ -8768,10 +8767,6 @@ static SOCK *AdminRpcSock(SESSION *s)
 
 RPC *AdminConnectEx(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name)
 {
-	return AdminConnectEx2(cedar, o, hubname, hashed_password, err, client_name, NULL);
-}
-static RPC *AdminConnectEx2(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name, void *hWnd)
-{
 	SESSION *s;
 	SOCK *sock;
 	RPC *rpc;
@@ -8789,7 +8784,7 @@ static RPC *AdminConnectEx2(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void 
 
 	Copy(hashed_password_2, hashed_password, SHA1_SIZE);
 
-	s = AdminConnectMain(cedar, o, hubname, hashed_password_2, err, client_name, hWnd, &empty_password);
+	s = AdminConnectMain(cedar, o, hubname, hashed_password_2, err, client_name, &empty_password);
 
 	if (s == NULL)
 	{
@@ -8845,7 +8840,7 @@ UINT AdminReconnect(RPC *rpc)
 		rpc->VpnServerHubName,
 		rpc->VpnServerHashedPassword,
 		&err,
-		rpc->VpnServerClientName, NULL, &empty_password);
+		rpc->VpnServerClientName, &empty_password);
 
 	ReleaseCedar(cedar);
 

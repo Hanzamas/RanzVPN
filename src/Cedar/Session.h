@@ -138,7 +138,6 @@ struct SESSION
 	UINT AdjustMss;
 
 	bool UseUdpAcceleration;
-	bool UseHMacOnUdpAcceleration;
 	UDP_ACCEL *UdpAccel;
 	bool IsUsingUdpAcceleration;
 	UINT UdpAccelMss;
@@ -176,7 +175,7 @@ struct SESSION
 };
 
 SESSION *NewClientSession(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *auth, PACKET_ADAPTER *pa);
-SESSION *NewRpcSessionEx2(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *client_str, void *hWnd);
+SESSION *NewRpcSession(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *client_str);
 SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, POLICY *policy);
 void ReleaseSession(SESSION *s);
 void StopSession(SESSION *s);
