@@ -1412,7 +1412,6 @@ void AbortExit()
 
 void AbortExitEx(char *msg)
 {
-	FILE *f;
 	if (msg == NULL)
 	{
 		msg = "Unknown Error";
@@ -1428,9 +1427,8 @@ void AbortExitEx(char *msg)
 	fflush(stdout);
 	_set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
 	abort();
-#endif
-
-	f = fopen("abort_error_log.txt", "w");
+#else	// RANZ_FUZZING
+	FILE *f = fopen("abort_error_log.txt", "w");
 	if (f != NULL)
 	{
 		SYSTEMTIME time = { 0 };
@@ -1466,6 +1464,7 @@ void AbortExitEx(char *msg)
 	fputs("\r\n", stdout);
 
 	_exit(1);
+#endif	// RANZ_FUZZING
 }
 
 
