@@ -195,18 +195,6 @@ ERR_152					TLS handshake has failed.
 ERR_153					The TCP Listener has been registered, but its port could not be opened: another program is using it or Windows reserves it. The VPN Server keeps trying and starts listening once the port is free; until then ListenerList shows the listener as Error.
 
 
-# Concerning licenses
-LICENSE_STATUS_OK		Valid
-LICENSE_STATUS_EXPIRED	Expired
-LICENSE_STATUS_ID_DIFF	Server ID Mismatch
-LICENSE_STATUS_DUP		Duplication
-LICENSE_STATUS_INSUFFICIENT	Other Licenses are Required
-LICENSE_STATUS_COMPETITION	Competition with Other Licenses
-LICENSE_STATUS_NONSENSE		Meaningless for Current Edition
-LICENSE_STATUS_CPU		CPU Type is Incompatible
-LICENSE_STATUS_OTHERERROR	Unknown Error
-
-
 # Concerning hardware tokens
 SEC_YES					Yes
 SEC_NO					No
@@ -818,32 +806,8 @@ SM_AC_DENY				Deny
 SM_LOG_FILE_COLUMN_1	Log File Name
 SM_LOG_FILE_COLUMN_2	File Size
 SM_LOG_FILE_COLUMN_3	Updated on
-SM_LICENSE_COLUMN_1		Number
-SM_LICENSE_COLUMN_2		License Key
-SM_LICENSE_COLUMN_3		License Type Name
-SM_LICENSE_COLUMN_4		Status
 SM_LICENSE_COLUMN_5		Expiration Date
-SM_LICENSE_COLUMN_6		License ID
-SM_LICENSE_COLUMN_7		License Type ID
-SM_LICENSE_COLUMN_8		Server ID
-SM_LICENSE_COLUMN_9		Serial ID
-SM_LICENSE_INFINITE		Infinite
 SM_LICENSE_NO_EXPIRES	No Expiration
-SM_LICENSE_STATUS_EDITION	Product Edition
-SM_LICENSE_STATUS_RELEASE	Release Date of VPN Server
-SM_LICENSE_STATUS_SYSTEM_ID	Current Server ID
-SM_LICENSE_STATUS_EXPIRES	Expiration of Current Product License
-SM_LICENSE_STATUS_SUBSCRIPTION	Status of Subscription Contract
-SM_LICENSE_STATUS_SUBSCRIPTION_NONEED	No Need (This Edition requires no subscription keys)
-SM_LICENSE_STATUS_SUBSCRIPTION_NONE		No Keys (Adding a subscription key is required)
-SM_LICENSE_STATUS_SUBSCRIPTION_VALID	Subscription is Active [Until %s]
-SM_LICENSE_STATUS_SUBSCRIPTION_EXPIRED	Subscription is Expired [at %s]
-SM_LICENSE_STATUS_SUBSCRIPTION_BUILD_STR	Free Upgrade to Any Future Versions Released Until %s is Allowed
-SM_LICENSE_STATUS_ENTERPRISE			Enterprise Functions Availability
-SM_LICENSE_STATUS_ENTERPRISE_YES		Yes (Available)
-SM_LICENSE_STATUS_ENTERPRISE_NO			No (Unavailable)
-SM_LICENSE_NUM_CLIENT	Allowed Concurrent Clients
-SM_LICENSE_NUM_BRIDGE	Allowed Concurrent Bridges
 SM_NO_LICENSE_COLUMN	Caution: 
 SM_NO_LICENSE			Because there are no product licenses registered, this VPN Server's communication function doesn't operate.
 SM_SYSLOG_0				Disable Syslog Send Function
@@ -878,6 +842,10 @@ LS_LOAD_CONFIG_2		The configuration file has been loaded.
 LS_LOAD_CONFIG_3		Configuration file does not exist. Attempting to start using initial settings.
 LS_INIT_SAVE_THREAD		Starting the automatically saving background task. The interval between auto-saves is %u seconds. You can change the interval by changing the parameter AutoSaveConfigSpan in the configuration file.
 LS_BAD_CONFIG			The contents of the configuration file is invalid. The loading process has been terminated.
+LS_CONFIG_SET_ASIDE		The configuration file "%s" could not be read. It is kept as "%s.bad", and the server starts with the initial settings.
+LS_CONFIG_SET_ASIDE_FAILED	The configuration file "%s" could not be read, and renaming it to "%s.bad" failed. The server starts with the initial settings and does not save over the file until the rename succeeds.
+LS_SAVE_CONFIG_FAILED	Saving the configuration file "%s" failed. The save will be retried.
+LS_SAVE_CONFIG_RESTORED	The configuration file "%s" has been saved again after a failed save.
 LS_LISTENER_START_1		TCP Listener (port %u) is starting.
 LS_LISTENER_START_2		TCP Listener (port %u) has started. Now listening for connection from client.
 LS_LISTENER_START_3		Unable to set port to Listen status for TCP Listener (port %u). Attempting at fixed intervals until successful.
@@ -2493,34 +2461,6 @@ CMD_AcDel_Help			Use this to delete a rule from the Source IP Address Limit List
 CMD_AcDel_Args			AcDel [id]
 CMD_AcDel_[id]			Specify the ID of the rule in the Source IP Address Limit List that you want to delete.
 CMD_AcDel_Prompt_ID		ID of Rule to Delete: 
-
-
-# LicenseAdd command
-CMD_LicenseAdd			Add License Key Registration
-CMD_LicenseAdd_Help		Use this to register a new license key on the Ranz VPN Server. \nTo use Ranz VPN Server you must acquire a valid license and register the license key. The license keys are 36 alphanumeric characters in length plus hyphens. They are key codes that certify the ownership of a license. \nWhen a license certificate is received together with this software, the license key is printed on this license certificate. If the license for this software has been purchased online, the license key is provided by email and on the website window at the time the license is purchased. The license key may also be written down by some other method. If you don't know where the license key is written down, ask the vendor who sold you the license. \n\nTo get the list of currently registered licenses, use the LicenseList command. \nTo display the license status of the current VPN Server, use the LicenseStatus command. \nTo execute this command, you must have VPN Server administrator privileges. \nThis command cannot be run on VPN Bridge.
-CMD_LicenseAdd_Args		LicenseAdd [key]
-CMD_LicenseAdd_[key]	Specify the license key to register. Specify 36 digits of alphanumeric characters and group the digits in groups of 6 separating them by hyphen. 
-CMD_LicenseAdd_Prompt_Key	License Key: 
-
-
-# LicenseDel command
-CMD_LicenseDel			Delete Registered License
-CMD_LicenseDel_Help		Use this to delete a specified license from the license list that is currently registered on the Ranz VPN Server. \n\nTo get the list of currently registered licenses, use the LicenseList command. \nTo display the license status of the current VPN Server, use the LicenseStatus command. \nTo execute this command, you must have VPN Server administrator privileges. \nThis command cannot be run on VPN Bridge.
-CMD_LicenseDel_Args		LicenseDel [id]
-CMD_LicenseDel_[id]		Specify the license number to delete.
-CMD_LicenseDel_Prompt_ID	License Number to Delete: 
-
-
-# LicenseList command
-CMD_LicenseList			Get List of Registered Licenses
-CMD_LicenseList_Help	Use this to display a list of license information currently registered on the Ranz VPN Server including: license key, license type name, status, expiration date, license ID, license type ID, server ID and serial ID. \n\nTo display the license status of the current VPN Server, use the LicenseStatus command. \nTo execute this command, you must have VPN Server administrator privileges. \nThis command cannot be run on VPN Bridge.
-CMD_LicenseList_Args	LicenseList
-
-
-# LicenseStatus command
-CMD_LicenseStatus		Get License Status of Current VPN Server
-CMD_LicenseStatus_Help	Use this to get and display the license status of the current Ranz VPN Server. \nThe following current information on the Ranz VPN Server will be displayed: product edition, server ID, product license expiration date, number of usable Client Connection Licenses and number of Bridge Connection Licenses. \n\nTo execute this command, you must have VPN Server administrator privileges. \nThis command cannot be run on VPN Bridge.
-CMD_LicenseStatus_Args	LicenseStatus
 
 
 # ServerCertRegenerate command

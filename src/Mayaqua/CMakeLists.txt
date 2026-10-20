@@ -89,6 +89,7 @@ if(WIN32)
       "DbgHelp.Lib"
       "dwmapi.lib"
       "iphlpapi.lib"
+      "ntdll.lib"
       "Psapi.Lib"
       "Secur32.Lib"
       "setupapi.lib"
