@@ -1,6 +1,6 @@
 // pkttest.c
 // Named packet parser tests of vpntest ("pktparse" command, FND-38 #113; "vlantpid" command,
-// FND-39 #113)
+// FND-39 #113; "icmpv6ns" command, FND-54 #117)
 //
 // pktparse pins the parsers of Mayaqua/TcpIp.c that read the DNS and DHCP traffic of VPN clients
 // for the packet log and the IP table of the hub:
@@ -14,7 +14,7 @@
 //   option code without its length byte or a body that runs past the end ends the list without
 //   that option. The old code read the byte behind a Pad as a length and filled a short body with
 //   zeros.
-// - ParseDHCPv4Data (PKT.DhcpOpCode of ParsePacket) reads the magic cookie only at offset 236.
+// - the DHCP message type reader (PKT.DhcpOpCode of ParsePacket) reads the magic cookie only at offset 236.
 //   The old code took the first cookie bytes anywhere in the payload, also in sname or file.
 //
 // vlantpid pins the VLAN TPID of the packet parser. A hub with VlanTypeId set (here 0x88A8, the
@@ -331,24 +331,7 @@ static void PktTestOptionsCase(PKTTEST_CTX *ctx, char *what, UCHAR *options, UIN
 	Free(data);
 }
 
-// One ParseDhcpOptionList case on the options, in a heap block of exactly options_size bytes: it
-// must give the opcode expect_opcode and the host name expect_host
-static void PktTestOptionListCase(PKTTEST_CTX *ctx, char *what, UCHAR *options, UINT options_size,
-	UINT expect_opcode, char *expect_host)
-{
-	UCHAR *data = Clone(options, options_size);
-	DHCP_OPTION_LIST *list = ParseDhcpOptionList(data, options_size);
-	bool ok = (list != NULL && list->Opcode == expect_opcode && StrCmp(list->Hostname, expect_host) == 0);
-
-	PktTestCheck(ctx, ok, what, "%s, opcode %u, host name \"%s\"; expected opcode %u, host name \"%s\"",
-		list == NULL ? "NULL" : "a list", list == NULL ? 0 : list->Opcode,
-		list == NULL ? "" : list->Hostname, expect_opcode, expect_host);
-
-	Free(list);
-	Free(data);
-}
-
-// ParseDhcpOptions and ParseDhcpOptionList
+// ParseDhcpOptions
 static void PktTestDhcpOptions(PKTTEST_CTX *ctx)
 {
 	UCHAR discover[] = {DHCP_DISCOVER};
@@ -391,10 +374,8 @@ static void PktTestDhcpOptions(PKTTEST_CTX *ctx)
 	PktTestOptionsCase(ctx, "ParseDhcpOptions rejects an option 250 whose body runs past the end, keeping the option before it",
 		continued_short, sizeof(continued_short), 1, DHCP_ID_HOST_NAME, host_part, sizeof(host_part));
 
-	PktTestOptionListCase(ctx, "ParseDhcpOptionList reads the message type and the host name of a DISCOVER with Pads",
-		discover_pads, sizeof(discover_pads), DHCP_DISCOVER, "host");
-	PktTestOptionListCase(ctx, "ParseDhcpOptionList takes no host name whose body runs past the end",
-		body_short, sizeof(body_short), DHCP_DISCOVER, "");
+	PktTestOptionsCase(ctx, "ParseDhcpOptions reads the message type and the host name of a DISCOVER with Pads",
+		discover_pads, sizeof(discover_pads), 2, DHCP_ID_HOST_NAME, host, sizeof(host));
 }
 
 // DHCP payload of a BOOTREQUEST of the client in a zeroed heap block of PKTTEST_DHCP_SIZE bytes: the
@@ -449,7 +430,7 @@ static void PktTestOpCodeCase(PKTTEST_CTX *ctx, char *what, UCHAR *payload, UINT
 	Free(f);
 }
 
-// ParseDHCPv4Data through ParsePacket (PKT.DhcpOpCode, which the IP table of the hub reads)
+// The DHCP message type reader through ParsePacket (PKT.DhcpOpCode, which the IP table of the hub reads)
 static void PktTestOpCode(PKTTEST_CTX *ctx)
 {
 	UCHAR discover[] = {53, 1, 1, 255};
@@ -732,5 +713,80 @@ void vlantpid_test(UINT num, char **arg)
 	else
 	{
 		Print("VLANTPID TEST FAILED (%u of %u checks failed)\n", ctx.NumFailed, ctx.NumChecks);
+	}
+}
+
+// icmpv6ns: BuildNeighborSolicitation gives the bytes the former builder chain (BuildICMPv6NeighborSoliciation,
+// BuildICMPv6, BuildIPv6, BuildIPv6PacketHeader, BuildICMPv6Options) gave for the unicast case
+// the hub sends, for the source fe80::1, the target 2001:db8::7 and the MAC address of the server:
+// the 40-byte IPv6 header (hop limit 255, next header 58, payload length 32), the ICMPv6 header
+// (type 135, checksum over the pseudo-header), the target address and the source link-layer option.
+// The frame below was computed from the former code's layout, independently of the new function
+static UCHAR pkttest_ns_golden[72] =
+{
+	0x60, 0x00, 0x00, 0x00, 0x00, 0x20, 0x3A, 0xFF,
+	0xFE, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+	0x20, 0x01, 0x0D, 0xB8, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07,
+	0x87, 0x00, 0x6C, 0xA0, 0x00, 0x00, 0x00, 0x00,
+	0x20, 0x01, 0x0D, 0xB8, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07,
+	0x01, 0x01, 0x5E, 0x00, 0x53, 0x00, 0x00, 0x01,
+};
+
+void icmpv6ns_test(UINT num, char **arg)
+{
+	PKTTEST_CTX ctx;
+	IPV6_ADDR src;
+	IPV6_ADDR target;
+	BUF *b;
+
+	Zero(&ctx, sizeof(ctx));
+
+	Print("ICMPv6 Neighbor Solicitation test\n");
+
+	Zero(&src, sizeof(src));
+	src.Value[0] = 0xFE;
+	src.Value[1] = 0x80;
+	src.Value[15] = 0x01;
+
+	Zero(&target, sizeof(target));
+	target.Value[0] = 0x20;
+	target.Value[1] = 0x01;
+	target.Value[2] = 0x0D;
+	target.Value[3] = 0xB8;
+	target.Value[15] = 0x07;
+
+	b = BuildNeighborSolicitation(&src, &target, pkttest_mac_server);
+
+	PktTestCheck(&ctx, b != NULL && b->Size == sizeof(pkttest_ns_golden),
+		"BuildNeighborSolicitation gives the 72 bytes of the packet", "size %u", (b == NULL) ? 0 : b->Size);
+	PktTestCheck(&ctx, b != NULL && b->Size == sizeof(pkttest_ns_golden) &&
+		Cmp(b->Buf, pkttest_ns_golden, sizeof(pkttest_ns_golden)) == 0,
+		"BuildNeighborSolicitation gives the bytes of the former builder chain", "bytes differ");
+	PktTestCheck(&ctx, b != NULL && b->Current == 0, "the packet is read from its start", "position %u",
+		(b == NULL) ? 0 : b->Current);
+	FreeBuf(b);
+
+	b = BuildNeighborSolicitation(NULL, &target, pkttest_mac_server);
+	PktTestCheck(&ctx, b == NULL, "BuildNeighborSolicitation without a source gives nothing", "got a packet");
+	FreeBuf(b);
+
+	b = BuildNeighborSolicitation(&src, NULL, pkttest_mac_server);
+	PktTestCheck(&ctx, b == NULL, "BuildNeighborSolicitation without a target gives nothing", "got a packet");
+	FreeBuf(b);
+
+	b = BuildNeighborSolicitation(&src, &target, NULL);
+	PktTestCheck(&ctx, b == NULL, "BuildNeighborSolicitation without a MAC address gives nothing", "got a packet");
+	FreeBuf(b);
+
+	if (ctx.NumFailed == 0)
+	{
+		Print("ICMPV6NS TEST OK\n");
+	}
+	else
+	{
+		Print("ICMPV6NS TEST FAILED (%u of %u checks failed)\n", ctx.NumFailed, ctx.NumChecks);
 	}
 }
