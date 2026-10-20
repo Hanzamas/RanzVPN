@@ -360,17 +360,6 @@ static void *MsOpenOrCreateGlobalPulse(char *name)
 	return (void *)h;
 }
 
-
-bool MsGetFileInformation(void *h, void *info)
-{
-	if (h == INVALID_HANDLE_VALUE || info == NULL)
-	{
-		return false;
-	}
-
-	return GetFileInformationByHandle(h, info);
-}
-
 double MsGetHiResTimeSpan(UINT64 diff)
 {
 	LARGE_INTEGER t;
@@ -450,12 +439,16 @@ static wchar_t ms_computer_name_full_cache[MAX_SIZE] = {0};
 
 void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache)
 {
-	DWORD size2 = size;
-	UniStrCpy(name, size, L"");
-	if (name == NULL || size == 0)
+	DWORD size2;
+	if (name == NULL || size < sizeof(wchar_t))
 	{
 		return;
 	}
+
+	UniStrCpy(name, size, L"");
+
+	// size counts bytes; GetComputerNameExW counts wide characters
+	size2 = size / sizeof(wchar_t);
 
 	if (with_cache)
 	{
@@ -3871,9 +3864,10 @@ void MsInit()
 	ms->ExeFileDir = CopyStr(tmp);
 
 	{
-		wchar_t tmp_w[MAX_PATH];
+		wchar_t tmp_w[MAX_SIZE];
 
-		GetModuleFileNameW(NULL, tmp_w, sizeof(tmp_w));
+		// The wide APIs below count wide characters, not bytes
+		Win32GetExeNameW(tmp_w, ARRAYSIZE(tmp_w));
 		ms->ExeFileNameW = CopyUniStr(tmp_w);
 
 		Win32GetDirFromPathW(tmp_w, sizeof(tmp_w), tmp_w);
@@ -3885,14 +3879,19 @@ void MsInit()
 	MsInitTempDir();
 
 	size = sizeof(tmp);
-	GetUserName(tmp, &size);
+	if (GetUserName(tmp, &size) == false)
+	{
+		tmp[0] = 0;
+	}
 	ms->UserName = CopyStr(tmp);
 
-	wchar_t tmp_w[MAX_PATH];
+	wchar_t tmp_w[MAX_SIZE];
 
-	size = sizeof(tmp_w);
-
-	GetUserNameW(tmp_w, &size);
+	size = ARRAYSIZE(tmp_w);
+	if (GetUserNameW(tmp_w, &size) == false)
+	{
+		tmp_w[0] = 0;
+	}
 	ms->UserNameW = CopyUniStr(tmp_w);
 
 	size = sizeof(tmp);
@@ -3901,7 +3900,7 @@ void MsInit()
 		ms->UserNameEx = CopyStr(tmp);
 	}
 
-	size = sizeof(tmp_w);
+	size = ARRAYSIZE(tmp_w);
 	if (GetUserNameExW(NameSamCompatible, tmp_w, &size))
 	{
 		ms->UserNameExW = CopyUniStr(tmp_w);

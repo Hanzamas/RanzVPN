@@ -13,6 +13,7 @@
 
 #include "Internat.h"
 #include "Memory.h"
+#include "Str.h"
 
 #include <TraceLoggingProvider.h>
 #include <winmeta.h>
@@ -57,20 +58,21 @@ bool IsTraceEnabled()
 // Write a Debug() message as one "Debug" event, formatted as PrintArgs() (Str.c) formats it
 void TraceDebugArgs(char *fmt, va_list args)
 {
-	wchar_t *fmt_w;
 	wchar_t *msg;
 	if (fmt == NULL || IsTraceEnabled() == false)
 	{
 		return;
 	}
 
-	fmt_w = CopyStrToUni(fmt);
-	msg = InternalFormatArgs(fmt_w, args, true);
+	msg = CopyFormatArgsToUni(fmt, args);
+	if (msg == NULL)
+	{
+		return;
+	}
 
 	TraceLoggingWrite(trace_provider, "Debug",
 		TraceLoggingLevel(WINEVENT_LEVEL_VERBOSE),
 		TraceLoggingWideString(msg, "Message"));
 
 	Free(msg);
-	Free(fmt_w);
 }

@@ -385,13 +385,44 @@ static void BufBoundsTestCfgValid(BUFBOUNDS_CTX *ctx)
 	CfgAddUniStr(sub, "Empty", L"");
 	CfgCreateFolder(sub, "DEFAULT");
 
-	text1 = CfgFolderToBuf(f, true);
-	bin = CfgFolderToBuf(f, false);
-	SeekBuf(bin, 8 + SHA1_SIZE, 0);
+	// The same tree as a binary body, written by hand (Ranz VPN writes text only)
+	bin = NewBuf();
+	WriteBufStr(bin, TAG_ROOT);
+	WriteBufInt(bin, 1);			// Subfolders
+	WriteBufStr(bin, "VirtualHUB");
+	WriteBufInt(bin, 1);			// Subfolders
+	WriteBufStr(bin, "DEFAULT");
+	WriteBufInt(bin, 0);			// Subfolders
+	WriteBufInt(bin, 0);			// Items
+	WriteBufInt(bin, 3);			// Items
+	WriteBufStr(bin, "HashedPassword");
+	WriteBufInt(bin, ITEM_TYPE_BYTE);
+	WriteBufInt(bin, sizeof(bytes));
+	WriteBuf(bin, bytes, sizeof(bytes));
+	WriteBufStr(bin, "ServerName");
+	WriteBufInt(bin, ITEM_TYPE_STRING);
+	WriteBufInt(bin, 14);
+	WriteBuf(bin, "Ranz VPN \xc3\xa9\xe6\x97\xa5", 14);
+	WriteBufStr(bin, "Empty");
+	WriteBufInt(bin, ITEM_TYPE_STRING);
+	WriteBufInt(bin, 0);
+	WriteBufInt(bin, 3);			// Items
+	WriteBufStr(bin, "ConfigRevision");
+	WriteBufInt(bin, ITEM_TYPE_INT);
+	WriteBufInt(bin, 3);
+	WriteBufStr(bin, "AutoDeleteCheckDiskFreeSpaceMin");
+	WriteBufInt(bin, ITEM_TYPE_INT64);
+	WriteBufInt64(bin, 104857600);
+	WriteBufStr(bin, "IPsecMessageDisplayed");
+	WriteBufInt(bin, ITEM_TYPE_BOOL);
+	WriteBufInt(bin, 1);
+
+	text1 = CfgFolderToBuf(f);
+	SeekBufToBegin(bin);
 	f2 = CfgBufBinToFolder(bin);
 	if (f2 != NULL)
 	{
-		text2 = CfgFolderToBuf(f2, true);
+		text2 = CfgFolderToBuf(f2);
 	}
 
 	BufBoundsCheck(ctx, f2 != NULL && CompareBuf(text1, text2),
@@ -404,6 +435,86 @@ static void BufBoundsTestCfgValid(BUFBOUNDS_CTX *ctx)
 	CfgDeleteFolder(f);
 }
 
+// The Name of entry i of an Items list (folders false) or a Folders list (folders true)
+static char *BufBoundsCfgEntryName(LIST *o, UINT i, bool folders)
+{
+	if (folders)
+	{
+		return ((FOLDER *)LIST_DATA(o, i))->Name;
+	}
+
+	return ((ITEM *)LIST_DATA(o, i))->Name;
+}
+
+// True when the names of list o are sorted case-insensitively, as CfgCmpName orders them
+static bool BufBoundsCfgListSorted(LIST *o, bool folders)
+{
+	UINT i;
+
+	for (i = 1;i < LIST_NUM(o);i++)
+	{
+		if (StrCmpi(BufBoundsCfgEntryName(o, i - 1, folders), BufBoundsCfgEntryName(o, i, folders)) > 0)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+// True when every name of t comes after the one before it, case-insensitively: sorted, each once
+static bool BufBoundsCfgTokensUnique(TOKEN_LIST *t)
+{
+	UINT i;
+
+	for (i = 1;i < t->NumTokens;i++)
+	{
+		if (StrCmpi(t->Token[i - 1], t->Token[i]) >= 0)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+// CfgEnumItemToTokenList and CfgEnumFolderToTokenList drop duplicates in one pass (FND-58): the
+// Items and Folders lists are sorted when enumerated, and two names differing only in case
+// enumerate once
+static void BufBoundsTestCfgEnum(BUFBOUNDS_CTX *ctx)
+{
+	FOLDER *f = CfgCreateFolder(NULL, TAG_ROOT);
+	FOLDER *sub;
+	TOKEN_LIST *items, *folders;
+
+	CfgAddInt(f, "Zeta", 1);
+	CfgAddInt(f, "alpha", 2);
+	CfgAddInt(f, "Mid", 3);
+	CfgAddInt(f, "ALPHA", 4);
+	CfgAddInt(f, "Beta", 5);
+	CfgCreateFolder(f, "zeta");
+	CfgCreateFolder(f, "Beta");
+	CfgCreateFolder(f, "BETA");
+	CfgCreateFolder(f, "Alpha");
+	CfgCreateFolder(f, "beta");
+
+	sub = CfgFindFolder(f, "BeTa");
+	items = CfgEnumItemToTokenList(f);
+	folders = CfgEnumFolderToTokenList(f);
+
+	BufBoundsCheck(ctx, BufBoundsCfgListSorted(f->Items, false) && BufBoundsCfgListSorted(f->Folders, true),
+		"the Items and Folders lists are sorted case-insensitively when enumerated");
+	BufBoundsCheck(ctx, items->NumTokens == 4 && folders->NumTokens == 3 &&
+		BufBoundsCfgTokensUnique(items) && BufBoundsCfgTokensUnique(folders),
+		"names differing only in case enumerate once, in sorted order");
+	BufBoundsCheck(ctx, sub != NULL && StrCmpi(sub->Name, "beta") == 0 && CfgGetInt(f, "MID") == 3,
+		"a lookup by name ignores case");
+
+	FreeToken(items);
+	FreeToken(folders);
+	CfgDeleteFolder(f);
+}
+
 // CfgBufBinToFolder: every count and size is checked against the bytes left
 static void BufBoundsTestCfg(BUFBOUNDS_CTX *ctx)
 {
@@ -411,6 +522,7 @@ static void BufBoundsTestCfg(BUFBOUNDS_CTX *ctx)
 	UINT i;
 
 	BufBoundsTestCfgValid(ctx);
+	BufBoundsTestCfgEnum(ctx);
 
 	b = NewBuf();
 	WriteBufStr(b, TAG_ROOT);
@@ -467,6 +579,173 @@ static void BufBoundsTestCfg(BUFBOUNDS_CTX *ctx)
 		"a STRING item of size 0xFFFFFFFF is rejected (the old reader wrapped size + 1 to 0 and copied past the block)");
 }
 
+// Text configuration of count folders nested in each other, "root" outermost
+static BUF *BufBoundsCfgNestedText(UINT count)
+{
+	BUF *b = NewBuf();
+	UINT i;
+
+	for (i = 0;i < count;i++)
+	{
+		char *line = (i == 0 ? "declare root\r\n{\r\n" : "declare x\r\n{\r\n");
+
+		WriteBuf(b, line, StrLen(line));
+	}
+	for (i = 0;i < count;i++)
+	{
+		WriteBuf(b, "}\r\n", 3);
+	}
+
+	SeekBufToBegin(b);
+
+	return b;
+}
+
+// Body of a binary configuration of count folders nested in each other, "root" outermost
+static BUF *BufBoundsCfgNestedBin(UINT count)
+{
+	BUF *b = NewBuf();
+	UINT i;
+
+	for (i = 0;i < count;i++)
+	{
+		WriteBufStr(b, i == 0 ? TAG_ROOT : "x");
+		WriteBufInt(b, (i + 1 < count) ? 1 : 0);	// Subfolders
+	}
+	for (i = 0;i < count;i++)
+	{
+		WriteBufInt(b, 0);						// Items
+	}
+
+	SeekBufToBegin(b);
+
+	return b;
+}
+
+// True when the text configuration in b loads; frees b
+static bool BufBoundsCfgTextLoads(BUF *b)
+{
+	FOLDER *f = CfgBufTextToFolder(b);
+	bool ret = (f != NULL);
+
+	FreeBuf(b);
+	CfgDeleteFolder(f);
+
+	return ret;
+}
+
+// Both readers stop at a nesting depth of 64 folders instead of recursing once per level
+static void BufBoundsTestCfgDepth(BUFBOUNDS_CTX *ctx)
+{
+	BUF *b;
+	FOLDER *f;
+
+	BufBoundsCheck(ctx, BufBoundsCfgTextLoads(BufBoundsCfgNestedText(64)), "a text configuration of 64 nested folders loads");
+	BufBoundsCheck(ctx, BufBoundsCfgTextLoads(BufBoundsCfgNestedText(65)) == false, "a text configuration of 65 nested folders is rejected");
+	BufBoundsCheck(ctx, BufBoundsCfgTextLoads(BufBoundsCfgNestedText(10000)) == false,
+		"a text configuration of 10000 nested folders is rejected (the old reader recursed once per level)");
+
+	b = BufBoundsCfgNestedBin(64);
+	f = CfgBufBinToFolder(b);
+	BufBoundsCheck(ctx, f != NULL, "a binary configuration of 64 nested folders loads");
+	CfgDeleteFolder(f);
+	FreeBuf(b);
+
+	BufBoundsCheck(ctx, BufBoundsCfgRejects(BufBoundsCfgNestedBin(65)), "a binary configuration of 65 nested folders is rejected");
+	BufBoundsCheck(ctx, BufBoundsCfgRejects(BufBoundsCfgNestedBin(10000)),
+		"a binary configuration of 10000 nested folders is rejected (the old reader recursed once per level)");
+}
+
+// True when CfgReadW() of a file holding b returns NULL; frees b
+static bool BufBoundsCfgFileRejects(wchar_t *name, BUF *b)
+{
+	FOLDER *f;
+	bool written = DumpBufW(b, name);
+
+	FreeBuf(b);
+	f = CfgReadW(name);
+	FileDeleteW(name);
+
+	if (f != NULL)
+	{
+		CfgDeleteFolder(f);
+		return false;
+	}
+
+	return written;
+}
+
+// Binary configuration file of the body in b: "SEVPN_DB", the SHA-0 of the body, the body; frees b
+static BUF *BufBoundsCfgBinFile(BUF *b)
+{
+	BUF *file = NewBuf();
+	UCHAR hash[SHA1_SIZE];
+
+	Sha0(hash, b->Buf, b->Size);
+	WriteBuf(file, TAG_BINARY, 8);
+	WriteBuf(file, hash, sizeof(hash));
+	WriteBuf(file, b->Buf, b->Size);
+	FreeBuf(b);
+
+	return file;
+}
+
+// CfgReadW: a "SEVPN_DB" file too short for its SHA-0, one with a wrong SHA-0, binary files with a
+// valid SHA-0 and a folder count or STRING size of 0xFFFFFFFF, and a text file of 10000 nested
+// folders are rejected (the read buffer freed on every path), in a directory of its own under the
+// temporary directory
+static void BufBoundsTestCfgRead(BUFBOUNDS_CTX *ctx)
+{
+	wchar_t temp[MAX_PATH];
+	wchar_t dir_name[64];
+	wchar_t dir[MAX_PATH];
+	wchar_t name[MAX_PATH];
+	UCHAR zero[SHA1_SIZE];
+	BUF *b;
+
+	if (BufBoundsCheck(ctx, GetTempPathW(MAX_PATH, temp) != 0, "the temporary directory of Windows") == false)
+	{
+		return;
+	}
+
+	UniFormat(dir_name, sizeof(dir_name), L"ranz_cfgread_%u", (UINT)GetCurrentProcessId());
+	CombinePathW(dir, sizeof(dir), temp, dir_name);
+	MakeDirW(dir);
+	CombinePathW(name, sizeof(name), dir, L"vpn_server.config");
+	Zero(zero, sizeof(zero));
+
+	b = NewBuf();
+	WriteBuf(b, TAG_BINARY, 8);
+	WriteBuf(b, zero, 12);
+	BufBoundsCheck(ctx, BufBoundsCfgFileRejects(name, b),
+		"CfgReadW of \"SEVPN_DB\" and 12 bytes is rejected (the old reader hashed b->Size - 28 bytes, past the end)");
+
+	b = NewBuf();
+	WriteBuf(b, TAG_BINARY, 8);
+	WriteBuf(b, zero, sizeof(zero));
+	WriteBufStr(b, TAG_ROOT);
+	WriteBufInt(b, 0);
+	WriteBufInt(b, 0);
+	BufBoundsCheck(ctx, BufBoundsCfgFileRejects(name, b), "CfgReadW of a binary file with a wrong SHA-0 is rejected");
+
+	b = NewBuf();
+	WriteBufStr(b, TAG_ROOT);
+	WriteBufInt(b, 0xFFFFFFFF);
+	BufBoundsCheck(ctx, BufBoundsCfgFileRejects(name, BufBoundsCfgBinFile(b)),
+		"CfgReadW of a binary file with a valid SHA-0 and a folder count of 0xFFFFFFFF is rejected");
+
+	b = BufBoundsCfgOneItem("ServerName", ITEM_TYPE_STRING);
+	WriteBufInt(b, 0xFFFFFFFF);
+	WriteBuf(b, "abcd", 4);
+	BufBoundsCheck(ctx, BufBoundsCfgFileRejects(name, BufBoundsCfgBinFile(b)),
+		"CfgReadW of a binary file with a valid SHA-0 and a STRING item of size 0xFFFFFFFF is rejected");
+
+	BufBoundsCheck(ctx, BufBoundsCfgFileRejects(name, BufBoundsCfgNestedText(10000)),
+		"CfgReadW of a text file of 10000 nested folders is rejected (the old reader recursed once per level)");
+
+	DeleteDirW(dir);
+}
+
 // bufbounds: BUF reads and writes near 2^32 and the binary configuration reader of SEC-3
 void bufbounds_test(UINT num, char **arg)
 {
@@ -487,6 +766,8 @@ void bufbounds_test(UINT num, char **arg)
 	BufBoundsTestWriteBufInside(&ctx);
 	BufBoundsTestWriteBuf(&ctx);
 	BufBoundsTestCfg(&ctx);
+	BufBoundsTestCfgDepth(&ctx);
+	BufBoundsTestCfgRead(&ctx);
 
 	if (ctx.NumFailed == 0)
 	{
