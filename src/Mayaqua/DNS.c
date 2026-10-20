@@ -269,6 +269,47 @@ DNS_CACHE_REVERSE *DnsCacheReverseUpdate(const IP *ip, const char *hostname)
 	return entry;
 }
 
+// Wait for a lookup worker until it ends, the timeout passes or *cancel_flag is set; releases the worker
+static bool DnsWaitWorker(THREAD *worker, const UINT timeout, volatile const bool *cancel_flag)
+{
+	bool finished = false;
+
+	Inc(threads_counter);
+
+	WaitThreadInit(worker);
+
+	if (cancel_flag == NULL)
+	{
+		finished = WaitThread(worker, timeout);
+	}
+	else
+	{
+		const UINT64 end = Tick64() + timeout;
+
+		while (FlagRead(cancel_flag) == false)
+		{
+			const UINT64 now = Tick64();
+			if (now >= end)
+			{
+				break;
+			}
+
+			BYTE next = MIN(end - now, 100);
+			if (WaitThread(worker, next))
+			{
+				finished = true;
+				break;
+			}
+		}
+	}
+
+	ReleaseThread(worker);
+
+	Dec(threads_counter);
+
+	return finished;
+}
+
 bool DnsResolve(IP *ipv6, IP *ipv4, const char *hostname, UINT timeout, volatile const bool *cancel_flag)
 {
 	if ((ipv6 == NULL && ipv4 == NULL) || IsEmptyStr(hostname))
@@ -340,8 +381,6 @@ bool DnsResolveEx(LIST **iplist_v6, LIST **iplist_v4, const char *hostname, UINT
 			AddHostIPAddressToList(*iplist_v4, &ip);
 			return true;
 		}
-
-		return false;
 	}
 
 	if (DnsThreadNum() > DnsThreadNumMax())
@@ -362,8 +401,6 @@ bool DnsResolveEx(LIST **iplist_v6, LIST **iplist_v4, const char *hostname, UINT
 		timeout = DNS_RESOLVE_DEFAULT_TIMEOUT;
 	}
 
-	Inc(threads_counter);
-
 	DNS_RESOLVER *resolver;
 	resolver = ZeroMalloc(sizeof(DNS_RESOLVER));
 	resolver->Ref = NewRef();
@@ -371,36 +408,7 @@ bool DnsResolveEx(LIST **iplist_v6, LIST **iplist_v4, const char *hostname, UINT
 	resolver->IPList_v4 = NewListFast(NULL);
 	resolver->Hostname = CopyStr(hostname);
 
-	THREAD *worker = NewThread(DnsResolver, resolver);
-	WaitThreadInit(worker);
-
-	if (cancel_flag == NULL)
-	{
-		WaitThread(worker, timeout);
-	}
-	else
-	{
-		const UINT64 end = Tick64() + timeout;
-
-		while (FlagRead(cancel_flag) == false)
-		{
-			const UINT64 now = Tick64();
-			if (now >= end)
-			{
-				break;
-			}
-
-			BYTE next = MIN(end - now, 100);
-			if (WaitThread(worker, next))
-			{
-				break;
-			}
-		}
-	}
-
-	ReleaseThread(worker);
-
-	Dec(threads_counter);
+	DnsWaitWorker(NewThread(DnsResolver, resolver), timeout, cancel_flag);
 
 	if (resolver->OK)
 	{
@@ -480,8 +488,6 @@ void DnsResolver(THREAD *t, void *param)
 	}
 	else if (ret == 0)
 	{
-		bool ipv6_ok = false;
-		bool ipv4_ok = false;
 		for (ADDRINFOW *result = results; result != NULL; result = result->ai_next)
 		{
 			IP ip;
@@ -493,12 +499,10 @@ void DnsResolver(THREAD *t, void *param)
 				{
 					ip.ipv6_scope_id = in->sin6_scope_id;
 					AddHostIPAddressToList(resolver->IPList_v6, &ip);
-					ipv6_ok = true;
 				}
 				else if (IsIP4(&ip))
 				{
 					AddHostIPAddressToList(resolver->IPList_v4, &ip);
-					ipv4_ok = true;
 				}
 			}
 			else
@@ -508,7 +512,6 @@ void DnsResolver(THREAD *t, void *param)
 				if (IsIP4(&ip))
 				{
 					AddHostIPAddressToList(resolver->IPList_v4, &ip);
-					ipv4_ok = true;
 				}
 			}
 		}
@@ -516,9 +519,6 @@ void DnsResolver(THREAD *t, void *param)
 		resolver->OK = true;
 
 		FreeAddrInfoW(results);
-	}
-	else if (ret != EAI_NONAME)
-	{
 	}
 
 	ReleaseDnsResolver(resolver);
@@ -551,43 +551,12 @@ bool DnsResolveReverse(char *dst, const UINT size, const IP *ip, UINT timeout, v
 		timeout = DNS_RESOLVE_REVERSE_DEFAULT_TIMEOUT;
 	}
 
-	Inc(threads_counter);
-
 	DNS_RESOLVER_REVERSE *resolver;
 	resolver = ZeroMalloc(sizeof(DNS_RESOLVER_REVERSE));
 	resolver->Ref = NewRef();
 	Copy(&resolver->IP, ip, sizeof(resolver->IP));
 
-	THREAD *worker = NewThread(DnsResolverReverse, resolver);
-	WaitThreadInit(worker);
-
-	if (cancel_flag == NULL)
-	{
-		WaitThread(worker, timeout);
-	}
-	else
-	{
-		const UINT64 end = Tick64() + timeout;
-
-		while (FlagRead(cancel_flag) == false)
-		{
-			const UINT64 now = Tick64();
-			if (now >= end)
-			{
-				break;
-			}
-
-			BYTE next = MIN(end - now, 100);
-			if (WaitThread(worker, next))
-			{
-				break;
-			}
-		}
-	}
-
-	ReleaseThread(worker);
-
-	Dec(threads_counter);
+	DnsWaitWorker(NewThread(DnsResolverReverse, resolver), timeout, cancel_flag);
 
 	if (resolver->OK)
 	{
@@ -648,9 +617,6 @@ void DnsResolverReverse(THREAD *t, void *param)
 		{
 			Debug("DnsResolverReverse(): WideCharToMultiByte() failed with error %u!\n", GetLastError());
 		}
-	}
-	else if (ret != EAI_NONAME)
-	{
 	}
 
 	ReleaseDnsResolverReverse(resolver);
