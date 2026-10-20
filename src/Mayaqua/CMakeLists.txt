@@ -69,6 +69,13 @@ if(OQS_ENABLE)
     set(OQS_PERMIT_UNSUPPORTED_ARCHITECTURE ON CACHE BOOL "Permit building liboqs for an architecture without optimised code")
   endif()
 
+  # /volatile:ms for the vendored targets. cmake/RanzOptions.cmake applies it to the project's own
+  # code through ranz_options, which liboqs and oqs-provider do not link; both live under
+  # src/Mayaqua/3rdparty, so the "Check /volatile:ms" CI step counts their compile commands and fails
+  # when they lack it. Directory-wide, so it reaches the targets the add_subdirectory calls below
+  # create; C and CXX only, so the resource and assembly compile steps are left out.
+  add_compile_options("$<$<COMPILE_LANGUAGE:C,CXX>:/volatile:ms>")
+
   add_subdirectory(3rdparty/liboqs)
   add_subdirectory(3rdparty/oqs-provider)
 
