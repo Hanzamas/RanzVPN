@@ -10,7 +10,6 @@ endif()
 # Link MSVC runtime statically
 # this should be revisited after installer migration to MSI
 #
-cmake_policy(SET CMP0091 NEW)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 project("Ranz VPN"

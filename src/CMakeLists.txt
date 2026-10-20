@@ -7,12 +7,8 @@ if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
 endif()
 
 if(WIN32)
-  if(IS_CROSS_COMPILATION MATCHES "arm64-on-x64")
-    set(CMAKE_SYSTEM_PROCESSOR "arm64")
-  else()
-    message("Setting QSPECTRE")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Qspectre")
-  endif()
+  message("Setting QSPECTRE")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Qspectre")
 
   #
   # https://msrc-blog.microsoft.com/2020/08/17/control-flow-guard-for-clang-llvm-and-rust/

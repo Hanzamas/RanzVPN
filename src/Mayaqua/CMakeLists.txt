@@ -67,7 +67,6 @@ include(CheckSymbolExists)
 
 set(CMAKE_REQUIRED_INCLUDES ${OPENSSL_INCLUDE_DIR})
 set(CMAKE_REQUIRED_LIBRARIES OpenSSL::Crypto)
-set(CMAKE_REQUIRED_LIBRARIES OpenSSL::SSL)
 
 check_symbol_exists(EVP_PKEY_get_raw_public_key "openssl/evp.h" HAVE_EVP_PKEY_GET_RAW_PUBLIC_KEY)
 
