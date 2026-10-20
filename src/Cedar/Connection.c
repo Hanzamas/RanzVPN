@@ -1231,6 +1231,7 @@ void ConnectionAccept(CONNECTION *c)
 	struct ssl_ctx_st *ssl_ctx;
 	char tmp[128];
 	UINT initial_timeout = CONNECTING_TIMEOUT;
+	SERVER_LOGIN login;
 
 	if (c == NULL)
 	{
@@ -1244,7 +1245,7 @@ void ConnectionAccept(CONNECTION *c)
 
 	IPToStr(tmp, sizeof(tmp), &s->RemoteIP);
 
-	SLog(c->Cedar, "LS_CONNECTION_START_1", tmp, s->RemoteHostname, (IS_SPECIAL_PORT(s->RemotePort) ? 0 : s->RemotePort), c->Name);
+	SLog(c->Cedar, "LS_CONNECTION_START_1", tmp, s->RemoteHostname, s->RemotePort, c->Name);
 
 	initial_timeout += GetMachineRand() % (CONNECTING_TIMEOUT / 2);
 	SetTimeout(s, initial_timeout);
@@ -1270,7 +1271,12 @@ void ConnectionAccept(CONNECTION *c)
 
 	SLog(c->Cedar, "LS_SSL_START", c->Name, s->SslVersion, s->CipherName);
 
-	ServerAccept(c);
+	Zero(&login, sizeof(login));
+	if (ServerAccept(c, &login))
+	{
+		// A logged-in session: run it until it ends, then give its hub slot back
+		ServerRunSession(c, &login);
+	}
 
 FINAL:
 	if (c->flag1 == false)

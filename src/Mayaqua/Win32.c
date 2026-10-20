@@ -384,7 +384,7 @@ void Win32GetOsInfo(OS_INFO *info)
 	info->OsType = Win32GetOsType();
 	info->OsServicePack = os.wServicePackMajor;
 	info->OsSystemName = CopyStr("Windows NT");
-	Format(tmp, sizeof(tmp), "Build %u", os.dwBuildNumber);
+	Format(tmp, sizeof(tmp), "Build %u", (UINT)os.dwBuildNumber);
 	if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "CurrentType"))
 	{
 		char str[MAX_SIZE];
@@ -407,7 +407,7 @@ void Win32GetOsInfo(OS_INFO *info)
 	}
 	info->OsVersion = CopyStr(tmp);
 	info->KernelName = CopyStr("NTOS Kernel");
-	Format(tmp, sizeof(tmp), "Build %u", os.dwBuildNumber);
+	Format(tmp, sizeof(tmp), "Build %u", (UINT)os.dwBuildNumber);
 	if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "CurrentType"))
 	{
 		char str[MAX_SIZE];

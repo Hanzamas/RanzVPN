@@ -25,6 +25,14 @@
 
 typedef int (COMPARE)(void *p1, void *p2);
 
+// printf format checking (clang -Wformat) for a function whose format string is argument f and whose
+// variable arguments start at argument a (0 for a va_list); empty for other compilers
+#ifdef	__clang__
+#define	RANZ_PRINTF_FORMAT(f, a)	__attribute__((format(printf, f, a)))
+#else
+#define	RANZ_PRINTF_FORMAT(f, a)
+#endif
+
 
 #ifdef	MAX
 #undef	MAX

@@ -29,8 +29,6 @@
 #include <IcmpAPI.h>
 
 static LOCK *machine_name_lock = NULL;
-static LOCK *disconnect_function_lock = NULL;
-extern LOCK *openssl_lock;
 static COUNTER *num_tcp_connections = NULL;
 static LIST *WaitThreadList = NULL;
 static UCHAR machine_ip_process_hash[SHA1_SIZE];
@@ -54,7 +52,7 @@ static LOCK *local_mac_list_lock = NULL;
 
 static DH_CTX *dh_param = NULL;
 
-// Decoded copy of the Windows ROOT store, for the client's peer verification (guarded by openssl_lock)
+// Decoded copy of the Windows ROOT store, for the client's peer verification
 #define	SSL_ROOT_CERTS_REFRESH_SPAN		(10 * 60 * 1000ULL)
 static STACK_OF(X509) *ssl_root_certs = NULL;
 static UINT64 ssl_root_certs_tick = 0;
@@ -409,7 +407,7 @@ static int CALLBACK Win32AcceptCheckCallback(LPWSABUF lpCallerId, LPWSABUF lpCal
 	return CF_ACCEPT;
 }
 
-static SOCKET Win32Accept(SOCK *sock, SOCKET s, struct sockaddr *addr, int *addrlen, bool ipv6)
+static SOCKET Win32Accept(SOCK *sock, SOCKET s, struct sockaddr *addr, int *addrlen)
 {
 	SOCKET ret;
 	WIN32_ACCEPT_CHECK_DATA d;
@@ -457,7 +455,7 @@ L_LOOP:
 				goto L_LOOP;
 			}
 
-			Debug("!!! WaitForSingleObject Error. ret=%u GetLastError=%u\n", wait_ret, GetLastError());
+			Debug("!!! WaitForSingleObject Error. ret=%u GetLastError=%u\n", wait_ret, (UINT)GetLastError());
 		}
 
 		num_error++;
@@ -1772,91 +1770,132 @@ void Cancel(CANCEL *c)
 	Win32Cancel(c);
 }
 
-UINT RecvFrom(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
+// Fill a sockaddr for a UDP socket of the given family and return its length, 0 if the IP is not of that
+// family. A NULL or zero IP gives the any-address, which is what bind wants.
+static int UdpSockAddr(struct sockaddr_storage *sa, bool ipv6, IP *ip, UINT port)
 {
-	struct sockaddr_in addr;
-	int ret = 0;
-	int socklen = sizeof(addr);
+	Zero(sa, sizeof(*sa));
 
-	if (sock != NULL)
+	if (ipv6)
 	{
-		if (sock->IPv6)
+		struct sockaddr_in6 *a6 = (struct sockaddr_in6 *)sa;
+
+		if (ip != NULL && IsIP6(ip) == false)
 		{
-			return RecvFrom6(sock, src_addr, src_port, data, size);
+			return 0;
 		}
 
-		sock->IgnoreRecvErr = false;
+		a6->sin6_family = AF_INET6;
+		a6->sin6_port = htons((USHORT)port);
+
+		if (ip != NULL && IsZeroIP(ip) == false)
+		{
+			IPToInAddr6(&a6->sin6_addr, ip);
+			a6->sin6_scope_id = ip->ipv6_scope_id;
+		}
+
+		return sizeof(*a6);
 	}
 	else
 	{
-		return 0;
-	}
+		struct sockaddr_in *a4 = (struct sockaddr_in *)sa;
 
-	if (src_addr == NULL || src_port == NULL || data == NULL || size == 0)
-	{
-		return 0;
-	}
-
-	if (sock->Type != SOCK_UDP || sock->socket == INVALID_SOCKET)
-	{
-		return 0;
-	}
-
-	ret = recvfrom(sock->socket, data, size, 0, (struct sockaddr *)&addr, &socklen);
-	if (ret > 0)
-	{
-		InAddrToIP(src_addr, &addr.sin_addr);
-		*src_port = (UINT)ntohs(addr.sin_port);
-		if (sock->IsRawSocket)
+		if (ip != NULL && IsIP4(ip) == false)
 		{
-			*src_port = sock->LocalPort;
+			return 0;
 		}
 
-		Lock(sock->lock);
-		{
-			sock->RecvNum++;
-			sock->RecvSize += (UINT64)ret;
-		}
-		Unlock(sock->lock);
+		a4->sin_family = AF_INET;
+		a4->sin_port = htons((USHORT)port);
 
-		return (UINT)ret;
-	}
-	else if (ret == 0)
-	{
-		return SOCK_LATER;
-	}
-	else
-	{
-		if (WSAGetLastError() == WSAECONNRESET || WSAGetLastError() == WSAENETRESET || WSAGetLastError() == WSAEMSGSIZE || WSAGetLastError() == WSAENETUNREACH ||
-		        WSAGetLastError() == WSAENOBUFS || WSAGetLastError() == WSAEHOSTUNREACH || WSAGetLastError() == WSAEUSERS || WSAGetLastError() == WSAEADDRNOTAVAIL || WSAGetLastError() == WSAEADDRNOTAVAIL)
+		if (ip != NULL && IsZeroIP(ip) == false)
 		{
-			sock->IgnoreRecvErr = true;
+			IPToInAddr(&a4->sin_addr, ip);
 		}
-		else if (WSAGetLastError() == WSAEWOULDBLOCK || WSAGetLastError() == WSAEINPROGRESS)
-		{
-			return SOCK_LATER;
-		}
-		else
-		{
-			Debug("RecvFrom(): recvfrom() failed with error: %u\n", WSAGetLastError());
-		}
-		return 0;
+
+		return sizeof(*a4);
 	}
 }
-UINT RecvFrom6(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
-{
-	struct sockaddr_in6 addr;
-	int ret = 0;
-	int socklen = sizeof(addr);
 
-	if (sock != NULL)
+// Read the source IP and port from the sockaddr that recvfrom filled in
+static void UdpSockAddrToIP(IP *ip, UINT *port, struct sockaddr_storage *sa, bool ipv6)
+{
+	if (ipv6)
 	{
-		sock->IgnoreRecvErr = false;
+		struct sockaddr_in6 *a6 = (struct sockaddr_in6 *)sa;
+
+		InAddrToIP6(ip, &a6->sin6_addr);
+		ip->ipv6_scope_id = a6->sin6_scope_id;
+		*port = (UINT)ntohs(a6->sin6_port);
 	}
 	else
 	{
+		struct sockaddr_in *a4 = (struct sockaddr_in *)sa;
+
+		InAddrToIP(ip, &a4->sin_addr);
+		*port = (UINT)ntohs(a4->sin_port);
+	}
+}
+
+// Whether a datagram to this address needs SO_BROADCAST: the IPv4 limited broadcast, or a multicast address
+static bool UdpNeedsBroadcast(bool ipv6, IP *ip)
+{
+	const BYTE *ipv4;
+
+	if (ipv6)
+	{
+		return (GetIPAddrType6(ip) & IPV6_ADDR_MULTICAST) != 0;
+	}
+
+	ipv4 = IPV4(ip->address);
+
+	return (ipv4[0] == 255 && ipv4[1] == 255 && ipv4[2] == 255 && ipv4[3] == 255) ||
+		(ipv4[0] >= 224 && ipv4[0] <= 239);
+}
+
+// The result of a failed recvfrom (send == false) or sendto (send == true): SOCK_LATER when the call would
+// block, else 0. An error that only means "the datagram was lost" sets the Ignore flag of that direction.
+static UINT UdpIoFailed(SOCK *sock, bool send)
+{
+	UINT e = (UINT)WSAGetLastError();
+
+	if (e == WSAECONNRESET || e == WSAENETRESET || e == WSAEMSGSIZE || e == WSAENETUNREACH ||
+	        e == WSAENOBUFS || e == WSAEHOSTUNREACH || e == WSAEUSERS || e == WSAEADDRNOTAVAIL ||
+	        (send && e == WSAEINVAL))
+	{
+		if (send)
+		{
+			sock->IgnoreSendErr = true;
+		}
+		else
+		{
+			sock->IgnoreRecvErr = true;
+		}
+	}
+	else if (e == WSAEWOULDBLOCK || e == WSAEINPROGRESS)
+	{
+		return SOCK_LATER;
+	}
+	else if (send == false)
+	{
+		Debug("RecvFrom(): recvfrom() failed with error: %u\n", e);
+	}
+
+	return 0;
+}
+
+UINT RecvFrom(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
+{
+	struct sockaddr_storage addr;
+	int ret = 0;
+	int socklen = sizeof(addr);
+
+	if (sock == NULL)
+	{
 		return 0;
 	}
+
+	sock->IgnoreRecvErr = false;
 
 	if (src_addr == NULL || src_port == NULL || data == NULL || size == 0)
 	{
@@ -1868,24 +1907,10 @@ UINT RecvFrom6(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 		return 0;
 	}
 
-
 	ret = recvfrom(sock->socket, data, size, 0, (struct sockaddr *)&addr, &socklen);
 	if (ret > 0)
 	{
-		InAddrToIP6(src_addr, &addr.sin6_addr);
-		src_addr->ipv6_scope_id = addr.sin6_scope_id;
-		*src_port = (UINT)ntohs(addr.sin6_port);
-		if (sock->IsRawSocket)
-		{
-			*src_port = sock->LocalPort;
-		}
-
-		Lock(sock->lock);
-		{
-			sock->RecvNum++;
-			sock->RecvSize += (UINT64)ret;
-		}
-		Unlock(sock->lock);
+		UdpSockAddrToIP(src_addr, src_port, &addr, sock->IPv6);
 
 		return (UINT)ret;
 	}
@@ -1893,43 +1918,25 @@ UINT RecvFrom6(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 	{
 		return SOCK_LATER;
 	}
-	else
-	{
-		if (WSAGetLastError() == WSAECONNRESET || WSAGetLastError() == WSAENETRESET || WSAGetLastError() == WSAEMSGSIZE || WSAGetLastError() == WSAENETUNREACH ||
-		        WSAGetLastError() == WSAENOBUFS || WSAGetLastError() == WSAEHOSTUNREACH || WSAGetLastError() == WSAEUSERS || WSAGetLastError() == WSAEADDRNOTAVAIL || WSAGetLastError() == WSAEADDRNOTAVAIL)
-		{
-			sock->IgnoreRecvErr = true;
-		}
-		else if (WSAGetLastError() == WSAEWOULDBLOCK || WSAGetLastError() == WSAEINPROGRESS)
-		{
-			return SOCK_LATER;
-		}
-		else
-		{
-			Debug("RecvFrom(): recvfrom() failed with error: %u\n", WSAGetLastError());
-		}
-		return 0;
-	}
+
+	return UdpIoFailed(sock, false);
 }
 
 UINT SendTo(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size)
 {
-	return SendToEx(sock, dest_addr, dest_port, data, size, false);
-}
-UINT SendToEx(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size, bool broadcast)
-{
-	SOCKET s;
+	struct sockaddr_storage addr;
+	int addrlen;
 	int ret;
-	struct sockaddr_in addr;
+
 	if (sock != NULL)
 	{
 		sock->IgnoreSendErr = false;
 	}
-	if (sock == NULL || dest_addr == NULL || (sock->IsRawSocket == false && dest_port == 0) || data == NULL)
+	if (sock == NULL || dest_addr == NULL || dest_port == 0 || data == NULL)
 	{
 		return 0;
 	}
-	if (dest_port >= 65536 && sock->IsRawSocket == false)
+	if (dest_port >= 65536)
 	{
 		return 0;
 	}
@@ -1942,183 +1949,28 @@ UINT SendToEx(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size, 
 		return 0;
 	}
 
-	if (sock->IPv6)
-	{
-		return SendTo6Ex(sock, dest_addr, dest_port, data, size, broadcast);
-	}
-
-	if (IsIP4(dest_addr) == false)
+	addrlen = UdpSockAddr(&addr, sock->IPv6, dest_addr, dest_port);
+	if (addrlen == 0)
 	{
 		return 0;
 	}
 
-	s = sock->socket;
-	Zero(&addr, sizeof(addr));
-	addr.sin_family = AF_INET;
-	if (sock->IsRawSocket == false)
+	if (sock->UdpBroadcast == false && UdpNeedsBroadcast(sock->IPv6, dest_addr))
 	{
-		addr.sin_port = htons((USHORT)dest_port);
-	}
-	IPToInAddr(&addr.sin_addr, dest_addr);
+		UINT yes = 1;
 
-	const BYTE *ipv4 = IPV4(dest_addr->address);
-	if ((ipv4[0] == 255 && ipv4[1] == 255 && ipv4[2] == 255 && ipv4[3] == 255) ||
-		(ipv4[0] >= 224 && ipv4[0] <= 239) ||
-		broadcast)
-	{
-		if (sock->UdpBroadcast == false)
-		{
-			UINT yes = 1;
+		sock->UdpBroadcast = true;
 
-			sock->UdpBroadcast = true;
-
-			(void)setsockopt(s, SOL_SOCKET, SO_BROADCAST, (char *)&yes, sizeof(yes));
-		}
+		(void)setsockopt(sock->socket, SOL_SOCKET, SO_BROADCAST, (char *)&yes, sizeof(yes));
 	}
 
-	ret = sendto(s, data, size, 0, (struct sockaddr *)&addr, sizeof(addr));
+	ret = sendto(sock->socket, data, size, 0, (struct sockaddr *)&addr, addrlen);
 	if (ret != (int)size)
 	{
-		sock->IgnoreSendErr = false;
-
-		if (WSAGetLastError() == WSAECONNRESET || WSAGetLastError() == WSAENETRESET || WSAGetLastError() == WSAEMSGSIZE || WSAGetLastError() == WSAENETUNREACH ||
-		        WSAGetLastError() == WSAENOBUFS || WSAGetLastError() == WSAEHOSTUNREACH || WSAGetLastError() == WSAEUSERS || WSAGetLastError() == WSAEINVAL || WSAGetLastError() == WSAEADDRNOTAVAIL)
-		{
-			sock->IgnoreSendErr = true;
-		}
-		else if (WSAGetLastError() == WSAEWOULDBLOCK || WSAGetLastError() == WSAEINPROGRESS)
-		{
-			return SOCK_LATER;
-		}
-		else
-		{
-			UINT e = WSAGetLastError();
-		}
-		return 0;
+		return UdpIoFailed(sock, true);
 	}
-
-	Lock(sock->lock);
-	{
-		sock->SendSize += (UINT64)size;
-		sock->SendNum++;
-	}
-	Unlock(sock->lock);
 
 	return ret;
-}
-UINT SendTo6Ex(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size, bool broadcast)
-{
-	SOCKET s;
-	int ret;
-	struct sockaddr_in6 addr;
-	UINT type;
-	if (sock != NULL)
-	{
-		sock->IgnoreSendErr = false;
-	}
-	if (sock == NULL || dest_addr == NULL || (sock->IsRawSocket == false && dest_port == 0) || data == NULL)
-	{
-		return 0;
-	}
-	if (dest_port >= 65536 && sock->IsRawSocket == false)
-	{
-		return 0;
-	}
-	if (sock->Type != SOCK_UDP || sock->socket == INVALID_SOCKET)
-	{
-		return 0;
-	}
-	if (size == 0)
-	{
-		return 0;
-	}
-
-	if (IsIP6(dest_addr) == false)
-	{
-		return 0;
-	}
-
-	s = sock->socket;
-	Zero(&addr, sizeof(addr));
-	addr.sin6_family = AF_INET6;
-	if (sock->IsRawSocket == false)
-	{
-		addr.sin6_port = htons((USHORT)dest_port);
-	}
-	IPToInAddr6(&addr.sin6_addr, dest_addr);
-	addr.sin6_scope_id = dest_addr->ipv6_scope_id;
-
-	type = GetIPAddrType6(dest_addr);
-
-	if ((type & IPV6_ADDR_MULTICAST) || broadcast)
-	{
-		if (sock->UdpBroadcast == false)
-		{
-			UINT yes = 1;
-
-			sock->UdpBroadcast = true;
-
-			(void)setsockopt(s, SOL_SOCKET, SO_BROADCAST, (char *)&yes, sizeof(yes));
-		}
-	}
-
-	ret = sendto(s, data, size, 0, (struct sockaddr *)&addr, sizeof(addr));
-	if (ret != (int)size)
-	{
-		sock->IgnoreSendErr = false;
-
-		if (WSAGetLastError() == WSAECONNRESET || WSAGetLastError() == WSAENETRESET || WSAGetLastError() == WSAEMSGSIZE || WSAGetLastError() == WSAENETUNREACH ||
-		        WSAGetLastError() == WSAENOBUFS || WSAGetLastError() == WSAEHOSTUNREACH || WSAGetLastError() == WSAEUSERS || WSAGetLastError() == WSAEINVAL || WSAGetLastError() == WSAEADDRNOTAVAIL)
-		{
-			sock->IgnoreSendErr = true;
-		}
-		else if (WSAGetLastError() == WSAEWOULDBLOCK || WSAGetLastError() == WSAEINPROGRESS)
-		{
-			return SOCK_LATER;
-		}
-		return 0;
-	}
-
-	Lock(sock->lock);
-	{
-		sock->SendSize += (UINT64)size;
-		sock->SendNum++;
-	}
-	Unlock(sock->lock);
-
-	return ret;
-}
-
-SOCK *NewUDP(UINT port)
-{
-	return NewUDPEx2(port, false, NULL);
-}
-SOCK *NewUDPEx2(UINT port, bool ipv6, IP *ip)
-{
-	if (ipv6 == false)
-	{
-		return NewUDP4(port, ip);
-	}
-	else
-	{
-		return NewUDP6(port, ip);
-	}
-}
-SOCK *NewUDPEx3(UINT port, IP *ip)
-{
-	if (ip == NULL)
-	{
-		return NewUDPEx2(port, false, NULL);
-	}
-
-	if (IsIP4(ip))
-	{
-		return NewUDPEx2(port, false, ip);
-	}
-	else
-	{
-		return NewUDPEx2(port, true, ip);
-	}
 }
 
 // Winsock reports an ICMP port or network unreachable, caused by an earlier datagram of a UDP socket, as
@@ -2140,62 +1992,41 @@ static void DisableUdpReset(SOCKET s)
 	}
 }
 
-SOCK *NewUDP4(UINT port, IP *ip)
+SOCK *NewUDP(UINT port)
+{
+	return NewUDPEx2(port, false, NULL);
+}
+SOCK *NewUDPEx2(UINT port, bool ipv6, IP *ip)
 {
 	SOCK *sock;
 	SOCKET s;
-	struct sockaddr_in addr;
-	if (ip != NULL && IsIP4(ip) == false)
+	struct sockaddr_storage addr;
+	int addrlen;
+	UINT true_flag = 1;
+
+	addrlen = UdpSockAddr(&addr, ipv6, ip, port);
+	if (addrlen == 0)
 	{
 		return NULL;
 	}
 
-	if (IS_SPECIAL_PORT(port) == false)
-	{
-		s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	}
-	else
-	{
-		s = socket(AF_INET, SOCK_RAW, GET_SPECIAL_PORT(port));
-	}
+	s = socket(ipv6 ? AF_INET6 : AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (s == INVALID_SOCKET)
 	{
 		return NULL;
 	}
 
-	Zero(&addr, sizeof(addr));
-	addr.sin_family = AF_INET;
-
-	if (ip == NULL || IsZeroIP(ip))
-	{
-		addr.sin_addr.s_addr = htonl(INADDR_ANY);
-	}
-	else
-	{
-		IPToInAddr(&addr.sin_addr, ip);
-	}
-
-	if (port == 0 || IS_SPECIAL_PORT(port))
-	{
-		addr.sin_port = 0;
-	}
-	else
-	{
-		addr.sin_port = htons((USHORT)port);
-	}
-
-	if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
+	if (bind(s, (struct sockaddr *)&addr, addrlen) != 0)
 	{
 		if (port != 0)
 		{
-			UINT true_flag = 1;
 			(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&true_flag, sizeof(true_flag));
-			if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
+			if (bind(s, (struct sockaddr *)&addr, addrlen) != 0)
 			{
 				UINT false_flag = 0;
 				(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&false_flag, sizeof(false_flag));
 				(void)setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (char *)&true_flag, sizeof(true_flag));
-				if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
+				if (bind(s, (struct sockaddr *)&addr, addrlen) != 0)
 				{
 					closesocket(s);
 					return NULL;
@@ -2215,106 +2046,7 @@ SOCK *NewUDP4(UINT port, IP *ip)
 	sock->Connected = false;
 	sock->AsyncMode = false;
 	sock->ServerMode = false;
-	if (port != 0)
-	{
-		sock->ServerMode = true;
-	}
-
-	sock->socket = s;
-
-	InitUdpSocketBufferSize((int)s);
-
-	if (IS_SPECIAL_PORT(port) == false)
-	{
-		DisableUdpReset(s);
-	}
-
-	if (IS_SPECIAL_PORT(port))
-	{
-		UINT no = 0;
-		(void)setsockopt(sock->socket, IPPROTO_IP, IP_HDRINCL, (char *)&no, sizeof(no));
-
-		sock->IsRawSocket = true;
-		sock->RawSocketIPProtocol = GET_SPECIAL_PORT(port);
-	}
-
-	QuerySocketInformation(sock);
-
-	return sock;
-}
-SOCK *NewUDP6(UINT port, IP *ip)
-{
-	SOCK *sock;
-	SOCKET s;
-	struct sockaddr_in6 addr;
-	if (ip != NULL && IsIP6(ip) == false)
-	{
-		return NULL;
-	}
-
-	if (IS_SPECIAL_PORT(port) == false)
-	{
-		s = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
-	}
-	else
-	{
-		s = socket(AF_INET6, SOCK_RAW, GET_SPECIAL_PORT(port));
-	}
-	if (s == INVALID_SOCKET)
-	{
-		return NULL;
-	}
-
-	Zero(&addr, sizeof(addr));
-	addr.sin6_family = AF_INET6;
-	if (port == 0)
-	{
-		addr.sin6_port = 0;
-	}
-	else
-	{
-		addr.sin6_port = htons((USHORT)port);
-	}
-
-	if (ip != NULL && IsZeroIP(ip) == false)
-	{
-		IPToInAddr6(&addr.sin6_addr, ip);
-		addr.sin6_scope_id = ip->ipv6_scope_id;
-	}
-
-	UINT true_flag = 1;
-	UINT false_flag = 0;
-
-	if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
-	{
-		if (port != 0)
-		{
-			(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&true_flag, sizeof(true_flag));
-			if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
-			{
-				(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&false_flag, sizeof(false_flag));
-				(void)setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (char *)&true_flag, sizeof(true_flag));
-				if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
-				{
-					closesocket(s);
-					return NULL;
-				}
-			}
-		}
-		else
-		{
-			closesocket(s);
-			return NULL;
-		}
-	}
-
-	sock = NewSock();
-
-	sock->Type = SOCK_UDP;
-	sock->Connected = false;
-	sock->AsyncMode = false;
-	sock->ServerMode = false;
-	sock->IPv6 = true;
+	sock->IPv6 = ipv6;
 	if (port != 0)
 	{
 		sock->ServerMode = true;
@@ -2324,24 +2056,15 @@ SOCK *NewUDP6(UINT port, IP *ip)
 
 	InitUdpSocketBufferSize(s);
 
-	if (IS_SPECIAL_PORT(port) == false)
-	{
-		DisableUdpReset(s);
-	}
-
-	if (IS_SPECIAL_PORT(port))
-	{
-		UINT no = 0;
-		(void)setsockopt(sock->socket, IPPROTO_IP, IPV6_HDRINCL, (char *)&no, sizeof(no));
-		(void)setsockopt(sock->socket, IPPROTO_IP, IP_HDRINCL, (char *)&no, sizeof(no));
-
-		sock->IsRawSocket = true;
-		sock->RawSocketIPProtocol = GET_SPECIAL_PORT(port);
-	}
+	DisableUdpReset(s);
 
 	QuerySocketInformation(sock);
 
 	return sock;
+}
+SOCK *NewUDPEx3(UINT port, IP *ip)
+{
+	return NewUDPEx2(port, ip != NULL && IsIP4(ip) == false, ip);
 }
 
 void Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2)
@@ -2750,13 +2473,13 @@ bool AddChainSslCert(struct ssl_ctx_st *ctx, X *x)
 	return true;
 }
 
-// Drain the OpenSSL error queue of a failed SSL_accept or SSL_connect into the ssl_err code (call under openssl_lock)
+// Drain the OpenSSL error queue of a failed SSL_accept or SSL_connect into the ssl_err code
 static void SslHandshakeError(bool server_mode, UINT *ssl_err)
 {
 	unsigned long err;
 	while ((err = ERR_get_error()) != 0)
 	{
-		Debug("%s error %X: %s\n", server_mode ? "SSL_accept" : "SSL_connect", err, ERR_reason_error_string(err));
+		Debug("%s error %X: %s\n", server_mode ? "SSL_accept" : "SSL_connect", (UINT)err, ERR_reason_error_string(err));
 		if (ERR_GET_LIB(err) != ERR_LIB_SSL)
 		{
 			continue;
@@ -2783,7 +2506,7 @@ static void SslHandshakeError(bool server_mode, UINT *ssl_err)
 	}
 }
 
-// Add the Windows ROOT store's certificates to a client's verification store (caller holds openssl_lock)
+// Add the Windows ROOT store's certificates to a client's verification store
 static void AddSslRootCerts(X509_STORE *store)
 {
 	UINT64 now = Tick64();
@@ -2851,29 +2574,25 @@ struct ssl_ctx_st *NewServerSSLCtx(X *x, K *priv, LIST *chain, char *cipher_list
 		settings = &none;
 	}
 
-	Lock(openssl_lock);
+	if (settings->Tls_Disable1_0)
 	{
-		if (settings->Tls_Disable1_0)
-		{
-			SSL_CTX_set_options(ctx, SSL_OP_NO_TLSv1);
-		}
-
-		if (settings->Tls_Disable1_1)
-		{
-			SSL_CTX_set_options(ctx, SSL_OP_NO_TLSv1_1);
-		}
-
-		if (settings->Tls_Disable1_2)
-		{
-			SSL_CTX_set_options(ctx, SSL_OP_NO_TLSv1_2);
-		}
-
-		if (settings->Tls_Disable1_3)
-		{
-			SSL_CTX_set_options(ctx, SSL_OP_NO_TLSv1_3);
-		}
+		SSL_CTX_set_options(ctx, SSL_OP_NO_TLSv1);
 	}
-	Unlock(openssl_lock);
+
+	if (settings->Tls_Disable1_1)
+	{
+		SSL_CTX_set_options(ctx, SSL_OP_NO_TLSv1_1);
+	}
+
+	if (settings->Tls_Disable1_2)
+	{
+		SSL_CTX_set_options(ctx, SSL_OP_NO_TLSv1_2);
+	}
+
+	if (settings->Tls_Disable1_3)
+	{
+		SSL_CTX_set_options(ctx, SSL_OP_NO_TLSv1_3);
+	}
 
 	if (chain == NULL)
 	{
@@ -2893,33 +2612,29 @@ struct ssl_ctx_st *NewServerSSLCtx(X *x, K *priv, LIST *chain, char *cipher_list
 		UnlockList(chain);
 	}
 
-	Lock(openssl_lock);
+	if (settings->Override_Security_Level)
 	{
-		if (settings->Override_Security_Level)
-		{
-			SSL_CTX_set_security_level(ctx, settings->Override_Security_Level_Value);
-		}
-
-		if (use_cert)
-		{
-			SSL_CTX_use_certificate(ctx, x->x509);
-			SSL_CTX_use_PrivateKey(ctx, priv->pkey);
-		}
-
-		if (cipher_list != NULL)
-		{
-			if (SSL_CTX_set_cipher_list(ctx, cipher_list) == 0)
-			{
-				SSL_CTX_set_cipher_list(ctx, DEFAULT_CIPHER_LIST);
-			}
-		}
-
-		SSL_CTX_set1_groups_list(ctx, PQ_GROUP_LIST);
-
-		// A context that lives for many connections must not resume sessions: a fresh context per connection never did
-		SSL_CTX_set_session_cache_mode(ctx, SSL_SESS_CACHE_OFF);
+		SSL_CTX_set_security_level(ctx, settings->Override_Security_Level_Value);
 	}
-	Unlock(openssl_lock);
+
+	if (use_cert)
+	{
+		SSL_CTX_use_certificate(ctx, x->x509);
+		SSL_CTX_use_PrivateKey(ctx, priv->pkey);
+	}
+
+	if (cipher_list != NULL)
+	{
+		if (SSL_CTX_set_cipher_list(ctx, cipher_list) == 0)
+		{
+			SSL_CTX_set_cipher_list(ctx, DEFAULT_CIPHER_LIST);
+		}
+	}
+
+	SSL_CTX_set1_groups_list(ctx, PQ_GROUP_LIST);
+
+	// A context that lives for many connections must not resume sessions: a fresh context per connection never did
+	SSL_CTX_set_session_cache_mode(ctx, SSL_SESS_CACHE_OFF);
 
 	return ctx;
 }
@@ -3010,56 +2725,50 @@ static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *pri
 		goto FAIL;
 	}
 
-	Lock(openssl_lock);
+	if (sock->ServerMode == false)
 	{
-		if (sock->ServerMode == false)
+		if (ssl_option != NULL && ssl_option->VerifyPeer)
 		{
-			if (ssl_option != NULL && ssl_option->VerifyPeer)
+			X509_STORE* store = SSL_CTX_get_cert_store(ssl_ctx);
+			if (ssl_option->AddDefaultCA)
 			{
-				X509_STORE* store = SSL_CTX_get_cert_store(ssl_ctx);
-				if (ssl_option->AddDefaultCA)
-				{
-					AddSslRootCerts(store);
-				}
+				AddSslRootCerts(store);
+			}
 
-				UINT i;
-				for (i = 0; i < LIST_NUM(ssl_option->CaList); ++i)
-				{
-					X *ca = LIST_DATA(ssl_option->CaList, i);
-					X509_STORE_add_cert(store, ca->x509);
-				}
+			UINT i;
+			for (i = 0; i < LIST_NUM(ssl_option->CaList); ++i)
+			{
+				X *ca = LIST_DATA(ssl_option->CaList, i);
+				X509_STORE_add_cert(store, ca->x509);
+			}
 
-				X509_VERIFY_PARAM *vpm = SSL_CTX_get0_param(ssl_ctx);
-				X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_PARTIAL_CHAIN);
+			X509_VERIFY_PARAM *vpm = SSL_CTX_get0_param(ssl_ctx);
+			X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_PARTIAL_CHAIN);
 
-				// Enable hostname verification (by default CN is only checked if SAN is not available)
-				if (ssl_option->VerifyHostname && IsEmptyStr(sni_hostname) == false)
-				{
-					X509_VERIFY_PARAM_set1_host(vpm, sni_hostname, StrLen(sni_hostname));
-				}
+			// Enable hostname verification (by default CN is only checked if SAN is not available)
+			if (ssl_option->VerifyHostname && IsEmptyStr(sni_hostname) == false)
+			{
+				X509_VERIFY_PARAM_set1_host(vpm, sni_hostname, StrLen(sni_hostname));
 			}
 		}
-
-		sock->ssl = SSL_new(ssl_ctx);
-
-		if (sock->ssl == NULL)
-		{
-			Unlock(openssl_lock);
-			goto FAIL;
-		}
-
-		SSL_set_fd(sock->ssl, (int)sock->socket);
-
-		if (sock->ServerMode == false)
-		{
-			if (IsEmptyStr(sni_hostname) == false)
-			{
-				SSL_set_tlsext_host_name(sock->ssl, sni_hostname);
-			}
-		}
-
 	}
-	Unlock(openssl_lock);
+
+	sock->ssl = SSL_new(ssl_ctx);
+
+	if (sock->ssl == NULL)
+	{
+		goto FAIL;
+	}
+
+	SSL_set_fd(sock->ssl, (int)sock->socket);
+
+	if (sock->ServerMode == false)
+	{
+		if (IsEmptyStr(sni_hostname) == false)
+		{
+			SSL_set_tlsext_host_name(sock->ssl, sni_hostname);
+		}
+	}
 
 	if (sock->ServerMode == false)
 	{
@@ -3071,12 +2780,8 @@ static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *pri
 				x509 = x->x509;
 				key = priv->pkey;
 
-				Lock(openssl_lock);
-				{
-					SSL_use_certificate(sock->ssl, x509);
-					SSL_use_PrivateKey(sock->ssl, key);
-				}
-				Unlock(openssl_lock);
+				SSL_use_certificate(sock->ssl, x509);
+				SSL_use_PrivateKey(sock->ssl, key);
 			}
 		}
 
@@ -3097,11 +2802,7 @@ static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *pri
 
 	if (handshake_ret <= 0)
 	{
-		Lock(openssl_lock);
-		{
-			SslHandshakeError(sock->ServerMode, ssl_err);
-		}
-		Unlock(openssl_lock);
+		SslHandshakeError(sock->ServerMode, ssl_err);
 		goto FAIL;
 	}
 
@@ -3120,13 +2821,9 @@ static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *pri
 
 	}
 
-	Lock(openssl_lock);
-	{
-		x509 = SSL_get_peer_certificate(sock->ssl);
-		ssl_verify_err = SSL_get_verify_result(sock->ssl);
-		sock->SslVersion = SSL_get_version(sock->ssl);
-	}
-	Unlock(openssl_lock);
+	x509 = SSL_get_peer_certificate(sock->ssl);
+	ssl_verify_err = SSL_get_verify_result(sock->ssl);
+	sock->SslVersion = SSL_get_version(sock->ssl);
 
 	if (x509 == NULL)
 	{
@@ -3179,44 +2876,13 @@ static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *pri
 		}
 	}
 
-	Lock(openssl_lock);
-	{
-		x509 = SSL_get_certificate(sock->ssl);
-	}
-	Unlock(openssl_lock);
-
-	if (x509 == NULL)
-	{
-		sock->LocalX = NULL;
-	}
-	else
-	{
-		// The certificate belongs to the SSL object: neither X509ToX (when it refuses it) nor the X frees it
-		X *local_x;
-		local_x = X509ToX(x509);
-		if (local_x == NULL)
-		{
-			sock->LocalX = NULL;
-		}
-		else
-		{
-			local_x->do_not_free = true;
-			sock->LocalX = CloneX(local_x);
-			FreeX(local_x);
-		}
-	}
-
 	SSL_set_mode(sock->ssl, SSL_MODE_AUTO_RETRY);
 
 	SSL_set_mode(sock->ssl, SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
 
 	sock->ssl_ctx = ssl_ctx;
 
-	Lock(openssl_lock);
-	{
-		sock->CipherName = CopyStr((char *)SSL_get_cipher(sock->ssl));
-	}
-	Unlock(openssl_lock);
+	sock->CipherName = CopyStr((char *)SSL_get_cipher(sock->ssl));
 
 	// The only success point: Recv/Send(secure) and Disconnect see SecureMode with a live ssl and ssl_ctx
 	sock->SecureMode = true;
@@ -3229,11 +2895,7 @@ FAIL:
 	// The one failure exit: no SSL object, no context, no lock held, not secure
 	if (sock->ssl != NULL)
 	{
-		Lock(openssl_lock);
-		{
-			SSL_free(sock->ssl);
-		}
-		Unlock(openssl_lock);
+		SSL_free(sock->ssl);
 		sock->ssl = NULL;
 	}
 	FreeSSLCtx(ssl_ctx);
@@ -3323,13 +2985,6 @@ static UINT SecureRecv(SOCK *sock, void *data, UINT size)
 
 	if (ret > 0)
 	{
-		Lock(sock->lock);
-		{
-			sock->RecvSize += (UINT64)ret;
-			sock->RecvNum++;
-		}
-		Unlock(sock->lock);
-
 		return (UINT)ret;
 	}
 
@@ -3364,12 +3019,6 @@ static UINT SecureSend(SOCK *sock, void *data, UINT size)
 
 	if (ret > 0)
 	{
-		Lock(sock->lock);
-		{
-			sock->SendSize += (UINT64)ret;
-			sock->SendNum++;
-		}
-		Unlock(sock->lock);
 		return (UINT)ret;
 	}
 
@@ -3409,12 +3058,6 @@ UINT Recv(SOCK *sock, void *data, UINT size, bool secure)
 
 	if (ret > 0)
 	{
-		Lock(sock->lock);
-		{
-			sock->RecvSize += (UINT64)ret;
-			sock->RecvNum++;
-		}
-		Unlock(sock->lock);
 		return (UINT)ret;
 	}
 
@@ -3449,12 +3092,6 @@ UINT Send(SOCK *sock, void *data, UINT size, bool secure)
 	ret = send(s, data, size, 0);
 	if (ret > 0)
 	{
-		Lock(sock->lock);
-		{
-			sock->SendSize += (UINT64)ret;
-			sock->SendNum++;
-		}
-		Unlock(sock->lock);
 		return (UINT)ret;
 	}
 
@@ -3491,12 +3128,17 @@ void SetTimeout(SOCK *sock, UINT timeout)
 		timeout = TIMEOUT_INFINITE;
 	}
 
-	sock->TimeOut = timeout;
+	// Same value again, or "no limit" on a socket whose timeouts were never set (the OS default): nothing to change
+	if (timeout == sock->TimeOut || (timeout == TIMEOUT_INFINITE && sock->TimeOut == 0))
+	{
+		sock->TimeOut = timeout;
+		return;
+	}
 
+	sock->TimeOut = timeout;
 
 	setsockopt(sock->socket, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(UINT));
 	setsockopt(sock->socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(UINT));
-
 }
 
 void DisableGetHostNameWhenAcceptInit()
@@ -3562,8 +3204,9 @@ SOCK *Accept(SOCK *sock)
 	SOCK *ret;
 	SOCKET s, new_socket;
 	int size;
-	struct sockaddr_in addr;
+	struct sockaddr_storage addr;
 	UINT true_flag = 1;
+	bool is_ipv6;
 	if (sock == NULL)
 	{
 		return NULL;
@@ -3577,10 +3220,6 @@ SOCK *Accept(SOCK *sock)
 	{
 		return NULL;
 	}
-	if (sock->IPv6)
-	{
-		return Accept6(sock);
-	}
 
 	s = sock->socket;
 	if (s == INVALID_SOCKET)
@@ -3592,11 +3231,11 @@ SOCK *Accept(SOCK *sock)
 
 	if (sock->EnableConditionalAccept)
 	{
-		new_socket = Win32Accept(sock, s, (struct sockaddr *)&addr,(int *)&size, false);
+		new_socket = Win32Accept(sock, s, (struct sockaddr *)&addr, &size);
 	}
 	else
 	{
-		new_socket = accept(s, (struct sockaddr *)&addr,(int *)&size);
+		new_socket = accept(s, (struct sockaddr *)&addr, &size);
 		if (new_socket == INVALID_SOCKET)
 		{
 			sock->AcceptError = WSAGetLastError();
@@ -3605,15 +3244,10 @@ SOCK *Accept(SOCK *sock)
 
 	if (new_socket == INVALID_SOCKET)
 	{
-		if (sock->CancelAccept)
-		{
-			sock->AcceptCanceled = true;
-		}
 		return NULL;
 	}
 	if (sock->CancelAccept)
 	{
-		sock->AcceptCanceled = true;
 		closesocket(new_socket);
 		return NULL;
 	}
@@ -3632,6 +3266,9 @@ SOCK *Accept(SOCK *sock)
 
 	QuerySocketInformation(ret);
 
+	// An IPv4 peer of the dual-stack listener arrives as ::ffff:a.b.c.d, which decodes to an IPv4 address
+	is_ipv6 = IsIP6(&ret->RemoteIP);
+
 	if (IsLocalHostIP(&ret->RemoteIP) == false)
 	{
 		ret->IpClientAdded = true;
@@ -3642,256 +3279,125 @@ SOCK *Accept(SOCK *sock)
 	{
 		IP current_ip;
 
-		if (GetCurrentGlobalIP(&current_ip, false) == false)
+		if (GetCurrentGlobalIP(&current_ip, is_ipv6) == false)
 		{
-			SetCurrentGlobalIP(&sock->LocalIP, false);
+			SetCurrentGlobalIP(&sock->LocalIP, is_ipv6);
 		}
 	}
 
-	StrCpy(ret->UnderlayProtocol, sizeof(ret->UnderlayProtocol), SOCK_UNDERLAY_NATIVE_V4);
+	StrCpy(ret->UnderlayProtocol, sizeof(ret->UnderlayProtocol), is_ipv6 ? SOCK_UNDERLAY_NATIVE_V6 : SOCK_UNDERLAY_NATIVE_V4);
 
-	AddProtocolDetailsStr(ret->ProtocolDetails, sizeof(ret->ProtocolDetails), "IPv4");
+	AddProtocolDetailsStr(ret->ProtocolDetails, sizeof(ret->ProtocolDetails), is_ipv6 ? "IPv6" : "IPv4");
 
 	return ret;
-}
-
-SOCK *Accept6(SOCK *sock)
-{
-	SOCK *ret;
-	SOCKET s, new_socket;
-	int size;
-	struct sockaddr_in6 addr;
-	if (sock == NULL)
-	{
-		return NULL;
-	}
-	sock->AcceptError = 0;
-	if (sock->ListenMode == false || sock->Type != SOCK_TCP || sock->ServerMode == false)
-	{
-		return NULL;
-	}
-	if (sock->CancelAccept)
-	{
-		return NULL;
-	}
-	if (sock->IPv6 == false)
-	{
-		return NULL;
-	}
-
-	s = sock->socket;
-	if (s == INVALID_SOCKET)
-	{
-		return NULL;
-	}
-	Zero(&addr, sizeof(addr));
-	size = sizeof(addr);
-
-	if (sock->EnableConditionalAccept)
-	{
-		new_socket = Win32Accept(sock, s, (struct sockaddr *)&addr,(int *)&size, true);
-	}
-	else
-	{
-		new_socket = accept(s, (struct sockaddr *)&addr,(int *)&size);
-		if (new_socket == INVALID_SOCKET)
-		{
-			sock->AcceptError = WSAGetLastError();
-		}
-	}
-
-	if (new_socket == INVALID_SOCKET)
-	{
-		if (sock->CancelAccept)
-		{
-			sock->AcceptCanceled = true;
-		}
-		return NULL;
-	}
-	if (sock->CancelAccept)
-	{
-		sock->AcceptCanceled = true;
-		closesocket(new_socket);
-		return NULL;
-	}
-
-	ret = NewSock();
-	ret->socket = new_socket;
-	ret->Connected = true;
-	ret->AsyncMode = false;
-	ret->Type = SOCK_TCP;
-	ret->ServerMode = true;
-	ret->SecureMode = false;
-
-	UINT true_flag = 1;
-	(void)setsockopt(ret->socket, IPPROTO_TCP, TCP_NODELAY, (char *)&true_flag, sizeof(true_flag));
-
-	SetTimeout(ret, TIMEOUT_INFINITE);
-
-	QuerySocketInformation(ret);
-
-	if (IsLocalHostIP(&ret->RemoteIP) == false)
-	{
-		ret->IpClientAdded = true;
-		AddIpClient(&ret->RemoteIP);
-	}
-	if (IsZeroIp(&sock->LocalIP) == false && IsLocalHostIP(&sock->LocalIP) == false)
-	{
-		IP current_ip;
-
-		if (GetCurrentGlobalIP(&current_ip, true) == false)
-		{
-			SetCurrentGlobalIP(&sock->LocalIP, true);
-		}
-	}
-
-	StrCpy(ret->UnderlayProtocol, sizeof(ret->UnderlayProtocol), SOCK_UNDERLAY_NATIVE_V6);
-
-	AddProtocolDetailsStr(ret->ProtocolDetails, sizeof(ret->ProtocolDetails), "IPv6");
-
-	return ret;
-}
-
-SOCK *ListenEx6(UINT port, bool local_only)
-{
-	return ListenEx63(port, local_only, false, NULL);
-}
-SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
-{
-	SOCKET s;
-	SOCK *sock;
-	struct sockaddr_in6 addr;
-	struct in6_addr in;
-	IP localhost;
-	UINT backlog = SOMAXCONN;
-	if (port == 0 || port >= 65536)
-	{
-		return NULL;
-	}
-
-	Zero(&addr, sizeof(addr));
-	Zero(&in, sizeof(in));
-	GetLocalHostIP6(&localhost);
-
-	addr.sin6_port = htons((UINT)port);
-	if (listen_ip == NULL || IsZeroIP(listen_ip))
-	{
-		addr.sin6_addr = in6addr_any;
-	}
-	else if (IsIP6(listen_ip))
-	{
-		IPToInAddr6(&addr.sin6_addr, listen_ip);
-	}
-	else
-	{
-		return NULL;
-	}
-	addr.sin6_family = AF_INET6;
-
-	if (local_only)
-	{
-		IPToInAddr6(&addr.sin6_addr, &localhost);
-
-		enable_ca = false;
-	}
-
-	s = socket(AF_INET6, SOCK_STREAM, 0);
-	if (s == INVALID_SOCKET)
-	{
-		return NULL;
-	}
-
-
-	if (bind(s, (struct sockaddr *)&addr, sizeof(struct sockaddr_in6)) != 0)
-	{
-		closesocket(s);
-		return NULL;
-	}
-
-	if (enable_ca)
-	{
-		backlog = 1;
-	}
-
-	if (listen(s, backlog))
-	{
-		closesocket(s);
-		return NULL;
-	}
-
-	sock = NewSock();
-	sock->Connected = false;
-	sock->AsyncMode = false;
-	sock->ServerMode = true;
-	sock->Type = SOCK_TCP;
-	sock->socket = s;
-	sock->ListenMode = true;
-	sock->SecureMode = false;
-	sock->LocalPort = port;
-	sock->IPv6 = true;
-	sock->EnableConditionalAccept = enable_ca;
-
-	return sock;
 }
 
 SOCK *Listen(UINT port)
 {
-	return ListenEx(port, false);
+	return ListenEx2(port, false, false, NULL, false);
 }
-SOCK *ListenEx(UINT port, bool local_only)
+
+// A TCP socket bound to addr. An AF_INET6 socket gets IPV6_V6ONLY from v6only: false makes it dual-stack.
+static SOCKET ListenBind(struct sockaddr *addr, int addr_size, bool v6only)
 {
-	return ListenEx2(port, local_only, false, NULL);
+	SOCKET s = socket(addr->sa_family, SOCK_STREAM, 0);
+
+	if (s == INVALID_SOCKET)
+	{
+		return INVALID_SOCKET;
+	}
+
+	if (addr->sa_family == AF_INET6)
+	{
+		DWORD flag = (v6only ? 1 : 0);
+
+		if (setsockopt(s, IPPROTO_IPV6, IPV6_V6ONLY, (char *)&flag, sizeof(flag)) != 0)
+		{
+			closesocket(s);
+			return INVALID_SOCKET;
+		}
+	}
+
+	if (bind(s, addr, addr_size) != 0)
+	{
+		closesocket(s);
+		return INVALID_SOCKET;
+	}
+
+	return s;
 }
-SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
+
+// One TCP listen socket per port. Without a ListenIP it is a dual-stack AF_INET6 socket on [::]:port, so IPv4 peers
+// arrive as ::ffff:a.b.c.d. AF_INET is used for local_only, an IPv4 ListenIP, ipv4_only or an unsupported IPv6.
+SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip, bool ipv4_only)
 {
-	SOCKET s;
+	SOCKET s = INVALID_SOCKET;
 	SOCK *sock;
-	struct sockaddr_in addr;
-	struct in_addr in;
-	IP localhost;
+	struct sockaddr_in addr4;
+	struct sockaddr_in6 addr6;
 	UINT backlog = SOMAXCONN;
+	UINT true_flag = 1;
+	bool is_ipv6 = false;
 	if (port == 0 || port >= 65536)
 	{
 		return NULL;
 	}
 
-	Zero(&addr, sizeof(addr));
-	Zero(&in, sizeof(in));
-	SetIP(&localhost, 127, 0, 0, 1);
-
-	addr.sin_port = htons((UINT)port);
-	if (listen_ip == NULL || IsZeroIP(listen_ip))
-	{
-		*((UINT *)&addr.sin_addr) = htonl(INADDR_ANY);
-	}
-	else if (IsIP4(listen_ip))
-	{
-		IPToInAddr(&addr.sin_addr, listen_ip);
-	}
-	else
-	{
-		return NULL;
-	}
-	addr.sin_family = AF_INET;
+	Zero(&addr4, sizeof(addr4));
+	addr4.sin_family = AF_INET;
+	addr4.sin_port = htons((UINT)port);
+	Zero(&addr6, sizeof(addr6));
+	addr6.sin6_family = AF_INET6;
+	addr6.sin6_port = htons((UINT)port);
 
 	if (local_only)
 	{
-		IPToInAddr(&addr.sin_addr, &localhost);
+		IP localhost;
+
+		SetIP(&localhost, 127, 0, 0, 1);
+		IPToInAddr(&addr4.sin_addr, &localhost);
 
 		enable_ca = false;
+
+		s = ListenBind((struct sockaddr *)&addr4, sizeof(addr4), false);
+	}
+	else if (listen_ip == NULL || IsZeroIP(listen_ip))
+	{
+		if (ipv4_only == false)
+		{
+			s = ListenBind((struct sockaddr *)&addr6, sizeof(addr6), false);
+			is_ipv6 = true;
+		}
+
+		if (s == INVALID_SOCKET)
+		{
+			// IPv6 is unsupported or off, or another process holds the port in one family: the free family listens
+			s = ListenBind((struct sockaddr *)&addr4, sizeof(addr4), false);
+			is_ipv6 = false;
+
+			if (s == INVALID_SOCKET && ipv4_only == false)
+			{
+				s = ListenBind((struct sockaddr *)&addr6, sizeof(addr6), true);
+				is_ipv6 = true;
+			}
+		}
+	}
+	else if (IsIP4(listen_ip))
+	{
+		IPToInAddr(&addr4.sin_addr, listen_ip);
+
+		s = ListenBind((struct sockaddr *)&addr4, sizeof(addr4), false);
+	}
+	else if (ipv4_only == false)
+	{
+		IPToInAddr6(&addr6.sin6_addr, listen_ip);
+
+		s = ListenBind((struct sockaddr *)&addr6, sizeof(addr6), true);
+		is_ipv6 = true;
 	}
 
-	s = socket(AF_INET, SOCK_STREAM, 0);
 	if (s == INVALID_SOCKET)
 	{
-		return NULL;
-	}
-
-	UINT true_flag = 1;
-
-	if (bind(s, (struct sockaddr *)&addr, sizeof(struct sockaddr_in)) != 0)
-	{
-		closesocket(s);
 		return NULL;
 	}
 
@@ -3916,6 +3422,7 @@ SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 	sock->ListenMode = true;
 	sock->SecureMode = false;
 	sock->LocalPort = port;
+	sock->IPv6 = is_ipv6;
 	sock->EnableConditionalAccept = enable_ca;
 
 	return sock;
@@ -3931,63 +3438,31 @@ void Disconnect(SOCK *sock)
 
 	if (sock->Type == SOCK_TCP && sock->ListenMode)
 	{
-		bool no_tcp_check_port = false;
-
 		sock->CancelAccept = true;
 
 		if (sock->hAcceptEvent != NULL)
 		{
 			SetEvent(sock->hAcceptEvent);
-
-			no_tcp_check_port = true;
-		}
-
-		if (sock->AcceptCanceled == false)
-		{
-			if (no_tcp_check_port == false)
-			{
-				if (sock->IPv6 == false)
-				{
-					CheckTCPPortEx("127.0.0.1", sock->LocalPort, TIMEOUT_TCP_PORT_CHECK);
-				}
-				else
-				{
-					CheckTCPPortEx("::1", sock->LocalPort, TIMEOUT_TCP_PORT_CHECK);
-				}
-			}
 		}
 	}
-
-	Lock(disconnect_function_lock);
 
 	Lock(sock->disconnect_lock);
 
 	if (sock->Type == SOCK_TCP)
 	{
-		if (sock->socket != INVALID_SOCKET)
-		{
-			UINT true_flag = 1;
-			(void)setsockopt(sock->socket, SOL_SOCKET, SO_DONTLINGER, (char *)&true_flag, sizeof(true_flag));
-		}
-
 		Lock(sock->lock);
 		{
 			if (sock->socket == INVALID_SOCKET)
 			{
 				Unlock(sock->lock);
 				Unlock(sock->disconnect_lock);
-				Unlock(disconnect_function_lock);
 				return;
 			}
 			s = sock->socket;
 
 			if (sock->Connected)
 			{
-				struct linger ling;
-				Zero(&ling, sizeof(ling));
-
-
-				shutdown(s, 2);
+				shutdown(s, SD_BOTH);
 			}
 
 			closesocket(s);
@@ -3998,12 +3473,8 @@ void Disconnect(SOCK *sock)
 				{
 					if (sock->ssl != NULL)
 					{
-						Lock(openssl_lock);
-						{
-							SSL_free(sock->ssl);
-							FreeSSLCtx(sock->ssl_ctx);
-						}
-						Unlock(openssl_lock);
+						SSL_free(sock->ssl);
+						FreeSSLCtx(sock->ssl_ctx);
 						sock->ssl = NULL;
 						sock->ssl_ctx = NULL;
 					}
@@ -4036,7 +3507,6 @@ void Disconnect(SOCK *sock)
 			{
 				Unlock(sock->lock);
 				Unlock(sock->disconnect_lock);
-				Unlock(disconnect_function_lock);
 				return;
 			}
 
@@ -4054,34 +3524,6 @@ void Disconnect(SOCK *sock)
 		Unlock(sock->lock);
 	}
 	Unlock(sock->disconnect_lock);
-
-	Unlock(disconnect_function_lock);
-}
-
-bool CheckTCPPortEx(char *hostname, UINT port, UINT timeout)
-{
-	SOCK *s;
-	if (hostname == NULL || port == 0 || port >= 65536)
-	{
-		return false;
-	}
-
-	if (timeout == 0)
-	{
-		timeout = TIMEOUT_TCP_PORT_CHECK;
-	}
-
-	s = ConnectEx4(hostname, port, timeout, NULL, true, NULL);
-	if (s == NULL)
-	{
-		return false;
-	}
-	else
-	{
-		Disconnect(s);
-		ReleaseSock(s);
-		return true;
-	}
 }
 
 static char *PrintError(int ErrorCode)
@@ -4133,9 +3575,8 @@ static char *PrintError(int ErrorCode)
 
 static int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool *cancel_flag)
 {
-	UINT64 start_time;
+	UINT64 end_time;
 	bool ok = false;
-	bool timeouted = false;
 	WSAEVENT hEvent;
 	UINT zero = 0;
 	UINT tmp = 0;
@@ -4151,50 +3592,36 @@ static int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeou
 
 	hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
+	// WSAEventSelect puts the socket in non-blocking mode; connect() is issued once and
+	// its result arrives as FD_CONNECT, polled in 25 ms slices so the cancel flag is honoured
 	WSAEventSelect(s, hEvent, FD_CONNECT);
 
-	start_time = Tick64();
+	end_time = Tick64() + (UINT64)timeout;
 
-	while (true)
+	if (connect(s, addr, size) == 0)
 	{
-		int ret;
-
-		ret = connect(s, addr, size);
-
-		if (ret == 0)
+		ok = true;
+	}
+	else if (WSAGetLastError() == WSAEWOULDBLOCK)
+	{
+		while (*cancel_flag == false && Tick64() < end_time)
 		{
-			ok = true;
-			break;
-		}
-		else
-		{
-			int err = WSAGetLastError();
-			if (timeouted && err == WSAEALREADY)
+			WSANETWORKEVENTS events;
+
+			if (WaitForSingleObject(hEvent, 25) != WAIT_OBJECT_0)
 			{
-				ok = false;
-				break;
+				continue;
 			}
-			if (*cancel_flag)
-			{
-				ok = false;
-				break;
-			}
-			if (err == WSAEISCONN || err == WSAEINVAL)
-			{
-				ok = true;
-				break;
-			}
-			if (((start_time + (UINT64)timeout) <= Tick64()) || (err != WSAEWOULDBLOCK && err != WSAEALREADY))
+
+			if (WSAEnumNetworkEvents(s, hEvent, &events) != 0)
 			{
 				break;
 			}
-			else
+
+			if (events.lNetworkEvents & FD_CONNECT)
 			{
-				SleepThread(10);
-				if (WaitForSingleObject(hEvent, 100) == WAIT_OBJECT_0)
-				{
-					timeouted = true;
-				}
+				ok = (events.iErrorCode[FD_CONNECT_BIT] == 0);
+				break;
 			}
 		}
 	}
@@ -4278,62 +3705,72 @@ static int bind_sock(SOCKET sock, IP *ip, UINT port)
 	}
 }
 
-static SOCKET BindConnectTimeoutIPv4(IP* localIP, UINT localport, IP* ip, UINT port, UINT timeout, bool* cancel_flag)
+static SOCKET BindConnectTimeout(bool ipv6, IP *localIP, UINT localport, IP *ip, UINT port, UINT timeout, bool *cancel_flag)
 {
 	SOCKET s;
 	struct sockaddr_in sockaddr4;
-	struct in_addr addr4;
+	struct sockaddr_in6 sockaddr6;
+	struct sockaddr *addr;
+	int addr_size;
+	IP tmpIP;
+	IP *bind_ip = localIP;
 
 	Zero(&sockaddr4, sizeof(sockaddr4));
-	Zero(&addr4, sizeof(addr4));
+	Zero(&sockaddr6, sizeof(sockaddr6));
 
-	IPToInAddr(&addr4, ip);
-	sockaddr4.sin_port = htons((USHORT)port);
-	sockaddr4.sin_family = AF_INET;
-	sockaddr4.sin_addr.s_addr = addr4.s_addr;
+	if (ipv6)
+	{
+		sockaddr6.sin6_family = AF_INET6;
+		sockaddr6.sin6_port = htons((USHORT)port);
+		sockaddr6.sin6_scope_id = ip->ipv6_scope_id;
+		IPToInAddr6(&sockaddr6.sin6_addr, ip);
+		addr = (struct sockaddr *)&sockaddr6;
+		addr_size = sizeof(sockaddr6);
+	}
+	else
+	{
+		sockaddr4.sin_family = AF_INET;
+		sockaddr4.sin_port = htons((USHORT)port);
+		IPToInAddr(&sockaddr4.sin_addr, ip);
+		addr = (struct sockaddr *)&sockaddr4;
+		addr_size = sizeof(sockaddr4);
+	}
 
-	s = socket(AF_INET, SOCK_STREAM, 0);
+	s = socket(ipv6 ? AF_INET6 : AF_INET, SOCK_STREAM, 0);
+	if (s == INVALID_SOCKET)
+	{
+		return INVALID_SOCKET;
+	}
 
-	if (s != INVALID_SOCKET) {
-		int ier;
-		IP tmpIP;
-		IP *tmpIP2;
+	if (bind_ip == BIND_LOCALIP_NULL)
+	{
+		// A NULL local address is the unspecified address of the target family
+		StrToIP(&tmpIP, ipv6 ? "0::0" : "0.0.0.0");
+		bind_ip = &tmpIP;
+	}
 
-		if (localIP == BIND_LOCALIP_NULL) {
-			StrToIP(&tmpIP, "0.0.0.0");	// A NULL address for the argument "localIP" is treated as if "0.0.0.0" in IPV4 was specified.
-			tmpIP2 = &tmpIP;
-		}
-		else {
-			tmpIP2 = localIP;
-		}
-
-		if ((IsZeroIP(tmpIP2) == false) || (localport != 0)) {
-
-			if (bind_sock(s, tmpIP2, localport) != 0) {
-				ier = WSAGetLastError();
-				Debug("IPv4 bind() failed with error: %d %s\n", ier, PrintError(ier));
-				closesocket(s);
-				s = INVALID_SOCKET;
-			}
+	if ((IsZeroIP(bind_ip) == false) || (localport != 0))
+	{
+		if (bind_sock(s, bind_ip, localport) != 0)
+		{
+			int ier = WSAGetLastError();
+			Debug("IPv%d bind() failed with error: %d %s\n", ipv6 ? 6 : 4, ier, PrintError(ier));
+			closesocket(s);
+			return INVALID_SOCKET;
 		}
 	}
 
-	if (s != INVALID_SOCKET)
+	if (connect_timeout(s, addr, addr_size, timeout, cancel_flag) != 0)
 	{
-		if (connect_timeout(s, (struct sockaddr *)&sockaddr4, sizeof(struct sockaddr_in), timeout, cancel_flag) != 0)
-		{
-			closesocket(s);
-			s = INVALID_SOCKET;
-		}
+		closesocket(s);
+		return INVALID_SOCKET;
 	}
 
 	return s;
 }
 
-static void BindConnectThreadForIPv4(THREAD *thread, void *param)
+static void BindConnectThread(THREAD *thread, void *param)
 {
-	SOCKET s = INVALID_SOCKET;
-	IP current_ip;
 	UINT i;
 	CONNECT_SERIAL_PARAM *p = (CONNECT_SERIAL_PARAM *)param;
 	if (thread == NULL || p == NULL)
@@ -4346,10 +3783,9 @@ static void BindConnectThreadForIPv4(THREAD *thread, void *param)
 		WaitEx(NULL, p->Delay, p->NoDelayFlag);
 	}
 
-	Zero(&current_ip, sizeof(current_ip));
-
 	for (i = 0; i < LIST_NUM(p->IpList); ++i)
 	{
+		SOCKET s;
 		IP *ip = LIST_DATA(p->IpList, i);
 
 		if (IsZeroIp(ip))
@@ -4367,138 +3803,27 @@ static void BindConnectThreadForIPv4(THREAD *thread, void *param)
 			break;
 		}
 
-		s = BindConnectTimeoutIPv4(p->LocalIP, p->LocalPort, ip, p->Port, p->Timeout, p->CancelFlag);
+		s = BindConnectTimeout(p->IPv6, p->LocalIP, p->LocalPort, ip, p->Port, p->Timeout, p->CancelFlag);
 
 		if (s != INVALID_SOCKET)
 		{
-			Copy(&current_ip, ip, sizeof(IP));
-
 			Copy(p->Ret_Ip, ip, sizeof(IP));
-		}
 
-		if (s != INVALID_SOCKET)
-		{
-			p->Sock = CreateTCPSock(s, false, &current_ip, p->No_Get_Hostname, p->Hostname);
+			p->Sock = CreateTCPSock(s, p->IPv6, p->Hostname);
 			break;
 		}
 	}
 
 	p->Ok = (p->Sock == NULL ? false : true);
-	p->FinishedTick = Tick64();
 	p->Finished = true;
 
 	Set(p->FinishEvent);
 }
 
-static void BindConnectThreadForIPv6(THREAD* thread, void* param)
+SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, char *hostname_original)
 {
-	SOCKET s = INVALID_SOCKET;
-	IP current_ip;
-	UINT i;
-	CONNECT_SERIAL_PARAM *p = (CONNECT_SERIAL_PARAM *)param;
-	if (thread == NULL || p == NULL)
-	{
-		return;
-	}
-
-	if (p->Delay >= 1)
-	{
-		WaitEx(NULL, p->Delay, p->NoDelayFlag);
-	}
-
-	Zero(&current_ip, sizeof(current_ip));
-
-	for (i = 0; i < LIST_NUM(p->IpList); ++i)
-	{
-		IP *ip = LIST_DATA(p->IpList, i);
-
-		if (IsZeroIp(ip))
-		{
-			continue;
-		}
-
-		if (i > 0 && p->RetryDelay >= 1)
-		{
-			WaitEx(NULL, p->RetryDelay, p->CancelFlag);
-		}
-
-		if (*p->CancelFlag)
-		{
-			break;
-		}
-
-		struct sockaddr_in6 sockaddr6;
-		struct in6_addr addr6;
-
-		Zero(&sockaddr6, sizeof(sockaddr6));
-		Zero(&addr6, sizeof(addr6));
-
-		IPToInAddr6(&addr6, ip);
-		sockaddr6.sin6_port = htons((USHORT)p->Port);
-		sockaddr6.sin6_family = AF_INET6;
-		sockaddr6.sin6_scope_id = ip->ipv6_scope_id;
-		Copy(&sockaddr6.sin6_addr, &addr6, sizeof(addr6));
-
-		s = socket(AF_INET6, SOCK_STREAM, 0);
-
-		if (s != INVALID_SOCKET){
-			int ier;
-			IP tmpIP;
-			IP *tmpIP2;
-
-			if (p->LocalIP == BIND_LOCALIP_NULL) {
-				StrToIP(&tmpIP, "0::0");	// A NULL address for the argument "p->LocalIP" is treated as if "0::0" in IPV6 was specified.
-				tmpIP2 = &tmpIP;
-			}
-			else {
-				tmpIP2 = p->LocalIP;
-			}
-
-			if ((IsZeroIP(tmpIP2) == false) || (p->LocalPort != 0)){
-
-				if (bind_sock(s, tmpIP2, p->LocalPort) != 0) {
-					ier = WSAGetLastError();
-					Debug("IPv6 bind() failed with error: %d %s\n", ier, PrintError(ier));
-					closesocket(s);
-					s = INVALID_SOCKET;
-				}
-			}
-		}
-
-		if (s != INVALID_SOCKET)
-		{
-			if (connect_timeout(s, (struct sockaddr *)&sockaddr6, sizeof(struct sockaddr_in6), p->Timeout, p->CancelFlag) != 0)
-			{
-				closesocket(s);
-				s = INVALID_SOCKET;
-			}
-			else
-			{
-				Copy(&current_ip, ip, sizeof(IP));
-
-				Copy(p->Ret_Ip, ip, sizeof(IP));
-			}
-		}
-
-		if (s != INVALID_SOCKET)
-		{
-			p->Sock = CreateTCPSock(s, true, &current_ip, p->No_Get_Hostname, p->Hostname);
-			break;
-		}
-	}
-
-	p->Ok = (p->Sock == NULL ? false : true);
-	p->FinishedTick = Tick64();
-	p->Finished = true;
-
-	Set(p->FinishEvent);
-}
-
-SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname, char *hostname_original)
-{
-	struct linger ling;
-	char tmp[MAX_SIZE];
 	SOCK *sock;
+	UINT true_flag = 1;
 
 	if (s == INVALID_SOCKET)
 	{
@@ -4513,19 +3838,7 @@ SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname
 	StrCpy(sock->UnderlayProtocol, sizeof(sock->UnderlayProtocol), is_ipv6 ? SOCK_UNDERLAY_NATIVE_V6 : SOCK_UNDERLAY_NATIVE_V4);
 	AddProtocolDetailsStr(sock->ProtocolDetails, sizeof(sock->ProtocolDetails), is_ipv6 ? "IPv6" : "IPv4");
 
-	if (no_get_hostname || (GetHostName(tmp, sizeof(tmp), current_ip) == false))
-	{
-		StrCpy(tmp, sizeof(tmp), hostname_original);
-	}
-
-
-	sock->RemoteHostname = CopyStr(tmp);
-
-
-	Zero(&ling, sizeof(ling));
-
-	UINT true_flag = 1;
-	(void)setsockopt(sock->socket, SOL_SOCKET, SO_DONTLINGER, (char *)&true_flag, sizeof(true_flag));
+	sock->RemoteHostname = CopyStr(hostname_original);
 
 	(void)setsockopt(sock->socket, IPPROTO_TCP, TCP_NODELAY, (char *)&true_flag, sizeof(true_flag));
 
@@ -4553,17 +3866,26 @@ SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname
 
 SOCK *Connect(char *hostname, UINT port)
 {
-	return ConnectEx4(hostname, port, 0, NULL, true, NULL);
+	return ConnectEx4(hostname, port, 0, NULL, NULL);
 }
-SOCK *ConnectEx4(char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname, IP *ret_ip)
+SOCK *ConnectEx4(char *hostname, UINT port, UINT timeout, bool *cancel_flag, IP *ret_ip)
 {
-	return BindConnectEx4(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, hostname, port, timeout, cancel_flag, no_get_hostname, ret_ip);
+	return BindConnectEx4(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, hostname, port, timeout, cancel_flag, ret_ip);
 }
 
-SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname, IP *ret_ip)
+SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, IP *ret_ip)
 {
 	bool dummy = false;
 	IP dummy_ret_ip;
+	LIST *iplists[2] = {NULL, NULL};	// [0] IPv6, [1] IPv4
+	CONNECT_SERIAL_PARAM params[2];
+	THREAD *threads[2] = {NULL, NULL};
+	IP ret_ips[2];
+	EVENT *finish_event;
+	bool cancel_flag2 = false;
+	bool no_delay_flag = false;
+	SOCK *ret = NULL;
+	UINT i;
 	if (hostname == NULL || port == 0 || port >= 65536 || IsEmptyStr(hostname))
 	{
 		return NULL;
@@ -4583,97 +3905,62 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 		ret_ip = &dummy_ret_ip;
 	}
 
-	LIST *iplist_v6 = NULL;
-	LIST *iplist_v4 = NULL;
-
 	if (IsZeroIp(ret_ip) == false)
 	{
-		if (IsIP6(ret_ip))
-		{
-			iplist_v6 = NewListFast(NULL);
-			AddHostIPAddressToList(iplist_v6, ret_ip);
-		}
-		else
-		{
-			iplist_v4 = NewListFast(NULL);
-			AddHostIPAddressToList(iplist_v4, ret_ip);
-		}
+		LIST **target = IsIP6(ret_ip) ? &iplists[0] : &iplists[1];
 
+		*target = NewListFast(NULL);
+		AddHostIPAddressToList(*target, ret_ip);
 	}
 	else
 	{
-		if (DnsResolveEx(&iplist_v6, &iplist_v4, hostname, 0, cancel_flag) == false)
+		if (DnsResolveEx(&iplists[0], &iplists[1], hostname, 0, cancel_flag) == false)
 		{
 			return NULL;
 		}
 	}
 
-	CONNECT_SERIAL_PARAM p4, p6;
-	EVENT *finish_event;
-	THREAD *t4 = NULL;
-	THREAD *t6 = NULL;
-	bool cancel_flag2 = false;
-	bool no_delay_flag = false;
-	IP ret_ip4, ret_ip6;
-
 	finish_event = NewEvent();
 
-	Zero(&p4, sizeof(p4));
-	Zero(&p6, sizeof(p6));
+	Zero(params, sizeof(params));
+	Zero(ret_ips, sizeof(ret_ips));
 
-	if (LIST_NUM(iplist_v6) > 0)
+	for (i = 0; i < 2; ++i)
 	{
-		p6.IpList = iplist_v6;
+		CONNECT_SERIAL_PARAM *p = &params[i];
 
-		if (localIP == BIND_LOCALIP_NULL) {
-			p6.LocalIP = BIND_LOCALIP_NULL;
+		if (LIST_NUM(iplists[i]) == 0)
+		{
+			continue;
 		}
-		else {
-			CopyIP(&p6.LocalIP_Cache, localIP);
-			p6.LocalIP = &p6.LocalIP_Cache;
-		}
-		p6.LocalPort = localport;
 
-		p6.Port = port;
-		p6.Timeout = timeout;
-		StrCpy(p6.Hostname, sizeof(p6.Hostname), hostname);
-		p6.No_Get_Hostname = no_get_hostname;
-		p6.CancelFlag = &cancel_flag2;
-		p6.NoDelayFlag = &no_delay_flag;
-		p6.FinishEvent = finish_event;
-		p6.Ret_Ip = &ret_ip6;
-		p6.RetryDelay = 250;
-		p6.Delay = 0;
-		t6 = NewThread(BindConnectThreadForIPv6, &p6);
+		p->IpList = iplists[i];
+		p->IPv6 = (i == 0);
+
+		if (localIP == BIND_LOCALIP_NULL)
+		{
+			p->LocalIP = BIND_LOCALIP_NULL;
+		}
+		else
+		{
+			CopyIP(&p->LocalIP_Cache, localIP);
+			p->LocalIP = &p->LocalIP_Cache;
+		}
+		p->LocalPort = localport;
+
+		p->Port = port;
+		p->Timeout = timeout;
+		StrCpy(p->Hostname, sizeof(p->Hostname), hostname);
+		p->CancelFlag = &cancel_flag2;
+		p->NoDelayFlag = &no_delay_flag;
+		p->FinishEvent = finish_event;
+		p->Ret_Ip = &ret_ips[i];
+		p->RetryDelay = 250;
+		p->Delay = (p->IPv6 ? 0 : 250);		// Delay IPv4 by 250ms to prioritize IPv6 (RFC 6555 recommends 150-250ms, Chrome uses 300ms)
+		threads[i] = NewThread(BindConnectThread, p);
 	}
 
-	if (LIST_NUM(iplist_v4) > 0)
-	{
-		p4.IpList = iplist_v4;
-
-		if (localIP == BIND_LOCALIP_NULL) {
-			p4.LocalIP = BIND_LOCALIP_NULL;
-		}
-		else {
-			CopyIP(&p4.LocalIP_Cache, localIP);
-			p4.LocalIP = &p4.LocalIP_Cache;
-		}
-		p4.LocalPort = localport;
-
-		p4.Port = port;
-		p4.Timeout = timeout;
-		StrCpy(p4.Hostname, sizeof(p4.Hostname), hostname);
-		p4.No_Get_Hostname = no_get_hostname;
-		p4.CancelFlag = &cancel_flag2;
-		p4.NoDelayFlag = &no_delay_flag;
-		p4.FinishEvent = finish_event;
-		p4.Ret_Ip = &ret_ip4;
-		p4.RetryDelay = 250;
-		p4.Delay = 250;		// Delay by 250ms to prioritize IPv6 (RFC 6555 recommends 150-250ms, Chrome uses 300ms)
-		t4 = NewThread(BindConnectThreadForIPv4, &p4);
-	}
-
-	if (t6 == NULL || t4 == NULL)
+	if (threads[0] == NULL || threads[1] == NULL)
 	{
 		no_delay_flag = true;
 	}
@@ -4685,18 +3972,18 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 			break;
 		}
 
-		if ((t6 == NULL || p6.Finished) && (t4 == NULL || p4.Finished))
+		if ((threads[0] == NULL || params[0].Finished) && (threads[1] == NULL || params[1].Finished))
 		{
 			break;
 		}
 
-		if ((p6.Finished && p6.Ok) || (p4.Finished && p4.Ok))
+		if ((params[0].Finished && params[0].Ok) || (params[1].Finished && params[1].Ok))
 		{
 			break;
 		}
 
 		// This check must be placed last to avoid race condition with cancel flag
-		if (no_delay_flag == false && (p6.Finished || p4.Finished))
+		if (no_delay_flag == false && (params[0].Finished || params[1].Finished))
 		{
 			no_delay_flag = true;
 		}
@@ -4707,41 +3994,31 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 	cancel_flag2 = true;
 	no_delay_flag = true;
 
-	WaitThread(t6, INFINITE);
-	WaitThread(t4, INFINITE);
-	ReleaseThread(t6);
-	ReleaseThread(t4);
+	for (i = 0; i < 2; ++i)
+	{
+		WaitThread(threads[i], INFINITE);
+		ReleaseThread(threads[i]);
+	}
 	ReleaseEvent(finish_event);
-	FreeHostIPAddressList(iplist_v6);
-	FreeHostIPAddressList(iplist_v4);
+	FreeHostIPAddressList(iplists[0]);
+	FreeHostIPAddressList(iplists[1]);
 
-	if (*cancel_flag)
+	// IPv6 wins over IPv4 when both connected; the losing socket (or both, on cancel) is closed
+	for (i = 0; i < 2; ++i)
 	{
-		Disconnect(p6.Sock);
-		ReleaseSock(p6.Sock);
-		Disconnect(p4.Sock);
-		ReleaseSock(p4.Sock);
-
-		return NULL;
+		if (*cancel_flag == false && ret == NULL && params[i].Ok)
+		{
+			ret = params[i].Sock;
+			Copy(ret_ip, &ret_ips[i], sizeof(IP));
+		}
+		else
+		{
+			Disconnect(params[i].Sock);
+			ReleaseSock(params[i].Sock);
+		}
 	}
 
-	if (p6.Ok)
-	{
-		Disconnect(p4.Sock);
-		ReleaseSock(p4.Sock);
-		Copy(ret_ip, &ret_ip6, sizeof(IP));
-		return p6.Sock;
-	}
-
-	if (p4.Ok)
-	{
-		Disconnect(p6.Sock);
-		ReleaseSock(p6.Sock);
-		Copy(ret_ip, &ret_ip4, sizeof(IP));
-		return p4.Sock;
-	}
-
-	return NULL;
+	return ret;
 }
 
 void AddProtocolDetailsStr(char *dst, UINT dst_size, char *str)
@@ -4840,6 +4117,27 @@ void InitUdpSocketBufferSize(SOCKET s)
 	SetSocketBufferSizeWithBestEffort(s, false, UDP_MAX_BUFFER_SIZE);
 }
 
+// Decode a socket address by its family. An IPv4-mapped IPv6 address (an IPv4 peer of a dual-stack socket)
+// becomes an IPv4 IP.
+static void DecodeSockAddr(struct sockaddr_storage *addr, IP *ip, UINT *port)
+{
+	if (addr->ss_family == AF_INET6)
+	{
+		struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)addr;
+
+		*port = (UINT)ntohs(addr6->sin6_port);
+		InAddrToIP6(ip, &addr6->sin6_addr);
+		ip->ipv6_scope_id = addr6->sin6_scope_id;
+	}
+	else if (addr->ss_family == AF_INET)
+	{
+		struct sockaddr_in *addr4 = (struct sockaddr_in *)addr;
+
+		*port = (UINT)ntohs(addr4->sin_port);
+		InAddrToIP(ip, &addr4->sin_addr);
+	}
+}
+
 void QuerySocketInformation(SOCK *sock)
 {
 	if (sock == NULL)
@@ -4849,94 +4147,24 @@ void QuerySocketInformation(SOCK *sock)
 
 	Lock(sock->lock);
 	{
-		struct sockaddr_in6 sockaddr6;
-		struct in6_addr *addr6;
+		struct sockaddr_storage sockaddr;
 		int size;
-		UINT dw;
-		UINT opt_value = 0;
 
 		if (sock->Type == SOCK_TCP)
 		{
-			size = sizeof(sockaddr6);
-			if (getpeername(sock->socket, (struct sockaddr *)&sockaddr6, (int *)&size) == 0)
+			size = sizeof(sockaddr);
+			if (getpeername(sock->socket, (struct sockaddr *)&sockaddr, &size) == 0)
 			{
-				if (size >= sizeof(struct sockaddr_in6))
-				{
-					sock->RemotePort = (UINT)ntohs(sockaddr6.sin6_port);
-					addr6 = &sockaddr6.sin6_addr;
-					InAddrToIP6(&sock->RemoteIP, addr6);
-					sock->RemoteIP.ipv6_scope_id = sockaddr6.sin6_scope_id;
-				}
-				else
-				{
-					struct sockaddr_in *sockaddr;
-					struct in_addr *addr;
-
-					sockaddr = (struct sockaddr_in *)&sockaddr6;
-					sock->RemotePort = (UINT)ntohs(sockaddr->sin_port);
-					addr = &sockaddr->sin_addr;
-					InAddrToIP(&sock->RemoteIP, addr);
-				}
+				DecodeSockAddr(&sockaddr, &sock->RemoteIP, &sock->RemotePort);
 			}
 		}
 
-		size = sizeof(sockaddr6);
-		if (getsockname(sock->socket, (struct sockaddr *)&sockaddr6, (int *)&size) == 0)
+		size = sizeof(sockaddr);
+		if (getsockname(sock->socket, (struct sockaddr *)&sockaddr, &size) == 0)
 		{
-			if (size >= sizeof(struct sockaddr_in6))
-			{
-				sock->LocalPort = (UINT)ntohs(sockaddr6.sin6_port);
-				addr6 = &sockaddr6.sin6_addr;
-				InAddrToIP6(&sock->LocalIP, addr6);
-				sock->LocalIP.ipv6_scope_id = sockaddr6.sin6_scope_id;
-			}
-			else
-			{
-				struct sockaddr_in *sockaddr;
-				struct in_addr *addr;
-
-				sockaddr = (struct sockaddr_in *)&sockaddr6;
-				sock->LocalPort = (UINT)ntohs(sockaddr->sin_port);
-				addr = &sockaddr->sin_addr;
-				InAddrToIP(&sock->LocalIP, addr);
-			}
+			DecodeSockAddr(&sockaddr, &sock->LocalIP, &sock->LocalPort);
 		}
 
-		if (sock->IsRawSocket)
-		{
-			sock->LocalPort = sock->RemotePort = MAKE_SPECIAL_PORT(sock->RawSocketIPProtocol);
-		}
-
-		if (sock->Type == SOCK_UDP)
-		{
-			if (true)
-			{
-				UINT max_value = 0;
-				int len = sizeof(UINT);
-
-				if (getsockopt(sock->socket, SOL_SOCKET, SO_MAX_MSG_SIZE, (char *)&max_value, &len) == 0)
-				{
-				}
-			}
-		}
-
-		if (sock->IPv6)
-		{
-			opt_value = IPV6_UNICAST_HOPS;
-		}
-		else
-		{
-			opt_value = IP_TTL;
-		}
-
-		size = sizeof(UINT);
-		if (opt_value == 0 ||
-		        getsockopt(sock->socket, (sock->IPv6 ? IPPROTO_IPV6 : IPPROTO_IP), opt_value, (char *)&dw, &size) != 0)
-		{
-		}
-		else
-		{
-		}
 	}
 	Unlock(sock->lock);
 }
@@ -4950,10 +4178,6 @@ void ReleaseSock(SOCK *s)
 
 	if (Release(s->ref) == 0)
 	{
-		if (s->ListenMode == false && s->ServerMode)
-		{
-			Print("");
-		}
 		CleanupSock(s);
 	}
 }
@@ -4985,11 +4209,6 @@ void CleanupSock(SOCK *s)
 	{
 		FreeX(s->RemoteX);
 		s->RemoteX = NULL;
-	}
-	if (s->LocalX != NULL)
-	{
-		FreeX(s->LocalX);
-		s->LocalX = NULL;
 	}
 
 	if (s->CipherName != NULL)
@@ -5555,7 +4774,6 @@ void InitNetwork()
 	DnsInit();
 
 	machine_name_lock = NewLock();
-	disconnect_function_lock = NewLock();
 	machine_ip_process_hash_lock = NewLock();
 	local_mac_list_lock = NewLock();
 
@@ -5884,9 +5102,8 @@ void FreeNetwork()
 	chain_cert_lock = NULL;
 
 	DeleteLock(machine_name_lock);
-	DeleteLock(disconnect_function_lock);
 	DeleteLock(machine_ip_process_hash_lock);
-	machine_name_lock = disconnect_function_lock = machine_ip_process_hash_lock = NULL;
+	machine_name_lock = machine_ip_process_hash_lock = NULL;
 
 	DnsFree();
 

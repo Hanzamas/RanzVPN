@@ -150,10 +150,18 @@ static void TlsCtxClient(TLSCTX_RESULT *r)
 
 	if (StartSSL(s, NULL, NULL) && s->RemoteX != NULL)
 	{
+		UCHAR buf[64];
+
 		r->Ok = true;
 		GetXDigest(s->RemoteX, r->Digest, true);
 		StrCpy(r->Cipher, sizeof(r->Cipher), s->CipherName);
 		StrCpy(r->Version, sizeof(r->Version), (char *)s->SslVersion);
+
+		// Wait for the server to close: a TLS 1.3 server writes its session tickets after the client is done,
+		// and a client that closes first resets the socket under that write and fails the accept
+		while (Recv(s, buf, sizeof(buf), true) != 0)
+		{
+		}
 	}
 
 	Disconnect(s);
@@ -195,7 +203,7 @@ static bool TlsCtxListen(TLSCTX_SERVER *srv)
 {
 	if (srv->Listen == NULL)
 	{
-		srv->Listen = ListenEx(TLSCTX_PORT, true);
+		srv->Listen = ListenEx2(TLSCTX_PORT, true, false, NULL, false);
 	}
 
 	return (srv->Listen != NULL);

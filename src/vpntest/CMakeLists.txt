@@ -50,6 +50,8 @@ ranz_add_executable(vpntest HAMCORE
     registry.c
     # Named byte-order test of FND-152 (#149)
     endian.c
+    # Named service argument test of FND-205 (#167)
+    svcargs.c
   # The resources test (runtime.c) compares every hamcore file the executable serves with its source
   # file. A C-only definition, so the resource scripts of vpntest do not get the quoted path.
   C_DEFINITIONS

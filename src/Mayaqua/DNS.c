@@ -609,7 +609,7 @@ void DnsResolverReverse(THREAD *t, void *param)
 		}
 		else
 		{
-			Debug("DnsResolverReverse(): WideCharToMultiByte() failed with error %u!\n", GetLastError());
+			Debug("DnsResolverReverse(): WideCharToMultiByte() failed with error %u!\n", (UINT)GetLastError());
 		}
 	}
 

@@ -12,6 +12,7 @@ set(RANZ_FUZZ_TARGETS
   fuzz_dhcp
   fuzz_net
   fuzz_stun
+  fuzz_login
 )
 
 # Console executables without an icon or the hamcore resources (cmake/RanzExecutable.cmake)

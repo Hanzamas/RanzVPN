@@ -1054,6 +1054,54 @@ static void MsSvcMsg(bool silent, char *id, ...)
 	UniPrint(L"%s\n", msg);
 }
 
+// The command line arguments of MsService and the mode each one selects. SVC_HELP lists exactly
+// these; any other argument selects SVC_MODE_NONE, which prints SVC_HELP.
+static const MS_SVC_ARG ms_svc_args[] =
+{
+	{SVC_ARG_INSTALL, SVC_MODE_INSTALL},
+	{SVC_ARG_UNINSTALL, SVC_MODE_UNINSTALL},
+	{SVC_ARG_START, SVC_MODE_START},
+	{SVC_ARG_STOP, SVC_MODE_STOP},
+	{SVC_ARG_TEST, SVC_MODE_TEST},
+	{SVC_ARG_USERMODE, SVC_MODE_USERMODE},
+	{SVC_ARG_SETUP_INSTALL, SVC_MODE_SETUP_INSTALL},
+	{SVC_ARG_SETUP_UNINSTALL, SVC_MODE_SETUP_UNINSTALL},
+	{SVC_ARG_SERVICE, SVC_MODE_SERVICE},
+};
+
+// The argument table of MsService; num receives the number of its entries
+const MS_SVC_ARG *MsSvcArgs(UINT *num)
+{
+	if (num != NULL)
+	{
+		*num = sizeof(ms_svc_args) / sizeof(ms_svc_args[0]);
+	}
+
+	return ms_svc_args;
+}
+
+// The mode that the command line argument arg selects, compared without case; SVC_MODE_NONE for an
+// argument that is not in the table, and for NULL
+UINT MsSvcArgToMode(char *arg)
+{
+	UINT i;
+
+	if (arg == NULL)
+	{
+		return SVC_MODE_NONE;
+	}
+
+	for (i = 0;i < sizeof(ms_svc_args) / sizeof(ms_svc_args[0]);i++)
+	{
+		if (StrCmpi(arg, ms_svc_args[i].Arg) == 0)
+		{
+			return ms_svc_args[i].Mode;
+		}
+	}
+
+	return SVC_MODE_NONE;
+}
+
 UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line)
 {
 	UINT mode;
@@ -1129,7 +1177,6 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 		wchar_t path[MAX_SIZE];
 		wchar_t *args_w = MsCopyProcessArgsW();
 		char *args = CopyUniToStr(args_w);
-		mode = SVC_MODE_NONE;
 
 		t = ParseCmdLine(args);
 		Free(args);
@@ -1148,50 +1195,7 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 			}
 		}
 
-		if (arg != NULL)
-		{
-			if (StrCmpi(arg, SVC_ARG_INSTALL) == 0)
-			{
-				mode = SVC_MODE_INSTALL;
-			}
-			if (StrCmpi(arg, SVC_ARG_UNINSTALL) == 0)
-			{
-				mode = SVC_MODE_UNINSTALL;
-			}
-			if (StrCmpi(arg, SVC_ARG_START) == 0)
-			{
-				mode = SVC_MODE_START;
-			}
-			if (StrCmpi(arg, SVC_ARG_STOP) == 0)
-			{
-				mode = SVC_MODE_STOP;
-			}
-			if (StrCmpi(arg, SVC_ARG_TEST) == 0)
-			{
-				mode = SVC_MODE_TEST;
-			}
-			if (StrCmpi(arg, SVC_ARG_USERMODE) == 0)
-			{
-				mode = SVC_MODE_USERMODE;
-			}
-			if (StrCmpi(arg, SVC_ARG_SETUP_INSTALL) == 0)
-			{
-				mode = SVC_MODE_SETUP_INSTALL;
-			}
-			if (StrCmpi(arg, SVC_ARG_SETUP_UNINSTALL) == 0)
-			{
-				mode = SVC_MODE_SETUP_UNINSTALL;
-			}
-			if (StrCmpi(arg, SVC_ARG_USERMODE_SHOWTRAY) == 0 || StrCmpi(arg, SVC_ARG_USERMODE_HIDETRAY) == 0)
-			{
-				// Legacy arguments: there is no task tray icon any more, so these are the same as /usermode
-				mode = SVC_MODE_USERMODE;
-			}
-			if (StrCmpi(arg, SVC_ARG_SERVICE) == 0)
-			{
-				mode = SVC_MODE_SERVICE;
-			}
-		}
+		mode = MsSvcArgToMode(arg);
 
 		UniFormat(path, sizeof(path), SVC_RUN_COMMANDLINE, ms->ExeFileNameW);
 
@@ -1206,8 +1210,14 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 			switch (mode)
 			{
 			case SVC_MODE_NONE:
+				// Title and name: the heading, the program, /install, /uninstall, /start, /stop,
+				// /test, /usermode, /setup_install, /setup_uninstall, /service
 				MsSvcMsg(false, "SVC_HELP",
-					service_title, service_name, service_title, service_title, service_name, service_title, service_name, service_title, service_name, service_title, service_name, service_title, service_title);
+					service_title, service_name, service_title,
+					service_title, service_name, service_title, service_name, service_title, service_name, service_title, service_name,
+					service_title, service_title,
+					service_title, service_name, service_title, service_name,
+					service_title);
 				break;
 
 			case SVC_MODE_SETUP_INSTALL:

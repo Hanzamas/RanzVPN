@@ -109,9 +109,7 @@ struct TTS
 	volatile bool Halt;					// Only through FlagRead and FlagWrite (Native.h)
 	UINT Port;
 	THREAD *Thread;
-	THREAD *IPv6AcceptThread;
 	SOCK *ListenSocket;
-	SOCK *ListenSocketV6;
 	UINT ErrorCode;
 	UINT IdSeed;
 	LIST *WorkerList;
