@@ -18,6 +18,7 @@
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/HTTP.h"
+#include "Mayaqua/Internat.h"
 #include "Mayaqua/Mayaqua.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
@@ -32,10 +33,8 @@ static NON_SSL *SearchNoSslList(CEDAR *c, IP *ip);
 static void FreeNetSvcList(CEDAR *cedar);
 
 static UINT init_cedar_counter = 0;
-static REF *cedar_log_ref = NULL;
-static LOG *cedar_log;
 
-bool IsSupportedWinVer(RPC_WINVER *v)
+static bool IsSupportedWinVer(RPC_WINVER *v)
 {
 	if (v == NULL)
 	{
@@ -138,8 +137,41 @@ bool IsSupportedWinVer(RPC_WINVER *v)
 	return false;
 }
 
-static void Win32GetWinVer(RPC_WINVER *v)
+// Message for a peer that runs an unsupported Windows version (empty for any other peer)
+void FormatUnsupportedWinVerMsg(wchar_t *buf, UINT size, RPC_WINVER *peer)
 {
+	SYSTEMTIME st;
+
+	if (buf == NULL || size == 0)
+	{
+		return;
+	}
+
+	Zero(buf, size);
+
+	if (peer == NULL || IsSupportedWinVer(peer))
+	{
+		return;
+	}
+
+	LocalTime(&st);
+
+	UniFormat(buf, size, _UU("WINVER_ERROR_FORMAT"),
+		_UU("WINVER_ERROR_PC_LOCAL"),
+		peer->Title,
+		_UU("WINVER_ERROR_VPNSERVER"),
+		SUPPORTED_WINDOWS_LIST,
+		_UU("WINVER_ERROR_PC_LOCAL"),
+		_UU("WINVER_ERROR_VPNSERVER"),
+		_UU("WINVER_ERROR_VPNSERVER"),
+		_UU("WINVER_ERROR_VPNSERVER"),
+		st.wYear, st.wMonth);
+}
+
+void GetWinVer(RPC_WINVER *v)
+{
+	OSVERSIONINFOEX os;
+
 	if (v == NULL)
 	{
 		return;
@@ -149,52 +181,38 @@ static void Win32GetWinVer(RPC_WINVER *v)
 
 	v->IsWindows = true;
 
-	if (true)
+	Zero(&os, sizeof(os));
+	os.dwOSVersionInfoSize = sizeof(os);
+	Win32GetVersionExInternal((LPOSVERSIONINFOA)&os);
+
+	v->IsNT = true;
+	v->Build = os.dwBuildNumber;
+	v->ServicePack = os.wServicePackMajor;
+
+	if (os.wProductType != VER_NT_WORKSTATION)
 	{
-		OSVERSIONINFOEX os;
-		Zero(&os, sizeof(os));
-		os.dwOSVersionInfoSize = sizeof(os);
-		Win32GetVersionExInternal((LPOSVERSIONINFOA)&os);
-
-		v->IsNT = true;
-		v->Build = os.dwBuildNumber;
-		v->ServicePack = os.wServicePackMajor;
-
-		if (os.wProductType != VER_NT_WORKSTATION)
-		{
-			v->IsServer = true;
-		}
-		v->VerMajor = os.dwMajorVersion;
-		v->VerMinor = os.dwMinorVersion;
-
-		if (GetOsInfo()->OsServicePack == 0)
-		{
-			StrCpy(v->Title, sizeof(v->Title), GetOsInfo()->OsProductName);
-		}
-		else
-		{
-			Format(v->Title, sizeof(v->Title), "%s Service Pack %u",
-				GetOsInfo()->OsProductName,
-				GetOsInfo()->OsServicePack);
-		}
-		Trim(v->Title);
-
-		if (InStr(GetOsInfo()->OsVersion, "rc") ||
-			InStr(GetOsInfo()->OsVersion, "beta"))
-		{
-			v->IsBeta = true;
-		}
+		v->IsServer = true;
 	}
-}
+	v->VerMajor = os.dwMajorVersion;
+	v->VerMinor = os.dwMinorVersion;
 
-void GetWinVer(RPC_WINVER *v)
-{
-	if (v == NULL)
+	if (GetOsInfo()->OsServicePack == 0)
 	{
-		return;
+		StrCpy(v->Title, sizeof(v->Title), GetOsInfo()->OsProductName);
 	}
+	else
+	{
+		Format(v->Title, sizeof(v->Title), "%s Service Pack %u",
+			GetOsInfo()->OsProductName,
+			GetOsInfo()->OsServicePack);
+	}
+	Trim(v->Title);
 
-	Win32GetWinVer(v);
+	if (InStr(GetOsInfo()->OsVersion, "rc") ||
+		InStr(GetOsInfo()->OsVersion, "beta"))
+	{
+		v->IsBeta = true;
+	}
 }
 
 void FreeTinyLog(TINY_LOG *t)
@@ -440,21 +458,6 @@ static void FreeNoSslList(CEDAR *c)
 
 	ReleaseList(c->NonSslList);
 	c->NonSslList = NULL;
-}
-
-void StopCedarLog()
-{
-	if (cedar_log_ref == NULL)
-	{
-		return;
-	}
-
-	if (Release(cedar_log_ref) == 0)
-	{
-		FreeLog(cedar_log);
-		cedar_log = NULL;
-		cedar_log_ref = NULL;
-	}
 }
 
 UINT64 GetTrafficPacketSize(TRAFFIC *t)
@@ -826,11 +829,6 @@ static void CleanupCedar(CEDAR *c)
 	DeleteCounter(c->ConnectionIncrement);
 	DeleteCounter(c->CurrentSessions);
 
-	if (c->DebugLog != NULL)
-	{
-		FreeLog(c->DebugLog);
-	}
-
 	if (c->ServerX)
 	{
 		FreeX(c->ServerX);
@@ -850,12 +848,8 @@ static void CleanupCedar(CEDAR *c)
 	}
 
 	Free(c->ServerStr);
-	Free(c->MachineName);
 
 	Free(c->HttpUserAgent);
-	Free(c->HttpAccept);
-	Free(c->HttpAcceptLanguage);
-	Free(c->HttpAcceptEncoding);
 
 	FreeTraffic(c->Traffic);
 
@@ -1099,23 +1093,10 @@ void RegistWindowsFirewallAll()
 	MsRegistWindowsFirewallEx2(CEDAR_PRODUCT_STR, "vpntest.exe", exedir);
 }
 
-static void CedarForceLink()
-{
-}
-
-UINT GetCedarVersionNumber()
-{
-	return CEDAR_WIRE_VER;
-}
-
 CEDAR *NewCedar(X *server_x, K *server_k)
 {
 	CEDAR *c;
 	char tmp[MAX_SIZE];
-	char tmp2[MAX_SIZE];
-	char *beta_str;
-
-	CedarForceLink();
 
 	c = ZeroMalloc(sizeof(CEDAR));
 
@@ -1145,8 +1126,6 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 		SetCedarMachineIdSalt(c, salt);
 	}
 
-	c->CreatedTick = Tick64();
-
 	c->lock = NewLock();
 	c->ref = NewRef();
 
@@ -1166,17 +1145,11 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 		c->ServerX = CloneX(server_x);
 	}
 
-	c->Version = GetCedarVersionNumber();
+	c->Version = CEDAR_WIRE_VER;
 	c->Build = CEDAR_WIRE_BUILD;
 	c->ServerStr = CopyStr(CEDAR_SERVER_STR);
 
-	GetMachineName(tmp, sizeof(tmp));
-	c->MachineName = CopyStr(tmp);
-
 	c->HttpUserAgent = CopyStr(DEFAULT_USER_AGENT);
-	c->HttpAccept = CopyStr(DEFAULT_ACCEPT);
-	c->HttpAcceptLanguage = CopyStr("ja");
-	c->HttpAcceptEncoding = CopyStr(DEFAULT_ENCODING);
 
 	c->Traffic = NewTraffic();
 	c->TrafficLock = NewLock();
@@ -1194,31 +1167,10 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 
 	InitLocalBridgeList(c);
 
-	beta_str = "Release Candidate";
-
-	ToStr(tmp2, c->Beta);
-	Format(tmp2, sizeof(tmp2), " %s %s ", beta_str, tmp2);
-
-	Format(tmp, sizeof(tmp),
-		"Version %u.%u.%u"
-		"%s"
-		"(%s)",
+	Format(tmp, sizeof(tmp), "Version %u.%u.%u (%s)",
 		CEDAR_VERSION_MAJOR, CEDAR_VERSION_MINOR, CEDAR_VERSION_BUILD,
-		c->Beta == 0 ? " " : tmp2,
 		_SS("LANGSTR"));
 	Trim(tmp);
-
-	if (true)
-	{
-		SYSTEMTIME st;
-		Zero(&st, sizeof(st));
-
-		st.wYear = BUILD_DATE_Y;
-		st.wMonth = BUILD_DATE_M;
-		st.wDay = BUILD_DATE_D;
-
-		c->BuiltDate = SystemToUINT64(&st);
-	}
 
 	c->VerString = CopyStr(tmp);
 

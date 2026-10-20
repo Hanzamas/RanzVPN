@@ -413,7 +413,6 @@ static char *harness_drop_caps[] =
 	"b_local_bridge",
 	"b_tap_supported",
 	"b_support_network_connection_name",
-	"b_beta_version",
 	"b_is_in_vm",
 	"b_support_aes_ni",
 	"b_using_selow_driver",

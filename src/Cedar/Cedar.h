@@ -61,9 +61,6 @@
 #endif
 
 
-#define	DEFAULT_USERNAME_HUB_SEPARATOR	'@'
-
-
 #define	MAX_ACCOUNT_NAME_LEN		255
 #define	MAX_USERNAME_LEN			255
 #define	MAX_PASSWORD_LEN			255
@@ -459,16 +456,11 @@ struct CEDAR
 	X *ServerX;
 	K *ServerK;
 	LIST *ServerChain;
-	char UsernameHubSeparator;
 	char *CipherList;
 	UINT Version;
 	UINT Build;
 	char *ServerStr;
-	char *MachineName;
 	char *HttpUserAgent;
-	char *HttpAccept;
-	char *HttpAcceptLanguage;
-	char *HttpAcceptEncoding;
 	TRAFFIC *Traffic;
 	LOCK *TrafficLock;
 	LIST *UDPEntryList;
@@ -478,19 +470,15 @@ struct CEDAR
 	char *VerString;
 	char *BuildInfo;
 	struct SERVER *Server;
-	UINT64 CreatedTick;
-	struct LOG *DebugLog;
 	UCHAR UniqueId[16];
 	LIST *LocalBridgeList;
 	bool Bridge;
 	COUNTER *AssignedClientLicense;
 	COUNTER *AssignedBridgeLicense;
 	LIST *NonSslList;
-	UINT Beta;
 	LOCK *CedarSuperLock;
 	bool DisableIPv6Listener;
 	UINT ClientId;
-	UINT64 BuiltDate;
 	LIST *UdpPortList;
 	LOCK *CurrentRegionLock;
 	char CurrentRegion[128];
@@ -528,7 +516,6 @@ void FreeCedar();
 char *GetSvcName(CEDAR *cedar, bool udp, UINT port);
 UINT64 GetTrafficPacketSize(TRAFFIC *t);
 UINT64 GetTrafficPacketNum(TRAFFIC *t);
-void StopCedarLog();
 bool AddNoSsl(CEDAR *c, IP *ip);
 void DecrementNoSsl(CEDAR *c, IP *ip, UINT num_dec);
 bool IsInNoSsl(CEDAR *c, IP *ip);
@@ -536,8 +523,7 @@ void FreeTinyLog(TINY_LOG *t);
 void WriteTinyLog(TINY_LOG *t, char *str);
 TINY_LOG *NewTinyLog();
 void GetWinVer(RPC_WINVER *v);
-bool IsSupportedWinVer(RPC_WINVER *v);
-UINT GetCedarVersionNumber();
+void FormatUnsupportedWinVerMsg(wchar_t *buf, UINT size, RPC_WINVER *peer);
 void CedarAddCurrentTcpQueueSize(CEDAR *c, int diff);
 UINT CedarGetCurrentTcpQueueSize(CEDAR *c);
 void CedarAddQueueBudget(CEDAR *c, int diff);

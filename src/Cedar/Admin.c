@@ -738,59 +738,16 @@ static UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
-	RPC_WINVER server_ver;
-	RPC_WINVER client_ver;
 	wchar_t winver_msg_client[3800];
-	wchar_t winver_msg_server[3800];
 	UINT tmpsize;
 	wchar_t *tmp;
 
 	FreeRpcMsg(t);
 	Zero(t, sizeof(RPC_MSG));
 
-	GetWinVer(&server_ver);
-	Copy(&client_ver, &a->ClientWinVer, sizeof(RPC_WINVER));
+	FormatUnsupportedWinVerMsg(winver_msg_client, sizeof(winver_msg_client), &a->ClientWinVer);
 
-	Zero(winver_msg_client, sizeof(winver_msg_client));
-	Zero(winver_msg_server, sizeof(winver_msg_server));
-
-	if (IsSupportedWinVer(&client_ver) == false)
-	{
-		SYSTEMTIME st;
-
-		LocalTime(&st);
-
-		UniFormat(winver_msg_client, sizeof(winver_msg_client), _UU("WINVER_ERROR_FORMAT"),
-			_UU("WINVER_ERROR_PC_LOCAL"),
-			client_ver.Title,
-			_UU("WINVER_ERROR_VPNSERVER"),
-			SUPPORTED_WINDOWS_LIST,
-			_UU("WINVER_ERROR_PC_LOCAL"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			st.wYear, st.wMonth);
-	}
-
-	if (IsSupportedWinVer(&server_ver) == false)
-	{
-		SYSTEMTIME st;
-
-		LocalTime(&st);
-
-		UniFormat(winver_msg_server, sizeof(winver_msg_server), _UU("WINVER_ERROR_FORMAT"),
-			_UU("WINVER_ERROR_PC_REMOTE"),
-			server_ver.Title,
-			_UU("WINVER_ERROR_VPNSERVER"),
-			SUPPORTED_WINDOWS_LIST,
-			_UU("WINVER_ERROR_PC_REMOTE"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			st.wYear, st.wMonth);
-	}
-
-	tmpsize = UniStrSize(winver_msg_client) + UniStrSize(winver_msg_server) + 10000;
+	tmpsize = UniStrSize(winver_msg_client) + 10000;
 
 	tmp = ZeroMalloc(tmpsize);
 
@@ -804,7 +761,6 @@ static UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t)
 	}
 
 	UniStrCat(tmp, tmpsize, winver_msg_client);
-	UniStrCat(tmp, tmpsize, winver_msg_server);
 
 	t->Msg = tmp;
 

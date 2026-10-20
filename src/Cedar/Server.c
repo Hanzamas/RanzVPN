@@ -819,12 +819,6 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 
 	AddCapsBool(t, "b_support_rename_cascade", true);
 
-
-	if (s->Cedar->Beta)
-	{
-		AddCapsBool(t, "b_beta_version", true);
-	}
-
 	AddCapsBool(t, "b_is_in_vm", s->IsInVm);
 
 	if (IsBridgeSupported())
@@ -1506,8 +1500,6 @@ static void SiLoadInitialConfiguration(SERVER *s)
 	SiInitCipherName(s);
 
 	SiInitDefaultServerCert(s);
-
-	s->Cedar->UsernameHubSeparator = DEFAULT_USERNAME_HUB_SEPARATOR;
 
 	{
 		SiInitDefaultHubList(s);
@@ -3833,11 +3825,6 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 			FreeXList(chain);
 		}
 
-		if (CfgGetStr(f, "UsernameHubSeparator", tmp, sizeof(tmp)))
-		{
-			c->UsernameHubSeparator = IsPrintableAsciiChar(tmp[0]) ? tmp[0] : DEFAULT_USERNAME_HUB_SEPARATOR;
-		}
-
 		if (CfgGetStr(f, "CipherName", tmp, sizeof(tmp)))
 		{
 			StrUpper(tmp);
@@ -4044,12 +4031,6 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s)
 		FreeBuf(b);
 
 		SiWriteCertList(CfgCreateFolder(f, "ServerChain"), c->ServerChain);
-
-		{
-			char str[2];
-			StrCpy(str, sizeof(str), &c->UsernameHubSeparator);
-			CfgAddStr(f, "UsernameHubSeparator", str);
-		}
 
 		Lock(c->TrafficLock);
 		{
@@ -4281,8 +4262,6 @@ void StStopServer()
 		server = NULL;
 	}
 	Unlock(server_lock);
-
-	StopCedarLog();
 }
 
 static void SiRebootServerThread(THREAD *thread, void *param)

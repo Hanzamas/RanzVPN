@@ -76,7 +76,6 @@ struct UDP_ACCEL
 	bool Inited;
 	UINT MaxUdpPacketSize;
 	bool FatalError;
-	UINT64 CreatedTick;
 	bool FastDetect;
 	UINT64 FirstStableReceiveTick;
 	UINT Version;
