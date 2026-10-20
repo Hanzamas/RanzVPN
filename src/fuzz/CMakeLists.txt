@@ -12,6 +12,7 @@ set(RANZ_FUZZ_TARGETS
   fuzz_dhcp
   fuzz_net
   fuzz_stun
+  fuzz_login
 )
 
 foreach(fuzz_target IN LISTS RANZ_FUZZ_TARGETS)
