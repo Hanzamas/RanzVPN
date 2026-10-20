@@ -1,6 +1,6 @@
 // pkttest.c
 // Named packet parser tests of vpntest ("pktparse" command, FND-38 #113; "vlantpid" command,
-// FND-39 #113)
+// FND-39 #113; "icmpv6ns" command, FND-54 #117)
 //
 // pktparse pins the parsers of Mayaqua/TcpIp.c that read the DNS and DHCP traffic of VPN clients
 // for the packet log and the IP table of the hub:
@@ -713,5 +713,80 @@ void vlantpid_test(UINT num, char **arg)
 	else
 	{
 		Print("VLANTPID TEST FAILED (%u of %u checks failed)\n", ctx.NumFailed, ctx.NumChecks);
+	}
+}
+
+// icmpv6ns: BuildNeighborSolicitation gives the bytes the former builder chain (BuildICMPv6NeighborSoliciation,
+// BuildICMPv6, BuildIPv6, BuildIPv6PacketHeader, BuildICMPv6Options) gave for the unicast case
+// the hub sends, for the source fe80::1, the target 2001:db8::7 and the MAC address of the server:
+// the 40-byte IPv6 header (hop limit 255, next header 58, payload length 32), the ICMPv6 header
+// (type 135, checksum over the pseudo-header), the target address and the source link-layer option.
+// The frame below was computed from the former code's layout, independently of the new function
+static UCHAR pkttest_ns_golden[72] =
+{
+	0x60, 0x00, 0x00, 0x00, 0x00, 0x20, 0x3A, 0xFF,
+	0xFE, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+	0x20, 0x01, 0x0D, 0xB8, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07,
+	0x87, 0x00, 0x6C, 0xA0, 0x00, 0x00, 0x00, 0x00,
+	0x20, 0x01, 0x0D, 0xB8, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07,
+	0x01, 0x01, 0x5E, 0x00, 0x53, 0x00, 0x00, 0x01,
+};
+
+void icmpv6ns_test(UINT num, char **arg)
+{
+	PKTTEST_CTX ctx;
+	IPV6_ADDR src;
+	IPV6_ADDR target;
+	BUF *b;
+
+	Zero(&ctx, sizeof(ctx));
+
+	Print("ICMPv6 Neighbor Solicitation test\n");
+
+	Zero(&src, sizeof(src));
+	src.Value[0] = 0xFE;
+	src.Value[1] = 0x80;
+	src.Value[15] = 0x01;
+
+	Zero(&target, sizeof(target));
+	target.Value[0] = 0x20;
+	target.Value[1] = 0x01;
+	target.Value[2] = 0x0D;
+	target.Value[3] = 0xB8;
+	target.Value[15] = 0x07;
+
+	b = BuildNeighborSolicitation(&src, &target, pkttest_mac_server);
+
+	PktTestCheck(&ctx, b != NULL && b->Size == sizeof(pkttest_ns_golden),
+		"BuildNeighborSolicitation gives the 72 bytes of the packet", "size %u", (b == NULL) ? 0 : b->Size);
+	PktTestCheck(&ctx, b != NULL && b->Size == sizeof(pkttest_ns_golden) &&
+		Cmp(b->Buf, pkttest_ns_golden, sizeof(pkttest_ns_golden)) == 0,
+		"BuildNeighborSolicitation gives the bytes of the former builder chain", "bytes differ");
+	PktTestCheck(&ctx, b != NULL && b->Current == 0, "the packet is read from its start", "position %u",
+		(b == NULL) ? 0 : b->Current);
+	FreeBuf(b);
+
+	b = BuildNeighborSolicitation(NULL, &target, pkttest_mac_server);
+	PktTestCheck(&ctx, b == NULL, "BuildNeighborSolicitation without a source gives nothing", "got a packet");
+	FreeBuf(b);
+
+	b = BuildNeighborSolicitation(&src, NULL, pkttest_mac_server);
+	PktTestCheck(&ctx, b == NULL, "BuildNeighborSolicitation without a target gives nothing", "got a packet");
+	FreeBuf(b);
+
+	b = BuildNeighborSolicitation(&src, &target, NULL);
+	PktTestCheck(&ctx, b == NULL, "BuildNeighborSolicitation without a MAC address gives nothing", "got a packet");
+	FreeBuf(b);
+
+	if (ctx.NumFailed == 0)
+	{
+		Print("ICMPV6NS TEST OK\n");
+	}
+	else
+	{
+		Print("ICMPV6NS TEST FAILED (%u of %u checks failed)\n", ctx.NumFailed, ctx.NumChecks);
 	}
 }

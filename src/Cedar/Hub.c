@@ -1309,9 +1309,8 @@ void HubWatchDogThread(THREAD *t, void *param)
 
 								if (IPToIPv6Addr(&ip6addr, &e->Ip))
 								{
-									buf = BuildICMPv6NeighborSoliciation(&hub->HubIpV6,
-										&ip6addr,
-										hub->HubMacAddr, ++hub->HubIP6Id, false);
+									buf = BuildNeighborSolicitation(&hub->HubIpV6, &ip6addr,
+										hub->HubMacAddr);
 
 									if (buf != NULL)
 									{

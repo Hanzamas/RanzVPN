@@ -591,313 +591,51 @@ bool VLanRemoveTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vla
 	return false;
 }
 
-static BUF *BuildICMPv6(IPV6_ADDR *src_ip, IPV6_ADDR *dest_ip, UCHAR hop_limit, UCHAR type, UCHAR code, void *data, UINT size, UINT id)
+// Builds the IPv6 packet of a Neighbor Solicitation (RFC 4861 4.3) from src_ip to target_ip, sent to
+// the unicast address of the target: IPv6 header, ICMPv6 header, the target address and the source
+// link-layer address option with my_mac_address, 72 bytes. The hop limit is 255; the flow label is
+// 0. Returns NULL when an argument is NULL
+BUF *BuildNeighborSolicitation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCHAR *my_mac_address)
 {
+	UINT icmp_size = sizeof(ICMP_HEADER) + sizeof(ICMPV6_NEIGHBOR_SOLICIATION_HEADER) +
+		sizeof(ICMPV6_OPTION_LINK_LAYER);
+	UCHAR *packet;
+	IPV6_HEADER *ip;
 	ICMP_HEADER *icmp;
-	void *data_buf;
-	BUF *ret;
-	if (src_ip == NULL || dest_ip == NULL || data == NULL)
-	{
-		return NULL;
-	}
-
-	icmp = ZeroMalloc(sizeof(ICMP_HEADER) + size);
-	data_buf = ((UCHAR *)icmp) + sizeof(ICMP_HEADER);
-	Copy(data_buf, data, size);
-
-	icmp->Type = type;
-	icmp->Code = code;
-	icmp->Checksum = CalcChecksumForIPv6(src_ip, dest_ip, IP_PROTO_ICMPV6, icmp,
-	                                     sizeof(ICMP_HEADER) + size, 0);
-
-	ret = BuildIPv6(dest_ip, src_ip, id, IP_PROTO_ICMPV6, hop_limit, icmp,
-	                sizeof(ICMP_HEADER) + size);
-
-	Free(icmp);
-
-	return ret;
-}
-
-BUF *BuildICMPv6NeighborSoliciation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCHAR *my_mac_address, UINT id, bool use_multicast)
-{
-	ICMPV6_OPTION_LIST opt;
-	ICMPV6_OPTION_LINK_LAYER link;
-	ICMPV6_NEIGHBOR_SOLICIATION_HEADER header;
-	BUF *b;
-	BUF *b2;
+	ICMPV6_NEIGHBOR_SOLICIATION_HEADER *ns;
+	ICMPV6_OPTION_LINK_LAYER *link;
 	BUF *ret;
 	if (src_ip == NULL || target_ip == NULL || my_mac_address == NULL)
 	{
 		return NULL;
 	}
 
-	Zero(&link, sizeof(link));
-	Copy(link.Address, my_mac_address, 6);
+	packet = ZeroMalloc(sizeof(IPV6_HEADER) + icmp_size);
+	ip = (IPV6_HEADER *)packet;
+	icmp = (ICMP_HEADER *)(packet + sizeof(IPV6_HEADER));
+	ns = (ICMPV6_NEIGHBOR_SOLICIATION_HEADER *)(icmp + 1);
+	link = (ICMPV6_OPTION_LINK_LAYER *)(ns + 1);
 
-	Zero(&opt, sizeof(opt));
-	opt.SourceLinkLayer = &link;
+	IPV6_SET_VERSION(ip, 6);
+	ip->PayloadLength = Endian16((USHORT)icmp_size);
+	ip->NextHeader = IP_PROTO_ICMPV6;
+	ip->HopLimit = 255;
+	Copy(&ip->SrcAddress, src_ip, sizeof(IPV6_ADDR));
+	Copy(&ip->DestAddress, target_ip, sizeof(IPV6_ADDR));
 
-	b = BuildICMPv6Options(&opt);
+	icmp->Type = ICMPV6_TYPE_NEIGHBOR_SOLICIATION;
+	Copy(&ns->TargetAddress, target_ip, sizeof(IPV6_ADDR));
+	link->IcmpOptionHeader.Type = ICMPV6_OPTION_TYPE_SOURCE_LINK_LAYER;
+	link->IcmpOptionHeader.Length = sizeof(ICMPV6_OPTION_LINK_LAYER) / 8;
+	Copy(link->Address, my_mac_address, 6);
 
-	Zero(&header, sizeof(header));
-	Copy(&header.TargetAddress, target_ip, sizeof(IPV6_ADDR));
+	icmp->Checksum = CalcChecksumForIPv6(src_ip, target_ip, IP_PROTO_ICMPV6, icmp, icmp_size, 0);
 
-	b2 = NewBuf();
-
-	WriteBuf(b2, &header, sizeof(header));
-	WriteBufBuf(b2, b);
-
-	if (use_multicast)
-	{
-		IPV6_ADDR solicitAddress;
-		Zero(&solicitAddress, sizeof(IPV6_ADDR));
-		solicitAddress.Value[0] = 0xFF;
-		solicitAddress.Value[1] = 0x02;
-		solicitAddress.Value[11] = 0x01;
-		solicitAddress.Value[12] = 0xFF;
-		Copy(&solicitAddress.Value[13], &target_ip->Value[13], 3);
-
-		ret = BuildICMPv6(src_ip, &solicitAddress, 255,
-	                          ICMPV6_TYPE_NEIGHBOR_SOLICIATION, 0, b2->Buf, b2->Size, id);
-	}
-	else
-	{
-		ret = BuildICMPv6(src_ip, target_ip, 255,
-	                          ICMPV6_TYPE_NEIGHBOR_SOLICIATION, 0, b2->Buf, b2->Size, id);
-	}
-
-	FreeBuf(b);
-	FreeBuf(b2);
-
-	return ret;
-}
-
-static UCHAR IPv6GetNextHeaderFromQueue(QUEUE *q)
-{
-	UINT *p;
-	UCHAR v = 0;
-	if (q == NULL)
-	{
-		return IPV6_HEADER_NONE;
-	}
-
-	p = (UINT *)GetNext(q);
-	if (p != NULL)
-	{
-		v = (UCHAR)(*p);
-		Free(p);
-	}
-
-	return v;
-}
-
-static void BuildAndAddIPv6PacketOptionHeader(BUF *b, IPV6_OPTION_HEADER *opt, UCHAR next_header, UINT size)
-{
-	IPV6_OPTION_HEADER *h;
-	UINT total_size;
-	if (b == NULL || opt == NULL)
-	{
-		return;
-	}
-
-	total_size = size;
-	if ((total_size % 8) != 0)
-	{
-		total_size = ((total_size / 8) + 1) * 8;
-	}
-
-	h = ZeroMalloc(total_size);
-	Copy(h, opt, size);
-	h->Size = (total_size / 8) - 1;
-	h->NextHeader = next_header;
-
-	WriteBuf(b, h, total_size);
-
-	Free(h);
-}
-
-BUF *BuildIPv6(IPV6_ADDR *dest_ip, IPV6_ADDR *src_ip, UINT id, UCHAR protocol, UCHAR hop_limit, void *data,
-               UINT size)
-{
-	IPV6_HEADER_PACKET_INFO info;
-	IPV6_HEADER ip_header;
-	BUF *buf;
-	UINT size_for_headers;
-	if (dest_ip == NULL || src_ip == NULL || data == NULL)
-	{
-		return NULL;
-	}
-	if (hop_limit == 0)
-	{
-		hop_limit = 255;
-	}
-
-	Zero(&ip_header, sizeof(ip_header));
-	IPV6_SET_VERSION(&ip_header, 6);
-	ip_header.HopLimit = hop_limit;
-	Copy(&ip_header.SrcAddress, src_ip, sizeof(IPV6_ADDR));
-	Copy(&ip_header.DestAddress, dest_ip, sizeof(IPV6_ADDR));
-
-	Zero(&info, sizeof(info));
-	info.IPv6Header = &ip_header;
-	info.Protocol = protocol;
-	info.Payload = data;
-	info.PayloadSize = size;
-
-	buf = BuildIPv6PacketHeader(&info, &size_for_headers);
-	if (buf == NULL)
-	{
-		return NULL;
-	}
-
-	return buf;
-}
-
-BUF *BuildIPv6PacketHeader(IPV6_HEADER_PACKET_INFO *info, UINT *bytes_before_payload)
-{
-	BUF *b;
-	QUEUE *q;
-	UINT bbp = 0;
-	if (info == NULL)
-	{
-		return NULL;
-	}
-
-	b = NewBuf();
-	q = NewQueueFast();
-
-	if (info->HopHeader != NULL)
-	{
-		InsertQueueInt(q, IPV6_HEADER_HOP);
-	}
-	if (info->EndPointHeader != NULL)
-	{
-		InsertQueueInt(q, IPV6_HEADER_ENDPOINT);
-	}
-	if (info->RoutingHeader != NULL)
-	{
-		InsertQueueInt(q, IPV6_HEADER_ROUTING);
-	}
-	if (info->FragmentHeader != NULL)
-	{
-		InsertQueueInt(q, IPV6_HEADER_FRAGMENT);
-	}
-	InsertQueueInt(q, info->Protocol);
-
-	info->IPv6Header->NextHeader = IPv6GetNextHeaderFromQueue(q);
-	WriteBuf(b, info->IPv6Header, sizeof(IPV6_HEADER));
-
-	if (info->HopHeader != NULL)
-	{
-		BuildAndAddIPv6PacketOptionHeader(b, info->HopHeader,
-		                                  IPv6GetNextHeaderFromQueue(q), info->HopHeaderSize);
-	}
-
-	if (info->EndPointHeader != NULL)
-	{
-		BuildAndAddIPv6PacketOptionHeader(b, info->EndPointHeader,
-		                                  IPv6GetNextHeaderFromQueue(q), info->EndPointHeaderSize);
-	}
-
-	if (info->RoutingHeader != NULL)
-	{
-		BuildAndAddIPv6PacketOptionHeader(b, info->RoutingHeader,
-		                                  IPv6GetNextHeaderFromQueue(q), info->RoutingHeaderSize);
-	}
-
-	if (info->FragmentHeader != NULL)
-	{
-		info->FragmentHeader->NextHeader = IPv6GetNextHeaderFromQueue(q);
-		WriteBuf(b, info->FragmentHeader, sizeof(IPV6_FRAGMENT_HEADER));
-	}
-
-	bbp = b->Size;
-	if (info->FragmentHeader == NULL)
-	{
-		bbp += sizeof(IPV6_FRAGMENT_HEADER);
-	}
-
-	if (info->Protocol != IPV6_HEADER_NONE)
-	{
-		WriteBuf(b, info->Payload, info->PayloadSize);
-	}
-
-	ReleaseQueue(q);
-
-	SeekBuf(b, 0, 0);
-
-	((IPV6_HEADER *)b->Buf)->PayloadLength = Endian16(b->Size - (USHORT)sizeof(IPV6_HEADER));
-
-	if (bytes_before_payload != NULL)
-	{
-		// Length up to the payload, assuming a fragment header is always present
-		*bytes_before_payload = bbp;
-	}
-
-	return b;
-}
-
-static void BuildICMPv6OptionValue(BUF *b, UCHAR type, void *header_pointer, UINT total_size)
-{
-	UINT packet_size;
-	UCHAR *packet;
-	ICMPV6_OPTION *opt;
-	if (b == NULL || header_pointer == NULL)
-	{
-		return;
-	}
-
-	packet_size = ((total_size + 7) / 8) * 8;
-	packet = ZeroMalloc(packet_size);
-
-	Copy(packet, header_pointer, total_size);
-	opt = (ICMPV6_OPTION *)packet;
-	opt->Length = (UCHAR)(packet_size / 8);
-	opt->Type = type;
-
-	WriteBuf(b, packet, packet_size);
+	ret = NewBufFromMemory(packet, sizeof(IPV6_HEADER) + icmp_size);
 
 	Free(packet);
-}
 
-BUF *BuildICMPv6Options(ICMPV6_OPTION_LIST *o)
-{
-	BUF *b;
-	UINT i;
-	if (o == NULL)
-	{
-		return NULL;
-	}
-
-	b = NewBuf();
-
-	if (o->SourceLinkLayer != NULL)
-	{
-		BuildICMPv6OptionValue(b, ICMPV6_OPTION_TYPE_SOURCE_LINK_LAYER, o->SourceLinkLayer, sizeof(ICMPV6_OPTION_LINK_LAYER));
-	}
-	if (o->TargetLinkLayer != NULL)
-	{
-		BuildICMPv6OptionValue(b, ICMPV6_OPTION_TYPE_TARGET_LINK_LAYER, o->TargetLinkLayer, sizeof(ICMPV6_OPTION_LINK_LAYER));
-	}
-	for (i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++)
-	{
-		if (o->Prefix[i] != NULL)
-		{
-			BuildICMPv6OptionValue(b, ICMPV6_OPTION_TYPE_PREFIX, o->Prefix[i], sizeof(ICMPV6_OPTION_PREFIX));
-		}
-		else
-		{
-			break;
-		}
-	}
-	if (o->Mtu != NULL)
-	{
-		BuildICMPv6OptionValue(b, ICMPV6_OPTION_TYPE_MTU, o->Mtu, sizeof(ICMPV6_OPTION_MTU));
-	}
-
-	SeekBuf(b, 0, 0);
-
-	return b;
+	return ret;
 }
 
 // Adds v to a 64-bit one's complement sum: the carry out of the top is added back at the bottom

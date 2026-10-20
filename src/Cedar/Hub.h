@@ -244,7 +244,6 @@ struct HUB
 	UCHAR HubMacAddr[6];
 	IP HubIp;
 	IPV6_ADDR HubIpV6;
-	UINT HubIP6Id;
 	LIST *AccessList;
 	HUB_LOG LogSetting;
 	LOG *PacketLogger;
