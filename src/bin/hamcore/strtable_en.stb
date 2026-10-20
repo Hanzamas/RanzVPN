@@ -177,7 +177,6 @@ ERR_134					The specified Dynamic DNS hostname has an invalid characters. Please
 ERR_135					The length of the specified Dynamic DNS hostname is too long. A hostname must be equal or shorter than 31 letters.
 ERR_136					The Dynamic DNS hostname is not specified.
 ERR_137					The length of the specified Dynamic DNS hostname is too short. A hostname must be equal or longer than 3 letters.
-ERR_138					The password of the specified user in the Virtual Hub must be reset before using MS-CHAP v2 authentication. Please ask the administrator of the VPN Server to reset the password by the VPN Server Manager or vpncmd which internal version is 4.0 or greater. Or you can change the password with VPN Client by yourself.
 ERR_139					The connection to the Dynamic DNS server has been disconnected.
 ERR_140					Failed to initialize the ICMP (Ping) protocol. The process of the VPN Server might be running in a normal-user privileges. In such case, run the VPN Server as a system service. (in Linux / UNIX, run it in root privileges.)
 ERR_141					Failed to open the DNS port 53. Make sure that there are no other DNS server program (for example, BIND or Microsoft DNS Server) on the same computer. If there are conflicting services stop them. Or run the VPN Server's process in root privileges on Linux / UNIX/
@@ -207,16 +206,6 @@ PW_TYPE_1				Standard Password Authentication
 PW_TYPE_2				RADIUS or NT Domain Authentication
 PW_TYPE_3				Client Certificate Authentication
 PW_TYPE_5				OpenSSL Engine Authentication
-
-
-# Concerning VPN connection status
-STATUS_1				Initializing...
-STATUS_2				Connecting to VPN Server "%S" via Proxy Server %S...
-STATUS_4				Connecting to VPN Server "%S"...
-STATUS_5				Verifying Server Certificate...
-STATUS_6				Authenticating User...
-STATUS_7				Establishing VPN Session...
-STATUS_9				VPN Session has been established.
 
 
 # Errors about Windows Versions

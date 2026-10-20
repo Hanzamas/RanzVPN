@@ -64,7 +64,6 @@
 #define	TIMEOUT_MAX					(60 * 1000)
 #define	TIMEOUT_DEFAULT				(30 * 1000)
 #define	CONNECTING_TIMEOUT			(15 * 1000)
-#define	CONNECTING_POOLING_SPAN		(3 * 1000)
 #define	MIN_RETRY_INTERVAL			(5 * 1000)
 #define	MAX_RETRY_INTERVAL			(300 * 1000)
 #define	RETRY_INTERVAL_SPECIAL		(60 * 1000)
@@ -259,7 +258,6 @@
 
 
 
-#define	BRIDGE_DEVICE_NAME				"_SEHUBBRIDGE_"
 #define	BRIDGE_USER_NAME				"localbridge"
 #define	BRIDGE_USER_NAME_PRINT			"Local Bridge"
 #define	BRIDGE_TRY_SPAN					1000
@@ -330,7 +328,6 @@
 #define ERR_BRANDED_C_FROM_S			125
 #define	ERR_CLIENT_ID_REQUIRED			127
 #define	ERR_TOO_MANY_USERS_CREATED		128
-#define	ERR_MSCHAP2_PASSWORD_NEED_RESET	138
 #define	ERR_NOT_SUPPORTED_AUTH_ON_OPENSOURCE	143
 #define	ERR_NOT_SUPPORTED_FUNCTION_ON_OPENSOURCE	147
 #define ERR_HOSTNAME_MISMATCH			149
@@ -380,7 +377,6 @@ struct CEDAR
 	LIST *ListenerList;
 	LIST *HubList;
 	LIST *ConnectionList;
-	LIST *CaList;
 	COUNTER *ConnectionIncrement;
 	X *ServerX;
 	K *ServerK;

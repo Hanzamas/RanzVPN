@@ -627,7 +627,6 @@ LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, 
 	NormalizeLinkOption(o);
 
 	a = ClientAuthClone(auth);
-	a->CheckCertProc = NULL;
 
 	k = ZeroMalloc(sizeof(LINK));
 

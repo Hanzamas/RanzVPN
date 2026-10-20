@@ -8,7 +8,7 @@
 
 #include "Mayaqua/MayaType.h"
 
-bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_password, char *mschap_v2_password, UCHAR *mschap_v2_server_response_20, UINT *err);
+bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_password);
 bool SamAuthUserByAnonymous(HUB *h, char *username);
 bool SamAuthUserByCert(HUB *h, char *username, X *x);
 bool SamAuthUserByPlainPassword(HUB *hub, char *username, char *password);

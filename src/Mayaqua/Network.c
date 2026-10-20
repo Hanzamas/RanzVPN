@@ -3171,10 +3171,7 @@ static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *pri
 					*ssl_err = 85;
 				}
 
-				if (ssl_option->PromptOnVerifyFail == false)
-				{
-					goto FAIL;
-				}
+				goto FAIL;
 			}
 		}
 	}

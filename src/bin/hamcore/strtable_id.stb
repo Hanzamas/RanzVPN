@@ -177,7 +177,6 @@ ERR_134					Nama host DNS Dinamis yang ditentukan mengandung karakter tidak vali
 ERR_135					Panjang nama host DNS Dinamis yang ditentukan terlalu panjang. Nama host harus sama atau lebih pendek dari 31 huruf.
 ERR_136					Nama host DNS Dinamis tidak ditentukan.
 ERR_137					Panjang nama host DNS Dinamis yang ditentukan terlalu panjang. Nama host harus sama atau lebih panjang dari 3 huruf.
-ERR_138					Kata sandi pengguna yang ditentukan di Virtual Hub harus direset sebelum menggunakan otentikasi MS-CHAP v2. Harap minta administrator VPN Server untuk mereset kata sandi dengan VPN Server Manager atau vpncmd yang versi internalnya adalah 4.0 atau lebih besar. Atau Anda dapat mengubah kata sandi dengan VPN Client sendiri.
 ERR_139					Koneksi ke server DNS Dinamis telah terputus.
 ERR_140					Gagal menginisialisasi protokol ICMP (Ping). Proses VPN Server mungkin dijalankan dengan hak akses pengguna biasa. Dalam hal ini, jalankan VPN Server sebagai layanan sistem. (di Linux / UNIX, jalankan dengan hak akses root.)
 ERR_141					Gagal membuka port DNS 53. Pastikan tidak ada program server DNS lain (misalnya, BIND atau Microsoft DNS Server) yang berjalan di komputer yang sama. Jika ada layanan yang bertentangan, hentikan mereka. Atau jalankan proses VPN Server dengan hak akses root di Linux / UNIX.
@@ -207,16 +206,6 @@ PW_TYPE_1				Autentikasi Kata Sandi Standar
 PW_TYPE_2				Autentikasi RADIUS atau NT Domain
 PW_TYPE_3				Autentikasi Sertifikat Klien
 PW_TYPE_5				Autentikasi Mesin OpenSSL
-
-
-# Concerning VPN connection status
-STATUS_1                Menginisialisasi...
-STATUS_2                Menghubungkan ke Server VPN "%S" melalui Server Proxy %S...
-STATUS_4                Menghubungkan ke Server VPN "%S"...
-STATUS_5                Memverifikasi Sertifikat Server...
-STATUS_6                Mengautentikasi Pengguna...
-STATUS_7                Membangun Sesi VPN...
-STATUS_9                Sesi VPN telah berhasil dibangun.
 
 
 # Errors about Windows Versions
