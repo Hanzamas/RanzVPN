@@ -2121,10 +2121,6 @@ UINT RecvFrom(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 	{
 		InAddrToIP(src_addr, &addr.sin_addr);
 		*src_port = (UINT)ntohs(addr.sin_port);
-		if (sock->IsRawSocket)
-		{
-			*src_port = sock->LocalPort;
-		}
 
 		return (UINT)ret;
 	}
@@ -2182,10 +2178,6 @@ UINT RecvFrom6(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 		InAddrToIP6(src_addr, &addr.sin6_addr);
 		src_addr->ipv6_scope_id = addr.sin6_scope_id;
 		*src_port = (UINT)ntohs(addr.sin6_port);
-		if (sock->IsRawSocket)
-		{
-			*src_port = sock->LocalPort;
-		}
 
 		return (UINT)ret;
 	}
@@ -2225,11 +2217,11 @@ UINT SendToEx(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size, 
 	{
 		sock->IgnoreSendErr = false;
 	}
-	if (sock == NULL || dest_addr == NULL || (sock->IsRawSocket == false && dest_port == 0) || data == NULL)
+	if (sock == NULL || dest_addr == NULL || dest_port == 0 || data == NULL)
 	{
 		return 0;
 	}
-	if (dest_port >= 65536 && sock->IsRawSocket == false)
+	if (dest_port >= 65536)
 	{
 		return 0;
 	}
@@ -2255,10 +2247,7 @@ UINT SendToEx(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size, 
 	s = sock->socket;
 	Zero(&addr, sizeof(addr));
 	addr.sin_family = AF_INET;
-	if (sock->IsRawSocket == false)
-	{
-		addr.sin_port = htons((USHORT)dest_port);
-	}
+	addr.sin_port = htons((USHORT)dest_port);
 	IPToInAddr(&addr.sin_addr, dest_addr);
 
 	const BYTE *ipv4 = IPV4(dest_addr->address);
@@ -2309,11 +2298,11 @@ UINT SendTo6Ex(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size,
 	{
 		sock->IgnoreSendErr = false;
 	}
-	if (sock == NULL || dest_addr == NULL || (sock->IsRawSocket == false && dest_port == 0) || data == NULL)
+	if (sock == NULL || dest_addr == NULL || dest_port == 0 || data == NULL)
 	{
 		return 0;
 	}
-	if (dest_port >= 65536 && sock->IsRawSocket == false)
+	if (dest_port >= 65536)
 	{
 		return 0;
 	}
@@ -2334,10 +2323,7 @@ UINT SendTo6Ex(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size,
 	s = sock->socket;
 	Zero(&addr, sizeof(addr));
 	addr.sin6_family = AF_INET6;
-	if (sock->IsRawSocket == false)
-	{
-		addr.sin6_port = htons((USHORT)dest_port);
-	}
+	addr.sin6_port = htons((USHORT)dest_port);
 	IPToInAddr6(&addr.sin6_addr, dest_addr);
 	addr.sin6_scope_id = dest_addr->ipv6_scope_id;
 
@@ -2416,14 +2402,7 @@ SOCK *NewUDP4(UINT port, IP *ip)
 		return NULL;
 	}
 
-	if (IS_SPECIAL_PORT(port) == false)
-	{
-		s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-	}
-	else
-	{
-		s = socket(AF_INET, SOCK_RAW, GET_SPECIAL_PORT(port));
-	}
+	s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (s == INVALID_SOCKET)
 	{
 		return NULL;
@@ -2441,7 +2420,7 @@ SOCK *NewUDP4(UINT port, IP *ip)
 		IPToInAddr(&addr.sin_addr, ip);
 	}
 
-	if (port == 0 || IS_SPECIAL_PORT(port))
+	if (port == 0)
 	{
 		addr.sin_port = 0;
 	}
@@ -2492,15 +2471,6 @@ SOCK *NewUDP4(UINT port, IP *ip)
 
 	InitUdpSocketBufferSize((int)s);
 
-	if (IS_SPECIAL_PORT(port))
-	{
-		UINT no = 0;
-		(void)setsockopt(sock->socket, IPPROTO_IP, IP_HDRINCL, (char *)&no, sizeof(no));
-
-		sock->IsRawSocket = true;
-		sock->RawSocketIPProtocol = GET_SPECIAL_PORT(port);
-	}
-
 	QuerySocketInformation(sock);
 
 	return sock;
@@ -2515,14 +2485,7 @@ SOCK *NewUDP6(UINT port, IP *ip)
 		return NULL;
 	}
 
-	if (IS_SPECIAL_PORT(port) == false)
-	{
-		s = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
-	}
-	else
-	{
-		s = socket(AF_INET6, SOCK_RAW, GET_SPECIAL_PORT(port));
-	}
+	s = socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
 	if (s == INVALID_SOCKET)
 	{
 		return NULL;
@@ -2588,18 +2551,6 @@ SOCK *NewUDP6(UINT port, IP *ip)
 	sock->socket = s;
 
 	InitUdpSocketBufferSize(s);
-
-	if (IS_SPECIAL_PORT(port))
-	{
-		UINT no = 0;
-#ifdef	IPV6_HDRINCL
-		(void)setsockopt(sock->socket, IPPROTO_IP, IPV6_HDRINCL, (char *)&no, sizeof(no));
-#endif
-		(void)setsockopt(sock->socket, IPPROTO_IP, IP_HDRINCL, (char *)&no, sizeof(no));
-
-		sock->IsRawSocket = true;
-		sock->RawSocketIPProtocol = GET_SPECIAL_PORT(port);
-	}
 
 	QuerySocketInformation(sock);
 
@@ -4890,11 +4841,6 @@ void QuerySocketInformation(SOCK *sock)
 				addr = &sockaddr->sin_addr;
 				InAddrToIP(&sock->LocalIP, addr);
 			}
-		}
-
-		if (sock->IsRawSocket)
-		{
-			sock->LocalPort = sock->RemotePort = MAKE_SPECIAL_PORT(sock->RawSocketIPProtocol);
 		}
 
 	}

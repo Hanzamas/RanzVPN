@@ -32,10 +32,6 @@ struct DYN_VALUE
 
 #define	PRIVATE_IP_TXT_FILENAME		"$private_ip.txt"
 
-#define	MAKE_SPECIAL_PORT(p)		(UINT)((UINT)0x10000 | (UINT)(p))
-#define	IS_SPECIAL_PORT(p)			(INT_TO_BOOL((p) & (UINT)0x10000))
-#define	GET_SPECIAL_PORT(p)			(UINT)((UINT)(p) & (UINT)0xffff)
-
 #define	UDP_MAX_BUFFER_SIZE			11911168
 
 #define	HOST_IP_ADDRESS_LIST_CACHE	(5 * 1000)
@@ -129,9 +125,7 @@ struct SOCK
 	bool AcceptCanceled;
 	bool UdpBroadcast;
 	bool IPv6;
-	bool IsRawSocket;
 	const char *SslVersion;
-	UINT RawSocketIPProtocol;
 	int CurrentTos;
 	char UnderlayProtocol[64];
 	char ProtocolDetails[256];
