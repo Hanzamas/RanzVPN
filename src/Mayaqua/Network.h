@@ -9,11 +9,6 @@
 
 #include <openssl/ssl.h> // This is needed only for the SSL/TLS version defines
 
-struct DYN_VALUE
-{
-	char Name[256];
-};
-
 #define	MAX_HOST_NAME_LEN			255
 
 #define	TIMEOUT_INFINITE			(0x7fffffff)
@@ -246,8 +241,6 @@ void CreateDummyValue(PACK *p);
 char *RecvLine(SOCK *s, UINT max_size);
 
 SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname, char *hostname_original);
-void GetCurrentMachineIpProcessHash(void *hash);
-void GetCurrentMachineIpProcessHashInternal(void *hash);
 void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_size, char *dst_domain, UINT dst_domain_size, bool do_not_parse_atmark);
 
 
@@ -265,7 +258,6 @@ void IPToStr32(char *str, UINT size, UINT ip);
 void IPToStr4or6(char *str, UINT size, UINT ip_4_uint, UCHAR *ip_6_bytes);
 bool GetHostName(char *hostname, UINT size, IP *ip);
 void GetMachineName(char *name, UINT size);
-void GetMachineHostName(char *name, UINT size);
 void UINTToIP(IP *ip, UINT value);
 UINT IPToUINT(IP *ip);
 SOCK *NewSock();
@@ -390,9 +382,6 @@ LIST *GetHostIPAddressList();
 LIST *CloneIPAddressList(LIST *o);
 void FreeHostIPAddressList(LIST *o);
 void AddHostIPAddressToList(LIST *o, IP *ip);
-
-void SetCurrentGlobalIP(IP *ip, bool ipv6);
-bool GetCurrentGlobalIP(IP *ip, bool ipv6);
 
 bool IsIPPrivate(IP *ip);
 bool IsIPMyHost(IP *ip);

@@ -141,7 +141,6 @@ bool MayaquaIsMinimalMode()
 void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 {
 	wchar_t tmp[MAX_PATH];
-	UCHAR hash[SHA1_SIZE];
 
 	if ((init_mayaqua_counter++) > 0)
 	{
@@ -239,8 +238,6 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 	CheckUnixTempDir();
 
 	InitProbe();
-
-	GetCurrentMachineIpProcessHash(hash);
 
 	LoadPrivateIPFile();
 }

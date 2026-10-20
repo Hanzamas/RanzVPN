@@ -31,12 +31,6 @@ static LOCK *disconnect_function_lock = NULL;
 extern LOCK *openssl_lock;
 static COUNTER *num_tcp_connections = NULL;
 static LIST *WaitThreadList = NULL;
-static UCHAR machine_ip_process_hash[SHA1_SIZE];
-static LOCK *machine_ip_process_hash_lock = NULL;
-static LOCK *current_global_ip_lock = NULL;
-static bool current_global_ip_set = false;
-static IP current_glocal_ipv4 = {0};
-static IP current_glocal_ipv6 = {0};
 static LOCK *host_ip_address_list_cache_lock = NULL;
 static UINT64 host_ip_address_list_cache_last = 0;
 static LIST *host_ip_address_cache = NULL;
@@ -63,34 +57,6 @@ typedef struct PRIVATE_IP_SUBNET
 
 static LIST *g_private_ip_list = NULL;
 
-
-static LIST *g_dyn_value_list = NULL;
-
-
-static void InitDynList()
-{
-	g_dyn_value_list = NewList(NULL);
-}
-
-static void FreeDynList()
-{
-	UINT i;
-	if (g_dyn_value_list == NULL)
-	{
-		return;
-	}
-
-	for (i = 0; i < LIST_NUM(g_dyn_value_list); i++)
-	{
-		DYN_VALUE *d = LIST_DATA(g_dyn_value_list, i);
-
-		Free(d);
-	}
-
-	ReleaseList(g_dyn_value_list);
-
-	g_dyn_value_list = NULL;
-}
 
 int GetCurrentTimezone()
 {
@@ -321,76 +287,6 @@ void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_s
 
 	StrCpy(dst_username, dst_username_size, tmp_username);
 	StrCpy(dst_domain, dst_domain_size, tmp_domain);
-}
-
-void GetCurrentMachineIpProcessHash(void *hash)
-{
-	if (hash == NULL)
-	{
-		return;
-	}
-
-	Lock(machine_ip_process_hash_lock);
-	{
-		if (IsZero(machine_ip_process_hash, SHA1_SIZE))
-		{
-			GetCurrentMachineIpProcessHashInternal(machine_ip_process_hash);
-		}
-
-		Copy(hash, machine_ip_process_hash, SHA1_SIZE);
-	}
-	Unlock(machine_ip_process_hash_lock);
-}
-void GetCurrentMachineIpProcessHashInternal(void *hash)
-{
-	BUF *b;
-	LIST *ip_list;
-	char machine_name[MAX_SIZE];
-	wchar_t exe_path[MAX_PATH];
-	char *product_id = NULL;
-	if (hash == NULL)
-	{
-		return;
-	}
-
-	product_id = MsRegReadStr(REG_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", "ProductId");
-	if (product_id == NULL)
-	{
-		product_id = MsRegReadStr(REG_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion", "ProductId");
-	}
-
-	b = NewBuf();
-
-	GetMachineHostName(machine_name, sizeof(machine_name));
-	Trim(machine_name);
-	StrUpper(machine_name);
-
-	GetExeNameW(exe_path, sizeof(exe_path));
-	UniTrim(exe_path);
-	UniStrUpper(exe_path);
-
-	WriteBuf(b, machine_name, StrSize(machine_name));
-	WriteBuf(b, exe_path, UniStrSize(exe_path));
-	WriteBuf(b, product_id, StrSize(product_id));
-
-	ip_list = GetHostIPAddressList();
-	if (ip_list != NULL)
-	{
-		UINT i;
-		for (i = 0; i < LIST_NUM(ip_list); i++)
-		{
-			IP *ip = LIST_DATA(ip_list, i);
-
-			WriteBuf(b, ip, sizeof(IP));
-		}
-	}
-	FreeHostIPAddressList(ip_list);
-
-	Sha1(hash, b->Buf, b->Size);
-
-	FreeBuf(b);
-
-	Free(product_id);
 }
 
 bool IsStrIPv6Address(char *str)
@@ -3646,16 +3542,6 @@ SOCK *Accept(SOCK *sock)
 		AddIpClient(&ret->RemoteIP);
 	}
 
-	if (IsZeroIp(&sock->LocalIP) == false && IsLocalHostIP(&sock->LocalIP) == false)
-	{
-		IP current_ip;
-
-		if (GetCurrentGlobalIP(&current_ip, false) == false)
-		{
-			SetCurrentGlobalIP(&sock->LocalIP, false);
-		}
-	}
-
 	StrCpy(ret->UnderlayProtocol, sizeof(ret->UnderlayProtocol), SOCK_UNDERLAY_NATIVE_V4);
 
 	AddProtocolDetailsStr(ret->ProtocolDetails, sizeof(ret->ProtocolDetails), "IPv4");
@@ -3730,15 +3616,6 @@ SOCK *Accept6(SOCK *sock)
 	{
 		ret->IpClientAdded = true;
 		AddIpClient(&ret->RemoteIP);
-	}
-	if (IsZeroIp(&sock->LocalIP) == false && IsLocalHostIP(&sock->LocalIP) == false)
-	{
-		IP current_ip;
-
-		if (GetCurrentGlobalIP(&current_ip, true) == false)
-		{
-			SetCurrentGlobalIP(&sock->LocalIP, true);
-		}
 	}
 
 	StrCpy(ret->UnderlayProtocol, sizeof(ret->UnderlayProtocol), SOCK_UNDERLAY_NATIVE_V6);
@@ -4481,16 +4358,6 @@ SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname
 
 	QuerySocketInformation(sock);
 
-	if (IsZeroIp(&sock->LocalIP) == false && IsLocalHostIP(&sock->LocalIP) == false)
-	{
-		IP current_ip;
-
-		if (GetCurrentGlobalIP(&current_ip, is_ipv6) == false)
-		{
-			SetCurrentGlobalIP(&sock->LocalIP, is_ipv6);
-		}
-	}
-
 	sock->Connected = true;
 	sock->AsyncMode = false;
 	sock->SecureMode = false;
@@ -5003,29 +4870,6 @@ void UINTToIP(IP *ip, UINT value)
 	}
 }
 
-void GetMachineHostName(char *name, UINT size)
-{
-	char tmp[MAX_SIZE];
-	UINT i, len;
-	if (name == NULL)
-	{
-		return;
-	}
-
-	GetMachineName(tmp, sizeof(tmp));
-
-	len = StrLen(tmp);
-	for (i = 0; i < len; i++)
-	{
-		if (tmp[i] == '.')
-		{
-			tmp[i] = 0;
-		}
-	}
-
-	ConvertSafeFileName(name, size, tmp);
-}
-
 void GetMachineName(char *name, UINT size)
 {
 	static char name_cache[MAX_SIZE];
@@ -5503,9 +5347,6 @@ void InitNetwork()
 	disable_gethostname_by_accept = false;
 
 
-	InitDynList();
-
-
 	host_ip_address_list_cache_lock = NewLock();
 	host_ip_address_list_cache_last = 0;
 
@@ -5521,11 +5362,7 @@ void InitNetwork()
 
 	machine_name_lock = NewLock();
 	disconnect_function_lock = NewLock();
-	machine_ip_process_hash_lock = NewLock();
 	local_mac_list_lock = NewLock();
-
-	current_global_ip_lock = NewLock();
-	current_global_ip_set = false;
 }
 
 TOKEN_LIST *GetCipherList()
@@ -5588,34 +5425,6 @@ TOKEN_LIST *GetCipherList()
 COUNTER *GetNumTcpConnectionsCounter()
 {
 	return num_tcp_connections;
-}
-
-bool GetCurrentGlobalIP(IP *ip, bool ipv6)
-{
-	bool ret = false;
-	if (ip == NULL)
-	{
-		return false;
-	}
-
-	Zero(ip, sizeof(IP));
-
-	Lock(current_global_ip_lock);
-	{
-		if (ipv6 == false)
-		{
-			Copy(ip, &current_glocal_ipv4, sizeof(IP));
-		}
-		else
-		{
-			Copy(ip, &current_glocal_ipv6, sizeof(IP));
-		}
-
-		ret = current_global_ip_set;
-	}
-	Unlock(current_global_ip_lock);
-
-	return ret;
 }
 
 bool IsIPMyHost(IP *ip)
@@ -5800,34 +5609,6 @@ void FreePrivateIPFile()
 	}
 }
 
-void SetCurrentGlobalIP(IP *ip, bool ipv6)
-{
-	if (ip == NULL)
-	{
-		return;
-	}
-
-	if (IsZeroIp(ip))
-	{
-		return;
-	}
-
-	Lock(current_global_ip_lock);
-	{
-		if (ipv6 == false)
-		{
-			Copy(&current_glocal_ipv4, ip, sizeof(IP));
-		}
-		else
-		{
-			Copy(&current_glocal_ipv6, ip, sizeof(IP));
-		}
-
-		current_global_ip_set = true;
-	}
-	Unlock(current_global_ip_lock);
-}
-
 void FreeNetwork()
 {
 
@@ -5844,8 +5625,7 @@ void FreeNetwork()
 
 	DeleteLock(machine_name_lock);
 	DeleteLock(disconnect_function_lock);
-	DeleteLock(machine_ip_process_hash_lock);
-	machine_name_lock = disconnect_function_lock = machine_ip_process_hash_lock = NULL;
+	machine_name_lock = disconnect_function_lock = NULL;
 
 	DnsFree();
 
@@ -5855,9 +5635,6 @@ void FreeNetwork()
 	num_tcp_connections = NULL;
 
 	FreeIpClientList();
-
-	DeleteLock(current_global_ip_lock);
-	current_global_ip_lock = NULL;
 
 	if (local_mac_list != NULL)
 	{
@@ -5873,8 +5650,6 @@ void FreeNetwork()
 
 	FreeHostIPAddressList(host_ip_address_cache);
 	host_ip_address_cache = NULL;
-
-	FreeDynList();
 }
 
 static bool ParseIpAndSubnetMask46(char *src, IP *ip, IP *mask)
