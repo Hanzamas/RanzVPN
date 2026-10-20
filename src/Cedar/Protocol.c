@@ -1193,7 +1193,7 @@ bool ServerAccept(CONNECTION *c)
 
 							if (fail_ext_user_auth == false)
 							{
-								auth_ret = SamAuthUserByPlainPassword(c, hub, username, plain_password, true);
+								auth_ret = SamAuthUserByPlainPassword(hub, username, plain_password);
 							}
 
 							if (auth_ret && pol == NULL)
