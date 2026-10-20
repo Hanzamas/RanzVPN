@@ -58,58 +58,6 @@ void DisableDosProtect()
 	disable_dos = true;
 }
 
-static void UDPReceivedPacket(CEDAR *cedar, SOCK *s, IP *ip, UINT port, void *data, UINT size)
-{
-	SESSION *session;
-	UINT *key32;
-	UCHAR *buf;
-	CONNECTION *c;
-	if (s == NULL || ip == NULL || data == NULL || size == 0 || cedar == NULL)
-	{
-		return;
-	}
-
-	if (size < 16)
-	{
-		return;
-	}
-	buf = (UCHAR *)data;
-	key32 = (UINT *)(buf + 4);
-
-	session = GetSessionFromUDPEntry(cedar, Endian32(*key32));
-	if (session == NULL)
-	{
-		return;
-	}
-
-	c = session->Connection;
-
-	PutUDPPacketData(c, buf, size);
-
-	Lock(c->lock);
-	{
-		if (c->Protocol == CONNECTION_UDP)
-		{
-			if (c->Udp->s != s)
-			{
-				if (c->Udp->s != NULL)
-				{
-					ReleaseSock(c->Udp->s);
-				}
-				AddRef(s->ref);
-				c->Udp->s = s;
-			}
-			Copy(&c->Udp->ip, ip, sizeof(UINT));
-			c->Udp->port = port;
-		}
-	}
-	Unlock(c->lock);
-
-	Cancel(session->Cancel1);
-
-	ReleaseSession(session);
-}
-
 static void TCPAcceptedThread(THREAD *t, void *param)
 {
 	TCP_ACCEPTED_PARAM *data;
@@ -235,6 +183,67 @@ static void TCPAccepted(LISTENER *r, SOCK *s)
 	ReleaseThread(t);
 }
 
+// Drop the DoS entries whose expire span or total lifetime has run out
+static void DeleteExpiredDos(LISTENER *r)
+{
+	UINT i;
+	LIST *o;
+
+	o = NewListFast(NULL);
+	for (i = 0;i < LIST_NUM(r->DosList);i++)
+	{
+		DOS *d = LIST_DATA(r->DosList, i);
+		if ((d->LastConnectedTick + d->CurrentExpireSpan) <= Tick64() ||
+			(d->DeleteEntryTick <= Tick64()))
+		{
+			Add(o, d);
+		}
+	}
+
+	for (i = 0;i < LIST_NUM(o);i++)
+	{
+		DOS *d = LIST_DATA(o, i);
+		Delete(r->DosList, d);
+		Free(d);
+	}
+
+	ReleaseList(o);
+}
+
+// The DoS table is full: drop the expired entries, else the least recently seen one; log the first time
+static void MakeRoomInDosList(LISTENER *r)
+{
+	DeleteExpiredDos(r);
+
+	if (LIST_NUM(r->DosList) >= RATE_LIMIT_TABLE_MAX)
+	{
+		DOS *oldest = NULL;
+		UINT i;
+
+		for (i = 0;i < LIST_NUM(r->DosList);i++)
+		{
+			DOS *d = LIST_DATA(r->DosList, i);
+
+			if (oldest == NULL || d->LastConnectedTick < oldest->LastConnectedTick)
+			{
+				oldest = d;
+			}
+		}
+
+		if (oldest != NULL)
+		{
+			Delete(r->DosList, oldest);
+			Free(oldest);
+		}
+	}
+
+	if (r->DosListFullLogged == false)
+	{
+		r->DosListFullLogged = true;
+		SLog(r->Cedar, "LS_LISTENER_DOS_TABLE_FULL", r->Port, (UINT)RATE_LIMIT_TABLE_MAX);
+	}
+}
+
 bool CheckDosAttack(LISTENER *r, SOCK *s)
 {
 	DOS *d;
@@ -262,12 +271,17 @@ bool CheckDosAttack(LISTENER *r, SOCK *s)
 		}
 		else
 		{
+			if (LIST_NUM(r->DosList) >= RATE_LIMIT_TABLE_MAX)
+			{
+				MakeRoomInDosList(r);
+			}
+
 			d = ZeroMalloc(sizeof(DOS));
 			d->CurrentExpireSpan = (UINT64)DOS_TABLE_EXPIRES_FIRST;
 			d->FirstConnectedTick = d->LastConnectedTick = Tick64();
 			d->AccessCount = 1;
 			d->DeleteEntryTick = d->FirstConnectedTick + (UINT64)DOS_TABLE_EXPIRES_TOTAL;
-			Copy(&d->IpAddress, &s->RemoteIP, sizeof(IP));
+			GetRateLimitKey(&d->IpAddress, &s->RemoteIP);
 			Add(r->DosList, d);
 		}
 	}
@@ -286,29 +300,9 @@ void RefreshDosList(LISTENER *r)
 	if (r->DosListLastRefreshTime == 0 ||
 		(r->DosListLastRefreshTime + (UINT64)DOS_TABLE_REFRESH_INTERVAL) <= Tick64())
 	{
-		UINT i;
-		LIST *o;
 		r->DosListLastRefreshTime = Tick64();
 
-		o = NewListFast(NULL);
-		for (i = 0;i < LIST_NUM(r->DosList);i++)
-		{
-			DOS *d = LIST_DATA(r->DosList, i);
-			if ((d->LastConnectedTick + d->CurrentExpireSpan) <= Tick64() ||
-				(d->DeleteEntryTick <= Tick64()))
-			{
-				Add(o, d);
-			}
-		}
-
-		for (i = 0;i < LIST_NUM(o);i++)
-		{
-			DOS *d = LIST_DATA(o, i);
-			Delete(r->DosList, d);
-			Free(d);
-		}
-
-		ReleaseList(o);
+		DeleteExpiredDos(r);
 	}
 }
 
@@ -320,7 +314,7 @@ DOS *SearchDosList(LISTENER *r, IP *ip)
 		return NULL;
 	}
 
-	Copy(&t.IpAddress, ip, sizeof(IP));
+	GetRateLimitKey(&t.IpAddress, ip);
 
 	d = Search(r->DosList, &t);
 
@@ -364,77 +358,23 @@ static void ListenerBindTried(LISTENER *r)
 	}
 }
 
-static void ListenerUDPMainLoop(LISTENER *r)
+// A transient accept() error (IsTransientAcceptError) keeps the listening socket: log it at most once per
+// ACCEPT_ERROR_LOG_INTERVAL with the number of errors since the last log, then wait ACCEPT_RETRY_TIME
+// (StopListener sets r->Event and ends the wait)
+static void ListenerAcceptRetry(LISTENER *r, UINT err)
 {
-	UCHAR *data;
-	if (r == NULL)
+	UINT64 now = Tick64();
+
+	r->NumAcceptErrors++;
+
+	if (r->AcceptErrorLogTick == 0 || (r->AcceptErrorLogTick + (UINT64)ACCEPT_ERROR_LOG_INTERVAL) <= now)
 	{
-		return;
+		SLog(r->Cedar, "LS_LISTENER_ACCEPT_RETRY", r->Port, err, r->NumAcceptErrors);
+		r->AcceptErrorLogTick = now;
+		r->NumAcceptErrors = 0;
 	}
 
-	r->Status = LISTENER_STATUS_TRYING;
-
-	while (true)
-	{
-		while (true)
-		{
-			if (r->Halt)
-			{
-				return;
-			}
-
-			// An unset ListenIP is the all-zero IPv6 address, which NewUDP4 refuses: bind to any address then
-			r->Sock = NewUDPEx2(r->Port, false, IsZeroIP(&r->Cedar->Server->ListenIP) ? NULL : &r->Cedar->Server->ListenIP);
-			if (r->Sock != NULL)
-			{
-				break;
-			}
-
-			Wait(r->Event, LISTEN_RETRY_TIME);
-
-			if (r->Halt)
-			{
-				return;
-			}
-		}
-
-		r->Status = LISTENER_STATUS_LISTENING;
-
-		if (r->Halt)
-		{
-			goto STOP;
-		}
-
-		data = Malloc(UDP_PACKET_SIZE);
-
-		while (true)
-		{
-			IP src_ip;
-			UINT src_port;
-			UINT size;
-			SOCKSET set;
-
-			InitSockSet(&set);
-			AddSockSet(&set, r->Sock);
-			Select(&set, SELECT_TIME, NULL, NULL);
-
-			size = RecvFrom(r->Sock, &src_ip, &src_port, data, UDP_PACKET_SIZE);
-			if (((size == 0) && (r->Sock->IgnoreRecvErr == false)) || r->Halt)
-			{
-STOP:
-				Disconnect(r->Sock);
-				ReleaseSock(r->Sock);
-				r->Sock = NULL;
-				Free(data);
-				break;
-			}
-
-			if (size != SOCK_LATER)
-			{
-				UDPReceivedPacket(r->Cedar, r->Sock, &src_ip, src_port, data, size);
-			}
-		}
-	}
+	Wait(r->Event, ACCEPT_RETRY_TIME);
 }
 
 static void ListenerTCPMainLoop(LISTENER *r)
@@ -553,6 +493,11 @@ static void ListenerTCPMainLoop(LISTENER *r)
 				TCPAccepted(r, new_sock);
 				ReleaseSock(new_sock);
 			}
+			else if (r->Halt == false && s->CancelAccept == false && IsTransientAcceptError(s->AcceptError))
+			{
+				// The peer left before the accept, or buffers or descriptors ran short: the listening socket and its backlog stay
+				ListenerAcceptRetry(r, s->AcceptError);
+			}
 			else
 			{
 STOP:
@@ -606,10 +551,6 @@ static void ListenerThread(THREAD *thread, void *param)
 	{
 	case LISTENER_TCP:
 		ListenerTCPMainLoop(r);
-		break;
-
-	case LISTENER_UDP:
-		ListenerUDPMainLoop(r);
 		break;
 	}
 
@@ -747,34 +688,6 @@ void ReleaseListener(LISTENER *r)
 	}
 }
 
-int CompareUDPEntry(void *p1, void *p2)
-{
-	UDP_ENTRY *e1, *e2;
-	if (p1 == NULL || p2 == NULL)
-	{
-		return 0;
-	}
-	e1 = *(UDP_ENTRY **)p1;
-	e2 = *(UDP_ENTRY **)p2;
-	if (e1 == NULL || e2 == NULL)
-	{
-		return 0;
-	}
-
-	if (e1->SessionKey32 > e2->SessionKey32)
-	{
-		return 1;
-	}
-	else if (e1->SessionKey32 == e2->SessionKey32)
-	{
-		return 0;
-	}
-	else
-	{
-		return -1;
-	}
-}
-
 int CompareListener(void *p1, void *p2)
 {
 	LISTENER *r1, *r2;
@@ -874,80 +787,5 @@ LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc,
 	}
 
 	return r;
-}
-
-SESSION *GetSessionFromUDPEntry(CEDAR *cedar, UINT key32)
-{
-	UDP_ENTRY *e, t;
-	SESSION *s;
-	if (cedar == NULL)
-	{
-		return NULL;
-	}
-
-	t.SessionKey32 = key32;
-
-	LockList(cedar->UDPEntryList);
-	{
-		e = Search(cedar->UDPEntryList, &t);
-		if (e == NULL)
-		{
-			UnlockList(cedar->UDPEntryList);
-			return NULL;
-		}
-		s = e->Session;
-		AddRef(s->ref);
-	}
-	UnlockList(cedar->UDPEntryList);
-
-	return s;
-}
-
-void DelUDPEntry(CEDAR *cedar, SESSION *session)
-{
-	UINT num, i;
-	if (cedar == NULL || session == NULL)
-	{
-		return;
-	}
-
-	LockList(cedar->UDPEntryList);
-	{
-		num = LIST_NUM(cedar->UDPEntryList);
-		for (i = 0;i < num;i++)
-		{
-			UDP_ENTRY *e = LIST_DATA(cedar->UDPEntryList, i);
-			if (e->Session == session)
-			{
-				ReleaseSession(e->Session);
-				Delete(cedar->UDPEntryList, e);
-				Free(e);
-				UnlockList(cedar->UDPEntryList);
-				return;
-			}
-		}
-	}
-	UnlockList(cedar->UDPEntryList);
-}
-
-void AddUDPEntry(CEDAR *cedar, SESSION *session)
-{
-	UDP_ENTRY *e;
-	if (cedar == NULL || session == NULL)
-	{
-		return;
-	}
-
-	e = ZeroMalloc(sizeof(UDP_ENTRY));
-	e->Session = session;
-	e->SessionKey32 = session->SessionKey32;
-	AddRef(session->ref);
-
-	LockList(cedar->UDPEntryList);
-	{
-		Add(cedar->UDPEntryList, e);
-	}
-	UnlockList(cedar->UDPEntryList);
-
 }
 

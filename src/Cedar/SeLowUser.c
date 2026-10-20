@@ -148,6 +148,7 @@ void SuSetInstallProc(SU_INSTALL_PROC *proc)
 
 bool SuInstallDriverInner(bool force)
 {
+	wchar_t sys_name[MAX_PATH];
 	wchar_t sys_fullpath[MAX_PATH];
 	UINT current_sl_ver = 0;
 	bool ret = false;
@@ -171,8 +172,8 @@ bool SuInstallDriverInner(bool force)
 	UniStrCat(tmp_dir, sizeof(tmp_dir), L"\\selowtmp");
 	MakeDirExW(tmp_dir);
 
-	CombinePathW(sys_fullpath, sizeof(sys_fullpath), MsGetSystem32DirW(), L"drivers\\SeLow_%S.sys");
-	UniFormat(sys_fullpath, sizeof(sys_fullpath), sys_fullpath, cpu_type);
+	UniFormat(sys_name, sizeof(sys_name), L"drivers\\SeLow_%S.sys", cpu_type);
+	CombinePathW(sys_fullpath, sizeof(sys_fullpath), MsGetSystem32DirW(), sys_name);
 
 	if (IsFileExistsW(sys_fullpath))
 	{

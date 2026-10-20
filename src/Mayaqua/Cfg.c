@@ -10,6 +10,10 @@
 #include "Object.h"
 #include "Str.h"
 
+// Folders nest at most this deep. The text and binary readers recurse once per level, so a deeper
+// file is rejected instead of running the stack out
+#define	CFG_MAX_DEPTH				64
+
 static void BackupCfgWEx(CFG_RW *rw, FOLDER *f, wchar_t *original, UINT revision_number)
 {
 	wchar_t dirname[MAX_PATH];
@@ -53,7 +57,7 @@ static void BackupCfgWEx(CFG_RW *rw, FOLDER *f, wchar_t *original, UINT revision
 	MakeDirW(dirname);
 
 	UniFormat(fullpath, sizeof(fullpath), L"%s/%s", dirname, filename);
-	CfgSaveW(f, fullpath);
+	CfgSaveExW(NULL, f, fullpath, NULL);
 }
 
 void FreeCfgRw(CFG_RW *rw)
@@ -167,7 +171,7 @@ UINT SaveCfgRwEx(CFG_RW *rw, FOLDER *f, UINT revision_number)
 			// The unreadable file is still in place: write nothing over it
 			rw->SaveFailed = true;
 		}
-		else if (CfgSaveExW2(rw, f, rw->FileNameW, &ret))
+		else if (CfgSaveExW(rw, f, rw->FileNameW, &ret))
 		{
 			if (rw->DontBackup == false)
 			{
@@ -363,21 +367,10 @@ void CfgGetDisplayFileName(CFG_RW *rw, char *dst, UINT size)
 	StrCpy(dst, size, rw->FileName + (rw->FileName[0] == '@' ? 1 : 0));
 }
 
-void CfgSaveW(FOLDER *f, wchar_t *name)
+// Save the folder as a text configuration file. With rw, an unchanged tree (same hash as the
+// last save) is not written again and false is returned.
+bool CfgSaveExW(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size)
 {
-	CfgSaveExW(NULL, f, name);
-}
-bool CfgSaveExW(CFG_RW *rw, FOLDER *f, wchar_t *name)
-{
-	return CfgSaveExW2(rw, f, name, NULL);
-}
-bool CfgSaveExW2(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size)
-{
-	return CfgSaveExW3(rw, f, name, written_size, IsFileExistsW(SAVE_BINARY_FILE_NAME_SWITCH));
-}
-bool CfgSaveExW3(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size, bool write_binary)
-{
-	bool text = !write_binary;
 	UCHAR hash[SHA1_SIZE];
 	BUF *b;
 	bool ret = true;
@@ -391,7 +384,7 @@ bool CfgSaveExW3(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size, bool 
 		written_size = &dummy_int;
 	}
 
-	b = CfgFolderToBuf(f, text);
+	b = CfgFolderToBuf(f);
 	if (b == NULL)
 	{
 		return false;
@@ -410,7 +403,7 @@ bool CfgSaveExW3(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size, bool 
 		}
 	}
 
-	if (ret || OS_IS_UNIX(GetOsInfo()->OsType))
+	if (ret)
 	{
 		// A failed write keeps the live file; the next save writes again
 		if (CfgWriteFileReplace(name, b->Buf, b->Size))
@@ -447,7 +440,7 @@ FOLDER *CfgReadW(wchar_t *name)
 	BUF *b;
 	IO *o;
 	UINT size;
-	void *buf;
+	bool read_ok;
 	FOLDER *f;
 	bool delete_new = false;
 	bool has_eof = false;
@@ -510,13 +503,19 @@ FOLDER *CfgReadW(wchar_t *name)
 	{
 		size -= 1;
 	}
-	buf = Malloc(size);
-	FileRead(o, buf, size);
+	// Read straight into the BUF; a failed read loads nothing, as a missing file does
 	b = NewBuf();
-	WriteBuf(b, buf, size);
-	SeekBuf(b, 0, 0);
+	AdjustBufSize(b, size);
+	read_ok = (size == 0 || FileRead(o, b->Buf, size));
+	b->Size = size;
 
 	FileClose(o);
+
+	if (read_ok == false)
+	{
+		FreeBuf(b);
+		return NULL;
+	}
 
 	if (delete_new)
 	{
@@ -525,7 +524,6 @@ FOLDER *CfgReadW(wchar_t *name)
 
 	f = CfgBufToFolder(b, false);
 
-	Free(buf);
 	FreeBuf(b);
 
 	FileDeleteW(newfile);
@@ -584,9 +582,10 @@ char *CfgReadNextLine(BUF *b)
 	return buf;
 }
 
-// Read the next line into current; false at the closing brace of current or at the end of the
-// buffer. *open counts the declared folders whose closing brace has not been read yet.
-static bool CfgReadNextTextBUF(BUF *b, FOLDER *current, UINT *open)
+// Read one line of the text format into current, a folder depth levels below the top. false at
+// the closing brace of current or at the end of the data; *error set when a folder nests deeper
+// than CFG_MAX_DEPTH. *open counts the declared folders whose closing brace has not been read yet.
+static bool CfgReadNextTextBUF(BUF *b, FOLDER *current, UINT depth, bool *error, UINT *open)
 {
 	char *buf;
 	TOKEN_LIST *token;
@@ -596,7 +595,7 @@ static bool CfgReadNextTextBUF(BUF *b, FOLDER *current, UINT *open)
 	bool ret;
 	FOLDER *f;
 
-	if (b == NULL || current == NULL || open == NULL)
+	if (b == NULL || current == NULL || error == NULL || open == NULL)
 	{
 		return false;
 	}
@@ -622,20 +621,34 @@ static bool CfgReadNextTextBUF(BUF *b, FOLDER *current, UINT *open)
 		{
 			if (token->NumTokens >= 2)
 			{
-				name = CfgUnescape(token->Token[1]);
-
-				f = CfgCreateFolder(current, name);
-				(*open)++;
-
-				while (true)
+				if (depth >= CFG_MAX_DEPTH)
 				{
-					if (CfgReadNextTextBUF(b, f, open) == false)
+					*error = true;
+				}
+				else
+				{
+					name = CfgUnescape(token->Token[1]);
+
+					f = CfgCreateFolder(current, name);
+					(*open)++;
+
+					while (true)
 					{
-						break;
+						if (CfgReadNextTextBUF(b, f, depth + 1, error, open) == false)
+						{
+							break;
+						}
 					}
+
+					Free(name);
 				}
 
-				Free(name);
+				if (*error)
+				{
+					FreeToken(token);
+					Free(buf);
+					return false;
+				}
 			}
 		}
 		if (!StrCmpi(token->Token[0], "}"))
@@ -720,6 +733,7 @@ static FOLDER *CfgBufTextToFolderEx(BUF *b, bool require_closed)
 {
 	FOLDER *f, *c;
 	UINT open = 0;
+	bool error = false;
 	if (b == NULL)
 	{
 		return NULL;
@@ -729,10 +743,16 @@ static FOLDER *CfgBufTextToFolderEx(BUF *b, bool require_closed)
 
 	while (true)
 	{
-		if (CfgReadNextTextBUF(b, c, &open) == false)
+		if (CfgReadNextTextBUF(b, c, 0, &error, &open) == false)
 		{
 			break;
 		}
+	}
+
+	if (error)
+	{
+		CfgDeleteFolder(c);
+		return NULL;
 	}
 
 	f = CfgFindFolder(c, TAG_ROOT);
@@ -818,10 +838,11 @@ static bool CfgReadBinCount(BUF *b, UINT *count)
 	return (*count <= ReadBufRemainSize(b) / CFG_BIN_MIN_ENTRY_SIZE);
 }
 
-// Read one folder of the binary format into parent. Every count and size is checked against the
-// bytes left before it is used: false on a short or malformed input, which leaves a partial tree
-// under parent for the caller to delete
-static bool CfgReadNextFolderBin(BUF *b, FOLDER *parent)
+// Read one folder of the binary format into parent, a folder depth levels below the top. Every
+// count and size is checked against the bytes left before it is used: false on a short or
+// malformed input or a folder nested deeper than CFG_MAX_DEPTH, which leaves a partial tree under
+// parent for the caller to delete
+static bool CfgReadNextFolderBin(BUF *b, FOLDER *parent, UINT depth)
 {
 	char name[MAX_SIZE];
 	FOLDER *f;
@@ -830,7 +851,7 @@ static bool CfgReadNextFolderBin(BUF *b, FOLDER *parent)
 	UINT value;
 	UCHAR *buf;
 	wchar_t *string;
-	if (b == NULL || parent == NULL)
+	if (b == NULL || parent == NULL || depth >= CFG_MAX_DEPTH)
 	{
 		return false;
 	}
@@ -847,7 +868,7 @@ static bool CfgReadNextFolderBin(BUF *b, FOLDER *parent)
 	}
 	for (i = 0;i < n;i++)
 	{
-		if (CfgReadNextFolderBin(b, f) == false)
+		if (CfgReadNextFolderBin(b, f, depth + 1) == false)
 		{
 			return false;
 		}
@@ -938,7 +959,7 @@ FOLDER *CfgBufBinToFolder(BUF *b)
 
 	c = CfgCreateFolder(NULL, "tmp");
 
-	if (CfgReadNextFolderBin(b, c) == false)
+	if (CfgReadNextFolderBin(b, c, 0) == false)
 	{
 		CfgDeleteFolder(c);
 		return NULL;
@@ -957,49 +978,6 @@ FOLDER *CfgBufBinToFolder(BUF *b)
 	CfgDeleteFolder(c);
 
 	return f;
-}
-
-static BUF *CfgFolderToBufBin(FOLDER *f)
-{
-	BUF *b;
-	UCHAR hash[SHA1_SIZE];
-	if (f == NULL)
-	{
-		return NULL;
-	}
-
-	b = NewBuf();
-
-	WriteBuf(b, TAG_BINARY, 8);
-
-	Zero(hash, sizeof(hash));
-	WriteBuf(b, hash, sizeof(hash));
-
-	CfgOutputFolderBin(b, f);
-
-	Sha0(((UCHAR *)b->Buf) + 8, ((UCHAR *)b->Buf) + 8 + SHA1_SIZE, b->Size - 8 - SHA1_SIZE);
-
-	return b;
-}
-
-static BUF *CfgFolderToBufTextEx(FOLDER *f, bool no_banner)
-{
-	BUF *b;
-	if (f == NULL)
-	{
-		return NULL;
-	}
-
-	b = NewBuf();
-
-	if (no_banner == false)
-	{
-		WriteBuf(b, TAG_CPYRIGHT, StrLen(TAG_CPYRIGHT));
-	}
-
-	CfgOutputFolderText(b, f, 0);
-
-	return b;
 }
 
 static bool CfgEnumFolderProc(FOLDER *f, void *param)
@@ -1028,79 +1006,6 @@ static bool CfgEnumItemProc(ITEM *t, void *param)
 	CfgAddItemText(p->b, t, p->depth);
 
 	return true;
-}
-
-void CfgOutputFolderBin(BUF *b, FOLDER *f)
-{
-	UINT i;
-	if (b == NULL || f == NULL)
-	{
-		return;
-	}
-
-	WriteBufStr(b, f->Name);
-
-	WriteBufInt(b, LIST_NUM(f->Folders));
-
-	for (i = 0;i < LIST_NUM(f->Folders);i++)
-	{
-		FOLDER *sub = LIST_DATA(f->Folders, i);
-		CfgOutputFolderBin(b, sub);
-
-		if ((i % 100) == 99)
-		{
-			YieldCpu();
-		}
-	}
-
-	WriteBufInt(b, LIST_NUM(f->Items));
-
-	for (i = 0;i < LIST_NUM(f->Items);i++)
-	{
-		char *utf8;
-		UINT utf8_size;
-		ITEM *t = LIST_DATA(f->Items, i);
-
-		WriteBufStr(b, t->Name);
-
-		WriteBufInt(b, t->Type);
-
-		switch (t->Type)
-		{
-		case ITEM_TYPE_INT:
-			WriteBufInt(b, *((UINT *)t->Buf));
-			break;
-
-		case ITEM_TYPE_INT64:
-			WriteBufInt64(b, *((UINT64 *)t->Buf));
-			break;
-
-		case ITEM_TYPE_BYTE:
-			WriteBufInt(b, t->size);
-			WriteBuf(b, t->Buf, t->size);
-			break;
-
-		case ITEM_TYPE_STRING:
-			utf8_size = CalcUniToUtf8((wchar_t *)t->Buf) + 1;
-			utf8 = ZeroMalloc(utf8_size);
-			UniToUtf8(utf8, utf8_size, (wchar_t *)t->Buf);
-			WriteBufInt(b, StrLen(utf8));
-			WriteBuf(b, utf8, StrLen(utf8));
-			Free(utf8);
-			break;
-
-		case ITEM_TYPE_BOOL:
-			if (*((bool *)t->Buf) == false)
-			{
-				WriteBufInt(b, 0);
-			}
-			else
-			{
-				WriteBufInt(b, 1);
-			}
-			break;
-		}
-	}
 }
 
 void CfgOutputFolderText(BUF *b, FOLDER *f, UINT depth)
@@ -1134,7 +1039,6 @@ void CfgOutputFolderText(BUF *b, FOLDER *f, UINT depth)
 void CfgAddItemText(BUF *b, ITEM *t, UINT depth)
 {
 	char *data;
-	char *sub = NULL;
 	UINT size;
 	char *utf8;
 	UINT utf8_size;
@@ -1168,7 +1072,6 @@ void CfgAddItemText(BUF *b, ITEM *t, UINT depth)
 		utf8 = ZeroMalloc(utf8_size);
 		utf8[0] = 0;
 		UniToUtf8(utf8, utf8_size, string);
-		size = utf8_size;
 		data = utf8;
 		break;
 
@@ -1190,60 +1093,76 @@ void CfgAddItemText(BUF *b, ITEM *t, UINT depth)
 		return;
 	}
 
-	CfgAddData(b, t->Type, t->Name, data, sub, depth);
+	CfgAddData(b, t->Type, t->Name, data, depth);
 
 	Free(data);
 }
 
-void CfgAddData(BUF *b, UINT type, char *name, char *data, char *sub, UINT depth)
+// The escaped form of c, a character CfgCheckCharForName refuses: '$' and two upper-case hex digits
+static void CfgEscapeChar(char c, char *dst)
 {
-	char *tmp;
-	char *name2;
-	char *data2;
-	char *sub2 = NULL;
-	UINT tmp_size;
+	static char hex[] = "0123456789ABCDEF";
+
+	dst[0] = '$';
+	dst[1] = hex[((UCHAR)c >> 4) & 0x0F];
+	dst[2] = hex[(UCHAR)c & 0x0F];
+}
+
+// Write str to b as CfgEscape escapes it, without a copy of the escaped string
+static void CfgWriteEscaped(BUF *b, char *str)
+{
+	char esc[3];
+	UINT len, start, i;
+
+	len = StrLen(str);
+	if (len == 0)
+	{
+		WriteBuf(b, "$", 1);
+		return;
+	}
+
+	start = 0;
+	for (i = 0;i < len;i++)
+	{
+		if (CfgCheckCharForName(str[i]) == false)
+		{
+			WriteBuf(b, str + start, i - start);
+			CfgEscapeChar(str[i], esc);
+			WriteBuf(b, esc, sizeof(esc));
+			start = i + 1;
+		}
+	}
+	WriteBuf(b, str + start, len - start);
+}
+
+static void CfgAddIndent(BUF *b, UINT depth)
+{
+	UINT i;
+
+	for (i = 0;i < depth;i++)
+	{
+		WriteBuf(b, "\t", 1);
+	}
+}
+
+// The line "<type> <name> <data>" with the escaped name and data written straight into b
+void CfgAddData(BUF *b, UINT type, char *name, char *data, UINT depth)
+{
+	char *type_str;
 	if (b == NULL || type == 0 || name == NULL || data == NULL)
 	{
 		return;
 	}
 
-	name2 = CfgEscape(name);
-	data2 = CfgEscape(data);
-	if (sub != NULL)
-	{
-		sub2 = CfgEscape(sub);
-	}
+	type_str = CfgTypeToStr(type);
 
-	tmp_size = StrLen(name2) + StrLen(data2) + 2 + 64 + 1;
-	tmp = Malloc(tmp_size);
-
-	if (sub2 != NULL)
-	{
-		StrCpy(tmp, tmp_size, CfgTypeToStr(type));
-		StrCat(tmp, tmp_size, " ");
-		StrCat(tmp, tmp_size, name2);
-		StrCat(tmp, tmp_size, " ");
-		StrCat(tmp, tmp_size, data2);
-		StrCat(tmp, tmp_size, " ");
-		StrCat(tmp, tmp_size, sub2);
-	}
-	else
-	{
-		StrCpy(tmp, tmp_size, CfgTypeToStr(type));
-		StrCat(tmp, tmp_size, " ");
-		StrCat(tmp, tmp_size, name2);
-		StrCat(tmp, tmp_size, " ");
-		StrCat(tmp, tmp_size, data2);
-	}
-
-	Free(name2);
-	Free(data2);
-	if (sub2 != NULL)
-	{
-		Free(sub2);
-	}
-	CfgAddLine(b, tmp, depth);
-	Free(tmp);
+	CfgAddIndent(b, depth);
+	WriteBuf(b, type_str, StrLen(type_str));
+	WriteBuf(b, " ", 1);
+	CfgWriteEscaped(b, name);
+	WriteBuf(b, " ", 1);
+	CfgWriteEscaped(b, data);
+	WriteBuf(b, "\r\n", 2);
 }
 
 char *CfgTypeToStr(UINT type)
@@ -1298,127 +1217,150 @@ void CfgAddDeclare(BUF *b, char *name, UINT depth)
 
 void CfgAddLine(BUF *b, char *str, UINT depth)
 {
-	UINT i;
 	if (b == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < depth;i++)
-	{
-		WriteBuf(b, "\t", 1);
-	}
+	CfgAddIndent(b, depth);
 	WriteBuf(b, str, StrLen(str));
 	WriteBuf(b, "\r\n", 2);
 }
 
-BUF *CfgFolderToBuf(FOLDER *f, bool textmode)
+// Write the folder as a text configuration: the banner, then the tree
+BUF *CfgFolderToBuf(FOLDER *f)
 {
-	return CfgFolderToBufEx(f, textmode, false);
-}
-BUF *CfgFolderToBufEx(FOLDER *f, bool textmode, bool no_banner)
-{
+	BUF *b;
 	if (f == NULL)
 	{
 		return NULL;
 	}
 
-	if (textmode)
+	b = NewBuf();
+
+	WriteBuf(b, TAG_CPYRIGHT, StrLen(TAG_CPYRIGHT));
+
+	CfgOutputFolderText(b, f, 0);
+
+	return b;
+}
+
+// Unescape str into dst when dst is not NULL, without a terminator. Returns the length of the
+// result, which ends at the first character that unescapes to 0. A lone '$' is the empty string.
+static UINT CfgUnescapeTo(char *str, char *dst)
+{
+	char tmp2[8];
+	UINT len, wp, i;
+	char c;
+
+	len = StrLen(str);
+	if (len == 1 && str[0] == '$')
 	{
-		return CfgFolderToBufTextEx(f, no_banner);
+		return 0;
 	}
-	else
+
+	wp = 0;
+	for (i = 0;i < len;i++)
 	{
-		return CfgFolderToBufBin(f);;
+		c = str[i];
+		if (c == '$')
+		{
+			tmp2[0] = '0';
+			tmp2[1] = 'x';
+			tmp2[2] = str[i + 1];
+			// A '$' at the end of the string has no digits: do not read past its null
+			tmp2[3] = (tmp2[2] != 0) ? str[i + 2] : 0;
+			i += 2;
+			tmp2[4] = 0;
+			c = (char)ToInt(tmp2);
+			if (c == 0)
+			{
+				break;
+			}
+		}
+		if (dst != NULL)
+		{
+			dst[wp] = c;
+		}
+		wp++;
 	}
+
+	return wp;
 }
 
 char *CfgUnescape(char *str)
 {
-	char *tmp;
 	char *ret;
-	char tmp2[16];
-	UINT len, wp, i;
-	UINT code;
+	UINT len;
 	if (str == NULL)
 	{
 		return NULL;
 	}
 
+	// Size the result in a first pass, then allocate it once
+	len = CfgUnescapeTo(str, NULL);
+	ret = Malloc(len + 1);
+	CfgUnescapeTo(str, ret);
+	ret[len] = 0;
+
+	return ret;
+}
+
+// Escape str into dst when dst is not NULL, without a terminator, and return the escaped length.
+// A character CfgCheckCharForName refuses becomes '$' and two hex digits; "" becomes a lone '$'.
+static UINT CfgEscapeTo(char *str, char *dst)
+{
+	UINT len, wp, i;
+
 	len = StrLen(str);
-	tmp = ZeroMalloc(len + 1);
-	wp = 0;
-	if (len == 1 && str[0] == '$')
+	if (len == 0)
 	{
-		tmp[0] = 0;
-	}
-	else
-	{
-		for (i = 0;i < len;i++)
+		if (dst != NULL)
 		{
-			if (str[i] != '$')
+			dst[0] = '$';
+		}
+		return 1;
+	}
+
+	wp = 0;
+	for (i = 0;i < len;i++)
+	{
+		if (CfgCheckCharForName(str[i]))
+		{
+			if (dst != NULL)
 			{
-				tmp[wp++] = str[i];
+				dst[wp] = str[i];
 			}
-			else
+			wp++;
+		}
+		else
+		{
+			if (dst != NULL)
 			{
-				tmp2[0] = '0';
-				tmp2[1] = 'x';
-				tmp2[2] = str[i + 1];
-				// A '$' at the end of the string has no digits: do not read past its null
-				tmp2[3] = (tmp2[2] != 0) ? str[i + 2] : 0;
-				i += 2;
-				tmp2[4] = 0;
-				code = ToInt(tmp2);
-				tmp[wp++] = (char)code;
+				CfgEscapeChar(str[i], dst + wp);
 			}
+			wp += 3;
 		}
 	}
-	ret = Malloc(StrLen(tmp) + 1);
-	StrCpy(ret, StrLen(tmp) + 1, tmp);
-	Free(tmp);
-	return ret;
+
+	return wp;
 }
 
 char *CfgEscape(char *str)
 {
-	char *tmp;
 	char *ret;
-	char tmp2[16];
 	UINT len;
-	UINT wp, i;
 	if (str == NULL)
 	{
 		return NULL;
 	}
 
-	len = StrLen(str);
-	tmp = ZeroMalloc(len * 3 + 2);
-	if (len == 0)
-	{
-		StrCpy(tmp, (len * 3 + 2), "$");
-	}
-	else
-	{
-		wp = 0;
-		for (i = 0;i < len;i++)
-		{
-			if (CfgCheckCharForName(str[i]))
-			{
-				tmp[wp++] = str[i];
-			}
-			else
-			{
-				tmp[wp++] = '$';
-				Format(tmp2, sizeof(tmp2), "%02X", (UINT)str[i]);
-				tmp[wp++] = tmp2[0];
-				tmp[wp++] = tmp2[1];
-			}
-		}
-	}
-	ret = Malloc(StrLen(tmp) + 1);
-	StrCpy(ret, 0, tmp);
-	Free(tmp);
+	// Size the result in a first pass, then allocate it once
+	len = CfgEscapeTo(str, NULL);
+	ret = Malloc(len + 1);
+	CfgEscapeTo(str, ret);
+	ret[len] = 0;
+
 	return ret;
 }
 
@@ -1441,8 +1383,7 @@ bool CfgCheckCharForName(char c)
 
 bool CfgGetStr(FOLDER *f, char *name, char *str, UINT size)
 {
-	wchar_t *tmp;
-	UINT tmp_size;
+	ITEM *t;
 	if (f == NULL || name == NULL || str == NULL)
 	{
 		return false;
@@ -1450,16 +1391,14 @@ bool CfgGetStr(FOLDER *f, char *name, char *str, UINT size)
 
 	str[0] = 0;
 
-	tmp_size = size * 4 + 10;
-	tmp = Malloc(tmp_size);
-	if (CfgGetUniStr(f, name, tmp, tmp_size) == false)
+	t = CfgFindItem(f, name);
+	if (t == NULL || t->Type != ITEM_TYPE_STRING)
 	{
-		Free(tmp);
 		return false;
 	}
 
-	UniToStr(str, size, tmp);
-	Free(tmp);
+	// Convert the stored string straight into the caller's buffer
+	UniToStr(str, size, t->Buf);
 
 	return true;
 }
@@ -1555,124 +1494,88 @@ UINT CfgGetByte(FOLDER *f, char *name, void *buf, UINT size)
 	}
 }
 
-UINT64 CfgGetInt64(FOLDER *f, char *name)
+// The value of the item called name when it has the given type and size, else NULL
+static void *CfgFindValue(FOLDER *f, char *name, UINT type, UINT size)
 {
 	ITEM *t;
-	UINT64 *ret;
 	if (f == NULL || name == NULL)
 	{
-		return 0;
+		return NULL;
 	}
 
 	t = CfgFindItem(f, name);
-	if (t == NULL)
+	if (t == NULL || t->Type != type || t->size != size)
 	{
-		return 0;
+		return NULL;
 	}
-	if (t->Type != ITEM_TYPE_INT64)
-	{
-		return 0;
-	}
-	if (t->size != sizeof(UINT64))
+
+	return t->Buf;
+}
+
+UINT64 CfgGetInt64(FOLDER *f, char *name)
+{
+	UINT64 *ret = CfgFindValue(f, name, ITEM_TYPE_INT64, sizeof(UINT64));
+	if (ret == NULL)
 	{
 		return 0;
 	}
 
-	ret = (UINT64 *)t->Buf;
 	return *ret;
 }
 
 bool CfgGetBool(FOLDER *f, char *name)
 {
-	ITEM *t;
-	bool *ret;
-	if (f == NULL || name == NULL)
-	{
-		return 0;
-	}
-
-	t = CfgFindItem(f, name);
-	if (t == NULL)
-	{
-		return 0;
-	}
-	if (t->Type != ITEM_TYPE_BOOL)
-	{
-		return 0;
-	}
-	if (t->size != sizeof(bool))
-	{
-		return 0;
-	}
-
-	ret = (bool *)t->Buf;
-	if (*ret == false)
+	bool *ret = CfgFindValue(f, name, ITEM_TYPE_BOOL, sizeof(bool));
+	if (ret == NULL || *ret == false)
 	{
 		return false;
 	}
-	else
-	{
-		return true;
-	}
+
+	return true;
 }
 
 UINT CfgGetInt(FOLDER *f, char *name)
 {
-	ITEM *t;
-	UINT *ret;
-	if (f == NULL || name == NULL)
+	UINT *ret = CfgFindValue(f, name, ITEM_TYPE_INT, sizeof(UINT));
+	if (ret == NULL)
 	{
 		return 0;
 	}
 
-	t = CfgFindItem(f, name);
-	if (t == NULL)
-	{
-		return 0;
-	}
-	if (t->Type != ITEM_TYPE_INT)
-	{
-		return 0;
-	}
-	if (t->size != sizeof(UINT))
-	{
-		return 0;
-	}
-
-	ret = (UINT *)t->Buf;
 	return *ret;
+}
+
+// The entry called name in an Items or Folders list. The key is a char * that CfgCmpName reads
+// as it reads the Name, the first member of an ITEM and a FOLDER.
+static void *CfgFindByName(LIST *o, char *name)
+{
+	if (o == NULL || name == NULL)
+	{
+		return NULL;
+	}
+
+	// The caller's pointer is the key: the search only reads it
+	return Search(o, &name);
 }
 
 ITEM *CfgFindItem(FOLDER *parent, char *name)
 {
-	ITEM *t, tt;
-	if (parent == NULL || name == NULL)
+	if (parent == NULL)
 	{
 		return NULL;
 	}
 
-	tt.Name = ZeroMalloc(StrLen(name) + 1);
-	StrCpy(tt.Name, 0, name);
-	t = Search(parent->Items, &tt);
-	Free(tt.Name);
-
-	return t;
+	return CfgFindByName(parent->Items, name);
 }
 
 FOLDER *CfgFindFolder(FOLDER *parent, char *name)
 {
-	FOLDER *f, ff;
-	if (parent == NULL || name == NULL)
+	if (parent == NULL)
 	{
 		return NULL;
 	}
 
-	ff.Name = ZeroMalloc(StrLen(name) + 1);
-	StrCpy(ff.Name, 0, name);
-	f = Search(parent->Folders, &ff);
-	Free(ff.Name);
-
-	return f;
+	return CfgFindByName(parent->Folders, name);
 }
 
 ITEM *CfgAddStr(FOLDER *f, char *name, char *str)
@@ -1855,36 +1758,28 @@ ITEM *CfgAddBool(FOLDER *f, char *name, bool b)
 	return CfgCreateItem(f, name, ITEM_TYPE_BOOL, &b, sizeof(bool));
 }
 
-static int CmpItemName(void *p1, void *p2)
+// The Name of an entry of an Items or Folders list. Name is the first member of both ITEM and
+// FOLDER, and a pointer to a structure points to its first member, so this reads either.
+static char *CfgEntryName(void *p)
 {
-	ITEM *f1, *f2;
-	if (p1 == NULL || p2 == NULL)
-	{
-		return 0;
-	}
-	f1 = *(ITEM **)p1;
-	f2 = *(ITEM **)p2;
-	if (f1 == NULL || f2 == NULL)
-	{
-		return 0;
-	}
-	return StrCmpi(f1->Name, f2->Name);
+	return *(char **)p;
 }
 
-static int CmpFolderName(void *p1, void *p2)
+// Comparator of the Items and the Folders lists: case-insensitive by Name
+static int CfgCmpName(void *p1, void *p2)
 {
-	FOLDER *f1, *f2;
+	void *e1, *e2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	f1 = *(FOLDER **)p1;
-	f2 = *(FOLDER **)p2;
-	if (f1 == NULL || f2 == NULL)
+	e1 = *(void **)p1;
+	e2 = *(void **)p2;
+	if (e1 == NULL || e2 == NULL)
 	{
 		return 0;
 	}
-	return StrCmpi(f1->Name, f2->Name);
+	return StrCmpi(CfgEntryName(e1), CfgEntryName(e2));
 }
 
 void CfgEnumItem(FOLDER *f, ENUM_ITEM proc, void *param)
@@ -1905,54 +1800,51 @@ void CfgEnumItem(FOLDER *f, ENUM_ITEM proc, void *param)
 	}
 }
 
+// The names of an Items or Folders list, each case-insensitive name once. Insert() keeps the list
+// sorted by CfgCmpName, so names equal but for case are adjacent: one pass against the last kept
+// name drops them and keeps the first, as the old O(N^2) scan did.
+static TOKEN_LIST *CfgNamesToTokenList(LIST *o)
+{
+	TOKEN_LIST *t;
+	char *last = NULL;
+	UINT i;
+
+	t = ZeroMalloc(sizeof(TOKEN_LIST));
+	t->Token = ZeroMalloc(sizeof(char *) * LIST_NUM(o));
+
+	for (i = 0;i < LIST_NUM(o);i++)
+	{
+		char *name = CfgEntryName(LIST_DATA(o, i));
+		if (last != NULL && StrCmpi(last, name) == 0)
+		{
+			continue;
+		}
+
+		t->Token[t->NumTokens++] = CopyStr(name);
+		last = name;
+	}
+
+	return t;
+}
+
 TOKEN_LIST *CfgEnumFolderToTokenList(FOLDER *f)
 {
-	TOKEN_LIST *t, *ret;
-	UINT i;
 	if (f == NULL)
 	{
 		return NULL;
 	}
 
-	t = ZeroMalloc(sizeof(TOKEN_LIST));
-	t->NumTokens = LIST_NUM(f->Folders);
-	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
-
-	for (i = 0;i < t->NumTokens;i++)
-	{
-		FOLDER *ff = LIST_DATA(f->Folders, i);
-		t->Token[i] = CopyStr(ff->Name);
-	}
-
-	ret = UniqueToken(t);
-	FreeToken(t);
-
-	return ret;
+	return CfgNamesToTokenList(f->Folders);
 }
 
 TOKEN_LIST *CfgEnumItemToTokenList(FOLDER *f)
 {
-	TOKEN_LIST *t, *ret;
-	UINT i;
 	if (f == NULL)
 	{
 		return NULL;
 	}
 
-	t = ZeroMalloc(sizeof(TOKEN_LIST));
-	t->NumTokens = LIST_NUM(f->Items);
-	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
-
-	for (i = 0;i < t->NumTokens;i++)
-	{
-		FOLDER *ff = LIST_DATA(f->Items, i);
-		t->Token[i] = CopyStr(ff->Name);
-	}
-
-	ret = UniqueToken(t);
-	FreeToken(t);
-
-	return ret;
+	return CfgNamesToTokenList(f->Items);
 }
 
 void CfgEnumFolder(FOLDER *f, ENUM_FOLDER proc, void *param)
@@ -2003,26 +1895,34 @@ ITEM *CfgCreateItem(FOLDER *parent, char *name, UINT type, void *buf, UINT size)
 	return t;
 }
 
-static void CfgDeleteItem(ITEM *t)
+// Free f with its subfolders and items. The children are not taken out of f's lists one by
+// one: the lists go whole with f, so freeing n children costs O(n). The caller detaches f.
+static void CfgFreeFolderTree(FOLDER *f)
 {
-	if (t == NULL)
+	UINT i;
+
+	for (i = 0;i < LIST_NUM(f->Folders);i++)
 	{
-		return;
+		CfgFreeFolderTree(LIST_DATA(f->Folders, i));
 	}
 
-	Delete(t->Parent->Items, t);
+	for (i = 0;i < LIST_NUM(f->Items);i++)
+	{
+		ITEM *t = LIST_DATA(f->Items, i);
 
-	Free(t->Buf);
-	Free(t->Name);
-	Free(t);
+		Free(t->Buf);
+		Free(t->Name);
+		Free(t);
+	}
+
+	ReleaseList(f->Folders);
+	ReleaseList(f->Items);
+	Free(f->Name);
+	Free(f);
 }
-
 
 void CfgDeleteFolder(FOLDER *f)
 {
-	FOLDER **ff;
-	ITEM **tt;
-	UINT num, i;
 	if (f == NULL)
 	{
 		return;
@@ -2033,39 +1933,12 @@ void CfgDeleteFolder(FOLDER *f)
 		return;
 	}
 
-	num = LIST_NUM(f->Folders);
-	if (num  != 0)
-	{
-		ff = Malloc(sizeof(FOLDER *) * num);
-		Copy(ff, f->Folders->p, sizeof(FOLDER *) * num);
-		for (i = 0;i < num;i++)
-		{
-			CfgDeleteFolder(ff[i]);
-		}
-		Free(ff);
-	}
-
-	num = LIST_NUM(f->Items);
-	if (num != 0)
-	{
-		tt = Malloc(sizeof(ITEM *) * num);
-		Copy(tt, f->Items->p, sizeof(ITEM *) * num);
-		for (i = 0;i < num;i++)
-		{
-			CfgDeleteItem(tt[i]);
-		}
-		Free(tt);
-	}
-
-	Free(f->Name);
 	if (f->Parent != NULL)
 	{
 		Delete(f->Parent->Folders, f);
 	}
-	ReleaseList(f->Folders);
-	ReleaseList(f->Items);
 
-	Free(f);
+	CfgFreeFolderTree(f);
 }
 
 FOLDER *CfgCreateFolder(FOLDER *parent, char *name)
@@ -2080,8 +1953,8 @@ FOLDER *CfgCreateFolder(FOLDER *parent, char *name)
 	size = StrLen(name) + 1;
 
 	f = ZeroMalloc(sizeof(FOLDER));
-	f->Items = NewListFast(CmpItemName);
-	f->Folders = NewListFast(CmpFolderName);
+	f->Items = NewListFast(CfgCmpName);
+	f->Folders = NewListFast(CfgCmpName);
 	f->Name = ZeroMalloc(size);
 	StrCpy(f->Name, 0, name);
 	f->Parent = parent;

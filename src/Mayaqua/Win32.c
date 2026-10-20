@@ -161,9 +161,9 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 				UniStrCmpi(data_w.cFileName, L".") != 0)
 			{
 				DIRENT *f = ZeroMalloc(sizeof(DIRENT));
-				SYSTEMTIME t1, t2;
 				wchar_t fullpath[MAX_SIZE];
 				bool ok = false;
+				HANDLE hfile;
 
 				f->FileNameW = UniCopyStr(data_w.cFileName);
 				f->FileName = CopyUniToStr(f->FileNameW);
@@ -171,47 +171,34 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 
 				CombinePathW(fullpath, sizeof(fullpath), dirname2, f->FileNameW);
 
-				if (true)
+				hfile = CreateFileW(fullpath, 0,
+					FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
+					NULL, OPEN_EXISTING, 0, NULL);
+
+				if (hfile != INVALID_HANDLE_VALUE)
 				{
-					HANDLE h = CreateFileW(fullpath, 0,
-						FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
-						NULL, OPEN_EXISTING, 0, NULL);
+					BY_HANDLE_FILE_INFORMATION info;
 
-					if (h != INVALID_HANDLE_VALUE)
+					Zero(&info, sizeof(info));
+
+					if (GetFileInformationByHandle(hfile, &info))
 					{
-						BY_HANDLE_FILE_INFORMATION info;
+						f->UpdateDate = FileTimeToUINT64(&info.ftLastWriteTime);
 
-						Zero(&info, sizeof(info));
-
-						if (MsGetFileInformation(h, &info))
+						if (f->Folder == false)
 						{
-							Zero(&t1, sizeof(t1));
-							Zero(&t2, sizeof(t2));
-							FileTimeToSystemTime(&info.ftCreationTime, &t1);
-							FileTimeToSystemTime(&info.ftLastWriteTime, &t2);
-							f->CreateDate = SystemToUINT64(&t1);
-							f->UpdateDate = SystemToUINT64(&t2);
-
-							if (f->Folder == false)
-							{
-								f->FileSize = ((UINT64)info.nFileSizeHigh * (UINT64)((UINT64)MAXDWORD + (UINT64)1)) + (UINT64)info.nFileSizeLow;
-							}
-
-							ok = true;
+							f->FileSize = ((UINT64)info.nFileSizeHigh * (UINT64)((UINT64)MAXDWORD + (UINT64)1)) + (UINT64)info.nFileSizeLow;
 						}
 
-						CloseHandle(h);
+						ok = true;
 					}
+
+					CloseHandle(hfile);
 				}
 
 				if (ok == false)
 				{
-					Zero(&t1, sizeof(t1));
-					Zero(&t2, sizeof(t2));
-					FileTimeToSystemTime(&data_w.ftCreationTime, &t1);
-					FileTimeToSystemTime(&data_w.ftLastWriteTime, &t2);
-					f->CreateDate = SystemToUINT64(&t1);
-					f->UpdateDate = SystemToUINT64(&t2);
+					f->UpdateDate = FileTimeToUINT64(&data_w.ftLastWriteTime);
 
 					if (f->Folder == false)
 					{
@@ -466,6 +453,8 @@ void Win32GetOsInfo(OS_INFO *info)
 	UINT type = Win32GetOsType();
 	OSVERSIONINFOEX os;
 	char tmp[MAX_SIZE];
+	char *s;
+	char *keyname = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
 	if (info == NULL)
 	{
 		return;
@@ -477,44 +466,39 @@ void Win32GetOsInfo(OS_INFO *info)
 
 	info->OsType = Win32GetOsType();
 	info->OsServicePack = os.wServicePackMajor;
-	if (true)
+	info->OsSystemName = CopyStr("Windows NT");
+	Format(tmp, sizeof(tmp), "Build %u", os.dwBuildNumber);
+	if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "CurrentType"))
 	{
-		char *s;
-		char *keyname = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
-		info->OsSystemName = CopyStr("Windows NT");
-		Format(tmp, sizeof(tmp), "Build %u", os.dwBuildNumber);
-		if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "CurrentType"))
-		{
-			char str[MAX_SIZE];
-			Format(str, sizeof(str), ", %s", s);
-			StrCat(tmp, sizeof(tmp), str);
-			Free(s);
-		}
-		if (os.wServicePackMajor != 0)
-		{
-			char str[MAX_SIZE];
-			Format(str, sizeof(str), ", Service Pack %u", os.wServicePackMajor);
-			StrCat(tmp, sizeof(tmp), str);
-		}
-		if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "BuildLab"))
-		{
-			char str[MAX_SIZE];
-			Format(str, sizeof(str), " (%s)", s);
-			StrCat(tmp, sizeof(tmp), str);
-			Free(s);
-		}
-		info->OsVersion = CopyStr(tmp);
-		info->KernelName = CopyStr("NTOS Kernel");
-		Format(tmp, sizeof(tmp), "Build %u", os.dwBuildNumber);
-		if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "CurrentType"))
-		{
-			char str[MAX_SIZE];
-			Format(str, sizeof(str), " %s", s);
-			StrCat(tmp, sizeof(tmp), str);
-			Free(s);
-		}
-		info->KernelVersion = CopyStr(tmp);
+		char str[MAX_SIZE];
+		Format(str, sizeof(str), ", %s", s);
+		StrCat(tmp, sizeof(tmp), str);
+		Free(s);
 	}
+	if (os.wServicePackMajor != 0)
+	{
+		char str[MAX_SIZE];
+		Format(str, sizeof(str), ", Service Pack %u", os.wServicePackMajor);
+		StrCat(tmp, sizeof(tmp), str);
+	}
+	if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "BuildLab"))
+	{
+		char str[MAX_SIZE];
+		Format(str, sizeof(str), " (%s)", s);
+		StrCat(tmp, sizeof(tmp), str);
+		Free(s);
+	}
+	info->OsVersion = CopyStr(tmp);
+	info->KernelName = CopyStr("NTOS Kernel");
+	Format(tmp, sizeof(tmp), "Build %u", os.dwBuildNumber);
+	if (s = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "CurrentType"))
+	{
+		char str[MAX_SIZE];
+		Format(str, sizeof(str), " %s", s);
+		StrCat(tmp, sizeof(tmp), str);
+		Free(s);
+	}
+	info->KernelVersion = CopyStr(tmp);
 
 	info->OsProductName = CopyStr(OsTypeToStr(info->OsType));
 	info->OsVendorName = CopyStr("Microsoft Corporation");
@@ -970,72 +954,41 @@ bool Win32DeleteDirW(wchar_t *name)
 	return true;
 }
 
-#define	SIZE_OF_CALLSTACK_SYM	10000
 #define	CALLSTACK_DEPTH			12
+#define	CALLSTACK_NAME_CHARS	512		// Longest symbol name that SymFromAddrW writes, with its NUL
 
+// The frames of the calling thread: one CALLSTACK_DATA per return address, symbol names not resolved yet
 CALLSTACK_DATA *Win32GetCallStack()
 {
 #ifndef	WIN32_NO_DEBUG_HELP_DLL
-	STACKFRAME64 sf;
-	CALLSTACK_DATA *cs = NULL, *s;
+	void *frames[CALLSTACK_DEPTH];
+	CALLSTACK_DATA *cs = NULL, *s = NULL;
+	UINT num, i;
 
-	CONTEXT context;
+	// Frame 0 is this function (skip 0): the callers drop their own frames with WalkDownCallStack
+	num = (UINT)CaptureStackBackTrace(0, CALLSTACK_DEPTH, frames, NULL);
 
-	bool ret;
-	UINT depth = 0;
-
-	Zero(&context, sizeof(context));
-	context.ContextFlags = CONTEXT_FULL;
-	RtlCaptureContext(&context);
-
-	Zero(&sf, sizeof(sf));
-
-	sf.AddrPC.Offset = context.Rip;
-	sf.AddrStack.Offset = context.Rsp;
-	sf.AddrFrame.Offset = context.Rsp;
-
-	sf.AddrPC.Mode = AddrModeFlat;
-	sf.AddrStack.Mode = AddrModeFlat;
-	sf.AddrFrame.Mode = AddrModeFlat;
-
-	while (true)
+	for (i = 0;i < num;i++)
 	{
-		DWORD type = IMAGE_FILE_MACHINE_I386;
+		CALLSTACK_DATA *n = OSMemoryAlloc(sizeof(CALLSTACK_DATA));
 
-		type = IMAGE_FILE_MACHINE_AMD64;
+		n->symbol_cache = false;
+		n->next = NULL;
+		n->offset = (UINT64)(UINT_PTR)frames[i];
+		n->disp = 0;
+		n->name = NULL;
+		n->line = 0;
+		n->filename[0] = 0;
 
-		if ((depth++) >= CALLSTACK_DEPTH)
+		if (s == NULL)
 		{
-			break;
-		}
-
-		ret = StackWalk64(type,
-			hCurrentProcessHandle,
-			GetCurrentThread(),
-			&sf,
-			&context, NULL, SymFunctionTableAccess64, SymGetModuleBase64, NULL);
-		if (ret == false || sf.AddrFrame.Offset == 0)
-		{
-			break;
-		}
-
-		if (cs == NULL)
-		{
-			cs = OSMemoryAlloc(sizeof(CALLSTACK_DATA));
-			s = cs;
+			cs = n;
 		}
 		else
 		{
-			s->next = OSMemoryAlloc(sizeof(CALLSTACK_DATA));
-			s = s->next;
+			s->next = n;
 		}
-		s->symbol_cache = false;
-		s->next = NULL;
-		s->offset = sf.AddrPC.Offset;
-		s->disp = 0;
-		s->name = NULL;
-		s->line = 0;
-		s->filename[0] = 0;
+		s = n;
 	}
 
 	return cs;
@@ -1044,17 +997,22 @@ CALLSTACK_DATA *Win32GetCallStack()
 #endif
 }
 
+// Resolves the name, the line and the file name of one frame, when a stack is printed
 bool Win32GetCallStackSymbolInfo(CALLSTACK_DATA *s)
 {
 #ifdef	WIN32_NO_DEBUG_HELP_DLL
 	return false;
 #else
-	UINT64 disp;
-	DWORD disp32;		// The DWORD that SymGetLineFromAddr64 writes
-	UINT len;
-	IMAGEHLP_SYMBOL64 *sym;
-	IMAGEHLP_LINE64 line;
-	char tmp[MAX_PATH];
+	struct
+	{
+		SYMBOL_INFOW info;
+		wchar_t name_tail[CALLSTACK_NAME_CHARS];	// SYMBOL_INFOW.Name continues in here
+	} sym;
+	IMAGEHLP_LINEW64 line;
+	DWORD64 disp64 = 0;
+	DWORD disp32 = 0;		// The DWORD that SymGetLineFromAddrW64 writes
+	wchar_t *file_name;
+	int size;
 	if (s == NULL)
 	{
 		return false;
@@ -1065,41 +1023,48 @@ bool Win32GetCallStackSymbolInfo(CALLSTACK_DATA *s)
 		return true;
 	}
 
-	sym = OSMemoryAlloc(SIZE_OF_CALLSTACK_SYM);
-	sym->SizeOfStruct = SIZE_OF_CALLSTACK_SYM;
-	sym->MaxNameLength = SIZE_OF_CALLSTACK_SYM - sizeof(IMAGEHLP_SYMBOL64);
+	Zero(&sym, sizeof(sym));
+	sym.info.SizeOfStruct = sizeof(sym.info);
+	sym.info.MaxNameLen = CALLSTACK_NAME_CHARS - 1;
 
-	if (SymGetSymFromAddr64(hCurrentProcessHandle, s->offset, &disp, sym))
+	s->disp = 0;
+	s->name = NULL;
+	if (SymFromAddrW(hCurrentProcessHandle, s->offset, &disp64, &sym.info))
 	{
-		s->disp = disp;
-		s->name = OSMemoryAlloc((UINT)strlen(sym->Name) + 1);
-		lstrcpy(s->name, sym->Name);
-	}
-	else
-	{
-		s->disp = 0;
-		s->name = NULL;
+		size = WideCharToMultiByte(CP_ACP, 0, sym.info.Name, -1, NULL, 0, NULL, NULL);
+		if (size > 0)
+		{
+			s->name = OSMemoryAlloc((UINT)size);
+			if (WideCharToMultiByte(CP_ACP, 0, sym.info.Name, -1, s->name, size, NULL, NULL) != 0)
+			{
+				s->disp = disp64;
+			}
+			else
+			{
+				OSMemoryFree(s->name);
+				s->name = NULL;
+			}
+		}
 	}
 
+	s->line = 0;
+	s->filename[0] = 0;
 	Zero(&line, sizeof(line));
 	line.SizeOfStruct = sizeof(line);
-	if (SymGetLineFromAddr64(hCurrentProcessHandle, s->offset, &disp32, &line))
+	if (SymGetLineFromAddrW64(hCurrentProcessHandle, s->offset, &disp32, &line))
 	{
-		disp = (UINT64)disp32;
-		s->line = line.LineNumber;
-		lstrcpy(s->filename, line.FileName);
-		Win32GetDirFromPath(tmp, sizeof(tmp), s->filename);
-		len = lstrlen(tmp);
-		lstrcpy(tmp, &s->filename[len + 1]);
-		lstrcpy(s->filename, tmp);
+		// The file name without its directory
+		file_name = wcsrchr(line.FileName, L'\\');
+		file_name = (file_name == NULL) ? line.FileName : file_name + 1;
+		if (WideCharToMultiByte(CP_ACP, 0, file_name, -1, s->filename, sizeof(s->filename), NULL, NULL) != 0)
+		{
+			s->line = line.LineNumber;
+		}
+		else
+		{
+			s->filename[0] = 0;
+		}
 	}
-	else
-	{
-		s->line = 0;
-		s->filename[0] = 0;
-	}
-
-	OSMemoryFree(sym);
 
 	s->symbol_cache = true;
 
@@ -1240,14 +1205,13 @@ bool Win32InputW(wchar_t *str, UINT size)
 		size = 0x7fffffff;
 	}
 
-	if (str == NULL || size <= sizeof(wchar_t))
+	if (size <= sizeof(wchar_t))
 	{
-		if (str != NULL)
-		{
-			Zero(str, size);
-		}
+		Zero(str, size);
 
-		return Win32InputFromFileW(NULL, 0);
+		Win32InputDiscardLine();
+
+		return false;
 	}
 
 	if (ReadConsoleW(hstdin, str, (size / sizeof(wchar_t)) - 1, &read_size, NULL))
@@ -1265,13 +1229,19 @@ bool Win32InputW(wchar_t *str, UINT size)
 
 	return ret;
 }
+
+void Win32InputDiscardLine()
+{
+	char *a = Win32InputFromFileLineA();
+
+	Free(a);
+}
+
 bool Win32InputFromFileW(wchar_t *str, UINT size)
 {
 	char *a;
 	if (str == NULL)
 	{
-		wchar_t tmp[MAX_SIZE];
-		Win32InputFromFileW(tmp, sizeof(tmp));
 		return false;
 	}
 

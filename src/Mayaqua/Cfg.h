@@ -7,8 +7,6 @@
 #include "Encrypt.h"
 
 
-#define	SAVE_BINARY_FILE_NAME_SWITCH	L"$save_binary"
-
 #define	TAG_DECLARE			"declare"
 #define	TAG_STRING			"string"
 #define	TAG_INT				"uint"
@@ -95,24 +93,19 @@ bool CfgIsItem(FOLDER *f, char *name);
 char *CfgEscape(char *name);
 bool CfgCheckCharForName(char c);
 char *CfgUnescape(char *str);
-BUF *CfgFolderToBuf(FOLDER *f, bool textmode);
-BUF *CfgFolderToBufEx(FOLDER *f, bool textmode, bool no_banner);
+BUF *CfgFolderToBuf(FOLDER *f);
 void CfgOutputFolderText(BUF *b, FOLDER *f, UINT depth);
-void CfgOutputFolderBin(BUF *b, FOLDER *f);
 void CfgAddLine(BUF *b, char *str, UINT depth);
 void CfgAddDeclare(BUF *b, char *name, UINT depth);
 void CfgAddEnd(BUF *b, UINT depth);
-void CfgAddData(BUF *b, UINT type, char *name, char *data, char *sub, UINT depth);
+void CfgAddData(BUF *b, UINT type, char *name, char *data, UINT depth);
 char *CfgTypeToStr(UINT type);
 void CfgAddItemText(BUF *b, ITEM *t, UINT depth);
 FOLDER *CfgBufTextToFolder(BUF *b);
 FOLDER *CfgBufBinToFolder(BUF *b);
 FOLDER *CfgBufToFolder(BUF *b, bool require_closed);
 char *CfgReadNextLine(BUF *b);
-void CfgSaveW(FOLDER *f, wchar_t *name);
-bool CfgSaveExW(CFG_RW *rw, FOLDER *f, wchar_t *name);
-bool CfgSaveExW2(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size);
-bool CfgSaveExW3(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size, bool write_binary);
+bool CfgSaveExW(CFG_RW *rw, FOLDER *f, wchar_t *name, UINT *written_size);
 FOLDER *CfgReadW(wchar_t *name);
 bool CfgStageNewFile(CFG_RW *rw, void *data, UINT size);
 void CfgGetDisplayFileName(CFG_RW *rw, char *dst, UINT size);

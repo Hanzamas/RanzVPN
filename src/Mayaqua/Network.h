@@ -69,10 +69,14 @@ struct IPV6_ADDR
 #define	IPV6_ADDR_ZERO							128
 #define	IPV6_ADDR_LOOPBACK						256
 
+// Per-source tables (ip_clients, the listener DoS table, the non-SSL table) hold at most this many keys
+#define	RATE_LIMIT_TABLE_MAX		65536
+
 struct IP_CLIENT
 {
-	IP IpAddress;
+	IP IpAddress;				// Rate-limit key of the source (GetRateLimitKey)
 	UINT NumConnections;
+	UINT64 LastTick;			// Tick64 of the last connection from this key
 };
 
 struct SOCK_EVENT
@@ -132,6 +136,7 @@ struct SOCK
 	SOCK_EVENT *SockEvent;
 	bool CancelAccept;
 	bool AcceptCanceled;
+	UINT AcceptError;			// WSA error code of the last failed Accept() of this listening socket, 0 if none (read it only while CancelAccept is false)
 	bool UdpBroadcast;
 	bool IPv6;
 	bool IsRawSocket;
@@ -291,6 +296,7 @@ SOCK *ListenEx6(UINT port, bool local_only);
 SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip);
 SOCK *Accept(SOCK *sock);
 SOCK *Accept6(SOCK *sock);
+bool IsTransientAcceptError(UINT err);
 UINT Send(SOCK *sock, void *data, UINT size, bool secure);
 UINT Recv(SOCK *sock, void *data, UINT size, bool secure);
 bool StartSSL(SOCK *sock, X *x, K *priv);
@@ -346,6 +352,7 @@ void SetSockHighPriority(SOCK *s, bool flag);
 int CompareIpClientList(void *p1, void *p2);
 IP_CLIENT *SearchIpClient(IP *ip);
 UINT GetNumIpClient(IP *ip);
+void GetRateLimitKey(IP *key, IP *ip);
 void AddProtocolDetailsStr(char *dst, UINT dst_size, char *str);
 void AddProtocolDetailsKeyValueInt(char *dst, UINT dst_size, char *key, UINT value);
 

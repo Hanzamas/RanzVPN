@@ -291,7 +291,6 @@ void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache);
 bool MsUniMakeDir(wchar_t *name);
 UINT64 MsGetHiResCounter();
 double MsGetHiResTimeSpan(UINT64 diff);
-bool MsGetFileInformation(void *h, void *info);
 void MsSetEnableMinidump(bool enabled);
 void MsWriteMinidump(wchar_t *filename, void *ex);
 

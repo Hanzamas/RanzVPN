@@ -1708,7 +1708,7 @@ static UINT StGetConfig(ADMIN *a, RPC_CONFIG *t)
 	if (s->CfgRw != NULL)
 	{
 		FOLDER *f = SiWriteConfigurationToCfg(s);
-		BUF *b = CfgFolderToBuf(f, true);
+		BUF *b = CfgFolderToBuf(f);
 
 		CfgGetDisplayFileName(s->CfgRw, t->FileName, sizeof(t->FileName));
 

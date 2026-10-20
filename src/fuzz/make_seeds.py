@@ -163,7 +163,7 @@ def sha0(data):
 
 
 def cfg_bin_folder(name, folders, items):
-    # CfgOutputFolderBin: name, subfolder count, subfolders, item count, items
+    # As CfgReadNextFolderBin reads it: name, subfolder count, subfolders, item count, items
     out = buf_str(name) + struct.pack('>I', len(folders))
     for sub in folders:
         out += cfg_bin_folder(*sub)
@@ -181,7 +181,7 @@ def cfg_bin_folder(name, folders, items):
 
 
 def cfg_bin_file(body):
-    # CfgFolderToBufBin: "SEVPN_DB", SHA-0 of the body, body
+    # As CfgReadW reads it: "SEVPN_DB", SHA-0 of the body, body
     return b'SEVPN_DB' + sha0(body) + body
 
 
@@ -225,6 +225,16 @@ def make_cfg_seeds():
     write_seed('fuzz_cfg', 'bin_unknown_type.config',
                cfg_bin_file(cfg_bin_one_item('ConfigRevision', 9) + struct.pack('>I', 3)))
     write_seed('fuzz_cfg', 'bin_truncated.config', cfg_bin_file(body[:len(body) // 2]))
+
+    # Malformed configurations of FND-56 (#118): "SEVPN_DB" too short for its SHA-0 (CfgReadW()
+    # hashed b->Size - 28 bytes), and folders nested 200 deep in text and binary (the readers
+    # recursed once per level; they stop at 64). 200 levels fit in the 4096-byte max_len.
+    write_seed('fuzz_cfg', 'bin_short_header.config', b'SEVPN_DB' + bytes(12))
+    write_seed('fuzz_cfg', 'text_nested_deep.config',
+               b'declare root\r\n{\r\n' + b'declare x\r\n{\r\n' * 199 + b'}\r\n' * 200)
+    nested = b''.join(buf_str('root' if i == 0 else 'x') + struct.pack('>I', 1 if i < 199 else 0)
+                      for i in range(200))
+    write_seed('fuzz_cfg', 'bin_nested_deep.config', cfg_bin_file(nested + struct.pack('>I', 0) * 200))
 
 
 # ---------------------------------------------------------------------------

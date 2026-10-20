@@ -2982,7 +2982,7 @@ static void HarnessConfigApiRoundTrip(HARNESS *h)
 
 	if (HarnessCheck(h, root != NULL, "configuration text parsed by CfgBufTextToFolder"))
 	{
-		BUF *b2 = CfgFolderToBuf(root, true);
+		BUF *b2 = CfgFolderToBuf(root);
 		char *text2 = HarnessBufToStr(b2);
 
 		HarnessCompareConfig(h, "config_cfg_api_roundtrip", c.FileData, text2);
