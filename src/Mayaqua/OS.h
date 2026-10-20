@@ -24,8 +24,6 @@ UINT OSThreadId();
 bool OSRun(char *filename, char *arg, bool hide, bool wait);
 bool OSIsSupportedOs();
 void OSGetOsInfo(OS_INFO *info);
-void OSAlert(char *msg, char *caption);
-void OSAlertW(wchar_t *msg, wchar_t *caption);
 char* OSGetProductId();
 void OSSetHighPriority();
 void OSRestorePriority();

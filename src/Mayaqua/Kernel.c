@@ -1595,9 +1595,13 @@ void AbortExit()
 }
 
 
+// The log goes beside the executable, not into the working directory (System32 for a service).
+// Plain CRT and Win32 calls only: the caller may be out of memory.
 void AbortExitEx(char *msg)
 {
-	FILE *f;
+	FILE *f = NULL;
+	wchar_t log_name[MAX_PATH + 32];
+	DWORD len;
 	if (msg == NULL)
 	{
 		msg = "Unknown Error";
@@ -1615,7 +1619,17 @@ void AbortExitEx(char *msg)
 	abort();
 #endif
 
-	f = fopen("abort_error_log.txt", "w");
+	len = GetModuleFileNameW(NULL, log_name, MAX_PATH);
+	if (len != 0 && len < MAX_PATH)
+	{
+		wchar_t *sep = wcsrchr(log_name, L'\\');
+		if (sep != NULL)
+		{
+			sep[1] = 0;
+			wcscat_s(log_name, sizeof(log_name) / sizeof(wchar_t), L"abort_error_log.txt");
+			f = _wfopen(log_name, L"w");
+		}
+	}
 	if (f != NULL)
 	{
 		SYSTEMTIME time = { 0 };
@@ -1649,6 +1663,7 @@ void AbortExitEx(char *msg)
 	fputs("Fatal Error: ", stdout);
 	fputs(msg, stdout);
 	fputs("\r\n", stdout);
+	fflush(stdout);
 
 	_exit(1);
 }

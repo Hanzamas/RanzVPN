@@ -198,13 +198,14 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 
 	if (OSIsSupportedOs() == false)
 	{
-		exit(0);
+		MayaFatalExit(1, CEDAR_PRODUCT_STR " VPN doesn't support this Windows Operating System.\r\n"
+			CEDAR_PRODUCT_STR " VPN requires " SUPPORTED_WINDOWS_LIST ".\r\n\r\n"
+			"Please contact your system administrator.");
 	}
 
 	if (RsaCheckEx() == false)
 	{
-		Alert("OpenSSL Library Init Failed. (too old?)\nPlease install the latest version of OpenSSL.\n\n", "RsaCheck()");
-		exit(0);
+		MayaFatalExit(1, "OpenSSL Library Init Failed. (too old?)\r\nPlease install the latest version of OpenSSL.");
 	}
 
 	InitHamcore();
@@ -220,15 +221,14 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 	GetExeNameW(tmp, sizeof(tmp));
 	if (IsFileExistsW(tmp) == false)
 	{
-		wchar_t tmp2[MAX_SIZE];
+		char msg[MAX_SIZE];
 
-		UniFormat(tmp2, sizeof(tmp2),
-			L"Error: Executable binary file \"%s\" not found.\r\n\r\n"
-			L"Please execute program with full path.\r\n",
+		Format(msg, sizeof(msg),
+			"Error: Executable binary file \"%S\" not found.\r\n\r\n"
+			"Please execute program with full path.",
 			tmp);
 
-		OSAlertW(tmp2, NULL);
-		_exit(0);
+		MayaFatalExit(1, msg);
 	}
 
 	InitProbe();
@@ -293,9 +293,61 @@ void FreeMayaqua()
 	OSFree();
 }
 
-void Alert(char *msg, char *caption)
+// Whether a person can see a message box: a visible window station (not a service), and either
+// no standard error (a GUI program) or a console with a visible window. A redirected standard
+// error (a CI job, a pipe) gets the message there and never a box that waits for a click.
+static bool FatalExitCanShowBox()
 {
-	OSAlert(msg, caption);
+	HWINSTA station = GetProcessWindowStation();
+	USEROBJECTFLAGS flags;
+	HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
+	HWND console;
+
+	Zero(&flags, sizeof(flags));
+	if (station == NULL || GetUserObjectInformationW(station, UOI_FLAGS, &flags, sizeof(flags), NULL) == FALSE ||
+		(flags.dwFlags & WSF_VISIBLE) == 0)
+	{
+		return false;
+	}
+
+	if (err == NULL || err == INVALID_HANDLE_VALUE)
+	{
+		return true;
+	}
+
+	console = GetConsoleWindow();
+
+	return GetFileType(err) == FILE_TYPE_CHAR && console != NULL && IsWindowVisible(console);
+}
+
+// End the process on an error it cannot run past. The message goes to standard error, to the
+// Application event log and, only when a person can see it, to a message box (never
+// MB_SERVICE_NOTIFICATION, which puts a service's box on the user's desktop and blocks it).
+// Exits with code (1 when code is 0) without CRT clean-up, as other threads may still run.
+// Plain CRT and Win32 calls only: it may run before InitMayaqua() is done.
+void MayaFatalExit(UINT code, char *msg)
+{
+	if (msg == NULL)
+	{
+		msg = "Unknown Error";
+	}
+	if (code == 0)
+	{
+		code = 1;
+	}
+
+	fputs(msg, stderr);
+	fputs("\n", stderr);
+	fflush(stderr);
+
+	MsWriteEventLog(CEDAR_PRODUCT_STR " VPN", EVENTLOG_ERROR_TYPE, MS_EVENT_FATAL_ERROR, msg);
+
+	if (FatalExitCanShowBox())
+	{
+		MessageBoxA(NULL, msg, CEDAR_PRODUCT_STR " VPN Kernel", MB_SETFOREGROUND | MB_TOPMOST | MB_OK | MB_ICONERROR);
+	}
+
+	_exit((int)code);
 }
 
 OS_INFO *GetOsInfo()

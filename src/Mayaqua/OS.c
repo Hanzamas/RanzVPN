@@ -84,15 +84,6 @@ void OSGetOsInfo(OS_INFO *info)
 	Win32GetOsInfo(info);
 }
 
-void OSAlert(char *msg, char *caption)
-{
-	Win32Alert(msg, caption);
-}
-void OSAlertW(wchar_t *msg, wchar_t *caption)
-{
-	Win32AlertW(msg, caption);
-}
-
 bool OSRun(char *filename, char *arg, bool hide, bool wait)
 {
 	return Win32Run(filename, arg, hide, wait);

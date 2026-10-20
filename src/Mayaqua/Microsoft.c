@@ -11,6 +11,7 @@
 #include "GlobalConst.h"
 #include "Internat.h"
 #include "Kernel.h"
+#include "Mayaqua.h"
 #include "Memory.h"
 #include "Object.h"
 #include "Str.h"
@@ -1554,7 +1555,6 @@ static void CALLBACK MsServiceDispatcher(DWORD argc, LPTSTR *argv)
 	{
 		MsWriteServiceEvent(EVENTLOG_ERROR_TYPE, MS_EVENT_SERVICE_FAILED,
 			"could not start: RegisterServiceCtrlHandler() failed", GetLastError());
-		MessageBox(NULL, "RegisterServiceCtrlHandler() Failed.", "MsServiceDispatcher()", MB_SETFOREGROUND | MB_TOPMOST | MB_SERVICE_NOTIFICATION | MB_OK | MB_ICONEXCLAMATION);
 		return;
 	}
 
@@ -1719,15 +1719,15 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 		{
 			MsWriteServiceEvent(EVENTLOG_ERROR_TYPE, MS_EVENT_SERVICE_FAILED,
 				"could not start: StartServiceCtrlDispatcher() failed", GetLastError());
-			MessageBox(NULL, "StartServiceCtrlDispatcher() Failed.", "MsServiceMode()", MB_SETFOREGROUND | MB_TOPMOST | MB_SERVICE_NOTIFICATION | MB_OK | MB_ICONEXCLAMATION);
-		}
-		else
-		{
-			MsUpdateServiceConfig(g_service_name);
+			// The entry above is the event log record: standard error and a non-zero exit only
+			fputs("StartServiceCtrlDispatcher() failed: start this program as a service.\n", stderr);
+			fflush(stderr);
+			_exit(1);
 		}
 
+		MsUpdateServiceConfig(g_service_name);
+
 		_exit(0);
-		return 0;
 	}
 
 #ifdef	_DEBUG	// Debug configuration: the debug CRT (/MTd) defines _DEBUG
@@ -3146,10 +3146,10 @@ static void MsInitTempDir()
 		{
 			char msg[MAX_SIZE];
 			Format(msg, sizeof(msg),
-				"Couldn't create Temporary Directory: %s\r\n\r\n"
+				"Couldn't create Temporary Directory: %S\r\n\r\n"
 				"Please contact your system administrator.",
 				tmp);
-			exit(0);
+			MayaFatalExit(1, msg);
 		}
 	}
 

@@ -172,7 +172,7 @@ void FreeCommandLineTokens();
 TOKEN_LIST *GetCommandLineToken();
 void InitOsInfo();
 void FreeOsInfo();
-void Alert(char *msg, char *caption);
+__declspec(noreturn) void MayaFatalExit(UINT code, char *msg);
 OS_INFO *GetOsInfo();
 void EnableProbe(bool enable);
 
