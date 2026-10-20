@@ -14,6 +14,8 @@
 
 #include <stdlib.h>
 
+#include <winioctl.h>
+
 static char exe_file_name[MAX_SIZE];
 static wchar_t exe_file_name_w[MAX_SIZE];
 
