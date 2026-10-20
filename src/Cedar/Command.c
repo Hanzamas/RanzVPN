@@ -2628,7 +2628,6 @@ static void PsMain(PS *ps)
 			{"Check", PtCheck},
 			{"Crash", PsCrash},
 			{"Flush", PsFlush},
-			{"Debug", PsDebug},
 			{"ServerInfoGet", PsServerInfoGet},
 			{"ServerStatusGet", PsServerStatusGet},
 			{"ListenerCreate", PsListenerCreate},
@@ -3725,7 +3724,13 @@ static UINT PsCaps(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	t = ScGetCapsEx(ps->Rpc);
+	t = ps->CapsList;
+	if (t == NULL)
+	{
+		CmdPrintError(c, ERR_INTERNAL_ERROR);
+		FreeParamValueList(o);
+		return ERR_INTERNAL_ERROR;
+	}
 
 	ct = CtNewStandard();
 
@@ -3757,8 +3762,6 @@ static UINT PsCaps(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	}
 
 	CtFree(ct, c);
-
-	FreeCapsList(t);
 
 	FreeParamValueList(o);
 
@@ -8584,12 +8587,6 @@ UINT PsAccessAddEx(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	if (GetCapsBool(ps->CapsList, "b_support_ex_acl") == false)
-	{
-		c->Write(c, _E(ERR_NOT_SUPPORTED));
-		return ERR_NOT_SUPPORTED;
-	}
-
 	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
 	if (o == NULL)
 	{
@@ -8666,12 +8663,6 @@ UINT PsAccessAdd6(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	{
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
-	}
-
-	if (GetCapsBool(ps->CapsList, "b_support_ex_acl") == false)
-	{
-		c->Write(c, _E(ERR_NOT_SUPPORTED));
-		return ERR_NOT_SUPPORTED;
 	}
 
 	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
@@ -8774,12 +8765,6 @@ UINT PsAccessAddEx6(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	{
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
-	}
-
-	if (GetCapsBool(ps->CapsList, "b_support_ex_acl") == false)
-	{
-		c->Write(c, _E(ERR_NOT_SUPPORTED));
-		return ERR_NOT_SUPPORTED;
 	}
 
 	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
@@ -12163,59 +12148,6 @@ UINT PsAcAdd6(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	}
 
 	FreeRpcAcList(&t);
-
-	FreeParamValueList(o);
-
-	return 0;
-}
-
-UINT PsDebug(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
-{
-	LIST *o;
-	PS *ps = (PS *)param;
-	UINT id;
-	PARAM args[] =
-	{
-		{"[id]", NULL, NULL, NULL, NULL},
-		{"ARG", NULL, NULL, NULL, NULL},
-	};
-
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
-	if (o == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	id = GetParamInt(o, "[id]");
-
-	if (true)
-	{
-		RPC_TEST t;
-		UINT ret;
-
-		c->Write(c, _UU("CMD_Debug_Msg1"));
-
-		Zero(&t, sizeof(t));
-
-		t.IntValue = id;
-		StrCpy(t.StrValue, sizeof(t.StrValue), GetParamStr(o, "ARG"));
-
-		ret = ScDebug(ps->Rpc, &t);
-
-		if (ret != ERR_NO_ERROR)
-		{
-			CmdPrintError(c, ret);
-			FreeParamValueList(o);
-			return ret;
-		}
-		else
-		{
-			wchar_t tmp[sizeof(t.StrValue)];
-
-			UniFormat(tmp, sizeof(tmp), _UU("CMD_Debug_Msg2"), t.StrValue);
-			c->Write(c, tmp);
-		}
-	}
 
 	FreeParamValueList(o);
 

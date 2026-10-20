@@ -89,7 +89,7 @@ _Avoid_: client connection, tunnel, VPN link
 
 **Local Bridge**:
 An L2 bridge between a Hub and a physical Ethernet adapter. `LOCALBRIDGE` is the configured pair (Hub name, device name, with `Monitor`, `TapMode`, `LimitBroadcast` flags). `BRIDGE` is the running instance, which holds a bridge-mode Session and an `ETH`. On Windows 10 it runs on SeLow (ADR-0013).
-_Avoid_: network bridge, bare "Bridge" (also the `Cedar->Bridge` product-flavour flag)
+_Avoid_: network bridge, bare "Bridge"
 
 **SeLow**:
 SoftEther's signed NDIS lightweight filter driver that captures and injects frames for a Local Bridge. Driver sources live in `src/SeLow`; the user-mode side is `SeLowUser`.
@@ -123,5 +123,5 @@ _Avoid_: machine ID (Windows' name for the MachineGuid), `UniqueId` (a random va
 ## Flagged ambiguities
 
 - "Cedar" names both the library and the root `CEDAR` object. "Mayaqua" is only the library.
-- "Bridge" is the Local Bridge feature, the `BRIDGE` object, the `Bridge.c` module and the `Cedar->Bridge` flag. Say Local Bridge for the feature.
+- "Bridge" is the Local Bridge feature, the `BRIDGE` object and the `Bridge.c` module. Say Local Bridge for the feature.
 - "Link" in code is "Cascade" in vpncmd and in prose. Use Cascade, and `LINK` only for the struct.

@@ -671,7 +671,6 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 	PACKET_LOG *pl;
 	SERVER *s;
 	UINT syslog_setting;
-	bool no_log = false;
 	HUB_OPTION *opt = NULL;
 	if (hub == NULL || src_session == NULL || packet == NULL)
 	{
@@ -717,15 +716,6 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 		}
 	}
 
-	if (true)
-	{
-		if (GetGlobalServerFlag(GSF_DISABLE_DEEP_LOGGING) != 0)
-		{
-			no_log = true;
-		}
-
-	}
-
 	syslog_setting = SiGetSysLogSaveStatus(s);
 
 	p = ClonePacket(packet, level == PACKET_LOG_ALL ? true : false);
@@ -734,7 +724,6 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 
 	pl->Cedar = hub->Cedar;
 	pl->Packet = p;
-	pl->NoLog = no_log;
 	pl->SrcSessionName = CopyStr(src_session->Name);
 	if (dest_session != NULL)
 	{
@@ -1117,507 +1106,500 @@ char *PacketLogParseProc(RECORD *rec)
 	ToStr(tmp, p->PacketSize);
 	t->Token[5] = CopyStr(tmp);
 
-	if (pl->NoLog == false)
+	switch (p->TypeL3)
 	{
-		switch (p->TypeL3)
-		{
-		case L3_ARPV4:
-			t->Token[6] = CopyStr("ARPv4");
+	case L3_ARPV4:
+		t->Token[6] = CopyStr("ARPv4");
 
-			switch (Endian16(p->L3.ARPv4Header->Operation))
+		switch (Endian16(p->L3.ARPv4Header->Operation))
+		{
+		case ARP_OPERATION_REQUEST:
+			t->Token[7] = CopyStr("Request");
+			if (Endian16(p->L3.ARPv4Header->HardwareType) == ARP_HARDWARE_TYPE_ETHERNET &&
+			        p->L3.ARPv4Header->HardwareSize == 6 &&
+			        Endian16(p->L3.ARPv4Header->ProtocolType) == MAC_PROTO_IPV4 &&
+			        p->L3.ARPv4Header->ProtocolSize == 4)
 			{
-			case ARP_OPERATION_REQUEST:
-				t->Token[7] = CopyStr("Request");
-				if (Endian16(p->L3.ARPv4Header->HardwareType) == ARP_HARDWARE_TYPE_ETHERNET &&
-				        p->L3.ARPv4Header->HardwareSize == 6 &&
-				        Endian16(p->L3.ARPv4Header->ProtocolType) == MAC_PROTO_IPV4 &&
-				        p->L3.ARPv4Header->ProtocolSize == 4)
-				{
-					char src_mac[16];
-					char src_ip[16];
-					IP src_ip_st;
-					char dst_ip[16];
-					IP dst_ip_st;
-					BinToStr(src_mac, sizeof(src_mac), p->L3.ARPv4Header->SrcAddress, 6);
-					UINTToIP(&src_ip_st, p->L3.ARPv4Header->SrcIP);
-					UINTToIP(&dst_ip_st, p->L3.ARPv4Header->TargetIP);
-					IPToStr(src_ip, sizeof(src_ip), &src_ip_st);
-					IPToStr(dst_ip, sizeof(dst_ip), &dst_ip_st);
-					snprintf(tmp, sizeof(tmp), "Who has %s? Please Tell %s(%s)",
-					         dst_ip, src_mac, src_ip);
-					t->Token[14] = CopyStr(tmp);
-				}
+				char src_mac[16];
+				char src_ip[16];
+				IP src_ip_st;
+				char dst_ip[16];
+				IP dst_ip_st;
+				BinToStr(src_mac, sizeof(src_mac), p->L3.ARPv4Header->SrcAddress, 6);
+				UINTToIP(&src_ip_st, p->L3.ARPv4Header->SrcIP);
+				UINTToIP(&dst_ip_st, p->L3.ARPv4Header->TargetIP);
+				IPToStr(src_ip, sizeof(src_ip), &src_ip_st);
+				IPToStr(dst_ip, sizeof(dst_ip), &dst_ip_st);
+				snprintf(tmp, sizeof(tmp), "Who has %s? Please Tell %s(%s)",
+				         dst_ip, src_mac, src_ip);
+				t->Token[14] = CopyStr(tmp);
+			}
+			break;
+
+		case ARP_OPERATION_RESPONSE:
+			t->Token[7] = CopyStr("Response");
+			if (Endian16(p->L3.ARPv4Header->HardwareType) == ARP_HARDWARE_TYPE_ETHERNET &&
+			        p->L3.ARPv4Header->HardwareSize == 6 &&
+			        Endian16(p->L3.ARPv4Header->ProtocolType) == MAC_PROTO_IPV4 &&
+			        p->L3.ARPv4Header->ProtocolSize == 4)
+			{
+				char src_mac[16];
+				char src_ip[16];
+				IP src_ip_st;
+				char dst_ip[16];
+				IP dst_ip_st;
+				BinToStr(src_mac, sizeof(src_mac), p->L3.ARPv4Header->SrcAddress, 6);
+				UINTToIP(&src_ip_st, p->L3.ARPv4Header->SrcIP);
+				UINTToIP(&dst_ip_st, p->L3.ARPv4Header->TargetIP);
+				IPToStr(src_ip, sizeof(src_ip), &src_ip_st);
+				IPToStr(dst_ip, sizeof(dst_ip), &dst_ip_st);
+				snprintf(tmp, sizeof(tmp), "%s has %s",
+				         src_mac, src_ip);
+				t->Token[14] = CopyStr(tmp);
+			}
+			break;
+		}
+		break;
+
+	case L3_IPV4:
+		switch (p->TypeL4)
+		{
+		case L4_ICMPV4:
+			t->Token[6] = CopyStr("ICMPv4");
+
+			switch (p->L4.ICMPHeader->Type)
+			{
+			case ICMP_TYPE_ECHO_REQUEST:
+				t->Token[7] = CopyStr("Echo Request");
 				break;
 
-			case ARP_OPERATION_RESPONSE:
-				t->Token[7] = CopyStr("Response");
-				if (Endian16(p->L3.ARPv4Header->HardwareType) == ARP_HARDWARE_TYPE_ETHERNET &&
-				        p->L3.ARPv4Header->HardwareSize == 6 &&
-				        Endian16(p->L3.ARPv4Header->ProtocolType) == MAC_PROTO_IPV4 &&
-				        p->L3.ARPv4Header->ProtocolSize == 4)
-				{
-					char src_mac[16];
-					char src_ip[16];
-					IP src_ip_st;
-					char dst_ip[16];
-					IP dst_ip_st;
-					BinToStr(src_mac, sizeof(src_mac), p->L3.ARPv4Header->SrcAddress, 6);
-					UINTToIP(&src_ip_st, p->L3.ARPv4Header->SrcIP);
-					UINTToIP(&dst_ip_st, p->L3.ARPv4Header->TargetIP);
-					IPToStr(src_ip, sizeof(src_ip), &src_ip_st);
-					IPToStr(dst_ip, sizeof(dst_ip), &dst_ip_st);
-					snprintf(tmp, sizeof(tmp), "%s has %s",
-					         src_mac, src_ip);
-					t->Token[14] = CopyStr(tmp);
-				}
+			case ICMP_TYPE_ECHO_RESPONSE:
+				t->Token[7] = CopyStr("Echo Reply");
 				break;
 			}
 			break;
 
-		case L3_IPV4:
-			switch (p->TypeL4)
+		case L4_TCP:
+			tcp_conn = false;
+			if (p->L4.TCPHeader->Flag & TCP_SYN || p->L4.TCPHeader->Flag & TCP_RST || p->L4.TCPHeader->Flag & TCP_FIN)
 			{
-			case L4_ICMPV4:
-				t->Token[6] = CopyStr("ICMPv4");
+				tcp_conn = true;
+			}
+			t->Token[6] = CopyStr(tcp_conn ? "TCP_CONNECTv4" : "TCP_DATAv4");
+			t->Token[7] = TcpFlagStr(p->L4.TCPHeader->Flag);
 
-				switch (p->L4.ICMPHeader->Type)
+			t->Token[9] = PortStr(pl->Cedar, Endian16(p->L4.TCPHeader->SrcPort), false);
+			t->Token[11] = PortStr(pl->Cedar, Endian16(p->L4.TCPHeader->DstPort), false);
+
+			ToStr(tmp, Endian32(p->L4.TCPHeader->SeqNumber));
+			t->Token[12] = CopyStr(tmp);
+
+			ToStr(tmp, Endian32(p->L4.TCPHeader->AckNumber));
+			t->Token[13] = CopyStr(tmp);
+
+			snprintf(tmp, sizeof(tmp), "WindowSize=%u", Endian16(p->L4.TCPHeader->WindowSize));
+
+			if (p->HttpLog != NULL)
+			{
+				char *tmp2;
+				UINT tmp2_size;
+				char *http_str = BuildHttpLogStr(p->HttpLog);
+
+				tmp2_size = StrLen(http_str) + 16 + StrLen(tmp);
+				tmp2 = Malloc(tmp2_size);
+
+				StrCpy(tmp2, tmp2_size, tmp);
+
+				if (IsEmptyStr(http_str) == false)
 				{
-				case ICMP_TYPE_ECHO_REQUEST:
-					t->Token[7] = CopyStr("Echo Request");
-					break;
-
-				case ICMP_TYPE_ECHO_RESPONSE:
-					t->Token[7] = CopyStr("Echo Reply");
-					break;
+					StrCat(tmp2, tmp2_size, " ");
+					StrCat(tmp2, tmp2_size, http_str);
 				}
-				break;
 
-			case L4_TCP:
-				tcp_conn = false;
-				if (p->L4.TCPHeader->Flag & TCP_SYN || p->L4.TCPHeader->Flag & TCP_RST || p->L4.TCPHeader->Flag & TCP_FIN)
+				Free(http_str);
+
+				t->Token[14] = tmp2;
+			}
+			else
+			{
+				t->Token[14] = CopyStr(tmp);
+			}
+			break;
+
+		case L4_UDP:
+			t->Token[9] = PortStr(pl->Cedar, Endian16(p->L4.UDPHeader->SrcPort), true);
+			t->Token[11] = PortStr(pl->Cedar, Endian16(p->L4.UDPHeader->DstPort), true);
+
+			switch (p->TypeL7)
+			{
+			case L7_DHCPV4:
+				t->Token[6] = CopyStr("DHCPv4");
+				if (p->L7.DHCPv4Header->OpCode == 1)
 				{
-					tcp_conn = true;
-				}
-				t->Token[6] = CopyStr(tcp_conn ? "TCP_CONNECTv4" : "TCP_DATAv4");
-				t->Token[7] = TcpFlagStr(p->L4.TCPHeader->Flag);
-
-				t->Token[9] = PortStr(pl->Cedar, Endian16(p->L4.TCPHeader->SrcPort), false);
-				t->Token[11] = PortStr(pl->Cedar, Endian16(p->L4.TCPHeader->DstPort), false);
-
-				ToStr(tmp, Endian32(p->L4.TCPHeader->SeqNumber));
-				t->Token[12] = CopyStr(tmp);
-
-				ToStr(tmp, Endian32(p->L4.TCPHeader->AckNumber));
-				t->Token[13] = CopyStr(tmp);
-
-				snprintf(tmp, sizeof(tmp), "WindowSize=%u", Endian16(p->L4.TCPHeader->WindowSize));
-
-				if (p->HttpLog != NULL)
-				{
-					char *tmp2;
-					UINT tmp2_size;
-					char *http_str = BuildHttpLogStr(p->HttpLog);
-
-					tmp2_size = StrLen(http_str) + 16 + StrLen(tmp);
-					tmp2 = Malloc(tmp2_size);
-
-					StrCpy(tmp2, tmp2_size, tmp);
-
-					if (IsEmptyStr(http_str) == false)
-					{
-						StrCat(tmp2, tmp2_size, " ");
-						StrCat(tmp2, tmp2_size, http_str);
-					}
-
-					Free(http_str);
-
-					t->Token[14] = tmp2;
+					t->Token[7] = CopyStr("Request");
 				}
 				else
 				{
+					t->Token[7] = CopyStr("Response");
+				}
+
+				{
+					char ip1[64], ip2[64], ip3[64], ip4[64];
+					IPToStr32(ip1, sizeof(ip1), p->L7.DHCPv4Header->ClientIP);
+					IPToStr32(ip2, sizeof(ip2), p->L7.DHCPv4Header->YourIP);
+					IPToStr32(ip3, sizeof(ip3), p->L7.DHCPv4Header->ServerIP);
+					IPToStr32(ip4, sizeof(ip4), p->L7.DHCPv4Header->RelayIP);
+
+					snprintf(tmp, sizeof(tmp),
+					         "TransactionId=%u ClientIP=%s YourIP=%s ServerIP=%s RelayIP=%s",
+					         Endian32(p->L7.DHCPv4Header->TransactionId),
+					         ip1, ip2, ip3, ip4);
+
 					t->Token[14] = CopyStr(tmp);
 				}
+
 				break;
 
-			case L4_UDP:
-				t->Token[9] = PortStr(pl->Cedar, Endian16(p->L4.UDPHeader->SrcPort), true);
-				t->Token[11] = PortStr(pl->Cedar, Endian16(p->L4.UDPHeader->DstPort), true);
+			case L7_IKECONN:
+				t->Token[6] = CopyStr("IKE_CONNECTv4");
 
-				switch (p->TypeL7)
+				if (p->L7.IkeHeader != NULL)
 				{
-				case L7_DHCPV4:
-					t->Token[6] = CopyStr("DHCPv4");
-					if (p->L7.DHCPv4Header->OpCode == 1)
+					if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_MAIN)
 					{
-						t->Token[7] = CopyStr("Request");
+						t->Token[7] = CopyStr("MainMode");
 					}
-					else
+					else if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_AGGRESSIVE)
 					{
-						t->Token[7] = CopyStr("Response");
+						t->Token[7] = CopyStr("AggressiveMode");
 					}
 
 					{
-						char ip1[64], ip2[64], ip3[64], ip4[64];
-						IPToStr32(ip1, sizeof(ip1), p->L7.DHCPv4Header->ClientIP);
-						IPToStr32(ip2, sizeof(ip2), p->L7.DHCPv4Header->YourIP);
-						IPToStr32(ip3, sizeof(ip3), p->L7.DHCPv4Header->ServerIP);
-						IPToStr32(ip4, sizeof(ip4), p->L7.DHCPv4Header->RelayIP);
-
-						snprintf(tmp, sizeof(tmp),
-						         "TransactionId=%u ClientIP=%s YourIP=%s ServerIP=%s RelayIP=%s",
-						         Endian32(p->L7.DHCPv4Header->TransactionId),
-						         ip1, ip2, ip3, ip4);
+						Format(tmp, sizeof(tmp), "InitiatorCookie=%I64u ResponderCookie=%I64u "
+						       "Version=0x%x ExchangeType=0x%x Flag=0x%x MessageId=%u MessageSize=%u",
+						       Endian64(p->L7.IkeHeader->InitiatorCookie),
+						       Endian64(p->L7.IkeHeader->ResponderCookie),
+						       p->L7.IkeHeader->Version,
+						       p->L7.IkeHeader->ExchangeType,
+						       p->L7.IkeHeader->Flag,
+						       Endian32(p->L7.IkeHeader->MessageId),
+						       Endian32(p->L7.IkeHeader->MessageSize));
 
 						t->Token[14] = CopyStr(tmp);
 					}
-
-					break;
-
-				case L7_IKECONN:
-					t->Token[6] = CopyStr("IKE_CONNECTv4");
-
-					if (p->L7.IkeHeader != NULL)
-					{
-						if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_MAIN)
-						{
-							t->Token[7] = CopyStr("MainMode");
-						}
-						else if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_AGGRESSIVE)
-						{
-							t->Token[7] = CopyStr("AggressiveMode");
-						}
-
-						{
-							Format(tmp, sizeof(tmp), "InitiatorCookie=%I64u ResponderCookie=%I64u "
-							       "Version=0x%x ExchangeType=0x%x Flag=0x%x MessageId=%u MessageSize=%u",
-							       Endian64(p->L7.IkeHeader->InitiatorCookie),
-							       Endian64(p->L7.IkeHeader->ResponderCookie),
-							       p->L7.IkeHeader->Version,
-							       p->L7.IkeHeader->ExchangeType,
-							       p->L7.IkeHeader->Flag,
-							       Endian32(p->L7.IkeHeader->MessageId),
-							       Endian32(p->L7.IkeHeader->MessageSize));
-
-							t->Token[14] = CopyStr(tmp);
-						}
-					}
-					break;
-
-				case L7_DNS:
-					t->Token[6] = CopyStr("DNSv4");
-					t->Token[7] = CopyStr("DNS_Query");
-					// The query name holds raw label bytes from the wire
-					t->Token[14] = CopyStr(p->DnsQueryHost);
-					MakeSafeLogStr(t->Token[14]);
-					break;
-
-				default:
-					t->Token[6] = CopyStr("UDPv4");
-					break;
 				}
 				break;
 
-			case L4_FRAGMENT:
-				snprintf(tmp, sizeof(tmp), "IPv4_Fragment(0x%02X)", p->L3.IPv4Header->Protocol);
-				t->Token[6] = CopyStr(tmp);
+			case L7_DNS:
+				t->Token[6] = CopyStr("DNSv4");
+				t->Token[7] = CopyStr("DNS_Query");
+				// The query name holds raw label bytes from the wire
+				t->Token[14] = CopyStr(p->DnsQueryHost);
+				MakeSafeLogStr(t->Token[14]);
 				break;
 
-			case L4_UNKNOWN:
-				snprintf(tmp, sizeof(tmp), "IPv4(0x%02X)", p->L3.IPv4Header->Protocol);
-				t->Token[6] = CopyStr(tmp);
+			default:
+				t->Token[6] = CopyStr("UDPv4");
 				break;
-			}
-
-			IPToStr32(tmp, sizeof(tmp), p->L3.IPv4Header->SrcIP);
-			t->Token[8] = CopyStr(tmp);
-
-			IPToStr32(tmp, sizeof(tmp), p->L3.IPv4Header->DstIP);
-			t->Token[10] = CopyStr(tmp);
-
-			break;
-
-		case L3_IPV6:
-			switch (p->TypeL4)
-			{
-			case L4_ICMPV6:
-			{
-				char info[MAX_SIZE];
-				ICMPV6_HEADER_INFO *icmp = &p->ICMPv6HeaderPacketInfo;
-				ICMPV6_OPTION_LIST *ol = &icmp->OptionList;
-
-				Zero(info, sizeof(info));
-
-				t->Token[6] = CopyStr("ICMPv6");
-
-				switch (icmp->Type)
-				{
-				case ICMPV6_TYPE_ECHO_REQUEST:
-					t->Token[7] = CopyStr("Echo Request");
-					snprintf(tmp, sizeof(tmp), "EchoDataSize=%u ", icmp->EchoDataSize);
-					StrCat(info, sizeof(info), tmp);
-					break;
-
-				case ICMPV6_TYPE_ECHO_RESPONSE:
-					t->Token[7] = CopyStr("Echo Reply");
-					snprintf(tmp, sizeof(tmp), "EchoDataSize=%u ", icmp->EchoDataSize);
-					StrCat(info, sizeof(info), tmp);
-					break;
-
-				case ICMPV6_TYPE_ROUTER_SOLICIATION:
-				{
-					ICMPV6_ROUTER_SOLICIATION_HEADER *h = icmp->Headers.RouterSoliciationHeader;
-					t->Token[7] = CopyStr("Router Soliciation");
-
-					if (h != NULL)
-					{
-					}
-				}
-				break;
-
-				case ICMPV6_TYPE_ROUTER_ADVERTISEMENT:
-				{
-					ICMPV6_ROUTER_ADVERTISEMENT_HEADER *h = icmp->Headers.RouterAdvertisementHeader;
-					t->Token[7] = CopyStr("Router Advertisement");
-
-					if (h != NULL)
-					{
-						snprintf(tmp, sizeof(tmp), "CurHopLimit=%u "
-						         "Flags=0x%02X Lifetime=%u ",
-						         h->CurHopLimit, h->Flags, Endian16(h->Lifetime));
-						StrCat(info, sizeof(info), tmp);
-					}
-				}
-				break;
-
-				case ICMPV6_TYPE_NEIGHBOR_SOLICIATION:
-				{
-					ICMPV6_NEIGHBOR_SOLICIATION_HEADER *h = icmp->Headers.NeighborSoliciationHeader;
-					t->Token[7] = CopyStr("Neighbor Soliciation");
-
-					if (h != NULL)
-					{
-						char tmp2[MAX_SIZE];
-
-						IP6AddrToStr(tmp2, sizeof(tmp2), &h->TargetAddress);
-
-						snprintf(tmp, sizeof(tmp), "TargetAddress=%s ",
-						         tmp2);
-						StrCat(info, sizeof(info), tmp);
-					}
-				}
-				break;
-
-				case ICMPV6_TYPE_NEIGHBOR_ADVERTISEMENT:
-				{
-					ICMPV6_NEIGHBOR_ADVERTISEMENT_HEADER *h = icmp->Headers.NeighborAdvertisementHeader;
-					t->Token[7] = CopyStr("Neighbor Advertisement");
-
-					if (h != NULL)
-					{
-						char tmp2[MAX_SIZE];
-
-						IP6AddrToStr(tmp2, sizeof(tmp2), &h->TargetAddress);
-
-						snprintf(tmp, sizeof(tmp), "TargetAddress=%s Flags=0x%02X ",
-						         tmp2, h->Flags);
-						StrCat(info, sizeof(info), tmp);
-					}
-				}
-				break;
-
-				default:
-				{
-					snprintf(tmp, sizeof(tmp), "Type=%u", icmp->Type);
-					t->Token[7] = CopyStr(tmp);
-				}
-				break;
-				}
-
-				if (ol->SourceLinkLayer != NULL)
-				{
-					char tmp2[MAX_SIZE];
-					BinToStr(tmp2, sizeof(tmp2), ol->SourceLinkLayer->Address, 6);
-					snprintf(tmp, sizeof(tmp), "SourceLinkLayer=%s ", tmp2);
-					StrCat(info, sizeof(info), tmp);
-				}
-				if (ol->TargetLinkLayer != NULL)
-				{
-					char tmp2[MAX_SIZE];
-					BinToStr(tmp2, sizeof(tmp2), ol->TargetLinkLayer->Address, 6);
-					snprintf(tmp, sizeof(tmp), "TargetLinkLayer=%s ", tmp2);
-					StrCat(info, sizeof(info), tmp);
-				}
-				for (i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++)
-				{
-					if (ol->Prefix[i] != NULL)
-					{
-						char tmp2[MAX_SIZE];
-						IP6AddrToStr(tmp2, sizeof(tmp2), &ol->Prefix[i]->Prefix);
-						snprintf(tmp, sizeof(tmp), "Prefix=%s/%u PrefixFlag=0x%02X ", tmp2,
-						         ol->Prefix[i]->SubnetLength, ol->Prefix[i]->Flags);
-						StrCat(info, sizeof(info), tmp);
-					}
-					else
-					{
-						break;
-					}
-				}
-				if (ol->Mtu != NULL)
-				{
-					snprintf(tmp, sizeof(tmp), "Mtu=%u ", Endian32(ol->Mtu->Mtu));
-					StrCat(info, sizeof(info), tmp);
-				}
-
-				Trim(info);
-
-				if (IsEmptyStr(info) == false)
-				{
-					t->Token[14] = CopyStr(info);
-				}
 			}
 			break;
 
-			case L4_TCP:
-				tcp_conn = false;
-				if (p->L4.TCPHeader->Flag & TCP_SYN || p->L4.TCPHeader->Flag & TCP_RST || p->L4.TCPHeader->Flag & TCP_FIN)
-				{
-					tcp_conn = true;
-				}
-				t->Token[6] = CopyStr(tcp_conn ? "TCP_CONNECTv6" : "TCP_DATAv6");
-				t->Token[7] = TcpFlagStr(p->L4.TCPHeader->Flag);
-
-				t->Token[9] = PortStr(pl->Cedar, Endian16(p->L4.TCPHeader->SrcPort), false);
-				t->Token[11] = PortStr(pl->Cedar, Endian16(p->L4.TCPHeader->DstPort), false);
-
-				ToStr(tmp, Endian32(p->L4.TCPHeader->SeqNumber));
-				t->Token[12] = CopyStr(tmp);
-
-				ToStr(tmp, Endian32(p->L4.TCPHeader->AckNumber));
-				t->Token[13] = CopyStr(tmp);
-
-				snprintf(tmp, sizeof(tmp), "WindowSize=%u", Endian16(p->L4.TCPHeader->WindowSize));
-
-				if (p->HttpLog != NULL)
-				{
-					char *tmp2;
-					UINT tmp2_size;
-					char *http_str = BuildHttpLogStr(p->HttpLog);
-
-					tmp2_size = StrLen(http_str) + 16 + StrLen(tmp);
-					tmp2 = Malloc(tmp2_size);
-
-					StrCpy(tmp2, tmp2_size, tmp);
-
-					if (IsEmptyStr(http_str) == false)
-					{
-						StrCat(tmp2, tmp2_size, " ");
-						StrCat(tmp2, tmp2_size, http_str);
-					}
-
-					Free(http_str);
-
-					t->Token[14] = tmp2;
-				}
-				else
-				{
-					t->Token[14] = CopyStr(tmp);
-				}
-				break;
-
-			case L4_UDP:
-				t->Token[9] = PortStr(pl->Cedar, Endian16(p->L4.UDPHeader->SrcPort), true);
-				t->Token[11] = PortStr(pl->Cedar, Endian16(p->L4.UDPHeader->DstPort), true);
-
-				switch (p->TypeL7)
-				{
-				case L7_IKECONN:
-					t->Token[6] = CopyStr("IKE_CONNECTv6");
-
-					if (p->L7.IkeHeader != NULL)
-					{
-						if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_MAIN)
-						{
-							t->Token[7] = CopyStr("MainMode");
-						}
-						else if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_AGGRESSIVE)
-						{
-							t->Token[7] = CopyStr("AggressiveMode");
-						}
-
-						{
-							Format(tmp, sizeof(tmp), "InitiatorCookie=%I64u ResponderCookie=%I64u "
-							       "Version=0x%x ExchangeType=0x%x Flag=0x%x MessageId=%u MessageSize=%u",
-							       Endian64(p->L7.IkeHeader->InitiatorCookie),
-							       Endian64(p->L7.IkeHeader->ResponderCookie),
-							       p->L7.IkeHeader->Version,
-							       p->L7.IkeHeader->ExchangeType,
-							       p->L7.IkeHeader->Flag,
-							       Endian32(p->L7.IkeHeader->MessageId),
-							       Endian32(p->L7.IkeHeader->MessageSize));
-
-							t->Token[14] = CopyStr(tmp);
-						}
-					}
-					break;
-
-				case L7_DNS:
-					t->Token[6] = CopyStr("DNSv6");
-					t->Token[7] = CopyStr("DNS_Query");
-					// The query name holds raw label bytes from the wire
-					t->Token[14] = CopyStr(p->DnsQueryHost);
-					MakeSafeLogStr(t->Token[14]);
-					break;
-
-				default:
-					t->Token[6] = CopyStr("UDPv6");
-					break;
-				}
-				break;
-
-			case L4_FRAGMENT:
-				snprintf(tmp, sizeof(tmp), "IPv6_Fragment(0x%02X)", p->IPv6HeaderPacketInfo.Protocol);
-				t->Token[6] = CopyStr(tmp);
-				break;
-
-			case L4_UNKNOWN:
-				snprintf(tmp, sizeof(tmp), "IPv6(0x%02X)", p->IPv6HeaderPacketInfo.Protocol);
-				t->Token[6] = CopyStr(tmp);
-				break;
-			}
-
-			IP6AddrToStr(tmp, sizeof(tmp), &p->L3.IPv6Header->SrcAddress);
-			t->Token[8] = CopyStr(tmp);
-
-			IP6AddrToStr(tmp, sizeof(tmp), &p->L3.IPv6Header->DestAddress);
-			t->Token[10] = CopyStr(tmp);
-
+		case L4_FRAGMENT:
+			snprintf(tmp, sizeof(tmp), "IPv4_Fragment(0x%02X)", p->L3.IPv4Header->Protocol);
+			t->Token[6] = CopyStr(tmp);
 			break;
 
-		case L3_UNKNOWN:
-			snprintf(tmp, sizeof(tmp), "Proto=0x%04X", Endian16(p->MacHeader->Protocol));
+		case L4_UNKNOWN:
+			snprintf(tmp, sizeof(tmp), "IPv4(0x%02X)", p->L3.IPv4Header->Protocol);
 			t->Token[6] = CopyStr(tmp);
 			break;
 		}
 
-		if (p->PacketData != NULL && (pl->PurePacket == false || pl->PurePacketNoPayload == false))
+		IPToStr32(tmp, sizeof(tmp), p->L3.IPv4Header->SrcIP);
+		t->Token[8] = CopyStr(tmp);
+
+		IPToStr32(tmp, sizeof(tmp), p->L3.IPv4Header->DstIP);
+		t->Token[10] = CopyStr(tmp);
+
+		break;
+
+	case L3_IPV6:
+		switch (p->TypeL4)
 		{
-			char *data = Malloc(p->PacketSize * 2 + 1);
-			BinToStr(data, p->PacketSize * 2 + 1, p->PacketData, p->PacketSize);
-			t->Token[15] = data;
+		case L4_ICMPV6:
+		{
+			char info[MAX_SIZE];
+			ICMPV6_HEADER_INFO *icmp = &p->ICMPv6HeaderPacketInfo;
+			ICMPV6_OPTION_LIST *ol = &icmp->OptionList;
+
+			Zero(info, sizeof(info));
+
+			t->Token[6] = CopyStr("ICMPv6");
+
+			switch (icmp->Type)
+			{
+			case ICMPV6_TYPE_ECHO_REQUEST:
+				t->Token[7] = CopyStr("Echo Request");
+				snprintf(tmp, sizeof(tmp), "EchoDataSize=%u ", icmp->EchoDataSize);
+				StrCat(info, sizeof(info), tmp);
+				break;
+
+			case ICMPV6_TYPE_ECHO_RESPONSE:
+				t->Token[7] = CopyStr("Echo Reply");
+				snprintf(tmp, sizeof(tmp), "EchoDataSize=%u ", icmp->EchoDataSize);
+				StrCat(info, sizeof(info), tmp);
+				break;
+
+			case ICMPV6_TYPE_ROUTER_SOLICIATION:
+			{
+				ICMPV6_ROUTER_SOLICIATION_HEADER *h = icmp->Headers.RouterSoliciationHeader;
+				t->Token[7] = CopyStr("Router Soliciation");
+
+				if (h != NULL)
+				{
+				}
+			}
+			break;
+
+			case ICMPV6_TYPE_ROUTER_ADVERTISEMENT:
+			{
+				ICMPV6_ROUTER_ADVERTISEMENT_HEADER *h = icmp->Headers.RouterAdvertisementHeader;
+				t->Token[7] = CopyStr("Router Advertisement");
+
+				if (h != NULL)
+				{
+					snprintf(tmp, sizeof(tmp), "CurHopLimit=%u "
+					         "Flags=0x%02X Lifetime=%u ",
+					         h->CurHopLimit, h->Flags, Endian16(h->Lifetime));
+					StrCat(info, sizeof(info), tmp);
+				}
+			}
+			break;
+
+			case ICMPV6_TYPE_NEIGHBOR_SOLICIATION:
+			{
+				ICMPV6_NEIGHBOR_SOLICIATION_HEADER *h = icmp->Headers.NeighborSoliciationHeader;
+				t->Token[7] = CopyStr("Neighbor Soliciation");
+
+				if (h != NULL)
+				{
+					char tmp2[MAX_SIZE];
+
+					IP6AddrToStr(tmp2, sizeof(tmp2), &h->TargetAddress);
+
+					snprintf(tmp, sizeof(tmp), "TargetAddress=%s ",
+					         tmp2);
+					StrCat(info, sizeof(info), tmp);
+				}
+			}
+			break;
+
+			case ICMPV6_TYPE_NEIGHBOR_ADVERTISEMENT:
+			{
+				ICMPV6_NEIGHBOR_ADVERTISEMENT_HEADER *h = icmp->Headers.NeighborAdvertisementHeader;
+				t->Token[7] = CopyStr("Neighbor Advertisement");
+
+				if (h != NULL)
+				{
+					char tmp2[MAX_SIZE];
+
+					IP6AddrToStr(tmp2, sizeof(tmp2), &h->TargetAddress);
+
+					snprintf(tmp, sizeof(tmp), "TargetAddress=%s Flags=0x%02X ",
+					         tmp2, h->Flags);
+					StrCat(info, sizeof(info), tmp);
+				}
+			}
+			break;
+
+			default:
+			{
+				snprintf(tmp, sizeof(tmp), "Type=%u", icmp->Type);
+				t->Token[7] = CopyStr(tmp);
+			}
+			break;
+			}
+
+			if (ol->SourceLinkLayer != NULL)
+			{
+				char tmp2[MAX_SIZE];
+				BinToStr(tmp2, sizeof(tmp2), ol->SourceLinkLayer->Address, 6);
+				snprintf(tmp, sizeof(tmp), "SourceLinkLayer=%s ", tmp2);
+				StrCat(info, sizeof(info), tmp);
+			}
+			if (ol->TargetLinkLayer != NULL)
+			{
+				char tmp2[MAX_SIZE];
+				BinToStr(tmp2, sizeof(tmp2), ol->TargetLinkLayer->Address, 6);
+				snprintf(tmp, sizeof(tmp), "TargetLinkLayer=%s ", tmp2);
+				StrCat(info, sizeof(info), tmp);
+			}
+			for (i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++)
+			{
+				if (ol->Prefix[i] != NULL)
+				{
+					char tmp2[MAX_SIZE];
+					IP6AddrToStr(tmp2, sizeof(tmp2), &ol->Prefix[i]->Prefix);
+					snprintf(tmp, sizeof(tmp), "Prefix=%s/%u PrefixFlag=0x%02X ", tmp2,
+					         ol->Prefix[i]->SubnetLength, ol->Prefix[i]->Flags);
+					StrCat(info, sizeof(info), tmp);
+				}
+				else
+				{
+					break;
+				}
+			}
+			if (ol->Mtu != NULL)
+			{
+				snprintf(tmp, sizeof(tmp), "Mtu=%u ", Endian32(ol->Mtu->Mtu));
+				StrCat(info, sizeof(info), tmp);
+			}
+
+			Trim(info);
+
+			if (IsEmptyStr(info) == false)
+			{
+				t->Token[14] = CopyStr(info);
+			}
+		}
+		break;
+
+		case L4_TCP:
+			tcp_conn = false;
+			if (p->L4.TCPHeader->Flag & TCP_SYN || p->L4.TCPHeader->Flag & TCP_RST || p->L4.TCPHeader->Flag & TCP_FIN)
+			{
+				tcp_conn = true;
+			}
+			t->Token[6] = CopyStr(tcp_conn ? "TCP_CONNECTv6" : "TCP_DATAv6");
+			t->Token[7] = TcpFlagStr(p->L4.TCPHeader->Flag);
+
+			t->Token[9] = PortStr(pl->Cedar, Endian16(p->L4.TCPHeader->SrcPort), false);
+			t->Token[11] = PortStr(pl->Cedar, Endian16(p->L4.TCPHeader->DstPort), false);
+
+			ToStr(tmp, Endian32(p->L4.TCPHeader->SeqNumber));
+			t->Token[12] = CopyStr(tmp);
+
+			ToStr(tmp, Endian32(p->L4.TCPHeader->AckNumber));
+			t->Token[13] = CopyStr(tmp);
+
+			snprintf(tmp, sizeof(tmp), "WindowSize=%u", Endian16(p->L4.TCPHeader->WindowSize));
+
+			if (p->HttpLog != NULL)
+			{
+				char *tmp2;
+				UINT tmp2_size;
+				char *http_str = BuildHttpLogStr(p->HttpLog);
+
+				tmp2_size = StrLen(http_str) + 16 + StrLen(tmp);
+				tmp2 = Malloc(tmp2_size);
+
+				StrCpy(tmp2, tmp2_size, tmp);
+
+				if (IsEmptyStr(http_str) == false)
+				{
+					StrCat(tmp2, tmp2_size, " ");
+					StrCat(tmp2, tmp2_size, http_str);
+				}
+
+				Free(http_str);
+
+				t->Token[14] = tmp2;
+			}
+			else
+			{
+				t->Token[14] = CopyStr(tmp);
+			}
+			break;
+
+		case L4_UDP:
+			t->Token[9] = PortStr(pl->Cedar, Endian16(p->L4.UDPHeader->SrcPort), true);
+			t->Token[11] = PortStr(pl->Cedar, Endian16(p->L4.UDPHeader->DstPort), true);
+
+			switch (p->TypeL7)
+			{
+			case L7_IKECONN:
+				t->Token[6] = CopyStr("IKE_CONNECTv6");
+
+				if (p->L7.IkeHeader != NULL)
+				{
+					if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_MAIN)
+					{
+						t->Token[7] = CopyStr("MainMode");
+					}
+					else if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_AGGRESSIVE)
+					{
+						t->Token[7] = CopyStr("AggressiveMode");
+					}
+
+					{
+						Format(tmp, sizeof(tmp), "InitiatorCookie=%I64u ResponderCookie=%I64u "
+						       "Version=0x%x ExchangeType=0x%x Flag=0x%x MessageId=%u MessageSize=%u",
+						       Endian64(p->L7.IkeHeader->InitiatorCookie),
+						       Endian64(p->L7.IkeHeader->ResponderCookie),
+						       p->L7.IkeHeader->Version,
+						       p->L7.IkeHeader->ExchangeType,
+						       p->L7.IkeHeader->Flag,
+						       Endian32(p->L7.IkeHeader->MessageId),
+						       Endian32(p->L7.IkeHeader->MessageSize));
+
+						t->Token[14] = CopyStr(tmp);
+					}
+				}
+				break;
+
+			case L7_DNS:
+				t->Token[6] = CopyStr("DNSv6");
+				t->Token[7] = CopyStr("DNS_Query");
+				// The query name holds raw label bytes from the wire
+				t->Token[14] = CopyStr(p->DnsQueryHost);
+				MakeSafeLogStr(t->Token[14]);
+				break;
+
+			default:
+				t->Token[6] = CopyStr("UDPv6");
+				break;
+			}
+			break;
+
+		case L4_FRAGMENT:
+			snprintf(tmp, sizeof(tmp), "IPv6_Fragment(0x%02X)", p->IPv6HeaderPacketInfo.Protocol);
+			t->Token[6] = CopyStr(tmp);
+			break;
+
+		case L4_UNKNOWN:
+			snprintf(tmp, sizeof(tmp), "IPv6(0x%02X)", p->IPv6HeaderPacketInfo.Protocol);
+			t->Token[6] = CopyStr(tmp);
+			break;
 		}
 
-		if (StrLen(pl->SrcPhysicalIP) != 0)
-		{
-			t->Token[16] = CopyStr(pl->SrcPhysicalIP);
-		}
-		if (StrLen(pl->DestPhysicalIP) != 0)
-		{
-			t->Token[17] = CopyStr(pl->DestPhysicalIP);
-		}
+		IP6AddrToStr(tmp, sizeof(tmp), &p->L3.IPv6Header->SrcAddress);
+		t->Token[8] = CopyStr(tmp);
+
+		IP6AddrToStr(tmp, sizeof(tmp), &p->L3.IPv6Header->DestAddress);
+		t->Token[10] = CopyStr(tmp);
+
+		break;
+
+	case L3_UNKNOWN:
+		snprintf(tmp, sizeof(tmp), "Proto=0x%04X", Endian16(p->MacHeader->Protocol));
+		t->Token[6] = CopyStr(tmp);
+		break;
 	}
-	else
+
+	if (p->PacketData != NULL && (pl->PurePacket == false || pl->PurePacketNoPayload == false))
 	{
-		t->Token[6] = CopyUniToUtf(_UU("LH_PACKET_LOG_NO_LOG_OSS"));
+		char *data = Malloc(p->PacketSize * 2 + 1);
+		BinToStr(data, p->PacketSize * 2 + 1, p->PacketData, p->PacketSize);
+		t->Token[15] = data;
+	}
+
+	if (StrLen(pl->SrcPhysicalIP) != 0)
+	{
+		t->Token[16] = CopyStr(pl->SrcPhysicalIP);
+	}
+	if (StrLen(pl->DestPhysicalIP) != 0)
+	{
+		t->Token[17] = CopyStr(pl->DestPhysicalIP);
 	}
 
 	s = GenCsvLine(t);

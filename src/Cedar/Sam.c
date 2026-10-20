@@ -73,11 +73,6 @@ bool SamAuthUserByPlainPassword(CONNECTION *c, HUB *hub, char *username, char *p
 		return false;
 	}
 
-	if (GetGlobalServerFlag(GSF_DISABLE_RADIUS_AUTH) != 0)
-	{
-		return false;
-	}
-
 	h = hub;
 
 	AddRef(h->ref);
@@ -144,11 +139,6 @@ bool SamAuthUserByCert(HUB *h, char *username, X *x)
 {
 	bool b = false;
 	if (h == NULL || username == NULL || x == NULL)
-	{
-		return false;
-	}
-
-	if (GetGlobalServerFlag(GSF_DISABLE_CERT_AUTH) != 0)
 	{
 		return false;
 	}
