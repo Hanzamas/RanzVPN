@@ -7018,6 +7018,41 @@ static void HarnessPacketLogGolden(HARNESS *h)
 	Free(cedar);
 }
 
+// InsertUnicodeRecord queues the UTF-8 text of the line itself (one allocation): a CR and an LF become '?', the other
+// characters stay. The LOG has a record queue and no log thread, so the test reads the record from the queue
+static void HarnessLogRecordCheck(HARNESS *h)
+{
+	LOG *g = ZeroMalloc(sizeof(LOG));
+	RECORD *rec;
+	bool ok;
+
+	Print("[logrecord]\n");
+
+	g->RecordQueue = NewQueue();
+	g->Event = NewEvent();
+
+	InsertUnicodeRecord(g, L"a\r\nb\x00e9");
+
+	LockQueue(g->RecordQueue);
+	{
+		rec = GetNext(g->RecordQueue);
+	}
+	UnlockQueue(g->RecordQueue);
+
+	ok = (rec != NULL && rec->Data != NULL && StrCmp((char *)rec->Data, "a??b\xC3\xA9") == 0);
+	HarnessCheck(h, ok, "log record: InsertUnicodeRecord queues the UTF-8 line with control characters mapped to '?'");
+
+	if (rec != NULL)
+	{
+		Free(rec->Data);
+		Free(rec);
+	}
+
+	ReleaseQueue(g->RecordQueue);
+	ReleaseEvent(g->Event);
+	Free(g);
+}
+
 ////////////////////////////
 // Entry points
 
@@ -7042,6 +7077,7 @@ void harness_test(UINT num, char **arg)
 		HarnessFrames(h);
 		HarnessGolden(h);
 		HarnessPacketLogGolden(h);
+		HarnessLogRecordCheck(h);
 		HarnessSetPhase("pack", NULL);
 		HarnessPackGolden(h);
 		HarnessSetPhase("zerokey", NULL);
