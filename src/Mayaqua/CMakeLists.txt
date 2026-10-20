@@ -126,7 +126,6 @@ if(WIN32)
       "iphlpapi.lib"
       "Psapi.Lib"
       "Secur32.Lib"
-      "setupapi.lib"
       "winmm.lib"
       "ws2_32.lib"
       "WtsApi32.Lib"

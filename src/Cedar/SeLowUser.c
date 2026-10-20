@@ -18,6 +18,7 @@
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Tick64.h"
 
+#include <SetupAPI.h>
 #include <winioctl.h>
 
 static SU *SuInitMain(UINT wait_for_bind_complete_tick, bool start_service, bool install);
@@ -53,69 +54,46 @@ void SuDeleteGarbageInfsInner()
 {
 	char *base_key_name = "DRIVERS\\DriverDatabase\\DriverPackages";
 	TOKEN_LIST *keys;
-	HINSTANCE hSetupApiDll = NULL;
-	BOOL (WINAPI *_SetupUninstallOEMInfA)(PCSTR, DWORD, PVOID) = NULL;
 
-	hSetupApiDll = LoadLibraryA("setupapi.dll");
-	if (hSetupApiDll == NULL)
+	keys = MsRegEnumKeyEx2(REG_LOCAL_MACHINE, base_key_name, false, true);
+
+	if (keys != NULL)
 	{
-		return;
-	}
+		char full_key[MAX_PATH];
+		UINT i;
 
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wincompatible-function-pointer-types"
-	_SetupUninstallOEMInfA =
-		(UINT (__stdcall *)(PCSTR,DWORD,PVOID))
-		GetProcAddress(hSetupApiDll, "SetupUninstallOEMInfA");
-    #pragma clang diagnostic pop
-
-	if (_SetupUninstallOEMInfA != NULL)
-	{
-		keys = MsRegEnumKeyEx2(REG_LOCAL_MACHINE, base_key_name, false, true);
-
-		if (keys != NULL)
+		for (i = 0;i < keys->NumTokens;i++)
 		{
-			char full_key[MAX_PATH];
-			UINT i;
+			char *oem_name, *inf_name, *provider;
 
-			for (i = 0;i < keys->NumTokens;i++)
+			Format(full_key, sizeof(full_key), "%s\\%s", base_key_name, keys->Token[i]);
+
+			oem_name = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "", false, true);
+			inf_name = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "InfName", false, true);
+			provider = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "Provider", false, true);
+
+			if (IsEmptyStr(oem_name) == false && IsEmptyStr(inf_name) == false)
 			{
-				char *oem_name, *inf_name, *provider;
-
-				Format(full_key, sizeof(full_key), "%s\\%s", base_key_name, keys->Token[i]);
-
-				oem_name = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "", false, true);
-				inf_name = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "InfName", false, true);
-				provider = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "Provider", false, true);
-
-				if (IsEmptyStr(oem_name) == false && IsEmptyStr(inf_name) == false)
+				if (StartWith(oem_name, "oem"))
 				{
-					if (StartWith(oem_name, "oem"))
+					if (StartWith(inf_name, "selow"))
 					{
-						if (StartWith(inf_name, "selow"))
+						if (InStr(provider, "softether"))
 						{
-							if (InStr(provider, "softether"))
-							{
-								Debug("Delete OEM INF %s (%s): %u\n",
-									oem_name, inf_name,
-									_SetupUninstallOEMInfA(oem_name, 0x00000001, NULL));
-							}
+							Debug("Delete OEM INF %s (%s): %u\n",
+								oem_name, inf_name,
+								SetupUninstallOEMInfA(oem_name, SUOI_FORCEDELETE, NULL));
 						}
 					}
 				}
-
-				Free(oem_name);
-				Free(inf_name);
-				Free(provider);
 			}
 
-			FreeToken(keys);
+			Free(oem_name);
+			Free(inf_name);
+			Free(provider);
 		}
-	}
 
-	if (hSetupApiDll != NULL)
-	{
-		FreeLibrary(hSetupApiDll);
+		FreeToken(keys);
 	}
 }
 

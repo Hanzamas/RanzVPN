@@ -1,5 +1,5 @@
 // Win32Com.h
-// Header of Win32Com.cpp
+// Header of Win32Com.c
 
 
 #ifndef WIN32COM_H
@@ -7,16 +7,7 @@
 
 #include "Mayaqua/MayaType.h"
 
-#if	defined(__cplusplus)
-extern "C"
-{
-#endif
-
-	bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout);
-
-#if	defined(__cplusplus)
-}
-#endif
+bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout);
 
 #endif // WIN32COM_H
 
