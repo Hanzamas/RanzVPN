@@ -74,29 +74,6 @@ UINT GetNumberOfCpu()
 	return ret;
 }
 
-void GetHomeDirW(wchar_t *path, UINT size)
-{
-	if (path == NULL)
-	{
-		return;
-	}
-
-	if (GetEnvW(L"HOME", path, size) == false)
-	{
-		wchar_t drive[MAX_SIZE];
-		wchar_t hpath[MAX_SIZE];
-		if (GetEnvW(L"HOMEDRIVE", drive, sizeof(drive)) &&
-			GetEnvW(L"HOMEPATH", hpath, sizeof(hpath)))
-		{
-			UniFormat(path, size, L"%s%s", drive, hpath);
-		}
-		else
-		{
-			Win32GetCurrentDirW(path, size / sizeof(wchar_t));
-		}
-	}
-}
-
 bool GetEnv(char *name, char *data, UINT size)
 {
 	char *ret;
@@ -114,26 +91,6 @@ bool GetEnv(char *name, char *data, UINT size)
 	}
 
 	StrCpy(data, size, ret);
-
-	return true;
-}
-bool GetEnvW(wchar_t *name, wchar_t *data, UINT size)
-{
-	wchar_t *ret;
-	if (name == NULL || data == NULL)
-	{
-		return false;
-	}
-
-	UniStrCpy(data, size, L"");
-
-	ret = _wgetenv(name);
-	if (ret == NULL)
-	{
-		return false;
-	}
-
-	UniStrCpy(data, size, ret);
 
 	return true;
 }
@@ -1410,9 +1367,13 @@ void AbortExit()
 }
 
 
+// The log goes beside the executable, not into the working directory (System32 for a service).
+// Plain CRT and Win32 calls only: the caller may be out of memory.
 void AbortExitEx(char *msg)
 {
-	FILE *f;
+	FILE *f = NULL;
+	wchar_t log_name[MAX_PATH + 32];
+	DWORD len;
 	if (msg == NULL)
 	{
 		msg = "Unknown Error";
@@ -1430,7 +1391,17 @@ void AbortExitEx(char *msg)
 	abort();
 #endif
 
-	f = fopen("abort_error_log.txt", "w");
+	len = GetModuleFileNameW(NULL, log_name, MAX_PATH);
+	if (len != 0 && len < MAX_PATH)
+	{
+		wchar_t *sep = wcsrchr(log_name, L'\\');
+		if (sep != NULL)
+		{
+			sep[1] = 0;
+			wcscat_s(log_name, sizeof(log_name) / sizeof(wchar_t), L"abort_error_log.txt");
+			f = _wfopen(log_name, L"w");
+		}
+	}
 	if (f != NULL)
 	{
 		SYSTEMTIME time = { 0 };
@@ -1464,6 +1435,7 @@ void AbortExitEx(char *msg)
 	fputs("Fatal Error: ", stdout);
 	fputs(msg, stdout);
 	fputs("\r\n", stdout);
+	fflush(stdout);
 
 	_exit(1);
 }

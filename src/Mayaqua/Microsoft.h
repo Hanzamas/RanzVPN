@@ -26,6 +26,8 @@
 #define	MS_EVENT_SERVICE_STARTED	1
 #define	MS_EVENT_SERVICE_STOPPED	2
 #define	MS_EVENT_SERVICE_FAILED		3
+// MayaFatalExit() (Mayaqua.c), under the source "Ranz VPN"
+#define	MS_EVENT_FATAL_ERROR		4
 
 #define	SVC_RUN_COMMANDLINE			L"\"%s\" /service"
 

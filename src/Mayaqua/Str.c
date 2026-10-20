@@ -1275,8 +1275,7 @@ void InitStringLibrary()
 
 	if (CheckStringLibrary() == false)
 	{
-		Alert("String Library Init Failed.\r\nPlease check your locale settings.", NULL);
-		exit(0);
+		MayaFatalExit(1, "String Library Init Failed.\r\nPlease check your locale settings.");
 	}
 }
 

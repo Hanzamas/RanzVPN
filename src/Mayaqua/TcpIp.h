@@ -16,7 +16,7 @@ struct MAC_HEADER
 	UCHAR	DestAddress[6];
 	UCHAR	SrcAddress[6];
 	USHORT	Protocol;
-} GCC_PACKED;
+};
 
 #define	MAC_PROTO_ARPV4		0x0806
 #define	MAC_PROTO_IPV4		0x0800
@@ -28,7 +28,7 @@ struct LLC_HEADER
 	UCHAR	Dsap;
 	UCHAR	Ssap;
 	UCHAR	Ctl;
-} GCC_PACKED;
+};
 
 #define	LLC_DSAP_BPDU		0x42
 #define	LLC_SSAP_BPDU		0x42
@@ -49,7 +49,7 @@ struct BPDU_HEADER
 	USHORT	MaxAge;
 	USHORT	HelloTime;
 	USHORT	ForwardDelay;
-} GCC_PACKED;
+};
 
 struct ARPV4_HEADER
 {
@@ -62,7 +62,7 @@ struct ARPV4_HEADER
 	UINT	SrcIP;
 	UCHAR	TargetAddress[6];
 	UINT	TargetIP;
-} GCC_PACKED;
+};
 
 #define	ARP_HARDWARE_TYPE_ETHERNET		0x0001
 
@@ -73,7 +73,7 @@ struct TAGVLAN_HEADER
 {
 	UCHAR TagID[2];
 	UCHAR Protocol[2];
-} GCC_PACKED;
+};
 
 struct IPV4_HEADER
 {
@@ -87,7 +87,7 @@ struct IPV4_HEADER
 	USHORT	Checksum;
 	UINT	SrcIP;
 	UINT	DstIP;
-} GCC_PACKED;
+};
 
 #define	IPV4_SET_VERSION(h, v)		((h)->VersionAndHeaderLength |= (((v) & 0x0f) << 4))
 #define	IPV4_GET_HEADER_LEN(h)		((h)->VersionAndHeaderLength & 0x0f)
@@ -107,7 +107,7 @@ struct UDP_HEADER
 	USHORT	DstPort;
 	USHORT	PacketLength;
 	USHORT	Checksum;
-} GCC_PACKED;
+};
 
 struct IPV4_PSEUDO_HEADER
 {
@@ -116,7 +116,7 @@ struct IPV4_PSEUDO_HEADER
 	UCHAR	Reserved;
 	UCHAR	Protocol;
 	USHORT	PacketLength;
-} GCC_PACKED;
+};
 
 struct TCP_HEADER
 {
@@ -129,7 +129,7 @@ struct TCP_HEADER
 	USHORT	WindowSize;
 	USHORT	Checksum;
 	USHORT	UrgentPointer;
-} GCC_PACKED;
+};
 
 #define	TCP_GET_HEADER_SIZE(h)	(((h)->HeaderSizeAndReserved >> 4) & 0x0f)
 #define	TCP_SET_HEADER_SIZE(h, v)	((h)->HeaderSizeAndReserved = (((v) & 0x0f) << 4))
@@ -146,13 +146,13 @@ struct ICMP_HEADER
 	UCHAR	Type;
 	UCHAR	Code;
 	USHORT	Checksum;
-} GCC_PACKED;
+};
 
 struct ICMP_ECHO
 {
 	USHORT	Identifier;
 	USHORT	SeqNo;
-} GCC_PACKED;
+};
 
 #define	ICMP_TYPE_ECHO_REQUEST						8
 #define	ICMP_TYPE_ECHO_RESPONSE						0
@@ -172,7 +172,7 @@ struct DHCPV4_HEADER
 	UINT	RelayIP;
 	UCHAR	ClientMacAddress[6];
 	UCHAR	Padding[10];
-} GCC_PACKED;
+};
 
 struct DNSV4_HEADER
 {
@@ -183,7 +183,7 @@ struct DNSV4_HEADER
 	USHORT	AnswerRRs;
 	USHORT	AuthorityRRs;
 	USHORT	AdditionalRRs;
-} GCC_PACKED;
+};
 
 #define	DHCP_MAGIC_COOKIE	0x63825363
 
@@ -215,7 +215,7 @@ struct IPV6_HEADER
 	UCHAR HopLimit;
 	IPV6_ADDR SrcAddress;
 	IPV6_ADDR DestAddress;
-} GCC_PACKED;
+};
 
 
 #define IPV6_GET_VERSION(h)			(((h)->VersionAndTrafficClass1 >> 4) & 0x0f)
@@ -232,7 +232,7 @@ struct IPV6_OPTION_HEADER
 {
 	UCHAR NextHeader;
 	UCHAR Size;							// Header size (/8)
-} GCC_PACKED;
+};
 
 // The unfragmentable part runs up to the routing header, the hop-by-hop
 // header, the first extension header or the payload
@@ -243,7 +243,7 @@ struct IPV6_FRAGMENT_HEADER
 	UCHAR FragmentOffset1;				// Fragment offset 1 (/8, 8 bit)
 	UCHAR FragmentOffset2AndFlags;		// Fragment offset 2 (/8, 5 bit) + Reserved (2 bit) + More flag (1 bit)
 	UINT Identification;
-} GCC_PACKED;
+};
 
 #define IPV6_GET_FRAGMENT_OFFSET(h)		(((((h)->FragmentOffset1) << 5) & 0x1fe0) | (((h)->FragmentOffset2AndFlags >> 3) & 0x1f))
 #define IPV6_GET_FLAGS(h)				((h)->FragmentOffset2AndFlags & 0x0f)
@@ -257,12 +257,12 @@ struct IPV6_PSEUDO_HEADER
 	UINT UpperLayerPacketSize;
 	UCHAR Padding[3];
 	UCHAR NextHeader;
-} GCC_PACKED;
+};
 
 struct ICMPV6_ROUTER_SOLICIATION_HEADER
 {
 	UINT Reserved;
-} GCC_PACKED;
+};
 
 struct ICMPV6_ROUTER_ADVERTISEMENT_HEADER
 {
@@ -271,20 +271,20 @@ struct ICMPV6_ROUTER_ADVERTISEMENT_HEADER
 	USHORT Lifetime;
 	UINT ReachableTime;
 	UINT RetransTimer;
-} GCC_PACKED;
+};
 
 struct ICMPV6_NEIGHBOR_SOLICIATION_HEADER
 {
 	UINT Reserved;
 	IPV6_ADDR TargetAddress;
-} GCC_PACKED;
+};
 
 struct ICMPV6_NEIGHBOR_ADVERTISEMENT_HEADER
 {
 	UCHAR Flags;
 	UCHAR Reserved[3];
 	IPV6_ADDR TargetAddress;
-} GCC_PACKED;
+};
 
 #define ICMPV6_OPTION_PREFIXES_MAX_COUNT				10
 
@@ -294,13 +294,13 @@ struct ICMPV6_OPTION_LIST
 	ICMPV6_OPTION_LINK_LAYER *TargetLinkLayer;
 	ICMPV6_OPTION_PREFIX *Prefix[ICMPV6_OPTION_PREFIXES_MAX_COUNT];
 	ICMPV6_OPTION_MTU *Mtu;
-} GCC_PACKED;
+};
 
 struct ICMPV6_OPTION
 {
 	UCHAR Type;
 	UCHAR Length;							// Length (/8, include type and length)
-} GCC_PACKED;
+};
 
 #define	ICMPV6_OPTION_TYPE_SOURCE_LINK_LAYER	1
 #define ICMPV6_OPTION_TYPE_TARGET_LINK_LAYER	2
@@ -311,7 +311,7 @@ struct ICMPV6_OPTION_LINK_LAYER
 {
 	ICMPV6_OPTION IcmpOptionHeader;
 	UCHAR Address[6];
-} GCC_PACKED;
+};
 
 struct ICMPV6_OPTION_PREFIX
 {
@@ -322,14 +322,14 @@ struct ICMPV6_OPTION_PREFIX
 	UINT PreferredLifetime;
 	UINT Reserved;
 	IPV6_ADDR Prefix;
-} GCC_PACKED;
+};
 
 struct ICMPV6_OPTION_MTU
 {
 	ICMPV6_OPTION IcmpOptionHeader;
 	USHORT Reserved;
 	UINT Mtu;
-} GCC_PACKED;
+};
 
 
 struct ICMPV6_HEADER_INFO
@@ -438,7 +438,7 @@ struct PKT
 	UINT				PayloadSize;
 	struct HTTPLOG		*HttpLog;
 	char DnsQueryHost[64];
-} GCC_PACKED;
+};
 
 #define	L3_UNKNOWN			0
 #define	L3_ARPV4			1
@@ -470,7 +470,7 @@ struct IKE_HEADER
 	UCHAR Flag;
 	UINT MessageId;
 	UINT MessageSize;
-} GCC_PACKED;
+};
 
 #define	IKE_EXCHANGE_TYPE_MAIN				2
 #define IKE_EXCHANGE_TYPE_AGGRESSIVE		4

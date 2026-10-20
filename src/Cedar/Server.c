@@ -984,8 +984,7 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 
 	if (IsBridgeSupported())
 	{
-		const UINT OsType = GetOsInfo()->OsType;
-		AddCapsBool(t, "b_tap_supported", OsType == OSTYPE_LINUX || OsType == OSTYPE_BSD);
+		AddCapsBool(t, "b_tap_supported", false);
 	}
 
 	AddCapsBool(t, "b_support_cascade", true);

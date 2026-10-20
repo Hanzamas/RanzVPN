@@ -24,8 +24,6 @@ bool Win32WaitProcess(void *h, UINT timeout);
 void Win32CloseProcess(void *handle);
 bool Win32IsSupportedOs();
 void Win32GetOsInfo(OS_INFO *info);
-void Win32Alert(char *msg, char *caption);
-void Win32AlertW(wchar_t *msg, wchar_t *caption);
 char* Win32GetProductId();
 void Win32SetHighPriority();
 void Win32RestorePriority();

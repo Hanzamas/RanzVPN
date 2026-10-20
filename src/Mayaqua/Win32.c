@@ -390,45 +390,10 @@ char* Win32GetProductId()
 	return CopyStr("--");
 }
 
+// InitMayaqua() ends the process through MayaFatalExit() when this is false
 bool Win32IsSupportedOs()
 {
-	if (Win32GetOsType() == 0)
-	{
-		Win32Alert(
-			CEDAR_PRODUCT_STR " VPN doesn't support this Windows Operating System.\n"
-			CEDAR_PRODUCT_STR " VPN requires " SUPPORTED_WINDOWS_LIST ".\n\n"
-			"Please contact your system administrator.", NULL);
-		return false;
-	}
-
-	return true;
-}
-
-void Win32AlertW(wchar_t *msg, wchar_t *caption)
-{
-	if (msg == NULL)
-	{
-		msg = L"Alert";
-	}
-	if (caption == NULL)
-	{
-		caption = CEDAR_PRODUCT_STR_W L" VPN Kernel";
-	}
-
-	MessageBoxW(NULL, msg, caption, MB_SETFOREGROUND | MB_TOPMOST | MB_SERVICE_NOTIFICATION | MB_OK | MB_ICONEXCLAMATION);
-}
-void Win32Alert(char *msg, char *caption)
-{
-	if (msg == NULL)
-	{
-		msg = "Alert";
-	}
-	if (caption == NULL)
-	{
-		caption = CEDAR_PRODUCT_STR " VPN Kernel";
-	}
-
-	MessageBox(NULL, msg, caption, MB_SETFOREGROUND | MB_TOPMOST | MB_SERVICE_NOTIFICATION | MB_OK | MB_ICONEXCLAMATION);
+	return Win32GetOsType() != 0;
 }
 
 UINT Win32GetNumberOfCpuInner()
@@ -1095,12 +1060,6 @@ void Win32Init()
 #else
 	use_heap_api = false;
 #endif
-
-	if (MayaquaIsDotNetMode())
-	{
-		// The heap API can crash when called in .NET mode
-		use_heap_api = false;
-	}
 
 	if (use_heap_api)
 	{

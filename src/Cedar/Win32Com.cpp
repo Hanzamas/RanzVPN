@@ -33,7 +33,6 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout
 	hSetupApiDll = LoadLibraryA("setupapi.dll");
 	if (hSetupApiDll == NULL)
 	{
-		WHERE;
 		goto LABEL_CLEANUP;
 	}
 
@@ -47,7 +46,6 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout
 
 	if (_SetupCopyOEMInfW == NULL || _SetupUninstallOEMInfW == NULL)
 	{
-		WHERE;
 		goto LABEL_CLEANUP;
 	}
 
@@ -98,16 +96,8 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout
 
 								ret = true;
 							}
-							else
-							{
-								WHERE;
-							}
 
 							pSetup->Release();
-						}
-						else
-						{
-							WHERE;
 						}
 
 						if (ret == false)
@@ -123,31 +113,15 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path, wchar_t *id, UINT lock_timeout
 							}
 						}
 					}
-					else
-					{
-						WHERE;
-					}
-				}
-				else
-				{
-					WHERE;
 				}
 
 				pLock->ReleaseWriteLock();
-			}
-			else
-			{
-				WHERE;
 			}
 
 			pLock->Release();
 		}
 
 		pNetCfg->Release();
-	}
-	else
-	{
-		WHERE;
 	}
 
 LABEL_CLEANUP:

@@ -540,6 +540,7 @@ void nullsafe_test(UINT num, char **arg)
 	UINT ret;
 	UINT64 start, elapsed;
 	bool waited;
+	UCHAR be[8];
 
 	RtBegin(&ctx, "NULLSAFE", "NULL safety test");
 
@@ -552,6 +553,36 @@ void nullsafe_test(UINT num, char **arg)
 	UnlockInner(lock);
 	DeleteLock(lock);
 	RtCheck(&ctx, true, "UnlockInner(NULL) and DeleteLock(NULL) return", "");
+
+	// Macro hygiene: Lock/Unlock, WRITE_* and KS_* are each one statement, so each stands in
+	// an unbraced if/else (the KS_INC/KS_DEC branches compile but never run)
+	Zero(be, sizeof(be));
+	if (item == 1)
+		Lock(lock);
+	else
+		Unlock(lock);
+	if (item == 1)
+		WRITE_UINT64(be, 0x0102030405060708ULL);
+	else
+		WRITE_USHORT(be, 0);
+	if (item == 1)
+		WRITE_USHORT(be + 6, 0x0A0B);
+	else
+		WRITE_UINT(be, 0);
+	if (item == 1)
+		WRITE_UINT(be, 0x11223344);
+	else
+		WRITE_UINT64(be, 0);
+	if (item == 1)
+		KS_ADD(KS_STRLEN_COUNT, 0);
+	else
+		KS_INC(KS_STRLEN_COUNT);
+	if (item == 1)
+		KS_SUB(KS_STRLEN_COUNT, 0);
+	else
+		KS_DEC(KS_STRLEN_COUNT);
+	RtCheck(&ctx, READ_UINT64(be) == 0x1122334405060A0BULL, "WRITE_* in unbraced if/else write big-endian",
+		"got %08x%08x", READ_UINT(be), READ_UINT(be + 4));
 
 	// LockList/UnlockList on a list from NewListFast, which has no lock
 	o = NewListFast(NULL);

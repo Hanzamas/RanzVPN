@@ -23,9 +23,8 @@
 
 bool g_memcheck;
 bool g_debug;
-UINT64 kernel_status[NUM_KERNEL_STATUS];
-UINT64 kernel_status_max[NUM_KERNEL_STATUS];
-static LOCK *kernel_status_lock[NUM_KERNEL_STATUS];
+volatile LONG64 kernel_status[NUM_KERNEL_STATUS];
+volatile LONG64 kernel_status_max[NUM_KERNEL_STATUS];
 bool kernel_status_inited = false;
 bool g_little_endian = true;
 char *cmdline = NULL;
@@ -36,9 +35,6 @@ static wchar_t *exename_w = NULL;
 static TOKEN_LIST *cmdline_token = NULL;
 static UNI_TOKEN_LIST *cmdline_uni_token = NULL;
 static OS_INFO *os_info = NULL;
-static bool dot_net_mode = false;
-static bool minimal_mode = false;
-static bool is_ham_mode = false;
 static UINT init_mayaqua_counter = 0;
 static BUF *probe_buf = NULL;
 static LOCK *probe_lock = NULL;
@@ -97,6 +93,12 @@ void EnableProbe(bool enable)
 	probe_enabled = enable;
 }
 
+// Test hooks: set only by the test harness (ham mode) and the fuzzer (minimal mode),
+// never by the shipped binaries.
+static bool is_ham_mode = false;
+static bool minimal_mode = false;
+
+// vpntest: the server starts without registering itself in the Windows firewall
 void SetHamMode()
 {
 	is_ham_mode = true;
@@ -107,9 +109,15 @@ bool IsHamMode()
 	return is_ham_mode;
 }
 
-bool MayaquaIsDotNetMode()
+// fuzzer: start without the hamcore archive and the string table
+void MayaquaMinimalMode()
 {
-	return dot_net_mode;
+	minimal_mode = true;
+}
+
+bool MayaquaIsMinimalMode()
+{
+	return minimal_mode;
 }
 
 static void CheckEndian()
@@ -129,15 +137,6 @@ static void CheckEndian()
 	}
 }
 
-void MayaquaMinimalMode()
-{
-	minimal_mode = true;
-}
-bool MayaquaIsMinimalMode()
-{
-	return minimal_mode;
-}
-
 void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 {
 	wchar_t tmp[MAX_PATH];
@@ -153,11 +152,7 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 	g_memcheck = memcheck;
 	g_debug = debug;
 	cmdline = NULL;
-	if (dot_net_mode == false)
-	{
-		// This fails in .NET mode
-		setbuf(stdout, NULL);
-	}
+	setbuf(stdout, NULL);
 
 	CheckEndian();
 
@@ -203,7 +198,9 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 
 	if (OSIsSupportedOs() == false)
 	{
-		exit(0);
+		MayaFatalExit(1, CEDAR_PRODUCT_STR " VPN doesn't support this Windows Operating System.\r\n"
+			CEDAR_PRODUCT_STR " VPN requires " SUPPORTED_WINDOWS_LIST ".\r\n\r\n"
+			"Please contact your system administrator.");
 	}
 
 	InitHamcore();
@@ -219,18 +216,15 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 	GetExeNameW(tmp, sizeof(tmp));
 	if (IsFileExistsW(tmp) == false)
 	{
-		wchar_t tmp2[MAX_SIZE];
+		char msg[MAX_SIZE];
 
-		UniFormat(tmp2, sizeof(tmp2),
-			L"Error: Executable binary file \"%s\" not found.\r\n\r\n"
-			L"Please execute program with full path.\r\n",
+		Format(msg, sizeof(msg),
+			"Error: Executable binary file \"%S\" not found.\r\n\r\n"
+			"Please execute program with full path.",
 			tmp);
 
-		OSAlertW(tmp2, NULL);
-		_exit(0);
+		MayaFatalExit(1, msg);
 	}
-
-	CheckUnixTempDir();
 
 	InitProbe();
 
@@ -294,40 +288,61 @@ void FreeMayaqua()
 	OSFree();
 }
 
-void CheckUnixTempDir()
+// Whether a person can see a message box: a visible window station (not a service), and either
+// no standard error (a GUI program) or a console with a visible window. A redirected standard
+// error (a CI job, a pipe) gets the message there and never a box that waits for a click.
+static bool FatalExitCanShowBox()
 {
-	if (OS_IS_UNIX(GetOsInfo()->OsType))
+	HWINSTA station = GetProcessWindowStation();
+	USEROBJECTFLAGS flags;
+	HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
+	HWND console;
+
+	Zero(&flags, sizeof(flags));
+	if (station == NULL || GetUserObjectInformationW(station, UOI_FLAGS, &flags, sizeof(flags), NULL) == FALSE ||
+		(flags.dwFlags & WSF_VISIBLE) == 0)
 	{
-		char tmp[128], tmp2[64];
-		UINT64 now = SystemTime64();
-		IO *o;
-
-		MakeDir("/tmp");
-
-		Format(tmp2, sizeof(tmp2), "%I64u", now);
-
-		Format(tmp, sizeof(tmp), "/tmp/.%s", tmp2);
-
-		o = FileCreate(tmp);
-		if (o == NULL)
-		{
-			o = FileOpen(tmp, false);
-			if (o == NULL)
-			{
-				Print("Unable to use /tmp.\n\n");
-				exit(0);
-			}
-		}
-
-		FileClose(o);
-
-		FileDelete(tmp);
+		return false;
 	}
+
+	if (err == NULL || err == INVALID_HANDLE_VALUE)
+	{
+		return true;
+	}
+
+	console = GetConsoleWindow();
+
+	return GetFileType(err) == FILE_TYPE_CHAR && console != NULL && IsWindowVisible(console);
 }
 
-void Alert(char *msg, char *caption)
+// End the process on an error it cannot run past. The message goes to standard error, to the
+// Application event log and, only when a person can see it, to a message box (never
+// MB_SERVICE_NOTIFICATION, which puts a service's box on the user's desktop and blocks it).
+// Exits with code (1 when code is 0) without CRT clean-up, as other threads may still run.
+// Plain CRT and Win32 calls only: it may run before InitMayaqua() is done.
+void MayaFatalExit(UINT code, char *msg)
 {
-	OSAlert(msg, caption);
+	if (msg == NULL)
+	{
+		msg = "Unknown Error";
+	}
+	if (code == 0)
+	{
+		code = 1;
+	}
+
+	fputs(msg, stderr);
+	fputs("\n", stderr);
+	fflush(stderr);
+
+	MsWriteEventLog(CEDAR_PRODUCT_STR " VPN", EVENTLOG_ERROR_TYPE, MS_EVENT_FATAL_ERROR, msg);
+
+	if (FatalExitCanShowBox())
+	{
+		MessageBoxA(NULL, msg, CEDAR_PRODUCT_STR " VPN Kernel", MB_SETFOREGROUND | MB_TOPMOST | MB_OK | MB_ICONERROR);
+	}
+
+	_exit((int)code);
 }
 
 OS_INFO *GetOsInfo()
@@ -627,12 +642,10 @@ void InitKernelStatus()
 {
 	UINT i;
 
-	Zero(kernel_status, sizeof(kernel_status));
-	Zero(kernel_status_max, sizeof(kernel_status_max));
-
 	for (i = 0;i < NUM_KERNEL_STATUS;i++)
 	{
-		kernel_status_lock[i] = OSNewLock();
+		kernel_status[i] = 0;
+		kernel_status_max[i] = 0;
 	}
 
 	kernel_status_inited = true;
@@ -640,34 +653,7 @@ void InitKernelStatus()
 
 void FreeKernelStatus()
 {
-	UINT i;
-
 	kernel_status_inited = false;
-
-	for (i = 0;i < NUM_KERNEL_STATUS;i++)
-	{
-		OSDeleteLock(kernel_status_lock[i]);
-	}
-}
-
-void LockKernelStatus(UINT id)
-{
-	if (id >= NUM_KERNEL_STATUS)
-	{
-		return;
-	}
-
-	OSLock(kernel_status_lock[id]);
-}
-
-void UnlockKernelStatus(UINT id)
-{
-	if (id >= NUM_KERNEL_STATUS)
-	{
-		return;
-	}
-
-	OSUnlock(kernel_status_lock[id]);
 }
 
 void PrintDebugInformation()
