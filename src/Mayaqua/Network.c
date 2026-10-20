@@ -3709,15 +3709,10 @@ SOCK *Accept(SOCK *sock)
 
 	if (new_socket == INVALID_SOCKET)
 	{
-		if (sock->CancelAccept)
-		{
-			sock->AcceptCanceled = true;
-		}
 		return NULL;
 	}
 	if (sock->CancelAccept)
 	{
-		sock->AcceptCanceled = true;
 		closesocket(new_socket);
 		return NULL;
 	}
@@ -3801,15 +3796,10 @@ SOCK *Accept6(SOCK *sock)
 
 	if (new_socket == INVALID_SOCKET)
 	{
-		if (sock->CancelAccept)
-		{
-			sock->AcceptCanceled = true;
-		}
 		return NULL;
 	}
 	if (sock->CancelAccept)
 	{
-		sock->AcceptCanceled = true;
 		closesocket(new_socket);
 		return NULL;
 	}
@@ -4030,30 +4020,11 @@ void Disconnect(SOCK *sock)
 
 	if (sock->Type == SOCK_TCP && sock->ListenMode)
 	{
-		bool no_tcp_check_port = false;
-
 		sock->CancelAccept = true;
 
 		if (sock->hAcceptEvent != NULL)
 		{
 			SetEvent(sock->hAcceptEvent);
-
-			no_tcp_check_port = true;
-		}
-
-		if (sock->AcceptCanceled == false)
-		{
-			if (no_tcp_check_port == false)
-			{
-				if (sock->IPv6 == false)
-				{
-					CheckTCPPortEx("127.0.0.1", sock->LocalPort, TIMEOUT_TCP_PORT_CHECK);
-				}
-				else
-				{
-					CheckTCPPortEx("::1", sock->LocalPort, TIMEOUT_TCP_PORT_CHECK);
-				}
-			}
 		}
 	}
 
@@ -4063,17 +4034,6 @@ void Disconnect(SOCK *sock)
 
 	if (sock->Type == SOCK_TCP)
 	{
-		if (sock->socket != INVALID_SOCKET)
-		{
-#ifdef	SO_DONTLINGER
-			UINT true_flag = 1;
-			(void)setsockopt(sock->socket, SOL_SOCKET, SO_DONTLINGER, (char *)&true_flag, sizeof(true_flag));
-#else
-			UINT false_flag = 0;
-			(void)setsockopt(sock->socket, SOL_SOCKET, SO_LINGER, (char *)&false_flag, sizeof(false_flag));
-#endif
-		}
-
 		Lock(sock->lock);
 		{
 			if (sock->socket == INVALID_SOCKET)
@@ -4087,11 +4047,7 @@ void Disconnect(SOCK *sock)
 
 			if (sock->Connected)
 			{
-				struct linger ling;
-				Zero(&ling, sizeof(ling));
-
-
-				shutdown(s, 2);
+				shutdown(s, SD_BOTH);
 			}
 
 			closesocket(s);
@@ -4160,32 +4116,6 @@ void Disconnect(SOCK *sock)
 	Unlock(sock->disconnect_lock);
 
 	Unlock(disconnect_function_lock);
-}
-
-bool CheckTCPPortEx(char *hostname, UINT port, UINT timeout)
-{
-	SOCK *s;
-	if (hostname == NULL || port == 0 || port >= 65536)
-	{
-		return false;
-	}
-
-	if (timeout == 0)
-	{
-		timeout = TIMEOUT_TCP_PORT_CHECK;
-	}
-
-	s = ConnectEx4(hostname, port, timeout, NULL, true, NULL);
-	if (s == NULL)
-	{
-		return false;
-	}
-	else
-	{
-		Disconnect(s);
-		ReleaseSock(s);
-		return true;
-	}
 }
 
 static char *PrintError(int ErrorCode)
@@ -4602,9 +4532,9 @@ static void BindConnectThreadForIPv6(THREAD* thread, void* param)
 
 SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname, char *hostname_original)
 {
-	struct linger ling;
 	char tmp[MAX_SIZE];
 	SOCK *sock;
+	UINT true_flag = 1;
 
 	if (s == INVALID_SOCKET)
 	{
@@ -4626,17 +4556,6 @@ SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname
 
 
 	sock->RemoteHostname = CopyStr(tmp);
-
-
-	Zero(&ling, sizeof(ling));
-
-	UINT true_flag = 1;
-#ifdef	SO_DONTLINGER
-	(void)setsockopt(sock->socket, SOL_SOCKET, SO_DONTLINGER, (char *)&true_flag, sizeof(true_flag));
-#else
-	UINT false_flag = 0;
-	(void)setsockopt(sock->socket, SOL_SOCKET, SO_LINGER, (char *)&false_flag, sizeof(false_flag));
-#endif
 
 	(void)setsockopt(sock->socket, IPPROTO_TCP, TCP_NODELAY, (char *)&true_flag, sizeof(true_flag));
 

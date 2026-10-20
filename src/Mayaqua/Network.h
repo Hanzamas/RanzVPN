@@ -131,7 +131,6 @@ struct SOCK
 	UINT TimeOut;
 	SOCK_EVENT *SockEvent;
 	bool CancelAccept;
-	bool AcceptCanceled;
 	bool UdpBroadcast;
 	bool IPv6;
 	bool IsRawSocket;
@@ -321,7 +320,6 @@ UINT RecvFrom(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size);
 UINT RecvFrom6(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size);
 void SetTimeout(SOCK *sock, UINT timeout);
 UINT GetTimeout(SOCK *sock);
-bool CheckTCPPortEx(char *hostname, UINT port, UINT timeout);
 void JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event);
 SOCK_EVENT *NewSockEvent();
 void SetSockEvent(SOCK_EVENT *event);
