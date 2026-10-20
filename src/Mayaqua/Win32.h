@@ -45,6 +45,7 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare);
 bool Win32GetDiskFree(char *path, UINT64 *free_size, UINT64 *used_size, UINT64 *total_size);
 bool Win32SetFolderCompress(char *path, bool compressed);
 bool Win32InputW(wchar_t *str, UINT size);
+void Win32InputDiscardLine();
 bool Win32InputFromFileW(wchar_t *str, UINT size);
 char *Win32InputFromFileLineA();
 void Win32PrintW(wchar_t *str);

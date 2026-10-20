@@ -295,10 +295,18 @@ jobs:
   # Debug configuration, built without running anything: the code that build_and_test
   # (RelWithDebInfo) never compiles, under _DEBUG (Microsoft.c and vpncmd.c) and without
   # WIN32_NO_DEBUG_HELP_DLL (the DbgHelp call stacks of Win32.c), with the Debug definitions of
-  # cmake/RanzOptions.cmake. x64 only: the stack walk of Win32GetCallStack reads x64 registers.
+  # cmake/RanzOptions.cmake. x64 and arm64: Win32GetCallStack captures with CaptureStackBackTrace,
+  # which needs no machine type.
   debug:
-    runs-on: windows-latest
-    name: x64 Debug (build only)
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [
+          { ARCHITECTURE: x64, VCPKG_TRIPLET: "x64-windows-static", RUNNER: "windows-latest", CMAKE_EXTRA_FLAGS: ""},
+          { ARCHITECTURE: arm64, VCPKG_TRIPLET: "arm64-windows-static", RUNNER: "windows-11-arm", CMAKE_EXTRA_FLAGS: "-DOQS_PERMIT_UNSUPPORTED_ARCHITECTURE=ON"}
+        ]
+    runs-on: ${{ matrix.platform.RUNNER }}
+    name: ${{ matrix.platform.ARCHITECTURE }} Debug (build only)
     steps:
     - uses: actions/checkout@v4
       with:
@@ -307,9 +315,13 @@ jobs:
       uses: actions/cache/restore@v4
       with:
         path: vcpkg-bincache
-        key: vcpkg-bin-x64-windows-static-none
-        restore-keys: vcpkg-bin-x64-windows-static-
+        key: vcpkg-bin-${{ matrix.platform.VCPKG_TRIPLET }}-none
+        restore-keys: vcpkg-bin-${{ matrix.platform.VCPKG_TRIPLET }}-
     - name: Build (Debug)
+      env:
+        ARCHITECTURE: ${{ matrix.platform.ARCHITECTURE }}
+        VCPKG_TRIPLET: ${{ matrix.platform.VCPKG_TRIPLET }}
+        CMAKE_EXTRA_FLAGS: ${{ matrix.platform.CMAKE_EXTRA_FLAGS }}
       run: |
         set BUILD_NUMBER=0
         if not exist "%VCPKG_BINCACHE%" mkdir "%VCPKG_BINCACHE%"
@@ -322,9 +334,19 @@ jobs:
           exit /b 1
         )
 
-        call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
-        set "COMPILER_PATH=%VSINSTALL%\VC\Tools\Llvm\x64\bin\clang-cl.exe"
-        cmake -G "Ninja" -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER="%COMPILER_PATH%" -DCMAKE_CXX_COMPILER="%COMPILER_PATH%" -DBUILD_NUMBER=%BUILD_NUMBER% -DRANZ_UNUSED_WARNINGS=ON ..
+        if /i "%ARCHITECTURE%"=="x64" (
+          set "VCVARS_PATH=%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
+          set "COMPILER_PATH=%VSINSTALL%\VC\Tools\Llvm\x64\bin\clang-cl.exe"
+        ) else if /i "%ARCHITECTURE%"=="arm64" (
+          set "VCVARS_PATH=%VSINSTALL%\VC\Auxiliary\Build\vcvarsarm64.bat"
+          set "COMPILER_PATH=%VSINSTALL%\VC\Tools\Llvm\ARM64\bin\clang-cl.exe"
+        ) else (
+          echo Unsupported architecture: %ARCHITECTURE%
+          exit /b 1
+        )
+
+        call "%VCVARS_PATH%"
+        cmake -G "Ninja" -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=%VCPKG_TRIPLET% -DCMAKE_BUILD_TYPE=Debug -DCMAKE_C_COMPILER="%COMPILER_PATH%" -DCMAKE_CXX_COMPILER="%COMPILER_PATH%" -DBUILD_NUMBER=%BUILD_NUMBER% -DRANZ_UNUSED_WARNINGS=ON %CMAKE_EXTRA_FLAGS% ..
         if errorlevel 1 exit /b 1
         cmake --build .
       shell: cmd

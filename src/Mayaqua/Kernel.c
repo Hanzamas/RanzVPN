@@ -19,43 +19,19 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
-#ifndef TM_YEAR_MAX
-#define TM_YEAR_MAX         2106
-#endif
-#ifndef TM_MON_MAX
-#define TM_MON_MAX          1
-#endif
-#ifndef TM_MDAY_MAX
-#define TM_MDAY_MAX         7
-#endif
-#ifndef TM_HOUR_MAX
-#define TM_HOUR_MAX         6
-#endif
-#ifndef TM_MIN_MAX
-#define TM_MIN_MAX          28
-#endif
-#ifndef TM_SEC_MAX
-#define TM_SEC_MAX          14
-#endif
-
-#define ADJUST_TM(tm_member, tm_carry, modulus) \
-	if ((tm_member) < 0){ \
-	tm_carry -= (1 - ((tm_member)+1) / (modulus)); \
-	tm_member = (modulus-1) + (((tm_member)+1) % (modulus)); \
-	} else if ((tm_member) >= (modulus)) { \
-	tm_carry += (tm_member) / (modulus); \
-	tm_member = (tm_member) % (modulus); \
-	}
-#define leap(y) (((y) % 4 == 0 && (y) % 100 != 0) || (y) % 400 == 0)
-#define nleap(y) (((y) - 1969) / 4 - ((y) - 1901) / 100 + ((y) - 1601) / 400)
-#define leapday(m, y) ((m) == 1 && leap (y))
-#define monthlen(m, y) (ydays[(m)+1] - ydays[m] + leapday (m, y))
-static int ydays[] =
-{
-	0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365
-};
+// Constants of the UINT64 time encoding (Unix-epoch milliseconds minus 9 hours) and of the
+// SYSTEMTIME conversions. A FILETIME counts 100 ns ticks since 1601-01-01 UTC.
+#define	TIME_TICKS_PER_MS		10000ULL				// FILETIME ticks in a millisecond
+#define	TIME_TICKS_PER_SEC		10000000ULL				// FILETIME ticks in a second
+#define	TIME_TICKS_PER_DAY		864000000000ULL			// FILETIME ticks in a day
+#define	TIME_UNIX_EPOCH_TICKS	116444736000000000ULL	// 1970-01-01 00:00:00 UTC as a FILETIME
+#define	TIME_YEAR_MIN			1970					// A SYSTEMTIME converted to the encoding is clamped to these years
+#define	TIME_YEAR_MAX			2099
+#define	TIME_ENCODE_OFFSET_MS	32400000ULL				// 9 hours (ms), subtracted by the encoding
+#define	TIME_ENCODE_MIN_SEC		32400000ULL				// Seconds after 1970 below which the encoding is 0: the offset above, compared with seconds (1971-01-11)
+#define	TIME_ENCODE_MAX_MS		4102243323123ULL		// Latest Unix-epoch time (ms) the encoding decodes (2099-12-29 16:02:03.123)
+#define	TIME_UNIX_SEC_MAX		(TIME_ENCODE_MAX_MS / 1000ULL)	// Latest Unix time (s) TimeToSystem converts
 
 static UINT cached_number_of_cpus = 0;
 
@@ -65,100 +41,6 @@ L"- - $ : : $ Sun Mon Tue Wed Thu Fri Sat : : : $ (None)";
 
 
 static LOCALE current_locale;
-
-#define MONSPERYEAR 12
-#define DAYSPERNYEAR 365
-#define DAYSPERLYEAR 366
-#define SECSPERMIN 60
-#define SECSPERHOUR (60*60)
-#define SECSPERDAY (24*60*60)
-#define DAYSPERWEEK 7
-#define TM_THURSDAY	4
-
-#define TM_YEAR_BASE	1900
-
-#define EPOCH_YEAR	1970
-#define EPOCH_WDAY	TM_THURSDAY
-
-#define isleap(y) (((y) % 4) == 0 && (((y) % 100) != 0 || ((y) % 400) == 0))
-
-static const int	mon_lengths[2][MONSPERYEAR] = {
-	{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 },
-	{ 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
-};
-
-static const int	year_lengths[2] = {
-	DAYSPERNYEAR, DAYSPERLYEAR
-};
-
-
-/*
- * Taken from FreeBSD src / lib / libc / stdtime / localtime.c 1.43 revision.
- * localtime.c 7.78.
- * tzfile.h 1.8
- * adapted to be replacement gmtime_r.
- */
-static void
-c_timesub(timep, offset, tmp)
-const time_64t * const			timep;
-const long				offset;
-struct tm * const		tmp;
-{
-	INT64			days;
-	INT64			rem;
-	INT64			y;
-	int			yleap;
-	const int *		ip;
-
-	days = *timep / SECSPERDAY;
-	rem = *timep % SECSPERDAY;
-	rem += (offset);
-	while (rem < 0) {
-		rem += SECSPERDAY;
-		--days;
-	}
-	while (rem >= SECSPERDAY) {
-		rem -= SECSPERDAY;
-		++days;
-	}
-	tmp->tm_hour = (int) (rem / SECSPERHOUR);
-	rem = rem % SECSPERHOUR;
-	tmp->tm_min = (int) (rem / SECSPERMIN);
-	/*
-	** A positive leap second requires a special
-	** representation.  This uses "... ??:59:60" et seq.
-	*/
-	tmp->tm_sec = (int) (rem % SECSPERMIN) ;
-	tmp->tm_wday = (int) ((EPOCH_WDAY + days) % DAYSPERWEEK);
-	if (tmp->tm_wday < 0)
-		tmp->tm_wday += DAYSPERWEEK;
-	y = EPOCH_YEAR;
-#define LEAPS_THRU_END_OF(y)	((y) / 4 - (y) / 100 + (y) / 400)
-	while (days < 0 || days >= (long) year_lengths[yleap = isleap(y)]) {
-		INT64	newy;
-
-		newy = y + days / DAYSPERNYEAR;
-		if (days < 0)
-			--newy;
-		days -= (newy - y) * DAYSPERNYEAR +
-			LEAPS_THRU_END_OF(newy - 1) -
-			LEAPS_THRU_END_OF(y - 1);
-		y = newy;
-	}
-	tmp->tm_year = (int)(y - TM_YEAR_BASE);
-	tmp->tm_yday = (int) days;
-	ip = mon_lengths[yleap];
-	for (tmp->tm_mon = 0; days >= (INT64) ip[tmp->tm_mon]; ++(tmp->tm_mon))
-		days = days - (INT64) ip[tmp->tm_mon];
-	tmp->tm_mday = (int) (days + 1);
-	tmp->tm_isdst = 0;
-}
-
-static struct tm * c_gmtime_r(const time_64t* timep, struct tm *tm)
-{
-	c_timesub(timep, 0L, tm);
-	return tm;
-}
 
 UINT GetNumberOfCpu()
 {
@@ -457,7 +339,86 @@ void GetTimeStrMilli64(char *str, UINT size, UINT64 sec64)
 
 static UINT64 SafeTime64(UINT64 sec64)
 {
-	return MAKESURE(sec64, 0, 4102243323123ULL);
+	return MAKESURE(sec64, 0, TIME_ENCODE_MAX_MS);
+}
+
+// A FILETIME as a count of 100 ns ticks, and back
+static UINT64 FileTimeToTicks(FILETIME *ft)
+{
+	return ((UINT64)ft->dwHighDateTime << 32) | (UINT64)ft->dwLowDateTime;
+}
+
+static void TicksToFileTime(FILETIME *ft, UINT64 ticks)
+{
+	ft->dwHighDateTime = (DWORD)(ticks >> 32);
+	ft->dwLowDateTime = (DWORD)ticks;
+}
+
+// The ticks of the UTC time in a SYSTEMTIME. Every field is clamped to its valid range and the
+// year to 1970..2099; a day past the end of the month rolls into the next month. wMilliseconds
+// and wDayOfWeek are not read. Returns 0 when the conversion fails
+static UINT64 SystemToTicks(SYSTEMTIME *st)
+{
+	SYSTEMTIME tmp;
+	FILETIME ft;
+
+	Zero(&tmp, sizeof(tmp));
+	tmp.wYear = (WORD)MAKESURE(st->wYear, TIME_YEAR_MIN, TIME_YEAR_MAX);
+	tmp.wMonth = (WORD)MAKESURE(st->wMonth, 1, 12);
+	tmp.wDay = 1;
+	tmp.wHour = (WORD)MAKESURE(st->wHour, 0, 23);
+	tmp.wMinute = (WORD)MAKESURE(st->wMinute, 0, 59);
+	tmp.wSecond = (WORD)MAKESURE(st->wSecond, 0, 59);
+
+	if (SystemTimeToFileTime(&tmp, &ft) == FALSE)
+	{
+		return 0;
+	}
+
+	return FileTimeToTicks(&ft) + (UINT64)(MAKESURE(st->wDay, 1, 31) - 1) * TIME_TICKS_PER_DAY;
+}
+
+// The UINT64 time encoding of a time in ticks plus a number of milliseconds. Times before the
+// lower limit encode as 0: the result is unsigned
+static UINT64 TicksToTime64(UINT64 ticks, UINT64 add_ms)
+{
+	UINT64 sec;
+
+	if (ticks < TIME_UNIX_EPOCH_TICKS)
+	{
+		return 0;
+	}
+
+	sec = (ticks - TIME_UNIX_EPOCH_TICKS) / TIME_TICKS_PER_SEC;
+	if (sec < TIME_ENCODE_MIN_SEC)
+	{
+		return 0;
+	}
+
+	return sec * 1000ULL + add_ms - TIME_ENCODE_OFFSET_MS;
+}
+
+UINT64 FileTimeToUINT64(FILETIME *ft)
+{
+	UINT64 ticks;
+	if (ft == NULL)
+	{
+		return 0;
+	}
+
+	ticks = FileTimeToTicks(ft);
+
+	return TicksToTime64(ticks, (ticks % TIME_TICKS_PER_SEC) / TIME_TICKS_PER_MS);
+}
+
+void UINT64ToFileTime(FILETIME *ft, UINT64 t)
+{
+	if (ft == NULL)
+	{
+		return;
+	}
+
+	TicksToFileTime(ft, TIME_UNIX_EPOCH_TICKS + SafeTime64(t + TIME_ENCODE_OFFSET_MS) * TIME_TICKS_PER_MS);
 }
 
 // The THREAD jobs (NewThreadNamed) run on a private Windows thread pool. Every job joins the
@@ -1162,10 +1123,9 @@ bool DateTimeStrRFC3339ToSystemTime(SYSTEMTIME *st, char *str)
 	}
 
 	// Local time minus the offset is UTC (FILETIME counts 100 ns units)
-	t = ((UINT64)ft.dwHighDateTime << 32) | (UINT64)ft.dwLowDateTime;
-	t = (UINT64)((INT64)t - offset_sign * (INT64)(offset_hour * 60 + offset_minute) * 600000000LL);
-	ft.dwHighDateTime = (DWORD)(t >> 32);
-	ft.dwLowDateTime = (DWORD)t;
+	t = FileTimeToTicks(&ft);
+	t = (UINT64)((INT64)t - offset_sign * (INT64)(offset_hour * 60 + offset_minute) * (INT64)(60ULL * TIME_TICKS_PER_SEC));
+	TicksToFileTime(&ft, t);
 
 	if (FileTimeToSystemTime(&ft, st) == FALSE)
 	{
@@ -1269,113 +1229,29 @@ bool LoadLocale(LOCALE *locale, wchar_t *str)
 	return true;
 }
 
-static void TmToSystem(SYSTEMTIME *st, struct tm *t)
-{
-	struct tm tmp;
-	if (st == NULL || t == NULL)
-	{
-		return;
-	}
-
-	Copy(&tmp, t, sizeof(struct tm));
-	NormalizeTm(&tmp);
-
-	Zero(st, sizeof(SYSTEMTIME));
-	st->wYear = MAKESURE(tmp.tm_year + 1900, 1970, 2099);
-	st->wMonth = MAKESURE(tmp.tm_mon + 1, 1, 12);
-	st->wDay = MAKESURE(tmp.tm_mday, 1, 31);
-	st->wDayOfWeek = MAKESURE(tmp.tm_wday, 0, 6);
-	st->wHour = MAKESURE(tmp.tm_hour, 0, 23);
-	st->wMinute = MAKESURE(tmp.tm_min, 0, 59);
-	st->wSecond = MAKESURE(tmp.tm_sec, 0, 59);
-	st->wMilliseconds = 0;
-}
-
-static void SystemToTm(struct tm *t, SYSTEMTIME *st)
-{
-	if (t == NULL || st == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(struct tm));
-	t->tm_year = MAKESURE(st->wYear, 1970, 2099) - 1900;
-	t->tm_mon = MAKESURE(st->wMonth, 1, 12) - 1;
-	t->tm_mday = MAKESURE(st->wDay, 1, 31);
-	t->tm_hour = MAKESURE(st->wHour, 0, 23);
-	t->tm_min = MAKESURE(st->wMinute, 0, 59);
-	t->tm_sec = MAKESURE(st->wSecond, 0, 59);
-
-	t->tm_isdst = -1;
-	NormalizeTm(t);
-}
-
 void TimeToSystem(SYSTEMTIME *st, time_64t t)
 {
-	struct tm tmp;
+	FILETIME ft;
 	if (st == NULL)
 	{
 		return;
 	}
 
-	TimeToTm(&tmp, t);
-	TmToSystem(st, &tmp);
-}
-
-static time_64t SystemToTime(SYSTEMTIME *st)
-{
-	struct tm t;
-	if (st == NULL)
+	// The times that the UINT64 encoding holds
+	if (t < 0)
 	{
-		return 0;
+		t = 0;
+	}
+	if (t > (time_64t)TIME_UNIX_SEC_MAX)
+	{
+		t = (time_64t)TIME_UNIX_SEC_MAX;
 	}
 
-	SystemToTm(&t, st);
-	return TmToTime(&t);
-}
-
-time_64t TmToTime(struct tm *t)
-{
-	time_64t tmp;
-	if (t == NULL)
+	TicksToFileTime(&ft, TIME_UNIX_EPOCH_TICKS + (UINT64)t * TIME_TICKS_PER_SEC);
+	if (FileTimeToSystemTime(&ft, st) == FALSE)
 	{
-		return 0;
+		Zero(st, sizeof(SYSTEMTIME));
 	}
-
-	tmp = c_mkgmtime(t);
-	if (tmp == (time_64t)-1)
-	{
-		return 0;
-	}
-	return tmp;
-}
-
-void TimeToTm(struct tm *t, time_64t time)
-{
-	if (t == NULL)
-	{
-		return;
-	}
-
-	Zero(t, sizeof(struct tm));
-	c_gmtime_r(&time, t);
-}
-
-void NormalizeTm(struct tm *t)
-{
-	time_64t tmp;
-	if (t == NULL)
-	{
-		return;
-	}
-
-	tmp = c_mkgmtime(t);
-	if (tmp == (time_64t)-1)
-	{
-		return;
-	}
-
-	c_gmtime_r(&tmp, t);
 }
 
 void NormalizeSystem(SYSTEMTIME *st)
@@ -1432,102 +1308,98 @@ void SystemToLocal(SYSTEMTIME *local, SYSTEMTIME *system)
 
 INT64 GetTimeDiffEx(SYSTEMTIME *basetime, bool local_time)
 {
-	time_t tmp;
-	struct tm t1, t2;
-	SYSTEMTIME snow;
-	struct tm now;
-	SYSTEMTIME s1, s2;
-	INT64 ret;
-
-	Copy(&snow, basetime, sizeof(SYSTEMTIME));
-
-	if (sizeof(time_t) == 4)
-	{
-		if (snow.wYear >= 2038)
-		{
-			// Clamp to 2037 to avoid the 2038 problem
-			snow.wYear = 2037;
-		}
-	}
-
-	SystemToTm(&now, &snow);
-	if (local_time == false)
-	{
-		tmp = (time_t)c_mkgmtime(&now);
-	}
-	else
-	{
-		tmp = mktime(&now);
-	}
-
-	if (tmp == (time_t)-1)
+	FILETIME ft;
+	SYSTEMTIME base, other;
+	UINT64 base_ticks, other_ticks;
+	if (basetime == NULL)
 	{
 		return 0;
 	}
 
-	Copy(&t1, localtime(&tmp), sizeof(struct tm));
-	Copy(&t2, gmtime(&tmp), sizeof(struct tm));
+	// Clamp and normalize the fields as SystemToUINT64 does
+	base_ticks = SystemToTicks(basetime);
+	if (base_ticks == 0)
+	{
+		return 0;
+	}
 
-	TmToSystem(&s1, &t1);
-	TmToSystem(&s2, &t2);
+	TicksToFileTime(&ft, base_ticks);
+	if (FileTimeToSystemTime(&ft, &base) == FALSE)
+	{
+		return 0;
+	}
 
-	ret = (INT)SystemToUINT64(&s1) - (INT)SystemToUINT64(&s2);
+	if (local_time == false)
+	{
+		// basetime is UTC
+		if (SystemTimeToTzSpecificLocalTime(NULL, &base, &other) == FALSE)
+		{
+			return 0;
+		}
+	}
+	else
+	{
+		// basetime is local time
+		if (TzSpecificLocalTimeToSystemTime(NULL, &base, &other) == FALSE)
+		{
+			return 0;
+		}
+	}
 
-	return ret;
+	if (SystemTimeToFileTime(&other, &ft) == FALSE)
+	{
+		return 0;
+	}
+	other_ticks = FileTimeToTicks(&ft);
+
+	// Local time minus UTC, in milliseconds
+	if (local_time == false)
+	{
+		return ((INT64)other_ticks - (INT64)base_ticks) / (INT64)TIME_TICKS_PER_MS;
+	}
+
+	return ((INT64)base_ticks - (INT64)other_ticks) / (INT64)TIME_TICKS_PER_MS;
 }
 
 void UINT64ToSystem(SYSTEMTIME *st, UINT64 sec64)
 {
-	UINT64 tmp64;
-	UINT sec, millisec;
-	time_64t time;
+	FILETIME ft;
 	if (st == NULL)
 	{
 		return;
 	}
 
-	sec64 = SafeTime64(sec64 + 32400000ULL);
-	tmp64 = sec64 / (UINT64)1000;
-	millisec = (UINT)(sec64 - tmp64 * (UINT64)1000);
-	sec = (UINT)tmp64;
-	time = (time_64t)sec;
-	TimeToSystem(st, time);
-	st->wMilliseconds = (USHORT)millisec;
+	UINT64ToFileTime(&ft, sec64);
+	if (FileTimeToSystemTime(&ft, st) == FALSE)
+	{
+		Zero(st, sizeof(SYSTEMTIME));
+	}
 }
 
 UINT64 SystemToUINT64(SYSTEMTIME *st)
 {
-	UINT64 sec64;
-	time_64t time;
 	if (st == NULL)
 	{
 		return 0;
 	}
 
-	time = SystemToTime(st);
-
-	// Clamp times before 1970-01-01 to 0: the result is unsigned.
-	// The bound allows for the 9-hour shift subtracted below.
-	if( time < 32400000LL ) return 0;
-
-	sec64 = (UINT64)time * (UINT64)1000;
-	sec64 += st->wMilliseconds;
-
-	return sec64 - 32400000ULL;
+	return TicksToTime64(SystemToTicks(st), st->wMilliseconds);
 }
 
 UINT64 LocalTime64()
 {
-	SYSTEMTIME s;
-	LocalTime(&s);
-	return SystemToUINT64(&s);
+	return SystemToLocal64(SystemTime64());
 }
 
 UINT64 SystemTime64()
 {
-	SYSTEMTIME s;
-	SystemTime(&s);
-	return SystemToUINT64(&s);
+	FILETIME ft;
+
+	GetSystemTimeAsFileTime(&ft);
+
+	KS_INC(KS_GETTIME_COUNT);
+
+	return FileTimeToUINT64(&ft);
 }
 
 void LocalTime(SYSTEMTIME *st)
@@ -1552,73 +1424,6 @@ void SystemTime(SYSTEMTIME *st)
 	GetSystemTime(st);
 
 	KS_INC(KS_GETTIME_COUNT);
-}
-
-time_64t c_mkgmtime(struct tm *tm)
-{
-	int years, months, days, hours, minutes, seconds;
-
-	years = tm->tm_year + 1900;   /* year - 1900 -> year */
-	months = tm->tm_mon;          /* 0..11 */
-	days = tm->tm_mday - 1;       /* 1..31 -> 0..30 */
-	hours = tm->tm_hour;          /* 0..23 */
-	minutes = tm->tm_min;         /* 0..59 */
-	seconds = tm->tm_sec;         /* 0..61 in ANSI C. */
-
-	ADJUST_TM(seconds, minutes, 60);
-	ADJUST_TM(minutes, hours, 60);
-	ADJUST_TM(hours, days, 24);
-	ADJUST_TM(months, years, 12);
-	if (days < 0)
-		do {
-			if (--months < 0) {
-				--years;
-				months = 11;
-			}
-			days += monthlen(months, years);
-		} while (days < 0);
-	else
-		while (days >= monthlen(months, years)) {
-			days -= monthlen(months, years);
-			if (++months >= 12) {
-				++years;
-				months = 0;
-			}
-		}
-
-		tm->tm_year = years - 1900;
-		tm->tm_mon = months;
-		tm->tm_mday = days + 1;
-		tm->tm_hour = hours;
-		tm->tm_min = minutes;
-		tm->tm_sec = seconds;
-
-		days += ydays[months] + (months > 1 && leap (years));
-		tm->tm_yday = days;
-
-		days = (unsigned)days + 365 * (unsigned)(years - 1970) +
-			(unsigned)(nleap (years));
-		tm->tm_wday = ((unsigned)days + 4) % 7; /* Jan 1, 1970 was Thursday. */
-		tm->tm_isdst = 0;
-
-		if (years < 1970)
-			return (time_64t)-1;
-
-		if (years > TM_YEAR_MAX ||
-			(years == TM_YEAR_MAX &&
-			(tm->tm_yday > ydays[TM_MON_MAX] + (TM_MDAY_MAX - 1) +
-			(TM_MON_MAX > 1 && leap (TM_YEAR_MAX)) ||
-			(tm->tm_yday == ydays[TM_MON_MAX] + (TM_MDAY_MAX - 1) +
-			(TM_MON_MAX > 1 && leap (TM_YEAR_MAX)) &&
-			(hours > TM_HOUR_MAX ||
-			(hours == TM_HOUR_MAX &&
-			(minutes > TM_MIN_MAX ||
-			(minutes == TM_MIN_MAX && seconds > TM_SEC_MAX) )))))))
-			return (time_64t)-1;
-
-		return (time_64t)(86400L * (unsigned long)(unsigned)days +
-			3600L * (unsigned long)hours +
-			(unsigned long)(60 * minutes + seconds));
 }
 
 void SleepThread(UINT time)

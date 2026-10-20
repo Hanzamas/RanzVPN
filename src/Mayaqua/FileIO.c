@@ -1216,7 +1216,6 @@ static bool FileGetDate(void *pData, UINT64 *created_time, UINT64 *updated_time,
 {
 	WIN32IO *p;
 	BY_HANDLE_FILE_INFORMATION info;
-	SYSTEMTIME st_create, st_update, st_access;
 	// Validate arguments
 	if (pData == NULL)
 	{
@@ -1232,27 +1231,19 @@ static bool FileGetDate(void *pData, UINT64 *created_time, UINT64 *updated_time,
 		return false;
 	}
 
-	Zero(&st_create, sizeof(st_create));
-	Zero(&st_update, sizeof(st_update));
-	Zero(&st_access, sizeof(st_access));
-
-	FileTimeToSystemTime(&info.ftCreationTime, &st_create);
-	FileTimeToSystemTime(&info.ftLastWriteTime, &st_update);
-	FileTimeToSystemTime(&info.ftLastAccessTime, &st_access);
-
 	if (created_time != NULL)
 	{
-		*created_time = SystemToUINT64(&st_create);
+		*created_time = FileTimeToUINT64(&info.ftCreationTime);
 	}
 
 	if (updated_time != NULL)
 	{
-		*updated_time = SystemToUINT64(&st_update);
+		*updated_time = FileTimeToUINT64(&info.ftLastWriteTime);
 	}
 
 	if (accessed_date != NULL)
 	{
-		*accessed_date = SystemToUINT64(&st_access);
+		*accessed_date = FileTimeToUINT64(&info.ftLastAccessTime);
 	}
 
 	return true;
@@ -1262,7 +1253,6 @@ static bool FileGetDate(void *pData, UINT64 *created_time, UINT64 *updated_time,
 static bool FileSetDate(void *pData, UINT64 created_time, UINT64 updated_time)
 {
 	WIN32IO *p;
-	SYSTEMTIME st_created_time, st_updated_time;
 	FILETIME ft_created_time, ft_updated_time;
 	FILETIME *p_created_time = NULL, *p_updated_time = NULL;
 	// Validate arguments
@@ -1273,23 +1263,16 @@ static bool FileSetDate(void *pData, UINT64 created_time, UINT64 updated_time)
 
 	p = (WIN32IO *)pData;
 
-	Zero(&st_created_time, sizeof(st_created_time));
-	Zero(&st_updated_time, sizeof(st_updated_time));
-
 	if (created_time != 0)
 	{
-		UINT64ToSystem(&st_created_time, created_time);
-
-		SystemTimeToFileTime(&st_created_time, &ft_created_time);
+		UINT64ToFileTime(&ft_created_time, created_time);
 
 		p_created_time = &ft_created_time;
 	}
 
 	if (updated_time != 0)
 	{
-		UINT64ToSystem(&st_updated_time, updated_time);
-
-		SystemTimeToFileTime(&st_updated_time, &ft_updated_time);
+		UINT64ToFileTime(&ft_updated_time, updated_time);
 
 		p_updated_time = &ft_updated_time;
 	}
