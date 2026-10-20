@@ -1618,29 +1618,30 @@ void SiUnlockListenerList(SERVER *s)
 
 void SiSetDefaultHubOption(HUB_OPTION *o)
 {
+	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
+	for (i = 0;i < num_hub_option_fields;i++)
+	{
+		HUB_OPTION_FIELD *f = &hub_option_fields[i];
+
+		if (f->Default != 0)
+		{
+			SetHubOptionField(o, f, f->Default);
+		}
+	}
+
+	// A zero default is not applied (the caller may have set NoEnum), except MaxSession which is always reset
 	o->MaxSession = 0;
-	o->VlanTypeId = MAC_PROTO_TAGVLAN;
-	o->NoIPv6DefaultRouterInRAWhenIPv6 = false;
-	o->ManageOnlyPrivateIP = true;
-	o->ManageOnlyLocalUnicastIPv6 = true;
-	o->NoMacAddressLog = true;
-	o->NoDhcpPacketLogOutsideHub = true;
-	o->AccessListIncludeFileCacheLifetime = ACCESS_LIST_INCLUDE_FILE_CACHE_LIFETIME;
-	o->RemoveDefGwOnDhcpForLocalhost = true;
-	o->FloodingSendQueueBufferQuota = DEFAULT_FLOODING_QUEUE_LENGTH;
-	o->DhcpDiscoverTimeoutMs = DEFAULT_DHCP_DISCOVER_TIMEOUT;
 }
 
 static void SiInitDefaultHubList(SERVER *s)
 {
 	HUB *h;
 	HUB_OPTION o;
-	HUB_LOG g;
 	if (s == NULL)
 	{
 		return;
@@ -1663,26 +1664,7 @@ static void SiInitDefaultHubList(SERVER *s)
 	h->Offline = true;
 	SetHubOnline(h);
 
-	SiSetDefaultLogSetting(&g);
-	SetHubLogSettingEx(h, &g, false);
-
 	ReleaseHub(h);
-}
-
-void SiSetDefaultLogSetting(HUB_LOG *g)
-{
-	if (g == NULL)
-	{
-		return;
-	}
-
-	Zero(g, sizeof(HUB_LOG));
-	g->SaveSecurityLog = true;
-	g->SecurityLogSwitchType = LOG_SWITCH_DAY;
-	g->SavePacketLog = true;
-	g->PacketLogSwitchType = LOG_SWITCH_DAY;
-	g->PacketLogConfig[PACKET_LOG_TCP_CONN] =
-		g->PacketLogConfig[PACKET_LOG_DHCP] = PACKET_LOG_HEADER;
 }
 
 static void SiLoadInitialConfiguration(SERVER *s)
@@ -2617,216 +2599,89 @@ static void SiLoadHubAccessLists(HUB *h, FOLDER *f)
 
 static void SiLoadHubOptionCfg(FOLDER *f, HUB_OPTION *o)
 {
-	char tmp[MAX_SIZE];
+	UINT i;
 	if (f == NULL || o == NULL)
 	{
 		return;
 	}
 
-	o->MaxSession = CfgGetInt(f, "MaxSession");
-	o->NoArpPolling = CfgGetBool(f, "NoArpPolling");
-	o->NoIPv6AddrPolling = CfgGetBool(f, "NoIPv6AddrPolling");
-	o->NoIpTable = CfgGetBool(f, "NoIpTable");
-	o->NoEnum = CfgGetBool(f, "NoEnum");
-	o->FilterPPPoE = CfgGetBool(f, "FilterPPPoE");
-	o->FilterOSPF = CfgGetBool(f, "FilterOSPF");
-	o->FilterIPv4 = CfgGetBool(f, "FilterIPv4");
-	o->FilterIPv6 = CfgGetBool(f, "FilterIPv6");
-	o->FilterNonIP = CfgGetBool(f, "FilterNonIP");
-	o->FilterBPDU = CfgGetBool(f, "FilterBPDU");
-	o->NoIPv4PacketLog = CfgGetBool(f, "NoIPv4PacketLog");
-	o->NoIPv6PacketLog = CfgGetBool(f, "NoIPv6PacketLog");
-	o->NoIPv6DefaultRouterInRAWhenIPv6 = CfgGetBool(f, "NoIPv6DefaultRouterInRAWhenIPv6");
-	o->DisableIPParsing = CfgGetBool(f, "DisableIPParsing");
-	o->YieldAfterStorePacket = CfgGetBool(f, "YieldAfterStorePacket");
-	o->NoSpinLockForPacketDelay = CfgGetBool(f, "NoSpinLockForPacketDelay");
-	o->BroadcastStormDetectionThreshold = CfgGetInt(f, "BroadcastStormDetectionThreshold");
-	o->ClientMinimumRequiredBuild = CfgGetInt(f, "ClientMinimumRequiredBuild");
-	o->RequiredClientId = CfgGetInt(f, "RequiredClientId");
-	o->NoManageVlanId = CfgGetBool(f, "NoManageVlanId");
-	o->VlanTypeId = 0;
-	if (CfgGetStr(f, "VlanTypeId", tmp, sizeof(tmp)))
-	{
-		o->VlanTypeId = HexToInt(tmp);
-	}
-	if (o->VlanTypeId == 0)
-	{
-		o->VlanTypeId = MAC_PROTO_TAGVLAN;
-	}
-	o->FixForDLinkBPDU = CfgGetBool(f, "FixForDLinkBPDU");
-	o->BroadcastLimiterStrictMode = CfgGetBool(f, "BroadcastLimiterStrictMode");
-	o->MaxLoggedPacketsPerMinute = CfgGetInt(f, "MaxLoggedPacketsPerMinute");
-	if (CfgIsItem(f, "FloodingSendQueueBufferQuota"))
-	{
-		o->FloodingSendQueueBufferQuota = CfgGetInt(f, "FloodingSendQueueBufferQuota");
-	}
-	else
-	{
-		o->FloodingSendQueueBufferQuota = DEFAULT_FLOODING_QUEUE_LENGTH;
-	}
-	o->DoNotSaveHeavySecurityLogs = CfgGetBool(f, "DoNotSaveHeavySecurityLogs");
+	// An item the file does not have keeps its default
+	Zero(o, sizeof(HUB_OPTION));
+	SiSetDefaultHubOption(o);
 
-	if (CfgIsItem(f, "DropBroadcastsInPrivacyFilterMode"))
+	for (i = 0;i < num_hub_option_fields;i++)
 	{
-		o->DropBroadcastsInPrivacyFilterMode = CfgGetBool(f, "DropBroadcastsInPrivacyFilterMode");
-	}
-	else
-	{
-		o->DropBroadcastsInPrivacyFilterMode = true;
-	}
+		HUB_OPTION_FIELD *t = &hub_option_fields[i];
+		UINT value = GetHubOptionField(o, t);
+		char tmp[MAX_SIZE];
 
-	if (CfgIsItem(f, "DropArpInPrivacyFilterMode"))
-	{
-		o->DropArpInPrivacyFilterMode = CfgGetBool(f, "DropArpInPrivacyFilterMode");
-	}
-	else
-	{
-		o->DropArpInPrivacyFilterMode = true;
-	}
+		if (CfgIsItem(f, t->CfgName) == false)
+		{
+			continue;
+		}
 
-	if (CfgIsItem(f, "AllowSameUserInPrivacyFilterMode"))
-        {
-                o->AllowSameUserInPrivacyFilterMode = CfgGetBool(f, "AllowSameUserInPrivacyFilterMode");
-        }
-        else
-        {
-                o->AllowSameUserInPrivacyFilterMode = false;
-        }
+		switch (t->Type)
+		{
+		case HUB_OPTION_BOOL:
+			value = CfgGetBool(f, t->CfgName);
+			break;
 
+		case HUB_OPTION_UINT:
+			value = CfgGetInt(f, t->CfgName);
+			break;
 
-	o->NoLookBPDUBridgeId = CfgGetBool(f, "NoLookBPDUBridgeId");
-	o->AdjustTcpMssValue = CfgGetInt(f, "AdjustTcpMssValue");
-	o->DisableAdjustTcpMss = CfgGetBool(f, "DisableAdjustTcpMss");
-	if (CfgIsItem(f, "NoDhcpPacketLogOutsideHub"))
-	{
-		o->NoDhcpPacketLogOutsideHub = CfgGetBool(f, "NoDhcpPacketLogOutsideHub");
-	}
-	else
-	{
-		o->NoDhcpPacketLogOutsideHub = true;
-	}
-	o->DisableHttpParsing = CfgGetBool(f, "DisableHttpParsing");
-	o->DisableUdpAcceleration = CfgGetBool(f, "DisableUdpAcceleration");
-	o->DisableUdpFilterForLocalBridgeNic = CfgGetBool(f, "DisableUdpFilterForLocalBridgeNic");
-	o->ApplyIPv4AccessListOnArpPacket = CfgGetBool(f, "ApplyIPv4AccessListOnArpPacket");
-	if (CfgIsItem(f, "RemoveDefGwOnDhcpForLocalhost"))
-	{
-		o->RemoveDefGwOnDhcpForLocalhost = CfgGetBool(f, "RemoveDefGwOnDhcpForLocalhost");
-	}
-	else
-	{
-		o->RemoveDefGwOnDhcpForLocalhost = true;
-	}
-	o->AccessListIncludeFileCacheLifetime = CfgGetInt(f, "AccessListIncludeFileCacheLifetime");
+		case HUB_OPTION_HEX:
+			if (CfgGetStr(f, t->CfgName, tmp, sizeof(tmp)))
+			{
+				value = HexToInt(tmp);
+			}
+			break;
+		}
 
-	if (o->AccessListIncludeFileCacheLifetime == 0)
-	{
-		o->AccessListIncludeFileCacheLifetime = ACCESS_LIST_INCLUDE_FILE_CACHE_LIFETIME;
-	}
+		if ((t->Flags & HUB_OPTION_ZERO_IS_DEFAULT) != 0 && value == 0)
+		{
+			value = t->Default;
+		}
 
-	o->DisableCheckMacOnLocalBridge = CfgGetBool(f, "DisableCheckMacOnLocalBridge");
-	o->DisableCorrectIpOffloadChecksum = CfgGetBool(f, "DisableCorrectIpOffloadChecksum");
-	o->SuppressClientUpdateNotification = CfgGetBool(f, "SuppressClientUpdateNotification");
-	o->DetectDormantSessionInterval = CfgGetInt(f, "DetectDormantSessionInterval");
-	o->NoPhysicalIPOnPacketLog = CfgGetBool(f, "NoPhysicalIPOnPacketLog");
-	o->UseHubNameAsDhcpUserClassOption = CfgGetBool(f, "UseHubNameAsDhcpUserClassOption");
-	o->AllowEapMatchUserByCert = CfgGetBool(f, "AllowEapMatchUserByCert");
-	o->DhcpDiscoverTimeoutMs = CfgGetInt(f, "DhcpDiscoverTimeoutMs");
-	if (o->DhcpDiscoverTimeoutMs == 0)
-	{
-		o->DhcpDiscoverTimeoutMs = DEFAULT_DHCP_DISCOVER_TIMEOUT;
-	}
-
-	// Missing item means enabled
-	if (CfgIsItem(f, "ManageOnlyPrivateIP"))
-	{
-		o->ManageOnlyPrivateIP = CfgGetBool(f, "ManageOnlyPrivateIP");
-	}
-	else
-	{
-		o->ManageOnlyPrivateIP = true;
-	}
-	if (CfgIsItem(f, "ManageOnlyLocalUnicastIPv6"))
-	{
-		o->ManageOnlyLocalUnicastIPv6 = CfgGetBool(f, "ManageOnlyLocalUnicastIPv6");
-	}
-	else
-	{
-		o->ManageOnlyLocalUnicastIPv6 = true;
-	}
-	if (CfgIsItem(f, "NoMacAddressLog"))
-	{
-		o->NoMacAddressLog = CfgGetBool(f, "NoMacAddressLog");
-	}
-	else
-	{
-		o->NoMacAddressLog = true;
+		SetHubOptionField(o, t, value);
 	}
 }
 
 static void SiWriteHubOptionCfg(FOLDER *f, HUB_OPTION *o)
 {
-	char tmp[MAX_SIZE];
+	UINT i;
 	if (f == NULL || o == NULL)
 	{
 		return;
 	}
 
-	CfgAddInt(f, "MaxSession", o->MaxSession);
-	CfgAddBool(f, "NoArpPolling", o->NoArpPolling);
-	CfgAddBool(f, "NoIPv6AddrPolling", o->NoIPv6AddrPolling);
-	CfgAddBool(f, "NoIpTable", o->NoIpTable);
-	CfgAddBool(f, "NoEnum", o->NoEnum);
-	CfgAddBool(f, "FilterPPPoE", o->FilterPPPoE);
-	CfgAddBool(f, "FilterOSPF", o->FilterOSPF);
-	CfgAddBool(f, "FilterIPv4", o->FilterIPv4);
-	CfgAddBool(f, "FilterIPv6", o->FilterIPv6);
-	CfgAddBool(f, "FilterNonIP", o->FilterNonIP);
-	CfgAddBool(f, "NoIPv4PacketLog", o->NoIPv4PacketLog);
-	CfgAddBool(f, "NoIPv6PacketLog", o->NoIPv6PacketLog);
-	CfgAddBool(f, "FilterBPDU", o->FilterBPDU);
-	CfgAddBool(f, "NoIPv6DefaultRouterInRAWhenIPv6", o->NoIPv6DefaultRouterInRAWhenIPv6);
-	CfgAddBool(f, "NoMacAddressLog", o->NoMacAddressLog);
-	CfgAddBool(f, "ManageOnlyPrivateIP", o->ManageOnlyPrivateIP);
-	CfgAddBool(f, "ManageOnlyLocalUnicastIPv6", o->ManageOnlyLocalUnicastIPv6);
-	CfgAddBool(f, "DisableIPParsing", o->DisableIPParsing);
-	CfgAddBool(f, "YieldAfterStorePacket", o->YieldAfterStorePacket);
-	CfgAddBool(f, "NoSpinLockForPacketDelay", o->NoSpinLockForPacketDelay);
-	CfgAddInt(f, "BroadcastStormDetectionThreshold", o->BroadcastStormDetectionThreshold);
-	CfgAddInt(f, "ClientMinimumRequiredBuild", o->ClientMinimumRequiredBuild);
-	CfgAddInt(f, "RequiredClientId", o->RequiredClientId);
-	CfgAddBool(f, "NoManageVlanId", o->NoManageVlanId);
-	Format(tmp, sizeof(tmp), "0x%x", o->VlanTypeId);
-	CfgAddStr(f, "VlanTypeId", tmp);
-	if (o->FixForDLinkBPDU)
+	for (i = 0;i < num_hub_option_fields;i++)
 	{
-		CfgAddBool(f, "FixForDLinkBPDU", o->FixForDLinkBPDU);
+		HUB_OPTION_FIELD *t = &hub_option_fields[i];
+		UINT value = GetHubOptionField(o, t);
+		char tmp[MAX_SIZE];
+
+		if ((t->Flags & HUB_OPTION_WRITE_IF_TRUE) != 0 && value == 0)
+		{
+			continue;
+		}
+
+		switch (t->Type)
+		{
+		case HUB_OPTION_BOOL:
+			CfgAddBool(f, t->CfgName, value != 0);
+			break;
+
+		case HUB_OPTION_UINT:
+			CfgAddInt(f, t->CfgName, value);
+			break;
+
+		case HUB_OPTION_HEX:
+			Format(tmp, sizeof(tmp), "0x%x", value);
+			CfgAddStr(f, t->CfgName, tmp);
+			break;
+		}
 	}
-	CfgAddBool(f, "BroadcastLimiterStrictMode", o->BroadcastLimiterStrictMode);
-	CfgAddInt(f, "MaxLoggedPacketsPerMinute", o->MaxLoggedPacketsPerMinute);
-	CfgAddInt(f, "FloodingSendQueueBufferQuota", o->FloodingSendQueueBufferQuota);
-	CfgAddBool(f, "DoNotSaveHeavySecurityLogs", o->DoNotSaveHeavySecurityLogs);
-	CfgAddBool(f, "DropBroadcastsInPrivacyFilterMode", o->DropBroadcastsInPrivacyFilterMode);
-	CfgAddBool(f, "DropArpInPrivacyFilterMode", o->DropArpInPrivacyFilterMode);
-	CfgAddBool(f, "AllowSameUserInPrivacyFilterMode", o->AllowSameUserInPrivacyFilterMode);
-	CfgAddBool(f, "SuppressClientUpdateNotification", o->SuppressClientUpdateNotification);
-	CfgAddBool(f, "NoPhysicalIPOnPacketLog", o->NoPhysicalIPOnPacketLog);
-	CfgAddInt(f, "DetectDormantSessionInterval", o->DetectDormantSessionInterval);
-	CfgAddBool(f, "NoLookBPDUBridgeId", o->NoLookBPDUBridgeId);
-	CfgAddInt(f, "AdjustTcpMssValue", o->AdjustTcpMssValue);
-	CfgAddBool(f, "DisableAdjustTcpMss", o->DisableAdjustTcpMss);
-	CfgAddBool(f, "NoDhcpPacketLogOutsideHub", o->NoDhcpPacketLogOutsideHub);
-	CfgAddBool(f, "DisableHttpParsing", o->DisableHttpParsing);
-	CfgAddBool(f, "DisableUdpAcceleration", o->DisableUdpAcceleration);
-	CfgAddBool(f, "DisableUdpFilterForLocalBridgeNic", o->DisableUdpFilterForLocalBridgeNic);
-	CfgAddBool(f, "ApplyIPv4AccessListOnArpPacket", o->ApplyIPv4AccessListOnArpPacket);
-	CfgAddBool(f, "RemoveDefGwOnDhcpForLocalhost", o->RemoveDefGwOnDhcpForLocalhost);
-	CfgAddInt(f, "AccessListIncludeFileCacheLifetime", o->AccessListIncludeFileCacheLifetime);
-	CfgAddBool(f, "DisableCheckMacOnLocalBridge", o->DisableCheckMacOnLocalBridge);
-	CfgAddBool(f, "DisableCorrectIpOffloadChecksum", o->DisableCorrectIpOffloadChecksum);
-	CfgAddBool(f, "UseHubNameAsDhcpUserClassOption", o->UseHubNameAsDhcpUserClassOption);
-	CfgAddBool(f, "AllowEapMatchUserByCert", o->AllowEapMatchUserByCert);
-	CfgAddInt(f, "DhcpDiscoverTimeoutMs", o->DhcpDiscoverTimeoutMs);
 }
 
 static void SiWriteUserCfg(FOLDER *f, USER *u)

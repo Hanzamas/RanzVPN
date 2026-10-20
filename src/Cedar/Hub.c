@@ -23,13 +23,6 @@
 
 #include <string.h>
 
-#define GetHubAdminOptionDataAndSet(ao, name, dest) \
-	value = GetHubAdminOptionData(ao, name);        \
-	if (value != INFINITE)                          \
-	{                                               \
-		dest = value;                               \
-	}
-
 // These names must be shorter than 64 bytes
 ADMIN_OPTION admin_options[] =
 {
@@ -77,6 +70,111 @@ ADMIN_OPTION admin_options[] =
 };
 
 UINT num_admin_options = sizeof(admin_options) / sizeof(ADMIN_OPTION);
+
+// One row per HUB_OPTION member. The config file, the defaults of a new hub and the RPC admin option list all
+// follow it; the rows with an admin name come in the order the admin option list has. Config names are those
+// of the members, the admin names too unless they are given.
+#define	HUB_OPTION_ROW(type, name, admin, def, flags)	\
+	{#name, admin, offsetof(HUB_OPTION, name), type, def, flags}
+#define	HUB_OPTION_CFG_ROW(type, name, def)				HUB_OPTION_ROW(type, name, NULL, def, 0)
+#define	HUB_OPTION_BOOL_ROW(name, def)					HUB_OPTION_ROW(HUB_OPTION_BOOL, name, #name, def, 0)
+#define	HUB_OPTION_UINT_ROW(name, def, flags)			HUB_OPTION_ROW(HUB_OPTION_UINT, name, #name, def, flags)
+
+HUB_OPTION_FIELD hub_option_fields[] =
+{
+	HUB_OPTION_CFG_ROW(HUB_OPTION_UINT, MaxSession, 0),
+	HUB_OPTION_CFG_ROW(HUB_OPTION_BOOL, NoEnum, 0),
+	HUB_OPTION_ROW(HUB_OPTION_BOOL, NoArpPolling, "NoAddressPollingIPv4", 0, 0),
+	HUB_OPTION_ROW(HUB_OPTION_BOOL, NoIPv6AddrPolling, "NoAddressPollingIPv6", 0, 0),
+	HUB_OPTION_BOOL_ROW(NoIpTable, 0),
+	HUB_OPTION_BOOL_ROW(NoMacAddressLog, 1),
+	HUB_OPTION_BOOL_ROW(ManageOnlyPrivateIP, 1),
+	HUB_OPTION_BOOL_ROW(ManageOnlyLocalUnicastIPv6, 1),
+	HUB_OPTION_BOOL_ROW(DisableIPParsing, 0),
+	HUB_OPTION_BOOL_ROW(YieldAfterStorePacket, 0),
+	HUB_OPTION_BOOL_ROW(NoSpinLockForPacketDelay, 0),
+	HUB_OPTION_UINT_ROW(BroadcastStormDetectionThreshold, 0, 0),
+	HUB_OPTION_UINT_ROW(ClientMinimumRequiredBuild, 0, 0),
+	HUB_OPTION_BOOL_ROW(FilterPPPoE, 0),
+	HUB_OPTION_BOOL_ROW(FilterOSPF, 0),
+	HUB_OPTION_BOOL_ROW(FilterIPv4, 0),
+	HUB_OPTION_BOOL_ROW(FilterIPv6, 0),
+	HUB_OPTION_BOOL_ROW(FilterNonIP, 0),
+	HUB_OPTION_BOOL_ROW(NoIPv4PacketLog, 0),
+	HUB_OPTION_BOOL_ROW(NoIPv6PacketLog, 0),
+	HUB_OPTION_BOOL_ROW(FilterBPDU, 0),
+	HUB_OPTION_BOOL_ROW(NoIPv6DefaultRouterInRAWhenIPv6, 0),
+	HUB_OPTION_BOOL_ROW(NoLookBPDUBridgeId, 0),
+	HUB_OPTION_BOOL_ROW(NoManageVlanId, 0),
+	HUB_OPTION_ROW(HUB_OPTION_HEX, VlanTypeId, "VlanTypeId", MAC_PROTO_TAGVLAN, HUB_OPTION_ZERO_IS_DEFAULT),
+	HUB_OPTION_ROW(HUB_OPTION_BOOL, FixForDLinkBPDU, "FixForDLinkBPDU", 0, HUB_OPTION_WRITE_IF_TRUE),
+	HUB_OPTION_UINT_ROW(RequiredClientId, 0, 0),
+	HUB_OPTION_UINT_ROW(AdjustTcpMssValue, 0, 0),
+	HUB_OPTION_BOOL_ROW(DisableAdjustTcpMss, 0),
+	HUB_OPTION_BOOL_ROW(NoDhcpPacketLogOutsideHub, 1),
+	HUB_OPTION_BOOL_ROW(DisableHttpParsing, 0),
+	HUB_OPTION_BOOL_ROW(DisableUdpAcceleration, 0),
+	HUB_OPTION_BOOL_ROW(DisableUdpFilterForLocalBridgeNic, 0),
+	HUB_OPTION_BOOL_ROW(ApplyIPv4AccessListOnArpPacket, 0),
+	HUB_OPTION_BOOL_ROW(RemoveDefGwOnDhcpForLocalhost, 1),
+	HUB_OPTION_UINT_ROW(AccessListIncludeFileCacheLifetime, ACCESS_LIST_INCLUDE_FILE_CACHE_LIFETIME, HUB_OPTION_ZERO_IS_DEFAULT),
+	HUB_OPTION_BOOL_ROW(DisableCheckMacOnLocalBridge, 0),
+	HUB_OPTION_BOOL_ROW(DisableCorrectIpOffloadChecksum, 0),
+	HUB_OPTION_BOOL_ROW(BroadcastLimiterStrictMode, 0),
+	HUB_OPTION_UINT_ROW(MaxLoggedPacketsPerMinute, 0, 0),
+	HUB_OPTION_BOOL_ROW(DoNotSaveHeavySecurityLogs, 0),
+	HUB_OPTION_BOOL_ROW(DropBroadcastsInPrivacyFilterMode, 1),
+	HUB_OPTION_BOOL_ROW(DropArpInPrivacyFilterMode, 1),
+	HUB_OPTION_BOOL_ROW(AllowSameUserInPrivacyFilterMode, 0),
+	HUB_OPTION_BOOL_ROW(SuppressClientUpdateNotification, 0),
+	HUB_OPTION_UINT_ROW(FloodingSendQueueBufferQuota, DEFAULT_FLOODING_QUEUE_LENGTH, 0),
+	HUB_OPTION_UINT_ROW(DetectDormantSessionInterval, 0, 0),
+	HUB_OPTION_BOOL_ROW(NoPhysicalIPOnPacketLog, 0),
+	HUB_OPTION_BOOL_ROW(UseHubNameAsDhcpUserClassOption, 0),
+	HUB_OPTION_BOOL_ROW(AllowEapMatchUserByCert, 0),
+	HUB_OPTION_UINT_ROW(DhcpDiscoverTimeoutMs, DEFAULT_DHCP_DISCOVER_TIMEOUT, HUB_OPTION_ZERO_IS_DEFAULT),
+};
+
+UINT num_hub_option_fields = sizeof(hub_option_fields) / sizeof(HUB_OPTION_FIELD);
+
+// Value of a HUB_OPTION member, a bool as 0 or 1
+UINT GetHubOptionField(HUB_OPTION *o, HUB_OPTION_FIELD *f)
+{
+	UCHAR *p;
+	if (o == NULL || f == NULL)
+	{
+		return 0;
+	}
+
+	p = ((UCHAR *)o) + f->Offset;
+
+	if (f->Type == HUB_OPTION_BOOL)
+	{
+		return *((bool *)p) ? 1 : 0;
+	}
+
+	return *((UINT *)p);
+}
+
+void SetHubOptionField(HUB_OPTION *o, HUB_OPTION_FIELD *f, UINT value)
+{
+	UCHAR *p;
+	if (o == NULL || f == NULL)
+	{
+		return;
+	}
+
+	p = ((UCHAR *)o) + f->Offset;
+
+	if (f->Type == HUB_OPTION_BOOL)
+	{
+		*((bool *)p) = (value != 0);
+	}
+	else
+	{
+		*((UINT *)p) = value;
+	}
+}
 
 
 static LIST *NewUserList()
@@ -409,159 +507,65 @@ UINT GetHubAdminOptionData(RPC_ADMIN_OPTION *ao, char *name)
 
 void DataToHubOptionStruct(HUB_OPTION *o, RPC_ADMIN_OPTION *ao)
 {
+	UINT i;
 	if (o == NULL || ao == NULL)
 	{
 		return;
 	}
 
-	UINT value;
+	for (i = 0;i < num_hub_option_fields;i++)
+	{
+		HUB_OPTION_FIELD *f = &hub_option_fields[i];
 
-	GetHubAdminOptionDataAndSet(ao, "NoAddressPollingIPv4", o->NoArpPolling);
-	GetHubAdminOptionDataAndSet(ao, "NoAddressPollingIPv6", o->NoIPv6AddrPolling);
-	GetHubAdminOptionDataAndSet(ao, "NoIpTable", o->NoIpTable);
-	GetHubAdminOptionDataAndSet(ao, "NoMacAddressLog", o->NoMacAddressLog);
-	GetHubAdminOptionDataAndSet(ao, "ManageOnlyPrivateIP", o->ManageOnlyPrivateIP);
-	GetHubAdminOptionDataAndSet(ao, "ManageOnlyLocalUnicastIPv6", o->ManageOnlyLocalUnicastIPv6);
-	GetHubAdminOptionDataAndSet(ao, "DisableIPParsing", o->DisableIPParsing);
-	GetHubAdminOptionDataAndSet(ao, "YieldAfterStorePacket", o->YieldAfterStorePacket);
-	GetHubAdminOptionDataAndSet(ao, "NoSpinLockForPacketDelay", o->NoSpinLockForPacketDelay);
-	GetHubAdminOptionDataAndSet(ao, "BroadcastStormDetectionThreshold", o->BroadcastStormDetectionThreshold);
-	GetHubAdminOptionDataAndSet(ao, "ClientMinimumRequiredBuild", o->ClientMinimumRequiredBuild);
-	GetHubAdminOptionDataAndSet(ao, "FilterPPPoE", o->FilterPPPoE);
-	GetHubAdminOptionDataAndSet(ao, "FilterOSPF", o->FilterOSPF);
-	GetHubAdminOptionDataAndSet(ao, "FilterIPv4", o->FilterIPv4);
-	GetHubAdminOptionDataAndSet(ao, "FilterIPv6", o->FilterIPv6);
-	GetHubAdminOptionDataAndSet(ao, "FilterNonIP", o->FilterNonIP);
-	GetHubAdminOptionDataAndSet(ao, "NoIPv4PacketLog", o->NoIPv4PacketLog);
-	GetHubAdminOptionDataAndSet(ao, "NoIPv6PacketLog", o->NoIPv6PacketLog);
-	GetHubAdminOptionDataAndSet(ao, "FilterBPDU", o->FilterBPDU);
-	GetHubAdminOptionDataAndSet(ao, "NoIPv6DefaultRouterInRAWhenIPv6", o->NoIPv6DefaultRouterInRAWhenIPv6);
-	GetHubAdminOptionDataAndSet(ao, "NoLookBPDUBridgeId", o->NoLookBPDUBridgeId);
-	GetHubAdminOptionDataAndSet(ao, "NoManageVlanId", o->NoManageVlanId);
-	GetHubAdminOptionDataAndSet(ao, "VlanTypeId", o->VlanTypeId);
-	GetHubAdminOptionDataAndSet(ao, "FixForDLinkBPDU", o->FixForDLinkBPDU);
-	GetHubAdminOptionDataAndSet(ao, "RequiredClientId", o->RequiredClientId);
-	GetHubAdminOptionDataAndSet(ao, "AdjustTcpMssValue", o->AdjustTcpMssValue);
-	GetHubAdminOptionDataAndSet(ao, "DisableAdjustTcpMss", o->DisableAdjustTcpMss);
-	GetHubAdminOptionDataAndSet(ao, "NoDhcpPacketLogOutsideHub", o->NoDhcpPacketLogOutsideHub);
-	GetHubAdminOptionDataAndSet(ao, "DisableHttpParsing", o->DisableHttpParsing);
-	GetHubAdminOptionDataAndSet(ao, "DisableUdpAcceleration", o->DisableUdpAcceleration);
-	GetHubAdminOptionDataAndSet(ao, "DisableUdpFilterForLocalBridgeNic", o->DisableUdpFilterForLocalBridgeNic);
-	GetHubAdminOptionDataAndSet(ao, "ApplyIPv4AccessListOnArpPacket", o->ApplyIPv4AccessListOnArpPacket);
-	GetHubAdminOptionDataAndSet(ao, "RemoveDefGwOnDhcpForLocalhost", o->RemoveDefGwOnDhcpForLocalhost);
-	GetHubAdminOptionDataAndSet(ao, "AccessListIncludeFileCacheLifetime", o->AccessListIncludeFileCacheLifetime);
-	GetHubAdminOptionDataAndSet(ao, "DisableCheckMacOnLocalBridge", o->DisableCheckMacOnLocalBridge);
-	GetHubAdminOptionDataAndSet(ao, "DisableCorrectIpOffloadChecksum", o->DisableCorrectIpOffloadChecksum);
-	GetHubAdminOptionDataAndSet(ao, "BroadcastLimiterStrictMode", o->BroadcastLimiterStrictMode);
-	GetHubAdminOptionDataAndSet(ao, "MaxLoggedPacketsPerMinute", o->MaxLoggedPacketsPerMinute);
-	GetHubAdminOptionDataAndSet(ao, "DoNotSaveHeavySecurityLogs", o->DoNotSaveHeavySecurityLogs);
-	GetHubAdminOptionDataAndSet(ao, "DropBroadcastsInPrivacyFilterMode", o->DropBroadcastsInPrivacyFilterMode);
-	GetHubAdminOptionDataAndSet(ao, "DropArpInPrivacyFilterMode", o->DropArpInPrivacyFilterMode);
-	GetHubAdminOptionDataAndSet(ao, "AllowSameUserInPrivacyFilterMode", o->AllowSameUserInPrivacyFilterMode);
-	GetHubAdminOptionDataAndSet(ao, "SuppressClientUpdateNotification", o->SuppressClientUpdateNotification);
-	GetHubAdminOptionDataAndSet(ao, "FloodingSendQueueBufferQuota", o->FloodingSendQueueBufferQuota);
-	GetHubAdminOptionDataAndSet(ao, "DetectDormantSessionInterval", o->DetectDormantSessionInterval);
-	GetHubAdminOptionDataAndSet(ao, "NoPhysicalIPOnPacketLog", o->NoPhysicalIPOnPacketLog);
-	GetHubAdminOptionDataAndSet(ao, "UseHubNameAsDhcpUserClassOption", o->UseHubNameAsDhcpUserClassOption);
-	GetHubAdminOptionDataAndSet(ao, "AllowEapMatchUserByCert", o->AllowEapMatchUserByCert);
-	GetHubAdminOptionDataAndSet(ao, "DhcpDiscoverTimeoutMs", o->DhcpDiscoverTimeoutMs);
+		if (f->AdminName != NULL)
+		{
+			UINT value = GetHubAdminOptionData(ao, f->AdminName);
+
+			if (value != INFINITE)
+			{
+				SetHubOptionField(o, f, value);
+			}
+		}
+	}
 }
 
 void HubOptionStructToData(RPC_ADMIN_OPTION *ao, HUB_OPTION *o, char *hub_name)
 {
-	LIST *aol;
-	UINT i;
+	UINT i, num;
 	if (ao == NULL || o == NULL || hub_name == NULL)
 	{
 		return;
 	}
 
-	aol = NewListFast(NULL);
-
-	Add(aol, NewAdminOption("NoAddressPollingIPv4", o->NoArpPolling));
-	Add(aol, NewAdminOption("NoAddressPollingIPv6", o->NoIPv6AddrPolling));
-	Add(aol, NewAdminOption("NoIpTable", o->NoIpTable));
-	Add(aol, NewAdminOption("NoMacAddressLog", o->NoMacAddressLog));
-	Add(aol, NewAdminOption("ManageOnlyPrivateIP", o->ManageOnlyPrivateIP));
-	Add(aol, NewAdminOption("ManageOnlyLocalUnicastIPv6", o->ManageOnlyLocalUnicastIPv6));
-	Add(aol, NewAdminOption("DisableIPParsing", o->DisableIPParsing));
-	Add(aol, NewAdminOption("YieldAfterStorePacket", o->YieldAfterStorePacket));
-	Add(aol, NewAdminOption("NoSpinLockForPacketDelay", o->NoSpinLockForPacketDelay));
-	Add(aol, NewAdminOption("BroadcastStormDetectionThreshold", o->BroadcastStormDetectionThreshold));
-	Add(aol, NewAdminOption("ClientMinimumRequiredBuild", o->ClientMinimumRequiredBuild));
-	Add(aol, NewAdminOption("FilterPPPoE", o->FilterPPPoE));
-	Add(aol, NewAdminOption("FilterOSPF", o->FilterOSPF));
-	Add(aol, NewAdminOption("FilterIPv4", o->FilterIPv4));
-	Add(aol, NewAdminOption("FilterIPv6", o->FilterIPv6));
-	Add(aol, NewAdminOption("FilterNonIP", o->FilterNonIP));
-	Add(aol, NewAdminOption("NoIPv4PacketLog", o->NoIPv4PacketLog));
-	Add(aol, NewAdminOption("NoIPv6PacketLog", o->NoIPv6PacketLog));
-	Add(aol, NewAdminOption("FilterBPDU", o->FilterBPDU));
-	Add(aol, NewAdminOption("NoIPv6DefaultRouterInRAWhenIPv6", o->NoIPv6DefaultRouterInRAWhenIPv6));
-	Add(aol, NewAdminOption("NoLookBPDUBridgeId", o->NoLookBPDUBridgeId));
-	Add(aol, NewAdminOption("NoManageVlanId", o->NoManageVlanId));
-	Add(aol, NewAdminOption("VlanTypeId", o->VlanTypeId));
-	Add(aol, NewAdminOption("FixForDLinkBPDU", o->FixForDLinkBPDU));
-	Add(aol, NewAdminOption("RequiredClientId", o->RequiredClientId));
-	Add(aol, NewAdminOption("AdjustTcpMssValue", o->AdjustTcpMssValue));
-	Add(aol, NewAdminOption("DisableAdjustTcpMss", o->DisableAdjustTcpMss));
-	Add(aol, NewAdminOption("NoDhcpPacketLogOutsideHub", o->NoDhcpPacketLogOutsideHub));
-	Add(aol, NewAdminOption("DisableHttpParsing", o->DisableHttpParsing));
-	Add(aol, NewAdminOption("DisableUdpAcceleration", o->DisableUdpAcceleration));
-	Add(aol, NewAdminOption("DisableUdpFilterForLocalBridgeNic", o->DisableUdpFilterForLocalBridgeNic));
-	Add(aol, NewAdminOption("ApplyIPv4AccessListOnArpPacket", o->ApplyIPv4AccessListOnArpPacket));
-	Add(aol, NewAdminOption("RemoveDefGwOnDhcpForLocalhost", o->RemoveDefGwOnDhcpForLocalhost));
-	Add(aol, NewAdminOption("AccessListIncludeFileCacheLifetime", o->AccessListIncludeFileCacheLifetime));
-	Add(aol, NewAdminOption("DisableCheckMacOnLocalBridge", o->DisableCheckMacOnLocalBridge));
-	Add(aol, NewAdminOption("DisableCorrectIpOffloadChecksum", o->DisableCorrectIpOffloadChecksum));
-	Add(aol, NewAdminOption("BroadcastLimiterStrictMode", o->BroadcastLimiterStrictMode));
-	Add(aol, NewAdminOption("MaxLoggedPacketsPerMinute", o->MaxLoggedPacketsPerMinute));
-	Add(aol, NewAdminOption("DoNotSaveHeavySecurityLogs", o->DoNotSaveHeavySecurityLogs));
-	Add(aol, NewAdminOption("DropBroadcastsInPrivacyFilterMode", o->DropBroadcastsInPrivacyFilterMode));
-	Add(aol, NewAdminOption("DropArpInPrivacyFilterMode", o->DropArpInPrivacyFilterMode));
-	Add(aol, NewAdminOption("AllowSameUserInPrivacyFilterMode", o->AllowSameUserInPrivacyFilterMode));
-	Add(aol, NewAdminOption("SuppressClientUpdateNotification", o->SuppressClientUpdateNotification));
-	Add(aol, NewAdminOption("FloodingSendQueueBufferQuota", o->FloodingSendQueueBufferQuota));
-	Add(aol, NewAdminOption("DetectDormantSessionInterval", o->DetectDormantSessionInterval));
-	Add(aol, NewAdminOption("NoPhysicalIPOnPacketLog", o->NoPhysicalIPOnPacketLog));
-	Add(aol, NewAdminOption("UseHubNameAsDhcpUserClassOption", o->UseHubNameAsDhcpUserClassOption));
-	Add(aol, NewAdminOption("AllowEapMatchUserByCert", o->AllowEapMatchUserByCert));
-	Add(aol, NewAdminOption("DhcpDiscoverTimeoutMs", o->DhcpDiscoverTimeoutMs));
-
 	Zero(ao, sizeof(RPC_ADMIN_OPTION));
 
 	StrCpy(ao->HubName, sizeof(ao->HubName), hub_name);
 
-	ao->NumItem = LIST_NUM(aol);
+	for (i = 0;i < num_hub_option_fields;i++)
+	{
+		if (hub_option_fields[i].AdminName != NULL)
+		{
+			ao->NumItem++;
+		}
+	}
+
 	ao->Items = ZeroMalloc(sizeof(ADMIN_OPTION) * ao->NumItem);
 
-	for (i = 0;i < LIST_NUM(aol);i++)
+	num = 0;
+
+	for (i = 0;i < num_hub_option_fields;i++)
 	{
-		ADMIN_OPTION *a = LIST_DATA(aol, i);
+		HUB_OPTION_FIELD *f = &hub_option_fields[i];
 
-		UniStrCpy(a->Descrption, sizeof(a->Descrption), GetHubAdminOptionHelpString(a->Name));
+		if (f->AdminName != NULL)
+		{
+			ADMIN_OPTION *a = &ao->Items[num++];
 
-		Copy(&ao->Items[i], a, sizeof(ADMIN_OPTION));
-
-		Free(a);
+			StrCpy(a->Name, sizeof(a->Name), f->AdminName);
+			a->Value = GetHubOptionField(o, f);
+			UniStrCpy(a->Descrption, sizeof(a->Descrption), GetHubAdminOptionHelpString(a->Name));
+		}
 	}
-
-	ReleaseList(aol);
-}
-
-ADMIN_OPTION *NewAdminOption(char *name, UINT value)
-{
-	ADMIN_OPTION *a;
-	if (name == NULL)
-	{
-		return NULL;
-	}
-
-	a = ZeroMalloc(sizeof(ADMIN_OPTION));
-	StrCpy(a->Name, sizeof(a->Name), name);
-	a->Value = value;
-
-	return a;
 }
 
 void SetAcList(LIST *o, LIST *src)
@@ -1271,7 +1275,7 @@ void HubWatchDogThread(THREAD *t, void *param)
 					if (e->MacAddress[0] != 0xff || e->MacAddress[1] != 0xff || e->MacAddress[2] != 0xff ||
 						e->MacAddress[3] != 0xff || e->MacAddress[4] != 0xff || e->MacAddress[5] != 0xff)
 					{
-						if (hub->Option != NULL && hub->Option->NoArpPolling == false)
+						if (hub->Option->NoArpPolling == false)
 						{
 							if (IsIP4(&e->Ip))
 							{
@@ -1300,7 +1304,7 @@ void HubWatchDogThread(THREAD *t, void *param)
 							}
 						}
 
-						if (hub->Option != NULL && hub->Option->NoIPv6AddrPolling == false)
+						if (hub->Option->NoIPv6AddrPolling == false)
 						{
 							if (IsIP6(&e->Ip))
 							{
@@ -1677,17 +1681,66 @@ void GetAccessListStr(char *str, UINT size, ACCESS *a)
 	}
 }
 
+// Whether the IPv4 address in an Ethernet ARP packet (the target address when dest, else the sender) lies in addr/mask.
+// False for an ARP of another kind, an unset or broadcast address, or a hub-internal address sent from a hub MAC
+static bool ArpAddrMatches(PKT *p, bool dest, UINT addr, UINT mask)
+{
+	ARPV4_HEADER *arp = p->L3.ARPv4Header;
+	UINT uint_ip;
+
+	if (arp->HardwareSize != 6 ||
+		Endian16(arp->HardwareType) != ARP_HARDWARE_TYPE_ETHERNET ||
+		arp->ProtocolSize != 4 ||
+		Endian16(arp->ProtocolType) != 0x0800)
+	{
+		return false;
+	}
+
+	uint_ip = dest ? arp->TargetIP : arp->SrcIP;
+
+	if (uint_ip == 0 || uint_ip == 0xffffffff || (IsHubIpAddress32(uint_ip) && IsHubMacAddress(p->MacAddressSrc)))
+	{
+		return false;
+	}
+
+	return (uint_ip & mask) == (addr & mask);
+}
+
+// A port range with both ends 0 holds every port
+static bool PortInRange(UINT port, UINT start, UINT end)
+{
+	if (start == 0 && end == 0)
+	{
+		return true;
+	}
+
+	return port >= start && port <= end;
+}
+
+// Whether a user (name_in_acl is an include: or exclude: list) matches for hub; never for an internal session.
+// user_session is the session of that user, NULL when it is not known
+static bool MatchIncludeExcludeUser(HUB *hub, SESSION *user_session, char *name_in_acl, UINT64 user_hash)
+{
+	if (user_session != NULL && user_session->NormalClient == false)
+	{
+		// exclude: and include: filters never match internal sessions
+		return false;
+	}
+
+	return IsUserMatchInUserListWithCacheExpiresAcl(hub->UserList, name_in_acl, user_hash,
+		hub->Option->AccessListIncludeFileCacheLifetime * 1000);
+}
+
 static bool IsPacketMaskedByAccessList(SESSION *s, PKT *p, ACCESS *a, UINT64 dest_username, UINT64 dest_groupname, SESSION *dest_session)
 {
 	UINT64 src_username;
-	UINT64 src_username_simple;
 	UINT64 src_groupname;
 	HUB_PA *pa;
 	IPV4_HEADER *ip = NULL;
 	IPV6_HEADER *ip6 = NULL;
-	bool is_ipv4_packet = false;
-	bool is_ipv6_packet = false;
-	bool is_arp_packet = false;
+	bool is_ipv4_packet;
+	bool is_ipv6_packet;
+	bool is_arp_packet;
 	if (s == NULL || p == NULL || a == NULL)
 	{
 		return false;
@@ -1700,7 +1753,6 @@ static bool IsPacketMaskedByAccessList(SESSION *s, PKT *p, ACCESS *a, UINT64 des
 	pa = (HUB_PA *)s->PacketAdapter->Param;
 
 	src_username = pa->UsernameHash;
-	src_username_simple = pa->UsernameHashSimple;
 	src_groupname = pa->GroupnameHash;
 
 	if (a->CheckSrcMac != false)
@@ -1736,26 +1788,9 @@ static bool IsPacketMaskedByAccessList(SESSION *s, PKT *p, ACCESS *a, UINT64 des
 				return false;
 			}
 		}
-		else
+		else if (s->Hub != NULL && MatchIncludeExcludeUser(s->Hub, s, a->SrcUsername, src_username) == false)
 		{
-			HUB *hub = s->Hub;
-
-			if (hub != NULL)
-			{
-				LIST *o = hub->UserList;
-
-				if (s->NormalClient == false)
-				{
-					// exclude: and include: filters never match internal sessions
-					return false;
-				}
-
-				if (IsUserMatchInUserListWithCacheExpiresAcl(o, a->SrcUsername, src_username,
-					hub->Option->AccessListIncludeFileCacheLifetime * 1000) == false)
-				{
-					return false;
-				}
-			}
+			return false;
 		}
 	}
 
@@ -1768,51 +1803,15 @@ static bool IsPacketMaskedByAccessList(SESSION *s, PKT *p, ACCESS *a, UINT64 des
 				return false;
 			}
 		}
-		else
+		else if (s->Hub != NULL && MatchIncludeExcludeUser(s->Hub, dest_session, a->DestUsername, dest_username) == false)
 		{
-			HUB *hub = s->Hub;
-
-			if (hub != NULL)
-			{
-				LIST *o = hub->UserList;
-
-				if (dest_session != NULL && dest_session->NormalClient == false)
-				{
-					// exclude: and include: filters never match internal sessions
-					return false;
-				}
-
-				if (IsUserMatchInUserListWithCacheExpiresAcl(o, a->DestUsername, dest_username,
-					hub->Option->AccessListIncludeFileCacheLifetime * 1000) == false)
-				{
-					return false;
-				}
-			}
+			return false;
 		}
 	}
 
-	if (p->TypeL3 != L3_IPV4)
-	{
-		is_ipv4_packet = false;
-	}
-	else
-	{
-		is_ipv4_packet = true;
-	}
-
-	if (p->TypeL3 != L3_IPV6)
-	{
-		is_ipv6_packet = false;
-	}
-	else
-	{
-		is_ipv6_packet = true;
-	}
-
-	if (p->TypeL3 == L3_ARPV4)
-	{
-		is_arp_packet = true;
-	}
+	is_ipv4_packet = (p->TypeL3 == L3_IPV4);
+	is_ipv6_packet = (p->TypeL3 == L3_IPV6);
+	is_arp_packet = (p->TypeL3 == L3_ARPV4);
 
 	if (is_ipv4_packet)
 	{
@@ -1831,34 +1830,7 @@ static bool IsPacketMaskedByAccessList(SESSION *s, PKT *p, ACCESS *a, UINT64 des
 		{
 			if (is_ipv4_packet == false)
 			{
-				if (p->TypeL3 == L3_ARPV4)
-				{
-					bool arp_match = false;
-					if (p->L3.ARPv4Header->HardwareSize == 6 &&
-						Endian16(p->L3.ARPv4Header->HardwareType) == ARP_HARDWARE_TYPE_ETHERNET &&
-						p->L3.ARPv4Header->ProtocolSize == 4 &&
-						Endian16(p->L3.ARPv4Header->ProtocolType) == 0x0800)
-					{
-						UINT uint_ip = p->L3.ARPv4Header->SrcIP;
-
-						if (uint_ip != 0 && uint_ip != 0xffffffff && !(IsHubIpAddress32(uint_ip) && IsHubMacAddress(p->MacAddressSrc)))
-						{
-							if ((uint_ip & a->SrcSubnetMask) != (a->SrcIpAddress & a->SrcSubnetMask))
-							{
-							}
-							else
-							{
-								arp_match = true;
-							}
-						}
-					}
-
-					if (arp_match == false)
-					{
-						return false;
-					}
-				}
-				else
+				if (is_arp_packet == false || ArpAddrMatches(p, false, a->SrcIpAddress, a->SrcSubnetMask) == false)
 				{
 					return false;
 				}
@@ -1876,34 +1848,7 @@ static bool IsPacketMaskedByAccessList(SESSION *s, PKT *p, ACCESS *a, UINT64 des
 		{
 			if (is_ipv4_packet == false)
 			{
-				if (p->TypeL3 == L3_ARPV4)
-				{
-					bool arp_match = false;
-					if (p->L3.ARPv4Header->HardwareSize == 6 &&
-						Endian16(p->L3.ARPv4Header->HardwareType) == ARP_HARDWARE_TYPE_ETHERNET &&
-						p->L3.ARPv4Header->ProtocolSize == 4 &&
-						Endian16(p->L3.ARPv4Header->ProtocolType) == 0x0800)
-					{
-						UINT uint_ip = p->L3.ARPv4Header->TargetIP;
-
-						if (uint_ip != 0 && uint_ip != 0xffffffff && !(IsHubIpAddress32(uint_ip) && IsHubMacAddress(p->MacAddressSrc)))
-						{
-							if ((uint_ip & a->DestSubnetMask) != (a->DestIpAddress & a->DestSubnetMask))
-							{
-							}
-							else
-							{
-								arp_match = true;
-							}
-						}
-					}
-
-					if (arp_match == false)
-					{
-						return false;
-					}
-				}
-				else
+				if (is_arp_packet == false || ArpAddrMatches(p, true, a->DestIpAddress, a->DestSubnetMask) == false)
 				{
 					return false;
 				}
@@ -1973,15 +1918,9 @@ static bool IsPacketMaskedByAccessList(SESSION *s, PKT *p, ACCESS *a, UINT64 des
 		}
 	}
 
-	if (is_arp_packet)
+	if (is_arp_packet && (s->Hub == NULL || s->Hub->Option->ApplyIPv4AccessListOnArpPacket == false))
 	{
-		if (s->Hub != NULL && s->Hub->Option != NULL && s->Hub->Option->ApplyIPv4AccessListOnArpPacket)
-		{
-		}
-		else
-		{
-			return false;
-		}
+		return false;
 	}
 
 	if (a->Protocol != 0)
@@ -2026,49 +1965,26 @@ static bool IsPacketMaskedByAccessList(SESSION *s, PKT *p, ACCESS *a, UINT64 des
 		}
 		else
 		{
+			UINT src_port;
+			UINT dest_port;
+
 			if (p->TypeL4 == L4_TCP)
 			{
-				TCP_HEADER *tcp = p->L4.TCPHeader;
-				if (a->SrcPortStart != 0 || a->SrcPortEnd != 0)
-				{
-					UINT src_port = Endian16(tcp->SrcPort);
-					if (src_port < a->SrcPortStart || src_port > a->SrcPortEnd)
-					{
-						return false;
-					}
-				}
-
-				if (a->DestPortStart != 0 || a->DestPortEnd != 0)
-				{
-					UINT dest_port = Endian16(tcp->DstPort);
-					if (dest_port < a->DestPortStart || dest_port > a->DestPortEnd)
-					{
-						return false;
-					}
-				}
+				src_port = Endian16(p->L4.TCPHeader->SrcPort);
+				dest_port = Endian16(p->L4.TCPHeader->DstPort);
 			}
 			else if (p->TypeL4 == L4_UDP)
 			{
-				UDP_HEADER *udp = p->L4.UDPHeader;
-				if (a->SrcPortStart != 0 || a->SrcPortEnd != 0)
-				{
-					UINT src_port = Endian16(udp->SrcPort);
-					if (src_port < a->SrcPortStart || src_port > a->SrcPortEnd)
-					{
-						return false;
-					}
-				}
-
-				if (a->DestPortStart != 0 || a->DestPortEnd != 0)
-				{
-					UINT dest_port = Endian16(udp->DstPort);
-					if (dest_port < a->DestPortStart || dest_port > a->DestPortEnd)
-					{
-						return false;
-					}
-				}
+				src_port = Endian16(p->L4.UDPHeader->SrcPort);
+				dest_port = Endian16(p->L4.UDPHeader->DstPort);
 			}
 			else
+			{
+				return false;
+			}
+
+			if (PortInRange(src_port, a->SrcPortStart, a->SrcPortEnd) == false ||
+				PortInRange(dest_port, a->DestPortStart, a->DestPortEnd) == false)
 			{
 				return false;
 			}
@@ -2434,9 +2350,59 @@ static void ForceRedirectToUrl(SESSION *src_session, PKT *p, char *redirect_url)
 	Free(b);
 }
 
+// DHCPv4: UDP over IPv4 that the parser knows as DHCP
+static bool IsDhcpv4(PKT *p)
+{
+	return (p->TypeL3 == L3_IPV4 && p->TypeL4 == L4_UDP && p->TypeL7 == L7_DHCPV4);
+}
+
+// DHCPv6: UDP over IPv6 with a destination port of 546 or 547
+static bool IsDhcpv6Port(PKT *p)
+{
+	if (p->TypeL3 == L3_IPV6 && p->TypeL4 == L4_UDP)
+	{
+		USHORT port = Endian16(p->L4.UDPHeader->DstPort);
+
+		return (port == 546 || port == 547);
+	}
+
+	return false;
+}
+
+// EtherType of the MAC header is IPv4 or ARP (false without a MAC header)
+static bool IsEtherTypeIPv4(PKT *p)
+{
+	if (p->MacHeader != NULL)
+	{
+		USHORT proto = Endian16(p->MacHeader->Protocol);
+
+		return (proto == 0x0800 || proto == 0x0806);
+	}
+
+	return false;
+}
+
+// EtherType of the MAC header is IPv6 (false without a MAC header)
+static bool IsEtherTypeIPv6(PKT *p)
+{
+	if (p->MacHeader != NULL)
+	{
+		return (Endian16(p->MacHeader->Protocol) == 0x86dd);
+	}
+
+	return false;
+}
+
+// EtherType of the MAC header is neither IPv4, ARP nor IPv6 (false without a MAC header)
+static bool IsEtherTypeNonIP(PKT *p)
+{
+	return (p->MacHeader != NULL && IsEtherTypeIPv4(p) == false && IsEtherTypeIPv6(p) == false);
+}
+
 static bool ApplyAccessListToStoredPacket(HUB *hub, SESSION *s, PKT *p)
 {
 	UINT i;
+	HUB_OPTION *opt;
 	bool pass = true;
 	bool use_redirect_url = false;
 	char redirect_url[MAX_REDIRECT_URL_LEN + 1];
@@ -2445,7 +2411,9 @@ static bool ApplyAccessListToStoredPacket(HUB *hub, SESSION *s, PKT *p)
 		return false;
 	}
 
-	if (hub->Option != NULL && hub->Option->FilterPPPoE)
+	opt = hub->Option;
+
+	if (opt->FilterPPPoE)
 	{
 		if (p->MacHeader != NULL)
 		{
@@ -2457,7 +2425,7 @@ static bool ApplyAccessListToStoredPacket(HUB *hub, SESSION *s, PKT *p)
 		}
 	}
 
-	if (hub->Option != NULL && hub->Option->FilterOSPF)
+	if (opt->FilterOSPF)
 	{
 		if (p->TypeL3 == L3_IPV4)
 		{
@@ -2471,43 +2439,22 @@ static bool ApplyAccessListToStoredPacket(HUB *hub, SESSION *s, PKT *p)
 		}
 	}
 
-	if (hub->Option != NULL && hub->Option->FilterIPv4)
+	if (opt->FilterIPv4 && IsEtherTypeIPv4(p))
 	{
-		if (p->MacHeader != NULL)
-		{
-			USHORT proto = Endian16(p->MacHeader->Protocol);
-			if (proto == 0x0800 || proto == 0x0806)
-			{
-				return false;
-			}
-		}
+		return false;
 	}
 
-	if (hub->Option != NULL && hub->Option->FilterIPv6)
+	if (opt->FilterIPv6 && IsEtherTypeIPv6(p))
 	{
-		if (p->MacHeader != NULL)
-		{
-			USHORT proto = Endian16(p->MacHeader->Protocol);
-			if (proto == 0x86dd)
-			{
-				return false;
-			}
-		}
+		return false;
 	}
 
-	if (hub->Option != NULL && hub->Option->FilterNonIP)
+	if (opt->FilterNonIP && IsEtherTypeNonIP(p))
 	{
-		if (p->MacHeader != NULL)
-		{
-			USHORT proto = Endian16(p->MacHeader->Protocol);
-			if (!(proto == 0x86dd || proto == 0x0800 || proto == 0x0806))
-			{
-				return false;
-			}
-		}
+		return false;
 	}
 
-	if (hub->Option != NULL && hub->Option->FilterBPDU)
+	if (opt->FilterBPDU)
 	{
 		if (p->MacHeader != NULL)
 		{
@@ -2572,48 +2519,6 @@ static bool ApplyAccessListToStoredPacket(HUB *hub, SESSION *s, PKT *p)
 	}
 	UnlockList(hub->AccessList);
 
-	if (pass)
-	{
-		if (s->FirstTimeHttpRedirect && s->FirstTimeHttpAccessCheckIp != 0)
-		{
-			if ((p->TypeL3 == L3_IPV4 || p->TypeL3 == L3_IPV6) &&
-				p->TypeL4 == L4_TCP)
-			{
-				TCP_HEADER *tcp = p->L4.TCPHeader;
-
-				if (tcp != NULL)
-				{
-					if (tcp->DstPort == Endian16(80))
-					{
-						if (p->L3.IPv4Header->DstIP == s->FirstTimeHttpAccessCheckIp)
-						{
-							s->FirstTimeHttpRedirect = false;
-						}
-						else if (tcp->Flag & TCP_ACK)
-						{
-							if ((tcp->Flag & TCP_SYN) == 0 &&
-								(tcp->Flag & TCP_RST) == 0 &&
-								(tcp->Flag & TCP_URG) == 0)
-							{
-								if (p->PayloadSize != 0)
-								{
-									if (IsTcpPacketNcsiHttpAccess(p) == false)
-									{
-										if (IsEmptyStr(s->FirstTimeHttpRedirectUrl) == false)
-										{
-											use_redirect_url = true;
-											StrCpy(redirect_url, sizeof(redirect_url), s->FirstTimeHttpRedirectUrl);
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-
 	if (use_redirect_url)
 	{
 		if (s->NormalClient)
@@ -2621,59 +2526,11 @@ static bool ApplyAccessListToStoredPacket(HUB *hub, SESSION *s, PKT *p)
 			// Normal VPN clients get the URL redirect; local bridges only drop the packet
 			ForceRedirectToUrl(s, p, redirect_url);
 		}
-		else
-		{
-		}
 
 		pass = false;
 	}
 
 	return pass;
-}
-
-bool IsTcpPacketNcsiHttpAccess(PKT *p)
-{
-	if (p == NULL)
-	{
-		return false;
-	}
-
-	if (p->TypeL4 != L4_TCP)
-	{
-		return false;
-	}
-
-	if (p->Payload == NULL || p->PayloadSize == 0)
-	{
-		return false;
-	}
-
-	if (SearchBin(p->Payload, 0, p->PayloadSize, "NCSI", 4) != INFINITE)
-	{
-		return true;
-	}
-
-	if (SearchBin(p->Payload, 0, p->PayloadSize, ".jpeg", 5) != INFINITE)
-	{
-		return true;
-	}
-
-	if (SearchBin(p->Payload, 0, p->PayloadSize, ".jpg", 4) != INFINITE)
-	{
-		return true;
-	}
-
-	if (SearchBin(p->Payload, 0, p->PayloadSize, ".gif", 4) != INFINITE)
-	{
-		return true;
-	}
-
-	if (SearchBin(p->Payload, 0, p->PayloadSize, ".css", 4) != INFINITE)
-	{
-		return true;
-	}
-
-	return false;
 }
 
 void AddAccessListEx(HUB *hub, ACCESS *a, bool no_sort, bool no_reassign_id)
@@ -3103,24 +2960,23 @@ static bool HubPaPutPacket(SESSION *s, void *data, UINT size)
 {
 	PKT *packet;
 	HUB_PA *pa = (HUB_PA *)s->PacketAdapter->Param;
-	HUB *hub;
-	bool no_l3 = false;
-	bool no_http = false;
+	HUB *hub = s->Hub;
+	HUB_OPTION *opt = hub->Option;
+	bool no_l3;
+	bool no_http;
 	LIST *o = NULL;
 	UINT i;
-	UINT vlan_type_id = 0;
-	bool no_look_bpdu_bridge_id = false;
+	UINT vlan_type_id;
+	bool no_look_bpdu_bridge_id;
 	bool no_parse_dhcp = false;
-	bool no_correct_checksum = false;
+	bool no_correct_checksum;
 	bool no_l7 = false;
-
-	hub = s->Hub;
 
 	pa->Now = Tick64();
 
-	if (hub != NULL && hub->Option != NULL && hub->Option->DisableAdjustTcpMss == false && s != NULL)
+	if (opt->DisableAdjustTcpMss == false)
 	{
-		UINT target_mss = (hub->Option->AdjustTcpMssValue == 0 ? INFINITE : hub->Option->AdjustTcpMssValue);
+		UINT target_mss = (opt->AdjustTcpMssValue == 0 ? INFINITE : opt->AdjustTcpMssValue);
 		UINT session_mss = (s->AdjustMss == 0 ? INFINITE : s->AdjustMss);
 
 		target_mss = MIN(target_mss, session_mss);
@@ -3132,7 +2988,7 @@ static bool HubPaPutPacket(SESSION *s, void *data, UINT size)
 
 		if (target_mss != INFINITE)
 		{
-			AdjustTcpMssL2(data, size, target_mss, hub->Option->VlanTypeId);
+			AdjustTcpMssL2(data, size, target_mss, opt->VlanTypeId);
 		}
 	}
 
@@ -3187,27 +3043,21 @@ static bool HubPaPutPacket(SESSION *s, void *data, UINT size)
 
 		CancelList(s->CancelList);
 
-		if (hub != NULL)
+		if (opt->YieldAfterStorePacket)
 		{
-			if (hub->Option != NULL && hub->Option->YieldAfterStorePacket)
-			{
-				YieldCpu();
-			}
+			YieldCpu();
 		}
 
 		return true;
 	}
 
-	if (hub != NULL && hub->Option != NULL)
-	{
-		no_l3 = hub->Option->DisableIPParsing;
-		no_http = hub->Option->DisableHttpParsing;
-		vlan_type_id = hub->Option->VlanTypeId;
-		no_look_bpdu_bridge_id = hub->Option->NoLookBPDUBridgeId;
-		no_correct_checksum = hub->Option->DisableCorrectIpOffloadChecksum;
-	}
+	no_l3 = opt->DisableIPParsing;
+	no_http = opt->DisableHttpParsing;
+	vlan_type_id = opt->VlanTypeId;
+	no_look_bpdu_bridge_id = opt->NoLookBPDUBridgeId;
+	no_correct_checksum = opt->DisableCorrectIpOffloadChecksum;
 
-	if (hub != NULL && hub->LogSetting.SavePacketLog == false)
+	if (hub->LogSetting.SavePacketLog == false)
 	{
 		// Only PacketLog reads the HTTP, TLS SNI and DNS results, and it returns at once while the hub packet
 		// log is off, so that parsing is skipped. The DHCP opcode is still parsed: IP learning reads it
@@ -3234,7 +3084,7 @@ LABEL_TRY_AGAIN:
 
 	if (no_parse_dhcp == false && packet != NULL)
 	{
-		if (hub != NULL && hub->Option != NULL && hub->Option->RemoveDefGwOnDhcpForLocalhost)
+		if (opt->RemoveDefGwOnDhcpForLocalhost)
 		{
 			if (packet->TypeL7 == L7_DHCPV4)
 			{
@@ -3303,8 +3153,8 @@ static bool CheckBroadcastStorm(HUB *hub, SESSION *s, PKT *p)
 	UINT limit_start_count;
 	SESSION *sess = s;
 	bool ret = true;
-	bool strict = false;
-	bool no_heavy = false;
+	bool strict;
+	bool no_heavy;
 	if (s == NULL || p == NULL || hub == NULL)
 	{
 		return false;
@@ -3315,11 +3165,8 @@ static bool CheckBroadcastStorm(HUB *hub, SESSION *s, PKT *p)
 		return true;
 	}
 
-	if (hub->Option != NULL)
-	{
-		strict = hub->Option->BroadcastLimiterStrictMode;
-		no_heavy = hub->Option->DoNotSaveHeavySecurityLogs;
-	}
+	strict = hub->Option->BroadcastLimiterStrictMode;
+	no_heavy = hub->Option->DoNotSaveHeavySecurityLogs;
 
 	pa = (HUB_PA *)s->PacketAdapter->Param;
 
@@ -3344,9 +3191,9 @@ static bool CheckBroadcastStorm(HUB *hub, SESSION *s, PKT *p)
 
 	limit_start_count = 32;
 
-	if (s->Hub != NULL && s->Hub->Option->BroadcastStormDetectionThreshold != 0)
+	if (hub->Option->BroadcastStormDetectionThreshold != 0)
 	{
-		limit_start_count = s->Hub->Option->BroadcastStormDetectionThreshold;
+		limit_start_count = hub->Option->BroadcastStormDetectionThreshold;
 	}
 
 	LockList(pa->StormList);
@@ -3449,6 +3296,95 @@ static void HubLogMacRegist(HUB *hub, SESSION *s, UCHAR *mac, UINT vlan_id)
 	}
 }
 
+// Destination policy: true when the policy of the session a frame goes to drops it. The rule set of the
+// unicast branch and of the flood loop of StorePacket (the source side is StorePacketFilterByPolicy)
+static bool PolicyDropsPacket(POLICY *pol, PKT *p)
+{
+	if (pol->RSandRAFilter)
+	{
+		if (p->TypeL3 == L3_IPV6 &&
+			p->TypeL4 == L4_ICMPV6 &&
+			(p->ICMPv6HeaderPacketInfo.Type == ICMPV6_TYPE_ROUTER_SOLICIATION ||
+			 p->ICMPv6HeaderPacketInfo.Type == ICMPV6_TYPE_ROUTER_ADVERTISEMENT))
+		{
+			return true;
+		}
+	}
+
+	if (pol->DHCPFilter)
+	{
+		if (IsDhcpv4(p))
+		{
+			return true;
+		}
+	}
+
+	if (pol->DHCPv6Filter)
+	{
+		if (IsDhcpv6Port(p))
+		{
+			return true;
+		}
+	}
+
+	if (pol->ArpDhcpOnly)
+	{
+		if (p->BroadcastPacket)
+		{
+			bool b = true;
+
+			if (IsDhcpv4(p))
+			{
+				b = false;
+			}
+			else if (p->TypeL3 == L3_ARPV4)
+			{
+				b = false;
+			}
+			else if (IsDhcpv6Port(p))
+			{
+				b = false;
+			}
+			else if (p->TypeL3 == L3_IPV6 &&
+				p->TypeL4 == L4_ICMPV6)
+			{
+				b = false;
+			}
+
+			if (b)
+			{
+				return true;
+			}
+		}
+	}
+
+	if (pol->FilterIPv4)
+	{
+		if (p->TypeL3 == L3_IPV4 || p->TypeL3 == L3_ARPV4)
+		{
+			return true;
+		}
+	}
+
+	if (pol->FilterIPv6)
+	{
+		if (p->TypeL3 == L3_IPV6)
+		{
+			return true;
+		}
+	}
+
+	if (pol->FilterNonIP)
+	{
+		if (p->TypeL3 != L3_IPV4 && p->TypeL3 != L3_ARPV4 && p->TypeL3 != L3_IPV6)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
 void StorePacket(HUB *hub, SESSION *s, PKT *packet)
 {
 	MAC_TABLE_ENTRY *entry = NULL;
@@ -3480,17 +3416,14 @@ void StorePacket(HUB *hub, SESSION *s, PKT *packet)
 		}
 	}
 
-	if (hub->Option != NULL)
+	no_heavy = hub->Option->DoNotSaveHeavySecurityLogs;
+	drop_broadcast_packet_privacy = hub->Option->DropBroadcastsInPrivacyFilterMode;
+	drop_arp_packet_privacy = hub->Option->DropArpInPrivacyFilterMode;
+	allow_same_user_packet_privacy = hub->Option->AllowSameUserInPrivacyFilterMode;
+	tcp_queue_quota = hub->Option->FloodingSendQueueBufferQuota;
+	if (hub->Option->DetectDormantSessionInterval != 0)
 	{
-		no_heavy = hub->Option->DoNotSaveHeavySecurityLogs;
-		drop_broadcast_packet_privacy = hub->Option->DropBroadcastsInPrivacyFilterMode;
-		drop_arp_packet_privacy = hub->Option->DropArpInPrivacyFilterMode;
-		allow_same_user_packet_privacy = hub->Option->AllowSameUserInPrivacyFilterMode;
-		tcp_queue_quota = hub->Option->FloodingSendQueueBufferQuota;
-		if (hub->Option->DetectDormantSessionInterval != 0)
-		{
-			dormant_interval = (UINT64)hub->Option->DetectDormantSessionInterval * (UINT64)1000;
-		}
+		dormant_interval = (UINT64)hub->Option->DetectDormantSessionInterval * (UINT64)1000;
 	}
 
 	if (dormant_interval != 0)
@@ -3694,7 +3627,7 @@ DISCARD_PACKET:
 								{
 									check_mac = true;
 
-									if (hub->Option != NULL && hub->Option->DisableCheckMacOnLocalBridge)
+									if (hub->Option->DisableCheckMacOnLocalBridge)
 									{
 										check_mac = false;
 									}
@@ -3703,7 +3636,7 @@ DISCARD_PACKET:
 
 							if (check_mac && ((entry->UpdatedTime + MAC_TABLE_EXCLUSIVE_TIME) >= now))
 							{
-								if (hub->Option != NULL && hub->Option->FixForDLinkBPDU && IsDLinkStpMac(packet->MacAddressSrc))
+								if (hub->Option->FixForDLinkBPDU && IsDLinkStpMac(packet->MacAddressSrc))
 								{
 									// D-Link sends spanning tree packets from these addresses. CheckMac on a local
 									// bridge would break them, so they are handled separately.
@@ -3811,13 +3744,9 @@ UPDATE_FDB:
 								dhcp_or_ra = true;
 							}
 						}
-						else if (packet->TypeL4 == L4_UDP)
+						else if (IsDhcpv6Port(packet))
 						{
-							if (Endian16(packet->L4.UDPHeader->DstPort) == 546 ||
-								Endian16(packet->L4.UDPHeader->DstPort) == 547)
-							{
-								dhcp_or_ra = true;
-							}
+							dhcp_or_ra = true;
 						}
 
 						if (IsHubMacAddress(packet->MacAddressSrc) &&
@@ -4154,88 +4083,9 @@ UPDATE_FDB:
 						{
 							DeleteIPv6DefaultRouterInRA(packet);
 						}
-						if (dest_session->Policy->RSandRAFilter)
+						if (PolicyDropsPacket(dest_session->Policy, packet))
 						{
-							if (packet->TypeL3 == L3_IPV6 &&
-								packet->TypeL4 == L4_ICMPV6 &&
-								(packet->ICMPv6HeaderPacketInfo.Type == ICMPV6_TYPE_ROUTER_SOLICIATION ||
-								 packet->ICMPv6HeaderPacketInfo.Type == ICMPV6_TYPE_ROUTER_ADVERTISEMENT))
-							{
-								goto DISCARD_UNICAST_PACKET;
-							}
-						}
-						if (dest_session->Policy->DHCPFilter)
-						{
-							if (packet->TypeL3 == L3_IPV4 &&
-								packet->TypeL4 == L4_UDP &&
-								packet->TypeL7 == L7_DHCPV4)
-							{
-								goto DISCARD_UNICAST_PACKET;
-							}
-						}
-						if (dest_session->Policy->DHCPv6Filter)
-						{
-							if (packet->TypeL3 == L3_IPV6 &&
-								packet->TypeL4 == L4_UDP &&
-								(Endian16(packet->L4.UDPHeader->DstPort) == 546 || Endian16(packet->L4.UDPHeader->DstPort) == 547))
-							{
-								goto DISCARD_UNICAST_PACKET;
-							}
-						}
-						if (dest_session->Policy->ArpDhcpOnly)
-						{
-							if (packet->BroadcastPacket)
-							{
-								bool b = true;
-
-								if (packet->TypeL3 == L3_IPV4 &&
-									packet->TypeL4 == L4_UDP &&
-									packet->TypeL7 == L7_DHCPV4)
-								{
-									b = false;
-								}
-								else if (packet->TypeL3 == L3_ARPV4)
-								{
-									b = false;
-								}
-								else if (packet->TypeL3 == L3_IPV6 &&
-									packet->TypeL4 == L4_UDP &&
-									(Endian16(packet->L4.UDPHeader->DstPort) == 546 || Endian16(packet->L4.UDPHeader->DstPort) == 547))
-								{
-									b = false;
-								}
-								else if (packet->TypeL3 == L3_IPV6 &&
-									packet->TypeL4 == L4_ICMPV6)
-								{
-									b = false;
-								}
-
-								if (b)
-								{
-									goto DISCARD_UNICAST_PACKET;
-								}
-							}
-						}
-						if (dest_session->Policy->FilterIPv4)
-						{
-							if (packet->TypeL3 == L3_IPV4 || packet->TypeL3 == L3_ARPV4)
-							{
-								goto DISCARD_UNICAST_PACKET;
-							}
-						}
-						if (dest_session->Policy->FilterIPv6)
-						{
-							if (packet->TypeL3 == L3_IPV6)
-							{
-								goto DISCARD_UNICAST_PACKET;
-							}
-						}
-						if (dest_session->Policy->FilterNonIP)
-						{
-							if (packet->TypeL3 != L3_IPV4 && packet->TypeL3 != L3_ARPV4 && packet->TypeL3 != L3_IPV6)
-							{
-								goto DISCARD_UNICAST_PACKET;
-							}
+							goto DISCARD_UNICAST_PACKET;
 						}
 
 						if (s != NULL &&
@@ -4358,92 +4208,9 @@ DISCARD_UNICAST_PACKET:
 										}
 									}
 								}
-								if (dest_session->Policy->RSandRAFilter)
+								if (PolicyDropsPacket(dest_session->Policy, packet))
 								{
-									if (packet->TypeL3 == L3_IPV6 &&
-										packet->TypeL4 == L4_ICMPV6 &&
-										(packet->ICMPv6HeaderPacketInfo.Type == ICMPV6_TYPE_ROUTER_SOLICIATION ||
-										 packet->ICMPv6HeaderPacketInfo.Type == ICMPV6_TYPE_ROUTER_ADVERTISEMENT))
-									{
-										discard = true;
-									}
-								}
-
-								if (dest_session->Policy->DHCPFilter)
-								{
-									if (packet->TypeL3 == L3_IPV4 &&
-										packet->TypeL4 == L4_UDP &&
-										packet->TypeL7 == L7_DHCPV4)
-									{
-										discard = true;
-									}
-								}
-
-								if (dest_session->Policy->DHCPv6Filter)
-								{
-									if (packet->TypeL3 == L3_IPV6 &&
-										packet->TypeL4 == L4_UDP &&
-										(Endian16(packet->L4.UDPHeader->DstPort) == 546 || Endian16(packet->L4.UDPHeader->DstPort) == 547))
-									{
-										discard = true;
-									}
-								}
-
-								if (dest_session->Policy->ArpDhcpOnly)
-								{
-									if (packet->BroadcastPacket)
-									{
-										bool b = true;
-
-										if (packet->TypeL3 == L3_IPV4 &&
-											packet->TypeL4 == L4_UDP &&
-											packet->TypeL7 == L7_DHCPV4)
-										{
-											b = false;
-										}
-										else if (packet->TypeL3 == L3_ARPV4)
-										{
-											b = false;
-										}
-										else if (packet->TypeL3 == L3_IPV6 &&
-											packet->TypeL4 == L4_UDP &&
-											(Endian16(packet->L4.UDPHeader->DstPort) == 546 || Endian16(packet->L4.UDPHeader->DstPort) == 547))
-										{
-											b = false;
-										}
-										else if (packet->TypeL3 == L3_IPV6 &&
-											packet->TypeL4 == L4_ICMPV6)
-										{
-											b = false;
-										}
-
-										if (discard == false)
-										{
-											discard = b;
-										}
-									}
-								}
-
-								if (dest_session->Policy->FilterIPv4)
-								{
-									if (packet->TypeL3 == L3_IPV4 || packet->TypeL3 == L3_ARPV4)
-									{
-										discard = true;
-									}
-								}
-								if (dest_session->Policy->FilterIPv6)
-								{
-									if (packet->TypeL3 == L3_IPV6)
-									{
-										discard = true;
-									}
-								}
-								if (dest_session->Policy->FilterNonIP)
-								{
-									if (packet->TypeL3 != L3_IPV4 && packet->TypeL3 != L3_ARPV4 && packet->TypeL3 != L3_IPV6)
-									{
-										discard = true;
-									}
+									discard = true;
 								}
 
 								if (s != NULL &&
@@ -4541,11 +4308,6 @@ bool IsIPManagementTargetForHUB(IP *ip, HUB *hub)
 	if (ip == NULL || hub == NULL)
 	{
 		return false;
-	}
-
-	if (hub->Option == NULL)
-	{
-		return true;
 	}
 
 	if (IsIP4(ip))
@@ -4722,7 +4484,7 @@ void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *
 		}
 	}
 
-	if (packet != NULL && src != NULL && src->Hub != NULL && src->Hub->Option != NULL && src->Hub->Option->FixForDLinkBPDU)
+	if (packet != NULL && src != NULL && src->Hub != NULL && src->Hub->Option->FixForDLinkBPDU)
 	{
 		// Workaround for D-Link BPDUs sent from these source MACs
 		if (IsDLinkStpMac(packet->MacAddressSrc))
@@ -4746,7 +4508,7 @@ void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *
 	if (dest->Session != NULL && dest->Session->VLanId != 0)
 	{
 		UINT vlan_tpid = 0;
-		if (src != NULL && src->Hub != NULL && src->Hub->Option != NULL)
+		if (src != NULL && src->Hub != NULL)
 		{
 			vlan_tpid = src->Hub->Option->VlanTypeId;
 		}
@@ -4757,7 +4519,7 @@ void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *
 		}
 	}
 
-	if (src != NULL && dest->Session != NULL && src->Hub != NULL && src->Hub->Option != NULL)
+	if (src != NULL && dest->Session != NULL && src->Hub != NULL)
 	{
 		if (dest->Session->AdjustMss != 0 ||
 			(dest->Session->UseUdpAcceleration && dest->Session->UdpAccelMss != 0))
@@ -4848,7 +4610,7 @@ static bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
 
 	hub = s->Hub;
 
-	if (hub != NULL && hub->Option != NULL)
+	if (hub != NULL)
 	{
 		no_heavy = hub->Option->DoNotSaveHeavySecurityLogs;
 	}
@@ -4915,15 +4677,9 @@ static bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
 		{
 			ok = true;
 		}
-		if (p->TypeL3 == L3_IPV4)
+		if (IsDhcpv4(p))
 		{
-			if (p->TypeL4 == L4_UDP)
-			{
-				if (p->TypeL7 == L7_DHCPV4)
-				{
-					ok = true;
-				}
-			}
+			ok = true;
 		}
 		if (p->TypeL3 == L3_IPV6)
 		{
@@ -4933,9 +4689,7 @@ static bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
 			}
 		}
 
-		if (p->TypeL3 == L3_IPV6 &&
-			p->TypeL4 == L4_UDP &&
-			(Endian16(p->L4.UDPHeader->DstPort) == 546 || Endian16(p->L4.UDPHeader->DstPort) == 547))
+		if (IsDhcpv6Port(p))
 		{
 			ok = true;
 		}
@@ -4948,70 +4702,47 @@ static bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
 
 	if (pol->FilterIPv4)
 	{
-		if (p->MacHeader != NULL)
+		if (IsEtherTypeIPv4(p))
 		{
-			USHORT proto = Endian16(p->MacHeader->Protocol);
-			if (proto == 0x0800 || proto == 0x0806)
-			{
-				return false;
-			}
+			return false;
 		}
 	}
 
 	if (pol->FilterIPv6)
 	{
-		if (p->MacHeader != NULL)
+		if (IsEtherTypeIPv6(p))
 		{
-			USHORT proto = Endian16(p->MacHeader->Protocol);
-			if (proto == 0x86dd)
-			{
-				return false;
-			}
+			return false;
 		}
 	}
 
 	if (pol->FilterNonIP)
 	{
-		if (p->MacHeader != NULL)
+		if (IsEtherTypeNonIP(p))
 		{
-			USHORT proto = Endian16(p->MacHeader->Protocol);
-			if (!(proto == 0x86dd || proto == 0x0800 || proto == 0x0806))
-			{
-				return false;
-			}
+			return false;
 		}
 	}
 
 	if (pol->DHCPFilter)
 	{
-		if (p->TypeL3 == L3_IPV4 &&
-			p->TypeL4 == L4_UDP &&
-			p->TypeL7 == L7_DHCPV4)
+		if (IsDhcpv4(p))
 		{
-
 			return false;
 		}
 	}
 
 	if (pol->DHCPv6Filter)
 	{
-		if (p->TypeL3 == L3_IPV6 &&
-			p->TypeL4 == L4_UDP)
+		if (IsDhcpv6Port(p))
 		{
-			if (Endian16(p->L4.UDPHeader->DstPort) == 546 ||
-				Endian16(p->L4.UDPHeader->DstPort) == 547)
-			{
-
-				return false;
-			}
+			return false;
 		}
 	}
 
 	if (pol->DHCPNoServer)
 	{
-		if (p->TypeL3 == L3_IPV4 &&
-			p->TypeL4 == L4_UDP &&
-			p->TypeL7 == L7_DHCPV4)
+		if (IsDhcpv4(p))
 		{
 			DHCPV4_HEADER *h = p->L7.DHCPv4Header;
 			if (h->OpCode == 2)
@@ -5070,9 +4801,7 @@ static bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
 		}
 	}
 
-	if (p->TypeL3 == L3_IPV4 &&
-		p->TypeL4 == L4_UDP &&
-		p->TypeL7 == L7_DHCPV4 &&
+	if (IsDhcpv4(p) &&
 		(s->Hub != NULL && s->Hub->Option->NoIpTable == false))
 	{
 		DHCPV4_HEADER *h = p->L7.DHCPv4Header;
@@ -5119,7 +4848,7 @@ UPDATE_DHCP_ALLOC_ENTRY:
 									Insert(hub->IpTable, e);
 
 								
-									if ((hub->Option != NULL && hub->Option->NoDhcpPacketLogOutsideHub == false) || mac_table->Session != s)
+									if ((hub->Option->NoDhcpPacketLogOutsideHub == false) || mac_table->Session != s)
 									{
 										char dhcp_mac_addr[64];
 										char dest_mac_addr[64];
@@ -5248,12 +4977,9 @@ bool IsMostHighestPriorityPacket(SESSION *s, PKT *p)
 			}
 		}
 
-		if (p->TypeL4 == L4_UDP)
+		if (IsDhcpv4(p))
 		{
-			if (p->TypeL7 == L7_DHCPV4)
-			{
-				return true;
-			}
+			return true;
 		}
 	}
 
@@ -5953,11 +5679,7 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 
 	h->UserList = NewUserList();
 
-	h->LogSetting.SavePacketLog = h->LogSetting.SaveSecurityLog = true;
-	h->LogSetting.PacketLogConfig[PACKET_LOG_TCP_CONN] =
-		h->LogSetting.PacketLogConfig[PACKET_LOG_DHCP] = PACKET_LOG_HEADER;
-	h->LogSetting.SecurityLogSwitchType = LOG_SWITCH_DAY;
-	h->LogSetting.PacketLogSwitchType = LOG_SWITCH_DAY;
+	SetDefaultHubLog(&h->LogSetting);
 
 	MakeDir(HUB_SECURITY_LOG_DIR_NAME);
 	MakeDir(HUB_PACKET_LOG_DIR_NAME);
