@@ -136,7 +136,7 @@ struct CONNECTION
 	UINT Status;
 	char *Name;
 	THREAD *Thread;
-	volatile bool Halt;
+	volatile bool Halt;					// Only through FlagRead and FlagWrite (Native.h)
 	UCHAR Random[SHA1_SIZE];
 	UINT ServerVer;
 	UINT ServerBuild;

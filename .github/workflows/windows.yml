@@ -72,7 +72,7 @@ jobs:
         )
 
         call "%VCVARS_PATH%"
-        cmake -G "Ninja" -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=%VCPKG_TRIPLET% -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER="%COMPILER_PATH%" -DCMAKE_CXX_COMPILER="%COMPILER_PATH%" -DBUILD_NUMBER=%BUILD_NUMBER% -DRANZ_UNUSED_WARNINGS=ON %CMAKE_EXTRA_FLAGS% ..
+        cmake -G "Ninja" -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=%VCPKG_TRIPLET% -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER="%COMPILER_PATH%" -DCMAKE_CXX_COMPILER="%COMPILER_PATH%" -DBUILD_NUMBER=%BUILD_NUMBER% -DRANZ_UNUSED_WARNINGS=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON %CMAKE_EXTRA_FLAGS% ..
         if errorlevel 1 exit /b 1
 
         rem The compiler output goes to build-log.txt for the unused-code report step, then to the job log
@@ -81,6 +81,19 @@ jobs:
         type build-log.txt
         exit /b %BUILD_EXIT%
       shell: cmd
+    # Every Mayaqua and Cedar compile command carries /volatile:ms (cmake/RanzOptions.cmake). ARM64
+    # defaults to /volatile:iso, which gives the cross-thread halt and cancel flags no acquire and
+    # release semantics.
+    - name: Check /volatile:ms
+      shell: pwsh
+      run: |
+        $db = Get-Content -Raw -LiteralPath build/compile_commands.json | ConvertFrom-Json
+        $own = @($db | Where-Object { $_.file -match '[\\/]src[\\/](Mayaqua|Cedar)[\\/]' })
+        if ($own.Count -eq 0) { throw 'No Mayaqua or Cedar compile command in build/compile_commands.json' }
+        $missing = @($own | Where-Object { $_.command -notmatch '(^|\s)[/-]volatile:ms(\s|$)' })
+        $missing | ForEach-Object { Write-Host "No /volatile:ms: $($_.file)" }
+        if ($missing.Count -gt 0) { throw "$($missing.Count) of $($own.Count) Mayaqua and Cedar compile commands lack /volatile:ms" }
+        Write-Host "$($own.Count) Mayaqua and Cedar compile commands carry /volatile:ms (${{ matrix.platform.ARCHITECTURE }})"
     # The key is the content hash of the cache directory, so a run that built nothing new finds the key
     # taken and saves nothing (a warning, not a failure).
     - name: Save vcpkg binary cache

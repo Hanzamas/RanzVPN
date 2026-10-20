@@ -112,7 +112,7 @@ struct TTS
 {
 	TT_PRINT_PROC *Print;
 	void *Param;
-	volatile bool Halt;
+	volatile bool Halt;					// Only through FlagRead and FlagWrite (Native.h)
 	UINT Port;
 	THREAD *Thread;
 	THREAD *IPv6AcceptThread;

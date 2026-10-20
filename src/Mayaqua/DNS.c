@@ -352,7 +352,7 @@ bool DnsResolveEx(LIST **iplist_v6, LIST **iplist_v4, const char *hostname, UINT
 		goto CACHE;
 	}
 
-	if (cancel_flag != NULL && *cancel_flag)
+	if (cancel_flag != NULL && FlagRead(cancel_flag))
 	{
 		return false;
 	}
@@ -382,7 +382,7 @@ bool DnsResolveEx(LIST **iplist_v6, LIST **iplist_v4, const char *hostname, UINT
 	{
 		const UINT64 end = Tick64() + timeout;
 
-		while (*cancel_flag == false)
+		while (FlagRead(cancel_flag) == false)
 		{
 			const UINT64 now = Tick64();
 			if (now >= end)
@@ -541,7 +541,7 @@ bool DnsResolveReverse(char *dst, const UINT size, const IP *ip, UINT timeout, v
 		goto CACHE;
 	}
 
-	if (cancel_flag != NULL && *cancel_flag)
+	if (cancel_flag != NULL && FlagRead(cancel_flag))
 	{
 		return false;
 	}
@@ -569,7 +569,7 @@ bool DnsResolveReverse(char *dst, const UINT size, const IP *ip, UINT timeout, v
 	{
 		const UINT64 end = Tick64() + timeout;
 
-		while (*cancel_flag == false)
+		while (FlagRead(cancel_flag) == false)
 		{
 			const UINT64 now = Tick64();
 			if (now >= end)

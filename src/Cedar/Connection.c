@@ -1816,7 +1816,7 @@ void StopConnection(CONNECTION *c, bool no_wait)
 	}
 
 
-	c->Halt = true;
+	FlagWrite(&c->Halt, true);
 
 	// The connection thread clears c->FirstSock under c->lock before it releases the socket:
 	// take a ref under the same lock so the socket outlives the Disconnect

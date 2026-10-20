@@ -497,7 +497,7 @@ CLEANUP:
 	{
 		int diff =  -((int)s->Connection->LastTcpQueueSize);
 		s->Connection->LastTcpQueueSize = 0;
-		s->Connection->Halt = true;
+		FlagWrite(&s->Connection->Halt, true);
 		CedarAddCurrentTcpQueueSize(s->Cedar, diff);
 
 		diff = ((int)c->CurrentSendQueueSize) - ((int)c->LastPacketQueueSize);
