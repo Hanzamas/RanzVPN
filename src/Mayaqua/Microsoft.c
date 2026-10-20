@@ -42,9 +42,6 @@
 
 static MS *ms = NULL;
 
-static LOCK *lock_adapter_list = NULL;
-static MS_ADAPTER_LIST *last_adapter_list = NULL;
-
 static SERVICE_STATUS_HANDLE ssh = NULL;
 static SERVICE_STATUS status = { 0 };
 static HANDLE service_stop_event = NULL;
@@ -363,17 +360,6 @@ static void *MsOpenOrCreateGlobalPulse(char *name)
 	return (void *)h;
 }
 
-
-bool MsGetFileInformation(void *h, void *info)
-{
-	if (h == INVALID_HANDLE_VALUE || info == NULL)
-	{
-		return false;
-	}
-
-	return GetFileInformationByHandle(h, info);
-}
-
 double MsGetHiResTimeSpan(UINT64 diff)
 {
 	LARGE_INTEGER t;
@@ -453,12 +439,16 @@ static wchar_t ms_computer_name_full_cache[MAX_SIZE] = {0};
 
 void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache)
 {
-	DWORD size2 = size;
-	UniStrCpy(name, size, L"");
-	if (name == NULL || size == 0)
+	DWORD size2;
+	if (name == NULL || size < sizeof(wchar_t))
 	{
 		return;
 	}
+
+	UniStrCpy(name, size, L"");
+
+	// size counts bytes; GetComputerNameExW counts wide characters
+	size2 = size / sizeof(wchar_t);
 
 	if (with_cache)
 	{
@@ -624,38 +614,6 @@ void MsRegistWindowsFirewallEx(char *title, char *exe)
 	Free(tmp);
 }
 
-UINT MsSetConsoleWidth(UINT size)
-{
-	HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
-	CONSOLE_SCREEN_BUFFER_INFO info;
-	COORD c;
-	UINT old_x, old_y;
-	if (size == 0)
-	{
-		return 0;
-	}
-	if (h == INVALID_HANDLE_VALUE)
-	{
-		return 0;
-	}
-
-	Zero(&info, sizeof(info));
-	if (GetConsoleScreenBufferInfo(h, &info) == false)
-	{
-		return 0;
-	}
-
-	old_x = info.dwSize.X;
-	old_y = info.dwSize.Y;
-
-	c.X = size;
-	c.Y = old_y;
-
-	SetConsoleScreenBufferSize(h, c);
-
-	return old_x;
-}
-
 UINT MsGetConsoleWidth()
 {
 	HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -675,27 +633,6 @@ UINT MsGetConsoleWidth()
 	return info.dwSize.X;
 }
 
-MS_ADAPTER *MsGetAdapterByGuid(char *guid)
-{
-	MS_ADAPTER_LIST *o;
-	MS_ADAPTER *ret = NULL;
-	if (guid == NULL)
-	{
-		return NULL;
-	}
-
-	o = MsCreateAdapterList();
-	if (o == NULL)
-	{
-		return NULL;
-	}
-
-	ret = MsGetAdapterByGuidFromList(o, guid);
-
-	MsFreeAdapterList(o);
-
-	return ret;
-}
 MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid)
 {
 	MS_ADAPTER *ret = NULL;
@@ -717,208 +654,25 @@ MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid)
 	return ret;
 }
 
-// Detect a 32-bit counter wraparound
-#define	CHECK_32BIT_OVERFLOW(old_value, new_value)				\
-{																\
-	if ((old_value) > (new_value))								\
-	{															\
-		(new_value) += ((UINT64)4294967296ULL);					\
-	}															\
-}
-
-static void MsGetAdapterTcpIpInformation(MS_ADAPTER *a)
+// Whether an interface is a wired Ethernet LAN, the kind that the Local Bridge lists unless it
+// shows every interface. Decided from the MIB_IF_ROW2 type data, not from words in the adapter
+// title, which are localized and also appear in unrelated names: an Ethernet interface type on
+// 802.3 media whose physical medium is 802.3, or is unspecified on a hardware NIC. Tunnels, PPP
+// and dial-up, loopback and wireless interfaces are not, and neither are software interfaces
+// that do not report their physical medium, such as the WAN Miniport interfaces of RAS
+bool MsIsBridgeableIf(UINT type, UINT media_type, UINT physical_medium_type, bool hardware_interface)
 {
-	IP_ADAPTER_INFO *info, *info_top;
-	ULONG info_size;
-	ULONG ret;
-	if (a == NULL)
+	if (type != IF_TYPE_ETHERNET_CSMACD || media_type != NdisMedium802_3)
 	{
-		return;
+		return false;
 	}
 
-	info_top = ZeroMalloc(sizeof(IP_ADAPTER_INFO));
-	info_size = sizeof(IP_ADAPTER_INFO);
-
-	ret = GetAdaptersInfo(info_top, &info_size);
-	if (ret == ERROR_INSUFFICIENT_BUFFER || ret == ERROR_BUFFER_OVERFLOW)
+	if (physical_medium_type == NdisPhysicalMedium802_3)
 	{
-		Free(info_top);
-		info_size *= 2;
-		info_top = ZeroMalloc(info_size);
-
-		if (GetAdaptersInfo(info_top, &info_size) != NO_ERROR)
-		{
-			Free(info_top);
-			return;
-		}
-	}
-	else if (ret != NO_ERROR)
-	{
-		Free(info_top);
-		return;
+		return true;
 	}
 
-	info = info_top;
-
-	while (info != NULL)
-	{
-		if (info->Index == a->Index)
-		{
-			IP_ADDR_STRING *s;
-
-			a->NumIpAddress = 0;
-			s = &info->IpAddressList;
-			while (s != NULL)
-			{
-				if (a->NumIpAddress < MAX_MS_ADAPTER_IP_ADDRESS)
-				{
-					StrToIP(&a->IpAddresses[a->NumIpAddress], s->IpAddress.String);
-					StrToIP(&a->SubnetMasks[a->NumIpAddress], s->IpMask.String);
-					a->NumIpAddress++;
-				}
-				s = s->Next;
-			}
-
-			a->NumGateway = 0;
-			s = &info->GatewayList;
-			while (s != NULL)
-			{
-				if (a->NumGateway < MAX_MS_ADAPTER_IP_ADDRESS)
-				{
-					StrToIP(&a->Gateways[a->NumGateway], s->IpAddress.String);
-					a->NumGateway++;
-				}
-				s = s->Next;
-			}
-
-			a->UseDhcp = (info->DhcpEnabled == 0 ? false : true);
-			if (a->UseDhcp)
-			{
-				SYSTEMTIME st;
-
-				StrToIP(&a->DhcpServer, info->DhcpServer.IpAddress.String);
-				TimeToSystem(&st, info->LeaseObtained);
-				a->DhcpLeaseStart = SystemToUINT64(&st);
-
-				TimeToSystem(&st, info->LeaseExpires);
-				a->DhcpLeaseExpires = SystemToUINT64(&st);
-			}
-
-			a->UseWins = info->HaveWins;
-			if (a->UseWins)
-			{
-				StrToIP(&a->PrimaryWinsServer, info->PrimaryWinsServer.IpAddress.String);
-				StrToIP(&a->SecondaryWinsServer, info->SecondaryWinsServer.IpAddress.String);
-			}
-
-			StrCpy(a->Guid, sizeof(a->Guid), info->AdapterName);
-
-			break;
-		}
-
-		info = info->Next;
-	}
-
-	Free(info_top);
-}
-
-MS_ADAPTER_LIST *MsCreateAdapterList()
-{
-	return MsCreateAdapterListEx(false);
-}
-MS_ADAPTER_LIST *MsCreateAdapterListEx(bool no_info)
-{
-	MS_ADAPTER_LIST *ret;
-
-	if (no_info)
-	{
-		ret = MsCreateAdapterListInnerExVista(true);
-
-		return ret;
-	}
-
-	Lock(lock_adapter_list);
-	{
-		MS_ADAPTER_LIST *old = last_adapter_list;
-		UINT i;
-
-		ret = MsCreateAdapterListInnerExVista(false);
-
-		if (ret == NULL)
-		{
-			Unlock(lock_adapter_list);
-			return NULL;
-		}
-
-		for (i = 0;i < ret->Num;i++)
-		{
-			UINT j;
-			for (j = 0;j < old->Num;j++)
-			{
-				MS_ADAPTER *o = old->Adapters[j];
-				MS_ADAPTER *n = ret->Adapters[i];
-
-				if (StrCmpi(o->Title, n->Title) == 0)
-				{
-					CHECK_32BIT_OVERFLOW(o->RecvBytes, n->RecvBytes);
-					CHECK_32BIT_OVERFLOW(o->RecvPacketsBroadcast, n->RecvPacketsBroadcast);
-					CHECK_32BIT_OVERFLOW(o->RecvPacketsUnicast, n->RecvPacketsUnicast);
-					CHECK_32BIT_OVERFLOW(o->SendBytes, n->SendBytes);
-					CHECK_32BIT_OVERFLOW(o->SendPacketsBroadcast, n->SendPacketsBroadcast);
-					CHECK_32BIT_OVERFLOW(o->SendPacketsUnicast, n->SendPacketsUnicast);
-					break;
-				}
-			}
-		}
-
-		MsFreeAdapterList(old);
-
-		last_adapter_list = MsCloneAdapterList(ret);
-	}
-	Unlock(lock_adapter_list);
-
-	return ret;
-}
-
-static void MsInitAdapterListModule()
-{
-	lock_adapter_list = NewLock(NULL);
-
-	last_adapter_list = MsCreateAdapterListInnerExVista(false);
-}
-
-static void MsFreeAdapterListModule()
-{
-	if (last_adapter_list != NULL)
-	{
-		MsFreeAdapterList(last_adapter_list);
-		last_adapter_list = NULL;
-	}
-
-	DeleteLock(lock_adapter_list);
-	lock_adapter_list = NULL;
-}
-
-MS_ADAPTER_LIST *MsCloneAdapterList(MS_ADAPTER_LIST *o)
-{
-	MS_ADAPTER_LIST *ret;
-	UINT i;
-	if (o == NULL)
-	{
-		return NULL;
-	}
-
-	ret = ZeroMalloc(sizeof(MS_ADAPTER_LIST));
-	ret->Num = o->Num;
-	ret->Adapters = ZeroMalloc(sizeof(MS_ADAPTER *) * ret->Num);
-
-	for (i = 0;i < ret->Num;i++)
-	{
-		ret->Adapters[i] = ZeroMalloc(sizeof(MS_ADAPTER));
-		Copy(ret->Adapters[i], o->Adapters[i], sizeof(MS_ADAPTER));
-	}
-
-	return ret;
+	return physical_medium_type == NdisPhysicalMediumUnspecified && hardware_interface;
 }
 
 MS_ADAPTER *MsCloneAdapter(MS_ADAPTER *a)
@@ -935,7 +689,7 @@ MS_ADAPTER *MsCloneAdapter(MS_ADAPTER *a)
 	return ret;
 }
 
-MS_ADAPTER_LIST *MsCreateAdapterListInnerExVista(bool no_info)
+MS_ADAPTER_LIST *MsCreateAdapterList()
 {
 	LIST *o;
 	UINT i;
@@ -1004,32 +758,18 @@ MS_ADAPTER_LIST *MsCreateAdapterListInnerExVista(bool no_info)
 				a->Speed = MAX((UINT)r->TransmitLinkSpeed, (UINT)r->ReceiveLinkSpeed);
 				a->AddressSize = MIN(sizeof(a->Address), r->PhysicalAddressLength);
 				Copy(a->Address, r->PhysicalAddress, a->AddressSize);
-				a->RecvBytes = r->InOctets;
-				a->RecvPacketsBroadcast = r->InNUcastPkts;
-				a->RecvPacketsUnicast = r->InUcastPkts;
-				a->SendBytes = r->OutOctets;
-				a->SendPacketsBroadcast = r->OutNUcastPkts;
-				a->SendPacketsUnicast = r->OutUcastPkts;
 
-				if (r->MediaType == NdisMediumWirelessWan || r->PhysicalMediumType == NdisPhysicalMediumWirelessLan ||
-					r->PhysicalMediumType == NdisPhysicalMediumWirelessWan || r->PhysicalMediumType == NdisPhysicalMediumWiMax ||
-					r->Type == IF_TYPE_IEEE80211)
-				{
-					a->IsWireless = true;
-				}
+				// Same "{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}" form as the SeLow and NDIS adapter
+				// names; every interface gets one, with or without an IPv4 binding
+				Format(a->Guid, sizeof(a->Guid), "{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
+					(UINT)r->InterfaceGuid.Data1, (UINT)r->InterfaceGuid.Data2, (UINT)r->InterfaceGuid.Data3,
+					(UINT)r->InterfaceGuid.Data4[0], (UINT)r->InterfaceGuid.Data4[1],
+					(UINT)r->InterfaceGuid.Data4[2], (UINT)r->InterfaceGuid.Data4[3],
+					(UINT)r->InterfaceGuid.Data4[4], (UINT)r->InterfaceGuid.Data4[5],
+					(UINT)r->InterfaceGuid.Data4[6], (UINT)r->InterfaceGuid.Data4[7]);
 
-				if (a->IsWireless ||
-					r->Type != IF_TYPE_ETHERNET_CSMACD ||
-					r->MediaType != NdisMedium802_3 || 
-					(r->PhysicalMediumType != 0 && r->PhysicalMediumType != NdisPhysicalMedium802_3))
-				{
-					a->IsNotEthernetLan = true;
-				}
-
-				if (no_info == false)
-				{
-					MsGetAdapterTcpIpInformation(a);
-				}
+				a->IsBridgeable = MsIsBridgeableIf(r->Type, r->MediaType, r->PhysicalMediumType,
+					r->InterfaceAndOperStatusFlags.HardwareInterface);
 
 				Add(o, a);
 			}
@@ -4124,9 +3864,10 @@ void MsInit()
 	ms->ExeFileDir = CopyStr(tmp);
 
 	{
-		wchar_t tmp_w[MAX_PATH];
+		wchar_t tmp_w[MAX_SIZE];
 
-		GetModuleFileNameW(NULL, tmp_w, sizeof(tmp_w));
+		// The wide APIs below count wide characters, not bytes
+		Win32GetExeNameW(tmp_w, ARRAYSIZE(tmp_w));
 		ms->ExeFileNameW = CopyUniStr(tmp_w);
 
 		Win32GetDirFromPathW(tmp_w, sizeof(tmp_w), tmp_w);
@@ -4138,14 +3879,19 @@ void MsInit()
 	MsInitTempDir();
 
 	size = sizeof(tmp);
-	GetUserName(tmp, &size);
+	if (GetUserName(tmp, &size) == false)
+	{
+		tmp[0] = 0;
+	}
 	ms->UserName = CopyStr(tmp);
 
-	wchar_t tmp_w[MAX_PATH];
+	wchar_t tmp_w[MAX_SIZE];
 
-	size = sizeof(tmp_w);
-
-	GetUserNameW(tmp_w, &size);
+	size = ARRAYSIZE(tmp_w);
+	if (GetUserNameW(tmp_w, &size) == false)
+	{
+		tmp_w[0] = 0;
+	}
 	ms->UserNameW = CopyUniStr(tmp_w);
 
 	size = sizeof(tmp);
@@ -4154,7 +3900,7 @@ void MsInit()
 		ms->UserNameEx = CopyStr(tmp);
 	}
 
-	size = sizeof(tmp_w);
+	size = ARRAYSIZE(tmp_w);
 	if (GetUserNameExW(NameSamCompatible, tmp_w, &size))
 	{
 		ms->UserNameExW = CopyUniStr(tmp_w);
@@ -4168,8 +3914,6 @@ void MsInit()
 	{
 		ms->UserNameExW = CopyUniStr(ms->UserNameW);
 	}
-
-	MsInitAdapterListModule();
 
 	if (true)
 	{
@@ -4321,8 +4065,6 @@ void MsFree()
 
 		hLsa = NULL;
 	}
-
-	MsFreeAdapterListModule();
 
 	MsFreeTempDir();
 

@@ -8,58 +8,14 @@
 #include "GlobalConst.h"
 
 #include "Mayaqua/Network.h"
+#include "Mayaqua/Proxy.h"	// PROXY_DIRECT, PROXY_HTTP, PROXY_SOCKS, PROXY_SOCKS5
 
-#ifndef	CEDAR_VERSION_MAJOR
-#define	CEDAR_VERSION_MAJOR		0
-#endif
-
-#ifndef	CEDAR_VERSION_MINOR
-#define	CEDAR_VERSION_MINOR		0
-#endif
-
-#ifndef	CEDAR_VERSION_BUILD
-#define	CEDAR_VERSION_BUILD		0
-#endif
-
-// The version above (major.minor.build) is for display only. Peers receive
-// and compare these fixed values instead (hello/welcome packs, node info,
-// admin RPC, server caps), kept at the last SoftEther VPN 5.02 build 5187
-// so that existing peers keep gating features the same way.
+// The version in BuildInfo.h (major.minor.build) is for display only. Peers
+// receive and compare these fixed values instead (hello/welcome packs, node
+// info, admin RPC, server caps), kept at the last SoftEther VPN 5.02 build
+// 5187 so that existing peers keep gating features the same way.
 #define	CEDAR_WIRE_VER			502		// Major * 100 + minor
 #define	CEDAR_WIRE_BUILD		5187
-
-#ifndef	BUILDER_NAME
-#define	BUILDER_NAME			"Unknown"
-#endif
-
-#ifndef	BUILD_PLACE
-#define	BUILD_PLACE				"Unknown"
-#endif
-
-#ifndef	BUILD_DATE_Y
-#define	BUILD_DATE_Y			1970
-#endif
-
-#ifndef	BUILD_DATE_M
-#define	BUILD_DATE_M			1
-#endif
-
-#ifndef	BUILD_DATE_D
-#define	BUILD_DATE_D			1
-#endif
-
-#ifndef	BUILD_DATE_HO
-#define	BUILD_DATE_HO			0
-#endif
-
-#ifndef	BUILD_DATE_MI
-#define	BUILD_DATE_MI			0
-#endif
-
-#ifndef	BUILD_DATE_SE
-#define	BUILD_DATE_SE			0
-#endif
-
 
 #define	DEFAULT_USERNAME_HUB_SEPARATOR	'@'
 
@@ -96,7 +52,6 @@
 #define	FIFO_BUDGET					VPN_GP(GP_FIFO_BUDGET, 1600 * 1600 * 4)
 
 #define	MAX_PACKET_SIZE				1600
-#define	UDP_BUF_SIZE				(32 * 1024)
 
 #define	MAX_SEND_SOCKET_QUEUE_SIZE	VPN_GP(GP_MAX_SEND_SOCKET_QUEUE_SIZE, (1600 * 1600 * 1))
 #define	MIN_SEND_SOCKET_QUEUE_SIZE	VPN_GP(GP_MIN_SEND_SOCKET_QUEUE_SIZE, (1600 * 200 * 1))
@@ -143,8 +98,6 @@
 #define DH_PARAM_BITS_DEFAULT		2048
 
 
-#define	SE_UDP_SIGN			"SE2P"
-
 #define	INCREMENT_TRAFFIC_INTERVAL		(10 * 1000)
 
 #define	CLIENT_STATUS_CONNECTING	0
@@ -166,11 +119,6 @@
 
 #define	RECV_BUF_SIZE				65536
 
-#define	PROXY_DIRECT			0
-#define	PROXY_HTTP				1
-#define	PROXY_SOCKS				2
-#define	PROXY_SOCKS5			3
-
 #define	TCP_BOTH				0
 #define	TCP_SERVER_TO_CLIENT	1
 #define	TCP_CLIENT_TO_SERVER	2
@@ -184,7 +132,6 @@
 #define	CONNECTION_TYPE_PASSWORD		7
 
 #define	CONNECTION_TCP					0
-#define	CONNECTION_UDP					1
 #define	CONNECTION_HUB_BRIDGE			7
 #define	CONNECTION_HUB_LINK_SERVER		9
 
@@ -230,6 +177,8 @@
 #define	LISTEN_RETRY_TIME			(2 * 1000)
 #define LISTEN_RETRY_TIME_NOIPV6	(60 * 1000)
 #define	LISTENER_BIND_WAIT_TIME		(5 * 1000)		// ListenerCreate / ListenerEnable wait at most this for the bind attempt
+#define	ACCEPT_RETRY_TIME			100				// Back-off of a TCP listener after a transient accept() error
+#define	ACCEPT_ERROR_LOG_INTERVAL	(60 * 1000)		// A TCP listener logs transient accept() errors at most once per interval
 
 #define	DOS_TABLE_EXPIRES_FIRST		250
 #define	DOS_TABLE_EXPIRES_MAX		1000
@@ -239,7 +188,6 @@
 
 
 #define	LISTENER_TCP				0
-#define	LISTENER_UDP				1
 
 #define	LISTENER_STATUS_TRYING		0
 #define	LISTENER_STATUS_LISTENING	1
@@ -433,7 +381,7 @@ struct TRAFFIC
 
 typedef struct NON_SSL
 {
-	IP IpAddress;
+	IP IpAddress;				// Rate-limit key of the source (GetRateLimitKey)
 	UINT64 EntryExpires;
 	UINT Count;
 } NON_SSL;
@@ -471,7 +419,6 @@ struct CEDAR
 	char *HttpAcceptEncoding;
 	TRAFFIC *Traffic;
 	LOCK *TrafficLock;
-	LIST *UDPEntryList;
 	COUNTER *CurrentSessions;
 	COUNTER *CurrentTcpConnections;
 	LIST *NetSvcList;
@@ -486,6 +433,7 @@ struct CEDAR
 	COUNTER *AssignedClientLicense;
 	COUNTER *AssignedBridgeLicense;
 	LIST *NonSslList;
+	bool NonSslListFullLogged;		// MakeRoomInNoSslList has logged that NonSslList reached RATE_LIMIT_TABLE_MAX
 	UINT Beta;
 	LOCK *CedarSuperLock;
 	bool DisableIPv6Listener;
@@ -496,10 +444,8 @@ struct CEDAR
 	char CurrentRegion[128];
 	UINT CurrentTcpQueueSize;						// Changed only with InterlockedExchangeAdd
 	COUNTER *CurrentActiveLinks;
-	LOCK *QueueBudgetLock;
-	UINT QueueBudget;
-	LOCK *FifoBudgetLock;
-	UINT FifoBudget;
+	UINT QueueBudget;								// Changed only with InterlockedExchangeAdd
+	UINT FifoBudget;								// Changed only with InterlockedExchangeAdd
 	SSL_ACCEPT_SETTINGS SslAcceptSettings;
 	UINT DhParamBits;
 	char StunServer[MAX_HOST_NAME_LEN + 1];	// STUN server (host[:port]) for UDP acceleration, empty = STUN disabled
@@ -540,7 +486,7 @@ bool IsSupportedWinVer(RPC_WINVER *v);
 UINT GetCedarVersionNumber();
 void CedarAddCurrentTcpQueueSize(CEDAR *c, int diff);
 UINT CedarGetCurrentTcpQueueSize(CEDAR *c);
-void CedarAddQueueBudget(CEDAR *c, int diff);
+void CedarSyncQueueBudget(CEDAR *c, UINT current, UINT *last);
 void CedarAddFifoBudget(CEDAR *c, int diff);
 UINT CedarGetQueueBudgetConsuming(CEDAR *c);
 UINT CedarGetFifoBudgetConsuming(CEDAR *c);

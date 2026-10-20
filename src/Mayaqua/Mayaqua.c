@@ -206,12 +206,6 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 		exit(0);
 	}
 
-	if (RsaCheckEx() == false)
-	{
-		Alert("OpenSSL Library Init Failed. (too old?)\nPlease install the latest version of OpenSSL.\n\n", "RsaCheck()");
-		exit(0);
-	}
-
 	InitHamcore();
 
 	InitTable();

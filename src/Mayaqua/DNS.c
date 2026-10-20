@@ -601,7 +601,12 @@ bool DnsResolveReverse(char *dst, const UINT size, const IP *ip, UINT timeout, v
 	ReleaseDnsResolverReverse(resolver);
 
 CACHE:
-	Debug("DnsResolveReverse(): Could not resolve \"%r\". Searching for it in the cache...\n", ip);
+	{
+		char ip_str[MAX_SIZE];
+
+		IPToStr(ip_str, sizeof(ip_str), ip);
+		Debug("DnsResolveReverse(): Could not resolve \"%s\". Searching for it in the cache...\n", ip_str);
+	}
 
 	const DNS_CACHE_REVERSE *cached = DnsCacheReverseFind(ip);
 	if (cached == NULL || cached->Expiration <= Tick64())

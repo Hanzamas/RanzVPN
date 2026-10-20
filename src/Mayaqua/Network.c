@@ -23,6 +23,7 @@
 
 #include <iphlpapi.h>
 #include <WS2tcpip.h>
+#include <MSWSock.h>
 #include <wincrypt.h>
 #include <IcmpAPI.h>
 
@@ -48,12 +49,18 @@ static bool disable_gethostname_by_accept = false;
 
 
 static LIST *ip_clients = NULL;
+static bool ip_clients_full_logged = false;	// EvictOldestIpClient has logged that ip_clients is full
 
 static LIST *local_mac_list = NULL;
 static LOCK *local_mac_list_lock = NULL;
 
 
 static DH_CTX *dh_param = NULL;
+
+// Decoded copy of the Windows ROOT store, for the client's peer verification (guarded by openssl_lock)
+#define	SSL_ROOT_CERTS_REFRESH_SPAN		(10 * 60 * 1000ULL)
+static STACK_OF(X509) *ssl_root_certs = NULL;
+static UINT64 ssl_root_certs_tick = 0;
 
 typedef struct PRIVATE_IP_SUBNET
 {
@@ -469,6 +476,8 @@ L_LOOP:
 		{
 			goto L_LOOP;
 		}
+
+		sock->AcceptError = err;
 	}
 	else
 	{
@@ -1350,6 +1359,60 @@ UINT GetNumIpClient(IP *ip)
 	return ret;
 }
 
+// Map a source address to its per-source rate-limit key: an IPv4 address keeps all 32 bits,
+// an IPv6 address keeps only its /64 prefix, since one host can pick any address inside its /64
+void GetRateLimitKey(IP *key, IP *ip)
+{
+	if (key == NULL)
+	{
+		return;
+	}
+
+	Zero(key, sizeof(IP));
+
+	if (ip == NULL)
+	{
+		return;
+	}
+
+	Copy(key->address, ip->address, sizeof(key->address));
+
+	if (IsIP4(ip) == false)
+	{
+		Zero(&key->address[8], 8);
+	}
+}
+
+// ip_clients is full: drop the key with the oldest last connection (ip_clients has no
+// expired entries, a key leaves when its last connection closes), log the first time
+static void EvictOldestIpClient()
+{
+	IP_CLIENT *oldest = NULL;
+	UINT i;
+
+	for (i = 0; i < LIST_NUM(ip_clients); i++)
+	{
+		IP_CLIENT *c = LIST_DATA(ip_clients, i);
+
+		if (oldest == NULL || c->LastTick < oldest->LastTick)
+		{
+			oldest = c;
+		}
+	}
+
+	if (oldest != NULL)
+	{
+		Delete(ip_clients, oldest);
+		Free(oldest);
+	}
+
+	if (ip_clients_full_logged == false)
+	{
+		ip_clients_full_logged = true;
+		Debug("ip_clients reached %u source keys, the least recently seen keys are dropped\n", RATE_LIMIT_TABLE_MAX);
+	}
+}
+
 static void AddIpClient(IP *ip)
 {
 	IP_CLIENT *c;
@@ -1364,14 +1427,20 @@ static void AddIpClient(IP *ip)
 
 		if (c == NULL)
 		{
+			if (LIST_NUM(ip_clients) >= RATE_LIMIT_TABLE_MAX)
+			{
+				EvictOldestIpClient();
+			}
+
 			c = ZeroMallocFast(sizeof(IP_CLIENT));
-			Copy(&c->IpAddress, ip, sizeof(IP));
+			GetRateLimitKey(&c->IpAddress, ip);
 			c->NumConnections = 0;
 
 			Add(ip_clients, c);
 		}
 
 		c->NumConnections++;
+		c->LastTick = Tick64();
 	}
 	UnlockList(ip_clients);
 
@@ -1413,7 +1482,7 @@ IP_CLIENT *SearchIpClient(IP *ip)
 	}
 
 	Zero(&t, sizeof(t));
-	Copy(&t.IpAddress, ip, sizeof(IP));
+	GetRateLimitKey(&t.IpAddress, ip);
 
 	return Search(ip_clients, &t);
 }
@@ -1421,6 +1490,7 @@ IP_CLIENT *SearchIpClient(IP *ip)
 static void InitIpClientList()
 {
 	ip_clients = NewList(CompareIpClientList);
+	ip_clients_full_logged = false;
 }
 
 static void FreeIpClientList()
@@ -2435,6 +2505,26 @@ SOCK *NewUDPEx3(UINT port, IP *ip)
 		return NewUDPEx2(port, true, ip);
 	}
 }
+
+// Winsock reports an ICMP port or network unreachable, caused by an earlier datagram of a UDP socket, as
+// WSAECONNRESET or WSAENETRESET on the next recvfrom() or sendto() of the socket. The error says nothing about
+// the datagram at hand and every caller only skips it, so both reports are switched off.
+static void DisableUdpReset(SOCKET s)
+{
+	BOOL off = FALSE;
+	DWORD ret_size = 0;
+
+	if (WSAIoctl(s, SIO_UDP_CONNRESET, &off, sizeof(off), NULL, 0, &ret_size, NULL, NULL) != 0)
+	{
+		Debug("DisableUdpReset(): SIO_UDP_CONNRESET failed with error: %u\n", WSAGetLastError());
+	}
+
+	if (WSAIoctl(s, SIO_UDP_NETRESET, &off, sizeof(off), NULL, 0, &ret_size, NULL, NULL) != 0)
+	{
+		Debug("DisableUdpReset(): SIO_UDP_NETRESET failed with error: %u\n", WSAGetLastError());
+	}
+}
+
 SOCK *NewUDP4(UINT port, IP *ip)
 {
 	SOCK *sock;
@@ -2520,6 +2610,11 @@ SOCK *NewUDP4(UINT port, IP *ip)
 	sock->socket = s;
 
 	InitUdpSocketBufferSize((int)s);
+
+	if (IS_SPECIAL_PORT(port) == false)
+	{
+		DisableUdpReset(s);
+	}
 
 	if (IS_SPECIAL_PORT(port))
 	{
@@ -2617,6 +2712,11 @@ SOCK *NewUDP6(UINT port, IP *ip)
 	sock->socket = s;
 
 	InitUdpSocketBufferSize(s);
+
+	if (IS_SPECIAL_PORT(port) == false)
+	{
+		DisableUdpReset(s);
+	}
 
 	if (IS_SPECIAL_PORT(port))
 	{
@@ -2901,22 +3001,100 @@ bool AddChainSslCert(struct ssl_ctx_st *ctx, X *x)
 	return ret;
 }
 
+// Drain the OpenSSL error queue of a failed SSL_accept or SSL_connect into the ssl_err code (call under openssl_lock)
+static void SslHandshakeError(bool server_mode, UINT *ssl_err)
+{
+	unsigned long err;
+	while ((err = ERR_get_error()) != 0)
+	{
+		Debug("%s error %X: %s\n", server_mode ? "SSL_accept" : "SSL_connect", err, ERR_reason_error_string(err));
+		if (ERR_GET_LIB(err) != ERR_LIB_SSL)
+		{
+			continue;
+		}
+		switch (ERR_GET_REASON(err))
+		{
+		case SSL_R_UNSUPPORTED_PROTOCOL:
+		case SSL_R_VERSION_TOO_LOW:
+#if defined(SSL_R_VERSION_TOO_HIGH)
+		case SSL_R_VERSION_TOO_HIGH:
+#endif
+			*ssl_err = 150;
+			break;
+		// The two reasons the accept and connect mappings disagree on
+		case SSL_R_TLSV1_ALERT_PROTOCOL_VERSION:
+			*ssl_err = (server_mode ? 152 : 150);
+			break;
+		case SSL_R_NO_SHARED_CIPHER:
+			*ssl_err = (server_mode ? 151 : 152);
+			break;
+		default:
+			*ssl_err = 152;
+		}
+	}
+}
+
+// Add the Windows ROOT store's certificates to a client's verification store (caller holds openssl_lock)
+static void AddSslRootCerts(X509_STORE *store)
+{
+	UINT64 now = Tick64();
+	int i;
+
+	if (ssl_root_certs == NULL || now >= ssl_root_certs_tick + SSL_ROOT_CERTS_REFRESH_SPAN)
+	{
+		STACK_OF(X509) *certs = sk_X509_new_null();
+
+		if (certs != NULL)
+		{
+			HCERTSTORE hStore = CertOpenSystemStore(0, "ROOT");
+			if (hStore != NULL)
+			{
+				PCCERT_CONTEXT pContext = NULL;
+				while ((pContext = CertEnumCertificatesInStore(hStore, pContext)) != NULL)
+				{
+					// d2i_X509 advances the pointer it is given: decode from a local copy, never the store's own context
+					const unsigned char *der = pContext->pbCertEncoded;
+					X509 *x509 = d2i_X509(NULL, &der, (long)pContext->cbCertEncoded);
+					if (x509 != NULL && sk_X509_push(certs, x509) == 0)
+					{
+						X509_free(x509);
+					}
+				}
+				CertCloseStore(hStore, 0);
+			}
+
+			sk_X509_pop_free(ssl_root_certs, X509_free);
+			ssl_root_certs = certs;
+			ssl_root_certs_tick = now;
+		}
+	}
+
+	if (ssl_root_certs != NULL)
+	{
+		for (i = 0; i < sk_X509_num(ssl_root_certs); i++)
+		{
+			X509_STORE_add_cert(store, sk_X509_value(ssl_root_certs, i));
+		}
+	}
+}
+
 bool StartSSL(SOCK *sock, X *x, K *priv)
 {
-	return StartSSLEx(sock, x, priv, 0, NULL);
+	return StartSSLEx(sock, x, priv, NULL);
 }
-bool StartSSLEx(SOCK *sock, X *x, K *priv, UINT ssl_timeout, char *sni_hostname)
+bool StartSSLEx(SOCK *sock, X *x, K *priv, char *sni_hostname)
 {
-	return StartSSLEx3(sock, x, priv, NULL, ssl_timeout, sni_hostname, NULL, NULL);
+	return StartSSLEx3(sock, x, priv, NULL, sni_hostname, NULL, NULL);
 }
-bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err)
+bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err)
 {
 	X509 *x509;
 	EVP_PKEY *key;
-	UINT prev_timeout = 1024;
+	UINT prev_timeout;
 	SSL_CTX *ssl_ctx;
 	UINT dummy_err = 0;
 	long ssl_verify_err;
+	int handshake_ret;
 
 	if (sock == NULL)
 	{
@@ -2935,10 +3113,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 	{
 		return false;
 	}
-	if (ssl_timeout == 0)
-	{
-		ssl_timeout = TIMEOUT_SSL_CONNECT;
-	}
 
 	if (sock->SecureMode)
 	{
@@ -2955,7 +3129,7 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 	ssl_ctx = NewSSLCtx(sock->ServerMode);
 	if (ssl_ctx == NULL)
 	{
-		return false;
+		goto FAIL;
 	}
 
 	Lock(openssl_lock);
@@ -3018,21 +3192,7 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 				X509_STORE* store = SSL_CTX_get_cert_store(ssl_ctx);
 				if (ssl_option->AddDefaultCA)
 				{
-					HCERTSTORE hStore = CertOpenSystemStore(0, "ROOT");
-					if (hStore != NULL)
-					{
-						PCCERT_CONTEXT pContext = NULL;
-						while ((pContext = CertEnumCertificatesInStore(hStore, pContext)))
-						{
-							X509 *x509 = d2i_X509(NULL, (const unsigned char**)&pContext->pbCertEncoded, pContext->cbCertEncoded);
-							if (x509 != NULL)
-							{
-								X509_STORE_add_cert(store, x509);
-								X509_free(x509);
-							}
-						}
-						CertCloseStore(hStore, 0);
-					}
+					AddSslRootCerts(store);
 				}
 
 				UINT i;
@@ -3064,7 +3224,8 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 
 		if (sock->ssl == NULL)
 		{
-			return false;
+			Unlock(openssl_lock);
+			goto FAIL;
 		}
 
 		SSL_set_fd(sock->ssl, (int)sock->socket);
@@ -3114,44 +3275,28 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 	
 	if (sock->ServerMode)
 	{
+		handshake_ret = SSL_accept(sock->ssl);
+	}
+	else
+	{
+		prev_timeout = GetTimeout(sock);
+		SetTimeout(sock, TIMEOUT_SSL_CONNECT);
+		handshake_ret = SSL_connect(sock->ssl);
+		SetTimeout(sock, prev_timeout);
+	}
 
-		if (SSL_accept(sock->ssl) <= 0)
+	if (handshake_ret <= 0)
+	{
+		Lock(openssl_lock);
 		{
-
-			Lock(openssl_lock);
-			{
-				unsigned long err;
-				while (err = ERR_get_error())
-				{
-					Debug("SSL_accept error %X: %s\n", err, ERR_reason_error_string(err));
-					if (ERR_GET_LIB(err) == ERR_LIB_SSL)
-					{
-						switch (ERR_GET_REASON(err))
-						{
-						case SSL_R_UNSUPPORTED_PROTOCOL:
-						case SSL_R_VERSION_TOO_LOW:
-#if defined(SSL_R_VERSION_TOO_HIGH)
-						case SSL_R_VERSION_TOO_HIGH:
-#endif
-							*ssl_err = 150;
-							break;
-						case SSL_R_NO_SHARED_CIPHER:
-							*ssl_err = 151;
-							break;
-						default:
-							*ssl_err = 152;
-						}
-					}
-				}
-				SSL_free(sock->ssl);
-				sock->ssl = NULL;
-			}
-			Unlock(openssl_lock);
-
-			Unlock(sock->ssl_lock);
-			FreeSSLCtx(ssl_ctx);
-			return false;
+			SslHandshakeError(sock->ServerMode, ssl_err);
 		}
+		Unlock(openssl_lock);
+		goto FAIL;
+	}
+
+	if (sock->ServerMode)
+	{
 
 #ifdef	SSL_CTRL_SET_TLSEXT_HOSTNAME
 #ifdef	TLSEXT_NAMETYPE_host_name
@@ -3166,51 +3311,7 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 		}
 #endif
 #endif
-
 	}
-	else
-	{	
-		prev_timeout = GetTimeout(sock);
-		SetTimeout(sock, ssl_timeout);
-		if (SSL_connect(sock->ssl) <= 0)
-		{
-			Lock(openssl_lock);
-			{
-				unsigned long err;
-				while (err = ERR_get_error())
-				{
-					Debug("SSL_connect error %X: %s\n", err, ERR_reason_error_string(err));
-					if (ERR_GET_LIB(err) == ERR_LIB_SSL)
-					{
-						switch (ERR_GET_REASON(err))
-						{
-						case SSL_R_UNSUPPORTED_PROTOCOL:
-						case SSL_R_VERSION_TOO_LOW:
-#if defined(SSL_R_VERSION_TOO_HIGH)
-						case SSL_R_VERSION_TOO_HIGH:
-#endif
-						case SSL_R_TLSV1_ALERT_PROTOCOL_VERSION:
-							*ssl_err = 150;
-							break;
-						default:
-							*ssl_err = 152;
-						}
-					}
-				}
-				SSL_free(sock->ssl);
-				sock->ssl = NULL;
-			}
-			Unlock(openssl_lock);
-
-			Unlock(sock->ssl_lock);
-			SetTimeout(sock, prev_timeout);
-			FreeSSLCtx(ssl_ctx);
-			return false;
-		}
-		SetTimeout(sock, prev_timeout);
-	}
-
-	sock->SecureMode = true;
 
 	Lock(openssl_lock);
 	{
@@ -3236,6 +3337,12 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 
 	if (ssl_option != NULL && ssl_option->VerifyPeer)
 	{
+		// OpenSSL checks no name when none is given: hostname verification without a hostname is a mismatch
+		if (ssl_verify_err == X509_V_OK && sock->ServerMode == false && ssl_option->VerifyHostname && IsEmptyStr(sni_hostname))
+		{
+			ssl_verify_err = X509_V_ERR_HOSTNAME_MISMATCH;
+		}
+
 		if (ssl_verify_err != X509_V_OK)
 		{
 			// Clear any error if matching saved certificate and not expired
@@ -3259,16 +3366,7 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 
 				if (ssl_option->PromptOnVerifyFail == false)
 				{
-					Lock(openssl_lock);
-					{
-						SSL_free(sock->ssl);
-						sock->ssl = NULL;
-					}
-					Unlock(openssl_lock);
-
-					Unlock(sock->ssl_lock);
-					FreeSSLCtx(ssl_ctx);
-					return false;
+					goto FAIL;
 				}
 			}
 		}
@@ -3313,17 +3411,62 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 	}
 	Unlock(openssl_lock);
 
+	// The only success point: Recv/Send(secure) and Disconnect see SecureMode with a live ssl and ssl_ctx
+	sock->SecureMode = true;
+
 	Unlock(sock->ssl_lock);
 
 	return true;
+
+FAIL:
+	// The one failure exit: no SSL object, no context, no lock held, not secure
+	if (sock->ssl != NULL)
+	{
+		Lock(openssl_lock);
+		{
+			SSL_free(sock->ssl);
+		}
+		Unlock(openssl_lock);
+		sock->ssl = NULL;
+	}
+	FreeSSLCtx(ssl_ctx);
+	sock->SecureMode = false;
+
+	Unlock(sock->ssl_lock);
+
+	return false;
+}
+
+// A failed recv, send or SSL call: SOCK_LATER when an async socket only has to wait, else the socket is disconnected
+static UINT SockFailResult(SOCK *sock, bool later)
+{
+	if (later)
+	{
+		return SOCK_LATER;
+	}
+
+	Disconnect(sock);
+	return 0;
+}
+
+// The SSL_get_error code of a failed SSL_peek, SSL_read or SSL_write: an async socket waits on WANT_READ/WANT_WRITE
+static UINT SslFailResult(SOCK *sock, int e)
+{
+	if (sock->AsyncMode && e == SSL_ERROR_SSL)
+	{
+		UINT ssl_err_no;
+		while ((ssl_err_no = ERR_get_error()) != 0)
+		{
+			Debug("%s %u SSL_ERROR_SSL on ASYNC socket !!! ssl_err_no = %u: '%s'\n", __FILE__, __LINE__, ssl_err_no, ERR_error_string(ssl_err_no, NULL));
+		}
+	}
+
+	return SockFailResult(sock, sock->AsyncMode && (e == SSL_ERROR_WANT_READ || e == SSL_ERROR_WANT_WRITE));
 }
 
 static UINT SecureRecv(SOCK *sock, void *data, UINT size)
 {
 	int ret, e = SSL_ERROR_NONE;
-	SSL *ssl;
-
-	ssl = sock->ssl;
 
 	if (sock->AsyncMode)
 	{
@@ -3331,13 +3474,17 @@ static UINT SecureRecv(SOCK *sock, void *data, UINT size)
 		char c;
 		Lock(sock->ssl_lock);
 		{
-			if (sock->Connected == false)
+			if (sock->Connected == false || sock->ssl == NULL)
 			{
 				Unlock(sock->ssl_lock);
 				return 0;
 			}
 			ERR_clear_error();
-			ret = SSL_peek(ssl, &c, sizeof(c));
+			ret = SSL_peek(sock->ssl, &c, sizeof(c));
+			if (ret <= 0)
+			{
+				e = SSL_get_error(sock->ssl, ret);
+			}
 		}
 		Unlock(sock->ssl_lock);
 #if OPENSSL_VERSION_NUMBER < 0x30000000L
@@ -3349,43 +3496,22 @@ static UINT SecureRecv(SOCK *sock, void *data, UINT size)
 			return 0;
 		}
 #endif
-		if (ret <= 0)
+		if (ret <= 0 && (e == SSL_ERROR_WANT_READ || e == SSL_ERROR_WANT_WRITE || e == SSL_ERROR_SSL))
 		{
-			e = SSL_get_error(ssl, ret);
-			if (e == SSL_ERROR_WANT_READ || e == SSL_ERROR_WANT_WRITE || e == SSL_ERROR_SSL)
-			{
-				if (e == SSL_ERROR_SSL
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-					&&
-					sock->ssl->s3->send_alert[0] == SSL3_AL_FATAL &&
-					sock->ssl->s3->send_alert[0] != sock->Ssl_Init_Async_SendAlert[0] &&
-					sock->ssl->s3->send_alert[1] != sock->Ssl_Init_Async_SendAlert[1]
-#endif
-					)
-				{
-					UINT ssl_err_no;
-					while (ssl_err_no = ERR_get_error()){
-						Debug("%s %u SSL_ERROR_SSL on ASYNC socket !!! ssl_err_no = %u: '%s'\n", __FILE__, __LINE__, ssl_err_no, ERR_error_string(ssl_err_no, NULL));
-					};
-
-					Disconnect(sock);
-					return 0;
-				}
-				return SOCK_LATER;
-			}
+			return SslFailResult(sock, e);
 		}
 	}
 
 	Lock(sock->ssl_lock);
 	{
-		if (sock->Connected == false)
+		if (sock->Connected == false || sock->ssl == NULL)
 		{
 			Unlock(sock->ssl_lock);
 			return 0;
 		}
 
 		ERR_clear_error();
-		ret = SSL_read(ssl, data, size);
+		ret = SSL_read(sock->ssl, data, size);
 
 #if OPENSSL_VERSION_NUMBER < 0x30000000L
 		if (ret < 0)
@@ -3393,7 +3519,7 @@ static UINT SecureRecv(SOCK *sock, void *data, UINT size)
 		if (ret <= 0)
 #endif
 		{
-			e = SSL_get_error(ssl, ret);
+			e = SSL_get_error(sock->ssl, ret);
 		}
 
 	}
@@ -3401,8 +3527,12 @@ static UINT SecureRecv(SOCK *sock, void *data, UINT size)
 
 	if (ret > 0)
 	{
-		sock->RecvSize += (UINT64)ret;
-		sock->RecvNum++;
+		Lock(sock->lock);
+		{
+			sock->RecvSize += (UINT64)ret;
+			sock->RecvNum++;
+		}
+		Unlock(sock->lock);
 
 		return (UINT)ret;
 	}
@@ -3417,71 +3547,47 @@ static UINT SecureRecv(SOCK *sock, void *data, UINT size)
 	}
 #endif
 
-	if (sock->AsyncMode)
-	{
-		if (e == SSL_ERROR_WANT_READ || e == SSL_ERROR_WANT_WRITE || e == SSL_ERROR_SSL)
-		{
-			if (e == SSL_ERROR_SSL
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-				&&
-				sock->ssl->s3->send_alert[0] == SSL3_AL_FATAL &&
-				sock->ssl->s3->send_alert[0] != sock->Ssl_Init_Async_SendAlert[0] &&
-				sock->ssl->s3->send_alert[1] != sock->Ssl_Init_Async_SendAlert[1]
-#endif
-				)
-			{
-				UINT ssl_err_no;
-				while (ssl_err_no = ERR_get_error()) {
-					Debug("%s %u SSL_ERROR_SSL on ASYNC socket !!! ssl_err_no = %u: '%s'\n", __FILE__, __LINE__, ssl_err_no, ERR_error_string(ssl_err_no, NULL));
-				};
-
-				Disconnect(sock);
-				return 0;
-			}
-
-			return SOCK_LATER;
-		}
-	}
-	Disconnect(sock);
-	return 0;
+	return SslFailResult(sock, e);
 }
 
 static UINT SecureSend(SOCK *sock, void *data, UINT size)
 {
 	int ret, e = SSL_ERROR_NONE;
-	SSL *ssl;
-	ssl = sock->ssl;
-
-	if (sock->AsyncMode)
-	{
-		SSL_set_mode(ssl, SSL_MODE_ENABLE_PARTIAL_WRITE);
-	}
 
 	Lock(sock->ssl_lock);
 	{
-		if (sock->Connected == false)
+		if (sock->Connected == false || sock->ssl == NULL)
 		{
 			Unlock(sock->ssl_lock);
 			return 0;
 		}
 
+		if (sock->AsyncMode)
+		{
+			SSL_set_mode(sock->ssl, SSL_MODE_ENABLE_PARTIAL_WRITE);
+		}
+
 		ERR_clear_error();
-		ret = SSL_write(ssl, data, size);
+		ret = SSL_write(sock->ssl, data, size);
 #if OPENSSL_VERSION_NUMBER < 0x30000000L
 		if (ret < 0)
 #else
 		if (ret <= 0)
 #endif
 		{
-			e = SSL_get_error(ssl, ret);
+			e = SSL_get_error(sock->ssl, ret);
 		}
 	}
 	Unlock(sock->ssl_lock);
 
 	if (ret > 0)
 	{
-		sock->SendSize += (UINT64)ret;
-		sock->SendNum++;
+		Lock(sock->lock);
+		{
+			sock->SendSize += (UINT64)ret;
+			sock->SendNum++;
+		}
+		Unlock(sock->lock);
 		return (UINT)ret;
 	}
 
@@ -3493,26 +3599,7 @@ static UINT SecureSend(SOCK *sock, void *data, UINT size)
 	}
 #endif
 
-	if (sock->AsyncMode)
-	{
-		if (e == SSL_ERROR_WANT_READ || e == SSL_ERROR_WANT_WRITE || e == SSL_ERROR_SSL)
-		{
-			if (e == SSL_ERROR_SSL)
-			{
-				UINT ssl_err_no;
-				while (ssl_err_no = ERR_get_error()) {
-					Debug("%s %u SSL_ERROR_SSL on ASYNC socket !!! ssl_err_no = %u: '%s'\n", __FILE__, __LINE__, ssl_err_no, ERR_error_string(ssl_err_no, NULL));
-				};
-
-				Disconnect(sock);
-				return 0;
-			}
-
-			return SOCK_LATER;
-		}
-	}
-	Disconnect(sock);
-	return 0;
+	return SslFailResult(sock, e);
 }
 
 UINT Recv(SOCK *sock, void *data, UINT size, bool secure)
@@ -3524,6 +3611,8 @@ UINT Recv(SOCK *sock, void *data, UINT size, bool secure)
 	{
 		return 0;
 	}
+	// recv and SSL_read take an int: the same cap as Send
+	size = MIN(size, MAX_SEND_BUF_MEM_SIZE);
 
 	if (sock->Type != SOCK_TCP || sock->Connected == false || sock->ListenMode != false ||
 	        sock->socket == INVALID_SOCKET)
@@ -3549,28 +3638,13 @@ UINT Recv(SOCK *sock, void *data, UINT size, bool secure)
 		Lock(sock->lock);
 		{
 			sock->RecvSize += (UINT64)ret;
-			sock->SendNum++;
+			sock->RecvNum++;
 		}
 		Unlock(sock->lock);
 		return (UINT)ret;
 	}
 
-	if (sock->AsyncMode)
-	{
-		if (ret == SOCKET_ERROR)
-		{
-			if (WSAGetLastError() == WSAEWOULDBLOCK)
-			{
-				return SOCK_LATER;
-			}
-			else
-			{
-			}
-		}
-	}
-
-	Disconnect(sock);
-	return 0;
+	return SockFailResult(sock, sock->AsyncMode && ret == SOCKET_ERROR && WSAGetLastError() == WSAEWOULDBLOCK);
 }
 
 UINT Send(SOCK *sock, void *data, UINT size, bool secure)
@@ -3610,22 +3684,7 @@ UINT Send(SOCK *sock, void *data, UINT size, bool secure)
 		return (UINT)ret;
 	}
 
-	if (sock->AsyncMode)
-	{
-		if (ret == SOCKET_ERROR)
-		{
-			if (WSAGetLastError() == WSAEWOULDBLOCK)
-			{
-				return SOCK_LATER;
-			}
-			else
-			{
-			}
-		}
-	}
-
-	Disconnect(sock);
-	return 0;
+	return SockFailResult(sock, sock->AsyncMode && ret == SOCKET_ERROR && WSAGetLastError() == WSAEWOULDBLOCK);
 }
 
 UINT GetTimeout(SOCK *sock)
@@ -3706,6 +3765,24 @@ void AcceptInitEx(SOCK *s, bool no_lookup_hostname)
 	s->RemoteHostname = CopyStr(tmp);
 }
 
+// True when a failed accept() of a listening socket may succeed on the next call: the peer reset or aborted the
+// connection before it was accepted, or the process ran short of buffers or descriptors. Any other error, and a
+// canceled accept (err 0), means that the listening socket must be rebuilt.
+bool IsTransientAcceptError(UINT err)
+{
+	switch (err)
+	{
+	case WSAECONNRESET:
+	case WSAECONNABORTED:
+	case WSAENOBUFS:
+	case WSAEMFILE:
+		return true;
+
+	default:
+		return false;
+	}
+}
+
 SOCK *Accept(SOCK *sock)
 {
 	SOCK *ret;
@@ -3717,6 +3794,7 @@ SOCK *Accept(SOCK *sock)
 	{
 		return NULL;
 	}
+	sock->AcceptError = 0;
 	if (sock->ListenMode == false || sock->Type != SOCK_TCP || sock->ServerMode == false)
 	{
 		return NULL;
@@ -3745,6 +3823,10 @@ SOCK *Accept(SOCK *sock)
 	else
 	{
 		new_socket = accept(s, (struct sockaddr *)&addr,(int *)&size);
+		if (new_socket == INVALID_SOCKET)
+		{
+			sock->AcceptError = WSAGetLastError();
+		}
 	}
 
 	if (new_socket == INVALID_SOCKET)
@@ -3809,6 +3891,7 @@ SOCK *Accept6(SOCK *sock)
 	{
 		return NULL;
 	}
+	sock->AcceptError = 0;
 	if (sock->ListenMode == false || sock->Type != SOCK_TCP || sock->ServerMode == false)
 	{
 		return NULL;
@@ -3837,6 +3920,10 @@ SOCK *Accept6(SOCK *sock)
 	else
 	{
 		new_socket = accept(s, (struct sockaddr *)&addr,(int *)&size);
+		if (new_socket == INVALID_SOCKET)
+		{
+			sock->AcceptError = WSAGetLastError();
+		}
 	}
 
 	if (new_socket == INVALID_SOCKET)
@@ -5382,7 +5469,8 @@ bool GetNetBiosName(char *name, UINT size, IP *ip)
 		}
 		else
 		{
-			if (ret >= sizeof(NBTRESPONSE))
+			// Only a reply from the queried host's NetBIOS port counts; anything else may be spoofed
+			if (ret >= sizeof(NBTRESPONSE) && src_port == 137 && CmpIpAddr(&src_ip, ip) == 0)
 			{
 				NBTRESPONSE *r = (NBTRESPONSE *)buf;
 				bool b = false;
@@ -5737,7 +5825,7 @@ void InitNetwork()
 
 TOKEN_LIST *GetCipherList()
 {
-	UINT i;
+	int i, num;
 	SSL *ssl;
 	SSL_CTX *ctx;
 	const char *name;
@@ -5758,15 +5846,22 @@ TOKEN_LIST *GetCipherList()
 		return ciphers;
 	}
 
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || LIBRESSL_VERSION_NUMBER >= 0x2090100L
+	// A copy of the list (OpenSSL 1.1.1 or later is required): NULL when no cipher is enabled
 	sk = SSL_get1_supported_ciphers(ssl);
-#else
-	sk = SSL_get_ciphers(ssl);
-#endif
+	num = (sk != NULL ? sk_SSL_CIPHER_num(sk) : 0);
 
-	for (i = 0; i < (UINT)sk_SSL_CIPHER_num(sk); i++)
+	if (num > 0)
+	{
+		ciphers->Token = ZeroMalloc(sizeof(char *) * (UINT)num);
+	}
+
+	for (i = 0; i < num; i++)
 	{
 		const SSL_CIPHER *c = sk_SSL_CIPHER_value(sk, i);
+		if (c == NULL)
+		{
+			continue;
+		}
 
 		name = SSL_CIPHER_get_name(c);
 		if (IsEmptyStr((char *)name))
@@ -5774,22 +5869,13 @@ TOKEN_LIST *GetCipherList()
 			break;
 		}
 
-		ciphers->NumTokens++;
-
-		if (ciphers->Token != NULL)
-		{
-			ciphers->Token = ReAlloc(ciphers->Token, sizeof(char *) * ciphers->NumTokens);
-		}
-		else
-		{
-			ciphers->Token = Malloc(sizeof(char *));
-		}
-
-		ciphers->Token[i] = CopyStr((char *)name);
+		ciphers->Token[ciphers->NumTokens++] = CopyStr((char *)name);
 	}
 
 	sk_SSL_CIPHER_free(sk);
 	SSL_free(ssl);
+	// SSL_free drops only the SSL's own reference: the context is ours
+	FreeSSLCtx(ctx);
 
 	return ciphers;
 }
@@ -6045,6 +6131,9 @@ void FreeNetwork()
 		DhFree(dh_param);
 		dh_param = NULL;
 	}
+
+	sk_X509_pop_free(ssl_root_certs, X509_free);
+	ssl_root_certs = NULL;
 
 	FreeWaitThread();
 

@@ -220,11 +220,8 @@ bool CheckSignature(X *x, K *k);
 X *X509ToX(X509 *x509);
 bool CheckXEx(X *x, X *x_issuer, bool check_name, bool check_date);
 bool Asn1TimeToSystem(SYSTEMTIME *s, void *asn1_time);
-bool StrToSystem(SYSTEMTIME *s, char *str);
 UINT64 Asn1TimeToUINT64(void *asn1_time);
-bool SystemToAsn1Time(void *asn1_time, SYSTEMTIME *s);
 bool UINT64ToAsn1Time(void *asn1_time, UINT64 t);
-bool SystemToStr(char *str, UINT size, SYSTEMTIME *s);
 bool CheckXDate(X *x, UINT64 current_system_time);
 bool CheckXDateNow(X *x);
 NAME *NewName(wchar_t *common_name, wchar_t *organization, wchar_t *unit,
@@ -236,7 +233,6 @@ X509 *NewRootX509(K *pub, K *priv, NAME *name, UINT days, X_SERIAL *serial);
 X *NewRootX(K *pub, K *priv, NAME *name, UINT days, X_SERIAL *serial);
 X509 *NewX509(K *pub, K *priv, X *ca, NAME *name, UINT days, X_SERIAL *serial);
 X *NewX(K *pub, K *priv, X *ca, NAME *name, UINT days, X_SERIAL *serial);
-UINT GetDaysUntil2038Ex();
 X_SERIAL *NewXSerial(void *data, UINT size);
 void FreeXSerial(X_SERIAL *serial);
 X *CloneX(X *x);
@@ -256,8 +252,6 @@ NAME *CopyName(NAME *n);
 
 
 bool RsaGen(K **priv, K **pub, UINT bit);
-bool RsaCheck();
-bool RsaCheckEx();
 bool RsaSignEx(void *dst, UINT dst_size, void *src, UINT src_size, K *k);
 bool RsaVerifyEx(void *data, UINT data_size, void *sign, UINT sign_size, K *k);
 

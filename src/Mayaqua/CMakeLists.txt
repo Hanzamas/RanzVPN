@@ -107,6 +107,7 @@ target_link_libraries(mayaqua
     "Psapi.Lib"
     "Secur32.Lib"
     "setupapi.lib"
+    "winhttp.lib"
     "winmm.lib"
     "ws2_32.lib"
     "WtsApi32.Lib"

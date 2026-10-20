@@ -405,7 +405,7 @@ static SOCK *LoginSigConnect()
 
 	SetTimeout(s, LOGIN_SIG_TIMEOUT);
 
-	if (StartSSLEx(s, NULL, NULL, 0, NULL) == false)
+	if (StartSSLEx(s, NULL, NULL, NULL) == false)
 	{
 		HarnessRawClose(s);
 		return NULL;

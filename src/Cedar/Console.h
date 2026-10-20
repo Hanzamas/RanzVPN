@@ -54,7 +54,6 @@ struct LOCAL_CONSOLE_PARAM
 	IO *InFile;
 	BUF *InBuf;
 	IO *OutFile;
-	UINT Win32_OldConsoleWidth;
 };
 
 typedef UINT (COMMAND_PROC)(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);

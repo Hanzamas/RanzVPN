@@ -62,7 +62,6 @@ struct HUB_PA
 	SESSION *Session;
 	LIST *StormList;
 	UINT64 UsernameHash;
-	UINT64 UsernameHashSimple;
 	UINT64 GroupnameHash;
 };
 
@@ -119,6 +118,26 @@ struct HUB_OPTION
 	bool UseHubNameAsDhcpUserClassOption;
 	bool AllowEapMatchUserByCert;
 	UINT DhcpDiscoverTimeoutMs;
+};
+
+// Types of the HUB_OPTION_FIELD rows
+#define	HUB_OPTION_BOOL					0
+#define	HUB_OPTION_UINT					1
+#define	HUB_OPTION_HEX					2	// A UINT that the config file holds as the string "0x..."
+
+// Flags of the HUB_OPTION_FIELD rows
+#define	HUB_OPTION_WRITE_IF_TRUE		1	// The config file gets the item only when the value is not zero
+#define	HUB_OPTION_ZERO_IS_DEFAULT		2	// A stored zero is read as the default
+
+// One row per HUB_OPTION member (hub_option_fields in Hub.c): the order of the rows is the order of the admin options
+struct HUB_OPTION_FIELD
+{
+	char *CfgName;			// Item name in the config file
+	char *AdminName;		// Name in the RPC admin option list, NULL for a member that is not an admin option
+	UINT Offset;			// Offset of the member in HUB_OPTION
+	UINT Type;				// HUB_OPTION_BOOL, HUB_OPTION_UINT or HUB_OPTION_HEX
+	UINT Default;			// Value of a new hub and of an item the config file does not have
+	UINT Flags;
 };
 
 struct MAC_TABLE_ENTRY
@@ -244,7 +263,6 @@ struct HUB
 	UCHAR HubMacAddr[6];
 	IP HubIp;
 	IPV6_ADDR HubIpV6;
-	UINT HubIP6Id;
 	LIST *AccessList;
 	HUB_LOG LogSetting;
 	LOG *PacketLogger;
@@ -271,6 +289,8 @@ struct HUB
 
 extern ADMIN_OPTION admin_options[];
 extern UINT num_admin_options;
+extern HUB_OPTION_FIELD hub_option_fields[];
+extern UINT num_hub_option_fields;
 
 
 HUBDB *NewHubDb();
@@ -308,7 +328,6 @@ STORM *AddStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, boo
 bool AddRootCert(HUB *hub, X *x);
 int CmpAccessList(void *p1, void *p2);
 void AddAccessListEx(HUB *hub, ACCESS *a, bool no_sort, bool no_reassign_id);
-bool IsTcpPacketNcsiHttpAccess(PKT *p);
 UINT64 UsernameToInt64(char *name);
 void MakeSimpleUsernameRemoveNtDomain(char *dst, UINT dst_size, char *src);
 void GetAccessListStr(char *str, UINT size, ACCESS *a);
@@ -340,7 +359,8 @@ void FreeAcList(LIST *o);
 bool IsIPManagementTargetForHUB(IP *ip, HUB *hub);
 wchar_t *GetHubAdminOptionHelpString(char *name);
 void HubOptionStructToData(RPC_ADMIN_OPTION *ao, HUB_OPTION *o, char *hub_name);
-ADMIN_OPTION *NewAdminOption(char *name, UINT value);
+UINT GetHubOptionField(HUB_OPTION *o, HUB_OPTION_FIELD *f);
+void SetHubOptionField(HUB_OPTION *o, HUB_OPTION_FIELD *f, UINT value);
 void DataToHubOptionStruct(HUB_OPTION *o, RPC_ADMIN_OPTION *ao);
 UINT GetHubAdminOptionData(RPC_ADMIN_OPTION *ao, char *name);
 bool IsURLMsg(wchar_t *str, char *url, UINT url_size);

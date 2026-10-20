@@ -40,7 +40,7 @@ SOCK* BindTcpIpConnectEx(IP *localIP, UINT localport, char *hostname, UINT port,
 
 bool ClientUploadSignature(SOCK *s);
 bool ClientDownloadHello(CONNECTION *c, SOCK *s);
-bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str);
+bool ServerDownloadSignature(CONNECTION *c);
 bool ServerUploadHello(CONNECTION *c);
 bool ClientUploadAuth(CONNECTION *c);
 SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect);
