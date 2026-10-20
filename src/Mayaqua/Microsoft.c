@@ -468,7 +468,7 @@ void MsRegistWindowsFirewallEx(char *title, char *exe)
 		Format(cscript, sizeof(cscript), "%s\\cscript.exe", MsGetSystem32Dir());
 		Format(arg, sizeof(arg), "\"%s\"", filename);
 
-		if (Run(cscript, arg, true, false))
+		if (Win32Run(cscript, arg, true, false))
 		{
 			MsRegWriteIntEx2(REG_LOCAL_MACHINE, SOFTETHER_FW_SCRIPT_HASH, file_hash_str, 1, false);
 		}

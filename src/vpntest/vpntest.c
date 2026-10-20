@@ -531,6 +531,9 @@ void chaincerts_test(UINT num, char **arg);
 // Named shared server SSL_CTX test of FND-140, #145 (tlsctx.c)
 void tlsctx_test(UINT num, char **arg);
 
+// Named OS information test of FND-203, #166 (osinfo.c)
+void osinfo_test(UINT num, char **arg);
+
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
 char *watermark_expect_sha256 = "96A706BBAB378EC37DFEF21E02B1A3C177FBEBEFFA039EB0EFAC918630DF12A0";
@@ -670,6 +673,7 @@ TEST_LIST test_list[] =
 	{"chaincerts", chaincerts_test, "chain_certs: the folder is scanned once for many connections, again after a certificate is added, removed or saved."},
 	{"tlsctx", tlsctx_test, "Shared server SSL_CTX: a new certificate, cipher list or SslAcceptSettings reaches the next connection; accept rate (informational)."},
 	{"ptrkey", ptrkey_test, "Pointer keys: POINTER_TO_KEY keys a block by its address; AccessDelete by UniqueId removes that entry after the Ids are renumbered."},
+	{"osinfo", osinfo_test, "OS information: Windows 10 and 11, Server 2016, 2019, 2022 and 2025 by build number; a GitHub-hosted runner is Server 2022 or later or Windows 11."},
 };
 
 // Test function

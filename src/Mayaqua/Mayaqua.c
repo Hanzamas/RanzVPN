@@ -11,12 +11,12 @@
 #include "Microsoft.h"
 #include "Network.h"
 #include "Object.h"
-#include "OS.h"
 #include "Str.h"
 #include "Table.h"
 #include "Tick64.h"
 #include "Trace.h"
 #include "Tracking.h"
+#include "Win32.h"
 
 #include <locale.h>
 #include <stdlib.h>
@@ -153,7 +153,7 @@ void InitMayaqua(bool memcheck, bool debug)
 
 	setlocale(LC_ALL, "");
 
-	OSInit();
+	Win32Init();
 
 	// The ETW provider of Debug() (Trace.c), registered first so that it sees the whole start
 	InitTrace();
@@ -187,7 +187,7 @@ void InitMayaqua(bool memcheck, bool debug)
 
 	MsInit();
 
-	if (OSIsSupportedOs() == false)
+	if (Win32IsSupportedOs() == false)
 	{
 		MayaFatalExit(1, CEDAR_PRODUCT_STR " VPN doesn't support this Windows Operating System.\r\n"
 			CEDAR_PRODUCT_STR " VPN requires " SUPPORTED_WINDOWS_LIST ".\r\n\r\n"
@@ -267,7 +267,7 @@ void FreeMayaqua()
 
 	FreeTrace();
 
-	OSFree();
+	Win32Free();
 }
 
 // Whether a person can see a message box: a visible window station (not a service), and either
@@ -341,7 +341,7 @@ void InitOsInfo()
 
 	os_info = ZeroMalloc(sizeof(OS_INFO));
 
-	OSGetOsInfo(os_info);
+	Win32GetOsInfo(os_info);
 }
 
 void FreeOsInfo()

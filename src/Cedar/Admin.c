@@ -28,6 +28,7 @@
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 #include "Mayaqua/Tick64.h"
+#include "Mayaqua/Win32.h"
 
 static UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t);
 static UINT StSetHubMsg(ADMIN *a, RPC_MSG *t);
@@ -4340,7 +4341,7 @@ static UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 	// Hide the memory figures of the host from hub administrators
 	if (a->ServerAdmin)
 	{
-		GetMemInfo(&t->MemInfo);
+		Win32GetMemInfo(&t->MemInfo);
 	}
 
 	t->NumTcpConnections = t->NumTcpConnectionsLocal = 0;

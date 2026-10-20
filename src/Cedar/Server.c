@@ -20,12 +20,12 @@
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Object.h"
-#include "Mayaqua/OS.h"
 #include "Mayaqua/Pack.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 #include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
+#include "Mayaqua/Win32.h"
 
 static SERVER *server = NULL;
 static LOCK *server_lock = NULL;
@@ -4205,7 +4205,7 @@ SERVER *SiNewServer(void)
 
 	if (s->NoHighPriorityProcess == false)
 	{
-		OSSetHighPriority();
+		Win32SetHighPriority();
 	}
 
 	SiInitDeadLockCheck(s);
