@@ -30,10 +30,6 @@ struct DYN_VALUE
 
 #define	PRIVATE_IP_TXT_FILENAME		"$private_ip.txt"
 
-#define	MAKE_SPECIAL_PORT(p)		(UINT)((UINT)0x10000 | (UINT)(p))
-#define	IS_SPECIAL_PORT(p)			(INT_TO_BOOL((p) & (UINT)0x10000))
-#define	GET_SPECIAL_PORT(p)			(UINT)((UINT)(p) & (UINT)0xffff)
-
 #define	UDP_MAX_BUFFER_SIZE			11911168
 
 #define	HOST_IP_ADDRESS_LIST_CACHE	(5 * 1000)
@@ -120,25 +116,17 @@ struct SOCK
 	char *RemoteHostname;
 	UINT RemotePort;
 	UINT LocalPort;
-	UINT64 SendSize;
-	UINT64 RecvSize;
-	UINT64 SendNum;
-	UINT64 RecvNum;
 	X *RemoteX;
-	X *LocalX;
 	char *CipherName;
 	bool IgnoreRecvErr;
 	bool IgnoreSendErr;
 	UINT TimeOut;
 	SOCK_EVENT *SockEvent;
 	bool CancelAccept;
-	bool AcceptCanceled;
 	UINT AcceptError;			// WSA error code of the last failed Accept() of this listening socket, 0 if none (read it only while CancelAccept is false)
 	bool UdpBroadcast;
 	bool IPv6;
-	bool IsRawSocket;
 	const char *SslVersion;
-	UINT RawSocketIPProtocol;
 	int CurrentTos;
 	char UnderlayProtocol[64];
 	char ProtocolDetails[256];
@@ -197,19 +185,18 @@ typedef struct NBTRESPONSE
 struct CONNECT_SERIAL_PARAM
 {
 	LIST *IpList;
+	bool IPv6;							// Address family of every entry in IpList
 	UINT LocalPort;
 	IP   *LocalIP;						// Local IP address to bind. NULL address allowed to use.
 	IP   LocalIP_Cache;
 	UINT Port;
 	UINT Timeout;
 	char Hostname[MAX_SIZE];
-	bool No_Get_Hostname;
 	bool *CancelFlag;
 	bool *NoDelayFlag;
 	SOCK *Sock;
 	bool Finished;
 	bool Ok;
-	UINT64 FinishedTick;
 	EVENT *FinishEvent;
 	UINT Delay;
 	UINT RetryDelay;
@@ -248,7 +235,7 @@ void CreateDummyValue(PACK *p);
 
 char *RecvLine(SOCK *s, UINT max_size);
 
-SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname, char *hostname_original);
+SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, char *hostname_original);
 void GetCurrentMachineIpProcessHash(void *hash);
 void GetCurrentMachineIpProcessHashInternal(void *hash);
 void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_size, char *dst_domain, UINT dst_domain_size, bool do_not_parse_atmark);
@@ -275,22 +262,18 @@ SOCK *NewSock();
 void ReleaseSock(SOCK *s);
 void CleanupSock(SOCK *s);
 SOCK *Connect(char *hostname, UINT port);
-SOCK *ConnectEx4(char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname, IP *ret_ip);
+SOCK *ConnectEx4(char *hostname, UINT port, UINT timeout, bool *cancel_flag, IP *ret_ip);
 
 #define	BIND_LOCALIP_NULL			NULL		// NULL IP address specifies no binding
 #define	BIND_LOCALPORT_NULL			0			// NULL port number specifies no binding
-SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname, IP *ret_ip);
+SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, IP *ret_ip);
 
 void InitUdpSocketBufferSize(SOCKET s);
 void QuerySocketInformation(SOCK *sock);
 void Disconnect(SOCK *sock);
 SOCK *Listen(UINT port);
-SOCK *ListenEx(UINT port, bool local_only);
-SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip);
-SOCK *ListenEx6(UINT port, bool local_only);
-SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip);
+SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip, bool ipv4_only);
 SOCK *Accept(SOCK *sock);
-SOCK *Accept6(SOCK *sock);
 bool IsTransientAcceptError(UINT err);
 UINT Send(SOCK *sock, void *data, UINT size, bool secure);
 UINT Recv(SOCK *sock, void *data, UINT size, bool secure);
@@ -318,16 +301,10 @@ void Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2);
 SOCK *NewUDP(UINT port);
 SOCK *NewUDPEx2(UINT port, bool ipv6, IP *ip);
 SOCK *NewUDPEx3(UINT port, IP *ip);
-SOCK *NewUDP4(UINT port, IP *ip);
-SOCK *NewUDP6(UINT port, IP *ip);
 UINT SendTo(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size);
-UINT SendToEx(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size, bool broadcast);
-UINT SendTo6Ex(SOCK *sock, IP *dest_addr, UINT dest_port, void *data, UINT size, bool broadcast);
 UINT RecvFrom(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size);
-UINT RecvFrom6(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size);
 void SetTimeout(SOCK *sock, UINT timeout);
 UINT GetTimeout(SOCK *sock);
-bool CheckTCPPortEx(char *hostname, UINT port, UINT timeout);
 void JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event);
 SOCK_EVENT *NewSockEvent();
 void SetSockEvent(SOCK_EVENT *event);
