@@ -1124,17 +1124,12 @@ void AddHubAdminOptionsDefaults(HUB *h, bool lock)
 	}
 }
 
-void DeleteAllHubAdminOption(HUB *h, bool lock)
+void DeleteAllHubAdminOption(HUB *h)
 {
 	UINT i;
 	if (h == NULL)
 	{
 		return;
-	}
-
-	if (lock)
-	{
-		LockList(h->AdminOptionList);
 	}
 
 	for (i = 0;i < LIST_NUM(h->AdminOptionList);i++)
@@ -1143,11 +1138,6 @@ void DeleteAllHubAdminOption(HUB *h, bool lock)
 	}
 
 	DeleteAll(h->AdminOptionList);
-
-	if (lock)
-	{
-		UnlockList(h->AdminOptionList);
-	}
 }
 
 UINT GetHubAdminOption(HUB *h, char *name)
@@ -2345,7 +2335,7 @@ static void ForceRedirectToUrl(SESSION *src_session, PKT *p, char *redirect_url)
 	WriteBuf(b, tcp_data, tcp_size);
 
 	StorePacketToHubPa((HUB_PA *)src_session->PacketAdapter->Param,
-		NULL, b->Buf, b->Size, NULL, false, false);
+		NULL, b->Buf, b->Size, NULL, false);
 
 	Free(tcp_data);
 	FreeBuf(payload);
@@ -4068,7 +4058,7 @@ UPDATE_FDB:
 								data = MallocFast(size);
 								Copy(data, packet->PacketData, size);
 								StorePacketToHubPa((HUB_PA *)monitor_session->PacketAdapter->Param,
-									s, data, size, packet, false, false);
+									s, data, size, packet, false);
 							}
 						}
 					}
@@ -4122,7 +4112,7 @@ UPDATE_FDB:
 							}
 						}
 
-						StorePacketToHubPa(dest_pa, s, packet->PacketData, packet->PacketSize, packet, false, false);
+						StorePacketToHubPa(dest_pa, s, packet->PacketData, packet->PacketSize, packet, false);
 					}
 					else
 					{
@@ -4257,7 +4247,7 @@ DISCARD_UNICAST_PACKET:
 											FreePacket(pkt2);
 										}
 
-										StorePacketToHubPa(dest_pa, s, data, size, packet, true, true);
+										StorePacketToHubPa(dest_pa, s, data, size, packet, true);
 									}
 								}
 							}
@@ -4442,7 +4432,7 @@ STORM *SearchStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, 
 	return s;
 }
 
-void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *packet, bool is_flooding, bool no_check_acl)
+void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *packet, bool from_flood)
 {
 	BLOCK *b;
 	if (dest == NULL || data == NULL)
@@ -4456,7 +4446,8 @@ void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *
 		return;
 	}
 
-	if (no_check_acl == false)
+	// Flooded frames passed the access list once already
+	if (from_flood == false)
 	{
 		if (src != NULL)
 		{
@@ -4556,7 +4547,7 @@ void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *
 		{
 			InsertQueue(dest->PacketQueue, b);
 
-			if (is_flooding)
+			if (from_flood)
 			{
 				if (src != NULL)
 				{
@@ -5667,8 +5658,6 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 	h->Option->DropBroadcastsInPrivacyFilterMode = true;
 	h->Option->DropArpInPrivacyFilterMode = true;
 	h->Option->AllowSameUserInPrivacyFilterMode = false;
-
-	Rand(h->HubSignature, sizeof(h->HubSignature));
 
 	GenerateMachineUniqueHash(cedar, hash);
 	GenHubMacAddress(h->HubMacAddr, hash, h->Name);

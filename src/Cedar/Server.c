@@ -273,11 +273,6 @@ static void SiCheckDeadLockMain(SERVER *s, UINT timeout)
 
 	CheckDeadLock(s->lock, timeout, "s->lock");
 
-	if (s->HubCreateHistoryList != NULL)
-	{
-		CheckDeadLock(s->HubCreateHistoryList->lock, timeout, "s->HubCreateHistoryList->lock");
-	}
-
 	CheckDeadLock(s->CapsCacheLock, timeout, "s->CapsCacheLock");
 
 	if (cedar != NULL)
@@ -289,33 +284,7 @@ static void SiCheckDeadLockMain(SERVER *s, UINT timeout)
 
 		if (cedar->ListenerList != NULL)
 		{
-			UINT i;
-			LIST *o = NewListFast(NULL);
-
 			CheckDeadLock(cedar->ListenerList->lock, timeout, "cedar->ListenerList->lock");
-
-			LockList(cedar->ListenerList);
-			{
-				for (i = 0;i < LIST_NUM(cedar->ListenerList);i++)
-				{
-					LISTENER *r = LIST_DATA(cedar->ListenerList, i);
-
-					AddRef(r->ref);
-
-					Add(o, r);
-				}
-			}
-			UnlockList(cedar->ListenerList);
-
-			for (i = 0;i < LIST_NUM(o);i++)
-			{
-				LISTENER *r = LIST_DATA(o, i);
-
-
-				ReleaseListener(r);
-			}
-
-			ReleaseList(o);
 		}
 
 		if (cedar->ConnectionList != NULL)
@@ -404,36 +373,6 @@ static void SiFreeDeadLockCheck(SERVER *s)
 	s->HaltDeadLockThread = false;
 }
 
-static void SiInitHubCreateHistory(SERVER *s)
-{
-	if (s == NULL)
-	{
-		return;
-	}
-
-	s->HubCreateHistoryList = NewList(NULL);
-}
-
-static void SiFreeHubCreateHistory(SERVER *s)
-{
-	UINT i;
-	if (s == NULL)
-	{
-		return;
-	}
-
-	for (i = 0;i < LIST_NUM(s->HubCreateHistoryList);i++)
-	{
-		SERVER_HUB_CREATE_HISTORY *h = LIST_DATA(s->HubCreateHistoryList, i);
-
-		Free(h);
-	}
-
-	ReleaseList(s->HubCreateHistoryList);
-
-	s->HubCreateHistoryList = NULL;
-}
-
 bool IsAdminPackSupportedServerProduct(char *name)
 {
 	return true;
@@ -500,7 +439,6 @@ void SiSetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting)
 		return;
 	}
 
-	Zero(&set, sizeof(set));
 	Copy(&set, setting, sizeof(SYSLOG_SETTING));
 
 	if (IsEmptyStr(set.Hostname) || set.Port == 0)
@@ -524,9 +462,7 @@ void SiGetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting)
 		return;
 	}
 
-	{
-		Copy(setting, &s->SyslogSetting, sizeof(SYSLOG_SETTING));
-	}
+	Copy(setting, &s->SyslogSetting, sizeof(SYSLOG_SETTING));
 }
 
 
@@ -598,12 +534,44 @@ void FreeEnumLogFile(LIST *o)
 	ReleaseList(o);
 }
 
+// Enumerate the log files of one log directory tree (packet log or security log):
+// every hub subdirectory when hubname is NULL, otherwise only the hub's one.
+static void EnumLogFileSubdirs(LIST *o, char *exe_dir, char *base_dir, char *hubname)
+{
+	char tmp[MAX_PATH];
+
+	if (hubname == NULL)
+	{
+		UINT i;
+		DIRLIST *dir;
+
+		Format(tmp, sizeof(tmp), "%s/%s", exe_dir, base_dir);
+
+		dir = EnumDir(tmp);
+		for (i = 0;i < dir->NumFiles;i++)
+		{
+			DIRENT *e = dir->File[i];
+
+			if (e->Folder)
+			{
+				Format(tmp, sizeof(tmp), "%s/%s", base_dir, e->FileName);
+				EnumLogFileDir(o, tmp);
+			}
+		}
+
+		FreeDir(dir);
+	}
+	else
+	{
+		Format(tmp, sizeof(tmp), "%s/%s", base_dir, hubname);
+		EnumLogFileDir(o, tmp);
+	}
+}
+
 LIST *EnumLogFile(char *hubname)
 {
 	char exe_dir[MAX_PATH];
-	char tmp[MAX_PATH];
 	LIST *o = NewListFast(CmpLogFile);
-	DIRLIST *dir;
 
 	if (StrLen(hubname) == 0)
 	{
@@ -617,71 +585,8 @@ LIST *EnumLogFile(char *hubname)
 		EnumLogFileDir(o, SERVER_LOG_DIR);
 	}
 
-	Format(tmp, sizeof(tmp), "%s/"HUB_PACKET_LOG_DIR, exe_dir);
-
-	if (hubname == NULL)
-	{
-		dir = EnumDir(tmp);
-		if (dir != NULL)
-		{
-			UINT i;
-			for (i = 0;i < dir->NumFiles;i++)
-			{
-				DIRENT *e = dir->File[i];
-
-				if (e->Folder)
-				{
-					char dir_name[MAX_PATH];
-					Format(dir_name, sizeof(dir_name), HUB_PACKET_LOG_DIR"/%s", e->FileName);
-					EnumLogFileDir(o, dir_name);
-				}
-			}
-
-			FreeDir(dir);
-		}
-	}
-	else
-	{
-		char dir_name[MAX_PATH];
-
-		Format(dir_name, sizeof(dir_name), HUB_PACKET_LOG_DIR"/%s", hubname);
-
-		EnumLogFileDir(o, dir_name);
-	}
-
-	Format(tmp, sizeof(tmp), "%s/"HUB_SECURITY_LOG_DIR, exe_dir);
-
-	if (hubname == NULL)
-	{
-		dir = EnumDir(tmp);
-		if (dir != NULL)
-		{
-			UINT i;
-			for (i = 0;i < dir->NumFiles;i++)
-			{
-				DIRENT *e = dir->File[i];
-
-				if (e->Folder)
-				{
-					char dir_name[MAX_PATH];
-
-					Format(dir_name, sizeof(dir_name), HUB_SECURITY_LOG_DIR"/%s", e->FileName);
-
-					EnumLogFileDir(o, dir_name);
-				}
-			}
-
-			FreeDir(dir);
-		}
-	}
-	else
-	{
-		char dir_name[MAX_PATH];
-
-		Format(dir_name, sizeof(dir_name), HUB_SECURITY_LOG_DIR"/%s", hubname);
-
-		EnumLogFileDir(o, dir_name);
-	}
+	EnumLogFileSubdirs(o, exe_dir, HUB_PACKET_LOG_DIR, hubname);
+	EnumLogFileSubdirs(o, exe_dir, HUB_SECURITY_LOG_DIR, hubname);
 
 	return o;
 }
@@ -701,10 +606,6 @@ void EnumLogFileDir(LIST *o, char *dirname)
 	Format(dir_full_path, sizeof(dir_full_path), "%s/%s", exe_dir, dirname);
 
 	dir = EnumDir(dir_full_path);
-	if (dir == NULL)
-	{
-		return;
-	}
 
 	for (i = 0;i < dir->NumFiles;i++)
 	{
@@ -712,11 +613,9 @@ void EnumLogFileDir(LIST *o, char *dirname)
 
 		if (e->Folder == false && e->FileSize > 0)
 		{
-			char full_path[MAX_PATH];
 			char file_path[MAX_PATH];
 
 			Format(file_path, sizeof(file_path), "%s/%s", dirname, e->FileName);
-			Format(full_path, sizeof(full_path), "%s/%s", exe_dir, file_path);
 
 			if (EndWith(file_path, ".log"))
 			{
@@ -1375,23 +1274,28 @@ static UINT SiGetDefaultCertDays()
 	return (UINT)((target - now) / (UINT64)(1000 * 60 * 60 * 24));
 }
 
-void SiGenerateDefaultCertEx(X **server_x, K **server_k, char *common_name)
+bool SiGenerateDefaultCertEx(X **server_x, K **server_k, char *common_name)
 {
 	X *x;
-	K *private_key, *public_key;
+	K *private_key = NULL, *public_key = NULL;
 	NAME *name;
 	char tmp[MAX_SIZE];
 	wchar_t cn[MAX_SIZE];
 	if (server_x == NULL || server_k == NULL)
 	{
-		return;
+		return false;
 	}
 
-	RsaGen(&private_key, &public_key, 2048);
+	*server_x = NULL;
+	*server_k = NULL;
+
+	if (RsaGen(&private_key, &public_key, 2048) == false)
+	{
+		return false;
+	}
 
 	if (IsEmptyStr(common_name))
 	{
-		StrCpy(tmp, sizeof(tmp), "server.softether.vpn");
 		GetMachineName(tmp, sizeof(tmp));
 		StrToUni(cn, sizeof(cn), tmp);
 	}
@@ -1404,12 +1308,20 @@ void SiGenerateDefaultCertEx(X **server_x, K **server_k, char *common_name)
 		L"US", NULL, NULL);
 	x = NewRootX(public_key, private_key, name, SiGetDefaultCertDays(), NULL);
 
-	*server_x = x;
-	*server_k = private_key;
-
 	FreeName(name);
 
 	FreeK(public_key);
+
+	if (x == NULL)
+	{
+		FreeK(private_key);
+		return false;
+	}
+
+	*server_x = x;
+	*server_k = private_key;
+
+	return true;
 }
 
 static void SiInitDefaultServerCert(SERVER *s)
@@ -1421,7 +1333,11 @@ static void SiInitDefaultServerCert(SERVER *s)
 		return;
 	}
 
-	SiGenerateDefaultCertEx(&x, &k, NULL);
+	if (SiGenerateDefaultCertEx(&x, &k, NULL) == false)
+	{
+		SLog(s->Cedar, "LS_DEFAULT_CERT_FAILED");
+		return;
+	}
 
 	SetCedarCertAndChain(s->Cedar, x, k, NULL);
 
@@ -1708,14 +1624,9 @@ static void SiLoadInitialConfiguration(SERVER *s)
 		return;
 	}
 
-	s->AutoSaveConfigSpan = SERVER_FILE_SAVE_INTERVAL_DEFAULT;
-	s->BackupConfigOnlyWhenModified = true;
-
 	TunablesLoad(NULL);
 
-	{
-		Sha0(s->HashedPassword, "", 0);
-	}
+	Sha0(s->HashedPassword, "", 0);
 
 	SiInitCipherName(s);
 
@@ -1727,23 +1638,11 @@ static void SiLoadInitialConfiguration(SERVER *s)
 	s->DisableGetHostNameWhenAcceptTcp = true;
 	DisableGetHostNameWhenAcceptInit();
 
-	{
-		SiInitDefaultHubList(s);
-	}
+	SiInitDefaultHubList(s);
 
 	SiInitListenerList(s);
 
 	s->Eraser = NewEraser(s->Logger, 0);
-}
-
-static bool SiLoadConfigurationFileMain(SERVER *s, FOLDER *root)
-{
-	if (s == NULL || root == NULL)
-	{
-		return false;
-	}
-
-	return SiLoadConfigurationCfg(s, root);
 }
 
 static bool SiLoadConfigurationFile(SERVER *s)
@@ -1773,7 +1672,7 @@ static bool SiLoadConfigurationFile(SERVER *s)
 		return false;
 	}
 
-	ret = SiLoadConfigurationFileMain(s, root);
+	ret = SiLoadConfigurationCfg(s, root);
 
 	CfgDeleteFolder(root);
 
@@ -1797,8 +1696,6 @@ static void SiInitConfiguration(SERVER *s)
 
 		SLog(s->Cedar, "LS_LOAD_CONFIG_3");
 		SiLoadInitialConfiguration(s);
-
-		server_reset_setting = false;
 	}
 	else
 	{
@@ -2098,13 +1995,6 @@ FOLDER *SiWriteConfigurationToCfg(SERVER *s)
 		}
 	}
 
-	if (s->Led)
-	{
-		CfgAddBool(root, "Led", true);
-		CfgAddBool(root, "LedSpecial", s->LedSpecial);
-	}
-
-
 	return root;
 }
 
@@ -2341,7 +2231,7 @@ static void SiLoadHubAdminOptions(HUB *h, FOLDER *f)
 
 		LockList(h->AdminOptionList);
 		{
-			DeleteAllHubAdminOption(h, false);
+			DeleteAllHubAdminOption(h);
 
 			for (i = 0;i < t->NumTokens;i++)
 			{
@@ -3409,7 +3299,7 @@ static void SiLoadCertList(LIST *o, FOLDER *f)
 	UnlockList(o);
 }
 
-static void SiWriteHubDb(FOLDER *f, HUBDB *db, bool no_save_ac_list)
+static void SiWriteHubDb(FOLDER *f, HUBDB *db)
 {
 	if (f == NULL || db == NULL)
 	{
@@ -3420,11 +3310,7 @@ static void SiWriteHubDb(FOLDER *f, HUBDB *db, bool no_save_ac_list)
 	SiWriteGroupList(CfgCreateFolder(f, "GroupList"), db->GroupList);
 	SiWriteCertList(CfgCreateFolder(f, "CertList"), db->RootCertList);
 	SiWriteCrlList(CfgCreateFolder(f, "CrlList"), db->CrlList);
-
-	if (no_save_ac_list == false)
-	{
-		SiWriteAcList(CfgCreateFolder(f, "IPAccessControlList"), db->AcList);
-	}
+	SiWriteAcList(CfgCreateFolder(f, "IPAccessControlList"), db->AcList);
 }
 
 static void SiLoadHubDb(HUB *h, FOLDER *f)
@@ -3473,7 +3359,7 @@ static void SiWriteHubCfg(FOLDER *f, HUB *h)
 		}
 	}
 
-	SiWriteHubLogCfgEx(CfgCreateFolder(f, "LogSetting"), &h->LogSetting, false);
+	SiWriteHubLogCfg(CfgCreateFolder(f, "LogSetting"), &h->LogSetting);
 
 	SiWriteHubLinks(CfgCreateFolder(f, "CascadeList"), h);
 
@@ -3483,9 +3369,7 @@ static void SiWriteHubCfg(FOLDER *f, HUB *h)
 
 	if (h->Cedar->Bridge == false)
 	{
-		SiWriteHubDb(CfgCreateFolder(f, "SecurityAccountDatabase"), h->HubDb,
-			false
-			);
+		SiWriteHubDb(CfgCreateFolder(f, "SecurityAccountDatabase"), h->HubDb);
 	}
 
 	CfgAddInt64(f, "LastCommTime", h->LastCommTime);
@@ -3517,20 +3401,16 @@ static void SiLoadHubLogCfg(HUB_LOG *g, FOLDER *f)
 	g->PacketLogConfig[PACKET_LOG_ETHERNET] = CfgGetInt(f, "PACKET_LOG_ETHERNET");
 }
 
-void SiWriteHubLogCfgEx(FOLDER *f, HUB_LOG *g, bool el_mode)
+void SiWriteHubLogCfg(FOLDER *f, HUB_LOG *g)
 {
 	if (f == NULL || g == NULL)
 	{
 		return;
 	}
 
-	if (el_mode == false)
-	{
-		CfgAddBool(f, "SaveSecurityLog", g->SaveSecurityLog);
-		CfgAddInt(f, "SecurityLogSwitchType", g->SecurityLogSwitchType);
-		CfgAddBool(f, "SavePacketLog", g->SavePacketLog);
-	}
-
+	CfgAddBool(f, "SaveSecurityLog", g->SaveSecurityLog);
+	CfgAddInt(f, "SecurityLogSwitchType", g->SecurityLogSwitchType);
+	CfgAddBool(f, "SavePacketLog", g->SavePacketLog);
 	CfgAddInt(f, "PacketLogSwitchType", g->PacketLogSwitchType);
 
 	CfgAddInt(f, "PACKET_LOG_TCP_CONN", g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
@@ -3861,9 +3741,6 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 		SetEraserCheckInterval(CfgGetInt(f, "AutoDeleteCheckIntervalSecs"));
 		s->Eraser = NewEraser(s->Logger, CfgGetInt64(f, "AutoDeleteCheckDiskFreeSpaceMin"));
 
-
-		s->UseWebTimePage = CfgGetBool(f, "UseWebTimePage");
-
 		s->NoHighPriorityProcess = CfgGetBool(f, "NoHighPriorityProcess");
 
 		s->NoDebugDump = CfgGetBool(f, "NoDebugDump");
@@ -3901,12 +3778,17 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 			FreeX(x);
 			FreeK(k);
 			FreeXList(chain);
-			SiGenerateDefaultCertEx(&x, &k, NULL);
+			if (SiGenerateDefaultCertEx(&x, &k, NULL))
+			{
+				SetCedarCertAndChain(c, x, k, NULL);
 
-			SetCedarCertAndChain(c, x, k, NULL);
-
-			FreeX(x);
-			FreeK(k);
+				FreeX(x);
+				FreeK(k);
+			}
+			else
+			{
+				SLog(c, "LS_DEFAULT_CERT_FAILED");
+			}
 		}
 		else
 		{
@@ -3960,8 +3842,6 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 		{
 			DisableGetHostNameWhenAcceptInit();
 		}
-
-		s->DisableCoreDumpOnUnix = CfgGetBool(f, "DisableCoreDumpOnUnix");
 
 		SetGlobalServerFlag(GSF_DISABLE_SESSION_RECONNECT, CfgGetBool(f, "DisableSessionReconnect"));
 
@@ -4060,8 +3940,6 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s)
 
 		CfgAddBool(f, "NoDebugDump", s->NoDebugDump);
 
-		CfgAddBool(f, "UseWebTimePage", s->UseWebTimePage);
-
 		CfgAddBool(f, "SaveDebugLog", s->SaveDebugLog);
 
 		CfgAddBool(f, "NoSendSignature", s->NoSendSignature);
@@ -4095,7 +3973,6 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s)
 		SiWriteMachineIdCfg(f, c);
 
 		CfgAddBool(f, "DisableGetHostNameWhenAcceptTcp", s->DisableGetHostNameWhenAcceptTcp);
-		CfgAddBool(f, "DisableCoreDumpOnUnix", s->DisableCoreDumpOnUnix);
 
 		CfgAddBool(f, "Tls_Disable1_0", c->SslAcceptSettings.Tls_Disable1_0);
 		CfgAddBool(f, "Tls_Disable1_1", c->SslAcceptSettings.Tls_Disable1_1);
@@ -4373,7 +4250,7 @@ static void SiStopAllListener(SERVER *s)
 	ReleaseList(s->ServerListenerList);
 }
 
-static void SiCleanupServer(SERVER *s)
+void SiReleaseServer(SERVER *s)
 {
 	UINT i;
 	CEDAR *c;
@@ -4460,25 +4337,10 @@ static void SiCleanupServer(SERVER *s)
 
 	FreeServerCapsCache(s);
 
-	SiFreeHubCreateHistory(s);
-
 	FreeTinyLog(s->DebugLog);
 
 
 	Free(s);
-}
-
-void SiReleaseServer(SERVER *s)
-{
-	if (s == NULL)
-	{
-		return;
-	}
-
-	if (Release(s->ref) == 0)
-	{
-		SiCleanupServer(s);
-	}
 }
 
 void SiGetCurrentRegion(CEDAR *c, char *region, UINT region_size)
@@ -4575,17 +4437,12 @@ SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_serve
 
 	SetEraserCheckInterval(0);
 
-	SiInitHubCreateHistory(s);
-
 	InitServerCapsCache(s);
-
-	Rand(s->MyRandomKey, sizeof(s->MyRandomKey));
 
 	s->lock = NewLock();
 
 
 	s->SaveCfgLock = NewLock();
-	s->ref = NewRef();
 	s->Cedar = NewCedar(NULL, NULL);
 	s->Cedar->Server = s;
 

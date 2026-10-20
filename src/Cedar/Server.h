@@ -48,30 +48,23 @@ struct SERVER
 	bool BackupConfigOnlyWhenModified;
 	UINT ConfigRevision;
 	bool DisableDosProtection;
-	UCHAR MyRandomKey[SHA1_SIZE];
 	bool DisableDeadLockCheck;
 	bool SaveDebugLog;
 	bool NoSendSignature;
-	bool UseWebTimePage;
 	bool NoHighPriorityProcess;
 	bool NoDebugDump;
 	bool NoMoreSave;
 
 	volatile bool Halt;
 	LOCK *lock;
-	REF *ref;
 	CEDAR *Cedar;
 	CFG_RW *CfgRw;
 	LOCK *SaveCfgLock;
 	EVENT *SaveHaltEvent;
 	THREAD *SaveThread;
-	LIST *HubCreateHistoryList;
 
 	LOG *Logger;
 	ERASER *Eraser;
-
-	bool Led;
-	bool LedSpecial;
 
 	UINT CurrentAssignedClientLicense;
 	UINT CurrentAssignedBridgeLicense;
@@ -152,19 +145,13 @@ struct LOG_FILE
 #define	GSF_SHOW_OSS_MSG				7
 #define	GSF_DISABLE_SESSION_RECONNECT	9
 
-struct SERVER_HUB_CREATE_HISTORY
-{
-	char HubName[MAX_HUBNAME_LEN + 1];
-	UINT64 CreatedTime;
-};
-
 SERVER *SiNewServer(bool bridge);
 SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_server);
 void SiReleaseServer(SERVER *s);
 void StStartServer(bool bridge);
 void StStopServer();
 UINT SiWriteConfigurationFile(SERVER *s);
-void SiGenerateDefaultCertEx(X **server_x, K **server_k, char *common_name);
+bool SiGenerateDefaultCertEx(X **server_x, K **server_k, char *common_name);
 void SiLockListenerList(SERVER *s);
 void SiUnlockListenerList(SERVER *s);
 bool SiAddListenerEx(SERVER *s, UINT port, bool enabled, bool disable_dos);
@@ -190,7 +177,7 @@ void SiLoadLicenseManager(SERVER *s, FOLDER *f);
 void SiWriteLicenseManager(FOLDER *f, SERVER *s);
 void SiWriteHubs(FOLDER *f, SERVER *s);
 void SiLoadHubs(SERVER *s, FOLDER *f);
-void SiWriteHubLogCfgEx(FOLDER *f, HUB_LOG *g, bool el_mode);
+void SiWriteHubLogCfg(FOLDER *f, HUB_LOG *g);
 void SiRebootServerEx(bool bridge, bool reset_setting);
 void StInit();
 void StFree();

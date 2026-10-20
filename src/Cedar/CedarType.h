@@ -86,7 +86,6 @@ typedef struct CAPS CAPS;
 typedef struct CAPSLIST CAPSLIST;
 typedef struct LOG_FILE LOG_FILE;
 typedef struct SYSLOG_SETTING SYSLOG_SETTING;
-typedef struct SERVER_HUB_CREATE_HISTORY SERVER_HUB_CREATE_HISTORY;
 
 typedef struct ADMIN ADMIN;
 typedef struct RPC_TEST RPC_TEST;

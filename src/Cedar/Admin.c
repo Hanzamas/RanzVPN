@@ -626,7 +626,11 @@ static UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t)
 
 	SERVER_ADMIN_ONLY;
 
-	SiGenerateDefaultCertEx(&x, &k, t->StrValue);
+	if (SiGenerateDefaultCertEx(&x, &k, t->StrValue) == false)
+	{
+		SLog(c, "LS_DEFAULT_CERT_FAILED");
+		return ERR_INTERNAL_ERROR;
+	}
 
 	SetCedarCertAndChain(c, x, k, NULL);
 
@@ -1621,7 +1625,7 @@ static UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 
 	LockList(h->AdminOptionList);
 	{
-		DeleteAllHubAdminOption(h, false);
+		DeleteAllHubAdminOption(h);
 
 		for (i = 0;i < t->NumItem;i++)
 		{

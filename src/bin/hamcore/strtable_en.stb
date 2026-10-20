@@ -878,6 +878,7 @@ LS_LOAD_CONFIG_2		The configuration file has been loaded.
 LS_LOAD_CONFIG_3		Configuration file does not exist. Attempting to start using initial settings.
 LS_INIT_SAVE_THREAD		Starting the automatically saving background task. The interval between auto-saves is %u seconds. You can change the interval by changing the parameter AutoSaveConfigSpan in the configuration file.
 LS_BAD_CONFIG			The contents of the configuration file is invalid. The loading process has been terminated.
+LS_DEFAULT_CERT_FAILED		The default server certificate could not be generated. The server has no certificate, so TLS connections will be refused until one is installed.
 LS_LISTENER_START_1		TCP Listener (port %u) is starting.
 LS_LISTENER_START_2		TCP Listener (port %u) has started. Now listening for connection from client.
 LS_LISTENER_START_3		Unable to set port to Listen status for TCP Listener (port %u). Attempting at fixed intervals until successful.
