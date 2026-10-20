@@ -231,10 +231,12 @@ static bool BufBoundsFileHas(wchar_t *name, char *text)
 // directory in a directory of its own under the temporary directory of Windows (not the VPN_
 // directory of this process, which a starting process may clean), and its standard output and
 // error in a file there. AbortExitEx() reports the guard on standard output (flushed before
-// abort() in RANZ_FUZZING builds) or in abort_error_log.txt in the working directory (other builds).
+// abort() in RANZ_FUZZING builds and before _exit() in other builds) and in abort_error_log.txt
+// beside the executable, not in the working directory (other builds).
 static void BufBoundsTestWriteBuf(BUFBOUNDS_CTX *ctx)
 {
 	wchar_t exe[MAX_PATH];
+	wchar_t exe_dir[MAX_PATH];
 	wchar_t temp[MAX_PATH];
 	wchar_t dir_name[64];
 	wchar_t dir[MAX_PATH];
@@ -262,7 +264,10 @@ static void BufBoundsTestWriteBuf(BUFBOUNDS_CTX *ctx)
 	CombinePathW(dir, sizeof(dir), temp, dir_name);
 	MakeDirW(dir);
 	CombinePathW(out_name, sizeof(out_name), dir, L"child_output.txt");
-	CombinePathW(log_name, sizeof(log_name), dir, L"abort_error_log.txt");
+	GetDirNameFromFilePathW(exe_dir, sizeof(exe_dir), exe);
+	CombinePathW(log_name, sizeof(log_name), exe_dir, L"abort_error_log.txt");
+	// A log of an earlier run must not pass the check below
+	FileDeleteW(log_name);
 
 	Zero(&sa, sizeof(sa));
 	sa.nLength = sizeof(sa);

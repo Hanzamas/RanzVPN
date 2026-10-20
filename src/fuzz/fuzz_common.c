@@ -26,7 +26,7 @@ int LLVMFuzzerInitialize(int *argc, char ***argv)
 
 	// Same flags as vpntest: no memcheck, debug on (debug enables the kernel status counters
 	// that FreeMayaqua() checks for leaks)
-	InitMayaqua(false, true, *argc, *argv);
+	InitMayaqua(false, true);
 
 	atexit(FuzzAtExit);
 

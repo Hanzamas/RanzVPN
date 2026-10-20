@@ -3428,10 +3428,6 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 		s->NoHighPriorityProcess = CfgGetBool(f, "NoHighPriorityProcess");
 
 		s->NoDebugDump = CfgGetBool(f, "NoDebugDump");
-		if (s->NoDebugDump)
-		{
-			MsSetEnableMinidump(false);
-		}
 
 		s->SaveDebugLog = CfgGetBool(f, "SaveDebugLog");
 		if (s->SaveDebugLog)

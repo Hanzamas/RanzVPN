@@ -10,6 +10,9 @@
 #include "Mayaqua/Pack.h"
 #include "Mayaqua/Str.h"
 
+// The body of a frame is read in pieces of this size, so a frame that declares more than it sends costs only what it sent
+#define	RPC_RECV_CHUNK_SIZE		(64 * 1024U)
+
 void RpcFree(RPC *rpc)
 {
 	if (rpc == NULL)
@@ -42,49 +45,73 @@ static PACK *CallRpcDispatcher(RPC *r, PACK *p)
 	return r->Dispatch(r, func_name, p);
 }
 
-static bool RpcRecvNextCall(RPC *r)
+// One frame is a 32-bit big-endian size and the serialised PACK
+static bool RpcSendPack(SOCK *s, PACK *p)
 {
+	BUF *b;
 	UINT size;
-	void *tmp;
-	SOCK *s;
+
+	b = PackToBuf(p);
+
+	size = Endian32(b->Size);
+	SendAdd(s, &size, sizeof(UINT));
+	SendAdd(s, b->Buf, b->Size);
+	FreeBuf(b);
+
+	return SendNow(s, s->SecureMode);
+}
+
+static PACK *RpcRecvPack(SOCK *s)
+{
 	BUF *b;
 	PACK *p;
-	PACK *ret;
-	if (r == NULL)
-	{
-		return false;
-	}
-
-	s = r->Sock;
-
+	UINT size;
 	if (RecvAll(s, &size, sizeof(UINT), s->SecureMode) == false)
 	{
-		return false;
+		return NULL;
 	}
 
 	size = Endian32(size);
 
 	if (size > MAX_PACK_SIZE)
 	{
-		return false;
-	}
-
-	tmp = MallocEx(size, true);
-
-	if (RecvAll(s, tmp, size, s->SecureMode) == false)
-	{
-		Free(tmp);
-		return false;
+		return NULL;
 	}
 
 	b = NewBuf();
-	WriteBuf(b, tmp, size);
-	SeekBuf(b, 0, 0);
-	Free(tmp);
+
+	while (b->Size < size)
+	{
+		UINT chunk = MIN(size - b->Size, RPC_RECV_CHUNK_SIZE);
+
+		AdjustBufSize(b, b->Size + chunk);
+
+		if (RecvAll(s, (UCHAR *)b->Buf + b->Size, chunk, s->SecureMode) == false)
+		{
+			FreeBuf(b);
+			return NULL;
+		}
+
+		b->Size += chunk;
+	}
 
 	p = BufToPack(b);
 	FreeBuf(b);
 
+	return p;
+}
+
+static bool RpcRecvNextCall(RPC *r)
+{
+	PACK *p;
+	PACK *ret;
+	bool ok;
+	if (r == NULL)
+	{
+		return false;
+	}
+
+	p = RpcRecvPack(r->Sock);
 	if (p == NULL)
 	{
 		return false;
@@ -98,33 +125,18 @@ static bool RpcRecvNextCall(RPC *r)
 		ret = PackError(ERR_NOT_SUPPORTED);
 	}
 
-	b = PackToBuf(ret);
+	ok = RpcSendPack(r->Sock, ret);
 	FreePack(ret);
 
-	size = Endian32(b->Size);
-	SendAdd(s, &size, sizeof(UINT));
-	SendAdd(s, b->Buf, b->Size);
-
-	if (SendNow(s, s->SecureMode) == false)
-	{
-		FreeBuf(b);
-		return false;
-	}
-
-	FreeBuf(b);
-
-	return true;
+	return ok;
 }
 
 void RpcServer(RPC *r)
 {
-	SOCK *s;
 	if (r == NULL)
 	{
 		return;
 	}
-
-	s = r->Sock;
 
 	while (true)
 	{
@@ -161,7 +173,7 @@ RETRY:
 
 		if (ret == NULL)
 		{
-			if (r->IsVpnServer && r->Sock != NULL)
+			if (r->Sock != NULL)
 			{
 				if (num_retry < 1)
 				{
@@ -197,10 +209,6 @@ RETRY:
 
 PACK *RpcCallInternal(RPC *r, PACK *p)
 {
-	BUF *b;
-	UINT size;
-	PACK *ret;
-	void *tmp;
 	if (r == NULL || p == NULL)
 	{
 		return NULL;
@@ -211,54 +219,16 @@ PACK *RpcCallInternal(RPC *r, PACK *p)
 		return NULL;
 	}
 
-	b = PackToBuf(p);
-
-	size = Endian32(b->Size);
-	SendAdd(r->Sock, &size, sizeof(UINT));
-	SendAdd(r->Sock, b->Buf, b->Size);
-	FreeBuf(b);
-
-	if (SendNow(r->Sock, r->Sock->SecureMode) == false)
+	if (RpcSendPack(r->Sock, p) == false)
 	{
 		return NULL;
 	}
 
-	if (RecvAll(r->Sock, &size, sizeof(UINT), r->Sock->SecureMode) == false)
-	{
-		return NULL;
-	}
-
-	size = Endian32(size);
-	if (size > MAX_PACK_SIZE)
-	{
-		return NULL;
-	}
-
-	tmp = MallocEx(size, true);
-	if (RecvAll(r->Sock, tmp, size, r->Sock->SecureMode) == false)
-	{
-		Free(tmp);
-		return NULL;
-	}
-
-	b = NewBuf();
-	WriteBuf(b, tmp, size);
-	SeekBuf(b, 0, 0);
-	Free(tmp);
-
-	ret = BufToPack(b);
-	if (ret == NULL)
-	{
-		FreeBuf(b);
-		return NULL;
-	}
-
-	FreeBuf(b);
-
-	return ret;
+	return RpcRecvPack(r->Sock);
 }
 
-RPC *StartRpcServer(SOCK *s, RPC_DISPATCHER *dispatch, void *param)
+// dispatch is the function a server-side RPC runs for each call, NULL for the calling side
+RPC *NewRpc(SOCK *s, RPC_DISPATCHER *dispatch, void *param)
 {
 	RPC *r;
 	if (s == NULL)
@@ -272,29 +242,9 @@ RPC *StartRpcServer(SOCK *s, RPC_DISPATCHER *dispatch, void *param)
 	r->Lock = NewLock();
 	AddRef(s->ref);
 
-	r->ServerMode = true;
 	r->Dispatch = dispatch;
 
 	Format(r->Name, sizeof(r->Name), "RPC-%u", s->socket);
-
-	return r;
-}
-
-RPC *StartRpcClient(SOCK *s, void *param)
-{
-	RPC *r;
-	if (s == NULL)
-	{
-		return NULL;
-	}
-
-	r = ZeroMalloc(sizeof(RPC));
-	r->Sock = s;
-	r->Param = param;
-	r->Lock = NewLock();
-	AddRef(s->ref);
-
-	r->ServerMode = false;
 
 	return r;
 }

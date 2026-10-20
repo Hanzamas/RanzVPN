@@ -57,7 +57,7 @@ void SuDeleteGarbageInfsInner()
 	char *base_key_name = "DRIVERS\\DriverDatabase\\DriverPackages";
 	TOKEN_LIST *keys;
 
-	keys = MsRegEnumKeyEx2(REG_LOCAL_MACHINE, base_key_name, false, true);
+	keys = MsRegEnumKeyEx2(REG_LOCAL_MACHINE, base_key_name, false);
 
 	if (keys != NULL)
 	{
@@ -70,9 +70,9 @@ void SuDeleteGarbageInfsInner()
 
 			Format(full_key, sizeof(full_key), "%s\\%s", base_key_name, keys->Token[i]);
 
-			oem_name = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "", false, true);
-			inf_name = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "InfName", false, true);
-			provider = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "Provider", false, true);
+			oem_name = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "", false);
+			inf_name = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "InfName", false);
+			provider = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "Provider", false);
 
 			if (IsEmptyStr(oem_name) == false && IsEmptyStr(inf_name) == false)
 			{
@@ -263,7 +263,7 @@ bool SuInstallDriverInner()
 
 			ret = true;
 
-			MsRegWriteIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "Start", SERVICE_SYSTEM_START, false, true);
+			MsRegWriteIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "Start", SERVICE_SYSTEM_START, false);
 		}
 
 		// The driver store holds its own copy now: the staged one is no longer needed
@@ -344,12 +344,12 @@ bool SuIsSupportedOs()
 #if defined(_M_ARM64)
 	return false;
 #else	// defined(_M_ARM64)
-	if (MsRegReadIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "EnableSeLow", false, true) != 0)
+	if (MsRegReadIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "EnableSeLow", false) != 0)
 	{
 		return true;
 	}
 
-	if (MsRegReadIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "DisableSeLow", false, true) != 0)
+	if (MsRegReadIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "DisableSeLow", false) != 0)
 	{
 		return false;
 	}
@@ -655,7 +655,7 @@ LIST *SuGetAdapterList(SU *u)
 
 			if (GetClassRegKeyWin32(regkey, sizeof(regkey), tmp, sizeof(tmp), adapter_guid))
 			{
-				char *driver_desc = MsRegReadStrEx2(REG_LOCAL_MACHINE, regkey, "DriverDesc", false, true);
+				char *driver_desc = MsRegReadStrEx2(REG_LOCAL_MACHINE, regkey, "DriverDesc", false);
 
 				if (driver_desc != NULL)
 				{

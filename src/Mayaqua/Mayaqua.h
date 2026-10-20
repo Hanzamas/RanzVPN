@@ -15,57 +15,56 @@ void InitProcessCallOnce();
 #define	IsBigEndian()		(g_little_endian ? false : true)
 #define	IsLittleEndian()	(g_little_endian)
 
-#define	GCC_PACKED
-
-#define	WHERE			if (IsDebug()){printf("%s: %u\n", __FILE__, __LINE__); SleepThread(10);}
-
-#define	PROBE_DATA2(str, data, size)
-
 extern bool g_memcheck;
 extern bool g_debug;
-extern char *cmdline;
 extern bool g_little_endian;
 
 #define	NUM_KERNEL_STATUS	128
-extern UINT64 kernel_status[NUM_KERNEL_STATUS];
-extern UINT64 kernel_status_max[NUM_KERNEL_STATUS];
+extern volatile LONG64 kernel_status[NUM_KERNEL_STATUS];
+extern volatile LONG64 kernel_status_max[NUM_KERNEL_STATUS];
 extern bool kernel_status_inited;
 
-#define	KS_LOCK(id)		LockKernelStatus(id)
-#define	KS_UNLOCK(id)	UnlockKernelStatus(id)
-#define	KS_GET64(id)	(kernel_status[id])
+// The kernel status counters and the object tracker run in debug or memcheck mode, from
+// InitKernelStatus() on
+static inline bool IsTrackingEnabled(void)
+{
+	return (g_debug || g_memcheck) && kernel_status_inited;
+}
+
+// Adds n to a kernel status counter and raises its peak. Interlocked, so no lock is taken; the
+// peak compares unsigned, as it did when the counters were UINT64
+static inline void KsAdd(UINT id, LONG64 n)
+{
+	LONG64 now, peak;
+
+	if (IsTrackingEnabled() == false)
+	{
+		return;
+	}
+
+	now = InterlockedAdd64(&kernel_status[id], n);
+	peak = kernel_status_max[id];
+	while ((UINT64)now > (UINT64)peak)
+	{
+		LONG64 seen = InterlockedCompareExchange64(&kernel_status_max[id], now, peak);
+		if (seen == peak)
+		{
+			break;
+		}
+		peak = seen;
+	}
+}
+
+#define	KS_GET64(id)	((UINT64)kernel_status[(id)])
 #define	KS_GET(id)		((UINT)KS_GET64(id))
-#define	KS_GETMAX64(id)	(kernel_status_max[id])
+#define	KS_GETMAX64(id)	((UINT64)kernel_status_max[(id)])
 #define	KS_GETMAX(id)	((UINT)KS_GETMAX64(id))
 
-#define	KS_INC(id)															\
-if (IsTrackingEnabled()) {													\
-	KS_LOCK(id);															\
-	kernel_status[id]++;													\
-	kernel_status_max[id] = MAX(kernel_status_max[id], kernel_status[id]);	\
-	KS_UNLOCK(id);															\
-}
-#define	KS_DEC(id)															\
-if (IsTrackingEnabled()) {													\
-	KS_LOCK(id);															\
-	kernel_status[id]--;													\
-	kernel_status_max[id] = MAX(kernel_status_max[id], kernel_status[id]);	\
-	KS_UNLOCK(id);															\
-}
-#define	KS_ADD(id, n)														\
-if (IsTrackingEnabled()) {													\
-	KS_LOCK(id);															\
-	kernel_status[id] += n;													\
-	kernel_status_max[id] = MAX(kernel_status_max[id], kernel_status[id]);	\
-	KS_UNLOCK(id);															\
-}
-#define	KS_SUB(id, n)														\
-if (IsTrackingEnabled()) {													\
-	KS_LOCK(id);															\
-	kernel_status[id] -= n;													\
-	kernel_status_max[id] = MAX(kernel_status_max[id], kernel_status[id]);	\
-	KS_UNLOCK(id);															\
-}
+// Each one is a single function call, safe as the body of an unbraced if or else
+#define	KS_INC(id)		KsAdd((id), 1)
+#define	KS_DEC(id)		KsAdd((id), -1)
+#define	KS_ADD(id, n)	KsAdd((id), (LONG64)(n))
+#define	KS_SUB(id, n)	KsAdd((id), -(LONG64)(n))
 
 #define	KS_STRCPY_COUNT			0
 #define	KS_STRLEN_COUNT			1
@@ -147,32 +146,23 @@ if (IsTrackingEnabled()) {													\
 #define	IsDebug()		(g_debug)
 #define	IsMemCheck()	(g_memcheck)
 
-void InitMayaqua(bool memcheck, bool debug, int argc, char **argv);
+void InitMayaqua(bool memcheck, bool debug);
 void FreeMayaqua();
-bool MayaquaIsDotNetMode();
-void MayaquaMinimalMode();
-bool MayaquaIsMinimalMode();
 void InitKernelStatus();
 void FreeKernelStatus();
 void PrintDebugInformation();
-void LockKernelStatus(UINT id);
-void UnlockKernelStatus(UINT id);
 void PrintKernelStatus();
-void InitCommandLineStr(int argc, char **argv);
-void FreeCommandLineStr();
-void SetCommandLineStr(char *str);
-void SetCommandLineUniStr(wchar_t *str);
-wchar_t *GetCommandLineUniStr();
-void FreeCommandLineTokens();
-TOKEN_LIST *GetCommandLineToken();
 void InitOsInfo();
 void FreeOsInfo();
-void Alert(char *msg, char *caption);
+__declspec(noreturn) void MayaFatalExit(UINT code, char *msg);
 OS_INFO *GetOsInfo();
-void CheckUnixTempDir();
+void EnableProbe(bool enable);
+
+// Test hooks (harness and fuzzer only)
 void SetHamMode();
 bool IsHamMode();
-void EnableProbe(bool enable);
+void MayaquaMinimalMode();
+bool MayaquaIsMinimalMode();
 
 
 #endif

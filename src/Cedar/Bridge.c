@@ -41,27 +41,12 @@ UINT GetEthDeviceHash()
 
 bool IsBridgeSupported()
 {
-	UINT type = GetOsInfo()->OsType;
-
-	if (OS_IS_WINDOWS(type))
+	if (Win32EthIsSuSupported())
 	{
-		if (Win32EthIsSuSupported())
-		{
-			return true;
-		}
-		else
-		{
-			bool ret = false;
-
-			ret = MsIsAdmin();
-
-			return ret;
-		}
+		return true;
 	}
-	else
-	{
-		return Win32EthIsSuSupported();
-	}
+
+	return MsIsAdmin();
 }
 
 bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename)

@@ -5613,8 +5613,6 @@ static UINT PsCascadeCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *para
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
 
-	t.Online = false;
-
 	Copy(&t.Policy, GetDefaultPolicy(), sizeof(POLICY));
 
 	t.ClientOption = ZeroMalloc(sizeof(CLIENT_OPTION));
@@ -5622,12 +5620,9 @@ static UINT PsCascadeCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *para
 	t.ClientOption->Port = port;
 	StrCpy(t.ClientOption->Hostname, sizeof(t.ClientOption->Hostname), host);
 	StrCpy(t.ClientOption->HubName, sizeof(t.ClientOption->HubName), GetParamStr(o, "HUB"));
-	t.ClientOption->NumRetry = INFINITE;
-	t.ClientOption->RetryInterval = 15;
 	t.ClientOption->MaxConnection = 8;
 	t.ClientOption->UseEncrypt = true;
 	t.ClientOption->AdditionalConnectionInterval = 1;
-	t.ClientOption->RequireBridgeRoutingMode = true;
 
 	t.ClientAuth = ZeroMalloc(sizeof(CLIENT_AUTH));
 	t.ClientAuth->AuthType = CLIENT_AUTHTYPE_ANONYMOUS;
