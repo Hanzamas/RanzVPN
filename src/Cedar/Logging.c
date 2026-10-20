@@ -495,6 +495,23 @@ void ELog(ERASER *e, char *name, ...)
 	va_end(args);
 }
 
+// The log setting of a new hub: security and packet logs on, switched daily, TCP connection and DHCP packets logged by header
+void SetDefaultHubLog(HUB_LOG *g)
+{
+	if (g == NULL)
+	{
+		return;
+	}
+
+	Zero(g, sizeof(HUB_LOG));
+	g->SaveSecurityLog = true;
+	g->SecurityLogSwitchType = LOG_SWITCH_DAY;
+	g->SavePacketLog = true;
+	g->PacketLogSwitchType = LOG_SWITCH_DAY;
+	g->PacketLogConfig[PACKET_LOG_TCP_CONN] =
+		g->PacketLogConfig[PACKET_LOG_DHCP] = PACKET_LOG_HEADER;
+}
+
 void SLog(CEDAR *c, char *name, ...)
 {
 	wchar_t buf[MAX_SIZE * 2];
@@ -664,22 +681,19 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 		return true;
 	}
 
-	if (hub->Option != NULL)
+	if (opt->NoIPv4PacketLog && (packet->TypeL3 == L3_IPV4 || packet->TypeL3 == L3_ARPV4))
 	{
-		if (hub->Option->NoIPv4PacketLog && (packet->TypeL3 == L3_IPV4 || packet->TypeL3 == L3_ARPV4))
-		{
-			return true;
-		}
-
-		if (hub->Option->NoIPv6PacketLog && packet->TypeL3 == L3_IPV6)
-		{
-			return true;
-		}
+		return true;
 	}
 
-	if (hub->Option != NULL && hub->Option->MaxLoggedPacketsPerMinute != 0)
+	if (opt->NoIPv6PacketLog && packet->TypeL3 == L3_IPV6)
 	{
-		if (CheckMaxLoggedPacketsPerMinute(src_session, hub->Option->MaxLoggedPacketsPerMinute, now) == false)
+		return true;
+	}
+
+	if (opt->MaxLoggedPacketsPerMinute != 0)
+	{
+		if (CheckMaxLoggedPacketsPerMinute(src_session, opt->MaxLoggedPacketsPerMinute, now) == false)
 		{
 			return false;
 		}

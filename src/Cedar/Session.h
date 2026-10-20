@@ -163,10 +163,6 @@ struct SESSION
 	HUB *NumLoginIncrementHubObject;
 	UINT64 NumLoginIncrementTick;
 
-	bool FirstTimeHttpRedirect;
-	char FirstTimeHttpRedirectUrl[128];
-	UINT FirstTimeHttpAccessCheckIp;
-
 	UINT64 MaxLoggedPacketsPerMinuteStartTick;
 	UINT CurrentNumPackets;
 

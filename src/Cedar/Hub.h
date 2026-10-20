@@ -62,7 +62,6 @@ struct HUB_PA
 	SESSION *Session;
 	LIST *StormList;
 	UINT64 UsernameHash;
-	UINT64 UsernameHashSimple;
 	UINT64 GroupnameHash;
 };
 
@@ -330,7 +329,6 @@ STORM *AddStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, boo
 bool AddRootCert(HUB *hub, X *x);
 int CmpAccessList(void *p1, void *p2);
 void AddAccessListEx(HUB *hub, ACCESS *a, bool no_sort, bool no_reassign_id);
-bool IsTcpPacketNcsiHttpAccess(PKT *p);
 UINT64 UsernameToInt64(char *name);
 void MakeSimpleUsernameRemoveNtDomain(char *dst, UINT dst_size, char *src);
 void GetAccessListStr(char *str, UINT size, ACCESS *a);

@@ -1641,7 +1641,6 @@ static void SiInitDefaultHubList(SERVER *s)
 {
 	HUB *h;
 	HUB_OPTION o;
-	HUB_LOG g;
 	if (s == NULL)
 	{
 		return;
@@ -1664,26 +1663,7 @@ static void SiInitDefaultHubList(SERVER *s)
 	h->Offline = true;
 	SetHubOnline(h);
 
-	SiSetDefaultLogSetting(&g);
-	SetHubLogSettingEx(h, &g, false);
-
 	ReleaseHub(h);
-}
-
-void SiSetDefaultLogSetting(HUB_LOG *g)
-{
-	if (g == NULL)
-	{
-		return;
-	}
-
-	Zero(g, sizeof(HUB_LOG));
-	g->SaveSecurityLog = true;
-	g->SecurityLogSwitchType = LOG_SWITCH_DAY;
-	g->SavePacketLog = true;
-	g->PacketLogSwitchType = LOG_SWITCH_DAY;
-	g->PacketLogConfig[PACKET_LOG_TCP_CONN] =
-		g->PacketLogConfig[PACKET_LOG_DHCP] = PACKET_LOG_HEADER;
 }
 
 static void SiLoadInitialConfiguration(SERVER *s)
