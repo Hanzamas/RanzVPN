@@ -1691,9 +1691,7 @@ static UINT GetMachineRand()
 void ConnectionAccept(CONNECTION *c)
 {
 	SOCK *s;
-	X *x;
-	K *k;
-	LIST *chain;
+	struct ssl_ctx_st *ssl_ctx;
 	char tmp[128];
 	UINT initial_timeout = CONNECTING_TIMEOUT;
 	UCHAR ctoken_hash[SHA1_SIZE];
@@ -1717,38 +1715,24 @@ void ConnectionAccept(CONNECTION *c)
 	initial_timeout += GetMachineRand() % (CONNECTING_TIMEOUT / 2);
 	SetTimeout(s, initial_timeout);
 
-	Lock(c->Cedar->lock);
-	{
-		if (c->Cedar->CipherList != NULL)
-		{
-			SetWantToUseCipher(s, c->Cedar->CipherList);
-		}
+	// One server context for every connection: certificate, key, chain, cipher list and settings are in it
+	ssl_ctx = GetCedarServerSslCtx(c->Cedar);
 
-		x = CloneX(c->Cedar->ServerX);
-		k = CloneK(c->Cedar->ServerK);
-		chain = CloneXList(c->Cedar->ServerChain);
-	}
-	Unlock(c->Cedar->lock);
-
-	Copy(&s->SslAcceptSettings, &c->Cedar->SslAcceptSettings, sizeof(SSL_ACCEPT_SETTINGS));
 	UINT ssl_err = 0;
-	if (StartSSLEx3(s, x, k, chain, NULL, NULL, &ssl_err) == false)
+	if (StartSSLServer(s, ssl_ctx, &ssl_err) == false)
 	{
+		FreeSSLCtx(ssl_ctx);
+
 		AddNoSsl(c->Cedar, &s->RemoteIP);
 		if (ssl_err != 0)
 		{
 			SLog(c->Cedar, "LS_SSL_START_ERROR", c->Name, GetUniErrorStr(ssl_err), ssl_err);
 		}
-		FreeX(x);
-		FreeK(k);
-		FreeXList(chain);
 
 		goto FINAL;
 	}
 
-	FreeX(x);
-	FreeK(k);
-	FreeXList(chain);
+	FreeSSLCtx(ssl_ctx);
 
 	SLog(c->Cedar, "LS_SSL_START", c->Name, s->SslVersion, s->CipherName);
 
