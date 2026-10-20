@@ -59,7 +59,6 @@ UINT SiDebug(SERVER *s, RPC_TEST *ret, UINT i, char *str)
 	{
 		{1, "Hello World", "<test string>", SiDebugProcHelloWorld},
 		{2, "Terminate process now", "", SiDebugProcExit},
-		{3, "Write memory dumpfile", "", SiDebugProcDump},
 		{4, "Restore process priority", "", SiDebugProcRestorePriority},
 		{5, "Set the process priority high", "", SiDebugProcSetHighPriority},
 		{6, "Get the .exe filename of the process", "", SiDebugProcGetExeFileName},
@@ -145,17 +144,6 @@ UINT SiDebugProcExit(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size)
 	}
 
 	_exit(1);
-
-	return ERR_NO_ERROR;
-}
-UINT SiDebugProcDump(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size)
-{
-	if (s == NULL || in_str == NULL || ret_str == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	MsWriteMinidump(NULL, NULL);
 
 	return ERR_NO_ERROR;
 }
@@ -3927,10 +3915,6 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 		s->NoHighPriorityProcess = CfgGetBool(f, "NoHighPriorityProcess");
 
 		s->NoDebugDump = CfgGetBool(f, "NoDebugDump");
-		if (s->NoDebugDump)
-		{
-			MsSetEnableMinidump(false);
-		}
 
 		s->SaveDebugLog = CfgGetBool(f, "SaveDebugLog");
 		if (s->SaveDebugLog)

@@ -783,7 +783,7 @@ static void GetMachineGuid(char *guid, UINT size)
 		return;
 	}
 
-	s = MsRegReadStrEx2(REG_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Cryptography", "MachineGuid", false, true);
+	s = MsRegReadStrEx2(REG_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Cryptography", "MachineGuid", false);
 
 	StrCpy(guid, size, s);
 

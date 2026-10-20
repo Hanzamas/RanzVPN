@@ -20,18 +20,13 @@ int main(int argc, char *argv[])
 
 #ifdef	_DEBUG	// Debug configuration: the debug CRT (/MTd) defines _DEBUG
 	// memcheck = true logs every malloc/realloc/free to find leaks; it is very slow.
-	InitMayaqua(false, true, argc, argv);
+	InitMayaqua(false, true);
 #else
-	InitMayaqua(false, false, argc, argv);
+	InitMayaqua(false, false);
 #endif
 	InitCedar();
 
-	s = GetCommandLineUniStr();
-
-	if (s == NULL)
-	{
-		s = CopyUniStr(L"");
-	}
+	s = MsCopyProcessArgsW();
 
 	if (UniStrCmpi(s, L"exit") != 0)
 	{

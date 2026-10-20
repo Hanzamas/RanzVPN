@@ -27,7 +27,6 @@ int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 
 extern bool g_memcheck;
 extern bool g_debug;
-extern char *cmdline;
 extern bool g_little_endian;
 
 #define	NUM_KERNEL_STATUS	128
@@ -157,19 +156,12 @@ static inline void KsAdd(UINT id, LONG64 n)
 #define	IsDebug()		(g_debug)
 #define	IsMemCheck()	(g_memcheck)
 
-void InitMayaqua(bool memcheck, bool debug, int argc, char **argv);
+void InitMayaqua(bool memcheck, bool debug);
 void FreeMayaqua();
 void InitKernelStatus();
 void FreeKernelStatus();
 void PrintDebugInformation();
 void PrintKernelStatus();
-void InitCommandLineStr(int argc, char **argv);
-void FreeCommandLineStr();
-void SetCommandLineStr(char *str);
-void SetCommandLineUniStr(wchar_t *str);
-wchar_t *GetCommandLineUniStr();
-void FreeCommandLineTokens();
-TOKEN_LIST *GetCommandLineToken();
 void InitOsInfo();
 void FreeOsInfo();
 __declspec(noreturn) void MayaFatalExit(UINT code, char *msg);

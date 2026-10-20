@@ -74,9 +74,11 @@ UINT GetNumberOfCpu()
 	return ret;
 }
 
+// A value longer than the buffer is truncated
 bool GetEnv(char *name, char *data, UINT size)
 {
-	char *ret;
+	DWORD len;
+	char *tmp;
 	if (name == NULL || data == NULL)
 	{
 		return false;
@@ -84,13 +86,19 @@ bool GetEnv(char *name, char *data, UINT size)
 
 	StrCpy(data, size, "");
 
-	ret = getenv(name);
-	if (ret == NULL)
+	// The size with the terminating null; 0 when the variable is not set
+	len = GetEnvironmentVariableA(name, NULL, 0);
+	if (len == 0)
 	{
 		return false;
 	}
 
-	StrCpy(data, size, ret);
+	tmp = ZeroMalloc(len);
+	if (GetEnvironmentVariableA(name, tmp, len) < len)
+	{
+		StrCpy(data, size, tmp);
+	}
+	Free(tmp);
 
 	return true;
 }
