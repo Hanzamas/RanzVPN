@@ -14,9 +14,6 @@
 
 #include <objbase.h>
 
-#ifndef	WIN32_NO_DEBUG_HELP_DLL
-#endif
-
 static HANDLE heap_handle = NULL;
 static bool use_heap_api = false;
 
