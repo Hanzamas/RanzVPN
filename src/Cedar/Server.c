@@ -12,6 +12,7 @@
 #include "Protocol.h"
 #include "RpcField.h"
 #include "Sam.h"
+#include "Tunables.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/DNS.h"
@@ -37,8 +38,6 @@ static char *BRIDGE_CONFIG_TEMPLATE_NAME = "$ranz_server_template.config";
 static bool server_reset_setting = false;
 
 static volatile UINT global_server_flags[NUM_GLOBAL_SERVER_FLAGS] = {0};
-
-UINT vpn_global_parameters[NUM_GLOBAL_PARAMS] = {0};
 
 bool SiTooManyUserObjectsInServer(SERVER *s, bool oneMore)
 {
@@ -1695,7 +1694,7 @@ static void SiLoadInitialConfiguration(SERVER *s)
 	s->AutoSaveConfigSpan = SERVER_FILE_SAVE_INTERVAL_DEFAULT;
 	s->BackupConfigOnlyWhenModified = true;
 
-	SiLoadGlobalParamsCfg(NULL);
+	TunablesLoad(NULL);
 
 	{
 		Sha0(s->HashedPassword, "", 0);
@@ -1781,8 +1780,6 @@ static void SiInitConfiguration(SERVER *s)
 
 		SLog(s->Cedar, "LS_LOAD_CONFIG_3");
 		SiLoadInitialConfiguration(s);
-
-		SetFifoCurrentReallocMemSize(MEM_FIFO_REALLOC_MEM_SIZE);
 
 		server_reset_setting = false;
 	}
@@ -3940,7 +3937,7 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 	SetMaxLogSize(CfgGetInt64(f, "LoggerMaxLogSize"));
 
 	params_folder = CfgFindFolder(f, "GlobalParams");
-	SiLoadGlobalParamsCfg(params_folder);
+	TunablesLoad(params_folder);
 
 	c = s->Cedar;
 	Lock(c->lock);
@@ -4102,71 +4099,6 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 	Unlock(c->lock);
 }
 
-void SiLoadGlobalParamsCfg(FOLDER *f)
-{
-	SiLoadGlobalParamItem(GP_MAX_SEND_SOCKET_QUEUE_SIZE, CfgGetInt(f, "MAX_SEND_SOCKET_QUEUE_SIZE"));
-	SiLoadGlobalParamItem(GP_MIN_SEND_SOCKET_QUEUE_SIZE, CfgGetInt(f, "MIN_SEND_SOCKET_QUEUE_SIZE"));
-	SiLoadGlobalParamItem(GP_MAX_SEND_SOCKET_QUEUE_NUM, CfgGetInt(f, "MAX_SEND_SOCKET_QUEUE_NUM"));
-	SiLoadGlobalParamItem(GP_SELECT_TIME, CfgGetInt(f, "SELECT_TIME"));
-	SiLoadGlobalParamItem(GP_SELECT_TIME_FOR_NAT, CfgGetInt(f, "SELECT_TIME_FOR_NAT"));
-	SiLoadGlobalParamItem(GP_MAX_STORED_QUEUE_NUM, CfgGetInt(f, "MAX_STORED_QUEUE_NUM"));
-	SiLoadGlobalParamItem(GP_MAX_BUFFERING_PACKET_SIZE, CfgGetInt(f, "MAX_BUFFERING_PACKET_SIZE"));
-	SiLoadGlobalParamItem(GP_HUB_ARP_SEND_INTERVAL, CfgGetInt(f, "HUB_ARP_SEND_INTERVAL"));
-	SiLoadGlobalParamItem(GP_MAC_TABLE_EXPIRE_TIME, CfgGetInt(f, "MAC_TABLE_EXPIRE_TIME"));
-	SiLoadGlobalParamItem(GP_IP_TABLE_EXPIRE_TIME, CfgGetInt(f, "IP_TABLE_EXPIRE_TIME"));
-	SiLoadGlobalParamItem(GP_IP_TABLE_EXPIRE_TIME_DHCP, CfgGetInt(f, "IP_TABLE_EXPIRE_TIME_DHCP"));
-	SiLoadGlobalParamItem(GP_STORM_CHECK_SPAN, CfgGetInt(f, "STORM_CHECK_SPAN"));
-	SiLoadGlobalParamItem(GP_STORM_DISCARD_VALUE_START, CfgGetInt(f, "STORM_DISCARD_VALUE_START"));
-	SiLoadGlobalParamItem(GP_STORM_DISCARD_VALUE_END, CfgGetInt(f, "STORM_DISCARD_VALUE_END"));
-	SiLoadGlobalParamItem(GP_MAX_MAC_TABLES, CfgGetInt(f, "MAX_MAC_TABLES"));
-	SiLoadGlobalParamItem(GP_MAX_IP_TABLES, CfgGetInt(f, "MAX_IP_TABLES"));
-	SiLoadGlobalParamItem(GP_MAX_HUB_LINKS, CfgGetInt(f, "MAX_HUB_LINKS"));
-	SiLoadGlobalParamItem(GP_MEM_FIFO_REALLOC_MEM_SIZE, CfgGetInt(f, "MEM_FIFO_REALLOC_MEM_SIZE"));
-	SiLoadGlobalParamItem(GP_QUEUE_BUDGET, CfgGetInt(f, "QUEUE_BUDGET"));
-	SiLoadGlobalParamItem(GP_FIFO_BUDGET, CfgGetInt(f, "FIFO_BUDGET"));
-
-	SetFifoCurrentReallocMemSize(MEM_FIFO_REALLOC_MEM_SIZE);
-}
-
-void SiLoadGlobalParamItem(UINT id, UINT value)
-{
-	if (id == 0)
-	{
-		return;
-	}
-
-	vpn_global_parameters[id] = value;
-}
-
-static void SiWriteGlobalParamsCfg(FOLDER *f)
-{
-	if (f == NULL)
-	{
-		return;
-	}
-
-	CfgAddInt(f, "MAX_SEND_SOCKET_QUEUE_SIZE", MAX_SEND_SOCKET_QUEUE_SIZE);
-	CfgAddInt(f, "MIN_SEND_SOCKET_QUEUE_SIZE", MIN_SEND_SOCKET_QUEUE_SIZE);
-	CfgAddInt(f, "MAX_SEND_SOCKET_QUEUE_NUM", MAX_SEND_SOCKET_QUEUE_NUM);
-	CfgAddInt(f, "SELECT_TIME", SELECT_TIME);
-	CfgAddInt(f, "SELECT_TIME_FOR_NAT", SELECT_TIME_FOR_NAT);
-	CfgAddInt(f, "MAX_STORED_QUEUE_NUM", MAX_STORED_QUEUE_NUM);
-	CfgAddInt(f, "MAX_BUFFERING_PACKET_SIZE", MAX_BUFFERING_PACKET_SIZE);
-	CfgAddInt(f, "HUB_ARP_SEND_INTERVAL", HUB_ARP_SEND_INTERVAL);
-	CfgAddInt(f, "MAC_TABLE_EXPIRE_TIME", MAC_TABLE_EXPIRE_TIME);
-	CfgAddInt(f, "IP_TABLE_EXPIRE_TIME", IP_TABLE_EXPIRE_TIME);
-	CfgAddInt(f, "IP_TABLE_EXPIRE_TIME_DHCP", IP_TABLE_EXPIRE_TIME_DHCP);
-	CfgAddInt(f, "STORM_CHECK_SPAN", STORM_CHECK_SPAN);
-	CfgAddInt(f, "STORM_DISCARD_VALUE_START", STORM_DISCARD_VALUE_START);
-	CfgAddInt(f, "STORM_DISCARD_VALUE_END", STORM_DISCARD_VALUE_END);
-	CfgAddInt(f, "MAX_MAC_TABLES", MAX_MAC_TABLES);
-	CfgAddInt(f, "MAX_IP_TABLES", MAX_IP_TABLES);
-	CfgAddInt(f, "MAX_HUB_LINKS", MAX_HUB_LINKS);
-	CfgAddInt(f, "MEM_FIFO_REALLOC_MEM_SIZE", MEM_FIFO_REALLOC_MEM_SIZE);
-	CfgAddInt(f, "QUEUE_BUDGET", QUEUE_BUDGET);
-	CfgAddInt(f, "FIFO_BUDGET", FIFO_BUDGET);
-}
-
 void SiWriteServerCfg(FOLDER *f, SERVER *s)
 {
 	BUF *b;
@@ -4199,7 +4131,7 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s)
 
 	if (params_folder != NULL)
 	{
-		SiWriteGlobalParamsCfg(params_folder);
+		TunablesSave(params_folder);
 	}
 
 	c = s->Cedar;
@@ -4798,9 +4730,6 @@ SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_serve
 
 	s->Syslog = NewSysLog(NULL, 0, &s->Cedar->Server->ListenIP);
 	s->SyslogLock = NewLock();
-
-	SetFifoCurrentReallocMemSize(MEM_FIFO_REALLOC_MEM_SIZE);
-
 
 	if (s->NoHighPriorityProcess == false)
 	{

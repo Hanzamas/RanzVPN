@@ -10,8 +10,6 @@
 #define	SERVER_DEF_PORTS_4				GC_DEFAULT_PORT
 
 extern char *SERVER_CONFIG_FILE_NAME;
-// An invalid cipher spec makes the server fall back to its built-in list of modern ciphers.
-#define	SERVER_DEFAULT_CIPHER_NAME		"~DEFAULT~"
 #define	SERVER_DEFAULT_HUB_NAME			"DEFAULT"
 #define	SERVER_DEFAULT_BRIDGE_NAME		"BRIDGE"
 
@@ -154,34 +152,6 @@ struct LOG_FILE
 #define	GSF_SHOW_OSS_MSG				7
 #define	GSF_DISABLE_SESSION_RECONNECT	9
 
-#define	NUM_GLOBAL_PARAMS					128
-#define	GP_MAX_SEND_SOCKET_QUEUE_SIZE		1
-#define	GP_MIN_SEND_SOCKET_QUEUE_SIZE		2
-#define	GP_MAX_SEND_SOCKET_QUEUE_NUM		3
-#define	GP_SELECT_TIME						4
-#define	GP_SELECT_TIME_FOR_NAT				5
-#define	GP_MAX_STORED_QUEUE_NUM				6
-#define	GP_MAX_BUFFERING_PACKET_SIZE		7
-#define	GP_HUB_ARP_SEND_INTERVAL			8
-#define	GP_MAC_TABLE_EXPIRE_TIME			9
-#define	GP_IP_TABLE_EXPIRE_TIME				10
-#define	GP_IP_TABLE_EXPIRE_TIME_DHCP		11
-#define	GP_STORM_CHECK_SPAN					12
-#define	GP_STORM_DISCARD_VALUE_START		13
-#define	GP_STORM_DISCARD_VALUE_END			14
-#define	GP_MAX_MAC_TABLES					15
-#define	GP_MAX_IP_TABLES					16
-#define	GP_MAX_HUB_LINKS					17
-#define	GP_MEM_FIFO_REALLOC_MEM_SIZE		18
-#define	GP_QUEUE_BUDGET						19
-#define	GP_FIFO_BUDGET						20
-
-extern UINT vpn_global_parameters[NUM_GLOBAL_PARAMS];
-
-#define	VPN_GP(id, default_value)	((UINT)(vpn_global_parameters[(id)] != 0 ? vpn_global_parameters[(id)] : (default_value)))
-
-
-
 struct SERVER_HUB_CREATE_HISTORY
 {
 	char HubName[MAX_HUBNAME_LEN + 1];
@@ -211,8 +181,6 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s);
 void SiLoadServerCfg(SERVER *s, FOLDER *f);
 void SiWriteMachineIdCfg(FOLDER *f, CEDAR *c);
 void SiLoadMachineIdCfg(CEDAR *c, FOLDER *f);
-void SiLoadGlobalParamsCfg(FOLDER *f);
-void SiLoadGlobalParamItem(UINT id, UINT value);
 void SiWriteTraffic(FOLDER *parent, char *name, TRAFFIC *t);
 void SiWriteTrafficInner(FOLDER *parent, char *name, TRAFFIC_ENTRY *e);
 void SiLoadTrafficInner(FOLDER *parent, char *name, TRAFFIC_ENTRY *e);

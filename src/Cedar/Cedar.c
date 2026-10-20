@@ -11,7 +11,6 @@
 #include "Listener.h"
 #include "Protocol.h"
 #include "Sam.h"
-#include "Server.h"
 #include "Session.h"
 #include "WaterMark.h"
 
