@@ -294,9 +294,10 @@ BUF *ReadHamcore(char *name)
 	}
 
 	// A loose file in the "hamcore" folder next to the executable wins over the built-in one
+	char exe_dir[MAX_PATH];
 	char path[MAX_PATH];
-	GetExeDir(path, sizeof(path));
-	Format(path, sizeof(path), "%s/%s/%s", path, HAMCORE_DIR_NAME, name);
+	GetExeDir(exe_dir, sizeof(exe_dir));
+	Format(path, sizeof(path), "%s/%s/%s", exe_dir, HAMCORE_DIR_NAME, name);
 
 	BUF *buf = ReadDump(path);
 	if (buf != NULL)

@@ -339,15 +339,16 @@ static void StrTestFormat(STRTEST_CTX *ctx)
 	StrTestOut(ctx, "BinToStrEx of NULL leaves the destination as it is", "xy", STRTEST_GUARD_END);
 }
 
-// snprintf after the Mayaqua headers, and Format of a field wider than the conversion buffer of
-// InternalFormatArgs (Internat.c). Mayaqua.h once mapped snprintf to the legacy Microsoft variant,
-// which leaves a truncated result without its terminator and returns -1.
+// snprintf after the Mayaqua headers, and Format and UniFormat on the CRT formatter. Mayaqua.h once
+// mapped snprintf to the legacy Microsoft variant, which leaves a truncated result without its
+// terminator and returns -1.
 static void StrTestSnprintf(STRTEST_CTX *ctx)
 {
 	char *b;
 	char *six = "abcdef";		// Arguments, not literals, so the compiler does not report the truncation
 	char *three = "abc";
 	char wide[MAX_SIZE * 2];
+	wchar_t uni[MAX_SIZE];
 	UINT len, spaces;
 	int ret;
 
@@ -362,9 +363,7 @@ static void StrTestSnprintf(STRTEST_CTX *ctx)
 		"snprintf of exactly size characters keeps size - 1 of them and the NUL",
 		"returned %d, buffer \"%s\"", ret, b);
 
-	// 600 characters do not fit the 512-byte buffer that InternalFormatArgs formats a number into:
-	// the result stops at its end and is terminated there (AddressSanitizer sees the read past the
-	// buffer when it is not)
+	// A field of 600 characters comes out whole: 599 spaces and the number
 	Format(wide, sizeof(wide), "%600u", 7);
 	len = StrLen(wide);
 	spaces = 0;
@@ -372,9 +371,26 @@ static void StrTestSnprintf(STRTEST_CTX *ctx)
 	{
 		spaces++;
 	}
-	StrTestCheck(ctx, len >= (MAX_SIZE - 1) && len <= 600 && (spaces == len || (spaces == len - 1 && wide[spaces] == '7')),
-		"Format of a numeric field wider than its conversion buffer gives only the padded number",
+	StrTestCheck(ctx, len == 600 && spaces == 599 && wide[spaces] == '7',
+		"Format of a numeric field of 600 characters gives the whole padded number",
 		"%u characters, %u leading spaces", len, spaces);
+
+	// The CRT pads %s by characters: a CJK character is one, not two (UniStrWidth)
+	UniFormat(uni, sizeof(uni), L"%-6s|", L"\x4e2d");
+	StrTestCheck(ctx, UniStrCmp(uni, L"\x4e2d     |") == 0,
+		"UniFormat pads %-6s of one CJK character with 5 spaces", "got %u characters", UniStrLen(uni));
+
+	// Size rules: a cut result keeps size - 1 characters and the terminator, size 1 leaves a wide
+	// buffer as it is, and %S and %s swap between Format and UniFormat
+	b = StrTestReset(ctx, NULL);
+	Format(b, 4, "%s%S", "ab", L"cd");
+	StrTestCheck(ctx, StrTestIs(ctx, "abc", STRTEST_GUARD_END), "Format cuts to size - 1 characters", "buffer \"%s\"", b);
+	UniStrCpy(uni, sizeof(uni), L"xy");
+	UniFormat(uni, 1, L"%u", 5);
+	StrTestCheck(ctx, UniStrCmp(uni, L"xy") == 0, "UniFormat of size 1 leaves the buffer as it is", "changed");
+	UniFormat(uni, sizeof(uni), L"%s|%S|%I64u|%llu|%s", L"w", "n", (UINT64)1 << 40, (UINT64)7, (wchar_t *)NULL);
+	StrTestCheck(ctx, UniStrCmp(uni, L"w|n|1099511627776|7|(null)") == 0,
+		"UniFormat formats %s, %S, %I64u, %llu and a NULL string", "got %u characters", UniStrLen(uni));
 }
 
 // SearchStr, SearchStrEx, InStr, InStrEx, ReplaceStr and ReplaceStri

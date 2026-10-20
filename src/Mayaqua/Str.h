@@ -28,6 +28,7 @@ void StrLower(char *str);
 int StrCmp(char *str1, char *str2);
 int StrCmpi(char *str1, char *str2);
 void FormatArgs(char *buf, UINT size, char *fmt, va_list args);
+wchar_t *CopyFormatArgsToUni(char *fmt, va_list args);
 void Format(char *buf, UINT size, char *fmt, ...);
 void Print(char *fmt, ...);
 void Debug(char *fmt, ...);

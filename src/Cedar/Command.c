@@ -584,6 +584,7 @@ static bool CheckStrings()
 	wchar_t *numstr = _UU("CHECK_TEST_123456789");
 	char tmp[MAX_SIZE];
 	wchar_t tmp2[MAX_SIZE];
+	wchar_t num[MAX_PATH];
 	UINT i;
 	UINT sum, sum2;
 	UNI_TOKEN_LIST *t;
@@ -594,7 +595,8 @@ static bool CheckStrings()
 	for (i = 0;i < 64;i++)
 	{
 		sum2 += i;
-		UniFormat(tmp2, sizeof(tmp2), L"%s,%u", tmp2, i);
+		UniFormat(num, sizeof(num), L",%u", i);
+		UniStrCat(tmp2, sizeof(tmp2), num);
 	}
 
 	t = UniParseToken(tmp2, L",");

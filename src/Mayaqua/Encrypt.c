@@ -543,6 +543,14 @@ void GetAllNameFromX(wchar_t *str, UINT size, X *x)
 	UniStrCat(str, size, tmp3);
 }
 
+// Append key, value and ", " to str, cut at size like the rest of the name list
+static void AppendNamePart(wchar_t *str, UINT size, wchar_t *key, wchar_t *value)
+{
+	UniStrCat(str, size, key);
+	UniStrCat(str, size, value);
+	UniStrCat(str, size, L", ");
+}
+
 void GetAllNameFromName(wchar_t *str, UINT size, NAME *name)
 {
 	UniStrCpy(str, size, L"");
@@ -553,27 +561,27 @@ void GetAllNameFromName(wchar_t *str, UINT size, NAME *name)
 
 	if (name->CommonName != NULL)
 	{
-		UniFormat(str, size, L"%sCN=%s, ", str, name->CommonName);
+		AppendNamePart(str, size, L"CN=", name->CommonName);
 	}
 	if (name->Organization != NULL)
 	{
-		UniFormat(str, size, L"%sO=%s, ", str, name->Organization);
+		AppendNamePart(str, size, L"O=", name->Organization);
 	}
 	if (name->Unit != NULL)
 	{
-		UniFormat(str, size, L"%sOU=%s, ", str, name->Unit);
+		AppendNamePart(str, size, L"OU=", name->Unit);
 	}
 	if (name->State != NULL)
 	{
-		UniFormat(str, size, L"%sS=%s, ", str, name->State);
+		AppendNamePart(str, size, L"S=", name->State);
 	}
 	if (name->Local != NULL)
 	{
-		UniFormat(str, size, L"%sL=%s, ", str, name->Local);
+		AppendNamePart(str, size, L"L=", name->Local);
 	}
 	if (name->Country != NULL)
 	{
-		UniFormat(str, size, L"%sC=%s, ", str, name->Country);
+		AppendNamePart(str, size, L"C=", name->Country);
 	}
 
 	if (UniStrLen(str) >= 3)
@@ -596,27 +604,27 @@ void GetAllNameFromNameEx(wchar_t *str, UINT size, NAME *name)
 	UniStrCpy(str, size, L"");
 	if (name->CommonName != NULL)
 	{
-		UniFormat(str, size, L"%s%s, ", str, name->CommonName);
+		AppendNamePart(str, size, L"", name->CommonName);
 	}
 	if (name->Organization != NULL)
 	{
-		UniFormat(str, size, L"%s%s, ", str, name->Organization);
+		AppendNamePart(str, size, L"", name->Organization);
 	}
 	if (name->Unit != NULL)
 	{
-		UniFormat(str, size, L"%s%s, ", str, name->Unit);
+		AppendNamePart(str, size, L"", name->Unit);
 	}
 	if (name->State != NULL)
 	{
-		UniFormat(str, size, L"%s%s, ", str, name->State);
+		AppendNamePart(str, size, L"", name->State);
 	}
 	if (name->Local != NULL)
 	{
-		UniFormat(str, size, L"%s%s, ", str, name->Local);
+		AppendNamePart(str, size, L"", name->Local);
 	}
 	if (name->Country != NULL)
 	{
-		UniFormat(str, size, L"%s%s, ", str, name->Country);
+		AppendNamePart(str, size, L"", name->Country);
 	}
 
 	if (UniStrLen(str) >= 3)
