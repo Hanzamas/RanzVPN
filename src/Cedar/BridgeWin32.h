@@ -14,6 +14,7 @@ typedef struct WP_ADAPTER
 	char Title[MAX_SIZE];
 	char Guid[MAX_SIZE];
 	UINT Id;
+	UCHAR MacAddress[6];			// Current MAC address reported by SeLow
 } WP_ADAPTER;
 
 #endif
@@ -38,11 +39,9 @@ ETH *OpenEth(char *name, bool local, bool tapmode, char *tapaddr);
 void CloseEth(ETH *e);
 CANCEL *EthGetCancel(ETH *e);
 UINT EthGetPacket(ETH *e, void **data);
+bool EthHasPendingFrames(ETH *e);
 void EthPutPackets(ETH *e, UINT num, void **datas, UINT *sizes);
 void GetEthNetworkConnectionName(wchar_t *dst, UINT size, char *device_name);
-UINT EthGetMtu(ETH *e);
-bool EthSetMtu(ETH *e, UINT mtu);
-bool EthIsChangeMtuSupported(ETH *e);
 
 bool Win32EthIsSuSupported();
 bool Win32EthInstallSu();

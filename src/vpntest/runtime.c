@@ -1863,8 +1863,7 @@ static void RtFileioReplace(RT_CTX *ctx, wchar_t *aux_path, UCHAR *data)
 }
 
 // FileSeek: the three origins, an unknown origin, a position before the start, and the
-// position that equals ERROR_NEGATIVE_SEEK (131). Kept as is: the backend compares the new
-// position returned by SetFilePointer with that error code, so this seek reports failure.
+// position that equals ERROR_NEGATIVE_SEEK (131), which is an ordinary offset for SetFilePointerEx
 static void RtFileioSeek(RT_CTX *ctx, wchar_t *aux_path, UCHAR *data)
 {
 	UCHAR buf[RT_FILEIO_SHORT_SIZE];
@@ -1893,8 +1892,8 @@ static void RtFileioSeek(RT_CTX *ctx, wchar_t *aux_path, UCHAR *data)
 
 	RtCheck(ctx, FileSeek(io, 3, 0) == false, "FileSeek with an unknown origin fails", "returned true");
 	RtCheck(ctx, FileSeek(io, FILE_BEGIN, -1) == false, "FileSeek before the beginning fails", "returned true");
-	RtCheck(ctx, FileSeek(io, FILE_BEGIN, ERROR_NEGATIVE_SEEK) == false,
-		"FileSeek to offset 131 reports failure (kept as is)", "returned true");
+	RtCheck(ctx, FileSeek(io, FILE_BEGIN, ERROR_NEGATIVE_SEEK),
+		"FileSeek to offset 131 succeeds (it reported failure)", "returned false");
 
 	FileClose(io);
 }
@@ -1961,10 +1960,12 @@ static void RtFileioHidden(RT_CTX *ctx, wchar_t *aux_path, UCHAR *data)
 }
 
 // More sharing: read-locked readers coexist and lock out a writer; a reader without the read
-// lock lets a writer in; FileCreate shares read like a writer
+// lock lets a writer in; FileCreate shares read like a writer; a file locked by another
+// handle still exists
 static void RtFileioShare(RT_CTX *ctx, wchar_t *aux_path)
 {
 	IO *io, *io2;
+	HANDLE h;
 
 	io = FileOpenW(aux_path, false);
 	if (RtCheck(ctx, io != NULL, "FileOpen read-only", "returned NULL"))
@@ -2003,6 +2004,13 @@ static void RtFileioShare(RT_CTX *ctx, wchar_t *aux_path)
 
 		FileClose(io);
 	}
+
+	h = CreateFileW(aux_path, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	if (RtCheck(ctx, h != INVALID_HANDLE_VALUE, "CreateFileW of the aux file without sharing", "error %u", GetLastError()))
+	{
+		RtCheck(ctx, IsFileExistsW(aux_path), "IsFileExists of a file opened without sharing is true", "returned false");
+		CloseHandle(h);
+	}
 }
 
 // FileRename moves a file and does not replace an existing target
@@ -2031,6 +2039,7 @@ static void RtFileioDir(RT_CTX *ctx, wchar_t *dir_path)
 	RtCheck(ctx, attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY) != 0, "MakeDir creates the directory",
 		"attributes %u", attr);
 	RtCheck(ctx, MakeDirW(L"@" RT_FILEIO_DIR_NAME) == false, "MakeDir of an existing directory fails", "returned true");
+	RtCheck(ctx, IsFileExistsW(dir_path) == false, "IsFileExists of a directory is false", "returned true");
 
 	RtCheck(ctx, DeleteDirW(L"@" RT_FILEIO_DIR_NAME), "DeleteDir through @", "failed");
 	RtCheck(ctx, GetFileAttributesW(dir_path) == INVALID_FILE_ATTRIBUTES, "DeleteDir removes the directory", "still there");

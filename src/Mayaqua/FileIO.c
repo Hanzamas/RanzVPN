@@ -70,19 +70,6 @@ void ConvertSafeFileName(char *dst, UINT size, char *src)
 	}
 }
 
-bool GetDiskFree(char *path, UINT64 *free_size, UINT64 *used_size, UINT64 *total_size)
-{
-	bool ret;
-	if (path == NULL)
-	{
-		path = "./";
-	}
-
-	ret = Win32GetDiskFree(path, free_size, used_size, total_size);
-
-	return ret;
-}
-
 static DIRLIST *EnumDirEx(char *dirname, COMPARE *compare)
 {
 	wchar_t *dirname_w = CopyStrToUni(dirname);
@@ -430,7 +417,7 @@ void InitGetExeName(char *arg)
 
 	arg_w = CopyUtfToUni(arg);
 
-	Win32GetExeNameW(exe_file_name_w, sizeof(exe_file_name_w));
+	Win32GetExeNameW(exe_file_name_w, ARRAYSIZE(exe_file_name_w));
 
 	UniToStr(exe_file_name, sizeof(exe_file_name), exe_file_name_w);
 
@@ -652,21 +639,24 @@ bool IsFileExistsW(wchar_t *name)
 
 	return IsFileExistsInnerW(tmp);
 }
+// A file exists when it has attributes and is not a directory (a locked file exists too)
 bool IsFileExistsInnerW(wchar_t *name)
 {
-	IO *o;
+	wchar_t name2[MAX_SIZE];
+	DWORD attr;
 	if (name == NULL)
 	{
 		return false;
 	}
 
-	o = FileOpenInnerW(name, false, false);
-	if (o == NULL)
+	UniStrCpy(name2, sizeof(name2), name);
+	ConvertPathW(name2);
+
+	attr = GetFileAttributesW(name2);
+	if (attr == INVALID_FILE_ATTRIBUTES || (attr & FILE_ATTRIBUTE_DIRECTORY) != 0)
 	{
 		return false;
 	}
-
-	FileClose(o);
 
 	return true;
 }
@@ -697,7 +687,7 @@ void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 		wchar_t cd[MAX_SIZE];
 		Zero(cd, sizeof(cd));
 
-		Win32GetCurrentDirW(cd, sizeof(cd));
+		Win32GetCurrentDirW(cd, ARRAYSIZE(cd));
 
 		if (UniStartWith(tmp, L".."))
 		{
@@ -1066,11 +1056,11 @@ bool FileDeleteInnerW(wchar_t *name)
 	return true;
 }
 
-// Seek the file (a 32-bit offset; a hamcore file cannot seek)
-bool FileSeek(IO *o, UINT mode, int offset)
+// Seek the file (a 64-bit offset; a hamcore file cannot seek)
+bool FileSeek(IO *o, UINT mode, INT64 offset)
 {
 	WIN32IO *p;
-	DWORD ret;
+	LARGE_INTEGER distance;
 	if (o == NULL)
 	{
 		return false;
@@ -1087,8 +1077,8 @@ bool FileSeek(IO *o, UINT mode, int offset)
 	}
 
 	p = (WIN32IO *)o->pData;
-	ret = SetFilePointer(p->hFile, (LONG)offset, NULL, mode);
-	if (ret == INVALID_SET_FILE_POINTER || ret == ERROR_NEGATIVE_SEEK)
+	distance.QuadPart = offset;
+	if (SetFilePointerEx(p->hFile, distance, NULL, mode) == FALSE)
 	{
 		return false;
 	}
@@ -1099,8 +1089,7 @@ bool FileSeek(IO *o, UINT mode, int offset)
 UINT64 FileSize64(IO *o)
 {
 	WIN32IO *p;
-	UINT64 ret;
-	DWORD tmp;
+	LARGE_INTEGER size;
 	if (o == NULL)
 	{
 		return 0;
@@ -1112,23 +1101,17 @@ UINT64 FileSize64(IO *o)
 	}
 
 	p = (WIN32IO *)o->pData;
-	tmp = 0;
-	ret = GetFileSize(p->hFile, &tmp);
-	if (ret == (DWORD)-1)
+	if (GetFileSizeEx(p->hFile, &size) == FALSE || size.QuadPart < 0)
 	{
 		return 0;
 	}
 
-	if (tmp != 0)
-	{
-		ret += (UINT64)tmp * 4294967296ULL;
-	}
-
-	return ret;
+	return (UINT64)size.QuadPart;
 }
+// The size clamped to 4 GiB - 1
 UINT FileSize(IO *o)
 {
-	UINT64 size = (UINT)(FileSize64(o));
+	UINT64 size = FileSize64(o);
 
 	if (size >= 4294967296ULL)
 	{
@@ -1300,15 +1283,17 @@ void FileFlush(IO *o)
 	}
 }
 
-void FileClose(IO *o)
+// Close the file; false when the flush or the close of a disk file fails
+bool FileClose(IO *o)
 {
-	FileCloseEx(o, false);
+	return FileCloseEx(o, false);
 }
-void FileCloseEx(IO *o, bool no_flush)
+bool FileCloseEx(IO *o, bool no_flush)
 {
+	bool ret = true;
 	if (o == NULL)
 	{
-		return;
+		return false;
 	}
 
 	if (o->HamMode == false)
@@ -1323,9 +1308,15 @@ void FileCloseEx(IO *o, bool no_flush)
 		// A writer is flushed unless no_flush is set
 		if (p->WriteMode && no_flush == false)
 		{
-			FlushFileBuffers(p->hFile);
+			if (FlushFileBuffers(p->hFile) == FALSE)
+			{
+				ret = false;
+			}
 		}
-		CloseHandle(p->hFile);
+		if (CloseHandle(p->hFile) == FALSE)
+		{
+			ret = false;
+		}
 
 		Win32MemoryFree(p);
 	}
@@ -1336,6 +1327,8 @@ void FileCloseEx(IO *o, bool no_flush)
 	Free(o);
 
 	KS_INC(KS_IO_CLOSE_COUNT);
+
+	return ret;
 }
 
 static IO *FileCreateInnerW(wchar_t *name)

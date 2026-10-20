@@ -70,9 +70,6 @@ typedef struct CHECK_CERT_THREAD_PROC CHECK_CERT_THREAD_PROC;
 typedef struct LINK LINK;
 
 
-typedef struct INTERNET_SETTING INTERNET_SETTING;
-typedef struct URL_DATA URL_DATA;
-
 typedef struct ETH ETH;
 typedef struct BRIDGE BRIDGE;
 typedef struct LOCALBRIDGE LOCALBRIDGE;

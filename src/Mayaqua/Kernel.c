@@ -92,7 +92,7 @@ void GetHomeDirW(wchar_t *path, UINT size)
 		}
 		else
 		{
-			Win32GetCurrentDirW(path, size);
+			Win32GetCurrentDirW(path, size / sizeof(wchar_t));
 		}
 	}
 }
@@ -146,24 +146,13 @@ void GetMemInfo(MEMINFO *info)
 
 INSTANCE *NewSingleInstance(char *instance_name)
 {
-	return NewSingleInstanceEx(instance_name, false);
-}
-INSTANCE *NewSingleInstanceEx(char *instance_name, bool user_local)
-{
 	char name[MAX_SIZE];
 	INSTANCE *ret;
 	void *data;
 
 	if (instance_name != NULL)
 	{
-		if (user_local == false)
-		{
-			HashInstanceName(name, sizeof(name), instance_name);
-		}
-		else
-		{
-			HashInstanceNameLocal(name, sizeof(name), instance_name);
-		}
+		HashInstanceName(name, sizeof(name), instance_name);
 
 		data = OSNewSingleInstance(name);
 	}
@@ -226,29 +215,6 @@ void HashInstanceName(char *name, UINT size, char *instance_name)
 
 	StrCpy(tmp, sizeof(tmp), name);
 	Format(name, size, "Global\\%s", tmp);
-}
-void HashInstanceNameLocal(char *name, UINT size, char *instance_name)
-{
-	char tmp[MAX_SIZE];
-	UCHAR hash[SHA1_SIZE];
-	char key[11];
-	if (name == NULL || instance_name == NULL)
-	{
-		return;
-	}
-
-	StrCpy(tmp, sizeof(tmp), instance_name);
-	Trim(tmp);
-	StrUpper(tmp);
-
-	Sha0(hash, tmp, StrLen(tmp));
-	BinToStr(key, sizeof(key), hash, 5);
-	key[10] = 0;
-
-	Format(name, size, "VPN-%s", key);
-
-	StrCpy(tmp, sizeof(tmp), name);
-	Format(name, size, "Local\\%s", tmp);
 }
 
 bool Run(char *filename, char *arg, bool hide, bool wait)
@@ -551,11 +517,11 @@ void SetThreadName(UINT thread_id, char *name, void *param)
 
 		if (name == NULL)
 		{
-			strcpy(tmp, "idle");
+			StrCpy(tmp, sizeof(tmp), "idle");
 		}
 		else
 		{
-			sprintf(tmp, "%s (0x%x)", name, (UINT)param);
+			snprintf(tmp, sizeof(tmp), "%s (%p)", name, param);
 		}
 
 		Win32SetThreadName(thread_id, tmp);

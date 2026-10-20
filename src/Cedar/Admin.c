@@ -5,6 +5,7 @@
 
 #include "Account.h"
 #include "BridgeWin32.h"
+#include "BuildInfo.h"
 #include "Connection.h"
 #include "Link.h"
 #include "Listener.h"
@@ -15,7 +16,6 @@
 #include "Sam.h"
 #include "Server.h"
 #include "Session.h"
-#include "Wpc.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/FileIO.h"

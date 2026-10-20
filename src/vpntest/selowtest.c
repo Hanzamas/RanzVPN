@@ -11,6 +11,9 @@
 // - The adapter-list read (SuReadAdapterInfoList) accepts a list with SL_SIGNATURE and refuses a
 //   wrong signature or a failed read. SuGetAdapterList frees its list on a failed read and leaves
 //   the device handle open (SuFree closes it).
+// - The Local Bridge lists an interface by its type data (MsIsBridgeableIf), not by title words: a
+//   wired NIC is listed whatever it is called, a tunnel, PPP, Wi-Fi or RAS WAN Miniport interface
+//   is hidden whatever its localized title says.
 // The install step is replaced by a counting stub (SuSetInstallProc), so the test never installs a
 // driver. The install checks run only on a machine without SeLow, such as the CI runners; elsewhere
 // they are skipped. Prints "SELOW TEST OK" only when every check passes, and frees everything it
@@ -25,6 +28,7 @@
 #include "Mayaqua/Str.h"
 
 #include <stdarg.h>
+#include <iphlpapi.h>
 
 #define	SELOWTEST_FILE_NAME			L"selowtest_list.tmp"			// Adapter list file next to vpntest.exe
 #define	SELOWTEST_VERSION			0x1234							// SeLowVersion written to the file
@@ -268,6 +272,23 @@ static void SelowTestInstall(SELOWTEST_CTX *ctx, bool supported)
 		"returned %u, install step ran %u times", ok, selowtest_num_install);
 }
 
+// Which interfaces the Local Bridge lists unless it shows every interface (FND-182)
+static void SelowTestClass(SELOWTEST_CTX *ctx)
+{
+	SelowTestCheck(ctx, MsIsBridgeableIf(IF_TYPE_ETHERNET_CSMACD, NdisMedium802_3, NdisPhysicalMedium802_3, true),
+		"A wired NIC is listed, whatever its title (such as \"WAN port\")", "hidden");
+	SelowTestCheck(ctx, MsIsBridgeableIf(IF_TYPE_ETHERNET_CSMACD, NdisMedium802_3, NdisPhysicalMediumUnspecified, true),
+		"A NIC that does not report its physical medium is listed", "hidden");
+	SelowTestCheck(ctx, MsIsBridgeableIf(IF_TYPE_TUNNEL, NdisMedium802_3, NdisPhysicalMediumUnspecified, false) == false,
+		"A tunnel is hidden, whatever its localized title", "listed");
+	SelowTestCheck(ctx, MsIsBridgeableIf(IF_TYPE_PPP, NdisMediumWan, NdisPhysicalMediumUnspecified, false) == false,
+		"A PPP interface is hidden", "listed");
+	SelowTestCheck(ctx, MsIsBridgeableIf(IF_TYPE_IEEE80211, NdisMedium802_3, NdisPhysicalMediumNative802_11, true) == false,
+		"A Wi-Fi NIC is hidden", "listed");
+	SelowTestCheck(ctx, MsIsBridgeableIf(IF_TYPE_ETHERNET_CSMACD, NdisMedium802_3, NdisPhysicalMediumUnspecified, false) == false,
+		"A software interface without a physical medium (WAN Miniport) is hidden", "listed");
+}
+
 // selow: read-only capability query, explicit driver install, one adapter-list read (FIX-2 #98)
 void selow_test(UINT num, char **arg)
 {
@@ -284,6 +305,7 @@ void selow_test(UINT num, char **arg)
 	ConbinePathW(path, sizeof(path), dir, SELOWTEST_FILE_NAME);
 
 	SelowTestRead(&ctx, path);
+	SelowTestClass(&ctx);
 
 	// From here on the install step only counts
 	SuSetInstallProc(SelowTestInstallProc);

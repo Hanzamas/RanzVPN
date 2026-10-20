@@ -416,11 +416,26 @@ bool SuGetNextPacket(SU_ADAPTER *a, void **buf, UINT *size)
 			Copy(*buf, SL_ADDR_OF_PACKET(a->GetBuffer, a->CurrentPacketCount), *size);
 
 			a->CurrentPacketCount++;
+			a->LastGetHadPacket = true;
 
 			return true;
 		}
 		else
 		{
+			// The driver sets the event when it queues a frame and resets it when
+			// a read empties its queue, so at the end of a drain an unsignalled
+			// event means a read would return no frames. The driver resets the
+			// event after it drops its queue lock, so a frame queued in that gap
+			// leaves the event unsignalled: the first call of the next drain
+			// always reads.
+			if (a->LastGetHadPacket && WaitForSingleObject(a->hEvent, 0) == WAIT_TIMEOUT)
+			{
+				a->LastGetHadPacket = false;
+				*buf = NULL;
+				*size = 0;
+				return true;
+			}
+
 			if (SuGetPacketsFromDriver(a) == false)
 			{
 				return false;
@@ -428,6 +443,7 @@ bool SuGetNextPacket(SU_ADAPTER *a, void **buf, UINT *size)
 
 			if (SL_NUM_PACKET(a->GetBuffer) == 0)
 			{
+				a->LastGetHadPacket = false;
 				*buf = NULL;
 				*size = 0;
 				return true;
@@ -436,6 +452,18 @@ bool SuGetNextPacket(SU_ADAPTER *a, void **buf, UINT *size)
 			a->CurrentPacketCount = 0;
 		}
 	}
+}
+
+// Frames already read from the driver but not yet taken by SuGetNextPacket.
+// The driver event does not signal them.
+bool SuHasPendingPackets(SU_ADAPTER *a)
+{
+	if (a == NULL || a->Halt)
+	{
+		return false;
+	}
+
+	return a->CurrentPacketCount < SL_NUM_PACKET(a->GetBuffer);
 }
 
 bool SuGetPacketsFromDriver(SU_ADAPTER *a)
@@ -608,16 +636,9 @@ LIST *SuGetAdapterList(SU *u)
 		{
 			SU_ADAPTER_LIST *a = SuAdapterInfoToAdapterList(info);
 
-			char macstr[128] = {0};
-			BinToStr(macstr, sizeof(macstr), info->MacAddress, sizeof(info->MacAddress));
-
 			if (a != NULL)
 			{
-
 				Add(ret, a);
-			}
-			else
-			{
 			}
 		}
 	}

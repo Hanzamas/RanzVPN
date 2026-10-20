@@ -4,6 +4,7 @@
 #include "Command.h"
 
 #include "Admin.h"
+#include "BuildInfo.h"
 #include "Connection.h"
 #include "Console.h"
 #include "Database.h"
