@@ -42,6 +42,12 @@ target_sources(vpntest PRIVATE consoleline.c)
 # Named temp directory and string table test of SEC-8 (#96)
 target_sources(vpntest PRIVATE tempdir.c)
 
+# Named chain_certs cache test of FND-139 (#145)
+target_sources(vpntest PRIVATE chaincerts.c)
+
+# Named shared server SSL_CTX test of FND-140 (#145)
+target_sources(vpntest PRIVATE tlsctx.c)
+
 # vpncmd command cases of the harness (golden family "cmd"), PKG-2 (#106)
 target_sources(vpntest PRIVATE harness_cmd.c)
 

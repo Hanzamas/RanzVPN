@@ -26,9 +26,7 @@ struct DYN_VALUE
 
 #define	DEFAULT_CIPHER_LIST			"ECDHE+AESGCM:ECDHE+CHACHA20:DHE+AESGCM:DHE+CHACHA20:ECDHE+AES256:DHE+AES256:RSA+AES"
 
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
 #define PQ_GROUP_LIST				"X25519MLKEM768:p521_kyber1024:x25519_kyber768:P-521:X25519:P-256"
-#endif
 
 #define	PRIVATE_IP_TXT_FILENAME		"$private_ip.txt"
 
@@ -129,7 +127,6 @@ struct SOCK
 	X *RemoteX;
 	X *LocalX;
 	char *CipherName;
-	char *WaitToUseCipher;
 	bool IgnoreRecvErr;
 	bool IgnoreSendErr;
 	UINT TimeOut;
@@ -145,8 +142,6 @@ struct SOCK
 	int CurrentTos;
 	char UnderlayProtocol[64];
 	char ProtocolDetails[256];
-	UCHAR Ssl_Init_Async_SendAlert[2];
-	SSL_ACCEPT_SETTINGS SslAcceptSettings;
 
 	void *hAcceptEvent;
 
@@ -302,7 +297,13 @@ UINT Recv(SOCK *sock, void *data, UINT size, bool secure);
 bool StartSSL(SOCK *sock, X *x, K *priv);
 bool StartSSLEx(SOCK *sock, X *x, K *priv, char *sni_hostname);
 bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err);
+bool StartSSLServer(SOCK *sock, struct ssl_ctx_st *ctx, UINT *ssl_err);
 bool AddChainSslCert(struct ssl_ctx_st *ctx, X *x);
+UINT AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx);
+UINT GetChainCertGeneration();
+void PrepareChainCertDir();
+void InvalidateChainCertCache();
+UINT GetChainCertScanCount();
 bool SendAll(SOCK *sock, void *data, UINT size, bool secure);
 void SendAdd(SOCK *sock, void *data, UINT size);
 bool SendNow(SOCK *sock, int secure);
@@ -314,7 +315,6 @@ CANCEL *NewCancelSpecial(void *hEvent);
 void ReleaseCancel(CANCEL *c);
 void Cancel(CANCEL *c);
 void Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2);
-void SetWantToUseCipher(SOCK *sock, char *name);
 SOCK *NewUDP(UINT port);
 SOCK *NewUDPEx2(UINT port, bool ipv6, IP *ip);
 SOCK *NewUDPEx3(UINT port, IP *ip);
@@ -417,6 +417,8 @@ bool IsMacAddressLocalFast(void *addr);
 void RefreshLocalMacAddressList();
 
 struct ssl_ctx_st *NewSSLCtx(bool server_mode);
+struct ssl_ctx_st *NewServerSSLCtx(X *x, K *priv, LIST *chain, char *cipher_list, SSL_ACCEPT_SETTINGS *settings);
+void ShareSSLCtx(struct ssl_ctx_st *ctx);
 void FreeSSLCtx(struct ssl_ctx_st *ctx);
 UINT GetOSSecurityLevel();
 
