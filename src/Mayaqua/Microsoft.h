@@ -203,10 +203,6 @@ void MsRegistWindowsFirewallEx2(char *title, char *exe, char *dir);
 void MsGetComputerName(char *name, UINT size);
 void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache);
 
-UINT64 MsGetHiResCounter();
-double MsGetHiResTimeSpan(UINT64 diff);
-
-
 UINT MsGetUserLocaleId();
 
 bool MsIsInVm();

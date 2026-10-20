@@ -5,7 +5,6 @@
 
 #include "Kernel.h"
 #include "Memory.h"
-#include "Microsoft.h"
 #include "Str.h"
 
 static TICK64 *tk64 = NULL;
