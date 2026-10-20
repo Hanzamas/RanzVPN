@@ -806,17 +806,32 @@ bool Win32GetCallStackSymbolInfo(CALLSTACK_DATA *s)
 #endif
 }
 
+// The process handle of the symbol queries; DbgHelp symbols are loaded only for a memory check run
+void Win32InitCallStack()
+{
+	hCurrentProcessHandle = GetCurrentProcess();
+
+	if (IsMemCheck())
+	{
+#ifndef	WIN32_NO_DEBUG_HELP_DLL
+		SymInitialize(hCurrentProcessHandle, NULL, TRUE);
+#endif
+	}
+}
+
+void Win32FreeCallStack()
+{
+	if (IsMemCheck())
+	{
+#ifndef	WIN32_NO_DEBUG_HELP_DLL
+		SymCleanup(hCurrentProcessHandle);
+#endif
+	}
+}
+
 void Win32Init()
 {
-	if (hstdout == INVALID_HANDLE_VALUE)
-	{
-		hstdout = GetStdHandle(STD_OUTPUT_HANDLE);
-	}
-
-	if (hstdin == INVALID_HANDLE_VALUE)
-	{
-		hstdin = GetStdHandle(STD_INPUT_HANDLE);
-	}
+	Win32InitConsole();
 
 	Win32InitNewThread();
 
@@ -833,25 +848,12 @@ void Win32Init()
 		heap_handle = HeapCreate(0, 0, 0);
 	}
 
-	hCurrentProcessHandle = GetCurrentProcess();
-
-
-	if (IsMemCheck())
-	{
-#ifndef	WIN32_NO_DEBUG_HELP_DLL
-		SymInitialize(hCurrentProcessHandle, NULL, TRUE);
-#endif
-	}
+	Win32InitCallStack();
 }
 
 void Win32Free()
 {
-	if (IsMemCheck())
-	{
-#ifndef	WIN32_NO_DEBUG_HELP_DLL
-		SymCleanup(hCurrentProcessHandle);
-#endif
-	}
+	Win32FreeCallStack();
 
 	if (use_heap_api)
 	{
@@ -895,6 +897,20 @@ void Win32MemoryFree(void *addr)
 	else
 	{
 		free(addr);
+	}
+}
+
+// The standard handles that the console input and output functions read and write
+void Win32InitConsole()
+{
+	if (hstdout == INVALID_HANDLE_VALUE)
+	{
+		hstdout = GetStdHandle(STD_OUTPUT_HANDLE);
+	}
+
+	if (hstdin == INVALID_HANDLE_VALUE)
+	{
+		hstdin = GetStdHandle(STD_INPUT_HANDLE);
 	}
 }
 

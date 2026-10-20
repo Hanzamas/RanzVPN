@@ -8,6 +8,9 @@
 
 void Win32Init();
 void Win32Free();
+void Win32InitConsole();
+void Win32InitCallStack();
+void Win32FreeCallStack();
 void *Win32MemoryAlloc(UINT size);
 void *Win32MemoryReAlloc(void *addr, UINT size);
 void Win32MemoryFree(void *addr);
