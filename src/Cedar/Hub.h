@@ -115,8 +115,6 @@ struct HUB_OPTION
 	UINT FloodingSendQueueBufferQuota;
 	UINT DetectDormantSessionInterval;
 	bool NoPhysicalIPOnPacketLog;
-	bool UseHubNameAsDhcpUserClassOption;
-	bool AllowEapMatchUserByCert;
 	UINT DhcpDiscoverTimeoutMs;
 };
 
@@ -157,6 +155,7 @@ struct IP_TABLE_ENTRY
 	bool DhcpAllocated;
 	UINT64 CreatedTime;
 	UINT64 UpdatedTime;
+	UINT64 LastProbeTime;	// Tick64 of the last watchdog ARP/NS probe, 0 = never probed
 	UCHAR MacAddress[6];
 };
 
