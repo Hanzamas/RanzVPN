@@ -381,7 +381,6 @@ struct CEDAR
 	LOCK *lock;
 	REF *ref;
 	COUNTER *AcceptingSockets;
-	UINT Type;
 	LIST *ListenerList;
 	LIST *HubList;
 	LIST *ConnectionList;
@@ -449,6 +448,8 @@ void ReleaseCedar(CEDAR *c);
 void StopCedar(CEDAR *c);
 void AddListener(CEDAR *c, LISTENER *r);
 void AddTraffic(TRAFFIC *dst, TRAFFIC *diff);
+void SubTraffic(TRAFFIC *dst, TRAFFIC *a, TRAFFIC *b);
+void TrafficCountFrame(TRAFFIC_ENTRY *e, UCHAR *buf, UINT size);
 void AddHub(CEDAR *c, HUB *h);
 void DelHub(CEDAR *c, HUB *h);
 void AddConnection(CEDAR *cedar, CONNECTION *c);

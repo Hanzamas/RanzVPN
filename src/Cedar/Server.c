@@ -2361,7 +2361,7 @@ static void SiLoadHubLinkCfg(FOLDER *f, HUB *h)
 	if (o == NULL || a == NULL)
 	{
 		Free(o);
-		CiFreeClientAuth(a);
+		ClientAuthFree(a);
 		return;
 	}
 
@@ -2384,7 +2384,7 @@ static void SiLoadHubLinkCfg(FOLDER *f, HUB *h)
 	}
 
 	Free(o);
-	CiFreeClientAuth(a);
+	ClientAuthFree(a);
 }
 
 static void SiLoadHubAdminOptions(HUB *h, FOLDER *f)

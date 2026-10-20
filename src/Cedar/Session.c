@@ -31,13 +31,12 @@ void SessionMain(SESSION *s)
 	bool pa_inited = false;
 	UINT packet_size;
 	void *packet;
-	bool packet_put;
 	bool pa_fail = false;
 	bool update_hub_last_comm = false;
 	UINT err = ERR_SESSION_TIMEOUT;
 	UINT64 next_update_hub_last_comm = 0;
-	bool block_all_packets = false;
 	TRAFFIC t;
+	int packet_queue_diff;
 	bool is_server_session = false;
 	bool lock_receive_blocks_queue = false;
 	HUB *udp_accel_log_hub;
@@ -51,12 +50,9 @@ void SessionMain(SESSION *s)
 	// cascade connection to the log of the local hub of the cascade
 	udp_accel_log_hub = (s->Hub != NULL ? s->Hub : (s->Link != NULL ? s->Link->Hub : NULL));
 
-	BinToStr(s->SessionKeyStr, sizeof(s->SessionKeyStr), s->SessionKey, sizeof(s->SessionKey));
-
 	s->CurrentRetryCount = 0;
 	s->ConnectSucceed = true;
 	s->SessionTimeOuted = false;
-	s->NumDisconnected = 0;
 
 	c = s->Connection;
 	policy = s->Policy;
@@ -194,7 +190,6 @@ void SessionMain(SESSION *s)
 		}
 		{
 			BLOCK *b;
-			packet_put = false;
 			while (true)
 			{
 				b = GetNext(c->ReceivedBlocks);
@@ -207,37 +202,8 @@ void SessionMain(SESSION *s)
 
 				update_hub_last_comm = true;
 
-				if (b->Size >= 14)
-				{
-					if (b->Buf[0] & 0x01)
-					{
-						if (is_server_session == false)
-						{
-							t.Recv.BroadcastCount++;
-							t.Recv.BroadcastBytes += (UINT64)b->Size;
-						}
-						else
-						{
-							t.Send.BroadcastCount++;
-							t.Send.BroadcastBytes += (UINT64)b->Size;
-						}
-					}
-					else
-					{
-						if (is_server_session == false)
-						{
-							t.Recv.UnicastCount++;
-							t.Recv.UnicastBytes += (UINT64)b->Size;
-						}
-						else
-						{
-							t.Send.UnicastCount++;
-							t.Send.UnicastBytes += (UINT64)b->Size;
-						}
-					}
-				}
+				TrafficCountFrame(is_server_session ? &t.Send : &t.Recv, b->Buf, b->Size);
 
-				packet_put = true;
 				PROBE_DATA2("pa->PutPacket", b->Buf, b->Size);
 				if (pa->PutPacket(s, b->Buf, b->Size) == false)
 				{
@@ -248,13 +214,11 @@ void SessionMain(SESSION *s)
 				Free(b);
 			}
 
+			PROBE_DATA2("pa->PutPacket", NULL, 0);
+			if (pa->PutPacket(s, NULL, 0) == false)
 			{
-				PROBE_DATA2("pa->PutPacket", NULL, 0);
-				if (pa->PutPacket(s, NULL, 0) == false)
-				{
-					pa_fail = true;
-					err = ERR_DEVICE_DRIVER_ERROR;
-				}
+				pa_fail = true;
+				err = ERR_DEVICE_DRIVER_ERROR;
 			}
 		}
 		if (lock_receive_blocks_queue)
@@ -277,8 +241,7 @@ void SessionMain(SESSION *s)
 
 				update_hub_last_comm = true;
 
-				if ((c->CurrentSendQueueSize > MAX_BUFFERING_PACKET_SIZE) ||
-					block_all_packets)
+				if (c->CurrentSendQueueSize > MAX_BUFFERING_PACKET_SIZE)
 				{
 					Free(packet);
 				}
@@ -286,36 +249,7 @@ void SessionMain(SESSION *s)
 				{
 					bool priority;
 					QUEUE *q = NULL;
-					if (packet_size >= 14)
-					{
-						UCHAR *buf = (UCHAR *)packet;
-						if (buf[0] & 0x01)
-						{
-							if (is_server_session == false)
-							{
-								t.Send.BroadcastCount++;
-								t.Send.BroadcastBytes += (UINT64)packet_size;
-							}
-							else
-							{
-								t.Recv.BroadcastCount++;
-								t.Recv.BroadcastBytes += (UINT64)packet_size;
-							}
-						}
-						else
-						{
-							if (is_server_session == false)
-							{
-								t.Send.UnicastCount++;
-								t.Send.UnicastBytes += (UINT64)packet_size;
-							}
-							else
-							{
-								t.Recv.UnicastCount++;
-								t.Recv.UnicastBytes += (UINT64)packet_size;
-							}
-						}
-					}
+					TrafficCountFrame(is_server_session ? &t.Recv : &t.Send, (UCHAR *)packet, packet_size);
 					priority = IsPriorityHighestPacketForQoS(packet, packet_size);
 
 					b = NewBlock(packet, packet_size, s->UseCompress ? 1 : 0);
@@ -363,11 +297,9 @@ void SessionMain(SESSION *s)
 
 		AddTrafficForSession(s, &t);
 
-		{
-			int diff = ((int)c->CurrentSendQueueSize) - ((int)c->LastPacketQueueSize);
-			CedarAddCurrentTcpQueueSize(c->Cedar, diff);
-			c->LastPacketQueueSize = c->CurrentSendQueueSize;
-		}
+		packet_queue_diff = ((int)c->CurrentSendQueueSize) - ((int)c->LastPacketQueueSize);
+		CedarAddCurrentTcpQueueSize(c->Cedar, packet_queue_diff);
+		c->LastPacketQueueSize = c->CurrentSendQueueSize;
 
 		now = Tick64();
 
@@ -611,22 +543,7 @@ void IncrementUserTraffic(HUB *hub, char *username, SESSION *s)
 
 	Lock(s->TrafficLock);
 	{
-		report_traffic.Send.BroadcastBytes =
-			s->Traffic->Send.BroadcastBytes - s->OldTraffic->Send.BroadcastBytes;
-		report_traffic.Send.BroadcastCount =
-			s->Traffic->Send.BroadcastCount - s->OldTraffic->Send.BroadcastCount;
-		report_traffic.Send.UnicastBytes =
-			s->Traffic->Send.UnicastBytes - s->OldTraffic->Send.UnicastBytes;
-		report_traffic.Send.UnicastCount =
-			s->Traffic->Send.UnicastCount - s->OldTraffic->Send.UnicastCount;
-		report_traffic.Recv.BroadcastBytes =
-			s->Traffic->Recv.BroadcastBytes - s->OldTraffic->Recv.BroadcastBytes;
-		report_traffic.Recv.BroadcastCount =
-			s->Traffic->Recv.BroadcastCount - s->OldTraffic->Recv.BroadcastCount;
-		report_traffic.Recv.UnicastBytes =
-			s->Traffic->Recv.UnicastBytes - s->OldTraffic->Recv.UnicastBytes;
-		report_traffic.Recv.UnicastCount =
-			s->Traffic->Recv.UnicastCount - s->OldTraffic->Recv.UnicastCount;
+		SubTraffic(&report_traffic, s->Traffic, s->OldTraffic);
 		Copy(s->OldTraffic, s->Traffic, sizeof(TRAFFIC));
 
 		AcLock(hub);
@@ -787,9 +704,7 @@ static void ClientAdditionalThread(THREAD *t, void *param)
 
 	NoticeThreadInit(t);
 
-	Debug("Additional Connection #%u\n", Count(c->CurrentNumConnection));
-
-	if (ClientAdditionalConnect(c, t) == false)
+	if (ClientAdditionalConnect(c) == false)
 	{
 		Dec(c->CurrentNumConnection);
 
@@ -860,7 +775,7 @@ static bool SessionConnect(SESSION *s)
 	}
 	Unlock(s->lock);
 
-	c = NewClientConnectionEx(s, NULL, 0, 0);
+	c = NewClientConnectionEx(s, NULL);
 
 	// StopSessionEx reads s->Connection and takes its ref under s->lock
 	Lock(s->lock);
@@ -978,18 +893,7 @@ static void CleanupSession(SESSION *s)
 		Free(s->ClientOption);
 	}
 
-	if (s->ClientAuth != NULL)
-	{
-		if (s->ClientAuth->ClientX != NULL)
-		{
-			FreeX(s->ClientAuth->ClientX);
-		}
-		if (s->ClientAuth->ClientK != NULL)
-		{
-			FreeK(s->ClientAuth->ClientK);
-		}
-		Free(s->ClientAuth);
-	}
+	ClientAuthFree(s->ClientAuth);
 
 	if (s->SslOption != NULL)
 	{
@@ -1072,18 +976,9 @@ void ReleaseSession(SESSION *s)
 	}
 }
 
-void PrintSessionTotalDataSize(SESSION *s)
-{
-	if (s == NULL)
-	{
-		return;
-	}
-}
-
 static void ClientThread(THREAD *t, void *param)
 {
 	SESSION *s;
-	CEDAR *cedar;
 	if (t == NULL || param == NULL)
 	{
 		return;
@@ -1095,8 +990,6 @@ static void ClientThread(THREAD *t, void *param)
 	AddRef(t->ref);
 
 	NoticeThreadInit(t);
-
-	cedar = s->Cedar;
 
 	s->ClientStatus = CLIENT_STATUS_CONNECTING;
 	s->RetryFlag = true;
@@ -1129,8 +1022,6 @@ static void ClientThread(THREAD *t, void *param)
 		{
 			s->Err = ERR_USER_CANCEL;
 		}
-
-		PrintSessionTotalDataSize(s);
 
 		if (s->LinkModeClient && s->Link != NULL)
 		{
@@ -1199,6 +1090,27 @@ static void ClientThread(THREAD *t, void *param)
 	ReleaseSession(s);
 }
 
+// The fields every session constructor sets the same way
+static SESSION *NewSessionBase(CEDAR *cedar, bool server_mode)
+{
+	SESSION *s;
+
+	s = ZeroMalloc(sizeof(SESSION));
+
+	s->LoggingRecordCount = NewCounter();
+	s->lock = NewLock();
+	s->ref = NewRef();
+	s->Cedar = cedar;
+	s->ServerMode = server_mode;
+	s->CreatedTime = s->LastCommTime = Tick64();
+	s->Traffic = NewTraffic();
+	s->HaltEvent = NewEvent();
+	s->TrafficLock = NewLock();
+	s->Cancel1 = NewCancel();
+
+	return s;
+}
+
 SESSION *NewRpcSessionEx2(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *client_str, void *hWnd)
 {
 	SESSION *s;
@@ -1213,28 +1125,17 @@ SESSION *NewRpcSessionEx2(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *
 		return NULL;
 	}
 
-	s = ZeroMalloc(sizeof(SESSION));
+	s = NewSessionBase(cedar, false);
 
-	s->LoggingRecordCount = NewCounter();
-	s->lock = NewLock();
-	s->ref = NewRef();
-	s->Cedar = cedar;
-	s->ServerMode = false;
 	s->Name = CopyStr("CLIENT_RPC_SESSION");
-	s->CreatedTime = s->LastCommTime = Tick64();
-	s->Traffic = NewTraffic();
-	s->HaltEvent = NewEvent();
-	s->TrafficLock = NewLock();
-	s->Cancel1 = NewCancel();
 
-	s->ClientOption = Malloc(sizeof(CLIENT_OPTION));
-	Copy(s->ClientOption, option, sizeof(CLIENT_OPTION));
+	s->ClientOption = ClientOptionClone(option);
 
 	s->MaxConnection = option->MaxConnection;
 	s->UseEncrypt = option->UseEncrypt;
 	s->UseCompress = option->UseCompress;
 
-	c = s->Connection = NewClientConnectionEx(s, client_str, cedar->Version, cedar->Build);
+	c = s->Connection = NewClientConnectionEx(s, client_str);
 	c->hWndForUI = hWnd;
 
 	sock = ClientConnectToServer(c);
@@ -1282,26 +1183,14 @@ static SESSION *NewClientSessionEx(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_A
 		return NULL;
 	}
 
-	s = ZeroMalloc(sizeof(SESSION));
+	s = NewSessionBase(cedar, false);
 
-	s->LoggingRecordCount = NewCounter();
-
-	s->lock = NewLock();
-	s->ref = NewRef();
-	s->Cedar = cedar;
-	s->ServerMode = false;
 	s->Name = CopyStr("CLIENT_SESSION");
-	s->CreatedTime = s->LastCommTime = Tick64();
-	s->Traffic = NewTraffic();
-	s->HaltEvent = NewEvent();
 	s->PacketAdapter = pa;
-	s->TrafficLock = NewLock();
 	s->OldTraffic = NewTraffic();
-	s->Cancel1 = NewCancel();
 	s->CancelList = NewList(NULL);
 
-	s->ClientOption = Malloc(sizeof(CLIENT_OPTION));
-	Copy(s->ClientOption, option, sizeof(CLIENT_OPTION));
+	s->ClientOption = ClientOptionClone(option);
 
 	if (GetGlobalServerFlag(GSF_DISABLE_SESSION_RECONNECT))
 	{
@@ -1319,24 +1208,7 @@ static SESSION *NewClientSessionEx(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_A
 
 	s->ClientOption->AdditionalConnectionInterval = MAX(s->ClientOption->AdditionalConnectionInterval, 1);
 
-	s->ClientAuth = Malloc(sizeof(CLIENT_AUTH));
-	Copy(s->ClientAuth, auth, sizeof(CLIENT_AUTH));
-
-	if (s->ClientAuth->ClientX != NULL)
-	{
-		s->ClientAuth->ClientX = CloneX(s->ClientAuth->ClientX);
-	}
-	if (s->ClientAuth->ClientK != NULL)
-	{
-		if (s->ClientAuth->AuthType != CLIENT_AUTHTYPE_OPENSSLENGINE)
-		{
-			s->ClientAuth->ClientK = CloneK(s->ClientAuth->ClientK);
-		}
-		else
-		{
-			s->ClientAuth->ClientK = OpensslEngineToK(s->ClientAuth->OpensslEnginePrivateKeyName, s->ClientAuth->OpensslEngineName);
-		}
-	}
+	s->ClientAuth = ClientAuthClone(auth);
 
 	if (StrCmpi(s->ClientOption->DeviceName, LINK_DEVICE_NAME) == 0)
 	{
@@ -1430,9 +1302,9 @@ SESSION *GetSessionFromKey(CEDAR *cedar, UCHAR *session_key)
 	return NULL;
 }
 
-static void NewSessionKey(CEDAR *cedar, UCHAR *session_key, UINT *session_key_32)
+static void NewSessionKey(UCHAR *session_key, UINT *session_key_32)
 {
-	if (cedar == NULL || session_key == NULL || session_key_32 == NULL)
+	if (session_key == NULL || session_key_32 == NULL)
 	{
 		return;
 	}
@@ -1452,20 +1324,10 @@ SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, P
 		return NULL;
 	}
 
-	s = ZeroMalloc(sizeof(SESSION));
+	s = NewSessionBase(cedar, true);
 
-	s->LoggingRecordCount = NewCounter();
-	s->lock = NewLock();
-	s->ref = NewRef();
-	s->Cedar = cedar;
-	s->ServerMode = true;
-	s->CreatedTime = s->LastCommTime = Tick64();
-	s->Traffic = NewTraffic();
-	s->HaltEvent = NewEvent();
-	s->Cancel1 = NewCancel();
 	s->CancelList = NewList(NULL);
 	s->Thread = c->Thread;
-	s->TrafficLock = NewLock();
 	s->OldTraffic = NewTraffic();
 	s->QoS = GetServerCapsBool(cedar->Server, "b_support_qos");
 	AddRef(s->Thread->ref);
@@ -1491,7 +1353,7 @@ SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, P
 
 	AddSession(h, s);
 
-	NewSessionKey(cedar, s->SessionKey, &s->SessionKey32);
+	NewSessionKey(s->SessionKey, &s->SessionKey32);
 
 	return s;
 }
