@@ -63,6 +63,9 @@ target_sources(vpntest PRIVATE tablecache.c)
 # Named registry test of FND-64 (#121)
 target_sources(vpntest PRIVATE registry.c)
 
+# Named byte-order test of FND-152 (#149)
+target_sources(vpntest PRIVATE endian.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"

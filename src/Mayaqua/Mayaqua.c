@@ -27,7 +27,6 @@ UINT64 kernel_status[NUM_KERNEL_STATUS];
 UINT64 kernel_status_max[NUM_KERNEL_STATUS];
 static LOCK *kernel_status_lock[NUM_KERNEL_STATUS];
 bool kernel_status_inited = false;
-bool g_little_endian = true;
 char *cmdline = NULL;
 static wchar_t *uni_cmdline = NULL;
 
@@ -112,23 +111,6 @@ bool MayaquaIsDotNetMode()
 	return dot_net_mode;
 }
 
-static void CheckEndian()
-{
-	unsigned short test;
-	UCHAR *buf;
-
-	test = 0x1234;
-	buf = (UCHAR *)&test;
-	if (buf[0] == 0x12)
-	{
-		g_little_endian = false;
-	}
-	else
-	{
-		g_little_endian = true;
-	}
-}
-
 void MayaquaMinimalMode()
 {
 	minimal_mode = true;
@@ -158,8 +140,6 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 		// This fails in .NET mode
 		setbuf(stdout, NULL);
 	}
-
-	CheckEndian();
 
 	_configthreadlocale(_DISABLE_PER_THREAD_LOCALE);
 

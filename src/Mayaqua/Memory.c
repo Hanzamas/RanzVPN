@@ -2170,89 +2170,12 @@ void EndianUnicode(wchar_t *str)
 	}
 }
 
-USHORT Endian16(USHORT src)
-{
-	int x = 1;
-	if (*((char *)&x))
-	{
-		return Swap16(src);
-	}
-	else
-	{
-		return src;
-	}
-}
-
-UINT Endian32(UINT src)
-{
-	int x = 1;
-	if (*((char *)&x))
-	{
-		return Swap32(src);
-	}
-	else
-	{
-		return src;
-	}
-}
-
-UINT64 Endian64(UINT64 src)
-{
-	int x = 1;
-	if (*((char *)&x))
-	{
-		return Swap64(src);
-	}
-	else
-	{
-		return src;
-	}
-}
-
-UINT LittleEndian32(UINT src)
-{
-	int x = 0x01000000;
-	if (*((char *)&x))
-	{
-		return Swap32(src);
-	}
-	else
-	{
-		return src;
-	}
-}
-
-USHORT Swap16(USHORT value)
-{
-	USHORT r;
-	((BYTE *)&r)[0] = ((BYTE *)&value)[1];
-	((BYTE *)&r)[1] = ((BYTE *)&value)[0];
-	return r;
-}
-
-UINT Swap32(UINT value)
-{
-	UINT r;
-	((BYTE *)&r)[0] = ((BYTE *)&value)[3];
-	((BYTE *)&r)[1] = ((BYTE *)&value)[2];
-	((BYTE *)&r)[2] = ((BYTE *)&value)[1];
-	((BYTE *)&r)[3] = ((BYTE *)&value)[0];
-	return r;
-}
-
-UINT64 Swap64(UINT64 value)
-{
-	UINT64 r;
-	((BYTE *)&r)[0] = ((BYTE *)&value)[7];
-	((BYTE *)&r)[1] = ((BYTE *)&value)[6];
-	((BYTE *)&r)[2] = ((BYTE *)&value)[5];
-	((BYTE *)&r)[3] = ((BYTE *)&value)[4];
-	((BYTE *)&r)[4] = ((BYTE *)&value)[3];
-	((BYTE *)&r)[5] = ((BYTE *)&value)[2];
-	((BYTE *)&r)[6] = ((BYTE *)&value)[1];
-	((BYTE *)&r)[7] = ((BYTE *)&value)[0];
-	return r;
-}
+// Endian16/32/64 (MayaType.h) swap always: the build is for a little-endian target only
+#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__)
+_Static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "Ranz VPN needs a little-endian target");
+#elif !defined(_M_X64) && !defined(_M_ARM64) && !defined(_M_IX86)
+#error "Ranz VPN needs a little-endian target (x64, arm64)"
+#endif
 
 // Base64 on crypt32: CryptStringToBinaryA and CryptBinaryToStringA
 // https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/nf-wincrypt-cryptstringtobinarya

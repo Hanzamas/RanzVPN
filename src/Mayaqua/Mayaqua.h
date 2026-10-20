@@ -22,9 +22,6 @@ int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 
 #define	STRTABLE_ID					"SE_VPN_20121007"
 
-#define	IsBigEndian()		(g_little_endian ? false : true)
-#define	IsLittleEndian()	(g_little_endian)
-
 #define	GCC_PACKED
 
 #define	WHERE			if (IsDebug()){printf("%s: %u\n", __FILE__, __LINE__); SleepThread(10);}
@@ -34,7 +31,6 @@ int PASCAL WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow)
 extern bool g_memcheck;
 extern bool g_debug;
 extern char *cmdline;
-extern bool g_little_endian;
 
 #define	NUM_KERNEL_STATUS	128
 extern UINT64 kernel_status[NUM_KERNEL_STATUS];

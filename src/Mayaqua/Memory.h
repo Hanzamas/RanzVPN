@@ -131,13 +131,6 @@ void *Clone(void *addr, UINT size);
 void *Base64FromBin(UINT *out_size, const void *src, const UINT size);
 void *Base64ToBin(UINT *out_size, const void *src, const UINT size);
 
-USHORT Swap16(USHORT value);
-UINT Swap32(UINT value);
-UINT64 Swap64(UINT64 value);
-USHORT Endian16(USHORT src);
-UINT Endian32(UINT src);
-UINT64 Endian64(UINT64 src);
-UINT LittleEndian32(UINT src);
 void EndianUnicode(wchar_t *str);
 
 BUF *NewBuf();

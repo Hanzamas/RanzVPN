@@ -1587,12 +1587,7 @@ static UINT IntToSubnetMask32(UINT i)
 		break;
 	}
 
-	if (IsLittleEndian())
-	{
-		ret = Swap32(ret);
-	}
-
-	return ret;
+	return Endian32(ret);
 }
 void IntToSubnetMask4(IP *ip, UINT i)
 {
@@ -1631,12 +1626,7 @@ bool IsSubnetMask4(IP *ip)
 		return false;
 	}
 
-	i = IPToUINT(ip);
-
-	if (IsLittleEndian())
-	{
-		i = Swap32(i);
-	}
+	i = Endian32(IPToUINT(ip));
 
 	switch (i)
 	{
