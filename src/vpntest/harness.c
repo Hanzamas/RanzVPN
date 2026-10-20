@@ -6934,7 +6934,7 @@ static void HarnessPacketLogGolden(HARNESS *h)
 	char tmp[MAX_SIZE];
 	bool update;
 	CEDAR *cedar = ZeroMalloc(sizeof(CEDAR));
-	HUB *hub = ZeroMalloc(sizeof(HUB));
+	HUB_LOG *g = ZeroMalloc(sizeof(HUB_LOG));
 	BUF *b = NewBuf();
 	char *actual;
 	UINT i, j;
@@ -6991,10 +6991,10 @@ static void HarnessPacketLogGolden(HARNESS *h)
 		{
 			char num[16];
 
-			Zero(hub->LogSetting.PacketLogConfig, sizeof(hub->LogSetting.PacketLogConfig));
-			hub->LogSetting.PacketLogConfig[j] = PACKET_LOG_ALL;
+			Zero(g->PacketLogConfig, sizeof(g->PacketLogConfig));
+			g->PacketLogConfig[j] = PACKET_LOG_ALL;
 
-			Format(num, sizeof(num), " %u", CalcPacketLoggingLevel(hub, p));
+			Format(num, sizeof(num), " %u", CalcPacketLoggingLevel(g, p));
 			StrCat(tmp, sizeof(tmp), num);
 		}
 
@@ -7007,7 +7007,7 @@ static void HarnessPacketLogGolden(HARNESS *h)
 
 	Free(actual);
 	FreeBuf(b);
-	Free(hub);
+	Free(g);
 
 	for (i = 0;i < LIST_NUM(cedar->NetSvcList);i++)
 	{

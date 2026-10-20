@@ -637,7 +637,6 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 	SERVER *s;
 	UINT syslog_setting;
 	bool no_log = false;
-	HUB_OPTION *opt = NULL;
 	if (hub == NULL || src_session == NULL || packet == NULL)
 	{
 		return true;
@@ -656,9 +655,7 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 		return true;
 	}
 
-	opt = hub->Option;
-
-	level = CalcPacketLoggingLevel(hub, packet);
+	level = CalcPacketLoggingLevel(&hub->LogSetting, packet);
 	if (level == PACKET_LOG_NONE)
 	{
 		return true;
@@ -675,23 +672,17 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 		{
 			return true;
 		}
-	}
 
-	if (hub->Option != NULL && hub->Option->MaxLoggedPacketsPerMinute != 0)
-	{
-		if (CheckMaxLoggedPacketsPerMinute(src_session, hub->Option->MaxLoggedPacketsPerMinute, now) == false)
+		if (hub->Option->MaxLoggedPacketsPerMinute != 0 &&
+			CheckMaxLoggedPacketsPerMinute(src_session, hub->Option->MaxLoggedPacketsPerMinute, now) == false)
 		{
 			return false;
 		}
 	}
 
-	if (true)
+	if (GetGlobalServerFlag(GSF_DISABLE_DEEP_LOGGING) != 0)
 	{
-		if (GetGlobalServerFlag(GSF_DISABLE_DEEP_LOGGING) != 0)
-		{
-			no_log = true;
-		}
-
+		no_log = true;
 	}
 
 	syslog_setting = SiGetSysLogSaveStatus(s);
@@ -713,7 +704,7 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 		pl->DestSessionName = CopyStr("");
 	}
 
-	if (opt == NULL || opt->NoPhysicalIPOnPacketLog == false)
+	if (hub->Option == NULL || hub->Option->NoPhysicalIPOnPacketLog == false)
 	{
 		if (src_session->NormalClient)
 		{
@@ -797,7 +788,13 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 	return true;
 }
 
-static UINT CalcPacketLoggingLevelEx(HUB_LOG *g, PKT *packet)
+// A TCP segment that opens or closes a connection
+static bool IsTcpConnectionFlag(UCHAR flag)
+{
+	return ((flag & (TCP_SYN | TCP_RST | TCP_FIN)) != 0);
+}
+
+UINT CalcPacketLoggingLevel(HUB_LOG *g, PKT *packet)
 {
 	UINT ret = 0;
 	if (g == NULL || packet == NULL)
@@ -814,20 +811,20 @@ static UINT CalcPacketLoggingLevelEx(HUB_LOG *g, PKT *packet)
 		break;
 
 	case L3_IPV4:
+	case L3_IPV6:
 		ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_IP]);
 
 		switch (packet->TypeL4)
 		{
 		case L4_ICMPV4:
+		case L4_ICMPV6:
 			ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_ICMP]);
 			break;
 
 		case L4_TCP:
 			ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP]);
 
-			if (packet->L4.TCPHeader->Flag & TCP_SYN ||
-			        packet->L4.TCPHeader->Flag & TCP_RST ||
-			        packet->L4.TCPHeader->Flag & TCP_FIN)
+			if (IsTcpConnectionFlag(packet->L4.TCPHeader->Flag))
 			{
 				ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
 			}
@@ -844,49 +841,6 @@ static UINT CalcPacketLoggingLevelEx(HUB_LOG *g, PKT *packet)
 				break;
 
 			case L7_IKECONN:
-				ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
-				break;
-
-			case L7_DNS:
-				ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
-				break;
-			}
-
-			break;
-		}
-
-		break;
-
-	case L3_IPV6:
-		ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_IP]);
-
-		switch (packet->TypeL4)
-		{
-		case L4_ICMPV6:
-			ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_ICMP]);
-			break;
-
-		case L4_TCP:
-			ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP]);
-
-			if (packet->L4.TCPHeader->Flag & TCP_SYN ||
-			        packet->L4.TCPHeader->Flag & TCP_RST ||
-			        packet->L4.TCPHeader->Flag & TCP_FIN)
-			{
-				ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
-			}
-
-			break;
-
-		case L4_UDP:
-			ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_UDP]);
-
-			switch (packet->TypeL7)
-			{
-			case L7_IKECONN:
-				ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
-				break;
-
 			case L7_DNS:
 				ret = MAX(ret, g->PacketLogConfig[PACKET_LOG_TCP_CONN]);
 				break;
@@ -904,15 +858,6 @@ static UINT CalcPacketLoggingLevelEx(HUB_LOG *g, PKT *packet)
 	}
 
 	return ret;
-}
-UINT CalcPacketLoggingLevel(HUB *hub, PKT *packet)
-{
-	if (hub == NULL || packet == NULL)
-	{
-		return PACKET_LOG_NONE;
-	}
-
-	return CalcPacketLoggingLevelEx(&hub->LogSetting, packet);
 }
 
 static char *BuildHttpLogStr(HTTPLOG *h)
@@ -1043,6 +988,208 @@ void MakeSafeLogStr(char *str)
 	}
 }
 
+// The packet log tokens of a TCP segment. suffix is "v4" or "v6"
+static void PacketLogTcp(TOKEN_LIST *t, PACKET_LOG *pl, PKT *p, char *suffix)
+{
+	char tmp[MAX_SIZE];
+
+	snprintf(tmp, sizeof(tmp), "%s%s", (IsTcpConnectionFlag(p->L4.TCPHeader->Flag) ? "TCP_CONNECT" : "TCP_DATA"), suffix);
+	t->Token[6] = CopyStr(tmp);
+	t->Token[7] = TcpFlagStr(p->L4.TCPHeader->Flag);
+
+	t->Token[9] = PortStr(pl->Cedar, Endian16(p->L4.TCPHeader->SrcPort), false);
+	t->Token[11] = PortStr(pl->Cedar, Endian16(p->L4.TCPHeader->DstPort), false);
+
+	ToStr(tmp, Endian32(p->L4.TCPHeader->SeqNumber));
+	t->Token[12] = CopyStr(tmp);
+
+	ToStr(tmp, Endian32(p->L4.TCPHeader->AckNumber));
+	t->Token[13] = CopyStr(tmp);
+
+	snprintf(tmp, sizeof(tmp), "WindowSize=%u", Endian16(p->L4.TCPHeader->WindowSize));
+
+	if (p->HttpLog != NULL)
+	{
+		char *tmp2;
+		UINT tmp2_size;
+		char *http_str = BuildHttpLogStr(p->HttpLog);
+
+		tmp2_size = StrLen(http_str) + 16 + StrLen(tmp);
+		tmp2 = Malloc(tmp2_size);
+
+		StrCpy(tmp2, tmp2_size, tmp);
+
+		if (IsEmptyStr(http_str) == false)
+		{
+			StrCat(tmp2, tmp2_size, " ");
+			StrCat(tmp2, tmp2_size, http_str);
+		}
+
+		Free(http_str);
+
+		t->Token[14] = tmp2;
+	}
+	else
+	{
+		t->Token[14] = CopyStr(tmp);
+	}
+}
+
+// The packet log tokens of an IKE connection packet. suffix is "v4" or "v6"
+static void PacketLogIke(TOKEN_LIST *t, PKT *p, char *suffix)
+{
+	char tmp[MAX_SIZE];
+
+	snprintf(tmp, sizeof(tmp), "IKE_CONNECT%s", suffix);
+	t->Token[6] = CopyStr(tmp);
+
+	if (p->L7.IkeHeader != NULL)
+	{
+		if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_MAIN)
+		{
+			t->Token[7] = CopyStr("MainMode");
+		}
+		else if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_AGGRESSIVE)
+		{
+			t->Token[7] = CopyStr("AggressiveMode");
+		}
+
+		Format(tmp, sizeof(tmp), "InitiatorCookie=%I64u ResponderCookie=%I64u "
+		       "Version=0x%x ExchangeType=0x%x Flag=0x%x MessageId=%u MessageSize=%u",
+		       Endian64(p->L7.IkeHeader->InitiatorCookie),
+		       Endian64(p->L7.IkeHeader->ResponderCookie),
+		       p->L7.IkeHeader->Version,
+		       p->L7.IkeHeader->ExchangeType,
+		       p->L7.IkeHeader->Flag,
+		       Endian32(p->L7.IkeHeader->MessageId),
+		       Endian32(p->L7.IkeHeader->MessageSize));
+
+		t->Token[14] = CopyStr(tmp);
+	}
+}
+
+// The packet log tokens of a DNS query. suffix is "v4" or "v6"
+static void PacketLogDns(TOKEN_LIST *t, PKT *p, char *suffix)
+{
+	char tmp[MAX_SIZE];
+
+	snprintf(tmp, sizeof(tmp), "DNS%s", suffix);
+	t->Token[6] = CopyStr(tmp);
+	t->Token[7] = CopyStr("DNS_Query");
+	// The query name holds raw label bytes from the wire
+	t->Token[14] = CopyStr(p->DnsQueryHost);
+	MakeSafeLogStr(t->Token[14]);
+}
+
+// The packet log tokens of a UDP datagram. suffix is "v4" or "v6"
+static void PacketLogUdp(TOKEN_LIST *t, PACKET_LOG *pl, PKT *p, char *suffix)
+{
+	char tmp[MAX_SIZE];
+
+	t->Token[9] = PortStr(pl->Cedar, Endian16(p->L4.UDPHeader->SrcPort), true);
+	t->Token[11] = PortStr(pl->Cedar, Endian16(p->L4.UDPHeader->DstPort), true);
+
+	switch (p->TypeL7)
+	{
+	case L7_DHCPV4:
+		t->Token[6] = CopyStr("DHCPv4");
+		if (p->L7.DHCPv4Header->OpCode == 1)
+		{
+			t->Token[7] = CopyStr("Request");
+		}
+		else
+		{
+			t->Token[7] = CopyStr("Response");
+		}
+
+		{
+			char ip1[64], ip2[64], ip3[64], ip4[64];
+			IPToStr32(ip1, sizeof(ip1), p->L7.DHCPv4Header->ClientIP);
+			IPToStr32(ip2, sizeof(ip2), p->L7.DHCPv4Header->YourIP);
+			IPToStr32(ip3, sizeof(ip3), p->L7.DHCPv4Header->ServerIP);
+			IPToStr32(ip4, sizeof(ip4), p->L7.DHCPv4Header->RelayIP);
+
+			snprintf(tmp, sizeof(tmp),
+			         "TransactionId=%u ClientIP=%s YourIP=%s ServerIP=%s RelayIP=%s",
+			         Endian32(p->L7.DHCPv4Header->TransactionId),
+			         ip1, ip2, ip3, ip4);
+
+			t->Token[14] = CopyStr(tmp);
+		}
+
+		break;
+
+	case L7_IKECONN:
+		PacketLogIke(t, p, suffix);
+		break;
+
+	case L7_DNS:
+		PacketLogDns(t, p, suffix);
+		break;
+
+	default:
+		snprintf(tmp, sizeof(tmp), "UDP%s", suffix);
+		t->Token[6] = CopyStr(tmp);
+		break;
+	}
+}
+
+// The packet log tokens of an ARP packet: the request and the response differ only in the text
+static void PacketLogArp(TOKEN_LIST *t, PKT *p)
+{
+	ARPV4_HEADER *a = p->L3.ARPv4Header;
+	char tmp[MAX_SIZE];
+	bool request;
+
+	t->Token[6] = CopyStr("ARPv4");
+
+	switch (Endian16(a->Operation))
+	{
+	case ARP_OPERATION_REQUEST:
+		t->Token[7] = CopyStr("Request");
+		request = true;
+		break;
+
+	case ARP_OPERATION_RESPONSE:
+		t->Token[7] = CopyStr("Response");
+		request = false;
+		break;
+
+	default:
+		return;
+	}
+
+	if (Endian16(a->HardwareType) == ARP_HARDWARE_TYPE_ETHERNET &&
+	        a->HardwareSize == 6 &&
+	        Endian16(a->ProtocolType) == MAC_PROTO_IPV4 &&
+	        a->ProtocolSize == 4)
+	{
+		char src_mac[16];
+		char src_ip[16];
+		IP src_ip_st;
+		BinToStr(src_mac, sizeof(src_mac), a->SrcAddress, 6);
+		UINTToIP(&src_ip_st, a->SrcIP);
+		IPToStr(src_ip, sizeof(src_ip), &src_ip_st);
+
+		if (request)
+		{
+			char dst_ip[16];
+			IP dst_ip_st;
+			UINTToIP(&dst_ip_st, a->TargetIP);
+			IPToStr(dst_ip, sizeof(dst_ip), &dst_ip_st);
+			snprintf(tmp, sizeof(tmp), "Who has %s? Please Tell %s(%s)",
+			         dst_ip, src_mac, src_ip);
+		}
+		else
+		{
+			snprintf(tmp, sizeof(tmp), "%s has %s",
+			         src_mac, src_ip);
+		}
+
+		t->Token[14] = CopyStr(tmp);
+	}
+}
+
 char *PacketLogParseProc(RECORD *rec)
 {
 	PACKET_LOG *pl;
@@ -1050,7 +1197,6 @@ char *PacketLogParseProc(RECORD *rec)
 	char *s;
 	TOKEN_LIST *t;
 	char tmp[MAX_SIZE];
-	bool tcp_conn;
 	UINT i;
 	if (rec == NULL)
 	{
@@ -1090,56 +1236,7 @@ char *PacketLogParseProc(RECORD *rec)
 		switch (p->TypeL3)
 		{
 		case L3_ARPV4:
-			t->Token[6] = CopyStr("ARPv4");
-
-			switch (Endian16(p->L3.ARPv4Header->Operation))
-			{
-			case ARP_OPERATION_REQUEST:
-				t->Token[7] = CopyStr("Request");
-				if (Endian16(p->L3.ARPv4Header->HardwareType) == ARP_HARDWARE_TYPE_ETHERNET &&
-				        p->L3.ARPv4Header->HardwareSize == 6 &&
-				        Endian16(p->L3.ARPv4Header->ProtocolType) == MAC_PROTO_IPV4 &&
-				        p->L3.ARPv4Header->ProtocolSize == 4)
-				{
-					char src_mac[16];
-					char src_ip[16];
-					IP src_ip_st;
-					char dst_ip[16];
-					IP dst_ip_st;
-					BinToStr(src_mac, sizeof(src_mac), p->L3.ARPv4Header->SrcAddress, 6);
-					UINTToIP(&src_ip_st, p->L3.ARPv4Header->SrcIP);
-					UINTToIP(&dst_ip_st, p->L3.ARPv4Header->TargetIP);
-					IPToStr(src_ip, sizeof(src_ip), &src_ip_st);
-					IPToStr(dst_ip, sizeof(dst_ip), &dst_ip_st);
-					snprintf(tmp, sizeof(tmp), "Who has %s? Please Tell %s(%s)",
-					         dst_ip, src_mac, src_ip);
-					t->Token[14] = CopyStr(tmp);
-				}
-				break;
-
-			case ARP_OPERATION_RESPONSE:
-				t->Token[7] = CopyStr("Response");
-				if (Endian16(p->L3.ARPv4Header->HardwareType) == ARP_HARDWARE_TYPE_ETHERNET &&
-				        p->L3.ARPv4Header->HardwareSize == 6 &&
-				        Endian16(p->L3.ARPv4Header->ProtocolType) == MAC_PROTO_IPV4 &&
-				        p->L3.ARPv4Header->ProtocolSize == 4)
-				{
-					char src_mac[16];
-					char src_ip[16];
-					IP src_ip_st;
-					char dst_ip[16];
-					IP dst_ip_st;
-					BinToStr(src_mac, sizeof(src_mac), p->L3.ARPv4Header->SrcAddress, 6);
-					UINTToIP(&src_ip_st, p->L3.ARPv4Header->SrcIP);
-					UINTToIP(&dst_ip_st, p->L3.ARPv4Header->TargetIP);
-					IPToStr(src_ip, sizeof(src_ip), &src_ip_st);
-					IPToStr(dst_ip, sizeof(dst_ip), &dst_ip_st);
-					snprintf(tmp, sizeof(tmp), "%s has %s",
-					         src_mac, src_ip);
-					t->Token[14] = CopyStr(tmp);
-				}
-				break;
-			}
+			PacketLogArp(t, p);
 			break;
 
 		case L3_IPV4:
@@ -1161,128 +1258,11 @@ char *PacketLogParseProc(RECORD *rec)
 				break;
 
 			case L4_TCP:
-				tcp_conn = false;
-				if (p->L4.TCPHeader->Flag & TCP_SYN || p->L4.TCPHeader->Flag & TCP_RST || p->L4.TCPHeader->Flag & TCP_FIN)
-				{
-					tcp_conn = true;
-				}
-				t->Token[6] = CopyStr(tcp_conn ? "TCP_CONNECTv4" : "TCP_DATAv4");
-				t->Token[7] = TcpFlagStr(p->L4.TCPHeader->Flag);
-
-				t->Token[9] = PortStr(pl->Cedar, Endian16(p->L4.TCPHeader->SrcPort), false);
-				t->Token[11] = PortStr(pl->Cedar, Endian16(p->L4.TCPHeader->DstPort), false);
-
-				ToStr(tmp, Endian32(p->L4.TCPHeader->SeqNumber));
-				t->Token[12] = CopyStr(tmp);
-
-				ToStr(tmp, Endian32(p->L4.TCPHeader->AckNumber));
-				t->Token[13] = CopyStr(tmp);
-
-				snprintf(tmp, sizeof(tmp), "WindowSize=%u", Endian16(p->L4.TCPHeader->WindowSize));
-
-				if (p->HttpLog != NULL)
-				{
-					char *tmp2;
-					UINT tmp2_size;
-					char *http_str = BuildHttpLogStr(p->HttpLog);
-
-					tmp2_size = StrLen(http_str) + 16 + StrLen(tmp);
-					tmp2 = Malloc(tmp2_size);
-
-					StrCpy(tmp2, tmp2_size, tmp);
-
-					if (IsEmptyStr(http_str) == false)
-					{
-						StrCat(tmp2, tmp2_size, " ");
-						StrCat(tmp2, tmp2_size, http_str);
-					}
-
-					Free(http_str);
-
-					t->Token[14] = tmp2;
-				}
-				else
-				{
-					t->Token[14] = CopyStr(tmp);
-				}
+				PacketLogTcp(t, pl, p, "v4");
 				break;
 
 			case L4_UDP:
-				t->Token[9] = PortStr(pl->Cedar, Endian16(p->L4.UDPHeader->SrcPort), true);
-				t->Token[11] = PortStr(pl->Cedar, Endian16(p->L4.UDPHeader->DstPort), true);
-
-				switch (p->TypeL7)
-				{
-				case L7_DHCPV4:
-					t->Token[6] = CopyStr("DHCPv4");
-					if (p->L7.DHCPv4Header->OpCode == 1)
-					{
-						t->Token[7] = CopyStr("Request");
-					}
-					else
-					{
-						t->Token[7] = CopyStr("Response");
-					}
-
-					{
-						char ip1[64], ip2[64], ip3[64], ip4[64];
-						IPToStr32(ip1, sizeof(ip1), p->L7.DHCPv4Header->ClientIP);
-						IPToStr32(ip2, sizeof(ip2), p->L7.DHCPv4Header->YourIP);
-						IPToStr32(ip3, sizeof(ip3), p->L7.DHCPv4Header->ServerIP);
-						IPToStr32(ip4, sizeof(ip4), p->L7.DHCPv4Header->RelayIP);
-
-						snprintf(tmp, sizeof(tmp),
-						         "TransactionId=%u ClientIP=%s YourIP=%s ServerIP=%s RelayIP=%s",
-						         Endian32(p->L7.DHCPv4Header->TransactionId),
-						         ip1, ip2, ip3, ip4);
-
-						t->Token[14] = CopyStr(tmp);
-					}
-
-					break;
-
-				case L7_IKECONN:
-					t->Token[6] = CopyStr("IKE_CONNECTv4");
-
-					if (p->L7.IkeHeader != NULL)
-					{
-						if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_MAIN)
-						{
-							t->Token[7] = CopyStr("MainMode");
-						}
-						else if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_AGGRESSIVE)
-						{
-							t->Token[7] = CopyStr("AggressiveMode");
-						}
-
-						{
-							Format(tmp, sizeof(tmp), "InitiatorCookie=%I64u ResponderCookie=%I64u "
-							       "Version=0x%x ExchangeType=0x%x Flag=0x%x MessageId=%u MessageSize=%u",
-							       Endian64(p->L7.IkeHeader->InitiatorCookie),
-							       Endian64(p->L7.IkeHeader->ResponderCookie),
-							       p->L7.IkeHeader->Version,
-							       p->L7.IkeHeader->ExchangeType,
-							       p->L7.IkeHeader->Flag,
-							       Endian32(p->L7.IkeHeader->MessageId),
-							       Endian32(p->L7.IkeHeader->MessageSize));
-
-							t->Token[14] = CopyStr(tmp);
-						}
-					}
-					break;
-
-				case L7_DNS:
-					t->Token[6] = CopyStr("DNSv4");
-					t->Token[7] = CopyStr("DNS_Query");
-					// The query name holds raw label bytes from the wire
-					t->Token[14] = CopyStr(p->DnsQueryHost);
-					MakeSafeLogStr(t->Token[14]);
-					break;
-
-				default:
-					t->Token[6] = CopyStr("UDPv4");
-					break;
-				}
+				PacketLogUdp(t, pl, p, "v4");
 				break;
 
 			case L4_FRAGMENT:
@@ -1332,15 +1312,8 @@ char *PacketLogParseProc(RECORD *rec)
 					break;
 
 				case ICMPV6_TYPE_ROUTER_SOLICIATION:
-				{
-					ICMPV6_ROUTER_SOLICIATION_HEADER *h = icmp->Headers.RouterSoliciationHeader;
 					t->Token[7] = CopyStr("Router Soliciation");
-
-					if (h != NULL)
-					{
-					}
-				}
-				break;
+					break;
 
 				case ICMPV6_TYPE_ROUTER_ADVERTISEMENT:
 				{
@@ -1446,100 +1419,11 @@ char *PacketLogParseProc(RECORD *rec)
 			break;
 
 			case L4_TCP:
-				tcp_conn = false;
-				if (p->L4.TCPHeader->Flag & TCP_SYN || p->L4.TCPHeader->Flag & TCP_RST || p->L4.TCPHeader->Flag & TCP_FIN)
-				{
-					tcp_conn = true;
-				}
-				t->Token[6] = CopyStr(tcp_conn ? "TCP_CONNECTv6" : "TCP_DATAv6");
-				t->Token[7] = TcpFlagStr(p->L4.TCPHeader->Flag);
-
-				t->Token[9] = PortStr(pl->Cedar, Endian16(p->L4.TCPHeader->SrcPort), false);
-				t->Token[11] = PortStr(pl->Cedar, Endian16(p->L4.TCPHeader->DstPort), false);
-
-				ToStr(tmp, Endian32(p->L4.TCPHeader->SeqNumber));
-				t->Token[12] = CopyStr(tmp);
-
-				ToStr(tmp, Endian32(p->L4.TCPHeader->AckNumber));
-				t->Token[13] = CopyStr(tmp);
-
-				snprintf(tmp, sizeof(tmp), "WindowSize=%u", Endian16(p->L4.TCPHeader->WindowSize));
-
-				if (p->HttpLog != NULL)
-				{
-					char *tmp2;
-					UINT tmp2_size;
-					char *http_str = BuildHttpLogStr(p->HttpLog);
-
-					tmp2_size = StrLen(http_str) + 16 + StrLen(tmp);
-					tmp2 = Malloc(tmp2_size);
-
-					StrCpy(tmp2, tmp2_size, tmp);
-
-					if (IsEmptyStr(http_str) == false)
-					{
-						StrCat(tmp2, tmp2_size, " ");
-						StrCat(tmp2, tmp2_size, http_str);
-					}
-
-					Free(http_str);
-
-					t->Token[14] = tmp2;
-				}
-				else
-				{
-					t->Token[14] = CopyStr(tmp);
-				}
+				PacketLogTcp(t, pl, p, "v6");
 				break;
 
 			case L4_UDP:
-				t->Token[9] = PortStr(pl->Cedar, Endian16(p->L4.UDPHeader->SrcPort), true);
-				t->Token[11] = PortStr(pl->Cedar, Endian16(p->L4.UDPHeader->DstPort), true);
-
-				switch (p->TypeL7)
-				{
-				case L7_IKECONN:
-					t->Token[6] = CopyStr("IKE_CONNECTv6");
-
-					if (p->L7.IkeHeader != NULL)
-					{
-						if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_MAIN)
-						{
-							t->Token[7] = CopyStr("MainMode");
-						}
-						else if (p->L7.IkeHeader->ExchangeType == IKE_EXCHANGE_TYPE_AGGRESSIVE)
-						{
-							t->Token[7] = CopyStr("AggressiveMode");
-						}
-
-						{
-							Format(tmp, sizeof(tmp), "InitiatorCookie=%I64u ResponderCookie=%I64u "
-							       "Version=0x%x ExchangeType=0x%x Flag=0x%x MessageId=%u MessageSize=%u",
-							       Endian64(p->L7.IkeHeader->InitiatorCookie),
-							       Endian64(p->L7.IkeHeader->ResponderCookie),
-							       p->L7.IkeHeader->Version,
-							       p->L7.IkeHeader->ExchangeType,
-							       p->L7.IkeHeader->Flag,
-							       Endian32(p->L7.IkeHeader->MessageId),
-							       Endian32(p->L7.IkeHeader->MessageSize));
-
-							t->Token[14] = CopyStr(tmp);
-						}
-					}
-					break;
-
-				case L7_DNS:
-					t->Token[6] = CopyStr("DNSv6");
-					t->Token[7] = CopyStr("DNS_Query");
-					// The query name holds raw label bytes from the wire
-					t->Token[14] = CopyStr(p->DnsQueryHost);
-					MakeSafeLogStr(t->Token[14]);
-					break;
-
-				default:
-					t->Token[6] = CopyStr("UDPv6");
-					break;
-				}
+				PacketLogUdp(t, pl, p, "v6");
 				break;
 
 			case L4_FRAGMENT:
@@ -1567,7 +1451,7 @@ char *PacketLogParseProc(RECORD *rec)
 			break;
 		}
 
-		if (p->PacketData != NULL && (pl->PurePacket == false || pl->PurePacketNoPayload == false))
+		if (p->PacketData != NULL)
 		{
 			char *data = Malloc(p->PacketSize * 2 + 1);
 			BinToStr(data, p->PacketSize * 2 + 1, p->PacketData, p->PacketSize);
@@ -1591,15 +1475,7 @@ char *PacketLogParseProc(RECORD *rec)
 	s = GenCsvLine(t);
 	FreeToken(t);
 
-	if (pl->PurePacket == false)
-	{
-		FreeClonePacket(p);
-	}
-	else
-	{
-		Free(p->PacketData);
-		FreePacket(p);
-	}
+	FreeClonePacket(p);
 
 	if (pl->SrcSession != NULL)
 	{
