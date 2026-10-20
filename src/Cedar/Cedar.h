@@ -435,7 +435,7 @@ struct TRAFFIC
 
 typedef struct NON_SSL
 {
-	IP IpAddress;
+	IP IpAddress;				// Rate-limit key of the source (GetRateLimitKey)
 	UINT64 EntryExpires;
 	UINT Count;
 } NON_SSL;
@@ -488,6 +488,7 @@ struct CEDAR
 	COUNTER *AssignedClientLicense;
 	COUNTER *AssignedBridgeLicense;
 	LIST *NonSslList;
+	bool NonSslListFullLogged;		// MakeRoomInNoSslList has logged that NonSslList reached RATE_LIMIT_TABLE_MAX
 	UINT Beta;
 	LOCK *CedarSuperLock;
 	bool DisableIPv6Listener;

@@ -69,10 +69,14 @@ struct IPV6_ADDR
 #define	IPV6_ADDR_ZERO							128
 #define	IPV6_ADDR_LOOPBACK						256
 
+// Per-source tables (ip_clients, the listener DoS table, the non-SSL table) hold at most this many keys
+#define	RATE_LIMIT_TABLE_MAX		65536
+
 struct IP_CLIENT
 {
-	IP IpAddress;
+	IP IpAddress;				// Rate-limit key of the source (GetRateLimitKey)
 	UINT NumConnections;
+	UINT64 LastTick;			// Tick64 of the last connection from this key
 };
 
 struct SOCK_EVENT
@@ -348,6 +352,7 @@ void SetSockHighPriority(SOCK *s, bool flag);
 int CompareIpClientList(void *p1, void *p2);
 IP_CLIENT *SearchIpClient(IP *ip);
 UINT GetNumIpClient(IP *ip);
+void GetRateLimitKey(IP *key, IP *ip);
 void AddProtocolDetailsStr(char *dst, UINT dst_size, char *str);
 void AddProtocolDetailsKeyValueInt(char *dst, UINT dst_size, char *key, UINT value);
 

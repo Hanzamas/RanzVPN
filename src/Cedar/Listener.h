@@ -12,7 +12,7 @@
 
 struct DOS
 {
-	IP IpAddress;
+	IP IpAddress;				// Rate-limit key of the source (GetRateLimitKey)
 	UINT64 FirstConnectedTick;
 	UINT64 LastConnectedTick;
 	UINT64 CurrentExpireSpan;
@@ -36,6 +36,7 @@ struct LISTENER
 
 	LIST *DosList;
 	UINT64 DosListLastRefreshTime;
+	bool DosListFullLogged;		// MakeRoomInDosList has logged that DosList reached RATE_LIMIT_TABLE_MAX
 
 	UINT64 AcceptErrorLogTick;	// Tick64 of the last log of a transient accept() error, 0 if none yet
 	UINT NumAcceptErrors;		// Transient accept() errors since that log

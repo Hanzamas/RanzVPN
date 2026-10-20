@@ -45,6 +45,7 @@ static bool disable_gethostname_by_accept = false;
 
 
 static LIST *ip_clients = NULL;
+static bool ip_clients_full_logged = false;	// EvictOldestIpClient has logged that ip_clients is full
 
 static LIST *local_mac_list = NULL;
 static LOCK *local_mac_list_lock = NULL;
@@ -1349,6 +1350,60 @@ UINT GetNumIpClient(IP *ip)
 	return ret;
 }
 
+// Map a source address to its per-source rate-limit key: an IPv4 address keeps all 32 bits,
+// an IPv6 address keeps only its /64 prefix, since one host can pick any address inside its /64
+void GetRateLimitKey(IP *key, IP *ip)
+{
+	if (key == NULL)
+	{
+		return;
+	}
+
+	Zero(key, sizeof(IP));
+
+	if (ip == NULL)
+	{
+		return;
+	}
+
+	Copy(key->address, ip->address, sizeof(key->address));
+
+	if (IsIP4(ip) == false)
+	{
+		Zero(&key->address[8], 8);
+	}
+}
+
+// ip_clients is full: drop the key with the oldest last connection (ip_clients has no
+// expired entries, a key leaves when its last connection closes), log the first time
+static void EvictOldestIpClient()
+{
+	IP_CLIENT *oldest = NULL;
+	UINT i;
+
+	for (i = 0; i < LIST_NUM(ip_clients); i++)
+	{
+		IP_CLIENT *c = LIST_DATA(ip_clients, i);
+
+		if (oldest == NULL || c->LastTick < oldest->LastTick)
+		{
+			oldest = c;
+		}
+	}
+
+	if (oldest != NULL)
+	{
+		Delete(ip_clients, oldest);
+		Free(oldest);
+	}
+
+	if (ip_clients_full_logged == false)
+	{
+		ip_clients_full_logged = true;
+		Debug("ip_clients reached %u source keys, the least recently seen keys are dropped\n", RATE_LIMIT_TABLE_MAX);
+	}
+}
+
 static void AddIpClient(IP *ip)
 {
 	IP_CLIENT *c;
@@ -1363,14 +1418,20 @@ static void AddIpClient(IP *ip)
 
 		if (c == NULL)
 		{
+			if (LIST_NUM(ip_clients) >= RATE_LIMIT_TABLE_MAX)
+			{
+				EvictOldestIpClient();
+			}
+
 			c = ZeroMallocFast(sizeof(IP_CLIENT));
-			Copy(&c->IpAddress, ip, sizeof(IP));
+			GetRateLimitKey(&c->IpAddress, ip);
 			c->NumConnections = 0;
 
 			Add(ip_clients, c);
 		}
 
 		c->NumConnections++;
+		c->LastTick = Tick64();
 	}
 	UnlockList(ip_clients);
 
@@ -1412,7 +1473,7 @@ IP_CLIENT *SearchIpClient(IP *ip)
 	}
 
 	Zero(&t, sizeof(t));
-	Copy(&t.IpAddress, ip, sizeof(IP));
+	GetRateLimitKey(&t.IpAddress, ip);
 
 	return Search(ip_clients, &t);
 }
@@ -1420,6 +1481,7 @@ IP_CLIENT *SearchIpClient(IP *ip)
 static void InitIpClientList()
 {
 	ip_clients = NewList(CompareIpClientList);
+	ip_clients_full_logged = false;
 }
 
 static void FreeIpClientList()
