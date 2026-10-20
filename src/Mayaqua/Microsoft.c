@@ -29,7 +29,6 @@
 #define NO_SHLWAPI_GDI
 
 #include <AclAPI.h>
-#include <DbgHelp.h>
 #include <dwmapi.h>
 #include <iphlpapi.h>
 #include <mmsystem.h>
@@ -1679,7 +1678,9 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 			{NULL, NULL},
 		};
 
-		SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+		// No SEM_NOGPFAULTERRORBOX: it bypasses Windows Error Reporting, and the WER LocalDumps key writes
+		// the crash dumps of the service
+		SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX);
 
 		if (_StartServiceCtrlDispatcher(dispatch_table) == false)
 		{
@@ -3826,9 +3827,6 @@ void MsInit()
 
 		GetModuleFileNameW(NULL, tmp_w, sizeof(tmp_w));
 		ms->ExeFileNameW = CopyUniStr(tmp_w);
-
-		Win32GetDirFromPathW(tmp_w, sizeof(tmp_w), tmp_w);
-		ms->ExeFileDirW = CopyUniStr(tmp_w);
 	}
 
 	MsGetSpecialDirs();
@@ -3844,23 +3842,6 @@ void MsInit()
 	ms->UserNameW = CopyUniStr(tmp_w);
 
 	MsInitAdapterListModule();
-
-	if (true)
-	{
-		wchar_t tmp[MAX_PATH];
-		if (MsIsAdmin())
-		{
-			CombinePathW(tmp, sizeof(tmp), ms->ExeFileDirW, L"vpn_debug\\dump");
-		}
-		else
-		{
-			CombinePathW(tmp, sizeof(tmp), ms->TempDirW, L"vpn_debug\\dump");
-		}
-		ms->MinidumpBaseFileNameW = CopyUniStr(tmp);
-	}
-
-	MsSetEnableMinidump(true);
-	SetUnhandledExceptionFilter(MsExceptionHandler);
 
 	hLsa = NULL;
 
@@ -3913,75 +3894,6 @@ void MsInit()
 	}
 }
 
-void MsSetEnableMinidump(bool enabled)
-{
-	ms->MiniDumpEnabled = enabled;
-}
-
-void MsWriteMinidump(wchar_t *filename, void *ex)
-{
-	wchar_t tmp[MAX_PATH];
-	wchar_t dir[MAX_PATH];
-	HANDLE h;
-	MINIDUMP_EXCEPTION_INFORMATION info;
-	struct _EXCEPTION_POINTERS *exp = (struct _EXCEPTION_POINTERS *)ex;
-
-	if (filename != NULL)
-	{
-		UniStrCpy(tmp, sizeof(tmp), filename);
-	}
-	else
-	{
-		SYSTEMTIME tm;
-
-		Zero(&tm, sizeof(tm));
-		GetLocalTime(&tm);
-
-		UniFormat(tmp, sizeof(tmp), L"%s_%04u%02u%02u_%02u%02u%02u.dmp",
-			ms->MinidumpBaseFileNameW,
-			tm.wYear, tm.wMonth, tm.wDay, tm.wHour, tm.wMinute, tm.wSecond);
-	}
-
-	GetDirNameFromFilePathW(dir, sizeof(dir), tmp);
-
-	CreateDirectoryW(dir, NULL);
-
-	Zero(&info, sizeof(info));
-
-	if (exp != NULL)
-	{
-		info.ThreadId = GetCurrentThreadId();
-		info.ExceptionPointers = exp;
-		info.ClientPointers = true;
-	}
-
-	h = CreateFileW(tmp, GENERIC_READ | GENERIC_WRITE,
-		FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
-		NULL);
-	if (h != INVALID_HANDLE_VALUE)
-	{
-		MiniDumpWriteDump(ms->hCurrentProcess, ms->CurrentProcessId,
-			h,
-			MiniDumpNormal | MiniDumpWithFullMemory | MiniDumpWithDataSegs |
-			MiniDumpWithHandleData
-			,
-			info.ThreadId == 0 ? NULL : &info, NULL, NULL);
-
-		FlushFileBuffers(h);
-		CloseHandle(h);
-	}
-}
-
-LONG CALLBACK MsExceptionHandler(struct _EXCEPTION_POINTERS *ExceptionInfo)
-{
-	if (ms->MiniDumpEnabled)
-	{
-		MsWriteMinidump(NULL, ExceptionInfo);
-	}
-
-	return EXCEPTION_CONTINUE_SEARCH;
-}
-
 void MsFree()
 {
 	if (ms == NULL)
@@ -4006,10 +3918,8 @@ void MsFree()
 	Free(ms->WindowsDirW);
 	Free(ms->System32DirW);
 	Free(ms->TempDirW);
-	Free(ms->ExeFileDirW);
 	Free(ms->ExeFileNameW);
 	Free(ms->UserNameW);
-	Free(ms->MinidumpBaseFileNameW);
 
 	Free(ms);
 	ms = NULL;

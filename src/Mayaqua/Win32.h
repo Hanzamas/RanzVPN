@@ -38,7 +38,6 @@ UINT Win32GetOsType();
 void Win32NukuEn(char *dst, UINT size, char *src);
 void Win32NukuEnW(wchar_t *dst, UINT size, wchar_t *src);
 void Win32GetDirFromPath(char *dst, UINT size, char *src);
-void Win32GetDirFromPathW(wchar_t *dst, UINT size, wchar_t *src);
 void Win32GetCurrentDirW(wchar_t *dir, UINT size);
 void Win32GetExeNameW(wchar_t *name, UINT size);
 DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare);

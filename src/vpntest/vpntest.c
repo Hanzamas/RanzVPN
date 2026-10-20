@@ -679,8 +679,6 @@ int TestMain(char *cmd)
 	Print("Enter 'q' or 'exit' to exit the process.\n\n");
 	Print("   - In Jurassic Park: \"It's a UNIX system! I know this!\"\n\n");
 
-	MsSetEnableMinidump(true);
-
 	while (true)
 	{
 		Print("TEST>");

@@ -756,8 +756,6 @@ static UINT StCrash(ADMIN *a, RPC_TEST *t)
 {
 	SERVER_ADMIN_ONLY;
 
-	MsSetEnableMinidump(false);
-
 	CrashNow();
 
 	return ERR_NO_ERROR;

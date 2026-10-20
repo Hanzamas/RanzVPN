@@ -245,7 +245,6 @@ void SiDebugLog(SERVER *s, char *msg);
 UINT SiDebug(SERVER *s, RPC_TEST *ret, UINT i, char *str);
 UINT SiDebugProcHelloWorld(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
 UINT SiDebugProcExit(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcDump(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
 UINT SiDebugProcRestorePriority(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
 UINT SiDebugProcSetHighPriority(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
 UINT SiDebugProcGetExeFileName(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);

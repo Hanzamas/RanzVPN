@@ -883,44 +883,6 @@ void Win32NukuEn(char *dst, UINT size, char *src)
 	StrCpy(dst, size, str);
 }
 
-void Win32GetDirFromPathW(wchar_t *dst, UINT size, wchar_t *src)
-{
-	wchar_t str[MAX_SIZE];
-	int i,len;
-	wchar_t c;
-	wchar_t tmp[MAX_SIZE];
-	int wp;
-	if (src)
-	{
-		UniStrCpy(str, sizeof(str), src);
-	}
-	else
-	{
-		UniStrCpy(str, sizeof(str), dst);
-	}
-	Win32NukuEnW(str, sizeof(str), NULL);
-	wp = 0;
-	len = UniStrLen(str);
-	dst[0] = 0;
-	for (i = 0;i < len;i++)
-	{
-		c = str[i];
-		switch (c)
-		{
-		case L'\\':
-			tmp[wp] = 0;
-			wp = 0;
-			UniStrCat(dst, size, tmp);
-			UniStrCat(dst, size, L"\\");
-			break;
-		default:
-			tmp[wp] = c;
-			wp++;
-			break;
-		}
-	}
-	Win32NukuEnW(dst, size, NULL);
-}
 void Win32GetDirFromPath(char *dst, UINT size, char *src)
 {
 	char str[MAX_SIZE];

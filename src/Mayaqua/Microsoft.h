@@ -59,19 +59,16 @@ typedef struct MS
 	bool IsAdmin;
 	HANDLE hCurrentProcess;
 	UINT CurrentProcessId;
-	bool MiniDumpEnabled;
 	char *ExeFileDir;
 	char *System32Dir;
 	char *TempDir;
 	char *MyTempDir;
 	wchar_t *ExeFileNameW;
-	wchar_t *ExeFileDirW;
 	wchar_t *WindowsDirW;
 	wchar_t *System32DirW;
 	wchar_t *TempDirW;
 	wchar_t *MyTempDirW;
 	wchar_t *UserNameW;
-	wchar_t *MinidumpBaseFileNameW;
 	IO *LockFile;
 } MS;
 
@@ -274,8 +271,6 @@ void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache);
 UINT64 MsGetHiResCounter();
 double MsGetHiResTimeSpan(UINT64 diff);
 bool MsGetFileInformation(void *h, void *info);
-void MsSetEnableMinidump(bool enabled);
-void MsWriteMinidump(wchar_t *filename, void *ex);
 
 
 UINT MsGetUserLocaleId();
@@ -285,7 +280,6 @@ bool MsIsInVm();
 void MsInitProcessCallOnce();
 
 #ifdef MICROSOFT_C
-LONG CALLBACK MsExceptionHandler(struct _EXCEPTION_POINTERS *ExceptionInfo);
 HKEY MsGetRootKeyFromInt(UINT root);
 #endif // MICROSOFT_C
 
