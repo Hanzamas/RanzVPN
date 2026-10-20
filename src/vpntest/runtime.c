@@ -135,6 +135,8 @@ void tickorigin_test(UINT num, char **arg)
 #define	RT_UNIX_EPOCH_FILETIME	116444736000000000ULL	// 1970-01-01 00:00:00 UTC as a FILETIME (100 ns units)
 #define	RT_TIME_2024			1709177696789ULL		// 2024-02-29 12:34:56.789 UTC, encoded
 #define	RT_TIME_1971			32367600000ULL			// 1971-01-11 00:00:00.000 UTC, encoded: the smallest value above 0
+#define	RT_TIME_DAY				86400000ULL				// A day (ms)
+#define	RT_TIME_BEYOND_MAX		9000000000000ULL		// Encoded value above the latest time UINT64ToSystem decodes, 2099-12-29 16:02:03.123 UTC
 #define	RT_TICK_TIME_WAIT		(TICK64_SPAN_WIN32 + 200)	// Wait that lets the periodic Tick64 clock check run at least once (ms)
 
 // Distance between two UINT64 values
@@ -462,6 +464,25 @@ void timeenc_test(UINT num, char **arg)
 	// 0 decodes to 1970-01-01 09:00:00.000, a Thursday (the 9 hours added back)
 	UINT64ToSystem(&st, 0);
 	RtCheckSystem(&ctx, &st, "UINT64ToSystem(0) is 1970-01-01 09:00:00.000", 1970, 1, 1, 4, 9, 0, 0, 0);
+
+	// A day past the end of the month rolls into the next month: February 30, 2024 is March 1
+	RtSetSystem(&st, 2024, 2, 30, 12, 34, 56, 789);
+	value = SystemToUINT64(&st);
+	expect = RT_TIME_2024 + RT_TIME_DAY;
+	RtCheck(&ctx, value == expect, "SystemToUINT64(2024-02-30 12:34:56.789) is 2024-03-01 12:34:56.789",
+		"got %I64u, expected %I64u", value, expect);
+
+	// The year is clamped to 1970..2099: 2150 reads as 2099
+	RtSetSystem(&st, 2150, 1, 1, 0, 0, 0, 0);
+	value = SystemToUINT64(&st);
+	RtSetSystem(&st, 2099, 1, 1, 0, 0, 0, 0);
+	expect = SystemToUINT64(&st);
+	RtCheck(&ctx, value != 0 && value == expect, "SystemToUINT64 clamps the year 2150 to 2099",
+		"got %I64u, 2099 is %I64u", value, expect);
+
+	// Values above the latest decoded time stop at 2099-12-29 16:02:03.123, a Tuesday
+	UINT64ToSystem(&st, RT_TIME_BEYOND_MAX);
+	RtCheckSystem(&ctx, &st, "UINT64ToSystem stops at 2099-12-29 16:02:03.123", 2099, 12, 29, 2, 16, 2, 3, 123);
 
 	// SystemToLocal64 and LocalToSystem64 at the fixed input, against the OS time zone
 	RtSetSystem(&st, 2024, 2, 29, 12, 34, 56, 789);

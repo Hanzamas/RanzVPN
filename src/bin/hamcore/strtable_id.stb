@@ -2083,8 +2083,8 @@ CMD_AccessAddEx6_Prompt_DELAY	Keterlambatan untuk Dihasilkan (dalam milidetik: 0
 CMD_AccessAddEx6_Prompt_JITTER	Fluktuasi Jitter untuk Dihasilkan (Persen: 0 - 100): 
 CMD_AccessAddEx6_Prompt_LOSS	    Rasio Kehilangan Paket (Persen: 0 - 100): 
 CMD_AccessAddEx6_Eval_DELAY	    Keterlambatan harus maksimal 10000 milidetik.
-CMD_AccessAddEx6_Eval_JITTER	    Fluktuasi Jitter harus maksimal 100%.
-CMD_AccessAddEx6_Eval_LOSS	    Rasio Kehilangan Paket harus maksimal 100%.
+CMD_AccessAddEx6_Eval_JITTER	    Fluktuasi Jitter harus maksimal 100%%.
+CMD_AccessAddEx6_Eval_LOSS	    Rasio Kehilangan Paket harus maksimal 100%%.
 
 
 # AccessList command

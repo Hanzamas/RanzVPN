@@ -1229,8 +1229,7 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 
 	beta_str = "Release Candidate";
 
-	ToStr(tmp2, c->Beta);
-	Format(tmp2, sizeof(tmp2), " %s %s ", beta_str, tmp2);
+	Format(tmp2, sizeof(tmp2), " %s %u ", beta_str, c->Beta);
 
 	Format(tmp, sizeof(tmp),
 		"Version %u.%u.%u"

@@ -8,8 +8,10 @@
 //   Long PrintableString, UTF8String and BMPString fields must come back exactly, a field longer
 //   than the buffer as its first X509T_NAME_KEPT bytes, as before.
 // - Asn1TimeToSystem moved a GeneralizedTime by the local UTC offset. Both certificate time forms
-//   are UTC (RFC 5280 section 4.1.2.5): with the process time zone set to UTC+9, a GeneralizedTime
-//   must read as written and as the same instant as the equal UTCTime.
+//   are UTC (RFC 5280 section 4.1.2.5): whatever the OS time zone, a GeneralizedTime must read as
+//   written and as the same instant as the equal UTCTime. The old check set the CRT zone with TZ to
+//   UTC+9; the local time conversions follow the OS zone since FND-132 and ignore TZ, so a runner in
+//   UTC no longer exercises a zone with an offset.
 // - BioToXList freed a certificate twice when X509ToX failed on it (here: an unknown public key
 //   algorithm): X509ToX freed it, then X509_INFO_free. A PEM bundle of such a certificate and a
 //   valid one must give a list of the valid one, each certificate freed once.
@@ -72,7 +74,6 @@
 #define	X509T_DIGEST_INFO		(15 + SHA1_SIZE)	// Bytes of the SHA-1 DigestInfo and hash in a PKCS#1 v1.5 block
 #define	X509T_TRAILING			8			// Bytes after the DigestInfo and hash in the forged signature block
 #define	X509T_MAX_SIGN			(4096 / 8)	// Largest signature (bytes): the buffer Protocol.c receives it into
-#define	X509T_TIME_ZONE			"JST-9"		// CRT time zone of the time checks: UTC+9, no daylight saving time
 #define	X509T_GUARD				16			// Guard bytes after a signature destination
 #define	X509T_GUARD_BYTE		0xA5		// Value of the guard bytes
 
@@ -320,28 +321,15 @@ static bool X509TestIsTime(SYSTEMTIME *st, UINT year, UINT month, UINT day, UINT
 		st->wHour == hour && st->wMinute == minute && st->wSecond == second;
 }
 
-// Certificate times are UTC in both ASN.1 forms, whatever the local time zone
+// Certificate times are UTC in both ASN.1 forms, whatever the local time zone. The zone is the one
+// of the OS: LocalToSystem follows it through the Windows time zone functions, not the TZ variable
 static void X509TestTimes(X509T_CTX *ctx)
 {
-	char old_tz[MAX_SIZE];
-	bool had_tz = GetEnv("TZ", old_tz, sizeof(old_tz));
 	ASN1_GENERALIZEDTIME *gen2060 = ASN1_GENERALIZEDTIME_new();
 	ASN1_GENERALIZEDTIME *gen2049 = ASN1_GENERALIZEDTIME_new();
 	ASN1_UTCTIME *utc2049 = ASN1_UTCTIME_new();
-	SYSTEMTIME local, st;
+	SYSTEMTIME st;
 	bool made;
-
-	// The CRT time functions behind LocalToSystem (mktime, localtime) follow TZ once _tzset reads it
-	_putenv_s("TZ", X509T_TIME_ZONE);
-	_tzset();
-
-	// The zone is in effect: 2060-01-01 00:00 local time is 2059-12-31 15:00 UTC
-	Zero(&local, sizeof(local));
-	local.wYear = 2060;
-	local.wMonth = 1;
-	local.wDay = 1;
-	LocalToSystem(&st, &local);
-	X509TestCheck(ctx, X509TestIsTime(&st, 2059, 12, 31, 15, 0, 0), "Process time zone is UTC+9 for the time checks");
 
 	made = gen2060 != NULL && gen2049 != NULL && utc2049 != NULL &&
 		ASN1_GENERALIZEDTIME_set_string(gen2060, "20600101000000Z") == 1 &&
@@ -366,10 +354,6 @@ static void X509TestTimes(X509T_CTX *ctx)
 	ASN1_UTCTIME_free(utc2049);
 	ASN1_GENERALIZEDTIME_free(gen2049);
 	ASN1_GENERALIZEDTIME_free(gen2060);
-
-	// Back to the time zone of the process: an empty value removes TZ
-	_putenv_s("TZ", had_tz ? old_tz : "");
-	_tzset();
 }
 
 // RsaVerifyEx: a valid signature verifies, a block with bytes after the hash does not
