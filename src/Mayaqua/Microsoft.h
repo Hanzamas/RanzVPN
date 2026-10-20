@@ -162,7 +162,19 @@ typedef struct MS_ADAPTER
 	UCHAR Address[8];
 	char Guid[MAX_SIZE];			// MIB_IF_ROW2.InterfaceGuid as "{XXXXXXXX-...}"
 	bool IsBridgeable;				// MsIsBridgeableIf of the interface type data
+	wchar_t Alias[MAX_PATH];		// MIB_IF_ROW2.Alias: the network connection name, such as "Ethernet 2"
 } MS_ADAPTER;
+
+// One present device of the network adapter setup class, from MsNetClassEnum
+typedef struct MS_NETCLASS_DEVICE
+{
+	char Guid[MAX_SIZE];				// NetCfgInstanceId, "{XXXXXXXX-...}": the key of the table
+	char ShortKey[MAX_SIZE];			// Driver key below the Class key, "{4D36E972-E325-11CE-BFC1-08002BE10318}\0007"
+	char ClassKey[MAX_SIZE];			// "SYSTEM\CurrentControlSet\Control\Class\" and ShortKey
+	char DeviceInstanceId[MAX_SIZE];	// Such as "PCI\VEN_8086&DEV_15B8&...\3&11583659&0&FE"
+	char Service[MAX_SIZE];				// Name of the driver service
+	char DriverFileName[MAX_PATH];		// File name of the service ImagePath, such as "e1d68x64.sys"
+} MS_NETCLASS_DEVICE;
 
 typedef struct MS_ADAPTER_LIST
 {
@@ -227,7 +239,10 @@ UINT MsGetCurrentProcessId();
 char *MsGetExeDirName();
 
 bool MsCheckLogon(wchar_t *username, char *password);
-wchar_t *MsGetNetworkConnectionName(char *guid);
+
+LIST *MsNetClassEnum();
+MS_NETCLASS_DEVICE *MsNetClassFind(LIST *o, char *guid);
+void MsNetClassFree(LIST *o);
 
 void MsGenLockFile(wchar_t *name, UINT size, wchar_t *temp_dir);
 void MsDeleteAllFileW(wchar_t *dir);
