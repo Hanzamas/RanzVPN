@@ -7,8 +7,6 @@
 #include "Encrypt.h"
 #include "Mayaqua.h"
 
-#include <openssl/ssl.h> // This is needed only for the SSL/TLS version defines
-
 struct DYN_VALUE
 {
 	char Name[256];
@@ -25,10 +23,6 @@ struct DYN_VALUE
 #define	MAX_NUM_IGNORE_ERRORS		1024
 
 #define	DEFAULT_CIPHER_LIST			"ECDHE+AESGCM:ECDHE+CHACHA20:DHE+AESGCM:DHE+CHACHA20:ECDHE+AES256:DHE+AES256:RSA+AES"
-
-#if OPENSSL_VERSION_NUMBER >= 0x30000000L
-#define PQ_GROUP_LIST				"X25519MLKEM768:p521_kyber1024:x25519_kyber768:P-521:X25519:P-256"
-#endif
 
 #define	PRIVATE_IP_TXT_FILENAME		"$private_ip.txt"
 

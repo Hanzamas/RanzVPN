@@ -80,8 +80,9 @@ endif()
 
 find_package(ZLIB REQUIRED)
 
-# Required because we include <openssl/opensslv.h> in Encrypt.h.
-target_include_directories(mayaqua PUBLIC ${OPENSSL_INCLUDE_DIR})
+# The OpenSSL headers stay private to Mayaqua: no Mayaqua header includes one, so Cedar, the
+# executables and the fuzz targets build without them
+target_include_directories(mayaqua PRIVATE ${OPENSSL_INCLUDE_DIR})
 
 target_link_libraries(mayaqua
   PRIVATE

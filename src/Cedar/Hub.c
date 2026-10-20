@@ -21,6 +21,7 @@
 #include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 #define GetHubAdminOptionDataAndSet(ao, name, dest) \

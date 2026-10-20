@@ -26,6 +26,10 @@
 #include <wincrypt.h>
 #include <IcmpAPI.h>
 
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#define PQ_GROUP_LIST				"X25519MLKEM768:p521_kyber1024:x25519_kyber768:P-521:X25519:P-256"
+#endif
+
 static LOCK *machine_name_lock = NULL;
 static LOCK *disconnect_function_lock = NULL;
 extern LOCK *openssl_lock;
