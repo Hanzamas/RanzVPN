@@ -11,6 +11,9 @@
 // - AdjustTcpMssL3, called by AdjustTcpMssL2 to clamp the MSS of a SYN. It walks the TCP options
 //   with checked lengths, so the MSS option is clamped wherever it is in the list, and a malformed
 //   list is left alone. The old code clamped it only when it was the first option.
+// - IpChecksum, CalcChecksumForIPv4 and CalcChecksumForIPv6 (FND-53), now a 64-bit one's complement
+//   sum that reads the data in place: the result is the same as the sum over 16-bit words (RFC
+//   1071) for every size and alignment.
 // Every payload, frame and packet is in a heap block of exactly its size, so AddressSanitizer
 // reports a read past its end. Prints "TCPIP TEST OK" only when every check passes, and frees
 // everything it allocates. The [PASS] lines carry no values; the [FAIL] details do.
@@ -383,6 +386,156 @@ static void TcpIpTestMss(TCPIPTEST_CTX *ctx)
 	TcpIpTestMssCase(ctx, "AdjustTcpMssL3 stops at an option kind without its length, reading nothing past it", lone_kind, NULL, sizeof(lone_kind), false);
 }
 
+// The word-by-word one's complement sum of RFC 1071, which IpChecksum was before it became a 64-bit
+// sum: 16-bit words in the byte order of the machine, and an odd last byte as the first byte of a
+// word of its own
+static USHORT TcpIpTestRefChecksum(UCHAR *buf, UINT size)
+{
+	UINT64 sum = 0;
+	UINT i;
+
+	for (i = 0; i + 1 < size; i += 2)
+	{
+		USHORT w;
+
+		Copy(&w, buf + i, sizeof(w));
+		sum += w;
+	}
+
+	if ((size % 2) == 1)
+	{
+		USHORT w = 0;
+
+		*(UCHAR *)(&w) = buf[size - 1];
+		sum += w;
+	}
+
+	while ((sum >> 16) != 0)
+	{
+		sum = (sum >> 16) + (sum & 0xFFFF);
+	}
+
+	return (USHORT)~sum;
+}
+
+// Fill buf: pattern 0 is pseudo-random bytes (a fixed generator, so a failure repeats), 1 is all
+// 0xFF (the sum is a multiple of 0xFFFF) and 2 is all zero
+static void TcpIpTestFill(UCHAR *buf, UINT size, UINT pattern, UINT *seed)
+{
+	UINT i;
+
+	for (i = 0; i < size; i++)
+	{
+		if (pattern == 1)
+		{
+			buf[i] = 0xFF;
+		}
+		else if (pattern == 2)
+		{
+			buf[i] = 0;
+		}
+		else
+		{
+			*seed = *seed * 1664525 + 1013904223;
+			buf[i] = (UCHAR)(*seed >> 24);
+		}
+	}
+}
+
+// IpChecksum, CalcChecksumForIPv4 and CalcChecksumForIPv6 against the word-by-word sum, over a
+// buffer that is a heap block of exactly its size at every alignment of 0 to 7 bytes
+static void TcpIpTestChecksum(TCPIPTEST_CTX *ctx)
+{
+	UINT big_sizes[] = {1460, 1461, 4096, 9001, 65535, 65536};
+	UINT num_small = 134;
+	UINT seed = 1;
+	UINT num = 0, bad_ip = 0, bad_v4 = 0, bad_v6 = 0;
+	UINT first_bad = INFINITE;
+	UINT k;
+
+	for (k = 0; k < num_small + sizeof(big_sizes) / sizeof(big_sizes[0]); k++)
+	{
+		UINT len = (k < num_small) ? k : big_sizes[k - num_small];
+		UINT off, pattern;
+
+		for (off = 0; off < 8; off++)
+		{
+			for (pattern = 0; pattern < 3; pattern++)
+			{
+				UINT alloc = len + off;
+				UCHAR *block, *buf, *v4, *v6;
+				IPV6_ADDR src6, dst6;
+				UINT src4, dst4;
+
+				if (alloc == 0)
+				{
+					alloc = 1;
+				}
+
+				block = Malloc(alloc);
+				buf = block + off;
+				TcpIpTestFill(buf, len, pattern, &seed);
+
+				// 12-byte pseudo-header of IPv4 and 40-byte pseudo-header of IPv6, then the data
+				v4 = Malloc(12 + len);
+				v6 = Malloc(40 + len);
+				Zero(v4, 12);
+				Zero(v6, 40);
+				TcpIpTestFill((UCHAR *)&src4, sizeof(src4), 0, &seed);
+				TcpIpTestFill((UCHAR *)&dst4, sizeof(dst4), 0, &seed);
+				TcpIpTestFill(src6.Value, sizeof(src6.Value), 0, &seed);
+				TcpIpTestFill(dst6.Value, sizeof(dst6.Value), 0, &seed);
+				Copy(v4, &src4, 4);
+				Copy(v4 + 4, &dst4, 4);
+				v4[9] = IP_PROTO_TCP;
+				v4[10] = (UCHAR)(len >> 8);
+				v4[11] = (UCHAR)len;
+				Copy(v6, src6.Value, 16);
+				Copy(v6 + 16, dst6.Value, 16);
+				v6[32] = (UCHAR)(len >> 24);
+				v6[33] = (UCHAR)(len >> 16);
+				v6[34] = (UCHAR)(len >> 8);
+				v6[35] = (UCHAR)len;
+				v6[39] = IP_PROTO_ICMPV6;
+				Copy(v4 + 12, buf, len);
+				Copy(v6 + 40, buf, len);
+
+				num++;
+
+				if (IpChecksum(buf, len) != TcpIpTestRefChecksum(buf, len))
+				{
+					bad_ip++;
+					if (first_bad == INFINITE)
+					{
+						first_bad = len;
+					}
+				}
+
+				if (CalcChecksumForIPv4(src4, dst4, IP_PROTO_TCP, buf, len, 0) != TcpIpTestRefChecksum(v4, 12 + len))
+				{
+					bad_v4++;
+				}
+
+				if (CalcChecksumForIPv6(&src6, &dst6, IP_PROTO_ICMPV6, buf, len, 0) != TcpIpTestRefChecksum(v6, 40 + len))
+				{
+					bad_v6++;
+				}
+
+				Free(v6);
+				Free(v4);
+				Free(block);
+			}
+		}
+	}
+
+	TcpIpTestCheck(ctx, bad_ip == 0, "IpChecksum equals the 16-bit word sum for sizes 0 to 133 and up to 65536 at every alignment",
+		"%u of %u inputs differ, the first of size %u", bad_ip, num, first_bad);
+	TcpIpTestCheck(ctx, bad_v4 == 0, "CalcChecksumForIPv4 equals the word sum over the pseudo-header and the data",
+		"%u of %u inputs differ", bad_v4, num);
+	TcpIpTestCheck(ctx, bad_v6 == 0, "CalcChecksumForIPv6 equals the word sum over the pseudo-header and the data",
+		"%u of %u inputs differ", bad_v6, num);
+}
+
 void tcpip_test(UINT num, char **arg)
 {
 	TCPIPTEST_CTX ctx;
@@ -393,6 +546,7 @@ void tcpip_test(UINT num, char **arg)
 
 	TcpIpTestDhcpModify(&ctx);
 	TcpIpTestMss(&ctx);
+	TcpIpTestChecksum(&ctx);
 
 	if (ctx.NumFailed == 0)
 	{

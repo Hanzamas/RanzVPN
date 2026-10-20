@@ -886,6 +886,8 @@ static void CleanupCedar(CEDAR *c)
 		Free(c->CipherList);
 	}
 
+	FreeSSLCtx(c->ServerSslCtx);
+
 	Free(c->ServerStr);
 	Free(c->MachineName);
 
@@ -936,6 +938,57 @@ void ReleaseCedar(CEDAR *c)
 	}
 }
 
+// Release the shared server SSL_CTX: the next accepted connection builds it again. Connections that already
+// have it keep it until they end (reference count). c->lock is held
+static void ResetCedarServerSslCtx(CEDAR *c)
+{
+	FreeSSLCtx(c->ServerSslCtx);
+	c->ServerSslCtx = NULL;
+}
+
+// The server SSL_CTX shared by all accepted connections: certificate, key, chain, cipher list and the
+// SslAcceptSettings are applied once, when it is built. It is built again when one of them changed
+// (SetCedarCertAndChain, SetCedarCipherList, SslAcceptSettings) or, with no ServerChain, when the chain_certs
+// folder changed. The caller releases the reference it gets with FreeSSLCtx
+struct ssl_ctx_st *GetCedarServerSslCtx(CEDAR *c)
+{
+	struct ssl_ctx_st *ret;
+	UINT chain_gen = 0;
+
+	if (c == NULL)
+	{
+		return NULL;
+	}
+
+	Lock(c->lock);
+	{
+		if (c->ServerChain == NULL)
+		{
+			chain_gen = GetChainCertGeneration();
+		}
+
+		if (c->ServerSslCtx != NULL &&
+			(Cmp(&c->ServerSslCtxSettings, &c->SslAcceptSettings, sizeof(SSL_ACCEPT_SETTINGS)) != 0 ||
+			(c->ServerChain == NULL && c->ServerSslCtxChainGen != chain_gen)))
+		{
+			ResetCedarServerSslCtx(c);
+		}
+
+		if (c->ServerSslCtx == NULL)
+		{
+			c->ServerSslCtx = NewServerSSLCtx(c->ServerX, c->ServerK, c->ServerChain, c->CipherList, &c->SslAcceptSettings);
+			Copy(&c->ServerSslCtxSettings, &c->SslAcceptSettings, sizeof(SSL_ACCEPT_SETTINGS));
+			c->ServerSslCtxChainGen = chain_gen;
+		}
+
+		ret = c->ServerSslCtx;
+		ShareSSLCtx(ret);
+	}
+	Unlock(c->lock);
+
+	return ret;
+}
+
 void SetCedarCipherList(CEDAR *cedar, char *name)
 {
 	if (cedar == NULL)
@@ -943,18 +996,24 @@ void SetCedarCipherList(CEDAR *cedar, char *name)
 		return;
 	}
 
-	if (cedar->CipherList != NULL)
+	Lock(cedar->lock);
 	{
-		Free(cedar->CipherList);
+		if (cedar->CipherList != NULL)
+		{
+			Free(cedar->CipherList);
+		}
+		if (name != NULL)
+		{
+			cedar->CipherList = CopyStr(name);
+		}
+		else
+		{
+			cedar->CipherList = NULL;
+		}
+
+		ResetCedarServerSslCtx(cedar);
 	}
-	if (name != NULL)
-	{
-		cedar->CipherList = CopyStr(name);
-	}
-	else
-	{
-		cedar->CipherList = NULL;
-	}
+	Unlock(cedar->lock);
 }
 
 static int CompareNetSvc(void *p1, void *p2)
@@ -1105,6 +1164,8 @@ void SetCedarCertAndChain(CEDAR *c, X *server_x, K *server_k, LIST *server_chain
 		c->ServerX = CloneX(server_x);
 		c->ServerK = CloneK(server_k);
 		c->ServerChain = CloneXList(server_chain);
+
+		ResetCedarServerSslCtx(c);
 	}
 	Unlock(c->lock);
 }

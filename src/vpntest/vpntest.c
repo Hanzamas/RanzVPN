@@ -504,9 +504,10 @@ void authtype_test(UINT num, char **arg);
 void acpassword_test(UINT num, char **arg);
 void sigleak_test(UINT num, char **arg);
 
-// Named packet parser tests of FND-38 and FND-39, #113 (pkttest.c)
+// Named packet parser tests of FND-38, FND-39 and FND-54, #113 and #117 (pkttest.c)
 void pktparse_test(UINT num, char **arg);
 void vlantpid_test(UINT num, char **arg);
+void icmpv6ns_test(UINT num, char **arg);
 
 // Named PACK decoder bounds test of FND-42, #114 (packdecode.c)
 void pack_decode_bounds_test(UINT num, char **arg);
@@ -525,6 +526,12 @@ void x509root_test(UINT num, char **arg);
 
 // Named RSA client certificate signature test of FND-83, #127 (x509test.c)
 void rsasig_test(UINT num, char **arg);
+
+// Named chain_certs cache test of FND-139, #145 (chaincerts.c)
+void chaincerts_test(UINT num, char **arg);
+
+// Named shared server SSL_CTX test of FND-140, #145 (tlsctx.c)
+void tlsctx_test(UINT num, char **arg);
 
 // Size and SHA-256 of the former WaterMark[] array in Cedar/WaterMark.c, also used by fileio_test (runtime.c)
 UINT watermark_expect_size = 1411;
@@ -655,12 +662,15 @@ TEST_LIST test_list[] =
 	{"sigleak", sigleak_test, "Signature POST: a body that is not the watermark gets 403 and is freed; the request after the last one gets no answer."},
 	{"pktparse", pktparse_test, "Packet parsers: DNS opcode mask and label limits, DHCP Pad and whole option bodies, the DHCP cookie at offset 236."},
 	{"vlantpid", vlantpid_test, "VLAN TPID: frames tagged with the hub's VlanTypeId reach layer 3 and 4, the access list of such a hub sees their IPv4."},
+	{"icmpv6ns", icmpv6ns_test, "Neighbor Solicitation: BuildNeighborSolicitation gives the bytes of the former builder chain, nothing for a NULL argument."},
 	{"pack_decode_bounds", pack_decode_bounds_test, "PACK decoder: value counts and sizes past the bytes present, unknown types and values cut short are rejected before they allocate."},
 	{"tablecache", tablecache_test, "String table: loaded from the resource only, a planted table_name.txt beside the exe is ignored, no cache file is written."},
 	{"registry", registry_test, "Registry: empty and 1-byte REG_SZ read as empty strings, a REG_MULTI_SZ as its first string, writes and deletes need no KEY_ALL_ACCESS."},
 	{"certsig", certsig_test, "Certificate signatures: only X509_verify() == 1 is valid; an unknown signature algorithm fails CheckXEx and GetIssuerFromList."},
 	{"x509root", x509root_test, "Root certificates: root_cert only for a verified self-signature; X509ToX leaves a certificate it refuses to its caller."},
 	{"rsasig", rsasig_test, "RSA client certificate signatures: PKCS#1 v1.5 SHA-1, a destination smaller than the key refused, a signature of another length rejected."},
+	{"chaincerts", chaincerts_test, "chain_certs: the folder is scanned once for many connections, again after a certificate is added, removed or saved."},
+	{"tlsctx", tlsctx_test, "Shared server SSL_CTX: a new certificate, cipher list or SslAcceptSettings reaches the next connection; accept rate (informational)."},
 	{"ptrkey", ptrkey_test, "Pointer keys: POINTER_TO_KEY keys a block by its address; AccessDelete by UniqueId removes that entry after the Ids are renumbered."},
 };
 

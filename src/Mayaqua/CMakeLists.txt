@@ -19,12 +19,12 @@ set_target_properties(mayaqua
   RUNTIME_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
 )
 
-find_package(OpenSSL REQUIRED)
+find_package(OpenSSL 3.0 REQUIRED)
 
-if(OPENSSL_VERSION VERSION_GREATER_EQUAL "3.0.0" AND OPENSSL_VERSION VERSION_LESS "4.0.0")
+if(OPENSSL_VERSION VERSION_LESS "4.0.0")
   set(OQS_ENABLE ON CACHE BOOL "By setting this to OFF, Open Quantum Safe algorithms will not be built in")
 else()
-  # Disable oqsprovider when OpenSSL version < 3
+  # oqsprovider is built against OpenSSL 3 only
   set(OQS_ENABLE OFF)
 endif()
 
@@ -63,23 +63,6 @@ else()
   target_compile_definitions(mayaqua PRIVATE SKIP_OQS_PROVIDER)
 endif()
 
-include(CheckSymbolExists)
-
-set(CMAKE_REQUIRED_INCLUDES ${OPENSSL_INCLUDE_DIR})
-set(CMAKE_REQUIRED_LIBRARIES OpenSSL::Crypto)
-set(CMAKE_REQUIRED_LIBRARIES OpenSSL::SSL)
-
-check_symbol_exists(EVP_PKEY_get_raw_public_key "openssl/evp.h" HAVE_EVP_PKEY_GET_RAW_PUBLIC_KEY)
-
-unset(CMAKE_REQUIRED_INCLUDES)
-unset(CMAKE_REQUIRED_LIBRARIES)
-
-if(NOT HAVE_EVP_PKEY_GET_RAW_PUBLIC_KEY)
-  message(FATAL_ERROR "Required EVP_PKEY_get_raw_public_key() not found in OpenSSL library!")
-endif()
-
-
-
 find_package(ZLIB REQUIRED)
 
 # Required because we include <openssl/opensslv.h> in Encrypt.h.
@@ -106,6 +89,7 @@ if(WIN32)
       "DbgHelp.Lib"
       "dwmapi.lib"
       "iphlpapi.lib"
+      "ntdll.lib"
       "Psapi.Lib"
       "Secur32.Lib"
       "setupapi.lib"

@@ -23,6 +23,7 @@
 
 #include <iphlpapi.h>
 #include <WS2tcpip.h>
+#include <mstcpip.h>
 #include <MSWSock.h>
 #include <wincrypt.h>
 #include <IcmpAPI.h>
@@ -502,49 +503,96 @@ bool IsStrIPv6Address(char *str)
 	return true;
 }
 
-UINT SubnetMaskToInt6(IP *a)
+// Subnet mask of 'size' bytes with a prefix of 'len' bits: one bits from the most significant bit
+// of the first byte, then zero bits. A length beyond the mask gives all one bits
+static void PrefixLenToMask(UCHAR *mask, UINT size, UINT len)
 {
 	UINT i;
+
+	for (i = 0; i < size; i++)
+	{
+		if (len >= 8)
+		{
+			mask[i] = 0xFF;
+			len -= 8;
+		}
+		else
+		{
+			// 0 to 7 leading one bits; every byte after this one is zero
+			mask[i] = (UCHAR)(0xFF00 >> len);
+			len = 0;
+		}
+	}
+}
+
+// Prefix length of a subnet mask of 'size' bytes: the number of its leading one bits. INFINITE when
+// a one bit follows a zero bit (not a subnet mask)
+static UINT MaskToPrefixLen(UCHAR *mask, UINT size)
+{
+	UINT len = 0;
+	UINT i = 0;
+	UCHAR rest;
+
+	while (i < size && mask[i] == 0xFF)
+	{
+		len += 8;
+		i++;
+	}
+
+	if (i == size)
+	{
+		return len;
+	}
+
+	// The first byte with a zero bit: its leading one bits count, the bits behind them must be zero
+	rest = mask[i];
+	while ((rest & 0x80) != 0)
+	{
+		len++;
+		rest = (UCHAR)(rest << 1);
+	}
+
+	if (rest != 0)
+	{
+		return INFINITE;
+	}
+
+	// Every byte behind it must be zero
+	for (i++; i < size; i++)
+	{
+		if (mask[i] != 0)
+		{
+			return INFINITE;
+		}
+	}
+
+	return len;
+}
+
+// Prefix length of an IPv6 subnet mask; 0 for an IPv4 address or a mask that is not contiguous
+UINT SubnetMaskToInt6(IP *a)
+{
+	UINT len;
 	if (IsIP6(a) == false)
 	{
 		return 0;
 	}
 
-	for (i = 0; i <= 128; i++)
-	{
-		IP tmp;
+	len = MaskToPrefixLen(a->address, sizeof(a->address));
 
-		IntToSubnetMask6(&tmp, i);
-
-		if (CmpIpAddr(a, &tmp) == 0)
-		{
-			return i;
-		}
-	}
-
-	return 0;
+	return (len == INFINITE ? 0 : len);
 }
 static UINT SubnetMaskToInt4(IP *a)
 {
-	UINT i;
+	UINT len;
 	if (IsIP4(a) == false)
 	{
 		return 0;
 	}
 
-	for (i = 0; i <= 32; i++)
-	{
-		IP tmp;
+	len = MaskToPrefixLen(IPV4(a->address), IPV4_SIZE);
 
-		IntToSubnetMask4(&tmp, i);
-
-		if (CmpIpAddr(a, &tmp) == 0)
-		{
-			return i;
-		}
-	}
-
-	return 0;
+	return (len == INFINITE ? 0 : len);
 }
 static UINT SubnetMaskToInt(IP *a)
 {
@@ -560,25 +608,12 @@ static UINT SubnetMaskToInt(IP *a)
 
 static bool IsSubnetMask6(IP *a)
 {
-	UINT i;
 	if (IsIP6(a) == false)
 	{
 		return false;
 	}
 
-	for (i = 0; i <= 128; i++)
-	{
-		IP tmp;
-
-		IntToSubnetMask6(&tmp, i);
-
-		if (CmpIpAddr(a, &tmp) == 0)
-		{
-			return true;
-		}
-	}
-
-	return false;
+	return (MaskToPrefixLen(a->address, sizeof(a->address)) != INFINITE);
 }
 
 void GenerateEui64LocalAddress(IP *a, UCHAR *mac)
@@ -764,26 +799,14 @@ void IPAnd6(IP *dst, IP *a, IP *b)
 
 void IntToSubnetMask6(IP *ip, UINT i)
 {
-	UINT j = i / 8;
-	UINT k = i % 8;
-	UINT z;
-	IP a;
-
-	Zero(&a, sizeof(IP));
-
-	for (z = 0; z < sizeof(a.address); ++z)
+	if (ip == NULL)
 	{
-		if (z < j)
-		{
-			a.address[z] = 0xff;
-		}
-		else if (z == j)
-		{
-			a.address[z] = ~(0xff >> k);
-		}
+		return;
 	}
 
-	Copy(ip, &a, sizeof(IP));
+	Zero(ip, sizeof(IP));
+
+	PrefixLenToMask(ip->address, sizeof(ip->address), i);
 }
 
 void IP6AddrToStr(char *str, UINT size, IPV6_ADDR *addr)
@@ -809,122 +832,35 @@ void IPToStr6Array(char *str, UINT size, UCHAR *bytes)
 }
 void IPToStr6(char *str, UINT size, IP *ip)
 {
-	char tmp[MAX_SIZE];
-
-	IPToStr6Inner(tmp, ip);
-
-	StrCpy(str, size, tmp);
-}
-void IPToStr6Inner(char *str, IP *ip)
-{
-	UINT i;
-	USHORT values[8];
-	UINT zero_started_index;
-	UINT max_zero_len;
-	UINT max_zero_start;
-	IP a;
+	IN6_ADDR addr;
+	char tmp[INET6_ADDRSTRLEN];
+	ULONG len = sizeof(tmp);
 	if (str == NULL || ip == NULL)
 	{
 		return;
 	}
 
-	Copy(&a, ip, sizeof(IP));
+	Copy(&addr, ip->address, sizeof(addr));
 
-	for (i = 0; i < 8; i++)
+	// RFC 5952 text, with "%" and the scope ID when the scope ID is not zero
+	if (RtlIpv6AddressToStringExA(&addr, ip->ipv6_scope_id, 0, tmp, &len) != 0)
 	{
-		Copy(&values[i], &a.address[i * 2], sizeof(USHORT));
-		values[i] = Endian16(values[i]);
+		tmp[0] = 0;
 	}
 
-	zero_started_index = INFINITE;
-	max_zero_len = 0;
-	max_zero_start = INFINITE;
-	for (i = 0; i < 9; i++)
-	{
-		USHORT v = (i != 8 ? values[i] : 1);
-
-		if (v == 0)
-		{
-			if (zero_started_index == INFINITE)
-			{
-				zero_started_index = i;
-			}
-		}
-		else
-		{
-			UINT zero_len;
-
-			if (zero_started_index != INFINITE)
-			{
-				zero_len = i - zero_started_index;
-				if (zero_len >= 2)
-				{
-					if (max_zero_len < zero_len)
-					{
-						max_zero_start = zero_started_index;
-						max_zero_len = zero_len;
-					}
-				}
-
-				zero_started_index = INFINITE;
-			}
-		}
-	}
-
-	StrCpy(str, 0, "");
-	for (i = 0; i < 8; i++)
-	{
-		char tmp[16];
-
-		ToHex(tmp, values[i]);
-		StrLower(tmp);
-
-		if (i == max_zero_start)
-		{
-			if (i == 0)
-			{
-				StrCat(str, 0, "::");
-			}
-			else
-			{
-				StrCat(str, 0, ":");
-			}
-			i += max_zero_len - 1;
-		}
-		else
-		{
-			StrCat(str, 0, tmp);
-			if (i != 7)
-			{
-				StrCat(str, 0, ":");
-			}
-		}
-	}
-
-	if (ip->ipv6_scope_id != 0)
-	{
-		char tmp[64];
-
-		StrCat(str, 0, "%");
-		ToStr(tmp, ip->ipv6_scope_id);
-
-		StrCat(str, 0, tmp);
-	}
+	StrCpy(str, size, tmp);
 }
 
 bool StrToIP6(IP *ip, char *str)
 {
-	TOKEN_LIST *t;
 	char tmp[MAX_PATH];
-	IP a;
-	UINT i;
-	UINT scope_id = 0;
+	IN6_ADDR addr;
+	ULONG scope_id;
+	USHORT port;
 	if (str == NULL || ip == NULL)
 	{
 		return false;
 	}
-
-	Zero(&a, sizeof(a));
 
 	StrCpy(tmp, sizeof(tmp), str);
 	Trim(tmp);
@@ -939,176 +875,20 @@ bool StrToIP6(IP *ip, char *str)
 		}
 	}
 
-	i = SearchStrEx(tmp, "%", 0, false);
-	if (i != INFINITE)
+	// The whole text is the address and an optional decimal "%scope": no brackets and so no port
+	if (InStr(tmp, "[") || InStr(tmp, "]"))
 	{
-		char ss[MAX_PATH];
-
-		StrCpy(ss, sizeof(ss), &tmp[i + 1]);
-
-		tmp[i] = 0;
-
-		Trim(tmp);
-
-		Trim(ss);
-
-		scope_id = ToInt(ss);
-	}
-
-	t = ParseTokenWithNullStr(tmp, ":");
-	if (t->NumTokens >= 3 && t->NumTokens <= 8)
-	{
-		UINT i, n;
-		bool b = true;
-		UINT k = 0;
-
-		n = 0;
-
-		for (i = 0; i < t->NumTokens; i++)
-		{
-			char *str = t->Token[i];
-
-			if (i != 0 && i != (t->NumTokens - 1) && StrLen(str) == 0)
-			{
-				n++;
-				if (n == 1)
-				{
-					k += 2 * (8 - t->NumTokens + 1);
-				}
-				else
-				{
-					b = false;
-					break;
-				}
-			}
-			else
-			{
-				UCHAR chars[2];
-
-				if (CheckIPItemStr6(str) == false)
-				{
-					b = false;
-					break;
-				}
-
-				IPItemStrToChars6(chars, str);
-
-				a.address[k++] = chars[0];
-				a.address[k++] = chars[1];
-			}
-		}
-
-		if (n != 0 && n != 1)
-		{
-			b = false;
-		}
-		else if (n == 0 && t->NumTokens != 8)
-		{
-			b = false;
-		}
-
-		if (b == false)
-		{
-			FreeToken(t);
-			return false;
-		}
-	}
-	else
-	{
-		FreeToken(t);
 		return false;
 	}
 
-	FreeToken(t);
+	if (RtlIpv6StringToAddressExA(tmp, &addr, &scope_id, &port) != 0)
+	{
+		return false;
+	}
 
-	Copy(ip, &a, sizeof(IP));
-
+	Zero(ip, sizeof(IP));
+	Copy(ip->address, &addr, sizeof(ip->address));
 	ip->ipv6_scope_id = scope_id;
-
-	return true;
-}
-
-void IPItemStrToChars6(UCHAR *chars, char *str)
-{
-	char tmp[5];
-	BUF *b;
-	UINT len;
-	if (chars == NULL)
-	{
-		return;
-	}
-
-	Zero(tmp, sizeof(tmp));
-
-	len = StrLen(str);
-	switch (len)
-	{
-	case 0:
-		tmp[0] = tmp[1] = tmp[2] = tmp[3] = '0';
-		break;
-
-	case 1:
-		tmp[0] = tmp[1] = tmp[2] = '0';
-		tmp[3] = str[0];
-		break;
-
-	case 2:
-		tmp[0] = tmp[1] = '0';
-		tmp[2] = str[0];
-		tmp[3] = str[1];
-		break;
-
-	case 3:
-		tmp[0] = '0';
-		tmp[1] = str[0];
-		tmp[2] = str[1];
-		tmp[3] = str[2];
-		break;
-
-	case 4:
-		tmp[0] = str[0];
-		tmp[1] = str[1];
-		tmp[2] = str[2];
-		tmp[3] = str[3];
-		break;
-	}
-
-	b = StrToBin(tmp);
-
-	chars[0] = ((UCHAR *)b->Buf)[0];
-	chars[1] = ((UCHAR *)b->Buf)[1];
-
-	FreeBuf(b);
-}
-
-bool CheckIPItemStr6(char *str)
-{
-	UINT i, len;
-	if (str == NULL)
-	{
-		return false;
-	}
-
-	len = StrLen(str);
-	if (len >= 5)
-	{
-		return false;
-	}
-
-	for (i = 0; i < len; i++)
-	{
-		char c = str[i];
-
-		if ((c >= 'a' && c <= 'f') ||
-		        (c >= 'A' && c <= 'F') ||
-		        (c >= '0' && c <= '9'))
-		{
-		}
-		else
-		{
-			return false;
-		}
-	}
 
 	return true;
 }
@@ -1550,131 +1330,16 @@ bool IsZeroIP6Addr(IPV6_ADDR *addr)
 	return IsZero(addr, sizeof(IPV6_ADDR));
 }
 
-static UINT IntToSubnetMask32(UINT i)
-{
-	UINT ret = 0xFFFFFFFF;
-
-	switch (i)
-	{
-	case 0:
-		ret = 0x00000000;
-		break;
-	case 1:
-		ret = 0x80000000;
-		break;
-	case 2:
-		ret = 0xC0000000;
-		break;
-	case 3:
-		ret = 0xE0000000;
-		break;
-	case 4:
-		ret = 0xF0000000;
-		break;
-	case 5:
-		ret = 0xF8000000;
-		break;
-	case 6:
-		ret = 0xFC000000;
-		break;
-	case 7:
-		ret = 0xFE000000;
-		break;
-	case 8:
-		ret = 0xFF000000;
-		break;
-	case 9:
-		ret = 0xFF800000;
-		break;
-	case 10:
-		ret = 0xFFC00000;
-		break;
-	case 11:
-		ret = 0xFFE00000;
-		break;
-	case 12:
-		ret = 0xFFF00000;
-		break;
-	case 13:
-		ret = 0xFFF80000;
-		break;
-	case 14:
-		ret = 0xFFFC0000;
-		break;
-	case 15:
-		ret = 0xFFFE0000;
-		break;
-	case 16:
-		ret = 0xFFFF0000;
-		break;
-	case 17:
-		ret = 0xFFFF8000;
-		break;
-	case 18:
-		ret = 0xFFFFC000;
-		break;
-	case 19:
-		ret = 0xFFFFE000;
-		break;
-	case 20:
-		ret = 0xFFFFF000;
-		break;
-	case 21:
-		ret = 0xFFFFF800;
-		break;
-	case 22:
-		ret = 0xFFFFFC00;
-		break;
-	case 23:
-		ret = 0xFFFFFE00;
-		break;
-	case 24:
-		ret = 0xFFFFFF00;
-		break;
-	case 25:
-		ret = 0xFFFFFF80;
-		break;
-	case 26:
-		ret = 0xFFFFFFC0;
-		break;
-	case 27:
-		ret = 0xFFFFFFE0;
-		break;
-	case 28:
-		ret = 0xFFFFFFF0;
-		break;
-	case 29:
-		ret = 0xFFFFFFF8;
-		break;
-	case 30:
-		ret = 0xFFFFFFFC;
-		break;
-	case 31:
-		ret = 0xFFFFFFFE;
-		break;
-	case 32:
-		ret = 0xFFFFFFFF;
-		break;
-	}
-
-	if (IsLittleEndian())
-	{
-		ret = Swap32(ret);
-	}
-
-	return ret;
-}
 void IntToSubnetMask4(IP *ip, UINT i)
 {
-	UINT m;
 	if (ip == NULL)
 	{
 		return;
 	}
 
-	m = IntToSubnetMask32(i);
+	ZeroIP4(ip);
 
-	UINTToIP(ip, m);
+	PrefixLenToMask(IPV4(ip->address), IPV4_SIZE, i);
 }
 
 static bool IsSubnetMask(IP *ip)
@@ -1690,7 +1355,6 @@ static bool IsSubnetMask(IP *ip)
 }
 bool IsSubnetMask4(IP *ip)
 {
-	UINT i;
 	if (ip == NULL)
 	{
 		return false;
@@ -1701,52 +1365,7 @@ bool IsSubnetMask4(IP *ip)
 		return false;
 	}
 
-	i = IPToUINT(ip);
-
-	if (IsLittleEndian())
-	{
-		i = Swap32(i);
-	}
-
-	switch (i)
-	{
-	case 0x00000000:
-	case 0x80000000:
-	case 0xC0000000:
-	case 0xE0000000:
-	case 0xF0000000:
-	case 0xF8000000:
-	case 0xFC000000:
-	case 0xFE000000:
-	case 0xFF000000:
-	case 0xFF800000:
-	case 0xFFC00000:
-	case 0xFFE00000:
-	case 0xFFF00000:
-	case 0xFFF80000:
-	case 0xFFFC0000:
-	case 0xFFFE0000:
-	case 0xFFFF0000:
-	case 0xFFFF8000:
-	case 0xFFFFC000:
-	case 0xFFFFE000:
-	case 0xFFFFF000:
-	case 0xFFFFF800:
-	case 0xFFFFFC00:
-	case 0xFFFFFE00:
-	case 0xFFFFFF00:
-	case 0xFFFFFF80:
-	case 0xFFFFFFC0:
-	case 0xFFFFFFE0:
-	case 0xFFFFFFF0:
-	case 0xFFFFFFF8:
-	case 0xFFFFFFFC:
-	case 0xFFFFFFFE:
-	case 0xFFFFFFFF:
-		return true;
-	}
-
-	return false;
+	return (MaskToPrefixLen(IPV4(ip->address), IPV4_SIZE) != INFINITE);
 }
 
 
@@ -2575,9 +2194,7 @@ SOCK *NewUDP4(UINT port, IP *ip)
 			{
 				UINT false_flag = 0;
 				(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&false_flag, sizeof(false_flag));
-#ifdef	SO_EXCLUSIVEADDRUSE
 				(void)setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (char *)&true_flag, sizeof(true_flag));
-#endif
 				if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
 				{
 					closesocket(s);
@@ -2676,9 +2293,7 @@ SOCK *NewUDP6(UINT port, IP *ip)
 			if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
 			{
 				(void)setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (char *)&false_flag, sizeof(false_flag));
-#ifdef	SO_EXCLUSIVEADDRUSE
 				(void)setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (char *)&true_flag, sizeof(true_flag));
-#endif
 				if (bind(s, (struct sockaddr *)&addr, sizeof(addr)) != 0)
 				{
 					closesocket(s);
@@ -2717,9 +2332,7 @@ SOCK *NewUDP6(UINT port, IP *ip)
 	if (IS_SPECIAL_PORT(port))
 	{
 		UINT no = 0;
-#ifdef	IPV6_HDRINCL
 		(void)setsockopt(sock->socket, IPPROTO_IP, IPV6_HDRINCL, (char *)&no, sizeof(no));
-#endif
 		(void)setsockopt(sock->socket, IPPROTO_IP, IP_HDRINCL, (char *)&no, sizeof(no));
 
 		sock->IsRawSocket = true;
@@ -2869,49 +2482,96 @@ bool SendAll(SOCK *sock, void *data, UINT size, bool secure)
 	}
 }
 
-void SetWantToUseCipher(SOCK *sock, char *name)
+// Certificates of the chain_certs folder next to the exe, deduplicated by SHA-1 digest. The cache is scanned
+// once and again only after the folder changed (a change notification) or InvalidateChainCertCache() was called
+static LOCK *chain_cert_lock = NULL;
+static LIST *chain_cert_list = NULL;				// X of the folder, each digest once
+static HANDLE chain_cert_notify = INVALID_HANDLE_VALUE;	// Change notification of the folder
+static bool chain_cert_valid = false;				// chain_cert_list is current
+static UINT chain_cert_scans = 0;					// Scans of the folder so far
+
+// Get the folder of the chain certificates
+static void GetChainCertDirW(wchar_t *dirname, UINT size)
 {
-	if (sock == NULL || name == NULL)
-	{
-		return;
-	}
-
-	if (sock->WaitToUseCipher)
-	{
-		Free(sock->WaitToUseCipher);
-	}
-
-	sock->WaitToUseCipher = CopyStr(name);
-}
-
-static void AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx)
-{
-	wchar_t dirname[MAX_SIZE];
 	wchar_t exedir[MAX_SIZE];
-	wchar_t txtname[MAX_SIZE];
-	DIRLIST *dir;
-	LIST *o;
-	UINT i;
-
-	if (ctx == NULL)
-	{
-		return;
-	}
-
-	o = NewListFast(NULL);
 
 	GetExeDirW(exedir, sizeof(exedir));
 
-	CombinePathW(dirname, sizeof(dirname), exedir, L"chain_certs");
+	CombinePathW(dirname, size, exedir, L"chain_certs");
+}
+
+// Create the folder of the chain certificates (once, at server start)
+void PrepareChainCertDir()
+{
+	wchar_t dirname[MAX_SIZE];
+
+	GetChainCertDirW(dirname, sizeof(dirname));
 
 	MakeDirExW(dirname);
+}
 
-	CombinePathW(txtname, sizeof(txtname), dirname, L"Readme_Chain_Certs.txt");
-
-	if (IsFileExistsW(txtname) == false)
+// Mark the cached chain certificates as out of date: the next connection scans the folder again
+void InvalidateChainCertCache()
+{
+	if (chain_cert_lock == NULL)
 	{
-		FileCopyW(L"|chain_certs.txt", txtname);
+		return;
 	}
+
+	Lock(chain_cert_lock);
+	{
+		chain_cert_valid = false;
+	}
+	Unlock(chain_cert_lock);
+}
+
+// Number of scans of the chain_certs folder so far
+UINT GetChainCertScanCount()
+{
+	UINT ret;
+
+	if (chain_cert_lock == NULL)
+	{
+		return 0;
+	}
+
+	Lock(chain_cert_lock);
+	{
+		ret = chain_cert_scans;
+	}
+	Unlock(chain_cert_lock);
+
+	return ret;
+}
+
+// Release the cache and the change notification
+static void FreeChainCertCache()
+{
+	if (chain_cert_list != NULL)
+	{
+		FreeXList(chain_cert_list);
+		chain_cert_list = NULL;
+	}
+
+	if (chain_cert_notify != INVALID_HANDLE_VALUE)
+	{
+		FindCloseChangeNotification(chain_cert_notify);
+		chain_cert_notify = INVALID_HANDLE_VALUE;
+	}
+
+	chain_cert_valid = false;
+}
+
+// Read the folder into the cache. chain_cert_lock is held
+static void ScanChainCertDir(wchar_t *dirname)
+{
+	DIRLIST *dir;
+	LIST *o;
+	LIST *hashes;
+	UINT i;
+
+	o = NewListFast(NULL);
+	hashes = NewListFast(NULL);
 
 	dir = EnumDirW(dirname);
 
@@ -2938,24 +2598,26 @@ static void AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx)
 
 					GetXDigest(x, hash, true);
 
-					for (j = 0; j < LIST_NUM(o); j++)
+					for (j = 0; j < LIST_NUM(hashes); j++)
 					{
-						UCHAR *hash2 = LIST_DATA(o, j);
+						UCHAR *hash2 = LIST_DATA(hashes, j);
 
 						if (Cmp(hash, hash2, SHA1_SIZE) == 0)
 						{
 							exists = true;
+							break;
 						}
 					}
 
 					if (exists == false)
 					{
-						AddChainSslCert(ctx, x);
-
-						Add(o, Clone(hash, SHA1_SIZE));
+						Add(hashes, Clone(hash, SHA1_SIZE));
+						Add(o, x);
 					}
-
-					FreeX(x);
+					else
+					{
+						FreeX(x);
+					}
 				}
 			}
 		}
@@ -2963,38 +2625,129 @@ static void AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx)
 		FreeDir(dir);
 	}
 
-	for (i = 0; i < LIST_NUM(o); i++)
+	for (i = 0; i < LIST_NUM(hashes); i++)
 	{
-		UCHAR *hash = LIST_DATA(o, i);
-
-		Free(hash);
+		Free(LIST_DATA(hashes, i));
 	}
 
-	ReleaseList(o);
+	ReleaseList(hashes);
+
+	chain_cert_list = o;
+	chain_cert_scans++;
+}
+
+// Bring the cache up to date: read the folder again when it changed or was invalidated. chain_cert_lock is held
+static void RefreshChainCertCache()
+{
+	if (chain_cert_valid && chain_cert_notify != INVALID_HANDLE_VALUE &&
+		WaitForSingleObject(chain_cert_notify, 0) == WAIT_OBJECT_0)
+	{
+		// The folder changed: arm the notification again before the scan so that a change during it is seen
+		if (FindNextChangeNotification(chain_cert_notify) == false)
+		{
+			FindCloseChangeNotification(chain_cert_notify);
+			chain_cert_notify = INVALID_HANDLE_VALUE;
+		}
+
+		chain_cert_valid = false;
+	}
+
+	if (chain_cert_valid == false)
+	{
+		wchar_t dirname[MAX_SIZE];
+
+		GetChainCertDirW(dirname, sizeof(dirname));
+
+		if (chain_cert_list != NULL)
+		{
+			FreeXList(chain_cert_list);
+			chain_cert_list = NULL;
+		}
+
+		// The notification is opened before the scan so that no change between them is lost
+		if (chain_cert_notify == INVALID_HANDLE_VALUE)
+		{
+			chain_cert_notify = FindFirstChangeNotificationW(dirname, FALSE,
+				FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_SIZE | FILE_NOTIFY_CHANGE_LAST_WRITE);
+		}
+
+		ScanChainCertDir(dirname);
+
+		// Without a notification (no folder) every call scans
+		chain_cert_valid = (chain_cert_notify != INVALID_HANDLE_VALUE);
+	}
+}
+
+// Generation of the chain certificates: it changes each time the cached list is read again. The cache is brought
+// up to date first, so a context built after this call has the certificates of this generation (or newer ones)
+UINT GetChainCertGeneration()
+{
+	UINT ret;
+
+	if (chain_cert_lock == NULL)
+	{
+		return 0;
+	}
+
+	Lock(chain_cert_lock);
+	{
+		RefreshChainCertCache();
+
+		ret = chain_cert_scans;
+	}
+	Unlock(chain_cert_lock);
+
+	return ret;
+}
+
+// Add the certificates of the chain_certs folder to the chain of ctx. Returns the number added
+UINT AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx)
+{
+	UINT i;
+	UINT ret = 0;
+
+	if (ctx == NULL || chain_cert_lock == NULL)
+	{
+		return 0;
+	}
+
+	Lock(chain_cert_lock);
+	{
+		RefreshChainCertCache();
+
+		for (i = 0; i < LIST_NUM(chain_cert_list); i++)
+		{
+			if (AddChainSslCert(ctx, LIST_DATA(chain_cert_list, i)))
+			{
+				ret++;
+			}
+		}
+	}
+	Unlock(chain_cert_lock);
+
+	return ret;
 }
 
 bool AddChainSslCert(struct ssl_ctx_st *ctx, X *x)
 {
-	bool ret = false;
-	X *x_copy;
-	if (ctx == NULL || x == NULL)
+	if (ctx == NULL || x == NULL || x->x509 == NULL)
 	{
-		return ret;
+		return false;
 	}
 
-	x_copy = CloneX(x);
-
-	if (x_copy != NULL)
+	// The context takes over the reference when it succeeds
+	if (X509_up_ref(x->x509) != 1)
 	{
-		SSL_CTX_add_extra_chain_cert(ctx, x_copy->x509);
-		x_copy->do_not_free = true;
-
-		ret = true;
-
-		FreeX(x_copy);
+		return false;
 	}
 
-	return ret;
+	if (SSL_CTX_add_extra_chain_cert(ctx, x->x509) != 1)
+	{
+		X509_free(x->x509);
+		return false;
+	}
+
+	return true;
 }
 
 // Drain the OpenSSL error queue of a failed SSL_accept or SSL_connect into the ssl_err code (call under openssl_lock)
@@ -3074,6 +2827,103 @@ static void AddSslRootCerts(X509_STORE *store)
 	}
 }
 
+static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err);
+
+// A server context with every setting that does not depend on the connection applied: version flags, security
+// level, certificate chain, certificate and key, cipher list and groups. x and priv may be NULL (no certificate),
+// chain NULL takes the certificates of the chain_certs folder, cipher_list NULL keeps the OpenSSL default and
+// settings NULL overrides nothing. Connections take the context by reference (ShareSSLCtx, FreeSSLCtx)
+struct ssl_ctx_st *NewServerSSLCtx(X *x, K *priv, LIST *chain, char *cipher_list, SSL_ACCEPT_SETTINGS *settings)
+{
+	SSL_CTX *ctx;
+	SSL_ACCEPT_SETTINGS none;
+	bool use_cert = (x != NULL && priv != NULL && CheckXandK(x, priv));
+
+	ctx = NewSSLCtx(true);
+	if (ctx == NULL)
+	{
+		return NULL;
+	}
+
+	if (settings == NULL)
+	{
+		Zero(&none, sizeof(none));
+		settings = &none;
+	}
+
+	Lock(openssl_lock);
+	{
+		if (settings->Tls_Disable1_0)
+		{
+			SSL_CTX_set_options(ctx, SSL_OP_NO_TLSv1);
+		}
+
+		if (settings->Tls_Disable1_1)
+		{
+			SSL_CTX_set_options(ctx, SSL_OP_NO_TLSv1_1);
+		}
+
+		if (settings->Tls_Disable1_2)
+		{
+			SSL_CTX_set_options(ctx, SSL_OP_NO_TLSv1_2);
+		}
+
+		if (settings->Tls_Disable1_3)
+		{
+			SSL_CTX_set_options(ctx, SSL_OP_NO_TLSv1_3);
+		}
+	}
+	Unlock(openssl_lock);
+
+	if (chain == NULL)
+	{
+		AddChainSslCertOnDirectory(ctx);
+	}
+	else
+	{
+		UINT i;
+
+		LockList(chain);
+		{
+			for (i = 0;i < LIST_NUM(chain);i++)
+			{
+				AddChainSslCert(ctx, LIST_DATA(chain, i));
+			}
+		}
+		UnlockList(chain);
+	}
+
+	Lock(openssl_lock);
+	{
+		if (settings->Override_Security_Level)
+		{
+			SSL_CTX_set_security_level(ctx, settings->Override_Security_Level_Value);
+		}
+
+		if (use_cert)
+		{
+			SSL_CTX_use_certificate(ctx, x->x509);
+			SSL_CTX_use_PrivateKey(ctx, priv->pkey);
+		}
+
+		if (cipher_list != NULL)
+		{
+			if (SSL_CTX_set_cipher_list(ctx, cipher_list) == 0)
+			{
+				SSL_CTX_set_cipher_list(ctx, DEFAULT_CIPHER_LIST);
+			}
+		}
+
+		SSL_CTX_set1_groups_list(ctx, PQ_GROUP_LIST);
+
+		// A context that lives for many connections must not resume sessions: a fresh context per connection never did
+		SSL_CTX_set_session_cache_mode(ctx, SSL_SESS_CACHE_OFF);
+	}
+	Unlock(openssl_lock);
+
+	return ctx;
+}
+
 bool StartSSL(SOCK *sock, X *x, K *priv)
 {
 	return StartSSLEx(sock, x, priv, NULL);
@@ -3083,6 +2933,22 @@ bool StartSSLEx(SOCK *sock, X *x, K *priv, char *sni_hostname)
 	return StartSSLEx3(sock, x, priv, NULL, sni_hostname, NULL, NULL);
 }
 bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err)
+{
+	return StartSSLMain(sock, NULL, x, priv, chain, sni_hostname, ssl_option, ssl_err);
+}
+// Start TLS on an accepted connection with a server context that is shared by many connections (NewServerSSLCtx).
+// The caller keeps its own reference of ctx
+bool StartSSLServer(SOCK *sock, struct ssl_ctx_st *ctx, UINT *ssl_err)
+{
+	if (ctx == NULL)
+	{
+		return false;
+	}
+
+	return StartSSLMain(sock, ctx, NULL, NULL, NULL, NULL, NULL, ssl_err);
+}
+// server_ctx NULL: a context of this call (a client context, or a server one built from x, priv and chain)
+static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err)
 {
 	X509 *x509;
 	EVP_PKEY *key;
@@ -3109,6 +2975,10 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 	{
 		return false;
 	}
+	if (server_ctx != NULL && sock->ServerMode == false)
+	{
+		return false;
+	}
 
 	if (sock->SecureMode)
 	{
@@ -3122,7 +2992,19 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 		return true;
 	}
 
-	ssl_ctx = NewSSLCtx(sock->ServerMode);
+	if (server_ctx != NULL)
+	{
+		ShareSSLCtx(server_ctx);
+		ssl_ctx = server_ctx;
+	}
+	else if (sock->ServerMode)
+	{
+		ssl_ctx = NewServerSSLCtx(x, priv, chain, NULL, NULL);
+	}
+	else
+	{
+		ssl_ctx = NewSSLCtx(false);
+	}
 	if (ssl_ctx == NULL)
 	{
 		goto FAIL;
@@ -3130,58 +3012,7 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 
 	Lock(openssl_lock);
 	{
-		if (sock->ServerMode)
-		{
-#ifdef	SSL_OP_NO_TLSv1
-			if (sock->SslAcceptSettings.Tls_Disable1_0)
-			{
-				SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1);
-			}
-#endif
-
-#ifdef	SSL_OP_NO_TLSv1_1
-			if (sock->SslAcceptSettings.Tls_Disable1_1)
-			{
-				SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_1);
-			}
-#endif
-
-#ifdef	SSL_OP_NO_TLSv1_2
-			if (sock->SslAcceptSettings.Tls_Disable1_2)
-			{
-				SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_2);
-			}
-#endif
-
-#ifdef	SSL_OP_NO_TLSv1_3
-			if (sock->SslAcceptSettings.Tls_Disable1_3)
-			{
-				SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_TLSv1_3);
-			}
-#endif
-
-			Unlock(openssl_lock);
-			if (chain == NULL)
-			{
-				AddChainSslCertOnDirectory(ssl_ctx);
-			}
-			else
-			{
-				UINT i;
-				X *x;
-				LockList(chain);
-				{
-					for (i = 0;i < LIST_NUM(chain);i++)
-					{
-						x = LIST_DATA(chain, i);
-						AddChainSslCert(ssl_ctx, x);
-					}
-				}
-				UnlockList(chain);
-			}
-			Lock(openssl_lock);
-		}
-		else
+		if (sock->ServerMode == false)
 		{
 			if (ssl_option != NULL && ssl_option->VerifyPeer)
 			{
@@ -3209,13 +3040,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 			}
 		}
 
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) ||  LIBRESSL_VERSION_NUMBER >= 0x3060000L
-		if (sock->SslAcceptSettings.Override_Security_Level)
-		{
-			SSL_CTX_set_security_level(ssl_ctx, sock->SslAcceptSettings.Override_Security_Level_Value);
-		}
-#endif
-
 		sock->ssl = SSL_new(ssl_ctx);
 
 		if (sock->ssl == NULL)
@@ -3226,7 +3050,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 
 		SSL_set_fd(sock->ssl, (int)sock->socket);
 
-#ifdef	SSL_CTRL_SET_TLSEXT_HOSTNAME
 		if (sock->ServerMode == false)
 		{
 			if (IsEmptyStr(sni_hostname) == false)
@@ -3234,41 +3057,32 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 				SSL_set_tlsext_host_name(sock->ssl, sni_hostname);
 			}
 		}
-#endif
 
 	}
 	Unlock(openssl_lock);
 
-	if (x != NULL)
+	if (sock->ServerMode == false)
 	{
-		if (CheckXandK(x, priv))
+		// A client: certificate and groups of this connection (a server has them in its context)
+		if (x != NULL)
 		{
-			x509 = x->x509;
-			key = priv->pkey;
-
-			Lock(openssl_lock);
+			if (CheckXandK(x, priv))
 			{
-				SSL_use_certificate(sock->ssl, x509);
-				SSL_use_PrivateKey(sock->ssl, key);
+				x509 = x->x509;
+				key = priv->pkey;
+
+				Lock(openssl_lock);
+				{
+					SSL_use_certificate(sock->ssl, x509);
+					SSL_use_PrivateKey(sock->ssl, key);
+				}
+				Unlock(openssl_lock);
 			}
-			Unlock(openssl_lock);
 		}
-	}
 
-	if (sock->WaitToUseCipher != NULL)
-	{
-		Lock(openssl_lock);
-		{
-			if (SSL_set_cipher_list(sock->ssl, sock->WaitToUseCipher) == 0)
-				SSL_set_cipher_list(sock->ssl, DEFAULT_CIPHER_LIST);
-		}
-		Unlock(openssl_lock);
-	}
-
-	#if OPENSSL_VERSION_NUMBER >= 0x30000000L
 		SSL_set1_groups_list(sock->ssl, PQ_GROUP_LIST);
-	#endif
-	
+	}
+
 	if (sock->ServerMode)
 	{
 		handshake_ret = SSL_accept(sock->ssl);
@@ -3294,8 +3108,6 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 	if (sock->ServerMode)
 	{
 
-#ifdef	SSL_CTRL_SET_TLSEXT_HOSTNAME
-#ifdef	TLSEXT_NAMETYPE_host_name
 		if (true)
 		{
 			const char *sni_recv_hostname = SSL_get_servername(sock->ssl, TLSEXT_NAMETYPE_host_name);
@@ -3305,8 +3117,7 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL
 				StrCpy(sock->SniHostname, sizeof(sock->SniHostname), (char *)sni_recv_hostname);
 			}
 		}
-#endif
-#endif
+
 	}
 
 	Lock(openssl_lock);
@@ -3483,15 +3294,8 @@ static UINT SecureRecv(SOCK *sock, void *data, UINT size)
 			}
 		}
 		Unlock(sock->ssl_lock);
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-		// OpenSSL 3: both 0 and negative values may be retryable; use SSL_get_error().
+		// Both 0 and negative values may be retryable: use SSL_get_error().
 		// See: https://github.com/openssl/openssl/blob/435981cbadad2c58c35bacd30ca5d8b4c9bea72f/doc/man3/SSL_read.pod
-		if (ret == 0)
-		{
-			Disconnect(sock);
-			return 0;
-		}
-#endif
 		if (ret <= 0 && (e == SSL_ERROR_WANT_READ || e == SSL_ERROR_WANT_WRITE || e == SSL_ERROR_SSL))
 		{
 			return SslFailResult(sock, e);
@@ -3509,11 +3313,7 @@ static UINT SecureRecv(SOCK *sock, void *data, UINT size)
 		ERR_clear_error();
 		ret = SSL_read(sock->ssl, data, size);
 
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-		if (ret < 0)
-#else
 		if (ret <= 0)
-#endif
 		{
 			e = SSL_get_error(sock->ssl, ret);
 		}
@@ -3532,16 +3332,6 @@ static UINT SecureRecv(SOCK *sock, void *data, UINT size)
 
 		return (UINT)ret;
 	}
-
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-	// OpenSSL 3: both 0 and negative values may be retryable; use SSL_get_error().
-	// See: https://github.com/openssl/openssl/blob/435981cbadad2c58c35bacd30ca5d8b4c9bea72f/doc/man3/SSL_read.pod
-	if (ret == 0)
-	{
-		Disconnect(sock);
-		return 0;
-	}
-#endif
 
 	return SslFailResult(sock, e);
 }
@@ -3565,11 +3355,7 @@ static UINT SecureSend(SOCK *sock, void *data, UINT size)
 
 		ERR_clear_error();
 		ret = SSL_write(sock->ssl, data, size);
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-		if (ret < 0)
-#else
 		if (ret <= 0)
-#endif
 		{
 			e = SSL_get_error(sock->ssl, ret);
 		}
@@ -3586,14 +3372,6 @@ static UINT SecureSend(SOCK *sock, void *data, UINT size)
 		Unlock(sock->lock);
 		return (UINT)ret;
 	}
-
-#if OPENSSL_VERSION_NUMBER < 0x30000000L
-	if (ret == 0)
-	{
-		Disconnect(sock);
-		return 0;
-	}
-#endif
 
 	return SslFailResult(sock, e);
 }
@@ -4188,13 +3966,8 @@ void Disconnect(SOCK *sock)
 	{
 		if (sock->socket != INVALID_SOCKET)
 		{
-#ifdef	SO_DONTLINGER
 			UINT true_flag = 1;
 			(void)setsockopt(sock->socket, SOL_SOCKET, SO_DONTLINGER, (char *)&true_flag, sizeof(true_flag));
-#else
-			UINT false_flag = 0;
-			(void)setsockopt(sock->socket, SOL_SOCKET, SO_LINGER, (char *)&false_flag, sizeof(false_flag));
-#endif
 		}
 
 		Lock(sock->lock);
@@ -4454,9 +4227,7 @@ static void SetSockTos(SOCK *s, int tos)
 		return;
 	}
 
-#ifdef	IP_TOS
 	(void)setsockopt(s->socket, IPPROTO_IP, IP_TOS, (char *)&tos, sizeof(int));
-#endif
 
 	s->CurrentTos = tos;
 }
@@ -4754,12 +4525,7 @@ SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname
 	Zero(&ling, sizeof(ling));
 
 	UINT true_flag = 1;
-#ifdef	SO_DONTLINGER
 	(void)setsockopt(sock->socket, SOL_SOCKET, SO_DONTLINGER, (char *)&true_flag, sizeof(true_flag));
-#else
-	UINT false_flag = 0;
-	(void)setsockopt(sock->socket, SOL_SOCKET, SO_LINGER, (char *)&false_flag, sizeof(false_flag));
-#endif
 
 	(void)setsockopt(sock->socket, IPPROTO_TCP, TCP_NODELAY, (char *)&true_flag, sizeof(true_flag));
 
@@ -5156,15 +4922,11 @@ void QuerySocketInformation(SOCK *sock)
 
 		if (sock->IPv6)
 		{
-#ifdef	IPV6_UNICAST_HOPS
 			opt_value = IPV6_UNICAST_HOPS;
-#endif
 		}
 		else
 		{
-#ifdef	IP_TTL
 			opt_value = IP_TTL;
-#endif
 		}
 
 		size = sizeof(UINT);
@@ -5236,7 +4998,6 @@ void CleanupSock(SOCK *s)
 		s->CipherName = NULL;
 	}
 
-	Free(s->WaitToUseCipher);
 	DeleteLock(s->lock);
 	DeleteLock(s->ssl_lock);
 	DeleteLock(s->disconnect_lock);
@@ -5584,15 +5345,22 @@ void IPToStr(char *str, UINT size, IP *ip)
 	}
 	else
 	{
-		const BYTE *ipv4 = IPV4(ip->address);
-		Format(str, size, "%hhu.%hhu.%hhu.%hhu", ipv4[0], ipv4[1], ipv4[2], ipv4[3]);
+		IN_ADDR addr;
+		char tmp[INET_ADDRSTRLEN];
+
+		Copy(&addr, IPV4(ip->address), sizeof(addr));
+		RtlIpv4AddressToStringA(&addr, tmp);
+
+		StrCpy(str, size, tmp);
 	}
 }
 
 bool StrToIP(IP *ip, char *str)
 {
-	TOKEN_LIST *token;
 	char *tmp;
+	PCSTR end;
+	IN_ADDR addr;
+	bool ok;
 	if (ip == NULL || str == NULL)
 	{
 		return false;
@@ -5605,33 +5373,18 @@ bool StrToIP(IP *ip, char *str)
 
 	ZeroIP4(ip);
 
+	// Strict four-part dotted decimal, and nothing after it
 	tmp = CopyStr(str);
 	Trim(tmp);
-	token = ParseToken(tmp, ".");
+	ok = (RtlIpv4StringToAddressA(tmp, TRUE, &end, &addr) == 0 && *end == 0);
 	Free(tmp);
 
-	if (token->NumTokens != 4)
+	if (ok == false)
 	{
-		FreeToken(token);
 		return false;
 	}
-	for (BYTE i = 0; i < IPV4_SIZE; ++i)
-	{
-		char *s = token->Token[i];
-		if (s[0] < '0' || s[0] > '9' ||
-		        (ToInt(s) >= 256))
-		{
-			FreeToken(token);
-			return false;
-		}
-	}
 
-	for (BYTE i = 0; i < IPV4_SIZE; ++i)
-	{
-		IPV4(ip->address)[i] = (BYTE)ToInt(token->Token[i]);
-	}
-
-	FreeToken(token);
+	Copy(IPV4(ip->address), &addr, IPV4_SIZE);
 
 	return true;
 }
@@ -5714,42 +5467,35 @@ static DH *TmpDhCallback(SSL *ssl, int is_export, int keylength)
 
 struct ssl_ctx_st *NewSSLCtx(bool server_mode)
 {
-	struct ssl_ctx_st *ctx = SSL_CTX_new(SSLv23_method());
+	struct ssl_ctx_st *ctx = SSL_CTX_new(server_mode ? TLS_server_method() : TLS_client_method());
 	if(ctx == NULL)
 	{
 		return NULL;
 	}
-	if (server_mode)
-	{
-		SSL_CTX_set_ssl_version(ctx, SSLv23_server_method());
-	}
-	else
-	{
-		SSL_CTX_set_ssl_version(ctx, SSLv23_client_method());
-	}
 
-#ifdef	SSL_OP_NO_SSLv3
 	SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv3);
-#endif
 
-#ifdef	SSL_OP_NO_TICKET
 	SSL_CTX_set_options(ctx, SSL_OP_NO_TICKET);
-#endif
 
-#ifdef	SSL_OP_CIPHER_SERVER_PREFERENCE
 	if (server_mode)
 	{
 		SSL_CTX_set_options(ctx, SSL_OP_CIPHER_SERVER_PREFERENCE);
 	}
-#endif
 
 	SSL_CTX_set_tmp_dh_callback(ctx, TmpDhCallback);
 
-#ifdef	SSL_CTX_set_ecdh_auto
-	SSL_CTX_set_ecdh_auto(ctx, 1);
-#endif
-
 	return ctx;
+}
+
+// Take one more reference of ctx: each holder calls FreeSSLCtx once
+void ShareSSLCtx(struct ssl_ctx_st *ctx)
+{
+	if (ctx == NULL)
+	{
+		return;
+	}
+
+	SSL_CTX_up_ref(ctx);
 }
 
 void FreeSSLCtx(struct ssl_ctx_st *ctx)
@@ -5765,7 +5511,7 @@ void FreeSSLCtx(struct ssl_ctx_st *ctx)
 UINT GetOSSecurityLevel()
 {
 	UINT security_level_new = 0, security_level_set_ssl_version = 0;
-	struct ssl_ctx_st *ctx = SSL_CTX_new(SSLv23_method());
+	struct ssl_ctx_st *ctx = SSL_CTX_new(TLS_method());
 
 	if (ctx == NULL)
 	{
@@ -5773,11 +5519,9 @@ UINT GetOSSecurityLevel()
 	}
 
 
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)) || LIBRESSL_VERSION_NUMBER >= 0x3060000L
 	security_level_new = SSL_CTX_get_security_level(ctx);
-#endif
 
-	security_level_set_ssl_version = SSL_CTX_set_ssl_version(ctx, SSLv23_server_method());
+	security_level_set_ssl_version = SSL_CTX_set_ssl_version(ctx, TLS_server_method());
 
 	FreeSSLCtx(ctx);
 
@@ -5817,6 +5561,8 @@ void InitNetwork()
 
 	current_global_ip_lock = NewLock();
 	current_global_ip_set = false;
+
+	chain_cert_lock = NewLock();
 }
 
 TOKEN_LIST *GetCipherList()
@@ -6132,6 +5878,10 @@ void FreeNetwork()
 	ssl_root_certs = NULL;
 
 	FreeWaitThread();
+
+	FreeChainCertCache();
+	DeleteLock(chain_cert_lock);
+	chain_cert_lock = NULL;
 
 	DeleteLock(machine_name_lock);
 	DeleteLock(disconnect_function_lock);
@@ -6756,15 +6506,78 @@ char *RecvLine(SOCK *s, UINT max_size)
 	}
 }
 
+// Read cursor over a byte range: a read that does not fit fails and moves nothing
+typedef struct PKT_CURSOR
+{
+	UCHAR *Pos;
+	UINT Left;
+} PKT_CURSOR;
+
+static void PktCursorInit(PKT_CURSOR *c, UCHAR *buf, UINT size)
+{
+	c->Pos = buf;
+	c->Left = size;
+}
+
+// Takes the next size bytes as a cursor of their own; sub NULL skips them
+static bool PktCursorTake(PKT_CURSOR *c, UINT size, PKT_CURSOR *sub)
+{
+	if (size > c->Left)
+	{
+		return false;
+	}
+
+	if (sub != NULL)
+	{
+		PktCursorInit(sub, c->Pos, size);
+	}
+
+	c->Pos += size;
+	c->Left -= size;
+
+	return true;
+}
+
+static bool PktCursorU8(PKT_CURSOR *c, UCHAR *v)
+{
+	UCHAR *p = c->Pos;
+
+	if (PktCursorTake(c, 1, NULL) == false)
+	{
+		return false;
+	}
+
+	*v = p[0];
+
+	return true;
+}
+
+// Big-endian
+static bool PktCursorU16(PKT_CURSOR *c, USHORT *v)
+{
+	UCHAR *p = c->Pos;
+
+	if (PktCursorTake(c, 2, NULL) == false)
+	{
+		return false;
+	}
+
+	*v = (USHORT)((p[0] << 8) | p[1]);
+
+	return true;
+}
+
+// Host name from the server_name extension of a TLS ClientHello at the start of a TCP payload, read in
+// place. The handshake fields are bounded by the record length (not by the handshake length), each
+// extension by the extensions length. The first host_name entry that is not empty up to its first NUL
+// ends the search: it is cut to sni_size - 1 bytes, then spaces and tabs at both ends are dropped.
 bool GetSniNameFromSslPacket(UCHAR *packet_buf, UINT packet_size, char *sni, UINT sni_size)
 {
-	BUF *buf;
-	bool ret = false;
-	UCHAR content_type;
-	USHORT version;
-	USHORT handshake_length;
+	PKT_CURSOR rec, hello, exts, data, name;
+	USHORT version, record_len, hello_type, hello_len, len16, type;
+	UCHAR len8;
 
-	if (packet_buf == NULL || packet_size <= 11)
+	if (packet_buf == NULL || packet_size <= 11 || sni == NULL || sni_size == 0)
 	{
 		return false;
 	}
@@ -6776,189 +6589,74 @@ bool GetSniNameFromSslPacket(UCHAR *packet_buf, UINT packet_size, char *sni, UIN
 		return false;
 	}
 
-	buf = NewBufFromMemory(packet_buf, packet_size);
-
-	if (ReadBuf(buf, &content_type, sizeof(UCHAR)) == sizeof(UCHAR) &&
-	        ReadBuf(buf, &version, sizeof(USHORT)) == sizeof(USHORT) &&
-	        ReadBuf(buf, &handshake_length, sizeof(USHORT)) == sizeof(USHORT))
+	// Record header: content type 0x16 (checked above), version, length
+	PktCursorInit(&rec, packet_buf, packet_size);
+	if (PktCursorTake(&rec, 1, NULL) == false || PktCursorU16(&rec, &version) == false ||
+	        PktCursorU16(&rec, &record_len) == false || version < 0x0301 ||
+	        PktCursorTake(&rec, record_len, &hello) == false)
 	{
-		version = Endian16(version);
-		handshake_length = Endian16(handshake_length);
-
-		if (content_type == 0x16 && version >= 0x0301)
-		{
-			UCHAR *handshake_data = Malloc(handshake_length);
-
-			if (ReadBuf(buf, handshake_data, handshake_length) == handshake_length)
-			{
-				BUF *buf2 = NewBufFromMemory(handshake_data, handshake_length);
-				USHORT handshake_type;
-				USHORT handshake_length_2;
-
-				if (ReadBuf(buf2, &handshake_type, sizeof(USHORT)) == sizeof(USHORT) &&
-				        ReadBuf(buf2, &handshake_length_2, sizeof(USHORT)) == sizeof(USHORT))
-				{
-					handshake_type = Endian16(handshake_type);
-					handshake_length_2 = Endian16(handshake_length_2);
-
-					if (handshake_type == 0x0100 && handshake_length_2 <= (handshake_length - 4))
-					{
-						USHORT version2;
-
-						if (ReadBuf(buf2, &version2, sizeof(USHORT)) == sizeof(USHORT))
-						{
-							version2 = Endian16(version2);
-
-							if (version2 >= 0x0301)
-							{
-								UCHAR rand[32];
-
-								if (ReadBuf(buf2, rand, sizeof(rand)) == sizeof(rand))
-								{
-									UCHAR session_id_len;
-
-									if (ReadBuf(buf2, &session_id_len, sizeof(UCHAR)) == sizeof(UCHAR))
-									{
-										if (ReadBuf(buf2, NULL, session_id_len) == session_id_len)
-										{
-											USHORT cipher_len;
-
-											if (ReadBuf(buf2, &cipher_len, sizeof(USHORT)) == sizeof(USHORT))
-											{
-												cipher_len = Endian16(cipher_len);
-
-												if (ReadBuf(buf2, NULL, cipher_len) == cipher_len)
-												{
-													UCHAR comps_len;
-
-													if (ReadBuf(buf2, &comps_len, sizeof(UCHAR)) == sizeof(UCHAR))
-													{
-														if (ReadBuf(buf2, NULL, comps_len) == comps_len)
-														{
-															USHORT ext_length;
-
-															if (ReadBuf(buf2, &ext_length, sizeof(USHORT)) == sizeof(USHORT))
-															{
-																UCHAR *ext_buf;
-
-																ext_length = Endian16(ext_length);
-
-																ext_buf = Malloc(ext_length);
-
-																if (ReadBuf(buf2, ext_buf, ext_length) == ext_length)
-																{
-																	BUF *ebuf = NewBufFromMemory(ext_buf, ext_length);
-
-																	while (ret == false)
-																	{
-																		USHORT type;
-																		USHORT data_len;
-																		UCHAR *data;
-
-																		if (ReadBuf(ebuf, &type, sizeof(USHORT)) != sizeof(USHORT))
-																		{
-																			break;
-																		}
-
-																		if (ReadBuf(ebuf, &data_len, sizeof(USHORT)) != sizeof(USHORT))
-																		{
-																			break;
-																		}
-
-																		type = Endian16(type);
-																		data_len = Endian16(data_len);
-
-																		data = Malloc(data_len);
-
-																		if (ReadBuf(ebuf, data, data_len) != data_len)
-																		{
-																			Free(data);
-																			break;
-																		}
-
-																		if (type == 0x0000)
-																		{
-																			BUF *dbuf = NewBufFromMemory(data, data_len);
-
-																			USHORT total_len;
-
-																			if (ReadBuf(dbuf, &total_len, sizeof(USHORT)) == sizeof(USHORT))
-																			{
-																				UCHAR c;
-																				total_len = Endian16(total_len);
-
-																				if (ReadBuf(dbuf, &c, sizeof(UCHAR)) == sizeof(UCHAR))
-																				{
-																					if (c == 0)
-																					{
-																						USHORT name_len;
-
-																						if (ReadBuf(dbuf, &name_len, sizeof(USHORT)) == sizeof(USHORT))
-																						{
-																							char *name_buf;
-																							name_len = Endian16(name_len);
-
-																							name_buf = ZeroMalloc(name_len + 1);
-
-																							if (ReadBuf(dbuf, name_buf, name_len) == name_len)
-																							{
-																								if (StrLen(name_buf) >= 1)
-																								{
-																									ret = true;
-
-																									StrCpy(sni, sni_size, name_buf);
-																								}
-																							}
-
-																							Free(name_buf);
-																						}
-																					}
-																				}
-																			}
-
-																			FreeBuf(dbuf);
-																		}
-
-																		Free(data);
-																	}
-
-																	FreeBuf(ebuf);
-																}
-
-																Free(ext_buf);
-															}
-														}
-													}
-												}
-											}
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-
-				FreeBuf(buf2);
-			}
-
-			Free(handshake_data);
-		}
+		return false;
 	}
 
-	FreeBuf(buf);
-
-	if (ret)
+	// Handshake type 1 with the top length byte 0, then a 16-bit length that fits in the record
+	if (PktCursorU16(&hello, &hello_type) == false || PktCursorU16(&hello, &hello_len) == false ||
+	        hello_type != 0x0100 || hello_len > record_len - 4)
 	{
-		Trim(sni);
-
-		if (IsEmptyStr(sni))
-		{
-			ret = false;
-		}
+		return false;
 	}
 
-	return ret;
+	// client_version, random, session_id, cipher_suites, compression_methods, extensions
+	if (PktCursorU16(&hello, &version) == false || version < 0x0301 ||
+	        PktCursorTake(&hello, 32, NULL) == false ||
+	        PktCursorU8(&hello, &len8) == false || PktCursorTake(&hello, len8, NULL) == false ||
+	        PktCursorU16(&hello, &len16) == false || PktCursorTake(&hello, len16, NULL) == false ||
+	        PktCursorU8(&hello, &len8) == false || PktCursorTake(&hello, len8, NULL) == false ||
+	        PktCursorU16(&hello, &len16) == false || PktCursorTake(&hello, len16, &exts) == false)
+	{
+		return false;
+	}
+
+	while (PktCursorU16(&exts, &type) && PktCursorU16(&exts, &len16) && PktCursorTake(&exts, len16, &data))
+	{
+		UINT n, start, end;
+
+		// server_name: list length (not checked), name type 0 (host_name), name length, name
+		if (type != 0x0000 || PktCursorTake(&data, 2, NULL) == false ||
+		        PktCursorU8(&data, &len8) == false || len8 != 0 ||
+		        PktCursorU16(&data, &len16) == false || PktCursorTake(&data, len16, &name) == false)
+		{
+			continue;
+		}
+
+		n = 0;
+		while (n < name.Left && name.Pos[n] != 0)
+		{
+			n++;
+		}
+
+		if (n == 0)
+		{
+			continue;
+		}
+
+		end = MIN(n, sni_size - 1);
+		start = 0;
+		while (start < end && (name.Pos[start] == ' ' || name.Pos[start] == '\t'))
+		{
+			start++;
+		}
+		while (end > start && (name.Pos[end - 1] == ' ' || name.Pos[end - 1] == '\t'))
+		{
+			end--;
+		}
+
+		Copy(sni, name.Pos + start, end - start);
+		sni[end - start] = '\0';
+
+		return end != start;
+	}
+
+	return false;
 }
 
 void SetDhParam(DH_CTX *dh)
