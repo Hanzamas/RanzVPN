@@ -2181,6 +2181,7 @@ static BUF *BuildRedirectToUrlPayload(SESSION *s, char *redirect_url)
 		{
 			UCHAR hash[SHA1_SIZE];
 			char hash_str[MAX_SIZE];
+			char client_ip[MAX_SIZE];
 			SYSTEMTIME st;
 			BUF *b2;
 
@@ -2192,9 +2193,10 @@ static BUF *BuildRedirectToUrlPayload(SESSION *s, char *redirect_url)
 			}
 
 			SystemTime(&st);
+			IPToStr(client_ip, sizeof(client_ip), &s->Connection->ClientIp);
 
-			Format(info, sizeof(info), "%s|%s|%r|%04u%02u%02u%02u%02u%02u|",
-				username, session_name, &s->Connection->ClientIp,
+			Format(info, sizeof(info), "%s|%s|%s|%04u%02u%02u%02u%02u%02u|",
+				username, session_name, client_ip,
 				st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
 
 			b2 = NewBuf();

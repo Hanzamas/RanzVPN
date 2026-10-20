@@ -477,9 +477,9 @@ TABLE *FindTable(char *name)
 		return NULL;
 	}
 
-	tt.name = CopyStr(name);
+	// The key only lends its name to CmpTableName, which does not change it
+	tt.name = name;
 	t = Search(TableList, &tt);
-	Free(tt.name);
 
 	return t;
 }

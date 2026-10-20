@@ -67,7 +67,6 @@ wchar_t *UniCopyStr(wchar_t *str);
 UNI_TOKEN_LIST *UniNullToken();
 bool IsEmptyUniStr(wchar_t *str);
 bool UniIsEmptyStr(wchar_t *str);
-wchar_t *InternalFormatArgs(wchar_t *fmt, va_list args, bool ansi_mode);
 UINT UniStrWidth(wchar_t *str);
 void UniToStr3(wchar_t *str, UINT size, UINT64 value);
 bool UniEndWith(wchar_t *str, wchar_t *key);

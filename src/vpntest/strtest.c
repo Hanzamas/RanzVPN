@@ -11,6 +11,7 @@
 // It also pins snprintf as a unit that includes Mayaqua.h sees it: the C99 snprintf of the CRT,
 // which ends a truncated result in NUL (FND-2, #105).
 
+#include "Mayaqua/Internat.h"
 #include "Mayaqua/Mayaqua.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Str.h"
@@ -338,15 +339,16 @@ static void StrTestFormat(STRTEST_CTX *ctx)
 	StrTestOut(ctx, "BinToStrEx of NULL leaves the destination as it is", "xy", STRTEST_GUARD_END);
 }
 
-// snprintf after the Mayaqua headers, and Format of a field wider than the conversion buffer of
-// InternalFormatArgs (Internat.c). Mayaqua.h once mapped snprintf to the legacy Microsoft variant,
-// which leaves a truncated result without its terminator and returns -1.
+// snprintf after the Mayaqua headers, and Format and UniFormat on the CRT formatter. Mayaqua.h once
+// mapped snprintf to the legacy Microsoft variant, which leaves a truncated result without its
+// terminator and returns -1.
 static void StrTestSnprintf(STRTEST_CTX *ctx)
 {
 	char *b;
 	char *six = "abcdef";		// Arguments, not literals, so the compiler does not report the truncation
 	char *three = "abc";
 	char wide[MAX_SIZE * 2];
+	wchar_t uni[MAX_SIZE];
 	UINT len, spaces;
 	int ret;
 
@@ -361,9 +363,7 @@ static void StrTestSnprintf(STRTEST_CTX *ctx)
 		"snprintf of exactly size characters keeps size - 1 of them and the NUL",
 		"returned %d, buffer \"%s\"", ret, b);
 
-	// 600 characters do not fit the 512-byte buffer that InternalFormatArgs formats a number into:
-	// the result stops at its end and is terminated there (AddressSanitizer sees the read past the
-	// buffer when it is not)
+	// A field of 600 characters comes out whole: 599 spaces and the number
 	Format(wide, sizeof(wide), "%600u", 7);
 	len = StrLen(wide);
 	spaces = 0;
@@ -371,9 +371,26 @@ static void StrTestSnprintf(STRTEST_CTX *ctx)
 	{
 		spaces++;
 	}
-	StrTestCheck(ctx, len >= (MAX_SIZE - 1) && len <= 600 && (spaces == len || (spaces == len - 1 && wide[spaces] == '7')),
-		"Format of a numeric field wider than its conversion buffer gives only the padded number",
+	StrTestCheck(ctx, len == 600 && spaces == 599 && wide[spaces] == '7',
+		"Format of a numeric field of 600 characters gives the whole padded number",
 		"%u characters, %u leading spaces", len, spaces);
+
+	// The CRT pads %s by characters: a CJK character is one, not two (UniStrWidth)
+	UniFormat(uni, sizeof(uni), L"%-6s|", L"\x4e2d");
+	StrTestCheck(ctx, UniStrCmp(uni, L"\x4e2d     |") == 0,
+		"UniFormat pads %-6s of one CJK character with 5 spaces", "got %u characters", UniStrLen(uni));
+
+	// Size rules: a cut result keeps size - 1 characters and the terminator, size 1 leaves a wide
+	// buffer as it is, and %S and %s swap between Format and UniFormat
+	b = StrTestReset(ctx, NULL);
+	Format(b, 4, "%s%S", "ab", L"cd");
+	StrTestCheck(ctx, StrTestIs(ctx, "abc", STRTEST_GUARD_END), "Format cuts to size - 1 characters", "buffer \"%s\"", b);
+	UniStrCpy(uni, sizeof(uni), L"xy");
+	UniFormat(uni, 1, L"%u", 5);
+	StrTestCheck(ctx, UniStrCmp(uni, L"xy") == 0, "UniFormat of size 1 leaves the buffer as it is", "changed");
+	UniFormat(uni, sizeof(uni), L"%s|%S|%I64u|%llu|%s", L"w", "n", (UINT64)1 << 40, (UINT64)7, (wchar_t *)NULL);
+	StrTestCheck(ctx, UniStrCmp(uni, L"w|n|1099511627776|7|(null)") == 0,
+		"UniFormat formats %s, %S, %I64u, %llu and a NULL string", "got %u characters", UniStrLen(uni));
 }
 
 // SearchStr, SearchStrEx, InStr, InStrEx, ReplaceStr and ReplaceStri
@@ -397,6 +414,31 @@ static void StrTestSearch(STRTEST_CTX *ctx)
 	StrTestUint(ctx, "SearchStrEx keeps the case when asked", SearchStrEx("aBcAbC", "abc", 0, true), INFINITE);
 	StrTestUint(ctx, "SearchStrEx folds only letters", SearchStrEx("x_Y", "_y", 0, false), 1);
 	StrTestUint(ctx, "SearchStrEx folds only ASCII letters, not bytes above 127", SearchStrEx("\xe9X", "\xc9x", 0, false), INFINITE);
+
+	// search_str_parity: UniSearchStrEx gives what SearchStrEx gives (FND-124)
+	{
+		static char *cases[][2] = {{"abc", "abc"}, {"abc", "ABC"}, {"abc", "abcd"}, {"abc", ""}, {"abcabc", "bc"}};
+		UINT i, start, cs;
+
+		for (i = 0;i < sizeof(cases) / sizeof(cases[0]);i++)
+		{
+			for (start = 0;start <= 1;start++)
+			{
+				for (cs = 0;cs <= 1;cs++)
+				{
+					wchar_t ws[16], wk[16];
+					UINT a, w;
+
+					StrToUni(ws, sizeof(ws), cases[i][0]);
+					StrToUni(wk, sizeof(wk), cases[i][1]);
+					a = SearchStrEx(cases[i][0], cases[i][1], start, cs != 0);
+					w = UniSearchStrEx(ws, wk, start, cs != 0);
+					StrTestCheck(ctx, a == w, "search_str_parity: UniSearchStrEx agrees with SearchStrEx",
+						"\"%s\" in \"%s\" from %u, case %u: %u and %u", cases[i][1], cases[i][0], start, cs, a, w);
+				}
+			}
+		}
+	}
 
 	StrTestCheck(ctx, InStr("Hello World", "WORLD"), "InStr ignores the case", "returned false");
 	StrTestCheck(ctx, InStrEx("Hello World", "WORLD", true) == false, "InStrEx keeps the case when asked", "returned true");

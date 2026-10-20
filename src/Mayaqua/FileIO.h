@@ -36,7 +36,6 @@ struct DIRENT
 	char *FileName;
 	wchar_t *FileNameW;
 	UINT64 FileSize;
-	UINT64 CreateDate;
 	UINT64 UpdateDate;
 };
 
