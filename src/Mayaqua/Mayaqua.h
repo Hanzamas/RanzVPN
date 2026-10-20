@@ -12,12 +12,8 @@ void InitProcessCallOnce();
 
 #define	STRTABLE_ID					"SE_VPN_20121007"
 
-#define	IsBigEndian()		(g_little_endian ? false : true)
-#define	IsLittleEndian()	(g_little_endian)
-
 extern bool g_memcheck;
 extern bool g_debug;
-extern bool g_little_endian;
 
 #define	NUM_KERNEL_STATUS	128
 extern volatile LONG64 kernel_status[NUM_KERNEL_STATUS];

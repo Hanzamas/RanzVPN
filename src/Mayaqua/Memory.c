@@ -3,7 +3,6 @@
 
 #include "Memory.h"
 
-#include "Encoding.h"
 #include "Encrypt.h"
 #include "FileIO.h"
 #include "Internat.h"
@@ -15,8 +14,11 @@
 #include "Tracking.h"
 #include "Win32.h"
 
+#include <intrin.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <wincrypt.h>
 
 #include <zlib.h>
 
@@ -60,82 +62,27 @@ static UINT64 canary_memtag_magic2 = 0;
 
 UCHAR *GetCanaryRand(UINT id)
 {
-	if (id >= NUM_CANARY_RAND)
-	{
-		id = NUM_CANARY_RAND - 1;
-	}
-
 	return &((canary_rand_data[id].Data)[0]);
 }
 
 void InitCanaryRand()
 {
-	SYSTEMTIME st = { 0 };
-	char random_seed[1024] = { 0 };
-	UINT64 t1 = 0, t2 = 0;
+	UINT i;
 	if (canary_inited)
 	{
 		return;
 	}
 
-	GetSystemTime(&st);
-	memcpy(&t1, ((UCHAR *)&st) + 0, 8);
-	memcpy(&t2, ((UCHAR *)&st) + 8, 8);
-
+	// From CNG (Rand): no seed, no state shared with the CRT generator
+	for (i = 0;i < NUM_CANARY_RAND;i++)
 	{
-		UINT64 dos_rand = (UINT64)rand();
-		UINT64 tick1 = TickHighresNano64(true);
-		UINT64 tick2 = TickHighresNano64(true);
-
-		UINT i;
-
-		void *p1 = malloc(1);
-		void *p2 = malloc(1);
-
-		for (i = 0;i < NUM_CANARY_RAND;i++)
-		{
-			// using sprintf() here is safe.
-			sprintf(random_seed,
-				"%u "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%llu "
-				"%u "
-				,
-				i,
-				(UINT64)InitCanaryRand,
-				(UINT64)&canary_inited,
-				(UINT64) & ((canary_rand_data[0].Data)[0]),
-				(UINT64)&random_seed[0],
-				tick1,
-				tick2,
-				dos_rand,
-				(UINT64)p1,
-				(UINT64)p2,
-				t1,
-				t2,
-				~i
-			);
-
-			Sha0(canary_rand_data[i].Data, random_seed, (UINT)strlen(random_seed));
-		}
-
-		free(p1);
-		free(p2);
-
-		canary_memtag_magic1 = *((UINT64 *)(GetCanaryRand(CANARY_RAND_ID_MEMTAG_MAGIC) + 0));
-		canary_memtag_magic2 = *((UINT64 *)(GetCanaryRand(CANARY_RAND_ID_MEMTAG_MAGIC) + 8));
-
-		canary_inited = true;
+		Rand(canary_rand_data[i].Data, CANARY_RAND_SIZE);
 	}
+
+	canary_memtag_magic1 = *((UINT64 *)(GetCanaryRand(CANARY_RAND_ID_MEMTAG_MAGIC) + 0));
+	canary_memtag_magic2 = *((UINT64 *)(GetCanaryRand(CANARY_RAND_ID_MEMTAG_MAGIC) + 8));
+
+	canary_inited = true;
 }
 
 bool IsInHashListKey(HASH_LIST *h, UINT key)
@@ -218,13 +165,6 @@ void **HashListToArray(HASH_LIST *h, UINT *num)
 		return NULL;
 	}
 
-	if (h->AllList != NULL)
-	{
-		*num = LIST_NUM(h->AllList);
-
-		return ToArray(h->AllList);
-	}
-
 	ret = ZeroMalloc(sizeof(void *) * h->NumItems);
 
 	for (i = 0;i < h->Size;i++)
@@ -301,20 +241,12 @@ bool DeleteHash(HASH_LIST *h, void *p)
 		}
 	}
 
-	if (ret)
-	{
-		if (h->AllList != NULL)
-		{
-			Delete(h->AllList, p);
-		}
-	}
-
 	return ret;
 }
 
 // Take out every item for which proc returns true, in one pass over the buckets: no array copy and no search per
-// item. The kept items keep their order. proc may free an item it takes out: after that the item is only compared
-// by pointer (AllList). Returns the number of items taken out.
+// item. The kept items keep their order. proc may free an item it takes out: the item is not touched after that.
+// Returns the number of items taken out.
 UINT DeleteHashIf(HASH_LIST *h, HASH_LIST_TAKE_PROC *proc, void *param)
 {
 	UINT i, num_taken = 0;
@@ -339,14 +271,7 @@ UINT DeleteHashIf(HASH_LIST *h, HASH_LIST_TAKE_PROC *proc, void *param)
 		{
 			void *p = LIST_DATA(o, j);
 
-			if (proc(p, param))
-			{
-				if (h->AllList != NULL)
-				{
-					Delete(h->AllList, p);
-				}
-			}
-			else
+			if (proc(p, param) == false)
 			{
 				o->p[num_kept++] = p;
 			}
@@ -383,11 +308,6 @@ void AddHash(HASH_LIST *h, void *p)
 
 	Insert(h->Entries[r], p);
 
-	if (h->AllList != NULL)
-	{
-		Add(h->AllList, p);
-	}
-
 	h->NumItems++;
 }
 
@@ -404,7 +324,7 @@ UINT CalcHashForHashList(HASH_LIST *h, void *p)
 	return (r % h->Size);
 }
 
-HASH_LIST *NewHashList(GET_HASH *get_hash_proc, COMPARE *compare_proc, UINT bits, bool make_list)
+HASH_LIST *NewHashList(GET_HASH *get_hash_proc, COMPARE *compare_proc, UINT bits)
 {
 	HASH_LIST *h;
 	if (get_hash_proc == NULL || compare_proc == NULL)
@@ -420,7 +340,7 @@ HASH_LIST *NewHashList(GET_HASH *get_hash_proc, COMPARE *compare_proc, UINT bits
 
 	h = ZeroMalloc(sizeof(HASH_LIST));
 
-	h->Size = Power(2, bits);
+	h->Size = 1U << bits;
 
 	h->Lock = NewLock();
 	h->Ref = NewRef();
@@ -429,11 +349,6 @@ HASH_LIST *NewHashList(GET_HASH *get_hash_proc, COMPARE *compare_proc, UINT bits
 
 	h->GetHashProc = get_hash_proc;
 	h->CompareProc = compare_proc;
-
-	if (make_list)
-	{
-		h->AllList = NewListFast(NULL);
-	}
 
 	return h;
 }
@@ -472,11 +387,6 @@ void CleanupHashList(HASH_LIST *h)
 
 	DeleteLock(h->Lock);
 
-	if (h->AllList != NULL)
-	{
-		ReleaseList(h->AllList);
-	}
-
 	Free(h);
 }
 
@@ -509,37 +419,15 @@ void AppendBufUtf8(BUF *b, wchar_t *str)
 	Free(data);
 }
 
-UINT Power(UINT a, UINT b)
-{
-	UINT ret, i;
-	if (a == 0)
-	{
-		return 0;
-	}
-	if (b == 0)
-	{
-		return 1;
-	}
-
-	ret = 1;
-	for (i = 0;i < b;i++)
-	{
-		ret *= a;
-	}
-
-	return ret;
-}
-
-UINT SearchBin(void *data, UINT data_start, UINT data_size, void *key, UINT key_size)
+UINT SearchBin(void *data, UINT data_size, void *key, UINT key_size)
 {
 	UINT i;
-	if (data == NULL || key == NULL || key_size == 0 || data_size == 0 ||
-		(data_start >= data_size) || (data_start + key_size > data_size))
+	if (data == NULL || key == NULL || key_size == 0 || data_size == 0 || key_size > data_size)
 	{
 		return INFINITE;
 	}
 
-	for (i = data_start;i < (data_size - key_size + 1);i++)
+	for (i = 0;i < (data_size - key_size + 1);i++)
 	{
 		UCHAR *p = ((UCHAR *)data) + i;
 
@@ -552,15 +440,11 @@ UINT SearchBin(void *data, UINT data_start, UINT data_size, void *key, UINT key_
 	return INFINITE;
 }
 
+// Ends the process at once with a fail-fast exception, which Windows Error Reporting records.
+// Writing to a random address could hit valid memory and corrupt it instead of crashing.
 void CrashNow()
 {
-	while (true)
-	{
-		UINT r = Rand32();
-		UCHAR *c = (UCHAR *)r;
-
-		*c = Rand8();
-	}
+	__fastfail(FAST_FAIL_FATAL_APP_EXIT);
 }
 
 bool IsZero(void *data, UINT size)
@@ -601,18 +485,13 @@ UINT Uncompress(void *dst, UINT dst_size, void *src, UINT src_size)
 
 UINT Compress(void *dst, UINT dst_size, void *src, UINT src_size)
 {
-	return CompressEx(dst, dst_size, src, src_size, Z_DEFAULT_COMPRESSION);
-}
-
-UINT CompressEx(void *dst, UINT dst_size, void *src, UINT src_size, UINT level)
-{
 	unsigned long dst_size_long = dst_size;
 	if (dst == NULL || dst_size_long == 0 || src == NULL)
 	{
 		return 0;
 	}
 
-	if (compress2(dst, &dst_size_long, src, src_size, (int)level) != Z_OK)
+	if (compress2(dst, &dst_size_long, src, src_size, Z_DEFAULT_COMPRESSION) != Z_OK)
 	{
 		return 0;
 	}
@@ -627,10 +506,6 @@ UINT CalcCompress(UINT src_size)
 
 SK *NewSk()
 {
-	return NewSkEx(false);
-}
-SK *NewSkEx(bool no_compact)
-{
 	SK *s;
 
 	s = Malloc(sizeof(SK));
@@ -639,7 +514,6 @@ SK *NewSkEx(bool no_compact)
 	s->num_item = 0;
 	s->num_reserved = INIT_NUM_RESERVED;
 	s->p = Malloc(sizeof(void *) * s->num_reserved);
-	s->no_compact = no_compact;
 
 	KS_INC(KS_NEWSK_COUNT);
 
@@ -728,15 +602,12 @@ void *Pop(SK *s)
 	ret = s->p[s->num_item - 1];
 	s->num_item--;
 
-	if (s->no_compact == false)
+	if ((s->num_item * 2) <= s->num_reserved)
 	{
-		if ((s->num_item * 2) <= s->num_reserved)
+		if (s->num_reserved >= (INIT_NUM_RESERVED * 2))
 		{
-			if (s->num_reserved >= (INIT_NUM_RESERVED * 2))
-			{
-				s->num_reserved = s->num_reserved / 2;
-				s->p = ReAlloc(s->p, sizeof(void *) * s->num_reserved);
-			}
+			s->num_reserved = s->num_reserved / 2;
+			s->p = ReAlloc(s->p, sizeof(void *) * s->num_reserved);
 		}
 	}
 
@@ -909,7 +780,7 @@ void *ToArrayEx(LIST *o, bool fast)
 	}
 	else
 	{
-		p = MallocFast(sizeof(void *) * LIST_NUM(o));
+		p = Malloc(sizeof(void *) * LIST_NUM(o));
 	}
 	CopyToArray(o, p);
 
@@ -1353,17 +1224,13 @@ void DelInt(LIST *o, UINT i)
 	}
 }
 
-LIST *NewIntList(bool sorted)
+LIST *NewIntList()
 {
-	LIST *o = NewList(sorted ? CompareInt : NULL);
-
-	return o;
+	return NewList(NULL);
 }
-LIST *NewInt64List(bool sorted)
+LIST *NewInt64List()
 {
-	LIST *o = NewList(sorted ? CompareInt64 : NULL);
-
-	return o;
+	return NewList(NULL);
 }
 
 int CompareInt(void *p1, void *p2)
@@ -1477,25 +1344,16 @@ int CompareStr(void *p1, void *p2)
 
 LIST *NewListFast(COMPARE *cmp)
 {
-	return NewListEx2(cmp, true, false);
+	return NewListEx2(cmp, true);
 }
 
 LIST *NewList(COMPARE *cmp)
 {
-	return NewListEx2(cmp, false, false);
+	return NewListEx2(cmp, false);
 }
-LIST *NewListEx2(COMPARE *cmp, bool fast, bool fast_malloc)
+LIST *NewListEx2(COMPARE *cmp, bool fast)
 {
-	LIST *o;
-
-	if (fast_malloc == false)
-	{
-		o = Malloc(sizeof(LIST));
-	}
-	else
-	{
-		o = MallocFast(sizeof(LIST));
-	}
+	LIST *o = Malloc(sizeof(LIST));
 
 	if (fast == false)
 	{
@@ -1511,14 +1369,7 @@ LIST *NewListEx2(COMPARE *cmp, bool fast, bool fast_malloc)
 	o->num_reserved = INIT_NUM_RESERVED;
 	o->Param1 = 0;
 
-	if (fast_malloc == false)
-	{
-		o->p = Malloc(sizeof(void *) * o->num_reserved);
-	}
-	else
-	{
-		o->p = MallocFast(sizeof(void *) * o->num_reserved);
-	}
+	o->p = Malloc(sizeof(void *) * o->num_reserved);
 
 	o->cmp = cmp;
 	o->sorted = true;
@@ -1548,14 +1399,9 @@ UINT ReadFifo(FIFO *f, void *p, UINT size)
 	f->pos += read_size;
 	f->size -= read_size;
 
-	f->total_read_size += (UINT64)read_size;
-
-	if (f->fixed == false)
+	if (f->size == 0)
 	{
-		if (f->size == 0)
-		{
-			f->pos = 0;
-		}
+		f->pos = 0;
 	}
 
 	ShrinkFifoMemory(f);
@@ -1568,11 +1414,6 @@ UINT ReadFifo(FIFO *f, void *p, UINT size)
 void ShrinkFifoMemory(FIFO *f)
 {
 	if (f == NULL)
-	{
-		return;
-	}
-
-	if (f->fixed)
 	{
 		return;
 	}
@@ -1626,8 +1467,6 @@ void WriteFifo(FIFO *f, void *p, UINT size)
 		Copy((UCHAR *)f->p + f->pos + i, p, size);
 	}
 
-	f->total_write_size += (UINT64)size;
-
 	KS_INC(KS_WRITE_FIFO_COUNT);
 }
 
@@ -1668,20 +1507,15 @@ void CleanupFifo(FIFO *f)
 	KS_INC(KS_FREEFIFO_COUNT);
 }
 
-void InitFifo()
-{
-	fifo_current_realloc_mem_size = FIFO_REALLOC_MEM_SIZE;
-}
-
 FIFO *NewFifo()
 {
-	return NewFifoEx2(false, false);
+	return NewFifoEx2(false);
 }
 FIFO *NewFifoFast()
 {
-	return NewFifoEx2(true, false);
+	return NewFifoEx2(true);
 }
-FIFO *NewFifoEx2(bool fast, bool fixed)
+FIFO *NewFifoEx2(bool fast)
 {
 	FIFO *f;
 
@@ -1701,7 +1535,6 @@ FIFO *NewFifoEx2(bool fast, bool fixed)
 	f->size = f->pos = 0;
 	f->memsize = FIFO_INIT_MEM_SIZE;
 	f->p = Malloc(FIFO_INIT_MEM_SIZE);
-	f->fixed = false;
 
 	KS_INC(KS_NEWFIFO_COUNT);
 
@@ -2407,106 +2240,33 @@ void EndianUnicode(wchar_t *str)
 	}
 }
 
-USHORT Endian16(USHORT src)
-{
-	int x = 1;
-	if (*((char *)&x))
-	{
-		return Swap16(src);
-	}
-	else
-	{
-		return src;
-	}
-}
+// Endian16/32/64 (MayaType.h) swap always: the build is for a little-endian target only
+#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__)
+_Static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__, "Ranz VPN needs a little-endian target");
+#elif !defined(_M_X64) && !defined(_M_ARM64) && !defined(_M_IX86)
+#error "Ranz VPN needs a little-endian target (x64, arm64)"
+#endif
 
-UINT Endian32(UINT src)
-{
-	int x = 1;
-	if (*((char *)&x))
-	{
-		return Swap32(src);
-	}
-	else
-	{
-		return src;
-	}
-}
-
-UINT64 Endian64(UINT64 src)
-{
-	int x = 1;
-	if (*((char *)&x))
-	{
-		return Swap64(src);
-	}
-	else
-	{
-		return src;
-	}
-}
-
-UINT LittleEndian32(UINT src)
-{
-	int x = 0x01000000;
-	if (*((char *)&x))
-	{
-		return Swap32(src);
-	}
-	else
-	{
-		return src;
-	}
-}
-
-USHORT Swap16(USHORT value)
-{
-	USHORT r;
-	((BYTE *)&r)[0] = ((BYTE *)&value)[1];
-	((BYTE *)&r)[1] = ((BYTE *)&value)[0];
-	return r;
-}
-
-UINT Swap32(UINT value)
-{
-	UINT r;
-	((BYTE *)&r)[0] = ((BYTE *)&value)[3];
-	((BYTE *)&r)[1] = ((BYTE *)&value)[2];
-	((BYTE *)&r)[2] = ((BYTE *)&value)[1];
-	((BYTE *)&r)[3] = ((BYTE *)&value)[0];
-	return r;
-}
-
-UINT64 Swap64(UINT64 value)
-{
-	UINT64 r;
-	((BYTE *)&r)[0] = ((BYTE *)&value)[7];
-	((BYTE *)&r)[1] = ((BYTE *)&value)[6];
-	((BYTE *)&r)[2] = ((BYTE *)&value)[5];
-	((BYTE *)&r)[3] = ((BYTE *)&value)[4];
-	((BYTE *)&r)[4] = ((BYTE *)&value)[3];
-	((BYTE *)&r)[5] = ((BYTE *)&value)[2];
-	((BYTE *)&r)[6] = ((BYTE *)&value)[1];
-	((BYTE *)&r)[7] = ((BYTE *)&value)[0];
-	return r;
-}
-
+// Base64 on crypt32: CryptStringToBinaryA and CryptBinaryToStringA
+// https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/nf-wincrypt-cryptstringtobinarya
+// https://learn.microsoft.com/en-us/windows/win32/api/wincrypt/nf-wincrypt-cryptbinarytostringa
 void *Base64ToBin(UINT *out_size, const void *src, const UINT size)
 {
+	DWORD bin_size = 0;
+	void *bin;
 	if (src == NULL || size == 0)
 	{
 		return NULL;
 	}
 
-	UINT bin_size = Base64Decode(NULL, src, size);
-	if (bin_size == 0)
+	if (CryptStringToBinaryA(src, size, CRYPT_STRING_BASE64, NULL, &bin_size, NULL, NULL) == false || bin_size == 0)
 	{
 		return NULL;
 	}
 
-	void *bin = ZeroMalloc(bin_size + 1);
-	bin_size = Base64Decode(bin, src, size);
-	if (bin_size == 0)
+	// One zero byte after the data, as before
+	bin = ZeroMalloc(bin_size + 1);
+	if (CryptStringToBinaryA(src, size, CRYPT_STRING_BASE64, bin, &bin_size, NULL, NULL) == false || bin_size == 0)
 	{
 		Free(bin);
 		return NULL;
@@ -2522,28 +2282,30 @@ void *Base64ToBin(UINT *out_size, const void *src, const UINT size)
 
 void *Base64FromBin(UINT *out_size, const void *src, const UINT size)
 {
+	DWORD base64_size = 0;
+	char *base64;
 	if (src == NULL || size == 0)
 	{
 		return NULL;
 	}
 
-	UINT base64_size = Base64Encode(NULL, src, size);
-	if (base64_size == 0)
+	// The first call gives the size with the terminator, the second the length without it
+	if (CryptBinaryToStringA(src, size, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, NULL, &base64_size) == false || base64_size == 0)
 	{
 		return NULL;
 	}
 
-	void *base64 = Malloc(base64_size);
-	base64_size = Base64Encode(base64, src, size);
-	if (base64_size == 0)
+	base64 = Malloc(base64_size);
+	if (CryptBinaryToStringA(src, size, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, base64, &base64_size) == false)
 	{
 		Free(base64);
 		return NULL;
 	}
 
+	// The size written, terminator included
 	if (out_size != NULL)
 	{
-		*out_size = base64_size;
+		*out_size = base64_size + 1;
 	}
 
 	return base64;

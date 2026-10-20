@@ -76,8 +76,8 @@ void osinfo_test(UINT num, char **arg)
 	}
 
 	type = Win32ClassifyOs(os->dwMajorVersion, os->dwBuildNumber, os->wProductType != VER_NT_WORKSTATION, &name);
-	Print("  This system: %u.%u build %u, product type %u: OsType %u \"%s\"\n", os->dwMajorVersion,
-		os->dwMinorVersion, os->dwBuildNumber, os->wProductType, info->OsType, info->OsProductName);
+	Print("  This system: %u.%u build %u, product type %u: OsType %u \"%s\"\n", (UINT)os->dwMajorVersion,
+		(UINT)os->dwMinorVersion, (UINT)os->dwBuildNumber, os->wProductType, info->OsType, info->OsProductName);
 	if (info->OsType != type || StrCmp(info->OsProductName, name) != 0)
 	{
 		Print("  [FAIL] GetOsInfo() differs from Win32ClassifyOs: %u \"%s\"\n", type, name);

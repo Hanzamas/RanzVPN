@@ -14,8 +14,6 @@
 #include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
 
-#include <stdlib.h>
-
 void UdpAccelPoll(UDP_ACCEL *a)
 {
 	UINT num_ignore_errors = 0;
@@ -102,11 +100,11 @@ void UdpAccelPoll(UDP_ACCEL *a)
 
 			if (a->FastDetect == false)
 			{
-				rand_interval = rand() % (UDP_ACCELERATION_KEEPALIVE_INTERVAL_MAX - UDP_ACCELERATION_KEEPALIVE_INTERVAL_MIN) + UDP_ACCELERATION_KEEPALIVE_INTERVAL_MIN;
+				rand_interval = Rand32() % (UDP_ACCELERATION_KEEPALIVE_INTERVAL_MAX - UDP_ACCELERATION_KEEPALIVE_INTERVAL_MIN) + UDP_ACCELERATION_KEEPALIVE_INTERVAL_MIN;
 			}
 			else
 			{
-				rand_interval = rand() % (UDP_ACCELERATION_KEEPALIVE_INTERVAL_MAX_FAST - UDP_ACCELERATION_KEEPALIVE_INTERVAL_MIN_FAST) + UDP_ACCELERATION_KEEPALIVE_INTERVAL_MIN_FAST;
+				rand_interval = Rand32() % (UDP_ACCELERATION_KEEPALIVE_INTERVAL_MAX_FAST - UDP_ACCELERATION_KEEPALIVE_INTERVAL_MIN_FAST) + UDP_ACCELERATION_KEEPALIVE_INTERVAL_MIN_FAST;
 			}
 
 			a->NextSendKeepAlive = a->Now + (UINT64)rand_interval;
@@ -247,11 +245,9 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 		const UINT current_total_size = size + (a->Version > 1 ? UDP_ACCELERATION_PACKET_MAC_SIZE_V2 : UDP_ACCELERATION_PACKET_IV_SIZE_V1);
 		if (current_total_size < max_size)
 		{
-			UCHAR pad[UDP_ACCELERATION_MAX_PADDING_SIZE];
 			UINT pad_size = MIN(max_size - current_total_size, UDP_ACCELERATION_MAX_PADDING_SIZE);
-			pad_size = rand() % pad_size;
-			Zero(pad, sizeof(pad));
-			Copy(buf, pad, pad_size);
+			pad_size = Rand32() % pad_size;
+			Zero(buf, pad_size);
 			buf += pad_size;
 			size += pad_size;
 		}

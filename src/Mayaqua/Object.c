@@ -426,7 +426,7 @@ bool WaitEx(EVENT *e, UINT timeout, volatile bool *cancel)
 
 		interval_to_giveup = MIN(interval_to_giveup, 25);
 
-		if (*cancel)
+		if (FlagRead(cancel))
 		{
 			return false;
 		}

@@ -557,7 +557,7 @@ CM_CERT_COLUMN_3		Expiration
 
 
 # Concerning services (Win32)
-SVC_HELP				*** Command Line Arguments of %s (%S) ***\r\n\r\nThis program (%s) is a process runs as a background task. Start the program by specifying the following arguments on the command line. \r\n\r\n\r\n/install : Installs %s service (service name: %S) in Windows. After this, the service will automatically start. \r\n\r\n/uninstall... Uninstalls %s service (service name: %S) from Windows. \r\n\r\n/start : Starts %s service (service name: %S). \r\n\r\n/stop : Stops %s service (service name: %S). \r\n\r\n/test : Starts %s program in test mode. (For debug)\r\n\r\n/usermode : Starts %s program in the user mode. (When possible)\r\n\r\n/usermode_showtray : When starting in the user mode, this is used to display task tray icons when they were set to be hidden on a previous occasion. \r\n\r\n/usermode_hidetray : When starting in the user mode, this sets the task tray icons to be hidden. \r\n\r\n\r\nNote: Commands related to service operation other than /test and /usermode can only be operated on Windows NT / XP / Server 2003 / Vista / Server 2008.
+SVC_HELP				*** Command Line Arguments of %s (%S) ***\r\n\r\nThis program (%s) runs as a background task. Start it with one of the following arguments on the command line.\r\n\r\n\r\n/install : Installs the %s service (service name: %S) in Windows. After this, the service starts automatically.\r\n\r\n/uninstall : Uninstalls the %s service (service name: %S) from Windows.\r\n\r\n/start : Starts the %s service (service name: %S).\r\n\r\n/stop : Stops the %s service (service name: %S).\r\n\r\n/test : Starts the %s program in test mode. (For debug)\r\n\r\n/usermode : Starts the %s program in user mode, without the service.\r\n\r\n/setup_install : Used by the installer. Replaces the %s service (service name: %S) with this program and starts it.\r\n\r\n/setup_uninstall : Used by the installer. Stops and uninstalls the %s service (service name: %S).\r\n\r\n/service : Used by Windows. Runs the %s program as the service.
 SVC_ALREADY_INSTALLED	The "%s" service (service name: %S) is already installed on this computer. Do you want to uninstall it and then re-install?
 SVC_INSTALL_OK			The "%s" service (Service name: %S) has been installed successfully. \r\n\r\n(Execution path: %s)\r\n\r\nThe service has started.
 SVC_INSTALL_FAILED		The installation of the "%s" service (service name: %S) failed.
@@ -576,12 +576,6 @@ SVC_NOT_ADMIN			To install, uninstall, start or stop the service you must have a
 SVC_TEST_MSG			The "%s" service is started in test mode. \r\n\r\nClick OK to exit the service.
 SVC_TEST_MUTEX			The executable file %s is already started.
 SVC_USERMODE_MUTEX		Another process of %s is already started.
-
-
-# Service Definition (Ranz VPN Server)
-SVC_VPNSERVER_NAME		vpnserver
-SVC_VPNSERVER_TITLE		Ranz VPN Server
-SVC_VPNSERVER_DESCRIPT	This manages the server processes of Ranz VPN Server. Ranz VPN Server provides high-performance Ranz VPN Server functions via TCP/IP protocol. When this service is stopped, Ranz VPN Server on this computer will stop and Ranz VPN Client will be unable to establish a VPN connection with this computer.
 
 
 # Service Definition (Ranz VPN Server)

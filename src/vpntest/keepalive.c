@@ -8,13 +8,17 @@
 // crashed the process (STATUS_INTEGER_DIVIDE_BY_ZERO). The test calls GenNextKeepAliveSpan() with
 // the timeouts that a conformant server sends (TIMEOUT_MIN to TIMEOUT_MAX: the span is unchanged),
 // then with 0, 1 and other values outside these bounds: the span must be the one of the timeout
-// clamped to [TIMEOUT_MIN, TIMEOUT_MAX]. On the old code the timeout 0 divides by zero. Prints
-// "KEEPALIVE TEST OK" only when every check passes, and frees everything it allocates.
+// clamped to [TIMEOUT_MIN, TIMEOUT_MAX]. On the old code the timeout 0 divides by zero.
+// The spans came from the CRT rand(), whose state is per thread and seeded only on the init thread,
+// so every new thread drew the same sequence (FND-150). Two threads now draw their spans: the two
+// sequences must differ. Prints "KEEPALIVE TEST OK" only when every check passes, and frees
+// everything it allocates.
 
 #include "Cedar/Cedar.h"
 #include "Cedar/Connection.h"
 #include "Cedar/Session.h"
 
+#include "Mayaqua/Kernel.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Str.h"
 
@@ -80,6 +84,61 @@ static void KeepAliveTestTimeout(KEEPALIVE_TEST *t, UINT timeout, UINT expect, c
 		timeout, num_bad, KEEPALIVE_TEST_DRAWS, lo, hi, bad_span);
 }
 
+// Spans one thread draws, at the timeout TIMEOUT_MAX
+typedef struct KEEPALIVE_TEST_THREAD
+{
+	CONNECTION *Connection;				// Connection of the spans, own to the thread
+	UINT Spans[KEEPALIVE_TEST_DRAWS];	// Spans drawn
+} KEEPALIVE_TEST_THREAD;
+
+static void KeepAliveTestThread(THREAD *thread, void *param)
+{
+	KEEPALIVE_TEST_THREAD *d = (KEEPALIVE_TEST_THREAD *)param;
+	UINT i;
+
+	for (i = 0;i < KEEPALIVE_TEST_DRAWS;i++)
+	{
+		d->Spans[i] = GenNextKeepAliveSpan(d->Connection);
+	}
+}
+
+// Two new threads draw their spans: the sequences must differ (a per-thread CRT seed made them equal)
+static void KeepAliveTestThreads(KEEPALIVE_TEST *t)
+{
+	KEEPALIVE_TEST_THREAD d[2];
+	THREAD *th[2];
+	UINT i;
+
+	Zero(d, sizeof(d));
+
+	for (i = 0;i < 2;i++)
+	{
+		d[i].Connection = ZeroMalloc(sizeof(CONNECTION));
+		d[i].Connection->Session = ZeroMalloc(sizeof(SESSION));
+		d[i].Connection->Session->Timeout = TIMEOUT_MAX;
+	}
+
+	for (i = 0;i < 2;i++)
+	{
+		th[i] = NewThread(KeepAliveTestThread, &d[i]);
+	}
+
+	for (i = 0;i < 2;i++)
+	{
+		WaitThread(th[i], INFINITE);
+		ReleaseThread(th[i]);
+	}
+
+	KeepAliveTestCheck(t, Cmp(d[0].Spans, d[1].Spans, sizeof(d[0].Spans)) == false,
+		"two threads: different span sequences", "both threads drew the same %u spans", KEEPALIVE_TEST_DRAWS);
+
+	for (i = 0;i < 2;i++)
+	{
+		Free(d[i].Connection->Session);
+		Free(d[i].Connection);
+	}
+}
+
 // keepalive: the keepalive span of every session timeout, also of one that a server sends out of bounds
 void keepalive_test(UINT num, char **arg)
 {
@@ -106,6 +165,9 @@ void keepalive_test(UINT num, char **arg)
 	// Above the bounds: the span of TIMEOUT_MAX
 	KeepAliveTestTimeout(&t, TIMEOUT_MAX + 1, TIMEOUT_MAX, "timeout TIMEOUT_MAX + 1: span of TIMEOUT_MAX");
 	KeepAliveTestTimeout(&t, 0xFFFFFFFF, TIMEOUT_MAX, "timeout 0xFFFFFFFF: span of TIMEOUT_MAX");
+
+	// Spans of two threads: no shared CRT sequence
+	KeepAliveTestThreads(&t);
 
 	Free(t.Connection->Session);
 	Free(t.Connection);

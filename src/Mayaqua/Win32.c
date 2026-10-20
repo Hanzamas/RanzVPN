@@ -18,7 +18,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <CommCtrl.h>
 #include <objbase.h>
 #include <timeapi.h>
 #include <winioctl.h>
@@ -462,7 +461,7 @@ void Win32GetOsInfo(OS_INFO *info)
 	info->KernelName = CopyStr("NTOS Kernel");
 
 	// "Build <n>, <CurrentType> (<BuildLab>)"
-	Format(tmp, sizeof(tmp), "Build %u", os->dwBuildNumber);
+	Format(tmp, sizeof(tmp), "Build %u", (UINT)os->dwBuildNumber);
 	if (current_type != NULL)
 	{
 		StrCat(tmp, sizeof(tmp), ", ");
@@ -477,7 +476,7 @@ void Win32GetOsInfo(OS_INFO *info)
 	info->OsVersion = CopyStr(tmp);
 
 	// "Build <n> <CurrentType>"
-	Format(tmp, sizeof(tmp), "Build %u", os->dwBuildNumber);
+	Format(tmp, sizeof(tmp), "Build %u", (UINT)os->dwBuildNumber);
 	if (current_type != NULL)
 	{
 		StrCat(tmp, sizeof(tmp), " ");
@@ -881,8 +880,6 @@ bool Win32GetCallStackSymbolInfo(CALLSTACK_DATA *s)
 
 void Win32Init()
 {
-	INITCOMMONCONTROLSEX c;
-
 	if (hstdout == INVALID_HANDLE_VALUE)
 	{
 		hstdout = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -917,16 +914,6 @@ void Win32Init()
 		SymInitialize(hCurrentProcessHandle, NULL, TRUE);
 #endif
 	}
-
-	Zero(&c, sizeof(INITCOMMONCONTROLSEX));
-	c.dwSize = sizeof(INITCOMMONCONTROLSEX);
-	c.dwICC = ICC_ANIMATE_CLASS | ICC_BAR_CLASSES | ICC_COOL_CLASSES |
-		ICC_DATE_CLASSES | ICC_HOTKEY_CLASS | ICC_INTERNET_CLASSES |
-		ICC_LISTVIEW_CLASSES | ICC_NATIVEFNTCTL_CLASS |
-		ICC_PAGESCROLLER_CLASS | ICC_PROGRESS_CLASS |
-		ICC_TAB_CLASSES | ICC_TREEVIEW_CLASSES | ICC_UPDOWN_CLASS | ICC_USEREX_CLASSES |
-		ICC_WIN95_CLASSES;
-	InitCommonControlsEx(&c);
 }
 
 void Win32Free()

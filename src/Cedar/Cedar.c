@@ -1217,7 +1217,7 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 
 	SetCedarCipherList(c, SERVER_DEFAULT_CIPHER_NAME);
 
-	c->UdpPortList = NewIntList(false);
+	c->UdpPortList = NewIntList();
 
 	c->DhParamBits = DH_PARAM_BITS_DEFAULT;
 

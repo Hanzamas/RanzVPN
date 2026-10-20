@@ -30,6 +30,13 @@ set(CMAKE_C_EXTENSIONS OFF)
 
 add_library(ranz_options INTERFACE)
 
+# Volatile loads and stores with acquire and release semantics (clang-cl maps /volatile:ms to
+# -fms-volatile). x64 has this by default; ARM64 defaults to /volatile:iso, where a thread that sees a
+# 'volatile bool' halt or cancel flag need not see the data written before it. The flags themselves
+# go through FlagRead and FlagWrite (src/Mayaqua/Native.h); the CI step "Check /volatile:ms" checks
+# the arm64 compile commands for it
+target_compile_options(ranz_options INTERFACE "$<$<COMPILE_LANGUAGE:C,CXX>:/volatile:ms>")
+
 target_compile_definitions(ranz_options INTERFACE
   WINVER=0x0A00
   _WIN32_WINNT=0x0A00

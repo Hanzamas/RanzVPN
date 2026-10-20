@@ -501,7 +501,7 @@ UINT ProxyConnect(UINT proxy_type, PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, vol
 		return PROXY_ERROR_CONNECTION;
 	}
 
-	s = BindConnectEx4(in->BindLocalIP, in->BindLocalPort, in->Hostname, in->Port, in->Timeout, (bool *)cancel_flag, true, &out->ResolvedIp);
+	s = BindConnectEx4(in->BindLocalIP, in->BindLocalPort, in->Hostname, in->Port, in->Timeout, (bool *)cancel_flag, &out->ResolvedIp);
 	if (s == NULL)
 	{
 		return PROXY_ERROR_CONNECTION;

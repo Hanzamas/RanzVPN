@@ -1029,80 +1029,784 @@ static void PackAddWelcomeMsg(PACK *p, RPC_WINVER *client_winver, wchar_t *msg)
 	Free(utf);
 }
 
-bool ServerAccept(CONNECTION *c)
+// Reads the fields of the client's "login" PACK that the hub-side login steps and the new session use.
+// Reads the PACK only. False when the PACK has no user name or no hub name.
+bool ParseLoginRequest(PACK *p, LOGIN_REQ *req)
 {
-	bool ret = false;
-	UINT err;
-	PACK *p;
-	char ip1[64], verstr[64];
-	wchar_t *authtype_str;
-	char username_real[MAX_SIZE];
-	char method[MAX_SIZE];
-	char hubname[MAX_SIZE];
-	char username[MAX_SIZE];
-	char groupname[MAX_SIZE];
-	UCHAR session_key[SHA1_SIZE];
-	UINT authtype;
-	POLICY *policy;
-	HUB *hub;
-	SESSION *s = NULL;
-	UINT64 user_expires = 0;
-	bool use_encrypt;
-	bool use_compress;
-	bool half_connection;
-	UINT adjust_mss;
-	bool use_udp_acceleration_client;
-	UINT client_udp_acceleration_max_version = 1;
-	UINT udp_acceleration_version = 1;
-	bool support_hmac_on_udp_acceleration_client = false;
-	bool support_udp_accel_fast_disconnect_detect;
-	bool use_hmac_on_udp_acceleration = false;
-	bool supress_return_pack_error = false;
-	IP udp_acceleration_client_ip;
-	UCHAR udp_acceleration_client_key[UDP_ACCELERATION_COMMON_KEY_SIZE_V1];
-	UCHAR udp_acceleration_client_key_v2[UDP_ACCELERATION_COMMON_KEY_SIZE_V2];
-	UINT udp_acceleration_client_port;
-	bool admin_mode = false;
-	UINT direction;
-	UINT max_connection;
-	UINT timeout;
-	bool require_bridge_routing_mode;
-	bool require_monitor_mode;
-	bool use_client_license = false, use_bridge_license = false;
-	bool local_host_session = false;
-	char sessionname[MAX_SESSION_NAME_LEN + 1];
-	bool is_server_or_bridge = false;
-	bool qos = false;
-	bool no_save_password = false;
-	NODE_INFO node;
-	wchar_t *msg = NULL;
-	bool suppress_client_update_notification = false;
-	USER *loggedin_user_object = NULL;
-	UCHAR unique[SHA1_SIZE], unique2[SHA1_SIZE];
-	RPC_WINVER winver;
-	UINT client_id;
-	UCHAR mschap_v2_server_response_20[20];
-	UINT ms_chap_error = 0;
-	bool is_empty_password = false;
+	bool support_hmac_on_udp_acceleration;
 
-	if (c == NULL)
+	if (p == NULL || req == NULL)
 	{
 		return false;
 	}
 
+	Zero(req, sizeof(LOGIN_REQ));
+
+	InRpcNodeInfo(&req->NodeInfo, p);
+
+	req->AuthType = GetAuthTypeFromPack(p);
+	if (GetHubnameAndUsernameFromPack(p, req->Username, sizeof(req->Username), req->HubName, sizeof(req->HubName)) == false)
+	{
+		return false;
+	}
+
+	req->UseEncrypt = PackGetInt(p, "use_encrypt") == 0 ? false : true;
+	req->UseCompress = PackGetInt(p, "use_compress") == 0 ? false : true;
+	req->MaxConnection = PackGetInt(p, "max_connection");
+	req->HalfConnection = PackGetInt(p, "half_connection") == 0 ? false : true;
+	req->QoS = PackGetInt(p, "qos") ? true : false;
+	req->ClientId = PackGetInt(p, "client_id");
+	req->AdjustMss = PackGetInt(p, "adjust_mss");
+	req->UseUdpAcceleration = PackGetBool(p, "use_udp_acceleration");
+	req->UdpAccelMaxVersion = PackGetInt(p, "udp_acceleration_max_version");
+	if (req->UdpAccelMaxVersion == 0)
+	{
+		req->UdpAccelMaxVersion = 1;
+	}
+	support_hmac_on_udp_acceleration = PackGetBool(p, "support_hmac_on_udp_acceleration");
+	req->UdpAccelFastDisconnectDetect = PackGetBool(p, "support_udp_accel_fast_disconnect_detect");
+
+	if (req->UseUdpAcceleration)
+	{
+		PackGetData2(p, "udp_acceleration_client_key", req->UdpAccelClientKey, UDP_ACCELERATION_COMMON_KEY_SIZE_V1);
+		PackGetData2(p, "udp_acceleration_client_key_v2", req->UdpAccelClientKeyV2, UDP_ACCELERATION_COMMON_KEY_SIZE_V2);
+
+		if (PackGetIp(p, "udp_acceleration_client_ip", &req->UdpAccelClientIp) == false)
+		{
+			req->UseUdpAcceleration = false;
+		}
+		else
+		{
+			req->UdpAccelClientPort = PackGetInt(p, "udp_acceleration_client_port");
+			if (req->UdpAccelClientPort == 0)
+			{
+				req->UseUdpAcceleration = false;
+			}
+		}
+
+		req->UseHMacOnUdpAcceleration = support_hmac_on_udp_acceleration;
+	}
+
+	req->RequireBridgeRoutingMode = PackGetBool(p, "require_bridge_routing_mode");
+	req->RequireMonitorMode = PackGetBool(p, "require_monitor_mode");
+	if (req->RequireMonitorMode)
+	{
+		req->QoS = false;
+	}
+
+	if (PackGetDataSize(p, "unique_id") == SHA1_SIZE)
+	{
+		PackGetData(p, "unique_id", req->UniqueId);
+	}
+
+	return true;
+}
+
+// Looks up the user object of an authenticated login and builds the policy of its session from the user's or
+// group's policy, the hub's admin options and the request. Runs under hub->lock and leaves it held.
+// Returns ERR_NO_ERROR with login->Policy set, or the error of a refused login (logged to the hub log) with
+// login->Policy NULL. login->User holds a reference in both cases; the caller releases it.
+UINT HubResolveSessionPolicy(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN *login)
+{
+	POLICY *policy = NULL;
+	USER *user;
+	USERGROUP *group;
+	UINT64 user_expires = 0;
+	UCHAR unique2[SHA1_SIZE];
+	bool qos;
+	bool local_host_session = false;
+
+	if (hub == NULL || c == NULL || req == NULL || login == NULL)
+	{
+		return ERR_INTERNAL_ERROR;
+	}
+
+	qos = req->QoS;
+
+	if (StrCmpi(req->Username, ADMINISTRATOR_USERNAME) != 0)
+	{
+		user = AcGetUser(hub, req->Username);
+		if (user == NULL)
+		{
+			user = AcGetUser(hub, "*");
+			if (user == NULL)
+			{
+				return ERR_ACCESS_DENIED;
+			}
+		}
+
+		policy = NULL;
+
+		Lock(user->lock);
+		{
+			user_expires = user->ExpireTime;
+
+			StrCpy(login->UserNameReal, sizeof(login->UserNameReal), user->Name);
+			group = user->Group;
+			if (group != NULL)
+			{
+				AddRef(group->ref);
+
+				Lock(group->lock);
+				{
+					StrCpy(login->GroupName, sizeof(login->GroupName), group->Name);
+				}
+				Unlock(group->lock);
+			}
+
+			if (user->Policy != NULL)
+			{
+				policy = ClonePolicy(user->Policy);
+			}
+			else
+			{
+				if (group)
+				{
+					Lock(group->lock);
+					{
+						if (group->Policy != NULL)
+						{
+							policy = ClonePolicy(group->Policy);
+						}
+					}
+					Unlock(group->lock);
+				}
+			}
+
+			if (group != NULL)
+			{
+				ReleaseGroup(group);
+			}
+		}
+		Unlock(user->lock);
+		login->User = user;
+	}
+	else
+	{
+		login->AdminMode = true;
+		StrCpy(login->UserNameReal, sizeof(login->UserNameReal), ADMINISTRATOR_USERNAME);
+
+		policy = ClonePolicy(GetDefaultPolicy());
+		policy->NoBroadcastLimiter = true;
+		policy->MonitorPort = true;
+	}
+
+	if (policy == NULL)
+	{
+		policy = ClonePolicy(GetDefaultPolicy());
+	}
+
+	if (policy->MaxConnection == 0)
+	{
+		policy->MaxConnection = MAX_TCP_CONNECTION;
+	}
+
+	if (policy->TimeOut == 0)
+	{
+		policy->TimeOut = 20;
+	}
+
+	if (qos)
+	{
+		if (policy->NoQoS)
+		{
+			qos = false;
+		}
+		if (GetHubAdminOption(hub, "deny_qos") != 0)
+		{
+			qos = false;
+			policy->NoQoS = true;
+		}
+	}
+
+	if (GetHubAdminOption(hub, "max_bitrates_download") != 0)
+	{
+		if (policy->MaxDownload == 0)
+		{
+			policy->MaxDownload = GetHubAdminOption(hub, "max_bitrates_download");
+		}
+		else
+		{
+			UINT r = GetHubAdminOption(hub, "max_bitrates_download");
+			policy->MaxDownload = MIN(policy->MaxDownload, r);
+		}
+	}
+
+	if (GetHubAdminOption(hub, "max_bitrates_upload") != 0)
+	{
+		if (policy->MaxUpload == 0)
+		{
+			policy->MaxUpload = GetHubAdminOption(hub, "max_bitrates_upload");
+		}
+		else
+		{
+			UINT r = GetHubAdminOption(hub, "max_bitrates_upload");
+			policy->MaxUpload = MIN(policy->MaxUpload, r);
+		}
+	}
+
+	if (GetHubAdminOption(hub, "deny_bridge") != 0)
+	{
+		policy->NoBridge = true;
+	}
+
+	if (GetHubAdminOption(hub, "deny_routing") != 0)
+	{
+		policy->NoRouting = true;
+	}
+
+	if (hub->Option->ClientMinimumRequiredBuild > c->ClientBuild &&
+		 InStrEx(c->ClientStr, "client", false))
+	{
+		HLog(hub, "LH_CLIENT_VERSION_OLD", c->Name, c->ClientBuild, hub->Option->ClientMinimumRequiredBuild);
+
+		Free(policy);
+		return ERR_VERSION_INVALID;
+	}
+
+	if (hub->Option->RequiredClientId != 0 &&
+		hub->Option->RequiredClientId != req->ClientId &&
+		InStrEx(c->ClientStr, "client", false))
+	{
+		HLog(hub, "LH_CLIENT_ID_REQUIRED", c->Name, req->ClientId, hub->Option->RequiredClientId);
+
+		Free(policy);
+		return ERR_CLIENT_ID_REQUIRED;
+	}
+
+	if (user_expires != 0 && user_expires <= SystemTime64())
+	{
+		HLog(hub, "LH_USER_EXPIRES", c->Name, req->Username);
+
+		Free(policy);
+		return ERR_ACCESS_DENIED;
+	}
+
+	if (policy->Access == false)
+	{
+		HLog(hub, "LH_POLICY_ACCESS_NG", c->Name, req->Username);
+
+		Free(policy);
+		return ERR_ACCESS_DENIED;
+	}
+
+	if (req->RequireMonitorMode && policy->MonitorPort == false)
+	{
+		HLog(hub, "LH_POLICY_MONITOR_MODE", c->Name);
+
+		Free(policy);
+		return ERR_MONITOR_MODE_DENIED;
+	}
+
+	if (policy->MonitorPort)
+	{
+		if (req->RequireMonitorMode == false)
+		{
+			policy->MonitorPort = false;
+		}
+	}
+
+	if (policy->MonitorPort)
+	{
+		qos = false;
+	}
+
+	if (req->RequireBridgeRoutingMode &&
+		(policy->NoBridge && policy->NoRouting))
+	{
+		HLog(hub, "LH_POLICY_BRIDGE_MODE", c->Name);
+
+		Free(policy);
+		return ERR_BRIDGE_MODE_DENIED;
+	}
+
+	if (req->RequireBridgeRoutingMode == false)
+	{
+		policy->NoBridge = true;
+		policy->NoRouting = true;
+	}
+
 	GenerateMachineUniqueHash(c->Cedar, unique2);
+	if (Cmp(req->UniqueId, unique2, SHA1_SIZE) == 0)
+	{
+		local_host_session = true;
+	}
+
+	if (local_host_session == false)
+	{
+		SOCK *s = c->FirstSock;
+
+		if (s != NULL)
+		{
+			if (IsIPMyHost(&s->RemoteIP))
+			{
+				local_host_session = true;
+			}
+		}
+	}
+
+	if (local_host_session)
+	{
+		policy->NoBridge = false;
+		policy->NoRouting = false;
+	}
+
+	login->Policy = policy;
+	login->QoS = qos;
+	login->LocalHostSession = local_host_session;
+
+	return ERR_NO_ERROR;
+}
+
+// Admits a login whose policy HubResolveSessionPolicy built: the user's multiple-login limit and the session limits
+// of the hub and the server. Runs under hub->lock. On ERR_NO_ERROR hub->lock is still held and the slot holds the
+// hub's and Cedar's session counters (HubReleaseSessionSlot gives them back). A refused login is logged to the hub
+// log after hub->lock is released, so on an error hub->lock is no longer held and login->Policy is freed.
+UINT HubAdmitSession(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN *login, HUB_SESSION_SLOT *slot)
+{
+	POLICY *policy;
+	bool use_client_license = false, use_bridge_license = false;
+
+	if (hub == NULL)
+	{
+		return ERR_INTERNAL_ERROR;
+	}
+	if (c == NULL || req == NULL || login == NULL || login->Policy == NULL || slot == NULL)
+	{
+		Unlock(hub->lock);
+		return ERR_INTERNAL_ERROR;
+	}
+
+	Zero(slot, sizeof(HUB_SESSION_SLOT));
+
+	policy = login->Policy;
+
+	if (login->LocalHostSession == false)
+	{
+
+		if (policy->NoBridge == false || policy->NoRouting == false)
+		{
+			use_bridge_license = true;
+		}
+		else
+		{
+			use_client_license = true;
+		}
+	}
+
+
+	{
+		UINT num;
+		UINT max_logins = policy->MultiLogins;
+		UINT ao = GetHubAdminOption(hub, "max_multilogins_per_user");
+
+		if (ao != 0)
+		{
+			if (max_logins != 0)
+			{
+				max_logins = MIN(max_logins, ao);
+			}
+			else
+			{
+				max_logins = ao;
+			}
+		}
+
+		if (max_logins != 0)
+		{
+			// Lock order is hub->lock, SessionList, s->lock: release hub->lock
+			// while the session list is walked, as before
+			Unlock(hub->lock);
+
+			num = HubCountUserSessions(hub, req->Username, req->NodeInfo.UniqueId);
+
+			Lock(hub->lock);
+
+			if (num >= max_logins)
+			{
+				Unlock(hub->lock);
+
+				HLog(hub, "LH_TOO_MANY_MULTILOGINS",
+					c->Name,
+					req->Username, max_logins, num);
+
+				Free(policy);
+				login->Policy = NULL;
+				return ERR_TOO_MANY_USER_SESSION;
+			}
+		}
+	}
+
+	if (login->User != NULL)
+	{
+		Lock(login->User->lock);
+		{
+			login->User->LastLoginTime = SystemTime64();
+		}
+		Unlock(login->User->lock);
+	}
+
+	hub->LastCommTime = hub->LastLoginTime = SystemTime64();
+
+	if (login->AdminMode == false)
+	{
+		if (hub->Option->MaxSession != 0 &&
+			hub->Option->MaxSession <= Count(hub->NumSessions))
+		{
+			Unlock(hub->lock);
+
+			HLog(hub, "LH_MAX_SESSION", c->Name, hub->Option->MaxSession);
+
+			Free(policy);
+			login->Policy = NULL;
+			return ERR_HUB_IS_BUSY;
+		}
+	}
+
+	if (use_client_license || use_bridge_license)
+	{
+		if (
+			(GetHubAdminOption(hub, "max_sessions") != 0 &&
+			(Count(hub->NumSessionsClient) + Count(hub->NumSessionsBridge)) >= GetHubAdminOption(hub, "max_sessions"))
+			||
+			(hub->Option->MaxSession != 0 &&
+			(Count(hub->NumSessionsClient) + Count(hub->NumSessionsBridge)) >= hub->Option->MaxSession))
+		{
+			Unlock(hub->lock);
+
+			HLog(hub, "LH_MAX_SESSION", c->Name, GetHubAdminOption(hub, "max_sessions"));
+
+			Free(policy);
+			login->Policy = NULL;
+			return ERR_HUB_IS_BUSY;
+		}
+	}
+
+	if (use_client_license)
+	{
+		if (GetHubAdminOption(hub, "max_sessions_client_bridge_apply") != 0 &&
+			Count(hub->NumSessionsClient) >= GetHubAdminOption(hub, "max_sessions_client"))
+		{
+			Unlock(hub->lock);
+
+			HLog(hub, "LH_MAX_SESSION_CLIENT", c->Name, GetHubAdminOption(hub, "max_sessions_client"));
+
+			Free(policy);
+			login->Policy = NULL;
+			return ERR_HUB_IS_BUSY;
+		}
+	}
+
+	if (use_bridge_license)
+	{
+		if (GetHubAdminOption(hub, "max_sessions_client_bridge_apply") != 0 &&
+			Count(hub->NumSessionsBridge) >= GetHubAdminOption(hub, "max_sessions_bridge"))
+		{
+			Unlock(hub->lock);
+
+			HLog(hub, "LH_MAX_SESSION_BRIDGE", c->Name, GetHubAdminOption(hub, "max_sessions_bridge"));
+
+			Free(policy);
+			login->Policy = NULL;
+			return ERR_HUB_IS_BUSY;
+		}
+	}
+
+	if (Count(hub->Cedar->CurrentSessions) >= SERVER_MAX_SESSIONS)
+	{
+		Unlock(hub->lock);
+
+		HLog(hub, "LH_MAX_SESSION_2", c->Name, SERVER_MAX_SESSIONS);
+
+		Free(policy);
+		login->Policy = NULL;
+		return ERR_HUB_IS_BUSY;
+	}
+
+	Inc(hub->NumSessions);
+	if (use_bridge_license)
+	{
+		Inc(hub->NumSessionsBridge);
+	}
+
+	if (use_client_license)
+	{
+		Inc(hub->NumSessionsClient);
+	}
+	Inc(hub->Cedar->CurrentSessions);
+
+	slot->Hub = hub;
+	slot->UseClientLicense = use_client_license;
+	slot->UseBridgeLicense = use_bridge_license;
+
+	return ERR_NO_ERROR;
+}
+
+// Takes the licence counters of an admitted session's slot on Cedar
+void HubAssignSessionLicense(HUB_SESSION_SLOT *slot)
+{
+	CEDAR *cedar;
+
+	if (slot == NULL || slot->Hub == NULL)
+	{
+		return;
+	}
+
+	cedar = slot->Hub->Cedar;
+
+	if (slot->UseBridgeLicense)
+	{
+		Inc(cedar->AssignedBridgeLicense);
+	}
+
+	if (slot->UseClientLicense)
+	{
+		Inc(cedar->AssignedClientLicense);
+	}
+
+	slot->LicenseAssigned = true;
+}
+
+// Gives back every counter a slot holds (HubAdmitSession, HubAssignSessionLicense), under hub->lock, and empties the
+// slot. Does nothing for an empty slot.
+void HubReleaseSessionSlot(HUB_SESSION_SLOT *slot)
+{
+	HUB *hub;
+	CEDAR *cedar;
+
+	if (slot == NULL || slot->Hub == NULL)
+	{
+		return;
+	}
+
+	hub = slot->Hub;
+	cedar = hub->Cedar;
+
+	Lock(hub->lock);
+	{
+		if (slot->UseBridgeLicense)
+		{
+			Dec(hub->NumSessionsBridge);
+		}
+
+		if (slot->UseClientLicense)
+		{
+			Dec(hub->NumSessionsClient);
+		}
+
+		Dec(hub->NumSessions);
+		Dec(cedar->CurrentSessions);
+
+		if (slot->LicenseAssigned)
+		{
+			if (slot->UseBridgeLicense)
+			{
+				Dec(cedar->AssignedBridgeLicense);
+			}
+
+			if (slot->UseClientLicense)
+			{
+				Dec(cedar->AssignedClientLicense);
+			}
+		}
+	}
+	Unlock(hub->lock);
+
+	Zero(slot, sizeof(HUB_SESSION_SLOT));
+}
+
+// Creates the session of an admitted login (NewServerSession) and applies the login's settings to it, assigns the
+// slot's licence (HubAssignSessionLicense) and sets c->Session. Runs under hub->lock, so the UDP acceleration
+// socket (NewUdpAccel) is created under it.
+SESSION *NewLoginSession(CONNECTION *c, HUB *hub, SERVER_SESSION_PARAMS *prm, HUB_SESSION_SLOT *slot)
+{
+	SESSION *s;
+	SERVER *server;
+	POLICY *policy;
+
+	if (c == NULL || hub == NULL || prm == NULL || prm->Policy == NULL || slot == NULL)
+	{
+		return NULL;
+	}
+
+	server = c->Cedar->Server;
+	policy = prm->Policy;
+
+	s = NewServerSession(c->Cedar, c, hub, prm->Username, policy);
+
+	s->LocalHostSession = prm->LocalHostSession;
+	s->NormalClient = true;
+
+	IPToStr(s->ClientIP, sizeof(s->ClientIP), &c->ClientIp);
+
+	StrCpy(s->UnderlayProtocol, sizeof(s->UnderlayProtocol), c->FirstSock->UnderlayProtocol);
+
+	AddProtocolDetailsStr(s->ProtocolDetails, sizeof(s->ProtocolDetails), c->FirstSock->ProtocolDetails);
+
+	s->NoSendSignature = server->NoSendSignature;
+
+	if (prm->UseUdpAcceleration)
+	{
+		s->UseUdpAcceleration = true;
+
+		s->UdpAccelFastDisconnectDetect = prm->UdpAccelFastDisconnectDetect;
+	}
+
+	if (hub->Option->DisableUdpAcceleration)
+	{
+		s->UseUdpAcceleration = false;
+	}
+
+	if (s->UseUdpAcceleration)
+	{
+		s->UseHMacOnUdpAcceleration = prm->UseHMacOnUdpAcceleration;
+	}
+
+
+	if (s->UseUdpAcceleration)
+	{
+		s->UdpAccel = NewUdpAccel(c->Cedar, &c->FirstSock->LocalIP, false, false);
+		if (s->UdpAccel == NULL)
+		{
+			s->UseUdpAcceleration = false;
+		}
+		else
+		{
+			s->UdpAccel->Version = prm->UdpAccelVersion;
+
+			if (UdpAccelInitServer(s->UdpAccel, prm->UdpAccelClientKey,
+				&c->FirstSock->RemoteIP, &prm->UdpAccelClientIp, prm->UdpAccelClientPort) == false)
+			{
+				s->UseUdpAcceleration = false;
+			}
+
+			s->UdpAccel->FastDetect = s->UdpAccelFastDisconnectDetect;
+
+			if (prm->UseEncrypt == false)
+			{
+				s->UdpAccel->PlainTextMode = true;
+			}
+
+			s->UdpAccel->UseHMac = s->UseHMacOnUdpAcceleration;
+
+			AddProtocolDetailsKeyValueInt(s->ProtocolDetails, sizeof(s->ProtocolDetails), "UDPAccel_Ver", s->UdpAccel->Version);
+
+			AddProtocolDetailsStr(s->ProtocolDetails, sizeof(s->ProtocolDetails), s->UdpAccel->Version > 1 ? "ChaCha20-Poly1305" : "RC4");
+
+			AddProtocolDetailsKeyValueInt(s->ProtocolDetails, sizeof(s->ProtocolDetails), "UDPAccel_MSS", UdpAccelCalcMss(s->UdpAccel));
+		}
+	}
+
+	s->AdjustMss = prm->AdjustMss;
+	if (s->AdjustMss != 0)
+	{
+		AddProtocolDetailsKeyValueInt(s->ProtocolDetails, sizeof(s->ProtocolDetails), "AdjustMSS", s->AdjustMss);
+	}
+
+	s->IsBridgeMode = (policy->NoBridge == false) || (policy->NoRouting == false);
+	s->IsMonitorMode = policy->MonitorPort;
+
+	s->IPv6Session = prm->IPv6Session;
+
+	HubAssignSessionLicense(slot);
+
+	{
+		char ip[128];
+		IPToStr(ip, sizeof(ip), &c->FirstSock->RemoteIP);
+		HLog(hub, "LH_NEW_SESSION", c->Name, s->Name, ip, c->FirstSock->RemotePort, c->FirstSock->UnderlayProtocol, c->FirstSock->ProtocolDetails);
+	}
+
+	c->Session = s;
+	StrCpy(s->UserNameReal, sizeof(s->UserNameReal), prm->UserNameReal);
+	StrCpy(s->GroupName, sizeof(s->GroupName), prm->GroupName);
+
+	s->MaxConnection = prm->MaxConnection;
+	s->UseEncrypt = prm->UseEncrypt;
+	s->UseCompress = prm->UseCompress;
+	s->HalfConnection = prm->HalfConnection;
+	s->Timeout = prm->Timeout;
+	s->QoS = prm->QoS;
+	s->VLanId = policy->VLanId;
+
+	s->Username = CopyStr(prm->Username);
+
+	HLog(hub, "LH_SET_SESSION", s->Name, s->MaxConnection,
+		s->UseEncrypt ? _UU("L_YES") : _UU("L_NO"),
+		s->UseCompress ? _UU("L_YES") : _UU("L_NO"),
+		s->HalfConnection ? _UU("L_YES") : _UU("L_NO"),
+		s->Timeout / 1000);
+
+	return s;
+}
+
+// End of a server-side connection (ServerAccept, ServerRunSession): sends the error PACK of c->Err unless
+// send_error is false, waits for the client's last PACK and logs the end of the connection
+static void ServerAcceptEnd(CONNECTION *c, bool send_error, bool no_save_password)
+{
+	PACK *p;
+
+	if (send_error)
+	{
+		p = PackError(c->Err);
+		PackAddBool(p, "no_save_password", no_save_password);
+		HttpServerSend(c->FirstSock, p);
+		FreePack(p);
+	}
+
+	FreePack(HttpServerRecv(c->FirstSock));
+
+	if (c->FirstSock != NULL)
+	{
+		// Give the error pack time to reach the client before the socket closes.
+		// A tunnelled session has no first socket left, so nothing was sent and the wait is skipped.
+		SleepThread(25);
+	}
+
+	SLog(c->Cedar, "LS_CONNECTION_ERROR", c->Name, GetUniErrorStr(c->Err), c->Err);
+}
+
+// Accepts a connection on the server side. True for a logged-in session, which ConnectionAccept runs with
+// ServerRunSession (login->Session set), and for an additional connection of a session (login->Session NULL).
+bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
+{
+	UINT err;
+	PACK *p;
+	char ip1[64], verstr[64];
+	wchar_t *authtype_str;
+	char method[MAX_SIZE];
+	LOGIN_REQ req;
+	HUB_LOGIN hub_login;
+	HUB_SESSION_SLOT slot;
+	SERVER_SESSION_PARAMS prm;
+	char *username = req.Username;
+	UCHAR session_key[SHA1_SIZE];
+	HUB *hub;
+	SESSION *s = NULL;
+	bool supress_return_pack_error = false;
+	UINT direction;
+	UINT max_connection;
+	UINT timeout;
+	bool is_server_or_bridge = false;
+	bool no_save_password = false;
+	wchar_t *msg = NULL;
+	bool suppress_client_update_notification = false;
+	RPC_WINVER winver;
+	UCHAR mschap_v2_server_response_20[20];
+	UINT ms_chap_error = 0;
+	bool is_empty_password = false;
+
+	if (c == NULL || login == NULL)
+	{
+		return false;
+	}
+
+	Zero(&req, sizeof(req));
+	Zero(&hub_login, sizeof(hub_login));
+	Zero(&slot, sizeof(slot));
 
 	Zero(mschap_v2_server_response_20, sizeof(mschap_v2_server_response_20));
 
-	Zero(&udp_acceleration_client_ip, sizeof(udp_acceleration_client_ip));
-	udp_acceleration_client_port = 0;
-	Zero(udp_acceleration_client_key, sizeof(udp_acceleration_client_key));
-	Zero(udp_acceleration_client_key_v2, sizeof(udp_acceleration_client_key_v2));
-
 	Zero(&winver, sizeof(winver));
-
-	StrCpy(groupname, sizeof(groupname), "");
-	StrCpy(sessionname, sizeof(sessionname), "");
 
 	c->Status = CONNECTION_STATUS_NEGOTIATION;
 
@@ -1167,29 +1871,35 @@ bool ServerAccept(CONNECTION *c)
 			StrCpy(c->ClientStr, sizeof(c->ClientStr), "Unknown");
 		}
 
-		Zero(&node, sizeof(node));
-		InRpcNodeInfo(&node, p);
-
 		c->Protocol = GetProtocolFromPack(p);
 
-		authtype = GetAuthTypeFromPack(p);
-		if (GetHubnameAndUsernameFromPack(p, username, sizeof(username), hubname, sizeof(hubname)) == false)
+		if (ParseLoginRequest(p, &req) == false)
 		{
 			FreePack(p);
 			c->Err = ERR_PROTOCOL_ERROR;
 			goto CLEANUP;
 		}
 
+		if (req.UseUdpAcceleration && IsZeroIP(&req.UdpAccelClientIp))
+		{
+			Copy(&req.UdpAccelClientIp, &c->FirstSock->RemoteIP, sizeof(IP));
+		}
+
+		if (is_server_or_bridge)
+		{
+			req.RequireBridgeRoutingMode = true;
+		}
+
 		LockHubList(c->Cedar);
 		{
-			hub = GetHub(c->Cedar, hubname);
+			hub = GetHub(c->Cedar, req.HubName);
 		}
 		UnlockHubList(c->Cedar);
 		if (hub == NULL)
 		{
 			FreePack(p);
 			c->Err = ERR_HUB_NOT_FOUND;
-			SLog(c->Cedar, "LS_HUB_NOT_FOUND", c->Name, hubname);
+			SLog(c->Cedar, "LS_HUB_NOT_FOUND", c->Name, req.HubName);
 			goto CLEANUP;
 		}
 
@@ -1214,8 +1924,6 @@ bool ServerAccept(CONNECTION *c)
 		{
 			UINT cert_size = 0;
 			void *cert_buf = NULL;
-			USER *user;
-			USERGROUP *group;
 			char plain_password[MAX_PASSWORD_LEN + 1];
 
 			if (hub->Halt || hub->Offline)
@@ -1226,22 +1934,6 @@ bool ServerAccept(CONNECTION *c)
 				c->Err = ERR_HUB_STOPPING;
 				goto CLEANUP;
 			}
-
-			use_encrypt = PackGetInt(p, "use_encrypt") == 0 ? false : true;
-			use_compress = PackGetInt(p, "use_compress") == 0 ? false : true;
-			max_connection = PackGetInt(p, "max_connection");
-			half_connection = PackGetInt(p, "half_connection") == 0 ? false : true;
-			qos = PackGetInt(p, "qos") ? true : false;
-			client_id = PackGetInt(p, "client_id");
-			adjust_mss = PackGetInt(p, "adjust_mss");
-			use_udp_acceleration_client = PackGetBool(p, "use_udp_acceleration");
-			client_udp_acceleration_max_version = PackGetInt(p, "udp_acceleration_max_version");
-			if (client_udp_acceleration_max_version == 0)
-			{
-				client_udp_acceleration_max_version = 1;
-			}
-			support_hmac_on_udp_acceleration_client = PackGetBool(p, "support_hmac_on_udp_acceleration");
-			support_udp_accel_fast_disconnect_detect = PackGetBool(p, "support_udp_accel_fast_disconnect_detect");
 
 			if (c->CipherName != NULL)
 			{
@@ -1265,52 +1957,8 @@ bool ServerAccept(CONNECTION *c)
 				c->SslVersion = CopyStr(c->FirstSock->SslVersion);
 			}
 
-			if (use_udp_acceleration_client)
-			{
-				PackGetData2(p, "udp_acceleration_client_key", udp_acceleration_client_key, UDP_ACCELERATION_COMMON_KEY_SIZE_V1);
-				PackGetData2(p, "udp_acceleration_client_key_v2", udp_acceleration_client_key_v2, UDP_ACCELERATION_COMMON_KEY_SIZE_V2);
-
-				if (PackGetIp(p, "udp_acceleration_client_ip", &udp_acceleration_client_ip) == false)
-				{
-					use_udp_acceleration_client = false;
-				}
-				else
-				{
-					if (IsZeroIP(&udp_acceleration_client_ip))
-					{
-						Copy(&udp_acceleration_client_ip, &c->FirstSock->RemoteIP, sizeof(IP));
-					}
-					udp_acceleration_client_port = PackGetInt(p, "udp_acceleration_client_port");
-					if (udp_acceleration_client_port == 0)
-					{
-						use_udp_acceleration_client = false;
-					}
-				}
-
-				use_hmac_on_udp_acceleration = support_hmac_on_udp_acceleration_client;
-			}
-
-
-			require_bridge_routing_mode = PackGetBool(p, "require_bridge_routing_mode");
-			require_monitor_mode = PackGetBool(p, "require_monitor_mode");
-			if (require_monitor_mode)
-			{
-				qos = false;
-			}
-
-			if (is_server_or_bridge)
-			{
-				require_bridge_routing_mode = true;
-			}
-
-			Zero(unique, sizeof(unique));
-			if (PackGetDataSize(p, "unique_id") == SHA1_SIZE)
-			{
-				PackGetData(p, "unique_id", unique);
-			}
-
 			authtype_str = _UU("LH_AUTH_UNKNOWN");
-			switch (authtype)
+			switch (req.AuthType)
 			{
 			case CLIENT_AUTHTYPE_ANONYMOUS:
 				authtype_str = _UU("LH_AUTH_ANONYMOUS");
@@ -1340,7 +1988,7 @@ bool ServerAccept(CONNECTION *c)
 
 			if (auth_ret == false)
 			{
-				switch (authtype)
+				switch (req.AuthType)
 				{
 				case CLIENT_AUTHTYPE_ANONYMOUS:
 					break;
@@ -1524,419 +2172,28 @@ bool ServerAccept(CONNECTION *c)
 				HLog(hub, "LH_AUTH_OK", c->Name, username);
 			}
 
-			policy = NULL;
-
 			FreePack(p);
 
-			if (StrCmpi(username, ADMINISTRATOR_USERNAME) != 0)
+			// The hub's policy for this user, then the session limits; both log a refusal to the hub log
+			err = HubResolveSessionPolicy(hub, c, &req, &hub_login);
+			if (err != ERR_NO_ERROR)
 			{
-				user = AcGetUser(hub, username);
-				if (user == NULL)
-				{
-					user = AcGetUser(hub, "*");
-					if (user == NULL)
-					{
-						Unlock(hub->lock);
-						ReleaseHub(hub);
-						c->Err = ERR_ACCESS_DENIED;
-						goto CLEANUP;
-					}
-				}
-
-				policy = NULL;
-
-				Lock(user->lock);
-				{
-					user_expires = user->ExpireTime;
-
-					StrCpy(username_real, sizeof(username_real), user->Name);
-					group = user->Group;
-					if (group != NULL)
-					{
-						AddRef(group->ref);
-
-						Lock(group->lock);
-						{
-							StrCpy(groupname, sizeof(groupname), group->Name);
-						}
-						Unlock(group->lock);
-					}
-
-					if (user->Policy != NULL)
-					{
-						policy = ClonePolicy(user->Policy);
-					}
-					else
-					{
-						if (group)
-						{
-							Lock(group->lock);
-							{
-								if (group->Policy != NULL)
-								{
-									policy = ClonePolicy(group->Policy);
-								}
-							}
-							Unlock(group->lock);
-						}
-					}
-
-					if (group != NULL)
-					{
-						ReleaseGroup(group);
-					}
-				}
-				Unlock(user->lock);
-				loggedin_user_object = user;
-			}
-			else
-			{
-				admin_mode = true;
-				StrCpy(username_real, sizeof(username_real), ADMINISTRATOR_USERNAME);
-
-				policy = ClonePolicy(GetDefaultPolicy());
-				policy->NoBroadcastLimiter = true;
-				policy->MonitorPort = true;
-			}
-
-			if (policy == NULL)
-			{
-				policy = ClonePolicy(GetDefaultPolicy());
-			}
-
-			if (policy->MaxConnection == 0)
-			{
-				policy->MaxConnection = MAX_TCP_CONNECTION;
-			}
-
-			if (policy->TimeOut == 0)
-			{
-				policy->TimeOut = 20;
-			}
-
-			if (qos)
-			{
-				if (policy->NoQoS)
-				{
-					qos = false;
-				}
-				if (GetHubAdminOption(hub, "deny_qos") != 0)
-				{
-					qos = false;
-					policy->NoQoS = true;
-				}
-			}
-
-			if (GetHubAdminOption(hub, "max_bitrates_download") != 0)
-			{
-				if (policy->MaxDownload == 0)
-				{
-					policy->MaxDownload = GetHubAdminOption(hub, "max_bitrates_download");
-				}
-				else
-				{
-					UINT r = GetHubAdminOption(hub, "max_bitrates_download");
-					policy->MaxDownload = MIN(policy->MaxDownload, r);
-				}
-			}
-
-			if (GetHubAdminOption(hub, "max_bitrates_upload") != 0)
-			{
-				if (policy->MaxUpload == 0)
-				{
-					policy->MaxUpload = GetHubAdminOption(hub, "max_bitrates_upload");
-				}
-				else
-				{
-					UINT r = GetHubAdminOption(hub, "max_bitrates_upload");
-					policy->MaxUpload = MIN(policy->MaxUpload, r);
-				}
-			}
-
-			if (GetHubAdminOption(hub, "deny_bridge") != 0)
-			{
-				policy->NoBridge = true;
-			}
-
-			if (GetHubAdminOption(hub, "deny_routing") != 0)
-			{
-				policy->NoRouting = true;
-			}
-
-			if (hub->Option->ClientMinimumRequiredBuild > c->ClientBuild &&
-				 InStrEx(c->ClientStr, "client", false))
-			{
-				HLog(hub, "LH_CLIENT_VERSION_OLD", c->Name, c->ClientBuild, hub->Option->ClientMinimumRequiredBuild);
-
 				Unlock(hub->lock);
 				ReleaseHub(hub);
-				c->Err = ERR_VERSION_INVALID;
-				Free(policy);
+				c->Err = err;
 				goto CLEANUP;
 			}
 
-			if (hub->Option->RequiredClientId != 0 &&
-				hub->Option->RequiredClientId != client_id && 
-				InStrEx(c->ClientStr, "client", false))
+			err = HubAdmitSession(hub, c, &req, &hub_login, &slot);
+			if (err != ERR_NO_ERROR)
 			{
-				HLog(hub, "LH_CLIENT_ID_REQUIRED", c->Name, client_id, hub->Option->RequiredClientId);
-
-				Unlock(hub->lock);
+				// HubAdmitSession released hub->lock and freed the policy
 				ReleaseHub(hub);
-				c->Err = ERR_CLIENT_ID_REQUIRED;
-				Free(policy);
+				c->Err = err;
 				goto CLEANUP;
 			}
 
-			if (user_expires != 0 && user_expires <= SystemTime64())
-			{
-				HLog(hub, "LH_USER_EXPIRES", c->Name, username);
-
-				Unlock(hub->lock);
-				ReleaseHub(hub);
-				c->Err = ERR_ACCESS_DENIED;
-				Free(policy);
-				goto CLEANUP;
-			}
-
-			if (policy->Access == false)
-			{
-				HLog(hub, "LH_POLICY_ACCESS_NG", c->Name, username);
-
-				Unlock(hub->lock);
-				ReleaseHub(hub);
-				c->Err = ERR_ACCESS_DENIED;
-				Free(policy);
-				goto CLEANUP;
-			}
-
-			if (require_monitor_mode && policy->MonitorPort == false)
-			{
-				HLog(hub, "LH_POLICY_MONITOR_MODE", c->Name);
-
-				Unlock(hub->lock);
-				ReleaseHub(hub);
-				c->Err = ERR_MONITOR_MODE_DENIED;
-				Free(policy);
-				goto CLEANUP;
-			}
-
-			if (policy->MonitorPort)
-			{
-				if (require_monitor_mode == false)
-				{
-					policy->MonitorPort = false;
-				}
-			}
-
-			if (policy->MonitorPort)
-			{
-				qos = false;
-			}
-
-			if (require_bridge_routing_mode &&
-				(policy->NoBridge && policy->NoRouting))
-			{
-				HLog(hub, "LH_POLICY_BRIDGE_MODE", c->Name);
-
-				Unlock(hub->lock);
-				ReleaseHub(hub);
-				c->Err = ERR_BRIDGE_MODE_DENIED;
-				Free(policy);
-				goto CLEANUP;
-			}
-
-			if (require_bridge_routing_mode == false)
-			{
-				policy->NoBridge = true;
-				policy->NoRouting = true;
-			}
-
-			if (Cmp(unique, unique2, SHA1_SIZE) == 0)
-			{
-				local_host_session = true;
-			}
-
-			if (local_host_session == false)
-			{
-				SOCK *s = c->FirstSock;
-
-				if (s != NULL)
-				{
-					if (IsIPMyHost(&s->RemoteIP))
-					{
-						local_host_session = true;
-					}
-				}
-			}
-
-			if (local_host_session)
-			{
-				policy->NoBridge = false;
-				policy->NoRouting = false;
-			}
-
-			if (local_host_session == false)
-			{
-
-				if (policy->NoBridge == false || policy->NoRouting == false)
-				{
-					use_bridge_license = true;
-				}
-				else
-				{
-					use_client_license = true;
-				}
-			}
-
-
-			{
-				UINT num;
-				UINT max_logins = policy->MultiLogins;
-				UINT ao = GetHubAdminOption(hub, "max_multilogins_per_user");
-
-				if (ao != 0)
-				{
-					if (max_logins != 0)
-					{
-						max_logins = MIN(max_logins, ao);
-					}
-					else
-					{
-						max_logins = ao;
-					}
-				}
-
-				if (max_logins != 0)
-				{
-					// Lock order is hub->lock, SessionList, s->lock: release hub->lock
-					// while the session list is walked, as before
-					Unlock(hub->lock);
-
-					num = HubCountUserSessions(hub, username, node.UniqueId);
-
-					Lock(hub->lock);
-
-					if (num >= max_logins)
-					{
-						Unlock(hub->lock);
-
-						HLog(hub, "LH_TOO_MANY_MULTILOGINS",
-							c->Name,
-							username, max_logins, num);
-
-						ReleaseHub(hub);
-						c->Err = ERR_TOO_MANY_USER_SESSION;
-						Free(policy);
-						goto CLEANUP;
-					}
-				}
-			}
-
-			if (loggedin_user_object != NULL)
-			{
-				Lock(loggedin_user_object->lock);
-				{
-					loggedin_user_object->LastLoginTime = SystemTime64();
-				}
-				Unlock(loggedin_user_object->lock);
-			}
-
-			hub->LastCommTime = hub->LastLoginTime = SystemTime64();
-
-			if (admin_mode == false)
-			{
-				if (hub->Option->MaxSession != 0 &&
-					hub->Option->MaxSession <= Count(hub->NumSessions))
-				{
-					Unlock(hub->lock);
-
-					HLog(hub, "LH_MAX_SESSION", c->Name, hub->Option->MaxSession);
-
-					ReleaseHub(hub);
-					c->Err = ERR_HUB_IS_BUSY;
-					Free(policy);
-					goto CLEANUP;
-				}
-			}
-
-			if (use_client_license || use_bridge_license)
-			{
-				if (
-					(GetHubAdminOption(hub, "max_sessions") != 0 &&
-					(Count(hub->NumSessionsClient) + Count(hub->NumSessionsBridge)) >= GetHubAdminOption(hub, "max_sessions"))
-					||
-					(hub->Option->MaxSession != 0 &&
-					(Count(hub->NumSessionsClient) + Count(hub->NumSessionsBridge)) >= hub->Option->MaxSession))
-				{
-					Unlock(hub->lock);
-
-					HLog(hub, "LH_MAX_SESSION", c->Name, GetHubAdminOption(hub, "max_sessions"));
-
-					ReleaseHub(hub);
-					c->Err = ERR_HUB_IS_BUSY;
-					Free(policy);
-					goto CLEANUP;
-				}
-			}
-
-			if (use_client_license)
-			{
-				if (GetHubAdminOption(hub, "max_sessions_client_bridge_apply") != 0 &&
-					Count(hub->NumSessionsClient) >= GetHubAdminOption(hub, "max_sessions_client"))
-				{
-					Unlock(hub->lock);
-
-					HLog(hub, "LH_MAX_SESSION_CLIENT", c->Name, GetHubAdminOption(hub, "max_sessions_client"));
-
-					ReleaseHub(hub);
-					c->Err = ERR_HUB_IS_BUSY;
-					Free(policy);
-					goto CLEANUP;
-				}
-			}
-
-			if (use_bridge_license)
-			{
-				if (GetHubAdminOption(hub, "max_sessions_client_bridge_apply") != 0 &&
-					Count(hub->NumSessionsBridge) >= GetHubAdminOption(hub, "max_sessions_bridge"))
-				{
-					Unlock(hub->lock);
-
-					HLog(hub, "LH_MAX_SESSION_BRIDGE", c->Name, GetHubAdminOption(hub, "max_sessions_bridge"));
-
-					ReleaseHub(hub);
-					c->Err = ERR_HUB_IS_BUSY;
-					Free(policy);
-					goto CLEANUP;
-				}
-			}
-
-			if (Count(hub->Cedar->CurrentSessions) >= SERVER_MAX_SESSIONS)
-			{
-				Unlock(hub->lock);
-
-				HLog(hub, "LH_MAX_SESSION_2", c->Name, SERVER_MAX_SESSIONS);
-
-				ReleaseHub(hub);
-				c->Err = ERR_HUB_IS_BUSY;
-				Free(policy);
-				goto CLEANUP;
-			}
-
-			Inc(hub->NumSessions);
-			if (use_bridge_license)
-			{
-				Inc(hub->NumSessionsBridge);
-			}
-
-			if (use_client_license)
-			{
-				Inc(hub->NumSessionsClient);
-			}
-			Inc(hub->Cedar->CurrentSessions);
-
-			timeout = policy->TimeOut * 1000;
+			timeout = hub_login.Policy->TimeOut * 1000;
 			if (timeout == 0)
 			{
 				timeout = TIMEOUT_DEFAULT;
@@ -1944,21 +2201,21 @@ bool ServerAccept(CONNECTION *c)
 			timeout = MIN(timeout, TIMEOUT_MAX);
 			timeout = MAX(timeout, TIMEOUT_MIN);
 
-			max_connection = MIN(max_connection, policy->MaxConnection);
+			max_connection = MIN(req.MaxConnection, hub_login.Policy->MaxConnection);
 			max_connection = MIN(max_connection, MAX_TCP_CONNECTION);
 			max_connection = MAX(max_connection, 1);
 
-			if (half_connection)
+			if (req.HalfConnection)
 			{
 				// Half connection needs at least 2 connections.
 				max_connection = MAX(max_connection, 2);
 			}
 
-			if (qos)
+			if (hub_login.QoS)
 			{
 				// VoIP / QoS needs at least 2 connections.
 				max_connection = MAX(max_connection, 2);
-				if (half_connection)
+				if (req.HalfConnection)
 				{
 					max_connection = MAX(max_connection, 4);
 				}
@@ -1969,137 +2226,39 @@ bool ServerAccept(CONNECTION *c)
 			DelConnection(c->Cedar, c);
 
 			StrLower(username);
-			s = NewServerSession(c->Cedar, c, hub, username, policy);
 
-			s->LocalHostSession = local_host_session;
-			s->NormalClient = true;
-
-			IPToStr(s->ClientIP, sizeof(s->ClientIP), &c->ClientIp);
-
-			StrCpy(s->UnderlayProtocol, sizeof(s->UnderlayProtocol), c->FirstSock->UnderlayProtocol);
-
-			AddProtocolDetailsStr(s->ProtocolDetails, sizeof(s->ProtocolDetails), c->FirstSock->ProtocolDetails);
-
-			s->NoSendSignature = c->Cedar->Server->NoSendSignature;
-
-			if (use_udp_acceleration_client)
+			Zero(&prm, sizeof(prm));
+			prm.Username = username;
+			prm.UserNameReal = hub_login.UserNameReal;
+			prm.GroupName = hub_login.GroupName;
+			prm.Policy = hub_login.Policy;
+			prm.LocalHostSession = hub_login.LocalHostSession;
+			prm.MaxConnection = max_connection;
+			prm.Timeout = timeout;
+			prm.UseEncrypt = req.UseEncrypt;
+			prm.UseCompress = req.UseCompress;
+			prm.HalfConnection = req.HalfConnection;
+			prm.QoS = hub_login.QoS;
+			prm.AdjustMss = req.AdjustMss;
+			prm.IPv6Session = (req.NodeInfo.ClientIpAddress == 0);
+			prm.UseUdpAcceleration = req.UseUdpAcceleration;
+			prm.UdpAccelVersion = 1;
+			prm.UdpAccelClientKey = req.UdpAccelClientKey;
+			if (req.UseUdpAcceleration && req.UdpAccelMaxVersion >= 2)
 			{
-				s->UseUdpAcceleration = true;
-
-				s->UdpAccelFastDisconnectDetect = support_udp_accel_fast_disconnect_detect;
-
-				udp_acceleration_version = 1;
-				if (client_udp_acceleration_max_version >= 2)
-				{
-					udp_acceleration_version = 2;
-				}
+				prm.UdpAccelVersion = 2;
+				prm.UdpAccelClientKey = req.UdpAccelClientKeyV2;
 			}
+			prm.UseHMacOnUdpAcceleration = req.UseHMacOnUdpAcceleration;
+			prm.UdpAccelFastDisconnectDetect = req.UdpAccelFastDisconnectDetect;
+			Copy(&prm.UdpAccelClientIp, &req.UdpAccelClientIp, sizeof(IP));
+			prm.UdpAccelClientPort = req.UdpAccelClientPort;
 
-			if (hub->Option->DisableUdpAcceleration)
-			{
-				s->UseUdpAcceleration = false;
-			}
-
-			if (s->UseUdpAcceleration)
-			{
-				s->UseHMacOnUdpAcceleration = use_hmac_on_udp_acceleration;
-			}
-
-
-			if (s->UseUdpAcceleration)
-			{
-				s->UdpAccel = NewUdpAccel(c->Cedar, &c->FirstSock->LocalIP, false, false);
-				if (s->UdpAccel == NULL)
-				{
-					s->UseUdpAcceleration = false;
-				}
-				else
-				{
-					s->UdpAccel->Version = udp_acceleration_version;
-
-					if (UdpAccelInitServer(s->UdpAccel,
-						s->UdpAccel->Version == 2 ? udp_acceleration_client_key_v2 : udp_acceleration_client_key,
-						&c->FirstSock->RemoteIP, &udp_acceleration_client_ip, udp_acceleration_client_port) == false)
-					{
-						s->UseUdpAcceleration = false;
-					}
-
-					s->UdpAccel->FastDetect = s->UdpAccelFastDisconnectDetect;
-
-					if (use_encrypt == false)
-					{
-						s->UdpAccel->PlainTextMode = true;
-					}
-
-					s->UdpAccel->UseHMac = s->UseHMacOnUdpAcceleration;
-
-					AddProtocolDetailsKeyValueInt(s->ProtocolDetails, sizeof(s->ProtocolDetails), "UDPAccel_Ver", s->UdpAccel->Version);
-
-					AddProtocolDetailsStr(s->ProtocolDetails, sizeof(s->ProtocolDetails), s->UdpAccel->Version > 1 ? "ChaCha20-Poly1305" : "RC4");
-
-					AddProtocolDetailsKeyValueInt(s->ProtocolDetails, sizeof(s->ProtocolDetails), "UDPAccel_MSS", UdpAccelCalcMss(s->UdpAccel));
-				}
-			}
-
-			s->AdjustMss = adjust_mss;
-			if (s->AdjustMss != 0)
-			{
-				AddProtocolDetailsKeyValueInt(s->ProtocolDetails, sizeof(s->ProtocolDetails), "AdjustMSS", s->AdjustMss);
-			}
-
-			s->IsBridgeMode = (policy->NoBridge == false) || (policy->NoRouting == false);
-			s->IsMonitorMode = policy->MonitorPort;
-
-			s->IPv6Session = false;
-
-			if (node.ClientIpAddress == 0)
-			{
-				s->IPv6Session = true;
-			}
-
-			if (use_bridge_license)
-			{
-				Inc(s->Cedar->AssignedBridgeLicense);
-			}
-
-			if (use_client_license)
-			{
-				Inc(s->Cedar->AssignedClientLicense);
-			}
-
-			if (StrLen(sessionname) != 0)
-			{
-				Free(s->Name);
-				s->Name = CopyStr(sessionname);
-			}
-
-			{
-				char ip[128];
-				IPToStr(ip, sizeof(ip), &c->FirstSock->RemoteIP);
-				HLog(hub, "LH_NEW_SESSION", c->Name, s->Name, ip, c->FirstSock->RemotePort, c->FirstSock->UnderlayProtocol, c->FirstSock->ProtocolDetails);
-			}
-
-			c->Session = s;
-			StrCpy(s->UserNameReal, sizeof(s->UserNameReal), username_real);
-			StrCpy(s->GroupName, sizeof(s->GroupName), groupname);
+			// The session takes over the policy
+			s = NewLoginSession(c, hub, &prm, &slot);
+			hub_login.Policy = NULL;
 
 			Copy(session_key, s->SessionKey, SHA1_SIZE);
-
-			s->MaxConnection = max_connection;
-			s->UseEncrypt = use_encrypt;
-			s->UseCompress = use_compress;
-			s->HalfConnection = half_connection;
-			s->Timeout = timeout;
-			s->QoS = qos;
-			s->VLanId = policy->VLanId;
-
-			s->Username = CopyStr(username);
-
-			HLog(hub, "LH_SET_SESSION", s->Name, s->MaxConnection,
-				s->UseEncrypt ? _UU("L_YES") : _UU("L_NO"),
-				s->UseCompress ? _UU("L_YES") : _UU("L_NO"),
-				s->HalfConnection ? _UU("L_YES") : _UU("L_NO"),
-				s->Timeout / 1000);
 
 			msg = GetHubMsg(hub);
 
@@ -2125,7 +2284,7 @@ bool ServerAccept(CONNECTION *c)
 		HttpServerSend(c->FirstSock, p);
 		FreePack(p);
 
-		Copy(&c->Session->NodeInfo, &node, sizeof(NODE_INFO));
+		Copy(&c->Session->NodeInfo, &req.NodeInfo, sizeof(NODE_INFO));
 
 
 		{
@@ -2157,57 +2316,18 @@ bool ServerAccept(CONNECTION *c)
 		DeleteAllUserListCache(hub->UserList);
 
 
-		s->NumLoginIncrementUserObject = loggedin_user_object;
+		s->NumLoginIncrementUserObject = hub_login.User;
 		s->NumLoginIncrementHubObject = s->Hub;
 		s->NumLoginIncrementTick = Tick64() + (UINT64)NUM_LOGIN_INCREMENT_INTERVAL;
-		SessionMain(s);
 
+		// ConnectionAccept runs the session (ServerRunSession); the hub, user and slot references go with it
+		login->Session = s;
+		login->Hub = hub;
+		login->User = hub_login.User;
+		Copy(&login->Slot, &slot, sizeof(HUB_SESSION_SLOT));
+		login->NoSavePassword = no_save_password;
 
-		DeleteAllUserListCache(hub->UserList);
-
-		Lock(s->Hub->lock);
-		{
-			if (use_bridge_license)
-			{
-				Dec(hub->NumSessionsBridge);
-			}
-
-			if (use_client_license)
-			{
-				Dec(hub->NumSessionsClient);
-			}
-
-			Dec(s->Hub->NumSessions);
-			Dec(s->Hub->Cedar->CurrentSessions);
-
-			if (use_bridge_license)
-			{
-				Dec(s->Cedar->AssignedBridgeLicense);
-			}
-
-			if (use_client_license)
-			{
-				Dec(s->Cedar->AssignedClientLicense);
-			}
-		}
-		Unlock(s->Hub->lock);
-
-		HLog(s->Hub, "LH_END_SESSION", s->Name, s->TotalSendSizeReal, s->TotalRecvSizeReal);
-
-		if (s->UdpAccel != NULL)
-		{
-			FreeUdpAccel(s->UdpAccel);
-			s->UdpAccel = NULL;
-		}
-
-		ReleaseSession(s);
-
-		ret = true;
-		c->Err = ERR_SESSION_REMOVED;
-
-		ReleaseHub(hub);
-
-		goto CLEANUP;
+		return true;
 	}
 	else if (StrCmpi(method, "additional_connect") == 0)
 	{
@@ -2400,27 +2520,60 @@ bool ServerAccept(CONNECTION *c)
 	}
 
 CLEANUP:
-	if (loggedin_user_object != NULL)
+	if (hub_login.User != NULL)
 	{
-		ReleaseUser(loggedin_user_object);
+		ReleaseUser(hub_login.User);
 	}
 
+	ServerAcceptEnd(c, supress_return_pack_error == false, no_save_password);
 
-	if (supress_return_pack_error == false)
+	return false;
+}
+
+// Runs a session that ServerAccept logged in until it ends, gives its hub slot back, releases the login's
+// references and ends the connection. Does nothing when ServerAccept handed over no session.
+void ServerRunSession(CONNECTION *c, SERVER_LOGIN *login)
+{
+	SESSION *s;
+	HUB *hub;
+
+	if (c == NULL || login == NULL || login->Session == NULL)
 	{
-		p = PackError(c->Err);
-		PackAddBool(p, "no_save_password", no_save_password);
-		HttpServerSend(c->FirstSock, p);
-		FreePack(p);
+		return;
 	}
 
-	FreePack(HttpServerRecv(c->FirstSock));
+	s = login->Session;
+	hub = login->Hub;
 
-	SleepThread(25);
+	SessionMain(s);
 
-	SLog(c->Cedar, "LS_CONNECTION_ERROR", c->Name, GetUniErrorStr(c->Err), c->Err);
 
-	return ret;
+	DeleteAllUserListCache(hub->UserList);
+
+	HubReleaseSessionSlot(&login->Slot);
+
+	HLog(s->Hub, "LH_END_SESSION", s->Name, s->TotalSendSizeReal, s->TotalRecvSizeReal);
+
+	if (s->UdpAccel != NULL)
+	{
+		FreeUdpAccel(s->UdpAccel);
+		s->UdpAccel = NULL;
+	}
+
+	ReleaseSession(s);
+
+	c->Err = ERR_SESSION_REMOVED;
+
+	ReleaseHub(hub);
+
+	if (login->User != NULL)
+	{
+		ReleaseUser(login->User);
+	}
+
+	ServerAcceptEnd(c, true, login->NoSavePassword);
+
+	Zero(login, sizeof(SERVER_LOGIN));
 }
 
 
@@ -2616,7 +2769,7 @@ bool ClientAdditionalConnect(CONNECTION *c)
 		return false;
 	}
 
-	if (c->Halt)
+	if (FlagRead(&c->Halt))
 	{
 		goto CLEANUP;
 	}
@@ -2626,7 +2779,7 @@ bool ClientAdditionalConnect(CONNECTION *c)
 		goto CLEANUP;
 	}
 
-	if (c->Halt)
+	if (FlagRead(&c->Halt))
 	{
 		goto CLEANUP;
 	}
@@ -2636,7 +2789,7 @@ bool ClientAdditionalConnect(CONNECTION *c)
 		goto CLEANUP;
 	}
 
-	if (c->Halt)
+	if (FlagRead(&c->Halt))
 	{
 		goto CLEANUP;
 	}
@@ -2860,7 +3013,7 @@ bool ClientConnect(CONNECTION *c)
 
 	Copy(&server_ip, &s->RemoteIP, sizeof(IP));
 
-	if (c->Halt)
+	if (FlagRead(&c->Halt))
 	{
 		c->Err = ERR_USER_CANCEL;
 		goto CLEANUP;
@@ -2890,7 +3043,7 @@ bool ClientConnect(CONNECTION *c)
 		goto CLEANUP;
 	}
 
-	if (c->Halt)
+	if (FlagRead(&c->Halt))
 	{
 		c->Err = ERR_USER_CANCEL;
 		goto CLEANUP;
@@ -2901,7 +3054,7 @@ bool ClientConnect(CONNECTION *c)
 		goto CLEANUP;
 	}
 
-	if (c->Halt)
+	if (FlagRead(&c->Halt))
 	{
 		c->Err = ERR_USER_CANCEL;
 		goto CLEANUP;
@@ -2917,7 +3070,7 @@ bool ClientConnect(CONNECTION *c)
 		goto CLEANUP;
 	}
 
-	if (c->Halt)
+	if (FlagRead(&c->Halt))
 	{
 		c->Err = ERR_USER_CANCEL;
 		goto CLEANUP;
@@ -3826,7 +3979,7 @@ SOCK *ClientConnectToServer(CONNECTION *c)
 		return NULL;
 	}
 
-	if (c->Halt)
+	if (FlagRead(&c->Halt))
 	{
 		c->Err = ERR_USER_CANCEL;
 		return NULL;
@@ -3841,7 +3994,7 @@ SOCK *ClientConnectToServer(CONNECTION *c)
 	// StopConnection reads c->FirstSock and takes its ref under c->lock
 	ClientSetFirstSock(c, s);
 
-	if (c->Halt)
+	if (FlagRead(&c->Halt))
 	{
 		c->Err = ERR_USER_CANCEL;
 		ClientSetFirstSock(c, NULL);
@@ -4098,7 +4251,7 @@ SOCK *BindTcpIpConnectEx(IP *localIP, UINT localport, char *hostname, UINT port,
 		return NULL;
 	}
 
-	s = BindConnectEx4(localIP, localport, hostname, port, 0, cancel_flag, true, ret_ip);
+	s = BindConnectEx4(localIP, localport, hostname, port, 0, cancel_flag, ret_ip);
 	if (s == NULL)
 	{
 		return NULL;

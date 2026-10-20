@@ -10,7 +10,6 @@ endif()
 # Link MSVC runtime statically
 # this should be revisited after installer migration to MSI
 #
-cmake_policy(SET CMP0091 NEW)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 project("Ranz VPN"
@@ -33,6 +32,9 @@ include("${TOP_DIRECTORY}/cmake/RanzResources.cmake")
 # Build options of the project's own code: C17 and the ranz_options target (Windows API level,
 # per-configuration definitions). After RanzSanitizers.cmake, whose options it reads.
 include("${TOP_DIRECTORY}/cmake/RanzOptions.cmake")
+
+# ranz_add_executable(): each executable with its version resource, icon, manifest and options
+include("${TOP_DIRECTORY}/cmake/RanzExecutable.cmake")
 
 # Check that submodules are present only if source was downloaded with git
 if(EXISTS "${TOP_DIRECTORY}/.git" AND NOT EXISTS "${TOP_DIRECTORY}/src/Mayaqua/3rdparty/liboqs/CMakeLists.txt")

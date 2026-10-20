@@ -1,12 +1,14 @@
 # RanzWarnings.cmake
 # The INTERFACE target ranz_warnings: the compiler warnings of the project's own code.
 #
-# Every target of the project's own code links it PRIVATE (cedar, mayaqua, vpnserver, vpncmd, vpntest):
+# Every target of the project's own code links it PRIVATE: cedar and mayaqua, and every executable
+# (vpnserver, vpncmd, vpntest and the fuzz targets) through ranz_add_executable
+# (cmake/RanzExecutable.cmake):
 #
 #   target_link_libraries(<target> PRIVATE ranz_warnings)
 #
 # A new target gets the flags from that one line; no list of targets is kept anywhere. The vendored
-# targets (liboqs, oqs-provider) and the fuzz targets do not link it, so they compile without them.
+# targets (liboqs, oqs-provider) do not link it, so they compile without them.
 #
 # What it carries:
 #   - /W3 with every compiler (clang-cl maps it to -Wall)
@@ -44,12 +46,16 @@ set(RANZ_UNUSED_ERROR_FLAGS
   -Werror=unreachable-code
 )
 
-# The other families with zero hits in the baseline of FND-31 (the CI log of the x64 build)
+# The other families with zero hits in the baseline of FND-31 (the CI log of the x64 build).
+# format: Format, FormatArgs, Print and Debug carry RANZ_PRINTF_FORMAT (Mayaqua/MayaType.h), so clang
+# checks their arguments against the format string; the -Wformat report of the project's own targets
+# was empty after FND-204.
 set(RANZ_ERROR_FLAGS
   -Werror=implicit-function-declaration
   -Werror=int-conversion
   -Werror=return-type
   -Werror=incompatible-function-pointer-types
+  -Werror=format
 )
 
 add_library(ranz_warnings INTERFACE)

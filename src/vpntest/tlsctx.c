@@ -203,7 +203,7 @@ static bool TlsCtxListen(TLSCTX_SERVER *srv)
 {
 	if (srv->Listen == NULL)
 	{
-		srv->Listen = ListenEx(TLSCTX_PORT, true);
+		srv->Listen = ListenEx2(TLSCTX_PORT, true, false, NULL, false);
 	}
 
 	return (srv->Listen != NULL);

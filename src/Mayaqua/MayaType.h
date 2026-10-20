@@ -7,6 +7,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 // The Windows API level comes from the build, once: ranz_options (cmake/RanzOptions.cmake) sets
 // Windows 10 version 1607 / Windows Server 2016 and WIN32_LEAN_AND_MEAN
@@ -22,6 +24,14 @@
 #define	SUPPORTED_WINDOWS_LIST		"Windows 10 / 11 / Server 2016 / Server 2019 / Server 2022"
 
 typedef int (COMPARE)(void *p1, void *p2);
+
+// printf format checking (clang -Wformat) for a function whose format string is argument f and whose
+// variable arguments start at argument a (0 for a va_list); empty for other compilers
+#ifdef	__clang__
+#define	RANZ_PRINTF_FORMAT(f, a)	__attribute__((format(printf, f, a)))
+#else
+#define	RANZ_PRINTF_FORMAT(f, a)
+#endif
 
 
 #ifdef	MAX
@@ -52,49 +62,65 @@ typedef int (COMPARE)(void *p1, void *p2);
 
 #define	UINT64_TO_POINTER(i)	(void *)(i)
 
-// Big-endian reads that work on unaligned buffers
-#define	READ_USHORT(buf)		(USHORT)((((USHORT)((UCHAR *)(buf))[0]) << 8) | (((USHORT)((UCHAR *)(buf))[1])))
-#define	READ_UINT(buf)			(UINT)((((UINT)((UCHAR *)(buf))[0]) << 24) | (((UINT)((UCHAR *)(buf))[1]) << 16) | (((UINT)((UCHAR *)(buf))[2]) << 8) | (((UINT)((UCHAR *)(buf))[3])))
-#define	READ_UINT64(buf)		(UINT64)((((UINT64)((UCHAR *)(buf))[0]) << 56) | (((UINT64)((UCHAR *)(buf))[1]) << 48) | (((UINT64)((UCHAR *)(buf))[2]) << 40) | (((UINT64)((UCHAR *)(buf))[3]) << 32) | (((UINT64)((UCHAR *)(buf))[4]) << 24) | (((UINT64)((UCHAR *)(buf))[5]) << 16) | (((UINT64)((UCHAR *)(buf))[6]) << 8) | (((UINT64)((UCHAR *)(buf))[7])))
-
-// Big-endian writes that work on unaligned buffers. Functions, so each WRITE_* is one
-// statement (safe in an unbraced if/else) and evaluates buf and i once; the macros keep the
-// explicit narrowing cast of the call sites
-static inline void WriteBeUshort(void *buf, USHORT i)
+// Byte order. Ranz VPN builds for little-endian Windows only (x64, arm64; Memory.c asserts it at
+// compile time), so host and network order differ on every target: Endian16/32/64 swap always,
+// on the compiler intrinsics (one bswap or rev instruction). Each one converts host to big-endian
+// (network) order and back.
+static inline USHORT Endian16(USHORT src)
 {
-	UCHAR *p = (UCHAR *)buf;
-
-	p[0] = (UCHAR)(i >> 8);
-	p[1] = (UCHAR)i;
+	return _byteswap_ushort(src);
+}
+static inline UINT Endian32(UINT src)
+{
+	return (UINT)_byteswap_ulong(src);
+}
+static inline UINT64 Endian64(UINT64 src)
+{
+	return _byteswap_uint64(src);
 }
 
-static inline void WriteBeUint(void *buf, UINT i)
+// Big-endian loads and stores that work on unaligned buffers: one memcpy load or store plus a swap
+static inline USHORT ReadBigEndian16(const void *buf)
 {
-	UCHAR *p = (UCHAR *)buf;
-
-	p[0] = (UCHAR)(i >> 24);
-	p[1] = (UCHAR)(i >> 16);
-	p[2] = (UCHAR)(i >> 8);
-	p[3] = (UCHAR)i;
+	USHORT v;
+	memcpy(&v, buf, sizeof(v));
+	return Endian16(v);
+}
+static inline UINT ReadBigEndian32(const void *buf)
+{
+	UINT v;
+	memcpy(&v, buf, sizeof(v));
+	return Endian32(v);
+}
+static inline UINT64 ReadBigEndian64(const void *buf)
+{
+	UINT64 v;
+	memcpy(&v, buf, sizeof(v));
+	return Endian64(v);
+}
+static inline void WriteBigEndian16(void *buf, USHORT i)
+{
+	USHORT v = Endian16(i);
+	memcpy(buf, &v, sizeof(v));
+}
+static inline void WriteBigEndian32(void *buf, UINT i)
+{
+	UINT v = Endian32(i);
+	memcpy(buf, &v, sizeof(v));
+}
+static inline void WriteBigEndian64(void *buf, UINT64 i)
+{
+	UINT64 v = Endian64(i);
+	memcpy(buf, &v, sizeof(v));
 }
 
-static inline void WriteBeUint64(void *buf, UINT64 i)
-{
-	UCHAR *p = (UCHAR *)buf;
+#define	READ_USHORT(buf)		ReadBigEndian16(buf)
+#define	READ_UINT(buf)			ReadBigEndian32(buf)
+#define	READ_UINT64(buf)		ReadBigEndian64(buf)
 
-	p[0] = (UCHAR)(i >> 56);
-	p[1] = (UCHAR)(i >> 48);
-	p[2] = (UCHAR)(i >> 40);
-	p[3] = (UCHAR)(i >> 32);
-	p[4] = (UCHAR)(i >> 24);
-	p[5] = (UCHAR)(i >> 16);
-	p[6] = (UCHAR)(i >> 8);
-	p[7] = (UCHAR)i;
-}
-
-#define	WRITE_USHORT(buf, i)	WriteBeUshort((buf), (USHORT)(i))
-#define	WRITE_UINT(buf, i)		WriteBeUint((buf), (UINT)(i))
-#define	WRITE_UINT64(buf, i)	WriteBeUint64((buf), (UINT64)(i))
+#define	WRITE_USHORT(buf, i)	WriteBigEndian16((buf), (USHORT)(i))
+#define	WRITE_UINT(buf, i)		WriteBigEndian32((buf), (UINT)(i))
+#define	WRITE_UINT64(buf, i)	WriteBigEndian64((buf), (UINT64)(i))
 
 typedef int64_t time_64t;
 

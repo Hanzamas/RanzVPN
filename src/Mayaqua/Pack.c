@@ -955,11 +955,6 @@ void PackAddIpEx(PACK *p, char *name, IP *ip, UINT index, UINT total)
 
 	i = IPToUINT(ip);
 
-	if (IsBigEndian())
-	{
-		i = Swap32(i);
-	}
-
 	PackAddIntEx(p, name, i, index, total);
 }
 void PackAddIp(PACK *p, char *name, IP *ip)
@@ -1021,11 +1016,6 @@ bool PackGetIpEx(PACK *p, char *name, IP *ip, UINT index)
 		}
 
 		i = PackGetIntEx(p, name, index);
-
-		if (IsBigEndian())
-		{
-			i = Swap32(i);
-		}
 
 		UINTToIP(ip, i);
 	}

@@ -312,7 +312,7 @@ USERLIST *LoadUserList(LIST *o, char *filename)
 
 	StrCpy(u->Filename, sizeof(u->Filename), filename);
 
-	u->UserHashList = NewInt64List(false);
+	u->UserHashList = NewInt64List();
 
 	b = ReadDumpWithMaxSize(filename, ACCESS_LIST_INCLUDE_FILE_MAX_SIZE);
 	if (b != NULL)
@@ -3529,7 +3529,7 @@ static bool CheckBroadcastStorm(HUB *hub, SESSION *s, PKT *p)
 			{
 				ret = false;
 			}
-			else if ((rand() % s->DiscardValue) != 0)
+			else if ((Rand32() % s->DiscardValue) != 0)
 			{
 				ret = false;
 			}
@@ -3725,7 +3725,7 @@ DISCARD_PACKET:
 
 			if (packet->Loss >= 1)
 			{
-				UINT r = rand() % 100;
+				UINT r = Rand32() % 100;
 				if ((packet->Loss >= 100) || (r < packet->Loss))
 				{
 					goto DISCARD_PACKET;
@@ -4171,7 +4171,7 @@ UPDATE_FDB:
 
 							if (monitor_session->PacketAdapter->Param != NULL)
 							{
-								data = MallocFast(size);
+								data = Malloc(size);
 								Copy(data, packet->PacketData, size);
 								StorePacketToHubPa((HUB_PA *)monitor_session->PacketAdapter->Param,
 									s, data, size, packet, false, false);
@@ -4350,7 +4350,7 @@ DISCARD_UNICAST_PACKET:
 									if (s == NULL ||
 										ApplyAccessListToForwardPacket(s->Hub, s, dest_pa->Session, packet))
 									{
-										data = MallocFast(packet->PacketSize);
+										data = Malloc(packet->PacketSize);
 										Copy(data, packet->PacketData, packet->PacketSize);
 										size = packet->PacketSize;
 
@@ -5150,6 +5150,12 @@ static void StopAllSession(HUB *h)
 	}
 	UnlockList(h->SessionList);
 
+	// Signal every session first so they all shut down in parallel, then wait for each one.
+	for (i = 0;i < num;i++)
+	{
+		StopSessionEx(s[i], true);
+	}
+
 	for (i = 0;i < num;i++)
 	{
 		StopSession(s[i]);
@@ -5710,7 +5716,7 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 	h->NumSessions = NewCounter();
 	h->NumSessionsClient = NewCounter();
 	h->NumSessionsBridge = NewCounter();
-	h->MacHashTable = NewHashList(GetHashOfMacTable, CompareMacTable, 8, false);
+	h->MacHashTable = NewHashList(GetHashOfMacTable, CompareMacTable, 8);
 	h->IpTable = NewList(CompareIpTable);
 	h->MonitorList = NewList(NULL);
 	h->LinkList = NewList(NULL);
