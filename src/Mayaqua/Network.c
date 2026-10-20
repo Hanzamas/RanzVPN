@@ -3298,9 +3298,15 @@ SOCK *Listen(UINT port)
 }
 
 // A TCP socket bound to addr. An AF_INET6 socket gets IPV6_V6ONLY from v6only: false makes it dual-stack.
-static SOCKET ListenBind(struct sockaddr *addr, int addr_size, bool v6only)
+// bind_failed (may be NULL) tells a failed bind(), a port held or reserved, from a family the stack does not support.
+static SOCKET ListenBind(struct sockaddr *addr, int addr_size, bool v6only, bool *bind_failed)
 {
 	SOCKET s = socket(addr->sa_family, SOCK_STREAM, 0);
+
+	if (bind_failed != NULL)
+	{
+		*bind_failed = false;
+	}
 
 	if (s == INVALID_SOCKET)
 	{
@@ -3320,6 +3326,11 @@ static SOCKET ListenBind(struct sockaddr *addr, int addr_size, bool v6only)
 
 	if (bind(s, addr, addr_size) != 0)
 	{
+		if (bind_failed != NULL)
+		{
+			*bind_failed = true;
+		}
+
 		closesocket(s);
 		return INVALID_SOCKET;
 	}
@@ -3359,40 +3370,37 @@ SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip, bool 
 
 		enable_ca = false;
 
-		s = ListenBind((struct sockaddr *)&addr4, sizeof(addr4), false);
+		s = ListenBind((struct sockaddr *)&addr4, sizeof(addr4), false, NULL);
 	}
 	else if (listen_ip == NULL || IsZeroIP(listen_ip))
 	{
+		bool held = false;
+
 		if (ipv4_only == false)
 		{
-			s = ListenBind((struct sockaddr *)&addr6, sizeof(addr6), false);
+			s = ListenBind((struct sockaddr *)&addr6, sizeof(addr6), false, &held);
 			is_ipv6 = true;
 		}
 
-		if (s == INVALID_SOCKET)
+		// IPv6 is off or unsupported: IPv4 listens. A port another process holds or Windows reserves stays a failed
+		// bind, so the listener reports it and retries instead of listening on one family only.
+		if (s == INVALID_SOCKET && held == false)
 		{
-			// IPv6 is unsupported or off, or another process holds the port in one family: the free family listens
-			s = ListenBind((struct sockaddr *)&addr4, sizeof(addr4), false);
+			s = ListenBind((struct sockaddr *)&addr4, sizeof(addr4), false, NULL);
 			is_ipv6 = false;
-
-			if (s == INVALID_SOCKET && ipv4_only == false)
-			{
-				s = ListenBind((struct sockaddr *)&addr6, sizeof(addr6), true);
-				is_ipv6 = true;
-			}
 		}
 	}
 	else if (IsIP4(listen_ip))
 	{
 		IPToInAddr(&addr4.sin_addr, listen_ip);
 
-		s = ListenBind((struct sockaddr *)&addr4, sizeof(addr4), false);
+		s = ListenBind((struct sockaddr *)&addr4, sizeof(addr4), false, NULL);
 	}
 	else if (ipv4_only == false)
 	{
 		IPToInAddr6(&addr6.sin6_addr, listen_ip);
 
-		s = ListenBind((struct sockaddr *)&addr6, sizeof(addr6), true);
+		s = ListenBind((struct sockaddr *)&addr6, sizeof(addr6), true, NULL);
 		is_ipv6 = true;
 	}
 
