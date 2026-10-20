@@ -24,6 +24,9 @@
 #include <stdarg.h>
 #include <string.h>
 
+#include <openssl/bn.h>
+#include <openssl/dh.h>
+
 // Sizes and limits
 #define	KAT_MD4_SIZE			16			// MD4 digest (bytes)
 #define	KAT_MAX_DIGEST			SHA256_SIZE	// Largest digest under test (bytes)
@@ -618,6 +621,60 @@ static void KatRsaSign(KAT_CTX *ctx)
 	FreeK(k);
 }
 
+// Prime sizes of DhNewFromBits and the SHA-256 of the big-endian bytes of the prime each one had as a hex macro
+// in Encrypt.h (FND-178). All primes but the 160-bit one are the RFC 2409 and RFC 3526 MODP groups, with g = 2.
+static struct
+{
+	UINT Bits;				// Argument of DhNewFromBits
+	UINT PrimeBits;			// Bits of the prime it gives
+	char *PrimeSha256;
+} kat_dh[] =
+{
+	{ 160, 160, "4223804f2b9f868b612cc5ca4fce460d5fa9a9341fee7bab79333db5bb45c55c" },
+	{ 768, 768, "b52ba6a3026520a6c49d37e4587601801bee500123b3259b6bf03e7cecc3e63d" },
+	{ 1024, 1024, "3f35a3f5f6c4376a744acad409bb22f8d897f949d2311d885adaa890981b67a0" },
+	{ 1536, 1536, "64fcc83ec403930bf18393dbc883ccaa1fbb08ac876f77f7aa99748ca945019b" },
+	{ 2048, 2048, "d66436f79bbd6b2e38c0ffbd079be904d2641415e2e67140e09448be9a60890e" },
+	{ 3072, 3072, "48cf8b092fbce4359d9871abf74f98e25b6163379eaa15cd9087e800c6d1c55c" },
+	{ 4096, 4096, "4ee95187682bcb230ad26a95205f6920e84708f6251b3894329b09ec23919e33" },
+	{ 12345, 2048, "d66436f79bbd6b2e38c0ffbd079be904d2641415e2e67140e09448be9a60890e" },
+};
+
+// DhNewFromBits known answer: the prime and the generator of each size
+static void KatDhParams(KAT_CTX *ctx)
+{
+	UINT i;
+
+	for (i = 0;i < sizeof(kat_dh) / sizeof(kat_dh[0]);i++)
+	{
+		DH_CTX *d = DhNewFromBits(kat_dh[i].Bits);
+		const BIGNUM *p = NULL, *g = NULL;
+		UCHAR raw[4096 / 8];
+		UCHAR digest[SHA256_SIZE];
+		char got[SHA256_SIZE * 2 + 1];
+		char what[MAX_SIZE];
+		bool same = false;
+
+		got[0] = 0;
+		if (d != NULL && d->dh != NULL)
+		{
+			DH_get0_pqg(d->dh, &p, NULL, &g);
+		}
+		if (p != NULL && g != NULL && BN_num_bits(p) == kat_dh[i].PrimeBits && BN_num_bytes(p) <= (int)sizeof(raw))
+		{
+			UINT size = (UINT)BN_bn2bin(p, raw);
+
+			Sha2_256(digest, raw, size);
+			same = KatHexEq(digest, sizeof(digest), kat_dh[i].PrimeSha256, got, sizeof(got)) && BN_is_word((BIGNUM *)g, 2);
+		}
+
+		Format(what, sizeof(what), "DhNewFromBits(%u): the prime of %u bits and the generator 2 of the old constants", kat_dh[i].Bits, kat_dh[i].PrimeBits);
+		KatCheck(ctx, same, what, "prime hash %s", got);
+
+		DhFree(d);
+	}
+}
+
 // Crypto known-answer test
 void crypto_test(UINT num, char **arg)
 {
@@ -627,7 +684,7 @@ void crypto_test(UINT num, char **arg)
 	Zero(&ctx, sizeof(ctx));
 	memset(million, 'a', KAT_MILLION);
 
-	Print("Crypto known-answer test (MD4, MD5, SHA-0, SHA-1, SHA-256, RC4, DES, random generator, RSA signature)\n");
+	Print("Crypto known-answer test (MD4, MD5, SHA-0, SHA-1, SHA-256, RC4, DES, random generator, RSA signature, DH primes)\n");
 
 	KatHashSuite(&ctx, "HashMd4", HashMd4, KAT_MD4_SIZE, kat_md4, million);
 	KatHashSuite(&ctx, "Md5", Md5, MD5_SIZE, kat_md5, million);
@@ -643,6 +700,7 @@ void crypto_test(UINT num, char **arg)
 	KatDesSuite(&ctx);
 	KatRand(&ctx);
 	KatRsaSign(&ctx);
+	KatDhParams(&ctx);
 
 	Free(million);
 

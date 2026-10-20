@@ -3350,19 +3350,9 @@ static UINT SecureRecv(SOCK *sock, void *data, UINT size)
 			e = SSL_get_error(ssl, ret);
 			if (e == SSL_ERROR_WANT_READ || e == SSL_ERROR_WANT_WRITE || e == SSL_ERROR_SSL)
 			{
-				if (e == SSL_ERROR_SSL
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-					&&
-					sock->ssl->s3->send_alert[0] == SSL3_AL_FATAL &&
-					sock->ssl->s3->send_alert[0] != sock->Ssl_Init_Async_SendAlert[0] &&
-					sock->ssl->s3->send_alert[1] != sock->Ssl_Init_Async_SendAlert[1]
-#endif
-					)
+				if (e == SSL_ERROR_SSL)
 				{
-					UINT ssl_err_no;
-					while (ssl_err_no = ERR_get_error()){
-						Debug("%s %u SSL_ERROR_SSL on ASYNC socket !!! ssl_err_no = %u: '%s'\n", __FILE__, __LINE__, ssl_err_no, ERR_error_string(ssl_err_no, NULL));
-					};
+					DrainCryptErrors("SecureRecv(): SSL_ERROR_SSL on ASYNC socket");
 
 					Disconnect(sock);
 					return 0;
@@ -3417,19 +3407,9 @@ static UINT SecureRecv(SOCK *sock, void *data, UINT size)
 	{
 		if (e == SSL_ERROR_WANT_READ || e == SSL_ERROR_WANT_WRITE || e == SSL_ERROR_SSL)
 		{
-			if (e == SSL_ERROR_SSL
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
-				&&
-				sock->ssl->s3->send_alert[0] == SSL3_AL_FATAL &&
-				sock->ssl->s3->send_alert[0] != sock->Ssl_Init_Async_SendAlert[0] &&
-				sock->ssl->s3->send_alert[1] != sock->Ssl_Init_Async_SendAlert[1]
-#endif
-				)
+			if (e == SSL_ERROR_SSL)
 			{
-				UINT ssl_err_no;
-				while (ssl_err_no = ERR_get_error()) {
-					Debug("%s %u SSL_ERROR_SSL on ASYNC socket !!! ssl_err_no = %u: '%s'\n", __FILE__, __LINE__, ssl_err_no, ERR_error_string(ssl_err_no, NULL));
-				};
+				DrainCryptErrors("SecureRecv(): SSL_ERROR_SSL on ASYNC socket");
 
 				Disconnect(sock);
 				return 0;
@@ -3495,10 +3475,7 @@ static UINT SecureSend(SOCK *sock, void *data, UINT size)
 		{
 			if (e == SSL_ERROR_SSL)
 			{
-				UINT ssl_err_no;
-				while (ssl_err_no = ERR_get_error()) {
-					Debug("%s %u SSL_ERROR_SSL on ASYNC socket !!! ssl_err_no = %u: '%s'\n", __FILE__, __LINE__, ssl_err_no, ERR_error_string(ssl_err_no, NULL));
-				};
+				DrainCryptErrors("SecureSend(): SSL_ERROR_SSL on ASYNC socket");
 
 				Disconnect(sock);
 				return 0;
