@@ -455,7 +455,7 @@ L_LOOP:
 				goto L_LOOP;
 			}
 
-			Debug("!!! WaitForSingleObject Error. ret=%u GetLastError=%u\n", wait_ret, GetLastError());
+			Debug("!!! WaitForSingleObject Error. ret=%u GetLastError=%u\n", wait_ret, (UINT)GetLastError());
 		}
 
 		num_error++;
@@ -2479,7 +2479,7 @@ static void SslHandshakeError(bool server_mode, UINT *ssl_err)
 	unsigned long err;
 	while ((err = ERR_get_error()) != 0)
 	{
-		Debug("%s error %X: %s\n", server_mode ? "SSL_accept" : "SSL_connect", err, ERR_reason_error_string(err));
+		Debug("%s error %X: %s\n", server_mode ? "SSL_accept" : "SSL_connect", (UINT)err, ERR_reason_error_string(err));
 		if (ERR_GET_LIB(err) != ERR_LIB_SSL)
 		{
 			continue;

@@ -1237,6 +1237,7 @@ void ConnectionAccept(CONNECTION *c)
 	struct ssl_ctx_st *ssl_ctx;
 	char tmp[128];
 	UINT initial_timeout = CONNECTING_TIMEOUT;
+	SERVER_LOGIN login;
 
 	if (c == NULL)
 	{
@@ -1276,7 +1277,12 @@ void ConnectionAccept(CONNECTION *c)
 
 	SLog(c->Cedar, "LS_SSL_START", c->Name, s->SslVersion, s->CipherName);
 
-	ServerAccept(c);
+	Zero(&login, sizeof(login));
+	if (ServerAccept(c, &login))
+	{
+		// A logged-in session: run it until it ends, then give its hub slot back
+		ServerRunSession(c, &login);
+	}
 
 FINAL:
 	if (c->flag1 == false)
