@@ -37,6 +37,8 @@ struct LINK
 
 
 bool LinkValidateAuthAndPolicy(CLIENT_AUTH *auth, POLICY *policy);
+void NormalizeLinkOption(CLIENT_OPTION *option);
+LINK *FindLinkByAccountName(HUB *hub, wchar_t *account_name);
 LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, POLICY *policy);
 void StartLink(LINK *k);
 void StopLink(LINK *k);

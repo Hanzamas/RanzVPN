@@ -2667,29 +2667,10 @@ static UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
 		}
 	}
 
-	if (t->AuthType == AUTHTYPE_USERCERT)
+	ret = CheckUserAuthData(t->AuthType, t->AuthData);
+	if (ret != ERR_NO_ERROR)
 	{
-		AUTHUSERCERT *c = t->AuthData;
-		if (c != NULL && c->UserX != NULL &&
-			c->UserX->is_compatible_bit == false)
-		{
-			return ERR_NOT_RSA_1024;
-		}
-		if (c == NULL || c->UserX == NULL)
-		{
-			return ERR_INVALID_PARAMETER;
-		}
-	}
-
-	// A password user needs a password hash: a missing or all-zero HashedKey is refused
-	if (t->AuthType == AUTHTYPE_PASSWORD)
-	{
-		AUTHPASSWORD *pw = t->AuthData;
-
-		if (pw == NULL || IsZero(pw->HashedKey, sizeof(pw->HashedKey)))
-		{
-			return ERR_INVALID_PARAMETER;
-		}
+		return ret;
 	}
 
 	h = AdminGetHub(a, t->HubName, "no_change_users", &ret);
@@ -2785,34 +2766,10 @@ static UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
 		}
 	}
 
-	if (t->AuthType == AUTHTYPE_USERCERT)
+	ret = CheckUserAuthData(t->AuthType, t->AuthData);
+	if (ret != ERR_NO_ERROR)
 	{
-		AUTHUSERCERT *c = t->AuthData;
-		if (c != NULL && c->UserX != NULL &&
-			c->UserX->is_compatible_bit == false)
-		{
-			return ERR_NOT_RSA_1024;
-		}
-		if (c == NULL || c->UserX == NULL)
-		{
-			return ERR_INVALID_PARAMETER;
-		}
-	}
-
-	// A password user needs a password hash: a missing or all-zero HashedKey is refused
-	if (t->AuthType == AUTHTYPE_PASSWORD)
-	{
-		AUTHPASSWORD *pw = t->AuthData;
-
-		if (pw == NULL || IsZero(pw->HashedKey, sizeof(pw->HashedKey)))
-		{
-			return ERR_INVALID_PARAMETER;
-		}
-	}
-
-	if (IsUserName(t->Name) == false)
-	{
-		return ERR_INVALID_PARAMETER;
+		return ret;
 	}
 
 	if (StrCmpi(t->Name, "*") == 0)
@@ -2984,6 +2941,31 @@ static UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t)
 	return ERR_NO_ERROR;
 }
 
+// Apply the hub admin options on an access list entry sent by a hub administrator:
+// no delay, jitter and packet loss; no user name taken from an include or exclude file
+static void AdminSanitizeAccess(ACCESS *access, bool no_jitter, bool no_include)
+{
+	if (no_jitter)
+	{
+		access->Jitter = access->Loss = access->Delay = 0;
+	}
+
+	if (no_include)
+	{
+		if (StartWith(access->SrcUsername, ACCESS_LIST_INCLUDED_PREFIX) ||
+			StartWith(access->SrcUsername, ACCESS_LIST_EXCLUDED_PREFIX))
+		{
+			ClearStr(access->SrcUsername, sizeof(access->SrcUsername));
+		}
+
+		if (StartWith(access->DestUsername, ACCESS_LIST_INCLUDED_PREFIX) ||
+			StartWith(access->DestUsername, ACCESS_LIST_EXCLUDED_PREFIX))
+		{
+			ClearStr(access->DestUsername, sizeof(access->DestUsername));
+		}
+	}
+}
+
 static UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 {
 	SERVER *s = a->Server;
@@ -3031,34 +3013,16 @@ static UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 
 		for (i = 0; i < t->NumAccess; ++i)
 		{
-			ACCESS *a = &t->Accesses[i];
+			ACCESS *access = &t->Accesses[i];
 
-			if (no_jitter)
-			{
-				a->Jitter = a->Loss = a->Delay = 0;
-			}
-
-			if (no_include)
-			{
-				if (StartWith(a->SrcUsername, ACCESS_LIST_INCLUDED_PREFIX) ||
-					StartWith(a->SrcUsername, ACCESS_LIST_EXCLUDED_PREFIX))
-				{
-					ClearStr(a->SrcUsername, sizeof(a->SrcUsername));
-				}
-
-				if (StartWith(a->DestUsername, ACCESS_LIST_INCLUDED_PREFIX) ||
-					StartWith(a->DestUsername, ACCESS_LIST_EXCLUDED_PREFIX))
-				{
-					ClearStr(a->DestUsername, sizeof(a->DestUsername));
-				}
-			}
+			AdminSanitizeAccess(access, no_jitter, no_include);
 
 			if (i == (t->NumAccess - 1))
 			{
 				Sort(h->AccessList);
 			}
 
-			AddAccessListEx(h, a, ((i != (t->NumAccess - 1)) ? true : false), ((i != (t->NumAccess - 1)) ? true : false));
+			AddAccessListEx(h, access,((i != (t->NumAccess - 1)) ? true : false), ((i != (t->NumAccess - 1)) ? true : false));
 		}
 
 		UnlockList(h->AccessList);
@@ -3101,25 +3065,7 @@ static UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t)
 
 	ALog(a, h, "LA_ADD_ACCESS");
 
-	if (no_jitter)
-	{
-		t->Access.Jitter = t->Access.Delay = t->Access.Loss = 0;
-	}
-
-	if (no_include)
-	{
-		if (StartWith(t->Access.SrcUsername, ACCESS_LIST_INCLUDED_PREFIX) ||
-			StartWith(t->Access.SrcUsername, ACCESS_LIST_EXCLUDED_PREFIX))
-		{
-			ClearStr(t->Access.SrcUsername, sizeof(t->Access.SrcUsername));
-		}
-
-		if (StartWith(t->Access.DestUsername, ACCESS_LIST_INCLUDED_PREFIX) ||
-			StartWith(t->Access.DestUsername, ACCESS_LIST_EXCLUDED_PREFIX))
-		{
-			ClearStr(t->Access.DestUsername, sizeof(t->Access.DestUsername));
-		}
-	}
+	AdminSanitizeAccess(&t->Access, no_jitter, no_include);
 
 	AddAccessListEx(h, &t->Access, false, false);
 
@@ -3132,12 +3078,10 @@ static UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t)
 
 static UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
 {
-	UINT i;
 	SERVER *s = a->Server;
 	HUB *h;
 	UINT ret = ERR_NO_ERROR;
 	LINK *k;
-	bool exists = false;
 
 	if (UniIsEmptyStr(t->OldAccountName) || UniIsEmptyStr(t->NewAccountName))
 	{
@@ -3157,48 +3101,18 @@ static UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
 		return ret;
 	}
 
-	k = NULL;
-
+	// The list stays locked (the lock is recursive), so the name check and the rename are one step
 	LockList(h->LinkList);
 	{
-		for (i = 0;i < LIST_NUM(h->LinkList);i++)
-		{
-			LINK *kk = LIST_DATA(h->LinkList, i);
-			Lock(kk->lock);
-			{
-				if (UniStrCmpi(kk->Option->AccountName, t->OldAccountName) == 0)
-				{
-					k = kk;
-					AddRef(kk->ref);
-				}
-			}
-			Unlock(kk->lock);
-
-			if (k != NULL)
-			{
-				break;
-			}
-		}
-
-		exists = false;
+		k = FindLinkByAccountName(h, t->OldAccountName);
 
 		if (k != NULL)
 		{
-			for (i = 0;i < LIST_NUM(h->LinkList);i++)
-			{
-				LINK *kk = LIST_DATA(h->LinkList, i);
-				Lock(kk->lock);
-				{
-					if (UniStrCmpi(kk->Option->AccountName, t->NewAccountName) == 0)
-					{
-						exists = true;
-					}
-				}
-				Unlock(kk->lock);
-			}
+			LINK *same = FindLinkByAccountName(h, t->NewAccountName);
 
-			if (exists)
+			if (same != NULL)
 			{
+				ReleaseLink(same);
 				ret = ERR_LINK_ALREADY_EXISTS;
 			}
 			else
@@ -3228,7 +3142,6 @@ static UINT StRenameLink(ADMIN *a, RPC_RENAME_LINK *t)
 
 static UINT StDeleteLink(ADMIN *a, RPC_LINK *t)
 {
-	UINT i;
 	SERVER *s = a->Server;
 	HUB *h;
 	UINT err;
@@ -3248,30 +3161,7 @@ static UINT StDeleteLink(ADMIN *a, RPC_LINK *t)
 	}
 
 	UniStrCpy(accountname, sizeof(accountname), t->AccountName);
-	k = NULL;
-
-	LockList(h->LinkList);
-	{
-		for (i = 0;i < LIST_NUM(h->LinkList);i++)
-		{
-			LINK *kk = LIST_DATA(h->LinkList, i);
-			Lock(kk->lock);
-			{
-				if (UniStrCmpi(kk->Option->AccountName, accountname) == 0)
-				{
-					k = kk;
-					AddRef(kk->ref);
-				}
-			}
-			Unlock(kk->lock);
-
-			if (k != NULL)
-			{
-				break;
-			}
-		}
-	}
-	UnlockList(h->LinkList);
+	k = FindLinkByAccountName(h, accountname);
 
 	if (k == NULL)
 	{
@@ -3298,7 +3188,6 @@ static UINT StDeleteLink(ADMIN *a, RPC_LINK *t)
 
 static UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t)
 {
-	UINT i;
 	SERVER *s = a->Server;
 	HUB *h;
 	UINT err;
@@ -3319,30 +3208,7 @@ static UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t)
 	}
 
 	UniStrCpy(accountname, sizeof(accountname), t->AccountName);
-	k = NULL;
-
-	LockList(h->LinkList);
-	{
-		for (i = 0;i < LIST_NUM(h->LinkList);i++)
-		{
-			LINK *kk = LIST_DATA(h->LinkList, i);
-			Lock(kk->lock);
-			{
-				if (UniStrCmpi(kk->Option->AccountName, accountname) == 0)
-				{
-					k = kk;
-					AddRef(kk->ref);
-				}
-			}
-			Unlock(kk->lock);
-
-			if (k != NULL)
-			{
-				break;
-			}
-		}
-	}
-	UnlockList(h->LinkList);
+	k = FindLinkByAccountName(h, accountname);
 
 	if (k == NULL)
 	{
@@ -3365,7 +3231,6 @@ static UINT StSetLinkOffline(ADMIN *a, RPC_LINK *t)
 
 static UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t)
 {
-	UINT i;
 	SERVER *s = a->Server;
 	HUB *h;
 	UINT err;
@@ -3386,30 +3251,7 @@ static UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t)
 	}
 
 	UniStrCpy(accountname, sizeof(accountname), t->AccountName);
-	k = NULL;
-
-	LockList(h->LinkList);
-	{
-		for (i = 0;i < LIST_NUM(h->LinkList);i++)
-		{
-			LINK *kk = LIST_DATA(h->LinkList, i);
-			Lock(kk->lock);
-			{
-				if (UniStrCmpi(kk->Option->AccountName, accountname) == 0)
-				{
-					k = kk;
-					AddRef(kk->ref);
-				}
-			}
-			Unlock(kk->lock);
-
-			if (k != NULL)
-			{
-				break;
-			}
-		}
-	}
-	UnlockList(h->LinkList);
+	k = FindLinkByAccountName(h, accountname);
 
 	if (k == NULL)
 	{
@@ -3432,7 +3274,6 @@ static UINT StSetLinkOnline(ADMIN *a, RPC_LINK *t)
 
 static UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t)
 {
-	UINT i;
 	HUB *h;
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
@@ -3459,30 +3300,7 @@ static UINT StGetLinkStatus(ADMIN *a, RPC_LINK_STATUS *t)
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 	UniStrCpy(t->AccountName, sizeof(t->AccountName), accountname);
 
-	k = NULL;
-
-	LockList(h->LinkList);
-	{
-		for (i = 0;i < LIST_NUM(h->LinkList);i++)
-		{
-			LINK *kk = LIST_DATA(h->LinkList, i);
-			Lock(kk->lock);
-			{
-				if (UniStrCmpi(kk->Option->AccountName, accountname) == 0)
-				{
-					k = kk;
-					AddRef(kk->ref);
-				}
-			}
-			Unlock(kk->lock);
-
-			if (k != NULL)
-			{
-				break;
-			}
-		}
-	}
-	UnlockList(h->LinkList);
+	k = FindLinkByAccountName(h, accountname);
 
 	if (k == NULL)
 	{
@@ -3577,7 +3395,6 @@ static UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t)
 	HUB *h;
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
-	UINT i;
 	char hubname[MAX_SIZE];
 	LINK *k;
 
@@ -3587,30 +3404,7 @@ static UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t)
 		return err;
 	}
 
-	k = NULL;
-
-	LockList(h->LinkList);
-	{
-		for (i = 0;i < LIST_NUM(h->LinkList);i++)
-		{
-			LINK *kk = LIST_DATA(h->LinkList, i);
-			Lock(kk->lock);
-			{
-				if (UniStrCmpi(kk->Option->AccountName, t->ClientOption->AccountName) == 0)
-				{
-					k = kk;
-					AddRef(kk->ref);
-				}
-			}
-			Unlock(kk->lock);
-
-			if (k != NULL)
-			{
-				break;
-			}
-		}
-	}
-	UnlockList(h->LinkList);
+	k = FindLinkByAccountName(h, t->ClientOption->AccountName);
 
 	if (k == NULL)
 	{
@@ -3649,7 +3443,6 @@ static UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 	HUB *h;
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
-	UINT i;
 	LINK *k;
 
 	// The checks of NewLink: a supported authentication type, and the policy fields every cascade has
@@ -3664,30 +3457,7 @@ static UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 		return err;
 	}
 
-	k = NULL;
-
-	LockList(h->LinkList);
-	{
-		for (i = 0;i < LIST_NUM(h->LinkList);i++)
-		{
-			LINK *kk = LIST_DATA(h->LinkList, i);
-			Lock(kk->lock);
-			{
-				if (UniStrCmpi(kk->Option->AccountName, t->ClientOption->AccountName) == 0)
-				{
-					k = kk;
-					AddRef(kk->ref);
-				}
-			}
-			Unlock(kk->lock);
-
-			if (k != NULL)
-			{
-				break;
-			}
-		}
-	}
-	UnlockList(h->LinkList);
+	k = FindLinkByAccountName(h, t->ClientOption->AccountName);
 
 	if (k == NULL)
 	{
@@ -3706,10 +3476,7 @@ static UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 		}
 
 		Copy(k->Option, t->ClientOption, sizeof(CLIENT_OPTION));
-		StrCpy(k->Option->DeviceName, sizeof(k->Option->DeviceName), LINK_DEVICE_NAME);
-		k->Option->NumRetry = INFINITE;
-		k->Option->RetryInterval = 10;
-		k->Option->NoRoutingTracking = true;
+		NormalizeLinkOption(k->Option);
 		CiFreeClientAuth(k->Auth);
 		k->Auth = CopyClientAuth(t->ClientAuth);
 
@@ -3721,9 +3488,6 @@ static UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 		{
 			Copy(k->Policy, &t->Policy, sizeof(POLICY));
 		}
-
-		k->Option->RequireBridgeRoutingMode = true;
-		k->Option->RequireMonitorMode = false;
 
 		k->CheckServerCert = t->CheckServerCert;
 		k->AddDefaultCA = t->AddDefaultCA;
@@ -3746,7 +3510,6 @@ static UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t)
 	HUB *h;
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
-	UINT i;
 	LINK *k;
 
 	h = AdminGetHub(a, t->HubName, "no_cascade", &err);
@@ -3755,30 +3518,7 @@ static UINT StCreateLink(ADMIN *a, RPC_CREATE_LINK *t)
 		return err;
 	}
 
-	k = NULL;
-
-	LockList(h->LinkList);
-	{
-		for (i = 0;i < LIST_NUM(h->LinkList);i++)
-		{
-			LINK *kk = LIST_DATA(h->LinkList, i);
-			Lock(kk->lock);
-			{
-				if (UniStrCmpi(kk->Option->AccountName, t->ClientOption->AccountName) == 0)
-				{
-					k = kk;
-					AddRef(kk->ref);
-				}
-			}
-			Unlock(kk->lock);
-
-			if (k != NULL)
-			{
-				break;
-			}
-		}
-	}
-	UnlockList(h->LinkList);
+	k = FindLinkByAccountName(h, t->ClientOption->AccountName);
 
 	if (k != NULL)
 	{

@@ -162,6 +162,7 @@ void SetUserPolicy(USER *u, POLICY *policy);
 void SetGroupPolicy(USERGROUP *g, POLICY *policy);
 POLICY *GetGroupPolicy(USERGROUP *g);
 bool IsUserName(char *name);
+UINT CheckUserAuthData(UINT auth_type, void *auth_data);
 void *CopyAuthData(void *authdata, UINT authtype);
 UINT PolicyNum();
 bool PolicyIsSupportedForCascade(UINT i);

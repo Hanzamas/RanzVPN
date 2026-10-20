@@ -588,6 +588,63 @@ bool LinkValidateAuthAndPolicy(CLIENT_AUTH *auth, POLICY *policy)
 	return true;
 }
 
+// Set the client option fields every cascade has, in place.
+// NewLink and the SetLink admin RPC call it
+void NormalizeLinkOption(CLIENT_OPTION *option)
+{
+	if (option == NULL)
+	{
+		return;
+	}
+
+	StrCpy(option->DeviceName, sizeof(option->DeviceName), LINK_DEVICE_NAME);
+
+	option->RequireBridgeRoutingMode = true;
+	option->RequireMonitorMode = false;
+
+	option->NumRetry = INFINITE;
+	option->RetryInterval = 10;			// seconds
+	option->NoRoutingTracking = true;
+}
+
+// Find the cascade of a hub by its account name. Returns the link with its reference count raised, or NULL
+LINK *FindLinkByAccountName(HUB *hub, wchar_t *account_name)
+{
+	LINK *found = NULL;
+	UINT i;
+
+	if (hub == NULL || account_name == NULL)
+	{
+		return NULL;
+	}
+
+	LockList(hub->LinkList);
+	{
+		for (i = 0;i < LIST_NUM(hub->LinkList);i++)
+		{
+			LINK *k = LIST_DATA(hub->LinkList, i);
+
+			Lock(k->lock);
+			{
+				if (UniStrCmpi(k->Option->AccountName, account_name) == 0)
+				{
+					found = k;
+					AddRef(k->ref);
+				}
+			}
+			Unlock(k->lock);
+
+			if (found != NULL)
+			{
+				break;
+			}
+		}
+	}
+	UnlockList(hub->LinkList);
+
+	return found;
+}
+
 LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, POLICY *policy)
 {
 	CLIENT_OPTION *o;
@@ -617,14 +674,7 @@ LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, 
 
 	o = ZeroMalloc(sizeof(CLIENT_OPTION));
 	Copy(o, option, sizeof(CLIENT_OPTION));
-	StrCpy(o->DeviceName, sizeof(o->DeviceName), LINK_DEVICE_NAME);
-
-	o->RequireBridgeRoutingMode = true;
-	o->RequireMonitorMode = false;
-
-	o->NumRetry = INFINITE;
-	o->RetryInterval = 10;			// seconds
-	o->NoRoutingTracking = true;
+	NormalizeLinkOption(o);
 
 	a = CopyClientAuth(auth);
 	a->CheckCertProc = NULL;
