@@ -99,7 +99,8 @@ set_target_properties(mayaqua
 )
 
 # Only the libraries Mayaqua sources call. EnumProcesses and GetModuleFileNameEx resolve to
-# the K32 exports of kernel32 (PSAPI_VERSION 2); SetupAPI is linked by Cedar, which calls it.
+# the K32 exports of kernel32 (PSAPI_VERSION 2); setupapi.lib: the net-class table of
+# MsNetClassEnum (Microsoft.c).
 target_link_libraries(mayaqua
   PRIVATE
     "bcrypt.lib"
@@ -108,6 +109,7 @@ target_link_libraries(mayaqua
     "iphlpapi.lib"
     "ntdll.lib"
     "Secur32.Lib"
+    "setupapi.lib"
     "shlwapi.lib"
     "winhttp.lib"
     "winmm.lib"

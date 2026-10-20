@@ -1413,33 +1413,18 @@ static UINT StGetBridgeSupport(ADMIN *a, RPC_BRIDGE_SUPPORT *t)
 
 static UINT StEnumEthernet(ADMIN *a, RPC_ENUM_ETH *t)
 {
-	TOKEN_LIST *o;
-	UINT i;
+	RPC_ENUM_ETH ret;
 
 	SERVER_ADMIN_ONLY;
 
-	o = GetEthList();
-	if (o == NULL)
+	// One SeLow probe and one adapter-list build for the devices and their connection names
+	if (EnumEthWin32(&ret) == false)
 	{
 		return ERR_NOT_SUPPORTED;
 	}
 
 	FreeRpcEnumEth(t);
-	Zero(t, sizeof(RPC_ENUM_ETH));
-
-	t->NumItem = o->NumTokens;
-	t->Items = ZeroMalloc(sizeof(RPC_ENUM_ETH_ITEM) * t->NumItem);
-
-	for (i = 0;i < t->NumItem;i++)
-	{
-		RPC_ENUM_ETH_ITEM *e = &t->Items[i];
-
-		StrCpy(e->DeviceName, sizeof(e->DeviceName), o->Token[i]);
-
-		GetEthNetworkConnectionName(e->NetworkConnectionName, sizeof(e->NetworkConnectionName), e->DeviceName);
-	}
-
-	FreeToken(o);
+	Copy(t, &ret, sizeof(RPC_ENUM_ETH));
 
 	return ERR_NO_ERROR;
 }
