@@ -437,7 +437,7 @@ char *CopyUniToStr(wchar_t *unistr)
 	return str;
 }
 
-wchar_t *CopyStrToUni(char *str)
+wchar_t *CopyStrToUni(const char *str)
 {
 	wchar_t *uni;
 	UINT uni_size;
@@ -573,7 +573,7 @@ static UINT AnsiCodePage(bool *c_locale)
 
 // Convert the ANSI string str into dst (NULL: only count), dst_len wchar_t at most. Returns the
 // number of wchar_t with the terminating NUL, or 0 when str does not convert
-static UINT ConvertAnsiToUni(wchar_t *dst, UINT dst_len, char *str)
+static UINT ConvertAnsiToUni(wchar_t *dst, UINT dst_len, const char *str)
 {
 	UINT cp = AnsiCodePage(NULL);
 	// UTF-8 takes no flag but MB_ERR_INVALID_CHARS
@@ -644,7 +644,7 @@ UINT CalcUniToStr(wchar_t *s)
 	return ConvertUniToAnsi(NULL, 0, s);
 }
 
-UINT StrToUni(wchar_t *s, UINT size, char *str)
+UINT StrToUni(wchar_t *s, UINT size, const char *str)
 {
 	UINT ret;
 	wchar_t *tmp;
@@ -673,7 +673,7 @@ UINT StrToUni(wchar_t *s, UINT size, char *str)
 	return ret;
 }
 
-UINT CalcStrToUni(char *str)
+UINT CalcStrToUni(const char *str)
 {
 	if (str == NULL)
 	{
@@ -749,7 +749,7 @@ static UINT UniToUtf8Units(BYTE *u, UINT u_size, wchar_t *s, UINT len)
 // Number of code units MultiByteToWideChar decodes the size bytes of u to, or 0 when they take
 // the bit-level decoder: they are not well-formed UTF-8, or hold a 4-byte sequence (a byte of
 // 0xF0 or above)
-static UINT Utf8NativeLen(BYTE *u, UINT size)
+static UINT Utf8NativeLen(const BYTE *u, UINT size)
 {
 	UINT i;
 	int ret;
@@ -774,7 +774,7 @@ static UINT Utf8NativeLen(BYTE *u, UINT size)
 
 // The bit-level decoder: decode the size bytes of u into s (NULL: only count), at most room code
 // units. Returns the number of code units
-static UINT Utf8ToUniBits(wchar_t *s, UINT room, BYTE *u, UINT size)
+static UINT Utf8ToUniBits(wchar_t *s, UINT room, const BYTE *u, UINT size)
 {
 	UINT i = 0, num = 0;
 
@@ -809,7 +809,7 @@ static UINT Utf8ToUniBits(wchar_t *s, UINT room, BYTE *u, UINT size)
 	return num;
 }
 
-UINT Utf8ToUni(wchar_t *s, UINT size, BYTE *u, UINT u_size)
+UINT Utf8ToUni(wchar_t *s, UINT size, const void *u, UINT u_size)
 {
 	UINT room, len, num;
 	if (s == NULL || u == NULL)
@@ -822,7 +822,7 @@ UINT Utf8ToUni(wchar_t *s, UINT size, BYTE *u, UINT u_size)
 	}
 	if (u_size == 0)
 	{
-		u_size = StrLen((char *)u);
+		u_size = StrLen(u);
 	}
 
 	// Code units that fit before the terminating NUL
@@ -855,7 +855,7 @@ UINT Utf8ToUni(wchar_t *s, UINT size, BYTE *u, UINT u_size)
 	return num;
 }
 
-UINT CalcUtf8ToUni(BYTE *u, UINT u_size)
+UINT CalcUtf8ToUni(const void *u, UINT u_size)
 {
 	if (u == NULL)
 	{
@@ -863,13 +863,13 @@ UINT CalcUtf8ToUni(BYTE *u, UINT u_size)
 	}
 	if (u_size == 0)
 	{
-		u_size = StrLen((char *)u);
+		u_size = StrLen(u);
 	}
 
 	return (Utf8Len(u, u_size) + 1) * sizeof(wchar_t);
 }
 
-UINT Utf8Len(BYTE *u, UINT size)
+UINT Utf8Len(const BYTE *u, UINT size)
 {
 	UINT num;
 	if (u == NULL)
@@ -890,7 +890,7 @@ UINT Utf8Len(BYTE *u, UINT size)
 	return num;
 }
 
-UINT UniToUtf8(BYTE *u, UINT size, wchar_t *s)
+UINT UniToUtf8(void *u, UINT size, wchar_t *s)
 {
 	UINT len, need, wp;
 	if (u == NULL || s == NULL)
@@ -920,7 +920,7 @@ UINT UniToUtf8(BYTE *u, UINT size, wchar_t *s)
 
 	if (wp < size)
 	{
-		u[wp] = 0;
+		((BYTE *)u)[wp] = 0;
 	}
 
 	return wp;
@@ -936,7 +936,7 @@ UINT CalcUniToUtf8(wchar_t *s)
 	return UniToUtf8Units(NULL, 0, s, UniStrLen(s));
 }
 
-UINT GetUtf8Type(BYTE *s, UINT size, UINT offset)
+UINT GetUtf8Type(const BYTE *s, UINT size, UINT offset)
 {
 	if (s == NULL)
 	{

@@ -56,7 +56,7 @@ bool IsTraceEnabled()
 }
 
 // Write a Debug() message as one "Debug" event, formatted as PrintArgs() (Str.c) formats it
-void TraceDebugArgs(char *fmt, va_list args)
+void TraceDebugArgs(const char *fmt, va_list args)
 {
 	wchar_t *msg;
 	if (fmt == NULL || IsTraceEnabled() == false)

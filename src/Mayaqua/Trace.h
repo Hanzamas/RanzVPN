@@ -11,6 +11,6 @@
 void InitTrace();
 void FreeTrace();
 bool IsTraceEnabled();
-void TraceDebugArgs(char *fmt, va_list args);
+void TraceDebugArgs(const char *fmt, va_list args);
 
 #endif	// TRACE_H
