@@ -1341,6 +1341,41 @@ CAPS *NewCaps(char *name, UINT value)
 	return c;
 }
 
+// Validity of the default server certificate in days: until 2038-01-01, or from 2030 on until
+// 2049-12-30. Certificate times themselves have no 2050 limit (UINT64ToAsn1Time writes GeneralizedTime);
+// the default certificate keeps its existing end date
+static UINT SiGetDefaultCertDays()
+{
+	UINT64 now = SystemTime64();
+	UINT64 target;
+	SYSTEMTIME st;
+
+	Zero(&st, sizeof(st));
+	SystemTime(&st);
+	if (st.wYear >= 2030)
+	{
+		Zero(&st, sizeof(st));
+		st.wYear = 2049;
+		st.wMonth = 12;
+		st.wDay = 30;
+	}
+	else
+	{
+		Zero(&st, sizeof(st));
+		st.wYear = 2038;
+		st.wMonth = 1;
+		st.wDay = 1;
+	}
+
+	target = SystemToUINT64(&st);
+	if (now >= target)
+	{
+		return 0;
+	}
+
+	return (UINT)((target - now) / (UINT64)(1000 * 60 * 60 * 24));
+}
+
 void SiGenerateDefaultCertEx(X **server_x, K **server_k, char *common_name)
 {
 	X *x;
@@ -1368,7 +1403,7 @@ void SiGenerateDefaultCertEx(X **server_x, K **server_k, char *common_name)
 
 	name = NewName(cn, cn, cn,
 		L"US", NULL, NULL);
-	x = NewRootX(public_key, private_key, name, GetDaysUntil2038Ex(), NULL);
+	x = NewRootX(public_key, private_key, name, SiGetDefaultCertDays(), NULL);
 
 	*server_x = x;
 	*server_k = private_key;
