@@ -79,7 +79,23 @@ jobs:
         cmake --build . > build-log.txt 2>&1
         set BUILD_EXIT=%ERRORLEVEL%
         type build-log.txt
-        exit /b %BUILD_EXIT%
+        if not "%BUILD_EXIT%"=="0" exit /b %BUILD_EXIT%
+
+        rem The linker's report of what /OPT:REF discarded and /OPT:ICF folded (src/CMakeLists.txt) for
+        rem vpnserver and vpncmd, uploaded as link-verbose-<arch>: each one is linked again with /VERBOSE,
+        rem passed in _LINK_, which lld-link and link.exe add to their arguments. lld-link has no
+        rem /VERBOSE:REF; its /VERBOSE lists the discarded sections and the folded functions.
+        set "_LINK_=/VERBOSE"
+        for %%t in (vpnserver vpncmd) do (
+          del %%t.exe
+          cmake --build . --target %%t > link-verbose-%%t.txt 2>&1
+          if errorlevel 1 (
+            type link-verbose-%%t.txt
+            exit /b 1
+          )
+        )
+        set "_LINK_="
+        exit /b 0
       shell: cmd
     # The key is the content hash of the cache directory, so a run that built nothing new finds the key
     # taken and saves nothing (a warning, not a failure).
@@ -106,6 +122,13 @@ jobs:
         path: |
           build/unused-report.txt
           build/build-log.txt
+    - name: Upload linker report (vpnserver and vpncmd)
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        if-no-files-found: warn
+        name: link-verbose-${{ matrix.platform.ARCHITECTURE }}
+        path: build/link-verbose-*.txt
     # Source lines per directory and executable sizes, in the job log and the job summary. Never a gate.
     - name: Size metrics
       if: ${{ !cancelled() }}
