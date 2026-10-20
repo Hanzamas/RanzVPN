@@ -80,8 +80,6 @@ struct SESSION
 	CANCEL *Cancel1;
 	CANCEL *Cancel2;
 	PACKET_ADAPTER *PacketAdapter;
-	UCHAR UdpSendKey[16];
-	UCHAR UdpRecvKey[16];
 	UINT ClientStatus;
 	bool RetryFlag;
 	bool ForceStopFlag;
@@ -128,7 +126,6 @@ struct SESSION
 	bool QoS;
 	bool NoSendSignature;
 	UINT NumDisconnected;
-	bool NoReconnectToSession;
 	char UnderlayProtocol[64];
 	char ProtocolDetails[256];
 	/* !!! Do not correct the spelling to keep the backward protocol compatibility !!!  */
@@ -162,10 +159,6 @@ struct SESSION
 	USER *NumLoginIncrementUserObject;
 	HUB *NumLoginIncrementHubObject;
 	UINT64 NumLoginIncrementTick;
-
-	bool FirstTimeHttpRedirect;
-	char FirstTimeHttpRedirectUrl[128];
-	UINT FirstTimeHttpAccessCheckIp;
 
 	UINT64 MaxLoggedPacketsPerMinuteStartTick;
 	UINT CurrentNumPackets;
