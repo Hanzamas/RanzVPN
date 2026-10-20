@@ -5782,12 +5782,13 @@ bool IsHubIpAddress64(IPV6_ADDR *addr)
 	return false;
 }
 
-static void GenHubIpAddress(IP *ip, UCHAR *machine_hash, char *name)
+// Hash of the machine-unique hash and the trimmed, upper-cased hub name;
+// the hub MAC and IP addresses both derive from it
+static void HubNameHash(UCHAR *hash, UCHAR *machine_hash, char *name)
 {
 	char tmp1[MAX_SIZE];
 	char tmp2[MAX_SIZE];
-	UCHAR hash[SHA1_SIZE];
-	if (ip == NULL || machine_hash == NULL || name == NULL)
+	if (hash == NULL || machine_hash == NULL || name == NULL)
 	{
 		return;
 	}
@@ -5799,27 +5800,24 @@ static void GenHubIpAddress(IP *ip, UCHAR *machine_hash, char *name)
 	StrUpper(tmp2);
 
 	Sha0(hash, tmp2, StrLen(tmp2));
-
-	SetIP(ip, 172, 31, hash[0] % 254 + 1, hash[0] % 254 + 1);
 }
 
-static void GenHubMacAddress(UCHAR *mac, UCHAR *machine_hash, char *name)
+static void GenHubIpAddress(IP *ip, UCHAR *hash)
 {
-	char tmp1[MAX_SIZE];
-	char tmp2[MAX_SIZE];
-	UCHAR hash[SHA1_SIZE];
-	if (mac == NULL || machine_hash == NULL || name == NULL)
+	if (ip == NULL || hash == NULL)
 	{
 		return;
 	}
 
-	StrCpy(tmp1, sizeof(tmp1), name);
-	Trim(tmp1);
-	BinToStr(tmp2, sizeof(tmp2), machine_hash, SHA1_SIZE);
-	StrCat(tmp2, sizeof(tmp2), tmp1);
-	StrUpper(tmp2);
+	SetIP(ip, 172, 31, hash[0] % 254 + 1, hash[1] % 254 + 1);
+}
 
-	Sha0(hash, tmp2, StrLen(tmp2));
+static void GenHubMacAddress(UCHAR *mac, UCHAR *hash)
+{
+	if (mac == NULL || hash == NULL)
+	{
+		return;
+	}
 
 	mac[0] = 0x00;
 	mac[1] = SE_HUB_MAC_ADDR_SIGN;
@@ -5878,6 +5876,7 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 	char packet_logger_name[MAX_SIZE];
 	char tmp[MAX_SIZE];
 	char safe_hub_name[MAX_HUBNAME_LEN + 1];
+	UCHAR machine_hash[SHA1_SIZE];
 	UCHAR hash[SHA1_SIZE];
 	IP ip6;
 	if (cedar == NULL || option == NULL || HubName == NULL)
@@ -5931,9 +5930,10 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 
 	Rand(h->HubSignature, sizeof(h->HubSignature));
 
-	GenerateMachineUniqueHash(cedar, hash);
-	GenHubMacAddress(h->HubMacAddr, hash, h->Name);
-	GenHubIpAddress(&h->HubIp, hash, h->Name);
+	GenerateMachineUniqueHash(cedar, machine_hash);
+	HubNameHash(hash, machine_hash, h->Name);
+	GenHubMacAddress(h->HubMacAddr, hash);
+	GenHubIpAddress(&h->HubIp, hash);
 
 	GenerateEui64LocalAddress(&ip6, h->HubMacAddr);
 	IPToIPv6Addr(&h->HubIpV6, &ip6);
