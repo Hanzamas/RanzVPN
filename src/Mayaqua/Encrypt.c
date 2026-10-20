@@ -68,6 +68,10 @@ typedef struct CB_PARAM
 // but then produces a keystream that is not RC4, so NewCrypt() does not give it those.
 #define	RC4_MAX_KEY_SIZE	64
 
+// A FILETIME counts 100 ns ticks since 1601-01-01 UTC
+#define	FILETIME_TICKS_PER_SEC		10000000ULL				// FILETIME ticks in a second
+#define	FILETIME_UNIX_EPOCH_TICKS	116444736000000000ULL	// 1970-01-01 00:00:00 UTC as a FILETIME
+
 // CNG algorithm providers of MD4, MD5, SHA-1, RC4 and DES, which run on CNG instead of OpenSSL.
 // They are opened once, on first use, and kept for the life of the process, as the CNG
 // pseudo-handles are (MayaType.h selects the Vista SDK level, which does not declare those).
@@ -1346,31 +1350,22 @@ static void LoadXDates(X *x)
 // UTCTime for 1950 to 2049, GeneralizedTime (4-digit year) from 2050, so a later time does not wrap
 bool UINT64ToAsn1Time(void *asn1_time, UINT64 t)
 {
-	SYSTEMTIME st;
-	struct tm tm;
-	time_64t sec;
+	FILETIME ft;
+	UINT64 ticks;
 	if (asn1_time == NULL)
 	{
 		return false;
 	}
 
-	UINT64ToSystem(&st, t);
-
-	Zero(&tm, sizeof(tm));
-	tm.tm_year = st.wYear - 1900;
-	tm.tm_mon = st.wMonth - 1;
-	tm.tm_mday = st.wDay;
-	tm.tm_hour = st.wHour;
-	tm.tm_min = st.wMinute;
-	tm.tm_sec = st.wSecond;
-
-	sec = TmToTime(&tm);
-	if (sec <= 0)
+	// The UTC time as FILETIME ticks; whole seconds after 1970 are the time_t OpenSSL takes
+	UINT64ToFileTime(&ft, t);
+	ticks = ((UINT64)ft.dwHighDateTime << 32) | (UINT64)ft.dwLowDateTime;
+	if (ticks < FILETIME_UNIX_EPOCH_TICKS + FILETIME_TICKS_PER_SEC)
 	{
 		return false;
 	}
 
-	return ASN1_TIME_set((ASN1_TIME *)asn1_time, (time_t)sec) != NULL;
+	return ASN1_TIME_set((ASN1_TIME *)asn1_time, (time_t)((ticks - FILETIME_UNIX_EPOCH_TICKS) / FILETIME_TICKS_PER_SEC)) != NULL;
 }
 
 UINT64 Asn1TimeToUINT64(void *asn1_time)
