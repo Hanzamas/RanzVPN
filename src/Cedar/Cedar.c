@@ -351,7 +351,7 @@ bool AddNoSsl(CEDAR *c, IP *ip)
 			GetRateLimitKey(&n->IpAddress, ip);
 			n->Count = 0;
 
-			Add(c->NonSslList, n);
+			Insert(c->NonSslList, n);
 		}
 
 		n->EntryExpires = Tick64() + (UINT64)NON_SSL_ENTRY_EXPIRES;
@@ -368,36 +368,24 @@ bool AddNoSsl(CEDAR *c, IP *ip)
 	return ret;
 }
 
+static bool IsNoSslExpired(void *p, void *param)
+{
+	NON_SSL *n = p;
+
+	return (n->EntryExpires <= *(UINT64 *)param);
+}
+
 static void DeleteOldNoSsl(CEDAR *c)
 {
-	UINT i;
-	LIST *o;
+	UINT64 now;
 	if (c == NULL)
 	{
 		return;
 	}
 
-	o = NewListFast(NULL);
+	now = Tick64();
 
-	for (i = 0;i < LIST_NUM(c->NonSslList);i++)
-	{
-		NON_SSL *n = LIST_DATA(c->NonSslList, i);
-
-		if (n->EntryExpires <= Tick64())
-		{
-			Add(o, n);
-		}
-	}
-
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		NON_SSL *n = LIST_DATA(o, i);
-
-		Delete(c->NonSslList, n);
-		Free(n);
-	}
-
-	ReleaseList(o);
+	DeleteAndFreeIf(c->NonSslList, IsNoSslExpired, &now);
 }
 
 // NonSslList is full after DeleteOldNoSsl: drop the least recently seen entry; log the first time

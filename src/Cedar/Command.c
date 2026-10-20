@@ -201,7 +201,7 @@ static void CheckNetworkListenThread(THREAD *thread, void *param)
 
 	for (i = 1025;;i++)
 	{
-		s = Listen(i);
+		s = Listen(i, NULL, false);
 		if (s != NULL)
 		{
 			break;
@@ -1307,7 +1307,7 @@ static void TtsListenThread(THREAD *thread, void *param)
 
 	tts = (TTS *)param;
 
-	tts->ListenSocket = ListenEx2(tts->Port, false, false, NULL, false);
+	tts->ListenSocket = Listen(tts->Port, NULL, false);
 
 	if (tts->ListenSocket == NULL)
 	{

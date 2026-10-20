@@ -203,7 +203,10 @@ static bool TlsCtxListen(TLSCTX_SERVER *srv)
 {
 	if (srv->Listen == NULL)
 	{
-		srv->Listen = ListenEx2(TLSCTX_PORT, true, false, NULL, false);
+		IP loopback;
+
+		GetLocalHostIP4(&loopback);
+		srv->Listen = Listen(TLSCTX_PORT, &loopback, false);
 	}
 
 	return (srv->Listen != NULL);

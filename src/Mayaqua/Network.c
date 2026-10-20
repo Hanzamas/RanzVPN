@@ -30,12 +30,6 @@
 
 static COUNTER *num_tcp_connections = NULL;
 static LIST *WaitThreadList = NULL;
-static UCHAR machine_ip_process_hash[SHA1_SIZE];
-static LOCK *machine_ip_process_hash_lock = NULL;
-static LOCK *current_global_ip_lock = NULL;
-static bool current_global_ip_set = false;
-static IP current_glocal_ipv4 = {0};
-static IP current_glocal_ipv6 = {0};
 static LOCK *host_ip_address_list_cache_lock = NULL;
 static UINT64 host_ip_address_list_cache_last = 0;
 static LIST *host_ip_address_cache = NULL;
@@ -293,167 +287,6 @@ void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_s
 	StrCpy(dst_username, dst_username_size, tmp_username);
 	StrCpy(dst_domain, dst_domain_size, tmp_domain);
 }
-
-void GetCurrentMachineIpProcessHash(void *hash)
-{
-	if (hash == NULL)
-	{
-		return;
-	}
-
-	Lock(machine_ip_process_hash_lock);
-	{
-		if (IsZero(machine_ip_process_hash, SHA1_SIZE))
-		{
-			GetCurrentMachineIpProcessHashInternal(machine_ip_process_hash);
-		}
-
-		Copy(hash, machine_ip_process_hash, SHA1_SIZE);
-	}
-	Unlock(machine_ip_process_hash_lock);
-}
-void GetCurrentMachineIpProcessHashInternal(void *hash)
-{
-	BUF *b;
-	LIST *ip_list;
-	char machine_name[MAX_SIZE];
-	wchar_t exe_path[MAX_PATH];
-	char *product_id = NULL;
-	if (hash == NULL)
-	{
-		return;
-	}
-
-	product_id = MsRegReadStr(REG_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", "ProductId");
-	if (product_id == NULL)
-	{
-		product_id = MsRegReadStr(REG_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion", "ProductId");
-	}
-
-	b = NewBuf();
-
-	GetMachineHostName(machine_name, sizeof(machine_name));
-	Trim(machine_name);
-	StrUpper(machine_name);
-
-	GetExeNameW(exe_path, sizeof(exe_path));
-	UniTrim(exe_path);
-	UniStrUpper(exe_path);
-
-	WriteBuf(b, machine_name, StrSize(machine_name));
-	WriteBuf(b, exe_path, UniStrSize(exe_path));
-	WriteBuf(b, product_id, StrSize(product_id));
-
-	ip_list = GetHostIPAddressList();
-	if (ip_list != NULL)
-	{
-		UINT i;
-		for (i = 0; i < LIST_NUM(ip_list); i++)
-		{
-			IP *ip = LIST_DATA(ip_list, i);
-
-			WriteBuf(b, ip, sizeof(IP));
-		}
-	}
-	FreeHostIPAddressList(ip_list);
-
-	Sha1(hash, b->Buf, b->Size);
-
-	FreeBuf(b);
-
-	Free(product_id);
-}
-
-
-typedef struct WIN32_ACCEPT_CHECK_DATA
-{
-	bool Rejected;
-} WIN32_ACCEPT_CHECK_DATA;
-
-static int CALLBACK Win32AcceptCheckCallback(LPWSABUF lpCallerId, LPWSABUF lpCallerData, LPQOS pQos,
-                                      LPQOS lpGQOS, LPWSABUF lpCalleeId, LPWSABUF lpCalleeData,
-                                      GROUP FAR *g, DWORD_PTR dwCallbackData)
-{
-	return CF_ACCEPT;
-}
-
-static SOCKET Win32Accept(SOCK *sock, SOCKET s, struct sockaddr *addr, int *addrlen)
-{
-	SOCKET ret;
-	WIN32_ACCEPT_CHECK_DATA d;
-	UINT err;
-	int initial_addrlen = *addrlen;
-	UINT num_error = 0;
-	UINT zero = 0;
-	UINT tmp = 0;
-	DWORD ret_size = 0;
-	if (sock == NULL || s == INVALID_SOCKET)
-	{
-		return INVALID_SOCKET;
-	}
-
-	if (sock->hAcceptEvent == NULL)
-	{
-		sock->hAcceptEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-
-		WSAEventSelect(s, sock->hAcceptEvent, FD_ACCEPT | FD_CLOSE);
-	}
-
-L_LOOP:
-
-	if (sock->CancelAccept)
-	{
-		return INVALID_SOCKET;
-	}
-
-	Zero(&d, sizeof(d));
-
-	*addrlen = initial_addrlen;
-	Zero(addr, initial_addrlen);
-	ret = WSAAccept(s, addr, addrlen, Win32AcceptCheckCallback, (DWORD_PTR)&d);
-
-	if (ret == INVALID_SOCKET)
-	{
-		err = WSAGetLastError();
-
-		if (err == WSAEWOULDBLOCK)
-		{
-			UINT wait_ret = WaitForSingleObject(sock->hAcceptEvent, 1234);
-
-			if (wait_ret == WAIT_OBJECT_0 || wait_ret == WAIT_TIMEOUT)
-			{
-				goto L_LOOP;
-			}
-
-			Debug("!!! WaitForSingleObject Error. ret=%u GetLastError=%u\n", wait_ret, (UINT)GetLastError());
-		}
-
-		num_error++;
-
-		Debug("!!! WSAAccept Error: %u  rej=%u  num=%u  tick=%I64u\n", err, d.Rejected, num_error, Tick64());
-
-		if (d.Rejected && err == WSAECONNREFUSED)
-		{
-			goto L_LOOP;
-		}
-
-		if (err == WSAETIMEDOUT)
-		{
-			goto L_LOOP;
-		}
-
-		sock->AcceptError = err;
-	}
-	else
-	{
-		WSAEventSelect(ret, sock->hAcceptEvent, 0);
-
-		WSAIoctl(ret, FIONBIO, &zero, sizeof(zero), &tmp, sizeof(tmp), &ret_size, NULL, NULL);
-	}
-
-	return ret;
-}
-
 
 bool IsStrIPv6Address(char *str)
 {
@@ -1171,7 +1004,7 @@ static void AddIpClient(IP *ip)
 			GetRateLimitKey(&c->IpAddress, ip);
 			c->NumConnections = 0;
 
-			Add(ip_clients, c);
+			Insert(ip_clients, c);
 		}
 
 		c->NumConnections++;
@@ -3168,21 +3001,10 @@ SOCK *Accept(SOCK *sock)
 	Zero(&addr, sizeof(addr));
 	size = sizeof(addr);
 
-	if (sock->EnableConditionalAccept)
-	{
-		new_socket = Win32Accept(sock, s, (struct sockaddr *)&addr, &size);
-	}
-	else
-	{
-		new_socket = accept(s, (struct sockaddr *)&addr, &size);
-		if (new_socket == INVALID_SOCKET)
-		{
-			sock->AcceptError = WSAGetLastError();
-		}
-	}
-
+	new_socket = accept(s, (struct sockaddr *)&addr, &size);
 	if (new_socket == INVALID_SOCKET)
 	{
+		sock->AcceptError = WSAGetLastError();
 		return NULL;
 	}
 	if (sock->CancelAccept)
@@ -3214,26 +3036,11 @@ SOCK *Accept(SOCK *sock)
 		AddIpClient(&ret->RemoteIP);
 	}
 
-	if (IsZeroIP(&sock->LocalIP) == false && IsLocalHostIP(&sock->LocalIP) == false)
-	{
-		IP current_ip;
-
-		if (GetCurrentGlobalIP(&current_ip, is_ipv6) == false)
-		{
-			SetCurrentGlobalIP(&sock->LocalIP, is_ipv6);
-		}
-	}
-
 	StrCpy(ret->UnderlayProtocol, sizeof(ret->UnderlayProtocol), is_ipv6 ? SOCK_UNDERLAY_NATIVE_V6 : SOCK_UNDERLAY_NATIVE_V4);
 
 	AddProtocolDetailsStr(ret->ProtocolDetails, sizeof(ret->ProtocolDetails), is_ipv6 ? "IPv6" : "IPv4");
 
 	return ret;
-}
-
-SOCK *Listen(UINT port)
-{
-	return ListenEx2(port, false, false, NULL, false);
 }
 
 // A TCP socket bound to addr. An AF_INET6 socket gets IPV6_V6ONLY from v6only: false makes it dual-stack.
@@ -3278,15 +3085,14 @@ static SOCKET ListenBind(struct sockaddr *addr, int addr_size, bool v6only, bool
 }
 
 // One TCP listen socket per port. Without a ListenIP it is a dual-stack AF_INET6 socket on [::]:port, so IPv4 peers
-// arrive as ::ffff:a.b.c.d. AF_INET is used for local_only, an IPv4 ListenIP, ipv4_only or an unsupported IPv6.
-SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip, bool ipv4_only)
+// arrive as ::ffff:a.b.c.d. AF_INET is used for an IPv4 ListenIP (127.0.0.1 for a local-only socket), ipv4_only or
+// an unsupported IPv6.
+SOCK *Listen(UINT port, IP *listen_ip, bool ipv4_only)
 {
 	SOCKET s = INVALID_SOCKET;
 	SOCK *sock;
 	struct sockaddr_in addr4;
 	struct sockaddr_in6 addr6;
-	UINT backlog = SOMAXCONN;
-	UINT true_flag = 1;
 	bool is_ipv6 = false;
 	if (port == 0 || port >= 65536)
 	{
@@ -3300,18 +3106,7 @@ SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip, bool 
 	addr6.sin6_family = AF_INET6;
 	addr6.sin6_port = htons((UINT)port);
 
-	if (local_only)
-	{
-		IP localhost;
-
-		SetIP(&localhost, 127, 0, 0, 1);
-		IPToInAddr(&addr4.sin_addr, &localhost);
-
-		enable_ca = false;
-
-		s = ListenBind((struct sockaddr *)&addr4, sizeof(addr4), false, NULL);
-	}
-	else if (listen_ip == NULL || IsZeroIP(listen_ip))
+	if (listen_ip == NULL || IsZeroIP(listen_ip))
 	{
 		bool held = false;
 
@@ -3348,13 +3143,7 @@ SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip, bool 
 		return NULL;
 	}
 
-	if (enable_ca)
-	{
-		setsockopt(s, SOL_SOCKET, SO_CONDITIONAL_ACCEPT, (char *)&true_flag, sizeof(true_flag));
-		backlog = 1;
-	}
-
-	if (listen(s, backlog))
+	if (listen(s, SOMAXCONN))
 	{
 		closesocket(s);
 		return NULL;
@@ -3370,7 +3159,6 @@ SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip, bool 
 	sock->SecureMode = false;
 	sock->LocalPort = port;
 	sock->IPv6 = is_ipv6;
-	sock->EnableConditionalAccept = enable_ca;
 
 	return sock;
 }
@@ -3386,11 +3174,6 @@ void Disconnect(SOCK *sock)
 	if (sock->Type == SOCK_TCP && sock->ListenMode)
 	{
 		sock->CancelAccept = true;
-
-		if (sock->hAcceptEvent != NULL)
-		{
-			SetEvent(sock->hAcceptEvent);
-		}
 	}
 
 	Lock(sock->disconnect_lock);
@@ -3766,16 +3549,6 @@ SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, char *hostname_original)
 
 	QuerySocketInformation(sock);
 
-	if (IsZeroIP(&sock->LocalIP) == false && IsLocalHostIP(&sock->LocalIP) == false)
-	{
-		IP current_ip;
-
-		if (GetCurrentGlobalIP(&current_ip, is_ipv6) == false)
-		{
-			SetCurrentGlobalIP(&sock->LocalIP, is_ipv6);
-		}
-	}
-
 	sock->Connected = true;
 	sock->AsyncMode = false;
 	sock->SecureMode = false;
@@ -4120,11 +3893,6 @@ void CleanupSock(SOCK *s)
 	}
 	Free(s->RemoteHostname);
 
-	if (s->hAcceptEvent != NULL)
-	{
-		CloseHandle(s->hAcceptEvent);
-	}
-
 	if (s->RemoteX != NULL)
 	{
 		FreeX(s->RemoteX);
@@ -4192,29 +3960,6 @@ void UINTToIP(IP *ip, UINT value)
 	{
 		IPV4(ip->address)[i] = ((BYTE *)&value)[i];
 	}
-}
-
-void GetMachineHostName(char *name, UINT size)
-{
-	char tmp[MAX_SIZE];
-	UINT i, len;
-	if (name == NULL)
-	{
-		return;
-	}
-
-	GetMachineName(tmp, sizeof(tmp));
-
-	len = StrLen(tmp);
-	for (i = 0; i < len; i++)
-	{
-		if (tmp[i] == '.')
-		{
-			tmp[i] = 0;
-		}
-	}
-
-	ConvertSafeFileName(name, size, tmp);
 }
 
 void GetMachineName(char *name, UINT size)
@@ -4670,11 +4415,7 @@ void InitNetwork()
 
 	DnsInit();
 
-	machine_ip_process_hash_lock = NewLock();
 	local_mac_list_lock = NewLock();
-
-	current_global_ip_lock = NewLock();
-	current_global_ip_set = false;
 
 	chain_cert_lock = NewLock();
 }
@@ -4739,34 +4480,6 @@ TOKEN_LIST *GetCipherList()
 COUNTER *GetNumTcpConnectionsCounter()
 {
 	return num_tcp_connections;
-}
-
-bool GetCurrentGlobalIP(IP *ip, bool ipv6)
-{
-	bool ret = false;
-	if (ip == NULL)
-	{
-		return false;
-	}
-
-	Zero(ip, sizeof(IP));
-
-	Lock(current_global_ip_lock);
-	{
-		if (ipv6 == false)
-		{
-			Copy(ip, &current_glocal_ipv4, sizeof(IP));
-		}
-		else
-		{
-			Copy(ip, &current_glocal_ipv6, sizeof(IP));
-		}
-
-		ret = current_global_ip_set;
-	}
-	Unlock(current_global_ip_lock);
-
-	return ret;
 }
 
 bool IsIPMyHost(IP *ip)
@@ -4951,34 +4664,6 @@ void FreePrivateIPFile()
 	}
 }
 
-void SetCurrentGlobalIP(IP *ip, bool ipv6)
-{
-	if (ip == NULL)
-	{
-		return;
-	}
-
-	if (IsZeroIP(ip))
-	{
-		return;
-	}
-
-	Lock(current_global_ip_lock);
-	{
-		if (ipv6 == false)
-		{
-			Copy(&current_glocal_ipv4, ip, sizeof(IP));
-		}
-		else
-		{
-			Copy(&current_glocal_ipv6, ip, sizeof(IP));
-		}
-
-		current_global_ip_set = true;
-	}
-	Unlock(current_global_ip_lock);
-}
-
 void FreeNetwork()
 {
 
@@ -4997,9 +4682,6 @@ void FreeNetwork()
 	DeleteLock(chain_cert_lock);
 	chain_cert_lock = NULL;
 
-	DeleteLock(machine_ip_process_hash_lock);
-	machine_ip_process_hash_lock = NULL;
-
 	DnsFree();
 
 	WSACleanup();
@@ -5008,9 +4690,6 @@ void FreeNetwork()
 	num_tcp_connections = NULL;
 
 	FreeIpClientList();
-
-	DeleteLock(current_global_ip_lock);
-	current_global_ip_lock = NULL;
 
 	if (local_mac_list != NULL)
 	{

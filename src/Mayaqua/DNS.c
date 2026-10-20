@@ -174,7 +174,7 @@ static void DnsCacheUpdateEx(const char *hostname, const LIST *iplist_v6, const 
 				entry = ZeroMalloc(sizeof(DNS_CACHE));
 				entry->Hostname = CopyStr(hostname);
 
-				Add(cache, entry);
+				Insert(cache, entry);
 			}
 
 			entry->Expiration = Tick64() + DNS_CACHE_EXPIRATION;
@@ -260,7 +260,7 @@ void DnsCacheReverseUpdate(const IP *ip, const char *hostname)
 				entry = ZeroMalloc(sizeof(DNS_CACHE_REVERSE));
 				Copy(&entry->IP, ip, sizeof(entry->IP));
 
-				Add(cache_reverse, entry);
+				Insert(cache_reverse, entry);
 			}
 
 			entry->Expiration = Tick64() + DNS_CACHE_EXPIRATION;

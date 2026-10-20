@@ -155,54 +155,36 @@ static void TCPAccepted(LISTENER *r, SOCK *s)
 		}
 	}
 
-	IPToStr(tmp, sizeof(tmp), &s->RemoteIP);
-
 	data = ZeroMalloc(sizeof(TCP_ACCEPTED_PARAM));
 	data->r = r;
 	data->s = s;
 
-	if (r->ThreadProc == TCPAcceptedThread)
-	{
-		Inc(cedar->AcceptingSockets);
-	}
+	Inc(cedar->AcceptingSockets);
 
-	t = NewThread(r->ThreadProc, data);
+	t = NewThread(TCPAcceptedThread, data);
 	WaitThreadInit(t);
 	Free(data);
 	ReleaseThread(t);
 }
 
-// Drop the DoS entries whose expire span or total lifetime has run out
-static void DeleteExpiredDos(LISTENER *r)
+static bool IsDosExpired(void *p, void *param)
 {
-	UINT i;
-	LIST *o;
+	DOS *d = p;
+	UINT64 now = *(UINT64 *)param;
 
-	o = NewListFast(NULL);
-	for (i = 0;i < LIST_NUM(r->DosList);i++)
-	{
-		DOS *d = LIST_DATA(r->DosList, i);
-		if ((d->LastConnectedTick + d->CurrentExpireSpan) <= Tick64() ||
-			(d->DeleteEntryTick <= Tick64()))
-		{
-			Add(o, d);
-		}
-	}
+	return ((d->LastConnectedTick + d->CurrentExpireSpan) <= now || d->DeleteEntryTick <= now);
+}
 
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		DOS *d = LIST_DATA(o, i);
-		Delete(r->DosList, d);
-		Free(d);
-	}
-
-	ReleaseList(o);
+// Drop the DoS entries whose expire span or total lifetime has run out
+static void DeleteExpiredDos(LISTENER *r, UINT64 now)
+{
+	DeleteAndFreeIf(r->DosList, IsDosExpired, &now);
 }
 
 // The DoS table is full: drop the expired entries, else the least recently seen one; log the first time
 static void MakeRoomInDosList(LISTENER *r)
 {
-	DeleteExpiredDos(r);
+	DeleteExpiredDos(r, Tick64());
 
 	if (LIST_NUM(r->DosList) >= RATE_LIMIT_TABLE_MAX)
 	{
@@ -271,7 +253,7 @@ bool CheckDosAttack(LISTENER *r, SOCK *s)
 			d->AccessCount = 1;
 			d->DeleteEntryTick = d->FirstConnectedTick + (UINT64)DOS_TABLE_EXPIRES_TOTAL;
 			GetRateLimitKey(&d->IpAddress, &s->RemoteIP);
-			Add(r->DosList, d);
+			Insert(r->DosList, d);
 		}
 	}
 	UnlockList(r->DosList);
@@ -289,9 +271,10 @@ void RefreshDosList(LISTENER *r)
 	if (r->DosListLastRefreshTime == 0 ||
 		(r->DosListLastRefreshTime + (UINT64)DOS_TABLE_REFRESH_INTERVAL) <= Tick64())
 	{
-		r->DosListLastRefreshTime = Tick64();
+		UINT64 now = Tick64();
+		r->DosListLastRefreshTime = now;
 
-		DeleteExpiredDos(r);
+		DeleteExpiredDos(r, now);
 	}
 }
 
@@ -309,8 +292,9 @@ DOS *SearchDosList(LISTENER *r, IP *ip)
 
 	if (d != NULL)
 	{
-		if ((d->LastConnectedTick + d->CurrentExpireSpan) <= Tick64() ||
-			(d->DeleteEntryTick <= Tick64()))
+		UINT64 now = Tick64();
+
+		if (IsDosExpired(d, &now))
 		{
 			Delete(r->DosList, d);
 			Free(d);
@@ -321,7 +305,7 @@ DOS *SearchDosList(LISTENER *r, IP *ip)
 	return d;
 }
 
-static int CompareDos(void *p1, void *p2)
+int CompareDos(void *p1, void *p2)
 {
 	DOS *d1, *d2;
 	if (p1 == NULL || p2 == NULL)
@@ -389,14 +373,8 @@ static void ListenerTCPMainLoop(LISTENER *r)
 				return;
 			}
 
-			s = NULL;
-
-			if (r->Protocol == LISTENER_TCP)
-			{
-				// One socket per port: dual-stack unless IPv6 is disabled or the ListenIP is IPv4
-				s = ListenEx2(r->Port, r->LocalOnly, r->EnableConditionalAccept,
-					(r->Cedar->Server == NULL ? NULL : &r->Cedar->Server->ListenIP), r->Cedar->DisableIPv6Listener);
-			}
+			// One socket per port: dual-stack unless IPv6 is disabled or the ListenIP is IPv4
+			s = Listen(r->Port, &r->Cedar->Server->ListenIP, r->Cedar->DisableIPv6Listener);
 
 			if (s != NULL)
 			{
@@ -408,20 +386,14 @@ static void ListenerTCPMainLoop(LISTENER *r)
 				}
 				Unlock(r->lock);
 
-				if (r->Protocol == LISTENER_TCP)
-				{
-					SLog(r->Cedar, "LS_LISTENER_START_2", r->Port);
-				}
+				SLog(r->Cedar, "LS_LISTENER_START_2", r->Port);
 				break;
 			}
 
 			if (first_failed)
 			{
 				first_failed = false;
-				if (r->Protocol == LISTENER_TCP)
-				{
-					SLog(r->Cedar, "LS_LISTENER_START_3", r->Port, LISTEN_RETRY_TIME / 1000);
-				}
+				SLog(r->Cedar, "LS_LISTENER_START_3", r->Port, LISTEN_RETRY_TIME / 1000);
 			}
 
 			// Status is LISTENER_STATUS_TRYING: the bind failed, the thread retries after the interval
@@ -547,10 +519,7 @@ void StopListener(LISTENER *r)
 
 	port = r->Port;
 
-	if (r->Protocol == LISTENER_TCP)
-	{
-		SLog(r->Cedar, "LS_LISTENER_STOP_1", port);
-	}
+	SLog(r->Cedar, "LS_LISTENER_STOP_1", port);
 
 	if (s != NULL)
 	{
@@ -563,10 +532,7 @@ void StopListener(LISTENER *r)
 
 	WaitThread(r->Thread, INFINITE);
 
-	if (r->Protocol == LISTENER_TCP)
-	{
-		SLog(r->Cedar, "LS_LISTENER_STOP_2", port);
-	}
+	SLog(r->Cedar, "LS_LISTENER_STOP_2", port);
 }
 
 // Wait until the listener thread has tried to bind the port, at most timeout ms. True when the port is bound;
@@ -670,31 +636,22 @@ int CompareListener(void *p1, void *p2)
 	}
 }
 
-LISTENER *NewListener(CEDAR *cedar, UINT proto, UINT port)
-{
-	return NewListenerEx5(cedar, proto, port, TCPAcceptedThread, NULL, false, false);
-}
-LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only, bool enable_ca)
+LISTENER *NewListener(CEDAR *cedar, UINT port)
 {
 	LISTENER *r;
 	THREAD *t;
-	if ((proto == LISTENER_TCP && port == 0) || cedar == NULL)
-	{
-		return NULL;
-	}
-	if (proto != LISTENER_TCP)
+	if (port == 0 || cedar == NULL)
 	{
 		return NULL;
 	}
 
 	r = ZeroMalloc(sizeof(LISTENER));
 
-	r->ThreadProc = proc;
 	r->Cedar = cedar;
 	AddRef(r->Cedar->ref);
 	r->lock = NewLock();
 	r->ref = NewRef();
-	r->Protocol = proto;
+	r->Protocol = LISTENER_TCP;
 	r->Port = port;
 	r->Event = NewEvent();
 	// Manual-reset: every waiter of WaitListenerBind sees the first bind attempt, also after it happened
@@ -702,13 +659,7 @@ LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc,
 
 	r->DosList = NewList(CompareDos);
 
-	r->LocalOnly = local_only;
-	r->EnableConditionalAccept = enable_ca;
-
-	if (proto == LISTENER_TCP)
-	{
-		SLog(cedar, "LS_LISTENER_START_1", port);
-	}
+	SLog(cedar, "LS_LISTENER_START_1", port);
 
 	t = NewThread(ListenerThread, r);
 	WaitThreadInit(t);

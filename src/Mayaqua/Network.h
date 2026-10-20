@@ -103,7 +103,6 @@ struct SOCK
 	bool ListenMode;
 	BUF *SendBuf;
 	bool IpClientAdded;
-	bool EnableConditionalAccept;
 	IP RemoteIP;
 	IP LocalIP;
 	char *RemoteHostname;
@@ -122,8 +121,6 @@ struct SOCK
 	const char *SslVersion;
 	char UnderlayProtocol[64];
 	char ProtocolDetails[256];
-
-	void *hAcceptEvent;
 
 	void *hEvent;
 };
@@ -226,8 +223,6 @@ void CreateDummyValue(PACK *p);
 char *RecvLine(SOCK *s, UINT max_size);
 
 SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, char *hostname_original);
-void GetCurrentMachineIpProcessHash(void *hash);
-void GetCurrentMachineIpProcessHashInternal(void *hash);
 void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_size, char *dst_domain, UINT dst_domain_size, bool do_not_parse_atmark);
 
 
@@ -245,7 +240,6 @@ void IPToStr32(char *str, UINT size, UINT ip);
 void IPToStr4or6(char *str, UINT size, UINT ip_4_uint, UCHAR *ip_6_bytes);
 bool GetHostName(char *hostname, UINT size, IP *ip);
 void GetMachineName(char *name, UINT size);
-void GetMachineHostName(char *name, UINT size);
 void UINTToIP(IP *ip, UINT value);
 UINT IPToUINT(IP *ip);
 SOCK *NewSock();
@@ -261,8 +255,7 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 void InitUdpSocketBufferSize(SOCKET s);
 void QuerySocketInformation(SOCK *sock);
 void Disconnect(SOCK *sock);
-SOCK *Listen(UINT port);
-SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip, bool ipv4_only);
+SOCK *Listen(UINT port, IP *listen_ip, bool ipv4_only);
 SOCK *Accept(SOCK *sock);
 bool IsTransientAcceptError(UINT err);
 UINT Send(SOCK *sock, void *data, UINT size, bool secure);
@@ -365,9 +358,6 @@ LIST *GetHostIPAddressList();
 LIST *CloneIPAddressList(LIST *o);
 void FreeHostIPAddressList(LIST *o);
 void AddHostIPAddressToList(LIST *o, IP *ip);
-
-void SetCurrentGlobalIP(IP *ip, bool ipv6);
-bool GetCurrentGlobalIP(IP *ip, bool ipv6);
 
 bool IsIPPrivate(IP *ip);
 bool IsIPMyHost(IP *ip);

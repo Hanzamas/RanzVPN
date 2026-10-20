@@ -41,10 +41,7 @@ struct LISTENER
 	UINT64 AcceptErrorLogTick;	// Tick64 of the last log of a transient accept() error, 0 if none yet
 	UINT NumAcceptErrors;		// Transient accept() errors since that log
 
-	THREAD_PROC *ThreadProc;
-	bool LocalOnly;
 	bool DisableDos;
-	bool EnableConditionalAccept;
 };
 
 struct TCP_ACCEPTED_PARAM
@@ -53,8 +50,7 @@ struct TCP_ACCEPTED_PARAM
 	SOCK *s;
 };
 
-LISTENER *NewListener(CEDAR *cedar, UINT proto, UINT port);
-LISTENER *NewListenerEx5(CEDAR *cedar, UINT proto, UINT port, THREAD_PROC *proc, void *thread_param, bool local_only, bool enable_ca);
+LISTENER *NewListener(CEDAR *cedar, UINT port);
 void ReleaseListener(LISTENER *r);
 void StopListener(LISTENER *r);
 bool WaitListenerBind(LISTENER *r, UINT timeout);
@@ -66,6 +62,7 @@ void SetMaxConnectionsPerIp(UINT num);
 UINT GetMaxUnestablishedConnections();
 void SetMaxUnestablishedConnections(UINT num);
 
+int CompareDos(void *p1, void *p2);
 DOS *SearchDosList(LISTENER *r, IP *ip);
 void RefreshDosList(LISTENER *r);
 bool CheckDosAttack(LISTENER *r, SOCK *s);
