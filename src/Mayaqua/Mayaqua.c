@@ -475,11 +475,11 @@ wchar_t *GetCommandLineUniStr()
 {
 	if (uni_cmdline == NULL)
 	{
-		return UniCopyStr(L"");
+		return CopyUniStr(L"");
 	}
 	else
 	{
-		return UniCopyStr(uni_cmdline);
+		return CopyUniStr(uni_cmdline);
 	}
 }
 

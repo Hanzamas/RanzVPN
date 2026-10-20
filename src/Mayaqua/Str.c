@@ -594,55 +594,7 @@ TOKEN_LIST *ListToTokenList(LIST *o)
 
 void FreeStrList(LIST *o)
 {
-	UINT i;
-	if (o == NULL)
-	{
-		return;
-	}
-
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		char *s = LIST_DATA(o, i);
-		Free(s);
-	}
-
-	ReleaseList(o);
-}
-
-LIST *StrToStrList(char *str, UINT size)
-{
-	LIST *o;
-	char *tmp;
-	UINT tmp_size;
-	UINT i;
-	if (str == NULL)
-	{
-		return NULL;
-	}
-
-	o = NewListFast(NULL);
-
-	i = 0;
-	while (true)
-	{
-		if (i >= size)
-		{
-			break;
-		}
-		if (*str == 0)
-		{
-			break;
-		}
-
-		tmp_size = StrSize(str);
-		tmp = ZeroMalloc(tmp_size);
-		StrCpy(tmp, tmp_size, str);
-		Add(o, tmp);
-		str += StrLen(str) + 1;
-		i++;
-	}
-
-	return o;
+	FreeListItems(o);
 }
 
 bool IsNum(char *str)

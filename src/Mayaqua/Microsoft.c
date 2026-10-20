@@ -3673,17 +3673,17 @@ static wchar_t *MsGetSpecialDirW(int id)
 
 	if (SHGetSpecialFolderLocation(NULL, id, &t) != S_OK)
 	{
-		return UniCopyStr(ms->ExeFileDirW);
+		return CopyUniStr(ms->ExeFileDirW);
 	}
 
 	if (SHGetPathFromIDListW(t, tmp) == false)
 	{
-		return UniCopyStr(ms->ExeFileDirW);
+		return CopyUniStr(ms->ExeFileDirW);
 	}
 
 	Win32NukuEnW(tmp, sizeof(tmp), tmp);
 
-	return UniCopyStr(tmp);
+	return CopyUniStr(tmp);
 }
 
 static void MsGetSpecialDirs()
@@ -3742,7 +3742,7 @@ static void MsGetSpecialDirs()
 		UniFormat(tmp, sizeof(tmp), L"%s\\Program Files", ms->WindowsDriveW);
 
 		Free(ms->ProgramFilesDirW);
-		ms->ProgramFilesDirW = UniCopyStr(tmp);
+		ms->ProgramFilesDirW = CopyUniStr(tmp);
 	}
 
 	ms->ProgramFilesDirX86 = MsGetSpecialDir(CSIDL_PROGRAM_FILESX86);
@@ -3762,7 +3762,7 @@ static void MsGetSpecialDirs()
 		UniFormat(tmp, sizeof(tmp), L"%s\\Program Files (x86)", ms->WindowsDriveW);
 
 		Free(ms->ProgramFilesDirX86W);
-		ms->ProgramFilesDirX86W = UniCopyStr(tmp);
+		ms->ProgramFilesDirX86W = CopyUniStr(tmp);
 	}
 
 	ms->ProgramFilesDirX64 = CopyStr(ms->ProgramFilesDir);
@@ -3844,7 +3844,7 @@ void MsInit()
 
 	str_ansi = CopyStr(GetCommandLineA());
 	Trim(str_ansi);
-	str_unicode = UniCopyStr(GetCommandLineW());
+	str_unicode = CopyUniStr(GetCommandLineW());
 	UniTrim(str_unicode);
 
 	SetCommandLineStr(MsCutExeNameFromCommandLine(str_ansi));

@@ -14,15 +14,15 @@
 #include <locale.h>
 #include <wchar.h>
 
-bool UniInChar(wchar_t *string, wchar_t c)
+bool UniIsCharInStr(wchar_t *str, wchar_t c)
 {
-	if (string == NULL)
+	if (str == NULL)
 	{
 		return false;
 	}
 
 	// wcschr also finds the terminator, which is not a character of the string
-	return c != L'\0' && wcschr(string, c) != NULL;
+	return c != L'\0' && wcschr(str, c) != NULL;
 }
 
 static UNI_TOKEN_LIST *UniListToTokenList(LIST *o)
@@ -39,7 +39,7 @@ static UNI_TOKEN_LIST *UniListToTokenList(LIST *o)
 	t->Token = ZeroMalloc(sizeof(wchar_t *) * t->NumTokens);
 	for (i = 0;i < LIST_NUM(o);i++)
 	{
-		t->Token[i] = UniCopyStr(LIST_DATA(o, i));
+		t->Token[i] = CopyUniStr(LIST_DATA(o, i));
 	}
 
 	return t;
@@ -47,19 +47,7 @@ static UNI_TOKEN_LIST *UniListToTokenList(LIST *o)
 
 void UniFreeStrList(LIST *o)
 {
-	UINT i;
-	if (o == NULL)
-	{
-		return;
-	}
-
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		wchar_t *s = LIST_DATA(o, i);
-		Free(s);
-	}
-
-	ReleaseList(o);
+	FreeListItems(o);
 }
 
 wchar_t *UniNormalizeCrlf(wchar_t *str)
@@ -199,10 +187,6 @@ UINT UniStrWidth(wchar_t *str)
 
 bool UniIsEmptyStr(wchar_t *str)
 {
-	return IsEmptyUniStr(str);
-}
-bool IsEmptyUniStr(wchar_t *str)
-{
 	UINT i;
 	if (str == NULL)
 	{
@@ -226,11 +210,6 @@ UNI_TOKEN_LIST *UniNullToken()
 	ret->Token = ZeroMalloc(0);
 
 	return ret;
-}
-
-wchar_t *UniCopyStr(wchar_t *str)
-{
-	return CopyUniStr(str);
 }
 
 UNI_TOKEN_LIST *UniParseCmdLine(wchar_t *str)
@@ -294,7 +273,7 @@ UNI_TOKEN_LIST *UniParseCmdLine(wchar_t *str)
 				tmp[wp++] = 0;
 				wp = 0;
 
-				Insert(o, UniCopyStr(tmp));
+				Insert(o, CopyUniStr(tmp));
 				mode = 0;
 			}
 			else
@@ -332,7 +311,7 @@ UNI_TOKEN_LIST *UniParseCmdLine(wchar_t *str)
 	if (wp != 0)
 	{
 		tmp[wp++] = 0;
-		Insert(o, UniCopyStr(tmp));
+		Insert(o, CopyUniStr(tmp));
 	}
 
 	Free(tmp);
@@ -1145,17 +1124,6 @@ static wchar_t *UniDefaultTokenSplitChars()
 	return L" ,\t\r\n";
 }
 
-static bool UniIsCharInStr(wchar_t *str, wchar_t c)
-{
-	if (str == NULL)
-	{
-		return false;
-	}
-
-	// wcschr also finds the terminator, which is not a character of the string
-	return c != L'\0' && wcschr(str, c) != NULL;
-}
-
 static UNI_TOKEN_LIST *UniParseTokenWithoutNullStr(wchar_t *str, wchar_t *split_chars)
 {
 	LIST *o;
@@ -1201,7 +1169,7 @@ static UNI_TOKEN_LIST *UniParseTokenWithoutNullStr(wchar_t *str, wchar_t *split_
 
 				if ((UniStrLen((wchar_t *)b->Buf)) != 0)
 				{
-					Insert(o, UniCopyStr((wchar_t *)b->Buf));
+					Insert(o, CopyUniStr((wchar_t *)b->Buf));
 				}
 				ClearBuf(b);
 			}
@@ -1415,7 +1383,7 @@ UNI_TOKEN_LIST *UniGetLines(wchar_t *str)
 
 			s = (wchar_t *)b->Buf;
 
-			Add(o, UniCopyStr(s));
+			Add(o, CopyUniStr(s));
 
 			ClearBuf(b);
 		}
@@ -1429,7 +1397,7 @@ UNI_TOKEN_LIST *UniGetLines(wchar_t *str)
 
 	s = (wchar_t *)b->Buf;
 
-	Add(o, UniCopyStr(s));
+	Add(o, CopyUniStr(s));
 
 	ClearBuf(b);
 

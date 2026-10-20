@@ -66,7 +66,6 @@ TOKEN_LIST *ParseCmdLine(char *str);
 TOKEN_LIST *CopyToken(TOKEN_LIST *src);
 TOKEN_LIST *NullToken();
 bool IsNum(char *str);
-LIST *StrToStrList(char *str, UINT size);
 void FreeStrList(LIST *o);
 TOKEN_LIST *ListToTokenList(LIST *o);
 bool IsEmptyStr(char *str);

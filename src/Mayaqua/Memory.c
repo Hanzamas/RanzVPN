@@ -1226,7 +1226,7 @@ bool IsInt64InList(LIST *o, UINT64 i)
 	return false;
 }
 
-void ReleaseIntList(LIST *o)
+void FreeListItems(LIST *o)
 {
 	UINT i;
 	if (o == NULL)
@@ -1236,29 +1236,19 @@ void ReleaseIntList(LIST *o)
 
 	for (i = 0;i < LIST_NUM(o);i++)
 	{
-		UINT *p = LIST_DATA(o, i);
-
-		Free(p);
+		Free(LIST_DATA(o, i));
 	}
 
 	ReleaseList(o);
 }
+
+void ReleaseIntList(LIST *o)
+{
+	FreeListItems(o);
+}
 void ReleaseInt64List(LIST *o)
 {
-	UINT i;
-	if (o == NULL)
-	{
-		return;
-	}
-
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		UINT64 *p = LIST_DATA(o, i);
-
-		Free(p);
-	}
-
-	ReleaseList(o);
+	FreeListItems(o);
 }
 
 void DelInt(LIST *o, UINT i)
@@ -1721,52 +1711,25 @@ BUF *ReadDump(char *filename)
 }
 BUF *ReadDumpWithMaxSize(char *filename, UINT max_size)
 {
-	IO *o;
-	BUF *b;
-	UINT size;
-	void *data;
+	wchar_t *filename_w;
+	BUF *ret;
 	if (filename == NULL)
 	{
 		return NULL;
 	}
 
-	o = FileOpen(filename, false);
-	if (o == NULL)
-	{
-		return NULL;
-	}
+	filename_w = CopyStrToUni(filename);
+	ret = ReadDumpExW(filename_w, true, max_size);
+	Free(filename_w);
 
-	size = FileSize(o);
-
-	if (max_size != 0)
-	{
-		if (size > max_size)
-		{
-			size = max_size;
-		}
-	}
-
-	data = Malloc(size);
-	if (FileRead(o, data, size) == false)
-	{
-		FileClose(o);
-		Free(data);
-		return NULL;
-	}
-	FileClose(o);
-
-	b = NewBuf();
-	WriteBuf(b, data, size);
-	b->Current = 0;
-	Free(data);
-
-	return b;
+	return ret;
 }
 BUF *ReadDumpW(wchar_t *filename)
 {
-	return ReadDumpExW(filename, true);
+	return ReadDumpExW(filename, true, 0);
 }
-BUF *ReadDumpExW(wchar_t *filename, bool read_lock)
+// Read a whole file; max_size 0 reads all of it, else at most max_size bytes
+BUF *ReadDumpExW(wchar_t *filename, bool read_lock, UINT max_size)
 {
 	IO *o;
 	BUF *b;
@@ -1784,6 +1747,15 @@ BUF *ReadDumpExW(wchar_t *filename, bool read_lock)
 	}
 
 	size = FileSize(o);
+
+	if (max_size != 0)
+	{
+		if (size > max_size)
+		{
+			size = max_size;
+		}
+	}
+
 	data = Malloc(size);
 	if (FileRead(o, data, size) == false)
 	{
@@ -1827,47 +1799,27 @@ bool DumpDataW(void *data, UINT size, wchar_t *filename)
 
 bool DumpBuf(BUF *b, char *filename)
 {
-	IO *o;
-	bool ok;
+	wchar_t *filename_w;
+	bool ret;
 	if (b == NULL || filename == NULL)
 	{
 		return false;
 	}
 
-	o = FileCreate(filename);
-	if (o == NULL)
-	{
-		return false;
-	}
-	ok = FileWrite(o, b->Buf, b->Size);
-	if (FileClose(o) == false)
-	{
-		ok = false;
-	}
+	filename_w = CopyStrToUni(filename);
+	ret = DumpBufW(b, filename_w);
+	Free(filename_w);
 
-	return ok;
+	return ret;
 }
 bool DumpBufW(BUF *b, wchar_t *filename)
 {
-	IO *o;
-	bool ok;
-	if (b == NULL || filename == NULL)
+	if (b == NULL)
 	{
 		return false;
 	}
 
-	o = FileCreateW(filename);
-	if (o == NULL)
-	{
-		return false;
-	}
-	ok = FileWrite(o, b->Buf, b->Size);
-	if (FileClose(o) == false)
-	{
-		ok = false;
-	}
-
-	return ok;
+	return DumpDataW(b->Buf, b->Size, filename);
 }
 
 bool DumpBufWIfNecessary(BUF *b, wchar_t *filename)

@@ -178,7 +178,7 @@ bool DumpDataW(void *data, UINT size, wchar_t *filename);
 BUF *ReadDump(char *filename);
 BUF *ReadDumpWithMaxSize(char *filename, UINT max_size);
 BUF *ReadDumpW(wchar_t *filename);
-BUF *ReadDumpExW(wchar_t *filename, bool read_lock);
+BUF *ReadDumpExW(wchar_t *filename, bool read_lock, UINT max_size);
 BUF *MemToBuf(void *data, UINT size);
 bool CompareBuf(BUF *b1, BUF *b2);
 
@@ -218,6 +218,7 @@ bool ReplaceListPointer(LIST *o, void *oldptr, void *newptr);
 void AddIntDistinct(LIST *o, UINT i);
 void AddInt64Distinct(LIST *o, UINT64 i);
 void DelInt(LIST *o, UINT i);
+void FreeListItems(LIST *o);
 void ReleaseIntList(LIST *o);
 void ReleaseInt64List(LIST *o);
 bool IsIntInList(LIST *o, UINT i);

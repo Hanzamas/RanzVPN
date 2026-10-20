@@ -3615,7 +3615,7 @@ static void SiWriteHubCfg(FOLDER *f, HUB *h)
 	{
 		FOLDER *folder = CfgCreateFolder(f, "Message");
 
-		if (IsEmptyUniStr(h->Msg) == false)
+		if (UniIsEmptyStr(h->Msg) == false)
 		{
 			CfgAddUniStr(folder, "MessageText", h->Msg);
 		}

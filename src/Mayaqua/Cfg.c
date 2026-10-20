@@ -218,7 +218,7 @@ bool FileCopyExW(wchar_t *src, wchar_t *dst, bool read_lock)
 		return false;
 	}
 
-	b = ReadDumpExW(src, false);
+	b = ReadDumpExW(src, false, 0);
 	if (b == NULL)
 	{
 		return false;
@@ -241,7 +241,7 @@ static bool FileCopyExWithEofW(wchar_t *src, wchar_t *dst, bool read_lock)
 		return false;
 	}
 
-	b = ReadDumpExW(src, false);
+	b = ReadDumpExW(src, false, 0);
 	if (b == NULL)
 	{
 		return false;

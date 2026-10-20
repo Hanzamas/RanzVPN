@@ -3838,7 +3838,7 @@ static UINT PsConfigGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	{
 		wchar_t *filename = GetParamUniStr(o, "[path]");
 
-		if (IsEmptyUniStr(filename))
+		if (UniIsEmptyStr(filename))
 		{
 			wchar_t tmp[MAX_SIZE];
 			UINT buf_size;
@@ -9486,7 +9486,7 @@ UINT PsUserGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			{
 				AUTHROOTCERT *arc = (AUTHROOTCERT *)t.AuthData;
 
-				if (IsEmptyUniStr(arc->CommonName) == false)
+				if (UniIsEmptyStr(arc->CommonName) == false)
 				{
 					CtInsert(ct, _UU("CMD_UserGet_Column_RootCert_CN"), arc->CommonName);
 				}
@@ -9507,7 +9507,7 @@ UINT PsUserGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			{
 				AUTHNT *an = (AUTHNT *)t.AuthData;
 
-				if (IsEmptyUniStr(an->NtUsername) == false)
+				if (UniIsEmptyStr(an->NtUsername) == false)
 				{
 					CtInsert(ct, _UU("CMD_UserGet_Column_RadiusAlias"), an->NtUsername);
 				}

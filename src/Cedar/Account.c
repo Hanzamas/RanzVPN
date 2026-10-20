@@ -570,7 +570,7 @@ void *CopyAuthData(void *authdata, UINT authtype)
 	case AUTHTYPE_NT:
 		{
 			AUTHNT *ret = ZeroMalloc(sizeof(AUTHNT));
-			ret->NtUsername = UniCopyStr(nt->NtUsername);
+			ret->NtUsername = CopyUniStr(nt->NtUsername);
 			return ret;
 		}
 		break;

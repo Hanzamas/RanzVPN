@@ -63,9 +63,7 @@ char *CopyUniToUtf(wchar_t *unistr);
 char *CopyUniToStr(wchar_t *unistr);
 wchar_t *CopyUtfToUni(char *utfstr);
 UNI_TOKEN_LIST *UniParseCmdLine(wchar_t *str);
-wchar_t *UniCopyStr(wchar_t *str);
 UNI_TOKEN_LIST *UniNullToken();
-bool IsEmptyUniStr(wchar_t *str);
 bool UniIsEmptyStr(wchar_t *str);
 UINT UniStrWidth(wchar_t *str);
 void UniToStr3(wchar_t *str, UINT size, UINT64 value);
@@ -73,7 +71,7 @@ bool UniEndWith(wchar_t *str, wchar_t *key);
 bool UniStartWith(wchar_t *str, wchar_t *key);
 wchar_t *UniNormalizeCrlf(wchar_t *str);
 void UniFreeStrList(LIST *o);
-bool UniInChar(wchar_t *string, wchar_t c);
+bool UniIsCharInStr(wchar_t *str, wchar_t c);
 UNI_TOKEN_LIST *UniGetLines(wchar_t *str);
 
 #endif

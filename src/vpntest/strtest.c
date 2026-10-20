@@ -522,7 +522,7 @@ static void StrTestTrim(STRTEST_CTX *ctx)
 	StrTestCheck(ctx, true, "Trim, TrimLeft and TrimRight do not write to a string they leave as it is", "");
 }
 
-// IsEmptyStr, IsEmptyUniStr, StartWith, UniStartWith, EndWith, UniEndWith, UniTrimLeft, UniTrimRight
+// IsEmptyStr, UniIsEmptyStr, StartWith, UniStartWith, EndWith, UniEndWith, UniTrimLeft, UniTrimRight
 // and UniSoftStrCmp (FND-167: they work in place)
 static void StrTestEdge(STRTEST_CTX *ctx)
 {
@@ -530,8 +530,8 @@ static void StrTestEdge(STRTEST_CTX *ctx)
 
 	StrTestCheck(ctx, IsEmptyStr(NULL) && IsEmptyStr("") && IsEmptyStr(" \t") && IsEmptyStr(" a") == false,
 		"IsEmptyStr is true for NULL, an empty string and blanks, false for a letter", "wrong result");
-	StrTestCheck(ctx, IsEmptyUniStr(NULL) && IsEmptyUniStr(L"") && IsEmptyUniStr(L" \t") && IsEmptyUniStr(L" a") == false,
-		"IsEmptyUniStr is true for NULL, an empty string and blanks, false for a letter", "wrong result");
+	StrTestCheck(ctx, UniIsEmptyStr(NULL) && UniIsEmptyStr(L"") && UniIsEmptyStr(L" \t") && UniIsEmptyStr(L" a") == false,
+		"UniIsEmptyStr is true for NULL, an empty string and blanks, false for a letter", "wrong result");
 
 	StrTestCheck(ctx, StartWith("Abc", "aB") && StartWith("abc", "abc") && StartWith("ab", "abc") == false,
 		"StartWith ignores the case and needs the whole key", "wrong result");

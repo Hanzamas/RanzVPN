@@ -2699,8 +2699,8 @@ static UINT StSetGroup(ADMIN *a, RPC_SET_GROUP *t)
 			{
 				Free(g->RealName);
 				Free(g->Note);
-				g->RealName = UniCopyStr(t->Realname);
-				g->Note = UniCopyStr(t->Note);
+				g->RealName = CopyUniStr(t->Realname);
+				g->Note = CopyUniStr(t->Note);
 			}
 			Unlock(g->lock);
 
@@ -3099,8 +3099,8 @@ static UINT StSetUser(ADMIN *a, RPC_SET_USER *t)
 				{
 					Free(u->RealName);
 					Free(u->Note);
-					u->RealName = UniCopyStr(t->Realname);
-					u->Note = UniCopyStr(t->Note);
+					u->RealName = CopyUniStr(t->Realname);
+					u->Note = CopyUniStr(t->Note);
 					SetUserAuthData(u, t->AuthType, CopyAuthData(t->AuthData, t->AuthType));
 					u->ExpireTime = t->ExpireTime;
 					u->UpdatedTime = SystemTime64();
