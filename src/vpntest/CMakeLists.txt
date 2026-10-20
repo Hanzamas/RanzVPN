@@ -63,6 +63,9 @@ target_sources(vpntest PRIVATE tablecache.c)
 # Named registry test of FND-64 (#121)
 target_sources(vpntest PRIVATE registry.c)
 
+# Named OS information test of FND-203 (#166)
+target_sources(vpntest PRIVATE osinfo.c)
+
 set_target_properties(vpntest
   PROPERTIES
   ARCHIVE_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"

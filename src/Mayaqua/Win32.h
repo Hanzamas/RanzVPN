@@ -31,6 +31,7 @@ void Win32GetMemInfo(MEMINFO *info);
 
 const OSVERSIONINFOEXW *Win32GetOsVersion();
 UINT Win32GetOsType();
+UINT Win32ClassifyOs(UINT major, UINT build, bool server, char **name);
 void Win32NukuEn(char *dst, UINT size, char *src);
 void Win32NukuEnW(wchar_t *dst, UINT size, wchar_t *src);
 void Win32GetDirFromPath(char *dst, UINT size, char *src);

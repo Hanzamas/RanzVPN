@@ -506,36 +506,56 @@ UINT Win32GetNumberOfCpuInner()
 	return ret;
 }
 
-// Product name of an OS type
-static char *OsTypeToStr(UINT type)
+// A Windows release: Windows 10 and later all report version 10.0, so only the build number tells them apart
+typedef struct WIN32_OS_RELEASE
 {
-	switch (type)
+	UINT Build;							// First build number of the release
+	bool Server;						// Windows Server (product type other than VER_NT_WORKSTATION)
+	UINT OsType;						// OSTYPE_* of the release
+	char *Name;							// Product name
+} WIN32_OS_RELEASE;
+
+// Windows releases, newest first within each product type; the build 0 rows catch every older build
+static const WIN32_OS_RELEASE win32_os_releases[] =
+{
+	{26100, true, OSTYPE_WINDOWS_SERVER_11, "Windows Server 2025"},
+	{20348, true, OSTYPE_WINDOWS_SERVER_11, "Windows Server 2022"},
+	{17763, true, OSTYPE_WINDOWS_SERVER_11, "Windows Server 2019"},
+	{0, true, OSTYPE_WINDOWS_SERVER_10, "Windows Server 2016"},
+	{22000, false, OSTYPE_WINDOWS_11, "Windows 11"},
+	{0, false, OSTYPE_WINDOWS_10, "Windows 10"},
+};
+
+// OS type and product name of a Windows version: 0 and "Unsupported OS by Ranz VPN" when it is older
+// than Windows 10 (a failed version query reads as 0.0). name may be NULL.
+UINT Win32ClassifyOs(UINT major, UINT build, bool server, char **name)
+{
+	UINT i;
+
+	if (major >= 10)
 	{
-	case 0:
-		return "Unsupported OS by Ranz VPN\0\n";
-	case OSTYPE_WINDOWS_10:
-		return "Windows 10\0\n";
-	case OSTYPE_WINDOWS_SERVER_10:
-		return "Windows Server 2016\0\n";
-	case OSTYPE_WINDOWS_11:
-		return "Newer than Windows 10\0\n";
-	case OSTYPE_WINDOWS_SERVER_11:
-		return "Newer than Windows Server 2016\0\n";
-	case OSTYPE_UNIX_UNKNOWN:
-		return "UNIX System\0\n";
-	case OSTYPE_LINUX:
-		return "Linux\0\n";
-	case OSTYPE_SOLARIS:
-		return "Sun Solaris\0\n";
-	case OSTYPE_CYGWIN:
-		return "Gnu Cygwin\0\n";
-	case OSTYPE_BSD:
-		return "BSD System\0\n";
-	case OSTYPE_MACOS_X:
-		return "Mac OS X\0\n";
+		for (i = 0; i < sizeof(win32_os_releases) / sizeof(win32_os_releases[0]); i++)
+		{
+			const WIN32_OS_RELEASE *r = &win32_os_releases[i];
+
+			if (r->Server == server && build >= r->Build)
+			{
+				if (name != NULL)
+				{
+					*name = r->Name;
+				}
+
+				return r->OsType;
+			}
+		}
 	}
 
-	return "Unknown OS";
+	if (name != NULL)
+	{
+		*name = "Unsupported OS by Ranz VPN";
+	}
+
+	return 0;
 }
 
 // The real OS version, read once per process. RtlGetVersion is not subject to the GetVersionEx
@@ -573,6 +593,7 @@ void Win32GetOsInfo(OS_INFO *info)
 	char *keyname = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
 	char *current_type;
 	char *build_lab;
+	char *product_name;
 	char tmp[MAX_SIZE];
 	if (info == NULL)
 	{
@@ -582,10 +603,11 @@ void Win32GetOsInfo(OS_INFO *info)
 	current_type = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "CurrentType");
 	build_lab = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "BuildLab");
 
-	info->OsType = Win32GetOsType();
+	info->OsType = Win32ClassifyOs(os->dwMajorVersion, os->dwBuildNumber,
+		os->wProductType != VER_NT_WORKSTATION, &product_name);
 	info->OsServicePack = os->wServicePackMajor;
 	info->OsSystemName = CopyStr("Windows NT");
-	info->OsProductName = CopyStr(OsTypeToStr(info->OsType));
+	info->OsProductName = CopyStr(product_name);
 	info->OsVendorName = CopyStr("Microsoft Corporation");
 	info->KernelName = CopyStr("NTOS Kernel");
 
@@ -621,19 +643,8 @@ void Win32GetOsInfo(OS_INFO *info)
 UINT Win32GetOsType()
 {
 	const OSVERSIONINFOEXW *os = Win32GetOsVersion();
-	bool workstation = (os->wProductType == VER_NT_WORKSTATION);
 
-	if (os->dwMajorVersion < 10)
-	{
-		return 0;
-	}
-
-	if (os->dwMajorVersion == 10 && os->dwMinorVersion == 0)
-	{
-		return workstation ? OSTYPE_WINDOWS_10 : OSTYPE_WINDOWS_SERVER_10;
-	}
-
-	return workstation ? OSTYPE_WINDOWS_11 : OSTYPE_WINDOWS_SERVER_11;
+	return Win32ClassifyOs(os->dwMajorVersion, os->dwBuildNumber, os->wProductType != VER_NT_WORKSTATION, NULL);
 }
 
 void Win32CloseProcess(void *handle)
