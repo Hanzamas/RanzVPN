@@ -1,0 +1,40 @@
+# Move-only checker for the #29 structural split (.github/scripts/move-only-check.py).
+#
+# Every "split: ", "header: " and "linkage: " commit of the pull request (or of the push) is
+# checked against its parent, and every unmarked commit made after the checker landed is scanned
+# for code that moves verbatim into another file. The fixtures run first, so a broken checker
+# fails here instead of passing everything. Only git and Python are needed, so it runs on Linux
+# and finishes in about a minute, beside the Windows build.
+
+name: move-only
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  move_only:
+    name: move-only check
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: Checker fixtures
+      run: python3 -I .github/scripts/move-only-check-test.py
+    - name: Check the commits
+      env:
+        BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+      run: |
+        # A push that creates the branch has no "before": check the pushed commit alone.
+        if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then BASE="$HEAD~1"; fi
+        python3 -I .github/scripts/move-only-check.py --range "$BASE..$HEAD"
