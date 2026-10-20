@@ -220,97 +220,38 @@ static bool SiIsEmptyPassword(void *hash_password);
 
 CAPSLIST *ScGetCapsEx(RPC *rpc)
 {
-	RPC_SERVER_INFO info;
 	CAPSLIST *t;
+	TOKEN_LIST *names;
 	if (rpc == NULL)
 	{
 		return NULL;
 	}
 
-	Zero(&info, sizeof(info));
-	ScGetServerInfo(rpc, &info);
-
 	t = ZeroMalloc(sizeof(CAPSLIST));
 
 	if (ScGetCaps(rpc, t) != ERR_NO_ERROR)
 	{
-		UINT build;
-
 		Free(t);
-		t = NewCapsList();
-
-		// Caps RPC failed: fall back to guessing from the build number
-		build = info.ServerBuildInt;
-
-		AddCapsInt(t, "i_max_packet_size", 1514);
-
-		AddCapsInt(t, "i_max_hubs", 4096);
-		AddCapsInt(t, "i_max_sessions", 4096);
-
-		AddCapsInt(t, "i_max_users_per_hub", 10000);
-		AddCapsInt(t, "i_max_groups_per_hub", 10000);
-		AddCapsInt(t, "i_max_access_lists", 4096);
-
-		AddCapsInt(t, "i_max_mac_tables", 10000);
-		AddCapsInt(t, "i_max_ip_tables", 10000);
-
-		AddCapsBool(t, "b_standalone", true);
-
-		AddCapsBool(t, "b_support_config_hub", true);
-
-		AddCapsBool(t, "b_vpn_client_connect", true);
-
-		if (build >= 3600)
-		{
-			RPC_BRIDGE_SUPPORT b;
-			Zero(&b, sizeof(b));
-			if (ScGetBridgeSupport(rpc, &b) == ERR_NO_ERROR)
-			{
-				AddCapsBool(t, "b_local_bridge", b.IsBridgeSupportedOs);
-			}
-			else
-			{
-				AddCapsBool(t, "b_local_bridge", false);
-			}
-		}
-		else
-		{
-			AddCapsBool(t, "b_local_bridge", false);
-		}
-
-		AddCapsBool(t, "b_tap_supported", false);
-
-		AddCapsBool(t, "b_support_cascade", true);
-
-		AddCapsBool(t, "b_support_cascade_cert", false);
-		AddCapsBool(t, "b_support_config_log", true);
-		AddCapsBool(t, "b_support_autodelete", false);
+		return NULL;
 	}
 
-	if (true)
+	// Caps the server did not report default to false
+	names = GetTableNameStartWith("CT_b_");
+	if (names != NULL)
 	{
-		TOKEN_LIST *names;
-
-		// Caps the server did not report default to false
-		names = GetTableNameStartWith("CT_b_");
-		if (names != NULL)
+		UINT i;
+		for (i = 0;i < names->NumTokens;i++)
 		{
-			UINT i;
-			for (i = 0;i < names->NumTokens;i++)
+			char *name = names->Token[i] + 3;
+
+			if (GetCaps(t, name) == NULL)
 			{
-				char *name = names->Token[i] + 3;
-
-				if (GetCaps(t, name) == NULL)
-				{
-					AddCapsBool(t, name, false);
-				}
+				AddCapsBool(t, name, false);
 			}
-
-			FreeToken(names);
 		}
-	}
 
-	FreeRpcServerInfo(&info);
+		FreeToken(names);
+	}
 
 	return t;
 }
@@ -805,24 +746,16 @@ static UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t)
 
 static UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t)
 {
-	SERVER *s = a->Server;
 	UINT ret = ERR_NO_ERROR;
 
 	SERVER_ADMIN_ONLY;
 
-	if (GetServerCapsBool(s, "b_support_eth_vlan") == false)
-	{
-		ret = ERR_NOT_SUPPORTED;
-	}
-	else
-	{
-		FreeRpcEnumEthVLan(t);
-		Zero(t, sizeof(RPC_ENUM_ETH_VLAN));
+	FreeRpcEnumEthVLan(t);
+	Zero(t, sizeof(RPC_ENUM_ETH_VLAN));
 
-		if (EnumEthVLanWin32(t) == false)
-		{
-			ret = ERR_INTERNAL_ERROR;
-		}
+	if (EnumEthVLanWin32(t) == false)
+	{
+		ret = ERR_INTERNAL_ERROR;
 	}
 
 	return ret;
@@ -830,16 +763,11 @@ static UINT StEnumEthVLan(ADMIN *a, RPC_ENUM_ETH_VLAN *t)
 
 static UINT StSetEnableEthVLan(ADMIN *a, RPC_TEST *t)
 {
-	SERVER *s = a->Server;
 	UINT ret = ERR_NO_ERROR;
 
 	SERVER_ADMIN_ONLY;
 
-	if (GetServerCapsBool(s, "b_support_eth_vlan") == false)
-	{
-		ret = ERR_NOT_SUPPORTED;
-	}
-	else if (MsIsAdmin() == false)
+	if (MsIsAdmin() == false)
 	{
 		ret = ERR_NOT_ENOUGH_RIGHT;
 	}
@@ -1902,11 +1830,6 @@ static UINT StSetSysLog(ADMIN *a, SYSLOG_SETTING *t)
 
 	SERVER_ADMIN_ONLY;
 
-	if (GetServerCapsBool(s, "b_support_syslog") == false)
-	{
-		return ERR_NOT_SUPPORTED;
-	}
-
 	SiSetSysLogSetting(s, t);
 
 	IncrementServerConfigRevision(s);
@@ -2689,7 +2612,7 @@ static UINT StCreateGroup(ADMIN *a, RPC_SET_GROUP *t)
 			USERGROUP *g = NewGroup(t->Name, t->Realname, t->Note);
 			SetGroupPolicy(g, t->Policy);
 
-			if ((LIST_NUM(h->HubDb->GroupList) >= GetServerCapsInt(a->Server, "i_max_users_per_hub")) ||
+			if ((LIST_NUM(h->HubDb->GroupList) >= MAX_USERS) ||
 				((GetHubAdminOption(h, "max_groups") != 0) && (LIST_NUM(h->HubDb->GroupList) >= GetHubAdminOption(h, "max_groups"))))
 			{
 				ret = ERR_TOO_MANY_GROUP;
@@ -3126,15 +3049,10 @@ static UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
 
 	AcLock(h);
 	{
-		if ((LIST_NUM(h->HubDb->UserList) >= GetServerCapsInt(a->Server, "i_max_users_per_hub")) ||
+		if ((LIST_NUM(h->HubDb->UserList) >= MAX_USERS) ||
 			((GetHubAdminOption(h, "max_users") != 0) && (LIST_NUM(h->HubDb->UserList) >= GetHubAdminOption(h, "max_users"))))
 		{
 			ret = ERR_TOO_MANY_USER;
-		}
-		else if (SiTooManyUserObjectsInServer(s, false))
-		{
-			ret = ERR_TOO_MANY_USERS_CREATED;
-			ALog(a, h, "ERR_128");
 		}
 		else if (AcIsUser(h, t->Name))
 		{
@@ -3294,7 +3212,7 @@ static UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 
 	CHECK_RIGHT;
 
-	if (t->NumAccess > GetServerCapsInt(a->Server, "i_max_access_lists"))
+	if (t->NumAccess > MAX_ACCESSLISTS)
 	{
 		return ERR_TOO_MANY_ACCESS_LIST;
 	}
@@ -3412,7 +3330,7 @@ static UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t)
 		return ERR_NOT_ENOUGH_RIGHT;
 	}
 
-	if ((LIST_NUM(h->AccessList) >= GetServerCapsInt(a->Server, "i_max_access_lists") ||
+	if ((LIST_NUM(h->AccessList) >= MAX_ACCESSLISTS ||
 		(GetHubAdminOption(h, "max_accesslists") != 0) && (LIST_NUM(h->AccessList) >= GetHubAdminOption(h, "max_accesslists"))))
 	{
 		ReleaseHub(h);
@@ -5069,7 +4987,7 @@ static UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
 	}
 	UnlockList(c->HubList);
 
-	if (current_hub_num > GetServerCapsInt(a->Server, "i_max_hubs"))
+	if (current_hub_num > SERVER_MAX_SESSIONS)
 	{
 		return ERR_TOO_MANY_HUBS;
 	}
@@ -5506,8 +5424,8 @@ static UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 	t->AssignedBridgeLicenses = Count(c->AssignedBridgeLicense);
 	t->AssignedClientLicenses = Count(c->AssignedClientLicense);
 
-	t->AssignedBridgeLicensesTotal = a->Server->CurrentAssignedBridgeLicense;
-	t->AssignedClientLicensesTotal = a->Server->CurrentAssignedClientLicense;
+	t->AssignedBridgeLicensesTotal = t->AssignedBridgeLicenses;
+	t->AssignedClientLicensesTotal = t->AssignedClientLicenses;
 
 	t->CurrentTick = Tick64();
 	t->CurrentTime = SystemTime64();

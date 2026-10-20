@@ -487,7 +487,6 @@ struct CEDAR
 	UINT Beta;
 	LOCK *CedarSuperLock;
 	bool DisableIPv6Listener;
-	UINT ClientId;
 	UINT64 BuiltDate;
 	LIST *UdpPortList;
 	UINT CurrentTcpQueueSize;						// Changed only with InterlockedExchangeAdd

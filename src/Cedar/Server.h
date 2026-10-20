@@ -75,16 +75,10 @@ struct SERVER
 	bool Led;
 	bool LedSpecial;
 
-	UINT CurrentAssignedClientLicense;
-	UINT CurrentAssignedBridgeLicense;
-
 
 	LOCK *SyslogLock;
 	SYSLOG_SETTING SyslogSetting;
 	SLOG *Syslog;
-
-	LOCK *CapsCacheLock;
-	CAPSLIST *CapsListCache;
 
 	THREAD *DeadLockCheckThread;
 	volatile bool HaltDeadLockThread;
@@ -211,8 +205,6 @@ void SiWriteTrafficInner(FOLDER *parent, char *name, TRAFFIC_ENTRY *e);
 void SiLoadTrafficInner(FOLDER *parent, char *name, TRAFFIC_ENTRY *e);
 void SiLoadTraffic(FOLDER *parent, char *name, TRAFFIC *t);
 void SiSaverThread(THREAD *thread, void *param);
-void SiLoadLicenseManager(SERVER *s, FOLDER *f);
-void SiWriteLicenseManager(FOLDER *f, SERVER *s);
 void SiWriteHubs(FOLDER *f, SERVER *s);
 void SiLoadHubs(SERVER *s, FOLDER *f);
 void SiWriteHubLogCfgEx(FOLDER *f, HUB_LOG *g, bool el_mode);
@@ -264,18 +256,10 @@ void InitCapsList(CAPSLIST *t);
 void InRpcSysLogSetting(SYSLOG_SETTING *t, PACK *p);
 void OutRpcSysLogSetting(PACK *p, SYSLOG_SETTING *t);
 
-void GetServerCaps(SERVER *s, CAPSLIST *t);
-bool GetServerCapsBool(SERVER *s, char *name);
-UINT GetServerCapsInt(SERVER *s, char *name);
 void GetServerCapsMain(SERVER *s, CAPSLIST *t);
 
 void SetGlobalServerFlag(UINT index, UINT value);
 UINT GetGlobalServerFlag(UINT index);
-
-
-bool IsAdminPackSupportedServerProduct(char *name);
-
-bool SiTooManyUserObjectsInServer(SERVER *s, bool oneMore);
 
 #endif
 

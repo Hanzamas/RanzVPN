@@ -762,10 +762,8 @@ bool ServerAccept(CONNECTION *c)
 	USER *loggedin_user_object = NULL;
 	SERVER *server = NULL;
 	UCHAR unique[SHA1_SIZE], unique2[SHA1_SIZE];
-	CEDAR *cedar;
 	RPC_WINVER winver;
 	UINT client_id;
-	bool no_more_users_in_server = false;
 	UCHAR mschap_v2_server_response_20[20];
 	UINT ms_chap_error = 0;
 	bool is_empty_password = false;
@@ -798,11 +796,6 @@ bool ServerAccept(CONNECTION *c)
 	{
 		BinToStr(ctoken_hash_str, sizeof(ctoken_hash_str), c->CToken_Hash, SHA1_SIZE);
 	}
-
-	cedar = c->Cedar;
-
-
-	no_more_users_in_server = SiTooManyUserObjectsInServer(cedar->Server, true);
 
 	c->Status = CONNECTION_STATUS_NEGOTIATION;
 
@@ -864,19 +857,6 @@ bool ServerAccept(CONNECTION *c)
 		goto CLEANUP;
 	}
 
-	{
-		char tmp[20];
-		char *branded_ctos = _SS("BRANDED_C_TO_S");
-		PackGetStr(p, "branded_ctos", tmp, sizeof(tmp));
-
-		if(StrCmpi(method, "login") == 0 && StrLen(branded_ctos) > 0 && StrCmpi(branded_ctos, tmp) != 0)
-		{
-			FreePack(p);
-			c->Err = ERR_BRANDED_C_TO_S;
-			goto CLEANUP;
-		}
-	}
-
 	PackGetStr(p, "client_str", c->ClientStr, sizeof(c->ClientStr));
 	c->ClientVer = PackGetInt(p, "client_ver");
 	c->ClientBuild = PackGetInt(p, "client_build");
@@ -898,14 +878,6 @@ bool ServerAccept(CONNECTION *c)
 		c->Status = CONNECTION_STATUS_USERAUTH;
 
 		c->Type = CONNECTION_TYPE_LOGIN;
-
-		if (no_more_users_in_server)
-		{
-			FreePack(p);
-			c->Err = ERR_TOO_MANY_USER;
-			error_detail = "ERR_TOO_MANY_USER";
-			goto CLEANUP;
-		}
 
 		if (PackGetStr(p, "hello", c->ClientStr, sizeof(c->ClientStr)) == false)
 		{
@@ -1871,12 +1843,6 @@ bool ServerAccept(CONNECTION *c)
 				Inc(s->Cedar->AssignedClientLicense);
 			}
 
-			if (server != NULL)
-			{
-				server->CurrentAssignedClientLicense = Count(s->Cedar->AssignedClientLicense);
-				server->CurrentAssignedBridgeLicense = Count(s->Cedar->AssignedBridgeLicense);
-			}
-
 			if (StrLen(sessionname) != 0)
 			{
 				Free(s->Name);
@@ -2003,14 +1969,6 @@ bool ServerAccept(CONNECTION *c)
 
 		Free(msg);
 
-		{
-			char *branded_cfroms = _SS("BRANDED_C_FROM_S");
-			if(StrLen(branded_cfroms) > 0)
-			{
-				PackAddStr(p, "branded_cfroms", branded_cfroms);
-			}
-		}
-
 		HttpServerSend(c->FirstSock, p);
 		FreePack(p);
 
@@ -2077,12 +2035,6 @@ bool ServerAccept(CONNECTION *c)
 			if (use_client_license)
 			{
 				Dec(s->Cedar->AssignedClientLicense);
-			}
-
-			if (server != NULL)
-			{
-				server->CurrentAssignedClientLicense = Count(s->Cedar->AssignedClientLicense);
-				server->CurrentAssignedBridgeLicense = Count(s->Cedar->AssignedBridgeLicense);
 			}
 		}
 		Unlock(s->Hub->lock);
@@ -2808,15 +2760,6 @@ bool ClientConnect(CONNECTION *c)
 		goto CLEANUP;
 	}
 
-	if (c->Session->ClientOption != NULL && c->Session->ClientOption->FromAdminPack)
-	{
-		if (IsAdminPackSupportedServerProduct(c->ServerStr) == false)
-		{
-			c->Err = ERR_NOT_ADMINPACK_SERVER;
-			goto CLEANUP;
-		}
-	}
-
 	if (c->Halt)
 	{
 		c->Err = ERR_USER_CANCEL;
@@ -2852,18 +2795,6 @@ bool ClientConnect(CONNECTION *c)
 		c->Err = err;
 		c->ClientConnectError_NoSavePassword = PackGetBool(p, "no_save_password");
 		goto CLEANUP;
-	}
-
-	{
-		char tmp[20];
-		char *branded_cfroms = _SS("BRANDED_C_FROM_S");
-		PackGetStr(p, "branded_cfroms", tmp, sizeof(tmp));
-
-		if(StrLen(branded_cfroms) > 0 && StrCmpi(branded_cfroms, tmp) != 0)
-		{
-			c->Err = ERR_BRANDED_C_FROM_S;
-			goto CLEANUP;
-		}
 	}
 
 	if (true)
@@ -3503,7 +3434,7 @@ bool ClientUploadAuth(CONNECTION *c)
 	PackAddStr(p, "hello", c->ClientStr);
 	PackAddInt(p, "version", c->ClientVer);
 	PackAddInt(p, "build", c->ClientBuild);
-	PackAddInt(p, "client_id", c->Cedar->ClientId);
+	PackAddInt(p, "client_id", 0);
 
 	PackAddInt(p, "max_connection", o->MaxConnection);
 	PackAddInt(p, "use_encrypt", o->UseEncrypt == false ? 0 : 1);
@@ -3548,14 +3479,6 @@ bool ClientUploadAuth(CONNECTION *c)
 		PackAddBool(p, "support_hmac_on_udp_acceleration", true);
 		PackAddBool(p, "support_udp_accel_fast_disconnect_detect", true);
 		PackAddInt(p, "udp_acceleration_max_version", 2);
-	}
-
-	{
-		char *branded_ctos = _SS("BRANDED_C_TO_S");
-		if(StrLen(branded_ctos) > 0)
-		{
-			PackAddStr(p, "branded_ctos", branded_ctos);
-		}
 	}
 
 	CreateNodeInfo(&info, c);

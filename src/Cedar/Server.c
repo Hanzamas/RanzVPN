@@ -37,11 +37,6 @@ static volatile UINT global_server_flags[NUM_GLOBAL_SERVER_FLAGS] = {0};
 
 UINT vpn_global_parameters[NUM_GLOBAL_PARAMS] = {0};
 
-bool SiTooManyUserObjectsInServer(SERVER *s, bool oneMore)
-{
-	return false;
-}
-
 typedef struct SI_DEBUG_PROC_LIST
 {
 	UINT Id;
@@ -276,8 +271,6 @@ static void SiCheckDeadLockMain(SERVER *s, UINT timeout)
 		CheckDeadLock(s->HubCreateHistoryList->lock, timeout, "s->HubCreateHistoryList->lock");
 	}
 
-	CheckDeadLock(s->CapsCacheLock, timeout, "s->CapsCacheLock");
-
 	if (cedar != NULL)
 	{
 		if (cedar->HubList != NULL)
@@ -431,12 +424,6 @@ static void SiFreeHubCreateHistory(SERVER *s)
 
 	s->HubCreateHistoryList = NULL;
 }
-
-bool IsAdminPackSupportedServerProduct(char *name)
-{
-	return true;
-}
-
 
 UINT SiGetSysLogSaveStatus(SERVER *s)
 {
@@ -721,97 +708,6 @@ int CmpLogFile(void *p1, void *p2)
 	}
 
 	return StrCmpi(f1->Path, f2->Path);
-}
-
-UINT GetServerCapsInt(SERVER *s, char *name)
-{
-	CAPSLIST t;
-	UINT ret;
-	if (s == NULL || name == NULL)
-	{
-		return 0;
-	}
-
-
-	Lock(s->CapsCacheLock);
-	{
-		Zero(&t, sizeof(t));
-		GetServerCaps(s, &t);
-
-		ret = GetCapsInt(&t, name);
-	}
-	Unlock(s->CapsCacheLock);
-
-	return ret;
-}
-bool GetServerCapsBool(SERVER *s, char *name)
-{
-	return (GetServerCapsInt(s, name) == 0) ? false : true;
-}
-
-static void InitServerCapsCache(SERVER *s)
-{
-	if (s == NULL)
-	{
-		return;
-	}
-
-	s->CapsCacheLock = NewLock();
-	s->CapsListCache = NULL;
-}
-
-static void FreeServerCapsCache(SERVER *s)
-{
-	if (s == NULL)
-	{
-		return;
-	}
-
-	if (s->CapsListCache != NULL)
-	{
-		FreeCapsList(s->CapsListCache);
-		s->CapsListCache = NULL;
-	}
-	DeleteLock(s->CapsCacheLock);
-}
-
-static void DestroyServerCapsCache(SERVER *s)
-{
-	if (s == NULL)
-	{
-		return;
-	}
-
-	Lock(s->CapsCacheLock);
-	{
-		if (s->CapsListCache != NULL)
-		{
-			FreeCapsList(s->CapsListCache);
-			s->CapsListCache = NULL;
-		}
-	}
-	Unlock(s->CapsCacheLock);
-}
-
-void GetServerCaps(SERVER *s, CAPSLIST *t)
-{
-	if (s == NULL || t == NULL)
-	{
-		return;
-	}
-
-	Lock(s->CapsCacheLock);
-	{
-
-		if (s->CapsListCache == NULL)
-		{
-			s->CapsListCache = ZeroMalloc(sizeof(CAPSLIST));
-			GetServerCapsMain(s, s->CapsListCache);
-		}
-
-		Copy(t, s->CapsListCache, sizeof(CAPSLIST));
-	}
-	Unlock(s->CapsCacheLock);
 }
 
 void SetGlobalServerFlag(UINT index, UINT value)
@@ -1690,7 +1586,7 @@ static void SiInitConfiguration(SERVER *s)
 
 bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root)
 {
-	FOLDER *f1, *f2, *f3, *f4, *f6;
+	FOLDER *f1, *f2, *f3, *f4;
 	if (s == NULL || root == NULL)
 	{
 		return false;
@@ -1700,7 +1596,6 @@ bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root)
 	f2 = CfgFindFolder(root, "VirtualHUB");
 	f3 = CfgFindFolder(root, "ListenerList");
 	f4 = CfgFindFolder(root, "LocalBridgeList");
-	f6 = CfgFindFolder(root, "LicenseManager");
 
 	if (f1 == NULL)
 	{
@@ -1723,16 +1618,6 @@ bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root)
 	InitEth();
 
 	s->ConfigRevision = CfgGetInt(root, "ConfigRevision");
-
-	if (f6 != NULL)
-	{
-		if (GetServerCapsBool(s, "b_support_license"))
-		{
-			SiLoadLicenseManager(s, f6);
-		}
-	}
-
-	DestroyServerCapsCache(s);
 
 	SiLoadServerCfg(s, f1);
 
@@ -1943,11 +1828,6 @@ FOLDER *SiWriteConfigurationToCfg(SERVER *s)
 	SiWriteServerCfg(CfgCreateFolder(root, "ServerConfiguration"), s);
 
 	SiWriteHubs(CfgCreateFolder(root, "VirtualHUB"), s);
-
-	if (GetServerCapsBool(s, "b_support_license"))
-	{
-		SiWriteLicenseManager(CfgCreateFolder(root, "LicenseManager"), s);
-	}
 
 	if (s->Led)
 	{
@@ -3606,14 +3486,6 @@ static void SiLoadHubCfg(SERVER *s, FOLDER *f, char *name)
 	}
 }
 
-void SiWriteLicenseManager(FOLDER *f, SERVER *s)
-{
-}
-
-void SiLoadLicenseManager(SERVER *s, FOLDER *f)
-{
-}
-
 void SiWriteHubs(FOLDER *f, SERVER *s)
 {
 	UINT i;
@@ -3778,7 +3650,7 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 		FOLDER *ff;
 
 		ff = CfgFindFolder(f, "SyslogSettings");
-		if (ff != NULL && GetServerCapsBool(s, "b_support_syslog"))
+		if (ff != NULL)
 		{
 			SYSLOG_SETTING set;
 
@@ -4461,8 +4333,6 @@ static void SiCleanupServer(SERVER *s)
 	FreeSysLog(s->Syslog);
 	DeleteLock(s->SyslogLock);
 
-	FreeServerCapsCache(s);
-
 	SiFreeHubCreateHistory(s);
 
 	FreeTinyLog(s->DebugLog);
@@ -4495,8 +4365,6 @@ SERVER *SiNewServer(void)
 	SetEraserCheckInterval(0);
 
 	SiInitHubCreateHistory(s);
-
-	InitServerCapsCache(s);
 
 	Rand(s->MyRandomKey, sizeof(s->MyRandomKey));
 
