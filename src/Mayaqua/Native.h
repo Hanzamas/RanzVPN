@@ -36,6 +36,20 @@ static inline UINT Count(COUNTER *c)
 	return (c == NULL) ? 0 : (UINT)InterlockedCompareExchange((volatile LONG *)&c->c, 0, 0);
 }
 
+// Cross-thread flag (a halt or cancel request that one thread sets and another polls): read with
+// acquire and write with release semantics (ReadAcquire8 and WriteRelease8, winnt.h), so on ARM64
+// the thread that sees the flag also sees everything written before it. The flags stay
+// 'volatile bool'; read and write them only through these two functions
+static inline bool FlagRead(volatile const bool *flag)
+{
+	return ReadAcquire8((CHAR const volatile *)flag) != 0;
+}
+
+static inline void FlagWrite(volatile bool *flag, bool value)
+{
+	WriteRelease8((CHAR volatile *)flag, value ? 1 : 0);
+}
+
 // Event object
 struct EVENT
 {

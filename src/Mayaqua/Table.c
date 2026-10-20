@@ -325,7 +325,7 @@ LIST *LoadLangList()
 					UniReplaceStrEx(e->TitleLocal, sizeof(e->TitleLocal), e->TitleLocal,
 						L"_", L" ", true);
 
-					e->LcidList = NewIntList(false);
+					e->LcidList = NewIntList();
 
 					t2 = ParseToken(t->Token[4], ",");
 					if (t2 != NULL)

@@ -25,8 +25,8 @@
 #define	TOSTR64_SIZE		sizeof("18446744073709551615")
 #define	TOHEX_SIZE			sizeof("ffffffff")
 
-static LOCK *token_lock = NULL;
-static char *default_spliter = " ,\t\r\n";
+// The separators of ParseToken and its two variants when none are given
+#define	DEFAULT_TOKEN_SPLIT_CHARS	" ,\t\r\n"
 
 typedef struct BYTESTR
 {
@@ -145,11 +145,6 @@ UINT HexTo4Bit(char c)
 	}
 }
 
-static char *DefaultTokenSplitChars()
-{
-	return " ,\t\r\n";
-}
-
 // A heap copy of the first len characters of str
 static char *CopyStrPrefix(char *str, UINT len)
 {
@@ -160,7 +155,9 @@ static char *CopyStrPrefix(char *str, UINT len)
 	return ret;
 }
 
-TOKEN_LIST *ParseTokenWithNullStr(char *str, char *split_chars)
+// The tokenizer of both variants. With keep_empty, each separator and the terminator end a token,
+// also an empty one; without it, a run of separators splits once and no token is empty.
+static TOKEN_LIST *ParseTokenCore(char *str, char *split_chars, bool keep_empty)
 {
 	LIST *o;
 	UINT i;
@@ -171,15 +168,25 @@ TOKEN_LIST *ParseTokenWithNullStr(char *str, char *split_chars)
 	}
 	if (split_chars == NULL)
 	{
-		split_chars = DefaultTokenSplitChars();
+		split_chars = DEFAULT_TOKEN_SPLIT_CHARS;
 	}
 
 	o = NewListFast(NULL);
 
-	// Each separator and the terminator end a token, also an empty one
 	while (true)
 	{
-		UINT len = (UINT)strcspn(str, split_chars);
+		UINT len;
+
+		if (keep_empty == false)
+		{
+			str += strspn(str, split_chars);
+			if (str[0] == '\0')
+			{
+				break;
+			}
+		}
+
+		len = (UINT)strcspn(str, split_chars);
 
 		Insert(o, CopyStrPrefix(str, len));
 
@@ -205,52 +212,14 @@ TOKEN_LIST *ParseTokenWithNullStr(char *str, char *split_chars)
 	return t;
 }
 
+TOKEN_LIST *ParseTokenWithNullStr(char *str, char *split_chars)
+{
+	return ParseTokenCore(str, split_chars, true);
+}
+
 TOKEN_LIST *ParseTokenWithoutNullStr(char *str, char *split_chars)
 {
-	LIST *o;
-	UINT i;
-	TOKEN_LIST *t;
-	if (str == NULL)
-	{
-		return NullToken();
-	}
-	if (split_chars == NULL)
-	{
-		split_chars = DefaultTokenSplitChars();
-	}
-
-	o = NewListFast(NULL);
-
-	// A run of separators splits once, and no token is empty
-	while (true)
-	{
-		UINT len;
-
-		str += strspn(str, split_chars);
-		if (str[0] == '\0')
-		{
-			break;
-		}
-
-		len = (UINT)strcspn(str, split_chars);
-
-		Insert(o, CopyStrPrefix(str, len));
-
-		str += len;
-	}
-
-	t = ZeroMalloc(sizeof(TOKEN_LIST));
-	t->NumTokens = LIST_NUM(o);
-	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
-
-	for (i = 0;i < t->NumTokens;i++)
-	{
-		t->Token[i] = LIST_DATA(o, i);
-	}
-
-	ReleaseList(o);
-
-	return t;
+	return ParseTokenCore(str, split_chars, false);
 }
 
 bool InStr(char *str, char *keyword)
@@ -276,10 +245,6 @@ static bool IsSplitChar(char c, char *split_str)
 {
 	UINT i, len;
 	char c_upper = ToUpper(c);
-	if (split_str == NULL)
-	{
-		split_str = default_spliter;
-	}
 
 	len = StrLen(split_str);
 
@@ -301,10 +266,6 @@ bool GetKeyAndValue(char *str, char *key, UINT key_size, char *value, UINT value
 	UINT i, len;
 	char *key_tmp, *value_tmp;
 	bool ret = false;
-	if (split_str == NULL)
-	{
-		split_str = default_spliter;
-	}
 
 	len = StrLen(str);
 
@@ -1023,34 +984,50 @@ BUF *StrToBin(char *str)
 	return b;
 }
 
+// Upper case hex of data straight into str, with one space between the bytes when spaced. Like
+// StrCpy, it writes at most str_size - 1 characters (no limit for str_size 0) and the terminator.
+static void BinToHexStr(char *str, UINT str_size, UCHAR *data, UINT data_size, bool spaced)
+{
+	static const char hex[] = "0123456789ABCDEF";
+	UINT room = (str_size == 0) ? INFINITE : str_size - 1;
+	UINT wp = 0;
+	UINT i;
+
+	for (i = 0;i < data_size && wp < room;i++)
+	{
+		if (spaced && i != 0)
+		{
+			str[wp++] = ' ';
+			if (wp >= room)
+			{
+				break;
+			}
+		}
+
+		str[wp++] = hex[data[i] >> 4];
+		if (wp >= room)
+		{
+			break;
+		}
+
+		str[wp++] = hex[data[i] & 0x0F];
+	}
+
+	str[wp] = '\0';
+}
+
 void BinToStrEx(char *str, UINT str_size, void *data, UINT data_size)
 {
-	char *tmp;
-	UCHAR *buf = (UCHAR *)data;
-	UINT size;
-	UINT i;
 	if (str == NULL || data == NULL)
 	{
 		return;
 	}
 
-	size = data_size * 3 + 1;
-	tmp = ZeroMalloc(size);
-	for (i = 0;i < data_size;i++)
-	{
-		StringCchPrintfA(&tmp[i * 3], size - i * 3, "%02X ", buf[i]);
-	}
-	Trim(tmp);
-	StrCpy(str, str_size, tmp);
-	Free(tmp);
+	BinToHexStr(str, str_size, (UCHAR *)data, data_size, true);
 }
 
 void BinToStr(char *str, UINT str_size, void *data, UINT data_size)
 {
-	char *tmp;
-	UCHAR *buf = (UCHAR *)data;
-	UINT size;
-	UINT i;
 	if (str == NULL || data == NULL)
 	{
 		if (str != NULL)
@@ -1060,14 +1037,7 @@ void BinToStr(char *str, UINT str_size, void *data, UINT data_size)
 		return;
 	}
 
-	size = data_size * 2 + 1;
-	tmp = ZeroMalloc(size);
-	for (i = 0;i < data_size;i++)
-	{
-		StringCchPrintfA(&tmp[i * 2], size - i * 2, "%02X", buf[i]);
-	}
-	StrCpy(str, str_size, tmp);
-	Free(tmp);
+	BinToHexStr(str, str_size, (UCHAR *)data, data_size, false);
 }
 void BinToStrW(wchar_t *str, UINT str_size, void *data, UINT data_size)
 {
@@ -1251,18 +1221,10 @@ static bool CheckStringLibrary()
 
 void InitStringLibrary()
 {
-	token_lock = NewLock();
-
 	if (CheckStringLibrary() == false)
 	{
 		MayaFatalExit(1, "String Library Init Failed.\r\nPlease check your locale settings.");
 	}
-}
-
-void FreeStringLibrary()
-{
-	DeleteLock(token_lock);
-	token_lock = NULL;
 }
 
 UINT ReplaceStri(char *dst, UINT size, char *string, char *old_keyword, char *new_keyword)
@@ -1531,7 +1493,7 @@ void TrimLeft(char *str)
 	skip = (UINT)strspn(str, " \t");
 	if (skip != 0)
 	{
-		StrCpyAllowOverlap(str, 0, str + skip);
+		StrCpy(str, 0, str + skip);
 	}
 }
 
@@ -1886,34 +1848,6 @@ UINT StrCatLeft(char *dst, UINT size, char *src)
 
 UINT StrCpy(char *dst, UINT size, char *src)
 {
-	char *end;
-	if (dst == src)
-	{
-		return StrLen(src);
-	}
-	if (dst == NULL || src == NULL)
-	{
-		if (src == NULL && dst != NULL)
-		{
-			if (size >= 1)
-			{
-				dst[0] = '\0';
-			}
-		}
-		return 0;
-	}
-
-	// Copies at most size - 1 characters and always writes the terminator: a longer src is cut,
-	// and size 1 writes only the terminator
-	end = dst;
-	StringCchCopyExA(dst, StrSafeCch(size), src, &end, NULL, 0);
-
-	KS_INC(KS_STRCPY_COUNT);
-
-	return (UINT)(end - dst);
-}
-UINT StrCpyAllowOverlap(char *dst, UINT size, char *src)
-{
 	size_t cch, len;
 	if (dst == src)
 	{
@@ -1931,8 +1865,10 @@ UINT StrCpyAllowOverlap(char *dst, UINT size, char *src)
 		return 0;
 	}
 
-	// strsafe copies forward only, so Move copies; strsafe bounds the length, which is size - 1
-	// for a src of size characters or more
+	// Copies at most size - 1 characters and always writes the terminator: a longer src is cut,
+	// and size 1 writes only the terminator. src and dst may overlap: strsafe copies forward only,
+	// so Move copies; strsafe bounds the length, which is size - 1 for a src of size characters
+	// or more
 	cch = StrSafeCch(size);
 	if (FAILED(StringCchLengthA(src, cch, &len)))
 	{

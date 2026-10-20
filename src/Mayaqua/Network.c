@@ -865,7 +865,7 @@ bool StrToIP6(IP *ip, char *str)
 
 	if (StartWith(tmp, "[") && EndWith(tmp, "]"))
 	{
-		StrCpyAllowOverlap(tmp, sizeof(tmp), &tmp[1]);
+		StrCpy(tmp, sizeof(tmp), &tmp[1]);
 
 		if (StrLen(tmp) >= 1)
 		{
@@ -1206,7 +1206,7 @@ static void AddIpClient(IP *ip)
 				EvictOldestIpClient();
 			}
 
-			c = ZeroMallocFast(sizeof(IP_CLIENT));
+			c = ZeroMalloc(sizeof(IP_CLIENT));
 			GetRateLimitKey(&c->IpAddress, ip);
 			c->NumConnections = 0;
 
@@ -1401,7 +1401,7 @@ static void Win32CleanupCancel(CANCEL *c)
 
 static CANCEL *Win32NewCancel()
 {
-	CANCEL *c = ZeroMallocFast(sizeof(CANCEL));
+	CANCEL *c = ZeroMalloc(sizeof(CANCEL));
 	c->ref = NewRef();
 	c->SpecialFlag = false;
 	c->hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
@@ -1450,7 +1450,7 @@ static void Win32SetSockEvent(SOCK_EVENT *event)
 
 static SOCK_EVENT *Win32NewSockEvent()
 {
-	SOCK_EVENT *e = ZeroMallocFast(sizeof(SOCK_EVENT));
+	SOCK_EVENT *e = ZeroMalloc(sizeof(SOCK_EVENT));
 
 	e->ref = NewRef();
 	e->hEvent = (void *)CreateEvent(NULL, FALSE, FALSE, NULL);
@@ -4236,7 +4236,7 @@ void CleanupSock(SOCK *s)
 
 SOCK *NewSock()
 {
-	SOCK *s = ZeroMallocFast(sizeof(SOCK));
+	SOCK *s = ZeroMalloc(sizeof(SOCK));
 
 	s->ref = NewRef();
 	s->lock = NewLock();

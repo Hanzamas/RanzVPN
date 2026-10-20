@@ -24,9 +24,10 @@ if(WIN32)
     COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
   )
 
-  # setupapi.lib: SetupCopyOEMInfW and SetupUninstallOEMInf* (SeLowUser.c, Win32Com.c);
-  # ole32.lib and uuid.lib: CoCreateInstance and the INetCfg GUIDs (Win32Com.c)
-  target_link_libraries(cedar PRIVATE comctl32.lib ole32.lib setupapi.lib uuid.lib winhttp.lib)
+  # A Windows library sits on the target whose sources call it. setupapi.lib: SetupCopyOEMInfW and
+  # SetupUninstallOEMInf* (SeLowUser.c, Win32Com.c); ole32.lib and uuid.lib: CoCreateInstance and the
+  # INetCfg GUIDs (Win32Com.c); winhttp.lib: the HTTP client of Protocol.c
+  target_link_libraries(cedar PRIVATE ole32.lib setupapi.lib uuid.lib winhttp.lib)
 endif()
 
 # Build identity: version, build time and builder in one generated BuildInfo.h. Only the files that

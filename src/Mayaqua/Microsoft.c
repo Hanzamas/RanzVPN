@@ -30,7 +30,6 @@
 #define NO_SHLWAPI_GDI
 
 #include <AclAPI.h>
-#include <dwmapi.h>
 #include <iphlpapi.h>
 #include <mmsystem.h>
 #include <nb30.h>
@@ -40,7 +39,6 @@
 #include <ShlObj.h>
 #include <Shlwapi.h>		// PathGetArgsW() of MsCopyProcessArgsW
 #include <SoftPub.h>
-#include <WtsApi32.h>
 
 #if defined(_M_X64) || defined(_M_IX86)
 #include <intrin.h>		// __cpuid() of the VM detection
@@ -2342,9 +2340,10 @@ UINT MsRegReadIntEx2(UINT root, char *keyname, char *valuename, bool force32bit)
 
 	Free(ret);
 
+	// The host is little-endian: only a REG_DWORD_BIG_ENDIAN value needs a swap
 	if (type == REG_DWORD_BIG_ENDIAN)
 	{
-		value = Swap32(value);
+		value = Endian32(value);
 	}
 
 	return value;

@@ -26,7 +26,6 @@ bool g_debug;
 volatile LONG64 kernel_status[NUM_KERNEL_STATUS];
 volatile LONG64 kernel_status_max[NUM_KERNEL_STATUS];
 bool kernel_status_inited = false;
-bool g_little_endian = true;
 
 static OS_INFO *os_info = NULL;
 static UINT init_mayaqua_counter = 0;
@@ -114,23 +113,6 @@ bool MayaquaIsMinimalMode()
 	return minimal_mode;
 }
 
-static void CheckEndian()
-{
-	unsigned short test;
-	UCHAR *buf;
-
-	test = 0x1234;
-	buf = (UCHAR *)&test;
-	if (buf[0] == 0x12)
-	{
-		g_little_endian = false;
-	}
-	else
-	{
-		g_little_endian = true;
-	}
-}
-
 void InitMayaqua(bool memcheck, bool debug)
 {
 	wchar_t tmp[MAX_PATH];
@@ -147,8 +129,6 @@ void InitMayaqua(bool memcheck, bool debug)
 	g_debug = debug;
 	setbuf(stdout, NULL);
 
-	CheckEndian();
-
 	_configthreadlocale(_DISABLE_PER_THREAD_LOCALE);
 
 	setlocale(LC_ALL, "");
@@ -157,10 +137,6 @@ void InitMayaqua(bool memcheck, bool debug)
 
 	// The ETW provider of Debug() (Trace.c), registered first so that it sees the whole start
 	InitTrace();
-
-	srand((UINT)SystemTime64());
-
-	InitFifo();
 
 	InitKernelStatus();
 
@@ -241,8 +217,6 @@ void FreeMayaqua()
 	FreeNetwork();
 
 	FreeTick64();
-
-	FreeStringLibrary();
 
 	FreeThreading();
 

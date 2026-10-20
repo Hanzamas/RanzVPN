@@ -1,7 +1,5 @@
 // Global Constants Header
 
-#pragma warning(disable : 4819)
-
 #ifndef	GLOBAL_CONST_H
 #define	GLOBAL_CONST_H
 
