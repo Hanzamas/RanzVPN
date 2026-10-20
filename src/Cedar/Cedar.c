@@ -172,7 +172,7 @@ void FormatUnsupportedWinVerMsg(wchar_t *buf, UINT size, RPC_WINVER *peer)
 
 void GetWinVer(RPC_WINVER *v)
 {
-	OSVERSIONINFOEX os;
+	const OSVERSIONINFOEXW *os = Win32GetOsVersion();
 
 	if (v == NULL)
 	{
@@ -182,32 +182,15 @@ void GetWinVer(RPC_WINVER *v)
 	Zero(v, sizeof(RPC_WINVER));
 
 	v->IsWindows = true;
-
-	Zero(&os, sizeof(os));
-	os.dwOSVersionInfoSize = sizeof(os);
-	Win32GetVersionExInternal((LPOSVERSIONINFOA)&os);
-
 	v->IsNT = true;
-	v->Build = os.dwBuildNumber;
-	v->ServicePack = os.wServicePackMajor;
+	v->Build = os->dwBuildNumber;
+	v->ServicePack = os->wServicePackMajor;
+	v->IsServer = (os->wProductType != VER_NT_WORKSTATION);
+	v->VerMajor = os->dwMajorVersion;
+	v->VerMinor = os->dwMinorVersion;
 
-	if (os.wProductType != VER_NT_WORKSTATION)
-	{
-		v->IsServer = true;
-	}
-	v->VerMajor = os.dwMajorVersion;
-	v->VerMinor = os.dwMinorVersion;
-
-	if (GetOsInfo()->OsServicePack == 0)
-	{
-		StrCpy(v->Title, sizeof(v->Title), GetOsInfo()->OsProductName);
-	}
-	else
-	{
-		Format(v->Title, sizeof(v->Title), "%s Service Pack %u",
-			GetOsInfo()->OsProductName,
-			GetOsInfo()->OsServicePack);
-	}
+	// Windows 10 and later have no service packs
+	StrCpy(v->Title, sizeof(v->Title), GetOsInfo()->OsProductName);
 	Trim(v->Title);
 
 	if (InStr(GetOsInfo()->OsVersion, "rc") ||

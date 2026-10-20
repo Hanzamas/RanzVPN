@@ -87,7 +87,6 @@ void GetDateStrEx(wchar_t *str, UINT size, SYSTEMTIME *st, LOCALE *locale);
 void GetTimeStrMilli(char *str, UINT size, SYSTEMTIME *st);
 UINT64 SystemToLocal64(UINT64 t);
 UINT64 LocalToSystem64(UINT64 t);
-UINT ThreadId();
 void GetDateTimeStr64(char *str, UINT size, UINT64 sec64);
 void GetDateTimeStr64Uni(wchar_t *str, UINT size, UINT64 sec64);
 void GetDateTimeStrMilli64(char *str, UINT size, UINT64 sec64);
@@ -97,16 +96,13 @@ void GetDateStrEx64(wchar_t *str, UINT size, UINT64 sec64, LOCALE *locale);
 void GetTimeStrMilli64(char *str, UINT size, UINT64 sec64);
 void GetDateTimeStrRFC3339(char *str, UINT size, SYSTEMTIME *st, int timezone_min);
 bool DateTimeStrRFC3339ToSystemTime(SYSTEMTIME *st, char *str);
-bool Run(char *filename, char *arg, bool hide, bool wait);
 void HashInstanceName(char *name, UINT size, char *instance_name);
 INSTANCE *NewSingleInstance(char *instance_name);
 void FreeSingleInstance(INSTANCE *inst);
 void GetSpanStrMilli(char *str, UINT size, UINT64 sec64);
-void GetMemInfo(MEMINFO *info);
 bool GetEnv(char *name, char *data, UINT size);
 __declspec(noreturn) void AbortExit();
 __declspec(noreturn) void AbortExitEx(char *msg);
-void YieldCpu();
 UINT GetNumberOfCpu();
 
 #endif

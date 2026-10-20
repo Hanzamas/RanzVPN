@@ -22,7 +22,6 @@
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Object.h"
-#include "Mayaqua/OS.h"
 #include "Mayaqua/Pack.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
@@ -1881,7 +1880,7 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 			goto CLEANUP;
 		}
 
-		if (req.UseUdpAcceleration && IsZeroIp(&req.UdpAccelClientIp))
+		if (req.UseUdpAcceleration && IsZeroIP(&req.UdpAccelClientIp))
 		{
 			Copy(&req.UdpAccelClientIp, &c->FirstSock->RemoteIP, sizeof(IP));
 		}
@@ -2582,7 +2581,6 @@ static void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
 {
 	SESSION *s;
 	OS_INFO *os;
-	char *product_id;
 	IP ip;
 	wchar_t namew[256];
 	char namea[256];
@@ -2607,9 +2605,7 @@ static void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
 
 	StrCpy(info->ClientOsName, sizeof(info->ClientOsName), os->OsProductName);
 	StrCpy(info->ClientOsVer, sizeof(info->ClientOsVer), os->OsVersion);
-	product_id = OSGetProductId();
-	StrCpy(info->ClientOsProductId, sizeof(info->ClientOsProductId), product_id);
-	Free(product_id);
+	StrCpy(info->ClientOsProductId, sizeof(info->ClientOsProductId), "--");
 
 	Zero(namew, sizeof(namew));
 	MsGetComputerNameFullEx(namew, sizeof(namew), true);
@@ -3189,7 +3185,7 @@ bool ClientConnect(CONNECTION *c)
 				{
 					UINT udp_acceleration_server_port = PackGetInt(p, "udp_acceleration_server_port");
 
-					if (IsZeroIp(&udp_acceleration_server_ip))
+					if (IsZeroIP(&udp_acceleration_server_ip))
 					{
 						Copy(&udp_acceleration_server_ip, &s->RemoteIP, sizeof(IP));
 					}
