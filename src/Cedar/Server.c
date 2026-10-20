@@ -38,203 +38,6 @@ static volatile UINT global_server_flags[NUM_GLOBAL_SERVER_FLAGS] = {0};
 
 UINT vpn_global_parameters[NUM_GLOBAL_PARAMS] = {0};
 
-typedef struct SI_DEBUG_PROC_LIST
-{
-	UINT Id;
-	char *Description;
-	char *Args;
-	SI_DEBUG_PROC *Proc;
-} SI_DEBUG_PROC_LIST;
-
-UINT SiDebug(SERVER *s, RPC_TEST *ret, UINT i, char *str)
-{
-	SI_DEBUG_PROC_LIST proc_list[] =
-	{
-		{1, "Hello World", "<test string>", SiDebugProcHelloWorld},
-		{2, "Terminate process now", "", SiDebugProcExit},
-		{3, "Write memory dumpfile", "", SiDebugProcDump},
-		{4, "Restore process priority", "", SiDebugProcRestorePriority},
-		{5, "Set the process priority high", "", SiDebugProcSetHighPriority},
-		{6, "Get the .exe filename of the process", "", SiDebugProcGetExeFileName},
-		{7, "Crash the process", "", SiDebugProcCrash},
-		{12, "Get the current TCP send queue length", "", SiDebugProcGetCurrentTcpSendQueueLength},
-		{13, "Get the current GetIP thread count", "", SiDebugProcGetCurrentGetIPThreadCount},
-	};
-	UINT num_proc_list = sizeof(proc_list) / sizeof(proc_list[0]);
-	UINT j;
-	UINT ret_value = ERR_NO_ERROR;
-	if (s == NULL || ret == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	if (i == 0)
-	{
-		char tmp[MAX_SIZE];
-		Zero(ret, sizeof(RPC_TEST));
-
-		StrCat(ret->StrValue, sizeof(ret->StrValue),
-			"\n--- Debug Functions List --\n");
-
-		for (j = 0;j < num_proc_list;j++)
-		{
-			SI_DEBUG_PROC_LIST *p = &proc_list[j];
-
-			if (IsEmptyStr(p->Args) == false)
-			{
-				Format(tmp, sizeof(tmp),
-					" %u: %s - Usage: %u /ARG:\"%s\"\n",
-					p->Id, p->Description, p->Id, p->Args);
-			}
-			else
-			{
-				Format(tmp, sizeof(tmp),
-					" %u: %s - Usage: %u\n",
-					p->Id, p->Description, p->Id);
-			}
-
-			StrCat(ret->StrValue, sizeof(ret->StrValue), tmp);
-		}
-	}
-	else
-	{
-		ret_value = ERR_NOT_SUPPORTED;
-
-		for (j = 0;j < num_proc_list;j++)
-		{
-			SI_DEBUG_PROC_LIST *p = &proc_list[j];
-
-			if (p->Id == i)
-			{
-				ret_value = p->Proc(s, str, ret->StrValue, sizeof(ret->StrValue));
-
-				if (ret_value == ERR_NO_ERROR && IsEmptyStr(ret->StrValue))
-				{
-					StrCpy(ret->StrValue, sizeof(ret->StrValue), "Ok.");
-				}
-				break;
-			}
-		}
-	}
-
-	return ret_value;
-}
-UINT SiDebugProcHelloWorld(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size)
-{
-	if (s == NULL || in_str == NULL || ret_str == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	Format(ret_str, ret_str_size, "Hello World %s\n", in_str);
-
-	return ERR_NO_ERROR;
-}
-UINT SiDebugProcExit(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size)
-{
-	if (s == NULL || in_str == NULL || ret_str == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	_exit(1);
-
-	return ERR_NO_ERROR;
-}
-UINT SiDebugProcDump(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size)
-{
-	if (s == NULL || in_str == NULL || ret_str == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	MsWriteMinidump(NULL, NULL);
-
-	return ERR_NO_ERROR;
-}
-UINT SiDebugProcRestorePriority(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size)
-{
-	if (s == NULL || in_str == NULL || ret_str == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	OSRestorePriority();
-
-	return ERR_NO_ERROR;
-}
-UINT SiDebugProcSetHighPriority(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size)
-{
-	if (s == NULL || in_str == NULL || ret_str == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	OSSetHighPriority();
-
-	return ERR_NO_ERROR;
-}
-UINT SiDebugProcGetExeFileName(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size)
-{
-	if (s == NULL || in_str == NULL || ret_str == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	GetExeName(ret_str, ret_str_size);
-
-	return ERR_NO_ERROR;
-}
-UINT SiDebugProcCrash(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size)
-{
-	if (s == NULL || in_str == NULL || ret_str == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	CrashNow();
-
-	return ERR_NO_ERROR;
-}
-UINT SiDebugProcGetCurrentTcpSendQueueLength(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size)
-{
-	char tmp1[64], tmp2[64], tmp3[64];
-	if (s == NULL || in_str == NULL || ret_str == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	ToStr3(tmp1, 0, CedarGetCurrentTcpQueueSize(s->Cedar));
-	ToStr3(tmp2, 0, CedarGetQueueBudgetConsuming(s->Cedar));
-	ToStr3(tmp3, 0, CedarGetFifoBudgetConsuming(s->Cedar));
-
-	Format(ret_str, 0, 
-		"CurrentTcpQueueSize  = %s\n"
-		"QueueBudgetConsuming = %s\n"
-		"FifoBudgetConsuming  = %s\n",
-		tmp1, tmp2, tmp3);
-
-	return ERR_NO_ERROR;
-}
-UINT SiDebugProcGetCurrentGetIPThreadCount(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size)
-{
-	char tmp1[64], tmp2[64];
-	if (s == NULL || in_str == NULL || ret_str == NULL)
-	{
-		return ERR_INVALID_PARAMETER;
-	}
-
-	ToStr3(tmp1, 0, DnsThreadNum());
-	ToStr3(tmp2, 0, DnsThreadNumMax());
-
-	Format(ret_str, 0, 
-		"Current threads = %s\n"
-		"Quota           = %s\n",
-		tmp1, tmp2);
-
-	return ERR_NO_ERROR;
-}
-
 void SiDebugLog(SERVER *s, char *msg)
 {
 	if (s == NULL || msg == NULL)
@@ -780,8 +583,8 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 
 	if (IsBridgeSupported())
 	{
-		const UINT OsType = GetOsInfo()->OsType;
-		AddCapsBool(t, "b_tap_supported", OsType == OSTYPE_LINUX || OsType == OSTYPE_BSD);
+		// No TAP device on Windows; the cap stays for admin clients that read it
+		AddCapsBool(t, "b_tap_supported", false);
 	}
 
 	AddCapsBool(t, "b_support_cascade", true);
@@ -809,12 +612,6 @@ void GetServerCapsMain(SERVER *s, CAPSLIST *t)
 	AddCapsBool(t, "b_support_read_log", true);
 
 	AddCapsBool(t, "b_support_rename_cascade", true);
-
-
-	if (s->Cedar->Beta)
-	{
-		AddCapsBool(t, "b_beta_version", true);
-	}
 
 	AddCapsBool(t, "b_is_in_vm", s->IsInVm);
 
@@ -1499,8 +1296,6 @@ static void SiLoadInitialConfiguration(SERVER *s)
 
 	SiInitDefaultServerCert(s);
 
-	s->Cedar->UsernameHubSeparator = DEFAULT_USERNAME_HUB_SEPARATOR;
-
 	// A fresh config does no reverse DNS or NetBIOS probe on the accept path
 	s->DisableGetHostNameWhenAcceptTcp = true;
 	DisableGetHostNameWhenAcceptInit();
@@ -1775,8 +1570,6 @@ static void SiLoadLocalBridgeCfg(SERVER *s, FOLDER *f)
 {
 	char hub[MAX_SIZE];
 	char nic[MAX_SIZE];
-	bool tapmode = false;
-	UCHAR tapaddr[6];
 	if (s == NULL || f == NULL)
 	{
 		return;
@@ -1795,7 +1588,7 @@ static void SiLoadLocalBridgeCfg(SERVER *s, FOLDER *f)
 	}
 
 	AddLocalBridge(s->Cedar, hub, nic, CfgGetBool(f, "NoPromiscuousMode"), CfgGetBool(f, "MonitorMode"),
-		tapmode, tapaddr, CfgGetBool(f, "LimitBroadcast"));
+		CfgGetBool(f, "LimitBroadcast"));
 }
 
 void SiLoadLocalBridges(SERVER *s, FOLDER *f)
@@ -3634,11 +3427,6 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 			FreeXList(chain);
 		}
 
-		if (CfgGetStr(f, "UsernameHubSeparator", tmp, sizeof(tmp)))
-		{
-			c->UsernameHubSeparator = IsPrintableAsciiChar(tmp[0]) ? tmp[0] : DEFAULT_USERNAME_HUB_SEPARATOR;
-		}
-
 		if (CfgGetStr(f, "CipherName", tmp, sizeof(tmp)))
 		{
 			StrUpper(tmp);
@@ -3850,12 +3638,6 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s)
 		FreeBuf(b);
 
 		SiWriteCertList(CfgCreateFolder(f, "ServerChain"), c->ServerChain);
-
-		{
-			char str[2];
-			StrCpy(str, sizeof(str), &c->UsernameHubSeparator);
-			CfgAddStr(f, "UsernameHubSeparator", str);
-		}
 
 		Lock(c->TrafficLock);
 		{
@@ -4087,8 +3869,6 @@ void StStopServer()
 		server = NULL;
 	}
 	Unlock(server_lock);
-
-	StopCedarLog();
 }
 
 static void SiRebootServerThread(THREAD *thread, void *param)

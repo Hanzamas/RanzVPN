@@ -907,8 +907,6 @@ UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port)
 
 	a->Version = 1;
 
-	a->CreatedTick = Tick64();
-
 	a->IsInCedarPortList = is_in_cedar_port_list;
 
 	a->Now = Tick64();

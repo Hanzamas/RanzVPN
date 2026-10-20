@@ -32,7 +32,6 @@
 static UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t);
 static UINT StSetHubMsg(ADMIN *a, RPC_MSG *t);
 static UINT StGetHubMsg(ADMIN *a, RPC_MSG *t);
-static UINT StDebug(ADMIN *a, RPC_TEST *t);
 static UINT StFlush(ADMIN *a, RPC_TEST *t);
 static UINT StCrash(ADMIN *a, RPC_TEST *t);
 static UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t);
@@ -132,7 +131,6 @@ static void InRpcAccess(ACCESS *a, PACK *p);
 static void OutRpcAccess(PACK *p, ACCESS *a);
 static void InRpcAccessEx(ACCESS *a, PACK *p, UINT index);
 static void OutRpcAccessEx(PACK *p, ACCESS *a, UINT index, UINT total);
-static UINT StTest(ADMIN *a, RPC_TEST *t);
 static UINT AdminCheckPassword(CEDAR *c, void *random, void *secure_password, char *hubname, bool accept_empty_password, bool *is_password_empty);
 static void HashAdminPassword(void *hash, char *password);
 static RPC *AdminConnectEx2(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, void *hashed_password, UINT *err, char *client_name, void *hWnd);
@@ -311,7 +309,6 @@ static PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 
 	if (0) {}
 
-	DECLARE_RPC_EX("Test", RPC_TEST, StTest, InRpcTest, OutRpcTest, FreeRpcTest)
 	DECLARE_RPC_EX("GetServerInfo", RPC_SERVER_INFO, StGetServerInfo, InRpcServerInfo, OutRpcServerInfo, FreeRpcServerInfo)
 	DECLARE_RPC("GetServerStatus", RPC_SERVER_STATUS, StGetServerStatus, InRpcServerStatus, OutRpcServerStatus)
 	DECLARE_RPC("CreateListener", RPC_LISTENER, StCreateListener, InRpcListener, OutRpcListener)
@@ -406,7 +403,6 @@ static PACK *AdminDispatch(RPC *rpc, char *name, PACK *p)
 	DECLARE_RPC("Crash", RPC_TEST, StCrash, InRpcTest, OutRpcTest)
 	DECLARE_RPC_EX("GetAdminMsg", RPC_MSG, StGetAdminMsg, InRpcMsg, OutRpcMsg, FreeRpcMsg)
 	DECLARE_RPC("Flush", RPC_TEST, StFlush, InRpcTest, OutRpcTest)
-	DECLARE_RPC("Debug", RPC_TEST, StDebug, InRpcTest, OutRpcTest)
 	DECLARE_RPC("RegenerateServerCert", RPC_TEST, StRegenerateServerCert, InRpcTest, OutRpcTest)
 
 	if (ok == false)
@@ -531,7 +527,6 @@ DECLARE_SC("SetSysLog", SYSLOG_SETTING, ScSetSysLog, InRpcSysLogSetting, OutRpcS
 DECLARE_SC("GetSysLog", SYSLOG_SETTING, ScGetSysLog, InRpcSysLogSetting, OutRpcSysLogSetting)
 DECLARE_SC("Crash", RPC_TEST, ScCrash, InRpcTest, OutRpcTest)
 DECLARE_SC("Flush", RPC_TEST, ScFlush, InRpcTest, OutRpcTest)
-DECLARE_SC("Debug", RPC_TEST, ScDebug, InRpcTest, OutRpcTest)
 DECLARE_SC("RegenerateServerCert", RPC_TEST, ScRegenerateServerCert, InRpcTest, OutRpcTest)
 
 static UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t)
@@ -629,30 +624,6 @@ static UINT StGetHubMsg(ADMIN *a, RPC_MSG *t)
 	return ret;
 }
 
-static UINT StDebug(ADMIN *a, RPC_TEST *t)
-{
-	SERVER *s = a->Server;
-	UINT ret = ERR_NO_ERROR;
-	RPC_TEST t2;
-
-	SERVER_ADMIN_ONLY;
-
-	Zero(&t2, sizeof(t2));
-
-	ret = SiDebug(s, &t2, t->IntValue, t->StrValue);
-
-	if (ret == ERR_NO_ERROR)
-	{
-		Copy(t, &t2, sizeof(RPC_TEST));
-	}
-	else
-	{
-		Zero(t, sizeof(RPC_TEST));
-	}
-
-	return ret;
-}
-
 static UINT StFlush(ADMIN *a, RPC_TEST *t)
 {
 	SERVER *s = a->Server;
@@ -680,64 +651,20 @@ static UINT StCrash(ADMIN *a, RPC_TEST *t)
 
 static UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t)
 {
-	RPC_WINVER server_ver;
-	RPC_WINVER client_ver;
 	wchar_t winver_msg_client[3800];
-	wchar_t winver_msg_server[3800];
 	UINT tmpsize;
 	wchar_t *tmp;
 
 	FreeRpcMsg(t);
 	Zero(t, sizeof(RPC_MSG));
 
-	GetWinVer(&server_ver);
-	Copy(&client_ver, &a->ClientWinVer, sizeof(RPC_WINVER));
+	FormatUnsupportedWinVerMsg(winver_msg_client, sizeof(winver_msg_client), &a->ClientWinVer);
 
-	Zero(winver_msg_client, sizeof(winver_msg_client));
-	Zero(winver_msg_server, sizeof(winver_msg_server));
-
-	if (IsSupportedWinVer(&client_ver) == false)
-	{
-		SYSTEMTIME st;
-
-		LocalTime(&st);
-
-		UniFormat(winver_msg_client, sizeof(winver_msg_client), _UU("WINVER_ERROR_FORMAT"),
-			_UU("WINVER_ERROR_PC_LOCAL"),
-			client_ver.Title,
-			_UU("WINVER_ERROR_VPNSERVER"),
-			SUPPORTED_WINDOWS_LIST,
-			_UU("WINVER_ERROR_PC_LOCAL"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			st.wYear, st.wMonth);
-	}
-
-	if (IsSupportedWinVer(&server_ver) == false)
-	{
-		SYSTEMTIME st;
-
-		LocalTime(&st);
-
-		UniFormat(winver_msg_server, sizeof(winver_msg_server), _UU("WINVER_ERROR_FORMAT"),
-			_UU("WINVER_ERROR_PC_REMOTE"),
-			server_ver.Title,
-			_UU("WINVER_ERROR_VPNSERVER"),
-			SUPPORTED_WINDOWS_LIST,
-			_UU("WINVER_ERROR_PC_REMOTE"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			_UU("WINVER_ERROR_VPNSERVER"),
-			st.wYear, st.wMonth);
-	}
-
-	tmpsize = UniStrSize(winver_msg_client) + UniStrSize(winver_msg_server) + 10000;
+	tmpsize = UniStrSize(winver_msg_client) + 10000;
 
 	tmp = ZeroMalloc(tmpsize);
 
 	UniStrCat(tmp, tmpsize, winver_msg_client);
-	UniStrCat(tmp, tmpsize, winver_msg_server);
 
 	t->Msg = tmp;
 
@@ -1730,7 +1657,6 @@ static UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 		return ERR_LOCAL_BRIDGE_UNSUPPORTED;
 	}
 
-	if (true)
 	{
 		char tmp[MAX_SIZE];
 		UINT id = Win32EthGetNameAndIdFromCombinedName(tmp, sizeof(tmp), t->DeviceName);
@@ -1742,7 +1668,8 @@ static UINT StAddLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 		}
 	}
 
-	AddLocalBridge(a->Server->Cedar, t->HubName, t->DeviceName, false, false, t->TapMode, NULL, false);
+	// The RPC TapMode field is ignored: there is no TAP device on Windows
+	AddLocalBridge(a->Server->Cedar, t->HubName, t->DeviceName, false, false, false);
 
 	ALog(a, NULL, "LA_ADD_BRIDGE", t->HubName, t->DeviceName);
 
@@ -1776,6 +1703,8 @@ static UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t)
 {
 	UINT i;
 	CEDAR *c;
+
+	SERVER_ADMIN_ONLY;
 
 	if (Win32EthIsSuSupported() == false)
 	{
@@ -1816,7 +1745,7 @@ static UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t)
 			StrCpy(e->DeviceName, sizeof(e->DeviceName), br->DeviceName);
 			StrCpy(e->HubName, sizeof(e->HubName), br->HubName);
 
-			e->TapMode = br->TapMode;
+			// TapMode stays false (zeroed above): no TAP device on Windows
 		}
 	}
 	UnlockList(c->LocalBridgeList);
@@ -5300,6 +5229,8 @@ static UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t)
 {
 	UINT i;
 
+	SERVER_ADMIN_ONLY;
+
 	FreeRpcListenerList(t);
 	Zero(t, sizeof(RPC_LISTENER_LIST));
 
@@ -5380,7 +5311,11 @@ static UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 	}
 	Unlock(c->TrafficLock);
 
-	GetMemInfo(&t->MemInfo);
+	// Hide the memory figures of the host from hub administrators
+	if (a->ServerAdmin)
+	{
+		GetMemInfo(&t->MemInfo);
+	}
 
 	t->NumTcpConnections = t->NumTcpConnectionsLocal = 0;
 	t->NumSessionsTotal = t->NumSessionsLocal = 0;
@@ -5456,7 +5391,6 @@ static UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t)
 	StrCpy(t->ServerBuildInfoString, sizeof(t->ServerBuildInfoString), c->BuildInfo);
 	t->ServerVerInt = c->Version;
 	t->ServerBuildInt = c->Build;
-	GetMachineName(t->ServerHostName, sizeof(t->ServerHostName));
 
 	Zero(&st, sizeof(st));
 	st.wYear = BUILD_DATE_Y;
@@ -5468,10 +5402,27 @@ static UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t)
 
 	t->ServerBuildDate = SystemToUINT64(&st);
 
-	info = GetOsInfo();
-	if (info != NULL)
+	if (a->ServerAdmin)
 	{
-		CopyOsInfo(&t->OsInfo, info);
+		GetMachineName(t->ServerHostName, sizeof(t->ServerHostName));
+
+		info = GetOsInfo();
+		if (info != NULL)
+		{
+			CopyOsInfo(&t->OsInfo, info);
+		}
+	}
+	else
+	{
+		// Hide the host name and the OS from hub administrators; the empty
+		// strings keep the reply's Pack layout the same
+		OS_INFO hidden;
+
+		Zero(&hidden, sizeof(hidden));
+		hidden.OsSystemName = hidden.OsProductName = hidden.OsVendorName = "";
+		hidden.OsVersion = hidden.KernelName = hidden.KernelVersion = "";
+
+		CopyOsInfo(&t->OsInfo, &hidden);
 	}
 
 	return ERR_NO_ERROR;
@@ -8116,13 +8067,6 @@ void InRpcDeleteTable(RPC_DELETE_TABLE *t, PACK *p)
 void OutRpcDeleteTable(PACK *p, RPC_DELETE_TABLE *t)
 {
 	RpcFieldOut(&rpc_delete_table_table, p, t);
-}
-
-static UINT StTest(ADMIN *a, RPC_TEST *t)
-{
-	Format(t->StrValue, sizeof(t->StrValue), "%u", t->IntValue);
-
-	return ERR_NO_ERROR;
 }
 
 static const RPC_FIELD rpc_test_fields[] =

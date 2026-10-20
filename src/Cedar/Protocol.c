@@ -2110,60 +2110,18 @@ bool ServerAccept(CONNECTION *c)
 		{
 			char *utf;
 			wchar_t winver_msg_client[3800];
-			wchar_t winver_msg_server[3800];
 			UINT tmpsize;
 			wchar_t *tmp;
-			RPC_WINVER server_winver;
 
-			GetWinVer(&server_winver);
+			FormatUnsupportedWinVerMsg(winver_msg_client, sizeof(winver_msg_client), &winver);
 
-			Zero(winver_msg_client, sizeof(winver_msg_client));
-			Zero(winver_msg_server, sizeof(winver_msg_server));
-
-			if (IsSupportedWinVer(&winver) == false)
-			{
-				SYSTEMTIME st;
-
-				LocalTime(&st);
-
-				UniFormat(winver_msg_client, sizeof(winver_msg_client), _UU("WINVER_ERROR_FORMAT"),
-					_UU("WINVER_ERROR_PC_LOCAL"),
-					winver.Title,
-					_UU("WINVER_ERROR_VPNSERVER"),
-					SUPPORTED_WINDOWS_LIST,
-					_UU("WINVER_ERROR_PC_LOCAL"),
-					_UU("WINVER_ERROR_VPNSERVER"),
-					_UU("WINVER_ERROR_VPNSERVER"),
-					_UU("WINVER_ERROR_VPNSERVER"),
-					st.wYear, st.wMonth);
-			}
-
-			if (IsSupportedWinVer(&server_winver) == false)
-			{
-				SYSTEMTIME st;
-
-				LocalTime(&st);
-
-				UniFormat(winver_msg_server, sizeof(winver_msg_server), _UU("WINVER_ERROR_FORMAT"),
-					_UU("WINVER_ERROR_PC_REMOTE"),
-					server_winver.Title,
-					_UU("WINVER_ERROR_VPNSERVER"),
-					SUPPORTED_WINDOWS_LIST,
-					_UU("WINVER_ERROR_PC_REMOTE"),
-					_UU("WINVER_ERROR_VPNSERVER"),
-					_UU("WINVER_ERROR_VPNSERVER"),
-					_UU("WINVER_ERROR_VPNSERVER"),
-					st.wYear, st.wMonth);
-			}
-
-			tmpsize = UniStrSize(winver_msg_client) + UniStrSize(winver_msg_server) + UniStrSize(msg) + (16000 + 3000) * sizeof(wchar_t);
+			tmpsize = UniStrSize(winver_msg_client) + UniStrSize(msg) + (16000 + 3000) * sizeof(wchar_t);
 
 			tmp = ZeroMalloc(tmpsize);
 
 			if (IsURLMsg(msg, NULL, 0) == false)
 			{
 				UniStrCat(tmp, tmpsize, winver_msg_client);
-				UniStrCat(tmp, tmpsize, winver_msg_server);
 			}
 			UniStrCat(tmp, tmpsize, msg);
 			

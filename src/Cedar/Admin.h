@@ -719,7 +719,6 @@ UINT ScSetSysLog(RPC *r, SYSLOG_SETTING *t);
 UINT ScGetSysLog(RPC *r, SYSLOG_SETTING *t);
 UINT ScCrash(RPC *r, RPC_TEST *t);
 UINT ScFlush(RPC *r, RPC_TEST *t);
-UINT ScDebug(RPC *r, RPC_TEST *t);
 UINT ScRegenerateServerCert(RPC *r, RPC_TEST *t);
 
 void FreeRpcTest(RPC_TEST *t);

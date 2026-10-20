@@ -224,18 +224,6 @@ void SiGetSysLogSetting(SERVER *s, SYSLOG_SETTING *setting);
 void SiWriteSysLog(SERVER *s, char *typestr, char *hubname, wchar_t *message);
 UINT SiGetSysLogSaveStatus(SERVER *s);
 void SiDebugLog(SERVER *s, char *msg);
-UINT SiDebug(SERVER *s, RPC_TEST *ret, UINT i, char *str);
-UINT SiDebugProcHelloWorld(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcExit(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcDump(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcRestorePriority(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcSetHighPriority(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcGetExeFileName(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcCrash(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcGetCurrentTcpSendQueueLength(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-UINT SiDebugProcGetCurrentGetIPThreadCount(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
-
-typedef UINT (SI_DEBUG_PROC)(SERVER *s, char *in_str, char *ret_str, UINT ret_str_size);
 
 CAPS *NewCaps(char *name, UINT value);
 void FreeCaps(CAPS *c);

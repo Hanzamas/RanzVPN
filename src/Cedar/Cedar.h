@@ -17,9 +17,6 @@
 #define	CEDAR_WIRE_VER			502		// Major * 100 + minor
 #define	CEDAR_WIRE_BUILD		5187
 
-#define	DEFAULT_USERNAME_HUB_SEPARATOR	'@'
-
-
 #define	MAX_ACCOUNT_NAME_LEN		255
 #define	MAX_USERNAME_LEN			255
 #define	MAX_PASSWORD_LEN			255
@@ -406,16 +403,11 @@ struct CEDAR
 	X *ServerX;
 	K *ServerK;
 	LIST *ServerChain;
-	char UsernameHubSeparator;
 	char *CipherList;
 	UINT Version;
 	UINT Build;
 	char *ServerStr;
-	char *MachineName;
 	char *HttpUserAgent;
-	char *HttpAccept;
-	char *HttpAcceptLanguage;
-	char *HttpAcceptEncoding;
 	TRAFFIC *Traffic;
 	LOCK *TrafficLock;
 	COUNTER *CurrentSessions;
@@ -424,18 +416,14 @@ struct CEDAR
 	char *VerString;
 	char *BuildInfo;
 	struct SERVER *Server;
-	UINT64 CreatedTick;
-	struct LOG *DebugLog;
 	UCHAR UniqueId[16];
 	LIST *LocalBridgeList;
 	COUNTER *AssignedClientLicense;
 	COUNTER *AssignedBridgeLicense;
 	LIST *NonSslList;
 	bool NonSslListFullLogged;		// MakeRoomInNoSslList has logged that NonSslList reached RATE_LIMIT_TABLE_MAX
-	UINT Beta;
 	LOCK *CedarSuperLock;
 	bool DisableIPv6Listener;
-	UINT64 BuiltDate;
 	LIST *UdpPortList;
 	UINT CurrentTcpQueueSize;						// Changed only with InterlockedExchangeAdd
 	COUNTER *CurrentActiveLinks;
@@ -468,7 +456,6 @@ void FreeCedar();
 char *GetSvcName(CEDAR *cedar, bool udp, UINT port);
 UINT64 GetTrafficPacketSize(TRAFFIC *t);
 UINT64 GetTrafficPacketNum(TRAFFIC *t);
-void StopCedarLog();
 bool AddNoSsl(CEDAR *c, IP *ip);
 void DecrementNoSsl(CEDAR *c, IP *ip, UINT num_dec);
 bool IsInNoSsl(CEDAR *c, IP *ip);
@@ -476,8 +463,7 @@ void FreeTinyLog(TINY_LOG *t);
 void WriteTinyLog(TINY_LOG *t, char *str);
 TINY_LOG *NewTinyLog();
 void GetWinVer(RPC_WINVER *v);
-bool IsSupportedWinVer(RPC_WINVER *v);
-UINT GetCedarVersionNumber();
+void FormatUnsupportedWinVerMsg(wchar_t *buf, UINT size, RPC_WINVER *peer);
 void CedarAddCurrentTcpQueueSize(CEDAR *c, int diff);
 UINT CedarGetCurrentTcpQueueSize(CEDAR *c);
 void CedarSyncQueueBudget(CEDAR *c, UINT current, UINT *last);

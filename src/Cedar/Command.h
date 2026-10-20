@@ -204,7 +204,6 @@ UINT PsListenerDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsServerPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsCrash(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsFlush(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsDebug(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsCascadeStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsCascadeRename(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsCascadeOnline(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
