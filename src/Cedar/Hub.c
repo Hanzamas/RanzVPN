@@ -1218,10 +1218,99 @@ static void StopHubWatchDog(HUB *h)
 	h->WatchDogEvent = NULL;
 }
 
+// Most due IP table entries one watchdog wake copies out and probes
+#define	HUB_WATCHDOG_SLICE			128
+
+// One due ARP/NS probe target, copied out of the IP table under the MacHashTable lock
+typedef struct HUB_WATCHDOG_PROBE
+{
+	IP Ip;
+	UCHAR MacAddress[6];
+} HUB_WATCHDOG_PROBE;
+
+// Send one ARP request (IPv4) or neighbor solicitation (IPv6) to a known IP table entry
+static void HubWatchDogSendProbe(HUB *hub, HUB_WATCHDOG_PROBE *probe)
+{
+	PKT *packet;
+
+	if (IsIP4(&probe->Ip))
+	{
+		MAC_HEADER *mac = ZeroMalloc(sizeof(MAC_HEADER) + sizeof(ARPV4_HEADER));
+		ARPV4_HEADER *p = (ARPV4_HEADER *)(((UCHAR *)mac) + sizeof(MAC_HEADER));
+
+		Copy(mac->DestAddress, probe->MacAddress, 6);
+		Copy(mac->SrcAddress, hub->HubMacAddr, 6);
+		mac->Protocol = Endian16(MAC_PROTO_ARPV4);
+
+		p->HardwareType = Endian16(ARP_HARDWARE_TYPE_ETHERNET);
+		p->ProtocolType = Endian16(MAC_PROTO_IPV4);
+		p->HardwareSize = 6;
+		p->ProtocolSize = 4;
+		p->Operation = Endian16(ARP_OPERATION_REQUEST);
+		Copy(p->SrcAddress, hub->HubMacAddr, 6);
+		p->SrcIP = IPToUINT(&hub->HubIp);
+		// TargetAddress stays all zero from ZeroMalloc
+		p->TargetIP = IPToUINT(&probe->Ip);
+
+		packet = ParsePacket((UCHAR *)mac, sizeof(MAC_HEADER) + sizeof(ARPV4_HEADER));
+		if (packet != NULL)
+		{
+			StorePacket(hub, NULL, packet);
+		}
+		else
+		{
+			Free(mac);
+		}
+	}
+	else if (IsIP6(&probe->Ip))
+	{
+		IPV6_ADDR ip6addr;
+		MAC_HEADER mac;
+		BUF *ns;
+		BUF *buf;
+
+		if (IPToIPv6Addr(&ip6addr, &probe->Ip) == false)
+		{
+			return;
+		}
+
+		ns = BuildICMPv6NeighborSoliciation(&hub->HubIpV6, &ip6addr, hub->HubMacAddr, ++hub->HubIP6Id, false);
+		if (ns == NULL)
+		{
+			return;
+		}
+
+		Zero(&mac, sizeof(mac));
+		Copy(mac.DestAddress, probe->MacAddress, 6);
+		Copy(mac.SrcAddress, hub->HubMacAddr, 6);
+		mac.Protocol = Endian16(MAC_PROTO_IPV6);
+
+		buf = NewBuf();
+		WriteBuf(buf, &mac, sizeof(MAC_HEADER));
+		WriteBuf(buf, ns->Buf, ns->Size);
+		FreeBuf(ns);
+
+		packet = ParsePacket(buf->Buf, buf->Size);
+		if (packet != NULL)
+		{
+			StorePacket(hub, NULL, packet);
+		}
+		else
+		{
+			Free(buf->Buf);
+		}
+
+		Free(buf);
+	}
+}
+
+// Keeps the IP table fresh by probing silent entries. An entry falls due one HUB_ARP_SEND_INTERVAL after
+// it was last seen or last probed. Probes are spread so that one probe of every entry fits in one interval,
+// never closer than 1 ms apart, and the thread sleeps until the next entry falls due.
 void HubWatchDogThread(THREAD *t, void *param)
 {
-	UINT num_packets_v4 = 0;
-	UINT num_packets_v6 = 0;
+	HUB_WATCHDOG_PROBE probes[HUB_WATCHDOG_SLICE];
+	UINT64 last_sent = 0;
 	HUB *hub;
 	if (t == NULL || param == NULL)
 	{
@@ -1235,192 +1324,114 @@ void HubWatchDogThread(THREAD *t, void *param)
 
 	NoticeThreadInit(t);
 
-	while (true)
+	while (hub->HaltWatchDog == false)
 	{
-		LIST *o;
-		LIST *o2;
-		UINT i, num;
-		UINT interval;
-		UINT wait_time = 100;
-		if (hub->HaltWatchDog)
-		{
-			break;
-		}
-
-		o = NewListFast(NULL);
-		o2 = NewListFast(NULL);
+		UINT64 interval = (UINT64)HUB_ARP_SEND_INTERVAL;
+		UINT64 step = interval;
+		UINT64 window;
+		UINT64 now = Tick64();
+		UINT64 next_due = 0;
+		UINT64 wait_time = interval;
+		UINT i, num = 0;
 
 		LockHashList(hub->MacHashTable);
 		{
-			num = LIST_NUM(hub->IpTable);
-			for (i = 0;i < LIST_NUM(hub->IpTable);i++)
+			UINT num_entries = LIST_NUM(hub->IpTable);
+			bool arp_polling = (hub->Option != NULL && hub->Option->NoArpPolling == false);
+			bool ns_polling = (hub->Option != NULL && hub->Option->NoIPv6AddrPolling == false);
+
+			if (num_entries != 0)
+			{
+				step = MAX(interval / (UINT64)num_entries, (UINT64)1);
+			}
+
+			// Entries falling due within this window ride along with this slice, so a table whose due
+			// times are staggered is not rescanned once per probe
+			window = MIN(step * HUB_WATCHDOG_SLICE, interval / 4);
+
+			for (i = 0;i < num_entries;i++)
 			{
 				IP_TABLE_ENTRY *e = LIST_DATA(hub->IpTable, i);
+				UINT64 due;
 
-				if (e == NULL) continue;
-
-				if ((e->UpdatedTime + (UINT64)(IP_TABLE_EXPIRE_TIME)) > Tick64())
+				if (e == NULL || (e->UpdatedTime + (UINT64)(IP_TABLE_EXPIRE_TIME)) <= now)
 				{
-					if (e->MacAddress[0] != 0xff || e->MacAddress[1] != 0xff || e->MacAddress[2] != 0xff ||
-						e->MacAddress[3] != 0xff || e->MacAddress[4] != 0xff || e->MacAddress[5] != 0xff)
+					continue;
+				}
+
+				if (e->MacAddress[0] == 0xff && e->MacAddress[1] == 0xff && e->MacAddress[2] == 0xff &&
+					e->MacAddress[3] == 0xff && e->MacAddress[4] == 0xff && e->MacAddress[5] == 0xff)
+				{
+					continue;
+				}
+
+				if ((arp_polling == false || IsIP4(&e->Ip) == false) &&
+					(ns_polling == false || IsIP6(&e->Ip) == false))
+				{
+					continue;
+				}
+
+				due = MAX(e->UpdatedTime, e->LastProbeTime) + interval;
+				if (due <= (now + window))
+				{
+					if (num < HUB_WATCHDOG_SLICE)
 					{
-						if (hub->Option != NULL && hub->Option->NoArpPolling == false)
-						{
-							if (IsIP4(&e->Ip))
-							{
-								MAC_HEADER *mac = ZeroMalloc(sizeof(MAC_HEADER) + sizeof(ARPV4_HEADER));
-								ARPV4_HEADER *p = (ARPV4_HEADER *)(((UCHAR *)mac) + sizeof(MAC_HEADER));
+						Copy(&probes[num].Ip, &e->Ip, sizeof(IP));
+						Copy(probes[num].MacAddress, e->MacAddress, 6);
 
-								Copy(mac->DestAddress, e->MacAddress, 6);
-								Copy(mac->SrcAddress, hub->HubMacAddr, 6);
-								mac->Protocol = Endian16(MAC_PROTO_ARPV4);
-
-								p->HardwareType = Endian16(ARP_HARDWARE_TYPE_ETHERNET);
-								p->ProtocolType = Endian16(MAC_PROTO_IPV4);
-								p->HardwareSize = 6;
-								p->ProtocolSize = 4;
-								p->Operation = Endian16(ARP_OPERATION_REQUEST);
-								Copy(p->SrcAddress, hub->HubMacAddr, 6);
-								p->SrcIP = IPToUINT(&hub->HubIp);
-								p->TargetAddress[0] =
-									p->TargetAddress[1] =
-									p->TargetAddress[2] =
-									p->TargetAddress[3] =
-									p->TargetAddress[4] =
-									p->TargetAddress[5] = 0x00;
-								p->TargetIP = IPToUINT(&e->Ip);
-								Insert(o, mac);
-							}
-						}
-
-						if (hub->Option != NULL && hub->Option->NoIPv6AddrPolling == false)
-						{
-							if (IsIP6(&e->Ip))
-							{
-								BUF *buf;
-								IPV6_ADDR ip6addr;
-
-								if (IPToIPv6Addr(&ip6addr, &e->Ip))
-								{
-									buf = BuildICMPv6NeighborSoliciation(&hub->HubIpV6,
-										&ip6addr,
-										hub->HubMacAddr, ++hub->HubIP6Id, false);
-
-									if (buf != NULL)
-									{
-										BUF *buf2 = NewBuf();
-										MAC_HEADER mac;
-
-										Zero(&mac, sizeof(mac));
-
-										Copy(mac.DestAddress, e->MacAddress, 6);
-										Copy(mac.SrcAddress, hub->HubMacAddr, 6);
-										mac.Protocol = Endian16(MAC_PROTO_IPV6);
-
-										WriteBuf(buf2, &mac, sizeof(MAC_HEADER));
-
-										WriteBuf(buf2, buf->Buf, buf->Size);
-
-										FreeBuf(buf);
-
-										Insert(o2, buf2);
-									}
-								}
-							}
-						}
+						// Probes of one slice go out one step apart
+						e->LastProbeTime = now + step * (UINT64)num;
+						due = e->LastProbeTime + interval;
+						num++;
 					}
+					else
+					{
+						// Slice full: come back for the rest after one step
+						due = now;
+					}
+				}
+
+				if (next_due == 0 || due < next_due)
+				{
+					next_due = due;
 				}
 			}
 		}
 		UnlockHashList(hub->MacHashTable);
 
-		if ((LIST_NUM(o) + LIST_NUM(o2)) != 0)
+		for (i = 0;i < num;i++)
 		{
-			interval = HUB_ARP_SEND_INTERVAL / (LIST_NUM(o) + LIST_NUM(o2));
-		}
-		else
-		{
-			interval = HUB_ARP_SEND_INTERVAL;
-		}
-
-		for (i = 0;i < LIST_NUM(o);i++)
-		{
-			PKT *packet;
-			void *p = LIST_DATA(o, i);
-
-			Wait(hub->WatchDogEvent, interval);
-			if (hub->HaltWatchDog)
+			if (i != 0)
 			{
-				for (;i < LIST_NUM(o);i++)
+				Wait(hub->WatchDogEvent, (UINT)step);
+				if (hub->HaltWatchDog)
 				{
-					Free(LIST_DATA(o, i));
+					break;
 				}
-				ReleaseList(o);
-
-				for (i = 0;i < LIST_NUM(o2);i++)
-				{
-					FreeBuf(LIST_DATA(o2, i));
-				}
-				ReleaseList(o2);
-				goto ESCAPE;
 			}
 
-			packet = ParsePacket((UCHAR *)p, sizeof(MAC_HEADER) + sizeof(ARPV4_HEADER));
-			if (packet != NULL)
-			{
-				StorePacket(hub, NULL, packet);
-				num_packets_v4++;
-			}
-			else
-			{
-				Free(p);
-			}
+			HubWatchDogSendProbe(hub, &probes[i]);
+			last_sent = Tick64();
 		}
 
-		for (i = 0;i < LIST_NUM(o2);i++)
+		if (hub->HaltWatchDog)
 		{
-			PKT *packet;
-			BUF *buf = LIST_DATA(o2, i);
-
-			Wait(hub->WatchDogEvent, interval);
-			if (hub->HaltWatchDog)
-			{
-				ReleaseList(o);
-
-				for (;i < LIST_NUM(o2);i++)
-				{
-					FreeBuf(LIST_DATA(o2, i));
-				}
-				ReleaseList(o2);
-				goto ESCAPE;
-			}
-
-			packet = ParsePacket(buf->Buf, buf->Size);
-			if (packet != NULL)
-			{
-				StorePacket(hub, NULL, packet);
-				num_packets_v6++;
-			}
-			else
-			{
-				Free(buf->Buf);
-			}
-
-			Free(buf);
+			break;
 		}
 
-		ReleaseList(o);
-		ReleaseList(o2);
-
-		if (num == 0)
+		// Sleep until the next entry falls due, but at least one step after the last probe. With nothing to
+		// probe, wake once per interval: a new entry falls due no earlier than one interval after it is seen.
+		if (next_due != 0)
 		{
-			wait_time = HUB_ARP_SEND_INTERVAL;
+			UINT64 wake = MAX(next_due, last_sent + step);
+
+			now = Tick64();
+			wait_time = (wake > now ? wake - now : 0);
+			wait_time = MIN(wait_time, interval);
 		}
 
-		Wait(hub->WatchDogEvent, wait_time);
+		Wait(hub->WatchDogEvent, (UINT)wait_time);
 	}
-ESCAPE:
-	return;
 }
 
 void GetAccessListStr(char *str, UINT size, ACCESS *a)
