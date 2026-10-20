@@ -6278,15 +6278,78 @@ char *RecvLine(SOCK *s, UINT max_size)
 	}
 }
 
+// Read cursor over a byte range: a read that does not fit fails and moves nothing
+typedef struct PKT_CURSOR
+{
+	UCHAR *Pos;
+	UINT Left;
+} PKT_CURSOR;
+
+static void PktCursorInit(PKT_CURSOR *c, UCHAR *buf, UINT size)
+{
+	c->Pos = buf;
+	c->Left = size;
+}
+
+// Takes the next size bytes as a cursor of their own; sub NULL skips them
+static bool PktCursorTake(PKT_CURSOR *c, UINT size, PKT_CURSOR *sub)
+{
+	if (size > c->Left)
+	{
+		return false;
+	}
+
+	if (sub != NULL)
+	{
+		PktCursorInit(sub, c->Pos, size);
+	}
+
+	c->Pos += size;
+	c->Left -= size;
+
+	return true;
+}
+
+static bool PktCursorU8(PKT_CURSOR *c, UCHAR *v)
+{
+	UCHAR *p = c->Pos;
+
+	if (PktCursorTake(c, 1, NULL) == false)
+	{
+		return false;
+	}
+
+	*v = p[0];
+
+	return true;
+}
+
+// Big-endian
+static bool PktCursorU16(PKT_CURSOR *c, USHORT *v)
+{
+	UCHAR *p = c->Pos;
+
+	if (PktCursorTake(c, 2, NULL) == false)
+	{
+		return false;
+	}
+
+	*v = (USHORT)((p[0] << 8) | p[1]);
+
+	return true;
+}
+
+// Host name from the server_name extension of a TLS ClientHello at the start of a TCP payload, read in
+// place. The handshake fields are bounded by the record length (not by the handshake length), each
+// extension by the extensions length. The first host_name entry that is not empty up to its first NUL
+// ends the search: it is cut to sni_size - 1 bytes, then spaces and tabs at both ends are dropped.
 bool GetSniNameFromSslPacket(UCHAR *packet_buf, UINT packet_size, char *sni, UINT sni_size)
 {
-	BUF *buf;
-	bool ret = false;
-	UCHAR content_type;
-	USHORT version;
-	USHORT handshake_length;
+	PKT_CURSOR rec, hello, exts, data, name;
+	USHORT version, record_len, hello_type, hello_len, len16, type;
+	UCHAR len8;
 
-	if (packet_buf == NULL || packet_size <= 11)
+	if (packet_buf == NULL || packet_size <= 11 || sni == NULL || sni_size == 0)
 	{
 		return false;
 	}
@@ -6298,189 +6361,74 @@ bool GetSniNameFromSslPacket(UCHAR *packet_buf, UINT packet_size, char *sni, UIN
 		return false;
 	}
 
-	buf = NewBufFromMemory(packet_buf, packet_size);
-
-	if (ReadBuf(buf, &content_type, sizeof(UCHAR)) == sizeof(UCHAR) &&
-	        ReadBuf(buf, &version, sizeof(USHORT)) == sizeof(USHORT) &&
-	        ReadBuf(buf, &handshake_length, sizeof(USHORT)) == sizeof(USHORT))
+	// Record header: content type 0x16 (checked above), version, length
+	PktCursorInit(&rec, packet_buf, packet_size);
+	if (PktCursorTake(&rec, 1, NULL) == false || PktCursorU16(&rec, &version) == false ||
+	        PktCursorU16(&rec, &record_len) == false || version < 0x0301 ||
+	        PktCursorTake(&rec, record_len, &hello) == false)
 	{
-		version = Endian16(version);
-		handshake_length = Endian16(handshake_length);
-
-		if (content_type == 0x16 && version >= 0x0301)
-		{
-			UCHAR *handshake_data = Malloc(handshake_length);
-
-			if (ReadBuf(buf, handshake_data, handshake_length) == handshake_length)
-			{
-				BUF *buf2 = NewBufFromMemory(handshake_data, handshake_length);
-				USHORT handshake_type;
-				USHORT handshake_length_2;
-
-				if (ReadBuf(buf2, &handshake_type, sizeof(USHORT)) == sizeof(USHORT) &&
-				        ReadBuf(buf2, &handshake_length_2, sizeof(USHORT)) == sizeof(USHORT))
-				{
-					handshake_type = Endian16(handshake_type);
-					handshake_length_2 = Endian16(handshake_length_2);
-
-					if (handshake_type == 0x0100 && handshake_length_2 <= (handshake_length - 4))
-					{
-						USHORT version2;
-
-						if (ReadBuf(buf2, &version2, sizeof(USHORT)) == sizeof(USHORT))
-						{
-							version2 = Endian16(version2);
-
-							if (version2 >= 0x0301)
-							{
-								UCHAR rand[32];
-
-								if (ReadBuf(buf2, rand, sizeof(rand)) == sizeof(rand))
-								{
-									UCHAR session_id_len;
-
-									if (ReadBuf(buf2, &session_id_len, sizeof(UCHAR)) == sizeof(UCHAR))
-									{
-										if (ReadBuf(buf2, NULL, session_id_len) == session_id_len)
-										{
-											USHORT cipher_len;
-
-											if (ReadBuf(buf2, &cipher_len, sizeof(USHORT)) == sizeof(USHORT))
-											{
-												cipher_len = Endian16(cipher_len);
-
-												if (ReadBuf(buf2, NULL, cipher_len) == cipher_len)
-												{
-													UCHAR comps_len;
-
-													if (ReadBuf(buf2, &comps_len, sizeof(UCHAR)) == sizeof(UCHAR))
-													{
-														if (ReadBuf(buf2, NULL, comps_len) == comps_len)
-														{
-															USHORT ext_length;
-
-															if (ReadBuf(buf2, &ext_length, sizeof(USHORT)) == sizeof(USHORT))
-															{
-																UCHAR *ext_buf;
-
-																ext_length = Endian16(ext_length);
-
-																ext_buf = Malloc(ext_length);
-
-																if (ReadBuf(buf2, ext_buf, ext_length) == ext_length)
-																{
-																	BUF *ebuf = NewBufFromMemory(ext_buf, ext_length);
-
-																	while (ret == false)
-																	{
-																		USHORT type;
-																		USHORT data_len;
-																		UCHAR *data;
-
-																		if (ReadBuf(ebuf, &type, sizeof(USHORT)) != sizeof(USHORT))
-																		{
-																			break;
-																		}
-
-																		if (ReadBuf(ebuf, &data_len, sizeof(USHORT)) != sizeof(USHORT))
-																		{
-																			break;
-																		}
-
-																		type = Endian16(type);
-																		data_len = Endian16(data_len);
-
-																		data = Malloc(data_len);
-
-																		if (ReadBuf(ebuf, data, data_len) != data_len)
-																		{
-																			Free(data);
-																			break;
-																		}
-
-																		if (type == 0x0000)
-																		{
-																			BUF *dbuf = NewBufFromMemory(data, data_len);
-
-																			USHORT total_len;
-
-																			if (ReadBuf(dbuf, &total_len, sizeof(USHORT)) == sizeof(USHORT))
-																			{
-																				UCHAR c;
-																				total_len = Endian16(total_len);
-
-																				if (ReadBuf(dbuf, &c, sizeof(UCHAR)) == sizeof(UCHAR))
-																				{
-																					if (c == 0)
-																					{
-																						USHORT name_len;
-
-																						if (ReadBuf(dbuf, &name_len, sizeof(USHORT)) == sizeof(USHORT))
-																						{
-																							char *name_buf;
-																							name_len = Endian16(name_len);
-
-																							name_buf = ZeroMalloc(name_len + 1);
-
-																							if (ReadBuf(dbuf, name_buf, name_len) == name_len)
-																							{
-																								if (StrLen(name_buf) >= 1)
-																								{
-																									ret = true;
-
-																									StrCpy(sni, sni_size, name_buf);
-																								}
-																							}
-
-																							Free(name_buf);
-																						}
-																					}
-																				}
-																			}
-
-																			FreeBuf(dbuf);
-																		}
-
-																		Free(data);
-																	}
-
-																	FreeBuf(ebuf);
-																}
-
-																Free(ext_buf);
-															}
-														}
-													}
-												}
-											}
-										}
-									}
-								}
-							}
-						}
-					}
-				}
-
-				FreeBuf(buf2);
-			}
-
-			Free(handshake_data);
-		}
+		return false;
 	}
 
-	FreeBuf(buf);
-
-	if (ret)
+	// Handshake type 1 with the top length byte 0, then a 16-bit length that fits in the record
+	if (PktCursorU16(&hello, &hello_type) == false || PktCursorU16(&hello, &hello_len) == false ||
+	        hello_type != 0x0100 || hello_len > record_len - 4)
 	{
-		Trim(sni);
-
-		if (IsEmptyStr(sni))
-		{
-			ret = false;
-		}
+		return false;
 	}
 
-	return ret;
+	// client_version, random, session_id, cipher_suites, compression_methods, extensions
+	if (PktCursorU16(&hello, &version) == false || version < 0x0301 ||
+	        PktCursorTake(&hello, 32, NULL) == false ||
+	        PktCursorU8(&hello, &len8) == false || PktCursorTake(&hello, len8, NULL) == false ||
+	        PktCursorU16(&hello, &len16) == false || PktCursorTake(&hello, len16, NULL) == false ||
+	        PktCursorU8(&hello, &len8) == false || PktCursorTake(&hello, len8, NULL) == false ||
+	        PktCursorU16(&hello, &len16) == false || PktCursorTake(&hello, len16, &exts) == false)
+	{
+		return false;
+	}
+
+	while (PktCursorU16(&exts, &type) && PktCursorU16(&exts, &len16) && PktCursorTake(&exts, len16, &data))
+	{
+		UINT n, start, end;
+
+		// server_name: list length (not checked), name type 0 (host_name), name length, name
+		if (type != 0x0000 || PktCursorTake(&data, 2, NULL) == false ||
+		        PktCursorU8(&data, &len8) == false || len8 != 0 ||
+		        PktCursorU16(&data, &len16) == false || PktCursorTake(&data, len16, &name) == false)
+		{
+			continue;
+		}
+
+		n = 0;
+		while (n < name.Left && name.Pos[n] != 0)
+		{
+			n++;
+		}
+
+		if (n == 0)
+		{
+			continue;
+		}
+
+		end = MIN(n, sni_size - 1);
+		start = 0;
+		while (start < end && (name.Pos[start] == ' ' || name.Pos[start] == '\t'))
+		{
+			start++;
+		}
+		while (end > start && (name.Pos[end - 1] == ' ' || name.Pos[end - 1] == '\t'))
+		{
+			end--;
+		}
+
+		Copy(sni, name.Pos + start, end - start);
+		sni[end - start] = '\0';
+
+		return end != start;
+	}
+
+	return false;
 }
 
 void SetDhParam(DH_CTX *dh)
