@@ -875,7 +875,14 @@ static int CompareWpAdapter(void *p1, void *p2)
 		return 0;
 	}
 	i = StrCmpi(a1->Title, a2->Title);
-	return i;
+	if (i != 0)
+	{
+		return i;
+	}
+
+	// Same title: the GUID fixes the order, so the "(2)" numbering of identically named NICs is
+	// the same on every run
+	return StrCmpi(a1->Guid, a2->Guid);
 }
 
 bool Win32IsUsingSeLow()
@@ -949,7 +956,7 @@ static LIST *GetEthAdapterListInternal(SU *su, LIST *netclass)
 
 	if (su_adapter_list != NULL)
 	{
-		// SeLow already returns the adapter list sorted
+		// Sort by title, then GUID: the numbering below follows this order
 		Sort(o);
 	}
 
