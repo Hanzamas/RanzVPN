@@ -365,15 +365,10 @@ struct ICMPV6_HEADER_INFO
 #define	DHCP_ID_MESSAGE_TYPE		0x35
 #define	DHCP_ID_REQUEST_IP_ADDRESS	0x32
 #define	DHCP_ID_HOST_NAME			0x0c
-#define	DHCP_ID_SERVER_ADDRESS		0x36
-#define	DHCP_ID_LEASE_TIME			0x33
 #define	DHCP_ID_DOMAIN_NAME			0x0f
-#define	DHCP_ID_SUBNET_MASK			0x01
 #define	DHCP_ID_GATEWAY_ADDR		0x03
 #define	DHCP_ID_DNS_ADDR			0x06
 #define	DHCP_ID_WINS_ADDR			0x2C
-#define	DHCP_ID_CLASSLESS_ROUTE		0x79
-#define	DHCP_ID_MS_CLASSLESS_ROUTE	0xF9
 #define	DHCP_ID_PRIVATE				0xFA
 
 
@@ -480,65 +475,11 @@ struct IKE_HEADER
 #define	IKE_EXCHANGE_TYPE_MAIN				2
 #define IKE_EXCHANGE_TYPE_AGGRESSIVE		4
 
-struct DHCPV4_DATA
-{
-	UCHAR *Data;
-	UINT Size;
-	IP SrcIP;
-	UINT SrcPort;
-	IP DestIP;
-	UINT DestPort;
-	UINT OpCode;
-
-	UCHAR *OptionData;
-	UINT OptionSize;
-
-	DHCPV4_HEADER *Header;
-	LIST *OptionList;
-
-	struct DHCP_OPTION_LIST *ParsedOptionList;
-};
 struct DHCP_OPTION
 {
 	UINT Id;
 	UINT Size;
 	void *Data;
-};
-
-struct DHCP_CLASSLESS_ROUTE
-{
-	bool Exists;
-	IP Network;
-	IP SubnetMask;
-	IP Gateway;
-	UINT SubnetMaskLen;
-};
-
-#define	MAX_DHCP_CLASSLESS_ROUTE_ENTRIES	64
-
-struct DHCP_CLASSLESS_ROUTE_TABLE
-{
-	UINT NumExistingRoutes;
-	DHCP_CLASSLESS_ROUTE Entries[MAX_DHCP_CLASSLESS_ROUTE_ENTRIES];
-};
-
-struct DHCP_OPTION_LIST
-{
-	UINT Opcode;
-
-	UINT RequestedIp;
-	char Hostname[MAX_HOST_NAME_LEN + 1];
-
-	UINT ServerAddress;
-	UINT LeaseTime;
-	char DomainName[MAX_HOST_NAME_LEN + 1];
-	UINT SubnetMask;
-	UINT Gateway;
-	UINT DnsServer;
-	UINT DnsServer2;
-	UINT WinsServer;
-	UINT WinsServer2;
-	DHCP_CLASSLESS_ROUTE_TABLE ClasslessRoute;
 };
 
 struct DHCP_MODIFY_OPTION
@@ -549,21 +490,14 @@ struct DHCP_MODIFY_OPTION
 
 PKT *ParsePacket(UCHAR *buf, UINT size);
 PKT *ParsePacketEx4(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum);
-PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum, bool no_l3_l4_except_icmpv6, bool no_dns);
+PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum, bool no_dns);
 void FreePacket(PKT *p);
-void FreePacketIPv4(PKT *p);
-void FreePacketTagVlan(PKT *p);
-void FreePacketARPv4(PKT *p);
-void FreePacketUDPv4(PKT *p);
-void FreePacketTCPv4(PKT *p);
-void FreePacketICMPv4(PKT *p);
-void FreePacketDHCPv4(PKT *p);
-bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4_except_icmpv6, USHORT vlan_tpid);
-bool ParsePacketL3(PKT *p, UCHAR *buf, UINT size, USHORT proto, bool no_l3, bool no_l3_l4_except_icmpv6);
+bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, USHORT vlan_tpid);
+bool ParsePacketL3(PKT *p, UCHAR *buf, UINT size, USHORT proto, bool no_l3);
 bool ParsePacketARPv4(PKT *p, UCHAR *buf, UINT size);
 bool ParsePacketIPv4(PKT *p, UCHAR *buf, UINT size);
 bool ParsePacketBPDU(PKT *p, UCHAR *buf, UINT size);
-bool ParsePacketTAGVLAN(PKT *p, UCHAR *buf, UINT size, bool no_l3, bool no_l3_l4_except_icmpv6);
+bool ParsePacketTAGVLAN(PKT *p, UCHAR *buf, UINT size, bool no_l3);
 bool ParseICMPv4(PKT *p, UCHAR *buf, UINT size);
 bool ParseTCP(PKT *p, UCHAR *buf, UINT size);
 bool ParseUDP(PKT *p, UCHAR *buf, UINT size);
@@ -573,22 +507,16 @@ void FreeClonePacket(PKT *p);
 
 void CorrectChecksum(PKT *p);
 
-bool ParsePacketIPv6(PKT *p, UCHAR *buf, UINT size, bool no_l3_l4_except_icmpv6);
+bool ParsePacketIPv6(PKT *p, UCHAR *buf, UINT size);
 bool ParsePacketIPv6Header(IPV6_HEADER_PACKET_INFO *info, UCHAR *buf, UINT size);
 void CloneICMPv6Options(ICMPV6_OPTION_LIST *dst, ICMPV6_OPTION_LIST *src);
 void FreeCloneICMPv6Options(ICMPV6_OPTION_LIST *o);
 USHORT CalcChecksumForIPv4(UINT src_ip, UINT dst_ip, UCHAR protocol, void *data, UINT size, UINT real_size);
 USHORT CalcChecksumForIPv6(IPV6_ADDR *src_ip, IPV6_ADDR *dest_ip, UCHAR protocol, void *data, UINT size, UINT real_size);
-BUF *BuildICMPv6Options(ICMPV6_OPTION_LIST *o);
-BUF *BuildIPv6(IPV6_ADDR *dest_ip, IPV6_ADDR *src_ip, UINT id, UCHAR protocol, UCHAR hop_limit, void *data,
-               UINT size);
-BUF *BuildIPv6PacketHeader(IPV6_HEADER_PACKET_INFO *info, UINT *bytes_before_payload);
-BUF *BuildICMPv6NeighborSoliciation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCHAR *my_mac_address, UINT id, bool use_multicast);
+BUF *BuildNeighborSolicitation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCHAR *my_mac_address);
 
 bool VLanRemoveTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vlan_tpid);
 void VLanInsertTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vlan_tpid);
-
-void FreeDHCPv4Data(DHCPV4_DATA *d);
 
 bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss);
 bool AdjustTcpMssL2(UCHAR *src, UINT src_size, UINT mss, USHORT tag_vlan_tpid);
@@ -600,7 +528,6 @@ USHORT IpChecksum(void *buf, UINT size);
 
 void GenMacAddress(UCHAR *mac);
 
-DHCP_OPTION_LIST *ParseDhcpOptionList(void *data, UINT size);
 DHCP_OPTION *GetDhcpOption(LIST *o, UINT id);
 void FreeDhcpOptions(LIST *o);
 LIST *ParseDhcpOptions(void *data, UINT size);
@@ -609,8 +536,6 @@ HTTPLOG *ParseHttpsAccessLog(PKT *pkt);
 
 BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size);
 BUF *DhcpModifyIPv4(DHCP_MODIFY_OPTION *m, void *data, UINT size);
-
-void DhcpParseClasslessRouteData(DHCP_CLASSLESS_ROUTE_TABLE *t, void *data, UINT size);
 
 
 #pragma pack(pop)

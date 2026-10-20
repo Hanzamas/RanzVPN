@@ -63,12 +63,9 @@ void InitThreading();
 void FreeThreading();
 void SetThreadName(UINT thread_id, char *name, void *param);
 
-struct tm;
-time_64t c_mkgmtime(struct tm *tm);
 void TimeToSystem(SYSTEMTIME *st, time_64t t);
-time_64t TmToTime(struct tm *t);
-void TimeToTm(struct tm *t, time_64t time);
-void NormalizeTm(struct tm *t);
+UINT64 FileTimeToUINT64(FILETIME *ft);
+void UINT64ToFileTime(FILETIME *ft, UINT64 t);
 void NormalizeSystem(SYSTEMTIME *st);
 void LocalToSystem(SYSTEMTIME *system, SYSTEMTIME *local);
 void SystemToLocal(SYSTEMTIME *local, SYSTEMTIME *system);
@@ -102,9 +99,7 @@ void GetDateTimeStrRFC3339(char *str, UINT size, SYSTEMTIME *st, int timezone_mi
 bool DateTimeStrRFC3339ToSystemTime(SYSTEMTIME *st, char *str);
 bool Run(char *filename, char *arg, bool hide, bool wait);
 void HashInstanceName(char *name, UINT size, char *instance_name);
-void HashInstanceNameLocal(char *name, UINT size, char *instance_name);
 INSTANCE *NewSingleInstance(char *instance_name);
-INSTANCE *NewSingleInstanceEx(char *instance_name, bool user_local);
 void FreeSingleInstance(INSTANCE *inst);
 void GetSpanStrMilli(char *str, UINT size, UINT64 sec64);
 void GetMemInfo(MEMINFO *info);

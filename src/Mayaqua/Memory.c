@@ -1747,7 +1747,12 @@ BUF *ReadDumpWithMaxSize(char *filename, UINT max_size)
 	}
 
 	data = Malloc(size);
-	FileRead(o, data, size);
+	if (FileRead(o, data, size) == false)
+	{
+		FileClose(o);
+		Free(data);
+		return NULL;
+	}
 	FileClose(o);
 
 	b = NewBuf();
@@ -1780,7 +1785,12 @@ BUF *ReadDumpExW(wchar_t *filename, bool read_lock)
 
 	size = FileSize(o);
 	data = Malloc(size);
-	FileRead(o, data, size);
+	if (FileRead(o, data, size) == false)
+	{
+		FileClose(o);
+		Free(data);
+		return NULL;
+	}
 	FileClose(o);
 
 	b = NewBuf();
@@ -1791,9 +1801,11 @@ BUF *ReadDumpExW(wchar_t *filename, bool read_lock)
 	return b;
 }
 
+// Write the data to a new file; false when the create, the write or the close fails
 bool DumpDataW(void *data, UINT size, wchar_t *filename)
 {
 	IO *o;
+	bool ok;
 	if (filename == NULL || (size != 0 && data == NULL))
 	{
 		return false;
@@ -1804,15 +1816,19 @@ bool DumpDataW(void *data, UINT size, wchar_t *filename)
 	{
 		return false;
 	}
-	FileWrite(o, data, size);
-	FileClose(o);
+	ok = (size == 0 || FileWrite(o, data, size));
+	if (FileClose(o) == false)
+	{
+		ok = false;
+	}
 
-	return true;
+	return ok;
 }
 
 bool DumpBuf(BUF *b, char *filename)
 {
 	IO *o;
+	bool ok;
 	if (b == NULL || filename == NULL)
 	{
 		return false;
@@ -1823,14 +1839,18 @@ bool DumpBuf(BUF *b, char *filename)
 	{
 		return false;
 	}
-	FileWrite(o, b->Buf, b->Size);
-	FileClose(o);
+	ok = FileWrite(o, b->Buf, b->Size);
+	if (FileClose(o) == false)
+	{
+		ok = false;
+	}
 
-	return true;
+	return ok;
 }
 bool DumpBufW(BUF *b, wchar_t *filename)
 {
 	IO *o;
+	bool ok;
 	if (b == NULL || filename == NULL)
 	{
 		return false;
@@ -1841,10 +1861,13 @@ bool DumpBufW(BUF *b, wchar_t *filename)
 	{
 		return false;
 	}
-	FileWrite(o, b->Buf, b->Size);
-	FileClose(o);
+	ok = FileWrite(o, b->Buf, b->Size);
+	if (FileClose(o) == false)
+	{
+		ok = false;
+	}
 
-	return true;
+	return ok;
 }
 
 bool DumpBufWIfNecessary(BUF *b, wchar_t *filename)

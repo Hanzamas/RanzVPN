@@ -70,19 +70,6 @@ void ConvertSafeFileName(char *dst, UINT size, char *src)
 	}
 }
 
-bool GetDiskFree(char *path, UINT64 *free_size, UINT64 *used_size, UINT64 *total_size)
-{
-	bool ret;
-	if (path == NULL)
-	{
-		path = "./";
-	}
-
-	ret = Win32GetDiskFree(path, free_size, used_size, total_size);
-
-	return ret;
-}
-
 static DIRLIST *EnumDirEx(char *dirname, COMPARE *compare)
 {
 	wchar_t *dirname_w = CopyStrToUni(dirname);
@@ -294,9 +281,10 @@ BUF *ReadHamcore(char *name)
 	}
 
 	// A loose file in the "hamcore" folder next to the executable wins over the built-in one
+	char exe_dir[MAX_PATH];
 	char path[MAX_PATH];
-	GetExeDir(path, sizeof(path));
-	Format(path, sizeof(path), "%s/%s/%s", path, HAMCORE_DIR_NAME, name);
+	GetExeDir(exe_dir, sizeof(exe_dir));
+	Format(path, sizeof(path), "%s/%s/%s", exe_dir, HAMCORE_DIR_NAME, name);
 
 	BUF *buf = ReadDump(path);
 	if (buf != NULL)
@@ -429,7 +417,7 @@ void InitGetExeName(char *arg)
 
 	arg_w = CopyUtfToUni(arg);
 
-	Win32GetExeNameW(exe_file_name_w, sizeof(exe_file_name_w));
+	Win32GetExeNameW(exe_file_name_w, ARRAYSIZE(exe_file_name_w));
 
 	UniToStr(exe_file_name, sizeof(exe_file_name), exe_file_name_w);
 
@@ -651,21 +639,24 @@ bool IsFileExistsW(wchar_t *name)
 
 	return IsFileExistsInnerW(tmp);
 }
+// A file exists when it has attributes and is not a directory (a locked file exists too)
 bool IsFileExistsInnerW(wchar_t *name)
 {
-	IO *o;
+	wchar_t name2[MAX_SIZE];
+	DWORD attr;
 	if (name == NULL)
 	{
 		return false;
 	}
 
-	o = FileOpenInnerW(name, false, false);
-	if (o == NULL)
+	UniStrCpy(name2, sizeof(name2), name);
+	ConvertPathW(name2);
+
+	attr = GetFileAttributesW(name2);
+	if (attr == INVALID_FILE_ATTRIBUTES || (attr & FILE_ATTRIBUTE_DIRECTORY) != 0)
 	{
 		return false;
 	}
-
-	FileClose(o);
 
 	return true;
 }
@@ -696,7 +687,7 @@ void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 		wchar_t cd[MAX_SIZE];
 		Zero(cd, sizeof(cd));
 
-		Win32GetCurrentDirW(cd, sizeof(cd));
+		Win32GetCurrentDirW(cd, ARRAYSIZE(cd));
 
 		if (UniStartWith(tmp, L".."))
 		{
@@ -1065,11 +1056,11 @@ bool FileDeleteInnerW(wchar_t *name)
 	return true;
 }
 
-// Seek the file (a 32-bit offset; a hamcore file cannot seek)
-bool FileSeek(IO *o, UINT mode, int offset)
+// Seek the file (a 64-bit offset; a hamcore file cannot seek)
+bool FileSeek(IO *o, UINT mode, INT64 offset)
 {
 	WIN32IO *p;
-	DWORD ret;
+	LARGE_INTEGER distance;
 	if (o == NULL)
 	{
 		return false;
@@ -1086,8 +1077,8 @@ bool FileSeek(IO *o, UINT mode, int offset)
 	}
 
 	p = (WIN32IO *)o->pData;
-	ret = SetFilePointer(p->hFile, (LONG)offset, NULL, mode);
-	if (ret == INVALID_SET_FILE_POINTER || ret == ERROR_NEGATIVE_SEEK)
+	distance.QuadPart = offset;
+	if (SetFilePointerEx(p->hFile, distance, NULL, mode) == FALSE)
 	{
 		return false;
 	}
@@ -1098,8 +1089,7 @@ bool FileSeek(IO *o, UINT mode, int offset)
 UINT64 FileSize64(IO *o)
 {
 	WIN32IO *p;
-	UINT64 ret;
-	DWORD tmp;
+	LARGE_INTEGER size;
 	if (o == NULL)
 	{
 		return 0;
@@ -1111,23 +1101,17 @@ UINT64 FileSize64(IO *o)
 	}
 
 	p = (WIN32IO *)o->pData;
-	tmp = 0;
-	ret = GetFileSize(p->hFile, &tmp);
-	if (ret == (DWORD)-1)
+	if (GetFileSizeEx(p->hFile, &size) == FALSE || size.QuadPart < 0)
 	{
 		return 0;
 	}
 
-	if (tmp != 0)
-	{
-		ret += (UINT64)tmp * 4294967296ULL;
-	}
-
-	return ret;
+	return (UINT64)size.QuadPart;
 }
+// The size clamped to 4 GiB - 1
 UINT FileSize(IO *o)
 {
-	UINT64 size = (UINT)(FileSize64(o));
+	UINT64 size = FileSize64(o);
 
 	if (size >= 4294967296ULL)
 	{
@@ -1215,7 +1199,6 @@ static bool FileGetDate(void *pData, UINT64 *created_time, UINT64 *updated_time,
 {
 	WIN32IO *p;
 	BY_HANDLE_FILE_INFORMATION info;
-	SYSTEMTIME st_create, st_update, st_access;
 	// Validate arguments
 	if (pData == NULL)
 	{
@@ -1231,27 +1214,19 @@ static bool FileGetDate(void *pData, UINT64 *created_time, UINT64 *updated_time,
 		return false;
 	}
 
-	Zero(&st_create, sizeof(st_create));
-	Zero(&st_update, sizeof(st_update));
-	Zero(&st_access, sizeof(st_access));
-
-	FileTimeToSystemTime(&info.ftCreationTime, &st_create);
-	FileTimeToSystemTime(&info.ftLastWriteTime, &st_update);
-	FileTimeToSystemTime(&info.ftLastAccessTime, &st_access);
-
 	if (created_time != NULL)
 	{
-		*created_time = SystemToUINT64(&st_create);
+		*created_time = FileTimeToUINT64(&info.ftCreationTime);
 	}
 
 	if (updated_time != NULL)
 	{
-		*updated_time = SystemToUINT64(&st_update);
+		*updated_time = FileTimeToUINT64(&info.ftLastWriteTime);
 	}
 
 	if (accessed_date != NULL)
 	{
-		*accessed_date = SystemToUINT64(&st_access);
+		*accessed_date = FileTimeToUINT64(&info.ftLastAccessTime);
 	}
 
 	return true;
@@ -1261,7 +1236,6 @@ static bool FileGetDate(void *pData, UINT64 *created_time, UINT64 *updated_time,
 static bool FileSetDate(void *pData, UINT64 created_time, UINT64 updated_time)
 {
 	WIN32IO *p;
-	SYSTEMTIME st_created_time, st_updated_time;
 	FILETIME ft_created_time, ft_updated_time;
 	FILETIME *p_created_time = NULL, *p_updated_time = NULL;
 	// Validate arguments
@@ -1272,23 +1246,16 @@ static bool FileSetDate(void *pData, UINT64 created_time, UINT64 updated_time)
 
 	p = (WIN32IO *)pData;
 
-	Zero(&st_created_time, sizeof(st_created_time));
-	Zero(&st_updated_time, sizeof(st_updated_time));
-
 	if (created_time != 0)
 	{
-		UINT64ToSystem(&st_created_time, created_time);
-
-		SystemTimeToFileTime(&st_created_time, &ft_created_time);
+		UINT64ToFileTime(&ft_created_time, created_time);
 
 		p_created_time = &ft_created_time;
 	}
 
 	if (updated_time != 0)
 	{
-		UINT64ToSystem(&st_updated_time, updated_time);
-
-		SystemTimeToFileTime(&st_updated_time, &ft_updated_time);
+		UINT64ToFileTime(&ft_updated_time, updated_time);
 
 		p_updated_time = &ft_updated_time;
 	}
@@ -1316,15 +1283,17 @@ void FileFlush(IO *o)
 	}
 }
 
-void FileClose(IO *o)
+// Close the file; false when the flush or the close of a disk file fails
+bool FileClose(IO *o)
 {
-	FileCloseEx(o, false);
+	return FileCloseEx(o, false);
 }
-void FileCloseEx(IO *o, bool no_flush)
+bool FileCloseEx(IO *o, bool no_flush)
 {
+	bool ret = true;
 	if (o == NULL)
 	{
-		return;
+		return false;
 	}
 
 	if (o->HamMode == false)
@@ -1339,9 +1308,15 @@ void FileCloseEx(IO *o, bool no_flush)
 		// A writer is flushed unless no_flush is set
 		if (p->WriteMode && no_flush == false)
 		{
-			FlushFileBuffers(p->hFile);
+			if (FlushFileBuffers(p->hFile) == FALSE)
+			{
+				ret = false;
+			}
 		}
-		CloseHandle(p->hFile);
+		if (CloseHandle(p->hFile) == FALSE)
+		{
+			ret = false;
+		}
 
 		Win32MemoryFree(p);
 	}
@@ -1352,6 +1327,8 @@ void FileCloseEx(IO *o, bool no_flush)
 	Free(o);
 
 	KS_INC(KS_IO_CLOSE_COUNT);
+
+	return ret;
 }
 
 static IO *FileCreateInnerW(wchar_t *name)

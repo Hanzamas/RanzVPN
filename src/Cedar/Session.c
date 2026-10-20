@@ -248,7 +248,6 @@ void SessionMain(SESSION *s)
 				Free(b);
 			}
 
-			if (true)
 			{
 				PROBE_DATA2("pa->PutPacket", NULL, 0);
 				if (pa->PutPacket(s, NULL, 0) == false)
@@ -364,7 +363,6 @@ void SessionMain(SESSION *s)
 
 		AddTrafficForSession(s, &t);
 
-		if (true)
 		{
 			int diff = ((int)c->CurrentSendQueueSize) - ((int)c->LastPacketQueueSize);
 			CedarAddCurrentTcpQueueSize(c->Cedar, diff);
@@ -863,12 +861,22 @@ static bool SessionConnect(SESSION *s)
 	Unlock(s->lock);
 
 	c = NewClientConnectionEx(s, NULL, 0, 0);
-	s->Connection = c;
+
+	// StopSessionEx reads s->Connection and takes its ref under s->lock
+	Lock(s->lock);
+	{
+		s->Connection = c;
+	}
+	Unlock(s->lock);
 
 	ret = ClientConnect(c);
 	s->Err = c->Err;
 
-	s->Connection = NULL;
+	Lock(s->lock);
+	{
+		s->Connection = NULL;
+	}
+	Unlock(s->lock);
 	ReleaseConnection(c);
 
 	Lock(s->lock);
@@ -888,8 +896,14 @@ void StopSession(SESSION *s)
 {
 	StopSessionEx(s, false);
 }
+
+// Teardown lock order: LINK lock, then SESSION lock, then CONNECTION lock. The teardown paths
+// (StopLink, StopSessionEx, StopConnection) take each lock only to read the child pointer and
+// add a ref, and release it before they stop the child, so no two of these locks nest there.
+// None of them is taken under the MacHashTable lock of a hub.
 void StopSessionEx(SESSION *s, bool no_wait)
 {
+	CONNECTION *c;
 	if (s == NULL)
 	{
 		return;
@@ -902,10 +916,19 @@ void StopSessionEx(SESSION *s, bool no_wait)
 
 	Set(s->HaltEvent);
 
-	if (s->Connection)
+	// SessionConnect sets and clears s->Connection under s->lock and then releases it
+	Lock(s->lock);
 	{
-		CONNECTION *c = s->Connection;
-		AddRef(c->ref);
+		c = s->Connection;
+		if (c != NULL)
+		{
+			AddRef(c->ref);
+		}
+	}
+	Unlock(s->lock);
+
+	if (c != NULL)
+	{
 		StopConnection(c, no_wait);
 		ReleaseConnection(c);
 	}
@@ -961,7 +984,7 @@ static void CleanupSession(SESSION *s)
 		{
 			FreeX(s->ClientAuth->ClientX);
 		}
-		if (s->ClientAuth->ClientX != NULL)
+		if (s->ClientAuth->ClientK != NULL)
 		{
 			FreeK(s->ClientAuth->ClientK);
 		}
@@ -1183,6 +1206,10 @@ SESSION *NewRpcSessionEx2(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *
 	SOCK *sock;
 	if (cedar == NULL || option == NULL)
 	{
+		if (err != NULL)
+		{
+			*err = ERR_INTERNAL_ERROR;
+		}
 		return NULL;
 	}
 
@@ -1223,6 +1250,8 @@ SESSION *NewRpcSessionEx2(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *
 
 	if (ClientUploadSignature(sock) == false)
 	{
+		// ClientUploadSignature has no connection to set the error of: the socket broke
+		c->Err = ERR_DISCONNECTED;
 		if (err != NULL)
 		{
 			*err = c->Err;

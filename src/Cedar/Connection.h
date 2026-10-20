@@ -100,17 +100,6 @@ struct TCP
 	LIST *TcpSockList;
 };
 
-struct UDP
-{
-	SOCK *s;
-	IP ip;
-	UINT port;
-	UINT64 NextKeepAliveTime;
-	UINT64 Seq;
-	UINT64 RecvSeq;
-	QUEUE *BufferQueue;
-};
-
 struct BLOCK
 {
 	bool Compressed;
@@ -131,7 +120,6 @@ struct CONNECTION
 	UINT Protocol;
 	SOCK *FirstSock;
 	TCP *Tcp;
-	UDP *Udp;
 	bool ServerMode;
 	UINT Status;
 	char *Name;
@@ -169,7 +157,6 @@ struct CONNECTION
 	void *hWndForUI;
 	UINT AdditionalConnectionFailedCounter;
 	UINT64 LastCounterResetTick;
-	UCHAR CToken_Hash[SHA1_SIZE];
 	UINT LastTcpQueueSize;
 	UINT LastPacketQueueSize;
 	UINT LastRecvFifoTotalSize;
@@ -195,11 +182,8 @@ BLOCK *NewBlock(void *data, UINT size, int compress);
 void FreeBlock(BLOCK *b);
 void StopAllAdditionalConnectThread(CONNECTION *c);
 UINT GenNextKeepAliveSpan(CONNECTION *c);
-void DisconnectUDPSockets(CONNECTION *c);
-void PutUDPPacketData(CONNECTION *c, void *data, UINT size);
-void InsertReceivedBlockToQueue(CONNECTION *c, BLOCK *block, bool no_lock);
+void InsertReceivedBlockToQueue(CONNECTION *c, BLOCK *block);
 CLIENT_AUTH *CopyClientAuth(CLIENT_AUTH *a);
-void NormalizeEthMtu(BRIDGE *b, CONNECTION *c, UINT packet_size);
 
 
 #endif

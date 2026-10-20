@@ -1,7 +1,7 @@
 // packdecode.c
 // Named PACK decoder bounds test of vpntest ("pack_decode_bounds" command, FND-42 #114)
 //
-// BufToPack() decodes every PACK a peer sends, also before the authentication (HttpServerRecvEx,
+// BufToPack() decodes every PACK a peer sends, also before the authentication (HttpServerRecv,
 // at most HTTP_PACK_MAX_SIZE bytes). ReadElement() and ReadValue() allocated from the counts and
 // sizes the peer claimed before they checked that the bytes were there:
 // - an element of 13 bytes that claims 262144 INT values made 262144 values of 0 (ReadBufInt reads

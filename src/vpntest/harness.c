@@ -2982,7 +2982,7 @@ static void HarnessConfigApiRoundTrip(HARNESS *h)
 
 	if (HarnessCheck(h, root != NULL, "configuration text parsed by CfgBufTextToFolder"))
 	{
-		BUF *b2 = CfgFolderToBuf(root, true);
+		BUF *b2 = CfgFolderToBuf(root);
 		char *text2 = HarnessBufToStr(b2);
 
 		HarnessCompareConfig(h, "config_cfg_api_roundtrip", c.FileData, text2);
@@ -4580,7 +4580,7 @@ static UINT HarnessBuildDnsQuery(UCHAR *buf, UINT buf_size, char *host)
 // log is off, so HTTP, TLS SNI and DNS are not parsed
 static PKT *HarnessParseLikeHub(HARNESS_PARSE_FRAME *f, bool no_log)
 {
-	return ParsePacketEx5(f->Data, f->Size, false, 0, true, no_log, true, false, no_log);
+	return ParsePacketEx5(f->Data, f->Size, false, 0, true, no_log, true, no_log);
 }
 
 // The parser reached the layer the frame was built for (no_log: and stopped before layer 7)
@@ -5119,7 +5119,7 @@ static void CertDlConnThread(THREAD *thread, void *param)
 
 	SetTimeout(s, CERTDL_CONN_TIMEOUT);
 
-	if (mode == CERTDL_MODE_TLS && StartSSLEx(s, srv->TlsCert, srv->TlsKey, 0, NULL) == false)
+	if (mode == CERTDL_MODE_TLS && StartSSLEx(s, srv->TlsCert, srv->TlsKey, NULL) == false)
 	{
 		Disconnect(s);
 		return;

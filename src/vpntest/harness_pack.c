@@ -1902,7 +1902,7 @@ SOCK *HarnessRawConnect(UCHAR *random)
 
 	SetTimeout(s, HARNESS_RAW_TIMEOUT);
 
-	if (StartSSLEx(s, NULL, NULL, 0, NULL) && ClientUploadSignature(s))
+	if (StartSSLEx(s, NULL, NULL, NULL) && ClientUploadSignature(s))
 	{
 		p = HttpClientRecvEx(s, HTTP_PACK_MAX_SIZE);
 		ok = (p != NULL && GetErrorFromPack(p) == ERR_NO_ERROR &&

@@ -9,7 +9,7 @@
 // makes a key whose DACL grants its owner only KEY_READ, KEY_SET_VALUE and DELETE (an OWNER RIGHTS
 // entry, so the implicit READ_CONTROL and WRITE_DAC of the owner do not apply) and writes, reads and
 // deletes values in it. A REG_MULTI_SZ reads as its first string, and a REG_SZ without a terminator
-// reads as NULL. Prints "REGISTRY TEST OK" only when every check passes, deletes its keys and frees
+// reads as NULL or as exactly its text, never past its data. Prints "REGISTRY TEST OK" only when every check passes, deletes its keys and frees
 // everything it allocates.
 
 #include "Mayaqua/Internat.h"
@@ -184,12 +184,14 @@ void registry_test(UINT num, char **arg)
 	RegistryCheck(&ctx, RegistryStrIs(s, ""), "MsRegReadStr reads an empty REG_SZ as an empty string");
 	Free(s);
 
-	// (3) A REG_SZ without a terminator reads as NULL; a REG_MULTI_SZ reads as its first string
+	// (3) A REG_SZ without a terminator reads as NULL, or as exactly its text when RegQueryValueExW
+	// returns it terminated (it does in the AddressSanitizer build); never past its data, which the
+	// AddressSanitizer job checks. A REG_MULTI_SZ reads as its first string
 	RegistryCheck(&ctx, RegistrySetRaw(key, L"noterm", REG_SZ, no_term, sizeof(no_term)) &&
 		RegistrySetRaw(key, L"multi", REG_MULTI_SZ, multi, sizeof(multi)), "A REG_SZ without a terminator and a REG_MULTI_SZ are written");
 
 	w = MsRegReadStrEx2W(REG_CURRENT_USER, key, "noterm", false, false);
-	RegistryCheck(&ctx, w == NULL, "MsRegReadStrEx2W reads a REG_SZ without a terminator as NULL");
+	RegistryCheck(&ctx, w == NULL || RegistryUniIs(w, L"AB"), "MsRegReadStrEx2W reads a REG_SZ without a terminator as NULL or as exactly its text");
 	Free(w);
 
 	s = MsRegReadStr(REG_CURRENT_USER, key, "multi");

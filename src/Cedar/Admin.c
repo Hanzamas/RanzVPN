@@ -5,6 +5,7 @@
 
 #include "Account.h"
 #include "BridgeWin32.h"
+#include "BuildInfo.h"
 #include "Connection.h"
 #include "Link.h"
 #include "Listener.h"
@@ -15,7 +16,6 @@
 #include "Sam.h"
 #include "Server.h"
 #include "Session.h"
-#include "Wpc.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/FileIO.h"
@@ -1734,7 +1734,7 @@ static UINT StGetConfig(ADMIN *a, RPC_CONFIG *t)
 	if (s->CfgRw != NULL)
 	{
 		FOLDER *f = SiWriteConfigurationToCfg(s);
-		BUF *b = CfgFolderToBuf(f, true);
+		BUF *b = CfgFolderToBuf(f);
 
 		StrCpy(t->FileName, sizeof(t->FileName), s->CfgRw->FileName + (s->CfgRw->FileName[0] == '@' ? 1 : 0));
 

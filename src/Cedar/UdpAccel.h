@@ -96,6 +96,7 @@ struct UDP_ACCEL
 };
 
 UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode, bool random_port);
+void UdpAccelNewCookies(UINT *my_cookie, UINT *your_cookie, UINT (*rand32)(void));
 void FreeUdpAccel(UDP_ACCEL *a);
 bool UdpAccelInitClient(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, IP *reported_ip, USHORT port, UINT cookie, UINT my_cookie);
 bool UdpAccelInitServer(UDP_ACCEL *a, UCHAR *key, IP *detected_ip, IP *reported_ip, USHORT port);

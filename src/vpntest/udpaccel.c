@@ -8,7 +8,8 @@
 // flood checks fail on it. Also pins the header check before decryption (a datagram shorter than
 // the smallest packet of the format is dropped, the smallest valid packet is still accepted), the
 // drop counters and the rate limit of their log entry. Runs on loopback sockets in plain text,
-// version 1 (RC4) and version 2 (ChaCha20-Poly1305) mode. Prints "UDPACCEL TEST OK" only when
+// version 1 (RC4) and version 2 (ChaCha20-Poly1305) mode. Also pins the cookie pair of a new
+// UDP_ACCEL: YourCookie is never 0 and never MyCookie (FND-60). Prints "UDPACCEL TEST OK" only when
 // every check passes, and frees everything it allocates.
 
 #include "Cedar/Cedar.h"
@@ -324,6 +325,26 @@ static void UdpAccelTestFlood(UDPACCEL_TEST *t)
 	UdpAccelTestClose(t);
 }
 
+// Stub random source of the cookie check: 5, then 0 and 5 that UdpAccelNewCookies must skip, then 7
+static UINT udpaccel_test_rand_index = 0;
+static UINT UdpAccelTestRand32(void)
+{
+	static const UINT seq[] = {5, 0, 5, 7};
+
+	return seq[udpaccel_test_rand_index++ % (sizeof(seq) / sizeof(seq[0]))];
+}
+
+// The cookie pair: YourCookie is never 0 and never MyCookie (FND-60; the old loop tested MyCookie twice)
+static void UdpAccelTestCookies(UDPACCEL_TEST *t)
+{
+	UINT my_cookie, your_cookie;
+
+	udpaccel_test_rand_index = 0;
+	UdpAccelNewCookies(&my_cookie, &your_cookie, UdpAccelTestRand32);
+	UdpAccelTestCheck(t, my_cookie == 5 && your_cookie == 7,
+		"cookies: a drawn 0 or MyCookie is skipped for YourCookie", "MyCookie %u, YourCookie %u", my_cookie, your_cookie);
+}
+
 // udpaccel: bounded receive loop and drop counters of the UDP Acceleration
 void udpaccel_test(UINT num, char **arg)
 {
@@ -332,6 +353,8 @@ void udpaccel_test(UINT num, char **arg)
 	Zero(&t, sizeof(t));
 
 	Print("UDP Acceleration receive test\n");
+
+	UdpAccelTestCookies(&t);
 
 	t.Cedar = NewCedar(NULL, NULL);
 	SetIP(&t.Localhost, 127, 0, 0, 1);

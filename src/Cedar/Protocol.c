@@ -13,11 +13,11 @@
 #include "Server.h"
 #include "UdpAccel.h"
 #include "WaterMark.h"
-#include "Wpc.h"
 
 #include "Mayaqua/Cfg.h"
 #include "Mayaqua/DNS.h"
 #include "Mayaqua/FileIO.h"
+#include "Mayaqua/HTTP.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
@@ -27,6 +27,8 @@
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 #include "Mayaqua/Tick64.h"
+
+#include <winhttp.h>
 
 bool DownloadAndSaveIntermediateCertificatesIfNecessary(X *x)
 {
@@ -240,24 +242,306 @@ X *FindCertIssuerFromCertList(LIST *o, X *x)
 	return NULL;
 }
 
+// Receive buffer size of HttpGet
+#define	HTTP_GET_RECV_BUF_SIZE		64000
+
+// Set a DWORD option of a WinHTTP handle
+static bool HttpSetDword(HINTERNET h, DWORD option, DWORD value)
+{
+	return (WinHttpSetOption(h, option, &value, sizeof(value)) != FALSE);
+}
+
+// GET an http or https URL with WinHTTP and return the body (the only HTTP request of the product: DownloadCert)
+// No proxy (WinHTTP does not read the system or WPAD proxy settings either), no redirect, cookie, authentication
+// or default credentials, no check of the server certificate and no client certificate. Only a 200 answer counts.
+// The body is read as far as Content-Length says, up to max_size bytes (0: no limit); without Content-Length no
+// body is read, chunked or not. timeout_ms is the TCP connect timeout and the time of each send and receive, the
+// TLS handshake of an https URL gets TIMEOUT_SSL_CONNECT instead. error_code may be NULL.
+static BUF *HttpGet(char *url, UINT timeout_ms, UINT max_size, UINT *error_code)
+{
+	char str[MAX_SIZE * 3];
+	wchar_t tmp[MAX_SIZE];
+	wchar_t host[MAX_HOST_NAME_LEN + 1];
+	wchar_t *wide_url;
+	wchar_t *target;
+	void *buffer;
+	URL_COMPONENTS uc;
+	HINTERNET session = NULL;
+	HINTERNET connect = NULL;
+	HINTERNET request = NULL;
+	BUF *ret = NULL;
+	UINT err = ERR_INTERNAL_ERROR;
+	UINT io_timeout;
+	UINT content_len = 0;
+	DWORD size;
+	DWORD http_status = 0;
+	bool secure;
+	bool ok;
+
+	// The URL, cut to a bounded length and trimmed
+	StrCpy(str, sizeof(str), url);
+	Trim(str);
+
+	if (SearchStrEx(str, "://", 0, false) == INFINITE)
+	{
+		// Without a scheme the URL is http
+		char *copy = CopyStr(str);
+
+		Format(str, sizeof(str), "http://%s", copy);
+		Free(copy);
+	}
+
+	wide_url = CopyStrToUni(str);
+
+	// Host into a buffer, the path and what follows it (query, fragment) stay in the URL string, which ends
+	// with them: that tail is the target and goes out as written, unescaped
+	Zero(&uc, sizeof(uc));
+	uc.dwStructSize = sizeof(uc);
+	uc.lpszHostName = host;
+	uc.dwHostNameLength = sizeof(host) / sizeof(host[0]);
+	uc.dwUserNameLength = (DWORD)-1;
+	uc.dwUrlPathLength = (DWORD)-1;
+	uc.dwExtraInfoLength = (DWORD)-1;
+
+	if (WinHttpCrackUrl(wide_url, 0, 0, &uc) == FALSE ||
+		(uc.nScheme != INTERNET_SCHEME_HTTP && uc.nScheme != INTERNET_SCHEME_HTTPS) ||
+		uc.dwHostNameLength == 0 || uc.dwUserNameLength != 0 || uc.nPort == 0 || (uc.dwUrlPathLength == 0 && uc.dwExtraInfoLength != 0))
+	{
+		err = ERR_INVALID_PARAMETER;
+		goto FINAL;
+	}
+
+	secure = (uc.nScheme == INTERNET_SCHEME_HTTPS);
+	target = (uc.dwUrlPathLength == 0 ? L"/" : uc.lpszUrlPath);
+
+	session = WinHttpOpen(L"" DEFAULT_USER_AGENT, WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME,
+		WINHTTP_NO_PROXY_BYPASS, 0);
+	if (session == NULL)
+	{
+		goto FINAL;
+	}
+
+	// Timeouts until the request is sent: the DnsResolveEx default, the TCP connect timeout, and on each send
+	// and receive the TLS handshake timeout for https
+	io_timeout = (secure ? TIMEOUT_SSL_CONNECT : timeout_ms);
+
+	if (WinHttpSetTimeouts(session, (int)DNS_RESOLVE_DEFAULT_TIMEOUT, (int)timeout_ms, (int)io_timeout,
+		(int)io_timeout) == FALSE)
+	{
+		goto FINAL;
+	}
+
+	connect = WinHttpConnect(session, host, uc.nPort, 0);
+	if (connect == NULL)
+	{
+		goto FINAL;
+	}
+
+	request = WinHttpOpenRequest(connect, L"GET", target, L"HTTP/1.1", WINHTTP_NO_REFERER,
+		WINHTTP_DEFAULT_ACCEPT_TYPES,
+		WINHTTP_FLAG_ESCAPE_DISABLE | WINHTTP_FLAG_ESCAPE_DISABLE_QUERY | (secure ? WINHTTP_FLAG_SECURE : 0));
+	if (request == NULL)
+	{
+		goto FINAL;
+	}
+
+	// No redirect, cookie, authentication or default credentials, and no keep-alive. DownloadCert makes
+	// one request per connection: a pooled keep-alive connection would outlive the request and let a later
+	// request reach a server that already answered the first one
+	ok = HttpSetDword(request, WINHTTP_OPTION_DISABLE_FEATURE,
+		WINHTTP_DISABLE_KEEP_ALIVE | WINHTTP_DISABLE_REDIRECTS | WINHTTP_DISABLE_COOKIES | WINHTTP_DISABLE_AUTHENTICATION) &&
+		HttpSetDword(request, WINHTTP_OPTION_AUTOLOGON_POLICY, WINHTTP_AUTOLOGON_SECURITY_LEVEL_HIGH);
+
+	// No total time limit on the response header. Should WinHTTP refuse the value, the request keeps
+	// WinHTTP's default limit instead of failing.
+	HttpSetDword(request, WINHTTP_OPTION_RECEIVE_RESPONSE_TIMEOUT, INFINITE);
+
+	if (ok && secure)
+	{
+		// No check of the server certificate, and no client certificate
+		ok = HttpSetDword(request, WINHTTP_OPTION_SECURITY_FLAGS,
+			SECURITY_FLAG_IGNORE_UNKNOWN_CA | SECURITY_FLAG_IGNORE_CERT_DATE_INVALID |
+			SECURITY_FLAG_IGNORE_CERT_CN_INVALID | SECURITY_FLAG_IGNORE_CERT_WRONG_USAGE) &&
+			(WinHttpSetOption(request, WINHTTP_OPTION_CLIENT_CERT_CONTEXT, WINHTTP_NO_CLIENT_CERT_CONTEXT, 0) != FALSE);
+	}
+
+	if (ok)
+	{
+		// Request headers that WinHTTP does not add itself (it sends Host, User-Agent and Connection: Keep-Alive)
+		ok = (WinHttpAddRequestHeaders(request,
+			L"Keep-Alive: " HTTP_KEEP_ALIVE "\r\nAccept-Language: ja\r\nPragma: no-cache\r\nCache-Control: no-cache",
+			(DWORD)-1, WINHTTP_ADDREQ_FLAG_ADD) != FALSE);
+	}
+
+	if (ok == false)
+	{
+		goto FINAL;
+	}
+
+	// Send
+	if (WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) == FALSE)
+	{
+		switch (GetLastError())
+		{
+		case ERROR_WINHTTP_NAME_NOT_RESOLVED:
+		case ERROR_WINHTTP_CANNOT_CONNECT:
+		case ERROR_WINHTTP_TIMEOUT:
+			// Name not resolved, or no connection within the timeout
+			err = ERR_CONNECT_FAILED;
+			break;
+
+		case ERROR_WINHTTP_SECURE_FAILURE:
+			// TLS handshake failed
+			err = ERR_PROTOCOL_ERROR;
+			break;
+
+		default:
+			// The request could not be sent
+			err = ERR_DISCONNECTED;
+			break;
+		}
+
+		goto FINAL;
+	}
+
+	// From here on timeout_ms applies to each send and receive. Should WinHTTP refuse the change, an https
+	// request keeps the TLS handshake timeout.
+	WinHttpSetTimeouts(request, (int)DNS_RESOLVE_DEFAULT_TIMEOUT, (int)timeout_ms, (int)timeout_ms, (int)timeout_ms);
+
+	// Receive
+	if (WinHttpReceiveResponse(request, NULL) == FALSE)
+	{
+		err = ERR_DISCONNECTED;
+		goto FINAL;
+	}
+
+	// Only an HTTP/1.x status line counts. WinHTTP has already skipped interim 1xx responses.
+	size = sizeof(tmp);
+	if (WinHttpQueryHeaders(request, WINHTTP_QUERY_VERSION, WINHTTP_HEADER_NAME_BY_INDEX, tmp, &size,
+		WINHTTP_NO_HEADER_INDEX))
+	{
+		UniToStr(str, sizeof(str), tmp);
+
+		if (StrLen(str) == 8 && Cmp(str, "HTTP/1.", 7) == 0)
+		{
+			size = sizeof(http_status);
+			if (WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+				WINHTTP_HEADER_NAME_BY_INDEX, &http_status, &size, WINHTTP_NO_HEADER_INDEX) == FALSE)
+			{
+				http_status = 0;
+			}
+		}
+	}
+
+	switch (http_status)
+	{
+	case 401:
+	case 407:
+		// Proxy authentication error
+		err = ERR_PROXY_AUTH_FAILED;
+		break;
+
+	case 404:
+		// 404 File Not Found
+		err = ERR_OBJECT_NOT_FOUND;
+		break;
+
+	case 200:
+		// Success
+		err = ERR_NO_ERROR;
+		break;
+
+	default:
+		// Protocol error
+		err = ERR_PROTOCOL_ERROR;
+		break;
+	}
+
+	if (err != ERR_NO_ERROR)
+	{
+		goto FINAL;
+	}
+
+	// Get the length of the content as GetContentLength does: ToInt of the first Content-Length value, 0 without
+	// one. Without it no body is read, chunked or not.
+	size = sizeof(tmp);
+	if (WinHttpQueryHeaders(request, WINHTTP_QUERY_CONTENT_LENGTH, WINHTTP_HEADER_NAME_BY_INDEX, tmp, &size,
+		WINHTTP_NO_HEADER_INDEX))
+	{
+		UniToStr(str, sizeof(str), tmp);
+		content_len = ToInt(str);
+	}
+	if (max_size != 0)
+	{
+		content_len = MIN(content_len, max_size);
+	}
+
+	// Receive the content
+	buffer = Malloc(HTTP_GET_RECV_BUF_SIZE);
+	ret = NewBuf();
+
+	while (true)
+	{
+		UINT recv_size = MIN(HTTP_GET_RECV_BUF_SIZE, content_len - ret->Size);
+
+		if (recv_size == 0)
+		{
+			break;
+		}
+
+		size = 0;
+		if (WinHttpReadData(request, buffer, recv_size, &size) == FALSE || size == 0)
+		{
+			// Disconnected
+			err = ERR_DISCONNECTED;
+			FreeBuf(ret);
+			ret = NULL;
+			break;
+		}
+
+		WriteBuf(ret, buffer, size);
+	}
+
+	Free(buffer);
+
+	if (ret != NULL)
+	{
+		SeekBuf(ret, 0, 0);
+	}
+
+FINAL:
+	if (request != NULL)
+	{
+		WinHttpCloseHandle(request);
+	}
+	if (connect != NULL)
+	{
+		WinHttpCloseHandle(connect);
+	}
+	if (session != NULL)
+	{
+		WinHttpCloseHandle(session);
+	}
+	Free(wide_url);
+
+	if (error_code != NULL)
+	{
+		*error_code = err;
+	}
+
+	return ret;
+}
+
 X *DownloadCert(char *url)
 {
 	BUF *b;
-	URL_DATA url_data;
 	X *ret = NULL;
 	if (IsEmptyStr(url))
 	{
 		return NULL;
 	}
 
-
-	if (ParseUrl(&url_data, url, false, NULL) == false)
-	{
-		return NULL;
-	}
-
-	b = HttpRequestEx(&url_data, NULL, CERT_HTTP_DOWNLOAD_TIMEOUT, CERT_HTTP_DOWNLOAD_TIMEOUT,
-		NULL, false, NULL, NULL, NULL, NULL, NULL, CERT_HTTP_DOWNLOAD_MAXSIZE);
+	b = HttpGet(url, CERT_HTTP_DOWNLOAD_TIMEOUT, CERT_HTTP_DOWNLOAD_MAXSIZE, NULL);
 
 	if (b == NULL)
 	{
@@ -747,7 +1031,6 @@ bool ServerAccept(CONNECTION *c)
 	UINT direction;
 	UINT max_connection;
 	UINT timeout;
-	bool no_reconnect_to_session = false;
 	bool require_bridge_routing_mode;
 	bool require_monitor_mode;
 	bool use_client_license = false, use_bridge_license = false;
@@ -760,7 +1043,6 @@ bool ServerAccept(CONNECTION *c)
 	wchar_t *msg = NULL;
 	bool suppress_client_update_notification = false;
 	USER *loggedin_user_object = NULL;
-	SERVER *server = NULL;
 	UCHAR unique[SHA1_SIZE], unique2[SHA1_SIZE];
 	CEDAR *cedar;
 	RPC_WINVER winver;
@@ -769,9 +1051,6 @@ bool ServerAccept(CONNECTION *c)
 	UCHAR mschap_v2_server_response_20[20];
 	UINT ms_chap_error = 0;
 	bool is_empty_password = false;
-	char *error_detail = NULL;
-	char *error_detail_2 = NULL;
-	char ctoken_hash_str[64];
 
 	if (c == NULL)
 	{
@@ -779,8 +1058,6 @@ bool ServerAccept(CONNECTION *c)
 	}
 
 	GenerateMachineUniqueHash(c->Cedar, unique2);
-
-	Zero(ctoken_hash_str, sizeof(ctoken_hash_str));
 
 	Zero(mschap_v2_server_response_20, sizeof(mschap_v2_server_response_20));
 
@@ -794,11 +1071,6 @@ bool ServerAccept(CONNECTION *c)
 	StrCpy(groupname, sizeof(groupname), "");
 	StrCpy(sessionname, sizeof(sessionname), "");
 
-	if (IsZero(c->CToken_Hash, SHA1_SIZE) == false)
-	{
-		BinToStr(ctoken_hash_str, sizeof(ctoken_hash_str), c->CToken_Hash, SHA1_SIZE);
-	}
-
 	cedar = c->Cedar;
 
 
@@ -806,28 +1078,8 @@ bool ServerAccept(CONNECTION *c)
 
 	c->Status = CONNECTION_STATUS_NEGOTIATION;
 
-	if (c->Cedar->Server != NULL)
+	if (ServerDownloadSignature(c) == false)
 	{
-		server = c->Cedar->Server;
-	}
-
-	error_detail_2 = NULL;
-	if (ServerDownloadSignature(c, &error_detail_2) == false)
-	{
-		if (c->Type == CONNECTION_TYPE_ADMIN_RPC)
-		{
-			c->Err = ERR_NO_ERROR;
-		}
-
-		if (error_detail_2 == NULL)
-		{
-			error_detail = "ServerDownloadSignature";
-		}
-		else
-		{
-			error_detail = error_detail_2;
-		}
-
 		supress_return_pack_error = true;
 
 		goto CLEANUP;
@@ -835,7 +1087,6 @@ bool ServerAccept(CONNECTION *c)
 
 	if (ServerUploadHello(c) == false)
 	{
-		error_detail = "ServerUploadHello";
 		goto CLEANUP;
 	}
 
@@ -844,7 +1095,6 @@ bool ServerAccept(CONNECTION *c)
 	if (p == NULL)
 	{
 		c->Err = ERR_DISCONNECTED;
-		error_detail = "RecvAuth1";
 		goto CLEANUP;
 	}
 
@@ -852,7 +1102,6 @@ bool ServerAccept(CONNECTION *c)
 	{
 		FreePack(p);
 		c->Err = err;
-		error_detail = "RecvAuth2";
 		goto CLEANUP;
 	}
 
@@ -860,7 +1109,6 @@ bool ServerAccept(CONNECTION *c)
 	{
 		FreePack(p);
 		c->Err = ERR_PROTOCOL_ERROR;
-		error_detail = "GetMethodFromPack";
 		goto CLEANUP;
 	}
 
@@ -903,7 +1151,6 @@ bool ServerAccept(CONNECTION *c)
 		{
 			FreePack(p);
 			c->Err = ERR_TOO_MANY_USER;
-			error_detail = "ERR_TOO_MANY_USER";
 			goto CLEANUP;
 		}
 
@@ -911,21 +1158,11 @@ bool ServerAccept(CONNECTION *c)
 		{
 			StrCpy(c->ClientStr, sizeof(c->ClientStr), "Unknown");
 		}
-		c->ServerVer = GetCedarVersionNumber();
-		c->ServerBuild = CEDAR_WIRE_BUILD;
 
 		Zero(&node, sizeof(node));
 		InRpcNodeInfo(&node, p);
 
 		c->Protocol = GetProtocolFromPack(p);
-		if (c->Protocol == CONNECTION_UDP)
-		{
-			if (c->Tcp)
-			{
-				ReleaseList(c->Tcp->TcpSockList);
-				Free(c->Tcp);
-			}
-		}
 
 		if (GetServerCapsBool(c->Cedar->Server, "b_vpn_client_connect") == false)
 		{
@@ -939,7 +1176,6 @@ bool ServerAccept(CONNECTION *c)
 		{
 			FreePack(p);
 			c->Err = ERR_PROTOCOL_ERROR;
-			error_detail = "GetHubnameAndUsernameFromPack";
 			goto CLEANUP;
 		}
 
@@ -953,7 +1189,6 @@ bool ServerAccept(CONNECTION *c)
 			FreePack(p);
 			c->Err = ERR_HUB_NOT_FOUND;
 			SLog(c->Cedar, "LS_HUB_NOT_FOUND", c->Name, hubname);
-			error_detail = "ERR_HUB_NOT_FOUND";
 			goto CLEANUP;
 		}
 
@@ -961,7 +1196,6 @@ bool ServerAccept(CONNECTION *c)
 		{
 			FreePack(p);
 			c->Err = ERR_SERVER_CANT_ACCEPT;
-			error_detail = "ERR_COMM_DISABLED";
 			ReleaseHub(hub);
 			goto CLEANUP;
 		}
@@ -1074,7 +1308,6 @@ bool ServerAccept(CONNECTION *c)
 				PackGetData(p, "unique_id", unique);
 			}
 
-			if (1)
 			{
 				char ip1[64], ip2[64], verstr[64];
 				wchar_t *authtype_str = _UU("LH_AUTH_UNKNOWN");
@@ -1121,10 +1354,7 @@ bool ServerAccept(CONNECTION *c)
 						POLICY *pol = NULL;
 						UCHAR secure_password[SHA1_SIZE];
 						Zero(secure_password, sizeof(secure_password));
-						if (PackGetDataSize(p, "secure_password") == SHA1_SIZE)
-						{
-							PackGetData(p, "secure_password", secure_password);
-						}
+						PackGetData(p, "secure_password", secure_password);
 						auth_ret = SamAuthUserByPassword(hub, username, c->Random, secure_password, NULL, NULL, NULL);
 
 						pol = SamGetUserPolicy(hub, username);
@@ -1248,9 +1478,6 @@ bool ServerAccept(CONNECTION *c)
 													c->ClientX = CloneX(x);
 												}
 											}
-											else
-											{
-											}
 											FreeK(k);
 										}
 										FreeX(x);
@@ -1278,7 +1505,6 @@ bool ServerAccept(CONNECTION *c)
 					ReleaseHub(hub);
 					FreePack(p);
 					c->Err = ERR_AUTHTYPE_NOT_SUPPORTED;
-					error_detail = "ERR_AUTHTYPE_NOT_SUPPORTED";
 					goto CLEANUP;
 				}
 			}
@@ -1297,7 +1523,6 @@ bool ServerAccept(CONNECTION *c)
 				{
 					c->Err = ms_chap_error;
 				}
-				error_detail = "ERR_AUTH_FAILED";
 				goto CLEANUP;
 			}
 			else
@@ -1316,7 +1541,6 @@ bool ServerAccept(CONNECTION *c)
 							ReleaseHub(hub);
 							FreePack(p);
 							c->Err = ERR_NULL_PASSWORD_LOCAL_ONLY;
-							error_detail = "ERR_NULL_PASSWORD_LOCAL_ONLY";
 							goto CLEANUP;
 						}
 					}
@@ -1340,7 +1564,6 @@ bool ServerAccept(CONNECTION *c)
 						Unlock(hub->lock);
 						ReleaseHub(hub);
 						c->Err = ERR_ACCESS_DENIED;
-						error_detail = "AcGetUser";
 						goto CLEANUP;
 					}
 				}
@@ -1479,7 +1702,6 @@ bool ServerAccept(CONNECTION *c)
 				ReleaseHub(hub);
 				c->Err = ERR_VERSION_INVALID;
 				Free(policy);
-				error_detail = "ERR_VERSION_INVALID";
 				goto CLEANUP;
 			}
 
@@ -1492,7 +1714,6 @@ bool ServerAccept(CONNECTION *c)
 				Unlock(hub->lock);
 				ReleaseHub(hub);
 				c->Err = ERR_CLIENT_ID_REQUIRED;
-				error_detail = "ERR_CLIENT_ID_REQUIRED";
 				Free(policy);
 				goto CLEANUP;
 			}
@@ -1504,7 +1725,6 @@ bool ServerAccept(CONNECTION *c)
 				Unlock(hub->lock);
 				ReleaseHub(hub);
 				c->Err = ERR_ACCESS_DENIED;
-				error_detail = "LH_USER_EXPIRES";
 				Free(policy);
 				goto CLEANUP;
 			}
@@ -1515,7 +1735,6 @@ bool ServerAccept(CONNECTION *c)
 
 				Unlock(hub->lock);
 				ReleaseHub(hub);
-				error_detail = "LH_POLICY_ACCESS_NG";
 				c->Err = ERR_ACCESS_DENIED;
 				Free(policy);
 				goto CLEANUP;
@@ -1529,7 +1748,6 @@ bool ServerAccept(CONNECTION *c)
 				ReleaseHub(hub);
 				c->Err = ERR_MONITOR_MODE_DENIED;
 				Free(policy);
-				error_detail = "ERR_MONITOR_MODE_DENIED";
 				goto CLEANUP;
 			}
 
@@ -1554,7 +1772,6 @@ bool ServerAccept(CONNECTION *c)
 				Unlock(hub->lock);
 				ReleaseHub(hub);
 				c->Err = ERR_BRIDGE_MODE_DENIED;
-				error_detail = "ERR_BRIDGE_MODE_DENIED";
 				Free(policy);
 				goto CLEANUP;
 			}
@@ -1603,69 +1820,66 @@ bool ServerAccept(CONNECTION *c)
 			}
 
 
-			if (server != NULL && policy != NULL)
+			if (GetServerCapsBool(hub->Cedar->Server, "b_support_limit_multilogin"))
 			{
-				if (GetServerCapsBool(hub->Cedar->Server, "b_support_limit_multilogin"))
-				{
-					RPC_ENUM_SESSION t;
-					UINT i, num;
-					UINT max_logins = policy->MultiLogins;
-					UINT ao = GetHubAdminOption(hub, "max_multilogins_per_user");
+				RPC_ENUM_SESSION t;
+				UINT i, num;
+				UINT max_logins = policy->MultiLogins;
+				UINT ao = GetHubAdminOption(hub, "max_multilogins_per_user");
 
-					if (ao != 0)
+				if (ao != 0)
+				{
+					if (max_logins != 0)
 					{
-						if (max_logins != 0)
+						max_logins = MIN(max_logins, ao);
+					}
+					else
+					{
+						max_logins = ao;
+					}
+				}
+
+				if (max_logins != 0)
+				{
+					Zero(&t, sizeof(t));
+					StrCpy(t.HubName, sizeof(t.HubName), hub->Name);
+
+					Unlock(hub->lock);
+
+					SiEnumSessionMain(cedar->Server, &t);
+
+					Lock(hub->lock);
+
+					num = 0;
+
+					for (i = 0;i < t.NumSession;i++)
+					{
+						RPC_ENUM_SESSION_ITEM *e = &t.Sessions[i];
+
+						if (e->BridgeMode == false && e->LinkMode == false && e->CurrentNumTcp != 0)
 						{
-							max_logins = MIN(max_logins, ao);
-						}
-						else
-						{
-							max_logins = ao;
+							if (StrCmpi(e->Username, username) == 0 &&
+								(IsZero(e->UniqueId, 16) || Cmp(e->UniqueId, node.UniqueId, 16) != 0))
+							{
+								num++;
+							}
 						}
 					}
 
-					if (max_logins != 0)
-					{
-						Zero(&t, sizeof(t));
-						StrCpy(t.HubName, sizeof(t.HubName), hub->Name);
+					FreeRpcEnumSession(&t);
 
+					if (num >= max_logins)
+					{
 						Unlock(hub->lock);
 
-						SiEnumSessionMain(server, &t);
+						HLog(hub, "LH_TOO_MANY_MULTILOGINS",
+							c->Name,
+							username, max_logins, num);
 
-						Lock(hub->lock);
-
-						num = 0;
-
-						for (i = 0;i < t.NumSession;i++)
-						{
-							RPC_ENUM_SESSION_ITEM *e = &t.Sessions[i];
-
-							if (e->BridgeMode == false && e->LinkMode == false && e->CurrentNumTcp != 0)
-							{
-								if (StrCmpi(e->Username, username) == 0 &&
-									(IsZero(e->UniqueId, 16) || Cmp(e->UniqueId, node.UniqueId, 16) != 0))
-								{
-									num++;
-								}
-							}
-						}
-
-						FreeRpcEnumSession(&t);
-
-						if (num >= max_logins)
-						{
-							Unlock(hub->lock);
-
-							HLog(hub, "LH_TOO_MANY_MULTILOGINS",
-								c->Name,
-								username, max_logins, num);
-
-							ReleaseHub(hub);
-							c->Err = ERR_TOO_MANY_USER_SESSION;
-							Free(policy);
-							goto CLEANUP;
-						}
+						ReleaseHub(hub);
+						c->Err = ERR_TOO_MANY_USER_SESSION;
+						Free(policy);
+						goto CLEANUP;
 					}
 				}
 			}
@@ -1693,7 +1907,6 @@ bool ServerAccept(CONNECTION *c)
 					ReleaseHub(hub);
 					c->Err = ERR_HUB_IS_BUSY;
 					Free(policy);
-					error_detail = "ERR_HUB_IS_BUSY";
 					goto CLEANUP;
 				}
 			}
@@ -1721,7 +1934,7 @@ bool ServerAccept(CONNECTION *c)
 			if (use_client_license)
 			{
 				if (GetHubAdminOption(hub, "max_sessions_client_bridge_apply") != 0 &&
-					Count(hub->NumSessionsClient) >= GetHubAdminOption(hub, "max_sessions_client") && hub->Cedar->Server != NULL)
+					Count(hub->NumSessionsClient) >= GetHubAdminOption(hub, "max_sessions_client"))
 				{
 					Unlock(hub->lock);
 
@@ -1737,7 +1950,7 @@ bool ServerAccept(CONNECTION *c)
 			if (use_bridge_license)
 			{
 				if (GetHubAdminOption(hub, "max_sessions_client_bridge_apply") != 0 &&
-					Count(hub->NumSessionsBridge) >= GetHubAdminOption(hub, "max_sessions_bridge") && hub->Cedar->Server != NULL)
+					Count(hub->NumSessionsBridge) >= GetHubAdminOption(hub, "max_sessions_bridge"))
 				{
 					Unlock(hub->lock);
 
@@ -1818,10 +2031,7 @@ bool ServerAccept(CONNECTION *c)
 
 			AddProtocolDetailsStr(s->ProtocolDetails, sizeof(s->ProtocolDetails), c->FirstSock->ProtocolDetails);
 
-			if (server != NULL)
-			{
-				s->NoSendSignature = server->NoSendSignature;
-			}
+			s->NoSendSignature = cedar->Server->NoSendSignature;
 
 			if (use_udp_acceleration_client)
 			{
@@ -1836,7 +2046,7 @@ bool ServerAccept(CONNECTION *c)
 				}
 			}
 
-			if (hub->Option != NULL && hub->Option->DisableUdpAcceleration)
+			if (hub->Option->DisableUdpAcceleration)
 			{
 				s->UseUdpAcceleration = false;
 			}
@@ -1908,11 +2118,8 @@ bool ServerAccept(CONNECTION *c)
 				Inc(s->Cedar->AssignedClientLicense);
 			}
 
-			if (server != NULL)
-			{
-				server->CurrentAssignedClientLicense = Count(s->Cedar->AssignedClientLicense);
-				server->CurrentAssignedBridgeLicense = Count(s->Cedar->AssignedBridgeLicense);
-			}
+			cedar->Server->CurrentAssignedClientLicense = Count(s->Cedar->AssignedClientLicense);
+			cedar->Server->CurrentAssignedBridgeLicense = Count(s->Cedar->AssignedBridgeLicense);
 
 			if (StrLen(sessionname) != 0)
 			{
@@ -1938,7 +2145,6 @@ bool ServerAccept(CONNECTION *c)
 			s->HalfConnection = half_connection;
 			s->Timeout = timeout;
 			s->QoS = qos;
-			s->NoReconnectToSession = no_reconnect_to_session;
 			s->VLanId = policy->VLanId;
 
 			s->Username = CopyStr(username);
@@ -1951,10 +2157,7 @@ bool ServerAccept(CONNECTION *c)
 
 			msg = GetHubMsg(hub);
 
-			if (hub->Option != NULL)
-			{
-				suppress_client_update_notification = hub->Option->SuppressClientUpdateNotification;
-			}
+			suppress_client_update_notification = hub->Option->SuppressClientUpdateNotification;
 		}
 		Unlock(hub->lock);
 
@@ -1969,7 +2172,6 @@ bool ServerAccept(CONNECTION *c)
 
 		PackAddBool(p, "suppress_client_update_notification", suppress_client_update_notification);
 
-		if (true)
 		{
 			char *utf;
 			wchar_t winver_msg_client[3800];
@@ -2126,11 +2328,8 @@ bool ServerAccept(CONNECTION *c)
 				Dec(s->Cedar->AssignedClientLicense);
 			}
 
-			if (server != NULL)
-			{
-				server->CurrentAssignedClientLicense = Count(s->Cedar->AssignedClientLicense);
-				server->CurrentAssignedBridgeLicense = Count(s->Cedar->AssignedBridgeLicense);
-			}
+			cedar->Server->CurrentAssignedClientLicense = Count(s->Cedar->AssignedClientLicense);
+			cedar->Server->CurrentAssignedBridgeLicense = Count(s->Cedar->AssignedBridgeLicense);
 		}
 		Unlock(s->Hub->lock);
 
@@ -2171,7 +2370,7 @@ bool ServerAccept(CONNECTION *c)
 		FreePack(p);
 
 		s = GetSessionFromKey(c->Cedar, session_key);
-		if (s == NULL || s->Halt || s->NoReconnectToSession)
+		if (s == NULL || s->Halt)
 		{
 			c->Err = ERR_SESSION_TIMEOUT;
 			goto CLEANUP;
@@ -2197,12 +2396,6 @@ bool ServerAccept(CONNECTION *c)
 		if (c->Err != 0)
 		{
 			Unlock(s->Connection->lock);
-			if (c->Err == ERR_TOO_MANY_CONNECTION)
-			{
-			}
-			else
-			{
-			}
 			ReleaseSession(s);
 			goto CLEANUP;
 		}
@@ -2286,7 +2479,7 @@ bool ServerAccept(CONNECTION *c)
 			for (i = 0;i < num;i++)
 			{
 				HUB *h = LIST_DATA(c->Cedar->HubList, i);
-				if (h->Option != NULL && h->Option->NoEnum == false)
+				if (h->Option->NoEnum == false)
 				{
 					Insert(o, CopyStr(h->Name));
 				}
@@ -2311,11 +2504,9 @@ bool ServerAccept(CONNECTION *c)
 
 		SLog(c->Cedar, "LS_ENUM_HUB", c->Name, num);
 
-		error_detail = "enum_hub";
-
 		goto CLEANUP;
 	}
-	else if (StrCmpi(method, "admin") == 0 && c->Cedar->Server != NULL)
+	else if (StrCmpi(method, "admin") == 0)
 	{
 		UINT err;
 		c->Type = CONNECTION_TYPE_ADMIN_RPC;
@@ -2327,8 +2518,6 @@ bool ServerAccept(CONNECTION *c)
 			HttpServerSend(c->FirstSock, p);
 			FreePack(p);
 		}
-
-		error_detail = "admin_rpc";
 
 		goto CLEANUP;
 	}
@@ -2343,16 +2532,12 @@ bool ServerAccept(CONNECTION *c)
 		HttpServerSend(c->FirstSock, p);
 		FreePack(p);
 
-		error_detail = "change_password";
-
 		goto CLEANUP;
 	}
 	else
 	{
 		FreePack(p);
 		c->Err = ERR_PROTOCOL_ERROR;
-
-		error_detail = "unknown_method";
 
 		goto CLEANUP;
 	}
@@ -2413,7 +2598,6 @@ static void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
 	StrCpy(info->ClientOsProductId, sizeof(info->ClientOsProductId), product_id);
 	Free(product_id);
 
-	if (true)
 	{
 		wchar_t namew[256];
 		char namea[256];
@@ -2526,7 +2710,7 @@ static SOCK *ClientAdditionalConnectToServer(CONNECTION *c)
 
 	SetTimeout(s, CONNECTING_TIMEOUT);
 
-	if (StartSSLEx(s, NULL, NULL, 0, c->ServerName) == false)
+	if (StartSSLEx(s, NULL, NULL, c->ServerName) == false)
 	{
 		Disconnect(s);
 		LockList(c->ConnectingSocks);
@@ -2543,8 +2727,20 @@ static SOCK *ClientAdditionalConnectToServer(CONNECTION *c)
 
 	if (CompareX(s->RemoteX, c->ServerX) == false)
 	{
+		// The server of an additional connection presents another certificate than the
+		// first one: drop the socket and fail, like the other failures above
 		Disconnect(s);
 		c->Session->SessionTimeOuted = true;
+		LockList(c->ConnectingSocks);
+		{
+			if (Delete(c->ConnectingSocks, s))
+			{
+				ReleaseSock(s);
+			}
+		}
+		UnlockList(c->ConnectingSocks);
+		ReleaseSock(s);
+		return NULL;
 	}
 
 	return s;
@@ -2913,7 +3109,6 @@ bool ClientConnect(CONNECTION *c)
 		}
 	}
 
-	if (true)
 	{
 		UINT utf_size;
 		char *utf;
@@ -2987,19 +3182,6 @@ bool ClientConnect(CONNECTION *c)
 		StrCpy(c->Session->UnderlayProtocol, sizeof(c->Session->UnderlayProtocol), s->UnderlayProtocol);
 
 		AddProtocolDetailsStr(c->Session->ProtocolDetails, sizeof(c->Session->ProtocolDetails), s->ProtocolDetails);
-
-		if (c->Protocol == CONNECTION_UDP)
-		{
-			if (PackGetDataSize(p, "udp_send_key") == sizeof(c->Session->UdpSendKey))
-			{
-				PackGetData(p, "udp_send_key", c->Session->UdpSendKey);
-			}
-
-			if (PackGetDataSize(p, "udp_recv_key") == sizeof(c->Session->UdpRecvKey))
-			{
-				PackGetData(p, "udp_recv_key", c->Session->UdpRecvKey);
-			}
-		}
 
 		sess->UseUdpAcceleration = false;
 		sess->IsUsingUdpAcceleration = false;
@@ -3177,7 +3359,12 @@ bool ClientConnect(CONNECTION *c)
 	}
 
 CLEANUP:
-	c->FirstSock = NULL;
+	// StopConnection reads c->FirstSock and takes its ref under c->lock
+	Lock(c->lock);
+	{
+		c->FirstSock = NULL;
+	}
+	Unlock(c->lock);
 
 	if (sess->UdpAccel != NULL)
 	{
@@ -3257,15 +3444,6 @@ PACK *PackWelcome(SESSION *s)
 	PackAddPolicy(p, s->Policy);
 
 	PackAddInt(p, "vlan_id", s->VLanId);
-
-	if (s->Connection->Protocol == CONNECTION_UDP)
-	{
-		Rand(s->UdpSendKey, sizeof(s->UdpSendKey));
-		Rand(s->UdpRecvKey, sizeof(s->UdpRecvKey));
-
-		PackAddData(p, "udp_send_key", s->UdpRecvKey, sizeof(s->UdpRecvKey));
-		PackAddData(p, "udp_recv_key", s->UdpSendKey, sizeof(s->UdpSendKey));
-	}
 
 	if (s->NoSendSignature)
 	{
@@ -3686,35 +3864,29 @@ bool ClientDownloadHello(CONNECTION *c, SOCK *s)
 	return true;
 }
 
-bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
+bool ServerDownloadSignature(CONNECTION *c)
 {
 	HTTP_HEADER *h;
 	UCHAR *data;
 	UINT data_size;
 	SOCK *s;
 	UINT num = 0, max = 19;
-	SERVER *server;
 	char *vpn_http_target = HTTP_VPN_TARGET2;
 	if (c == NULL)
 	{
 		return false;
 	}
 
-	server = c->Cedar->Server;
-
 	s = c->FirstSock;
 
 	while (true)
 	{
-		bool not_found_error = false;
-
 		num++;
 		if (num > max)
 		{
 			Disconnect(s);
 			c->Err = ERR_CLIENT_IS_NOT_VPN;
 
-			*error_detail_str = "HTTP_TOO_MANY_REQUEST";
 			return false;
 		}
 		h = RecvHttpHeader(s);
@@ -3732,10 +3904,9 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 
 			if ((data_size > MAX_WATERMARK_SIZE || data_size < WaterMarkSize) && (data_size != StrLen(HTTP_VPN_TARGET_POSTDATA)))
 			{
-				HttpSendForbidden(s, h->Target, NULL);
+				HttpSendDecoyPage(s, 403, h);
 				FreeHttpHeader(h);
 				c->Err = ERR_CLIENT_IS_NOT_VPN;
-				*error_detail_str = "POST_Recv_TooLong";
 				return false;
 			}
 			data = Malloc(data_size);
@@ -3744,13 +3915,11 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 				Free(data);
 				FreeHttpHeader(h);
 				c->Err = ERR_DISCONNECTED;
-				*error_detail_str = "POST_Recv_Failed";
 				return false;
 			}
-			if ((StrCmpi(h->Target, vpn_http_target) != 0) || not_found_error)
+			if (StrCmpi(h->Target, vpn_http_target) != 0)
 			{
-				HttpSendNotFound(s, h->Target);
-				*error_detail_str = "POST_Target_Wrong";
+				HttpSendDecoyPage(s, 404, h);
 			}
 			else
 			{
@@ -3761,8 +3930,7 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 				}
 				else
 				{
-					HttpSendForbidden(s, h->Target, NULL);
-					*error_detail_str = "POST_WaterMark_Error";
+					HttpSendDecoyPage(s, 403, h);
 				}
 			}
 
@@ -3781,22 +3949,17 @@ bool ServerDownloadSignature(CONNECTION *c, char **error_detail_str)
 			if (StrCmpi(h->Method, "GET") != 0 && StrCmpi(h->Method, "HEAD") != 0
 				 && StrCmpi(h->Method, "POST") != 0)
 			{
-				HttpSendNotImplemented(s, h->Method, h->Target, h->Version);
-				*error_detail_str = "HTTP_BAD_METHOD";
+				HttpSendDecoyPage(s, 501, h);
 			}
 			else
 			{
 				if (StrCmpi(h->Target, "/") == 0)
 				{
-					*error_detail_str = "HTTP_ROOT";
-
-					HttpSendForbidden(c->FirstSock, h->Target, "");
+					HttpSendDecoyPage(s, 403, h);
 				}
 				else
 				{
-					HttpSendNotFound(s, h->Target);
-
-					*error_detail_str = "HTTP_NOT_FOUND";
+					HttpSendDecoyPage(s, 404, h);
 				}
 			}
 			FreeHttpHeader(h);
@@ -3842,6 +4005,16 @@ bool ClientUploadSignature(SOCK *s)
 	return true;
 }
 
+// Set c->FirstSock under c->lock, where StopConnection reads it and takes its ref
+static void ClientSetFirstSock(CONNECTION *c, SOCK *s)
+{
+	Lock(c->lock);
+	{
+		c->FirstSock = s;
+	}
+	Unlock(c->lock);
+}
+
 SOCK *ClientConnectToServer(CONNECTION *c)
 {
 	SOCK *s = NULL;
@@ -3864,24 +4037,25 @@ SOCK *ClientConnectToServer(CONNECTION *c)
 		return NULL;
 	}
 
-	c->FirstSock = s;
+	// StopConnection reads c->FirstSock and takes its ref under c->lock
+	ClientSetFirstSock(c, s);
 
 	if (c->Halt)
 	{
 		c->Err = ERR_USER_CANCEL;
+		ClientSetFirstSock(c, NULL);
 		ReleaseSock(s);
-		c->FirstSock = NULL;
 		return NULL;
 	}
 
 	SetTimeout(s, CONNECTING_TIMEOUT);
 
 	UINT err = 0;
-	if (StartSSLEx3(s, x, k, NULL, 0, c->ServerName, c->Session->SslOption, &err) == false)
+	if (StartSSLEx3(s, x, k, NULL, c->ServerName, c->Session->SslOption, &err) == false)
 	{
 		Disconnect(s);
+		ClientSetFirstSock(c, NULL);
 		ReleaseSock(s);
-		c->FirstSock = NULL;
 		if (err != 0)
 		{
 			c->Err = err;
@@ -3901,8 +4075,8 @@ SOCK *ClientConnectToServer(CONNECTION *c)
 	if (s->RemoteX == NULL)
 	{
 		Disconnect(s);
+		ClientSetFirstSock(c, NULL);
 		ReleaseSock(s);
-		c->FirstSock = NULL;
 		c->Err = ERR_SERVER_IS_NOT_VPN;
 		return NULL;
 	}
@@ -4057,21 +4231,8 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 		UniFormat(tmp, sizeof(tmp), _UU("STATUS_2"), in.TargetHostname, in.Hostname);
 		PrintStatus(sess, tmp);
 
-		switch (o->ProxyType)
-		{
-		case PROXY_HTTP:
-			ret = BindProxyHttpConnect(&out, &in, cancel_flag);
-			break;
-		case PROXY_SOCKS:
-			ret = BindProxySocks4Connect(&out, &in, cancel_flag);
-			break;
-		case PROXY_SOCKS5:
-			ret = BindProxySocks5Connect(&out, &in, cancel_flag);
-			break;
-		default:
-			c->Err = ERR_INTERNAL_ERROR;
-			return NULL;
-		}
+		// An unknown proxy type gives PROXY_ERROR_PARAMETER, which is ERR_INTERNAL_ERROR
+		ret = ProxyConnect(o->ProxyType, &out, &in, cancel_flag);
 
 		c->Err = ProxyCodeToCedar(ret);
 
