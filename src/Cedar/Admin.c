@@ -2454,6 +2454,29 @@ static UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t)
 	return ret;
 }
 
+typedef struct ENUM_GROUP_COUNT
+{
+	USERGROUP *Group;
+	RPC_ENUM_GROUP_ITEM *Item;
+} ENUM_GROUP_COUNT;
+
+static int CompareEnumGroupCount(void *p1, void *p2)
+{
+	ENUM_GROUP_COUNT *c1, *c2;
+	if (p1 == NULL || p2 == NULL)
+	{
+		return 0;
+	}
+	c1 = *(ENUM_GROUP_COUNT **)p1;
+	c2 = *(ENUM_GROUP_COUNT **)p2;
+	if (c1 == NULL || c2 == NULL)
+	{
+		return 0;
+	}
+
+	return COMPARE_RET(c1->Group, c2->Group);
+}
+
 static UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 {
 	SERVER *s = a->Server;
@@ -2481,6 +2504,8 @@ static UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 	AcLock(h);
 	{
 		UINT i, j;
+		ENUM_GROUP_COUNT *counts;
+		LIST *index;
 
 		FreeRpcEnumGroup(t);
 		Zero(t, sizeof(RPC_ENUM_GROUP));
@@ -2488,6 +2513,10 @@ static UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 
 		t->NumGroup = LIST_NUM(h->HubDb->GroupList);
 		t->Groups = ZeroMalloc(sizeof(RPC_ENUM_GROUP_ITEM) * t->NumGroup);
+
+		// Group pointer to its item, so the members are counted in one pass over the users
+		counts = ZeroMalloc(sizeof(ENUM_GROUP_COUNT) * t->NumGroup);
+		index = NewListFast(CompareEnumGroupCount);
 
 		for (i = 0;i < t->NumGroup;i++)
 		{
@@ -2511,25 +2540,39 @@ static UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 
 			e->NumUsers = 0;
 
+			counts[i].Group = g;
+			counts[i].Item = e;
+			Add(index, &counts[i]);
+		}
 
-			LockList(h->HubDb->UserList);
+		for (j = 0;j < LIST_NUM(h->HubDb->UserList);j++)
+		{
+			USER *u = LIST_DATA(h->HubDb->UserList, j);
+			USERGROUP *ug;
+
+			Lock(u->lock);
 			{
-				for (j = 0;j < LIST_NUM(h->HubDb->UserList);j++)
-				{
-					USER *u = LIST_DATA(h->HubDb->UserList, j);
+				ug = u->Group;
+			}
+			Unlock(u->lock);
 
-					Lock(u->lock);
-					{
-						if (u->Group == g)
-						{
-							e->NumUsers++;
-						}
-					}
-					Unlock(u->lock);
+			if (ug != NULL)
+			{
+				ENUM_GROUP_COUNT key, *found;
+
+				key.Group = ug;
+				key.Item = NULL;
+
+				found = Search(index, &key);
+				if (found != NULL)
+				{
+					found->Item->NumUsers++;
 				}
 			}
-			UnlockList(h->HubDb->UserList);
 		}
+
+		ReleaseList(index);
+		Free(counts);
 	}
 	AcUnlock(h);
 
@@ -4613,6 +4656,7 @@ static UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	HUB *h;
+	HUB_STATS st;
 
 	CHECK_RIGHT;
 
@@ -4629,36 +4673,23 @@ static UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
 
 	Zero(t, sizeof(RPC_HUB_STATUS));
 
-	Lock(h->lock);
-	{
-		StrCpy(t->HubName, sizeof(t->HubName), h->Name);
-		t->Online = h->Offline ? false : true;
-		t->NumSessions = LIST_NUM(h->SessionList);
-		t->NumSessionsClient = Count(h->NumSessionsClient);
-		t->NumSessionsBridge = Count(h->NumSessionsBridge);
-		t->NumAccessLists = LIST_NUM(h->AccessList);
+	HubGetStats(h, &st);
 
-		if (h->HubDb != NULL)
-		{
-			t->NumUsers = LIST_NUM(h->HubDb->UserList);
-			t->NumGroups = LIST_NUM(h->HubDb->GroupList);
-		}
-
-		t->NumMacTables = HASH_LIST_NUM(h->MacHashTable);
-		t->NumIpTables = LIST_NUM(h->IpTable);
-
-		Lock(h->TrafficLock);
-		{
-			Copy(&t->Traffic, h->Traffic, sizeof(TRAFFIC));
-		}
-		Unlock(h->TrafficLock);
-
-		t->NumLogin = h->NumLogin;
-		t->LastCommTime = h->LastCommTime;
-		t->LastLoginTime = h->LastLoginTime;
-		t->CreatedTime = h->CreatedTime;
-	}
-	Unlock(h->lock);
+	StrCpy(t->HubName, sizeof(t->HubName), h->Name);
+	t->Online = st.Online;
+	t->NumSessions = st.NumSessions;
+	t->NumSessionsClient = st.NumSessionsClient;
+	t->NumSessionsBridge = st.NumSessionsBridge;
+	t->NumAccessLists = st.NumAccessLists;
+	t->NumUsers = st.NumUsers;
+	t->NumGroups = st.NumGroups;
+	t->NumMacTables = st.NumMacTables;
+	t->NumIpTables = st.NumIpTables;
+	Copy(&t->Traffic, &st.Traffic, sizeof(TRAFFIC));
+	t->NumLogin = st.NumLogin;
+	t->LastCommTime = st.LastCommTime;
+	t->LastLoginTime = st.LastLoginTime;
+	t->CreatedTime = st.CreatedTime;
 
 	ReleaseHub(h);
 
@@ -4927,8 +4958,6 @@ static UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 		{
 			HUB *h = LIST_DATA(c->HubList, i);
 
-			Lock(h->lock);
-
 			if (a->ServerAdmin == false &&
 				h->Option != NULL &&
 				StrCmpi(h->Name, a->HubName) != 0)
@@ -4957,49 +4986,25 @@ static UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 			else
 			{
 				RPC_ENUM_HUB_ITEM *e = &t->Hubs[i++];
+				HUB_STATS st;
+
+				HubGetStats(h, &st);
 
 				StrCpy(e->HubName, sizeof(e->HubName), h->Name);
-				e->Online = h->Offline ? false : true;
-
-				e->NumSessions = LIST_NUM(h->SessionList);
-
-				LockHashList(h->MacHashTable);
-				{
-					e->NumMacTables = HASH_LIST_NUM(h->MacHashTable);
-					e->NumIpTables = LIST_NUM(h->IpTable);
-				}
-				UnlockHashList(h->MacHashTable);
-
-				if (h->HubDb != NULL)
-				{
-					LockList(h->HubDb->UserList);
-					{
-						e->NumUsers = LIST_NUM(h->HubDb->UserList);
-					}
-					UnlockList(h->HubDb->UserList);
-
-					LockList(h->HubDb->GroupList);
-					{
-						e->NumGroups = LIST_NUM(h->HubDb->GroupList);
-					}
-					UnlockList(h->HubDb->GroupList);
-				}
-
-				e->LastCommTime = h->LastCommTime;
-				e->LastLoginTime = h->LastLoginTime;
-				e->NumLogin = h->NumLogin;
-				e->CreatedTime = h->CreatedTime;
-
-				Lock(h->TrafficLock);
-				{
-					Copy(&e->Traffic, h->Traffic, sizeof(TRAFFIC));
-				}
-				Unlock(h->TrafficLock);
+				e->Online = st.Online;
+				e->NumSessions = st.NumSessions;
+				e->NumMacTables = st.NumMacTables;
+				e->NumIpTables = st.NumIpTables;
+				e->NumUsers = st.NumUsers;
+				e->NumGroups = st.NumGroups;
+				e->LastCommTime = st.LastCommTime;
+				e->LastLoginTime = st.LastLoginTime;
+				e->NumLogin = st.NumLogin;
+				e->CreatedTime = st.CreatedTime;
+				Copy(&e->Traffic, &st.Traffic, sizeof(TRAFFIC));
 
 				e->IsTrafficFilled = true;
 			}
-
-			Unlock(h->lock);
 		}
 	}
 	UnlockHubList(c);
@@ -5597,21 +5602,16 @@ static UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 		for (i = 0;i < LIST_NUM(c->HubList);i++)
 		{
 			HUB *h = LIST_DATA(c->HubList, i);
-			Lock(h->lock);
-			{
-				t->NumHubStandalone++;
-			}
+			HUB_STATS st;
 
-			t->NumMacTables += HASH_LIST_NUM(h->MacHashTable);
-			t->NumIpTables += LIST_NUM(h->IpTable);
+			HubGetStats(h, &st);
 
-			if (h->HubDb != NULL)
-			{
-				t->NumUsers += LIST_NUM(h->HubDb->UserList);
-				t->NumGroups += LIST_NUM(h->HubDb->GroupList);
-			}
+			t->NumHubStandalone++;
 
-			Unlock(h->lock);
+			t->NumMacTables += st.NumMacTables;
+			t->NumIpTables += st.NumIpTables;
+			t->NumUsers += st.NumUsers;
+			t->NumGroups += st.NumGroups;
 		}
 	}
 	UnlockList(c->HubList);

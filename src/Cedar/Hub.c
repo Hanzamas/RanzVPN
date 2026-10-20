@@ -5836,6 +5836,73 @@ static void GenHubMacAddress(UCHAR *mac, UCHAR *machine_hash, char *name)
 	mac[5] = hash[3];
 }
 
+// Read model for the hub counters: the admin RPC handlers and /metrics all
+// read them here. Lock order is h->lock, then one list or table lock at a
+// time (never nested), then TrafficLock.
+void HubGetStats(HUB *h, HUB_STATS *st)
+{
+	if (h == NULL || st == NULL)
+	{
+		return;
+	}
+
+	Zero(st, sizeof(HUB_STATS));
+
+	Lock(h->lock);
+	{
+		st->Online = h->Offline ? false : true;
+
+		LockList(h->SessionList);
+		{
+			st->NumSessions = LIST_NUM(h->SessionList);
+		}
+		UnlockList(h->SessionList);
+
+		st->NumSessionsClient = Count(h->NumSessionsClient);
+		st->NumSessionsBridge = Count(h->NumSessionsBridge);
+
+		LockList(h->AccessList);
+		{
+			st->NumAccessLists = LIST_NUM(h->AccessList);
+		}
+		UnlockList(h->AccessList);
+
+		if (h->HubDb != NULL)
+		{
+			LockList(h->HubDb->UserList);
+			{
+				st->NumUsers = LIST_NUM(h->HubDb->UserList);
+			}
+			UnlockList(h->HubDb->UserList);
+
+			LockList(h->HubDb->GroupList);
+			{
+				st->NumGroups = LIST_NUM(h->HubDb->GroupList);
+			}
+			UnlockList(h->HubDb->GroupList);
+		}
+
+		LockHashList(h->MacHashTable);
+		{
+			st->NumMacTables = HASH_LIST_NUM(h->MacHashTable);
+			st->NumIpTables = LIST_NUM(h->IpTable);
+		}
+		UnlockHashList(h->MacHashTable);
+
+		Lock(h->TrafficLock);
+		{
+			Copy(&st->Traffic, h->Traffic, sizeof(TRAFFIC));
+		}
+		Unlock(h->TrafficLock);
+
+		st->NumLogin = h->NumLogin;
+		st->LastCommTime = h->LastCommTime;
+		st->LastLoginTime = h->LastLoginTime;
+		st->CreatedTime = h->CreatedTime;
+	}
+	Unlock(h->lock);
+}
+
 wchar_t *GetHubMsg(HUB *h)
 {
 	wchar_t *ret = NULL;

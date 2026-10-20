@@ -58,6 +58,7 @@ typedef struct MAC_TABLE_ENTRY MAC_TABLE_ENTRY;
 typedef struct IP_TABLE_ENTRY IP_TABLE_ENTRY;
 typedef struct ACCESS ACCESS;
 typedef struct HUB HUB;
+typedef struct HUB_STATS HUB_STATS;
 typedef struct ADMIN_OPTION ADMIN_OPTION;
 typedef struct CRL CRL;
 typedef struct AC AC;
