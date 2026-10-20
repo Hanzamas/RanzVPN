@@ -48,8 +48,6 @@ struct BUF
 
 struct FIFO
 {
-	REF *ref;
-	LOCK *lock;
 	void *p;
 	UINT pos, size, memsize;
 	UINT64 total_read_size;
@@ -59,7 +57,6 @@ struct FIFO
 
 struct LIST
 {
-	REF *ref;
 	UINT num_item, num_reserved;
 	void **p;
 	LOCK *lock;
@@ -70,7 +67,6 @@ struct LIST
 
 struct QUEUE
 {
-	REF *ref;
 	UINT num_item;
 	FIFO *fifo;
 	LOCK *lock;
@@ -78,7 +74,6 @@ struct QUEUE
 
 struct SK
 {
-	REF *ref;
 	UINT num_item, num_reserved;
 	void **p;
 	LOCK *lock;
@@ -97,7 +92,6 @@ struct HASH_LIST
 	GET_HASH *GetHashProc;
 	COMPARE *CompareProc;
 	LOCK *Lock;
-	REF *Ref;
 	LIST **Entries;
 	UINT NumItems;
 	LIST *AllList;
@@ -190,7 +184,7 @@ void ReleaseFifo(FIFO *f);
 void CleanupFifo(FIFO *f);
 FIFO *NewFifo();
 FIFO *NewFifoFast();
-FIFO *NewFifoEx2(bool fast, bool fixed);
+FIFO *NewFifoEx2(bool fixed);
 void InitFifo();
 void SetFifoCurrentReallocMemSize(UINT size);
 

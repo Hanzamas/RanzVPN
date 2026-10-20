@@ -369,7 +369,6 @@ HASH_LIST *NewHashList(GET_HASH *get_hash_proc, COMPARE *compare_proc, UINT bits
 	h->Size = Power(2, bits);
 
 	h->Lock = NewLock();
-	h->Ref = NewRef();
 
 	h->Entries = ZeroMalloc(sizeof(LIST *) * h->Size);
 
@@ -391,10 +390,7 @@ void ReleaseHashList(HASH_LIST *h)
 		return;
 	}
 
-	if (Release(h->Ref) == 0)
-	{
-		CleanupHashList(h);
-	}
+	CleanupHashList(h);
 }
 void CleanupHashList(HASH_LIST *h)
 {
@@ -581,7 +577,6 @@ SK *NewSkEx(bool no_compact)
 
 	s = Malloc(sizeof(SK));
 	s->lock = NewLock();
-	s->ref = NewRef();
 	s->num_item = 0;
 	s->num_reserved = INIT_NUM_RESERVED;
 	s->p = Malloc(sizeof(void *) * s->num_reserved);
@@ -599,10 +594,7 @@ void ReleaseSk(SK *s)
 		return;
 	}
 
-	if (Release(s->ref) == 0)
-	{
-		CleanupSk(s);
-	}
+	CleanupSk(s);
 }
 
 void CleanupSk(SK *s)
@@ -776,10 +768,7 @@ void ReleaseQueue(QUEUE *q)
 		return;
 	}
 
-	if (q->ref == NULL || Release(q->ref) == 0)
-	{
-		CleanupQueue(q);
-	}
+	CleanupQueue(q);
 }
 
 void CleanupQueue(QUEUE *q)
@@ -802,7 +791,6 @@ QUEUE *NewQueue()
 
 	q = ZeroMalloc(sizeof(QUEUE));
 	q->lock = NewLock();
-	q->ref = NewRef();
 	q->num_item = 0;
 	q->fifo = NewFifo();
 
@@ -816,7 +804,6 @@ QUEUE *NewQueueFast()
 
 	q = ZeroMalloc(sizeof(QUEUE));
 	q->lock = NULL;
-	q->ref = NULL;
 	q->num_item = 0;
 	q->fifo = NewFifoFast();
 
@@ -1162,10 +1149,7 @@ void ReleaseList(LIST *o)
 		return;
 	}
 
-	if (o->ref == NULL || Release(o->ref) == 0)
-	{
-		CleanupList(o);
-	}
+	CleanupList(o);
 }
 
 void CleanupList(LIST *o)
@@ -1436,12 +1420,10 @@ LIST *NewListEx2(COMPARE *cmp, bool fast, bool fast_malloc)
 	if (fast == false)
 	{
 		o->lock = NewLock();
-		o->ref = NewRef();
 	}
 	else
 	{
 		o->lock = NULL;
-		o->ref = NULL;
 	}
 	o->num_item = 0;
 	o->num_reserved = INIT_NUM_RESERVED;
@@ -1584,10 +1566,7 @@ void ReleaseFifo(FIFO *f)
 		return;
 	}
 
-	if (f->ref == NULL || Release(f->ref) == 0)
-	{
-		CleanupFifo(f);
-	}
+	CleanupFifo(f);
 }
 
 void CleanupFifo(FIFO *f)
@@ -1597,7 +1576,6 @@ void CleanupFifo(FIFO *f)
 		return;
 	}
 
-	DeleteLock(f->lock);
 	Free(f->p);
 	Free(f);
 
@@ -1611,28 +1589,17 @@ void InitFifo()
 
 FIFO *NewFifo()
 {
-	return NewFifoEx2(false, false);
+	return NewFifoEx2(false);
 }
 FIFO *NewFifoFast()
 {
-	return NewFifoEx2(true, false);
+	return NewFifoEx2(false);
 }
-FIFO *NewFifoEx2(bool fast, bool fixed)
+FIFO *NewFifoEx2(bool fixed)
 {
 	FIFO *f;
 
 	f = ZeroMalloc(sizeof(FIFO));
-
-	if (fast == false)
-	{
-		f->lock = NewLock();
-		f->ref = NewRef();
-	}
-	else
-	{
-		f->lock = NULL;
-		f->ref = NULL;
-	}
 
 	f->size = f->pos = 0;
 	f->memsize = FIFO_INIT_MEM_SIZE;
