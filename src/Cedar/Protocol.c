@@ -1502,7 +1502,7 @@ bool ServerAccept(CONNECTION *c)
 
 							if (fail_ext_user_auth == false)
 							{
-								auth_ret = SamAuthUserByPlainPassword(c, hub, username, plain_password, true);
+								auth_ret = SamAuthUserByPlainPassword(hub, username, plain_password);
 							}
 
 							if (auth_ret && pol == NULL)
@@ -1901,8 +1901,7 @@ bool ServerAccept(CONNECTION *c)
 
 			if (GetServerCapsBool(hub->Cedar->Server, "b_support_limit_multilogin"))
 			{
-				RPC_ENUM_SESSION t;
-				UINT i, num;
+				UINT num;
 				UINT max_logins = policy->MultiLogins;
 				UINT ao = GetHubAdminOption(hub, "max_multilogins_per_user");
 
@@ -1920,32 +1919,13 @@ bool ServerAccept(CONNECTION *c)
 
 				if (max_logins != 0)
 				{
-					Zero(&t, sizeof(t));
-					StrCpy(t.HubName, sizeof(t.HubName), hub->Name);
-
+					// Lock order is hub->lock, SessionList, s->lock: release hub->lock
+					// while the session list is walked, as before
 					Unlock(hub->lock);
 
-					SiEnumSessionMain(cedar->Server, &t);
+					num = HubCountUserSessions(hub, username, node.UniqueId);
 
 					Lock(hub->lock);
-
-					num = 0;
-
-					for (i = 0;i < t.NumSession;i++)
-					{
-						RPC_ENUM_SESSION_ITEM *e = &t.Sessions[i];
-
-						if (e->BridgeMode == false && e->LinkMode == false && e->CurrentNumTcp != 0)
-						{
-							if (StrCmpi(e->Username, username) == 0 &&
-								(IsZero(e->UniqueId, 16) || Cmp(e->UniqueId, node.UniqueId, 16) != 0))
-							{
-								num++;
-							}
-						}
-					}
-
-					FreeRpcEnumSession(&t);
 
 					if (num >= max_logins)
 					{
