@@ -4122,9 +4122,8 @@ static UINT StGetLink(ADMIN *a, RPC_CREATE_LINK *t)
 	Lock(k->lock);
 	{
 		t->Online = k->Offline ? false : true;
-		t->ClientOption = ZeroMalloc(sizeof(CLIENT_OPTION));
-		Copy(t->ClientOption, k->Option, sizeof(CLIENT_OPTION));
-		t->ClientAuth = CopyClientAuth(k->Auth);
+		t->ClientOption = ClientOptionClone(k->Option);
+		t->ClientAuth = ClientAuthClone(k->Auth);
 		Copy(&t->Policy, k->Policy, sizeof(POLICY));
 
 		t->CheckServerCert = k->CheckServerCert;
@@ -4219,8 +4218,8 @@ static UINT StSetLink(ADMIN *a, RPC_CREATE_LINK *t)
 		k->Option->NumRetry = INFINITE;
 		k->Option->RetryInterval = 10;
 		k->Option->NoRoutingTracking = true;
-		CiFreeClientAuth(k->Auth);
-		k->Auth = CopyClientAuth(t->ClientAuth);
+		ClientAuthFree(k->Auth);
+		k->Auth = ClientAuthClone(t->ClientAuth);
 
 		if (t->Policy.Ver3 == false)
 		{
@@ -7293,7 +7292,7 @@ static void RpcCreateLinkClientAuthIn(const RPC_FIELD *f, void *base, PACK *p, U
 }
 static void RpcCreateLinkClientAuthFree(const RPC_FIELD *f, void *base)
 {
-	CiFreeClientAuth(*(CLIENT_AUTH **)((UCHAR *)base + f->Offset));
+	ClientAuthFree(*(CLIENT_AUTH **)((UCHAR *)base + f->Offset));
 }
 static const RPC_HOOK rpc_create_link_client_auth_hook = {RpcCreateLinkClientAuthOut, RpcCreateLinkClientAuthIn, RpcCreateLinkClientAuthFree};
 

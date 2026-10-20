@@ -3499,17 +3499,6 @@ bool ClientUploadAuth(CONNECTION *c)
 		break;
 
 	case CLIENT_AUTHTYPE_CERT:
-		if (a->ClientX != NULL && a->ClientX->is_compatible_bit &&
-			a->ClientX->bits != 0 && (a->ClientX->bits / 8) <= sizeof(sign))
-		{
-			if (RsaSignEx(sign, sizeof(sign), c->Random, SHA1_SIZE, a->ClientK))
-			{
-				p = PackLoginWithCert(o->HubName, a->Username, a->ClientX, sign, a->ClientX->bits / 8);
-				c->ClientX = CloneX(a->ClientX);
-			}
-		}
-		break;
-
 	case CLIENT_AUTHTYPE_OPENSSLENGINE:
 		if (a->ClientX != NULL && a->ClientX->is_compatible_bit &&
 			a->ClientX->bits != 0 && (a->ClientX->bits / 8) <= sizeof(sign))

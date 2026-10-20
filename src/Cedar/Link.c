@@ -307,7 +307,7 @@ void CleanupLink(LINK *k)
 		ReleaseSession(k->ClientSession);
 	}
 	Free(k->Option);
-	CiFreeClientAuth(k->Auth);
+	ClientAuthFree(k->Auth);
 	Free(k->Policy);
 
 	if (k->ServerCert != NULL)
@@ -594,8 +594,7 @@ LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, 
 		return NULL;
 	}
 
-	o = ZeroMalloc(sizeof(CLIENT_OPTION));
-	Copy(o, option, sizeof(CLIENT_OPTION));
+	o = ClientOptionClone(option);
 	StrCpy(o->DeviceName, sizeof(o->DeviceName), LINK_DEVICE_NAME);
 
 	o->RequireBridgeRoutingMode = true;
@@ -605,7 +604,7 @@ LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, 
 	o->RetryInterval = 10;			// seconds
 	o->NoRoutingTracking = true;
 
-	a = CopyClientAuth(auth);
+	a = ClientAuthClone(auth);
 	a->CheckCertProc = NULL;
 
 	k = ZeroMalloc(sizeof(LINK));

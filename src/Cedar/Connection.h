@@ -180,7 +180,6 @@ UINT GenNextKeepAliveSpan(CONNECTION *c);
 void DisconnectUDPSockets(CONNECTION *c);
 void PutUDPPacketData(CONNECTION *c, void *data, UINT size);
 void InsertReceivedBlockToQueue(CONNECTION *c, BLOCK *block, bool no_lock);
-CLIENT_AUTH *CopyClientAuth(CLIENT_AUTH *a);
 void NormalizeEthMtu(BRIDGE *b, CONNECTION *c, UINT packet_size);
 
 

@@ -893,18 +893,7 @@ static void CleanupSession(SESSION *s)
 		Free(s->ClientOption);
 	}
 
-	if (s->ClientAuth != NULL)
-	{
-		if (s->ClientAuth->ClientX != NULL)
-		{
-			FreeX(s->ClientAuth->ClientX);
-		}
-		if (s->ClientAuth->ClientK != NULL)
-		{
-			FreeK(s->ClientAuth->ClientK);
-		}
-		Free(s->ClientAuth);
-	}
+	ClientAuthFree(s->ClientAuth);
 
 	if (s->SslOption != NULL)
 	{
@@ -1140,8 +1129,7 @@ SESSION *NewRpcSessionEx2(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *
 
 	s->Name = CopyStr("CLIENT_RPC_SESSION");
 
-	s->ClientOption = Malloc(sizeof(CLIENT_OPTION));
-	Copy(s->ClientOption, option, sizeof(CLIENT_OPTION));
+	s->ClientOption = ClientOptionClone(option);
 
 	s->MaxConnection = option->MaxConnection;
 	s->UseEncrypt = option->UseEncrypt;
@@ -1202,8 +1190,7 @@ static SESSION *NewClientSessionEx(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_A
 	s->OldTraffic = NewTraffic();
 	s->CancelList = NewList(NULL);
 
-	s->ClientOption = Malloc(sizeof(CLIENT_OPTION));
-	Copy(s->ClientOption, option, sizeof(CLIENT_OPTION));
+	s->ClientOption = ClientOptionClone(option);
 
 	if (GetGlobalServerFlag(GSF_DISABLE_SESSION_RECONNECT))
 	{
@@ -1221,24 +1208,7 @@ static SESSION *NewClientSessionEx(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_A
 
 	s->ClientOption->AdditionalConnectionInterval = MAX(s->ClientOption->AdditionalConnectionInterval, 1);
 
-	s->ClientAuth = Malloc(sizeof(CLIENT_AUTH));
-	Copy(s->ClientAuth, auth, sizeof(CLIENT_AUTH));
-
-	if (s->ClientAuth->ClientX != NULL)
-	{
-		s->ClientAuth->ClientX = CloneX(s->ClientAuth->ClientX);
-	}
-	if (s->ClientAuth->ClientK != NULL)
-	{
-		if (s->ClientAuth->AuthType != CLIENT_AUTHTYPE_OPENSSLENGINE)
-		{
-			s->ClientAuth->ClientK = CloneK(s->ClientAuth->ClientK);
-		}
-		else
-		{
-			s->ClientAuth->ClientK = OpensslEngineToK(s->ClientAuth->OpensslEnginePrivateKeyName, s->ClientAuth->OpensslEngineName);
-		}
-	}
+	s->ClientAuth = ClientAuthClone(auth);
 
 	if (StrCmpi(s->ClientOption->DeviceName, LINK_DEVICE_NAME) == 0)
 	{

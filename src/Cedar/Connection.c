@@ -31,48 +31,6 @@
 #define	IS_RECV_TCP_SOCK(ts)		\
 	((ts->Direction == TCP_BOTH) || ((ts->Direction == TCP_SERVER_TO_CLIENT) && (s->ServerMode == false)) || ((ts->Direction == TCP_CLIENT_TO_SERVER) && (s->ServerMode)))
 
-CLIENT_AUTH *CopyClientAuth(CLIENT_AUTH *a)
-{
-	CLIENT_AUTH *ret;
-	if (a == NULL)
-	{
-		return NULL;
-	}
-
-	ret = ZeroMallocEx(sizeof(CLIENT_AUTH), true);
-
-	ret->AuthType = a->AuthType;
-	StrCpy(ret->Username, sizeof(ret->Username), a->Username);
-
-	switch (a->AuthType)
-	{
-	case CLIENT_AUTHTYPE_ANONYMOUS:
-		break;
-
-	case CLIENT_AUTHTYPE_PASSWORD:
-		Copy(ret->HashedPassword, a->HashedPassword, SHA1_SIZE);
-		break;
-
-	case CLIENT_AUTHTYPE_PLAIN_PASSWORD:
-		StrCpy(ret->PlainPassword, sizeof(ret->PlainPassword), a->PlainPassword);
-		break;
-
-	case CLIENT_AUTHTYPE_CERT:
-		ret->ClientX = CloneX(a->ClientX);
-		ret->ClientK = CloneK(a->ClientK);
-		break;
-
-	case CLIENT_AUTHTYPE_OPENSSLENGINE:
-		ret->ClientX = CloneX(a->ClientX);
-		StrCpy(ret->OpensslEnginePrivateKeyName, sizeof(ret->OpensslEnginePrivateKeyName), a->OpensslEnginePrivateKeyName);
-		StrCpy(ret->OpensslEngineName, sizeof(ret->OpensslEngineName), a->OpensslEngineName);
-    ret->ClientK = OpensslEngineToK(ret->OpensslEnginePrivateKeyName, ret->OpensslEngineName);
-		break;
-	}
-
-	return ret;
-}
-
 static void WriteSendFifo(TCPSOCK *ts, void *data, UINT size)
 {
 	if (ts == NULL || data == NULL)
