@@ -421,63 +421,6 @@ bool IsAllUpperStr(char *str)
 	return true;
 }
 
-TOKEN_LIST *UniqueToken(TOKEN_LIST *t)
-{
-	UINT i, num, j, n;
-	TOKEN_LIST *ret;
-	if (t == NULL)
-	{
-		return NULL;
-	}
-
-	num = 0;
-	for (i = 0;i < t->NumTokens;i++)
-	{
-		bool exists = false;
-
-		for (j = 0;j < i;j++)
-		{
-			if (StrCmpi(t->Token[j], t->Token[i]) == 0)
-			{
-				exists = true;
-				break;
-			}
-		}
-
-		if (exists == false)
-		{
-			num++;
-		}
-	}
-
-	ret = ZeroMalloc(sizeof(TOKEN_LIST));
-	ret->Token = ZeroMalloc(sizeof(char *) * num);
-	ret->NumTokens = num;
-
-	n = 0;
-
-	for (i = 0;i < t->NumTokens;i++)
-	{
-		bool exists = false;
-
-		for (j = 0;j < i;j++)
-		{
-			if (StrCmpi(t->Token[j], t->Token[i]) == 0)
-			{
-				exists = true;
-				break;
-			}
-		}
-
-		if (exists == false)
-		{
-			ret->Token[n++] = CopyStr(t->Token[i]);
-		}
-	}
-
-	return ret;
-}
-
 void ToStrByte1000(char *str, UINT size, UINT64 v)
 {
 	UINT i;

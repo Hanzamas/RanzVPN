@@ -223,7 +223,7 @@ static void MachineIdTestCfg(MACHINEID_CTX *ctx)
 	MachineIdCheck(ctx, MachineIdLoadKeeps(c2, MACHINE_ID_SALT_SIZE) == false, "a MachineIdSalt of the right size replaces the salt");
 
 	SiWriteMachineIdCfg(f, c1);
-	b = CfgFolderToBuf(f, true);
+	b = CfgFolderToBuf(f);
 	SeekBufToBegin(b);
 	f2 = CfgBufTextToFolder(b);
 

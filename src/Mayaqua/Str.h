@@ -75,7 +75,6 @@ void MacToStr(char *str, UINT size, UCHAR *mac_address);
 void ToStr3(char *str, UINT size, UINT64 v);
 void ToStrByte(char *str, UINT size, UINT64 v);
 void ToStrByte1000(char *str, UINT size, UINT64 v);
-TOKEN_LIST *UniqueToken(TOKEN_LIST *t);
 bool IsAllUpperStr(char *str);
 UINT StrWidth(char *str);
 char *MakeCharArray(char c, UINT count);
