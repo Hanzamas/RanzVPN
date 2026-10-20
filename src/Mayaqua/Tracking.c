@@ -5,8 +5,9 @@
 
 #include "Mayaqua.h"
 #include "Memory.h"
-#include "OS.h"
+#include "Native.h"
 #include "Str.h"
+#include "Win32.h"
 
 static LOCK *obj_lock;
 static LOCK *obj_id_lock;
@@ -132,7 +133,7 @@ void DebugPrintObjectInfo(UINT id)
 	TRACKING_OBJECT *o;
 
 	o = NULL;
-	OSLock(obj_lock);
+	RawLock(obj_lock);
 	{
 		for (i = 0;i < TRACKING_NUM_ARRAY;i++)
 		{
@@ -163,7 +164,7 @@ void DebugPrintObjectInfo(UINT id)
 			}
 		}
 	}
-	OSUnlock(obj_lock);
+	RawUnlock(obj_lock);
 
 	if (o == NULL)
 	{
@@ -192,7 +193,7 @@ void DebugPrintAllObjects()
 	LIST *view;
 
 	view = NewListFast(SortObjectView);
-	OSLock(obj_lock);
+	RawLock(obj_lock);
 	{
 		for (i = 0;i < TRACKING_NUM_ARRAY;i++)
 		{
@@ -214,7 +215,7 @@ void DebugPrintAllObjects()
 			}
 		}
 	}
-	OSUnlock(obj_lock);
+	RawUnlock(obj_lock);
 
 	Sort(view);
 
@@ -247,7 +248,7 @@ void GetMemoryStatus(MEMORY_STATUS *status)
 		return;
 	}
 
-	OSLock(obj_lock);
+	RawLock(obj_lock);
 	{
 		size = num = 0;
 
@@ -277,7 +278,7 @@ void GetMemoryStatus(MEMORY_STATUS *status)
 			}
 		}
 	}
-	OSUnlock(obj_lock);
+	RawUnlock(obj_lock);
 
 	status->MemoryBlocksNum = num;
 	status->MemorySize = size;
@@ -320,13 +321,13 @@ void TrackNewObj(UINT64 addr, char *name, UINT size)
 		return;
 	}
 
-	OSLock(obj_id_lock);
+	RawLock(obj_id_lock);
 	{
 		new_id = ++obj_id;
 	}
-	OSUnlock(obj_id_lock);
+	RawUnlock(obj_id_lock);
 
-	o = OSMemoryAlloc(sizeof(TRACKING_OBJECT));
+	o = Win32MemoryAlloc(sizeof(TRACKING_OBJECT));
 	o->Id = new_id;
 	o->Address = addr;
 	o->Name = name;
@@ -337,11 +338,11 @@ void TrackNewObj(UINT64 addr, char *name, UINT size)
 	o->FileName[0] = 0;
 	o->LineNumber = 0;
 
-	OSLock(obj_lock);
+	RawLock(obj_lock);
 	{
 		InsertTrackingList(o);
 	}
-	OSUnlock(obj_lock);
+	RawUnlock(obj_lock);
 }
 
 void TrackDeleteObj(UINT64 addr)
@@ -357,17 +358,17 @@ void TrackDeleteObj(UINT64 addr)
 		return;
 	}
 
-	OSLock(obj_lock);
+	RawLock(obj_lock);
 	{
 		o = SearchTrackingList(addr);
 		if (o == NULL)
 		{
-			OSUnlock(obj_lock);
+			RawUnlock(obj_lock);
 			return;
 		}
 		DeleteTrackingList(o, true);
 	}
-	OSUnlock(obj_lock);
+	RawUnlock(obj_lock);
 }
 
 void TrackChangeObjSize(UINT64 addr, UINT size, UINT64 new_addr)
@@ -383,12 +384,12 @@ void TrackChangeObjSize(UINT64 addr, UINT size, UINT64 new_addr)
 		return;
 	}
 
-	OSLock(obj_lock);
+	RawLock(obj_lock);
 	{
 		o = SearchTrackingList(addr);
 		if (o == NULL)
 		{
-			OSUnlock(obj_lock);
+			RawUnlock(obj_lock);
 			return;
 		}
 
@@ -399,7 +400,7 @@ void TrackChangeObjSize(UINT64 addr, UINT size, UINT64 new_addr)
 
 		InsertTrackingList(o);
 	}
-	OSUnlock(obj_lock);
+	RawUnlock(obj_lock);
 }
 
 TRACKING_OBJECT *SearchTrackingList(UINT64 Address)
@@ -480,12 +481,12 @@ void DeleteTrackingList(TRACKING_OBJECT *o, bool free_object_memory)
 
 		if (ft != NULL)
 		{
-			OSMemoryFree(ft);
+			Win32MemoryFree(ft);
 
 			if (free_object_memory)
 			{
 				FreeCallStack(o->CallStack);
-				OSMemoryFree(o);
+				Win32MemoryFree(o);
 			}
 		}
 	}
@@ -500,7 +501,7 @@ void InsertTrackingList(TRACKING_OBJECT *o)
 		return;
 	}
 
-	t = OSMemoryAlloc(sizeof(TRACKING_LIST));
+	t = Win32MemoryAlloc(sizeof(TRACKING_LIST));
 	t->Object = o;
 	t->Next = NULL;
 
@@ -531,7 +532,7 @@ void InitTracking()
 	UINT i;
 	CALLSTACK_DATA *s;
 
-	hashlist = (TRACKING_LIST **)OSMemoryAlloc(sizeof(TRACKING_LIST *) * TRACKING_NUM_ARRAY);
+	hashlist = (TRACKING_LIST **)Win32MemoryAlloc(sizeof(TRACKING_LIST *) * TRACKING_NUM_ARRAY);
 
 	for (i = 0;i < TRACKING_NUM_ARRAY;i++)
 	{
@@ -540,9 +541,9 @@ void InitTracking()
 
 	obj_id = 0;
 
-	obj_lock = OSNewLock();
-	obj_id_lock = OSNewLock();
-	cs_lock = OSNewLock();
+	obj_lock = NewRawLock();
+	obj_id_lock = NewRawLock();
+	cs_lock = NewRawLock();
 
 	s = GetCallStack();
 	if (s == NULL)
@@ -559,9 +560,9 @@ void InitTracking()
 void FreeTracking()
 {
 	UINT i;
-	OSDeleteLock(obj_lock);
-	OSDeleteLock(obj_id_lock);
-	OSDeleteLock(cs_lock);
+	DeleteRawLock(obj_lock);
+	DeleteRawLock(obj_id_lock);
+	DeleteRawLock(cs_lock);
 	cs_lock = NULL;
 	obj_id_lock = NULL;
 	obj_lock = NULL;
@@ -578,11 +579,11 @@ void FreeTracking()
 				TRACKING_OBJECT *o = t->Object;
 
 				FreeCallStack(o->CallStack);
-				OSMemoryFree(o);
+				Win32MemoryFree(o);
 
 				t = t->Next;
 
-				OSMemoryFree(t2);
+				Win32MemoryFree(t2);
 
 				if (t == NULL)
 				{
@@ -592,7 +593,7 @@ void FreeTracking()
 		}
 	}
 
-	OSMemoryFree(hashlist);
+	Win32MemoryFree(hashlist);
 }
 
 void PrintCallStack(CALLSTACK_DATA *s)
@@ -663,11 +664,11 @@ CALLSTACK_DATA *GetCallStack()
 		return NULL;
 	}
 
-	OSLock(cs_lock);
+	RawLock(cs_lock);
 	{
-		s = OSGetCallStack();
+		s = Win32GetCallStack();
 	}
-	OSUnlock(cs_lock);
+	RawUnlock(cs_lock);
 	if (s == NULL)
 	{
 		return NULL;
@@ -686,11 +687,11 @@ bool GetCallStackSymbolInfo(CALLSTACK_DATA *s)
 		return false;
 	}
 
-	OSLock(cs_lock);
+	RawLock(cs_lock);
 	{
-		ret = OSGetCallStackSymbolInfo(s);
+		ret = Win32GetCallStackSymbolInfo(s);
 	}
-	OSUnlock(cs_lock);
+	RawUnlock(cs_lock);
 
 	return ret;
 }
@@ -716,8 +717,8 @@ CALLSTACK_DATA *WalkDownCallStack(CALLSTACK_DATA *s, UINT num)
 		i++;
 		tmp = cs;
 		cs = tmp->next;
-		OSMemoryFree(tmp->name);
-		OSMemoryFree(tmp);
+		Win32MemoryFree(tmp->name);
+		Win32MemoryFree(tmp);
 
 		if (cs == NULL)
 		{
@@ -736,8 +737,8 @@ void FreeCallStack(CALLSTACK_DATA *s)
 	while (true)
 	{
 		CALLSTACK_DATA *next = s->next;
-		OSMemoryFree(s->name);
-		OSMemoryFree(s);
+		Win32MemoryFree(s->name);
+		Win32MemoryFree(s);
 		if (next == NULL)
 		{
 			break;

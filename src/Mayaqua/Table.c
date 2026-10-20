@@ -10,6 +10,7 @@
 #include "Memory.h"
 #include "Microsoft.h"
 #include "Str.h"
+#include "Win32.h"
 
 #include <stdlib.h>
 
@@ -31,7 +32,7 @@ void InitTable()
 	if (o == NULL)
 	{
 LABEL_FATAL_ERROR:
-		Alert("Fatal Error: The hamcore files are missing or broken.\r\nPlease check the hamcore files: the resources of the executable, and a hamcore folder next to it.\r\n\r\n(First, reboot the computer. If this problem occurs again, please reinstall VPN software files.)", NULL);
+		Win32Alert("Fatal Error: The hamcore files are missing or broken.\r\nPlease check the hamcore files: the resources of the executable, and a hamcore folder next to it.\r\n\r\n(First, reboot the computer. If this problem occurs again, please reinstall VPN software files.)", NULL);
 		exit(-1);
 		return;
 	}
@@ -832,7 +833,7 @@ bool LoadTable(char *filename)
 	{
 		char tmp[MAX_SIZE];
 		StrCpy(tmp, sizeof(tmp), "Error: Can't read string tables (file not found).\r\nPlease check the hamcore files: the resources of the executable, and a hamcore folder next to it.\r\n\r\n(First, reboot the computer. If this problem occurs again, please reinstall VPN software files.)");
-		Alert(tmp, NULL);
+		Win32Alert(tmp, NULL);
 		exit(-1);
 		return false;
 	}
@@ -852,7 +853,7 @@ bool LoadTable(char *filename)
 		char tmp[MAX_SIZE];
 		Format(tmp, sizeof(tmp), "Error: Can't read string tables (invalid version: '%s'!='%s').\r\nPlease check the hamcore files: the resources of the executable, and a hamcore folder next to it.\r\n\r\n(First, reboot the computer. If this problem occurs again, please reinstall VPN software files.)",
 			_SS("STRTABLE_ID"), STRTABLE_ID);
-		Alert(tmp, NULL);
+		Win32Alert(tmp, NULL);
 		exit(-1);
 		return false;
 	}

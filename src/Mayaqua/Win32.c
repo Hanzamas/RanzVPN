@@ -331,11 +331,6 @@ void Win32GetCurrentDirW(wchar_t *dir, UINT size)
 	GetCurrentDirectoryW(size, dir);
 }
 
-void Win32Yield()
-{
-	Sleep(0);
-}
-
 void Win32GetMemInfo(MEMINFO *info)
 {
 	static HINSTANCE hDll = NULL;
@@ -453,11 +448,6 @@ void Win32RestorePriority()
 	SetPriorityClass(GetCurrentProcess(), NORMAL_PRIORITY_CLASS);
 }
 
-char* Win32GetProductId()
-{
-	return CopyStr("--");
-}
-
 bool Win32IsSupportedOs()
 {
 	if (Win32GetOsType() == 0)
@@ -514,6 +504,38 @@ UINT Win32GetNumberOfCpuInner()
 	}
 
 	return ret;
+}
+
+// Product name of an OS type
+static char *OsTypeToStr(UINT type)
+{
+	switch (type)
+	{
+	case 0:
+		return "Unsupported OS by Ranz VPN\0\n";
+	case OSTYPE_WINDOWS_10:
+		return "Windows 10\0\n";
+	case OSTYPE_WINDOWS_SERVER_10:
+		return "Windows Server 2016\0\n";
+	case OSTYPE_WINDOWS_11:
+		return "Newer than Windows 10\0\n";
+	case OSTYPE_WINDOWS_SERVER_11:
+		return "Newer than Windows Server 2016\0\n";
+	case OSTYPE_UNIX_UNKNOWN:
+		return "UNIX System\0\n";
+	case OSTYPE_LINUX:
+		return "Linux\0\n";
+	case OSTYPE_SOLARIS:
+		return "Sun Solaris\0\n";
+	case OSTYPE_CYGWIN:
+		return "Gnu Cygwin\0\n";
+	case OSTYPE_BSD:
+		return "BSD System\0\n";
+	case OSTYPE_MACOS_X:
+		return "Mac OS X\0\n";
+	}
+
+	return "Unknown OS";
 }
 
 void Win32GetOsInfo(OS_INFO *info)
@@ -886,11 +908,6 @@ bool Win32Run(char *filename, char *arg, bool hide, bool wait)
 	return true;
 }
 
-UINT Win32ThreadId()
-{
-	return GetCurrentThreadId();
-}
-
 void Win32NukuEnW(wchar_t *dst, UINT size, wchar_t *src)
 {
 	wchar_t str[MAX_SIZE];
@@ -1072,12 +1089,12 @@ CALLSTACK_DATA *Win32GetCallStack()
 
 		if (cs == NULL)
 		{
-			cs = OSMemoryAlloc(sizeof(CALLSTACK_DATA));
+			cs = Win32MemoryAlloc(sizeof(CALLSTACK_DATA));
 			s = cs;
 		}
 		else
 		{
-			s->next = OSMemoryAlloc(sizeof(CALLSTACK_DATA));
+			s->next = Win32MemoryAlloc(sizeof(CALLSTACK_DATA));
 			s = s->next;
 		}
 		s->symbol_cache = false;
@@ -1116,14 +1133,14 @@ bool Win32GetCallStackSymbolInfo(CALLSTACK_DATA *s)
 		return true;
 	}
 
-	sym = OSMemoryAlloc(SIZE_OF_CALLSTACK_SYM);
+	sym = Win32MemoryAlloc(SIZE_OF_CALLSTACK_SYM);
 	sym->SizeOfStruct = SIZE_OF_CALLSTACK_SYM;
 	sym->MaxNameLength = SIZE_OF_CALLSTACK_SYM - sizeof(IMAGEHLP_SYMBOL64);
 
 	if (SymGetSymFromAddr64(hCurrentProcessHandle, s->offset, &disp, sym))
 	{
 		s->disp = disp;
-		s->name = OSMemoryAlloc((UINT)strlen(sym->Name) + 1);
+		s->name = Win32MemoryAlloc((UINT)strlen(sym->Name) + 1);
 		lstrcpy(s->name, sym->Name);
 	}
 	else
@@ -1150,7 +1167,7 @@ bool Win32GetCallStackSymbolInfo(CALLSTACK_DATA *s)
 		s->filename[0] = 0;
 	}
 
-	OSMemoryFree(sym);
+	Win32MemoryFree(sym);
 
 	s->symbol_cache = true;
 
@@ -1266,16 +1283,6 @@ void Win32MemoryFree(void *addr)
 	{
 		free(addr);
 	}
-}
-
-void Win32GetSystemTime(SYSTEMTIME *system_time)
-{
-	GetSystemTime(system_time);
-}
-
-void Win32Sleep(UINT time)
-{
-	Sleep(time);
 }
 
 bool Win32InputW(wchar_t *str, UINT size)

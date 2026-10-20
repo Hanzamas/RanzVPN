@@ -20,12 +20,12 @@
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Object.h"
-#include "Mayaqua/OS.h"
 #include "Mayaqua/Pack.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 #include "Mayaqua/TcpIp.h"
 #include "Mayaqua/Tick64.h"
+#include "Mayaqua/Win32.h"
 
 static SERVER *server = NULL;
 static LOCK *server_lock = NULL;
@@ -166,7 +166,7 @@ UINT SiDebugProcRestorePriority(SERVER *s, char *in_str, char *ret_str, UINT ret
 		return ERR_INVALID_PARAMETER;
 	}
 
-	OSRestorePriority();
+	Win32RestorePriority();
 
 	return ERR_NO_ERROR;
 }
@@ -177,7 +177,7 @@ UINT SiDebugProcSetHighPriority(SERVER *s, char *in_str, char *ret_str, UINT ret
 		return ERR_INVALID_PARAMETER;
 	}
 
-	OSSetHighPriority();
+	Win32SetHighPriority();
 
 	return ERR_NO_ERROR;
 }
@@ -4804,7 +4804,7 @@ SERVER *SiNewServerEx(bool bridge, bool in_client_inner_server, bool relay_serve
 
 	if (s->NoHighPriorityProcess == false)
 	{
-		OSSetHighPriority();
+		Win32SetHighPriority();
 	}
 
 	SiInitDeadLockCheck(s);

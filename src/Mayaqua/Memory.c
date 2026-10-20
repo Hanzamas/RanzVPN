@@ -10,10 +10,10 @@
 #include "Kernel.h"
 #include "Mayaqua.h"
 #include "Object.h"
-#include "OS.h"
 #include "Str.h"
 #include "Tick64.h"
 #include "Tracking.h"
+#include "Win32.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -78,7 +78,7 @@ void InitCanaryRand()
 		return;
 	}
 
-	Win32GetSystemTime(&st);
+	GetSystemTime(&st);
 	memcpy(&t1, ((UCHAR *)&st) + 0, 8);
 	memcpy(&t2, ((UCHAR *)&st) + 8, 8);
 
@@ -2680,13 +2680,13 @@ void *InternalMalloc(UINT size)
 		{
 			AbortExitEx("InternalMalloc: error: malloc() failed.\n\n");
 		}
-		addr = OSMemoryAlloc(size);
+		addr = Win32MemoryAlloc(size);
 		if (addr != NULL)
 		{
 			break;
 		}
 
-		OSSleep(MEMORY_SLEEP_TIME);
+		Sleep(MEMORY_SLEEP_TIME);
 	}
 
 	TrackNewObj(POINTER_TO_UINT64(addr), "MEM", size);
@@ -2706,7 +2706,7 @@ void InternalFree(void *addr)
 
 	TrackDeleteObj(POINTER_TO_UINT64(addr));
 
-	OSMemoryFree(addr);
+	Win32MemoryFree(addr);
 }
 
 void *InternalReAlloc(void *addr, UINT size)
@@ -2724,13 +2724,13 @@ void *InternalReAlloc(void *addr, UINT size)
 		{
 			AbortExitEx("InternalReAlloc: error: realloc() failed.\n\n");
 		}
-		new_addr = OSMemoryReAlloc(addr, size);
+		new_addr = Win32MemoryReAlloc(addr, size);
 		if (new_addr != NULL)
 		{
 			break;
 		}
 
-		OSSleep(MEMORY_SLEEP_TIME);
+		Sleep(MEMORY_SLEEP_TIME);
 	}
 
 	TrackChangeObjSize(POINTER_TO_UINT64(addr), size, POINTER_TO_UINT64(new_addr));

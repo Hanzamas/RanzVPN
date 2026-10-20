@@ -10,6 +10,7 @@
 #include "Object.h"
 #include "Trace.h"
 #include "Tracking.h"
+#include "Win32.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1332,7 +1333,7 @@ void InitStringLibrary()
 
 	if (CheckStringLibrary() == false)
 	{
-		Alert("String Library Init Failed.\r\nPlease check your locale settings.", NULL);
+		Win32Alert("String Library Init Failed.\r\nPlease check your locale settings.", NULL);
 		exit(0);
 	}
 }

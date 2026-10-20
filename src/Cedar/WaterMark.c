@@ -7,6 +7,7 @@
 #include "Mayaqua/Mayaqua.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Str.h"
+#include "Mayaqua/Win32.h"
 
 #include <stdlib.h>
 
@@ -45,7 +46,7 @@ void InitWaterMark()
 
 	if (b == NULL)
 	{
-		Alert("Error: Can't read the watermark data (watermark.bin is missing or corrupt).\r\nPlease check the hamcore files: the resources of the executable, and a hamcore folder next to it.\r\n\r\n(First, reboot the computer. If this problem occurs again, please reinstall VPN software files.)", NULL);
+		Win32Alert("Error: Can't read the watermark data (watermark.bin is missing or corrupt).\r\nPlease check the hamcore files: the resources of the executable, and a hamcore folder next to it.\r\n\r\n(First, reboot the computer. If this problem occurs again, please reinstall VPN software files.)", NULL);
 		exit(-1);
 	}
 

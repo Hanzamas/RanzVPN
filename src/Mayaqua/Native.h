@@ -30,6 +30,25 @@ struct REF
 bool LockInner(LOCK *lock);
 void UnlockInner(LOCK *lock);
 
+// Raw lock (Object.c): the critical section behind LockInner/UnlockInner. It never touches
+// the KS_ counters, because KS_INC itself takes such a lock
+LOCK *NewRawLock();
+bool RawLock(LOCK *lock);
+void RawUnlock(LOCK *lock);
+void DeleteRawLock(LOCK *lock);
+
+// Thread ID of the calling thread
+static inline UINT ThreadId()
+{
+	return GetCurrentThreadId();
+}
+
+// Give the rest of the time slice to another ready thread
+static inline void YieldCpu()
+{
+	Sleep(0);
+}
+
 // Get the count value: 0 for NULL, otherwise an atomic read with a full barrier
 static inline UINT Count(COUNTER *c)
 {

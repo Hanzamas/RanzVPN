@@ -22,7 +22,6 @@
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Object.h"
-#include "Mayaqua/OS.h"
 #include "Mayaqua/Pack.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
@@ -2670,7 +2669,6 @@ static void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
 {
 	SESSION *s;
 	OS_INFO *os;
-	char *product_id;
 	IP ip;
 	if (c == NULL)
 	{
@@ -2693,9 +2691,7 @@ static void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
 
 	StrCpy(info->ClientOsName, sizeof(info->ClientOsName), os->OsProductName);
 	StrCpy(info->ClientOsVer, sizeof(info->ClientOsVer), os->OsVersion);
-	product_id = OSGetProductId();
-	StrCpy(info->ClientOsProductId, sizeof(info->ClientOsProductId), product_id);
-	Free(product_id);
+	StrCpy(info->ClientOsProductId, sizeof(info->ClientOsProductId), "--");
 
 	if (true)
 	{

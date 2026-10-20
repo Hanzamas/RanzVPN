@@ -11,12 +11,12 @@
 #include "Microsoft.h"
 #include "Network.h"
 #include "Object.h"
-#include "OS.h"
 #include "Str.h"
 #include "Table.h"
 #include "Tick64.h"
 #include "Trace.h"
 #include "Tracking.h"
+#include "Win32.h"
 
 #include <locale.h>
 #include <stdlib.h>
@@ -165,7 +165,7 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 
 	setlocale(LC_ALL, "");
 
-	OSInit();
+	Win32Init();
 
 	// The ETW provider of Debug() (Trace.c), registered first so that it sees the whole start
 	InitTrace();
@@ -201,14 +201,14 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 
 	MsInit();
 
-	if (OSIsSupportedOs() == false)
+	if (Win32IsSupportedOs() == false)
 	{
 		exit(0);
 	}
 
 	if (RsaCheckEx() == false)
 	{
-		Alert("OpenSSL Library Init Failed. (too old?)\nPlease install the latest version of OpenSSL.\n\n", "RsaCheck()");
+		Win32Alert("OpenSSL Library Init Failed. (too old?)\nPlease install the latest version of OpenSSL.\n\n", "RsaCheck()");
 		exit(0);
 	}
 
@@ -232,7 +232,7 @@ void InitMayaqua(bool memcheck, bool debug, int argc, char **argv)
 			L"Please execute program with full path.\r\n",
 			tmp);
 
-		OSAlertW(tmp2, NULL);
+		Win32AlertW(tmp2, NULL);
 		_exit(0);
 	}
 
@@ -297,7 +297,7 @@ void FreeMayaqua()
 
 	FreeTrace();
 
-	OSFree();
+	Win32Free();
 }
 
 void CheckUnixTempDir()
@@ -331,11 +331,6 @@ void CheckUnixTempDir()
 	}
 }
 
-void Alert(char *msg, char *caption)
-{
-	OSAlert(msg, caption);
-}
-
 OS_INFO *GetOsInfo()
 {
 	return os_info;
@@ -350,7 +345,7 @@ void InitOsInfo()
 
 	os_info = ZeroMalloc(sizeof(OS_INFO));
 
-	OSGetOsInfo(os_info);
+	Win32GetOsInfo(os_info);
 }
 
 void FreeOsInfo()
@@ -638,7 +633,7 @@ void InitKernelStatus()
 
 	for (i = 0;i < NUM_KERNEL_STATUS;i++)
 	{
-		kernel_status_lock[i] = OSNewLock();
+		kernel_status_lock[i] = NewRawLock();
 	}
 
 	kernel_status_inited = true;
@@ -652,7 +647,7 @@ void FreeKernelStatus()
 
 	for (i = 0;i < NUM_KERNEL_STATUS;i++)
 	{
-		OSDeleteLock(kernel_status_lock[i]);
+		DeleteRawLock(kernel_status_lock[i]);
 	}
 }
 
@@ -663,7 +658,7 @@ void LockKernelStatus(UINT id)
 		return;
 	}
 
-	OSLock(kernel_status_lock[id]);
+	RawLock(kernel_status_lock[id]);
 }
 
 void UnlockKernelStatus(UINT id)
@@ -673,7 +668,7 @@ void UnlockKernelStatus(UINT id)
 		return;
 	}
 
-	OSUnlock(kernel_status_lock[id]);
+	RawUnlock(kernel_status_lock[id]);
 }
 
 void PrintDebugInformation()

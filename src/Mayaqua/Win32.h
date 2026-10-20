@@ -4,16 +4,13 @@
 #ifndef	WIN32_H
 #define	WIN32_H
 
-#include "OS.h"
+#include "MayaType.h"
 
 void Win32Init();
 void Win32Free();
 void *Win32MemoryAlloc(UINT size);
 void *Win32MemoryReAlloc(void *addr, UINT size);
 void Win32MemoryFree(void *addr);
-void Win32GetSystemTime(SYSTEMTIME *system_time);
-void Win32Sleep(UINT time);
-UINT Win32ThreadId();
 void Win32InitNewThread();
 bool Win32DeleteDirW(wchar_t *name);
 CALLSTACK_DATA *Win32GetCallStack();
@@ -26,13 +23,11 @@ bool Win32IsSupportedOs();
 void Win32GetOsInfo(OS_INFO *info);
 void Win32Alert(char *msg, char *caption);
 void Win32AlertW(wchar_t *msg, wchar_t *caption);
-char* Win32GetProductId();
 void Win32SetHighPriority();
 void Win32RestorePriority();
 void *Win32NewSingleInstance(char *instance_name);
 void Win32FreeSingleInstance(void *data);
 void Win32GetMemInfo(MEMINFO *info);
-void Win32Yield();
 
 UINT Win32GetOsType();
 void Win32NukuEn(char *dst, UINT size, char *src);

@@ -355,7 +355,7 @@ void InitHamcore()
 		}
 		StrCat(tmp, sizeof(tmp), "\r\nThe build embeds src/bin/hamcore with cmake/RanzResources.cmake.\r\n\r\n(If this problem occurs again, please reinstall VPN software files.)");
 
-		Alert(tmp, NULL);
+		Win32Alert(tmp, NULL);
 		exit(-1);
 	}
 }

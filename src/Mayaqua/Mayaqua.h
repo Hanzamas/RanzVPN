@@ -177,7 +177,6 @@ void FreeCommandLineTokens();
 TOKEN_LIST *GetCommandLineToken();
 void InitOsInfo();
 void FreeOsInfo();
-void Alert(char *msg, char *caption);
 OS_INFO *GetOsInfo();
 void CheckUnixTempDir();
 void SetHamMode();

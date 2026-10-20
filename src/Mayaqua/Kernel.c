@@ -257,11 +257,6 @@ bool GetEnvW(wchar_t *name, wchar_t *data, UINT size)
 }
 
 
-void GetMemInfo(MEMINFO *info)
-{
-	OSGetMemInfo(info);
-}
-
 INSTANCE *NewSingleInstance(char *instance_name)
 {
 	return NewSingleInstanceEx(instance_name, false);
@@ -283,11 +278,11 @@ INSTANCE *NewSingleInstanceEx(char *instance_name, bool user_local)
 			HashInstanceNameLocal(name, sizeof(name), instance_name);
 		}
 
-		data = OSNewSingleInstance(name);
+		data = Win32NewSingleInstance(name);
 	}
 	else
 	{
-		data = OSNewSingleInstance(NULL);
+		data = Win32NewSingleInstance(NULL);
 	}
 
 	if (data == NULL)
@@ -313,7 +308,7 @@ void FreeSingleInstance(INSTANCE *inst)
 		return;
 	}
 
-	OSFreeSingleInstance(inst->pData);
+	Win32FreeSingleInstance(inst->pData);
 
 	if (inst->Name != NULL)
 	{
@@ -367,16 +362,6 @@ void HashInstanceNameLocal(char *name, UINT size, char *instance_name)
 
 	StrCpy(tmp, sizeof(tmp), name);
 	Format(name, size, "Local\\%s", tmp);
-}
-
-bool Run(char *filename, char *arg, bool hide, bool wait)
-{
-	if (filename == NULL)
-	{
-		return false;
-	}
-
-	return OSRun(filename, arg, hide, wait);
 }
 
 void GetDateTimeStr64Uni(wchar_t *str, UINT size, UINT64 sec64)
@@ -735,11 +720,6 @@ bool WaitThread(THREAD *t, UINT timeout)
 	// Any number of threads can wait: the end event is manual-reset and never reset.
 	// Only a time-out gives false, as Wait gives for an EVENT.
 	return (WaitForSingleObject((HANDLE)t->EndedEvent, timeout) != WAIT_TIMEOUT);
-}
-
-UINT ThreadId()
-{
-	return OSThreadId();
 }
 
 // Thread handle of a host THREAD (its pData), from the raw OS allocator
@@ -1624,12 +1604,7 @@ void SleepThread(UINT time)
 {
 	KS_INC(KS_SLEEPTHREAD_COUNT);
 
-	OSSleep(time);
-}
-
-void YieldCpu()
-{
-	OSYield();
+	Sleep(time);
 }
 
 void AbortExit()
