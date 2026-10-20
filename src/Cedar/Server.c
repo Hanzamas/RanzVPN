@@ -1611,8 +1611,7 @@ static void SiInitDefaultHubList(SERVER *s)
 		Rand(h->SecurePassword, sizeof(h->SecurePassword));
 	}
 
-	h->Offline = true;
-	SetHubOnline(h);
+	HubApplyInitialState(h, true);
 
 	ReleaseHub(h);
 }
@@ -3564,16 +3563,7 @@ static void SiLoadHubCfg(SERVER *s, FOLDER *f, char *name)
 
 		AddHub(c, h);
 
-		if (online)
-		{
-			h->Offline = true;
-			SetHubOnline(h);
-		}
-		else
-		{
-			h->Offline = false;
-			SetHubOffline(h);
-		}
+		HubApplyInitialState(h, online);
 
 		WaitLogFlush(h->SecurityLogger);
 		WaitLogFlush(h->PacketLogger);

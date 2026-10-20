@@ -319,6 +319,7 @@ bool StorePacketFilter(SESSION *s, PKT *packet);
 void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *packet, bool from_flood);
 void SetHubOnline(HUB *h);
 void SetHubOffline(HUB *h);
+void HubApplyInitialState(HUB *h, bool online);
 SESSION *GetSessionByName(HUB *hub, char *name);
 void DeleteIPv6DefaultRouterInRA(PKT *p);
 void IntoTrafficLimiter(TRAFFIC_LIMITER *tr, PKT *p);

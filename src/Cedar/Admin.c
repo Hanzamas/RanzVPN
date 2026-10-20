@@ -5193,16 +5193,7 @@ static UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
 
 	AddHub(c, h);
 
-	if (t->Online)
-	{
-		h->Offline = true;
-		SetHubOnline(h);
-	}
-	else
-	{
-		h->Offline = false;
-		SetHubOffline(h);
-	}
+	HubApplyInitialState(h, t->Online);
 
 	h->CreatedTime = SystemTime64();
 

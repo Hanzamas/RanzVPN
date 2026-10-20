@@ -299,15 +299,6 @@ USERLIST *LoadUserList(LIST *o, char *filename)
 		return NULL;
 	}
 
-	u = FindUserList(o, filename);
-
-	if (u != NULL)
-	{
-		Delete(o, u);
-
-		FreeUserListEntry(u);
-	}
-
 	u = ZeroMalloc(sizeof(USERLIST));
 
 	StrCpy(u->Filename, sizeof(u->Filename), filename);
@@ -421,18 +412,12 @@ void DeleteAllUserListCache(LIST *o)
 
 static void FreeUserList(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		USERLIST *u = LIST_DATA(o, i);
-
-		FreeUserListEntry(u);
-	}
+	DeleteAllUserListCache(o);
 
 	ReleaseList(o);
 }
@@ -606,18 +591,12 @@ void DelAllAc(LIST *o)
 
 void FreeAcList(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		AC *ac = LIST_DATA(o, i);
-
-		Free(ac);
-	}
+	DelAllAc(o);
 
 	ReleaseList(o);
 }
@@ -5226,6 +5205,27 @@ void SetHubOffline(HUB *h)
 	Unlock(h->lock_online);
 }
 
+// Bring a freshly created hub into its configured state. A new hub is neither online nor offline yet, so the flag
+// is set opposite to the wanted state first, which lets the setter do the whole transition
+void HubApplyInitialState(HUB *h, bool online)
+{
+	if (h == NULL)
+	{
+		return;
+	}
+
+	h->Offline = online;
+
+	if (online)
+	{
+		SetHubOnline(h);
+	}
+	else
+	{
+		SetHubOffline(h);
+	}
+}
+
 bool IsHub(CEDAR *cedar, char *name)
 {
 	HUB *h;
@@ -5305,7 +5305,6 @@ void ReleaseHub(HUB *h)
 
 void CleanupHub(HUB *h)
 {
-	UINT i;
 	char name[MAX_SIZE];
 	if (h == NULL)
 	{
@@ -5344,10 +5343,7 @@ void CleanupHub(HUB *h)
 	FreeLog(h->PacketLogger);
 	FreeLog(h->SecurityLogger);
 
-	for (i = 0;i < LIST_NUM(h->AdminOptionList);i++)
-	{
-		Free(LIST_DATA(h->AdminOptionList, i));
-	}
+	DeleteAllHubAdminOption(h);
 	ReleaseList(h->AdminOptionList);
 
 	if (h->Msg != NULL)
@@ -5679,8 +5675,6 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 
 	Format(tmp, sizeof(tmp), HUB_SECURITY_LOG_FILE_NAME, h->Name);
 	h->SecurityLogger = NewLog(tmp, HUB_SECURITY_LOG_PREFIX, h->LogSetting.SecurityLogSwitchType);
-
-	SetHubOnline(h);
 
 	if (h->Cedar->Bridge)
 	{
