@@ -3730,7 +3730,13 @@ static UINT PsCaps(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	t = ScGetCapsEx(ps->Rpc);
+	t = ps->CapsList;
+	if (t == NULL)
+	{
+		CmdPrintError(c, ERR_INTERNAL_ERROR);
+		FreeParamValueList(o);
+		return ERR_INTERNAL_ERROR;
+	}
 
 	ct = CtNewStandard();
 
@@ -3762,8 +3768,6 @@ static UINT PsCaps(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	}
 
 	CtFree(ct, c);
-
-	FreeCapsList(t);
 
 	FreeParamValueList(o);
 
@@ -8594,12 +8598,6 @@ UINT PsAccessAddEx(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	if (GetCapsBool(ps->CapsList, "b_support_ex_acl") == false)
-	{
-		c->Write(c, _E(ERR_NOT_SUPPORTED));
-		return ERR_NOT_SUPPORTED;
-	}
-
 	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
 	if (o == NULL)
 	{
@@ -8676,12 +8674,6 @@ UINT PsAccessAdd6(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	{
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
-	}
-
-	if (GetCapsBool(ps->CapsList, "b_support_ex_acl") == false)
-	{
-		c->Write(c, _E(ERR_NOT_SUPPORTED));
-		return ERR_NOT_SUPPORTED;
 	}
 
 	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
@@ -8784,12 +8776,6 @@ UINT PsAccessAddEx6(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	{
 		c->Write(c, _UU("CMD_Hub_Not_Selected"));
 		return ERR_INVALID_PARAMETER;
-	}
-
-	if (GetCapsBool(ps->CapsList, "b_support_ex_acl") == false)
-	{
-		c->Write(c, _E(ERR_NOT_SUPPORTED));
-		return ERR_NOT_SUPPORTED;
 	}
 
 	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
@@ -12660,18 +12646,15 @@ UINT PsLicenseStatus(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			CtInsert(ct, _UU("SM_LICENSE_STATUS_SUBSCRIPTION_BUILD_STR"), tmp);
 		}
 
-		if (GetCapsBool(ps->CapsList, "b_vpn3"))
+		if (st.NumClientConnectLicense == INFINITE)
 		{
-			if (st.NumClientConnectLicense == INFINITE)
-			{
-				UniStrCpy(tmp, sizeof(tmp), _UU("SM_LICENSE_INFINITE"));
-			}
-			else
-			{
-				UniToStru(tmp, st.NumClientConnectLicense);
-			}
-			CtInsert(ct, _UU("SM_LICENSE_NUM_CLIENT"), tmp);
+			UniStrCpy(tmp, sizeof(tmp), _UU("SM_LICENSE_INFINITE"));
 		}
+		else
+		{
+			UniToStru(tmp, st.NumClientConnectLicense);
+		}
+		CtInsert(ct, _UU("SM_LICENSE_NUM_CLIENT"), tmp);
 
 		if (st.NumBridgeConnectLicense == INFINITE)
 		{

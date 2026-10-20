@@ -919,8 +919,6 @@ static void CleanupCedar(CEDAR *c)
 
 	ReleaseIntList(c->UdpPortList);
 
-	DeleteLock(c->CurrentRegionLock);
-
 	DeleteCounter(c->CurrentActiveLinks);
 
 	Free(c);
@@ -1112,19 +1110,6 @@ void SetCedarCertAndChain(CEDAR *c, X *server_x, K *server_k, LIST *server_chain
 	Unlock(c->lock);
 }
 
-void SetCedarVpnBridge(CEDAR *c)
-{
-	if (c == NULL)
-	{
-		return;
-	}
-
-	c->Bridge = true;
-
-	Free(c->ServerStr);
-	c->ServerStr = CopyStr(CEDAR_BRIDGE_STR);
-}
-
 void RegistWindowsFirewallAll()
 {
 	char exedir[MAX_SIZE];
@@ -1161,8 +1146,6 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 	c->AcceptingSockets = NewCounter();
 
 	c->CedarSuperLock = NewLock();
-
-	c->CurrentRegionLock = NewLock();
 
 	InitNoSslList(c);
 
@@ -1216,8 +1199,6 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 	c->CaList = NewList(CompareCert);
 
 	SetCedarCipherList(c, SERVER_DEFAULT_CIPHER_NAME);
-
-	c->ClientId = _II("CLIENT_ID");
 
 	c->UdpPortList = NewIntList(false);
 

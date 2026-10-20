@@ -655,11 +655,6 @@ bool IsIpDeniedByAcList(IP *ip, LIST *o)
 		return false;
 	}
 
-	if (GetGlobalServerFlag(GSF_DISABLE_AC) != 0)
-	{
-		return false;
-	}
-
 	for (i = 0;i < LIST_NUM(o);i++)
 	{
 		AC *ac = LIST_DATA(o, i);
@@ -684,11 +679,6 @@ bool IsIpMaskedByAc(IP *ip, AC *ac)
 {
 	UINT uip, net, mask;
 	if (ip == NULL || ac == NULL)
-	{
-		return false;
-	}
-
-	if (GetGlobalServerFlag(GSF_DISABLE_AC) != 0)
 	{
 		return false;
 	}
@@ -5693,11 +5683,6 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 	h->SecurityLogger = NewLog(tmp, HUB_SECURITY_LOG_PREFIX, h->LogSetting.SecurityLogSwitchType);
 
 	SetHubOnline(h);
-
-	if (h->Cedar->Bridge)
-	{
-		h->Option->NoArpPolling = true;
-	}
 
 	if (h->Option->NoArpPolling == false && h->Option->NoIpTable == false)
 	{

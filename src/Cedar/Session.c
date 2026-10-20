@@ -1467,7 +1467,7 @@ SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, P
 	s->Thread = c->Thread;
 	s->TrafficLock = NewLock();
 	s->OldTraffic = NewTraffic();
-	s->QoS = GetServerCapsBool(cedar->Server, "b_support_qos");
+	s->QoS = true;
 	AddRef(s->Thread->ref);
 	s->Hub = h;
 	s->ClientStatus = CLIENT_STATUS_ESTABLISHED;
