@@ -159,7 +159,7 @@ bool SuInstallDriverInner(bool force)
 	wchar_t dst_inf[MAX_PATH];
 	wchar_t dst_sys[MAX_PATH];
 	wchar_t tmp_dir[MAX_PATH];
-	char *cpu_type = MsIsX64() ? "x64" : "x86";
+	char *cpu_type = "x64";	// The only SeLow driver package; SuIsSupportedOs refuses every other architecture
 
 	if (SuIsSupportedOs(true) == false)
 	{
@@ -313,6 +313,13 @@ bool SuCopySysFile(wchar_t *src, wchar_t *dst)
 
 bool SuIsSupportedOs(bool on_install)
 {
+	// SeLow ships only as an x64 driver package (DriverPackages\SeLow_Win10\x64), so no other
+	// architecture, arm64 included, has a driver to open or install, whatever EnableSeLow says (FND-173)
+	if (MsIsX64() == false)
+	{
+		return false;
+	}
+
 	if (MsRegReadIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "EnableSeLow", false, true) != 0)
 	{
 		return true;

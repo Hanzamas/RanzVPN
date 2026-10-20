@@ -5,6 +5,8 @@
 // - Asking whether SeLow is supported (SuInitEx, Win32EthIsSuSupported, IsBridgeSupported) never
 //   reaches the driver install step, leaves the SeLow service as it was, and does not use up the one
 //   install attempt of the process.
+// - No Local Bridge support is claimed where no SeLow driver package exists (any architecture but
+//   x64, such as arm64): SuIsSupportedOs and IsBridgeSupported are false there, elevated or not.
 // - Creating a Local Bridge (OpenEth, and Win32EthInstallSu of the AddLocalBridge RPC) and listing
 //   the devices for one (GetEthList, the EnumEthernet RPC) still reach the install step when the
 //   SeLow device is missing, at most once per process.
@@ -214,6 +216,17 @@ static bool SelowTestQuery(SELOWTEST_CTX *ctx)
 	SelowTestCheck(ctx, running_before == running_after, "Asking whether SeLow is supported leaves the SeLow service as it was",
 		"running %u before, %u after", running_before, running_after);
 
+	// No SeLow driver package for this architecture (arm64): no support claim, even when elevated
+	if (MsIsX64() == false)
+	{
+		bool os = SuIsSupportedOs(false);
+		bool bridge = IsBridgeSupported();
+
+		SelowTestCheck(ctx, os == false && bridge == false && supported == false,
+			"No Local Bridge support is claimed where no SeLow driver package exists",
+			"SuIsSupportedOs %u, IsBridgeSupported %u, Win32EthIsSuSupported %u", os, bridge, supported);
+	}
+
 	return supported;
 }
 
@@ -233,7 +246,7 @@ static void SelowTestInstall(SELOWTEST_CTX *ctx, bool supported)
 
 	if (SuIsSupportedOs(false) == false)
 	{
-		Print("  [SKIP] Install step: SeLow is turned off by the DisableSeLow registry value\n");
+		Print("  [SKIP] Install step: no SeLow driver package for this architecture, or SeLow is turned off by the DisableSeLow registry value\n");
 		return;
 	}
 
