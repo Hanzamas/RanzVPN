@@ -120,7 +120,7 @@ bool CmdEvalIsFile(CONSOLE *c, wchar_t *str, void *param)
 
 	UniStrCpy(tmp, sizeof(tmp), str);
 
-	if (IsEmptyUniStr(tmp))
+	if (UniIsEmptyStr(tmp))
 	{
 		c->Write(c, _UU("CMD_FILE_NAME_EMPTY"));
 		return false;
@@ -523,7 +523,7 @@ UNI_TOKEN_LIST *SeparateStringByWidth(wchar_t *str, UINT width)
 			tmp[wp++] = 0;
 			wp = 0;
 
-			Insert(o, UniCopyStr(tmp));
+			Insert(o, CopyUniStr(tmp));
 			break;
 
 		default:
@@ -535,7 +535,7 @@ UNI_TOKEN_LIST *SeparateStringByWidth(wchar_t *str, UINT width)
 				tmp[wp++] = 0;
 				wp = 0;
 
-				Insert(o, UniCopyStr(tmp));
+				Insert(o, CopyUniStr(tmp));
 			}
 
 			tmp[wp++] = c;
@@ -545,7 +545,7 @@ UNI_TOKEN_LIST *SeparateStringByWidth(wchar_t *str, UINT width)
 				tmp[wp++] = 0;
 				wp = 0;
 
-				Insert(o, UniCopyStr(tmp));
+				Insert(o, CopyUniStr(tmp));
 			}
 			break;
 		}
@@ -631,7 +631,7 @@ RETRY:
 		str = c->ReadLine(c, tmp, false);
 		Free(tmp);
 
-		if (str != NULL && IsEmptyUniStr(str))
+		if (str != NULL && UniIsEmptyStr(str))
 		{
 			Free(str);
 			goto RETRY;
@@ -682,7 +682,7 @@ RETRY:
 		StrCpy(tmp, sizeof(tmp), cmd_name + 1);
 		StrCpy(cmd_name, 0, tmp);
 
-		s = UniCopyStr(L"/?");
+		s = CopyUniStr(L"/?");
 		Free(cmd_param);
 
 		cmd_param = s;
@@ -694,7 +694,7 @@ RETRY:
 
 		cmd_name[StrLen(cmd_name) - 1] = 0;
 
-		s = UniCopyStr(L"/?");
+		s = CopyUniStr(L"/?");
 		Free(cmd_param);
 
 		cmd_param = s;
@@ -872,7 +872,7 @@ bool SeparateCommandAndParam(wchar_t *src, char **cmd, wchar_t **param)
 		*param = NULL;
 	}
 
-	src_tmp = UniCopyStr(src);
+	src_tmp = CopyUniStr(src);
 	UniTrimCrlf(src_tmp);
 	UniTrim(src_tmp);
 
@@ -1597,7 +1597,7 @@ wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list)
 						{
 							if (ret == NULL)
 							{
-								ret = UniCopyStr(&token[i + 1]);
+								ret = CopyUniStr(&token[i + 1]);
 							}
 						}
 
@@ -1617,7 +1617,7 @@ wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list)
 						{
 							if (ret == NULL)
 							{
-								ret = UniCopyStr(L"");
+								ret = CopyUniStr(L"");
 							}
 						}
 					}
@@ -1630,15 +1630,15 @@ wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list)
 						{
 							if (token[0] == L'-' && token[1] == L'-')
 							{
-								ret = UniCopyStr(&token[1]);
+								ret = CopyUniStr(&token[1]);
 							}
 							else if (token[0] == L'/' && token[1] == L'/')
 							{
-								ret = UniCopyStr(&token[1]);
+								ret = CopyUniStr(&token[1]);
 							}
 							else
 							{
-								ret = UniCopyStr(token);
+								ret = CopyUniStr(token);
 							}
 						}
 					}
@@ -1783,7 +1783,7 @@ static wchar_t *Prompt(wchar_t *prompt_str)
 		{
 			UniTrimCrlf(tmp);
 
-			ret = UniCopyStr(tmp);
+			ret = CopyUniStr(tmp);
 		}
 	}
 	Free(tmp);

@@ -14,25 +14,15 @@
 #include <locale.h>
 #include <wchar.h>
 
-bool UniInChar(wchar_t *string, wchar_t c)
+bool UniIsCharInStr(wchar_t *str, wchar_t c)
 {
-	UINT i, len;
-	if (string == NULL)
+	if (str == NULL)
 	{
 		return false;
 	}
 
-	len = UniStrLen(string);
-
-	for (i = 0;i < len;i++)
-	{
-		if (string[i] == c)
-		{
-			return true;
-		}
-	}
-
-	return false;
+	// wcschr also finds the terminator, which is not a character of the string
+	return c != L'\0' && wcschr(str, c) != NULL;
 }
 
 static UNI_TOKEN_LIST *UniListToTokenList(LIST *o)
@@ -49,7 +39,7 @@ static UNI_TOKEN_LIST *UniListToTokenList(LIST *o)
 	t->Token = ZeroMalloc(sizeof(wchar_t *) * t->NumTokens);
 	for (i = 0;i < LIST_NUM(o);i++)
 	{
-		t->Token[i] = UniCopyStr(LIST_DATA(o, i));
+		t->Token[i] = CopyUniStr(LIST_DATA(o, i));
 	}
 
 	return t;
@@ -57,19 +47,7 @@ static UNI_TOKEN_LIST *UniListToTokenList(LIST *o)
 
 void UniFreeStrList(LIST *o)
 {
-	UINT i;
-	if (o == NULL)
-	{
-		return;
-	}
-
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		wchar_t *s = LIST_DATA(o, i);
-		Free(s);
-	}
-
-	ReleaseList(o);
+	FreeListItems(o);
 }
 
 wchar_t *UniNormalizeCrlf(wchar_t *str)
@@ -146,40 +124,28 @@ bool UniEndWith(wchar_t *str, wchar_t *key)
 
 bool UniStartWith(wchar_t *str, wchar_t *key)
 {
-	UINT str_len;
-	UINT key_len;
-	wchar_t *tmp;
-	bool ret;
+	UINT i;
 	if (str == NULL || key == NULL)
 	{
 		return false;
 	}
 
-	str_len = UniStrLen(str);
-	key_len = UniStrLen(key);
-	if (str_len < key_len)
+	// An empty str or key never matches
+	if (key[0] == L'\0')
 	{
 		return false;
 	}
-	if (str_len == 0 || key_len == 0)
-	{
-		return false;
-	}
-	tmp = CopyUniStr(str);
-	tmp[key_len] = 0;
 
-	if (UniStrCmpi(tmp, key) == 0)
+	// Compares in place with the ASCII-only fold of UniStrCmpi, and stops at the end of str
+	for (i = 0;key[i] != L'\0';i++)
 	{
-		ret = true;
-	}
-	else
-	{
-		ret = false;
+		if (str[i] == L'\0' || UniToUpper(str[i]) != UniToUpper(key[i]))
+		{
+			return false;
+		}
 	}
 
-	Free(tmp);
-
-	return ret;
+	return true;
 }
 
 void UniToStr3(wchar_t *str, UINT size, UINT64 value)
@@ -221,32 +187,20 @@ UINT UniStrWidth(wchar_t *str)
 
 bool UniIsEmptyStr(wchar_t *str)
 {
-	return IsEmptyUniStr(str);
-}
-bool IsEmptyUniStr(wchar_t *str)
-{
-	bool ret;
-	wchar_t *s;
+	UINT i;
 	if (str == NULL)
 	{
 		return true;
 	}
 
-	s = UniCopyStr(str);
-
-	UniTrim(s);
-	if (UniStrLen(s) == 0)
+	// Empty when nothing but blanks (the characters UniTrim removes) precedes the terminator
+	i = 0;
+	while (str[i] == L' ' || str[i] == L'\t')
 	{
-		ret = true;
-	}
-	else
-	{
-		ret = false;
+		i++;
 	}
 
-	Free(s);
-
-	return ret;
+	return str[i] == L'\0';
 }
 
 
@@ -256,11 +210,6 @@ UNI_TOKEN_LIST *UniNullToken()
 	ret->Token = ZeroMalloc(0);
 
 	return ret;
-}
-
-wchar_t *UniCopyStr(wchar_t *str)
-{
-	return CopyUniStr(str);
 }
 
 UNI_TOKEN_LIST *UniParseCmdLine(wchar_t *str)
@@ -324,7 +273,7 @@ UNI_TOKEN_LIST *UniParseCmdLine(wchar_t *str)
 				tmp[wp++] = 0;
 				wp = 0;
 
-				Insert(o, UniCopyStr(tmp));
+				Insert(o, CopyUniStr(tmp));
 				mode = 0;
 			}
 			else
@@ -362,7 +311,7 @@ UNI_TOKEN_LIST *UniParseCmdLine(wchar_t *str)
 	if (wp != 0)
 	{
 		tmp[wp++] = 0;
-		Insert(o, UniCopyStr(tmp));
+		Insert(o, CopyUniStr(tmp));
 	}
 
 	Free(tmp);
@@ -1157,26 +1106,6 @@ static wchar_t *UniDefaultTokenSplitChars()
 	return L" ,\t\r\n";
 }
 
-static bool UniIsCharInStr(wchar_t *str, wchar_t c)
-{
-	UINT i, len;
-	if (str == NULL)
-	{
-		return false;
-	}
-
-	len = UniStrLen(str);
-	for (i = 0;i < len;i++)
-	{
-		if (str[i] == c)
-		{
-			return true;
-		}
-	}
-
-	return false;
-}
-
 static UNI_TOKEN_LIST *UniParseTokenWithoutNullStr(wchar_t *str, wchar_t *split_chars)
 {
 	LIST *o;
@@ -1222,7 +1151,7 @@ static UNI_TOKEN_LIST *UniParseTokenWithoutNullStr(wchar_t *str, wchar_t *split_
 
 				if ((UniStrLen((wchar_t *)b->Buf)) != 0)
 				{
-					Insert(o, UniCopyStr((wchar_t *)b->Buf));
+					Insert(o, CopyUniStr((wchar_t *)b->Buf));
 				}
 				ClearBuf(b);
 			}
@@ -1300,83 +1229,46 @@ void UniTrim(wchar_t *str)
 
 void UniTrimRight(wchar_t *str)
 {
-	wchar_t *buf, *tmp;
-	UINT len, i, wp, wp2;
-	bool flag;
+	UINT len, end;
 	if (str == NULL)
 	{
 		return;
 	}
+
 	len = UniStrLen(str);
-	if (len == 0)
+	end = len;
+	while (end != 0 && (str[end - 1] == L' ' || str[end - 1] == L'\t'))
 	{
-		return;
-	}
-	if (str[len - 1] != L' ' && str[len - 1] != L'\t')
-	{
-		return;
+		end--;
 	}
 
-	buf = Malloc((len + 1) * sizeof(wchar_t));
-	tmp = Malloc((len + 1) * sizeof(wchar_t));
-	flag = false;
-	wp = wp2 = 0;
-	for (i = 0;i < len;i++)
+	// Writes only when there is something to remove
+	if (end != len)
 	{
-		if (str[i] != L' ' && str[i] != L'\t')
-		{
-			Copy(&buf[wp], tmp, wp2 * sizeof(wchar_t));
-			wp += wp2;
-			wp2 = 0;
-			buf[wp++] = str[i];
-		}
-		else
-		{
-			tmp[wp2++] = str[i];
-		}
+		str[end] = L'\0';
 	}
-	buf[wp] = 0;
-	UniStrCpy(str, 0, buf);
-	Free(buf);
-	Free(tmp);
 }
 
 void UniTrimLeft(wchar_t *str)
 {
-	wchar_t *buf;
-	UINT len, i, wp;
-	bool flag;
+	UINT skip, len;
 	if (str == NULL)
 	{
 		return;
 	}
-	len = UniStrLen(str);
-	if (len == 0)
+
+	skip = 0;
+	while (str[skip] == L' ' || str[skip] == L'\t')
 	{
-		return;
-	}
-	if (str[0] != L' ' && str[0] != L'\t')
-	{
-		return;
+		skip++;
 	}
 
-	buf = Malloc((len + 1) * sizeof(wchar_t));
-	flag = false;
-	wp = 0;
-	for (i = 0;i < len;i++)
+	// Writes only when there is something to remove; the terminator moves along
+	if (skip != 0)
 	{
-		if (str[i] != L' ' && str[i] != L'\t')
-		{
-			flag = true;
-		}
-		if (flag)
-		{
-			buf[wp++] = str[i];
-		}
+		len = UniStrLen(str + skip);
+		Move(str, str + skip, (len + 1) * sizeof(wchar_t));
 	}
-	buf[wp] = 0;
-	UniStrCpy(str, 0, buf);
-	Free(buf);
 }
 
 void UniToStru(wchar_t *str, UINT i)
@@ -1473,7 +1365,7 @@ UNI_TOKEN_LIST *UniGetLines(wchar_t *str)
 
 			s = (wchar_t *)b->Buf;
 
-			Add(o, UniCopyStr(s));
+			Add(o, CopyUniStr(s));
 
 			ClearBuf(b);
 		}
@@ -1487,7 +1379,7 @@ UNI_TOKEN_LIST *UniGetLines(wchar_t *str)
 
 	s = (wchar_t *)b->Buf;
 
-	Add(o, UniCopyStr(s));
+	Add(o, CopyUniStr(s));
 
 	ClearBuf(b);
 
@@ -1601,8 +1493,7 @@ void UniFormat(wchar_t *buf, UINT size, wchar_t *fmt, ...)
 
 int UniSoftStrCmp(wchar_t *str1, wchar_t *str2)
 {
-	UINT ret;
-	wchar_t *tmp1, *tmp2;
+	UINT len1, len2, i;
 	if (str1 == NULL && str2 == NULL)
 	{
 		return 0;
@@ -1616,18 +1507,43 @@ int UniSoftStrCmp(wchar_t *str1, wchar_t *str2)
 		return -1;
 	}
 
-	tmp1 = CopyUniStr(str1);
-	tmp2 = CopyUniStr(str2);
+	// Compares the ranges left after UniTrim in place, with the fold of UniStrCmpi
+	while (*str1 == L' ' || *str1 == L'\t')
+	{
+		str1++;
+	}
+	while (*str2 == L' ' || *str2 == L'\t')
+	{
+		str2++;
+	}
 
-	UniTrim(tmp1);
-	UniTrim(tmp2);
+	len1 = UniStrLen(str1);
+	while (len1 != 0 && (str1[len1 - 1] == L' ' || str1[len1 - 1] == L'\t'))
+	{
+		len1--;
+	}
+	len2 = UniStrLen(str2);
+	while (len2 != 0 && (str2[len2 - 1] == L' ' || str2[len2 - 1] == L'\t'))
+	{
+		len2--;
+	}
 
-	ret = UniStrCmpi(tmp1, tmp2);
+	for (i = 0;i < len1 || i < len2;i++)
+	{
+		// A range that has ended reads as the terminator
+		wchar_t c1 = (i < len1) ? UniToUpper(str1[i]) : L'\0';
+		wchar_t c2 = (i < len2) ? UniToUpper(str2[i]) : L'\0';
+		if (c1 > c2)
+		{
+			return 1;
+		}
+		else if (c1 < c2)
+		{
+			return -1;
+		}
+	}
 
-	Free(tmp1);
-	Free(tmp2);
-
-	return ret;
+	return 0;
 }
 
 int UniStrCmpi(wchar_t *str1, wchar_t *str2)
@@ -1833,22 +1749,11 @@ UINT UniStrSize(wchar_t *str)
 
 UINT UniStrLen(wchar_t *str)
 {
-	UINT i;
 	if (str == NULL)
 	{
 		return 0;
 	}
 
-	i = 0;
-	while (true)
-	{
-		if (str[i] == 0)
-		{
-			break;
-		}
-		i++;
-	}
-
-	return i;
+	return (UINT)wcslen(str);
 }
 

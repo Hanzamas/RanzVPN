@@ -2529,11 +2529,11 @@ HKEY MsGetRootKeyFromInt(UINT root)
 // quoted or not, and the one space after it. The caller frees the copy.
 wchar_t *MsCopyProcessArgsW()
 {
-	wchar_t *line = UniCopyStr(GetCommandLineW());
+	wchar_t *line = CopyUniStr(GetCommandLineW());
 	wchar_t *args;
 
 	UniTrim(line);
-	args = UniCopyStr(PathGetArgsW(line));
+	args = CopyUniStr(PathGetArgsW(line));
 	Free(line);
 
 	return args;

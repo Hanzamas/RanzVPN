@@ -514,6 +514,56 @@ static void StrTestTrim(STRTEST_CTX *ctx)
 	StrTestCheck(ctx, true, "Trim, TrimLeft and TrimRight do not write to a string they leave as it is", "");
 }
 
+// IsEmptyStr, UniIsEmptyStr, StartWith, UniStartWith, EndWith, UniEndWith, UniTrimLeft, UniTrimRight
+// and UniSoftStrCmp (FND-167: they work in place)
+static void StrTestEdge(STRTEST_CTX *ctx)
+{
+	wchar_t ub[STRTEST_BUF_SIZE];
+
+	StrTestCheck(ctx, IsEmptyStr(NULL) && IsEmptyStr("") && IsEmptyStr(" \t") && IsEmptyStr(" a") == false,
+		"IsEmptyStr is true for NULL, an empty string and blanks, false for a letter", "wrong result");
+	StrTestCheck(ctx, UniIsEmptyStr(NULL) && UniIsEmptyStr(L"") && UniIsEmptyStr(L" \t") && UniIsEmptyStr(L" a") == false,
+		"UniIsEmptyStr is true for NULL, an empty string and blanks, false for a letter", "wrong result");
+
+	StrTestCheck(ctx, StartWith("Abc", "aB") && StartWith("abc", "abc") && StartWith("ab", "abc") == false,
+		"StartWith ignores the case and needs the whole key", "wrong result");
+	StrTestCheck(ctx, StartWith("", "") == false && StartWith("a", "") == false && StartWith("", "a") == false &&
+		StartWith(NULL, "a") == false && StartWith("a", NULL) == false,
+		"StartWith is false for an empty or NULL string or key", "wrong result");
+	StrTestCheck(ctx, StartWith("\xe9", "\xc9") == false, "StartWith folds only ASCII letters", "returned true");
+	StrTestCheck(ctx, UniStartWith(L"Abc", L"aB") && UniStartWith(L"abc", L"abc") && UniStartWith(L"ab", L"abc") == false,
+		"UniStartWith ignores the case and needs the whole key", "wrong result");
+	StrTestCheck(ctx, UniStartWith(L"", L"") == false && UniStartWith(L"a", L"") == false && UniStartWith(L"", L"a") == false &&
+		UniStartWith(NULL, L"a") == false && UniStartWith(L"a", NULL) == false,
+		"UniStartWith is false for an empty or NULL string or key", "wrong result");
+	StrTestCheck(ctx, UniStartWith(L"\xe9", L"\xc9") == false, "UniStartWith folds only ASCII letters", "returned true");
+
+	StrTestCheck(ctx, EndWith("abC", "Bc") && EndWith("abc", "") && EndWith("", "") && EndWith("c", "bc") == false && EndWith("\xe9", "\xc9") == false,
+		"EndWith ignores the case of ASCII letters, and an empty key always matches", "wrong result");
+	StrTestCheck(ctx, UniEndWith(L"abC", L"Bc") && UniEndWith(L"abc", L"") && UniEndWith(L"", L"") && UniEndWith(L"c", L"bc") == false && UniEndWith(L"\xe9", L"\xc9") == false,
+		"UniEndWith ignores the case of ASCII letters, and an empty key always matches", "wrong result");
+
+	UniStrCpy(ub, sizeof(ub), L" \t a b \t ");
+	UniTrimLeft(ub);
+	StrTestCheck(ctx, UniStrCmp(ub, L"a b \t ") == 0, "UniTrimLeft removes only the leading blanks", "wrong result");
+	UniStrCpy(ub, sizeof(ub), L" \t a b \t ");
+	UniTrimRight(ub);
+	StrTestCheck(ctx, UniStrCmp(ub, L" \t a b") == 0, "UniTrimRight removes only the trailing blanks", "wrong result");
+	UniStrCpy(ub, sizeof(ub), L" \t ");
+	UniTrimLeft(ub);
+	StrTestCheck(ctx, UniStrLen(ub) == 0, "UniTrimLeft of only blanks gives an empty string", "wrong result");
+	UniStrCpy(ub, sizeof(ub), L" \t ");
+	UniTrimRight(ub);
+	StrTestCheck(ctx, UniStrLen(ub) == 0, "UniTrimRight of only blanks gives an empty string", "wrong result");
+
+	StrTestInt(ctx, "UniSoftStrCmp ignores the outer blanks and the case", UniSoftStrCmp(L" \tAbc ", L"aBC\t"), 0);
+	StrTestInt(ctx, "UniSoftStrCmp keeps the inner blanks", UniSoftStrCmp(L"a b", L"ab"), -1);
+	StrTestInt(ctx, "UniSoftStrCmp sorts a prefix first", UniSoftStrCmp(L" ab ", L"abc"), -1);
+	StrTestInt(ctx, "UniSoftStrCmp of blanks and an empty string is 0", UniSoftStrCmp(L"  ", L""), 0);
+	StrTestInt(ctx, "UniSoftStrCmp(NULL, string) is 1", UniSoftStrCmp(NULL, L"a"), 1);
+	StrTestInt(ctx, "UniSoftStrCmp(string, NULL) is -1", UniSoftStrCmp(L"a", NULL), -1);
+}
+
 // StrCmp and StrCmpi
 static void StrTestCompare(STRTEST_CTX *ctx)
 {
@@ -578,6 +628,7 @@ void str_test(UINT num, char **arg)
 	StrTestSearch(&ctx);
 	StrTestChars(&ctx);
 	StrTestTrim(&ctx);
+	StrTestEdge(&ctx);
 	StrTestCompare(&ctx);
 	StrTestBase64(&ctx);
 

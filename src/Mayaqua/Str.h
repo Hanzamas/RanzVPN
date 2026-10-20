@@ -63,7 +63,6 @@ void ToStr64(char *str, UINT64 value);
 TOKEN_LIST *ParseCmdLine(const char *str);
 TOKEN_LIST *NullToken();
 bool IsNum(const char *str);
-LIST *StrToStrList(const char *str, UINT size);
 void FreeStrList(LIST *o);
 TOKEN_LIST *ListToTokenList(const LIST *o);
 bool IsEmptyStr(const char *str);

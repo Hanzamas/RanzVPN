@@ -44,15 +44,12 @@ struct BUF
 
 struct FIFO
 {
-	REF *ref;
-	LOCK *lock;
 	void *p;
 	UINT pos, size, memsize;
 };
 
 struct LIST
 {
-	REF *ref;
 	UINT num_item, num_reserved;
 	void **p;
 	LOCK *lock;
@@ -63,7 +60,6 @@ struct LIST
 
 struct QUEUE
 {
-	REF *ref;
 	UINT num_item;
 	FIFO *fifo;
 	LOCK *lock;
@@ -71,7 +67,6 @@ struct QUEUE
 
 struct SK
 {
-	REF *ref;
 	UINT num_item, num_reserved;
 	void **p;
 	LOCK *lock;
@@ -90,7 +85,6 @@ struct HASH_LIST
 	GET_HASH *GetHashProc;
 	COMPARE *CompareProc;
 	LOCK *Lock;
-	REF *Ref;
 	LIST **Entries;
 	UINT NumItems;
 };
@@ -164,7 +158,7 @@ bool DumpDataW(void *data, UINT size, wchar_t *filename);
 BUF *ReadDump(char *filename);
 BUF *ReadDumpWithMaxSize(char *filename, UINT max_size);
 BUF *ReadDumpW(wchar_t *filename);
-BUF *ReadDumpExW(wchar_t *filename, bool read_lock);
+BUF *ReadDumpExW(wchar_t *filename, bool read_lock, UINT max_size);
 BUF *MemToBuf(const void *data, UINT size);
 bool CompareBuf(BUF *b1, BUF *b2);
 
@@ -176,7 +170,7 @@ void ReleaseFifo(FIFO *f);
 void CleanupFifo(FIFO *f);
 FIFO *NewFifo();
 FIFO *NewFifoFast();
-FIFO *NewFifoEx2(bool fast);
+FIFO *NewFifoEx2();
 void SetFifoCurrentReallocMemSize(UINT size);
 
 void *Search(LIST *o, const void *target);
@@ -203,6 +197,7 @@ bool ReplaceListPointer(LIST *o, void *oldptr, void *newptr);
 void AddIntDistinct(LIST *o, UINT i);
 void AddInt64Distinct(LIST *o, UINT64 i);
 void DelInt(LIST *o, UINT i);
+void FreeListItems(LIST *o);
 void ReleaseIntList(LIST *o);
 void ReleaseInt64List(LIST *o);
 bool IsIntInList(LIST *o, UINT i);

@@ -455,7 +455,7 @@ bool IsURLMsg(wchar_t *str, char *url, UINT url_size)
 	{
 		wchar_t *str = t->Token[i];
 
-		if (IsEmptyUniStr(str) == false)
+		if (UniIsEmptyStr(str) == false)
 		{
 			n++;
 
@@ -5669,7 +5669,7 @@ void SetHubMsg(HUB *h, wchar_t *msg)
 
 		if (UniIsEmptyStr(msg) == false)
 		{
-			h->Msg = UniCopyStr(msg);
+			h->Msg = CopyUniStr(msg);
 		}
 	}
 	Unlock(h->lock);

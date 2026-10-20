@@ -3101,7 +3101,7 @@ bool ClientConnect(CONNECTION *c)
 
 	msg = CopyUtfToUni(utf);
 
-	if (IsEmptyUniStr(msg) == false)
+	if (UniIsEmptyStr(msg) == false)
 	{
 		if (c->Session->Client_Message != NULL)
 		{

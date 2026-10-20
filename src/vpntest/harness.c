@@ -6116,7 +6116,7 @@ static char *HarnessReadLogDir(char *dir_fmt, char *hubname)
 				BUF *f;
 
 				CombinePathW(path, sizeof(path), full, e->FileNameW);
-				f = ReadDumpExW(path, false);
+				f = ReadDumpExW(path, false, 0);
 				if (f != NULL)
 				{
 					WriteBuf(b, f->Buf, f->Size);

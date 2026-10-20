@@ -524,25 +524,13 @@ void MacToStr(char *str, UINT size, const UCHAR *mac_address)
 
 bool IsEmptyStr(const char *str)
 {
-	char *s;
 	if (str == NULL)
 	{
 		return true;
 	}
 
-	s = CopyStr(str);
-	Trim(s);
-
-	if (StrLen(s) == 0)
-	{
-		Free(s);
-		return true;
-	}
-	else
-	{
-		Free(s);
-		return false;
-	}
+	// Empty when nothing but blanks (the characters Trim removes) precedes the terminator
+	return str[strspn(str, " \t")] == '\0';
 }
 
 TOKEN_LIST *ListToTokenList(const LIST *o)
@@ -567,55 +555,7 @@ TOKEN_LIST *ListToTokenList(const LIST *o)
 
 void FreeStrList(LIST *o)
 {
-	UINT i;
-	if (o == NULL)
-	{
-		return;
-	}
-
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
-		char *s = LIST_DATA(o, i);
-		Free(s);
-	}
-
-	ReleaseList(o);
-}
-
-LIST *StrToStrList(const char *str, UINT size)
-{
-	LIST *o;
-	char *tmp;
-	UINT tmp_size;
-	UINT i;
-	if (str == NULL)
-	{
-		return NULL;
-	}
-
-	o = NewListFast(NULL);
-
-	i = 0;
-	while (true)
-	{
-		if (i >= size)
-		{
-			break;
-		}
-		if (*str == 0)
-		{
-			break;
-		}
-
-		tmp_size = StrSize(str);
-		tmp = ZeroMalloc(tmp_size);
-		StrCpy(tmp, tmp_size, str);
-		Add(o, tmp);
-		str += StrLen(str) + 1;
-		i++;
-	}
-
-	return o;
+	FreeListItems(o);
 }
 
 bool IsNum(const char *str)
@@ -872,40 +812,28 @@ bool EndWith(const char *str, const char *key)
 
 bool StartWith(const char *str, const char *key)
 {
-	UINT str_len;
-	UINT key_len;
-	char *tmp;
-	bool ret;
+	UINT i;
 	if (str == NULL || key == NULL)
 	{
 		return false;
 	}
 
-	str_len = StrLen(str);
-	key_len = StrLen(key);
-	if (str_len < key_len)
+	// An empty str or key never matches
+	if (key[0] == '\0')
 	{
 		return false;
 	}
-	if (str_len == 0 || key_len == 0)
-	{
-		return false;
-	}
-	tmp = CopyStr(str);
-	tmp[key_len] = 0;
 
-	if (StrCmpi(tmp, key) == 0)
+	// Compares in place with the ASCII-only fold of StrCmpi, and stops at the end of str
+	for (i = 0;key[i] != '\0';i++)
 	{
-		ret = true;
-	}
-	else
-	{
-		ret = false;
+		if (str[i] == '\0' || ToUpper(str[i]) != ToUpper(key[i]))
+		{
+			return false;
+		}
 	}
 
-	Free(tmp);
-
-	return ret;
+	return true;
 }
 
 bool StrToMac(UCHAR *mac_address, const char *str)
