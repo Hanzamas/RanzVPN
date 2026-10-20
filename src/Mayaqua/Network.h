@@ -219,7 +219,6 @@ struct CONNECT_SERIAL_PARAM
 struct SSL_VERIFY_OPTION
 {
 	bool VerifyPeer;
-	bool PromptOnVerifyFail;		// Prompt on verification failure (Windows)
 	bool AddDefaultCA;
 	bool VerifyHostname;
 	LIST *CaList;

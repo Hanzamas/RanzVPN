@@ -64,9 +64,6 @@ typedef struct AC AC;
 typedef struct USERLIST USERLIST;
 
 
-typedef struct CHECK_CERT_THREAD_PROC CHECK_CERT_THREAD_PROC;
-
-
 typedef struct LINK LINK;
 
 
@@ -78,7 +75,6 @@ typedef struct BRIDGE BRIDGE;
 typedef struct LOCALBRIDGE LOCALBRIDGE;
 
 
-typedef struct ACCOUNT ACCOUNT;
 typedef struct RPC_CLIENT_GET_CONNECTION_STATUS RPC_CLIENT_GET_CONNECTION_STATUS;
 
 

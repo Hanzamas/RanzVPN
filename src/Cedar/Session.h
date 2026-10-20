@@ -15,8 +15,6 @@ typedef UINT (PA_GETNEXTPACKET)(SESSION *s, void **data);
 typedef bool (PA_PUTPACKET)(SESSION *s, void *data, UINT size);
 typedef void (PA_FREE)(SESSION *s);
 
-typedef void (CLIENT_STATUS_PRINTER)(SESSION *s, wchar_t *status);
-
 struct NODE_INFO
 {
 	char ClientProductName[64];
@@ -144,7 +142,6 @@ struct SESSION
 	UINT UdpAccelMss;
 	bool UdpAccelFastDisconnectDetect;
 
-	ACCOUNT *Account;
 	UINT VLanDeviceErrorCount;
 	bool UserCanceled;
 	UINT64 LastTryAddConnectTime;
@@ -190,7 +187,6 @@ void SessionAdditionalConnect(SESSION *s);
 void PrintSessionTotalDataSize(SESSION *s);
 void AddTrafficForSession(SESSION *s, TRAFFIC *t);
 void IncrementUserTraffic(HUB *hub, char *username, SESSION *s);
-void PrintStatus(SESSION *s, wchar_t *str);
 void ReleaseCancelList(LIST *o);
 void AddCancelList(LIST *o, CANCEL *c);
 void CancelList(LIST *o);

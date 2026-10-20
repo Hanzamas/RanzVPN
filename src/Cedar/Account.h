@@ -173,16 +173,6 @@ void GetPolicyValueRangeStr(wchar_t *str, UINT size, UINT id);
 void FormatPolicyValue(wchar_t *str, UINT size, UINT id, UINT value);
 
 
-struct ACCOUNT
-{
-	bool CheckServerCert;
-	bool RetryOnServerCert;
-	bool AddDefaultCA;
-	X *ServerCert;
-
-	CLIENT_STATUS_PRINTER *StatusPrinter;
-};
-
 struct RPC_CLIENT_GET_CONNECTION_STATUS
 {
 	wchar_t AccountName[MAX_ACCOUNT_NAME_LEN + 1];

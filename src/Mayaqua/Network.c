@@ -3253,19 +3253,16 @@ bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, UINT ssl_timeout, char 
 					*ssl_err = 85;
 				}
 
-				if (ssl_option->PromptOnVerifyFail == false)
+				Lock(openssl_lock);
 				{
-					Lock(openssl_lock);
-					{
-						SSL_free(sock->ssl);
-						sock->ssl = NULL;
-					}
-					Unlock(openssl_lock);
-
-					Unlock(sock->ssl_lock);
-					FreeSSLCtx(ssl_ctx);
-					return false;
+					SSL_free(sock->ssl);
+					sock->ssl = NULL;
 				}
+				Unlock(openssl_lock);
+
+				Unlock(sock->ssl_lock);
+				FreeSSLCtx(ssl_ctx);
+				return false;
 			}
 		}
 	}

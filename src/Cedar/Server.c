@@ -323,11 +323,6 @@ static void SiCheckDeadLockMain(SERVER *s, UINT timeout)
 			CheckDeadLock(cedar->ConnectionList->lock, timeout, "cedar->ConnectionList->lock");
 		}
 
-		if (cedar->CaList != NULL)
-		{
-			CheckDeadLock(cedar->CaList->lock, timeout, "cedar->CaList->lock");
-		}
-
 		if (cedar->TrafficLock != NULL)
 		{
 			CheckDeadLock(cedar->TrafficLock, timeout, "cedar->TrafficLock");

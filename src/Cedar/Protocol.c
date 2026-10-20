@@ -2650,91 +2650,9 @@ CLEANUP:
 	return false;
 }
 
-static void ClientCheckServerCertThread(THREAD *thread, void *param)
-{
-	CHECK_CERT_THREAD_PROC *p = (CHECK_CERT_THREAD_PROC *)param;
-	if (thread == NULL || param == NULL)
-	{
-		return;
-	}
-
-	NoticeThreadInit(thread);
-
-	p->Ok = p->CheckCertProc(p->Connection->Session, p->Connection, p->ServerX, &p->Expired);
-	p->UserSelected = true;
-}
-
-static bool ClientCheckServerCert(CONNECTION *c, bool *expired)
-{
-	CLIENT_AUTH *auth;
-	X *x;
-	CHECK_CERT_THREAD_PROC *p;
-	THREAD *thread;
-	bool ret;
-	UINT64 start;
-	if (c == NULL)
-	{
-		return false;
-	}
-
-	if (expired != NULL)
-	{
-		*expired = false;
-	}
-
-	auth = c->Session->ClientAuth;
-
-	if (auth->CheckCertProc == NULL)
-	{
-		return false;
-	}
-
-	x = CloneX(c->FirstSock->RemoteX);
-	if (x == NULL)
-	{
-		return false;
-	}
-
-	p = ZeroMalloc(sizeof(CHECK_CERT_THREAD_PROC));
-	p->ServerX = x;
-	p->CheckCertProc = auth->CheckCertProc;
-	p->Connection = c;
-
-	thread = NewThread(ClientCheckServerCertThread, p);
-	WaitThreadInit(thread);
-
-	start = Tick64();
-	while (true)
-	{
-		if ((Tick64() - start) > CONNECTING_POOLING_SPAN)
-		{
-			start = Tick64();
-			// No NOOP here: the user is asked before the signature is sent.
-		}
-		if (p->UserSelected)
-		{
-			break;
-		}
-		WaitThread(thread, 500);
-	}
-
-	if (expired != NULL)
-	{
-		*expired = p->Expired;
-	}
-
-	ret = p->Ok;
-	FreeX(p->ServerX);
-	Free(p);
-	ReleaseThread(thread);
-
-	return ret;
-}
-
 bool ClientConnect(CONNECTION *c)
 {
 	bool ret = false;
-	bool ok = false;
 	UINT err;
 	SOCK *s;
 	PACK *p = NULL;
@@ -2744,7 +2662,6 @@ bool ClientConnect(CONNECTION *c)
 	char connection_name[MAX_CONNECTION_NAME_LEN + 1];
 	UCHAR session_key[SHA1_SIZE];
 	POLICY *policy;
-	bool expired = false;
 	IP server_ip;
 	if (c == NULL)
 	{
@@ -2753,9 +2670,6 @@ bool ClientConnect(CONNECTION *c)
 
 	sess = c->Session;
 
-	PrintStatus(sess, L"init");
-	PrintStatus(sess, _UU("STATUS_1"));
-
 	c->Status = CONNECTION_STATUS_CONNECTING;
 	c->Session->ClientStatus = CLIENT_STATUS_CONNECTING;
 
@@ -2763,33 +2677,11 @@ bool ClientConnect(CONNECTION *c)
 	if (s == NULL)
 	{
 		// Do not retry if untrusted or hostname mismatched
-		if (c->Session->LinkModeClient == false && (c->Err == ERR_CERT_NOT_TRUSTED || c->Err == ERR_HOSTNAME_MISMATCH)
-			&& (c->Session->Account == NULL || ! c->Session->Account->RetryOnServerCert))
+		if (c->Session->LinkModeClient == false && (c->Err == ERR_CERT_NOT_TRUSTED || c->Err == ERR_HOSTNAME_MISMATCH))
 		{
 			c->Session->ForceStopFlag = true;
 		}
-		PrintStatus(sess, L"free");
 		return false;
-	}
-
-	PrintStatus(sess, _UU("STATUS_5"));
-
-	// Prompt user whether to continue on verification errors
-	if ((c->Err == ERR_CERT_NOT_TRUSTED || c->Err == ERR_HOSTNAME_MISMATCH || c->Err == ERR_SERVER_CERT_EXPIRES) && ClientCheckServerCert(c, &expired) == false)
-	{
-		if (expired)
-		{
-			c->Err = ERR_SERVER_CERT_EXPIRES;
-		}
-
-		// Do not retry if untrusted or hostname mismatched
-		if (c->Session->LinkModeClient == false && (c->Err == ERR_CERT_NOT_TRUSTED || c->Err == ERR_HOSTNAME_MISMATCH)
-			&& (c->Session->Account == NULL || ! c->Session->Account->RetryOnServerCert))
-		{
-			c->Session->ForceStopFlag = true;
-		}
-
-		goto CLEANUP;
 	}
 
 	Copy(&server_ip, &s->RemoteIP, sizeof(IP));
@@ -2852,8 +2744,6 @@ bool ClientConnect(CONNECTION *c)
 
 
 	c->Session->ClientStatus = CLIENT_STATUS_AUTH;
-
-	PrintStatus(sess, _UU("STATUS_6"));
 
 	if (ClientUploadAuth(c) == false)
 	{
@@ -2921,8 +2811,6 @@ bool ClientConnect(CONNECTION *c)
 
 		Free(utf);
 	}
-
-	PrintStatus(sess, _UU("STATUS_7"));
 
 	if (ParseWelcomeFromPack(p, session_name, sizeof(session_name),
 		connection_name, sizeof(connection_name), &policy) == false)
@@ -3130,7 +3018,6 @@ bool ClientConnect(CONNECTION *c)
 		c->ServerX = CloneX(c->FirstSock->RemoteX);
 	}
 
-	PrintStatus(sess, _UU("STATUS_9"));
 	StartTunnelingMode(c);
 	s = NULL;
 
@@ -3140,16 +3027,12 @@ bool ClientConnect(CONNECTION *c)
 		ts->Direction = TCP_CLIENT_TO_SERVER;
 	}
 
-	PrintStatus(sess, L"free");
-
 	if (c->Session->LinkModeClient && c->Session->Link != NULL)
 	{
 		HLog(c->Session->Link->Hub, "LH_CONNECT_2", c->Session->ClientOption->AccountName, session_name);
 	}
 
 	SessionMain(c->Session);
-
-	ok = true;
 
 	if (c->Err == ERR_USER_CANCEL)
 	{
@@ -3172,12 +3055,6 @@ CLEANUP:
 
 	Disconnect(s);
 	ReleaseSock(s);
-
-
-	if (ok == false)
-	{
-		PrintStatus(sess, L"free");
-	}
 
 	return ret;
 }
@@ -3873,11 +3750,6 @@ SOCK *ClientConnectToServer(CONNECTION *c)
 		return NULL;
 	}
 
-	if (err != 0)
-	{
-		c->Err = err;
-	}
-
 	if (s->RemoteX == NULL)
 	{
 		Disconnect(s);
@@ -3943,10 +3815,6 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 
 	if (o->ProxyType == PROXY_DIRECT)
 	{
-		wchar_t tmp[MAX_SIZE];
-		UniFormat(tmp, sizeof(tmp), _UU("STATUS_4"), hostname);
-		PrintStatus(sess, tmp);
-
 		{
 			IP		*localIP;
 			UINT	localport;
@@ -3990,7 +3858,6 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 	}
 	else
 	{
-		wchar_t tmp[MAX_SIZE];
 		PROXY_PARAM_OUT out;
 		PROXY_PARAM_IN in;
 		UINT ret;
@@ -4033,9 +3900,6 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 		else {
 			in.BindLocalPort = sess->ClientOption->BindLocalPort + Count(sess->Connection->CurrentNumConnection) - 1;
 		}
-
-		UniFormat(tmp, sizeof(tmp), _UU("STATUS_2"), in.TargetHostname, in.Hostname);
-		PrintStatus(sess, tmp);
 
 		switch (o->ProxyType)
 		{

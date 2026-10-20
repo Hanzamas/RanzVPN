@@ -1168,11 +1168,6 @@ static void ClientThread(THREAD *t, void *param)
 
 	s->ClientStatus = CLIENT_STATUS_IDLE;
 
-	if (s->Account != NULL)
-	{
-		ReleaseSession(s);
-	}
-
 	ReleaseSession(s);
 }
 
@@ -1244,7 +1239,7 @@ SESSION *NewRpcSessionEx2(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *
 	return s;
 }
 
-static SESSION *NewClientSessionEx(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *auth, PACKET_ADAPTER *pa, ACCOUNT *account)
+SESSION *NewClientSession(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *auth, PACKET_ADAPTER *pa)
 {
 	SESSION *s;
 	THREAD *t;
@@ -1325,38 +1320,12 @@ static SESSION *NewClientSessionEx(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_A
 			s->SslOption->CaList = CloneXList(o);
 		}
 	}
-	else
-	{
-		if (account != NULL && account->CheckServerCert)
-		{
-			s->SslOption = ZeroMalloc(sizeof(SSL_VERIFY_OPTION));
-			s->SslOption->VerifyPeer = true;
-			s->SslOption->PromptOnVerifyFail = true;
-			s->SslOption->AddDefaultCA = account->AddDefaultCA;
-			s->SslOption->VerifyHostname = true;
-			s->SslOption->SavedCert = CloneX(account->ServerCert);
-
-			LIST *o = cedar->CaList;
-			s->SslOption->CaList = CloneXList(o);
-		}
-	}
-
-	if (StrCmpi(s->ClientOption->DeviceName, BRIDGE_DEVICE_NAME) == 0)
-	{
-		s->BridgeMode = true;
-	}
-
-	s->Account = account;
 
 	t = NewThread(ClientThread, (void *)s);
 	WaitThreadInit(t);
 	ReleaseThread(t);
 
 	return s;
-}
-SESSION *NewClientSession(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *auth, PACKET_ADAPTER *pa)
-{
-	return NewClientSessionEx(cedar, option, auth, pa, NULL);
 }
 
 SESSION *GetSessionFromKey(CEDAR *cedar, UCHAR *session_key)
@@ -1465,16 +1434,6 @@ SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, P
 	NewSessionKey(cedar, s->SessionKey, &s->SessionKey32);
 
 	return s;
-}
-
-void PrintStatus(SESSION *s, wchar_t *str)
-{
-	if (s == NULL || str == NULL || s->Account == NULL || s->Account->StatusPrinter == NULL)
-	{
-		return;
-	}
-
-	s->Account->StatusPrinter(s, str);
 }
 
 // Add c to the cancel list o once. The flood loop of StorePacket adds the cancel of every session of the hub,

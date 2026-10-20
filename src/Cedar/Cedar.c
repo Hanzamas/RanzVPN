@@ -805,18 +805,10 @@ void StopCedar(CEDAR *c)
 
 static void CleanupCedar(CEDAR *c)
 {
-	UINT i;
 	if (c == NULL)
 	{
 		return;
 	}
-
-	for (i = 0;i < LIST_NUM(c->CaList);i++)
-	{
-		X *x = LIST_DATA(c->CaList, i);
-		FreeX(x);
-	}
-	ReleaseList(c->CaList);
 
 	ReleaseList(c->ListenerList);
 	ReleaseList(c->HubList);
@@ -1180,7 +1172,6 @@ CEDAR *NewCedar(X *server_x, K *server_k)
 
 	c->Traffic = NewTraffic();
 	c->TrafficLock = NewLock();
-	c->CaList = NewList(CompareCert);
 
 	SetCedarCipherList(c, SERVER_DEFAULT_CIPHER_NAME);
 

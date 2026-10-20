@@ -612,7 +612,6 @@ LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, 
 	o->NoRoutingTracking = true;
 
 	a = CopyClientAuth(auth);
-	a->CheckCertProc = NULL;
 
 	k = ZeroMalloc(sizeof(LINK));
 

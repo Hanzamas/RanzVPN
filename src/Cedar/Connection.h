@@ -11,8 +11,6 @@
 
 #define	UPDATE_LAST_COMM_TIME(v, n)		{if ((v) <= (n)) { v = (n); } }
 
-typedef bool (CHECK_CERT_PROC)(SESSION *s, CONNECTION *c, X *server_x, bool *expired);
-
 // Do not change item size or order and only add new items at the end!
 struct CLIENT_OPTION
 {
@@ -71,7 +69,6 @@ struct CLIENT_AUTH
 	K *ClientK;
 	char OpensslEnginePrivateKeyName[MAX_SECURE_DEVICE_FILE_LEN + 1];
 	char OpensslEngineName[MAX_SECURE_DEVICE_FILE_LEN + 1];
-	CHECK_CERT_PROC *CheckCertProc;
 };
 
 struct TCPSOCK
