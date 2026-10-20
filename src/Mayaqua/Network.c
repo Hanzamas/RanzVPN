@@ -406,7 +406,7 @@ static int CALLBACK Win32AcceptCheckCallback(LPWSABUF lpCallerId, LPWSABUF lpCal
 	return CF_ACCEPT;
 }
 
-static SOCKET Win32Accept(SOCK *sock, SOCKET s, struct sockaddr *addr, int *addrlen, bool ipv6)
+static SOCKET Win32Accept(SOCK *sock, SOCKET s, struct sockaddr *addr, int *addrlen)
 {
 	SOCKET ret;
 	WIN32_ACCEPT_CHECK_DATA d;
@@ -3671,8 +3671,9 @@ SOCK *Accept(SOCK *sock)
 	SOCK *ret;
 	SOCKET s, new_socket;
 	int size;
-	struct sockaddr_in addr;
+	struct sockaddr_storage addr;
 	UINT true_flag = 1;
+	bool is_ipv6;
 	if (sock == NULL)
 	{
 		return NULL;
@@ -3685,10 +3686,6 @@ SOCK *Accept(SOCK *sock)
 	{
 		return NULL;
 	}
-	if (sock->IPv6)
-	{
-		return Accept6(sock);
-	}
 
 	s = sock->socket;
 	if (s == INVALID_SOCKET)
@@ -3700,11 +3697,11 @@ SOCK *Accept(SOCK *sock)
 
 	if (sock->EnableConditionalAccept)
 	{
-		new_socket = Win32Accept(sock, s, (struct sockaddr *)&addr,(int *)&size, false);
+		new_socket = Win32Accept(sock, s, (struct sockaddr *)&addr, &size);
 	}
 	else
 	{
-		new_socket = accept(s, (struct sockaddr *)&addr,(int *)&size);
+		new_socket = accept(s, (struct sockaddr *)&addr, &size);
 	}
 
 	if (new_socket == INVALID_SOCKET)
@@ -3731,6 +3728,9 @@ SOCK *Accept(SOCK *sock)
 
 	QuerySocketInformation(ret);
 
+	// An IPv4 peer of the dual-stack listener arrives as ::ffff:a.b.c.d, which decodes to an IPv4 address
+	is_ipv6 = IsIP6(&ret->RemoteIP);
+
 	if (IsLocalHostIP(&ret->RemoteIP) == false)
 	{
 		ret->IpClientAdded = true;
@@ -3741,246 +3741,125 @@ SOCK *Accept(SOCK *sock)
 	{
 		IP current_ip;
 
-		if (GetCurrentGlobalIP(&current_ip, false) == false)
+		if (GetCurrentGlobalIP(&current_ip, is_ipv6) == false)
 		{
-			SetCurrentGlobalIP(&sock->LocalIP, false);
+			SetCurrentGlobalIP(&sock->LocalIP, is_ipv6);
 		}
 	}
 
-	StrCpy(ret->UnderlayProtocol, sizeof(ret->UnderlayProtocol), SOCK_UNDERLAY_NATIVE_V4);
+	StrCpy(ret->UnderlayProtocol, sizeof(ret->UnderlayProtocol), is_ipv6 ? SOCK_UNDERLAY_NATIVE_V6 : SOCK_UNDERLAY_NATIVE_V4);
 
-	AddProtocolDetailsStr(ret->ProtocolDetails, sizeof(ret->ProtocolDetails), "IPv4");
-
-	return ret;
-}
-
-SOCK *Accept6(SOCK *sock)
-{
-	SOCK *ret;
-	SOCKET s, new_socket;
-	int size;
-	struct sockaddr_in6 addr;
-	if (sock == NULL)
-	{
-		return NULL;
-	}
-	if (sock->ListenMode == false || sock->Type != SOCK_TCP || sock->ServerMode == false)
-	{
-		return NULL;
-	}
-	if (sock->CancelAccept)
-	{
-		return NULL;
-	}
-	if (sock->IPv6 == false)
-	{
-		return NULL;
-	}
-
-	s = sock->socket;
-	if (s == INVALID_SOCKET)
-	{
-		return NULL;
-	}
-	Zero(&addr, sizeof(addr));
-	size = sizeof(addr);
-
-	if (sock->EnableConditionalAccept)
-	{
-		new_socket = Win32Accept(sock, s, (struct sockaddr *)&addr,(int *)&size, true);
-	}
-	else
-	{
-		new_socket = accept(s, (struct sockaddr *)&addr,(int *)&size);
-	}
-
-	if (new_socket == INVALID_SOCKET)
-	{
-		return NULL;
-	}
-	if (sock->CancelAccept)
-	{
-		closesocket(new_socket);
-		return NULL;
-	}
-
-	ret = NewSock();
-	ret->socket = new_socket;
-	ret->Connected = true;
-	ret->AsyncMode = false;
-	ret->Type = SOCK_TCP;
-	ret->ServerMode = true;
-	ret->SecureMode = false;
-
-	UINT true_flag = 1;
-	(void)setsockopt(ret->socket, IPPROTO_TCP, TCP_NODELAY, (char *)&true_flag, sizeof(true_flag));
-
-	SetTimeout(ret, TIMEOUT_INFINITE);
-
-	QuerySocketInformation(ret);
-
-	if (IsLocalHostIP(&ret->RemoteIP) == false)
-	{
-		ret->IpClientAdded = true;
-		AddIpClient(&ret->RemoteIP);
-	}
-	if (IsZeroIp(&sock->LocalIP) == false && IsLocalHostIP(&sock->LocalIP) == false)
-	{
-		IP current_ip;
-
-		if (GetCurrentGlobalIP(&current_ip, true) == false)
-		{
-			SetCurrentGlobalIP(&sock->LocalIP, true);
-		}
-	}
-
-	StrCpy(ret->UnderlayProtocol, sizeof(ret->UnderlayProtocol), SOCK_UNDERLAY_NATIVE_V6);
-
-	AddProtocolDetailsStr(ret->ProtocolDetails, sizeof(ret->ProtocolDetails), "IPv6");
+	AddProtocolDetailsStr(ret->ProtocolDetails, sizeof(ret->ProtocolDetails), is_ipv6 ? "IPv6" : "IPv4");
 
 	return ret;
-}
-
-SOCK *ListenEx6(UINT port, bool local_only)
-{
-	return ListenEx63(port, local_only, false, NULL);
-}
-SOCK *ListenEx63(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
-{
-	SOCKET s;
-	SOCK *sock;
-	struct sockaddr_in6 addr;
-	struct in6_addr in;
-	IP localhost;
-	UINT backlog = SOMAXCONN;
-	if (port == 0 || port >= 65536)
-	{
-		return NULL;
-	}
-
-	Zero(&addr, sizeof(addr));
-	Zero(&in, sizeof(in));
-	GetLocalHostIP6(&localhost);
-
-	addr.sin6_port = htons((UINT)port);
-	if (listen_ip == NULL || IsZeroIP(listen_ip))
-	{
-		addr.sin6_addr = in6addr_any;
-	}
-	else if (IsIP6(listen_ip))
-	{
-		IPToInAddr6(&addr.sin6_addr, listen_ip);
-	}
-	else
-	{
-		return NULL;
-	}
-	addr.sin6_family = AF_INET6;
-
-	if (local_only)
-	{
-		IPToInAddr6(&addr.sin6_addr, &localhost);
-
-		enable_ca = false;
-	}
-
-	s = socket(AF_INET6, SOCK_STREAM, 0);
-	if (s == INVALID_SOCKET)
-	{
-		return NULL;
-	}
-
-
-	if (bind(s, (struct sockaddr *)&addr, sizeof(struct sockaddr_in6)) != 0)
-	{
-		closesocket(s);
-		return NULL;
-	}
-
-	if (enable_ca)
-	{
-		backlog = 1;
-	}
-
-	if (listen(s, backlog))
-	{
-		closesocket(s);
-		return NULL;
-	}
-
-	sock = NewSock();
-	sock->Connected = false;
-	sock->AsyncMode = false;
-	sock->ServerMode = true;
-	sock->Type = SOCK_TCP;
-	sock->socket = s;
-	sock->ListenMode = true;
-	sock->SecureMode = false;
-	sock->LocalPort = port;
-	sock->IPv6 = true;
-	sock->EnableConditionalAccept = enable_ca;
-
-	return sock;
 }
 
 SOCK *Listen(UINT port)
 {
-	return ListenEx(port, false);
+	return ListenEx2(port, false, false, NULL, false);
 }
-SOCK *ListenEx(UINT port, bool local_only)
+
+// A TCP socket bound to addr. An AF_INET6 socket gets IPV6_V6ONLY from v6only: false makes it dual-stack.
+static SOCKET ListenBind(struct sockaddr *addr, int addr_size, bool v6only)
 {
-	return ListenEx2(port, local_only, false, NULL);
+	SOCKET s = socket(addr->sa_family, SOCK_STREAM, 0);
+
+	if (s == INVALID_SOCKET)
+	{
+		return INVALID_SOCKET;
+	}
+
+	if (addr->sa_family == AF_INET6)
+	{
+		DWORD flag = (v6only ? 1 : 0);
+
+		if (setsockopt(s, IPPROTO_IPV6, IPV6_V6ONLY, (char *)&flag, sizeof(flag)) != 0)
+		{
+			closesocket(s);
+			return INVALID_SOCKET;
+		}
+	}
+
+	if (bind(s, addr, addr_size) != 0)
+	{
+		closesocket(s);
+		return INVALID_SOCKET;
+	}
+
+	return s;
 }
-SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
+
+// One TCP listen socket per port. Without a ListenIP it is a dual-stack AF_INET6 socket on [::]:port, so IPv4 peers
+// arrive as ::ffff:a.b.c.d. AF_INET is used for local_only, an IPv4 ListenIP, ipv4_only or an unsupported IPv6.
+SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip, bool ipv4_only)
 {
-	SOCKET s;
+	SOCKET s = INVALID_SOCKET;
 	SOCK *sock;
-	struct sockaddr_in addr;
-	struct in_addr in;
-	IP localhost;
+	struct sockaddr_in addr4;
+	struct sockaddr_in6 addr6;
 	UINT backlog = SOMAXCONN;
+	UINT true_flag = 1;
+	bool is_ipv6 = false;
 	if (port == 0 || port >= 65536)
 	{
 		return NULL;
 	}
 
-	Zero(&addr, sizeof(addr));
-	Zero(&in, sizeof(in));
-	SetIP(&localhost, 127, 0, 0, 1);
-
-	addr.sin_port = htons((UINT)port);
-	if (listen_ip == NULL || IsZeroIP(listen_ip))
-	{
-		*((UINT *)&addr.sin_addr) = htonl(INADDR_ANY);
-	}
-	else if (IsIP4(listen_ip))
-	{
-		IPToInAddr(&addr.sin_addr, listen_ip);
-	}
-	else
-	{
-		return NULL;
-	}
-	addr.sin_family = AF_INET;
+	Zero(&addr4, sizeof(addr4));
+	addr4.sin_family = AF_INET;
+	addr4.sin_port = htons((UINT)port);
+	Zero(&addr6, sizeof(addr6));
+	addr6.sin6_family = AF_INET6;
+	addr6.sin6_port = htons((UINT)port);
 
 	if (local_only)
 	{
-		IPToInAddr(&addr.sin_addr, &localhost);
+		IP localhost;
+
+		SetIP(&localhost, 127, 0, 0, 1);
+		IPToInAddr(&addr4.sin_addr, &localhost);
 
 		enable_ca = false;
+
+		s = ListenBind((struct sockaddr *)&addr4, sizeof(addr4), false);
+	}
+	else if (listen_ip == NULL || IsZeroIP(listen_ip))
+	{
+		if (ipv4_only == false)
+		{
+			s = ListenBind((struct sockaddr *)&addr6, sizeof(addr6), false);
+			is_ipv6 = true;
+		}
+
+		if (s == INVALID_SOCKET)
+		{
+			// IPv6 is unsupported or off, or another process holds the port in one family: the free family listens
+			s = ListenBind((struct sockaddr *)&addr4, sizeof(addr4), false);
+			is_ipv6 = false;
+
+			if (s == INVALID_SOCKET && ipv4_only == false)
+			{
+				s = ListenBind((struct sockaddr *)&addr6, sizeof(addr6), true);
+				is_ipv6 = true;
+			}
+		}
+	}
+	else if (IsIP4(listen_ip))
+	{
+		IPToInAddr(&addr4.sin_addr, listen_ip);
+
+		s = ListenBind((struct sockaddr *)&addr4, sizeof(addr4), false);
+	}
+	else if (ipv4_only == false)
+	{
+		IPToInAddr6(&addr6.sin6_addr, listen_ip);
+
+		s = ListenBind((struct sockaddr *)&addr6, sizeof(addr6), true);
+		is_ipv6 = true;
 	}
 
-	s = socket(AF_INET, SOCK_STREAM, 0);
 	if (s == INVALID_SOCKET)
 	{
-		return NULL;
-	}
-
-	UINT true_flag = 1;
-
-	if (bind(s, (struct sockaddr *)&addr, sizeof(struct sockaddr_in)) != 0)
-	{
-		closesocket(s);
 		return NULL;
 	}
 
@@ -4005,6 +3884,7 @@ SOCK *ListenEx2(UINT port, bool local_only, bool enable_ca, IP *listen_ip)
 	sock->ListenMode = true;
 	sock->SecureMode = false;
 	sock->LocalPort = port;
+	sock->IPv6 = is_ipv6;
 	sock->EnableConditionalAccept = enable_ca;
 
 	return sock;
@@ -4870,6 +4750,27 @@ void InitUdpSocketBufferSize(SOCKET s)
 	SetSocketBufferSizeWithBestEffort(s, false, UDP_MAX_BUFFER_SIZE);
 }
 
+// Decode a socket address by its family. An IPv4-mapped IPv6 address (an IPv4 peer of a dual-stack socket)
+// becomes an IPv4 IP.
+static void DecodeSockAddr(struct sockaddr_storage *addr, IP *ip, UINT *port)
+{
+	if (addr->ss_family == AF_INET6)
+	{
+		struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)addr;
+
+		*port = (UINT)ntohs(addr6->sin6_port);
+		InAddrToIP6(ip, &addr6->sin6_addr);
+		ip->ipv6_scope_id = addr6->sin6_scope_id;
+	}
+	else if (addr->ss_family == AF_INET)
+	{
+		struct sockaddr_in *addr4 = (struct sockaddr_in *)addr;
+
+		*port = (UINT)ntohs(addr4->sin_port);
+		InAddrToIP(ip, &addr4->sin_addr);
+	}
+}
+
 void QuerySocketInformation(SOCK *sock)
 {
 	if (sock == NULL)
@@ -4879,57 +4780,24 @@ void QuerySocketInformation(SOCK *sock)
 
 	Lock(sock->lock);
 	{
-		struct sockaddr_in6 sockaddr6;
-		struct in6_addr *addr6;
+		struct sockaddr_storage sockaddr;
 		int size;
 		UINT dw;
 		UINT opt_value = 0;
 
 		if (sock->Type == SOCK_TCP)
 		{
-			size = sizeof(sockaddr6);
-			if (getpeername(sock->socket, (struct sockaddr *)&sockaddr6, (int *)&size) == 0)
+			size = sizeof(sockaddr);
+			if (getpeername(sock->socket, (struct sockaddr *)&sockaddr, &size) == 0)
 			{
-				if (size >= sizeof(struct sockaddr_in6))
-				{
-					sock->RemotePort = (UINT)ntohs(sockaddr6.sin6_port);
-					addr6 = &sockaddr6.sin6_addr;
-					InAddrToIP6(&sock->RemoteIP, addr6);
-					sock->RemoteIP.ipv6_scope_id = sockaddr6.sin6_scope_id;
-				}
-				else
-				{
-					struct sockaddr_in *sockaddr;
-					struct in_addr *addr;
-
-					sockaddr = (struct sockaddr_in *)&sockaddr6;
-					sock->RemotePort = (UINT)ntohs(sockaddr->sin_port);
-					addr = &sockaddr->sin_addr;
-					InAddrToIP(&sock->RemoteIP, addr);
-				}
+				DecodeSockAddr(&sockaddr, &sock->RemoteIP, &sock->RemotePort);
 			}
 		}
 
-		size = sizeof(sockaddr6);
-		if (getsockname(sock->socket, (struct sockaddr *)&sockaddr6, (int *)&size) == 0)
+		size = sizeof(sockaddr);
+		if (getsockname(sock->socket, (struct sockaddr *)&sockaddr, &size) == 0)
 		{
-			if (size >= sizeof(struct sockaddr_in6))
-			{
-				sock->LocalPort = (UINT)ntohs(sockaddr6.sin6_port);
-				addr6 = &sockaddr6.sin6_addr;
-				InAddrToIP6(&sock->LocalIP, addr6);
-				sock->LocalIP.ipv6_scope_id = sockaddr6.sin6_scope_id;
-			}
-			else
-			{
-				struct sockaddr_in *sockaddr;
-				struct in_addr *addr;
-
-				sockaddr = (struct sockaddr_in *)&sockaddr6;
-				sock->LocalPort = (UINT)ntohs(sockaddr->sin_port);
-				addr = &sockaddr->sin_addr;
-				InAddrToIP(&sock->LocalIP, addr);
-			}
+			DecodeSockAddr(&sockaddr, &sock->LocalIP, &sock->LocalPort);
 		}
 
 		if (sock->IsRawSocket)

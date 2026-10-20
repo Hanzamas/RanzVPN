@@ -278,7 +278,7 @@ void packcap_test(UINT num, char **arg)
 
 	Print("Client Pack size cap test (ClientDownloadHello, the welcome Pack of ClientConnect)\n");
 
-	t.Listen = ListenEx(PACKCAP_PORT, true);
+	t.Listen = ListenEx2(PACKCAP_PORT, true, false, NULL, false);
 	PackCapCheck(&t, t.Listen != NULL, "The peer listens on 127.0.0.1", "cannot listen on TCP %u", PACKCAP_PORT);
 
 	if (t.Listen != NULL)

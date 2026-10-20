@@ -1270,17 +1270,6 @@ static void TtsWorkerThread(THREAD *thread, void *param)
 	Free(recv_buf_data);
 }
 
-static void TtsIPv6AcceptThread(THREAD *thread, void *param)
-{
-	TTS *tts = (TTS *)param;
-	if (tts == NULL || param == NULL)
-	{
-		return;
-	}
-
-	TtsAcceptProc(tts, tts->ListenSocketV6);
-}
-
 static void TtsAcceptProc(TTS *tts, SOCK *listen_socket)
 {
 	wchar_t tmp[MAX_SIZE];
@@ -1354,11 +1343,9 @@ static void TtsListenThread(THREAD *thread, void *param)
 
 	tts = (TTS *)param;
 
-	tts->ListenSocket = NULL;
-	tts->ListenSocket = ListenEx(tts->Port, false);
-	tts->ListenSocketV6 = ListenEx6(tts->Port, false);
+	tts->ListenSocket = ListenEx2(tts->Port, false, false, NULL, false);
 
-	if (tts->ListenSocket == NULL && tts->ListenSocketV6 == NULL)
+	if (tts->ListenSocket == NULL)
 	{
 		UniFormat(tmp, sizeof(tmp), _UU("TT_LISTEN_FAILED"), tts->Port);
 		TtPrint(tts->Param, tts->Print, tmp);
@@ -1374,25 +1361,7 @@ static void TtsListenThread(THREAD *thread, void *param)
 		UniFormat(tmp, sizeof(tmp), _UU("TTS_LISTEN_STARTED"), tts->Port);
 		TtPrint(tts->Param, tts->Print, tmp);
 
-		if (tts->ListenSocketV6 != NULL)
-		{
-			UniFormat(tmp, sizeof(tmp), _UU("TTS_LISTEN_STARTED_V6"), tts->Port);
-			TtPrint(tts->Param, tts->Print, tmp);
-		}
-		else
-		{
-			UniFormat(tmp, sizeof(tmp), _UU("TTS_LISTEN_FAILED_V6"), tts->Port);
-			TtPrint(tts->Param, tts->Print, tmp);
-		}
-
-		if (tts->ListenSocket != NULL)
-		{
-			AddRef(tts->ListenSocket->ref);
-		}
-		if (tts->ListenSocketV6 != NULL)
-		{
-			AddRef(tts->ListenSocketV6->ref);
-		}
+		AddRef(tts->ListenSocket->ref);
 
 		num_worker_threads = GetNumberOfCpu();
 
@@ -1409,24 +1378,11 @@ static void TtsListenThread(THREAD *thread, void *param)
 
 		NoticeThreadInit(thread);
 
-		tts->IPv6AcceptThread = NULL;
-		if (tts->ListenSocketV6 != NULL)
-		{
-			tts->IPv6AcceptThread = NewThread(TtsIPv6AcceptThread, tts);
-		}
-
 		TtsAcceptProc(tts, tts->ListenSocket);
-
-		if (tts->IPv6AcceptThread != NULL)
-		{
-			WaitThread(tts->IPv6AcceptThread, INFINITE);
-			ReleaseThread(tts->IPv6AcceptThread);
-		}
 
 		TtPrint(tts->Param, tts->Print, _UU("TTS_LISTEN_STOP"));
 
 		ReleaseSock(tts->ListenSocket);
-		ReleaseSock(tts->ListenSocketV6);
 
 		for (i = 0;i < LIST_NUM(tts->WorkerList);i++)
 		{
@@ -2119,8 +2075,6 @@ static UINT FreeTts(TTS *tts)
 	tts->Halt = true;
 	Disconnect(tts->ListenSocket);
 	ReleaseSock(tts->ListenSocket);
-	Disconnect(tts->ListenSocketV6);
-	ReleaseSock(tts->ListenSocketV6);
 
 	WaitThread(tts->Thread, INFINITE);
 

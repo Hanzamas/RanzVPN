@@ -224,7 +224,6 @@
 
 
 #define	LISTEN_RETRY_TIME			(2 * 1000)
-#define LISTEN_RETRY_TIME_NOIPV6	(60 * 1000)
 #define	LISTENER_BIND_WAIT_TIME		(5 * 1000)		// ListenerCreate / ListenerEnable wait at most this for the bind attempt
 
 #define	DOS_TABLE_EXPIRES_FIRST		250
