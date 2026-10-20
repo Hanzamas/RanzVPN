@@ -944,8 +944,6 @@ LH_NO_DHCP				Sesi "%S": Meskipun host %S di sesi ini mengirimkan paket yang men
 LH_REGIST_DHCP			Sesi "%S": Server DHCP host "%S" (%S) di sesi ini mengalokasikan, untuk host "%S" di sesi lain "%S", alamat IP baru %S.
 LH_BRIDGE_1				Sesi "%S": Koneksi Local Bridge ke antarmuka Ethernet fisik "%S" dimulai.
 LH_BRIDGE_2				Sesi "%S": Karena komunikasi gagal dibangun dengan antarmuka Ethernet fisik "%S", Local Bridge dihentikan.
-LH_SET_MTU				Sesi "%S": Antarmuka Ethernet fisik "%S" memiliki nilai MTU yang disetel ke %u. Diperlukan untuk mengirim dan menerima paket Ethernet yang memiliki %u byte. MTU sekarang diubah ke %u.
-LH_SET_MTU_ERROR		Sesi "%S": Antarmuka Ethernet fisik "%S" memiliki nilai MTU yang disetel ke %u. Diperlukan untuk mengirim dan menerima paket Ethernet yang memiliki %u byte. Namun, mengubah MTU ke %u gagal. Antarmuka Ethernet fisik ini atau driver perangkat mungkin tidak dapat memproses paket Ethernet yang memiliki lebih dari 1.514 byte (ukuran payload: 1.500 byte). Dalam hal ini, paket VLAN bertanda yang lebih besar dari 1.514 byte tidak dapat ditransmisikan. Anda harus mengganti adaptor Ethernet fisik saat ini dengan adaptor yang mendukung Jumbo Frames. Anda juga dapat mencoba untuk memperbarui driver perangkat. Metode lain yang mungkin adalah mengaktifkan Jumbo Frames pada pengaturan sistem operasi atau driver perangkat.
 LH_START_BRIDGE			Koneksi Local Bridge "%S" telah dimulai. Sesi bridge "%S" telah dibuat.
 LH_STOP_BRIDGE			Koneksi Local Bridge "%S" telah dihentikan.
 LH_LINK_START			Koneksi Cascade "%s" telah terjalin. Sesi Cascade "%S" telah dibuat.
