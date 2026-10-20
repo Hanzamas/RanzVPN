@@ -262,10 +262,6 @@ UINT PsAcList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsAcAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsAcAdd6(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsAcDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsLicenseAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsLicenseDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsLicenseList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
-UINT PsLicenseStatus(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsServerCertRegenerate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 
 

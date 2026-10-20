@@ -64,12 +64,11 @@ Executables: `vpnserver` uses Cedar/Server (`StInit`, `StStartServer`) and `MsSe
 | UdpAccel | UDP acceleration: key and cookie exchange, encrypted UDP send and receive, optional STUN discovery | `UDP_ACCEL` | Connection | Connection, Protocol |
 | Remote | RPC transport over a socket: request/response PACKs | `RPC`, `RPC_DISPATCHER` | none in Cedar (Pack, Network) | Admin |
 | Admin | Admin RPC: `AdminAccept`, `AdminDispatch` table of `St*` handlers, `Sc*` client calls, `InRpc*`/`OutRpc*` converters | `ADMIN`, about 70 `RPC_*` structs | Hub, Server, Account, Logging, Sam, Link, Session, Bridge, Remote | Command, Protocol |
-| Command | `vpncmd`: `CommandMain`, server-admin commands (`Ps*`), tools (`Pt*`), traffic test (`Tt*`), table output (`CT`) | `PS`, `PT`, `CT`, `TTC`, `TTS`, `TT_RESULT` | Console, Admin, Account, Server, Hub, Sam, Database | `vpncmd`, `vpntest` |
+| Command | `vpncmd`: `CommandMain`, server-admin commands (`Ps*`), tools (`Pt*`), traffic test (`Tt*`), table output (`CT`) | `PS`, `PT`, `CT`, `TTC`, `TTS`, `TT_RESULT` | Console, Admin, Account, Server, Hub, Sam | `vpncmd`, `vpntest` |
 | Console | Console abstraction, command-line parameter parser, command tables, prompts | `CONSOLE`, `PARAM`, `CMD`, `LOCAL_CONSOLE_PARAM` | none in Cedar | Command |
 | Logging | Threaded rotating file logger, packet and hub logs, log eraser, syslog | `LOG`, `PACKET_LOG`, `HUB_LOG`, `ERASER`, `SLOG` | Server | Admin, Bridge, Cedar, Connection, Hub, Link, Listener, Protocol, Sam, Server, Session |
 | Wpc | HTTP(S) fetch helper with optional proxy | `URL_DATA`, `INTERNET_SETTING`, `WPC_CONNECT` | none in Cedar | Protocol |
 | WaterMark | GIF "digital watermark" blob (from hamcore `watermark.bin`) the client uploads in the signature step and the server checks | none | none | Cedar (init), Protocol |
-| Database | Vestigial: one function, `LiGetLicenseStatusStr` | none | none | Command |
 
 ## Language
 

@@ -195,18 +195,6 @@ ERR_152					Gagal melakukan handshake TLS.
 ERR_153					Listener TCP sudah terdaftar, tetapi port-nya tidak dapat dibuka: program lain sedang memakainya atau Windows mencadangkannya. VPN Server terus mencoba dan mulai mendengarkan begitu port itu bebas; sampai saat itu ListenerList menampilkan listener tersebut sebagai Gagal.
 
 
-# Concerning licenses
-LICENSE_STATUS_OK	    Valid
-LICENSE_STATUS_EXPIRED  Kedaluwarsa
-LICENSE_STATUS_ID_DIFF  ID Server Tidak Cocok
-LICENSE_STATUS_DUP      Duplikasi
-LICENSE_STATUS_INSUFFICIENT Lisensi Lain Diperlukan
-LICENSE_STATUS_COMPETITION  Kompetisi dengan Lisensi Lain
-LICENSE_STATUS_NONSENSE     Tidak Bermakna untuk Edisi Saat Ini
-LICENSE_STATUS_CPU		Jenis CPU Tidak Kompatibel
-LICENSE_STATUS_OTHERERROR   Kesalahan Tidak Dikenal
-
-
 # Concerning hardware tokens
 SEC_YES			        Ya
 SEC_NO			        Tidak
@@ -818,32 +806,8 @@ SM_AC_DENY				Tolak
 SM_LOG_FILE_COLUMN_1	Nama Berkas Log
 SM_LOG_FILE_COLUMN_2	Ukuran Berkas
 SM_LOG_FILE_COLUMN_3	Diperbarui pada
-SM_LICENSE_COLUMN_1		Nomor
-SM_LICENSE_COLUMN_2		Kunci Lisensi
-SM_LICENSE_COLUMN_3		Nama Jenis Lisensi
-SM_LICENSE_COLUMN_4		Status
 SM_LICENSE_COLUMN_5		Tanggal Kedaluwarsa
-SM_LICENSE_COLUMN_6		ID Lisensi
-SM_LICENSE_COLUMN_7		ID Jenis Lisensi
-SM_LICENSE_COLUMN_8		ID Server
-SM_LICENSE_COLUMN_9		ID Serial
-SM_LICENSE_INFINITE		Tak Terbatas
 SM_LICENSE_NO_EXPIRES	Tanpa Kedaluwarsa
-SM_LICENSE_STATUS_EDITION	Edisi Produk
-SM_LICENSE_STATUS_RELEASE	Tanggal Rilis VPN Server
-SM_LICENSE_STATUS_SYSTEM_ID	ID Server Saat Ini
-SM_LICENSE_STATUS_EXPIRES	Kedaluwarsa Lisensi Produk Saat Ini
-SM_LICENSE_STATUS_SUBSCRIPTION	Status Kontrak Berlangganan
-SM_LICENSE_STATUS_SUBSCRIPTION_NONEED	Tidak Perlu (Edisi ini tidak memerlukan kunci langganan)
-SM_LICENSE_STATUS_SUBSCRIPTION_NONE		Tidak Ada Kunci (Menambahkan kunci langganan diperlukan)
-SM_LICENSE_STATUS_SUBSCRIPTION_VALID	Langganan Aktif [Hingga %s]
-SM_LICENSE_STATUS_SUBSCRIPTION_EXPIRED	Langganan Kadaluarsa [pada %s]
-SM_LICENSE_STATUS_SUBSCRIPTION_BUILD_STR	Pembaruan Gratis ke Versi yang Akan Datang Hingga %s Diperbolehkan
-SM_LICENSE_STATUS_ENTERPRISE			Ketersediaan Fitur Enterprise
-SM_LICENSE_STATUS_ENTERPRISE_YES		Ya (Tersedia)
-SM_LICENSE_STATUS_ENTERPRISE_NO			Tidak (Tidak Tersedia)
-SM_LICENSE_NUM_CLIENT	Pelanggan yang Diperbolehkan Terhubung Secara Bersamaan
-SM_LICENSE_NUM_BRIDGE	Jembatan yang Diperbolehkan Terhubung Secara Bersamaan
 SM_NO_LICENSE_COLUMN	Peringatan: 
 SM_NO_LICENSE			Tidak ada lisensi produk yang terdaftar, sehingga fungsi komunikasi VPN Server ini tidak beroperasi.
 SM_SYSLOG_0				Nonaktifkan Fungsi Pengiriman Syslog
@@ -2492,34 +2456,6 @@ CMD_AcDel_Help			Gunakan perintah ini untuk menghapus aturan dari Daftar Batas A
 CMD_AcDel_Args			AcDel [id]
 CMD_AcDel_[id]			Tentukan ID dari aturan dalam Daftar Batas Alamat IP Sumber yang ingin Anda hapus.
 CMD_AcDel_Prompt_ID		ID Aturan untuk Dihapus: 
-
-
-# LicenseAdd command
-CMD_LicenseAdd			Tambahkan Pendaftaran Kunci Lisensi
-CMD_LicenseAdd_Help		Gunakan perintah ini untuk mendaftar kunci lisensi baru pada Ranz VPN Server.\nUntuk menggunakan Ranz VPN Server, Anda harus memperoleh lisensi yang sah dan mendaftarkan kunci lisensi. Kunci lisensi terdiri dari 36 karakter alfanumerik ditambah dengan tanda hubung. Kunci ini adalah kode yang membuktikan kepemilikan lisensi.\nKetika sertifikat lisensi diterima bersama dengan perangkat lunak ini, kunci lisensi tercetak pada sertifikat lisensi tersebut. Jika lisensi untuk perangkat lunak ini dibeli secara online, kunci lisensi diberikan melalui email dan pada jendela situs web saat lisensi dibeli. Kunci lisensi juga dapat dicatat dengan cara lain. Jika Anda tidak tahu di mana kunci lisensi dicatat, tanyakan kepada vendor yang menjual lisensi kepada Anda.\n\nUntuk mendapatkan daftar lisensi yang terdaftar saat ini, gunakan perintah LicenseList.\nUntuk menampilkan status lisensi dari VPN Server saat ini, gunakan perintah LicenseStatus.\nUntuk menjalankan perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.\nPerintah ini tidak dapat dijalankan pada VPN Bridge.
-CMD_LicenseAdd_Args		LicenseAdd [key]
-CMD_LicenseAdd_[key]	Tentukan kunci lisensi yang akan didaftarkan. Tentukan 36 digit karakter alfanumerik dan kelompokkan digit-digitnya dalam grup-grup yang dipisahkan dengan tanda hubung.
-CMD_LicenseAdd_Prompt_Key	Kunci Lisensi: 
-
-
-# LicenseDel command
-CMD_LicenseDel			Hapus Lisensi Terdaftar
-CMD_LicenseDel_Help		Gunakan perintah ini untuk menghapus lisensi tertentu dari daftar lisensi yang terdaftar pada Ranz VPN Server saat ini.\n\nUntuk mendapatkan daftar lisensi yang terdaftar saat ini, gunakan perintah LicenseList.\nUntuk menampilkan status lisensi dari VPN Server saat ini, gunakan perintah LicenseStatus.\nUntuk menjalankan perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.\nPerintah ini tidak dapat dijalankan pada VPN Bridge.
-CMD_LicenseDel_Args		LicenseDel [id]
-CMD_LicenseDel_[id]		Tentukan nomor lisensi yang akan dihapus.
-CMD_LicenseDel_Prompt_ID	Nomor Lisensi yang Akan Dihapus: 
-
-
-# LicenseList command
-CMD_LicenseList			Tampilkan Daftar Lisensi Terdaftar
-CMD_LicenseList_Help	Gunakan perintah ini untuk menampilkan daftar informasi lisensi yang saat ini terdaftar pada Ranz VPN Server, termasuk: kunci lisensi, nama jenis lisensi, status, tanggal kedaluwarsa, ID lisensi, ID jenis lisensi, ID server, dan ID serial.\n\nUntuk menampilkan status lisensi dari VPN Server saat ini, gunakan perintah LicenseStatus.\nUntuk menjalankan perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.\nPerintah ini tidak dapat dijalankan pada VPN Bridge.
-CMD_LicenseList_Args	LicenseList
-
-
-# LicenseStatus command
-CMD_LicenseStatus		Tampilkan Status Lisensi dari VPN Server Saat Ini
-CMD_LicenseStatus_Help	Gunakan perintah ini untuk mendapatkan dan menampilkan status lisensi dari Ranz VPN Server saat ini. \nInformasi berikut tentang Ranz VPN Server saat ini akan ditampilkan: edisi produk, ID server, tanggal kedaluwarsa lisensi produk, jumlah Lisensi Koneksi Klien yang dapat digunakan, dan jumlah Lisensi Koneksi Jembatan. \n\nUntuk menjalankan perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.\nPerintah ini tidak dapat dijalankan pada VPN Bridge.
-CMD_LicenseStatus_Args	LicenseStatus
 
 
 # ServerCertRegenerate command
