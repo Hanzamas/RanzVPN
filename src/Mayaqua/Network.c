@@ -4047,9 +4047,8 @@ static char *PrintError(int ErrorCode)
 
 static int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool *cancel_flag)
 {
-	UINT64 start_time;
+	UINT64 end_time;
 	bool ok = false;
-	bool timeouted = false;
 	WSAEVENT hEvent;
 	UINT zero = 0;
 	UINT tmp = 0;
@@ -4065,50 +4064,36 @@ static int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeou
 
 	hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
+	// WSAEventSelect puts the socket in non-blocking mode; connect() is issued once and
+	// its result arrives as FD_CONNECT, polled in 25 ms slices so the cancel flag is honoured
 	WSAEventSelect(s, hEvent, FD_CONNECT);
 
-	start_time = Tick64();
+	end_time = Tick64() + (UINT64)timeout;
 
-	while (true)
+	if (connect(s, addr, size) == 0)
 	{
-		int ret;
-
-		ret = connect(s, addr, size);
-
-		if (ret == 0)
+		ok = true;
+	}
+	else if (WSAGetLastError() == WSAEWOULDBLOCK)
+	{
+		while (*cancel_flag == false && Tick64() < end_time)
 		{
-			ok = true;
-			break;
-		}
-		else
-		{
-			int err = WSAGetLastError();
-			if (timeouted && err == WSAEALREADY)
+			WSANETWORKEVENTS events;
+
+			if (WaitForSingleObject(hEvent, 25) != WAIT_OBJECT_0)
 			{
-				ok = false;
-				break;
+				continue;
 			}
-			if (*cancel_flag)
-			{
-				ok = false;
-				break;
-			}
-			if (err == WSAEISCONN || err == WSAEINVAL)
-			{
-				ok = true;
-				break;
-			}
-			if (((start_time + (UINT64)timeout) <= Tick64()) || (err != WSAEWOULDBLOCK && err != WSAEALREADY))
+
+			if (WSAEnumNetworkEvents(s, hEvent, &events) != 0)
 			{
 				break;
 			}
-			else
+
+			if (events.lNetworkEvents & FD_CONNECT)
 			{
-				SleepThread(10);
-				if (WaitForSingleObject(hEvent, 100) == WAIT_OBJECT_0)
-				{
-					timeouted = true;
-				}
+				ok = (events.iErrorCode[FD_CONNECT_BIT] == 0);
+				break;
 			}
 		}
 	}
@@ -4194,62 +4179,72 @@ static int bind_sock(SOCKET sock, IP *ip, UINT port)
 	}
 }
 
-static SOCKET BindConnectTimeoutIPv4(IP* localIP, UINT localport, IP* ip, UINT port, UINT timeout, bool* cancel_flag)
+static SOCKET BindConnectTimeout(bool ipv6, IP *localIP, UINT localport, IP *ip, UINT port, UINT timeout, bool *cancel_flag)
 {
 	SOCKET s;
 	struct sockaddr_in sockaddr4;
-	struct in_addr addr4;
+	struct sockaddr_in6 sockaddr6;
+	struct sockaddr *addr;
+	int addr_size;
+	IP tmpIP;
+	IP *bind_ip = localIP;
 
 	Zero(&sockaddr4, sizeof(sockaddr4));
-	Zero(&addr4, sizeof(addr4));
+	Zero(&sockaddr6, sizeof(sockaddr6));
 
-	IPToInAddr(&addr4, ip);
-	sockaddr4.sin_port = htons((USHORT)port);
-	sockaddr4.sin_family = AF_INET;
-	sockaddr4.sin_addr.s_addr = addr4.s_addr;
+	if (ipv6)
+	{
+		sockaddr6.sin6_family = AF_INET6;
+		sockaddr6.sin6_port = htons((USHORT)port);
+		sockaddr6.sin6_scope_id = ip->ipv6_scope_id;
+		IPToInAddr6(&sockaddr6.sin6_addr, ip);
+		addr = (struct sockaddr *)&sockaddr6;
+		addr_size = sizeof(sockaddr6);
+	}
+	else
+	{
+		sockaddr4.sin_family = AF_INET;
+		sockaddr4.sin_port = htons((USHORT)port);
+		IPToInAddr(&sockaddr4.sin_addr, ip);
+		addr = (struct sockaddr *)&sockaddr4;
+		addr_size = sizeof(sockaddr4);
+	}
 
-	s = socket(AF_INET, SOCK_STREAM, 0);
+	s = socket(ipv6 ? AF_INET6 : AF_INET, SOCK_STREAM, 0);
+	if (s == INVALID_SOCKET)
+	{
+		return INVALID_SOCKET;
+	}
 
-	if (s != INVALID_SOCKET) {
-		int ier;
-		IP tmpIP;
-		IP *tmpIP2;
+	if (bind_ip == BIND_LOCALIP_NULL)
+	{
+		// A NULL local address is the unspecified address of the target family
+		StrToIP(&tmpIP, ipv6 ? "0::0" : "0.0.0.0");
+		bind_ip = &tmpIP;
+	}
 
-		if (localIP == BIND_LOCALIP_NULL) {
-			StrToIP(&tmpIP, "0.0.0.0");	// A NULL address for the argument "localIP" is treated as if "0.0.0.0" in IPV4 was specified.
-			tmpIP2 = &tmpIP;
-		}
-		else {
-			tmpIP2 = localIP;
-		}
-
-		if ((IsZeroIP(tmpIP2) == false) || (localport != 0)) {
-
-			if (bind_sock(s, tmpIP2, localport) != 0) {
-				ier = WSAGetLastError();
-				Debug("IPv4 bind() failed with error: %d %s\n", ier, PrintError(ier));
-				closesocket(s);
-				s = INVALID_SOCKET;
-			}
+	if ((IsZeroIP(bind_ip) == false) || (localport != 0))
+	{
+		if (bind_sock(s, bind_ip, localport) != 0)
+		{
+			int ier = WSAGetLastError();
+			Debug("IPv%d bind() failed with error: %d %s\n", ipv6 ? 6 : 4, ier, PrintError(ier));
+			closesocket(s);
+			return INVALID_SOCKET;
 		}
 	}
 
-	if (s != INVALID_SOCKET)
+	if (connect_timeout(s, addr, addr_size, timeout, cancel_flag) != 0)
 	{
-		if (connect_timeout(s, (struct sockaddr *)&sockaddr4, sizeof(struct sockaddr_in), timeout, cancel_flag) != 0)
-		{
-			closesocket(s);
-			s = INVALID_SOCKET;
-		}
+		closesocket(s);
+		return INVALID_SOCKET;
 	}
 
 	return s;
 }
 
-static void BindConnectThreadForIPv4(THREAD *thread, void *param)
+static void BindConnectThread(THREAD *thread, void *param)
 {
-	SOCKET s = INVALID_SOCKET;
-	IP current_ip;
 	UINT i;
 	CONNECT_SERIAL_PARAM *p = (CONNECT_SERIAL_PARAM *)param;
 	if (thread == NULL || p == NULL)
@@ -4262,10 +4257,9 @@ static void BindConnectThreadForIPv4(THREAD *thread, void *param)
 		WaitEx(NULL, p->Delay, p->NoDelayFlag);
 	}
 
-	Zero(&current_ip, sizeof(current_ip));
-
 	for (i = 0; i < LIST_NUM(p->IpList); ++i)
 	{
+		SOCKET s;
 		IP *ip = LIST_DATA(p->IpList, i);
 
 		if (IsZeroIp(ip))
@@ -4283,136 +4277,25 @@ static void BindConnectThreadForIPv4(THREAD *thread, void *param)
 			break;
 		}
 
-		s = BindConnectTimeoutIPv4(p->LocalIP, p->LocalPort, ip, p->Port, p->Timeout, p->CancelFlag);
+		s = BindConnectTimeout(p->IPv6, p->LocalIP, p->LocalPort, ip, p->Port, p->Timeout, p->CancelFlag);
 
 		if (s != INVALID_SOCKET)
 		{
-			Copy(&current_ip, ip, sizeof(IP));
-
 			Copy(p->Ret_Ip, ip, sizeof(IP));
-		}
 
-		if (s != INVALID_SOCKET)
-		{
-			p->Sock = CreateTCPSock(s, false, &current_ip, p->No_Get_Hostname, p->Hostname);
+			p->Sock = CreateTCPSock(s, p->IPv6, p->Hostname);
 			break;
 		}
 	}
 
 	p->Ok = (p->Sock == NULL ? false : true);
-	p->FinishedTick = Tick64();
 	p->Finished = true;
 
 	Set(p->FinishEvent);
 }
 
-static void BindConnectThreadForIPv6(THREAD* thread, void* param)
+SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, char *hostname_original)
 {
-	SOCKET s = INVALID_SOCKET;
-	IP current_ip;
-	UINT i;
-	CONNECT_SERIAL_PARAM *p = (CONNECT_SERIAL_PARAM *)param;
-	if (thread == NULL || p == NULL)
-	{
-		return;
-	}
-
-	if (p->Delay >= 1)
-	{
-		WaitEx(NULL, p->Delay, p->NoDelayFlag);
-	}
-
-	Zero(&current_ip, sizeof(current_ip));
-
-	for (i = 0; i < LIST_NUM(p->IpList); ++i)
-	{
-		IP *ip = LIST_DATA(p->IpList, i);
-
-		if (IsZeroIp(ip))
-		{
-			continue;
-		}
-
-		if (i > 0 && p->RetryDelay >= 1)
-		{
-			WaitEx(NULL, p->RetryDelay, p->CancelFlag);
-		}
-
-		if (*p->CancelFlag)
-		{
-			break;
-		}
-
-		struct sockaddr_in6 sockaddr6;
-		struct in6_addr addr6;
-
-		Zero(&sockaddr6, sizeof(sockaddr6));
-		Zero(&addr6, sizeof(addr6));
-
-		IPToInAddr6(&addr6, ip);
-		sockaddr6.sin6_port = htons((USHORT)p->Port);
-		sockaddr6.sin6_family = AF_INET6;
-		sockaddr6.sin6_scope_id = ip->ipv6_scope_id;
-		Copy(&sockaddr6.sin6_addr, &addr6, sizeof(addr6));
-
-		s = socket(AF_INET6, SOCK_STREAM, 0);
-
-		if (s != INVALID_SOCKET){
-			int ier;
-			IP tmpIP;
-			IP *tmpIP2;
-
-			if (p->LocalIP == BIND_LOCALIP_NULL) {
-				StrToIP(&tmpIP, "0::0");	// A NULL address for the argument "p->LocalIP" is treated as if "0::0" in IPV6 was specified.
-				tmpIP2 = &tmpIP;
-			}
-			else {
-				tmpIP2 = p->LocalIP;
-			}
-
-			if ((IsZeroIP(tmpIP2) == false) || (p->LocalPort != 0)){
-
-				if (bind_sock(s, tmpIP2, p->LocalPort) != 0) {
-					ier = WSAGetLastError();
-					Debug("IPv6 bind() failed with error: %d %s\n", ier, PrintError(ier));
-					closesocket(s);
-					s = INVALID_SOCKET;
-				}
-			}
-		}
-
-		if (s != INVALID_SOCKET)
-		{
-			if (connect_timeout(s, (struct sockaddr *)&sockaddr6, sizeof(struct sockaddr_in6), p->Timeout, p->CancelFlag) != 0)
-			{
-				closesocket(s);
-				s = INVALID_SOCKET;
-			}
-			else
-			{
-				Copy(&current_ip, ip, sizeof(IP));
-
-				Copy(p->Ret_Ip, ip, sizeof(IP));
-			}
-		}
-
-		if (s != INVALID_SOCKET)
-		{
-			p->Sock = CreateTCPSock(s, true, &current_ip, p->No_Get_Hostname, p->Hostname);
-			break;
-		}
-	}
-
-	p->Ok = (p->Sock == NULL ? false : true);
-	p->FinishedTick = Tick64();
-	p->Finished = true;
-
-	Set(p->FinishEvent);
-}
-
-SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname, char *hostname_original)
-{
-	char tmp[MAX_SIZE];
 	SOCK *sock;
 	UINT true_flag = 1;
 
@@ -4429,13 +4312,7 @@ SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname
 	StrCpy(sock->UnderlayProtocol, sizeof(sock->UnderlayProtocol), is_ipv6 ? SOCK_UNDERLAY_NATIVE_V6 : SOCK_UNDERLAY_NATIVE_V4);
 	AddProtocolDetailsStr(sock->ProtocolDetails, sizeof(sock->ProtocolDetails), is_ipv6 ? "IPv6" : "IPv4");
 
-	if (no_get_hostname || (GetHostName(tmp, sizeof(tmp), current_ip) == false))
-	{
-		StrCpy(tmp, sizeof(tmp), hostname_original);
-	}
-
-
-	sock->RemoteHostname = CopyStr(tmp);
+	sock->RemoteHostname = CopyStr(hostname_original);
 
 	(void)setsockopt(sock->socket, IPPROTO_TCP, TCP_NODELAY, (char *)&true_flag, sizeof(true_flag));
 
@@ -4463,17 +4340,26 @@ SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname
 
 SOCK *Connect(char *hostname, UINT port)
 {
-	return ConnectEx4(hostname, port, 0, NULL, true, NULL);
+	return ConnectEx4(hostname, port, 0, NULL, NULL);
 }
-SOCK *ConnectEx4(char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname, IP *ret_ip)
+SOCK *ConnectEx4(char *hostname, UINT port, UINT timeout, bool *cancel_flag, IP *ret_ip)
 {
-	return BindConnectEx4(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, hostname, port, timeout, cancel_flag, no_get_hostname, ret_ip);
+	return BindConnectEx4(BIND_LOCALIP_NULL, BIND_LOCALPORT_NULL, hostname, port, timeout, cancel_flag, ret_ip);
 }
 
-SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname, IP *ret_ip)
+SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, IP *ret_ip)
 {
 	bool dummy = false;
 	IP dummy_ret_ip;
+	LIST *iplists[2] = {NULL, NULL};	// [0] IPv6, [1] IPv4
+	CONNECT_SERIAL_PARAM params[2];
+	THREAD *threads[2] = {NULL, NULL};
+	IP ret_ips[2];
+	EVENT *finish_event;
+	bool cancel_flag2 = false;
+	bool no_delay_flag = false;
+	SOCK *ret = NULL;
+	UINT i;
 	if (hostname == NULL || port == 0 || port >= 65536 || IsEmptyStr(hostname))
 	{
 		return NULL;
@@ -4493,97 +4379,62 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 		ret_ip = &dummy_ret_ip;
 	}
 
-	LIST *iplist_v6 = NULL;
-	LIST *iplist_v4 = NULL;
-
 	if (IsZeroIp(ret_ip) == false)
 	{
-		if (IsIP6(ret_ip))
-		{
-			iplist_v6 = NewListFast(NULL);
-			AddHostIPAddressToList(iplist_v6, ret_ip);
-		}
-		else
-		{
-			iplist_v4 = NewListFast(NULL);
-			AddHostIPAddressToList(iplist_v4, ret_ip);
-		}
+		LIST **target = IsIP6(ret_ip) ? &iplists[0] : &iplists[1];
 
+		*target = NewListFast(NULL);
+		AddHostIPAddressToList(*target, ret_ip);
 	}
 	else
 	{
-		if (DnsResolveEx(&iplist_v6, &iplist_v4, hostname, 0, cancel_flag) == false)
+		if (DnsResolveEx(&iplists[0], &iplists[1], hostname, 0, cancel_flag) == false)
 		{
 			return NULL;
 		}
 	}
 
-	CONNECT_SERIAL_PARAM p4, p6;
-	EVENT *finish_event;
-	THREAD *t4 = NULL;
-	THREAD *t6 = NULL;
-	bool cancel_flag2 = false;
-	bool no_delay_flag = false;
-	IP ret_ip4, ret_ip6;
-
 	finish_event = NewEvent();
 
-	Zero(&p4, sizeof(p4));
-	Zero(&p6, sizeof(p6));
+	Zero(params, sizeof(params));
+	Zero(ret_ips, sizeof(ret_ips));
 
-	if (LIST_NUM(iplist_v6) > 0)
+	for (i = 0; i < 2; ++i)
 	{
-		p6.IpList = iplist_v6;
+		CONNECT_SERIAL_PARAM *p = &params[i];
 
-		if (localIP == BIND_LOCALIP_NULL) {
-			p6.LocalIP = BIND_LOCALIP_NULL;
+		if (LIST_NUM(iplists[i]) == 0)
+		{
+			continue;
 		}
-		else {
-			CopyIP(&p6.LocalIP_Cache, localIP);
-			p6.LocalIP = &p6.LocalIP_Cache;
-		}
-		p6.LocalPort = localport;
 
-		p6.Port = port;
-		p6.Timeout = timeout;
-		StrCpy(p6.Hostname, sizeof(p6.Hostname), hostname);
-		p6.No_Get_Hostname = no_get_hostname;
-		p6.CancelFlag = &cancel_flag2;
-		p6.NoDelayFlag = &no_delay_flag;
-		p6.FinishEvent = finish_event;
-		p6.Ret_Ip = &ret_ip6;
-		p6.RetryDelay = 250;
-		p6.Delay = 0;
-		t6 = NewThread(BindConnectThreadForIPv6, &p6);
+		p->IpList = iplists[i];
+		p->IPv6 = (i == 0);
+
+		if (localIP == BIND_LOCALIP_NULL)
+		{
+			p->LocalIP = BIND_LOCALIP_NULL;
+		}
+		else
+		{
+			CopyIP(&p->LocalIP_Cache, localIP);
+			p->LocalIP = &p->LocalIP_Cache;
+		}
+		p->LocalPort = localport;
+
+		p->Port = port;
+		p->Timeout = timeout;
+		StrCpy(p->Hostname, sizeof(p->Hostname), hostname);
+		p->CancelFlag = &cancel_flag2;
+		p->NoDelayFlag = &no_delay_flag;
+		p->FinishEvent = finish_event;
+		p->Ret_Ip = &ret_ips[i];
+		p->RetryDelay = 250;
+		p->Delay = (p->IPv6 ? 0 : 250);		// Delay IPv4 by 250ms to prioritize IPv6 (RFC 6555 recommends 150-250ms, Chrome uses 300ms)
+		threads[i] = NewThread(BindConnectThread, p);
 	}
 
-	if (LIST_NUM(iplist_v4) > 0)
-	{
-		p4.IpList = iplist_v4;
-
-		if (localIP == BIND_LOCALIP_NULL) {
-			p4.LocalIP = BIND_LOCALIP_NULL;
-		}
-		else {
-			CopyIP(&p4.LocalIP_Cache, localIP);
-			p4.LocalIP = &p4.LocalIP_Cache;
-		}
-		p4.LocalPort = localport;
-
-		p4.Port = port;
-		p4.Timeout = timeout;
-		StrCpy(p4.Hostname, sizeof(p4.Hostname), hostname);
-		p4.No_Get_Hostname = no_get_hostname;
-		p4.CancelFlag = &cancel_flag2;
-		p4.NoDelayFlag = &no_delay_flag;
-		p4.FinishEvent = finish_event;
-		p4.Ret_Ip = &ret_ip4;
-		p4.RetryDelay = 250;
-		p4.Delay = 250;		// Delay by 250ms to prioritize IPv6 (RFC 6555 recommends 150-250ms, Chrome uses 300ms)
-		t4 = NewThread(BindConnectThreadForIPv4, &p4);
-	}
-
-	if (t6 == NULL || t4 == NULL)
+	if (threads[0] == NULL || threads[1] == NULL)
 	{
 		no_delay_flag = true;
 	}
@@ -4595,18 +4446,18 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 			break;
 		}
 
-		if ((t6 == NULL || p6.Finished) && (t4 == NULL || p4.Finished))
+		if ((threads[0] == NULL || params[0].Finished) && (threads[1] == NULL || params[1].Finished))
 		{
 			break;
 		}
 
-		if ((p6.Finished && p6.Ok) || (p4.Finished && p4.Ok))
+		if ((params[0].Finished && params[0].Ok) || (params[1].Finished && params[1].Ok))
 		{
 			break;
 		}
 
 		// This check must be placed last to avoid race condition with cancel flag
-		if (no_delay_flag == false && (p6.Finished || p4.Finished))
+		if (no_delay_flag == false && (params[0].Finished || params[1].Finished))
 		{
 			no_delay_flag = true;
 		}
@@ -4617,41 +4468,31 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 	cancel_flag2 = true;
 	no_delay_flag = true;
 
-	WaitThread(t6, INFINITE);
-	WaitThread(t4, INFINITE);
-	ReleaseThread(t6);
-	ReleaseThread(t4);
+	for (i = 0; i < 2; ++i)
+	{
+		WaitThread(threads[i], INFINITE);
+		ReleaseThread(threads[i]);
+	}
 	ReleaseEvent(finish_event);
-	FreeHostIPAddressList(iplist_v6);
-	FreeHostIPAddressList(iplist_v4);
+	FreeHostIPAddressList(iplists[0]);
+	FreeHostIPAddressList(iplists[1]);
 
-	if (*cancel_flag)
+	// IPv6 wins over IPv4 when both connected; the losing socket (or both, on cancel) is closed
+	for (i = 0; i < 2; ++i)
 	{
-		Disconnect(p6.Sock);
-		ReleaseSock(p6.Sock);
-		Disconnect(p4.Sock);
-		ReleaseSock(p4.Sock);
-
-		return NULL;
+		if (*cancel_flag == false && ret == NULL && params[i].Ok)
+		{
+			ret = params[i].Sock;
+			Copy(ret_ip, &ret_ips[i], sizeof(IP));
+		}
+		else
+		{
+			Disconnect(params[i].Sock);
+			ReleaseSock(params[i].Sock);
+		}
 	}
 
-	if (p6.Ok)
-	{
-		Disconnect(p4.Sock);
-		ReleaseSock(p4.Sock);
-		Copy(ret_ip, &ret_ip6, sizeof(IP));
-		return p6.Sock;
-	}
-
-	if (p4.Ok)
-	{
-		Disconnect(p6.Sock);
-		ReleaseSock(p6.Sock);
-		Copy(ret_ip, &ret_ip4, sizeof(IP));
-		return p4.Sock;
-	}
-
-	return NULL;
+	return ret;
 }
 
 void AddProtocolDetailsStr(char *dst, UINT dst_size, char *str)

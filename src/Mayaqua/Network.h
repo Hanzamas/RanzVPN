@@ -196,19 +196,18 @@ typedef struct NBTRESPONSE
 struct CONNECT_SERIAL_PARAM
 {
 	LIST *IpList;
+	bool IPv6;							// Address family of every entry in IpList
 	UINT LocalPort;
 	IP   *LocalIP;						// Local IP address to bind. NULL address allowed to use.
 	IP   LocalIP_Cache;
 	UINT Port;
 	UINT Timeout;
 	char Hostname[MAX_SIZE];
-	bool No_Get_Hostname;
 	bool *CancelFlag;
 	bool *NoDelayFlag;
 	SOCK *Sock;
 	bool Finished;
 	bool Ok;
-	UINT64 FinishedTick;
 	EVENT *FinishEvent;
 	UINT Delay;
 	UINT RetryDelay;
@@ -247,7 +246,7 @@ void CreateDummyValue(PACK *p);
 
 char *RecvLine(SOCK *s, UINT max_size);
 
-SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, IP *current_ip, bool no_get_hostname, char *hostname_original);
+SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, char *hostname_original);
 void GetCurrentMachineIpProcessHash(void *hash);
 void GetCurrentMachineIpProcessHashInternal(void *hash);
 void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_size, char *dst_domain, UINT dst_domain_size, bool do_not_parse_atmark);
@@ -274,11 +273,11 @@ SOCK *NewSock();
 void ReleaseSock(SOCK *s);
 void CleanupSock(SOCK *s);
 SOCK *Connect(char *hostname, UINT port);
-SOCK *ConnectEx4(char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname, IP *ret_ip);
+SOCK *ConnectEx4(char *hostname, UINT port, UINT timeout, bool *cancel_flag, IP *ret_ip);
 
 #define	BIND_LOCALIP_NULL			NULL		// NULL IP address specifies no binding
 #define	BIND_LOCALPORT_NULL			0			// NULL port number specifies no binding
-SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, bool no_get_hostname, IP *ret_ip);
+SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UINT timeout, bool *cancel_flag, IP *ret_ip);
 
 void InitUdpSocketBufferSize(SOCKET s);
 void QuerySocketInformation(SOCK *sock);

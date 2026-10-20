@@ -1824,7 +1824,7 @@ static void TtcThread(THREAD *thread, void *param)
 			IPToStr(target_host, sizeof(target_host), &ip_ret);
 		}
 
-		s = ConnectEx4(target_host, ttc->Port, 0, NULL, true, &ip_ret);
+		s = ConnectEx4(target_host, ttc->Port, 0, NULL, &ip_ret);
 
 		if (s == NULL)
 		{
