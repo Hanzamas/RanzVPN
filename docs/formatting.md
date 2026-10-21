@@ -9,6 +9,8 @@ pip install clang-format==22.1.8
 python .github/scripts/format_check.py files | xargs clang-format -i
 ```
 
+The `format check` job of `.github/workflows/windows.yml` runs the pinned clang-format with `--dry-run --Werror` on the same file list and fails when a file is not formatted. Run the two commands above before pushing a change to a file in the scope.
+
 ## The one-time reformat (spec #24, pass 11)
 
 `.github/workflows/format.yml` runs on a push to a `format/**` branch. It formats the scoped files and pushes two commits back to that branch:
