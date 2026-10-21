@@ -19,6 +19,7 @@ bool CmdEvalPort(CONSOLE *c, wchar_t *str, void *param);
 void CmdInsertTrafficInfo(CT *ct, TRAFFIC *t);
 char *CmdPasswordPrompt(CONSOLE *c);
 wchar_t *GetAuthTypeStr(UINT id);
+void CmdPrintStatusToListViewEx(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s, bool server_mode);
 UINT PsAbout(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsServerInfoGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
 UINT PsServerStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param);
