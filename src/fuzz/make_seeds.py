@@ -703,6 +703,51 @@ def make_stun_seeds():
         write_seed('fuzz_stun', name, text)
 
 
+# ---------------------------------------------------------------------------
+# Noise session (src/Core/NoiseSession.c): the records of the golden transcripts of coretest
+# noisesession (src/coretest/session.c), made with the keys of the cacophony IK vector, which
+# fuzz_noise.c uses too. Bound: the TLS exporter 00 .. 1f, records in clear; encrypted: no binding,
+# records under the Noise keys, rekey after 4.
+# ---------------------------------------------------------------------------
+NOISE_GOLDEN = {
+    'bound': {
+        'hs1': '0001ca35def5ae56cec33dc2036731ab14896bc4c75dbb07a61f879f8e3afa4c79444e417bc55c7a8166c993356c1be41ef67818a292426f301556c7f26b21d25ddb50901f6c0fe1e7ad5e23084c93002377d265fcde584d2a7bee488866fe3d6a96',
+        'hs2': '000195ebc60d2b1fa672c1f46a8aa265ef51bfe38e7ccb39ec5be34069f1448088435e02bac3ee97e3ac27fdd5f32aad4e05',
+        'records': ['0201010348554205616c69636500067365637265740000',
+                    '01000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b',
+                    '03', '0172656b65792031', '0172656b65792032', '04'],
+    },
+    'encrypted': {
+        'hs1': '0001ca35def5ae56cec33dc2036731ab14896bc4c75dbb07a61f879f8e3afa4c79444e417bc55c7a8166c993356c1be41ef67818a292426f301556c7f26b21d25ddbab78f691bedb2016cad0d55ed4bc463368c1ed3ba8c9906fedeb321c1431d854',
+        'hs2': '000195ebc60d2b1fa672c1f46a8aa265ef51bfe38e7ccb39ec5be34069f144808843369f326da14e1d270d0629a34a4a68e5',
+        'records': ['022183df9b987b30e1738c9674856828c0538701253acadf7ad43a1e13c85906b77531983c9a40',
+                    '010df1c02f1c17afc87c5812abff8ebfa905eeb568befbed9f5459d37710a31dacd0ab6e18b17f6a80c0461d63b8f1bc4d306340776a6b80186c7d0decd694ee2765af5683a494d6387cdc6c84',
+                    '037910fa9329022aa1d6d5c94aba0eadf8', '81862aea81d5cff4afc5fdc3684e80756a8700f0a2852641',
+                    '01e9cb26864bae94ffc40a1aa46694bff1c6508fbdb27285', '04795896313c9804601a8fb9cf8654be0d'],
+    },
+}
+
+
+def noise_login(method, hub, user, secret=b'', sign=b''):
+    # NoiseLoginEncode: version, method, hub and user (1-byte sizes), secret and signature (2-byte sizes)
+    return (bytes([1, method, len(hub)]) + hub + bytes([len(user)]) + user +
+            struct.pack('>H', len(secret)) + secret + struct.pack('>H', len(sign)) + sign)
+
+
+def make_noise_seeds():
+    for mode, g in NOISE_GOLDEN.items():
+        write_seed('fuzz_noise', 'handshake1_%s.bin' % mode, bytes.fromhex(g['hs1']))
+        write_seed('fuzz_noise', 'handshake2_%s.bin' % mode, bytes.fromhex(g['hs2']))
+        stream = b''.join(struct.pack('>H', len(bytes.fromhex(r))) + bytes.fromhex(r) for r in g['records'])
+        write_seed('fuzz_noise', 'records_%s.bin' % mode, stream)
+    # A first record of IKhfs (suite 2): the size of its message 1 with an empty payload, 1296 bytes
+    rng = random.Random(62)
+    write_seed('fuzz_noise', 'handshake1_ikhfs.bin', bytes([0, 2]) + bytes(rng.getrandbits(8) for _ in range(1296)))
+    write_seed('fuzz_noise', 'login_password.bin', noise_login(1, b'HUB', b'alice', b'secret'))
+    write_seed('fuzz_noise', 'login_cert.bin', noise_login(2, b'HUB', b'alice', bytes(range(200)), bytes(256)))
+    write_seed('fuzz_noise', 'login_join.bin', noise_login(3, b'HUB', b'alice', bytes(16)))
+
+
 if __name__ == '__main__':
     assert sha0(b'abc').hex() == '0164b8a914cd2a5e74c4f7ff082c4d97f1edf880'
     make_pack_seeds()
@@ -715,3 +760,4 @@ if __name__ == '__main__':
     make_dhcp_seeds()
     make_net_seeds()
     make_stun_seeds()
+    make_noise_seeds()
