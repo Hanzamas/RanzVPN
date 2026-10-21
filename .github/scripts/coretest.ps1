@@ -5,10 +5,11 @@ $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 
 # The named tests of coretest (src/coretest), the known-answer and certificate tests of the new
-# core's crypto module (CORE-F1, #61). Each must print "<TEST> TEST OK" and exit with 0; its output
-# is printed in full either way, so the job log shows every vector on x64 and arm64.
+# core's crypto module (CORE-F1, #61) and the tests of its peer module and relay role (CORE-S5-2,
+# #78). Each must print "<TEST> TEST OK" and exit with 0; its output is printed in full either way,
+# so the job log shows every vector on x64 and arm64.
 # RANZ_CORE_TESTS (comma list) overrides the list.
-$named = @('rand', 'sha256', 'hmac', 'hkdf', 'aesgcm', 'x25519', 'identity', 'mlkem', 'selfsign', 'pfx', 'certstore', 'schannel')
+$named = @('rand', 'sha256', 'hmac', 'hkdf', 'aesgcm', 'x25519', 'identity', 'mlkem', 'selfsign', 'pfx', 'certstore', 'schannel', 'envelope', 'relay', 'relaypolicy')
 if ($env:RANZ_CORE_TESTS) { $named = $env:RANZ_CORE_TESTS -split ',' | % { $_.Trim() } | ? { $_ } }
 
 $failed = @()
