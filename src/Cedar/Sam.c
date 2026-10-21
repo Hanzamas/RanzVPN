@@ -9,6 +9,7 @@
 #include "Hub.h"
 #include "Server.h"
 
+#include "Mayaqua/Encrypt.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Memory.h"
 #include "Mayaqua/Microsoft.h"
