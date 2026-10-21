@@ -388,3 +388,30 @@ jobs:
         if errorlevel 1 exit /b 1
         cmake --build --preset %PRESET%
       shell: cmd
+
+  # Layout drift check (spec #24, pass 11): every file that format_check.py lists must already be
+  # formatted by the committed .clang-format, with the clang-format version that format.yml pins.
+  # It needs only Python, so it runs on Linux like the reformat itself.
+  format:
+    runs-on: ubuntu-latest
+    name: format check
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Format check
+      env:
+        # the pin of .github/workflows/format.yml
+        CLANG_FORMAT_VERSION: '22.1.8'
+      run: |
+        python -m pip install --disable-pip-version-check "clang-format==${CLANG_FORMAT_VERSION}"
+        clang-format --version
+        python .github/scripts/format_check.py files . > "$RUNNER_TEMP/files.txt"
+        echo "$(wc -l < "$RUNNER_TEMP/files.txt") files in scope"
+        # --Werror turns every place that clang-format would change into an error
+        if ! xargs -a "$RUNNER_TEMP/files.txt" clang-format --dry-run --Werror --style=file:.clang-format; then
+          echo "::error::Some files are not formatted. Fix: pip install clang-format==${CLANG_FORMAT_VERSION}, then python .github/scripts/format_check.py files | xargs clang-format -i (docs/formatting.md)"
+          exit 1
+        fi
