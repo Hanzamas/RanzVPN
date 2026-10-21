@@ -29,14 +29,14 @@
 
 // BCryptEncapsulate and BCryptDecapsulate (bcrypt.dll of Windows 11 24H2 and later)
 typedef NTSTATUS(WINAPI *CRYPTO_ENCAPSULATE_PROC)(BCRYPT_KEY_HANDLE key, PUCHAR secret, ULONG secret_size, ULONG *secret_result,
-                                                   PUCHAR ciphertext, ULONG ciphertext_size, ULONG *ciphertext_result, ULONG flags);
+                                                  PUCHAR ciphertext, ULONG ciphertext_size, ULONG *ciphertext_result, ULONG flags);
 typedef NTSTATUS(WINAPI *CRYPTO_DECAPSULATE_PROC)(BCRYPT_KEY_HANDLE key, PUCHAR ciphertext, ULONG ciphertext_size,
-                                                   PUCHAR secret, ULONG secret_size, ULONG *secret_result, ULONG flags);
+                                                  PUCHAR secret, ULONG secret_size, ULONG *secret_result, ULONG flags);
 
 // Opened by CryptoInit(), once, for the life of the process; NULL when the provider is missing
-extern BCRYPT_ALG_HANDLE crypto_x25519;                  // ECDH on curve25519
-extern BCRYPT_ALG_HANDLE crypto_mlkem;                   // ML-KEM, NULL where the OS has none
-extern CRYPTO_ENCAPSULATE_PROC crypto_encapsulate;       // NULL with crypto_mlkem
+extern BCRYPT_ALG_HANDLE crypto_x25519;            // ECDH on curve25519
+extern BCRYPT_ALG_HANDLE crypto_mlkem;             // ML-KEM, NULL where the OS has none
+extern CRYPTO_ENCAPSULATE_PROC crypto_encapsulate; // NULL with crypto_mlkem
 extern CRYPTO_DECAPSULATE_PROC crypto_decapsulate;
 
 // CryptoX25519.c: the private and public CNG blobs of an X25519 key, in RFC 7748 byte order

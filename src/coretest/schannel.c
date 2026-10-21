@@ -37,8 +37,8 @@ typedef struct TLS_SIDE {
 	CtxtHandle Ctx;
 	bool HaveCred;
 	bool HaveCtx;
-	bool Done;     // The handshake is complete on this side
-	TLS_PIPE In;   // What the peer sent
+	bool Done;   // The handshake is complete on this side
+	TLS_PIPE In; // What the peer sent
 } TLS_SIDE;
 
 static bool tls_pipe_append(TLS_PIPE *p, const void *data, UINT size) {
