@@ -47,7 +47,7 @@ UINT PsUserCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -112,7 +112,7 @@ UINT PsUserSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -166,7 +166,7 @@ UINT PsUserDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -206,7 +206,7 @@ UINT PsUserAnonymousSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -262,7 +262,7 @@ UINT PsUserPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -322,7 +322,7 @@ UINT PsUserCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -396,7 +396,7 @@ UINT PsUserSignedSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -469,7 +469,7 @@ UINT PsUserNTLMSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -528,7 +528,7 @@ UINT PsUserPolicyRemove(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -656,7 +656,7 @@ UINT PsUserExpiresSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -716,7 +716,7 @@ UINT PsGroupJoin(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -771,7 +771,7 @@ UINT PsGroupUnjoin(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;

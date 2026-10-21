@@ -58,7 +58,7 @@ UINT PsCrash(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		{"[yes]", CmdPrompt, _UU("CMD_Crash_Confirm"), NULL, NULL},
 	};
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -103,7 +103,7 @@ UINT PsServerCertRegenerate(CONSOLE *c, char *cmd_name, wchar_t *str, void *para
 		{"[CN]", CmdPrompt, _UU("CMD_ServerCertRegenerate_Prompt_CN"), CmdEvalNotEmpty, NULL},
 	};
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;

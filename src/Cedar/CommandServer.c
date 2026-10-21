@@ -257,7 +257,7 @@ UINT PsServerPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		{"[password]", CmdPromptChoosePassword, NULL, NULL, NULL},
 	};
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -356,7 +356,7 @@ UINT PsListenerDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		{"[port]", CmdPromptPort, _UU("CMD_ListenerDisable_PortPrompt"), CmdEvalPort, NULL},
 	};
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -389,7 +389,7 @@ UINT PsListenerEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		{"[port]", CmdPromptPort, _UU("CMD_ListenerEnable_PortPrompt"), CmdEvalPort, NULL},
 	};
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -477,7 +477,7 @@ UINT PsListenerDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		{"[port]", CmdPromptPort, _UU("CMD_ListenerDelete_PortPrompt"), CmdEvalPort, NULL},
 	};
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -760,7 +760,7 @@ UINT PsListenerCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		{"[port]", CmdPromptPort, _UU("CMD_ListenerCreate_PortPrompt"), CmdEvalPort, NULL},
 	};
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;

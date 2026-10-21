@@ -387,7 +387,7 @@ void ToStrByte1000(char *str, UINT size, UINT64 v)
 	bytestr[4].base_value = 1000UL;
 	bytestr[5].base_value = 0UL;
 
-	for (UINT i = 0;i < sizeof(bytestr) / sizeof(bytestr[0]);i++)
+	for (UINT i = 0;i < _countof(bytestr);i++)
 	{
 		BYTESTR *b = &bytestr[i];
 
@@ -426,7 +426,7 @@ void ToStrByte(char *str, UINT size, UINT64 v)
 	bytestr[4].base_value = 1024UL;
 	bytestr[5].base_value = 0UL;
 
-	for (UINT i = 0;i < sizeof(bytestr) / sizeof(bytestr[0]);i++)
+	for (UINT i = 0;i < _countof(bytestr);i++)
 	{
 		BYTESTR *b = &bytestr[i];
 

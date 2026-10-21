@@ -96,7 +96,7 @@ UINT PsSessionGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -291,7 +291,7 @@ UINT PsSessionDisconnect(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -332,7 +332,7 @@ UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -428,7 +428,7 @@ UINT PsMacDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -469,7 +469,7 @@ UINT PsIpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -563,7 +563,7 @@ UINT PsIpDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;

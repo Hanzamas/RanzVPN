@@ -224,7 +224,7 @@ static void RtCheckRfc3339Print(RT_CTX *ctx)
 	SYSTEMTIME st;
 	char str[MAX_SIZE];
 
-	for (UINT i = 0; i < sizeof(rt_rfc3339_vectors) / sizeof(rt_rfc3339_vectors[0]); i++)
+	for (UINT i = 0; i < _countof(rt_rfc3339_vectors); i++)
 	{
 		RT_RFC3339_VECTOR *v = &rt_rfc3339_vectors[i];
 
@@ -283,7 +283,7 @@ static void RtCheckRfc3339Parse(RT_CTX *ctx)
 	UINT64 local64, utc64, expect64;
 	bool ok;
 
-	for (UINT i = 0; i < sizeof(rt_rfc3339_parse_vectors) / sizeof(rt_rfc3339_parse_vectors[0]); i++)
+	for (UINT i = 0; i < _countof(rt_rfc3339_parse_vectors); i++)
 	{
 		RT_RFC3339_PARSE_VECTOR *v = &rt_rfc3339_parse_vectors[i];
 
@@ -316,7 +316,7 @@ static void RtCheckRfc3339Parse(RT_CTX *ctx)
 	RtCheck(ctx, ok == false, "RFC 3339 parse refuses a NULL result", "returned true");
 
 	// Round trip: printer, parser (UTC: the local time minus the offset), printer again
-	for (UINT i = 0; i < sizeof(rt_rfc3339_vectors) / sizeof(rt_rfc3339_vectors[0]); i++)
+	for (UINT i = 0; i < _countof(rt_rfc3339_vectors); i++)
 	{
 		RT_RFC3339_VECTOR *v = &rt_rfc3339_vectors[i];
 
@@ -377,7 +377,7 @@ static void RtCheckZoneOffset(RT_CTX *ctx)
 	int offset;
 	INT64 os_offset = 0;
 
-	for (UINT i = 0; i < sizeof(rt_zone_vectors) / sizeof(rt_zone_vectors[0]); i++)
+	for (UINT i = 0; i < _countof(rt_zone_vectors); i++)
 	{
 		RT_ZONE_VECTOR *v = &rt_zone_vectors[i];
 
@@ -912,11 +912,11 @@ static void RtCharsetUtf8Fixed(RT_CTX *ctx)
 	wchar_t high[] = {0xD800, 0};
 	char *mixed_utf8 = "a\xC3\xA9\xED\xA0\xBD\xED\xB8\x80";
 
-	for (UINT i = 0;i < sizeof(rt_utf8_decode_vectors) / sizeof(rt_utf8_decode_vectors[0]);i++)
+	for (UINT i = 0;i < _countof(rt_utf8_decode_vectors);i++)
 	{
 		RtCharsetDecodeVector(ctx, &rt_utf8_decode_vectors[i]);
 	}
-	for (UINT i = 0;i < sizeof(rt_utf8_encode_vectors) / sizeof(rt_utf8_encode_vectors[0]);i++)
+	for (UINT i = 0;i < _countof(rt_utf8_encode_vectors);i++)
 	{
 		RtCharsetEncodeVector(ctx, &rt_utf8_encode_vectors[i]);
 	}
@@ -1505,7 +1505,7 @@ static void RtAnsiGenUni(UINT *state, wchar_t *w)
 		switch (r % 5)
 		{
 		case 0:
-			w[i] = rt_ansi_units[(r >> 3) % (sizeof(rt_ansi_units) / sizeof(rt_ansi_units[0]))];
+			w[i] = rt_ansi_units[(r >> 3) % (_countof(rt_ansi_units))];
 			break;
 		case 1:
 			w[i] = (wchar_t)(0x20 + (r >> 3) % 0x5F);
@@ -1688,8 +1688,8 @@ static void RtAnsiCompare(RT_ANSI_DIFF *d, UINT *state)
 // printed once the locale of the process is back.
 static void RtCharsetAnsiOracle(RT_CTX *ctx)
 {
-	RT_ANSI_DIFF d[sizeof(rt_ansi_locales) / sizeof(rt_ansi_locales[0])];
-	UINT num = sizeof(rt_ansi_locales) / sizeof(rt_ansi_locales[0]);
+	RT_ANSI_DIFF d[_countof(rt_ansi_locales)];
+	UINT num = _countof(rt_ansi_locales);
 	UINT state = RT_ANSI_SEED;
 	char saved[MAX_SIZE];
 	char what[MAX_SIZE];
@@ -2353,7 +2353,7 @@ void resources_test(UINT num, char **arg)
 
 	// vpnserver.exe and vpncmd.exe carry the same files: each holds every resource of type
 	// HAMCORE_RESOURCE_TYPE of this executable with the same bytes, and no other one
-	for (UINT i = 0;i < sizeof(rt_resource_exes) / sizeof(rt_resource_exes[0]);i++)
+	for (UINT i = 0;i < _countof(rt_resource_exes);i++)
 	{
 		wchar_t other_path[MAX_SIZE];
 		HMODULE self = GetModuleHandleW(NULL);

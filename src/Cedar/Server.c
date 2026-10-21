@@ -490,7 +490,7 @@ static ERASER *SiNewEraser(SERVER *s, UINT64 min_size, UINT interval)
 	targets[2] = security_log_dir;
 	targets[3] = server_log_dir;
 
-	return NewEraser(s->Logger, min_size, interval, targets, sizeof(targets) / sizeof(targets[0]));
+	return NewEraser(s->Logger, min_size, interval, targets, _countof(targets));
 }
 
 // Set the maximum size of a log file (LoggerMaxLogSize, 0 for MAX_LOG_SIZE_DEFAULT) of the server log and of the
