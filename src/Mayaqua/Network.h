@@ -259,6 +259,8 @@ TOKEN_LIST *GetCipherList();
 COUNTER *GetNumTcpConnectionsCounter();
 void AddWaitThread(THREAD *t);
 void DelWaitThread(THREAD *t);
+void InitWaitThread();
+void FreeWaitThread();
 bool GetNetBiosName(char *name, UINT size, const IP *ip);
 bool IsIPv6Supported();
 bool HasIPv6Address();

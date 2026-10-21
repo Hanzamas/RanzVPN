@@ -771,12 +771,12 @@ void DelWaitThread(THREAD *t)
 	UnlockList(WaitThreadList);
 }
 
-static void InitWaitThread()
+void InitWaitThread()
 {
 	WaitThreadList = NewList(NULL);
 }
 
-static void FreeWaitThread()
+void FreeWaitThread()
 {
 	UINT i, num;
 	THREAD **threads;
