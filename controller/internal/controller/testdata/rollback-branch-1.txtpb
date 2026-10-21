@@ -1,0 +1,26 @@
+# Generation 3 of branch-1 after `ranz rollback 1` (revision 3): the delta from generation 2 back
+# to the state of revision 1. corp gets its MTU of revision 1 again, and the Network corp-dmz and
+# the Peer branch-2, which apply2.json added, are removed.
+update: {
+  generation: 3
+  base_generation: 2
+  set: {
+    vrf: {
+      name: "corp"
+      id: 10
+      ula: {
+        address: "\375\0224Vx\232\000\000\000\000\000\000\000\000\000\000"  # fd12:3456:789a::
+        length: 48
+      }
+      mtu: 1280
+    }
+  }
+  remove: {
+    kind: KIND_NETWORK
+    name: "corp-dmz"
+  }
+  remove: {
+    kind: KIND_PEER
+    name: "branch-2"
+  }
+}
