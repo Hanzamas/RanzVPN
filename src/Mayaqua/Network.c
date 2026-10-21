@@ -8,6 +8,7 @@
 #include "FileIO.h"
 #include "HTTP.h"
 #include "Internat.h"
+#include "IpAddr.h"
 #include "Memory.h"
 #include "Microsoft.h"
 #include "Object.h"
