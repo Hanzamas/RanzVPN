@@ -21,6 +21,7 @@ import (
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
 	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
+	"github.com/Hanzamas/RanzVPN/controller/internal/licence"
 )
 
 // maxBody bounds the body of an apply.
@@ -56,6 +57,11 @@ type NodeList struct {
 	Nodes []controller.NodeStatus `json:"nodes"`
 }
 
+// LicenceKey is the body of PUT /api/v1/licence.
+type LicenceKey struct {
+	Key string `json:"key"`
+}
+
 // Problem is the body of every answer that is not 200 OK.
 type Problem struct {
 	Error string `json:"error"`
@@ -68,6 +74,12 @@ type Problem struct {
 //	GET    /api/v1/nodes                  NodeList
 //	POST   /api/v1/apply                  an intent.Document; answers a controller.ApplyResult
 //	DELETE /api/v1/resources/{kind}/{name} answers a controller.ApplyResult
+//	GET    /api/v1/licence                licence.Status, the licence in force
+//	PUT    /api/v1/licence                a LicenceKey; answers licence.Status
+//	DELETE /api/v1/licence                removes the licence key; answers licence.Status
+//
+// What the licence in force does not allow is answered with 403 Forbidden, and a licence key
+// that does not verify with 400 Bad Request.
 //
 // status holds the control address and the TLS fingerprint that the status call reports;
 // Handler fills in the public key. The handler answers loopback clients only (LoopbackOnly).
@@ -110,6 +122,36 @@ func Handler(c *controller.Controller, status Status) http.Handler {
 		}
 		reply(w, http.StatusOK, res)
 	})
+	mux.HandleFunc("GET /api/v1/licence", func(w http.ResponseWriter, r *http.Request) {
+		reply(w, http.StatusOK, c.Licence())
+	})
+	mux.HandleFunc("PUT /api/v1/licence", func(w http.ResponseWriter, r *http.Request) {
+		var k LicenceKey
+		d := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
+		d.DisallowUnknownFields()
+		if err := d.Decode(&k); err != nil {
+			reply(w, http.StatusBadRequest, Problem{Error: "the body is not a licence key: " + err.Error()})
+			return
+		}
+		if strings.TrimSpace(k.Key) == "" {
+			reply(w, http.StatusBadRequest, Problem{Error: "the body names no licence key; DELETE /api/v1/licence removes the installed one"})
+			return
+		}
+		st, err := c.SetLicence(r.Context(), k.Key)
+		if err != nil {
+			replyError(w, err)
+			return
+		}
+		reply(w, http.StatusOK, st)
+	})
+	mux.HandleFunc("DELETE /api/v1/licence", func(w http.ResponseWriter, r *http.Request) {
+		st, err := c.SetLicence(r.Context(), "")
+		if err != nil {
+			replyError(w, err)
+			return
+		}
+		reply(w, http.StatusOK, st)
+	})
 	return LoopbackOnly(mux)
 }
 
@@ -141,8 +183,10 @@ func replyError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, intent.ErrNotFound):
 		code = http.StatusNotFound
-	case errors.Is(err, intent.ErrInvalid):
+	case errors.Is(err, intent.ErrInvalid), errors.Is(err, licence.ErrInvalid):
 		code = http.StatusBadRequest
+	case errors.Is(err, licence.ErrRefused):
+		code = http.StatusForbidden
 	}
 	reply(w, code, Problem{Error: err.Error()})
 }
@@ -206,6 +250,28 @@ func (c *Client) Delete(ctx context.Context, kind, name string) (controller.Appl
 	var res controller.ApplyResult
 	err := c.do(ctx, http.MethodDelete, "/api/v1/resources/"+url.PathEscape(kind)+"/"+url.PathEscape(name), nil, &res)
 	return res, err
+}
+
+// Licence returns the licence in force.
+func (c *Client) Licence(ctx context.Context) (licence.Status, error) {
+	var st licence.Status
+	err := c.do(ctx, http.MethodGet, "/api/v1/licence", nil, &st)
+	return st, err
+}
+
+// SetLicence installs the licence key key and returns the licence in force then.
+func (c *Client) SetLicence(ctx context.Context, key string) (licence.Status, error) {
+	var st licence.Status
+	err := c.do(ctx, http.MethodPut, "/api/v1/licence", LicenceKey{Key: key}, &st)
+	return st, err
+}
+
+// RemoveLicence removes the installed licence key and returns the licence in force then: the
+// Personal tier.
+func (c *Client) RemoveLicence(ctx context.Context) (licence.Status, error) {
+	var st licence.Status
+	err := c.do(ctx, http.MethodDelete, "/api/v1/licence", nil, &st)
+	return st, err
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body, out any) error {

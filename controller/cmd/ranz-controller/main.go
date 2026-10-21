@@ -21,6 +21,10 @@
 // The API answers clients on the loopback interface only until RBAC (SDN-14, #190). rqlite is
 // the controller's sidecar: with -rqlited the controller runs rqlited itself, with its data in
 // the rqlite directory under -data; without it, the controller uses the rqlite at -rqlite.
+//
+// The licence key (ADR-0036) is installed with `ranz licence -f FILE` and kept in rqlite. It
+// must be signed with a vendor key that the release build links in (internal/licence); without
+// one, the Personal tier is in force.
 package main
 
 import (

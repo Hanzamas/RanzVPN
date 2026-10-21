@@ -7,6 +7,9 @@
 //	ranz [-server URL] get nodes          print the generation of each node and the one it acknowledged
 //	ranz [-server URL] delete KIND NAME   delete one resource
 //	ranz [-server URL] status             print the controller's public key, control address and TLS fingerprint
+//	ranz [-server URL] get licence        print the licence in force: tier, node cap, features, expiry
+//	ranz [-server URL] licence -f FILE    install the licence key in FILE (- for standard input)
+//	ranz [-server URL] licence -remove    remove the licence key, which leaves the Personal tier
 //
 // The server is https://127.0.0.1 (port 443) unless -server or the RANZ_SERVER environment
 // variable names another. Every answer is printed as JSON, the canonical form of the intent.
@@ -27,9 +30,10 @@ import (
 
 const usage = `usage:
   ranz [-server URL] apply -f FILE
-  ranz [-server URL] get resources|nodes
+  ranz [-server URL] get resources|nodes|licence
   ranz [-server URL] delete KIND NAME
   ranz [-server URL] status
+  ranz [-server URL] licence -f FILE|-remove
 `
 
 var errUsage = errors.New("bad arguments")
@@ -101,20 +105,51 @@ func do(ctx context.Context, c *api.Client, args []string) error {
 			return err
 		}
 		return show(s)
+	case len(args) == 2 && args[0] == "get" && args[1] == "licence":
+		st, err := c.Licence(ctx)
+		if err != nil {
+			return err
+		}
+		return show(st)
+	case args[0] == "licence":
+		flags := flag.NewFlagSet("licence", flag.ContinueOnError)
+		file := flags.String("f", "", "the licence key, - for standard input")
+		remove := flags.Bool("remove", false, "remove the licence key")
+		if err := flags.Parse(args[1:]); err != nil || flags.NArg() > 0 || (*file != "") == *remove {
+			return errUsage
+		}
+		if *remove {
+			st, err := c.RemoveLicence(ctx)
+			if err != nil {
+				return err
+			}
+			return show(st)
+		}
+		b, err := readInput(*file)
+		if err != nil {
+			return err
+		}
+		st, err := c.SetLicence(ctx, string(b))
+		if err != nil {
+			return err
+		}
+		return show(st)
 	}
 	return errUsage
+}
+
+// readInput reads the file name, or standard input for "-".
+func readInput(name string) ([]byte, error) {
+	if name == "-" {
+		return io.ReadAll(os.Stdin)
+	}
+	return os.ReadFile(name)
 }
 
 // readDocument reads an intent document, YAML or JSON, from the file name, or from standard
 // input for "-".
 func readDocument(name string) (intent.Document, error) {
-	var b []byte
-	var err error
-	if name == "-" {
-		b, err = io.ReadAll(os.Stdin)
-	} else {
-		b, err = os.ReadFile(name)
-	}
+	b, err := readInput(name)
 	if err != nil {
 		return intent.Document{}, err
 	}
