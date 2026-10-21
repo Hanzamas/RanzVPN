@@ -6,11 +6,9 @@
 
 #include "Connection.h"
 #include "Hub.h"
-#include "SeLowUser.h"
 #include "Session.h"
 
 #include "Mayaqua/Memory.h"
-#include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/TcpIp.h"
