@@ -178,7 +178,7 @@
 #define	HARNESS_PACK_ITEMS			32					// Sessions in the Pack benchmark struct
 #define	HARNESS_BENCH_RUNS			5					// Runs per bench case: the median and every run are printed
 #define	HARNESS_FLOOD_BATCH			32					// Frames the flood sender stores per receive loop
-#define	HARNESS_LOGWAIT_BACKLOG		30000				// Queued packet log records of a session from which PacketLog makes it wait
+#define	HARNESS_LOGWAIT_BACKLOG		PACKET_LOG_WAIT_RECORDS	// Queued packet log records of a session from which PacketLog makes it wait
 #define	HARNESS_LOGWAIT_DELAY		20					// flood_fps_logwait floods this long (ms) into that wait of up to 250 ms
 #define	HARNESS_IPTABLE_ADD_BATCH	1024				// New source addresses per run of an ip_table_add case
 #define	HARNESS_PACK_NAMES			500					// Distinct element names of the many-names Pack case

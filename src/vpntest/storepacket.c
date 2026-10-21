@@ -27,6 +27,9 @@
 //   the highest address, and the entries that expired (with their DHCP and non-DHCP times) are gone at the
 //   next new address while refreshed ones stay. The hub now skips the expiry pass while no entry can have
 //   expired and frees the expired entries after its table lock; the deletions are the same.
+// - Packet log back-pressure (CORE-F6 #66): a sender with PACKET_LOG_WAIT_RECORDS queued packet log records
+//   still waits for the log writer, but after the hub lock: its record is queued and its frame delivered at
+//   once, and the hub lock is free during the wait. The old hub waited under its lock.
 // Prints "STOREPACKET TEST OK" only when every check passes, and frees everything it allocates.
 
 #include "Cedar/Account.h"
@@ -34,6 +37,7 @@
 #include "Cedar/Connection.h"
 #include "Cedar/Hub.h"
 #include "Cedar/LogWriter.h"
+#include "Cedar/PacketLog.h"
 #include "Cedar/Server.h"
 #include "Cedar/Session.h"
 #include "Cedar/Tunables.h"
@@ -101,6 +105,9 @@
 #define	STOREPACKET_TEST_IPTABLE_DHCPD	0x0A06FFFE	// The sender as the DHCP server of the case: 10.6.255.254
 #define	STOREPACKET_TEST_DHCP_SIZE		300		// DHCP payload of an ACK of the case (DHCP_MIN_SIZE)
 #define	STOREPACKET_TEST_DHCP_COOKIE	236		// Offset of the magic cookie: fixed header (44 bytes), sname (64), file (128)
+#define	STOREPACKET_TEST_LOGWAIT_DST	0xC0A8FE01	// Destination of the frames of the back-pressure case: 192.168.254.1
+#define	STOREPACKET_TEST_LOGWAIT_MIN	150		// Milliseconds: below the back-pressure wait (250 ms), far above a frame without it
+#define	STOREPACKET_TEST_LOGWAIT_TIMEOUT	2000	// The record of the logged frame is queued within this (ms)
 
 // Run state of the test
 typedef struct STOREPACKET_TEST
@@ -123,6 +130,18 @@ typedef struct STOREPACKET_TEST_REPLY
 	UINT ContentLength;					// Value of the Content-Length line, INFINITE without one
 	UINT BodyLength;					// Bytes after the blank line, INFINITE without a blank line
 } STOREPACKET_TEST_REPLY;
+
+// One logged frame of the sender on a thread of its own (packet log back-pressure case)
+typedef struct STOREPACKET_TEST_LOGWAIT
+{
+	SESSION *Session;					// The sender
+	UCHAR Frame[STOREPACKET_TEST_FRAME_MAX];
+	UINT Size;
+	EVENT *Sending;						// Set right before the frame goes into the hub
+	UINT64 Start;						// Tick64 before the frame goes into the hub
+	UINT64 End;							// Tick64 when the hub returned
+	volatile bool Done;					// The hub returned
+} STOREPACKET_TEST_LOGWAIT;
 
 static UCHAR storepacket_test_mac_sender[6] = {0x02, 0x42, 0x55, 0x52, 0x00, 0x5A};
 static UCHAR storepacket_test_mac_broadcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
@@ -1344,6 +1363,143 @@ static void StorePacketTestIpTable(STOREPACKET_TEST *t)
 	StorePacketTestFreeSession(s);
 }
 
+// Thread of the packet log back-pressure case: one frame of the sender into the hub
+static void StorePacketTestLogWaitThread(THREAD *thread, void *param)
+{
+	STOREPACKET_TEST_LOGWAIT *w = (STOREPACKET_TEST_LOGWAIT *)param;
+
+	if (w == NULL)
+	{
+		return;
+	}
+
+	void *data = Malloc(w->Size);
+	Copy(data, w->Frame, w->Size);
+
+	w->Start = Tick64();
+	Set(w->Sending);
+	w->Session->PacketAdapter->PutPacket(w->Session, data, w->Size);
+	w->End = Tick64();
+	w->Done = true;
+}
+
+// Records queued in a capture LOG of the back-pressure case
+static UINT StorePacketTestLogQueued(LOG *capture)
+{
+	UINT num;
+
+	LockQueue(capture->RecordQueue);
+	{
+		num = capture->RecordQueue->num_item;
+	}
+	UnlockQueue(capture->RecordQueue);
+
+	return num;
+}
+
+// Free the records of a capture LOG of the back-pressure case: a packet log record gives back its record count and
+// its session reference. Returns their number
+static UINT StorePacketTestLogFree(LOG *capture)
+{
+	RECORD *rec;
+	UINT num = 0;
+
+	while ((rec = GetNext(capture->RecordQueue)) != NULL)
+	{
+		rec->FreeProc(rec->Data);
+		Free(rec);
+		num++;
+	}
+
+	return num;
+}
+
+// Packet log back-pressure (CORE-F6 #66): UDP frames are logged at header level into a LOG with a record queue and
+// no log thread (as in the NoServer case), and the sender holds PACKET_LOG_WAIT_RECORDS queued records. One frame of
+// the sender, on a thread of its own: its record is queued at once and the frame is delivered, the hub lock is free
+// while the thread still waits for the log writer, and the wait (up to 250 ms) is still there. The old hub waited
+// under its lock and queued the record after the wait. Without the backlog a frame passes without a wait
+static void StorePacketTestLogWait(STOREPACKET_TEST *t)
+{
+	HUB_LOG old_setting;
+	LOG *old_logger = t->Hub->PacketLogger;
+	LOG *capture = ZeroMalloc(sizeof(LOG));
+	STOREPACKET_TEST_LOGWAIT w;
+	UCHAR frame[STOREPACKET_TEST_FRAME_MAX];
+	UINT64 queued_at = 0;
+	bool waiting;
+
+	Copy(&old_setting, &t->Hub->LogSetting, sizeof(HUB_LOG));
+	t->Hub->LogSetting.SavePacketLog = true;
+	t->Hub->LogSetting.PacketLogConfig[PACKET_LOG_UDP] = PACKET_LOG_HEADER;
+	capture->RecordQueue = NewQueue();
+	capture->Event = NewEvent();
+	t->Hub->PacketLogger = capture;
+
+	Zero(&w, sizeof(w));
+	w.Session = t->Sender;
+	w.Size = StorePacketTestIpFrame(w.Frame, STOREPACKET_TEST_LOGWAIT_DST);
+	w.Sending = NewEvent();
+
+	StorePacketTestDrain(t, NULL, 0, NULL);
+	InterlockedExchangeAdd((volatile LONG *)&t->Sender->LoggingRecordCount->c, (LONG)PACKET_LOG_WAIT_RECORDS);
+
+	THREAD *thread = NewThread(StorePacketTestLogWaitThread, &w);
+	Wait(w.Sending, INFINITE);
+
+	UINT64 deadline = Tick64() + STOREPACKET_TEST_LOGWAIT_TIMEOUT;
+	while (StorePacketTestLogQueued(capture) == 0 && Tick64() < deadline)
+	{
+		SleepThread(1);
+	}
+	if (StorePacketTestLogQueued(capture) != 0)
+	{
+		queued_at = Tick64();
+	}
+
+	HubLockTables(t->Hub);
+	{
+		waiting = (w.Done == false);
+	}
+	HubUnlockTables(t->Hub);
+
+	UINT num_recv = StorePacketTestDrain(t, NULL, 0, NULL);
+
+	WaitThread(thread, INFINITE);
+	ReleaseThread(thread);
+	ReleaseEvent(w.Sending);
+
+	UINT num_records = StorePacketTestLogFree(capture);
+	InterlockedExchangeAdd((volatile LONG *)&t->Sender->LoggingRecordCount->c, -(LONG)PACKET_LOG_WAIT_RECORDS);
+
+	StorePacketTestCheck(t, queued_at != 0 && (queued_at - w.Start) < STOREPACKET_TEST_LOGWAIT_MIN && waiting &&
+		num_recv == 1 && num_records == 1,
+		"packet log back-pressure: the record is queued and the frame delivered at once, the hub lock is free while the sender waits",
+		"record queued after %I64u ms (0: not within %u ms), sender still waiting: %u, %u delivered, %u records",
+		(queued_at != 0 ? queued_at - w.Start : 0), STOREPACKET_TEST_LOGWAIT_TIMEOUT, waiting, num_recv, num_records);
+	StorePacketTestCheck(t, (w.End - w.Start) >= STOREPACKET_TEST_LOGWAIT_MIN,
+		"packet log back-pressure: a sender with PACKET_LOG_WAIT_RECORDS queued records still waits for the log writer",
+		"the frame took %I64u ms", w.End - w.Start);
+
+	// Without the backlog
+	UINT size = StorePacketTestIpFrame(frame, STOREPACKET_TEST_LOGWAIT_DST);
+	UINT64 start = Tick64();
+	StorePacketTestSendFrom(t->Sender, frame, size);
+	UINT64 took = Tick64() - start;
+	num_recv = StorePacketTestDrain(t, NULL, 0, NULL);
+	num_records = StorePacketTestLogFree(capture);
+
+	StorePacketTestCheck(t, took < STOREPACKET_TEST_LOGWAIT_MIN && num_recv == 1 && num_records == 1,
+		"packet log back-pressure: without a backlog the logged frame passes without a wait",
+		"the frame took %I64u ms, %u delivered, %u records", took, num_recv, num_records);
+
+	t->Hub->PacketLogger = old_logger;
+	Copy(&t->Hub->LogSetting, &old_setting, sizeof(HUB_LOG));
+	ReleaseQueue(capture->RecordQueue);
+	ReleaseEvent(capture->Event);
+	Free(capture);
+}
+
 // storepacket: bounded broadcast storm list, access list delay and jitter without a divide by zero
 void storepacket_test(UINT num, char **arg)
 {
@@ -1384,6 +1540,7 @@ void storepacket_test(UINT num, char **arg)
 	StorePacketTestDLinkMac(&t);
 	StorePacketTestRedirectCases(&t);
 	StorePacketTestNoServerPort(&t);
+	StorePacketTestLogWait(&t);
 
 	Zero(&a, sizeof(a));
 	a.Active = true;

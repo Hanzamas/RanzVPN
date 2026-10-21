@@ -1317,6 +1317,7 @@ void StorePacket(HUB *hub, SESSION *s, PKT *packet) {
 	UINT tcp_queue_quota = 0;
 	UINT64 dormant_interval = 0;
 	IP_TABLE_ENTRY *expired = NULL;
+	bool log_wait = false;
 	if (hub == NULL || packet == NULL)
 		return;
 
@@ -1692,7 +1693,7 @@ void StorePacket(HUB *hub, SESSION *s, PKT *packet) {
 						}
 
 						if (s != NULL) {
-							if (PacketLog(s->Hub, s, dest_session, packet, now) == false)
+							if (PacketLog(s->Hub, s, dest_session, packet, now, &log_wait) == false)
 								goto DISCARD_UNICAST_PACKET;
 						}
 
@@ -1705,7 +1706,7 @@ void StorePacket(HUB *hub, SESSION *s, PKT *packet) {
 					UINT current_tcp_queue_size = 0;
 
 					if (s != NULL) {
-						if (PacketLog(s->Hub, s, NULL, packet, now) == false)
+						if (PacketLog(s->Hub, s, NULL, packet, now, &log_wait) == false)
 							goto DISCARD_BROADCAST_PACKET;
 					}
 
@@ -1813,6 +1814,12 @@ void StorePacket(HUB *hub, SESSION *s, PKT *packet) {
 	HubUnlockTables(hub);
 
 	FreeIpTableEntries(expired);
+
+	// The packet log back-pressure of the source session waits here, after the lock, so the other sessions of the
+	// hub forward in the meantime. The server side of a cascade still holds its received-blocks queue lock, as it
+	// did for the wait under the hub lock (that lock comes before MacHashTable in the lock order)
+	if (log_wait)
+		PacketLogWait(s);
 }
 
 
