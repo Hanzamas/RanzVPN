@@ -34,6 +34,14 @@ struct SERVER_LISTENER
 	bool DisableDos;
 };
 
+// One listener as the admin RPCs report it, copied by SiEnumListeners under the listener list lock
+struct SERVER_LISTENER_INFO
+{
+	UINT Port;
+	bool Enabled;
+	bool Trying;							// Enabled, and the port is not bound yet
+};
+
 struct SYSLOG_SETTING
 {
 	UINT SaveType;
@@ -150,6 +158,7 @@ bool SiEnableListener(SERVER *s, UINT port);
 bool SiDisableListener(SERVER *s, UINT port);
 bool SiDeleteListener(SERVER *s, UINT port);
 SERVER_LISTENER *SiGetListener(SERVER *s, UINT port);
+SERVER_LISTENER_INFO *SiEnumListeners(SERVER *s, UINT *num);
 void SiSetDefaultHubOption(HUB_OPTION *o);
 FOLDER *SiWriteConfigurationToCfg(SERVER *s);
 bool SiLoadConfigurationCfg(SERVER *s, FOLDER *root);

@@ -2759,6 +2759,32 @@ UINT HubCountUserSessions(HUB *h, char *username, UCHAR *unique_id)
 	return num;
 }
 
+// SessionGetInfo of every session of the hub, in SessionList order, all taken under the SessionList lock.
+// The caller frees the array with Free
+SESSION_INFO *HubEnumSessions(HUB *h, UINT *num)
+{
+	SESSION_INFO *ret;
+	if (h == NULL || num == NULL)
+	{
+		return NULL;
+	}
+
+	LockList(h->SessionList);
+	{
+		UINT i;
+		*num = LIST_NUM(h->SessionList);
+		ret = ZeroMalloc(sizeof(SESSION_INFO) * (*num));
+
+		for (i = 0;i < *num;i++)
+		{
+			SessionGetInfo(LIST_DATA(h->SessionList, i), &ret[i]);
+		}
+	}
+	UnlockList(h->SessionList);
+
+	return ret;
+}
+
 static int CompareStormList(void *p1, void *p2)
 {
 	STORM *s1, *s2;

@@ -1141,6 +1141,39 @@ void SiUnlockListenerList(SERVER *s)
 	UnlockList(s->ServerListenerList);
 }
 
+// Port, enabled flag and bind state of every listener, in list order, all taken under the listener list lock.
+// The caller frees the array with Free
+SERVER_LISTENER_INFO *SiEnumListeners(SERVER *s, UINT *num)
+{
+	SERVER_LISTENER_INFO *ret;
+	if (s == NULL || num == NULL)
+	{
+		return NULL;
+	}
+
+	SiLockListenerList(s);
+	{
+		UINT i;
+		*num = LIST_NUM(s->ServerListenerList);
+		ret = ZeroMalloc(sizeof(SERVER_LISTENER_INFO) * (*num));
+
+		for (i = 0;i < *num;i++)
+		{
+			SERVER_LISTENER *o = LIST_DATA(s->ServerListenerList, i);
+
+			ret[i].Port = o->Port;
+			ret[i].Enabled = o->Enabled;
+			if (o->Enabled && o->Listener->Status == LISTENER_STATUS_TRYING)
+			{
+				ret[i].Trying = true;
+			}
+		}
+	}
+	SiUnlockListenerList(s);
+
+	return ret;
+}
+
 void SiSetDefaultHubOption(HUB_OPTION *o)
 {
 	UINT i;

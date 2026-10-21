@@ -1634,3 +1634,43 @@ CONNECTION *NewClientConnectionEx(SESSION *s, char *client_str)
 
 	return c;
 }
+
+// Copy what the admin RPCs report about the connection; the caller may hold the Cedar's ConnectionList
+void ConnectionGetInfo(CONNECTION *c, CONNECTION_INFO *info)
+{
+	if (info == NULL)
+	{
+		return;
+	}
+
+	Zero(info, sizeof(CONNECTION_INFO));
+
+	if (c == NULL)
+	{
+		return;
+	}
+
+	Lock(c->lock);
+	{
+		SOCK *s = c->FirstSock;
+
+		if (s != NULL)
+		{
+			Copy(&info->RemoteIp, &s->RemoteIP, sizeof(IP));
+			info->RemotePort = s->RemotePort;
+			StrCpy(info->RemoteHostname, sizeof(info->RemoteHostname), s->RemoteHostname);
+		}
+
+		StrCpy(info->Name, sizeof(info->Name), c->Name);
+		info->ConnectedTick = c->ConnectedTick;
+		info->Type = c->Type;
+
+		StrCpy(info->ServerStr, sizeof(info->ServerStr), c->ServerStr);
+		StrCpy(info->ClientStr, sizeof(info->ClientStr), c->ClientStr);
+		info->ServerVer = c->ServerVer;
+		info->ServerBuild = c->ServerBuild;
+		info->ClientVer = c->ClientVer;
+		info->ClientBuild = c->ClientBuild;
+	}
+	Unlock(c->lock);
+}

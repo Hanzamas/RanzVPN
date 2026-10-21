@@ -1804,33 +1804,28 @@ static UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
 	}
 	else
 	{
-		SESSION *s = sess;
+		SESSION_INFO info;
 
-		Lock(s->lock);
+		SessionGetInfo(sess, &info);
+
+		StrCpy(t->Username, sizeof(t->Username), info.Username);
+		StrCpy(t->RealUsername, sizeof(t->RealUsername), info.RealUsername);
+		StrCpy(t->GroupName, sizeof(t->GroupName), info.GroupName);
+		Copy(&t->NodeInfo, &info.NodeInfo, sizeof(NODE_INFO));
+
+		t->ClientIp = IPToUINT(&info.ClientIp);
+		if (IsIP6(&info.ClientIp))
 		{
-			StrCpy(t->Username, sizeof(t->Username), s->Username);
-			StrCpy(t->RealUsername, sizeof(t->RealUsername), s->UserNameReal);
-			StrCpy(t->GroupName, sizeof(t->GroupName), s->GroupName);
-			Copy(&t->NodeInfo, &s->NodeInfo, sizeof(NODE_INFO));
-
-			if (s->Connection != NULL)
-			{
-				t->ClientIp = IPToUINT(&s->Connection->ClientIp);
-				if (IsIP6(&s->Connection->ClientIp))
-				{
-					Copy(&t->ClientIp6, &s->Connection->ClientIp.address, sizeof(t->ClientIp6));
-				}
-
-				CopyIP(&t->ClientIpAddress, &s->Connection->ClientIp);
-
-				StrCpy(t->ClientHostName, sizeof(t->ClientHostName), s->Connection->ClientHostname);
-			}
+			Copy(&t->ClientIp6, &info.ClientIp.address, sizeof(t->ClientIp6));
 		}
-		Unlock(s->lock);
 
-		CiGetSessionStatus(&t->Status, s);
+		CopyIP(&t->ClientIpAddress, &info.ClientIp);
 
-		ReleaseSession(s);
+		StrCpy(t->ClientHostName, sizeof(t->ClientHostName), info.ClientHostname);
+
+		CiGetSessionStatus(&t->Status, sess);
+
+		ReleaseSession(sess);
 	}
 
 	ReleaseHub(h);
@@ -3533,7 +3528,7 @@ static UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t)
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 	CONNECTION *connection;
-	char name[MAX_CONNECTION_NAME_LEN + 1];
+	CONNECTION_INFO info;
 
 	if (IsEmptyStr(t->Name))
 	{
@@ -3547,7 +3542,6 @@ static UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t)
 		CONNECTION tt;
 		Zero(&tt, sizeof(tt));
 		tt.Name = t->Name;
-		StrCpy(name, sizeof(name), t->Name);
 
 		connection = Search(c->ConnectionList, &tt);
 
@@ -3563,34 +3557,24 @@ static UINT StGetConnectionInfo(ADMIN *a, RPC_CONNECTION_INFO *t)
 		return ERR_OBJECT_NOT_FOUND;
 	}
 
-	Zero(t, sizeof(RPC_CONNECTION_INFO));
-	StrCpy(t->Name, sizeof(t->Name), name);
-
-	Lock(connection->lock);
-	{
-		SOCK *s = connection->FirstSock;
-
-		if (s != NULL)
-		{
-			t->Ip = IPToUINT(&s->RemoteIP);
-			t->Port = s->RemotePort;
-			StrCpy(t->Hostname, sizeof(t->Hostname), s->RemoteHostname);
-		}
-
-		StrCpy(t->Name, sizeof(t->Name), connection->Name);
-		t->ConnectedTime = Tick64ToTime64(connection->ConnectedTick);
-		t->Type = connection->Type;
-
-		StrCpy(t->ServerStr, sizeof(t->ServerStr), connection->ServerStr);
-		StrCpy(t->ClientStr, sizeof(t->ClientStr), connection->ClientStr);
-		t->ServerVer = connection->ServerVer;
-		t->ServerBuild = connection->ServerBuild;
-		t->ClientVer = connection->ClientVer;
-		t->ClientBuild = connection->ClientBuild;
-	}
-	Unlock(connection->lock);
+	ConnectionGetInfo(connection, &info);
 
 	ReleaseConnection(connection);
+
+	Zero(t, sizeof(RPC_CONNECTION_INFO));
+	StrCpy(t->Name, sizeof(t->Name), info.Name);
+	t->Ip = IPToUINT(&info.RemoteIp);
+	t->Port = info.RemotePort;
+	StrCpy(t->Hostname, sizeof(t->Hostname), info.RemoteHostname);
+	t->ConnectedTime = Tick64ToTime64(info.ConnectedTick);
+	t->Type = info.Type;
+
+	StrCpy(t->ServerStr, sizeof(t->ServerStr), info.ServerStr);
+	StrCpy(t->ClientStr, sizeof(t->ClientStr), info.ClientStr);
+	t->ServerVer = info.ServerVer;
+	t->ServerBuild = info.ServerBuild;
+	t->ClientVer = info.ClientVer;
+	t->ClientBuild = info.ClientBuild;
 
 	return ERR_NO_ERROR;
 }
@@ -3655,24 +3639,16 @@ static UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t)
 		for (i = 0;i < t->NumConnection;i++)
 		{
 			RPC_ENUM_CONNECTION_ITEM *e = &t->Connections[i];
-			CONNECTION *connection = LIST_DATA(c->ConnectionList, i);
+			CONNECTION_INFO info;
 
-			Lock(connection->lock);
-			{
-				SOCK *s = connection->FirstSock;
+			ConnectionGetInfo(LIST_DATA(c->ConnectionList, i), &info);
 
-				if (s != NULL)
-				{
-					e->Ip = IPToUINT(&s->RemoteIP);
-					e->Port = s->RemotePort;
-					StrCpy(e->Hostname, sizeof(e->Hostname), s->RemoteHostname);
-				}
-
-				StrCpy(e->Name, sizeof(e->Name), connection->Name);
-				e->ConnectedTime = Tick64ToTime64(connection->ConnectedTick);
-				e->Type = connection->Type;
-			}
-			Unlock(connection->lock);
+			e->Ip = IPToUINT(&info.RemoteIp);
+			e->Port = info.RemotePort;
+			StrCpy(e->Hostname, sizeof(e->Hostname), info.RemoteHostname);
+			StrCpy(e->Name, sizeof(e->Name), info.Name);
+			e->ConnectedTime = Tick64ToTime64(info.ConnectedTick);
+			e->Type = info.Type;
 		}
 	}
 	UnlockList(c->ConnectionList);
@@ -4138,7 +4114,7 @@ static UINT StWaitListenerBind(SERVER *s, UINT port)
 	LISTENER *r = NULL;
 	bool bound;
 
-	LockList(s->ServerListenerList);
+	SiLockListenerList(s);
 	{
 		e = SiGetListener(s, port);
 		if (e != NULL && e->Listener != NULL)
@@ -4147,7 +4123,7 @@ static UINT StWaitListenerBind(SERVER *s, UINT port)
 			AddRef(r->ref);
 		}
 	}
-	UnlockList(s->ServerListenerList);
+	SiUnlockListenerList(s);
 
 	// Outside the list lock: other admin calls take it, the listener thread does not
 	bound = WaitListenerBind(r, LISTENER_BIND_WAIT_TIME);
@@ -4164,7 +4140,7 @@ static UINT StEnableListener(ADMIN *a, RPC_LISTENER *t)
 	SERVER_ADMIN_ONLY;
 
 
-	LockList(a->Server->ServerListenerList);
+	SiLockListenerList(a->Server);
 	{
 		if (t->Enable)
 		{
@@ -4189,7 +4165,7 @@ static UINT StEnableListener(ADMIN *a, RPC_LISTENER *t)
 			}
 		}
 	}
-	UnlockList(a->Server->ServerListenerList);
+	SiUnlockListenerList(a->Server);
 
 	IncrementServerConfigRevision(a->Server);
 
@@ -4209,7 +4185,7 @@ static UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t)
 	SERVER_ADMIN_ONLY;
 
 
-	LockList(a->Server->ServerListenerList);
+	SiLockListenerList(a->Server);
 	{
 		if (SiDeleteListener(a->Server, t->Port) == false)
 		{
@@ -4222,7 +4198,7 @@ static UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t)
 			IncrementServerConfigRevision(a->Server);
 		}
 	}
-	UnlockList(a->Server->ServerListenerList);
+	SiUnlockListenerList(a->Server);
 
 	return ret;
 }
@@ -4230,35 +4206,26 @@ static UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t)
 static UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t)
 {
 	UINT i;
+	SERVER_LISTENER_INFO *o;
 
 	SERVER_ADMIN_ONLY;
 
 	FreeRpcListenerList(t);
 	Zero(t, sizeof(RPC_LISTENER_LIST));
 
-	LockList(a->Server->ServerListenerList);
+	o = SiEnumListeners(a->Server, &t->NumPort);
+	t->Ports = ZeroMalloc(sizeof(UINT) * t->NumPort);
+	t->Enables = ZeroMalloc(sizeof(bool) * t->NumPort);
+	t->Errors = ZeroMalloc(sizeof(bool) * t->NumPort);
+
+	for (i = 0;i < t->NumPort;i++)
 	{
-		t->NumPort = LIST_NUM(a->Server->ServerListenerList);
-		t->Ports = ZeroMalloc(sizeof(UINT) * t->NumPort);
-		t->Enables = ZeroMalloc(sizeof(bool) * t->NumPort);
-		t->Errors = ZeroMalloc(sizeof(bool) * t->NumPort);
-
-		for (i = 0;i < t->NumPort;i++)
-		{
-			SERVER_LISTENER *o = LIST_DATA(a->Server->ServerListenerList, i);
-
-			t->Ports[i] = o->Port;
-			t->Enables[i] = o->Enabled;
-			if (t->Enables[i])
-			{
-				if (o->Listener->Status == LISTENER_STATUS_TRYING)
-				{
-					t->Errors[i] = true;
-				}
-			}
-		}
+		t->Ports[i] = o[i].Port;
+		t->Enables[i] = o[i].Enabled;
+		t->Errors[i] = o[i].Trying;
 	}
-	UnlockList(a->Server->ServerListenerList);
+
+	Free(o);
 
 	return ERR_NO_ERROR;
 }
@@ -4274,7 +4241,7 @@ static UINT StCreateListener(ADMIN *a, RPC_LISTENER *t)
 
 	SERVER_ADMIN_ONLY;
 
-	LockList(a->Server->ServerListenerList);
+	SiLockListenerList(a->Server);
 	{
 		if (SiAddListenerEx(a->Server, t->Port, t->Enable, false) == false)
 		{
@@ -4287,7 +4254,7 @@ static UINT StCreateListener(ADMIN *a, RPC_LISTENER *t)
 			IncrementServerConfigRevision(a->Server);
 		}
 	}
-	UnlockList(a->Server->ServerListenerList);
+	SiUnlockListenerList(a->Server);
 
 	// A disabled listener has no bind to wait for
 	if (ret == ERR_NO_ERROR && t->Enable)
@@ -5098,6 +5065,8 @@ static void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t)
 	HUB *h;
 	UINT64 now = Tick64();
 	UINT64 dormant_interval;
+	SESSION_INFO *info;
+	UINT i;
 	if (s == NULL || hubname == NULL || t == NULL)
 	{
 		return;
@@ -5114,75 +5083,61 @@ static void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t)
 
 	dormant_interval = h->Option->DetectDormantSessionInterval * (UINT64)1000;
 
-	LockList(h->SessionList);
+	info = HubEnumSessions(h, &t->NumSession);
+	t->Sessions = ZeroMalloc(sizeof(RPC_ENUM_SESSION_ITEM) * t->NumSession);
+
+	for (i = 0;i < t->NumSession;i++)
 	{
-		UINT i;
-		t->NumSession = LIST_NUM(h->SessionList);
-		t->Sessions = ZeroMalloc(sizeof(RPC_ENUM_SESSION_ITEM) * t->NumSession);
+		SESSION_INFO *si = &info[i];
+		RPC_ENUM_SESSION_ITEM *e = &t->Sessions[i];
 
-		for (i = 0;i < t->NumSession;i++)
+		StrCpy(e->Name, sizeof(e->Name), si->Name);
+		StrCpy(e->Username, sizeof(e->Username), si->Username);
+		e->Ip = IPToUINT(&si->ClientIp);
+		CopyIP(&e->ClientIP, &si->ClientIp);
+		StrCpy(e->Hostname, sizeof(e->Hostname), si->ClientHostname);
+		e->MaxNumTcp = si->MaxConnection;
+		e->CreatedTime = Tick64ToTime64(si->CreatedTime);
+		e->LastCommTime = Tick64ToTime64(si->LastCommTime);
+		e->LinkMode = si->LinkModeServer;
+		e->BridgeMode = si->BridgeMode;
+		e->VLanId = si->VLanId;
+		e->CurrentNumTcp = si->NumTcp;
+		e->PacketSize = si->PacketSize;
+		e->PacketNum = si->PacketNum;
+		e->Client_BridgeMode = si->IsBridgeMode;
+		e->Client_MonitorMode = si->IsMonitorMode;
+		Copy(e->UniqueId, si->NodeInfo.UniqueId, 16);
+
+		if (si->NormalClient)
 		{
-			SESSION *s = LIST_DATA(h->SessionList, i);
-			RPC_ENUM_SESSION_ITEM *e = &t->Sessions[i];
-			Lock(s->lock);
+			e->IsDormantEnabled = (dormant_interval == 0 ? false : true);
+			if (e->IsDormantEnabled)
 			{
-				StrCpy(e->Name, sizeof(e->Name), s->Name);
-				StrCpy(e->Username, sizeof(e->Username), s->Username);
-				e->Ip = IPToUINT(&s->Connection->ClientIp);
-				CopyIP(&e->ClientIP, &s->Connection->ClientIp);
-				StrCpy(e->Hostname, sizeof(e->Hostname), s->Connection->ClientHostname);
-				e->MaxNumTcp = s->MaxConnection;
-				e->CreatedTime = Tick64ToTime64(s->CreatedTime);
-				e->LastCommTime = Tick64ToTime64(s->LastCommTime);
-				e->LinkMode = s->LinkModeServer;
-				e->BridgeMode = s->BridgeMode;
-				e->VLanId = s->VLanId;
-				LockList(s->Connection->Tcp->TcpSockList);
+				if (si->LastCommTimeForDormant == 0)
 				{
-					e->CurrentNumTcp = s->Connection->Tcp->TcpSockList->num_item;
+					e->LastCommDormant = (UINT64)0x7FFFFFFF;
 				}
-				UnlockList(s->Connection->Tcp->TcpSockList);
-				Lock(s->TrafficLock);
+				else
 				{
-					e->PacketSize = GetTrafficPacketSize(s->Traffic);
-					e->PacketNum = GetTrafficPacketNum(s->Traffic);
+					e->LastCommDormant = now - si->LastCommTimeForDormant;
 				}
-				Unlock(s->TrafficLock);
-				e->Client_BridgeMode = s->IsBridgeMode;
-				e->Client_MonitorMode = s->IsMonitorMode;
-				Copy(e->UniqueId, s->NodeInfo.UniqueId, 16);
-
-				if (s->NormalClient)
+				if (si->LastCommTimeForDormant == 0)
 				{
-					e->IsDormantEnabled = (dormant_interval == 0 ? false : true);
-					if (e->IsDormantEnabled)
+					e->IsDormant = true;
+				}
+				else
+				{
+					if ((si->LastCommTimeForDormant + dormant_interval) < now)
 					{
-						if (s->LastCommTimeForDormant == 0)
-						{
-							e->LastCommDormant = (UINT64)0x7FFFFFFF;
-						}
-						else
-						{
-							e->LastCommDormant = now - s->LastCommTimeForDormant;
-						}
-						if (s->LastCommTimeForDormant == 0)
-						{
-							e->IsDormant = true;
-						}
-						else
-						{
-							if ((s->LastCommTimeForDormant + dormant_interval) < now)
-							{
-								e->IsDormant = true;
-							}
-						}
+						e->IsDormant = true;
 					}
 				}
 			}
-			Unlock(s->lock);
 		}
 	}
-	UnlockList(h->SessionList);
+
+	Free(info);
 
 	ReleaseHub(h);
 }
@@ -7406,6 +7361,7 @@ static SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, 
 {
 	UCHAR secure_password[SHA1_SIZE];
 	SESSION *s;
+	CONNECTION *c;
 	SOCK *sock;
 	PACK *p;
 	RPC_WINVER ver;
@@ -7415,11 +7371,13 @@ static SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, 
 		return NULL;
 	}
 
-	sock = s->Connection->FirstSock;
+	// The connection NewRpcSession opened and logged in: the admin RPC runs on its first socket
+	c = s->Connection;
+	sock = c->FirstSock;
 
 	p = NewPack();
 
-	PackAddClientVersion(p, s->Connection);
+	PackAddClientVersion(p, c);
 
 	PackAddStr(p, "method", "admin");
 	PackAddBool(p, "accept_empty_password", true);
@@ -7427,7 +7385,7 @@ static SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, 
 	GetWinVer(&ver);
 	OutRpcWinVer(p, &ver);
 
-	SecurePassword(secure_password, hashed_password, s->Connection->Random);
+	SecurePassword(secure_password, hashed_password, c->Random);
 
 	PackAddData(p, "secure_password", secure_password, sizeof(secure_password));
 
@@ -7477,7 +7435,8 @@ static SESSION *AdminConnectMain(CEDAR *cedar, CLIENT_OPTION *o, char *hubname, 
 // EnumLogFile) and the connect left CONNECTING_TIMEOUT on the socket. The caller takes its own reference
 static SOCK *AdminRpcSock(SESSION *s)
 {
-	SOCK *sock = s->Connection->FirstSock;
+	CONNECTION *c = s->Connection;
+	SOCK *sock = c->FirstSock;
 
 	SetTimeout(sock, INFINITE);
 

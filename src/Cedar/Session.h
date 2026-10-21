@@ -161,6 +161,31 @@ struct SESSION
 	UCHAR LastDLinkSTPPacketDataHash[MD5_SIZE];
 };
 
+// What the admin RPCs report about one session, copied by SessionGetInfo under the session's lock
+struct SESSION_INFO
+{
+	char Name[MAX_SESSION_NAME_LEN + 1];
+	char Username[MAX_USERNAME_LEN + 1];
+	char RealUsername[MAX_USERNAME_LEN + 1];
+	char GroupName[MAX_USERNAME_LEN + 1];
+	NODE_INFO NodeInfo;
+	IP ClientIp;							// Zero when the session has no connection
+	char ClientHostname[MAX_HOST_NAME_LEN + 1];
+	UINT NumTcp;							// TCP sockets of the connection
+	UINT MaxConnection;
+	UINT64 CreatedTime;						// Tick64
+	UINT64 LastCommTime;					// Tick64
+	UINT64 LastCommTimeForDormant;			// Tick64, 0 before the first packet
+	bool LinkModeServer;
+	bool BridgeMode;
+	bool NormalClient;
+	bool IsBridgeMode;
+	bool IsMonitorMode;
+	UINT VLanId;
+	UINT64 PacketSize;
+	UINT64 PacketNum;
+};
+
 SESSION *NewClientSession(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *auth, PACKET_ADAPTER *pa);
 SESSION *NewRpcSession(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *client_str);
 SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, POLICY *policy);
@@ -180,6 +205,7 @@ void AddCancelList(LIST *o, CANCEL *c);
 void CancelList(LIST *o);
 bool IsPriorityHighestPacketForQoS(void *data, UINT size);
 UINT GetNextDelayedPacketTickDiff(SESSION *s);
+void SessionGetInfo(SESSION *s, SESSION_INFO *info);
 
 #endif
 

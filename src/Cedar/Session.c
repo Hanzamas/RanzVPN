@@ -1403,3 +1403,62 @@ void ReleaseCancelList(LIST *o)
 
 	ReleaseList(o);
 }
+
+// Copy what the admin RPCs report about the session. Lock order as in HubCountUserSessions: the caller may hold the
+// hub's SessionList; this takes s->lock, then the TcpSockList lock and the traffic lock
+void SessionGetInfo(SESSION *s, SESSION_INFO *info)
+{
+	if (info == NULL)
+	{
+		return;
+	}
+
+	Zero(info, sizeof(SESSION_INFO));
+
+	if (s == NULL)
+	{
+		return;
+	}
+
+	Lock(s->lock);
+	{
+		StrCpy(info->Name, sizeof(info->Name), s->Name);
+		StrCpy(info->Username, sizeof(info->Username), s->Username);
+		StrCpy(info->RealUsername, sizeof(info->RealUsername), s->UserNameReal);
+		StrCpy(info->GroupName, sizeof(info->GroupName), s->GroupName);
+		Copy(&info->NodeInfo, &s->NodeInfo, sizeof(NODE_INFO));
+
+		if (s->Connection != NULL)
+		{
+			CONNECTION *c = s->Connection;
+
+			Copy(&info->ClientIp, &c->ClientIp, sizeof(IP));
+			StrCpy(info->ClientHostname, sizeof(info->ClientHostname), c->ClientHostname);
+
+			LockList(c->Tcp->TcpSockList);
+			{
+				info->NumTcp = LIST_NUM(c->Tcp->TcpSockList);
+			}
+			UnlockList(c->Tcp->TcpSockList);
+		}
+
+		info->MaxConnection = s->MaxConnection;
+		info->CreatedTime = s->CreatedTime;
+		info->LastCommTime = s->LastCommTime;
+		info->LastCommTimeForDormant = s->LastCommTimeForDormant;
+		info->LinkModeServer = s->LinkModeServer;
+		info->BridgeMode = s->BridgeMode;
+		info->NormalClient = s->NormalClient;
+		info->IsBridgeMode = s->IsBridgeMode;
+		info->IsMonitorMode = s->IsMonitorMode;
+		info->VLanId = s->VLanId;
+
+		Lock(s->TrafficLock);
+		{
+			info->PacketSize = GetTrafficPacketSize(s->Traffic);
+			info->PacketNum = GetTrafficPacketNum(s->Traffic);
+		}
+		Unlock(s->TrafficLock);
+	}
+	Unlock(s->lock);
+}
