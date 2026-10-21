@@ -24,7 +24,6 @@ struct TABLE
 #define	_SS(name)		(GetTableStr((const char *)(name)))
 #define	_UU(name)		(GetTableUniStr((const char *)(name)))
 #define	_II(name)		(GetTableInt((const char *)(name)))
-#define	_E(name)		(GetUniErrorStr((UINT)(name)))
 #define _GETLANG()		(_II("LANG"))
 
 struct LANGLIST
@@ -44,6 +43,10 @@ TOKEN_LIST *GetTableNameStartWith(const char *str);
 char *GetTableStr(const char *name);
 wchar_t *GetTableUniStr(const char *name);
 wchar_t *GetUniErrorStr(UINT err);
+static inline wchar_t *_E(UINT name)
+{
+	return (GetUniErrorStr((UINT)(name)));
+}
 UINT GetTableInt(const char *name);
 void InitTable();
 

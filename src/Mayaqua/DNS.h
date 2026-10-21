@@ -10,12 +10,8 @@
 #define DNS_RESOLVE_DEFAULT_TIMEOUT (2300)
 #define DNS_RESOLVE_REVERSE_DEFAULT_TIMEOUT (500)
 
-#define GetIP(ip, hostname) (GetIPEx(ip, hostname, 0, NULL))
 #define GetIP4(ip, hostname) (GetIP4Ex(ip, hostname, 0, NULL))
 #define GetIP6(ip, hostname) (GetIP6Ex(ip, hostname, 0, NULL))
-
-#define GetIP4Ex(ip, hostname, timeout, cancel_flag) (DnsResolve(NULL, ip, hostname, timeout, cancel_flag))
-#define GetIP6Ex(ip, hostname, timeout, cancel_flag) (DnsResolve(ip, NULL, hostname, timeout, cancel_flag))
 
 struct DNS_CACHE
 {
@@ -61,6 +57,14 @@ void DnsCacheToggle(const bool enabled);
 void DnsCacheReverseUpdate(const IP *ip, const char *hostname);
 
 bool DnsResolve(IP *ipv6, IP *ipv4, const char *hostname, UINT timeout, volatile const bool *cancel_flag);
+static inline bool GetIP4Ex(IP *ip, const char *hostname, UINT timeout, volatile const bool *cancel_flag)
+{
+	return (DnsResolve(NULL, ip, hostname, timeout, cancel_flag));
+}
+static inline bool GetIP6Ex(IP *ip, const char *hostname, UINT timeout, volatile const bool *cancel_flag)
+{
+	return (DnsResolve(ip, NULL, hostname, timeout, cancel_flag));
+}
 bool DnsResolveEx(LIST **iplist_v6, LIST **iplist_v4, const char *hostname, UINT timeout, volatile const bool *cancel_flag);
 void DnsResolver(THREAD *t, void *param);
 
@@ -68,6 +72,10 @@ bool DnsResolveReverse(char *dst, const UINT size, const IP *ip, UINT timeout, v
 void DnsResolverReverse(THREAD *t, void *param);
 
 bool GetIPEx(IP *ip, const char *hostname, UINT timeout, volatile const bool *cancel_flag);
+static inline bool GetIP(IP *ip, const char *hostname)
+{
+	return (GetIPEx(ip, hostname, 0, NULL));
+}
 
 void ReleaseDnsResolver(DNS_RESOLVER *p);
 void ReleaseDnsResolverReverse(DNS_RESOLVER_REVERSE *p);
