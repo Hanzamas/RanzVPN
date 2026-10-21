@@ -103,3 +103,12 @@ void HashAdminPassword(void *hash, char *password);
 HUB *AdminGetHub(ADMIN *a, char *hubname, char *denied_option, UINT *err);
 
 #endif	// ADMIN_INTERNAL_H
+
+#define	CHECK_RIGHT														\
+	if (a->ServerAdmin == false && (StrCmpi(a->HubName, t->HubName) != 0))	\
+		return ERR_NOT_ENOUGH_RIGHT;	\
+	if (IsEmptyStr(t->HubName))			\
+		return ERR_INVALID_PARAMETER;
+#define	SERVER_ADMIN_ONLY												\
+	if (a->ServerAdmin == false)										\
+		return ERR_NOT_ENOUGH_RIGHT;

@@ -112,14 +112,6 @@ static bool SiIsEmptyPassword(void *hash_password);
 		FreePack(ret);													\
 		return err;														\
 	}
-#define	CHECK_RIGHT														\
-	if (a->ServerAdmin == false && (StrCmpi(a->HubName, t->HubName) != 0))	\
-		return ERR_NOT_ENOUGH_RIGHT;	\
-	if (IsEmptyStr(t->HubName))			\
-		return ERR_INVALID_PARAMETER;
-#define	SERVER_ADMIN_ONLY												\
-	if (a->ServerAdmin == false)										\
-		return ERR_NOT_ENOUGH_RIGHT;
 
 // Hub lookup for the admin handlers: the access check, the lookup and the hub
 // admin option check, in that order. Returns a referenced HUB, or NULL with *err set.
