@@ -36,6 +36,7 @@ import (
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
 	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
+	"github.com/Hanzamas/RanzVPN/controller/internal/rbac"
 	"github.com/Hanzamas/RanzVPN/controller/internal/store"
 )
 
@@ -66,6 +67,8 @@ type Config struct {
 	Fingerprint string
 	// Store is the member's connection to its rqlite member.
 	Store *store.Store
+	// Tokens are the API tokens, in Store, which every member knows.
+	Tokens *rbac.Tokens
 	// Key is the member's Noise static key.
 	Key keys.Static
 	// Schema is the control schema version the controller runs as (controller.Config.Schema).
@@ -170,15 +173,16 @@ func (m *Member) ServeStream(tc *tls.Conn) {
 }
 
 // Handler returns the member's HTTP API: GET /api/v1/status answers for this member, every other
-// call goes to the controller of the leader, here or forwarded to the member that leads. It
-// answers loopback clients only (api.LoopbackOnly).
+// call goes to the controller of the leader, here or forwarded to the member that leads with the
+// caller's bearer token, which the leader checks again. Every call needs the role that the API
+// asks for it (api.Guard): the tokens are in the store, so every member knows them.
 func (m *Member) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/status", func(w http.ResponseWriter, r *http.Request) {
 		api.Reply(w, http.StatusOK, m.Status())
 	})
 	mux.HandleFunc("/", m.serveAPI)
-	return api.LoopbackOnly(mux)
+	return api.Guard(m.cfg.Tokens, mux)
 }
 
 // Status returns the answer of GET /api/v1/status of this member.
@@ -289,7 +293,7 @@ func (m *Member) lead(ctx context.Context, l store.Lease) {
 		m.release(l.Epoch)
 		return
 	}
-	h := api.Handler(c, m.cfg.Status)
+	h := api.Routes(c, m.cfg.Tokens, m.cfg.Status)
 	m.mu.Lock()
 	m.active, m.handler, m.lease = c, h, l
 	m.proxy, m.proxyFor = nil, store.Lease{}

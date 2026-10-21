@@ -295,11 +295,40 @@ func newCluster(t *testing.T, schema int) []*member {
 	for _, m := range ms {
 		m.start(t)
 	}
+	admin := waitAdminToken(t, ms)
+	for _, m := range ms {
+		m.api.Token = admin
+	}
 	for _, m := range ms {
 		m.waitUp(t)
 	}
 	waitLeader(t, ms, "")
 	return ms
+}
+
+// waitAdminToken waits until the member that started first has written the secret of the admin
+// token to its data directory (rbac.Bootstrap), and returns the secret. The tokens are in the
+// store, so the API of every member takes it.
+func waitAdminToken(t *testing.T, ms []*member) string {
+	t.Helper()
+	deadline := time.Now().Add(clusterTimeout)
+	for {
+		for _, m := range ms {
+			select {
+			case <-m.exited:
+				t.Fatalf("%s exited before it served: %v", m.name, m.err)
+			default:
+			}
+			b, err := os.ReadFile(filepath.Join(m.dir, "data", adminTokenFile))
+			if err == nil && strings.HasSuffix(string(b), "\n") {
+				return strings.TrimSpace(string(b))
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no member wrote %s within %v", adminTokenFile, clusterTimeout)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 func (m *member) logPath() string {

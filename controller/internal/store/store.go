@@ -34,6 +34,7 @@ import (
 var schema = []string{
 	`CREATE TABLE IF NOT EXISTS resources (kind TEXT NOT NULL, name TEXT NOT NULL, spec TEXT NOT NULL, PRIMARY KEY (kind, name))`,
 	`CREATE TABLE IF NOT EXISTS node_state (name TEXT NOT NULL PRIMARY KEY, generation INTEGER NOT NULL, desired TEXT NOT NULL, acked_generation INTEGER NOT NULL, acked TEXT NOT NULL)`,
+	`CREATE TABLE IF NOT EXISTS api_tokens (name TEXT NOT NULL PRIMARY KEY, role TEXT NOT NULL, hash TEXT NOT NULL UNIQUE)`,
 	`CREATE TABLE IF NOT EXISTS lease (id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1), epoch INTEGER NOT NULL, renewal INTEGER NOT NULL, holder TEXT NOT NULL, address TEXT NOT NULL, fingerprint TEXT NOT NULL)`,
 	`INSERT OR IGNORE INTO lease (id, epoch, renewal, holder, address, fingerprint) VALUES (1, 0, 0, '', '', '')`,
 	// The fence: a write of a fenced store first inserts a row here when the lease has another
