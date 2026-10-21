@@ -1089,3 +1089,41 @@ void FreeEth()
 	DeleteLock(eth_list_lock);
 	eth_list_lock = NULL;
 }
+
+UINT GetEthDeviceHash()
+{
+	MS_ADAPTER_LIST *a = MsCreateAdapterList();
+	UINT num;
+	UINT i;
+	char tmp[4096];
+	UCHAR hash[SHA1_SIZE];
+
+	tmp[0] = 0;
+	if (a != NULL)
+	{
+		for (i = 0;i < a->Num;i++)
+		{
+			StrCat(tmp, sizeof(tmp), a->Adapters[i]->Title);
+		}
+	}
+	MsFreeAdapterList(a);
+
+	Sha0(hash, tmp, StrLen(tmp));
+
+	Copy(&num, hash, sizeof(UINT));
+
+	return num;
+}
+
+// Whether this machine can run a Local Bridge. SeLow must exist for this OS and architecture
+// (SuIsSupportedOs: no claim where no SeLow driver package exists, such as arm64), and then be
+// usable now or installable by this elevated process (FND-173)
+bool IsBridgeSupported()
+{
+	if (SuIsSupportedOs() == false)
+	{
+		return false;
+	}
+
+	return Win32EthIsSuSupported() || MsIsAdmin();
+}
