@@ -703,8 +703,45 @@ def make_stun_seeds():
         write_seed('fuzz_stun', name, text)
 
 
+# ---------------------------------------------------------------------------
+# Peer layer of the new core (Core/Peer.c PeerInput, Core/PeerSignal.c PeerOpenSignal and PeerSignalDecode)
+# ---------------------------------------------------------------------------
+# The public keys of the fixed scalars of fuzz_peer.c and coretest: A (1, 2, ...), B (33, 34, ...), the relay
+# (129, 130, ...). X25519 is not in the standard library, so they are written out (src/coretest/envelope.c).
+PEER_A = bytes.fromhex('07a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c')
+PEER_B = bytes.fromhex('5869aff450549732cbaaed5e5df9b30a6da31cb0e5742bad5ad4a1a768f1a67b')
+PEER_RELAY = bytes.fromhex('883186b800b41d5cf0429695da9b3cc4f328ebcd184a6e482fa578c103f06c77')
+# The known answers of coretest's envelope test: a signal payload, its envelope from A to B, a bind from A to the
+# relay
+PEER_SIGNAL = bytes.fromhex(
+    '01010102030405060708883186b800b41d5cf0429695da9b3cc4f328ebcd184a6e482fa578c103f06c7700000000000000000000'
+    'ffffc000020a1b58020100000000000000000000ffff0a00000213880200000000000000000000ffffc63364079c41')
+PEER_SIGNAL_ENVELOPE = bytes.fromhex(
+    '0407a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c244fe3b963e899dd295baffce248d3530f3a9a74'
+    '79ba063002680ebfe7adad49529bf345ba812669a43343fe55f5bdebfa1fd20846a6b5d96b0efe2ebaabc1b2f8e61fd05853d2e30e'
+    'daa0107cab08f15d22975a1970ba0956de502d94c629a92543f49c5206a51e61b47e1c6263a7345cae0aa14d13bfd2d6f1f2049ea5'
+    'a1ef584e6d2014829b4ea20ba9afc1f865290e2a82')
+PEER_BIND_ENVELOPE = bytes.fromhex(
+    '0207a37cbc142093c8b755dc1b10e86cb426374ad16aa853ed0bdfc0b2b86d1c7c244fe3b963e899dd295baffce248d3530f3a9a74'
+    '79ba063002680ebfe7adad498b4b5ccb906d23b5b95c9a9b3beeb6779a7126787517d53658')
+
+
+def make_peer_seeds():
+    write_seed('fuzz_peer', 'data_a_to_b.bin', b'\x01' + PEER_A + PEER_B + b'hello through the relay')
+    write_seed('fuzz_peer', 'data_a_to_relay.bin', b'\x01' + PEER_A + PEER_RELAY + b'ping')
+    write_seed('fuzz_peer', 'data_short.bin', b'\x01' + PEER_A[:20])
+    write_seed('fuzz_peer', 'signal_payload.bin', PEER_SIGNAL)
+    # No candidate, no relay: the smallest signal
+    write_seed('fuzz_peer', 'signal_payload_empty.bin', b'\x01\x02' + struct.pack('>Q', 7) + b'\0' * 50 + b'\0')
+    write_seed('fuzz_peer', 'signal_envelope.bin', PEER_SIGNAL_ENVELOPE)
+    write_seed('fuzz_peer', 'bind_envelope.bin', PEER_BIND_ENVELOPE)
+    # A bound with the header of an envelope and a ciphertext that opens for no one
+    write_seed('fuzz_peer', 'bound_garbage.bin', b'\x03' + PEER_RELAY + PEER_A + b'\0' * 43)
+
+
 if __name__ == '__main__':
     assert sha0(b'abc').hex() == '0164b8a914cd2a5e74c4f7ff082c4d97f1edf880'
+    assert len(PEER_SIGNAL) == 99 and len(PEER_SIGNAL_ENVELOPE) == 180 and len(PEER_BIND_ENVELOPE) == 90
     make_pack_seeds()
     make_pack_bad_seeds()
     make_login_seeds()
@@ -715,3 +752,4 @@ if __name__ == '__main__':
     make_dhcp_seeds()
     make_net_seeds()
     make_stun_seeds()
+    make_peer_seeds()
