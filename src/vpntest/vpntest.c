@@ -247,7 +247,6 @@ void stun_test(UINT num, char **arg)
 	IP expect_ipv4, expect_ipv6, expect_mapped;
 	IP ip;
 	UINT port;
-	UINT size;
 	bool ok = true;
 
 	Print("STUN Binding Request / Response helpers test (RFC 5389, RFC 5769)\n");
@@ -258,7 +257,7 @@ void stun_test(UINT num, char **arg)
 
 	// (1) Binding Request
 	Zero(request, sizeof(request));
-	size = StunBuildBindingRequest(request, sizeof(request), tid);
+	UINT size = StunBuildBindingRequest(request, sizeof(request), tid);
 	stun_test_check(&ok, size == STUN_HEADER_SIZE &&
 		Cmp(request, expect_request_head, sizeof(expect_request_head)) == 0 &&
 		Cmp(request + 8, tid, STUN_TRANSACTION_ID_SIZE) == 0,
@@ -484,12 +483,11 @@ void watermark_test(UINT num, char **arg)
 	UCHAR hash[SHA256_SIZE];
 	char hash_str[SHA256_SIZE * 2 + 1];
 	bool ok = true;
-	BUF *b;
 
 	Print("Watermark test (hamcore %s)\n", WATERMARK_FILENAME);
 
 	// Same code path as InitWaterMark() at startup
-	b = LoadWaterMark();
+	BUF *b = LoadWaterMark();
 	if (b == NULL)
 	{
 		Print("  [FAIL] LoadWaterMark(): file missing, or its size or SHA-256 is wrong\n");
@@ -738,8 +736,6 @@ int main(int argc, char *argv[])
 	bool memchk = false;
 	char cmd[MAX_SIZE];
 	char *s;
-	wchar_t *args_w;
-	char *args;
 	int status = 0;
 
 	InitProcessCallOnce();
@@ -768,8 +764,8 @@ int main(int argc, char *argv[])
 	EnableProbe(true);
 	InitCedar();
 	SetHamMode();
-	args_w = MsCopyProcessArgsW();
-	args = CopyUniToStr(args_w);
+	wchar_t *args_w = MsCopyProcessArgsW();
+	char *args = CopyUniToStr(args_w);
 	status = TestMain(args);
 	Free(args);
 	Free(args_w);

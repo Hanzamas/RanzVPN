@@ -24,18 +24,15 @@ typedef struct CB_PARAM
 
 X *FileToXW(wchar_t *filename)
 {
-	bool text;
-	BUF *b;
-	X *x;
 	if (filename == NULL)
 	{
 		return NULL;
 	}
 
-	b = ReadDumpW(filename);
-	text = IsBase64(b);
+	BUF *b = ReadDumpW(filename);
+	bool text = IsBase64(b);
 
-	x = BufToX(b, text);
+	X *x = BufToX(b, text);
 	FreeBuf(b);
 
 	return x;
@@ -43,20 +40,18 @@ X *FileToXW(wchar_t *filename)
 
 bool XToFileW(X *x, wchar_t *filename, bool text)
 {
-	BUF *b;
-	bool ret;
 	if (x == NULL || filename == NULL)
 	{
 		return false;
 	}
 
-	b = XToBuf(x, text);
+	BUF *b = XToBuf(x, text);
 	if (b == NULL)
 	{
 		return false;
 	}
 
-	ret = DumpBufW(b, filename);
+	bool ret = DumpBufW(b, filename);
 	FreeBuf(b);
 
 	return ret;
@@ -64,21 +59,19 @@ bool XToFileW(X *x, wchar_t *filename, bool text)
 
 K *FileToKW(wchar_t *filename, bool private_key, char *password)
 {
-	bool text;
-	BUF *b;
 	K *k;
 	if (filename == NULL)
 	{
 		return NULL;
 	}
 
-	b = ReadDumpW(filename);
+	BUF *b = ReadDumpW(filename);
 	if (b == NULL)
 	{
 		return NULL;
 	}
 
-	text = IsBase64(b);
+	bool text = IsBase64(b);
 	if (text == false)
 	{
 		k = BufToK(b, private_key, false, NULL);
@@ -99,20 +92,18 @@ K *FileToKW(wchar_t *filename, bool private_key, char *password)
 
 bool KToFileW(K *k, wchar_t *filename, bool text, char *password)
 {
-	BUF *b;
-	bool ret;
 	if (k == NULL || filename == NULL)
 	{
 		return false;
 	}
 
-	b = KToBuf(k, text, password);
+	BUF *b = KToBuf(k, text, password);
 	if (b == NULL)
 	{
 		return false;
 	}
 
-	ret = DumpBufW(b, filename);
+	bool ret = DumpBufW(b, filename);
 	FreeBuf(b);
 
 	return ret;
@@ -120,20 +111,18 @@ bool KToFileW(K *k, wchar_t *filename, bool text, char *password)
 
 BUF *KToBuf(K *k, bool text, char *password)
 {
-	BUF *buf;
-	BIO *bio;
 	if (k == NULL)
 	{
 		return NULL;
 	}
 
-	bio = KToBio(k, text, password);
+	BIO *bio = KToBio(k, text, password);
 	if (bio == NULL)
 	{
 		return NULL;
 	}
 
-	buf = BioToBuf(bio);
+	BUF *buf = BioToBuf(bio);
 	FreeBio(bio);
 
 	SeekBuf(buf, 0, 0);
@@ -143,13 +132,12 @@ BUF *KToBuf(K *k, bool text, char *password)
 
 BIO *KToBio(K *k, bool text, char *password)
 {
-	BIO *bio;
 	if (k == NULL)
 	{
 		return NULL;
 	}
 
-	bio = BIO_new(BIO_s_mem());
+	BIO *bio = BIO_new(BIO_s_mem());
 
 	if (k->private_key)
 	{
@@ -245,7 +233,6 @@ bool IsBase64(BUF *b)
 
 bool IsEncryptedK(BUF *b, bool private_key)
 {
-	K *k;
 	if (b == NULL)
 	{
 		return false;
@@ -255,7 +242,7 @@ bool IsEncryptedK(BUF *b, bool private_key)
 		return false;
 	}
 
-	k = BufToK(b, private_key, true, NULL);
+	K *k = BufToK(b, private_key, true, NULL);
 	if (k != NULL)
 	{
 		FreeK(k);
@@ -268,12 +255,11 @@ bool IsEncryptedK(BUF *b, bool private_key)
 K *OpensslEngineToK(char *key_file_name, char *engine_name)
 {
 #ifndef OPENSSL_NO_ENGINE
-    K *k;
     ENGINE *engine = ENGINE_by_id(engine_name);
     ENGINE_init(engine);
     EVP_PKEY *pkey;
     pkey = ENGINE_load_private_key(engine, key_file_name, NULL, NULL);
-   	k = ZeroMalloc(sizeof(K));
+   	K *k = ZeroMalloc(sizeof(K));
     k->pkey = pkey;
     k->private_key = true;
     return k;
@@ -284,15 +270,13 @@ K *OpensslEngineToK(char *key_file_name, char *engine_name)
 
 K *BufToK(BUF *b, bool private_key, bool text, char *password)
 {
-	BIO *bio;
-	K *k;
 	if (b == NULL)
 	{
 		return NULL;
 	}
 
-	bio = BufToBio(b);
-	k = BioToK(bio, private_key, text, password);
+	BIO *bio = BufToBio(b);
+	K *k = BioToK(bio, private_key, text, password);
 	FreeBio(bio);
 
 	return k;
@@ -301,7 +285,6 @@ K *BufToK(BUF *b, bool private_key, bool text, char *password)
 K *BioToK(BIO *bio, bool private_key, bool text, char *password)
 {
 	EVP_PKEY *pkey;
-	K *k;
 	if (bio == NULL)
 	{
 		return NULL;
@@ -355,7 +338,7 @@ K *BioToK(BIO *bio, bool private_key, bool text, char *password)
 		}
 	}
 
-	k = ZeroMalloc(sizeof(K));
+	K *k = ZeroMalloc(sizeof(K));
 	k->pkey = pkey;
 	k->private_key = private_key;
 
@@ -364,13 +347,12 @@ K *BioToK(BIO *bio, bool private_key, bool text, char *password)
 
 int PKeyPasswordCallbackFunction(char *buf, int bufsize, int verify, void *param)
 {
-	CB_PARAM *cb;
 	if (buf == NULL || param == NULL || bufsize == 0)
 	{
 		return 0;
 	}
 
-	cb = (CB_PARAM *)param;
+	CB_PARAM *cb = (CB_PARAM *)param;
 	if (cb->password == NULL)
 	{
 		return 0;
@@ -381,20 +363,18 @@ int PKeyPasswordCallbackFunction(char *buf, int bufsize, int verify, void *param
 
 BUF *XToBuf(X *x, bool text)
 {
-	BIO *bio;
-	BUF *b;
 	if (x == NULL)
 	{
 		return NULL;
 	}
 
-	bio = XToBio(x, text);
+	BIO *bio = XToBio(x, text);
 	if (bio == NULL)
 	{
 		return NULL;
 	}
 
-	b = BioToBuf(bio);
+	BUF *b = BioToBuf(bio);
 	FreeBio(bio);
 
 	SeekBuf(b, 0, 0);
@@ -404,13 +384,12 @@ BUF *XToBuf(X *x, bool text)
 
 BIO *XToBio(X *x, bool text)
 {
-	BIO *bio;
 	if (x == NULL)
 	{
 		return NULL;
 	}
 
-	bio = BIO_new(BIO_s_mem());
+	BIO *bio = BIO_new(BIO_s_mem());
 
 	if (text == false)
 	{
@@ -427,20 +406,18 @@ BIO *XToBio(X *x, bool text)
 // The caller keeps b and frees it, also when this fails
 X *BufToX(BUF *b, bool text)
 {
-	X *x;
-	BIO *bio;
 	if (b == NULL)
 	{
 		return NULL;
 	}
 
-	bio = BufToBio(b);
+	BIO *bio = BufToBio(b);
 	if (bio == NULL)
 	{
 		return NULL;
 	}
 
-	x = BioToX(bio, text);
+	X *x = BioToX(bio, text);
 
 	FreeBio(bio);
 
@@ -450,20 +427,18 @@ X *BufToX(BUF *b, bool text)
 // The caller keeps b and frees it, also when this fails
 LIST *BufToXList(BUF *b, bool text)
 {
-	LIST *chain;
-	BIO *bio;
 	if (b == NULL)
 	{
 		return NULL;
 	}
 
-	bio = BufToBio(b);
+	BIO *bio = BufToBio(b);
 	if (bio == NULL)
 	{
 		return NULL;
 	}
 
-	chain = BioToXList(bio, text);
+	LIST *chain = BioToXList(bio, text);
 
 	FreeBio(bio);
 
@@ -472,7 +447,6 @@ LIST *BufToXList(BUF *b, bool text)
 
 X *BioToX(BIO *bio, bool text)
 {
-	X *x;
 	X509 *x509;
 	if (bio == NULL)
 	{
@@ -493,7 +467,7 @@ X *BioToX(BIO *bio, bool text)
 		return NULL;
 	}
 
-	x = X509ToX(x509);
+	X *x = X509ToX(x509);
 
 	if (x == NULL)
 	{
@@ -555,20 +529,17 @@ void FreeBio(BIO *bio)
 
 BUF *BioToBuf(BIO *bio)
 {
-	BUF *b;
-	UINT size;
-	void *tmp;
 	if (bio == NULL)
 	{
 		return NULL;
 	}
 
 	BIO_seek(bio, 0);
-	size = (UINT)BIO_number_written(bio);
-	tmp = Malloc(size);
+	UINT size = (UINT)BIO_number_written(bio);
+	void *tmp = Malloc(size);
 	BIO_read(bio, tmp, size);
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 	WriteBuf(b, tmp, size);
 	Free(tmp);
 
@@ -577,13 +548,12 @@ BUF *BioToBuf(BIO *bio)
 
 BIO *BufToBio(BUF *b)
 {
-	BIO *bio;
 	if (b == NULL)
 	{
 		return NULL;
 	}
 
-	bio = BIO_new(BIO_s_mem());
+	BIO *bio = BIO_new(BIO_s_mem());
 	if (bio == NULL)
 	{
 		return NULL;

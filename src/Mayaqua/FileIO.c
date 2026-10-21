@@ -37,13 +37,12 @@ bool IsFile(char *name)
 }
 bool IsFileW(wchar_t *name)
 {
-	IO *io;
 	if (name == NULL)
 	{
 		return false;
 	}
 
-	io = FileOpenExW(name, false, false);
+	IO *io = FileOpenExW(name, false, false);
 	if (io == NULL)
 	{
 		return false;
@@ -108,13 +107,12 @@ DIRLIST *EnumDirW(wchar_t *dirname)
 
 int CompareDirListByName(void *p1, void *p2)
 {
-	DIRENT *d1, *d2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	d1 = *(DIRENT **)p1;
-	d2 = *(DIRENT **)p2;
+	DIRENT *d1 = *(DIRENT **)p1;
+	DIRENT *d2 = *(DIRENT **)p2;
 	if (d1 == NULL || d2 == NULL)
 	{
 		return 0;
@@ -260,9 +258,8 @@ static void HamcoreResourceName(UINT id, char *name, UINT name_size)
 static BUF *ReadHamcoreW(wchar_t *filename)
 {
 	char *filename_a = CopyUniToStr(filename);
-	BUF *ret;
 
-	ret = ReadHamcore(filename_a);
+	BUF *ret = ReadHamcore(filename_a);
 
 	Free(filename_a);
 
@@ -354,13 +351,12 @@ void FreeHamcore()
 
 int CompareHamcore(void *p1, void *p2)
 {
-	HC *c1, *c2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	c1 = *(HC **)p1;
-	c2 = *(HC **)p2;
+	HC *c1 = *(HC **)p1;
+	HC *c2 = *(HC **)p2;
 	if (c1 == NULL || c2 == NULL)
 	{
 		return 0;
@@ -416,14 +412,13 @@ void InitGetExeName()
 void GetFileNameFromFilePath(char *dst, UINT size, char *filepath)
 {
 	char tmp[MAX_SIZE];
-	UINT len, wp;
 	if (dst == NULL || filepath == NULL)
 	{
 		return;
 	}
 
-	len = MIN(StrLen(filepath), (MAX_SIZE - 2));
-	wp = 0;
+	UINT len = MIN(StrLen(filepath), (MAX_SIZE - 2));
+	UINT wp = 0;
 
 	for (UINT i = 0;i < (len + 1);i++)
 	{
@@ -450,8 +445,6 @@ void GetFileNameFromFilePath(char *dst, UINT size, char *filepath)
 void GetDirNameFromFilePathW(wchar_t *dst, UINT size, wchar_t *filepath)
 {
 	wchar_t tmp[MAX_SIZE];
-	UINT wp;
-	UINT len;
 	if (dst == NULL || filepath == NULL)
 	{
 		return;
@@ -463,11 +456,11 @@ void GetDirNameFromFilePathW(wchar_t *dst, UINT size, wchar_t *filepath)
 		tmp[UniStrLen(tmp) - 1] = 0;
 	}
 
-	len = UniStrLen(tmp);
+	UINT len = UniStrLen(tmp);
 
 	UniStrCpy(dst, size, L"");
 
-	wp = 0;
+	UINT wp = 0;
 
 	for (UINT i = 0;i < len;i++)
 	{
@@ -496,8 +489,6 @@ void GetDirNameFromFilePathW(wchar_t *dst, UINT size, wchar_t *filepath)
 void GetDirNameFromFilePath(char *dst, UINT size, char *filepath)
 {
 	char tmp[MAX_SIZE];
-	UINT wp;
-	UINT len;
 	if (dst == NULL || filepath == NULL)
 	{
 		return;
@@ -509,11 +500,11 @@ void GetDirNameFromFilePath(char *dst, UINT size, char *filepath)
 		tmp[StrLen(tmp) - 1] = 0;
 	}
 
-	len = StrLen(tmp);
+	UINT len = StrLen(tmp);
 
 	StrCpy(dst, size, "");
 
-	wp = 0;
+	UINT wp = 0;
 
 	for (UINT i = 0;i < len;i++)
 	{
@@ -554,7 +545,6 @@ void ConbinePath(char *dst, UINT size, char *dirname, char *filename)
 }
 void ConbinePathW(wchar_t *dst, UINT size, wchar_t *dirname, wchar_t *filename)
 {
-	bool is_full_path;
 	wchar_t tmp[MAX_SIZE];
 	wchar_t filename_ident[MAX_SIZE];
 	if (dst == NULL || dirname == NULL || filename == NULL)
@@ -564,7 +554,7 @@ void ConbinePathW(wchar_t *dst, UINT size, wchar_t *dirname, wchar_t *filename)
 
 	NormalizePathW(filename_ident, sizeof(filename_ident), filename);
 
-	is_full_path = false;
+	bool is_full_path = false;
 
 	if (UniStartWith(filename_ident, L"\\") || UniStartWith(filename_ident, L"/"))
 	{
@@ -630,7 +620,6 @@ bool IsFileExistsW(wchar_t *name)
 bool IsFileExistsInnerW(wchar_t *name)
 {
 	wchar_t name2[MAX_SIZE];
-	DWORD attr;
 	if (name == NULL)
 	{
 		return false;
@@ -639,7 +628,7 @@ bool IsFileExistsInnerW(wchar_t *name)
 	UniStrCpy(name2, sizeof(name2), name);
 	ConvertPathW(name2);
 
-	attr = GetFileAttributesW(name2);
+	DWORD attr = GetFileAttributesW(name2);
 	if (attr == INVALID_FILE_ATTRIBUTES || (attr & FILE_ATTRIBUTE_DIRECTORY) != 0)
 	{
 		return false;
@@ -651,12 +640,10 @@ bool IsFileExistsInnerW(wchar_t *name)
 void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 {
 	wchar_t tmp[MAX_SIZE];
-	UNI_TOKEN_LIST *t;
 	bool first_double_slash = false;
 	bool first_single_slash = false;
 	wchar_t win32_drive_char = 0;
 	bool is_full_path = false;
-	SK *sk;
 	if (dst == NULL || src == 0)
 	{
 		return;
@@ -717,9 +704,9 @@ void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 		tmp[0] = 0;
 	}
 
-	t = UniParseToken(tmp, L"/\\");
+	UNI_TOKEN_LIST *t = UniParseToken(tmp, L"/\\");
 
-	sk = NewSk();
+	SK *sk = NewSk();
 
 	for (UINT i = 0;i < t->NumTokens;i++)
 	{
@@ -823,10 +810,9 @@ bool FileRenameInnerW(wchar_t *old_name, wchar_t *new_name)
 
 void ConvertPathW(wchar_t *path)
 {
-	UINT len;
 	wchar_t new_char = L'\\';
 
-	len = UniStrLen(path);
+	UINT len = UniStrLen(path);
 	for (UINT i = 0;i < len;i++)
 	{
 		if (path[i] == L'\\' || path[i] == L'/')
@@ -901,10 +887,9 @@ void InnerFilePath(char *dst, UINT size, char *src)
 
 bool MakeDirEx(char *name)
 {
-	bool ret;
 	wchar_t *name_w = CopyStrToUni(name);
 
-	ret = MakeDirExW(name_w);
+	bool ret = MakeDirExW(name_w);
 
 	Free(name_w);
 
@@ -912,7 +897,6 @@ bool MakeDirEx(char *name)
 }
 bool MakeDirExW(wchar_t *name)
 {
-	LIST *o;
 	wchar_t tmp[MAX_PATH];
 	wchar_t tmp2[MAX_PATH];
 	bool ret = false;
@@ -921,7 +905,7 @@ bool MakeDirExW(wchar_t *name)
 		return false;
 	}
 
-	o = NewListFast(NULL);
+	LIST *o = NewListFast(NULL);
 
 	UniStrCpy(tmp, sizeof(tmp), name);
 	while (true)
@@ -1035,7 +1019,6 @@ bool FileDeleteInnerW(wchar_t *name)
 // Seek the file (a 64-bit offset; a hamcore file cannot seek)
 bool FileSeek(IO *o, UINT mode, INT64 offset)
 {
-	WIN32IO *p;
 	LARGE_INTEGER distance;
 	if (o == NULL)
 	{
@@ -1052,7 +1035,7 @@ bool FileSeek(IO *o, UINT mode, INT64 offset)
 		return false;
 	}
 
-	p = (WIN32IO *)o->pData;
+	WIN32IO *p = (WIN32IO *)o->pData;
 	distance.QuadPart = offset;
 	if (SetFilePointerEx(p->hFile, distance, NULL, mode) == FALSE)
 	{
@@ -1064,7 +1047,6 @@ bool FileSeek(IO *o, UINT mode, INT64 offset)
 
 UINT64 FileSize64(IO *o)
 {
-	WIN32IO *p;
 	LARGE_INTEGER size;
 	if (o == NULL)
 	{
@@ -1076,7 +1058,7 @@ UINT64 FileSize64(IO *o)
 		return (UINT64)o->HamBuf->Size;
 	}
 
-	p = (WIN32IO *)o->pData;
+	WIN32IO *p = (WIN32IO *)o->pData;
 	if (GetFileSizeEx(p->hFile, &size) == FALSE || size.QuadPart < 0)
 	{
 		return 0;
@@ -1100,7 +1082,6 @@ UINT FileSize(IO *o)
 // Read from a file (all or nothing: a short read fails)
 bool FileRead(IO *o, void *buf, UINT size)
 {
-	WIN32IO *p;
 	DWORD read_size;
 	if (o == NULL || buf == NULL)
 	{
@@ -1120,7 +1101,7 @@ bool FileRead(IO *o, void *buf, UINT size)
 		return ReadBuf(o->HamBuf, buf, size) == size ? true : false;
 	}
 
-	p = (WIN32IO *)o->pData;
+	WIN32IO *p = (WIN32IO *)o->pData;
 	if (ReadFile(p->hFile, buf, size, &read_size, NULL) == FALSE)
 	{
 		return false;
@@ -1137,7 +1118,6 @@ bool FileRead(IO *o, void *buf, UINT size)
 // Write to a file (all or nothing: a short write fails)
 bool FileWrite(IO *o, void *buf, UINT size)
 {
-	WIN32IO *p;
 	DWORD write_size;
 	if (o == NULL || buf == NULL)
 	{
@@ -1156,7 +1136,7 @@ bool FileWrite(IO *o, void *buf, UINT size)
 		return true;
 	}
 
-	p = (WIN32IO *)o->pData;
+	WIN32IO *p = (WIN32IO *)o->pData;
 	if (WriteFile(p->hFile, buf, size, &write_size, NULL) == FALSE)
 	{
 		return false;
@@ -1173,7 +1153,6 @@ bool FileWrite(IO *o, void *buf, UINT size)
 // Read the dates of a disk file (on open)
 static bool FileGetDate(void *pData, UINT64 *created_time, UINT64 *updated_time, UINT64 *accessed_date)
 {
-	WIN32IO *p;
 	BY_HANDLE_FILE_INFORMATION info;
 	// Validate arguments
 	if (pData == NULL)
@@ -1181,7 +1160,7 @@ static bool FileGetDate(void *pData, UINT64 *created_time, UINT64 *updated_time,
 		return false;
 	}
 
-	p = (WIN32IO *)pData;
+	WIN32IO *p = (WIN32IO *)pData;
 
 	Zero(&info, sizeof(info));
 
@@ -1211,7 +1190,6 @@ static bool FileGetDate(void *pData, UINT64 *created_time, UINT64 *updated_time,
 // Write the dates of a disk file (on close of a writer); nothing to do when both are 0
 static bool FileSetDate(void *pData, UINT64 created_time, UINT64 updated_time)
 {
-	WIN32IO *p;
 	FILETIME ft_created_time, ft_updated_time;
 	FILETIME *p_created_time = NULL, *p_updated_time = NULL;
 	// Validate arguments
@@ -1220,7 +1198,7 @@ static bool FileSetDate(void *pData, UINT64 created_time, UINT64 updated_time)
 		return false;
 	}
 
-	p = (WIN32IO *)pData;
+	WIN32IO *p = (WIN32IO *)pData;
 
 	if (created_time != 0)
 	{
@@ -1241,7 +1219,6 @@ static bool FileSetDate(void *pData, UINT64 created_time, UINT64 updated_time)
 
 void FileFlush(IO *o)
 {
-	WIN32IO *p;
 	if (o == NULL)
 	{
 		return;
@@ -1252,7 +1229,7 @@ void FileFlush(IO *o)
 		return;
 	}
 
-	p = (WIN32IO *)o->pData;
+	WIN32IO *p = (WIN32IO *)o->pData;
 	if (p->WriteMode)
 	{
 		FlushFileBuffers(p->hFile);
@@ -1309,9 +1286,6 @@ bool FileCloseEx(IO *o, bool no_flush)
 
 static IO *FileCreateInnerW(wchar_t *name)
 {
-	IO *o;
-	WIN32IO *p;
-	HANDLE h;
 	wchar_t name2[MAX_SIZE];
 	if (name == NULL)
 	{
@@ -1323,7 +1297,7 @@ static IO *FileCreateInnerW(wchar_t *name)
 
 	// Replace an existing file, read-write, sharing read. An existing hidden file denies
 	// FILE_ATTRIBUTE_NORMAL, so retry with FILE_ATTRIBUTE_HIDDEN.
-	h = CreateFileW(name2, GENERIC_READ | GENERIC_WRITE,
+	HANDLE h = CreateFileW(name2, GENERIC_READ | GENERIC_WRITE,
 		FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL,
 		NULL);
 	if (h == INVALID_HANDLE_VALUE)
@@ -1337,11 +1311,11 @@ static IO *FileCreateInnerW(wchar_t *name)
 		}
 	}
 
-	p = Win32MemoryAlloc(sizeof(WIN32IO));
+	WIN32IO *p = Win32MemoryAlloc(sizeof(WIN32IO));
 	p->hFile = h;
 	p->WriteMode = true;
 
-	o = ZeroMalloc(sizeof(IO));
+	IO *o = ZeroMalloc(sizeof(IO));
 	o->pData = p;
 	UniStrCpy(o->NameW, sizeof(o->NameW), name2);
 	UniToStr(o->Name, sizeof(o->Name), o->NameW);
@@ -1375,9 +1349,6 @@ IO *FileCreateW(wchar_t *name)
 
 IO *FileOpenInnerW(wchar_t *name, bool write_mode, bool read_lock)
 {
-	IO *o;
-	WIN32IO *p;
-	HANDLE h;
 	DWORD lock_mode;
 	wchar_t name2[MAX_SIZE];
 	if (name == NULL)
@@ -1406,7 +1377,7 @@ IO *FileOpenInnerW(wchar_t *name, bool write_mode, bool read_lock)
 		}
 	}
 
-	h = CreateFileW(name2,
+	HANDLE h = CreateFileW(name2,
 		(write_mode ? GENERIC_READ | GENERIC_WRITE : GENERIC_READ),
 		lock_mode,
 		NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -1415,11 +1386,11 @@ IO *FileOpenInnerW(wchar_t *name, bool write_mode, bool read_lock)
 		return NULL;
 	}
 
-	p = Win32MemoryAlloc(sizeof(WIN32IO));
+	WIN32IO *p = Win32MemoryAlloc(sizeof(WIN32IO));
 	p->hFile = h;
 	p->WriteMode = write_mode;
 
-	o = ZeroMalloc(sizeof(IO));
+	IO *o = ZeroMalloc(sizeof(IO));
 	o->pData = p;
 	UniStrCpy(o->NameW, sizeof(o->NameW), name2);
 	UniToStr(o->Name, sizeof(o->Name), o->NameW);
@@ -1500,10 +1471,7 @@ IO *FileOpenExW(wchar_t *name, bool write_mode, bool read_lock)
 
 bool Win32SetFolderCompress(char *path, bool compressed)
 {
-	HANDLE h;
 	DWORD retsize = 0;
-	USHORT flag;
-	bool ret;
 	char tmp[MAX_PATH];
 	if (path == NULL)
 	{
@@ -1512,16 +1480,16 @@ bool Win32SetFolderCompress(char *path, bool compressed)
 
 	InnerFilePath(tmp, sizeof(tmp), path);
 
-	h = CreateFile(tmp, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+	HANDLE h = CreateFile(tmp, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
 
 	if (h == INVALID_HANDLE_VALUE)
 	{
 		return false;
 	}
 
-	flag = compressed ? COMPRESSION_FORMAT_DEFAULT : COMPRESSION_FORMAT_NONE;
+	USHORT flag = compressed ? COMPRESSION_FORMAT_DEFAULT : COMPRESSION_FORMAT_NONE;
 
-	ret = (DeviceIoControl(h, FSCTL_SET_COMPRESSION, &flag, sizeof(USHORT),
+	bool ret = (DeviceIoControl(h, FSCTL_SET_COMPRESSION, &flag, sizeof(USHORT),
 		NULL, 0, &retsize, NULL) != FALSE);
 
 	CloseHandle(h);
@@ -1532,12 +1500,9 @@ bool Win32SetFolderCompress(char *path, bool compressed)
 DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 {
 	WIN32_FIND_DATAW data_w;
-	HANDLE h;
 	wchar_t tmp[MAX_PATH];
 	wchar_t tmp2[MAX_PATH];
 	wchar_t dirname2[MAX_PATH];
-	LIST *o;
-	DIRLIST *d;
 
 	UniStrCpy(tmp2, sizeof(tmp2), dirname);
 
@@ -1550,11 +1515,11 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 	NormalizePathW(tmp, sizeof(tmp), tmp);
 	NormalizePathW(dirname2, sizeof(dirname2), tmp2);
 
-	o = NewListFast(compare);
+	LIST *o = NewListFast(compare);
 
 	Zero(&data_w, sizeof(data_w));
 
-	h = FindFirstFileW(tmp, &data_w);
+	HANDLE h = FindFirstFileW(tmp, &data_w);
 
 	if (h != INVALID_HANDLE_VALUE)
 	{
@@ -1568,7 +1533,6 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 				DIRENT *f = ZeroMalloc(sizeof(DIRENT));
 				wchar_t fullpath[MAX_SIZE];
 				bool ok = false;
-				HANDLE hfile;
 
 				f->FileNameW = CopyUniStr(data_w.cFileName);
 				f->FileName = CopyUniToStr(f->FileNameW);
@@ -1576,7 +1540,7 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 
 				CombinePathW(fullpath, sizeof(fullpath), dirname2, f->FileNameW);
 
-				hfile = CreateFileW(fullpath, 0,
+				HANDLE hfile = CreateFileW(fullpath, 0,
 					FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE,
 					NULL, OPEN_EXISTING, 0, NULL);
 
@@ -1625,7 +1589,7 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 
 	Sort(o);
 
-	d = ZeroMalloc(sizeof(DIRLIST));
+	DIRLIST *d = ZeroMalloc(sizeof(DIRLIST));
 	d->NumFiles = LIST_NUM(o);
 	d->File = ToArray(o);
 
@@ -1638,13 +1602,12 @@ DIRLIST *Win32EnumDirExW(wchar_t *dirname, COMPARE *compare)
 // does not fit.
 void Win32GetExeNameW(wchar_t *name, UINT num_chars)
 {
-	DWORD ret;
 	if (name == NULL || num_chars == 0)
 	{
 		return;
 	}
 
-	ret = GetModuleFileNameW(NULL, name, num_chars);
+	DWORD ret = GetModuleFileNameW(NULL, name, num_chars);
 	if (ret == 0 || ret >= num_chars)
 	{
 		name[0] = 0;
@@ -1655,13 +1618,12 @@ void Win32GetExeNameW(wchar_t *name, UINT num_chars)
 // not fit.
 void Win32GetCurrentDirW(wchar_t *dir, UINT num_chars)
 {
-	DWORD ret;
 	if (dir == NULL || num_chars == 0)
 	{
 		return;
 	}
 
-	ret = GetCurrentDirectoryW(num_chars, dir);
+	DWORD ret = GetCurrentDirectoryW(num_chars, dir);
 	if (ret == 0 || ret >= num_chars)
 	{
 		dir[0] = 0;
@@ -1671,7 +1633,6 @@ void Win32GetCurrentDirW(wchar_t *dir, UINT num_chars)
 void Win32NukuEnW(wchar_t *dst, UINT size, wchar_t *src)
 {
 	wchar_t str[MAX_SIZE];
-	int i;
 	if (src)
 	{
 		UniStrCpy(str, sizeof(str), src);
@@ -1680,7 +1641,7 @@ void Win32NukuEnW(wchar_t *dst, UINT size, wchar_t *src)
 	{
 		UniStrCpy(str, sizeof(str), dst);
 	}
-	i = UniStrLen(str);
+	int i = UniStrLen(str);
 	if (i > 0 && str[i - 1] == L'\\')
 	{
 		str[i - 1] = 0;
@@ -1690,7 +1651,6 @@ void Win32NukuEnW(wchar_t *dst, UINT size, wchar_t *src)
 void Win32NukuEn(char *dst, UINT size, char *src)
 {
 	char str[MAX_SIZE];
-	int i;
 	if (src)
 	{
 		StrCpy(str, sizeof(str), src);
@@ -1699,7 +1659,7 @@ void Win32NukuEn(char *dst, UINT size, char *src)
 	{
 		StrCpy(str, sizeof(str), dst);
 	}
-	i = StrLen(str);
+	int i = StrLen(str);
 	if (i > 0 && str[i - 1] == '\\')
 	{
 		str[i - 1] = 0;
@@ -1710,10 +1670,8 @@ void Win32NukuEn(char *dst, UINT size, char *src)
 void Win32GetDirFromPath(char *dst, UINT size, char *src)
 {
 	char str[MAX_SIZE];
-	int len;
 	char c;
 	char tmp[MAX_SIZE];
-	int wp;
 	if (src)
 	{
 		StrCpy(str, sizeof(str), src);
@@ -1723,8 +1681,8 @@ void Win32GetDirFromPath(char *dst, UINT size, char *src)
 		StrCpy(str, sizeof(str), dst);
 	}
 	Win32NukuEn(str, sizeof(str), NULL);
-	wp = 0;
-	len = StrLen(str);
+	int wp = 0;
+	int len = StrLen(str);
 	dst[0] = 0;
 	for (int i = 0;i < len;i++)
 	{

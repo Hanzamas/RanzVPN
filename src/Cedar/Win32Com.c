@@ -30,7 +30,6 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path)
 {
 	bool ret = false;
 	bool com_initialized = false;
-	HRESULT hr;
 	INetCfg *pNetCfg;
 	if (inf_path == NULL)
 	{
@@ -39,7 +38,7 @@ bool InstallNdisProtocolDriver(wchar_t *inf_path)
 
 	// COM for this call only: S_OK and S_FALSE both take a reference that CoUninitialize returns.
 	// RPC_E_CHANGED_MODE means the thread already runs in another apartment, which stays as it is.
-	hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+	HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
 	if (SUCCEEDED(hr))
 	{
 		com_initialized = true;

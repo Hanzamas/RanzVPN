@@ -59,12 +59,7 @@ static UINT DhcpMessageType(LIST *o)
 
 void VLanInsertTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vlan_tpid)
 {
-	UINT dest_size;
-	UCHAR *dest_data;
-	UINT src_size;
-	UCHAR *src_data;
 	USHORT vlan_ushort = Endian16(((USHORT)vlan_id) & 0xFFF);
-	USHORT vlan_tpid_ushort;
 	if (packet_data == NULL || *packet_data == NULL || packet_size == NULL ||
 	        *packet_size < 14 || vlan_id == 0)
 	{
@@ -75,13 +70,13 @@ void VLanInsertTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vla
 		vlan_tpid = MAC_PROTO_TAGVLAN;
 	}
 
-	vlan_tpid_ushort = Endian16((USHORT)vlan_tpid);
+	USHORT vlan_tpid_ushort = Endian16((USHORT)vlan_tpid);
 
-	src_size = *packet_size;
-	src_data = (UCHAR *)(*packet_data);
+	UINT src_size = *packet_size;
+	UCHAR *src_data = (UCHAR *)(*packet_data);
 
-	dest_size = src_size + 4;
-	dest_data = Malloc(dest_size);
+	UINT dest_size = src_size + 4;
+	UCHAR *dest_data = Malloc(dest_size);
 
 	Copy(&dest_data[12], &vlan_tpid_ushort, sizeof(USHORT));
 	Copy(&dest_data[14], &vlan_ushort, sizeof(USHORT));
@@ -97,10 +92,6 @@ void VLanInsertTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vla
 
 bool VLanRemoveTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vlan_tpid)
 {
-	UCHAR *src_data;
-	UINT src_size;
-	USHORT vlan_tpid_ushort;
-	UCHAR *vlan_tpid_uchar;
 	if (packet_data == NULL || *packet_data == NULL || packet_size == NULL ||
 	        *packet_size < 14)
 	{
@@ -112,19 +103,17 @@ bool VLanRemoveTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vla
 		vlan_tpid = MAC_PROTO_TAGVLAN;
 	}
 
-	vlan_tpid_ushort = Endian16((USHORT)vlan_tpid);
-	vlan_tpid_uchar = (UCHAR *)(&vlan_tpid_ushort);
+	USHORT vlan_tpid_ushort = Endian16((USHORT)vlan_tpid);
+	UCHAR *vlan_tpid_uchar = (UCHAR *)(&vlan_tpid_ushort);
 
-	src_data = (UCHAR *)(*packet_data);
-	src_size = *packet_size;
+	UCHAR *src_data = (UCHAR *)(*packet_data);
+	UINT src_size = *packet_size;
 
 	if (src_data[12] == vlan_tpid_uchar[0] && src_data[13] == vlan_tpid_uchar[1])
 	{
 		if (src_size >= 18)
 		{
-			USHORT vlan_ushort;
-
-			vlan_ushort = READ_USHORT(&src_data[14]);
+			USHORT vlan_ushort = READ_USHORT(&src_data[14]);
 			vlan_ushort = vlan_ushort & 0xFFF;
 
 			if (vlan_id == 0 || (vlan_ushort == vlan_id))
@@ -183,21 +172,18 @@ static bool TrimToIpLength(UCHAR *buf, UINT *size, UINT l2_len)
 // web proxy or web server port, and keeps it in p->HttpLog
 static void ParseTcpHttpLog(PKT *p)
 {
-	TCP_HEADER *tcp;
-	USHORT port;
-
 	if ((p->TypeL3 != L3_IPV4 && p->TypeL3 != L3_IPV6) || p->TypeL4 != L4_TCP)
 	{
 		return;
 	}
 
-	tcp = p->L4.TCPHeader;
+	TCP_HEADER *tcp = p->L4.TCPHeader;
 	if (tcp == NULL || (tcp->Flag & (TCP_SYN | TCP_RST | TCP_FIN)) != 0 || p->PayloadSize == 0)
 	{
 		return;
 	}
 
-	port = tcp->DstPort;
+	USHORT port = tcp->DstPort;
 
 	if (port == Endian16(80) || port == Endian16(8080) || port == Endian16(3128))
 	{
@@ -211,8 +197,6 @@ static void ParseTcpHttpLog(PKT *p)
 
 PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool bridge_id_as_mac_address, bool no_http, bool correct_checksum, bool no_dns)
 {
-	PKT *p;
-	USHORT vlan_type_id_16;
 	if (buf == NULL || size == 0)
 	{
 		return NULL;
@@ -223,9 +207,9 @@ PKT *ParsePacketEx5(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool b
 		vlan_type_id = MAC_PROTO_TAGVLAN;
 	}
 
-	vlan_type_id_16 = Endian16((USHORT)vlan_type_id);
+	USHORT vlan_type_id_16 = Endian16((USHORT)vlan_type_id);
 
-	p = ZeroMalloc(sizeof(PKT));
+	PKT *p = ZeroMalloc(sizeof(PKT));
 
 	// Drop any garbage after the payload of IPv4 and IPv6 packets, tagged with a VLAN or not
 	if (size >= 24)
@@ -313,7 +297,6 @@ static UCHAR GetNextByte(BUF *b)
 
 static bool ParseDnsQuery(char *name, UINT name_size, void *data, UINT data_size)
 {
-	BUF *b;
 	char tmp[DNS_MAX_LABEL_LEN + 1];
 	bool ok = true;
 	UINT wire_len = 1;		// Octets of the name on the wire: the root label, then each label with its length byte
@@ -324,7 +307,7 @@ static bool ParseDnsQuery(char *name, UINT name_size, void *data, UINT data_size
 	}
 	StrCpy(name, name_size, "");
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 	WriteBuf(b, data, data_size);
 	SeekBuf(b, 0, 0);
 
@@ -399,9 +382,6 @@ static bool ParseDnsQuery(char *name, UINT name_size, void *data, UINT data_size
 
 static void ParseDNS(PKT *p, UCHAR *buf, UINT size)
 {
-	UCHAR *query_data;
-	UINT query_data_size;
-	DNSV4_HEADER *dns;
 	char hostname[MAX_SIZE];
 	if (p == NULL|| buf == NULL)
 	{
@@ -413,7 +393,7 @@ static void ParseDNS(PKT *p, UCHAR *buf, UINT size)
 		return;
 	}
 
-	dns = (DNSV4_HEADER *)buf;
+	DNSV4_HEADER *dns = (DNSV4_HEADER *)buf;
 
 	// A standard query only: not a response, opcode 0 (QUERY), whatever its AA, TC and RD bits
 	if ((dns->Flag1 & (DNS_FLAG1_QR | DNS_FLAG1_OPCODE)) != 0)
@@ -425,8 +405,8 @@ static void ParseDNS(PKT *p, UCHAR *buf, UINT size)
 		return;
 	}
 
-	query_data = ((UCHAR *)dns) + sizeof(DNSV4_HEADER);
-	query_data_size = size - sizeof(DNSV4_HEADER);
+	UCHAR *query_data = ((UCHAR *)dns) + sizeof(DNSV4_HEADER);
+	UINT query_data_size = size - sizeof(DNSV4_HEADER);
 
 	if (ParseDnsQuery(hostname, sizeof(hostname), query_data, query_data_size) == false)
 	{
@@ -439,7 +419,6 @@ static void ParseDNS(PKT *p, UCHAR *buf, UINT size)
 
 static BUF *BuildDhcpOptionsBuf(LIST *o)
 {
-	BUF *b;
 	UCHAR id;
 	UCHAR sz;
 	if (o == NULL)
@@ -447,7 +426,7 @@ static BUF *BuildDhcpOptionsBuf(LIST *o)
 		return NULL;
 	}
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 	for (UINT i = 0; i < LIST_NUM(o); i++)
 	{
 		DHCP_OPTION *d = LIST_DATA(o, i);
@@ -499,13 +478,12 @@ static BUF *BuildDhcpOptionsBuf(LIST *o)
 
 static DHCP_OPTION *NewDhcpOption(UINT id, void *data, UINT size)
 {
-	DHCP_OPTION *ret;
 	if (size != 0 && data == NULL)
 	{
 		return NULL;
 	}
 
-	ret = ZeroMalloc(sizeof(DHCP_OPTION));
+	DHCP_OPTION *ret = ZeroMalloc(sizeof(DHCP_OPTION));
 	ret->Data = ZeroMalloc(size);
 	Copy(ret->Data, data, size);
 	ret->Size = size;
@@ -661,13 +639,12 @@ void FreeClonePacket(PKT *p)
 
 PKT *ClonePacket(PKT *p, bool copy_data)
 {
-	PKT *ret;
 	if (p == NULL)
 	{
 		return NULL;
 	}
 
-	ret = ZeroMalloc(sizeof(PKT));
+	PKT *ret = ZeroMalloc(sizeof(PKT));
 	ret->PacketSize = p->PacketSize;
 
 	ret->MacHeader = Malloc(sizeof(MAC_HEADER));
@@ -830,9 +807,6 @@ PKT *ParsePacketEx4(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool b
 // vlan_tpid that is the type of ARP, IPv4 or IPv6 tags nothing, so those frames stay what they are
 bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, USHORT vlan_tpid)
 {
-	bool b1, b2;
-	USHORT type_id_16;
-	bool is_tag_vlan;
 	if (p == NULL || buf == NULL)
 	{
 		return false;
@@ -849,8 +823,8 @@ bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, USHORT vlan_tpid
 	size -= sizeof(MAC_HEADER);
 
 	p->BroadcastPacket = true;
-	b1 = true;
-	b2 = true;
+	bool b1 = true;
+	bool b2 = true;
 	for (UINT i = 0; i < 6; i++)
 	{
 		if (p->MacHeader->DestAddress[i] != 0xff)
@@ -880,9 +854,9 @@ bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, USHORT vlan_tpid
 		p->BroadcastPacket = true;
 	}
 
-	type_id_16 = Endian16(p->MacHeader->Protocol);
+	USHORT type_id_16 = Endian16(p->MacHeader->Protocol);
 
-	is_tag_vlan = (type_id_16 == MAC_PROTO_TAGVLAN);
+	bool is_tag_vlan = (type_id_16 == MAC_PROTO_TAGVLAN);
 	if (type_id_16 == vlan_tpid && vlan_tpid != MAC_PROTO_ARPV4 && vlan_tpid != MAC_PROTO_IPV4 && vlan_tpid != MAC_PROTO_IPV6)
 	{
 		is_tag_vlan = true;
@@ -903,14 +877,13 @@ bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, USHORT vlan_tpid
 	{
 		// Old IEEE 802.3 frame: the header holds the payload length (used by BPDU, etc.)
 		UINT length = (UINT)type_id_16;
-		LLC_HEADER *llc;
 
 		if (size < length || size < sizeof(LLC_HEADER))
 		{
 			return true;
 		}
 
-		llc = (LLC_HEADER *)buf;
+		LLC_HEADER *llc = (LLC_HEADER *)buf;
 		buf += sizeof(LLC_HEADER);
 		size -= sizeof(LLC_HEADER);
 
@@ -960,8 +933,6 @@ bool ParsePacketL3(PKT *p, UCHAR *buf, UINT size, USHORT proto, bool no_l3)
 
 bool ParsePacketTAGVLAN(PKT *p, UCHAR *buf, UINT size, bool no_l3)
 {
-	USHORT vlan_ushort;
-	USHORT proto_ushort;
 	if (p == NULL || buf == NULL)
 	{
 		return false;
@@ -978,12 +949,12 @@ bool ParsePacketTAGVLAN(PKT *p, UCHAR *buf, UINT size, bool no_l3)
 	buf += sizeof(TAGVLAN_HEADER);
 	size -= sizeof(TAGVLAN_HEADER);
 
-	vlan_ushort = READ_USHORT(p->L3.TagVlanHeader->TagID);
+	USHORT vlan_ushort = READ_USHORT(p->L3.TagVlanHeader->TagID);
 	vlan_ushort = vlan_ushort & 0xFFF;
 
 	p->VlanId = vlan_ushort;
 
-	proto_ushort = READ_USHORT(p->L3.TagVlanHeader->Protocol);
+	USHORT proto_ushort = READ_USHORT(p->L3.TagVlanHeader->Protocol);
 
 	return ParsePacketL3(p, buf, size, proto_ushort, no_l3);
 }
@@ -1026,7 +997,6 @@ bool ParsePacketARPv4(PKT *p, UCHAR *buf, UINT size)
 
 bool ParsePacketIPv4(PKT *p, UCHAR *buf, UINT size)
 {
-	UINT header_size;
 	if (p == NULL || buf == NULL)
 	{
 		return false;
@@ -1040,7 +1010,7 @@ bool ParsePacketIPv4(PKT *p, UCHAR *buf, UINT size)
 	p->L3.IPv4Header = (IPV4_HEADER *)buf;
 	p->TypeL3 = L3_IPV4;
 
-	header_size = IPV4_GET_HEADER_LEN(p->L3.IPv4Header) * 4;
+	UINT header_size = IPV4_GET_HEADER_LEN(p->L3.IPv4Header) * 4;
 	if (header_size < sizeof(IPV4_HEADER) || size < header_size)
 	{
 		p->L3.IPv4Header = NULL;
@@ -1100,7 +1070,6 @@ bool ParseICMPv4(PKT *p, UCHAR *buf, UINT size)
 
 bool ParseTCP(PKT *p, UCHAR *buf, UINT size)
 {
-	UINT header_size;
 	if (p == NULL || buf == NULL)
 	{
 		return false;
@@ -1114,7 +1083,7 @@ bool ParseTCP(PKT *p, UCHAR *buf, UINT size)
 	p->L4.TCPHeader = (TCP_HEADER *)buf;
 	p->TypeL4 = L4_TCP;
 
-	header_size = TCP_GET_HEADER_SIZE(p->L4.TCPHeader) * 4;
+	UINT header_size = TCP_GET_HEADER_SIZE(p->L4.TCPHeader) * 4;
 	if (header_size < sizeof(TCP_HEADER) || size < header_size)
 	{
 		p->L4.TCPHeader = NULL;
@@ -1133,7 +1102,6 @@ bool ParseTCP(PKT *p, UCHAR *buf, UINT size)
 
 bool ParseUDP(PKT *p, UCHAR *buf, UINT size)
 {
-	USHORT src_port, dst_port;
 	if (p == NULL || buf == NULL)
 	{
 		return false;
@@ -1153,8 +1121,8 @@ bool ParseUDP(PKT *p, UCHAR *buf, UINT size)
 	p->Payload = buf;
 	p->PayloadSize = size;
 
-	src_port = Endian16(p->L4.UDPHeader->SrcPort);
-	dst_port = Endian16(p->L4.UDPHeader->DstPort);
+	USHORT src_port = Endian16(p->L4.UDPHeader->SrcPort);
+	USHORT dst_port = Endian16(p->L4.UDPHeader->DstPort);
 
 	if ((src_port == 67 && dst_port == 68) ||
 	        (src_port == 68 && dst_port == 67))

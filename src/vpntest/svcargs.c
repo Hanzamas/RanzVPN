@@ -102,9 +102,7 @@ static UINT SvcArgsTestCount(wchar_t *str, wchar_t *keyword)
 void svcargs_test(UINT num, char **arg)
 {
 	SVCARGS_TEST t;
-	const MS_SVC_ARG *table;
 	UINT table_num = 0;
-	wchar_t *help;
 
 	Zero(&t, sizeof(t));
 
@@ -128,7 +126,7 @@ void svcargs_test(UINT num, char **arg)
 	}
 
 	// The table holds the documented arguments and no other
-	table = MsSvcArgs(&table_num);
+	const MS_SVC_ARG *table = MsSvcArgs(&table_num);
 	SvcArgsTestCheck(&t, table != NULL && table_num == sizeof(svcargs_expect) / sizeof(svcargs_expect[0]),
 		"the table holds exactly the documented arguments", "%u entries", table_num);
 
@@ -144,7 +142,7 @@ void svcargs_test(UINT num, char **arg)
 	SvcArgsTestCheck(&t, MsSvcArgToMode(NULL) == SVC_MODE_NONE, "NULL selects no mode", "mode %u", MsSvcArgToMode(NULL));
 
 	// SVC_HELP lists each argument of the table as "<argument> :", and no other argument
-	help = _UU("SVC_HELP");
+	wchar_t *help = _UU("SVC_HELP");
 	SvcArgsTestCheck(&t, UniStrLen(help) != 0, "SVC_HELP is in the string table", "empty");
 
 	for (UINT i = 0;table != NULL && i < table_num;i++)
@@ -152,12 +150,11 @@ void svcargs_test(UINT num, char **arg)
 		char what[MAX_SIZE];
 		char line[MAX_SIZE];
 		wchar_t line_w[MAX_SIZE];
-		UINT count;
 
 		// "/install : " is not inside "/setup_install : ": the slash comes right before the name
 		Format(line, sizeof(line), "%s : ", table[i].Arg);
 		StrToUni(line_w, sizeof(line_w), line);
-		count = SvcArgsTestCount(help, line_w);
+		UINT count = SvcArgsTestCount(help, line_w);
 
 		Format(what, sizeof(what), "SVC_HELP lists %s once", table[i].Arg);
 		SvcArgsTestCheck(&t, count == 1, what, "%u times", count);

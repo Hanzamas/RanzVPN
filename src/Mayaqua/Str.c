@@ -52,13 +52,12 @@ void ClearStr(char *str, UINT str_size)
 UINT SearchAsciiInBinary(const void *data, UINT size, const char *str, bool case_sensitive)
 {
 	UINT ret = INFINITE;
-	char *tmp;
 	if (data == NULL || size == 0 || str == NULL)
 	{
 		return INFINITE;
 	}
 
-	tmp = ZeroMalloc(size + 1);
+	char *tmp = ZeroMalloc(size + 1);
 	Copy(tmp, data, size);
 
 	ret = SearchStrEx(tmp, str, 0, case_sensitive);
@@ -70,7 +69,6 @@ UINT SearchAsciiInBinary(const void *data, UINT size, const char *str, bool case
 
 UINT HexToInt(const char *str)
 {
-	UINT len;
 	UINT ret = 0;
 	if (str == NULL)
 	{
@@ -82,7 +80,7 @@ UINT HexToInt(const char *str)
 		str += 2;
 	}
 
-	len = StrLen(str);
+	UINT len = StrLen(str);
 	for (UINT i = 0;i < len;i++)
 	{
 		char c = str[i];
@@ -159,8 +157,6 @@ static char *CopyStrPrefix(const char *str, UINT len)
 // also an empty one; without it, a run of separators splits once and no token is empty.
 static TOKEN_LIST *ParseTokenCore(const char *str, const char *split_chars, bool keep_empty)
 {
-	LIST *o;
-	TOKEN_LIST *t;
 	if (str == NULL)
 	{
 		return NullToken();
@@ -170,12 +166,10 @@ static TOKEN_LIST *ParseTokenCore(const char *str, const char *split_chars, bool
 		split_chars = DEFAULT_TOKEN_SPLIT_CHARS;
 	}
 
-	o = NewListFast(NULL);
+	LIST *o = NewListFast(NULL);
 
 	while (true)
 	{
-		UINT len;
-
 		if (keep_empty == false)
 		{
 			str += strspn(str, split_chars);
@@ -185,7 +179,7 @@ static TOKEN_LIST *ParseTokenCore(const char *str, const char *split_chars, bool
 			}
 		}
 
-		len = (UINT)strcspn(str, split_chars);
+		UINT len = (UINT)strcspn(str, split_chars);
 
 		Insert(o, CopyStrPrefix(str, len));
 
@@ -197,7 +191,7 @@ static TOKEN_LIST *ParseTokenCore(const char *str, const char *split_chars, bool
 		str += len + 1;
 	}
 
-	t = ZeroMalloc(sizeof(TOKEN_LIST));
+	TOKEN_LIST *t = ZeroMalloc(sizeof(TOKEN_LIST));
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
 
@@ -242,10 +236,9 @@ bool InStrEx(const char *str, const char *keyword, bool case_sensitive)
 
 static bool IsSplitChar(char c, const char *split_str)
 {
-	UINT len;
 	char c_upper = ToUpper(c);
 
-	len = StrLen(split_str);
+	UINT len = StrLen(split_str);
 
 	for (UINT i = 0;i < len;i++)
 	{
@@ -262,14 +255,12 @@ bool GetKeyAndValue(const char *str, char *key, UINT key_size, char *value, UINT
 {
 	UINT mode = 0;
 	UINT wp1 = 0, wp2 = 0;
-	UINT len;
-	char *key_tmp, *value_tmp;
 	bool ret = false;
 
-	len = StrLen(str);
+	UINT len = StrLen(str);
 
-	key_tmp = ZeroMalloc(len + 1);
-	value_tmp = ZeroMalloc(len + 1);
+	char *key_tmp = ZeroMalloc(len + 1);
+	char *value_tmp = ZeroMalloc(len + 1);
 
 	for (UINT i = 0;i < len;i++)
 	{
@@ -340,15 +331,13 @@ char *MakeCharArray(char c, UINT count)
 
 UINT StrWidth(const char *str)
 {
-	wchar_t *s;
-	UINT ret;
 	if (str == NULL)
 	{
 		return 0;
 	}
 
-	s = CopyStrToUni(str);
-	ret = UniStrWidth(s);
+	wchar_t *s = CopyStrToUni(str);
+	UINT ret = UniStrWidth(s);
 	Free(s);
 
 	return ret;
@@ -356,13 +345,12 @@ UINT StrWidth(const char *str)
 
 bool IsAllUpperStr(const char *str)
 {
-	UINT len;
 	if (str == NULL)
 	{
 		return false;
 	}
 
-	len = StrLen(str);
+	UINT len = StrLen(str);
 
 	for (UINT i = 0;i < len;i++)
 	{
@@ -463,7 +451,6 @@ void ToStr3(char *str, UINT size, UINT64 v)
 {
 	char tmp[128];
 	char tmp2[128];
-	UINT len, wp;
 	if (str == NULL)
 	{
 		return;
@@ -471,8 +458,8 @@ void ToStr3(char *str, UINT size, UINT64 v)
 
 	ToStr64(tmp, v);
 
-	wp = 0;
-	len = StrLen(tmp);
+	UINT wp = 0;
+	UINT len = StrLen(tmp);
 
 	for (UINT i = len - 1;((int)i) >= 0;i--)
 	{
@@ -537,13 +524,12 @@ bool IsEmptyStr(const char *str)
 
 TOKEN_LIST *ListToTokenList(const LIST *o)
 {
-	TOKEN_LIST *t;
 	if (o == NULL)
 	{
 		return NULL;
 	}
 
-	t = ZeroMalloc(sizeof(TOKEN_LIST));
+	TOKEN_LIST *t = ZeroMalloc(sizeof(TOKEN_LIST));
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
 	for (UINT i = 0;i < LIST_NUM(o);i++)
@@ -562,10 +548,8 @@ void FreeStrList(LIST *o)
 bool IsNum(const char *str)
 {
 	char c;
-	UINT len;
 	UINT n = 0;
 	char tmp[MAX_SIZE];
-	TOKEN_LIST *t;
 	if (str == NULL)
 	{
 		return false;
@@ -579,7 +563,7 @@ bool IsNum(const char *str)
 		return false;
 	}
 
-	t = ParseToken(tmp, " ");
+	TOKEN_LIST *t = ParseToken(tmp, " ");
 
 	if (t->NumTokens >= 1)
 	{
@@ -588,7 +572,7 @@ bool IsNum(const char *str)
 
 	FreeToken(t);
 
-	len = StrLen(tmp);
+	UINT len = StrLen(tmp);
 	for (UINT i = 0;i < len;i++)
 	{
 		bool b = false;
@@ -630,24 +614,20 @@ TOKEN_LIST *NullToken()
 
 TOKEN_LIST *ParseCmdLine(const char *str)
 {
-	TOKEN_LIST *t;
-	LIST *o;
-	UINT len, wp, mode;
 	char c;
-	char *tmp;
 	bool ignore_space = false;
 	if (str == NULL)
 	{
 		return NullToken();
 	}
 
-	o = NewListFast(NULL);
-	tmp = Malloc(StrSize(str) + 32);
+	LIST *o = NewListFast(NULL);
+	char *tmp = Malloc(StrSize(str) + 32);
 
-	wp = 0;
-	mode = 0;
+	UINT wp = 0;
+	UINT mode = 0;
 
-	len = StrLen(str);
+	UINT len = StrLen(str);
 	for (UINT i = 0;i < len;i++)
 	{
 		c = str[i];
@@ -732,7 +712,7 @@ TOKEN_LIST *ParseCmdLine(const char *str)
 
 	Free(tmp);
 
-	t = ZeroMalloc(sizeof(TOKEN_LIST));
+	TOKEN_LIST *t = ZeroMalloc(sizeof(TOKEN_LIST));
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
 	for (UINT i = 0;i < t->NumTokens;i++)
@@ -757,14 +737,13 @@ void ToStr64(char *str, UINT64 value)
 
 UINT64 ToInt64(const char *str)
 {
-	UINT len;
 	UINT64 ret = 0;
 	if (str == NULL)
 	{
 		return 0;
 	}
 
-	len = StrLen(str);
+	UINT len = StrLen(str);
 	for (UINT i = 0;i < len;i++)
 	{
 		char c = str[i];
@@ -787,15 +766,13 @@ UINT64 ToInt64(const char *str)
 
 bool EndWith(const char *str, const char *key)
 {
-	UINT str_len;
-	UINT key_len;
 	if (str == NULL || key == NULL)
 	{
 		return false;
 	}
 
-	str_len = StrLen(str);
-	key_len = StrLen(key);
+	UINT str_len = StrLen(str);
+	UINT key_len = StrLen(key);
 	if (str_len < key_len)
 	{
 		return false;
@@ -838,13 +815,12 @@ bool StartWith(const char *str, const char *key)
 
 bool StrToMac(UCHAR *mac_address, const char *str)
 {
-	BUF *b;
 	if (mac_address == NULL || str == NULL)
 	{
 		return false;
 	}
 
-	b = StrToBin(str);
+	BUF *b = StrToBin(str);
 	if (b == NULL)
 	{
 		return false;
@@ -865,17 +841,15 @@ bool StrToMac(UCHAR *mac_address, const char *str)
 
 BUF *StrToBin(const char *str)
 {
-	BUF *b;
-	UINT len;
 	char tmp[3];
 	if (str == NULL)
 	{
 		return NULL;
 	}
 
-	len = StrLen(str);
+	UINT len = StrLen(str);
 	tmp[0] = 0;
-	b = NewBuf();
+	BUF *b = NewBuf();
 	for (UINT i = 0;i < len;i++)
 	{
 		char c = str[i];
@@ -889,13 +863,12 @@ BUF *StrToBin(const char *str)
 			}
 			else if (tmp[1] == 0)
 			{
-				UCHAR data;
 				char tmp2[64];
 				tmp[1] = c;
 				tmp[2] = 0;
 				StrCpy(tmp2, sizeof(tmp2), "0x");
 				StrCat(tmp2, sizeof(tmp2), tmp);
-				data = (UCHAR)strtoul(tmp2, NULL, 0);
+				UCHAR data = (UCHAR)strtoul(tmp2, NULL, 0);
 				WriteBuf(b, &data, 1);
 				Zero(tmp, sizeof(tmp));	
 			}
@@ -968,8 +941,6 @@ void BinToStr(char *str, UINT str_size, const void *data, UINT data_size)
 }
 void BinToStrW(wchar_t *str, UINT str_size, const void *data, UINT data_size)
 {
-	char *tmp;
-	UINT tmp_size;
 	if (str == NULL || data == NULL)
 	{
 		if (str != NULL)
@@ -979,8 +950,8 @@ void BinToStrW(wchar_t *str, UINT str_size, const void *data, UINT data_size)
 		return;
 	}
 
-	tmp_size = (data_size * 2 + 4) * sizeof(wchar_t);
-	tmp = ZeroMalloc(tmp_size);
+	UINT tmp_size = (data_size * 2 + 4) * sizeof(wchar_t);
+	char *tmp = ZeroMalloc(tmp_size);
 
 	BinToStr(tmp, tmp_size, data, data_size);
 
@@ -991,28 +962,25 @@ void BinToStrW(wchar_t *str, UINT str_size, const void *data, UINT data_size)
 
 char *CopyStr(const char *str)
 {
-	UINT len;
-	char *dst;
 	if (str == NULL)
 	{
 		return NULL;
 	}
 
-	len = StrLen(str);
-	dst = Malloc(len + 1);
+	UINT len = StrLen(str);
+	char *dst = Malloc(len + 1);
 	StrCpy(dst, len + 1, str);
 	return dst;
 }
 
 bool IsSafeStr(const char *str)
 {
-	UINT len;
 	if (str == NULL)
 	{
 		return false;
 	}
 
-	len = StrLen(str);
+	UINT len = StrLen(str);
 	for (UINT i = 0;i < len;i++)
 	{
 		if (IsSafeChar(str[i]) == false)
@@ -1050,13 +1018,12 @@ bool IsPrintableAsciiChar(char c)
 
 void EnPrintableAsciiStr(char *str, char replace)
 {
-	UINT len;
 	if (str == NULL)
 	{
 		return;
 	}
 
-	len = StrLen(str);
+	UINT len = StrLen(str);
 
 	for (UINT i = 0;i < len;i++)
 	{
@@ -1166,28 +1133,23 @@ UINT ReplaceStr(char *dst, UINT size, const char *string, const char *old_keywor
 
 UINT ReplaceStrEx(char *dst, UINT size, const char *string, const char *old_keyword, const char *new_keyword, bool case_sensitive)
 {
-	UINT i, j, num;
-	UINT len_string, len_old, len_new;
-	UINT len_ret;
-	UINT wp;
-	char *ret;
 	if (string == NULL || old_keyword == NULL || new_keyword == NULL)
 	{
 		return 0;
 	}
 
-	len_string = StrLen(string);
-	len_old = StrLen(old_keyword);
-	len_new = StrLen(new_keyword);
+	UINT len_string = StrLen(string);
+	UINT len_old = StrLen(old_keyword);
+	UINT len_new = StrLen(new_keyword);
 
-	len_ret = CalcReplaceStrEx(string, old_keyword, new_keyword, case_sensitive);
-	ret = Malloc(len_ret + 1);
+	UINT len_ret = CalcReplaceStrEx(string, old_keyword, new_keyword, case_sensitive);
+	char *ret = Malloc(len_ret + 1);
 	ret[len_ret] = '\0';
 
-	i = 0;
-	j = 0;
-	num = 0;
-	wp = 0;
+	UINT i = 0;
+	UINT j = 0;
+	UINT num = 0;
+	UINT wp = 0;
 	while (true)
 	{
 		i = SearchStrEx(string, old_keyword, i, case_sensitive);
@@ -1215,24 +1177,22 @@ UINT ReplaceStrEx(char *dst, UINT size, const char *string, const char *old_keyw
 
 UINT CalcReplaceStrEx(const char *string, const char *old_keyword, const char *new_keyword, bool case_sensitive)
 {
-	UINT i, num;
-	UINT len_string, len_old, len_new;
 	if (string == NULL || old_keyword == NULL || new_keyword == NULL)
 	{
 		return 0;
 	}
 
-	len_string = StrLen(string);
-	len_old = StrLen(old_keyword);
-	len_new = StrLen(new_keyword);
+	UINT len_string = StrLen(string);
+	UINT len_old = StrLen(old_keyword);
+	UINT len_new = StrLen(new_keyword);
 
 	if (len_old == len_new)
 	{
 		return len_string;
 	}
 
-	num = 0;
-	i = 0;
+	UINT num = 0;
+	UINT i = 0;
 	while (true)
 	{
 		i = SearchStrEx(string, old_keyword, i, case_sensitive);
@@ -1255,23 +1215,20 @@ UINT SearchStr(const char *string, const char *keyword, UINT start)
 // Returns INFINITE if not found
 UINT SearchStrEx(const char *string, const char *keyword, UINT start, bool case_sensitive)
 {
-	UINT len_string, len_keyword;
-	UINT ret;
 	const char *cmp_string, *cmp_keyword;
 	char *upper_string = NULL, *upper_keyword = NULL;
-	char *found;
 	if (string == NULL || keyword == NULL)
 	{
 		return INFINITE;
 	}
 
-	len_string = StrLen(string);
+	UINT len_string = StrLen(string);
 	if (len_string <= start)
 	{
 		return INFINITE;
 	}
 
-	len_keyword = StrLen(keyword);
+	UINT len_keyword = StrLen(keyword);
 	if (len_keyword == 0)
 	{
 		return INFINITE;
@@ -1298,8 +1255,8 @@ UINT SearchStrEx(const char *string, const char *keyword, UINT start, bool case_
 	}
 
 	// The first match at or after start
-	found = strstr(cmp_string + start, cmp_keyword);
-	ret = (found == NULL) ? INFINITE : (UINT)(found - cmp_string);
+	char *found = strstr(cmp_string + start, cmp_keyword);
+	UINT ret = (found == NULL) ? INFINITE : (UINT)(found - cmp_string);
 
 	if (case_sensitive == false)
 	{
@@ -1334,13 +1291,11 @@ TOKEN_LIST *ParseToken(const char *src, const char *separator)
 
 bool GetLine(char *str, UINT size)
 {
-	bool ret;
-	wchar_t *unistr;
 	UINT unistr_size = (size + 1) * sizeof(wchar_t);
 
-	unistr = Malloc(unistr_size);
+	wchar_t *unistr = Malloc(unistr_size);
 
-	ret = UniGetLineWin32(unistr, unistr_size);
+	bool ret = UniGetLineWin32(unistr, unistr_size);
 
 	UniToStr(str, size, unistr);
 
@@ -1351,12 +1306,11 @@ bool GetLine(char *str, UINT size)
 
 void TrimCrlf(char *str)
 {
-	UINT len;
 	if (str == NULL)
 	{
 		return;
 	}
-	len = StrLen(str);
+	UINT len = StrLen(str);
 	if (len == 0)
 	{
 		return;
@@ -1390,14 +1344,13 @@ void Trim(char *str)
 
 void TrimRight(char *str)
 {
-	UINT len, end;
 	if (str == NULL)
 	{
 		return;
 	}
 
-	len = StrLen(str);
-	end = len;
+	UINT len = StrLen(str);
+	UINT end = len;
 	while (end != 0 && (str[end - 1] == ' ' || str[end - 1] == '\t'))
 	{
 		end--;
@@ -1412,14 +1365,13 @@ void TrimRight(char *str)
 
 void TrimLeft(char *str)
 {
-	UINT skip;
 	if (str == NULL)
 	{
 		return;
 	}
 
 	// Writes only when there is something to remove
-	skip = (UINT)strspn(str, " \t");
+	UINT skip = (UINT)strspn(str, " \t");
 	if (skip != 0)
 	{
 		StrCpy(str, 0, str + skip);
@@ -1502,13 +1454,12 @@ wchar_t *CopyFormatArgsToUni(const char *fmt, va_list args)
 // The message goes to the console as a wide string, without a hop through the ANSI code page
 static void PrintArgs(const char *fmt, va_list args)
 {
-	wchar_t *str;
 	if (fmt == NULL)
 	{
 		return;
 	}
 
-	str = CopyFormatArgsToUni(fmt, args);
+	wchar_t *str = CopyFormatArgsToUni(fmt, args);
 	if (str == NULL)
 	{
 		return;
@@ -1600,10 +1551,9 @@ void FormatArgs(char *buf, UINT size, const char *fmt, va_list args)
 	if (size == 0)
 	{
 		va_list count_args;
-		int len;
 
 		va_copy(count_args, args);
-		len = _vscprintf(fmt, count_args);
+		int len = _vscprintf(fmt, count_args);
 		va_end(count_args);
 		if (len < 0)
 		{
@@ -1618,7 +1568,6 @@ void FormatArgs(char *buf, UINT size, const char *fmt, va_list args)
 
 int StrCmpi(const char *str1, const char *str2)
 {
-	UINT i;
 	if (str1 == NULL && str2 == NULL)
 	{
 		return 0;
@@ -1632,12 +1581,11 @@ int StrCmpi(const char *str1, const char *str2)
 		return -1;
 	}
 
-	i = 0;
+	UINT i = 0;
 	while (true)
 	{
-		char c1, c2;
-		c1 = ToUpper(str1[i]);
-		c2 = ToUpper(str2[i]);
+		char c1 = ToUpper(str1[i]);
+		char c2 = ToUpper(str2[i]);
 		if (c1 > c2)
 		{
 			return 1;
@@ -1674,13 +1622,12 @@ int StrCmp(const char *str1, const char *str2)
 
 void StrLower(char *str)
 {
-	UINT len;
 	if (str == NULL)
 	{
 		return;
 	}
 
-	len = StrLen(str);
+	UINT len = StrLen(str);
 	for (UINT i = 0;i < len;i++)
 	{
 		str[i] = ToLower(str[i]);
@@ -1689,13 +1636,12 @@ void StrLower(char *str)
 
 void StrUpper(char *str)
 {
-	UINT len;
 	if (str == NULL)
 	{
 		return;
 	}
 
-	len = StrLen(str);
+	UINT len = StrLen(str);
 	for (UINT i = 0;i < len;i++)
 	{
 		str[i] = ToUpper(str[i]);
@@ -1734,8 +1680,7 @@ static size_t StrSafeCch(UINT size)
 
 UINT StrCat(char *dst, UINT size, const char *src)
 {
-	size_t cch, len1;
-	char *end;
+	size_t len1;
 	if (dst == NULL || src == NULL)
 	{
 		return 0;
@@ -1743,7 +1688,7 @@ UINT StrCat(char *dst, UINT size, const char *src)
 
 	KS_INC(KS_STRCAT_COUNT);
 
-	cch = StrSafeCch(size);
+	size_t cch = StrSafeCch(size);
 
 	// A destination without room for one more character takes nothing and gives 0, except that
 	// an empty src gives the length of a destination that fits
@@ -1753,20 +1698,19 @@ UINT StrCat(char *dst, UINT size, const char *src)
 	}
 
 	// Appends at most cch - 1 - len1 characters and always writes the terminator
-	end = dst + len1;
+	char *end = dst + len1;
 	StringCchCopyExA(dst + len1, cch - len1, src, &end, NULL, 0);
 
 	return (UINT)(end - dst);
 }
 UINT StrCatLeft(char *dst, UINT size, const char *src)
 {
-	char *s;
 	if (dst == NULL || src == NULL)
 	{
 		return 0;
 	}
 
-	s = CopyStr(dst);
+	char *s = CopyStr(dst);
 	StrCpy(dst, size, src);
 	StrCat(dst, size, s);
 
@@ -1777,7 +1721,7 @@ UINT StrCatLeft(char *dst, UINT size, const char *src)
 
 UINT StrCpy(char *dst, UINT size, const char *src)
 {
-	size_t cch, len;
+	size_t len;
 	if (dst == src)
 	{
 		return StrLen(src);
@@ -1798,7 +1742,7 @@ UINT StrCpy(char *dst, UINT size, const char *src)
 	// and size 1 writes only the terminator. src and dst may overlap: strsafe copies forward only,
 	// so Move copies; strsafe bounds the length, which is size - 1 for a src of size characters
 	// or more
-	cch = StrSafeCch(size);
+	size_t cch = StrSafeCch(size);
 	if (FAILED(StringCchLengthA(src, cch, &len)))
 	{
 		len = cch - 1;

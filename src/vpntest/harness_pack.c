@@ -255,11 +255,10 @@ static char *harness_pack_test_key_pem =
 static X *HarnessTestCert()
 {
 	BUF *b = NewBuf();
-	X *x;
 
 	WriteBuf(b, harness_pack_test_cert_pem, StrLen(harness_pack_test_cert_pem));
 	SeekBufToBegin(b);
-	x = BufToX(b, true);
+	X *x = BufToX(b, true);
 	FreeBuf(b);
 
 	return x;
@@ -269,11 +268,10 @@ static X *HarnessTestCert()
 static K *HarnessTestKey()
 {
 	BUF *b = NewBuf();
-	K *k;
 
 	WriteBuf(b, harness_pack_test_key_pem, StrLen(harness_pack_test_key_pem));
 	SeekBufToBegin(b);
-	k = BufToK(b, true, true, NULL);
+	K *k = BufToK(b, true, true, NULL);
 	FreeBuf(b);
 
 	return k;
@@ -377,14 +375,14 @@ static char *HarnessPackTypeName(UINT type)
 static bool HarnessPackNameInList(char *name, char *list)
 {
 	char pattern[MAX_ELEMENT_NAME_LEN + 2];
-	UINT len, i = 0;
+	UINT i = 0;
 
 	if (name == NULL || list == NULL)
 	{
 		return false;
 	}
 
-	len = StrLen(list);
+	UINT len = StrLen(list);
 
 	while (i < len)
 	{
@@ -539,7 +537,6 @@ static void HarnessPackDump(BUF *b, PACK *p, HARNESS_PACK_CASE *c)
 // Size and SHA-1 of the serialised Pack (WritePack writes the list order)
 static void HarnessPackPutBytes(BUF *b, PACK *p, bool masked)
 {
-	BUF *w;
 	char tmp[MAX_SIZE];
 
 	if (masked)
@@ -548,7 +545,7 @@ static void HarnessPackPutBytes(BUF *b, PACK *p, bool masked)
 		return;
 	}
 
-	w = PackToBuf(p);
+	BUF *w = PackToBuf(p);
 	Format(tmp, sizeof(tmp), "bytes=%u sha1=", w->Size);
 	HarnessPackPut(b, tmp);
 	HarnessPackPutSha1(b, w->Buf, w->Size);
@@ -602,7 +599,6 @@ static void HarnessPackCanonData(HARNESS_PACK_RUN *r, ELEMENT *e, UINT h, UINT i
 {
 	BUF *src = NULL;
 	char tmp[MAX_SIZE];
-	UINT x;
 
 	if (StrCmp(e->name, "Cert") == 0 || StrCmp(e->name, "Chain") == 0 || StrCmp(e->name, "ServerCert") == 0 ||
 		StrCmp(e->name, "ServerX") == 0 || StrCmp(e->name, "ClientX") == 0 || StrCmp(e->name, "UserX") == 0)
@@ -632,7 +628,7 @@ static void HarnessPackCanonData(HARNESS_PACK_RUN *r, ELEMENT *e, UINT h, UINT i
 		return;
 	}
 
-	x = h ^ (index * 0x9E3779B9U);
+	UINT x = h ^ (index * 0x9E3779B9U);
 
 	for (UINT i = 0;i < v->Size;i++)
 	{
@@ -650,14 +646,13 @@ static void HarnessPackCanon(HARNESS_PACK_RUN *r, PACK *p, bool live)
 	for (UINT i = 0;i < LIST_NUM(p->elements);i++)
 	{
 		ELEMENT *e = LIST_DATA(p->elements, i);
-		UINT h;
 
 		if (HarnessPackIsKept(e->name, live))
 		{
 			continue;
 		}
 
-		h = HarnessPackHash(e->name);
+		UINT h = HarnessPackHash(e->name);
 
 		for (UINT j = 0;j < e->num_value;j++)
 		{
@@ -1024,11 +1019,10 @@ static void HarnessPackPrepCrlFull(HARNESS *h, void *p)
 {
 	RPC_CRL *t = p;
 	UCHAR serial[8] = {0x52, 0x41, 0x4E, 0x5A, 0x05, 0x06, 0x07, 0x08};
-	NAME *n;
 
 	t->Crl = ZeroMalloc(sizeof(CRL));
 	t->Crl->Serial = NewXSerial(serial, sizeof(serial));
-	n = t->Crl->Name = ZeroMalloc(sizeof(NAME));
+	NAME *n = t->Crl->Name = ZeroMalloc(sizeof(NAME));
 	n->CommonName = CopyUniStr(L"");
 	n->Organization = CopyUniStr(L"");
 	n->Unit = CopyUniStr(L"");
@@ -1517,7 +1511,6 @@ static BUF *HarnessCompareGoldenBin(HARNESS *h, char *out_dir, char *golden_dir,
 	char path[MAX_SIZE];
 	char tmp[MAX_SIZE];
 	BUF *g;
-	BUF *ret;
 
 	Format(path, sizeof(path), "%s/%s", out_dir, file_name);
 	if (DumpBuf(actual, path) == false)
@@ -1544,7 +1537,6 @@ static BUF *HarnessCompareGoldenBin(HARNESS *h, char *out_dir, char *golden_dir,
 			if (HarnessCheck(h, same, tmp) == false)
 			{
 				BUF *w = NewBuf();
-				char *s;
 
 				HarnessPackPut(w, "  golden: bytes=");
 				Format(tmp, sizeof(tmp), "%u sha1=", g->Size);
@@ -1554,7 +1546,7 @@ static BUF *HarnessCompareGoldenBin(HARNESS *h, char *out_dir, char *golden_dir,
 				Format(tmp, sizeof(tmp), "%u sha1=", actual->Size);
 				HarnessPackPut(w, tmp);
 				HarnessPackPutSha1(w, actual->Buf, actual->Size);
-				s = HarnessBufToStr(w);
+				char *s = HarnessBufToStr(w);
 				Print("%s\n", s);
 				Free(s);
 				FreeBuf(w);
@@ -1571,7 +1563,7 @@ static BUF *HarnessCompareGoldenBin(HARNESS *h, char *out_dir, char *golden_dir,
 		HarnessCheck(h, true, tmp);
 	}
 
-	ret = NewBuf();
+	BUF *ret = NewBuf();
 	WriteBuf(ret, actual->Buf, actual->Size);
 	SeekBufToBegin(ret);
 
@@ -1581,40 +1573,36 @@ static BUF *HarnessCompareGoldenBin(HARNESS *h, char *out_dir, char *golden_dir,
 // [in-out] and [in-out-in-out] sections of one input
 static void HarnessPackRoundTrip(BUF *text, HARNESS_PACK_TYPE *y, BUF *input)
 {
-	PACK *pin, *p1, *pin2, *p2;
-	BUF *b1, *b2;
-	void *t1, *t2;
-
 	HarnessPackPut(text, "[in-out]\n");
 
 	SeekBufToBegin(input);
-	pin = BufToPack(input);
+	PACK *pin = BufToPack(input);
 	if (pin == NULL)
 	{
 		HarnessPackPut(text, "input is not a Pack\n");
 		return;
 	}
 
-	t1 = ZeroMalloc(y->Size);
+	void *t1 = ZeroMalloc(y->Size);
 	y->In(t1, pin);
-	p1 = NewPack();
+	PACK *p1 = NewPack();
 	y->Out(p1, t1);
 	HarnessPackDump(text, p1, NULL);
 	HarnessPackPutBytes(text, p1, false);
 
 	HarnessPackPut(text, "[in-out-in-out]\n");
 
-	b1 = PackToBuf(p1);
+	BUF *b1 = PackToBuf(p1);
 	SeekBufToBegin(b1);
-	pin2 = BufToPack(b1);
-	t2 = ZeroMalloc(y->Size);
+	PACK *pin2 = BufToPack(b1);
+	void *t2 = ZeroMalloc(y->Size);
 	if (pin2 != NULL)
 	{
 		y->In(t2, pin2);
 	}
-	p2 = NewPack();
+	PACK *p2 = NewPack();
 	y->Out(p2, t2);
-	b2 = PackToBuf(p2);
+	BUF *b2 = PackToBuf(p2);
 
 	if (b1->Size == b2->Size && Cmp(b1->Buf, b2->Buf, b1->Size) == 0)
 	{
@@ -1644,11 +1632,9 @@ static void HarnessPackRunCase(HARNESS_PACK_RUN *r, HARNESS_PACK_CASE *c)
 	BUF *text = NewBuf();
 	PACK *p0 = NULL;
 	BUF *fresh;
-	BUF *input;
 	char file_name[MAX_SIZE];
 	char tmp[MAX_SIZE];
 	char *kind = (c->Kind == HARNESS_PACK_SYN ? "syn" : (c->Kind == HARNESS_PACK_LIVE ? "live" : "in"));
-	char *s;
 
 	HarnessSetPhase("pack", c->Name);
 
@@ -1672,7 +1658,6 @@ static void HarnessPackRunCase(HARNESS_PACK_RUN *r, HARNESS_PACK_CASE *c)
 	{
 		void *t = ZeroMalloc(y->Size);
 		PACK *req = NewPack();
-		UINT err;
 
 		if (c->Prep != NULL)
 		{
@@ -1684,7 +1669,7 @@ static void HarnessPackRunCase(HARNESS_PACK_RUN *r, HARNESS_PACK_CASE *c)
 
 		// AdminCall releases the request; the response keeps the server's element order
 		p0 = AdminCall(h->Rpc, c->RpcName, req);
-		err = HarnessPackGetError(p0);
+		UINT err = HarnessPackGetError(p0);
 		if (err != ERR_NO_ERROR)
 		{
 			Format(tmp, sizeof(tmp), "pack %s: admin RPC %s", c->Name, c->RpcName);
@@ -1714,11 +1699,11 @@ static void HarnessPackRunCase(HARNESS_PACK_RUN *r, HARNESS_PACK_CASE *c)
 	}
 
 	Format(file_name, sizeof(file_name), "pack_%s.pack", c->Name);
-	input = HarnessCompareGoldenBin(h, r->OutDir, r->GoldenDir, file_name, fresh, r->Update);
+	BUF *input = HarnessCompareGoldenBin(h, r->OutDir, r->GoldenDir, file_name, fresh, r->Update);
 
 	HarnessPackRoundTrip(text, y, input);
 
-	s = HarnessBufToStr(text);
+	char *s = HarnessBufToStr(text);
 	Format(file_name, sizeof(file_name), "pack_%s.txt", c->Name);
 	HarnessCompareGolden(h, r->OutDir, r->GoldenDir, file_name, s, r->Update);
 
@@ -1789,8 +1774,6 @@ void HarnessPackGolden(HARNESS *h)
 {
 	HARNESS_PACK_RUN r;
 	UINT64 start = Tick64();
-	X *x;
-	K *k;
 
 	Print("[golden: admin RPC Packs]\n");
 	HarnessSetPhase("pack", NULL);
@@ -1806,8 +1789,8 @@ void HarnessPackGolden(HARNESS *h)
 		r.Update ? "update mode: missing or empty, or RANZ_UPDATE_GOLDEN=1" : "compare mode");
 	Print("  output directory: %s\n", r.OutDir);
 
-	x = HarnessTestCert();
-	k = HarnessTestKey();
+	X *x = HarnessTestCert();
+	K *k = HarnessTestKey();
 	if (HarnessCheck(h, x != NULL && k != NULL, "fixed test certificate and key parsed") == false)
 	{
 		FreeX(x);
@@ -1919,21 +1902,18 @@ PACK *HarnessRawLoginPack(char *hubname, char *username, UINT authtype)
 // (ERR_NO_ERROR for a welcome Pack), or ERR_DISCONNECTED when no answer comes. p stays with the caller.
 UINT HarnessRawRequest(SOCK *s, PACK *p)
 {
-	PACK *ret;
-	UINT err;
-
 	if (s == NULL || p == NULL || HttpClientSend(s, p) == false)
 	{
 		return ERR_DISCONNECTED;
 	}
 
-	ret = HttpClientRecvEx(s, CLIENT_WELCOME_PACK_MAX_SIZE);
+	PACK *ret = HttpClientRecvEx(s, CLIENT_WELCOME_PACK_MAX_SIZE);
 	if (ret == NULL)
 	{
 		return ERR_DISCONNECTED;
 	}
 
-	err = GetErrorFromPack(ret);
+	UINT err = GetErrorFromPack(ret);
 	FreePack(ret);
 
 	return err;

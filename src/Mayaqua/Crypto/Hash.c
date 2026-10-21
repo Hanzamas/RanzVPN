@@ -133,7 +133,6 @@ typedef struct MY_SHA0_CTX {
 
 static void MY_SHA0_Transform(MY_SHA0_CTX* ctx) {
 	UINT W[80];
-	UINT A, B, C, D, E;
 	UCHAR* p = ctx->buf;
 	int t;
 	for(t = 0; t < 16; ++t) {
@@ -146,11 +145,11 @@ static void MY_SHA0_Transform(MY_SHA0_CTX* ctx) {
 	for(; t < 80; t++) {
 		W[t] = (1,W[t-3] ^ W[t-8] ^ W[t-14] ^ W[t-16]);
 	}
-	A = ctx->state[0];
-	B = ctx->state[1];
-	C = ctx->state[2];
-	D = ctx->state[3];
-	E = ctx->state[4];
+	UINT A = ctx->state[0];
+	UINT B = ctx->state[1];
+	UINT C = ctx->state[2];
+	UINT D = ctx->state[3];
+	UINT E = ctx->state[4];
 	for(t = 0; t < 80; t++) {
 		UINT tmp = rol(5,A) + E + W[t];
 		if (t < 20)

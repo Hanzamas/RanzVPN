@@ -71,13 +71,12 @@ void Win32InputDiscardLine()
 
 bool Win32InputFromFileW(wchar_t *str, UINT size)
 {
-	char *a;
 	if (str == NULL)
 	{
 		return false;
 	}
 
-	a = Win32InputFromFileLineA();
+	char *a = Win32InputFromFileLineA();
 	if (a == NULL)
 	{
 		UniStrCpy(str, size, L"");
@@ -150,14 +149,13 @@ void Win32PrintW(wchar_t *str)
 }
 void Win32PrintToFileW(wchar_t *str)
 {
-	char *utf;
 	DWORD size = 0;
 	if (str == NULL)
 	{
 		return;
 	}
 
-	utf = CopyUniToUtf(str);
+	char *utf = CopyUniToUtf(str);
 
 	WriteFile(hstdout, utf, StrLen(utf), &size, NULL);
 

@@ -16,12 +16,11 @@
 
 UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 {
-	HUB *h;
 	UINT err;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
-	h = AdminGetHub(a, t->HubName, NULL, &err);
+	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
 		return err;
@@ -54,20 +53,18 @@ UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t)
 {
 	SERVER *s = a->Server;
-	HUB *h;
 	UINT err;
-	bool exists;
 
 
 	CHECK_RIGHT;
 
-	h = AdminGetHub(a, t->HubName, "no_change_access_list", &err);
+	HUB *h = AdminGetHub(a, t->HubName, "no_change_access_list", &err);
 	if (h == NULL)
 	{
 		return err;
 	}
 
-	exists = false;
+	bool exists = false;
 
 	LockList(h->AccessList);
 	{
@@ -131,7 +128,6 @@ static void AdminSanitizeAccess(ACCESS *access, bool no_jitter, bool no_include)
 UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 {
 	SERVER *s = a->Server;
-	HUB *h;
 	UINT err;
 	bool no_jitter = false;
 	bool no_include = false;
@@ -143,7 +139,7 @@ UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 		return ERR_TOO_MANY_ACCESS_LIST;
 	}
 
-	h = AdminGetHub(a, t->HubName, "no_change_access_list", &err);
+	HUB *h = AdminGetHub(a, t->HubName, "no_change_access_list", &err);
 	if (h == NULL)
 	{
 		return err;
@@ -199,13 +195,12 @@ UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 UINT StAddAccess(ADMIN *a, RPC_ADD_ACCESS *t)
 {
 	SERVER *s = a->Server;
-	HUB *h;
 	UINT err;
 	bool no_jitter = false;
 	bool no_include = false;
 
 
-	h = AdminGetHub(a, t->HubName, "no_change_access_list", &err);
+	HUB *h = AdminGetHub(a, t->HubName, "no_change_access_list", &err);
 	if (h == NULL)
 	{
 		return err;

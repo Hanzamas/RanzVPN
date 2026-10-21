@@ -694,8 +694,6 @@ void HarnessSetPhase(char *phase, char *detail)
 static void HarnessWatchdogThread(THREAD *thread, void *param)
 {
 	HARNESS_WATCHDOG *w = (HARNESS_WATCHDOG *)param;
-	char *phase;
-	char *detail;
 
 	if (w == NULL)
 	{
@@ -707,8 +705,8 @@ static void HarnessWatchdogThread(THREAD *thread, void *param)
 		return;
 	}
 
-	phase = harness_phase;
-	detail = harness_phase_detail;
+	char *phase = harness_phase;
+	char *detail = harness_phase_detail;
 
 	Print("%s TEST FAILED (watchdog: no completion after %u ms in phase %s%s%s)\n",
 		w->TestName, w->Limit, phase, IsEmptyStr(detail) ? "" : ": ", detail);
@@ -753,16 +751,13 @@ static void HarnessStopWatchdog(HARNESS_WATCHDOG *w)
 // Convert a Unicode string into a newly allocated UTF-8 string
 char *HarnessUniToUtf8(wchar_t *s)
 {
-	UINT size;
-	char *ret;
-
 	if (s == NULL)
 	{
 		return CopyStr("");
 	}
 
-	size = CalcUniToUtf8(s);
-	ret = ZeroMalloc(size + 1);
+	UINT size = CalcUniToUtf8(s);
+	char *ret = ZeroMalloc(size + 1);
 	UniToUtf8((BYTE *)ret, size + 1, s);
 
 	return ret;
@@ -771,14 +766,12 @@ char *HarnessUniToUtf8(wchar_t *s)
 // Copy a buffer into a newly allocated NUL-terminated string
 char *HarnessBufToStr(BUF *b)
 {
-	char *ret;
-
 	if (b == NULL)
 	{
 		return CopyStr("");
 	}
 
-	ret = ZeroMalloc(b->Size + 1);
+	char *ret = ZeroMalloc(b->Size + 1);
 	Copy(ret, b->Buf, b->Size);
 
 	return ret;
@@ -799,28 +792,27 @@ static char *HarnessSkipBom(char *s)
 static LIST *HarnessSplitLines(char *text)
 {
 	LIST *o = NewListFast(NULL);
-	UINT len, start = 0;
+	UINT start = 0;
 
 	if (text == NULL)
 	{
 		return o;
 	}
 
-	len = StrLen(text);
+	UINT len = StrLen(text);
 
 	for (UINT i = 0;i <= len;i++)
 	{
 		if (i == len || text[i] == '\n')
 		{
 			UINT n = i - start;
-			char *line;
 
 			if (i == len && n == 0)
 			{
 				break;
 			}
 
-			line = ZeroMalloc(n + 1);
+			char *line = ZeroMalloc(n + 1);
 			Copy(line, text + start, n);
 			if (n >= 1 && line[n - 1] == '\r')
 			{
@@ -1240,14 +1232,12 @@ static bool HarnessPaWaitRecv(HARNESS_PA *p, UINT num, UINT timeout)
 
 	while (true)
 	{
-		UINT64 now;
-
 		if (HarnessPaNumRecorded(p) >= num)
 		{
 			return true;
 		}
 
-		now = Tick64();
+		UINT64 now = Tick64();
 		if (now >= end)
 		{
 			return false;
@@ -1359,7 +1349,6 @@ static bool HarnessStartSession(HARNESS *h, HARNESS_PA *p, char *hubname, char *
 {
 	CLIENT_OPTION o;
 	CLIENT_AUTH a;
-	PACKET_ADAPTER *pa;
 
 	Zero(&o, sizeof(o));
 	UniFormat(o.AccountName, sizeof(o.AccountName), L"HARNESS_%S", username);
@@ -1382,7 +1371,7 @@ static bool HarnessStartSession(HARNESS *h, HARNESS_PA *p, char *hubname, char *
 	StrCpy(a.Username, sizeof(a.Username), username);
 	HashPassword(a.HashedPassword, username, HARNESS_PASSWORD);
 
-	pa = NewPacketAdapter(HarnessPaInit, HarnessPaGetCancel, HarnessPaGetNextPacket,
+	PACKET_ADAPTER *pa = NewPacketAdapter(HarnessPaInit, HarnessPaGetCancel, HarnessPaGetNextPacket,
 		HarnessPaPutPacket, HarnessPaFree);
 	pa->Param = (void *)p;
 
@@ -1494,12 +1483,11 @@ static RPC *HarnessAdminConnect(CEDAR *cedar, UINT timeout, UINT *err)
 static bool HarnessUseOnlyTestListener(HARNESS *h)
 {
 	RPC_LISTENER_LIST t;
-	UINT err;
 	bool ok = true;
 	char tmp[MAX_SIZE];
 
 	Zero(&t, sizeof(t));
-	err = ScEnumListener(h->Rpc, &t);
+	UINT err = ScEnumListener(h->Rpc, &t);
 	if (HarnessCheckErr(h, err, "EnumListener") == false)
 	{
 		return false;
@@ -1566,7 +1554,6 @@ static bool HarnessCreateHub(HARNESS *h, char *name)
 static bool HarnessCreateUser(HARNESS *h, char *hubname, char *username, wchar_t *realname)
 {
 	RPC_SET_USER t;
-	UINT err;
 	char tmp[MAX_SIZE];
 
 	Zero(&t, sizeof(t));
@@ -1577,7 +1564,7 @@ static bool HarnessCreateUser(HARNESS *h, char *hubname, char *username, wchar_t
 	t.AuthType = AUTHTYPE_PASSWORD;
 	t.AuthData = NewPasswordAuthData(username, HARNESS_PASSWORD);
 
-	err = ScCreateUser(h->Rpc, &t);
+	UINT err = ScCreateUser(h->Rpc, &t);
 	if (err == ERR_NO_ERROR)
 	{
 		FreeRpcSetUser(&t);
@@ -1592,7 +1579,6 @@ static bool HarnessCreateUser(HARNESS *h, char *hubname, char *username, wchar_t
 static bool HarnessCreateLink(HARNESS *h)
 {
 	RPC_CREATE_LINK t;
-	UINT err;
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
@@ -1619,7 +1605,7 @@ static bool HarnessCreateLink(HARNESS *h)
 	StrCpy(t.ClientAuth->Username, sizeof(t.ClientAuth->Username), HARNESS_LINK_USER);
 	HashPassword(t.ClientAuth->HashedPassword, HARNESS_LINK_USER, HARNESS_PASSWORD);
 
-	err = ScCreateLink(h->Rpc, &t);
+	UINT err = ScCreateLink(h->Rpc, &t);
 	if (err == ERR_NO_ERROR)
 	{
 		FreeRpcCreateLink(&t);
@@ -1633,7 +1619,6 @@ static bool HarnessWaitLink(HARNESS *h, UINT timeout)
 {
 	RPC_LINK k;
 	RPC_ENUM_LINK e;
-	UINT64 start, end;
 	UINT err;
 	char tmp[MAX_SIZE];
 
@@ -1646,8 +1631,8 @@ static bool HarnessWaitLink(HARNESS *h, UINT timeout)
 		return false;
 	}
 
-	start = Tick64();
-	end = start + (UINT64)timeout;
+	UINT64 start = Tick64();
+	UINT64 end = start + (UINT64)timeout;
 
 	while (true)
 	{
@@ -1845,7 +1830,6 @@ static bool HarnessStartServer(HARNESS *h)
 // Start the server, the test listener, the admin RPC, the hubs, the users, the cascade and the test sessions
 static bool HarnessSetup(HARNESS *h)
 {
-	bool ok;
 	char name[MAX_SESSION_NAME_LEN + 1];
 
 	Print("[setup]\n");
@@ -1856,7 +1840,7 @@ static bool HarnessSetup(HARNESS *h)
 	}
 
 	HarnessSetPhase("setup", "hubs, users, cascade");
-	ok = HarnessCreateHub(h, HARNESS_HUB_A) &&
+	bool ok = HarnessCreateHub(h, HARNESS_HUB_A) &&
 		HarnessCreateHub(h, HARNESS_HUB_B) &&
 		HarnessCreateUser(h, HARNESS_HUB_B, HARNESS_LINK_USER, L"Harness cascade") &&
 		HarnessCreateUser(h, HARNESS_HUB_B, HARNESS_USER_B, L"Harness tester B") &&
@@ -1905,7 +1889,6 @@ static bool HarnessSetup(HARNESS *h)
 static bool HarnessCheckMac(HARNESS *h, char *hubname, UCHAR *mac, char *session_name)
 {
 	RPC_ENUM_MAC_TABLE t;
-	UINT err;
 	bool found = false;
 	char mac_str[64];
 	char got[MAX_SESSION_NAME_LEN + 1];
@@ -1917,7 +1900,7 @@ static bool HarnessCheckMac(HARNESS *h, char *hubname, UCHAR *mac, char *session
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), hubname);
 
-	err = ScEnumMacTable(h->Rpc, &t);
+	UINT err = ScEnumMacTable(h->Rpc, &t);
 	if (err != ERR_NO_ERROR)
 	{
 		Format(tmp, sizeof(tmp), "EnumMacTable %s", hubname);
@@ -1949,13 +1932,12 @@ static bool HarnessTeach(HARNESS *h)
 {
 	UCHAR teach_b[HARNESS_FRAME_SIZE];
 	UCHAR teach_a[HARNESS_FRAME_SIZE];
-	bool ok;
 
 	HarnessBuildFrame(teach_b, sizeof(teach_b), harness_mac_broadcast, harness_mac_b, 1);
 	HarnessBuildFrame(teach_a, sizeof(teach_a), harness_mac_broadcast, harness_mac_a, 2);
 
 	HarnessPaSend(h->PaB, teach_b, sizeof(teach_b));
-	ok = HarnessCheck(h, HarnessPaWaitRecv(h->PaA, 1, HARNESS_FRAME_TIMEOUT) &&
+	bool ok = HarnessCheck(h, HarnessPaWaitRecv(h->PaA, 1, HARNESS_FRAME_TIMEOUT) &&
 		HarnessPaFrameIs(h->PaA, 0, teach_b, sizeof(teach_b)),
 		"broadcast from HARNESS_B arrives byte-identical on HARNESS_A");
 
@@ -1977,12 +1959,10 @@ static bool HarnessFrames(HARNESS *h)
 	char name_link_a[MAX_SESSION_NAME_LEN + 1];
 	char name_link_b[MAX_SESSION_NAME_LEN + 1];
 	char tmp[MAX_SIZE];
-	UINT num_a, num_b;
-	bool ok;
 
 	Print("[frames]\n");
 
-	ok = HarnessTeach(h);
+	bool ok = HarnessTeach(h);
 
 	HarnessBuildFrame(unicast, sizeof(unicast), harness_mac_b, harness_mac_a, 3);
 	HarnessBuildFrame(bcast, sizeof(bcast), harness_mac_broadcast, harness_mac_a, 4);
@@ -1998,8 +1978,8 @@ static bool HarnessFrames(HARNESS *h)
 		"second broadcast from HARNESS_A arrives byte-identical") && ok;
 
 	SleepThread(HARNESS_SETTLE_TIME);
-	num_a = HarnessPaNumRecorded(h->PaA);
-	num_b = HarnessPaNumRecorded(h->PaB);
+	UINT num_a = HarnessPaNumRecorded(h->PaA);
+	UINT num_b = HarnessPaNumRecorded(h->PaB);
 	Format(tmp, sizeof(tmp), "no unexpected or echoed frames (A received %u of 1, B received %u of 3)", num_a, num_b);
 	ok = HarnessCheck(h, num_a == 1 && num_b == 3, tmp) && ok;
 
@@ -2171,7 +2151,6 @@ static HARNESS_CELLS *HarnessCsvSplit(char *line)
 static char *HarnessCsvJoin(HARNESS_CELLS *c)
 {
 	BUF *b = NewBuf();
-	char *ret;
 
 	for (UINT i = 0;i < c->Num;i++)
 	{
@@ -2212,7 +2191,7 @@ static char *HarnessCsvJoin(HARNESS_CELLS *c)
 	}
 
 	WriteBufChar(b, 0);
-	ret = CopyStr((char *)b->Buf);
+	char *ret = CopyStr((char *)b->Buf);
 	FreeBuf(b);
 
 	return ret;
@@ -2249,8 +2228,6 @@ static bool HarnessIsDateTime(char *s)
 
 	for (UINT i = 0;(i + 4) <= len;i++)
 	{
-		UINT j, n;
-
 		if (i >= 1 && HARNESS_IS_DIGIT(s[i - 1]))
 		{
 			continue;
@@ -2262,14 +2239,14 @@ static bool HarnessIsDateTime(char *s)
 			continue;
 		}
 
-		j = i + 4;
+		UINT j = i + 4;
 		if (j < len && HARNESS_IS_DIGIT(s[j]))
 		{
 			continue;
 		}
 
 		// Separator (locale strings may be multi-byte)
-		n = 0;
+		UINT n = 0;
 		while (j < len && HARNESS_IS_DIGIT(s[j]) == false && n < 6)
 		{
 			j++;
@@ -2438,8 +2415,6 @@ char *HarnessNormalizeVpncmd(HARNESS_NORM *n, BUF *raw)
 	LIST *out = NewListFast(NULL);
 	bool volatile_col[HARNESS_MAX_COLUMNS];
 	UINT num_header = 0;
-	BUF *b;
-	char *ret;
 
 	Zero(volatile_col, sizeof(volatile_col));
 
@@ -2529,7 +2504,7 @@ char *HarnessNormalizeVpncmd(HARNESS_NORM *n, BUF *raw)
 		Free(last);
 	}
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 	for (UINT i = 0;i < LIST_NUM(out);i++)
 	{
 		char *s = LIST_DATA(out, i);
@@ -2537,7 +2512,7 @@ char *HarnessNormalizeVpncmd(HARNESS_NORM *n, BUF *raw)
 		WriteBuf(b, s, StrLen(s));
 		WriteBuf(b, "\r\n", 2);
 	}
-	ret = HarnessBufToStr(b);
+	char *ret = HarnessBufToStr(b);
 	FreeBuf(b);
 
 	HarnessFreeLines(out);
@@ -2552,9 +2527,6 @@ static BUF *HarnessRunVpncmd(HARNESS *h, HARNESS_VPNCMD *v)
 {
 	char cmdline[MAX_SIZE];
 	char tmp[MAX_SIZE];
-	wchar_t *w;
-	UINT ret;
-	BUF *b;
 
 	FileDelete(HARNESS_VPNCMD_OUT);
 
@@ -2571,11 +2543,11 @@ static BUF *HarnessRunVpncmd(HARNESS *h, HARNESS_VPNCMD *v)
 
 	Print("  vpncmd: %s\n", cmdline);
 
-	w = CopyStrToUni(cmdline);
-	ret = CommandMain(w);
+	wchar_t *w = CopyStrToUni(cmdline);
+	UINT ret = CommandMain(w);
 	Free(w);
 
-	b = ReadDump(HARNESS_VPNCMD_OUT);
+	BUF *b = ReadDump(HARNESS_VPNCMD_OUT);
 	FileDelete(HARNESS_VPNCMD_OUT);
 
 	Format(tmp, sizeof(tmp), "vpncmd %s%s%s ran (return code %u, output %s)",
@@ -2736,12 +2708,9 @@ void HarnessCompareGolden(HARNESS *h, char *out_dir, char *golden_dir, char *fil
 	}
 	else
 	{
-		BUF *g;
-		char *golden;
-
 		Format(path, sizeof(path), "%s/%s", golden_dir, file_name);
-		g = ReadDump(path);
-		golden = HarnessBufToStr(g);
+		BUF *g = ReadDump(path);
+		char *golden = HarnessBufToStr(g);
 
 		Format(tmp, sizeof(tmp), "%s matches the golden file", file_name);
 		if (g == NULL)
@@ -2765,7 +2734,6 @@ static void HarnessGolden(HARNESS *h)
 	char out_dir[MAX_SIZE];
 	char golden_dir[MAX_SIZE];
 	bool update;
-	HARNESS_NORM *n;
 
 	Print("[golden]\n");
 	HarnessSetPhase("golden", NULL);
@@ -2779,15 +2747,14 @@ static void HarnessGolden(HARNESS *h)
 		update ? "update mode: missing or empty, or RANZ_UPDATE_GOLDEN=1" : "compare mode");
 	Print("  output directory: %s\n", out_dir);
 
-	n = HarnessNewNorm();
+	HARNESS_NORM *n = HarnessNewNorm();
 
 	for (UINT i = 0;i < sizeof(harness_vpncmd_list) / sizeof(harness_vpncmd_list[0]);i++)
 	{
 		HARNESS_VPNCMD *v = &harness_vpncmd_list[i];
-		BUF *raw;
 
 		HarnessSetPhase("golden", v->Name);
-		raw = HarnessRunVpncmd(h, v);
+		BUF *raw = HarnessRunVpncmd(h, v);
 
 		if (raw != NULL)
 		{
@@ -2887,21 +2854,19 @@ static char *HarnessNormalizeConfig(char *text)
 {
 	LIST *lines = HarnessSplitLines(text);
 	BUF *b = NewBuf();
-	char *ret;
 
 	for (UINT i = 0;i < LIST_NUM(lines);i++)
 	{
 		char *line = LIST_DATA(lines, i);
 		UINT indent = 0;
 		bool replaced = false;
-		TOKEN_LIST *t;
 
 		while (line[indent] == '\t' || line[indent] == ' ')
 		{
 			indent++;
 		}
 
-		t = ParseToken(line + indent, " \t");
+		TOKEN_LIST *t = ParseToken(line + indent, " \t");
 		if (t != NULL)
 		{
 			if (t->NumTokens == 3 &&
@@ -2927,7 +2892,7 @@ static char *HarnessNormalizeConfig(char *text)
 		WriteBuf(b, "\r\n", 2);
 	}
 
-	ret = HarnessBufToStr(b);
+	char *ret = HarnessBufToStr(b);
 	FreeBuf(b);
 	HarnessFreeLines(lines);
 
@@ -2940,10 +2905,9 @@ static bool HarnessCompareConfig(HARNESS *h, char *what, char *text1, char *text
 	char *n1 = HarnessNormalizeConfig(text1);
 	char *n2 = HarnessNormalizeConfig(text2);
 	char tmp[MAX_SIZE];
-	bool ok;
 
 	Format(tmp, sizeof(tmp), "%s: normalised configuration texts are equal", what);
-	ok = HarnessCheck(h, HarnessTextEqual(n1, n2), tmp);
+	bool ok = HarnessCheck(h, HarnessTextEqual(n1, n2), tmp);
 	if (ok == false)
 	{
 		HarnessPrintDiff(what, n1, n2);
@@ -2959,23 +2923,20 @@ static bool HarnessCompareConfig(HARNESS *h, char *what, char *text1, char *text
 static void HarnessConfigApiRoundTrip(HARNESS *h)
 {
 	RPC_CONFIG c;
-	BUF *b;
-	FOLDER *root;
-	UINT err;
 
 	Print("[config: Cfg API round-trip]\n");
 
 	Zero(&c, sizeof(c));
-	err = ScGetConfig(h->Rpc, &c);
+	UINT err = ScGetConfig(h->Rpc, &c);
 	if (HarnessCheckErr(h, err, "GetConfig") == false)
 	{
 		return;
 	}
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 	WriteBuf(b, c.FileData, StrLen(c.FileData));
 	SeekBufToBegin(b);
-	root = CfgBufTextToFolder(b);
+	FOLDER *root = CfgBufTextToFolder(b);
 	FreeBuf(b);
 
 	if (HarnessCheck(h, root != NULL, "configuration text parsed by CfgBufTextToFolder"))
@@ -3014,11 +2975,9 @@ static void HarnessConfigApiRoundTrip(HARNESS *h)
 // The machine identity of the server and the MAC address and address of hub HARNESS_HUB_A (FIX-5, #101)
 static bool HarnessGetMachineId(HARNESS *h, UCHAR *id, UCHAR *hub_mac, IP *hub_ip)
 {
-	HUB *hub;
-
 	GenerateMachineUniqueHash(h->Server->Cedar, id);
 
-	hub = GetHub(h->Server->Cedar, HARNESS_HUB_A);
+	HUB *hub = GetHub(h->Server->Cedar, HARNESS_HUB_A);
 	if (hub == NULL)
 	{
 		return false;
@@ -3059,7 +3018,6 @@ static void HarnessCheckHubAddr(HARNESS *h, UCHAR *id, UCHAR *hub_mac, IP *hub_i
 static void HarnessReload(HARNESS *h)
 {
 	RPC_CONFIG c;
-	char *text1;
 	UINT err = ERR_NO_ERROR;
 	UCHAR id1[SHA1_SIZE];
 	UCHAR id2[SHA1_SIZE];
@@ -3067,7 +3025,6 @@ static void HarnessReload(HARNESS *h)
 	UCHAR mac2[6];
 	IP ip1;
 	IP ip2;
-	bool have_id1;
 
 	Print("[config: reload into a fresh server instance]\n");
 
@@ -3077,10 +3034,10 @@ static void HarnessReload(HARNESS *h)
 	{
 		return;
 	}
-	text1 = CopyStr(c.FileData);
+	char *text1 = CopyStr(c.FileData);
 	FreeRpcConfig(&c);
 
-	have_id1 = HarnessCheck(h, HarnessGetMachineId(h, id1, mac1, &ip1), "GetHub " HARNESS_HUB_A " before the restart");
+	bool have_id1 = HarnessCheck(h, HarnessGetMachineId(h, id1, mac1, &ip1), "GetHub " HARNESS_HUB_A " before the restart");
 	if (have_id1)
 	{
 		HarnessCheckHubAddr(h, id1, mac1, &ip1);
@@ -3142,9 +3099,6 @@ static void HarnessZeroKeyDelete(HARNESS *h, char *what)
 static void HarnessZeroKeyUser(HARNESS *h)
 {
 	RPC_SET_USER t;
-	PACK *p;
-	PACK *ret;
-	UINT err;
 
 	Print("[zerokey: password user record without a password hash]\n");
 
@@ -3154,7 +3108,7 @@ static void HarnessZeroKeyUser(HARNESS *h)
 	StrCpy(t.Name, sizeof(t.Name), HARNESS_ZEROKEY_USER);
 	t.AuthType = AUTHTYPE_PASSWORD;
 	t.AuthData = ZeroMalloc(sizeof(AUTHPASSWORD));
-	err = ScCreateUser(h->Rpc, &t);
+	UINT err = ScCreateUser(h->Rpc, &t);
 	FreeRpcSetUser(&t);
 	HarnessExpectErr(h, err, ERR_INVALID_PARAMETER, "CreateUser " HARNESS_ZEROKEY_USER " with an all-zero HashedKey");
 	if (err == ERR_NO_ERROR)
@@ -3163,11 +3117,11 @@ static void HarnessZeroKeyUser(HARNESS *h)
 	}
 
 	// Raw request Pack: AuthType password with neither HashedKey nor Auth_Password
-	p = NewPack();
+	PACK *p = NewPack();
 	PackAddStr(p, "HubName", HARNESS_HUB_A);
 	PackAddStr(p, "Name", HARNESS_ZEROKEY_USER);
 	PackAddInt(p, "AuthType", AUTHTYPE_PASSWORD);
-	ret = AdminCall(h->Rpc, "CreateUser", p);
+	PACK *ret = AdminCall(h->Rpc, "CreateUser", p);
 	err = GetErrorFromPack(ret);
 	FreePack(ret);
 	HarnessExpectErr(h, err, ERR_INVALID_PARAMETER, "CreateUser " HARNESS_ZEROKEY_USER " without HashedKey and Auth_Password");
@@ -3247,8 +3201,6 @@ static void HarnessIpTableLockThread(THREAD *thread, void *param)
 static bool HarnessIpTableLockCase(HARNESS *h, HUB *hub, UINT which, UINT expected, char *what)
 {
 	HARNESS_IPTABLE_CALL c;
-	THREAD *t;
-	bool waits;
 	char tmp[MAX_SIZE];
 
 	// One event per case: a Mayaqua event resets itself when a Wait returns
@@ -3258,8 +3210,8 @@ static bool HarnessIpTableLockCase(HARNESS *h, HUB *hub, UINT which, UINT expect
 	c.Done = NewEvent();
 
 	LockHashList(hub->MacHashTable);
-	t = NewThread(HarnessIpTableLockThread, &c);
-	waits = (Wait(c.Done, HARNESS_IPTABLE_HOLD) == false);
+	THREAD *t = NewThread(HarnessIpTableLockThread, &c);
+	bool waits = (Wait(c.Done, HARNESS_IPTABLE_HOLD) == false);
 	UnlockHashList(hub->MacHashTable);
 
 	Format(tmp, sizeof(tmp), "%s waits for the MacHashTable lock", what);
@@ -3285,7 +3237,6 @@ static void HarnessIpTableSendThread(THREAD *thread, void *param)
 	HARNESS_IPTABLE_SENDER *s = (HARNESS_IPTABLE_SENDER *)param;
 	UCHAR frame[128];
 	UCHAR payload[8];
-	UINT size;
 	UINT n = 0;
 	USHORT sum;
 
@@ -3295,7 +3246,7 @@ static void HarnessIpTableSendThread(THREAD *thread, void *param)
 	}
 
 	Zero(payload, sizeof(payload));
-	size = HarnessBuildIpFrame(frame, sizeof(frame), IP_PROTO_UDP, HARNESS_IPTABLE_PORT, payload, sizeof(payload));
+	UINT size = HarnessBuildIpFrame(frame, sizeof(frame), IP_PROTO_UDP, HARNESS_IPTABLE_PORT, payload, sizeof(payload));
 	if (size == 0)
 	{
 		return;
@@ -3333,12 +3284,11 @@ static void HarnessIpTableSendThread(THREAD *thread, void *param)
 static bool HarnessIpTableRound(HARNESS *h, UINT *num_listed, UINT *num_deleted, UINT *bad_err)
 {
 	RPC_ENUM_IP_TABLE t;
-	UINT err;
 	bool ret = true;
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
-	err = ScEnumIpTable(h->Rpc, &t);
+	UINT err = ScEnumIpTable(h->Rpc, &t);
 	if (err != ERR_NO_ERROR)
 	{
 		*bad_err = err;
@@ -3379,11 +3329,8 @@ static bool HarnessIpTableRound(HARNESS *h, UINT *num_listed, UINT *num_deleted,
 // never takes, so an entry could be freed while the admin RPC read or freed it. No login is attempted
 static void HarnessIpTableLock(HARNESS *h)
 {
-	HUB *hub;
 	RPC_ENUM_HUB e;
 	HARNESS_IPTABLE_SENDER s;
-	THREAD *t;
-	UINT old_max;
 	UINT rounds = 0;
 	UINT num_listed = 0;
 	UINT num_deleted = 0;
@@ -3391,12 +3338,11 @@ static void HarnessIpTableLock(HARNESS *h)
 	UINT num_left_deleted = 0;
 	UINT bad_err = ERR_NO_ERROR;
 	bool ok = true;
-	UINT64 start;
 	char tmp[MAX_SIZE];
 
 	Print("[iptablelock: admin IP table RPCs and the MacHashTable lock of " HARNESS_HUB_A "]\n");
 
-	hub = GetHub(h->Server->Cedar, HARNESS_HUB_A);
+	HUB *hub = GetHub(h->Server->Cedar, HARNESS_HUB_A);
 	if (HarnessCheck(h, hub != NULL, "GetHub " HARNESS_HUB_A " for the lock cases") == false)
 	{
 		return;
@@ -3416,14 +3362,14 @@ static void HarnessIpTableLock(HARNESS *h)
 	// Stress: session A sends from new addresses, so the hub adds entries and evicts the oldest one at
 	// HARNESS_IPTABLE_MAX, while the admin RPC lists the entries and deletes them. A round counts once it listed
 	// entries; the loop ends after HARNESS_IPTABLE_ROUNDS rounds or HARNESS_IPTABLE_SPAN ms
-	old_max = vpn_global_parameters[GP_MAX_IP_TABLES];
+	UINT old_max = vpn_global_parameters[GP_MAX_IP_TABLES];
 	vpn_global_parameters[GP_MAX_IP_TABLES] = HARNESS_IPTABLE_MAX;
 
 	Zero(&s, sizeof(s));
 	s.Pa = h->PaA;
-	t = NewThread(HarnessIpTableSendThread, &s);
+	THREAD *t = NewThread(HarnessIpTableSendThread, &s);
 
-	start = Tick64();
+	UINT64 start = Tick64();
 	while (ok && rounds < HARNESS_IPTABLE_ROUNDS && (Tick64() - start) < HARNESS_IPTABLE_SPAN)
 	{
 		UINT listed = 0;
@@ -3483,10 +3429,9 @@ static UINT HarnessSetLinkGet(HARNESS *h, RPC_CREATE_LINK *t)
 static void HarnessSetLinkAuthType(HARNESS *h)
 {
 	RPC_CREATE_LINK t;
-	UINT err;
 	char tmp[MAX_SIZE];
 
-	err = HarnessSetLinkGet(h, &t);
+	UINT err = HarnessSetLinkGet(h, &t);
 	if (HarnessCheckErr(h, err, "SetLinkRejectsBadAuthType: GetLink HARNESS_SETLINK") == false)
 	{
 		return;
@@ -3516,10 +3461,9 @@ static void HarnessSetLinkAuthType(HARNESS *h)
 static void HarnessSetLinkPolicy(HARNESS *h)
 {
 	RPC_CREATE_LINK t;
-	UINT err;
 	char tmp[MAX_SIZE];
 
-	err = HarnessSetLinkGet(h, &t);
+	UINT err = HarnessSetLinkGet(h, &t);
 	if (HarnessCheckErr(h, err, "SetLinkNormalisesPolicy: GetLink HARNESS_SETLINK") == false)
 	{
 		return;
@@ -3555,7 +3499,6 @@ static void HarnessSetLink(HARNESS *h)
 {
 	RPC_CREATE_LINK t;
 	RPC_LINK k;
-	UINT err;
 
 	Print("[setlink: SetLink checks the authentication type and normalises the cascade policy]\n");
 
@@ -3577,7 +3520,7 @@ static void HarnessSetLink(HARNESS *h)
 	StrCpy(t.ClientAuth->Username, sizeof(t.ClientAuth->Username), HARNESS_LINK_USER);
 	HashPassword(t.ClientAuth->HashedPassword, HARNESS_LINK_USER, HARNESS_PASSWORD);
 
-	err = ScCreateLink(h->Rpc, &t);
+	UINT err = ScCreateLink(h->Rpc, &t);
 	if (err == ERR_NO_ERROR)
 	{
 		FreeRpcCreateLink(&t);
@@ -3634,17 +3577,15 @@ static bool HarnessFindAdminConnection(HARNESS *h, UINT port, char *name, UINT n
 // connection (SetConfig, a large EnumSession or EnumLogFile) timed out again
 static void HarnessAdminReconnect(HARNESS *h)
 {
-	RPC *rpc;
 	RPC_DISCONNECT_CONNECTION d;
 	RPC_SERVER_INFO info;
-	UINT old_port;
 	UINT err = ERR_NO_ERROR;
 	char name[MAX_SIZE];
 	char tmp[MAX_SIZE];
 
 	Print("[adminreconnect: the admin RPC reconnects with no socket timeout]\n");
 
-	rpc = HarnessAdminConnect(h->ClientCedar, HARNESS_START_TIMEOUT, &err);
+	RPC *rpc = HarnessAdminConnect(h->ClientCedar, HARNESS_START_TIMEOUT, &err);
 	if (HarnessCheckErr(h, (rpc != NULL ? ERR_NO_ERROR : err),
 		"AdminReconnectKeepsInfiniteTimeout: second admin RPC connected (AdminConnectEx)") == false)
 	{
@@ -3654,7 +3595,7 @@ static void HarnessAdminReconnect(HARNESS *h)
 	HarnessCheck(h, GetTimeout(rpc->Sock) == TIMEOUT_INFINITE,
 		"AdminReconnectKeepsInfiniteTimeout: the first connection has no socket timeout");
 
-	old_port = rpc->Sock->LocalPort;
+	UINT old_port = rpc->Sock->LocalPort;
 
 	if (HarnessCheck(h, HarnessFindAdminConnection(h, old_port, name, sizeof(name)),
 		"AdminReconnectKeepsInfiniteTimeout: EnumConnection lists the admin connection of the second admin RPC"))
@@ -3689,10 +3630,6 @@ static void HarnessAdminReconnect(HARNESS *h)
 static void HarnessAdminInvoke(HARNESS *h)
 {
 	ADMIN_LOGIN l;
-	ADMIN *a;
-	PACK *req;
-	PACK *local;
-	PACK *remote;
 	BUF *b1;
 	BUF *b2;
 	UCHAR hashed_password[SHA1_SIZE];
@@ -3710,7 +3647,7 @@ static void HarnessAdminInvoke(HARNESS *h)
 	SecurePassword(l.SecurePassword, hashed_password, l.Random);
 	l.HasSecurePassword = true;
 
-	a = AdminOpen(h->Server, &l, &err);
+	ADMIN *a = AdminOpen(h->Server, &l, &err);
 	if (HarnessCheckErr(h, (a != NULL ? ERR_NO_ERROR : err),
 		"AdminInvoke: AdminOpen opens a server session without a socket") == false)
 	{
@@ -3720,12 +3657,12 @@ static void HarnessAdminInvoke(HARNESS *h)
 	HarnessCheck(h, a->ServerAdmin && a->HubName == NULL && StrCmp(a->Tag, "RPC-4242") == 0,
 		"AdminInvoke: the session is a server session tagged RPC-n");
 
-	req = NewPack();
-	local = AdminInvoke(a, "GetCaps", req);
+	PACK *req = NewPack();
+	PACK *local = AdminInvoke(a, "GetCaps", req);
 	FreePack(req);
 
 	req = NewPack();
-	remote = AdminCall(h->Rpc, "GetCaps", req);
+	PACK *remote = AdminCall(h->Rpc, "GetCaps", req);
 
 	if (HarnessCheck(h, local != NULL && remote != NULL, "AdminInvoke: both calls return a Pack"))
 	{
@@ -3822,14 +3759,13 @@ static void HarnessDeleteConfigFiles()
 {
 	wchar_t dir[MAX_SIZE];
 	wchar_t path[MAX_SIZE];
-	DIRLIST *d;
 
 	FileDelete(HARNESS_CONFIG_FILE);
 
 	// EnumDirW does not resolve the '$' prefix: use the full path
 	InnerFilePathW(dir, sizeof(dir), HARNESS_CONFIG_BACKUP_DIR);
 
-	d = EnumDirW(dir);
+	DIRLIST *d = EnumDirW(dir);
 	if (d != NULL)
 	{
 		for (UINT i = 0;i < d->NumFiles;i++)
@@ -4023,9 +3959,7 @@ static void HarnessBenchFrames(HARNESS *h, UINT size)
 	UINT64 mark_recv[HARNESS_BENCH_RUNS + 1];	// Frames received by session B at each boundary
 	UINT64 fps[HARNESS_BENCH_RUNS];
 	UINT64 centi_mbps[HARNESS_BENCH_RUNS];
-	UINT64 next_mark;
 	UINT num_marks = 0;
-	UINT num_unsent;
 	char name[MAX_SIZE];
 	char tmp[MAX_SIZE];
 
@@ -4038,11 +3972,10 @@ static void HarnessBenchFrames(HARNESS *h, UINT size)
 	}
 	Unlock(h->PaB->Lock);
 
-	next_mark = HarnessNowNs() + (UINT64)HARNESS_BENCH_WARMUP * HARNESS_NS_PER_MS;
+	UINT64 next_mark = HarnessNowNs() + (UINT64)HARNESS_BENCH_WARMUP * HARNESS_NS_PER_MS;
 
 	while (true)
 	{
-		UINT queued;
 		UINT64 now = HarnessNowNs();
 
 		if (now >= next_mark)
@@ -4059,7 +3992,7 @@ static void HarnessBenchFrames(HARNESS *h, UINT size)
 			next_mark = now + (UINT64)HARNESS_BENCH_SPAN * HARNESS_NS_PER_MS;
 		}
 
-		queued = HarnessPaQueued(h->PaA);
+		UINT queued = HarnessPaQueued(h->PaA);
 		if (queued < HARNESS_QUEUE_HIGH)
 		{
 			UINT num = HARNESS_QUEUE_HIGH - queued;
@@ -4092,7 +4025,7 @@ static void HarnessBenchFrames(HARNESS *h, UINT size)
 	HarnessPaDrain(h->PaA, HARNESS_BENCH_DRAIN);
 
 	// Frames still queued after the drain would be counted in the next frame size: discard them
-	num_unsent = HarnessPaPurge(h->PaA);
+	UINT num_unsent = HarnessPaPurge(h->PaA);
 
 	for (UINT i = 0;i < HARNESS_BENCH_RUNS;i++)
 	{
@@ -4136,8 +4069,6 @@ static void HarnessFloodIdleThread(THREAD *thread, void *param)
 // adapter itself, so a frame goes through HubPaPutPacket, StorePacket and HubPaGetNextPacket only
 static SESSION *HarnessNewFloodSession(HUB *hub, THREAD *thread, UINT index, bool sender)
 {
-	CONNECTION *c;
-	SESSION *s;
 	POLICY *policy = ClonePolicy(GetDefaultPolicy());
 	char username[MAX_USERNAME_LEN + 1];
 
@@ -4149,8 +4080,8 @@ static SESSION *HarnessNewFloodSession(HUB *hub, THREAD *thread, UINT index, boo
 		policy->NoBroadcastLimiter = true;
 	}
 
-	c = NewServerConnection(hub->Cedar, NULL, thread);
-	s = NewServerSession(hub->Cedar, c, hub, username, policy);
+	CONNECTION *c = NewServerConnection(hub->Cedar, NULL, thread);
+	SESSION *s = NewServerSession(hub->Cedar, c, hub, username, policy);
 	c->Session = s;
 	ReleaseConnection(c);
 
@@ -4212,16 +4143,13 @@ static void HarnessBenchFloodCase(HUB *hub, UINT num_recv)
 	UINT64 span_ns = (UINT64)HARNESS_BENCH_FLOOD_SPAN * HARNESS_NS_PER_MS;
 	UINT64 sent = 0;
 	UINT64 delivered = 0;
-	THREAD *thread;
-	SESSION *sender;
-	SESSION **recv;
 	char name[MAX_SIZE];
 
 	Format(name, sizeof(name), "flood_fps_%u", num_recv);
 
-	thread = NewThread(HarnessFloodIdleThread, NULL);
-	sender = HarnessNewFloodSession(hub, thread, 0, true);
-	recv = ZeroMalloc(sizeof(SESSION *) * num_recv);
+	THREAD *thread = NewThread(HarnessFloodIdleThread, NULL);
+	SESSION *sender = HarnessNewFloodSession(hub, thread, 0, true);
+	SESSION **recv = ZeroMalloc(sizeof(SESSION *) * num_recv);
 	for (UINT i = 0;i < num_recv;i++)
 	{
 		recv[i] = HarnessNewFloodSession(hub, thread, i + 1, false);
@@ -4272,14 +4200,13 @@ static void HarnessBenchFloodCase(HUB *hub, UINT num_recv)
 static void HarnessBenchFlood(HARNESS *h)
 {
 	RPC_DELETE_HUB d;
-	HUB *hub;
 
 	if (HarnessCreateHub(h, HARNESS_HUB_FLOOD) == false)
 	{
 		return;
 	}
 
-	hub = GetHub(h->Server->Cedar, HARNESS_HUB_FLOOD);
+	HUB *hub = GetHub(h->Server->Cedar, HARNESS_HUB_FLOOD);
 	if (HarnessCheck(h, hub != NULL, "GetHub " HARNESS_HUB_FLOOD))
 	{
 		HarnessSetPhase("bench_flood_8", NULL);
@@ -4303,10 +4230,9 @@ static bool HarnessOpEncodeEnumSession(void *param)
 {
 	HARNESS_PACK_BENCH *b = (HARNESS_PACK_BENCH *)param;
 	PACK *p = NewPack();
-	BUF *buf;
 
 	OutRpcEnumSession(p, b->Struct);
-	buf = PackToBuf(p);
+	BUF *buf = PackToBuf(p);
 	FreePack(p);
 	FreeBuf(buf);
 
@@ -4318,10 +4244,9 @@ static bool HarnessOpDecodeEnumSession(void *param)
 {
 	HARNESS_PACK_BENCH *b = (HARNESS_PACK_BENCH *)param;
 	RPC_ENUM_SESSION t;
-	PACK *p;
 
 	SeekBufToBegin(b->Buf);
-	p = BufToPack(b->Buf);
+	PACK *p = BufToPack(b->Buf);
 	if (p == NULL)
 	{
 		return false;
@@ -4340,7 +4265,6 @@ static void HarnessBenchPack(HARNESS *h)
 	HARNESS_PACK_BENCH b;
 	RPC_ENUM_SESSION t;
 	RPC_ENUM_SESSION t2;
-	PACK *p;
 	bool ok = false;
 
 	Zero(&t, sizeof(t));
@@ -4369,7 +4293,7 @@ static void HarnessBenchPack(HARNESS *h)
 	Zero(&b, sizeof(b));
 	b.Struct = &t;
 
-	p = NewPack();
+	PACK *p = NewPack();
 	OutRpcEnumSession(p, &t);
 	b.Buf = PackToBuf(p);
 	FreePack(p);
@@ -4436,10 +4360,9 @@ static bool HarnessOpEncodeNames(void *param)
 static bool HarnessOpDecodePack(void *param)
 {
 	HARNESS_PACK_BENCH *b = (HARNESS_PACK_BENCH *)param;
-	PACK *p;
 
 	SeekBufToBegin(b->Buf);
-	p = BufToPack(b->Buf);
+	PACK *p = BufToPack(b->Buf);
 	if (p == NULL)
 	{
 		return false;
@@ -4454,7 +4377,6 @@ static bool HarnessOpDecodePack(void *param)
 static void HarnessBenchPackNames()
 {
 	HARNESS_PACK_BENCH b;
-	PACK *p;
 	bool ok = false;
 	char name[MAX_SIZE];
 
@@ -4469,7 +4391,7 @@ static void HarnessBenchPackNames()
 		b.Names[i] = CopyStr(tmp);
 	}
 
-	p = HarnessNewNamesPack(&b);
+	PACK *p = HarnessNewNamesPack(&b);
 	b.Buf = PackToBuf(p);
 	FreePack(p);
 
@@ -4518,7 +4440,6 @@ static UINT HarnessBuildIpFrame(UCHAR *buf, UINT buf_size, UCHAR protocol, USHOR
 	UCHAR *ip = buf + 14;
 	UCHAR *l4 = ip + 20;
 	UINT src_ip, dst_ip;
-	USHORT sum;
 
 	if (size > buf_size)
 	{
@@ -4544,7 +4465,7 @@ static UINT HarnessBuildIpFrame(UCHAR *buf, UINT buf_size, UCHAR protocol, USHOR
 	ip[15] = 1;
 	ip[16] = 10;
 	ip[19] = 2;
-	sum = IpChecksum(ip, 20);
+	USHORT sum = IpChecksum(ip, 20);
 	Copy(ip + 10, &sum, sizeof(USHORT));
 
 	l4[0] = 0xC0;								// Source port 49152
@@ -4636,7 +4557,6 @@ static UINT HarnessBuildDnsQuery(UCHAR *buf, UINT buf_size, char *host)
 {
 	UINT len = StrLen(host);
 	UINT start = 0;
-	UCHAR *p;
 
 	if ((12 + len + 2 + 4) > buf_size)
 	{
@@ -4649,7 +4569,7 @@ static UINT HarnessBuildDnsQuery(UCHAR *buf, UINT buf_size, char *host)
 	buf[2] = 0x01;								// Recursion desired
 	buf[5] = 0x01;								// One question
 
-	p = buf + 12;
+	UCHAR *p = buf + 12;
 	for (UINT i = 0;i <= len;i++)
 	{
 		if (i == len || host[i] == '.')
@@ -4753,16 +4673,14 @@ static bool HarnessOpParseMix(void *param)
 static void HarnessBenchParse()
 {
 	HARNESS_PARSE_BENCH b;
-	HARNESS_PARSE_FRAME *f;
 	UCHAR payload[HARNESS_PARSE_FRAME_MAX];
 	char *http = "GET /index.html HTTP/1.1\r\nHost: " HARNESS_BENCH_HOST "\r\nUser-Agent: ranz-bench/1.0\r\nAccept: */*\r\n\r\n";
-	UINT size;
 	bool ok;
 	char name[MAX_SIZE];
 
 	Zero(&b, sizeof(b));
 
-	f = &b.Frames[0];
+	HARNESS_PARSE_FRAME *f = &b.Frames[0];
 	f->Kind = "l2";
 	f->Size = HARNESS_FRAME_SIZE;
 	HarnessBuildFrame(f->Data, f->Size, harness_mac_b, harness_mac_a, 1);
@@ -4781,7 +4699,7 @@ static void HarnessBenchParse()
 
 	f = &b.Frames[3];
 	f->Kind = "tls";
-	size = HarnessBuildClientHello(payload, sizeof(payload), HARNESS_BENCH_HOST);
+	UINT size = HarnessBuildClientHello(payload, sizeof(payload), HARNESS_BENCH_HOST);
 	f->Size = HarnessBuildIpFrame(f->Data, sizeof(f->Data), IP_PROTO_TCP, 443, payload, size);
 
 	f = &b.Frames[4];
@@ -4845,7 +4763,6 @@ static void HarnessBenchIpTableExpire(UINT num)
 	{
 		LIST *o = NewList(CompareIpTable);
 		UINT64 now = Tick64();
-		UINT64 start;
 
 		for (UINT i = 0;i < num;i++)
 		{
@@ -4862,7 +4779,7 @@ static void HarnessBenchIpTableExpire(UINT num)
 			Insert(o, e);
 		}
 
-		start = HarnessNowNs();
+		UINT64 start = HarnessNowNs();
 		DeleteExpiredIpTableEntry(o);
 		runs[r] = (HarnessNowNs() - start) / 1000ULL;
 
@@ -4902,12 +4819,11 @@ static void HarnessBenchAcceptTable(UINT num)
 	for (UINT r = 0;r < HARNESS_BENCH_RUNS;r++)
 	{
 		LIST *ref = NewListFast(CompareDos);
-		UINT64 start;
 
 		l->DosList = NewList(CompareDos);
 		l->DosListLastRefreshTime = 0;
 
-		start = HarnessNowNs();
+		UINT64 start = HarnessNowNs();
 		for (UINT i = 0;i < num;i++)
 		{
 			// An odd multiplier modulo 2^24 gives every i another address, in no particular order
@@ -5200,11 +5116,10 @@ static char certdl_key_pem[] =
 static X *CertDlPemToX(char *pem)
 {
 	BUF *b = NewBuf();
-	X *x;
 
 	WriteBuf(b, pem, StrLen(pem));
 	SeekBuf(b, 0, 0);
-	x = BufToX(b, true);
+	X *x = BufToX(b, true);
 	FreeBuf(b);
 
 	return x;
@@ -5214,11 +5129,10 @@ static X *CertDlPemToX(char *pem)
 static K *CertDlPemToK(char *pem)
 {
 	BUF *b = NewBuf();
-	K *k;
 
 	WriteBuf(b, pem, StrLen(pem));
 	SeekBuf(b, 0, 0);
-	k = BufToK(b, true, true, NULL);
+	K *k = BufToK(b, true, true, NULL);
 	FreeBuf(b);
 
 	return k;
@@ -5292,7 +5206,6 @@ static bool CertDlRespond(CERTDL_SERVER *srv, SOCK *s, UINT mode, UINT num)
 {
 	BUF *b = NewBuf();
 	bool close_now = false;
-	bool ok;
 	void *pad;
 	char tmp[MAX_SIZE];
 
@@ -5360,7 +5273,7 @@ static bool CertDlRespond(CERTDL_SERVER *srv, SOCK *s, UINT mode, UINT num)
 		break;
 	}
 
-	ok = (b->Size == 0 || SendAll(s, b->Buf, b->Size, s->SecureMode));
+	bool ok = (b->Size == 0 || SendAll(s, b->Buf, b->Size, s->SecureMode));
 	FreeBuf(b);
 
 	return (close_now || ok == false);
@@ -5391,14 +5304,13 @@ static void CertDlConnThread(THREAD *thread, void *param)
 	while (true)
 	{
 		HTTP_HEADER *h = RecvHttpHeader(s);
-		bool close_now;
 
 		if (h == NULL)
 		{
 			break;
 		}
 
-		close_now = CertDlRespond(srv, s, mode, CertDlRecord(srv, h));
+		bool close_now = CertDlRespond(srv, s, mode, CertDlRecord(srv, h));
 		FreeHttpHeader(h);
 
 		if (close_now)
@@ -5417,7 +5329,6 @@ static void CertDlAcceptThread(THREAD *thread, void *param)
 
 	while (true)
 	{
-		CERTDL_CONN *c;
 		SOCK *s = Accept(srv->ListenSock);
 
 		if (s == NULL)
@@ -5425,7 +5336,7 @@ static void CertDlAcceptThread(THREAD *thread, void *param)
 			break;
 		}
 
-		c = ZeroMalloc(sizeof(CERTDL_CONN));
+		CERTDL_CONN *c = ZeroMalloc(sizeof(CERTDL_CONN));
 		c->Server = srv;
 		c->Sock = s;
 
@@ -5441,19 +5352,17 @@ static void CertDlAcceptThread(THREAD *thread, void *param)
 // Start the listener on 127.0.0.1:CERTDL_PORT; tls_cert and tls_key must outlive it
 static CERTDL_SERVER *CertDlStartServer(X *issuer, X *tls_cert, K *tls_key)
 {
-	CERTDL_SERVER *srv;
 	IP loopback;
-	SOCK *s;
 
 	GetLocalHostIP4(&loopback);
-	s = Listen(CERTDL_PORT, &loopback, false);
+	SOCK *s = Listen(CERTDL_PORT, &loopback, false);
 
 	if (s == NULL)
 	{
 		return NULL;
 	}
 
-	srv = ZeroMalloc(sizeof(CERTDL_SERVER));
+	CERTDL_SERVER *srv = ZeroMalloc(sizeof(CERTDL_SERVER));
 	srv->ListenSock = s;
 	srv->ConnList = NewList(NULL);
 	srv->CaDer = XToBuf(issuer, false);
@@ -5502,7 +5411,6 @@ static void CertDlRun(HARNESS *h, CERTDL_SERVER *srv, char *name, UINT mode, X *
 	CERTDL_RESULT *r)
 {
 	RPC_KEY_PAIR t;
-	UINT64 start;
 
 	Zero(r, sizeof(CERTDL_RESULT));
 
@@ -5520,7 +5428,7 @@ static void CertDlRun(HARNESS *h, CERTDL_SERVER *srv, char *name, UINT mode, X *
 	t.Cert = CloneX(cert);
 	t.Key = CloneK(key);
 
-	start = Tick64();
+	UINT64 start = Tick64();
 	r->Err = ScSetServerCert(h->Rpc, &t);
 	r->Elapsed = Tick64() - start;
 	r->Flag1 = t.Flag1;
@@ -5657,15 +5565,13 @@ static bool ListenBindState(HARNESS *h, UINT port, bool *enabled, bool *error)
 static UINT ListenBindCall(HARNESS *h, bool create, UINT port, bool enable, UINT64 *elapsed)
 {
 	RPC_LISTENER t;
-	UINT64 start;
-	UINT err;
 
 	Zero(&t, sizeof(t));
 	t.Port = port;
 	t.Enable = enable;
 
-	start = Tick64();
-	err = (create ? ScCreateListener(h->Rpc, &t) : ScEnableListener(h->Rpc, &t));
+	UINT64 start = Tick64();
+	UINT err = (create ? ScCreateListener(h->Rpc, &t) : ScEnableListener(h->Rpc, &t));
 	*elapsed = Tick64() - start;
 
 	return err;
@@ -5676,7 +5582,6 @@ static UINT ListenBindCall(HARNESS *h, bool create, UINT port, bool enable, UINT
 static bool ListenBindExpect(HARNESS *h, char *name, char *what, UINT err, UINT expected, UINT64 elapsed)
 {
 	char tmp[MAX_SIZE];
-	bool ok;
 
 	Print("TIME listenerbind_%s %I64u ms\n", name, elapsed);
 
@@ -5688,7 +5593,7 @@ static bool ListenBindExpect(HARNESS *h, char *name, char *what, UINT err, UINT 
 	{
 		Format(tmp, sizeof(tmp), "%s: error %u (%S), expected %u (%S)", what, err, _E(err), expected, _E(expected));
 	}
-	ok = HarnessCheck(h, err == expected, tmp);
+	bool ok = HarnessCheck(h, err == expected, tmp);
 
 	Format(tmp, sizeof(tmp), "%s: returned within %u ms", what, LISTENBIND_RPC_LIMIT);
 	ok = HarnessCheck(h, elapsed < LISTENBIND_RPC_LIMIT, tmp) && ok;
@@ -5718,7 +5623,6 @@ static bool AdminAuditCollect(ADMINAUDIT *a, UINT timeout)
 	while (true)
 	{
 		SOCKSET set;
-		UINT64 now;
 
 		while (true)
 		{
@@ -5740,7 +5644,7 @@ static bool AdminAuditCollect(ADMINAUDIT *a, UINT timeout)
 			Add(a->Lines, CopyStr(buf));
 		}
 
-		now = Tick64();
+		UINT64 now = Tick64();
 		if (now >= end)
 		{
 			return false;
@@ -5806,7 +5710,6 @@ static void AdminAuditEnd(ADMINAUDIT *a, char *what, UINT err, UINT expected, wc
 	bool bumped)
 {
 	HARNESS *h = a->H;
-	bool changed;
 	char tmp[MAX_SIZE];
 
 	HarnessExpectErr(h, err, expected, what);
@@ -5831,7 +5734,7 @@ static void AdminAuditEnd(ADMINAUDIT *a, char *what, UINT err, UINT expected, wc
 		HarnessCheck(h, AdminAuditLogged(a, not_logged) == false, tmp);
 	}
 
-	changed = (h->Server->ConfigRevision != a->Revision);
+	bool changed = (h->Server->ConfigRevision != a->Revision);
 	Format(tmp, sizeof(tmp), "%s: configuration revision %s", what, bumped ? "incremented" : "unchanged");
 	HarnessCheck(h, changed == bumped, tmp);
 }
@@ -5875,7 +5778,6 @@ static ADMINAUDIT *AdminAuditNew(HARNESS *h)
 	SYSLOG_SETTING s;
 	SOCKSET set;
 	IP localhost;
-	bool ok;
 
 	a->H = h;
 	a->Lines = NewListFast(NULL);
@@ -5883,7 +5785,7 @@ static ADMINAUDIT *AdminAuditNew(HARNESS *h)
 
 	SetIP(&localhost, 127, 0, 0, 1);
 	a->Udp = NewUDPEx3(0, &localhost);
-	ok = HarnessCheck(h, a->Udp != NULL, "syslog receiver bound on 127.0.0.1");
+	bool ok = HarnessCheck(h, a->Udp != NULL, "syslog receiver bound on 127.0.0.1");
 
 	if (ok)
 	{
@@ -5920,14 +5822,13 @@ static void AdminAuditUsers(ADMINAUDIT *a)
 	RPC_ENUM_USER e;
 	RPC_DELETE_USER d;
 	wchar_t text[MAX_SIZE];
-	UINT err;
 
 	Print("[users]\n");
 
 	Zero(&e, sizeof(e));
 	StrCpy(e.HubName, sizeof(e.HubName), HARNESS_HUB_A);
 	AdminAuditBegin(a);
-	err = ScEnumUser(a->H->Rpc, &e);
+	UINT err = ScEnumUser(a->H->Rpc, &e);
 	if (err == ERR_NO_ERROR)
 	{
 		FreeRpcEnumUser(&e);
@@ -5955,13 +5856,12 @@ static void AdminAuditUsers(ADMINAUDIT *a)
 static UINT AdminAuditCreateGroup(ADMINAUDIT *a, char *name)
 {
 	RPC_SET_GROUP t;
-	UINT err;
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
 	StrCpy(t.Name, sizeof(t.Name), name);
 
-	err = ScCreateGroup(a->H->Rpc, &t);
+	UINT err = ScCreateGroup(a->H->Rpc, &t);
 	if (err == ERR_NO_ERROR)
 	{
 		FreeRpcSetGroup(&t);
@@ -5974,7 +5874,6 @@ static UINT AdminAuditCreateGroup(ADMINAUDIT *a, char *name)
 static bool AdminAuditMaxGroups(ADMINAUDIT *a)
 {
 	RPC_ADMIN_OPTION o;
-	UINT err;
 
 	Zero(&o, sizeof(o));
 	StrCpy(o.HubName, sizeof(o.HubName), HARNESS_HUB_A);
@@ -5983,7 +5882,7 @@ static bool AdminAuditMaxGroups(ADMINAUDIT *a)
 	StrCpy(o.Items[0].Name, sizeof(o.Items[0].Name), "max_groups");
 	o.Items[0].Value = 1;
 
-	err = ScSetHubAdminOptions(a->H->Rpc, &o);
+	UINT err = ScSetHubAdminOptions(a->H->Rpc, &o);
 	if (err == ERR_NO_ERROR)
 	{
 		FreeRpcAdminOption(&o);
@@ -5997,13 +5896,12 @@ static void AdminAuditGroups(ADMINAUDIT *a)
 {
 	RPC_DELETE_USER d;
 	wchar_t text[MAX_SIZE];
-	UINT err;
 
 	Print("[groups]\n");
 
 	AdminAuditText(text, sizeof(text), "LA_CREATE_GROUP", ADMINAUDIT_GROUP, NULL);
 	AdminAuditBegin(a);
-	err = AdminAuditCreateGroup(a, ADMINAUDIT_GROUP);
+	UINT err = AdminAuditCreateGroup(a, ADMINAUDIT_GROUP);
 	AdminAuditEnd(a, "CreateGroup " ADMINAUDIT_GROUP, err, ERR_NO_ERROR, text, NULL, true);
 
 	AdminAuditBegin(a);
@@ -6042,8 +5940,6 @@ static UINT AdminAuditHubMsgCall(ADMINAUDIT *a, char *rpc_name, char *hubname, w
 {
 	RPC_MSG t;
 	PACK *p = NewPack();
-	PACK *ret;
-	UINT err;
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), hubname);
@@ -6051,8 +5947,8 @@ static UINT AdminAuditHubMsgCall(ADMINAUDIT *a, char *rpc_name, char *hubname, w
 	OutRpcMsg(p, &t);
 
 	// AdminCall releases the request
-	ret = AdminCall(a->H->Rpc, rpc_name, p);
-	err = GetErrorFromPack(ret);
+	PACK *ret = AdminCall(a->H->Rpc, rpc_name, p);
+	UINT err = GetErrorFromPack(ret);
 	if (err == ERR_NO_ERROR && got != NULL)
 	{
 		Zero(&t, sizeof(t));
@@ -6067,21 +5963,19 @@ static UINT AdminAuditHubMsgCall(ADMINAUDIT *a, char *rpc_name, char *hubname, w
 // SetHubMsg changes the configuration only when it set the message; GetHubMsg reads no message from the request
 static void AdminAuditHubMsg(ADMINAUDIT *a)
 {
-	wchar_t *msg;
 	wchar_t *got = NULL;
-	UINT err;
 
 	Print("[hub message]\n");
 
 	AdminAuditBegin(a);
-	err = AdminAuditHubMsgCall(a, "SetHubMsg", ADMINAUDIT_NO_HUB, ADMINAUDIT_MSG, NULL);
+	UINT err = AdminAuditHubMsgCall(a, "SetHubMsg", ADMINAUDIT_NO_HUB, ADMINAUDIT_MSG, NULL);
 	AdminAuditEnd(a, "SetHubMsg " ADMINAUDIT_NO_HUB " (no such hub)", err, ERR_HUB_NOT_FOUND, NULL, NULL, false);
 
 	AdminAuditBegin(a);
 	err = AdminAuditHubMsgCall(a, "SetHubMsg", HARNESS_HUB_A, ADMINAUDIT_MSG, NULL);
 	AdminAuditEnd(a, "SetHubMsg " HARNESS_HUB_A, err, ERR_NO_ERROR, NULL, NULL, true);
 
-	msg = ZeroMalloc(sizeof(wchar_t) * (HUB_MAXMSG_LEN + 2));
+	wchar_t *msg = ZeroMalloc(sizeof(wchar_t) * (HUB_MAXMSG_LEN + 2));
 	for (UINT i = 0;i <= HUB_MAXMSG_LEN;i++)
 	{
 		msg[i] = L'x';
@@ -6110,13 +6004,12 @@ static CRL *AdminAuditNewCrl(wchar_t *organization)
 static bool AdminAuditCrlKey(ADMINAUDIT *a, UINT *key)
 {
 	RPC_ENUM_CRL e;
-	UINT err;
 
 	*key = 0;
 
 	Zero(&e, sizeof(e));
 	StrCpy(e.HubName, sizeof(e.HubName), HARNESS_HUB_A);
-	err = ScEnumCrl(a->H->Rpc, &e);
+	UINT err = ScEnumCrl(a->H->Rpc, &e);
 	if (err == ERR_NO_ERROR)
 	{
 		if (e.NumItem == 1)
@@ -6133,8 +6026,6 @@ static bool AdminAuditCrlKey(ADMINAUDIT *a, UINT *key)
 static void AdminAuditCheckSaved(ADMINAUDIT *a, bool expected, char *what)
 {
 	RPC_TEST t;
-	BUF *b;
-	char *s;
 
 	Zero(&t, sizeof(t));
 	if (HarnessCheckErr(a->H, ScFlush(a->H->Rpc, &t), "Flush (the server writes " HARNESS_CONFIG_FILE ")") == false)
@@ -6142,8 +6033,8 @@ static void AdminAuditCheckSaved(ADMINAUDIT *a, bool expected, char *what)
 		return;
 	}
 
-	b = ReadDump(HARNESS_CONFIG_FILE);
-	s = HarnessBufToStr(b);
+	BUF *b = ReadDump(HARNESS_CONFIG_FILE);
+	char *s = HarnessBufToStr(b);
 
 	HarnessCheck(a->H, b != NULL && InStr(s, ADMINAUDIT_CRL_NAME_A) == expected, what);
 
@@ -6156,13 +6047,10 @@ static void AdminAuditCheckSaved(ADMINAUDIT *a, bool expected, char *what)
 static void AdminAuditCrl(ADMINAUDIT *a)
 {
 	RPC_CRL t;
-	PACK *p;
-	PACK *ret;
 	wchar_t add_text[MAX_SIZE];
 	wchar_t set_text[MAX_SIZE];
 	wchar_t del_text[MAX_SIZE];
 	UINT key;
-	UINT err;
 
 	Print("[certificate revocation list]\n");
 
@@ -6174,7 +6062,7 @@ static void AdminAuditCrl(ADMINAUDIT *a)
 	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
 	t.Crl = AdminAuditNewCrl(NULL);
 	AdminAuditBegin(a);
-	err = ScAddCrl(a->H->Rpc, &t);
+	UINT err = ScAddCrl(a->H->Rpc, &t);
 	if (err == ERR_NO_ERROR)
 	{
 		FreeRpcCrl(&t);
@@ -6191,11 +6079,11 @@ static void AdminAuditCrl(ADMINAUDIT *a)
 	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
 	t.Key = key;
 	t.Crl = AdminAuditNewCrl(ADMINAUDIT_CRL_ORG);
-	p = NewPack();
+	PACK *p = NewPack();
 	OutRpcCrl(p, &t);
 	FreeRpcCrl(&t);
 	AdminAuditBegin(a);
-	ret = AdminCall(a->H->Rpc, "SetCrl", p);
+	PACK *ret = AdminCall(a->H->Rpc, "SetCrl", p);
 	err = GetErrorFromPack(ret);
 	FreePack(ret);
 	AdminAuditEnd(a, "SetCrl " ADMINAUDIT_CRL_NAME_A, err, ERR_NO_ERROR, set_text, add_text, true);
@@ -6227,7 +6115,6 @@ static void AdminAuditSession(ADMINAUDIT *a, char *session)
 {
 	RPC_DELETE_SESSION t;
 	wchar_t text[MAX_SIZE];
-	UINT err;
 
 	Print("[sessions]\n");
 
@@ -6236,7 +6123,7 @@ static void AdminAuditSession(ADMINAUDIT *a, char *session)
 	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
 	StrCpy(t.Name, sizeof(t.Name), ADMINAUDIT_NO_SESSION);
 	AdminAuditBegin(a);
-	err = ScDeleteSession(a->H->Rpc, &t);
+	UINT err = ScDeleteSession(a->H->Rpc, &t);
 	AdminAuditEnd(a, "DeleteSession " ADMINAUDIT_NO_SESSION " (no such session)", err, ERR_OBJECT_NOT_FOUND, NULL, text,
 		false);
 
@@ -6257,7 +6144,6 @@ static void AdminAuditBridge(ADMINAUDIT *a)
 {
 	RPC_LOCALBRIDGE t;
 	wchar_t text[MAX_SIZE];
-	UINT err;
 
 	Print("[local bridge]\n");
 
@@ -6266,7 +6152,7 @@ static void AdminAuditBridge(ADMINAUDIT *a)
 	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
 	StrCpy(t.DeviceName, sizeof(t.DeviceName), ADMINAUDIT_NO_DEVICE);
 	AdminAuditBegin(a);
-	err = ScDeleteLocalBridge(a->H->Rpc, &t);
+	UINT err = ScDeleteLocalBridge(a->H->Rpc, &t);
 	AdminAuditEnd(a, "DeleteLocalBridge " ADMINAUDIT_NO_DEVICE " (no such bridge)", err, ERR_OBJECT_NOT_FOUND, NULL,
 		text, false);
 }
@@ -6276,7 +6162,6 @@ static void AdminAuditAddCa(ADMINAUDIT *a, X *x, char *what, bool added)
 {
 	RPC_HUB_ADD_CA t;
 	wchar_t text[MAX_SIZE];
-	UINT err;
 
 	AdminAuditText(text, sizeof(text), "LA_ADD_CA", NULL, NULL);
 
@@ -6284,7 +6169,7 @@ static void AdminAuditAddCa(ADMINAUDIT *a, X *x, char *what, bool added)
 	StrCpy(t.HubName, sizeof(t.HubName), HARNESS_HUB_A);
 	t.Cert = CloneX(x);
 	AdminAuditBegin(a);
-	err = ScAddCa(a->H->Rpc, &t);
+	UINT err = ScAddCa(a->H->Rpc, &t);
 	if (err == ERR_NO_ERROR)
 	{
 		FreeRpcHubAddCa(&t);
@@ -6331,20 +6216,17 @@ typedef struct HARNESS_LOG_SCAN
 static char *HarnessReadLogDir(char *dir_fmt, char *hubname)
 {
 	char dir[MAX_PATH];
-	wchar_t *dir_w;
 	wchar_t full[MAX_SIZE];
 	wchar_t path[MAX_SIZE];
-	DIRLIST *d;
 	BUF *b = NewBuf();
-	char *ret;
 
 	Format(dir, sizeof(dir), dir_fmt, hubname);
-	dir_w = CopyStrToUni(dir);
+	wchar_t *dir_w = CopyStrToUni(dir);
 	InnerFilePathW(full, sizeof(full), dir_w);
 	Free(dir_w);
 
 	// EnumDirW does not resolve the '@' prefix: use the full path
-	d = EnumDirW(full);
+	DIRLIST *d = EnumDirW(full);
 	if (d != NULL)
 	{
 		for (UINT i = 0;i < d->NumFiles;i++)
@@ -6353,10 +6235,8 @@ static char *HarnessReadLogDir(char *dir_fmt, char *hubname)
 
 			if (e->Folder == false && UniEndWith(e->FileNameW, L".log"))
 			{
-				BUF *f;
-
 				CombinePathW(path, sizeof(path), full, e->FileNameW);
-				f = ReadDumpExW(path, false, 0);
+				BUF *f = ReadDumpExW(path, false, 0);
 				if (f != NULL)
 				{
 					WriteBuf(b, f->Buf, f->Size);
@@ -6369,7 +6249,7 @@ static char *HarnessReadLogDir(char *dir_fmt, char *hubname)
 		FreeDir(d);
 	}
 
-	ret = HarnessBufToStr(b);
+	char *ret = HarnessBufToStr(b);
 	FreeBuf(b);
 
 	return ret;
@@ -6455,7 +6335,6 @@ static char *HarnessRecvSyslog(SOCK *s, UINT timeout)
 		SOCKSET set;
 		IP src_ip;
 		UINT src_port;
-		UINT size;
 		UINT64 now = Tick64();
 
 		// Select() also puts the socket in non-blocking mode for RecvFrom()
@@ -6463,7 +6342,7 @@ static char *HarnessRecvSyslog(SOCK *s, UINT timeout)
 		AddSockSet(&set, s);
 		Select(&set, (UINT)(now < end ? MIN(end - now, 100) : 0), NULL, NULL);
 
-		size = RecvFrom(s, &src_ip, &src_port, buf, sizeof(buf) - 1);
+		UINT size = RecvFrom(s, &src_ip, &src_port, buf, sizeof(buf) - 1);
 		if (size != 0 && size != SOCK_LATER)
 		{
 			char *ret = ZeroMalloc(size + 1);
@@ -6488,14 +6367,13 @@ static char *HarnessRecvSyslogWith(SOCK *s, char *marker)
 	while (true)
 	{
 		UINT64 now = Tick64();
-		char *d;
 
 		if (now >= end)
 		{
 			return NULL;
 		}
 
-		d = HarnessRecvSyslog(s, (UINT)(end - now));
+		char *d = HarnessRecvSyslog(s, (UINT)(end - now));
 		if (d == NULL)
 		{
 			return NULL;
@@ -6514,10 +6392,9 @@ static char *HarnessRecvSyslogWith(SOCK *s, char *marker)
 static bool HarnessSetSyslog(HARNESS *h, UINT save_type, UINT port, SYSLOG_SETTING *old)
 {
 	SYSLOG_SETTING t;
-	UINT err;
 
 	Zero(old, sizeof(SYSLOG_SETTING));
-	err = ScGetSysLog(h->Rpc, old);
+	UINT err = ScGetSysLog(h->Rpc, old);
 	if (HarnessCheckErr(h, err, "GetSysLog") == false)
 	{
 		return false;
@@ -6560,12 +6437,9 @@ static void HarnessLogInject(HARNESS *h)
 	char text[MAX_SIZE];
 	UCHAR query[256];
 	UCHAR frame[512];
-	UINT query_size, frame_size;
 	HARNESS_LOG_SCAN scan;
-	HARNESS_PA *login;
 	SYSLOG_SETTING old;
 	IP localhost;
-	SOCK *s;
 	char *d;
 
 	Print("[logs: LOGINJECT]\n");
@@ -6576,7 +6450,7 @@ static void HarnessLogInject(HARNESS *h)
 	Format(forged, sizeof(forged), "FORGED%s", tag);
 	Format(text, sizeof(text), "%s\r\n%s", marker, forged);
 
-	login = HarnessStartLogin(h, text);
+	HARNESS_PA *login = HarnessStartLogin(h, text);
 	HarnessWaitLog(HUB_SECURITY_LOG_FILE_NAME, HARNESS_HUB_A, marker, forged, &scan);
 	HarnessStopSession(login);
 	HarnessFreePa(login);
@@ -6587,8 +6461,8 @@ static void HarnessLogInject(HARNESS *h)
 	// Packet log file: the query name of a DNS frame from test session A
 	Format(marker, sizeof(marker), "dns%s", tag);
 	Format(text, sizeof(text), "%s\r\n%s.example", marker, forged);
-	query_size = HarnessBuildDnsQuery(query, sizeof(query), text);
-	frame_size = HarnessBuildIpFrame(frame, sizeof(frame), IP_PROTO_UDP, 53, query, query_size);
+	UINT query_size = HarnessBuildDnsQuery(query, sizeof(query), text);
+	UINT frame_size = HarnessBuildIpFrame(frame, sizeof(frame), IP_PROTO_UDP, 53, query, query_size);
 	HarnessPaSend(h->PaA, frame, frame_size);
 
 	HarnessWaitLog(HUB_PACKET_LOG_FILE_NAME, HARNESS_HUB_A, marker, forged, &scan);
@@ -6597,7 +6471,7 @@ static void HarnessLogInject(HARNESS *h)
 
 	// Syslog datagram: the security log goes to the syslog socket of the test
 	SetIP(&localhost, 127, 0, 0, 1);
-	s = NewUDPEx2(0, false, &localhost);
+	SOCK *s = NewUDPEx2(0, false, &localhost);
 	if (HarnessCheck(h, s != NULL, "LOGINJECT: loopback UDP socket for the syslog datagrams") == false)
 	{
 		return;
@@ -6637,7 +6511,6 @@ static UINT HarnessBuildLoopbackUdp(UCHAR *buf, USHORT src_port, USHORT dst_port
 	UCHAR *udp = ip + 20;
 	UINT udp_size = 8 + 8;
 	UINT ip_size = 20 + udp_size;
-	USHORT sum;
 
 	Zero(buf, 14 + ip_size);
 
@@ -6655,7 +6528,7 @@ static UINT HarnessBuildLoopbackUdp(UCHAR *buf, USHORT src_port, USHORT dst_port
 	ip[15] = 1;
 	ip[16] = 127;								// 127.0.0.1
 	ip[19] = 1;
-	sum = IpChecksum(ip, 20);
+	USHORT sum = IpChecksum(ip, 20);
 	Copy(ip + 10, &sum, sizeof(USHORT));
 
 	udp[0] = (UCHAR)(src_port >> 8);
@@ -6687,14 +6560,13 @@ static void HarnessCountSelfDatagrams(SOCK *s, UINT timeout, bool stop_at_other,
 	{
 		UINT64 now = Tick64();
 		bool other = false;
-		char *d;
 
 		if (now >= end)
 		{
 			return;
 		}
 
-		d = HarnessRecvSyslog(s, (UINT)(end - now));
+		char *d = HarnessRecvSyslog(s, (UINT)(end - now));
 		if (d == NULL)
 		{
 			return;
@@ -6731,19 +6603,17 @@ static void HarnessSyslogSelf(HARNESS *h)
 	RPC_HUB_LOG t;
 	SYSLOG_SETTING old_syslog;
 	IP localhost;
-	SOCK *s;
 	UCHAR frame[128];
 	UINT frame_size;
 	UINT num_self = 0;
 	UINT num_other = 0;
-	UINT err;
 	char tmp[MAX_SIZE];
 
 	Print("[logs: SYSLOG_SELF]\n");
 
 	Zero(&old_log, sizeof(old_log));
 	StrCpy(old_log.HubName, sizeof(old_log.HubName), HARNESS_HUB_A);
-	err = ScGetHubLog(h->Rpc, &old_log);
+	UINT err = ScGetHubLog(h->Rpc, &old_log);
 	if (HarnessCheckErr(h, err, "SYSLOG_SELF: GetHubLog " HARNESS_HUB_A) == false)
 	{
 		return;
@@ -6759,7 +6629,7 @@ static void HarnessSyslogSelf(HARNESS *h)
 	}
 
 	SetIP(&localhost, 127, 0, 0, 1);
-	s = NewUDPEx2(0, false, &localhost);
+	SOCK *s = NewUDPEx2(0, false, &localhost);
 
 	if (HarnessCheck(h, s != NULL, "SYSLOG_SELF: loopback UDP socket for the syslog datagrams") &&
 		HarnessSetSyslog(h, SYSLOG_SERVER_AND_HUB_ALL_LOG, s->LocalPort, &old_syslog))
@@ -6852,15 +6722,13 @@ static HARNESS_PLOG_CASE harness_plog_cases[] =
 // Order of the services of GetSvcName: by port, then TCP before UDP
 static int HarnessPlogCompareSvc(void *p1, void *p2)
 {
-	NETSVC *n1, *n2;
-
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
 
-	n1 = *(NETSVC **)p1;
-	n2 = *(NETSVC **)p2;
+	NETSVC *n1 = *(NETSVC **)p1;
+	NETSVC *n2 = *(NETSVC **)p2;
 
 	if (n1 == NULL || n2 == NULL)
 	{
@@ -6983,7 +6851,6 @@ static UINT HarnessPlogBuildL4Frame(UINT kind, UCHAR *buf, UINT buf_size)
 	UINT payload_size = 0;
 	UCHAR protocol = IP_PROTO_UDP;
 	USHORT dst_port = 40002;
-	UINT size;
 
 	Zero(payload, sizeof(payload));
 
@@ -7045,7 +6912,7 @@ static UINT HarnessPlogBuildL4Frame(UINT kind, UCHAR *buf, UINT buf_size)
 		break;
 	}
 
-	size = HarnessBuildIpFrame(buf, buf_size, protocol, dst_port, payload, payload_size);
+	UINT size = HarnessBuildIpFrame(buf, buf_size, protocol, dst_port, payload, payload_size);
 
 	if (size != 0 && kind == HARNESS_PLOG_TCP_SYN)
 	{
@@ -7139,16 +7006,14 @@ static UINT HarnessPlogBuild(HARNESS_PLOG_CASE *c, UCHAR *buf, UINT buf_size)
 static char *HarnessPlogLine(HARNESS_PLOG_CASE *c, CEDAR *cedar, UCHAR *frame, UINT size)
 {
 	PKT *p = ParsePacketEx5(frame, size, false, 0, true, false, false, false);
-	PACKET_LOG *pl;
 	RECORD rec;
-	char *ret;
 
 	if (p == NULL)
 	{
 		return NULL;
 	}
 
-	pl = ZeroMalloc(sizeof(PACKET_LOG));
+	PACKET_LOG *pl = ZeroMalloc(sizeof(PACKET_LOG));
 	pl->Cedar = cedar;
 	pl->Packet = ClonePacket(p, c->Data);
 	pl->SrcSessionName = CopyStr("sess-a");
@@ -7167,7 +7032,7 @@ static char *HarnessPlogLine(HARNESS_PLOG_CASE *c, CEDAR *cedar, UCHAR *frame, U
 	rec.Data = pl;
 
 	// The parse proc releases the record
-	ret = PacketLogParseProc(&rec);
+	char *ret = PacketLogParseProc(&rec);
 
 	return ret;
 }
@@ -7190,7 +7055,6 @@ static void HarnessPacketLogGolden(HARNESS *h)
 	CEDAR *cedar = ZeroMalloc(sizeof(CEDAR));
 	HUB_LOG *g = ZeroMalloc(sizeof(HUB_LOG));
 	BUF *b = NewBuf();
-	char *actual;
 
 	Print("[packetlog]\n");
 	HarnessSetPhase("packetlog", NULL);
@@ -7255,7 +7119,7 @@ static void HarnessPacketLogGolden(HARNESS *h)
 		FreePacket(p);
 	}
 
-	actual = HarnessBufToStr(b);
+	char *actual = HarnessBufToStr(b);
 	HarnessCompareGolden(h, out_dir, golden_dir, HARNESS_PLOG_FILE, actual, update);
 
 	Free(actual);
@@ -7277,7 +7141,6 @@ static void HarnessLogRecordCheck(HARNESS *h)
 {
 	LOG *g = ZeroMalloc(sizeof(LOG));
 	RECORD *rec;
-	bool ok;
 
 	Print("[logrecord]\n");
 
@@ -7292,7 +7155,7 @@ static void HarnessLogRecordCheck(HARNESS *h)
 	}
 	UnlockQueue(g->RecordQueue);
 
-	ok = (rec != NULL && rec->Data != NULL && StrCmp((char *)rec->Data, "a??b\xC3\xA9") == 0);
+	bool ok = (rec != NULL && rec->Data != NULL && StrCmp((char *)rec->Data, "a??b\xC3\xA9") == 0);
 	HarnessCheck(h, ok, "log record: InsertUnicodeRecord queues the UTF-8 line with control characters mapped to '?'");
 
 	if (rec != NULL)
@@ -7315,14 +7178,12 @@ void harness_test(UINT num, char **arg)
 	HARNESS *h = HarnessNew();
 	HARNESS_WATCHDOG *wd = HarnessStartWatchdog("HARNESS", HARNESS_WATCHDOG_LIMIT);
 	UINT64 start = Tick64();
-	UINT64 elapsed;
-	bool setup_ok;
 	char tmp[MAX_SIZE];
 
 	Print("Ranz harness: in-process server on TCP %u, hubs %s and %s, cascade, frames, golden outputs\n",
 		HARNESS_PORT, HARNESS_HUB_A, HARNESS_HUB_B);
 
-	setup_ok = HarnessSetup(h);
+	bool setup_ok = HarnessSetup(h);
 
 	if (setup_ok)
 	{
@@ -7362,7 +7223,7 @@ void harness_test(UINT num, char **arg)
 	HarnessSetPhase("teardown", NULL);
 	HarnessTeardown(h, setup_ok);
 
-	elapsed = Tick64() - start;
+	UINT64 elapsed = Tick64() - start;
 	Format(tmp, sizeof(tmp), "runtime within the %u ms budget", HARNESS_RUNTIME_BUDGET);
 	HarnessCheck(h, elapsed < HARNESS_RUNTIME_BUDGET, tmp);
 	Print("TIME harness_runtime %I64u ms\n", elapsed);
@@ -7388,15 +7249,13 @@ void bench_test(UINT num, char **arg)
 	HARNESS *h = HarnessNew();
 	HARNESS_WATCHDOG *wd = HarnessStartWatchdog("BENCH", HARNESS_BENCH_WATCHDOG);
 	UINT64 start = Tick64();
-	UINT64 elapsed;
-	bool ok;
 
 	Print("Ranz bench: %u runs per case (median, then every run); per run: cascade path %u ms per frame size, "
 		"hub flood %u ms, Pack %u ms, ParsePacket %u ms, one IP table expiry pass\n",
 		HARNESS_BENCH_RUNS, HARNESS_BENCH_SPAN, HARNESS_BENCH_FLOOD_SPAN, HARNESS_BENCH_PACK_SPAN,
 		HARNESS_BENCH_MICRO_SPAN);
 
-	ok = HarnessSetup(h);
+	bool ok = HarnessSetup(h);
 
 	if (ok)
 	{
@@ -7437,7 +7296,7 @@ void bench_test(UINT num, char **arg)
 	HarnessSetPhase("teardown", NULL);
 	HarnessTeardown(h, ok);
 
-	elapsed = Tick64() - start;
+	UINT64 elapsed = Tick64() - start;
 	Print("BENCH bench_runtime_ms %I64u ms\n", elapsed);
 
 	// Informational like the numbers: the budget is reported, never failed
@@ -7475,14 +7334,13 @@ void certdl_test(UINT num, char **arg)
 	K *key = CertDlPemToK(certdl_key_pem);
 	wchar_t saved_file[MAX_SIZE];
 	char tmp[MAX_SIZE];
-	bool ok;
 
 	Print("Ranz certdl: SetServerCert downloads the issuer certificate from a loopback listener on TCP %u\n",
 		CERTDL_PORT);
 
 	Print("[setup]\n");
 	HarnessSetPhase("setup", "fixtures");
-	ok = HarnessCheck(h, ca != NULL && ca->root_cert, "fixture issuer certificate loads as a root certificate");
+	bool ok = HarnessCheck(h, ca != NULL && ca->root_cert, "fixture issuer certificate loads as a root certificate");
 	ok = HarnessCheck(h, leaf_http != NULL && leaf_https != NULL && tls != NULL && key != NULL &&
 		CheckXandK(leaf_http, key) && CheckXandK(leaf_https, key) && CheckXandK(tls, key),
 		"fixture server and TLS certificates load and match the fixture key") && ok;
@@ -7603,11 +7461,10 @@ void listenerbind_test(UINT num, char **arg)
 {
 	HARNESS *h = HarnessNew();
 	HARNESS_WATCHDOG *wd = HarnessStartWatchdog("LISTENERBIND", LISTENBIND_WATCHDOG_LIMIT);
-	SOCK *held;
 	RPC_LISTENER d;
 	UINT64 elapsed, fastest, end;
 	UINT err;
-	bool ok, enabled, error;
+	bool enabled, error;
 	char tmp[MAX_SIZE];
 
 	Print("Ranz listenerbind: ListenerCreate and ListenerEnable report the bind status; TCP %u held by the test, "
@@ -7617,9 +7474,9 @@ void listenerbind_test(UINT num, char **arg)
 	HarnessSetPhase("setup", "held port");
 	// The bind of the server's listener (any address, no address reuse): the server cannot bind the port while
 	// this socket is open
-	held = Listen(LISTENBIND_PORT_HELD, NULL, false);
+	SOCK *held = Listen(LISTENBIND_PORT_HELD, NULL, false);
 	Format(tmp, sizeof(tmp), "the test holds TCP %u", LISTENBIND_PORT_HELD);
-	ok = HarnessCheck(h, held != NULL, tmp);
+	bool ok = HarnessCheck(h, held != NULL, tmp);
 
 	if (ok)
 	{
@@ -7760,7 +7617,6 @@ void adminaudit_test(UINT num, char **arg)
 	HARNESS_WATCHDOG *wd = HarnessStartWatchdog("ADMINAUDIT", ADMINAUDIT_WATCHDOG_LIMIT);
 	ADMINAUDIT *a = NULL;
 	char session[MAX_SESSION_NAME_LEN + 1];
-	bool ok;
 
 	session[0] = 0;
 
@@ -7768,7 +7624,7 @@ void adminaudit_test(UINT num, char **arg)
 		"loopback receiver\n", HARNESS_HUB_A);
 
 	Print("[setup]\n");
-	ok = HarnessStartServer(h);
+	bool ok = HarnessStartServer(h);
 
 	if (ok)
 	{
@@ -7863,8 +7719,6 @@ HARNESS *HarnessOpenServer(char *test_name, UINT limit, char *hubname, char *use
 // Stop the server and the watchdog of a run of HarnessOpenServer and release the run. Returns its failed checks.
 UINT HarnessCloseServer(HARNESS *h)
 {
-	UINT num_fail;
-
 	HarnessSetPhase("teardown", NULL);
 	Print("[teardown]\n");
 	HarnessStopServer(h);
@@ -7873,7 +7727,7 @@ UINT HarnessCloseServer(HARNESS *h)
 	HarnessStopWatchdog(harness_open_watchdog);
 	harness_open_watchdog = NULL;
 
-	num_fail = h->NumFail;
+	UINT num_fail = h->NumFail;
 	HarnessFree(h);
 
 	return num_fail;

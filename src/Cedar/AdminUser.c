@@ -296,7 +296,6 @@ UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
 	SERVER *s = a->Server;
 	HUB *h = NULL;
 	UINT ret = ERR_NO_ERROR;
-	USER *u;
 	USERGROUP *g = NULL;
 
 
@@ -327,7 +326,7 @@ UINT StCreateUser(ADMIN *a, RPC_SET_USER *t)
 		return ret;
 	}
 
-	u = NewUser(t->Name, t->Realname, t->Note, t->AuthType, CopyAuthData(t->AuthData, t->AuthType));
+	USER *u = NewUser(t->Name, t->Realname, t->Note, t->AuthType, CopyAuthData(t->AuthData, t->AuthType));
 	if (u == NULL)
 	{
 		ReleaseHub(h);

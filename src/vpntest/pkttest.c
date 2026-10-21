@@ -125,16 +125,12 @@ static UCHAR *PktTestUdpFrame(UCHAR *dst_mac, UCHAR *src_mac, USHORT tpid, UCHAR
 	UINT l2_size = PktTestEthernet(l2, dst_mac, src_mac, tpid, MAC_PROTO_IPV4);
 	UINT udp_size = 8 + payload_size;
 	UINT ip_size = 20 + udp_size;
-	UCHAR *buf;
-	UCHAR *ip;
-	UCHAR *udp;
-	USHORT sum;
 
 	*size = l2_size + ip_size;
-	buf = ZeroMalloc(*size);
+	UCHAR *buf = ZeroMalloc(*size);
 	Copy(buf, l2, l2_size);
-	ip = buf + l2_size;
-	udp = ip + 20;
+	UCHAR *ip = buf + l2_size;
+	UCHAR *udp = ip + 20;
 
 	ip[0] = 0x45;								// Version 4, 20-byte header
 	ip[2] = (UCHAR)(ip_size >> 8);
@@ -143,7 +139,7 @@ static UCHAR *PktTestUdpFrame(UCHAR *dst_mac, UCHAR *src_mac, USHORT tpid, UCHAR
 	ip[9] = IP_PROTO_UDP;
 	Copy(ip + 12, src, 4);
 	Copy(ip + 16, dst, 4);
-	sum = IpChecksum(ip, 20);
+	USHORT sum = IpChecksum(ip, 20);
 	Copy(ip + 10, &sum, sizeof(USHORT));
 
 	udp[0] = (UCHAR)(sport >> 8);
@@ -433,9 +429,8 @@ static void PktTestOpCode(PKTTEST_CTX *ctx)
 	UCHAR discover[] = {53, 1, 1, 255};
 	UCHAR request[] = {53, 1, 3, 255};
 	UCHAR pad_first[] = {0, 53, 1, 1, 255};
-	UCHAR *p;
 
-	p = PktTestDhcpRequest(discover, sizeof(discover));
+	UCHAR *p = PktTestDhcpRequest(discover, sizeof(discover));
 	PktTestOpCodeCase(ctx, "ParsePacket gives the message type of a well-formed DISCOVER", p, DHCP_DISCOVER);
 
 	// Cookie bytes and the options of a REQUEST planted in sname: only the cookie at offset 236 counts
@@ -497,13 +492,11 @@ static UCHAR *PktTestArpFrame(USHORT tpid, UINT *size)
 {
 	UCHAR l2[18];
 	UINT l2_size = PktTestEthernet(l2, pkttest_mac_broadcast, pkttest_mac_client, tpid, MAC_PROTO_ARPV4);
-	UCHAR *buf;
-	UCHAR *arp;
 
 	*size = l2_size + 28;
-	buf = ZeroMalloc(*size);
+	UCHAR *buf = ZeroMalloc(*size);
 	Copy(buf, l2, l2_size);
-	arp = buf + l2_size;
+	UCHAR *arp = buf + l2_size;
 
 	arp[1] = 1;									// Hardware type: Ethernet
 	arp[2] = 0x08;								// Protocol type: IPv4
@@ -545,13 +538,12 @@ static void PktTestTpidParse(PKTTEST_CTX *ctx)
 {
 	UCHAR discover[] = {53, 1, 1, 255};
 	UCHAR *payload = PktTestDhcpRequest(discover, sizeof(discover));
-	UCHAR *dhcp_8021ad, *dhcp_8021q, *dhcp_untagged, *arp_8021ad;
 	UINT dhcp_8021ad_size, dhcp_8021q_size, dhcp_untagged_size, arp_8021ad_size;
 
-	dhcp_8021ad = PktTestDhcpFrame(PKTTEST_TPID_8021AD, payload, &dhcp_8021ad_size);
-	dhcp_8021q = PktTestDhcpFrame(MAC_PROTO_TAGVLAN, payload, &dhcp_8021q_size);
-	dhcp_untagged = PktTestDhcpFrame(0, payload, &dhcp_untagged_size);
-	arp_8021ad = PktTestArpFrame(PKTTEST_TPID_8021AD, &arp_8021ad_size);
+	UCHAR *dhcp_8021ad = PktTestDhcpFrame(PKTTEST_TPID_8021AD, payload, &dhcp_8021ad_size);
+	UCHAR *dhcp_8021q = PktTestDhcpFrame(MAC_PROTO_TAGVLAN, payload, &dhcp_8021q_size);
+	UCHAR *dhcp_untagged = PktTestDhcpFrame(0, payload, &dhcp_untagged_size);
+	UCHAR *arp_8021ad = PktTestArpFrame(PKTTEST_TPID_8021AD, &arp_8021ad_size);
 
 	PktTestTpidCase(ctx, "TPID 0x88A8: a 0x88A8-tagged DHCP DISCOVER is IPv4, UDP and DHCP with its VLAN ID (the old parser left it at L3_UNKNOWN)",
 		dhcp_8021ad, dhcp_8021ad_size, PKTTEST_TPID_8021AD, L3_IPV4, PKTTEST_VLAN_ID);
@@ -582,12 +574,10 @@ static void PktTestIdleThread(THREAD *thread, void *param)
 // policy, made like the sessions of the storepacket test
 static SESSION *PktTestNewSession(PKTTEST_HUB *h, char *username)
 {
-	CONNECTION *c;
-	SESSION *s;
 	POLICY *policy = ClonePolicy(GetDefaultPolicy());
 
-	c = NewServerConnection(h->Cedar, NULL, h->Thread);
-	s = NewServerSession(h->Cedar, c, h->Hub, username, policy);
+	CONNECTION *c = NewServerConnection(h->Cedar, NULL, h->Thread);
+	SESSION *s = NewServerSession(h->Cedar, c, h->Hub, username, policy);
 	c->Session = s;
 	ReleaseConnection(c);
 
@@ -737,7 +727,6 @@ void icmpv6ns_test(UINT num, char **arg)
 	PKTTEST_CTX ctx;
 	IPV6_ADDR src;
 	IPV6_ADDR target;
-	BUF *b;
 
 	Zero(&ctx, sizeof(ctx));
 
@@ -755,7 +744,7 @@ void icmpv6ns_test(UINT num, char **arg)
 	target.Value[3] = 0xB8;
 	target.Value[15] = 0x07;
 
-	b = BuildNeighborSolicitation(&src, &target, pkttest_mac_server);
+	BUF *b = BuildNeighborSolicitation(&src, &target, pkttest_mac_server);
 
 	PktTestCheck(&ctx, b != NULL && b->Size == sizeof(pkttest_ns_golden),
 		"BuildNeighborSolicitation gives the 72 bytes of the packet", "size %u", (b == NULL) ? 0 : b->Size);

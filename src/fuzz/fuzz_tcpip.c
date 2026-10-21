@@ -22,9 +22,6 @@
 // One Ethernet frame input
 static void FuzzTcpIp(const uint8_t *data, size_t size)
 {
-	UCHAR *frame;
-	PKT *p;
-
 	if (size == 0 || size > FUZZ_MAX_FRAME_SIZE)
 	{
 		return;
@@ -33,7 +30,7 @@ static void FuzzTcpIp(const uint8_t *data, size_t size)
 	// ParsePacketEx4() may rewrite IP checksums in place, so it parses a writable copy.
 	// malloc() rather than Malloc(): the copy is exactly 'size' bytes, so AddressSanitizer
 	// reports any read past the end of the frame.
-	frame = malloc(size);
+	UCHAR *frame = malloc(size);
 	if (frame == NULL)
 	{
 		return;
@@ -42,7 +39,7 @@ static void FuzzTcpIp(const uint8_t *data, size_t size)
 
 	// The hub's arguments for a HUB_OPTION left at its defaults: IP parsing on, VLAN TPID 0
 	// (0x8100), BPDU bridge ID as MAC address, HTTP parsing on, checksum correction on
-	p = ParsePacketEx4(frame, (UINT)size, false, 0, true, false, true);
+	PKT *p = ParsePacketEx4(frame, (UINT)size, false, 0, true, false, true);
 	FreePacket(p);
 
 	// The same on a hub with VlanTypeId 0x88A8

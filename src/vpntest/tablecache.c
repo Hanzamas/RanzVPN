@@ -98,10 +98,9 @@ static bool TableCacheTableName(LIST *o, UINT id, char *name, UINT size)
 // Number of files in the directory that the list taken before does not hold; prints their names
 static UINT TableCacheNewFiles(DIRLIST *before, wchar_t *dir)
 {
-	DIRLIST *d;
 	UINT num = 0;
 
-	d = EnumDirW(dir);
+	DIRLIST *d = EnumDirW(dir);
 	if (d == NULL)
 	{
 		return 0;
@@ -152,38 +151,26 @@ static bool TableCacheResourceInUse(UINT lang_id)
 void tablecache_test(UINT num, char **arg)
 {
 	TABLECACHE_CTX ctx;
-	LIST *langs;
-	LANGLIST *en;
-	LANGLIST *id;
 	wchar_t exe_dir[MAX_PATH];
-	wchar_t *my_temp;
 	wchar_t override_path[MAX_PATH];
 	wchar_t planted_path[MAX_PATH];
 	char override_text[MAX_SIZE];
 	char planted_text[MAX_SIZE];
 	char cur_table[MAX_SIZE];
-	DIRLIST *exe_before;
-	DIRLIST *temp_before;
-	UINT lang_id;
-	UINT new_exe;
-	UINT new_temp;
-	bool planted;
-	bool has_table;
-	bool loaded;
 
 	Zero(&ctx, sizeof(ctx));
 
 	Print("String table loader test (LoadTable, LoadLangList)\n");
 
 	// (1) languages.txt still yields the language list and the LCIDs
-	lang_id = GetCurrentLangId();
-	langs = LoadLangList();
+	UINT lang_id = GetCurrentLangId();
+	LIST *langs = LoadLangList();
 
 	TableCacheCheck(&ctx, langs != NULL && LIST_NUM(langs) >= 2, "languages.txt yields two languages or more",
 		"%u languages", langs == NULL ? 0 : LIST_NUM(langs));
 
-	en = langs == NULL ? NULL : TableCacheFindLang(langs, "en");
-	id = langs == NULL ? NULL : TableCacheFindLang(langs, "id");
+	LANGLIST *en = langs == NULL ? NULL : TableCacheFindLang(langs, "en");
+	LANGLIST *id = langs == NULL ? NULL : TableCacheFindLang(langs, "id");
 
 	TableCacheCheck(&ctx, TableCacheLangOk(en, "en", 1033) && en->Id == 1, "English is language 1 with LCID 1033",
 		"en %s", en == NULL ? "missing" : "has another ID or no LCID 1033");
@@ -197,7 +184,7 @@ void tablecache_test(UINT num, char **arg)
 	TableCacheCheck(&ctx, langs != NULL && GetBestLangByLcid(langs, 0xFFFF) == en && en != NULL,
 		"An unknown LCID falls back to English", "another language");
 
-	has_table = langs != NULL && TableCacheTableName(langs, lang_id, cur_table, sizeof(cur_table));
+	bool has_table = langs != NULL && TableCacheTableName(langs, lang_id, cur_table, sizeof(cur_table));
 
 	TableCacheCheck(&ctx, has_table, "The current language has a string table", "language %u not in the list", lang_id);
 
@@ -205,7 +192,7 @@ void tablecache_test(UINT num, char **arg)
 
 	// (2) Plant table_name.txt beside the exe, naming a crafted table with the right STRTABLE_ID
 	GetExeDirW(exe_dir, sizeof(exe_dir));
-	my_temp = MsGetMyTempDirW();
+	wchar_t *my_temp = MsGetMyTempDirW();
 
 	CombinePathW(override_path, sizeof(override_path), exe_dir, TABLECACHE_OVERRIDE_FILE);
 	CombinePathW(planted_path, sizeof(planted_path), exe_dir, TABLECACHE_PLANTED_FILE);
@@ -218,16 +205,16 @@ void tablecache_test(UINT num, char **arg)
 		"%s\t\tplanted\r\n",
 		lang_id, STRTABLE_ID, TABLECACHE_PLANTED_NAME);
 
-	planted = DumpDataW(planted_text, StrLen(planted_text), planted_path) &&
+	bool planted = DumpDataW(planted_text, StrLen(planted_text), planted_path) &&
 		DumpDataW(override_text, StrLen(override_text), override_path);
 
 	TableCacheCheck(&ctx, planted, "table_name.txt and a crafted table are planted beside the exe", "cannot write to %S", exe_dir);
 
-	exe_before = EnumDirW(exe_dir);
-	temp_before = my_temp == NULL ? NULL : EnumDirW(my_temp);
+	DIRLIST *exe_before = EnumDirW(exe_dir);
+	DIRLIST *temp_before = my_temp == NULL ? NULL : EnumDirW(my_temp);
 
 	// (3) Load the current table: the override is ignored and the strings come from the resource
-	loaded = has_table && planted && LoadTable(cur_table);
+	bool loaded = has_table && planted && LoadTable(cur_table);
 
 	TableCacheCheck(&ctx, loaded, "The current string table loads with the planted files present", "LoadTable failed");
 
@@ -239,8 +226,8 @@ void tablecache_test(UINT num, char **arg)
 		TABLECACHE_RESOURCE_NAME, _UU(TABLECACHE_RESOURCE_NAME));
 
 	// (4) The load wrote no file beside the exe or in the temp directory of the process
-	new_exe = TableCacheNewFiles(exe_before, exe_dir);
-	new_temp = my_temp == NULL ? 0 : TableCacheNewFiles(temp_before, my_temp);
+	UINT new_exe = TableCacheNewFiles(exe_before, exe_dir);
+	UINT new_temp = my_temp == NULL ? 0 : TableCacheNewFiles(temp_before, my_temp);
 
 	FreeDir(exe_before);
 	FreeDir(temp_before);

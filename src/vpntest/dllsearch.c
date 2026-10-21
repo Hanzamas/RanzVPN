@@ -70,8 +70,6 @@ static bool DllSearchPlace(DLLSEARCH_CTX *ctx, wchar_t *dir_path, UINT dir_size,
 						   wchar_t *dir, wchar_t *sub, wchar_t *name)
 {
 	char what[MAX_SIZE];
-	UINT err;
-	bool ok;
 
 	if (sub == NULL)
 	{
@@ -85,8 +83,8 @@ static bool DllSearchPlace(DLLSEARCH_CTX *ctx, wchar_t *dir_path, UINT dir_size,
 
 	CombinePathW(dll_path, dll_size, dir_path, name);
 
-	ok = (CopyFileW(ctx->Source, dll_path, FALSE) != FALSE);
-	err = GetLastError();
+	bool ok = (CopyFileW(ctx->Source, dll_path, FALSE) != FALSE);
+	UINT err = GetLastError();
 	if (ok)
 	{
 		return true;
@@ -102,12 +100,10 @@ static bool DllSearchPlace(DLLSEARCH_CTX *ctx, wchar_t *dir_path, UINT dir_size,
 // True when a module was loaded, with its file in found; false with the error in err otherwise.
 static bool DllSearchLoad(wchar_t *name, wchar_t *found, UINT found_size, UINT *err)
 {
-	HMODULE h;
-
 	found[0] = 0;
 	*err = 0;
 
-	h = LoadLibraryW(name);
+	HMODULE h = LoadLibraryW(name);
 	if (h == NULL)
 	{
 		*err = GetLastError();

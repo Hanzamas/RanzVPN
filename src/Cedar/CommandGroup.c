@@ -20,7 +20,6 @@
 
 UINT PsGroupList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ENUM_GROUP t;
@@ -31,7 +30,7 @@ UINT PsGroupList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
+	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -81,7 +80,6 @@ UINT PsGroupList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsGroupCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_GROUP t;
@@ -98,7 +96,7 @@ UINT PsGroupCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -128,7 +126,6 @@ UINT PsGroupCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsGroupSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_GROUP t;
@@ -145,7 +142,7 @@ UINT PsGroupSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -185,7 +182,6 @@ UINT PsGroupSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsGroupDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_DELETE_USER t;
@@ -200,7 +196,7 @@ UINT PsGroupDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -226,7 +222,6 @@ UINT PsGroupDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsGroupPolicyRemove(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_GROUP t;
@@ -241,7 +236,7 @@ UINT PsGroupPolicyRemove(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;

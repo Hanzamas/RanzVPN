@@ -15,7 +15,6 @@
 
 static BUF *RsaPublicToBuf(K *k)
 {
-	BUF *b;
 	const RSA *rsa;
 	const BIGNUM *n;
 	if (k == NULL || k->pkey == NULL)
@@ -35,7 +34,7 @@ static BUF *RsaPublicToBuf(K *k)
 		return NULL;
 	}
 
-	b = BigNumToBuf(n);
+	BUF *b = BigNumToBuf(n);
 
 	if (b == NULL)
 	{
@@ -47,16 +46,13 @@ static BUF *RsaPublicToBuf(K *k)
 
 static UINT RsaPublicSize(K *k)
 {
-	BUF *b;
-	UINT ret;
-
-	b = RsaPublicToBuf(k);
+	BUF *b = RsaPublicToBuf(k);
 	if (b == NULL)
 	{
 		return 0;
 	}
 
-	ret = b->Size;
+	UINT ret = b->Size;
 
 	FreeBuf(b);
 
@@ -65,19 +61,16 @@ static UINT RsaPublicSize(K *k)
 
 BUF *BigNumToBuf(const BIGNUM *bn)
 {
-	UINT size;
-	UCHAR *tmp;
-	BUF *b;
 	if (bn == NULL)
 	{
 		return NULL;
 	}
 
-	size = BN_num_bytes(bn);
-	tmp = ZeroMalloc(size);
+	UINT size = BN_num_bytes(bn);
+	UCHAR *tmp = ZeroMalloc(size);
 	BN_bn2bin(bn, tmp);
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 	WriteBuf(b, tmp, size);
 	Free(tmp);
 
@@ -90,7 +83,6 @@ BUF *BigNumToBuf(const BIGNUM *bn)
 // after it is loaded or generated, so sharing the EVP_PKEY is safe across threads.
 K *CloneK(K *k)
 {
-	K *ret;
 	if (k == NULL || k->pkey == NULL)
 	{
 		return NULL;
@@ -101,7 +93,7 @@ K *CloneK(K *k)
 		return NULL;
 	}
 
-	ret = ZeroMalloc(sizeof(K));
+	K *ret = ZeroMalloc(sizeof(K));
 	ret->pkey = k->pkey;
 	ret->private_key = k->private_key;
 

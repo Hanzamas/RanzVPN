@@ -159,11 +159,7 @@ static void StrTestTokens(STRTEST_CTX *ctx, char *what, TOKEN_LIST *t, UINT expe
 // StrCpy (also over its own source), CopyStr, ClearStr and MakeCharArray
 static void StrTestCopy(STRTEST_CTX *ctx)
 {
-	char *b;
-	char *p;
-	UINT ret;
-
-	b = StrTestReset(ctx, NULL);
+	char *b = StrTestReset(ctx, NULL);
 	StrTestDst(ctx, "StrCpy copies a string that fits and writes nothing behind its terminator", StrCpy(b, 8, "abc"), 3, "abc", STRTEST_GUARD_END);
 	b = StrTestReset(ctx, NULL);
 	StrTestDst(ctx, "StrCpy fills size exactly with a string of size - 1 characters", StrCpy(b, 4, "abc"), 3, "abc", STRTEST_GUARD_END);
@@ -183,11 +179,11 @@ static void StrTestCopy(STRTEST_CTX *ctx)
 	StrTestDst(ctx, "StrCpy of NULL with size 0 leaves the destination as it is", StrCpy(b, 0, NULL), 0, "xy", STRTEST_GUARD_END);
 	b = StrTestReset(ctx, "hello");
 	StrTestDst(ctx, "StrCpy onto itself copies nothing and returns the length, whatever the size", StrCpy(b, 2, b), 5, "hello", STRTEST_GUARD_END);
-	ret = StrCpy(NULL, 8, "abc");
+	UINT ret = StrCpy(NULL, 8, "abc");
 	StrTestUint(ctx, "StrCpy to NULL returns 0", ret, 0);
 
 	// A heap block of exactly size bytes (AddressSanitizer sees a write past it)
-	p = Malloc(4);
+	char *p = Malloc(4);
 	ret = StrCpy(p, 4, "abcdefgh");
 	StrTestCheck(ctx, ret == 3 && StrCmp(p, "abc") == 0, "StrCpy into a heap block of size bytes truncates inside it",
 		"returned %u, \"%s\"", ret, p);
@@ -218,10 +214,7 @@ static void StrTestCopy(STRTEST_CTX *ctx)
 // StrCat and StrCatLeft
 static void StrTestCat(STRTEST_CTX *ctx)
 {
-	char *b;
-	UINT ret;
-
-	b = StrTestReset(ctx, "ab");
+	char *b = StrTestReset(ctx, "ab");
 	StrTestDst(ctx, "StrCat appends a string that fits and returns the new length", StrCat(b, 8, "cd"), 4, "abcd", STRTEST_GUARD_END);
 	b = StrTestReset(ctx, "ab");
 	StrTestDst(ctx, "StrCat fills size exactly with a result of size - 1 characters", StrCat(b, 5, "cd"), 4, "abcd", STRTEST_GUARD_END);
@@ -247,7 +240,7 @@ static void StrTestCat(STRTEST_CTX *ctx)
 	StrTestDst(ctx, "StrCat to an empty destination copies the string", StrCat(b, 8, "abc"), 3, "abc", STRTEST_GUARD_END);
 	b = StrTestReset(ctx, "ab");
 	StrTestDst(ctx, "StrCat of NULL changes nothing and returns 0", StrCat(b, 8, NULL), 0, "ab", STRTEST_GUARD_END);
-	ret = StrCat(NULL, 8, "ab");
+	UINT ret = StrCat(NULL, 8, "ab");
 	StrTestUint(ctx, "StrCat to NULL returns 0", ret, 0);
 
 	b = StrTestReset(ctx, "cd");
@@ -276,9 +269,8 @@ static void StrTestCheckLen(STRTEST_CTX *ctx)
 static void StrTestFormat(STRTEST_CTX *ctx)
 {
 	UCHAR data[3] = {0x00, 0xAB, 0x7F};
-	char *b;
 
-	b = StrTestReset(ctx, NULL);
+	char *b = StrTestReset(ctx, NULL);
 	ToStr(b, 0);
 	StrTestOut(ctx, "ToStr(0) is \"0\"", "0", STRTEST_GUARD_END);
 	b = StrTestReset(ctx, NULL);
@@ -335,16 +327,13 @@ static void StrTestFormat(STRTEST_CTX *ctx)
 // terminator and returns -1.
 static void StrTestSnprintf(STRTEST_CTX *ctx)
 {
-	char *b;
 	char *six = "abcdef";		// Arguments, not literals, so the compiler does not report the truncation
 	char *three = "abc";
 	char wide[MAX_SIZE * 2];
 	wchar_t uni[MAX_SIZE];
-	UINT len, spaces;
-	int ret;
 
-	b = StrTestReset(ctx, NULL);
-	ret = snprintf(b, 4, "%s", six);
+	char *b = StrTestReset(ctx, NULL);
+	int ret = snprintf(b, 4, "%s", six);
 	StrTestCheck(ctx, ret == 6 && b[3] == 0 && StrTestIs(ctx, "abc", STRTEST_GUARD_END),
 		"snprintf truncates to size - 1 characters, ends them in NUL and returns the full length",
 		"returned %d, buffer \"%s\"", ret, b);
@@ -356,8 +345,8 @@ static void StrTestSnprintf(STRTEST_CTX *ctx)
 
 	// A field of 600 characters comes out whole: 599 spaces and the number
 	Format(wide, sizeof(wide), "%600u", 7);
-	len = StrLen(wide);
-	spaces = 0;
+	UINT len = StrLen(wide);
+	UINT spaces = 0;
 	while (spaces < len && wide[spaces] == ' ')
 	{
 		spaces++;
@@ -387,8 +376,6 @@ static void StrTestSnprintf(STRTEST_CTX *ctx)
 // SearchStr, SearchStrEx, InStr, InStrEx, ReplaceStr and ReplaceStri
 static void StrTestSearch(STRTEST_CTX *ctx)
 {
-	char *b;
-
 	StrTestUint(ctx, "SearchStr finds the first match", SearchStr("abcabc", "bc", 0), 1);
 	StrTestUint(ctx, "SearchStr finds a match at the start", SearchStr("abcabc", "ab", 0), 0);
 	StrTestUint(ctx, "SearchStr finds the first match at or after start", SearchStr("abcabc", "bc", 2), 4);
@@ -417,12 +404,11 @@ static void StrTestSearch(STRTEST_CTX *ctx)
 				for (UINT cs = 0;cs <= 1;cs++)
 				{
 					wchar_t ws[16], wk[16];
-					UINT a, w;
 
 					StrToUni(ws, sizeof(ws), cases[i][0]);
 					StrToUni(wk, sizeof(wk), cases[i][1]);
-					a = SearchStrEx(cases[i][0], cases[i][1], start, cs != 0);
-					w = UniSearchStrEx(ws, wk, start, cs != 0);
+					UINT a = SearchStrEx(cases[i][0], cases[i][1], start, cs != 0);
+					UINT w = UniSearchStrEx(ws, wk, start, cs != 0);
 					StrTestCheck(ctx, a == w, "search_str_parity: UniSearchStrEx agrees with SearchStrEx",
 						"\"%s\" in \"%s\" from %u, case %u: %u and %u", cases[i][1], cases[i][0], start, cs, a, w);
 				}
@@ -434,7 +420,7 @@ static void StrTestSearch(STRTEST_CTX *ctx)
 	StrTestCheck(ctx, InStrEx("Hello World", "WORLD", true) == false, "InStrEx keeps the case when asked", "returned true");
 	StrTestCheck(ctx, InStr("abc", "") == false, "InStr of an empty keyword is false", "returned true");
 
-	b = StrTestReset(ctx, NULL);
+	char *b = StrTestReset(ctx, NULL);
 	StrTestDst(ctx, "ReplaceStri replaces every match whatever its case", ReplaceStri(b, STRTEST_BUF_SIZE, "aXbxc", "x", "--"), 2, "a--b--c", STRTEST_GUARD_END);
 	b = StrTestReset(ctx, NULL);
 	StrTestDst(ctx, "ReplaceStr replaces only the matches of the same case", ReplaceStr(b, STRTEST_BUF_SIZE, "aXbxc", "x", "--"), 1, "aXb--c", STRTEST_GUARD_END);
@@ -474,9 +460,7 @@ static void StrTestChars(STRTEST_CTX *ctx)
 // Trim, TrimLeft and TrimRight
 static void StrTestTrim(STRTEST_CTX *ctx)
 {
-	char *b;
-
-	b = StrTestReset(ctx, " \t a b \t ");
+	char *b = StrTestReset(ctx, " \t a b \t ");
 	Trim(b);
 	StrTestOut(ctx, "Trim removes the leading and trailing spaces and tabs", "a b", sizeof(" \t a b \t "));
 	b = StrTestReset(ctx, "\t a ");
@@ -593,9 +577,8 @@ static void StrTestCompare(STRTEST_CTX *ctx)
 static void StrTestBase64(STRTEST_CTX *ctx)
 {
 	UINT size = 0;
-	char *s;
 
-	s = Base64FromBin(&size, "foobar", 6);
+	char *s = Base64FromBin(&size, "foobar", 6);
 	StrTestCheck(ctx, s != NULL && StrCmp(s, "Zm9vYmFy") == 0 && size == 9, "Base64FromBin(\"foobar\") is \"Zm9vYmFy\", size 9", "got \"%s\", size %u", s == NULL ? "(NULL)" : s, size);
 	Free(s);
 	s = Base64FromBin(&size, "fo", 2);
@@ -736,7 +719,6 @@ static void StrTestFast(STRTEST_CTX *ctx)
 			SYSTEMTIME st;
 			UCHAR mac[6];
 			char full[STRTEST_FAST_BUF];
-			UINT len;
 
 			Zero(&st, sizeof(st));
 			st.wYear = values[v];
@@ -752,20 +734,19 @@ static void StrTestFast(STRTEST_CTX *ctx)
 			}
 
 			StrTestFastCall(func, true, full, 0, &st, mac, zones[v]);
-			len = StrLen(full);
+			UINT len = StrLen(full);
 
 			for (UINT size = 0;size <= len + 2;size++)
 			{
 				char got[STRTEST_FAST_BUF];
 				char want[STRTEST_FAST_BUF];
-				bool same;
 
 				memset(got, STRTEST_FILL, sizeof(got));
 				memset(want, STRTEST_FILL, sizeof(want));
 				StrTestFastCall(func, false, got, size, &st, mac, zones[v]);
 				StrTestFastCall(func, true, want, size, &st, mac, zones[v]);
 
-				same = (StrCmp(got, want) == 0);
+				bool same = (StrCmp(got, want) == 0);
 				for (UINT i = StrSize(got);same && i < sizeof(got);i++)
 				{
 					same = (got[i] == STRTEST_FILL);

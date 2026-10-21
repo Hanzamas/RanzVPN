@@ -418,21 +418,19 @@ static void X509TestBundle(X509T_CTX *ctx, K *priv, K *pub)
 	BUF *valid_pem = XToBuf(valid, true);
 	BUF *one = NewBuf();
 	BUF *bundle = NewBuf();
-	LIST *chain;
-	X *x;
 
 	X509TestCheck(ctx, valid != NULL && valid_pem != NULL, "Valid self-signed RSA-2048 certificate is made");
 
 	// Alone: X509ToX gets no public key from it
 	WriteBuf(one, x509t_unknown_key_pem, StrLen(x509t_unknown_key_pem));
-	x = BufToX(one, true);
+	X *x = BufToX(one, true);
 	X509TestCheck(ctx, x == NULL, "BufToX refuses the certificate with the unknown public key algorithm");
 	FreeX(x);
 
 	// First in a bundle, the valid certificate after it
 	WriteBuf(bundle, x509t_unknown_key_pem, StrLen(x509t_unknown_key_pem));
 	WriteBufBuf(bundle, valid_pem);
-	chain = BufToXList(bundle, true);
+	LIST *chain = BufToXList(bundle, true);
 	X509TestCheck(ctx, chain != NULL && LIST_NUM(chain) == 1 && CompareX(LIST_DATA(chain, 0), valid),
 		"BufToXList of the bundle frees the refused certificate once and lists the valid one");
 	FreeXList(chain);
@@ -485,11 +483,10 @@ void x509_test(UINT num, char **arg)
 static X *X509TestPemToX(char *pem)
 {
 	BUF *b = NewBuf();
-	X *x;
 
 	WriteBuf(b, pem, StrLen(pem));
 	SeekBuf(b, 0, 0);
-	x = BufToX(b, true);
+	X *x = BufToX(b, true);
 	FreeBuf(b);
 
 	return x;
@@ -642,13 +639,12 @@ static void X509TestRsaSizes(X509T_CTX *ctx, K *priv, K *pub, UINT bits)
 	UCHAR dst[X509T_MAX_SIGN + X509T_GUARD];
 	UINT sign_size = bits / 8;
 	UINT small = sign_size / 2;
-	bool signed_ok;
 	char what[MAX_SIZE];
 
 	Rand(data, sizeof(data));
 
 	Zero(sign, sizeof(sign));
-	signed_ok = RsaSignEx(sign, sign_size, data, sizeof(data), priv);
+	bool signed_ok = RsaSignEx(sign, sign_size, data, sizeof(data), priv);
 	Format(what, sizeof(what), "RSA-%u: a signature into a destination of exactly %u bytes verifies", bits, sign_size);
 	X509TestCheck(ctx, signed_ok && RsaVerifyEx(data, sizeof(data), sign, sign_size, pub), what);
 

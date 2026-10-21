@@ -21,12 +21,11 @@
 UINT StSetCrl(ADMIN *a, RPC_CRL *t)
 {
 	SERVER *s = a->Server;
-	HUB *h;
 	UINT ret = ERR_NO_ERROR;
 
 	CHECK_RIGHT;
 
-	h = AdminGetHub(a, t->HubName, "no_change_crl_list", &ret);
+	HUB *h = AdminGetHub(a, t->HubName, "no_change_crl_list", &ret);
 	if (h == NULL)
 	{
 		return ret;
@@ -61,21 +60,19 @@ UINT StSetCrl(ADMIN *a, RPC_CRL *t)
 
 UINT StGetCrl(ADMIN *a, RPC_CRL *t)
 {
-	HUB *h;
 	UINT ret = ERR_NO_ERROR;
-	UINT key;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
 	StrCpy(hubname, sizeof(hubname), t->HubName);
-	key = t->Key;
+	UINT key = t->Key;
 
 	FreeRpcCrl(t);
 	Zero(t, sizeof(RPC_CRL));
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 	t->Key = key;
 
-	h = AdminGetHub(a, hubname, NULL, &ret);
+	HUB *h = AdminGetHub(a, hubname, NULL, &ret);
 	if (h == NULL)
 	{
 		return ret;
@@ -104,12 +101,11 @@ UINT StGetCrl(ADMIN *a, RPC_CRL *t)
 UINT StDelCrl(ADMIN *a, RPC_CRL *t)
 {
 	SERVER *s = a->Server;
-	HUB *h;
 	UINT ret = ERR_NO_ERROR;
 
 	CHECK_RIGHT;
 
-	h = AdminGetHub(a, t->HubName, "no_change_crl_list", &ret);
+	HUB *h = AdminGetHub(a, t->HubName, "no_change_crl_list", &ret);
 	if (h == NULL)
 	{
 		return ret;
@@ -143,12 +139,11 @@ UINT StAddCrl(ADMIN *a, RPC_CRL *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
-	HUB *h;
 	UINT err;
 
 	CHECK_RIGHT;
 
-	h = AdminGetHub(a, t->HubName, "no_change_crl_list", &err);
+	HUB *h = AdminGetHub(a, t->HubName, "no_change_crl_list", &err);
 	if (h == NULL)
 	{
 		return err;
@@ -176,7 +171,6 @@ UINT StAddCrl(ADMIN *a, RPC_CRL *t)
 
 UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t)
 {
-	HUB *h;
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
@@ -187,7 +181,7 @@ UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t)
 
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 
-	h = AdminGetHub(a, hubname, NULL, &ret);
+	HUB *h = AdminGetHub(a, hubname, NULL, &ret);
 	if (h == NULL)
 	{
 		return ret;

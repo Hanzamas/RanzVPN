@@ -19,13 +19,12 @@
 
 bool SiDeleteListener(SERVER *s, UINT port)
 {
-	SERVER_LISTENER *e;
 	if (s == NULL || port == 0)
 	{
 		return false;
 	}
 
-	e = SiGetListener(s, port);
+	SERVER_LISTENER *e = SiGetListener(s, port);
 	if (e == NULL)
 	{
 		return false;
@@ -46,13 +45,12 @@ bool SiDeleteListener(SERVER *s, UINT port)
 
 bool SiDisableListener(SERVER *s, UINT port)
 {
-	SERVER_LISTENER *e;
 	if (s == NULL || port == 0)
 	{
 		return false;
 	}
 
-	e = SiGetListener(s, port);
+	SERVER_LISTENER *e = SiGetListener(s, port);
 	if (e == NULL)
 	{
 		return false;
@@ -75,13 +73,12 @@ bool SiDisableListener(SERVER *s, UINT port)
 
 bool SiEnableListener(SERVER *s, UINT port)
 {
-	SERVER_LISTENER *e;
 	if (s == NULL || port == 0)
 	{
 		return false;
 	}
 
-	e = SiGetListener(s, port);
+	SERVER_LISTENER *e = SiGetListener(s, port);
 	if (e == NULL)
 	{
 		return false;

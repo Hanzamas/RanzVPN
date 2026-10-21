@@ -189,7 +189,6 @@ UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t)
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 	char name[MAX_SESSION_NAME_LEN + 1];
-	SESSION *sess;
 
 	if (IsEmptyStr(t->Name))
 	{
@@ -204,7 +203,7 @@ UINT StDeleteSession(ADMIN *a, RPC_DELETE_SESSION *t)
 		return err;
 	}
 
-	sess = GetSessionByName(h, name);
+	SESSION *sess = GetSessionByName(h, name);
 
 	if (sess == NULL)
 	{
@@ -244,7 +243,6 @@ UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
 	char name[MAX_SESSION_NAME_LEN + 1];
-	SESSION *sess;
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 	StrCpy(name, sizeof(name), t->Name);
@@ -265,7 +263,7 @@ UINT StGetSessionStatus(ADMIN *a, RPC_SESSION_STATUS *t)
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 	StrCpy(t->Name, sizeof(t->Name), name);
 
-	sess = GetSessionByName(h, t->Name);
+	SESSION *sess = GetSessionByName(h, t->Name);
 
 	if (sess == NULL)
 	{
@@ -331,16 +329,13 @@ UINT StEnumSession(ADMIN *a, RPC_ENUM_SESSION *t)
 
 static void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t)
 {
-	HUB *h;
 	UINT64 now = Tick64();
-	UINT64 dormant_interval;
-	SESSION_INFO *info;
 	if (s == NULL || hubname == NULL || t == NULL)
 	{
 		return;
 	}
 
-	h = GetHub(s->Cedar, hubname);
+	HUB *h = GetHub(s->Cedar, hubname);
 
 	if (h == NULL)
 	{
@@ -349,9 +344,9 @@ static void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t)
 		return;
 	}
 
-	dormant_interval = h->Option->DetectDormantSessionInterval * (UINT64)1000;
+	UINT64 dormant_interval = h->Option->DetectDormantSessionInterval * (UINT64)1000;
 
-	info = HubEnumSessions(h, &t->NumSession);
+	SESSION_INFO *info = HubEnumSessions(h, &t->NumSession);
 	t->Sessions = ZeroMalloc(sizeof(RPC_ENUM_SESSION_ITEM) * t->NumSession);
 
 	for (UINT i = 0;i < t->NumSession;i++)

@@ -10,13 +10,12 @@
 
 CIPHER *NewCipher(char *name)
 {
-	CIPHER *c;
 	if (name == NULL)
 	{
 		return NULL;
 	}
 
-	c = ZeroMalloc(sizeof(CIPHER));
+	CIPHER *c = ZeroMalloc(sizeof(CIPHER));
 
 	StrCpy(c->Name, sizeof(c->Name), name);
 

@@ -151,12 +151,10 @@ static void StorePacketTestIdleThread(THREAD *thread, void *param)
 // (the broadcast storm guard is on), made like the flood bench sessions of harness.c
 static SESSION *StorePacketTestNewSession(STOREPACKET_TEST *t, char *username)
 {
-	CONNECTION *c;
-	SESSION *s;
 	POLICY *policy = ClonePolicy(GetDefaultPolicy());
 
-	c = NewServerConnection(t->Cedar, NULL, t->Thread);
-	s = NewServerSession(t->Cedar, c, t->Hub, username, policy);
+	CONNECTION *c = NewServerConnection(t->Cedar, NULL, t->Thread);
+	SESSION *s = NewServerSession(t->Cedar, c, t->Hub, username, policy);
 	c->Session = s;
 	ReleaseConnection(c);
 
@@ -183,7 +181,6 @@ static UINT StorePacketTestIpFrame(UCHAR *buf, UINT dst)
 	UCHAR *udp = ip + 20;
 	UINT udp_size = 8 + 8;
 	UINT ip_size = 20 + udp_size;
-	USHORT sum;
 
 	Zero(buf, 14 + ip_size);
 
@@ -205,7 +202,7 @@ static UINT StorePacketTestIpFrame(UCHAR *buf, UINT dst)
 	ip[17] = (UCHAR)(dst >> 16);
 	ip[18] = (UCHAR)(dst >> 8);
 	ip[19] = (UCHAR)dst;
-	sum = IpChecksum(ip, 20);
+	USHORT sum = IpChecksum(ip, 20);
 	Copy(ip + 10, &sum, sizeof(USHORT));
 
 	udp[0] = 0x9C;								// Source port 40000
@@ -326,7 +323,6 @@ static void StorePacketTestStormDetect(STOREPACKET_TEST *t, char *when, UINT dst
 {
 	UCHAR frame[STOREPACKET_TEST_FRAME_MAX];
 	UINT size = StorePacketTestIpFrame(frame, dst);
-	UINT num_within, num_after;
 	char what[MAX_SIZE];
 
 	StorePacketTestDrain(t, NULL, 0, NULL);
@@ -336,13 +332,13 @@ static void StorePacketTestStormDetect(STOREPACKET_TEST *t, char *when, UINT dst
 		StorePacketTestSend(t, frame, size);
 	}
 	StorePacketTestFlush(t);
-	num_within = StorePacketTestDrain(t, NULL, 0, NULL);
+	UINT num_within = StorePacketTestDrain(t, NULL, 0, NULL);
 
 	SleepThread(STORM_CHECK_SPAN + STOREPACKET_TEST_STORM_MARGIN);
 
 	StorePacketTestSend(t, frame, size);
 	StorePacketTestFlush(t);
-	num_after = StorePacketTestDrain(t, NULL, 0, NULL);
+	UINT num_after = StorePacketTestDrain(t, NULL, 0, NULL);
 
 	Format(what, sizeof(what), "storm %s: %u frames of one flow within a check span pass, the next one after the span is dropped",
 		when, STOREPACKET_TEST_STORM_FRAMES);
@@ -355,8 +351,6 @@ static void StorePacketTestStormFlood(STOREPACKET_TEST *t)
 {
 	UCHAR frame[STOREPACKET_TEST_FRAME_MAX];
 	UINT num_recv = 0;
-	UINT num_list;
-	bool has_first, has_last, has_detect;
 
 	// The storm flow before the flood keeps an older check window than every flow of the flood
 	SleepThread(STOREPACKET_TEST_TICK_GAP);
@@ -376,10 +370,10 @@ static void StorePacketTestStormFlood(STOREPACKET_TEST *t)
 	StorePacketTestFlush(t);
 	num_recv += StorePacketTestDrain(t, NULL, 0, NULL);
 
-	num_list = StorePacketTestStormNum(t);
-	has_first = StorePacketTestHasStorm(t, STOREPACKET_TEST_FLOOD_NET);
-	has_last = StorePacketTestHasStorm(t, STOREPACKET_TEST_FLOOD_NET + STOREPACKET_TEST_FLOOD - 1);
-	has_detect = StorePacketTestHasStorm(t, STOREPACKET_TEST_DETECT_BELOW);
+	UINT num_list = StorePacketTestStormNum(t);
+	bool has_first = StorePacketTestHasStorm(t, STOREPACKET_TEST_FLOOD_NET);
+	bool has_last = StorePacketTestHasStorm(t, STOREPACKET_TEST_FLOOD_NET + STOREPACKET_TEST_FLOOD - 1);
+	bool has_detect = StorePacketTestHasStorm(t, STOREPACKET_TEST_DETECT_BELOW);
 
 	StorePacketTestCheck(t, num_recv == STOREPACKET_TEST_FLOOD,
 		"storm flood: one frame per flow is no storm, every frame of the distinct flows passes",
@@ -449,19 +443,18 @@ static void StorePacketTestDelayDeliver(STOREPACKET_TEST *t)
 {
 	UCHAR frame[STOREPACKET_TEST_FRAME_MAX];
 	UINT size = StorePacketTestRawFrame(frame, 1);
-	UINT64 before, after;
 	UINT64 tick = 0;
-	UINT num_held, num_early, num_recv, num_equal;
+	UINT num_equal;
 
 	StorePacketTestSetDelay(t, STOREPACKET_TEST_DELAY, STOREPACKET_TEST_JITTER);
 	StorePacketTestDrain(t, NULL, 0, NULL);
 
-	before = TickHighres64();
+	UINT64 before = TickHighres64();
 	StorePacketTestSend(t, frame, size);
-	after = TickHighres64();
+	UINT64 after = TickHighres64();
 
-	num_held = StorePacketTestDelayed(t, false, &tick);
-	num_early = StorePacketTestDrain(t, NULL, 0, NULL);
+	UINT num_held = StorePacketTestDelayed(t, false, &tick);
+	UINT num_early = StorePacketTestDrain(t, NULL, 0, NULL);
 
 	StorePacketTestCheck(t, num_held == 1 && num_early == 0 &&
 		tick >= before + STOREPACKET_TEST_DELAY && tick <= after + STOREPACKET_TEST_DELAY,
@@ -472,7 +465,7 @@ static void StorePacketTestDelayDeliver(STOREPACKET_TEST *t)
 	SleepThread(STOREPACKET_TEST_DELAY + STOREPACKET_TEST_DELIVER_MARGIN);
 	StorePacketTestFlush(t);
 
-	num_recv = StorePacketTestDrain(t, frame, size, &num_equal);
+	UINT num_recv = StorePacketTestDrain(t, frame, size, &num_equal);
 	num_held = StorePacketTestDelayed(t, false, NULL);
 
 	StorePacketTestCheck(t, num_recv == 1 && num_equal == 1 && num_held == 0,
@@ -489,9 +482,7 @@ static bool StorePacketTestDelayCase(STOREPACKET_TEST *t, UINT delay, UINT jitte
 	UINT span = (UINT)((UINT64)delay * (UINT64)jitter / 100);
 	UINT low = delay;
 	UINT high = delay;
-	UINT64 before, after;
 	UINT64 tick = 0;
-	UINT num;
 
 	if (span != 0)
 	{
@@ -501,11 +492,11 @@ static bool StorePacketTestDelayCase(STOREPACKET_TEST *t, UINT delay, UINT jitte
 
 	StorePacketTestSetDelay(t, delay, jitter);
 
-	before = TickHighres64();
+	UINT64 before = TickHighres64();
 	StorePacketTestSend(t, frame, size);
-	after = TickHighres64();
+	UINT64 after = TickHighres64();
 
-	num = StorePacketTestDelayed(t, true, &tick);
+	UINT num = StorePacketTestDelayed(t, true, &tick);
 
 	if (num != 1 || tick < before + low || tick > after + high)
 	{
@@ -653,21 +644,19 @@ static void StorePacketTestDLinkMac(STOREPACKET_TEST *t)
 		{
 			UCHAR *mac = storepacket_test_mac_dlink[i];
 			SESSION *expected = (fix != 0 ? t->Receiver : t->Sender);
-			SESSION *first, *second;
 			char mac_str[MAX_SIZE];
 			char what[MAX_SIZE];
-			UINT size;
 
 			// Each frame differs from the one before: the D-Link guard drops a repeat within 750 ms
-			size = StorePacketTestRawFrame(frame, seq++);
+			UINT size = StorePacketTestRawFrame(frame, seq++);
 			Copy(frame + 6, mac, 6);
 			StorePacketTestSendFrom(t->Sender, frame, size);
-			first = StorePacketTestMacOwner(t, mac);
+			SESSION *first = StorePacketTestMacOwner(t, mac);
 
 			size = StorePacketTestRawFrame(frame, seq++);
 			Copy(frame + 6, mac, 6);
 			StorePacketTestSendFrom(t->Receiver, frame, size);
-			second = StorePacketTestMacOwner(t, mac);
+			SESSION *second = StorePacketTestMacOwner(t, mac);
 
 			StorePacketTestDrainFrom(t->Sender);
 			StorePacketTestDrainFrom(t->Receiver);
@@ -766,32 +755,28 @@ static void StorePacketTestClearAccessList(STOREPACKET_TEST *t)
 // HTTP text of a reply frame of the hub: the TCP payload of an IPv4 frame. False for any other frame
 static bool StorePacketTestHttpText(UCHAR *frame, UINT size, char *text, UINT text_size)
 {
-	IPV4_HEADER *ip;
-	TCP_HEADER *tcp;
-	UINT ip_size, tcp_size, total, payload_size;
-
 	if (size < 14 + sizeof(IPV4_HEADER) + sizeof(TCP_HEADER) || frame[12] != 0x08 || frame[13] != 0x00)
 	{
 		return false;
 	}
 
-	ip = (IPV4_HEADER *)(frame + 14);
-	ip_size = IPV4_GET_HEADER_LEN(ip) * 4;
-	total = Endian16(ip->TotalLength);
+	IPV4_HEADER *ip = (IPV4_HEADER *)(frame + 14);
+	UINT ip_size = IPV4_GET_HEADER_LEN(ip) * 4;
+	UINT total = Endian16(ip->TotalLength);
 	if (ip->Protocol != IP_PROTO_TCP || ip_size < sizeof(IPV4_HEADER) || total > size - 14 ||
 		total < ip_size + sizeof(TCP_HEADER))
 	{
 		return false;
 	}
 
-	tcp = (TCP_HEADER *)(frame + 14 + ip_size);
-	tcp_size = TCP_GET_HEADER_SIZE(tcp) * 4;
+	TCP_HEADER *tcp = (TCP_HEADER *)(frame + 14 + ip_size);
+	UINT tcp_size = TCP_GET_HEADER_SIZE(tcp) * 4;
 	if (tcp_size < sizeof(TCP_HEADER) || total < ip_size + tcp_size)
 	{
 		return false;
 	}
 
-	payload_size = total - ip_size - tcp_size;
+	UINT payload_size = total - ip_size - tcp_size;
 	if (payload_size >= text_size)
 	{
 		return false;
@@ -818,14 +803,13 @@ static void StorePacketTestParseReply(char *text, STOREPACKET_TEST_REPLY *r)
 	{
 		char line[STOREPACKET_TEST_REPLY_MAX];
 		UINT next = SearchStr(text, "\r\n", pos);
-		UINT len;
 
 		if (next == INFINITE || next > header_len)
 		{
 			next = header_len;
 		}
 
-		len = MIN(next - pos, sizeof(line) - 1);
+		UINT len = MIN(next - pos, sizeof(line) - 1);
 		Copy(line, text + pos, len);
 		line[len] = 0;
 
@@ -888,18 +872,15 @@ static bool StorePacketTestInfoHashOk(char *location)
 {
 	char hash_str[MAX_SIZE];
 	UCHAR hash[SHA1_SIZE];
-	char *info;
-	UINT len;
 	UINT bar = INFINITE;
-	BUF *b;
 
 	if (StartWith(location, STOREPACKET_TEST_INFO_PREFIX) == false)
 	{
 		return false;
 	}
 
-	info = location + StrLen(STOREPACKET_TEST_INFO_PREFIX);
-	len = StrLen(info);
+	char *info = location + StrLen(STOREPACKET_TEST_INFO_PREFIX);
+	UINT len = StrLen(info);
 
 	for (UINT i = 0;i < len;i++)
 	{
@@ -914,7 +895,7 @@ static bool StorePacketTestInfoHashOk(char *location)
 		return false;
 	}
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 	WriteBuf(b, info, bar + 1);
 	WriteBuf(b, STOREPACKET_TEST_INFO_SECRET, StrLen(STOREPACKET_TEST_INFO_SECRET));
 	Sha1(hash, b->Buf, b->Size);
@@ -935,7 +916,6 @@ static UINT StorePacketTestRedirect(STOREPACKET_TEST *t, char *url, char *userna
 	char *old_username = t->Sender->Username;
 	ACCESS a;
 	void *data;
-	UINT size;
 	UINT num = 0;
 
 	Zero(&a, sizeof(a));
@@ -953,7 +933,7 @@ static UINT StorePacketTestRedirect(STOREPACKET_TEST *t, char *url, char *userna
 	StorePacketTestDrainFrom(t->Sender);
 	StorePacketTestDrainFrom(t->Receiver);
 
-	size = StorePacketTestTcpFrame(frame, false, STOREPACKET_TEST_CLIENT_PORT, STOREPACKET_TEST_HTTP_PORT,
+	UINT size = StorePacketTestTcpFrame(frame, false, STOREPACKET_TEST_CLIENT_PORT, STOREPACKET_TEST_HTTP_PORT,
 		TCP_ACK | TCP_PSH, STOREPACKET_TEST_HTTP_GET);
 	StorePacketTestSendFrom(t->Sender, frame, size);
 
@@ -997,9 +977,8 @@ static void StorePacketTestRedirectCases(STOREPACKET_TEST *t)
 	char long_user[MAX_USERNAME_LEN + 1];
 	STOREPACKET_TEST_REPLY r;
 	UINT frame_size;
-	UINT num;
 
-	num = StorePacketTestRedirect(t, STOREPACKET_TEST_REDIRECT_URL, "storepacket-sender", text, sizeof(text), &frame_size);
+	UINT num = StorePacketTestRedirect(t, STOREPACKET_TEST_REDIRECT_URL, "storepacket-sender", text, sizeof(text), &frame_size);
 	StorePacketTestParseReply(text, &r);
 	StorePacketTestCheck(t, num == 1 && r.Found && r.NumLines == STOREPACKET_TEST_REPLY_LINES &&
 		StrCmp(r.Location, STOREPACKET_TEST_REDIRECT_URL) == 0 && r.BodyLength != INFINITE && r.ContentLength == r.BodyLength,
@@ -1075,7 +1054,6 @@ static void StorePacketTestNoServerPort(STOREPACKET_TEST *t)
 		char what[MAX_SIZE];
 		LOG *capture = ZeroMalloc(sizeof(LOG));
 		RECORD *rec;
-		UINT size, num_recv;
 		UINT num_lines = 0;
 		bool found = false;
 
@@ -1083,11 +1061,11 @@ static void StorePacketTestNoServerPort(STOREPACKET_TEST *t)
 		capture->Event = NewEvent();
 		t->Hub->SecurityLogger = capture;
 
-		size = StorePacketTestTcpFrame(frame, ipv6, STOREPACKET_TEST_SERVER_PORT, STOREPACKET_TEST_CLIENT_PORT,
+		UINT size = StorePacketTestTcpFrame(frame, ipv6, STOREPACKET_TEST_SERVER_PORT, STOREPACKET_TEST_CLIENT_PORT,
 			TCP_SYN | TCP_ACK, NULL);
 		StorePacketTestDrainFrom(t->Receiver);
 		StorePacketTestSendFrom(t->Sender, frame, size);
-		num_recv = StorePacketTestDrainFrom(t->Receiver);
+		UINT num_recv = StorePacketTestDrainFrom(t->Receiver);
 		StorePacketTestDrainFrom(t->Sender);
 
 		t->Hub->SecurityLogger = old_logger;

@@ -47,7 +47,6 @@ UINT StRegenerateServerCert(ADMIN *a, RPC_TEST *t)
 UINT StSetHubMsg(ADMIN *a, RPC_MSG *t)
 {
 	SERVER *s = a->Server;
-	HUB *h;
 	UINT err;
 
 	CHECK_RIGHT;
@@ -56,7 +55,7 @@ UINT StSetHubMsg(ADMIN *a, RPC_MSG *t)
 		return ERR_MEMORY_NOT_ENOUGH;
 	}
 
-	h = AdminGetHub(a, t->HubName, "no_change_msg", &err);
+	HUB *h = AdminGetHub(a, t->HubName, "no_change_msg", &err);
 	if (h == NULL)
 	{
 		return err;
@@ -73,12 +72,11 @@ UINT StSetHubMsg(ADMIN *a, RPC_MSG *t)
 
 UINT StGetHubMsg(ADMIN *a, RPC_MSG *t)
 {
-	HUB *h;
 	UINT err;
 
 	CHECK_RIGHT;
 
-	h = AdminGetHub(a, t->HubName, NULL, &err);
+	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
 		return err;
@@ -97,11 +95,10 @@ UINT StGetHubMsg(ADMIN *a, RPC_MSG *t)
 UINT StFlush(ADMIN *a, RPC_TEST *t)
 {
 	SERVER *s = a->Server;
-	UINT size;
 
 	SERVER_ADMIN_ONLY;
 
-	size = SiWriteConfigurationFile(s);
+	UINT size = SiWriteConfigurationFile(s);
 
 	t->IntValue = size;
 
@@ -120,17 +117,15 @@ UINT StCrash(ADMIN *a, RPC_TEST *t)
 UINT StGetAdminMsg(ADMIN *a, RPC_MSG *t)
 {
 	wchar_t winver_msg_client[3800];
-	UINT tmpsize;
-	wchar_t *tmp;
 
 	FreeRpcMsg(t);
 	Zero(t, sizeof(RPC_MSG));
 
 	FormatUnsupportedWinVerMsg(winver_msg_client, sizeof(winver_msg_client), &a->ClientWinVer);
 
-	tmpsize = UniStrSize(winver_msg_client) + 10000;
+	UINT tmpsize = UniStrSize(winver_msg_client) + 10000;
 
-	tmp = ZeroMalloc(tmpsize);
+	wchar_t *tmp = ZeroMalloc(tmpsize);
 
 	UniStrCat(tmp, tmpsize, winver_msg_client);
 

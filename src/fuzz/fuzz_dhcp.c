@@ -34,7 +34,6 @@ static UCHAR *FuzzDhcpCopy(const uint8_t *data, size_t size)
 static void FuzzDhcp(const uint8_t *data, size_t size)
 {
 	DHCP_MODIFY_OPTION m;
-	UCHAR *copy;
 
 	if (size == 0 || size > FUZZ_MAX_FRAME_SIZE)
 	{
@@ -47,7 +46,7 @@ static void FuzzDhcp(const uint8_t *data, size_t size)
 	m.RemoveDefaultGatewayOnReply = true;
 
 	// An Ethernet frame, as StorePacket() passes it
-	copy = FuzzDhcpCopy(data, size);
+	UCHAR *copy = FuzzDhcpCopy(data, size);
 	if (copy == NULL)
 	{
 		return;

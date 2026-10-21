@@ -495,13 +495,12 @@ UINT GetNextDelayedPacketTickDiff(SESSION *s)
 
 bool IsPriorityHighestPacketForQoS(void *data, UINT size)
 {
-	UCHAR *buf;
 	if (data == NULL)
 	{
 		return false;
 	}
 
-	buf = (UCHAR *)data;
+	UCHAR *buf = (UCHAR *)data;
 	if (size >= 16)
 	{
 		if (buf[12] == 0x08 && buf[13] == 0x00 && buf[15] != 0x00 && buf[15] != 0x08)
@@ -651,13 +650,12 @@ static void FreePacketAdapter(PACKET_ADAPTER *pa)
 PACKET_ADAPTER *NewPacketAdapter(PA_INIT *init, PA_GETCANCEL *getcancel, PA_GETNEXTPACKET *getnext,
 								 PA_PUTPACKET *put, PA_FREE *free)
 {
-	PACKET_ADAPTER *pa;
 	if (init == NULL || getcancel == NULL || getnext == NULL || put == NULL || free == NULL)
 	{
 		return NULL;
 	}
 
-	pa = ZeroMalloc(sizeof(PACKET_ADAPTER));
+	PACKET_ADAPTER *pa = ZeroMalloc(sizeof(PACKET_ADAPTER));
 
 	pa->Init = init;
 	pa->Free = free;
@@ -670,18 +668,16 @@ PACKET_ADAPTER *NewPacketAdapter(PA_INIT *init, PA_GETCANCEL *getcancel, PA_GETN
 
 static void ClientAdditionalThread(THREAD *t, void *param)
 {
-	SESSION *s;
-	CONNECTION *c;
 	if (t == NULL || param == NULL)
 	{
 		return;
 	}
 
-	s = (SESSION *)param;
+	SESSION *s = (SESSION *)param;
 
 	s->LastTryAddConnectTime = Tick64();
 
-	c = s->Connection;
+	CONNECTION *c = s->Connection;
 	Inc(c->CurrentNumConnection);
 	LockList(c->ConnectingThreads);
 	{
@@ -729,21 +725,19 @@ static void ClientAdditionalThread(THREAD *t, void *param)
 
 void SessionAdditionalConnect(SESSION *s)
 {
-	THREAD *t;
 	if (s == NULL)
 	{
 		return;
 	}
 
 	AddRef(s->ref);
-	t = NewThread(ClientAdditionalThread, (void *)s);
+	THREAD *t = NewThread(ClientAdditionalThread, (void *)s);
 	WaitThreadInit(t);
 	ReleaseThread(t);
 }
 
 static bool SessionConnect(SESSION *s)
 {
-	CONNECTION *c;
 	bool ret = false;
 	if (s == NULL)
 	{
@@ -763,7 +757,7 @@ static bool SessionConnect(SESSION *s)
 	}
 	Unlock(s->lock);
 
-	c = NewClientConnectionEx(s, NULL);
+	CONNECTION *c = NewClientConnectionEx(s, NULL);
 
 	// StopSessionEx reads s->Connection and takes its ref under s->lock
 	Lock(s->lock);
@@ -965,13 +959,12 @@ void ReleaseSession(SESSION *s)
 
 static void ClientThread(THREAD *t, void *param)
 {
-	SESSION *s;
 	if (t == NULL || param == NULL)
 	{
 		return;
 	}
 
-	s = (SESSION *)param;
+	SESSION *s = (SESSION *)param;
 	AddRef(s->ref);
 	s->Thread = t;
 	AddRef(t->ref);
@@ -1075,9 +1068,7 @@ static void ClientThread(THREAD *t, void *param)
 // The fields every session constructor sets the same way
 static SESSION *NewSessionBase(CEDAR *cedar, bool server_mode)
 {
-	SESSION *s;
-
-	s = ZeroMalloc(sizeof(SESSION));
+	SESSION *s = ZeroMalloc(sizeof(SESSION));
 
 	s->LoggingRecordCount = NewCounter();
 	s->lock = NewLock();
@@ -1095,9 +1086,6 @@ static SESSION *NewSessionBase(CEDAR *cedar, bool server_mode)
 
 SESSION *NewRpcSession(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *client_str)
 {
-	SESSION *s;
-	CONNECTION *c;
-	SOCK *sock;
 	if (cedar == NULL || option == NULL)
 	{
 		if (err != NULL)
@@ -1107,7 +1095,7 @@ SESSION *NewRpcSession(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *cli
 		return NULL;
 	}
 
-	s = NewSessionBase(cedar, false);
+	SESSION *s = NewSessionBase(cedar, false);
 
 	s->Name = CopyStr("CLIENT_RPC_SESSION");
 
@@ -1117,9 +1105,9 @@ SESSION *NewRpcSession(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *cli
 	s->UseEncrypt = option->UseEncrypt;
 	s->UseCompress = option->UseCompress;
 
-	c = s->Connection = NewClientConnectionEx(s, client_str);
+	CONNECTION *c = s->Connection = NewClientConnectionEx(s, client_str);
 
-	sock = ClientConnectToServer(c);
+	SOCK *sock = ClientConnectToServer(c);
 	if (sock == NULL)
 	{
 		if (err != NULL)
@@ -1157,14 +1145,12 @@ SESSION *NewRpcSession(CEDAR *cedar, CLIENT_OPTION *option, UINT *err, char *cli
 
 SESSION *NewClientSession(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *auth, PACKET_ADAPTER *pa)
 {
-	SESSION *s;
-	THREAD *t;
 	if (cedar == NULL || option == NULL || auth == NULL || pa == NULL)
 	{
 		return NULL;
 	}
 
-	s = NewSessionBase(cedar, false);
+	SESSION *s = NewSessionBase(cedar, false);
 
 	s->Name = CopyStr("CLIENT_SESSION");
 	s->PacketAdapter = pa;
@@ -1208,7 +1194,7 @@ SESSION *NewClientSession(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *auth
 		}
 	}
 
-	t = NewThread(ClientThread, (void *)s);
+	THREAD *t = NewThread(ClientThread, (void *)s);
 	WaitThreadInit(t);
 	ReleaseThread(t);
 
@@ -1269,7 +1255,6 @@ static void NewSessionKey(UCHAR *session_key, UINT *session_key_32)
 
 SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, POLICY *policy)
 {
-	SESSION *s;
 	char name[MAX_SIZE];
 	char hub_name_upper[MAX_SIZE];
 	char user_name_upper[MAX_USERNAME_LEN + 1];
@@ -1278,7 +1263,7 @@ SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, P
 		return NULL;
 	}
 
-	s = NewSessionBase(cedar, true);
+	SESSION *s = NewSessionBase(cedar, true);
 
 	s->CancelList = NewList(NULL);
 	s->Thread = c->Thread;

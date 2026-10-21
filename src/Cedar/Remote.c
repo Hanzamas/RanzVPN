@@ -48,12 +48,9 @@ static PACK *CallRpcDispatcher(RPC *r, PACK *p)
 // One frame is a 32-bit big-endian size and the serialised PACK
 static bool RpcSendPack(SOCK *s, PACK *p)
 {
-	BUF *b;
-	UINT size;
+	BUF *b = PackToBuf(p);
 
-	b = PackToBuf(p);
-
-	size = Endian32(b->Size);
+	UINT size = Endian32(b->Size);
 	SendAdd(s, &size, sizeof(UINT));
 	SendAdd(s, b->Buf, b->Size);
 	FreeBuf(b);
@@ -63,8 +60,6 @@ static bool RpcSendPack(SOCK *s, PACK *p)
 
 static PACK *RpcRecvPack(SOCK *s)
 {
-	BUF *b;
-	PACK *p;
 	UINT size;
 	if (RecvAll(s, &size, sizeof(UINT), s->SecureMode) == false)
 	{
@@ -78,7 +73,7 @@ static PACK *RpcRecvPack(SOCK *s)
 		return NULL;
 	}
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 
 	while (b->Size < size)
 	{
@@ -95,7 +90,7 @@ static PACK *RpcRecvPack(SOCK *s)
 		b->Size += chunk;
 	}
 
-	p = BufToPack(b);
+	PACK *p = BufToPack(b);
 	FreeBuf(b);
 
 	return p;
@@ -103,21 +98,18 @@ static PACK *RpcRecvPack(SOCK *s)
 
 static bool RpcRecvNextCall(RPC *r)
 {
-	PACK *p;
-	PACK *ret;
-	bool ok;
 	if (r == NULL)
 	{
 		return false;
 	}
 
-	p = RpcRecvPack(r->Sock);
+	PACK *p = RpcRecvPack(r->Sock);
 	if (p == NULL)
 	{
 		return false;
 	}
 
-	ret = CallRpcDispatcher(r, p);
+	PACK *ret = CallRpcDispatcher(r, p);
 	FreePack(p);
 
 	if (ret == NULL)
@@ -125,7 +117,7 @@ static bool RpcRecvNextCall(RPC *r)
 		ret = PackError(ERR_NOT_SUPPORTED);
 	}
 
-	ok = RpcSendPack(r->Sock, ret);
+	bool ok = RpcSendPack(r->Sock, ret);
 	FreePack(ret);
 
 	return ok;
@@ -230,13 +222,12 @@ PACK *RpcCallInternal(RPC *r, PACK *p)
 // dispatch is the function a server-side RPC runs for each call, NULL for the calling side
 RPC *NewRpc(SOCK *s, RPC_DISPATCHER *dispatch, void *param)
 {
-	RPC *r;
 	if (s == NULL)
 	{
 		return NULL;
 	}
 
-	r = ZeroMallocEx(sizeof(RPC), true);
+	RPC *r = ZeroMallocEx(sizeof(RPC), true);
 	r->Sock = s;
 	r->Param = param;
 	r->Lock = NewLock();

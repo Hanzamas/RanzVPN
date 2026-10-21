@@ -214,7 +214,6 @@ void FreeTinyLog(TINY_LOG *t)
 
 void WriteTinyLog(TINY_LOG *t, char *str)
 {
-	BUF *b;
 	char dt[MAX_PATH];
 	if (t == NULL)
 	{
@@ -224,7 +223,7 @@ void WriteTinyLog(TINY_LOG *t, char *str)
 	GetDateTimeStrMilli64(dt, sizeof(dt), LocalTime64());
 	StrCat(dt, sizeof(dt), ": ");
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 
 	WriteBuf(b, dt, StrLen(dt));
 	WriteBuf(b, str, StrLen(str));
@@ -243,7 +242,6 @@ TINY_LOG *NewTinyLog()
 {
 	char name[MAX_PATH];
 	SYSTEMTIME st;
-	TINY_LOG *t;
 
 	LocalTime(&st);
 
@@ -252,7 +250,7 @@ TINY_LOG *NewTinyLog()
 	Format(name, sizeof(name), TINY_LOG_FILENAME,
 		st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
 
-	t = ZeroMalloc(sizeof(TINY_LOG));
+	TINY_LOG *t = ZeroMalloc(sizeof(TINY_LOG));
 
 	StrCpy(t->FileName, sizeof(t->FileName), name);
 	t->io = FileCreate(name);
@@ -263,13 +261,12 @@ TINY_LOG *NewTinyLog()
 
 static int CompareNoSslList(void *p1, void *p2)
 {
-	NON_SSL *n1, *n2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	n1 = *(NON_SSL **)p1;
-	n2 = *(NON_SSL **)p2;
+	NON_SSL *n1 = *(NON_SSL **)p1;
+	NON_SSL *n2 = *(NON_SSL **)p2;
 	if (n1 == NULL || n2 == NULL)
 	{
 		return 0;
@@ -377,13 +374,12 @@ static bool IsNoSslExpired(void *p, void *param)
 
 static void DeleteOldNoSsl(CEDAR *c)
 {
-	UINT64 now;
 	if (c == NULL)
 	{
 		return;
 	}
 
-	now = Tick64();
+	UINT64 now = Tick64();
 
 	DeleteAndFreeIf(c->NonSslList, IsNoSslExpired, &now);
 }
@@ -418,7 +414,7 @@ static void MakeRoomInNoSslList(CEDAR *c)
 
 static NON_SSL *SearchNoSslList(CEDAR *c, IP *ip)
 {
-	NON_SSL *n, t;
+	NON_SSL t;
 	if (c == NULL || ip == NULL)
 	{
 		return NULL;
@@ -427,7 +423,7 @@ static NON_SSL *SearchNoSslList(CEDAR *c, IP *ip)
 	Zero(&t, sizeof(t));
 	GetRateLimitKey(&t.IpAddress, ip);
 
-	n = Search(c->NonSslList, &t);
+	NON_SSL *n = Search(c->NonSslList, &t);
 
 	if (n == NULL)
 	{
@@ -506,13 +502,12 @@ void DelConnection(CEDAR *cedar, CONNECTION *c)
 
 UINT GetUnestablishedConnections(CEDAR *cedar)
 {
-	UINT ret;
 	if (cedar == NULL)
 	{
 		return 0;
 	}
 
-	ret = 0;
+	UINT ret = 0;
 
 	LockList(cedar->ConnectionList);
 	{
@@ -546,13 +541,12 @@ UINT GetUnestablishedConnections(CEDAR *cedar)
 void AddConnection(CEDAR *cedar, CONNECTION *c)
 {
 	char tmp[MAX_SIZE];
-	UINT i;
 	if (cedar == NULL || c == NULL)
 	{
 		return;
 	}
 
-	i = Inc(cedar->ConnectionIncrement);
+	UINT i = Inc(cedar->ConnectionIncrement);
 	Format(tmp, sizeof(tmp), "CID-%u", i);
 
 	Lock(c->lock);
@@ -972,13 +966,12 @@ void SetCedarCipherList(CEDAR *cedar, char *name)
 
 static int CompareNetSvc(void *p1, void *p2)
 {
-	NETSVC *n1, *n2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	n1 = *(NETSVC **)p1;
-	n2 = *(NETSVC **)p2;
+	NETSVC *n1 = *(NETSVC **)p1;
+	NETSVC *n2 = *(NETSVC **)p2;
 	if (n1 == NULL || n2 == NULL)
 	{
 		return 0;
@@ -1005,7 +998,6 @@ static int CompareNetSvc(void *p1, void *p2)
 static void InitNetSvcList(CEDAR *cedar)
 {
 	char filename[MAX_PATH] = "/etc/services";
-	BUF *b;
 	if (cedar == NULL)
 	{
 		return;
@@ -1015,7 +1007,7 @@ static void InitNetSvcList(CEDAR *cedar)
 
 	cedar->NetSvcList = NewList(CompareNetSvc);
 
-	b = ReadDump(filename);
+	BUF *b = ReadDump(filename);
 	if (b == NULL)
 	{
 		return;
@@ -1136,10 +1128,9 @@ void RegistWindowsFirewallAll()
 
 CEDAR *NewCedar(X *server_x, K *server_k)
 {
-	CEDAR *c;
 	char tmp[MAX_SIZE];
 
-	c = ZeroMalloc(sizeof(CEDAR));
+	CEDAR *c = ZeroMalloc(sizeof(CEDAR));
 
 	c->CurrentActiveLinks = NewCounter();
 
@@ -1273,9 +1264,7 @@ void TrafficCountFrame(TRAFFIC_ENTRY *e, UCHAR *buf, UINT size)
 
 TRAFFIC *NewTraffic()
 {
-	TRAFFIC *t;
-
-	t = ZeroMalloc(sizeof(TRAFFIC));
+	TRAFFIC *t = ZeroMalloc(sizeof(TRAFFIC));
 	return t;
 }
 

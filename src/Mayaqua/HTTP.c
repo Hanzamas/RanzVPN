@@ -12,13 +12,12 @@
 
 HTTP_HEADER *NewHttpHeader(char *method, char *target, char *version)
 {
-	HTTP_HEADER *header;
 	if (method == NULL || target == NULL || version == NULL)
 	{
 		return NULL;
 	}
 
-	header = ZeroMalloc(sizeof(HTTP_HEADER));
+	HTTP_HEADER *header = ZeroMalloc(sizeof(HTTP_HEADER));
 
 	header->Method = CopyStr(method);
 	header->Target = CopyStr(target);
@@ -30,7 +29,6 @@ HTTP_HEADER *NewHttpHeader(char *method, char *target, char *version)
 
 void FreeHttpHeader(HTTP_HEADER *header)
 {
-	HTTP_VALUE **values;
 	if (header == NULL)
 	{
 		return;
@@ -40,7 +38,7 @@ void FreeHttpHeader(HTTP_HEADER *header)
 	Free(header->Target);
 	Free(header->Version);
 
-	values = ToArray(header->ValueList);
+	HTTP_VALUE **values = ToArray(header->ValueList);
 	for (UINT i = 0;i < LIST_NUM(header->ValueList);i++)
 	{
 		FreeHttpValue(values[i]);
@@ -54,13 +52,12 @@ void FreeHttpHeader(HTTP_HEADER *header)
 
 HTTP_VALUE *NewHttpValue(char *name, char *data)
 {
-	HTTP_VALUE *v;
 	if (name == NULL || data == NULL)
 	{
 		return NULL;
 	}
 
-	v = ZeroMalloc(sizeof(HTTP_VALUE));
+	HTTP_VALUE *v = ZeroMalloc(sizeof(HTTP_VALUE));
 
 	v->Name = CopyStr(name);
 	v->Data = CopyStr(data);
@@ -86,13 +83,12 @@ void FreeHttpValue(HTTP_VALUE *value)
 
 int CompareHttpValue(void *p1, void *p2)
 {
-	HTTP_VALUE *v1, *v2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	v1 = *(HTTP_VALUE **)p1;
-	v2 = *(HTTP_VALUE **)p2;
+	HTTP_VALUE *v1 = *(HTTP_VALUE **)p1;
+	HTTP_VALUE *v2 = *(HTTP_VALUE **)p2;
 	if (v1 == NULL || v2 == NULL)
 	{
 		return 0;
@@ -102,14 +98,14 @@ int CompareHttpValue(void *p1, void *p2)
 
 HTTP_VALUE *GetHttpValue(HTTP_HEADER *header, char *name)
 {
-	HTTP_VALUE *v, t;
+	HTTP_VALUE t;
 	if (header == NULL || name == NULL)
 	{
 		return NULL;
 	}
 
 	t.Name = name;
-	v = Search(header->ValueList, &t);
+	HTTP_VALUE *v = Search(header->ValueList, &t);
 	if (v == NULL)
 	{
 		return NULL;
@@ -181,29 +177,24 @@ bool AddHttpValueStr(HTTP_HEADER* header, char *string)
 
 UINT GetContentLength(HTTP_HEADER *header)
 {
-	UINT ret;
-	HTTP_VALUE *v;
 	if (header == NULL)
 	{
 		return 0;
 	}
 
-	v = GetHttpValue(header, "Content-Length");
+	HTTP_VALUE *v = GetHttpValue(header, "Content-Length");
 	if (v == NULL)
 	{
 		return 0;
 	}
 
-	ret = ToInt(v->Data);
+	UINT ret = ToInt(v->Data);
 
 	return ret;
 }
 
 bool PostHttp(SOCK *s, HTTP_HEADER *header, void *post_data, UINT post_size)
 {
-	char *header_str;
-	BUF *b;
-	bool ret;
 	if (s == NULL || header == NULL || (post_size != 0 && post_data == NULL))
 	{
 		return false;
@@ -216,18 +207,18 @@ bool PostHttp(SOCK *s, HTTP_HEADER *header, void *post_data, UINT post_size)
 		AddHttpValue(header, NewHttpValue("Content-Length", tmp));
 	}
 
-	header_str = HttpHeaderToStr(header);
+	char *header_str = HttpHeaderToStr(header);
 	if (header_str == NULL)
 	{
 		return false;
 	}
-	b = NewBuf();
+	BUF *b = NewBuf();
 	WriteBuf(b, header_str, StrLen(header_str));
 	Free(header_str);
 
 	WriteBuf(b, post_data, post_size);
 
-	ret = SendAll(s, b->Buf, b->Size, s->SecureMode);
+	bool ret = SendAll(s, b->Buf, b->Size, s->SecureMode);
 
 	FreeBuf(b);
 
@@ -236,16 +227,13 @@ bool PostHttp(SOCK *s, HTTP_HEADER *header, void *post_data, UINT post_size)
 
 char *HttpHeaderToStr(HTTP_HEADER *header)
 {
-	BUF *b;
-	char *tmp;
-	char *s;
 	if (header == NULL)
 	{
 		return NULL;
 	}
 
-	tmp = Malloc(HTTP_HEADER_LINE_MAX_SIZE);
-	b = NewBuf();
+	char *tmp = Malloc(HTTP_HEADER_LINE_MAX_SIZE);
+	BUF *b = NewBuf();
 
 	Format(tmp, HTTP_HEADER_LINE_MAX_SIZE,
 		"%s %s %s\r\n", header->Method, header->Target, header->Version);
@@ -260,7 +248,7 @@ char *HttpHeaderToStr(HTTP_HEADER *header)
 	}
 
 	WriteBuf(b, "\r\n", 2);
-	s = Malloc(b->Size + 1);
+	char *s = Malloc(b->Size + 1);
 	Copy(s, b->Buf, b->Size);
 	s[b->Size] = 0;
 
@@ -272,16 +260,14 @@ char *HttpHeaderToStr(HTTP_HEADER *header)
 
 bool SendHttpHeader(SOCK *s, HTTP_HEADER *header)
 {
-	char *str;
-	bool ret;
 	if (s == NULL || header == NULL)
 	{
 		return false;
 	}
 
-	str = HttpHeaderToStr(header);
+	char *str = HttpHeaderToStr(header);
 
-	ret = SendAll(s, str, StrLen(str), s->SecureMode);
+	bool ret = SendAll(s, str, StrLen(str), s->SecureMode);
 
 	Free(str);
 
@@ -302,15 +288,13 @@ static char *HttpSockLineSource(void *param, UINT max_size)
 char *HttpBufLineSource(void *param, UINT max_size)
 {
 	BUF *b = (BUF *)param;
-	UCHAR *data;
-	UINT start;
 	if (b == NULL || max_size == 0)
 	{
 		return NULL;
 	}
 
-	data = (UCHAR *)b->Buf;
-	start = b->Current;
+	UCHAR *data = (UCHAR *)b->Buf;
+	UINT start = b->Current;
 
 	for (UINT i = start;i < b->Size;i++)
 	{
@@ -325,14 +309,13 @@ char *HttpBufLineSource(void *param, UINT max_size)
 		if (data[i] == '\n')
 		{
 			UINT len = consumed - 1;
-			char *str;
 
 			if (len >= 1 && data[start + len - 1] == '\r')
 			{
 				len--;
 			}
 
-			str = Malloc(len + 1);
+			char *str = Malloc(len + 1);
 			Copy(str, data + start, len);
 			str[len] = 0;
 
@@ -430,7 +413,6 @@ HTTP_HEADER *RecvHttpHeader(SOCK *s)
 
 char *RecvLine(SOCK *s, UINT max_size)
 {
-	BUF *b;
 	char c;
 	char *str;
 	if (s == NULL || max_size == 0)
@@ -438,17 +420,16 @@ char *RecvLine(SOCK *s, UINT max_size)
 		return NULL;
 	}
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 	while (true)
 	{
-		UCHAR *buf;
 		if (RecvAll(s, &c, sizeof(c), s->SecureMode) == false)
 		{
 			FreeBuf(b);
 			return NULL;
 		}
 		WriteBuf(b, &c, sizeof(c));
-		buf = (UCHAR *)b->Buf;
+		UCHAR *buf = (UCHAR *)b->Buf;
 		if (b->Size > max_size)
 		{
 			FreeBuf(b);

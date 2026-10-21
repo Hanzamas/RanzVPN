@@ -31,7 +31,6 @@
 
 bool DownloadAndSaveIntermediateCertificatesIfNecessary(X *x)
 {
-	LIST *o;
 	bool ret = false;
 	if (x == NULL)
 	{
@@ -43,7 +42,7 @@ bool DownloadAndSaveIntermediateCertificatesIfNecessary(X *x)
 		return true;
 	}
 
-	o = NewCertList(true);
+	LIST *o = NewCertList(true);
 
 	ret = TryGetRootCertChain(o, x, true, NULL);
 
@@ -120,7 +119,6 @@ bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x)
 				wchar_t hex[128];
 				UCHAR hash[SHA1_SIZE];
 				wchar_t tmp[MAX_SIZE];
-				BUF *b;
 
 				GetXDigest(xx, hash, true);
 				BinToStr(hex_a, sizeof(hex_a), hash, SHA1_SIZE);
@@ -132,7 +130,7 @@ bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x)
 
 				CombinePathW(tmp, sizeof(tmp), dirname, fn);
 
-				b = XToBuf(xx, true);
+				BUF *b = XToBuf(xx, true);
 
 				DumpBufW(b, tmp);
 
@@ -165,7 +163,6 @@ bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x)
 bool TryGetParentCertFromCertList(LIST *o, X *x, LIST *found_chain)
 {
 	bool ret = false;
-	X *r;
 	bool do_free = false;
 	if (o == NULL || x == NULL || found_chain == NULL)
 	{
@@ -184,7 +181,7 @@ bool TryGetParentCertFromCertList(LIST *o, X *x, LIST *found_chain)
 		return true;
 	}
 
-	r = FindCertIssuerFromCertList(o, x);
+	X *r = FindCertIssuerFromCertList(o, x);
 
 	if (r == NULL)
 	{
@@ -537,14 +534,13 @@ FINAL:
 
 X *DownloadCert(char *url)
 {
-	BUF *b;
 	X *ret = NULL;
 	if (IsEmptyStr(url))
 	{
 		return NULL;
 	}
 
-	b = HttpGet(url, CERT_HTTP_DOWNLOAD_TIMEOUT, CERT_HTTP_DOWNLOAD_MAXSIZE, NULL);
+	BUF *b = HttpGet(url, CERT_HTTP_DOWNLOAD_TIMEOUT, CERT_HTTP_DOWNLOAD_MAXSIZE, NULL);
 
 	if (b == NULL)
 	{
@@ -560,9 +556,7 @@ X *DownloadCert(char *url)
 
 LIST *NewCertList(bool load_root_and_chain)
 {
-	LIST *o;
-
-	o = NewList(NULL);
+	LIST *o = NewList(NULL);
 
 	if (load_root_and_chain)
 	{
@@ -634,7 +628,6 @@ void AddAllChainCertsToCertList(LIST *o)
 {
 	wchar_t dirname[MAX_SIZE];
 	wchar_t exedir[MAX_SIZE];
-	DIRLIST *dir;
 	if (o == NULL)
 	{
 		return;
@@ -646,7 +639,7 @@ void AddAllChainCertsToCertList(LIST *o)
 
 	MakeDirExW(dirname);
 
-	dir = EnumDirW(dirname);
+	DIRLIST *dir = EnumDirW(dirname);
 
 	if (dir != NULL)
 	{
@@ -657,11 +650,10 @@ void AddAllChainCertsToCertList(LIST *o)
 			if (e->Folder == false)
 			{
 				wchar_t tmp[MAX_SIZE];
-				X *x;
 
 				CombinePathW(tmp, sizeof(tmp), dirname, e->FileNameW);
 
-				x = FileToXW(tmp);
+				X *x = FileToXW(tmp);
 
 				if (x != NULL)
 				{
@@ -678,21 +670,19 @@ void AddAllChainCertsToCertList(LIST *o)
 
 void AddAllRootCertsToCertList(LIST *o)
 {
-	BUF *buf;
-	PACK *p;
 	UINT num_ok = 0, num_error = 0;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	buf = ReadDump(ROOT_CERTS_FILENAME);
+	BUF *buf = ReadDump(ROOT_CERTS_FILENAME);
 	if (buf == NULL)
 	{
 		return;
 	}
 
-	p = BufToPack(buf);
+	PACK *p = BufToPack(buf);
 
 	if (p != NULL)
 	{
@@ -742,7 +732,6 @@ void AddAllRootCertsToCertList(LIST *o)
 // salt alone still tells two servers apart.
 void ComputeMachineUniqueHash(void *data, char *machine_guid, void *salt, UINT salt_size)
 {
-	BUF *b;
 	char guid[MAX_SIZE];
 	UCHAR hash[SHA256_SIZE];
 	if (data == NULL || (salt == NULL && salt_size != 0))
@@ -754,7 +743,7 @@ void ComputeMachineUniqueHash(void *data, char *machine_guid, void *salt, UINT s
 	Trim(guid);
 	StrLower(guid);
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 	WriteBuf(b, MACHINE_ID_LABEL, StrSize(MACHINE_ID_LABEL));
 	WriteBuf(b, guid, StrSize(guid));
 	WriteBuf(b, salt, salt_size);
@@ -769,13 +758,12 @@ void ComputeMachineUniqueHash(void *data, char *machine_guid, void *salt, UINT s
 // HKLM\SOFTWARE\Microsoft\Cryptography\MachineGuid in the 64-bit registry view, or "" when it cannot be read
 static void GetMachineGuid(char *guid, UINT size)
 {
-	char *s;
 	if (guid == NULL)
 	{
 		return;
 	}
 
-	s = MsRegReadStrEx2(REG_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Cryptography", "MachineGuid", false);
+	char *s = MsRegReadStrEx2(REG_LOCAL_MACHINE, "SOFTWARE\\Microsoft\\Cryptography", "MachineGuid", false);
 
 	StrCpy(guid, size, s);
 

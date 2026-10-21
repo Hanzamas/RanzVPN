@@ -17,14 +17,12 @@
 
 UINT PsFlush(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	RPC_TEST t;
-	UINT ret;
 	wchar_t tmp[MAX_SIZE];
 	char sizestr[MAX_SIZE];
 
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
+	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -34,7 +32,7 @@ UINT PsFlush(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	Zero(&t, sizeof(t));
 
-	ret = ScFlush(ps->Rpc, &t);
+	UINT ret = ScFlush(ps->Rpc, &t);
 
 	if (ret != ERR_NO_ERROR)
 	{
@@ -54,21 +52,19 @@ UINT PsFlush(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsCrash(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
-	char *yes;
 	PARAM args[] =
 	{
 		{"[yes]", CmdPrompt, _UU("CMD_Crash_Confirm"), NULL, NULL},
 	};
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
 	}
 
-	yes = GetParamStr(o, "[yes]");
+	char *yes = GetParamStr(o, "[yes]");
 
 	if (StrCmpi(yes, "yes") != 0)
 	{
@@ -77,13 +73,12 @@ UINT PsCrash(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	else
 	{
 		RPC_TEST t;
-		UINT ret;
 
 		c->Write(c, _UU("CMD_Crash_Msg"));
 
 		Zero(&t, sizeof(t));
 
-		ret = ScCrash(ps->Rpc, &t);
+		UINT ret = ScCrash(ps->Rpc, &t);
 
 		if (ret != ERR_NO_ERROR)
 		{
@@ -100,7 +95,6 @@ UINT PsCrash(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsServerCertRegenerate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_TEST t;
@@ -109,7 +103,7 @@ UINT PsServerCertRegenerate(CONSOLE *c, char *cmd_name, wchar_t *str, void *para
 		{"[CN]", CmdPrompt, _UU("CMD_ServerCertRegenerate_Prompt_CN"), CmdEvalNotEmpty, NULL},
 	};
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;

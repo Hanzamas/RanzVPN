@@ -34,13 +34,12 @@ static UINT PackValueMinWireSize(UINT type)
 
 PACK *BufToPack(BUF *b)
 {
-	PACK *p;
 	if (b == NULL)
 	{
 		return NULL;
 	}
 
-	p = NewPack();
+	PACK *p = NewPack();
 	if (ReadPack(b, p) == false)
 	{
 		FreePack(p);
@@ -52,13 +51,12 @@ PACK *BufToPack(BUF *b)
 
 BUF *PackToBuf(PACK *p)
 {
-	BUF *b;
 	if (p == NULL)
 	{
 		return NULL;
 	}
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 	WritePack(b, p);
 
 	return b;
@@ -66,13 +64,12 @@ BUF *PackToBuf(PACK *p)
 
 bool ReadPack(BUF *b, PACK *p)
 {
-	UINT num;
 	if (b == NULL || p == NULL)
 	{
 		return false;
 	}
 
-	num = ReadBufInt(b);
+	UINT num = ReadBufInt(b);
 	// The peer claims the count: no more elements than the bytes present can hold
 	if (num > MAX_ELEMENT_NUM || num > ReadBufRemainSize(b) / PACK_ELEMENT_MIN_WIRE_SIZE)
 	{
@@ -81,8 +78,7 @@ bool ReadPack(BUF *b, PACK *p)
 
 	for (UINT i = 0;i < num;i++)
 	{
-		ELEMENT *e;
-		e = ReadElement(b);
+		ELEMENT *e = ReadElement(b);
 		if (AddElement(p, e) == false)
 		{
 			return false;
@@ -111,9 +107,6 @@ void WritePack(BUF *b, PACK *p)
 ELEMENT *ReadElement(BUF *b)
 {
 	char name[MAX_ELEMENT_NAME_LEN + 1];
-	UINT type, num_value, value_size;
-	VALUE **values;
-	ELEMENT *e;
 	if (b == NULL)
 	{
 		return NULL;
@@ -130,18 +123,18 @@ ELEMENT *ReadElement(BUF *b)
 		return NULL;
 	}
 
-	type = ReadBufInt(b);
+	UINT type = ReadBufInt(b);
 
-	num_value = ReadBufInt(b);
+	UINT num_value = ReadBufInt(b);
 
 	// A known type, and no more values than the bytes present can hold, before anything is allocated
-	value_size = PackValueMinWireSize(type);
+	UINT value_size = PackValueMinWireSize(type);
 	if (value_size == 0 || num_value == 0 || num_value > MAX_VALUE_NUM || num_value > ReadBufRemainSize(b) / value_size)
 	{
 		return NULL;
 	}
 
-	values = (VALUE **)Malloc(sizeof(VALUE *) * num_value);
+	VALUE **values = (VALUE **)Malloc(sizeof(VALUE *) * num_value);
 	for (UINT i = 0;i < num_value;i++)
 	{
 		values[i] = ReadValue(b, type);
@@ -158,7 +151,7 @@ ELEMENT *ReadElement(BUF *b)
 		}
 	}
 
-	e = NewElement(name, type, num_value, values);
+	ELEMENT *e = NewElement(name, type, num_value, values);
 
 	Free(values);
 
@@ -192,7 +185,6 @@ VALUE *ReadValue(BUF *b, UINT type)
 	UINT unistr_size;
 	UINT size;
 	UINT u_size;
-	UINT min_size;
 	VALUE *v = NULL;
 	if (b == NULL)
 	{
@@ -200,7 +192,7 @@ VALUE *ReadValue(BUF *b, UINT type)
 	}
 
 	// The value, or the length before it, must be there: ReadBufInt() reads 0 past the end
-	min_size = PackValueMinWireSize(type);
+	UINT min_size = PackValueMinWireSize(type);
 	if (min_size == 0 || ReadBufRemainSize(b) < min_size)
 	{
 		return NULL;
@@ -327,13 +319,12 @@ static VALUE *GetElementValue(ELEMENT *e, UINT index)
 
 static int ComparePackName(void *p1, void *p2)
 {
-	ELEMENT *o1, *o2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	o1 = *(ELEMENT **)p1;
-	o2 = *(ELEMENT **)p2;
+	ELEMENT *o1 = *(ELEMENT **)p1;
+	ELEMENT *o2 = *(ELEMENT **)p2;
 	if (o1 == NULL || o2 == NULL)
 	{
 		return 0;
@@ -370,13 +361,12 @@ static void FreeValue(VALUE *v, UINT type)
 
 VALUE *NewUniStrValue(wchar_t *str)
 {
-	VALUE *v;
 	if (str == NULL)
 	{
 		return NULL;
 	}
 
-	v = Malloc(sizeof(VALUE));
+	VALUE *v = Malloc(sizeof(VALUE));
 
 	v->Size = UniStrSize(str);
 	v->UniStr = Malloc(v->Size);
@@ -389,13 +379,12 @@ VALUE *NewUniStrValue(wchar_t *str)
 
 VALUE *NewStrValue(char *str)
 {
-	VALUE *v;
 	if (str == NULL)
 	{
 		return NULL;
 	}
 
-	v = Malloc(sizeof(VALUE));
+	VALUE *v = Malloc(sizeof(VALUE));
 
 	v->Size = StrLen(str) + 1;
 	v->Str = Malloc(v->Size);
@@ -408,13 +397,12 @@ VALUE *NewStrValue(char *str)
 
 VALUE *NewDataValue(void *data, UINT size)
 {
-	VALUE *v;
 	if (data == NULL)
 	{
 		return NULL;
 	}
 
-	v = Malloc(sizeof(VALUE));
+	VALUE *v = Malloc(sizeof(VALUE));
 
 	v->Size = size;
 	v->Data = Malloc(v->Size);
@@ -425,9 +413,7 @@ VALUE *NewDataValue(void *data, UINT size)
 
 VALUE *NewInt64Value(UINT64 i)
 {
-	VALUE *v;
-
-	v = Malloc(sizeof(VALUE));
+	VALUE *v = Malloc(sizeof(VALUE));
 	v->Int64Value = i;
 	v->Size = sizeof(UINT64);
 
@@ -436,9 +422,7 @@ VALUE *NewInt64Value(UINT64 i)
 
 VALUE *NewIntValue(UINT i)
 {
-	VALUE *v;
-
-	v = Malloc(sizeof(VALUE));
+	VALUE *v = Malloc(sizeof(VALUE));
 	v->IntValue = i;
 	v->Size = sizeof(UINT);
 
@@ -463,13 +447,12 @@ static void FreeElement(ELEMENT *e)
 
 ELEMENT *NewElement(char *name, UINT type, UINT num_value, VALUE **values)
 {
-	ELEMENT *e;
 	if (name == NULL || num_value == 0 || values == NULL)
 	{
 		return NULL;
 	}
 
-	e = ZeroMalloc(sizeof(ELEMENT));
+	ELEMENT *e = ZeroMalloc(sizeof(ELEMENT));
 	StrCpy(e->name, sizeof(e->name), name);
 	e->num_value = num_value;
 	e->type = type;
@@ -486,14 +469,13 @@ ELEMENT *NewElement(char *name, UINT type, UINT num_value, VALUE **values)
 ELEMENT *GetElement(PACK *p, char *name, UINT type)
 {
 	ELEMENT t;
-	ELEMENT *e;
 	if (p == NULL || name == NULL)
 	{
 		return NULL;
 	}
 
 	StrCpy(t.name, sizeof(t.name), name);
-	e = Search(p->elements, &t);
+	ELEMENT *e = Search(p->elements, &t);
 
 	if (e == NULL)
 	{
@@ -555,13 +537,12 @@ bool AddElement(PACK *p, ELEMENT *e)
 
 void FreePack(PACK *p)
 {
-	ELEMENT **elements;
 	if (p == NULL)
 	{
 		return;
 	}
 
-	elements = ToArray(p->elements);
+	ELEMENT **elements = ToArray(p->elements);
 	for (UINT i = 0;i < LIST_NUM(p->elements);i++)
 	{
 		FreeElement(elements[i]);
@@ -574,9 +555,7 @@ void FreePack(PACK *p)
 
 PACK *NewPack()
 {
-	PACK *p;
-
-	p = ZeroMallocEx(sizeof(PACK), true);
+	PACK *p = ZeroMallocEx(sizeof(PACK), true);
 
 	p->elements = NewListFast(ComparePackName);
 
@@ -585,20 +564,18 @@ PACK *NewPack()
 
 K *PackGetK(PACK *p, char *name)
 {
-	K *k;
-	BUF *b;
 	if (p == NULL || name == NULL)
 	{
 		return NULL;
 	}
 
-	b = PackGetBuf(p, name);
+	BUF *b = PackGetBuf(p, name);
 	if (b == NULL)
 	{
 		return NULL;
 	}
 
-	k = BufToK(b, true, false, NULL);
+	K *k = BufToK(b, true, false, NULL);
 
 	if (k == NULL)
 	{
@@ -612,20 +589,18 @@ K *PackGetK(PACK *p, char *name)
 
 X *PackGetX(PACK *p, char *name)
 {
-	X *x;
-	BUF *b;
 	if (p == NULL || name == NULL)
 	{
 		return NULL;
 	}
 
-	b = PackGetBuf(p, name);
+	BUF *b = PackGetBuf(p, name);
 	if (b == NULL)
 	{
 		return NULL;
 	}
 
-	x = BufToX(b, false);
+	X *x = BufToX(b, false);
 
 	if (x == NULL)
 	{
@@ -641,7 +616,6 @@ LIST *PackGetXList(PACK *p, char *name)
 {
 	X *x;
 	BUF *b;
-	LIST *chain;
 	if (p == NULL || name == NULL)
 	{
 		return NULL;
@@ -653,7 +627,7 @@ LIST *PackGetXList(PACK *p, char *name)
 		return NULL;
 	}
 
-	chain = NewList(NULL);
+	LIST *chain = NewList(NULL);
 	for (UINT i = 0;i < e->num_value;i++)
 	{
 		b = PackGetBufEx(p, name, i);
@@ -680,14 +654,13 @@ LIST *PackGetXList(PACK *p, char *name)
 
 ELEMENT *PackAddK(PACK *p, char *name, K *k)
 {
-	BUF *b;
 	ELEMENT *e = NULL;
 	if (p == NULL || name == NULL || k == NULL)
 	{
 		return NULL;
 	}
 
-	b = KToBuf(k, false, NULL);
+	BUF *b = KToBuf(k, false, NULL);
 	if (b == NULL)
 	{
 		return NULL;
@@ -701,14 +674,13 @@ ELEMENT *PackAddK(PACK *p, char *name, K *k)
 
 ELEMENT *PackAddX(PACK *p, char *name, X *x)
 {
-	BUF *b;
 	ELEMENT *e = NULL;
 	if (p == NULL || name == NULL || x == NULL)
 	{
 		return NULL;
 	}
 
-	b = XToBuf(x, false);
+	BUF *b = XToBuf(x, false);
 	if (b == NULL)
 	{
 		return NULL;
@@ -753,23 +725,20 @@ BUF *PackGetBuf(PACK *p, char *name)
 }
 BUF *PackGetBufEx(PACK *p, char *name, UINT index)
 {
-	UINT size;
-	void *tmp;
-	BUF *b;
 	if (p == NULL || name == NULL)
 	{
 		return NULL;
 	}
 
-	size = PackGetDataSizeEx(p, name, index);
-	tmp = MallocEx(size, true);
+	UINT size = PackGetDataSizeEx(p, name, index);
+	void *tmp = MallocEx(size, true);
 	if (PackGetDataEx(p, name, tmp, index) == false)
 	{
 		Free(tmp);
 		return NULL;
 	}
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 	WriteBuf(b, tmp, size);
 	SeekBuf(b, 0, 0);
 
@@ -784,19 +753,17 @@ bool PackGetData(PACK *p, char *name, void *data)
 }
 bool PackGetDataEx(PACK *p, char *name, void *data, UINT index)
 {
-	ELEMENT *e;
-	VALUE *v;
 	if (p == NULL || name == NULL)
 	{
 		return false;
 	}
 
-	e = GetElement(p, name, VALUE_DATA);
+	ELEMENT *e = GetElement(p, name, VALUE_DATA);
 	if (e == NULL)
 	{
 		return false;
 	}
-	v = GetElementValue(e, index);
+	VALUE *v = GetElementValue(e, index);
 	if (v != NULL)
 	{
 		Copy(data, v->Data, v->Size);
@@ -809,19 +776,17 @@ bool PackGetData2(PACK *p, char *name, void *data, UINT size)
 }
 bool PackGetDataEx2(PACK *p, char *name, void *data, UINT size, UINT index)
 {
-	ELEMENT *e;
-	VALUE *v;
 	if (p == NULL || name == NULL)
 	{
 		return false;
 	}
 
-	e = GetElement(p, name, VALUE_DATA);
+	ELEMENT *e = GetElement(p, name, VALUE_DATA);
 	if (e == NULL)
 	{
 		return false;
 	}
-	v = GetElementValue(e, index);
+	VALUE *v = GetElementValue(e, index);
 	if ((v == NULL ? 0 : v->Size) != size)
 	{
 		return false;
@@ -857,13 +822,12 @@ UINT64 PackGetInt64Ex(PACK *p, char *name, UINT index)
 
 UINT PackGetIndexCount(PACK *p, char *name)
 {
-	ELEMENT *e;
 	if (p == NULL || name == NULL)
 	{
 		return 0;
 	}
 
-	e = GetElement(p, name, INFINITE);
+	ELEMENT *e = GetElement(p, name, INFINITE);
 	if (e == NULL)
 	{
 		return 0;
@@ -937,7 +901,6 @@ static void PackIpName(char *dst, UINT size, char *name, char *suffix)
 }
 void PackAddIpEx(PACK *p, char *name, IP *ip, UINT index, UINT total)
 {
-	UINT i;
 	char tmp[MAX_PATH];
 	if (p == NULL || name == NULL || ip == NULL)
 	{
@@ -953,7 +916,7 @@ void PackAddIpEx(PACK *p, char *name, IP *ip, UINT index, UINT total)
 	PackIpName(tmp, sizeof(tmp), name, "@ipv6_scope_id");
 	PackAddIntEx(p, tmp, ip->ipv6_scope_id, index, total);
 
-	i = IPToUINT(ip);
+	UINT i = IPToUINT(ip);
 
 	PackAddIntEx(p, name, i, index, total);
 }
@@ -994,7 +957,6 @@ bool PackGetIpEx(PACK *p, char *name, IP *ip, UINT index)
 	if (PackGetBoolEx(p, tmp, index))
 	{
 		UCHAR data[16];
-		UINT scope_id;
 
 		Zero(data, sizeof(data));
 
@@ -1002,7 +964,7 @@ bool PackGetIpEx(PACK *p, char *name, IP *ip, UINT index)
 		PackGetDataEx2(p, tmp, data, sizeof(data), index);
 
 		PackIpName(tmp, sizeof(tmp), name, "@ipv6_scope_id");
-		scope_id = PackGetIntEx(p, tmp, index);
+		UINT scope_id = PackGetIntEx(p, tmp, index);
 
 		SetIP6(ip, data);
 		ip->ipv6_scope_id = scope_id;
@@ -1044,8 +1006,6 @@ bool PackGetUniStr(PACK *p, char *name, wchar_t *unistr, UINT size)
 }
 bool PackGetUniStrEx(PACK *p, char *name, wchar_t *unistr, UINT size, UINT index)
 {
-	ELEMENT *e;
-	VALUE *v;
 	if (p == NULL || name == NULL || unistr == NULL || size == 0)
 	{
 		return false;
@@ -1053,12 +1013,12 @@ bool PackGetUniStrEx(PACK *p, char *name, wchar_t *unistr, UINT size, UINT index
 
 	unistr[0] = 0;
 
-	e = GetElement(p, name, VALUE_UNISTR);
+	ELEMENT *e = GetElement(p, name, VALUE_UNISTR);
 	if (e == NULL)
 	{
 		return false;
 	}
-	v = GetElementValue(e, index);
+	VALUE *v = GetElementValue(e, index);
 	UniStrCpy(unistr, size, v == NULL ? NULL : v->UniStr);
 	return true;
 }
@@ -1069,8 +1029,6 @@ bool PackGetStr(PACK *p, char *name, char *str, UINT size)
 }
 bool PackGetStrEx(PACK *p, char *name, char *str, UINT size, UINT index)
 {
-	ELEMENT *e;
-	VALUE *v;
 	if (p == NULL || name == NULL || str == NULL || size == 0)
 	{
 		return false;
@@ -1078,13 +1036,13 @@ bool PackGetStrEx(PACK *p, char *name, char *str, UINT size, UINT index)
 
 	str[0] = 0;
 
-	e = GetElement(p, name, VALUE_STR);
+	ELEMENT *e = GetElement(p, name, VALUE_STR);
 	if (e == NULL)
 	{
 		return false;
 	}
 
-	v = GetElementValue(e, index);
+	VALUE *v = GetElementValue(e, index);
 	StrCpy(str, size, v == NULL ? NULL : v->Str);
 	return true;
 }
@@ -1095,14 +1053,13 @@ bool PackGetStrEx(PACK *p, char *name, char *str, UINT size, UINT index)
 // PACK, rejects the value: NULL. The value is the PACK's or freed in every case.
 static ELEMENT *PackAddValueEx(PACK *p, char *name, UINT type, VALUE *v, UINT index, UINT total)
 {
-	ELEMENT *e;
 	if (p == NULL || name == NULL || v == NULL || total == 0)
 	{
 		FreeValue(v, type);
 		return NULL;
 	}
 
-	e = GetElement(p, name, type);
+	ELEMENT *e = GetElement(p, name, type);
 	if (e != NULL)
 	{
 		if (e->num_value >= total)
@@ -1137,14 +1094,13 @@ static ELEMENT *PackAddValueEx(PACK *p, char *name, UINT type, VALUE *v, UINT in
 // PACK rejects the value: NULL. The value is the PACK's or freed in every case.
 static ELEMENT *PackAddValue(PACK *p, char *name, UINT type, VALUE *v)
 {
-	ELEMENT *e;
 	if (p == NULL || name == NULL || v == NULL)
 	{
 		FreeValue(v, type);
 		return NULL;
 	}
 
-	e = NewElement(name, type, 1, &v);
+	ELEMENT *e = NewElement(name, type, 1, &v);
 	if (AddElement(p, e) == false)
 	{
 		return NULL;
@@ -1275,9 +1231,7 @@ ELEMENT *PackAddStr(PACK *p, char *name, char *str)
 
 PACK *PackError(UINT error)
 {
-	PACK *p;
-
-	p = NewPack();
+	PACK *p = NewPack();
 	PackAddInt(p, "error", error);
 
 	return p;
@@ -1295,15 +1249,13 @@ UINT GetErrorFromPack(PACK *p)
 
 void CreateDummyValue(PACK *p)
 {
-	UINT size;
-	UCHAR *buf;
 	if (p == NULL)
 	{
 		return;
 	}
 
-	size = Rand32() % HTTP_PACK_RAND_SIZE_MAX;
-	buf = Malloc(size);
+	UINT size = Rand32() % HTTP_PACK_RAND_SIZE_MAX;
+	UCHAR *buf = Malloc(size);
 	Rand(buf, size);
 
 	PackAddData(p, "pencore", buf, size);

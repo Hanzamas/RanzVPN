@@ -169,8 +169,6 @@ static void UdpAccelTestFormat(UDPACCEL_TEST *t, char *mode, UINT version, bool 
 {
 	UCHAR data[UDPACCEL_TEST_DATA_SIZE];
 	char what[MAX_SIZE];
-	UINT64 drop_short, drop_invalid;
-	BLOCK *b;
 
 	if (UdpAccelTestOpen(t, version, plain_text) == false)
 	{
@@ -191,7 +189,7 @@ static void UdpAccelTestFormat(UDPACCEL_TEST *t, char *mode, UINT version, bool 
 	Rand(data, sizeof(data));
 	UdpAccelTestSendValid(t, data, sizeof(data), t->Peer->MaxUdpPacketSize);
 	UdpAccelTestPoll(t, Tick64());
-	b = GetNext(t->Recv->RecvBlockQueue);
+	BLOCK *b = GetNext(t->Recv->RecvBlockQueue);
 	Format(what, sizeof(what), "%s: a data packet arrives with its data", mode);
 	UdpAccelTestCheck(t, b != NULL && b->Size == sizeof(data) && Cmp(b->Buf, data, sizeof(data)) == 0 &&
 		UdpAccelTestDrops(t) == 0, what, "block %s, size %u, %I64u dropped",
@@ -199,8 +197,8 @@ static void UdpAccelTestFormat(UDPACCEL_TEST *t, char *mode, UINT version, bool 
 	FreeBlock(b);
 
 	// (3) One byte shorter than the smallest packet: dropped by the header check before decryption
-	drop_short = t->Recv->NumDropShort;
-	drop_invalid = t->Recv->NumDropInvalid;
+	UINT64 drop_short = t->Recv->NumDropShort;
+	UINT64 drop_invalid = t->Recv->NumDropInvalid;
 	UdpAccelTestSendJunk(t, 1, min_size - 1);
 	UdpAccelTestPoll(t, Tick64());
 	Format(what, sizeof(what), "%s: a datagram of %u bytes is dropped before decryption (NumDropShort)", mode, min_size - 1);
@@ -226,8 +224,6 @@ static void UdpAccelTestFlood(UDPACCEL_TEST *t)
 	UINT per_tick = UDP_ACCELERATION_MAX_RECV_PER_TICK;
 	UCHAR data[UDPACCEL_TEST_DATA_SIZE];
 	wchar_t log[MAX_SIZE];
-	UINT64 drops, limit, tick;
-	BLOCK *b;
 
 	if (UdpAccelTestOpen(t, 2, false) == false)
 	{
@@ -241,9 +237,9 @@ static void UdpAccelTestFlood(UDPACCEL_TEST *t)
 	Rand(data, sizeof(data));
 	UdpAccelTestSendValid(t, data, sizeof(data), t->Peer->MaxUdpPacketSize);
 
-	drops = UdpAccelTestDrops(t);
-	limit = t->Recv->NumRecvLimit;
-	tick = Tick64();
+	UINT64 drops = UdpAccelTestDrops(t);
+	UINT64 limit = t->Recv->NumRecvLimit;
+	UINT64 tick = Tick64();
 
 	UdpAccelTestPoll(t, tick);
 	UdpAccelTestCheck(t, UdpAccelTestDrops(t) - drops == per_poll && t->Recv->NumRecvLimit - limit == 1 &&
@@ -258,7 +254,7 @@ static void UdpAccelTestFlood(UDPACCEL_TEST *t)
 		"%I64u read, NumRecvLimit +%I64u", UdpAccelTestDrops(t) - drops, t->Recv->NumRecvLimit - limit);
 
 	UdpAccelTestPoll(t, tick);
-	b = GetNext(t->Recv->RecvBlockQueue);
+	BLOCK *b = GetNext(t->Recv->RecvBlockQueue);
 	UdpAccelTestCheck(t, UdpAccelTestDrops(t) - drops == per_poll * 2 + UDPACCEL_TEST_EXTRA && t->Recv->NumRecvLimit - limit == 2 &&
 		b != NULL && b->Size == sizeof(data) && Cmp(b->Buf, data, sizeof(data)) == 0,
 		"flood: the poll that empties the socket stops below the budget and the valid packet behind the flood arrives",

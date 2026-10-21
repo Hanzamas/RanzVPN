@@ -140,10 +140,7 @@ void registry_test(UINT num, char **arg)
 	char restricted[MAX_PATH];
 	wchar_t no_term[2] = {L'A', L'B'};
 	wchar_t multi[] = L"first\0second\0";
-	HKEY h;
 	LSTATUS open_all;
-	wchar_t *w;
-	char *s;
 
 	Zero(&ctx, sizeof(ctx));
 
@@ -157,11 +154,11 @@ void registry_test(UINT num, char **arg)
 	// (1) A string and a number written and read back through the helpers
 	RegistryCheck(&ctx, MsRegWriteStr(REG_CURRENT_USER, key, "str", "ranz"), "MsRegWriteStr makes the key and writes a REG_SZ");
 
-	s = MsRegReadStr(REG_CURRENT_USER, key, "str");
+	char *s = MsRegReadStr(REG_CURRENT_USER, key, "str");
 	RegistryCheck(&ctx, RegistryStrIs(s, "ranz"), "MsRegReadStr reads it back");
 	Free(s);
 
-	w = MsRegReadStrEx2W(REG_CURRENT_USER, key, "str", false);
+	wchar_t *w = MsRegReadStrEx2W(REG_CURRENT_USER, key, "str", false);
 	RegistryCheck(&ctx, RegistryUniIs(w, L"ranz"), "MsRegReadStrEx2W reads it back");
 	Free(w);
 
@@ -201,7 +198,7 @@ void registry_test(UINT num, char **arg)
 	// (4) A key that grants its owner reading, setting values and DELETE only
 	RegistryCheck(&ctx, RegistryMakeRestricted(restricted), "The restricted key is made (KEY_READ, KEY_SET_VALUE and DELETE for its owner)");
 
-	h = NULL;
+	HKEY h = NULL;
 	open_all = RegOpenKeyExA(HKEY_CURRENT_USER, restricted, 0, KEY_ALL_ACCESS, &h);
 	if (open_all == ERROR_SUCCESS)
 	{

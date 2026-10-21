@@ -97,8 +97,6 @@ TOKEN_LIST *MsRegEnumKey(UINT root, char *keyname)
 TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit)
 {
 	HKEY h;
-	TOKEN_LIST *t;
-	LIST *o;
 
 	if (keyname == NULL)
 	{
@@ -112,17 +110,16 @@ TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit)
 		}
 	}
 
-	o = NewListFast(CompareStr);
+	LIST *o = NewListFast(CompareStr);
 
 	for (UINT i = 0;;i++)
 	{
 		char tmp[MAX_SIZE];
-		UINT ret;
 		DWORD size = sizeof(tmp);
 		FILETIME ft;
 
 		Zero(tmp, sizeof(tmp));
-		ret = RegEnumKeyEx(h, i, tmp, &size, NULL, NULL, NULL, &ft);
+		UINT ret = RegEnumKeyEx(h, i, tmp, &size, NULL, NULL, NULL, &ft);
 		if (ret == ERROR_NO_MORE_ITEMS)
 		{
 			break;
@@ -137,7 +134,7 @@ TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit)
 
 	Sort(o);
 
-	t = ZeroMalloc(sizeof(TOKEN_LIST));
+	TOKEN_LIST *t = ZeroMalloc(sizeof(TOKEN_LIST));
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
 	for (UINT i = 0;i < t->NumTokens;i++)
@@ -215,7 +212,6 @@ bool MsRegWriteValueEx2(UINT root, char *keyname, char *valuename, UINT type, vo
 static bool MsRegReadValueCore(UINT root, char *keyname, char *valuename, void **data, DWORD *type, DWORD *size, bool force32bit, bool wide)
 {
 	HKEY h;
-	UINT ret;
 	wchar_t *valuename_w = NULL;
 	if (keyname == NULL || data == NULL || type == NULL || size == NULL)
 	{
@@ -235,7 +231,7 @@ static bool MsRegReadValueCore(UINT root, char *keyname, char *valuename, void *
 	}
 
 	*data = ZeroMalloc(*size);
-	ret = wide ? RegQueryValueExW(h, valuename_w, 0, type, *data, size) : RegQueryValueEx(h, valuename, 0, type, *data, size);
+	UINT ret = wide ? RegQueryValueExW(h, valuename_w, 0, type, *data, size) : RegQueryValueEx(h, valuename, 0, type, *data, size);
 
 	if (ret == ERROR_MORE_DATA)
 	{
@@ -389,8 +385,7 @@ bool MsRegIsValue(UINT root, char *keyname, char *valuename)
 bool MsRegIsValueEx2(UINT root, char *keyname, char *valuename, bool force32bit)
 {
 	HKEY h;
-	DWORD type, size;
-	UINT ret;
+	DWORD type;
 	if (keyname == NULL)
 	{
 		return false;
@@ -401,8 +396,8 @@ bool MsRegIsValueEx2(UINT root, char *keyname, char *valuename, bool force32bit)
 		return false;
 	}
 
-	size = 0;
-	ret = RegQueryValueEx(h, valuename, 0, &type, NULL, &size);
+	DWORD size = 0;
+	UINT ret = RegQueryValueEx(h, valuename, 0, &type, NULL, &size);
 
 	if (ret == ERROR_SUCCESS || ret == ERROR_MORE_DATA)
 	{

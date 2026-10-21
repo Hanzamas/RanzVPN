@@ -80,8 +80,6 @@ static void TcpIpTestEthernet(UCHAR *buf, UCHAR *dst_mac, UCHAR *src_mac)
 // The checksum of the layer 4 header behind it is TcpIpTestL4Checksum's
 static void TcpIpTestIpv4(UCHAR *ip, UINT ip_size, UCHAR protocol, UCHAR *src, UCHAR *dst)
 {
-	USHORT sum;
-
 	ip[0] = 0x45;								// Version 4, 20-byte header
 	ip[2] = (UCHAR)(ip_size >> 8);
 	ip[3] = (UCHAR)(ip_size & 0xFF);
@@ -92,7 +90,7 @@ static void TcpIpTestIpv4(UCHAR *ip, UINT ip_size, UCHAR protocol, UCHAR *src, U
 	ip[9] = protocol;
 	Copy(ip + 12, src, 4);
 	Copy(ip + 16, dst, 4);
-	sum = IpChecksum(ip, 20);
+	USHORT sum = IpChecksum(ip, 20);
 	Copy(ip + 10, &sum, sizeof(USHORT));
 }
 
@@ -100,11 +98,10 @@ static void TcpIpTestIpv4(UCHAR *ip, UINT ip_size, UCHAR protocol, UCHAR *src, U
 static void TcpIpTestL4Checksum(UCHAR *ip, UINT l4_size, UINT sum_offset)
 {
 	UINT src_ip, dst_ip;
-	USHORT sum;
 
 	Copy(&src_ip, ip + 12, sizeof(UINT));
 	Copy(&dst_ip, ip + 16, sizeof(UINT));
-	sum = CalcChecksumForIPv4(src_ip, dst_ip, ip[9], ip + 20, l4_size, 0);
+	USHORT sum = CalcChecksumForIPv4(src_ip, dst_ip, ip[9], ip + 20, l4_size, 0);
 	Copy(ip + 20 + sum_offset, &sum, sizeof(USHORT));
 }
 
@@ -140,14 +137,11 @@ static UCHAR *TcpIpTestDhcpFrame(UCHAR *payload, UINT payload_size, UINT *size)
 	UCHAR dst[4] = {192, 168, 30, 10};
 	UINT udp_size = 8 + payload_size;
 	UINT ip_size = 20 + udp_size;
-	UCHAR *buf;
-	UCHAR *ip;
-	UCHAR *udp;
 
 	*size = 14 + ip_size;
-	buf = ZeroMalloc(*size);
-	ip = buf + 14;
-	udp = ip + 20;
+	UCHAR *buf = ZeroMalloc(*size);
+	UCHAR *ip = buf + 14;
+	UCHAR *udp = ip + 20;
 
 	TcpIpTestEthernet(buf, tcpiptest_mac_client, tcpiptest_mac_server);
 	TcpIpTestIpv4(ip, ip_size, IP_PROTO_UDP, src, dst);
@@ -173,14 +167,11 @@ static UCHAR *TcpIpTestSyn(UCHAR *options, UINT options_size, bool ethernet, UIN
 	UINT l2_size = (ethernet ? 14 : 0);
 	UINT tcp_size = 20 + options_size;
 	UINT ip_size = 20 + tcp_size;
-	UCHAR *buf;
-	UCHAR *ip;
-	UCHAR *tcp;
 
 	*size = l2_size + ip_size;
-	buf = ZeroMalloc(*size);
-	ip = buf + l2_size;
-	tcp = ip + 20;
+	UCHAR *buf = ZeroMalloc(*size);
+	UCHAR *ip = buf + l2_size;
+	UCHAR *tcp = ip + 20;
 
 	if (ethernet)
 	{
@@ -253,11 +244,7 @@ static void TcpIpTestDhcpModify(TCPIPTEST_CTX *ctx)
 	UCHAR request[] = {53, 1, 3, 255};
 	UINT short_sizes[] = {44, 100, TCPIPTEST_COOKIE_OFFSET + 3};
 	DHCP_MODIFY_OPTION m;
-	UCHAR *p;
-	UCHAR *e;
 	UCHAR *q;
-	UCHAR *f;
-	UCHAR *g;
 	UINT f_size;
 	UINT g_size;
 
@@ -266,14 +253,14 @@ static void TcpIpTestDhcpModify(TCPIPTEST_CTX *ctx)
 
 	// A well-formed ACK: the gateway, DNS, domain name and WINS options go, the result is padded to the
 	// size of the payload. The old code read the 44 bytes behind the payload as options.
-	p = TcpIpTestDhcp(TCPIPTEST_DHCP_SIZE, ack, sizeof(ack));
-	e = TcpIpTestDhcp(TCPIPTEST_DHCP_SIZE, ack_modified, sizeof(ack_modified));
+	UCHAR *p = TcpIpTestDhcp(TCPIPTEST_DHCP_SIZE, ack, sizeof(ack));
+	UCHAR *e = TcpIpTestDhcp(TCPIPTEST_DHCP_SIZE, ack_modified, sizeof(ack_modified));
 	TcpIpTestBuf(ctx, "DhcpModify removes the gateway, DNS, domain name and WINS options of an ACK, reading nothing past it",
 		DhcpModify(&m, p, TCPIPTEST_DHCP_SIZE), e, TCPIPTEST_DHCP_SIZE);
 
 	// The parent: the frame of that ACK through DhcpModifyIPv4, with its UDP checksum computed again
-	f = TcpIpTestDhcpFrame(p, TCPIPTEST_DHCP_SIZE, &f_size);
-	g = TcpIpTestDhcpFrame(e, TCPIPTEST_DHCP_SIZE, &g_size);
+	UCHAR *f = TcpIpTestDhcpFrame(p, TCPIPTEST_DHCP_SIZE, &f_size);
+	UCHAR *g = TcpIpTestDhcpFrame(e, TCPIPTEST_DHCP_SIZE, &g_size);
 	TcpIpTestBuf(ctx, "DhcpModifyIPv4 modifies the frame of the ACK and computes its UDP checksum again",
 		DhcpModifyIPv4(&m, f, f_size), g, g_size);
 	Free(f);
@@ -330,7 +317,6 @@ static void TcpIpTestMssCase(TCPIPTEST_CTX *ctx, char *what, UCHAR *options, UCH
 	UCHAR *p = TcpIpTestSyn(options, options_size, ethernet, &size);
 	UCHAR *e = TcpIpTestSyn(expect != NULL ? expect : options, options_size, ethernet, &expect_size);
 	bool ret;
-	bool same;
 
 	if (ethernet)
 	{
@@ -341,7 +327,7 @@ static void TcpIpTestMssCase(TCPIPTEST_CTX *ctx, char *what, UCHAR *options, UCH
 		ret = AdjustTcpMssL3(p, size, TCPIPTEST_TARGET_MSS);
 	}
 
-	same = (size == expect_size && Cmp(p, e, size) == 0);
+	bool same = (size == expect_size && Cmp(p, e, size) == 0);
 
 	TcpIpTestCheck(ctx, ret == (expect != NULL) && same, what, "returned %s, the SYN is %s; expected %s",
 		ret ? "true" : "false", same ? "as expected" : "not as expected", expect != NULL ? "true" : "false");
@@ -457,7 +443,6 @@ static void TcpIpTestChecksum(TCPIPTEST_CTX *ctx)
 			for (UINT pattern = 0; pattern < 3; pattern++)
 			{
 				UINT alloc = len + off;
-				UCHAR *block, *buf, *v4, *v6;
 				IPV6_ADDR src6, dst6;
 				UINT src4, dst4;
 
@@ -466,13 +451,13 @@ static void TcpIpTestChecksum(TCPIPTEST_CTX *ctx)
 					alloc = 1;
 				}
 
-				block = Malloc(alloc);
-				buf = block + off;
+				UCHAR *block = Malloc(alloc);
+				UCHAR *buf = block + off;
 				TcpIpTestFill(buf, len, pattern, &seed);
 
 				// 12-byte pseudo-header of IPv4 and 40-byte pseudo-header of IPv6, then the data
-				v4 = Malloc(12 + len);
-				v6 = Malloc(40 + len);
+				UCHAR *v4 = Malloc(12 + len);
+				UCHAR *v6 = Malloc(40 + len);
 				Zero(v4, 12);
 				Zero(v6, 40);
 				TcpIpTestFill((UCHAR *)&src4, sizeof(src4), 0, &seed);

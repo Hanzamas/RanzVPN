@@ -19,13 +19,12 @@ void UdpAccelPoll(UDP_ACCEL *a)
 {
 	UINT num_ignore_errors = 0;
 	UINT num_recv = 0;
-	UCHAR *tmp;
 	if (a == NULL)
 	{
 		return;
 	}
 
-	tmp = a->TmpBuf;
+	UCHAR *tmp = a->TmpBuf;
 
 	// The per-tick budget starts over on a new tick
 	if (a->RecvTick != a->Now)
@@ -38,7 +37,6 @@ void UdpAccelPoll(UDP_ACCEL *a)
 	{
 		IP src_ip;
 		UINT src_port;
-		UINT ret;
 
 		// A flood must not hold the session thread: past the budget, the datagrams stay in the
 		// socket for the next call. After a full poll the last read has re-armed the socket event,
@@ -54,16 +52,14 @@ void UdpAccelPoll(UDP_ACCEL *a)
 			break;
 		}
 
-		ret = RecvFrom(a->UdpSock, &src_ip, &src_port, tmp, UDP_ACCELERATION_TMP_BUF_SIZE);
+		UINT ret = RecvFrom(a->UdpSock, &src_ip, &src_port, tmp, UDP_ACCELERATION_TMP_BUF_SIZE);
 
 		if (ret != 0 && ret != SOCK_LATER)
 		{
-			BLOCK *b;
-
 			num_recv++;
 			a->RecvNumInTick++;
 
-			b = UdpAccelProcessRecvPacket(a, tmp, ret, &src_ip, src_port);
+			BLOCK *b = UdpAccelProcessRecvPacket(a, tmp, ret, &src_ip, src_port);
 
 			if (b != NULL)
 			{
@@ -133,14 +129,12 @@ static UINT UdpAccelMaxPacketSize(bool is_ipv6)
 
 UINT UdpAccelCalcMss(UDP_ACCEL *a)
 {
-	UINT ret;
-
 	if (a == NULL)
 	{
 		return 0;
 	}
 
-	ret = UdpAccelMaxPacketSize(a->IsIPv6);
+	UINT ret = UdpAccelMaxPacketSize(a->IsIPv6);
 
 	if (a->PlainTextMode == false)
 	{
@@ -176,10 +170,7 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 	UCHAR buffer[UDP_ACCELERATION_TMP_BUF_SIZE];
 	UCHAR *buf = buffer;
 	UINT size = 0;
-	UINT64 tmp;
 	UINT ret;
-	UINT u32;
-	USHORT u16;
 	if (a == NULL || (data_size != 0 && data == NULL))
 	{
 		return;
@@ -207,12 +198,12 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 		}
 	}
 
-	u32 = Endian32(a->YourCookie);
+	UINT u32 = Endian32(a->YourCookie);
 	Copy(buf, &u32, sizeof(UINT));
 	buf += sizeof(UINT);
 	size += sizeof(UINT);
 
-	tmp = Endian64(a->Now == 0 ? 1ULL : a->Now);
+	UINT64 tmp = Endian64(a->Now == 0 ? 1ULL : a->Now);
 	Copy(buf, &tmp, sizeof(UINT64));
 	buf += sizeof(UINT64);
 	size += sizeof(UINT64);
@@ -222,7 +213,7 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 	buf += sizeof(UINT64);
 	size += sizeof(UINT64);
 
-	u16 = Endian16(data_size);
+	USHORT u16 = Endian16(data_size);
 	Copy(buf, &u16, sizeof(USHORT));
 	buf += sizeof(USHORT);
 	size += sizeof(USHORT);
@@ -269,7 +260,6 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 			UCHAR *inner = buffer + UDP_ACCELERATION_PACKET_IV_SIZE_V1;
 			UCHAR key[UDP_ACCELERATION_PACKET_KEY_SIZE_V1];
 			const UINT inner_size = size; // We don't have to subtract because we add below
-			CRYPT *c;
 
 			// Integrity check: some bytes are filled with zeroes,
 			// and the remote host checks that all of them are still zero.
@@ -279,7 +269,7 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 
 			UdpAccelCalcKeyV1(key, a->MyKey, a->NextIv);
 
-			c = NewCrypt(key, UDP_ACCELERATION_PACKET_KEY_SIZE_V1);
+			CRYPT *c = NewCrypt(key, UDP_ACCELERATION_PACKET_KEY_SIZE_V1);
 			Encrypt(c, inner, inner, inner_size);
 			FreeCrypt(c);
 
@@ -347,7 +337,6 @@ void UdpAccelSend(UDP_ACCEL *a, UCHAR *data, UINT data_size, UCHAR flag, UINT ma
 
 bool UdpAccelIsSendReady(UDP_ACCEL *a, bool check_keepalive)
 {
-	UINT64 timeout_value;
 	if (a == NULL)
 	{
 		return false;
@@ -368,7 +357,7 @@ bool UdpAccelIsSendReady(UDP_ACCEL *a, bool check_keepalive)
 		return false;
 	}
 
-	timeout_value = UDP_ACCELERATION_KEEPALIVE_TIMEOUT;
+	UINT64 timeout_value = UDP_ACCELERATION_KEEPALIVE_TIMEOUT;
 
 	if (a->FastDetect)
 	{
@@ -779,13 +768,12 @@ bool UdpAccelIsRecvBudgetSpent(UDP_ACCEL *a)
 // session are written at once. Returns true when an entry was written.
 bool UdpAccelLogDrops(UDP_ACCEL *a, HUB *h, char *session_name, bool final)
 {
-	UINT64 num_drop;
 	if (a == NULL)
 	{
 		return false;
 	}
 
-	num_drop = a->NumDropShort + a->NumDropInvalid;
+	UINT64 num_drop = a->NumDropShort + a->NumDropInvalid;
 	if (num_drop == a->LogDropNum)
 	{
 		return false;
@@ -822,7 +810,6 @@ void UdpAccelNewCookies(UINT *my_cookie, UINT *your_cookie, UINT (*rand32)(void)
 
 UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode)
 {
-	UDP_ACCEL *a;
 	SOCK *s;
 	bool is_in_cedar_port_list = false;
 
@@ -875,7 +862,7 @@ UDP_ACCEL *NewUdpAccel(CEDAR *cedar, IP *ip, bool client_mode)
 		return NULL;
 	}
 
-	a = ZeroMalloc(sizeof(UDP_ACCEL));
+	UDP_ACCEL *a = ZeroMalloc(sizeof(UDP_ACCEL));
 
 	a->Cedar = cedar;
 	AddRef(a->Cedar->ref);

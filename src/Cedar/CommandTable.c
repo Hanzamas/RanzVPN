@@ -16,27 +16,22 @@
 
 static void CtPrintRow(CONSOLE *c, UINT num, UINT *widths, wchar_t **strings, bool *rights, char separate_char)
 {
-	wchar_t *buf;
-	UINT buf_size;
 	bool is_sep_line = true;
 	if (c == NULL || num == 0 || widths == NULL || strings == NULL || rights == NULL)
 	{
 		return;
 	}
 
-	buf_size = 32;
+	UINT buf_size = 32;
 	for (UINT i = 0;i < num;i++)
 	{
 		buf_size += sizeof(wchar_t) * widths[i] + 6;
 	}
 
-	buf = ZeroMalloc(buf_size);
+	wchar_t *buf = ZeroMalloc(buf_size);
 
 	for (UINT i = 0;i < num;i++)
 	{
-		char *tmp;
-		wchar_t *space_string;
-		UINT w;
 		UINT space = 0;
 		wchar_t *string = strings[i];
 		wchar_t *tmp_line = NULL;
@@ -53,15 +48,15 @@ static void CtPrintRow(CONSOLE *c, UINT num, UINT *widths, wchar_t **strings, bo
 			is_sep_line = false;
 		}
 
-		w = UniStrWidth(string);
+		UINT w = UniStrWidth(string);
 
 		if (widths[i] >= w)
 		{
 			space = widths[i] - w;
 		}
 
-		tmp = MakeCharArray(' ', space);
-		space_string = CopyStrToUni(tmp);
+		char *tmp = MakeCharArray(' ', space);
+		wchar_t *space_string = CopyStrToUni(tmp);
 
 		if (rights[i] != false)
 		{
@@ -121,13 +116,12 @@ static void CtPrintRow(CONSOLE *c, UINT num, UINT *widths, wchar_t **strings, bo
 
 static void CtPrintStandard(CT *ct, CONSOLE *c)
 {
-	CT *t;
 	if (ct == NULL || c == NULL)
 	{
 		return;
 	}
 
-	t = CtNewStandard();
+	CT *t = CtNewStandard();
 	for (UINT i = 0;i < LIST_NUM(ct->Rows);i++)
 	{
 		CTR *row = LIST_DATA(ct->Rows, i);
@@ -150,24 +144,19 @@ static void CtPrintStandard(CT *ct, CONSOLE *c)
 
 static void CtPrint(CT *ct, CONSOLE *c)
 {
-	UINT *widths;
-	UINT num;
-	wchar_t **header_strings;
-	bool *rights;
 	if (ct == NULL || c == NULL)
 	{
 		return;
 	}
 
-	num = LIST_NUM(ct->Columns);
-	widths = ZeroMalloc(sizeof(UINT) * num);
+	UINT num = LIST_NUM(ct->Columns);
+	UINT *widths = ZeroMalloc(sizeof(UINT) * num);
 
 	for (UINT i = 0;i < num;i++)
 	{
 		CTC *ctc = LIST_DATA(ct->Columns, i);
-		UINT w;
 
-		w = UniStrWidth(ctc->String);
+		UINT w = UniStrWidth(ctc->String);
 		widths[i] = MAX(widths[i], w);
 	}
 	for (UINT j = 0;j < LIST_NUM(ct->Rows);j++)
@@ -176,15 +165,13 @@ static void CtPrint(CT *ct, CONSOLE *c)
 
 		for (UINT i = 0;i < num;i++)
 		{
-			UINT w;
-
-			w = UniStrWidth(ctr->Strings[i]);
+			UINT w = UniStrWidth(ctr->Strings[i]);
 			widths[i] = MAX(widths[i], w);
 		}
 	}
 
-	header_strings = ZeroMalloc(sizeof(wchar_t *) * num);
-	rights = ZeroMalloc(sizeof(bool) * num);
+	wchar_t **header_strings = ZeroMalloc(sizeof(wchar_t *) * num);
+	bool *rights = ZeroMalloc(sizeof(bool) * num);
 
 	for (UINT i = 0;i < num;i++)
 	{
@@ -198,9 +185,7 @@ static void CtPrint(CT *ct, CONSOLE *c)
 
 	for (UINT i = 0;i < num;i++)
 	{
-		char *s;
-
-		s = MakeCharArray('-', widths[i]);
+		char *s = MakeCharArray('-', widths[i]);
 		header_strings[i] = CopyStrToUni(s);
 		Free(s);
 	}
@@ -226,7 +211,6 @@ static void CtPrint(CT *ct, CONSOLE *c)
 
 static void CtEscapeCsv(wchar_t *dst, UINT size, wchar_t *src){
 	UINT len = UniStrLen(src);
-	UINT idx;
 	bool need_to_escape = false;
 	wchar_t tmp[2]=L"*";
 
@@ -251,7 +235,7 @@ static void CtEscapeCsv(wchar_t *dst, UINT size, wchar_t *src){
 
 	// CSV: quote fields that contain a newline, comma or double quote
 	UniStrCpy(dst, size, L"\"");
-	idx = UniStrLen(dst);
+	UINT idx = UniStrLen(dst);
 	if(idx<size-1)
 	{
 		for (UINT i=0; i<len; i++)
@@ -302,7 +286,6 @@ static void CtPrintCsv(CT *ct, CONSOLE *c)
 
 void CtFreeEx(CT *ct, CONSOLE *c, bool standard_view)
 {
-	UINT num;
 	if (ct == NULL)
 	{
 		return;
@@ -327,7 +310,7 @@ void CtFreeEx(CT *ct, CONSOLE *c, bool standard_view)
 		}
 	}
 
-	num = LIST_NUM(ct->Columns);
+	UINT num = LIST_NUM(ct->Columns);
 
 	for (UINT i = 0;i < LIST_NUM(ct->Rows);i++)
 	{
@@ -362,19 +345,17 @@ void CtFree(CT *ct, CONSOLE *c)
 
 void CtInsert(CT *ct, ...)
 {
-	CTR *ctr;
-	UINT num;
 	va_list va;
 	if (ct == NULL)
 	{
 		return;
 	}
 
-	num = LIST_NUM(ct->Columns);
+	UINT num = LIST_NUM(ct->Columns);
 
 	va_start(va, ct);
 
-	ctr = ZeroMalloc(sizeof(CTR));
+	CTR *ctr = ZeroMalloc(sizeof(CTR));
 	ctr->Strings = ZeroMalloc(sizeof(wchar_t *) * num);
 
 	for (UINT i = 0;i < num;i++)
@@ -391,7 +372,6 @@ void CtInsert(CT *ct, ...)
 
 void CtInsertColumn(CT *ct, wchar_t *str, bool right)
 {
-	CTC *ctc;
 	if (ct == NULL)
 	{
 		return;
@@ -401,7 +381,7 @@ void CtInsertColumn(CT *ct, wchar_t *str, bool right)
 		str = L"";
 	}
 
-	ctc = ZeroMalloc(sizeof(CTC));
+	CTC *ctc = ZeroMalloc(sizeof(CTC));
 	ctc->String = CopyUniStr(str);
 	ctc->Right = right;
 
@@ -410,9 +390,7 @@ void CtInsertColumn(CT *ct, wchar_t *str, bool right)
 
 CT *CtNew()
 {
-	CT *ct;
-
-	ct = ZeroMalloc(sizeof(CT));
+	CT *ct = ZeroMalloc(sizeof(CT));
 	ct->Columns = NewList(NULL);
 	ct->Rows = NewList(NULL);
 

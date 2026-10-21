@@ -14,9 +14,7 @@
 
 static bool CheckEraserDiskFreeSpace(ERASER *e)
 {
-	wchar_t *dir_w;
 	wchar_t dir[MAX_SIZE];
-	UINT len;
 	ULARGE_INTEGER free_size;
 	if (e == NULL)
 	{
@@ -25,12 +23,12 @@ static bool CheckEraserDiskFreeSpace(ERASER *e)
 
 	// Ask the directory's own volume, so a mount point, junction or subst
 	// drive reports its target and not the drive root
-	dir_w = CopyStrToUni(e->DirName);
+	wchar_t *dir_w = CopyStrToUni(e->DirName);
 	InnerFilePathW(dir, sizeof(dir), dir_w);
 	Free(dir_w);
 
 	// A UNC path needs the trailing backslash
-	len = UniStrLen(dir);
+	UINT len = UniStrLen(dir);
 	if (len != 0 && dir[len - 1] != L'\\')
 	{
 		UniStrCat(dir, sizeof(dir), L"\\");
@@ -68,14 +66,13 @@ static void FreeEraseFileList(LIST *o)
 
 static void EnumEraseFile(LIST *o, char *dirname)
 {
-	DIRLIST *dir;
 	char tmp[MAX_PATH];
 	if (o == NULL || dirname == NULL)
 	{
 		return;
 	}
 
-	dir = EnumDir(dirname);
+	DIRLIST *dir = EnumDir(dirname);
 
 	for (UINT i = 0; i < dir->NumFiles; i++)
 	{
@@ -107,13 +104,12 @@ static void EnumEraseFile(LIST *o, char *dirname)
 
 static LIST *GenerateEraseFileList(ERASER *e)
 {
-	LIST *o;
 	if (e == NULL)
 	{
 		return NULL;
 	}
 
-	o = NewListFast(CompareEraseFile);
+	LIST *o = NewListFast(CompareEraseFile);
 
 	for (UINT i = 0; i < e->Targets->NumTokens; i++)
 	{
@@ -130,7 +126,6 @@ static LIST *GenerateEraseFileList(ERASER *e)
 
 static void EraserMain(ERASER *e)
 {
-	LIST *o;
 	bool ok = false;
 	char bs[64];
 	if (e == NULL)
@@ -145,7 +140,7 @@ static void EraserMain(ERASER *e)
 
 	ToStrByte(bs, sizeof(bs), e->MinFreeSpace);
 
-	o = GenerateEraseFileList(e);
+	LIST *o = GenerateEraseFileList(e);
 
 	for (UINT i = 0; i < LIST_NUM(o); i++)
 	{
@@ -175,13 +170,12 @@ static void EraserMain(ERASER *e)
 
 int CompareEraseFile(void *p1, void *p2)
 {
-	ERASE_FILE *f1, *f2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	f1 = *(ERASE_FILE **)p1;
-	f2 = *(ERASE_FILE **)p2;
+	ERASE_FILE *f1 = *(ERASE_FILE **)p1;
+	ERASE_FILE *f2 = *(ERASE_FILE **)p2;
 	if (f1 == NULL || f2 == NULL)
 	{
 		return 0;
@@ -225,14 +219,12 @@ static void EraserThread(THREAD *t, void *p)
 // The check interval of e in seconds, as AutoDeleteCheckIntervalSecs of the configuration (at least 1)
 UINT GetEraserCheckInterval(ERASER *e)
 {
-	UINT ret;
-
 	if (e == NULL)
 	{
 		return DISK_FREE_CHECK_INTERVAL_DEFAULT / 1000;
 	}
 
-	ret = e->CheckInterval / 1000;
+	UINT ret = e->CheckInterval / 1000;
 
 	if (ret == 0)
 	{
@@ -247,7 +239,6 @@ UINT GetEraserCheckInterval(ERASER *e)
 // (0 for DISK_FREE_SPACE_DEFAULT_WINDOWS, at least DISK_FREE_SPACE_MIN). It writes its log lines to log
 ERASER *NewEraser(LOG *log, UINT64 min_size, UINT interval, char **targets, UINT num_targets)
 {
-	ERASER *e;
 	char dir[MAX_PATH];
 
 	if (min_size == 0)
@@ -260,7 +251,7 @@ ERASER *NewEraser(LOG *log, UINT64 min_size, UINT interval, char **targets, UINT
 		min_size = DISK_FREE_SPACE_MIN;
 	}
 
-	e = ZeroMalloc(sizeof(ERASER));
+	ERASER *e = ZeroMalloc(sizeof(ERASER));
 
 	GetExeDir(dir, sizeof(dir));
 

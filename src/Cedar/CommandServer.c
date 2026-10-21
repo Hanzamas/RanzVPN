@@ -250,28 +250,25 @@ void CmdPrintStatusToListViewEx(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s, boo
 
 UINT PsServerPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
-	UINT ret;
 	RPC_SET_PASSWORD t;
-	char *pw;
 	PARAM args[] =
 	{
 		{"[password]", CmdPromptChoosePassword, NULL, NULL, NULL},
 	};
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
 	}
 
-	pw = GetParamStr(o, "[password]");
+	char *pw = GetParamStr(o, "[password]");
 
 	Zero(&t, sizeof(t));
 	Sha0(t.HashedPassword, pw, StrLen(pw));
 
-	ret = ScSetServerPassword(ps->Rpc, &t);
+	UINT ret = ScSetServerPassword(ps->Rpc, &t);
 
 	if (ret != ERR_NO_ERROR)
 	{
@@ -287,13 +284,12 @@ UINT PsServerPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 wchar_t *CmdPromptChoosePassword(CONSOLE *c, void *param)
 {
-	char *s;
 	if (c == NULL)
 	{
 		return NULL;
 	}
 
-	s = CmdPasswordPrompt(c);
+	char *s = CmdPasswordPrompt(c);
 
 	if (s == NULL)
 	{
@@ -353,16 +349,14 @@ RETRY:
 
 UINT PsListenerDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
-	UINT ret;
 	RPC_LISTENER t;
 	PARAM args[] =
 	{
 		{"[port]", CmdPromptPort, _UU("CMD_ListenerDisable_PortPrompt"), CmdEvalPort, NULL},
 	};
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -372,7 +366,7 @@ UINT PsListenerDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	t.Enable = false;
 	t.Port = ToInt(GetParamStr(o, "[port]"));
 
-	ret = ScEnableListener(ps->Rpc, &t);
+	UINT ret = ScEnableListener(ps->Rpc, &t);
 
 	if (ret != ERR_NO_ERROR)
 	{
@@ -388,16 +382,14 @@ UINT PsListenerDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsListenerEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
-	UINT ret;
 	RPC_LISTENER t;
 	PARAM args[] =
 	{
 		{"[port]", CmdPromptPort, _UU("CMD_ListenerEnable_PortPrompt"), CmdEvalPort, NULL},
 	};
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -407,7 +399,7 @@ UINT PsListenerEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	t.Enable = true;
 	t.Port = ToInt(GetParamStr(o, "[port]"));
 
-	ret = ScEnableListener(ps->Rpc, &t);
+	UINT ret = ScEnableListener(ps->Rpc, &t);
 
 	if (ret != ERR_NO_ERROR)
 	{
@@ -423,13 +415,10 @@ UINT PsListenerEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsListenerList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
-	UINT ret;
 	RPC_LISTENER_LIST t;
-	CT *ct;
 
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
+	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -437,7 +426,7 @@ UINT PsListenerList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	Zero(&t, sizeof(t));
 
-	ret = ScEnumListener(ps->Rpc, &t);
+	UINT ret = ScEnumListener(ps->Rpc, &t);
 
 	if (ret != ERR_NO_ERROR)
 	{
@@ -446,7 +435,7 @@ UINT PsListenerList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ret;
 	}
 
-	ct = CtNew();
+	CT *ct = CtNew();
 
 	CtInsertColumn(ct, _UU("CM_LISTENER_COLUMN_1"), false);
 	CtInsertColumn(ct, _UU("CM_LISTENER_COLUMN_2"), false);
@@ -481,16 +470,14 @@ UINT PsListenerList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsListenerDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
-	UINT ret;
 	RPC_LISTENER t;
 	PARAM args[] =
 	{
 		{"[port]", CmdPromptPort, _UU("CMD_ListenerDelete_PortPrompt"), CmdEvalPort, NULL},
 	};
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -500,7 +487,7 @@ UINT PsListenerDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	t.Enable = true;
 	t.Port = ToInt(GetParamStr(o, "[port]"));
 
-	ret = ScDeleteListener(ps->Rpc, &t);
+	UINT ret = ScDeleteListener(ps->Rpc, &t);
 
 	if (ret != ERR_NO_ERROR)
 	{
@@ -516,21 +503,18 @@ UINT PsListenerDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsServerInfoGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
-	UINT ret;
 	RPC_SERVER_INFO t;
-	CT *ct;
 	wchar_t tmp[MAX_SIZE];
 
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
+	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
 	}
 
 	Zero(&t, sizeof(t));
-	ret = ScGetServerInfo(ps->Rpc, &t);
+	UINT ret = ScGetServerInfo(ps->Rpc, &t);
 	if (ret != ERR_NO_ERROR)
 	{
 		CmdPrintError(c, ret);
@@ -538,7 +522,7 @@ UINT PsServerInfoGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ret;
 	}
 
-	ct = CtNew();
+	CT *ct = CtNew();
 
 	CtInsertColumn(ct, _UU("SM_STATUS_COLUMN_1"), false);
 	CtInsertColumn(ct, _UU("SM_STATUS_COLUMN_2"), false);
@@ -590,22 +574,19 @@ UINT PsServerInfoGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsServerStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
-	UINT ret;
 	RPC_SERVER_STATUS t;
 	wchar_t tmp[MAX_PATH];
 	char tmp2[MAX_PATH];
-	CT *ct;
 
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
+	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
 	}
 
 	Zero(&t, sizeof(t));
-	ret = ScGetServerStatus(ps->Rpc, &t);
+	UINT ret = ScGetServerStatus(ps->Rpc, &t);
 	if (ret != ERR_NO_ERROR)
 	{
 		CmdPrintError(c, ret);
@@ -613,7 +594,7 @@ UINT PsServerStatusGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ret;
 	}
 
-	ct = CtNew();
+	CT *ct = CtNew();
 
 	CtInsertColumn(ct, _UU("SM_STATUS_COLUMN_1"), false);
 	CtInsertColumn(ct, _UU("SM_STATUS_COLUMN_2"), false);
@@ -753,13 +734,12 @@ wchar_t *CmdPromptPort(CONSOLE *c, void *param)
 
 bool CmdEvalPort(CONSOLE *c, wchar_t *str, void *param)
 {
-	UINT i;
 	if (c == NULL || str == NULL)
 	{
 		return false;
 	}
 
-	i = UniToInt(str);
+	UINT i = UniToInt(str);
 
 	if (i >= 1 && i <= 65535)
 	{
@@ -773,16 +753,14 @@ bool CmdEvalPort(CONSOLE *c, wchar_t *str, void *param)
 
 UINT PsListenerCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
-	UINT ret;
 	RPC_LISTENER t;
 	PARAM args[] =
 	{
 		{"[port]", CmdPromptPort, _UU("CMD_ListenerCreate_PortPrompt"), CmdEvalPort, NULL},
 	};
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -792,7 +770,7 @@ UINT PsListenerCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	t.Enable = true;
 	t.Port = ToInt(GetParamStr(o, "[port]"));
 
-	ret = ScCreateListener(ps->Rpc, &t);
+	UINT ret = ScCreateListener(ps->Rpc, &t);
 
 	if (ret != ERR_NO_ERROR)
 	{
@@ -808,30 +786,25 @@ UINT PsListenerCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsAbout(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
-	BUF *b;
-
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
+	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
 	}
 
-	b = ReadDump("|legal.txt");
+	BUF *b = ReadDump("|legal.txt");
 
 	CmdPrintAbout(c);
 	c->Write(c, L"\r\n");
 
 	if (b != NULL)
 	{
-		wchar_t *s;
-
 		SeekBufToEnd(b);
 		WriteBufChar(b, 13);
 		WriteBufChar(b, 10);
 		WriteBufChar(b, 0);
 
-		s = CopyUtfToUni(b->Buf);
+		wchar_t *s = CopyUtfToUni(b->Buf);
 
 		c->Write(c, s);
 

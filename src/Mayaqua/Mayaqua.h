@@ -31,15 +31,13 @@ static inline bool IsTrackingEnabled(void)
 // peak compares unsigned, as it did when the counters were UINT64
 static inline void KsAdd(UINT id, LONG64 n)
 {
-	LONG64 now, peak;
-
 	if (IsTrackingEnabled() == false)
 	{
 		return;
 	}
 
-	now = InterlockedAdd64(&kernel_status[id], n);
-	peak = kernel_status_max[id];
+	LONG64 now = InterlockedAdd64(&kernel_status[id], n);
+	LONG64 peak = kernel_status_max[id];
 	while ((UINT64)now > (UINT64)peak)
 	{
 		LONG64 seen = InterlockedCompareExchange64(&kernel_status_max[id], now, peak);

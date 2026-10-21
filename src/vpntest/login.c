@@ -56,7 +56,6 @@
 static UINT LoginNumSessions(HARNESS *h)
 {
 	RPC_ENUM_SESSION t;
-	UINT num;
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), LOGIN_HUB);
@@ -66,7 +65,7 @@ static UINT LoginNumSessions(HARNESS *h)
 		return INFINITE;
 	}
 
-	num = t.NumSession;
+	UINT num = t.NumSession;
 	FreeRpcEnumSession(&t);
 
 	return num;
@@ -101,8 +100,6 @@ static UINT LoginTry(HARNESS *h, UINT authtype, char *password, UINT *num_sessio
 	UCHAR hashed_password[SHA1_SIZE];
 	UCHAR secure_password[SHA1_SIZE];
 	SOCK *s = HarnessRawConnect(random);
-	PACK *p;
-	UINT err;
 
 	*num_sessions = INFINITE;
 
@@ -112,7 +109,7 @@ static UINT LoginTry(HARNESS *h, UINT authtype, char *password, UINT *num_sessio
 		return ERR_DISCONNECTED;
 	}
 
-	p = HarnessRawLoginPack(LOGIN_HUB, LOGIN_USER, authtype);
+	PACK *p = HarnessRawLoginPack(LOGIN_HUB, LOGIN_USER, authtype);
 
 	if (password != NULL)
 	{
@@ -128,7 +125,7 @@ static UINT LoginTry(HARNESS *h, UINT authtype, char *password, UINT *num_sessio
 		}
 	}
 
-	err = HarnessRawRequest(s, p);
+	UINT err = HarnessRawRequest(s, p);
 	FreePack(p);
 
 	*num_sessions = LoginNumSessions(h);
@@ -175,14 +172,13 @@ static void LoginReport(char *name, UINT num_fail)
 // "authtype": the authentication types of a login (FND-26)
 void authtype_test(UINT num, char **arg)
 {
-	HARNESS *h;
 	bool ok;
 	UINT err;
 	UINT num_sessions;
 
 	Print("Login authtype test: in-process server on TCP %u, hub %s, user %s\n", HARNESS_PORT, LOGIN_HUB, LOGIN_USER);
 
-	h = HarnessOpenServer("AUTHTYPE", LOGIN_WATCHDOG_LIMIT, LOGIN_HUB, LOGIN_USER, &ok);
+	HARNESS *h = HarnessOpenServer("AUTHTYPE", LOGIN_WATCHDOG_LIMIT, LOGIN_HUB, LOGIN_USER, &ok);
 
 	if (HarnessCheck(h, ok, "server, hub " LOGIN_HUB " and user " LOGIN_USER " ready"))
 	{
@@ -236,7 +232,6 @@ static UINT LoginSetDenyLocal(HARNESS *h, bool deny)
 {
 	RPC_AC_LIST t;
 	AC ac;
-	UINT err;
 
 	Zero(&t, sizeof(t));
 	StrCpy(t.HubName, sizeof(t.HubName), LOGIN_HUB);
@@ -251,7 +246,7 @@ static UINT LoginSetDenyLocal(HARNESS *h, bool deny)
 		AddAc(t.o, &ac);
 	}
 
-	err = ScSetAcList(h->Rpc, &t);
+	UINT err = ScSetAcList(h->Rpc, &t);
 	FreeRpcAcList(&t);
 
 	return err;
@@ -296,8 +291,6 @@ static UINT LoginChangePassword(HARNESS *h, char *old_password, char *new_passwo
 	UCHAR secure_old_password[SHA1_SIZE];
 	UCHAR new_password_hash[SHA1_SIZE];
 	SOCK *s = HarnessRawConnect(random);
-	PACK *p;
-	UINT err;
 
 	if (s == NULL)
 	{
@@ -309,14 +302,14 @@ static UINT LoginChangePassword(HARNESS *h, char *old_password, char *new_passwo
 	SecurePassword(secure_old_password, hashed_old_password, random);
 	HashPassword(new_password_hash, LOGIN_USER, new_password);
 
-	p = NewPack();
+	PACK *p = NewPack();
 	PackAddStr(p, "method", "password");
 	PackAddStr(p, "hubname", LOGIN_HUB);
 	PackAddStr(p, "username", LOGIN_USER);
 	PackAddData(p, "secure_old_password", secure_old_password, SHA1_SIZE);
 	PackAddData(p, "new_password", new_password_hash, SHA1_SIZE);
 
-	err = HarnessRawRequest(s, p);
+	UINT err = HarnessRawRequest(s, p);
 	FreePack(p);
 
 	HarnessRawClose(s);
@@ -344,7 +337,6 @@ static void LoginExpectPassword(HARNESS *h, char *what, UINT err, UINT expected_
 // "acpassword": the access list of the hub applies to the 'password' method (FND-27)
 void acpassword_test(UINT num, char **arg)
 {
-	HARNESS *h;
 	bool ok;
 	UINT err;
 	UINT num_sessions;
@@ -352,7 +344,7 @@ void acpassword_test(UINT num, char **arg)
 	Print("Access list on the 'password' method: in-process server on TCP %u, hub %s, user %s\n", HARNESS_PORT,
 		LOGIN_HUB, LOGIN_USER);
 
-	h = HarnessOpenServer("ACPASSWORD", LOGIN_WATCHDOG_LIMIT, LOGIN_HUB, LOGIN_USER, &ok);
+	HARNESS *h = HarnessOpenServer("ACPASSWORD", LOGIN_WATCHDOG_LIMIT, LOGIN_HUB, LOGIN_USER, &ok);
 
 	if (HarnessCheck(h, ok, "server, hub " LOGIN_HUB " and user " LOGIN_USER " ready"))
 	{
@@ -470,7 +462,6 @@ static void LoginSigExpect(HARNESS *h, char *what, UINT status, UINT expected_st
 // "sigleak": every POST of the signature exchange frees its body (FND-28)
 void sigleak_test(UINT num, char **arg)
 {
-	HARNESS *h;
 	bool ok;
 	UINT sizes[3];
 	SOCK *s;
@@ -479,7 +470,7 @@ void sigleak_test(UINT num, char **arg)
 	Print("Signature POST bodies: in-process server on TCP %u, %u connections of %u requests\n", HARNESS_PORT,
 		LOGIN_SIG_CONNECTIONS, LOGIN_SIG_REQUESTS);
 
-	h = HarnessOpenServer("SIGLEAK", LOGIN_WATCHDOG_LIMIT, NULL, NULL, &ok);
+	HARNESS *h = HarnessOpenServer("SIGLEAK", LOGIN_WATCHDOG_LIMIT, NULL, NULL, &ok);
 
 	if (HarnessCheck(h, ok, "server ready"))
 	{
@@ -494,7 +485,6 @@ void sigleak_test(UINT num, char **arg)
 		for (UINT i = 0;i < LOGIN_SIG_CONNECTIONS;i++)
 		{
 			UINT num_forbidden = 0;
-			UINT last;
 
 			s = LoginSigConnect();
 			if (HarnessCheck(h, s != NULL, "TLS connection to the test listener") == false)
@@ -510,7 +500,7 @@ void sigleak_test(UINT num, char **arg)
 				}
 			}
 
-			last = LoginSigPost(s, HTTP_VPN_TARGET2, WaterMarkSize);
+			UINT last = LoginSigPost(s, HTTP_VPN_TARGET2, WaterMarkSize);
 			HarnessRawClose(s);
 
 			Format(tmp, sizeof(tmp), "connection %u: %u of %u wrong signatures get 403, request %u gets no answer (status %u)",
@@ -524,7 +514,6 @@ void sigleak_test(UINT num, char **arg)
 		s = LoginSigConnect();
 		if (HarnessCheck(h, s != NULL, "TLS connection to the test listener"))
 		{
-			PACK *p;
 			UCHAR random[SHA1_SIZE];
 			char server_str[MAX_SIZE];
 			UINT ver, build;
@@ -534,7 +523,7 @@ void sigleak_test(UINT num, char **arg)
 			LoginSigExpect(h, "wrong signature body, longest: 403", LoginSigPost(s, HTTP_VPN_TARGET2, sizes[2]), 403);
 			LoginSigExpect(h, "wrong target, shortest body: 404", LoginSigPost(s, LOGIN_SIG_WRONG_TARGET, sizes[0]), 404);
 
-			p = NULL;
+			PACK *p = NULL;
 			if (ClientUploadSignature(s))
 			{
 				p = HttpClientRecvEx(s, HTTP_PACK_MAX_SIZE);

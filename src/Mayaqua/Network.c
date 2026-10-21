@@ -353,13 +353,12 @@ static void FreeIpClientList()
 
 int CompareIpClientList(void *p1, void *p2)
 {
-	IP_CLIENT *c1, *c2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	c1 = *(IP_CLIENT **)p1;
-	c2 = *(IP_CLIENT **)p2;
+	IP_CLIENT *c1 = *(IP_CLIENT **)p1;
+	IP_CLIENT *c2 = *(IP_CLIENT **)p2;
 	if (c1 == NULL || c2 == NULL)
 	{
 		return 0;
@@ -400,9 +399,7 @@ static void Win32FreeAsyncSocket(SOCK *sock)
 
 bool IsIPv6Supported()
 {
-	SOCKET s;
-
-	s = socket(AF_INET6, SOCK_STREAM, 0);
+	SOCKET s = socket(AF_INET6, SOCK_STREAM, 0);
 	if (s == INVALID_SOCKET)
 	{
 		return false;
@@ -415,10 +412,9 @@ bool IsIPv6Supported()
 
 bool HasIPv6Address()
 {
-	LIST *o;
 	bool ret = false;
 
-	o = GetHostIPAddressList();
+	LIST *o = GetHostIPAddressList();
 
 	ret = false;
 
@@ -526,14 +522,10 @@ static void FreeChainCertCache()
 // Read the folder into the cache. chain_cert_lock is held
 static void ScanChainCertDir(wchar_t *dirname)
 {
-	DIRLIST *dir;
-	LIST *o;
-	LIST *hashes;
+	LIST *o = NewListFast(NULL);
+	LIST *hashes = NewListFast(NULL);
 
-	o = NewListFast(NULL);
-	hashes = NewListFast(NULL);
-
-	dir = EnumDirW(dirname);
+	DIRLIST *dir = EnumDirW(dirname);
 
 	if (dir != NULL)
 	{
@@ -544,11 +536,10 @@ static void ScanChainCertDir(wchar_t *dirname)
 			if (e->Folder == false)
 			{
 				wchar_t tmp[MAX_SIZE];
-				X *x;
 
 				CombinePathW(tmp, sizeof(tmp), dirname, e->FileNameW);
 
-				x = FileToXW(tmp);
+				X *x = FileToXW(tmp);
 
 				if (x != NULL)
 				{
@@ -1097,12 +1088,8 @@ void AcceptInitEx(SOCK *s, bool no_lookup_hostname)
 
 SOCK *Accept(SOCK *sock)
 {
-	SOCK *ret;
-	SOCKET s, new_socket;
-	int size;
 	struct sockaddr_storage addr;
 	UINT true_flag = 1;
-	bool is_ipv6;
 	if (sock == NULL)
 	{
 		return NULL;
@@ -1117,15 +1104,15 @@ SOCK *Accept(SOCK *sock)
 		return NULL;
 	}
 
-	s = sock->socket;
+	SOCKET s = sock->socket;
 	if (s == INVALID_SOCKET)
 	{
 		return NULL;
 	}
 	Zero(&addr, sizeof(addr));
-	size = sizeof(addr);
+	int size = sizeof(addr);
 
-	new_socket = accept(s, (struct sockaddr *)&addr, &size);
+	SOCKET new_socket = accept(s, (struct sockaddr *)&addr, &size);
 	if (new_socket == INVALID_SOCKET)
 	{
 		sock->AcceptError = WSAGetLastError();
@@ -1137,7 +1124,7 @@ SOCK *Accept(SOCK *sock)
 		return NULL;
 	}
 
-	ret = NewSock();
+	SOCK *ret = NewSock();
 	ret->socket = new_socket;
 	ret->Connected = true;
 	ret->AsyncMode = false;
@@ -1152,7 +1139,7 @@ SOCK *Accept(SOCK *sock)
 	QuerySocketInformation(ret);
 
 	// An IPv4 peer of the dual-stack listener arrives as ::ffff:a.b.c.d, which decodes to an IPv4 address
-	is_ipv6 = IsIP6(&ret->RemoteIP);
+	bool is_ipv6 = IsIP6(&ret->RemoteIP);
 
 	if (IsLocalHostIP(&ret->RemoteIP) == false)
 	{
@@ -1380,7 +1367,6 @@ COUNTER *GetNumTcpConnectionsCounter()
 
 bool IsIPMyHost(const IP *ip)
 {
-	LIST *o;
 	bool ret = false;
 	if (ip == NULL)
 	{
@@ -1392,7 +1378,7 @@ bool IsIPMyHost(const IP *ip)
 		return false;
 	}
 
-	o = GetHostIPAddressList();
+	LIST *o = GetHostIPAddressList();
 
 	for (UINT i = 0; i < LIST_NUM(o); i++)
 	{
@@ -1474,13 +1460,12 @@ bool IsIPPrivate(const IP *ip)
 void LoadPrivateIPFile()
 {
 	BUF *b = ReadDump(PRIVATE_IP_TXT_FILENAME);
-	LIST *o;
 	if (b == NULL)
 	{
 		return;
 	}
 
-	o = NewList(NULL);
+	LIST *o = NewList(NULL);
 
 	while (true)
 	{
@@ -1604,21 +1589,19 @@ void FreeNetwork()
 
 static int CmpIpAddressList(void *p1, void *p2)
 {
-	IP *ip1, *ip2;
-	UINT r;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	ip1 = *(IP **)p1;
-	ip2 = *(IP **)p2;
+	IP *ip1 = *(IP **)p1;
+	IP *ip2 = *(IP **)p2;
 	if (ip1 == NULL || ip2 == NULL)
 	{
 		return 0;
 	}
 
 	// IPv4 < IPv6
-	r = COMPARE_RET(IsIP6(ip1), IsIP6(ip2));
+	UINT r = COMPARE_RET(IsIP6(ip1), IsIP6(ip2));
 	if (r != 0)
 	{
 		return r;
@@ -1703,11 +1686,9 @@ LIST *GetHostIPAddressList()
 LIST *GetHostIPAddressListInternal()
 {
 	char hostname[MAX_SIZE];
-	LIST *o;
 	IP any6, any4;
 	IP local6, local4;
 	struct addrinfo hint;
-	struct addrinfo *info;
 	bool is_v6_supported = IsIPv6Supported();
 
 	GetLocalHostIP4(&local4);
@@ -1720,7 +1701,7 @@ LIST *GetHostIPAddressListInternal()
 
 	gethostname(hostname, sizeof(hostname));
 
-	o = NewListFast(CmpIpAddressList);
+	LIST *o = NewListFast(CmpIpAddressList);
 
 	AddHostIPAddressToList(o, &any4);
 	if (is_v6_supported)
@@ -1738,7 +1719,7 @@ LIST *GetHostIPAddressListInternal()
 	hint.ai_family = AF_UNSPEC;
 	hint.ai_socktype = SOCK_DGRAM;
 	hint.ai_protocol = IPPROTO_UDP;
-	info = NULL;
+	struct addrinfo *info = NULL;
 
 	if (getaddrinfo(hostname, NULL, &hint, &info) == 0)
 	{

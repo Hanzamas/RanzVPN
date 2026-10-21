@@ -87,9 +87,7 @@ static void SuDeleteGarbageInfs()
 			{
 				if (UniStartWith(name, L"oem") && SuIsSeLowOemInf(name))
 				{
-					BOOL deleted;
-
-					deleted = SetupUninstallOEMInfW(name, SUOI_FORCEDELETE, NULL);
+					BOOL deleted = SetupUninstallOEMInfW(name, SUOI_FORCEDELETE, NULL);
 
 					Debug("Delete OEM INF %S: %u\n", name, deleted);
 				}
@@ -530,8 +528,6 @@ void SuCloseAdapter(SU_ADAPTER *a)
 SU_ADAPTER *SuOpenAdapter(char *adapter_id)
 {
 	char filename[MAX_PATH];
-	void *h;
-	SU_ADAPTER *a;
 	SL_IOCTL_EVENT_NAME t;
 	DWORD read_size;
 	if (adapter_id == NULL)
@@ -541,7 +537,7 @@ SU_ADAPTER *SuOpenAdapter(char *adapter_id)
 
 	Format(filename, sizeof(filename), SL_ADAPTER_DEVICE_FILENAME_WIN32, adapter_id);
 
-	h = CreateFileA(filename, GENERIC_READ | GENERIC_WRITE,
+	void *h = CreateFileA(filename, GENERIC_READ | GENERIC_WRITE,
 		FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
 
 	if (h == INVALID_HANDLE_VALUE)
@@ -549,7 +545,7 @@ SU_ADAPTER *SuOpenAdapter(char *adapter_id)
 		return NULL;
 	}
 
-	a = ZeroMalloc(sizeof(SU_ADAPTER));
+	SU_ADAPTER *a = ZeroMalloc(sizeof(SU_ADAPTER));
 
 	a->hFile = h;
 
@@ -595,13 +591,12 @@ bool SuReadAdapterInfoList(void *h, SL_ADAPTER_INFO_LIST *list)
 // that is not a present device of the network class is left out
 LIST *SuGetAdapterList(SU *u, LIST *netclass)
 {
-	LIST *ret;
 	if (u == NULL)
 	{
 		return NULL;
 	}
 
-	ret = NewList(SuCmpAdapterList);
+	LIST *ret = NewList(SuCmpAdapterList);
 
 	// On a failed read, free the list; the device handle stays open (SuFree closes it)
 	Zero(&u->AdapterInfoList, sizeof(u->AdapterInfoList));
@@ -620,11 +615,10 @@ LIST *SuGetAdapterList(SU *u, LIST *netclass)
 			// Some NetAdapterCx drivers do not report FriendlyName in kernel mode,
 			// so fall back to DriverDesc from the NetCfg registry key.
 			char adapter_guid[MAX_PATH] = {0};
-			MS_NETCLASS_DEVICE *d;
 
 			UniToStr(adapter_guid, sizeof(adapter_guid), info->AdapterId + StrLen(SL_ADAPTER_ID_PREFIX));
 
-			d = MsNetClassFind(netclass, adapter_guid);
+			MS_NETCLASS_DEVICE *d = MsNetClassFind(netclass, adapter_guid);
 			if (d != NULL)
 			{
 				char *driver_desc = MsRegReadStrEx2(REG_LOCAL_MACHINE, d->ClassKey, "DriverDesc", false);
@@ -654,20 +648,18 @@ LIST *SuGetAdapterList(SU *u, LIST *netclass)
 
 int SuCmpAdapterList(void *p1, void *p2)
 {
-	int r;
-	SU_ADAPTER_LIST *a1, *a2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	a1 = *(SU_ADAPTER_LIST **)p1;
-	a2 = *(SU_ADAPTER_LIST **)p2;
+	SU_ADAPTER_LIST *a1 = *(SU_ADAPTER_LIST **)p1;
+	SU_ADAPTER_LIST *a2 = *(SU_ADAPTER_LIST **)p2;
 	if (a1 == NULL || a2 == NULL)
 	{
 		return 0;
 	}
 
-	r = StrCmpi(a1->SortKey, a2->SortKey);
+	int r = StrCmpi(a1->SortKey, a2->SortKey);
 	if (r != 0)
 	{
 		return 0;
@@ -697,7 +689,6 @@ SU_ADAPTER_LIST *SuAdapterInfoToAdapterList(SL_ADAPTER_INFO *info, LIST *netclas
 {
 	SU_ADAPTER_LIST t;
 	char tmp[MAX_SIZE];
-	MS_NETCLASS_DEVICE *d;
 	if (info == NULL)
 	{
 		return NULL;
@@ -718,7 +709,7 @@ SU_ADAPTER_LIST *SuAdapterInfoToAdapterList(SL_ADAPTER_INFO *info, LIST *netclas
 
 	StrCpy(t.Name, sizeof(t.Name), tmp);
 
-	d = MsNetClassFind(netclass, t.Guid);
+	MS_NETCLASS_DEVICE *d = MsNetClassFind(netclass, t.Guid);
 	if (d == NULL)
 	{
 		return NULL;

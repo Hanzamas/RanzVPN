@@ -23,8 +23,6 @@ static void SendSysLogLocked(SLOG *g, UCHAR *buf, UINT size)
 
 void SendSysLog(SLOG *g, wchar_t *str)
 {
-	UCHAR *buf;
-	UINT buf_size;
 	char hostname[MAX_HOST_NAME_LEN + 1];
 	bool poll = false;
 	if (g == NULL || str == NULL)
@@ -32,8 +30,8 @@ void SendSysLog(SLOG *g, wchar_t *str)
 		return;
 	}
 
-	buf_size = CalcUniToUtf8(str);
-	buf = ZeroMalloc(buf_size);
+	UINT buf_size = CalcUniToUtf8(str);
+	UCHAR *buf = ZeroMalloc(buf_size);
 	UniToUtf8(buf, buf_size, str);
 	LogMapControlChars(buf, buf_size);
 

@@ -50,7 +50,6 @@ static UINT MaskToPrefixLen(const UCHAR *mask, UINT size)
 {
 	UINT len = 0;
 	UINT i = 0;
-	UCHAR rest;
 
 	while (i < size && mask[i] == 0xFF)
 	{
@@ -64,7 +63,7 @@ static UINT MaskToPrefixLen(const UCHAR *mask, UINT size)
 	}
 
 	// The first byte with a zero bit: its leading one bits count, the bits behind them must be zero
-	rest = mask[i];
+	UCHAR rest = mask[i];
 	while ((rest & 0x80) != 0)
 	{
 		len++;
@@ -91,25 +90,23 @@ static UINT MaskToPrefixLen(const UCHAR *mask, UINT size)
 // Prefix length of an IPv6 subnet mask; 0 for an IPv4 address or a mask that is not contiguous
 UINT SubnetMaskToInt6(const IP *a)
 {
-	UINT len;
 	if (IsIP6(a) == false)
 	{
 		return 0;
 	}
 
-	len = MaskToPrefixLen(a->address, sizeof(a->address));
+	UINT len = MaskToPrefixLen(a->address, sizeof(a->address));
 
 	return (len == INFINITE ? 0 : len);
 }
 static UINT SubnetMaskToInt4(const IP *a)
 {
-	UINT len;
 	if (IsIP4(a) == false)
 	{
 		return 0;
 	}
 
-	len = MaskToPrefixLen(IPV4(a->address), IPV4_SIZE);
+	UINT len = MaskToPrefixLen(IPV4(a->address), IPV4_SIZE);
 
 	return (len == INFINITE ? 0 : len);
 }
@@ -705,8 +702,6 @@ bool IsValidUnicastIPAddress4(const IP *ip)
 
 bool IsValidUnicastIPAddress6(const IP *ip)
 {
-	UINT ipv6Type;
-
 	if (!IsIP6(ip))
 	{
 		return false;
@@ -717,7 +712,7 @@ bool IsValidUnicastIPAddress6(const IP *ip)
 		return false;
 	}
 
-	ipv6Type = GetIPAddrType6(ip);
+	UINT ipv6Type = GetIPAddrType6(ip);
 
 	if (!(ipv6Type & IPV6_ADDR_LOCAL_UNICAST) &&
 	        !(ipv6Type & IPV6_ADDR_GLOBAL_UNICAST))
@@ -868,10 +863,8 @@ void IPToStr(char *str, UINT size, const IP *ip)
 
 bool StrToIP(IP *ip, const char *str)
 {
-	char *tmp;
 	PCSTR end;
 	IN_ADDR addr;
-	bool ok;
 	if (ip == NULL || str == NULL)
 	{
 		return false;
@@ -885,9 +878,9 @@ bool StrToIP(IP *ip, const char *str)
 	ZeroIP4(ip);
 
 	// Strict four-part dotted decimal, and nothing after it
-	tmp = CopyStr(str);
+	char *tmp = CopyStr(str);
 	Trim(tmp);
-	ok = (RtlIpv4StringToAddressA(tmp, TRUE, &end, &addr) == 0 && *end == 0);
+	bool ok = (RtlIpv4StringToAddressA(tmp, TRUE, &end, &addr) == 0 && *end == 0);
 	Free(tmp);
 
 	if (ok == false)
@@ -965,9 +958,6 @@ void InAddrToIP6(IP *ip, const struct in6_addr *addr)
 
 bool ParseIpAndMask46(const char *src, IP *ip, IP *mask)
 {
-	TOKEN_LIST *t;
-	char *ipstr;
-	char *subnetstr;
 	bool ret = false;
 	IP ip2;
 	IP mask2;
@@ -979,15 +969,15 @@ bool ParseIpAndMask46(const char *src, IP *ip, IP *mask)
 	Zero(&ip2, sizeof(IP));
 	Zero(&mask2, sizeof(IP));
 
-	t = ParseToken(src, "/");
+	TOKEN_LIST *t = ParseToken(src, "/");
 	if (t->NumTokens != 2)
 	{
 		FreeToken(t);
 		return false;
 	}
 
-	ipstr = t->Token[0];
-	subnetstr = t->Token[1];
+	char *ipstr = t->Token[0];
+	char *subnetstr = t->Token[1];
 	Trim(ipstr);
 	Trim(subnetstr);
 
@@ -1161,13 +1151,12 @@ void AddHostIPAddressToList(LIST *o, const IP *ip)
 
 LIST *CloneIPAddressList(const LIST *o)
 {
-	LIST *ret;
 	if (o == NULL)
 	{
 		return NULL;
 	}
 
-	ret = NewListFast(o->cmp);
+	LIST *ret = NewListFast(o->cmp);
 
 	for (UINT i = 0; i < LIST_NUM(o); i++)
 	{

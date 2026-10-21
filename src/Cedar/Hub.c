@@ -128,13 +128,12 @@ static void FreeUserList(LIST *o)
 
 static int CompareAdminOption(void *p1, void *p2)
 {
-	ADMIN_OPTION *a1, *a2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	a1 = *(ADMIN_OPTION **)p1;
-	a2 = *(ADMIN_OPTION **)p2;
+	ADMIN_OPTION *a1 = *(ADMIN_OPTION **)p1;
+	ADMIN_OPTION *a2 = *(ADMIN_OPTION **)p2;
 	if (a1 == NULL || a2 == NULL)
 	{
 		return 0;
@@ -144,7 +143,6 @@ static int CompareAdminOption(void *p1, void *p2)
 
 static void StartHubWatchDog(HUB *h)
 {
-	THREAD *t;
 	if (h == NULL)
 	{
 		return;
@@ -153,7 +151,7 @@ static void StartHubWatchDog(HUB *h)
 	h->HaltWatchDog = false;
 	h->WatchDogEvent = NewEvent();
 
-	t = NewThread(HubWatchDogThread, h);
+	THREAD *t = NewThread(HubWatchDogThread, h);
 	WaitThreadInit(t);
 	ReleaseThread(t);
 }
@@ -225,15 +223,13 @@ static void HubWatchDogSendProbe(HUB *hub, HUB_WATCHDOG_PROBE *probe)
 	{
 		IPV6_ADDR ip6addr;
 		MAC_HEADER mac;
-		BUF *ns;
-		BUF *buf;
 
 		if (IPToIPv6Addr(&ip6addr, &probe->Ip) == false)
 		{
 			return;
 		}
 
-		ns = BuildNeighborSolicitation(&hub->HubIpV6, &ip6addr, hub->HubMacAddr);
+		BUF *ns = BuildNeighborSolicitation(&hub->HubIpV6, &ip6addr, hub->HubMacAddr);
 		if (ns == NULL)
 		{
 			return;
@@ -244,7 +240,7 @@ static void HubWatchDogSendProbe(HUB *hub, HUB_WATCHDOG_PROBE *probe)
 		Copy(mac.SrcAddress, hub->HubMacAddr, 6);
 		mac.Protocol = Endian16(MAC_PROTO_IPV6);
 
-		buf = NewBuf();
+		BUF *buf = NewBuf();
 		WriteBuf(buf, &mac, sizeof(MAC_HEADER));
 		WriteBuf(buf, ns->Buf, ns->Size);
 		FreeBuf(ns);
@@ -270,13 +266,12 @@ void HubWatchDogThread(THREAD *t, void *param)
 {
 	HUB_WATCHDOG_PROBE probes[HUB_WATCHDOG_SLICE];
 	UINT64 last_sent = 0;
-	HUB *hub;
 	if (t == NULL || param == NULL)
 	{
 		return;
 	}
 
-	hub = (HUB *)param;
+	HUB *hub = (HUB *)param;
 
 	hub->WatchDogThread = t;
 	AddRef(t->ref);
@@ -311,7 +306,6 @@ void HubWatchDogThread(THREAD *t, void *param)
 			for (UINT i = 0;i < num_entries;i++)
 			{
 				IP_TABLE_ENTRY *e = IpTableGet(hub, i);
-				UINT64 due;
 
 				if (e == NULL || (e->UpdatedTime + (UINT64)(IP_TABLE_EXPIRE_TIME)) <= now)
 				{
@@ -330,7 +324,7 @@ void HubWatchDogThread(THREAD *t, void *param)
 					continue;
 				}
 
-				due = MAX(e->UpdatedTime, e->LastProbeTime) + interval;
+				UINT64 due = MAX(e->UpdatedTime, e->LastProbeTime) + interval;
 				if (due <= (now + window))
 				{
 					if (num < HUB_WATCHDOG_SLICE)
@@ -398,7 +392,6 @@ void HubWatchDogThread(THREAD *t, void *param)
 static bool ArpAddrMatches(PKT *p, bool dest, UINT addr, UINT mask)
 {
 	ARPV4_HEADER *arp = p->L3.ARPv4Header;
-	UINT uint_ip;
 
 	if (arp->HardwareSize != 6 ||
 		Endian16(arp->HardwareType) != ARP_HARDWARE_TYPE_ETHERNET ||
@@ -408,7 +401,7 @@ static bool ArpAddrMatches(PKT *p, bool dest, UINT addr, UINT mask)
 		return false;
 	}
 
-	uint_ip = dest ? arp->TargetIP : arp->SrcIP;
+	UINT uint_ip = dest ? arp->TargetIP : arp->SrcIP;
 
 	if (uint_ip == 0 || uint_ip == 0xffffffff || (IsHubIpAddress32(uint_ip) && IsHubMacAddress(p->MacAddressSrc)))
 	{
@@ -445,14 +438,8 @@ static bool MatchIncludeExcludeUser(HUB *hub, SESSION *user_session, char *name_
 
 static bool IsPacketMaskedByAccessList(SESSION *s, PKT *p, ACCESS *a, UINT64 dest_username, UINT64 dest_groupname, SESSION *dest_session)
 {
-	UINT64 src_username;
-	UINT64 src_groupname;
-	HUB_PA *pa;
 	IPV4_HEADER *ip = NULL;
 	IPV6_HEADER *ip6 = NULL;
-	bool is_ipv4_packet;
-	bool is_ipv6_packet;
-	bool is_arp_packet;
 	if (s == NULL || p == NULL || a == NULL)
 	{
 		return false;
@@ -462,10 +449,10 @@ static bool IsPacketMaskedByAccessList(SESSION *s, PKT *p, ACCESS *a, UINT64 des
 		return false;
 	}
 
-	pa = (HUB_PA *)s->PacketAdapter->Param;
+	HUB_PA *pa = (HUB_PA *)s->PacketAdapter->Param;
 
-	src_username = pa->UsernameHash;
-	src_groupname = pa->GroupnameHash;
+	UINT64 src_username = pa->UsernameHash;
+	UINT64 src_groupname = pa->GroupnameHash;
 
 	if (a->CheckSrcMac != false)
 	{
@@ -519,9 +506,9 @@ static bool IsPacketMaskedByAccessList(SESSION *s, PKT *p, ACCESS *a, UINT64 des
 		}
 	}
 
-	is_ipv4_packet = (p->TypeL3 == L3_IPV4);
-	is_ipv6_packet = (p->TypeL3 == L3_IPV6);
-	is_arp_packet = (p->TypeL3 == L3_ARPV4);
+	bool is_ipv4_packet = (p->TypeL3 == L3_IPV4);
+	bool is_ipv6_packet = (p->TypeL3 == L3_IPV6);
+	bool is_arp_packet = (p->TypeL3 == L3_ARPV4);
 
 	if (is_ipv4_packet)
 	{
@@ -859,7 +846,6 @@ static BUF *BuildRedirectToUrlPayload(SESSION *s, char *redirect_url)
 	char redirect_url2[MAX_REDIRECT_URL_LEN + sizeof(info)];
 	char html[sizeof(redirect_url2) + MAX_SIZE];
 	char header[sizeof(redirect_url2) + MAX_SIZE];
-	BUF *b;
 	if (s == NULL || redirect_url == NULL)
 	{
 		return NULL;
@@ -871,12 +857,11 @@ static BUF *BuildRedirectToUrlPayload(SESSION *s, char *redirect_url)
 	if (InStr(redirect_url2, ACCESS_LIST_URL_INFO_TAG))
 	{
 		char secret[MAX_SIZE];
-		char *sep;
 
 		ClearStr(secret, sizeof(secret));
 
 		// The secret follows the last '|'
-		sep = strrchr(redirect_url2, '|');
+		char *sep = strrchr(redirect_url2, '|');
 		if (sep != NULL)
 		{
 			StrCpy(secret, sizeof(secret), sep + 1);
@@ -890,7 +875,6 @@ static BUF *BuildRedirectToUrlPayload(SESSION *s, char *redirect_url)
 			char hash_str[MAX_SIZE];
 			char client_ip[MAX_SIZE];
 			SYSTEMTIME st;
-			BUF *b2;
 
 			// The client chooses its user name: encoded, it cannot end the URL or a header line, nor add a '|' field
 			if (HubUrlEncode(username, sizeof(username), s->Username) == false ||
@@ -906,7 +890,7 @@ static BUF *BuildRedirectToUrlPayload(SESSION *s, char *redirect_url)
 				username, session_name, client_ip,
 				st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
 
-			b2 = NewBuf();
+			BUF *b2 = NewBuf();
 			WriteBuf(b2, info, StrLen(info));
 			WriteBuf(b2, secret, StrLen(secret));
 
@@ -936,7 +920,7 @@ static BUF *BuildRedirectToUrlPayload(SESSION *s, char *redirect_url)
 		"HTTP/1.1 302 Found\r\nLocation: %s\r\nCache-Control: private\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: %u\r\n\r\n",
 		redirect_url2, StrLen(html));
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 
 	WriteBuf(b, header, StrLen(header));
 	WriteBuf(b, html, StrLen(html));
@@ -946,12 +930,6 @@ static BUF *BuildRedirectToUrlPayload(SESSION *s, char *redirect_url)
 
 static void ForceRedirectToUrl(SESSION *src_session, PKT *p, char *redirect_url)
 {
-	BUF *payload;
-	UINT ip_header_size;
-	UINT tcp_size;
-	TCP_HEADER *tcp_data;
-	TCP_HEADER *src_tcp;
-	BUF *b;
 	if (src_session == NULL || p == NULL || redirect_url == NULL)
 	{
 		return;
@@ -965,28 +943,28 @@ static void ForceRedirectToUrl(SESSION *src_session, PKT *p, char *redirect_url)
 		return;
 	}
 
-	src_tcp = p->L4.TCPHeader;
+	TCP_HEADER *src_tcp = p->L4.TCPHeader;
 	if (src_tcp == NULL)
 	{
 		return;
 	}
 
-	payload = BuildRedirectToUrlPayload(src_session, redirect_url);
+	BUF *payload = BuildRedirectToUrlPayload(src_session, redirect_url);
 	if (payload == NULL)
 	{
 		return;
 	}
 
 	// The reply goes back as a single frame
-	ip_header_size = (p->TypeL3 == L3_IPV4 ? sizeof(IPV4_HEADER) : sizeof(IPV6_HEADER));
-	tcp_size = sizeof(TCP_HEADER) + payload->Size;
+	UINT ip_header_size = (p->TypeL3 == L3_IPV4 ? sizeof(IPV4_HEADER) : sizeof(IPV6_HEADER));
+	UINT tcp_size = sizeof(TCP_HEADER) + payload->Size;
 	if (sizeof(MAC_HEADER) + ip_header_size + tcp_size > MAX_PACKET_SIZE)
 	{
 		FreeBuf(payload);
 		return;
 	}
 
-	tcp_data = (TCP_HEADER *)ZeroMalloc(tcp_size);
+	TCP_HEADER *tcp_data = (TCP_HEADER *)ZeroMalloc(tcp_size);
 	tcp_data->SrcPort = src_tcp->DstPort;
 	tcp_data->DstPort = src_tcp->SrcPort;
 	tcp_data->SeqNumber = src_tcp->AckNumber;
@@ -1007,7 +985,7 @@ static void ForceRedirectToUrl(SESSION *src_session, PKT *p, char *redirect_url)
 			&p->IPv6HeaderPacketInfo.IPv6Header->SrcAddress, IP_PROTO_TCP, tcp_data, tcp_size, 0);
 	}
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 
 	WriteBuf(b, p->MacHeader->SrcAddress, 6);
 	WriteBuf(b, p->MacHeader->DestAddress, 6);
@@ -1110,7 +1088,6 @@ static bool IsEtherTypeNonIP(PKT *p)
 
 static bool ApplyAccessListToStoredPacket(HUB *hub, SESSION *s, PKT *p)
 {
-	HUB_OPTION *opt;
 	bool pass = true;
 	bool use_redirect_url = false;
 	char redirect_url[MAX_REDIRECT_URL_LEN + 1];
@@ -1119,7 +1096,7 @@ static bool ApplyAccessListToStoredPacket(HUB *hub, SESSION *s, PKT *p)
 		return false;
 	}
 
-	opt = hub->Option;
+	HUB_OPTION *opt = hub->Option;
 
 	if (opt->FilterPPPoE)
 	{
@@ -1416,14 +1393,12 @@ static void IpTableSetEntry(IP_TABLE_ENTRY *e, SESSION *s, IP *ip, UCHAR *mac, b
 // The table is sorted by address, so the last entry has the highest one: the entry a full table evicts. O(1)
 static void DeleteHighestIpTableEntry(LIST *o)
 {
-	IP_TABLE_ENTRY *e;
-
 	if (LIST_NUM(o) == 0)
 	{
 		return;
 	}
 
-	e = LIST_DATA(o, LIST_NUM(o) - 1);
+	IP_TABLE_ENTRY *e = LIST_DATA(o, LIST_NUM(o) - 1);
 	o->num_item--;
 	Free(e);
 }
@@ -1453,7 +1428,6 @@ static bool IpTableSessionAtLimit(HUB *h, SESSION *s, IP *ip, bool v6, bool no_c
 {
 	bool no_routing = v6 ? s->Policy->NoRoutingV6 : s->Policy->NoRouting;
 	UINT max_ip = v6 ? s->Policy->MaxIPv6 : s->Policy->MaxIP;
-	UINT num_ip_for_me;
 	UINT limited_count = 0xffffffff;
 	char tmp[64];
 
@@ -1462,7 +1436,7 @@ static bool IpTableSessionAtLimit(HUB *h, SESSION *s, IP *ip, bool v6, bool no_c
 		return false;
 	}
 
-	num_ip_for_me = CountSessionIps(h, s, v6);
+	UINT num_ip_for_me = CountSessionIps(h, s, v6);
 
 	if (no_routing)
 	{
@@ -1497,13 +1471,9 @@ static bool IpTableSessionAtLimit(HUB *h, SESSION *s, IP *ip, bool v6, bool no_c
 static bool CheckBroadcastStorm(HUB *hub, SESSION *s, PKT *p)
 {
 	IP src_ip, dest_ip;
-	HUB_PA *pa;
 	UINT64 now = Tick64();
-	UINT limit_start_count;
 	SESSION *sess = s;
 	bool ret = true;
-	bool strict;
-	bool no_heavy;
 	if (s == NULL || p == NULL || hub == NULL)
 	{
 		return false;
@@ -1514,10 +1484,10 @@ static bool CheckBroadcastStorm(HUB *hub, SESSION *s, PKT *p)
 		return true;
 	}
 
-	strict = hub->Option->BroadcastLimiterStrictMode;
-	no_heavy = hub->Option->DoNotSaveHeavySecurityLogs;
+	bool strict = hub->Option->BroadcastLimiterStrictMode;
+	bool no_heavy = hub->Option->DoNotSaveHeavySecurityLogs;
 
-	pa = (HUB_PA *)s->PacketAdapter->Param;
+	HUB_PA *pa = (HUB_PA *)s->PacketAdapter->Param;
 
 	Zero(&src_ip, sizeof(IP));
 	Zero(&dest_ip, sizeof(IP));
@@ -1538,7 +1508,7 @@ static bool CheckBroadcastStorm(HUB *hub, SESSION *s, PKT *p)
 		IPv6AddrToIP(&dest_ip, &p->L3.IPv6Header->DestAddress);
 	}
 
-	limit_start_count = 32;
+	UINT limit_start_count = 32;
 
 	if (hub->Option->BroadcastStormDetectionThreshold != 0)
 	{
@@ -1547,9 +1517,8 @@ static bool CheckBroadcastStorm(HUB *hub, SESSION *s, PKT *p)
 
 	LockList(pa->StormList);
 	{
-		STORM *s;
 		UINT num;
-		s = SearchStormList(pa, p->MacAddressSrc, &src_ip, &dest_ip, strict);
+		STORM *s = SearchStormList(pa, p->MacAddressSrc, &src_ip, &dest_ip, strict);
 		if (s == NULL)
 		{
 			s = AddStormList(pa, p->MacAddressSrc, &src_ip, &dest_ip, strict);
@@ -2461,7 +2430,6 @@ DISCARD_BROADCAST_PACKET:
 
 void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *packet, bool from_flood)
 {
-	BLOCK *b;
 	if (dest == NULL || data == NULL)
 	{
 		return;
@@ -2566,7 +2534,7 @@ void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *
 		}
 	}
 
-	b = NewBlock(data, size, 0);
+	BLOCK *b = NewBlock(data, size, 0);
 
 	LockQueue(dest->PacketQueue);
 	{
@@ -2602,22 +2570,20 @@ void StorePacketToHubPa(HUB_PA *dest, SESSION *src, void *data, UINT size, PKT *
 
 static bool StorePacketFilterByPolicy(SESSION *s, PKT *p)
 {
-	POLICY *pol;
-	HUB *hub;
 	bool no_heavy = false;
 	if (s == NULL || p == NULL)
 	{
 		return false;
 	}
 
-	hub = s->Hub;
+	HUB *hub = s->Hub;
 
 	if (hub != NULL)
 	{
 		no_heavy = hub->Option->DoNotSaveHeavySecurityLogs;
 	}
 
-	pol = s->Policy;
+	POLICY *pol = s->Policy;
 
 	if (pol->NoServer)
 	{
@@ -2901,8 +2867,6 @@ bool IsMostHighestPriorityPacket(SESSION *s, PKT *p)
 
 static bool StorePacketFilterByTrafficLimiter(SESSION *s, PKT *p)
 {
-	HUB_PA *pa;
-	TRAFFIC_LIMITER *tr;
 	if (s == NULL || p == NULL)
 	{
 		return false;
@@ -2913,8 +2877,8 @@ static bool StorePacketFilterByTrafficLimiter(SESSION *s, PKT *p)
 		return true;
 	}
 
-	pa = (HUB_PA *)s->PacketAdapter->Param;
-	tr = &pa->UploadLimiter;
+	HUB_PA *pa = (HUB_PA *)s->PacketAdapter->Param;
+	TRAFFIC_LIMITER *tr = &pa->UploadLimiter;
 
 	if (IsMostHighestPriorityPacket(s, p))
 	{
@@ -3147,13 +3111,12 @@ void HubApplyInitialState(HUB *h, bool online)
 
 bool IsHub(CEDAR *cedar, char *name)
 {
-	HUB *h;
 	if (cedar == NULL || name == NULL)
 	{
 		return false;
 	}
 
-	h = GetHub(cedar, name);
+	HUB *h = GetHub(cedar, name);
 	if (h == NULL)
 	{
 		return false;
@@ -3166,7 +3129,7 @@ bool IsHub(CEDAR *cedar, char *name)
 
 HUB *GetHub(CEDAR *cedar, char *name)
 {
-	HUB *h, t;
+	HUB t;
 	if (cedar == NULL || name == NULL)
 	{
 		return NULL;
@@ -3175,7 +3138,7 @@ HUB *GetHub(CEDAR *cedar, char *name)
 	LockHubList(cedar);
 
 	t.Name = name;
-	h = Search(cedar->HubList, &t);
+	HUB *h = Search(cedar->HubList, &t);
 	if (h == NULL)
 	{
 		UnlockHubList(cedar);
@@ -3277,7 +3240,6 @@ void CleanupHub(HUB *h)
 
 static UINT GetHashOfMacTable(void *p)
 {
-	UINT v;
 	MAC_TABLE_ENTRY *e = p;
 
 	if (e == NULL)
@@ -3285,7 +3247,7 @@ static UINT GetHashOfMacTable(void *p)
 		return 0;
 	}
 
-	v = e->MacAddress[0] + e->MacAddress[1] + e->MacAddress[2] + 
+	UINT v = e->MacAddress[0] + e->MacAddress[1] + e->MacAddress[2] + 
 		e->MacAddress[3] + e->MacAddress[4] + e->MacAddress[5] + 
 		e->VlanId;
 
@@ -3294,19 +3256,17 @@ static UINT GetHashOfMacTable(void *p)
 
 static int CompareMacTable(void *p1, void *p2)
 {
-	int r;
-	MAC_TABLE_ENTRY *e1, *e2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	e1 = *(MAC_TABLE_ENTRY **)p1;
-	e2 = *(MAC_TABLE_ENTRY **)p2;
+	MAC_TABLE_ENTRY *e1 = *(MAC_TABLE_ENTRY **)p1;
+	MAC_TABLE_ENTRY *e2 = *(MAC_TABLE_ENTRY **)p2;
 	if (e1 == NULL || e2 == NULL)
 	{
 		return 0;
 	}
-	r = Cmp(e1->MacAddress, e2->MacAddress, 6);
+	int r = Cmp(e1->MacAddress, e2->MacAddress, 6);
 	if (r != 0)
 	{
 		return r;
@@ -3324,13 +3284,12 @@ static int CompareMacTable(void *p1, void *p2)
 
 int CompareHub(void *p1, void *p2)
 {
-	HUB *h1, *h2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	h1 = *(HUB **)p1;
-	h2 = *(HUB **)p2;
+	HUB *h1 = *(HUB **)p1;
+	HUB *h2 = *(HUB **)p2;
 	if (h1 == NULL || h2 == NULL)
 	{
 		return 0;
@@ -3520,7 +3479,6 @@ void HubGetStats(HUB *h, HUB_STATS *st)
 
 HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 {
-	HUB *h;
 	char packet_logger_name[MAX_SIZE];
 	char tmp[MAX_SIZE];
 	char log_dir[MAX_SIZE];
@@ -3533,7 +3491,7 @@ HUB *NewHub(CEDAR *cedar, char *HubName, HUB_OPTION *option)
 		return NULL;
 	}
 
-	h = ZeroMalloc(sizeof(HUB));
+	HUB *h = ZeroMalloc(sizeof(HUB));
 	Sha0(h->HashedPassword, "", 0);
 	HashPassword(h->SecurePassword, ADMINISTRATOR_USERNAME, "");
 	h->lock = NewLock();
@@ -3633,11 +3591,8 @@ void DeleteHubDb(HUBDB *d)
 	{
 		LockList(d->GroupList);
 		{
-			USER **users;
-			USERGROUP **groups;
-
-			users = ToArray(d->UserList);
-			groups = ToArray(d->GroupList);
+			USER **users = ToArray(d->UserList);
+			USERGROUP **groups = ToArray(d->GroupList);
 
 			for (UINT i = 0;i < LIST_NUM(d->UserList);i++)
 			{

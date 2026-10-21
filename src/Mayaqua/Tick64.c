@@ -164,7 +164,6 @@ UINT64 Diff64(UINT64 a, UINT64 b)
 
 void InitTick64()
 {
-	ADJUST_TIME *t;
 	ULARGE_INTEGER span;
 	FILETIME due;
 	if (tk64 != NULL)
@@ -176,7 +175,7 @@ void InitTick64()
 	tk64->AdjustTime = NewList(NULL);
 
 	// The first correction, before this returns: the time at the current tick
-	t = ZeroMalloc(sizeof(ADJUST_TIME));
+	ADJUST_TIME *t = ZeroMalloc(sizeof(ADJUST_TIME));
 	t->Tick = Tick64();
 	t->Time = SystemTime64();
 	tk64->Tick64WithTime64 = t->Tick;

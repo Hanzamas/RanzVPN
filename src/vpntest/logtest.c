@@ -163,14 +163,13 @@ static void LogTestDeleteDir(char *dir)
 static char *LogTestReadText(char *path)
 {
 	BUF *b = ReadDump(path);
-	char *ret;
 
 	if (b == NULL)
 	{
 		return NULL;
 	}
 
-	ret = ZeroMalloc(b->Size + 1);
+	char *ret = ZeroMalloc(b->Size + 1);
 	Copy(ret, b->Buf, b->Size);
 
 	FreeBuf(b);
@@ -183,7 +182,6 @@ static char *LogTestReadText(char *path)
 static char *LogTestNextLine(char **pos)
 {
 	char *s = *pos;
-	char *line;
 
 	while (*s == '\r' || *s == '\n')
 	{
@@ -196,7 +194,7 @@ static char *LogTestNextLine(char **pos)
 		return NULL;
 	}
 
-	line = s;
+	char *line = s;
 
 	while (*s != 0 && *s != '\r' && *s != '\n')
 	{
@@ -289,15 +287,9 @@ void logwriter_test(UINT num, char **arg)
 	char file1[MAX_PATH];
 	char file2[MAX_PATH];
 	char file3[MAX_PATH];
-	char *text1;
-	char *text2;
-	LOG *g;
-	UINT64 opens;
-	UINT64 end;
 	UINT64 size1 = 0;
 	UINT total = LOGTEST_WRITER_RECORDS + LOGTEST_WRITER_SWITCH_RECORDS + 1;
 	UINT lines, in_order;
-	bool switched;
 
 	Zero(&ctx, sizeof(ctx));
 
@@ -312,9 +304,9 @@ void logwriter_test(UINT num, char **arg)
 	Format(file3, sizeof(file3), "%s/%s", dir, LOGTEST_WRITER_NEXT_FILE);
 
 	// First LOG: the default maximum size, no date in the file name
-	opens = LogTestNumOpens();
+	UINT64 opens = LogTestNumOpens();
 
-	g = NewLog(dir, LOGTEST_WRITER_PREFIX, LOG_SWITCH_NO, 0);
+	LOG *g = NewLog(dir, LOGTEST_WRITER_PREFIX, LOG_SWITCH_NO, 0);
 	for (UINT i = 0;i < LOGTEST_WRITER_RECORDS;i++)
 	{
 		LogWriterInsert(g, i);
@@ -326,7 +318,7 @@ void logwriter_test(UINT num, char **arg)
 		"1000 records: the writer opens or creates its file at most twice (it reopened the file for every record)",
 		"%I64u files opened or created", opens);
 
-	text1 = LogTestReadText(file1);
+	char *text1 = LogTestReadText(file1);
 	if (LogTestCheck(&ctx, text1 != NULL, "the first LOG wrote lw.log", "%s cannot be read", file1))
 	{
 		lines = LogWriterCountLines(text1, &in_order);
@@ -346,12 +338,12 @@ void logwriter_test(UINT num, char **arg)
 		LogWriterInsert(g, i);
 	}
 
-	end = Tick64() + LOGTEST_WRITER_SWITCH_WAIT;
+	UINT64 end = Tick64() + LOGTEST_WRITER_SWITCH_WAIT;
 	while (g->CurrentLogNumber == 0 && Tick64() < end)
 	{
 		SleepThread(10);
 	}
-	switched = (g->CurrentLogNumber == 1);
+	bool switched = (g->CurrentLogNumber == 1);
 
 	LogWriterInsert(g, total - 1);
 	FreeLog(g);
@@ -370,11 +362,10 @@ void logwriter_test(UINT num, char **arg)
 		IsFileExists(file3) ? "exists" : "missing");
 
 	text1 = LogTestReadText(file1);
-	text2 = LogTestReadText(file2);
+	char *text2 = LogTestReadText(file2);
 	if (LogTestCheck(&ctx, text1 != NULL && text2 != NULL, "both files can be read", "%s or %s cannot be read", file1, file2))
 	{
 		BUF *b = NewBuf();
-		char *all;
 
 		size1 = StrLen(text1);
 		LogTestCheck(&ctx, size1 <= LOGTEST_WRITER_MAX_SIZE, "lw.log stays within the maximum size",
@@ -383,7 +374,7 @@ void logwriter_test(UINT num, char **arg)
 		WriteBuf(b, text1, StrLen(text1));
 		WriteBuf(b, text2, StrLen(text2));
 		WriteBufChar(b, 0);
-		all = (char *)b->Buf;
+		char *all = (char *)b->Buf;
 
 		lines = LogWriterCountLines(all, &in_order);
 		LogTestCheck(&ctx, lines == total && in_order == total,
@@ -501,7 +492,6 @@ static void LogBoundCheckFile(LOGTEST_CTX *ctx, char *path)
 {
 	char *text = LogTestReadText(path);
 	char expect[MAX_SIZE];
-	char *pos;
 	char *line;
 	UINT num_buffered = 0;
 	UINT64 buffered_bytes = 0;
@@ -517,7 +507,7 @@ static void LogBoundCheckFile(LOGTEST_CTX *ctx, char *path)
 		return;
 	}
 
-	pos = text;
+	char *pos = text;
 
 	while ((line = LogTestNextLine(&pos)) != NULL)
 	{
@@ -590,11 +580,6 @@ void logbound_test(UINT num, char **arg)
 	char log_dir[MAX_PATH];
 	char file[MAX_PATH];
 	UCHAR frame_buf[LOGTEST_BOUND_FRAME_SIZE];
-	PKT *frame;
-	SESSION *s;
-	IO *io;
-	UINT64 end;
-	bool blocked;
 	bool drained;
 	bool opened;
 
@@ -616,13 +601,13 @@ void logbound_test(UINT num, char **arg)
 
 	// The parent of the log directory is an existing file: the writer can make neither the directory nor the log file
 	MakeDir(dir);
-	io = FileCreate(block);
-	blocked = (io != NULL);
+	IO *io = FileCreate(block);
+	bool blocked = (io != NULL);
 	FileClose(io);
 	LogTestCheck(&ctx, blocked, "the parent of the log directory is an existing file", "%s cannot be created", block);
 
-	s = LogBoundNewSession();
-	frame = LogBoundParseFrame(frame_buf);
+	SESSION *s = LogBoundNewSession();
+	PKT *frame = LogBoundParseFrame(frame_buf);
 	LogTestCheck(&ctx, frame != NULL, "the frame of the packet log records parses", "ParsePacket returned NULL");
 
 	t.Log = NewLog(log_dir, LOGTEST_BOUND_PREFIX, LOG_SWITCH_NO, 0);
@@ -642,7 +627,7 @@ void logbound_test(UINT num, char **arg)
 
 	// The writer takes every record while the file cannot be opened: the first ones into its buffer, the
 	// others it drops through their release path
-	end = Tick64() + LOGTEST_BOUND_DRAIN_WAIT;
+	UINT64 end = Tick64() + LOGTEST_BOUND_DRAIN_WAIT;
 	while (true)
 	{
 		drained = (LogBoundQueued(&t) == 0 && Count(s->LoggingRecordCount) == 0);
@@ -717,7 +702,6 @@ static UINT LogTestRecvDatagram(SOCK *s, UCHAR *buf, UINT size, UINT timeout)
 		SOCKSET set;
 		IP src_ip;
 		UINT src_port;
-		UINT ret;
 		UINT64 now = Tick64();
 
 		// Select() also puts the socket in non-blocking mode for RecvFrom()
@@ -725,7 +709,7 @@ static UINT LogTestRecvDatagram(SOCK *s, UCHAR *buf, UINT size, UINT timeout)
 		AddSockSet(&set, s);
 		Select(&set, (UINT)(now < end ? MIN(end - now, 100) : 0), NULL, NULL);
 
-		ret = RecvFrom(s, &src_ip, &src_port, buf, size);
+		UINT ret = RecvFrom(s, &src_ip, &src_port, buf, size);
 		if (ret != 0 && ret != SOCK_LATER)
 		{
 			return ret;
@@ -763,26 +747,18 @@ void slog_test(UINT num, char **arg)
 {
 	LOGTEST_CTX ctx;
 	IP localhost;
-	SOCK *s;
-	SLOG *g;
-	THREAD *t;
-	UINT64 before, after, next;
 	UINT64 elapsed = 0;
 	UCHAR buf[2048];
-	wchar_t *long_text;
 	char host[64];
-	UINT base;
-	UINT size;
 	bool in_flight;
 	bool still_in_flight = false;
-	bool all_a;
 
 	Zero(&ctx, sizeof(ctx));
 
 	Print("Syslog test: next resolve deadline, a second sender during a slow resolve, datagram content\n");
 
 	SetIP(&localhost, 127, 0, 0, 1);
-	s = NewUDPEx2(0, false, &localhost);
+	SOCK *s = NewUDPEx2(0, false, &localhost);
 	if (LogTestCheck(&ctx, s != NULL, "loopback UDP socket of the test", "NewUDPEx2 failed") == false)
 	{
 		LogTestEnd(&ctx, "SLOG");
@@ -790,10 +766,10 @@ void slog_test(UINT num, char **arg)
 	}
 
 	// A host that resolves: the next resolve is SYSLOG_POLL_IP_INTERVAL from now
-	before = Tick64();
-	g = NewSysLog("127.0.0.1", s->LocalPort, NULL);
-	after = Tick64();
-	next = SlogNextPoll(g);
+	UINT64 before = Tick64();
+	SLOG *g = NewSysLog("127.0.0.1", s->LocalPort, NULL);
+	UINT64 after = Tick64();
+	UINT64 next = SlogNextPoll(g);
 	LogTestCheck(&ctx, next >= before + SYSLOG_POLL_IP_INTERVAL && next <= after + SYSLOG_POLL_IP_INTERVAL,
 		"SetSysLog with a resolved host: the next resolve is SYSLOG_POLL_IP_INTERVAL ms from now (it was the bare interval)",
 		"NextPollIp %I64u, set between ticks %I64u and %I64u", next, before, after);
@@ -811,11 +787,11 @@ void slog_test(UINT num, char **arg)
 
 	// A datagram holds the UTF-8 text of the message, at most LOGTEST_SLOG_DATAGRAM_MAX bytes of it
 	SendSysLog(g, LOGTEST_SLOG_TEXT);
-	size = LogTestRecvDatagram(s, buf, sizeof(buf), LOGTEST_SLOG_RECV_WAIT);
+	UINT size = LogTestRecvDatagram(s, buf, sizeof(buf), LOGTEST_SLOG_RECV_WAIT);
 	LogTestCheck(&ctx, size == StrLen(LOGTEST_SLOG_TEXT_UTF8) && Cmp(buf, LOGTEST_SLOG_TEXT_UTF8, size) == 0,
 		"a syslog datagram holds the UTF-8 text of its message", "%u bytes received", size);
 
-	long_text = ZeroMalloc(sizeof(wchar_t) * (LOGTEST_SLOG_LONG + 1));
+	wchar_t *long_text = ZeroMalloc(sizeof(wchar_t) * (LOGTEST_SLOG_LONG + 1));
 	for (UINT i = 0;i < LOGTEST_SLOG_LONG;i++)
 	{
 		long_text[i] = L'a';
@@ -825,7 +801,7 @@ void slog_test(UINT num, char **arg)
 	Free(long_text);
 
 	size = LogTestRecvDatagram(s, buf, sizeof(buf), LOGTEST_SLOG_RECV_WAIT);
-	all_a = true;
+	bool all_a = true;
 	for (UINT i = 0;i < size;i++)
 	{
 		if (buf[i] != 'a')
@@ -846,8 +822,8 @@ void slog_test(UINT num, char **arg)
 	}
 	Unlock(g->lock);
 
-	base = DnsThreadNum();
-	t = NewThread(SlogFirstSenderThread, g);
+	UINT base = DnsThreadNum();
+	THREAD *t = NewThread(SlogFirstSenderThread, g);
 
 	before = Tick64();
 	while ((in_flight = (DnsThreadNum() > base)) == false && Tick64() < before + LOGTEST_SLOG_RESOLVE_WAIT)
@@ -884,9 +860,6 @@ void slog_test(UINT num, char **arg)
 void eraser_test(UINT num, char **arg)
 {
 	LOGTEST_CTX ctx;
-	ERASER *e;
-	UINT checks;
-	UINT secs;
 
 	Zero(&ctx, sizeof(ctx));
 
@@ -894,15 +867,15 @@ void eraser_test(UINT num, char **arg)
 
 	// AutoDeleteCheckIntervalSecs goes through NewEraser and GetEraserCheckInterval in seconds. The threshold of
 	// DISK_FREE_SPACE_MIN is met on any test machine and no target is given: the eraser only checks, it deletes nothing
-	e = NewEraser(NULL, DISK_FREE_SPACE_MIN, LOGTEST_ERASER_CONFIG_SECS, NULL, 0);
-	secs = GetEraserCheckInterval(e);
+	ERASER *e = NewEraser(NULL, DISK_FREE_SPACE_MIN, LOGTEST_ERASER_CONFIG_SECS, NULL, 0);
+	UINT secs = GetEraserCheckInterval(e);
 	FreeEraser(e);
 	LogTestCheck(&ctx, secs == LOGTEST_ERASER_CONFIG_SECS, "the check interval goes in and out of the configuration in seconds",
 		"set %u s, got %u", LOGTEST_ERASER_CONFIG_SECS, secs);
 
 	e = NewEraser(NULL, DISK_FREE_SPACE_MIN, LOGTEST_ERASER_INTERVAL, NULL, 0);
 	SleepThread(LOGTEST_ERASER_SPAN);
-	checks = e->NumChecks;
+	UINT checks = e->NumChecks;
 	FreeEraser(e);
 
 	LogTestCheck(&ctx, checks >= 1 && checks <= LOGTEST_ERASER_MAX_CHECKS,

@@ -15,22 +15,20 @@
 static void FuzzHttp(const uint8_t *data, size_t size)
 {
 	BUF *b = FuzzNewBuf(data, size);
-	HTTP_HEADER *header;
 
-	header = HttpParseHeaderLines(HttpBufLineSource, b);
+	HTTP_HEADER *header = HttpParseHeaderLines(HttpBufLineSource, b);
 
 	FreeBuf(b);
 
 	if (header != NULL)
 	{
 		// What the server and the client read from a received header, then the encoder
-		char *s;
 
 		GetContentLength(header);
 		GetHttpValue(header, "Content-Type");
 		GetHttpValue(header, "Connection");
 
-		s = HttpHeaderToStr(header);
+		char *s = HttpHeaderToStr(header);
 		Free(s);
 
 		FreeHttpHeader(header);

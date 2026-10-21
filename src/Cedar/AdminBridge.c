@@ -100,8 +100,6 @@ UINT StDeleteLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 
 UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t)
 {
-	CEDAR *c;
-
 	SERVER_ADMIN_ONLY;
 
 	if (Win32EthIsSuSupported() == false)
@@ -112,7 +110,7 @@ UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t)
 	FreeRpcEnumLocalBridge(t);
 	Zero(t, sizeof(RPC_ENUM_LOCALBRIDGE));
 
-	c = a->Server->Cedar;
+	CEDAR *c = a->Server->Cedar;
 
 	LockList(c->LocalBridgeList);
 	{

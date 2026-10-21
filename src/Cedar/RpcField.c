@@ -93,17 +93,14 @@ static UINT RpcFieldArrayCount(const RPC_FIELD *f, PACK *p)
 // Write the items of a top-level ARRAY row
 static void RpcFieldOutArray(const RPC_FIELD *f, PACK *p, void *base, UINT total)
 {
-	UINT num;
-	UCHAR *items;
-
 	if (total != 0 || f->Item == NULL)
 	{
 		Debug("RpcFieldOut: %s: nested or untyped array skipped\n", RpcFieldKeyName(f->Key));
 		return;
 	}
 
-	num = *((UINT *)(((UCHAR *)base) + f->CountOffset));
-	items = *((UCHAR **)RPC_FIELD_MEMBER(base, f));
+	UINT num = *((UINT *)(((UCHAR *)base) + f->CountOffset));
+	UCHAR *items = *((UCHAR **)RPC_FIELD_MEMBER(base, f));
 	if (num == 0 || items == NULL)
 	{
 		return;
@@ -118,17 +115,14 @@ static void RpcFieldOutArray(const RPC_FIELD *f, PACK *p, void *base, UINT total
 // Read the items of a top-level ARRAY row
 static void RpcFieldInArray(const RPC_FIELD *f, void *base, PACK *p, UINT total)
 {
-	UINT num;
-	UCHAR *items;
-
 	if (total != 0 || f->Item == NULL)
 	{
 		Debug("RpcFieldIn: %s: nested or untyped array skipped\n", RpcFieldKeyName(f->Key));
 		return;
 	}
 
-	num = RpcFieldArrayCount(f, p);
-	items = ZeroMalloc(f->Item->Size * num);
+	UINT num = RpcFieldArrayCount(f, p);
+	UCHAR *items = ZeroMalloc(f->Item->Size * num);
 
 	*((UINT *)(((UCHAR *)base) + f->CountOffset)) = num;
 	*((UCHAR **)RPC_FIELD_MEMBER(base, f)) = items;
@@ -142,8 +136,6 @@ static void RpcFieldInArray(const RPC_FIELD *f, void *base, PACK *p, UINT total)
 // Release the items of an ARRAY row
 static void RpcFieldFreeArray(const RPC_FIELD *f, void *base)
 {
-	UINT num;
-	UCHAR *items;
 	const RPC_FIELD *r;
 	bool item_free = false;
 
@@ -152,8 +144,8 @@ static void RpcFieldFreeArray(const RPC_FIELD *f, void *base)
 		return;
 	}
 
-	num = *((UINT *)(((UCHAR *)base) + f->CountOffset));
-	items = *((UCHAR **)RPC_FIELD_MEMBER(base, f));
+	UINT num = *((UINT *)(((UCHAR *)base) + f->CountOffset));
+	UCHAR *items = *((UCHAR **)RPC_FIELD_MEMBER(base, f));
 
 	for (r = f->Item->Fields;r->Type != RPC_FT_END;r++)
 	{

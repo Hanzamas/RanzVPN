@@ -168,8 +168,6 @@ static BUF *HarnessCmdRun(char *hub, char *command, UINT *ret)
 {
 	UINT size = StrLen(command) + MAX_SIZE;
 	char *cmdline = ZeroMalloc(size);
-	wchar_t *w;
-	BUF *b;
 
 	if (hub == NULL)
 	{
@@ -186,12 +184,12 @@ static BUF *HarnessCmdRun(char *hub, char *command, UINT *ret)
 
 	FileDelete(HARNESS_VPNCMD_OUT);
 
-	w = CopyStrToUni(cmdline);
+	wchar_t *w = CopyStrToUni(cmdline);
 	*ret = CommandMain(w);
 	Free(w);
 	Free(cmdline);
 
-	b = ReadDump(HARNESS_VPNCMD_OUT);
+	BUF *b = ReadDump(HARNESS_VPNCMD_OUT);
 	FileDelete(HARNESS_VPNCMD_OUT);
 
 	if (b == NULL)
@@ -258,7 +256,6 @@ static char *HarnessCmdMaskId(char *text, char *id)
 	UINT id_len = StrLen(id);
 	char *p = text;
 	bool line_start = true;
-	char *ret;
 
 	while (*p != 0)
 	{
@@ -275,7 +272,7 @@ static char *HarnessCmdMaskId(char *text, char *id)
 		p++;
 	}
 
-	ret = HarnessBufToStr(b);
+	char *ret = HarnessBufToStr(b);
 	FreeBuf(b);
 
 	return ret;
@@ -289,13 +286,11 @@ static void HarnessCmdRunStep(HARNESS *h, HARNESS_NORM *n, HARNESS_CMD_CASE *c, 
 	char *command = ZeroMalloc(size);
 	char what[MAX_SIZE * 2];
 	UINT ret = 0;
-	BUF *raw;
-	char *text;
 
 	ReplaceStr(command, size, s->Command, HARNESS_CMD_TAG_ID, id);
 
-	raw = HarnessCmdRun(c->Hub, command, &ret);
-	text = HarnessBufToStr(raw);
+	BUF *raw = HarnessCmdRun(c->Hub, command, &ret);
+	char *text = HarnessBufToStr(raw);
 
 	Format(what, sizeof(what), "%s: %s ends with code %u", c->Name, command, s->Expect);
 	if (HarnessCheck(h, ret == s->Expect, what) == false)
@@ -347,7 +342,6 @@ static void HarnessCmdRunCase(HARNESS *h, HARNESS_NORM *n, HARNESS_CMD_CASE *c, 
 	char id[MAX_SIZE];
 	char file_name[MAX_SIZE];
 	char tmp[MAX_SIZE];
-	char *s;
 
 	HarnessSetPhase("cmd", c->Name);
 	Print("  case %s\n", c->Name);
@@ -384,7 +378,7 @@ static void HarnessCmdRunCase(HARNESS *h, HARNESS_NORM *n, HARNESS_CMD_CASE *c, 
 		HarnessCheckErr(h, ScDeleteHub(h->Rpc, &d), tmp);
 	}
 
-	s = HarnessBufToStr(golden);
+	char *s = HarnessBufToStr(golden);
 	Format(file_name, sizeof(file_name), "cmd_%s.txt", c->Name);
 	HarnessCompareGolden(h, out_dir, golden_dir, file_name, s, update);
 
@@ -477,7 +471,6 @@ void HarnessCmdCases(HARNESS *h)
 	char out_dir[MAX_SIZE];
 	char golden_dir[MAX_SIZE];
 	bool update;
-	HARNESS_NORM *n;
 
 	Print("[vpncmd cases]\n");
 	HarnessSetPhase("cmd", NULL);
@@ -493,7 +486,7 @@ void HarnessCmdCases(HARNESS *h)
 
 	HarnessParseHostPort(h);
 
-	n = HarnessNewNorm();
+	HARNESS_NORM *n = HarnessNewNorm();
 
 	for (UINT i = 0;i < sizeof(harness_cmd_cases) / sizeof(harness_cmd_cases[0]);i++)
 	{

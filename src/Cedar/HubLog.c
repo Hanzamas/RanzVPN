@@ -99,15 +99,13 @@ void HLog(HUB *h, char *name, ...)
 void WriteHubLog(HUB *h, wchar_t *str)
 {
 	wchar_t buf[MAX_SIZE * 2];
-	UINT syslog_status;
-	SERVER *s;
 	if (h == NULL || str == NULL)
 	{
 		return;
 	}
 
-	s = h->Cedar->Server;
-	syslog_status = SiGetSysLogSaveStatus(s);
+	SERVER *s = h->Cedar->Server;
+	UINT syslog_status = SiGetSysLogSaveStatus(s);
 
 	UniFormat(buf, sizeof(buf), L"[HUB \"%S\"] %s", h->Name, str);
 
@@ -134,13 +132,12 @@ void WriteHubLog(HUB *h, wchar_t *str)
 
 void WriteServerLog(CEDAR *c, wchar_t *str)
 {
-	SERVER *s;
 	if (c == NULL || str == NULL)
 	{
 		return;
 	}
 
-	s = c->Server;
+	SERVER *s = c->Server;
 	if (s == NULL)
 	{
 		return;
@@ -205,11 +202,9 @@ static void EnumLogFileSubdirs(LIST *o, char *exe_dir, char *base_dir, char *hub
 
 	if (hubname == NULL)
 	{
-		DIRLIST *dir;
-
 		Format(tmp, sizeof(tmp), "%s/%s", exe_dir, base_dir);
 
-		dir = EnumDir(tmp);
+		DIRLIST *dir = EnumDir(tmp);
 		for (UINT i = 0;i < dir->NumFiles;i++)
 		{
 			DIRENT *e = dir->File[i];
@@ -261,7 +256,6 @@ void EnumLogFileDir(LIST *o, char *dirname)
 {
 	char exe_dir[MAX_PATH];
 	char dir_full_path[MAX_PATH];
-	DIRLIST *dir;
 	if (o == NULL || dirname == NULL)
 	{
 		return;
@@ -270,7 +264,7 @@ void EnumLogFileDir(LIST *o, char *dirname)
 	GetExeDir(exe_dir, sizeof(exe_dir));
 	Format(dir_full_path, sizeof(dir_full_path), "%s/%s", exe_dir, dirname);
 
-	dir = EnumDir(dir_full_path);
+	DIRLIST *dir = EnumDir(dir_full_path);
 
 	for (UINT i = 0;i < dir->NumFiles;i++)
 	{
@@ -300,13 +294,12 @@ void EnumLogFileDir(LIST *o, char *dirname)
 
 int CmpLogFile(void *p1, void *p2)
 {
-	LOG_FILE *f1, *f2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	f1 = *(LOG_FILE **)p1;
-	f2 = *(LOG_FILE **)p2;
+	LOG_FILE *f1 = *(LOG_FILE **)p1;
+	LOG_FILE *f2 = *(LOG_FILE **)p2;
 	if (f1 == NULL || f2 == NULL)
 	{
 		return 0;

@@ -16,8 +16,6 @@
 
 UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t)
 {
-	HUB *h;
-	HUBDB *db;
 	UINT err;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
@@ -29,13 +27,13 @@ UINT StGetAcList(ADMIN *a, RPC_AC_LIST *t)
 	Zero(t, sizeof(RPC_AC_LIST));
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 
-	h = AdminGetHub(a, hubname, NULL, &err);
+	HUB *h = AdminGetHub(a, hubname, NULL, &err);
 	if (h == NULL)
 	{
 		return err;
 	}
 
-	db = h->HubDb;
+	HUBDB *db = h->HubDb;
 
 	LockList(db->AcList);
 	{
@@ -53,19 +51,17 @@ UINT StSetAcList(ADMIN *a, RPC_AC_LIST *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
-	HUB *h;
-	HUBDB *db;
 	UINT err;
 
 	CHECK_RIGHT;
 
-	h = AdminGetHub(a, t->HubName, "no_change_access_control_list", &err);
+	HUB *h = AdminGetHub(a, t->HubName, "no_change_access_control_list", &err);
 	if (h == NULL)
 	{
 		return err;
 	}
 
-	db = h->HubDb;
+	HUBDB *db = h->HubDb;
 
 	LockList(db->AcList);
 	{

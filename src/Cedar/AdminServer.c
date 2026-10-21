@@ -105,11 +105,10 @@ UINT StGetServerCipherList(ADMIN *a, RPC_STR *t)
 
 UINT StGetServerCert(ADMIN *a, RPC_KEY_PAIR *t)
 {
-	bool admin;
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
 
-	admin = a->ServerAdmin;
+	bool admin = a->ServerAdmin;
 
 	FreeRpcKeyPair(t);
 	Zero(t, sizeof(RPC_KEY_PAIR));
@@ -188,7 +187,6 @@ static UINT StWaitListenerBind(SERVER *s, UINT port)
 {
 	SERVER_LISTENER *e;
 	LISTENER *r = NULL;
-	bool bound;
 
 	SiLockListenerList(s);
 	{
@@ -202,7 +200,7 @@ static UINT StWaitListenerBind(SERVER *s, UINT port)
 	SiUnlockListenerList(s);
 
 	// Outside the list lock: other admin calls take it, the listener thread does not
-	bound = WaitListenerBind(r, LISTENER_BIND_WAIT_TIME);
+	bool bound = WaitListenerBind(r, LISTENER_BIND_WAIT_TIME);
 
 	ReleaseListener(r);
 
@@ -281,14 +279,12 @@ UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t)
 
 UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t)
 {
-	SERVER_LISTENER_INFO *o;
-
 	SERVER_ADMIN_ONLY;
 
 	FreeRpcListenerList(t);
 	Zero(t, sizeof(RPC_LISTENER_LIST));
 
-	o = SiEnumListeners(a->Server, &t->NumPort);
+	SERVER_LISTENER_INFO *o = SiEnumListeners(a->Server, &t->NumPort);
 	t->Ports = ZeroMalloc(sizeof(UINT) * t->NumPort);
 	t->Enables = ZeroMalloc(sizeof(bool) * t->NumPort);
 	t->Errors = ZeroMalloc(sizeof(bool) * t->NumPort);
@@ -342,9 +338,7 @@ UINT StCreateListener(ADMIN *a, RPC_LISTENER *t)
 
 UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 {
-	CEDAR *c;
-
-	c = a->Server->Cedar;
+	CEDAR *c = a->Server->Cedar;
 
 	Zero(t, sizeof(RPC_SERVER_STATUS));
 
@@ -410,7 +404,6 @@ UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 
 UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t)
 {
-	CEDAR *c;
 	OS_INFO *info;
 	SYSTEMTIME st;
 	if (a == NULL || t == NULL)
@@ -421,7 +414,7 @@ UINT StGetServerInfo(ADMIN *a, RPC_SERVER_INFO *t)
 	FreeRpcServerInfo(t);
 	Zero(t, sizeof(RPC_SERVER_INFO));
 
-	c = a->Server->Cedar;
+	CEDAR *c = a->Server->Cedar;
 
 	GetServerProductName(a->Server, t->ServerProductName, sizeof(t->ServerProductName));
 

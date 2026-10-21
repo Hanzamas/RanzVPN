@@ -87,15 +87,12 @@ UINT GetCurrentLangId()
 
 bool SaveLangConfig(wchar_t *filename, const char *str)
 {
-	BUF *b;
-	LIST *o;
-	bool ret;
 	if (filename == NULL)
 	{
 		return false;
 	}
 
-	b = ReadDump(LANG_CONFIG_TEMPLETE);
+	BUF *b = ReadDump(LANG_CONFIG_TEMPLETE);
 	if (b == NULL)
 	{
 		return false;
@@ -103,7 +100,7 @@ bool SaveLangConfig(wchar_t *filename, const char *str)
 
 	SeekBuf(b, b->Size, 0);
 
-	o = LoadLangList();
+	LIST *o = LoadLangList();
 	if (o != NULL)
 	{
 		wchar_t tmp[MAX_SIZE];
@@ -127,7 +124,7 @@ bool SaveLangConfig(wchar_t *filename, const char *str)
 		FreeLangList(o);
 	}
 
-	ret = DumpBufWIfNecessary(b, filename);
+	bool ret = DumpBufWIfNecessary(b, filename);
 
 	FreeBuf(b);
 
@@ -136,14 +133,13 @@ bool SaveLangConfig(wchar_t *filename, const char *str)
 
 bool LoadLangConfig(wchar_t *filename, char *str, UINT str_size)
 {
-	BUF *b;
 	bool ret = false;
 	if (filename == NULL || str == NULL)
 	{
 		return false;
 	}
 
-	b = ReadDumpW(filename);
+	BUF *b = ReadDumpW(filename);
 	if (b == NULL)
 	{
 		return false;
@@ -193,7 +189,6 @@ LANGLIST *GetBestLangForCurrentEnvironment(LIST *o)
 
 LANGLIST *GetBestLangByLcid(LIST *o, UINT lcid)
 {
-	LANGLIST *ret;
 	if (o == NULL)
 	{
 		return NULL;
@@ -209,7 +204,7 @@ LANGLIST *GetBestLangByLcid(LIST *o, UINT lcid)
 		}
 	}
 
-	ret = GetBestLangByName(o, "en");
+	LANGLIST *ret = GetBestLangByName(o, "en");
 
 	return ret;
 }
@@ -280,9 +275,8 @@ LIST *LoadLangList()
 {
 	LIST *o = NewListFast(NULL);
 	char *filename = LANGLIST_FILENAME;
-	BUF *b;
 
-	b = ReadDump(filename);
+	BUF *b = ReadDump(filename);
 	if (b == NULL)
 	{
 		FreeLangList(o);
@@ -308,7 +302,6 @@ LIST *LoadLangList()
 				if (t->NumTokens == 6)
 				{
 					LANGLIST *e = ZeroMalloc(sizeof(LANGLIST));
-					TOKEN_LIST *t2;
 
 					e->Id = ToInt(t->Token[0]);
 					StrCpy(e->Name, sizeof(e->Name), t->Token[1]);
@@ -323,7 +316,7 @@ LIST *LoadLangList()
 
 					e->LcidList = NewIntList();
 
-					t2 = ParseToken(t->Token[4], ",");
+					TOKEN_LIST *t2 = ParseToken(t->Token[4], ",");
 					if (t2 != NULL)
 					{
 						for (UINT i = 0;i < t2->NumTokens;i++)
@@ -353,11 +346,10 @@ LIST *LoadLangList()
 
 wchar_t *GetUniErrorStr(UINT err)
 {
-	wchar_t *ret;
 	char name[MAX_SIZE];
 	Format(name, sizeof(name), "ERR_%u", err);
 
-	ret = GetTableUniStr(name);
+	wchar_t *ret = GetTableUniStr(name);
 	if (UniStrLen(ret) != 0)
 	{
 		return ret;
@@ -370,25 +362,23 @@ wchar_t *GetUniErrorStr(UINT err)
 
 UINT GetTableInt(const char *name)
 {
-	char *str;
 	if (name == NULL)
 	{
 		return 0;
 	}
 
-	str = GetTableStr(name);
+	char *str = GetTableStr(name);
 	return ToInt(str);
 }
 
 wchar_t *GetTableUniStr(const char *name)
 {
-	TABLE *t;
 	if (name == NULL)
 	{
 		return L"";
 	}
 
-	t = FindTable(name);
+	TABLE *t = FindTable(name);
 	if (t == NULL)
 	{
 		return L"";
@@ -399,13 +389,12 @@ wchar_t *GetTableUniStr(const char *name)
 
 char *GetTableStr(const char *name)
 {
-	TABLE *t;
 	if (name == NULL)
 	{
 		return "";
 	}
 
-	t = FindTable(name);
+	TABLE *t = FindTable(name);
 	if (t == NULL)
 	{
 		return "";
@@ -416,8 +405,6 @@ char *GetTableStr(const char *name)
 
 TOKEN_LIST *GetTableNameStartWith(const char *str)
 {
-	UINT len;
-	LIST *o;
 	TOKEN_LIST *t;
 	char tmp[MAX_SIZE];
 	if (str == NULL)
@@ -428,9 +415,9 @@ TOKEN_LIST *GetTableNameStartWith(const char *str)
 	StrCpy(tmp, sizeof(tmp), str);
 	StrUpper(tmp);
 
-	len = StrLen(tmp);
+	UINT len = StrLen(tmp);
 
-	o = NewListFast(NULL);
+	LIST *o = NewListFast(NULL);
 
 	for (UINT i = 0;i < LIST_NUM(TableList);i++)
 	{
@@ -462,7 +449,7 @@ TOKEN_LIST *GetTableNameStartWith(const char *str)
 
 TABLE *FindTable(const char *name)
 {
-	TABLE *t, tt;
+	TABLE tt;
 	if (name == NULL || TableList == NULL)
 	{
 		return NULL;
@@ -470,20 +457,19 @@ TABLE *FindTable(const char *name)
 
 	// The key only lends its name to CmpTableName, which does not change it
 	tt.name = (char *)name;
-	t = Search(TableList, &tt);
+	TABLE *t = Search(TableList, &tt);
 
 	return t;
 }
 
 static int CmpTableName(void *p1, void *p2)
 {
-	TABLE *t1, *t2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	t1 = *(TABLE **)p1;
-	t2 = *(TABLE **)p2;
+	TABLE *t1 = *(TABLE **)p1;
+	TABLE *t2 = *(TABLE **)p2;
 	if (t1 == NULL || t2 == NULL)
 	{
 		return 0;
@@ -494,23 +480,15 @@ static int CmpTableName(void *p1, void *p2)
 
 static TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *replace_list)
 {
-	UINT i, len;
-	UINT len_name;
-	UINT string_start;
-	char *name;
-	char *name2;
-	UINT name2_size;
-	wchar_t *unistr;
+	UINT i;
 	char *str;
-	UINT unistr_size, str_size;
-	TABLE *t;
 	if (line == NULL || prefix == NULL)
 	{
 		return NULL;
 	}
 	TrimLeft(line);
 
-	len = StrLen(line);
+	UINT len = StrLen(line);
 	if (len == 0)
 	{
 		return NULL;
@@ -521,7 +499,7 @@ static TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *r
 		return NULL;
 	}
 
-	len_name = 0;
+	UINT len_name = 0;
 	for (i = 0;;i++)
 	{
 		if (line[i] == 0)
@@ -535,10 +513,10 @@ static TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *r
 		len_name++;
 	}
 
-	name = Malloc(len_name + 1);
+	char *name = Malloc(len_name + 1);
 	StrCpy(name, len_name + 1, line);
 
-	string_start = len_name;
+	UINT string_start = len_name;
 	for (i = len_name;i < len;i++)
 	{
 		if (line[i] != ' ' && line[i] != '\t')
@@ -555,21 +533,20 @@ static TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *r
 
 	UnescapeStr(&line[string_start]);
 
-	unistr_size = CalcUtf8ToUni(&line[string_start], StrLen(&line[string_start]));
+	UINT unistr_size = CalcUtf8ToUni(&line[string_start], StrLen(&line[string_start]));
 	if (unistr_size == 0)
 	{
 		Free(name);
 		return NULL;
 	}
-	unistr = Malloc(unistr_size);
+	wchar_t *unistr = Malloc(unistr_size);
 	Utf8ToUni(unistr, unistr_size, &line[string_start], StrLen(&line[string_start]));
 
 	if (UniIsCharInStr(unistr, L'$'))
 	{
-		wchar_t *tmp;
 		UINT tmp_size = (UniStrSize(unistr) + 1024) * 2;
 
-		tmp = Malloc(tmp_size);
+		wchar_t *tmp = Malloc(tmp_size);
 
 		UniStrCpy(tmp, tmp_size, unistr);
 
@@ -587,7 +564,7 @@ static TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *r
 		Free(tmp);
 	}
 
-	str_size = CalcUniToStr(unistr);
+	UINT str_size = CalcUniToStr(unistr);
 	if (str_size == 0)
 	{
 		str_size = 1;
@@ -617,8 +594,8 @@ static TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *r
 		return NULL;
 	}
 
-	name2_size = StrLen(name) + StrLen(prefix) + 2;
-	name2 = ZeroMalloc(name2_size);
+	UINT name2_size = StrLen(name) + StrLen(prefix) + 2;
+	char *name2 = ZeroMalloc(name2_size);
 
 	if (prefix[0] != 0)
 	{
@@ -630,7 +607,7 @@ static TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *r
 
 	Free(name);
 
-	t = Malloc(sizeof(TABLE));
+	TABLE *t = Malloc(sizeof(TABLE));
 	StrUpper(name2);
 	t->name = name2;
 	t->str = str;
@@ -693,15 +670,13 @@ FINISH:
 
 void FreeTable()
 {
-	UINT num;
-	TABLE **tables;
 	if (TableList == NULL)
 	{
 		return;
 	}
 
-	num = LIST_NUM(TableList);
-	tables = ToArray(TableList);
+	UINT num = LIST_NUM(TableList);
+	TABLE **tables = ToArray(TableList);
 	for (UINT i = 0;i < num;i++)
 	{
 		TABLE *t = tables[i];
@@ -752,11 +727,10 @@ static bool LoadTableFromBuf(BUF *b)
 			{
 				if (StartWith(key, "$") && EndWith(key, "$") && StrLen(key) >= 3)
 				{
-					TABLE *t;
 					wchar_t univalue[MAX_SIZE];
 					wchar_t uniname[MAX_SIZE];
 
-					t = ZeroMalloc(sizeof(TABLE));
+					TABLE *t = ZeroMalloc(sizeof(TABLE));
 
 					Zero(univalue, sizeof(univalue));
 					Utf8ToUni(univalue, sizeof(univalue), value, StrLen(value));
@@ -805,7 +779,6 @@ static bool LoadTableFromBuf(BUF *b)
 // which other users can write (SEC-8), and no override file beside the exe naming another table (FND-43)
 bool LoadTable(const char *filename)
 {
-	BUF *b;
 	if (filename == NULL)
 	{
 		return false;
@@ -816,7 +789,7 @@ bool LoadTable(const char *filename)
 		return true;
 	}
 
-	b = ReadDump(filename);
+	BUF *b = ReadDump(filename);
 	if (b == NULL)
 	{
 		MayaFatalExit(1, "Error: Can't read string tables (file not found).\r\nPlease check the hamcore files: the resources of the executable, and a hamcore folder next to it.\r\n\r\n(First, reboot the computer. If this problem occurs again, please reinstall VPN software files.)");

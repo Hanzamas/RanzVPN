@@ -201,17 +201,14 @@ static void SelowTestRead(SELOWTEST_CTX *ctx, wchar_t *path)
 // as it was. Returns whether SeLow is usable on this machine
 static bool SelowTestQuery(SELOWTEST_CTX *ctx)
 {
-	bool supported;
-	bool running_before, running_after;
+	bool running_before = MsIsServiceRunning(SL_PROTOCOL_NAME);
 
-	running_before = MsIsServiceRunning(SL_PROTOCOL_NAME);
-
-	supported = Win32EthIsSuSupported();
+	bool supported = Win32EthIsSuSupported();
 	Win32EthIsSuSupported();
 	IsBridgeSupported();
 	SuFree(SuInitEx(0));
 
-	running_after = MsIsServiceRunning(SL_PROTOCOL_NAME);
+	bool running_after = MsIsServiceRunning(SL_PROTOCOL_NAME);
 
 	SelowTestCheck(ctx, selowtest_num_install == 0, "Asking whether SeLow is supported never reaches the driver install",
 		"install step ran %u times", selowtest_num_install);
@@ -325,13 +322,11 @@ static void SelowTestNetClass(SELOWTEST_CTX *ctx)
 	{
 		MS_NETCLASS_DEVICE *d = LIST_DATA(o, i);
 		char enum_key[MAX_SIZE];
-		char *guid;
-		char *driver;
 
 		Format(enum_key, sizeof(enum_key), "SYSTEM\\CurrentControlSet\\Enum\\%s", d->DeviceInstanceId);
 
-		guid = MsRegReadStr(REG_LOCAL_MACHINE, d->ClassKey, "NetCfgInstanceId");
-		driver = MsRegReadStr(REG_LOCAL_MACHINE, enum_key, "Driver");
+		char *guid = MsRegReadStr(REG_LOCAL_MACHINE, d->ClassKey, "NetCfgInstanceId");
+		char *driver = MsRegReadStr(REG_LOCAL_MACHINE, enum_key, "Driver");
 
 		if (StrCmpi(guid, d->Guid) == 0 && StrCmpi(driver, d->ShortKey) == 0)
 		{
@@ -360,7 +355,6 @@ void selow_test(UINT num, char **arg)
 	SELOWTEST_CTX ctx;
 	wchar_t dir[MAX_SIZE];
 	wchar_t path[MAX_SIZE];
-	bool supported;
 
 	Zero(&ctx, sizeof(ctx));
 
@@ -377,7 +371,7 @@ void selow_test(UINT num, char **arg)
 	SuSetInstallProc(SelowTestInstallProc);
 	selowtest_num_install = 0;
 
-	supported = SelowTestQuery(&ctx);
+	bool supported = SelowTestQuery(&ctx);
 	SelowTestInstall(&ctx, supported);
 
 	SuSetInstallProc(NULL);

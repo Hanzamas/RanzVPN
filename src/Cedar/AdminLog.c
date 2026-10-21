@@ -25,7 +25,6 @@ UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
 	SERVER *s = a->Server;
 	char logfilename[MAX_PATH];
 	char servername[MAX_HOST_NAME_LEN + 1];
-	UINT offset;
 
 	if (IsEmptyStr(t->FilePath))
 	{
@@ -33,7 +32,7 @@ UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
 	}
 
 	StrCpy(logfilename, sizeof(logfilename), t->FilePath);
-	offset = t->Offset;
+	UINT offset = t->Offset;
 
 	GetMachineName(servername, sizeof(servername));
 
@@ -41,11 +40,10 @@ UINT StReadLogFile(ADMIN *a, RPC_READ_LOG_FILE *t)
 	if (a->LogFileList == NULL)
 	{
 		RPC_ENUM_LOG_FILE elf;
-		UINT elf_ret;
 
 		Zero(&elf, sizeof(elf));
 
-		elf_ret = StEnumLogFile(a, &elf);
+		UINT elf_ret = StEnumLogFile(a, &elf);
 
 		FreeRpcEnumLogFile(&elf);
 
@@ -131,7 +129,6 @@ UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t)
 static void SiReadLocalLogFile(SERVER *s, char *filepath, UINT offset, RPC_READ_LOG_FILE *t)
 {
 	char exe_dir[MAX_PATH], full_path[MAX_PATH];
-	IO *o;
 	if (s == NULL || t == NULL || filepath == NULL)
 	{
 		return;
@@ -142,7 +139,7 @@ static void SiReadLocalLogFile(SERVER *s, char *filepath, UINT offset, RPC_READ_
 	GetExeDir(exe_dir, sizeof(exe_dir));
 	Format(full_path, sizeof(full_path), "%s/%s", exe_dir, filepath);
 
-	o = FileOpenEx(full_path, false, false);
+	IO *o = FileOpenEx(full_path, false, false);
 	if (o != NULL)
 	{
 		UINT filesize = FileSize(o);
@@ -166,7 +163,6 @@ static void SiReadLocalLogFile(SERVER *s, char *filepath, UINT offset, RPC_READ_
 
 static void SiEnumLocalLogFileList(SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t)
 {
-	LIST *o;
 	if (s == NULL || t == NULL)
 	{
 		return;
@@ -174,7 +170,7 @@ static void SiEnumLocalLogFileList(SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *
 
 	Zero(t, sizeof(RPC_ENUM_LOG_FILE));
 
-	o = EnumLogFile(hubname);
+	LIST *o = EnumLogFile(hubname);
 
 	t->NumItem = LIST_NUM(o);
 	t->Items = ZeroMalloc(sizeof(RPC_ENUM_LOG_FILE_ITEM) * t->NumItem);

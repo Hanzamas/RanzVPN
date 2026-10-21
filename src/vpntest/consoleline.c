@@ -131,16 +131,14 @@ static void ConsoleLineCodes(char *dst, UINT size, wchar_t *s)
 static void ConsoleLineChild()
 {
 	wchar_t infile[MAX_PATH];
-	CONSOLE *c;
-	UINT len;
 
-	len = GetEnvironmentVariableW(CONSOLELINE_ENV_INFILE, infile, MAX_PATH);
+	UINT len = GetEnvironmentVariableW(CONSOLELINE_ENV_INFILE, infile, MAX_PATH);
 	if (len == 0 || len >= MAX_PATH)
 	{
 		infile[0] = 0;
 	}
 
-	c = NewLocalConsole(infile, NULL);
+	CONSOLE *c = NewLocalConsole(infile, NULL);
 	if (c == NULL)
 	{
 		Print(CONSOLELINE_MARK "NO CONSOLE\n");
@@ -225,7 +223,6 @@ static char *ConsoleLineRunChild(BUF *in, BUF *infile, UINT *exit_code)
 	wchar_t stdin_path[MAX_PATH], stdout_path[MAX_PATH], in_path[MAX_PATH];
 	wchar_t exe[MAX_PATH];
 	wchar_t cmd[MAX_PATH * 2];
-	HANDLE h_in, h_out;
 	STARTUPINFOW si;
 	PROCESS_INFORMATION pi;
 	DWORD code = 1;
@@ -246,8 +243,8 @@ static char *ConsoleLineRunChild(BUF *in, BUF *infile, UINT *exit_code)
 		SetEnvironmentVariableW(CONSOLELINE_ENV_INFILE, in_path);
 	}
 
-	h_in = ConsoleLineOpenForChild(stdin_path, false);
-	h_out = ConsoleLineOpenForChild(stdout_path, true);
+	HANDLE h_in = ConsoleLineOpenForChild(stdin_path, false);
+	HANDLE h_out = ConsoleLineOpenForChild(stdout_path, true);
 
 	GetExeNameW(exe, sizeof(exe));
 	UniFormat(cmd, sizeof(cmd), L"\"%s\" consoleline child", exe);
@@ -366,7 +363,6 @@ static void ConsoleLineCase(CONSOLELINE_CTX *ctx, char *what, BUF *in, BUF *infi
 	char result[MAX_SIZE];
 	UINT exit_code = 1;
 	char *out = ConsoleLineRunChild(in, infile, &exit_code);
-	bool ok;
 
 	result[0] = 0;
 	if (out != NULL)
@@ -374,7 +370,7 @@ static void ConsoleLineCase(CONSOLELINE_CTX *ctx, char *what, BUF *in, BUF *infi
 		ConsoleLineResult(result, sizeof(result), out);
 	}
 
-	ok = (out != NULL && exit_code == 0 && StrCmp(result, expect) == 0 && InStrEx(out, "NO MEMORY LEAKS", true));
+	bool ok = (out != NULL && exit_code == 0 && StrCmp(result, expect) == 0 && InStrEx(out, "NO MEMORY LEAKS", true));
 
 	if (ConsoleLineCheck(ctx, ok, what) == false)
 	{

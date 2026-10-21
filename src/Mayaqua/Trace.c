@@ -58,13 +58,12 @@ bool IsTraceEnabled()
 // Write a Debug() message as one "Debug" event, formatted as PrintArgs() (Str.c) formats it
 void TraceDebugArgs(const char *fmt, va_list args)
 {
-	wchar_t *msg;
 	if (fmt == NULL || IsTraceEnabled() == false)
 	{
 		return;
 	}
 
-	msg = CopyFormatArgsToUni(fmt, args);
+	wchar_t *msg = CopyFormatArgsToUni(fmt, args);
 	if (msg == NULL)
 	{
 		return;

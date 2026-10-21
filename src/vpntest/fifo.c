@@ -59,9 +59,7 @@ static void FifoTestWrite(FIFO *f, UINT *next, UINT size)
 // Read size bytes in one ReadFifo: true when all of them come back and are the stream from byte *next on
 static bool FifoTestRead(FIFO *f, UINT *next, UINT size)
 {
-	bool ok;
-
-	ok = (ReadFifo(f, fifo_test_buf, size) == size);
+	bool ok = (ReadFifo(f, fifo_test_buf, size) == size);
 
 	for (UINT i = 0;i < size && ok;i++)
 	{
@@ -80,12 +78,12 @@ static bool FifoTestRead(FIFO *f, UINT *next, UINT size)
 static void FifoTestBacklog()
 {
 	FIFO *f = NewFifo();
-	UINT written = 0, read = 0, peak;
+	UINT written = 0, read = 0;
 	bool order = true, direct = true;
 	char what[MAX_SIZE];
 
 	FifoTestWrite(f, &written, FIFO_TEST_BACKLOG);
-	peak = f->memsize;
+	UINT peak = f->memsize;
 
 	for (UINT i = 0;i < FIFO_TEST_NUM_CYCLES;i++)
 	{
@@ -120,15 +118,13 @@ static void FifoTestBacklog()
 // The move and growth paths of WriteFifo keep the order
 static void FifoTestGrowth()
 {
-	FIFO *f;
-	UINT written, read, memsize;
-	bool ok;
+	UINT read;
 
 	// Fewer bytes read than live: the FIFO grows, the bytes stay where they are
-	f = NewFifo();
-	written = read = 0;
+	FIFO *f = NewFifo();
+	UINT written = read = 0;
 	FifoTestWrite(f, &written, 3000);
-	ok = FifoTestRead(f, &read, 1000);
+	bool ok = FifoTestRead(f, &read, 1000);
 	FifoTestWrite(f, &written, 5000);
 	ok = ok && f->memsize >= 7000 && FifoSize(f) == 7000;
 	ok = ok && FifoTestRead(f, &read, 7000) && FifoSize(f) == 0;
@@ -149,7 +145,7 @@ static void FifoTestGrowth()
 	// More bytes read than live, the write fits after the move: the FIFO keeps its size
 	f = NewFifo();
 	written = read = 0;
-	memsize = f->memsize;
+	UINT memsize = f->memsize;
 	FifoTestWrite(f, &written, 3000);
 	ok = FifoTestRead(f, &read, 2500);
 	FifoTestWrite(f, &written, 3000);
@@ -179,15 +175,14 @@ static bool FifoTestGet(QUEUE *q, UINT *next)
 static void FifoTestQueue()
 {
 	QUEUE *q = NewQueueFast();
-	UINT next_in = 1, next_out = 1, max_reserved;
-	bool ok, pow2;
+	UINT next_in = 1, next_out = 1;
 
 	FifoTestCheck(GetNext(q) == NULL && GetQueueNum(q) == 0, "GetNext of an empty queue is NULL");
 	InsertQueue(q, NULL);
 	FifoTestCheck(GetQueueNum(q) == 0 && GetNext(q) == NULL, "InsertQueue of NULL adds nothing");
 
 	// Wrap-around, then growth of a wrapped ring: 10 in, 5 out, then 20 more in
-	ok = true;
+	bool ok = true;
 	for (UINT i = 0;i < 10;i++)
 	{
 		InsertQueue(q, FIFO_TEST_ITEM(next_in++));
@@ -219,7 +214,7 @@ static void FifoTestQueue()
 	{
 		InsertQueue(q, FIFO_TEST_ITEM(next_in++));
 	}
-	max_reserved = q->num_reserved;
+	UINT max_reserved = q->num_reserved;
 	for (UINT i = 0;i < 100000;i++)
 	{
 		InsertQueue(q, FIFO_TEST_ITEM(next_in++));
@@ -248,7 +243,7 @@ static void FifoTestQueue()
 	}
 	FifoTestCheck(GetQueueNum(q) == 5000 && q->num_reserved >= 5000 && FifoTestPow2(q->num_reserved), "a burst of 5000 items grows the ring to a power of two");
 	ok = true;
-	pow2 = true;
+	bool pow2 = true;
 	for (UINT i = 0;i < 5000;i++)
 	{
 		if (FifoTestGet(q, &next_out) == false)

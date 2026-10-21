@@ -59,14 +59,13 @@ static void ChainCertsTestCheck(CHAINCERTS_TEST *t, bool ok, char *what, char *d
 static UINT ChainCertsConnection()
 {
 	struct ssl_ctx_st *ctx = NewSSLCtx(true);
-	UINT ret;
 
 	if (ctx == NULL)
 	{
 		return 0xFFFFFFFF;
 	}
 
-	ret = AddChainSslCertOnDirectory(ctx);
+	UINT ret = AddChainSslCertOnDirectory(ctx);
 
 	FreeSSLCtx(ctx);
 
@@ -144,13 +143,7 @@ void chaincerts_test(UINT num, char **arg)
 	wchar_t dir[MAX_SIZE];
 	wchar_t file[MAX_SIZE];
 	K *priv = NULL, *pub = NULL;
-	NAME *name;
-	DIRLIST *listing;
-	X *x;
-	UINT base;
-	UINT scans;
 	UINT wrong;
-	UINT n;
 
 	Zero(&t, sizeof(t));
 
@@ -164,26 +157,26 @@ void chaincerts_test(UINT num, char **arg)
 	CombinePathW(file, sizeof(file), dir, CHAINCERTS_FILE_NAME);
 	FileDeleteW(file);
 
-	listing = EnumDirW(dir);
+	DIRLIST *listing = EnumDirW(dir);
 	ChainCertsTestCheck(&t, listing != NULL, "PrepareChainCertDir: the folder exists", "no folder");
 	FreeDir(listing);
 
 	// The folder as it is: the certificates of earlier tests of this process directory
-	base = ChainCertsConnection();
+	UINT base = ChainCertsConnection();
 	ChainCertsSettle();
 
-	scans = ChainCertsConnections(&wrong, base);
+	UINT scans = ChainCertsConnections(&wrong, base);
 	ChainCertsTestCheck(&t, scans == 0 && wrong == 0, "unchanged folder: N connections, no scan, same chain",
 		"%u scans, %u connections with another chain", scans, wrong);
 
 	// A certificate written into the folder
-	name = NewName(L"Ranz VPN chaincerts test", NULL, NULL, NULL, NULL, NULL);
+	NAME *name = NewName(L"Ranz VPN chaincerts test", NULL, NULL, NULL, NULL, NULL);
 	ChainCertsTestCheck(&t, RsaGen(&priv, &pub, 2048), "RSA-2048 key is made", "RsaGen failed");
-	x = NewRootX(pub, priv, name, 365, NULL);
+	X *x = NewRootX(pub, priv, name, 365, NULL);
 	ChainCertsTestCheck(&t, x != NULL && XToFileW(x, file, true), "certificate is written into chain_certs", "write failed");
 
 	scans = GetChainCertScanCount();
-	n = ChainCertsWaitFor(base + 1);
+	UINT n = ChainCertsWaitFor(base + 1);
 	ChainCertsTestCheck(&t, n == base + 1, "written certificate: on the chain of the next connection",
 		"%u certificates on the chain, expected %u", n, base + 1);
 	ChainCertsTestCheck(&t, GetChainCertScanCount() > scans, "written certificate: the folder was scanned again", "no scan");

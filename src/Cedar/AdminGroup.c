@@ -29,13 +29,12 @@ typedef struct ENUM_GROUP_COUNT
 
 static int CompareEnumGroupCount(void *p1, void *p2)
 {
-	ENUM_GROUP_COUNT *c1, *c2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	c1 = *(ENUM_GROUP_COUNT **)p1;
-	c2 = *(ENUM_GROUP_COUNT **)p2;
+	ENUM_GROUP_COUNT *c1 = *(ENUM_GROUP_COUNT **)p1;
+	ENUM_GROUP_COUNT *c2 = *(ENUM_GROUP_COUNT **)p2;
 	if (c1 == NULL || c2 == NULL)
 	{
 		return 0;
@@ -62,9 +61,6 @@ UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 
 	AcLock(h);
 	{
-		ENUM_GROUP_COUNT *counts;
-		LIST *index;
-
 		FreeRpcEnumGroup(t);
 		Zero(t, sizeof(RPC_ENUM_GROUP));
 		StrCpy(t->HubName, sizeof(t->HubName), hubname);
@@ -73,8 +69,8 @@ UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 		t->Groups = ZeroMalloc(sizeof(RPC_ENUM_GROUP_ITEM) * t->NumGroup);
 
 		// Group pointer to its item, so the members are counted in one pass over the users
-		counts = ZeroMalloc(sizeof(ENUM_GROUP_COUNT) * t->NumGroup);
-		index = NewListFast(CompareEnumGroupCount);
+		ENUM_GROUP_COUNT *counts = ZeroMalloc(sizeof(ENUM_GROUP_COUNT) * t->NumGroup);
+		LIST *index = NewListFast(CompareEnumGroupCount);
 
 		for (UINT i = 0;i < t->NumGroup;i++)
 		{
@@ -116,12 +112,12 @@ UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 
 			if (ug != NULL)
 			{
-				ENUM_GROUP_COUNT key, *found;
+				ENUM_GROUP_COUNT key;
 
 				key.Group = ug;
 				key.Item = NULL;
 
-				found = Search(index, &key);
+				ENUM_GROUP_COUNT *found = Search(index, &key);
 				if (found != NULL)
 				{
 					found->Item->NumUsers++;

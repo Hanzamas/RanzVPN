@@ -20,7 +20,6 @@
 
 UINT PsAdminOptionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ADMIN_OPTION t;
@@ -31,7 +30,7 @@ UINT PsAdminOptionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
+	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -77,7 +76,6 @@ UINT PsAdminOptionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsAdminOptionSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ADMIN_OPTION t;
@@ -93,7 +91,7 @@ UINT PsAdminOptionSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -154,7 +152,6 @@ UINT PsAdminOptionSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsExtOptionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ADMIN_OPTION t;
@@ -165,7 +162,7 @@ UINT PsExtOptionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
+	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -211,7 +208,6 @@ UINT PsExtOptionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsExtOptionSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ADMIN_OPTION t;
@@ -227,7 +223,7 @@ UINT PsExtOptionSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;

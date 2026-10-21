@@ -27,11 +27,10 @@ static void FuzzNetSni(const uint8_t *data, size_t size)
 {
 	char sni[MAX_PATH];
 	char short_sni[FUZZ_SHORT_SNI_SIZE];
-	UCHAR *payload;
 
 	// malloc() rather than Malloc(): the copy is exactly 'size' bytes, so AddressSanitizer reports
 	// any read past the end of the payload
-	payload = malloc(size);
+	UCHAR *payload = malloc(size);
 	if (payload == NULL)
 	{
 		return;
@@ -48,7 +47,6 @@ static void FuzzNetSni(const uint8_t *data, size_t size)
 static void FuzzNetAddress(const uint8_t *data, size_t size)
 {
 	char out[MAX_SIZE];
-	char *str;
 	IP ip;
 	IP mask;
 	UINT ip32;
@@ -56,7 +54,7 @@ static void FuzzNetAddress(const uint8_t *data, size_t size)
 
 	// malloc() rather than Malloc(): the text and its terminator fill the block exactly, so
 	// AddressSanitizer reports any read past the terminator
-	str = malloc(size + 1);
+	char *str = malloc(size + 1);
 	if (str == NULL)
 	{
 		return;

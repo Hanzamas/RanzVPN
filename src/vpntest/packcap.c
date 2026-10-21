@@ -102,14 +102,12 @@ static void PackCapPeerThread(THREAD *thread, void *param)
 // end, or NULL when the connection fails. PackCapEnd frees p.
 static SOCK *PackCapStart(PACKCAP_TEST *t, PACKCAP_PEER *peer, PACK *p)
 {
-	SOCK *s;
-
 	Zero(peer, sizeof(PACKCAP_PEER));
 	peer->Listen = t->Listen;
 	peer->Pack = p;
 	peer->Thread = NewThread(PackCapPeerThread, peer);
 
-	s = Connect("127.0.0.1", PACKCAP_PORT);
+	SOCK *s = Connect("127.0.0.1", PACKCAP_PORT);
 	if (s != NULL)
 	{
 		SetTimeout(s, PACKCAP_TIMEOUT);
@@ -149,10 +147,9 @@ static void PackCapEnd(PACKCAP_TEST *t, PACKCAP_PEER *peer, SOCK *s)
 static PACK *PackCapHello(UINT pad_size)
 {
 	UCHAR random[SHA1_SIZE];
-	PACK *p;
 
 	Rand(random, sizeof(random));
-	p = PackHello(random, PACKCAP_SERVER_VER, PACKCAP_SERVER_BUILD, PACKCAP_SERVER_STR);
+	PACK *p = PackHello(random, PACKCAP_SERVER_VER, PACKCAP_SERVER_BUILD, PACKCAP_SERVER_STR);
 
 	if (pad_size != 0)
 	{

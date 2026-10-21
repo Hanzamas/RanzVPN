@@ -15,22 +15,16 @@ BUF *BuildNeighborSolicitation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCHAR *m
 {
 	UINT icmp_size = sizeof(ICMP_HEADER) + sizeof(ICMPV6_NEIGHBOR_SOLICIATION_HEADER) +
 		sizeof(ICMPV6_OPTION_LINK_LAYER);
-	UCHAR *packet;
-	IPV6_HEADER *ip;
-	ICMP_HEADER *icmp;
-	ICMPV6_NEIGHBOR_SOLICIATION_HEADER *ns;
-	ICMPV6_OPTION_LINK_LAYER *link;
-	BUF *ret;
 	if (src_ip == NULL || target_ip == NULL || my_mac_address == NULL)
 	{
 		return NULL;
 	}
 
-	packet = ZeroMalloc(sizeof(IPV6_HEADER) + icmp_size);
-	ip = (IPV6_HEADER *)packet;
-	icmp = (ICMP_HEADER *)(packet + sizeof(IPV6_HEADER));
-	ns = (ICMPV6_NEIGHBOR_SOLICIATION_HEADER *)(icmp + 1);
-	link = (ICMPV6_OPTION_LINK_LAYER *)(ns + 1);
+	UCHAR *packet = ZeroMalloc(sizeof(IPV6_HEADER) + icmp_size);
+	IPV6_HEADER *ip = (IPV6_HEADER *)packet;
+	ICMP_HEADER *icmp = (ICMP_HEADER *)(packet + sizeof(IPV6_HEADER));
+	ICMPV6_NEIGHBOR_SOLICIATION_HEADER *ns = (ICMPV6_NEIGHBOR_SOLICIATION_HEADER *)(icmp + 1);
+	ICMPV6_OPTION_LINK_LAYER *link = (ICMPV6_OPTION_LINK_LAYER *)(ns + 1);
 
 	IPV6_SET_VERSION(ip, 6);
 	ip->PayloadLength = Endian16((USHORT)icmp_size);
@@ -47,7 +41,7 @@ BUF *BuildNeighborSolicitation(IPV6_ADDR *src_ip, IPV6_ADDR *target_ip, UCHAR *m
 
 	icmp->Checksum = CalcChecksumForIPv6(src_ip, target_ip, IP_PROTO_ICMPV6, icmp, icmp_size, 0);
 
-	ret = NewBufFromMemory(packet, sizeof(IPV6_HEADER) + icmp_size);
+	BUF *ret = NewBufFromMemory(packet, sizeof(IPV6_HEADER) + icmp_size);
 
 	Free(packet);
 
@@ -196,16 +190,13 @@ static bool ParseICMPv6Options(ICMPV6_OPTION_LIST *o, UCHAR *buf, UINT size)
 
 	while (true)
 	{
-		ICMPV6_OPTION *option_header;
-		UINT header_total_size;
-		UCHAR *header_pointer;
 		if (size < sizeof(ICMPV6_OPTION))
 		{
 			return true;
 		}
 
-		option_header = (ICMPV6_OPTION *)buf;
-		header_total_size = option_header->Length * 8;
+		ICMPV6_OPTION *option_header = (ICMPV6_OPTION *)buf;
+		UINT header_total_size = option_header->Length * 8;
 		if (header_total_size == 0)
 		{
 			return true;
@@ -215,7 +206,7 @@ static bool ParseICMPv6Options(ICMPV6_OPTION_LIST *o, UCHAR *buf, UINT size)
 			return true;
 		}
 
-		header_pointer = buf;
+		UCHAR *header_pointer = buf;
 		buf += header_total_size;
 		size -= header_total_size;
 
@@ -280,9 +271,7 @@ static const struct
 static bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 {
 	ICMPV6_HEADER_INFO icmp_info;
-	ICMP_HEADER *icmp;
 	ICMP_ECHO *echo;
-	UINT msg_size;
 	if (p == NULL || buf == NULL)
 	{
 		return false;
@@ -295,10 +284,10 @@ static bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 		return false;
 	}
 
-	icmp = (ICMP_HEADER *)buf;
+	ICMP_HEADER *icmp = (ICMP_HEADER *)buf;
 	p->L4.ICMPHeader = icmp;
 
-	msg_size = size - sizeof(ICMP_HEADER);
+	UINT msg_size = size - sizeof(ICMP_HEADER);
 
 	icmp_info.Type = icmp->Type;
 	icmp_info.Data = ((UCHAR *)buf) + sizeof(ICMP_HEADER);
