@@ -10,9 +10,13 @@
 // other workers go on meanwhile. The Hubs of the server role are fork Hubs, whose users (Account) the fork's
 // Sam checks through NodeAuthenticate; the node writes its log through LogWriter and reads its configuration
 // through Cfg.
+// The relay role (CORE-S5-2 #78) listens on a UDP port under the node identity key: two peer layers of the new
+// core (Core/Peer.h) on UDP sockets of their own bind to it, come up after one signal each way and reach each
+// other through it, and it forwards nothing once the control plane takes their peers away.
 // nodesvc: ranz-node installs as the ranzvpnserver service and, for each role of its configuration, runs it
 // and stops cleanly: the service reports no error, the process exits with code 0, and the node log holds the
 // start and the stop of that role alone. It needs administrator rights and leaves an installed node alone.
+// Both tests use the identity key NODETEST_IDENTITY_KEY, not the one of an installed node, and delete it.
 // Print "NODE TEST OK" and "NODESVC TEST OK" only when every check passes.
 
 #include "Cedar/Account.h"
@@ -47,6 +51,8 @@
 #define	NODETEST_POLICY_ENTRIES	16			// ... of the policy table
 #define	NODETEST_QUEUE_FRAMES	20			// Frames per round of the queue case: 16 known MAC addresses, 4 unknown
 #define	NODETEST_QUEUE_KNOWN	16
+#define	NODETEST_IDENTITY_KEY	"Ranz Node Test"	// The identity key of the test nodes (IdentityKey)
+#define	NODETEST_QUIET			500			// How long the relay case waits for a datagram that must not come (ms)
 
 #define	NODESVC_START_WAIT		60000		// The service reaches a state within this time (ms)
 #define	NODESVC_RUN_WAIT		120000		// A run of ranz-node.exe with a service argument ends within this time (ms)
@@ -208,12 +214,14 @@ static void NodeTestDeleteDir(wchar_t *dir)
 	NodeTestDeleteFiles(dir, true);
 }
 
-// Write the configuration of a data directory: Roles (no item for NULL), NumWorkers (no item for 0) and one
-// hub under Hubs (none for NULL)
+// Write the configuration of a data directory: Roles (no item for NULL), NumWorkers (no item for 0), one hub
+// under Hubs (none for NULL), and IdentityKey, the identity key of the test nodes
 static void NodeTestWriteConfig(wchar_t *dir, char *roles, UINT num_workers, char *hub)
 {
 	wchar_t path[MAX_PATH];
 	FOLDER *root = CfgCreateFolder(NULL, TAG_ROOT);
+
+	CfgAddStr(root, "IdentityKey", NODETEST_IDENTITY_KEY);
 
 	if (roles != NULL)
 	{
@@ -1128,6 +1136,209 @@ static void NodeTestSwap(NODETEST_CTX *ctx)
 	NodeTestDeleteDir(dir);
 }
 
+//
+// The relay role
+//
+
+// One node of the relay case: a peer layer of the new core on a UDP socket of its own
+typedef struct NODETEST_PEER
+{
+	PEER_KEY Key;					// Its static key
+	PEER_UDP *Udp;					// Its socket
+	PEER_AGENT *Agent;				// Its peer layer
+	PEER_ADDR Addr;					// Its address on the loopback interface
+	volatile LONG Received;			// Datagrams that reached it through the relay
+	volatile LONG Echo;				// Answer "ping" with "pong"
+	char Last[64];					// The payload of the last one, as text
+} NODETEST_PEER;
+
+static void NodeTestPeerRecv(PEER_AGENT *a, void *param, const UCHAR *src, UINT path, const void *data, UINT size)
+{
+	NODETEST_PEER *p = (NODETEST_PEER *)param;
+	UINT len = MIN(size, (UINT)sizeof(p->Last) - 1);
+
+	Copy(p->Last, data, len);
+	p->Last[len] = 0;
+
+	if (path == PEER_PATH_RELAY)
+	{
+		InterlockedIncrement(&p->Received);
+	}
+
+	if (InterlockedCompareExchange(&p->Echo, 0, 0) != 0 && size == 4 && Cmp(data, "ping", 4) == 0)
+	{
+		PeerSend(a, src, "pong", 4);
+	}
+}
+
+// Start a peer layer with the fixed key of the scalar first, first + 1, ... on a socket of a port that the
+// system picks; its host candidate is that port on the loopback address
+static bool NodeTestPeerStart(NODETEST_PEER *p, UCHAR first)
+{
+	UCHAR priv[PEER_KEY_SIZE];
+
+	Zero(p, sizeof(NODETEST_PEER));
+
+	for (UINT i = 0;i < PEER_KEY_SIZE;i++)
+	{
+		priv[i] = (UCHAR)(first + i);
+	}
+
+	if (PeerKeyFromScalar(&p->Key, priv) == false)
+	{
+		return false;
+	}
+
+	p->Udp = PeerUdpNew(0);
+	if (p->Udp == NULL)
+	{
+		return false;
+	}
+
+	p->Agent = PeerNew(&p->Key, NULL, PeerUdpSend, p->Udp, NodeTestPeerRecv, p);
+	if (p->Agent == NULL || PeerUdpStart(p->Udp, p->Agent) == false)
+	{
+		return false;
+	}
+
+	PeerAddrSetV4(&p->Addr, 127, 0, 0, 1, PeerUdpPort(p->Udp));
+	PeerSetHostCandidates(p->Agent, &p->Addr, 1);
+
+	return true;
+}
+
+static void NodeTestPeerStop(NODETEST_PEER *p)
+{
+	PeerUdpFree(p->Udp);
+	PeerFree(p->Agent);
+	PeerKeyClose(&p->Key);
+}
+
+// A peer of a peer table: a node with the key key in one VRF
+static void NodeTestPeerInfo(PEER_INFO *info, char *name, UCHAR *key, UINT vrf)
+{
+	Zero(info, sizeof(PEER_INFO));
+	StrCpy(info->Name, sizeof(info->Name), name);
+	Copy(info->Key, key, PEER_KEY_SIZE);
+	info->NumVrfs = 1;
+	info->VrfIds[0] = vrf;
+}
+
+// Wait until the peer layer is bound to its relay
+static bool NodeTestWaitBound(NODETEST_PEER *p)
+{
+	UINT64 end = Tick64() + NODETEST_BOUND;
+	PEER_STATS st;
+
+	while (true)
+	{
+		PeerGetStats(p->Agent, &st);
+		if (st.NumBound == 1)
+		{
+			return true;
+		}
+
+		if (Tick64() >= end)
+		{
+			return false;
+		}
+
+		SleepThread(10);
+	}
+}
+
+static void NodeTestRelay(NODETEST_CTX *ctx)
+{
+	wchar_t dir[MAX_PATH];
+	NODE_STATUS st;
+	NODETEST_PEER a, b;
+	PEER_INFO peers[2];
+	PEER_INFO peer;
+	PEER_RELAY_INFO relay;
+	UCHAR env[PEER_MAX_ENVELOPE];
+
+	NodeTestNewDir(dir, sizeof(dir), "relay");
+	NodeTestWriteConfig(dir, "relay", 1, NULL);
+
+	NODE *n = NewNode(dir);
+	NodeStart(n);
+	NodeGetStatus(n, &st);
+	NodeTestCheck(ctx, st.Roles == NODE_ROLE_RELAY && st.RelayPort != 0 && IsZero(st.RelayKey, PEER_KEY_SIZE) == false,
+		"The relay role listens on a UDP port, under the node identity key", "roles 0x%x, port %u", st.Roles, (UINT)st.RelayPort);
+
+	bool ok = NodeTestPeerStart(&a, 1);
+	ok = NodeTestPeerStart(&b, 33) && ok;
+	NodeTestCheck(ctx, ok, "Two peer layers of the new core start on UDP sockets of their own", "one could not start");
+
+	if (ok && st.RelayPort != 0)
+	{
+		// The Peer objects of the relay node, of a and of b, and the Relay object of a and b
+		NodeTestPeerInfo(&peers[0], "a", a.Key.Public, 10);
+		NodeTestPeerInfo(&peers[1], "b", b.Key.Public, 10);
+		NodeSetPeers(n, peers, 2);
+
+		Zero(&relay, sizeof(relay));
+		StrCpy(relay.Name, sizeof(relay.Name), "relay");
+		Copy(relay.Key, st.RelayKey, PEER_KEY_SIZE);
+		PeerAddrSetV4(&relay.Addr, 127, 0, 0, 1, st.RelayPort);
+
+		NodeTestPeerInfo(&peer, "b", b.Key.Public, 10);
+		PeerSetPeers(a.Agent, &peer, 1);
+		PeerSetRelays(a.Agent, &relay, 1);
+		NodeTestPeerInfo(&peer, "a", a.Key.Public, 10);
+		PeerSetPeers(b.Agent, &peer, 1);
+		PeerSetRelays(b.Agent, &relay, 1);
+
+		bool bound = NodeTestWaitBound(&a);
+		bound = NodeTestWaitBound(&b) && bound;
+		NodeGetStatus(n, &st);
+		NodeTestCheck(ctx, bound && st.RelayBindings == 2 && st.RelayBinds >= 2, "Both bind to the relay role of the node, which answers each bind",
+			"bound %u, %u bindings, %I64u binds", (UINT)bound, st.RelayBindings, st.RelayBinds);
+
+		// One signal each way, which the control plane would carry
+		UINT size = PeerSealSignal(a.Agent, b.Key.Public, PEER_SIGNAL_OFFER, env, sizeof(env));
+		UINT offer = PeerOpenSignal(b.Agent, env, size, NULL);
+		size = PeerSealSignal(b.Agent, a.Key.Public, PEER_SIGNAL_ANSWER, env, sizeof(env));
+		UINT answer = PeerOpenSignal(a.Agent, env, size, NULL);
+		NodeTestCheck(ctx, offer == PEER_OK && answer == PEER_OK, "Each takes the other's signal, which names the relay of the node",
+			"offer: %s, answer: %s", PeerReasonName(offer), PeerReasonName(answer));
+
+		InterlockedExchange(&b.Echo, 1);
+		bool sent = PeerSend(a.Agent, b.Key.Public, "ping", 4);
+		bool got = NodeTestWait(&a.Received, 1, NODETEST_BOUND);
+		NodeGetStatus(n, &st);
+		NodeTestCheck(ctx, sent && got && b.Received == 1 && StrCmp(a.Last, "pong") == 0 && st.RelayForwarded == 2,
+			"A ping and its pong go between the two through the relay role of the node, over UDP", "sent %u, received %u and %u, %I64u forwarded",
+			(UINT)sent, (UINT)a.Received, (UINT)b.Received, st.RelayForwarded);
+
+		// The control plane takes the peers of the relay away: it drops their bindings and forwards nothing
+		NodeSetPeers(n, NULL, 0);
+		PeerSend(a.Agent, b.Key.Public, "ping", 4);
+		SleepThread(NODETEST_QUIET);
+		NodeGetStatus(n, &st);
+		NodeTestCheck(ctx, b.Received == 1 && st.RelayBindings == 0 && st.RelayForwarded == 2,
+			"With no peers set, the relay role holds no binding and forwards nothing", "%u received, %u bindings, %I64u forwarded",
+			(UINT)b.Received, st.RelayBindings, st.RelayForwarded);
+	}
+
+	NodeTestPeerStop(&a);
+	NodeTestPeerStop(&b);
+
+	NodeStop(n);
+	NodeGetStatus(n, &st);
+	NodeTestCheck(ctx, st.RelayPort == 0 && st.RelayBindings == 0, "NodeStop stops the relay role and closes its socket", "port %u, %u bindings",
+		(UINT)st.RelayPort, st.RelayBindings);
+
+	FreeNode(n);
+
+	char *log = NodeTestReadLog(dir);
+	NodeTestCheck(ctx, NodeTestLogHas(log, "Relay listening on UDP port") && NodeTestLogHas(log, "Peers set: 2") && NodeTestLogHas(log, "Role relay stopped"),
+		"The node log records the relay role and the peers", "%s", log == NULL ? "no node log" : "a line is missing");
+	Free(log);
+
+	NodeTestDeleteDir(dir);
+}
+
 // node: the node in-process
 void node_test(UINT num, char **arg)
 {
@@ -1162,6 +1373,10 @@ void node_test(UINT num, char **arg)
 	NodeTestWorkers(&ctx);
 	NodeTestQueues(&ctx);
 	NodeTestSwap(&ctx);
+	NodeTestRelay(&ctx);
+
+	// The identity key that the relay role of the test nodes created
+	PeerKeyDelete(L"" NODETEST_IDENTITY_KEY);
 
 	NodeTestWatchdogStop(&wd);
 
@@ -1394,6 +1609,9 @@ void nodesvc_test(UINT num, char **arg)
 		{
 			FileRenameW(backup, config);
 		}
+
+		// The identity key that the relay role of the service created, in the machine key set
+		PeerKeyDelete(L"" NODETEST_IDENTITY_KEY);
 	}
 
 	NodeTestWatchdogStop(&wd);

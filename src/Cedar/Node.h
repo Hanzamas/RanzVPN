@@ -9,6 +9,8 @@
 
 #include "Mayaqua/MayaType.h"
 
+#include "Core/Peer.h"
+
 // The roles of a node (ADR-0011, ADR-0022). A node runs any set of them, chosen by the configuration
 // and later by the control plane (NodeSetRoles). The controller is not a role: it left the node with #176.
 #define NODE_ROLE_SERVER 0x01 // Hosts the Hubs that the sessions of strangler steps 1 and 2 end in
@@ -24,6 +26,9 @@
 #define NODE_CONFIG_FILE_NAME L"ranz_node.config"
 #define NODE_LOG_DIR_NAME     L"node_log"
 #define NODE_LOG_PREFIX       "node"
+
+// The node identity key in the software key storage provider (ADR-0022) without an IdentityKey item
+#define NODE_IDENTITY_KEY_NAME "Ranz Node"
 
 #define NODE_MAX_WORKERS       256      // Workers of one node at most, whatever the number of cores
 #define NODE_WORKER_BATCH      64       // Completions that a worker takes from its port in one wait
@@ -115,6 +120,15 @@ struct NODE {
 	volatile LONG64 Epoch;        // The table epoch: one more at each swap
 	volatile LONG64 Generation;   // The generation of the current snapshot, 0 while stopped
 	UINT64 LastGeneration;        // The generation of the last snapshot installed, under TableLock
+
+	// The peers and the relay role (CORE-S5-2, #78), under Lock
+	UINT ConfigRelayPort;       // The UDP port of the relay role (RelayPort), 0 for one that the system picks
+	char IdentityKey[MAX_SIZE]; // The name of the identity key (IdentityKey), NODE_IDENTITY_KEY_NAME without the item
+	PEER_INFO *Peers;           // The peers that the control plane set (NodeSetPeers)
+	UINT NumPeers;              // ... their number
+	PEER_KEY RelayKey;          // The identity key, while the relay role runs
+	PEER_UDP *RelayUdp;         // The UDP socket of the relay role, NULL while it does not run
+	PEER_AGENT *Relay;          // The peer layer of the relay role, NULL while it does not run
 };
 
 // What NodeGetStatus reports
@@ -126,6 +140,13 @@ struct NODE_STATUS {
 	UINT NumReaders;   // Registered table readers
 	UINT NumHubs;      // Hubs of the server role
 	UINT64 Generation; // The generation of the current table snapshot, 0 when there is none
+
+	// The relay role
+	USHORT RelayPort;              // Its UDP port, 0 while it does not run
+	UCHAR RelayKey[PEER_KEY_SIZE]; // Its static key: the public half of the identity key
+	UINT RelayBindings;            // The nodes bound to it
+	UINT64 RelayBinds;             // The binds it took
+	UINT64 RelayForwarded;         // The datagrams it forwarded
 };
 
 // Node.c
@@ -137,6 +158,7 @@ UINT NodeSetRoles(NODE *n, UINT roles);
 void NodeGetStatus(NODE *n, NODE_STATUS *st);
 HUB *NodeGetHub(NODE *n, char *name);
 bool NodeAuthenticate(NODE *n, char *hubname, AUTH_REQUEST *req, AUTH_RESULT *ret);
+void NodeSetPeers(NODE *n, PEER_INFO *peers, UINT num);
 UINT NodeParseRoles(char *str, char *unknown, UINT unknown_size);
 void NodeRolesToStr(char *str, UINT size, UINT roles);
 void NodeDefaultDataDir(wchar_t *dir, UINT size);
