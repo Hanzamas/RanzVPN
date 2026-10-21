@@ -177,7 +177,6 @@ ERR_134					Nama host DNS Dinamis yang ditentukan mengandung karakter tidak vali
 ERR_135					Panjang nama host DNS Dinamis yang ditentukan terlalu panjang. Nama host harus sama atau lebih pendek dari 31 huruf.
 ERR_136					Nama host DNS Dinamis tidak ditentukan.
 ERR_137					Panjang nama host DNS Dinamis yang ditentukan terlalu panjang. Nama host harus sama atau lebih panjang dari 3 huruf.
-ERR_138					Kata sandi pengguna yang ditentukan di Virtual Hub harus direset sebelum menggunakan otentikasi MS-CHAP v2. Harap minta administrator VPN Server untuk mereset kata sandi dengan VPN Server Manager atau vpncmd yang versi internalnya adalah 4.0 atau lebih besar. Atau Anda dapat mengubah kata sandi dengan VPN Client sendiri.
 ERR_139					Koneksi ke server DNS Dinamis telah terputus.
 ERR_140					Gagal menginisialisasi protokol ICMP (Ping). Proses VPN Server mungkin dijalankan dengan hak akses pengguna biasa. Dalam hal ini, jalankan VPN Server sebagai layanan sistem. (di Linux / UNIX, jalankan dengan hak akses root.)
 ERR_141					Gagal membuka port DNS 53. Pastikan tidak ada program server DNS lain (misalnya, BIND atau Microsoft DNS Server) yang berjalan di komputer yang sama. Jika ada layanan yang bertentangan, hentikan mereka. Atau jalankan proses VPN Server dengan hak akses root di Linux / UNIX.
@@ -192,18 +191,7 @@ ERR_149					Sertifikat VPN Server tujuan tidak cocok dengan nama host yang diten
 ERR_150					Gagal menemukan versi TLS yang didukung oleh kedua sisi. Ini biasanya berarti salah satu sisi mungkin menggunakan versi TLS yang sudah usang yang dinonaktifkan oleh sisi lainnya.
 ERR_151					Gagal menemukan cipher yang tersedia yang didukung oleh kedua sisi, atau cipher yang ditentukan tidak kompatibel dengan sertifikat server.
 ERR_152					Gagal melakukan handshake TLS.
-
-
-# Concerning licenses
-LICENSE_STATUS_OK	    Valid
-LICENSE_STATUS_EXPIRED  Kedaluwarsa
-LICENSE_STATUS_ID_DIFF  ID Server Tidak Cocok
-LICENSE_STATUS_DUP      Duplikasi
-LICENSE_STATUS_INSUFFICIENT Lisensi Lain Diperlukan
-LICENSE_STATUS_COMPETITION  Kompetisi dengan Lisensi Lain
-LICENSE_STATUS_NONSENSE     Tidak Bermakna untuk Edisi Saat Ini
-LICENSE_STATUS_CPU		Jenis CPU Tidak Kompatibel
-LICENSE_STATUS_OTHERERROR   Kesalahan Tidak Dikenal
+ERR_153					Listener TCP sudah terdaftar, tetapi port-nya tidak dapat dibuka: program lain sedang memakainya atau Windows mencadangkannya. VPN Server terus mencoba dan mulai mendengarkan begitu port itu bebas; sampai saat itu ListenerList menampilkan listener tersebut sebagai Gagal.
 
 
 # Concerning hardware tokens
@@ -217,17 +205,6 @@ PW_TYPE_0				Autentikasi Anonim
 PW_TYPE_1				Autentikasi Kata Sandi Standar
 PW_TYPE_2				Autentikasi RADIUS atau NT Domain
 PW_TYPE_3				Autentikasi Sertifikat Klien
-PW_TYPE_5				Autentikasi Mesin OpenSSL
-
-
-# Concerning VPN connection status
-STATUS_1                Menginisialisasi...
-STATUS_2                Menghubungkan ke Server VPN "%S" melalui Server Proxy %S...
-STATUS_4                Menghubungkan ke Server VPN "%S"...
-STATUS_5                Memverifikasi Sertifikat Server...
-STATUS_6                Mengautentikasi Pengguna...
-STATUS_7                Membangun Sesi VPN...
-STATUS_9                Sesi VPN telah berhasil dibangun.
 
 
 # Errors about Windows Versions
@@ -238,7 +215,6 @@ WINVER_ERROR_PC_REMOTE	server jarak jauh
 
 
 # Warning for Open-source Version
-OSS_MSG					Selamat datang di SoftEther VPN Server Versi Akademik!\r\n\r\n\r\nVPN Server ini adalah perangkat lunak sumber terbuka gratis yang dikembangkan sebagai penelitian akademik di Universitas Tsukuba, Jepang, dan didistribusikan dari Proyek SoftEther VPN (http://www.softether.org/), secara gratis untuk kepentingan publik.\r\n\r\nPerangkat lunak SoftEther VPN didistribusikan kepada publik sebagai bagian dari kontrak penelitian bersama antara Universitas Tsukuba dan Proyek SoftEther VPN. Perangkat lunak SoftEther VPN dikembangkan dan diterbitkan untuk TUJUAN PENELITIAN AKADEMIS SAJA. Oleh karena itu, tidak ada layanan dukungan yang diberikan mengenai perangkat lunak SoftEther VPN meskipun terdapat bug atau kerentanannya. Pengguna akan bertanggung jawab atas hasil penggunaan SoftEther VPN. Pengembang dan penerbit SoftEther VPN tidak akan bertanggung jawab atas konsekuensi atau kerusakan apa pun.\r\n\r\nSelamat menikmati penggunaan VPN dengan SoftEther VPN Server.\r\n\r\nUntuk detail lebih lanjut tentang SoftEther VPN, kunjungi http://www.softether.org/.\r\n\r\n
 
 
 # Virtual HUB Admin Options
@@ -263,9 +239,6 @@ HUB_AO_deny_qos							Jika Anda mengatur opsi ini ke nilai non-nol, maka setiap 
 HUB_AO_deny_change_user_password		Jika Anda mengatur opsi ini ke nilai non-nol, maka pengguna di Virtual Hub akan dilarang untuk mengubah kata sandi mereka menggunakan fungsi pengubahan kata sandi dari VPN Client.\r\n
 HUB_AO_no_change_users					Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk menambahkan, mengedit, atau menghapus pengguna.\r\n
 HUB_AO_no_change_groups					Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk menambahkan, mengedit, atau menghapus grup.\r\n
-HUB_AO_no_securenat						Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengaktifkan atau menonaktifkan fungsi SecureNAT.\r\n
-HUB_AO_no_securenat_enablenat			Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengaktifkan atau menonaktifkan fungsi Virtual NAT dalam fungsi SecureNAT.\r\n
-HUB_AO_no_securenat_enabledhcp			Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengaktifkan atau menonaktifkan fungsi Virtual DHCP Server dalam fungsi SecureNAT.\r\n
 HUB_AO_no_cascade						Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk menambahkan, mengedit, menghapus, atau mengubah status online dari koneksi cascade.\r\n
 HUB_AO_no_online						Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengubah Virtual Hub yang offline menjadi status online.\r\n
 HUB_AO_no_offline						Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengubah Virtual Hub yang online menjadi status offline.\r\n
@@ -282,7 +255,6 @@ HUB_AO_no_change_access_control_list	Jika Anda mengatur opsi ini ke nilai non-no
 HUB_AO_no_change_cert_list				Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengubah daftar otoritas sertifikat yang dipercaya oleh Virtual Hub.\r\n
 HUB_AO_no_change_crl_list				Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengubah daftar sertifikat yang dicabut (CRL) dari Virtual Hub.\r\n
 HUB_AO_no_read_log_file					Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mendaftar atau mengunduh file log Virtual Hub dari jarak jauh.\r\n
-HUB_AO_no_change_msg					Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk mengubah pesan yang akan ditampilkan saat Klien VPN terhubung ke Virtual Hub.\r\n
 HUB_AO_no_access_list_include_file		Jika Anda mengatur opsi ini ke nilai non-nol, maka administrator Virtual Hub akan dilarang untuk menentukan instruksi "include:" atau "exclude:" sebagai sumber atau tujuan dalam entri daftar akses Virtual Hub.\r\n
 
 
@@ -335,8 +307,6 @@ HUB_AO_SuppressClientUpdateNotification		Tekan tampilan pemberitahuan pembaruan 
 HUB_AO_FloodingSendQueueBufferQuota			Tentukan nilai batas kuota (dalam byte) ukuran buffer antrean pengiriman yang dapat dikonsumsi oleh operasi banjir pada Virtual Hub. Nilai kuota diterapkan pada total panjang antrean pengiriman dari semua sesi VPN aktif. Tentukan '0' untuk menonaktifkan kuota ini. Opsi ini efektif untuk mengatasi masalah kehabisan memori pada jaringan yang memiliki banyak paket banjir.\r\n
 HUB_AO_DetectDormantSessionInterval			Jika Anda mengatur opsi ini ke nilai non-nol, maka Virtual Hub akan menganggap sesi VPN yang tidak mengirimkan paket selama interval waktu tertentu (dalam detik) sebagai Sesi Dorman. Virtual Hub tidak akan membanjiri paket yang seharusnya dibanjiri ke Sesi Dorman.\r\n
 HUB_AO_NoPhysicalIPOnPacketLog				Jika Anda mengatur opsi ini ke nilai non-nol, maka alamat IP fisik dari VPN client, baik untuk sesi VPN sumber maupun sesi VPN tujuan, tidak akan dicatat pada file log paket.\r\n
-HUB_AO_UseHubNameAsDhcpUserClassOption		Jika Anda mengatur opsi ini ke nilai non-nol, maka Nama Virtual Hub akan ditambahkan ke permintaan DHCP ke server DHCP eksternal sebagai opsi "User-Class". Ini memungkinkan penggunaan kumpulan alamat IP terpisah untuk setiap Virtual Hub. (Hanya untuk sesi L2TP/IPsec dan OpenVPN.)\r\n
-HUB_AO_AllowEapMatchUserByCert				Jika Anda mengaktifkan (atur ke 1) opsi ini, Virtual Hub akan mencoba mencocokkan Identitas EAP tidak hanya dengan nama pengguna, tetapi juga dengan sertifikat pengguna selama alur otentikasi PPP EAP.\r\n
 
 
 # Concerning protocols
@@ -362,9 +332,6 @@ CT_i_max_groups_per_hub	Jumlah Grup Maksimum per Virtual Hub
 CT_i_max_access_lists	Jumlah Daftar Akses Maksimum per Virtual Hub
 CT_i_max_mac_tables		Jumlah Entri Alamat MAC Maksimum per Virtual Hub
 CT_i_max_ip_tables		Jumlah Entri Alamat IP Maksimum per Virtual Hub
-CT_i_max_l3_sw			Jumlah Virtual Layer 3 Switch Maksimum
-CT_i_max_l3_if			Jumlah Antarmuka Virtual per Layer 3 Switch Maksimum
-CT_i_max_l3_table		Jumlah Tabel Routing per Layer 3 Switch Maksimum
 CT_b_bridge				Berfungsi sebagai Software VPN Bridge
 CT_b_standalone			Mode Standalone
 CT_b_vpn_client_connect	Menerima Koneksi dari VPN Client / Bridge
@@ -379,7 +346,6 @@ CT_b_support_config_rw	Pembacaan dan Penulisan Jarak Jauh untuk File Konfigurasi
 CT_b_support_hub_admin_option	Opsi Administrasi Virtual Hub Didukung
 CT_b_support_cascade_client_cert	Sertifikat Klien untuk Koneksi Cascade Didukung
 CT_b_support_hide_hub	Pengaturan Penyembunyian Virtual Hub Didukung
-CT_b_support_layer3		Virtual Layer 3 Switch Didukung
 CT_b_support_crl		Daftar Pencabutan Sertifikat Khusus Virtual Hub Didukung
 CT_b_support_ac			Daftar Batas Alamat IP Sumber Khusus Virtual Hub Didukung
 CT_b_support_read_log	Pengunduhan File Log Didukung
@@ -388,7 +354,6 @@ CT_b_support_license	Pengelolaan Lisensi Didukung
 CT_b_support_limit_multilogin	Batasan untuk Login Ganda oleh Pengguna yang Sama Didukung
 CT_b_support_qos		Fungsi VoIP / QoS Didukung
 CT_b_support_syslog		Fungsi Pengiriman Syslog Didukung
-CT_b_beta_version		Versi Beta (Build Pra-rilis)
 CT_b_support_check_mac	Penentuan Alamat MAC dalam Daftar Akses Didukung
 CT_b_support_check_tcp_state	Pemeriksaan Penyaringan Status Koneksi TCP Didukung
 CT_b_support_network_connection_name	Penentuan Nama Ramah Jaringan Didukung
@@ -400,8 +365,6 @@ CT_b_support_ipv6_acl	Daftar Akses IPv6 Didukung
 CT_b_support_ex_acl		Delay, Jitter, dan Kehilangan Paket Didukung dalam Daftar Akses
 CT_b_support_acl_group	Pengondisian berdasarkan Nama Grup Didukung dalam Daftar Akses
 CT_b_support_ipv6_ac	Daftar Kontrol Akses IP IPv6 Didukung
-CT_b_support_eth_vlan	Dukungan untuk Alat Transparansi Paket VLAN Berlabel Didukung
-CT_b_support_msg		Fungsi Pesan Hari Ini Didukung
 CT_b_vpn3				Fungsi Versi Internal 3.0 Didukung
 CT_b_vpn4				Fungsi Versi Internal 4.0 Didukung
 CT_b_support_udp_acceleration	Fungsi Akselerasi UDP Didukung
@@ -574,7 +537,7 @@ CM_CERT_COLUMN_3		Kadaluarsa
 
 
 # Concerning services (Win32)
-SVC_HELP				*** Argumen Baris Perintah dari %s (%S) ***\r\n\r\nProgram ini (%s) adalah sebuah proses yang berjalan sebagai tugas latar belakang. Mulailah program dengan menentukan argumen berikut pada baris perintah.\r\n\r\n\r\n/install : Menginstal layanan %s (nama layanan: %S) di Windows. Setelah ini, layanan akan otomatis dimulai.\r\n\r\n/uninstall... Menghapus instalasi layanan %s (nama layanan: %S) dari Windows.\r\n\r\n/start : Memulai layanan %s (nama layanan: %S).\r\n\r\n/stop : Menghentikan layanan %s (nama layanan: %S).\r\n\r\n/test : Memulai program %s dalam mode uji. (Untuk debug)\r\n\r\n/usermode : Memulai program %s dalam mode pengguna. (Jika memungkinkan)\r\n\r\n/usermode_showtray : Ketika memulai dalam mode pengguna, ini digunakan untuk menampilkan ikon task tray ketika sebelumnya diset untuk disembunyikan.\r\n\r\n/usermode_hidetray : Ketika memulai dalam mode pengguna, ini menyembunyikan ikon task tray.\r\n\r\n\r\nCatatan: Perintah terkait operasi layanan selain /test dan /usermode hanya dapat dijalankan pada Windows NT / XP / Server 2003 / Vista / Server 2008.
+SVC_HELP				*** Argumen Baris Perintah dari %s (%S) ***\r\n\r\nProgram ini (%s) berjalan sebagai tugas latar belakang. Mulailah program dengan salah satu argumen berikut pada baris perintah.\r\n\r\n\r\n/install : Menginstal layanan %s (nama layanan: %S) di Windows. Setelah ini, layanan akan otomatis dimulai.\r\n\r\n/uninstall : Menghapus instalasi layanan %s (nama layanan: %S) dari Windows.\r\n\r\n/start : Memulai layanan %s (nama layanan: %S).\r\n\r\n/stop : Menghentikan layanan %s (nama layanan: %S).\r\n\r\n/test : Memulai program %s dalam mode uji. (Untuk debug)\r\n\r\n/usermode : Memulai program %s dalam mode pengguna, tanpa layanan.\r\n\r\n/setup_install : Dipakai oleh penginstal. Mengganti layanan %s (nama layanan: %S) dengan program ini lalu memulainya.\r\n\r\n/setup_uninstall : Dipakai oleh penginstal. Menghentikan dan menghapus instalasi layanan %s (nama layanan: %S).\r\n\r\n/service : Dipakai oleh Windows. Menjalankan program %s sebagai layanan.
 SVC_ALREADY_INSTALLED	Layanan "%s" (nama layanan: %S) sudah terinstal di komputer ini. Apakah Anda ingin menghapus instalasi dan menginstalnya kembali?
 SVC_INSTALL_OK			Layanan "%s" (Nama Layanan: %S) telah berhasil diinstal.\r\n\r\n(Jalur Eksekusi: %s)\r\n\r\nLayanan telah dimulai.
 SVC_INSTALL_FAILED		Instalasi layanan "%s" (nama layanan: %S) gagal.
@@ -593,12 +556,6 @@ SVC_NOT_ADMIN			Untuk menginstal, menghapus instalasi, memulai atau menghentikan
 SVC_TEST_MSG			Layanan "%s" telah dimulai dalam mode uji.\r\n\r\nKlik OK untuk keluar dari layanan.
 SVC_TEST_MUTEX			File eksekusi %s sudah dimulai.
 SVC_USERMODE_MUTEX		Proses lain dari %s sudah dimulai.
-
-
-# Service Definition (Ranz VPN Server)
-SVC_VPNSERVER_NAME		vpnserver
-SVC_VPNSERVER_TITLE		Ranz VPN Server
-SVC_VPNSERVER_DESCRIPT	Layanan ini mengelola proses server dari Ranz VPN Server. Ranz VPN Server menyediakan fungsi server Ranz VPN berkinerja tinggi melalui protokol TCP/IP. Ketika layanan ini dihentikan, Ranz VPN Server di komputer ini akan berhenti dan Ranz VPN Client tidak akan dapat membangun koneksi VPN dengan komputer ini.
 
 
 # Service Definition (Ranz VPN Server)
@@ -772,7 +729,6 @@ SM_SESS_LINK			Koneksi Cascade
 SM_SESS_LINK_HOSTNAME	Virtual Host
 SM_SESS_LINK_TCP		Tidak Ada
 SM_SESS_BRIDGE_HOSTNAME	Ethernet Bridge
-SM_SESS_LAYER3_HOSTNAME	Switch Layer 3 Virtual
 SM_SESS_BRIDGE_TCP		Tidak Ada
 SM_SESS_STATUS_USERNAME	Nama Pengguna (Otentikasi)
 SM_SESS_STATUS_REALUSER	Nama Pengguna (Database)
@@ -812,20 +768,6 @@ SM_BRIDGE_OFFLINE		Offline
 SM_BRIDGE_ONLINE		Beroperasi
 SM_BRIDGE_ERROR			Error
 SM_BRIDGE_INTEL			Saat kondisi terjadi segera setelah koneksi jembatan baru dibuat saat menjembatani ke adaptor jaringan fisik, tergantung pada jenis adaptor jaringan, terkadang tidak memungkinkan untuk berkomunikasi menggunakan TCP/IP dengan adaptor jaringan melalui koneksi jembatan dari komputer di jaringan virtual. \r\n(Penemuan ini diketahui terjadi pada adaptor jaringan Intel dan Broadcom.) \r\n\r\n\r\nJika masalah ini muncul, perbaiki situasinya dengan merestart komputer tempat VPN Server / Bridge dijalankan. Komunikasi normal akan mungkin setelah komputer merestart. \r\n\r\n\r\nSelain itu banyak adaptor jaringan nirkabel yang tidak merespon pengiriman paket dalam mode promiscuous, dan saat hal ini terjadi Anda tidak dapat menggunakan Jembatan Lokal. Jika masalah ini terjadi, coba gunakan adaptor jaringan kabel biasa alih-alih adaptor jaringan nirkabel.
-SM_L3_SW_COLUMN1		Nama Switch Layer 3
-SM_L3_SW_COLUMN2		Status Berjalan
-SM_L3_SW_COLUMN3		Antarmuka
-SM_L3_SW_COLUMN4		Tabel Routing
-SM_L3_SW_ST_F_F			Stop
-SM_L3_SW_ST_T_F			Mulai (Error) 
-SM_L3_SW_ST_T_T			Mulai (Berjalan)
-SM_L3_SW_IF_COLUMN1		Alamat IP
-SM_L3_SW_IF_COLUMN2		Subnet Mask
-SM_L3_SW_IF_COLUMN3		Nama Virtual Hub
-SM_L3_SW_TABLE_COLUMN1	Alamat Jaringan
-SM_L3_SW_TABLE_COLUMN2	Subnet Mask
-SM_L3_SW_TABLE_COLUMN3	Alamat Gateway
-SM_L3_SW_TABLE_COLUMN4	Metrik
 SM_CRL_COLUMN_1			Ringkasan Sertifikat
 SM_AC_COLUMN_1			ID
 SM_AC_COLUMN_2			Prioritas
@@ -836,36 +778,11 @@ SM_AC_DENY				Tolak
 SM_LOG_FILE_COLUMN_1	Nama Berkas Log
 SM_LOG_FILE_COLUMN_2	Ukuran Berkas
 SM_LOG_FILE_COLUMN_3	Diperbarui pada
-SM_LICENSE_COLUMN_1		Nomor
-SM_LICENSE_COLUMN_2		Kunci Lisensi
-SM_LICENSE_COLUMN_3		Nama Jenis Lisensi
-SM_LICENSE_COLUMN_4		Status
 SM_LICENSE_COLUMN_5		Tanggal Kedaluwarsa
-SM_LICENSE_COLUMN_6		ID Lisensi
-SM_LICENSE_COLUMN_7		ID Jenis Lisensi
-SM_LICENSE_COLUMN_8		ID Server
-SM_LICENSE_COLUMN_9		ID Serial
-SM_LICENSE_INFINITE		Tak Terbatas
 SM_LICENSE_NO_EXPIRES	Tanpa Kedaluwarsa
-SM_LICENSE_STATUS_EDITION	Edisi Produk
-SM_LICENSE_STATUS_RELEASE	Tanggal Rilis VPN Server
-SM_LICENSE_STATUS_SYSTEM_ID	ID Server Saat Ini
-SM_LICENSE_STATUS_EXPIRES	Kedaluwarsa Lisensi Produk Saat Ini
-SM_LICENSE_STATUS_SUBSCRIPTION	Status Kontrak Berlangganan
-SM_LICENSE_STATUS_SUBSCRIPTION_NONEED	Tidak Perlu (Edisi ini tidak memerlukan kunci langganan)
-SM_LICENSE_STATUS_SUBSCRIPTION_NONE		Tidak Ada Kunci (Menambahkan kunci langganan diperlukan)
-SM_LICENSE_STATUS_SUBSCRIPTION_VALID	Langganan Aktif [Hingga %s]
-SM_LICENSE_STATUS_SUBSCRIPTION_EXPIRED	Langganan Kadaluarsa [pada %s]
-SM_LICENSE_STATUS_SUBSCRIPTION_BUILD_STR	Pembaruan Gratis ke Versi yang Akan Datang Hingga %s Diperbolehkan
-SM_LICENSE_STATUS_ENTERPRISE			Ketersediaan Fitur Enterprise
-SM_LICENSE_STATUS_ENTERPRISE_YES		Ya (Tersedia)
-SM_LICENSE_STATUS_ENTERPRISE_NO			Tidak (Tidak Tersedia)
-SM_LICENSE_NUM_CLIENT	Pelanggan yang Diperbolehkan Terhubung Secara Bersamaan
-SM_LICENSE_NUM_BRIDGE	Jembatan yang Diperbolehkan Terhubung Secara Bersamaan
 SM_NO_LICENSE_COLUMN	Peringatan: 
 SM_NO_LICENSE			Tidak ada lisensi produk yang terdaftar, sehingga fungsi komunikasi VPN Server ini tidak beroperasi.
 SM_SYSLOG_0				Nonaktifkan Fungsi Pengiriman Syslog
-SM_SYSLOG_1				Kirim Log Server melalui Syslog
 SM_SYSLOG_2				Kirim Log Server dan Log Keamanan Virtual Hub melalui Syslog
 SM_SYSLOG_3				Kirim Log Server, Log Keamanan Virtual Hub, dan Log Paket melalui Syslog
 SM_CERT_MESSAGE_CLI				--- Peringatan ---\r\n\r\nSertifikat root self-signed SSL saat ini pada VPN Server ini berada dalam format lama.\r\n\r\nBeberapa versi OpenVPN Connect untuk Android memiliki bug yang salah menginterpretasikan sertifikat SSL dalam format lama. Hal ini mungkin menyebabkan masalah koneksi dari OpenVPN Connect untuk Android ke VPN Server ini.\r\n\r\nJika Anda berencana menggunakan OpenVPN Connect untuk Android sebagai klien VPN, disarankan untuk menghasilkan ulang sertifikat server SSL.\r\n\r\nUntuk menghasilkan ulang dan memperbarui sertifikat server, jalankan perintah "ServerCertRegenerate" setelah memperbarui VPN Server ke versi terbaru.
@@ -896,6 +813,11 @@ LS_LOAD_CONFIG_2		File konfigurasi telah dimuat.
 LS_LOAD_CONFIG_3		File konfigurasi tidak ada. Mencoba untuk memulai menggunakan pengaturan awal.
 LS_INIT_SAVE_THREAD		Memulai tugas latar belakang penyimpanan otomatis. Interval antara penyimpanan otomatis adalah %u detik. Anda dapat mengubah interval dengan mengubah parameter AutoSaveConfigSpan dalam file konfigurasi.
 LS_BAD_CONFIG			Konten file konfigurasi tidak valid. Proses pemuatan dihentikan.
+LS_DEFAULT_CERT_FAILED		Sertifikat server bawaan tidak dapat dibuat. Server tidak memiliki sertifikat, sehingga koneksi TLS akan ditolak sampai sertifikat dipasang.
+LS_CONFIG_SET_ASIDE		File konfigurasi "%s" tidak dapat dibaca. File disimpan sebagai "%s.bad", dan server dimulai dengan pengaturan awal.
+LS_CONFIG_SET_ASIDE_FAILED	File konfigurasi "%s" tidak dapat dibaca, dan penggantian namanya menjadi "%s.bad" gagal. Server dimulai dengan pengaturan awal dan tidak menyimpan di atas file tersebut sampai penggantian nama berhasil.
+LS_SAVE_CONFIG_FAILED	Penyimpanan file konfigurasi "%s" gagal. Penyimpanan akan dicoba lagi.
+LS_SAVE_CONFIG_RESTORED	File konfigurasi "%s" telah tersimpan kembali setelah penyimpanan yang gagal.
 LS_LISTENER_START_1		Pendengar TCP (port %u) sedang dimulai.
 LS_LISTENER_START_2		Pendengar TCP (port %u) telah dimulai. Sekarang mendengarkan koneksi dari klien.
 LS_LISTENER_START_3		Tidak dapat mengatur port untuk status Dengar untuk Pendengar TCP (port %u). Mencoba pada interval tetap sampai berhasil.
@@ -903,6 +825,9 @@ LS_LISTENER_ACCEPT		Pada Pendengar TCP (Port %u), sebuah Klien (alamat IP %S, Na
 LS_LISTENER_DISCONNECT	Koneksi dengan klien (alamat IP %S, Nomor port %u) telah diputuskan.
 LS_LISTENER_DOS			Sebuah serangan DoS pada Pendengar TCP (port %u) telah terdeteksi. Alamat IP sumber yang terhubung adalah %S, nomor port %u. Koneksi ini akan diputuskan paksa sekarang.
 LS_LISTENER_MAXUEC		Pendengar TCP sementara menghentikan penerimaan koneksi masuk baru karena jumlah koneksi TCP yang tertunda melebihi %u. (Nilai saat ini = %u)
+LS_LISTENER_ACCEPT_RETRY	Pendengar TCP (port %u) gagal menerima koneksi (galat %u, %u kali sejak laporan terakhir). Pendengar tetap memegang port dan mencoba lagi.
+LS_LISTENER_DOS_TABLE_FULL	Tabel perlindungan DoS pada Pendengar TCP (port %u) telah mencapai batas %u alamat sumber. Mulai sekarang sumber yang paling lama tidak terlihat dihapus untuk memberi tempat bagi sumber baru.
+LS_NON_SSL_TABLE_FULL	Tabel sumber yang mengirim data non-SSL telah mencapai batas %u alamat sumber. Mulai sekarang sumber yang paling lama tidak terlihat dihapus untuk memberi tempat bagi sumber baru.
 LS_LISTENER_STOP_1		Pendengar TCP (port %u) sedang dihentikan.
 LS_LISTENER_STOP_2		Pendengar TCP (port %u) telah dihentikan.
 LS_HUB_START			Virtual Hub "%S" telah dimulai.
@@ -928,8 +853,6 @@ LH_AUTH_ANONYMOUS		Otentikasi anonim
 LH_AUTH_PASSWORD		Otentikasi kata sandi
 LH_AUTH_PLAIN_PASSWORD	Otentikasi server eksternal
 LH_AUTH_CERT			Otentikasi sertifikat
-LH_AUTH_EXTERNAL		Otentikasi server eksternal
-LH_AUTH_CERT_NOT_SUPPORT_ON_OPEN_SOURCE	Koneksi "%S": Metode otentikasi pengguna "%S" telah ditentukan sebagai Otentikasi Sertifikat. Namun, fungsi Otentikasi Sertifikat belum diimplementasikan pada versi Open-Source dari Ranz VPN. Koneksi akan ditolak.
 LH_AUTH_OK				Koneksi "%S": Berhasil diautentikasi sebagai pengguna "%S".
 LH_AUTH_OK_CERT			Manajer Akun Keamanan Virtual Hub telah menerima sertifikat berikut dari VPN Client dan menerima isinya sebagai sertifikat untuk login pengguna "%S": %s
 LH_AUTH_NG_CERT			Meskipun Manajer Akun Keamanan Virtual Hub telah menerima sertifikat berikut, isinya ditolak sebagai sertifikat untuk login pengguna "%S" karena isi sertifikat ini cocok dengan yang terdaftar di daftar pencabutan sertifikat Virtual Hub: %s
@@ -948,6 +871,7 @@ LH_SET_SESSION			Sesi "%S": Parameter telah disetel. Jumlah maksimum koneksi TCP
 LH_NODE_INFO			Sesi "%S": Detail VPN Client: (%s)
 LH_VLAN_ID				Sesi "%S": VLAN ID yang ditetapkan: %u
 LH_END_SESSION			Sesi "%S": Sesi telah dihentikan. Informasi statistik adalah sebagai berikut: Total ukuran data keluar: %I64u byte, Total ukuran data masuk: %I64u byte.
+LH_UDP_ACCEL_DROP		Sesi "%S": UDP Acceleration telah membuang datagram diterima yang bukan paket sesi ini. Lebih pendek dari sebuah paket (dibuang sebelum dekripsi): %I64u, gagal dekripsi atau pemeriksaan paket: %I64u. Penerimaan dijeda pada batas per-poll atau per-tick sebanyak %I64u kali.
 LH_BCAST_STORM			Sesi "%S": Volume besar paket broadcast terdeteksi. Ada kasus di mana paket dibuang berdasarkan kebijakan. Alamat MAC sumber adalah %S, alamat IP sumber adalah %S, alamat IP tujuan adalah %S. Jumlah paket broadcast sama dengan atau lebih besar dari %u item per 1 detik (perhatikan bahwa informasi ini adalah hasil analisis mekanis dari sebagian paket dan bisa jadi tidak akurat).
 LH_DHCP_FORCE			Sesi "%S": Paket dibuang karena mencoba menggunakan alamat IP %S, yang bukan alamat IP yang dialokasikan oleh server DHCP.
 LH_MAC_LIMIT			Sesi "%S": Meskipun Virtual Hub mencoba menetapkan alamat MAC baru "%S", %u alamat MAC telah diberikan untuk layanan ini. Berdasarkan kebijakan keamanan, sesi ini diizinkan memiliki maksimum %u alamat MAC. Paket telah dibuang.
@@ -962,8 +886,6 @@ LH_NO_DHCP				Sesi "%S": Meskipun host %S di sesi ini mengirimkan paket yang men
 LH_REGIST_DHCP			Sesi "%S": Server DHCP host "%S" (%S) di sesi ini mengalokasikan, untuk host "%S" di sesi lain "%S", alamat IP baru %S.
 LH_BRIDGE_1				Sesi "%S": Koneksi Local Bridge ke antarmuka Ethernet fisik "%S" dimulai.
 LH_BRIDGE_2				Sesi "%S": Karena komunikasi gagal dibangun dengan antarmuka Ethernet fisik "%S", Local Bridge dihentikan.
-LH_SET_MTU				Sesi "%S": Antarmuka Ethernet fisik "%S" memiliki nilai MTU yang disetel ke %u. Diperlukan untuk mengirim dan menerima paket Ethernet yang memiliki %u byte. MTU sekarang diubah ke %u.
-LH_SET_MTU_ERROR		Sesi "%S": Antarmuka Ethernet fisik "%S" memiliki nilai MTU yang disetel ke %u. Diperlukan untuk mengirim dan menerima paket Ethernet yang memiliki %u byte. Namun, mengubah MTU ke %u gagal. Antarmuka Ethernet fisik ini atau driver perangkat mungkin tidak dapat memproses paket Ethernet yang memiliki lebih dari 1.514 byte (ukuran payload: 1.500 byte). Dalam hal ini, paket VLAN bertanda yang lebih besar dari 1.514 byte tidak dapat ditransmisikan. Anda harus mengganti adaptor Ethernet fisik saat ini dengan adaptor yang mendukung Jumbo Frames. Anda juga dapat mencoba untuk memperbarui driver perangkat. Metode lain yang mungkin adalah mengaktifkan Jumbo Frames pada pengaturan sistem operasi atau driver perangkat.
 LH_START_BRIDGE			Koneksi Local Bridge "%S" telah dimulai. Sesi bridge "%S" telah dibuat.
 LH_STOP_BRIDGE			Koneksi Local Bridge "%S" telah dihentikan.
 LH_LINK_START			Koneksi Cascade "%s" telah terjalin. Sesi Cascade "%S" telah dibuat.
@@ -979,7 +901,6 @@ LH_CONNECT_ERROR		Koneksi untuk Koneksi Cascade "%s" telah terputus atau gagal. 
 LH_POLICY_MONITOR_MODE	Koneksi "%S": Karena seorang pengguna yang kebijakan keamanannya menolak izin untuk Mode Pemantauan meminta agar Mode Pemantauan diaktifkan dan mencoba untuk terhubung ke Virtual Hub, koneksi telah ditolak.
 LH_POLICY_BRIDGE_MODE	Koneksi "%S": Karena seorang pengguna yang kebijakan keamanannya menolak koneksi bridge dan operasi routing meminta agar koneksi bridge atau operasi routing diaktifkan dan mencoba untuk terhubung ke Virtual Hub, koneksi telah ditolak.
 LH_TOO_MANY_MULTILOGINS	Koneksi "%S": Meskipun pengguna "%S" melakukan upaya login, kebijakan keamanan yang berlaku untuk pengguna ini membatasi jumlah maksimum login ganda hingga %u sesi. Saat ini jumlah login pengguna ini adalah %u sesi dan karena itu pengguna tersebut menolak izin untuk koneksi VPN baru.
-LH_PACKET_LOG_NO_LOG_OSS	VPN Server ini adalah versi Open-Source atau Gratis. Fungsi pencatatan data alamat IP atau header TCP/UDP belum diterapkan. Tidak ada alamat IP atau data header TCP/UDP yang akan dicatat di sini.
 
 
 # (Administration log)
@@ -1033,30 +954,14 @@ LA_GET_CONFIG			File konfigurasi telah dibaca.
 LA_SET_CONFIG			File konfigurasi telah ditulis. Memulai ulang VPN Server.
 LA_SET_HUB_ADMIN_OPTION	Pengaturan administrasi telah ditetapkan untuk Virtual Hub "%S".
 LA_SET_HUB_EXT_OPTION	Pengaturan Opsi Ekstensi Virtual Hub telah ditetapkan untuk Virtual Hub "%S".
-LA_ADD_L3_SW			Virtual Layer 3 Switch "%S" telah dibuat pada server.
-LA_DEL_L3_SW			Virtual Layer 3 Switch "%S" telah dihapus dari server.
-LA_START_L3_SW			Virtual Layer 3 Switch "%S" telah dimulai.
-LA_STOP_L3_SW			Virtual Layer 3 Switch "%S" telah dihentikan.
-LA_ADD_L3_IF			Antarmuka virtual untuk Virtual Hub "%S" telah ditambahkan ke Virtual Layer 3 Switch "%S".
-LA_DEL_L3_IF			Antarmuka virtual untuk Virtual Hub "%S" telah dihapus dari Virtual Layer 3 Switch "%S".
-LA_ADD_L3_TABLE			Tabel routing untuk jaringan "%S" telah ditambahkan ke Virtual Layer 3 Switch "%S".
-LA_DEL_L3_TABLE			Tabel routing untuk jaringan "%S" telah dihapus dari Virtual Layer 3 Switch "%S".
 LA_ADD_CRL				Sertifikat telah ditambahkan ke Daftar Pencabutan Sertifikat (CRL).
 LA_DEL_CRL				Sertifikat telah dihapus dari Daftar Pencabutan Sertifikat (CRL).
-LA_SET_CRL				Item yang terdaftar dalam daftar sertifikat yang tidak sah telah diedit.
 LA_READ_LOG_FILE		File log pada server "%S" (file log "%S") telah diunduh.
 
 # (Eraser log)
 LE_START				Memantau direktori "%S". Jika jumlah ruang disk yang tersedia menjadi kurang dari %S, file cadangan untuk file log dan konfigurasi yang disimpan di sub-direktori direktori ini akan secara otomatis dihapus berdasarkan urutan file tertua terlebih dahulu. Jumlah ruang disk kosong yang menentukan kapan penghapusan dimulai dapat diubah dengan mengubah item "AutoDeleteCheckDiskFreeSpaceMin" di file konfigurasi.
 LE_DELETE				Ruang disk kosong sekarang kurang dari %S sehingga file lama "%S" telah dihapus secara otomatis. Jumlah ruang disk kosong yang menentukan kapan penghapusan dimulai dapat diubah dengan mengubah item "AutoDeleteCheckDiskFreeSpaceMin" di file konfigurasi.
 LE_NOT_ENOUGH_FREE		<<PERINGATAN>> Jika ruang disk kosong menjadi lebih rendah dari %S, maka tidak akan mungkin lagi menghapus file cadangan lama dari file log dan konfigurasi secara otomatis. Kami menyarankan Anda untuk segera menghapus file yang tidak diperlukan secara manual di komputer ini dan memulihkan ruang disk kosong yang diperlukan. Ketika ada sangat sedikit ruang disk kosong, operasi komputer bisa menjadi tidak stabil.
-
-# (Layer 3 Switch log)
-L3_SWITCH_START			Switch Lapisan 3 Virtual "%S" dimulai. Ia akan menunggu hingga Virtual Hub dari semua antarmuka yang terdaftar pada switch ini menjadi online dan kemudian akan memulai operasi.
-L3_SWITCH_ONLINE		Virtual Hub dari semua antarmuka pada Switch Lapisan 3 Virtual "%S" sudah online dan Switch Lapisan 3 Virtual telah memulai operasi Switch Lapisan 3 Virtual.
-L3_SWITCH_OFFLINE		Salah satu Virtual Hub dari antarmuka yang terdaftar pada Switch Lapisan 3 Virtual "%S" berhenti, dan operasi Switch Lapisan 3 Virtual telah dihentikan.
-L3_SWITCH_STOP			Switch Lapisan 3 Virtual "%S" dihentikan.
-
 
 ###########################################################################
 #                                                                         #
@@ -1132,8 +1037,6 @@ CMD_EVAL_PORT			Nomor port tidak valid. Tentukan nomor port yang berada dalam re
 CMD_CT_STD_COLUMN_1		Item
 CMD_CT_STD_COLUMN_2		Nilai
 CMD_CT_STD_COLUMN_3		Deskripsi
-CMD_PARSE_IP_SUBNET_ERROR_1	Tentukan dalam format "alamat IPv4/masker subnet". \nTentukan alamat IPv4 dengan memisahkan nilai desimal menggunakan titik seperti "192.168.0.1". Untuk masker subnet, tentukan nilai desimal yang dipisahkan dengan titik seperti "255.255.255.0", atau Anda dapat menentukan panjang bit masker subnet menggunakan nilai desimal seperti 24. \nUntuk menentukan host berdiri sendiri, tentukan masker subnet sebagai "255.255.255.255" atau "32". \n(Contoh)\n 192.168.0.1/24\n 192.168.0.1/255.255.255.0\n192.168.0.5/255.255.255.255\n\n
-CMD_PARSE_IP_SUBNET_ERROR_2	Alamat IP yang ditentukan bukan alamat jaringan.
 CMD_EVAL_DATE_TIME_FAILED	Spesifikasi tanggal dan waktu tidak valid. \nTanggal dan waktu harus dalam format yang sama dengan "2005/10/08 19:30:00" di mana 6 angka ditentukan, mewakili tahun/bulan/hari jam:menit:detik yang dipisahkan dengan garis miring, sebuah spasi, dan kemudian tanda titik dua. Tentukan 4 digit untuk tahun.
 CMD_PARSE_IP_MASK_ERROR_1_6	Tentukan dalam format "alamat IPv6/masker". \nTentukan alamat IPv6 dengan memisahkan nilai heksadesimal menggunakan tanda titik dua seperti "2001:200:0:1::". Untuk masker, tentukan nilai heksadesimal yang dipisahkan dengan titik dua seperti "ffff:ffff:ffff:ffff::", atau Anda dapat menentukan panjang bit masker menggunakan nilai desimal seperti 64. \nUntuk menentukan host berdiri sendiri, tentukan masker sebagai "ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff" atau "128". \n(Contoh)\n2001:200:0:1::/64\n2001:200:0:1::/ffff:ffff:ffff:ffff::\n2001:200:0:1::5/12\n\n
 CMD_PARSE_IP_MASK_ERROR_1	Tentukan dalam format "alamat IPv4/masker". \nTentukan alamat IPv4 dengan memisahkan nilai desimal menggunakan titik seperti "192.168.0.1". Untuk masker, tentukan nilai desimal yang dipisahkan dengan titik seperti "255.255.255.0", atau Anda dapat menentukan panjang bit masker menggunakan nilai desimal seperti 24. \nUntuk menentukan host berdiri sendiri, tentukan masker sebagai "255.255.255.255" atau "32". \n(Contoh)\n 192.168.0.1/24\n 192.168.0.1/255.255.255.0\n192.168.0.5/255.255.255.255\n\n
@@ -1309,16 +1212,6 @@ CMD_ServerPasswordSet_Args	ServerPasswordSet [password]
 CMD_ServerPasswordSet_[password]	Ini menentukan pengaturan kata sandi baru.
 
 
-# Debug command
-CMD_Debug				Jalankan Perintah Debug
-CMD_Debug_Help			Menjalankan perintah debug pada proses VPN Server / Bridge yang sedang berjalan.\nPerintah ini harus dijalankan ketika staf dukungan meminta untuk melakukannya.\nPenyalahgunaan perintah ini dapat menyebabkan kerusakan pada VPN Server / Bridge yang sedang berjalan.
-CMD_Debug_Args			Debug [id] [/ARG:arg]
-CMD_Debug_[id]			Tentukan nomor perintah debug.
-CMD_Debug_ARG			Tentukan string yang akan diteruskan ke perintah debug. Jika string mengandung spasi, masukkan seluruh perintah dalam tanda kutip (" ").
-CMD_Debug_Msg1			Mengirim perintah debug...
-CMD_Debug_Msg2			Perintah debug telah dijalankan.\nHasil: "%S"
-
-
 # Crash command
 CMD_Crash				Menimbulkan kesalahan pada VPN Server / Bridge untuk menghentikan proses secara paksa.
 CMD_Crash_Help			Perintah ini akan menimbulkan kesalahan fatal (pelanggaran akses memori) pada proses VPN Server / Bridge yang sedang berjalan untuk menghentikan proses tersebut. Sebagai hasilnya, VPN Server / Bridge akan dihentikan dan dimulai ulang jika berjalan dalam mode layanan. Jika VPN Server berjalan dalam mode pengguna, proses tidak akan dimulai ulang secara otomatis.\nPerintah ini digunakan ketika VPN Server / Bridge mengalami kesalahan yang tidak dapat diperbaiki atau proses berada dalam loop tak terbatas. Perintah ini akan memutuskan semua Sesi VPN di VPN Server / Bridge. Semua pengaturan yang belum disimpan dalam memori VPN Server / Bridge akan hilang.\nSebelum menjalankan perintah ini, jalankan perintah Flush untuk mencoba menyimpan data yang bersifat volatil ke file konfigurasi.\nUntuk menjalankan perintah ini, Anda harus memiliki hak akses administrator VPN Server / VPN Bridge.
@@ -1376,11 +1269,11 @@ CMD_ServerCipherSet_PROMPT_NAME	Nama Algoritma Enkripsi yang Akan Ditetapkan:
 # SyslogEnable command
 CMD_SyslogEnable		Setel Fungsi Pengiriman Syslog
 CMD_SyslogEnable_Help	Gunakan ini untuk mengatur penggunaan fungsi pengiriman syslog dan server syslog mana yang akan digunakan.
-CMD_SyslogEnable_Args	SyslogEnable [1|2|3] [/HOST:host:port]
-CMD_SyslogEnable_[1|2|3]	Tentukan, menggunakan angka, 1, 2, atau 3 untuk pengaturan yang akan menggunakan fungsi pengiriman syslog. \n1: Kirim log server melalui syslog. \n2: Kirim log server dan log keamanan Virtual Hub melalui syslog. \n3: Kirim log server, log keamanan Virtual Hub, dan log paket melalui syslog.
+CMD_SyslogEnable_Args	SyslogEnable [2|3] [/HOST:host:port]
+CMD_SyslogEnable_[2|3]	Tentukan, menggunakan angka, 2 atau 3 untuk pengaturan yang akan menggunakan fungsi pengiriman syslog. \n2: Kirim log server dan log keamanan Virtual Hub melalui syslog. \n3: Kirim log server, log keamanan Virtual Hub, dan log paket melalui syslog.
 CMD_SyslogEnable_HOST	Tentukan nama host atau alamat IP, dan nomor port server syslog menggunakan format [nama host:nomor port]. Jika nomor port tidak disebutkan, 514 akan digunakan.
-CMD_SyslogEnable_MINMAX	Tentukan, menggunakan angka, 1, 2, atau 3 untuk pengaturan yang akan menggunakan fungsi pengiriman syslog.
-CMD_SyslogEnable_Prompt_123	    Pengaturan untuk Menggunakan Fungsi Pengiriman Syslog (1-3): 
+CMD_SyslogEnable_MINMAX	Tentukan, menggunakan angka, 2 atau 3 untuk pengaturan yang akan menggunakan fungsi pengiriman syslog.
+CMD_SyslogEnable_Prompt_23	    Pengaturan untuk Menggunakan Fungsi Pengiriman Syslog (2-3):
 CMD_SyslogEnable_Prompt_HOST	Tentukan Server syslog:
 
 
@@ -1482,104 +1375,6 @@ CMD_ConfigSet_Args		ConfigSet [path]
 CMD_ConfigSet_[path]		Tentukan nama file dari file konfigurasi tujuan untuk ditulis. Jika file tujuan mengandung karakter multi-byte, encoding harus menggunakan format Unicode (UTF-8).
 CMD_ConfigSet_PROMPT_PATH	Nama jalur file konfigurasi untuk diunggah ke server: 
 CMD_ConfigSet_FILE_LOAD_FAILED	Gagal membaca dari file yang ditentukan.
-
-
-# RouterList command
-CMD_RouterList			Mendapatkan Daftar Virtual Layer 3 Switch
-CMD_RouterList_Help	    Gunakan ini untuk mendapatkan daftar Virtual Layer 3 Switch yang didefinisikan di VPN Server. Anda dapat memperoleh informasi berikut tentang Virtual Layer 3 Switch: Nama Switch, Status Operasi, Jumlah Antarmuka, dan Jumlah Tabel Routing. \nUntuk menjalankan perintah ini, Anda harus memiliki hak administrator VPN Server. \nSelain itu, perintah ini tidak berfungsi pada VPN Bridge.
-CMD_RouterList_Args	    RouterList
-
-
-# RouterAdd command
-CMD_RouterAdd			Menentukan Virtual Layer 3 Switch Baru
-CMD_RouterAdd_Help	    Gunakan ini untuk menentukan Virtual Layer 3 Switch baru di VPN Server. \nUntuk menjalankan perintah ini, Anda harus memiliki hak administrator VPN Server. \nSelain itu, perintah ini tidak berfungsi pada VPN Bridge. \n\n[Penjelasan tentang Fungsi Virtual Layer 3 Switch]\nAnda dapat menentukan Virtual Layer 3 Switch di antara beberapa Virtual Hub yang beroperasi di VPN Server ini dan mengonfigurasi routing antar jaringan IP yang berbeda. \n\n[Perhatian tentang Fungsi Virtual Layer 3 Switch]\nFungsi Virtual Layer 3 Switch disediakan untuk administrator jaringan dan orang-orang lain yang memiliki pengetahuan luas tentang jaringan dan routing IP. Jika Anda menggunakan fungsi VPN biasa, Anda tidak perlu menggunakan fungsi Virtual Layer 3 Switch. \nJika fungsi Virtual Layer 3 Switch akan digunakan, orang yang mengonfigurasikannya harus memiliki pengetahuan yang cukup tentang routing IP dan benar-benar mampu menghindari dampak negatif pada jaringan.
-CMD_RouterAdd_Args	    RouterAdd [name]
-CMD_RouterAdd_[name]    Gunakan ini untuk menentukan nama Virtual Layer 3 Switch baru yang dibuat. Anda tidak dapat menambahkan nama yang identik dengan Virtual Layer 3 Switch yang sudah ada.
-CMD_RouterAdd_PROMPT_NAME	Nama Virtual Layer 3 Switch yang Akan Dibuat:
-
-
-# RouterDelete command
-CMD_RouterDelete		Menghapus Virtual Layer 3 Switch
-CMD_RouterDelete_Help	Gunakan ini untuk menghapus Virtual Layer 3 Switch yang sudah ada dan didefinisikan di VPN Server. Ketika Virtual Layer 3 Switch yang ditentukan sedang beroperasi, akan otomatis dihapus setelah operasinya berhenti. \nUntuk mendapatkan daftar Virtual Layer 3 Switch yang ada, gunakan perintah RouterList. \nUntuk menjalankan perintah ini, Anda harus memiliki hak administrator VPN Server. \nSelain itu, perintah ini tidak berfungsi pada VPN Bridge.
-CMD_RouterDelete_Args	RouterDelete [name]
-CMD_RouterDelete_[name]	Gunakan ini untuk menentukan nama Virtual Layer 3 Switch yang akan dihapus.
-CMD_RouterDelete_PROMPT_NAME	Nama Virtual Layer 3 Switch yang Akan Dihapus:
-
-
-# RouterStart command
-CMD_RouterStart			Mulai Operasi Virtual Layer 3 Switch
-CMD_RouterStart_Help	Gunakan ini untuk memulai operasi Virtual Layer 3 Switch yang sudah ada dan didefinisikan di VPN Server yang operasinya saat ini dihentikan. \nUntuk mendapatkan daftar Virtual Layer 3 Switch yang ada, gunakan perintah RouterList. \nUntuk menjalankan perintah ini, Anda harus memiliki hak administrator VPN Server. \nSelain itu, perintah ini tidak berfungsi pada VPN Bridge. \n\n[Penjelasan tentang Fungsi Virtual Layer 3 Switch]\nAnda dapat menentukan Virtual Layer 3 Switch di antara beberapa Virtual Hub yang beroperasi di VPN Server ini dan mengonfigurasi routing antar jaringan IP yang berbeda. \n\n[Perhatian tentang Fungsi Virtual Layer 3 Switch]\nFungsi Virtual Layer 3 Switch disediakan untuk administrator jaringan dan orang-orang lain yang memiliki pengetahuan luas tentang jaringan dan routing IP. Jika Anda menggunakan fungsi VPN biasa, Anda tidak perlu menggunakan fungsi Virtual Layer 3 Switch. \nJika fungsi Virtual Layer 3 Switch akan digunakan, orang yang mengonfigurasikannya harus memiliki pengetahuan yang cukup tentang routing IP dan benar-benar mampu menghindari dampak negatif pada jaringan.
-CMD_RouterStart_Args	RouterStart [name]
-CMD_RouterStart_[name]	Gunakan ini untuk menentukan nama Virtual Layer 3 Switch yang akan dimulai.
-CMD_RouterStart_PROMPT_NAME	Nama Virtual Layer 3 Switch yang Akan Dimulai:
-
-
-# RouterStop command
-CMD_RouterStop			Menghentikan Operasi Virtual Layer 3 Switch
-CMD_RouterStop_Help		Gunakan ini untuk menghentikan operasi Virtual Layer 3 Switch yang sudah ada dan didefinisikan di VPN Server yang saat ini sedang beroperasi. \nUntuk mendapatkan daftar Virtual Layer 3 Switch yang ada, gunakan perintah RouterList. \nUntuk menjalankan perintah ini, Anda harus memiliki hak administrator VPN Server.
-CMD_RouterStop_Args		RouterStop [name]
-CMD_RouterStop_[name]	Gunakan ini untuk menentukan nama Virtual Layer 3 Switch yang akan dihentikan.
-CMD_RouterStop_PROMPT_NAME	Nama Virtual Layer 3 Switch yang Akan Dihentikan:
-
-
-# RouterIfList command
-CMD_RouterIfList		Mendapatkan Daftar Antarmuka yang Terdaftar di Virtual Layer 3 Switch
-CMD_RouterIfList_Help	Gunakan ini untuk mendapatkan daftar antarmuka virtual ketika antarmuka virtual telah didefinisikan pada Virtual Layer 3 Switch yang ditentukan. \nAnda dapat mendefinisikan beberapa antarmuka virtual dan tabel routing untuk satu Virtual Layer 3 Switch. \nSebuah antarmuka virtual dikaitkan dengan Virtual Hub dan beroperasi sebagai satu host IP pada Virtual Hub ketika Virtual Hub tersebut beroperasi. Ketika beberapa antarmuka virtual yang masing-masing berasal dari jaringan IP yang berbeda dari Virtual Hub yang berbeda telah didefinisikan, routing IP akan secara otomatis dilakukan di antara antarmuka ini. \nUntuk menjalankan perintah ini, Anda harus memiliki hak administrator VPN Server. \nSelain itu, perintah ini tidak berfungsi pada VPN Bridge.
-CMD_RouterIfList_Args	RouterIfList [name]
-CMD_RouterIfList_[name]	Gunakan ini untuk menentukan nama Virtual Layer 3 Switch.
-CMD_RouterIfList_PROMPT_NAME	Nama Virtual Layer 3 Switch:
-
-
-# RouterIfAdd command
-CMD_RouterIfAdd			Menambahkan Antarmuka Virtual ke Virtual Layer 3 Switch
-CMD_RouterIfAdd_Help	Gunakan ini untuk menambahkan antarmuka virtual yang terhubung ke Virtual Hub yang beroperasi di VPN Server yang sama ke Virtual Layer 3 Switch yang ditentukan. \nAnda dapat mendefinisikan beberapa antarmuka virtual dan tabel routing untuk satu Virtual Layer 3 Switch. \nSebuah antarmuka virtual dikaitkan dengan Virtual Hub dan beroperasi sebagai satu host IP pada Virtual Hub ketika Virtual Hub tersebut beroperasi. Ketika beberapa antarmuka virtual yang masing-masing berasal dari jaringan IP yang berbeda dari Virtual Hub yang berbeda telah didefinisikan, routing IP akan secara otomatis dilakukan di antara antarmuka ini. \nAnda harus mendefinisikan ruang jaringan IP tempat antarmuka virtual berada dan alamat IP dari antarmuka itu sendiri. \nSelain itu, Anda harus menentukan nama Virtual Hub yang akan dihubungkan oleh antarmuka tersebut. \nAnda dapat menentukan nama Virtual Hub yang saat ini belum ada. \nAntarmuka virtual harus memiliki satu alamat IP di Virtual Hub. Anda juga harus menentukan subnet mask dari jaringan IP tempat alamat IP tersebut berada. \nRouting melalui Virtual Layer 3 Switch dari ruang IP beberapa Virtual Hub beroperasi berdasarkan alamat IP yang ditentukan di sini. \nUntuk menjalankan perintah ini, Anda harus memiliki hak administrator VPN Server. \nSelain itu, perintah ini tidak berfungsi pada VPN Bridge. \nUntuk menjalankan perintah ini, Virtual Layer 3 Switch target harus dalam keadaan berhenti. Jika belum berhenti, gunakan terlebih dahulu perintah RouterStop untuk menghentikannya dan kemudian jalankan perintah ini.
-CMD_RouterIfAdd_Args	RouterIfAdd [name] [/HUB:hub] [/IP:ip/mask]
-CMD_RouterIfAdd_[name]	Gunakan ini untuk menentukan nama Virtual Layer 3 Switch.
-CMD_RouterIfAdd_HUB		Gunakan ini untuk menentukan nama Virtual Hub yang menjadi tujuan koneksi antarmuka virtual yang akan ditambahkan. Untuk mendapatkan daftar Virtual Hub, Anda dapat menggunakan perintah HubList. Tidak wajib untuk menentukan Virtual Hub yang sedang beroperasi. Jika Anda menentukan nama Virtual Hub yang saat ini tidak beroperasi atau belum ada, Virtual Layer 3 Switch akan diaktifkan ketika operasi nyata dari Virtual Hub tersebut dimulai.
-CMD_RouterIfAdd_IP		Menggunakan format: "alamat IP/subnet mask", tentukan alamat IP dan subnet mask yang dimiliki oleh antarmuka virtual yang akan ditambahkan. Tentukan alamat IP dengan memisahkan nilai desimal menggunakan titik, seperti 192.168.0.1. Untuk subnet mask, Anda dapat menentukan nilai desimal yang dipisahkan titik seperti 255.255.255.0, atau Anda dapat menentukan panjang bit dari header menggunakan nilai desimal seperti 24.
-CMD_RouterIfAdd_PROMPT_NAME	Nama Virtual Layer 3 Switch:
-CMD_RouterIfAdd_PROMPT_HUB	Nama Virtual Hub Tujuan dari Antarmuka Virtual:
-CMD_RouterIfAdd_PROMPT_IP	Alamat IP/Subnet Mask:
-
-
-# RouterIfDel command
-CMD_RouterIfDel			Menghapus Antarmuka Virtual dari Virtual Layer 3 Switch
-CMD_RouterIfDel_Help	Gunakan ini untuk menghapus antarmuka virtual yang sudah didefinisikan di Virtual Layer 3 Switch yang ditentukan. \nAnda dapat mendapatkan daftar antarmuka virtual yang saat ini didefinisikan, dengan menggunakan perintah RouterIfList. \nUntuk menjalankan perintah ini, Anda harus memiliki hak administrator VPN Server. \nSelain itu, perintah ini tidak berfungsi pada VPN Bridge. \nUntuk menjalankan perintah ini, Virtual Layer 3 Switch target harus dalam keadaan berhenti. Jika belum berhenti, gunakan terlebih dahulu perintah RouterStop untuk menghentikannya dan kemudian jalankan perintah ini.
-CMD_RouterIfDel_Args	RouterIfDel [name] [/HUB:hub]
-CMD_RouterIfDel_[name]	Gunakan ini untuk menentukan nama Virtual Layer 3 Switch.
-CMD_RouterIfDel_HUB		Gunakan ini untuk menentukan nama Virtual Hub yang menjadi tujuan koneksi antarmuka virtual yang akan dihapus.
-
-
-# RouterTableList command
-CMD_RouterTableList		Mendapatkan Daftar Tabel Routing dari Virtual Layer 3 Switch
-CMD_RouterTableList_Help	Gunakan ini untuk mendapatkan daftar tabel routing ketika tabel routing telah didefinisikan pada Virtual Layer 3 Switch yang ditentukan. \nJika alamat IP tujuan dari paket IP tidak termasuk dalam jaringan IP yang dimiliki oleh antarmuka virtual manapun, mesin routing IP dari Virtual Layer 3 Switch akan merujuk tabel routing ini dan menjalankan routing. \nUntuk menjalankan perintah ini, Anda harus memiliki hak administrator VPN Server. \nSelain itu, perintah ini tidak berfungsi pada VPN Bridge.
-CMD_RouterTableList_Args	RouterTableList [name]
-CMD_RouterTableList_[name]	Gunakan ini untuk menentukan nama Virtual Layer 3 Switch.
-CMD_RouterTableList_PROMPT_NAME	Nama Virtual Layer 3 Switch:
-
-
-# RouterTableAdd command
-CMD_RouterTableAdd		Menambahkan Entri Tabel Routing untuk Virtual Layer 3 Switch
-CMD_RouterTableAdd_Help	Di sini Anda dapat menambahkan entri tabel routing baru ke tabel routing Virtual Layer 3 Switch yang ditentukan. \nJika alamat IP tujuan dari paket IP tidak termasuk dalam jaringan IP yang dimiliki oleh antarmuka virtual manapun, mesin routing IP dari Virtual Layer 3 Switch akan merujuk tabel routing ini dan menjalankan routing. \nAnda harus menentukan isi entri tabel routing yang akan ditambahkan ke Virtual Layer 3 Switch. Anda harus menentukan alamat IP yang termasuk dalam jaringan IP yang sama di antarmuka virtual dari Virtual Layer 3 Switch ini sebagai alamat gateway. \nUntuk menjalankan perintah ini, Anda harus memiliki hak administrator VPN Server. \nSelain itu, perintah ini tidak berfungsi pada VPN Bridge. \nUntuk menjalankan perintah ini, Virtual Layer 3 Switch target harus dalam keadaan berhenti. Jika belum berhenti, gunakan terlebih dahulu perintah RouterStop untuk menghentikannya dan kemudian jalankan perintah ini.
-CMD_RouterTableAdd_Args	RouterTableAdd [name] [/NETWORK:ip/mask] [/GATEWAY:gwip] [/METRIC:metric]
-CMD_RouterTableAdd_[name]	Gunakan ini untuk menentukan nama Virtual Layer 3 Switch.
-CMD_RouterTableAdd_NETWORK	Menggunakan format: "alamat IP/subnet mask", tentukan alamat jaringan dan subnet mask dari entri tabel routing yang akan ditambahkan. Tentukan alamat jaringan dengan memisahkan nilai desimal menggunakan titik, seperti "192.168.0.1". Untuk subnet mask, tentukan nilai desimal yang dipisahkan titik seperti 255.255.255.0, atau Anda dapat menentukan panjang bit dari header menggunakan nilai desimal seperti 24. Jika Anda menentukan 0.0.0.0/0.0.0.0, maka jalur default akan digunakan.
-CMD_RouterTableAdd_GATEWAY	Tentukan alamat IP gateway.
-CMD_RouterTableAdd_METRIC	Tentukan nilai metric. Tentukan sebuah bilangan bulat (1 atau lebih).
-CMD_RouterTableAdd_PROMPT_NAME	Nama Virtual Layer 3 Switch:
-CMD_RouterTableAdd_PROMPT_NETWORK	Alamat Jaringan/Subnet Mask:
-CMD_RouterTableAdd_PROMPT_GATEWAY	Alamat Gateway:
-CMD_RouterTableAdd_PROMPT_METRIC	Nilai Metric:
-
-
-# RouterTableDel command
-CMD_RouterTableDel		Menghapus Entri Tabel Routing dari Virtual Layer 3 Switch
-CMD_RouterTableDel_Help	Gunakan ini untuk menghapus entri tabel routing yang didefinisikan di Virtual Layer 3 Switch yang ditentukan. \nAnda dapat mendapatkan daftar entri tabel routing yang sudah didefinisikan dengan menggunakan perintah RouterTableList. \nUntuk menjalankan perintah ini, Anda harus memiliki hak administrator VPN Server. \nSelain itu, perintah ini tidak berfungsi pada VPN Bridge. \nUntuk menjalankan perintah ini, Virtual Layer 3 Switch target harus dalam keadaan berhenti. Jika belum berhenti, gunakan terlebih dahulu perintah RouterStop untuk menghentikannya dan kemudian jalankan perintah ini.
-CMD_RouterTableDel_Args	RouterTableDel [name] [/NETWORK:ip/mask] [/GATEWAY:gwip] [/METRIC:metric]
-CMD_RouterTableDel_[name]	Gunakan ini untuk menentukan nama Virtual Layer 3 Switch.
-CMD_RouterTableDel_NETWORK	Menggunakan format: "alamat IP/subnet mask", tentukan alamat jaringan dari entri tabel routing yang akan dihapus.
-CMD_RouterTableDel_GATEWAY	Tentukan alamat IP gateway.
-CMD_RouterTableDel_METRIC	Tentukan nilai metric. Tentukan sebuah bilangan bulat (1 atau lebih).
 
 
 # LogFileList command
@@ -2215,8 +2010,8 @@ CMD_AccessAddEx6_Prompt_DELAY	Keterlambatan untuk Dihasilkan (dalam milidetik: 0
 CMD_AccessAddEx6_Prompt_JITTER	Fluktuasi Jitter untuk Dihasilkan (Persen: 0 - 100): 
 CMD_AccessAddEx6_Prompt_LOSS	    Rasio Kehilangan Paket (Persen: 0 - 100): 
 CMD_AccessAddEx6_Eval_DELAY	    Keterlambatan harus maksimal 10000 milidetik.
-CMD_AccessAddEx6_Eval_JITTER	    Fluktuasi Jitter harus maksimal 100%.
-CMD_AccessAddEx6_Eval_LOSS	    Rasio Kehilangan Paket harus maksimal 100%.
+CMD_AccessAddEx6_Eval_JITTER	    Fluktuasi Jitter harus maksimal 100%%.
+CMD_AccessAddEx6_Eval_LOSS	    Rasio Kehilangan Paket harus maksimal 100%%.
 
 
 # AccessList command
@@ -2255,7 +2050,7 @@ CMD_UserList_Args		UserList
 
 # UserCreate command
 CMD_UserCreate			Buat Pengguna
-CMD_UserCreate_Help	    Gunakan ini untuk membuat pengguna baru di database akun keamanan dari Virtual Hub yang sedang dikelola. \nDengan membuat pengguna, VPN Client dapat terhubung ke Virtual Hub dengan menggunakan informasi otentikasi dari pengguna tersebut. \nKetika pengguna dibuat menggunakan perintah UserCreate dan jenis otentikasi pengguna tersebut terdaftar sebagai Otentikasi Password, string acak akan diberikan sebagai kata sandi. Oleh karena itu, pengguna tersebut tidak akan dapat terhubung ke Virtual Hub dalam keadaan ini. Setelah membuat pengguna, kamu harus selalu menggunakan perintah UserPasswordSet untuk menentukan kata sandi pengguna, atau sebaliknya menggunakan perintah UserAnonymousSet, UserCertSet, UserSignedSet, UserRadiusSet, atau UserNTLMSet untuk mengubah jenis otentikasi pengguna. \nPerlu dicatat bahwa pengguna yang nama penggunanya dibuat sebagai "*" (karakter asterisk tunggal) akan secara otomatis terdaftar sebagai pengguna otentikasi RADIUS. Untuk kasus di mana ada pengguna dengan "*" sebagai nama, ketika seorang pengguna, yang nama penggunanya telah diberikan ketika klien terhubung ke VPN Server dan tidak cocok dengan nama pengguna yang ada, dapat diautentikasi oleh server RADIUS atau pengontrol domain NT dengan memasukkan nama pengguna dan kata sandi, pengaturan otentikasi dan pengaturan kebijakan keamanan akan mengikuti pengaturan untuk pengguna "*". \nUntuk mengubah informasi pengguna dari pengguna yang telah dibuat, gunakan perintah UserSet. \nPerintah ini tidak dapat dijalankan pada VPN Bridge. \nKamu tidak dapat menjalankan perintah ini untuk Virtual Hub dari VPN Server yang beroperasi sebagai anggota server dalam cluster.
+CMD_UserCreate_Help	    Gunakan ini untuk membuat pengguna baru di database akun keamanan dari Virtual Hub yang sedang dikelola. \nDengan membuat pengguna, VPN Client dapat terhubung ke Virtual Hub dengan menggunakan informasi otentikasi dari pengguna tersebut. \nKetika pengguna dibuat menggunakan perintah UserCreate dan jenis otentikasi pengguna tersebut terdaftar sebagai Otentikasi Password, string acak akan diberikan sebagai kata sandi. Oleh karena itu, pengguna tersebut tidak akan dapat terhubung ke Virtual Hub dalam keadaan ini. Setelah membuat pengguna, kamu harus selalu menggunakan perintah UserPasswordSet untuk menentukan kata sandi pengguna, atau sebaliknya menggunakan perintah UserAnonymousSet, UserCertSet, UserSignedSet, atau UserNTLMSet untuk mengubah jenis otentikasi pengguna. \nPerlu dicatat bahwa pengguna yang nama penggunanya dibuat sebagai "*" (karakter asterisk tunggal) akan secara otomatis terdaftar sebagai pengguna otentikasi RADIUS. Untuk kasus di mana ada pengguna dengan "*" sebagai nama, ketika seorang pengguna, yang nama penggunanya telah diberikan ketika klien terhubung ke VPN Server dan tidak cocok dengan nama pengguna yang ada, dapat diautentikasi oleh server RADIUS atau pengontrol domain NT dengan memasukkan nama pengguna dan kata sandi, pengaturan otentikasi dan pengaturan kebijakan keamanan akan mengikuti pengaturan untuk pengguna "*". \nUntuk mengubah informasi pengguna dari pengguna yang telah dibuat, gunakan perintah UserSet. \nPerintah ini tidak dapat dijalankan pada VPN Bridge. \nKamu tidak dapat menjalankan perintah ini untuk Virtual Hub dari VPN Server yang beroperasi sebagai anggota server dalam cluster.
 CMD_UserCreate_Args		UserCreate [name] [/GROUP:group] [/REALNAME:realname] [/NOTE:note]
 CMD_UserCreate_[name]	Tentukan nama pengguna dari pengguna yang akan dibuat.
 CMD_UserCreate_GROUP	Jika menetapkan pengguna ke grup, tentukan nama grup. Jika tidak menetapkan pengguna ke grup mana pun, tentukan /GROUP:none.
@@ -2296,7 +2091,7 @@ CMD_UserGet_Column_Group	Nama Grup
 CMD_UserGet_Column_Expires	Tanggal Kedaluwarsa
 CMD_UserGet_Column_AuthType	Jenis Otentikasi
 CMD_UserGet_Column_UserCert	Sertifikat Individu Pengguna Terdaftar
-CMD_UserGet_Column_RadiusAlias	Nama Pengguna Server Otentikasi Eksternal
+CMD_UserGet_Column_NtUsername	Nama Pengguna Server Otentikasi Eksternal
 CMD_UserGet_Column_RootCert_CN	Batasan Nilai Certificate CN
 CMD_UserGet_Column_RootCert_SERIAL	Batasan Nomor Seri Sertifikat
 CMD_UserGet_Policy		Kebijakan Keamanan yang Ditetapkan untuk Pengguna ini
@@ -2345,16 +2140,13 @@ CMD_UserSignedSet_Prompt_CN	Batasan Nilai Nama Umum (CN):
 CMD_UserSignedSet_Prompt_SERIAL	Batasan Nilai Nomor Seri: 
 
 
-# UserRadiusSet command
-CMD_UserRadiusSet_Prompt_ALIAS	Nama Alias untuk Otentikasi (Opsional): 
-
-
 # UserNTLMSet コマンド
 CMD_UserNTLMSet		    Atur Otentikasi Domain NT untuk Tipe Otentikasi Pengguna
 CMD_UserNTLMSet_Help	Gunakan ini untuk mengatur Otentikasi Domain NT sebagai tipe otentikasi untuk pengguna yang terdaftar dalam database akun keamanan Virtual Hub yang sedang dikelola. Ketika seorang pengguna menghubungkan ke Virtual Hub menggunakan nama pengguna yang diatur untuk otentikasi Domain NT, nama pengguna dan kata sandi yang dimasukkan oleh pengguna dikirim ke Windows NT / 2000 / Server 2003 / Server 2008 / Server 2008 R2 / Server 2012 Domain Controller atau Active Directory Server, dimana server tersebut memeriksa nama pengguna dan kata sandi, kemudian jika verifikasi berhasil, pengguna tersebut diizinkan untuk terhubung ke VPN. \nUntuk menggunakan otentikasi Domain NT, Server VPN harus beroperasi di sistem operasi Windows NT 4.0, Windows 2000, Windows XP, Windows Vista, Windows Server 2008, Windows Server 2008 R2 atau Windows Server 2012 yang terhubung dengan domain tersebut. Untuk rincian lebih lanjut, silakan hubungi administrator Server VPN. \nUntuk mendapatkan daftar pengguna yang terdaftar saat ini, gunakan perintah UserList. \nPerintah ini tidak dapat dijalankan pada VPN Bridge. \nKamu tidak dapat menjalankan perintah ini untuk Virtual Hub dari VPN Server yang beroperasi sebagai anggota server dalam cluster.
 CMD_UserNTLMSet_Args	UserNTLMSet [name] [/ALIAS:alias_name]
 CMD_UserNTLMSet_[name]	Tentukan nama pengguna dari pengguna yang pengaturannya ingin diubah.
 CMD_UserNTLMSet_ALIAS	Saat parameter ini diatur, dimungkinkan untuk membuat nama pengguna yang dikirim ke server Domain NT atau Active Directory berbeda dengan nama pengguna pada Virtual Hub. Saat ini tidak diatur, harap tentukan /ALIAS:none (nama pengguna pada Virtual Hub akan digunakan). Jika nama pengguna adalah "*", parameter /ALIAS akan diabaikan. Untuk membaca penjelasan tentang pengguna "*", silakan masukkan UserCreate/HELP untuk menampilkan informasi ini.
+CMD_UserNTLMSet_Prompt_ALIAS	Nama Alias untuk Otentikasi (Opsional): 
 
 
 # UserPolicyRemove command
@@ -2627,34 +2419,6 @@ CMD_AcDel_[id]			Tentukan ID dari aturan dalam Daftar Batas Alamat IP Sumber yan
 CMD_AcDel_Prompt_ID		ID Aturan untuk Dihapus: 
 
 
-# LicenseAdd command
-CMD_LicenseAdd			Tambahkan Pendaftaran Kunci Lisensi
-CMD_LicenseAdd_Help		Gunakan perintah ini untuk mendaftar kunci lisensi baru pada Ranz VPN Server.\nUntuk menggunakan Ranz VPN Server, Anda harus memperoleh lisensi yang sah dan mendaftarkan kunci lisensi. Kunci lisensi terdiri dari 36 karakter alfanumerik ditambah dengan tanda hubung. Kunci ini adalah kode yang membuktikan kepemilikan lisensi.\nKetika sertifikat lisensi diterima bersama dengan perangkat lunak ini, kunci lisensi tercetak pada sertifikat lisensi tersebut. Jika lisensi untuk perangkat lunak ini dibeli secara online, kunci lisensi diberikan melalui email dan pada jendela situs web saat lisensi dibeli. Kunci lisensi juga dapat dicatat dengan cara lain. Jika Anda tidak tahu di mana kunci lisensi dicatat, tanyakan kepada vendor yang menjual lisensi kepada Anda.\n\nUntuk mendapatkan daftar lisensi yang terdaftar saat ini, gunakan perintah LicenseList.\nUntuk menampilkan status lisensi dari VPN Server saat ini, gunakan perintah LicenseStatus.\nUntuk menjalankan perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.\nPerintah ini tidak dapat dijalankan pada VPN Bridge.
-CMD_LicenseAdd_Args		LicenseAdd [key]
-CMD_LicenseAdd_[key]	Tentukan kunci lisensi yang akan didaftarkan. Tentukan 36 digit karakter alfanumerik dan kelompokkan digit-digitnya dalam grup-grup yang dipisahkan dengan tanda hubung.
-CMD_LicenseAdd_Prompt_Key	Kunci Lisensi: 
-
-
-# LicenseDel command
-CMD_LicenseDel			Hapus Lisensi Terdaftar
-CMD_LicenseDel_Help		Gunakan perintah ini untuk menghapus lisensi tertentu dari daftar lisensi yang terdaftar pada Ranz VPN Server saat ini.\n\nUntuk mendapatkan daftar lisensi yang terdaftar saat ini, gunakan perintah LicenseList.\nUntuk menampilkan status lisensi dari VPN Server saat ini, gunakan perintah LicenseStatus.\nUntuk menjalankan perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.\nPerintah ini tidak dapat dijalankan pada VPN Bridge.
-CMD_LicenseDel_Args		LicenseDel [id]
-CMD_LicenseDel_[id]		Tentukan nomor lisensi yang akan dihapus.
-CMD_LicenseDel_Prompt_ID	Nomor Lisensi yang Akan Dihapus: 
-
-
-# LicenseList command
-CMD_LicenseList			Tampilkan Daftar Lisensi Terdaftar
-CMD_LicenseList_Help	Gunakan perintah ini untuk menampilkan daftar informasi lisensi yang saat ini terdaftar pada Ranz VPN Server, termasuk: kunci lisensi, nama jenis lisensi, status, tanggal kedaluwarsa, ID lisensi, ID jenis lisensi, ID server, dan ID serial.\n\nUntuk menampilkan status lisensi dari VPN Server saat ini, gunakan perintah LicenseStatus.\nUntuk menjalankan perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.\nPerintah ini tidak dapat dijalankan pada VPN Bridge.
-CMD_LicenseList_Args	LicenseList
-
-
-# LicenseStatus command
-CMD_LicenseStatus		Tampilkan Status Lisensi dari VPN Server Saat Ini
-CMD_LicenseStatus_Help	Gunakan perintah ini untuk mendapatkan dan menampilkan status lisensi dari Ranz VPN Server saat ini. \nInformasi berikut tentang Ranz VPN Server saat ini akan ditampilkan: edisi produk, ID server, tanggal kedaluwarsa lisensi produk, jumlah Lisensi Koneksi Klien yang dapat digunakan, dan jumlah Lisensi Koneksi Jembatan. \n\nUntuk menjalankan perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.\nPerintah ini tidak dapat dijalankan pada VPN Bridge.
-CMD_LicenseStatus_Args	LicenseStatus
-
-
 # ServerCertRegenerate command
 CMD_ServerCertRegenerate	Generasi Sertifikat Self-Signed Baru dengan CN (Nama Umum) yang Ditetapkan dan Daftarkan pada VPN Server
 CMD_ServerCertRegenerate_Help	Anda dapat menggunakan perintah ini untuk mengganti sertifikat saat ini pada VPN Server dengan sertifikat self-signed baru yang memiliki nilai CN (Nama Umum) pada bidangnya.\n\nPerintah ini berguna jika Anda berencana untuk menggunakan Fungsi Klon Server SSTP VPN Microsoft. Karena nilai CN (Nama Umum) pada sertifikat SSL VPN Server harus cocok dengan nama host yang ditentukan pada klien SSTP VPN.\n\nPerintah ini akan menghapus sertifikat SSL yang ada pada VPN Server. Disarankan untuk mencadangkan sertifikat SSL dan kunci privat saat ini dengan menggunakan perintah ServerKeyGet sebelumnya.\n\nUntuk menjalankan perintah ini, Anda harus memiliki hak istimewa administrator VPN Server.\nPerintah ini tidak dapat dijalankan pada VPN Bridge.\nAnda tidak dapat menjalankan perintah ini untuk Virtual Hubs dari VPN Server yang beroperasi sebagai anggota cluster.
@@ -2682,8 +2446,8 @@ CMD_AccountDetailSet_Prompt_NOQOS	 Nonaktifkan Fungsi Kontrol QoS (yes/no):
 
 
 # MakeCert command
-CMD_MakeCert			Buat Sertifikat X.509 Baru dan Kunci Pribadi (1024 bit)
-CMD_MakeCert_Help		Gunakan ini untuk membuat sertifikat X.509 baru dan kunci pribadi dan menyimpannya sebagai file. \nAlgoritma yang digunakan untuk membuat kunci publik dan kunci pribadi dari sertifikat adalah RSA 1024 bit. \nAnda dapat memilih untuk membuat sertifikat root (sertifikat yang ditandatangani sendiri) atau sertifikat yang ditandatangani oleh sertifikat lain. Untuk membuat sertifikat yang ditandatangani oleh sertifikat lain, Anda memerlukan file kunci pribadi (encoded base64) yang kompatibel dengan sertifikat yang menggunakan tanda tangan tersebut (file format X.509). \n\nSaat membuat sertifikat, Anda dapat menentukan hal-hal berikut: Nama (CN), Organisasi (O), Unit Organisasi (OU), Negara (C), Negara Bagian (ST), Lokal (L), Nomor Seri, dan Tanggal Kedaluwarsa. \nSertifikat yang dibuat akan disimpan sebagai file format X.509 dan file kunci pribadi akan disimpan dalam format Base 64 encoded RSA 1024 bit. \n\nPerintah MakeCert adalah alat yang menyediakan fungsi paling dasar untuk membuat sertifikat. Jika Anda ingin membuat sertifikat yang lebih substansial, kami sarankan untuk menggunakan perangkat lunak gratis seperti OpenSSL, atau perangkat lunak CA (certificate authority) komersial. \n\nCatatan: Perintah ini dapat dipanggil dari Utilitas Manajemen Baris Perintah Ranz VPN. Anda juga dapat mengeksekusi perintah ini saat terhubung ke VPN Server atau VPN Client saat dalam Mode Administrasi, tetapi yang sebenarnya melakukan komputasi RSA, menghasilkan data sertifikat, dan menyimpannya ke file adalah komputer tempat perintah tersebut dijalankan, dan semua ini dijalankan dalam konteks yang tidak ada hubungannya dengan komputer yang menjadi tujuan koneksi Mode Administrasi.
+CMD_MakeCert			Buat Sertifikat X.509 Baru dan Kunci Pribadi (2048 bit)
+CMD_MakeCert_Help		Gunakan ini untuk membuat sertifikat X.509 baru dan kunci pribadi dan menyimpannya sebagai file. \nAlgoritma yang digunakan untuk membuat kunci publik dan kunci pribadi dari sertifikat adalah RSA 2048 bit. \nAnda dapat memilih untuk membuat sertifikat root (sertifikat yang ditandatangani sendiri) atau sertifikat yang ditandatangani oleh sertifikat lain. Untuk membuat sertifikat yang ditandatangani oleh sertifikat lain, Anda memerlukan file kunci pribadi (encoded base64) yang kompatibel dengan sertifikat yang menggunakan tanda tangan tersebut (file format X.509). \n\nSaat membuat sertifikat, Anda dapat menentukan hal-hal berikut: Nama (CN), Organisasi (O), Unit Organisasi (OU), Negara (C), Negara Bagian (ST), Lokal (L), Nomor Seri, dan Tanggal Kedaluwarsa. \nSertifikat yang dibuat akan disimpan sebagai file format X.509 dan file kunci pribadi akan disimpan dalam format Base 64 encoded RSA 2048 bit. \n\nPerintah MakeCert adalah alat yang menyediakan fungsi paling dasar untuk membuat sertifikat. Jika Anda ingin membuat sertifikat yang lebih substansial, kami sarankan untuk menggunakan perangkat lunak gratis seperti OpenSSL, atau perangkat lunak CA (certificate authority) komersial. \n\nCatatan: Perintah ini dapat dipanggil dari Utilitas Manajemen Baris Perintah Ranz VPN. Anda juga dapat mengeksekusi perintah ini saat terhubung ke VPN Server atau VPN Client saat dalam Mode Administrasi, tetapi yang sebenarnya melakukan komputasi RSA, menghasilkan data sertifikat, dan menyimpannya ke file adalah komputer tempat perintah tersebut dijalankan, dan semua ini dijalankan dalam konteks yang tidak ada hubungannya dengan komputer yang menjadi tujuan koneksi Mode Administrasi.
 CMD_MakeCert_Args		MakeCert [/CN:cn] [/O:o] [/OU:ou] [/C:c] [/ST:st] [/L:l] [/SERIAL:serial] [/EXPIRES:expires] [/SIGNCERT:signcert] [/SIGNKEY:signkey] [/SAVECERT:savecert] [/SAVEKEY:savekey]
 CMD_MakeCert_CN			Tentukan Nama (CN) dari sertifikat yang akan dibuat. Anda dapat menentukan "none".
 CMD_MakeCert_O			Tentukan Organisasi (O) dari sertifikat yang akan dibuat. Anda dapat menentukan "none".
@@ -2695,8 +2459,8 @@ CMD_MakeCert_SERIAL		Tentukan Nomor Seri dari sertifikat yang akan dibuat. Tentu
 CMD_MakeCert_EXPIRES	Tentukan Tanggal Kedaluwarsa dari sertifikat yang akan dibuat. Jika Anda menentukan "none" atau "0", 3650 hari (sekitar 10 tahun) akan digunakan. Anda dapat menentukan maksimal 10950 hari (sekitar 30 tahun).
 CMD_MakeCert_SIGNCERT	Tentukan file sertifikat format X.509 yang akan digunakan untuk menandatangani tanda tangan jika sertifikat yang dibuat ditandatangani oleh sertifikat lain. Jika parameter ini tidak disebutkan, maka tanda tangan tidak akan dilakukan dan sertifikat baru akan dibuat sebagai sertifikat root.
 CMD_MakeCert_SIGNKEY	Tentukan kunci pribadi (RSA, encoded base64) yang kompatibel dengan sertifikat yang ditentukan oleh /SIGNCERT.
-CMD_MakeCert_SAVECERT	Tentukan nama file untuk menyimpan sertifikat yang telah Anda buat. Sertifikat akan disimpan dalam format X.509 yang mencakup kunci publik yang berbentuk RSA 1024 bit.
-CMD_MakeCert_SAVEKEY	Tentukan nama file untuk menyimpan kunci pribadi yang kompatibel dengan sertifikat yang Anda buat. Kunci pribadi akan disimpan dalam file RSA-format 1024-bit.
+CMD_MakeCert_SAVECERT	Tentukan nama file untuk menyimpan sertifikat yang telah Anda buat. Sertifikat akan disimpan dalam format X.509 yang mencakup kunci publik yang berbentuk RSA 2048 bit.
+CMD_MakeCert_SAVEKEY	Tentukan nama file untuk menyimpan kunci pribadi yang kompatibel dengan sertifikat yang Anda buat. Kunci pribadi akan disimpan dalam file RSA-format 2048-bit.
 CMD_MakeCert_PROMPT_CN			Nama Sertifikat yang Akan Dibuat (CN): 
 CMD_MakeCert_PROMPT_O			Organisasi Sertifikat yang Akan Dibuat (O): 
 CMD_MakeCert_PROMPT_OU			Unit Organisasi Sertifikat yang Akan Dibuat (OU): 
@@ -2791,9 +2555,7 @@ TTC_TYPE_FULL			Penuh (Server < -- > Klien)
 TTC_SPAN_STR			%.1f detik
 TTC_COMM_START			\nSemua koneksi telah didirikan dan transfer data dimulai. \nWaktu Mulai Pengukuran: %s\nWaktu Selesai yang Dijadwalkan: %s\n\nPengukuran sedang berlangsung. Harap tunggu... \n(Jangan gunakan aplikasi lain saat pengukuran sedang berlangsung.)\n\n
 TTC_COMM_END			Sudah %.1f detik atau lebih berlalu, maka komunikasi data akan berakhir. \n\n
-TTC_COMM_USER_CANCEL	Karena pembatalan oleh pengguna, komunikasi data akan berakhir. \n\n
 TTC_COMM_DISCONNECTED	Koneksi TCP %u telah terputus.
-TTC_STOPPING			Memberhentikan operasi alat pengukuran throughput komunikasi klien...
 TTC_RES_TITLE			\n\nAlat Uji Kecepatan Lalu Lintas Jaringan\n\n
 TTC_RES_COLUMN_1		Nama Item
 TTC_RES_COLUMN_2		Tampilan Normal

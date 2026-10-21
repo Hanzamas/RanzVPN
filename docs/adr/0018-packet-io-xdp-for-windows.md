@@ -1,6 +1,6 @@
 # ADR-0018: Packet I/O and XDP for Windows
 
-**Status:** Partly accepted (2026-10-13). Decisions 1, 3, 4 and 5 are Accepted (Hilmi: "catat nih"; "mending ini KM TEST loopback"; the backend matrix and "y" to Npcap; "gas QTIP"). Decision 2 is Proposed.
+**Status:** Accepted (2026-10-13). Decisions 1, 3, 4 and 5 were Accepted in the first pass (Hilmi: "catat nih"; "mending ini KM TEST loopback"; the backend matrix and "y" to Npcap; "gas QTIP"); **decision 2 was accepted in the 2026-10-13 grilling** (default off, Server x64 only). See the amendment at the end.
 
 ## Context
 
@@ -11,7 +11,7 @@ The new core's transport is QUIC via MsQuic with a TLS/TCP 443 fallback and a No
 ## Decision
 
 1. **The TLS/TCP 443 fallback stays on the Windows TCP stack** (Accepted). It is not moved onto XDP: that would require a complete TCP implementation in user mode, a project of its own, for a path that exists for reachability, not for speed.
-2. **QUIC traffic gets XDP only through MsQuic** (Proposed). Ranz carries its L2 and L3 packets in QUIC datagrams, so the MsQuic XDP datapath accelerates the main data path without Ranz code touching AF_XDP. XDP is an optional acceleration for server nodes on Windows Server 2019/2022 x64; every node also runs on the normal datapath (Winsock, RIO, USO/URO). A custom UDP transport on AF_XDP is not built while the transport is QUIC.
+2. **QUIC traffic gets XDP only through MsQuic** (Accepted 2026-10-13, default off, Server x64 only). Ranz carries its L2 and L3 packets in QUIC datagrams, so the MsQuic XDP datapath accelerates the main data path without Ranz code touching AF_XDP. XDP is an optional acceleration for server nodes on Windows Server x64; every node also runs on the normal datapath (Winsock with IOCP, USO/URO; **RIO is crossed out**, ADR-0008). A custom UDP transport on AF_XDP is not built while the transport is QUIC.
 3. **Bridge backends, by attachment type** (Accepted 2026-10-13). The new core's Local Bridge has a backend interface; which backends apply depends on what the hub is attached to:
    - **Physical NIC (bridge to a LAN):** SeLow (default; prebuilt, bundled, works today); Npcap (optional; used only when the administrator installed it, never bundled, so no Npcap OEM licence is needed); XDP + Npcap (XDP carries the frames, Npcap only keeps the NIC in promiscuous mode, which XDP cannot set yet: xdp-for-windows issue #44). When issue #44 is resolved, XDP alone replaces the XDP + Npcap combination.
    - **Virtual (KM-TEST loopback adapter, the L2 adapter of decision 4):** XDP only, through its TX inspect and RX inject hooks; promiscuous mode is not needed there.
@@ -28,3 +28,15 @@ Fact corrections (2026-10-13, from the repository's CI and releases): XDP for Wi
 - Server deployments that want maximum throughput install the XDP runtime and enable it. Nodes that use an L2 network need the XDP runtime for the loopback adapter (decision 4); the transport never depends on it.
 - Packets redirected to AF_XDP sockets are not seen by Windows Firewall/WFP; any XDP backend must apply its own filtering, and the documentation must say so.
 - If the Local Bridge spike succeeds, Ranz stops depending on a frozen, third-party-signed driver binary (SeLow ships prebuilt and cannot be rebuilt or extended, e.g. to arm64, without a driver-signing pipeline of our own) on the server platforms XDP supports.
+
+## Amendment 2026-10-13: decision 2 accepted, RIO crossed out, rule API now / eBPF later, signature re-check
+
+The 2026-10-13 grilling (new-core round; `spike-xdp-result.md`, `spike-xdp-ebpf-result.md`, `facts-xdp.md`) settled the open points:
+
+- **Decision 2 is Accepted:** QUIC acceleration through the MsQuic XDP datapath, **default off, Server x64 only** — one flag, no Ranz AF_XDP code.
+- **RIO is crossed out** (ADR-0008): the normal datapath is Winsock with IOCP plus USO/URO. Decision 2's text above is corrected.
+- **Ship on the XDP 1.4 rule API now; eBPF later.** The rule API (`XdpCreateProgram`) is the only XDP path that captures the frames the OS sends, and it is supported until 2028-01-29. The **eBPF path is rejected for now**: the `spike/xdp-ebpf` result is conclusive that eBPF for Windows has no TX-inspect hook (every program attaches to `{L2, RX, INSPECT}`, and KM-TEST does not loop TX back to RX), and there is **no production-signed eBPF for Windows runtime** (it needs test signing and Secure Boot off). Finish the eBPF spike in parallel and switch only when eBPF-for-Windows installs cleanly and is production-signed; re-run the spike on every XDP release.
+- **Re-verify the `xdp.sys` signature before decision 4 is final.** The spike ran on hosted runners with test signing on; re-run it on a Server 2022 VM with **Secure Boot on and test signing off** to confirm the nuget.org `xdp.sys` is production-signed (not attestation-signed, which Server refuses) before the loopback design is treated as proven. `signtool verify /kp` already passes on the nuget.org 1.4.0 `xdp.sys`.
+- **Install path:** a separate `Install-RanzXdp.ps1` (wrapping `xdp-setup.ps1`); the MSI does not bundle XDP for v1 (ADR-0022).
+- **QTIP (decision 5) lands at strangler step 7** (ADR-0022), default port **8443** (both TCP and UDP reserved, configurable), proven with a two-VM spike.
+- **KM-TEST details (decision 4):** per-adapter locally administered MAC from the node id and network id; forward ARP/IGMP/LLMNR/NetBIOS chatter and rate-limit broadcast per VLAN; add broadcast, multicast and 802.1Q-tagged injection to the spike.

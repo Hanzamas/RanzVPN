@@ -1,6 +1,7 @@
 // fuzz_x509.c
-// libFuzzer target: X.509 certificate loading from a buffer (BufToX), DER and PEM, and
-// the conversion of the parsed certificate into Mayaqua's X (X509ToX)
+// libFuzzer target: X.509 certificate loading from a buffer (BufToX), DER and PEM, PEM
+// certificate bundles (BufToXList, as for a chain file), and the conversion of the parsed
+// certificates into Mayaqua's X (X509ToX)
 
 #include "fuzz_common.h"
 
@@ -17,9 +18,8 @@ static bool FuzzHasEncryptedTag(const uint8_t *data, size_t size)
 {
 	static const char tag[] = "ENCRYPTED";
 	size_t tag_len = sizeof(tag) - 1;
-	size_t i;
 
-	for (i = 0;i + tag_len <= size;i++)
+	for (size_t i = 0;i + tag_len <= size;i++)
 	{
 		if (memcmp(data + i, tag, tag_len) == 0)
 		{
@@ -35,12 +35,11 @@ static void FuzzX509(const uint8_t *data, size_t size)
 {
 	BUF *b = FuzzNewBuf(data, size);
 	UINT num_passes = FuzzHasEncryptedTag(data, size) ? 1 : 2;
-	UINT i;
 
 	// Callers pass text = false (DER) or text = IsBase64(b) (PEM); try both on every input,
 	// except PEM when the input could hold an encrypted PEM header (see above).
-	// BufToX() frees b only when it cannot allocate an OpenSSL BIO, which does not happen here.
-	for (i = 0;i < num_passes;i++)
+	// BufToX() and BufToXList() never free b.
+	for (UINT i = 0;i < num_passes;i++)
 	{
 		X *x = BufToX(b, i == 1);
 
@@ -53,6 +52,12 @@ static void FuzzX509(const uint8_t *data, size_t size)
 			FreeBuf(der);
 			FreeBuf(pem);
 			FreeX(x);
+		}
+
+		// The PEM pass also reads the input as a bundle of certificates
+		if (i == 1)
+		{
+			FreeXList(BufToXList(b, true));
 		}
 	}
 

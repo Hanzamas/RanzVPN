@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
-
 // Bridge.c
 // Ethernet Bridge Program (Local Bridge)
 
@@ -13,93 +9,26 @@
 #include "Session.h"
 
 #include "Mayaqua/Memory.h"
-#include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Object.h"
 #include "Mayaqua/Str.h"
 #include "Mayaqua/TcpIp.h"
+#include "Mayaqua/Tick64.h"
 
-// Hash the list of current Ethernet devices
-UINT GetEthDeviceHash()
-{
-	// Win32
-	UINT ret = 0;
-	MS_ADAPTER_LIST *a = MsCreateAdapterListEx(true);
-	UINT num;
-	UINT i;
-	char tmp[4096];
-	UCHAR hash[SHA1_SIZE];
-
-	tmp[0] = 0;
-	if (a != NULL)
-	{
-		for (i = 0;i < a->Num;i++)
-		{
-			StrCat(tmp, sizeof(tmp), a->Adapters[i]->Title);
-		}
-	}
-	MsFreeAdapterList(a);
-
-	Sha0(hash, tmp, StrLen(tmp));
-
-	Copy(&num, hash, sizeof(UINT));
-
-	return num;
-}
-
-// Get whether the local-bridging is supported by current OS
-bool IsBridgeSupported()
-{
-	UINT type = GetOsInfo()->OsType;
-
-	if (OS_IS_WINDOWS(type))
-	{
-		if (IsEthSupported())
-		{
-			return true;
-		}
-		else
-		{
-			bool ret = false;
-
-#ifdef	OS_WIN32
-			ret = MsIsAdmin();
-#endif	// OS_WIN32
-
-			return ret;
-		}
-	}
-	else
-	{
-		return IsEthSupported();
-	}
-}
-
-// Delete a local-bridge
-bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename)
-{
+bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename) {
 	bool ret = false;
-	// Validate arguments
 	if (c == NULL || hubname == NULL || devicename == NULL)
-	{
 		return false;
-	}
 
 	LockList(c->HubList);
 	{
 		LockList(c->LocalBridgeList);
 		{
-			UINT i;
-
-			for (i = 0;i < LIST_NUM(c->LocalBridgeList);i++)
-			{
+			for (UINT i = 0; i < LIST_NUM(c->LocalBridgeList); i++) {
 				LOCALBRIDGE *br = LIST_DATA(c->LocalBridgeList, i);
 
-				if (StrCmpi(br->HubName, hubname) == 0)
-				{
-					if (StrCmpi(br->DeviceName, devicename) == 0)
-					{
-						if (br->Bridge != NULL)
-						{
+				if (StrCmpi(br->HubName, hubname) == 0) {
+					if (StrCmpi(br->DeviceName, devicename) == 0) {
+						if (br->Bridge != NULL) {
 							BrFreeBridge(br->Bridge);
 							br->Bridge = NULL;
 						}
@@ -120,22 +49,11 @@ bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename)
 	return ret;
 }
 
-// Add a local-bridge
-void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool monitor, bool tapmode, char *tapaddr, bool limit_broadcast)
-{
-	UINT i;
+void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool monitor, bool limit_broadcast) {
 	HUB *h = NULL;
 	LOCALBRIDGE *br = NULL;
-	// Validate arguments
 	if (c == NULL || hubname == NULL || devicename == NULL)
-	{
 		return;
-	}
-
-	if (OS_IS_UNIX(GetOsInfo()->OsType) == false)
-	{
-		tapmode = false;
-	}
 
 	LockList(c->HubList);
 	{
@@ -143,53 +61,28 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 		{
 			bool exists = false;
 
-			// Ensure that the same configuration local-bridge doesn't exist already 
-			for (i = 0;i < LIST_NUM(c->LocalBridgeList);i++)
-			{
+			for (UINT i = 0; i < LIST_NUM(c->LocalBridgeList); i++) {
 				LOCALBRIDGE *br = LIST_DATA(c->LocalBridgeList, i);
-				if (StrCmpi(br->DeviceName, devicename) == 0)
-				{
+				if (StrCmpi(br->DeviceName, devicename) == 0) {
 					if (StrCmpi(br->HubName, hubname) == 0)
-					{
-						if (br->TapMode == tapmode)
-						{
-							exists = true;
-						}
-					}
+						exists = true;
 				}
 			}
 
-			if (exists == false)
-			{
-				// Add configuration
+			if (exists == false) {
 				br = ZeroMalloc(sizeof(LOCALBRIDGE));
 				StrCpy(br->HubName, sizeof(br->HubName), hubname);
 				StrCpy(br->DeviceName, sizeof(br->DeviceName), devicename);
 				br->Bridge = NULL;
 				br->Local = local;
-				br->TapMode = tapmode;
 				br->LimitBroadcast = limit_broadcast;
 				br->Monitor = monitor;
-				if (br->TapMode)
-				{
-					if (tapaddr != NULL && IsZero(tapaddr, 6) == false)
-					{
-						Copy(br->TapMacAddress, tapaddr, 6);
-					}
-					else
-					{
-						GenMacAddress(br->TapMacAddress);
-					}
-				}
 
 				Add(c->LocalBridgeList, br);
 
-				// Find the hub
-				for (i = 0;i < LIST_NUM(c->HubList);i++)
-				{
+				for (UINT i = 0; i < LIST_NUM(c->HubList); i++) {
 					HUB *hub = LIST_DATA(c->HubList, i);
-					if (StrCmpi(hub->Name, br->HubName) == 0)
-					{
+					if (StrCmpi(hub->Name, br->HubName) == 0) {
 						h = hub;
 						AddRef(h->ref);
 						break;
@@ -201,21 +94,15 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 	}
 	UnlockList(c->HubList);
 
-	// Start the local-bridge immediately
-	if (h != NULL && br != NULL)
-	{
+	if (h != NULL && br != NULL) {
 		Lock(h->lock_online);
 		{
-			if (h->Offline == false)
-			{
+			if (h->Offline == false) {
 				LockList(c->LocalBridgeList);
 				{
-					if (IsInList(c->LocalBridgeList, br))
-					{
+					if (IsInList(c->LocalBridgeList, br)) {
 						if (br->Bridge == NULL)
-						{
-							br->Bridge = BrNewBridge(h, br->DeviceName, NULL, br->Local, br->Monitor, br->TapMode, br->TapMacAddress, br->LimitBroadcast, br);
-						}
+							br->Bridge = BrNewBridge(h, br);
 					}
 				}
 				UnlockList(c->LocalBridgeList);
@@ -227,30 +114,18 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 	ReleaseHub(h);
 }
 
-// Initialize the local-bridge list
-void InitLocalBridgeList(CEDAR *c)
-{
-	// Validate arguments
+void InitLocalBridgeList(CEDAR *c) {
 	if (c == NULL)
-	{
 		return;
-	}
 
 	c->LocalBridgeList = NewList(NULL);
 }
 
-// Free the local-bridge list
-void FreeLocalBridgeList(CEDAR *c)
-{
-	UINT i;
-	// Validate arguments
+void FreeLocalBridgeList(CEDAR *c) {
 	if (c == NULL)
-	{
 		return;
-	}
 
-	for (i = 0;i < LIST_NUM(c->LocalBridgeList);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(c->LocalBridgeList); i++) {
 		LOCALBRIDGE *br = LIST_DATA(c->LocalBridgeList, i);
 		Free(br);
 	}
@@ -259,50 +134,34 @@ void FreeLocalBridgeList(CEDAR *c)
 	c->LocalBridgeList = NULL;
 }
 
-// Bridging thread
-void BrBridgeThread(THREAD *thread, void *param)
-{
-	BRIDGE *b;
-	CONNECTION *c;
-	SESSION *s;
-	HUB *h;
+static void BrBridgeThread(THREAD *thread, void *param) {
 	char name[MAX_SIZE];
-	// Validate arguments
 	if (thread == NULL || param == NULL)
-	{
 		return;
-	}
 
-	b = (BRIDGE *)param;
+	BRIDGE *b = (BRIDGE *)param;
 
-	// Create a connection object
-	c = NewServerConnection(b->Cedar, NULL, thread);
+	CONNECTION *c = NewServerConnection(b->Cedar, NULL, thread);
 	c->Protocol = CONNECTION_HUB_BRIDGE;
 
-	// Create a session object
-	s = NewServerSession(b->Cedar, c, b->Hub, BRIDGE_USER_NAME, b->Policy);
+	SESSION *s = NewServerSession(b->Cedar, c, b->Hub, BRIDGE_USER_NAME, b->Policy);
 	HLog(b->Hub, "LH_START_BRIDGE", b->Name, s->Name);
 	StrCpy(name, sizeof(name), b->Name);
-	h = b->Hub;
+	HUB *h = b->Hub;
 	AddRef(h->ref);
 	s->BridgeMode = true;
 	s->Bridge = b;
 	c->Session = s;
 	ReleaseConnection(c);
 
-	// Dummy user name for local-bridge
 	s->Username = CopyStr(BRIDGE_USER_NAME_PRINT);
 
 	b->Session = s;
 	AddRef(s->ref);
 
-	// Notify completion
 	NoticeThreadInit(thread);
 
-	// Main procedure of the session
-	Debug("Bridge %s Start.\n", b->Name);
 	SessionMain(s);
-	Debug("Bridge %s Stop.\n", b->Name);
 
 	HLog(h, "LH_STOP_BRIDGE", name);
 
@@ -311,88 +170,202 @@ void BrBridgeThread(THREAD *thread, void *param)
 	ReleaseSession(s);
 }
 
-// Free the local-bridge object
-void BrFreeBridge(BRIDGE *b)
-{
-	// Validate arguments
+void BrFreeBridge(BRIDGE *b) {
 	if (b == NULL)
-	{
 		return;
-	}
 
 	if (b->ParentLocalBridge != NULL)
-	{
 		b->ParentLocalBridge = NULL;
-	}
 
-	// Stop session thread
 	StopSession(b->Session);
 	ReleaseSession(b->Session);
 
 	Free(b);
 }
 
-// Create new local-bridge
-BRIDGE *BrNewBridge(HUB *h, char *name, POLICY *p, bool local, bool monitor, bool tapmode, char *tapaddr, bool limit_broadcast, LOCALBRIDGE *parent_local_bridge)
-{
-	BRIDGE *b;
-	POLICY *policy;
-	THREAD *t;
-	// Validate arguments
-	if (h == NULL || name == NULL || parent_local_bridge == NULL)
-	{
+BRIDGE *BrNewBridge(HUB *h, LOCALBRIDGE *parent_local_bridge) {
+	if (h == NULL || parent_local_bridge == NULL)
 		return NULL;
-	}
 
-	if (p == NULL)
-	{
-		policy = ClonePolicy(GetDefaultPolicy());
-	}
-	else
-	{
-		policy = ClonePolicy(p);
-	}
+	POLICY *policy = ClonePolicy(GetDefaultPolicy());
 
-	b = ZeroMalloc(sizeof(BRIDGE));
+	BRIDGE *b = ZeroMalloc(sizeof(BRIDGE));
 	b->Cedar = h->Cedar;
 	b->Hub = h;
-	StrCpy(b->Name, sizeof(b->Name), name);
+	StrCpy(b->Name, sizeof(b->Name), parent_local_bridge->DeviceName);
 	b->Policy = policy;
-	b->Local = local;
-	b->Monitor = monitor;
-	b->TapMode = tapmode;
-	b->LimitBroadcast = limit_broadcast;
 	b->ParentLocalBridge = parent_local_bridge;
 
-	if (b->TapMode)
-	{
-		if (tapaddr != NULL && IsZero(tapaddr, 6) == false)
-		{
-			Copy(b->TapMacAddress, tapaddr, 6);
-		}
-		else
-		{
-			GenMacAddress(b->TapMacAddress);
-		}
-	}
-
-	if (monitor)
-	{
-		// Enabling monitoring mode
+	if (parent_local_bridge->Monitor)
 		policy->MonitorPort = true;
-	}
 
-	if (b->LimitBroadcast == false)
-	{
-		// Disable broadcast limiter
+	if (parent_local_bridge->LimitBroadcast == false)
 		policy->NoBroadcastLimiter = true;
-	}
 
-	// Start thread
-	t = NewThread(BrBridgeThread, b);
+	THREAD *t = NewThread(BrBridgeThread, b);
 	WaitThreadInit(t);
 	ReleaseThread(t);
 
 	return b;
+}
+
+// Sends the blocks queued on a Local Bridge connection to its Ethernet device
+void BrSendBlocks(CONNECTION *c) {
+	if (c == NULL)
+		return;
+
+	SESSION *s = c->Session;
+	HUB *hub = s->Hub;
+	BRIDGE *b = s->Bridge;
+
+	if (b != NULL) {
+		if (b->Active) {
+			BLOCK *block;
+			UINT num_packet = c->SendBlocks->num_item;
+
+			if (num_packet != 0) {
+				void **datas = Malloc(sizeof(void *) * num_packet);
+				UINT *sizes = Malloc(sizeof(UINT) * num_packet);
+
+				UINT i = 0;
+				while (block = GetNext(c->SendBlocks)) {
+					if (hub != NULL && hub->Option->DisableUdpFilterForLocalBridgeNic == false &&
+					    b->Eth != NULL && IsDhcpPacketForSpecificMac(block->Buf, block->Size, b->Eth->MacAddress)) {
+						datas[i] = NULL;
+						sizes[i] = 0;
+
+						Free(block->Buf);
+					} else {
+						datas[i] = block->Buf;
+						sizes[i] = block->Size;
+					}
+
+					c->CurrentSendQueueSize -= block->Size;
+					Free(block);
+					i++;
+				}
+
+				EthPutPackets(b->Eth, num_packet, datas, sizes);
+
+				Free(datas);
+				Free(sizes);
+			}
+		}
+	}
+}
+
+// Takes the frames that the Ethernet device of a Local Bridge connection has received, or
+// opens the device again while the bridge is not active
+void BrReceiveBlocks(CONNECTION *c, CANCEL *c1, CANCEL *c2) {
+	bool no_spinlock_for_delay = false;
+	if (c == NULL)
+		return;
+
+	SESSION *s = c->Session;
+	HUB *hub = s->Hub;
+	BRIDGE *b = s->Bridge;
+
+	if (hub != NULL)
+		no_spinlock_for_delay = hub->Option->NoSpinLockForPacketDelay;
+
+	if (b->Active) {
+		void *data;
+		UINT ret;
+		UINT num = 0;
+		bool device_changed = false;
+		UINT time = SELECT_TIME;
+		UINT next_delay_packet_diff = 0;
+		UINT num_delayed = 0;
+
+		next_delay_packet_diff = GetNextDelayedPacketTickDiff(s);
+		time = MIN(time, next_delay_packet_diff);
+		num_delayed = LIST_NUM(s->DelayedPacketList);
+
+		// Frames left in the bridge's receive buffer by the last drain do not
+		// signal c2, so take them without waiting
+		if (EthHasPendingFrames(b->Eth))
+			Select(NULL, 0, c1, c2);
+		else if (no_spinlock_for_delay || time >= 50 || num_delayed == false)
+			Select(NULL, (num_delayed == 0 ? time : (time > 100 ? (time - 100) : 1)), c1, c2);
+		else
+			YieldCpu();
+
+		if ((b->LastNumDeviceCheck + BRIDGE_NUM_DEVICE_CHECK_SPAN) <= Tick64()) {
+			device_changed = (b->LastNumDevice != GetEthDeviceHash());
+			b->LastNumDeviceCheck = Tick64();
+		}
+
+		while (true) {
+			if (device_changed)
+				ret = INFINITE;
+			else
+				ret = EthGetPacket(b->Eth, &data);
+
+			if (ret == INFINITE) {
+				CloseEth(b->Eth);
+				b->Eth = NULL;
+				b->Active = false;
+				ReleaseCancel(s->Cancel2);
+				s->Cancel2 = NULL;
+
+				HLog(s->Hub, "LH_BRIDGE_2", s->Name, b->Name);
+
+				break;
+			} else if (ret == 0) {
+				break;
+			} else if (hub != NULL && hub->Option->DisableUdpFilterForLocalBridgeNic == false &&
+			           b->Eth != NULL && IsDhcpPacketForSpecificMac(data, ret, b->Eth->MacAddress)) {
+				Free(data);
+			} else {
+				BLOCK *block = NewBlock(data, ret, 0);
+
+				if (block->Size > MAX_PACKET_SIZE)
+					FreeBlock(block);
+				else
+					InsertReceivedBlockToQueue(c, block);
+				num++;
+				if (num >= MAX_SEND_SOCKET_QUEUE_NUM)
+					break;
+			}
+		}
+	} else {
+		ETH *e;
+		Select(NULL, SELECT_TIME, c1, NULL);
+
+		if (b->LastBridgeTry == 0 || (b->LastBridgeTry + BRIDGE_TRY_SPAN) <= Tick64()) {
+			b->LastBridgeTry = Tick64();
+
+			e = OpenEth(b->Name);
+			if (e != NULL) {
+				b->Eth = e;
+				b->Active = true;
+				b->LastNumDeviceCheck = Tick64();
+				b->LastNumDevice = GetEthDeviceHash();
+
+				if (IsEmptyStr(e->Title) == false) {
+					StrCpy(b->Name, sizeof(b->Name), e->Title);
+
+					if (b->ParentLocalBridge != NULL)
+						StrCpy(b->ParentLocalBridge->DeviceName, sizeof(b->ParentLocalBridge->DeviceName), e->Title);
+				}
+
+
+				HLog(c->Session->Hub, "LH_BRIDGE_1", c->Session->Name, b->Name);
+
+				s->Cancel2 = EthGetCancel(b->Eth);
+			}
+		}
+	}
+}
+
+// Closes the Ethernet device of a Local Bridge session whose session loop has ended
+void BrSessionCleanup(SESSION *s) {
+	if (s == NULL)
+		return;
+
+	if (s->Bridge->Active) {
+		CloseEth(s->Bridge->Eth);
+		s->Bridge->Eth = NULL;
+	}
 }
 

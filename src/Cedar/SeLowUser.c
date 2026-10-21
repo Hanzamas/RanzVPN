@@ -1,18 +1,17 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
 // SeLow: SoftEther Lightweight Network Protocol
 
 
 // SeLowUser.c
 // SoftEther Lightweight Network Protocol User-mode Library
 
-#ifdef OS_WIN32
 
 #include "SeLowUser.h"
 
-#include "BridgeWin32.h"
+#include "Cedar.h"
 #include "Win32Com.h"
 
 #include "Mayaqua/Cfg.h"
+#include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Microsoft.h"
@@ -20,275 +19,218 @@
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Tick64.h"
 
+#include <SetupAPI.h>
+#include <sddl.h>
 #include <winioctl.h>
 
-// Load the drivers hive
-bool SuLoadDriversHive()
-{
-	wchar_t config_dir[MAX_PATH];
-	wchar_t filename[MAX_PATH];
+static SU *SuInitMain(UINT wait_for_bind_complete_tick, bool start_service, bool install);
+static bool SuInstallDriver();
 
-	MsEnablePrivilege(SE_RESTORE_NAME, true);
-	MsEnablePrivilege(SE_BACKUP_NAME, true);
+// True if the published INF oem_name (an oemNN.inf in %windir%\inf) is a copy
+// of a SoftEther SeLow INF: its original name starts with "selow" and its
+// provider contains "softether"
+static bool SuIsSeLowOemInf(wchar_t *oem_name) {
+	HINF inf;
+	SP_INF_INFORMATION *info;
+	SP_ORIGINAL_FILE_INFO_W original;
+	INFCONTEXT ctx;
+	wchar_t provider[MAX_SIZE];
+	DWORD info_size = 0;
+	bool ret = false;
 
-	CombinePathW(config_dir, sizeof(config_dir), MsGetSystem32DirW(), L"config");
-	CombinePathW(filename, sizeof(filename), config_dir, L"DRIVERS");
+	inf = SetupOpenInfFileW(oem_name, NULL, INF_STYLE_WIN4, NULL);
+	if (inf == INVALID_HANDLE_VALUE)
+		return false;
 
-	return MsRegLoadHive(REG_LOCAL_MACHINE, L"DRIVERS", filename);
-}
+	if (SetupGetInfInformationW(inf, INFINFO_INF_SPEC_IS_HINF, NULL, 0, &info_size) && info_size != 0) {
+		info = ZeroMalloc(info_size);
 
-// Unload the drivers hive
-bool SuUnloadDriversHive()
-{
-	// todo: always failed.
-	return MsRegUnloadHive(REG_LOCAL_MACHINE, L"DRIVERS");
-}
+		Zero(&original, sizeof(original));
+		original.cbSize = sizeof(original);
 
-// Delete garbage inf files
-void SuDeleteGarbageInfs()
-{
-	void *wow;
-	bool load_hive = false;
-	Debug("SuDeleteGarbageInfs()\n");
+		if (SetupGetInfInformationW(inf, INFINFO_INF_SPEC_IS_HINF, info, info_size, NULL) &&
+		    SetupQueryInfOriginalFileInformationW(info, 0, NULL, &original) &&
+		    UniStartWith(original.OriginalInfName, L"selow") &&
+		    SetupFindFirstLineW(inf, L"Version", L"Provider", &ctx) &&
+		    SetupGetStringFieldW(&ctx, 1, provider, sizeof(provider) / sizeof(wchar_t), NULL) &&
+		    UniSearchStrEx(provider, L"softether", 0, false) != INFINITE)
+			ret = true;
 
-	wow = MsDisableWow64FileSystemRedirection();
-
-	load_hive = SuLoadDriversHive();
-	Debug("SuLoadDriversHive: %u\n", load_hive);
-
-	SuDeleteGarbageInfsInner();
-
-	/*
-	if (load_hive)
-	{
-		Debug("SuUnloadDriversHive: %u\n", SuUnloadDriversHive());
-	}*/
-
-	MsRestoreWow64FileSystemRedirection(wow);
-}
-void SuDeleteGarbageInfsInner()
-{
-	char *base_key_name = "DRIVERS\\DriverDatabase\\DriverPackages";
-	TOKEN_LIST *keys;
-	HINSTANCE hSetupApiDll = NULL;
-	BOOL (WINAPI *_SetupUninstallOEMInfA)(PCSTR, DWORD, PVOID) = NULL;
-
-	hSetupApiDll = LoadLibraryA("setupapi.dll");
-	if (hSetupApiDll == NULL)
-	{
-		return;
+		Free(info);
 	}
 
-    #pragma clang diagnostic push
-    #pragma clang diagnostic ignored "-Wincompatible-function-pointer-types"
-	_SetupUninstallOEMInfA =
-		(UINT (__stdcall *)(PCSTR,DWORD,PVOID))
-		GetProcAddress(hSetupApiDll, "SetupUninstallOEMInfA");
-    #pragma clang diagnostic pop
-
-	if (_SetupUninstallOEMInfA != NULL)
-	{
-		keys = MsRegEnumKeyEx2(REG_LOCAL_MACHINE, base_key_name, false, true);
-
-		if (keys != NULL)
-		{
-			char full_key[MAX_PATH];
-			UINT i;
-
-			for (i = 0;i < keys->NumTokens;i++)
-			{
-				char *oem_name, *inf_name, *provider;
-
-				Format(full_key, sizeof(full_key), "%s\\%s", base_key_name, keys->Token[i]);
-
-				oem_name = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "", false, true);
-				inf_name = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "InfName", false, true);
-				provider = MsRegReadStrEx2(REG_LOCAL_MACHINE, full_key, "Provider", false, true);
-
-				if (IsEmptyStr(oem_name) == false && IsEmptyStr(inf_name) == false)
-				{
-					if (StartWith(oem_name, "oem"))
-					{
-						if (StartWith(inf_name, "selow"))
-						{
-							if (InStr(provider, "softether"))
-							{
-								Debug("Delete OEM INF %s (%s): %u\n",
-									oem_name, inf_name,
-									_SetupUninstallOEMInfA(oem_name, 0x00000001, NULL));
-							}
-						}
-					}
-				}
-
-				Free(oem_name);
-				Free(inf_name);
-				Free(provider);
-			}
-
-			FreeToken(keys);
-		}
-	}
-
-	if (hSetupApiDll != NULL)
-	{
-		FreeLibrary(hSetupApiDll);
-	}
-}
-
-// Install the driver
-bool SuInstallDriver(bool force)
-{
-	bool ret;
-	void *wow;
-
-	wow = MsDisableWow64FileSystemRedirection();
-
-	ret = SuInstallDriverInner(force);
-
-	MsRestoreWow64FileSystemRedirection(wow);
+	SetupCloseInfFile(inf);
 
 	return ret;
 }
-bool SuInstallDriverInner(bool force)
-{
-	wchar_t sys_fullpath[MAX_PATH];
-	UINT current_sl_ver = 0;
-	bool ret = false;
-	wchar_t src_cat[MAX_PATH];
-	wchar_t src_inf[MAX_PATH];
-	wchar_t src_sys[MAX_PATH];
-	wchar_t dst_cat[MAX_PATH];
-	wchar_t dst_inf[MAX_PATH];
-	wchar_t dst_sys[MAX_PATH];
-	wchar_t tmp_dir[MAX_PATH];
-	char *cpu_type = MsIsX64() ? "x64" : "x86";
 
-	if (SuIsSupportedOs(true) == false)
-	{
-		// Unsupported OS
+// Remove the stale oemNN.inf copies of SeLow from the driver store
+static void SuDeleteGarbageInfs() {
+	wchar_t *list;
+	wchar_t *name;
+	DWORD list_size = 0;
+
+	if (SetupGetInfFileListW(NULL, INF_STYLE_WIN4, NULL, 0, &list_size) && list_size != 0) {
+		list = ZeroMalloc(list_size * sizeof(wchar_t));
+
+		if (SetupGetInfFileListW(NULL, INF_STYLE_WIN4, list, list_size, NULL)) {
+			for (name = list; name < list + list_size && *name != 0; name += UniStrLen(name) + 1) {
+				if (UniStartWith(name, L"oem") && SuIsSeLowOemInf(name)) {
+					BOOL deleted = SetupUninstallOEMInfW(name, SUOI_FORCEDELETE, NULL);
+
+					Debug("Delete OEM INF %S: %u\n", name, deleted);
+				}
+			}
+		}
+
+		Free(list);
+	}
+}
+
+// Driver install step: SuInstallDriver, or the stub that a test sets with SuSetInstallProc
+static SU_INSTALL_PROC *su_install_proc = SuInstallDriver;
+// Nonzero once the install step ran in this process: it runs at most once per process, also
+// after a failed install. Local Bridge session threads and the RPC threads race on it, so it is
+// taken only with InterlockedCompareExchange
+static volatile LONG su_install_tried = 0;
+
+// Test seam (vpntest selow): replace the driver install step with proc; NULL restores
+// SuInstallDriver. Also forgets an earlier install attempt, so the next one runs the step again
+void SuSetInstallProc(SU_INSTALL_PROC *proc) {
+	su_install_proc = (proc != NULL ? proc : SuInstallDriver);
+	InterlockedExchange(&su_install_tried, 0);
+}
+
+// Remove a staging directory made by SuStageDriverPackage and everything in it
+void SuUnstageDriverPackage(wchar_t *dir) {
+	if (UniIsEmptyStr(dir))
+		return;
+
+	MsDeleteAllFileW(dir);
+
+	if (RemoveDirectoryW(dir) == FALSE)
+		Debug("SuUnstageDriverPackage: RemoveDirectoryW(%S) failed: %u\n", dir, (UINT)GetLastError());
+}
+
+// Stage the driver package for one install attempt: make a new directory with a random name under
+// %WINDIR%\Temp that only SYSTEM and Administrators can open, and copy the package files into it.
+// CreateDirectoryW fails on a name that exists, so nothing is ever written through a directory or
+// junction that someone else planted there. dir receives the path. On failure nothing stays behind
+bool SuStageDriverPackage(wchar_t *dir, UINT dir_size) {
+	wchar_t *files[] = {SU_PACKAGE_SYS, SU_PACKAGE_CAT, SU_PACKAGE_INF};
+	wchar_t temp_dir[MAX_PATH];
+	wchar_t name[SU_STAGE_RANDOM_SIZE * 2 + 1];
+	UCHAR random[SU_STAGE_RANDOM_SIZE];
+	SECURITY_ATTRIBUTES sa;
+	PSECURITY_DESCRIPTOR sd = NULL;
+	bool created = false;
+	UINT err = 0;
+
+	if (dir == NULL || dir_size == 0)
+		return false;
+
+	dir[0] = 0;
+
+	if (ConvertStringSecurityDescriptorToSecurityDescriptorW(SU_STAGE_DIR_SDDL, SDDL_REVISION_1, &sd, NULL) == FALSE) {
+		Debug("SuStageDriverPackage: ConvertStringSecurityDescriptorToSecurityDescriptorW failed: %u\n", (UINT)GetLastError());
 		return false;
 	}
 
-	CombinePathW(tmp_dir, sizeof(tmp_dir), MsGetWindowsDirW(), L"Temp");
-	MakeDirExW(tmp_dir);
+	Zero(&sa, sizeof(sa));
+	sa.nLength = sizeof(sa);
+	sa.lpSecurityDescriptor = sd;
+	sa.bInheritHandle = FALSE;
 
-	UniStrCat(tmp_dir, sizeof(tmp_dir), L"\\selowtmp");
-	MakeDirExW(tmp_dir);
+	CombinePathW(temp_dir, sizeof(temp_dir), MsGetWindowsDirW(), L"Temp");
 
-	// Confirm whether the driver is currently installed
-	CombinePathW(sys_fullpath, sizeof(sys_fullpath), MsGetSystem32DirW(), L"drivers\\SeLow_%S.sys");
-	UniFormat(sys_fullpath, sizeof(sys_fullpath), sys_fullpath, cpu_type);
+	for (UINT i = 0; i < SU_STAGE_MAX_TRIES; i++) {
+		Rand(random, sizeof(random));
+		BinToStrW(name, sizeof(name), random, sizeof(random));
+		UniFormat(dir, dir_size, L"%s\\selow_%s", temp_dir, name);
 
-	if (IsFileExistsW(sys_fullpath))
-	{
-		char *path;
-
-		// Read the current version from the registry
-		current_sl_ver = MsRegReadIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME,
-			SL_REG_VER_VALUE_WIN10,
-			false, true);
-
-		path = MsRegReadStrEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "ImagePath", false, true);
-
-		if (IsEmptyStr(path) || IsFileExists(path) == false || MsIsServiceInstalled(SL_PROTOCOL_NAME) == false)
-		{
-			current_sl_ver = 0;
+		if (CreateDirectoryW(dir, &sa)) {
+			created = true;
+			break;
 		}
 
-		Free(path);
+		// Only a name clash is worth another name
+		err = GetLastError();
+		if (err != ERROR_ALREADY_EXISTS)
+			break;
 	}
 
-	if (force == false && current_sl_ver >= SL_VER)
-	{
-		// Newer version has already been installed
-		Debug("Newer SeLow is Installed. %u >= %u\n", current_sl_ver, SL_VER);
-		return true;
+	LocalFree(sd);
+
+	if (created == false) {
+		Debug("SuStageDriverPackage: CreateDirectoryW(%S) failed: %u\n", dir, err);
+		dir[0] = 0;
+		return false;
 	}
 
-	// Copy necessary files to a temporary directory
-	UniFormat(src_sys, sizeof(src_sys), L"|DriverPackages\\SeLow_Win10\\%S\\SeLow_%S.sys",
-		cpu_type, cpu_type);
-	// Windows 10 uses WHQL catalog files
-	UniFormat(src_cat, sizeof(src_cat), L"|DriverPackages\\SeLow_Win10\\%S\\SeLow_Win10_%S.cat", cpu_type, cpu_type);
-	UniFormat(src_inf, sizeof(src_inf), L"|DriverPackages\\SeLow_Win10\\%S\\SeLow_%S.inf",
-		cpu_type, cpu_type);
+	for (UINT i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
+		wchar_t src[MAX_PATH];
+		wchar_t dst[MAX_PATH];
 
-	UniFormat(dst_sys, sizeof(dst_cat), L"%s\\SeLow_%S.sys", tmp_dir, cpu_type);
-	UniFormat(dst_cat, sizeof(dst_cat), L"%s\\SeLow_Win10_%S.cat", tmp_dir,
-		cpu_type);
+		UniFormat(src, sizeof(src), L"%s\\%s", SU_PACKAGE_DIR, files[i]);
+		UniFormat(dst, sizeof(dst), L"%s\\%s", dir, files[i]);
 
-	UniFormat(dst_inf, sizeof(dst_inf), L"%s\\SeLow_%S.inf", tmp_dir, cpu_type);
-
-	if (FileCopyW(src_sys, dst_sys) &&
-		FileCopyW(src_cat, dst_cat) &&
-		FileCopyW(src_inf, dst_inf))
-	{
-		NO_WARNING *nw;
-
-		nw = MsInitNoWarningEx(SL_USER_AUTO_PUSH_TIMER);
-
-		if (MsIsServiceInstalled(SL_PROTOCOL_NAME) == false && MsIsServiceRunning(SL_PROTOCOL_NAME) == false)
-		{
-			// On Windows 10, if there are no SwLow service installed, then uinstall the protocol driver first.
-			// TODO: currently do nothing. On some versions of Windows 10 beta builds it is necessary to do something...
+		if (FileCopyW(src, dst) == false) {
+			Debug("SuStageDriverPackage: FileCopyW(%S, %S) failed\n", src, dst);
+			SuUnstageDriverPackage(dir);
+			dir[0] = 0;
+			return false;
 		}
+	}
 
-		// Delete garbage INFs
+	return true;
+}
+
+static bool SuInstallDriver() {
+	wchar_t sys_fullpath[MAX_PATH];
+	bool ret = false;
+	wchar_t *src_sys = SU_PACKAGE_DIR L"\\" SU_PACKAGE_SYS;
+	wchar_t stage_dir[MAX_PATH];
+	wchar_t dst_inf[MAX_PATH];
+
+	if (SuIsSupportedOs() == false)
+		return false;
+
+	// Where the installed driver lives; SuCopySysFile also copies it there by hand
+	CombinePathW(sys_fullpath, sizeof(sys_fullpath), MsGetSystem32DirW(), L"drivers\\" SU_PACKAGE_SYS);
+
+	if (SuStageDriverPackage(stage_dir, sizeof(stage_dir))) {
+		UniFormat(dst_inf, sizeof(dst_inf), L"%s\\%s", stage_dir, SU_PACKAGE_INF);
+
 		SuDeleteGarbageInfs();
 
-		// Call the installer
-		if (InstallNdisProtocolDriver(dst_inf, L"SeLow", SL_USER_INSTALL_LOCK_TIMEOUT) == false)
-		{
-			Debug("InstallNdisProtocolDriver Error.\n");
-		}
-		else
-		{
-			Debug("InstallNdisProtocolDriver Ok.\n");
+		if (InstallNdisProtocolDriver(dst_inf)) {
+			// Also copy by hand: the installer sometimes fails to copy the .sys file
+			bool copied = SuCopySysFile(src_sys, sys_fullpath);
 
-			// Copy manually because there are cases where .sys file is not copied successfully for some reason
-			Debug("SuCopySysFile from %S to %s: ret = %u\n", src_sys, sys_fullpath, SuCopySysFile(src_sys, sys_fullpath));
+			Debug("SuCopySysFile from %S to %S: ret = %u\n", src_sys, sys_fullpath, copied);
 
 			ret = true;
 
-			// Write the version number into the registry
-			MsRegWriteIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME,
-				SL_REG_VER_VALUE_WIN10,
-				SL_VER, false, true);
-
-			// Set to automatic startup
-			MsRegWriteIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "Start", SERVICE_SYSTEM_START, false, true);
+			MsRegWriteIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "Start", SERVICE_SYSTEM_START, false);
 		}
 
-		MsFreeNoWarning(nw);
-	}
-	else
-	{
-		Debug("Fail Copying Files.\n");
+		// The driver store holds its own copy now: the staged one is no longer needed
+		SuUnstageDriverPackage(stage_dir);
 	}
 
+	// Wait for the new driver to bind: it may start the service, it never installs again
 	if (ret)
-	{
-		// If the service is installed this time, start and wait until the enumeration is completed
-		SuFree(SuInitEx(180 * 1000));
-	}
+		SuFree(SuInitMain(180 * 1000, true, false));
 
 	return ret;
 }
 
-// Copy a sys file
-bool SuCopySysFile(wchar_t *src, wchar_t *dst)
-{
+bool SuCopySysFile(wchar_t *src, wchar_t *dst) {
 	wchar_t dst_rename[MAX_PATH];
-	UINT i;
 	if (src == NULL || dst == NULL)
-	{
 		return false;
-	}
-	if (FileCopyW(src, dst))
-	{
-		for (i = 1;i <= 100;i++)
-		{
+	if (FileCopyW(src, dst)) {
+		for (UINT i = 1; i <= 100; i++) {
 			UniFormat(dst_rename, sizeof(dst_rename), L"%s.old%u", dst, i);
 
 			FileDeleteW(dst_rename);
@@ -297,30 +239,21 @@ bool SuCopySysFile(wchar_t *src, wchar_t *dst)
 		return true;
 	}
 
-	for (i = 1;;i++)
-	{
+	for (UINT i = 1;; i++) {
 		UniFormat(dst_rename, sizeof(dst_rename), L"%s.old%u", dst, i);
 
 		if (IsFileExistsW(dst_rename) == false)
-		{
 			break;
-		}
 
 		if (i >= 100)
-		{
 			return false;
-		}
 	}
 
 	if (MoveFileW(dst, dst_rename) == false)
-	{
 		return false;
-	}
 
-	if (FileCopyW(src, dst))
-	{
-		for (i = 1;i <= 100;i++)
-		{
+	if (FileCopyW(src, dst)) {
+		for (UINT i = 1; i <= 100; i++) {
 			UniFormat(dst_rename, sizeof(dst_rename), L"%s.old%u", dst, i);
 
 			FileDeleteW(dst_rename);
@@ -334,60 +267,43 @@ bool SuCopySysFile(wchar_t *src, wchar_t *dst)
 	return false;
 }
 
-// Get whether the current OS is supported by SeLow
-bool SuIsSupportedOs(bool on_install)
-{
-	if (MsRegReadIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "EnableSeLow", false, true) != 0)
-	{
-		// Force enable
+// SeLow is usable on this build and machine. Only an x64 driver package exists (hamcore
+// DriverPackages\SeLow_Win10\x64), so on arm64 it never is: no service start, no staging and no
+// install is tried there
+bool SuIsSupportedOs() {
+#if defined(_M_ARM64)
+	return false;
+#else  // defined(_M_ARM64)
+	if (MsRegReadIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "EnableSeLow", false) != 0)
 		return true;
-	}
 
-	if (MsRegReadIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "DisableSeLow", false, true) != 0)
-	{
-		// Force disable
+	if (MsRegReadIntEx2(REG_LOCAL_MACHINE, SL_REG_KEY_NAME, "DisableSeLow", false) != 0)
 		return false;
-	}
 
-	// Windows 10 or later are always supported.
 	return true;
+#endif // defined(_M_ARM64)
 }
 
-// Write the next packet to the driver
-bool SuPutPacket(SU_ADAPTER *a, void *buf, UINT size)
-{
-	// Validate arguments
+bool SuPutPacket(SU_ADAPTER *a, void *buf, UINT size) {
 	if (a == NULL)
-	{
 		return false;
-	}
 	if (a->Halt)
-	{
 		return false;
-	}
 	if (size > MAX_PACKET_SIZE)
-	{
 		return false;
-	}
 
-	// First, examine whether the current buffer is full
 	if ((SL_NUM_PACKET(a->PutBuffer) >= SL_MAX_PACKET_EXCHANGE) ||
-		(buf == NULL && SL_NUM_PACKET(a->PutBuffer) != 0))
-	{
-		// Write all current packets to the driver
+	    (buf == NULL && SL_NUM_PACKET(a->PutBuffer) != 0)) {
 		if (SuPutPacketsToDriver(a) == false)
-		{
 			return false;
-		}
 
 		SL_NUM_PACKET(a->PutBuffer) = 0;
 	}
 
-	// Add the next packet to the buffer
-	if (buf != NULL)
-	{
+	if (buf != NULL) {
 		UINT i = SL_NUM_PACKET(a->PutBuffer);
-		SL_NUM_PACKET(a->PutBuffer)++;
+		SL_NUM_PACKET(a->PutBuffer)
+		++;
 
 		SL_SIZE_OF_PACKET(a->PutBuffer, i) = size;
 		Copy(SL_ADDR_OF_PACKET(a->PutBuffer, i), buf, size);
@@ -398,30 +314,19 @@ bool SuPutPacket(SU_ADAPTER *a, void *buf, UINT size)
 	return true;
 }
 
-// Write all current packets to the driver
-bool SuPutPacketsToDriver(SU_ADAPTER *a)
-{
+bool SuPutPacketsToDriver(SU_ADAPTER *a) {
 	DWORD write_size;
-	// Validate arguments
 	if (a == NULL)
-	{
 		return false;
-	}
 	if (a->Halt)
-	{
 		return false;
-	}
 
-	if (WriteFile(a->hFile, a->PutBuffer, SL_EXCHANGE_BUFFER_SIZE, &write_size, NULL) == false)
-	{
+	if (WriteFile(a->hFile, a->PutBuffer, SL_EXCHANGE_BUFFER_SIZE, &write_size, NULL) == false) {
 		a->Halt = true;
-
-		SuCloseAdapterHandleInner(a);
 		return false;
 	}
 
-	if (write_size != SL_EXCHANGE_BUFFER_SIZE)
-	{
+	if (write_size != SL_EXCHANGE_BUFFER_SIZE) {
 		a->Halt = true;
 		return false;
 	}
@@ -429,45 +334,42 @@ bool SuPutPacketsToDriver(SU_ADAPTER *a)
 	return true;
 }
 
-// Read the next packet from the driver
-bool SuGetNextPacket(SU_ADAPTER *a, void **buf, UINT *size)
-{
-	// Validate arguments
+bool SuGetNextPacket(SU_ADAPTER *a, void **buf, UINT *size) {
 	if (a == NULL || buf == NULL || size == NULL)
-	{
 		return false;
-	}
 
 	if (a->Halt)
-	{
 		return false;
-	}
 
-	while (true)
-	{
-		if (a->CurrentPacketCount < SL_NUM_PACKET(a->GetBuffer))
-		{
-			// There are still packets that have been already read
+	while (true) {
+		if (a->CurrentPacketCount < SL_NUM_PACKET(a->GetBuffer)) {
 			*size = SL_SIZE_OF_PACKET(a->GetBuffer, a->CurrentPacketCount);
 			*buf = Malloc(*size);
 			Copy(*buf, SL_ADDR_OF_PACKET(a->GetBuffer, a->CurrentPacketCount), *size);
 
-			// Increment the packet number
 			a->CurrentPacketCount++;
+			a->LastGetHadPacket = true;
 
 			return true;
-		}
-		else
-		{
-			// Read the next packet from the driver
-			if (SuGetPacketsFromDriver(a) == false)
-			{
-				return false;
+		} else {
+			// The driver sets the event when it queues a frame and resets it when
+			// a read empties its queue, so at the end of a drain an unsignalled
+			// event means a read would return no frames. The driver resets the
+			// event after it drops its queue lock, so a frame queued in that gap
+			// leaves the event unsignalled: the first call of the next drain
+			// always reads.
+			if (a->LastGetHadPacket && WaitForSingleObject(a->hEvent, 0) == WAIT_TIMEOUT) {
+				a->LastGetHadPacket = false;
+				*buf = NULL;
+				*size = 0;
+				return true;
 			}
 
-			if (SL_NUM_PACKET(a->GetBuffer) == 0)
-			{
-				// Packet is not received yet
+			if (SuGetPacketsFromDriver(a) == false)
+				return false;
+
+			if (SL_NUM_PACKET(a->GetBuffer) == 0) {
+				a->LastGetHadPacket = false;
 				*buf = NULL;
 				*size = 0;
 				return true;
@@ -478,31 +380,29 @@ bool SuGetNextPacket(SU_ADAPTER *a, void **buf, UINT *size)
 	}
 }
 
-// Read the next packet from the driver
-bool SuGetPacketsFromDriver(SU_ADAPTER *a)
-{
-	DWORD read_size;
-	// Validate arguments
-	if (a == NULL)
-	{
+// Frames already read from the driver but not yet taken by SuGetNextPacket.
+// The driver event does not signal them.
+bool SuHasPendingPackets(SU_ADAPTER *a) {
+	if (a == NULL || a->Halt)
 		return false;
-	}
+
+	return a->CurrentPacketCount < SL_NUM_PACKET(a->GetBuffer);
+}
+
+bool SuGetPacketsFromDriver(SU_ADAPTER *a) {
+	DWORD read_size;
+	if (a == NULL)
+		return false;
 
 	if (a->Halt)
-	{
 		return false;
-	}
 
-	if (ReadFile(a->hFile, a->GetBuffer, SL_EXCHANGE_BUFFER_SIZE, &read_size, NULL) == false)
-	{
+	if (ReadFile(a->hFile, a->GetBuffer, SL_EXCHANGE_BUFFER_SIZE, &read_size, NULL) == false) {
 		a->Halt = true;
-
-		SuCloseAdapterHandleInner(a);
 		return false;
 	}
 
-	if (read_size != SL_EXCHANGE_BUFFER_SIZE)
-	{
+	if (read_size != SL_EXCHANGE_BUFFER_SIZE) {
 		a->Halt = true;
 		return false;
 	}
@@ -510,22 +410,14 @@ bool SuGetPacketsFromDriver(SU_ADAPTER *a)
 	return true;
 }
 
-// Close the adapter
-void SuCloseAdapter(SU_ADAPTER *a)
-{
-	// Validate arguments
+void SuCloseAdapter(SU_ADAPTER *a) {
 	if (a == NULL)
-	{
 		return;
-	}
 
 	if (a->hEvent != NULL)
-	{
 		CloseHandle(a->hEvent);
-	}
 
-	if (a->hFile != INVALID_HANDLE_VALUE)
-	{
+	if (a->hFile != INVALID_HANDLE_VALUE) {
 		CloseHandle(a->hFile);
 		a->hFile = INVALID_HANDLE_VALUE;
 	}
@@ -533,77 +425,35 @@ void SuCloseAdapter(SU_ADAPTER *a)
 	Free(a);
 }
 
-// Close the adapter handle
-void SuCloseAdapterHandleInner(SU_ADAPTER *a)
-{
-	return;//////////// ****************
-	// Validate arguments
-	if (a == NULL)
-	{
-		return;
-	}
-
-	if (a->hFile != INVALID_HANDLE_VALUE)
-	{
-		CloseHandle(a->hFile);
-		a->hFile = INVALID_HANDLE_VALUE;
-	}
-}
-
-// Open the adapter
-SU_ADAPTER *SuOpenAdapter(SU *u, char *adapter_id)
-{
+SU_ADAPTER *SuOpenAdapter(char *adapter_id) {
 	char filename[MAX_PATH];
-	void *h;
-	SU_ADAPTER *a;
 	SL_IOCTL_EVENT_NAME t;
 	DWORD read_size;
-	// Validate arguments
-	if (u == NULL || adapter_id == NULL)
-	{
+	if (adapter_id == NULL)
 		return NULL;
-	}
 
 	Format(filename, sizeof(filename), SL_ADAPTER_DEVICE_FILENAME_WIN32, adapter_id);
 
-	h = CreateFileA(filename, GENERIC_READ | GENERIC_WRITE,
-		FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+	void *h = CreateFileA(filename, GENERIC_READ | GENERIC_WRITE,
+	                      FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
 
 	if (h == INVALID_HANDLE_VALUE)
-	{
-		Debug("Create File %s failed. %u\n", filename, GetLastError());
 		return NULL;
-	}
-	else
-	{
-		Debug("Create File %s ok.\n", filename);
-	}
 
-	a = ZeroMalloc(sizeof(SU_ADAPTER));
-
-	StrCpy(a->AdapterId, sizeof(a->AdapterId), adapter_id);
-	StrCpy(a->DeviceName, sizeof(a->DeviceName), filename);
+	SU_ADAPTER *a = ZeroMalloc(sizeof(SU_ADAPTER));
 
 	a->hFile = h;
 
 	Zero(&t, sizeof(t));
 
-	// Get the event name
-	if (DeviceIoControl(h, SL_IOCTL_GET_EVENT_NAME, &t, sizeof(t), &t, sizeof(t), &read_size, NULL) == false)
-	{
-		// Acquisition failure
+	if (DeviceIoControl(h, SL_IOCTL_GET_EVENT_NAME, &t, sizeof(t), &t, sizeof(t), &read_size, NULL) == false) {
 		SuCloseAdapter(a);
 		return NULL;
 	}
 
-	Debug("Event Name: %s\n", t.EventNameWin32);
-
-	// Get the event
 	a->hEvent = OpenEvent(EVENT_ALL_ACCESS, FALSE, t.EventNameWin32);
 
-	if (a->hEvent == NULL)
-	{
-		// Acquisition failure
+	if (a->hEvent == NULL) {
 		SuCloseAdapter(a);
 		return NULL;
 	}
@@ -611,90 +461,50 @@ SU_ADAPTER *SuOpenAdapter(SU *u, char *adapter_id)
 	return a;
 }
 
-// Enumerate adapters
-TOKEN_LIST *SuEnumAdapters(SU *u)
-{
-	UINT i;
-	DWORD ret_size;
-	TOKEN_LIST *ret;
-	// Validate arguments
-	if (u == NULL)
-	{
-		return NullToken();
-	}
+// Read the adapter list from the SeLow basic device h into list and check its signature. This is
+// the only copy of that read; each caller keeps its own cleanup when it fails
+bool SuReadAdapterInfoList(void *h, SL_ADAPTER_INFO_LIST *list) {
+	DWORD read_size;
+	if (h == NULL || list == NULL)
+		return false;
 
-	Zero(&u->AdapterInfoList, sizeof(u->AdapterInfoList));
-	if (ReadFile(u->hFile, &u->AdapterInfoList, sizeof(u->AdapterInfoList),
-		&ret_size, NULL) == false ||
-		u->AdapterInfoList.Signature != SL_SIGNATURE)
-	{
-		Debug("SuEnumAdapters: ReadFile error.\n");
-		return NullToken();
-	}
+	if (ReadFile(h, list, sizeof(SL_ADAPTER_INFO_LIST), &read_size, NULL) == false)
+		return false;
 
-	ret = ZeroMalloc(sizeof(TOKEN_LIST));
-
-	ret->NumTokens = u->AdapterInfoList.NumAdapters;
-	ret->Token = ZeroMalloc(sizeof(char *) * ret->NumTokens);
-	Debug("SuEnumAdapters: u->AdapterInfoList.NumAdapters = %u\n", u->AdapterInfoList.NumAdapters);
-
-	for (i = 0;i < ret->NumTokens;i++)
-	{
-		ret->Token[i] = CopyUniToStr(u->AdapterInfoList.Adapters[i].AdapterId);
-
-		UniPrint(L"%s %u %S\n",
-			u->AdapterInfoList.Adapters[i].AdapterId,
-			u->AdapterInfoList.Adapters[i].MtuSize,
-			u->AdapterInfoList.Adapters[i].FriendlyName);
-	}
-
-	return ret;
+	return (list->Signature == SL_SIGNATURE);
 }
 
-// Create an adapters list
-LIST *SuGetAdapterList(SU *u)
-{
-	LIST *ret;
-	DWORD read_size;
-	UINT i;
-	// Validate arguments
+// The adapters of the SeLow device u. netclass: the net-class table of the caller (MsNetClassEnum),
+// which gives the Class key of each adapter and the DriverDesc fallback of its name; an adapter
+// that is not a present device of the network class is left out
+LIST *SuGetAdapterList(SU *u, LIST *netclass) {
 	if (u == NULL)
-	{
 		return NULL;
-	}
 
-	ret = NewList(SuCmpAdapterList);
+	LIST *ret = NewList(SuCmpAdapterList);
 
-	// Enumerate adapters
+	// On a failed read, free the list; the device handle stays open (SuFree closes it)
 	Zero(&u->AdapterInfoList, sizeof(u->AdapterInfoList));
-	if (ReadFile(u->hFile, &u->AdapterInfoList, sizeof(u->AdapterInfoList),
-		&read_size, NULL) == false ||
-		u->AdapterInfoList.Signature != SL_SIGNATURE)
-	{
+	if (SuReadAdapterInfoList(u->hFile, &u->AdapterInfoList) == false) {
 		SuFreeAdapterList(ret);
 		return NULL;
 	}
 
-	for (i = 0;i < u->AdapterInfoList.NumAdapters;i++)
-	{
+	for (UINT i = 0; i < u->AdapterInfoList.NumAdapters; i++) {
 		SL_ADAPTER_INFO *info = &u->AdapterInfoList.Adapters[i];
 
-		if (IsEmptyStr(info->FriendlyName))
-		{
-			// Some NetAdapterCx drivers doesn't report the FriendlyName in the kernel mode.
-			// So we attempt to obtain the DriverDesc string from NetCfg registry key alternatively.
-			char regkey[MAX_PATH] = {0};
-			char tmp[MAX_PATH] = {0};
+		if (IsEmptyStr(info->FriendlyName)) {
+			// Some NetAdapterCx drivers do not report FriendlyName in kernel mode,
+			// so fall back to DriverDesc from the NetCfg registry key.
 			char adapter_guid[MAX_PATH] = {0};
 
 			UniToStr(adapter_guid, sizeof(adapter_guid), info->AdapterId + StrLen(SL_ADAPTER_ID_PREFIX));
 
-			if (GetClassRegKeyWin32(regkey, sizeof(regkey), tmp, sizeof(tmp), adapter_guid))
-			{
-				char *driver_desc = MsRegReadStrEx2(REG_LOCAL_MACHINE, regkey, "DriverDesc", false, true);
+			MS_NETCLASS_DEVICE *d = MsNetClassFind(netclass, adapter_guid);
+			if (d != NULL) {
+				char *driver_desc = MsRegReadStrEx2(REG_LOCAL_MACHINE, d->ClassKey, "DriverDesc", false);
 
-				if (driver_desc != NULL)
-				{
+				if (driver_desc != NULL) {
 					StrCpy(info->FriendlyName, sizeof(info->FriendlyName), driver_desc);
 					Free(driver_desc);
 				}
@@ -702,67 +512,38 @@ LIST *SuGetAdapterList(SU *u)
 		}
 
 		{
-			SU_ADAPTER_LIST *a = SuAdapterInfoToAdapterList(info);
-
-			char macstr[128] = {0};
-			BinToStr(macstr, sizeof(macstr), info->MacAddress, sizeof(info->MacAddress));
+			SU_ADAPTER_LIST *a = SuAdapterInfoToAdapterList(info, netclass);
 
 			if (a != NULL)
-			{
-				// Debug("SU: Adapter %u (OK): ID=%S, MAC=%s, FriendlyName=%s\n", i, info->AdapterId, macstr, info->FriendlyName);
-
 				Add(ret, a);
-			}
-			else
-			{
-				// Debug("SU: Adapter %u (NG): ID=%S, MAC=%s, FriendlyName=%s\n", i, info->AdapterId, macstr, info->FriendlyName);
-			}
 		}
 	}
 
-	// Sort
 	Sort(ret);
 
 	return ret;
 }
 
-// Comparison function of the adapter list
-int SuCmpAdapterList(void *p1, void *p2)
-{
-	int r;
-	SU_ADAPTER_LIST *a1, *a2;
+int SuCmpAdapterList(void *p1, void *p2) {
 	if (p1 == NULL || p2 == NULL)
-	{
 		return 0;
-	}
-	a1 = *(SU_ADAPTER_LIST **)p1;
-	a2 = *(SU_ADAPTER_LIST **)p2;
+	SU_ADAPTER_LIST *a1 = *(SU_ADAPTER_LIST **)p1;
+	SU_ADAPTER_LIST *a2 = *(SU_ADAPTER_LIST **)p2;
 	if (a1 == NULL || a2 == NULL)
-	{
 		return 0;
-	}
 
-	r = StrCmpi(a1->SortKey, a2->SortKey);
+	int r = StrCmpi(a1->SortKey, a2->SortKey);
 	if (r != 0)
-	{
 		return 0;
-	}
 
 	return StrCmpi(a1->Guid, a2->Guid);
 }
 
-// Release the adapter list
-void SuFreeAdapterList(LIST *o)
-{
-	UINT i;
-	// Validate arguments
+void SuFreeAdapterList(LIST *o) {
 	if (o == NULL)
-	{
 		return;
-	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(o); i++) {
 		SU_ADAPTER_LIST *a = LIST_DATA(o, i);
 
 		Free(a);
@@ -771,94 +552,73 @@ void SuFreeAdapterList(LIST *o)
 	ReleaseList(o);
 }
 
-// Create an adapter list item
-SU_ADAPTER_LIST *SuAdapterInfoToAdapterList(SL_ADAPTER_INFO *info)
-{
+SU_ADAPTER_LIST *SuAdapterInfoToAdapterList(SL_ADAPTER_INFO *info, LIST *netclass) {
 	SU_ADAPTER_LIST t;
 	char tmp[MAX_SIZE];
-	// Validate arguments
 	if (info == NULL)
-	{
 		return NULL;
-	}
 
 	Zero(&t, sizeof(t));
-	Copy(&t.Info, info, sizeof(SL_ADAPTER_INFO));
+	StrCpy(t.FriendlyName, sizeof(t.FriendlyName), info->FriendlyName);
+	Copy(t.MacAddress, info->MacAddress, sizeof(t.MacAddress));
 
 	UniToStr(tmp, sizeof(tmp), info->AdapterId);
-	// Make the NIC appear in the "Local Bridge Settings" list regardless of a NULL character consisted in "FriendlyName".
+	// List the NIC in Local Bridge settings even when its FriendlyName is empty.
 	if (IsEmptyStr(tmp) || /* IsEmptyStr(info->FriendlyName) || */ StartWith(tmp, SL_ADAPTER_ID_PREFIX) == false)
-	{
-		// Name is invalid
 		return NULL;
-	}
 
-	// GUID (Part after "SELOW_A_" prefix)
 	StrCpy(t.Guid, sizeof(t.Guid), tmp + StrLen(SL_ADAPTER_ID_PREFIX));
 
-	// Name
 	StrCpy(t.Name, sizeof(t.Name), tmp);
 
-	// Key for sort
-	if (GetClassRegKeyWin32(t.SortKey, sizeof(t.SortKey), tmp, sizeof(tmp), t.Guid) == false)
-	{
-		// Can not be found
+	MS_NETCLASS_DEVICE *d = MsNetClassFind(netclass, t.Guid);
+	if (d == NULL)
 		return NULL;
-	}
+
+	StrCpy(t.SortKey, sizeof(t.SortKey), d->ClassKey);
 
 	return Clone(&t, sizeof(t));
 }
 
-// Initialize the driver 
-SU *SuInit()
-{
-	return SuInitEx(0);
+// Open the SeLow basic device and read its adapter list. Read-only: never starts the SeLow service
+// or installs the driver, so asking whether SeLow is supported changes nothing (FIX-2 #98)
+SU *SuInitEx(UINT wait_for_bind_complete_tick) {
+	return SuInitMain(wait_for_bind_complete_tick, false, false);
 }
-SU *SuInitEx(UINT wait_for_bind_complete_tick)
-{
+
+// Like SuInitEx, but when the device is missing, start the SeLow service and, when that fails,
+// install the driver (at most once per process). Only for creating a Local Bridge or for an
+// explicit admin action
+SU *SuInitInstall() {
+	return SuInitMain(0, true, true);
+}
+
+// Open the SeLow basic device and read its adapter list. When the device is missing: with
+// start_service, start the SeLow service once and try again; when that start fails, with install,
+// run the driver install step (at most once per process) and try again
+static SU *SuInitMain(UINT wait_for_bind_complete_tick, bool start_service, bool install) {
 	void *h;
 	SU *u;
-	DWORD read_size;
 	bool flag = false;
 	UINT64 giveup_tick = 0;
-	static bool flag2 = false; // flag2 must be global
 
-	if (SuIsSupportedOs(false) == false)
-	{
-		// Unsupported OS
+	if (SuIsSupportedOs() == false)
 		return NULL;
-	}
 
 LABEL_RETRY:
 
-	// Open the device driver
 	h = CreateFileA(SL_BASIC_DEVICE_FILENAME_WIN32, GENERIC_READ | GENERIC_WRITE,
-		FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+	                FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
 
-	if (h == INVALID_HANDLE_VALUE)
-	{
-		Debug("CreateFileA(%s) Failed.\n", SL_BASIC_DEVICE_FILENAME_WIN32);
-
-		// Start the service if it fails to start the device driver
-		if (flag == false)
-		{
-			if (MsStartService(SL_PROTOCOL_NAME) == false)
-			{
-				Debug("MsStartService(%s) Failed.\n", SL_PROTOCOL_NAME);
-
-				if (flag2 == false)
-				{
-					flag2 = true;
-
-					if (SuInstallDriver(true))
-					{
+	if (h == INVALID_HANDLE_VALUE) {
+		if (start_service && flag == false) {
+			if (MsStartService(SL_PROTOCOL_NAME) == false) {
+				// Exactly one caller per process wins the latch and runs the install step
+				if (install && InterlockedCompareExchange(&su_install_tried, 1, 0) == 0) {
+					if (su_install_proc())
 						goto LABEL_RETRY;
-					}
 				}
-			}
-			else
-			{
-				Debug("MsStartService(%s) Ok.\n", SL_PROTOCOL_NAME);
+			} else {
 				flag = true;
 
 				goto LABEL_RETRY;
@@ -867,36 +627,23 @@ LABEL_RETRY:
 		return NULL;
 	}
 
-	//Debug("CreateFileA(%s) Ok.\n", SL_BASIC_DEVICE_FILENAME_WIN32);
 
 	u = ZeroMalloc(sizeof(SU));
 
 	giveup_tick = Tick64() + (UINT64)wait_for_bind_complete_tick;
 
-	if (wait_for_bind_complete_tick == 0)
-	{
-		if (ReadFile(h, &u->AdapterInfoList, sizeof(u->AdapterInfoList), &read_size, NULL) == false ||
-			u->AdapterInfoList.Signature != SL_SIGNATURE)
-		{
-			// Signature reception failure
-			Debug("Bad Signature.\n");
+	// On a failed read, free the SU and close the device handle
+	if (wait_for_bind_complete_tick == 0) {
+		if (SuReadAdapterInfoList(h, &u->AdapterInfoList) == false) {
 
 			Free(u);
 			CloseHandle(h);
 
 			return NULL;
 		}
-	}
-	else
-	{
-		while (giveup_tick >= Tick64())
-		{
-			// Wait until the enumeration is completed
-			if (ReadFile(h, &u->AdapterInfoList, sizeof(u->AdapterInfoList), &read_size, NULL) == false ||
-				u->AdapterInfoList.Signature != SL_SIGNATURE)
-			{
-				// Signature reception failure
-				Debug("Bad Signature.\n");
+	} else {
+		while (giveup_tick >= Tick64()) {
+			if (SuReadAdapterInfoList(h, &u->AdapterInfoList) == false) {
 
 				Free(u);
 				CloseHandle(h);
@@ -905,14 +652,7 @@ LABEL_RETRY:
 			}
 
 			if (u->AdapterInfoList.EnumCompleted)
-			{
-				// Complete enumeration
-				Debug("Bind Completed! %u\n", u->AdapterInfoList.EnumCompleted);
 				break;
-			}
-
-			// Incomplete enumeration
-			Debug("Waiting for Bind Complete.\n");
 
 			SleepThread(25);
 		}
@@ -923,19 +663,13 @@ LABEL_RETRY:
 	return u;
 }
 
-// Release the driver
-void SuFree(SU *u)
-{
-	// Validate arguments
+void SuFree(SU *u) {
 	if (u == NULL)
-	{
 		return;
-	}
 
 	CloseHandle(u->hFile);
 
 	Free(u);
 }
 
-#endif	// WIN32
 

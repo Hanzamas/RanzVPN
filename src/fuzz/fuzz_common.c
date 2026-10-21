@@ -21,12 +21,12 @@ static void FuzzAtExit(void)
 // libFuzzer calls this once, before the first input
 int LLVMFuzzerInitialize(int *argc, char ***argv)
 {
-	// Minimal mode: no hamcore.se2 and no string table, which none of the parsers needs
+	// Minimal mode: no hamcore files and no string table, which none of the parsers needs
 	MayaquaMinimalMode();
 
 	// Same flags as vpntest: no memcheck, debug on (debug enables the kernel status counters
 	// that FreeMayaqua() checks for leaks)
-	InitMayaqua(false, true, *argc, *argv);
+	InitMayaqua(false, true);
 
 	atexit(FuzzAtExit);
 
@@ -42,20 +42,16 @@ static const char *fuzz_live_names[FUZZ_NUM_LIVE] = {"memory blocks", "LOCK obje
 // Current values of the live object counters
 static void FuzzGetLive(UINT64 *live)
 {
-	UINT i;
-
-	for (i = 0;i < FUZZ_NUM_LIVE;i++)
+	for (UINT i = 0;i < FUZZ_NUM_LIVE;i++)
 	{
 		live[i] = KS_GET64(fuzz_live_ids[i]);
 	}
 }
 
 // True when a live object counter is higher after than before
-static bool FuzzLiveGrew(UINT64 *before, UINT64 *after)
+static bool FuzzLiveGrew(const UINT64 *before, const UINT64 *after)
 {
-	UINT i;
-
-	for (i = 0;i < FUZZ_NUM_LIVE;i++)
+	for (UINT i = 0;i < FUZZ_NUM_LIVE;i++)
 	{
 		if (after[i] > before[i])
 		{
@@ -69,7 +65,7 @@ static bool FuzzLiveGrew(UINT64 *before, UINT64 *after)
 // Runs proc over the input and checks that every Mayaqua object it allocated was released.
 // A run that leaves more live objects is run once more: a parser leak repeats on the same
 // input, while a one-time lazy initialisation or an allocation by another Mayaqua thread
-// (the Tick64 thread records clock adjustments) does not. A leak on both runs calls abort(),
+// (the Tick64 timer records clock adjustments) does not. A leak on both runs calls abort(),
 // so that libFuzzer stops and saves the input as a crash artifact. libFuzzer's own leak
 // detection needs LeakSanitizer, which Windows does not have, and OpenSSL allocations are
 // not counted here: only -rss_limit_mb bounds them (src/fuzz/run_fuzzers.ps1).
@@ -77,7 +73,6 @@ void FuzzRun(FUZZ_PROC *proc, const uint8_t *data, size_t size)
 {
 	UINT64 before[FUZZ_NUM_LIVE];
 	UINT64 after[FUZZ_NUM_LIVE];
-	UINT i;
 
 	FuzzGetLive(before);
 	proc(data, size);
@@ -96,7 +91,7 @@ void FuzzRun(FUZZ_PROC *proc, const uint8_t *data, size_t size)
 	}
 
 	fprintf(stderr, "==RANZ FUZZ== Mayaqua objects leaked by this input (live count before -> after):\n");
-	for (i = 0;i < FUZZ_NUM_LIVE;i++)
+	for (UINT i = 0;i < FUZZ_NUM_LIVE;i++)
 	{
 		fprintf(stderr, "  %s: %llu -> %llu\n", fuzz_live_names[i],
 			(unsigned long long)before[i], (unsigned long long)after[i]);

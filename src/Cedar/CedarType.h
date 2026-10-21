@@ -1,27 +1,15 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
-
 // CedarType.h
 // List of types that Cedar using
 
-#ifndef	CEDARTYPE_H
-#define	CEDARTYPE_H
+#ifndef CEDARTYPE_H
+#define CEDARTYPE_H
 
 typedef struct CEDAR CEDAR;
 typedef struct TRAFFIC TRAFFIC;
 
 
-// ==============================================================
-//   Remote Procedure Call
-// ==============================================================
-
 typedef struct RPC RPC;
 
-
-// ==============================================================
-//   Account
-// ==============================================================
 
 typedef struct POLICY_ITEM POLICY_ITEM;
 typedef struct POLICY POLICY;
@@ -33,130 +21,71 @@ typedef struct AUTHROOTCERT AUTHROOTCERT;
 typedef struct AUTHNT AUTHNT;
 
 
-// ==============================================================
-//   Listener
-// ==============================================================
-
 typedef struct DOS DOS;
 typedef struct LISTENER LISTENER;
 typedef struct TCP_ACCEPTED_PARAM TCP_ACCEPTED_PARAM;
-typedef struct UDP_ENTRY UDP_ENTRY;
 
-
-// ==============================================================
-//   Logging
-// ==============================================================
 
 typedef struct PACKET_LOG PACKET_LOG;
 typedef struct HUB_LOG HUB_LOG;
-typedef struct RECORD RECORD;
-typedef struct LOG LOG;
-typedef struct ERASER ERASER;
-typedef struct SLOG SLOG;
 
 
-// ==============================================================
-//   Connection
-// ==============================================================
-
-typedef struct RC4_KEY_PAIR RC4_KEY_PAIR;
 typedef struct CLIENT_OPTION CLIENT_OPTION;
 typedef struct CLIENT_AUTH CLIENT_AUTH;
 typedef struct TCPSOCK TCPSOCK;
 typedef struct TCP TCP;
-typedef struct UDP UDP;
 typedef struct BLOCK BLOCK;
 typedef struct CONNECTION CONNECTION;
+typedef struct CONNECTION_INFO CONNECTION_INFO;
 
-
-// ==============================================================
-//   Session
-// ==============================================================
 
 typedef struct NODE_INFO NODE_INFO;
 typedef struct PACKET_ADAPTER PACKET_ADAPTER;
 typedef struct SESSION SESSION;
+typedef struct SESSION_INFO SESSION_INFO;
 
 
-// ==============================================================
-//   Hub
-// ==============================================================
-
-typedef struct SE_LINK SE_LINK;
-typedef struct TEST_HISTORY TEST_HISTORY;
-typedef struct SE_TEST SE_TEST;
 typedef struct HUBDB HUBDB;
 typedef struct TRAFFIC_LIMITER TRAFFIC_LIMITER;
 typedef struct STORM STORM;
 typedef struct HUB_PA HUB_PA;
 typedef struct HUB_OPTION HUB_OPTION;
+typedef struct HUB_OPTION_FIELD HUB_OPTION_FIELD;
 typedef struct MAC_TABLE_ENTRY MAC_TABLE_ENTRY;
 typedef struct IP_TABLE_ENTRY IP_TABLE_ENTRY;
-typedef struct LOOP_LIST LOOP_LIST;
 typedef struct ACCESS ACCESS;
 typedef struct HUB HUB;
+typedef struct HUB_STATS HUB_STATS;
 typedef struct ADMIN_OPTION ADMIN_OPTION;
 typedef struct CRL CRL;
 typedef struct AC AC;
 typedef struct USERLIST USERLIST;
 
 
-// ==============================================================
-//   Protocol
-// ==============================================================
-
-typedef struct CHECK_CERT_THREAD_PROC CHECK_CERT_THREAD_PROC;
-typedef struct RAND_CACHE RAND_CACHE;
-typedef struct BLACK BLACK;
-typedef struct SEND_SIGNATURE_PARAM SEND_SIGNATURE_PARAM;
+typedef struct LOGIN_REQ LOGIN_REQ;
+typedef struct HUB_LOGIN HUB_LOGIN;
+typedef struct HUB_SESSION_SLOT HUB_SESSION_SLOT;
+typedef struct SERVER_SESSION_PARAMS SERVER_SESSION_PARAMS;
+typedef struct SERVER_LOGIN SERVER_LOGIN;
 
 
-// ==============================================================
-//   Link
-// ==============================================================
+typedef struct AUTH_REQUEST AUTH_REQUEST;
+typedef struct AUTH_RESULT AUTH_RESULT;
+
 
 typedef struct LINK LINK;
 
-
-// ==============================================================
-//   WPC
-// ==============================================================
-
-typedef struct INTERNET_SETTING INTERNET_SETTING;
-typedef struct URL_DATA URL_DATA;
-typedef struct WPC_ENTRY WPC_ENTRY;
-typedef struct WPC_PACKET WPC_PACKET;
-typedef struct WPC_CONNECT WPC_CONNECT;
-
-// ==============================================================
-//   VLAN
-// ==============================================================
-
-typedef struct VLAN VLAN;
-typedef struct VLAN_PARAM VLAN_PARAM;
-
-// ==============================================================
-//   Bridge
-// ==============================================================
 
 typedef struct ETH ETH;
 typedef struct BRIDGE BRIDGE;
 typedef struct LOCALBRIDGE LOCALBRIDGE;
 
 
-// ==============================================================
-//   Client
-// ==============================================================
-
-typedef struct ACCOUNT ACCOUNT;
 typedef struct RPC_CLIENT_GET_CONNECTION_STATUS RPC_CLIENT_GET_CONNECTION_STATUS;
 
 
-// ==============================================================
-//   Server
-// ==============================================================
-
 typedef struct SERVER_LISTENER SERVER_LISTENER;
+typedef struct SERVER_LISTENER_INFO SERVER_LISTENER_INFO;
 typedef struct SERVER SERVER;
 typedef struct RPC_ENUM_SESSION RPC_ENUM_SESSION;
 typedef struct RPC_SESSION_STATUS RPC_SESSION_STATUS;
@@ -164,15 +93,9 @@ typedef struct CAPS CAPS;
 typedef struct CAPSLIST CAPSLIST;
 typedef struct LOG_FILE LOG_FILE;
 typedef struct SYSLOG_SETTING SYSLOG_SETTING;
-typedef struct HUB_SNAPSHOT HUB_SNAPSHOT;
-typedef struct SERVER_SNAPSHOT SERVER_SNAPSHOT;
-typedef struct SERVER_HUB_CREATE_HISTORY SERVER_HUB_CREATE_HISTORY;
-
-// ==============================================================
-//   Server Admin Tool
-// ==============================================================
 
 typedef struct ADMIN ADMIN;
+typedef struct ADMIN_LOGIN ADMIN_LOGIN;
 typedef struct RPC_TEST RPC_TEST;
 typedef struct RPC_SERVER_INFO RPC_SERVER_INFO;
 typedef struct RPC_SERVER_STATUS RPC_SERVER_STATUS;
@@ -182,7 +105,6 @@ typedef struct RPC_STR RPC_STR;
 typedef struct RPC_SET_PASSWORD RPC_SET_PASSWORD;
 typedef struct RPC_KEY_PAIR RPC_KEY_PAIR;
 typedef struct RPC_HUB_OPTION RPC_HUB_OPTION;
-typedef struct RPC_HUB RPC_HUB;
 typedef struct RPC_CREATE_HUB RPC_CREATE_HUB;
 typedef struct RPC_ENUM_HUB_ITEM RPC_ENUM_HUB_ITEM;
 typedef struct RPC_ENUM_HUB RPC_ENUM_HUB;
@@ -225,38 +147,19 @@ typedef struct RPC_ENUM_ETH_ITEM RPC_ENUM_ETH_ITEM;
 typedef struct RPC_ENUM_ETH RPC_ENUM_ETH;
 typedef struct RPC_LOCALBRIDGE RPC_LOCALBRIDGE;
 typedef struct RPC_ENUM_LOCALBRIDGE RPC_ENUM_LOCALBRIDGE;
-typedef struct RPC_BRIDGE_SUPPORT RPC_BRIDGE_SUPPORT;
 typedef struct RPC_CONFIG RPC_CONFIG;
 typedef struct RPC_ADMIN_OPTION RPC_ADMIN_OPTION;
 typedef struct RPC_CRL RPC_CRL;
 typedef struct RPC_ENUM_CRL_ITEM RPC_ENUM_CRL_ITEM;
 typedef struct RPC_ENUM_CRL RPC_ENUM_CRL;
-typedef struct RPC_INT RPC_INT;
 typedef struct RPC_AC_LIST RPC_AC_LIST;
 typedef struct RPC_ENUM_LOG_FILE_ITEM RPC_ENUM_LOG_FILE_ITEM;
 typedef struct RPC_ENUM_LOG_FILE RPC_ENUM_LOG_FILE;
 typedef struct RPC_READ_LOG_FILE RPC_READ_LOG_FILE;
 typedef struct DOWNLOAD_PROGRESS DOWNLOAD_PROGRESS;
 typedef struct RPC_RENAME_LINK RPC_RENAME_LINK;
-typedef struct RPC_ENUM_LICENSE_KEY RPC_ENUM_LICENSE_KEY;
-typedef struct RPC_ENUM_LICENSE_KEY_ITEM RPC_ENUM_LICENSE_KEY_ITEM;
-typedef struct RPC_LICENSE_STATUS RPC_LICENSE_STATUS;
-typedef struct RPC_ENUM_ETH_VLAN_ITEM RPC_ENUM_ETH_VLAN_ITEM;
-typedef struct RPC_ENUM_ETH_VLAN RPC_ENUM_ETH_VLAN;
-typedef struct RPC_MSG RPC_MSG;
 typedef struct RPC_WINVER RPC_WINVER;
 
-
-// ==============================================================
-//  WinUI
-// ==============================================================
-
-
-
-
-// ==============================================================
-//  Console
-// ==============================================================
 
 typedef struct PARAM PARAM;
 typedef struct PARAM_VALUE PARAM_VALUE;
@@ -265,10 +168,6 @@ typedef struct LOCAL_CONSOLE_PARAM LOCAL_CONSOLE_PARAM;
 typedef struct CMD CMD;
 typedef struct CMD_EVAL_MIN_MAX CMD_EVAL_MIN_MAX;
 
-
-// ==============================================================
-//  Command
-// ==============================================================
 
 typedef struct PS PS;
 typedef struct CT CT;
@@ -284,37 +183,8 @@ typedef struct TTC_SOCK TTC_SOCK;
 typedef struct PT PT;
 
 
-// ==============================================================
-//  Database
-// ==============================================================
-
-typedef struct LICENSE_PRODUCT LICENSE_PRODUCT;
-typedef struct LICENSE_SYSTEM LICENSE_SYSTEM;
-typedef struct LICENSE_DATA LICENSE_DATA;
-typedef struct LICENSE LICENSE;
-typedef struct LICENSE_STATUS LICENSE_STATUS;
-typedef struct SECURE_PACK_FOLDER SECURE_PACK_FOLDER;
-typedef struct WIDE_MACHINE_ID WIDE_MACHINE_ID;
-typedef struct TRIAL_INFO TRIAL_INFO;
-
-
-// ==============================================================
-//  In-Process VPN Client
-// ==============================================================
-
-typedef struct IPC_MSCHAP_V2_AUTHINFO IPC_MSCHAP_V2_AUTHINFO;
-
-
-// ==============================================================
-//   UDP Acceleration
-// ==============================================================
-
 typedef struct UDP_ACCEL UDP_ACCEL;
 
-
-// ==============================================================
-//  SeLow User-mode
-// ==============================================================
 
 typedef struct SU SU;
 typedef struct SU_ADAPTER SU_ADAPTER;
@@ -322,4 +192,4 @@ typedef struct SU_ADAPTER_LIST SU_ADAPTER_LIST;
 
 
 
-#endif	// CEDARTYPE_H
+#endif

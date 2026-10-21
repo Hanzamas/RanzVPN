@@ -5,10 +5,6 @@
 // SeLowCommon.h
 // Common Header for Kernel Mode / User Mode
 
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-
 #include "Windows.h"
 
 //// Version number
@@ -55,7 +51,6 @@ typedef struct SL_IOCTL_EVENT_NAME
 // Registry key
 #define	SL_REG_KEY_NAME					"SYSTEM\\CurrentControlSet\\services\\SeLow"
 #define	SL_REG_VER_VALUE				"SlVersion"
-#define	SL_REG_VER_VALUE_WIN10			"SlVersion_Win10"
 
 // Adapter data
 #define	SL_ADAPTER_ID_LEN				64

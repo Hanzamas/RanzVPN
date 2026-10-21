@@ -1,159 +1,52 @@
-How to build SoftEther VPN for Windows
-======================================
+How to build Ranz VPN on Windows
+================================
 
-There are several methods for using CMake but the easiest by far is through Visual Studio by importing the CMake project directly
-into it. So that is what will be described below.
+The reference build is the GitHub Actions workflow
+[`.github/workflows/windows.yml`](../.github/workflows/windows.yml): clang-cl, vcpkg (static triplets) and
+Ninja, for x64 (`windows-latest`) and arm64 (`windows-11-arm`, built natively). The README's *Build*
+section lists the same configure and build commands. Ranz VPN builds for 64-bit targets only.
 
 ## Requirements
 
-- Visual Studio 2019 or 2022 (Community Edition is fine)
-
-  https://visualstudio.microsoft.com/downloads
-
-- Git for Windows (or other git tool)
-
-  https://gitforwindows.org/
-
-- vcpkg
-
-  https://github.com/microsoft/vcpkg
-
-## Installation
-
-- Visual Studio
-
-  Download from the official site and run the installer.
-
-  Make sure to check **Desktop development with C++** under *Workloads* and **Clang C++ Tools for Windows** in *Optional* components.
-
+- Visual Studio 2022 with **Desktop development with C++** and **C++ Clang Compiler for Windows**
 - Git
+- vcpkg, cloned to `C:\vcpkg` and bootstrapped (`bootstrap-vcpkg.bat`); Visual Studio's folder view
+  also needs `vcpkg integrate install`
 
-  Nothing special. Just follow the installer.
+The OpenSSL and zlib versions come from the `builtin-baseline` commit in `vcpkg.json`, not from whatever
+your vcpkg checkout holds, so CI and every developer build the same libraries. If the configure step
+cannot find that commit, run `git pull` and `bootstrap-vcpkg.bat` in the vcpkg checkout. To take newer
+library versions, move the baseline with `vcpkg x-update-baseline` and commit the changed `vcpkg.json`.
 
-- vcpkg
-
-  Let's say you will install it to `C:\vcpkg`.
-
-  Open your preferred terminal and go to `C:\`. Then run these commands.
-
-  ```
-  C:\> git clone https://github.com/microsoft/vcpkg
-  C:\> cd vcpkg
-  C:\vcpkg> bootstrap-vcpkg.bat
-  C:\vcpkg> vcpkg integrate install
-  ```
-
-## Update
-
-- vcpkg
-
-  You are recommended to update vcpkg from time to time, so that the latest libraries are used in the build.
-
-  Go to the installation path, pull the latest repo and the binary:
-
-  ```
-  C:\vcpkg> git pull
-  C:\vcpkg> bootstrap-vcpkg.bat
-  ```
-  
 ## Building
 
-1. Launch Visual Studio
+1. Clone with submodules (liboqs and oqs-provider):
 
-   Choose either **Clone a repository** to clone from GitHub or **Open a local folder** if you already have a copy.
+   `git clone --recursive <repository>` or, in an existing clone, `git submodule update --init --recursive`
 
-1. Open Terminal (*View -> Terminal*). Install the needed submodules to build the project, avoiding CMake telling you to do so with:
+1. Set the environment variable `VCPKG_ROOT` to your vcpkg checkout (for example `C:\vcpkg`).
 
-   `git submodule update --init --recursive`
-
-   **Note**: This step is not necessary if you have chosen **Clone a repository** as Visual Studio automatically takes care of it.
-
-1. Switch to folder view in the solution explorer
-
-1. Select a configuration from the dropdown menu below the search box. The default configurations are:
-
-   - x64-native
-
-     Build x64 executables with 64-bit compiler (most common)
-
-   - x64-on-x86
-
-     Cross compile x64 executables with 32-bit compiler
-
-   - x86-native
-
-     Build x86 executables with 32-bit compiler
-
-   - x86-on-x64
-
-     Cross compile x86 executables with 64-bit compiler
-    
-    - arm64-on-x64
-
-     Cross compile arm64 executables with x64t compiler
-
-   On 64-bit Windows, all four configurations can be used. 32-bit platforms can only use 32-bit compiler.
-
-1. Visual Studio will try generating CMake cache. If not, click **Project -> Configure Cache** or **Generate Cache**.
-
-   If CMake is busy, you will find **Generate Cache** greyed out. Wait until it finishes or click **Cancel CMake Cache Generation** to stop it.
-
-   The initial configuration will take a longer time since it needs to download and install dependencies.
-
-1. When *CMake generation finished* is displayed, simply go to toolbar and click **Build -> Build All**.
-
-1. Once building has finished, hopefully with no errors, look in the newly created `/build` directory in the project's folder.
-
-   Run `vpnsetup.exe` to install desired components.
-
-1. Congrats, you now have a complete CMake development environment for SoftEtherVPN on Windows, enjoy and happy contributing!
-
-## Notes
-
-1. Build number
-
-   You can change the build number in `CMakeSettings.json`. The build number becomes the third version component (0.1.N); CI uses the GitHub run number.
-
-   Delete and regenerate CMake cache after the change.
-
-1. OpenSSL
-
-   The above instruction builds OpenSSL library statically in the SoftEther binaries,
-   so that when you distribute the installer to others they will not need to install OpenSSL separately.
-   However, the downside is that the OpenSSL library cannot be updated without a rebuild and reinstallation of SoftEther.
-   
-   It's also possible to build OpenSSL library dynamically so that you can update OpenSSL without rebuilding SoftEther.
-   To achieve that, you need to remove `openssl` from `vcpkg.json` and install OpenSSL directly.
-   
-   Installing from a package manager such as [Scoop](https://scoop.sh/) would make the subsequent updates easily.
-   However, you should avoid using [Winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/)
-   for the time being because due to a bug it cannot detect the correct version of OpenSSL, causing endless updates.
-   
-   If you install from Scoop, make sure to add the OpenSSL folder to the system's `PATH`.
-   As Scoop already adds it to the user's `PATH`, just copy the same location into the system environment variable(s).
-   SoftEther Server Service starts from the System account and will fail to start if OpenSSL is not in the global `PATH`.
-   
-   Building should be straightforward. You can verify that the binaries are now linked against the locally installed OpenSSL
-   with tools like `ldd` (available from Git Bash):
-
-   ```bash
-   $ ldd /c/Program\ Files/SoftEther\ VPN\ Server\ Developer\ Edition/vpnserver.exe
-        ...
-        libcrypto-3-x64.dll => /c/Scoop/apps/openssl/current/bin/libcrypto-3-x64.dll (0x7ff8beb70000)
-        libssl-3-x64.dll => /c/Scoop/apps/openssl/current/bin/libssl-3-x64.dll (0x7ff8beaa0000)
-        ...
-   ```
-
-1. 32-bit Windows
-
-   You don't need 32-bit Windows to build 32-bit executables. However, if 32-bit Windows is what you only have, things become a little complicated.
-
-   Visual Studio 2019 is the last version that works on 32-bit Windows. It does the job but its bundled CMake and Ninja are 64-bit versions.
-
-   After the installation of VS 2019, you need to download 32-bit CMake and Ninja and replace those that come with VS in:
+1. From a developer command prompt (`vcvars64.bat`, or `vcvarsarm64.bat` on an arm64 host):
 
    ```
-   C:\Program Files\Microsoft Visual Studio\2019\Community\Common7\IDE\CommonExtensions\Microsoft\CMake
+   cmake --preset x64
+   cmake --build --preset x64
    ```
 
-   Currently CMake has an official x86 installer but Ninja does not. You may need to download from a 3rd party or build from source.
+   The presets are defined in `CMakePresets.json` and build in `build/`:
+
+   - `x64`: x64 RelWithDebInfo, the configuration CI builds and tests
+   - `arm64`: arm64 RelWithDebInfo, built on a Windows ARM64 host (no cross-compilation)
+   - `asan`: x64 with AddressSanitizer and the libFuzzer targets (the fuzz-asan CI job)
+   - `debug`, `debug-arm64`: Debug builds
+
+1. Visual Studio's *Open a local folder* offers the same presets in the configuration dropdown.
+
+The executables (`vpnserver.exe`, `vpncmd.exe`, `vpntest.exe`) are written to the build directory. The
+hamcore files are resources of each executable (`cmake/RanzResources.cmake`).
+
+## Build number
+
+`BUILD_NUMBER` is the third version component (0.1.N); CI passes the GitHub run number. Locally it
+defaults to 0 (`-DBUILD_NUMBER=<n>` on the configure command, or `BUILD_NUMBER` in a
+`CMakeUserPresets.json` of your own). Delete the CMake cache after a change.

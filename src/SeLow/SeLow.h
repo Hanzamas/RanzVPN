@@ -8,18 +8,13 @@
 #ifndef	SELOW_H
 #define	SELOW_H
 
-// Win32 DDK related
-#ifndef	CPU_64
+// Win32 DDK related (_WIN64: the compiler targets 64-bit Windows)
+#ifndef	_WIN64
 #define	_X86_
-#else	// CPU_64
-#ifndef	NEO_IA64
+#else	// _WIN64
 #define	_AMD64_
 #define	AMD64
-#else	// NEO_IA64
-#define	_IA64_
-#define	IA64
-#endif	// NEO_IA64
-#endif	// CPU_64
+#endif	// _WIN64
 #define	NDIS_MINIPORT_DRIVER
 // NDIS 6.2
 #define	NDIS620_MINIPORT
@@ -36,9 +31,7 @@
 #include <string.h>
 
 // OS determination
-#ifdef	WIN32
-#define	OS_WIN32	// Microsoft Windows
-#else
+#ifndef	WIN32
 #error "Ranz VPN builds on Windows only."
 #endif
 

@@ -1,13 +1,7 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
-
 // vpncmd.c
 // VPN Command Line Management Utility
 
 #include "Cedar/Cedar.h"
-#ifdef OS_WIN32
-#endif
 #include "Cedar/Command.h"
 
 #include "Mayaqua/Internat.h"
@@ -15,75 +9,66 @@
 #include "Mayaqua/Microsoft.h"
 #include "Mayaqua/Str.h"
 
-// main function
-int main(int argc, char *argv[])
-{
+#include <TlHelp32.h>
+
+// A command shell (cmd.exe, command.com) runs on this computer: Toolhelp32 snapshot of the processes
+static bool VpncmdIsShellRunning() {
+	PROCESSENTRY32W e;
+	bool ret = false;
+
+	HANDLE h = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	if (h == INVALID_HANDLE_VALUE)
+		return false;
+
+	Zero(&e, sizeof(e));
+	e.dwSize = sizeof(e);
+
+	if (Process32FirstW(h, &e)) {
+		do {
+			if (UniStrCmpi(e.szExeFile, L"cmd.exe") == 0 || UniStrCmpi(e.szExeFile, L"command.com") == 0) {
+				ret = true;
+				break;
+			}
+		} while (Process32NextW(h, &e));
+	}
+
+	CloseHandle(h);
+
+	return ret;
+}
+
+int main(int argc, char *argv[]) {
 	wchar_t *s;
 	UINT ret = 0;
 
 	InitProcessCallOnce();
 
-#ifdef	OS_WIN32
 	SetConsoleTitleA(CEDAR_PRODUCT_STR " VPN Command Line Utility");
-#endif	// OS_WIN32
 
-#if defined(_DEBUG) || defined(DEBUG)	// In VC++ compilers, the macro is "_DEBUG", not "DEBUG".
-	// If set memcheck = true, the program will be vitally slow since it will log all malloc() / realloc() / free() calls to find the cause of memory leak.
-	// For normal debug we set memcheck = false.
-	// Please set memcheck = true if you want to test the cause of memory leaks.
-	InitMayaqua(false, true, argc, argv);
+#ifdef _DEBUG // Debug configuration: the debug CRT (/MTd) defines _DEBUG
+	// memcheck = true logs every malloc/realloc/free to find leaks; it is very slow.
+	InitMayaqua(false, true);
 #else
-	InitMayaqua(false, false, argc, argv);
+	InitMayaqua(false, false);
 #endif
 	InitCedar();
 
-	s = GetCommandLineUniStr();
+	s = MsCopyProcessArgsW();
 
-	if (s == NULL)
-	{
-		s = CopyUniStr(L"");
-	}
-
-	if (UniStrCmpi(s, L"exit") != 0)
-	{
+	if (UniStrCmpi(s, L"exit") != 0) {
 		UINT size = UniStrSize(s) + 64;
-		wchar_t *tmp;
 
-		tmp = Malloc(size);
+		wchar_t *tmp = Malloc(size);
 		UniFormat(tmp, size, L"vpncmd %s", s);
 		ret = CommandMain(tmp);
 
 		Free(tmp);
 	}
 
-#ifdef	OS_WIN32
-	{
-		UINT i;
-		LIST *o = MsGetProcessList();
-		bool b = false;
-
-		for (i = 0;i < LIST_NUM(o);i++)
-		{
-			MS_PROCESS *p = LIST_DATA(o, i);
-
-			if (EndWith(p->ExeFilename, "\\cmd.exe") || EndWith(p->ExeFilename, "\\command.com"))
-			{
-				b = true;
-				break;
-			}
-		}
-
-		MsFreeProcessList(o);
-
-		if (b == false)
-		{
-			if (ret != ERR_NO_ERROR)
-			{
-				SleepThread(1000);
-			}
-		}
+	if (VpncmdIsShellRunning() == false) {
+		if (ret != ERR_NO_ERROR)
+			SleepThread(1000);
 	}
-#endif	// OS_WIN32
 
 	Free(s);
 

@@ -1,43 +1,27 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Cedar Communication Module
-
-
 // vpnserver.c
 // VPN Server service program
-
-#define	VPN_EXE
 
 #include "Cedar/Server.h"
 
 #include "Mayaqua/Mayaqua.h"
 #include "Mayaqua/Microsoft.h"
-#include "Mayaqua/Win32.h"
 
-// Process starting function
-void StartProcess()
-{
-	// Start the server
+static void StartProcess() {
 	InitCedar();
 	StInit();
-	StStartServer(false);
+	StStartServer();
 }
 
-// Process termination function
-void StopProcess()
-{
-	// Stop the server
+static void StopProcess() {
 	StStopServer();
 	StFree();
 	FreeCedar();
 }
 
-// WinMain function
-int main(int argc, char *argv[])
-{
+// The GUI-subsystem entry point: CmdLine holds the arguments without the program name
+int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, char *CmdLine, int CmdShow) {
 	InitProcessCallOnce();
 
-#ifdef	OS_WIN32
-	return MsService(GC_SVC_NAME_VPNSERVER, StartProcess, StopProcess, 0, argv[0]);
-#endif	// OS_WIN32
+	return MsService(GC_SVC_NAME_VPNSERVER, StartProcess, StopProcess, CmdLine);
 }
 

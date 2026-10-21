@@ -10,40 +10,43 @@ concurrency:
 permissions:
   contents: read
 
+# vcpkg binary caching: built packages (OpenSSL) are stored as zip files keyed by their ABI hash in
+# VCPKG_BINCACHE and kept between runs with actions/cache. The cache key carries the hash of
+# vcpkg.json: its builtin-baseline pins the ports tree (the same OpenSSL and zlib on every runner),
+# and a change of vcpkg.json is a cache miss, so the new versions are built, never mixed with old ones.
+# VCPKG_ROOT is the vcpkg checkout of the runner image: CMakePresets.json takes the toolchain file from it.
+env:
+  VCPKG_ROOT: C:\vcpkg
+  VCPKG_BINCACHE: ${{ github.workspace }}\vcpkg-bincache
+  VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\vcpkg-bincache,readwrite
+
 jobs:
   build_and_test:
     strategy:
       fail-fast: false
       matrix:
         platform: [
-          { ARCHITECTURE: x64, VCPKG_TRIPLET: "x64-windows-static", RUNNER: "windows-latest", CMAKE_EXTRA_FLAGS: ""},
-          { ARCHITECTURE: arm64, VCPKG_TRIPLET: "arm64-windows-static", RUNNER: "windows-11-arm", CMAKE_EXTRA_FLAGS: "-DOQS_PERMIT_UNSUPPORTED_ARCHITECTURE=ON"}
+          { ARCHITECTURE: x64, VCPKG_TRIPLET: "x64-windows-static", RUNNER: "windows-latest"},
+          { ARCHITECTURE: arm64, VCPKG_TRIPLET: "arm64-windows-static", RUNNER: "windows-11-arm"}
         ]
     runs-on: ${{ matrix.platform.RUNNER }}
     name: ${{ matrix.platform.ARCHITECTURE }}
+    timeout-minutes: 60
     steps:
     - uses: actions/checkout@v4
       with:
         submodules: true
-    - name: Cache vcpkg
-      uses: actions/cache@v4
+    - name: Restore vcpkg binary cache
+      uses: actions/cache/restore@v4
       with:
-        path: 'build/vcpkg_installed/'
-        key: vcpkg-${{ matrix.platform.VCPKG_TRIPLET }}
-    - name: Set version variables
-      run: |
-        $v = python version.py
-        echo "VERSION=$v" | Out-File -FilePath $Env:GITHUB_ENV -Encoding utf8 -Append
-      shell: pwsh
+        path: vcpkg-bincache
+        key: vcpkg-bin-${{ matrix.platform.VCPKG_TRIPLET }}-${{ hashFiles('vcpkg.json') }}-none
+        restore-keys: vcpkg-bin-${{ matrix.platform.VCPKG_TRIPLET }}-${{ hashFiles('vcpkg.json') }}-
     - name: Build
       env:
         ARCHITECTURE: ${{ matrix.platform.ARCHITECTURE }}
-        VCPKG_TRIPLET: ${{ matrix.platform.VCPKG_TRIPLET }}
-        CMAKE_EXTRA_FLAGS: ${{ matrix.platform.CMAKE_EXTRA_FLAGS }}
       run: |
-        set BUILD_NUMBER=%GITHUB_RUN_NUMBER%
-        mkdir build
-        cd build
+        if not exist "%VCPKG_BINCACHE%" mkdir "%VCPKG_BINCACHE%"
 
         for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set "VSINSTALL=%%i"
         if "%VSINSTALL%"=="" (
@@ -63,9 +66,95 @@ jobs:
         )
 
         call "%VCVARS_PATH%"
-        cmake -G "Ninja" -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=%VCPKG_TRIPLET% -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER="%COMPILER_PATH%" -DCMAKE_CXX_COMPILER="%COMPILER_PATH%" -DBUILD_NUMBER=%BUILD_NUMBER% %CMAKE_EXTRA_FLAGS% ..
-        cmake --build .
+        rem The preset is named after the architecture (CMakePresets.json); a job adds the compiler path of this
+        rem runner, the run number and build/compile_commands.json (for the /volatile:ms check) to it
+        cmake --preset %ARCHITECTURE% -DCMAKE_C_COMPILER="%COMPILER_PATH%" -DBUILD_NUMBER=%GITHUB_RUN_NUMBER% -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+        if errorlevel 1 exit /b 1
+
+        rem The compiler output goes to build\build-log.txt for the unused-code report step, then to the job log
+        cmake --build --preset %ARCHITECTURE% > build\build-log.txt 2>&1
+        set BUILD_EXIT=%ERRORLEVEL%
+        type build\build-log.txt
+        if not "%BUILD_EXIT%"=="0" exit /b %BUILD_EXIT%
+
+        rem The linker's report of what /OPT:REF discarded and /OPT:ICF folded (src/CMakeLists.txt) for
+        rem vpnserver and vpncmd, uploaded as link-verbose-<arch>: each one is linked again with /VERBOSE,
+        rem passed in _LINK_, which lld-link and link.exe add to their arguments. lld-link has no
+        rem /VERBOSE:REF; its /VERBOSE lists the discarded sections and the folded functions.
+        set "_LINK_=/VERBOSE"
+        for %%t in (vpnserver vpncmd) do (
+          del build\%%t.exe
+          cmake --build --preset %ARCHITECTURE% --target %%t > build\link-verbose-%%t.txt 2>&1
+          if errorlevel 1 (
+            type build\link-verbose-%%t.txt
+            exit /b 1
+          )
+        )
+        set "_LINK_="
+        exit /b 0
       shell: cmd
+    # Every Mayaqua and Cedar compile command carries /volatile:ms (cmake/RanzOptions.cmake). ARM64
+    # defaults to /volatile:iso, which gives the cross-thread halt and cancel flags no acquire and
+    # release semantics.
+    - name: Check /volatile:ms
+      shell: pwsh
+      run: |
+        $db = Get-Content -Raw -LiteralPath build/compile_commands.json | ConvertFrom-Json
+        $own = @($db | Where-Object { $_.file -match '[\\/]src[\\/](Mayaqua|Cedar)[\\/]' })
+        if ($own.Count -eq 0) { throw 'No Mayaqua or Cedar compile command in build/compile_commands.json' }
+        $missing = @($own | Where-Object { $_.command -notmatch '(^|\s)[/-]volatile:ms(\s|$)' })
+        $missing | ForEach-Object { Write-Host "No /volatile:ms: $($_.file)" }
+        if ($missing.Count -gt 0) { throw "$($missing.Count) of $($own.Count) Mayaqua and Cedar compile commands lack /volatile:ms" }
+        Write-Host "$($own.Count) Mayaqua and Cedar compile commands carry /volatile:ms (${{ matrix.platform.ARCHITECTURE }})"
+    # The key is the content hash of the cache directory, so a run that built nothing new finds the key
+    # taken and saves nothing (a warning, not a failure).
+    - name: Save vcpkg binary cache
+      if: ${{ !cancelled() }}
+      uses: actions/cache/save@v4
+      with:
+        path: vcpkg-bincache
+        key: vcpkg-bin-${{ matrix.platform.VCPKG_TRIPLET }}-${{ hashFiles('vcpkg.json') }}-${{ hashFiles('vcpkg-bincache/**') }}
+    # Every unused or unreachable code warning of the build (cmake/RanzWarnings.cmake), de-duplicated:
+    # in the job log under "=== unused-code report ===", in the job summary and as an artifact.
+    # The kinds in RANZ_UNUSED_ERROR_FLAGS are errors and fail the Build step; the rest are informational.
+    - name: Unused-code report
+      if: ${{ !cancelled() }}
+      shell: pwsh
+      run: |
+        python .github/scripts/unused-report.py --log build/build-log.txt --out build/unused-report.txt --arch ${{ matrix.platform.ARCHITECTURE }}
+    - name: Upload unused-code report and build log
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        if-no-files-found: warn
+        name: unused-report-${{ matrix.platform.ARCHITECTURE }}
+        path: |
+          build/unused-report.txt
+          build/build-log.txt
+    - name: Upload linker report (vpnserver and vpncmd)
+      if: ${{ !cancelled() }}
+      uses: actions/upload-artifact@v4
+      with:
+        if-no-files-found: warn
+        name: link-verbose-${{ matrix.platform.ARCHITECTURE }}
+        path: build/link-verbose-*.txt
+    # Source lines per directory and executable sizes, in the job log and the job summary. Never a gate.
+    - name: Size metrics
+      if: ${{ !cancelled() }}
+      shell: pwsh
+      run: |
+        python .github/scripts/size-metrics.py --build-dir build --arch ${{ matrix.platform.ARCHITECTURE }}
+    # The version resource of each executable (src/BuildFiles/VerScript/ver.rc.in): English (United
+    # States), language 0x0409, with the file description filled in.
+    - name: Version resource
+      shell: pwsh
+      run: |
+        foreach ($exe in 'vpnserver', 'vpncmd', 'vpntest') {
+          $info = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path "build/$exe.exe").Path)
+          Write-Host "${exe}.exe: Language '$($info.Language)', FileDescription '$($info.FileDescription)', FileVersion '$($info.FileVersion)'"
+          if ($info.Language -ne 'English (United States)') { throw "${exe}.exe: version resource language is '$($info.Language)', not English (United States) (0x0409)" }
+          if (-not $info.FileDescription) { throw "${exe}.exe: version resource has no FileDescription" }
+        }
     - name: Set up .NET for stbchecker
       if: matrix.platform.ARCHITECTURE == 'x64'
       uses: actions/setup-dotnet@v4
@@ -80,7 +169,10 @@ jobs:
         if ($LASTEXITCODE -ne 0) { throw "stbchecker reported differences between the string tables (exit code $LASTEXITCODE)" }
     - name: Test
       timeout-minutes: 10
-      shell: powershell
+      shell: pwsh
+      env:
+        # Names build/harness-out/bench-<arch>.txt (the BENCH lines of vpntest bench)
+        ARCHITECTURE: ${{ matrix.platform.ARCHITECTURE }}
       run: |
         . .github/scripts/vpntest.ps1
     - name: Self-check
@@ -91,6 +183,20 @@ jobs:
         Write-Host $out
         if ($LASTEXITCODE -ne 0) { throw "vpncmd self-check exited with code $LASTEXITCODE" }
         if ($out -notmatch 'All checks passed') { throw "vpncmd self-check did not report 'All checks passed'" }
+    # vpntest trace without and inside an ETW trace session on the Debug() TraceLogging provider (ticket #92).
+    # The session's .etl file is kept in build/harness-out/.
+    - name: ETW trace session
+      timeout-minutes: 5
+      shell: pwsh
+      run: |
+        . .github/scripts/etw-trace.ps1
+    # vpnserver installed, started, stopped and uninstalled as a Windows service: its start and stop entries
+    # in the Application event log (ticket #92)
+    - name: Service events in the Event Log
+      timeout-minutes: 10
+      shell: pwsh
+      run: |
+        . .github/scripts/service-eventlog.ps1
     - name: Upload harness outputs (golden bootstrap and diffs)
       if: always()
       uses: actions/upload-artifact@v4
@@ -105,7 +211,6 @@ jobs:
         path: |
           build/*.exe
           build/*.pdb
-          build/*.se2
 
   # AddressSanitizer + libFuzzer (x64 only: Microsoft documents ASan on Windows for x86 and x64).
   # Builds with -DRANZ_ASAN=ON -DRANZ_FUZZ=ON (cmake/RanzSanitizers.cmake), runs the vpntest
@@ -114,15 +219,17 @@ jobs:
   fuzz-asan:
     runs-on: windows-latest
     name: fuzz-asan
+    timeout-minutes: 45
     steps:
     - uses: actions/checkout@v4
       with:
         submodules: true
-    - name: Cache vcpkg
-      uses: actions/cache@v4
+    - name: Restore vcpkg binary cache
+      uses: actions/cache/restore@v4
       with:
-        path: 'build/vcpkg_installed/'
-        key: vcpkg-x64-windows-static
+        path: vcpkg-bincache
+        key: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg.json') }}-none
+        restore-keys: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg.json') }}-
     - name: Pick clang-cl with the one-DLL ASan runtime and libFuzzer
       shell: pwsh
       run: |
@@ -156,9 +263,7 @@ jobs:
         throw 'No clang-cl with the one-DLL ASan runtime (LLVM 20 or later) and libFuzzer found'
     - name: Build (RANZ_ASAN=ON, RANZ_FUZZ=ON)
       run: |
-        set BUILD_NUMBER=0
-        mkdir build
-        cd build
+        if not exist "%VCPKG_BINCACHE%" mkdir "%VCPKG_BINCACHE%"
 
         for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set "VSINSTALL=%%i"
         if "%VSINSTALL%"=="" (
@@ -167,24 +272,30 @@ jobs:
         )
 
         call "%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
-        cmake -G "Ninja" -DCMAKE_TOOLCHAIN_FILE="C:\vcpkg\scripts\buildsystems\vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER="%COMPILER_PATH%" -DCMAKE_CXX_COMPILER="%COMPILER_PATH%" -DBUILD_NUMBER=%BUILD_NUMBER% -DRANZ_ASAN=ON -DRANZ_FUZZ=ON ..
+        rem COMPILER_PATH is the clang-cl picked by the step above
+        cmake --preset asan -DCMAKE_C_COMPILER="%COMPILER_PATH%"
         if errorlevel 1 exit /b 1
-        cmake --build .
+        cmake --build --preset asan
       shell: cmd
+    - name: Save vcpkg binary cache
+      if: ${{ !cancelled() }}
+      uses: actions/cache/save@v4
+      with:
+        path: vcpkg-bincache
+        key: vcpkg-bin-x64-windows-static-${{ hashFiles('vcpkg.json') }}-${{ hashFiles('vcpkg-bincache/**') }}
     - name: vpntest smoke test under ASan
       shell: pwsh
       timeout-minutes: 10
       env:
         # harness and bench have time budgets that AddressSanitizer would exceed; run them in build_and_test only.
-        RANZ_SMOKE_TESTS: mschapv2,stun,watermark,stress
+        # certdl has time windows too (it measures the client timeouts); it also runs in build_and_test only.
+        RANZ_SMOKE_TESTS: nthash,crypto,stun,watermark,stress,tickorigin,timeenc,nullsafe,charset,fileio,resources,threadpool,dns,trace,eventlog,str,udpaccel,selow,dllsearch,machineid,vmdetect,tcpip,x509,bufbounds,keepalive,packcap,storepacket,consoleline,tempdir,logwriter,logbound,slog,eraser,authtype,acpassword,sigleak,pktparse,vlantpid,icmpv6ns,pack_decode_bounds,tablecache,registry,certsig,x509root,rsasig,chaincerts,tlsctx,endian,svcargs,osinfo,fifo
       run: |
-        # The smoke test script of build_and_test itself, so both jobs run the same test list:
-        # its new path (.github/scripts) first, its old one second. Its output and the vpntest
-        # stderr (AddressSanitizer reports) are captured, to also catch a report printed after
-        # "NO MEMORY LEAKS".
-        $script = @('.github/scripts/vpntest.ps1', '.ci/appveyor-vpntest.ps1') | Where-Object { Test-Path $_ } | Select-Object -First 1
-        if (-not $script) { throw 'vpntest smoke test script not found' }
-        $out = (cmd /c "powershell -NoProfile -ExecutionPolicy Bypass -File $script 2>&1") | Out-String
+        # The smoke test script of build_and_test itself, so both jobs run the same test list. Its output
+        # and the vpntest stderr (AddressSanitizer reports) are captured, to also catch a report printed
+        # after "NO MEMORY LEAKS".
+        $script = '.github/scripts/vpntest.ps1'
+        $out = (cmd /c "pwsh -NoProfile -ExecutionPolicy Bypass -File $script -BuildDir build 2>&1") | Out-String
         $code = $LASTEXITCODE
         Write-Host $out
         if ($code -ne 0) { throw "$script failed under AddressSanitizer (exit code $code)" }
@@ -207,8 +318,8 @@ jobs:
         path: |
           build/fuzz-artifacts/
           build/fuzz-logs/
-    # What a crash needs to be replayed elsewhere: the instrumented executables, their symbols,
-    # hamcore and the ASan runtime DLL
+    # What a crash needs to be replayed elsewhere: the instrumented executables, their symbols
+    # and the ASan runtime DLL
     - uses: actions/upload-artifact@v4
       if: failure()
       with:
@@ -219,5 +330,88 @@ jobs:
           build/fuzz_*.pdb
           build/vpntest.exe
           build/vpntest.pdb
-          build/*.se2
           build/clang_rt.asan_dynamic*.dll
+
+  # Debug configuration, built without running anything: the code that build_and_test
+  # (RelWithDebInfo) never compiles, under _DEBUG (Microsoft.c and vpncmd.c) and without
+  # WIN32_NO_DEBUG_HELP_DLL (the DbgHelp call stacks of Win32.c), with the Debug definitions of
+  # cmake/RanzOptions.cmake. x64 and arm64: Win32GetCallStack captures with CaptureStackBackTrace,
+  # which needs no machine type.
+  debug:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [
+          { ARCHITECTURE: x64, VCPKG_TRIPLET: "x64-windows-static", RUNNER: "windows-latest", PRESET: "debug"},
+          { ARCHITECTURE: arm64, VCPKG_TRIPLET: "arm64-windows-static", RUNNER: "windows-11-arm", PRESET: "debug-arm64"}
+        ]
+    runs-on: ${{ matrix.platform.RUNNER }}
+    name: ${{ matrix.platform.ARCHITECTURE }} Debug (build only)
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+    - name: Restore vcpkg binary cache
+      uses: actions/cache/restore@v4
+      with:
+        path: vcpkg-bincache
+        key: vcpkg-bin-${{ matrix.platform.VCPKG_TRIPLET }}-${{ hashFiles('vcpkg.json') }}-none
+        restore-keys: vcpkg-bin-${{ matrix.platform.VCPKG_TRIPLET }}-${{ hashFiles('vcpkg.json') }}-
+    - name: Build (Debug)
+      env:
+        ARCHITECTURE: ${{ matrix.platform.ARCHITECTURE }}
+        PRESET: ${{ matrix.platform.PRESET }}
+      run: |
+        if not exist "%VCPKG_BINCACHE%" mkdir "%VCPKG_BINCACHE%"
+
+        for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath`) do set "VSINSTALL=%%i"
+        if "%VSINSTALL%"=="" (
+          echo Visual Studio installation was not found.
+          exit /b 1
+        )
+
+        if /i "%ARCHITECTURE%"=="x64" (
+          set "VCVARS_PATH=%VSINSTALL%\VC\Auxiliary\Build\vcvars64.bat"
+          set "COMPILER_PATH=%VSINSTALL%\VC\Tools\Llvm\x64\bin\clang-cl.exe"
+        ) else if /i "%ARCHITECTURE%"=="arm64" (
+          set "VCVARS_PATH=%VSINSTALL%\VC\Auxiliary\Build\vcvarsarm64.bat"
+          set "COMPILER_PATH=%VSINSTALL%\VC\Tools\Llvm\ARM64\bin\clang-cl.exe"
+        ) else (
+          echo Unsupported architecture: %ARCHITECTURE%
+          exit /b 1
+        )
+
+        call "%VCVARS_PATH%"
+        rem PRESET is the Debug preset of the architecture (CMakePresets.json: debug, debug-arm64)
+        cmake --preset %PRESET% -DCMAKE_C_COMPILER="%COMPILER_PATH%"
+        if errorlevel 1 exit /b 1
+        cmake --build --preset %PRESET%
+      shell: cmd
+
+  # Layout drift check (spec #24, pass 11): every file that format_check.py lists must already be
+  # formatted by the committed .clang-format, with the clang-format version that format.yml pins.
+  # It needs only Python, so it runs on Linux like the reformat itself.
+  format:
+    runs-on: ubuntu-latest
+    name: format check
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    - name: Format check
+      env:
+        # the pin of .github/workflows/format.yml
+        CLANG_FORMAT_VERSION: '22.1.8'
+      run: |
+        python -m pip install --disable-pip-version-check "clang-format==${CLANG_FORMAT_VERSION}"
+        clang-format --version
+        python .github/scripts/format_check.py files . > "$RUNNER_TEMP/files.txt"
+        echo "$(wc -l < "$RUNNER_TEMP/files.txt") files in scope"
+        # --Werror turns every place that clang-format would change into an error
+        if ! xargs -a "$RUNNER_TEMP/files.txt" clang-format --dry-run --Werror --style=file:.clang-format; then
+          echo "::error::Some files are not formatted. Fix: pip install clang-format==${CLANG_FORMAT_VERSION}, then python .github/scripts/format_check.py files | xargs clang-format -i (docs/formatting.md)"
+          exit 1
+        fi

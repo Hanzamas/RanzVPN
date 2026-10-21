@@ -12,9 +12,10 @@
 # CRT linkage: /MT stays. LLVM 20 and later have a single ASan runtime DLL for every CRT; with
 # /MT the EXE links its import library plus a static thunk. LLVM 19 and earlier linked ASan
 # statically with /MT, and that runtime never hooks HeapAlloc ([ASAN-WIN]): it is rejected.
-# RANZ_ASAN builds allocate from the CRT heap (Mayaqua.h leaves WIN32_USE_HEAP_API_FOR_MEMORY
-# undefined), so no ASAN_OPTIONS are needed. windows_hook_rtl_allocators=1 ([ASAN-FLAGS]) is not
-# set: with it, vpntest did not start on the CI runner (0xC0000142, STATUS_DLL_INIT_FAILED).
+# RANZ_ASAN builds allocate from the CRT heap (cmake/RanzOptions.cmake leaves
+# WIN32_USE_HEAP_API_FOR_MEMORY undefined), so no ASAN_OPTIONS are needed.
+# windows_hook_rtl_allocators=1 ([ASAN-FLAGS]) is not set: with it, vpntest did not start on the
+# CI runner (0xC0000142, STATUS_DLL_INIT_FAILED).
 #
 # CMake links MSVC-style targets by calling the linker (lld-link, or link.exe) directly, not
 # through clang-cl, so the sanitizer runtime libraries that clang-cl would add in its own link
@@ -130,8 +131,7 @@ if(_ranz_asan_dynamic AND _ranz_asan_static_thunk)
 
   # [MS-RT]: "Even when statically linking, the ASan runtime DLL must be present at runtime".
   # Copy the DLL of this compiler next to the executables: the build directory (vpntest,
-  # vpnserver, vpncmd, the fuzz targets) here, hamcorebuilder, which runs during the build,
-  # through ranz_copy_asan_dll() below.
+  # vpnserver, vpncmd, the fuzz targets).
   get_filename_component(_ranz_cc_dir "${CMAKE_C_COMPILER}" DIRECTORY)
   set(RANZ_ASAN_DLL "")
   foreach(candidate
@@ -156,25 +156,12 @@ else()
   message(FATAL_ERROR "RANZ_ASAN: no clang_rt.asan libraries for ${RANZ_RT_ARCH} in ${RANZ_RT_DIR}")
 endif()
 
-# Copies the ASan runtime DLL next to the executable of <target>, a tool that runs during the
-# build (src/CMakeLists.txt calls it for hamcorebuilder, which writes hamcore.se2). Reads the
-# target's output directory, so a RUNTIME_OUTPUT_DIRECTORY set by its own CMakeLists.txt is
-# followed. Copied at configure time because add_custom_command(TARGET ... POST_BUILD) only
-# accepts targets created in the calling directory.
-function(ranz_copy_asan_dll target)
-  get_target_property(_ranz_dir ${target} RUNTIME_OUTPUT_DIRECTORY)
-  if(NOT _ranz_dir)
-    get_target_property(_ranz_dir ${target} BINARY_DIR)
-  endif()
-  file(COPY "${RANZ_ASAN_DLL}" DESTINATION "${_ranz_dir}")
-endfunction()
-
 # Compiler: [MS-FSAN] /fsanitize=address, which clang-cl accepts with the same spelling.
 # C and C++ only, so that resource and assembler sources keep their flags.
 add_compile_options("$<$<COMPILE_LANGUAGE:C,CXX>:/fsanitize=address>")
 
-# Test-only code in Mayaqua: RANZ_ASAN poisons the slack after each Malloc() block (Memory.c)
-add_compile_definitions(RANZ_ASAN)
+# Test-only code in Mayaqua: the RANZ_ASAN macro poisons the slack after each Malloc() block
+# (Memory.c). cmake/RanzOptions.cmake defines it for the project's own targets only.
 
 # Linker: the runtime libraries above, on every EXE/DLL link (static libraries are not linked)
 add_link_options(${RANZ_ASAN_LIBS})
@@ -212,10 +199,9 @@ if(RANZ_FUZZ)
   # implementations in the ASan runtime (sanitizer coverage interface).
   add_compile_options("$<$<COMPILE_LANGUAGE:C,CXX>:-fsanitize=fuzzer-no-link>")
 
-  # Test-only code in Mayaqua: RANZ_FUZZING makes AbortExitEx() call abort() instead of
+  # Test-only code in Mayaqua: the RANZ_FUZZING macro makes AbortExitEx() call abort() instead of
   # _exit(1) (Kernel.c), so that libFuzzer saves the input ([LIBFUZZER]: a fuzz target "must not
-  # exit() on any input")
-  add_compile_definitions(RANZ_FUZZING)
+  # exit() on any input"). cmake/RanzOptions.cmake defines it for the project's own targets only.
 
   # Link step of -fsanitize=fuzzer ([LIBFUZZER]: it "links in the libFuzzer's main()"), as
   # clang-cl does it: the libFuzzer library with /wholearchive ([CLANG-DRV], [MS-WHOLE]).

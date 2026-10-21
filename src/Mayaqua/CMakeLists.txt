@@ -1,11 +1,17 @@
 file(GLOB SOURCES_MAYAQUA "*.c" "Crypto/*.c")
 file(GLOB HEADERS_MAYAQUA "*.h" "Crypto/*.h")
 
-if(WIN32)
-  add_library(mayaqua STATIC ${SOURCES_MAYAQUA} ${HEADERS_MAYAQUA})
-endif()
+add_library(mayaqua STATIC ${SOURCES_MAYAQUA} ${HEADERS_MAYAQUA})
 
-target_include_directories(mayaqua PUBLIC .)
+# The src root only: every unit includes "Mayaqua/X.h", "Cedar/X.h" and "GlobalConst.h" from
+# there; a Mayaqua unit includes the headers of its own directory by their plain names
+target_include_directories(mayaqua PUBLIC "${TOP_DIRECTORY}/src")
+
+# The project's build options (cmake/RanzOptions.cmake), for Mayaqua and every target built on it
+target_link_libraries(mayaqua PUBLIC ranz_options)
+
+# The warning flags of the project's own code (cmake/RanzWarnings.cmake); PRIVATE: they stay on Mayaqua
+target_link_libraries(mayaqua PRIVATE ranz_warnings)
 
 set_target_properties(mayaqua
   PROPERTIES
@@ -14,12 +20,12 @@ set_target_properties(mayaqua
   RUNTIME_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
 )
 
-find_package(OpenSSL REQUIRED)
+find_package(OpenSSL 3.0 REQUIRED)
 
-if(OPENSSL_VERSION VERSION_GREATER_EQUAL "3.0.0" AND OPENSSL_VERSION VERSION_LESS "4.0.0")
+if(OPENSSL_VERSION VERSION_LESS "4.0.0")
   set(OQS_ENABLE ON CACHE BOOL "By setting this to OFF, Open Quantum Safe algorithms will not be built in")
 else()
-  # Disable oqsprovider when OpenSSL version < 3
+  # oqsprovider is built against OpenSSL 3 only
   set(OQS_ENABLE OFF)
 endif()
 
@@ -48,6 +54,28 @@ if(OQS_ENABLE)
   set(OQS_ENABLE_SIG_SNOVA OFF)
   set(OQS_ENABLE_SIG_SLH_DSA OFF)
 
+  if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND MSVC)
+    # clang-cl: liboqs puts -g3 and -fno-omit-frame-pointer in its flags (it treats clang-cl as
+    # GNU-style clang), and clang-cl ignores both with a warning for every liboqs source file.
+    # The vendored code is not ours to change, so the two warnings are off for liboqs and
+    # oqs-provider; the option is directory-wide and applies to targets created after this line
+    add_compile_options(-Wno-unknown-argument -Wno-unused-command-line-argument)
+  endif()
+
+  # liboqs refuses to configure for an architecture it has no optimised code for unless
+  # OQS_PERMIT_UNSUPPORTED_ARCHITECTURE is ON; Windows on ARM64 is such a target (the workflow
+  # used to pass the flag on the command line, so a local ARM64 configure failed)
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|arm64|aarch64)$" OR CMAKE_C_COMPILER_ARCHITECTURE_ID MATCHES "ARM" OR VCPKG_TARGET_TRIPLET MATCHES "^arm64")
+    set(OQS_PERMIT_UNSUPPORTED_ARCHITECTURE ON CACHE BOOL "Permit building liboqs for an architecture without optimised code")
+  endif()
+
+  # /volatile:ms for the vendored targets. cmake/RanzOptions.cmake applies it to the project's own
+  # code through ranz_options, which liboqs and oqs-provider do not link; both live under
+  # src/Mayaqua/3rdparty, so the "Check /volatile:ms" CI step counts their compile commands and fails
+  # when they lack it. Directory-wide, so it reaches the targets the add_subdirectory calls below
+  # create; C and CXX only, so the resource and assembly compile steps are left out.
+  add_compile_options("$<$<COMPILE_LANGUAGE:C,CXX>:/volatile:ms>")
+
   add_subdirectory(3rdparty/liboqs)
   add_subdirectory(3rdparty/oqs-provider)
 
@@ -55,62 +83,42 @@ if(OQS_ENABLE)
   set_property(TARGET oqsprovider PROPERTY POSITION_INDEPENDENT_CODE ON)
   target_link_libraries(mayaqua PRIVATE oqsprovider)
 else()
-  add_definitions(-DSKIP_OQS_PROVIDER)
+  target_compile_definitions(mayaqua PRIVATE SKIP_OQS_PROVIDER)
 endif()
-
-include(CheckSymbolExists)
-
-set(CMAKE_REQUIRED_INCLUDES ${OPENSSL_INCLUDE_DIR})
-set(CMAKE_REQUIRED_LIBRARIES OpenSSL::Crypto)
-set(CMAKE_REQUIRED_LIBRARIES OpenSSL::SSL)
-
-check_symbol_exists(EVP_PKEY_get_raw_public_key "openssl/evp.h" HAVE_EVP_PKEY_GET_RAW_PUBLIC_KEY)
-check_symbol_exists(SSL_CTX_set_num_tickets "openssl/ssl.h" HAVE_SSL_CTX_SET_NUM_TICKETS)
-
-unset(CMAKE_REQUIRED_INCLUDES)
-unset(CMAKE_REQUIRED_LIBRARIES)
-
-if(NOT HAVE_EVP_PKEY_GET_RAW_PUBLIC_KEY)
-  message(FATAL_ERROR "Required EVP_PKEY_get_raw_public_key() not found in OpenSSL library!")
-endif()
-
-if (HAVE_SSL_CTX_SET_NUM_TICKETS)
-  add_compile_definitions(HAVE_SSL_CTX_SET_NUM_TICKETS)
-endif()
-
-
 
 find_package(ZLIB REQUIRED)
 
-# Required because we include <openssl/opensslv.h> in Encrypt.h.
-target_include_directories(mayaqua PUBLIC ${OPENSSL_INCLUDE_DIR})
+# The OpenSSL headers stay private to Mayaqua: no Mayaqua header includes one, so Cedar, the
+# executables and the fuzz targets build without them
+target_include_directories(mayaqua PRIVATE ${OPENSSL_INCLUDE_DIR})
 
 target_link_libraries(mayaqua
   PRIVATE
-    libhamcore
     OpenSSL::SSL
     OpenSSL::Crypto
     ZLIB::ZLIB
 )
 
-if(WIN32)
-  set_target_properties(mayaqua
-    PROPERTIES
-    COMPILE_PDB_NAME "mayaqua"
-    COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
-  )
+set_target_properties(mayaqua
+  PROPERTIES
+  COMPILE_PDB_NAME "mayaqua"
+  COMPILE_PDB_OUTPUT_DIRECTORY "${BUILD_DIRECTORY}"
+)
 
-  target_link_libraries(mayaqua
-    PRIVATE
-      "crypt32.lib"
-      "DbgHelp.Lib"
-      "dwmapi.lib"
-      "iphlpapi.lib"
-      "Psapi.Lib"
-      "Secur32.Lib"
-      "setupapi.lib"
-      "winmm.lib"
-      "ws2_32.lib"
-      "WtsApi32.Lib"
-    )
-endif()
+# Only the libraries Mayaqua sources call. EnumProcesses and GetModuleFileNameEx resolve to
+# the K32 exports of kernel32 (PSAPI_VERSION 2); setupapi.lib: the net-class table of
+# MsNetClassEnum (Microsoft.c).
+target_link_libraries(mayaqua
+  PRIVATE
+    "bcrypt.lib"
+    "crypt32.lib"
+    "DbgHelp.Lib"
+    "iphlpapi.lib"
+    "ntdll.lib"
+    "Secur32.Lib"
+    "setupapi.lib"
+    "shlwapi.lib"
+    "winhttp.lib"
+    "winmm.lib"
+    "ws2_32.lib"
+  )

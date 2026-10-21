@@ -3,8 +3,7 @@
 #
 # For every target:
 #   1. replay: every seed of src/fuzz/corpus/<target> once (-runs=0); must exit 0 and print
-#      "NO MEMORY LEAKS" (Mayaqua's leak check, run at exit by fuzz_common.c). Runs with
-#      RANZ_FUZZ_CFG_BINARY=1, so fuzz_cfg also parses its binary seed (see fuzz_cfg.c).
+#      "NO MEMORY LEAKS" (Mayaqua's leak check, run at exit by fuzz_common.c).
 #   2. fuzz: -max_total_time=<Seconds> with a fixed -seed; must exit 0. A leak report at the
 #      end of this run is printed as a warning only: an input that leaks Mayaqua objects
 #      already aborted (FuzzRun() in fuzz_common.c), so this report means a leak that did not
@@ -24,17 +23,19 @@ param(
 	[string] $BuildDir = 'build',
 	[int] $Seconds = 60,
 	[int] $Seed = 1,
-	[string[]] $Targets = @('fuzz_pack', 'fuzz_cfg', 'fuzz_tcpip', 'fuzz_x509', 'fuzz_http')
+	[string[]] $Targets = @('fuzz_pack', 'fuzz_cfg', 'fuzz_tcpip', 'fuzz_x509', 'fuzz_http', 'fuzz_dhcp', 'fuzz_net', 'fuzz_stun', 'fuzz_login')
 )
 
 $ErrorActionPreference = 'Stop'
 
-# RANZ_ASAN builds allocate from the CRT heap (Mayaqua.h leaves WIN32_USE_HEAP_API_FOR_MEMORY
-# undefined), which AddressSanitizer checks without extra ASAN_OPTIONS.
+# RANZ_ASAN builds allocate from the CRT heap (cmake/RanzOptions.cmake leaves
+# WIN32_USE_HEAP_API_FOR_MEMORY undefined), which AddressSanitizer checks without extra ASAN_OPTIONS.
 
-# Largest input per target (-max_len); fuzz_tcpip matches its FUZZ_MAX_FRAME_SIZE, fuzz_http is
-# above twice HTTP_HEADER_LINE_MAX_SIZE (4096) so that over-long lines are reached
-$MaxLen = @{ 'fuzz_pack' = 4096; 'fuzz_cfg' = 4096; 'fuzz_tcpip' = 1600; 'fuzz_x509' = 4096; 'fuzz_http' = 10240 }
+# Largest input per target (-max_len); fuzz_tcpip and fuzz_dhcp match their FUZZ_MAX_FRAME_SIZE,
+# fuzz_net and fuzz_stun their FUZZ_MAX_INPUT_SIZE, fuzz_http is above twice
+# HTTP_HEADER_LINE_MAX_SIZE (4096) so that over-long lines are reached
+$MaxLen = @{ 'fuzz_pack' = 4096; 'fuzz_cfg' = 4096; 'fuzz_tcpip' = 1600; 'fuzz_x509' = 4096; 'fuzz_http' = 10240;
+	'fuzz_dhcp' = 1600; 'fuzz_net' = 4096; 'fuzz_stun' = 2048; 'fuzz_login' = 4096 }
 
 $BuildDir = (Resolve-Path $BuildDir).Path
 $CorpusRoot = Join-Path $PSScriptRoot 'corpus'
@@ -45,10 +46,9 @@ foreach ($dir in @($WorkRoot, $ArtifactDir, $LogDir)) {
 	New-Item -ItemType Directory -Force -Path $dir | Out-Null
 }
 
-# Runs one fuzzer process with stdin closed (a leak report waits for Enter otherwise) and the
-# extra environment variables given, captures stdout (Mayaqua) and stderr (libFuzzer, ASan)
-# into the log, returns the result
-function Invoke-Fuzzer([string] $Exe, [string[]] $Arguments, [string] $Log, [hashtable] $Environment = @{}) {
+# Runs one fuzzer process with stdin closed (a leak report waits for Enter otherwise), captures
+# stdout (Mayaqua) and stderr (libFuzzer, ASan) into the log, returns the result
+function Invoke-Fuzzer([string] $Exe, [string[]] $Arguments, [string] $Log) {
 	$psi = New-Object System.Diagnostics.ProcessStartInfo
 	$psi.FileName = $Exe
 	$psi.Arguments = ($Arguments | ForEach-Object { '"' + $_ + '"' }) -join ' '
@@ -57,7 +57,6 @@ function Invoke-Fuzzer([string] $Exe, [string[]] $Arguments, [string] $Log, [has
 	$psi.RedirectStandardOutput = $true
 	$psi.RedirectStandardError = $true
 	$psi.WorkingDirectory = $BuildDir
-	foreach ($name in $Environment.Keys) { $psi.EnvironmentVariables[$name] = $Environment[$name] }
 
 	$proc = [System.Diagnostics.Process]::Start($psi)
 	$proc.StandardInput.Close()
@@ -102,10 +101,10 @@ foreach ($target in $Targets) {
 	$common = @("-max_len=$($MaxLen[$target])", '-timeout=25', '-rss_limit_mb=2048',
 		('-artifact_prefix=' + (Join-Path $ArtifactDir "$($target)-")))
 
-	# 1. Replay the seed corpus, binary configurations included (fuzz_cfg.c)
+	# 1. Replay the seed corpus
 	$log = Join-Path $LogDir "$target-replay.log"
 	Write-Host "[$target] replay $seeds"
-	$result = Invoke-Fuzzer $exe ($common + @('-runs=0', $seeds)) $log @{ 'RANZ_FUZZ_CFG_BINARY' = '1' }
+	$result = Invoke-Fuzzer $exe ($common + @('-runs=0', $seeds)) $log
 	$problems = Get-Problems $result $true
 	if ($problems.Count -ne 0) {
 		Write-LogTail $result

@@ -1,38 +1,51 @@
-﻿if(BUILD_TYPE STREQUAL "Debug")
-  add_definitions(-D_DEBUG -DDEBUG)
+﻿# The project's definitions and include path come from the targets, not from this directory:
+# ranz_options (cmake/RanzOptions.cmake) and the src root that mayaqua exports
+# (src/Mayaqua/CMakeLists.txt), so the vendored targets get neither
+
+if(NOT WIN32)
+  message(FATAL_ERROR "Ranz VPN builds on Windows only")
+endif()
+
+if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
+  message(FATAL_ERROR "Ranz VPN builds for x64 and arm64 only")
+endif()
+
+if(CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+  # cl.exe only. clang-cl takes /Qspectre and ignores it with a warning, so it is not set for
+  # clang-cl: docs/adr/0024-clang-cl-spectre.md
+  message("Setting QSPECTRE")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Qspectre")
 else()
-  add_definitions(-DNDEBUG -DVPN_SPEED)
+  message(STATUS "No /Qspectre with ${CMAKE_C_COMPILER_ID}: docs/adr/0024-clang-cl-spectre.md")
 endif()
 
-if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-  add_definitions(-DCPU_64)
-endif()
+#
+# https://msrc-blog.microsoft.com/2020/08/17/control-flow-guard-for-clang-llvm-and-rust/
+#
 
-add_definitions(-D_REENTRANT -DREENTRANT -D_THREAD_SAFE -D_THREADSAFE -DTHREAD_SAFE -DTHREADSAFE -D_FILE_OFFSET_BITS=64)
+message("Setting CONTROL FLOW GUARD") 
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /guard:cf")
+set(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} /guard:cf /DYNAMICBASE")
 
-# Add /src to the include paths
-include_directories(.)
+message("Setting CETCOMPAT")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /CETCOMPAT")
 
-if(WIN32)
-  if(IS_CROSS_COMPILATION MATCHES "arm64-on-x64")
-    set(CMAKE_SYSTEM_PROCESSOR "arm64")
-  else()
-    message("Setting QSPECTRE")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /Qspectre")
-  endif()
-  add_definitions(-DWIN32 -D_WINDOWS -DOS_WIN32 -D_CRT_SECURE_NO_WARNINGS)
-
-  #
-  # https://msrc-blog.microsoft.com/2020/08/17/control-flow-guard-for-clang-llvm-and-rust/
-  #
-
-  message("Setting CONTROL FLOW GUARD") 
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /guard:cf")
-  set(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} /guard:cf /DYNAMICBASE")
-
-  message("Setting CETCOMPAT")
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /CETCOMPAT")
-
+# Optimised linking of the executables: /OPT:REF drops unreferenced functions and data, /OPT:ICF
+# folds identical ones. /DEBUG, which the RelWithDebInfo flags keep for the PDBs, turns both off
+# unless they are named. CMake's /INCREMENTAL becomes /INCREMENTAL:NO, as in
+# cmake/RanzSanitizers.cmake: the linker ignores it next to /OPT:REF, with a warning.
+# Debug builds keep CMake's flags. So do ASan builds (RANZ_ASAN): /OPT:ICF could fold two
+# instrumented globals into one address that ASan then registers twice.
+# /OPT:ICF gives identical functions one address. The only comparison of a function pointer
+# against a named function, r->ThreadProc == TCPAcceptedThread (Listener.c), names a function
+# whose body is unique. A log record says with IsCsv how its line starts (LogWriter.c).
+if(NOT RANZ_ASAN)
+  message("Setting /OPT:REF /OPT:ICF /INCREMENTAL:NO")
+  foreach(_ranz_config RELWITHDEBINFO RELEASE MINSIZEREL)
+    set(_ranz_var "CMAKE_EXE_LINKER_FLAGS_${_ranz_config}")
+    string(REGEX REPLACE " */INCREMENTAL(:NO|:YES)?" "" ${_ranz_var} "${${_ranz_var}}")
+    set(${_ranz_var} "${${_ranz_var}} /INCREMENTAL:NO /OPT:REF /OPT:ICF")
+  endforeach()
 endif()
 
 # Cedar communication module
@@ -54,60 +67,3 @@ add_subdirectory(vpntest)
 if(RANZ_FUZZ)
   add_subdirectory(fuzz)
 endif()
-
-# libhamcore
-add_subdirectory(libhamcore)
-
-# hamcorebuilder utility
-add_subdirectory(hamcorebuilder)
-
-# hamcorebuilder runs during the build: ASan builds need the ASan runtime DLL next to it
-if(RANZ_ASAN)
-  ranz_copy_asan_dll(hamcorebuilder)
-endif()
-
-# hamcore.se2 archive file
-add_custom_target(hamcore-archive-build
-  ALL
-  DEPENDS "${BUILD_DIRECTORY}/hamcore.se2"
-)
-if(IS_CROSS_COMPILATION MATCHES "arm64-on-x64")
-    file(TO_CMAKE_PATH "${TOP_DIRECTORY}" TOP_DIRECTORY_NORM)
-    set(X64_HAMCORE_BUILDER
-      "${TOP_DIRECTORY_NORM}/out/build/x64-native/src/hamcorebuilder/hamcorebuilder.exe"
-    )
-    if(EXISTS "${X64_HAMCORE_BUILDER}")
-      message(STATUS "file exist (from TOP_DIRECTORY)")
-    endif()
-
-  # support cross compile, when you compile ARM64 version on X64 Platform
-  if(EXISTS "${X64_HAMCORE_BUILDER}")
-    message("X64_HAMCORE_BUILDER found: ${X64_HAMCORE_BUILDER}")
-  elseif(EXISTS("${TOP_DIRECTORY}/out/build/x64-native/src/hamcorebuilder/hamcorebuilder.exe"))
-    set(X64_HAMCORE_BUILDER "${TOP_DIRECTORY}/out/build/x64-native/src/hamcorebuilder/hamcorebuilder.exe")
-  else()
-	message("${TOP_DIRECTORY}/out/build/x64-native/src/hamcorebuilder/hamcorebuilder.exe")
-    message(FATAL_ERROR "X64_HAMCORE_BUILDER not found: ${X64_HAMCORE_BUILDER}, pls build x64-native version first")
-  endif()
-  message(STATUS "X64_HAMCORE_BUILDER = ${X64_HAMCORE_BUILDER}")
-
-  add_custom_command(
-    COMMENT "Building hamcore.se2 archive file..."
-    COMMAND ${X64_HAMCORE_BUILDER} "hamcore.se2" "${TOP_DIRECTORY}/src/bin/hamcore"
-    DEPENDS ${X64_HAMCORE_BUILDER} "${TOP_DIRECTORY}/src/bin/hamcore/"
-    OUTPUT "${BUILD_DIRECTORY}/hamcore.se2"
-    WORKING_DIRECTORY "${BUILD_DIRECTORY}"
-    VERBATIM
-  )
-
-else()
-  add_custom_command(
-      COMMENT "Building hamcore.se2 archive file..."
-      COMMAND hamcorebuilder "hamcore.se2" "${TOP_DIRECTORY}/src/bin/hamcore"
-      DEPENDS hamcorebuilder "${TOP_DIRECTORY}/src/bin/hamcore/"
-      OUTPUT "${BUILD_DIRECTORY}/hamcore.se2"
-      WORKING_DIRECTORY "${BUILD_DIRECTORY}"
-      VERBATIM
-  )
-endif()
-

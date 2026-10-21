@@ -1,7 +1,3 @@
-// SoftEther VPN Source Code - Developer Edition Master Branch
-// Mayaqua Kernel
-
-
 // Pack.c
 // Data package code
 
@@ -9,50 +5,37 @@
 
 #include "Encrypt.h"
 #include "Internat.h"
+#include "IpAddr.h"
 #include "Mayaqua.h"
 #include "Memory.h"
-#include "Network.h"
 #include "Str.h"
 
-// Get a list of the element names in the PACK
-TOKEN_LIST *GetPackElementNames(PACK *p)
-{
-	TOKEN_LIST *ret;
-	UINT i;
-	// Validate arguments
-	if (p == NULL)
-	{
-		return NULL;
+// Smallest element on the wire: name length (the name may be empty), type, value count, one value
+#define PACK_ELEMENT_MIN_WIRE_SIZE (4 + 4 + 4 + 4)
+
+static void FreeValue(VALUE *v, UINT type);
+
+// Smallest value of the type on the wire: the value, or the length before it; 0 for an unknown type
+static UINT PackValueMinWireSize(UINT type) {
+	switch (type) {
+	case VALUE_INT:
+	case VALUE_DATA:
+	case VALUE_STR:
+	case VALUE_UNISTR:
+		return 4;
+	case VALUE_INT64:
+		return 8;
 	}
 
-	ret = ZeroMalloc(sizeof(TOKEN_LIST));
-
-	ret->NumTokens = LIST_NUM(p->elements);
-	ret->Token = ZeroMalloc(sizeof(char *) * ret->NumTokens);
-
-	for (i = 0;i < ret->NumTokens;i++)
-	{
-		ELEMENT *e = LIST_DATA(p->elements, i);
-
-		ret->Token[i] = CopyStr(e->name);
-	}
-
-	return ret;
+	return 0;
 }
 
-// Convert the BUF to a PACK
-PACK *BufToPack(BUF *b)
-{
-	PACK *p;
-	// Validate arguments
+PACK *BufToPack(BUF *b) {
 	if (b == NULL)
-	{
 		return NULL;
-	}
 
-	p = NewPack();
-	if (ReadPack(b, p) == false)
-	{
+	PACK *p = NewPack();
+	if (ReadPack(b, p) == false) {
 		FreePack(p);
 		return NULL;
 	}
@@ -60,149 +43,101 @@ PACK *BufToPack(BUF *b)
 	return p;
 }
 
-// Convert the PACK to the BUF
-BUF *PackToBuf(PACK *p)
-{
-	BUF *b;
-	// Validate arguments
+BUF *PackToBuf(PACK *p) {
 	if (p == NULL)
-	{
 		return NULL;
-	}
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 	WritePack(b, p);
 
 	return b;
 }
 
-// Read the PACK
-bool ReadPack(BUF *b, PACK *p)
-{
-	UINT i, num;
-	// Validate arguments
+bool ReadPack(BUF *b, PACK *p) {
 	if (b == NULL || p == NULL)
-	{
 		return false;
-	}
 
-	// The number of ELEMENTs
-	num = ReadBufInt(b);
-	if (num > MAX_ELEMENT_NUM)
-	{
-		// Number exceeds
+	UINT num = ReadBufInt(b);
+	// The peer claims the count: no more elements than the bytes present can hold
+	if (num > MAX_ELEMENT_NUM || num > ReadBufRemainSize(b) / PACK_ELEMENT_MIN_WIRE_SIZE)
 		return false;
-	}
 
-	// Read the ELEMENT
-	for (i = 0;i < num;i++)
-	{
-		ELEMENT *e;
-		e = ReadElement(b);
+	for (UINT i = 0; i < num; i++) {
+		ELEMENT *e = ReadElement(b);
 		if (AddElement(p, e) == false)
-		{
-			// Adding error
 			return false;
-		}
 	}
 
 	return true;
 }
 
-// Write down the PACK
-void WritePack(BUF *b, PACK *p)
-{
-	UINT i;
-	// Validate arguments
+void WritePack(BUF *b, PACK *p) {
 	if (b == NULL || p == NULL)
-	{
 		return;
-	}
 
-	// The number of ELEMENTs
 	WriteBufInt(b, LIST_NUM(p->elements));
 
-	// Write the ELEMENT
-	for (i = 0;i < LIST_NUM(p->elements);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(p->elements); i++) {
 		ELEMENT *e = LIST_DATA(p->elements, i);
 		WriteElement(b, e);
 	}
 }
 
-// Read the ELEMENT
-ELEMENT *ReadElement(BUF *b)
-{
-	UINT i;
+ELEMENT *ReadElement(BUF *b) {
 	char name[MAX_ELEMENT_NAME_LEN + 1];
-	UINT type, num_value;
-	VALUE **values;
-	ELEMENT *e;
-	// Validate arguments
 	if (b == NULL)
-	{
 		return NULL;
-	}
 
-	// Name
 	if (ReadBufStr(b, name, sizeof(name)) == false)
-	{
 		return NULL;
-	}
 
-	// Type of item
-	type = ReadBufInt(b);
-
-	// Number of items
-	num_value = ReadBufInt(b);
-	if (num_value > MAX_VALUE_NUM)
-	{
-		// Number exceeds
+	// The type and the value count must be there: ReadBufInt() reads 0 past the end
+	if (ReadBufRemainSize(b) < 8)
 		return NULL;
-	}
 
-	// VALUE
-	values = (VALUE **)Malloc(sizeof(VALUE *) * num_value);
-	for (i = 0;i < num_value;i++)
-	{
+	UINT type = ReadBufInt(b);
+
+	UINT num_value = ReadBufInt(b);
+
+	// A known type, and no more values than the bytes present can hold, before anything is allocated
+	UINT value_size = PackValueMinWireSize(type);
+	if (value_size == 0 || num_value == 0 || num_value > MAX_VALUE_NUM || num_value > ReadBufRemainSize(b) / value_size)
+		return NULL;
+
+	VALUE **values = (VALUE **)Malloc(sizeof(VALUE *) * num_value);
+	for (UINT i = 0; i < num_value; i++) {
 		values[i] = ReadValue(b, type);
+		if (values[i] == NULL) {
+			// A value that cannot be read fails the element: no ELEMENT holds a NULL value
+			for (UINT j = 0; j < i; j++)
+				FreeValue(values[j], type);
+			Free(values);
+
+			return NULL;
+		}
 	}
 
-	// Create a ELEMENT
-	e = NewElement(name, type, num_value, values);
+	ELEMENT *e = NewElement(name, type, num_value, values);
 
 	Free(values);
 
 	return e;
 }
 
-// Write the ELEMENT
-void WriteElement(BUF *b, ELEMENT *e)
-{
-	UINT i;
-	// Validate arguments
+void WriteElement(BUF *b, ELEMENT *e) {
 	if (b == NULL || e == NULL)
-	{
 		return;
-	}
 
-	// Name
 	WriteBufStr(b, e->name);
-	// Type of item
 	WriteBufInt(b, e->type);
-	// Number of items
 	WriteBufInt(b, e->num_value);
-	// VALUE
-	for (i = 0;i < e->num_value;i++)
-	{
+	for (UINT i = 0; i < e->num_value; i++) {
 		VALUE *v = e->values[i];
 		WriteValue(b, v, e->type);
 	}
 }
 
-// Read the VALUE
-VALUE *ReadValue(BUF *b, UINT type)
-{
+VALUE *ReadValue(BUF *b, UINT type) {
 	UINT len;
 	BYTE *u;
 	void *data;
@@ -212,50 +147,40 @@ VALUE *ReadValue(BUF *b, UINT type)
 	UINT size;
 	UINT u_size;
 	VALUE *v = NULL;
-	// Validate arguments
 	if (b == NULL)
-	{
 		return NULL;
-	}
 
-	// Data item
-	switch (type)
-	{
-	case VALUE_INT:			// Integer
+	// The value, or the length before it, must be there: ReadBufInt() reads 0 past the end
+	UINT min_size = PackValueMinWireSize(type);
+	if (min_size == 0 || ReadBufRemainSize(b) < min_size)
+		return NULL;
+
+	// A length is checked against the bytes present before the block is allocated
+	switch (type) {
+	case VALUE_INT:
 		v = NewIntValue(ReadBufInt(b));
 		break;
 	case VALUE_INT64:
 		v = NewInt64Value(ReadBufInt64(b));
 		break;
-	case VALUE_DATA:		// Data
+	case VALUE_DATA:
 		size = ReadBufInt(b);
-		if (size > MAX_VALUE_SIZE)
-		{
-			// Size over
+		if (size > MAX_VALUE_SIZE || size > ReadBufRemainSize(b))
 			break;
-		}
 		data = Malloc(size);
-		if (ReadBuf(b, data, size) != size)
-		{
-			// Read failure
+		if (ReadBuf(b, data, size) != size) {
 			Free(data);
 			break;
 		}
 		v = NewDataValue(data, size);
 		Free(data);
 		break;
-	case VALUE_STR:			// ANSI string
+	case VALUE_STR:
 		len = ReadBufInt(b);
-		if (len > (MAX_VALUE_SIZE - 1))
-		{
-			// Size over
+		if (len > (MAX_VALUE_SIZE - 1) || len > ReadBufRemainSize(b))
 			break;
-		}
 		str = Malloc(len + 1);
-		// String body
-		if (ReadBuf(b, str, len) != len)
-		{
-			// Read failure
+		if (ReadBuf(b, str, len) != len) {
 			Free(str);
 			break;
 		}
@@ -263,25 +188,17 @@ VALUE *ReadValue(BUF *b, UINT type)
 		v = NewStrValue(str);
 		Free(str);
 		break;
-	case VALUE_UNISTR:		// Unicode string
+	case VALUE_UNISTR:
 		u_size = ReadBufInt(b);
-		if (u_size > MAX_VALUE_SIZE)
-		{
-			// Size over
+		if (u_size > MAX_VALUE_SIZE || u_size > ReadBufRemainSize(b))
 			break;
-		}
-		// Reading an UTF-8 string
 		u = ZeroMalloc(u_size + 1);
-		if (ReadBuf(b, u, u_size) != u_size)
-		{
-			// Read failure
+		if (ReadBuf(b, u, u_size) != u_size) {
 			Free(u);
 			break;
 		}
-		// Convert to a Unicode string
 		unistr_size = CalcUtf8ToUni(u, u_size);
-		if (unistr_size == 0)
-		{
+		if (unistr_size == 0) {
 			Free(u);
 			break;
 		}
@@ -296,211 +213,65 @@ VALUE *ReadValue(BUF *b, UINT type)
 	return v;
 }
 
-// Write the VALUE
-void WriteValue(BUF *b, VALUE *v, UINT type)
-{
+void WriteValue(BUF *b, VALUE *v, UINT type) {
 	UINT len;
 	BYTE *u;
 	UINT u_size;
-	// Validate arguments
 	if (b == NULL || v == NULL)
-	{
 		return;
-	}
 
-	// Data item
-	switch (type)
-	{
-	case VALUE_INT:			// Integer
+	switch (type) {
+	case VALUE_INT:
 		WriteBufInt(b, v->IntValue);
 		break;
-	case VALUE_INT64:		// 64 bit integer
+	case VALUE_INT64:
 		WriteBufInt64(b, v->Int64Value);
 		break;
-	case VALUE_DATA:		// Data
-		// Size
+	case VALUE_DATA:
 		WriteBufInt(b, v->Size);
-		// Body
 		WriteBuf(b, v->Data, v->Size);
 		break;
-	case VALUE_STR:			// ANSI string
+	case VALUE_STR:
 		len = StrLen(v->Str);
-		// Length
 		WriteBufInt(b, len);
-		// String body
 		WriteBuf(b, v->Str, len);
 		break;
-	case VALUE_UNISTR:		// Unicode string
-		// Convert to UTF-8
+	case VALUE_UNISTR:
 		u_size = CalcUniToUtf8(v->UniStr) + 1;
 		u = ZeroMalloc(u_size);
 		UniToUtf8(u, u_size, v->UniStr);
-		// Size
 		WriteBufInt(b, u_size);
-		// UTF-8 string body
 		WriteBuf(b, u, u_size);
 		Free(u);
 		break;
 	}
 }
 
-// Get data size
-UINT GetDataValueSize(ELEMENT *e, UINT index)
-{
-	// Validate arguments
-	if (e == NULL)
-	{
-		return 0;
-	}
-	if (e->values == NULL)
-	{
-		return 0;
-	}
-	if (index >= e->num_value)
-	{
-		return 0;
-	}
-	if (e->values[index] == NULL)
-	{
-		return 0;
-	}
+// The value at the index of the element, or NULL when there is no element, the index is past its values, or the
+// slot is still empty (an element added with PackAdd*Ex gets its values one index at a time)
+static VALUE *GetElementValue(const ELEMENT *e, UINT index) {
+	if (e == NULL || e->values == NULL || index >= e->num_value)
+		return NULL;
 
-	return e->values[index]->Size;
+	return e->values[index];
 }
 
-// Get the data
-void *GetDataValue(ELEMENT *e, UINT index)
-{
-	// Validate arguments
-	if (e == NULL)
-	{
-		return NULL;
-	}
-	if (e->values == NULL)
-	{
-		return NULL;
-	}
-	if (index >= e->num_value)
-	{
-		return NULL;
-	}
-	if (e->values[index] == NULL)
-	{
-		return NULL;
-	}
-
-	return e->values[index]->Data;
-}
-
-// Get the Unicode string type
-wchar_t *GetUniStrValue(ELEMENT *e, UINT index)
-{
-	// Validate arguments
-	if (e == NULL)
-	{
-		return 0;
-	}
-	if (index >= e->num_value)
-	{
-		return 0;
-	}
-	if (e->values[index] == NULL)
-	{
-		return NULL;
-	}
-
-	return e->values[index]->UniStr;
-}
-
-// Get the ANSI string type
-char *GetStrValue(ELEMENT *e, UINT index)
-{
-	// Validate arguments
-	if (e == NULL)
-	{
-		return 0;
-	}
-	if (index >= e->num_value)
-	{
-		return 0;
-	}
-	if (e->values[index] == NULL)
-	{
-		return NULL;
-	}
-
-	return e->values[index]->Str;
-}
-
-// Get the 64 bit integer value
-UINT64 GetInt64Value(ELEMENT *e, UINT index)
-{
-	// Validate arguments
-	if (e == NULL)
-	{
-		return 0;
-	}
-	if (index >= e->num_value)
-	{
-		return 0;
-	}
-	if (e->values[index] == NULL)
-	{
-		return 0;
-	}
-
-	return e->values[index]->Int64Value;
-}
-
-// Get the integer value
-UINT GetIntValue(ELEMENT *e, UINT index)
-{
-	// Validate arguments
-	if (e == NULL)
-	{
-		return 0;
-	}
-	if (index >= e->num_value)
-	{
-		return 0;
-	}
-	if (e->values[index] == NULL)
-	{
-		return 0;
-	}
-
-	return e->values[index]->IntValue;
-}
-
-// Function of sort for PACK
-int ComparePackName(void *p1, void *p2)
-{
-	ELEMENT *o1, *o2;
+static int ComparePackName(void *p1, void *p2) {
 	if (p1 == NULL || p2 == NULL)
-	{
 		return 0;
-	}
-	o1 = *(ELEMENT **)p1;
-	o2 = *(ELEMENT **)p2;
+	ELEMENT *o1 = *(ELEMENT **)p1;
+	ELEMENT *o2 = *(ELEMENT **)p2;
 	if (o1 == NULL || o2 == NULL)
-	{
 		return 0;
-	}
 
 	return StrCmpi(o1->name, o2->name);
 }
 
-// Delete the VALUE
-void FreeValue(VALUE *v, UINT type)
-{
-	// Validate arguments
+static void FreeValue(VALUE *v, UINT type) {
 	if (v == NULL)
-	{
 		return;
-	}
 
-	switch (type)
-	{
+	switch (type) {
 	case VALUE_INT:
 	case VALUE_INT64:
 		break;
@@ -515,24 +286,15 @@ void FreeValue(VALUE *v, UINT type)
 		break;
 	}
 
-	// Memory release
 	Free(v);
 }
 
-// Create a VALUE of Unicode String type
-VALUE *NewUniStrValue(wchar_t *str)
-{
-	VALUE *v;
-	// Validate arguments
+VALUE *NewUniStrValue(wchar_t *str) {
 	if (str == NULL)
-	{
 		return NULL;
-	}
 
-	// Memory allocation
-	v = Malloc(sizeof(VALUE));
+	VALUE *v = Malloc(sizeof(VALUE));
 
-	// String copy
 	v->Size = UniStrSize(str);
 	v->UniStr = Malloc(v->Size);
 	UniStrCpy(v->UniStr, v->Size, str);
@@ -542,20 +304,12 @@ VALUE *NewUniStrValue(wchar_t *str)
 	return v;
 }
 
-// Creation of the VALUE of ANSI string type
-VALUE *NewStrValue(char *str)
-{
-	VALUE *v;
-	// Validate arguments
+VALUE *NewStrValue(char *str) {
 	if (str == NULL)
-	{
 		return NULL;
-	}
 
-	// Memory allocation
-	v = Malloc(sizeof(VALUE));
+	VALUE *v = Malloc(sizeof(VALUE));
 
-	// String copy
 	v->Size = StrLen(str) + 1;
 	v->Str = Malloc(v->Size);
 	StrCpy(v->Str, v->Size, str);
@@ -565,20 +319,12 @@ VALUE *NewStrValue(char *str)
 	return v;
 }
 
-// Create the VALUE of the data type
-VALUE *NewDataValue(void *data, UINT size)
-{
-	VALUE *v;
-	// Validate arguments
+VALUE *NewDataValue(void *data, UINT size) {
 	if (data == NULL)
-	{
 		return NULL;
-	}
 
-	// Memory allocation
-	v = Malloc(sizeof(VALUE));
+	VALUE *v = Malloc(sizeof(VALUE));
 
-	// Data copy
 	v->Size = size;
 	v->Data = Malloc(v->Size);
 	Copy(v->Data, data, size);
@@ -586,307 +332,174 @@ VALUE *NewDataValue(void *data, UINT size)
 	return v;
 }
 
-// Create the VALUE of 64 bit integer type
-VALUE *NewInt64Value(UINT64 i)
-{
-	VALUE *v;
-
-	v = Malloc(sizeof(VALUE));
+VALUE *NewInt64Value(UINT64 i) {
+	VALUE *v = Malloc(sizeof(VALUE));
 	v->Int64Value = i;
 	v->Size = sizeof(UINT64);
 
 	return v;
 }
 
-// Create the VALUE of integer type
-VALUE *NewIntValue(UINT i)
-{
-	VALUE *v;
-
-	// Memory allocation
-	v = Malloc(sizeof(VALUE));
+VALUE *NewIntValue(UINT i) {
+	VALUE *v = Malloc(sizeof(VALUE));
 	v->IntValue = i;
 	v->Size = sizeof(UINT);
 
 	return v;
 }
 
-// Delete the ELEMENT
-void FreeElement(ELEMENT *e)
-{
-	UINT i;
-	// Validate arguments
+static void FreeElement(ELEMENT *e) {
 	if (e == NULL)
-	{
 		return;
-	}
 
-	for (i = 0;i < e->num_value;i++)
-	{
+	for (UINT i = 0; i < e->num_value; i++)
 		FreeValue(e->values[i], e->type);
-	}
 	Free(e->values);
 
 	Free(e);
 }
 
-// Create a ELEMENT
-ELEMENT *NewElement(char *name, UINT type, UINT num_value, VALUE **values)
-{
-	ELEMENT *e;
-	UINT i;
-	// Validate arguments
+ELEMENT *NewElement(char *name, UINT type, UINT num_value, VALUE **values) {
 	if (name == NULL || num_value == 0 || values == NULL)
-	{
 		return NULL;
-	}
 
-	// Memory allocation
-	e = ZeroMalloc(sizeof(ELEMENT));
+	ELEMENT *e = ZeroMalloc(sizeof(ELEMENT));
 	StrCpy(e->name, sizeof(e->name), name);
 	e->num_value = num_value;
 	e->type = type;
 
-	// Copy of the pointer list to the element
 	e->values = (VALUE **)ZeroMalloc(sizeof(VALUE *) * num_value);
-	for (i = 0;i < e->num_value;i++)
-	{
+	for (UINT i = 0; i < e->num_value; i++)
 		e->values[i] = values[i];
-	}
 
 	return e;
 }
 
-// Search and retrieve a ELEMENT from the PACK
-ELEMENT *GetElement(PACK *p, char *name, UINT type)
-{
+ELEMENT *GetElement(PACK *p, char *name, UINT type) {
 	ELEMENT t;
-	ELEMENT *e;
-	// Validate arguments
 	if (p == NULL || name == NULL)
-	{
 		return NULL;
-	}
 
-	// Search
 	StrCpy(t.name, sizeof(t.name), name);
-	e = Search(p->elements, &t);
+	ELEMENT *e = Search(p->elements, &t);
 
 	if (e == NULL)
-	{
 		return NULL;
-	}
 
-	// Type checking
-	if (type != INFINITE)
-	{
+	if (type != INFINITE) {
 		if (e->type != type)
-		{
 			return NULL;
-		}
 	}
 
 	return e;
 }
 
-// Check whether the specified element exists
-bool IsElement(PACK *p, char *name)
-{
-	ELEMENT t;
-	ELEMENT *e;
-	// Validate arguments
-	if (p == NULL || name == NULL)
-	{
-		return false;
-	}
-
-	// Search
-	StrCpy(t.name, sizeof(t.name), name);
-	e = Search(p->elements, &t);
-
-	if (e == NULL)
-	{
-		return false;
-	}
-
-	return true;
-}
-
-// Remove the ELEMENT from the PACK
-void DelElement(PACK *p, char *name)
-{
-	ELEMENT *e;
-	// Validate arguments
-	if (p == NULL || name == NULL)
-	{
-		return;
-	}
-
-	e = GetElement(p, name, INFINITE);
-	if (e != NULL)
-	{
-		Delete(p->elements, e);
-
-		FreeElement(e);
-	}
-}
-
-// Add an ELEMENT to the PACK
-bool AddElement(PACK *p, ELEMENT *e)
-{
-	// Validate arguments
+bool AddElement(PACK *p, ELEMENT *e) {
 	if (p == NULL || e == NULL)
-	{
 		return false;
-	}
 
-	// Size Check
-	if (LIST_NUM(p->elements) >= MAX_ELEMENT_NUM)
-	{
-		// Can not add any more
+	if (LIST_NUM(p->elements) >= MAX_ELEMENT_NUM) {
 		FreeElement(e);
 		return false;
 	}
 
-	// Check whether there is another item which have same name
-	if (GetElement(p, e->name, INFINITE))
-	{
-		// Exists
+	// Without this, the lookup below qsorts the whole list on every new name (n adds = n sorts).
+	// Only the element appended by the previous AddElement can be out of place, so move it into
+	// its sorted slot instead. The list then holds the same order the qsort gave, so WritePack
+	// still emits the elements in the same order (wire format).
+	if (p->elements->sorted == false && LIST_NUM(p->elements) >= 1) {
+		ELEMENT *last = LIST_DATA(p->elements, LIST_NUM(p->elements) - 1);
+
+		p->elements->num_item--;
+		p->elements->sorted = true;
+		Insert(p->elements, last);
+	}
+
+	if (GetElement(p, e->name, INFINITE)) {
 		FreeElement(e);
 		return false;
 	}
 
-	if (e->num_value == 0)
-	{
-		// VALUE without any items can not be added
+	if (e->num_value == 0) {
 		FreeElement(e);
 		return false;
 	}
 
-	// Adding
 	Add(p->elements, e);
 	return true;
 }
 
-// Release of the PACK object
-void FreePack(PACK *p)
-{
-	UINT i;
-	ELEMENT **elements;
-	// Validate arguments
+void FreePack(PACK *p) {
 	if (p == NULL)
-	{
 		return;
-	}
 
-	elements = ToArray(p->elements);
-	for (i = 0;i < LIST_NUM(p->elements);i++)
-	{
+	ELEMENT **elements = ToArray(p->elements);
+	for (UINT i = 0; i < LIST_NUM(p->elements); i++)
 		FreeElement(elements[i]);
-	}
 	Free(elements);
 
 	ReleaseList(p->elements);
 	Free(p);
 }
 
-// Create a PACK object
-PACK *NewPack()
-{
-	PACK *p;
+PACK *NewPack() {
+	PACK *p = ZeroMallocEx(sizeof(PACK), true);
 
-	// Memory allocation
-	p = ZeroMallocEx(sizeof(PACK), true);
-
-	// Creating a List
 	p->elements = NewListFast(ComparePackName);
 
 	return p;
 }
 
-// Get the K from the PACK
-K *PackGetK(PACK *p, char *name)
-{
-	K *k;
-	BUF *b;
-	// Validate arguments
+K *PackGetK(PACK *p, char *name) {
 	if (p == NULL || name == NULL)
-	{
 		return NULL;
-	}
 
-	b = PackGetBuf(p, name);
+	BUF *b = PackGetBuf(p, name);
 	if (b == NULL)
-	{
 		return NULL;
-	}
 
-	k = BufToK(b, true, false, NULL);
+	K *k = BufToK(b, true, false, NULL);
 
 	if (k == NULL)
-	{
 		k = BufToK(b, true, true, NULL);
-	}
 
 	FreeBuf(b);
 
 	return k;
 }
 
-// Get the X from the PACK
-X *PackGetX(PACK *p, char *name)
-{
-	X *x;
-	BUF *b;
-	// Validate arguments
+X *PackGetX(PACK *p, char *name) {
 	if (p == NULL || name == NULL)
-	{
 		return NULL;
-	}
 
-	b = PackGetBuf(p, name);
+	BUF *b = PackGetBuf(p, name);
 	if (b == NULL)
-	{
 		return NULL;
-	}
 
-	x = BufToX(b, false);
+	X *x = BufToX(b, false);
 
 	if (x == NULL)
-	{
 		x = BufToX(b, true);
-	}
 
 	FreeBuf(b);
 
 	return x;
 }
 
-// Get the X chain from the PACK
-LIST *PackGetXList(PACK *p, char *name)
-{
+LIST *PackGetXList(PACK *p, char *name) {
 	X *x;
 	BUF *b;
-	LIST *chain;
-	UINT i;
-	// Validate arguments
 	if (p == NULL || name == NULL)
-	{
 		return NULL;
-	}
 
 	ELEMENT *e = GetElement(p, name, VALUE_DATA);
 	if (e == NULL)
-	{
 		return NULL;
-	}
 
-	chain = NewList(NULL);
-	for (i = 0;i < e->num_value;i++)
-	{
+	LIST *chain = NewList(NULL);
+	for (UINT i = 0; i < e->num_value; i++) {
 		b = PackGetBufEx(p, name, i);
-		if (b == NULL)
-		{
+		if (b == NULL) {
 			FreeXList(chain);
 			return NULL;
 		}
@@ -894,9 +507,7 @@ LIST *PackGetXList(PACK *p, char *name)
 		x = BufToX(b, false);
 
 		if (x == NULL)
-		{
 			x = BufToX(b, true);
-		}
 
 		FreeBuf(b);
 
@@ -906,22 +517,14 @@ LIST *PackGetXList(PACK *p, char *name)
 	return chain;
 }
 
-// Add the K to the PACK
-ELEMENT *PackAddK(PACK *p, char *name, K *k)
-{
-	BUF *b;
+ELEMENT *PackAddK(PACK *p, char *name, K *k) {
 	ELEMENT *e = NULL;
-	// Validate arguments
 	if (p == NULL || name == NULL || k == NULL)
-	{
 		return NULL;
-	}
 
-	b = KToBuf(k, false, NULL);
+	BUF *b = KToBuf(k, false, NULL);
 	if (b == NULL)
-	{
 		return NULL;
-	}
 
 	e = PackAddBuf(p, name, b);
 	FreeBuf(b);
@@ -929,22 +532,14 @@ ELEMENT *PackAddK(PACK *p, char *name, K *k)
 	return e;
 }
 
-// Add an X into the PACK
-ELEMENT *PackAddX(PACK *p, char *name, X *x)
-{
-	BUF *b;
+ELEMENT *PackAddX(PACK *p, char *name, X *x) {
 	ELEMENT *e = NULL;
-	// Validate arguments
 	if (p == NULL || name == NULL || x == NULL)
-	{
 		return NULL;
-	}
 
-	b = XToBuf(x, false);
+	BUF *b = XToBuf(x, false);
 	if (b == NULL)
-	{
 		return NULL;
-	}
 
 	e = PackAddBuf(p, name, b);
 	FreeBuf(b);
@@ -952,28 +547,19 @@ ELEMENT *PackAddX(PACK *p, char *name, X *x)
 	return e;
 }
 
-// Add an X chain into the PACK
-ELEMENT *PackAddXList(PACK *p, char *name, LIST *chain)
-{
+ELEMENT *PackAddXList(PACK *p, char *name, LIST *chain) {
 	BUF *b;
 	X *x;
 	ELEMENT *e = NULL;
-	// Validate arguments
 	if (p == NULL || name == NULL || chain == NULL)
-	{
 		return NULL;
-	}
 
-	UINT i;
-	for (i = 0;i < LIST_NUM(chain);i++)
-	{
+	for (UINT i = 0; i < LIST_NUM(chain); i++) {
 		x = LIST_DATA(chain, i);
 		b = XToBuf(x, false);
 
 		if (b == NULL)
-		{
 			return NULL;
-		}
 
 		e = PackAddBufEx(p, name, b, i, LIST_NUM(chain));
 		FreeBuf(b);
@@ -982,31 +568,21 @@ ELEMENT *PackAddXList(PACK *p, char *name, LIST *chain)
 	return e;
 }
 
-// Get a buffer from the PACK
-BUF *PackGetBuf(PACK *p, char *name)
-{
+BUF *PackGetBuf(PACK *p, char *name) {
 	return PackGetBufEx(p, name, 0);
 }
-BUF *PackGetBufEx(PACK *p, char *name, UINT index)
-{
-	UINT size;
-	void *tmp;
-	BUF *b;
-	// Validate arguments
+BUF *PackGetBufEx(PACK *p, char *name, UINT index) {
 	if (p == NULL || name == NULL)
-	{
 		return NULL;
-	}
 
-	size = PackGetDataSizeEx(p, name, index);
-	tmp = MallocEx(size, true);
-	if (PackGetDataEx(p, name, tmp, index) == false)
-	{
+	UINT size = PackGetDataSizeEx(p, name, index);
+	void *tmp = MallocEx(size, true);
+	if (PackGetDataEx(p, name, tmp, index) == false) {
 		Free(tmp);
 		return NULL;
 	}
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 	WriteBuf(b, tmp, size);
 	SeekBuf(b, 0, 0);
 
@@ -1015,795 +591,390 @@ BUF *PackGetBufEx(PACK *p, char *name, UINT index)
 	return b;
 }
 
-// Get the data from the PACK
-bool PackGetData(PACK *p, char *name, void *data)
-{
+bool PackGetData(PACK *p, char *name, void *data) {
 	return PackGetDataEx(p, name, data, 0);
 }
-bool PackGetDataEx(PACK *p, char *name, void *data, UINT index)
-{
-	ELEMENT *e;
-	// Validate arguments
+bool PackGetDataEx(PACK *p, char *name, void *data, UINT index) {
 	if (p == NULL || name == NULL)
-	{
 		return false;
-	}
 
-	e = GetElement(p, name, VALUE_DATA);
+	ELEMENT *e = GetElement(p, name, VALUE_DATA);
 	if (e == NULL)
-	{
 		return false;
-	}
-	Copy(data, GetDataValue(e, index), GetDataValueSize(e, index));
+	VALUE *v = GetElementValue(e, index);
+	if (v != NULL)
+		Copy(data, v->Data, v->Size);
 	return true;
 }
-bool PackGetData2(PACK *p, char *name, void *data, UINT size)
-{
+bool PackGetData2(PACK *p, char *name, void *data, UINT size) {
 	return PackGetDataEx2(p, name, data, size, 0);
 }
-bool PackGetDataEx2(PACK *p, char *name, void *data, UINT size, UINT index)
-{
-	ELEMENT *e;
-	// Validate arguments
+bool PackGetDataEx2(PACK *p, char *name, void *data, UINT size, UINT index) {
 	if (p == NULL || name == NULL)
-	{
 		return false;
-	}
 
-	e = GetElement(p, name, VALUE_DATA);
+	ELEMENT *e = GetElement(p, name, VALUE_DATA);
 	if (e == NULL)
-	{
 		return false;
-	}
-	if (GetDataValueSize(e, index) != size)
-	{
+	VALUE *v = GetElementValue(e, index);
+	if ((v == NULL ? 0 : v->Size) != size)
 		return false;
-	}
-	Copy(data, GetDataValue(e, index), GetDataValueSize(e, index));
+	if (v != NULL)
+		Copy(data, v->Data, v->Size);
 	return true;
 }
 
-// Get the data size from the PACK
-UINT PackGetDataSize(PACK *p, char *name)
-{
+UINT PackGetDataSize(PACK *p, char *name) {
 	return PackGetDataSizeEx(p, name, 0);
 }
-UINT PackGetDataSizeEx(PACK *p, char *name, UINT index)
-{
-	ELEMENT *e;
-	// Validate arguments
-	if (p == NULL || name == NULL)
-	{
-		return 0;
-	}
+UINT PackGetDataSizeEx(PACK *p, char *name, UINT index) {
+	VALUE *v = GetElementValue(GetElement(p, name, VALUE_DATA), index);
 
-	e = GetElement(p, name, VALUE_DATA);
-	if (e == NULL)
-	{
-		return 0;
-	}
-	return GetDataValueSize(e, index);
+	return v == NULL ? 0 : v->Size;
 }
 
-// Get an integer from the PACK
-UINT64 PackGetInt64(PACK *p, char *name)
-{
+UINT64 PackGetInt64(PACK *p, char *name) {
 	return PackGetInt64Ex(p, name, 0);
 }
-UINT64 PackGetInt64Ex(PACK *p, char *name, UINT index)
-{
-	ELEMENT *e;
-	// Validate arguments
-	if (p == NULL || name == NULL)
-	{
-		return 0;
-	}
+UINT64 PackGetInt64Ex(PACK *p, char *name, UINT index) {
+	VALUE *v = GetElementValue(GetElement(p, name, VALUE_INT64), index);
 
-	e = GetElement(p, name, VALUE_INT64);
-	if (e == NULL)
-	{
-		return 0;
-	}
-	return GetInt64Value(e, index);
+	return v == NULL ? 0 : v->Int64Value;
 }
 
-// Get the index number from the PACK
-UINT PackGetIndexCount(PACK *p, char *name)
-{
-	ELEMENT *e;
-	// Validate arguments
+UINT PackGetIndexCount(PACK *p, char *name) {
 	if (p == NULL || name == NULL)
-	{
 		return 0;
-	}
 
-	e = GetElement(p, name, INFINITE);
+	ELEMENT *e = GetElement(p, name, INFINITE);
 	if (e == NULL)
-	{
 		return 0;
-	}
 
 	return e->num_value;
 }
 
-// Get the number from the PACK
-UINT PackGetNum(PACK *p, char *name)
-{
-	return MIN(PackGetInt(p, name), 65536);
-}
-
-// Get a bool type from the PACK
-bool PackGetBool(PACK *p, char *name)
-{
+bool PackGetBool(PACK *p, char *name) {
 	return PackGetInt(p, name) == 0 ? false : true;
 }
-bool PackGetBoolEx(PACK *p, char *name, UINT index)
-{
+bool PackGetBoolEx(PACK *p, char *name, UINT index) {
 	return PackGetIntEx(p, name, index) == 0 ? false : true;
 }
 
-// Add a bool type into the PACK
-ELEMENT *PackAddBool(PACK *p, char *name, bool b)
-{
+ELEMENT *PackAddBool(PACK *p, char *name, bool b) {
 	return PackAddInt(p, name, b ? 1 : 0);
 }
-ELEMENT *PackAddBoolEx(PACK *p, char *name, bool b, UINT index, UINT total)
-{
+ELEMENT *PackAddBoolEx(PACK *p, char *name, bool b, UINT index, UINT total) {
 	return PackAddIntEx(p, name, b ? 1 : 0, index, total);
 }
 
-// Add the IPV6_ADDR to the PACK
-ELEMENT *PackAddIp6AddrEx(PACK *p, char *name, IPV6_ADDR *addr, UINT index, UINT total)
-{
-	// Validate arguments
+ELEMENT *PackAddIp6AddrEx(PACK *p, char *name, IPV6_ADDR *addr, UINT index, UINT total) {
 	if (p == NULL || name == NULL || addr == NULL)
-	{
 		return NULL;
-	}
 
 	return PackAddDataEx(p, name, addr, sizeof(IPV6_ADDR), index, total);
 }
-ELEMENT *PackAddIp6Addr(PACK *p, char *name, IPV6_ADDR *addr)
-{
-	return PackAddIp6AddrEx(p, name, addr, 0, 1);
-}
 
-// Get an IPV6_ADDR from the PACK
-bool PackGetIp6AddrEx(PACK *p, char *name, IPV6_ADDR *addr, UINT index)
-{
-	// Validate arguments
-	if (p == NULL || name == NULL || addr == NULL)
-	{
+bool PackGetIp6AddrEx(PACK *p, char *name, IPV6_ADDR *addr, UINT index) {
+	if (p == NULL || name == NULL || addr == NULL) {
 		Zero(addr, sizeof(IPV6_ADDR));
 		return false;
 	}
 
 	return PackGetDataEx2(p, name, addr, sizeof(IPV6_ADDR), index);
 }
-bool PackGetIp6Addr(PACK *p, char *name, IPV6_ADDR *addr)
-{
-	return PackGetIp6AddrEx(p, name, addr, 0);
-}
 
-// Add the IP to the PACK
-void PackAddIp32Ex(PACK *p, char *name, UINT ip32, UINT index, UINT total)
-{
-	PackAddIp32Ex2(p, name, ip32, index, total, false);
-}
-void PackAddIp32Ex2(PACK *p, char *name, UINT ip32, UINT index, UINT total, bool is_single)
-{
+void PackAddIp32Ex(PACK *p, char *name, UINT ip32, UINT index, UINT total) {
 	IP ip;
-	// Validate arguments
 	if (p == NULL || name == NULL)
-	{
 		return;
-	}
 
 	UINTToIP(&ip, ip32);
 
-	PackAddIpEx2(p, name, &ip, index, total, is_single);
+	PackAddIpEx(p, name, &ip, index, total);
 }
-void PackAddIp32(PACK *p, char *name, UINT ip32)
-{
-	PackAddIp32Ex2(p, name, ip32, 0, 1, true);
+void PackAddIp32(PACK *p, char *name, UINT ip32) {
+	PackAddIp32Ex(p, name, ip32, 0, 1);
 }
-void PackAddIpEx(PACK *p, char *name, IP *ip, UINT index, UINT total)
-{
-	PackAddIpEx2(p, name, ip, index, total, false);
-}
-void PackAddIpEx2(PACK *p, char *name, IP *ip, UINT index, UINT total, bool is_single)
-{
-	UINT i;
-	char tmp[MAX_PATH];
-	// Validate arguments
-	if (p == NULL || name == NULL || ip == NULL)
-	{
-		return;
-	}
+// Element name of one part of an IP: name followed by suffix, cut as Format of "%s<suffix>" cuts
+// it: at most size - 1 characters (size is not 0) and the terminator
+static void PackIpName(char *dst, UINT size, const char *name, const char *suffix) {
+	UINT len = StrCpy(dst, size, name);
 
-	Format(tmp, sizeof(tmp), "%s@ipv6_bool", name);
+	StrCpy(dst + len, size - len, suffix);
+}
+void PackAddIpEx(PACK *p, char *name, IP *ip, UINT index, UINT total) {
+	char tmp[MAX_PATH];
+	if (p == NULL || name == NULL || ip == NULL)
+		return;
+
+	PackIpName(tmp, sizeof(tmp), name, "@ipv6_bool");
 	PackAddBoolEx(p, tmp, IsIP6(ip), index, total);
 
-	Format(tmp, sizeof(tmp), "%s@ipv6_array", name);
+	PackIpName(tmp, sizeof(tmp), name, "@ipv6_array");
 	PackAddDataEx(p, tmp, ip->address, sizeof(ip->address), index, total);
 
-	Format(tmp, sizeof(tmp), "%s@ipv6_scope_id", name);
+	PackIpName(tmp, sizeof(tmp), name, "@ipv6_scope_id");
 	PackAddIntEx(p, tmp, ip->ipv6_scope_id, index, total);
 
-	i = IPToUINT(ip);
-
-	if (IsBigEndian())
-	{
-		i = Swap32(i);
-	}
+	UINT i = IPToUINT(ip);
 
 	PackAddIntEx(p, name, i, index, total);
 }
-void PackAddIp(PACK *p, char *name, IP *ip)
-{
-	PackAddIpEx2(p, name, ip, 0, 1, true);
+void PackAddIp(PACK *p, char *name, IP *ip) {
+	PackAddIpEx(p, name, ip, 0, 1);
 }
 
-// Get an IP from the PACK
-UINT PackGetIp32Ex(PACK *p, char *name, UINT index)
-{
+UINT PackGetIp32Ex(PACK *p, char *name, UINT index) {
 	IP ip;
-	// Validate arguments
 	if (p == NULL || name == NULL)
-	{
 		return 0;
-	}
 
 	if (PackGetIpEx(p, name, &ip, index) == false)
-	{
 		return 0;
-	}
 
 	return IPToUINT(&ip);
 }
-UINT PackGetIp32(PACK *p, char *name)
-{
+UINT PackGetIp32(PACK *p, char *name) {
 	return PackGetIp32Ex(p, name, 0);
 }
-bool PackGetIpEx(PACK *p, char *name, IP *ip, UINT index)
-{
+bool PackGetIpEx(PACK *p, char *name, IP *ip, UINT index) {
 	UINT i;
 	char tmp[MAX_PATH];
-	// Validate arguments
 	if (p == NULL || ip == NULL || name == NULL)
-	{
 		return false;
-	}
 
-	Format(tmp, sizeof(tmp), "%s@ipv6_bool", name);
-	if (PackGetBoolEx(p, tmp, index))
-	{
+	PackIpName(tmp, sizeof(tmp), name, "@ipv6_bool");
+	if (PackGetBoolEx(p, tmp, index)) {
 		UCHAR data[16];
-		UINT scope_id;
 
 		Zero(data, sizeof(data));
 
-		Format(tmp, sizeof(tmp), "%s@ipv6_array", name);
+		PackIpName(tmp, sizeof(tmp), name, "@ipv6_array");
 		PackGetDataEx2(p, tmp, data, sizeof(data), index);
 
-		Format(tmp, sizeof(tmp), "%s@ipv6_scope_id", name);
-		scope_id = PackGetIntEx(p, tmp, index);
+		PackIpName(tmp, sizeof(tmp), name, "@ipv6_scope_id");
+		UINT scope_id = PackGetIntEx(p, tmp, index);
 
 		SetIP6(ip, data);
 		ip->ipv6_scope_id = scope_id;
-	}
-	else
-	{
-		if (GetElement(p, name, VALUE_INT) == NULL)
-		{
+	} else {
+		if (GetElement(p, name, VALUE_INT) == NULL) {
 			Zero(ip, sizeof(IP));
 			return false;
 		}
 
 		i = PackGetIntEx(p, name, index);
 
-		if (IsBigEndian())
-		{
-			i = Swap32(i);
-		}
-
 		UINTToIP(ip, i);
 	}
 
 	return true;
 }
-bool PackGetIp(PACK *p, char *name, IP *ip)
-{
+bool PackGetIp(PACK *p, char *name, IP *ip) {
 	return PackGetIpEx(p, name, ip, 0);
 }
 
-// Check whether the specified value is existing on the Pack
-bool PackIsValueExists(PACK *p, char *name)
-{
-	// Validate arguments
-	if (p == NULL || name == NULL)
-	{
-		return false;
-	}
-
-	return IsElement(p, name);
-}
-
-// Get an integer from the PACK
-UINT PackGetInt(PACK *p, char *name)
-{
+UINT PackGetInt(PACK *p, char *name) {
 	return PackGetIntEx(p, name, 0);
 }
-UINT PackGetIntEx(PACK *p, char *name, UINT index)
-{
-	ELEMENT *e;
-	// Validate arguments
-	if (p == NULL || name == NULL)
-	{
-		return 0;
-	}
+UINT PackGetIntEx(PACK *p, char *name, UINT index) {
+	VALUE *v = GetElementValue(GetElement(p, name, VALUE_INT), index);
 
-	e = GetElement(p, name, VALUE_INT);
-	if (e == NULL)
-	{
-		return 0;
-	}
-	return GetIntValue(e, index);
+	return v == NULL ? 0 : v->IntValue;
 }
 
-// Get an Unicode string from the PACK
-bool PackGetUniStr(PACK *p, char *name, wchar_t *unistr, UINT size)
-{
+bool PackGetUniStr(PACK *p, char *name, wchar_t *unistr, UINT size) {
 	return PackGetUniStrEx(p, name, unistr, size, 0);
 }
-bool PackGetUniStrEx(PACK *p, char *name, wchar_t *unistr, UINT size, UINT index)
-{
-	ELEMENT *e;
-	// Validate arguments
+bool PackGetUniStrEx(PACK *p, char *name, wchar_t *unistr, UINT size, UINT index) {
 	if (p == NULL || name == NULL || unistr == NULL || size == 0)
-	{
 		return false;
-	}
 
 	unistr[0] = 0;
 
-	e = GetElement(p, name, VALUE_UNISTR);
+	ELEMENT *e = GetElement(p, name, VALUE_UNISTR);
 	if (e == NULL)
-	{
 		return false;
-	}
-	UniStrCpy(unistr, size, GetUniStrValue(e, index));
+	VALUE *v = GetElementValue(e, index);
+	UniStrCpy(unistr, size, v == NULL ? NULL : v->UniStr);
 	return true;
 }
 
-// Compare strings in the PACK
-bool PackCmpStr(PACK *p, char *name, char *str)
-{
-	char tmp[MAX_SIZE];
-
-	if (PackGetStr(p, name, tmp, sizeof(tmp)) == false)
-	{
-		return false;
-	}
-
-	if (StrCmpi(tmp, str) == 0)
-	{
-		return true;
-	}
-
-	return false;
-}
-
-// Get a string from the PACK
-bool PackGetStr(PACK *p, char *name, char *str, UINT size)
-{
+bool PackGetStr(PACK *p, char *name, char *str, UINT size) {
 	return PackGetStrEx(p, name, str, size, 0);
 }
-bool PackGetStrEx(PACK *p, char *name, char *str, UINT size, UINT index)
-{
-	ELEMENT *e;
-	// Validate arguments
+bool PackGetStrEx(PACK *p, char *name, char *str, UINT size, UINT index) {
 	if (p == NULL || name == NULL || str == NULL || size == 0)
-	{
 		return false;
-	}
 
 	str[0] = 0;
 
-	e = GetElement(p, name, VALUE_STR);
+	ELEMENT *e = GetElement(p, name, VALUE_STR);
 	if (e == NULL)
-	{
 		return false;
-	}
 
-	StrCpy(str, size, GetStrValue(e, index));
+	VALUE *v = GetElementValue(e, index);
+	StrCpy(str, size, v == NULL ? NULL : v->Str);
 	return true;
 }
 
-// Get the string size from the PACK
-UINT PackGetStrSize(PACK *p, char *name)
-{
-	return PackGetStrSizeEx(p, name, 0);
-}
-UINT PackGetStrSizeEx(PACK *p, char *name, UINT index)
-{
-	ELEMENT *e;
-	// Validate arguments
-	if (p == NULL || name == NULL)
-	{
-		return 0;
-	}
-
-	e = GetElement(p, name, VALUE_STR);
-	if (e == NULL)
-	{
-		return 0;
-	}
-	return GetDataValueSize(e, index);
-}
-
-// Add the buffer to the PACK (array)
-ELEMENT *PackAddBufEx(PACK *p, char *name, BUF *b, UINT index, UINT total)
-{
-	// Validate arguments
-	if (p == NULL || name == NULL || b == NULL || total == 0)
-	{
+// Add the value at the index of the element of the name and type, which holds total values when it is new.
+// An element of that name and type with total values or more gets the value at the index, replacing the
+// one there; a shorter one drops the value and is returned as is. A name used by another type, or a full
+// PACK, rejects the value: NULL. The value is the PACK's or freed in every case.
+static ELEMENT *PackAddValueEx(PACK *p, char *name, UINT type, VALUE *v, UINT index, UINT total) {
+	if (p == NULL || name == NULL || v == NULL || total == 0) {
+		FreeValue(v, type);
 		return NULL;
 	}
+
+	ELEMENT *e = GetElement(p, name, type);
+	if (e != NULL) {
+		if (e->num_value >= total) {
+			FreeValue(e->values[index], type);
+			e->values[index] = v;
+		} else {
+			FreeValue(v, type);
+		}
+
+		return e;
+	}
+
+	e = ZeroMallocEx(sizeof(ELEMENT), true);
+	StrCpy(e->name, sizeof(e->name), name);
+	e->num_value = total;
+	e->type = type;
+	e->values = ZeroMallocEx(sizeof(VALUE *) * total, true);
+	e->values[index] = v;
+
+	if (AddElement(p, e) == false)
+		return NULL;
+
+	return e;
+}
+
+// Add an element of the name holding the one value. A name already in the PACK, of any type, or a full
+// PACK rejects the value: NULL. The value is the PACK's or freed in every case.
+static ELEMENT *PackAddValue(PACK *p, char *name, UINT type, VALUE *v) {
+	if (p == NULL || name == NULL || v == NULL) {
+		FreeValue(v, type);
+		return NULL;
+	}
+
+	ELEMENT *e = NewElement(name, type, 1, &v);
+	if (AddElement(p, e) == false)
+		return NULL;
+
+	return e;
+}
+
+ELEMENT *PackAddBufEx(PACK *p, char *name, BUF *b, UINT index, UINT total) {
+	if (p == NULL || name == NULL || b == NULL || total == 0)
+		return NULL;
 
 	return PackAddDataEx(p, name, b->Buf, b->Size, index, total);
 }
 
-// Add the data to the PACK (array)
-ELEMENT *PackAddDataEx(PACK *p, char *name, void *data, UINT size, UINT index, UINT total)
-{
-	VALUE *v;
-	ELEMENT *e;
-	// Validate arguments
+ELEMENT *PackAddDataEx(PACK *p, char *name, void *data, UINT size, UINT index, UINT total) {
 	if (p == NULL || data == NULL || name == NULL || total == 0)
-	{
 		return NULL;
-	}
 
-	v = NewDataValue(data, size);
-	e = GetElement(p, name, VALUE_DATA);
-	if (e != NULL)
-	{
-		if (e->num_value >= total)
-		{
-			FreeValue(e->values[index], VALUE_DATA);
-			e->values[index] = v;
-		}
-		else
-		{
-			FreeValue(v, VALUE_DATA);
-		}
-	}
-	else
-	{
-		e = ZeroMallocEx(sizeof(ELEMENT), true);
-		StrCpy(e->name, sizeof(e->name), name);
-		e->num_value = total;
-		e->type = VALUE_DATA;
-		e->values = ZeroMallocEx(sizeof(VALUE *) * total, true);
-		e->values[index] = v;
-		if (AddElement(p, e) == false)
-		{
-			return NULL;
-		}
-	}
-
-	return e;
+	return PackAddValueEx(p, name, VALUE_DATA, NewDataValue(data, size), index, total);
 }
 
-// Add the buffer to the PACK
-ELEMENT *PackAddBuf(PACK *p, char *name, BUF *b)
-{
-	// Validate arguments
+ELEMENT *PackAddBuf(PACK *p, char *name, BUF *b) {
 	if (p == NULL || name == NULL || b == NULL)
-	{
 		return NULL;
-	}
 
 	return PackAddData(p, name, b->Buf, b->Size);
 }
 
-// Add the data to the PACK
-ELEMENT *PackAddData(PACK *p, char *name, void *data, UINT size)
-{
-	VALUE *v;
-	ELEMENT *e;
-	// Validate arguments
+ELEMENT *PackAddData(PACK *p, char *name, void *data, UINT size) {
 	if (p == NULL || data == NULL || name == NULL)
-	{
 		return NULL;
-	}
 
-	v = NewDataValue(data, size);
-	e = NewElement(name, VALUE_DATA, 1, &v);
-	if (AddElement(p, e) == false)
-	{
-		return NULL;
-	}
-
-	return e;
+	return PackAddValue(p, name, VALUE_DATA, NewDataValue(data, size));
 }
 
-// Add a 64 bit integer (array) to the PACK
-ELEMENT *PackAddInt64Ex(PACK *p, char *name, UINT64 i, UINT index, UINT total)
-{
-	VALUE *v;
-	ELEMENT *e;
-	// Validate arguments
+ELEMENT *PackAddInt64Ex(PACK *p, char *name, UINT64 i, UINT index, UINT total) {
 	if (p == NULL || name == NULL || total == 0)
-	{
 		return NULL;
-	}
 
-	v = NewInt64Value(i);
-	e = GetElement(p, name, VALUE_INT64);
-	if (e != NULL)
-	{
-		if (e->num_value >= total)
-		{
-			FreeValue(e->values[index], VALUE_INT64);
-			e->values[index] = v;
-		}
-		else
-		{
-			FreeValue(v, VALUE_INT64);
-		}
-	}
-	else
-	{
-		e = ZeroMallocEx(sizeof(ELEMENT), true);
-		StrCpy(e->name, sizeof(e->name), name);
-		e->num_value = total;
-		e->type = VALUE_INT64;
-		e->values = ZeroMallocEx(sizeof(VALUE *) * total, true);
-		e->values[index] = v;
-
-		if (AddElement(p, e) == false)
-		{
-			return NULL;
-		}
-	}
-
-	return e;
+	return PackAddValueEx(p, name, VALUE_INT64, NewInt64Value(i), index, total);
 }
 
-// Add an integer to the PACK (array)
-ELEMENT *PackAddIntEx(PACK *p, char *name, UINT i, UINT index, UINT total)
-{
-	VALUE *v;
-	ELEMENT *e;
-	// Validate arguments
+ELEMENT *PackAddIntEx(PACK *p, char *name, UINT i, UINT index, UINT total) {
 	if (p == NULL || name == NULL || total == 0)
-	{
 		return NULL;
-	}
 
-	v = NewIntValue(i);
-	e = GetElement(p, name, VALUE_INT);
-	if (e != NULL)
-	{
-		if (e->num_value >= total)
-		{
-			FreeValue(e->values[index], VALUE_INT);
-			e->values[index] = v;
-		}
-		else
-		{
-			FreeValue(v, VALUE_INT);
-		}
-	}
-	else
-	{
-		e = ZeroMallocEx(sizeof(ELEMENT), true);
-		StrCpy(e->name, sizeof(e->name), name);
-		e->num_value = total;
-		e->type = VALUE_INT;
-		e->values = ZeroMallocEx(sizeof(VALUE *) * total, true);
-		e->values[index] = v;
-
-		if (AddElement(p, e) == false)
-		{
-			return NULL;
-		}
-	}
-
-	return e;
+	return PackAddValueEx(p, name, VALUE_INT, NewIntValue(i), index, total);
 }
 
-// Add 64 bit integer time value to the PACK
-ELEMENT *PackAddTime64(PACK *p, char *name, UINT64 i)
-{
-	return PackAddInt64(p, name, i);
-}
-ELEMENT *PackAddTime64Ex(PACK *p, char *name, UINT64 i, UINT index, UINT total)
-{
-	return PackAddInt64Ex(p, name, i, index, total);
-}
-
-
-// Add a 64 bit integer to the PACK
-ELEMENT *PackAddInt64(PACK *p, char *name, UINT64 i)
-{
-	VALUE *v;
-	ELEMENT *e;
-	// Validate arguments
+ELEMENT *PackAddInt64(PACK *p, char *name, UINT64 i) {
 	if (p == NULL || name == NULL)
-	{
 		return NULL;
-	}
 
-	v = NewInt64Value(i);
-	e = NewElement(name, VALUE_INT64, 1, &v);
-	if (AddElement(p, e) == false)
-	{
-		return NULL;
-	}
-	return e;
+	return PackAddValue(p, name, VALUE_INT64, NewInt64Value(i));
 }
 
-// Add the number of items to the PACK
-ELEMENT *PackAddNum(PACK *p, char *name, UINT num)
-{
-	return PackAddInt(p, name, num);
-}
-
-// Add an integer to the PACK
-ELEMENT *PackAddInt(PACK *p, char *name, UINT i)
-{
-	VALUE *v;
-	ELEMENT *e = NULL;
-	// Validate arguments
+ELEMENT *PackAddInt(PACK *p, char *name, UINT i) {
 	if (p == NULL || name == NULL)
-	{
 		return NULL;
-	}
 
-	v = NewIntValue(i);
-	e = NewElement(name, VALUE_INT, 1, &v);
-	if (AddElement(p, e) == false)
-	{
-		return NULL;
-	}
-	return e;
+	return PackAddValue(p, name, VALUE_INT, NewIntValue(i));
 }
 
-// Add a Unicode string (array) to the PACK
-ELEMENT *PackAddUniStrEx(PACK *p, char *name, wchar_t *unistr, UINT index, UINT total)
-{
-	VALUE *v;
-	ELEMENT *e;
-	// Validate arguments
+ELEMENT *PackAddUniStrEx(PACK *p, char *name, wchar_t *unistr, UINT index, UINT total) {
 	if (p == NULL || name == NULL || unistr == NULL || total == 0)
-	{
 		return NULL;
-	}
 
-	v = NewUniStrValue(unistr);
-	e = GetElement(p, name, VALUE_UNISTR);
-	if (e != NULL)
-	{
-		if (e->num_value >= total)
-		{
-			FreeValue(e->values[index], VALUE_UNISTR);
-			e->values[index] = v;
-		}
-		else
-		{
-			FreeValue(v, VALUE_UNISTR);
-		}
-	}
-	else
-	{
-		e = ZeroMallocEx(sizeof(ELEMENT), true);
-		StrCpy(e->name, sizeof(e->name), name);
-		e->num_value = total;
-		e->type = VALUE_UNISTR;
-		e->values = ZeroMallocEx(sizeof(VALUE *) * total, true);
-		e->values[index] = v;
-		if (AddElement(p, e) == false)
-		{
-			return NULL;
-		}
-	}
-
-	return e;
+	return PackAddValueEx(p, name, VALUE_UNISTR, NewUniStrValue(unistr), index, total);
 }
 
-// Add a Unicode string to the PACK
-ELEMENT *PackAddUniStr(PACK *p, char *name, wchar_t *unistr)
-{
-	VALUE *v;
-	ELEMENT *e = NULL;
-	// Validate arguments
+ELEMENT *PackAddUniStr(PACK *p, char *name, wchar_t *unistr) {
 	if (p == NULL || name == NULL || unistr == NULL)
-	{
 		return NULL;
-	}
 
-	v = NewUniStrValue(unistr);
-	e = NewElement(name, VALUE_UNISTR, 1, &v);
-	if (AddElement(p, e) == false)
-	{
-		return NULL;
-	}
-	return e;
+	return PackAddValue(p, name, VALUE_UNISTR, NewUniStrValue(unistr));
 }
 
-// Add a string to the PACK (array)
-ELEMENT *PackAddStrEx(PACK *p, char *name, char *str, UINT index, UINT total)
-{
-	VALUE *v;
-	ELEMENT *e;
-	// Validate arguments
+ELEMENT *PackAddStrEx(PACK *p, char *name, char *str, UINT index, UINT total) {
 	if (p == NULL || name == NULL || str == NULL || total == 0)
-	{
 		return NULL;
-	}
 
-	v = NewStrValue(str);
-	e = GetElement(p, name, VALUE_STR);
-	if (e != NULL)
-	{
-		if (e->num_value >= total)
-		{
-			FreeValue(e->values[index], VALUE_STR);
-			e->values[index] = v;
-		}
-		else
-		{
-			FreeValue(v, VALUE_STR);
-		}
-	}
-	else
-	{
-		e = ZeroMallocEx(sizeof(ELEMENT), true);
-		StrCpy(e->name, sizeof(e->name), name);
-		e->num_value = total;
-		e->type = VALUE_STR;
-		e->values = ZeroMallocEx(sizeof(VALUE *) * total, true);
-		e->values[index] = v;
-		if (AddElement(p, e) == false)
-		{
-			return NULL;
-		}
-	}
-
-	return e;
+	return PackAddValueEx(p, name, VALUE_STR, NewStrValue(str), index, total);
 }
 
-// Add a string to the PACK
-ELEMENT *PackAddStr(PACK *p, char *name, char *str)
-{
-	VALUE *v;
-	ELEMENT *e = NULL;
-	// Validate arguments
+ELEMENT *PackAddStr(PACK *p, char *name, char *str) {
 	if (p == NULL || name == NULL || str == NULL)
-	{
 		return NULL;
-	}
 
-	v = NewStrValue(str);
-	e = NewElement(name, VALUE_STR, 1, &v);
-	if (AddElement(p, e) == false)
-	{
-		return NULL;
-	}
-	return e;
+	return PackAddValue(p, name, VALUE_STR, NewStrValue(str));
 }
 
-ELEMENT *ElementNullSafe(ELEMENT *p)
-{
-	static ELEMENT dummy;
-	if (p == NULL)
-	{
-		Zero(&dummy, sizeof(dummy));
-		return &dummy;
-	}
+PACK *PackError(UINT error) {
+	PACK *p = NewPack();
+	PackAddInt(p, "error", error);
+
 	return p;
 }
 
+UINT GetErrorFromPack(PACK *p) {
+	if (p == NULL)
+		return 0;
+
+	return PackGetInt(p, "error");
+}
+
+void CreateDummyValue(PACK *p) {
+	if (p == NULL)
+		return;
+
+	UINT size = Rand32() % HTTP_PACK_RAND_SIZE_MAX;
+	UCHAR *buf = Malloc(size);
+	Rand(buf, size);
+
+	PackAddData(p, "pencore", buf, size);
+
+	Free(buf);
+}
