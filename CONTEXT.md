@@ -274,6 +274,10 @@ _Avoid_: tap, SPAN, monitor (the Local Bridge `Monitor` flag is a different thin
 The TCP 443 listener of a Node that reads the first bytes of each connection and hands the socket to the process that owns that protocol.
 _Avoid_: port sharing, reverse proxy, demultiplexer (the opt-in UDP 443 demultiplexer is a different thing)
 
+**API token**:
+A bearer secret that a caller of the Controller's API presents, holding one of the three global API roles: `viewer` reads, `operator` also applies Intent, `admin` also manages the API tokens (ADR-0031). The Controller keeps only its SHA-256; the first start creates the `admin` token.
+_Avoid_: API key, password, session (a user login of SDN-32 is a different thing)
+
 **Egress tier**:
 How a Node that is an internet exit for a VRF translates its traffic: tier 1 is RRAS NAT, tier 2 is WinNAT, tier 3 is a proxy on the Windows TCP/IP stack.
 _Avoid_: SecureNAT, NAT mode
@@ -298,6 +302,7 @@ _Avoid_: `CAPS` (the slim fork's server capability list), feature flag
 - "Network" names three things: the SDN resource (a segment inside a VRF, the successor of the Hub), the Mayaqua Network module (sockets), and a word the Hub entry tells you to avoid. In slim-fork text say Hub; say Network only for the SDN resource.
 - "Node" is a new-core host running `ranz-node`, the new core's binary, and its `NODE` object. `NODE_INFO` (Session) is unrelated: the record of a connecting client's host details that a SE-VPN login sends, not a Node.
 - "Capability" is what a Node reports to the Controller. `CAPS` (`ServerCaps.c`) is the slim fork's list of server capabilities for admin clients.
+- "Role" is what a Node does (`server`, `client`, `bridge`, `relay`). The `admin`, `operator` and `viewer` of the Controller's API are API roles, held by an API token; say API role for them.
 - "controller" was a role of the node binary in ADR-0022. Since ADR-0026 the Controller is the separate `ranz-controller` service, and the node has no `controller` role.
 - "Generation" and "revision" are different versions: a revision is a version of the whole Intent (what `ranz rollback` returns to); a Generation is a version of one Node's desired state.
 - "Configuration" is the Config file of the slim fork (`ranz_server.config`, Cfg) or the Configuration store of a Node (`ranz_node.db`, ConfigStore). Say which one.
