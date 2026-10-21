@@ -12,6 +12,7 @@
 #include "Mayaqua/Table.h"
 
 #include <stdlib.h>
+#include "CommandInternal.h"
 
 static void CtPrintRow(CONSOLE *c, UINT num, UINT *widths, wchar_t **strings, bool *rights, char separate_char)
 {

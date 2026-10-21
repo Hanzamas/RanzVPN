@@ -18,6 +18,7 @@
 #include "Mayaqua/TcpIp.h"
 
 #include <stdlib.h>
+#include "CommandInternal.h"
 
 static void CmdPrintStatusToListViewEx(CT *ct, RPC_CLIENT_GET_CONNECTION_STATUS *s, bool server_mode)
 {

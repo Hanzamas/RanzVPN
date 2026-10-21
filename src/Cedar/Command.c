@@ -24,6 +24,7 @@
 #include "Mayaqua/Tick64.h"
 
 #include <stdlib.h>
+#include "CommandInternal.h"
 
 // RSA key size of MakeCert and its MakeCert2048 alias
 #define	MAKECERT_RSA_BITS		2048
