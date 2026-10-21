@@ -202,13 +202,12 @@ bool SetVLanEnableStatus(char *title, bool enable)
 
 static RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, char *name)
 {
-	UINT i;
 	if (t == NULL || name == NULL)
 	{
 		return NULL;
 	}
 
-	for (i = 0;i < t->NumItem;i++)
+	for (UINT i = 0;i < t->NumItem;i++)
 	{
 		if (StrCmpi(t->Items[i].DeviceName, name) == 0)
 		{
@@ -349,7 +348,6 @@ static void GetVLanSupportStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
 // One SeLow probe, which also reads the adapter list
 static bool EnumEthVLanMain(RPC_ENUM_ETH_VLAN *t, LIST *netclass)
 {
-	UINT i;
 	LIST *o;
 	SU *su;
 	if (t == NULL)
@@ -371,7 +369,7 @@ static bool EnumEthVLanMain(RPC_ENUM_ETH_VLAN *t, LIST *netclass)
 
 	o = NewListFast(CmpRpcEnumEthVLan);
 
-	for (i = 0;i < LIST_NUM(eth_list);i++)
+	for (UINT i = 0;i < LIST_NUM(eth_list);i++)
 	{
 		WP_ADAPTER *a = LIST_DATA(eth_list, i);
 		MS_NETCLASS_DEVICE *d = MsNetClassFind(netclass, a->Guid);
@@ -396,7 +394,7 @@ static bool EnumEthVLanMain(RPC_ENUM_ETH_VLAN *t, LIST *netclass)
 	t->NumItem = LIST_NUM(o);
 	t->Items = ZeroMalloc(sizeof(RPC_ENUM_ETH_VLAN_ITEM) * t->NumItem);
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		RPC_ENUM_ETH_VLAN_ITEM *e = LIST_DATA(o, i);
 
@@ -426,7 +424,6 @@ bool EnumEthVLanWin32(RPC_ENUM_ETH_VLAN *t)
 
 void EthPutPackets(ETH *e, UINT num, void **datas, UINT *sizes)
 {
-	UINT i;
 	bool ok = true;
 	if (e == NULL || num == 0 || datas == NULL || sizes == NULL)
 	{
@@ -437,7 +434,7 @@ void EthPutPackets(ETH *e, UINT num, void **datas, UINT *sizes)
 		return;
 	}
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		UCHAR *data = datas[i];
 		UINT size = sizes[i];
@@ -528,7 +525,6 @@ void CloseEth(ETH *e)
 
 static struct WP_ADAPTER *Win32EthSearch(char *name)
 {
-	UINT i;
 	UINT id;
 	char simple_name[MAX_SIZE];
 	WP_ADAPTER *ret = NULL;
@@ -538,7 +534,7 @@ static struct WP_ADAPTER *Win32EthSearch(char *name)
 	if (id != 0)
 	{
 		UINT num_match = 0;
-		for (i = 0;i < LIST_NUM(eth_list);i++)
+		for (UINT i = 0;i < LIST_NUM(eth_list);i++)
 		{
 			WP_ADAPTER *a = LIST_DATA(eth_list, i);
 
@@ -551,7 +547,7 @@ static struct WP_ADAPTER *Win32EthSearch(char *name)
 
 		if (num_match >= 2)
 		{
-			for (i = 0;i < LIST_NUM(eth_list);i++)
+			for (UINT i = 0;i < LIST_NUM(eth_list);i++)
 			{
 				WP_ADAPTER *a = LIST_DATA(eth_list, i);
 
@@ -568,7 +564,7 @@ static struct WP_ADAPTER *Win32EthSearch(char *name)
 	}
 	else
 	{
-		for (i = 0;i < LIST_NUM(eth_list);i++)
+		for (UINT i = 0;i < LIST_NUM(eth_list);i++)
 		{
 			WP_ADAPTER *a = LIST_DATA(eth_list, i);
 
@@ -748,7 +744,6 @@ TOKEN_LIST *GetEthList(void)
 {
 	RPC_ENUM_ETH t;
 	TOKEN_LIST *ret;
-	UINT i;
 
 	if (EnumEthWin32(&t) == false)
 	{
@@ -759,7 +754,7 @@ TOKEN_LIST *GetEthList(void)
 	ret->NumTokens = t.NumItem;
 	ret->Token = ZeroMalloc(sizeof(char *) * ret->NumTokens);
 
-	for (i = 0;i < t.NumItem;i++)
+	for (UINT i = 0;i < t.NumItem;i++)
 	{
 		ret->Token[i] = CopyStr(t.Items[i].DeviceName);
 	}
@@ -778,7 +773,6 @@ bool EnumEthWin32(RPC_ENUM_ETH *t)
 	LIST *netclass;
 	LIST *o;
 	MS_ADAPTER_LIST *adapter_list;
-	UINT i;
 	if (t == NULL)
 	{
 		return false;
@@ -807,7 +801,7 @@ bool EnumEthWin32(RPC_ENUM_ETH *t)
 
 	InitEthAdaptersList(su, netclass);
 
-	for (i = 0;i < LIST_NUM(eth_list);i++)
+	for (UINT i = 0;i < LIST_NUM(eth_list);i++)
 	{
 		WP_ADAPTER *a = LIST_DATA(eth_list, i);
 		MS_ADAPTER *msa = MsGetAdapterByGuidFromList(adapter_list, a->Guid);
@@ -836,7 +830,7 @@ bool EnumEthWin32(RPC_ENUM_ETH *t)
 	t->NumItem = LIST_NUM(o);
 	t->Items = ZeroMalloc(sizeof(RPC_ENUM_ETH_ITEM) * t->NumItem);
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		RPC_ENUM_ETH_ITEM *e = LIST_DATA(o, i);
 
@@ -898,7 +892,6 @@ static LIST *GetEthAdapterList(SU *su, LIST *netclass)
 {
 	LIST *o;
 	LIST *ret;
-	UINT i, j;
 	char *qos_tag = "(Microsoft's Packet Scheduler)";
 	LIST *su_adapter_list = NULL;
 
@@ -913,7 +906,7 @@ static LIST *GetEthAdapterList(SU *su, LIST *netclass)
 
 	if (su_adapter_list != NULL)
 	{
-		for (i = 0;i < LIST_NUM(su_adapter_list);i++)
+		for (UINT i = 0;i < LIST_NUM(su_adapter_list);i++)
 		{
 			SU_ADAPTER_LIST *t = LIST_DATA(su_adapter_list, i);
 			WP_ADAPTER *a = ZeroMalloc(sizeof(WP_ADAPTER));
@@ -942,14 +935,13 @@ static LIST *GetEthAdapterList(SU *su, LIST *netclass)
 
 	ret = NewListFast(CompareWpAdapter);
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		WP_ADAPTER *a = LIST_DATA(o, i);
 		char tmp[MAX_SIZE];
-		UINT k;
 
 		// Every SeLow adapter is listed here; EnumEthWin32 hides the ones that are no wired LAN
-		for (k = 0;;k++)
+		for (UINT k = 0;;k++)
 		{
 			bool ok;
 
@@ -963,7 +955,7 @@ static LIST *GetEthAdapterList(SU *su, LIST *netclass)
 			}
 
 			ok = true;
-			for (j = 0;j < LIST_NUM(ret);j++)
+			for (UINT j = 0;j < LIST_NUM(ret);j++)
 			{
 				WP_ADAPTER *aa = LIST_DATA(ret, j);
 				if (StrCmpi(aa->Title, tmp) == 0)
@@ -1004,12 +996,11 @@ static void InitEthAdaptersList(SU *su, LIST *netclass)
 
 static void FreeEthAdaptersList()
 {
-	UINT i;
 	if (eth_list == NULL)
 	{
 		return;
 	}
-	for (i = 0;i < LIST_NUM(eth_list);i++)
+	for (UINT i = 0;i < LIST_NUM(eth_list);i++)
 	{
 		WP_ADAPTER *a = LIST_DATA(eth_list, i);
 		Free(a);
@@ -1094,14 +1085,13 @@ UINT GetEthDeviceHash()
 {
 	MS_ADAPTER_LIST *a = MsCreateAdapterList();
 	UINT num;
-	UINT i;
 	char tmp[4096];
 	UCHAR hash[SHA1_SIZE];
 
 	tmp[0] = 0;
 	if (a != NULL)
 	{
-		for (i = 0;i < a->Num;i++)
+		for (UINT i = 0;i < a->Num;i++)
 		{
 			StrCat(tmp, sizeof(tmp), a->Adapters[i]->Title);
 		}

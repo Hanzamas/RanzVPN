@@ -33,7 +33,7 @@ static UINT ProxyHttpHandshake(SOCK *s, PROXY_PARAM_IN *in, volatile bool *cance
 	char target_hostname[MAX_HOST_NAME_LEN + 1];
 	char target_hostname_port[MAX_SIZE];
 	HTTP_HEADER *h;
-	UINT i, code;
+	UINT code;
 	bool ok;
 
 	if ((IsEmptyStr(in->Username) || IsEmptyStr(in->Password)) == false)
@@ -44,7 +44,7 @@ static UINT ProxyHttpHandshake(SOCK *s, PROXY_PARAM_IN *in, volatile bool *cance
 	Zero(target_hostname, sizeof(target_hostname));
 	StrCpy(target_hostname, sizeof(target_hostname), in->TargetHostname);
 
-	for (i = 0; i < StrLen(target_hostname); ++i)
+	for (UINT i = 0; i < StrLen(target_hostname); ++i)
 	{
 		if (target_hostname[i] == '/')
 		{
@@ -74,7 +74,7 @@ static UINT ProxyHttpHandshake(SOCK *s, PROXY_PARAM_IN *in, volatile bool *cance
 		TOKEN_LIST *tokens = ParseToken(in->HttpCustomHeader, "\r\n");
 		if (tokens != NULL)
 		{
-			for (i = 0; i < tokens->NumTokens; i++)
+			for (UINT i = 0; i < tokens->NumTokens; i++)
 			{
 				AddHttpValueStr(h, tokens->Token[i]);
 			}

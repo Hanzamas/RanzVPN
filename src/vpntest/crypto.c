@@ -231,9 +231,7 @@ static bool KatHexEq(void *data, UINT size, char *expect_hex, char *got, UINT go
 // Whether every byte of the buffer has the value
 static bool KatAllBytes(UCHAR *buf, UINT size, UCHAR value)
 {
-	UINT i;
-
-	for (i = 0;i < size;i++)
+	for (UINT i = 0;i < size;i++)
 	{
 		if (buf[i] != value)
 		{
@@ -251,9 +249,8 @@ static void KatHashSuite(KAT_CTX *ctx, char *name, KAT_HASH_PROC *proc, UINT dig
 	UCHAR buf[KAT_MAX_DIGEST];
 	char got[KAT_MAX_DIGEST * 2 + 1];
 	char what[MAX_SIZE];
-	UINT i;
 
-	for (i = 0;i < KAT_NUM_MESSAGES;i++)
+	for (UINT i = 0;i < KAT_NUM_MESSAGES;i++)
 	{
 		void *msg = kat_messages[i];
 		UINT msg_size = (kat_messages[i] == NULL ? KAT_MILLION : StrLen(kat_messages[i]));
@@ -464,7 +461,6 @@ static void KatRand(KAT_CTX *ctx)
 	UINT64 expect_ones = (UINT64)KAT_RAND_BULK * 8 / 2;
 	UINT64 skew;
 	UINT num_seen = 0;
-	UINT i;
 	bool rand1_true = false, rand1_false = false;
 	bool r8 = false, r16 = false, r32 = false, r64 = false;
 	UCHAR first8;
@@ -491,7 +487,7 @@ static void KatRand(KAT_CTX *ctx)
 	// Statistics of a large draw: the 1-bit count near half, every byte value present
 	Zero(seen, sizeof(seen));
 	Rand(bulk, KAT_RAND_BULK);
-	for (i = 0;i < KAT_RAND_BULK;i++)
+	for (UINT i = 0;i < KAT_RAND_BULK;i++)
 	{
 		ones += KatBits(bulk[i]);
 		if (seen[bulk[i]] == false)
@@ -510,7 +506,7 @@ static void KatRand(KAT_CTX *ctx)
 	first16 = Rand16();
 	first32 = Rand32();
 	first64 = Rand64();
-	for (i = 0;i < KAT_RAND_DRAWS;i++)
+	for (UINT i = 0;i < KAT_RAND_DRAWS;i++)
 	{
 		if (Rand1())
 		{
@@ -541,9 +537,8 @@ static void KatRsaSign(KAT_CTX *ctx)
 	UCHAR sign[KAT_RSA_SIGN + KAT_GUARD];
 	char got[KAT_RSA_SIGN * 2 + 1];
 	bool signed_ok, same;
-	UINT i;
 
-	for (i = 0;i < sizeof(src);i++)
+	for (UINT i = 0;i < sizeof(src);i++)
 	{
 		src[i] = (UCHAR)(i + 1);
 	}
@@ -589,9 +584,7 @@ static struct
 // DhNewFromBits known answer: the prime and the generator of each size
 static void KatDhParams(KAT_CTX *ctx)
 {
-	UINT i;
-
-	for (i = 0;i < sizeof(kat_dh) / sizeof(kat_dh[0]);i++)
+	for (UINT i = 0;i < sizeof(kat_dh) / sizeof(kat_dh[0]);i++)
 	{
 		DH_CTX *d = DhNewFromBits(kat_dh[i].Bits);
 		const BIGNUM *p = NULL, *g = NULL;

@@ -82,8 +82,7 @@ CAPSLIST *ScGetCapsEx(RPC *rpc)
 	names = GetTableNameStartWith("CT_b_");
 	if (names != NULL)
 	{
-		UINT i;
-		for (i = 0;i < names->NumTokens;i++)
+		for (UINT i = 0;i < names->NumTokens;i++)
 		{
 			char *name = names->Token[i] + 3;
 

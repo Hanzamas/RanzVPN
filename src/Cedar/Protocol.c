@@ -68,7 +68,6 @@ bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x)
 
 	if (ret)
 	{
-		UINT i;
 		DIRLIST *dir;
 		wchar_t dirname[MAX_SIZE];
 		wchar_t exedir[MAX_SIZE];
@@ -82,7 +81,7 @@ bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x)
 			dir = EnumDirW(dirname);
 			if (dir != NULL)
 			{
-				for (i = 0;i < dir->NumFiles;i++)
+				for (UINT i = 0;i < dir->NumFiles;i++)
 				{
 					DIRENT *e = dir->File[i];
 
@@ -106,7 +105,7 @@ bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x)
 		current_chain_dir = NewCertList(false);
 		AddAllChainCertsToCertList(current_chain_dir);
 
-		for (i = 0;i < LIST_NUM(chain);i++)
+		for (UINT i = 0;i < LIST_NUM(chain);i++)
 		{
 			wchar_t tmp[MAX_SIZE];
 			X *xx = LIST_DATA(chain, i);
@@ -220,7 +219,6 @@ bool TryGetParentCertFromCertList(LIST *o, X *x, LIST *found_chain)
 
 X *FindCertIssuerFromCertList(LIST *o, X *x)
 {
-	UINT i;
 	if (o == NULL || x == NULL)
 	{
 		return NULL;
@@ -231,7 +229,7 @@ X *FindCertIssuerFromCertList(LIST *o, X *x)
 		return NULL;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		X *xx = LIST_DATA(o, i);
 
@@ -577,13 +575,12 @@ LIST *NewCertList(bool load_root_and_chain)
 
 void FreeCertList(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		X *x = LIST_DATA(o, i);
 
@@ -595,13 +592,12 @@ void FreeCertList(LIST *o)
 
 bool IsXInCertList(LIST *o, X *x)
 {
-	UINT i;
 	if (o == NULL || x == NULL)
 	{
 		return false;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		X *xx = LIST_DATA(o, i);
 
@@ -654,9 +650,7 @@ void AddAllChainCertsToCertList(LIST *o)
 
 	if (dir != NULL)
 	{
-		UINT i;
-
-		for (i = 0;i < dir->NumFiles;i++)
+		for (UINT i = 0;i < dir->NumFiles;i++)
 		{
 			DIRENT *e = dir->File[i];
 
@@ -703,9 +697,8 @@ void AddAllRootCertsToCertList(LIST *o)
 	if (p != NULL)
 	{
 		UINT num = PackGetIndexCount(p, "cert");
-		UINT i;
 
-		for (i = 0;i < num;i++)
+		for (UINT i = 0;i < num;i++)
 		{
 			bool ok = false;
 			BUF *b = PackGetBufEx(p, "cert", i);

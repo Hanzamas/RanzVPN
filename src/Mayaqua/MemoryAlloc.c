@@ -49,14 +49,13 @@ UCHAR *GetCanaryRand(UINT id)
 
 void InitCanaryRand()
 {
-	UINT i;
 	if (canary_inited)
 	{
 		return;
 	}
 
 	// From CNG (Rand): no seed, no state shared with the CRT generator
-	for (i = 0;i < NUM_CANARY_RAND;i++)
+	for (UINT i = 0;i < NUM_CANARY_RAND;i++)
 	{
 		Rand(canary_rand_data[i].Data, CANARY_RAND_SIZE);
 	}

@@ -281,7 +281,6 @@ UINT StDeleteListener(ADMIN *a, RPC_LISTENER *t)
 
 UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t)
 {
-	UINT i;
 	SERVER_LISTENER_INFO *o;
 
 	SERVER_ADMIN_ONLY;
@@ -294,7 +293,7 @@ UINT StEnumListener(ADMIN *a, RPC_LISTENER_LIST *t)
 	t->Enables = ZeroMalloc(sizeof(bool) * t->NumPort);
 	t->Errors = ZeroMalloc(sizeof(bool) * t->NumPort);
 
-	for (i = 0;i < t->NumPort;i++)
+	for (UINT i = 0;i < t->NumPort;i++)
 	{
 		t->Ports[i] = o[i].Port;
 		t->Enables[i] = o[i].Enabled;
@@ -344,7 +343,6 @@ UINT StCreateListener(ADMIN *a, RPC_LISTENER *t)
 UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 {
 	CEDAR *c;
-	UINT i;
 
 	c = a->Server->Cedar;
 
@@ -375,7 +373,7 @@ UINT StGetServerStatus(ADMIN *a, RPC_SERVER_STATUS *t)
 
 		t->NumHubStandalone = 0;
 
-		for (i = 0;i < LIST_NUM(c->HubList);i++)
+		for (UINT i = 0;i < LIST_NUM(c->HubList);i++)
 		{
 			HUB *h = LIST_DATA(c->HubList, i);
 			HUB_STATS st;

@@ -52,13 +52,12 @@ UINT PsCrlList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	}
 	else
 	{
-		UINT i;
 		CT *ct = CtNew();
 
 		CtInsertColumn(ct, _UU("CMD_ID"), false);
 		CtInsertColumn(ct, _UU("SM_CRL_COLUMN_1"), false);
 
-		for (i = 0;i < t.NumItem;i++)
+		for (UINT i = 0;i < t.NumItem;i++)
 		{
 			wchar_t tmp[64];
 			RPC_ENUM_CRL_ITEM *e = &t.Items[i];

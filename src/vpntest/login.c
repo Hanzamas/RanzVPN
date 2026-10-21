@@ -473,7 +473,6 @@ void sigleak_test(UINT num, char **arg)
 	HARNESS *h;
 	bool ok;
 	UINT sizes[3];
-	UINT i, j;
 	SOCK *s;
 	char tmp[MAX_SIZE];
 
@@ -492,7 +491,7 @@ void sigleak_test(UINT num, char **arg)
 		Print("[wrong signature body until the server disconnects]\n");
 		HarnessSetPhase("sigleak", "wrong body");
 
-		for (i = 0;i < LOGIN_SIG_CONNECTIONS;i++)
+		for (UINT i = 0;i < LOGIN_SIG_CONNECTIONS;i++)
 		{
 			UINT num_forbidden = 0;
 			UINT last;
@@ -503,7 +502,7 @@ void sigleak_test(UINT num, char **arg)
 				break;
 			}
 
-			for (j = 0;j < LOGIN_SIG_REQUESTS;j++)
+			for (UINT j = 0;j < LOGIN_SIG_REQUESTS;j++)
 			{
 				if (LoginSigPost(s, HTTP_VPN_TARGET2, sizes[j % 3]) == 403)
 				{

@@ -130,9 +130,8 @@ bool VLanRemoveTag(void **packet_data, UINT *packet_size, UINT vlan_id, UINT vla
 			if (vlan_id == 0 || (vlan_ushort == vlan_id))
 			{
 				UINT dest_size = src_size - 4;
-				UINT i;
 
-				for (i = 12; i < dest_size; i++)
+				for (UINT i = 12; i < dest_size; i++)
 				{
 					src_data[i] = src_data[i + 4];
 				}
@@ -441,7 +440,6 @@ static void ParseDNS(PKT *p, UCHAR *buf, UINT size)
 static BUF *BuildDhcpOptionsBuf(LIST *o)
 {
 	BUF *b;
-	UINT i;
 	UCHAR id;
 	UCHAR sz;
 	if (o == NULL)
@@ -450,7 +448,7 @@ static BUF *BuildDhcpOptionsBuf(LIST *o)
 	}
 
 	b = NewBuf();
-	for (i = 0; i < LIST_NUM(o); i++)
+	for (UINT i = 0; i < LIST_NUM(o); i++)
 	{
 		DHCP_OPTION *d = LIST_DATA(o, i);
 		UINT current_size = d->Size;
@@ -527,7 +525,6 @@ BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size)
 	LIST *opt_list = NULL;
 	LIST *opt_list2 = NULL;
 	UINT src_size = size;
-	UINT i;
 	UINT dhcp_min_size;
 	if (m == NULL || data == NULL || size == 0)
 	{
@@ -553,7 +550,7 @@ BUF *DhcpModify(DHCP_MODIFY_OPTION *m, void *data, UINT size)
 
 	opt_list2 = NewListFast(NULL);
 
-	for (i = 0; i < LIST_NUM(opt_list); i++)
+	for (UINT i = 0; i < LIST_NUM(opt_list); i++)
 	{
 		DHCP_OPTION *o = LIST_DATA(opt_list, i);
 		DHCP_OPTION *o2 = NULL;
@@ -833,7 +830,6 @@ PKT *ParsePacketEx4(UCHAR *buf, UINT size, bool no_l3, UINT vlan_type_id, bool b
 // vlan_tpid that is the type of ARP, IPv4 or IPv6 tags nothing, so those frames stay what they are
 bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, USHORT vlan_tpid)
 {
-	UINT i;
 	bool b1, b2;
 	USHORT type_id_16;
 	bool is_tag_vlan;
@@ -855,7 +851,7 @@ bool ParsePacketL2Ex(PKT *p, UCHAR *buf, UINT size, bool no_l3, USHORT vlan_tpid
 	p->BroadcastPacket = true;
 	b1 = true;
 	b2 = true;
-	for (i = 0; i < 6; i++)
+	for (UINT i = 0; i < 6; i++)
 	{
 		if (p->MacHeader->DestAddress[i] != 0xff)
 		{

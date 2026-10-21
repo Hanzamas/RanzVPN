@@ -392,9 +392,8 @@ static void DeleteOldNoSsl(CEDAR *c)
 static void MakeRoomInNoSslList(CEDAR *c)
 {
 	NON_SSL *oldest = NULL;
-	UINT i;
 
-	for (i = 0;i < LIST_NUM(c->NonSslList);i++)
+	for (UINT i = 0;i < LIST_NUM(c->NonSslList);i++)
 	{
 		NON_SSL *n = LIST_DATA(c->NonSslList, i);
 
@@ -450,13 +449,12 @@ static void InitNoSslList(CEDAR *c)
 
 static void FreeNoSslList(CEDAR *c)
 {
-	UINT i;
 	if (c == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(c->NonSslList);i++)
+	for (UINT i = 0;i < LIST_NUM(c->NonSslList);i++)
 	{
 		NON_SSL *n = LIST_DATA(c->NonSslList, i);
 
@@ -508,7 +506,7 @@ void DelConnection(CEDAR *cedar, CONNECTION *c)
 
 UINT GetUnestablishedConnections(CEDAR *cedar)
 {
-	UINT i, ret;
+	UINT ret;
 	if (cedar == NULL)
 	{
 		return 0;
@@ -518,7 +516,7 @@ UINT GetUnestablishedConnections(CEDAR *cedar)
 
 	LockList(cedar->ConnectionList);
 	{
-		for (i = 0;i < LIST_NUM(cedar->ConnectionList);i++)
+		for (UINT i = 0;i < LIST_NUM(cedar->ConnectionList);i++)
 		{
 			CONNECTION *c = LIST_DATA(cedar->ConnectionList, i);
 
@@ -575,7 +573,6 @@ void AddConnection(CEDAR *cedar, CONNECTION *c)
 static void StopAllConnection(CEDAR *c)
 {
 	UINT num;
-	UINT i;
 	CONNECTION **connections;
 	if (c == NULL)
 	{
@@ -590,7 +587,7 @@ static void StopAllConnection(CEDAR *c)
 	}
 	UnlockList(c->ConnectionList);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		StopConnection(connections[i], false);
 		ReleaseConnection(connections[i]);
@@ -639,7 +636,7 @@ void AddHub(CEDAR *c, HUB *h)
 static void StopAllHub(CEDAR *c)
 {
 	HUB **hubs;
-	UINT i, num;
+	UINT num;
 	if (c == NULL)
 	{
 		return;
@@ -653,7 +650,7 @@ static void StopAllHub(CEDAR *c)
 	}
 	UnlockHubList(c);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		StopHub(hubs[i]);
 		ReleaseHub(hubs[i]);
@@ -680,7 +677,7 @@ void AddListener(CEDAR *c, LISTENER *r)
 static void StopAllListener(CEDAR *c)
 {
 	LISTENER **array;
-	UINT i, num;
+	UINT num;
 	if (c == NULL)
 	{
 		return;
@@ -694,7 +691,7 @@ static void StopAllListener(CEDAR *c)
 	}
 	UnlockList(c->ListenerList);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		StopListener(array[i]);
 		ReleaseListener(array[i]);
@@ -1079,13 +1076,12 @@ char *GetSvcName(CEDAR *cedar, bool udp, UINT port)
 
 static void FreeNetSvcList(CEDAR *cedar)
 {
-	UINT i;
 	if (cedar == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(cedar->NetSvcList);i++)
+	for (UINT i = 0;i < LIST_NUM(cedar->NetSvcList);i++)
 	{
 		NETSVC *n = LIST_DATA(cedar->NetSvcList, i);
 		Free(n->Name);

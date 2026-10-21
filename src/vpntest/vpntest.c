@@ -648,7 +648,7 @@ int TestMain(char *cmd)
 		Trim(tmp);
 		if (StrLen(tmp) != 0)
 		{
-			UINT i, num;
+			UINT num;
 			bool b = false;
 			TOKEN_LIST *token = ParseCmdLine(tmp);
 			char *cmd = token->Token[0];
@@ -662,12 +662,12 @@ int TestMain(char *cmd)
 				UINT max_len = 0;
 				Print("Available commands:\n\n");
 				num = sizeof(test_list) / sizeof(TEST_LIST);
-				for (i = 0;i < num;i++)
+				for (UINT i = 0;i < num;i++)
 				{
 					TEST_LIST *t = &test_list[i];
 					max_len = MAX(max_len, StrLen(t->command_str));
 				}
-				for (i = 0;i < num;i++)
+				for (UINT i = 0;i < num;i++)
 				{
 					TEST_LIST *t = &test_list[i];
 					UINT len = StrLen(t->command_str);
@@ -694,18 +694,17 @@ int TestMain(char *cmd)
 			else
 			{
 				num = sizeof(test_list) / sizeof(TEST_LIST);
-				for (i = 0;i < num;i++)
+				for (UINT i = 0;i < num;i++)
 				{
 					if (!StrCmpi(test_list[i].command_str, cmd))
 					{
 						char **arg = Malloc(sizeof(char *) * (token->NumTokens - 1));
-						UINT j;
-						for (j = 0;j < token->NumTokens - 1;j++)
+						for (UINT j = 0;j < token->NumTokens - 1;j++)
 						{
 							arg[j] = CopyStr(token->Token[j + 1]);
 						}
 						test_list[i].proc(token->NumTokens - 1, arg);
-						for (j = 0;j < token->NumTokens - 1;j++)
+						for (UINT j = 0;j < token->NumTokens - 1;j++)
 						{
 							Free(arg[j]);
 						}
@@ -737,7 +736,6 @@ int TestMain(char *cmd)
 int main(int argc, char *argv[])
 {
 	bool memchk = false;
-	UINT i;
 	char cmd[MAX_SIZE];
 	char *s;
 	wchar_t *args_w;
@@ -749,7 +747,7 @@ int main(int argc, char *argv[])
 	cmd[0] = 0;
 	if (argc >= 2)
 	{
-		for (i = 1;i < (UINT)argc;i++)
+		for (UINT i = 1;i < (UINT)argc;i++)
 		{
 			s = argv[i];
 			if (s[0] == '/')

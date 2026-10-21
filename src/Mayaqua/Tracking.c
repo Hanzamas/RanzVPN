@@ -123,13 +123,12 @@ static void PrintObjectInfo(TRACKING_OBJECT *o)
 
 void DebugPrintObjectInfo(UINT id)
 {
-	UINT i;
 	TRACKING_OBJECT *o;
 
 	o = NULL;
 	RawLock(obj_lock);
 	{
-		for (i = 0;i < TRACKING_NUM_ARRAY;i++)
+		for (UINT i = 0;i < TRACKING_NUM_ARRAY;i++)
 		{
 			if (hashlist[i] != NULL)
 			{
@@ -183,13 +182,12 @@ static void PrintObjectList(TRACKING_OBJECT *o)
 
 void DebugPrintAllObjects()
 {
-	UINT i;
 	LIST *view;
 
 	view = NewListFast(SortObjectView);
 	RawLock(obj_lock);
 	{
-		for (i = 0;i < TRACKING_NUM_ARRAY;i++)
+		for (UINT i = 0;i < TRACKING_NUM_ARRAY;i++)
 		{
 			if (hashlist[i] != NULL)
 			{
@@ -213,7 +211,7 @@ void DebugPrintAllObjects()
 
 	Sort(view);
 
-	for (i = 0;i < LIST_NUM(view);i++)
+	for (UINT i = 0;i < LIST_NUM(view);i++)
 	{
 		TRACKING_OBJECT *o = (TRACKING_OBJECT *)LIST_DATA(view, i);
 		PrintObjectList(o);
@@ -236,7 +234,7 @@ void DebugPrintCommandList()
 
 void GetMemoryStatus(MEMORY_STATUS *status)
 {
-	UINT i, num, size;
+	UINT num, size;
 	if (status == NULL)
 	{
 		return;
@@ -246,7 +244,7 @@ void GetMemoryStatus(MEMORY_STATUS *status)
 	{
 		size = num = 0;
 
-		for (i = 0;i < TRACKING_NUM_ARRAY;i++)
+		for (UINT i = 0;i < TRACKING_NUM_ARRAY;i++)
 		{
 			if (hashlist[i] != NULL)
 			{
@@ -519,12 +517,11 @@ void InsertTrackingList(TRACKING_OBJECT *o)
 
 void InitTracking()
 {
-	UINT i;
 	CALLSTACK_DATA *s;
 
 	hashlist = (TRACKING_LIST **)Win32MemoryAlloc(sizeof(TRACKING_LIST *) * TRACKING_NUM_ARRAY);
 
-	for (i = 0;i < TRACKING_NUM_ARRAY;i++)
+	for (UINT i = 0;i < TRACKING_NUM_ARRAY;i++)
 	{
 		hashlist[i] = NULL;
 	}
@@ -548,13 +545,12 @@ void InitTracking()
 
 void FreeTracking()
 {
-	UINT i;
 	DeleteRawLock(obj_lock);
 	DeleteRawLock(cs_lock);
 	cs_lock = NULL;
 	obj_lock = NULL;
 
-	for (i = 0;i < TRACKING_NUM_ARRAY;i++)
+	for (UINT i = 0;i < TRACKING_NUM_ARRAY;i++)
 	{
 		if (hashlist[i] != NULL)
 		{

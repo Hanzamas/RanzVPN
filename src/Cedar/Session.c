@@ -456,7 +456,6 @@ CLEANUP:
 
 UINT GetNextDelayedPacketTickDiff(SESSION *s)
 {
-	UINT i;
 	UINT ret = 0x7fffffff;
 	UINT64 now;
 	if (s == NULL)
@@ -470,7 +469,7 @@ UINT GetNextDelayedPacketTickDiff(SESSION *s)
 
 		LockList(s->DelayedPacketList);
 		{
-			for (i = 0;i < LIST_NUM(s->DelayedPacketList);i++)
+			for (UINT i = 0;i < LIST_NUM(s->DelayedPacketList);i++)
 			{
 				PKT *p = LIST_DATA(s->DelayedPacketList, i);
 				UINT64 t = p->DelayedForwardTick;
@@ -865,8 +864,7 @@ static void CleanupSession(SESSION *s)
 
 	if (s->DelayedPacketList != NULL)
 	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(s->DelayedPacketList);i++)
+		for (UINT i = 0;i < LIST_NUM(s->DelayedPacketList);i++)
 		{
 			PKT *p = LIST_DATA(s->DelayedPacketList, i);
 
@@ -1220,7 +1218,6 @@ SESSION *NewClientSession(CEDAR *cedar, CLIENT_OPTION *option, CLIENT_AUTH *auth
 SESSION *GetSessionFromKey(CEDAR *cedar, UCHAR *session_key)
 {
 	HUB *h;
-	UINT i, j;
 	if (cedar == NULL || session_key == NULL)
 	{
 		return NULL;
@@ -1228,12 +1225,12 @@ SESSION *GetSessionFromKey(CEDAR *cedar, UCHAR *session_key)
 
 	LockList(cedar->HubList);
 	{
-		for (i = 0;i < LIST_NUM(cedar->HubList);i++)
+		for (UINT i = 0;i < LIST_NUM(cedar->HubList);i++)
 		{
 			h = LIST_DATA(cedar->HubList, i);
 			LockList(h->SessionList);
 			{
-				for (j = 0;j < LIST_NUM(h->SessionList);j++)
+				for (UINT j = 0;j < LIST_NUM(h->SessionList);j++)
 				{
 					SESSION *s = LIST_DATA(h->SessionList, j);
 					Lock(s->lock);
@@ -1322,7 +1319,6 @@ SESSION *NewServerSession(CEDAR *cedar, CONNECTION *c, HUB *h, char *username, P
 // scan runs, so o stays a set exactly as before.
 void AddCancelList(LIST *o, CANCEL *c)
 {
-	UINT i;
 	if (o == NULL || c == NULL)
 	{
 		return;
@@ -1335,7 +1331,7 @@ void AddCancelList(LIST *o, CANCEL *c)
 
 	if (c->CancelListNum != 0)
 	{
-		for (i = 0;i < LIST_NUM(o);i++)
+		for (UINT i = 0;i < LIST_NUM(o);i++)
 		{
 			CANCEL *t = LIST_DATA(o, i);
 			if (t == c)
@@ -1365,13 +1361,12 @@ static void LeaveCancelList(LIST *o, CANCEL *c)
 
 void CancelList(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		CANCEL *c = LIST_DATA(o, i);
 		LeaveCancelList(o, c);
@@ -1384,13 +1379,12 @@ void CancelList(LIST *o)
 
 void ReleaseCancelList(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		CANCEL *c = LIST_DATA(o, i);
 		LeaveCancelList(o, c);

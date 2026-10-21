@@ -79,7 +79,6 @@ static char *StrTestReset(STRTEST_CTX *ctx, char *init)
 static bool StrTestIs(STRTEST_CTX *ctx, char *expect, UINT guard)
 {
 	UINT size = StrSize(expect);
-	UINT i;
 
 	if (Cmp(ctx->Buf, expect, size) != 0)
 	{
@@ -91,7 +90,7 @@ static bool StrTestIs(STRTEST_CTX *ctx, char *expect, UINT guard)
 		guard = size;
 	}
 
-	for (i = guard;i < STRTEST_BUF_SIZE;i++)
+	for (UINT i = guard;i < STRTEST_BUF_SIZE;i++)
 	{
 		if (ctx->Buf[i] != STRTEST_FILL)
 		{
@@ -140,10 +139,9 @@ static void StrTestHeap(STRTEST_CTX *ctx, char *what, char *s, char *expect)
 static void StrTestTokens(STRTEST_CTX *ctx, char *what, TOKEN_LIST *t, UINT expect_num, char *expect)
 {
 	char joined[MAX_SIZE];
-	UINT i;
 
 	joined[0] = 0;
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		if (i != 0)
 		{
@@ -411,13 +409,12 @@ static void StrTestSearch(STRTEST_CTX *ctx)
 	// search_str_parity: UniSearchStrEx gives what SearchStrEx gives (FND-124)
 	{
 		static char *cases[][2] = {{"abc", "abc"}, {"abc", "ABC"}, {"abc", "abcd"}, {"abc", ""}, {"abcabc", "bc"}};
-		UINT i, start, cs;
 
-		for (i = 0;i < sizeof(cases) / sizeof(cases[0]);i++)
+		for (UINT i = 0;i < sizeof(cases) / sizeof(cases[0]);i++)
 		{
-			for (start = 0;start <= 1;start++)
+			for (UINT start = 0;start <= 1;start++)
 			{
-				for (cs = 0;cs <= 1;cs++)
+				for (UINT cs = 0;cs <= 1;cs++)
 				{
 					wchar_t ws[16], wk[16];
 					UINT a, w;
@@ -721,9 +718,8 @@ static void StrTestFast(STRTEST_CTX *ctx)
 	static WORD values[] = {0, 1, 9, 10, 59, 99, 100, 999, 1000, 2026, 9999, 10000, 65535};
 	static int zones[] = {0, 1, -1, 59, -60, 330, -480, 840, 0, 100000, -100000, 2147483647, -2147483647};
 	UINT num_values = sizeof(values) / sizeof(values[0]);
-	UINT func;
 
-	for (func = 0;func < STRTEST_FAST_NUM;func++)
+	for (UINT func = 0;func < STRTEST_FAST_NUM;func++)
 	{
 		UINT num_compared = 0;
 		UINT num_differ = 0;
@@ -731,17 +727,16 @@ static void StrTestFast(STRTEST_CTX *ctx)
 		char first_got[STRTEST_FAST_BUF];
 		char first_want[STRTEST_FAST_BUF];
 		char what[MAX_SIZE];
-		UINT v;
 
 		first_got[0] = 0;
 		first_want[0] = 0;
 
-		for (v = 0;v < num_values;v++)
+		for (UINT v = 0;v < num_values;v++)
 		{
 			SYSTEMTIME st;
 			UCHAR mac[6];
 			char full[STRTEST_FAST_BUF];
-			UINT len, size, i;
+			UINT len;
 
 			Zero(&st, sizeof(st));
 			st.wYear = values[v];
@@ -751,7 +746,7 @@ static void StrTestFast(STRTEST_CTX *ctx)
 			st.wMinute = values[(v + 4) % num_values];
 			st.wSecond = values[(v + 5) % num_values];
 			st.wMilliseconds = values[(v + 6) % num_values];
-			for (i = 0;i < sizeof(mac);i++)
+			for (UINT i = 0;i < sizeof(mac);i++)
 			{
 				mac[i] = (UCHAR)(values[v] + i * 0x2B);
 			}
@@ -759,7 +754,7 @@ static void StrTestFast(STRTEST_CTX *ctx)
 			StrTestFastCall(func, true, full, 0, &st, mac, zones[v]);
 			len = StrLen(full);
 
-			for (size = 0;size <= len + 2;size++)
+			for (UINT size = 0;size <= len + 2;size++)
 			{
 				char got[STRTEST_FAST_BUF];
 				char want[STRTEST_FAST_BUF];
@@ -771,7 +766,7 @@ static void StrTestFast(STRTEST_CTX *ctx)
 				StrTestFastCall(func, true, want, size, &st, mac, zones[v]);
 
 				same = (StrCmp(got, want) == 0);
-				for (i = StrSize(got);same && i < sizeof(got);i++)
+				for (UINT i = StrSize(got);same && i < sizeof(got);i++)
 				{
 					same = (got[i] == STRTEST_FILL);
 				}

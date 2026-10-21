@@ -49,7 +49,6 @@ UINT PsAcList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	}
 	else
 	{
-		UINT i;
 		CT *ct;
 
 		ct = CtNew();
@@ -58,7 +57,7 @@ UINT PsAcList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		CtInsertColumn(ct, _UU("SM_AC_COLUMN_3"), false);
 		CtInsertColumn(ct, _UU("SM_AC_COLUMN_4"), false);
 
-		for (i = 0;i < LIST_NUM(t.o);i++)
+		for (UINT i = 0;i < LIST_NUM(t.o);i++)
 		{
 			wchar_t tmp1[32], *tmp2, tmp3[MAX_SIZE], tmp4[32];
 			char *tmp_str;
@@ -122,10 +121,9 @@ UINT PsAcDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	}
 	else
 	{
-		UINT i;
 		bool b = false;
 
-		for (i = 0;i < LIST_NUM(t.o);i++)
+		for (UINT i = 0;i < LIST_NUM(t.o);i++)
 		{
 			AC *ac = LIST_DATA(t.o, i);
 

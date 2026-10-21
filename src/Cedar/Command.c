@@ -177,7 +177,7 @@ static void CheckNetworkListenThread(THREAD *thread, void *param)
 {
 	CHECK_NETWORK_1 *c = (CHECK_NETWORK_1 *)param;
 	SOCK *s;
-	UINT i, rsa_bits = 1024;
+	UINT rsa_bits = 1024;
 	K *pub, *pri;
 	X *x;
 	LIST *o = NewList(NULL);
@@ -200,7 +200,7 @@ static void CheckNetworkListenThread(THREAD *thread, void *param)
 
 	FreeName(name);
 
-	for (i = 1025;;i++)
+	for (UINT i = 1025;;i++)
 	{
 		s = Listen(i, NULL, false);
 		if (s != NULL)
@@ -237,7 +237,7 @@ static void CheckNetworkListenThread(THREAD *thread, void *param)
 		}
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		THREAD *t = LIST_DATA(o, i);
 		WaitThread(t, INFINITE);
@@ -300,11 +300,10 @@ static bool CheckNetwork()
 	{
 		while (true)
 		{
-			UINT i;
 			bool end = false;
 			bool all_blocked = true;
 
-			for (i = 0;i < num;i++)
+			for (UINT i = 0;i < num;i++)
 			{
 				UINT n;
 				UINT ret;
@@ -373,12 +372,11 @@ static UINT check_thread_global_1 = 0;
 static void CheckThread1(THREAD *thread, void *param)
 {
 	CHECK_THREAD_1 *ct1 = (CHECK_THREAD_1 *)param;
-	UINT i;
 	UINT num = CHECK_THREAD_INCREMENT_COUNT;
 
 	WaitThread(ct1->wait_thread, INFINITE);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		Lock(ct1->lock);
 		check_thread_global_1 = ct1->num;
@@ -422,7 +420,6 @@ static bool CheckThread()
 	bool ok = true;
 	CHECK_THREAD_1 ct1;
 	UINT num = 32;
-	UINT i;
 	THREAD **threads;
 	EVENT *e;
 	THREAD *t2;
@@ -438,7 +435,7 @@ static bool CheckThread()
 	ct1.wait_thread = t2;
 
 	threads = ZeroMalloc(sizeof(THREAD *) * num);
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		threads[i] = NewThread(CheckThread1, &ct1);
 		if (threads[i] == NULL)
@@ -450,7 +447,7 @@ static bool CheckThread()
 
 	Set(e);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		WaitThread(threads[i], INFINITE);
 		ReleaseThread(threads[i]);
@@ -494,13 +491,12 @@ static bool CheckFileSystem()
 	char exe[MAX_PATH];
 	char exe_dir[MAX_PATH];
 	DIRLIST *dirs;
-	UINT i;
 
 	GetExeName(exe, sizeof(exe));
 	GetExeDir(exe_dir, sizeof(exe_dir));
 
 	dirs = EnumDir(exe_dir);
-	for (i = 0;i < dirs->NumFiles;i++)
+	for (UINT i = 0;i < dirs->NumFiles;i++)
 	{
 		if (EndWith(exe, dirs->File[i]->FileName))
 		{
@@ -524,7 +520,7 @@ static bool CheckFileSystem()
 		CombinePathW(filename, sizeof(filename), MsGetMyTempDirW(), L"vpn_checker_tmp");
 
 		buf = Malloc(size);
-		for (i = 0;i < size;i++)
+		for (UINT i = 0;i < size;i++)
 		{
 			buf[i] = i % 256;
 		}
@@ -560,7 +556,7 @@ static bool CheckFileSystem()
 					return false;
 				}
 
-				for (i = 0;i < b->Size;i++)
+				for (UINT i = 0;i < b->Size;i++)
 				{
 					UCHAR c = ((UCHAR *)b->Buf)[i];
 
@@ -588,14 +584,13 @@ static bool CheckStrings()
 	char tmp[MAX_SIZE];
 	wchar_t tmp2[MAX_SIZE];
 	wchar_t num[MAX_PATH];
-	UINT i;
 	UINT sum, sum2;
 	UNI_TOKEN_LIST *t;
 
 	UniStrCpy(tmp2, sizeof(tmp2), L"");
 
 	sum2 = 0;
-	for (i = 0;i < 64;i++)
+	for (UINT i = 0;i < 64;i++)
 	{
 		sum2 += i;
 		UniFormat(num, sizeof(num), L",%u", i);
@@ -606,7 +601,7 @@ static bool CheckStrings()
 
 	sum = 0;
 
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		wchar_t *s = t->Token[i];
 		UINT n = UniToInt(s);
@@ -640,7 +635,7 @@ static bool CheckStrings()
 
 static bool CheckMemory()
 {
-	UINT i, num, size, j;
+	UINT num, size;
 	void **pp;
 	bool ok = true;
 	UINT old_size;
@@ -648,28 +643,28 @@ static bool CheckMemory()
 	num = 2000;
 	size = 1000;
 	pp = ZeroMalloc(sizeof(void *) * num);
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		pp[i] = ZeroMalloc(size);
 		InputToNull(pp[i]);
-		for (j = 0;j < size;j++)
+		for (UINT j = 0;j < size;j++)
 		{
 			((UCHAR *)pp[i])[j] = j % 256;
 		}
 	}
 	old_size = size;
 	size = size * 3;
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		pp[i] = ReAlloc(pp[i], size);
-		for (j = old_size;j < size;j++)
+		for (UINT j = old_size;j < size;j++)
 		{
 			InputToNull((void *)(UINT)(((UCHAR *)pp[i])[j] = j % 256));
 		}
 	}
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
-		for (j = 0;j < size;j++)
+		for (UINT j = 0;j < size;j++)
 		{
 			if (((UCHAR *)pp[i])[j] != (j % 256))
 			{
@@ -707,11 +702,11 @@ static UINT RetZero()
 
 static bool CheckKernel()
 {
-	UINT num = 10, i;
+	UINT num = 10;
 	UINT64 s = Tick64();
 	UINT64 t = Tick64();
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		UINT64 q = Tick64();
 		if (t > q)
@@ -737,12 +732,11 @@ static bool CheckKernel()
 
 static bool SystemCheck()
 {
-	UINT i;
 	bool ng = false;
 
 	UniPrint(_UU("CHECK_TITLE"));
 	UniPrint(_UU("CHECK_NOTE"));
-	for (i = 0;i < sizeof(checker_procs) / sizeof(checker_procs[0]);i++)
+	for (UINT i = 0;i < sizeof(checker_procs) / sizeof(checker_procs[0]);i++)
 	{
 		wchar_t *title;
 		bool ret = false;
@@ -907,7 +901,6 @@ static void TtGenerateRandomData(UCHAR **buf, UINT *size)
 {
 	UCHAR *tmp;
 	UINT sz;
-	UINT i;
 	if (buf == NULL || size == NULL)
 	{
 		return;
@@ -916,7 +909,7 @@ static void TtGenerateRandomData(UCHAR **buf, UINT *size)
 	sz = TRAFFIC_BUF_SIZE;
 	tmp = Malloc(sz);
 	Rand(tmp, sz);
-	for (i = 0;i < sz;i++)
+	for (UINT i = 0;i < sz;i++)
 	{
 		if (tmp[i] == '!')
 		{
@@ -1129,13 +1122,11 @@ static void TtsWorkerThread(THREAD *thread, void *param)
 
 							if (ret != SOCK_LATER)
 							{
-								UINT j;
-
 								ts->LastWaitTick = Tick64() + 100;
 
 								if (ts->SessionId != 0)
 								{
-									for (j = 0;j < LIST_NUM(w->TtsSockList);j++)
+									for (UINT j = 0;j < LIST_NUM(w->TtsSockList);j++)
 									{
 										TTS_SOCK *ts2 = LIST_DATA(w->TtsSockList, j);
 
@@ -1181,8 +1172,7 @@ static void TtsWorkerThread(THREAD *thread, void *param)
 
 				if (LIST_NUM(o) != 0)
 				{
-					UINT i;
-					for (i = 0;i < LIST_NUM(o);i++)
+					for (UINT i = 0;i < LIST_NUM(o);i++)
 					{
 						TTS_SOCK *ts = LIST_DATA(o, i);
 
@@ -1321,7 +1311,7 @@ static void TtsListenThread(THREAD *thread, void *param)
 	}
 	else
 	{
-		UINT i, num_worker_threads;
+		UINT num_worker_threads;
 
 		UniFormat(tmp, sizeof(tmp), _UU("TTS_LISTEN_STARTED"), tts->Port);
 		TtPrint(tts->Param, tts->Print, tmp);
@@ -1330,7 +1320,7 @@ static void TtsListenThread(THREAD *thread, void *param)
 
 		num_worker_threads = GetNumberOfCpu();
 
-		for (i = 0;i < num_worker_threads;i++)
+		for (UINT i = 0;i < num_worker_threads;i++)
 		{
 			TTS_WORKER *w = ZeroMalloc(sizeof(TTS_WORKER));
 
@@ -1349,7 +1339,7 @@ static void TtsListenThread(THREAD *thread, void *param)
 
 		ReleaseSock(tts->ListenSocket);
 
-		for (i = 0;i < LIST_NUM(tts->WorkerList);i++)
+		for (UINT i = 0;i < LIST_NUM(tts->WorkerList);i++)
 		{
 			TTS_WORKER *w = LIST_DATA(tts->WorkerList, i);
 
@@ -1426,7 +1416,6 @@ static void TtcPrintSummary(TTC *ttc)
 static void TtcGenerateResult(TTC *ttc)
 {
 	TT_RESULT *res;
-	UINT i;
 	if (ttc == NULL)
 	{
 		return;
@@ -1440,7 +1429,7 @@ static void TtcGenerateResult(TTC *ttc)
 	res->Double = ttc->Double;
 	res->Span = ttc->RealSpan;
 
-	for (i = 0;i < LIST_NUM(ttc->ItcSockList);i++)
+	for (UINT i = 0;i < LIST_NUM(ttc->ItcSockList);i++)
 	{
 		TTC_SOCK *ts = LIST_DATA(ttc->ItcSockList, i);
 
@@ -1507,8 +1496,6 @@ static void TtcWorkerThread(THREAD *thread, void *param)
 
 	while (true)
 	{
-		UINT i;
-
 		if (dont_block_next_time == false)
 		{
 			WaitSockEvent(w->SockEvent, 50);
@@ -1547,7 +1534,7 @@ static void TtcWorkerThread(THREAD *thread, void *param)
 		{
 			bool ok = true;
 
-			for (i = 0;i < LIST_NUM(w->SockList);i++)
+			for (UINT i = 0;i < LIST_NUM(w->SockList);i++)
 			{
 				TTC_SOCK *ts = LIST_DATA(w->SockList, i);
 
@@ -1582,7 +1569,7 @@ static void TtcWorkerThread(THREAD *thread, void *param)
 		{
 			all_sockets_blocked = true;
 
-			for (i = 0;i < LIST_NUM(w->SockList);i++)
+			for (UINT i = 0;i < LIST_NUM(w->SockList);i++)
 			{
 				UINT ret = SOCK_LATER;
 				TTC_SOCK *ts = LIST_DATA(w->SockList, i);
@@ -1657,11 +1644,10 @@ static void TtcWorkerThread(THREAD *thread, void *param)
 						(Tick64() >= ts->NextSendRequestReportTick))
 					{
 						UCHAR suprise[MAX_SIZE];
-						UINT i;
 
 						ts->NextSendRequestReportTick = Tick64() + 200ULL;
 
-						for (i = 0;i < sizeof(suprise);i++)
+						for (UINT i = 0;i < sizeof(suprise);i++)
 						{
 							suprise[i] = '!';
 						}
@@ -1836,7 +1822,7 @@ static void TtcThread(THREAD *thread, void *param)
 		UINT64 start_tick, end_tick;
 		wchar_t tmp1[MAX_SIZE], tmp2[MAX_SIZE];
 		UINT64 session_id = Rand64();
-		UINT i, num_cpu;
+		UINT num_cpu;
 		bool all_ok = false;
 
 		ttc->session_id = session_id;
@@ -1845,7 +1831,7 @@ static void TtcThread(THREAD *thread, void *param)
 
 		ttc->WorkerThreadList = NewList(NULL);
 
-		for (i = 0;i < num_cpu;i++)
+		for (UINT i = 0;i < num_cpu;i++)
 		{
 			TTC_WORKER *w = ZeroMalloc(sizeof(TTC_WORKER));
 
@@ -1861,7 +1847,7 @@ static void TtcThread(THREAD *thread, void *param)
 			Add(ttc->WorkerThreadList, w);
 		}
 
-		for (i = 0;i < LIST_NUM(ttc->ItcSockList);i++)
+		for (UINT i = 0;i < LIST_NUM(ttc->ItcSockList);i++)
 		{
 			TTC_SOCK *ts = LIST_DATA(ttc->ItcSockList, i);
 			UINT num = LIST_NUM(ttc->WorkerThreadList);
@@ -1879,7 +1865,7 @@ static void TtcThread(THREAD *thread, void *param)
 		ttc->start_tick = start_tick;
 		ttc->end_tick = end_tick;
 
-		for (i = 0;i < LIST_NUM(ttc->WorkerThreadList);i++)
+		for (UINT i = 0;i < LIST_NUM(ttc->WorkerThreadList);i++)
 		{
 			TTC_WORKER *w = LIST_DATA(ttc->WorkerThreadList, i);
 
@@ -1892,7 +1878,7 @@ static void TtcThread(THREAD *thread, void *param)
 		TtPrint(ttc->Param, ttc->Print, tmp);
 
 		all_ok = true;
-		for (i = 0;i < LIST_NUM(ttc->WorkerThreadList);i++)
+		for (UINT i = 0;i < LIST_NUM(ttc->WorkerThreadList);i++)
 		{
 			TTC_WORKER *w = LIST_DATA(ttc->WorkerThreadList, i);
 
@@ -1909,7 +1895,7 @@ static void TtcThread(THREAD *thread, void *param)
 			TtcGenerateResult(ttc);
 		}
 
-		for (i = 0;i < LIST_NUM(ttc->WorkerThreadList);i++)
+		for (UINT i = 0;i < LIST_NUM(ttc->WorkerThreadList);i++)
 		{
 			TTC_WORKER *w = LIST_DATA(ttc->WorkerThreadList, i);
 
@@ -3023,7 +3009,6 @@ static UINT PsServerCipherGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *pa
 	UINT ret = 0;
 	RPC_STR t;
 	TOKEN_LIST *ciphers;
-	UINT i;
 	wchar_t tmp[4096];
 
 	o = ParseCommandList(c, cmd_name, str, NULL, 0);
@@ -3061,7 +3046,7 @@ static UINT PsServerCipherGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *pa
 		c->Write(c, L"");
 		c->Write(c, _UU("CMD_ServerCipherGet_CIPHERS"));
 
-		for (i = 0; i < ciphers->NumTokens; i++)
+		for (UINT i = 0; i < ciphers->NumTokens; i++)
 		{
 			UniFormat(tmp, sizeof(tmp), L" %S", ciphers->Token[i]);
 			c->Write(c, tmp);
@@ -3269,7 +3254,6 @@ static UINT PsConnectionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *par
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ENUM_CONNECTION t;
-	UINT i;
 	CT *ct;
 
 	o = ParseCommandList(c, cmd_name, str, NULL, 0);
@@ -3295,7 +3279,7 @@ static UINT PsConnectionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *par
 	CtInsertColumn(ct, _UU("SM_CONN_COLUMN_3"), false);
 	CtInsertColumn(ct, _UU("SM_CONN_COLUMN_4"), false);
 
-	for (i = 0;i < t.NumConnection;i++)
+	for (UINT i = 0;i < t.NumConnection;i++)
 	{
 		wchar_t tmp[MAX_SIZE];
 		wchar_t name[MAX_SIZE];
@@ -3438,7 +3422,6 @@ static UINT PsBridgeDeviceList(CONSOLE *c, char *cmd_name, wchar_t *str, void *p
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ENUM_ETH t;
-	UINT i;
 
 	o = ParseCommandList(c, cmd_name, str, NULL, 0);
 	if (o == NULL)
@@ -3457,7 +3440,7 @@ static UINT PsBridgeDeviceList(CONSOLE *c, char *cmd_name, wchar_t *str, void *p
 		return ret;
 	}
 
-	for (i = 0;i < t.NumItem;i++)
+	for (UINT i = 0;i < t.NumItem;i++)
 	{
 		RPC_ENUM_ETH_ITEM *item = &t.Items[i];
 		wchar_t tmp[MAX_SIZE * 2];
@@ -3479,7 +3462,6 @@ static UINT PsBridgeList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ENUM_LOCALBRIDGE t;
-	UINT i;
 	CT *ct;
 
 	o = ParseCommandList(c, cmd_name, str, NULL, 0);
@@ -3506,7 +3488,7 @@ static UINT PsBridgeList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	CtInsertColumn(ct, _UU("SM_BRIDGE_COLUMN_3"), false);
 	CtInsertColumn(ct, _UU("SM_BRIDGE_COLUMN_4"), false);
 
-	for (i = 0;i < t.NumItem;i++)
+	for (UINT i = 0;i < t.NumItem;i++)
 	{
 		RPC_LOCALBRIDGE *e = &t.Items[i];
 		wchar_t name[MAX_SIZE];
@@ -3631,7 +3613,6 @@ static UINT PsCaps(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	LIST *o;
 	PS *ps = (PS *)param;
 	CAPSLIST *t;
-	UINT i;
 	CT *ct;
 
 
@@ -3651,7 +3632,7 @@ static UINT PsCaps(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	ct = CtNewStandard();
 
-	for (i = 0;i < LIST_NUM(t->CapsList);i++)
+	for (UINT i = 0;i < LIST_NUM(t->CapsList);i++)
 	{
 		CAPS *c = LIST_DATA(t->CapsList, i);
 		wchar_t title[MAX_SIZE];
@@ -3773,9 +3754,7 @@ static UINT PsConfigGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			lines = UniGetLines(buf);
 			if (lines != NULL)
 			{
-				UINT i;
-
-				for (i = 0;i < lines->NumTokens;i++)
+				for (UINT i = 0;i < lines->NumTokens;i++)
 				{
 					c->Write(c, lines->Token[i]);
 				}
@@ -3930,7 +3909,6 @@ static UINT PsLogFileList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	}
 	else
 	{
-		UINT i;
 		wchar_t tmp[MAX_SIZE];
 		CT *ct;
 
@@ -3943,7 +3921,7 @@ static UINT PsLogFileList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		CtInsertColumn(ct, _UU("SM_LOG_FILE_COLUMN_2"), true);
 		CtInsertColumn(ct, _UU("SM_LOG_FILE_COLUMN_3"), false);
 
-		for (i = 0;i < t.NumItem;i++)
+		for (UINT i = 0;i < t.NumItem;i++)
 		{
 			RPC_ENUM_LOG_FILE_ITEM *e = &t.Items[i];
 			wchar_t tmp1[MAX_PATH], tmp2[128], tmp3[128];
@@ -4142,7 +4120,6 @@ static UINT PsHubList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ENUM_HUB t;
-	UINT i;
 
 	o = ParseCommandList(c, cmd_name, str, NULL, 0);
 	if (o == NULL)
@@ -4177,7 +4154,7 @@ static UINT PsHubList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_6"), false);
 		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_7"), false);
 
-		for (i = 0;i < t.NumHub;i++)
+		for (UINT i = 0;i < t.NumHub;i++)
 		{
 			RPC_ENUM_HUB_ITEM *e = &t.Hubs[i];
 			wchar_t name[MAX_HUBNAME_LEN + 1];
@@ -4802,11 +4779,9 @@ static UINT PsLogGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 			t.LogSetting.SavePacketLog ? _UU("CMD_MSG_ENABLE") : _UU("CMD_MSG_DISABLE"));
 		if (t.LogSetting.SavePacketLog)
 		{
-			UINT i;
-
 			CtInsert(ct, _UU("CMD_Log_SwitchType"), GetLogSwitchStr(t.LogSetting.PacketLogSwitchType));
 
-			for (i = 0;i <= 7;i++)
+			for (UINT i = 0;i <= 7;i++)
 			{
 				wchar_t *tmp = NULL;
 
@@ -5265,10 +5240,9 @@ static UINT PsCAList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	}
 	else
 	{
-		UINT i;
 		CT *ct = CtNewStandard();
 
-		for (i = 0;i < t.NumCa;i++)
+		for (UINT i = 0;i < t.NumCa;i++)
 		{
 			wchar_t tmp[MAX_SIZE];
 			wchar_t tmp2[64];
@@ -5478,7 +5452,6 @@ static UINT PsCascadeList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	else
 	{
 		CT *ct = CtNew();
-		UINT i;
 
 		CtInsertColumn(ct, _UU("SM_LINK_COLUMN_1"), false);
 		CtInsertColumn(ct, _UU("SM_LINK_COLUMN_2"), false);
@@ -5486,7 +5459,7 @@ static UINT PsCascadeList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		CtInsertColumn(ct, _UU("SM_LINK_COLUMN_4"), false);
 		CtInsertColumn(ct, _UU("SM_LINK_COLUMN_5"), false);
 
-		for (i = 0;i < t.NumLink;i++)
+		for (UINT i = 0;i < t.NumLink;i++)
 		{
 			RPC_ENUM_LINK_ITEM *e = &t.Links[i];
 			wchar_t tmp1[MAX_SIZE];
@@ -7322,7 +7295,6 @@ static UINT PsCascadeDetailSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *p
 
 static void PrintPolicy(CONSOLE *c, POLICY *pol, bool cascade_mode)
 {
-	UINT i;
 	CT *ct;
 	PACK *p;
 	if (c == NULL || pol == NULL)
@@ -7338,7 +7310,7 @@ static void PrintPolicy(CONSOLE *c, POLICY *pol, bool cascade_mode)
 	p = NewPack();
 	OutRpcPolicy(p, pol);
 
-	for (i = 0; i < PolicyNum();i++)
+	for (UINT i = 0; i < PolicyNum();i++)
 	{
 		char name[64];
 		wchar_t *tmp;
@@ -7433,12 +7405,11 @@ static void PrintPolicyList(CONSOLE *c, char *name)
 	}
 	else
 	{
-		UINT i;
 		CT *ct = CtNew();
 		CtInsertColumn(ct, _UU("CMD_PolicyList_Column_1"), false);
 		CtInsertColumn(ct, _UU("CMD_PolicyList_Column_2"), false);
 
-		for (i = 0; i < PolicyNum();i++)
+		for (UINT i = 0; i < PolicyNum();i++)
 		{
 			char name[64];
 			wchar_t *tmp;
@@ -7714,14 +7685,13 @@ static bool CmdEvalProtocol(CONSOLE *c, wchar_t *str, void *param)
 static bool StrToUIntStrict(char *str, UINT max, UINT *value)
 {
 	UINT v = 0;
-	UINT i;
 
 	if (str == NULL || str[0] == 0)
 	{
 		return false;
 	}
 
-	for (i = 0;str[i] != 0;i++)
+	for (UINT i = 0;str[i] != 0;i++)
 	{
 		UINT d;
 
@@ -8367,7 +8337,6 @@ UINT PsUserList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	}
 	else
 	{
-		UINT i;
 		CT *ct = CtNew();
 
 		CtInsertColumn(ct, _UU("SM_USER_COLUMN_1"), false);
@@ -8381,7 +8350,7 @@ UINT PsUserList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_6"), false);
 		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_7"), false);
 
-		for (i = 0;i < t.NumUser;i++)
+		for (UINT i = 0;i < t.NumUser;i++)
 		{
 			RPC_ENUM_USER_ITEM *e = &t.Users[i];
 			wchar_t name[MAX_SIZE];
@@ -8781,9 +8750,7 @@ UINT PsGroupGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 			if (ScEnumUser(ps->Rpc, &t) == ERR_NO_ERROR)
 			{
-				UINT i;
-
-				for (i = 0;i < t.NumUser;i++)
+				for (UINT i = 0;i < t.NumUser;i++)
 				{
 					RPC_ENUM_USER_ITEM *u = &t.Users[i];
 
@@ -9318,7 +9285,7 @@ bool ParseHostPort(char *src, char **host, UINT *port, UINT default_port)
 		if (InStr(src, "]"))
 		{
 			// Format of [target]:port
-			UINT i, n;
+			UINT n;
 			char tmp[MAX_SIZE];
 
 			StrCpy(tmp, sizeof(tmp), src);
@@ -9328,7 +9295,7 @@ bool ParseHostPort(char *src, char **host, UINT *port, UINT default_port)
 			{
 				UINT len = StrLen(tmp);
 
-				for (i = n;i < len;i++)
+				for (UINT i = n;i < len;i++)
 				{
 					if (tmp[i] == ':')
 					{

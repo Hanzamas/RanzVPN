@@ -97,14 +97,12 @@ const MS_SVC_ARG *MsSvcArgs(UINT *num)
 // argument that is not in the table, and for NULL
 UINT MsSvcArgToMode(char *arg)
 {
-	UINT i;
-
 	if (arg == NULL)
 	{
 		return SVC_MODE_NONE;
 	}
 
-	for (i = 0;i < sizeof(ms_svc_args) / sizeof(ms_svc_args[0]);i++)
+	for (UINT i = 0;i < sizeof(ms_svc_args) / sizeof(ms_svc_args[0]);i++)
 	{
 		if (StrCmpi(arg, ms_svc_args[i].Arg) == 0)
 		{
@@ -283,14 +281,13 @@ static void MsSetServiceRecovery(SC_HANDLE service)
 {
 	SERVICE_FAILURE_ACTIONS action;
 	SC_ACTION e[3];
-	UINT i;
 
 	Zero(&action, sizeof(action));
 	action.dwResetPeriod = 1 * 60 * 60 * 24;
 	action.cActions = (DWORD)(sizeof(e) / sizeof(e[0]));
 	action.lpsaActions = e;
 
-	for (i = 0;i < action.cActions;i++)
+	for (UINT i = 0;i < action.cActions;i++)
 	{
 		e[i].Type = SC_ACTION_RESTART;
 		e[i].Delay = 10000;

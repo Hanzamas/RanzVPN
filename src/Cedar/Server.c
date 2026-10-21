@@ -437,13 +437,12 @@ static int CompareServerListener(void *p1, void *p2)
 
 void SiSetDefaultHubOption(HUB_OPTION *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < num_hub_option_fields;i++)
+	for (UINT i = 0;i < num_hub_option_fields;i++)
 	{
 		HUB_OPTION_FIELD *f = &hub_option_fields[i];
 
@@ -505,14 +504,13 @@ static ERASER *SiNewEraser(SERVER *s, UINT64 min_size, UINT interval)
 static void SiSetMaxLogSize(SERVER *s, UINT64 size)
 {
 	CEDAR *c = s->Cedar;
-	UINT i;
 
 	c->MaxLogSize = size;
 	SetMaxLogSize(s->Logger, size);
 
 	LockList(c->HubList);
 	{
-		for (i = 0;i < LIST_NUM(c->HubList);i++)
+		for (UINT i = 0;i < LIST_NUM(c->HubList);i++)
 		{
 			HUB *h = LIST_DATA(c->HubList, i);
 
@@ -738,14 +736,13 @@ static void SiLoadListenerCfg(SERVER *s, FOLDER *f)
 void SiLoadListeners(SERVER *s, FOLDER *f)
 {
 	TOKEN_LIST *t;
-	UINT i;
 	if (s == NULL || f == NULL)
 	{
 		return;
 	}
 
 	t = CfgEnumFolderToTokenList(f);
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		FOLDER *ff = CfgFindFolder(f, t->Token[i]);
 		if (ff != NULL)
@@ -765,8 +762,7 @@ static void SiWriteListeners(FOLDER *f, SERVER *s)
 
 	LockList(s->ServerListenerList);
 	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(s->ServerListenerList);i++)
+		for (UINT i = 0;i < LIST_NUM(s->ServerListenerList);i++)
 		{
 			SERVER_LISTENER *r = LIST_DATA(s->ServerListenerList, i);
 			char name[MAX_SIZE];
@@ -804,8 +800,7 @@ static void SiWriteLocalBridges(FOLDER *f, SERVER *s)
 
 	LockList(s->Cedar->LocalBridgeList);
 	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(s->Cedar->LocalBridgeList);i++)
+		for (UINT i = 0;i < LIST_NUM(s->Cedar->LocalBridgeList);i++)
 		{
 			LOCALBRIDGE *br = LIST_DATA(s->Cedar->LocalBridgeList, i);
 			char name[MAX_SIZE];
@@ -845,7 +840,6 @@ static void SiLoadLocalBridgeCfg(SERVER *s, FOLDER *f)
 void SiLoadLocalBridges(SERVER *s, FOLDER *f)
 {
 	TOKEN_LIST *t;
-	UINT i;
 	if (s == NULL || f == NULL)
 	{
 		return;
@@ -855,7 +849,7 @@ void SiLoadLocalBridges(SERVER *s, FOLDER *f)
 
 	t = CfgEnumFolderToTokenList(f);
 
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		char *name = t->Token[i];
 
@@ -938,7 +932,6 @@ FOLDER *SiWriteConfigurationToCfg(SERVER *s)
 
 static void SiLoadPolicyCfg(POLICY *p, FOLDER *f)
 {
-	UINT i;
 	if (f == NULL || p == NULL)
 	{
 		return;
@@ -946,7 +939,7 @@ static void SiLoadPolicyCfg(POLICY *p, FOLDER *f)
 
 	Zero(p, sizeof(POLICY));
 
-	for (i = 0;i < NUM_POLICY_ITEM;i++)
+	for (UINT i = 0;i < NUM_POLICY_ITEM;i++)
 	{
 		POLICY_ITEM *item = &policy_item[i];
 
@@ -956,13 +949,12 @@ static void SiLoadPolicyCfg(POLICY *p, FOLDER *f)
 
 static void SiWritePolicyCfg(FOLDER *f, POLICY *p, bool cascade_mode)
 {
-	UINT i;
 	if (f == NULL || p == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < NUM_POLICY_ITEM;i++)
+	for (UINT i = 0;i < NUM_POLICY_ITEM;i++)
 	{
 		POLICY_ITEM *item = &policy_item[i];
 
@@ -1080,13 +1072,11 @@ static void SiLoadHubAdminOptions(HUB *h, FOLDER *f)
 	t = CfgEnumItemToTokenList(f);
 	if (t != NULL)
 	{
-		UINT i;
-
 		LockList(h->AdminOptionList);
 		{
 			DeleteAllHubAdminOption(h);
 
-			for (i = 0;i < t->NumTokens;i++)
+			for (UINT i = 0;i < t->NumTokens;i++)
 			{
 				char *name = t->Token[i];
 				ADMIN_OPTION *a;
@@ -1118,8 +1108,7 @@ static void SiWriteHubAdminOptions(FOLDER *f, HUB *h)
 
 	LockList(h->AdminOptionList);
 	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(h->AdminOptionList);i++)
+		for (UINT i = 0;i < LIST_NUM(h->AdminOptionList);i++)
 		{
 			ADMIN_OPTION *a = LIST_DATA(h->AdminOptionList, i);
 
@@ -1138,8 +1127,7 @@ static void SiWriteHubLinks(FOLDER *f, HUB *h)
 
 	LockList(h->LinkList);
 	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(h->LinkList);i++)
+		for (UINT i = 0;i < LIST_NUM(h->LinkList);i++)
 		{
 			LINK *k = LIST_DATA(h->LinkList, i);
 			char name[MAX_SIZE];
@@ -1153,7 +1141,6 @@ static void SiWriteHubLinks(FOLDER *f, HUB *h)
 static void SiLoadHubLinks(HUB *h, FOLDER *f)
 {
 	TOKEN_LIST *t;
-	UINT i;
 	if (h == NULL || f == NULL)
 	{
 		return;
@@ -1161,7 +1148,7 @@ static void SiLoadHubLinks(HUB *h, FOLDER *f)
 
 	t = CfgEnumFolderToTokenList(f);
 
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		char *name = t->Token[i];
 		SiLoadHubLinkCfg(CfgFindFolder(f, name), h);
@@ -1340,8 +1327,7 @@ static void SiWriteHubAccessLists(FOLDER *f, HUB *h)
 
 	LockList(h->AccessList);
 	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(h->AccessList);i++)
+		for (UINT i = 0;i < LIST_NUM(h->AccessList);i++)
 		{
 			ACCESS *a = LIST_DATA(h->AccessList, i);
 			char name[MAX_SIZE];
@@ -1355,7 +1341,6 @@ static void SiWriteHubAccessLists(FOLDER *f, HUB *h)
 static void SiLoadHubAccessLists(HUB *h, FOLDER *f)
 {
 	TOKEN_LIST *t;
-	UINT i;
 	if (f == NULL || h == NULL)
 	{
 		return;
@@ -1363,7 +1348,7 @@ static void SiLoadHubAccessLists(HUB *h, FOLDER *f)
 
 	t = CfgEnumFolderToTokenList(f);
 
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		char *name = t->Token[i];
 		SiLoadHubAccessCfg(h, CfgFindFolder(f, name));
@@ -1374,7 +1359,6 @@ static void SiLoadHubAccessLists(HUB *h, FOLDER *f)
 
 static void SiLoadHubOptionCfg(FOLDER *f, HUB_OPTION *o)
 {
-	UINT i;
 	if (f == NULL || o == NULL)
 	{
 		return;
@@ -1384,7 +1368,7 @@ static void SiLoadHubOptionCfg(FOLDER *f, HUB_OPTION *o)
 	Zero(o, sizeof(HUB_OPTION));
 	SiSetDefaultHubOption(o);
 
-	for (i = 0;i < num_hub_option_fields;i++)
+	for (UINT i = 0;i < num_hub_option_fields;i++)
 	{
 		HUB_OPTION_FIELD *t = &hub_option_fields[i];
 		UINT value = GetHubOptionField(o, t);
@@ -1424,13 +1408,12 @@ static void SiLoadHubOptionCfg(FOLDER *f, HUB_OPTION *o)
 
 static void SiWriteHubOptionCfg(FOLDER *f, HUB_OPTION *o)
 {
-	UINT i;
 	if (f == NULL || o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < num_hub_option_fields;i++)
+	for (UINT i = 0;i < num_hub_option_fields;i++)
 	{
 		HUB_OPTION_FIELD *t = &hub_option_fields[i];
 		UINT value = GetHubOptionField(o, t);
@@ -1699,8 +1682,7 @@ static void SiWriteUserList(FOLDER *f, LIST *o)
 
 	LockList(o);
 	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(o);i++)
+		for (UINT i = 0;i < LIST_NUM(o);i++)
 		{
 			USER *u = LIST_DATA(o, i);
 			SiWriteUserCfg(CfgCreateFolder(f, u->Name), u);
@@ -1712,7 +1694,6 @@ static void SiWriteUserList(FOLDER *f, LIST *o)
 static void SiLoadUserList(HUB *h, FOLDER *f)
 {
 	TOKEN_LIST *t;
-	UINT i;
 	char *name;
 	if (f == NULL || h == NULL)
 	{
@@ -1721,7 +1702,7 @@ static void SiLoadUserList(HUB *h, FOLDER *f)
 
 	t = CfgEnumFolderToTokenList(f);
 
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		FOLDER *ff;
 		name = t->Token[i];
@@ -1810,8 +1791,7 @@ static void SiWriteGroupList(FOLDER *f, LIST *o)
 
 	LockList(o);
 	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(o);i++)
+		for (UINT i = 0;i < LIST_NUM(o);i++)
 		{
 			USERGROUP *g = LIST_DATA(o, i);
 			SiWriteGroupCfg(CfgCreateFolder(f, g->Name), g);
@@ -1823,7 +1803,6 @@ static void SiWriteGroupList(FOLDER *f, LIST *o)
 static void SiLoadGroupList(HUB *h, FOLDER *f)
 {
 	TOKEN_LIST *t;
-	UINT i;
 	char *name;
 	if (f == NULL || h == NULL)
 	{
@@ -1832,7 +1811,7 @@ static void SiLoadGroupList(HUB *h, FOLDER *f)
 
 	t = CfgEnumFolderToTokenList(f);
 
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		name = t->Token[i];
 		SiLoadGroupCfg(h, CfgFindFolder(f, name));
@@ -1850,8 +1829,7 @@ static void SiWriteAcList(FOLDER *f, LIST *o)
 
 	LockList(o);
 	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(o);i++)
+		for (UINT i = 0;i < LIST_NUM(o);i++)
 		{
 			char name[MAX_SIZE];
 			AC *ac = LIST_DATA(o, i);
@@ -1887,9 +1865,7 @@ static void SiLoadAcList(LIST *o, FOLDER *f)
 
 		if (t != NULL)
 		{
-			UINT i;
-
-			for (i = 0;i < t->NumTokens;i++)
+			for (UINT i = 0;i < t->NumTokens;i++)
 			{
 				FOLDER *ff = CfgFindFolder(f, t->Token[i]);
 
@@ -1926,8 +1902,7 @@ static void SiWriteCrlList(FOLDER *f, LIST *o)
 
 	LockList(o);
 	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(o);i++)
+		for (UINT i = 0;i < LIST_NUM(o);i++)
 		{
 			char name[MAX_SIZE];
 			CRL *crl = LIST_DATA(o, i);
@@ -2006,12 +1981,11 @@ static void SiLoadCrlList(LIST *o, FOLDER *f)
 
 	LockList(o);
 	{
-		UINT i;
 		TOKEN_LIST *t;
 
 		t = CfgEnumFolderToTokenList(f);
 
-		for (i = 0;i < t->NumTokens;i++)
+		for (UINT i = 0;i < t->NumTokens;i++)
 		{
 			CRL *crl;
 			FOLDER *ff = CfgFindFolder(f, t->Token[i]);
@@ -2097,9 +2071,8 @@ static void SiWriteCertList(FOLDER *f, LIST *o)
 
 	LockList(o);
 	{
-		UINT i;
 		X *x;
-		for (i = 0;i < LIST_NUM(o);i++)
+		for (UINT i = 0;i < LIST_NUM(o);i++)
 		{
 			char name[MAX_SIZE];
 			BUF *b;
@@ -2125,12 +2098,11 @@ static void SiLoadCertList(LIST *o, FOLDER *f)
 
 	LockList(o);
 	{
-		UINT i;
 		TOKEN_LIST *t;
 
 		t = CfgEnumFolderToTokenList(f);
 
-		for (i = 0;i < t->NumTokens;i++)
+		for (UINT i = 0;i < t->NumTokens;i++)
 		{
 			FOLDER *ff = CfgFindFolder(f, t->Token[i]);
 			BUF *b;
@@ -2354,7 +2326,6 @@ static void SiLoadHubCfg(SERVER *s, FOLDER *f, char *name)
 
 void SiWriteHubs(FOLDER *f, SERVER *s)
 {
-	UINT i;
 	FOLDER *hub_folder;
 	CEDAR *c;
 	UINT num;
@@ -2370,14 +2341,14 @@ void SiWriteHubs(FOLDER *f, SERVER *s)
 		hubs = ToArray(c->HubList);
 		num = LIST_NUM(c->HubList);
 
-		for (i = 0;i < num;i++)
+		for (UINT i = 0;i < num;i++)
 		{
 			AddRef(hubs[i]->ref);
 		}
 	}
 	UnlockList(c->HubList);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		HUB *h = hubs[i];
 
@@ -2401,7 +2372,6 @@ void SiWriteHubs(FOLDER *f, SERVER *s)
 
 void SiLoadHubs(SERVER *s, FOLDER *f)
 {
-	UINT i;
 	FOLDER *hub_folder;
 	TOKEN_LIST *t;
 	if (f == NULL || s == NULL)
@@ -2410,7 +2380,7 @@ void SiLoadHubs(SERVER *s, FOLDER *f)
 	}
 
 	t = CfgEnumFolderToTokenList(f);
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		char *name = t->Token[i];
 
@@ -2946,14 +2916,13 @@ UINT SiWriteConfigurationFile(SERVER *s)
 static void SiFreeConfiguration(SERVER *s)
 {
 	UINT size;
-	UINT i;
 	if (s == NULL)
 	{
 		return;
 	}
 
 	// The last save: a short retry for a file that another process holds locked for a moment
-	for (i = 0; i < SERVER_FILE_SAVE_FINAL_TRIES; i++)
+	for (UINT i = 0; i < SERVER_FILE_SAVE_FINAL_TRIES; i++)
 	{
 		if (i != 0)
 		{
@@ -3066,15 +3035,14 @@ static void SiStopAllListener(SERVER *s)
 
 	SiLockListenerList(s);
 	{
-		UINT i;
 		LIST *o = NewListFast(NULL);
-		for (i = 0;i < LIST_NUM(s->ServerListenerList);i++)
+		for (UINT i = 0;i < LIST_NUM(s->ServerListenerList);i++)
 		{
 			SERVER_LISTENER *e = LIST_DATA(s->ServerListenerList, i);
 			Add(o, e);
 		}
 
-		for (i = 0;i < LIST_NUM(o);i++)
+		for (UINT i = 0;i < LIST_NUM(o);i++)
 		{
 			SERVER_LISTENER *e = LIST_DATA(o, i);
 			SiDeleteListener(s, e->Port);
@@ -3089,7 +3057,6 @@ static void SiStopAllListener(SERVER *s)
 
 void SiReleaseServer(SERVER *s)
 {
-	UINT i;
 	CEDAR *c;
 	LISTENER **listener_list;
 	UINT num_listener;
@@ -3114,14 +3081,14 @@ void SiReleaseServer(SERVER *s)
 	{
 		listener_list = ToArray(c->ListenerList);
 		num_listener = LIST_NUM(c->ListenerList);
-		for (i = 0;i < num_listener;i++)
+		for (UINT i = 0;i < num_listener;i++)
 		{
 			AddRef(listener_list[i]->ref);
 		}
 	}
 	UnlockList(c->ListenerList);
 
-	for (i = 0;i < num_listener;i++)
+	for (UINT i = 0;i < num_listener;i++)
 	{
 		StopListener(listener_list[i]);
 		ReleaseListener(listener_list[i]);
@@ -3134,14 +3101,14 @@ void SiReleaseServer(SERVER *s)
 	{
 		hub_list = ToArray(c->HubList);
 		num_hub = LIST_NUM(c->HubList);
-		for (i = 0;i < num_hub;i++)
+		for (UINT i = 0;i < num_hub;i++)
 		{
 			AddRef(hub_list[i]->ref);
 		}
 	}
 	UnlockList(c->HubList);
 
-	for (i = 0;i < num_hub;i++)
+	for (UINT i = 0;i < num_hub;i++)
 	{
 		StopHub(hub_list[i]);
 		ReleaseHub(hub_list[i]);

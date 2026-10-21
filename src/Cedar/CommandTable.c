@@ -16,7 +16,6 @@
 
 static void CtPrintRow(CONSOLE *c, UINT num, UINT *widths, wchar_t **strings, bool *rights, char separate_char)
 {
-	UINT i;
 	wchar_t *buf;
 	UINT buf_size;
 	bool is_sep_line = true;
@@ -26,14 +25,14 @@ static void CtPrintRow(CONSOLE *c, UINT num, UINT *widths, wchar_t **strings, bo
 	}
 
 	buf_size = 32;
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		buf_size += sizeof(wchar_t) * widths[i] + 6;
 	}
 
 	buf = ZeroMalloc(buf_size);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		char *tmp;
 		wchar_t *space_string;
@@ -123,18 +122,17 @@ static void CtPrintRow(CONSOLE *c, UINT num, UINT *widths, wchar_t **strings, bo
 static void CtPrintStandard(CT *ct, CONSOLE *c)
 {
 	CT *t;
-	UINT i, j;
 	if (ct == NULL || c == NULL)
 	{
 		return;
 	}
 
 	t = CtNewStandard();
-	for (i = 0;i < LIST_NUM(ct->Rows);i++)
+	for (UINT i = 0;i < LIST_NUM(ct->Rows);i++)
 	{
 		CTR *row = LIST_DATA(ct->Rows, i);
 
-		for (j = 0;j < LIST_NUM(ct->Columns);j++)
+		for (UINT j = 0;j < LIST_NUM(ct->Columns);j++)
 		{
 			CTC *column = LIST_DATA(ct->Columns, j);
 
@@ -154,7 +152,6 @@ static void CtPrint(CT *ct, CONSOLE *c)
 {
 	UINT *widths;
 	UINT num;
-	UINT i, j;
 	wchar_t **header_strings;
 	bool *rights;
 	if (ct == NULL || c == NULL)
@@ -165,7 +162,7 @@ static void CtPrint(CT *ct, CONSOLE *c)
 	num = LIST_NUM(ct->Columns);
 	widths = ZeroMalloc(sizeof(UINT) * num);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		CTC *ctc = LIST_DATA(ct->Columns, i);
 		UINT w;
@@ -173,11 +170,11 @@ static void CtPrint(CT *ct, CONSOLE *c)
 		w = UniStrWidth(ctc->String);
 		widths[i] = MAX(widths[i], w);
 	}
-	for (j = 0;j < LIST_NUM(ct->Rows);j++)
+	for (UINT j = 0;j < LIST_NUM(ct->Rows);j++)
 	{
 		CTR *ctr = LIST_DATA(ct->Rows, j);
 
-		for (i = 0;i < num;i++)
+		for (UINT i = 0;i < num;i++)
 		{
 			UINT w;
 
@@ -189,7 +186,7 @@ static void CtPrint(CT *ct, CONSOLE *c)
 	header_strings = ZeroMalloc(sizeof(wchar_t *) * num);
 	rights = ZeroMalloc(sizeof(bool) * num);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		CTC *ctc = LIST_DATA(ct->Columns, i);
 
@@ -199,7 +196,7 @@ static void CtPrint(CT *ct, CONSOLE *c)
 
 	CtPrintRow(c, num, widths, header_strings, rights, '|');
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		char *s;
 
@@ -210,12 +207,12 @@ static void CtPrint(CT *ct, CONSOLE *c)
 
 	CtPrintRow(c, num, widths, header_strings, rights, '+');
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		Free(header_strings[i]);
 	}
 
-	for (j = 0;j < LIST_NUM(ct->Rows);j++)
+	for (UINT j = 0;j < LIST_NUM(ct->Rows);j++)
 	{
 		CTR *ctr = LIST_DATA(ct->Rows, j);
 
@@ -228,7 +225,6 @@ static void CtPrint(CT *ct, CONSOLE *c)
 }
 
 static void CtEscapeCsv(wchar_t *dst, UINT size, wchar_t *src){
-	UINT i;
 	UINT len = UniStrLen(src);
 	UINT idx;
 	bool need_to_escape = false;
@@ -239,7 +235,7 @@ static void CtEscapeCsv(wchar_t *dst, UINT size, wchar_t *src){
 		return;
 	}
 
-	for (i=0; i<len; i++)
+	for (UINT i=0; i<len; i++)
 	{
 		tmp[0] = src[i];
 		if (tmp[0] == L","[0] || tmp[0] == L"\n"[0] || tmp[0] == L"\""[0])
@@ -258,7 +254,7 @@ static void CtEscapeCsv(wchar_t *dst, UINT size, wchar_t *src){
 	idx = UniStrLen(dst);
 	if(idx<size-1)
 	{
-		for (i=0; i<len; i++)
+		for (UINT i=0; i<len; i++)
 		{
 			tmp[0] = src[i];
 			if (tmp[0] == L"\""[0])
@@ -274,13 +270,12 @@ static void CtEscapeCsv(wchar_t *dst, UINT size, wchar_t *src){
 
 static void CtPrintCsv(CT *ct, CONSOLE *c)
 {
-	UINT i, j;
 	UINT num_columns = LIST_NUM(ct->Columns);
 	wchar_t buf[MAX_SIZE*4];
 	wchar_t fmtbuf[MAX_SIZE*4];
 
 	buf[0] = 0;
-	for(i=0; i<num_columns; i++)
+	for(UINT i=0; i<num_columns; i++)
 	{
 		CTC *ctc = LIST_DATA(ct->Columns, i);
 		CtEscapeCsv(fmtbuf, sizeof(fmtbuf), ctc->String);
@@ -290,11 +285,11 @@ static void CtPrintCsv(CT *ct, CONSOLE *c)
 	}
 	c->Write(c, buf);
 
-	for(j=0; j<LIST_NUM(ct->Rows); j++)
+	for(UINT j=0; j<LIST_NUM(ct->Rows); j++)
 	{
 		CTR *ctr = LIST_DATA(ct->Rows, j);
 		buf[0] = 0;
-		for(i=0; i<num_columns; i++)
+		for(UINT i=0; i<num_columns; i++)
 		{
 			CtEscapeCsv(fmtbuf, sizeof(fmtbuf), ctr->Strings[i]);
 			UniStrCat(buf, sizeof(buf), fmtbuf);
@@ -307,7 +302,7 @@ static void CtPrintCsv(CT *ct, CONSOLE *c)
 
 void CtFreeEx(CT *ct, CONSOLE *c, bool standard_view)
 {
-	UINT i, num;
+	UINT num;
 	if (ct == NULL)
 	{
 		return;
@@ -334,12 +329,11 @@ void CtFreeEx(CT *ct, CONSOLE *c, bool standard_view)
 
 	num = LIST_NUM(ct->Columns);
 
-	for (i = 0;i < LIST_NUM(ct->Rows);i++)
+	for (UINT i = 0;i < LIST_NUM(ct->Rows);i++)
 	{
-		UINT j;
 		CTR *ctr = LIST_DATA(ct->Rows, i);
 
-		for (j = 0;j < num;j++)
+		for (UINT j = 0;j < num;j++)
 		{
 			Free(ctr->Strings[j]);
 		}
@@ -348,7 +342,7 @@ void CtFreeEx(CT *ct, CONSOLE *c, bool standard_view)
 		Free(ctr);
 	}
 
-	for (i = 0;i < LIST_NUM(ct->Columns);i++)
+	for (UINT i = 0;i < LIST_NUM(ct->Columns);i++)
 	{
 		CTC *ctc = LIST_DATA(ct->Columns, i);
 
@@ -369,7 +363,7 @@ void CtFree(CT *ct, CONSOLE *c)
 void CtInsert(CT *ct, ...)
 {
 	CTR *ctr;
-	UINT num, i;
+	UINT num;
 	va_list va;
 	if (ct == NULL)
 	{
@@ -383,7 +377,7 @@ void CtInsert(CT *ct, ...)
 	ctr = ZeroMalloc(sizeof(CTR));
 	ctr->Strings = ZeroMalloc(sizeof(wchar_t *) * num);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		wchar_t *s = va_arg(va, wchar_t *);
 

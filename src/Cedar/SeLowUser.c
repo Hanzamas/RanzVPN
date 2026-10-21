@@ -145,7 +145,6 @@ bool SuStageDriverPackage(wchar_t *dir, UINT dir_size)
 	PSECURITY_DESCRIPTOR sd = NULL;
 	bool created = false;
 	UINT err = 0;
-	UINT i;
 
 	if (dir == NULL || dir_size == 0)
 	{
@@ -167,7 +166,7 @@ bool SuStageDriverPackage(wchar_t *dir, UINT dir_size)
 
 	CombinePathW(temp_dir, sizeof(temp_dir), MsGetWindowsDirW(), L"Temp");
 
-	for (i = 0;i < SU_STAGE_MAX_TRIES;i++)
+	for (UINT i = 0;i < SU_STAGE_MAX_TRIES;i++)
 	{
 		Rand(random, sizeof(random));
 		BinToStrW(name, sizeof(name), random, sizeof(random));
@@ -196,7 +195,7 @@ bool SuStageDriverPackage(wchar_t *dir, UINT dir_size)
 		return false;
 	}
 
-	for (i = 0;i < sizeof(files) / sizeof(files[0]);i++)
+	for (UINT i = 0;i < sizeof(files) / sizeof(files[0]);i++)
 	{
 		wchar_t src[MAX_PATH];
 		wchar_t dst[MAX_PATH];
@@ -266,14 +265,13 @@ static bool SuInstallDriver()
 bool SuCopySysFile(wchar_t *src, wchar_t *dst)
 {
 	wchar_t dst_rename[MAX_PATH];
-	UINT i;
 	if (src == NULL || dst == NULL)
 	{
 		return false;
 	}
 	if (FileCopyW(src, dst))
 	{
-		for (i = 1;i <= 100;i++)
+		for (UINT i = 1;i <= 100;i++)
 		{
 			UniFormat(dst_rename, sizeof(dst_rename), L"%s.old%u", dst, i);
 
@@ -283,7 +281,7 @@ bool SuCopySysFile(wchar_t *src, wchar_t *dst)
 		return true;
 	}
 
-	for (i = 1;;i++)
+	for (UINT i = 1;;i++)
 	{
 		UniFormat(dst_rename, sizeof(dst_rename), L"%s.old%u", dst, i);
 
@@ -305,7 +303,7 @@ bool SuCopySysFile(wchar_t *src, wchar_t *dst)
 
 	if (FileCopyW(src, dst))
 	{
-		for (i = 1;i <= 100;i++)
+		for (UINT i = 1;i <= 100;i++)
 		{
 			UniFormat(dst_rename, sizeof(dst_rename), L"%s.old%u", dst, i);
 
@@ -598,7 +596,6 @@ bool SuReadAdapterInfoList(void *h, SL_ADAPTER_INFO_LIST *list)
 LIST *SuGetAdapterList(SU *u, LIST *netclass)
 {
 	LIST *ret;
-	UINT i;
 	if (u == NULL)
 	{
 		return NULL;
@@ -614,7 +611,7 @@ LIST *SuGetAdapterList(SU *u, LIST *netclass)
 		return NULL;
 	}
 
-	for (i = 0;i < u->AdapterInfoList.NumAdapters;i++)
+	for (UINT i = 0;i < u->AdapterInfoList.NumAdapters;i++)
 	{
 		SL_ADAPTER_INFO *info = &u->AdapterInfoList.Adapters[i];
 
@@ -681,13 +678,12 @@ int SuCmpAdapterList(void *p1, void *p2)
 
 void SuFreeAdapterList(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		SU_ADAPTER_LIST *a = LIST_DATA(o, i);
 

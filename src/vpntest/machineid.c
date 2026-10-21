@@ -73,9 +73,7 @@ static void MachineIdCheckHex(MACHINEID_CTX *ctx, UCHAR *id, char *expect, char 
 // Fill a known-answer salt: first, first + 1, ...
 static void MachineIdKatSalt(UCHAR *salt, UCHAR first)
 {
-	UINT i;
-
-	for (i = 0;i < MACHINEID_KAT_SALT_SIZE;i++)
+	for (UINT i = 0;i < MACHINEID_KAT_SALT_SIZE;i++)
 	{
 		salt[i] = (UCHAR)(first + i);
 	}

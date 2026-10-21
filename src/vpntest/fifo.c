@@ -47,9 +47,7 @@ static UCHAR FifoTestByte(UINT n)
 // Write the next size bytes of the stream, from byte *next on, in one WriteFifo
 static void FifoTestWrite(FIFO *f, UINT *next, UINT size)
 {
-	UINT i;
-
-	for (i = 0;i < size;i++)
+	for (UINT i = 0;i < size;i++)
 	{
 		fifo_test_buf[i] = FifoTestByte(*next + i);
 	}
@@ -61,12 +59,11 @@ static void FifoTestWrite(FIFO *f, UINT *next, UINT size)
 // Read size bytes in one ReadFifo: true when all of them come back and are the stream from byte *next on
 static bool FifoTestRead(FIFO *f, UINT *next, UINT size)
 {
-	UINT i;
 	bool ok;
 
 	ok = (ReadFifo(f, fifo_test_buf, size) == size);
 
-	for (i = 0;i < size && ok;i++)
+	for (UINT i = 0;i < size && ok;i++)
 	{
 		if (fifo_test_buf[i] != FifoTestByte(*next + i))
 		{
@@ -83,14 +80,14 @@ static bool FifoTestRead(FIFO *f, UINT *next, UINT size)
 static void FifoTestBacklog()
 {
 	FIFO *f = NewFifo();
-	UINT written = 0, read = 0, peak, i;
+	UINT written = 0, read = 0, peak;
 	bool order = true, direct = true;
 	char what[MAX_SIZE];
 
 	FifoTestWrite(f, &written, FIFO_TEST_BACKLOG);
 	peak = f->memsize;
 
-	for (i = 0;i < FIFO_TEST_NUM_CYCLES;i++)
+	for (UINT i = 0;i < FIFO_TEST_NUM_CYCLES;i++)
 	{
 		FifoTestWrite(f, &written, FIFO_TEST_CYCLE);
 		peak = MAX(peak, f->memsize);
@@ -182,7 +179,7 @@ static bool FifoTestGet(QUEUE *q, UINT *next)
 static void FifoTestQueue()
 {
 	QUEUE *q = NewQueueFast();
-	UINT next_in = 1, next_out = 1, max_reserved, i;
+	UINT next_in = 1, next_out = 1, max_reserved;
 	bool ok, pow2;
 
 	FifoTestCheck(GetNext(q) == NULL && GetQueueNum(q) == 0, "GetNext of an empty queue is NULL");
@@ -191,23 +188,23 @@ static void FifoTestQueue()
 
 	// Wrap-around, then growth of a wrapped ring: 10 in, 5 out, then 20 more in
 	ok = true;
-	for (i = 0;i < 10;i++)
+	for (UINT i = 0;i < 10;i++)
 	{
 		InsertQueue(q, FIFO_TEST_ITEM(next_in++));
 	}
-	for (i = 0;i < 5;i++)
+	for (UINT i = 0;i < 5;i++)
 	{
 		if (FifoTestGet(q, &next_out) == false)
 		{
 			ok = false;
 		}
 	}
-	for (i = 0;i < 20;i++)
+	for (UINT i = 0;i < 20;i++)
 	{
 		InsertQueue(q, FIFO_TEST_ITEM(next_in++));
 	}
 	ok = ok && GetQueueNum(q) == 25;
-	for (i = 0;i < 25;i++)
+	for (UINT i = 0;i < 25;i++)
 	{
 		if (FifoTestGet(q, &next_out) == false)
 		{
@@ -218,12 +215,12 @@ static void FifoTestQueue()
 
 	// A standing backlog of 100 items, then 100,000 cycles of insert one / take one
 	ok = true;
-	for (i = 0;i < 100;i++)
+	for (UINT i = 0;i < 100;i++)
 	{
 		InsertQueue(q, FIFO_TEST_ITEM(next_in++));
 	}
 	max_reserved = q->num_reserved;
-	for (i = 0;i < 100000;i++)
+	for (UINT i = 0;i < 100000;i++)
 	{
 		InsertQueue(q, FIFO_TEST_ITEM(next_in++));
 		if (FifoTestGet(q, &next_out) == false)
@@ -235,7 +232,7 @@ static void FifoTestQueue()
 	FifoTestCheck(ok && GetQueueNum(q) == 100, "a standing backlog of 100 items with 100,000 cycles of insert one / take one keeps the order");
 	FifoTestCheck(max_reserved <= 128, "the ring of that backlog stays at 128 slots or fewer");
 	ok = true;
-	for (i = 0;i < 100;i++)
+	for (UINT i = 0;i < 100;i++)
 	{
 		if (FifoTestGet(q, &next_out) == false)
 		{
@@ -245,14 +242,14 @@ static void FifoTestQueue()
 	FifoTestCheck(ok && GetQueueNum(q) == 0, "the backlog comes back last, in order");
 
 	// A burst of 5000 items: the ring grows, then gives its slots back down to 512
-	for (i = 0;i < 5000;i++)
+	for (UINT i = 0;i < 5000;i++)
 	{
 		InsertQueue(q, FIFO_TEST_ITEM(next_in++));
 	}
 	FifoTestCheck(GetQueueNum(q) == 5000 && q->num_reserved >= 5000 && FifoTestPow2(q->num_reserved), "a burst of 5000 items grows the ring to a power of two");
 	ok = true;
 	pow2 = true;
-	for (i = 0;i < 5000;i++)
+	for (UINT i = 0;i < 5000;i++)
 	{
 		if (FifoTestGet(q, &next_out) == false)
 		{

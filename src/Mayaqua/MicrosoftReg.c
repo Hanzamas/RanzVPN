@@ -97,7 +97,6 @@ TOKEN_LIST *MsRegEnumKey(UINT root, char *keyname)
 TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit)
 {
 	HKEY h;
-	UINT i;
 	TOKEN_LIST *t;
 	LIST *o;
 
@@ -115,7 +114,7 @@ TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit)
 
 	o = NewListFast(CompareStr);
 
-	for (i = 0;;i++)
+	for (UINT i = 0;;i++)
 	{
 		char tmp[MAX_SIZE];
 		UINT ret;
@@ -141,7 +140,7 @@ TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit)
 	t = ZeroMalloc(sizeof(TOKEN_LIST));
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		t->Token[i] = LIST_DATA(o, i);
 	}

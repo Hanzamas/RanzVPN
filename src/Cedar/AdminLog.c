@@ -79,7 +79,6 @@ UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
-	UINT i;
 	bool no_access = false;
 
 	HUB *h;
@@ -114,7 +113,7 @@ UINT StEnumLogFile(ADMIN *a, RPC_ENUM_LOG_FILE *t)
 
 	a->LogFileList = NewListFast(CmpLogFile);
 
-	for (i = 0;i < t->NumItem;i++)
+	for (UINT i = 0;i < t->NumItem;i++)
 	{
 		RPC_ENUM_LOG_FILE_ITEM *e = &t->Items[i];
 		LOG_FILE *f = ZeroMalloc(sizeof(LOG_FILE));
@@ -168,7 +167,6 @@ static void SiReadLocalLogFile(SERVER *s, char *filepath, UINT offset, RPC_READ_
 static void SiEnumLocalLogFileList(SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *t)
 {
 	LIST *o;
-	UINT i;
 	if (s == NULL || t == NULL)
 	{
 		return;
@@ -181,7 +179,7 @@ static void SiEnumLocalLogFileList(SERVER *s, char *hubname, RPC_ENUM_LOG_FILE *
 	t->NumItem = LIST_NUM(o);
 	t->Items = ZeroMalloc(sizeof(RPC_ENUM_LOG_FILE_ITEM) * t->NumItem);
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		LOG_FILE *f = LIST_DATA(o, i);
 		RPC_ENUM_LOG_FILE_ITEM *e = &t->Items[i];

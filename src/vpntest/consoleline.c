@@ -79,9 +79,7 @@ static bool ConsoleLineCheck(CONSOLELINE_CTX *ctx, bool ok, char *what)
 // True when the len characters of s are all 'A'
 static bool ConsoleLineAllA(wchar_t *s, UINT len)
 {
-	UINT i;
-
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		if (s[i] != L'A')
 		{
@@ -95,9 +93,7 @@ static bool ConsoleLineAllA(wchar_t *s, UINT len)
 // True when every character of s is printable ASCII
 static bool ConsoleLineIsAscii(wchar_t *s)
 {
-	UINT i;
-
-	for (i = 0;s[i] != 0;i++)
+	for (UINT i = 0;s[i] != 0;i++)
 	{
 		if (s[i] < 0x20 || s[i] > 0x7e)
 		{
@@ -112,11 +108,10 @@ static bool ConsoleLineIsAscii(wchar_t *s)
 static void ConsoleLineCodes(char *dst, UINT size, wchar_t *s)
 {
 	char *hex = "0123456789ABCDEF";
-	UINT i;
 
 	dst[0] = 0;
 
-	for (i = 0;s[i] != 0;i++)
+	for (UINT i = 0;s[i] != 0;i++)
 	{
 		UINT v = (UINT)s[i];
 		char one[6];
@@ -137,7 +132,7 @@ static void ConsoleLineChild()
 {
 	wchar_t infile[MAX_PATH];
 	CONSOLE *c;
-	UINT i, len;
+	UINT len;
 
 	len = GetEnvironmentVariableW(CONSOLELINE_ENV_INFILE, infile, MAX_PATH);
 	if (len == 0 || len >= MAX_PATH)
@@ -152,7 +147,7 @@ static void ConsoleLineChild()
 		return;
 	}
 
-	for (i = 0;i < CONSOLELINE_MAX_READS;i++)
+	for (UINT i = 0;i < CONSOLELINE_MAX_READS;i++)
 	{
 		wchar_t *s = c->ReadLine(c, L"", false);
 
@@ -322,11 +317,10 @@ static char *ConsoleLineRunChild(BUF *in, BUF *infile, UINT *exit_code)
 static void ConsoleLineResult(char *result, UINT size, char *out)
 {
 	TOKEN_LIST *t = ParseToken(out, "\r\n");
-	UINT i;
 
 	result[0] = 0;
 
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		char *line = t->Token[i];
 
@@ -347,9 +341,8 @@ static void ConsoleLineResult(char *result, UINT size, char *out)
 static void ConsoleLinePrintOutput(char *out)
 {
 	TOKEN_LIST *t = ParseToken(out, "\r\n");
-	UINT i;
 
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		UINT len = StrLen(t->Token[i]);
 
@@ -407,9 +400,8 @@ static void ConsoleLineSingleChars(CONSOLELINE_CTX *ctx)
 	char dst[16];
 	char map[8];
 	bool untouched = true;
-	UINT i;
 
-	for (i = 0;i < sizeof(dst) - 1;i++)
+	for (UINT i = 0;i < sizeof(dst) - 1;i++)
 	{
 		dst[i] = CONSOLELINE_SENTINEL;
 	}
@@ -417,7 +409,7 @@ static void ConsoleLineSingleChars(CONSOLELINE_CTX *ctx)
 
 	UniToStrForSingleChars(dst, 8, L"abcdefghij");
 
-	for (i = 8;i < sizeof(dst) - 1;i++)
+	for (UINT i = 8;i < sizeof(dst) - 1;i++)
 	{
 		if (dst[i] != CONSOLELINE_SENTINEL)
 		{
@@ -439,12 +431,11 @@ static void ConsoleLineSingleChars(CONSOLELINE_CTX *ctx)
 static void ConsoleLineUniToInt(CONSOLELINE_CTX *ctx)
 {
 	wchar_t *s = ZeroMalloc((CONSOLELINE_INT_LEN + 1) * sizeof(wchar_t));
-	UINT i;
 
 	ConsoleLineCheck(ctx, UniToInt(L"123456789") == 123456789, "UniToInt of 123456789");
 
 	// 126 zeros and a 7: 127 characters and the terminator fill the 128-byte buffer of UniToInt
-	for (i = 0;i < 126;i++)
+	for (UINT i = 0;i < 126;i++)
 	{
 		s[i] = L'0';
 	}
@@ -456,7 +447,7 @@ static void ConsoleLineUniToInt(CONSOLELINE_CTX *ctx)
 	// 42 and 300 letters: the former copy ran 175 bytes past the buffer
 	s[0] = L'4';
 	s[1] = L'2';
-	for (i = 2;i < CONSOLELINE_INT_LEN;i++)
+	for (UINT i = 2;i < CONSOLELINE_INT_LEN;i++)
 	{
 		s[i] = L'x';
 	}

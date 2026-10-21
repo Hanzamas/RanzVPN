@@ -994,10 +994,8 @@ void GetDateTimeStrRFC3339(char *str, UINT size, SYSTEMTIME *st, int timezone_mi
 // never reads past the end of the string
 static bool ParseRFC3339Digits(char *str, UINT count, UINT *value)
 {
-	UINT i;
-
 	*value = 0;
-	for (i = 0; i < count; i++)
+	for (UINT i = 0; i < count; i++)
 	{
 		if (str[i] < '0' || str[i] > '9')
 		{
@@ -1178,7 +1176,6 @@ void SetLocale(wchar_t *str)
 bool LoadLocale(LOCALE *locale, wchar_t *str)
 {
 	UNI_TOKEN_LIST *tokens;
-	UINT i;
 	if (locale == NULL || str == NULL)
 	{
 		return false;
@@ -1199,7 +1196,7 @@ bool LoadLocale(LOCALE *locale, wchar_t *str)
 	COPY_LOCALE_STR(locale->MinuteStr, sizeof(locale->MinuteStr), tokens->Token[4]);
 	COPY_LOCALE_STR(locale->SecondStr, sizeof(locale->SecondStr), tokens->Token[5]);
 
-	for (i = 0;i < 7;i++)
+	for (UINT i = 0;i < 7;i++)
 	{
 		COPY_LOCALE_STR(locale->DayOfWeek[i], sizeof(locale->DayOfWeek[i]),
 			tokens->Token[6 + i]);

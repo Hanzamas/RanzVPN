@@ -68,7 +68,7 @@ bool IsInHashListKey(const HASH_LIST *h, UINT key)
 
 void *HashListKeyToPointer(const HASH_LIST *h, UINT key)
 {
-	UINT num, i;
+	UINT num;
 	void **pp;
 	void *ret = NULL;
 	if (h == NULL || key == 0)
@@ -82,7 +82,7 @@ void *HashListKeyToPointer(const HASH_LIST *h, UINT key)
 		return NULL;
 	}
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		void *p = pp[i];
 
@@ -120,7 +120,6 @@ void UnlockHashList(HASH_LIST *h)
 void **HashListToArray(const HASH_LIST *h, UINT *num)
 {
 	void **ret = NULL;
-	UINT i;
 	UINT n = 0;
 	if (h == NULL || num == NULL)
 	{
@@ -133,15 +132,13 @@ void **HashListToArray(const HASH_LIST *h, UINT *num)
 
 	ret = ZeroMalloc(sizeof(void *) * h->NumItems);
 
-	for (i = 0;i < h->Size;i++)
+	for (UINT i = 0;i < h->Size;i++)
 	{
 		LIST *o = h->Entries[i];
 
 		if (o != NULL)
 		{
-			UINT j;
-
-			for (j = 0;j < LIST_NUM(o);j++)
+			for (UINT j = 0;j < LIST_NUM(o);j++)
 			{
 				void *p = LIST_DATA(o, j);
 
@@ -215,16 +212,16 @@ bool DeleteHash(HASH_LIST *h, void *p)
 // Returns the number of items taken out.
 UINT DeleteHashIf(HASH_LIST *h, HASH_LIST_TAKE_PROC *proc, void *param)
 {
-	UINT i, num_taken = 0;
+	UINT num_taken = 0;
 	if (h == NULL || proc == NULL)
 	{
 		return 0;
 	}
 
-	for (i = 0;i < h->Size;i++)
+	for (UINT i = 0;i < h->Size;i++)
 	{
 		LIST *o = h->Entries[i];
-		UINT j, num, num_kept = 0;
+		UINT num, num_kept = 0;
 
 		if (o == NULL)
 		{
@@ -233,7 +230,7 @@ UINT DeleteHashIf(HASH_LIST *h, HASH_LIST_TAKE_PROC *proc, void *param)
 
 		num = LIST_NUM(o);
 
-		for (j = 0;j < num;j++)
+		for (UINT j = 0;j < num;j++)
 		{
 			void *p = LIST_DATA(o, j);
 
@@ -329,13 +326,12 @@ void ReleaseHashList(HASH_LIST *h)
 }
 void CleanupHashList(HASH_LIST *h)
 {
-	UINT i;
 	if (h == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < h->Size;i++)
+	for (UINT i = 0;i < h->Size;i++)
 	{
 		LIST *o = h->Entries[i];
 
@@ -383,13 +379,12 @@ void AppendBufUtf8(BUF *b, const wchar_t *str)
 
 UINT SearchBin(const void *data, UINT data_size, const void *key, UINT key_size)
 {
-	UINT i;
 	if (data == NULL || key == NULL || key_size == 0 || data_size == 0 || key_size > data_size)
 	{
 		return INFINITE;
 	}
 
-	for (i = 0;i < (data_size - key_size + 1);i++)
+	for (UINT i = 0;i < (data_size - key_size + 1);i++)
 	{
 		UCHAR *p = ((UCHAR *)data) + i;
 
@@ -411,14 +406,13 @@ void CrashNow()
 
 bool IsZero(const void *data, UINT size)
 {
-	UINT i;
 	UCHAR *c = (UCHAR *)data;
 	if (data == NULL || size == 0)
 	{
 		return true;
 	}
 
-	for (i = 0;i < size;i++)
+	for (UINT i = 0;i < size;i++)
 	{
 		if (c[i] != 0)
 		{
@@ -882,13 +876,12 @@ void Sort(LIST *o)
 
 bool ReplaceListPointer(LIST *o, const void *oldptr, void *newptr)
 {
-	UINT i;
 	if (o == NULL || oldptr == NULL || newptr == NULL)
 	{
 		return false;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		void *p = LIST_DATA(o, i);
 
@@ -904,13 +897,12 @@ bool ReplaceListPointer(LIST *o, const void *oldptr, void *newptr)
 
 void *ListKeyToPointer(LIST *o, UINT key)
 {
-	UINT i;
 	if (o == NULL || key == 0)
 	{
 		return NULL;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		void *p = LIST_DATA(o, i);
 
@@ -942,13 +934,12 @@ bool IsInListKey(LIST *o, UINT key)
 
 bool IsInList(LIST *o, const void *p)
 {
-	UINT i;
 	if (o == NULL || p == NULL)
 	{
 		return false;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		void *q = LIST_DATA(o, i);
 		if (p == q)
@@ -1024,7 +1015,7 @@ bool Delete(LIST *o, const void *p)
 // Returns the number of items removed
 UINT DeleteAndFreeIf(LIST *o, bool (*is_dead)(void *p, void *param), void *param)
 {
-	UINT i, keep, num;
+	UINT keep, num;
 	if (o == NULL || is_dead == NULL)
 	{
 		return 0;
@@ -1033,7 +1024,7 @@ UINT DeleteAndFreeIf(LIST *o, bool (*is_dead)(void *p, void *param), void *param
 	num = o->num_item;
 	keep = 0;
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		void *p = o->p[i];
 
@@ -1064,7 +1055,7 @@ UINT DeleteAndFreeIf(LIST *o, bool (*is_dead)(void *p, void *param), void *param
 			o->p = ReAlloc(o->p, sizeof(void *) * o->num_reserved);
 		}
 
-		for (i = keep;i < num;i++)
+		for (UINT i = keep;i < num;i++)
 		{
 			KS_INC(KS_DELETE_COUNT);
 		}
@@ -1134,13 +1125,12 @@ void CleanupList(LIST *o)
 
 bool IsIntInList(LIST *o, UINT i)
 {
-	UINT j;
 	if (o == NULL)
 	{
 		return false;
 	}
 
-	for (j = 0;j < LIST_NUM(o);j++)
+	for (UINT j = 0;j < LIST_NUM(o);j++)
 	{
 		UINT *p = LIST_DATA(o, j);
 
@@ -1154,13 +1144,12 @@ bool IsIntInList(LIST *o, UINT i)
 }
 bool IsInt64InList(LIST *o, UINT64 i)
 {
-	UINT j;
 	if (o == NULL)
 	{
 		return false;
 	}
 
-	for (j = 0;j < LIST_NUM(o);j++)
+	for (UINT j = 0;j < LIST_NUM(o);j++)
 	{
 		UINT64 *p = LIST_DATA(o, j);
 
@@ -1175,13 +1164,12 @@ bool IsInt64InList(LIST *o, UINT64 i)
 
 void FreeListItems(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		Free(LIST_DATA(o, i));
 	}
@@ -1201,13 +1189,12 @@ void ReleaseInt64List(LIST *o)
 void DelInt(LIST *o, UINT i)
 {
 	LIST *o2 = NULL;
-	UINT j;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (j = 0;j < LIST_NUM(o);j++)
+	for (UINT j = 0;j < LIST_NUM(o);j++)
 	{
 		UINT *p = LIST_DATA(o, j);
 
@@ -1221,7 +1208,7 @@ void DelInt(LIST *o, UINT i)
 		}
 	}
 
-	for (j = 0;j < LIST_NUM(o2);j++)
+	for (UINT j = 0;j < LIST_NUM(o2);j++)
 	{
 		UINT *p = LIST_DATA(o2, j);
 
@@ -2195,14 +2182,14 @@ BUF *MemToBuf(const void *data, UINT size)
 
 void EndianUnicode(wchar_t *str)
 {
-	UINT i, len;
+	UINT len;
 	if (str == NULL)
 	{
 		return;
 	}
 	len = UniStrLen(str);
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		str[i] = Endian16(str[i]);
 	}
@@ -2329,13 +2316,12 @@ int Cmp(const void *p1, const void *p2, UINT size)
 
 int CmpCaseIgnore(const void *p1, const void *p2, UINT size)
 {
-	UINT i;
 	if (p1 == NULL || p2 == NULL || size == 0)
 	{
 		return 0;
 	}
 
-	for (i = 0;i < size;i++)
+	for (UINT i = 0;i < size;i++)
 	{
 		char c1 = (char)(*(((UCHAR *)p1) + i));
 		char c2 = (char)(*(((UCHAR *)p2) + i));

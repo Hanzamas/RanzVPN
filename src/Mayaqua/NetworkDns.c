@@ -66,7 +66,7 @@ bool GetHostName(char *hostname, UINT size, const IP *ip)
 bool GetNetBiosName(char *name, UINT size, const IP *ip)
 {
 	SOCK *s;
-	UINT i, j;
+	UINT i;
 	bool flag = false;
 	bool ok = false;
 	NBTREQUEST req;
@@ -91,7 +91,7 @@ bool GetNetBiosName(char *name, UINT size, const IP *ip)
 		return false;
 	}
 
-	for (j = 0; j < NUM_NBT_QUERYS_SEND; j++)
+	for (UINT j = 0; j < NUM_NBT_QUERYS_SEND; j++)
 	{
 		Zero(&req, sizeof(req));
 		req.TransactionId = Endian16(tran_id[j]);
@@ -155,9 +155,8 @@ bool GetNetBiosName(char *name, UINT size, const IP *ip)
 			{
 				NBTRESPONSE *r = (NBTRESPONSE *)buf;
 				bool b = false;
-				UINT i;
 				USHORT id = Endian16(r->TransactionId);
-				for (i = 0; i < NUM_NBT_QUERYS_SEND; i++)
+				for (UINT i = 0; i < NUM_NBT_QUERYS_SEND; i++)
 				{
 					if (id == tran_id[i])
 					{

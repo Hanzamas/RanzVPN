@@ -283,7 +283,6 @@ UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t)
 	HUB *h;
 	UINT err;
 	char hubname[MAX_HUBNAME_LEN + 1];
-	UINT i;
 
 	h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
@@ -301,7 +300,7 @@ UINT StEnumLink(ADMIN *a, RPC_ENUM_LINK *t)
 		t->NumLink = LIST_NUM(h->LinkList);
 		t->Links = ZeroMalloc(sizeof(RPC_ENUM_LINK_ITEM) * t->NumLink);
 
-		for (i = 0;i < LIST_NUM(h->LinkList);i++)
+		for (UINT i = 0;i < LIST_NUM(h->LinkList);i++)
 		{
 			LINK *k = LIST_DATA(h->LinkList, i);
 			RPC_ENUM_LINK_ITEM *e = &t->Links[i];

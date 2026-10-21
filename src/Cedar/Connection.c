@@ -260,7 +260,6 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 		if (ts != NULL && ts_hp != NULL)
 		{
 			TCPSOCK *tss;
-			UINT j;
 			QUEUE *q;
 
 			if (s->UdpAccel != NULL)
@@ -268,7 +267,7 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 				UdpAccelSetTick(s->UdpAccel, now);
 			}
 
-			for (j = 0;j < 2;j++)
+			for (UINT j = 0;j < 2;j++)
 			{
 				if (j == 0)
 				{
@@ -500,8 +499,7 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 			{
 				LockList(tcp->TcpSockList);
 				{
-					UINT i;
-					for (i = 0;i < LIST_NUM(tcp->TcpSockList);i++)
+					for (UINT i = 0;i < LIST_NUM(tcp->TcpSockList);i++)
 					{
 						TCPSOCK *ts = LIST_DATA(tcp->TcpSockList, i);
 						if (ts->DisconnectTick != 0 &&
@@ -520,14 +518,14 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 			// If the connection count is at the limit and all sockets share one direction, disconnect one.
 			LockList(tcp->TcpSockList);
 			{
-				UINT i, num;
+				UINT num;
 				UINT c2s, s2c;
 				c2s = s2c = 0;
 				num = LIST_NUM(tcp->TcpSockList);
 				if (num >= s->MaxConnection)
 				{
 					TCPSOCK *ts;
-					for (i = 0;i < num;i++)
+					for (UINT i = 0;i < num;i++)
 					{
 						ts = LIST_DATA(tcp->TcpSockList, i);
 						if (ts->Direction == TCP_SERVER_TO_CLIENT)
@@ -1145,7 +1143,7 @@ FINAL:
 
 void StopAllAdditionalConnectThread(CONNECTION *c)
 {
-	UINT i, num;
+	UINT num;
 	SOCK **socks;
 	THREAD **threads;
 	if (c == NULL || c->ServerMode != false)
@@ -1160,7 +1158,7 @@ void StopAllAdditionalConnectThread(CONNECTION *c)
 		DeleteAll(c->ConnectingSocks);
 	}
 	UnlockList(c->ConnectingSocks);
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		Disconnect(socks[i]);
 		ReleaseSock(socks[i]);
@@ -1174,7 +1172,7 @@ void StopAllAdditionalConnectThread(CONNECTION *c)
 		DeleteAll(c->ConnectingThreads);
 	}
 	UnlockList(c->ConnectingThreads);
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		WaitThread(threads[i], INFINITE);
 		ReleaseThread(threads[i]);
@@ -1216,7 +1214,7 @@ void StopConnection(CONNECTION *c, bool no_wait)
 
 void DisconnectTcpSockets(CONNECTION *c)
 {
-	UINT i, num;
+	UINT num;
 	TCP *tcp;
 	TCPSOCK **tcpsocks;
 	if (c == NULL)
@@ -1239,7 +1237,7 @@ void DisconnectTcpSockets(CONNECTION *c)
 
 	if (num != 0)
 	{
-		for (i = 0;i < num;i++)
+		for (UINT i = 0;i < num;i++)
 		{
 			TCPSOCK *ts = tcpsocks[i];
 			FreeTcpSock(ts);
@@ -1251,7 +1249,7 @@ void DisconnectTcpSockets(CONNECTION *c)
 
 static void CleanupConnection(CONNECTION *c)
 {
-	UINT i, num;
+	UINT num;
 	if (c == NULL)
 	{
 		return;
@@ -1304,7 +1302,7 @@ static void CleanupConnection(CONNECTION *c)
 		{
 			num = LIST_NUM(c->ConnectingThreads);
 			threads = ToArray(c->ConnectingThreads);
-			for (i = 0;i < num;i++)
+			for (UINT i = 0;i < num;i++)
 			{
 				ReleaseThread(threads[i]);
 			}
@@ -1321,7 +1319,7 @@ static void CleanupConnection(CONNECTION *c)
 		{
 			num = LIST_NUM(c->ConnectingSocks);
 			socks = ToArray(c->ConnectingSocks);
-			for (i = 0;i < num;i++)
+			for (UINT i = 0;i < num;i++)
 			{
 				Disconnect(socks[i]);
 				ReleaseSock(socks[i]);

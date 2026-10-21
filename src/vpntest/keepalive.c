@@ -65,11 +65,10 @@ static void KeepAliveTestTimeout(KEEPALIVE_TEST *t, UINT timeout, UINT expect, c
 	UINT hi = expect / 2;
 	UINT num_bad = 0;
 	UINT bad_span = 0;
-	UINT i;
 
 	t->Connection->Session->Timeout = timeout;
 
-	for (i = 0;i < KEEPALIVE_TEST_DRAWS;i++)
+	for (UINT i = 0;i < KEEPALIVE_TEST_DRAWS;i++)
 	{
 		UINT span = GenNextKeepAliveSpan(t->Connection);
 
@@ -94,9 +93,8 @@ typedef struct KEEPALIVE_TEST_THREAD
 static void KeepAliveTestThread(THREAD *thread, void *param)
 {
 	KEEPALIVE_TEST_THREAD *d = (KEEPALIVE_TEST_THREAD *)param;
-	UINT i;
 
-	for (i = 0;i < KEEPALIVE_TEST_DRAWS;i++)
+	for (UINT i = 0;i < KEEPALIVE_TEST_DRAWS;i++)
 	{
 		d->Spans[i] = GenNextKeepAliveSpan(d->Connection);
 	}
@@ -107,23 +105,22 @@ static void KeepAliveTestThreads(KEEPALIVE_TEST *t)
 {
 	KEEPALIVE_TEST_THREAD d[2];
 	THREAD *th[2];
-	UINT i;
 
 	Zero(d, sizeof(d));
 
-	for (i = 0;i < 2;i++)
+	for (UINT i = 0;i < 2;i++)
 	{
 		d[i].Connection = ZeroMalloc(sizeof(CONNECTION));
 		d[i].Connection->Session = ZeroMalloc(sizeof(SESSION));
 		d[i].Connection->Session->Timeout = TIMEOUT_MAX;
 	}
 
-	for (i = 0;i < 2;i++)
+	for (UINT i = 0;i < 2;i++)
 	{
 		th[i] = NewThread(KeepAliveTestThread, &d[i]);
 	}
 
-	for (i = 0;i < 2;i++)
+	for (UINT i = 0;i < 2;i++)
 	{
 		WaitThread(th[i], INFINITE);
 		ReleaseThread(th[i]);
@@ -132,7 +129,7 @@ static void KeepAliveTestThreads(KEEPALIVE_TEST *t)
 	KeepAliveTestCheck(t, Cmp(d[0].Spans, d[1].Spans, sizeof(d[0].Spans)) != 0,
 		"two threads: different span sequences", "both threads drew the same %u spans", KEEPALIVE_TEST_DRAWS);
 
-	for (i = 0;i < 2;i++)
+	for (UINT i = 0;i < 2;i++)
 	{
 		Free(d[i].Connection->Session);
 		Free(d[i].Connection);

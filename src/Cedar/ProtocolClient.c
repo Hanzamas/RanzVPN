@@ -789,7 +789,6 @@ bool ParseWelcomeFromPack(PACK *p, char *session_name, UINT session_name_size,
 POLICY *PackGetPolicy(PACK *p)
 {
 	POLICY *y;
-	UINT i;
 	if (p == NULL)
 	{
 		return NULL;
@@ -797,7 +796,7 @@ POLICY *PackGetPolicy(PACK *p)
 
 	y = ZeroMalloc(sizeof(POLICY));
 
-	for (i = 0;i < NUM_POLICY_ITEM;i++)
+	for (UINT i = 0;i < NUM_POLICY_ITEM;i++)
 	{
 		POLICY_ITEM *item = &policy_item[i];
 		char name[MAX_SIZE];

@@ -97,14 +97,13 @@ bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address)
 
 DHCP_OPTION *GetDhcpOption(LIST *o, UINT id)
 {
-	UINT i;
 	DHCP_OPTION *ret = NULL;
 	if (o == NULL)
 	{
 		return NULL;
 	}
 
-	for (i = 0; i < LIST_NUM(o); i++)
+	for (UINT i = 0; i < LIST_NUM(o); i++)
 	{
 		DHCP_OPTION *opt = LIST_DATA(o, i);
 		if (opt->Id == id)
@@ -118,13 +117,12 @@ DHCP_OPTION *GetDhcpOption(LIST *o, UINT id)
 
 void FreeDhcpOptions(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0; i < LIST_NUM(o); i++)
+	for (UINT i = 0; i < LIST_NUM(o); i++)
 	{
 		DHCP_OPTION *opt = LIST_DATA(o, i);
 		Free(opt->Data);

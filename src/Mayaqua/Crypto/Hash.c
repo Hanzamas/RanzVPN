@@ -196,16 +196,15 @@ static void MY_SHA0_update(MY_SHA0_CTX* ctx, const void* data, int len) {
 static const UCHAR* MY_SHA0_final(MY_SHA0_CTX* ctx) {
 	UCHAR *p = ctx->buf;
 	UINT64 cnt = ctx->count * 8;
-	int i;
 	MY_SHA0_update(ctx, (UCHAR*)"\x80", 1);
 	while ((ctx->count & 63) != 56) {
 		MY_SHA0_update(ctx, (UCHAR*)"\0", 1);
 	}
-	for (i = 0; i < 8; ++i) {
+	for (int i = 0; i < 8; ++i) {
 		UCHAR tmp = (UCHAR) (cnt >> ((7 - i) * 8));
 		MY_SHA0_update(ctx, &tmp, 1);
 	}
-	for (i = 0; i < 5; i++) {
+	for (int i = 0; i < 5; i++) {
 		UINT tmp = ctx->state[i];
 		*p++ = tmp >> 24;
 		*p++ = tmp >> 16;

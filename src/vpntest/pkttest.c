@@ -171,7 +171,6 @@ static BUF *PktTestDnsQuery(UCHAR flag1, UINT *labels, UINT num_labels)
 	BUF *b = NewBuf();
 	UCHAR header[12];
 	UCHAR tail[5] = {0x00, 0x00, 0x01, 0x00, 0x01};	// Root label, type A, class IN
-	UINT i, j;
 
 	Zero(header, sizeof(header));
 	header[0] = 0x52;								// Transaction ID
@@ -180,13 +179,13 @@ static BUF *PktTestDnsQuery(UCHAR flag1, UINT *labels, UINT num_labels)
 	header[5] = 1;									// One question
 	WriteBuf(b, header, sizeof(header));
 
-	for (i = 0; i < num_labels; i++)
+	for (UINT i = 0; i < num_labels; i++)
 	{
 		UCHAR len = (UCHAR)labels[i];
 
 		WriteBuf(b, &len, 1);
 
-		for (j = 0; j < labels[i]; j++)
+		for (UINT j = 0; j < labels[i]; j++)
 		{
 			UCHAR c = PktTestLabelChar(j);
 
@@ -202,18 +201,16 @@ static BUF *PktTestDnsQuery(UCHAR flag1, UINT *labels, UINT num_labels)
 // Name of the labels of PktTestDnsQuery as ParseDnsQuery gives it: the labels joined with dots
 static void PktTestDnsName(char *name, UINT name_size, UINT *labels, UINT num_labels)
 {
-	UINT i, j;
-
 	StrCpy(name, name_size, "");
 
-	for (i = 0; i < num_labels; i++)
+	for (UINT i = 0; i < num_labels; i++)
 	{
 		if (i != 0)
 		{
 			StrCat(name, name_size, ".");
 		}
 
-		for (j = 0; j < labels[i]; j++)
+		for (UINT j = 0; j < labels[i]; j++)
 		{
 			char c[2];
 

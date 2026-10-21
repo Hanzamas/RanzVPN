@@ -354,14 +354,13 @@ static void StressLockProbeThread(THREAD *t, void *param)
 static void StressLockWorkerThread(THREAD *t, void *param)
 {
 	STRESS_LOCK_DATA *d = (STRESS_LOCK_DATA *)param;
-	UINT i;
 
 	if (t == NULL || d == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < STRESS_LOCK_LOOPS;i++)
+	for (UINT i = 0;i < STRESS_LOCK_LOOPS;i++)
 	{
 		Lock(d->Lock);
 		{
@@ -390,7 +389,7 @@ static void StressCaseLock(STRESS_CTX *ctx)
 	STRESS_LOCK_DATA d;
 	THREAD *probe;
 	THREAD *workers[STRESS_NUM_THREADS];
-	UINT i, expected;
+	UINT expected;
 	bool trying, acquired_twice, acquired_once, joined;
 
 	Zero(&d, sizeof(d));
@@ -435,13 +434,13 @@ static void StressCaseLock(STRESS_CTX *ctx)
 	// Workers increment a plain counter under the LOCK
 	StressStep("lock: workers incrementing a counter under the LOCK");
 	d.Value = 0;
-	for (i = 0;i < STRESS_NUM_THREADS;i++)
+	for (UINT i = 0;i < STRESS_NUM_THREADS;i++)
 	{
 		workers[i] = NewThread(StressLockWorkerThread, &d);
 	}
 
 	StressStep("lock: joining the counter workers");
-	for (i = 0;i < STRESS_NUM_THREADS;i++)
+	for (UINT i = 0;i < STRESS_NUM_THREADS;i++)
 	{
 		StressJoin(workers[i], INFINITE);
 	}
@@ -487,7 +486,7 @@ static void StressCounterWorkerThread(THREAD *t, void *param)
 {
 	STRESS_COUNTER_DATA *d = (STRESS_COUNTER_DATA *)param;
 	STRESS_OBJ *o;
-	UINT i, bad = 0;
+	UINT bad = 0;
 	UINT max_count = STRESS_NUM_THREADS * (STRESS_COUNTER_LOOPS + 1);
 	UINT max_ref = 1 + STRESS_NUM_THREADS * 2;
 
@@ -498,7 +497,7 @@ static void StressCounterWorkerThread(THREAD *t, void *param)
 
 	o = d->Obj;
 
-	for (i = 0;i < STRESS_COUNTER_LOOPS;i++)
+	for (UINT i = 0;i < STRESS_COUNTER_LOOPS;i++)
 	{
 		UINT a, b, c;
 
@@ -541,7 +540,7 @@ typedef struct STRESS_FLOOR_DATA
 static void StressFloorWorkerThread(THREAD *t, void *param)
 {
 	STRESS_FLOOR_DATA *d = (STRESS_FLOOR_DATA *)param;
-	UINT i, num, nonzero = 0;
+	UINT num, nonzero = 0;
 	UINT64 sum = 0;
 
 	if (t == NULL || d == NULL)
@@ -554,7 +553,7 @@ static void StressFloorWorkerThread(THREAD *t, void *param)
 	// Start together with the other workers, so the Inc/Dec calls contend
 	StressWaitFlag(&d->Go, STRESS_GATE_BOUND);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		UINT v = d->DecPhase ? Dec(d->Counter) : Inc(d->Counter);
 
@@ -577,14 +576,13 @@ static void StressFloorWorkerThread(THREAD *t, void *param)
 static void StressFloorPhase(STRESS_FLOOR_DATA *d, bool dec_phase)
 {
 	THREAD *workers[STRESS_NUM_THREADS];
-	UINT i;
 
 	d->DecPhase = dec_phase;
 	d->NumNonZero = 0;
 	d->Sum = 0;
 	d->Go = false;
 
-	for (i = 0;i < STRESS_NUM_THREADS;i++)
+	for (UINT i = 0;i < STRESS_NUM_THREADS;i++)
 	{
 		workers[i] = NewThread(StressFloorWorkerThread, d);
 	}
@@ -592,7 +590,7 @@ static void StressFloorPhase(STRESS_FLOOR_DATA *d, bool dec_phase)
 	// Open the gate only after every worker exists
 	d->Go = true;
 
-	for (i = 0;i < STRESS_NUM_THREADS;i++)
+	for (UINT i = 0;i < STRESS_NUM_THREADS;i++)
 	{
 		StressJoin(workers[i], INFINITE);
 	}
@@ -605,7 +603,7 @@ static void StressCaseCounter(STRESS_CTX *ctx)
 	STRESS_FLOOR_DATA f;
 	THREAD *workers[STRESS_NUM_THREADS];
 	REF *ref;
-	UINT a, b, c, i, total, bad, expected;
+	UINT a, b, c, total, bad, expected;
 	UINT64 sum;
 
 	// Return values of a REF on one thread
@@ -625,11 +623,11 @@ static void StressCaseCounter(STRESS_CTX *ctx)
 
 	// One reference per worker, dropped by the worker itself
 	StressStep("counter: workers on a shared COUNTER and REF");
-	for (i = 0;i < STRESS_NUM_THREADS;i++)
+	for (UINT i = 0;i < STRESS_NUM_THREADS;i++)
 	{
 		AddRef(d.Obj->Ref);
 	}
-	for (i = 0;i < STRESS_NUM_THREADS;i++)
+	for (UINT i = 0;i < STRESS_NUM_THREADS;i++)
 	{
 		workers[i] = NewThread(StressCounterWorkerThread, &d);
 	}
@@ -638,7 +636,7 @@ static void StressCaseCounter(STRESS_CTX *ctx)
 	StressReleaseObj(&d, d.Obj);
 
 	StressStep("counter: joining the workers");
-	for (i = 0;i < STRESS_NUM_THREADS;i++)
+	for (UINT i = 0;i < STRESS_NUM_THREADS;i++)
 	{
 		StressJoin(workers[i], INFINITE);
 	}
@@ -658,7 +656,7 @@ static void StressCaseCounter(STRESS_CTX *ctx)
 	if (total == expected)
 	{
 		bad = 0;
-		for (i = 0;i < total;i++)
+		for (UINT i = 0;i < total;i++)
 		{
 			if (Dec(d.Counter) != (total - 1 - i))
 			{
@@ -756,14 +754,14 @@ static void StressEventWaiterThread(THREAD *t, void *param)
 static void StressEventPartnerThread(THREAD *t, void *param)
 {
 	STRESS_EVENT_DATA *d = (STRESS_EVENT_DATA *)param;
-	UINT i, rounds = 0;
+	UINT rounds = 0;
 
 	if (t == NULL || d == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < STRESS_PINGPONG_ROUNDS;i++)
+	for (UINT i = 0;i < STRESS_PINGPONG_ROUNDS;i++)
 	{
 		if (Wait(d->Ping, STRESS_ROUND_BOUND) == false)
 		{
@@ -874,7 +872,7 @@ static void StressCaseEvent(STRESS_CTX *ctx)
 	THREAD *helper;
 	EVENT *e2;
 	UINT64 start;
-	UINT i, elapsed, rounds, woken, refs;
+	UINT elapsed, rounds, woken, refs;
 	bool r1, r2;
 
 	Zero(&d, sizeof(d));
@@ -912,7 +910,7 @@ static void StressCaseEvent(STRESS_CTX *ctx)
 
 	// One Set wakes exactly one of two waiting threads (a manual-reset event wakes both)
 	StressStep("event: one Set with two waiting threads");
-	for (i = 0;i < 2;i++)
+	for (UINT i = 0;i < 2;i++)
 	{
 		waiters[i] = NewThread(StressEventWaiterThread, &d);
 	}
@@ -927,7 +925,7 @@ static void StressCaseEvent(STRESS_CTX *ctx)
 
 	Set(d.Event);
 	StressStep("event: joining the waiting threads");
-	for (i = 0;i < 2;i++)
+	for (UINT i = 0;i < 2;i++)
 	{
 		StressJoin(waiters[i], INFINITE);
 	}
@@ -941,7 +939,7 @@ static void StressCaseEvent(STRESS_CTX *ctx)
 	StressStep("event: ping-pong between two threads");
 	partner = NewThread(StressEventPartnerThread, &d);
 	rounds = 0;
-	for (i = 0;i < STRESS_PINGPONG_ROUNDS;i++)
+	for (UINT i = 0;i < STRESS_PINGPONG_ROUNDS;i++)
 	{
 		Set(d.Ping);
 		if (Wait(d.Pong, STRESS_ROUND_BOUND) == false)
@@ -1115,7 +1113,7 @@ static void StressCaseThread(STRESS_CTX *ctx)
 	STRESS_DETACH_DATA *dd;
 	THREAD *threads[STRESS_CHURN_THREADS];
 	THREAD *probe;
-	UINT i, joined, ran_early, ran, bad_param, refs_before, refs_after;
+	UINT joined, ran_early, ran, bad_param, refs_before, refs_after;
 	bool all_ran, running, finished;
 
 	Zero(&d, sizeof(d));
@@ -1123,7 +1121,7 @@ static void StressCaseThread(STRESS_CTX *ctx)
 
 	// Threads that end before WaitThread is called
 	StressStep("thread: creating short threads");
-	for (i = 0;i < STRESS_CHURN_THREADS;i++)
+	for (UINT i = 0;i < STRESS_CHURN_THREADS;i++)
 	{
 		threads[i] = NewThread(StressChurnQuickThread, &d);
 	}
@@ -1134,7 +1132,7 @@ static void StressCaseThread(STRESS_CTX *ctx)
 
 	StressStep("thread: joining threads that already ended");
 	joined = 0;
-	for (i = 0;i < STRESS_CHURN_THREADS;i++)
+	for (UINT i = 0;i < STRESS_CHURN_THREADS;i++)
 	{
 		if (StressJoin(threads[i], STRESS_WAIT_BOUND))
 		{
@@ -1149,7 +1147,7 @@ static void StressCaseThread(STRESS_CTX *ctx)
 	d.Ran = 0;
 	d.Go = false;
 	StressStep("thread: creating gated threads (NoticeThreadInit/WaitThreadInit)");
-	for (i = 0;i < STRESS_CHURN_THREADS;i++)
+	for (UINT i = 0;i < STRESS_CHURN_THREADS;i++)
 	{
 		threads[i] = NewThread(StressChurnGatedThread, &d);
 		WaitThreadInit(threads[i]);
@@ -1163,7 +1161,7 @@ static void StressCaseThread(STRESS_CTX *ctx)
 	d.Go = true;
 	StressStep("thread: joining gated threads");
 	joined = 0;
-	for (i = 0;i < STRESS_CHURN_THREADS;i++)
+	for (UINT i = 0;i < STRESS_CHURN_THREADS;i++)
 	{
 		if (StressJoin(threads[i], STRESS_WAIT_BOUND))
 		{
@@ -1203,7 +1201,7 @@ static void StressCaseThread(STRESS_CTX *ctx)
 	dd->Ref = NewRef();
 	dd->StatLock = NewLock();
 	StressStep("thread: releasing gated threads while they run");
-	for (i = 0;i < STRESS_CHURN_THREADS;i++)
+	for (UINT i = 0;i < STRESS_CHURN_THREADS;i++)
 	{
 		THREAD *t;
 
@@ -1248,14 +1246,14 @@ static void StressTickSamplerThread(THREAD *t, void *param)
 {
 	STRESS_TICK_DATA *d = (STRESS_TICK_DATA *)param;
 	UINT64 last = 0;
-	UINT i, backwards = 0, jumps = 0, zeros = 0;
+	UINT backwards = 0, jumps = 0, zeros = 0;
 
 	if (t == NULL || d == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < STRESS_TICK_SAMPLES;i++)
+	for (UINT i = 0;i < STRESS_TICK_SAMPLES;i++)
 	{
 		UINT64 now = Tick64();
 
@@ -1316,20 +1314,19 @@ static void StressCaseTick(STRESS_CTX *ctx)
 	STRESS_TICK_DATA d;
 	THREAD *samplers[STRESS_TICK_THREADS];
 	UINT64 first, t0, t1, advanced;
-	UINT i;
 
 	Zero(&d, sizeof(d));
 	d.Lock = NewLock();
 
 	StressStep("tick: sampling threads");
 	first = Tick64();
-	for (i = 0;i < STRESS_TICK_THREADS;i++)
+	for (UINT i = 0;i < STRESS_TICK_THREADS;i++)
 	{
 		samplers[i] = NewThread(StressTickSamplerThread, &d);
 	}
 
 	StressStep("tick: joining the sampling threads");
-	for (i = 0;i < STRESS_TICK_THREADS;i++)
+	for (UINT i = 0;i < STRESS_TICK_THREADS;i++)
 	{
 		StressJoin(samplers[i], INFINITE);
 	}
@@ -1428,7 +1425,7 @@ static STRESS_ITEM *StressSearchKey(LIST *o, UINT key)
 static void StressListWorkerThread(THREAD *t, void *param)
 {
 	STRESS_LIST_DATA *d = (STRESS_LIST_DATA *)param;
-	UINT index, base, j, errors = 0;
+	UINT index, base, errors = 0;
 	bool use_add;
 
 	if (t == NULL || d == NULL)
@@ -1447,7 +1444,7 @@ static void StressListWorkerThread(THREAD *t, void *param)
 	// Odd workers append with Add (which leaves the list unsorted), even workers use Insert
 	use_add = ((index % 2) == 1);
 
-	for (j = 0;j < STRESS_LIST_KEYS;j++)
+	for (UINT j = 0;j < STRESS_LIST_KEYS;j++)
 	{
 		STRESS_ITEM *item = Malloc(sizeof(STRESS_ITEM));
 		STRESS_ITEM *found;
@@ -1486,7 +1483,7 @@ static void StressListWorkerThread(THREAD *t, void *param)
 		UnlockList(d->List);
 	}
 
-	for (j = 1;j < STRESS_LIST_KEYS;j += 2)
+	for (UINT j = 1;j < STRESS_LIST_KEYS;j += 2)
 	{
 		STRESS_ITEM *found;
 		STRESS_ITEM *again;
@@ -1523,7 +1520,7 @@ static void StressCaseList(STRESS_CTX *ctx)
 {
 	STRESS_LIST_DATA d;
 	THREAD *workers[STRESS_LIST_THREADS];
-	UINT i, num, wrong = 0;
+	UINT num, wrong = 0;
 	UINT half = STRESS_LIST_KEYS / 2;
 	UINT expected_num = STRESS_LIST_THREADS * half;
 
@@ -1532,13 +1529,13 @@ static void StressCaseList(STRESS_CTX *ctx)
 	d.StatLock = NewLock();
 
 	StressStep("list: workers adding, searching and deleting under LockList");
-	for (i = 0;i < STRESS_LIST_THREADS;i++)
+	for (UINT i = 0;i < STRESS_LIST_THREADS;i++)
 	{
 		workers[i] = NewThread(StressListWorkerThread, &d);
 	}
 
 	StressStep("list: joining the workers");
-	for (i = 0;i < STRESS_LIST_THREADS;i++)
+	for (UINT i = 0;i < STRESS_LIST_THREADS;i++)
 	{
 		StressJoin(workers[i], INFINITE);
 	}
@@ -1552,7 +1549,7 @@ static void StressCaseList(STRESS_CTX *ctx)
 		Sort(d.List);
 		num = LIST_NUM(d.List);
 
-		for (i = 0;i < num;i++)
+		for (UINT i = 0;i < num;i++)
 		{
 			STRESS_ITEM *item = LIST_DATA(d.List, i);
 			UINT expected = (i / half) * STRESS_LIST_KEYS + (i % half) * 2;
@@ -1568,7 +1565,7 @@ static void StressCaseList(STRESS_CTX *ctx)
 	StressCheck(ctx, num == expected_num && wrong == 0, "the LIST ends with exactly the even keys of every worker, in order",
 		"%u items (expected %u), %u misplaced", num, expected_num, wrong);
 
-	for (i = 0;i < LIST_NUM(d.List);i++)
+	for (UINT i = 0;i < LIST_NUM(d.List);i++)
 	{
 		Free(LIST_DATA(d.List, i));
 	}
@@ -1686,13 +1683,12 @@ void stress_test(UINT num, char **arg)
 	bool filter = false;
 	bool bad_arg = false;
 	char failed[MAX_SIZE];
-	UINT i, j;
 
 	Zero(&ctx, sizeof(ctx));
 	Zero(selected, sizeof(selected));
 	failed[0] = 0;
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		bool known = false;
 
@@ -1702,7 +1698,7 @@ void stress_test(UINT num, char **arg)
 			continue;
 		}
 
-		for (j = 0;j < STRESS_NUM_CASES;j++)
+		for (UINT j = 0;j < STRESS_NUM_CASES;j++)
 		{
 			if (StrCmpi(arg[i], stress_cases[j].Name) == 0)
 			{
@@ -1724,7 +1720,7 @@ void stress_test(UINT num, char **arg)
 	if (bad_arg)
 	{
 		Print("Usage: stress [timing] [case ...]\nCases:");
-		for (j = 0;j < STRESS_NUM_CASES;j++)
+		for (UINT j = 0;j < STRESS_NUM_CASES;j++)
 		{
 			Print(" %s", stress_cases[j].Name);
 		}
@@ -1732,7 +1728,7 @@ void stress_test(UINT num, char **arg)
 		return;
 	}
 
-	for (i = 0;i < STRESS_NUM_CASES;i++)
+	for (UINT i = 0;i < STRESS_NUM_CASES;i++)
 	{
 		STRESS_CASE *c = &stress_cases[i];
 		STRESS_WATCHDOG w;

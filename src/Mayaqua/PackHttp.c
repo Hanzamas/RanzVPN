@@ -72,8 +72,7 @@ static HTTP_HEADER *NewHttpHeaderKeepAlive(char *method, char *target, char *ver
 
 static void ReplaceUnsafeCharInHttpTarget(char *target)
 {
-	UINT i;
-	for(i = 0; target[i] ; i++) {
+	for(UINT i = 0; target[i] ; i++) {
 		if(target[i] == '<')
 			target[i] = '(';
 		else if(target[i] == '>')
@@ -306,13 +305,12 @@ bool HttpSendDecoyPage(SOCK *s, UINT code, HTTP_HEADER *request)
 	char port_str[MAX_SIZE];
 	bool ret;
 	char host[MAX_SIZE];
-	UINT i;
 	if (s == NULL || request == NULL)
 	{
 		return false;
 	}
 
-	for (i = 0; i < sizeof(http_decoy_pages) / sizeof(http_decoy_pages[0]); i++)
+	for (UINT i = 0; i < sizeof(http_decoy_pages) / sizeof(http_decoy_pages[0]); i++)
 	{
 		if (http_decoy_pages[i].Code == code)
 		{

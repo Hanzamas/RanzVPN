@@ -24,7 +24,6 @@ UINT PsAccessList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	UINT ret = 0;
 	RPC_ENUM_ACCESS_LIST t;
 	CT *ct;
-	UINT i;
 	
 	if (ps->HubName == NULL)
 	{
@@ -59,7 +58,7 @@ UINT PsAccessList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	CtInsertColumn(ct, _UU("SM_ACCESS_COLUMN_5"), false);
 	CtInsertColumn(ct, _UU("SM_ACCESS_COLUMN_4"), false);
 
-	for (i = 0;i < t.NumAccess;i++)
+	for (UINT i = 0;i < t.NumAccess;i++)
 	{
 		ACCESS *a = &t.Accesses[i];
 		char tmp[MAX_SIZE];
@@ -175,9 +174,8 @@ UINT PsAccessEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	}
 	else
 	{
-		UINT i;
 		bool b = false;
-		for (i = 0;i < t.NumAccess;i++)
+		for (UINT i = 0;i < t.NumAccess;i++)
 		{
 			ACCESS *a = &t.Accesses[i];
 
@@ -250,9 +248,8 @@ UINT PsAccessDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	}
 	else
 	{
-		UINT i;
 		bool b = false;
-		for (i = 0;i < t.NumAccess;i++)
+		for (UINT i = 0;i < t.NumAccess;i++)
 		{
 			ACCESS *a = &t.Accesses[i];
 

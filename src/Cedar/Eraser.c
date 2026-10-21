@@ -51,13 +51,12 @@ static bool CheckEraserDiskFreeSpace(ERASER *e)
 
 static void FreeEraseFileList(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0; i < LIST_NUM(o); i++)
+	for (UINT i = 0; i < LIST_NUM(o); i++)
 	{
 		ERASE_FILE *f = LIST_DATA(o, i);
 		Free(f->FullPath);
@@ -70,7 +69,6 @@ static void FreeEraseFileList(LIST *o)
 static void EnumEraseFile(LIST *o, char *dirname)
 {
 	DIRLIST *dir;
-	UINT i;
 	char tmp[MAX_PATH];
 	if (o == NULL || dirname == NULL)
 	{
@@ -79,7 +77,7 @@ static void EnumEraseFile(LIST *o, char *dirname)
 
 	dir = EnumDir(dirname);
 
-	for (i = 0; i < dir->NumFiles; i++)
+	for (UINT i = 0; i < dir->NumFiles; i++)
 	{
 		DIRENT *e = dir->File[i];
 		Format(tmp, sizeof(tmp), "%s/%s", dirname, e->FileName);
@@ -110,7 +108,6 @@ static void EnumEraseFile(LIST *o, char *dirname)
 static LIST *GenerateEraseFileList(ERASER *e)
 {
 	LIST *o;
-	UINT i;
 	if (e == NULL)
 	{
 		return NULL;
@@ -118,7 +115,7 @@ static LIST *GenerateEraseFileList(ERASER *e)
 
 	o = NewListFast(CompareEraseFile);
 
-	for (i = 0; i < e->Targets->NumTokens; i++)
+	for (UINT i = 0; i < e->Targets->NumTokens; i++)
 	{
 		char dirname[MAX_PATH];
 		Format(dirname, sizeof(dirname), "%s/%s", e->DirName, e->Targets->Token[i]);
@@ -134,7 +131,6 @@ static LIST *GenerateEraseFileList(ERASER *e)
 static void EraserMain(ERASER *e)
 {
 	LIST *o;
-	UINT i;
 	bool ok = false;
 	char bs[64];
 	if (e == NULL)
@@ -151,7 +147,7 @@ static void EraserMain(ERASER *e)
 
 	o = GenerateEraseFileList(e);
 
-	for (i = 0; i < LIST_NUM(o); i++)
+	for (UINT i = 0; i < LIST_NUM(o); i++)
 	{
 		ERASE_FILE *f = LIST_DATA(o, i);
 
@@ -253,7 +249,6 @@ ERASER *NewEraser(LOG *log, UINT64 min_size, UINT interval, char **targets, UINT
 {
 	ERASER *e;
 	char dir[MAX_PATH];
-	UINT i;
 
 	if (min_size == 0)
 	{
@@ -278,7 +273,7 @@ ERASER *NewEraser(LOG *log, UINT64 min_size, UINT interval, char **targets, UINT
 	e->Targets = ZeroMalloc(sizeof(TOKEN_LIST));
 	e->Targets->NumTokens = (targets == NULL ? 0 : num_targets);
 	e->Targets->Token = ZeroMalloc(sizeof(char *) * MAX(e->Targets->NumTokens, 1));
-	for (i = 0; i < e->Targets->NumTokens; i++)
+	for (UINT i = 0; i < e->Targets->NumTokens; i++)
 	{
 		e->Targets->Token[i] = CopyStr(targets[i]);
 	}

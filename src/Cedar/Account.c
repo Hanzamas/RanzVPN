@@ -218,13 +218,12 @@ char *PolicyIdToStr(UINT i)
 
 UINT PolicyStrToId(char *name)
 {
-	UINT i;
 	if (name == NULL)
 	{
 		return INFINITE;
 	}
 
-	for (i = 0;i < NUM_POLICY_ITEM;i++)
+	for (UINT i = 0;i < NUM_POLICY_ITEM;i++)
 	{
 		if (StartWith(PolicyIdToStr(i), name))
 		{
@@ -242,7 +241,7 @@ UINT PolicyNum()
 
 bool IsUserName(char *name)
 {
-	UINT i, len;
+	UINT len;
 	char tmp[MAX_SIZE];
 	if (name == NULL)
 	{
@@ -265,7 +264,7 @@ bool IsUserName(char *name)
 		return true;
 	}
 
-	for (i = 0; i < len; i++)
+	for (UINT i = 0; i < len; i++)
 	{
 		if (IsSafeChar(name[i]) == false && name[i] != '@')
 		{
@@ -451,11 +450,10 @@ POLICY *GetDefaultPolicy()
 	if (ready == false)
 	{
 		POLICY tmp;
-		UINT i;
 
 		Zero(&tmp, sizeof(tmp));
 
-		for (i = 0;i < NUM_POLICY_ITEM;i++)
+		for (UINT i = 0;i < NUM_POLICY_ITEM;i++)
 		{
 			SetPolicyValue(&tmp, i, policy_item[i].DefaultValue);
 		}
@@ -527,7 +525,7 @@ void GenerateNtPasswordHash(UCHAR *dst, char *password)
 {
 	UCHAR *tmp;
 	UINT tmp_size;
-	UINT i, len;
+	UINT len;
 	if (dst == NULL || password == NULL)
 	{
 		return;
@@ -538,7 +536,7 @@ void GenerateNtPasswordHash(UCHAR *dst, char *password)
 
 	tmp = ZeroMalloc(tmp_size);
 
-	for (i = 0; i < len; i++)
+	for (UINT i = 0; i < len; i++)
 	{
 		tmp[i * 2] = password[i];
 	}
@@ -840,7 +838,6 @@ bool AcDeleteUser(HUB *h, char *name)
 bool AcDeleteGroup(HUB *h, char *name)
 {
 	USERGROUP *g;
-	UINT i;
 	if (h == NULL || name == NULL)
 	{
 		return false;
@@ -857,7 +854,7 @@ bool AcDeleteGroup(HUB *h, char *name)
 		ReleaseGroup(g);
 	}
 
-	for (i = 0;i < LIST_NUM(h->HubDb->UserList);i++)
+	for (UINT i = 0;i < LIST_NUM(h->HubDb->UserList);i++)
 	{
 		USER *u = LIST_DATA(h->HubDb->UserList, i);
 		Lock(u->lock);
@@ -1498,13 +1495,12 @@ void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s)
 				st->QoS = s->QoS;
 				if (s->Connection->Protocol == CONNECTION_TCP)
 				{
-					UINT i;
 					LockList(s->Connection->Tcp->TcpSockList);
 					{
 						st->NumTcpConnections = LIST_NUM(s->Connection->Tcp->TcpSockList);
 						if (st->HalfConnection)
 						{
-							for (i = 0;i < st->NumTcpConnections;i++)
+							for (UINT i = 0;i < st->NumTcpConnections;i++)
 							{
 								TCPSOCK *ts = LIST_DATA(s->Connection->Tcp->TcpSockList, i);
 								if (ts->Direction & TCP_SERVER_TO_CLIENT)

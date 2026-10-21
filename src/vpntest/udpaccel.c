@@ -143,14 +143,13 @@ static void UdpAccelTestSendValid(UDPACCEL_TEST *t, UCHAR *data, UINT data_size,
 static void UdpAccelTestSendJunk(UDPACCEL_TEST *t, UINT num, UINT size)
 {
 	UCHAR buf[UDP_ACCELERATION_TMP_BUF_SIZE];
-	UINT i;
 
 	Rand(buf, sizeof(buf));
 
 	// The cookie leads a plain text packet: never the cookie of Recv
 	buf[0] = (UCHAR)((t->Recv->MyCookie >> 24) ^ 0xff);
 
-	for (i = 0; i < num; i++)
+	for (UINT i = 0; i < num; i++)
 	{
 		SendTo(t->Flood, &t->Localhost, t->Recv->MyPort, buf, size);
 	}
@@ -229,7 +228,6 @@ static void UdpAccelTestFlood(UDPACCEL_TEST *t)
 	wchar_t log[MAX_SIZE];
 	UINT64 drops, limit, tick;
 	BLOCK *b;
-	UINT i;
 
 	if (UdpAccelTestOpen(t, 2, false) == false)
 	{
@@ -276,7 +274,7 @@ static void UdpAccelTestFlood(UDPACCEL_TEST *t)
 	tick += 1000;
 
 	UdpAccelTestPoll(t, tick);
-	for (i = 0; i < per_tick / per_poll + 3; i++)
+	for (UINT i = 0; i < per_tick / per_poll + 3; i++)
 	{
 		UdpAccelPoll(t->Recv);
 	}

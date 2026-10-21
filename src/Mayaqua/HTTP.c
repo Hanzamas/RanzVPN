@@ -30,7 +30,6 @@ HTTP_HEADER *NewHttpHeader(char *method, char *target, char *version)
 
 void FreeHttpHeader(HTTP_HEADER *header)
 {
-	UINT i;
 	HTTP_VALUE **values;
 	if (header == NULL)
 	{
@@ -42,7 +41,7 @@ void FreeHttpHeader(HTTP_HEADER *header)
 	Free(header->Version);
 
 	values = ToArray(header->ValueList);
-	for (i = 0;i < LIST_NUM(header->ValueList);i++)
+	for (UINT i = 0;i < LIST_NUM(header->ValueList);i++)
 	{
 		FreeHttpValue(values[i]);
 	}
@@ -239,7 +238,6 @@ char *HttpHeaderToStr(HTTP_HEADER *header)
 {
 	BUF *b;
 	char *tmp;
-	UINT i;
 	char *s;
 	if (header == NULL)
 	{
@@ -253,7 +251,7 @@ char *HttpHeaderToStr(HTTP_HEADER *header)
 		"%s %s %s\r\n", header->Method, header->Target, header->Version);
 	WriteBuf(b, tmp, StrLen(tmp));
 
-	for (i = 0;i < LIST_NUM(header->ValueList);i++)
+	for (UINT i = 0;i < LIST_NUM(header->ValueList);i++)
 	{
 		HTTP_VALUE *v = (HTTP_VALUE *)LIST_DATA(header->ValueList, i);
 		Format(tmp, HTTP_HEADER_LINE_MAX_SIZE,
@@ -306,7 +304,6 @@ char *HttpBufLineSource(void *param, UINT max_size)
 	BUF *b = (BUF *)param;
 	UCHAR *data;
 	UINT start;
-	UINT i;
 	if (b == NULL || max_size == 0)
 	{
 		return NULL;
@@ -315,7 +312,7 @@ char *HttpBufLineSource(void *param, UINT max_size)
 	data = (UCHAR *)b->Buf;
 	start = b->Current;
 
-	for (i = start;i < b->Size;i++)
+	for (UINT i = start;i < b->Size;i++)
 	{
 		UINT consumed = i - start + 1;
 

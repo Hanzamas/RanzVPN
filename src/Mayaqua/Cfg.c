@@ -823,7 +823,7 @@ static bool CfgReadNextFolderBin(BUF *b, FOLDER *parent, UINT depth)
 {
 	char name[MAX_SIZE];
 	FOLDER *f;
-	UINT n, i;
+	UINT n;
 	UINT size;
 	UINT value;
 	char *buf;
@@ -843,7 +843,7 @@ static bool CfgReadNextFolderBin(BUF *b, FOLDER *parent, UINT depth)
 	{
 		return false;
 	}
-	for (i = 0;i < n;i++)
+	for (UINT i = 0;i < n;i++)
 	{
 		if (CfgReadNextFolderBin(b, f, depth + 1) == false)
 		{
@@ -855,7 +855,7 @@ static bool CfgReadNextFolderBin(BUF *b, FOLDER *parent, UINT depth)
 	{
 		return false;
 	}
-	for (i = 0;i < n;i++)
+	for (UINT i = 0;i < n;i++)
 	{
 		UINT type;
 
@@ -1089,7 +1089,7 @@ static void CfgEscapeChar(char c, char *dst)
 static void CfgWriteEscaped(BUF *b, char *str)
 {
 	char esc[3];
-	UINT len, start, i;
+	UINT len, start;
 
 	len = StrLen(str);
 	if (len == 0)
@@ -1099,7 +1099,7 @@ static void CfgWriteEscaped(BUF *b, char *str)
 	}
 
 	start = 0;
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		if (CfgCheckCharForName(str[i]) == false)
 		{
@@ -1114,9 +1114,7 @@ static void CfgWriteEscaped(BUF *b, char *str)
 
 static void CfgAddIndent(BUF *b, UINT depth)
 {
-	UINT i;
-
-	for (i = 0;i < depth;i++)
+	for (UINT i = 0;i < depth;i++)
 	{
 		WriteBuf(b, "\t", 1);
 	}
@@ -1227,7 +1225,7 @@ BUF *CfgFolderToBuf(FOLDER *f)
 static UINT CfgUnescapeTo(char *str, char *dst)
 {
 	char tmp2[8];
-	UINT len, wp, i;
+	UINT len, wp;
 	char c;
 
 	len = StrLen(str);
@@ -1237,7 +1235,7 @@ static UINT CfgUnescapeTo(char *str, char *dst)
 	}
 
 	wp = 0;
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		c = str[i];
 		if (c == '$')
@@ -1287,7 +1285,7 @@ char *CfgUnescape(char *str)
 // A character CfgCheckCharForName refuses becomes '$' and two hex digits; "" becomes a lone '$'.
 static UINT CfgEscapeTo(char *str, char *dst)
 {
-	UINT len, wp, i;
+	UINT len, wp;
 
 	len = StrLen(str);
 	if (len == 0)
@@ -1300,7 +1298,7 @@ static UINT CfgEscapeTo(char *str, char *dst)
 	}
 
 	wp = 0;
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		if (CfgCheckCharForName(str[i]))
 		{
@@ -1761,13 +1759,12 @@ static int CfgCmpName(void *p1, void *p2)
 
 void CfgEnumItem(FOLDER *f, ENUM_ITEM proc, void *param)
 {
-	UINT i;
 	if (f == NULL || proc == NULL)
 	{
 		return;
 	}
 	
-	for (i = 0;i < LIST_NUM(f->Items);i++)
+	for (UINT i = 0;i < LIST_NUM(f->Items);i++)
 	{
 		ITEM *tt = LIST_DATA(f->Items, i);
 		if (proc(tt, param) == false)
@@ -1784,12 +1781,11 @@ static TOKEN_LIST *CfgNamesToTokenList(LIST *o)
 {
 	TOKEN_LIST *t;
 	char *last = NULL;
-	UINT i;
 
 	t = ZeroMalloc(sizeof(TOKEN_LIST));
 	t->Token = ZeroMalloc(sizeof(char *) * LIST_NUM(o));
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		char *name = CfgEntryName(LIST_DATA(o, i));
 		if (last != NULL && StrCmpi(last, name) == 0)
@@ -1826,13 +1822,12 @@ TOKEN_LIST *CfgEnumItemToTokenList(FOLDER *f)
 
 void CfgEnumFolder(FOLDER *f, ENUM_FOLDER proc, void *param)
 {
-	UINT i;
 	if (f == NULL || proc == NULL)
 	{
 		return;
 	}
 	
-	for (i = 0;i < LIST_NUM(f->Folders);i++)
+	for (UINT i = 0;i < LIST_NUM(f->Folders);i++)
 	{
 		FOLDER *ff = LIST_DATA(f->Folders, i);
 		if (proc(ff, param) == false)
@@ -1876,14 +1871,12 @@ ITEM *CfgCreateItem(FOLDER *parent, char *name, UINT type, void *buf, UINT size)
 // one: the lists go whole with f, so freeing n children costs O(n). The caller detaches f.
 static void CfgFreeFolderTree(FOLDER *f)
 {
-	UINT i;
-
-	for (i = 0;i < LIST_NUM(f->Folders);i++)
+	for (UINT i = 0;i < LIST_NUM(f->Folders);i++)
 	{
 		CfgFreeFolderTree(LIST_DATA(f->Folders, i));
 	}
 
-	for (i = 0;i < LIST_NUM(f->Items);i++)
+	for (UINT i = 0;i < LIST_NUM(f->Items);i++)
 	{
 		ITEM *t = LIST_DATA(f->Items, i);
 

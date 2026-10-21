@@ -77,9 +77,8 @@ static UINT ChainCertsConnection()
 static void ChainCertsSettle()
 {
 	UINT stable = 0;
-	UINT i;
 
-	for (i = 0;i < CHAINCERTS_SETTLE_MAX && stable < 2;i++)
+	for (UINT i = 0;i < CHAINCERTS_SETTLE_MAX && stable < 2;i++)
 	{
 		UINT before = GetChainCertScanCount();
 
@@ -103,9 +102,8 @@ static void ChainCertsSettle()
 static UINT ChainCertsWaitFor(UINT want)
 {
 	UINT ret = 0;
-	UINT i;
 
-	for (i = 0;i < CHAINCERTS_WAIT_MAX;i++)
+	for (UINT i = 0;i < CHAINCERTS_WAIT_MAX;i++)
 	{
 		ret = ChainCertsConnection();
 
@@ -124,11 +122,10 @@ static UINT ChainCertsWaitFor(UINT want)
 static UINT ChainCertsConnections(UINT *wrong_count, UINT expect)
 {
 	UINT before = GetChainCertScanCount();
-	UINT i;
 
 	*wrong_count = 0;
 
-	for (i = 0;i < CHAINCERTS_CONNECTIONS;i++)
+	for (UINT i = 0;i < CHAINCERTS_CONNECTIONS;i++)
 	{
 		if (ChainCertsConnection() != expect)
 		{

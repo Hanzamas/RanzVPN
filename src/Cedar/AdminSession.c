@@ -46,7 +46,6 @@ UINT StDeleteIpTable(ADMIN *a, RPC_DELETE_TABLE *t)
 
 static UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t)
 {
-	UINT i;
 	HUB *h = NULL;
 	if (s == NULL || hubname == NULL || t == NULL)
 	{
@@ -67,7 +66,7 @@ static UINT SiEnumIpTable(SERVER *s, char *hubname, RPC_ENUM_IP_TABLE *t)
 		t->NumIpTable = HubIpTableNum(h);
 		t->IpTables = ZeroMalloc(sizeof(RPC_ENUM_IP_TABLE_ITEM) * t->NumIpTable);
 
-		for (i = 0;i < t->NumIpTable;i++)
+		for (UINT i = 0;i < t->NumIpTable;i++)
 		{
 			RPC_ENUM_IP_TABLE_ITEM *e = &t->IpTables[i];
 			IP_TABLE_ENTRY *table = IpTableGet(h, i);
@@ -128,7 +127,6 @@ UINT StDeleteMacTable(ADMIN *a, RPC_DELETE_TABLE *t)
 
 static UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t)
 {
-	UINT i;
 	HUB *h = NULL;
 	if (s == NULL || hubname == NULL || t == NULL)
 	{
@@ -149,7 +147,7 @@ static UINT SiEnumMacTable(SERVER *s, char *hubname, RPC_ENUM_MAC_TABLE *t)
 		MAC_TABLE_ENTRY **pp = MacTableEnum(h, &t->NumMacTable);
 		t->MacTables = ZeroMalloc(sizeof(RPC_ENUM_MAC_TABLE_ITEM) * t->NumMacTable);
 
-		for (i = 0;i < t->NumMacTable;i++)
+		for (UINT i = 0;i < t->NumMacTable;i++)
 		{
 			RPC_ENUM_MAC_TABLE_ITEM *e = &t->MacTables[i];
 			MAC_TABLE_ENTRY *mac = pp[i];
@@ -337,7 +335,6 @@ static void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t)
 	UINT64 now = Tick64();
 	UINT64 dormant_interval;
 	SESSION_INFO *info;
-	UINT i;
 	if (s == NULL || hubname == NULL || t == NULL)
 	{
 		return;
@@ -357,7 +354,7 @@ static void SiEnumLocalSession(SERVER *s, char *hubname, RPC_ENUM_SESSION *t)
 	info = HubEnumSessions(h, &t->NumSession);
 	t->Sessions = ZeroMalloc(sizeof(RPC_ENUM_SESSION_ITEM) * t->NumSession);
 
-	for (i = 0;i < t->NumSession;i++)
+	for (UINT i = 0;i < t->NumSession;i++)
 	{
 		SESSION_INFO *si = &info[i];
 		RPC_ENUM_SESSION_ITEM *e = &t->Sessions[i];

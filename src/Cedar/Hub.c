@@ -291,7 +291,7 @@ void HubWatchDogThread(THREAD *t, void *param)
 		UINT64 now = Tick64();
 		UINT64 next_due = 0;
 		UINT64 wait_time = interval;
-		UINT i, num = 0;
+		UINT num = 0;
 
 		HubLockTables(hub);
 		{
@@ -308,7 +308,7 @@ void HubWatchDogThread(THREAD *t, void *param)
 			// times are staggered is not rescanned once per probe
 			window = MIN(step * HUB_WATCHDOG_SLICE, interval / 4);
 
-			for (i = 0;i < num_entries;i++)
+			for (UINT i = 0;i < num_entries;i++)
 			{
 				IP_TABLE_ENTRY *e = IpTableGet(hub, i);
 				UINT64 due;
@@ -358,7 +358,7 @@ void HubWatchDogThread(THREAD *t, void *param)
 		}
 		HubUnlockTables(hub);
 
-		for (i = 0;i < num;i++)
+		for (UINT i = 0;i < num;i++)
 		{
 			if (i != 0)
 			{
@@ -469,8 +469,7 @@ static bool IsPacketMaskedByAccessList(SESSION *s, PKT *p, ACCESS *a, UINT64 des
 
 	if (a->CheckSrcMac != false)
 	{
-		UINT i;
-		for (i = 0; i < 6; i++)
+		for (UINT i = 0; i < 6; i++)
 		{
 			if((a->SrcMacAddress[i] & a->SrcMacMask[i]) != (a->SrcMacMask[i] & p->MacAddressSrc[i]))
 			{
@@ -481,8 +480,7 @@ static bool IsPacketMaskedByAccessList(SESSION *s, PKT *p, ACCESS *a, UINT64 des
 
 	if (a->CheckDstMac != false)
 	{
-		UINT i;
-		for (i = 0; i < 6; i++)
+		for (UINT i = 0; i < 6; i++)
 		{
 			if ((a->DstMacAddress[i] & a->DstMacMask[i]) != (a->DstMacMask[i] & p->MacAddressDest[i]))
 			{
@@ -739,7 +737,6 @@ static bool IsPacketMaskedByAccessList(SESSION *s, PKT *p, ACCESS *a, UINT64 des
 
 static bool ApplyAccessListToForwardPacket(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *p)
 {
-	UINT i;
 	bool pass = true;
 	bool skip = true;
 	if (hub == NULL || src_session == NULL || p == NULL || dest_session == NULL)
@@ -754,7 +751,7 @@ static bool ApplyAccessListToForwardPacket(HUB *hub, SESSION *src_session, SESSI
 
 	LockList(hub->AccessList);
 	{
-		for (i = 0;i < LIST_NUM(hub->AccessList);i++)
+		for (UINT i = 0;i < LIST_NUM(hub->AccessList);i++)
 		{
 			ACCESS *a = LIST_DATA(hub->AccessList, i);
 
@@ -790,13 +787,12 @@ static bool HubUrlEncode(char *dst, UINT size, char *src)
 	static char hex[] = "0123456789ABCDEF";
 	UINT len = StrLen(src);
 	UINT n = 0;
-	UINT i;
 	if (dst == NULL || size == 0)
 	{
 		return false;
 	}
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		UCHAR c = (UCHAR)src[i];
 
@@ -832,14 +828,13 @@ static bool HubUrlEncode(char *dst, UINT size, char *src)
 static bool IsRedirectUrlSafe(char *url)
 {
 	UINT len = StrLen(url);
-	UINT i;
 
 	if (len == 0)
 	{
 		return false;
 	}
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		UCHAR c = (UCHAR)url[i];
 
@@ -1115,7 +1110,6 @@ static bool IsEtherTypeNonIP(PKT *p)
 
 static bool ApplyAccessListToStoredPacket(HUB *hub, SESSION *s, PKT *p)
 {
-	UINT i;
 	HUB_OPTION *opt;
 	bool pass = true;
 	bool use_redirect_url = false;
@@ -1181,7 +1175,7 @@ static bool ApplyAccessListToStoredPacket(HUB *hub, SESSION *s, PKT *p)
 
 	LockList(hub->AccessList);
 	{
-		for (i = 0;i < LIST_NUM(hub->AccessList);i++)
+		for (UINT i = 0;i < LIST_NUM(hub->AccessList);i++)
 		{
 			ACCESS *a = LIST_DATA(hub->AccessList, i);
 
@@ -1259,13 +1253,12 @@ static void InitAccessList(HUB *hub)
 
 static void FreeAccessList(HUB *hub)
 {
-	UINT i;
 	if (hub == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(hub->AccessList);i++)
+	for (UINT i = 0;i < LIST_NUM(hub->AccessList);i++)
 	{
 		ACCESS *a = LIST_DATA(hub->AccessList, i);
 		Free(a);
@@ -1328,8 +1321,7 @@ SESSION *GetSessionByName(HUB *hub, char *name)
 
 	LockList(hub->SessionList);
 	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(hub->SessionList);i++)
+		for (UINT i = 0;i < LIST_NUM(hub->SessionList);i++)
 		{
 			SESSION *s = LIST_DATA(hub->SessionList, i);
 			if (StrCmpi(s->Name, name) == 0)
@@ -1360,8 +1352,7 @@ UINT HubCountUserSessions(HUB *h, char *username, UCHAR *unique_id)
 
 	LockList(h->SessionList);
 	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(h->SessionList);i++)
+		for (UINT i = 0;i < LIST_NUM(h->SessionList);i++)
 		{
 			SESSION *s = LIST_DATA(h->SessionList, i);
 			Lock(s->lock);
@@ -1400,11 +1391,10 @@ SESSION_INFO *HubEnumSessions(HUB *h, UINT *num)
 
 	LockList(h->SessionList);
 	{
-		UINT i;
 		*num = LIST_NUM(h->SessionList);
 		ret = ZeroMalloc(sizeof(SESSION_INFO) * (*num));
 
-		for (i = 0;i < *num;i++)
+		for (UINT i = 0;i < *num;i++)
 		{
 			SessionGetInfo(LIST_DATA(h->SessionList, i), &ret[i]);
 		}
@@ -1890,14 +1880,14 @@ DISCARD_PACKET:
 
 						if (s->Policy->MaxMac != 0 || s->Policy->NoBridge)
 						{
-							UINT i, num_mac_for_me = 0;
+							UINT num_mac_for_me = 0;
 							UINT limited_count;
 							MAC_TABLE_ENTRY **pp;
 							UINT num_pp;
 
 							pp = (MAC_TABLE_ENTRY **)HashListToArray(hub->MacHashTable, &num_pp);
 
-							for (i = 0;i < num_pp;i++)
+							for (UINT i = 0;i < num_pp;i++)
 							{
 								MAC_TABLE_ENTRY *e = pp[i];
 								if (e->Session == s)
@@ -2250,10 +2240,9 @@ UPDATE_FDB:
 				{
 					LockList(hub->MonitorList);
 					{
-						UINT i;
 						void *data;
 						UINT size = packet->PacketSize;
-						for (i = 0;i < LIST_NUM(hub->MonitorList);i++)
+						for (UINT i = 0;i < LIST_NUM(hub->MonitorList);i++)
 						{
 							SESSION *monitor_session = (SESSION *)LIST_DATA(hub->MonitorList, i);
 
@@ -2338,8 +2327,8 @@ DISCARD_UNICAST_PACKET:
 
 					LockList(hub->SessionList);
 					{
-						UINT i, num = LIST_NUM(hub->SessionList);
-						for (i = 0;i < num;i++)
+						UINT num = LIST_NUM(hub->SessionList);
+						for (UINT i = 0;i < num;i++)
 						{
 							SESSION *dest_session = LIST_DATA(hub->SessionList, i);
 							HUB_PA *dest_pa = (HUB_PA *)dest_session->PacketAdapter->Param;
@@ -2970,7 +2959,7 @@ bool StorePacketFilter(SESSION *s, PKT *packet)
 static void StopAllSession(HUB *h)
 {
 	SESSION **s;
-	UINT i, num;
+	UINT num;
 	if (h == NULL)
 	{
 		return;
@@ -2985,12 +2974,12 @@ static void StopAllSession(HUB *h)
 	UnlockList(h->SessionList);
 
 	// Signal every session first so they all shut down in parallel, then wait for each one.
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		StopSessionEx(s[i], true);
 	}
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		StopSession(s[i]);
 		ReleaseSession(s[i]);
@@ -3074,8 +3063,7 @@ void SetHubOnline(HUB *h)
 
 		LockList(h->Cedar->LocalBridgeList);
 		{
-			UINT i;
-			for (i = 0;i < LIST_NUM(h->Cedar->LocalBridgeList);i++)
+			for (UINT i = 0;i < LIST_NUM(h->Cedar->LocalBridgeList);i++)
 			{
 				LOCALBRIDGE *br = LIST_DATA(h->Cedar->LocalBridgeList, i);
 
@@ -3097,7 +3085,6 @@ void SetHubOnline(HUB *h)
 
 void SetHubOffline(HUB *h)
 {
-	UINT i;
 	if (h == NULL)
 	{
 		return;
@@ -3117,7 +3104,7 @@ void SetHubOffline(HUB *h)
 
 		LockList(h->Cedar->LocalBridgeList);
 		{
-			for (i = 0;i < LIST_NUM(h->Cedar->LocalBridgeList);i++)
+			for (UINT i = 0;i < LIST_NUM(h->Cedar->LocalBridgeList);i++)
 			{
 				LOCALBRIDGE *br = LIST_DATA(h->Cedar->LocalBridgeList, i);
 
@@ -3646,18 +3633,17 @@ void DeleteHubDb(HUBDB *d)
 	{
 		LockList(d->GroupList);
 		{
-			UINT i;
 			USER **users;
 			USERGROUP **groups;
 
 			users = ToArray(d->UserList);
 			groups = ToArray(d->GroupList);
 
-			for (i = 0;i < LIST_NUM(d->UserList);i++)
+			for (UINT i = 0;i < LIST_NUM(d->UserList);i++)
 			{
 				ReleaseUser(users[i]);
 			}
-			for (i = 0;i < LIST_NUM(d->GroupList);i++)
+			for (UINT i = 0;i < LIST_NUM(d->GroupList);i++)
 			{
 				ReleaseGroup(groups[i]);
 			}
@@ -3671,8 +3657,7 @@ void DeleteHubDb(HUBDB *d)
 
 	LockList(d->RootCertList);
 	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(d->RootCertList);i++)
+		for (UINT i = 0;i < LIST_NUM(d->RootCertList);i++)
 		{
 			X *x = LIST_DATA(d->RootCertList, i);
 			FreeX(x);
@@ -3682,8 +3667,7 @@ void DeleteHubDb(HUBDB *d)
 
 	LockList(d->CrlList);
 	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(d->CrlList);i++)
+		for (UINT i = 0;i < LIST_NUM(d->CrlList);i++)
 		{
 			CRL *crl = LIST_DATA(d->CrlList, i);
 			FreeCrl(crl);

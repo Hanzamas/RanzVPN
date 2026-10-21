@@ -26,7 +26,7 @@ UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
 	HUB *h = NULL;
 	UINT err;
 	char hubname[MAX_HUBNAME_LEN + 1];
-	UINT i, num;
+	UINT num;
 
 	CHECK_RIGHT;
 	h = AdminGetHub(a, t->HubName, NULL, &err);
@@ -49,7 +49,7 @@ UINT StEnumUser(ADMIN *a, RPC_ENUM_USER *t)
 		t->NumUser = num;
 		t->Users = ZeroMalloc(sizeof(RPC_ENUM_USER_ITEM) * num);
 
-		for (i = 0;i < num;i++)
+		for (UINT i = 0;i < num;i++)
 		{
 			USER *u = LIST_DATA(h->HubDb->UserList, i);
 

@@ -260,7 +260,6 @@ static void TcpIpTestDhcpModify(TCPIPTEST_CTX *ctx)
 	UCHAR *g;
 	UINT f_size;
 	UINT g_size;
-	UINT i;
 
 	Zero(&m, sizeof(m));
 	m.RemoveDefaultGatewayOnReply = true;
@@ -302,7 +301,7 @@ static void TcpIpTestDhcpModify(TCPIPTEST_CTX *ctx)
 
 	// Payloads that end before the options: only the fixed header, part of sname, part of the cookie
 	p = TcpIpTestDhcp(TCPIPTEST_DHCP_SIZE, ack, sizeof(ack));
-	for (i = 0; i < sizeof(short_sizes) / sizeof(short_sizes[0]); i++)
+	for (UINT i = 0; i < sizeof(short_sizes) / sizeof(short_sizes[0]); i++)
 	{
 		char what[MAX_SIZE];
 
@@ -392,9 +391,8 @@ static void TcpIpTestMss(TCPIPTEST_CTX *ctx)
 static USHORT TcpIpTestRefChecksum(UCHAR *buf, UINT size)
 {
 	UINT64 sum = 0;
-	UINT i;
 
-	for (i = 0; i + 1 < size; i += 2)
+	for (UINT i = 0; i + 1 < size; i += 2)
 	{
 		USHORT w;
 
@@ -422,9 +420,7 @@ static USHORT TcpIpTestRefChecksum(UCHAR *buf, UINT size)
 // 0xFF (the sum is a multiple of 0xFFFF) and 2 is all zero
 static void TcpIpTestFill(UCHAR *buf, UINT size, UINT pattern, UINT *seed)
 {
-	UINT i;
-
-	for (i = 0; i < size; i++)
+	for (UINT i = 0; i < size; i++)
 	{
 		if (pattern == 1)
 		{
@@ -451,16 +447,14 @@ static void TcpIpTestChecksum(TCPIPTEST_CTX *ctx)
 	UINT seed = 1;
 	UINT num = 0, bad_ip = 0, bad_v4 = 0, bad_v6 = 0;
 	UINT first_bad = INFINITE;
-	UINT k;
 
-	for (k = 0; k < num_small + sizeof(big_sizes) / sizeof(big_sizes[0]); k++)
+	for (UINT k = 0; k < num_small + sizeof(big_sizes) / sizeof(big_sizes[0]); k++)
 	{
 		UINT len = (k < num_small) ? k : big_sizes[k - num_small];
-		UINT off, pattern;
 
-		for (off = 0; off < 8; off++)
+		for (UINT off = 0; off < 8; off++)
 		{
-			for (pattern = 0; pattern < 3; pattern++)
+			for (UINT pattern = 0; pattern < 3; pattern++)
 			{
 				UINT alloc = len + off;
 				UCHAR *block, *buf, *v4, *v6;

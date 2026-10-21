@@ -100,7 +100,6 @@ UINT StDeleteLocalBridge(ADMIN *a, RPC_LOCALBRIDGE *t)
 
 UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t)
 {
-	UINT i;
 	CEDAR *c;
 
 	SERVER_ADMIN_ONLY;
@@ -120,7 +119,7 @@ UINT StEnumLocalBridge(ADMIN *a, RPC_ENUM_LOCALBRIDGE *t)
 		t->NumItem = LIST_NUM(c->LocalBridgeList);
 		t->Items = ZeroMalloc(sizeof(RPC_LOCALBRIDGE) * t->NumItem);
 
-		for (i = 0;i < t->NumItem;i++)
+		for (UINT i = 0;i < t->NumItem;i++)
 		{
 			RPC_LOCALBRIDGE *e = &t->Items[i];
 			LOCALBRIDGE *br = LIST_DATA(c->LocalBridgeList, i);

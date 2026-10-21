@@ -195,12 +195,10 @@ UINT StEnumCrl(ADMIN *a, RPC_ENUM_CRL *t)
 
 	LockList(h->HubDb->CrlList);
 	{
-		UINT i;
-
 		t->NumItem = LIST_NUM(h->HubDb->CrlList);
 		t->Items = ZeroMalloc(sizeof(RPC_ENUM_CRL_ITEM) * t->NumItem);
 
-		for (i = 0;i < LIST_NUM(h->HubDb->CrlList);i++)
+		for (UINT i = 0;i < LIST_NUM(h->HubDb->CrlList);i++)
 		{
 			CRL *crl = LIST_DATA(h->HubDb->CrlList, i);
 			wchar_t *info = GenerateCrlStr(crl);

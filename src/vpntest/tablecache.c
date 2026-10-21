@@ -59,9 +59,7 @@ static void TableCacheCheck(TABLECACHE_CTX *ctx, bool ok, char *what, char *deta
 // The language of the list with this name, or NULL
 static LANGLIST *TableCacheFindLang(LIST *o, char *name)
 {
-	UINT i;
-
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		LANGLIST *e = LIST_DATA(o, i);
 
@@ -83,9 +81,7 @@ static bool TableCacheLangOk(LANGLIST *e, char *name, UINT lcid)
 // Name of the string table of the language, or false when the list has no such language
 static bool TableCacheTableName(LIST *o, UINT id, char *name, UINT size)
 {
-	UINT i;
-
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		LANGLIST *e = LIST_DATA(o, i);
 
@@ -103,7 +99,6 @@ static bool TableCacheTableName(LIST *o, UINT id, char *name, UINT size)
 static UINT TableCacheNewFiles(DIRLIST *before, wchar_t *dir)
 {
 	DIRLIST *d;
-	UINT i, j;
 	UINT num = 0;
 
 	d = EnumDirW(dir);
@@ -112,7 +107,7 @@ static UINT TableCacheNewFiles(DIRLIST *before, wchar_t *dir)
 		return 0;
 	}
 
-	for (i = 0;i < d->NumFiles;i++)
+	for (UINT i = 0;i < d->NumFiles;i++)
 	{
 		struct DIRENT *e = d->File[i];
 		bool found = false;
@@ -122,7 +117,7 @@ static UINT TableCacheNewFiles(DIRLIST *before, wchar_t *dir)
 			continue;
 		}
 
-		for (j = 0;before != NULL && j < before->NumFiles;j++)
+		for (UINT j = 0;before != NULL && j < before->NumFiles;j++)
 		{
 			if (UniStrCmpi(before->File[j]->FileNameW, e->FileNameW) == 0)
 			{

@@ -189,9 +189,8 @@ static void MakeRoomInDosList(LISTENER *r)
 	if (LIST_NUM(r->DosList) >= RATE_LIMIT_TABLE_MAX)
 	{
 		DOS *oldest = NULL;
-		UINT i;
 
-		for (i = 0;i < LIST_NUM(r->DosList);i++)
+		for (UINT i = 0;i < LIST_NUM(r->DosList);i++)
 		{
 			DOS *d = LIST_DATA(r->DosList, i);
 

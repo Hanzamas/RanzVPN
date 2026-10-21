@@ -200,7 +200,6 @@ UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	else
 	{
 		CT *ct = CtNew();
-		UINT i;
 
 		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_1"), false);
 		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_8"), false);
@@ -211,7 +210,7 @@ UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_6"), true);
 		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_7"), true);
 
-		for (i = 0;i < t.NumSession;i++)
+		for (UINT i = 0;i < t.NumSession;i++)
 		{
 			RPC_ENUM_SESSION_ITEM *e = &t.Sessions[i];
 			wchar_t tmp1[MAX_SIZE];
@@ -326,7 +325,6 @@ UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ENUM_MAC_TABLE t;
-	UINT i;
 
 	PARAM args[] =
 	{
@@ -373,7 +371,7 @@ UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		CtInsertColumn(ct, _UU("SM_MAC_COLUMN_3"), false);
 		CtInsertColumn(ct, _UU("SM_MAC_COLUMN_4"), false);
 
-		for (i = 0;i < t.NumMacTable;i++)
+		for (UINT i = 0;i < t.NumMacTable;i++)
 		{
 			char str[MAX_SIZE];
 			wchar_t tmp0[128];
@@ -466,7 +464,6 @@ UINT PsIpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ENUM_IP_TABLE t;
-	UINT i;
 
 	PARAM args[] =
 	{
@@ -512,7 +509,7 @@ UINT PsIpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		CtInsertColumn(ct, _UU("SM_IP_COLUMN_3"), false);
 		CtInsertColumn(ct, _UU("SM_IP_COLUMN_4"), false);
 
-		for (i = 0;i < t.NumIpTable;i++)
+		for (UINT i = 0;i < t.NumIpTable;i++)
 		{
 			char str[MAX_SIZE];
 			wchar_t tmp0[128];

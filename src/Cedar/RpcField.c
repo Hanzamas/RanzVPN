@@ -93,7 +93,7 @@ static UINT RpcFieldArrayCount(const RPC_FIELD *f, PACK *p)
 // Write the items of a top-level ARRAY row
 static void RpcFieldOutArray(const RPC_FIELD *f, PACK *p, void *base, UINT total)
 {
-	UINT i, num;
+	UINT num;
 	UCHAR *items;
 
 	if (total != 0 || f->Item == NULL)
@@ -109,7 +109,7 @@ static void RpcFieldOutArray(const RPC_FIELD *f, PACK *p, void *base, UINT total
 		return;
 	}
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		RpcFieldOutRows(f->Item, p, items + ((size_t)f->Item->Size * i), i, num);
 	}
@@ -118,7 +118,7 @@ static void RpcFieldOutArray(const RPC_FIELD *f, PACK *p, void *base, UINT total
 // Read the items of a top-level ARRAY row
 static void RpcFieldInArray(const RPC_FIELD *f, void *base, PACK *p, UINT total)
 {
-	UINT i, num;
+	UINT num;
 	UCHAR *items;
 
 	if (total != 0 || f->Item == NULL)
@@ -133,7 +133,7 @@ static void RpcFieldInArray(const RPC_FIELD *f, void *base, PACK *p, UINT total)
 	*((UINT *)(((UCHAR *)base) + f->CountOffset)) = num;
 	*((UCHAR **)RPC_FIELD_MEMBER(base, f)) = items;
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		RpcFieldInRows(f->Item, items + ((size_t)f->Item->Size * i), p, i, num);
 	}
@@ -142,7 +142,7 @@ static void RpcFieldInArray(const RPC_FIELD *f, void *base, PACK *p, UINT total)
 // Release the items of an ARRAY row
 static void RpcFieldFreeArray(const RPC_FIELD *f, void *base)
 {
-	UINT i, num;
+	UINT num;
 	UCHAR *items;
 	const RPC_FIELD *r;
 	bool item_free = false;
@@ -165,7 +165,7 @@ static void RpcFieldFreeArray(const RPC_FIELD *f, void *base)
 
 	if (item_free && items != NULL)
 	{
-		for (i = 0;i < num;i++)
+		for (UINT i = 0;i < num;i++)
 		{
 			RpcFieldFreeRows(f->Item, items + ((size_t)f->Item->Size * i));
 		}

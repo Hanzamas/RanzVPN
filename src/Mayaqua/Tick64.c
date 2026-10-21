@@ -69,8 +69,7 @@ UINT64 Tick64ToTime64(UINT64 tick)
 	}
 	LockList(tk64->AdjustTime);
 	{
-		INT i;
-		for (i = ((INT)LIST_NUM(tk64->AdjustTime) - 1); i >= 0; i--)
+		for (INT i = ((INT)LIST_NUM(tk64->AdjustTime) - 1); i >= 0; i--)
 		{
 			ADJUST_TIME *t = LIST_DATA(tk64->AdjustTime, i);
 			if (t->Tick <= tick)
@@ -199,7 +198,6 @@ void InitTick64()
 
 void FreeTick64()
 {
-	UINT i;
 	if (tk64 == NULL)
 	{
 		return;
@@ -211,7 +209,7 @@ void FreeTick64()
 	CloseThreadpoolTimer(tk64->Timer);
 	tk64->Timer = NULL;
 
-	for (i = 0;i < LIST_NUM(tk64->AdjustTime);i++)
+	for (UINT i = 0;i < LIST_NUM(tk64->AdjustTime);i++)
 	{
 		ADJUST_TIME *t = LIST_DATA(tk64->AdjustTime, i);
 		Free(t);

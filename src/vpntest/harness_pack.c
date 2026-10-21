@@ -302,9 +302,8 @@ static void HarnessPackPutHex(BUF *b, void *data, UINT size)
 {
 	static char *digits = "0123456789abcdef";
 	UCHAR *u = (UCHAR *)data;
-	UINT i;
 
-	for (i = 0;i < size;i++)
+	for (UINT i = 0;i < size;i++)
 	{
 		char two[2];
 
@@ -326,11 +325,9 @@ static void HarnessPackPutSha1(BUF *b, void *data, UINT size)
 // Append a quoted string: \\, \" and \xNN for control and non-ASCII bytes (the file stays ASCII)
 static void HarnessPackPutStr(BUF *b, char *s)
 {
-	UINT i;
-
 	HarnessPackPut(b, "\"");
 
-	for (i = 0;s[i] != 0;i++)
+	for (UINT i = 0;s[i] != 0;i++)
 	{
 		UCHAR c = (UCHAR)s[i];
 
@@ -451,9 +448,7 @@ static bool HarnessPackIsMasked(HARNESS_PACK_CASE *c, ELEMENT *e)
 // Dump the elements of a Pack in list order: #<i> <name> <type>[<num>] = <v0>, <v1>, ...
 static void HarnessPackDump(BUF *b, PACK *p, HARNESS_PACK_CASE *c)
 {
-	UINT i, j;
-
-	for (i = 0;i < LIST_NUM(p->elements);i++)
+	for (UINT i = 0;i < LIST_NUM(p->elements);i++)
 	{
 		ELEMENT *e = LIST_DATA(p->elements, i);
 		bool masked = HarnessPackIsMasked(c, e);
@@ -462,7 +457,7 @@ static void HarnessPackDump(BUF *b, PACK *p, HARNESS_PACK_CASE *c)
 		Format(tmp, sizeof(tmp), "#%u %s %s[%u] =", i, e->name, HarnessPackTypeName(e->type), e->num_value);
 		HarnessPackPut(b, tmp);
 
-		for (j = 0;j < e->num_value;j++)
+		for (UINT j = 0;j < e->num_value;j++)
 		{
 			VALUE *v = e->values[j];
 
@@ -568,9 +563,8 @@ static void HarnessPackPutBytes(BUF *b, PACK *p, bool masked)
 static UINT HarnessPackHash(char *s)
 {
 	UINT h = 2166136261U;
-	UINT i;
 
-	for (i = 0;s[i] != 0;i++)
+	for (UINT i = 0;s[i] != 0;i++)
 	{
 		h ^= (UCHAR)s[i];
 		h *= 16777619U;
@@ -608,7 +602,7 @@ static void HarnessPackCanonData(HARNESS_PACK_RUN *r, ELEMENT *e, UINT h, UINT i
 {
 	BUF *src = NULL;
 	char tmp[MAX_SIZE];
-	UINT x, i;
+	UINT x;
 
 	if (StrCmp(e->name, "Cert") == 0 || StrCmp(e->name, "Chain") == 0 || StrCmp(e->name, "ServerCert") == 0 ||
 		StrCmp(e->name, "ServerX") == 0 || StrCmp(e->name, "ClientX") == 0 || StrCmp(e->name, "UserX") == 0)
@@ -640,7 +634,7 @@ static void HarnessPackCanonData(HARNESS_PACK_RUN *r, ELEMENT *e, UINT h, UINT i
 
 	x = h ^ (index * 0x9E3779B9U);
 
-	for (i = 0;i < v->Size;i++)
+	for (UINT i = 0;i < v->Size;i++)
 	{
 		x = x * 1103515245U + 12345U;
 		((UCHAR *)v->Data)[i] = (UCHAR)(x >> 16);
@@ -653,9 +647,7 @@ static void HarnessPackCanonData(HARNESS_PACK_RUN *r, ELEMENT *e, UINT h, UINT i
 // U+4E2D for the UTF-8 path). The kept keys (HarnessPackIsKept) keep their values.
 static void HarnessPackCanon(HARNESS_PACK_RUN *r, PACK *p, bool live)
 {
-	UINT i, j;
-
-	for (i = 0;i < LIST_NUM(p->elements);i++)
+	for (UINT i = 0;i < LIST_NUM(p->elements);i++)
 	{
 		ELEMENT *e = LIST_DATA(p->elements, i);
 		UINT h;
@@ -667,7 +659,7 @@ static void HarnessPackCanon(HARNESS_PACK_RUN *r, PACK *p, bool live)
 
 		h = HarnessPackHash(e->name);
 
-		for (j = 0;j < e->num_value;j++)
+		for (UINT j = 0;j < e->num_value;j++)
 		{
 			VALUE *v = e->values[j];
 			char tmp[MAX_SIZE];
@@ -1033,7 +1025,6 @@ static void HarnessPackPrepCrlFull(HARNESS *h, void *p)
 	RPC_CRL *t = p;
 	UCHAR serial[8] = {0x52, 0x41, 0x4E, 0x5A, 0x05, 0x06, 0x07, 0x08};
 	NAME *n;
-	UINT i;
 
 	t->Crl = ZeroMalloc(sizeof(CRL));
 	t->Crl->Serial = NewXSerial(serial, sizeof(serial));
@@ -1046,11 +1037,11 @@ static void HarnessPackPrepCrlFull(HARNESS *h, void *p)
 	n->Local = CopyUniStr(L"");
 
 	// Non-zero digests: OutRpcCrl writes only those
-	for (i = 0;i < MD5_SIZE;i++)
+	for (UINT i = 0;i < MD5_SIZE;i++)
 	{
 		t->Crl->DigestMD5[i] = (UCHAR)(0x10 + i);
 	}
-	for (i = 0;i < SHA1_SIZE;i++)
+	for (UINT i = 0;i < SHA1_SIZE;i++)
 	{
 		t->Crl->DigestSHA1[i] = (UCHAR)(0x40 + i);
 	}
@@ -1227,9 +1218,8 @@ static PACK *HarnessPackBuildCrlBadDigest(void)
 {
 	PACK *p = NewPack();
 	UCHAR d[32];
-	UINT i;
 
-	for (i = 0;i < sizeof(d);i++)
+	for (UINT i = 0;i < sizeof(d);i++)
 	{
 		d[i] = (UCHAR)(0xA0 + i);
 	}
@@ -1501,14 +1491,12 @@ static HARNESS_PACK_CASE harness_pack_cases[] =
 // Error of an admin RPC response, found by a linear scan (a lookup would sort the element list)
 static UINT HarnessPackGetError(PACK *p)
 {
-	UINT i;
-
 	if (p == NULL)
 	{
 		return ERR_INTERNAL_ERROR;
 	}
 
-	for (i = 0;i < LIST_NUM(p->elements);i++)
+	for (UINT i = 0;i < LIST_NUM(p->elements);i++)
 	{
 		ELEMENT *e = LIST_DATA(p->elements, i);
 
@@ -1744,7 +1732,6 @@ static void HarnessPackRunCase(HARNESS_PACK_RUN *r, HARNESS_PACK_CASE *c)
 static void HarnessCheckStalePack(HARNESS *h, char *golden_dir)
 {
 	DIRLIST *d = EnumDir(golden_dir);
-	UINT i, j;
 	UINT num_stale = 0;
 	char expected[MAX_SIZE];
 	char tmp[MAX_SIZE];
@@ -1754,7 +1741,7 @@ static void HarnessCheckStalePack(HARNESS *h, char *golden_dir)
 		return;
 	}
 
-	for (i = 0;i < d->NumFiles;i++)
+	for (UINT i = 0;i < d->NumFiles;i++)
 	{
 		DIRENT *e = d->File[i];
 		bool known = false;
@@ -1764,7 +1751,7 @@ static void HarnessCheckStalePack(HARNESS *h, char *golden_dir)
 			continue;
 		}
 
-		for (j = 0;j < sizeof(harness_pack_cases) / sizeof(harness_pack_cases[0]);j++)
+		for (UINT j = 0;j < sizeof(harness_pack_cases) / sizeof(harness_pack_cases[0]);j++)
 		{
 			Format(expected, sizeof(expected), "pack_%s.txt", harness_pack_cases[j].Name);
 			if (StrCmpi(e->FileName, expected) == 0)
@@ -1804,7 +1791,6 @@ void HarnessPackGolden(HARNESS *h)
 	UINT64 start = Tick64();
 	X *x;
 	K *k;
-	UINT i;
 
 	Print("[golden: admin RPC Packs]\n");
 	HarnessSetPhase("pack", NULL);
@@ -1833,7 +1819,7 @@ void HarnessPackGolden(HARNESS *h)
 	FreeX(x);
 	FreeK(k);
 
-	for (i = 0;i < sizeof(harness_pack_cases) / sizeof(harness_pack_cases[0]);i++)
+	for (UINT i = 0;i < sizeof(harness_pack_cases) / sizeof(harness_pack_cases[0]);i++)
 	{
 		HarnessPackRunCase(&r, &harness_pack_cases[i]);
 	}

@@ -107,13 +107,12 @@ bool SiEnableListener(SERVER *s, UINT port)
 
 SERVER_LISTENER *SiGetListener(SERVER *s, UINT port)
 {
-	UINT i;
 	if (s == NULL || port == 0)
 	{
 		return NULL;
 	}
 
-	for (i = 0;i < LIST_NUM(s->ServerListenerList);i++)
+	for (UINT i = 0;i < LIST_NUM(s->ServerListenerList);i++)
 	{
 		SERVER_LISTENER *e = LIST_DATA(s->ServerListenerList, i);
 		if (e->Port == port)
@@ -128,13 +127,12 @@ SERVER_LISTENER *SiGetListener(SERVER *s, UINT port)
 bool SiAddListenerEx(SERVER *s, UINT port, bool enabled, bool disable_dos)
 {
 	SERVER_LISTENER *e;
-	UINT i;
 	if (s == NULL || port == 0)
 	{
 		return false;
 	}
 
-	for (i = 0;i < LIST_NUM(s->ServerListenerList);i++)
+	for (UINT i = 0;i < LIST_NUM(s->ServerListenerList);i++)
 	{
 		e = LIST_DATA(s->ServerListenerList, i);
 		if (e->Port == port)
@@ -194,11 +192,10 @@ SERVER_LISTENER_INFO *SiEnumListeners(SERVER *s, UINT *num)
 
 	SiLockListenerList(s);
 	{
-		UINT i;
 		*num = LIST_NUM(s->ServerListenerList);
 		ret = ZeroMalloc(sizeof(SERVER_LISTENER_INFO) * (*num));
 
-		for (i = 0;i < *num;i++)
+		for (UINT i = 0;i < *num;i++)
 		{
 			SERVER_LISTENER *o = LIST_DATA(s->ServerListenerList, i);
 

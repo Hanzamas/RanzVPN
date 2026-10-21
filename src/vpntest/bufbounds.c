@@ -62,9 +62,8 @@ static bool BufBoundsCheck(BUFBOUNDS_CTX *ctx, bool ok, char *what)
 static BUF *BufBoundsNewBuf(UINT size)
 {
 	BUF *b = NewBuf();
-	UINT i;
 
-	for (i = 0;i < size;i++)
+	for (UINT i = 0;i < size;i++)
 	{
 		WriteBufChar(b, (UCHAR)i);
 	}
@@ -114,17 +113,16 @@ static void BufBoundsTestReadBufStr(BUFBOUNDS_CTX *ctx)
 	BUF *b;
 	char str[64];
 	char long_str[101];
-	UINT i;
 	bool ret;
 
 	// 10 bytes, then a string length of 0xFFFFFFFF and 100 bytes of string
 	b = NewBuf();
-	for (i = 0;i < 10;i++)
+	for (UINT i = 0;i < 10;i++)
 	{
 		WriteBufChar(b, 0);
 	}
 	WriteBufInt(b, 0xFFFFFFFF);
-	for (i = 0;i < 100;i++)
+	for (UINT i = 0;i < 100;i++)
 	{
 		WriteBufChar(b, 'a');
 	}
@@ -135,7 +133,7 @@ static void BufBoundsTestReadBufStr(BUFBOUNDS_CTX *ctx)
 	FreeBuf(b);
 
 	// An over-long string that is all there: the first size - 1 bytes, the rest skipped
-	for (i = 0;i < 100;i++)
+	for (UINT i = 0;i < 100;i++)
 	{
 		long_str[i] = 'x';
 	}
@@ -375,9 +373,8 @@ static void BufBoundsTestCfgValid(BUFBOUNDS_CTX *ctx)
 	FOLDER *f2;
 	BUF *bin, *text1, *text2 = NULL;
 	UCHAR bytes[20];
-	UINT i;
 
-	for (i = 0;i < sizeof(bytes);i++)
+	for (UINT i = 0;i < sizeof(bytes);i++)
 	{
 		bytes[i] = (UCHAR)i;
 	}
@@ -454,9 +451,7 @@ static char *BufBoundsCfgEntryName(LIST *o, UINT i, bool folders)
 // True when the names of list o are sorted case-insensitively, as CfgCmpName orders them
 static bool BufBoundsCfgListSorted(LIST *o, bool folders)
 {
-	UINT i;
-
-	for (i = 1;i < LIST_NUM(o);i++)
+	for (UINT i = 1;i < LIST_NUM(o);i++)
 	{
 		if (StrCmpi(BufBoundsCfgEntryName(o, i - 1, folders), BufBoundsCfgEntryName(o, i, folders)) > 0)
 		{
@@ -470,9 +465,7 @@ static bool BufBoundsCfgListSorted(LIST *o, bool folders)
 // True when every name of t comes after the one before it, case-insensitively: sorted, each once
 static bool BufBoundsCfgTokensUnique(TOKEN_LIST *t)
 {
-	UINT i;
-
-	for (i = 1;i < t->NumTokens;i++)
+	for (UINT i = 1;i < t->NumTokens;i++)
 	{
 		if (StrCmpi(t->Token[i - 1], t->Token[i]) >= 0)
 		{
@@ -524,7 +517,6 @@ static void BufBoundsTestCfgEnum(BUFBOUNDS_CTX *ctx)
 static void BufBoundsTestCfg(BUFBOUNDS_CTX *ctx)
 {
 	BUF *b;
-	UINT i;
 
 	BufBoundsTestCfgValid(ctx);
 	BufBoundsTestCfgEnum(ctx);
@@ -561,7 +553,7 @@ static void BufBoundsTestCfg(BUFBOUNDS_CTX *ctx)
 	WriteBufInt(b, 0);
 	WriteBufInt(b, 1);
 	WriteBufInt(b, 0xFFFFFFFF);
-	for (i = 0;i < 600;i++)
+	for (UINT i = 0;i < 600;i++)
 	{
 		WriteBufChar(b, 'n');
 	}
@@ -588,15 +580,14 @@ static void BufBoundsTestCfg(BUFBOUNDS_CTX *ctx)
 static BUF *BufBoundsCfgNestedText(UINT count)
 {
 	BUF *b = NewBuf();
-	UINT i;
 
-	for (i = 0;i < count;i++)
+	for (UINT i = 0;i < count;i++)
 	{
 		char *line = (i == 0 ? "declare root\r\n{\r\n" : "declare x\r\n{\r\n");
 
 		WriteBuf(b, line, StrLen(line));
 	}
-	for (i = 0;i < count;i++)
+	for (UINT i = 0;i < count;i++)
 	{
 		WriteBuf(b, "}\r\n", 3);
 	}
@@ -610,14 +601,13 @@ static BUF *BufBoundsCfgNestedText(UINT count)
 static BUF *BufBoundsCfgNestedBin(UINT count)
 {
 	BUF *b = NewBuf();
-	UINT i;
 
-	for (i = 0;i < count;i++)
+	for (UINT i = 0;i < count;i++)
 	{
 		WriteBufStr(b, i == 0 ? TAG_ROOT : "x");
 		WriteBufInt(b, (i + 1 < count) ? 1 : 0);	// Subfolders
 	}
-	for (i = 0;i < count;i++)
+	for (UINT i = 0;i < count;i++)
 	{
 		WriteBufInt(b, 0);						// Items
 	}

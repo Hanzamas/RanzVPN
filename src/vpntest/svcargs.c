@@ -105,14 +105,13 @@ void svcargs_test(UINT num, char **arg)
 	const MS_SVC_ARG *table;
 	UINT table_num = 0;
 	wchar_t *help;
-	UINT i;
 
 	Zero(&t, sizeof(t));
 
 	Print("Service argument test (MsSvcArgs, MsSvcArgToMode, SVC_HELP)\n");
 
 	// Each documented argument selects its mode, also in upper case
-	for (i = 0;i < sizeof(svcargs_expect) / sizeof(svcargs_expect[0]);i++)
+	for (UINT i = 0;i < sizeof(svcargs_expect) / sizeof(svcargs_expect[0]);i++)
 	{
 		char what[MAX_SIZE];
 		char upper[MAX_SIZE];
@@ -134,7 +133,7 @@ void svcargs_test(UINT num, char **arg)
 		"the table holds exactly the documented arguments", "%u entries", table_num);
 
 	// The former tray aliases and other strings select no mode
-	for (i = 0;i < sizeof(svcargs_none) / sizeof(svcargs_none[0]);i++)
+	for (UINT i = 0;i < sizeof(svcargs_none) / sizeof(svcargs_none[0]);i++)
 	{
 		char what[MAX_SIZE];
 		UINT mode = MsSvcArgToMode(svcargs_none[i]);
@@ -148,7 +147,7 @@ void svcargs_test(UINT num, char **arg)
 	help = _UU("SVC_HELP");
 	SvcArgsTestCheck(&t, UniStrLen(help) != 0, "SVC_HELP is in the string table", "empty");
 
-	for (i = 0;table != NULL && i < table_num;i++)
+	for (UINT i = 0;table != NULL && i < table_num;i++)
 	{
 		char what[MAX_SIZE];
 		char line[MAX_SIZE];

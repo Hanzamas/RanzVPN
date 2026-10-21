@@ -427,7 +427,6 @@ UINT PsListenerList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	PS *ps = (PS *)param;
 	UINT ret;
 	RPC_LISTENER_LIST t;
-	UINT i;
 	CT *ct;
 
 	o = ParseCommandList(c, cmd_name, str, NULL, 0);
@@ -452,7 +451,7 @@ UINT PsListenerList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	CtInsertColumn(ct, _UU("CM_LISTENER_COLUMN_1"), false);
 	CtInsertColumn(ct, _UU("CM_LISTENER_COLUMN_2"), false);
 
-	for (i = 0;i < t.NumPort;i++)
+	for (UINT i = 0;i < t.NumPort;i++)
 	{
 		wchar_t *status = _UU("CM_LISTENER_OFFLINE");
 		wchar_t tmp[128];

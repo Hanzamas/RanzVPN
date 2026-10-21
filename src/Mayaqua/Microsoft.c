@@ -778,9 +778,7 @@ static void MsDeleteTempDir()
 							d = EnumDirW(dir_name);
 							if (d != NULL)
 							{
-								UINT i;
-
-								for (i = 0;i < d->NumFiles;i++)
+								for (UINT i = 0;i < d->NumFiles;i++)
 								{
 									wchar_t full_path[MAX_PATH];
 

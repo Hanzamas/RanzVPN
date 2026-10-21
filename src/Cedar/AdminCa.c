@@ -100,7 +100,6 @@ UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
 	HUB *h;
 	UINT err;
 	char hubname[MAX_HUBNAME_LEN + 1];
-	UINT i;
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
@@ -119,7 +118,7 @@ UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
 		t->NumCa = LIST_NUM(h->HubDb->RootCertList);
 		t->Ca = ZeroMalloc(sizeof(RPC_HUB_ENUM_CA_ITEM) * t->NumCa);
 
-		for (i = 0;i < t->NumCa;i++)
+		for (UINT i = 0;i < t->NumCa;i++)
 		{
 			RPC_HUB_ENUM_CA_ITEM *e = &t->Ca[i];
 			X *x = LIST_DATA(h->HubDb->RootCertList, i);

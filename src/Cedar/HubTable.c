@@ -149,7 +149,6 @@ int CompareUserList(void *p1, void *p2)
 
 void DeleteAllUserListCache(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
@@ -157,7 +156,7 @@ void DeleteAllUserListCache(LIST *o)
 
 	LockList(o);
 	{
-		for (i = 0;i < LIST_NUM(o);i++)
+		for (UINT i = 0;i < LIST_NUM(o);i++)
 		{
 			USERLIST *u = LIST_DATA(o, i);
 
@@ -171,7 +170,6 @@ void DeleteAllUserListCache(LIST *o)
 
 void SetAcList(LIST *o, LIST *src)
 {
-	UINT i;
 	if (o == NULL || src == NULL)
 	{
 		return;
@@ -179,7 +177,7 @@ void SetAcList(LIST *o, LIST *src)
 
 	DelAllAc(o);
 
-	for (i = 0;i < LIST_NUM(src);i++)
+	for (UINT i = 0;i < LIST_NUM(src);i++)
 	{
 		AC *ac = LIST_DATA(src, i);
 
@@ -189,13 +187,12 @@ void SetAcList(LIST *o, LIST *src)
 
 void DelAllAc(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		AC *ac = LIST_DATA(o, i);
 
@@ -244,13 +241,12 @@ char *GenerateAcStr(AC *ac)
 
 bool IsIpDeniedByAcList(IP *ip, LIST *o)
 {
-	UINT i;
 	if (ip == NULL || o == NULL)
 	{
 		return false;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		AC *ac = LIST_DATA(o, i);
 
@@ -344,13 +340,12 @@ void AddAc(LIST *o, AC *ac)
 
 void NormalizeAcList(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		AC *ac = LIST_DATA(o, i);
 
@@ -465,13 +460,12 @@ bool IsValidCertInHub(HUB *h, X *x)
 
 bool IsCertMatchCrlList(X *x, LIST *o)
 {
-	UINT i;
 	if (x == NULL || o == NULL)
 	{
 		return false;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		CRL *crl = LIST_DATA(o, i);
 
@@ -902,7 +896,6 @@ void AddAccessListEx(HUB *hub, ACCESS *a, bool no_sort, bool no_reassign_id)
 	LockList(hub->AccessList);
 	{
 		ACCESS *access;
-		UINT i;
 
 		if (LIST_NUM(hub->AccessList) >= MAX_ACCESSLISTS)
 		{
@@ -966,7 +959,7 @@ void AddAccessListEx(HUB *hub, ACCESS *a, bool no_sort, bool no_reassign_id)
 
 		if (no_reassign_id == false)
 		{
-			for (i = 0;i < LIST_NUM(hub->AccessList);i++)
+			for (UINT i = 0;i < LIST_NUM(hub->AccessList);i++)
 			{
 				ACCESS *a = LIST_DATA(hub->AccessList, i);
 				a->Id = (i + 1);
@@ -1133,9 +1126,9 @@ IP_TABLE_ENTRY *IpTableGet(HUB *h, UINT index)
 // IPv6 (v6) or IPv4 addresses that session s holds in the IP table
 UINT CountSessionIps(HUB *h, SESSION *s, bool v6)
 {
-	UINT i, num = 0;
+	UINT num = 0;
 
-	for (i = 0;i < LIST_NUM(h->IpTable);i++)
+	for (UINT i = 0;i < LIST_NUM(h->IpTable);i++)
 	{
 		IP_TABLE_ENTRY *e = LIST_DATA(h->IpTable, i);
 
@@ -1165,9 +1158,9 @@ void LogIpConflict(HUB *h, SESSION *s, IP *ip, IP_TABLE_ENTRY *e, UINT64 now)
 void IpTableFlushSession(HUB *h, SESSION *s)
 {
 	LIST *o = h->IpTable;
-	UINT i, num_kept = 0;
+	UINT num_kept = 0;
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		IP_TABLE_ENTRY *e = LIST_DATA(o, i);
 
@@ -1208,7 +1201,6 @@ bool IpTableDeleteByKey(HUB *h, UINT key)
 void DeleteExpiredMacTableEntry(HASH_LIST *h)
 {
 	LIST *o2;
-	UINT i;
 	MAC_TABLE_ENTRY **pp;
 	UINT num;
 	if (h == NULL)
@@ -1220,7 +1212,7 @@ void DeleteExpiredMacTableEntry(HASH_LIST *h)
 
 	pp = (MAC_TABLE_ENTRY **)HashListToArray(h, &num);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		MAC_TABLE_ENTRY *e = pp[i];
 		if ((e->UpdatedTime + (UINT64)MAC_TABLE_EXPIRE_TIME) <= Tick64())
@@ -1229,7 +1221,7 @@ void DeleteExpiredMacTableEntry(HASH_LIST *h)
 		}
 	}
 
-	for (i = 0;i < LIST_NUM(o2);i++)
+	for (UINT i = 0;i < LIST_NUM(o2);i++)
 	{
 		MAC_TABLE_ENTRY *e = LIST_DATA(o2, i);
 		DeleteHash(h, e);
@@ -1243,7 +1235,7 @@ void DeleteExpiredMacTableEntry(HASH_LIST *h)
 
 void DeleteExpiredIpTableEntry(LIST *o)
 {
-	UINT i, num_kept = 0;
+	UINT num_kept = 0;
 	UINT64 now;
 	if (o == NULL)
 	{
@@ -1256,7 +1248,7 @@ void DeleteExpiredIpTableEntry(LIST *o)
 	// and DeleteHighestIpTableEntry still evicts the same entry.
 	now = Tick64();
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		IP_TABLE_ENTRY *e = LIST_DATA(o, i);
 		if ((e->UpdatedTime + (UINT64)(e->DhcpAllocated ? IP_TABLE_EXPIRE_TIME_DHCP : IP_TABLE_EXPIRE_TIME)) <= now)
@@ -1305,10 +1297,9 @@ bool AddRootCert(HUB *hub, X *x)
 		{
 			if (LIST_NUM(db->RootCertList) < MAX_HUB_CERTS)
 			{
-				UINT i;
 				bool ok = true;
 
-				for (i = 0;i < LIST_NUM(db->RootCertList);i++)
+				for (UINT i = 0;i < LIST_NUM(db->RootCertList);i++)
 				{
 					X *exist_x = LIST_DATA(db->RootCertList, i);
 					if (CompareX(exist_x, x))

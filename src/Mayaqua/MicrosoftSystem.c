@@ -80,9 +80,8 @@ static bool MsIsHypervisorGuest()
 static void MsSmbiosAddString(char *dst, UINT dst_size, UCHAR *str_set, UINT str_set_size, UINT index)
 {
 	UINT pos = 0;
-	UINT i;
 
-	for (i = 1; index != 0 && pos < str_set_size; i++)
+	for (UINT i = 1; index != 0 && pos < str_set_size; i++)
 	{
 		UINT len = 0;
 
@@ -129,7 +128,6 @@ static bool MsIsVmFirmware()
 	UINT table_size;
 	UINT end;
 	UINT pos;
-	UINT i;
 	bool ret = false;
 
 	size = GetSystemFirmwareTable(MS_SMBIOS_PROVIDER, 0, NULL, 0);
@@ -190,7 +188,7 @@ static bool MsIsVmFirmware()
 
 	Free(buf);
 
-	for (i = 0; i < sizeof(vm_names) / sizeof(vm_names[0]); i++)
+	for (UINT i = 0; i < sizeof(vm_names) / sizeof(vm_names[0]); i++)
 	{
 		if (InStrEx(names, vm_names[i], false))
 		{

@@ -26,9 +26,7 @@ bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename)
 	{
 		LockList(c->LocalBridgeList);
 		{
-			UINT i;
-
-			for (i = 0;i < LIST_NUM(c->LocalBridgeList);i++)
+			for (UINT i = 0;i < LIST_NUM(c->LocalBridgeList);i++)
 			{
 				LOCALBRIDGE *br = LIST_DATA(c->LocalBridgeList, i);
 
@@ -60,7 +58,6 @@ bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename)
 
 void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool monitor, bool limit_broadcast)
 {
-	UINT i;
 	HUB *h = NULL;
 	LOCALBRIDGE *br = NULL;
 	if (c == NULL || hubname == NULL || devicename == NULL)
@@ -74,7 +71,7 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 		{
 			bool exists = false;
 
-			for (i = 0;i < LIST_NUM(c->LocalBridgeList);i++)
+			for (UINT i = 0;i < LIST_NUM(c->LocalBridgeList);i++)
 			{
 				LOCALBRIDGE *br = LIST_DATA(c->LocalBridgeList, i);
 				if (StrCmpi(br->DeviceName, devicename) == 0)
@@ -98,7 +95,7 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 
 				Add(c->LocalBridgeList, br);
 
-				for (i = 0;i < LIST_NUM(c->HubList);i++)
+				for (UINT i = 0;i < LIST_NUM(c->HubList);i++)
 				{
 					HUB *hub = LIST_DATA(c->HubList, i);
 					if (StrCmpi(hub->Name, br->HubName) == 0)
@@ -151,13 +148,12 @@ void InitLocalBridgeList(CEDAR *c)
 
 void FreeLocalBridgeList(CEDAR *c)
 {
-	UINT i;
 	if (c == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(c->LocalBridgeList);i++)
+	for (UINT i = 0;i < LIST_NUM(c->LocalBridgeList);i++)
 	{
 		LOCALBRIDGE *br = LIST_DATA(c->LocalBridgeList, i);
 		Free(br);

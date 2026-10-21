@@ -94,11 +94,9 @@ struct ssl_ctx_st *NewServerSSLCtx(X *x, K *priv, LIST *chain, char *cipher_list
 	}
 	else
 	{
-		UINT i;
-
 		LockList(chain);
 		{
-			for (i = 0;i < LIST_NUM(chain);i++)
+			for (UINT i = 0;i < LIST_NUM(chain);i++)
 			{
 				AddChainSslCert(ctx, LIST_DATA(chain, i));
 			}
@@ -378,7 +376,7 @@ UINT GetOSSecurityLevel()
 
 TOKEN_LIST *GetCipherList()
 {
-	int i, num;
+	int num;
 	SSL *ssl;
 	SSL_CTX *ctx;
 	const char *name;
@@ -408,7 +406,7 @@ TOKEN_LIST *GetCipherList()
 		ciphers->Token = ZeroMalloc(sizeof(char *) * (UINT)num);
 	}
 
-	for (i = 0; i < num; i++)
+	for (int i = 0; i < num; i++)
 	{
 		const SSL_CIPHER *c = sk_SSL_CIPHER_value(sk, i);
 		if (c == NULL)

@@ -170,7 +170,6 @@ void InitCapsList(CAPSLIST *t)
 }
 void InRpcCapsList(CAPSLIST *t, PACK *p)
 {
-	UINT i;
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -179,7 +178,7 @@ void InRpcCapsList(CAPSLIST *t, PACK *p)
 	Zero(t, sizeof(CAPSLIST));
 	t->CapsList = NewListFast(CompareCaps);
 
-	for (i = 0;i < LIST_NUM(p->elements);i++)
+	for (UINT i = 0;i < LIST_NUM(p->elements);i++)
 	{
 		ELEMENT *e = LIST_DATA(p->elements, i);
 
@@ -192,13 +191,12 @@ void InRpcCapsList(CAPSLIST *t, PACK *p)
 }
 void OutRpcCapsList(PACK *p, CAPSLIST *t)
 {
-	UINT i;
 	if (t == NULL || p == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(t->CapsList);i++)
+	for (UINT i = 0;i < LIST_NUM(t->CapsList);i++)
 	{
 		char tmp[MAX_SIZE];
 		char ct_key[MAX_PATH];
@@ -230,13 +228,12 @@ void OutRpcCapsList(PACK *p, CAPSLIST *t)
 }
 void FreeRpcCapsList(CAPSLIST *t)
 {
-	UINT i;
 	if (t == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(t->CapsList);i++)
+	for (UINT i = 0;i < LIST_NUM(t->CapsList);i++)
 	{
 		CAPS *c = LIST_DATA(t->CapsList, i);
 
@@ -306,13 +303,12 @@ bool GetCapsBool(CAPSLIST *caps, char *name)
 
 void FreeCapsList(CAPSLIST *caps)
 {
-	UINT i;
 	if (caps == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(caps->CapsList);i++)
+	for (UINT i = 0;i < LIST_NUM(caps->CapsList);i++)
 	{
 		CAPS *c = LIST_DATA(caps->CapsList, i);
 
@@ -325,13 +321,12 @@ void FreeCapsList(CAPSLIST *caps)
 
 CAPS *GetCaps(CAPSLIST *caps, char *name)
 {
-	UINT i;
 	if (caps == NULL || name == NULL)
 	{
 		return NULL;
 	}
 
-	for (i = 0;i < LIST_NUM(caps->CapsList);i++)
+	for (UINT i = 0;i < LIST_NUM(caps->CapsList);i++)
 	{
 		CAPS *c = LIST_DATA(caps->CapsList, i);
 

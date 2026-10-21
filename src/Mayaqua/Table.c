@@ -89,7 +89,6 @@ bool SaveLangConfig(wchar_t *filename, const char *str)
 {
 	BUF *b;
 	LIST *o;
-	UINT i;
 	bool ret;
 	if (filename == NULL)
 	{
@@ -111,7 +110,7 @@ bool SaveLangConfig(wchar_t *filename, const char *str)
 
 		AppendBufStr(b, "# Available Language IDs are:\r\n");
 
-		for (i = 0;i < LIST_NUM(o);i++)
+		for (UINT i = 0;i < LIST_NUM(o);i++)
 		{
 			LANGLIST *e = LIST_DATA(o, i);
 
@@ -195,13 +194,12 @@ LANGLIST *GetBestLangForCurrentEnvironment(LIST *o)
 LANGLIST *GetBestLangByLcid(LIST *o, UINT lcid)
 {
 	LANGLIST *ret;
-	UINT i;
 	if (o == NULL)
 	{
 		return NULL;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		LANGLIST *e = LIST_DATA(o, i);
 
@@ -218,14 +216,13 @@ LANGLIST *GetBestLangByLcid(LIST *o, UINT lcid)
 
 LANGLIST *GetBestLangByName(LIST *o, const char *name)
 {
-	UINT i;
 	LANGLIST *ret = NULL;
 	if (o == NULL)
 	{
 		return NULL;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		LANGLIST *e = LIST_DATA(o, i);
 
@@ -241,7 +238,7 @@ LANGLIST *GetBestLangByName(LIST *o, const char *name)
 		return ret;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		LANGLIST *e = LIST_DATA(o, i);
 
@@ -262,13 +259,12 @@ LANGLIST *GetBestLangByName(LIST *o, const char *name)
 
 void FreeLangList(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		LANGLIST *e = LIST_DATA(o, i);
 
@@ -330,9 +326,7 @@ LIST *LoadLangList()
 					t2 = ParseToken(t->Token[4], ",");
 					if (t2 != NULL)
 					{
-						UINT i;
-
-						for (i = 0;i < t2->NumTokens;i++)
+						for (UINT i = 0;i < t2->NumTokens;i++)
 						{
 							UINT id = ToInt(t2->Token[i]);
 
@@ -422,7 +416,6 @@ char *GetTableStr(const char *name)
 
 TOKEN_LIST *GetTableNameStartWith(const char *str)
 {
-	UINT i;
 	UINT len;
 	LIST *o;
 	TOKEN_LIST *t;
@@ -439,7 +432,7 @@ TOKEN_LIST *GetTableNameStartWith(const char *str)
 
 	o = NewListFast(NULL);
 
-	for (i = 0;i < LIST_NUM(TableList);i++)
+	for (UINT i = 0;i < LIST_NUM(TableList);i++)
 	{
 		TABLE *t = LIST_DATA(TableList, i);
 		UINT len2 = StrLen(t->name);
@@ -457,7 +450,7 @@ TOKEN_LIST *GetTableNameStartWith(const char *str)
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
 
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		t->Token[i] = LIST_DATA(o, i);
 	}
@@ -575,13 +568,12 @@ static TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *r
 	{
 		wchar_t *tmp;
 		UINT tmp_size = (UniStrSize(unistr) + 1024) * 2;
-		UINT i;
 
 		tmp = Malloc(tmp_size);
 
 		UniStrCpy(tmp, tmp_size, unistr);
 
-		for (i = 0; i < LIST_NUM(replace_list);i++)
+		for (UINT i = 0; i < LIST_NUM(replace_list);i++)
 		{
 			TABLE *r = LIST_DATA(replace_list, i);
 
@@ -649,7 +641,7 @@ static TABLE *ParseTableLine(char *line, char *prefix, UINT prefix_size, LIST *r
 
 void UnescapeStr(char *src)
 {
-	UINT i, len, wp;
+	UINT len, wp;
 	char *tmp;
 	if (src == NULL)
 	{
@@ -659,7 +651,7 @@ void UnescapeStr(char *src)
 	len = StrLen(src);
 	tmp = Malloc(len + 1);
 	wp = 0;
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		if (src[i] == '\\')
 		{
@@ -701,7 +693,7 @@ FINISH:
 
 void FreeTable()
 {
-	UINT i, num;
+	UINT num;
 	TABLE **tables;
 	if (TableList == NULL)
 	{
@@ -710,7 +702,7 @@ void FreeTable()
 
 	num = LIST_NUM(TableList);
 	tables = ToArray(TableList);
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		TABLE *t = tables[i];
 		Free(t->name);
@@ -728,7 +720,6 @@ static bool LoadTableFromBuf(BUF *b)
 	char *tmp;
 	char prefix[MAX_SIZE];
 	LIST *replace_list = NULL;
-	UINT i;
 	if (b == NULL)
 	{
 		return false;
@@ -794,7 +785,7 @@ static bool LoadTableFromBuf(BUF *b)
 		Free(tmp);
 	}
 
-	for (i = 0;i < LIST_NUM(replace_list);i++)
+	for (UINT i = 0;i < LIST_NUM(replace_list);i++)
 	{
 		TABLE *t = LIST_DATA(replace_list, i);
 

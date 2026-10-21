@@ -56,14 +56,13 @@ bool IsFileW(wchar_t *name)
 
 void ConvertSafeFileName(char *dst, UINT size, char *src)
 {
-	UINT i;
 	if (dst == NULL || src == NULL)
 	{
 		return;
 	}
 
 	StrCpy(dst, size, src);
-	for (i = 0;i < StrLen(dst);i++)
+	for (UINT i = 0;i < StrLen(dst);i++)
 	{
 		if (IsSafeChar(dst[i]) == false)
 		{
@@ -125,13 +124,12 @@ int CompareDirListByName(void *p1, void *p2)
 
 void FreeDir(DIRLIST *d)
 {
-	UINT i;
 	if (d == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < d->NumFiles;i++)
+	for (UINT i = 0;i < d->NumFiles;i++)
 	{
 		DIRENT *f = d->File[i];
 		Free(f->FileName);
@@ -418,7 +416,7 @@ void InitGetExeName()
 void GetFileNameFromFilePath(char *dst, UINT size, char *filepath)
 {
 	char tmp[MAX_SIZE];
-	UINT i, len, wp;
+	UINT len, wp;
 	if (dst == NULL || filepath == NULL)
 	{
 		return;
@@ -427,7 +425,7 @@ void GetFileNameFromFilePath(char *dst, UINT size, char *filepath)
 	len = MIN(StrLen(filepath), (MAX_SIZE - 2));
 	wp = 0;
 
-	for (i = 0;i < (len + 1);i++)
+	for (UINT i = 0;i < (len + 1);i++)
 	{
 		char c = filepath[i];
 
@@ -453,7 +451,6 @@ void GetDirNameFromFilePathW(wchar_t *dst, UINT size, wchar_t *filepath)
 {
 	wchar_t tmp[MAX_SIZE];
 	UINT wp;
-	UINT i;
 	UINT len;
 	if (dst == NULL || filepath == NULL)
 	{
@@ -472,7 +469,7 @@ void GetDirNameFromFilePathW(wchar_t *dst, UINT size, wchar_t *filepath)
 
 	wp = 0;
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		wchar_t c = tmp[i];
 		if (c == L'/' || c == L'\\')
@@ -500,7 +497,6 @@ void GetDirNameFromFilePath(char *dst, UINT size, char *filepath)
 {
 	char tmp[MAX_SIZE];
 	UINT wp;
-	UINT i;
 	UINT len;
 	if (dst == NULL || filepath == NULL)
 	{
@@ -519,7 +515,7 @@ void GetDirNameFromFilePath(char *dst, UINT size, char *filepath)
 
 	wp = 0;
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		char c = tmp[i];
 		if (c == '/' || c == '\\')
@@ -660,7 +656,6 @@ void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 	bool first_single_slash = false;
 	wchar_t win32_drive_char = 0;
 	bool is_full_path = false;
-	UINT i;
 	SK *sk;
 	if (dst == NULL || src == 0)
 	{
@@ -726,7 +721,7 @@ void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 
 	sk = NewSk();
 
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		wchar_t *s = t->Token[i];
 
@@ -767,7 +762,7 @@ void NormalizePathW(wchar_t *dst, UINT size, wchar_t *src)
 		UniStrCat(tmp, sizeof(tmp), L":/");
 	}
 
-	for (i = 0;i < sk->num_item;i++)
+	for (UINT i = 0;i < sk->num_item;i++)
 	{
 		UniStrCat(tmp, sizeof(tmp), (wchar_t *)sk->p[i]);
 		if (i != (sk->num_item - 1))
@@ -828,11 +823,11 @@ bool FileRenameInnerW(wchar_t *old_name, wchar_t *new_name)
 
 void ConvertPathW(wchar_t *path)
 {
-	UINT i, len;
+	UINT len;
 	wchar_t new_char = L'\\';
 
 	len = UniStrLen(path);
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		if (path[i] == L'\\' || path[i] == L'/')
 		{
@@ -920,7 +915,6 @@ bool MakeDirExW(wchar_t *name)
 	LIST *o;
 	wchar_t tmp[MAX_PATH];
 	wchar_t tmp2[MAX_PATH];
-	UINT i;
 	bool ret = false;
 	if (name == NULL)
 	{
@@ -946,7 +940,7 @@ bool MakeDirExW(wchar_t *name)
 		UniStrCpy(tmp, sizeof(tmp), tmp2);
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		UINT j = LIST_NUM(o) - i - 1;
 		wchar_t *s = LIST_DATA(o, j);
@@ -1716,7 +1710,7 @@ void Win32NukuEn(char *dst, UINT size, char *src)
 void Win32GetDirFromPath(char *dst, UINT size, char *src)
 {
 	char str[MAX_SIZE];
-	int i,len;
+	int len;
 	char c;
 	char tmp[MAX_SIZE];
 	int wp;
@@ -1732,7 +1726,7 @@ void Win32GetDirFromPath(char *dst, UINT size, char *src)
 	wp = 0;
 	len = StrLen(str);
 	dst[0] = 0;
-	for (i = 0;i < len;i++)
+	for (int i = 0;i < len;i++)
 	{
 		c = str[i];
 		switch (c)

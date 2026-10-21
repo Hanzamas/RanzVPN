@@ -319,10 +319,9 @@ static void SelowTestClass(SELOWTEST_CTX *ctx)
 static void SelowTestNetClass(SELOWTEST_CTX *ctx)
 {
 	LIST *o = MsNetClassEnum();
-	UINT i;
 	UINT num_ok = 0;
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		MS_NETCLASS_DEVICE *d = LIST_DATA(o, i);
 		char enum_key[MAX_SIZE];

@@ -263,10 +263,9 @@ static void X509TestNames(X509T_CTX *ctx)
 {
 	UCHAR *bytes = ZeroMalloc(X509T_OVERLONG * 2);
 	wchar_t *expect = ZeroMalloc((X509T_OVERLONG + 1) * sizeof(wchar_t));
-	UINT i;
 
 	// 600 ASCII characters as PrintableString and as UTF8String
-	for (i = 0;i < X509T_LONG_ASCII;i++)
+	for (UINT i = 0;i < X509T_LONG_ASCII;i++)
 	{
 		bytes[i] = (UCHAR)X509TestChar(i);
 		expect[i] = (wchar_t)X509TestChar(i);
@@ -278,7 +277,7 @@ static void X509TestNames(X509T_CTX *ctx)
 		"600-character UTF8String common name comes back exactly");
 
 	// 300 times U+00E9 as UTF-8 (C3 A9), 600 bytes
-	for (i = 0;i < X509T_LONG_UTF8;i++)
+	for (UINT i = 0;i < X509T_LONG_UTF8;i++)
 	{
 		bytes[i * 2] = 0xC3;
 		bytes[i * 2 + 1] = 0xA9;
@@ -289,7 +288,7 @@ static void X509TestNames(X509T_CTX *ctx)
 		"UTF8String common name of 300 times U+00E9 comes back exactly");
 
 	// 500 characters as BMPString (UTF-16 big endian), 1000 bytes
-	for (i = 0;i < X509T_LONG_BMP;i++)
+	for (UINT i = 0;i < X509T_LONG_BMP;i++)
 	{
 		bytes[i * 2] = 0;
 		bytes[i * 2 + 1] = (UCHAR)X509TestChar(i);
@@ -300,7 +299,7 @@ static void X509TestNames(X509T_CTX *ctx)
 		"500-character BMPString common name comes back exactly");
 
 	// Longer than the buffer: its first X509T_NAME_KEPT bytes, as before
-	for (i = 0;i < X509T_OVERLONG;i++)
+	for (UINT i = 0;i < X509T_OVERLONG;i++)
 	{
 		bytes[i] = (UCHAR)X509TestChar(i);
 		expect[i] = (wchar_t)X509TestChar(i);
@@ -368,7 +367,6 @@ static void X509TestRsa(X509T_CTX *ctx, K *priv, K *pub, UINT bits)
 	bool forged_ok = false;
 	char what[MAX_SIZE];
 	UINT sign_size = bits / 8;
-	UINT i;
 
 	// The client signs the 20 random bytes of the server (c->Random in Protocol.c)
 	Rand(data, sizeof(data));
@@ -390,7 +388,7 @@ static void X509TestRsa(X509T_CTX *ctx, K *priv, K *pub, UINT bits)
 	// signed with the private key (EVP_PKEY_sign with no digest signs the bytes as they are)
 	Copy(block, x509t_sha1_digest_info, sizeof(x509t_sha1_digest_info));
 	Sha1(block + sizeof(x509t_sha1_digest_info), data, sizeof(data));
-	for (i = X509T_DIGEST_INFO;i < sizeof(block);i++)
+	for (UINT i = X509T_DIGEST_INFO;i < sizeof(block);i++)
 	{
 		block[i] = 'X';
 	}
@@ -624,9 +622,7 @@ void x509root_test(UINT num, char **arg)
 // Whether every byte of the buffer has the value
 static bool X509TestAllBytes(UCHAR *buf, UINT size, UCHAR value)
 {
-	UINT i;
-
-	for (i = 0;i < size;i++)
+	for (UINT i = 0;i < size;i++)
 	{
 		if (buf[i] != value)
 		{

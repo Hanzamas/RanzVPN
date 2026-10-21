@@ -51,9 +51,8 @@ UINT PsAdminOptionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	else
 	{
 		CT *ct = CtNewStandardEx();
-		UINT i;
 
-		for (i = 0;i < t.NumItem;i++)
+		for (UINT i = 0;i < t.NumItem;i++)
 		{
 			ADMIN_OPTION *e = &t.Items[i];
 			wchar_t tmp1[MAX_SIZE];
@@ -113,10 +112,9 @@ UINT PsAdminOptionSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	}
 	else
 	{
-		UINT i;
 		bool b = false;
 
-		for (i = 0;i < t.NumItem;i++)
+		for (UINT i = 0;i < t.NumItem;i++)
 		{
 			if (StrCmpi(t.Items[i].Name, GetParamStr(o, "[name]")) == 0)
 			{
@@ -187,9 +185,8 @@ UINT PsExtOptionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	else
 	{
 		CT *ct = CtNewStandardEx();
-		UINT i;
 
-		for (i = 0;i < t.NumItem;i++)
+		for (UINT i = 0;i < t.NumItem;i++)
 		{
 			ADMIN_OPTION *e = &t.Items[i];
 			wchar_t tmp1[MAX_SIZE];
@@ -249,10 +246,9 @@ UINT PsExtOptionSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	}
 	else
 	{
-		UINT i;
 		bool b = false;
 
-		for (i = 0;i < t.NumItem;i++)
+		for (UINT i = 0;i < t.NumItem;i++)
 		{
 			if (StrCmpi(t.Items[i].Name, GetParamStr(o, "[name]")) == 0)
 			{

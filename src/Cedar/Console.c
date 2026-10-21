@@ -28,7 +28,6 @@ static void PrintCmdHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *param_list)
 	wchar_t *description, *args, *help;
 	UNI_TOKEN_LIST *t;
 	UINT width;
-	UINT i;
 	char *space;
 	if (c == NULL || cmd_name == NULL || param_list == NULL)
 	{
@@ -50,7 +49,7 @@ static void PrintCmdHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *param_list)
 
 	c->Write(c, _UU("CMD_HELP_DESCRIPTION"));
 	t = SeparateStringByWidth(description, width - 2);
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		UniFormat(buf, buf_size, L"%S%s", space, t->Token[i]);
 		c->Write(c, buf);
@@ -60,7 +59,7 @@ static void PrintCmdHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *param_list)
 
 	c->Write(c, _UU("CMD_HELP_HELP"));
 	t = SeparateStringByWidth(help, width - 2);
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		UniFormat(buf, buf_size, L"%S%s", space, t->Token[i]);
 		c->Write(c, buf);
@@ -70,7 +69,7 @@ static void PrintCmdHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *param_list)
 
 	c->Write(c, _UU("CMD_HELP_USAGE"));
 	t = SeparateStringByWidth(args, width - 2);
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		UniFormat(buf, buf_size, L"%S%s", space, t->Token[i]);
 		c->Write(c, buf);
@@ -276,7 +275,6 @@ void PrintCandidateHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *candidate_list, 
 	UINT console_width;
 	UINT max_keyword_width;
 	LIST *o;
-	UINT i;
 	wchar_t *tmpbuf;
 	UINT tmpbuf_size;
 	char *left_space_array;
@@ -297,7 +295,7 @@ void PrintCandidateHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *candidate_list, 
 
 	max_keyword_width = 0;
 
-	for (i = 0;i < candidate_list->NumTokens;i++)
+	for (UINT i = 0;i < candidate_list->NumTokens;i++)
 	{
 		UINT keyword_width;
 
@@ -321,13 +319,12 @@ void PrintCandidateHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *candidate_list, 
 
 	max_space_array = MakeCharArray(' ', max_keyword_width);
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		char tmp[128];
 		char *name = LIST_DATA(o, i);
 		UNI_TOKEN_LIST *t;
 		wchar_t *help;
-		UINT j;
 		UINT descript_start_width = left_space + max_keyword_width + 1;
 		UINT descript_width;
 		char *space;
@@ -374,7 +371,7 @@ void PrintCandidateHelp(CONSOLE *c, char *cmd_name, TOKEN_LIST *candidate_list, 
 
 		t = SeparateStringByWidth(help, descript_width);
 
-		for (j = 0;j < t->NumTokens;j++)
+		for (UINT j = 0;j < t->NumTokens;j++)
 		{
 			if (j == 0)
 			{
@@ -450,7 +447,6 @@ static bool IsWordChar(wchar_t c)
 
 static UINT GetNextWordWidth(wchar_t *str)
 {
-	UINT i;
 	UINT ret;
 	if (str == NULL)
 	{
@@ -459,7 +455,7 @@ static UINT GetNextWordWidth(wchar_t *str)
 
 	ret = 0;
 
-	for (i = 0;;i++)
+	for (UINT i = 0;;i++)
 	{
 		wchar_t c = str[i];
 
@@ -483,7 +479,7 @@ UNI_TOKEN_LIST *SeparateStringByWidth(wchar_t *str, UINT width)
 {
 	UINT wp;
 	wchar_t *tmp;
-	UINT len, i;
+	UINT len;
 	LIST *o;
 	UNI_TOKEN_LIST *ret;
 	if (str == NULL)
@@ -501,7 +497,7 @@ UNI_TOKEN_LIST *SeparateStringByWidth(wchar_t *str, UINT width)
 	tmp = ZeroMalloc(sizeof(wchar_t) * (len + 32));
 	wp = 0;
 
-	for (i = 0;i < (len + 1);i++)
+	for (UINT i = 0;i < (len + 1);i++)
 	{
 		wchar_t c = str[i];
 		UINT next_word_width;
@@ -560,7 +556,7 @@ UNI_TOKEN_LIST *SeparateStringByWidth(wchar_t *str, UINT width)
 	ret->NumTokens = LIST_NUM(o);
 	ret->Token = ZeroMalloc(sizeof(wchar_t *) * ret->NumTokens);
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		wchar_t *s = LIST_DATA(o, i);
 
@@ -779,11 +775,10 @@ RETRY:
 		else
 		{
 			char *real_cmd_name;
-			UINT i;
 
 			real_cmd_name = candidate->Token[0];
 
-			for (i = 0;i < num_cmd;i++)
+			for (UINT i = 0;i < num_cmd;i++)
 			{
 				if (StrCmpi(cmd[i].Name, real_cmd_name) == 0)
 				{
@@ -856,7 +851,7 @@ UINT GetConsoleWidth(CONSOLE *c)
 
 bool SeparateCommandAndParam(wchar_t *src, char **cmd, wchar_t **param)
 {
-	UINT i, len, wp;
+	UINT len, wp;
 	wchar_t *tmp;
 	wchar_t *src_tmp;
 	if (src == NULL)
@@ -880,7 +875,7 @@ bool SeparateCommandAndParam(wchar_t *src, char **cmd, wchar_t **param)
 	tmp = Malloc(sizeof(wchar_t) * (len + 32));
 	wp = 0;
 
-	for (i = 0;i < (len + 1);i++)
+	for (UINT i = 0;i < (len + 1);i++)
 	{
 		wchar_t c = src_tmp[i];
 
@@ -926,7 +921,6 @@ TOKEN_LIST *GetRealnameCandidate(char *input_name, TOKEN_LIST *real_name_list)
 {
 	TOKEN_LIST *ret;
 	LIST *o;
-	UINT i;
 	bool ok = false;
 	if (input_name == NULL || real_name_list == NULL)
 	{
@@ -935,7 +929,7 @@ TOKEN_LIST *GetRealnameCandidate(char *input_name, TOKEN_LIST *real_name_list)
 
 	o = NewListFast(NULL);
 
-	for (i = 0;i < real_name_list->NumTokens;i++)
+	for (UINT i = 0;i < real_name_list->NumTokens;i++)
 	{
 		char *name = real_name_list->Token[i];
 
@@ -949,7 +943,7 @@ TOKEN_LIST *GetRealnameCandidate(char *input_name, TOKEN_LIST *real_name_list)
 
 	if (ok == false)
 	{
-		for (i = 0;i < real_name_list->NumTokens;i++)
+		for (UINT i = 0;i < real_name_list->NumTokens;i++)
 		{
 			char *name = real_name_list->Token[i];
 
@@ -1017,7 +1011,7 @@ bool IsOmissionName(char *input_name, char *real_name)
 
 void GetOmissionName(char *dst, UINT size, char *src)
 {
-	UINT i, len;
+	UINT len;
 	if (dst == NULL || src == NULL)
 	{
 		return;
@@ -1026,7 +1020,7 @@ void GetOmissionName(char *dst, UINT size, char *src)
 	StrCpy(dst, size, "");
 	len = StrLen(src);
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		char c = src[i];
 
@@ -1153,10 +1147,9 @@ LIST *ParseCommandList(CONSOLE *c, char *cmd_name, wchar_t *command, PARAM param
 			}
 			else
 			{
-				UINT j;
 				char *real_name = candidate->Token[0];
 
-				for (j = 0;j < num_param;j++)
+				for (UINT j = 0;j < num_param;j++)
 				{
 					if (StrCmpi(param[j].Name, real_name) == 0)
 					{
@@ -1423,13 +1416,12 @@ PARAM_VALUE *FindParamValue(LIST *o, char *name)
 
 void FreeParamValueList(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		PARAM_VALUE *v = LIST_DATA(o, i);
 
@@ -1487,7 +1479,6 @@ wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list)
 	static const wchar_t cmd_suffixes[4] = {L' ', L'\t', L':', L'='};
 	UNI_TOKEN_LIST *t;
 	UINT i;
-	UINT prefix_index, suffix_index;
 	wchar_t *tmp;
 	wchar_t *ret = NULL;
 	LIST *o;
@@ -1513,9 +1504,9 @@ wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list)
 	// order. A match preceded by its own prefix character (//CMD, --CMD) does
 	// not count.
 	i = INFINITE;
-	for (prefix_index = 0;prefix_index < 2 && i == INFINITE;prefix_index++)
+	for (UINT prefix_index = 0;prefix_index < 2 && i == INFINITE;prefix_index++)
 	{
-		for (suffix_index = 0;suffix_index < 4 && i == INFINITE;suffix_index++)
+		for (UINT suffix_index = 0;suffix_index < 4 && i == INFINITE;suffix_index++)
 		{
 			wchar_t key[6];
 
@@ -1654,12 +1645,11 @@ wchar_t *ParseCommandEx(wchar_t *str, wchar_t *name, TOKEN_LIST **param_list)
 	if (o != NULL)
 	{
 		TOKEN_LIST *t = ZeroMalloc(sizeof(TOKEN_LIST));
-		UINT i;
 
 		t->NumTokens = LIST_NUM(o);
 		t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
 
-		for (i = 0;i < t->NumTokens;i++)
+		for (UINT i = 0;i < t->NumTokens;i++)
 		{
 			t->Token[i] = LIST_DATA(o, i);
 		}
@@ -1767,10 +1757,10 @@ static wchar_t *Prompt(wchar_t *prompt_str)
 	if (UniGetLineWin32(tmp, MAX_PROMPT_STRSIZE))
 	{
 		bool escape = false;
-		UINT i, len;
+		UINT len;
 
 		len = UniStrLen(tmp);
-		for (i = 0;i < len;i++)
+		for (UINT i = 0;i < len;i++)
 		{
 			if (tmp[i] == 0x04 || tmp[i] == 0x1A)
 			{

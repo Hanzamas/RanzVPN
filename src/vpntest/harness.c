@@ -799,7 +799,7 @@ static char *HarnessSkipBom(char *s)
 static LIST *HarnessSplitLines(char *text)
 {
 	LIST *o = NewListFast(NULL);
-	UINT len, i, start = 0;
+	UINT len, start = 0;
 
 	if (text == NULL)
 	{
@@ -808,7 +808,7 @@ static LIST *HarnessSplitLines(char *text)
 
 	len = StrLen(text);
 
-	for (i = 0;i <= len;i++)
+	for (UINT i = 0;i <= len;i++)
 	{
 		if (i == len || text[i] == '\n')
 		{
@@ -838,14 +838,12 @@ static LIST *HarnessSplitLines(char *text)
 // Release a line list
 static void HarnessFreeLines(LIST *o)
 {
-	UINT i;
-
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		Free(LIST_DATA(o, i));
 	}
@@ -859,7 +857,6 @@ static bool HarnessTextEqual(char *a, char *b)
 	LIST *la = HarnessSplitLines(HarnessSkipBom(a));
 	LIST *lb = HarnessSplitLines(HarnessSkipBom(b));
 	bool ret = true;
-	UINT i;
 
 	if (LIST_NUM(la) != LIST_NUM(lb))
 	{
@@ -867,7 +864,7 @@ static bool HarnessTextEqual(char *a, char *b)
 	}
 	else
 	{
-		for (i = 0;i < LIST_NUM(la);i++)
+		for (UINT i = 0;i < LIST_NUM(la);i++)
 		{
 			if (StrCmp(LIST_DATA(la, i), LIST_DATA(lb, i)) != 0)
 			{
@@ -896,10 +893,8 @@ static void HarnessPrintDiff(char *name, char *expected, char *actual)
 
 	if (n > HARNESS_DIFF_MAX_LINES || m > HARNESS_DIFF_MAX_LINES)
 	{
-		UINT i;
-
 		// Too large for the LCS table: report the first difference only
-		for (i = 0;i < MAX(n, m);i++)
+		for (UINT i = 0;i < MAX(n, m);i++)
 		{
 			char *x = (i < n) ? LIST_DATA(a, i) : NULL;
 			char *y = (i < m) ? LIST_DATA(b, i) : NULL;
@@ -927,7 +922,7 @@ static void HarnessPrintDiff(char *name, char *expected, char *actual)
 		char *op_type = ZeroMalloc(n + m + 1);
 		char **op_line = ZeroMalloc(sizeof(char *) * (n + m + 1));
 		bool *visible = ZeroMalloc(sizeof(bool) * (n + m + 1));
-		UINT i, j, k;
+		UINT i, j;
 		bool gap = false;
 
 		// dp[i][j] = length of the LCS of a[i..] and b[j..]
@@ -971,22 +966,21 @@ static void HarnessPrintDiff(char *name, char *expected, char *actual)
 			}
 		}
 
-		for (k = 0;k < num_ops;k++)
+		for (UINT k = 0;k < num_ops;k++)
 		{
 			if (op_type[k] != ' ')
 			{
 				UINT from = (k >= HARNESS_DIFF_CONTEXT) ? (k - HARNESS_DIFF_CONTEXT) : 0;
 				UINT to = MIN(k + HARNESS_DIFF_CONTEXT, num_ops - 1);
-				UINT x;
 
-				for (x = from;x <= to;x++)
+				for (UINT x = from;x <= to;x++)
 				{
 					visible[x] = true;
 				}
 			}
 		}
 
-		for (k = 0;k < num_ops;k++)
+		for (UINT k = 0;k < num_ops;k++)
 		{
 			if (visible[k])
 			{
@@ -1020,8 +1014,6 @@ static void HarnessPrintDiff(char *name, char *expected, char *actual)
 // Build a deterministic test frame: dst, src, EtherType 0x88B5, sequence number, pattern
 static void HarnessBuildFrame(UCHAR *buf, UINT size, UCHAR *dst, UCHAR *src, UINT seq)
 {
-	UINT i;
-
 	Copy(buf, dst, 6);
 	Copy(buf + 6, src, 6);
 	buf[12] = HARNESS_ETHERTYPE_HI;
@@ -1031,7 +1023,7 @@ static void HarnessBuildFrame(UCHAR *buf, UINT size, UCHAR *dst, UCHAR *src, UIN
 	buf[16] = (UCHAR)((seq >> 8) & 0xFF);
 	buf[17] = (UCHAR)(seq & 0xFF);
 
-	for (i = 18;i < size;i++)
+	for (UINT i = 18;i < size;i++)
 	{
 		buf[i] = (UCHAR)((i * 7 + seq * 13) & 0xFF);
 	}
@@ -1181,11 +1173,9 @@ static HARNESS_PA *HarnessNewPa(char *name)
 // Discard the recorded frames and reset the counters
 static void HarnessClearRecv(HARNESS_PA *p)
 {
-	UINT i;
-
 	Lock(p->Lock);
 	{
-		for (i = 0;i < LIST_NUM(p->RecvList);i++)
+		for (UINT i = 0;i < LIST_NUM(p->RecvList);i++)
 		{
 			HARNESS_FRAME *f = LIST_DATA(p->RecvList, i);
 
@@ -1433,11 +1423,9 @@ static bool HarnessWaitListener(HARNESS *h, UINT timeout)
 
 	while (true)
 	{
-		UINT i;
-
 		SiLockListenerList(h->Server);
 		{
-			for (i = 0;i < LIST_NUM(h->Server->ServerListenerList);i++)
+			for (UINT i = 0;i < LIST_NUM(h->Server->ServerListenerList);i++)
 			{
 				SERVER_LISTENER *e = LIST_DATA(h->Server->ServerListenerList, i);
 
@@ -1506,7 +1494,7 @@ static RPC *HarnessAdminConnect(CEDAR *cedar, UINT timeout, UINT *err)
 static bool HarnessUseOnlyTestListener(HARNESS *h)
 {
 	RPC_LISTENER_LIST t;
-	UINT i, err;
+	UINT err;
 	bool ok = true;
 	char tmp[MAX_SIZE];
 
@@ -1517,7 +1505,7 @@ static bool HarnessUseOnlyTestListener(HARNESS *h)
 		return false;
 	}
 
-	for (i = 0;i < t.NumPort;i++)
+	for (UINT i = 0;i < t.NumPort;i++)
 	{
 		if (t.Ports[i] != HARNESS_PORT)
 		{
@@ -1647,7 +1635,6 @@ static bool HarnessWaitLink(HARNESS *h, UINT timeout)
 	RPC_ENUM_LINK e;
 	UINT64 start, end;
 	UINT err;
-	UINT i;
 	char tmp[MAX_SIZE];
 
 	Zero(&k, sizeof(k));
@@ -1702,7 +1689,7 @@ static bool HarnessWaitLink(HARNESS *h, UINT timeout)
 	StrCpy(e.HubName, sizeof(e.HubName), HARNESS_HUB_A);
 	if (ScEnumLink(h->Rpc, &e) == ERR_NO_ERROR)
 	{
-		for (i = 0;i < e.NumLink;i++)
+		for (UINT i = 0;i < e.NumLink;i++)
 		{
 			Print("  [info] cascade %S: online %u, connected %u, last error %u (%S)\n",
 				e.Links[i].AccountName, e.Links[i].Online, e.Links[i].Connected,
@@ -1720,7 +1707,6 @@ static bool HarnessWaitLink(HARNESS *h, UINT timeout)
 bool HarnessFindSession(HARNESS *h, char *hubname, char *username, bool link_mode, char *name, UINT name_size)
 {
 	RPC_ENUM_SESSION t;
-	UINT i;
 	bool ret = false;
 
 	Zero(&t, sizeof(t));
@@ -1731,7 +1717,7 @@ bool HarnessFindSession(HARNESS *h, char *hubname, char *username, bool link_mod
 		return false;
 	}
 
-	for (i = 0;i < t.NumSession;i++)
+	for (UINT i = 0;i < t.NumSession;i++)
 	{
 		RPC_ENUM_SESSION_ITEM *e = &t.Sessions[i];
 
@@ -1919,7 +1905,7 @@ static bool HarnessSetup(HARNESS *h)
 static bool HarnessCheckMac(HARNESS *h, char *hubname, UCHAR *mac, char *session_name)
 {
 	RPC_ENUM_MAC_TABLE t;
-	UINT i, err;
+	UINT err;
 	bool found = false;
 	char mac_str[64];
 	char got[MAX_SESSION_NAME_LEN + 1];
@@ -1938,7 +1924,7 @@ static bool HarnessCheckMac(HARNESS *h, char *hubname, UCHAR *mac, char *session
 		return HarnessCheckErr(h, err, tmp);
 	}
 
-	for (i = 0;i < t.NumMacTable;i++)
+	for (UINT i = 0;i < t.NumMacTable;i++)
 	{
 		RPC_ENUM_MAC_TABLE_ITEM *e = &t.MacTables[i];
 
@@ -2041,28 +2027,27 @@ static bool HarnessFrames(HARNESS *h)
 HARNESS_NORM *HarnessNewNorm()
 {
 	HARNESS_NORM *n = ZeroMalloc(sizeof(HARNESS_NORM));
-	UINT i;
 
 	n->VolatileColumns = NewListFast(NULL);
 	n->VolatileRows = NewListFast(NULL);
 	n->DropRows = NewListFast(NULL);
 
-	for (i = 0;i < sizeof(harness_volatile_columns) / sizeof(harness_volatile_columns[0]);i++)
+	for (UINT i = 0;i < sizeof(harness_volatile_columns) / sizeof(harness_volatile_columns[0]);i++)
 	{
 		HarnessAddLabel(n->VolatileColumns, _UU(harness_volatile_columns[i]));
 	}
 
-	for (i = 0;i < sizeof(harness_volatile_rows) / sizeof(harness_volatile_rows[0]);i++)
+	for (UINT i = 0;i < sizeof(harness_volatile_rows) / sizeof(harness_volatile_rows[0]);i++)
 	{
 		HarnessAddLabel(n->VolatileRows, _UU(harness_volatile_rows[i]));
 	}
 
-	for (i = 0;i < sizeof(harness_drop_rows) / sizeof(harness_drop_rows[0]);i++)
+	for (UINT i = 0;i < sizeof(harness_drop_rows) / sizeof(harness_drop_rows[0]);i++)
 	{
 		HarnessAddLabel(n->DropRows, _UU(harness_drop_rows[i]));
 	}
 
-	for (i = 0;i < sizeof(harness_drop_caps) / sizeof(harness_drop_caps[0]);i++)
+	for (UINT i = 0;i < sizeof(harness_drop_caps) / sizeof(harness_drop_caps[0]);i++)
 	{
 		HarnessAddCapsLabel(n->DropRows, harness_drop_caps[i]);
 	}
@@ -2116,9 +2101,7 @@ static void HarnessAddCapsLabel(LIST *o, char *caps_name)
 // Exact string lookup
 static bool HarnessInList(LIST *o, char *str)
 {
-	UINT i;
-
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		if (StrCmp(LIST_DATA(o, i), str) == 0)
 		{
@@ -2188,10 +2171,9 @@ static HARNESS_CELLS *HarnessCsvSplit(char *line)
 static char *HarnessCsvJoin(HARNESS_CELLS *c)
 {
 	BUF *b = NewBuf();
-	UINT i, j;
 	char *ret;
 
-	for (i = 0;i < c->Num;i++)
+	for (UINT i = 0;i < c->Num;i++)
 	{
 		char *s = c->Cell[i];
 		UINT len = StrLen(s);
@@ -2202,7 +2184,7 @@ static char *HarnessCsvJoin(HARNESS_CELLS *c)
 			WriteBuf(b, ",", 1);
 		}
 
-		for (j = 0;j < len;j++)
+		for (UINT j = 0;j < len;j++)
 		{
 			if (s[j] == ',' || s[j] == '"' || s[j] == '\n')
 			{
@@ -2217,7 +2199,7 @@ static char *HarnessCsvJoin(HARNESS_CELLS *c)
 		else
 		{
 			WriteBuf(b, "\"", 1);
-			for (j = 0;j < len;j++)
+			for (UINT j = 0;j < len;j++)
 			{
 				if (s[j] == '"')
 				{
@@ -2239,14 +2221,12 @@ static char *HarnessCsvJoin(HARNESS_CELLS *c)
 // Release cells
 static void HarnessFreeCells(HARNESS_CELLS *c)
 {
-	UINT i;
-
 	if (c == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < c->Num;i++)
+	for (UINT i = 0;i < c->Num;i++)
 	{
 		Free(c->Cell[i]);
 	}
@@ -2266,9 +2246,8 @@ static void HarnessSetCell(HARNESS_CELLS *c, UINT index, char *str)
 static bool HarnessIsDateTime(char *s)
 {
 	UINT len = StrLen(s);
-	UINT i;
 
-	for (i = 0;(i + 4) <= len;i++)
+	for (UINT i = 0;(i + 4) <= len;i++)
 	{
 		UINT j, n;
 
@@ -2353,11 +2332,9 @@ static bool HarnessIsHexChar(char c)
 static bool HarnessHasRandomMac(char *s)
 {
 	UINT len = StrLen(s);
-	UINT i;
 
-	for (i = 0;(i + 17) <= len;i++)
+	for (UINT i = 0;(i + 17) <= len;i++)
 	{
-		UINT k;
 		bool match = true;
 		char sep = s[i + 2];
 
@@ -2366,7 +2343,7 @@ static bool HarnessHasRandomMac(char *s)
 			continue;
 		}
 
-		for (k = 0;k < 17;k++)
+		for (UINT k = 0;k < 17;k++)
 		{
 			char c = s[i + k];
 
@@ -2395,7 +2372,7 @@ static bool HarnessHasRandomMac(char *s)
 			found[17] = 0;
 			if (sep == ':')
 			{
-				for (k = 2;k < 17;k += 3)
+				for (UINT k = 2;k < 17;k += 3)
 				{
 					found[k] = '-';
 				}
@@ -2461,13 +2438,12 @@ char *HarnessNormalizeVpncmd(HARNESS_NORM *n, BUF *raw)
 	LIST *out = NewListFast(NULL);
 	bool volatile_col[HARNESS_MAX_COLUMNS];
 	UINT num_header = 0;
-	UINT i, j;
 	BUF *b;
 	char *ret;
 
 	Zero(volatile_col, sizeof(volatile_col));
 
-	for (i = 0;i < LIST_NUM(lines);i++)
+	for (UINT i = 0;i < LIST_NUM(lines);i++)
 	{
 		char *line = LIST_DATA(lines, i);
 		HARNESS_CELLS *c = HarnessCsvSplit(line);
@@ -2481,7 +2457,7 @@ char *HarnessNormalizeVpncmd(HARNESS_NORM *n, BUF *raw)
 		}
 		else if (c->Num >= 2 && HarnessInList(n->VolatileRows, c->Cell[0]))
 		{
-			for (j = 1;j < c->Num;j++)
+			for (UINT j = 1;j < c->Num;j++)
 			{
 				HarnessSetCell(c, j, HARNESS_TAG_VOLATILE);
 			}
@@ -2493,7 +2469,7 @@ char *HarnessNormalizeVpncmd(HARNESS_NORM *n, BUF *raw)
 		{
 			bool is_header = false;
 
-			for (j = 0;j < c->Num;j++)
+			for (UINT j = 0;j < c->Num;j++)
 			{
 				if (HarnessInList(n->VolatileColumns, c->Cell[j]))
 				{
@@ -2506,14 +2482,14 @@ char *HarnessNormalizeVpncmd(HARNESS_NORM *n, BUF *raw)
 				// Header of a multi-column table: remember the volatile columns
 				Zero(volatile_col, sizeof(volatile_col));
 				num_header = c->Num;
-				for (j = 0;j < c->Num && j < HARNESS_MAX_COLUMNS;j++)
+				for (UINT j = 0;j < c->Num && j < HARNESS_MAX_COLUMNS;j++)
 				{
 					volatile_col[j] = HarnessInList(n->VolatileColumns, c->Cell[j]);
 				}
 			}
 			else if (c->Num == num_header)
 			{
-				for (j = 0;j < c->Num && j < HARNESS_MAX_COLUMNS;j++)
+				for (UINT j = 0;j < c->Num && j < HARNESS_MAX_COLUMNS;j++)
 				{
 					if (volatile_col[j])
 					{
@@ -2526,7 +2502,7 @@ char *HarnessNormalizeVpncmd(HARNESS_NORM *n, BUF *raw)
 
 		if (drop == false)
 		{
-			for (j = 0;j < c->Num;j++)
+			for (UINT j = 0;j < c->Num;j++)
 			{
 				char *s = HarnessNormalizeCell(c->Cell[j]);
 
@@ -2554,7 +2530,7 @@ char *HarnessNormalizeVpncmd(HARNESS_NORM *n, BUF *raw)
 	}
 
 	b = NewBuf();
-	for (i = 0;i < LIST_NUM(out);i++)
+	for (UINT i = 0;i < LIST_NUM(out);i++)
 	{
 		char *s = LIST_DATA(out, i);
 
@@ -2619,7 +2595,6 @@ static BUF *HarnessRunVpncmd(HARNESS *h, HARNESS_VPNCMD *v)
 bool HarnessDirHasFiles(char *dir)
 {
 	DIRLIST *d = EnumDir(dir);
-	UINT i;
 	bool ret = false;
 
 	if (d == NULL)
@@ -2627,7 +2602,7 @@ bool HarnessDirHasFiles(char *dir)
 		return false;
 	}
 
-	for (i = 0;i < d->NumFiles;i++)
+	for (UINT i = 0;i < d->NumFiles;i++)
 	{
 		if (d->File[i]->Folder == false)
 		{
@@ -2747,10 +2722,9 @@ void HarnessCompareGolden(HARNESS *h, char *out_dir, char *golden_dir, char *fil
 	if (update)
 	{
 		LIST *lines = HarnessSplitLines(actual);
-		UINT i;
 
 		Print("=== BEGIN GOLDEN %s ===\n", file_name);
-		for (i = 0;i < LIST_NUM(lines);i++)
+		for (UINT i = 0;i < LIST_NUM(lines);i++)
 		{
 			Print("%s\n", (char *)LIST_DATA(lines, i));
 		}
@@ -2792,7 +2766,6 @@ static void HarnessGolden(HARNESS *h)
 	char golden_dir[MAX_SIZE];
 	bool update;
 	HARNESS_NORM *n;
-	UINT i;
 
 	Print("[golden]\n");
 	HarnessSetPhase("golden", NULL);
@@ -2808,7 +2781,7 @@ static void HarnessGolden(HARNESS *h)
 
 	n = HarnessNewNorm();
 
-	for (i = 0;i < sizeof(harness_vpncmd_list) / sizeof(harness_vpncmd_list[0]);i++)
+	for (UINT i = 0;i < sizeof(harness_vpncmd_list) / sizeof(harness_vpncmd_list[0]);i++)
 	{
 		HARNESS_VPNCMD *v = &harness_vpncmd_list[i];
 		BUF *raw;
@@ -2841,7 +2814,6 @@ static void HarnessGolden(HARNESS *h)
 static void HarnessCheckStaleGolden(HARNESS *h, char *golden_dir)
 {
 	DIRLIST *d = EnumDir(golden_dir);
-	UINT i, j;
 	UINT num_stale = 0;
 	char expected[MAX_SIZE];
 	char tmp[MAX_SIZE];
@@ -2851,7 +2823,7 @@ static void HarnessCheckStaleGolden(HARNESS *h, char *golden_dir)
 		return;
 	}
 
-	for (i = 0;i < d->NumFiles;i++)
+	for (UINT i = 0;i < d->NumFiles;i++)
 	{
 		DIRENT *e = d->File[i];
 		bool known = false;
@@ -2861,7 +2833,7 @@ static void HarnessCheckStaleGolden(HARNESS *h, char *golden_dir)
 			continue;
 		}
 
-		for (j = 0;j < sizeof(harness_vpncmd_list) / sizeof(harness_vpncmd_list[0]);j++)
+		for (UINT j = 0;j < sizeof(harness_vpncmd_list) / sizeof(harness_vpncmd_list[0]);j++)
 		{
 			Format(expected, sizeof(expected), "vpncmd_%s.txt", harness_vpncmd_list[j].Name);
 			if (StrCmpi(e->FileName, expected) == 0)
@@ -2893,15 +2865,13 @@ static void HarnessCheckStaleGolden(HARNESS *h, char *golden_dir)
 // Configuration items normalised before a comparison
 static bool HarnessIsVolatileConfigName(char *name, bool is_uint64)
 {
-	UINT i;
-
 	// Timestamps: CreatedTime, UpdatedTime, LastCommTime, LastLoginTime, ExpireTime
 	if (is_uint64 && EndWith(name, "Time"))
 	{
 		return true;
 	}
 
-	for (i = 0;i < sizeof(harness_config_volatile_names) / sizeof(harness_config_volatile_names[0]);i++)
+	for (UINT i = 0;i < sizeof(harness_config_volatile_names) / sizeof(harness_config_volatile_names[0]);i++)
 	{
 		if (StrCmp(name, harness_config_volatile_names[i]) == 0)
 		{
@@ -2917,10 +2887,9 @@ static char *HarnessNormalizeConfig(char *text)
 {
 	LIST *lines = HarnessSplitLines(text);
 	BUF *b = NewBuf();
-	UINT i;
 	char *ret;
 
-	for (i = 0;i < LIST_NUM(lines);i++)
+	for (UINT i = 0;i < LIST_NUM(lines);i++)
 	{
 		char *line = LIST_DATA(lines, i);
 		UINT indent = 0;
@@ -3365,7 +3334,6 @@ static bool HarnessIpTableRound(HARNESS *h, UINT *num_listed, UINT *num_deleted,
 {
 	RPC_ENUM_IP_TABLE t;
 	UINT err;
-	UINT i;
 	bool ret = true;
 
 	Zero(&t, sizeof(t));
@@ -3381,7 +3349,7 @@ static bool HarnessIpTableRound(HARNESS *h, UINT *num_listed, UINT *num_deleted,
 		*num_listed += t.NumIpTable;
 	}
 
-	for (i = 0;ret && i < t.NumIpTable;i++)
+	for (UINT i = 0;ret && i < t.NumIpTable;i++)
 	{
 		RPC_DELETE_TABLE d;
 
@@ -3635,7 +3603,6 @@ static void HarnessSetLink(HARNESS *h)
 static bool HarnessFindAdminConnection(HARNESS *h, UINT port, char *name, UINT name_size)
 {
 	RPC_ENUM_CONNECTION t;
-	UINT i;
 	bool ret = false;
 
 	Zero(&t, sizeof(t));
@@ -3644,7 +3611,7 @@ static bool HarnessFindAdminConnection(HARNESS *h, UINT port, char *name, UINT n
 		return false;
 	}
 
-	for (i = 0;i < t.NumConnection;i++)
+	for (UINT i = 0;i < t.NumConnection;i++)
 	{
 		RPC_ENUM_CONNECTION_ITEM *e = &t.Connections[i];
 
@@ -3792,7 +3759,6 @@ static void HarnessDeleteObjects(HARNESS *h, bool check)
 	RPC_DELETE_HUB d;
 	RPC_ENUM_HUB e;
 	UINT err;
-	UINT i;
 
 	Print("[teardown]\n");
 
@@ -3837,7 +3803,7 @@ static void HarnessDeleteObjects(HARNESS *h, bool check)
 		err = ScEnumHub(h->Rpc, &e);
 		if (HarnessCheckErr(h, err, "EnumHub after the teardown"))
 		{
-			for (i = 0;i < e.NumHub;i++)
+			for (UINT i = 0;i < e.NumHub;i++)
 			{
 				if (StartWith(e.Hubs[i].HubName, "HARNESS_"))
 				{
@@ -3857,7 +3823,6 @@ static void HarnessDeleteConfigFiles()
 	wchar_t dir[MAX_SIZE];
 	wchar_t path[MAX_SIZE];
 	DIRLIST *d;
-	UINT i;
 
 	FileDelete(HARNESS_CONFIG_FILE);
 
@@ -3867,7 +3832,7 @@ static void HarnessDeleteConfigFiles()
 	d = EnumDirW(dir);
 	if (d != NULL)
 	{
-		for (i = 0;i < d->NumFiles;i++)
+		for (UINT i = 0;i < d->NumFiles;i++)
 		{
 			if (d->File[i]->Folder == false)
 			{
@@ -3972,7 +3937,7 @@ static void HarnessBenchReport(char *name, UINT64 *runs, UINT num, char *unit, b
 	UINT64 sorted[HARNESS_BENCH_RUNS];
 	char list[MAX_SIZE];
 	char value[64];
-	UINT i, j;
+	UINT j;
 
 	if (num == 0 || num > HARNESS_BENCH_RUNS)
 	{
@@ -3980,7 +3945,7 @@ static void HarnessBenchReport(char *name, UINT64 *runs, UINT num, char *unit, b
 	}
 
 	Copy(sorted, runs, sizeof(UINT64) * num);
-	for (i = 1;i < num;i++)
+	for (UINT i = 1;i < num;i++)
 	{
 		UINT64 v = sorted[i];
 
@@ -3992,7 +3957,7 @@ static void HarnessBenchReport(char *name, UINT64 *runs, UINT num, char *unit, b
 	}
 
 	list[0] = 0;
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		HarnessBenchValue(value, sizeof(value), runs[i], centi);
 		if (i != 0)
@@ -4014,9 +3979,8 @@ static bool HarnessBenchOps(char *name, HARNESS_BENCH_OP *op, void *param, UINT 
 {
 	UINT64 runs[HARNESS_BENCH_RUNS];
 	UINT64 span_ns = (UINT64)span * HARNESS_NS_PER_MS;
-	UINT r;
 
-	for (r = 0;r < HARNESS_BENCH_RUNS;r++)
+	for (UINT r = 0;r < HARNESS_BENCH_RUNS;r++)
 	{
 		UINT64 start = HarnessNowNs();
 		UINT64 now = start;
@@ -4062,7 +4026,6 @@ static void HarnessBenchFrames(HARNESS *h, UINT size)
 	UINT64 next_mark;
 	UINT num_marks = 0;
 	UINT num_unsent;
-	UINT i;
 	char name[MAX_SIZE];
 	char tmp[MAX_SIZE];
 
@@ -4101,7 +4064,7 @@ static void HarnessBenchFrames(HARNESS *h, UINT size)
 		{
 			UINT num = HARNESS_QUEUE_HIGH - queued;
 
-			for (i = 0;i < num;i++)
+			for (UINT i = 0;i < num;i++)
 			{
 				batch[i] = ZeroMalloc(sizeof(HARNESS_FRAME));
 				batch[i]->Data = Malloc(size);
@@ -4111,7 +4074,7 @@ static void HarnessBenchFrames(HARNESS *h, UINT size)
 
 			Lock(h->PaA->Lock);
 			{
-				for (i = 0;i < num;i++)
+				for (UINT i = 0;i < num;i++)
 				{
 					InsertQueue(h->PaA->SendQueue, batch[i]);
 				}
@@ -4131,7 +4094,7 @@ static void HarnessBenchFrames(HARNESS *h, UINT size)
 	// Frames still queued after the drain would be counted in the next frame size: discard them
 	num_unsent = HarnessPaPurge(h->PaA);
 
-	for (i = 0;i < HARNESS_BENCH_RUNS;i++)
+	for (UINT i = 0;i < HARNESS_BENCH_RUNS;i++)
 	{
 		UINT64 elapsed = mark_ns[i + 1] - mark_ns[i];
 		UINT64 delivered = mark_recv[i + 1] - mark_recv[i];
@@ -4214,9 +4177,8 @@ static UINT64 HarnessFloodBatch(SESSION *sender, SESSION **recv, UINT num_recv, 
 {
 	PACKET_ADAPTER *pa = sender->PacketAdapter;
 	UINT64 delivered = 0;
-	UINT i;
 
-	for (i = 0;i < HARNESS_FLOOD_BATCH;i++)
+	for (UINT i = 0;i < HARNESS_FLOOD_BATCH;i++)
 	{
 		void *data = Malloc(size);
 
@@ -4226,7 +4188,7 @@ static UINT64 HarnessFloodBatch(SESSION *sender, SESSION **recv, UINT num_recv, 
 
 	pa->PutPacket(sender, NULL, 0);
 
-	for (i = 0;i < num_recv;i++)
+	for (UINT i = 0;i < num_recv;i++)
 	{
 		SESSION *s = recv[i];
 		void *data;
@@ -4253,7 +4215,6 @@ static void HarnessBenchFloodCase(HUB *hub, UINT num_recv)
 	THREAD *thread;
 	SESSION *sender;
 	SESSION **recv;
-	UINT i, r;
 	char name[MAX_SIZE];
 
 	Format(name, sizeof(name), "flood_fps_%u", num_recv);
@@ -4261,7 +4222,7 @@ static void HarnessBenchFloodCase(HUB *hub, UINT num_recv)
 	thread = NewThread(HarnessFloodIdleThread, NULL);
 	sender = HarnessNewFloodSession(hub, thread, 0, true);
 	recv = ZeroMalloc(sizeof(SESSION *) * num_recv);
-	for (i = 0;i < num_recv;i++)
+	for (UINT i = 0;i < num_recv;i++)
 	{
 		recv[i] = HarnessNewFloodSession(hub, thread, i + 1, false);
 	}
@@ -4271,7 +4232,7 @@ static void HarnessBenchFloodCase(HUB *hub, UINT num_recv)
 	// Warm-up: the hub learns the sender MAC address
 	HarnessFloodBatch(sender, recv, num_recv, frame, sizeof(frame));
 
-	for (r = 0;r < HARNESS_BENCH_RUNS;r++)
+	for (UINT r = 0;r < HARNESS_BENCH_RUNS;r++)
 	{
 		UINT64 start = HarnessNowNs();
 		UINT64 now;
@@ -4297,7 +4258,7 @@ static void HarnessBenchFloodCase(HUB *hub, UINT num_recv)
 		Print("BENCH WARNING %s: %I64u of %I64u copies delivered\n", name, delivered, sent * (UINT64)num_recv);
 	}
 
-	for (i = 0;i < num_recv;i++)
+	for (UINT i = 0;i < num_recv;i++)
 	{
 		HarnessFreeFloodSession(recv[i]);
 	}
@@ -4380,7 +4341,6 @@ static void HarnessBenchPack(HARNESS *h)
 	RPC_ENUM_SESSION t;
 	RPC_ENUM_SESSION t2;
 	PACK *p;
-	UINT i;
 	bool ok = false;
 
 	Zero(&t, sizeof(t));
@@ -4388,7 +4348,7 @@ static void HarnessBenchPack(HARNESS *h)
 	t.NumSession = HARNESS_PACK_ITEMS;
 	t.Sessions = ZeroMalloc(sizeof(RPC_ENUM_SESSION_ITEM) * t.NumSession);
 
-	for (i = 0;i < t.NumSession;i++)
+	for (UINT i = 0;i < t.NumSession;i++)
 	{
 		RPC_ENUM_SESSION_ITEM *e = &t.Sessions[i];
 
@@ -4443,9 +4403,8 @@ static void HarnessBenchPack(HARNESS *h)
 static PACK *HarnessNewNamesPack(HARNESS_PACK_BENCH *b)
 {
 	PACK *p = NewPack();
-	UINT i;
 
-	for (i = 0;i < HARNESS_PACK_NAMES;i++)
+	for (UINT i = 0;i < HARNESS_PACK_NAMES;i++)
 	{
 		if ((i % 2) == 0)
 		{
@@ -4496,13 +4455,12 @@ static void HarnessBenchPackNames()
 {
 	HARNESS_PACK_BENCH b;
 	PACK *p;
-	UINT i;
 	bool ok = false;
 	char name[MAX_SIZE];
 
 	Zero(&b, sizeof(b));
 	b.Names = ZeroMalloc(sizeof(char *) * HARNESS_PACK_NAMES);
-	for (i = 0;i < HARNESS_PACK_NAMES;i++)
+	for (UINT i = 0;i < HARNESS_PACK_NAMES;i++)
 	{
 		char tmp[MAX_ELEMENT_NAME_LEN + 1];
 
@@ -4539,7 +4497,7 @@ static void HarnessBenchPackNames()
 	}
 
 	FreeBuf(b.Buf);
-	for (i = 0;i < HARNESS_PACK_NAMES;i++)
+	for (UINT i = 0;i < HARNESS_PACK_NAMES;i++)
 	{
 		Free(b.Names[i]);
 	}
@@ -4628,7 +4586,6 @@ static UINT HarnessBuildClientHello(UCHAR *buf, UINT buf_size, char *host)
 	UINT body = 43 + ext_len;					// Version 2, random 32, session id 1, ciphers 4, compression 2, extensions length 2
 	UINT size = 5 + 4 + body;					// Record header, handshake header, ClientHello body
 	UCHAR *p = buf;
-	UINT i;
 
 	if (size > buf_size)
 	{
@@ -4646,7 +4603,7 @@ static UINT HarnessBuildClientHello(UCHAR *buf, UINT buf_size, char *host)
 	*p++ = (UCHAR)(body & 0xFF);
 	*p++ = 0x03;								// Client version TLS 1.2
 	*p++ = 0x03;
-	for (i = 0;i < 32;i++)
+	for (UINT i = 0;i < 32;i++)
 	{
 		*p++ = (UCHAR)(i * 11 + 1);				// Random
 	}
@@ -4679,7 +4636,6 @@ static UINT HarnessBuildDnsQuery(UCHAR *buf, UINT buf_size, char *host)
 {
 	UINT len = StrLen(host);
 	UINT start = 0;
-	UINT i;
 	UCHAR *p;
 
 	if ((12 + len + 2 + 4) > buf_size)
@@ -4694,7 +4650,7 @@ static UINT HarnessBuildDnsQuery(UCHAR *buf, UINT buf_size, char *host)
 	buf[5] = 0x01;								// One question
 
 	p = buf + 12;
-	for (i = 0;i <= len;i++)
+	for (UINT i = 0;i <= len;i++)
 	{
 		if (i == len || host[i] == '.')
 		{
@@ -4800,9 +4756,7 @@ static void HarnessBenchParse()
 	HARNESS_PARSE_FRAME *f;
 	UCHAR payload[HARNESS_PARSE_FRAME_MAX];
 	char *http = "GET /index.html HTTP/1.1\r\nHost: " HARNESS_BENCH_HOST "\r\nUser-Agent: ranz-bench/1.0\r\nAccept: */*\r\n\r\n";
-	UINT i;
 	UINT size;
-	UINT pass;
 	bool ok;
 	char name[MAX_SIZE];
 
@@ -4815,7 +4769,7 @@ static void HarnessBenchParse()
 
 	f = &b.Frames[1];
 	f->Kind = "tcp";
-	for (i = 0;i < 64;i++)
+	for (UINT i = 0;i < 64;i++)
 	{
 		payload[i] = (UCHAR)(i * 3);
 	}
@@ -4835,7 +4789,7 @@ static void HarnessBenchParse()
 	size = HarnessBuildDnsQuery(payload, sizeof(payload), HARNESS_BENCH_HOST);
 	f->Size = HarnessBuildIpFrame(f->Data, sizeof(f->Data), IP_PROTO_UDP, 53, payload, size);
 
-	for (pass = 0;pass < 2;pass++)
+	for (UINT pass = 0;pass < 2;pass++)
 	{
 		char *suffix = (pass == 0 ? "" : "_nolog");
 
@@ -4843,7 +4797,7 @@ static void HarnessBenchParse()
 		b.Next = 0;
 		ok = true;
 
-		for (i = 0;i < HARNESS_NUM_PARSE_FRAMES;i++)
+		for (UINT i = 0;i < HARNESS_NUM_PARSE_FRAMES;i++)
 		{
 			PKT *p = NULL;
 
@@ -4882,19 +4836,18 @@ static void HarnessBenchParse()
 static void HarnessBenchIpTableExpire(UINT num)
 {
 	UINT64 runs[HARNESS_BENCH_RUNS];
-	UINT r, i;
 	bool ok = true;
 	char name[MAX_SIZE];
 
 	Format(name, sizeof(name), "ip_table_expire_%u", num);
 
-	for (r = 0;r < HARNESS_BENCH_RUNS;r++)
+	for (UINT r = 0;r < HARNESS_BENCH_RUNS;r++)
 	{
 		LIST *o = NewList(CompareIpTable);
 		UINT64 now = Tick64();
 		UINT64 start;
 
-		for (i = 0;i < num;i++)
+		for (UINT i = 0;i < num;i++)
 		{
 			IP_TABLE_ENTRY *e = ZeroMalloc(sizeof(IP_TABLE_ENTRY));
 
@@ -4918,7 +4871,7 @@ static void HarnessBenchIpTableExpire(UINT num)
 			ok = false;
 		}
 
-		for (i = 0;i < LIST_NUM(o);i++)
+		for (UINT i = 0;i < LIST_NUM(o);i++)
 		{
 			Free(LIST_DATA(o, i));
 		}
@@ -4939,7 +4892,6 @@ static void HarnessBenchIpTableExpire(UINT num)
 static void HarnessBenchAcceptTable(UINT num)
 {
 	UINT64 runs[HARNESS_BENCH_RUNS];
-	UINT r, i;
 	bool ok = true;
 	char name[MAX_SIZE];
 	LISTENER *l = ZeroMalloc(sizeof(LISTENER));
@@ -4947,7 +4899,7 @@ static void HarnessBenchAcceptTable(UINT num)
 
 	Format(name, sizeof(name), "accept_table_%u", num);
 
-	for (r = 0;r < HARNESS_BENCH_RUNS;r++)
+	for (UINT r = 0;r < HARNESS_BENCH_RUNS;r++)
 	{
 		LIST *ref = NewListFast(CompareDos);
 		UINT64 start;
@@ -4956,7 +4908,7 @@ static void HarnessBenchAcceptTable(UINT num)
 		l->DosListLastRefreshTime = 0;
 
 		start = HarnessNowNs();
-		for (i = 0;i < num;i++)
+		for (UINT i = 0;i < num;i++)
 		{
 			// An odd multiplier modulo 2^24 gives every i another address, in no particular order
 			UINT v = (i * 2654435761U) & 0xFFFFFF;
@@ -4975,13 +4927,13 @@ static void HarnessBenchAcceptTable(UINT num)
 			ok = false;
 		}
 
-		for (i = 0;i < LIST_NUM(l->DosList);i++)
+		for (UINT i = 0;i < LIST_NUM(l->DosList);i++)
 		{
 			Add(ref, LIST_DATA(l->DosList, i));
 		}
 		Sort(ref);
 
-		for (i = 0;i < LIST_NUM(ref) && i < LIST_NUM(l->DosList);i++)
+		for (UINT i = 0;i < LIST_NUM(ref) && i < LIST_NUM(l->DosList);i++)
 		{
 			if (LIST_DATA(ref, i) != LIST_DATA(l->DosList, i))
 			{
@@ -4989,7 +4941,7 @@ static void HarnessBenchAcceptTable(UINT num)
 			}
 		}
 
-		for (i = 0;i < LIST_NUM(l->DosList);i++)
+		for (UINT i = 0;i < LIST_NUM(l->DosList);i++)
 		{
 			Free(LIST_DATA(l->DosList, i));
 		}
@@ -5046,15 +4998,14 @@ static bool HarnessOpQueueCycle(void *param)
 static bool HarnessOpQueueBurst(void *param)
 {
 	HARNESS_FIFO_BENCH *b = (HARNESS_FIFO_BENCH *)param;
-	UINT i;
 	bool ok = true;
 
-	for (i = 0;i < HARNESS_QUEUE_BURST;i++)
+	for (UINT i = 0;i < HARNESS_QUEUE_BURST;i++)
 	{
 		InsertQueue(b->Queue, (void *)(UINT_PTR)(i + 1));
 	}
 
-	for (i = 0;i < HARNESS_QUEUE_BURST;i++)
+	for (UINT i = 0;i < HARNESS_QUEUE_BURST;i++)
 	{
 		if (GetNext(b->Queue) != (void *)(UINT_PTR)(i + 1))
 		{
@@ -5074,7 +5025,6 @@ static void HarnessBenchFifo()
 {
 	HARNESS_FIFO_BENCH *b = ZeroMalloc(sizeof(HARNESS_FIFO_BENCH));
 	char name[MAX_SIZE];
-	UINT i;
 
 	b->Fifo = NewFifo();
 	WriteFifo(b->Fifo, b->Buf, HARNESS_FIFO_BACKLOG);
@@ -5088,7 +5038,7 @@ static void HarnessBenchFifo()
 	b->Queue = NewQueueFast();
 	b->NextInsert = 1;
 	b->NextGet = 1;
-	for (i = 0;i < HARNESS_QUEUE_BACKLOG;i++)
+	for (UINT i = 0;i < HARNESS_QUEUE_BACKLOG;i++)
 	{
 		InsertQueue(b->Queue, (void *)(UINT_PTR)b->NextInsert);
 		b->NextInsert++;
@@ -5519,8 +5469,6 @@ static CERTDL_SERVER *CertDlStartServer(X *issuer, X *tls_cert, K *tls_key)
 // Stop the listener and wait for its connection threads
 static void CertDlStopServer(CERTDL_SERVER *srv)
 {
-	UINT i;
-
 	if (srv == NULL)
 	{
 		return;
@@ -5531,7 +5479,7 @@ static void CertDlStopServer(CERTDL_SERVER *srv)
 	ReleaseThread(srv->AcceptThread);
 
 	// The accept thread has ended: ConnList no longer changes
-	for (i = 0;i < LIST_NUM(srv->ConnList);i++)
+	for (UINT i = 0;i < LIST_NUM(srv->ConnList);i++)
 	{
 		CERTDL_CONN *c = LIST_DATA(srv->ConnList, i);
 
@@ -5679,7 +5627,6 @@ static void CertDlExpect(HARNESS *h, char *name, CERTDL_RESULT *r, bool chain, b
 static bool ListenBindState(HARNESS *h, UINT port, bool *enabled, bool *error)
 {
 	RPC_LISTENER_LIST t;
-	UINT i;
 	bool found = false;
 
 	*enabled = false;
@@ -5691,7 +5638,7 @@ static bool ListenBindState(HARNESS *h, UINT port, bool *enabled, bool *error)
 		return false;
 	}
 
-	for (i = 0;i < t.NumPort;i++)
+	for (UINT i = 0;i < t.NumPort;i++)
 	{
 		if (t.Ports[i] == port)
 		{
@@ -5824,9 +5771,7 @@ static bool AdminAuditSync(ADMINAUDIT *a)
 // Start a step: drop the lines of the last step and keep the configuration revision
 static void AdminAuditBegin(ADMINAUDIT *a)
 {
-	UINT i;
-
-	for (i = 0;i < LIST_NUM(a->Lines);i++)
+	for (UINT i = 0;i < LIST_NUM(a->Lines);i++)
 	{
 		Free(LIST_DATA(a->Lines, i));
 	}
@@ -5840,9 +5785,8 @@ static bool AdminAuditLogged(ADMINAUDIT *a, wchar_t *text)
 {
 	char *s = HarnessUniToUtf8(text);
 	bool ret = false;
-	UINT i;
 
-	for (i = 0;i < LIST_NUM(a->Lines);i++)
+	for (UINT i = 0;i < LIST_NUM(a->Lines);i++)
 	{
 		if (InStr(LIST_DATA(a->Lines, i), s))
 		{
@@ -5903,14 +5847,12 @@ static wchar_t *AdminAuditText(wchar_t *buf, UINT size, char *name, char *arg1, 
 // Release the receiver (a may be NULL)
 static void AdminAuditFree(ADMINAUDIT *a)
 {
-	UINT i;
-
 	if (a == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(a->Lines);i++)
+	for (UINT i = 0;i < LIST_NUM(a->Lines);i++)
 	{
 		Free(LIST_DATA(a->Lines, i));
 	}
@@ -6128,7 +6070,6 @@ static void AdminAuditHubMsg(ADMINAUDIT *a)
 	wchar_t *msg;
 	wchar_t *got = NULL;
 	UINT err;
-	UINT i;
 
 	Print("[hub message]\n");
 
@@ -6141,7 +6082,7 @@ static void AdminAuditHubMsg(ADMINAUDIT *a)
 	AdminAuditEnd(a, "SetHubMsg " HARNESS_HUB_A, err, ERR_NO_ERROR, NULL, NULL, true);
 
 	msg = ZeroMalloc(sizeof(wchar_t) * (HUB_MAXMSG_LEN + 2));
-	for (i = 0;i <= HUB_MAXMSG_LEN;i++)
+	for (UINT i = 0;i <= HUB_MAXMSG_LEN;i++)
 	{
 		msg[i] = L'x';
 	}
@@ -6396,7 +6337,6 @@ static char *HarnessReadLogDir(char *dir_fmt, char *hubname)
 	DIRLIST *d;
 	BUF *b = NewBuf();
 	char *ret;
-	UINT i;
 
 	Format(dir, sizeof(dir), dir_fmt, hubname);
 	dir_w = CopyStrToUni(dir);
@@ -6407,7 +6347,7 @@ static char *HarnessReadLogDir(char *dir_fmt, char *hubname)
 	d = EnumDirW(full);
 	if (d != NULL)
 	{
-		for (i = 0;i < d->NumFiles;i++)
+		for (UINT i = 0;i < d->NumFiles;i++)
 		{
 			DIRENT *e = d->File[i];
 
@@ -6453,11 +6393,10 @@ static bool HarnessHasLineBreak(char *s)
 static void HarnessScanLog(char *text, char *marker, char *forged, HARNESS_LOG_SCAN *r)
 {
 	LIST *lines = HarnessSplitLines(text);
-	UINT i;
 
 	Zero(r, sizeof(HARNESS_LOG_SCAN));
 
-	for (i = 0;i < LIST_NUM(lines);i++)
+	for (UINT i = 0;i < LIST_NUM(lines);i++)
 	{
 		char *line = LIST_DATA(lines, i);
 		bool has_marker = InStrEx(line, marker, true);
@@ -6699,7 +6638,6 @@ static UINT HarnessBuildLoopbackUdp(UCHAR *buf, USHORT src_port, USHORT dst_port
 	UINT udp_size = 8 + 8;
 	UINT ip_size = 20 + udp_size;
 	USHORT sum;
-	UINT i;
 
 	Zero(buf, 14 + ip_size);
 
@@ -6726,7 +6664,7 @@ static UINT HarnessBuildLoopbackUdp(UCHAR *buf, USHORT src_port, USHORT dst_port
 	udp[3] = (UCHAR)(dst_port & 0xFF);
 	udp[5] = (UCHAR)udp_size;					// Length
 
-	for (i = 0;i < 8;i++)
+	for (UINT i = 0;i < 8;i++)
 	{
 		udp[8 + i] = (UCHAR)(0x50 + i);
 	}
@@ -7253,7 +7191,6 @@ static void HarnessPacketLogGolden(HARNESS *h)
 	HUB_LOG *g = ZeroMalloc(sizeof(HUB_LOG));
 	BUF *b = NewBuf();
 	char *actual;
-	UINT i, j;
 
 	Print("[packetlog]\n");
 	HarnessSetPhase("packetlog", NULL);
@@ -7268,7 +7205,7 @@ static void HarnessPacketLogGolden(HARNESS *h)
 
 	HarnessPlogWriteLine(b, "# packet log lines (PacketLogParseProc): session sess-a, no destination session", "", "");
 
-	for (i = 0;i < sizeof(harness_plog_cases) / sizeof(harness_plog_cases[0]);i++)
+	for (UINT i = 0;i < sizeof(harness_plog_cases) / sizeof(harness_plog_cases[0]);i++)
 	{
 		HARNESS_PLOG_CASE *c = &harness_plog_cases[i];
 		UCHAR frame[HARNESS_PLOG_FRAME];
@@ -7289,7 +7226,7 @@ static void HarnessPacketLogGolden(HARNESS *h)
 	HarnessPlogWriteLine(b, "# packet log levels (CalcPacketLoggingLevel), the level when only one entry is ALL: "
 		"TCP_CONN TCP DHCP UDP ICMP IP ARP ETHERNET", "", "");
 
-	for (i = 0;i < sizeof(harness_plog_cases) / sizeof(harness_plog_cases[0]);i++)
+	for (UINT i = 0;i < sizeof(harness_plog_cases) / sizeof(harness_plog_cases[0]);i++)
 	{
 		HARNESS_PLOG_CASE *c = &harness_plog_cases[i];
 		UCHAR frame[HARNESS_PLOG_FRAME];
@@ -7303,7 +7240,7 @@ static void HarnessPacketLogGolden(HARNESS *h)
 
 		tmp[0] = 0;
 
-		for (j = PACKET_LOG_TCP_CONN;j <= PACKET_LOG_ETHERNET;j++)
+		for (UINT j = PACKET_LOG_TCP_CONN;j <= PACKET_LOG_ETHERNET;j++)
 		{
 			char num[16];
 
@@ -7325,7 +7262,7 @@ static void HarnessPacketLogGolden(HARNESS *h)
 	FreeBuf(b);
 	Free(g);
 
-	for (i = 0;i < LIST_NUM(cedar->NetSvcList);i++)
+	for (UINT i = 0;i < LIST_NUM(cedar->NetSvcList);i++)
 	{
 		Free(LIST_DATA(cedar->NetSvcList, i));
 	}
@@ -7669,7 +7606,7 @@ void listenerbind_test(UINT num, char **arg)
 	SOCK *held;
 	RPC_LISTENER d;
 	UINT64 elapsed, fastest, end;
-	UINT i, err;
+	UINT err;
 	bool ok, enabled, error;
 	char tmp[MAX_SIZE];
 
@@ -7719,7 +7656,7 @@ void listenerbind_test(UINT num, char **arg)
 			"ListenerList shows the free port listening right after ListenerCreate");
 		fastest = elapsed;
 
-		for (i = 0;i < LISTENBIND_CYCLES;i++)
+		for (UINT i = 0;i < LISTENBIND_CYCLES;i++)
 		{
 			err = ListenBindCall(h, false, LISTENBIND_PORT_FREE, false, &elapsed);
 			ListenBindExpect(h, "disable_free", "ListenerDisable on the free port", err, ERR_NO_ERROR, elapsed);
@@ -7962,7 +7899,6 @@ static void PtrKeyBlocks(HARNESS *h)
 	LIST *o = NewListFast(NULL);
 	UINT key_a = POINTER_TO_KEY(a);
 	UINT key_b = POINTER_TO_KEY(b);
-	UINT i;
 
 	HarnessCheck(h, key_a != 0 && key_b != 0, "two zeroed blocks get a key");
 	HarnessCheck(h, key_a != key_b, "two blocks with equal content get different keys");
@@ -7972,7 +7908,7 @@ static void PtrKeyBlocks(HARNESS *h)
 	HarnessCheck(h, ListKeyToPointer(o, key_a) == a && ListKeyToPointer(o, key_b) == b,
 		"ListKeyToPointer finds each of the two blocks by its own key");
 
-	for (i = 0;i < PTRKEY_BLOCK;i++)
+	for (UINT i = 0;i < PTRKEY_BLOCK;i++)
 	{
 		a[i] = (UCHAR)(0x5A + i);
 	}
@@ -8006,7 +7942,6 @@ static UINT PtrKeyEnumAccess(HARNESS *h, UINT priority, char *priorities, UINT p
 {
 	RPC_ENUM_ACCESS_LIST t;
 	UINT ret = 0;
-	UINT i;
 
 	StrCpy(priorities, priorities_size, "");
 
@@ -8017,7 +7952,7 @@ static UINT PtrKeyEnumAccess(HARNESS *h, UINT priority, char *priorities, UINT p
 		return 0;
 	}
 
-	for (i = 0;i < t.NumAccess;i++)
+	for (UINT i = 0;i < t.NumAccess;i++)
 	{
 		ACCESS *a = &t.Accesses[i];
 		char tmp[MAX_SIZE];

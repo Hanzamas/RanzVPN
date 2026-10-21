@@ -18,7 +18,6 @@ UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 {
 	HUB *h;
 	UINT err;
-	UINT i;
 	char hubname[MAX_HUBNAME_LEN + 1];
 
 	CHECK_RIGHT;
@@ -38,7 +37,7 @@ UINT StEnumAccess(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 		t->NumAccess = LIST_NUM(h->AccessList);
 		t->Accesses = ZeroMalloc(sizeof(ACCESS) * t->NumAccess);
 
-		for (i = 0;i < LIST_NUM(h->AccessList);i++)
+		for (UINT i = 0;i < LIST_NUM(h->AccessList);i++)
 		{
 			ACCESS *a = &t->Accesses[i];
 			Copy(a, LIST_DATA(h->AccessList, i), sizeof(ACCESS));
@@ -57,7 +56,6 @@ UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t)
 	SERVER *s = a->Server;
 	HUB *h;
 	UINT err;
-	UINT i;
 	bool exists;
 
 
@@ -73,7 +71,7 @@ UINT StDeleteAccess(ADMIN *a, RPC_DELETE_ACCESS *t)
 
 	LockList(h->AccessList);
 	{
-		for (i = 0;i < LIST_NUM(h->AccessList);i++)
+		for (UINT i = 0;i < LIST_NUM(h->AccessList);i++)
 		{
 			ACCESS *access = LIST_DATA(h->AccessList, i);
 
@@ -135,7 +133,6 @@ UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 	SERVER *s = a->Server;
 	HUB *h;
 	UINT err;
-	UINT i;
 	bool no_jitter = false;
 	bool no_include = false;
 
@@ -164,7 +161,7 @@ UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 
 	LockList(h->AccessList);
 	{
-		for (i = 0; i < LIST_NUM(h->AccessList); ++i)
+		for (UINT i = 0; i < LIST_NUM(h->AccessList); ++i)
 		{
 			ACCESS *access = LIST_DATA(h->AccessList, i);
 			Free(access);
@@ -174,7 +171,7 @@ UINT StSetAccessList(ADMIN *a, RPC_ENUM_ACCESS_LIST *t)
 
 		ALog(a, h, "LA_SET_ACCESS_LIST", t->NumAccess);
 
-		for (i = 0; i < t->NumAccess; ++i)
+		for (UINT i = 0; i < t->NumAccess; ++i)
 		{
 			ACCESS *access = &t->Accesses[i];
 

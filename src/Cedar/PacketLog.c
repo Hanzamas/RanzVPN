@@ -337,7 +337,7 @@ void AddLogBufToStr(BUF *b, char *name, char *value)
 
 void MakeSafeLogStr(char *str)
 {
-	UINT i, len;
+	UINT len;
 	bool is_http = false;
 	if (str == NULL)
 	{
@@ -353,7 +353,7 @@ void MakeSafeLogStr(char *str)
 	EnPrintableAsciiStr(str, '?');
 
 	len = StrLen(str);
-	for (i = 0; i < len; i++)
+	for (UINT i = 0; i < len; i++)
 	{
 		if (str[i] == ',')
 		{
@@ -578,7 +578,6 @@ char *PacketLogParseProc(RECORD *rec)
 	char *s;
 	TOKEN_LIST *t;
 	char tmp[MAX_SIZE];
-	UINT i;
 	if (rec == NULL)
 	{
 		return NULL;
@@ -767,7 +766,7 @@ char *PacketLogParseProc(RECORD *rec)
 				snprintf(tmp, sizeof(tmp), "TargetLinkLayer=%s ", tmp2);
 				StrCat(info, sizeof(info), tmp);
 			}
-			for (i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++)
+			for (UINT i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++)
 			{
 				if (ol->Prefix[i] != NULL)
 				{
@@ -955,7 +954,6 @@ char *PortStr(CEDAR *cedar, UINT port, bool udp)
 
 char *GenCsvLine(TOKEN_LIST *t)
 {
-	UINT i;
 	BUF *b;
 	char *ret;
 	if (t == NULL)
@@ -964,7 +962,7 @@ char *GenCsvLine(TOKEN_LIST *t)
 	}
 
 	b = NewBuf();
-	for (i = 0; i < t->NumTokens; i++)
+	for (UINT i = 0; i < t->NumTokens; i++)
 	{
 		if (t->Token[i] != NULL)
 		{
@@ -998,7 +996,7 @@ char *GenCsvLine(TOKEN_LIST *t)
 
 void ReplaceForCsv(char *str)
 {
-	UINT i, len;
+	UINT len;
 	if (str == NULL)
 	{
 		return;
@@ -1007,7 +1005,7 @@ void ReplaceForCsv(char *str)
 	len = StrLen(str);
 
 	// A comma, a CR, an LF or another control character would split the record (a NUL ends the token)
-	for (i = 0; i < len; i++)
+	for (UINT i = 0; i < len; i++)
 	{
 		if (str[i] == ',' || (UCHAR)str[i] < 0x20 || (UCHAR)str[i] == 0x7F)
 		{

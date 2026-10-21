@@ -206,9 +206,8 @@ static BUF *HarnessCmdRun(char *hub, char *command, UINT *ret)
 static char *HarnessCmdMessageLine(char *name)
 {
 	char *s = HarnessUniToUtf8(_UU(name));
-	UINT i;
 
-	for (i = 0;s[i] != 0;i++)
+	for (UINT i = 0;s[i] != 0;i++)
 	{
 		if (s[i] == '\r' || s[i] == '\n')
 		{
@@ -349,7 +348,6 @@ static void HarnessCmdRunCase(HARNESS *h, HARNESS_NORM *n, HARNESS_CMD_CASE *c, 
 	char file_name[MAX_SIZE];
 	char tmp[MAX_SIZE];
 	char *s;
-	UINT i;
 
 	HarnessSetPhase("cmd", c->Name);
 	Print("  case %s\n", c->Name);
@@ -370,7 +368,7 @@ static void HarnessCmdRunCase(HARNESS *h, HARNESS_NORM *n, HARNESS_CMD_CASE *c, 
 		HarnessCheckErr(h, ScCreateHub(h->Rpc, &t), tmp);
 	}
 
-	for (i = 0;c->Steps[i].Command != NULL;i++)
+	for (UINT i = 0;c->Steps[i].Command != NULL;i++)
 	{
 		HarnessCmdRunStep(h, n, c, &c->Steps[i], id, sizeof(id), golden);
 	}
@@ -398,7 +396,6 @@ static void HarnessCmdRunCase(HARNESS *h, HARNESS_NORM *n, HARNESS_CMD_CASE *c, 
 static void HarnessCheckStaleCmd(HARNESS *h, char *golden_dir)
 {
 	DIRLIST *d = EnumDir(golden_dir);
-	UINT i, j;
 	UINT num_stale = 0;
 	char expected[MAX_SIZE];
 	char tmp[MAX_SIZE];
@@ -408,7 +405,7 @@ static void HarnessCheckStaleCmd(HARNESS *h, char *golden_dir)
 		return;
 	}
 
-	for (i = 0;i < d->NumFiles;i++)
+	for (UINT i = 0;i < d->NumFiles;i++)
 	{
 		DIRENT *e = d->File[i];
 		bool known = false;
@@ -418,7 +415,7 @@ static void HarnessCheckStaleCmd(HARNESS *h, char *golden_dir)
 			continue;
 		}
 
-		for (j = 0;j < sizeof(harness_cmd_cases) / sizeof(harness_cmd_cases[0]);j++)
+		for (UINT j = 0;j < sizeof(harness_cmd_cases) / sizeof(harness_cmd_cases[0]);j++)
 		{
 			Format(expected, sizeof(expected), "cmd_%s.txt", harness_cmd_cases[j].Name);
 			if (StrCmpi(e->FileName, expected) == 0)
@@ -481,7 +478,6 @@ void HarnessCmdCases(HARNESS *h)
 	char golden_dir[MAX_SIZE];
 	bool update;
 	HARNESS_NORM *n;
-	UINT i;
 
 	Print("[vpncmd cases]\n");
 	HarnessSetPhase("cmd", NULL);
@@ -499,7 +495,7 @@ void HarnessCmdCases(HARNESS *h)
 
 	n = HarnessNewNorm();
 
-	for (i = 0;i < sizeof(harness_cmd_cases) / sizeof(harness_cmd_cases[0]);i++)
+	for (UINT i = 0;i < sizeof(harness_cmd_cases) / sizeof(harness_cmd_cases[0]);i++)
 	{
 		HarnessCmdRunCase(h, n, &harness_cmd_cases[i], out_dir, golden_dir, update);
 	}

@@ -253,11 +253,10 @@ UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t)
 
 	LockList(c->ConnectionList);
 	{
-		UINT i;
 		t->NumConnection = LIST_NUM(c->ConnectionList);
 		t->Connections = ZeroMalloc(sizeof(RPC_ENUM_CONNECTION_ITEM) * t->NumConnection);
 		
-		for (i = 0;i < t->NumConnection;i++)
+		for (UINT i = 0;i < t->NumConnection;i++)
 		{
 			RPC_ENUM_CONNECTION_ITEM *e = &t->Connections[i];
 			CONNECTION_INFO info;
@@ -321,12 +320,10 @@ UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 
 	LockHubList(c);
 	{
-		UINT i;
-
 		// Sized for every hub; NumHub counts the ones this admin may see
 		t->Hubs = ZeroMalloc(sizeof(RPC_ENUM_HUB_ITEM) * LIST_NUM(c->HubList));
 
-		for (i = 0;i < LIST_NUM(c->HubList);i++)
+		for (UINT i = 0;i < LIST_NUM(c->HubList);i++)
 		{
 			HUB *h = LIST_DATA(c->HubList, i);
 			RPC_ENUM_HUB_ITEM *e;

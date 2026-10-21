@@ -56,11 +56,9 @@ static const WIN32_OS_RELEASE win32_os_releases[] =
 // than Windows 10 (a failed version query reads as 0.0). name may be NULL.
 UINT Win32ClassifyOs(UINT major, UINT build, bool server, char **name)
 {
-	UINT i;
-
 	if (major >= 10)
 	{
-		for (i = 0; i < sizeof(win32_os_releases) / sizeof(win32_os_releases[0]); i++)
+		for (UINT i = 0; i < sizeof(win32_os_releases) / sizeof(win32_os_releases[0]); i++)
 		{
 			const WIN32_OS_RELEASE *r = &win32_os_releases[i];
 

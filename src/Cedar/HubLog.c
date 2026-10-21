@@ -182,13 +182,12 @@ bool CheckLogFileNameFromEnumList(LIST *o, char *name)
 
 void FreeEnumLogFile(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		LOG_FILE *f = LIST_DATA(o, i);
 
@@ -206,13 +205,12 @@ static void EnumLogFileSubdirs(LIST *o, char *exe_dir, char *base_dir, char *hub
 
 	if (hubname == NULL)
 	{
-		UINT i;
 		DIRLIST *dir;
 
 		Format(tmp, sizeof(tmp), "%s/%s", exe_dir, base_dir);
 
 		dir = EnumDir(tmp);
-		for (i = 0;i < dir->NumFiles;i++)
+		for (UINT i = 0;i < dir->NumFiles;i++)
 		{
 			DIRENT *e = dir->File[i];
 
@@ -261,7 +259,6 @@ LIST *EnumLogFile(char *hubname)
 
 void EnumLogFileDir(LIST *o, char *dirname)
 {
-	UINT i;
 	char exe_dir[MAX_PATH];
 	char dir_full_path[MAX_PATH];
 	DIRLIST *dir;
@@ -275,7 +272,7 @@ void EnumLogFileDir(LIST *o, char *dirname)
 
 	dir = EnumDir(dir_full_path);
 
-	for (i = 0;i < dir->NumFiles;i++)
+	for (UINT i = 0;i < dir->NumFiles;i++)
 	{
 		DIRENT *e = dir->File[i];
 

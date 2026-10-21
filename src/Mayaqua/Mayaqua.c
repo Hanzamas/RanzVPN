@@ -418,9 +418,7 @@ void PrintKernelStatus()
 
 void InitKernelStatus()
 {
-	UINT i;
-
-	for (i = 0;i < NUM_KERNEL_STATUS;i++)
+	for (UINT i = 0;i < NUM_KERNEL_STATUS;i++)
 	{
 		kernel_status[i] = 0;
 		kernel_status_max[i] = 0;

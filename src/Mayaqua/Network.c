@@ -96,13 +96,12 @@ void RefreshLocalMacAddressList()
 bool IsMacAddressLocalInner(LIST *o, void *addr)
 {
 	bool ret = false;
-	UINT i;
 	if (o == NULL || addr == NULL)
 	{
 		return false;
 	}
 
-	for (i = 0; i < LIST_NUM(o); i++)
+	for (UINT i = 0; i < LIST_NUM(o); i++)
 	{
 		NIC_ENTRY *e = LIST_DATA(o, i);
 
@@ -133,7 +132,6 @@ LIST *GetNicList()
 
 LIST *Win32GetNicList()
 {
-	UINT i;
 	LIST *o = NewListFast(NULL);
 	MS_ADAPTER_LIST *al = MsCreateAdapterList();
 
@@ -142,7 +140,7 @@ LIST *Win32GetNicList()
 		return NULL;
 	}
 
-	for (i = 0; i < al->Num; i++)
+	for (UINT i = 0; i < al->Num; i++)
 	{
 		MS_ADAPTER *a = al->Adapters[i];
 
@@ -169,13 +167,12 @@ LIST *Win32GetNicList()
 
 void FreeNicList(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0; i < LIST_NUM(o); i++)
+	for (UINT i = 0; i < LIST_NUM(o); i++)
 	{
 		NIC_ENTRY *e = LIST_DATA(o, i);
 
@@ -237,9 +234,8 @@ void GetRateLimitKey(IP *key, const IP *ip)
 static void EvictOldestIpClient()
 {
 	IP_CLIENT *oldest = NULL;
-	UINT i;
 
-	for (i = 0; i < LIST_NUM(ip_clients); i++)
+	for (UINT i = 0; i < LIST_NUM(ip_clients); i++)
 	{
 		IP_CLIENT *c = LIST_DATA(ip_clients, i);
 
@@ -344,9 +340,7 @@ static void InitIpClientList()
 
 static void FreeIpClientList()
 {
-	UINT i;
-
-	for (i = 0; i < LIST_NUM(ip_clients); i++)
+	for (UINT i = 0; i < LIST_NUM(ip_clients); i++)
 	{
 		IP_CLIENT *c = LIST_DATA(ip_clients, i);
 
@@ -422,14 +416,13 @@ bool IsIPv6Supported()
 bool HasIPv6Address()
 {
 	LIST *o;
-	UINT i;
 	bool ret = false;
 
 	o = GetHostIPAddressList();
 
 	ret = false;
 
-	for (i = 0; i < LIST_NUM(o); i++)
+	for (UINT i = 0; i < LIST_NUM(o); i++)
 	{
 		IP *p = LIST_DATA(o, i);
 
@@ -536,7 +529,6 @@ static void ScanChainCertDir(wchar_t *dirname)
 	DIRLIST *dir;
 	LIST *o;
 	LIST *hashes;
-	UINT i;
 
 	o = NewListFast(NULL);
 	hashes = NewListFast(NULL);
@@ -545,7 +537,7 @@ static void ScanChainCertDir(wchar_t *dirname)
 
 	if (dir != NULL)
 	{
-		for (i = 0; i < dir->NumFiles; i++)
+		for (UINT i = 0; i < dir->NumFiles; i++)
 		{
 			DIRENT *e = dir->File[i];
 
@@ -560,13 +552,12 @@ static void ScanChainCertDir(wchar_t *dirname)
 
 				if (x != NULL)
 				{
-					UINT j;
 					bool exists = false;
 					UCHAR hash[SHA1_SIZE];
 
 					GetXDigest(x, hash, true);
 
-					for (j = 0; j < LIST_NUM(hashes); j++)
+					for (UINT j = 0; j < LIST_NUM(hashes); j++)
 					{
 						UCHAR *hash2 = LIST_DATA(hashes, j);
 
@@ -593,7 +584,7 @@ static void ScanChainCertDir(wchar_t *dirname)
 		FreeDir(dir);
 	}
 
-	for (i = 0; i < LIST_NUM(hashes); i++)
+	for (UINT i = 0; i < LIST_NUM(hashes); i++)
 	{
 		Free(LIST_DATA(hashes, i));
 	}
@@ -671,7 +662,6 @@ UINT GetChainCertGeneration()
 // Add the certificates of the chain_certs folder to the chain of ctx. Returns the number added
 UINT AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx)
 {
-	UINT i;
 	UINT ret = 0;
 
 	if (ctx == NULL || chain_cert_lock == NULL)
@@ -683,7 +673,7 @@ UINT AddChainSslCertOnDirectory(struct ssl_ctx_st *ctx)
 	{
 		RefreshChainCertCache();
 
-		for (i = 0; i < LIST_NUM(chain_cert_list); i++)
+		for (UINT i = 0; i < LIST_NUM(chain_cert_list); i++)
 		{
 			if (AddChainSslCert(ctx, LIST_DATA(chain_cert_list, i)))
 			{
@@ -733,7 +723,6 @@ static void SslHandshakeError(bool server_mode, UINT *ssl_err)
 static void AddSslRootCerts(X509_STORE *store)
 {
 	UINT64 now = Tick64();
-	int i;
 
 	if (ssl_root_certs == NULL || now >= ssl_root_certs_tick + SSL_ROOT_CERTS_REFRESH_SPAN)
 	{
@@ -766,7 +755,7 @@ static void AddSslRootCerts(X509_STORE *store)
 
 	if (ssl_root_certs != NULL)
 	{
-		for (i = 0; i < sk_X509_num(ssl_root_certs); i++)
+		for (int i = 0; i < sk_X509_num(ssl_root_certs); i++)
 		{
 			X509_STORE_add_cert(store, sk_X509_value(ssl_root_certs, i));
 		}
@@ -815,7 +804,6 @@ static void TlsSetClientVerify(SSL_CTX *ssl_ctx, char *sni_hostname, SSL_VERIFY_
 {
 	X509_STORE *store;
 	X509_VERIFY_PARAM *vpm;
-	UINT i;
 
 	if (ssl_option == NULL || ssl_option->VerifyPeer == false)
 	{
@@ -828,7 +816,7 @@ static void TlsSetClientVerify(SSL_CTX *ssl_ctx, char *sni_hostname, SSL_VERIFY_
 		AddSslRootCerts(store);
 	}
 
-	for (i = 0; i < LIST_NUM(ssl_option->CaList); ++i)
+	for (UINT i = 0; i < LIST_NUM(ssl_option->CaList); ++i)
 	{
 		X *ca = LIST_DATA(ssl_option->CaList, i);
 		X509_STORE_add_cert(store, ca->x509);
@@ -1393,7 +1381,6 @@ COUNTER *GetNumTcpConnectionsCounter()
 bool IsIPMyHost(const IP *ip)
 {
 	LIST *o;
-	UINT i;
 	bool ret = false;
 	if (ip == NULL)
 	{
@@ -1407,7 +1394,7 @@ bool IsIPMyHost(const IP *ip)
 
 	o = GetHostIPAddressList();
 
-	for (i = 0; i < LIST_NUM(o); i++)
+	for (UINT i = 0; i < LIST_NUM(o); i++)
 	{
 		IP *p = LIST_DATA(o, i);
 
@@ -1536,9 +1523,8 @@ bool IsOnPrivateIPFile(UINT ip)
 	if (g_private_ip_list != NULL)
 	{
 		LIST *o = g_private_ip_list;
-		UINT i;
 
-		for (i = 0; i < LIST_NUM(o); i++)
+		for (UINT i = 0; i < LIST_NUM(o); i++)
 		{
 			PRIVATE_IP_SUBNET *p = LIST_DATA(o, i);
 
@@ -1557,11 +1543,10 @@ void FreePrivateIPFile()
 	if (g_private_ip_list != NULL)
 	{
 		LIST *o = g_private_ip_list;
-		UINT i;
 
 		g_private_ip_list = NULL;
 
-		for (i = 0; i < LIST_NUM(o); i++)
+		for (UINT i = 0; i < LIST_NUM(o); i++)
 		{
 			PRIVATE_IP_SUBNET *p = LIST_DATA(o, i);
 

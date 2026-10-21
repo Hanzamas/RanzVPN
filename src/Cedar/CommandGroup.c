@@ -51,14 +51,13 @@ UINT PsGroupList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	else
 	{
 		CT *ct = CtNew();
-		UINT i;
 
 		CtInsertColumn(ct, _UU("SM_GROUPLIST_NAME"), false);
 		CtInsertColumn(ct, _UU("SM_GROUPLIST_REALNAME"), false);
 		CtInsertColumn(ct, _UU("SM_GROUPLIST_NOTE"), false);
 		CtInsertColumn(ct, _UU("SM_GROUPLIST_NUMUSERS"), false);
 
-		for (i = 0;i < t.NumGroup;i++)
+		for (UINT i = 0;i < t.NumGroup;i++)
 		{
 			wchar_t tmp1[MAX_SIZE];
 			wchar_t tmp2[MAX_SIZE];

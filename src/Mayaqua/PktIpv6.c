@@ -243,8 +243,7 @@ static bool ParseICMPv6Options(ICMPV6_OPTION_LIST *o, UCHAR *buf, UINT size)
 		case ICMPV6_OPTION_TYPE_PREFIX:
 			if (header_total_size >= sizeof(ICMPV6_OPTION_PREFIX))
 			{
-				UINT i;
-				for (i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++)
+				for (UINT i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++)
 				{
 					if (o->Prefix[i] == NULL)
 					{
@@ -284,7 +283,6 @@ static bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 	ICMP_HEADER *icmp;
 	ICMP_ECHO *echo;
 	UINT msg_size;
-	UINT i;
 	if (p == NULL || buf == NULL)
 	{
 		return false;
@@ -321,7 +319,7 @@ static bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 		icmp_info.EchoDataSize = icmp_info.DataSize - sizeof(ICMP_ECHO);
 	}
 
-	for (i = 0; i < sizeof(icmpv6_option_messages) / sizeof(icmpv6_option_messages[0]); i++)
+	for (UINT i = 0; i < sizeof(icmpv6_option_messages) / sizeof(icmpv6_option_messages[0]); i++)
 	{
 		if (icmpv6_option_messages[i].Type == icmp_info.Type)
 		{
@@ -352,7 +350,6 @@ static bool ParseICMPv6(PKT *p, UCHAR *buf, UINT size)
 
 void FreeCloneICMPv6Options(ICMPV6_OPTION_LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
@@ -361,7 +358,7 @@ void FreeCloneICMPv6Options(ICMPV6_OPTION_LIST *o)
 	Free(o->SourceLinkLayer);
 	Free(o->TargetLinkLayer);
 
-	for (i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++)
+	for (UINT i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++)
 	{
 		Free(o->Prefix[i]);
 		o->Prefix[i] = NULL;
@@ -371,7 +368,6 @@ void FreeCloneICMPv6Options(ICMPV6_OPTION_LIST *o)
 
 void CloneICMPv6Options(ICMPV6_OPTION_LIST *dst, ICMPV6_OPTION_LIST *src)
 {
-	UINT i;
 	if (dst == NULL || src == NULL)
 	{
 		return;
@@ -381,7 +377,7 @@ void CloneICMPv6Options(ICMPV6_OPTION_LIST *dst, ICMPV6_OPTION_LIST *src)
 
 	dst->SourceLinkLayer = Clone(src->SourceLinkLayer, sizeof(ICMPV6_OPTION_LINK_LAYER));
 	dst->TargetLinkLayer = Clone(src->TargetLinkLayer, sizeof(ICMPV6_OPTION_LINK_LAYER));
-	for (i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++)
+	for (UINT i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++)
 	{
 		if (src->Prefix[i] != NULL)
 		{

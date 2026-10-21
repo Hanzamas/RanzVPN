@@ -116,7 +116,6 @@ static bool TempDirCheck(TEMPDIR_CTX *ctx, bool ok, char *what, char *detail_fmt
 static bool TempDirNameOk(wchar_t *path)
 {
 	wchar_t *name;
-	UINT i;
 
 	if (path == NULL)
 	{
@@ -124,7 +123,7 @@ static bool TempDirNameOk(wchar_t *path)
 	}
 
 	name = path;
-	for (i = 0;path[i] != 0;i++)
+	for (UINT i = 0;path[i] != 0;i++)
 	{
 		if (path[i] == L'\\' || path[i] == L'/')
 		{
@@ -144,7 +143,7 @@ static bool TempDirNameOk(wchar_t *path)
 		return false;
 	}
 
-	for (i = 0;i < TEMPDIR_RANDOM_CHARS;i++)
+	for (UINT i = 0;i < TEMPDIR_RANDOM_CHARS;i++)
 	{
 		wchar_t c = name[i];
 
@@ -162,7 +161,6 @@ static bool TempDirAclGrants(ACL *dacl, WELL_KNOWN_SID_TYPE type)
 {
 	UCHAR sid_buf[SECURITY_MAX_SID_SIZE];
 	DWORD sid_size = sizeof(sid_buf);
-	UINT i;
 
 	if (dacl == NULL)
 	{
@@ -175,7 +173,7 @@ static bool TempDirAclGrants(ACL *dacl, WELL_KNOWN_SID_TYPE type)
 		return true;
 	}
 
-	for (i = 0;i < dacl->AceCount;i++)
+	for (UINT i = 0;i < dacl->AceCount;i++)
 	{
 		ACE_HEADER *h = NULL;
 
@@ -202,7 +200,6 @@ static bool TempDirAclGrants(ACL *dacl, WELL_KNOWN_SID_TYPE type)
 static UINT TempDirCountCacheFiles(wchar_t *dir, bool delete_them)
 {
 	DIRLIST *d;
-	UINT i;
 	UINT num = 0;
 
 	d = EnumDirW(dir);
@@ -211,7 +208,7 @@ static UINT TempDirCountCacheFiles(wchar_t *dir, bool delete_them)
 		return 0;
 	}
 
-	for (i = 0;i < d->NumFiles;i++)
+	for (UINT i = 0;i < d->NumFiles;i++)
 	{
 		struct DIRENT *e = d->File[i];
 
@@ -238,9 +235,7 @@ static UINT TempDirCountCacheFiles(wchar_t *dir, bool delete_them)
 // Name of the string table of the language, or false when the list has no such language
 static bool TempDirTableName(LIST *o, UINT id, bool same, char *name, UINT size)
 {
-	UINT i;
-
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		LANGLIST *e = LIST_DATA(o, i);
 

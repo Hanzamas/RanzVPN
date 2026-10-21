@@ -114,8 +114,7 @@ static void HubPaFree(SESSION *s)
 
 	LockList(pa->StormList);
 	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(pa->StormList);i++)
+		for (UINT i = 0;i < LIST_NUM(pa->StormList);i++)
 		{
 			STORM *s = (STORM *)LIST_DATA(pa->StormList, i);
 			Free(s);
@@ -228,11 +227,10 @@ static bool HubPaPutPacket(SESSION *s, void *data, UINT size)
 		o = NULL;
 		LockList(s->DelayedPacketList);
 		{
-			UINT i;
 			if (LIST_NUM(s->DelayedPacketList) >= 1)
 			{
 				UINT64 now = TickHighres64();
-				for (i = 0;i < LIST_NUM(s->DelayedPacketList);i++)
+				for (UINT i = 0;i < LIST_NUM(s->DelayedPacketList);i++)
 				{
 					PKT *p = LIST_DATA(s->DelayedPacketList, i);
 
@@ -250,7 +248,7 @@ static bool HubPaPutPacket(SESSION *s, void *data, UINT size)
 
 			if (o != NULL)
 			{
-				for (i = 0;i < LIST_NUM(o);i++)
+				for (UINT i = 0;i < LIST_NUM(o);i++)
 				{
 					PKT *p = LIST_DATA(o, i);
 
@@ -442,9 +440,8 @@ bool IsIPManagementTargetForHUB(IP *ip, HUB *hub)
 static void DeleteOldestStorm(LIST *o)
 {
 	STORM *oldest = NULL;
-	UINT i;
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		STORM *s = LIST_DATA(o, i);
 

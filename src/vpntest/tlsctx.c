@@ -84,11 +84,10 @@ static void TlsCtxCheck(TLSCTX_TEST *t, bool ok, char *what, char *detail_fmt, .
 static void TlsCtxServerThread(THREAD *thread, void *param)
 {
 	TLSCTX_SERVER *srv = (TLSCTX_SERVER *)param;
-	UINT i;
 
 	srv->SameCtx = true;
 
-	for (i = 0;i < srv->Count;i++)
+	for (UINT i = 0;i < srv->Count;i++)
 	{
 		SOCK *s = Accept(srv->Listen);
 		UINT ssl_err = 0;
@@ -172,7 +171,6 @@ static void TlsCtxClient(TLSCTX_RESULT *r)
 static void TlsCtxRun(TLSCTX_SERVER *srv, TLSCTX_RESULT *result, UINT count)
 {
 	THREAD *thread;
-	UINT i;
 
 	srv->Count = count;
 	srv->NumOk = 0;
@@ -181,7 +179,7 @@ static void TlsCtxRun(TLSCTX_SERVER *srv, TLSCTX_RESULT *result, UINT count)
 
 	thread = NewThread(TlsCtxServerThread, srv);
 
-	for (i = 0;i < count;i++)
+	for (UINT i = 0;i < count;i++)
 	{
 		TlsCtxClient(&result[i]);
 	}
@@ -233,7 +231,6 @@ static UINT64 TlsCtxBench(TLSCTX_SERVER *srv, bool shared)
 {
 	TLSCTX_RESULT *result = ZeroMalloc(sizeof(TLSCTX_RESULT) * TLSCTX_BENCH_CONNS);
 	UINT64 start, ret;
-	UINT i;
 	bool ok = true;
 
 	srv->Shared = shared;
@@ -248,7 +245,7 @@ static UINT64 TlsCtxBench(TLSCTX_SERVER *srv, bool shared)
 	TlsCtxRun(srv, result, TLSCTX_BENCH_CONNS);
 	ret = Tick64() - start;
 
-	for (i = 0;i < TLSCTX_BENCH_CONNS;i++)
+	for (UINT i = 0;i < TLSCTX_BENCH_CONNS;i++)
 	{
 		if (result[i].Ok == false)
 		{
@@ -298,7 +295,6 @@ void tlsctx_test(UINT num, char **arg)
 	K *priv_a, *priv_b;
 	X *x_a, *x_b;
 	CEDAR *cedar;
-	UINT i;
 	UINT num_same;
 	UINT64 ms_each, ms_shared;
 
@@ -340,7 +336,7 @@ void tlsctx_test(UINT num, char **arg)
 	{
 		TlsCtxRun(&srv, same, TLSCTX_SAME);
 
-		for (i = 0;i < TLSCTX_SAME;i++)
+		for (UINT i = 0;i < TLSCTX_SAME;i++)
 		{
 			if (same[i].Ok && Cmp(same[i].Digest, digest_a, SHA1_SIZE) == 0 &&
 				StrCmp(same[i].Cipher, TLSCTX_CIPHER_128) == 0 && StrCmp(same[i].Version, "TLSv1.2") == 0)

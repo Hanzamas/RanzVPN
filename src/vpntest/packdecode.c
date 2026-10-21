@@ -177,9 +177,8 @@ static void PackDecodeTestValid(PACKDECODE_CTX *ctx)
 	UCHAR data[20];
 	wchar_t uni[64];
 	char str[64];
-	UINT i;
 
-	for (i = 0;i < sizeof(data);i++)
+	for (UINT i = 0;i < sizeof(data);i++)
 	{
 		data[i] = (UCHAR)i;
 	}
@@ -192,7 +191,7 @@ static void PackDecodeTestValid(PACKDECODE_CTX *ctx)
 	PackAddStr(p, "str_empty", "");
 	PackAddUniStr(p, "unistr", L"Ranz \x00e9\x65e5");
 	PackAddUniStr(p, "unistr_empty", L"");
-	for (i = 0;i < 3;i++)
+	for (UINT i = 0;i < 3;i++)
 	{
 		PackAddIntEx(p, "ints", 443 + i, i, 3);
 		PackAddStrEx(p, "strs", (i == 1 ? "" : "x"), i, 3);

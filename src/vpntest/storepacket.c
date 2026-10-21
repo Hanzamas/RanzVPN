@@ -184,7 +184,6 @@ static UINT StorePacketTestIpFrame(UCHAR *buf, UINT dst)
 	UINT udp_size = 8 + 8;
 	UINT ip_size = 20 + udp_size;
 	USHORT sum;
-	UINT i;
 
 	Zero(buf, 14 + ip_size);
 
@@ -215,7 +214,7 @@ static UINT StorePacketTestIpFrame(UCHAR *buf, UINT dst)
 	udp[3] = 0x41;
 	udp[5] = (UCHAR)udp_size;					// Length; checksum 0 (none)
 
-	for (i = 0;i < 8;i++)
+	for (UINT i = 0;i < 8;i++)
 	{
 		udp[8 + i] = (UCHAR)(0xA0 + i);
 	}
@@ -227,8 +226,6 @@ static UINT StorePacketTestIpFrame(UCHAR *buf, UINT dst)
 // list entry without addresses matches it. Returns its size
 static UINT StorePacketTestRawFrame(UCHAR *buf, UINT seq)
 {
-	UINT i;
-
 	Copy(buf, storepacket_test_mac_broadcast, 6);
 	Copy(buf + 6, storepacket_test_mac_sender, 6);
 	buf[12] = 0x88;
@@ -238,7 +235,7 @@ static UINT StorePacketTestRawFrame(UCHAR *buf, UINT seq)
 	buf[16] = (UCHAR)(seq >> 8);
 	buf[17] = (UCHAR)seq;
 
-	for (i = 18;i < STOREPACKET_TEST_RAW_SIZE;i++)
+	for (UINT i = 18;i < STOREPACKET_TEST_RAW_SIZE;i++)
 	{
 		buf[i] = (UCHAR)i;
 	}
@@ -331,11 +328,10 @@ static void StorePacketTestStormDetect(STOREPACKET_TEST *t, char *when, UINT dst
 	UINT size = StorePacketTestIpFrame(frame, dst);
 	UINT num_within, num_after;
 	char what[MAX_SIZE];
-	UINT i;
 
 	StorePacketTestDrain(t, NULL, 0, NULL);
 
-	for (i = 0;i < STOREPACKET_TEST_STORM_FRAMES;i++)
+	for (UINT i = 0;i < STOREPACKET_TEST_STORM_FRAMES;i++)
 	{
 		StorePacketTestSend(t, frame, size);
 	}
@@ -361,12 +357,11 @@ static void StorePacketTestStormFlood(STOREPACKET_TEST *t)
 	UINT num_recv = 0;
 	UINT num_list;
 	bool has_first, has_last, has_detect;
-	UINT i;
 
 	// The storm flow before the flood keeps an older check window than every flow of the flood
 	SleepThread(STOREPACKET_TEST_TICK_GAP);
 
-	for (i = 0;i < STOREPACKET_TEST_FLOOD;i++)
+	for (UINT i = 0;i < STOREPACKET_TEST_FLOOD;i++)
 	{
 		UINT size = StorePacketTestIpFrame(frame, STOREPACKET_TEST_FLOOD_NET + i);
 
@@ -419,7 +414,6 @@ static UINT StorePacketTestDelayed(STOREPACKET_TEST *t, bool take, UINT64 *forwa
 {
 	LIST *o = t->Sender->DelayedPacketList;
 	UINT num;
-	UINT i;
 
 	LockList(o);
 	{
@@ -434,7 +428,7 @@ static UINT StorePacketTestDelayed(STOREPACKET_TEST *t, bool take, UINT64 *forwa
 
 		if (take)
 		{
-			for (i = 0;i < num;i++)
+			for (UINT i = 0;i < num;i++)
 			{
 				PKT *p = LIST_DATA(o, i);
 
@@ -535,13 +529,12 @@ static void StorePacketTestDelaySampled(STOREPACKET_TEST *t)
 	char what[MAX_SIZE];
 	UINT num_cases = 0;
 	UINT num_fail = 0;
-	UINT delay, jitter, i, j, k;
 
 	StrCpy(first_fail, sizeof(first_fail), "");
 
-	for (delay = 1;delay <= STOREPACKET_TEST_SAMPLE_DELAY;delay++)
+	for (UINT delay = 1;delay <= STOREPACKET_TEST_SAMPLE_DELAY;delay++)
 	{
-		for (jitter = 1;jitter <= HUB_ACCESSLIST_JITTER_MAX;jitter++)
+		for (UINT jitter = 1;jitter <= HUB_ACCESSLIST_JITTER_MAX;jitter++)
 		{
 			char fail[MAX_SIZE];
 
@@ -556,11 +549,11 @@ static void StorePacketTestDelaySampled(STOREPACKET_TEST *t)
 		}
 	}
 
-	for (i = 0;i < sizeof(large_delay) / sizeof(large_delay[0]);i++)
+	for (UINT i = 0;i < sizeof(large_delay) / sizeof(large_delay[0]);i++)
 	{
-		for (j = 0;j < sizeof(large_jitter) / sizeof(large_jitter[0]);j++)
+		for (UINT j = 0;j < sizeof(large_jitter) / sizeof(large_jitter[0]);j++)
 		{
-			for (k = 0;k < STOREPACKET_TEST_LARGE_REPEAT;k++)
+			for (UINT k = 0;k < STOREPACKET_TEST_LARGE_REPEAT;k++)
 			{
 				char fail[MAX_SIZE];
 
@@ -648,16 +641,15 @@ static void StorePacketTestDLinkMac(STOREPACKET_TEST *t)
 	UCHAR frame[STOREPACKET_TEST_FRAME_MAX];
 	bool old_check_mac = t->Receiver->Policy->CheckMac;
 	UINT seq = STOREPACKET_TEST_DLINK_SEQ;
-	UINT fix, i;
 
 	t->Receiver->Policy->CheckMac = true;
 
 	// The option off first: with it on, StorePacketToHubPa records the D-Link frames the receiver gets
-	for (fix = 0;fix < 2;fix++)
+	for (UINT fix = 0;fix < 2;fix++)
 	{
 		t->Hub->Option->FixForDLinkBPDU = (fix != 0);
 
-		for (i = 0;i < sizeof(storepacket_test_mac_dlink) / sizeof(storepacket_test_mac_dlink[0]);i++)
+		for (UINT i = 0;i < sizeof(storepacket_test_mac_dlink) / sizeof(storepacket_test_mac_dlink[0]);i++)
 		{
 			UCHAR *mac = storepacket_test_mac_dlink[i];
 			SESSION *expected = (fix != 0 ? t->Receiver : t->Sender);
@@ -759,11 +751,9 @@ static UINT StorePacketTestTcpFrame(UCHAR *buf, bool ipv6, USHORT src_port, USHO
 // Remove every access list entry of the test hub
 static void StorePacketTestClearAccessList(STOREPACKET_TEST *t)
 {
-	UINT i;
-
 	LockList(t->Hub->AccessList);
 	{
-		for (i = 0;i < LIST_NUM(t->Hub->AccessList);i++)
+		for (UINT i = 0;i < LIST_NUM(t->Hub->AccessList);i++)
 		{
 			Free(LIST_DATA(t->Hub->AccessList, i));
 		}
@@ -862,9 +852,8 @@ static UINT StorePacketTestCountChar(char *str, char c)
 {
 	UINT len = StrLen(str);
 	UINT num = 0;
-	UINT i;
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		if (str[i] == c)
 		{
@@ -879,9 +868,8 @@ static UINT StorePacketTestCountChar(char *str, char c)
 static bool StorePacketTestHasSpaceOrCtl(char *str)
 {
 	UINT len = StrLen(str);
-	UINT i;
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		UCHAR c = (UCHAR)str[i];
 
@@ -903,7 +891,6 @@ static bool StorePacketTestInfoHashOk(char *location)
 	char *info;
 	UINT len;
 	UINT bar = INFINITE;
-	UINT i;
 	BUF *b;
 
 	if (StartWith(location, STOREPACKET_TEST_INFO_PREFIX) == false)
@@ -914,7 +901,7 @@ static bool StorePacketTestInfoHashOk(char *location)
 	info = location + StrLen(STOREPACKET_TEST_INFO_PREFIX);
 	len = StrLen(info);
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		if (info[i] == '|')
 		{
@@ -1011,7 +998,6 @@ static void StorePacketTestRedirectCases(STOREPACKET_TEST *t)
 	STOREPACKET_TEST_REPLY r;
 	UINT frame_size;
 	UINT num;
-	UINT i;
 
 	num = StorePacketTestRedirect(t, STOREPACKET_TEST_REDIRECT_URL, "storepacket-sender", text, sizeof(text), &frame_size);
 	StorePacketTestParseReply(text, &r);
@@ -1031,7 +1017,7 @@ static void StorePacketTestRedirectCases(STOREPACKET_TEST *t)
 		"redirect: a user name with CR, LF, ':', '=' and '|' is percent-encoded into the <INFO> text, the hash covers the encoded text",
 		"%u replies, %u header lines, Location '%s'", num, r.NumLines, r.Location);
 
-	for (i = 0;i < sizeof(bad_url) / sizeof(bad_url[0]);i++)
+	for (UINT i = 0;i < sizeof(bad_url) / sizeof(bad_url[0]);i++)
 	{
 		num = StorePacketTestRedirect(t, bad_url[i], "storepacket-sender", text, sizeof(text), &frame_size);
 		StorePacketTestCheck(t, num == 0,
@@ -1049,7 +1035,7 @@ static void StorePacketTestRedirectCases(STOREPACKET_TEST *t)
 	}
 	StrCat(long_url, sizeof(long_url), STOREPACKET_TEST_LONG_URL_TAIL);
 
-	for (i = 0;i < MAX_USERNAME_LEN;i++)
+	for (UINT i = 0;i < MAX_USERNAME_LEN;i++)
 	{
 		long_user[i] = '|';
 	}
@@ -1073,13 +1059,12 @@ static void StorePacketTestNoServerPort(STOREPACKET_TEST *t)
 	bool old_no_server = pol->NoServer;
 	bool old_no_server_v6 = pol->NoServerV6;
 	bool has_string = (UniIsEmptyStr(_UU("LH_NO_SERVER")) == false);
-	UINT v;
 
 	pol->NoServer = true;
 	pol->NoServerV6 = true;
 	t->Hub->LogSetting.SaveSecurityLog = true;
 
-	for (v = 0;v < 2;v++)
+	for (UINT v = 0;v < 2;v++)
 	{
 		bool ipv6 = (v != 0);
 		UCHAR frame[STOREPACKET_TEST_FRAME_MAX];

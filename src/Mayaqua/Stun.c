@@ -17,7 +17,6 @@ static bool StunParseAddressAttr(UCHAR *value, UINT value_size, bool xor_mapped,
 	UINT port_value;
 	UCHAR addr[16];
 	UCHAR xor_key[16];
-	UINT i;
 	if (value == NULL || transaction_id == NULL || ip == NULL || port == NULL)
 	{
 		return false;
@@ -60,7 +59,7 @@ static bool StunParseAddressAttr(UCHAR *value, UINT value_size, bool xor_mapped,
 
 		port_value ^= (STUN_MAGIC_COOKIE >> 16);
 
-		for (i = 0;i < addr_size;i++)
+		for (UINT i = 0;i < addr_size;i++)
 		{
 			addr[i] ^= xor_key[i];
 		}
@@ -239,7 +238,7 @@ bool StunParseServerStr(char *src, char *host, UINT host_size, UINT *port)
 	char *host_part;
 	char *port_part = NULL;
 	UINT port_value = STUN_DEFAULT_PORT;
-	UINT len, i;
+	UINT len;
 	if (src == NULL || host == NULL || host_size == 0 || port == NULL)
 	{
 		return false;
@@ -258,7 +257,7 @@ bool StunParseServerStr(char *src, char *host, UINT host_size, UINT *port)
 	{
 		char *close = NULL;
 
-		for (i = 1;i < len;i++)
+		for (UINT i = 1;i < len;i++)
 		{
 			if (tmp[i] == ']')
 			{
@@ -290,7 +289,7 @@ bool StunParseServerStr(char *src, char *host, UINT host_size, UINT *port)
 		UINT num_colons = 0;
 		UINT colon_pos = 0;
 
-		for (i = 0;i < len;i++)
+		for (UINT i = 0;i < len;i++)
 		{
 			if (tmp[i] == ':')
 			{
@@ -320,7 +319,7 @@ bool StunParseServerStr(char *src, char *host, UINT host_size, UINT *port)
 
 		port_value = 0;
 
-		for (i = 0;i < port_len;i++)
+		for (UINT i = 0;i < port_len;i++)
 		{
 			if (port_part[i] < '0' || port_part[i] > '9')
 			{
@@ -368,7 +367,6 @@ bool StunGetMappedAddress(SOCK *udp_sock, char *server_host_port, IP *mapped_ip,
 	UCHAR recv_buf[STUN_RECV_BUFFER_SIZE];
 	UINT request_size;
 	UINT wait_list[] = {STUN_WAIT_FIRST, STUN_WAIT_RETRANSMIT};
-	UINT i;
 	UINT64 limit;
 	if (udp_sock == NULL || server_host_port == NULL || mapped_ip == NULL || mapped_port == NULL)
 	{
@@ -410,7 +408,7 @@ bool StunGetMappedAddress(SOCK *udp_sock, char *server_host_port, IP *mapped_ip,
 		return false;
 	}
 
-	for (i = 0;i < (sizeof(wait_list) / sizeof(wait_list[0]));i++)
+	for (UINT i = 0;i < (sizeof(wait_list) / sizeof(wait_list[0]));i++)
 	{
 		UINT64 deadline;
 

@@ -223,11 +223,10 @@ static RT_RFC3339_VECTOR rt_rfc3339_vectors[] =
 // GetDateTimeStrRFC3339 against the printing vectors
 static void RtCheckRfc3339Print(RT_CTX *ctx)
 {
-	UINT i;
 	SYSTEMTIME st;
 	char str[MAX_SIZE];
 
-	for (i = 0; i < sizeof(rt_rfc3339_vectors) / sizeof(rt_rfc3339_vectors[0]); i++)
+	for (UINT i = 0; i < sizeof(rt_rfc3339_vectors) / sizeof(rt_rfc3339_vectors[0]); i++)
 	{
 		RT_RFC3339_VECTOR *v = &rt_rfc3339_vectors[i];
 
@@ -280,14 +279,13 @@ static RT_RFC3339_PARSE_VECTOR rt_rfc3339_parse_vectors[] =
 // the printer, the parser and the printer again
 static void RtCheckRfc3339Parse(RT_CTX *ctx)
 {
-	UINT i;
 	SYSTEMTIME st, utc, back;
 	char str[MAX_SIZE];
 	char what[MAX_SIZE];
 	UINT64 local64, utc64, expect64;
 	bool ok;
 
-	for (i = 0; i < sizeof(rt_rfc3339_parse_vectors) / sizeof(rt_rfc3339_parse_vectors[0]); i++)
+	for (UINT i = 0; i < sizeof(rt_rfc3339_parse_vectors) / sizeof(rt_rfc3339_parse_vectors[0]); i++)
 	{
 		RT_RFC3339_PARSE_VECTOR *v = &rt_rfc3339_parse_vectors[i];
 
@@ -320,7 +318,7 @@ static void RtCheckRfc3339Parse(RT_CTX *ctx)
 	RtCheck(ctx, ok == false, "RFC 3339 parse refuses a NULL result", "returned true");
 
 	// Round trip: printer, parser (UTC: the local time minus the offset), printer again
-	for (i = 0; i < sizeof(rt_rfc3339_vectors) / sizeof(rt_rfc3339_vectors[0]); i++)
+	for (UINT i = 0; i < sizeof(rt_rfc3339_vectors) / sizeof(rt_rfc3339_vectors[0]); i++)
 	{
 		RT_RFC3339_VECTOR *v = &rt_rfc3339_vectors[i];
 
@@ -375,7 +373,6 @@ static RT_ZONE_VECTOR rt_zone_vectors[] =
 // offset of the OS time zone now, daylight saving time included
 static void RtCheckZoneOffset(RT_CTX *ctx)
 {
-	UINT i;
 	TIME_ZONE_INFORMATION info;
 	SYSTEMTIME st;
 	char str[MAX_SIZE];
@@ -383,7 +380,7 @@ static void RtCheckZoneOffset(RT_CTX *ctx)
 	INT64 os_offset = 0;
 	bool have_offset;
 
-	for (i = 0; i < sizeof(rt_zone_vectors) / sizeof(rt_zone_vectors[0]); i++)
+	for (UINT i = 0; i < sizeof(rt_zone_vectors) / sizeof(rt_zone_vectors[0]); i++)
 	{
 		RT_ZONE_VECTOR *v = &rt_zone_vectors[i];
 
@@ -777,9 +774,9 @@ static UINT RtUtf8DecodeRef(wchar_t *s, BYTE *u, UINT size)
 // below U+0080, 2 below U+0800, 3 otherwise. Writes the bytes to u and returns their number
 static UINT RtUtf8EncodeRef(BYTE *u, wchar_t *s, UINT len)
 {
-	UINT i, wp = 0;
+	UINT wp = 0;
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		UINT c = s[i];
 
@@ -811,7 +808,7 @@ static bool RtUtf8DecodeMatches(BYTE *u, UINT size, UINT out_units, char *err, U
 	wchar_t expect[RT_CHARSET_BUF];
 	wchar_t got[RT_CHARSET_BUF];
 	char hex[RT_CHARSET_BUF * 2 + 1];
-	UINT n, len, calc, num, expect_num, i;
+	UINT n, len, calc, num, expect_num;
 	bool ok;
 
 	n = RtUtf8DecodeRef(expect, u, size);
@@ -825,7 +822,7 @@ static bool RtUtf8DecodeMatches(BYTE *u, UINT size, UINT out_units, char *err, U
 	// The code units, the terminating NUL, and nothing written after it
 	ok = (len == n && calc == (n + 1) * sizeof(wchar_t) && num == expect_num &&
 		Cmp(got, expect, num * sizeof(wchar_t)) == 0 && got[num] == 0);
-	for (i = num + 1;ok && i < RT_CHARSET_BUF;i++)
+	for (UINT i = num + 1;ok && i < RT_CHARSET_BUF;i++)
 	{
 		ok = (got[i] == RT_CHARSET_FILL);
 	}
@@ -933,14 +930,14 @@ static void RtCharsetUtf8Fixed(RT_CTX *ctx)
 	char *mixed_utf8 = "a\xC3\xA9\xED\xA0\xBD\xED\xB8\x80";
 	char *utf;
 	wchar_t *uni;
-	UINT i, ret;
+	UINT ret;
 	bool ok;
 
-	for (i = 0;i < sizeof(rt_utf8_decode_vectors) / sizeof(rt_utf8_decode_vectors[0]);i++)
+	for (UINT i = 0;i < sizeof(rt_utf8_decode_vectors) / sizeof(rt_utf8_decode_vectors[0]);i++)
 	{
 		RtCharsetDecodeVector(ctx, &rt_utf8_decode_vectors[i]);
 	}
-	for (i = 0;i < sizeof(rt_utf8_encode_vectors) / sizeof(rt_utf8_encode_vectors[0]);i++)
+	for (UINT i = 0;i < sizeof(rt_utf8_encode_vectors) / sizeof(rt_utf8_encode_vectors[0]);i++)
 	{
 		RtCharsetEncodeVector(ctx, &rt_utf8_encode_vectors[i]);
 	}
@@ -1036,7 +1033,7 @@ static void RtCharsetUtf8Sweep(RT_CTX *ctx)
 	char first[MAX_SIZE];
 	BYTE u[RT_CHARSET_MAX_LEN * 4];
 	wchar_t s[RT_CHARSET_MAX_LEN + 1];
-	UINT c, i, j, k, n, bad, bad_back, len, room, r;
+	UINT c, n, bad, bad_back, len, room, r;
 	UINT state = RT_CHARSET_SEED;
 
 	// Every code unit U+0001-U+FFFF alone: encoded as the reference does, decoded as the
@@ -1071,14 +1068,14 @@ static void RtCharsetUtf8Sweep(RT_CTX *ctx)
 	// Every input of 1 and 2 bytes
 	bad = 0;
 	StrCpy(first, sizeof(first), "");
-	for (i = 0;i < 256;i++)
+	for (UINT i = 0;i < 256;i++)
 	{
 		u[0] = (BYTE)i;
 		if (RtUtf8DecodeMatches(u, 1, 0, err, sizeof(err)) == false && bad++ == 0)
 		{
 			StrCpy(first, sizeof(first), err);
 		}
-		for (j = 0;j < 256;j++)
+		for (UINT j = 0;j < 256;j++)
 		{
 			u[1] = (BYTE)j;
 			if (RtUtf8DecodeMatches(u, 2, 0, err, sizeof(err)) == false && bad++ == 0)
@@ -1092,11 +1089,11 @@ static void RtCharsetUtf8Sweep(RT_CTX *ctx)
 	// Every lead byte followed by two boundary bytes
 	bad = 0;
 	StrCpy(first, sizeof(first), "");
-	for (i = 0;i < 256;i++)
+	for (UINT i = 0;i < 256;i++)
 	{
-		for (j = 0;j < sizeof(rt_charset_bytes);j++)
+		for (UINT j = 0;j < sizeof(rt_charset_bytes);j++)
 		{
-			for (k = 0;k < sizeof(rt_charset_bytes);k++)
+			for (UINT k = 0;k < sizeof(rt_charset_bytes);k++)
 			{
 				u[0] = (BYTE)i;
 				u[1] = rt_charset_bytes[j];
@@ -1114,12 +1111,12 @@ static void RtCharsetUtf8Sweep(RT_CTX *ctx)
 	// 4-byte sequences and some boundary bytes; decoded with a random room
 	bad = 0;
 	StrCpy(first, sizeof(first), "");
-	for (i = 0;i < RT_CHARSET_ROUNDS;i++)
+	for (UINT i = 0;i < RT_CHARSET_ROUNDS;i++)
 	{
 		UINT pieces = 1 + RtCharsetRandom(&state) % RT_CHARSET_MAX_LEN;
 
 		len = 0;
-		for (j = 0;j < pieces;j++)
+		for (UINT j = 0;j < pieces;j++)
 		{
 			r = RtCharsetRandom(&state);
 			if ((r & 7) == 0)
@@ -1154,10 +1151,10 @@ static void RtCharsetUtf8Sweep(RT_CTX *ctx)
 	// Random strings of code units (one in eight a surrogate), encoded with a random room
 	bad = 0;
 	StrCpy(first, sizeof(first), "");
-	for (i = 0;i < RT_CHARSET_ROUNDS;i++)
+	for (UINT i = 0;i < RT_CHARSET_ROUNDS;i++)
 	{
 		len = 1 + RtCharsetRandom(&state) % RT_CHARSET_MAX_LEN;
-		for (j = 0;j < len;j++)
+		for (UINT j = 0;j < len;j++)
 		{
 			r = RtCharsetRandom(&state);
 			switch (r & 7)
@@ -1542,9 +1539,8 @@ static void RtAnsiDiff(RT_ANSI_DIFF *d, bool same, char *func, UINT size, wchar_
 static void RtAnsiGenUni(UINT *state, wchar_t *w)
 {
 	UINT len = RtCharsetRandom(state) % (RT_ANSI_MAX_LEN + 1);
-	UINT i;
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		UINT r = RtCharsetRandom(state);
 
@@ -1580,9 +1576,8 @@ static void RtAnsiGenUni(UINT *state, wchar_t *w)
 static void RtAnsiGenAscii(UINT *state, wchar_t *w)
 {
 	UINT len = RtCharsetRandom(state) % (RT_ANSI_MAX_LEN + 1);
-	UINT i;
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		w[i] = (wchar_t)(1 + (RtCharsetRandom(state) >> 3) % 0x7F);
 	}
@@ -1596,12 +1591,11 @@ static void RtAnsiGenStr(UINT *state, char *s)
 {
 	UINT mode = RtCharsetRandom(state) % 3;
 	UINT len = 0;
-	UINT i;
 
 	if (mode == 0 || mode == 1)
 	{
 		len = RtCharsetRandom(state) % (RT_ANSI_MAX_LEN + 1);
-		for (i = 0;i < len;i++)
+		for (UINT i = 0;i < len;i++)
 		{
 			UINT r = RtCharsetRandom(state);
 
@@ -1647,9 +1641,9 @@ static void RtAnsiGenStr(UINT *state, char *s)
 // nothing: the current locale may not be the locale of the process.
 static void RtAnsiCompare(RT_ANSI_DIFF *d, UINT *state)
 {
-	UINT n, i;
+	UINT i;
 
-	for (n = 0;n < RT_ANSI_ROUNDS;n++)
+	for (UINT n = 0;n < RT_ANSI_ROUNDS;n++)
 	{
 		wchar_t w[RT_ANSI_MAX_LEN + 1];
 		char got[RT_CHARSET_BUF];
@@ -1689,7 +1683,7 @@ static void RtAnsiCompare(RT_ANSI_DIFF *d, UINT *state)
 		Free(want_copy);
 	}
 
-	for (n = 0;n < RT_ANSI_ROUNDS;n++)
+	for (UINT n = 0;n < RT_ANSI_ROUNDS;n++)
 	{
 		char s[RT_CHARSET_BUF];
 		wchar_t got[RT_CHARSET_BUF];
@@ -1751,14 +1745,13 @@ static void RtCharsetAnsiOracle(RT_CTX *ctx)
 	char input[MAX_SIZE];
 	char *name;
 	bool restored;
-	UINT i, j;
 
 	Zero(d, sizeof(d));
 
 	name = setlocale(LC_CTYPE, NULL);
 	StrCpy(saved, sizeof(saved), (name == NULL) ? "" : name);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		d[i].Set = (rt_ansi_locales[i] == NULL || setlocale(LC_CTYPE, rt_ansi_locales[i]) != NULL);
 		if (d[i].Set)
@@ -1769,7 +1762,7 @@ static void RtCharsetAnsiOracle(RT_CTX *ctx)
 
 	restored = (setlocale(LC_CTYPE, saved) != NULL);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		char *label = (rt_ansi_locales[i] == NULL) ? "the process locale" : rt_ansi_locales[i];
 
@@ -1792,7 +1785,7 @@ static void RtCharsetAnsiOracle(RT_CTX *ctx)
 		{
 			if (d[i].FirstIsUni)
 			{
-				for (j = 0;d[i].FirstUni[j] != 0;j++)
+				for (UINT j = 0;d[i].FirstUni[j] != 0;j++)
 				{
 					char unit[8];
 
@@ -2130,13 +2123,13 @@ void fileio_test(UINT num, char **arg)
 	UCHAR hash[SHA256_SIZE];
 	char hash_str[SHA256_SIZE * 2 + 1];
 	IO *io, *io2;
-	UINT i, size;
+	UINT size;
 	void *ham;
 	bool ok;
 
 	RtBegin(&ctx, "FILEIO", "FileIO test");
 
-	for (i = 0;i < RT_FILEIO_DATA_SIZE;i++)
+	for (UINT i = 0;i < RT_FILEIO_DATA_SIZE;i++)
 	{
 		data[i] = (UCHAR)(i * 7 + 1);
 	}
@@ -2155,7 +2148,7 @@ void fileio_test(UINT num, char **arg)
 
 	// "/" becomes "\": open the "@" file through its path written with forward slashes
 	UniStrCpy(slash_path, sizeof(slash_path), log_path);
-	for (i = 0;slash_path[i] != 0;i++)
+	for (UINT i = 0;slash_path[i] != 0;i++)
 	{
 		if (slash_path[i] == L'\\')
 		{
@@ -2166,7 +2159,7 @@ void fileio_test(UINT num, char **arg)
 	if (RtCheck(&ctx, io != NULL, "FileOpen of the path written with forward slashes", "returned NULL"))
 	{
 		ok = true;
-		for (i = 0;io->NameW[i] != 0;i++)
+		for (UINT i = 0;io->NameW[i] != 0;i++)
 		{
 			if (io->NameW[i] == L'/')
 			{
@@ -2277,7 +2270,6 @@ static void RtResourceFile(RT_CTX *ctx, char *path, char *name)
 	char bar_name[MAX_SIZE];
 	BUF *src, *b;
 	bool sub = false;
-	UINT i;
 
 	src = ReadDump(path);
 	Format(what, sizeof(what), "Read the source file of %s", name);
@@ -2299,7 +2291,7 @@ static void RtResourceFile(RT_CTX *ctx, char *path, char *name)
 		src->Size, b != NULL ? b->Size : 0, b != NULL ? "" : " (NULL)");
 	FreeBuf(b);
 
-	for (i = 0;bar_name[i] != 0;i++)
+	for (UINT i = 0;bar_name[i] != 0;i++)
 	{
 		if (bar_name[i] == '/')
 		{
@@ -2327,10 +2319,10 @@ static UINT RtResourceDir(RT_CTX *ctx, char *dir, char *rel)
 	char path[MAX_SIZE];
 	char name[MAX_SIZE];
 	DIRLIST *d;
-	UINT i, files = 0;
+	UINT files = 0;
 
 	d = EnumDir(dir);
-	for (i = 0;d != NULL && i < d->NumFiles;i++)
+	for (UINT i = 0;d != NULL && i < d->NumFiles;i++)
 	{
 		DIRENT *e = d->File[i];
 
@@ -2415,7 +2407,7 @@ void resources_test(UINT num, char **arg)
 	char what[MAX_SIZE];
 	BUF *b, *b2, *embedded;
 	IO *io;
-	UINT i, size, files;
+	UINT size, files;
 	void *data;
 	bool ok, made_dir;
 
@@ -2431,7 +2423,7 @@ void resources_test(UINT num, char **arg)
 
 	// vpnserver.exe and vpncmd.exe carry the same files: each holds every resource of type
 	// HAMCORE_RESOURCE_TYPE of this executable with the same bytes, and no other one
-	for (i = 0;i < sizeof(rt_resource_exes) / sizeof(rt_resource_exes[0]);i++)
+	for (UINT i = 0;i < sizeof(rt_resource_exes) / sizeof(rt_resource_exes[0]);i++)
 	{
 		wchar_t other_path[MAX_SIZE];
 		HMODULE self = GetModuleHandleW(NULL);
@@ -2707,7 +2699,7 @@ void threadpool_test(UINT num, char **arg)
 	volatile bool go;
 	THREAD *t;
 	HANDLE h;
-	UINT picked, i, num_jobs, joined, early, waited, ran, com_ready, found_index = 0;
+	UINT picked, num_jobs, joined, early, waited, ran, com_ready, found_index = 0;
 	DWORD handles_before = 0, handles_after = 0;
 	bool ended, alive, found, counted;
 
@@ -2748,7 +2740,7 @@ void threadpool_test(UINT num, char **arg)
 	go = false;
 	found = false;
 	num_jobs = 0;
-	for (i = 0;i < RT_POOL_MAX_JOBS && found == false;i++)
+	for (UINT i = 0;i < RT_POOL_MAX_JOBS && found == false;i++)
 	{
 		held[i].Go = &go;
 		jobs[i] = NewThread(RtPoolJobThread, &held[i]);
@@ -2762,7 +2754,7 @@ void threadpool_test(UINT num, char **arg)
 	}
 	go = true;
 	joined = 0;
-	for (i = 0;i < num_jobs;i++)
+	for (UINT i = 0;i < num_jobs;i++)
 	{
 		if (WaitThread(jobs[i], RT_POOL_BOUND))
 		{
@@ -2785,7 +2777,7 @@ void threadpool_test(UINT num, char **arg)
 	go = false;
 	target_job.Go = &go;
 	wd.Target = NewThread(RtPoolJobThread, &target_job);
-	for (i = 0;i < RT_POOL_WAITERS;i++)
+	for (UINT i = 0;i < RT_POOL_WAITERS;i++)
 	{
 		waiters[i] = NewThread(RtPoolWaiterThread, &wd);
 	}
@@ -2793,7 +2785,7 @@ void threadpool_test(UINT num, char **arg)
 	early = (UINT)wd.Returned;
 	go = true;
 	waited = 0;
-	for (i = 0;i < RT_POOL_WAITERS;i++)
+	for (UINT i = 0;i < RT_POOL_WAITERS;i++)
 	{
 		if (WaitThread(waiters[i], RT_POOL_BOUND * 2))
 		{
@@ -2812,7 +2804,7 @@ void threadpool_test(UINT num, char **arg)
 	// WaitThreadInternal returns true once the thread ended, and the end closes the handle
 	waited = ran = com_ready = 0;
 	counted = (GetProcessHandleCount(GetCurrentProcess(), &handles_before) != FALSE);
-	for (i = 0;i < RT_HOST_CYCLES;i++)
+	for (UINT i = 0;i < RT_HOST_CYCLES;i++)
 	{
 		Zero(&host, sizeof(host));
 		t = NewThreadInternal(RtPoolJobThread, &host);
@@ -2927,7 +2919,7 @@ void dns_test(UINT num, char **arg)
 	char name[MAX_SIZE];
 	char str[MAX_SIZE];
 	volatile bool cancel = true;
-	UINT threads, i;
+	UINT threads;
 	bool ret, ok;
 
 	RtBegin(&ctx, "DNS", "DNS test");
@@ -2976,7 +2968,7 @@ void dns_test(UINT num, char **arg)
 
 	ok = true;
 	StrCpy(str, sizeof(str), "none");
-	for (i = 0;i < LIST_NUM(v6);i++)
+	for (UINT i = 0;i < LIST_NUM(v6);i++)
 	{
 		if (IsIP6((IP *)LIST_DATA(v6, i)) == false)
 		{
@@ -2984,7 +2976,7 @@ void dns_test(UINT num, char **arg)
 			ok = false;
 		}
 	}
-	for (i = 0;i < LIST_NUM(v4);i++)
+	for (UINT i = 0;i < LIST_NUM(v4);i++)
 	{
 		if (IsIP4((IP *)LIST_DATA(v4, i)) == false)
 		{

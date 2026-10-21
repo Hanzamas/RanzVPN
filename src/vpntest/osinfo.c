@@ -58,11 +58,10 @@ void osinfo_test(UINT num, char **arg)
 	char *name = NULL;
 	UINT failed = 0;
 	UINT type;
-	UINT i;
 
 	Print("OS information test (Win32ClassifyOs, GetOsInfo)\n");
 
-	for (i = 0; i < sizeof(osinfo_cases) / sizeof(osinfo_cases[0]); i++)
+	for (UINT i = 0; i < sizeof(osinfo_cases) / sizeof(osinfo_cases[0]); i++)
 	{
 		const OSINFO_CASE *c = &osinfo_cases[i];
 

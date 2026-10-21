@@ -33,9 +33,7 @@ static UINT LogWriterWaitTime(LOG_WRITER *w);
 // multi-byte sequence) to '?': a CR or LF from untrusted input cannot start a forged log line or syslog message
 void LogMapControlChars(UCHAR *s, UINT size)
 {
-	UINT i;
-
-	for (i = 0;i < size;i++)
+	for (UINT i = 0;i < size;i++)
 	{
 		if (s[i] < 0x20 || s[i] == 0x7F)
 		{
@@ -686,12 +684,10 @@ static bool LogThreadWriteGeneral(LOG *log_object, LOG_WRITER *w)
 
 		if (log_date_changed)
 		{
-			UINT i;
-
 			log_object->CurrentLogNumber = 0;
 			MakeLogFileName(log_object, file_name, sizeof(file_name),
 			                rec->Tick, log_object->SwitchType, 0, w->DateName, sizeof(w->DateName));
-			for (i = 0;; i++)
+			for (UINT i = 0;; i++)
 			{
 				char tmp[MAX_SIZE];
 				MakeLogFileName(log_object, tmp, sizeof(tmp),

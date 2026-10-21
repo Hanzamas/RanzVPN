@@ -219,7 +219,6 @@ void FreeRpcReadLogFile(RPC_READ_LOG_FILE *t)
 
 void InRpcAcList(RPC_AC_LIST *t, PACK *p)
 {
-	UINT i;
 	LIST *o;
 	UINT num;
 	if (t == NULL || p == NULL)
@@ -233,7 +232,7 @@ void InRpcAcList(RPC_AC_LIST *t, PACK *p)
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	num = PackGetIndexCount(p, "IpAddress");
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		AC *ac = ZeroMalloc(sizeof(AC));
 
@@ -258,7 +257,7 @@ void InRpcAcList(RPC_AC_LIST *t, PACK *p)
 }
 void OutRpcAcList(PACK *p, RPC_AC_LIST *t)
 {
-	UINT i, num;
+	UINT num;
 	LIST *o;
 	if (t == NULL || p == NULL)
 	{
@@ -272,7 +271,7 @@ void OutRpcAcList(PACK *p, RPC_AC_LIST *t)
 
 	PackAddStr(p, "HubName", t->HubName);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		AC *ac = LIST_DATA(o, i);
 
@@ -874,7 +873,6 @@ void OutRpcListener(PACK *p, RPC_LISTENER *t)
 
 void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p)
 {
-	UINT i;
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -885,7 +883,7 @@ void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p)
 	t->Ports = ZeroMalloc(sizeof(UINT) * t->NumPort);
 	t->Enables = ZeroMalloc(sizeof(UINT) * t->NumPort);
 	t->Errors = ZeroMalloc(sizeof(UINT) * t->NumPort);
-	for (i = 0;i < t->NumPort;i++)
+	for (UINT i = 0;i < t->NumPort;i++)
 	{
 		t->Ports[i] = PackGetIntEx(p, "Ports", i);
 		t->Enables[i] = PackGetBoolEx(p, "Enables", i);
@@ -894,13 +892,12 @@ void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p)
 }
 void OutRpcListenerList(PACK *p, RPC_LISTENER_LIST *t)
 {
-	UINT i;
 	if (t == NULL || p == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < t->NumPort;i++)
+	for (UINT i = 0;i < t->NumPort;i++)
 	{
 		PackAddIntEx(p, "Ports", t->Ports[i], i, t->NumPort);
 		PackAddBoolEx(p, "Enables", t->Enables[i], i, t->NumPort);
@@ -1223,9 +1220,9 @@ void OutRpcHubStatus(PACK *p, RPC_HUB_STATUS *t)
 static void RpcHubLogPacketLogConfigOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
 {
 	UINT *c = (UINT *)(((UCHAR *)base) + f->Offset);
-	UINT i, num = f->Size / sizeof(UINT);
+	UINT num = f->Size / sizeof(UINT);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		PackAddIntEx(p, f->Key, c[i], i, num);
 	}
@@ -1233,9 +1230,9 @@ static void RpcHubLogPacketLogConfigOut(const RPC_FIELD *f, PACK *p, void *base,
 static void RpcHubLogPacketLogConfigIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
 {
 	UINT *c = (UINT *)(((UCHAR *)base) + f->Offset);
-	UINT i, num = f->Size / sizeof(UINT);
+	UINT num = f->Size / sizeof(UINT);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		c[i] = PackGetIntEx(p, f->Key, i);
 	}

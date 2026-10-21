@@ -125,13 +125,12 @@ void MsRegistWindowsFirewallEx(char *title, char *exe)
 MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid)
 {
 	MS_ADAPTER *ret = NULL;
-	UINT i;
 	if (o == NULL || guid == NULL)
 	{
 		return NULL;
 	}
 
-	for (i = 0;i < o->Num;i++)
+	for (UINT i = 0;i < o->Num;i++)
 	{
 		if (StrCmpi(o->Adapters[i]->Guid, guid) == 0)
 		{
@@ -181,7 +180,6 @@ MS_ADAPTER *MsCloneAdapter(MS_ADAPTER *a)
 MS_ADAPTER_LIST *MsCreateAdapterList()
 {
 	LIST *o;
-	UINT i;
 	UINT retcode;
 	PMIB_IF_TABLE2 table;
 	MS_ADAPTER_LIST *ret;
@@ -194,18 +192,16 @@ MS_ADAPTER_LIST *MsCreateAdapterList()
 
 	o = NewListFast(NULL);
 
-	for (i = 0;i < table->NumEntries;i++)
+	for (UINT i = 0;i < table->NumEntries;i++)
 	{
 		MIB_IF_ROW2 *r = &table->Table[i];
 		wchar_t title[MAX_PATH];
 		MS_ADAPTER *a;
-		UINT j;
 
 		{
 			{
-				for (j = 1;;j++)
+				for (UINT j = 1;;j++)
 				{
-					UINT k;
 					bool exists;
 					if (j == 1)
 					{
@@ -218,7 +214,7 @@ MS_ADAPTER_LIST *MsCreateAdapterList()
 
 					exists = false;
 
-					for (k = 0;k < LIST_NUM(o);k++)
+					for (UINT k = 0;k < LIST_NUM(o);k++)
 					{
 						MS_ADAPTER *a = LIST_DATA(o, k);
 
@@ -276,13 +272,12 @@ MS_ADAPTER_LIST *MsCreateAdapterList()
 
 void MsFreeAdapterList(MS_ADAPTER_LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < o->Num;i++)
+	for (UINT i = 0;i < o->Num;i++)
 	{
 		MsFreeAdapter(o->Adapters[i]);
 	}
@@ -346,7 +341,6 @@ LIST *MsNetClassEnum()
 {
 	LIST *o = NewList(MsNetClassCmp);
 	HDEVINFO h;
-	UINT i;
 
 	h = SetupDiGetClassDevsW(&ms_netclass_guid, NULL, NULL, DIGCF_PRESENT);
 	if (h == INVALID_HANDLE_VALUE)
@@ -354,7 +348,7 @@ LIST *MsNetClassEnum()
 		return o;
 	}
 
-	for (i = 0;;i++)
+	for (UINT i = 0;;i++)
 	{
 		SP_DEVINFO_DATA d;
 		MS_NETCLASS_DEVICE *e;
@@ -451,13 +445,12 @@ MS_NETCLASS_DEVICE *MsNetClassFind(LIST *o, char *guid)
 
 void MsNetClassFree(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		Free(LIST_DATA(o, i));
 	}

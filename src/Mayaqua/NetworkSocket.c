@@ -158,14 +158,14 @@ static void Win32InitAsyncSocket(SOCK *sock)
 static void Win32Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2)
 {
 	HANDLE array[MAXIMUM_WAIT_OBJECTS];
-	UINT n, i;
+	UINT n;
 	SOCK *s;
 	Zero(array, sizeof(array));
 	n = 0;
 
 	if (set != NULL)
 	{
-		for (i = 0; i < set->NumSocket; i++)
+		for (UINT i = 0; i < set->NumSocket; i++)
 		{
 			s = set->Sock[i];
 			if (s != NULL)
@@ -1130,7 +1130,6 @@ static SOCKET BindConnectTimeout(bool ipv6, IP *localIP, UINT localport, IP *ip,
 
 static void BindConnectThread(THREAD *thread, void *param)
 {
-	UINT i;
 	CONNECT_SERIAL_PARAM *p = (CONNECT_SERIAL_PARAM *)param;
 	if (thread == NULL || p == NULL)
 	{
@@ -1142,7 +1141,7 @@ static void BindConnectThread(THREAD *thread, void *param)
 		WaitEx(NULL, p->Delay, p->NoDelayFlag);
 	}
 
-	for (i = 0; i < LIST_NUM(p->IpList); ++i)
+	for (UINT i = 0; i < LIST_NUM(p->IpList); ++i)
 	{
 		SOCKET s;
 		IP *ip = LIST_DATA(p->IpList, i);
@@ -1234,7 +1233,6 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 	bool cancel_flag2 = false;
 	bool no_delay_flag = false;
 	SOCK *ret = NULL;
-	UINT i;
 	if (hostname == NULL || port == 0 || port >= 65536 || IsEmptyStr(hostname))
 	{
 		return NULL;
@@ -1274,7 +1272,7 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 	Zero(params, sizeof(params));
 	Zero(ret_ips, sizeof(ret_ips));
 
-	for (i = 0; i < 2; ++i)
+	for (UINT i = 0; i < 2; ++i)
 	{
 		CONNECT_SERIAL_PARAM *p = &params[i];
 
@@ -1343,7 +1341,7 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 	cancel_flag2 = true;
 	no_delay_flag = true;
 
-	for (i = 0; i < 2; ++i)
+	for (UINT i = 0; i < 2; ++i)
 	{
 		WaitThread(threads[i], INFINITE);
 		ReleaseThread(threads[i]);
@@ -1353,7 +1351,7 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 	FreeHostIPAddressList(iplists[1]);
 
 	// IPv6 wins over IPv4 when both connected; the losing socket (or both, on cancel) is closed
-	for (i = 0; i < 2; ++i)
+	for (UINT i = 0; i < 2; ++i)
 	{
 		if (*cancel_flag == false && ret == NULL && params[i].Ok)
 		{
@@ -1373,7 +1371,6 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 void AddProtocolDetailsStr(char *dst, UINT dst_size, char *str)
 {
 	TOKEN_LIST *t1, *t2;
-	UINT i, j;
 	if (dst == NULL || str == NULL)
 	{
 		return;
@@ -1382,10 +1379,10 @@ void AddProtocolDetailsStr(char *dst, UINT dst_size, char *str)
 	t1 = ParseTokenWithoutNullStr(dst, " ");
 	t2 = ParseTokenWithoutNullStr(str, " ");
 
-	for (i = 0; i < t2->NumTokens; i++)
+	for (UINT i = 0; i < t2->NumTokens; i++)
 	{
 		bool exists = false;
-		for (j = 0; j < t1->NumTokens; j++)
+		for (UINT j = 0; j < t1->NumTokens; j++)
 		{
 			if (StrCmpi(t1->Token[j], t2->Token[i]) == 0)
 			{

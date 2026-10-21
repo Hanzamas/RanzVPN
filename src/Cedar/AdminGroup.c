@@ -62,7 +62,6 @@ UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 
 	AcLock(h);
 	{
-		UINT i, j;
 		ENUM_GROUP_COUNT *counts;
 		LIST *index;
 
@@ -77,7 +76,7 @@ UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 		counts = ZeroMalloc(sizeof(ENUM_GROUP_COUNT) * t->NumGroup);
 		index = NewListFast(CompareEnumGroupCount);
 
-		for (i = 0;i < t->NumGroup;i++)
+		for (UINT i = 0;i < t->NumGroup;i++)
 		{
 			RPC_ENUM_GROUP_ITEM *e = &t->Groups[i];
 			USERGROUP *g = LIST_DATA(h->HubDb->GroupList, i);
@@ -104,7 +103,7 @@ UINT StEnumGroup(ADMIN *a, RPC_ENUM_GROUP *t)
 			Add(index, &counts[i]);
 		}
 
-		for (j = 0;j < LIST_NUM(h->HubDb->UserList);j++)
+		for (UINT j = 0;j < LIST_NUM(h->HubDb->UserList);j++)
 		{
 			USER *u = LIST_DATA(h->HubDb->UserList, j);
 			USERGROUP *ug;

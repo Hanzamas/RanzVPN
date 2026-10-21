@@ -228,7 +228,7 @@ static PACKET_ADAPTER *LinkGetPacketAdapter()
 void ReleaseAllLink(HUB *h)
 {
 	LINK **kk;
-	UINT num, i;
+	UINT num;
 	if (h == NULL)
 	{
 		return;
@@ -242,7 +242,7 @@ void ReleaseAllLink(HUB *h)
 	}
 	UnlockList(h->LinkList);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		LINK *k = kk[i];
 
@@ -352,8 +352,7 @@ void StartAllLink(HUB *h)
 
 	LockList(h->LinkList);
 	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(h->LinkList);i++)
+		for (UINT i = 0;i < LIST_NUM(h->LinkList);i++)
 		{
 			LINK *k = (LINK *)LIST_DATA(h->LinkList, i);
 
@@ -370,7 +369,6 @@ void StopAllLink(HUB *h)
 {
 	LINK **link_list;
 	UINT num_link;
-	UINT i;
 	if (h == NULL)
 	{
 		return;
@@ -382,14 +380,14 @@ void StopAllLink(HUB *h)
 	{
 		link_list = ToArray(h->LinkList);
 		num_link = LIST_NUM(h->LinkList);
-		for (i = 0;i < num_link;i++)
+		for (UINT i = 0;i < num_link;i++)
 		{
 			AddRef(link_list[i]->ref);
 		}
 	}
 	UnlockList(h->LinkList);
 
-	for (i = 0;i < num_link;i++)
+	for (UINT i = 0;i < num_link;i++)
 	{
 		StopLink(link_list[i]);
 		ReleaseLink(link_list[i]);
@@ -561,7 +559,6 @@ void NormalizeLinkOption(CLIENT_OPTION *option)
 LINK *FindLinkByAccountName(HUB *hub, wchar_t *account_name)
 {
 	LINK *found = NULL;
-	UINT i;
 
 	if (hub == NULL || account_name == NULL)
 	{
@@ -570,7 +567,7 @@ LINK *FindLinkByAccountName(HUB *hub, wchar_t *account_name)
 
 	LockList(hub->LinkList);
 	{
-		for (i = 0;i < LIST_NUM(hub->LinkList);i++)
+		for (UINT i = 0;i < LIST_NUM(hub->LinkList);i++)
 		{
 			LINK *k = LIST_DATA(hub->LinkList, i);
 

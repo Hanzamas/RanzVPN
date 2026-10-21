@@ -28,9 +28,7 @@ bool IsStrIPv6Address(char *str)
 // of the first byte, then zero bits. A length beyond the mask gives all one bits
 static void PrefixLenToMask(UCHAR *mask, UINT size, UINT len)
 {
-	UINT i;
-
-	for (i = 0; i < size; i++)
+	for (UINT i = 0; i < size; i++)
 	{
 		if (len >= 8)
 		{
@@ -614,7 +612,6 @@ void IPv6AddrToIP(IP *ip, const IPV6_ADDR *addr)
 
 bool IPToIPv6Addr(IPV6_ADDR *addr, const IP *ip)
 {
-	UINT i;
 	if (addr == NULL || ip == NULL)
 	{
 		Zero(addr, sizeof(IPV6_ADDR));
@@ -627,7 +624,7 @@ bool IPToIPv6Addr(IPV6_ADDR *addr, const IP *ip)
 		return false;
 	}
 
-	for (i = 0; i < sizeof(addr->Value); ++i)
+	for (UINT i = 0; i < sizeof(addr->Value); ++i)
 	{
 		addr->Value[i] = ip->address[i];
 	}
@@ -905,7 +902,6 @@ bool StrToIP(IP *ip, const char *str)
 
 void IPToInAddr(struct in_addr *addr, const IP *ip)
 {
-	UINT i;
 	if (addr == NULL || IsIP4(ip) == false)
 	{
 		return;
@@ -914,7 +910,7 @@ void IPToInAddr(struct in_addr *addr, const IP *ip)
 	Zero(addr, sizeof(struct in_addr));
 
 	const BYTE *ipv4 = IPV4(ip->address);
-	for (i = 0; i < IPV4_SIZE; ++i)
+	for (UINT i = 0; i < IPV4_SIZE; ++i)
 	{
 		((BYTE *)addr)[i] = ipv4[i];
 	}
@@ -1114,13 +1110,12 @@ void Mask6AddrToStr(char *str, UINT size, const IPV6_ADDR *mask)
 
 void FreeHostIPAddressList(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0; i < LIST_NUM(o); i++)
+	for (UINT i = 0; i < LIST_NUM(o); i++)
 	{
 		IP *ip = LIST_DATA(o, i);
 
@@ -1144,8 +1139,7 @@ void AddHostIPAddressToList(LIST *o, const IP *ip)
 	}
 	else
 	{
-		UINT i;
-		for (i = 0; i < LIST_NUM(o); i++)
+		for (UINT i = 0; i < LIST_NUM(o); i++)
 		{
 			IP *a = LIST_DATA(o, i);
 
@@ -1168,7 +1162,6 @@ void AddHostIPAddressToList(LIST *o, const IP *ip)
 LIST *CloneIPAddressList(const LIST *o)
 {
 	LIST *ret;
-	UINT i;
 	if (o == NULL)
 	{
 		return NULL;
@@ -1176,7 +1169,7 @@ LIST *CloneIPAddressList(const LIST *o)
 
 	ret = NewListFast(o->cmp);
 
-	for (i = 0; i < LIST_NUM(o); i++)
+	for (UINT i = 0; i < LIST_NUM(o); i++)
 	{
 		IP *ip = LIST_DATA(o, i);
 

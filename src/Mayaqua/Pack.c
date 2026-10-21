@@ -66,7 +66,7 @@ BUF *PackToBuf(PACK *p)
 
 bool ReadPack(BUF *b, PACK *p)
 {
-	UINT i, num;
+	UINT num;
 	if (b == NULL || p == NULL)
 	{
 		return false;
@@ -79,7 +79,7 @@ bool ReadPack(BUF *b, PACK *p)
 		return false;
 	}
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		ELEMENT *e;
 		e = ReadElement(b);
@@ -94,7 +94,6 @@ bool ReadPack(BUF *b, PACK *p)
 
 void WritePack(BUF *b, PACK *p)
 {
-	UINT i;
 	if (b == NULL || p == NULL)
 	{
 		return;
@@ -102,7 +101,7 @@ void WritePack(BUF *b, PACK *p)
 
 	WriteBufInt(b, LIST_NUM(p->elements));
 
-	for (i = 0;i < LIST_NUM(p->elements);i++)
+	for (UINT i = 0;i < LIST_NUM(p->elements);i++)
 	{
 		ELEMENT *e = LIST_DATA(p->elements, i);
 		WriteElement(b, e);
@@ -111,7 +110,6 @@ void WritePack(BUF *b, PACK *p)
 
 ELEMENT *ReadElement(BUF *b)
 {
-	UINT i, j;
 	char name[MAX_ELEMENT_NAME_LEN + 1];
 	UINT type, num_value, value_size;
 	VALUE **values;
@@ -144,13 +142,13 @@ ELEMENT *ReadElement(BUF *b)
 	}
 
 	values = (VALUE **)Malloc(sizeof(VALUE *) * num_value);
-	for (i = 0;i < num_value;i++)
+	for (UINT i = 0;i < num_value;i++)
 	{
 		values[i] = ReadValue(b, type);
 		if (values[i] == NULL)
 		{
 			// A value that cannot be read fails the element: no ELEMENT holds a NULL value
-			for (j = 0;j < i;j++)
+			for (UINT j = 0;j < i;j++)
 			{
 				FreeValue(values[j], type);
 			}
@@ -169,7 +167,6 @@ ELEMENT *ReadElement(BUF *b)
 
 void WriteElement(BUF *b, ELEMENT *e)
 {
-	UINT i;
 	if (b == NULL || e == NULL)
 	{
 		return;
@@ -178,7 +175,7 @@ void WriteElement(BUF *b, ELEMENT *e)
 	WriteBufStr(b, e->name);
 	WriteBufInt(b, e->type);
 	WriteBufInt(b, e->num_value);
-	for (i = 0;i < e->num_value;i++)
+	for (UINT i = 0;i < e->num_value;i++)
 	{
 		VALUE *v = e->values[i];
 		WriteValue(b, v, e->type);
@@ -450,13 +447,12 @@ VALUE *NewIntValue(UINT i)
 
 static void FreeElement(ELEMENT *e)
 {
-	UINT i;
 	if (e == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < e->num_value;i++)
+	for (UINT i = 0;i < e->num_value;i++)
 	{
 		FreeValue(e->values[i], e->type);
 	}
@@ -468,7 +464,6 @@ static void FreeElement(ELEMENT *e)
 ELEMENT *NewElement(char *name, UINT type, UINT num_value, VALUE **values)
 {
 	ELEMENT *e;
-	UINT i;
 	if (name == NULL || num_value == 0 || values == NULL)
 	{
 		return NULL;
@@ -480,7 +475,7 @@ ELEMENT *NewElement(char *name, UINT type, UINT num_value, VALUE **values)
 	e->type = type;
 
 	e->values = (VALUE **)ZeroMalloc(sizeof(VALUE *) * num_value);
-	for (i = 0;i < e->num_value;i++)
+	for (UINT i = 0;i < e->num_value;i++)
 	{
 		e->values[i] = values[i];
 	}
@@ -560,7 +555,6 @@ bool AddElement(PACK *p, ELEMENT *e)
 
 void FreePack(PACK *p)
 {
-	UINT i;
 	ELEMENT **elements;
 	if (p == NULL)
 	{
@@ -568,7 +562,7 @@ void FreePack(PACK *p)
 	}
 
 	elements = ToArray(p->elements);
-	for (i = 0;i < LIST_NUM(p->elements);i++)
+	for (UINT i = 0;i < LIST_NUM(p->elements);i++)
 	{
 		FreeElement(elements[i]);
 	}
@@ -648,7 +642,6 @@ LIST *PackGetXList(PACK *p, char *name)
 	X *x;
 	BUF *b;
 	LIST *chain;
-	UINT i;
 	if (p == NULL || name == NULL)
 	{
 		return NULL;
@@ -661,7 +654,7 @@ LIST *PackGetXList(PACK *p, char *name)
 	}
 
 	chain = NewList(NULL);
-	for (i = 0;i < e->num_value;i++)
+	for (UINT i = 0;i < e->num_value;i++)
 	{
 		b = PackGetBufEx(p, name, i);
 		if (b == NULL)
@@ -737,8 +730,7 @@ ELEMENT *PackAddXList(PACK *p, char *name, LIST *chain)
 		return NULL;
 	}
 
-	UINT i;
-	for (i = 0;i < LIST_NUM(chain);i++)
+	for (UINT i = 0;i < LIST_NUM(chain);i++)
 	{
 		x = LIST_DATA(chain, i);
 		b = XToBuf(x, false);

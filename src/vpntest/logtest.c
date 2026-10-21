@@ -298,7 +298,6 @@ void logwriter_test(UINT num, char **arg)
 	UINT total = LOGTEST_WRITER_RECORDS + LOGTEST_WRITER_SWITCH_RECORDS + 1;
 	UINT lines, in_order;
 	bool switched;
-	UINT i;
 
 	Zero(&ctx, sizeof(ctx));
 
@@ -316,7 +315,7 @@ void logwriter_test(UINT num, char **arg)
 	opens = LogTestNumOpens();
 
 	g = NewLog(dir, LOGTEST_WRITER_PREFIX, LOG_SWITCH_NO, 0);
-	for (i = 0;i < LOGTEST_WRITER_RECORDS;i++)
+	for (UINT i = 0;i < LOGTEST_WRITER_RECORDS;i++)
 	{
 		LogWriterInsert(g, i);
 	}
@@ -342,7 +341,7 @@ void logwriter_test(UINT num, char **arg)
 	opens = LogTestNumOpens();
 
 	g = NewLog(dir, LOGTEST_WRITER_PREFIX, LOG_SWITCH_NO, LOGTEST_WRITER_MAX_SIZE);
-	for (i = LOGTEST_WRITER_RECORDS;i < (total - 1);i++)
+	for (UINT i = LOGTEST_WRITER_RECORDS;i < (total - 1);i++)
 	{
 		LogWriterInsert(g, i);
 	}
@@ -483,9 +482,7 @@ static void LogBoundFreeSession(SESSION *s)
 // Frame of the packet log records (EtherType 0x88B5, no IP), parsed as the hub parses it
 static PKT *LogBoundParseFrame(UCHAR *buf)
 {
-	UINT i;
-
-	for (i = 0;i < LOGTEST_BOUND_FRAME_SIZE;i++)
+	for (UINT i = 0;i < LOGTEST_BOUND_FRAME_SIZE;i++)
 	{
 		buf[i] = (UCHAR)i;
 	}
@@ -600,7 +597,6 @@ void logbound_test(UINT num, char **arg)
 	bool blocked;
 	bool drained;
 	bool opened;
-	UINT i;
 
 	Zero(&ctx, sizeof(ctx));
 	Zero(&t, sizeof(t));
@@ -608,7 +604,7 @@ void logbound_test(UINT num, char **arg)
 	Print("Log bound test: %u string records and %u packet log records while the parent of the log directory is a "
 		"file, %u more after it is a directory\n", LOGTEST_BOUND_RECORDS, LOGTEST_BOUND_PACKETS, LOGTEST_BOUND_AFTER);
 
-	for (i = 0;i < LOGTEST_BOUND_PAD;i++)
+	for (UINT i = 0;i < LOGTEST_BOUND_PAD;i++)
 	{
 		t.Pad[i] = 'x';
 	}
@@ -631,14 +627,14 @@ void logbound_test(UINT num, char **arg)
 
 	t.Log = NewLog(log_dir, LOGTEST_BOUND_PREFIX, LOG_SWITCH_NO, 0);
 
-	for (i = 0;i < LOGTEST_BOUND_RECORDS;i++)
+	for (UINT i = 0;i < LOGTEST_BOUND_RECORDS;i++)
 	{
 		LogBoundInsert(&t, i);
 	}
 
 	if (frame != NULL)
 	{
-		for (i = 0;i < LOGTEST_BOUND_PACKETS;i++)
+		for (UINT i = 0;i < LOGTEST_BOUND_PACKETS;i++)
 		{
 			LogBoundInsertPacket(&t, s, frame);
 		}
@@ -684,7 +680,7 @@ void logbound_test(UINT num, char **arg)
 	LogTestCheck(&ctx, opened, "the writer opens the log file on its own once the directory can be made",
 		"%s missing after %u ms", file, LOGTEST_BOUND_OPEN_WAIT);
 
-	for (i = 0;i < LOGTEST_BOUND_AFTER;i++)
+	for (UINT i = 0;i < LOGTEST_BOUND_AFTER;i++)
 	{
 		char tmp[MAX_SIZE];
 
@@ -777,7 +773,6 @@ void slog_test(UINT num, char **arg)
 	char host[64];
 	UINT base;
 	UINT size;
-	UINT i;
 	bool in_flight;
 	bool still_in_flight = false;
 	bool all_a;
@@ -821,7 +816,7 @@ void slog_test(UINT num, char **arg)
 		"a syslog datagram holds the UTF-8 text of its message", "%u bytes received", size);
 
 	long_text = ZeroMalloc(sizeof(wchar_t) * (LOGTEST_SLOG_LONG + 1));
-	for (i = 0;i < LOGTEST_SLOG_LONG;i++)
+	for (UINT i = 0;i < LOGTEST_SLOG_LONG;i++)
 	{
 		long_text[i] = L'a';
 	}
@@ -831,7 +826,7 @@ void slog_test(UINT num, char **arg)
 
 	size = LogTestRecvDatagram(s, buf, sizeof(buf), LOGTEST_SLOG_RECV_WAIT);
 	all_a = true;
-	for (i = 0;i < size;i++)
+	for (UINT i = 0;i < size;i++)
 	{
 		if (buf[i] != 'a')
 		{

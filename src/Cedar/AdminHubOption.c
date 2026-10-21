@@ -83,7 +83,6 @@ UINT StGetHubExtOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 
 UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
-	UINT i;
 	SERVER *s = a->Server;
 	HUB *h;
 	UINT err;
@@ -111,7 +110,7 @@ UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 	{
 		DeleteAllHubAdminOption(h);
 
-		for (i = 0;i < t->NumItem;i++)
+		for (UINT i = 0;i < t->NumItem;i++)
 		{
 			ADMIN_OPTION *e = &t->Items[i];
 			ADMIN_OPTION *a = ZeroMalloc(sizeof(ADMIN_OPTION));
@@ -137,7 +136,6 @@ UINT StSetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 
 UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
-	UINT i;
 	HUB *h;
 	UINT err;
 
@@ -159,7 +157,7 @@ UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 		t->NumItem = LIST_NUM(h->AdminOptionList);
 		t->Items = ZeroMalloc(sizeof(ADMIN_OPTION) * t->NumItem);
 
-		for (i = 0;i < t->NumItem;i++)
+		for (UINT i = 0;i < t->NumItem;i++)
 		{
 			ADMIN_OPTION *a = LIST_DATA(h->AdminOptionList, i);
 			ADMIN_OPTION *e = &t->Items[i];
@@ -178,15 +176,13 @@ UINT StGetHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 
 UINT StGetDefaultHubAdminOptions(ADMIN *a, RPC_ADMIN_OPTION *t)
 {
-	UINT i;
-
 	FreeRpcAdminOption(t);
 	Zero(t, sizeof(RPC_ADMIN_OPTION));
 
 	t->NumItem = num_admin_options;
 	t->Items = ZeroMalloc(sizeof(ADMIN_OPTION) * t->NumItem);
 
-	for (i = 0;i < t->NumItem;i++)
+	for (UINT i = 0;i < t->NumItem;i++)
 	{
 		ADMIN_OPTION *a = &t->Items[i];
 

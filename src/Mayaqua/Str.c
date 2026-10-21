@@ -70,7 +70,7 @@ UINT SearchAsciiInBinary(const void *data, UINT size, const char *str, bool case
 
 UINT HexToInt(const char *str)
 {
-	UINT len, i;
+	UINT len;
 	UINT ret = 0;
 	if (str == NULL)
 	{
@@ -83,7 +83,7 @@ UINT HexToInt(const char *str)
 	}
 
 	len = StrLen(str);
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		char c = str[i];
 
@@ -160,7 +160,6 @@ static char *CopyStrPrefix(const char *str, UINT len)
 static TOKEN_LIST *ParseTokenCore(const char *str, const char *split_chars, bool keep_empty)
 {
 	LIST *o;
-	UINT i;
 	TOKEN_LIST *t;
 	if (str == NULL)
 	{
@@ -202,7 +201,7 @@ static TOKEN_LIST *ParseTokenCore(const char *str, const char *split_chars, bool
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
 
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		t->Token[i] = LIST_DATA(o, i);
 	}
@@ -243,12 +242,12 @@ bool InStrEx(const char *str, const char *keyword, bool case_sensitive)
 
 static bool IsSplitChar(char c, const char *split_str)
 {
-	UINT i, len;
+	UINT len;
 	char c_upper = ToUpper(c);
 
 	len = StrLen(split_str);
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		if (ToUpper(split_str[i]) == c_upper)
 		{
@@ -263,7 +262,7 @@ bool GetKeyAndValue(const char *str, char *key, UINT key_size, char *value, UINT
 {
 	UINT mode = 0;
 	UINT wp1 = 0, wp2 = 0;
-	UINT i, len;
+	UINT len;
 	char *key_tmp, *value_tmp;
 	bool ret = false;
 
@@ -272,7 +271,7 @@ bool GetKeyAndValue(const char *str, char *key, UINT key_size, char *value, UINT
 	key_tmp = ZeroMalloc(len + 1);
 	value_tmp = ZeroMalloc(len + 1);
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		char c = str[i];
 
@@ -357,7 +356,7 @@ UINT StrWidth(const char *str)
 
 bool IsAllUpperStr(const char *str)
 {
-	UINT i, len;
+	UINT len;
 	if (str == NULL)
 	{
 		return false;
@@ -365,7 +364,7 @@ bool IsAllUpperStr(const char *str)
 
 	len = StrLen(str);
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		char c = str[i];
 
@@ -384,7 +383,6 @@ bool IsAllUpperStr(const char *str)
 
 void ToStrByte1000(char *str, UINT size, UINT64 v)
 {
-	UINT i;
 	if (str == NULL)
 	{
 		return;
@@ -401,7 +399,7 @@ void ToStrByte1000(char *str, UINT size, UINT64 v)
 	bytestr[4].base_value = 1000UL;
 	bytestr[5].base_value = 0UL;
 
-	for (i = 0;i < sizeof(bytestr) / sizeof(bytestr[0]);i++)
+	for (UINT i = 0;i < sizeof(bytestr) / sizeof(bytestr[0]);i++)
 	{
 		BYTESTR *b = &bytestr[i];
 
@@ -424,7 +422,6 @@ void ToStrByte1000(char *str, UINT size, UINT64 v)
 
 void ToStrByte(char *str, UINT size, UINT64 v)
 {
-	UINT i;
 	if (str == NULL)
 	{
 		return;
@@ -441,7 +438,7 @@ void ToStrByte(char *str, UINT size, UINT64 v)
 	bytestr[4].base_value = 1024UL;
 	bytestr[5].base_value = 0UL;
 
-	for (i = 0;i < sizeof(bytestr) / sizeof(bytestr[0]);i++)
+	for (UINT i = 0;i < sizeof(bytestr) / sizeof(bytestr[0]);i++)
 	{
 		BYTESTR *b = &bytestr[i];
 
@@ -466,7 +463,7 @@ void ToStr3(char *str, UINT size, UINT64 v)
 {
 	char tmp[128];
 	char tmp2[128];
-	UINT i, len, wp;
+	UINT len, wp;
 	if (str == NULL)
 	{
 		return;
@@ -477,7 +474,7 @@ void ToStr3(char *str, UINT size, UINT64 v)
 	wp = 0;
 	len = StrLen(tmp);
 
-	for (i = len - 1;((int)i) >= 0;i--)
+	for (UINT i = len - 1;((int)i) >= 0;i--)
 	{
 		tmp2[wp++] = tmp[i];
 	}
@@ -485,7 +482,7 @@ void ToStr3(char *str, UINT size, UINT64 v)
 
 	wp = 0;
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		if (i != 0 && (i % 3) == 0)
 		{
@@ -497,7 +494,7 @@ void ToStr3(char *str, UINT size, UINT64 v)
 	wp = 0;
 	len = StrLen(tmp);
 
-	for (i = len - 1;((int)i) >= 0;i--)
+	for (UINT i = len - 1;((int)i) >= 0;i--)
 	{
 		tmp2[wp++] = tmp[i];
 	}
@@ -512,13 +509,12 @@ void MacToStr(char *str, UINT size, const UCHAR *mac_address)
 {
 	static const char hex[] = "0123456789ABCDEF";
 	char tmp[6 * 3];
-	UINT i;
 	if (str == NULL || mac_address == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < 6;i++)
+	for (UINT i = 0;i < 6;i++)
 	{
 		tmp[i * 3] = hex[mac_address[i] >> 4];
 		tmp[i * 3 + 1] = hex[mac_address[i] & 0x0F];
@@ -541,7 +537,6 @@ bool IsEmptyStr(const char *str)
 
 TOKEN_LIST *ListToTokenList(const LIST *o)
 {
-	UINT i;
 	TOKEN_LIST *t;
 	if (o == NULL)
 	{
@@ -551,7 +546,7 @@ TOKEN_LIST *ListToTokenList(const LIST *o)
 	t = ZeroMalloc(sizeof(TOKEN_LIST));
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		t->Token[i] = CopyStr(LIST_DATA(o, i));
 	}
@@ -567,7 +562,7 @@ void FreeStrList(LIST *o)
 bool IsNum(const char *str)
 {
 	char c;
-	UINT i, len;
+	UINT len;
 	UINT n = 0;
 	char tmp[MAX_SIZE];
 	TOKEN_LIST *t;
@@ -594,7 +589,7 @@ bool IsNum(const char *str)
 	FreeToken(t);
 
 	len = StrLen(tmp);
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		bool b = false;
 		c = tmp[i];
@@ -609,7 +604,7 @@ bool IsNum(const char *str)
 		}
 	}
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		c = tmp[i];
 		if (c == '-')
@@ -637,7 +632,7 @@ TOKEN_LIST *ParseCmdLine(const char *str)
 {
 	TOKEN_LIST *t;
 	LIST *o;
-	UINT i, len, wp, mode;
+	UINT len, wp, mode;
 	char c;
 	char *tmp;
 	bool ignore_space = false;
@@ -653,7 +648,7 @@ TOKEN_LIST *ParseCmdLine(const char *str)
 	mode = 0;
 
 	len = StrLen(str);
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		c = str[i];
 
@@ -740,7 +735,7 @@ TOKEN_LIST *ParseCmdLine(const char *str)
 	t = ZeroMalloc(sizeof(TOKEN_LIST));
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(char *) * t->NumTokens);
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		t->Token[i] = LIST_DATA(o, i);
 	}
@@ -762,7 +757,7 @@ void ToStr64(char *str, UINT64 value)
 
 UINT64 ToInt64(const char *str)
 {
-	UINT len, i;
+	UINT len;
 	UINT64 ret = 0;
 	if (str == NULL)
 	{
@@ -770,7 +765,7 @@ UINT64 ToInt64(const char *str)
 	}
 
 	len = StrLen(str);
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		char c = str[i];
 		if (c != ',')
@@ -818,7 +813,6 @@ bool EndWith(const char *str, const char *key)
 
 bool StartWith(const char *str, const char *key)
 {
-	UINT i;
 	if (str == NULL || key == NULL)
 	{
 		return false;
@@ -831,7 +825,7 @@ bool StartWith(const char *str, const char *key)
 	}
 
 	// Compares in place with the ASCII-only fold of StrCmpi, and stops at the end of str
-	for (i = 0;key[i] != '\0';i++)
+	for (UINT i = 0;key[i] != '\0';i++)
 	{
 		if (str[i] == '\0' || ToUpper(str[i]) != ToUpper(key[i]))
 		{
@@ -872,7 +866,7 @@ bool StrToMac(UCHAR *mac_address, const char *str)
 BUF *StrToBin(const char *str)
 {
 	BUF *b;
-	UINT len, i;
+	UINT len;
 	char tmp[3];
 	if (str == NULL)
 	{
@@ -882,7 +876,7 @@ BUF *StrToBin(const char *str)
 	len = StrLen(str);
 	tmp[0] = 0;
 	b = NewBuf();
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		char c = str[i];
 		c = ToUpper(c);
@@ -925,9 +919,8 @@ static void BinToHexStr(char *str, UINT str_size, const UCHAR *data, UINT data_s
 	static const char hex[] = "0123456789ABCDEF";
 	UINT room = (str_size == 0) ? INFINITE : str_size - 1;
 	UINT wp = 0;
-	UINT i;
 
-	for (i = 0;i < data_size && wp < room;i++)
+	for (UINT i = 0;i < data_size && wp < room;i++)
 	{
 		if (spaced && i != 0)
 		{
@@ -1013,14 +1006,14 @@ char *CopyStr(const char *str)
 
 bool IsSafeStr(const char *str)
 {
-	UINT i, len;
+	UINT len;
 	if (str == NULL)
 	{
 		return false;
 	}
 
 	len = StrLen(str);
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		if (IsSafeChar(str[i]) == false)
 		{
@@ -1057,7 +1050,7 @@ bool IsPrintableAsciiChar(char c)
 
 void EnPrintableAsciiStr(char *str, char replace)
 {
-	UINT i, len;
+	UINT len;
 	if (str == NULL)
 	{
 		return;
@@ -1065,7 +1058,7 @@ void EnPrintableAsciiStr(char *str, char replace)
 
 	len = StrLen(str);
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		char c = str[i];
 
@@ -1319,12 +1312,11 @@ UINT SearchStrEx(const char *string, const char *keyword, UINT start, bool case_
 
 void FreeToken(TOKEN_LIST *tokens)
 {
-	UINT i;
 	if (tokens == NULL)
 	{
 		return;
 	}
-	for (i = 0;i < tokens->NumTokens;i++)
+	for (UINT i = 0;i < tokens->NumTokens;i++)
 	{
 		if (tokens->Token[i] != 0)
 		{
@@ -1682,14 +1674,14 @@ int StrCmp(const char *str1, const char *str2)
 
 void StrLower(char *str)
 {
-	UINT len, i;
+	UINT len;
 	if (str == NULL)
 	{
 		return;
 	}
 
 	len = StrLen(str);
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		str[i] = ToLower(str[i]);
 	}
@@ -1697,14 +1689,14 @@ void StrLower(char *str)
 
 void StrUpper(char *str)
 {
-	UINT len, i;
+	UINT len;
 	if (str == NULL)
 	{
 		return;
 	}
 
 	len = StrLen(str);
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		str[i] = ToUpper(str[i]);
 	}

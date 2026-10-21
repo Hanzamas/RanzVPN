@@ -123,9 +123,8 @@ static void BuildAllName(wchar_t *str, UINT size, NAME *name, bool with_labels)
 {
 	wchar_t *labels[] = { L"CN=", L"O=", L"OU=", L"S=", L"L=", L"C=" };
 	wchar_t *values[] = { name->CommonName, name->Organization, name->Unit, name->State, name->Local, name->Country };
-	UINT i;
 
-	for (i = 0;i < sizeof(values) / sizeof(values[0]);i++)
+	for (UINT i = 0;i < sizeof(values) / sizeof(values[0]);i++)
 	{
 		if (values[i] != NULL)
 		{
@@ -224,8 +223,7 @@ LIST *CloneXList(LIST *chain)
 	ret = NewList(NULL);
 	LockList(chain);
 	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(chain);i++)
+		for (UINT i = 0;i < LIST_NUM(chain);i++)
 		{
 			x = CloneX(LIST_DATA(chain, i));
 			if (x != NULL)
@@ -500,7 +498,7 @@ static bool SetSerialForNewX509(X509 *x509, X_SERIAL *serial)
 static bool AddDnsAltNameToX509(X509 *x509, wchar_t *common_name)
 {
 	char dns[MAX_PATH];
-	UINT i, len;
+	UINT len;
 	GENERAL_NAMES *names;
 	GENERAL_NAME *gn;
 	ASN1_IA5STRING *ia5;
@@ -517,7 +515,7 @@ static bool AddDnsAltNameToX509(X509 *x509, wchar_t *common_name)
 	{
 		return true;
 	}
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		if (dns[i] <= ' ' || dns[i] > '~')
 		{
@@ -1088,7 +1086,7 @@ NAME *X509NameToName(void *xn)
 wchar_t *GetUniStrFromX509Name(void *xn, int nid)
 {
 	char txt[1024];
-	UINT i, size;
+	UINT size;
 	int index, len;
 	bool unicode = false;
 	bool is_utf_8 = false;
@@ -1133,7 +1131,7 @@ wchar_t *GetUniStrFromX509Name(void *xn, int nid)
 	// Scan only the bytes X509_NAME_get_text_by_NID copied (at most sizeof(txt) - 3): the field
 	// comes from the peer's certificate, and a scan sized from it ran past txt
 	size = (UINT)len;
-	for (i = 0;i < size;i++)
+	for (UINT i = 0;i < size;i++)
 	{
 		if ((UCHAR)txt[i] >= 0x80)
 		{
@@ -1221,8 +1219,7 @@ void FreeXList(LIST *chain)
 
 	LockList(chain);
 	{
-		UINT i;
-		for (i = 0; i < LIST_NUM(chain); i++)
+		for (UINT i = 0; i < LIST_NUM(chain); i++)
 		{
 			X *x = LIST_DATA(chain, i);
 			FreeX(x);
@@ -1309,9 +1306,7 @@ X *X509ToX(X509 *x509)
 
 		if (ads != NULL)
 		{
-			int i;
-
-			for (i = 0; i < sk_ACCESS_DESCRIPTION_num(ads); i++)
+			for (int i = 0; i < sk_ACCESS_DESCRIPTION_num(ads); i++)
 			{
 				ACCESS_DESCRIPTION *ad = sk_ACCESS_DESCRIPTION_value(ads, i);
 				if (ad != NULL)
@@ -1365,14 +1360,13 @@ X *X509ToX(X509 *x509)
 
 X *GetIssuerFromList(LIST *cert_list, X *cert)
 {
-	UINT i;
 	X *ret = NULL;
 	if (cert_list == NULL || cert == NULL)
 	{
 		return NULL;
 	}
 
-	for (i = 0;i < LIST_NUM(cert_list);i++)
+	for (UINT i = 0;i < LIST_NUM(cert_list);i++)
 	{
 		X *x = LIST_DATA(cert_list, i);
 		if (CheckXDateNow(x))

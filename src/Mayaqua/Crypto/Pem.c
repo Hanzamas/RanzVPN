@@ -189,7 +189,6 @@ BIO *KToBio(K *k, bool text, char *password)
 
 bool IsBase64(BUF *b)
 {
-	UINT i;
 	if (b == NULL)
 	{
 		return false;
@@ -200,7 +199,7 @@ bool IsBase64(BUF *b)
 		return true;
 	}
 
-	for (i = 0;i < b->Size;i++)
+	for (UINT i = 0;i < b->Size;i++)
 	{
 		char c = ((char *)b->Buf)[i];
 		bool b = false;

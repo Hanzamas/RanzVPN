@@ -26,7 +26,6 @@ bool UniIsCharInStr(const wchar_t *str, wchar_t c)
 
 static UNI_TOKEN_LIST *UniListToTokenList(LIST *o)
 {
-	UINT i;
 	UNI_TOKEN_LIST *t;
 	if (o == NULL)
 	{
@@ -36,7 +35,7 @@ static UNI_TOKEN_LIST *UniListToTokenList(LIST *o)
 	t = ZeroMalloc(sizeof(UNI_TOKEN_LIST));
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(wchar_t *) * t->NumTokens);
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		t->Token[i] = CopyUniStr(LIST_DATA(o, i));
 	}
@@ -52,7 +51,7 @@ void UniFreeStrList(LIST *o)
 wchar_t *UniNormalizeCrlf(const wchar_t *str)
 {
 	wchar_t *ret;
-	UINT ret_size, i, len, wp;
+	UINT ret_size, len, wp;
 	if (str == NULL)
 	{
 		return NULL;
@@ -64,7 +63,7 @@ wchar_t *UniNormalizeCrlf(const wchar_t *str)
 
 	wp = 0;
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		wchar_t c = str[i];
 
@@ -123,7 +122,6 @@ bool UniEndWith(const wchar_t *str, const wchar_t *key)
 
 bool UniStartWith(const wchar_t *str, const wchar_t *key)
 {
-	UINT i;
 	if (str == NULL || key == NULL)
 	{
 		return false;
@@ -136,7 +134,7 @@ bool UniStartWith(const wchar_t *str, const wchar_t *key)
 	}
 
 	// Compares in place with the ASCII-only fold of UniStrCmpi, and stops at the end of str
-	for (i = 0;key[i] != L'\0';i++)
+	for (UINT i = 0;key[i] != L'\0';i++)
 	{
 		if (str[i] == L'\0' || UniToUpper(str[i]) != UniToUpper(key[i]))
 		{
@@ -162,7 +160,7 @@ void UniToStr3(wchar_t *str, UINT size, UINT64 value)
 
 UINT UniStrWidth(const wchar_t *str)
 {
-	UINT i, len, ret;
+	UINT len, ret;
 	if (str == NULL)
 	{
 		return 0;
@@ -170,7 +168,7 @@ UINT UniStrWidth(const wchar_t *str)
 
 	ret = 0;
 	len = UniStrLen(str);
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		if (str[i] <= 255)
 		{
@@ -215,7 +213,7 @@ UNI_TOKEN_LIST *UniParseCmdLine(const wchar_t *str)
 {
 	UNI_TOKEN_LIST *t;
 	LIST *o;
-	UINT i, len, wp, mode;
+	UINT len, wp, mode;
 	wchar_t c;
 	wchar_t *tmp;
 	bool ignore_space = false;
@@ -231,7 +229,7 @@ UNI_TOKEN_LIST *UniParseCmdLine(const wchar_t *str)
 	mode = 0;
 
 	len = UniStrLen(str);
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		c = str[i];
 
@@ -318,7 +316,7 @@ UNI_TOKEN_LIST *UniParseCmdLine(const wchar_t *str)
 	t = ZeroMalloc(sizeof(UNI_TOKEN_LIST));
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(wchar_t *) * t->NumTokens);
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		t->Token[i] = LIST_DATA(o, i);
 	}
@@ -400,14 +398,14 @@ wchar_t *CopyUniStr(const wchar_t *str)
 
 bool IsSafeUniStr(const wchar_t *str)
 {
-	UINT i, len;
+	UINT len;
 	if (str == NULL)
 	{
 		return false;
 	}
 
 	len = UniStrLen(str);
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		if (IsSafeUniChar(str[i]) == false)
 		{
@@ -430,7 +428,7 @@ bool IsSafeUniStr(const wchar_t *str)
 
 bool IsSafeUniChar(wchar_t c)
 {
-	UINT i, len;
+	UINT len;
 	wchar_t *check_str =
 		L"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 		L"abcdefghijklmnopqrstuvwxyz"
@@ -438,7 +436,7 @@ bool IsSafeUniChar(wchar_t c)
 		L" ()-_#%&.";
 
 	len = UniStrLen(check_str);
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		if (c == check_str[i])
 		{
@@ -579,9 +577,7 @@ static UINT UniAsciiLen(const wchar_t *s)
 // Widen the first len characters of the ASCII string str into s and terminate s
 static void WidenAscii(wchar_t *s, const char *str, UINT len)
 {
-	UINT i;
-
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		s[i] = (wchar_t)str[i];
 	}
@@ -591,9 +587,7 @@ static void WidenAscii(wchar_t *s, const char *str, UINT len)
 // Narrow the first len characters of the ASCII string s into str and terminate str
 static void NarrowAscii(char *str, const wchar_t *s, UINT len)
 {
-	UINT i;
-
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		str[i] = (char)s[i];
 	}
@@ -883,7 +877,6 @@ static UINT UniToUtf8Units(BYTE *u, UINT u_size, const wchar_t *s, UINT len)
 // 0xF0 or above)
 static UINT Utf8NativeLen(const BYTE *u, UINT size)
 {
-	UINT i;
 	int ret;
 
 	if (size == 0 || size > UTF8_NATIVE_MAX)
@@ -891,7 +884,7 @@ static UINT Utf8NativeLen(const BYTE *u, UINT size)
 		return 0;
 	}
 
-	for (i = 0;i < size;i++)
+	for (UINT i = 0;i < size;i++)
 	{
 		if (u[i] >= 0xf0)
 		{
@@ -1274,12 +1267,11 @@ UINT UniSearchStrEx(const wchar_t *string, const wchar_t *keyword, UINT start, b
 
 void UniFreeToken(UNI_TOKEN_LIST *tokens)
 {
-	UINT i;
 	if (tokens == NULL)
 	{
 		return;
 	}
-	for (i = 0;i < tokens->NumTokens;i++)
+	for (UINT i = 0;i < tokens->NumTokens;i++)
 	{
 		Free(tokens->Token[i]);
 	}
@@ -1295,7 +1287,7 @@ static wchar_t *UniDefaultTokenSplitChars()
 static UNI_TOKEN_LIST *UniParseTokenWithoutNullStr(wchar_t *str, wchar_t *split_chars)
 {
 	LIST *o;
-	UINT i, len;
+	UINT len;
 	bool last_flag;
 	BUF *b;
 	wchar_t zero = 0;
@@ -1315,7 +1307,7 @@ static UNI_TOKEN_LIST *UniParseTokenWithoutNullStr(wchar_t *str, wchar_t *split_
 	len = UniStrLen(str);
 	last_flag = false;
 
-	for (i = 0;i < (len + 1);i++)
+	for (UINT i = 0;i < (len + 1);i++)
 	{
 		wchar_t c = str[i];
 		bool flag = UniIsCharInStr(split_chars, c);
@@ -1350,7 +1342,7 @@ static UNI_TOKEN_LIST *UniParseTokenWithoutNullStr(wchar_t *str, wchar_t *split_
 	t->NumTokens = LIST_NUM(o);
 	t->Token = ZeroMalloc(sizeof(wchar_t *) * t->NumTokens);
 
-	for (i = 0;i < t->NumTokens;i++)
+	for (UINT i = 0;i < t->NumTokens;i++)
 	{
 		t->Token[i] = LIST_DATA(o, i);
 	}
@@ -1478,7 +1470,7 @@ UINT UniToInt(const wchar_t *str)
 
 void UniToStrForSingleChars(char *dst, UINT dst_size, const wchar_t *src)
 {
-	UINT i, len;
+	UINT len;
 	if (dst == NULL || src == NULL || dst_size == 0)
 	{
 		return;
@@ -1491,7 +1483,7 @@ void UniToStrForSingleChars(char *dst, UINT dst_size, const wchar_t *src)
 		len = dst_size - 1;
 	}
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		wchar_t s = src[i];
 
@@ -1510,7 +1502,7 @@ void UniToStrForSingleChars(char *dst, UINT dst_size, const wchar_t *src)
 
 UNI_TOKEN_LIST *UniGetLines(const wchar_t *str)
 {
-	UINT i, len;
+	UINT len;
 	BUF *b = NULL;
 	wchar_t zero = 0;
 	wchar_t *s;
@@ -1527,7 +1519,7 @@ UNI_TOKEN_LIST *UniGetLines(const wchar_t *str)
 
 	b = NewBuf();
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		wchar_t c = str[i];
 		bool f = false;
@@ -1679,7 +1671,7 @@ void UniFormat(wchar_t *buf, UINT size, const wchar_t *fmt, ...)
 
 int UniSoftStrCmp(const wchar_t *str1, const wchar_t *str2)
 {
-	UINT len1, len2, i;
+	UINT len1, len2;
 	if (str1 == NULL && str2 == NULL)
 	{
 		return 0;
@@ -1714,7 +1706,7 @@ int UniSoftStrCmp(const wchar_t *str1, const wchar_t *str2)
 		len2--;
 	}
 
-	for (i = 0;i < len1 || i < len2;i++)
+	for (UINT i = 0;i < len1 || i < len2;i++)
 	{
 		// A range that has ended reads as the terminator
 		wchar_t c1 = (i < len1) ? UniToUpper(str1[i]) : L'\0';
@@ -1790,14 +1782,14 @@ int UniStrCmp(const wchar_t *str1, const wchar_t *str2)
 
 void UniStrLower(wchar_t *str)
 {
-	UINT i, len;
+	UINT len;
 	if (str == NULL)
 	{
 		return;
 	}
 
 	len = UniStrLen(str);
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		str[i] = UniToLower(str[i]);
 	}
@@ -1805,14 +1797,14 @@ void UniStrLower(wchar_t *str)
 
 void UniStrUpper(wchar_t *str)
 {
-	UINT i, len;
+	UINT len;
 	if (str == NULL)
 	{
 		return;
 	}
 
 	len = UniStrLen(str);
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		str[i] = UniToUpper(str[i]);
 	}

@@ -822,9 +822,9 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 			if (s->HalfConnection)
 			{
 				// In half-connection mode, set this socket's direction from the directions of the existing TCP connections.
-				UINT i, c2s, s2c;
+				UINT c2s, s2c;
 				c2s = s2c = 0;
-				for (i = 0;i < LIST_NUM(s->Connection->Tcp->TcpSockList);i++)
+				for (UINT i = 0;i < LIST_NUM(s->Connection->Tcp->TcpSockList);i++)
 				{
 					TCPSOCK *ts = (TCPSOCK *)LIST_DATA(s->Connection->Tcp->TcpSockList, i);
 					if (ts->Direction == TCP_SERVER_TO_CLIENT)
@@ -877,7 +877,7 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 	}
 	else if (StrCmpi(method, "enum_hub") == 0)
 	{
-		UINT i, num;
+		UINT num;
 		LIST *o;
 		o = NewListFast(NULL);
 
@@ -888,7 +888,7 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 		LockList(c->Cedar->HubList);
 		{
 			num = LIST_NUM(c->Cedar->HubList);
-			for (i = 0;i < num;i++)
+			for (UINT i = 0;i < num;i++)
 			{
 				HUB *h = LIST_DATA(c->Cedar->HubList, i);
 				if (h->Option->NoEnum == false)
@@ -900,7 +900,7 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 		UnlockList(c->Cedar->HubList);
 
 		num = LIST_NUM(o);
-		for (i = 0;i < num;i++)
+		for (UINT i = 0;i < num;i++)
 		{
 			char *name = LIST_DATA(o, i);
 			PackAddStrEx(p, "HubName", name, i, num);
@@ -1768,13 +1768,12 @@ PACK *PackWelcome(SESSION *s)
 
 void PackAddPolicy(PACK *p, POLICY *y)
 {
-	UINT i;
 	if (p == NULL || y == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < NUM_POLICY_ITEM;i++)
+	for (UINT i = 0;i < NUM_POLICY_ITEM;i++)
 	{
 		POLICY_ITEM *item = &policy_item[i];
 		char name[MAX_SIZE];
