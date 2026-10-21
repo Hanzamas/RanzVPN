@@ -41,6 +41,7 @@ Architecture decision records live in `docs/adr/`; the reasoning behind them is 
 - [ADR-0035](../adr/0035-front-door-on-443.md): The front door on TCP 443 peeks the first bytes and hands each socket to its owner with `WSADuplicateSocketW`; UDP 443 stays QUIC only (Accepted, SDN spec #176).
 - [ADR-0036](../adr/0036-licensing.md): Licensing: proprietary EULA, Personal, Business and Enterprise tiers, perpetual fallback after 12 paid months, two years of security fixes, licence check in the controller, third-party obligations (Accepted, SDN spec #176).
 - [ADR-0037](../adr/0037-legacy-phase-ranz-compat-and-industrial-gateways.md): The Legacy phase after v1: `ranz-compat` (frozen slim-fork Cedar with OpenSSL) for SE-VPN, OpenVPN, WireGuard, L2TP/IPsec, SSTP, EtherIP and L2TPv3, and a `legacy` role for industrial gateways, XOT first (Accepted, SDN spec #176; RADIUS moved to v1 and dial-out to stock SoftEther servers added by #224).
+- [ADR-0038](../adr/0038-web-ui-native-multi-page-with-islands.md): The web UI is native HTML, CSS and JavaScript with no build step, multi-page with interactive islands, View Transitions and Speculation Rules, embedded in the controller (Accepted, 2026-10-21).
 
 ## Discussion log
 
