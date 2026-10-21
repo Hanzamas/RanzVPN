@@ -201,5 +201,12 @@ typedef struct NODE_TABLE NODE_TABLE;
 typedef struct NODE_TABLES NODE_TABLES;
 
 
+typedef struct CONFIG_STORE CONFIG_STORE;
+typedef struct CS_NETWORK CS_NETWORK;
+typedef struct CS_USER CS_USER;
+typedef struct CS_ADMIN CS_ADMIN;
+typedef struct CS_IMPORT CS_IMPORT;
+
+
 
 #endif
