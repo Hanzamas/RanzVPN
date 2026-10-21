@@ -58,6 +58,14 @@ ranz_add_executable(vpntest HAMCORE
     fifo.c
     # Named node tests of CORE-F3 (#63)
     nodetest.c
+    # Named node Login test of CORE-F2 (#62): the session module of the new core against the SE-VPN login
+    nodelogin.c
+  # The session and crypto modules of the new core for nodelogin.c; netapi32: the local account that stands for
+  # a domain account (NetUserAdd)
+  LIBRARIES
+    corenoise
+    corecrypto
+    "netapi32.lib"
   # The resources test (runtime.c) compares every hamcore file the executable serves with its source
   # file. A C-only definition, so the resource scripts of vpntest do not get the quoted path.
   C_DEFINITIONS
