@@ -18,6 +18,9 @@
 
 #define	GC_SVC_NAME_VPNSERVER		"SEVPNSERVERDEV"
 
+// The service of the node of the new core, ranz-node (ADR-0020 decision 4: ranzvpnserver)
+#define	GC_SVC_NAME_NODE			"RANZVPNSERVER"
+
 
 
 // Product key under Software\ (organisation\product): Software\Hanzcodes\Ranz VPN

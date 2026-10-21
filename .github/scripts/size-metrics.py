@@ -11,7 +11,7 @@ import os
 import subprocess
 import sys
 
-DIRS = ['src/Cedar', 'src/Mayaqua', 'src/vpnserver', 'src/vpncmd', 'src/vpntest']
+DIRS = ['src/Cedar', 'src/Mayaqua', 'src/vpnserver', 'src/vpncmd', 'src/ranz-node', 'src/vpntest']
 EXTS = ('.c', '.h')
 
 

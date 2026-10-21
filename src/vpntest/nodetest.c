@@ -1,0 +1,1409 @@
+// nodetest.c
+// Named node tests of vpntest ("node" and "nodesvc" commands, CORE-F3 #63)
+//
+// node: the node of the new core in-process (Cedar/Node.c, NodeWorker.c, NodeTable.c). Each role, alone and
+// all four together, is selected by a configuration file, starts, and stops with every thread joined; names
+// that are no role (the controller among them) are ignored and logged; the control plane switches the roles
+// of a running node. One worker per core runs its work items on its own core, in posting order; an adapter
+// queue drains on one I/O thread of its own. A table swap is atomic under readers on every worker: no reader
+// sees a torn, wiped or older snapshot; a swap waits while a reader still holds the old snapshot, and the
+// other workers go on meanwhile. The Hubs of the server role are fork Hubs, whose users (Account) the fork's
+// Sam checks through NodeAuthenticate; the node writes its log through LogWriter and reads its configuration
+// through Cfg.
+// nodesvc: ranz-node installs as the ranzvpnserver service and, for each role of its configuration, runs it
+// and stops cleanly: the service reports no error, the process exits with code 0, and the node log holds the
+// start and the stop of that role alone. It needs administrator rights and leaves an installed node alone.
+// Print "NODE TEST OK" and "NODESVC TEST OK" only when every check passes.
+
+#include "Cedar/Account.h"
+#include "Cedar/Cedar.h"
+#include "Cedar/Hub.h"
+#include "Cedar/Node.h"
+#include "Cedar/Sam.h"
+#include "Cedar/Server.h"
+
+#include "Mayaqua/Cfg.h"
+#include "Mayaqua/Encrypt.h"
+#include "Mayaqua/FileIO.h"
+#include "Mayaqua/Internat.h"
+#include "Mayaqua/Kernel.h"
+#include "Mayaqua/Memory.h"
+#include "Mayaqua/Microsoft.h"
+#include "Mayaqua/Str.h"
+#include "Mayaqua/Table.h"
+#include "Mayaqua/Tick64.h"
+
+#define	NODETEST_BUDGET			300000		// The whole node test (ms): the watchdog ends a hung run
+#define	NODETEST_BOUND			10000		// A bounded wait on observable state (ms)
+#define	NODETEST_HOLD			300			// How long a swap must keep waiting for a reader that holds the old snapshot (ms)
+#define	NODETEST_SWAP_TIME		1000		// Swaps of the atomicity case run this long (ms)
+#define	NODETEST_SWAP_MAX		20000		// ... or this many swaps
+#define	NODETEST_ROLE_WORKERS	2			// Workers of the role cases
+#define	NODETEST_HUB			"NODETEST"	// Hub of the server role in the Sam case
+#define	NODETEST_USER			"alice"
+#define	NODETEST_PASSWORD		"node-test-password"
+#define	NODETEST_MAC_ENTRIES	64			// Entries of the MAC table of a test snapshot
+#define	NODETEST_ROUTE_ENTRIES	32			// ... of the route table
+#define	NODETEST_POLICY_ENTRIES	16			// ... of the policy table
+#define	NODETEST_QUEUE_FRAMES	20			// Frames per round of the queue case: 16 known MAC addresses, 4 unknown
+#define	NODETEST_QUEUE_KNOWN	16
+
+#define	NODESVC_START_WAIT		60000		// The service reaches a state within this time (ms)
+#define	NODESVC_RUN_WAIT		120000		// A run of ranz-node.exe with a service argument ends within this time (ms)
+#define	NODESVC_NAME			"ranzvpnserver"	// ADR-0020 decision 4
+
+// The checks of one test
+typedef struct NODETEST_CTX
+{
+	UINT NumChecks;					// Checks run so far
+	UINT NumFailed;					// Checks failed so far
+} NODETEST_CTX;
+
+// Record one check: print [PASS] with what, or [FAIL] with what and the formatted detail
+static bool NodeTestCheck(NODETEST_CTX *ctx, bool ok, char *what, char *fmt, ...) RANZ_PRINTF_FORMAT(4, 5);
+static bool NodeTestCheck(NODETEST_CTX *ctx, bool ok, char *what, char *fmt, ...)
+{
+	char detail[MAX_SIZE * 2];
+	va_list args;
+
+	ctx->NumChecks++;
+
+	if (ok)
+	{
+		Print("  [PASS] %s\n", what);
+		return true;
+	}
+
+	va_start(args, fmt);
+	FormatArgs(detail, sizeof(detail), fmt, args);
+	va_end(args);
+
+	Print("  [FAIL] %s: %s\n", what, detail);
+	ctx->NumFailed++;
+
+	return false;
+}
+
+// Watchdog of the node test: a native thread that ends a run that hangs, so that a lost wake-up of the node
+// is a failed test instead of a hung CI step
+typedef struct NODETEST_WATCHDOG
+{
+	HANDLE DoneEvent;				// Set when the test returns
+	HANDLE Thread;					// The watchdog thread
+	char *Name;						// The test it guards
+} NODETEST_WATCHDOG;
+
+static DWORD WINAPI NodeTestWatchdogThread(LPVOID param)
+{
+	NODETEST_WATCHDOG *w = (NODETEST_WATCHDOG *)param;
+	char msg[MAX_SIZE];
+	DWORD written = 0;
+
+	if (WaitForSingleObject(w->DoneEvent, NODETEST_BUDGET) != WAIT_TIMEOUT)
+	{
+		return 0;
+	}
+
+	int len = snprintf(msg, sizeof(msg), "%s TEST FAILED (did not finish within %u ms)\n", w->Name, NODETEST_BUDGET);
+	if (len > 0)
+	{
+		WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), msg, (DWORD)MIN((UINT)len, (UINT)sizeof(msg) - 1), &written, NULL);
+	}
+
+	TerminateProcess(GetCurrentProcess(), 1);
+
+	return 0;
+}
+
+static void NodeTestWatchdogStart(NODETEST_WATCHDOG *w, char *name)
+{
+	w->Name = name;
+	w->DoneEvent = CreateEventW(NULL, TRUE, FALSE, NULL);
+	w->Thread = (w->DoneEvent != NULL ? CreateThread(NULL, 0, NodeTestWatchdogThread, w, 0, NULL) : NULL);
+}
+
+static void NodeTestWatchdogStop(NODETEST_WATCHDOG *w)
+{
+	if (w->Thread != NULL)
+	{
+		SetEvent(w->DoneEvent);
+		WaitForSingleObject(w->Thread, INFINITE);
+		CloseHandle(w->Thread);
+	}
+
+	if (w->DoneEvent != NULL)
+	{
+		CloseHandle(w->DoneEvent);
+	}
+}
+
+// Wait until *v reaches at least target or the bound passes; true when it did
+static bool NodeTestWait(volatile LONG *v, LONG target, UINT timeout)
+{
+	UINT64 end = Tick64() + timeout;
+
+	while (InterlockedCompareExchange(v, 0, 0) < target)
+	{
+		if (Tick64() >= end)
+		{
+			return false;
+		}
+
+		SleepThread(1);
+	}
+
+	return true;
+}
+
+// The active processors of the machine
+static UINT NodeTestNumCores()
+{
+	UINT num = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+
+	return MIN(MAX(num, 1), NODE_MAX_WORKERS);
+}
+
+// A new empty data directory under the temp directory of the process
+static void NodeTestNewDir(wchar_t *dir, UINT size, char *name)
+{
+	wchar_t tmp[MAX_PATH];
+
+	UniFormat(tmp, sizeof(tmp), L"node_%S_%u", name, Rand32());
+	ConbinePathW(dir, size, MsGetMyTempDirW(), tmp);
+	MakeDirExW(dir);
+}
+
+// Delete the files of a directory, then the directory (it holds no subdirectory)
+static void NodeTestDeleteFiles(wchar_t *dir, bool delete_dir)
+{
+	DIRLIST *d = EnumDirW(dir);
+
+	for (UINT i = 0;d != NULL && i < d->NumFiles;i++)
+	{
+		DIRENT *e = d->File[i];
+		wchar_t path[MAX_PATH];
+
+		if (e->Folder == false)
+		{
+			ConbinePathW(path, sizeof(path), dir, e->FileNameW);
+			FileDeleteW(path);
+		}
+	}
+
+	FreeDir(d);
+
+	if (delete_dir)
+	{
+		DeleteDirW(dir);
+	}
+}
+
+// Delete a data directory of the test: the node log, the configuration, the directory
+static void NodeTestDeleteDir(wchar_t *dir)
+{
+	wchar_t log_dir[MAX_PATH];
+
+	ConbinePathW(log_dir, sizeof(log_dir), dir, NODE_LOG_DIR_NAME);
+	NodeTestDeleteFiles(log_dir, true);
+	NodeTestDeleteFiles(dir, true);
+}
+
+// Write the configuration of a data directory: Roles (no item for NULL), NumWorkers (no item for 0) and one
+// hub under Hubs (none for NULL)
+static void NodeTestWriteConfig(wchar_t *dir, char *roles, UINT num_workers, char *hub)
+{
+	wchar_t path[MAX_PATH];
+	FOLDER *root = CfgCreateFolder(NULL, TAG_ROOT);
+
+	if (roles != NULL)
+	{
+		CfgAddStr(root, "Roles", roles);
+	}
+
+	if (num_workers != 0)
+	{
+		CfgAddInt(root, "NumWorkers", num_workers);
+	}
+
+	if (hub != NULL)
+	{
+		CfgCreateFolder(CfgCreateFolder(root, "Hubs"), hub);
+	}
+
+	BUF *b = CfgFolderToBuf(root);
+	ConbinePathW(path, sizeof(path), dir, NODE_CONFIG_FILE_NAME);
+	DumpBufW(b, path);
+	FreeBuf(b);
+
+	CfgDeleteFolder(root);
+}
+
+// The text of every node log file of a data directory, NULL when there is none; the caller frees it
+static char *NodeTestReadLog(wchar_t *dir)
+{
+	wchar_t log_dir[MAX_PATH];
+	BUF *all = NewBuf();
+
+	ConbinePathW(log_dir, sizeof(log_dir), dir, NODE_LOG_DIR_NAME);
+
+	DIRLIST *d = EnumDirW(log_dir);
+	for (UINT i = 0;d != NULL && i < d->NumFiles;i++)
+	{
+		DIRENT *e = d->File[i];
+		wchar_t path[MAX_PATH];
+
+		if (e->Folder == false)
+		{
+			ConbinePathW(path, sizeof(path), log_dir, e->FileNameW);
+
+			BUF *b = ReadDumpW(path);
+			if (b != NULL)
+			{
+				WriteBuf(all, b->Buf, b->Size);
+				FreeBuf(b);
+			}
+		}
+	}
+	FreeDir(d);
+
+	char *ret = NULL;
+	if (all->Size != 0)
+	{
+		ret = ZeroMalloc(all->Size + 1);
+		Copy(ret, all->Buf, all->Size);
+	}
+	FreeBuf(all);
+
+	return ret;
+}
+
+// Whether the log text holds the line part
+static bool NodeTestLogHas(char *log, char *part)
+{
+	return (log != NULL && SearchStrEx(log, part, 0, true) != INFINITE);
+}
+
+//
+// Roles from the configuration
+//
+
+typedef struct NODETEST_ROLE_CASE
+{
+	char *Roles;					// The Roles item, NULL for none
+	UINT Expect;					// The roles that must run
+	char *Ignored;					// A name that must be logged as ignored, or NULL
+} NODETEST_ROLE_CASE;
+
+static NODETEST_ROLE_CASE nodetest_role_cases[] =
+{
+	{"server", NODE_ROLE_SERVER, NULL},
+	{"client", NODE_ROLE_CLIENT, NULL},
+	{"bridge", NODE_ROLE_BRIDGE, NULL},
+	{"relay", NODE_ROLE_RELAY, NULL},
+	{"server,client,bridge,relay", NODE_ROLE_ALL, NULL},
+	{"Relay, SERVER ,controller,bogus", NODE_ROLE_SERVER | NODE_ROLE_RELAY, "controller"},
+	{NULL, NODE_DEFAULT_ROLES, NULL},
+	{"none", 0, NULL},
+};
+
+// The role names of the bits, as the node writes them
+static char *nodetest_role_names[] = {"server", "client", "bridge", "relay"};
+
+// One role case: start the node with the configuration, check what runs, stop it, check that every thread
+// is gone, then check the node log
+static void NodeTestRoleCase(NODETEST_CTX *ctx, NODETEST_ROLE_CASE *c)
+{
+	wchar_t dir[MAX_PATH];
+	char expect_str[MAX_SIZE];
+	char got_str[MAX_SIZE];
+	char what[MAX_SIZE];
+	char line[MAX_SIZE];
+	NODE_STATUS st;
+	UINT workers = MIN(NODETEST_ROLE_WORKERS, NodeTestNumCores());
+
+	NodeRolesToStr(expect_str, sizeof(expect_str), c->Expect);
+	NodeTestNewDir(dir, sizeof(dir), "roles");
+	NodeTestWriteConfig(dir, c->Roles, NODETEST_ROLE_WORKERS, NULL);
+
+	NODE *n = NewNode(dir);
+	bool started = NodeStart(n);
+	NodeGetStatus(n, &st);
+	NodeRolesToStr(got_str, sizeof(got_str), st.Roles);
+
+	Format(what, sizeof(what), "Roles \"%s\": the node starts with the roles %s, %u workers, each a table reader",
+		c->Roles == NULL ? "(no item)" : c->Roles, expect_str, workers);
+	NodeTestCheck(ctx, started && st.Running && st.Roles == c->Expect && st.NumWorkers == workers &&
+		st.NumReaders == workers && st.Generation != 0, what,
+		"started %u, running %u, roles %s, %u workers, %u readers, generation %I64u",
+		(UINT)started, (UINT)st.Running, got_str, st.NumWorkers, st.NumReaders, st.Generation);
+
+	HUB *h = NodeGetHub(n, SERVER_DEFAULT_HUB_NAME);
+	bool server = ((c->Expect & NODE_ROLE_SERVER) != 0);
+	Format(what, sizeof(what), "Roles \"%s\": the DEFAULT hub runs only with the server role",
+		c->Roles == NULL ? "(no item)" : c->Roles);
+	NodeTestCheck(ctx, (h != NULL) == server && st.NumHubs == (server ? 1 : 0), what,
+		"hub %s, %u hubs", h != NULL ? "found" : "missing", st.NumHubs);
+	ReleaseHub(h);
+
+	NodeStop(n);
+	NodeGetStatus(n, &st);
+	Format(what, sizeof(what), "Roles \"%s\": after NodeStop no role, worker, queue, reader, hub or snapshot is left",
+		c->Roles == NULL ? "(no item)" : c->Roles);
+	NodeTestCheck(ctx, st.Running == false && st.Roles == 0 && st.NumWorkers == 0 && st.NumQueues == 0 &&
+		st.NumReaders == 0 && st.NumHubs == 0 && st.Generation == 0, what,
+		"running %u, roles 0x%x, %u workers, %u queues, %u readers, %u hubs, generation %I64u",
+		(UINT)st.Running, st.Roles, st.NumWorkers, st.NumQueues, st.NumReaders, st.NumHubs, st.Generation);
+
+	FreeNode(n);
+
+	// The log is complete once FreeNode closed it
+	char *log = NodeTestReadLog(dir);
+	bool ok = (log != NULL);
+	char missing[MAX_SIZE];
+	StrCpy(missing, sizeof(missing), "");
+
+	for (UINT i = 0;i < 4;i++)
+	{
+		bool expected = ((c->Expect & (1 << i)) != 0);
+
+		Format(line, sizeof(line), "Role %s started", nodetest_role_names[i]);
+		if (NodeTestLogHas(log, line) != expected)
+		{
+			ok = false;
+			StrCat(missing, sizeof(missing), expected ? " no " : " unexpected ");
+			StrCat(missing, sizeof(missing), line);
+		}
+
+		Format(line, sizeof(line), "Role %s stopped", nodetest_role_names[i]);
+		if (NodeTestLogHas(log, line) != expected)
+		{
+			ok = false;
+			StrCat(missing, sizeof(missing), expected ? " no " : " unexpected ");
+			StrCat(missing, sizeof(missing), line);
+		}
+	}
+
+	Format(line, sizeof(line), "Node stopped: %u workers joined, 0 adapter queues detached", workers);
+	if (NodeTestLogHas(log, line) == false)
+	{
+		ok = false;
+		StrCat(missing, sizeof(missing), " no ");
+		StrCat(missing, sizeof(missing), line);
+	}
+
+	if (c->Ignored != NULL)
+	{
+		Format(line, sizeof(line), "Role %s ignored", c->Ignored);
+		if (NodeTestLogHas(log, line) == false)
+		{
+			ok = false;
+			StrCat(missing, sizeof(missing), " no ");
+			StrCat(missing, sizeof(missing), line);
+		}
+	}
+
+	Format(what, sizeof(what), "Roles \"%s\": the node log names each role that started and stopped, and the joined workers",
+		c->Roles == NULL ? "(no item)" : c->Roles);
+	NodeTestCheck(ctx, ok, what, "%s", log == NULL ? "no node log" : missing);
+
+	Free(log);
+	NodeTestDeleteDir(dir);
+}
+
+// The control plane switches the roles of a running node
+static void NodeTestSetRoles(NODETEST_CTX *ctx)
+{
+	wchar_t dir[MAX_PATH];
+	NODE_STATUS st;
+
+	NodeTestNewDir(dir, sizeof(dir), "setroles");
+	NodeTestWriteConfig(dir, "server", 1, NULL);
+
+	NODE *n = NewNode(dir);
+	NodeStart(n);
+
+	UINT roles = NodeSetRoles(n, NODE_ROLE_CLIENT | NODE_ROLE_RELAY);
+	NodeGetStatus(n, &st);
+	HUB *h = NodeGetHub(n, SERVER_DEFAULT_HUB_NAME);
+	NodeTestCheck(ctx, roles == (NODE_ROLE_CLIENT | NODE_ROLE_RELAY) && st.Roles == roles && st.NumHubs == 0 && h == NULL,
+		"NodeSetRoles(client, relay) on a server node stops the server role and its hub, and starts client and relay",
+		"returned 0x%x, status 0x%x, %u hubs", roles, st.Roles, st.NumHubs);
+	ReleaseHub(h);
+
+	roles = NodeSetRoles(n, 0xFFFFFFFF);
+	h = NodeGetHub(n, SERVER_DEFAULT_HUB_NAME);
+	NodeTestCheck(ctx, roles == NODE_ROLE_ALL && h != NULL,
+		"NodeSetRoles with every bit set runs the four roles, the server role with its hub again",
+		"returned 0x%x, hub %s", roles, h != NULL ? "found" : "missing");
+	ReleaseHub(h);
+
+	NodeStop(n);
+	roles = NodeSetRoles(n, NODE_ROLE_SERVER);
+	NodeTestCheck(ctx, roles == 0, "NodeSetRoles on a stopped node starts nothing", "returned 0x%x", roles);
+
+	FreeNode(n);
+
+	char *log = NodeTestReadLog(dir);
+	NodeTestCheck(ctx, NodeTestLogHas(log, "Role server stopped") && NodeTestLogHas(log, "Node roles: client, relay") &&
+		NodeTestLogHas(log, "Node roles: server, client, bridge, relay"),
+		"The node log records each role change", "%s", log == NULL ? "no node log" : "a line is missing");
+	Free(log);
+
+	NodeTestDeleteDir(dir);
+}
+
+//
+// The fork's Hub, Account and Sam in the node
+//
+
+static void NodeTestSam(NODETEST_CTX *ctx)
+{
+	wchar_t dir[MAX_PATH];
+	UCHAR random[SHA1_SIZE];
+	AUTH_REQUEST req;
+	AUTH_RESULT res;
+
+	NodeTestNewDir(dir, sizeof(dir), "sam");
+	NodeTestWriteConfig(dir, "server", 1, NODETEST_HUB);
+
+	NODE *n = NewNode(dir);
+	NodeStart(n);
+
+	HUB *h = NodeGetHub(n, NODETEST_HUB);
+	HUB *fork_hub = GetHub(n->Cedar, NODETEST_HUB);
+	NodeTestCheck(ctx, h != NULL && h == fork_hub && NodeGetHub(n, SERVER_DEFAULT_HUB_NAME) == NULL,
+		"The server role runs the hub of the configuration, and only it, as a Hub of the node's Cedar",
+		"node hub %p, Cedar hub %p", h, fork_hub);
+	ReleaseHub(fork_hub);
+
+	if (h != NULL)
+	{
+		USER *u = NewUser(NODETEST_USER, L"", L"", AUTHTYPE_PASSWORD, NewPasswordAuthData(NODETEST_USER, NODETEST_PASSWORD));
+
+		AcLock(h);
+		{
+			AcAddUser(h, u);
+		}
+		AcUnlock(h);
+		ReleaseUser(u);
+		ReleaseHub(h);
+	}
+
+	Rand(random, sizeof(random));
+
+	Zero(&req, sizeof(req));
+	req.Username = NODETEST_USER;
+	req.AuthType = CLIENT_AUTHTYPE_PLAIN_PASSWORD;
+	req.PlainPassword = NODETEST_PASSWORD;
+	req.Random = random;
+
+	bool ok = NodeAuthenticate(n, NODETEST_HUB, &req, &res);
+	NodeTestCheck(ctx, ok && res.Ok && res.Error == ERR_NO_ERROR,
+		"Sam accepts the password of a user that Account added to the node's hub", "ok %u, error %u", (UINT)ok, res.Error);
+	Free(res.Policy);
+	FreeX(res.ClientX);
+
+	req.PlainPassword = "wrong";
+	ok = NodeAuthenticate(n, NODETEST_HUB, &req, &res);
+	NodeTestCheck(ctx, ok == false && res.Ok == false && res.Error == ERR_AUTH_FAILED,
+		"Sam refuses a wrong password", "ok %u, error %u", (UINT)ok, res.Error);
+	Free(res.Policy);
+	FreeX(res.ClientX);
+
+	req.PlainPassword = NODETEST_PASSWORD;
+	ok = NodeAuthenticate(n, "NOSUCHHUB", &req, &res);
+	NodeTestCheck(ctx, ok == false && res.Error == ERR_HUB_NOT_FOUND,
+		"A hub that the server role does not run gives ERR_HUB_NOT_FOUND", "ok %u, error %u", (UINT)ok, res.Error);
+
+	NodeStop(n);
+	ok = NodeAuthenticate(n, NODETEST_HUB, &req, &res);
+	NodeTestCheck(ctx, ok == false && res.Error == ERR_HUB_NOT_FOUND,
+		"A stopped node authenticates nobody", "ok %u, error %u", (UINT)ok, res.Error);
+
+	FreeNode(n);
+
+	char *log = NodeTestReadLog(dir);
+	NodeTestCheck(ctx, NodeTestLogHas(log, "Hub " NODETEST_HUB " online") && NodeTestLogHas(log, "Hub " NODETEST_HUB " stopped"),
+		"The node log (LogWriter) records the hub of the server role", "%s", log == NULL ? "no node log" : "a line is missing");
+	Free(log);
+
+	NodeTestDeleteDir(dir);
+}
+
+//
+// Workers
+//
+
+// What a probe work item saw
+typedef struct NODETEST_PROBE
+{
+	PROCESSOR_NUMBER Processor;		// The core it ran on
+	UINT ThreadId;					// The thread it ran on
+	UINT Index;						// The index of its worker
+	volatile LONG *Done;			// Counted up when it ran
+} NODETEST_PROBE;
+
+static void NodeTestProbeItem(NODE_WORKER *w, void *param)
+{
+	NODETEST_PROBE *p = (NODETEST_PROBE *)param;
+
+	GetCurrentProcessorNumberEx(&p->Processor);
+	p->ThreadId = GetCurrentThreadId();
+	p->Index = w->Index;
+
+	InterlockedIncrement(p->Done);
+}
+
+// The order in which items of one worker ran
+typedef struct NODETEST_ORDER
+{
+	UINT Next;						// The sequence number the next item must have
+	UINT Wrong;						// Items that ran out of order
+	volatile LONG Done;				// Items that ran
+} NODETEST_ORDER;
+
+static NODETEST_ORDER nodetest_order;
+
+static void NodeTestOrderItem(NODE_WORKER *w, void *param)
+{
+	UINT seq = (UINT)(UINT_PTR)param;
+
+	if (seq != nodetest_order.Next)
+	{
+		nodetest_order.Wrong++;
+	}
+
+	nodetest_order.Next = seq + 1;
+	InterlockedIncrement(&nodetest_order.Done);
+}
+
+static void NodeTestWorkers(NODETEST_CTX *ctx)
+{
+	wchar_t dir[MAX_PATH];
+	NODE_STATUS st;
+	volatile LONG done = 0;
+	UINT cores = NodeTestNumCores();
+
+	NodeTestNewDir(dir, sizeof(dir), "workers");
+	NodeTestWriteConfig(dir, "none", 0, NULL);
+
+	NODE *n = NewNode(dir);
+	NodeStart(n);
+	NodeGetStatus(n, &st);
+	NodeTestCheck(ctx, st.NumWorkers == cores && st.Roles == 0, "No NumWorkers item: one worker per active core; Roles none runs no role",
+		"%u workers for %u cores, roles 0x%x", st.NumWorkers, cores, st.Roles);
+
+	UINT num = st.NumWorkers;
+	NODETEST_PROBE *probes = ZeroMalloc(sizeof(NODETEST_PROBE) * MAX(num, 1));
+	for (UINT i = 0;i < num;i++)
+	{
+		probes[i].Done = &done;
+		NodePost(n, i, NodeTestProbeItem, &probes[i]);
+	}
+	bool all = NodeTestWait(&done, (LONG)num, NODETEST_BOUND);
+
+	UINT wrong_core = 0, wrong_index = 0, same_thread = 0;
+	for (UINT i = 0;i < num && all;i++)
+	{
+		NODE_WORKER *w = n->Workers[i];
+
+		if (probes[i].Processor.Group != w->Processor.Group || probes[i].Processor.Number != w->Processor.Number)
+		{
+			wrong_core++;
+		}
+		if (probes[i].Index != i || probes[i].ThreadId != w->ThreadId)
+		{
+			wrong_index++;
+		}
+		for (UINT j = 0;j < i;j++)
+		{
+			if (probes[j].ThreadId == probes[i].ThreadId)
+			{
+				same_thread++;
+			}
+		}
+		if (probes[i].ThreadId == GetCurrentThreadId())
+		{
+			same_thread++;
+		}
+	}
+	NodeTestCheck(ctx, all && wrong_core == 0 && wrong_index == 0 && same_thread == 0,
+		"Each worker runs its work item on its own thread, bound to its own core",
+		"%u of %u ran, %u on another core, %u on another worker, %u on a shared thread",
+		(UINT)done, num, wrong_core, wrong_index, same_thread);
+	Free(probes);
+
+	Zero(&nodetest_order, sizeof(nodetest_order));
+	for (UINT i = 0;i < 1000;i++)
+	{
+		NodePost(n, num - 1, NodeTestOrderItem, (void *)(UINT_PTR)i);
+	}
+	all = NodeTestWait(&nodetest_order.Done, 1000, NODETEST_BOUND);
+	NodeTestCheck(ctx, all && nodetest_order.Wrong == 0, "1000 work items of one worker run in posting order",
+		"%u ran, %u out of order", (UINT)nodetest_order.Done, nodetest_order.Wrong);
+
+	NodeTestCheck(ctx, NodePost(n, num, NodeTestProbeItem, NULL) == false && NodePost(n, 0, NULL, NULL) == false,
+		"NodePost refuses a worker that does not exist and a work item without a procedure", "accepted");
+
+	NodeStop(n);
+	NodeTestCheck(ctx, NodePost(n, 0, NodeTestProbeItem, NULL) == false, "NodePost refuses a stopped node", "accepted");
+
+	FreeNode(n);
+	NodeTestDeleteDir(dir);
+}
+
+//
+// Adapter queues
+//
+
+// A fake adapter queue: frames counted in Pending, MAC addresses 02:00:00:00:00:<seq % 20>
+typedef struct NODETEST_QUEUE
+{
+	HANDLE Event;					// Signalled when Pending grew
+	volatile LONG Pending;			// Frames waiting
+	UINT Seq;						// Frames drained so far (the I/O thread only)
+	volatile LONG Hits;				// Frames whose MAC address the MAC table knows
+	volatile LONG Misses;			// Frames whose MAC address it does not know
+	volatile LONG Drained;			// Frames drained
+	UINT FirstThread;				// The thread of the first drain
+	UINT OtherThread;				// Drains on another thread
+} NODETEST_QUEUE;
+
+static void NodeTestMac(UCHAR *mac, UINT n)
+{
+	Zero(mac, 6);
+	mac[0] = 0x02;
+	mac[5] = (UCHAR)n;
+}
+
+static void NodeTestQueueProc(NODE_QUEUE *q, void *param)
+{
+	NODETEST_QUEUE *f = (NODETEST_QUEUE *)param;
+	UCHAR key[NODE_TABLE_KEY_SIZE];
+	UCHAR mac[6];
+	LONG num = InterlockedExchange(&f->Pending, 0);
+
+	if (f->FirstThread == 0)
+	{
+		f->FirstThread = GetCurrentThreadId();
+	}
+	else if (f->FirstThread != GetCurrentThreadId())
+	{
+		f->OtherThread++;
+	}
+
+	NODE_TABLES *t = NodeGetTables(q->Node);
+
+	for (LONG i = 0;i < num;i++)
+	{
+		NodeTestMac(mac, f->Seq % NODETEST_QUEUE_FRAMES);
+		NodeMacKey(key, 0, mac);
+
+		if (t != NULL && NodeTableLookup(t->Mac, key) != NULL)
+		{
+			InterlockedIncrement(&f->Hits);
+		}
+		else
+		{
+			InterlockedIncrement(&f->Misses);
+		}
+
+		f->Seq++;
+		InterlockedIncrement(&f->Drained);
+	}
+}
+
+static void NodeTestQueues(NODETEST_CTX *ctx)
+{
+	wchar_t dir[MAX_PATH];
+	NODE_STATUS st;
+	NODETEST_QUEUE f, f2;
+	NODE_TABLE_ENTRY e[NODETEST_QUEUE_KNOWN];
+
+	NodeTestNewDir(dir, sizeof(dir), "queues");
+	NodeTestWriteConfig(dir, "none", 1, NULL);
+
+	NODE *n = NewNode(dir);
+	NodeStart(n);
+
+	// A MAC table of the 16 known addresses
+	Zero(e, sizeof(e));
+	for (UINT i = 0;i < NODETEST_QUEUE_KNOWN;i++)
+	{
+		UCHAR mac[6];
+
+		NodeTestMac(mac, i);
+		NodeMacKey(e[i].Key, 0, mac);
+		e[i].Value = i;
+	}
+	NodeTestCheck(ctx, NodeSwapTables(n, NodeNewTables(NodeNewTable(e, NODETEST_QUEUE_KNOWN), NULL, NULL)),
+		"NodeSwapTables installs a MAC table from a thread that is no reader", "refused");
+
+	Zero(&f, sizeof(f));
+	f.Event = CreateEventW(NULL, FALSE, FALSE, NULL);
+	NODE_QUEUE *q = NodeAddQueue(n, "fake0", f.Event, NodeTestQueueProc, &f);
+	NodeGetStatus(n, &st);
+	NodeTestCheck(ctx, q != NULL && st.NumQueues == 1 && st.NumReaders == 2,
+		"NodeAddQueue attaches a queue whose I/O thread is a table reader", "queue %p, %u queues, %u readers", q, st.NumQueues, st.NumReaders);
+
+	bool ok = (q != NULL);
+	for (UINT round = 1;round <= 3 && ok;round++)
+	{
+		InterlockedExchangeAdd(&f.Pending, NODETEST_QUEUE_FRAMES);
+		SetEvent(f.Event);
+		ok = NodeTestWait(&f.Drained, (LONG)(round * NODETEST_QUEUE_FRAMES), NODETEST_BOUND);
+	}
+	NodeTestCheck(ctx, ok && f.Hits == 3 * NODETEST_QUEUE_KNOWN && f.Misses == 3 * (NODETEST_QUEUE_FRAMES - NODETEST_QUEUE_KNOWN),
+		"The I/O thread drains three rounds of 20 frames and looks each MAC address up in the snapshot: 48 known, 12 unknown",
+		"%u drained, %u known, %u unknown", (UINT)f.Drained, (UINT)f.Hits, (UINT)f.Misses);
+	NodeTestCheck(ctx, ok && f.OtherThread == 0 && f.FirstThread != 0 && f.FirstThread == q->ThreadId &&
+		f.FirstThread != n->Workers[0]->ThreadId && f.FirstThread != GetCurrentThreadId(),
+		"Every drain runs on the one I/O thread of the queue, which is no worker",
+		"first thread %u, queue thread %u, %u drains elsewhere", f.FirstThread, q != NULL ? q->ThreadId : 0, f.OtherThread);
+
+	NodeDelQueue(n, q);
+	NodeGetStatus(n, &st);
+	NodeTestCheck(ctx, st.NumQueues == 0 && st.NumReaders == 1, "NodeDelQueue joins the I/O thread and unregisters its reader",
+		"%u queues, %u readers", st.NumQueues, st.NumReaders);
+
+	// A queue left attached: NodeStop detaches it
+	Zero(&f2, sizeof(f2));
+	f2.Event = CreateEventW(NULL, FALSE, FALSE, NULL);
+	NodeAddQueue(n, "fake1", f2.Event, NodeTestQueueProc, &f2);
+	NodeStop(n);
+	NodeGetStatus(n, &st);
+	NodeTestCheck(ctx, st.NumQueues == 0 && st.NumReaders == 0 && NodeAddQueue(n, "late", f2.Event, NodeTestQueueProc, &f2) == NULL,
+		"NodeStop detaches a queue left attached, and a stopped node attaches none", "%u queues, %u readers", st.NumQueues, st.NumReaders);
+
+	FreeNode(n);
+
+	char *log = NodeTestReadLog(dir);
+	NodeTestCheck(ctx, NodeTestLogHas(log, "Adapter queue fake0 detached after") && NodeTestLogHas(log, "1 adapter queues detached"),
+		"The node log records the queues", "%s", log == NULL ? "no node log" : "a line is missing");
+	Free(log);
+
+	CloseHandle(f.Event);
+	CloseHandle(f2.Event);
+	NodeTestDeleteDir(dir);
+}
+
+//
+// The table snapshot
+//
+
+// One entry of table number x of a snapshot built for generation g: key x, then i big-endian, so the sorted
+// order is i; value g in the high bits and i in the low 16 bits
+static void NodeTestEntry(NODE_TABLE_ENTRY *e, UINT x, UINT i, UINT64 g)
+{
+	Zero(e, sizeof(NODE_TABLE_ENTRY));
+	e->Key[0] = (UCHAR)x;
+	e->Key[1] = (UCHAR)(i >> 8);
+	e->Key[2] = (UCHAR)i;
+	e->Value = (g << 16) | i;
+}
+
+static NODE_TABLE *NodeTestTable(UINT x, UINT num, UINT64 g)
+{
+	NODE_TABLE_ENTRY *e = ZeroMalloc(sizeof(NODE_TABLE_ENTRY) * num);
+
+	for (UINT i = 0;i < num;i++)
+	{
+		// Written in reverse: NodeNewTable sorts
+		NodeTestEntry(&e[i], x, num - 1 - i, g);
+	}
+
+	NODE_TABLE *t = NodeNewTable(e, num);
+	Free(e);
+
+	return t;
+}
+
+// A snapshot whose every entry carries generation g
+static NODE_TABLES *NodeTestTables(UINT64 g)
+{
+	return NodeNewTables(NodeTestTable(1, NODETEST_MAC_ENTRIES, g), NodeTestTable(2, NODETEST_ROUTE_ENTRIES, g),
+		NodeTestTable(3, NODETEST_POLICY_ENTRIES, g));
+}
+
+// Whether one table of a snapshot is whole: num entries in key order, each of generation g
+static bool NodeTestTableIsWhole(NODE_TABLE *t, UINT x, UINT num, UINT64 g)
+{
+	if (t == NULL || t->NumEntries != num || t->Entries == NULL)
+	{
+		return false;
+	}
+
+	for (UINT i = 0;i < num;i++)
+	{
+		NODE_TABLE_ENTRY *e = &t->Entries[i];
+
+		if (e->Key[0] != x || e->Key[1] != (UCHAR)(i >> 8) || e->Key[2] != (UCHAR)i || e->Value != ((g << 16) | i))
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+// Whether a snapshot is whole: its generation is not 0 and every entry of its three tables carries it
+static bool NodeTestTablesAreWhole(NODE_TABLES *t)
+{
+	if (t == NULL || t->Generation == 0)
+	{
+		return false;
+	}
+
+	return NodeTestTableIsWhole(t->Mac, 1, NODETEST_MAC_ENTRIES, t->Generation) &&
+		NodeTestTableIsWhole(t->Route, 2, NODETEST_ROUTE_ENTRIES, t->Generation) &&
+		NodeTestTableIsWhole(t->Policy, 3, NODETEST_POLICY_ENTRIES, t->Generation);
+}
+
+// The state of the swap case, shared by the reader items
+typedef struct NODETEST_SWAP
+{
+	volatile LONG Stop;				// Set to end the reader items
+	volatile LONG Done;				// Reader items that ended
+} NODETEST_SWAP;
+
+static NODETEST_SWAP nodetest_swap;
+
+// What the reader item of one worker saw
+typedef struct NODETEST_READER
+{
+	UINT64 Passes;					// Snapshots read
+	UINT64 Torn;					// Snapshots that were not whole
+	UINT64 Backwards;				// Snapshots older than the one read before
+	UINT64 Distinct;				// Changes of the generation between two passes
+	UINT64 Last;					// The generation of the last pass
+} NODETEST_READER;
+
+// One pass of a reader: read the current snapshot, check it, then post the next pass to the same worker. The
+// worker passes its quiescent point between two passes, as the data path does between two batches.
+static void NodeTestReaderItem(NODE_WORKER *w, void *param)
+{
+	NODETEST_READER *r = (NODETEST_READER *)param;
+	NODE_TABLES *t = NodeGetTables(w->Node);
+
+	if (NodeTestTablesAreWhole(t) == false)
+	{
+		r->Torn++;
+	}
+	else
+	{
+		if (t->Generation < r->Last)
+		{
+			r->Backwards++;
+		}
+		if (t->Generation != r->Last)
+		{
+			r->Distinct++;
+		}
+		r->Last = t->Generation;
+	}
+
+	r->Passes++;
+
+	if (InterlockedCompareExchange(&nodetest_swap.Stop, 0, 0) != 0 || NodePost(w->Node, w->Index, NodeTestReaderItem, r) == false)
+	{
+		InterlockedIncrement(&nodetest_swap.Done);
+	}
+}
+
+// A reader that holds a snapshot until it is released
+typedef struct NODETEST_SLOW
+{
+	HANDLE Holding;					// Set once it holds the snapshot
+	HANDLE Release;					// Lets it go on
+	UINT64 Generation;				// The generation it holds
+	bool WholeAfter;				// The snapshot was still whole when it was released
+	volatile LONG Done;				// It ended
+} NODETEST_SLOW;
+
+static void NodeTestSlowItem(NODE_WORKER *w, void *param)
+{
+	NODETEST_SLOW *s = (NODETEST_SLOW *)param;
+	NODE_TABLES *t = NodeGetTables(w->Node);
+
+	s->Generation = (t != NULL ? t->Generation : 0);
+	SetEvent(s->Holding);
+
+	WaitForSingleObject(s->Release, NODETEST_BOUND);
+
+	s->WholeAfter = (NodeTestTablesAreWhole(t) && t->Generation == s->Generation);
+	InterlockedIncrement(&s->Done);
+}
+
+// A swap from a worker: refused, because the worker is an online reader and would wait for itself
+typedef struct NODETEST_SELF_SWAP
+{
+	bool Refused;					// NodeSwapTables returned false
+	volatile LONG Done;				// The item ran
+} NODETEST_SELF_SWAP;
+
+static void NodeTestSelfSwapItem(NODE_WORKER *w, void *param)
+{
+	NODETEST_SELF_SWAP *s = (NODETEST_SELF_SWAP *)param;
+	NODE_TABLES *t = NodeNewTables(NULL, NULL, NULL);
+
+	s->Refused = (NodeSwapTables(w->Node, t) == false);
+	if (s->Refused)
+	{
+		NodeFreeTables(t);
+	}
+
+	InterlockedIncrement(&s->Done);
+}
+
+// The swap of the grace period case, on a thread of its own
+typedef struct NODETEST_SWAPPER
+{
+	NODE *Node;						// The node
+	NODE_TABLES *Tables;			// The snapshot to install
+	bool Ret;						// What NodeSwapTables returned
+} NODETEST_SWAPPER;
+
+static void NodeTestSwapperThread(THREAD *thread, void *param)
+{
+	NODETEST_SWAPPER *s = (NODETEST_SWAPPER *)param;
+
+	s->Ret = NodeSwapTables(s->Node, s->Tables);
+}
+
+static void NodeTestSwap(NODETEST_CTX *ctx)
+{
+	wchar_t dir[MAX_PATH];
+	NODE_STATUS st;
+	char what[MAX_SIZE];
+
+	NodeTestNewDir(dir, sizeof(dir), "swap");
+	NodeTestWriteConfig(dir, "none", 0, NULL);
+
+	NODE *n = NewNode(dir);
+	NodeStart(n);
+	NodeGetStatus(n, &st);
+	UINT num = st.NumWorkers;
+
+	// A whole snapshot before the readers start: generation 2, after the empty one of NodeStart
+	NODE_TABLES *t = NodeTestTables(st.Generation + 1);
+	bool ok = NodeSwapTables(n, t);
+	NodeGetStatus(n, &st);
+	NodeTestCheck(ctx, ok && st.Generation == 2, "NodeSwapTables gives the snapshot the next generation",
+		"returned %u, generation %I64u", (UINT)ok, st.Generation);
+
+	// A reader on every worker, then swaps for NODETEST_SWAP_TIME
+	Zero(&nodetest_swap, sizeof(nodetest_swap));
+	NODETEST_READER *readers = ZeroMalloc(sizeof(NODETEST_READER) * MAX(num, 1));
+	for (UINT i = 0;i < num;i++)
+	{
+		NodePost(n, i, NodeTestReaderItem, &readers[i]);
+	}
+
+	UINT swaps = 0, refused = 0;
+	UINT64 end = Tick64() + NODETEST_SWAP_TIME;
+	while (Tick64() < end && swaps < NODETEST_SWAP_MAX)
+	{
+		NodeGetStatus(n, &st);
+		t = NodeTestTables(st.Generation + 1);
+		if (NodeSwapTables(n, t))
+		{
+			swaps++;
+		}
+		else
+		{
+			NodeFreeTables(t);
+			refused++;
+		}
+	}
+
+	InterlockedExchange(&nodetest_swap.Stop, 1);
+	bool ended = NodeTestWait(&nodetest_swap.Done, (LONG)num, NODETEST_BOUND);
+
+	UINT64 passes = 0, torn = 0, backwards = 0;
+	UINT few = 0;
+	for (UINT i = 0;i < num;i++)
+	{
+		passes += readers[i].Passes;
+		torn += readers[i].Torn;
+		backwards += readers[i].Backwards;
+		if (readers[i].Distinct < 2)
+		{
+			few++;
+		}
+	}
+	Free(readers);
+
+	Print("  %u swaps in %u ms under %u readers, %I64u reads\n", swaps, NODETEST_SWAP_TIME, num, passes);
+
+	Format(what, sizeof(what), "Swaps under a reader on each of the %u workers: no reader sees a torn, wiped or older snapshot", num);
+	NodeTestCheck(ctx, ended && refused == 0 && torn == 0 && backwards == 0, what,
+		"readers ended %u, %u swaps refused, %I64u torn, %I64u older", (UINT)ended, refused, torn, backwards);
+	NodeTestCheck(ctx, ended && swaps >= 10 && few == 0, "Every reader sees several generations while the swaps run",
+		"%u swaps, %u readers saw fewer than two generations", swaps, few);
+
+	// A reader that holds a snapshot: the swap waits for it, the other workers go on
+	NODETEST_SLOW s;
+	NODETEST_SWAPPER sw;
+	Zero(&s, sizeof(s));
+	Zero(&sw, sizeof(sw));
+	s.Holding = CreateEventW(NULL, TRUE, FALSE, NULL);
+	s.Release = CreateEventW(NULL, TRUE, FALSE, NULL);
+
+	NodePost(n, 0, NodeTestSlowItem, &s);
+	bool holding = (WaitForSingleObject(s.Holding, NODETEST_BOUND) == WAIT_OBJECT_0);
+
+	NodeGetStatus(n, &st);
+	sw.Node = n;
+	sw.Tables = NodeTestTables(st.Generation + 1);
+	THREAD *thread = NewThread(NodeTestSwapperThread, &sw);
+
+	bool waited = (WaitThread(thread, NODETEST_HOLD) == false);
+	NodeTestCheck(ctx, holding && waited, "A swap does not return while a worker holds the old snapshot",
+		"holding %u, the swap returned within %u ms", (UINT)holding, NODETEST_HOLD);
+
+	if (num >= 2)
+	{
+		volatile LONG done = 0;
+		NODETEST_PROBE p;
+
+		Zero(&p, sizeof(p));
+		p.Done = &done;
+		NodePost(n, num - 1, NodeTestProbeItem, &p);
+		bool ran = NodeTestWait(&done, 1, NODETEST_BOUND);
+		NodeTestCheck(ctx, ran && WaitThread(thread, 0) == false, "Another worker runs its work items while the swap waits: no forwarding lock",
+			"ran %u", (UINT)ran);
+	}
+	else
+	{
+		Print("  (one core: no other worker to run while the swap waits)\n");
+	}
+
+	SetEvent(s.Release);
+	bool returned = WaitThread(thread, NODETEST_BOUND);
+	NodeTestWait(&s.Done, 1, NODETEST_BOUND);
+	NodeGetStatus(n, &st);
+	NodeTestCheck(ctx, returned && sw.Ret && s.WholeAfter && st.Generation == s.Generation + 1,
+		"Once the reader lets go, the swap returns; the reader's snapshot stayed whole until then",
+		"returned %u, swapped %u, whole %u, generation %I64u after %I64u", (UINT)returned, (UINT)sw.Ret, (UINT)s.WholeAfter,
+		st.Generation, s.Generation);
+	ReleaseThread(thread);
+	CloseHandle(s.Holding);
+	CloseHandle(s.Release);
+
+	NODETEST_SELF_SWAP self;
+	Zero(&self, sizeof(self));
+	NodePost(n, 0, NodeTestSelfSwapItem, &self);
+	bool ran = NodeTestWait(&self.Done, 1, NODETEST_BOUND);
+	NodeTestCheck(ctx, ran && self.Refused, "NodeSwapTables on a worker, an online reader, is refused instead of waiting for itself",
+		"ran %u, refused %u", (UINT)ran, (UINT)self.Refused);
+
+	// A thread that registers itself as a reader reads the snapshot, and may not swap while it is online
+	NODE_READER r;
+	Zero(&r, sizeof(r));
+	NodeReaderRegister(n, &r);
+	t = NodeNewTables(NULL, NULL, NULL);
+	ok = NodeSwapTables(n, t);
+	if (ok == false)
+	{
+		NodeFreeTables(t);
+	}
+	NodeTestCheck(ctx, NodeTestTablesAreWhole(NodeGetTables(n)) && ok == false && r.ThreadId == GetCurrentThreadId(),
+		"A thread registered as a reader reads the whole snapshot, and its swap is refused while it is online", "swap %u", (UINT)ok);
+	NodeReaderUnregister(n, &r);
+	NodeGetStatus(n, &st);
+	NodeTestCheck(ctx, st.NumReaders == num, "NodeReaderUnregister removes the reader", "%u readers for %u workers", st.NumReaders, num);
+
+	NodeStop(n);
+	NodeGetStatus(n, &st);
+	t = NodeTestTables(1);
+	ok = NodeSwapTables(n, t);
+	if (ok == false)
+	{
+		NodeFreeTables(t);
+	}
+	NodeTestCheck(ctx, NodeGetTables(n) == NULL && st.Generation == 0 && ok == false,
+		"A stopped node has no snapshot and refuses a swap", "snapshot %p, generation %I64u, swap %u", NodeGetTables(n), st.Generation, (UINT)ok);
+
+	FreeNode(n);
+	NodeTestDeleteDir(dir);
+}
+
+// node: the node in-process
+void node_test(UINT num, char **arg)
+{
+	NODETEST_CTX ctx;
+	NODETEST_WATCHDOG wd;
+
+	Zero(&ctx, sizeof(ctx));
+	NodeTestWatchdogStart(&wd, "NODE");
+
+	Print("Node test: roles, workers, adapter queues and the table snapshot of the new core (%u cores)\n", NodeTestNumCores());
+
+	char unknown[MAX_SIZE];
+	char names[MAX_SIZE];
+	UINT roles = NodeParseRoles(" server,,RELAY  Client,controller,None ", unknown, sizeof(unknown));
+	NodeRolesToStr(names, sizeof(names), roles);
+	NodeTestCheck(&ctx, roles == (NODE_ROLE_SERVER | NODE_ROLE_CLIENT | NODE_ROLE_RELAY) && StrCmp(unknown, "controller") == 0 &&
+		StrCmp(names, "server, client, relay") == 0,
+		"NodeParseRoles takes names without case, separated by commas or spaces, and keeps the ones that are no role",
+		"roles 0x%x (%s), unknown \"%s\"", roles, names, unknown);
+	roles = NodeParseRoles("none", unknown, sizeof(unknown));
+	NodeRolesToStr(names, sizeof(names), roles);
+	NodeTestCheck(&ctx, roles == 0 && IsEmptyStr(unknown) && StrCmp(names, "none") == 0 && NodeParseRoles("", NULL, 0) == 0,
+		"\"none\" and an empty list name no role, and no role prints as \"none\"", "roles 0x%x, unknown \"%s\"", roles, unknown);
+
+	for (UINT i = 0;i < sizeof(nodetest_role_cases) / sizeof(nodetest_role_cases[0]);i++)
+	{
+		NodeTestRoleCase(&ctx, &nodetest_role_cases[i]);
+	}
+
+	NodeTestSetRoles(&ctx);
+	NodeTestSam(&ctx);
+	NodeTestWorkers(&ctx);
+	NodeTestQueues(&ctx);
+	NodeTestSwap(&ctx);
+
+	NodeTestWatchdogStop(&wd);
+
+	if (ctx.NumFailed == 0)
+	{
+		Print("NODE TEST OK\n");
+	}
+	else
+	{
+		Print("NODE TEST FAILED (%u of %u checks failed)\n", ctx.NumFailed, ctx.NumChecks);
+	}
+}
+
+//
+// The node as a service
+//
+
+// Run ranz-node.exe with one argument and wait for it to exit; true when it ran and exited in time
+static bool NodeSvcRun(wchar_t *exe, char *arg)
+{
+	wchar_t cmd[MAX_PATH * 2];
+	STARTUPINFOW si;
+	PROCESS_INFORMATION pi;
+
+	UniFormat(cmd, sizeof(cmd), L"\"%s\" %S", exe, arg);
+
+	Zero(&si, sizeof(si));
+	si.cb = sizeof(si);
+	Zero(&pi, sizeof(pi));
+
+	if (CreateProcessW(exe, cmd, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi) == false)
+	{
+		Print("  ranz-node.exe %s: CreateProcessW failed (error %u)\n", arg, (UINT)GetLastError());
+		return false;
+	}
+
+	bool ret = (WaitForSingleObject(pi.hProcess, NODESVC_RUN_WAIT) == WAIT_OBJECT_0);
+
+	CloseHandle(pi.hThread);
+	CloseHandle(pi.hProcess);
+
+	return ret;
+}
+
+// The status of the service, polled until it is in state or the bound passes; false when the service cannot
+// be queried or never reaches the state
+static bool NodeSvcWaitState(DWORD state, SERVICE_STATUS_PROCESS *ss)
+{
+	UINT64 end = Tick64() + NODESVC_START_WAIT;
+	bool ret = false;
+
+	Zero(ss, sizeof(SERVICE_STATUS_PROCESS));
+
+	SC_HANDLE sc = OpenSCManagerW(NULL, NULL, SC_MANAGER_CONNECT);
+	if (sc == NULL)
+	{
+		return false;
+	}
+
+	SC_HANDLE service = OpenServiceW(sc, L"" NODESVC_NAME, SERVICE_QUERY_STATUS);
+	while (service != NULL)
+	{
+		DWORD size = 0;
+
+		if (QueryServiceStatusEx(service, SC_STATUS_PROCESS_INFO, (BYTE *)ss, sizeof(SERVICE_STATUS_PROCESS), &size) &&
+			ss->dwCurrentState == state)
+		{
+			ret = true;
+			break;
+		}
+
+		if (Tick64() >= end)
+		{
+			break;
+		}
+
+		SleepThread(100);
+	}
+
+	if (service != NULL)
+	{
+		CloseServiceHandle(service);
+	}
+	CloseServiceHandle(sc);
+
+	return ret;
+}
+
+// Wait until the service is gone (DeleteService completes once its last handle closed)
+static bool NodeSvcWaitGone()
+{
+	UINT64 end = Tick64() + NODESVC_START_WAIT;
+
+	while (MsIsServiceInstalled(NODESVC_NAME))
+	{
+		if (Tick64() >= end)
+		{
+			return false;
+		}
+
+		SleepThread(100);
+	}
+
+	return true;
+}
+
+// One service run with the role role alone: install (which starts the service), stop, uninstall
+static void NodeSvcRoleCase(NODETEST_CTX *ctx, wchar_t *exe, wchar_t *exe_dir, UINT role)
+{
+	wchar_t log_dir[MAX_PATH];
+	char role_name[MAX_SIZE];
+	char what[MAX_SIZE];
+	char line[MAX_SIZE];
+	SERVICE_STATUS_PROCESS ss;
+	DWORD exit_code = STILL_ACTIVE;
+
+	NodeRolesToStr(role_name, sizeof(role_name), role);
+
+	// The node log of this run only
+	ConbinePathW(log_dir, sizeof(log_dir), exe_dir, NODE_LOG_DIR_NAME);
+	NodeTestDeleteFiles(log_dir, false);
+
+	NodeTestWriteConfig(exe_dir, role_name, NODETEST_ROLE_WORKERS, NULL);
+
+	NodeSvcRun(exe, "/install");
+	bool running = NodeSvcWaitState(SERVICE_RUNNING, &ss);
+	HANDLE process = (running ? OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, ss.dwProcessId) : NULL);
+	Format(what, sizeof(what), "Role %s: /install installs the %s service and it runs", role_name, NODESVC_NAME);
+	NodeTestCheck(ctx, running && process != NULL, what, "state %u, process %u", (UINT)ss.dwCurrentState, (UINT)ss.dwProcessId);
+
+	NodeSvcRun(exe, "/stop");
+	bool stopped = NodeSvcWaitState(SERVICE_STOPPED, &ss);
+	if (process != NULL)
+	{
+		if (WaitForSingleObject(process, NODESVC_START_WAIT) == WAIT_OBJECT_0)
+		{
+			GetExitCodeProcess(process, &exit_code);
+		}
+		CloseHandle(process);
+	}
+	Format(what, sizeof(what), "Role %s: /stop stops the service cleanly, with no service error and process exit code 0", role_name);
+	NodeTestCheck(ctx, stopped && ss.dwWin32ExitCode == NO_ERROR && ss.dwServiceSpecificExitCode == 0 && exit_code == 0, what,
+		"stopped %u, service exit code %u, process exit code %u", (UINT)stopped, (UINT)ss.dwWin32ExitCode, (UINT)exit_code);
+
+	NodeSvcRun(exe, "/uninstall");
+	Format(what, sizeof(what), "Role %s: /uninstall removes the service", role_name);
+	NodeTestCheck(ctx, NodeSvcWaitGone(), what, "still installed after %u ms", NODESVC_START_WAIT);
+
+	// The service wrote the node log next to the executable, its data directory
+	char *log = NodeTestReadLog(exe_dir);
+	bool ok = (log != NULL);
+	char missing[MAX_SIZE];
+	StrCpy(missing, sizeof(missing), "");
+
+	for (UINT i = 0;i < 4;i++)
+	{
+		bool expected = (role == (UINT)(1 << i));
+
+		Format(line, sizeof(line), "Role %s started", nodetest_role_names[i]);
+		if (NodeTestLogHas(log, line) != expected)
+		{
+			ok = false;
+			StrCat(missing, sizeof(missing), expected ? " no " : " unexpected ");
+			StrCat(missing, sizeof(missing), line);
+		}
+	}
+
+	Format(line, sizeof(line), "Role %s stopped", role_name);
+	if (NodeTestLogHas(log, line) == false || NodeTestLogHas(log, "Node stopped: ") == false)
+	{
+		ok = false;
+		StrCat(missing, sizeof(missing), " no stop lines");
+	}
+
+	Format(what, sizeof(what), "Role %s: the node log of the service holds the start and the stop of that role alone", role_name);
+	NodeTestCheck(ctx, ok, what, "%s", log == NULL ? "no node log" : missing);
+	Free(log);
+}
+
+// nodesvc: ranz-node as the ranzvpnserver service, once per role
+void nodesvc_test(UINT num, char **arg)
+{
+	NODETEST_CTX ctx;
+	NODETEST_WATCHDOG wd;
+	wchar_t exe_dir[MAX_PATH];
+	wchar_t exe[MAX_PATH];
+	wchar_t config[MAX_PATH];
+	wchar_t backup[MAX_PATH];
+
+	Zero(&ctx, sizeof(ctx));
+	NodeTestWatchdogStart(&wd, "NODESVC");
+
+	Print("Node service test: ranz-node as the %s service, once per role\n", NODESVC_NAME);
+
+	GetExeDirW(exe_dir, sizeof(exe_dir));
+	ConbinePathW(exe, sizeof(exe), exe_dir, L"ranz-node.exe");
+	ConbinePathW(config, sizeof(config), exe_dir, NODE_CONFIG_FILE_NAME);
+	UniFormat(backup, sizeof(backup), L"%s.nodesvc-backup", config);
+
+	bool ready = NodeTestCheck(&ctx, IsFileExistsW(exe), "ranz-node.exe is next to vpntest.exe", "%S is missing", exe);
+	ready = NodeTestCheck(&ctx, StrCmp(_SS("SVC_" GC_SVC_NAME_NODE "_NAME"), NODESVC_NAME) == 0,
+		"The string table names the service of ranz-node " NODESVC_NAME, "it names \"%s\"", _SS("SVC_" GC_SVC_NAME_NODE "_NAME")) && ready;
+	ready = NodeTestCheck(&ctx, MsIsAdmin(), "vpntest runs with administrator rights, which a service install needs", "not elevated") && ready;
+	ready = NodeTestCheck(&ctx, MsIsServiceInstalled(NODESVC_NAME) == false, "No " NODESVC_NAME " service is installed yet",
+		"one is installed: nodesvc leaves an installed node alone") && ready;
+
+	if (ready)
+	{
+		// A configuration of this directory is set aside and put back afterwards
+		bool had_config = IsFileExistsW(config);
+		if (had_config)
+		{
+			FileDeleteW(backup);
+			FileRenameW(config, backup);
+		}
+
+		NodeSvcRoleCase(&ctx, exe, exe_dir, NODE_ROLE_SERVER);
+		NodeSvcRoleCase(&ctx, exe, exe_dir, NODE_ROLE_CLIENT);
+		NodeSvcRoleCase(&ctx, exe, exe_dir, NODE_ROLE_BRIDGE);
+		NodeSvcRoleCase(&ctx, exe, exe_dir, NODE_ROLE_RELAY);
+
+		// Leave no service behind
+		if (MsIsServiceInstalled(NODESVC_NAME))
+		{
+			NodeSvcRun(exe, "/uninstall");
+		}
+
+		FileDeleteW(config);
+		if (had_config)
+		{
+			FileRenameW(backup, config);
+		}
+	}
+
+	NodeTestWatchdogStop(&wd);
+
+	if (ctx.NumFailed == 0)
+	{
+		Print("NODESVC TEST OK\n");
+	}
+	else
+	{
+		Print("NODESVC TEST FAILED (%u of %u checks failed)\n", ctx.NumFailed, ctx.NumChecks);
+	}
+}
