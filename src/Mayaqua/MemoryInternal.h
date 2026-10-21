@@ -5,13 +5,13 @@
 #define	MEMORY_INTERNAL_H
 
 void CleanupHashList(HASH_LIST *h);
-UINT CalcHashForHashList(HASH_LIST *h, void *p);
+UINT CalcHashForHashList(const HASH_LIST *h, void *p);
 void CheckMemTag1(MEMTAG1 *tag);
 void CheckMemTag2(MEMTAG2 *tag);
 void *InternalMalloc(UINT size);
 void *InternalReAlloc(void *addr, UINT size);
 void InternalFree(void *addr);
-bool BufToFile(IO *o, BUF *b);
+bool BufToFile(const IO *o, BUF *b);
 BUF *FileToBuf(IO *o);
 UCHAR ReadBufChar(BUF *b);
 void CleanupFifo(FIFO *f);

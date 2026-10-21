@@ -85,7 +85,7 @@ UINT GetCurrentLangId()
 	return e.Id;
 }
 
-bool SaveLangConfig(wchar_t *filename, char *str)
+bool SaveLangConfig(wchar_t *filename, const char *str)
 {
 	BUF *b;
 	LIST *o;
@@ -216,7 +216,7 @@ LANGLIST *GetBestLangByLcid(LIST *o, UINT lcid)
 	return ret;
 }
 
-LANGLIST *GetBestLangByName(LIST *o, char *name)
+LANGLIST *GetBestLangByName(LIST *o, const char *name)
 {
 	UINT i;
 	LANGLIST *ret = NULL;
@@ -374,7 +374,7 @@ wchar_t *GetUniErrorStr(UINT err)
 	}
 }
 
-UINT GetTableInt(char *name)
+UINT GetTableInt(const char *name)
 {
 	char *str;
 	if (name == NULL)
@@ -386,7 +386,7 @@ UINT GetTableInt(char *name)
 	return ToInt(str);
 }
 
-wchar_t *GetTableUniStr(char *name)
+wchar_t *GetTableUniStr(const char *name)
 {
 	TABLE *t;
 	if (name == NULL)
@@ -403,7 +403,7 @@ wchar_t *GetTableUniStr(char *name)
 	return t->unistr;
 }
 
-char *GetTableStr(char *name)
+char *GetTableStr(const char *name)
 {
 	TABLE *t;
 	if (name == NULL)
@@ -420,7 +420,7 @@ char *GetTableStr(char *name)
 	return t->str;
 }
 
-TOKEN_LIST *GetTableNameStartWith(char *str)
+TOKEN_LIST *GetTableNameStartWith(const char *str)
 {
 	UINT i;
 	UINT len;
@@ -467,7 +467,7 @@ TOKEN_LIST *GetTableNameStartWith(char *str)
 	return t;
 }
 
-TABLE *FindTable(char *name)
+TABLE *FindTable(const char *name)
 {
 	TABLE *t, tt;
 	if (name == NULL || TableList == NULL)
@@ -476,7 +476,7 @@ TABLE *FindTable(char *name)
 	}
 
 	// The key only lends its name to CmpTableName, which does not change it
-	tt.name = name;
+	tt.name = (char *)name;
 	t = Search(TableList, &tt);
 
 	return t;
@@ -812,7 +812,7 @@ static bool LoadTableFromBuf(BUF *b)
 
 // Load the string table from the file, '|' names a resource. Parsed at every load: no cache file in %TEMP%,
 // which other users can write (SEC-8), and no override file beside the exe naming another table (FND-43)
-bool LoadTable(char *filename)
+bool LoadTable(const char *filename)
 {
 	BUF *b;
 	if (filename == NULL)

@@ -51,7 +51,7 @@
 
 static UINT fifo_current_realloc_mem_size = FIFO_REALLOC_MEM_SIZE;
 
-bool IsInHashListKey(HASH_LIST *h, UINT key)
+bool IsInHashListKey(const HASH_LIST *h, UINT key)
 {
 	if (h == NULL || key == 0)
 	{
@@ -66,7 +66,7 @@ bool IsInHashListKey(HASH_LIST *h, UINT key)
 	return true;
 }
 
-void *HashListKeyToPointer(HASH_LIST *h, UINT key)
+void *HashListKeyToPointer(const HASH_LIST *h, UINT key)
 {
 	UINT num, i;
 	void **pp;
@@ -117,7 +117,7 @@ void UnlockHashList(HASH_LIST *h)
 	Unlock(h->Lock);
 }
 
-void **HashListToArray(HASH_LIST *h, UINT *num)
+void **HashListToArray(const HASH_LIST *h, UINT *num)
 {
 	void **ret = NULL;
 	UINT i;
@@ -156,7 +156,7 @@ void **HashListToArray(HASH_LIST *h, UINT *num)
 	return ret;
 }
 
-void *SearchHash(HASH_LIST *h, void *t)
+void *SearchHash(const HASH_LIST *h, void *t)
 {
 	UINT r;
 	void *ret = NULL;
@@ -277,7 +277,7 @@ void AddHash(HASH_LIST *h, void *p)
 	h->NumItems++;
 }
 
-UINT CalcHashForHashList(HASH_LIST *h, void *p)
+UINT CalcHashForHashList(const HASH_LIST *h, void *p)
 {
 	UINT r;
 	if (h == NULL || p == NULL)
@@ -352,7 +352,7 @@ void CleanupHashList(HASH_LIST *h)
 	Free(h);
 }
 
-void AppendBufStr(BUF *b, char *str)
+void AppendBufStr(BUF *b, const char *str)
 {
 	if (b == NULL || str == NULL)
 	{
@@ -362,7 +362,7 @@ void AppendBufStr(BUF *b, char *str)
 	WriteBuf(b, str, StrLen(str));
 }
 
-void AppendBufUtf8(BUF *b, wchar_t *str)
+void AppendBufUtf8(BUF *b, const wchar_t *str)
 {
 	UINT size;
 	UCHAR *data;
@@ -589,7 +589,7 @@ static void ResizeQueue(QUEUE *q, UINT num_reserved)
 	q->num_reserved = num_reserved;
 }
 
-UINT GetQueueNum(QUEUE *q)
+UINT GetQueueNum(const QUEUE *q)
 {
 	if (q == NULL)
 	{
@@ -880,7 +880,7 @@ void Sort(LIST *o)
 	KS_INC(KS_SORT_COUNT);
 }
 
-bool ReplaceListPointer(LIST *o, void *oldptr, void *newptr)
+bool ReplaceListPointer(LIST *o, const void *oldptr, void *newptr)
 {
 	UINT i;
 	if (o == NULL || oldptr == NULL || newptr == NULL)
@@ -940,7 +940,7 @@ bool IsInListKey(LIST *o, UINT key)
 	return true;
 }
 
-bool IsInList(LIST *o, void *p)
+bool IsInList(LIST *o, const void *p)
 {
 	UINT i;
 	if (o == NULL || p == NULL)
@@ -983,7 +983,7 @@ void Add(LIST *o, void *p)
 	KS_INC(KS_INSERT_COUNT);
 }
 
-bool Delete(LIST *o, void *p)
+bool Delete(LIST *o, const void *p)
 {
 	UINT i;
 	if (o == NULL || p == NULL)
@@ -1447,7 +1447,7 @@ void ShrinkFifoMemory(FIFO *f)
 	}
 }
 
-void WriteFifo(FIFO *f, void *p, UINT size)
+void WriteFifo(FIFO *f, const void *p, UINT size)
 {
 	UINT i, need_size;
 	bool realloc_flag;
@@ -1491,7 +1491,7 @@ void WriteFifo(FIFO *f, void *p, UINT size)
 	KS_INC(KS_WRITE_FIFO_COUNT);
 }
 
-UINT FifoSize(FIFO *f)
+UINT FifoSize(const FIFO *f)
 {
 	if (f == NULL)
 	{
@@ -1608,11 +1608,11 @@ BUF *FileToBuf(IO *o)
 	return b;
 }
 
-BUF *ReadDump(char *filename)
+BUF *ReadDump(const char *filename)
 {
 	return ReadDumpWithMaxSize(filename, 0);
 }
-BUF *ReadDumpWithMaxSize(char *filename, UINT max_size)
+BUF *ReadDumpWithMaxSize(const char *filename, UINT max_size)
 {
 	wchar_t *filename_w;
 	BUF *ret;
@@ -1700,7 +1700,7 @@ bool DumpDataW(void *data, UINT size, wchar_t *filename)
 	return ok;
 }
 
-bool DumpBuf(BUF *b, char *filename)
+bool DumpBuf(BUF *b, const char *filename)
 {
 	wchar_t *filename_w;
 	bool ret;
@@ -1756,7 +1756,7 @@ bool DumpBufWIfNecessary(BUF *b, wchar_t *filename)
 	}
 }
 
-bool BufToFile(IO *o, BUF *b)
+bool BufToFile(const IO *o, BUF *b)
 {
 	UCHAR hash[MD5_SIZE];
 	UINT size;
@@ -1788,7 +1788,7 @@ bool BufToFile(IO *o, BUF *b)
 	return true;
 }
 
-BUF *NewBufFromMemory(void *buf, UINT size)
+BUF *NewBufFromMemory(const void *buf, UINT size)
 {
 	BUF *b;
 	if (buf == NULL && size != 0)
@@ -1860,7 +1860,7 @@ void WriteBuf(BUF *b, const void *buf, UINT size)
 	KS_INC(KS_WRITE_BUF_COUNT);
 }
 
-bool WriteBufStr(BUF *b, char *str)
+bool WriteBufStr(BUF *b, const char *str)
 {
 	UINT len;
 	if (b == NULL || str == NULL)
@@ -2003,7 +2003,7 @@ UINT ReadBufInt(BUF *b)
 	return Endian32(value);
 }
 
-void WriteBufBuf(BUF *b, BUF *bb)
+void WriteBufBuf(BUF *b, const BUF *bb)
 {
 	if (b == NULL || bb == NULL)
 	{
@@ -2050,7 +2050,7 @@ UINT ReadBuf(BUF *b, void *buf, UINT size)
 }
 
 // Bytes left to read from the current position; a reader bounds a length by it before it allocates
-UINT ReadBufRemainSize(BUF *b)
+UINT ReadBufRemainSize(const BUF *b)
 {
 	if (b == NULL || b->Current >= b->Size)
 	{
@@ -2154,7 +2154,7 @@ void FreeBuf(BUF *b)
 	KS_DEC(KS_CURRENT_BUF_COUNT);
 }
 
-bool CompareBuf(BUF *b1, BUF *b2)
+bool CompareBuf(const BUF *b1, const BUF *b2)
 {
 	if (b1 == NULL && b2 == NULL)
 	{
