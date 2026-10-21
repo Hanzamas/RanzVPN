@@ -1607,3 +1607,433 @@ UINT PsGroupList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	return 0;
 }
+
+UINT PsGroupCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_SET_GROUP t;
+	PARAM args[] =
+	{
+		{"[name]", CmdPrompt, _UU("CMD_GroupCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+		{"REALNAME", CmdPrompt, _UU("CMD_GroupCreate_Prompt_REALNAME"), NULL, NULL},
+		{"NOTE", CmdPrompt, _UU("CMD_GroupCreate_Prompt_NOTE"), NULL, NULL},
+	};
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "[name]"));
+	UniStrCpy(t.Realname, sizeof(t.Realname), GetParamUniStr(o, "REALNAME"));
+	UniStrCpy(t.Note, sizeof(t.Note), GetParamUniStr(o, "NOTE"));
+
+	ret = ScCreateGroup(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	FreeRpcSetGroup(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsGroupSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_SET_GROUP t;
+	PARAM args[] =
+	{
+		{"[name]", CmdPrompt, _UU("CMD_GroupCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+		{"REALNAME", CmdPrompt, _UU("CMD_GroupCreate_Prompt_REALNAME"), NULL, NULL},
+		{"NOTE", CmdPrompt, _UU("CMD_GroupCreate_Prompt_NOTE"), NULL, NULL},
+	};
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "[name]"));
+
+	ret = ScGetGroup(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	UniStrCpy(t.Realname, sizeof(t.Realname), GetParamUniStr(o, "REALNAME"));
+	UniStrCpy(t.Note, sizeof(t.Note), GetParamUniStr(o, "NOTE"));
+
+	ret = ScSetGroup(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	FreeRpcSetGroup(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsGroupDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_DELETE_USER t;
+	PARAM args[] =
+	{
+		{"[name]", CmdPrompt, _UU("CMD_GroupCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+	};
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "[name]"));
+
+	ret = ScDeleteGroup(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsGroupJoin(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_SET_USER t;
+	PARAM args[] =
+	{
+		{"[name]", CmdPrompt, _UU("CMD_GroupCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+		{"USERNAME", CmdPrompt, _UU("CMD_GroupJoin_Prompt_USERNAME"), CmdEvalNotEmpty, NULL},
+	};
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "USERNAME"));
+
+	ret = ScGetUser(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+	else
+	{
+		StrCpy(t.GroupName, sizeof(t.GroupName), GetParamStr(o, "[name]"));
+
+		ret = ScSetUser(ps->Rpc, &t);
+
+		if (ret != ERR_NO_ERROR)
+		{
+			CmdPrintError(c, ret);
+			FreeParamValueList(o);
+			return ret;
+		}
+	}
+
+	FreeRpcSetUser(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsGroupUnjoin(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_SET_USER t;
+	PARAM args[] =
+	{
+		{"[name]", CmdPrompt, _UU("CMD_GroupUnjoin_Prompt_name"), CmdEvalNotEmpty, NULL},
+	};
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "[name]"));
+
+	ret = ScGetUser(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+	else
+	{
+		StrCpy(t.GroupName, sizeof(t.GroupName), "");
+
+		ret = ScSetUser(ps->Rpc, &t);
+
+		if (ret != ERR_NO_ERROR)
+		{
+			CmdPrintError(c, ret);
+			FreeParamValueList(o);
+			return ret;
+		}
+	}
+
+	FreeRpcSetUser(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsGroupPolicyRemove(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_SET_GROUP t;
+	PARAM args[] =
+	{
+		{"[name]", CmdPrompt, _UU("CMD_GroupCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+	};
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "[name]"));
+
+	ret = ScGetGroup(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+	else
+	{
+		if (t.Policy != NULL)
+		{
+			Free(t.Policy);
+			t.Policy = NULL;
+		}
+
+		ret = ScSetGroup(ps->Rpc, &t);
+
+		if (ret != ERR_NO_ERROR)
+		{
+			CmdPrintError(c, ret);
+			FreeParamValueList(o);
+			return ret;
+		}
+	}
+
+	FreeRpcSetGroup(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_ENUM_SESSION t;
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, NULL, 0);
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+
+	ret = ScEnumSession(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+	else
+	{
+		CT *ct = CtNew();
+		UINT i;
+
+		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_1"), false);
+		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_8"), false);
+		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_2"), false);
+		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_3"), false);
+		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_4"), false);
+		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_5"), true);
+		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_6"), true);
+		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_7"), true);
+
+		for (i = 0;i < t.NumSession;i++)
+		{
+			RPC_ENUM_SESSION_ITEM *e = &t.Sessions[i];
+			wchar_t tmp1[MAX_SIZE];
+			wchar_t *tmp2;
+			wchar_t tmp3[MAX_SIZE];
+			wchar_t tmp4[MAX_SIZE];
+			wchar_t tmp5[MAX_SIZE];
+			wchar_t tmp6[MAX_SIZE];
+			wchar_t tmp7[MAX_SIZE];
+			wchar_t tmp8[MAX_SIZE];
+
+			StrToUni(tmp1, sizeof(tmp1), e->Name);
+
+			tmp2 = _UU("SM_SESS_NORMAL");
+			if (e->LinkMode)
+			{
+				tmp2 = _UU("SM_SESS_LINK");
+			}
+
+			StrToUni(tmp3, sizeof(tmp3), e->Username);
+
+			StrToUni(tmp4, sizeof(tmp4), e->Hostname);
+			if (e->LinkMode)
+			{
+				UniStrCpy(tmp4, sizeof(tmp4), _UU("SM_SESS_LINK_HOSTNAME"));
+			}
+			else if (e->BridgeMode)
+			{
+				UniStrCpy(tmp4, sizeof(tmp4), _UU("SM_SESS_BRIDGE_HOSTNAME"));
+			}
+
+			UniFormat(tmp5, sizeof(tmp5), L"%u / %u", e->CurrentNumTcp, e->MaxNumTcp);
+			if (e->LinkMode)
+			{
+				UniStrCpy(tmp5, sizeof(tmp5), _UU("SM_SESS_LINK_TCP"));
+			}
+			else if (e->BridgeMode)
+			{
+				UniStrCpy(tmp5, sizeof(tmp5), _UU("SM_SESS_BRIDGE_TCP"));
+			}
+
+			UniToStr3(tmp6, sizeof(tmp6), e->PacketSize);
+			UniToStr3(tmp7, sizeof(tmp7), e->PacketNum);
+
+			if (e->VLanId == 0)
+			{
+				UniStrCpy(tmp8, sizeof(tmp8), _UU("CM_ST_NO_VLAN"));
+			}
+			else
+			{
+				UniToStru(tmp8, e->VLanId);
+			}
+
+			CtInsert(ct, tmp1, tmp8, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7);
+		}
+
+
+		CtFreeEx(ct, c, true);
+	}
+
+	FreeRpcEnumSession(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
