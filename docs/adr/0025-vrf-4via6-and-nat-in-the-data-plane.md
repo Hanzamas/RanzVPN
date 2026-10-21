@@ -56,6 +56,7 @@ What Linux gets from the kernel (VRF, nftables NAT) therefore has to be built in
 17. **Token-bucket rate limits per node and per VRF. DSCP is carried through the tunnel unchanged.** Priority queues beyond that are after v1.
 18. **Multicast inside a VRF is head-end replicated** to the members that policy allows, rate-limited. IGMP and MLD pruning is used if Windows sends membership reports on Wintun (to verify). Routed multicast (PIM) is after v1.
 19. **The per-node target stays 10,000 sessions and 10 Gbit/s** (ADR-0022); the SDN layers must not slow the data path.
+20. **Not in v1:** an L4 load balancer service.
 
 ## Consequences
 
