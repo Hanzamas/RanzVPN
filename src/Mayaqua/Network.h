@@ -199,6 +199,17 @@ SOCK *Accept(SOCK *sock);
 bool IsTransientAcceptError(UINT err);
 UINT Send(SOCK *sock, void *data, UINT size, bool secure);
 UINT Recv(SOCK *sock, void *data, UINT size, bool secure);
+
+// The ssl_err result of StartSSLEx3 and StartSSLServer: why the TLS start failed (TLS_ERR_NONE: no reason known).
+// The values never change: they are what ssl_err has always held
+#define	TLS_ERR_NONE				0
+#define	TLS_ERR_CERT_NOT_TRUSTED	85		// The peer certificate does not verify
+#define	TLS_ERR_CERT_EXPIRED		106		// The peer certificate has expired
+#define	TLS_ERR_HOSTNAME_MISMATCH	149		// The peer certificate does not match the hostname
+#define	TLS_ERR_PROTOCOL_VERSION	150		// No TLS version both sides support
+#define	TLS_ERR_SHARED_CIPHER		151		// No cipher both sides support
+#define	TLS_ERR_HANDSHAKE			152		// Any other handshake failure
+
 bool StartSSL(SOCK *sock, X *x, K *priv);
 bool StartSSLEx(SOCK *sock, X *x, K *priv, char *sni_hostname);
 bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err);

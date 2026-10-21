@@ -163,6 +163,7 @@ void ReleaseConnection(CONNECTION *c);
 int CompareConnection(void *p1, void *p2);
 void StopConnection(CONNECTION *c, bool no_wait);
 void ConnectionAccept(CONNECTION *c);
+UINT TlsErrToCedarErr(UINT tls_err);
 void StartTunnelingMode(CONNECTION *c);
 void EndTunnelingMode(CONNECTION *c);
 void DisconnectTcpSockets(CONNECTION *c);

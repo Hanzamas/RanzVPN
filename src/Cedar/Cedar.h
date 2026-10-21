@@ -309,6 +309,9 @@
 #define	ERR_NOT_SUPPORTED_AUTH_ON_OPENSOURCE	143
 #define	ERR_NOT_SUPPORTED_FUNCTION_ON_OPENSOURCE	147
 #define ERR_HOSTNAME_MISMATCH			149
+#define	ERR_SSL_PROTOCOL_VERSION		150		// No TLS version both sides support
+#define	ERR_SSL_SHARED_CIPHER			151		// No cipher both sides support
+#define	ERR_SSL_HANDSHAKE				152		// The TLS handshake has failed
 #define	ERR_LISTENER_BIND_FAILED		153		// Listener registered, but its TCP port is not bound (it keeps retrying)
 
 

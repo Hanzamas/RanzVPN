@@ -1056,6 +1056,28 @@ static UINT GetMachineRand()
 	return READ_UINT(hash);
 }
 
+// The Cedar error of a TLS_ERR_* result of StartSSLEx3 or StartSSLServer (ERR_NO_ERROR for TLS_ERR_NONE)
+UINT TlsErrToCedarErr(UINT tls_err)
+{
+	switch (tls_err)
+	{
+	case TLS_ERR_NONE:
+		return ERR_NO_ERROR;
+	case TLS_ERR_CERT_NOT_TRUSTED:
+		return ERR_CERT_NOT_TRUSTED;
+	case TLS_ERR_CERT_EXPIRED:
+		return ERR_SERVER_CERT_EXPIRES;
+	case TLS_ERR_HOSTNAME_MISMATCH:
+		return ERR_HOSTNAME_MISMATCH;
+	case TLS_ERR_PROTOCOL_VERSION:
+		return ERR_SSL_PROTOCOL_VERSION;
+	case TLS_ERR_SHARED_CIPHER:
+		return ERR_SSL_SHARED_CIPHER;
+	default:
+		return ERR_SSL_HANDSHAKE;
+	}
+}
+
 void ConnectionAccept(CONNECTION *c)
 {
 	SOCK *s;
@@ -1084,15 +1106,17 @@ void ConnectionAccept(CONNECTION *c)
 	// One server context for every connection: certificate, key, chain, cipher list and settings are in it
 	ssl_ctx = GetCedarServerSslCtx(c->Cedar);
 
-	UINT ssl_err = 0;
+	UINT ssl_err = TLS_ERR_NONE;
 	if (StartSSLServer(s, ssl_ctx, &ssl_err) == false)
 	{
+		UINT err = TlsErrToCedarErr(ssl_err);
+
 		FreeSSLCtx(ssl_ctx);
 
 		AddNoSsl(c->Cedar, &s->RemoteIP);
-		if (ssl_err != 0)
+		if (err != ERR_NO_ERROR)
 		{
-			SLog(c->Cedar, "LS_SSL_START_ERROR", c->Name, GetUniErrorStr(ssl_err), ssl_err);
+			SLog(c->Cedar, "LS_SSL_START_ERROR", c->Name, GetUniErrorStr(err), err);
 		}
 
 		goto FINAL;

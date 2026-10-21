@@ -714,17 +714,17 @@ static void SslHandshakeError(bool server_mode, UINT *ssl_err)
 #if defined(SSL_R_VERSION_TOO_HIGH)
 		case SSL_R_VERSION_TOO_HIGH:
 #endif
-			*ssl_err = 150;
+			*ssl_err = TLS_ERR_PROTOCOL_VERSION;
 			break;
 		// The two reasons the accept and connect mappings disagree on
 		case SSL_R_TLSV1_ALERT_PROTOCOL_VERSION:
-			*ssl_err = (server_mode ? 152 : 150);
+			*ssl_err = (server_mode ? TLS_ERR_HANDSHAKE : TLS_ERR_PROTOCOL_VERSION);
 			break;
 		case SSL_R_NO_SHARED_CIPHER:
-			*ssl_err = (server_mode ? 151 : 152);
+			*ssl_err = (server_mode ? TLS_ERR_SHARED_CIPHER : TLS_ERR_HANDSHAKE);
 			break;
 		default:
-			*ssl_err = 152;
+			*ssl_err = TLS_ERR_HANDSHAKE;
 		}
 	}
 }
@@ -773,6 +773,203 @@ static void AddSslRootCerts(X509_STORE *store)
 	}
 }
 
+// A TLS start needs a connected socket that does not listen, a key with a certificate, and a server socket for a shared server context
+static bool TlsCanStart(SOCK *sock, SSL_CTX *server_ctx, X *x, K *priv)
+{
+	if (sock->Connected == false || sock->socket == INVALID_SOCKET ||
+	        sock->ListenMode != false)
+	{
+		return false;
+	}
+	if (x != NULL && priv == NULL)
+	{
+		return false;
+	}
+	if (server_ctx != NULL && sock->ServerMode == false)
+	{
+		return false;
+	}
+
+	return true;
+}
+
+// The context of this TLS start: the shared server context (a reference of this call), a server context built from x, priv
+// and chain, or a client context. NULL when it cannot be built
+static SSL_CTX *TlsGetCtx(SOCK *sock, SSL_CTX *server_ctx, X *x, K *priv, LIST *chain)
+{
+	if (server_ctx != NULL)
+	{
+		ShareSSLCtx(server_ctx);
+		return server_ctx;
+	}
+	if (sock->ServerMode)
+	{
+		return NewServerSSLCtx(x, priv, chain, NULL, NULL);
+	}
+
+	return NewSSLCtx(false);
+}
+
+// A client that verifies its peer: the certificates it trusts and the hostname the peer certificate must match
+static void TlsSetClientVerify(SSL_CTX *ssl_ctx, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option)
+{
+	X509_STORE *store;
+	X509_VERIFY_PARAM *vpm;
+	UINT i;
+
+	if (ssl_option == NULL || ssl_option->VerifyPeer == false)
+	{
+		return;
+	}
+
+	store = SSL_CTX_get_cert_store(ssl_ctx);
+	if (ssl_option->AddDefaultCA)
+	{
+		AddSslRootCerts(store);
+	}
+
+	for (i = 0; i < LIST_NUM(ssl_option->CaList); ++i)
+	{
+		X *ca = LIST_DATA(ssl_option->CaList, i);
+		X509_STORE_add_cert(store, ca->x509);
+	}
+
+	vpm = SSL_CTX_get0_param(ssl_ctx);
+	X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_PARTIAL_CHAIN);
+
+	// Enable hostname verification (by default CN is only checked if SAN is not available)
+	if (ssl_option->VerifyHostname && IsEmptyStr(sni_hostname) == false)
+	{
+		X509_VERIFY_PARAM_set1_host(vpm, sni_hostname, StrLen(sni_hostname));
+	}
+}
+
+// The SSL object of the connection on ssl_ctx
+static bool TlsNewSsl(SOCK *sock, SSL_CTX *ssl_ctx, X *x, K *priv, char *sni_hostname)
+{
+	sock->ssl = SSL_new(ssl_ctx);
+	if (sock->ssl == NULL)
+	{
+		return false;
+	}
+
+	SSL_set_fd(sock->ssl, (int)sock->socket);
+
+	if (sock->ServerMode)
+	{
+		return true;
+	}
+
+	if (IsEmptyStr(sni_hostname) == false)
+	{
+		SSL_set_tlsext_host_name(sock->ssl, sni_hostname);
+	}
+
+	// A client: certificate and groups of this connection (a server has them in its context)
+	if (x != NULL && CheckXandK(x, priv))
+	{
+		SSL_use_certificate(sock->ssl, x->x509);
+		SSL_use_PrivateKey(sock->ssl, priv->pkey);
+	}
+
+	SSL_set1_groups_list(sock->ssl, PQ_GROUP_LIST);
+
+	return true;
+}
+
+// The handshake: SSL_accept for a server, SSL_connect within TIMEOUT_SSL_CONNECT for a client.
+// A failure sets ssl_err from the OpenSSL error queue
+static bool TlsHandshake(SOCK *sock, UINT *ssl_err)
+{
+	UINT prev_timeout;
+	int ret;
+
+	if (sock->ServerMode)
+	{
+		ret = SSL_accept(sock->ssl);
+	}
+	else
+	{
+		prev_timeout = GetTimeout(sock);
+		SetTimeout(sock, TIMEOUT_SSL_CONNECT);
+		ret = SSL_connect(sock->ssl);
+		SetTimeout(sock, prev_timeout);
+	}
+
+	if (ret <= 0)
+	{
+		SslHandshakeError(sock->ServerMode, ssl_err);
+		return false;
+	}
+
+	return true;
+}
+
+// The peer certificate (sock->RemoteX) and the TLS version of the finished handshake; returns the verify result
+static long TlsReadPeer(SOCK *sock)
+{
+	X509 *x509 = SSL_get_peer_certificate(sock->ssl);
+	long ssl_verify_err = SSL_get_verify_result(sock->ssl);
+
+	sock->SslVersion = SSL_get_version(sock->ssl);
+
+	if (x509 == NULL)
+	{
+		sock->RemoteX = NULL;
+	}
+	else
+	{
+		sock->RemoteX = X509ToX(x509);
+		if (sock->RemoteX == NULL)
+		{
+			// X509ToX leaves a certificate it refuses to the caller: our reference
+			FreeX509(x509);
+		}
+	}
+
+	return ssl_verify_err;
+}
+
+// The peer check that ssl_option asks for (VerifyPeer): false, with ssl_err set, when the peer certificate fails it
+static bool TlsCheckPeer(SOCK *sock, long ssl_verify_err, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err)
+{
+	if (ssl_option == NULL || ssl_option->VerifyPeer == false)
+	{
+		return true;
+	}
+
+	// OpenSSL checks no name when none is given: hostname verification without a hostname is a mismatch
+	if (ssl_verify_err == X509_V_OK && sock->ServerMode == false && ssl_option->VerifyHostname && IsEmptyStr(sni_hostname))
+	{
+		ssl_verify_err = X509_V_ERR_HOSTNAME_MISMATCH;
+	}
+
+	if (ssl_verify_err == X509_V_OK)
+	{
+		return true;
+	}
+
+	// Clear any error if matching saved certificate and not expired
+	if (ssl_option->SavedCert != NULL && sock->RemoteX != NULL && CheckXDateNow(sock->RemoteX) && CompareX(ssl_option->SavedCert, sock->RemoteX))
+	{
+		return true;
+	}
+
+	switch (ssl_verify_err)
+	{
+	case X509_V_ERR_CERT_HAS_EXPIRED:
+		*ssl_err = TLS_ERR_CERT_EXPIRED;
+		break;
+	case X509_V_ERR_HOSTNAME_MISMATCH:
+		*ssl_err = TLS_ERR_HOSTNAME_MISMATCH;
+		break;
+	default:
+		*ssl_err = TLS_ERR_CERT_NOT_TRUSTED;
+	}
+
+	return false;
+}
+
 static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err);
 
 bool StartSSLEx3(SOCK *sock, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err)
@@ -793,13 +990,9 @@ bool StartSSLServer(SOCK *sock, struct ssl_ctx_st *ctx, UINT *ssl_err)
 // server_ctx NULL: a context of this call (a client context, or a server one built from x, priv and chain)
 static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *priv, LIST *chain, char *sni_hostname, SSL_VERIFY_OPTION *ssl_option, UINT *ssl_err)
 {
-	X509 *x509;
-	EVP_PKEY *key;
-	UINT prev_timeout;
 	SSL_CTX *ssl_ctx;
 	UINT dummy_err = 0;
 	long ssl_verify_err;
-	int handshake_ret;
 
 	if (sock == NULL)
 	{
@@ -809,16 +1002,7 @@ static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *pri
 	{
 		ssl_err = &dummy_err;
 	}
-	if (sock->Connected == false || sock->socket == INVALID_SOCKET ||
-	        sock->ListenMode != false)
-	{
-		return false;
-	}
-	if (x != NULL && priv == NULL)
-	{
-		return false;
-	}
-	if (server_ctx != NULL && sock->ServerMode == false)
+	if (TlsCanStart(sock, server_ctx, x, priv) == false)
 	{
 		return false;
 	}
@@ -835,19 +1019,7 @@ static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *pri
 		return true;
 	}
 
-	if (server_ctx != NULL)
-	{
-		ShareSSLCtx(server_ctx);
-		ssl_ctx = server_ctx;
-	}
-	else if (sock->ServerMode)
-	{
-		ssl_ctx = NewServerSSLCtx(x, priv, chain, NULL, NULL);
-	}
-	else
-	{
-		ssl_ctx = NewSSLCtx(false);
-	}
+	ssl_ctx = TlsGetCtx(sock, server_ctx, x, priv, chain);
 	if (ssl_ctx == NULL)
 	{
 		goto FAIL;
@@ -855,135 +1027,18 @@ static bool StartSSLMain(SOCK *sock, struct ssl_ctx_st *server_ctx, X *x, K *pri
 
 	if (sock->ServerMode == false)
 	{
-		if (ssl_option != NULL && ssl_option->VerifyPeer)
-		{
-			X509_STORE* store = SSL_CTX_get_cert_store(ssl_ctx);
-			if (ssl_option->AddDefaultCA)
-			{
-				AddSslRootCerts(store);
-			}
-
-			UINT i;
-			for (i = 0; i < LIST_NUM(ssl_option->CaList); ++i)
-			{
-				X *ca = LIST_DATA(ssl_option->CaList, i);
-				X509_STORE_add_cert(store, ca->x509);
-			}
-
-			X509_VERIFY_PARAM *vpm = SSL_CTX_get0_param(ssl_ctx);
-			X509_VERIFY_PARAM_set_flags(vpm, X509_V_FLAG_PARTIAL_CHAIN);
-
-			// Enable hostname verification (by default CN is only checked if SAN is not available)
-			if (ssl_option->VerifyHostname && IsEmptyStr(sni_hostname) == false)
-			{
-				X509_VERIFY_PARAM_set1_host(vpm, sni_hostname, StrLen(sni_hostname));
-			}
-		}
+		TlsSetClientVerify(ssl_ctx, sni_hostname, ssl_option);
 	}
 
-	sock->ssl = SSL_new(ssl_ctx);
-
-	if (sock->ssl == NULL)
+	if (TlsNewSsl(sock, ssl_ctx, x, priv, sni_hostname) == false || TlsHandshake(sock, ssl_err) == false)
 	{
 		goto FAIL;
 	}
 
-	SSL_set_fd(sock->ssl, (int)sock->socket);
-
-	if (sock->ServerMode == false)
+	ssl_verify_err = TlsReadPeer(sock);
+	if (TlsCheckPeer(sock, ssl_verify_err, sni_hostname, ssl_option, ssl_err) == false)
 	{
-		if (IsEmptyStr(sni_hostname) == false)
-		{
-			SSL_set_tlsext_host_name(sock->ssl, sni_hostname);
-		}
-	}
-
-	if (sock->ServerMode == false)
-	{
-		// A client: certificate and groups of this connection (a server has them in its context)
-		if (x != NULL)
-		{
-			if (CheckXandK(x, priv))
-			{
-				x509 = x->x509;
-				key = priv->pkey;
-
-				SSL_use_certificate(sock->ssl, x509);
-				SSL_use_PrivateKey(sock->ssl, key);
-			}
-		}
-
-		SSL_set1_groups_list(sock->ssl, PQ_GROUP_LIST);
-	}
-
-	if (sock->ServerMode)
-	{
-		handshake_ret = SSL_accept(sock->ssl);
-	}
-	else
-	{
-		prev_timeout = GetTimeout(sock);
-		SetTimeout(sock, TIMEOUT_SSL_CONNECT);
-		handshake_ret = SSL_connect(sock->ssl);
-		SetTimeout(sock, prev_timeout);
-	}
-
-	if (handshake_ret <= 0)
-	{
-		SslHandshakeError(sock->ServerMode, ssl_err);
 		goto FAIL;
-	}
-
-	x509 = SSL_get_peer_certificate(sock->ssl);
-	ssl_verify_err = SSL_get_verify_result(sock->ssl);
-	sock->SslVersion = SSL_get_version(sock->ssl);
-
-	if (x509 == NULL)
-	{
-		sock->RemoteX = NULL;
-	}
-	else
-	{
-		sock->RemoteX = X509ToX(x509);
-		if (sock->RemoteX == NULL)
-		{
-			// X509ToX leaves a certificate it refuses to the caller: our reference
-			FreeX509(x509);
-		}
-	}
-
-	if (ssl_option != NULL && ssl_option->VerifyPeer)
-	{
-		// OpenSSL checks no name when none is given: hostname verification without a hostname is a mismatch
-		if (ssl_verify_err == X509_V_OK && sock->ServerMode == false && ssl_option->VerifyHostname && IsEmptyStr(sni_hostname))
-		{
-			ssl_verify_err = X509_V_ERR_HOSTNAME_MISMATCH;
-		}
-
-		if (ssl_verify_err != X509_V_OK)
-		{
-			// Clear any error if matching saved certificate and not expired
-			if (ssl_option->SavedCert != NULL && sock->RemoteX != NULL && CheckXDateNow(sock->RemoteX) && CompareX(ssl_option->SavedCert, sock->RemoteX))
-			{
-				ssl_verify_err = X509_V_OK;
-			}
-			else
-			{
-				switch (ssl_verify_err)
-				{
-				case X509_V_ERR_CERT_HAS_EXPIRED:
-					*ssl_err = 106;
-					break;
-				case X509_V_ERR_HOSTNAME_MISMATCH:
-					*ssl_err = 149;
-					break;
-				default:
-					*ssl_err = 85;
-				}
-
-				goto FAIL;
-			}
-		}
 	}
 
 	SSL_set_mode(sock->ssl, SSL_MODE_AUTO_RETRY);
