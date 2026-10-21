@@ -189,43 +189,6 @@ bool SamAuthUserByCert(HUB *h, char *username, X *x)
 	return b;
 }
 
-X *GetIssuerFromList(LIST *cert_list, X *cert)
-{
-	UINT i;
-	X *ret = NULL;
-	if (cert_list == NULL || cert == NULL)
-	{
-		return NULL;
-	}
-
-	for (i = 0;i < LIST_NUM(cert_list);i++)
-	{
-		X *x = LIST_DATA(cert_list, i);
-		if (CheckXDateNow(x))
-		{
-			if (CompareName(x->subject_name, cert->issuer_name))
-			{
-				K *k = GetKFromX(x);
-
-				if (k != NULL)
-				{
-					if (CheckSignature(cert, k))
-					{
-						ret = x;
-					}
-					FreeK(k);
-				}
-			}
-		}
-		if (CompareX(x, cert))
-		{
-			ret = x;
-		}
-	}
-
-	return ret;
-}
-
 POLICY *SamGetUserPolicy(HUB *h, char *username)
 {
 	POLICY *ret = NULL;
