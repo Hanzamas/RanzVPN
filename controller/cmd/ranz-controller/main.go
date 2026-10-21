@@ -21,6 +21,14 @@
 // The API answers clients on the loopback interface only until RBAC (SDN-14, #190). rqlite is
 // the controller's sidecar: with -rqlited the controller runs rqlited itself, with its data in
 // the rqlite directory under -data; without it, the controller uses the rqlite at -rqlite.
+//
+// Cluster (SDN-17, ADR-0026): a cluster of 3 or 5 members runs one ranz-controller on each host,
+// each with its own rqlited, all started with the same -rqlite-join (the Raft addresses of every
+// member) and -rqlite-expect (the number of members), and each with its own -name and
+// -advertise. The members elect a leader by a lease in rqlite (internal/cluster); the others are
+// standbys that send nodes to the leader and forward API calls to it. -rqlite-raft must then be
+// an address the other members reach (or -rqlite-raft-adv names one). A single controller is a
+// cluster of one member: it leads as soon as it starts.
 package main
 
 import (
@@ -40,11 +48,15 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/Hanzamas/RanzVPN/controller/internal/api"
+	"github.com/Hanzamas/RanzVPN/controller/internal/cluster"
 	"github.com/Hanzamas/RanzVPN/controller/internal/controller"
+	"github.com/Hanzamas/RanzVPN/controller/internal/controlpb"
+	"github.com/Hanzamas/RanzVPN/controller/internal/intent"
 	"github.com/Hanzamas/RanzVPN/controller/internal/keys"
 	"github.com/Hanzamas/RanzVPN/controller/internal/port"
 	"github.com/Hanzamas/RanzVPN/controller/internal/sidecar"
@@ -73,11 +85,22 @@ type config struct {
 	rqliteURL     string
 	rqlited       string
 	raftAddr      string
+	raftAdv       string
+	rqliteID      string
+	join          []string
+	expect        int
+	name          string
+	advertise     string
+	lease         time.Duration
+	schema        controlpb.SchemaVersion
 }
 
 func parseFlags(args []string) (config, error) {
 	flags := flag.NewFlagSet("ranz-controller", flag.ContinueOnError)
 	var cfg config
+	var join string
+	var schema int
+	host, _ := os.Hostname()
 	flags.StringVar(&cfg.dataDir, "data", defaultDataDir(), "the data directory: the controller's keys, the service log and the data of -rqlited")
 	flags.StringVar(&cfg.listen, "listen", ":443", "the TCP address of the TLS port: the control stream and the API, told apart by ALPN; the default falls back to 5555 when 443 cannot be bound")
 	flags.StringVar(&cfg.httpListen, "http-listen", "", "the TCP address of plain HTTP, for example :80, which only redirects to HTTPS and answers ACME HTTP-01 challenges (through HTTP.sys on Windows); off when empty")
@@ -85,7 +108,15 @@ func parseFlags(args []string) (config, error) {
 	flags.StringVar(&cfg.apiListen, "api-listen", "", "for development: a loopback address for the API over plain HTTP, for example 127.0.0.1:7080")
 	flags.StringVar(&cfg.rqliteURL, "rqlite", "http://127.0.0.1:4001", "the URL of the rqlite HTTP API; with -rqlited, rqlited listens on its host:port")
 	flags.StringVar(&cfg.rqlited, "rqlited", "", "the path of rqlited, to run it as the controller's sidecar")
-	flags.StringVar(&cfg.raftAddr, "rqlite-raft", "127.0.0.1:4002", "the TCP address of the Raft transport of -rqlited")
+	flags.StringVar(&cfg.raftAddr, "rqlite-raft", "127.0.0.1:4002", "the TCP address of the Raft transport of -rqlited; in a cluster, one the other members reach")
+	flags.StringVar(&cfg.raftAdv, "rqlite-raft-adv", "", "the Raft address of -rqlited as the other members reach it, when -rqlite-raft is not one (for example 0.0.0.0:4002)")
+	flags.StringVar(&cfg.rqliteID, "rqlite-id", "", "the Raft node id of -rqlited: 1 for a single controller, -name in a cluster when it is empty")
+	flags.StringVar(&join, "rqlite-join", "", "a cluster: the comma-separated Raft addresses of all its members (rqlited -join), the same on every member")
+	flags.IntVar(&cfg.expect, "rqlite-expect", 0, "a new cluster: the number of members that form it, 3 or 5 (rqlited -bootstrap-expect), the same on every member and at every start")
+	flags.StringVar(&cfg.name, "name", strings.ToLower(host), "the name of this member of the controller cluster, unique in the cluster")
+	flags.StringVar(&cfg.advertise, "advertise", "", "host:port of the TLS port as nodes and the other members reach it; the -listen address when it names a host and this is empty")
+	flags.DurationVar(&cfg.lease, "lease", cluster.DefaultLease, "the lease duration of the leader: a standby takes over this long after the leader is lost")
+	flags.IntVar(&schema, "schema-version", 0, "the control schema version to run as: the newest of this release by default, or the one before it during a rolling upgrade of a cluster, until every member runs this release")
 	if err := flags.Parse(args); err != nil {
 		return config{}, err
 	}
@@ -97,12 +128,56 @@ func parseFlags(args []string) (config, error) {
 			cfg.listenSet = true
 		}
 	})
-	if cfg.apiListen != "" && !loopbackAddr(cfg.apiListen) {
-		err := fmt.Errorf("-api-listen %q is not a loopback address: the API has no authentication yet (RBAC, SDN-14)", cfg.apiListen)
-		fmt.Fprintln(flags.Output(), err)
-		return config{}, err
+	for _, a := range strings.Split(join, ",") {
+		if a = strings.TrimSpace(a); a != "" {
+			cfg.join = append(cfg.join, a)
+		}
+	}
+	cfg.schema = controlpb.SchemaVersion(schema)
+	var problem error
+	switch {
+	case cfg.apiListen != "" && !loopbackAddr(cfg.apiListen):
+		problem = fmt.Errorf("-api-listen %q is not a loopback address: the API has no authentication yet (RBAC, SDN-14)", cfg.apiListen)
+	case cfg.name == "":
+		problem = errors.New("-name is empty and the host has no name")
+	case cfg.lease < time.Second:
+		problem = fmt.Errorf("-lease %v is shorter than 1s", cfg.lease)
+	case schema != 0 && cfg.schema != controller.SchemaVersion && cfg.schema != controller.SchemaVersion-1:
+		problem = fmt.Errorf("-schema-version %d: this release runs as version %d or %d", schema, int32(controller.SchemaVersion), int32(controller.SchemaVersion-1))
+	case len(cfg.advertise) > intent.MaxAddress:
+		problem = fmt.Errorf("-advertise is longer than %d characters", intent.MaxAddress)
+	case cfg.expect > 0 && len(cfg.join) == 0:
+		problem = errors.New("-rqlite-expect needs -rqlite-join")
+	}
+	if problem != nil {
+		fmt.Fprintln(flags.Output(), problem)
+		return config{}, problem
 	}
 	return cfg, nil
+}
+
+// rqliteNodeID returns the Raft node id of -rqlited: -rqlite-id, else 1 for a single
+// controller, the node id that a controller of SDN-2 has, and -name in a cluster.
+func (cfg config) rqliteNodeID() string {
+	switch {
+	case cfg.rqliteID != "":
+		return cfg.rqliteID
+	case len(cfg.join) == 0:
+		return "1"
+	}
+	return cfg.name
+}
+
+// advertised returns the address of the TLS port as nodes and the other members reach it:
+// -advertise, else the address ln listens on when it names a host, else none.
+func (cfg config) advertised(ln net.Listener) string {
+	if cfg.advertise != "" {
+		return cfg.advertise
+	}
+	if ap, err := netip.ParseAddrPort(ln.Addr().String()); err == nil && !ap.Addr().IsUnspecified() {
+		return ap.String()
+	}
+	return ""
 }
 
 // loopbackAddr reports whether the host of the TCP address addr is a loopback address.
@@ -191,6 +266,10 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 			DataDir:  filepath.Join(cfg.dataDir, "rqlite"),
 			HTTPAddr: u.Host,
 			RaftAddr: cfg.raftAddr,
+			RaftAdv:  cfg.raftAdv,
+			NodeID:   cfg.rqliteNodeID(),
+			Join:     cfg.join,
+			Expect:   cfg.expect,
 			Output:   out,
 		}
 		sctx, cancel := context.WithTimeout(ctx, startTimeout)
@@ -210,11 +289,6 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 		return err
 	}
 	defer st.Close()
-	c, err := controller.New(ctx, controller.Config{Store: st, Key: static, Log: log})
-	if err != nil {
-		return err
-	}
-	defer c.Close()
 
 	errc := make(chan error, 4)
 	ln, fell, err := listenTLS(cfg.listen, fallbackPort, cfg.listenSet, cfg.dataDir)
@@ -245,13 +319,31 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 	}
 
 	tlsPortValue, _ := strconv.Atoi(tlsPortNumber)
-	apiHandler := api.Handler(c, api.Status{
-		ControlAddress: ln.Addr().String(),
-		TLSFingerprint: keys.Fingerprint(cert),
-		Capabilities:   api.Capabilities{TLSPort: tlsPortValue, TLSPortFallback: fell, PlainHTTP: plainWhere},
+	m, err := cluster.Start(cluster.Config{
+		Name:        cfg.name,
+		Address:     cfg.advertised(ln),
+		Fingerprint: keys.Fingerprint(cert),
+		Store:       st,
+		Key:         static,
+		Schema:      cfg.schema,
+		Lease:       cfg.lease,
+		Log:         log,
+		Status: api.Status{
+			ControlAddress: ln.Addr().String(),
+			TLSFingerprint: keys.Fingerprint(cert),
+			Capabilities:   api.Capabilities{TLSPort: tlsPortValue, TLSPortFallback: fell, PlainHTTP: plainWhere},
+		},
 	})
+	if err != nil {
+		return err
+	}
+	defer m.Close()
+	st0 := m.Status()
+	log.Info("controller cluster member", "name", cfg.name, "advertise", cfg.advertised(ln), "role", st0.Cluster.Role,
+		"leader", st0.Cluster.Leader, "schema", st0.Cluster.SchemaVersion, "rqliteJoin", strings.Join(cfg.join, ","))
+	apiHandler := m.Handler()
 	tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}}
-	tlsPort := &port.Server{TLS: tlsCfg, Control: c.ServeStream, HTTP: apiHandler, Log: log}
+	tlsPort := &port.Server{TLS: tlsCfg, Control: m.ServeStream, HTTP: apiHandler, Log: log}
 	defer tlsPort.Close()
 	go func() { errc <- tlsPort.Serve(ln) }()
 	log.Info("TLS port", "address", ln.Addr().String(), "protocols", "ranz-control/1, h2, http/1.1")
@@ -261,7 +353,7 @@ func run(ctx context.Context, cfg config, log *slog.Logger, out io.Writer, h hoo
 		if err != nil {
 			return fmt.Errorf("-control-listen: %w", err)
 		}
-		dev := &port.Server{TLS: tlsCfg, Control: c.ServeStream, Log: log}
+		dev := &port.Server{TLS: tlsCfg, Control: m.ServeStream, Log: log}
 		defer dev.Close()
 		defer cln.Close()
 		go func() { errc <- dev.Serve(cln) }()
