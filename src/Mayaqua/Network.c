@@ -3996,55 +3996,6 @@ LIST *GetHostIPAddressListInternal()
 	return o;
 }
 
-char *RecvLine(SOCK *s, UINT max_size)
-{
-	BUF *b;
-	char c;
-	char *str;
-	if (s == NULL || max_size == 0)
-	{
-		return NULL;
-	}
-
-	b = NewBuf();
-	while (true)
-	{
-		UCHAR *buf;
-		if (RecvAll(s, &c, sizeof(c), s->SecureMode) == false)
-		{
-			FreeBuf(b);
-			return NULL;
-		}
-		WriteBuf(b, &c, sizeof(c));
-		buf = (UCHAR *)b->Buf;
-		if (b->Size > max_size)
-		{
-			FreeBuf(b);
-			return NULL;
-		}
-		if (b->Size >= 1)
-		{
-			if (buf[b->Size - 1] == '\n')
-			{
-				b->Size--;
-				if (b->Size >= 1)
-				{
-					if (buf[b->Size - 1] == '\r')
-					{
-						b->Size--;
-					}
-				}
-				str = Malloc(b->Size + 1);
-				Copy(str, b->Buf, b->Size);
-				str[b->Size] = 0;
-				FreeBuf(b);
-
-				return str;
-			}
-		}
-	}
-}
-
 // Read cursor over a byte range: a read that does not fit fails and moves nothing
 typedef struct PKT_CURSOR
 {
