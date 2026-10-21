@@ -6,13 +6,11 @@
 #include "Cfg.h"
 #include "DNS.h"
 #include "FileIO.h"
-#include "HTTP.h"
 #include "Internat.h"
 #include "IpAddr.h"
 #include "Memory.h"
 #include "Microsoft.h"
 #include "Object.h"
-#include "Pack.h"
 #include "Str.h"
 #include "TcpIp.h"
 #include "Tick64.h"
@@ -32,7 +30,6 @@
 #define PQ_GROUP_LIST				"X25519MLKEM768:p521_kyber1024:x25519_kyber768:P-521:X25519:P-256"
 
 static COUNTER *num_tcp_connections = NULL;
-static LIST *WaitThreadList = NULL;
 static LOCK *host_ip_address_list_cache_lock = NULL;
 static UINT64 host_ip_address_list_cache_last = 0;
 static LIST *host_ip_address_cache = NULL;
@@ -60,58 +57,6 @@ typedef struct PRIVATE_IP_SUBNET
 
 static LIST *g_private_ip_list = NULL;
 
-
-int GetCurrentTimezone()
-{
-	int ret = 0;
-
-	ret = GetCurrentTimezoneWin32();
-
-	return ret;
-}
-
-// Offset of local time from UTC in minutes (positive east of UTC), for the time zone
-// information and the zone ID that GetTimeZoneInformation returned. The biases of
-// TIME_ZONE_INFORMATION are UTC minus local time: the offset is the zone bias plus the
-// daylight or standard bias in effect, with the sign turned around
-int GetTimezoneInfoOffsetWin32(TIME_ZONE_INFORMATION *info, UINT zone_id)
-{
-	LONG bias;
-	if (info == NULL)
-	{
-		return 0;
-	}
-
-	bias = info->Bias;
-
-	if (zone_id == TIME_ZONE_ID_DAYLIGHT)
-	{
-		bias += info->DaylightBias;
-	}
-	else if (zone_id == TIME_ZONE_ID_STANDARD)
-	{
-		bias += info->StandardBias;
-	}
-
-	return -(int)bias;
-}
-
-// Current offset of local time from UTC in minutes (positive east of UTC), daylight saving
-// time included when it is in effect; 0 when the time zone cannot be read
-int GetCurrentTimezoneWin32()
-{
-	TIME_ZONE_INFORMATION info;
-	DWORD zone_id;
-	Zero(&info, sizeof(info));
-
-	zone_id = GetTimeZoneInformation(&info);
-	if (zone_id == TIME_ZONE_ID_INVALID)
-	{
-		return 0;
-	}
-
-	return GetTimezoneInfoOffsetWin32(&info, zone_id);
-}
 
 bool IsMacAddressLocalFast(void *addr)
 {
@@ -239,56 +184,6 @@ void FreeNicList(LIST *o)
 	}
 
 	ReleaseList(o);
-}
-
-void ParseNtUsername(char *src_username, char *dst_username, UINT dst_username_size, char *dst_domain, UINT dst_domain_size, bool do_not_parse_atmark)
-{
-	char tmp_username[MAX_SIZE];
-	char tmp_domain[MAX_SIZE];
-	TOKEN_LIST *t;
-
-	if (src_username != dst_username)
-	{
-		ClearStr(dst_username, dst_username_size);
-	}
-
-	ClearStr(dst_domain, dst_domain_size);
-	if (src_username == NULL || dst_username == NULL || dst_domain == NULL)
-	{
-		return;
-	}
-
-	StrCpy(tmp_username, sizeof(tmp_username), src_username);
-	ClearStr(tmp_domain, sizeof(tmp_domain));
-
-	if (do_not_parse_atmark == false)
-	{
-		t = ParseTokenWithNullStr(tmp_username, "@");
-		if (t->NumTokens >= 1)
-		{
-			StrCpy(tmp_username, sizeof(tmp_username), t->Token[0]);
-		}
-		if (t->NumTokens >= 2)
-		{
-			StrCpy(tmp_domain, sizeof(tmp_domain), t->Token[1]);
-		}
-		FreeToken(t);
-	}
-
-	t = ParseTokenWithNullStr(tmp_username, "\\");
-	if (t->NumTokens >= 2)
-	{
-		if (IsEmptyStr(tmp_domain))
-		{
-			StrCpy(tmp_domain, sizeof(tmp_domain), t->Token[0]);
-		}
-
-		StrCpy(tmp_username, sizeof(tmp_username), t->Token[1]);
-	}
-	FreeToken(t);
-
-	StrCpy(dst_username, dst_username_size, tmp_username);
-	StrCpy(dst_domain, dst_domain_size, tmp_domain);
 }
 
 UINT GetNumIpClient(const IP *ip)
@@ -736,70 +631,6 @@ bool HasIPv6Address()
 	FreeHostIPAddressList(o);
 
 	return ret;
-}
-
-void AddWaitThread(THREAD *t)
-{
-	if (t == NULL)
-	{
-		return;
-	}
-
-	AddRef(t->ref);
-
-	LockList(WaitThreadList);
-	{
-		Add(WaitThreadList, t);
-	}
-	UnlockList(WaitThreadList);
-}
-
-void DelWaitThread(THREAD *t)
-{
-	if (t == NULL)
-	{
-		return;
-	}
-
-	LockList(WaitThreadList);
-	{
-		if (Delete(WaitThreadList, t))
-		{
-			ReleaseThread(t);
-		}
-	}
-	UnlockList(WaitThreadList);
-}
-
-static void InitWaitThread()
-{
-	WaitThreadList = NewList(NULL);
-}
-
-static void FreeWaitThread()
-{
-	UINT i, num;
-	THREAD **threads;
-
-	LockList(WaitThreadList);
-	{
-		num = LIST_NUM(WaitThreadList);
-		threads = ToArray(WaitThreadList);
-		DeleteAll(WaitThreadList);
-	}
-	UnlockList(WaitThreadList);
-
-	for (i = 0; i < num; i++)
-	{
-		THREAD *t = threads[i];
-		WaitThread(t, INFINITE);
-		ReleaseThread(t);
-	}
-
-	Free(threads);
-
-	ReleaseList(WaitThreadList);
-	WaitThreadList = NULL;
 }
 
 SOCK_EVENT *NewSockEvent()
@@ -3994,93 +3825,6 @@ LIST *GetHostIPAddressListInternal()
 	}
 
 	return o;
-}
-
-PACK *PackError(UINT error)
-{
-	PACK *p;
-
-	p = NewPack();
-	PackAddInt(p, "error", error);
-
-	return p;
-}
-
-UINT GetErrorFromPack(PACK *p)
-{
-	if (p == NULL)
-	{
-		return 0;
-	}
-
-	return PackGetInt(p, "error");
-}
-
-void CreateDummyValue(PACK *p)
-{
-	UINT size;
-	UCHAR *buf;
-	if (p == NULL)
-	{
-		return;
-	}
-
-	size = Rand32() % HTTP_PACK_RAND_SIZE_MAX;
-	buf = Malloc(size);
-	Rand(buf, size);
-
-	PackAddData(p, "pencore", buf, size);
-
-	Free(buf);
-}
-
-char *RecvLine(SOCK *s, UINT max_size)
-{
-	BUF *b;
-	char c;
-	char *str;
-	if (s == NULL || max_size == 0)
-	{
-		return NULL;
-	}
-
-	b = NewBuf();
-	while (true)
-	{
-		UCHAR *buf;
-		if (RecvAll(s, &c, sizeof(c), s->SecureMode) == false)
-		{
-			FreeBuf(b);
-			return NULL;
-		}
-		WriteBuf(b, &c, sizeof(c));
-		buf = (UCHAR *)b->Buf;
-		if (b->Size > max_size)
-		{
-			FreeBuf(b);
-			return NULL;
-		}
-		if (b->Size >= 1)
-		{
-			if (buf[b->Size - 1] == '\n')
-			{
-				b->Size--;
-				if (b->Size >= 1)
-				{
-					if (buf[b->Size - 1] == '\r')
-					{
-						b->Size--;
-					}
-				}
-				str = Malloc(b->Size + 1);
-				Copy(str, b->Buf, b->Size);
-				str[b->Size] = 0;
-				FreeBuf(b);
-
-				return str;
-			}
-		}
-	}
 }
 
 // Read cursor over a byte range: a read that does not fit fails and moves nothing

@@ -7,7 +7,7 @@
 #include "Account.h"
 #include "Cedar.h"
 #include "Hub.h"
-#include "Logging.h"
+#include "HubLog.h"
 
 #include "Mayaqua/Kernel.h"
 

@@ -15,7 +15,6 @@
 #define	HTTP_HEADER_LINE_MAX_SIZE		4096
 #define	HTTP_HEADER_MAX_LINES			128
 #define	HTTP_HEADER_USER_AGENT_MAX_SIZE	512
-#define	HTTP_PACK_RAND_SIZE_MAX			1000
 #define	HTTP_PACK_MAX_SIZE				65536
 
 struct HTTP_VALUE
@@ -56,5 +55,7 @@ PACK *HttpClientRecvEx(SOCK *s, UINT max_data_size);
 bool HttpServerSend(SOCK *s, PACK *p);
 PACK *HttpServerRecv(SOCK *s);
 bool HttpSendDecoyPage(SOCK *s, UINT code, HTTP_HEADER *request);
+
+char *RecvLine(SOCK *s, UINT max_size);
 
 #endif

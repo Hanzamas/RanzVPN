@@ -11,6 +11,7 @@
 #define	MAX_ELEMENT_NAME_LEN	63		// The length of the name that can be attached to the ELEMENT
 #define	MAX_ELEMENT_NUM			262144	// Maximum ELEMENT number that can be stored in a single PACK
 #define	MAX_PACK_SIZE			(512 * 1024 * 1024)	// Maximum size of a serialized PACK
+#define	HTTP_PACK_RAND_SIZE_MAX			1000
 
 
 #define	VALUE_INT			0
@@ -114,5 +115,10 @@ ELEMENT *PackAddIp6AddrEx(PACK *p, char *name, IPV6_ADDR *addr, UINT index, UINT
 bool PackGetIp6AddrEx(PACK *p, char *name, IPV6_ADDR *addr, UINT index);
 bool PackGetData2(PACK *p, char *name, void *data, UINT size);
 bool PackGetDataEx2(PACK *p, char *name, void *data, UINT size, UINT index);
+
+UINT GetErrorFromPack(PACK *p);
+PACK *PackError(UINT error);
+
+void CreateDummyValue(PACK *p);
 
 #endif
