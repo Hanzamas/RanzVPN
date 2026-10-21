@@ -730,3 +730,239 @@ bool IsValidUnicastIPAddress6(const IP *ip)
 
 	return true;
 }
+
+bool IsZeroIP(const IP *ip)
+{
+	if (ip == NULL)
+	{
+		return true;
+	}
+
+	if (IsZero(ip->address, sizeof(ip->address)))
+	{
+		return true;
+	}
+
+	if (IsIP4(ip))
+	{
+		return IsZero(IPV4(ip->address), IPV4_SIZE);
+	}
+
+	return false;
+}
+bool IsZeroIP6Addr(const IPV6_ADDR *addr)
+{
+	if (addr == NULL)
+	{
+		return true;
+	}
+
+	return IsZero(addr, sizeof(IPV6_ADDR));
+}
+
+UINT IPToUINT(const IP *ip)
+{
+	if (ip == NULL || IsIP6(ip))
+	{
+		return 0;
+	}
+
+	UINT value;
+
+	for (BYTE i = 0; i < IPV4_SIZE; ++i)
+	{
+		((BYTE *)&value)[i] = IPV4(ip->address)[i];
+	}
+
+	return value;
+}
+
+void UINTToIP(IP *ip, UINT value)
+{
+	if (ip == NULL)
+	{
+		return;
+	}
+
+	ZeroIP4(ip);
+
+	for (BYTE i = 0; i < IPV4_SIZE; ++i)
+	{
+		IPV4(ip->address)[i] = ((BYTE *)&value)[i];
+	}
+}
+
+void SetIP(IP *ip, UCHAR a1, UCHAR a2, UCHAR a3, UCHAR a4)
+{
+	if (ip == NULL)
+	{
+		return;
+	}
+
+	ZeroIP4(ip);
+
+	ip->address[12] = a1;
+	ip->address[13] = a2;
+	ip->address[14] = a3;
+	ip->address[15] = a4;
+}
+
+void IPToStr32(char *str, UINT size, UINT ip)
+{
+	IP ip_st;
+	if (str == NULL)
+	{
+		return;
+	}
+
+	UINTToIP(&ip_st, ip);
+	IPToStr(str, size, &ip_st);
+}
+
+void IPToStr4or6(char *str, UINT size, UINT ip_4_uint, const UCHAR *ip_6_bytes)
+{
+	IP ip4;
+	IP ip6;
+	IP ip;
+	if (str == NULL)
+	{
+		return;
+	}
+
+	Zero(&ip, sizeof(ip));
+
+	UINTToIP(&ip4, ip_4_uint);
+	SetIP6(&ip6, ip_6_bytes);
+
+	if (IsIP6(&ip4) || (IsZeroIP(&ip4) && (IsZeroIP(&ip6) == false)))
+	{
+		Copy(&ip, &ip6, sizeof(IP));
+	}
+	else
+	{
+		Copy(&ip, &ip4, sizeof(IP));
+	}
+
+	IPToStr(str, size, &ip);
+}
+
+void IPToStr(char *str, UINT size, const IP *ip)
+{
+	if (str == NULL || ip == NULL)
+	{
+		return;
+	}
+
+	if (IsIP6(ip))
+	{
+		IPToStr6(str, size, ip);
+	}
+	else
+	{
+		IN_ADDR addr;
+		char tmp[INET_ADDRSTRLEN];
+
+		Copy(&addr, IPV4(ip->address), sizeof(addr));
+		RtlIpv4AddressToStringA(&addr, tmp);
+
+		StrCpy(str, size, tmp);
+	}
+}
+
+bool StrToIP(IP *ip, const char *str)
+{
+	char *tmp;
+	PCSTR end;
+	IN_ADDR addr;
+	bool ok;
+	if (ip == NULL || str == NULL)
+	{
+		return false;
+	}
+
+	if (StrToIP6(ip, str))
+	{
+		return true;
+	}
+
+	ZeroIP4(ip);
+
+	// Strict four-part dotted decimal, and nothing after it
+	tmp = CopyStr(str);
+	Trim(tmp);
+	ok = (RtlIpv4StringToAddressA(tmp, TRUE, &end, &addr) == 0 && *end == 0);
+	Free(tmp);
+
+	if (ok == false)
+	{
+		return false;
+	}
+
+	Copy(IPV4(ip->address), &addr, IPV4_SIZE);
+
+	return true;
+}
+
+void IPToInAddr(struct in_addr *addr, const IP *ip)
+{
+	UINT i;
+	if (addr == NULL || IsIP4(ip) == false)
+	{
+		return;
+	}
+
+	Zero(addr, sizeof(struct in_addr));
+
+	const BYTE *ipv4 = IPV4(ip->address);
+	for (i = 0; i < IPV4_SIZE; ++i)
+	{
+		((BYTE *)addr)[i] = ipv4[i];
+	}
+}
+
+void IPToInAddr6(struct in6_addr *addr, const IP *ip)
+{
+	if (addr == NULL || ip == NULL)
+	{
+		return;
+	}
+
+	Zero(addr, sizeof(struct in6_addr));
+
+	for (BYTE i = 0; i < sizeof(ip->address); ++i)
+	{
+		((BYTE *)addr)[i] = ip->address[i];
+	}
+}
+
+void InAddrToIP(IP *ip, const struct in_addr *addr)
+{
+	if (ip == NULL || addr == NULL)
+	{
+		return;
+	}
+
+	ZeroIP4(ip);
+
+	BYTE *ipv4 = IPV4(ip->address);
+
+	for (BYTE i = 0; i < IPV4_SIZE; ++i)
+	{
+		ipv4[i] = ((UCHAR *)addr)[i];
+	}
+}
+
+void InAddrToIP6(IP *ip, const struct in6_addr *addr)
+{
+	if (ip == NULL || addr == NULL)
+	{
+		return;
+	}
+
+	Zero(ip, sizeof(IP));
+
+	for (BYTE i = 0; i < sizeof(ip->address); ++i)
+	{
+		ip->address[i] = ((UCHAR *)addr)[i];
+	}
+}
