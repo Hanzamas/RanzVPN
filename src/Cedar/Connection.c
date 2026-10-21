@@ -158,7 +158,6 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 	TCPSOCK **tcpsocks;
 	UINT size;
 	SESSION *s;
-	HUB *hub = NULL;
 	bool use_qos = false;
 	if (c == NULL)
 	{
@@ -167,7 +166,6 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 
 	s = c->Session;
 
-	hub = s->Hub;
 	use_qos = s->QoS;
 
 	if (c->Protocol == CONNECTION_TCP)
@@ -450,50 +448,7 @@ SEND_START:
 	}
 	else if (c->Protocol == CONNECTION_HUB_BRIDGE)
 	{
-		BRIDGE *b = s->Bridge;
-
-		if (b != NULL)
-		{
-			if (b->Active)
-			{
-				BLOCK *block;
-				UINT num_packet = c->SendBlocks->num_item;
-
-				if (num_packet != 0)
-				{
-					void **datas = Malloc(sizeof(void *) * num_packet);
-					UINT *sizes = Malloc(sizeof(UINT) * num_packet);
-					UINT i;
-
-					i = 0;
-					while (block = GetNext(c->SendBlocks))
-					{
-						if (hub != NULL && hub->Option->DisableUdpFilterForLocalBridgeNic == false &&
-							b->Eth != NULL && IsDhcpPacketForSpecificMac(block->Buf, block->Size, b->Eth->MacAddress))
-						{
-							datas[i] = NULL;
-							sizes[i] = 0;
-
-							Free(block->Buf);
-						}
-						else
-						{
-							datas[i] = block->Buf;
-							sizes[i] = block->Size;
-						}
-
-						c->CurrentSendQueueSize -= block->Size;
-						Free(block);
-						i++;
-					}
-
-					EthPutPackets(b->Eth, num_packet, datas, sizes);
-
-					Free(datas);
-					Free(sizes);
-				}
-			}
-		}
+		BrSendBlocks(c);
 	}
 }
 
@@ -913,129 +868,212 @@ DISCONNECT_THIS_TCP:
 	}
 	else if (c->Protocol == CONNECTION_HUB_BRIDGE)
 	{
-		BRIDGE *b = c->Session->Bridge;
+		BrReceiveBlocks(c, c1, c2);
+	}
+}
 
+// Sends the blocks queued on a Local Bridge connection to its Ethernet device
+void BrSendBlocks(CONNECTION *c)
+{
+	SESSION *s;
+	HUB *hub;
+	BRIDGE *b;
+	if (c == NULL)
+	{
+		return;
+	}
+
+	s = c->Session;
+	hub = s->Hub;
+	b = s->Bridge;
+
+	if (b != NULL)
+	{
 		if (b->Active)
 		{
-			void *data;
-			UINT ret;
-			UINT num = 0;
-			bool device_changed = false;
-			UINT time = SELECT_TIME;
-			UINT next_delay_packet_diff = 0;
+			BLOCK *block;
+			UINT num_packet = c->SendBlocks->num_item;
 
-			next_delay_packet_diff = GetNextDelayedPacketTickDiff(s);
-			time = MIN(time, next_delay_packet_diff);
-			num_delayed = LIST_NUM(s->DelayedPacketList);
-
-			// Frames left in the bridge's receive buffer by the last drain do not
-			// signal c2, so take them without waiting
-			if (EthHasPendingFrames(b->Eth))
+			if (num_packet != 0)
 			{
-				Select(NULL, 0, c1, c2);
-			}
-			else if (no_spinlock_for_delay || time >= 50 || num_delayed == false)
-			{
-				Select(NULL, (num_delayed == 0 ? time : (time > 100 ? (time - 100) : 1)), c1, c2);
-			}
-			else
-			{
-				YieldCpu();
-			}
+				void **datas = Malloc(sizeof(void *) * num_packet);
+				UINT *sizes = Malloc(sizeof(UINT) * num_packet);
+				UINT i;
 
-			if ((b->LastNumDeviceCheck + BRIDGE_NUM_DEVICE_CHECK_SPAN) <= Tick64())
-			{
-				device_changed = (b->LastNumDevice != GetEthDeviceHash());
-				b->LastNumDeviceCheck = Tick64();
-			}
-
-			while (true)
-			{
-				if (device_changed)
-				{
-					ret = INFINITE;
-				}
-				else
-				{
-					ret = EthGetPacket(b->Eth, &data);
-				}
-
-				if (ret == INFINITE)
-				{
-					CloseEth(b->Eth);
-					b->Eth = NULL;
-					b->Active = false;
-					ReleaseCancel(s->Cancel2);
-					s->Cancel2 = NULL;
-
-					HLog(s->Hub, "LH_BRIDGE_2", s->Name, b->Name);
-
-					break;
-				}
-				else if (ret == 0)
-				{
-					break;
-				}
-				else
+				i = 0;
+				while (block = GetNext(c->SendBlocks))
 				{
 					if (hub != NULL && hub->Option->DisableUdpFilterForLocalBridgeNic == false &&
-						b->Eth != NULL && IsDhcpPacketForSpecificMac(data, ret, b->Eth->MacAddress))
+						b->Eth != NULL && IsDhcpPacketForSpecificMac(block->Buf, block->Size, b->Eth->MacAddress))
 					{
-						Free(data);
+						datas[i] = NULL;
+						sizes[i] = 0;
+
+						Free(block->Buf);
 					}
 					else
 					{
-						BLOCK *block = NewBlock(data, ret, 0);
+						datas[i] = block->Buf;
+						sizes[i] = block->Size;
+					}
 
-						if (block->Size > MAX_PACKET_SIZE)
-						{
-							FreeBlock(block);
-						}
-						else
-						{
-							InsertReceivedBlockToQueue(c, block);
-						}
-						num++;
-						if (num >= MAX_SEND_SOCKET_QUEUE_NUM)
-						{
-							break;
-						}
+					c->CurrentSendQueueSize -= block->Size;
+					Free(block);
+					i++;
+				}
+
+				EthPutPackets(b->Eth, num_packet, datas, sizes);
+
+				Free(datas);
+				Free(sizes);
+			}
+		}
+	}
+}
+
+// Takes the frames that the Ethernet device of a Local Bridge connection has received, or
+// opens the device again while the bridge is not active
+void BrReceiveBlocks(CONNECTION *c, CANCEL *c1, CANCEL *c2)
+{
+	SESSION *s;
+	HUB *hub;
+	BRIDGE *b;
+	bool no_spinlock_for_delay = false;
+	if (c == NULL)
+	{
+		return;
+	}
+
+	s = c->Session;
+	hub = s->Hub;
+	b = s->Bridge;
+
+	if (hub != NULL)
+	{
+		no_spinlock_for_delay = hub->Option->NoSpinLockForPacketDelay;
+	}
+
+	if (b->Active)
+	{
+		void *data;
+		UINT ret;
+		UINT num = 0;
+		bool device_changed = false;
+		UINT time = SELECT_TIME;
+		UINT next_delay_packet_diff = 0;
+		UINT num_delayed = 0;
+
+		next_delay_packet_diff = GetNextDelayedPacketTickDiff(s);
+		time = MIN(time, next_delay_packet_diff);
+		num_delayed = LIST_NUM(s->DelayedPacketList);
+
+		// Frames left in the bridge's receive buffer by the last drain do not
+		// signal c2, so take them without waiting
+		if (EthHasPendingFrames(b->Eth))
+		{
+			Select(NULL, 0, c1, c2);
+		}
+		else if (no_spinlock_for_delay || time >= 50 || num_delayed == false)
+		{
+			Select(NULL, (num_delayed == 0 ? time : (time > 100 ? (time - 100) : 1)), c1, c2);
+		}
+		else
+		{
+			YieldCpu();
+		}
+
+		if ((b->LastNumDeviceCheck + BRIDGE_NUM_DEVICE_CHECK_SPAN) <= Tick64())
+		{
+			device_changed = (b->LastNumDevice != GetEthDeviceHash());
+			b->LastNumDeviceCheck = Tick64();
+		}
+
+		while (true)
+		{
+			if (device_changed)
+			{
+				ret = INFINITE;
+			}
+			else
+			{
+				ret = EthGetPacket(b->Eth, &data);
+			}
+
+			if (ret == INFINITE)
+			{
+				CloseEth(b->Eth);
+				b->Eth = NULL;
+				b->Active = false;
+				ReleaseCancel(s->Cancel2);
+				s->Cancel2 = NULL;
+
+				HLog(s->Hub, "LH_BRIDGE_2", s->Name, b->Name);
+
+				break;
+			}
+			else if (ret == 0)
+			{
+				break;
+			}
+			else
+			{
+				if (hub != NULL && hub->Option->DisableUdpFilterForLocalBridgeNic == false &&
+					b->Eth != NULL && IsDhcpPacketForSpecificMac(data, ret, b->Eth->MacAddress))
+				{
+					Free(data);
+				}
+				else
+				{
+					BLOCK *block = NewBlock(data, ret, 0);
+
+					if (block->Size > MAX_PACKET_SIZE)
+					{
+						FreeBlock(block);
+					}
+					else
+					{
+						InsertReceivedBlockToQueue(c, block);
+					}
+					num++;
+					if (num >= MAX_SEND_SOCKET_QUEUE_NUM)
+					{
+						break;
 					}
 				}
 			}
 		}
-		else
+	}
+	else
+	{
+		ETH *e;
+		Select(NULL, SELECT_TIME, c1, NULL);
+
+		if (b->LastBridgeTry == 0 || (b->LastBridgeTry + BRIDGE_TRY_SPAN) <= Tick64())
 		{
-			ETH *e;
-			Select(NULL, SELECT_TIME, c1, NULL);
+			b->LastBridgeTry = Tick64();
 
-			if (b->LastBridgeTry == 0 || (b->LastBridgeTry + BRIDGE_TRY_SPAN) <= Tick64())
+			e = OpenEth(b->Name);
+			if (e != NULL)
 			{
-				b->LastBridgeTry = Tick64();
+				b->Eth = e;
+				b->Active = true;
+				b->LastNumDeviceCheck = Tick64();
+				b->LastNumDevice = GetEthDeviceHash();
 
-				e = OpenEth(b->Name);
-				if (e != NULL)
+				if (IsEmptyStr(e->Title) == false)
 				{
-					b->Eth = e;
-					b->Active = true;
-					b->LastNumDeviceCheck = Tick64();
-					b->LastNumDevice = GetEthDeviceHash();
+					StrCpy(b->Name, sizeof(b->Name), e->Title);
 
-					if (IsEmptyStr(e->Title) == false)
+					if (b->ParentLocalBridge != NULL)
 					{
-						StrCpy(b->Name, sizeof(b->Name), e->Title);
-
-						if (b->ParentLocalBridge != NULL)
-						{
-							StrCpy(b->ParentLocalBridge->DeviceName, sizeof(b->ParentLocalBridge->DeviceName), e->Title);
-						}
+						StrCpy(b->ParentLocalBridge->DeviceName, sizeof(b->ParentLocalBridge->DeviceName), e->Title);
 					}
-
-
-					HLog(c->Session->Hub, "LH_BRIDGE_1", c->Session->Name, b->Name);
-
-					s->Cancel2 = EthGetCancel(b->Eth);
 				}
+
+
+				HLog(c->Session->Hub, "LH_BRIDGE_1", c->Session->Name, b->Name);
+
+				s->Cancel2 = EthGetCancel(b->Eth);
 			}
 		}
 	}
