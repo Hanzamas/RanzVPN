@@ -1,0 +1,10 @@
+# Generation 3 of branch-1 after the Network corp-dmz was deleted: the delta from generation 2
+# removes it.
+update: {
+  generation: 3
+  base_generation: 2
+  remove: {
+    kind: KIND_NETWORK
+    name: "corp-dmz"
+  }
+}

@@ -1,0 +1,54 @@
+# Generation 1 of branch-2 after apply1.json and apply2.json: its full state, with branch-1 as
+# its peer in corp.
+update: {
+  generation: 1
+  set: {
+    node: {
+      name: "branch-2"
+    }
+  }
+  set: {
+    vrf: {
+      name: "corp"
+      id: 10
+      ula: {
+        address: "\375\0224Vx\232\000\000\000\000\000\000\000\000\000\000"  # fd12:3456:789a::
+        length: 48
+      }
+      mtu: 1400
+    }
+  }
+  set: {
+    network: {
+      name: "corp-dmz"
+      vrf_id: 10
+      mode: NETWORK_MODE_L2
+      ipv4_pool: {
+        address: "\012\024\000\000"  # 10.20.0.0
+        length: 24
+      }
+    }
+  }
+  set: {
+    network: {
+      name: "corp-lan"
+      vrf_id: 10
+      mode: NETWORK_MODE_L3
+      ipv4_pool: {
+        address: "\012\012\000\000"  # 10.10.0.0
+        length: 24
+      }
+      ipv6_pool: {
+        address: "\375\0224Vx\232\000\001\000\000\000\000\000\000\000\000"  # fd12:3456:789a:1::
+        length: 64
+      }
+    }
+  }
+  set: {
+    peer: {
+      name: "branch-1"
+      public_key: "\007\243|\274\024 \223\310\267U\334\033\020\350l\264&7J\321j\250S\355\013\337\300\262\270m\034|"
+      vrf_ids: 10
+    }
+  }
+}

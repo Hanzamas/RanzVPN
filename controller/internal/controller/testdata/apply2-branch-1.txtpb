@@ -1,0 +1,36 @@
+# Generation 2 of branch-1 after apply2.json: only the delta from generation 1. The MTU of corp
+# changed, the Network corp-dmz and the Node branch-2 are new; the node itself and corp-lan are
+# unchanged and not sent again.
+update: {
+  generation: 2
+  base_generation: 1
+  set: {
+    vrf: {
+      name: "corp"
+      id: 10
+      ula: {
+        address: "\375\0224Vx\232\000\000\000\000\000\000\000\000\000\000"  # fd12:3456:789a::
+        length: 48
+      }
+      mtu: 1400
+    }
+  }
+  set: {
+    network: {
+      name: "corp-dmz"
+      vrf_id: 10
+      mode: NETWORK_MODE_L2
+      ipv4_pool: {
+        address: "\012\024\000\000"  # 10.20.0.0
+        length: 24
+      }
+    }
+  }
+  set: {
+    peer: {
+      name: "branch-2"
+      public_key: "Xi\257\364PT\2272\313\252\355^]\371\263\012m\243\034\260\345t+\255Z\324\241\247h\361\246{"
+      vrf_ids: 10
+    }
+  }
+}
