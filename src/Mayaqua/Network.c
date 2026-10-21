@@ -26,8 +26,7 @@
 #include <MSWSock.h>
 #include <wincrypt.h>
 #include <IcmpAPI.h>
-
-#define PQ_GROUP_LIST				"X25519MLKEM768:p521_kyber1024:x25519_kyber768:P-521:X25519:P-256"
+#include "NetworkInternal.h"
 
 static COUNTER *num_tcp_connections = NULL;
 static LOCK *host_ip_address_list_cache_lock = NULL;
