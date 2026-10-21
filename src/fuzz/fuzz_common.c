@@ -42,20 +42,16 @@ static const char *fuzz_live_names[FUZZ_NUM_LIVE] = {"memory blocks", "LOCK obje
 // Current values of the live object counters
 static void FuzzGetLive(UINT64 *live)
 {
-	UINT i;
-
-	for (i = 0;i < FUZZ_NUM_LIVE;i++)
+	for (UINT i = 0;i < FUZZ_NUM_LIVE;i++)
 	{
 		live[i] = KS_GET64(fuzz_live_ids[i]);
 	}
 }
 
 // True when a live object counter is higher after than before
-static bool FuzzLiveGrew(UINT64 *before, UINT64 *after)
+static bool FuzzLiveGrew(const UINT64 *before, const UINT64 *after)
 {
-	UINT i;
-
-	for (i = 0;i < FUZZ_NUM_LIVE;i++)
+	for (UINT i = 0;i < FUZZ_NUM_LIVE;i++)
 	{
 		if (after[i] > before[i])
 		{
@@ -77,7 +73,6 @@ void FuzzRun(FUZZ_PROC *proc, const uint8_t *data, size_t size)
 {
 	UINT64 before[FUZZ_NUM_LIVE];
 	UINT64 after[FUZZ_NUM_LIVE];
-	UINT i;
 
 	FuzzGetLive(before);
 	proc(data, size);
@@ -96,7 +91,7 @@ void FuzzRun(FUZZ_PROC *proc, const uint8_t *data, size_t size)
 	}
 
 	fprintf(stderr, "==RANZ FUZZ== Mayaqua objects leaked by this input (live count before -> after):\n");
-	for (i = 0;i < FUZZ_NUM_LIVE;i++)
+	for (UINT i = 0;i < FUZZ_NUM_LIVE;i++)
 	{
 		fprintf(stderr, "  %s: %llu -> %llu\n", fuzz_live_names[i],
 			(unsigned long long)before[i], (unsigned long long)after[i]);

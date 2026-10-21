@@ -64,7 +64,7 @@ static void RegistryDeleteKeys(char *key, char *restricted)
 }
 
 // Set a value through the W API with the exact bytes given (RegSetValueExW keeps them as they are)
-static bool RegistrySetRaw(char *key, wchar_t *name, UINT type, void *data, UINT size)
+static bool RegistrySetRaw(const char *key, wchar_t *name, UINT type, void *data, UINT size)
 {
 	HKEY h;
 	wchar_t key_w[MAX_PATH];
@@ -85,19 +85,19 @@ static bool RegistrySetRaw(char *key, wchar_t *name, UINT type, void *data, UINT
 }
 
 // True when the wide string read is there and equals expected
-static bool RegistryUniIs(wchar_t *s, wchar_t *expected)
+static bool RegistryUniIs(const wchar_t *s, const wchar_t *expected)
 {
 	return s != NULL && UniStrCmp(s, expected) == 0;
 }
 
 // True when the string read is there and equals expected
-static bool RegistryStrIs(char *s, char *expected)
+static bool RegistryStrIs(const char *s, const char *expected)
 {
 	return s != NULL && StrCmp(s, expected) == 0;
 }
 
 // Make the restricted subkey with REGISTRY_RESTRICTED_SDDL as its security descriptor
-static bool RegistryMakeRestricted(char *restricted)
+static bool RegistryMakeRestricted(const char *restricted)
 {
 	SECURITY_ATTRIBUTES sa;
 	PSECURITY_DESCRIPTOR sd = NULL;
@@ -140,10 +140,7 @@ void registry_test(UINT num, char **arg)
 	char restricted[MAX_PATH];
 	wchar_t no_term[2] = {L'A', L'B'};
 	wchar_t multi[] = L"first\0second\0";
-	HKEY h;
 	LSTATUS open_all;
-	wchar_t *w;
-	char *s;
 
 	Zero(&ctx, sizeof(ctx));
 
@@ -157,11 +154,11 @@ void registry_test(UINT num, char **arg)
 	// (1) A string and a number written and read back through the helpers
 	RegistryCheck(&ctx, MsRegWriteStr(REG_CURRENT_USER, key, "str", "ranz"), "MsRegWriteStr makes the key and writes a REG_SZ");
 
-	s = MsRegReadStr(REG_CURRENT_USER, key, "str");
+	char *s = MsRegReadStr(REG_CURRENT_USER, key, "str");
 	RegistryCheck(&ctx, RegistryStrIs(s, "ranz"), "MsRegReadStr reads it back");
 	Free(s);
 
-	w = MsRegReadStrEx2W(REG_CURRENT_USER, key, "str", false);
+	wchar_t *w = MsRegReadStrEx2W(REG_CURRENT_USER, key, "str", false);
 	RegistryCheck(&ctx, RegistryUniIs(w, L"ranz"), "MsRegReadStrEx2W reads it back");
 	Free(w);
 
@@ -201,7 +198,7 @@ void registry_test(UINT num, char **arg)
 	// (4) A key that grants its owner reading, setting values and DELETE only
 	RegistryCheck(&ctx, RegistryMakeRestricted(restricted), "The restricted key is made (KEY_READ, KEY_SET_VALUE and DELETE for its owner)");
 
-	h = NULL;
+	HKEY h = NULL;
 	open_all = RegOpenKeyExA(HKEY_CURRENT_USER, restricted, 0, KEY_ALL_ACCESS, &h);
 	if (open_all == ERROR_SUCCESS)
 	{

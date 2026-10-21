@@ -18,22 +18,19 @@
 static void LinkServerSessionThread(THREAD *t, void *param)
 {
 	LINK *k = (LINK *)param;
-	CONNECTION *c;
-	SESSION *s;
-	POLICY *policy;
 	wchar_t name[MAX_SIZE];
 	if (t == NULL || param == NULL)
 	{
 		return;
 	}
 
-	c = NewServerConnection(k->Cedar, NULL, t);
+	CONNECTION *c = NewServerConnection(k->Cedar, NULL, t);
 	c->Protocol = CONNECTION_HUB_LINK_SERVER;
 
-	policy = ZeroMalloc(sizeof(POLICY));
+	POLICY *policy = ZeroMalloc(sizeof(POLICY));
 	Copy(policy, k->Policy, sizeof(POLICY));
 
-	s = NewServerSession(k->Cedar, c, k->Hub, LINK_USER_NAME, policy);
+	SESSION *s = NewServerSession(k->Cedar, c, k->Hub, LINK_USER_NAME, policy);
 	s->LinkModeServer = true;
 	s->Link = k;
 	c->Session = s;
@@ -59,7 +56,6 @@ static void LinkServerSessionThread(THREAD *t, void *param)
 static bool LinkPaInit(SESSION *s)
 {
 	LINK *k;
-	THREAD *t;
 	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
 	{
 		return false;
@@ -72,7 +68,7 @@ static bool LinkPaInit(SESSION *s)
 
 	k->SendPacketQueue = NewQueue();
 
-	t = NewThread(LinkServerSessionThread, (void *)k);
+	THREAD *t = NewThread(LinkServerSessionThread, (void *)k);
 	WaitThreadInit(t);
 
 	k->LastServerConnectionReceivedBlocksNum = 0;
@@ -121,8 +117,6 @@ static bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 {
 	LINK *k;
 	BLOCK *block = NULL;
-	SESSION *server_session;
-	CONNECTION *server_connection;
 	bool ret = true;
 	bool halting = false;
 	if (s == NULL || (k = (LINK *)s->PacketAdapter->Param) == NULL)
@@ -134,8 +128,8 @@ static bool LinkPaPutPacket(SESSION *s, void *data, UINT size)
 
 	// k->ServerSession is pinned by the link's ref until LinkPaFree, which runs on this thread;
 	// the server session never clears its Connection, so take a ref on it for this call
-	server_session = k->ServerSession;
-	server_connection = server_session->Connection;
+	SESSION *server_session = k->ServerSession;
+	CONNECTION *server_connection = server_session->Connection;
 	AddRef(server_connection->ref);
 
 	k->Flag1++;
@@ -228,7 +222,7 @@ static PACKET_ADAPTER *LinkGetPacketAdapter()
 void ReleaseAllLink(HUB *h)
 {
 	LINK **kk;
-	UINT num, i;
+	UINT num;
 	if (h == NULL)
 	{
 		return;
@@ -242,7 +236,7 @@ void ReleaseAllLink(HUB *h)
 	}
 	UnlockList(h->LinkList);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		LINK *k = kk[i];
 
@@ -352,8 +346,7 @@ void StartAllLink(HUB *h)
 
 	LockList(h->LinkList);
 	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(h->LinkList);i++)
+		for (UINT i = 0;i < LIST_NUM(h->LinkList);i++)
 		{
 			LINK *k = (LINK *)LIST_DATA(h->LinkList, i);
 
@@ -370,7 +363,6 @@ void StopAllLink(HUB *h)
 {
 	LINK **link_list;
 	UINT num_link;
-	UINT i;
 	if (h == NULL)
 	{
 		return;
@@ -382,14 +374,14 @@ void StopAllLink(HUB *h)
 	{
 		link_list = ToArray(h->LinkList);
 		num_link = LIST_NUM(h->LinkList);
-		for (i = 0;i < num_link;i++)
+		for (UINT i = 0;i < num_link;i++)
 		{
 			AddRef(link_list[i]->ref);
 		}
 	}
 	UnlockList(h->LinkList);
 
-	for (i = 0;i < num_link;i++)
+	for (UINT i = 0;i < num_link;i++)
 	{
 		StopLink(link_list[i]);
 		ReleaseLink(link_list[i]);
@@ -402,7 +394,6 @@ void StopAllLink(HUB *h)
 
 void StartLink(LINK *k)
 {
-	PACKET_ADAPTER *pa;
 	if (k == NULL)
 	{
 		return;
@@ -421,7 +412,7 @@ void StartLink(LINK *k)
 	}
 	UnlockLink(k);
 
-	pa = LinkGetPacketAdapter();
+	PACKET_ADAPTER *pa = LinkGetPacketAdapter();
 	pa->Param = (void *)k;
 	LockLink(k);
 	{
@@ -561,7 +552,6 @@ void NormalizeLinkOption(CLIENT_OPTION *option)
 LINK *FindLinkByAccountName(HUB *hub, wchar_t *account_name)
 {
 	LINK *found = NULL;
-	UINT i;
 
 	if (hub == NULL || account_name == NULL)
 	{
@@ -570,7 +560,7 @@ LINK *FindLinkByAccountName(HUB *hub, wchar_t *account_name)
 
 	LockList(hub->LinkList);
 	{
-		for (i = 0;i < LIST_NUM(hub->LinkList);i++)
+		for (UINT i = 0;i < LIST_NUM(hub->LinkList);i++)
 		{
 			LINK *k = LIST_DATA(hub->LinkList, i);
 
@@ -597,9 +587,6 @@ LINK *FindLinkByAccountName(HUB *hub, wchar_t *account_name)
 
 LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, POLICY *policy)
 {
-	CLIENT_OPTION *o;
-	LINK *k;
-	CLIENT_AUTH *a;
 	POLICY link_policy;
 	bool added = false;
 	if (cedar == NULL || hub == NULL || option == NULL || auth == NULL || policy == NULL)
@@ -622,12 +609,12 @@ LINK *NewLink(CEDAR *cedar, HUB *hub, CLIENT_OPTION *option, CLIENT_AUTH *auth, 
 		return NULL;
 	}
 
-	o = ClientOptionClone(option);
+	CLIENT_OPTION *o = ClientOptionClone(option);
 	NormalizeLinkOption(o);
 
-	a = ClientAuthClone(auth);
+	CLIENT_AUTH *a = ClientAuthClone(auth);
 
-	k = ZeroMalloc(sizeof(LINK));
+	LINK *k = ZeroMalloc(sizeof(LINK));
 
 	k->StopAllLinkFlag = &hub->StopAllLinkFlag;
 

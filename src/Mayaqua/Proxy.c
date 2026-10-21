@@ -32,9 +32,6 @@ static UINT ProxyHttpHandshake(SOCK *s, PROXY_PARAM_IN *in, volatile bool *cance
 	bool use_auth = false;
 	char target_hostname[MAX_HOST_NAME_LEN + 1];
 	char target_hostname_port[MAX_SIZE];
-	HTTP_HEADER *h;
-	UINT i, code;
-	bool ok;
 
 	if ((IsEmptyStr(in->Username) || IsEmptyStr(in->Password)) == false)
 	{
@@ -44,7 +41,7 @@ static UINT ProxyHttpHandshake(SOCK *s, PROXY_PARAM_IN *in, volatile bool *cance
 	Zero(target_hostname, sizeof(target_hostname));
 	StrCpy(target_hostname, sizeof(target_hostname), in->TargetHostname);
 
-	for (i = 0; i < StrLen(target_hostname); ++i)
+	for (UINT i = 0; i < StrLen(target_hostname); ++i)
 	{
 		if (target_hostname[i] == '/')
 		{
@@ -67,14 +64,14 @@ static UINT ProxyHttpHandshake(SOCK *s, PROXY_PARAM_IN *in, volatile bool *cance
 		Format(target_hostname_port, sizeof(target_hostname_port), "%s:%hu", target_hostname, in->TargetPort);
 	}
 
-	h = NewHttpHeader("CONNECT", target_hostname_port, "HTTP/1.0");
+	HTTP_HEADER *h = NewHttpHeader("CONNECT", target_hostname_port, "HTTP/1.0");
 
 	if (IsEmptyStr(in->HttpCustomHeader) == false)
 	{
 		TOKEN_LIST *tokens = ParseToken(in->HttpCustomHeader, "\r\n");
 		if (tokens != NULL)
 		{
-			for (i = 0; i < tokens->NumTokens; i++)
+			for (UINT i = 0; i < tokens->NumTokens; i++)
 			{
 				AddHttpValueStr(h, tokens->Token[i]);
 			}
@@ -120,7 +117,7 @@ static UINT ProxyHttpHandshake(SOCK *s, PROXY_PARAM_IN *in, volatile bool *cance
 		AddHttpValue(h, NewHttpValue("Proxy-Authorization", auth_str));
 	}
 
-	ok = SendHttpHeader(s, h);
+	bool ok = SendHttpHeader(s, h);
 
 	FreeHttpHeader(h);
 
@@ -140,7 +137,7 @@ static UINT ProxyHttpHandshake(SOCK *s, PROXY_PARAM_IN *in, volatile bool *cance
 		return PROXY_ERROR_GENERIC;
 	}
 
-	code = 0;
+	UINT code = 0;
 	if (StrLen(h->Method) == 8)
 	{
 		if (Cmp(h->Method, "HTTP/1.", 7) == 0)
@@ -169,14 +166,13 @@ static UINT ProxyHttpHandshake(SOCK *s, PROXY_PARAM_IN *in, volatile bool *cance
 
 // SOCKS5 CONNECT on the connected socket s, using the BUF b for the requests.
 // PROXY_ERROR_SUCCESS when the proxy reported the connection made.
-static UINT ProxySocks5HandshakeBuf(SOCK *s, PROXY_PARAM_IN *in, BUF *b)
+static UINT ProxySocks5HandshakeBuf(SOCK *s, const PROXY_PARAM_IN *in, BUF *b)
 {
 	UCHAR recv_buf[2], reply[4], tmp;
 	// The rest of the reply: a domain name of up to 255 bytes and the port
 	UCHAR bnd[255 + 2];
 	UINT bnd_size;
 	bool atyp_known = true;
-	USHORT target_port;
 	IP target_ip;
 
 	// +----+----------+----------+
@@ -222,8 +218,6 @@ static UINT ProxySocks5HandshakeBuf(SOCK *s, PROXY_PARAM_IN *in, BUF *b)
 
 	if (recv_buf[1] == SOCKS5_METHOD_USERPASS)
 	{
-		bool ok;
-
 		// +----+------+----------+------+----------+
 		// |VER | ULEN |  UNAME   | PLEN |  PASSWD  |
 		// +----+------+----------+------+----------+
@@ -244,7 +238,7 @@ static UINT ProxySocks5HandshakeBuf(SOCK *s, PROXY_PARAM_IN *in, BUF *b)
 		WriteBufChar(b, tmp);
 		WriteBuf(b, in->Password, tmp);
 
-		ok = SendAll(s, b->Buf, b->Size, false);
+		bool ok = SendAll(s, b->Buf, b->Size, false);
 
 		// The request holds the plain user name and password
 		Zero(b->Buf, b->Size);
@@ -333,7 +327,7 @@ static UINT ProxySocks5HandshakeBuf(SOCK *s, PROXY_PARAM_IN *in, BUF *b)
 		}
 	}
 
-	target_port = Endian16(in->TargetPort);
+	USHORT target_port = Endian16(in->TargetPort);
 	WriteBuf(b, &target_port, sizeof(target_port));
 
 	if (SendAll(s, b->Buf, b->Size, false) == false)
@@ -415,7 +409,7 @@ static UINT ProxySocks5HandshakeBuf(SOCK *s, PROXY_PARAM_IN *in, BUF *b)
 	}
 }
 
-static UINT ProxySocks5Handshake(SOCK *s, PROXY_PARAM_IN *in)
+static UINT ProxySocks5Handshake(SOCK *s, const PROXY_PARAM_IN *in)
 {
 	BUF *b = NewBuf();
 	UINT ret = ProxySocks5HandshakeBuf(s, in, b);
@@ -426,22 +420,19 @@ static UINT ProxySocks5Handshake(SOCK *s, PROXY_PARAM_IN *in)
 }
 
 // SOCKS4 CONNECT to the IPv4 address target_ip on the connected socket s
-static UINT ProxySocks4Handshake(SOCK *s, PROXY_PARAM_IN *in, IP *target_ip)
+static UINT ProxySocks4Handshake(SOCK *s, const PROXY_PARAM_IN *in, IP *target_ip)
 {
 	UCHAR recv_buf[8];
-	USHORT target_port;
-	BUF *b;
-	bool ok;
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 	WriteBufChar(b, SOCKS4_VERSION);
 	WriteBufChar(b, SOCKS4_CMD_CONNECT);
-	target_port = Endian16(in->TargetPort);
+	USHORT target_port = Endian16(in->TargetPort);
 	WriteBuf(b, &target_port, sizeof(target_port));
 	WriteBuf(b, IPV4(target_ip->address), IPV4_SIZE);
 	WriteBuf(b, in->Username, StrLen(in->Username) + 1);
 
-	ok = SendAll(s, b->Buf, b->Size, false);
+	bool ok = SendAll(s, b->Buf, b->Size, false);
 
 	FreeBuf(b);
 
@@ -475,7 +466,6 @@ UINT ProxyConnect(UINT proxy_type, PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, vol
 {
 	bool dummy_cancel_flag = false;
 	IP target_ip;
-	SOCK *s;
 	UINT ret;
 	if (out == NULL || in == NULL || in->Port == 0 || in->TargetPort == 0 || IsEmptyStr(in->Hostname) || IsEmptyStr(in->TargetHostname) ||
 		(proxy_type != PROXY_HTTP && proxy_type != PROXY_SOCKS && proxy_type != PROXY_SOCKS5))
@@ -501,7 +491,7 @@ UINT ProxyConnect(UINT proxy_type, PROXY_PARAM_OUT *out, PROXY_PARAM_IN *in, vol
 		return PROXY_ERROR_CONNECTION;
 	}
 
-	s = BindConnectEx4(in->BindLocalIP, in->BindLocalPort, in->Hostname, in->Port, in->Timeout, (bool *)cancel_flag, &out->ResolvedIp);
+	SOCK *s = BindConnectEx4(in->BindLocalIP, in->BindLocalPort, in->Hostname, in->Port, in->Timeout, (bool *)cancel_flag, &out->ResolvedIp);
 	if (s == NULL)
 	{
 		return PROXY_ERROR_CONNECTION;

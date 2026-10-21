@@ -60,24 +60,19 @@ void DisableDosProtect()
 
 static void TCPAcceptedThread(THREAD *t, void *param)
 {
-	TCP_ACCEPTED_PARAM *data;
-	LISTENER *r;
-	SOCK *s;
-	CONNECTION *c;
-	bool flag1;
 	char tmp[128];
 	if (t == NULL || param == NULL)
 	{
 		return;
 	}
 
-	data = (TCP_ACCEPTED_PARAM *)param;
-	r = data->r;
-	s = data->s;
+	TCP_ACCEPTED_PARAM *data = (TCP_ACCEPTED_PARAM *)param;
+	LISTENER *r = data->r;
+	SOCK *s = data->s;
 	AddRef(r->ref);
 	AddRef(s->ref);
 
-	c = NewServerConnection(r->Cedar, s, t);
+	CONNECTION *c = NewServerConnection(r->Cedar, s, t);
 
 	AddConnection(c->Cedar, c);
 
@@ -89,7 +84,7 @@ static void TCPAcceptedThread(THREAD *t, void *param)
 	SLog(r->Cedar, "LS_LISTENER_ACCEPT", r->Port, tmp, s->RemoteHostname, s->RemotePort);
 
 	ConnectionAccept(c);
-	flag1 = c->flag1;
+	bool flag1 = c->flag1;
 
 	SLog(r->Cedar, "LS_CONNECTION_END_1", c->Name);
 	ReleaseConnection(c);
@@ -107,23 +102,19 @@ static void TCPAcceptedThread(THREAD *t, void *param)
 
 static void TCPAccepted(LISTENER *r, SOCK *s)
 {
-	TCP_ACCEPTED_PARAM *data;
-	THREAD *t;
 	char tmp[MAX_SIZE];
 	UINT num_clients_from_this_ip = 0;
-	CEDAR *cedar;
 	if (r == NULL || s == NULL)
 	{
 		return;
 	}
 
-	cedar = r->Cedar;
+	CEDAR *cedar = r->Cedar;
 
 	num_clients_from_this_ip = GetNumIpClient(&s->RemoteIP);
 
 	if (disable_dos == false && r->DisableDos == false)
 	{
-		UINT max_uec, now_uec;
 		if (CheckDosAttack(r, s) == false)
 		{
 			IPToStr(tmp, sizeof(tmp), &s->RemoteIP);
@@ -146,8 +137,8 @@ static void TCPAccepted(LISTENER *r, SOCK *s)
 			SLog(r->Cedar, "LS_LISTENER_DOS", r->Port, tmp, s->RemotePort);
 			return;
 		}
-		max_uec = GetMaxUnestablishedConnections();
-		now_uec = GetUnestablishedConnections(cedar);
+		UINT max_uec = GetMaxUnestablishedConnections();
+		UINT now_uec = GetUnestablishedConnections(cedar);
 		if (now_uec > max_uec)
 		{
 			SLog(r->Cedar, "LS_LISTENER_MAXUEC", max_uec, now_uec);
@@ -155,13 +146,13 @@ static void TCPAccepted(LISTENER *r, SOCK *s)
 		}
 	}
 
-	data = ZeroMalloc(sizeof(TCP_ACCEPTED_PARAM));
+	TCP_ACCEPTED_PARAM *data = ZeroMalloc(sizeof(TCP_ACCEPTED_PARAM));
 	data->r = r;
 	data->s = s;
 
 	Inc(cedar->AcceptingSockets);
 
-	t = NewThread(TCPAcceptedThread, data);
+	THREAD *t = NewThread(TCPAcceptedThread, data);
 	WaitThreadInit(t);
 	Free(data);
 	ReleaseThread(t);
@@ -189,9 +180,8 @@ static void MakeRoomInDosList(LISTENER *r)
 	if (LIST_NUM(r->DosList) >= RATE_LIMIT_TABLE_MAX)
 	{
 		DOS *oldest = NULL;
-		UINT i;
 
-		for (i = 0;i < LIST_NUM(r->DosList);i++)
+		for (UINT i = 0;i < LIST_NUM(r->DosList);i++)
 		{
 			DOS *d = LIST_DATA(r->DosList, i);
 
@@ -280,7 +270,7 @@ void RefreshDosList(LISTENER *r)
 
 DOS *SearchDosList(LISTENER *r, IP *ip)
 {
-	DOS *d, t;
+	DOS t;
 	if (r == NULL || ip == NULL)
 	{
 		return NULL;
@@ -288,7 +278,7 @@ DOS *SearchDosList(LISTENER *r, IP *ip)
 
 	GetRateLimitKey(&t.IpAddress, ip);
 
-	d = Search(r->DosList, &t);
+	DOS *d = Search(r->DosList, &t);
 
 	if (d != NULL)
 	{
@@ -307,13 +297,12 @@ DOS *SearchDosList(LISTENER *r, IP *ip)
 
 int CompareDos(void *p1, void *p2)
 {
-	DOS *d1, *d2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	d1 = *(DOS **)p1;
-	d2 = *(DOS **)p2;
+	DOS *d1 = *(DOS **)p1;
+	DOS *d2 = *(DOS **)p2;
 	if (d1 == NULL || d2 == NULL)
 	{
 		return 0;
@@ -323,7 +312,7 @@ int CompareDos(void *p1, void *p2)
 }
 
 // Wake WaitListenerBind: the listener thread has tried to bind, r->Status holds the result
-static void ListenerBindTried(LISTENER *r)
+static void ListenerBindTried(const LISTENER *r)
 {
 	if (r->BindEvent != NULL)
 	{
@@ -465,13 +454,12 @@ STOP:
 
 static void ListenerThread(THREAD *thread, void *param)
 {
-	LISTENER *r;
 	if (thread == NULL || param == NULL)
 	{
 		return;
 	}
 
-	r = (LISTENER *)param;
+	LISTENER *r = (LISTENER *)param;
 	AddRef(r->ref);
 	r->Thread = thread;
 	AddRef(thread->ref);
@@ -492,7 +480,6 @@ static void ListenerThread(THREAD *thread, void *param)
 
 void StopListener(LISTENER *r)
 {
-	UINT port;
 	SOCK *s = NULL;
 	if (r == NULL)
 	{
@@ -517,7 +504,7 @@ void StopListener(LISTENER *r)
 
 	Unlock(r->lock);
 
-	port = r->Port;
+	UINT port = r->Port;
 
 	SLog(r->Cedar, "LS_LISTENER_STOP_1", port);
 
@@ -602,13 +589,12 @@ void ReleaseListener(LISTENER *r)
 
 int CompareListener(void *p1, void *p2)
 {
-	LISTENER *r1, *r2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	r1 = *(LISTENER **)p1;
-	r2 = *(LISTENER **)p2;
+	LISTENER *r1 = *(LISTENER **)p1;
+	LISTENER *r2 = *(LISTENER **)p2;
 	if (r1 == NULL || r2 == NULL)
 	{
 		return 0;
@@ -638,14 +624,12 @@ int CompareListener(void *p1, void *p2)
 
 LISTENER *NewListener(CEDAR *cedar, UINT port)
 {
-	LISTENER *r;
-	THREAD *t;
 	if (port == 0 || cedar == NULL)
 	{
 		return NULL;
 	}
 
-	r = ZeroMalloc(sizeof(LISTENER));
+	LISTENER *r = ZeroMalloc(sizeof(LISTENER));
 
 	r->Cedar = cedar;
 	AddRef(r->Cedar->ref);
@@ -661,7 +645,7 @@ LISTENER *NewListener(CEDAR *cedar, UINT port)
 
 	SLog(cedar, "LS_LISTENER_START_1", port);
 
-	t = NewThread(ListenerThread, r);
+	THREAD *t = NewThread(ListenerThread, r);
 	WaitThreadInit(t);
 	ReleaseThread(t);
 

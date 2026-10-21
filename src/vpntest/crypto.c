@@ -221,7 +221,7 @@ static bool KatCheck(KAT_CTX *ctx, bool ok, char *what, char *detail_fmt, ...)
 }
 
 // Compare bytes with a hex string; got receives the hex of the bytes
-static bool KatHexEq(void *data, UINT size, char *expect_hex, char *got, UINT got_size)
+static bool KatHexEq(const void *data, UINT size, const char *expect_hex, char *got, UINT got_size)
 {
 	BinToStr(got, got_size, data, size);
 
@@ -229,11 +229,9 @@ static bool KatHexEq(void *data, UINT size, char *expect_hex, char *got, UINT go
 }
 
 // Whether every byte of the buffer has the value
-static bool KatAllBytes(UCHAR *buf, UINT size, UCHAR value)
+static bool KatAllBytes(const UCHAR *buf, UINT size, UCHAR value)
 {
-	UINT i;
-
-	for (i = 0;i < size;i++)
+	for (UINT i = 0;i < size;i++)
 	{
 		if (buf[i] != value)
 		{
@@ -251,9 +249,8 @@ static void KatHashSuite(KAT_CTX *ctx, char *name, KAT_HASH_PROC *proc, UINT dig
 	UCHAR buf[KAT_MAX_DIGEST];
 	char got[KAT_MAX_DIGEST * 2 + 1];
 	char what[MAX_SIZE];
-	UINT i;
 
-	for (i = 0;i < KAT_NUM_MESSAGES;i++)
+	for (UINT i = 0;i < KAT_NUM_MESSAGES;i++)
 	{
 		void *msg = kat_messages[i];
 		UINT msg_size = (kat_messages[i] == NULL ? KAT_MILLION : StrLen(kat_messages[i]));
@@ -324,11 +321,10 @@ static void KatRc4Stream(KAT_CTX *ctx, char *key_hex, UINT offset, bool split, c
 	UCHAR *out = ZeroMalloc(size + KAT_GUARD);
 	char got[KAT_RC4_BLOCK * 2 + 1];
 	char what[MAX_SIZE];
-	CRYPT *c;
 
 	memset(out + size, KAT_GUARD_BYTE, KAT_GUARD);
 
-	c = NewCrypt(key->Buf, key->Size);
+	CRYPT *c = NewCrypt(key->Buf, key->Size);
 	if (split && offset != 0)
 	{
 		Encrypt(c, out, zero, offset);
@@ -359,13 +355,12 @@ static void KatRc4Text(KAT_CTX *ctx, char *key, char *text, bool in_place, char 
 	char got[MAX_SIZE];
 	char what[MAX_SIZE];
 	UCHAR *dst = (in_place ? buf : out);
-	CRYPT *c;
 
 	Zero(buf, sizeof(buf));
 	Zero(out, sizeof(out));
 	Copy(buf, text, size);
 
-	c = NewCrypt(key, StrLen(key));
+	CRYPT *c = NewCrypt(key, StrLen(key));
 	Encrypt(c, dst, buf, size);
 	FreeCrypt(c);
 
@@ -382,7 +377,6 @@ static void KatRc4(KAT_CTX *ctx)
 	UCHAR back[8];
 	UCHAR long_key[KAT_RC4_LONG_KEY];
 	char got[sizeof(out) * 2 + 1];
-	CRYPT *c;
 
 	// RFC 6229 section 2: 40, 64 and 128-bit keys
 	KatRc4Stream(ctx, "0102030405", 0, false, "B2396305F03DC027CCC3524A0A1118A8", "RFC 6229");
@@ -414,7 +408,7 @@ static void KatRc4(KAT_CTX *ctx)
 	Zero(out, sizeof(out));
 	memset(back, KAT_GUARD_BYTE, sizeof(back));
 
-	c = NewCrypt(key, sizeof(key));
+	CRYPT *c = NewCrypt(key, sizeof(key));
 	Encrypt(c, out, in, sizeof(in));
 	FreeCrypt(c);
 
@@ -462,15 +456,9 @@ static void KatRand(KAT_CTX *ctx)
 	bool seen[256];
 	UINT64 ones = 0;
 	UINT64 expect_ones = (UINT64)KAT_RAND_BULK * 8 / 2;
-	UINT64 skew;
 	UINT num_seen = 0;
-	UINT i;
 	bool rand1_true = false, rand1_false = false;
 	bool r8 = false, r16 = false, r32 = false, r64 = false;
-	UCHAR first8;
-	USHORT first16;
-	UINT first32;
-	UINT64 first64;
 
 	// Missing buffer and size 0
 	memset(a, KAT_GUARD_BYTE, sizeof(a));
@@ -491,7 +479,7 @@ static void KatRand(KAT_CTX *ctx)
 	// Statistics of a large draw: the 1-bit count near half, every byte value present
 	Zero(seen, sizeof(seen));
 	Rand(bulk, KAT_RAND_BULK);
-	for (i = 0;i < KAT_RAND_BULK;i++)
+	for (UINT i = 0;i < KAT_RAND_BULK;i++)
 	{
 		ones += KatBits(bulk[i]);
 		if (seen[bulk[i]] == false)
@@ -500,17 +488,17 @@ static void KatRand(KAT_CTX *ctx)
 			num_seen++;
 		}
 	}
-	skew = (ones >= expect_ones ? ones - expect_ones : expect_ones - ones);
+	UINT64 skew = (ones >= expect_ones ? ones - expect_ones : expect_ones - ones);
 	KatCheck(ctx, skew <= KAT_RAND_MAX_SKEW, "Rand(): 1-bit count of 64 KiB within 6 sigma of half",
 		"%I64u ones, expected %I64u", ones, expect_ones);
 	KatCheck(ctx, num_seen == 256, "Rand(): every byte value appears in 64 KiB", "%u of 256 values", num_seen);
 
 	// The fixed-size helpers vary
-	first8 = Rand8();
-	first16 = Rand16();
-	first32 = Rand32();
-	first64 = Rand64();
-	for (i = 0;i < KAT_RAND_DRAWS;i++)
+	UCHAR first8 = Rand8();
+	USHORT first16 = Rand16();
+	UINT first32 = Rand32();
+	UINT64 first64 = Rand64();
+	for (UINT i = 0;i < KAT_RAND_DRAWS;i++)
 	{
 		if (Rand1())
 		{
@@ -536,21 +524,19 @@ static void KatRand(KAT_CTX *ctx)
 static void KatRsaSign(KAT_CTX *ctx)
 {
 	BUF *b = NewBuf();
-	K *k;
 	UCHAR src[SHA1_SIZE];
 	UCHAR sign[KAT_RSA_SIGN + KAT_GUARD];
 	char got[KAT_RSA_SIGN * 2 + 1];
 	bool signed_ok, same;
-	UINT i;
 
-	for (i = 0;i < sizeof(src);i++)
+	for (UINT i = 0;i < sizeof(src);i++)
 	{
 		src[i] = (UCHAR)(i + 1);
 	}
 
 	WriteBuf(b, kat_rsa_key_pem, StrLen(kat_rsa_key_pem));
 	SeekBuf(b, 0, 0);
-	k = BufToK(b, true, true, NULL);
+	K *k = BufToK(b, true, true, NULL);
 	FreeBuf(b);
 
 	if (KatCheck(ctx, k != NULL, "RsaSignEx: the RSA-2048 known-answer key loads", "BufToK failed"))
@@ -589,9 +575,7 @@ static struct
 // DhNewFromBits known answer: the prime and the generator of each size
 static void KatDhParams(KAT_CTX *ctx)
 {
-	UINT i;
-
-	for (i = 0;i < sizeof(kat_dh) / sizeof(kat_dh[0]);i++)
+	for (UINT i = 0;i < sizeof(kat_dh) / sizeof(kat_dh[0]);i++)
 	{
 		DH_CTX *d = DhNewFromBits(kat_dh[i].Bits);
 		const BIGNUM *p = NULL, *g = NULL;

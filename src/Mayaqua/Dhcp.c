@@ -9,10 +9,6 @@
 
 bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address)
 {
-	USHORT *us;
-	IPV4_HEADER *ip;
-	UDP_HEADER *udp;
-	UINT ip_header_size;
 	bool is_send = false, is_recv = false;
 	if (data == NULL || mac_address == NULL || IsZero(mac_address, 6))
 	{
@@ -47,7 +43,7 @@ bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address)
 		return false;
 	}
 
-	us = (USHORT *)data;
+	USHORT *us = (USHORT *)data;
 	size -= 2;
 	data += 2;
 
@@ -56,13 +52,13 @@ bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address)
 		return false;
 	}
 
-	ip_header_size = GetIpHeaderSize(data, size);
+	UINT ip_header_size = GetIpHeaderSize(data, size);
 	if (ip_header_size == 0)
 	{
 		return false;
 	}
 
-	ip = (IPV4_HEADER *)data;
+	IPV4_HEADER *ip = (IPV4_HEADER *)data;
 	data += ip_header_size;
 	size -= ip_header_size;
 
@@ -75,7 +71,7 @@ bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address)
 	{
 		return false;
 	}
-	udp = (UDP_HEADER *)data;
+	UDP_HEADER *udp = (UDP_HEADER *)data;
 
 	if (is_send)
 	{
@@ -97,14 +93,13 @@ bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address)
 
 DHCP_OPTION *GetDhcpOption(LIST *o, UINT id)
 {
-	UINT i;
 	DHCP_OPTION *ret = NULL;
 	if (o == NULL)
 	{
 		return NULL;
 	}
 
-	for (i = 0; i < LIST_NUM(o); i++)
+	for (UINT i = 0; i < LIST_NUM(o); i++)
 	{
 		DHCP_OPTION *opt = LIST_DATA(o, i);
 		if (opt->Id == id)
@@ -118,13 +113,12 @@ DHCP_OPTION *GetDhcpOption(LIST *o, UINT id)
 
 void FreeDhcpOptions(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0; i < LIST_NUM(o); i++)
+	for (UINT i = 0; i < LIST_NUM(o); i++)
 	{
 		DHCP_OPTION *opt = LIST_DATA(o, i);
 		Free(opt->Data);
@@ -141,27 +135,23 @@ void FreeDhcpOptions(LIST *o)
 // option before it: BuildDhcpOptionsBuf splits an option of more than 255 bytes that way
 LIST *ParseDhcpOptions(void *data, UINT size)
 {
-	BUF *b;
-	LIST *o;
-	DHCP_OPTION *last_opt;
 	if (data == NULL)
 	{
 		return NULL;
 	}
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 	WriteBuf(b, data, size);
 	SeekBuf(b, 0, 0);
 
-	o = NewListFast(NULL);
+	LIST *o = NewListFast(NULL);
 
-	last_opt = NULL;
+	DHCP_OPTION *last_opt = NULL;
 
 	while (true)
 	{
 		UCHAR c = 0;
 		UCHAR sz = 0;
-		UCHAR *body;
 		DHCP_OPTION *opt;
 		if (ReadBuf(b, &c, 1) != 1)
 		{
@@ -181,7 +171,7 @@ LIST *ParseDhcpOptions(void *data, UINT size)
 			break;
 		}
 
-		body = ZeroMalloc((UINT)sz);
+		UCHAR *body = ZeroMalloc((UINT)sz);
 		if (ReadBuf(b, body, sz) != sz)
 		{
 			// The body runs past the end of the data
@@ -219,14 +209,13 @@ LIST *ParseDhcpOptions(void *data, UINT size)
 
 BUF *DhcpModifyIPv4(DHCP_MODIFY_OPTION *m, void *data, UINT size)
 {
-	PKT *p;
 	BUF *ret = NULL;
 	if (m == NULL || data == NULL || size == 0)
 	{
 		return NULL;
 	}
 
-	p = ParsePacketEx4(data, size, false, 0, false, false, false);
+	PKT *p = ParsePacketEx4(data, size, false, 0, false, false, false);
 
 	if (p != NULL && p->TypeL3 == L3_IPV4 && p->TypeL4 == L4_UDP && p->TypeL7 == L7_DHCPV4)
 	{

@@ -154,12 +154,12 @@ static HARNESS_CMD_CASE harness_cmd_cases[] =
 static BUF *HarnessCmdRun(char *hub, char *command, UINT *ret);
 static char *HarnessCmdMessageLine(char *name);
 static void HarnessCmdFirstCell(char *dst, UINT size, char *text);
-static char *HarnessCmdMaskId(char *text, char *id);
+static char *HarnessCmdMaskId(char *text, const char *id);
 static void HarnessCmdRunStep(HARNESS *h, HARNESS_NORM *n, HARNESS_CMD_CASE *c, HARNESS_CMD_STEP *s, char *id, UINT id_size,
 	BUF *golden);
 static void HarnessCmdRunCase(HARNESS *h, HARNESS_NORM *n, HARNESS_CMD_CASE *c, char *out_dir, char *golden_dir, bool update);
 static void HarnessCheckStaleCmd(HARNESS *h, char *golden_dir);
-static void HarnessParseHostPortCase(HARNESS *h, char *src, UINT default_port, bool expect_ret, char *expect_host,
+static void HarnessParseHostPortCase(HARNESS *h, char *src, UINT default_port, bool expect_ret, const char *expect_host,
 	UINT expect_port, char *what);
 static void HarnessParseHostPort(HARNESS *h);
 
@@ -168,8 +168,6 @@ static BUF *HarnessCmdRun(char *hub, char *command, UINT *ret)
 {
 	UINT size = StrLen(command) + MAX_SIZE;
 	char *cmdline = ZeroMalloc(size);
-	wchar_t *w;
-	BUF *b;
 
 	if (hub == NULL)
 	{
@@ -186,12 +184,12 @@ static BUF *HarnessCmdRun(char *hub, char *command, UINT *ret)
 
 	FileDelete(HARNESS_VPNCMD_OUT);
 
-	w = CopyStrToUni(cmdline);
+	wchar_t *w = CopyStrToUni(cmdline);
 	*ret = CommandMain(w);
 	Free(w);
 	Free(cmdline);
 
-	b = ReadDump(HARNESS_VPNCMD_OUT);
+	BUF *b = ReadDump(HARNESS_VPNCMD_OUT);
 	FileDelete(HARNESS_VPNCMD_OUT);
 
 	if (b == NULL)
@@ -206,9 +204,8 @@ static BUF *HarnessCmdRun(char *hub, char *command, UINT *ret)
 static char *HarnessCmdMessageLine(char *name)
 {
 	char *s = HarnessUniToUtf8(_UU(name));
-	UINT i;
 
-	for (i = 0;s[i] != 0;i++)
+	for (UINT i = 0;s[i] != 0;i++)
 	{
 		if (s[i] == '\r' || s[i] == '\n')
 		{
@@ -253,13 +250,12 @@ static void HarnessCmdFirstCell(char *dst, UINT size, char *text)
 }
 
 // Copy of text with the ID at the start of every line replaced by <ID>
-static char *HarnessCmdMaskId(char *text, char *id)
+static char *HarnessCmdMaskId(char *text, const char *id)
 {
 	BUF *b = NewBuf();
 	UINT id_len = StrLen(id);
 	char *p = text;
 	bool line_start = true;
-	char *ret;
 
 	while (*p != 0)
 	{
@@ -276,7 +272,7 @@ static char *HarnessCmdMaskId(char *text, char *id)
 		p++;
 	}
 
-	ret = HarnessBufToStr(b);
+	char *ret = HarnessBufToStr(b);
 	FreeBuf(b);
 
 	return ret;
@@ -290,13 +286,11 @@ static void HarnessCmdRunStep(HARNESS *h, HARNESS_NORM *n, HARNESS_CMD_CASE *c, 
 	char *command = ZeroMalloc(size);
 	char what[MAX_SIZE * 2];
 	UINT ret = 0;
-	BUF *raw;
-	char *text;
 
 	ReplaceStr(command, size, s->Command, HARNESS_CMD_TAG_ID, id);
 
-	raw = HarnessCmdRun(c->Hub, command, &ret);
-	text = HarnessBufToStr(raw);
+	BUF *raw = HarnessCmdRun(c->Hub, command, &ret);
+	char *text = HarnessBufToStr(raw);
 
 	Format(what, sizeof(what), "%s: %s ends with code %u", c->Name, command, s->Expect);
 	if (HarnessCheck(h, ret == s->Expect, what) == false)
@@ -348,8 +342,6 @@ static void HarnessCmdRunCase(HARNESS *h, HARNESS_NORM *n, HARNESS_CMD_CASE *c, 
 	char id[MAX_SIZE];
 	char file_name[MAX_SIZE];
 	char tmp[MAX_SIZE];
-	char *s;
-	UINT i;
 
 	HarnessSetPhase("cmd", c->Name);
 	Print("  case %s\n", c->Name);
@@ -370,7 +362,7 @@ static void HarnessCmdRunCase(HARNESS *h, HARNESS_NORM *n, HARNESS_CMD_CASE *c, 
 		HarnessCheckErr(h, ScCreateHub(h->Rpc, &t), tmp);
 	}
 
-	for (i = 0;c->Steps[i].Command != NULL;i++)
+	for (UINT i = 0;c->Steps[i].Command != NULL;i++)
 	{
 		HarnessCmdRunStep(h, n, c, &c->Steps[i], id, sizeof(id), golden);
 	}
@@ -386,7 +378,7 @@ static void HarnessCmdRunCase(HARNESS *h, HARNESS_NORM *n, HARNESS_CMD_CASE *c, 
 		HarnessCheckErr(h, ScDeleteHub(h->Rpc, &d), tmp);
 	}
 
-	s = HarnessBufToStr(golden);
+	char *s = HarnessBufToStr(golden);
 	Format(file_name, sizeof(file_name), "cmd_%s.txt", c->Name);
 	HarnessCompareGolden(h, out_dir, golden_dir, file_name, s, update);
 
@@ -398,7 +390,6 @@ static void HarnessCmdRunCase(HARNESS *h, HARNESS_NORM *n, HARNESS_CMD_CASE *c, 
 static void HarnessCheckStaleCmd(HARNESS *h, char *golden_dir)
 {
 	DIRLIST *d = EnumDir(golden_dir);
-	UINT i, j;
 	UINT num_stale = 0;
 	char expected[MAX_SIZE];
 	char tmp[MAX_SIZE];
@@ -408,7 +399,7 @@ static void HarnessCheckStaleCmd(HARNESS *h, char *golden_dir)
 		return;
 	}
 
-	for (i = 0;i < d->NumFiles;i++)
+	for (UINT i = 0;i < d->NumFiles;i++)
 	{
 		DIRENT *e = d->File[i];
 		bool known = false;
@@ -418,7 +409,7 @@ static void HarnessCheckStaleCmd(HARNESS *h, char *golden_dir)
 			continue;
 		}
 
-		for (j = 0;j < sizeof(harness_cmd_cases) / sizeof(harness_cmd_cases[0]);j++)
+		for (UINT j = 0;j < sizeof(harness_cmd_cases) / sizeof(harness_cmd_cases[0]);j++)
 		{
 			Format(expected, sizeof(expected), "cmd_%s.txt", harness_cmd_cases[j].Name);
 			if (StrCmpi(e->FileName, expected) == 0)
@@ -446,7 +437,7 @@ static void HarnessCheckStaleCmd(HARNESS *h, char *golden_dir)
 
 // vpncmd command cases: every case of the table, then the stale file check
 // ParseHostPort on one input: its result and, when it succeeds, the host and the port it gives
-static void HarnessParseHostPortCase(HARNESS *h, char *src, UINT default_port, bool expect_ret, char *expect_host,
+static void HarnessParseHostPortCase(HARNESS *h, char *src, UINT default_port, bool expect_ret, const char *expect_host,
 	UINT expect_port, char *what)
 {
 	char *host = NULL;
@@ -480,8 +471,6 @@ void HarnessCmdCases(HARNESS *h)
 	char out_dir[MAX_SIZE];
 	char golden_dir[MAX_SIZE];
 	bool update;
-	HARNESS_NORM *n;
-	UINT i;
 
 	Print("[vpncmd cases]\n");
 	HarnessSetPhase("cmd", NULL);
@@ -497,9 +486,9 @@ void HarnessCmdCases(HARNESS *h)
 
 	HarnessParseHostPort(h);
 
-	n = HarnessNewNorm();
+	HARNESS_NORM *n = HarnessNewNorm();
 
-	for (i = 0;i < sizeof(harness_cmd_cases) / sizeof(harness_cmd_cases[0]);i++)
+	for (UINT i = 0;i < sizeof(harness_cmd_cases) / sizeof(harness_cmd_cases[0]);i++)
 	{
 		HarnessCmdRunCase(h, n, &harness_cmd_cases[i], out_dir, golden_dir, update);
 	}

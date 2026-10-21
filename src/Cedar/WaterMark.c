@@ -14,11 +14,10 @@ UINT WaterMarkSize = 0;
 
 BUF *LoadWaterMark()
 {
-	BUF *b;
 	UCHAR hash[SHA256_SIZE];
 	char hash_str[SHA256_SIZE * 2 + 1];
 
-	b = ReadDump(WATERMARK_FILENAME);
+	BUF *b = ReadDump(WATERMARK_FILENAME);
 	if (b == NULL)
 	{
 		return NULL;

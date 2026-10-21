@@ -14,11 +14,10 @@
 // A command shell (cmd.exe, command.com) runs on this computer: Toolhelp32 snapshot of the processes
 static bool VpncmdIsShellRunning()
 {
-	HANDLE h;
 	PROCESSENTRY32W e;
 	bool ret = false;
 
-	h = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	HANDLE h = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
 	if (h == INVALID_HANDLE_VALUE)
 	{
 		return false;
@@ -67,9 +66,8 @@ int main(int argc, char *argv[])
 	if (UniStrCmpi(s, L"exit") != 0)
 	{
 		UINT size = UniStrSize(s) + 64;
-		wchar_t *tmp;
 
-		tmp = Malloc(size);
+		wchar_t *tmp = Malloc(size);
 		UniFormat(tmp, size, L"vpncmd %s", s);
 		ret = CommandMain(tmp);
 

@@ -76,13 +76,12 @@ typedef char policy_item_count_check[(sizeof(policy_item) / sizeof(policy_item[0
 
 void FormatPolicyValue(wchar_t *str, UINT size, UINT id, UINT value)
 {
-	POLICY_ITEM *p;
 	if (str == NULL)
 	{
 		return;
 	}
 
-	p = GetPolicyItem(id);
+	POLICY_ITEM *p = GetPolicyItem(id);
 
 	if (p->TypeInt == false)
 	{
@@ -110,13 +109,12 @@ void FormatPolicyValue(wchar_t *str, UINT size, UINT id, UINT value)
 
 void GetPolicyValueRangeStr(wchar_t *str, UINT size, UINT id)
 {
-	POLICY_ITEM *p;
 	if (str == NULL)
 	{
 		return;
 	}
 
-	p = GetPolicyItem(id);
+	POLICY_ITEM *p = GetPolicyItem(id);
 
 	if (p->TypeInt == false)
 	{
@@ -151,15 +149,13 @@ POLICY_ITEM *GetPolicyItem(UINT id)
 // Read one policy field by its table id; a bool field gives 0 or 1
 UINT GetPolicyValue(POLICY *p, UINT id)
 {
-	POLICY_ITEM *item;
-	UCHAR *field;
 	if (p == NULL || id >= NUM_POLICY_ITEM)
 	{
 		return 0;
 	}
 
-	item = &policy_item[id];
-	field = (UCHAR *)p + item->Offset;
+	POLICY_ITEM *item = &policy_item[id];
+	UCHAR *field = (UCHAR *)p + item->Offset;
 
 	if (item->TypeInt)
 	{
@@ -176,15 +172,13 @@ UINT GetPolicyValue(POLICY *p, UINT id)
 // Write one policy field by its table id; a bool field takes any non-zero value as true
 void SetPolicyValue(POLICY *p, UINT id, UINT value)
 {
-	POLICY_ITEM *item;
-	UCHAR *field;
 	if (p == NULL || id >= NUM_POLICY_ITEM)
 	{
 		return;
 	}
 
-	item = &policy_item[id];
-	field = (UCHAR *)p + item->Offset;
+	POLICY_ITEM *item = &policy_item[id];
+	UCHAR *field = (UCHAR *)p + item->Offset;
 
 	if (item->TypeInt)
 	{
@@ -218,13 +212,12 @@ char *PolicyIdToStr(UINT i)
 
 UINT PolicyStrToId(char *name)
 {
-	UINT i;
 	if (name == NULL)
 	{
 		return INFINITE;
 	}
 
-	for (i = 0;i < NUM_POLICY_ITEM;i++)
+	for (UINT i = 0;i < NUM_POLICY_ITEM;i++)
 	{
 		if (StartWith(PolicyIdToStr(i), name))
 		{
@@ -242,7 +235,6 @@ UINT PolicyNum()
 
 bool IsUserName(char *name)
 {
-	UINT i, len;
 	char tmp[MAX_SIZE];
 	if (name == NULL)
 	{
@@ -254,7 +246,7 @@ bool IsUserName(char *name)
 
 	Trim(name);
 
-	len = StrLen(name);
+	UINT len = StrLen(name);
 	if (len == 0)
 	{
 		return false;
@@ -265,7 +257,7 @@ bool IsUserName(char *name)
 		return true;
 	}
 
-	for (i = 0; i < len; i++)
+	for (UINT i = 0; i < len; i++)
 	{
 		if (IsSafeChar(name[i]) == false && name[i] != '@')
 		{
@@ -336,13 +328,12 @@ UINT CheckUserAuthData(UINT auth_type, void *auth_data)
 
 POLICY *ClonePolicy(POLICY *policy)
 {
-	POLICY *ret;
 	if (policy == NULL)
 	{
 		return NULL;
 	}
 
-	ret = ZeroMalloc(sizeof(POLICY));
+	POLICY *ret = ZeroMalloc(sizeof(POLICY));
 	Copy(ret, policy, sizeof(POLICY));
 
 	return ret;
@@ -451,11 +442,10 @@ POLICY *GetDefaultPolicy()
 	if (ready == false)
 	{
 		POLICY tmp;
-		UINT i;
 
 		Zero(&tmp, sizeof(tmp));
 
-		for (i = 0;i < NUM_POLICY_ITEM;i++)
+		for (UINT i = 0;i < NUM_POLICY_ITEM;i++)
 		{
 			SetPolicyValue(&tmp, i, policy_item[i].DefaultValue);
 		}
@@ -469,8 +459,7 @@ POLICY *GetDefaultPolicy()
 
 void *NewNTAuthData(wchar_t *username)
 {
-	AUTHNT *a;
-	a = ZeroMallocEx(sizeof(AUTHNT), true);
+	AUTHNT *a = ZeroMallocEx(sizeof(AUTHNT), true);
 	a->NtUsername = CopyUniStr(username);
 
 	return a;
@@ -478,9 +467,7 @@ void *NewNTAuthData(wchar_t *username)
 
 void *NewRootCertAuthData(X_SERIAL *serial, wchar_t *common_name)
 {
-	AUTHROOTCERT *a;
-
-	a = ZeroMallocEx(sizeof(AUTHROOTCERT), true);
+	AUTHROOTCERT *a = ZeroMallocEx(sizeof(AUTHROOTCERT), true);
 	if (common_name != NULL && UniIsEmptyStr(common_name) == false)
 	{
 		a->CommonName = CopyUniStr(common_name);
@@ -495,9 +482,7 @@ void *NewRootCertAuthData(X_SERIAL *serial, wchar_t *common_name)
 
 void *NewUserCertAuthData(X *x)
 {
-	AUTHUSERCERT *a;
-
-	a = ZeroMalloc(sizeof(AUTHUSERCERT));
+	AUTHUSERCERT *a = ZeroMalloc(sizeof(AUTHUSERCERT));
 	a->UserX = CloneX(x);
 
 	return a;
@@ -505,15 +490,13 @@ void *NewUserCertAuthData(X *x)
 
 void HashPassword(void *dst, char *username, char *password)
 {
-	BUF *b;
-	char *username_upper;
 	if (dst == NULL || username == NULL || password == NULL)
 	{
 		return;
 	}
 
-	b = NewBuf();
-	username_upper = CopyStr(username);
+	BUF *b = NewBuf();
+	char *username_upper = CopyStr(username);
 	StrUpper(username_upper);
 	WriteBuf(b, password, StrLen(password));
 	WriteBuf(b, username_upper, StrLen(username_upper));
@@ -525,20 +508,17 @@ void HashPassword(void *dst, char *username, char *password)
 
 void GenerateNtPasswordHash(UCHAR *dst, char *password)
 {
-	UCHAR *tmp;
-	UINT tmp_size;
-	UINT i, len;
 	if (dst == NULL || password == NULL)
 	{
 		return;
 	}
 
-	len = StrLen(password);
-	tmp_size = len * 2;
+	UINT len = StrLen(password);
+	UINT tmp_size = len * 2;
 
-	tmp = ZeroMalloc(tmp_size);
+	UCHAR *tmp = ZeroMalloc(tmp_size);
 
-	for (i = 0; i < len; i++)
+	for (UINT i = 0; i < len; i++)
 	{
 		tmp[i * 2] = password[i];
 	}
@@ -550,13 +530,12 @@ void GenerateNtPasswordHash(UCHAR *dst, char *password)
 
 void *NewPasswordAuthData(char *username, char *password)
 {
-	AUTHPASSWORD *pw;
 	if (username == NULL || password == NULL)
 	{
 		return NULL;
 	}
 
-	pw = ZeroMalloc(sizeof(AUTHPASSWORD));
+	AUTHPASSWORD *pw = ZeroMalloc(sizeof(AUTHPASSWORD));
 	HashPassword(pw->HashedKey, username, password);
 	GenerateNtPasswordHash(pw->NtLmSecureHash, password);
 
@@ -565,13 +544,12 @@ void *NewPasswordAuthData(char *username, char *password)
 
 void *NewPasswordAuthDataRaw(UCHAR *hashed_password, UCHAR *ntlm_secure_hash)
 {
-	AUTHPASSWORD *pw;
 	if (hashed_password == NULL)
 	{
 		return NULL;
 	}
 
-	pw = ZeroMalloc(sizeof(AUTHPASSWORD));
+	AUTHPASSWORD *pw = ZeroMalloc(sizeof(AUTHPASSWORD));
 	Copy(pw->HashedKey, hashed_password, SHA1_SIZE);
 
 	if (ntlm_secure_hash != NULL)
@@ -672,7 +650,7 @@ void SetUserAuthData(USER *u, UINT authtype, void *authdata)
 }
 
 // Replace a user's or group's traffic counters under its lock; NULL resets them
-static void SetTrafficLocked(LOCK *lock, TRAFFIC *dst, TRAFFIC *src)
+static void SetTrafficLocked(LOCK *lock, TRAFFIC *dst, const TRAFFIC *src)
 {
 	Lock(lock);
 	{
@@ -741,13 +719,12 @@ void JoinUserToGroup(USER *u, USERGROUP *g)
 
 bool AcIsGroup(HUB *h, char *name)
 {
-	USERGROUP *g;
 	if (h == NULL || name == NULL)
 	{
 		return false;
 	}
 
-	g = AcGetGroup(h, name);
+	USERGROUP *g = AcGetGroup(h, name);
 	if (g == NULL)
 	{
 		return false;
@@ -759,13 +736,12 @@ bool AcIsGroup(HUB *h, char *name)
 
 bool AcIsUser(HUB *h, char *name)
 {
-	USER *u;
 	if (h == NULL || name == NULL)
 	{
 		return false;
 	}
 
-	u = AcGetUser(h, name);
+	USER *u = AcGetUser(h, name);
 	if (u == NULL)
 	{
 		return false;
@@ -777,14 +753,14 @@ bool AcIsUser(HUB *h, char *name)
 
 USERGROUP *AcGetGroup(HUB *h, char *name)
 {
-	USERGROUP *g, t;
+	USERGROUP t;
 	if (h == NULL || name == NULL)
 	{
 		return NULL;
 	}
 
 	t.Name = name;
-	g = Search(h->HubDb->GroupList, &t);
+	USERGROUP *g = Search(h->HubDb->GroupList, &t);
 	if (g == NULL)
 	{
 		return NULL;
@@ -796,14 +772,14 @@ USERGROUP *AcGetGroup(HUB *h, char *name)
 
 USER *AcGetUser(HUB *h, char *name)
 {
-	USER *u, t;
+	USER t;
 	if (h == NULL || name == NULL)
 	{
 		return NULL;
 	}
 
 	t.Name = name;
-	u = Search(h->HubDb->UserList, &t);
+	USER *u = Search(h->HubDb->UserList, &t);
 	if (u == NULL)
 	{
 		return NULL;
@@ -815,13 +791,12 @@ USER *AcGetUser(HUB *h, char *name)
 
 bool AcDeleteUser(HUB *h, char *name)
 {
-	USER *u;
 	if (h == NULL || name == NULL)
 	{
 		return false;
 	}
 
-	u = AcGetUser(h, name);
+	USER *u = AcGetUser(h, name);
 	if (u == NULL)
 	{
 		return false;
@@ -839,14 +814,12 @@ bool AcDeleteUser(HUB *h, char *name)
 
 bool AcDeleteGroup(HUB *h, char *name)
 {
-	USERGROUP *g;
-	UINT i;
 	if (h == NULL || name == NULL)
 	{
 		return false;
 	}
 
-	g = AcGetGroup(h, name);
+	USERGROUP *g = AcGetGroup(h, name);
 	if (g == NULL)
 	{
 		return false;
@@ -857,7 +830,7 @@ bool AcDeleteGroup(HUB *h, char *name)
 		ReleaseGroup(g);
 	}
 
-	for (i = 0;i < LIST_NUM(h->HubDb->UserList);i++)
+	for (UINT i = 0;i < LIST_NUM(h->HubDb->UserList);i++)
 	{
 		USER *u = LIST_DATA(h->HubDb->UserList, i);
 		Lock(u->lock);
@@ -1003,7 +976,6 @@ void FreeAuthData(UINT authtype, void *authdata)
 
 USER *NewUser(char *name, wchar_t *realname, wchar_t *note, UINT authtype, void *authdata)
 {
-	USER *u;
 	if (name == NULL || realname == NULL || note == NULL)
 	{
 		return NULL;
@@ -1013,7 +985,7 @@ USER *NewUser(char *name, wchar_t *realname, wchar_t *note, UINT authtype, void 
 		return NULL;
 	}
 
-	u = ZeroMalloc(sizeof(USER));
+	USER *u = ZeroMalloc(sizeof(USER));
 	u->lock = NewLock();
 	u->ref = NewRef();
 	u->Name = CopyStr(name);
@@ -1070,13 +1042,12 @@ static void CleanupGroup(USERGROUP *g)
 
 USERGROUP *NewGroup(char *name, wchar_t *realname, wchar_t *note)
 {
-	USERGROUP *g;
 	if (name == NULL || realname == NULL || note == NULL)
 	{
 		return NULL;
 	}
 
-	g = ZeroMalloc(sizeof(USERGROUP));
+	USERGROUP *g = ZeroMalloc(sizeof(USERGROUP));
 	g->lock = NewLock();
 	g->ref = NewRef();
 	g->Name = CopyStr(name);
@@ -1110,13 +1081,12 @@ void AcUnlock(HUB *h)
 
 int CompareGroupName(void *p1, void *p2)
 {
-	USERGROUP *g1, *g2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	g1 = *(USERGROUP **)p1;
-	g2 = *(USERGROUP **)p2;
+	USERGROUP *g1 = *(USERGROUP **)p1;
+	USERGROUP *g2 = *(USERGROUP **)p2;
 	if (g1 == NULL || g2 == NULL)
 	{
 		return 0;
@@ -1127,13 +1097,12 @@ int CompareGroupName(void *p1, void *p2)
 
 int CompareUserName(void *p1, void *p2)
 {
-	USER *u1, *u2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	u1 = *(USER **)p1;
-	u2 = *(USER **)p2;
+	USER *u1 = *(USER **)p1;
+	USER *u2 = *(USER **)p2;
 	if (u1 == NULL || u2 == NULL)
 	{
 		return 0;
@@ -1344,13 +1313,12 @@ void OutRpcClientAuth(PACK *p, CLIENT_AUTH *c)
 
 void InRpcPolicy(POLICY *o, PACK *p)
 {
-	POLICY *pol;
 	if (o == NULL || p == NULL)
 	{
 		return;
 	}
 
-	pol = PackGetPolicy(p);
+	POLICY *pol = PackGetPolicy(p);
 	Copy(o, pol, sizeof(POLICY));
 	Free(pol);
 }
@@ -1498,13 +1466,12 @@ void CiGetSessionStatus(RPC_CLIENT_GET_CONNECTION_STATUS *st, SESSION *s)
 				st->QoS = s->QoS;
 				if (s->Connection->Protocol == CONNECTION_TCP)
 				{
-					UINT i;
 					LockList(s->Connection->Tcp->TcpSockList);
 					{
 						st->NumTcpConnections = LIST_NUM(s->Connection->Tcp->TcpSockList);
 						if (st->HalfConnection)
 						{
-							for (i = 0;i < st->NumTcpConnections;i++)
+							for (UINT i = 0;i < st->NumTcpConnections;i++)
 							{
 								TCPSOCK *ts = LIST_DATA(s->Connection->Tcp->TcpSockList, i);
 								if (ts->Direction & TCP_SERVER_TO_CLIENT)
@@ -1610,13 +1577,12 @@ void ClientAuthFree(CLIENT_AUTH *auth)
 
 CLIENT_AUTH *ClientAuthClone(CLIENT_AUTH *a)
 {
-	CLIENT_AUTH *ret;
 	if (a == NULL)
 	{
 		return NULL;
 	}
 
-	ret = ZeroMallocEx(sizeof(CLIENT_AUTH), true);
+	CLIENT_AUTH *ret = ZeroMallocEx(sizeof(CLIENT_AUTH), true);
 
 	ret->AuthType = a->AuthType;
 	StrCpy(ret->Username, sizeof(ret->Username), a->Username);
@@ -1652,13 +1618,12 @@ CLIENT_AUTH *ClientAuthClone(CLIENT_AUTH *a)
 
 CLIENT_OPTION *ClientOptionClone(CLIENT_OPTION *o)
 {
-	CLIENT_OPTION *ret;
 	if (o == NULL)
 	{
 		return NULL;
 	}
 
-	ret = ZeroMalloc(sizeof(CLIENT_OPTION));
+	CLIENT_OPTION *ret = ZeroMalloc(sizeof(CLIENT_OPTION));
 	Copy(ret, o, sizeof(CLIENT_OPTION));
 
 	return ret;
@@ -1666,7 +1631,6 @@ CLIENT_OPTION *ClientOptionClone(CLIENT_OPTION *o)
 
 CLIENT_AUTH *CiLoadClientAuth(FOLDER *f)
 {
-	CLIENT_AUTH *a;
 	char *s;
 	BUF *b;
 	if (f == NULL)
@@ -1674,7 +1638,7 @@ CLIENT_AUTH *CiLoadClientAuth(FOLDER *f)
 		return NULL;
 	}
 
-	a = ZeroMalloc(sizeof(CLIENT_AUTH));
+	CLIENT_AUTH *a = ZeroMalloc(sizeof(CLIENT_AUTH));
 
 	a->AuthType = CfgGetInt(f, "AuthType");
 	CfgGetStr(f, "Username", a->Username, sizeof(a->Username));
@@ -1734,15 +1698,12 @@ CLIENT_AUTH *CiLoadClientAuth(FOLDER *f)
 
 CLIENT_OPTION *CiLoadClientOption(FOLDER *f)
 {
-	CLIENT_OPTION *o;
-	char *s;
-	BUF *b;
 	if (f == NULL)
 	{
 		return NULL;
 	}
 
-	o = ZeroMalloc(sizeof(CLIENT_OPTION));
+	CLIENT_OPTION *o = ZeroMalloc(sizeof(CLIENT_OPTION));
 
 	CfgGetUniStr(f, "AccountName", o->AccountName, sizeof(o->AccountName));
 	CfgGetStr(f, "Hostname", o->Hostname, sizeof(o->Hostname));
@@ -1752,8 +1713,8 @@ CLIENT_OPTION *CiLoadClientOption(FOLDER *f)
 	CfgGetStr(f, "ProxyName", o->ProxyName, sizeof(o->ProxyName));
 	o->ProxyPort = CfgGetInt(f, "ProxyPort");
 	CfgGetStr(f, "ProxyUsername", o->ProxyUsername, sizeof(o->ProxyUsername));
-	b = CfgGetBuf(f, "ProxyPassword");
-	s = DecryptPassword(b);
+	BUF *b = CfgGetBuf(f, "ProxyPassword");
+	char *s = DecryptPassword(b);
 	StrCpy(o->ProxyPassword, sizeof(o->ProxyPassword), s);
 	Free(s);
 	FreeBuf(b);
@@ -1846,7 +1807,6 @@ void CiWriteClientAuth(FOLDER *f, CLIENT_AUTH *a)
 
 void CiWriteClientOption(FOLDER *f, CLIENT_OPTION *o)
 {
-	BUF *b;
 	if (f == NULL || o == NULL)
 	{
 		return;
@@ -1860,7 +1820,7 @@ void CiWriteClientOption(FOLDER *f, CLIENT_OPTION *o)
 	CfgAddStr(f, "ProxyName", o->ProxyName);
 	CfgAddInt(f, "ProxyPort", o->ProxyPort);
 	CfgAddStr(f, "ProxyUsername", o->ProxyUsername);
-	b = EncryptPassword(o->ProxyPassword);
+	BUF *b = EncryptPassword(o->ProxyPassword);
 	CfgAddByte(f, "ProxyPassword", b->Buf, b->Size);
 	FreeBuf(b);
 	CfgAddStr(f, "CustomHttpHeader", o->CustomHttpHeader);
@@ -1906,15 +1866,13 @@ static CRYPT *NewPasswordCrypt()
 
 static char *DecryptPassword(BUF *b)
 {
-	char *str;
-	CRYPT *c;
 	if (b == NULL)
 	{
 		return CopyStr("");
 	}
 
-	str = ZeroMalloc(b->Size + 1);
-	c = NewPasswordCrypt();
+	char *str = ZeroMalloc(b->Size + 1);
+	CRYPT *c = NewPasswordCrypt();
 	Encrypt(c, str, b->Buf, b->Size);
 	FreeCrypt(c);
 
@@ -1925,23 +1883,19 @@ static char *DecryptPassword(BUF *b)
 
 static BUF *EncryptPassword(char *password)
 {
-	UCHAR *tmp;
-	UINT size;
-	CRYPT *c;
-	BUF *b;
 	if (password == NULL)
 	{
 		password = "";
 	}
 
-	size = StrLen(password) + 1;
-	tmp = ZeroMalloc(size);
+	UINT size = StrLen(password) + 1;
+	UCHAR *tmp = ZeroMalloc(size);
 
-	c = NewPasswordCrypt();
+	CRYPT *c = NewPasswordCrypt();
 	Encrypt(c, tmp, password, size - 1);
 	FreeCrypt(c);
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 	WriteBuf(b, tmp, size - 1);
 	SeekBuf(b, 0, 0);
 	Free(tmp);

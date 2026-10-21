@@ -31,9 +31,11 @@
 // A stored 0 means "use the default of the table entry"
 extern UINT vpn_global_parameters[NUM_GLOBAL_PARAMS];
 
-#define	VPN_GP(id)	TunablesGet(id)
-
 UINT TunablesGet(UINT id);
+static inline UINT VPN_GP(UINT id)
+{
+	return TunablesGet(id);
+}
 void TunablesLoad(FOLDER *f);
 void TunablesSave(FOLDER *f);
 

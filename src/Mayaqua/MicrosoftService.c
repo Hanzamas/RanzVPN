@@ -45,22 +45,20 @@
 // entries before InitMayaqua().
 bool MsWriteEventLog(char *source, UINT type, UINT event_id, char *message)
 {
-	HANDLE h;
 	LPCSTR strings[1];
-	BOOL ret;
 	if (source == NULL || message == NULL)
 	{
 		return false;
 	}
 
-	h = RegisterEventSourceA(NULL, source);
+	HANDLE h = RegisterEventSourceA(NULL, source);
 	if (h == NULL)
 	{
 		return false;
 	}
 
 	strings[0] = message;
-	ret = ReportEventA(h, (WORD)type, 0, event_id, NULL, 1, 0, strings, NULL);
+	BOOL ret = ReportEventA(h, (WORD)type, 0, event_id, NULL, 1, 0, strings, NULL);
 
 	DeregisterEventSource(h);
 
@@ -97,14 +95,12 @@ const MS_SVC_ARG *MsSvcArgs(UINT *num)
 // argument that is not in the table, and for NULL
 UINT MsSvcArgToMode(char *arg)
 {
-	UINT i;
-
 	if (arg == NULL)
 	{
 		return SVC_MODE_NONE;
 	}
 
-	for (i = 0;i < sizeof(ms_svc_args) / sizeof(ms_svc_args[0]);i++)
+	for (UINT i = 0;i < sizeof(ms_svc_args) / sizeof(ms_svc_args[0]);i++)
 	{
 		if (StrCmpi(arg, ms_svc_args[i].Arg) == 0)
 		{
@@ -134,20 +130,19 @@ static void MsWaitServiceState(char *name, bool running)
 
 bool MsStopService(char *name)
 {
-	SC_HANDLE sc, service;
 	bool ret = false;
 	if (name == NULL)
 	{
 		return false;
 	}
 
-	sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
+	SC_HANDLE sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
 	if (sc == NULL)
 	{
 		return false;
 	}
 
-	service = OpenService(sc, name, SERVICE_ALL_ACCESS);
+	SC_HANDLE service = OpenService(sc, name, SERVICE_ALL_ACCESS);
 	if (service != NULL)
 	{
 		SERVICE_STATUS st;
@@ -167,20 +162,19 @@ bool MsStopService(char *name)
 
 bool MsStartService(char *name)
 {
-	SC_HANDLE sc, service;
 	bool ret = false;
 	if (name == NULL)
 	{
 		return false;
 	}
 
-	sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
+	SC_HANDLE sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
 	if (sc == NULL)
 	{
 		return false;
 	}
 
-	service = OpenService(sc, name, SERVICE_ALL_ACCESS);
+	SC_HANDLE service = OpenService(sc, name, SERVICE_ALL_ACCESS);
 	if (service != NULL)
 	{
 		ret = StartService(service, 0, NULL);
@@ -199,20 +193,19 @@ bool MsStartService(char *name)
 
 bool MsIsServiceRunning(char *name)
 {
-	SC_HANDLE sc, service;
 	bool ret = false;
 	if (name == NULL || IsEmptyStr(name))
 	{
 		return false;
 	}
 
-	sc = OpenSCManager(NULL, NULL, GENERIC_READ);
+	SC_HANDLE sc = OpenSCManager(NULL, NULL, GENERIC_READ);
 	if (sc == NULL)
 	{
 		return false;
 	}
 
-	service = OpenService(sc, name, GENERIC_READ);
+	SC_HANDLE service = OpenService(sc, name, GENERIC_READ);
 	if (service != NULL)
 	{
 		SERVICE_STATUS st;
@@ -241,7 +234,6 @@ bool MsIsServiceRunning(char *name)
 
 bool MsUninstallService(char *name)
 {
-	SC_HANDLE sc, service;
 	bool ret = false;
 	if (name == NULL)
 	{
@@ -250,13 +242,13 @@ bool MsUninstallService(char *name)
 
 	MsStopService(name);
 
-	sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
+	SC_HANDLE sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
 	if (sc == NULL)
 	{
 		return false;
 	}
 
-	service = OpenService(sc, name, SERVICE_ALL_ACCESS);
+	SC_HANDLE service = OpenService(sc, name, SERVICE_ALL_ACCESS);
 	if (service != NULL)
 	{
 		if (DeleteService(service))
@@ -283,14 +275,13 @@ static void MsSetServiceRecovery(SC_HANDLE service)
 {
 	SERVICE_FAILURE_ACTIONS action;
 	SC_ACTION e[3];
-	UINT i;
 
 	Zero(&action, sizeof(action));
 	action.dwResetPeriod = 1 * 60 * 60 * 24;
 	action.cActions = (DWORD)(sizeof(e) / sizeof(e[0]));
 	action.lpsaActions = e;
 
-	for (i = 0;i < action.cActions;i++)
+	for (UINT i = 0;i < action.cActions;i++)
 	{
 		e[i].Type = SC_ACTION_RESTART;
 		e[i].Delay = 10000;
@@ -301,7 +292,6 @@ static void MsSetServiceRecovery(SC_HANDLE service)
 
 bool MsUpdateServiceConfig(char *name)
 {
-	SC_HANDLE sc, service;
 	if (name == NULL)
 	{
 		return false;
@@ -316,18 +306,17 @@ bool MsUpdateServiceConfig(char *name)
 		}
 	}
 
-	sc = OpenSCManager(NULL, NULL, SC_MANAGER_CONNECT);
+	SC_HANDLE sc = OpenSCManager(NULL, NULL, SC_MANAGER_CONNECT);
 	if (sc == NULL)
 	{
 		return false;
 	}
 
 	// ChangeServiceConfig2 needs SERVICE_CHANGE_CONFIG, and SERVICE_START for the restart actions
-	service = OpenService(sc, name, SERVICE_CHANGE_CONFIG | SERVICE_START);
+	SC_HANDLE service = OpenService(sc, name, SERVICE_CHANGE_CONFIG | SERVICE_START);
 	if (service != NULL)
 	{
 		SERVICE_DESCRIPTIONW d;
-		wchar_t *description;
 		char dname[MAX_SIZE];
 
 		MsSetServiceRecovery(service);
@@ -336,7 +325,7 @@ bool MsUpdateServiceConfig(char *name)
 
 		Format(dname, sizeof(dname), "SVC_%s_DESCRIPT", name);
 
-		description = _UU(dname);
+		wchar_t *description = _UU(dname);
 
 		if (UniIsEmptyStr(description) == false)
 		{
@@ -355,7 +344,6 @@ bool MsUpdateServiceConfig(char *name)
 
 bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar_t *path)
 {
-	SC_HANDLE sc, service;
 	bool ret = false;
 	wchar_t name_w[MAX_SIZE];
 	if (name == NULL || title == NULL || path == NULL)
@@ -365,13 +353,13 @@ bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar
 
 	StrToUni(name_w, sizeof(name_w), name);
 
-	sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
+	SC_HANDLE sc = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
 	if (sc == NULL)
 	{
 		return false;
 	}
 
-	service = CreateServiceW(sc, name_w, title, SERVICE_ALL_ACCESS,
+	SC_HANDLE service = CreateServiceW(sc, name_w, title, SERVICE_ALL_ACCESS,
 		SERVICE_WIN32_OWN_PROCESS, SERVICE_AUTO_START,
 		SERVICE_ERROR_NORMAL, path, NULL, NULL, NULL, NULL, NULL);
 
@@ -402,21 +390,19 @@ bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar
 
 bool MsIsServiceInstalled(char *name)
 {
-	SC_HANDLE sc;
-	SC_HANDLE service;
 	bool ret = false;
 	if (name == NULL)
 	{
 		return false;
 	}
 
-	sc = OpenSCManager(NULL, NULL, GENERIC_READ);
+	SC_HANDLE sc = OpenSCManager(NULL, NULL, GENERIC_READ);
 	if (sc == NULL)
 	{
 		return false;
 	}
 
-	service = OpenService(sc, name, GENERIC_READ);
+	SC_HANDLE service = OpenService(sc, name, GENERIC_READ);
 	if (service != NULL)
 	{
 		ret = true;

@@ -27,10 +27,10 @@ CALLSTACK_DATA *Win32GetCallStack()
 #ifndef	WIN32_NO_DEBUG_HELP_DLL
 	void *frames[CALLSTACK_DEPTH];
 	CALLSTACK_DATA *cs = NULL, *s = NULL;
-	UINT num, i;
+	UINT i;
 
 	// Frame 0 is this function (skip 0): the callers drop their own frames with WalkDownCallStack
-	num = (UINT)CaptureStackBackTrace(0, CALLSTACK_DEPTH, frames, NULL);
+	UINT num = (UINT)CaptureStackBackTrace(0, CALLSTACK_DEPTH, frames, NULL);
 
 	for (i = 0;i < num;i++)
 	{

@@ -10,8 +10,6 @@
 
 bool AdjustTcpMssL2(UCHAR *src, UINT src_size, UINT mss, USHORT tag_vlan_tpid)
 {
-	MAC_HEADER *mac;
-	USHORT proto;
 	if (src == NULL || src_size == 0 || mss == 0)
 	{
 		return false;
@@ -26,12 +24,12 @@ bool AdjustTcpMssL2(UCHAR *src, UINT src_size, UINT mss, USHORT tag_vlan_tpid)
 		return false;
 	}
 
-	mac = (MAC_HEADER *)src;
+	MAC_HEADER *mac = (MAC_HEADER *)src;
 
 	src += sizeof(MAC_HEADER);
 	src_size -= sizeof(MAC_HEADER);
 
-	proto = Endian16(mac->Protocol);
+	USHORT proto = Endian16(mac->Protocol);
 
 	if (proto == MAC_PROTO_IPV4 || proto == MAC_PROTO_IPV6)
 	{
@@ -68,18 +66,16 @@ bool AdjustTcpMssL2(UCHAR *src, UINT src_size, UINT mss, USHORT tag_vlan_tpid)
 
 UINT GetIpHeaderSize(UCHAR *src, UINT src_size)
 {
-	UCHAR ip_ver;
 	IPV4_HEADER *ip = NULL;
 	if (src == NULL || src_size == 0)
 	{
 		return 0;
 	}
 
-	ip_ver = (src[0] >> 4) & 0x0f;
+	UCHAR ip_ver = (src[0] >> 4) & 0x0f;
 
 	if (ip_ver == 4)
 	{
-		UINT ip_header_size;
 		if (src_size < sizeof(IPV4_HEADER))
 		{
 			return 0;
@@ -87,7 +83,7 @@ UINT GetIpHeaderSize(UCHAR *src, UINT src_size)
 
 		ip = (IPV4_HEADER *)src;
 
-		ip_header_size = IPV4_GET_HEADER_LEN(ip) * 4;
+		UINT ip_header_size = IPV4_GET_HEADER_LEN(ip) * 4;
 		if (ip_header_size < sizeof(IPV4_HEADER))
 		{
 			return 0;
@@ -129,14 +125,9 @@ UINT GetIpHeaderSize(UCHAR *src, UINT src_size)
 
 bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss)
 {
-	UCHAR ip_ver;
 	TCP_HEADER *tcp = NULL;
 	UINT tcp_size = 0;
-	UINT tcp_header_size;
-	UCHAR *options;
-	UINT options_size;
 	UCHAR *mss_option = NULL;
-	UINT i;
 	IPV4_HEADER *ip = NULL;
 	IPV6_HEADER *ip6 = NULL;
 	if (src == NULL || src_size == 0 || mss == 0)
@@ -144,12 +135,10 @@ bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss)
 		return false;
 	}
 
-	ip_ver = (src[0] >> 4) & 0x0f;
+	UCHAR ip_ver = (src[0] >> 4) & 0x0f;
 
 	if (ip_ver == 4)
 	{
-		UINT ip_header_size;
-		UINT ip_total_length;
 		if (src_size < sizeof(IPV4_HEADER))
 		{
 			return false;
@@ -172,7 +161,7 @@ bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss)
 			return false;
 		}
 
-		ip_header_size = IPV4_GET_HEADER_LEN(ip) * 4;
+		UINT ip_header_size = IPV4_GET_HEADER_LEN(ip) * 4;
 		if (ip_header_size < sizeof(IPV4_HEADER))
 		{
 			return false;
@@ -183,7 +172,7 @@ bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss)
 			return false;
 		}
 
-		ip_total_length = READ_USHORT(&ip->TotalLength);
+		UINT ip_total_length = READ_USHORT(&ip->TotalLength);
 
 		if (ip_total_length < ip_header_size)
 		{
@@ -252,7 +241,7 @@ bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss)
 		return false;
 	}
 
-	tcp_header_size = TCP_GET_HEADER_SIZE(tcp) * 4;
+	UINT tcp_header_size = TCP_GET_HEADER_SIZE(tcp) * 4;
 	if (tcp_header_size < sizeof(TCP_HEADER))
 	{
 		return false;
@@ -271,18 +260,17 @@ bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss)
 		return false;
 	}
 
-	options = ((UCHAR *)tcp) + sizeof(TCP_HEADER);
-	options_size = tcp_header_size - sizeof(TCP_HEADER);
+	UCHAR *options = ((UCHAR *)tcp) + sizeof(TCP_HEADER);
+	UINT options_size = tcp_header_size - sizeof(TCP_HEADER);
 
 	// Find the MSS option (kind 2, length 4) wherever it is in the option list (RFC 9293 3.1):
 	// End of Option List (kind 0) ends the list, No-Operation (kind 1) is one byte, and every other
 	// option has a length byte of at least 2 that keeps it inside the options. A list that does not
 	// keep to that is left alone.
-	i = 0;
+	UINT i = 0;
 	while (i < options_size)
 	{
 		UCHAR kind = options[i];
-		UINT len;
 
 		if (kind == 0x00)
 		{
@@ -300,7 +288,7 @@ bool AdjustTcpMssL3(UCHAR *src, UINT src_size, UINT mss)
 			break;
 		}
 
-		len = options[i + 1];
+		UINT len = options[i + 1];
 		if (len < 2 || len > (options_size - i))
 		{
 			break;

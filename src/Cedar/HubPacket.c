@@ -24,14 +24,13 @@
 
 static int CompareStormList(void *p1, void *p2)
 {
-	STORM *s1, *s2;
 	UINT r;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	s1 = *(STORM **)p1;
-	s2 = *(STORM **)p2;
+	STORM *s1 = *(STORM **)p1;
+	STORM *s2 = *(STORM **)p2;
 	if (s1 == NULL || s2 == NULL)
 	{
 		return 0;
@@ -51,9 +50,8 @@ static int CompareStormList(void *p1, void *p2)
 	}
 	else
 	{
-		int r1, r2;
-		r1 = CmpIpAddr(&s1->DestIp, &s2->DestIp);
-		r2 = CmpIpAddr(&s1->SrcIp, &s2->SrcIp);
+		int r1 = CmpIpAddr(&s1->DestIp, &s2->DestIp);
+		int r2 = CmpIpAddr(&s1->SrcIp, &s2->SrcIp);
 		// Strict mode: entries that share either address differ only by MAC address
 		if (r1 != 0 && r2 != 0)
 		{
@@ -114,8 +112,7 @@ static void HubPaFree(SESSION *s)
 
 	LockList(pa->StormList);
 	{
-		UINT i;
-		for (i = 0;i < LIST_NUM(pa->StormList);i++)
+		for (UINT i = 0;i < LIST_NUM(pa->StormList);i++)
 		{
 			STORM *s = (STORM *)LIST_DATA(pa->StormList, i);
 			Free(s);
@@ -228,11 +225,10 @@ static bool HubPaPutPacket(SESSION *s, void *data, UINT size)
 		o = NULL;
 		LockList(s->DelayedPacketList);
 		{
-			UINT i;
 			if (LIST_NUM(s->DelayedPacketList) >= 1)
 			{
 				UINT64 now = TickHighres64();
-				for (i = 0;i < LIST_NUM(s->DelayedPacketList);i++)
+				for (UINT i = 0;i < LIST_NUM(s->DelayedPacketList);i++)
 				{
 					PKT *p = LIST_DATA(s->DelayedPacketList, i);
 
@@ -250,7 +246,7 @@ static bool HubPaPutPacket(SESSION *s, void *data, UINT size)
 
 			if (o != NULL)
 			{
-				for (i = 0;i < LIST_NUM(o);i++)
+				for (UINT i = 0;i < LIST_NUM(o);i++)
 				{
 					PKT *p = LIST_DATA(o, i);
 
@@ -442,9 +438,8 @@ bool IsIPManagementTargetForHUB(IP *ip, HUB *hub)
 static void DeleteOldestStorm(LIST *o)
 {
 	STORM *oldest = NULL;
-	UINT i;
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		STORM *s = LIST_DATA(o, i);
 
@@ -463,7 +458,6 @@ static void DeleteOldestStorm(LIST *o)
 
 STORM *AddStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, bool strict)
 {
-	STORM *s;
 	if (pa == NULL || mac_address == NULL)
 	{
 		return NULL;
@@ -476,7 +470,7 @@ STORM *AddStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, boo
 		DeleteOldestStorm(pa->StormList);
 	}
 
-	s = ZeroMalloc(sizeof(STORM));
+	STORM *s = ZeroMalloc(sizeof(STORM));
 	if (src_ip != NULL)
 	{
 		Copy(&s->SrcIp, src_ip, sizeof(IP));
@@ -495,7 +489,7 @@ STORM *AddStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, boo
 
 STORM *SearchStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, bool strict)
 {
-	STORM t, *s;
+	STORM t;
 	if (pa == NULL || mac_address == NULL)
 	{
 		return NULL;
@@ -514,7 +508,7 @@ STORM *SearchStormList(HUB_PA *pa, UCHAR *mac_address, IP *src_ip, IP *dest_ip, 
 
 	t.StrictMode = strict;
 
-	s = Search(pa->StormList, &t);
+	STORM *s = Search(pa->StormList, &t);
 
 	return s;
 }

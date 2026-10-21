@@ -19,12 +19,9 @@
 
 UINT PsAccessList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ENUM_ACCESS_LIST t;
-	CT *ct;
-	UINT i;
 	
 	if (ps->HubName == NULL)
 	{
@@ -32,7 +29,7 @@ UINT PsAccessList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
+	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -50,7 +47,7 @@ UINT PsAccessList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ret;
 	}
 
-	ct = CtNew();
+	CT *ct = CtNew();
 	CtInsertColumn(ct, _UU("SM_ACCESS_COLUMN_0"), true);
 	CtInsertColumn(ct, _UU("SM_ACCESS_COLUMN_1"), true);
 	CtInsertColumn(ct, _UU("SM_ACCESS_COLUMN_2"), true);
@@ -59,7 +56,7 @@ UINT PsAccessList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	CtInsertColumn(ct, _UU("SM_ACCESS_COLUMN_5"), false);
 	CtInsertColumn(ct, _UU("SM_ACCESS_COLUMN_4"), false);
 
-	for (i = 0;i < t.NumAccess;i++)
+	for (UINT i = 0;i < t.NumAccess;i++)
 	{
 		ACCESS *a = &t.Accesses[i];
 		char tmp[MAX_SIZE];
@@ -100,7 +97,6 @@ UINT PsAccessList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsAccessDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_DELETE_ACCESS t;
@@ -115,7 +111,7 @@ UINT PsAccessDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -141,7 +137,6 @@ UINT PsAccessDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsAccessEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ENUM_ACCESS_LIST t;
@@ -156,7 +151,7 @@ UINT PsAccessEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -175,9 +170,8 @@ UINT PsAccessEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	}
 	else
 	{
-		UINT i;
 		bool b = false;
-		for (i = 0;i < t.NumAccess;i++)
+		for (UINT i = 0;i < t.NumAccess;i++)
 		{
 			ACCESS *a = &t.Accesses[i];
 
@@ -216,7 +210,6 @@ UINT PsAccessEnable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsAccessDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ENUM_ACCESS_LIST t;
@@ -231,7 +224,7 @@ UINT PsAccessDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -250,9 +243,8 @@ UINT PsAccessDisable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	}
 	else
 	{
-		UINT i;
 		bool b = false;
-		for (i = 0;i < t.NumAccess;i++)
+		for (UINT i = 0;i < t.NumAccess;i++)
 		{
 			ACCESS *a = &t.Accesses[i];
 

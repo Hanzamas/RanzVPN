@@ -65,14 +65,12 @@ bool GetHostName(char *hostname, UINT size, const IP *ip)
 
 bool GetNetBiosName(char *name, UINT size, const IP *ip)
 {
-	SOCK *s;
-	UINT i, j;
+	UINT i;
 	bool flag = false;
 	bool ok = false;
 	NBTREQUEST req;
 	UCHAR buf[1024];
 	USHORT tran_id[NUM_NBT_QUERYS_SEND];
-	UINT64 timeout_tick;
 	if (name == NULL || ip == NULL)
 	{
 		return false;
@@ -85,13 +83,13 @@ bool GetNetBiosName(char *name, UINT size, const IP *ip)
 		tran_id[i] = Rand16();
 	}
 
-	s = NewUDP(0);
+	SOCK *s = NewUDP(0);
 	if (s == NULL)
 	{
 		return false;
 	}
 
-	for (j = 0; j < NUM_NBT_QUERYS_SEND; j++)
+	for (UINT j = 0; j < NUM_NBT_QUERYS_SEND; j++)
 	{
 		Zero(&req, sizeof(req));
 		req.TransactionId = Endian16(tran_id[j]);
@@ -113,11 +111,10 @@ bool GetNetBiosName(char *name, UINT size, const IP *ip)
 		}
 	}
 
-	timeout_tick = Tick64() + (UINT64)TIMEOUT_NETBIOS_HOSTNAME;
+	UINT64 timeout_tick = Tick64() + (UINT64)TIMEOUT_NETBIOS_HOSTNAME;
 
 	while (1)
 	{
-		UINT ret;
 		IP src_ip;
 		UINT src_port;
 		SOCKSET set;
@@ -138,7 +135,7 @@ bool GetNetBiosName(char *name, UINT size, const IP *ip)
 			SleepThread(10);
 		}
 
-		ret = RecvFrom(s, &src_ip, &src_port, buf, sizeof(buf));
+		UINT ret = RecvFrom(s, &src_ip, &src_port, buf, sizeof(buf));
 
 		if (ret == SOCK_LATER)
 		{
@@ -155,9 +152,8 @@ bool GetNetBiosName(char *name, UINT size, const IP *ip)
 			{
 				NBTRESPONSE *r = (NBTRESPONSE *)buf;
 				bool b = false;
-				UINT i;
 				USHORT id = Endian16(r->TransactionId);
-				for (i = 0; i < NUM_NBT_QUERYS_SEND; i++)
+				for (UINT i = 0; i < NUM_NBT_QUERYS_SEND; i++)
 				{
 					if (id == tran_id[i])
 					{

@@ -85,7 +85,6 @@ static USHORT IpChecksumFinish(UINT64 sum)
 USHORT CalcChecksumForIPv4(UINT src_ip, UINT dst_ip, UCHAR protocol, void *data, UINT size, UINT real_size)
 {
 	IPV4_PSEUDO_HEADER ph;
-	UINT64 sum;
 	if (data == NULL && size != 0)
 	{
 		return 0;
@@ -107,7 +106,7 @@ USHORT CalcChecksumForIPv4(UINT src_ip, UINT dst_ip, UCHAR protocol, void *data,
 	ph.Protocol = protocol;
 	ph.Reserved = 0;
 
-	sum = IpChecksumAdd(0, &ph, sizeof(ph));
+	UINT64 sum = IpChecksumAdd(0, &ph, sizeof(ph));
 	sum = IpChecksumAdd(sum, data, size);
 
 	return IpChecksumFinish(sum);
@@ -116,7 +115,6 @@ USHORT CalcChecksumForIPv4(UINT src_ip, UINT dst_ip, UCHAR protocol, void *data,
 USHORT CalcChecksumForIPv6(IPV6_ADDR *src_ip, IPV6_ADDR *dest_ip, UCHAR protocol, void *data, UINT size, UINT real_size)
 {
 	IPV6_PSEUDO_HEADER ph;
-	UINT64 sum;
 	if (data == NULL && size != 0)
 	{
 		return 0;
@@ -138,7 +136,7 @@ USHORT CalcChecksumForIPv6(IPV6_ADDR *src_ip, IPV6_ADDR *dest_ip, UCHAR protocol
 	ph.UpperLayerPacketSize = Endian32(real_size);
 	ph.NextHeader = protocol;
 
-	sum = IpChecksumAdd(0, &ph, sizeof(ph));
+	UINT64 sum = IpChecksumAdd(0, &ph, sizeof(ph));
 	sum = IpChecksumAdd(sum, data, size);
 
 	return IpChecksumFinish(sum);
@@ -146,7 +144,7 @@ USHORT CalcChecksumForIPv6(IPV6_ADDR *src_ip, IPV6_ADDR *dest_ip, UCHAR protocol
 
 // The checksum of a TCP or UDP segment over the pseudo-header of the packet's IP version, with the
 // size and the real_size of CalcChecksumForIPv4 and CalcChecksumForIPv6
-static USHORT CalcL4Checksum(PKT *p, UCHAR protocol, void *data, UINT size, UINT real_size)
+static USHORT CalcL4Checksum(const PKT *p, UCHAR protocol, void *data, UINT size, UINT real_size)
 {
 	if (p->TypeL3 == L3_IPV4)
 	{
@@ -166,10 +164,9 @@ static USHORT CalcL4Checksum(PKT *p, UCHAR protocol, void *data, UINT size, UINT
 // pseudo-header or at the complement of it. Such a checksum is replaced with the real one over the len
 // bytes of the segment l4. A UDP datagram with checksum 0 has none. When the segment is not complete
 // (complete is false) the field is cleared instead
-static void FixOffloadChecksum(PKT *p, UCHAR protocol, void *l4, void *checksum_field, UINT len, bool complete)
+static void FixOffloadChecksum(const PKT *p, UCHAR protocol, void *l4, void *checksum_field, UINT len, bool complete)
 {
 	USHORT checksum;
-	USHORT offloading_checksum;
 
 	Copy(&checksum, checksum_field, sizeof(checksum));
 
@@ -178,7 +175,7 @@ static void FixOffloadChecksum(PKT *p, UCHAR protocol, void *l4, void *checksum_
 		return;
 	}
 
-	offloading_checksum = CalcL4Checksum(p, protocol, NULL, 0, len);
+	USHORT offloading_checksum = CalcL4Checksum(p, protocol, NULL, 0, len);
 
 	if (checksum != 0 && checksum != offloading_checksum && checksum != (USHORT)~offloading_checksum)
 	{

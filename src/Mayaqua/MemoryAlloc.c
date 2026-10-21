@@ -49,14 +49,13 @@ UCHAR *GetCanaryRand(UINT id)
 
 void InitCanaryRand()
 {
-	UINT i;
 	if (canary_inited)
 	{
 		return;
 	}
 
 	// From CNG (Rand): no seed, no state shared with the CRT generator
-	for (i = 0;i < NUM_CANARY_RAND;i++)
+	for (UINT i = 0;i < NUM_CANARY_RAND;i++)
 	{
 		Rand(canary_rand_data[i].Data, CANARY_RAND_SIZE);
 	}
@@ -73,10 +72,6 @@ void *Malloc(UINT size)
 }
 void *MallocEx(UINT size, bool zero_clear_when_free)
 {
-	MEMTAG1 *tag1;
-	MEMTAG2 *tag2;
-	UINT real_size;
-
 	if (canary_inited == false)
 	{
 		InitCanaryRand();
@@ -87,15 +82,15 @@ void *MallocEx(UINT size, bool zero_clear_when_free)
 		AbortExitEx("MallocEx() error: too large size");
 	}
 
-	real_size = CALC_MALLOCSIZE(size);
+	UINT real_size = CALC_MALLOCSIZE(size);
 
-	tag1 = InternalMalloc(real_size);
+	MEMTAG1 *tag1 = InternalMalloc(real_size);
 
 	tag1->Magic = canary_memtag_magic1 ^ ((UINT64)tag1 * GOLDEN_RATION_PRIME_U64);
 	tag1->Size = size;
 	tag1->ZeroFree = zero_clear_when_free;
 
-	tag2 = (MEMTAG2 *)(((UCHAR *)tag1) + CALC_MALLOCSIZE(tag1->Size) - sizeof(MEMTAG2));
+	MEMTAG2 *tag2 = (MEMTAG2 *)(((UCHAR *)tag1) + CALC_MALLOCSIZE(tag1->Size) - sizeof(MEMTAG2));
 	tag2->Magic = canary_memtag_magic2 ^ ((UINT64)tag2 * GOLDEN_RATION_PRIME_U64);
 	MEMTAG_POISON(tag1);
 
@@ -104,10 +99,6 @@ void *MallocEx(UINT size, bool zero_clear_when_free)
 
 void *ReAlloc(void *addr, UINT size)
 {
-	MEMTAG1 *tag1;
-	MEMTAG2 *tag2;
-	bool zerofree;
-
 	if (canary_inited == false)
 	{
 		InitCanaryRand();
@@ -123,14 +114,14 @@ void *ReAlloc(void *addr, UINT size)
 		return NULL;
 	}
 
-	tag1 = POINTER_TO_MEMTAG1(addr);
+	MEMTAG1 *tag1 = POINTER_TO_MEMTAG1(addr);
 	CheckMemTag1(tag1);
 	MEMTAG_UNPOISON(tag1);
 
-	tag2 = (MEMTAG2 *)(((UCHAR *)tag1) + CALC_MALLOCSIZE(tag1->Size) - sizeof(MEMTAG2));
+	MEMTAG2 *tag2 = (MEMTAG2 *)(((UCHAR *)tag1) + CALC_MALLOCSIZE(tag1->Size) - sizeof(MEMTAG2));
 	CheckMemTag2(tag2);
 
-	zerofree = tag1->ZeroFree;
+	bool zerofree = tag1->ZeroFree;
 
 	if (tag1->Size == size)
 	{
@@ -159,19 +150,16 @@ void *ReAlloc(void *addr, UINT size)
 		}
 		else
 		{
-			MEMTAG1 *tag1_new;
-			MEMTAG2 *tag2_new;
-
 			tag1->Magic = 0;
 			tag2->Magic = 0;
 
-			tag1_new = InternalReAlloc(tag1, CALC_MALLOCSIZE(size));
+			MEMTAG1 *tag1_new = InternalReAlloc(tag1, CALC_MALLOCSIZE(size));
 
 			tag1_new->Magic = canary_memtag_magic1 ^ ((UINT64)tag1_new * GOLDEN_RATION_PRIME_U64);
 			tag1_new->Size = size;
 			tag1_new->ZeroFree = 0;
 
-			tag2_new = (MEMTAG2 *)(((UCHAR *)tag1_new) + CALC_MALLOCSIZE(size) - sizeof(MEMTAG2));
+			MEMTAG2 *tag2_new = (MEMTAG2 *)(((UCHAR *)tag1_new) + CALC_MALLOCSIZE(size) - sizeof(MEMTAG2));
 			tag2_new->Magic = canary_memtag_magic2 ^ ((UINT64)tag2_new * GOLDEN_RATION_PRIME_U64);
 			MEMTAG_POISON(tag1_new);
 
@@ -182,8 +170,6 @@ void *ReAlloc(void *addr, UINT size)
 
 void Free(void *addr)
 {
-	MEMTAG1 *tag1;
-	MEMTAG2 *tag2;
 	if (IS_NULL_POINTER(addr))
 	{
 		return;
@@ -194,11 +180,11 @@ void Free(void *addr)
 		InitCanaryRand();
 	}
 
-	tag1 = POINTER_TO_MEMTAG1(addr);
+	MEMTAG1 *tag1 = POINTER_TO_MEMTAG1(addr);
 	CheckMemTag1(tag1);
 	MEMTAG_UNPOISON(tag1);
 
-	tag2 = (MEMTAG2 *)(((UCHAR *)tag1) + CALC_MALLOCSIZE(tag1->Size) - sizeof(MEMTAG2));
+	MEMTAG2 *tag2 = (MEMTAG2 *)(((UCHAR *)tag1) + CALC_MALLOCSIZE(tag1->Size) - sizeof(MEMTAG2));
 	CheckMemTag2(tag2);
 
 	if (tag1->ZeroFree)

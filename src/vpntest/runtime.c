@@ -97,17 +97,15 @@ void tickorigin_test(UINT num, char **arg)
 {
 	RT_CTX ctx;
 	FILETIME create_ft, exit_ft, kernel_ft, user_ft, now_ft;
-	UINT64 tick, tick2;
 	UINT64 age = 0;
-	bool have_age;
 	UINT err = 0;
 
 	// Read the tick before anything else can take time
-	tick = Tick64();
+	UINT64 tick = Tick64();
 
 	RtBegin(&ctx, "TICKORIGIN", "Tick64 origin test");
 
-	have_age = (GetProcessTimes(GetCurrentProcess(), &create_ft, &exit_ft, &kernel_ft, &user_ft) != FALSE);
+	bool have_age = (GetProcessTimes(GetCurrentProcess(), &create_ft, &exit_ft, &kernel_ft, &user_ft) != FALSE);
 	if (have_age == false)
 	{
 		err = GetLastError();
@@ -123,7 +121,7 @@ void tickorigin_test(UINT num, char **arg)
 	RtCheck(&ctx, have_age && tick <= age + RT_TICK_ORIGIN_MARGIN, "Tick64 is at most the process age plus the margin",
 		"Tick64 = %I64u ms, process age = %I64u ms, margin = %u ms", tick, age, RT_TICK_ORIGIN_MARGIN);
 
-	tick2 = Tick64();
+	UINT64 tick2 = Tick64();
 	RtCheck(&ctx, tick2 >= tick, "Tick64 does not go back", "first %I64u, then %I64u", tick, tick2);
 
 	RtEnd(&ctx);
@@ -223,11 +221,10 @@ static RT_RFC3339_VECTOR rt_rfc3339_vectors[] =
 // GetDateTimeStrRFC3339 against the printing vectors
 static void RtCheckRfc3339Print(RT_CTX *ctx)
 {
-	UINT i;
 	SYSTEMTIME st;
 	char str[MAX_SIZE];
 
-	for (i = 0; i < sizeof(rt_rfc3339_vectors) / sizeof(rt_rfc3339_vectors[0]); i++)
+	for (UINT i = 0; i < _countof(rt_rfc3339_vectors); i++)
 	{
 		RT_RFC3339_VECTOR *v = &rt_rfc3339_vectors[i];
 
@@ -280,14 +277,13 @@ static RT_RFC3339_PARSE_VECTOR rt_rfc3339_parse_vectors[] =
 // the printer, the parser and the printer again
 static void RtCheckRfc3339Parse(RT_CTX *ctx)
 {
-	UINT i;
 	SYSTEMTIME st, utc, back;
 	char str[MAX_SIZE];
 	char what[MAX_SIZE];
 	UINT64 local64, utc64, expect64;
 	bool ok;
 
-	for (i = 0; i < sizeof(rt_rfc3339_parse_vectors) / sizeof(rt_rfc3339_parse_vectors[0]); i++)
+	for (UINT i = 0; i < _countof(rt_rfc3339_parse_vectors); i++)
 	{
 		RT_RFC3339_PARSE_VECTOR *v = &rt_rfc3339_parse_vectors[i];
 
@@ -320,7 +316,7 @@ static void RtCheckRfc3339Parse(RT_CTX *ctx)
 	RtCheck(ctx, ok == false, "RFC 3339 parse refuses a NULL result", "returned true");
 
 	// Round trip: printer, parser (UTC: the local time minus the offset), printer again
-	for (i = 0; i < sizeof(rt_rfc3339_vectors) / sizeof(rt_rfc3339_vectors[0]); i++)
+	for (UINT i = 0; i < _countof(rt_rfc3339_vectors); i++)
 	{
 		RT_RFC3339_VECTOR *v = &rt_rfc3339_vectors[i];
 
@@ -375,15 +371,13 @@ static RT_ZONE_VECTOR rt_zone_vectors[] =
 // offset of the OS time zone now, daylight saving time included
 static void RtCheckZoneOffset(RT_CTX *ctx)
 {
-	UINT i;
 	TIME_ZONE_INFORMATION info;
 	SYSTEMTIME st;
 	char str[MAX_SIZE];
 	int offset;
 	INT64 os_offset = 0;
-	bool have_offset;
 
-	for (i = 0; i < sizeof(rt_zone_vectors) / sizeof(rt_zone_vectors[0]); i++)
+	for (UINT i = 0; i < _countof(rt_zone_vectors); i++)
 	{
 		RT_ZONE_VECTOR *v = &rt_zone_vectors[i];
 
@@ -400,7 +394,7 @@ static void RtCheckZoneOffset(RT_CTX *ctx)
 	}
 
 	GetSystemTime(&st);
-	have_offset = RtOsZoneOffset(&st, &os_offset);
+	bool have_offset = RtOsZoneOffset(&st, &os_offset);
 	offset = GetCurrentTimezone();
 	RtCheck(ctx, have_offset && (INT64)offset * 60000 == os_offset,
 		"GetCurrentTimezone is the OS time zone offset now, daylight saving time included",
@@ -416,25 +410,23 @@ void timeenc_test(UINT num, char **arg)
 	RT_CTX ctx;
 	FILETIME now_ft;
 	SYSTEMTIME st;
-	UINT64 value, expect, local64, system64;
-	INT64 offset, os_offset = 0;
-	bool have_offset;
+	INT64 os_offset = 0;
 
 	RtBegin(&ctx, "TIMEENC", "Time encoding test");
 
 	// SystemTime64 against the OS clock
 	GetSystemTimeAsFileTime(&now_ft);
-	value = SystemTime64();
-	expect = (RtFileTime64(&now_ft) - RT_UNIX_EPOCH_FILETIME) / 10000ULL - RT_TIME_OFFSET;
+	UINT64 value = SystemTime64();
+	UINT64 expect = (RtFileTime64(&now_ft) - RT_UNIX_EPOCH_FILETIME) / 10000ULL - RT_TIME_OFFSET;
 	RtCheck(&ctx, RtDiff64(value, expect) <= RT_TIME_TOLERANCE, "SystemTime64 is the OS UTC time in Unix-epoch ms minus 9 hours",
 		"SystemTime64 = %I64u, expected %I64u", value, expect);
 
 	// LocalTime64 - SystemTime64 against the OS time zone offset
 	GetSystemTime(&st);
-	have_offset = RtOsZoneOffset(&st, &os_offset);
-	local64 = LocalTime64();
-	system64 = SystemTime64();
-	offset = (INT64)local64 - (INT64)system64;
+	bool have_offset = RtOsZoneOffset(&st, &os_offset);
+	UINT64 local64 = LocalTime64();
+	UINT64 system64 = SystemTime64();
+	INT64 offset = (INT64)local64 - (INT64)system64;
 	RtCheck(&ctx, have_offset && RtAbs64(offset - os_offset) <= RT_TIME_TOLERANCE,
 		"LocalTime64 - SystemTime64 is the OS time zone offset",
 		"LocalTime64 - SystemTime64 = %I64d ms, OS offset = %I64d ms", offset, os_offset);
@@ -535,11 +527,7 @@ void nullsafe_test(UINT num, char **arg)
 	COUNTER *counter = NULL;
 	REF *ref = NULL;
 	EVENT *e = NULL;
-	LIST *o;
 	UINT item = 1;
-	UINT ret;
-	UINT64 start, elapsed;
-	bool waited;
 	UCHAR be[8];
 
 	RtBegin(&ctx, "NULLSAFE", "NULL safety test");
@@ -585,7 +573,7 @@ void nullsafe_test(UINT num, char **arg)
 		"got %08x%08x", READ_UINT(be), READ_UINT(be + 4));
 
 	// LockList/UnlockList on a list from NewListFast, which has no lock
-	o = NewListFast(NULL);
+	LIST *o = NewListFast(NULL);
 	RtCheck(&ctx, o != NULL && o->lock == NULL, "NewListFast creates a list without a lock", "list %s", (o == NULL) ? "missing" : "has a lock");
 	LockList(o);
 	{
@@ -599,7 +587,7 @@ void nullsafe_test(UINT num, char **arg)
 	RtCheck(&ctx, true, "LockList(NULL) and UnlockList(NULL) return", "");
 
 	// COUNTER and REF
-	ret = Count(counter);
+	UINT ret = Count(counter);
 	RtCheck(&ctx, ret == 0, "Count(NULL) returns 0", "returned %u", ret);
 	ret = Inc(counter);
 	RtCheck(&ctx, ret == 0, "Inc(NULL) returns 0", "returned %u", ret);
@@ -626,9 +614,9 @@ void nullsafe_test(UINT num, char **arg)
 	CloseHandle((HANDLE)e->pData);
 	e->pData = NULL;
 	Set(e);
-	start = Tick64();
-	waited = Wait(e, RT_EVENT_NO_HANDLE_WAIT);
-	elapsed = Tick64() - start;
+	UINT64 start = Tick64();
+	bool waited = Wait(e, RT_EVENT_NO_HANDLE_WAIT);
+	UINT64 elapsed = Tick64() - start;
 	RtCheck(&ctx, waited == false && elapsed < RT_EVENT_NO_HANDLE_WAIT, "Wait on an EVENT without a handle returns false at once",
 		"returned %s after %I64u ms", waited ? "true" : "false", elapsed);
 	ReleaseEvent(e);
@@ -734,7 +722,7 @@ static UINT RtCharsetRandom(UINT *state)
 
 // Reference of the UTF-8 decoding Mayaqua has always done, independent of Internat.c (see the
 // decoding vectors). Writes the code units to s when s is not NULL and returns their number
-static UINT RtUtf8DecodeRef(wchar_t *s, BYTE *u, UINT size)
+static UINT RtUtf8DecodeRef(wchar_t *s, const BYTE *u, UINT size)
 {
 	UINT i = 0, num = 0;
 
@@ -775,11 +763,11 @@ static UINT RtUtf8DecodeRef(wchar_t *s, BYTE *u, UINT size)
 
 // Reference of the UTF-8 encoding Mayaqua has always done (see the encoding vectors): 1 byte
 // below U+0080, 2 below U+0800, 3 otherwise. Writes the bytes to u and returns their number
-static UINT RtUtf8EncodeRef(BYTE *u, wchar_t *s, UINT len)
+static UINT RtUtf8EncodeRef(BYTE *u, const wchar_t *s, UINT len)
 {
-	UINT i, wp = 0;
+	UINT wp = 0;
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		UINT c = s[i];
 
@@ -806,26 +794,24 @@ static UINT RtUtf8EncodeRef(BYTE *u, wchar_t *s, UINT len)
 // Compare Utf8Len, CalcUtf8ToUni and Utf8ToUni on the size bytes of u (at least 1) with the
 // reference. out_units is the size given to Utf8ToUni in wchar_t (0: no limit). On a difference,
 // describe it in err and return false
-static bool RtUtf8DecodeMatches(BYTE *u, UINT size, UINT out_units, char *err, UINT err_size)
+static bool RtUtf8DecodeMatches(const BYTE *u, UINT size, UINT out_units, char *err, UINT err_size)
 {
 	wchar_t expect[RT_CHARSET_BUF];
 	wchar_t got[RT_CHARSET_BUF];
 	char hex[RT_CHARSET_BUF * 2 + 1];
-	UINT n, len, calc, num, expect_num, i;
-	bool ok;
 
-	n = RtUtf8DecodeRef(expect, u, size);
-	len = Utf8Len(u, size);
-	calc = CalcUtf8ToUni(u, size);
+	UINT n = RtUtf8DecodeRef(expect, u, size);
+	UINT len = Utf8Len(u, size);
+	UINT calc = CalcUtf8ToUni(u, size);
 
 	memset(got, RT_CHARSET_FILL_BYTE, sizeof(got));
-	num = Utf8ToUni(got, (UINT)(out_units * sizeof(wchar_t)), u, size);
-	expect_num = (out_units == 0) ? n : MIN(n, out_units - 1);
+	UINT num = Utf8ToUni(got, (UINT)(out_units * sizeof(wchar_t)), u, size);
+	UINT expect_num = (out_units == 0) ? n : MIN(n, out_units - 1);
 
 	// The code units, the terminating NUL, and nothing written after it
-	ok = (len == n && calc == (n + 1) * sizeof(wchar_t) && num == expect_num &&
+	bool ok = (len == n && calc == (n + 1) * sizeof(wchar_t) && num == expect_num &&
 		Cmp(got, expect, num * sizeof(wchar_t)) == 0 && got[num] == 0);
-	for (i = num + 1;ok && i < RT_CHARSET_BUF;i++)
+	for (UINT i = num + 1;ok && i < RT_CHARSET_BUF;i++)
 	{
 		ok = (got[i] == RT_CHARSET_FILL);
 	}
@@ -843,25 +829,23 @@ static bool RtUtf8DecodeMatches(BYTE *u, UINT size, UINT out_units, char *err, U
 // Compare CalcUniToUtf8 and UniToUtf8 on s (at most RT_CHARSET_BUF code units) with the
 // reference. out_size is the size given to UniToUtf8 in bytes (0: no limit). On a difference,
 // describe it in err and return false
-static bool RtUtf8EncodeMatches(wchar_t *s, UINT out_size, char *err, UINT err_size)
+static bool RtUtf8EncodeMatches(const wchar_t *s, UINT out_size, char *err, UINT err_size)
 {
 	BYTE expect[RT_CHARSET_BUF * 3];
 	BYTE got[RT_CHARSET_BUF * 3 + 1];
 	char hex[RT_CHARSET_BUF * 4 + 1];
-	UINT len, n, calc, wp, expect_wp, i;
-	bool ok;
 
-	len = UniStrLen(s);
-	n = RtUtf8EncodeRef(expect, s, len);
-	calc = CalcUniToUtf8(s);
+	UINT len = UniStrLen(s);
+	UINT n = RtUtf8EncodeRef(expect, s, len);
+	UINT calc = CalcUniToUtf8(s);
 
 	memset(got, RT_CHARSET_FILL_BYTE, sizeof(got));
-	wp = UniToUtf8(got, out_size, s);
-	expect_wp = (out_size == 0) ? n : MIN(n, out_size);
+	UINT wp = UniToUtf8(got, out_size, s);
+	UINT expect_wp = (out_size == 0) ? n : MIN(n, out_size);
 
 	// The bytes, then the terminating NUL only when there is room for it, and nothing else
-	ok = (calc == n && wp == expect_wp && Cmp(got, expect, wp) == 0);
-	i = wp;
+	bool ok = (calc == n && wp == expect_wp && Cmp(got, expect, wp) == 0);
+	UINT i = wp;
 	if (ok && (out_size == 0 || wp < out_size))
 	{
 		ok = (got[wp] == 0);
@@ -886,16 +870,14 @@ static bool RtUtf8EncodeMatches(wchar_t *s, UINT out_size, char *err, UINT err_s
 static void RtCharsetDecodeVector(RT_CTX *ctx, RT_UTF8_DECODE_VECTOR *v)
 {
 	wchar_t got[RT_CHARSET_BUF];
-	UINT len, calc, num;
-	bool ok;
 
 	memset(got, RT_CHARSET_FILL_BYTE, sizeof(got));
 
-	len = Utf8Len((BYTE *)v->Bytes, v->Size);
-	calc = CalcUtf8ToUni((BYTE *)v->Bytes, v->Size);
-	num = Utf8ToUni(got, sizeof(got), (BYTE *)v->Bytes, v->Size);
+	UINT len = Utf8Len((BYTE *)v->Bytes, v->Size);
+	UINT calc = CalcUtf8ToUni((BYTE *)v->Bytes, v->Size);
+	UINT num = Utf8ToUni(got, sizeof(got), (BYTE *)v->Bytes, v->Size);
 
-	ok = (len == v->NumUnits && calc == (v->NumUnits + 1) * sizeof(wchar_t) && num == v->NumUnits &&
+	bool ok = (len == v->NumUnits && calc == (v->NumUnits + 1) * sizeof(wchar_t) && num == v->NumUnits &&
 		Cmp(got, v->Units, num * sizeof(wchar_t)) == 0 && got[num] == 0 && got[num + 1] == RT_CHARSET_FILL);
 
 	RtCheck(ctx, ok, v->What, "Utf8Len %u, CalcUtf8ToUni %u, Utf8ToUni %u, first unit 0x%04X; expected %u units, first 0x%04X",
@@ -907,15 +889,13 @@ static void RtCharsetEncodeVector(RT_CTX *ctx, RT_UTF8_ENCODE_VECTOR *v)
 {
 	BYTE got[RT_CHARSET_BUF];
 	char hex[RT_CHARSET_BUF * 2 + 1];
-	UINT calc, wp;
-	bool ok;
 
 	memset(got, RT_CHARSET_FILL_BYTE, sizeof(got));
 
-	calc = CalcUniToUtf8(v->Units);
-	wp = UniToUtf8(got, sizeof(got), v->Units);
+	UINT calc = CalcUniToUtf8(v->Units);
+	UINT wp = UniToUtf8(got, sizeof(got), v->Units);
 
-	ok = (calc == v->Size && wp == v->Size && Cmp(got, v->Bytes, wp) == 0 && got[wp] == 0 &&
+	bool ok = (calc == v->Size && wp == v->Size && Cmp(got, v->Bytes, wp) == 0 && got[wp] == 0 &&
 		got[wp + 1] == RT_CHARSET_FILL_BYTE);
 
 	BinToStr(hex, sizeof(hex), got, MIN(wp, 32));
@@ -931,22 +911,18 @@ static void RtCharsetUtf8Fixed(RT_CTX *ctx)
 	wchar_t two[] = {L'a', 0x00E9, 0};
 	wchar_t high[] = {0xD800, 0};
 	char *mixed_utf8 = "a\xC3\xA9\xED\xA0\xBD\xED\xB8\x80";
-	char *utf;
-	wchar_t *uni;
-	UINT i, ret;
-	bool ok;
 
-	for (i = 0;i < sizeof(rt_utf8_decode_vectors) / sizeof(rt_utf8_decode_vectors[0]);i++)
+	for (UINT i = 0;i < _countof(rt_utf8_decode_vectors);i++)
 	{
 		RtCharsetDecodeVector(ctx, &rt_utf8_decode_vectors[i]);
 	}
-	for (i = 0;i < sizeof(rt_utf8_encode_vectors) / sizeof(rt_utf8_encode_vectors[0]);i++)
+	for (UINT i = 0;i < _countof(rt_utf8_encode_vectors);i++)
 	{
 		RtCharsetEncodeVector(ctx, &rt_utf8_encode_vectors[i]);
 	}
 
 	// GetUtf8Type and GetUniType: the length classes
-	ok = (GetUtf8Type((BYTE *)"A", 1, 0) == 1 && GetUtf8Type((BYTE *)"\xC3\xA9", 2, 0) == 2 &&
+	bool ok = (GetUtf8Type((BYTE *)"A", 1, 0) == 1 && GetUtf8Type((BYTE *)"\xC3\xA9", 2, 0) == 2 &&
 		GetUtf8Type((BYTE *)"\x80\x41", 2, 0) == 2 && GetUtf8Type((BYTE *)"\xA0\x41\x42", 3, 0) == 3 &&
 		GetUtf8Type((BYTE *)"\xF0\x9F\x98\x80", 4, 0) == 3 && GetUtf8Type((BYTE *)"\xC3", 1, 0) == 0 &&
 		GetUtf8Type((BYTE *)"\xE3\x81", 2, 0) == 0 && GetUtf8Type((BYTE *)"A", 1, 1) == 0 &&
@@ -958,7 +934,7 @@ static void RtCharsetUtf8Fixed(RT_CTX *ctx)
 
 	// Utf8ToUni size limits: size counts bytes, room for the NUL is kept, 0 means no limit
 	memset(w, RT_CHARSET_FILL_BYTE, sizeof(w));
-	ret = Utf8ToUni(w, 3 * sizeof(wchar_t), (BYTE *)"ABCDE", 5);
+	UINT ret = Utf8ToUni(w, 3 * sizeof(wchar_t), (BYTE *)"ABCDE", 5);
 	RtCheck(ctx, ret == 2 && w[0] == L'A' && w[1] == L'B' && w[2] == 0 && w[3] == RT_CHARSET_FILL,
 		"Utf8ToUni with room for 3 code units writes 2 and the NUL", "returned %u", ret);
 	memset(w, RT_CHARSET_FILL_BYTE, sizeof(w));
@@ -1013,10 +989,10 @@ static void RtCharsetUtf8Fixed(RT_CTX *ctx)
 	RtCheck(ctx, ok, "The UTF-8 functions return 0 or NULL on NULL arguments", "a call returned something else");
 
 	// The copy functions: a surrogate pair goes out as CESU-8 and comes back unchanged
-	utf = CopyUniToUtf(mixed);
+	char *utf = CopyUniToUtf(mixed);
 	RtCheck(ctx, utf != NULL && StrLen(utf) == 9 && Cmp(utf, mixed_utf8, 10) == 0,
 		"CopyUniToUtf writes CESU-8 for a surrogate pair", "length %u", StrLen(utf));
-	uni = CopyUtfToUni(utf);
+	wchar_t *uni = CopyUtfToUni(utf);
 	RtCheck(ctx, uni != NULL && UniStrCmp(uni, mixed) == 0, "CopyUtfToUni gives the surrogate pair back", "length %u", UniStrLen(uni));
 	Free(uni);
 	Free(utf);
@@ -1036,12 +1012,12 @@ static void RtCharsetUtf8Sweep(RT_CTX *ctx)
 	char first[MAX_SIZE];
 	BYTE u[RT_CHARSET_MAX_LEN * 4];
 	wchar_t s[RT_CHARSET_MAX_LEN + 1];
-	UINT c, i, j, k, n, bad, bad_back, len, room, r;
+	UINT c, n, bad_back, len, room, r;
 	UINT state = RT_CHARSET_SEED;
 
 	// Every code unit U+0001-U+FFFF alone: encoded as the reference does, decoded as the
 	// reference does, and back to the same code unit
-	bad = bad_back = 0;
+	UINT bad = bad_back = 0;
 	StrCpy(first, sizeof(first), "");
 	for (c = 1;c <= 0xFFFF;c++)
 	{
@@ -1071,14 +1047,14 @@ static void RtCharsetUtf8Sweep(RT_CTX *ctx)
 	// Every input of 1 and 2 bytes
 	bad = 0;
 	StrCpy(first, sizeof(first), "");
-	for (i = 0;i < 256;i++)
+	for (UINT i = 0;i < 256;i++)
 	{
 		u[0] = (BYTE)i;
 		if (RtUtf8DecodeMatches(u, 1, 0, err, sizeof(err)) == false && bad++ == 0)
 		{
 			StrCpy(first, sizeof(first), err);
 		}
-		for (j = 0;j < 256;j++)
+		for (UINT j = 0;j < 256;j++)
 		{
 			u[1] = (BYTE)j;
 			if (RtUtf8DecodeMatches(u, 2, 0, err, sizeof(err)) == false && bad++ == 0)
@@ -1092,11 +1068,11 @@ static void RtCharsetUtf8Sweep(RT_CTX *ctx)
 	// Every lead byte followed by two boundary bytes
 	bad = 0;
 	StrCpy(first, sizeof(first), "");
-	for (i = 0;i < 256;i++)
+	for (UINT i = 0;i < 256;i++)
 	{
-		for (j = 0;j < sizeof(rt_charset_bytes);j++)
+		for (UINT j = 0;j < sizeof(rt_charset_bytes);j++)
 		{
-			for (k = 0;k < sizeof(rt_charset_bytes);k++)
+			for (UINT k = 0;k < sizeof(rt_charset_bytes);k++)
 			{
 				u[0] = (BYTE)i;
 				u[1] = rt_charset_bytes[j];
@@ -1114,12 +1090,12 @@ static void RtCharsetUtf8Sweep(RT_CTX *ctx)
 	// 4-byte sequences and some boundary bytes; decoded with a random room
 	bad = 0;
 	StrCpy(first, sizeof(first), "");
-	for (i = 0;i < RT_CHARSET_ROUNDS;i++)
+	for (UINT i = 0;i < RT_CHARSET_ROUNDS;i++)
 	{
 		UINT pieces = 1 + RtCharsetRandom(&state) % RT_CHARSET_MAX_LEN;
 
 		len = 0;
-		for (j = 0;j < pieces;j++)
+		for (UINT j = 0;j < pieces;j++)
 		{
 			r = RtCharsetRandom(&state);
 			if ((r & 7) == 0)
@@ -1154,10 +1130,10 @@ static void RtCharsetUtf8Sweep(RT_CTX *ctx)
 	// Random strings of code units (one in eight a surrogate), encoded with a random room
 	bad = 0;
 	StrCpy(first, sizeof(first), "");
-	for (i = 0;i < RT_CHARSET_ROUNDS;i++)
+	for (UINT i = 0;i < RT_CHARSET_ROUNDS;i++)
 	{
 		len = 1 + RtCharsetRandom(&state) % RT_CHARSET_MAX_LEN;
-		for (j = 0;j < len;j++)
+		for (UINT j = 0;j < len;j++)
 		{
 			r = RtCharsetRandom(&state);
 			switch (r & 7)
@@ -1200,19 +1176,16 @@ static void RtCharsetUtf8Sweep(RT_CTX *ctx)
 
 // StrToUni, CalcStrToUni and CopyStrToUni of str in the current locale: expect, or an empty
 // string with CalcStrToUni 0 when str does not convert (converts false)
-static void RtCharsetStrToUni(RT_CTX *ctx, char *what, char *str, wchar_t *expect, bool converts)
+static void RtCharsetStrToUni(RT_CTX *ctx, char *what, const char *str, const wchar_t *expect, bool converts)
 {
 	wchar_t got[RT_CHARSET_BUF];
-	wchar_t *copy;
-	UINT calc, len, expect_len;
-	bool ok;
 
-	expect_len = UniStrLen(expect);
-	calc = CalcStrToUni(str);
-	len = StrToUni(got, sizeof(got), str);
-	copy = CopyStrToUni(str);
+	UINT expect_len = UniStrLen(expect);
+	UINT calc = CalcStrToUni(str);
+	UINT len = StrToUni(got, sizeof(got), str);
+	wchar_t *copy = CopyStrToUni(str);
 
-	ok = (calc == (converts ? (expect_len + 1) * sizeof(wchar_t) : 0) && len == expect_len &&
+	bool ok = (calc == (converts ? (expect_len + 1) * sizeof(wchar_t) : 0) && len == expect_len &&
 		Cmp(got, expect, (expect_len + 1) * sizeof(wchar_t)) == 0 && copy != NULL && UniStrCmp(copy, expect) == 0);
 
 	RtCheck(ctx, ok, what, "CalcStrToUni %u, StrToUni %u (first 0x%04X); expected %u units", calc, len, (UINT)got[0], expect_len);
@@ -1222,20 +1195,17 @@ static void RtCharsetStrToUni(RT_CTX *ctx, char *what, char *str, wchar_t *expec
 
 // UniToStr, CalcUniToStr and CopyUniToStr of s in the current locale: expect, or an empty string
 // with CalcUniToStr 0 when s does not convert (converts false)
-static void RtCharsetUniToStr(RT_CTX *ctx, char *what, wchar_t *s, char *expect, bool converts)
+static void RtCharsetUniToStr(RT_CTX *ctx, char *what, const wchar_t *s, const char *expect, bool converts)
 {
 	char got[RT_CHARSET_BUF];
 	char hex[RT_CHARSET_BUF * 2 + 1];
-	char *copy;
-	UINT calc, len, expect_len;
-	bool ok;
 
-	expect_len = StrLen(expect);
-	calc = CalcUniToStr(s);
-	len = UniToStr(got, sizeof(got), s);
-	copy = CopyUniToStr(s);
+	UINT expect_len = StrLen(expect);
+	UINT calc = CalcUniToStr(s);
+	UINT len = UniToStr(got, sizeof(got), s);
+	char *copy = CopyUniToStr(s);
 
-	ok = (calc == (converts ? expect_len + 1 : 0) && len == expect_len && Cmp(got, expect, expect_len + 1) == 0 &&
+	bool ok = (calc == (converts ? expect_len + 1 : 0) && len == expect_len && Cmp(got, expect, expect_len + 1) == 0 &&
 		copy != NULL && Cmp(copy, expect, expect_len + 1) == 0);
 
 	BinToStr(hex, sizeof(hex), got, MIN(StrLen(got), 32));
@@ -1259,9 +1229,6 @@ static void RtCharsetAnsi(RT_CTX *ctx)
 	wchar_t sjis[] = {L'A', 0x3042, L'B', 0};
 	wchar_t pair[] = {0xD83D, 0xDE00, 0};
 	char saved[MAX_SIZE];
-	char *name;
-	UINT ret;
-	bool ok;
 
 	// The locale of the process
 	RtCharsetStrToUni(ctx, "StrToUni: ASCII", "Hello, World 123", L"Hello, World 123", true);
@@ -1269,17 +1236,17 @@ static void RtCharsetAnsi(RT_CTX *ctx)
 	RtCharsetUniToStr(ctx, "UniToStr: ASCII", L"Hello, World 123", "Hello, World 123", true);
 	RtCharsetUniToStr(ctx, "UniToStr: the empty string", L"", "", true);
 
-	ret = StrToUni(w, 4 * sizeof(wchar_t), "abcdef");
+	UINT ret = StrToUni(w, 4 * sizeof(wchar_t), "abcdef");
 	RtCheck(ctx, ret == 3 && UniStrCmp(w, L"abc") == 0, "StrToUni cuts at the room and keeps the NUL", "returned %u", ret);
 	ret = UniToStr(a, 4, L"abcdef");
 	RtCheck(ctx, ret == 3 && StrCmp(a, "abc") == 0, "UniToStr cuts at the room and keeps the NUL", "returned %u", ret);
 
-	ok = (StrToUni(NULL, sizeof(w), "a") == 0 && StrToUni(w, sizeof(w), NULL) == 0 && UniToStr(NULL, sizeof(a), L"a") == 0 &&
+	bool ok = (StrToUni(NULL, sizeof(w), "a") == 0 && StrToUni(w, sizeof(w), NULL) == 0 && UniToStr(NULL, sizeof(a), L"a") == 0 &&
 		UniToStr(a, sizeof(a), NULL) == 0 && CalcStrToUni(NULL) == 0 && CalcUniToStr(NULL) == 0 &&
 		CopyStrToUni(NULL) == NULL && CopyUniToStr(NULL) == NULL);
 	RtCheck(ctx, ok, "The ANSI functions return 0 or NULL on NULL arguments", "a call returned something else");
 
-	name = setlocale(LC_CTYPE, NULL);
+	char *name = setlocale(LC_CTYPE, NULL);
 	StrCpy(saved, sizeof(saved), (name == NULL) ? "" : name);
 
 	// The C locale: the bytes map 1:1 to U+0000-U+00FF, and nothing above U+00FF converts
@@ -1381,13 +1348,12 @@ typedef struct RT_ANSI_DIFF
 // mbstowcs of the C runtime in its current LC_CTYPE locale
 static UINT RtOldCalcUniToStr(wchar_t *s)
 {
-	UINT ret;
 	if (s == NULL)
 	{
 		return 0;
 	}
 
-	ret = (UINT)wcstombs(NULL, s, UniStrLen(s));
+	UINT ret = (UINT)wcstombs(NULL, s, UniStrLen(s));
 	if (ret == (UINT)-1)
 	{
 		return 0;
@@ -1398,15 +1364,12 @@ static UINT RtOldCalcUniToStr(wchar_t *s)
 
 static UINT RtOldUniToStr(char *str, UINT size, wchar_t *s)
 {
-	UINT ret;
-	char *tmp;
-	UINT new_size;
 	if (s == NULL || str == NULL)
 	{
 		return 0;
 	}
 
-	new_size = RtOldCalcUniToStr(s);
+	UINT new_size = RtOldCalcUniToStr(s);
 	if (new_size == 0)
 	{
 		if (size >= 1)
@@ -1415,11 +1378,11 @@ static UINT RtOldUniToStr(char *str, UINT size, wchar_t *s)
 		}
 		return 0;
 	}
-	tmp = Malloc(new_size);
+	char *tmp = Malloc(new_size);
 	tmp[0] = 0;
 	wcstombs(tmp, s, new_size);
 	tmp[new_size - 1] = 0;
-	ret = StrCpy(str, size, tmp);
+	UINT ret = StrCpy(str, size, tmp);
 	Free(tmp);
 
 	return ret;
@@ -1427,19 +1390,17 @@ static UINT RtOldUniToStr(char *str, UINT size, wchar_t *s)
 
 static char *RtOldCopyUniToStr(wchar_t *unistr)
 {
-	char *str;
-	UINT str_size;
 	if (unistr == NULL)
 	{
 		return NULL;
 	}
 
-	str_size = RtOldCalcUniToStr(unistr);
+	UINT str_size = RtOldCalcUniToStr(unistr);
 	if (str_size == 0)
 	{
 		return CopyStr("");
 	}
-	str = Malloc(str_size);
+	char *str = Malloc(str_size);
 	RtOldUniToStr(str, str_size, unistr);
 
 	return str;
@@ -1447,13 +1408,12 @@ static char *RtOldCopyUniToStr(wchar_t *unistr)
 
 static UINT RtOldCalcStrToUni(char *str)
 {
-	UINT ret;
 	if (str == NULL)
 	{
 		return 0;
 	}
 
-	ret = (UINT)mbstowcs(NULL, str, StrLen(str));
+	UINT ret = (UINT)mbstowcs(NULL, str, StrLen(str));
 	if (ret == (UINT)-1)
 	{
 		return 0;
@@ -1464,15 +1424,12 @@ static UINT RtOldCalcStrToUni(char *str)
 
 static UINT RtOldStrToUni(wchar_t *s, UINT size, char *str)
 {
-	UINT ret;
-	wchar_t *tmp;
-	UINT new_size;
 	if (s == NULL || str == NULL)
 	{
 		return 0;
 	}
 
-	new_size = RtOldCalcStrToUni(str);
+	UINT new_size = RtOldCalcStrToUni(str);
 	if (new_size == 0)
 	{
 		if (size >= 2)
@@ -1481,11 +1438,11 @@ static UINT RtOldStrToUni(wchar_t *s, UINT size, char *str)
 		}
 		return 0;
 	}
-	tmp = Malloc(new_size);
+	wchar_t *tmp = Malloc(new_size);
 	tmp[0] = 0;
 	mbstowcs(tmp, str, StrLen(str));
 	tmp[(new_size - 1) / sizeof(wchar_t)] = 0;
-	ret = UniStrCpy(s, size, tmp);
+	UINT ret = UniStrCpy(s, size, tmp);
 	Free(tmp);
 
 	return ret;
@@ -1493,26 +1450,24 @@ static UINT RtOldStrToUni(wchar_t *s, UINT size, char *str)
 
 static wchar_t *RtOldCopyStrToUni(char *str)
 {
-	wchar_t *uni;
-	UINT uni_size;
 	if (str == NULL)
 	{
 		return NULL;
 	}
 
-	uni_size = RtOldCalcStrToUni(str);
+	UINT uni_size = RtOldCalcStrToUni(str);
 	if (uni_size == 0)
 	{
 		return CopyUniStr(L"");
 	}
-	uni = Malloc(uni_size);
+	wchar_t *uni = Malloc(uni_size);
 	RtOldStrToUni(uni, uni_size, str);
 
 	return uni;
 }
 
 // Count one compared call, and keep the first one whose result differs
-static void RtAnsiDiff(RT_ANSI_DIFF *d, bool same, char *func, UINT size, wchar_t *w, char *s)
+static void RtAnsiDiff(RT_ANSI_DIFF *d, bool same, char *func, UINT size, const wchar_t *w, const char *s)
 {
 	d->NumCompared++;
 	if (same)
@@ -1542,16 +1497,15 @@ static void RtAnsiDiff(RT_ANSI_DIFF *d, bool same, char *func, UINT size, wchar_
 static void RtAnsiGenUni(UINT *state, wchar_t *w)
 {
 	UINT len = RtCharsetRandom(state) % (RT_ANSI_MAX_LEN + 1);
-	UINT i;
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		UINT r = RtCharsetRandom(state);
 
 		switch (r % 5)
 		{
 		case 0:
-			w[i] = rt_ansi_units[(r >> 3) % (sizeof(rt_ansi_units) / sizeof(rt_ansi_units[0]))];
+			w[i] = rt_ansi_units[(r >> 3) % (_countof(rt_ansi_units))];
 			break;
 		case 1:
 			w[i] = (wchar_t)(0x20 + (r >> 3) % 0x5F);
@@ -1580,9 +1534,8 @@ static void RtAnsiGenUni(UINT *state, wchar_t *w)
 static void RtAnsiGenAscii(UINT *state, wchar_t *w)
 {
 	UINT len = RtCharsetRandom(state) % (RT_ANSI_MAX_LEN + 1);
-	UINT i;
 
-	for (i = 0;i < len;i++)
+	for (UINT i = 0;i < len;i++)
 	{
 		w[i] = (wchar_t)(1 + (RtCharsetRandom(state) >> 3) % 0x7F);
 	}
@@ -1596,12 +1549,11 @@ static void RtAnsiGenStr(UINT *state, char *s)
 {
 	UINT mode = RtCharsetRandom(state) % 3;
 	UINT len = 0;
-	UINT i;
 
 	if (mode == 0 || mode == 1)
 	{
 		len = RtCharsetRandom(state) % (RT_ANSI_MAX_LEN + 1);
-		for (i = 0;i < len;i++)
+		for (UINT i = 0;i < len;i++)
 		{
 			UINT r = RtCharsetRandom(state);
 
@@ -1620,12 +1572,11 @@ static void RtAnsiGenStr(UINT *state, char *s)
 
 	{
 		wchar_t w[RT_ANSI_MAX_LEN + 1];
-		UINT r;
 
 		RtAnsiGenUni(state, w);
 		len = RtOldUniToStr(s, RT_CHARSET_BUF, w);
 
-		r = RtCharsetRandom(state);
+		UINT r = RtCharsetRandom(state);
 		if (len != 0 && (r % 3) == 0)
 		{
 			if (((r >> 2) % 2) == 0)
@@ -1647,15 +1598,14 @@ static void RtAnsiGenStr(UINT *state, char *s)
 // nothing: the current locale may not be the locale of the process.
 static void RtAnsiCompare(RT_ANSI_DIFF *d, UINT *state)
 {
-	UINT n, i;
+	UINT i;
 
-	for (n = 0;n < RT_ANSI_ROUNDS;n++)
+	for (UINT n = 0;n < RT_ANSI_ROUNDS;n++)
 	{
 		wchar_t w[RT_ANSI_MAX_LEN + 1];
 		char got[RT_CHARSET_BUF];
 		char want[RT_CHARSET_BUF];
-		UINT full, sizes[3];
-		char *copy, *want_copy;
+		UINT sizes[3];
 
 		if ((n % 4) == 0)
 		{
@@ -1665,7 +1615,7 @@ static void RtAnsiCompare(RT_ANSI_DIFF *d, UINT *state)
 		{
 			RtAnsiGenUni(state, w);
 		}
-		full = RtOldCalcUniToStr(w);
+		UINT full = RtOldCalcUniToStr(w);
 		RtAnsiDiff(d, CalcUniToStr(w) == full, "CalcUniToStr", 0, w, NULL);
 
 		sizes[0] = 0;
@@ -1673,29 +1623,26 @@ static void RtAnsiCompare(RT_ANSI_DIFF *d, UINT *state)
 		sizes[2] = 1 + RtCharsetRandom(state) % (full + 2);
 		for (i = 0;i < 3;i++)
 		{
-			UINT r1, r2;
-
 			memset(got, RT_CHARSET_FILL_BYTE, sizeof(got));
 			memset(want, RT_CHARSET_FILL_BYTE, sizeof(want));
-			r1 = UniToStr(got, sizes[i], w);
-			r2 = RtOldUniToStr(want, sizes[i], w);
+			UINT r1 = UniToStr(got, sizes[i], w);
+			UINT r2 = RtOldUniToStr(want, sizes[i], w);
 			RtAnsiDiff(d, r1 == r2 && Cmp(got, want, sizeof(got)) == 0, "UniToStr", sizes[i], w, NULL);
 		}
 
-		copy = CopyUniToStr(w);
-		want_copy = RtOldCopyUniToStr(w);
+		char *copy = CopyUniToStr(w);
+		char *want_copy = RtOldCopyUniToStr(w);
 		RtAnsiDiff(d, copy != NULL && want_copy != NULL && StrCmp(copy, want_copy) == 0, "CopyUniToStr", 0, w, NULL);
 		Free(copy);
 		Free(want_copy);
 	}
 
-	for (n = 0;n < RT_ANSI_ROUNDS;n++)
+	for (UINT n = 0;n < RT_ANSI_ROUNDS;n++)
 	{
 		char s[RT_CHARSET_BUF];
 		wchar_t got[RT_CHARSET_BUF];
 		wchar_t want[RT_CHARSET_BUF];
-		UINT full, sizes[3];
-		wchar_t *copy, *want_copy;
+		UINT sizes[3];
 
 		if ((n % 4) == 0)
 		{
@@ -1712,7 +1659,7 @@ static void RtAnsiCompare(RT_ANSI_DIFF *d, UINT *state)
 		{
 			RtAnsiGenStr(state, s);
 		}
-		full = RtOldCalcStrToUni(s);
+		UINT full = RtOldCalcStrToUni(s);
 		RtAnsiDiff(d, CalcStrToUni(s) == full, "CalcStrToUni", 0, NULL, s);
 
 		sizes[0] = 0;
@@ -1720,17 +1667,15 @@ static void RtAnsiCompare(RT_ANSI_DIFF *d, UINT *state)
 		sizes[2] = 1 + RtCharsetRandom(state) % (full + 4);
 		for (i = 0;i < 3;i++)
 		{
-			UINT r1, r2;
-
 			memset(got, RT_CHARSET_FILL_BYTE, sizeof(got));
 			memset(want, RT_CHARSET_FILL_BYTE, sizeof(want));
-			r1 = StrToUni(got, sizes[i], s);
-			r2 = RtOldStrToUni(want, sizes[i], s);
+			UINT r1 = StrToUni(got, sizes[i], s);
+			UINT r2 = RtOldStrToUni(want, sizes[i], s);
 			RtAnsiDiff(d, r1 == r2 && Cmp(got, want, sizeof(got)) == 0, "StrToUni", sizes[i], NULL, s);
 		}
 
-		copy = CopyStrToUni(s);
-		want_copy = RtOldCopyStrToUni(s);
+		wchar_t *copy = CopyStrToUni(s);
+		wchar_t *want_copy = RtOldCopyStrToUni(s);
 		RtAnsiDiff(d, copy != NULL && want_copy != NULL && UniStrCmp(copy, want_copy) == 0, "CopyStrToUni", 0, NULL, s);
 		Free(copy);
 		Free(want_copy);
@@ -1743,22 +1688,19 @@ static void RtAnsiCompare(RT_ANSI_DIFF *d, UINT *state)
 // printed once the locale of the process is back.
 static void RtCharsetAnsiOracle(RT_CTX *ctx)
 {
-	RT_ANSI_DIFF d[sizeof(rt_ansi_locales) / sizeof(rt_ansi_locales[0])];
-	UINT num = sizeof(rt_ansi_locales) / sizeof(rt_ansi_locales[0]);
+	RT_ANSI_DIFF d[_countof(rt_ansi_locales)];
+	UINT num = _countof(rt_ansi_locales);
 	UINT state = RT_ANSI_SEED;
 	char saved[MAX_SIZE];
 	char what[MAX_SIZE];
 	char input[MAX_SIZE];
-	char *name;
-	bool restored;
-	UINT i, j;
 
 	Zero(d, sizeof(d));
 
-	name = setlocale(LC_CTYPE, NULL);
+	char *name = setlocale(LC_CTYPE, NULL);
 	StrCpy(saved, sizeof(saved), (name == NULL) ? "" : name);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		d[i].Set = (rt_ansi_locales[i] == NULL || setlocale(LC_CTYPE, rt_ansi_locales[i]) != NULL);
 		if (d[i].Set)
@@ -1767,9 +1709,9 @@ static void RtCharsetAnsiOracle(RT_CTX *ctx)
 		}
 	}
 
-	restored = (setlocale(LC_CTYPE, saved) != NULL);
+	bool restored = (setlocale(LC_CTYPE, saved) != NULL);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		char *label = (rt_ansi_locales[i] == NULL) ? "the process locale" : rt_ansi_locales[i];
 
@@ -1792,7 +1734,7 @@ static void RtCharsetAnsiOracle(RT_CTX *ctx)
 		{
 			if (d[i].FirstIsUni)
 			{
-				for (j = 0;d[i].FirstUni[j] != 0;j++)
+				for (UINT j = 0;d[i].FirstUni[j] != 0;j++)
 				{
 					char unit[8];
 
@@ -1850,14 +1792,13 @@ extern char *watermark_expect_sha256;
 // the file is at the expected path
 static void RtFileioCreate(RT_CTX *ctx, wchar_t *name, wchar_t *expect_path, UCHAR *data, char *label)
 {
-	IO *io;
 	char what[MAX_SIZE];
 
 	// A file left by an earlier failed run
 	FileDeleteW(expect_path);
 
 	Format(what, sizeof(what), "FileCreate through %s returns a file", label);
-	io = FileCreateW(name);
+	IO *io = FileCreateW(name);
 	if (RtCheck(ctx, io != NULL, what, "returned NULL") == false)
 	{
 		return;
@@ -1880,10 +1821,8 @@ static void RtFileioCreate(RT_CTX *ctx, wchar_t *name, wchar_t *expect_path, UCH
 static void RtFileioReplace(RT_CTX *ctx, wchar_t *aux_path, UCHAR *data)
 {
 	UCHAR buf[RT_FILEIO_DATA_SIZE];
-	UINT64 size;
-	IO *io;
 
-	io = FileCreateW(L"@" RT_FILEIO_AUX_NAME);
+	IO *io = FileCreateW(L"@" RT_FILEIO_AUX_NAME);
 	if (RtCheck(ctx, io != NULL, "FileCreate of the aux file", "returned NULL") == false)
 	{
 		return;
@@ -1896,7 +1835,7 @@ static void RtFileioReplace(RT_CTX *ctx, wchar_t *aux_path, UCHAR *data)
 	{
 		return;
 	}
-	size = FileSize64(io);
+	UINT64 size = FileSize64(io);
 	RtCheck(ctx, size == 0, "FileCreate of an existing file empties it", "%I64u bytes", size);
 	RtCheck(ctx, FileWrite(io, data, RT_FILEIO_SHORT_SIZE), "FileWrite of the short content", "failed");
 	FileClose(io);
@@ -1934,9 +1873,8 @@ static void RtFileioReplace(RT_CTX *ctx, wchar_t *aux_path, UCHAR *data)
 static void RtFileioSeek(RT_CTX *ctx, wchar_t *aux_path, UCHAR *data)
 {
 	UCHAR buf[RT_FILEIO_SHORT_SIZE];
-	IO *io;
 
-	io = FileOpenW(aux_path, false);
+	IO *io = FileOpenW(aux_path, false);
 	if (RtCheck(ctx, io != NULL, "FileOpen of the aux file for seeking", "returned NULL") == false)
 	{
 		return;
@@ -1968,15 +1906,12 @@ static void RtFileioSeek(RT_CTX *ctx, wchar_t *aux_path, UCHAR *data)
 // File dates: FileOpen reads them; FileClose of a writer writes the dates set in the IO
 static void RtFileioDates(RT_CTX *ctx, wchar_t *aux_path)
 {
-	UINT64 now;
-	IO *io;
-
-	io = FileOpenW(aux_path, true);
+	IO *io = FileOpenW(aux_path, true);
 	if (RtCheck(ctx, io != NULL, "FileOpen of the aux file for the dates", "returned NULL") == false)
 	{
 		return;
 	}
-	now = SystemTime64();
+	UINT64 now = SystemTime64();
 	RtCheck(ctx, io->GetUpdateTime != 0 && RtDiff64(io->GetUpdateTime, now) <= RT_FILEIO_DATE_SLACK,
 		"FileOpen reads the update date", "update date %I64u, SystemTime64 %I64u", io->GetUpdateTime, now);
 	RtCheck(ctx, io->GetCreateTime != 0 && io->GetAccessTime != 0, "FileOpen reads the creation and access dates",
@@ -2002,24 +1937,19 @@ static void RtFileioDates(RT_CTX *ctx, wchar_t *aux_path)
 // retry with FILE_ATTRIBUTE_HIDDEN replaces it, so the file stays hidden
 static void RtFileioHidden(RT_CTX *ctx, wchar_t *aux_path, UCHAR *data)
 {
-	DWORD attr;
-	IO *io;
-	BOOL marked;
-	UINT err;
-
 	// Read the error right after the call: argument evaluation order is unspecified in C
-	marked = SetFileAttributesW(aux_path, FILE_ATTRIBUTE_HIDDEN);
-	err = (marked == FALSE) ? GetLastError() : 0;
+	BOOL marked = SetFileAttributesW(aux_path, FILE_ATTRIBUTE_HIDDEN);
+	UINT err = (marked == FALSE) ? GetLastError() : 0;
 	RtCheck(ctx, marked != FALSE, "Mark the aux file hidden", "error %u", err);
 
-	io = FileCreateW(L"@" RT_FILEIO_AUX_NAME);
+	IO *io = FileCreateW(L"@" RT_FILEIO_AUX_NAME);
 	if (RtCheck(ctx, io != NULL, "FileCreate replaces a hidden file", "returned NULL"))
 	{
 		RtCheck(ctx, FileWrite(io, data, RT_FILEIO_SHORT_SIZE), "FileWrite of the replaced hidden file", "failed");
 		FileClose(io);
 	}
 
-	attr = GetFileAttributesW(aux_path);
+	DWORD attr = GetFileAttributesW(aux_path);
 	RtCheck(ctx, attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_HIDDEN) != 0, "The replaced file stays hidden",
 		"attributes %u", attr);
 
@@ -2031,10 +1961,9 @@ static void RtFileioHidden(RT_CTX *ctx, wchar_t *aux_path, UCHAR *data)
 // handle still exists
 static void RtFileioShare(RT_CTX *ctx, wchar_t *aux_path)
 {
-	IO *io, *io2;
-	HANDLE h;
+	IO *io2;
 
-	io = FileOpenW(aux_path, false);
+	IO *io = FileOpenW(aux_path, false);
 	if (RtCheck(ctx, io != NULL, "FileOpen read-only", "returned NULL"))
 	{
 		io2 = FileOpenW(aux_path, false);
@@ -2072,7 +2001,7 @@ static void RtFileioShare(RT_CTX *ctx, wchar_t *aux_path)
 		FileClose(io);
 	}
 
-	h = CreateFileW(aux_path, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+	HANDLE h = CreateFileW(aux_path, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 	if (RtCheck(ctx, h != INVALID_HANDLE_VALUE, "CreateFileW of the aux file without sharing", "error %u", GetLastError()))
 	{
 		RtCheck(ctx, IsFileExistsW(aux_path), "IsFileExists of a file opened without sharing is true", "returned false");
@@ -2099,10 +2028,8 @@ static void RtFileioRename(RT_CTX *ctx, wchar_t *aux_path, wchar_t *ren_path)
 // MakeDir and DeleteDir: each fails when there is nothing to do
 static void RtFileioDir(RT_CTX *ctx, wchar_t *dir_path)
 {
-	DWORD attr;
-
 	RtCheck(ctx, MakeDirW(L"@" RT_FILEIO_DIR_NAME), "MakeDir through @", "failed");
-	attr = GetFileAttributesW(dir_path);
+	DWORD attr = GetFileAttributesW(dir_path);
 	RtCheck(ctx, attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY) != 0, "MakeDir creates the directory",
 		"attributes %u", attr);
 	RtCheck(ctx, MakeDirW(L"@" RT_FILEIO_DIR_NAME) == false, "MakeDir of an existing directory fails", "returned true");
@@ -2129,14 +2056,14 @@ void fileio_test(UINT num, char **arg)
 	UCHAR buf[RT_FILEIO_DATA_SIZE];
 	UCHAR hash[SHA256_SIZE];
 	char hash_str[SHA256_SIZE * 2 + 1];
-	IO *io, *io2;
-	UINT i, size;
+	IO *io2;
+	UINT size;
 	void *ham;
 	bool ok;
 
 	RtBegin(&ctx, "FILEIO", "FileIO test");
 
-	for (i = 0;i < RT_FILEIO_DATA_SIZE;i++)
+	for (UINT i = 0;i < RT_FILEIO_DATA_SIZE;i++)
 	{
 		data[i] = (UCHAR)(i * 7 + 1);
 	}
@@ -2155,18 +2082,18 @@ void fileio_test(UINT num, char **arg)
 
 	// "/" becomes "\": open the "@" file through its path written with forward slashes
 	UniStrCpy(slash_path, sizeof(slash_path), log_path);
-	for (i = 0;slash_path[i] != 0;i++)
+	for (UINT i = 0;slash_path[i] != 0;i++)
 	{
 		if (slash_path[i] == L'\\')
 		{
 			slash_path[i] = L'/';
 		}
 	}
-	io = FileOpenW(slash_path, false);
+	IO *io = FileOpenW(slash_path, false);
 	if (RtCheck(&ctx, io != NULL, "FileOpen of the path written with forward slashes", "returned NULL"))
 	{
 		ok = true;
-		for (i = 0;io->NameW[i] != 0;i++)
+		for (UINT i = 0;io->NameW[i] != 0;i++)
 		{
 			if (io->NameW[i] == L'/')
 			{
@@ -2262,7 +2189,7 @@ void fileio_test(UINT num, char **arg)
 #define	RT_RES_SOURCE_DIR		RANZ_HAMCORE_SOURCE_DIR				// src/bin/hamcore of the source tree (src/vpntest/CMakeLists.txt)
 
 // Both buffers were read and hold the same bytes
-static bool RtResourceSame(BUF *a, BUF *b)
+static bool RtResourceSame(const BUF *a, const BUF *b)
 {
 	return a != NULL && b != NULL && a->Size == b->Size && Cmp(a->Buf, b->Buf, a->Size) == 0;
 }
@@ -2275,18 +2202,16 @@ static void RtResourceFile(RT_CTX *ctx, char *path, char *name)
 {
 	char what[MAX_SIZE];
 	char bar_name[MAX_SIZE];
-	BUF *src, *b;
 	bool sub = false;
-	UINT i;
 
-	src = ReadDump(path);
+	BUF *src = ReadDump(path);
 	Format(what, sizeof(what), "Read the source file of %s", name);
 	if (RtCheck(ctx, src != NULL, what, "cannot read %s", path) == false)
 	{
 		return;
 	}
 
-	b = ReadHamcore(name);
+	BUF *b = ReadHamcore(name);
 	Format(what, sizeof(what), "ReadHamcore of %s returns the bytes of its source file", name);
 	RtCheck(ctx, RtResourceSame(src, b), what, "source %u bytes, read %u bytes%s",
 		src->Size, b != NULL ? b->Size : 0, b != NULL ? "" : " (NULL)");
@@ -2299,7 +2224,7 @@ static void RtResourceFile(RT_CTX *ctx, char *path, char *name)
 		src->Size, b != NULL ? b->Size : 0, b != NULL ? "" : " (NULL)");
 	FreeBuf(b);
 
-	for (i = 0;bar_name[i] != 0;i++)
+	for (UINT i = 0;bar_name[i] != 0;i++)
 	{
 		if (bar_name[i] == '/')
 		{
@@ -2326,11 +2251,10 @@ static UINT RtResourceDir(RT_CTX *ctx, char *dir, char *rel)
 {
 	char path[MAX_SIZE];
 	char name[MAX_SIZE];
-	DIRLIST *d;
-	UINT i, files = 0;
+	UINT files = 0;
 
-	d = EnumDir(dir);
-	for (i = 0;d != NULL && i < d->NumFiles;i++)
+	DIRLIST *d = EnumDir(dir);
+	for (UINT i = 0;d != NULL && i < d->NumFiles;i++)
 	{
 		DIRENT *e = d->File[i];
 
@@ -2413,11 +2337,9 @@ void resources_test(UINT num, char **arg)
 	wchar_t dir_path[MAX_SIZE];
 	wchar_t override_path[MAX_SIZE];
 	char what[MAX_SIZE];
-	BUF *b, *b2, *embedded;
-	IO *io;
-	UINT i, size, files;
+	UINT size;
 	void *data;
-	bool ok, made_dir;
+	bool ok;
 
 	RtBegin(&ctx, "RESOURCES", "Resources test");
 
@@ -2431,20 +2353,18 @@ void resources_test(UINT num, char **arg)
 
 	// vpnserver.exe and vpncmd.exe carry the same files: each holds every resource of type
 	// HAMCORE_RESOURCE_TYPE of this executable with the same bytes, and no other one
-	for (i = 0;i < sizeof(rt_resource_exes) / sizeof(rt_resource_exes[0]);i++)
+	for (UINT i = 0;i < _countof(rt_resource_exes);i++)
 	{
 		wchar_t other_path[MAX_SIZE];
 		HMODULE self = GetModuleHandleW(NULL);
-		HMODULE other;
 		RT_RES_CMP mine, theirs;
-		UINT err;
 
 		Zero(&mine, sizeof(mine));
 		Zero(&theirs, sizeof(theirs));
 
 		ConbinePathW(other_path, sizeof(other_path), exe_dir, rt_resource_exes[i]);
-		other = LoadLibraryExW(other_path, NULL, LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE);
-		err = GetLastError();
+		HMODULE other = LoadLibraryExW(other_path, NULL, LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE);
+		UINT err = GetLastError();
 		Format(what, sizeof(what), "Load %S as a data file", rt_resource_exes[i]);
 		if (RtCheck(&ctx, other != NULL, what, "cannot load %S (error %u)", other_path, err))
 		{
@@ -2463,12 +2383,12 @@ void resources_test(UINT num, char **arg)
 	}
 
 	// Every file of src/bin/hamcore, walked at run time, holds the bytes of its source file
-	files = RtResourceDir(&ctx, RT_RES_SOURCE_DIR, "");
+	UINT files = RtResourceDir(&ctx, RT_RES_SOURCE_DIR, "");
 	RtCheck(&ctx, files != 0, "The hamcore source folder holds files", "no file in %s", RT_RES_SOURCE_DIR);
 
 	// "|" opens the same bytes, with "\" in the name read as "/"
-	b = ReadHamcore(RT_RES_SLASH_NAME);
-	io = FileOpen(RT_RES_BACKSLASH_NAME, false);
+	BUF *b = ReadHamcore(RT_RES_SLASH_NAME);
+	IO *io = FileOpen(RT_RES_BACKSLASH_NAME, false);
 	if (RtCheck(&ctx, io != NULL, "FileOpen of a \"|\" name written with backslashes", "returned NULL"))
 	{
 		size = FileSize(io);
@@ -2483,7 +2403,7 @@ void resources_test(UINT num, char **arg)
 
 	// A leading "/" is skipped, and each read returns its own buffer at offset 0
 	b = ReadHamcore("watermark.bin");
-	b2 = ReadHamcore("/watermark.bin");
+	BUF *b2 = ReadHamcore("/watermark.bin");
 	if (RtCheck(&ctx, b != NULL && b2 != NULL && b->Size != 0 && b2->Size == b->Size && Cmp(b2->Buf, b->Buf, b->Size) == 0,
 		"ReadHamcore skips a leading \"/\"", "%s", b2 == NULL ? "returned NULL" : "the bytes differ"))
 	{
@@ -2510,8 +2430,8 @@ void resources_test(UINT num, char **arg)
 	RtCheck(&ctx, IsFile("|" RT_RES_MISSING_NAME) == false, "IsFile of a missing \"|\" name", "returned true");
 
 	// A file in a "hamcore" folder next to the executable wins over the built-in one, until it is deleted
-	embedded = ReadHamcore(RT_RES_OVERRIDE_NAME);
-	made_dir = MakeDirW(dir_path);
+	BUF *embedded = ReadHamcore(RT_RES_OVERRIDE_NAME);
+	bool made_dir = MakeDirW(dir_path);
 	b = NewBufFromMemory(RT_RES_OVERRIDE_DATA, StrLen(RT_RES_OVERRIDE_DATA));
 	ok = DumpBufW(b, override_path);
 	FreeBuf(b);
@@ -2606,7 +2526,6 @@ static bool RtWaitFlag(volatile bool *flag, UINT bound)
 static void RtPoolJobThread(THREAD *t, void *param)
 {
 	RT_POOL_JOB *j = (RT_POOL_JOB *)param;
-	HRESULT hr;
 
 	if (t == NULL || j == NULL)
 	{
@@ -2617,7 +2536,7 @@ static void RtPoolJobThread(THREAD *t, void *param)
 	j->MayaThreadId = ThreadId();
 
 	// S_FALSE: COM is already initialised on this thread, by the pool callback or the host thread procedure
-	hr = CoInitialize(NULL);
+	HRESULT hr = CoInitialize(NULL);
 	j->ComReady = (hr == S_FALSE);
 	if (SUCCEEDED(hr))
 	{
@@ -2703,13 +2622,9 @@ void threadpool_test(UINT num, char **arg)
 	THREAD *jobs[RT_POOL_MAX_JOBS];
 	THREAD *waiters[RT_POOL_WAITERS];
 	RT_POOL_WAIT_DATA wd;
-	RT_POOL_LATE *late;
 	volatile bool go;
-	THREAD *t;
-	HANDLE h;
-	UINT picked, i, num_jobs, joined, early, waited, ran, com_ready, found_index = 0;
+	UINT ran, com_ready, found_index = 0;
 	DWORD handles_before = 0, handles_after = 0;
-	bool ended, alive, found, counted;
 
 	RtBegin(&ctx, "THREADPOOL", "Thread pool test");
 
@@ -2718,10 +2633,10 @@ void threadpool_test(UINT num, char **arg)
 	Zero(&first, sizeof(first));
 	first.MarkSet = RT_POOL_MARK;
 	first.PrioritySet = THREAD_PRIORITY_HIGHEST;
-	t = NewThread(RtPoolJobThread, &first);
-	picked = t->ThreadId;
+	THREAD *t = NewThread(RtPoolJobThread, &first);
+	UINT picked = t->ThreadId;
 	RtCheck(&ctx, picked != 0, "NewThread returns after a pool thread took the job (ThreadId is set)", "ThreadId is 0");
-	ended = WaitThread(t, RT_POOL_BOUND);
+	bool ended = WaitThread(t, RT_POOL_BOUND);
 	RtCheck(&ctx, ended && first.Ran, "the job runs and WaitThread returns true", "WaitThread %s, job %s",
 		ended ? "true" : "false", first.Ran ? "ran" : "did not run");
 	RtCheck(&ctx, first.OsThreadId == picked && first.MayaThreadId == picked,
@@ -2733,8 +2648,8 @@ void threadpool_test(UINT num, char **arg)
 	ReleaseThread(t);
 
 	// The pool thread stays alive while it is idle (until FreeThreading)
-	h = OpenThread(SYNCHRONIZE, FALSE, picked);
-	alive = (h != NULL && WaitForSingleObject(h, RT_POOL_SETTLE) == WAIT_TIMEOUT);
+	HANDLE h = OpenThread(SYNCHRONIZE, FALSE, picked);
+	bool alive = (h != NULL && WaitForSingleObject(h, RT_POOL_SETTLE) == WAIT_TIMEOUT);
 	RtCheck(&ctx, alive, "the pool thread stays alive after its job ended", "the thread %s",
 		(h == NULL) ? "is gone" : "ended");
 	if (h != NULL)
@@ -2746,9 +2661,9 @@ void threadpool_test(UINT num, char **arg)
 	// NewThread takes another idle pool thread, until one of them is that thread.
 	Zero(held, sizeof(held));
 	go = false;
-	found = false;
-	num_jobs = 0;
-	for (i = 0;i < RT_POOL_MAX_JOBS && found == false;i++)
+	bool found = false;
+	UINT num_jobs = 0;
+	for (UINT i = 0;i < RT_POOL_MAX_JOBS && found == false;i++)
 	{
 		held[i].Go = &go;
 		jobs[i] = NewThread(RtPoolJobThread, &held[i]);
@@ -2761,8 +2676,8 @@ void threadpool_test(UINT num, char **arg)
 		}
 	}
 	go = true;
-	joined = 0;
-	for (i = 0;i < num_jobs;i++)
+	UINT joined = 0;
+	for (UINT i = 0;i < num_jobs;i++)
 	{
 		if (WaitThread(jobs[i], RT_POOL_BOUND))
 		{
@@ -2785,15 +2700,15 @@ void threadpool_test(UINT num, char **arg)
 	go = false;
 	target_job.Go = &go;
 	wd.Target = NewThread(RtPoolJobThread, &target_job);
-	for (i = 0;i < RT_POOL_WAITERS;i++)
+	for (UINT i = 0;i < RT_POOL_WAITERS;i++)
 	{
 		waiters[i] = NewThread(RtPoolWaiterThread, &wd);
 	}
 	SleepThread(RT_POOL_SETTLE);
-	early = (UINT)wd.Returned;
+	UINT early = (UINT)wd.Returned;
 	go = true;
-	waited = 0;
-	for (i = 0;i < RT_POOL_WAITERS;i++)
+	UINT waited = 0;
+	for (UINT i = 0;i < RT_POOL_WAITERS;i++)
 	{
 		if (WaitThread(waiters[i], RT_POOL_BOUND * 2))
 		{
@@ -2811,8 +2726,8 @@ void threadpool_test(UINT num, char **arg)
 	// Host threads (NewThreadInternal): the procedure runs with COM initialised,
 	// WaitThreadInternal returns true once the thread ended, and the end closes the handle
 	waited = ran = com_ready = 0;
-	counted = (GetProcessHandleCount(GetCurrentProcess(), &handles_before) != FALSE);
-	for (i = 0;i < RT_HOST_CYCLES;i++)
+	bool counted = (GetProcessHandleCount(GetCurrentProcess(), &handles_before) != FALSE);
+	for (UINT i = 0;i < RT_HOST_CYCLES;i++)
 	{
 		Zero(&host, sizeof(host));
 		t = NewThreadInternal(RtPoolJobThread, &host);
@@ -2845,7 +2760,7 @@ void threadpool_test(UINT num, char **arg)
 	// FreeThreading waited for both, including the one started while it was waiting.
 	// The check that the job is still running keeps this pin honest: a job that had already
 	// ended would let the run end with "NO MEMORY LEAKS" without testing the wait.
-	late = ZeroMalloc(sizeof(RT_POOL_LATE));
+	RT_POOL_LATE *late = ZeroMalloc(sizeof(RT_POOL_LATE));
 	late->Delay = RT_POOL_LATE_PARENT;
 	late->StartChild = true;
 	t = NewThread(RtPoolLateThread, late);
@@ -2879,14 +2794,13 @@ static void RtDnsCheckList(RT_CTX *ctx, LIST *o, IP *expect, char *what)
 
 // Check one immediate answer of DnsResolveEx: the call succeeds within the 1 ms timeout and
 // fills only the lists it should (expect6 or expect4 NULL: that list stays unset)
-static void RtDnsCheckImmediate(RT_CTX *ctx, char *hostname, IP *expect6, IP *expect4, volatile bool *cancel_flag, char *label)
+static void RtDnsCheckImmediate(RT_CTX *ctx, const char *hostname, IP *expect6, IP *expect4, volatile bool *cancel_flag, char *label)
 {
 	LIST *v6 = NULL;
 	LIST *v4 = NULL;
 	char what[MAX_SIZE];
-	bool ret;
 
-	ret = DnsResolveEx(&v6, &v4, hostname, RT_DNS_IMMEDIATE_TIMEOUT, cancel_flag);
+	bool ret = DnsResolveEx(&v6, &v4, hostname, RT_DNS_IMMEDIATE_TIMEOUT, cancel_flag);
 
 	Format(what, sizeof(what), "DnsResolveEx(%s) succeeds with a timeout of 1 ms", label);
 	RtCheck(ctx, ret, what, "returned false");
@@ -2922,13 +2836,11 @@ static void RtDnsCheckImmediate(RT_CTX *ctx, char *hostname, IP *expect6, IP *ex
 void dns_test(UINT num, char **arg)
 {
 	RT_CTX ctx;
-	LIST *v6, *v4;
+	LIST *v4;
 	IP ip, local6, local4, lit6, lit4;
 	char name[MAX_SIZE];
 	char str[MAX_SIZE];
 	volatile bool cancel = true;
-	UINT threads, i;
-	bool ret, ok;
 
 	RtBegin(&ctx, "DNS", "DNS test");
 
@@ -2949,7 +2861,7 @@ void dns_test(UINT num, char **arg)
 	RtDnsCheckImmediate(&ctx, RT_DNS_IP6_LITERAL, &lit6, NULL, &cancel, "the IPv6 literal, cancel flag set");
 
 	// The single-address forms: GetIPEx prefers IPv6, GetIP4Ex and GetIP6Ex pick their family
-	ret = GetIPEx(&ip, "localhost", RT_DNS_IMMEDIATE_TIMEOUT, NULL);
+	bool ret = GetIPEx(&ip, "localhost", RT_DNS_IMMEDIATE_TIMEOUT, NULL);
 	RtCheck(&ctx, ret && CmpIpAddr(&ip, &local6) == 0, "GetIPEx(\"localhost\") gives ::1", "returned %s", ret ? "another address" : "false");
 	ret = GetIP4Ex(&ip, "localhost", RT_DNS_IMMEDIATE_TIMEOUT, NULL);
 	RtCheck(&ctx, ret && CmpIpAddr(&ip, &local4) == 0, "GetIP4Ex(\"localhost\") gives 127.0.0.1", "returned %s", ret ? "another address" : "false");
@@ -2968,15 +2880,15 @@ void dns_test(UINT num, char **arg)
 		RtCheck(&ctx, gethostname(host, sizeof(host) - 1) == 0 && StrCmp(name, host) == 0, "GetMachineName equals gethostname()",
 			"GetMachineName gave \"%s\", gethostname() gave \"%s\"", name, host);
 	}
-	threads = DnsThreadNum();
-	v6 = v4 = NULL;
+	UINT threads = DnsThreadNum();
+	LIST *v6 = v4 = NULL;
 	ret = DnsResolveEx(&v6, &v4, name, RT_DNS_RESOLVER_TIMEOUT, NULL);
 	RtCheck(&ctx, ret && (LIST_NUM(v6) + LIST_NUM(v4)) >= 1, "DnsResolveEx of the computer name gives at least one address",
 		"name %s, returned %s, %u IPv6 and %u IPv4 addresses", name, ret ? "true" : "false", LIST_NUM(v6), LIST_NUM(v4));
 
-	ok = true;
+	bool ok = true;
 	StrCpy(str, sizeof(str), "none");
-	for (i = 0;i < LIST_NUM(v6);i++)
+	for (UINT i = 0;i < LIST_NUM(v6);i++)
 	{
 		if (IsIP6((IP *)LIST_DATA(v6, i)) == false)
 		{
@@ -2984,7 +2896,7 @@ void dns_test(UINT num, char **arg)
 			ok = false;
 		}
 	}
-	for (i = 0;i < LIST_NUM(v4);i++)
+	for (UINT i = 0;i < LIST_NUM(v4);i++)
 	{
 		if (IsIP4((IP *)LIST_DATA(v4, i)) == false)
 		{
@@ -3049,10 +2961,8 @@ void trace_test(UINT num, char **arg)
 
 // Whether one of the newest entries of the Application log has the source, type and event ID,
 // and the message as its only insertion string
-static bool RtEventLogFind(char *source, UINT type, UINT event_id, char *message)
+static bool RtEventLogFind(const char *source, UINT type, UINT event_id, const char *message)
 {
-	HANDLE h;
-	UCHAR *buf;
 	DWORD buf_size = 0x10000;
 	UINT scanned = 0;
 	bool found = false;
@@ -3062,13 +2972,13 @@ static bool RtEventLogFind(char *source, UINT type, UINT event_id, char *message
 	StrToUni(source_w, sizeof(source_w), source);
 	StrToUni(message_w, sizeof(message_w), message);
 
-	h = OpenEventLogW(NULL, L"Application");
+	HANDLE h = OpenEventLogW(NULL, L"Application");
 	if (h == NULL)
 	{
 		return false;
 	}
 
-	buf = Malloc(buf_size);
+	UCHAR *buf = Malloc(buf_size);
 
 	// Newest first
 	while (found == false && scanned < RT_EVENTLOG_SCAN)
@@ -3125,22 +3035,19 @@ void eventlog_test(UINT num, char **arg)
 {
 	RT_CTX ctx;
 	char msg[MAX_SIZE];
-	bool ret;
-	UINT err;
 	bool found = false;
-	UINT64 end;
 
 	RtBegin(&ctx, "EVENTLOG", "Event log test");
 
 	// Unique to this run, so that an entry of an earlier run does not count
 	Format(msg, sizeof(msg), "vpntest event log probe %u %I64u", MsGetCurrentProcessId(), SystemTime64());
 
-	ret = MsWriteEventLog(RT_EVENTLOG_SOURCE, EVENTLOG_INFORMATION_TYPE, MS_EVENT_SERVICE_STARTED, msg);
-	err = GetLastError();
+	bool ret = MsWriteEventLog(RT_EVENTLOG_SOURCE, EVENTLOG_INFORMATION_TYPE, MS_EVENT_SERVICE_STARTED, msg);
+	UINT err = GetLastError();
 	RtCheck(&ctx, ret, "MsWriteEventLog writes an information entry", "returned false, error %u", err);
 
 	// The entry may take a moment to become readable
-	end = Tick64() + RT_EVENTLOG_WAIT;
+	UINT64 end = Tick64() + RT_EVENTLOG_WAIT;
 	while (ret)
 	{
 		found = RtEventLogFind(RT_EVENTLOG_SOURCE, EVENTLOG_INFORMATION_TYPE, MS_EVENT_SERVICE_STARTED, msg);

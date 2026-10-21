@@ -36,18 +36,14 @@ HTTPLOG *ParseHttpsAccessLog(PKT *pkt)
 HTTPLOG *ParseHttpAccessLog(PKT *pkt)
 {
 	HTTPLOG h;
-	UCHAR *buf;
-	UINT size;
-	BUF *b;
-	char *line1;
 	bool ok = false;
 	if (pkt == NULL)
 	{
 		return NULL;
 	}
 
-	buf = pkt->Payload;
-	size = pkt->PayloadSize;
+	UCHAR *buf = pkt->Payload;
+	UINT size = pkt->PayloadSize;
 
 	if (size <= 5)
 	{
@@ -65,11 +61,11 @@ HTTPLOG *ParseHttpAccessLog(PKT *pkt)
 
 	h.Port = Endian16(pkt->L4.TCPHeader->DstPort);
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 	WriteBuf(b, buf, size);
 	SeekBuf(b, 0, 0);
 
-	line1 = CfgReadNextLine(b);
+	char *line1 = CfgReadNextLine(b);
 
 	if (line1 != NULL)
 	{
@@ -92,14 +88,13 @@ HTTPLOG *ParseHttpAccessLog(PKT *pkt)
 				while (true)
 				{
 					char *line = CfgReadNextLine(b);
-					UINT i;
 
 					if (line == NULL)
 					{
 						break;
 					}
 
-					i = SearchStr(line, ":", 0);
+					UINT i = SearchStr(line, ":", 0);
 					if (i != INFINITE && i < (MAX_SIZE / 2))
 					{
 						char name[MAX_SIZE];

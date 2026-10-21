@@ -115,16 +115,13 @@ static bool TempDirCheck(TEMPDIR_CTX *ctx, bool ok, char *what, char *detail_fmt
 // True when the last part of the path is the prefix and TEMPDIR_RANDOM_CHARS hex digits
 static bool TempDirNameOk(wchar_t *path)
 {
-	wchar_t *name;
-	UINT i;
-
 	if (path == NULL)
 	{
 		return false;
 	}
 
-	name = path;
-	for (i = 0;path[i] != 0;i++)
+	wchar_t *name = path;
+	for (UINT i = 0;path[i] != 0;i++)
 	{
 		if (path[i] == L'\\' || path[i] == L'/')
 		{
@@ -144,7 +141,7 @@ static bool TempDirNameOk(wchar_t *path)
 		return false;
 	}
 
-	for (i = 0;i < TEMPDIR_RANDOM_CHARS;i++)
+	for (UINT i = 0;i < TEMPDIR_RANDOM_CHARS;i++)
 	{
 		wchar_t c = name[i];
 
@@ -162,7 +159,6 @@ static bool TempDirAclGrants(ACL *dacl, WELL_KNOWN_SID_TYPE type)
 {
 	UCHAR sid_buf[SECURITY_MAX_SID_SIZE];
 	DWORD sid_size = sizeof(sid_buf);
-	UINT i;
 
 	if (dacl == NULL)
 	{
@@ -175,7 +171,7 @@ static bool TempDirAclGrants(ACL *dacl, WELL_KNOWN_SID_TYPE type)
 		return true;
 	}
 
-	for (i = 0;i < dacl->AceCount;i++)
+	for (UINT i = 0;i < dacl->AceCount;i++)
 	{
 		ACE_HEADER *h = NULL;
 
@@ -201,17 +197,15 @@ static bool TempDirAclGrants(ACL *dacl, WELL_KNOWN_SID_TYPE type)
 // Number of former string table cache files in the directory
 static UINT TempDirCountCacheFiles(wchar_t *dir, bool delete_them)
 {
-	DIRLIST *d;
-	UINT i;
 	UINT num = 0;
 
-	d = EnumDirW(dir);
+	DIRLIST *d = EnumDirW(dir);
 	if (d == NULL)
 	{
 		return 0;
 	}
 
-	for (i = 0;i < d->NumFiles;i++)
+	for (UINT i = 0;i < d->NumFiles;i++)
 	{
 		struct DIRENT *e = d->File[i];
 
@@ -238,9 +232,7 @@ static UINT TempDirCountCacheFiles(wchar_t *dir, bool delete_them)
 // Name of the string table of the language, or false when the list has no such language
 static bool TempDirTableName(LIST *o, UINT id, bool same, char *name, UINT size)
 {
-	UINT i;
-
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		LANGLIST *e = LIST_DATA(o, i);
 
@@ -256,10 +248,8 @@ static bool TempDirTableName(LIST *o, UINT id, bool same, char *name, UINT size)
 
 // Make link a junction (mount point) to the directory target, a full path without a trailing
 // backslash
-static bool TempDirMakeJunction(wchar_t *link, wchar_t *target)
+static bool TempDirMakeJunction(wchar_t *link, const wchar_t *target)
 {
-	TEMPDIR_MOUNT_POINT *m;
-	HANDLE h;
 	UINT target_len = UniStrLen(target);
 	UINT sub_len = 4 + target_len;		// "\??\" and the target
 	DWORD bytes = 0;
@@ -276,7 +266,7 @@ static bool TempDirMakeJunction(wchar_t *link, wchar_t *target)
 	}
 
 	// Substitute name (the NT path) and print name, each followed by the terminator ZeroMalloc left
-	m = ZeroMalloc(sizeof(TEMPDIR_MOUNT_POINT));
+	TEMPDIR_MOUNT_POINT *m = ZeroMalloc(sizeof(TEMPDIR_MOUNT_POINT));
 	m->ReparseTag = IO_REPARSE_TAG_MOUNT_POINT;
 	m->SubstituteNameOffset = 0;
 	m->SubstituteNameLength = (USHORT)(sub_len * sizeof(wchar_t));
@@ -287,7 +277,7 @@ static bool TempDirMakeJunction(wchar_t *link, wchar_t *target)
 	Copy(m->PathBuffer + 4, target, target_len * sizeof(wchar_t));
 	Copy(m->PathBuffer + sub_len + 1, target, target_len * sizeof(wchar_t));
 
-	h = CreateFileW(link, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
+	HANDLE h = CreateFileW(link, GENERIC_WRITE, 0, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
 	if (h != INVALID_HANDLE_VALUE)
 	{
 		ret = (DeviceIoControl(h, FSCTL_SET_REPARSE_POINT, m, FIELD_OFFSET(TEMPDIR_MOUNT_POINT, SubstituteNameOffset) + m->ReparseDataLength,
@@ -309,7 +299,6 @@ static bool TempDirMakeJunction(wchar_t *link, wchar_t *target)
 static bool TempDirMakeTarget(wchar_t *dir)
 {
 	wchar_t file[MAX_PATH];
-	HANDLE h;
 
 	if (CreateDirectoryW(dir, NULL) == FALSE)
 	{
@@ -318,7 +307,7 @@ static bool TempDirMakeTarget(wchar_t *dir)
 
 	UniFormat(file, sizeof(file), L"%s\\%s", dir, TEMPDIR_SENTINEL);
 
-	h = CreateFileW(file, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+	HANDLE h = CreateFileW(file, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
 	if (h == INVALID_HANDLE_VALUE)
 	{
 		return false;
@@ -489,13 +478,9 @@ static bool TempDirRunChild(wchar_t *dir, DWORD *exit_code)
 	wchar_t cmd[MAX_PATH + 4];
 	wchar_t old_tmp[TEMPDIR_ENV_SIZE];
 	wchar_t old_temp[TEMPDIR_ENV_SIZE];
-	DWORD tmp_len, temp_len;
 	SECURITY_ATTRIBUTES sa;
 	STARTUPINFOW si;
 	PROCESS_INFORMATION pi;
-	HANDLE null_out;
-	UINT old_mode;
-	bool started;
 	bool ended = false;
 
 	*exit_code = 0xFFFFFFFF;
@@ -504,8 +489,8 @@ static bool TempDirRunChild(wchar_t *dir, DWORD *exit_code)
 	UniFormat(exe, sizeof(exe), L"%s\\%s", exe_dir, TEMPDIR_CHILD_EXE);
 	UniFormat(cmd, sizeof(cmd), L"\"%s\"", exe);
 
-	tmp_len = GetEnvironmentVariableW(L"TMP", old_tmp, TEMPDIR_ENV_SIZE);
-	temp_len = GetEnvironmentVariableW(L"TEMP", old_temp, TEMPDIR_ENV_SIZE);
+	DWORD tmp_len = GetEnvironmentVariableW(L"TMP", old_tmp, TEMPDIR_ENV_SIZE);
+	DWORD temp_len = GetEnvironmentVariableW(L"TEMP", old_temp, TEMPDIR_ENV_SIZE);
 	if (tmp_len >= TEMPDIR_ENV_SIZE || temp_len >= TEMPDIR_ENV_SIZE)
 	{
 		return false;
@@ -515,7 +500,7 @@ static bool TempDirRunChild(wchar_t *dir, DWORD *exit_code)
 	Zero(&sa, sizeof(sa));
 	sa.nLength = sizeof(sa);
 	sa.bInheritHandle = TRUE;
-	null_out = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, NULL);
+	HANDLE null_out = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, NULL);
 	if (null_out == INVALID_HANDLE_VALUE)
 	{
 		return false;
@@ -533,8 +518,8 @@ static bool TempDirRunChild(wchar_t *dir, DWORD *exit_code)
 	SetEnvironmentVariableW(L"TEMP", dir);
 
 	// No error dialog when the child crashes: the child inherits this mode
-	old_mode = SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
-	started = (CreateProcessW(exe, cmd, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi) != FALSE);
+	UINT old_mode = SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+	bool started = (CreateProcessW(exe, cmd, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi) != FALSE);
 	SetErrorMode(old_mode);
 
 	// Back to the variables of this process; one that was not set is removed again
@@ -575,15 +560,10 @@ static void TempDirChildCase(TEMPDIR_CTX *ctx)
 	wchar_t nested_link[MAX_PATH];
 	wchar_t top_target[MAX_PATH];
 	wchar_t nested_target[MAX_PATH];
-	TEMPDIR_WATCH *w;
 	DWORD exit_code = 0;
-	DWORD len;
-	bool setup;
-	bool watching;
-	bool ended;
 
 	// The long form of %TEMP%: the junction targets hold the path as it is written
-	len = GetTempPathW(MAX_PATH, temp);
+	DWORD len = GetTempPathW(MAX_PATH, temp);
 	if (TempDirCheck(ctx, len != 0 && len < MAX_PATH, "The temp path of Windows is read", "error %u", GetLastError()) == false)
 	{
 		return;
@@ -611,7 +591,7 @@ static void TempDirChildCase(TEMPDIR_CTX *ctx)
 	// Leftovers of an earlier run with the same process id
 	TempDirCleanChildCase(root, stale_dir, stale_link, nested_link, top_target, nested_target);
 
-	setup = CreateDirectoryW(root, NULL) && TempDirMakeTarget(top_target) && TempDirMakeTarget(nested_target) &&
+	bool setup = CreateDirectoryW(root, NULL) && TempDirMakeTarget(top_target) && TempDirMakeTarget(nested_target) &&
 		CreateDirectoryW(stale_dir, NULL) && TempDirMakeJunction(nested_link, nested_target) &&
 		TempDirMakeJunction(stale_link, top_target);
 
@@ -622,10 +602,10 @@ static void TempDirChildCase(TEMPDIR_CTX *ctx)
 		return;
 	}
 
-	w = ZeroMalloc(sizeof(TEMPDIR_WATCH));
-	watching = TempDirWatchStart(w, root);
+	TEMPDIR_WATCH *w = ZeroMalloc(sizeof(TEMPDIR_WATCH));
+	bool watching = TempDirWatchStart(w, root);
 
-	ended = TempDirRunChild(root, &exit_code);
+	bool ended = TempDirRunChild(root, &exit_code);
 
 	TempDirWatchStop(w);
 
@@ -661,7 +641,6 @@ static void TempDirChildCase(TEMPDIR_CTX *ctx)
 void tempdir_test(UINT num, char **arg)
 {
 	TEMPDIR_CTX ctx;
-	wchar_t *dir;
 	wchar_t sys_temp[MAX_PATH];
 	PSECURITY_DESCRIPTOR sd = NULL;
 	ACL *dacl = NULL;
@@ -681,7 +660,7 @@ void tempdir_test(UINT num, char **arg)
 	Print("Temp directory and string table test (MsGetMyTempDirW, LoadTable)\n");
 
 	// (1) The name of the temp directory of the process
-	dir = MsGetMyTempDirW();
+	wchar_t *dir = MsGetMyTempDirW();
 	Print("  temp directory: %S\n", dir == NULL ? L"(none)" : dir);
 
 	TempDirCheck(&ctx, TempDirNameOk(dir), "The temp directory name is VPN_ and 16 hex digits (64 random bits)",

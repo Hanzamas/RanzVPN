@@ -62,9 +62,6 @@ void MsRegistWindowsFirewallEx2(char *title, char *exe, char *dir)
 }
 void MsRegistWindowsFirewallEx(char *title, char *exe)
 {
-	char *data;
-	char *tmp;
-	UINT tmp_size;
 	char filename[MAX_PATH];
 	char cscript[MAX_PATH];
 	char arg[MAX_PATH];
@@ -83,7 +80,7 @@ void MsRegistWindowsFirewallEx(char *title, char *exe)
 		return;
 	}
 
-	data = "Option Explicit\r\n\r\nConst PROFILES_ALL = 7\r\nConst NET_FW_ACTION_ALLOWNET_FW_ACTION_ALLOW = 1\r\n"
+	char *data = "Option Explicit\r\n\r\nConst PROFILES_ALL = 7\r\nConst NET_FW_ACTION_ALLOWNET_FW_ACTION_ALLOW = 1\r\n"
 		"\r\nDim policy2\r\nDim rules\r\nDim new_rule\r\n\r\nOn Error Resume Next\r\n\r\n"
 		"Set policy2 = CreateObject(\"HNetCfg.FwPolicy2\")\r\nSet rules = policy2.Rules\r\n"
 		"Set new_rule = CreateObject(\"HNetCfg.FWRule\")\r\nnew_rule.Name = \"$TITLE$\"\r\n"
@@ -91,8 +88,8 @@ void MsRegistWindowsFirewallEx(char *title, char *exe)
 		"new_rule.Enabled = TRUE\r\nnew_rule.Profiles = PROFILES_ALL\r\nnew_rule.Action = "
 		"NET_FW_ACTION_ALLOWNET_FW_ACTION_ALLOW\r\nrules.Add new_rule\r\n\r\n";
 
-	tmp_size = StrLen(data) * 4;
-	tmp = ZeroMalloc(tmp_size);
+	UINT tmp_size = StrLen(data) * 4;
+	char *tmp = ZeroMalloc(tmp_size);
 
 	Sha1(hashbin, exe, StrLen(exe));
 	BinToStr(hash, sizeof(hash), hashbin, 6);
@@ -125,13 +122,12 @@ void MsRegistWindowsFirewallEx(char *title, char *exe)
 MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid)
 {
 	MS_ADAPTER *ret = NULL;
-	UINT i;
 	if (o == NULL || guid == NULL)
 	{
 		return NULL;
 	}
 
-	for (i = 0;i < o->Num;i++)
+	for (UINT i = 0;i < o->Num;i++)
 	{
 		if (StrCmpi(o->Adapters[i]->Guid, guid) == 0)
 		{
@@ -166,13 +162,12 @@ bool MsIsBridgeableIf(UINT type, UINT media_type, UINT physical_medium_type, boo
 
 MS_ADAPTER *MsCloneAdapter(MS_ADAPTER *a)
 {
-	MS_ADAPTER *ret;
 	if (a == NULL)
 	{
 		return NULL;
 	}
 
-	ret = ZeroMalloc(sizeof(MS_ADAPTER));
+	MS_ADAPTER *ret = ZeroMalloc(sizeof(MS_ADAPTER));
 	Copy(ret, a, sizeof(MS_ADAPTER));
 
 	return ret;
@@ -180,33 +175,26 @@ MS_ADAPTER *MsCloneAdapter(MS_ADAPTER *a)
 
 MS_ADAPTER_LIST *MsCreateAdapterList()
 {
-	LIST *o;
-	UINT i;
-	UINT retcode;
 	PMIB_IF_TABLE2 table;
-	MS_ADAPTER_LIST *ret;
 
-	retcode = GetIfTable2(&table);
+	UINT retcode = GetIfTable2(&table);
 	if (retcode != NO_ERROR || table == NULL)
 	{
 		return ZeroMalloc(sizeof(MS_ADAPTER_LIST));
 	}
 
-	o = NewListFast(NULL);
+	LIST *o = NewListFast(NULL);
 
-	for (i = 0;i < table->NumEntries;i++)
+	for (UINT i = 0;i < table->NumEntries;i++)
 	{
 		MIB_IF_ROW2 *r = &table->Table[i];
 		wchar_t title[MAX_PATH];
 		MS_ADAPTER *a;
-		UINT j;
 
 		{
 			{
-				for (j = 1;;j++)
+				for (UINT j = 1;;j++)
 				{
-					UINT k;
-					bool exists;
 					if (j == 1)
 					{
 						UniStrCpy(title, sizeof(title), r->Description);
@@ -216,9 +204,9 @@ MS_ADAPTER_LIST *MsCreateAdapterList()
 						UniFormat(title, sizeof(title), L"%s (%u)", r->Description, j);
 					}
 
-					exists = false;
+					bool exists = false;
 
-					for (k = 0;k < LIST_NUM(o);k++)
+					for (UINT k = 0;k < LIST_NUM(o);k++)
 					{
 						MS_ADAPTER *a = LIST_DATA(o, k);
 
@@ -264,7 +252,7 @@ MS_ADAPTER_LIST *MsCreateAdapterList()
 		}
 	}
 
-	ret = ZeroMalloc(sizeof(MS_ADAPTER_LIST));
+	MS_ADAPTER_LIST *ret = ZeroMalloc(sizeof(MS_ADAPTER_LIST));
 	ret->Num = LIST_NUM(o);
 	ret->Adapters = ToArray(o);
 
@@ -276,13 +264,12 @@ MS_ADAPTER_LIST *MsCreateAdapterList()
 
 void MsFreeAdapterList(MS_ADAPTER_LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < o->Num;i++)
+	for (UINT i = 0;i < o->Num;i++)
 	{
 		MsFreeAdapter(o->Adapters[i]);
 	}
@@ -306,13 +293,12 @@ static const GUID ms_netclass_guid = {0x4d36e972, 0xe325, 0x11ce, {0xbf, 0xc1, 0
 
 static int MsNetClassCmp(void *p1, void *p2)
 {
-	MS_NETCLASS_DEVICE *d1, *d2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	d1 = *(MS_NETCLASS_DEVICE **)p1;
-	d2 = *(MS_NETCLASS_DEVICE **)p2;
+	MS_NETCLASS_DEVICE *d1 = *(MS_NETCLASS_DEVICE **)p1;
+	MS_NETCLASS_DEVICE *d2 = *(MS_NETCLASS_DEVICE **)p2;
 	if (d1 == NULL || d2 == NULL)
 	{
 		return 0;
@@ -346,7 +332,6 @@ LIST *MsNetClassEnum()
 {
 	LIST *o = NewList(MsNetClassCmp);
 	HDEVINFO h;
-	UINT i;
 
 	h = SetupDiGetClassDevsW(&ms_netclass_guid, NULL, NULL, DIGCF_PRESENT);
 	if (h == INVALID_HANDLE_VALUE)
@@ -354,11 +339,9 @@ LIST *MsNetClassEnum()
 		return o;
 	}
 
-	for (i = 0;;i++)
+	for (UINT i = 0;;i++)
 	{
 		SP_DEVINFO_DATA d;
-		MS_NETCLASS_DEVICE *e;
-		HKEY key;
 		wchar_t tmp[MAX_SIZE];
 
 		Zero(&d, sizeof(d));
@@ -369,10 +352,10 @@ LIST *MsNetClassEnum()
 			break;
 		}
 
-		e = ZeroMalloc(sizeof(MS_NETCLASS_DEVICE));
+		MS_NETCLASS_DEVICE *e = ZeroMalloc(sizeof(MS_NETCLASS_DEVICE));
 
 		// NetCfgInstanceId of the driver key: the adapter GUID of NDIS, SeLow and IP Helper
-		key = SetupDiOpenDevRegKey(h, &d, DICS_FLAG_GLOBAL, 0, DIREG_DRV, KEY_READ);
+		HKEY key = SetupDiOpenDevRegKey(h, &d, DICS_FLAG_GLOBAL, 0, DIREG_DRV, KEY_READ);
 		if (key != INVALID_HANDLE_VALUE)
 		{
 			DWORD type = 0;
@@ -411,11 +394,10 @@ LIST *MsNetClassEnum()
 		if (IsEmptyStr(e->Service) == false)
 		{
 			char service_key[MAX_SIZE];
-			char *image_path;
 
 			Format(service_key, sizeof(service_key), "SYSTEM\\CurrentControlSet\\services\\%s", e->Service);
 
-			image_path = MsRegReadStr(REG_LOCAL_MACHINE, service_key, "ImagePath");
+			char *image_path = MsRegReadStr(REG_LOCAL_MACHINE, service_key, "ImagePath");
 
 			if (IsEmptyStr(image_path) == false)
 			{
@@ -451,13 +433,12 @@ MS_NETCLASS_DEVICE *MsNetClassFind(LIST *o, char *guid)
 
 void MsNetClassFree(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		Free(LIST_DATA(o, i));
 	}

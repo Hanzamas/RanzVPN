@@ -75,10 +75,9 @@ bool MsCheckLogon(wchar_t *username, char *password)
 wchar_t *MsCopyProcessArgsW()
 {
 	wchar_t *line = CopyUniStr(GetCommandLineW());
-	wchar_t *args;
 
 	UniTrim(line);
-	args = CopyUniStr(PathGetArgsW(line));
+	wchar_t *args = CopyUniStr(PathGetArgsW(line));
 	Free(line);
 
 	return args;

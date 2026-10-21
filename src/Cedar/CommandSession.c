@@ -19,7 +19,7 @@
 #include <stdlib.h>
 #include "CommandInternal.h"
 
-static void CmdPrintNodeInfo(CT *ct, NODE_INFO *info)
+static void CmdPrintNodeInfo(CT *ct, const NODE_INFO *info)
 {
 	wchar_t tmp[MAX_SIZE];
 	char str[MAX_SIZE];
@@ -82,7 +82,6 @@ static void CmdPrintNodeInfo(CT *ct, NODE_INFO *info)
 
 UINT PsSessionGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SESSION_STATUS t;
@@ -97,7 +96,7 @@ UINT PsSessionGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -169,7 +168,6 @@ UINT PsSessionGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ENUM_SESSION t;
@@ -180,7 +178,7 @@ UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
+	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -200,7 +198,6 @@ UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	else
 	{
 		CT *ct = CtNew();
-		UINT i;
 
 		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_1"), false);
 		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_8"), false);
@@ -211,11 +208,10 @@ UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_6"), true);
 		CtInsertColumn(ct, _UU("SM_SESS_COLUMN_7"), true);
 
-		for (i = 0;i < t.NumSession;i++)
+		for (UINT i = 0;i < t.NumSession;i++)
 		{
 			RPC_ENUM_SESSION_ITEM *e = &t.Sessions[i];
 			wchar_t tmp1[MAX_SIZE];
-			wchar_t *tmp2;
 			wchar_t tmp3[MAX_SIZE];
 			wchar_t tmp4[MAX_SIZE];
 			wchar_t tmp5[MAX_SIZE];
@@ -225,7 +221,7 @@ UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 			StrToUni(tmp1, sizeof(tmp1), e->Name);
 
-			tmp2 = _UU("SM_SESS_NORMAL");
+			wchar_t *tmp2 = _UU("SM_SESS_NORMAL");
 			if (e->LinkMode)
 			{
 				tmp2 = _UU("SM_SESS_LINK");
@@ -281,7 +277,6 @@ UINT PsSessionList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsSessionDisconnect(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_DELETE_SESSION t;
@@ -296,7 +291,7 @@ UINT PsSessionDisconnect(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -322,11 +317,9 @@ UINT PsSessionDisconnect(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ENUM_MAC_TABLE t;
-	UINT i;
 
 	PARAM args[] =
 	{
@@ -339,7 +332,7 @@ UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -373,7 +366,7 @@ UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		CtInsertColumn(ct, _UU("SM_MAC_COLUMN_3"), false);
 		CtInsertColumn(ct, _UU("SM_MAC_COLUMN_4"), false);
 
-		for (i = 0;i < t.NumMacTable;i++)
+		for (UINT i = 0;i < t.NumMacTable;i++)
 		{
 			char str[MAX_SIZE];
 			wchar_t tmp0[128];
@@ -421,7 +414,6 @@ UINT PsMacTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsMacDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_DELETE_TABLE t;
@@ -436,7 +428,7 @@ UINT PsMacDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -462,11 +454,9 @@ UINT PsMacDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsIpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ENUM_IP_TABLE t;
-	UINT i;
 
 	PARAM args[] =
 	{
@@ -479,7 +469,7 @@ UINT PsIpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -512,7 +502,7 @@ UINT PsIpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		CtInsertColumn(ct, _UU("SM_IP_COLUMN_3"), false);
 		CtInsertColumn(ct, _UU("SM_IP_COLUMN_4"), false);
 
-		for (i = 0;i < t.NumIpTable;i++)
+		for (UINT i = 0;i < t.NumIpTable;i++)
 		{
 			char str[MAX_SIZE];
 			wchar_t tmp0[128];
@@ -559,7 +549,6 @@ UINT PsIpTable(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsIpDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_DELETE_TABLE t;
@@ -574,7 +563,7 @@ UINT PsIpDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;

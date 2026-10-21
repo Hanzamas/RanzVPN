@@ -76,7 +76,7 @@ static void SvcArgsTestCheck(SVCARGS_TEST *t, bool ok, char *what, char *detail_
 }
 
 // The number of times keyword occurs in str
-static UINT SvcArgsTestCount(wchar_t *str, wchar_t *keyword)
+static UINT SvcArgsTestCount(const wchar_t *str, const wchar_t *keyword)
 {
 	UINT num = 0;
 	UINT pos = 0;
@@ -102,17 +102,14 @@ static UINT SvcArgsTestCount(wchar_t *str, wchar_t *keyword)
 void svcargs_test(UINT num, char **arg)
 {
 	SVCARGS_TEST t;
-	const MS_SVC_ARG *table;
 	UINT table_num = 0;
-	wchar_t *help;
-	UINT i;
 
 	Zero(&t, sizeof(t));
 
 	Print("Service argument test (MsSvcArgs, MsSvcArgToMode, SVC_HELP)\n");
 
 	// Each documented argument selects its mode, also in upper case
-	for (i = 0;i < sizeof(svcargs_expect) / sizeof(svcargs_expect[0]);i++)
+	for (UINT i = 0;i < sizeof(svcargs_expect) / sizeof(svcargs_expect[0]);i++)
 	{
 		char what[MAX_SIZE];
 		char upper[MAX_SIZE];
@@ -129,12 +126,12 @@ void svcargs_test(UINT num, char **arg)
 	}
 
 	// The table holds the documented arguments and no other
-	table = MsSvcArgs(&table_num);
+	const MS_SVC_ARG *table = MsSvcArgs(&table_num);
 	SvcArgsTestCheck(&t, table != NULL && table_num == sizeof(svcargs_expect) / sizeof(svcargs_expect[0]),
 		"the table holds exactly the documented arguments", "%u entries", table_num);
 
 	// The former tray aliases and other strings select no mode
-	for (i = 0;i < sizeof(svcargs_none) / sizeof(svcargs_none[0]);i++)
+	for (UINT i = 0;i < sizeof(svcargs_none) / sizeof(svcargs_none[0]);i++)
 	{
 		char what[MAX_SIZE];
 		UINT mode = MsSvcArgToMode(svcargs_none[i]);
@@ -145,20 +142,19 @@ void svcargs_test(UINT num, char **arg)
 	SvcArgsTestCheck(&t, MsSvcArgToMode(NULL) == SVC_MODE_NONE, "NULL selects no mode", "mode %u", MsSvcArgToMode(NULL));
 
 	// SVC_HELP lists each argument of the table as "<argument> :", and no other argument
-	help = _UU("SVC_HELP");
+	wchar_t *help = _UU("SVC_HELP");
 	SvcArgsTestCheck(&t, UniStrLen(help) != 0, "SVC_HELP is in the string table", "empty");
 
-	for (i = 0;table != NULL && i < table_num;i++)
+	for (UINT i = 0;table != NULL && i < table_num;i++)
 	{
 		char what[MAX_SIZE];
 		char line[MAX_SIZE];
 		wchar_t line_w[MAX_SIZE];
-		UINT count;
 
 		// "/install : " is not inside "/setup_install : ": the slash comes right before the name
 		Format(line, sizeof(line), "%s : ", table[i].Arg);
 		StrToUni(line_w, sizeof(line_w), line);
-		count = SvcArgsTestCount(help, line_w);
+		UINT count = SvcArgsTestCount(help, line_w);
 
 		Format(what, sizeof(what), "SVC_HELP lists %s once", table[i].Arg);
 		SvcArgsTestCheck(&t, count == 1, what, "%u times", count);

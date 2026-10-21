@@ -62,9 +62,8 @@ static bool BufBoundsCheck(BUFBOUNDS_CTX *ctx, bool ok, char *what)
 static BUF *BufBoundsNewBuf(UINT size)
 {
 	BUF *b = NewBuf();
-	UINT i;
 
-	for (i = 0;i < size;i++)
+	for (UINT i = 0;i < size;i++)
 	{
 		WriteBufChar(b, (UCHAR)i);
 	}
@@ -79,10 +78,9 @@ static void BufBoundsTestReadBuf(BUFBOUNDS_CTX *ctx)
 {
 	BUF *b = BufBoundsNewBuf(100);
 	UCHAR tmp[8];
-	UINT ret;
 
 	SeekBuf(b, 10, 0);
-	ret = ReadBuf(b, NULL, 0xFFFFFFF8);
+	UINT ret = ReadBuf(b, NULL, 0xFFFFFFF8);
 	BufBoundsCheck(ctx, ret == 90 && b->Current == 100,
 		"ReadBuf(NULL, 0xFFFFFFF8) at offset 10 of 100 bytes skips the 90 bytes left (Current + size wrapped to 2 before)");
 
@@ -111,31 +109,28 @@ static void BufBoundsTestReadBuf(BUFBOUNDS_CTX *ctx)
 // ReadBufStr: the tail of an over-long string is skipped forward only, and must be there
 static void BufBoundsTestReadBufStr(BUFBOUNDS_CTX *ctx)
 {
-	BUF *b;
 	char str[64];
 	char long_str[101];
-	UINT i;
-	bool ret;
 
 	// 10 bytes, then a string length of 0xFFFFFFFF and 100 bytes of string
-	b = NewBuf();
-	for (i = 0;i < 10;i++)
+	BUF *b = NewBuf();
+	for (UINT i = 0;i < 10;i++)
 	{
 		WriteBufChar(b, 0);
 	}
 	WriteBufInt(b, 0xFFFFFFFF);
-	for (i = 0;i < 100;i++)
+	for (UINT i = 0;i < 100;i++)
 	{
 		WriteBufChar(b, 'a');
 	}
 	SeekBuf(b, 10, 0);
-	ret = ReadBufStr(b, str, sizeof(str));
+	bool ret = ReadBufStr(b, str, sizeof(str));
 	BufBoundsCheck(ctx, ret == false && b->Current == b->Size,
 		"ReadBufStr of a length 0xFFFFFFFF with 100 bytes left fails at the end (the skip wrapped back to offset 12 before)");
 	FreeBuf(b);
 
 	// An over-long string that is all there: the first size - 1 bytes, the rest skipped
-	for (i = 0;i < 100;i++)
+	for (UINT i = 0;i < 100;i++)
 	{
 		long_str[i] = 'x';
 	}
@@ -174,11 +169,10 @@ static void BufBoundsTestWriteBufInside(BUFBOUNDS_CTX *ctx)
 {
 	BUF *b = BufBoundsNewBuf(100);
 	UCHAR data[4] = {0xAA, 0xBB, 0xCC, 0xDD};
-	UCHAR *p;
 
 	SeekBuf(b, 0, 0);
 	WriteBuf(b, data, sizeof(data));
-	p = (UCHAR *)b->Buf;
+	UCHAR *p = (UCHAR *)b->Buf;
 	BufBoundsCheck(ctx, b->Size == 100 && b->Current == 4 && Cmp(p, data, sizeof(data)) == 0 && p[4] == 4 && p[99] == 99,
 		"WriteBuf of 4 bytes at offset 0 of 100 bytes overwrites them and keeps Size at 100 (it was cut to 4 before)");
 
@@ -210,17 +204,16 @@ static void BufBoundsWriteWrapChild(void)
 }
 
 // True when the file holds text
-static bool BufBoundsFileHas(wchar_t *name, char *text)
+static bool BufBoundsFileHas(wchar_t *name, const char *text)
 {
 	BUF *b = ReadDumpW(name);
-	bool ret;
 
 	if (b == NULL)
 	{
 		return false;
 	}
 
-	ret = (SearchBin(b->Buf, b->Size, text, StrLen(text)) != INFINITE);
+	bool ret = (SearchBin(b->Buf, b->Size, text, StrLen(text)) != INFINITE);
 
 	FreeBuf(b);
 
@@ -246,11 +239,7 @@ static void BufBoundsTestWriteBuf(BUFBOUNDS_CTX *ctx)
 	SECURITY_ATTRIBUTES sa;
 	STARTUPINFOW si;
 	PROCESS_INFORMATION pi;
-	HANDLE out;
 	DWORD exit_code = 0;
-	UINT old_mode;
-	UINT err;
-	bool started;
 	bool ended = false;
 	bool in_out, in_log;
 
@@ -272,7 +261,7 @@ static void BufBoundsTestWriteBuf(BUFBOUNDS_CTX *ctx)
 	Zero(&sa, sizeof(sa));
 	sa.nLength = sizeof(sa);
 	sa.bInheritHandle = TRUE;
-	out = CreateFileW(out_name, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, &sa,
+	HANDLE out = CreateFileW(out_name, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, &sa,
 		CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 	if (BufBoundsCheck(ctx, out != INVALID_HANDLE_VALUE, "output file of the child process") == false)
 	{
@@ -291,9 +280,9 @@ static void BufBoundsTestWriteBuf(BUFBOUNDS_CTX *ctx)
 	Zero(&pi, sizeof(pi));
 
 	// No error dialog when the child crashes (the old WriteBuf() did): the child inherits this mode
-	old_mode = SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
-	started = (CreateProcessW(exe, cmd, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, dir, &si, &pi) != FALSE);
-	err = GetLastError();
+	UINT old_mode = SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+	bool started = (CreateProcessW(exe, cmd, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, dir, &si, &pi) != FALSE);
+	UINT err = GetLastError();
 	SetErrorMode(old_mode);
 	CloseHandle(out);
 
@@ -335,7 +324,7 @@ static void BufBoundsTestWriteBuf(BUFBOUNDS_CTX *ctx)
 
 // Body of a binary configuration (what follows "SEVPN_DB" and the hash): folder "root" without
 // subfolders and with one item of the given name and type; the caller writes the value
-static BUF *BufBoundsCfgOneItem(char *name, UINT type)
+static BUF *BufBoundsCfgOneItem(const char *name, UINT type)
 {
 	BUF *b = NewBuf();
 
@@ -351,10 +340,8 @@ static BUF *BufBoundsCfgOneItem(char *name, UINT type)
 // True when CfgBufBinToFolder() rejects the body in b; frees b
 static bool BufBoundsCfgRejects(BUF *b)
 {
-	FOLDER *f;
-
 	SeekBufToBegin(b);
-	f = CfgBufBinToFolder(b);
+	FOLDER *f = CfgBufBinToFolder(b);
 	FreeBuf(b);
 
 	if (f != NULL)
@@ -372,12 +359,10 @@ static void BufBoundsTestCfgValid(BUFBOUNDS_CTX *ctx)
 {
 	FOLDER *f = CfgCreateFolder(NULL, TAG_ROOT);
 	FOLDER *sub = CfgCreateFolder(f, "VirtualHUB");
-	FOLDER *f2;
-	BUF *bin, *text1, *text2 = NULL;
+	BUF *text2 = NULL;
 	UCHAR bytes[20];
-	UINT i;
 
-	for (i = 0;i < sizeof(bytes);i++)
+	for (UINT i = 0;i < sizeof(bytes);i++)
 	{
 		bytes[i] = (UCHAR)i;
 	}
@@ -391,7 +376,7 @@ static void BufBoundsTestCfgValid(BUFBOUNDS_CTX *ctx)
 	CfgCreateFolder(sub, "DEFAULT");
 
 	// The same tree as a binary body, written by hand (Ranz VPN writes text only)
-	bin = NewBuf();
+	BUF *bin = NewBuf();
 	WriteBufStr(bin, TAG_ROOT);
 	WriteBufInt(bin, 1);			// Subfolders
 	WriteBufStr(bin, "VirtualHUB");
@@ -422,9 +407,9 @@ static void BufBoundsTestCfgValid(BUFBOUNDS_CTX *ctx)
 	WriteBufInt(bin, ITEM_TYPE_BOOL);
 	WriteBufInt(bin, 1);
 
-	text1 = CfgFolderToBuf(f);
+	BUF *text1 = CfgFolderToBuf(f);
 	SeekBufToBegin(bin);
-	f2 = CfgBufBinToFolder(bin);
+	FOLDER *f2 = CfgBufBinToFolder(bin);
 	if (f2 != NULL)
 	{
 		text2 = CfgFolderToBuf(f2);
@@ -454,9 +439,7 @@ static char *BufBoundsCfgEntryName(LIST *o, UINT i, bool folders)
 // True when the names of list o are sorted case-insensitively, as CfgCmpName orders them
 static bool BufBoundsCfgListSorted(LIST *o, bool folders)
 {
-	UINT i;
-
-	for (i = 1;i < LIST_NUM(o);i++)
+	for (UINT i = 1;i < LIST_NUM(o);i++)
 	{
 		if (StrCmpi(BufBoundsCfgEntryName(o, i - 1, folders), BufBoundsCfgEntryName(o, i, folders)) > 0)
 		{
@@ -468,11 +451,9 @@ static bool BufBoundsCfgListSorted(LIST *o, bool folders)
 }
 
 // True when every name of t comes after the one before it, case-insensitively: sorted, each once
-static bool BufBoundsCfgTokensUnique(TOKEN_LIST *t)
+static bool BufBoundsCfgTokensUnique(const TOKEN_LIST *t)
 {
-	UINT i;
-
-	for (i = 1;i < t->NumTokens;i++)
+	for (UINT i = 1;i < t->NumTokens;i++)
 	{
 		if (StrCmpi(t->Token[i - 1], t->Token[i]) >= 0)
 		{
@@ -489,8 +470,6 @@ static bool BufBoundsCfgTokensUnique(TOKEN_LIST *t)
 static void BufBoundsTestCfgEnum(BUFBOUNDS_CTX *ctx)
 {
 	FOLDER *f = CfgCreateFolder(NULL, TAG_ROOT);
-	FOLDER *sub;
-	TOKEN_LIST *items, *folders;
 
 	CfgAddInt(f, "Zeta", 1);
 	CfgAddInt(f, "alpha", 2);
@@ -503,9 +482,9 @@ static void BufBoundsTestCfgEnum(BUFBOUNDS_CTX *ctx)
 	CfgCreateFolder(f, "Alpha");
 	CfgCreateFolder(f, "beta");
 
-	sub = CfgFindFolder(f, "BeTa");
-	items = CfgEnumItemToTokenList(f);
-	folders = CfgEnumFolderToTokenList(f);
+	FOLDER *sub = CfgFindFolder(f, "BeTa");
+	TOKEN_LIST *items = CfgEnumItemToTokenList(f);
+	TOKEN_LIST *folders = CfgEnumFolderToTokenList(f);
 
 	BufBoundsCheck(ctx, BufBoundsCfgListSorted(f->Items, false) && BufBoundsCfgListSorted(f->Folders, true),
 		"the Items and Folders lists are sorted case-insensitively when enumerated");
@@ -523,13 +502,10 @@ static void BufBoundsTestCfgEnum(BUFBOUNDS_CTX *ctx)
 // CfgBufBinToFolder: every count and size is checked against the bytes left
 static void BufBoundsTestCfg(BUFBOUNDS_CTX *ctx)
 {
-	BUF *b;
-	UINT i;
-
 	BufBoundsTestCfgValid(ctx);
 	BufBoundsTestCfgEnum(ctx);
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 	WriteBufStr(b, TAG_ROOT);
 	WriteBufInt(b, 1000);
 	BufBoundsCheck(ctx, BufBoundsCfgRejects(b),
@@ -561,7 +537,7 @@ static void BufBoundsTestCfg(BUFBOUNDS_CTX *ctx)
 	WriteBufInt(b, 0);
 	WriteBufInt(b, 1);
 	WriteBufInt(b, 0xFFFFFFFF);
-	for (i = 0;i < 600;i++)
+	for (UINT i = 0;i < 600;i++)
 	{
 		WriteBufChar(b, 'n');
 	}
@@ -588,15 +564,14 @@ static void BufBoundsTestCfg(BUFBOUNDS_CTX *ctx)
 static BUF *BufBoundsCfgNestedText(UINT count)
 {
 	BUF *b = NewBuf();
-	UINT i;
 
-	for (i = 0;i < count;i++)
+	for (UINT i = 0;i < count;i++)
 	{
 		char *line = (i == 0 ? "declare root\r\n{\r\n" : "declare x\r\n{\r\n");
 
 		WriteBuf(b, line, StrLen(line));
 	}
-	for (i = 0;i < count;i++)
+	for (UINT i = 0;i < count;i++)
 	{
 		WriteBuf(b, "}\r\n", 3);
 	}
@@ -610,14 +585,13 @@ static BUF *BufBoundsCfgNestedText(UINT count)
 static BUF *BufBoundsCfgNestedBin(UINT count)
 {
 	BUF *b = NewBuf();
-	UINT i;
 
-	for (i = 0;i < count;i++)
+	for (UINT i = 0;i < count;i++)
 	{
 		WriteBufStr(b, i == 0 ? TAG_ROOT : "x");
 		WriteBufInt(b, (i + 1 < count) ? 1 : 0);	// Subfolders
 	}
-	for (i = 0;i < count;i++)
+	for (UINT i = 0;i < count;i++)
 	{
 		WriteBufInt(b, 0);						// Items
 	}
@@ -642,16 +616,13 @@ static bool BufBoundsCfgTextLoads(BUF *b)
 // Both readers stop at a nesting depth of 64 folders instead of recursing once per level
 static void BufBoundsTestCfgDepth(BUFBOUNDS_CTX *ctx)
 {
-	BUF *b;
-	FOLDER *f;
-
 	BufBoundsCheck(ctx, BufBoundsCfgTextLoads(BufBoundsCfgNestedText(64)), "a text configuration of 64 nested folders loads");
 	BufBoundsCheck(ctx, BufBoundsCfgTextLoads(BufBoundsCfgNestedText(65)) == false, "a text configuration of 65 nested folders is rejected");
 	BufBoundsCheck(ctx, BufBoundsCfgTextLoads(BufBoundsCfgNestedText(10000)) == false,
 		"a text configuration of 10000 nested folders is rejected (the old reader recursed once per level)");
 
-	b = BufBoundsCfgNestedBin(64);
-	f = CfgBufBinToFolder(b);
+	BUF *b = BufBoundsCfgNestedBin(64);
+	FOLDER *f = CfgBufBinToFolder(b);
 	BufBoundsCheck(ctx, f != NULL, "a binary configuration of 64 nested folders loads");
 	CfgDeleteFolder(f);
 	FreeBuf(b);
@@ -664,11 +635,10 @@ static void BufBoundsTestCfgDepth(BUFBOUNDS_CTX *ctx)
 // True when CfgReadW() of a file holding b returns NULL; frees b
 static bool BufBoundsCfgFileRejects(wchar_t *name, BUF *b)
 {
-	FOLDER *f;
 	bool written = DumpBufW(b, name);
 
 	FreeBuf(b);
-	f = CfgReadW(name);
+	FOLDER *f = CfgReadW(name);
 	FileDeleteW(name);
 
 	if (f != NULL)
@@ -706,7 +676,6 @@ static void BufBoundsTestCfgRead(BUFBOUNDS_CTX *ctx)
 	wchar_t dir[MAX_PATH];
 	wchar_t name[MAX_PATH];
 	UCHAR zero[SHA1_SIZE];
-	BUF *b;
 
 	if (BufBoundsCheck(ctx, GetTempPathW(MAX_PATH, temp) != 0, "the temporary directory of Windows") == false)
 	{
@@ -719,7 +688,7 @@ static void BufBoundsTestCfgRead(BUFBOUNDS_CTX *ctx)
 	CombinePathW(name, sizeof(name), dir, L"vpn_server.config");
 	Zero(zero, sizeof(zero));
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 	WriteBuf(b, TAG_BINARY, 8);
 	WriteBuf(b, zero, 12);
 	BufBoundsCheck(ctx, BufBoundsCfgFileRejects(name, b),

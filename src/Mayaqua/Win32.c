@@ -90,10 +90,8 @@ void Win32GetMemInfo(MEMINFO *info)
 
 void *Win32NewSingleInstance(char *instance_name)
 {
-	WIN32MUTEX *ret;
 	char tmp[MAX_SIZE];
 	wchar_t name_w[MAX_SIZE];
-	HANDLE hMutex;
 	if (instance_name == NULL)
 	{
 		char exe_path[MAX_PATH];
@@ -104,7 +102,7 @@ void *Win32NewSingleInstance(char *instance_name)
 
 	// One atomic create: an existing mutex (or one this account may not open) means another instance runs
 	StrToUni(name_w, sizeof(name_w), instance_name);
-	hMutex = CreateMutexW(NULL, FALSE, name_w);
+	HANDLE hMutex = CreateMutexW(NULL, FALSE, name_w);
 	if (hMutex == NULL)
 	{
 		return NULL;
@@ -115,7 +113,7 @@ void *Win32NewSingleInstance(char *instance_name)
 		return NULL;
 	}
 
-	ret = Win32MemoryAlloc(sizeof(WIN32MUTEX));
+	WIN32MUTEX *ret = Win32MemoryAlloc(sizeof(WIN32MUTEX));
 	ret->hMutex = hMutex;
 
 	return (void *)ret;
@@ -123,13 +121,12 @@ void *Win32NewSingleInstance(char *instance_name)
 
 void Win32FreeSingleInstance(void *data)
 {
-	WIN32MUTEX *m;
 	if (data == NULL)
 	{
 		return;
 	}
 
-	m = (WIN32MUTEX *)data;
+	WIN32MUTEX *m = (WIN32MUTEX *)data;
 	ReleaseMutex(m->hMutex);
 	CloseHandle(m->hMutex);
 

@@ -19,11 +19,10 @@
 UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t)
 {
 	SERVER *s = a->Server;
-	HUB *h;
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
-	h = AdminGetHub(a, t->HubName, "no_change_cert_list", &err);
+	HUB *h = AdminGetHub(a, t->HubName, "no_change_cert_list", &err);
 	if (h == NULL)
 	{
 		return err;
@@ -55,21 +54,19 @@ UINT StDeleteCa(ADMIN *a, RPC_HUB_DELETE_CA *t)
 
 UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t)
 {
-	HUB *h;
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 	char hubname[MAX_HUBNAME_LEN + 1];
-	UINT key;
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
-	key = t->Key;
+	UINT key = t->Key;
 
 	FreeRpcHubGetCa(t);
 	Zero(t, sizeof(RPC_HUB_GET_CA));
 	t->Key = key;
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
 
-	h = AdminGetHub(a, t->HubName, NULL, &err);
+	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
 		return err;
@@ -97,10 +94,8 @@ UINT StGetCa(ADMIN *a, RPC_HUB_GET_CA *t)
 
 UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
 {
-	HUB *h;
 	UINT err;
 	char hubname[MAX_HUBNAME_LEN + 1];
-	UINT i;
 
 	StrCpy(hubname, sizeof(hubname), t->HubName);
 
@@ -108,7 +103,7 @@ UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
 	Zero(t, sizeof(RPC_HUB_ENUM_CA));
 
 	StrCpy(t->HubName, sizeof(t->HubName), hubname);
-	h = AdminGetHub(a, t->HubName, NULL, &err);
+	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
 		return err;
@@ -119,7 +114,7 @@ UINT StEnumCa(ADMIN *a, RPC_HUB_ENUM_CA *t)
 		t->NumCa = LIST_NUM(h->HubDb->RootCertList);
 		t->Ca = ZeroMalloc(sizeof(RPC_HUB_ENUM_CA_ITEM) * t->NumCa);
 
-		for (i = 0;i < t->NumCa;i++)
+		for (UINT i = 0;i < t->NumCa;i++)
 		{
 			RPC_HUB_ENUM_CA_ITEM *e = &t->Ca[i];
 			X *x = LIST_DATA(h->HubDb->RootCertList, i);
@@ -141,7 +136,6 @@ UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
-	HUB *h;
 	UINT err;
 
 	if (t->Cert == NULL)
@@ -149,7 +143,7 @@ UINT StAddCa(ADMIN *a, RPC_HUB_ADD_CA *t)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	h = AdminGetHub(a, t->HubName, "no_change_cert_list", &err);
+	HUB *h = AdminGetHub(a, t->HubName, "no_change_cert_list", &err);
 	if (h == NULL)
 	{
 		return err;

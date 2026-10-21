@@ -717,7 +717,7 @@ void InitWaitThread()
 
 void FreeWaitThread()
 {
-	UINT i, num;
+	UINT num;
 	THREAD **threads;
 
 	LockList(WaitThreadList);
@@ -728,7 +728,7 @@ void FreeWaitThread()
 	}
 	UnlockList(WaitThreadList);
 
-	for (i = 0; i < num; i++)
+	for (UINT i = 0; i < num; i++)
 	{
 		THREAD *t = threads[i];
 		WaitThread(t, INFINITE);

@@ -24,10 +24,9 @@
 
 UINT StGetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 {
-	HUB *h;
 	UINT err;
 
-	h = AdminGetHub(a, t->HubName, NULL, &err);
+	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
 		return err;
@@ -43,10 +42,9 @@ UINT StGetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 UINT StSetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 {
 	SERVER *s = a->Server;
-	HUB *h;
 	UINT err;
 
-	h = AdminGetHub(a, t->HubName, "no_change_log_config", &err);
+	HUB *h = AdminGetHub(a, t->HubName, "no_change_log_config", &err);
 	if (h == NULL)
 	{
 		return err;
@@ -66,11 +64,10 @@ UINT StSetHubLog(ADMIN *a, RPC_HUB_LOG *t)
 
 UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
 {
-	HUB *h;
 	UINT err;
 	HUB_STATS st;
 
-	h = AdminGetHub(a, t->HubName, NULL, &err);
+	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
 		return err;
@@ -104,11 +101,10 @@ UINT StGetHubStatus(ADMIN *a, RPC_HUB_STATUS *t)
 UINT StSetHubOnline(ADMIN *a, RPC_SET_HUB_ONLINE *t)
 {
 	SERVER *s = a->Server;
-	HUB *h;
 	UINT err;
 
 
-	h = AdminGetHub(a, t->HubName, NULL, &err);
+	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
 		return err;
@@ -253,11 +249,10 @@ UINT StEnumConnection(ADMIN *a, RPC_ENUM_CONNECTION *t)
 
 	LockList(c->ConnectionList);
 	{
-		UINT i;
 		t->NumConnection = LIST_NUM(c->ConnectionList);
 		t->Connections = ZeroMalloc(sizeof(RPC_ENUM_CONNECTION_ITEM) * t->NumConnection);
 		
-		for (i = 0;i < t->NumConnection;i++)
+		for (UINT i = 0;i < t->NumConnection;i++)
 		{
 			RPC_ENUM_CONNECTION_ITEM *e = &t->Connections[i];
 			CONNECTION_INFO info;
@@ -321,15 +316,12 @@ UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 
 	LockHubList(c);
 	{
-		UINT i;
-
 		// Sized for every hub; NumHub counts the ones this admin may see
 		t->Hubs = ZeroMalloc(sizeof(RPC_ENUM_HUB_ITEM) * LIST_NUM(c->HubList));
 
-		for (i = 0;i < LIST_NUM(c->HubList);i++)
+		for (UINT i = 0;i < LIST_NUM(c->HubList);i++)
 		{
 			HUB *h = LIST_DATA(c->HubList, i);
-			RPC_ENUM_HUB_ITEM *e;
 			HUB_STATS st;
 
 			if (a->ServerAdmin == false && StrCmpi(h->Name, a->HubName) != 0)
@@ -337,7 +329,7 @@ UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 				continue;
 			}
 
-			e = &t->Hubs[t->NumHub++];
+			RPC_ENUM_HUB_ITEM *e = &t->Hubs[t->NumHub++];
 
 			HubGetStats(h, &st);
 
@@ -365,14 +357,13 @@ UINT StEnumHub(ADMIN *a, RPC_ENUM_HUB *t)
 UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t)
 {
 	UINT ret = ERR_NO_ERROR;
-	HUB *h;
 
 	if (IsEmptyStr(t->HubName) || IsSafeStr(t->HubName) == false)
 	{
 		return ERR_INVALID_PARAMETER;
 	}
 
-	h = AdminGetHub(a, t->HubName, NULL, &ret);
+	HUB *h = AdminGetHub(a, t->HubName, NULL, &ret);
 
 	Zero(t, sizeof(RPC_CREATE_HUB));
 
@@ -398,7 +389,6 @@ UINT StGetHub(ADMIN *a, RPC_CREATE_HUB *t)
 UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 {
 	SERVER *s = a->Server;
-	HUB *h;
 	UINT err;
 	UINT ret = ERR_NO_ERROR;
 
@@ -409,7 +399,7 @@ UINT StSetHub(ADMIN *a, RPC_CREATE_HUB *t)
 
 	CHECK_RIGHT;
 
-	h = AdminGetHub(a, t->HubName, NULL, &err);
+	HUB *h = AdminGetHub(a, t->HubName, NULL, &err);
 	if (h == NULL)
 	{
 		return err;
@@ -490,7 +480,6 @@ UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
 {
 	SERVER *s = a->Server;
 	CEDAR *c = s->Cedar;
-	HUB *h;
 	HUB_OPTION o;
 	UINT current_hub_num;
 	bool b;
@@ -551,7 +540,7 @@ UINT StCreateHub(ADMIN *a, RPC_CREATE_HUB *t)
 		HashPassword(t->SecurePassword, ADMINISTRATOR_USERNAME, t->AdminPasswordPlainText);
 	}
 
-	h = NewHub(c, t->HubName, &o);
+	HUB *h = NewHub(c, t->HubName, &o);
 	Copy(h->HashedPassword, t->HashedPassword, SHA1_SIZE);
 	Copy(h->SecurePassword, t->SecurePassword, SHA1_SIZE);
 

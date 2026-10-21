@@ -30,7 +30,6 @@ wchar_t *GetAuthTypeStr(UINT id)
 
 UINT PsUserCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_USER t;
@@ -48,7 +47,7 @@ UINT PsUserCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -96,7 +95,6 @@ UINT PsUserCreate(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsUserSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_USER t;
@@ -114,7 +112,7 @@ UINT PsUserSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -154,7 +152,6 @@ UINT PsUserSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsUserDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_DELETE_USER t;
@@ -169,7 +166,7 @@ UINT PsUserDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -195,7 +192,6 @@ UINT PsUserDelete(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsUserAnonymousSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_USER t;
@@ -210,7 +206,7 @@ UINT PsUserAnonymousSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -251,7 +247,6 @@ UINT PsUserAnonymousSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsUserPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_USER t;
@@ -267,7 +262,7 @@ UINT PsUserPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -288,9 +283,7 @@ UINT PsUserPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	FreeAuthData(t.AuthType, t.AuthData);
 
 	{
-		AUTHPASSWORD *pw;
-
-		pw = NewPasswordAuthData(t.Name, GetParamStr(o, "PASSWORD"));
+		AUTHPASSWORD *pw = NewPasswordAuthData(t.Name, GetParamStr(o, "PASSWORD"));
 
 		t.AuthType = AUTHTYPE_PASSWORD;
 		t.AuthData = pw;
@@ -314,11 +307,9 @@ UINT PsUserPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsUserCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_USER t;
-	X *x;
 	PARAM args[] =
 	{
 		{"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
@@ -331,13 +322,13 @@ UINT PsUserCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
 	}
 
-	x = FileToXW(GetParamUniStr(o, "LOADCERT"));
+	X *x = FileToXW(GetParamUniStr(o, "LOADCERT"));
 	if (x == NULL)
 	{
 		c->Write(c, _UU("CMD_LOADCERT_FAILED"));
@@ -363,9 +354,7 @@ UINT PsUserCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	FreeAuthData(t.AuthType, t.AuthData);
 
 	{
-		AUTHUSERCERT *c;
-
-		c = NewUserCertAuthData(x);
+		AUTHUSERCERT *c = NewUserCertAuthData(x);
 
 		FreeX(x);
 
@@ -391,7 +380,6 @@ UINT PsUserCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsUserSignedSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_USER t;
@@ -408,7 +396,7 @@ UINT PsUserSignedSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -429,11 +417,9 @@ UINT PsUserSignedSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	FreeAuthData(t.AuthType, t.AuthData);
 
 	{
-		AUTHROOTCERT *c;
-		BUF *b;
 		X_SERIAL *serial = NULL;
 
-		b = StrToBin(GetParamStr(o, "SERIAL"));
+		BUF *b = StrToBin(GetParamStr(o, "SERIAL"));
 
 		if (b != NULL && b->Size >= 1)
 		{
@@ -442,7 +428,7 @@ UINT PsUserSignedSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 		FreeBuf(b);
 
-		c = NewRootCertAuthData(serial, GetParamUniStr(o, "CN"));
+		AUTHROOTCERT *c = NewRootCertAuthData(serial, GetParamUniStr(o, "CN"));
 
 		FreeXSerial(serial);
 
@@ -468,7 +454,6 @@ UINT PsUserSignedSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsUserNTLMSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_USER t;
@@ -484,7 +469,7 @@ UINT PsUserNTLMSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -505,9 +490,7 @@ UINT PsUserNTLMSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	FreeAuthData(t.AuthType, t.AuthData);
 
 	{
-		AUTHNT *a;
-
-		a = NewNTAuthData(GetParamUniStr(o, "ALIAS"));
+		AUTHNT *a = NewNTAuthData(GetParamUniStr(o, "ALIAS"));
 
 		t.AuthType = AUTHTYPE_NT;
 		t.AuthData = a;
@@ -531,7 +514,6 @@ UINT PsUserNTLMSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsUserPolicyRemove(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_USER t;
@@ -546,7 +528,7 @@ UINT PsUserPolicyRemove(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -586,11 +568,9 @@ UINT PsUserPolicyRemove(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	return 0;
 }
 
-static UINT64 StrToDateTime64(char *str)
+static UINT64 StrToDateTime64(const char *str)
 {
 	UINT64 ret = 0;
-	TOKEN_LIST *t;
-	UINT a, b, c, d, e, f;
 	if (str == NULL)
 	{
 		return INFINITE;
@@ -601,19 +581,19 @@ static UINT64 StrToDateTime64(char *str)
 		return 0;
 	}
 
-	t = ParseToken(str, ":/,. \"");
+	TOKEN_LIST *t = ParseToken(str, ":/,. \"");
 	if (t->NumTokens != 6)
 	{
 		FreeToken(t);
 		return INFINITE;
 	}
 
-	a = ToInt(t->Token[0]);
-	b = ToInt(t->Token[1]);
-	c = ToInt(t->Token[2]);
-	d = ToInt(t->Token[3]);
-	e = ToInt(t->Token[4]);
-	f = ToInt(t->Token[5]);
+	UINT a = ToInt(t->Token[0]);
+	UINT b = ToInt(t->Token[1]);
+	UINT c = ToInt(t->Token[2]);
+	UINT d = ToInt(t->Token[3]);
+	UINT e = ToInt(t->Token[4]);
+	UINT f = ToInt(t->Token[5]);
 
 	ret = INFINITE;
 
@@ -640,7 +620,6 @@ static UINT64 StrToDateTime64(char *str)
 
 static bool CmdEvalDateTime(CONSOLE *c, wchar_t *str, void *param)
 {
-	UINT64 ret;
 	char tmp[MAX_SIZE];
 	if (c == NULL || str == NULL)
 	{
@@ -649,7 +628,7 @@ static bool CmdEvalDateTime(CONSOLE *c, wchar_t *str, void *param)
 
 	UniToStr(tmp, sizeof(tmp), str);
 
-	ret = StrToDateTime64(tmp);
+	UINT64 ret = StrToDateTime64(tmp);
 
 	if (ret == INFINITE)
 	{
@@ -662,11 +641,9 @@ static bool CmdEvalDateTime(CONSOLE *c, wchar_t *str, void *param)
 
 UINT PsUserExpiresSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_USER t;
-	UINT64 expires;
 	PARAM args[] =
 	{
 		{"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
@@ -679,7 +656,7 @@ UINT PsUserExpiresSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -697,7 +674,7 @@ UINT PsUserExpiresSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ret;
 	}
 
-	expires = StrToDateTime64(GetParamStr(o, "EXPIRES"));
+	UINT64 expires = StrToDateTime64(GetParamStr(o, "EXPIRES"));
 
 	if (expires != 0)
 	{
@@ -724,7 +701,6 @@ UINT PsUserExpiresSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsGroupJoin(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_USER t;
@@ -740,7 +716,7 @@ UINT PsGroupJoin(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -781,7 +757,6 @@ UINT PsGroupJoin(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsGroupUnjoin(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_SET_USER t;
@@ -796,7 +771,7 @@ UINT PsGroupUnjoin(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;

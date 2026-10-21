@@ -92,15 +92,9 @@ void vmdetect_test(UINT num, char **arg)
 {
 	VMDETECT_CTX ctx;
 	wchar_t script[MAX_PATH];
-	char *manufacturer;
-	char *product;
-	HANDLE job;
 	UINT before = INFINITE;
 	UINT after = INFINITE;
 	UINT err = 0;
-	UINT64 start;
-	UINT64 took;
-	bool vm;
 
 	Zero(&ctx, sizeof(ctx));
 
@@ -111,7 +105,7 @@ void vmdetect_test(UINT num, char **arg)
 	FileDeleteW(script);
 
 	// From here on the job counts every process that this process starts
-	job = CreateJobObjectW(NULL, NULL);
+	HANDLE job = CreateJobObjectW(NULL, NULL);
 	if (job == NULL || AssignProcessToJobObject(job, GetCurrentProcess()) == FALSE)
 	{
 		err = GetLastError();
@@ -125,9 +119,9 @@ void vmdetect_test(UINT num, char **arg)
 		"error %u", err);
 
 	// Nothing in vpntest calls MsIsInVm before this test, so this is the call that detects
-	start = Tick64();
-	vm = MsIsInVm();
-	took = Tick64() - start;
+	UINT64 start = Tick64();
+	bool vm = MsIsInVm();
+	UINT64 took = Tick64() - start;
 
 	if (before != INFINITE)
 	{
@@ -150,8 +144,8 @@ void vmdetect_test(UINT num, char **arg)
 		"took %I64u ms, limit %u ms", took, VMDETECT_MAX_TIME);
 
 	// Informational: the answer, the SMBIOS strings that Windows recorded, and the time of the call
-	manufacturer = MsRegReadStr(REG_LOCAL_MACHINE, VMDETECT_BIOS_KEY, "SystemManufacturer");
-	product = MsRegReadStr(REG_LOCAL_MACHINE, VMDETECT_BIOS_KEY, "SystemProductName");
+	char *manufacturer = MsRegReadStr(REG_LOCAL_MACHINE, VMDETECT_BIOS_KEY, "SystemManufacturer");
+	char *product = MsRegReadStr(REG_LOCAL_MACHINE, VMDETECT_BIOS_KEY, "SystemProductName");
 	Print("  MsIsInVm() = %s (system manufacturer \"%s\", product \"%s\")\n", vm ? "true" : "false",
 		manufacturer == NULL ? "" : manufacturer, product == NULL ? "" : product);
 	Free(manufacturer);

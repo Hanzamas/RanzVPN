@@ -52,10 +52,9 @@ static void GetHttpDateStr(char *str, UINT size, UINT64 t)
 // carries: Date, Host when host is not NULL, Keep-Alive, Connection and Content-Type
 static HTTP_HEADER *NewHttpHeaderKeepAlive(char *method, char *target, char *version, char *host, char *content_type)
 {
-	HTTP_HEADER *h;
 	char date_str[MAX_SIZE];
 
-	h = NewHttpHeader(method, target, version);
+	HTTP_HEADER *h = NewHttpHeader(method, target, version);
 
 	GetHttpDateStr(date_str, sizeof(date_str), SystemTime64());
 	AddHttpValue(h, NewHttpValue("Date", date_str));
@@ -72,8 +71,7 @@ static HTTP_HEADER *NewHttpHeaderKeepAlive(char *method, char *target, char *ver
 
 static void ReplaceUnsafeCharInHttpTarget(char *target)
 {
-	UINT i;
-	for(i = 0; target[i] ; i++) {
+	for(UINT i = 0; target[i] ; i++) {
 		if(target[i] == '<')
 			target[i] = '(';
 		else if(target[i] == '>')
@@ -84,21 +82,17 @@ static void ReplaceUnsafeCharInHttpTarget(char *target)
 // Send p as the body of an HTTP message with the given start line; host, when not NULL, goes in a Host header
 static bool HttpSendPack(SOCK *s, PACK *p, char *method, char *target, char *version, char *host)
 {
-	BUF *b;
-	bool ret;
-	HTTP_HEADER *h;
-
 	CreateDummyValue(p);
 
-	b = PackToBuf(p);
+	BUF *b = PackToBuf(p);
 	if (b == NULL)
 	{
 		return false;
 	}
 
-	h = NewHttpHeaderKeepAlive(method, target, version, host, HTTP_CONTENT_TYPE2);
+	HTTP_HEADER *h = NewHttpHeaderKeepAlive(method, target, version, host, HTTP_CONTENT_TYPE2);
 
-	ret = PostHttp(s, h, b->Buf, b->Size);
+	bool ret = PostHttp(s, h, b->Buf, b->Size);
 
 	FreeHttpHeader(h);
 	FreeBuf(b);
@@ -111,39 +105,33 @@ static bool HttpSendPack(SOCK *s, PACK *p, char *method, char *target, char *ver
 // refused before the body is read or anything is allocated for it.
 static PACK *HttpRecvPackBody(SOCK *s, HTTP_HEADER *h, UINT max_data_size)
 {
-	BUF *b;
-	PACK *p;
-	UINT size;
-	UCHAR *tmp;
-	HTTP_VALUE *v;
-
-	v = GetHttpValue(h, "Content-Type");
+	HTTP_VALUE *v = GetHttpValue(h, "Content-Type");
 	if (v == NULL || StrCmpi(v->Data, HTTP_CONTENT_TYPE2) != 0)
 	{
 		FreeHttpHeader(h);
 		return NULL;
 	}
 
-	size = GetContentLength(h);
+	UINT size = GetContentLength(h);
 	FreeHttpHeader(h);
 	if (size == 0 || size > max_data_size)
 	{
 		return NULL;
 	}
 
-	tmp = MallocEx(size, true);
+	UCHAR *tmp = MallocEx(size, true);
 	if (RecvAll(s, tmp, size, s->SecureMode) == false)
 	{
 		Free(tmp);
 		return NULL;
 	}
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 	WriteBuf(b, tmp, size);
 	Free(tmp);
 
 	SeekBuf(b, 0, 0);
-	p = BufToPack(b);
+	PACK *p = BufToPack(b);
 	FreeBuf(b);
 
 	return p;
@@ -299,20 +287,15 @@ START:
 bool HttpSendDecoyPage(SOCK *s, UINT code, HTTP_HEADER *request)
 {
 	HTTP_DECOY_PAGE *page = NULL;
-	HTTP_HEADER *h;
 	char code_str[MAX_SIZE];
-	char *str;
-	UINT str_size;
 	char port_str[MAX_SIZE];
-	bool ret;
 	char host[MAX_SIZE];
-	UINT i;
 	if (s == NULL || request == NULL)
 	{
 		return false;
 	}
 
-	for (i = 0; i < sizeof(http_decoy_pages) / sizeof(http_decoy_pages[0]); i++)
+	for (UINT i = 0; i < sizeof(http_decoy_pages) / sizeof(http_decoy_pages[0]); i++)
 	{
 		if (http_decoy_pages[i].Code == code)
 		{
@@ -329,14 +312,14 @@ bool HttpSendDecoyPage(SOCK *s, UINT code, HTTP_HEADER *request)
 	IPToStr(host, sizeof(host), &s->LocalIP);
 
 	ToStr(code_str, code);
-	h = NewHttpHeaderKeepAlive("HTTP/1.1", code_str, page->Reason, NULL, HTTP_CONTENT_TYPE);
+	HTTP_HEADER *h = NewHttpHeaderKeepAlive("HTTP/1.1", code_str, page->Reason, NULL, HTTP_CONTENT_TYPE);
 
-	str_size = (StrLen(page->Template) + 1) * 2 + StrLen(request->Target) + StrLen(host);
+	UINT str_size = (StrLen(page->Template) + 1) * 2 + StrLen(request->Target) + StrLen(host);
 	if (page->NamesMethod)
 	{
 		str_size += StrLen(request->Method) + StrLen(request->Version);
 	}
-	str = Malloc(str_size);
+	char *str = Malloc(str_size);
 	StrCpy(str, str_size, page->Template);
 
 	ReplaceUnsafeCharInHttpTarget(request->Target);
@@ -354,7 +337,7 @@ bool HttpSendDecoyPage(SOCK *s, UINT code, HTTP_HEADER *request)
 		ReplaceStri(str, str_size, str, "$VERSION$", request->Version);
 	}
 
-	ret = PostHttp(s, h, str, StrLen(str));
+	bool ret = PostHttp(s, h, str, StrLen(str));
 
 	FreeHttpHeader(h);
 	Free(str);

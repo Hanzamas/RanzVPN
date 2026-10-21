@@ -16,7 +16,7 @@
 #include "Mayaqua/Str.h"
 
 // Formats a log line of a credential check as HLog does and hands it to the log callback of req
-static void SamLog(AUTH_REQUEST *req, char *name, ...)
+static void SamLog(const AUTH_REQUEST *req, char *name, ...)
 {
 	wchar_t buf[MAX_SIZE * 2];
 	va_list args;
@@ -74,9 +74,7 @@ static bool SamAuthUserByPlainPassword(HUB *hub, char *username, char *password,
 
 	AcLock(hub);
 	{
-		USER *u;
-
-		u = AcGetUser(hub, username);
+		USER *u = AcGetUser(hub, username);
 		if (u == NULL)
 		{
 			u = AcGetUser(hub, "*");
@@ -153,8 +151,7 @@ static bool SamAuthUserByCert(HUB *h, AUTH_REQUEST *req)
 
 	AcLock(h);
 	{
-		USER *u;
-		u = AcGetUser(h, username);
+		USER *u = AcGetUser(h, username);
 		if (u)
 		{
 			Lock(u->lock);
@@ -174,8 +171,7 @@ static bool SamAuthUserByCert(HUB *h, AUTH_REQUEST *req)
 					{
 						LockList(h->HubDb->RootCertList);
 						{
-							X *root_cert;
-							root_cert = GetIssuerFromList(h->HubDb->RootCertList, x);
+							X *root_cert = GetIssuerFromList(h->HubDb->RootCertList, x);
 							if (root_cert != NULL)
 							{
 								b = true;
@@ -227,8 +223,7 @@ static POLICY *SamGetUserPolicy(HUB *h, char *username)
 
 	AcLock(h);
 	{
-		USER *u;
-		u = AcGetUser(h, username);
+		USER *u = AcGetUser(h, username);
 		if (u)
 		{
 			USERGROUP *g = NULL;
@@ -274,7 +269,7 @@ static POLICY *SamGetUserPolicy(HUB *h, char *username)
 	return ret;
 }
 
-static bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *secure_password)
+static bool SamAuthUserByPassword(HUB *h, char *username, void *random, const void *secure_password)
 {
 	bool b = false;
 	UCHAR secure_password_check[SHA1_SIZE];
@@ -291,8 +286,7 @@ static bool SamAuthUserByPassword(HUB *h, char *username, void *random, void *se
 
 	AcLock(h);
 	{
-		USER *u;
-		u = AcGetUser(h, username);
+		USER *u = AcGetUser(h, username);
 		if (u)
 		{
 			Lock(u->lock);

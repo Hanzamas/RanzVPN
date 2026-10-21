@@ -67,8 +67,6 @@ void OutRpcWinVer(PACK *p, RPC_WINVER *t)
 
 void InRpcMsg(RPC_MSG *t, PACK *p)
 {
-	UINT size;
-	char *utf8;
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -77,24 +75,22 @@ void InRpcMsg(RPC_MSG *t, PACK *p)
 	Zero(t, sizeof(RPC_MSG));
 
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	size = PackGetDataSize(p, "Msg");
-	utf8 = ZeroMalloc(size + 8);
+	UINT size = PackGetDataSize(p, "Msg");
+	char *utf8 = ZeroMalloc(size + 8);
 	PackGetData(p, "Msg", utf8);
 	t->Msg = CopyUtfToUni(utf8);
 	Free(utf8);
 }
 void OutRpcMsg(PACK *p, RPC_MSG *t)
 {
-	UINT size;
-	char *utf8;
 	if (t == NULL || p == NULL)
 	{
 		return;
 	}
 
 	PackAddStr(p, "HubName", t->HubName);
-	utf8 = CopyUniToUtf(t->Msg);
-	size = StrLen(utf8);
+	char *utf8 = CopyUniToUtf(t->Msg);
+	UINT size = StrLen(utf8);
 	PackAddData(p, "Msg", utf8, size);
 	Free(utf8);
 }
@@ -219,21 +215,18 @@ void FreeRpcReadLogFile(RPC_READ_LOG_FILE *t)
 
 void InRpcAcList(RPC_AC_LIST *t, PACK *p)
 {
-	UINT i;
-	LIST *o;
-	UINT num;
 	if (t == NULL || p == NULL)
 	{
 		return;
 	}
 
 	Zero(t, sizeof(RPC_AC_LIST));
-	o = NewList(CmpAc);
+	LIST *o = NewList(CmpAc);
 
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
-	num = PackGetIndexCount(p, "IpAddress");
+	UINT num = PackGetIndexCount(p, "IpAddress");
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		AC *ac = ZeroMalloc(sizeof(AC));
 
@@ -258,21 +251,19 @@ void InRpcAcList(RPC_AC_LIST *t, PACK *p)
 }
 void OutRpcAcList(PACK *p, RPC_AC_LIST *t)
 {
-	UINT i, num;
-	LIST *o;
 	if (t == NULL || p == NULL)
 	{
 		return;
 	}
 
-	o = t->o;
-	num = LIST_NUM(o);
+	LIST *o = t->o;
+	UINT num = LIST_NUM(o);
 
 	PackAddInt(p, "NumItem", num);
 
 	PackAddStr(p, "HubName", t->HubName);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		AC *ac = LIST_DATA(o, i);
 
@@ -328,8 +319,6 @@ void FreeRpcEnumCrl(RPC_ENUM_CRL *t)
 
 void InRpcCrl(RPC_CRL *t, PACK *p)
 {
-	BUF *b;
-	NAME *n;
 	wchar_t tmp[MAX_SIZE];
 	if (t == NULL || p == NULL)
 	{
@@ -339,7 +328,7 @@ void InRpcCrl(RPC_CRL *t, PACK *p)
 	Zero(t, sizeof(RPC_CRL));
 	PackGetStr(p, "HubName", t->HubName, sizeof(t->HubName));
 	t->Key = PackGetInt(p, "Key");
-	b = PackGetBuf(p, "Serial");
+	BUF *b = PackGetBuf(p, "Serial");
 	t->Crl = ZeroMalloc(sizeof(CRL));
 	if (b != NULL)
 	{
@@ -347,7 +336,7 @@ void InRpcCrl(RPC_CRL *t, PACK *p)
 		FreeBuf(b);
 	}
 	t->Crl->Name = ZeroMalloc(sizeof(NAME));
-	n = t->Crl->Name;
+	NAME *n = t->Crl->Name;
 	if (PackGetUniStr(p, "CommonName", tmp, sizeof(tmp)))
 	{
 		n->CommonName = CopyUniStr(tmp);
@@ -383,7 +372,6 @@ void InRpcCrl(RPC_CRL *t, PACK *p)
 }
 void OutRpcCrl(PACK *p, RPC_CRL *t)
 {
-	NAME *n;
 	if (p == NULL || t == NULL)
 	{
 		return;
@@ -401,7 +389,7 @@ void OutRpcCrl(PACK *p, RPC_CRL *t)
 	{
 		PackAddData(p, "Serial", t->Crl->Serial->data, t->Crl->Serial->size);
 	}
-	n = t->Crl->Name;
+	NAME *n = t->Crl->Name;
 	if (n->CommonName != NULL)
 	{
 		PackAddUniStr(p, "CommonName", n->CommonName);
@@ -648,7 +636,6 @@ void FreeRpcAdminOption(RPC_ADMIN_OPTION *t)
 
 void InRpcConfig(RPC_CONFIG *t, PACK *p)
 {
-	UINT size;
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -656,7 +643,7 @@ void InRpcConfig(RPC_CONFIG *t, PACK *p)
 
 	Zero(t, sizeof(RPC_CONFIG));
 	PackGetStr(p, "FileName", t->FileName, sizeof(t->FileName));
-	size = PackGetDataSize(p, "FileData");
+	UINT size = PackGetDataSize(p, "FileData");
 	t->FileData = ZeroMalloc(size + 1);
 	PackGetData(p, "FileData", t->FileData);
 }
@@ -874,7 +861,6 @@ void OutRpcListener(PACK *p, RPC_LISTENER *t)
 
 void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p)
 {
-	UINT i;
 	if (t == NULL || p == NULL)
 	{
 		return;
@@ -885,7 +871,7 @@ void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p)
 	t->Ports = ZeroMalloc(sizeof(UINT) * t->NumPort);
 	t->Enables = ZeroMalloc(sizeof(UINT) * t->NumPort);
 	t->Errors = ZeroMalloc(sizeof(UINT) * t->NumPort);
-	for (i = 0;i < t->NumPort;i++)
+	for (UINT i = 0;i < t->NumPort;i++)
 	{
 		t->Ports[i] = PackGetIntEx(p, "Ports", i);
 		t->Enables[i] = PackGetBoolEx(p, "Enables", i);
@@ -894,13 +880,12 @@ void InRpcListenerList(RPC_LISTENER_LIST *t, PACK *p)
 }
 void OutRpcListenerList(PACK *p, RPC_LISTENER_LIST *t)
 {
-	UINT i;
 	if (t == NULL || p == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < t->NumPort;i++)
+	for (UINT i = 0;i < t->NumPort;i++)
 	{
 		PackAddIntEx(p, "Ports", t->Ports[i], i, t->NumPort);
 		PackAddBoolEx(p, "Enables", t->Enables[i], i, t->NumPort);
@@ -1223,9 +1208,9 @@ void OutRpcHubStatus(PACK *p, RPC_HUB_STATUS *t)
 static void RpcHubLogPacketLogConfigOut(const RPC_FIELD *f, PACK *p, void *base, UINT index, UINT total)
 {
 	UINT *c = (UINT *)(((UCHAR *)base) + f->Offset);
-	UINT i, num = f->Size / sizeof(UINT);
+	UINT num = f->Size / sizeof(UINT);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		PackAddIntEx(p, f->Key, c[i], i, num);
 	}
@@ -1233,9 +1218,9 @@ static void RpcHubLogPacketLogConfigOut(const RPC_FIELD *f, PACK *p, void *base,
 static void RpcHubLogPacketLogConfigIn(const RPC_FIELD *f, void *base, PACK *p, UINT index, UINT total)
 {
 	UINT *c = (UINT *)(((UCHAR *)base) + f->Offset);
-	UINT i, num = f->Size / sizeof(UINT);
+	UINT num = f->Size / sizeof(UINT);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		c[i] = PackGetIntEx(p, f->Key, i);
 	}

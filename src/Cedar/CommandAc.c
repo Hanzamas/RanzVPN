@@ -19,7 +19,6 @@
 
 UINT PsAcList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_AC_LIST t;
@@ -30,7 +29,7 @@ UINT PsAcList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
+	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -49,24 +48,20 @@ UINT PsAcList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	}
 	else
 	{
-		UINT i;
-		CT *ct;
-
-		ct = CtNew();
+		CT *ct = CtNew();
 		CtInsertColumn(ct, _UU("SM_AC_COLUMN_1"), true);
 		CtInsertColumn(ct, _UU("SM_AC_COLUMN_2"), true);
 		CtInsertColumn(ct, _UU("SM_AC_COLUMN_3"), false);
 		CtInsertColumn(ct, _UU("SM_AC_COLUMN_4"), false);
 
-		for (i = 0;i < LIST_NUM(t.o);i++)
+		for (UINT i = 0;i < LIST_NUM(t.o);i++)
 		{
-			wchar_t tmp1[32], *tmp2, tmp3[MAX_SIZE], tmp4[32];
-			char *tmp_str;
+			wchar_t tmp1[32], tmp3[MAX_SIZE], tmp4[32];
 			AC *ac = LIST_DATA(t.o, i);
 
 			UniToStru(tmp1, ac->Id);
-			tmp2 = ac->Deny ? _UU("SM_AC_DENY") : _UU("SM_AC_PASS");
-			tmp_str = GenerateAcStr(ac);
+			wchar_t *tmp2 = ac->Deny ? _UU("SM_AC_DENY") : _UU("SM_AC_PASS");
+			char *tmp_str = GenerateAcStr(ac);
 			StrToUni(tmp3, sizeof(tmp3), tmp_str);
 
 			Free(tmp_str);
@@ -88,7 +83,6 @@ UINT PsAcList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsAcDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_AC_LIST t;
@@ -103,7 +97,7 @@ UINT PsAcDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -122,10 +116,9 @@ UINT PsAcDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	}
 	else
 	{
-		UINT i;
 		bool b = false;
 
-		for (i = 0;i < LIST_NUM(t.o);i++)
+		for (UINT i = 0;i < LIST_NUM(t.o);i++)
 		{
 			AC *ac = LIST_DATA(t.o, i);
 

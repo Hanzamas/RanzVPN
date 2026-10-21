@@ -30,7 +30,6 @@ static void CheckDeadLockThread(THREAD *t, void *param)
 void CheckDeadLock(LOCK *lock, UINT timeout, char *name)
 {
 	DEADCHECK c;
-	THREAD *t;
 	char msg[MAX_PATH];
 
 	if (lock == NULL)
@@ -48,7 +47,7 @@ void CheckDeadLock(LOCK *lock, UINT timeout, char *name)
 	c.Lock = lock;
 	c.Unlocked = false;
 
-	t = NewThread(CheckDeadLockThread, &c);
+	THREAD *t = NewThread(CheckDeadLockThread, &c);
 	WaitThreadInit(t);
 	if (WaitThread(t, timeout) == false)
 	{
@@ -195,9 +194,7 @@ void UnlockInner(LOCK *lock)
 
 COUNTER *NewCounter()
 {
-	COUNTER *c;
-
-	c = Malloc(sizeof(COUNTER));
+	COUNTER *c = Malloc(sizeof(COUNTER));
 
 	c->c = 0;
 
@@ -222,13 +219,12 @@ void DeleteCounter(COUNTER *c)
 // Increment; returns the new value
 UINT Inc(COUNTER *c)
 {
-	UINT ret;
 	if (c == NULL)
 	{
 		return 0;
 	}
 
-	ret = (UINT)InterlockedIncrement((volatile LONG *)&c->c);
+	UINT ret = (UINT)InterlockedIncrement((volatile LONG *)&c->c);
 
 	KS_INC(KS_INC_COUNT);
 	KS_INC(KS_CURRENT_COUNT);
@@ -270,7 +266,6 @@ UINT Dec(COUNTER *c)
 
 UINT Release(REF *ref)
 {
-	UINT c;
 	if (ref == NULL)
 	{
 		return 0;
@@ -279,7 +274,7 @@ UINT Release(REF *ref)
 	KS_INC(KS_RELEASE_COUNT);
 	KS_DEC(KS_CURRENT_REFED_COUNT);
 
-	c = Dec(&ref->c);
+	UINT c = Dec(&ref->c);
 	if (c == 0)
 	{
 		KS_DEC(KS_CURRENT_REF_COUNT);
@@ -292,13 +287,12 @@ UINT Release(REF *ref)
 
 UINT AddRef(REF *ref)
 {
-	UINT c;
 	if (ref == NULL)
 	{
 		return 0;
 	}
 
-	c = Inc(&ref->c);
+	UINT c = Inc(&ref->c);
 
 	KS_INC(KS_ADDREF_COUNT);
 	KS_INC(KS_CURRENT_REFED_COUNT);
@@ -308,10 +302,8 @@ UINT AddRef(REF *ref)
 
 REF *NewRef()
 {
-	REF *ref;
-
 	// Memory allocation: the counter is embedded, so this is the only heap block
-	ref = Malloc(sizeof(REF));
+	REF *ref = Malloc(sizeof(REF));
 
 	// Initialization
 	ref->c.c = 0;
@@ -391,13 +383,13 @@ bool Wait(EVENT *e, UINT timeout)
 bool WaitEx(EVENT *e, UINT timeout, volatile bool *cancel)
 {
 	bool dummy_bool = false;
-	UINT64 start, giveup;
+	UINT64 giveup;
 	if (cancel == NULL)
 	{
 		cancel = &dummy_bool;
 	}
 
-	start = Tick64();
+	UINT64 start = Tick64();
 
 	if (timeout == INFINITE || timeout == 0x7FFFFFFF)
 	{

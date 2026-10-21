@@ -11,13 +11,12 @@
 
 static BIGNUM *BinToBigNum(void *data, UINT size)
 {
-	BIGNUM *bn;
 	if (data == NULL)
 	{
 		return NULL;
 	}
 
-	bn = BN_new();
+	BIGNUM *bn = BN_new();
 	BN_bin2bn(data, size, bn);
 
 	return bn;
@@ -27,17 +26,14 @@ static BIGNUM *BinToBigNum(void *data, UINT size)
 // A key is not generated here: TLS makes its own key from these parameters for each handshake.
 static DH_CTX *DhNewFromPrime(BIGNUM *p, UINT g)
 {
-	DH_CTX *dh;
-	BIGNUM *dhg;
-
 	if (p == NULL)
 	{
 		return NULL;
 	}
 
-	dh = ZeroMalloc(sizeof(DH_CTX));
+	DH_CTX *dh = ZeroMalloc(sizeof(DH_CTX));
 	dh->dh = DH_new();
-	dhg = BN_new();
+	BIGNUM *dhg = BN_new();
 	if (dh->dh == NULL || dhg == NULL || BN_set_word(dhg, g) == false)
 	{
 		BN_free(dhg);
@@ -84,15 +80,13 @@ DH_CTX *DhNewFromBits(UINT bits)
 
 DH_CTX *DhNew(char *prime, UINT g)
 {
-	BUF *buf;
-	BIGNUM *p;
 	if (prime == NULL || g == 0)
 	{
 		return NULL;
 	}
 
-	buf = StrToBin(prime);
-	p = BinToBigNum(buf->Buf, buf->Size);
+	BUF *buf = StrToBin(prime);
+	BIGNUM *p = BinToBigNum(buf->Buf, buf->Size);
 	FreeBuf(buf);
 
 	return DhNewFromPrime(p, g);

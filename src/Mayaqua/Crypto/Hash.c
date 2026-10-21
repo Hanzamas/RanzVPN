@@ -14,7 +14,7 @@ static void Internal_Sha0(unsigned char *dest, const unsigned char *src, const U
 
 // Hash with a CNG provider. digest_size is the digest size of the algorithm; the source may be the
 // destination. Should CNG fail, the digest is all zero.
-static void CngHash(BCRYPT_ALG_HANDLE *alg, void *dst, UINT digest_size, void *src, UINT size)
+static void CngHash(const BCRYPT_ALG_HANDLE *alg, void *dst, UINT digest_size, void *src, UINT size)
 {
 	BCRYPT_HASH_HANDLE h = NULL;
 	bool ok = false;
@@ -133,7 +133,6 @@ typedef struct MY_SHA0_CTX {
 
 static void MY_SHA0_Transform(MY_SHA0_CTX* ctx) {
 	UINT W[80];
-	UINT A, B, C, D, E;
 	UCHAR* p = ctx->buf;
 	int t;
 	for(t = 0; t < 16; ++t) {
@@ -146,11 +145,11 @@ static void MY_SHA0_Transform(MY_SHA0_CTX* ctx) {
 	for(; t < 80; t++) {
 		W[t] = (1,W[t-3] ^ W[t-8] ^ W[t-14] ^ W[t-16]);
 	}
-	A = ctx->state[0];
-	B = ctx->state[1];
-	C = ctx->state[2];
-	D = ctx->state[3];
-	E = ctx->state[4];
+	UINT A = ctx->state[0];
+	UINT B = ctx->state[1];
+	UINT C = ctx->state[2];
+	UINT D = ctx->state[3];
+	UINT E = ctx->state[4];
 	for(t = 0; t < 80; t++) {
 		UINT tmp = rol(5,A) + E + W[t];
 		if (t < 20)
@@ -196,16 +195,15 @@ static void MY_SHA0_update(MY_SHA0_CTX* ctx, const void* data, int len) {
 static const UCHAR* MY_SHA0_final(MY_SHA0_CTX* ctx) {
 	UCHAR *p = ctx->buf;
 	UINT64 cnt = ctx->count * 8;
-	int i;
 	MY_SHA0_update(ctx, (UCHAR*)"\x80", 1);
 	while ((ctx->count & 63) != 56) {
 		MY_SHA0_update(ctx, (UCHAR*)"\0", 1);
 	}
-	for (i = 0; i < 8; ++i) {
+	for (int i = 0; i < 8; ++i) {
 		UCHAR tmp = (UCHAR) (cnt >> ((7 - i) * 8));
 		MY_SHA0_update(ctx, &tmp, 1);
 	}
-	for (i = 0; i < 5; i++) {
+	for (int i = 0; i < 5; i++) {
 		UINT tmp = ctx->state[i];
 		*p++ = tmp >> 24;
 		*p++ = tmp >> 16;

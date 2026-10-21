@@ -25,7 +25,6 @@
 static void FuzzStunResponse(const uint8_t *data, size_t size)
 {
 	UCHAR transaction_id[STUN_TRANSACTION_ID_SIZE];
-	UCHAR *datagram;
 	IP ip;
 	UINT port;
 
@@ -37,7 +36,7 @@ static void FuzzStunResponse(const uint8_t *data, size_t size)
 
 	// malloc() rather than Malloc(): the copy is exactly 'size' bytes, so AddressSanitizer reports
 	// any read past the end of the datagram
-	datagram = malloc(size);
+	UCHAR *datagram = malloc(size);
 	if (datagram == NULL)
 	{
 		return;
@@ -54,12 +53,11 @@ static void FuzzStunResponse(const uint8_t *data, size_t size)
 static void FuzzStunServerStr(const uint8_t *data, size_t size)
 {
 	char host[MAX_HOST_NAME_LEN + 1];
-	char *str;
 	UINT port;
 
 	// malloc() rather than Malloc(): the text and its terminator fill the block exactly, so
 	// AddressSanitizer reports any read past the terminator
-	str = malloc(size + 1);
+	char *str = malloc(size + 1);
 	if (str == NULL)
 	{
 		return;

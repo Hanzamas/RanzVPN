@@ -51,20 +51,18 @@ bool IsUserMatchInUserList(LIST *o, char *filename, UINT64 user_hash)
 
 USERLIST *LoadUserList(LIST *o, char *filename)
 {
-	USERLIST *u;
-	BUF *b;
 	if (o == NULL || filename == NULL)
 	{
 		return NULL;
 	}
 
-	u = ZeroMalloc(sizeof(USERLIST));
+	USERLIST *u = ZeroMalloc(sizeof(USERLIST));
 
 	StrCpy(u->Filename, sizeof(u->Filename), filename);
 
 	u->UserHashList = NewInt64List();
 
-	b = ReadDumpWithMaxSize(filename, ACCESS_LIST_INCLUDE_FILE_MAX_SIZE);
+	BUF *b = ReadDumpWithMaxSize(filename, ACCESS_LIST_INCLUDE_FILE_MAX_SIZE);
 	if (b != NULL)
 	{
 		while (true)
@@ -115,7 +113,7 @@ void FreeUserListEntry(USERLIST *u)
 
 USERLIST *FindUserList(LIST *o, char *filename)
 {
-	USERLIST t, *u;
+	USERLIST t;
 	if (o == NULL || filename == NULL)
 	{
 		return NULL;
@@ -125,20 +123,19 @@ USERLIST *FindUserList(LIST *o, char *filename)
 
 	StrCpy(t.Filename, sizeof(t.Filename), filename);
 
-	u = Search(o, &t);
+	USERLIST *u = Search(o, &t);
 
 	return u;
 }
 
 int CompareUserList(void *p1, void *p2)
 {
-	USERLIST *u1, *u2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	u1 = *(USERLIST **)p1;
-	u2 = *(USERLIST **)p2;
+	USERLIST *u1 = *(USERLIST **)p1;
+	USERLIST *u2 = *(USERLIST **)p2;
 	if (u1 == NULL || u2 == NULL)
 	{
 		return 0;
@@ -149,7 +146,6 @@ int CompareUserList(void *p1, void *p2)
 
 void DeleteAllUserListCache(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
@@ -157,7 +153,7 @@ void DeleteAllUserListCache(LIST *o)
 
 	LockList(o);
 	{
-		for (i = 0;i < LIST_NUM(o);i++)
+		for (UINT i = 0;i < LIST_NUM(o);i++)
 		{
 			USERLIST *u = LIST_DATA(o, i);
 
@@ -171,7 +167,6 @@ void DeleteAllUserListCache(LIST *o)
 
 void SetAcList(LIST *o, LIST *src)
 {
-	UINT i;
 	if (o == NULL || src == NULL)
 	{
 		return;
@@ -179,7 +174,7 @@ void SetAcList(LIST *o, LIST *src)
 
 	DelAllAc(o);
 
-	for (i = 0;i < LIST_NUM(src);i++)
+	for (UINT i = 0;i < LIST_NUM(src);i++)
 	{
 		AC *ac = LIST_DATA(src, i);
 
@@ -189,13 +184,12 @@ void SetAcList(LIST *o, LIST *src)
 
 void DelAllAc(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		AC *ac = LIST_DATA(o, i);
 
@@ -244,13 +238,12 @@ char *GenerateAcStr(AC *ac)
 
 bool IsIpDeniedByAcList(IP *ip, LIST *o)
 {
-	UINT i;
 	if (ip == NULL || o == NULL)
 	{
 		return false;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		AC *ac = LIST_DATA(o, i);
 
@@ -344,13 +337,12 @@ void AddAc(LIST *o, AC *ac)
 
 void NormalizeAcList(LIST *o)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		AC *ac = LIST_DATA(o, i);
 
@@ -365,13 +357,12 @@ void NormalizeAcList(LIST *o)
 
 int CmpAc(void *p1, void *p2)
 {
-	AC *a1, *a2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	a1 = *(AC **)p1;
-	a2 = *(AC **)p2;
+	AC *a1 = *(AC **)p1;
+	AC *a2 = *(AC **)p2;
 	if (a1 == NULL || a2 == NULL)
 	{
 		return 0;
@@ -400,13 +391,12 @@ int CmpAc(void *p1, void *p2)
 
 CRL *CopyCrl(CRL *crl)
 {
-	CRL *ret;
 	if (crl == NULL)
 	{
 		return NULL;
 	}
 
-	ret = ZeroMalloc(sizeof(CRL));
+	CRL *ret = ZeroMalloc(sizeof(CRL));
 
 	if (crl->Serial != NULL)
 	{
@@ -465,13 +455,12 @@ bool IsValidCertInHub(HUB *h, X *x)
 
 bool IsCertMatchCrlList(X *x, LIST *o)
 {
-	UINT i;
 	if (x == NULL || o == NULL)
 	{
 		return false;
 	}
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		CRL *crl = LIST_DATA(o, i);
 
@@ -589,9 +578,8 @@ bool IsCertMatchCrl(X *x, CRL *crl)
 
 	if (crl->Name != NULL)
 	{
-		NAME *xn, *cn;
-		xn = x->subject_name;
-		cn = crl->Name;
+		NAME *xn = x->subject_name;
+		NAME *cn = crl->Name;
 
 		if (cn->CommonName != NULL && (UniIsEmptyStr(cn->CommonName) == false))
 		{
@@ -901,16 +889,13 @@ void AddAccessListEx(HUB *hub, ACCESS *a, bool no_sort, bool no_reassign_id)
 
 	LockList(hub->AccessList);
 	{
-		ACCESS *access;
-		UINT i;
-
 		if (LIST_NUM(hub->AccessList) >= MAX_ACCESSLISTS)
 		{
 			UnlockList(hub->AccessList);
 			return;
 		}
 
-		access = Malloc(sizeof(ACCESS));
+		ACCESS *access = Malloc(sizeof(ACCESS));
 		Copy(access, a, sizeof(ACCESS));
 
 		access->IsSrcUsernameIncludeOrExclude = false;
@@ -966,7 +951,7 @@ void AddAccessListEx(HUB *hub, ACCESS *a, bool no_sort, bool no_reassign_id)
 
 		if (no_reassign_id == false)
 		{
-			for (i = 0;i < LIST_NUM(hub->AccessList);i++)
+			for (UINT i = 0;i < LIST_NUM(hub->AccessList);i++)
 			{
 				ACCESS *a = LIST_DATA(hub->AccessList, i);
 				a->Id = (i + 1);
@@ -978,13 +963,12 @@ void AddAccessListEx(HUB *hub, ACCESS *a, bool no_sort, bool no_reassign_id)
 
 int CmpAccessList(void *p1, void *p2)
 {
-	ACCESS *a1, *a2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	a1 = *(ACCESS **)p1;
-	a2 = *(ACCESS **)p2;
+	ACCESS *a1 = *(ACCESS **)p1;
+	ACCESS *a2 = *(ACCESS **)p2;
 	if (a1 == NULL || a2 == NULL)
 	{
 		return 0;
@@ -1050,14 +1034,12 @@ MAC_TABLE_ENTRY *MacTableLookup(HUB *h, UCHAR *mac, UINT vlan_id)
 // Learn mac on vlan_id for session s, which has no entry for it yet. NULL when the table is full (MAX_MAC_TABLES)
 MAC_TABLE_ENTRY *MacTableLearn(HUB *h, SESSION *s, UCHAR *mac, UINT vlan_id, UINT64 now)
 {
-	MAC_TABLE_ENTRY *e;
-
 	if (HASH_LIST_NUM(h->MacHashTable) >= MAX_MAC_TABLES)
 	{
 		return NULL;
 	}
 
-	e = ZeroMalloc(sizeof(MAC_TABLE_ENTRY));
+	MAC_TABLE_ENTRY *e = ZeroMalloc(sizeof(MAC_TABLE_ENTRY));
 	e->HubPa = (HUB_PA *)s->PacketAdapter->Param;
 	Copy(e->MacAddress, mac, 6);
 	e->VlanId = vlan_id;
@@ -1133,9 +1115,9 @@ IP_TABLE_ENTRY *IpTableGet(HUB *h, UINT index)
 // IPv6 (v6) or IPv4 addresses that session s holds in the IP table
 UINT CountSessionIps(HUB *h, SESSION *s, bool v6)
 {
-	UINT i, num = 0;
+	UINT num = 0;
 
-	for (i = 0;i < LIST_NUM(h->IpTable);i++)
+	for (UINT i = 0;i < LIST_NUM(h->IpTable);i++)
 	{
 		IP_TABLE_ENTRY *e = LIST_DATA(h->IpTable, i);
 
@@ -1165,9 +1147,9 @@ void LogIpConflict(HUB *h, SESSION *s, IP *ip, IP_TABLE_ENTRY *e, UINT64 now)
 void IpTableFlushSession(HUB *h, SESSION *s)
 {
 	LIST *o = h->IpTable;
-	UINT i, num_kept = 0;
+	UINT num_kept = 0;
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		IP_TABLE_ENTRY *e = LIST_DATA(o, i);
 
@@ -1207,20 +1189,17 @@ bool IpTableDeleteByKey(HUB *h, UINT key)
 
 void DeleteExpiredMacTableEntry(HASH_LIST *h)
 {
-	LIST *o2;
-	UINT i;
-	MAC_TABLE_ENTRY **pp;
 	UINT num;
 	if (h == NULL)
 	{
 		return;
 	}
 
-	o2 = NewListFast(NULL);
+	LIST *o2 = NewListFast(NULL);
 
-	pp = (MAC_TABLE_ENTRY **)HashListToArray(h, &num);
+	MAC_TABLE_ENTRY **pp = (MAC_TABLE_ENTRY **)HashListToArray(h, &num);
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		MAC_TABLE_ENTRY *e = pp[i];
 		if ((e->UpdatedTime + (UINT64)MAC_TABLE_EXPIRE_TIME) <= Tick64())
@@ -1229,7 +1208,7 @@ void DeleteExpiredMacTableEntry(HASH_LIST *h)
 		}
 	}
 
-	for (i = 0;i < LIST_NUM(o2);i++)
+	for (UINT i = 0;i < LIST_NUM(o2);i++)
 	{
 		MAC_TABLE_ENTRY *e = LIST_DATA(o2, i);
 		DeleteHash(h, e);
@@ -1243,8 +1222,7 @@ void DeleteExpiredMacTableEntry(HASH_LIST *h)
 
 void DeleteExpiredIpTableEntry(LIST *o)
 {
-	UINT i, num_kept = 0;
-	UINT64 now;
+	UINT num_kept = 0;
 	if (o == NULL)
 	{
 		return;
@@ -1254,9 +1232,9 @@ void DeleteExpiredIpTableEntry(LIST *o)
 	// a global lock) and compact the array in one pass: a Delete per expired entry searched and shifted the
 	// whole array each time, O(n * expired). The kept entries keep their order, so a sorted table stays sorted
 	// and DeleteHighestIpTableEntry still evicts the same entry.
-	now = Tick64();
+	UINT64 now = Tick64();
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		IP_TABLE_ENTRY *e = LIST_DATA(o, i);
 		if ((e->UpdatedTime + (UINT64)(e->DhcpAllocated ? IP_TABLE_EXPIRE_TIME_DHCP : IP_TABLE_EXPIRE_TIME)) <= now)
@@ -1274,13 +1252,12 @@ void DeleteExpiredIpTableEntry(LIST *o)
 
 int CompareIpTable(void *p1, void *p2)
 {
-	IP_TABLE_ENTRY *e1, *e2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	e1 = *(IP_TABLE_ENTRY **)p1;
-	e2 = *(IP_TABLE_ENTRY **)p2;
+	IP_TABLE_ENTRY *e1 = *(IP_TABLE_ENTRY **)p1;
+	IP_TABLE_ENTRY *e2 = *(IP_TABLE_ENTRY **)p2;
 	if (e1 == NULL || e2 == NULL)
 	{
 		return 0;
@@ -1291,24 +1268,22 @@ int CompareIpTable(void *p1, void *p2)
 // Add a trusted root certificate to the hub; false when the hub already trusts it or holds MAX_HUB_CERTS
 bool AddRootCert(HUB *hub, X *x)
 {
-	HUBDB *db;
 	bool added = false;
 	if (hub == NULL || x == NULL)
 	{
 		return false;
 	}
 
-	db = hub->HubDb;
+	HUBDB *db = hub->HubDb;
 	if (db != NULL)
 	{
 		LockList(db->RootCertList);
 		{
 			if (LIST_NUM(db->RootCertList) < MAX_HUB_CERTS)
 			{
-				UINT i;
 				bool ok = true;
 
-				for (i = 0;i < LIST_NUM(db->RootCertList);i++)
+				for (UINT i = 0;i < LIST_NUM(db->RootCertList);i++)
 				{
 					X *exist_x = LIST_DATA(db->RootCertList, i);
 					if (CompareX(exist_x, x))
@@ -1333,15 +1308,14 @@ bool AddRootCert(HUB *hub, X *x)
 
 int CompareCert(void *p1, void *p2)
 {
-	X *x1, *x2;
 	wchar_t tmp1[MAX_SIZE];
 	wchar_t tmp2[MAX_SIZE];
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	x1 = *(X **)p1;
-	x2 = *(X **)p2;
+	X *x1 = *(X **)p1;
+	X *x2 = *(X **)p2;
 	if (x1 == NULL || x2 == NULL)
 	{
 		return 0;

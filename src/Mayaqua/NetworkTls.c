@@ -94,11 +94,9 @@ struct ssl_ctx_st *NewServerSSLCtx(X *x, K *priv, LIST *chain, char *cipher_list
 	}
 	else
 	{
-		UINT i;
-
 		LockList(chain);
 		{
-			for (i = 0;i < LIST_NUM(chain);i++)
+			for (UINT i = 0;i < LIST_NUM(chain);i++)
 			{
 				AddChainSslCert(ctx, LIST_DATA(chain, i));
 			}
@@ -259,9 +257,6 @@ static UINT SecureSend(SOCK *sock, void *data, UINT size)
 
 UINT Recv(SOCK *sock, void *data, UINT size, bool secure)
 {
-	SOCKET s;
-	int ret;
-
 	if (sock == NULL || data == NULL || size == 0)
 	{
 		return 0;
@@ -284,9 +279,9 @@ UINT Recv(SOCK *sock, void *data, UINT size, bool secure)
 		return SecureRecv(sock, data, size);
 	}
 
-	s = sock->socket;
+	SOCKET s = sock->socket;
 
-	ret = recv(s, data, size, 0);
+	int ret = recv(s, data, size, 0);
 
 	if (ret > 0)
 	{
@@ -298,8 +293,6 @@ UINT Recv(SOCK *sock, void *data, UINT size, bool secure)
 
 UINT Send(SOCK *sock, void *data, UINT size, bool secure)
 {
-	SOCKET s;
-	int ret;
 	if (sock == NULL || data == NULL || size == 0)
 	{
 		return 0;
@@ -320,8 +313,8 @@ UINT Send(SOCK *sock, void *data, UINT size, bool secure)
 		return SecureSend(sock, data, size);
 	}
 
-	s = sock->socket;
-	ret = send(s, data, size, 0);
+	SOCKET s = sock->socket;
+	int ret = send(s, data, size, 0);
 	if (ret > 0)
 	{
 		return (UINT)ret;
@@ -378,8 +371,6 @@ UINT GetOSSecurityLevel()
 
 TOKEN_LIST *GetCipherList()
 {
-	int i, num;
-	SSL *ssl;
 	SSL_CTX *ctx;
 	const char *name;
 	STACK_OF(SSL_CIPHER) *sk;
@@ -392,7 +383,7 @@ TOKEN_LIST *GetCipherList()
 		return ciphers;
 	}
 
-	ssl = SSL_new(ctx);
+	SSL *ssl = SSL_new(ctx);
 	if (ssl == NULL)
 	{
 		FreeSSLCtx(ctx);
@@ -401,14 +392,14 @@ TOKEN_LIST *GetCipherList()
 
 	// A copy of the list (OpenSSL 1.1.1 or later is required): NULL when no cipher is enabled
 	sk = SSL_get1_supported_ciphers(ssl);
-	num = (sk != NULL ? sk_SSL_CIPHER_num(sk) : 0);
+	int num = (sk != NULL ? sk_SSL_CIPHER_num(sk) : 0);
 
 	if (num > 0)
 	{
 		ciphers->Token = ZeroMalloc(sizeof(char *) * (UINT)num);
 	}
 
-	for (i = 0; i < num; i++)
+	for (int i = 0; i < num; i++)
 	{
 		const SSL_CIPHER *c = sk_SSL_CIPHER_value(sk, i);
 		if (c == NULL)
@@ -545,8 +536,6 @@ bool GetSniNameFromSslPacket(UCHAR *packet_buf, UINT packet_size, char *sni, UIN
 
 	while (PktCursorU16(&exts, &type) && PktCursorU16(&exts, &len16) && PktCursorTake(&exts, len16, &data))
 	{
-		UINT n, start, end;
-
 		// server_name: list length (not checked), name type 0 (host_name), name length, name
 		if (type != 0x0000 || PktCursorTake(&data, 2, NULL) == false ||
 		        PktCursorU8(&data, &len8) == false || len8 != 0 ||
@@ -555,7 +544,7 @@ bool GetSniNameFromSslPacket(UCHAR *packet_buf, UINT packet_size, char *sni, UIN
 			continue;
 		}
 
-		n = 0;
+		UINT n = 0;
 		while (n < name.Left && name.Pos[n] != 0)
 		{
 			n++;
@@ -566,8 +555,8 @@ bool GetSniNameFromSslPacket(UCHAR *packet_buf, UINT packet_size, char *sni, UIN
 			continue;
 		}
 
-		end = MIN(n, sni_size - 1);
-		start = 0;
+		UINT end = MIN(n, sni_size - 1);
+		UINT start = 0;
 		while (start < end && (name.Pos[start] == ' ' || name.Pos[start] == '\t'))
 		{
 			start++;

@@ -119,12 +119,10 @@ bool MsIsUserMode()
 	return is_usermode;
 }
 
-static void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop)
+static void MsUserModeW(const wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop)
 {
 	WNDCLASS wc;
-	HWND hWnd;
 	MSG msg;
-	INSTANCE *inst;
 	char title_a[MAX_PATH];
 	wchar_t msg_str[MAX_SIZE];
 	if (title == NULL || start == NULL || stop == NULL)
@@ -138,7 +136,7 @@ static void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTIO
 	g_start = start;
 	g_stop = stop;
 
-	inst = NewSingleInstance(NULL);
+	INSTANCE *inst = NewSingleInstance(NULL);
 	if (inst == NULL)
 	{
 		UniFormat(msg_str, sizeof(msg_str), _UU("SVC_USERMODE_MUTEX"), ms->ExeFileNameW);
@@ -157,7 +155,7 @@ static void MsUserModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTIO
 		return;
 	}
 
-	hWnd = CreateWindow(title_a, title_a, WS_OVERLAPPEDWINDOW,
+	HWND hWnd = CreateWindow(title_a, title_a, WS_OVERLAPPEDWINDOW,
 		CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
 		NULL, NULL, ms->hInst, NULL);
 
@@ -230,11 +228,10 @@ static void MsServiceStoperMainThread(THREAD *t, void *p)
 
 static bool MsServiceStopProc()
 {
-	THREAD *thread;
 	bool ret = true;
 	UINT64 selfkill_timeout = Tick64() + SVC_SELFKILL_TIMEOUT;
 
-	thread = NewThread(MsServiceStoperMainThread, NULL);
+	THREAD *thread = NewThread(MsServiceStoperMainThread, NULL);
 
 	while (WaitThread(thread, 250) == false)
 	{
@@ -344,7 +341,6 @@ static void WINAPI MsServiceDispatcher(DWORD argc, LPWSTR *argv)
 
 static void MsTestModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop)
 {
-	INSTANCE *inst;
 	wchar_t msg[MAX_SIZE];
 	if (title == NULL || start == NULL || stop == NULL)
 	{
@@ -353,7 +349,7 @@ static void MsTestModeW(wchar_t *title, SERVICE_FUNCTION *start, SERVICE_FUNCTIO
 
 	is_usermode = true;
 
-	inst = NewSingleInstance(NULL);
+	INSTANCE *inst = NewSingleInstance(NULL);
 	if (inst == NULL)
 	{
 		UniFormat(msg, sizeof(msg), _UU("SVC_TEST_MUTEX"), ms->ExeFileNameW);
@@ -725,7 +721,6 @@ UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char
 // to %TEMP% can make) is no temp directory of this program: it is left alone and never followed.
 static void MsDeleteTempDir()
 {
-	HANDLE h;
 	wchar_t dir_mask[MAX_PATH];
 	WIN32_FIND_DATAW data_w;
 
@@ -733,7 +728,7 @@ static void MsDeleteTempDir()
 
 	UniFormat(dir_mask, sizeof(dir_mask), L"%s\\*", ms->TempDirW);
 
-	h = FindFirstFileW(dir_mask, &data_w);
+	HANDLE h = FindFirstFileW(dir_mask, &data_w);
 
 	if (h != INVALID_HANDLE_VALUE)
 	{
@@ -752,13 +747,12 @@ static void MsDeleteTempDir()
 						wchar_t lock_file_name[MAX_PATH];
 						wchar_t dir_name[MAX_PATH];
 						bool delete_now = false;
-						IO *io;
 
 						UniFormat(dir_name, sizeof(dir_name), L"%s\\%s",
 							ms->TempDirW, data_w.cFileName);
 						MsGenLockFile(lock_file_name, sizeof(lock_file_name), dir_name);
 
-						io = FileOpenExW(lock_file_name, false, false);
+						IO *io = FileOpenExW(lock_file_name, false, false);
 						if (io != NULL)
 						{
 							FileClose(io);
@@ -771,16 +765,12 @@ static void MsDeleteTempDir()
 						}
 						else
 						{
-							DIRLIST *d;
-
 							delete_now = true;
 
-							d = EnumDirW(dir_name);
+							DIRLIST *d = EnumDirW(dir_name);
 							if (d != NULL)
 							{
-								UINT i;
-
-								for (i = 0;i < d->NumFiles;i++)
+								for (UINT i = 0;i < d->NumFiles;i++)
 								{
 									wchar_t full_path[MAX_PATH];
 
@@ -824,8 +814,6 @@ static void MsDeleteTempDir()
 // in the meantime.
 void MsDeleteAllFileW(wchar_t *dir)
 {
-	HANDLE h;
-	HANDLE dir_handle;
 	BY_HANDLE_FILE_INFORMATION info;
 	wchar_t file_mask[MAX_PATH];
 	WIN32_FIND_DATAW data;
@@ -834,7 +822,7 @@ void MsDeleteAllFileW(wchar_t *dir)
 		return;
 	}
 
-	dir_handle = CreateFileW(dir, FILE_LIST_DIRECTORY, FILE_SHARE_READ, NULL, OPEN_EXISTING,
+	HANDLE dir_handle = CreateFileW(dir, FILE_LIST_DIRECTORY, FILE_SHARE_READ, NULL, OPEN_EXISTING,
 		FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, NULL);
 	if (dir_handle == INVALID_HANDLE_VALUE)
 	{
@@ -852,7 +840,7 @@ void MsDeleteAllFileW(wchar_t *dir)
 
 	UniFormat(file_mask, sizeof(file_mask), L"%s\\*.*", dir);
 
-	h = FindFirstFileW(file_mask, &data);
+	HANDLE h = FindFirstFileW(file_mask, &data);
 	if (h != INVALID_HANDLE_VALUE)
 	{
 		do
@@ -1077,7 +1065,6 @@ static bool MsCheckIsAdmin()
 void MsInit()
 {
 	char tmp[MAX_SIZE];
-	DWORD size;
 	if (ms != NULL)
 	{
 		return;
@@ -1110,7 +1097,7 @@ void MsInit()
 
 	wchar_t tmp_w[MAX_SIZE];
 
-	size = ARRAYSIZE(tmp_w);
+	DWORD size = ARRAYSIZE(tmp_w);
 	if (GetUserNameW(tmp_w, &size) == false)
 	{
 		tmp_w[0] = 0;

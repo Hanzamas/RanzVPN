@@ -56,11 +56,9 @@ static const WIN32_OS_RELEASE win32_os_releases[] =
 // than Windows 10 (a failed version query reads as 0.0). name may be NULL.
 UINT Win32ClassifyOs(UINT major, UINT build, bool server, char **name)
 {
-	UINT i;
-
 	if (major >= 10)
 	{
-		for (i = 0; i < sizeof(win32_os_releases) / sizeof(win32_os_releases[0]); i++)
+		for (UINT i = 0; i < sizeof(win32_os_releases) / sizeof(win32_os_releases[0]); i++)
 		{
 			const WIN32_OS_RELEASE *r = &win32_os_releases[i];
 
@@ -117,8 +115,6 @@ void Win32GetOsInfo(OS_INFO *info)
 {
 	const OSVERSIONINFOEXW *os = Win32GetOsVersion();
 	char *keyname = "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
-	char *current_type;
-	char *build_lab;
 	char *product_name;
 	char tmp[MAX_SIZE];
 	if (info == NULL)
@@ -126,8 +122,8 @@ void Win32GetOsInfo(OS_INFO *info)
 		return;
 	}
 
-	current_type = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "CurrentType");
-	build_lab = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "BuildLab");
+	char *current_type = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "CurrentType");
+	char *build_lab = MsRegReadStr(REG_LOCAL_MACHINE, keyname, "BuildLab");
 
 	info->OsType = Win32ClassifyOs(os->dwMajorVersion, os->dwBuildNumber,
 		os->wProductType != VER_NT_WORKSTATION, &product_name);

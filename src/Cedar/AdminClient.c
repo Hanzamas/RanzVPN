@@ -63,14 +63,12 @@
 
 CAPSLIST *ScGetCapsEx(RPC *rpc)
 {
-	CAPSLIST *t;
-	TOKEN_LIST *names;
 	if (rpc == NULL)
 	{
 		return NULL;
 	}
 
-	t = ZeroMalloc(sizeof(CAPSLIST));
+	CAPSLIST *t = ZeroMalloc(sizeof(CAPSLIST));
 
 	if (ScGetCaps(rpc, t) != ERR_NO_ERROR)
 	{
@@ -79,11 +77,10 @@ CAPSLIST *ScGetCapsEx(RPC *rpc)
 	}
 
 	// Caps the server did not report default to false
-	names = GetTableNameStartWith("CT_b_");
+	TOKEN_LIST *names = GetTableNameStartWith("CT_b_");
 	if (names != NULL)
 	{
-		UINT i;
-		for (i = 0;i < names->NumTokens;i++)
+		for (UINT i = 0;i < names->NumTokens;i++)
 		{
 			char *name = names->Token[i] + 3;
 
@@ -186,28 +183,25 @@ DECLARE_SC("RegenerateServerCert", RPC_TEST, ScRegenerateServerCert, InRpcTest, 
 
 BUF *DownloadFileFromServer(RPC *r, char *filepath, UINT total_size, DOWNLOAD_PROC *proc, void *param)
 {
-	UINT offset;
-	BUF *buf;
 	if (r == NULL || filepath == NULL)
 	{
 		return NULL;
 	}
 
-	offset = 0;
+	UINT offset = 0;
 
-	buf = NewBuf();
+	BUF *buf = NewBuf();
 
 	while (true)
 	{
 		DOWNLOAD_PROGRESS g;
 		RPC_READ_LOG_FILE t;
-		UINT ret;
 
 		Zero(&t, sizeof(t));
 		StrCpy(t.FilePath, sizeof(t.FilePath), filepath);
 		t.Offset = offset;
 
-		ret = ScReadLogFile(r, &t);
+		UINT ret = ScReadLogFile(r, &t);
 
 		if (ret != ERR_NO_ERROR)
 		{
@@ -267,15 +261,13 @@ PACK *AdminCall(RPC *rpc, char *function_name, PACK *p)
 
 void AdminDisconnect(RPC *rpc)
 {
-	SESSION *s;
-	SOCK *sock;
 	if (rpc == NULL)
 	{
 		return;
 	}
 
-	s = (SESSION *)rpc->Param;
-	sock = rpc->Sock;
+	SESSION *s = (SESSION *)rpc->Param;
+	SOCK *sock = rpc->Sock;
 
 	RpcFree(rpc);
 

@@ -52,7 +52,7 @@ static void NodeInfoToStr(wchar_t *str, UINT size, NODE_INFO *info)
 
 // Whether the access list of hub (source IP address limit) admits the client of c. A denied client is logged
 // (LS_IP_DENIED); the caller refuses the request with ERR_IP_ADDRESS_DENIED before any credential check.
-static bool ServerCheckHubAccess(CONNECTION *c, HUB *hub)
+static bool ServerCheckHubAccess(CONNECTION *c, const HUB *hub)
 {
 	IP ip;
 	char ip_str[64];
@@ -77,7 +77,6 @@ static bool ServerCheckHubAccess(CONNECTION *c, HUB *hub)
 
 static UINT ChangePasswordAccept(CONNECTION *c, PACK *p)
 {
-	CEDAR *cedar;
 	UCHAR random[SHA1_SIZE];
 	char hubname[MAX_HUBNAME_LEN + 1];
 	char username[MAX_USERNAME_LEN + 1];
@@ -106,7 +105,7 @@ static UINT ChangePasswordAccept(CONNECTION *c, PACK *p)
 		Zero(new_password_ntlm, sizeof(new_password_ntlm));
 	}
 
-	cedar = c->Cedar;
+	CEDAR *cedar = c->Cedar;
 
 	LockHubList(cedar);
 	{
@@ -213,16 +212,13 @@ static UINT ChangePasswordAccept(CONNECTION *c, PACK *p)
 // Adds the login message to the Welcome pack: the OS support warning for the client, then msg
 static void PackAddWelcomeMsg(PACK *p, RPC_WINVER *client_winver, wchar_t *msg)
 {
-	char *utf;
 	wchar_t winver_msg_client[3800];
-	UINT tmpsize;
-	wchar_t *tmp;
 
 	FormatUnsupportedWinVerMsg(winver_msg_client, sizeof(winver_msg_client), client_winver);
 
-	tmpsize = UniStrSize(winver_msg_client) + UniStrSize(msg) + (16000 + 3000) * sizeof(wchar_t);
+	UINT tmpsize = UniStrSize(winver_msg_client) + UniStrSize(msg) + (16000 + 3000) * sizeof(wchar_t);
 
-	tmp = ZeroMalloc(tmpsize);
+	wchar_t *tmp = ZeroMalloc(tmpsize);
 
 	if (IsURLMsg(msg, NULL, 0) == false)
 	{
@@ -230,7 +226,7 @@ static void PackAddWelcomeMsg(PACK *p, RPC_WINVER *client_winver, wchar_t *msg)
 	}
 	UniStrCat(tmp, tmpsize, msg);
 
-	utf = CopyUniToUtf(tmp);
+	char *utf = CopyUniToUtf(tmp);
 
 	PackAddData(p, "Msg", utf, StrLen(utf));
 
@@ -275,13 +271,12 @@ static void ServerAuthLog(void *param, wchar_t *line)
 // missing, of a size out of bounds or unreadable; the caller frees the certificate.
 static X *ServerReadClientCert(PACK *p, UCHAR *sign, UINT sign_buf_size, UINT *sign_size)
 {
-	UINT cert_size;
 	void *cert_buf;
 	X *x = NULL;
 
 	*sign_size = 0;
 
-	cert_size = PackGetDataSize(p, "cert");
+	UINT cert_size = PackGetDataSize(p, "cert");
 	if (cert_size >= 1 && cert_size <= 100000)
 	{
 		cert_buf = ZeroMalloc(cert_size);
@@ -822,9 +817,9 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 			if (s->HalfConnection)
 			{
 				// In half-connection mode, set this socket's direction from the directions of the existing TCP connections.
-				UINT i, c2s, s2c;
+				UINT c2s, s2c;
 				c2s = s2c = 0;
-				for (i = 0;i < LIST_NUM(s->Connection->Tcp->TcpSockList);i++)
+				for (UINT i = 0;i < LIST_NUM(s->Connection->Tcp->TcpSockList);i++)
 				{
 					TCPSOCK *ts = (TCPSOCK *)LIST_DATA(s->Connection->Tcp->TcpSockList, i);
 					if (ts->Direction == TCP_SERVER_TO_CLIENT)
@@ -877,7 +872,7 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 	}
 	else if (StrCmpi(method, "enum_hub") == 0)
 	{
-		UINT i, num;
+		UINT num;
 		LIST *o;
 		o = NewListFast(NULL);
 
@@ -888,7 +883,7 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 		LockList(c->Cedar->HubList);
 		{
 			num = LIST_NUM(c->Cedar->HubList);
-			for (i = 0;i < num;i++)
+			for (UINT i = 0;i < num;i++)
 			{
 				HUB *h = LIST_DATA(c->Cedar->HubList, i);
 				if (h->Option->NoEnum == false)
@@ -900,7 +895,7 @@ bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login)
 		UnlockList(c->Cedar->HubList);
 
 		num = LIST_NUM(o);
-		for (i = 0;i < num;i++)
+		for (UINT i = 0;i < num;i++)
 		{
 			char *name = LIST_DATA(o, i);
 			PackAddStrEx(p, "HubName", name, i, num);
@@ -969,16 +964,13 @@ CLEANUP:
 // references and ends the connection. Does nothing when ServerAccept handed over no session.
 void ServerRunSession(CONNECTION *c, SERVER_LOGIN *login)
 {
-	SESSION *s;
-	HUB *hub;
-
 	if (c == NULL || login == NULL || login->Session == NULL)
 	{
 		return;
 	}
 
-	s = login->Session;
-	hub = login->Hub;
+	SESSION *s = login->Session;
+	HUB *hub = login->Hub;
 
 	SessionMain(s);
 
@@ -1091,7 +1083,6 @@ UINT HubResolveSessionPolicy(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN 
 	USERGROUP *group;
 	UINT64 user_expires = 0;
 	UCHAR unique2[SHA1_SIZE];
-	bool qos;
 	bool local_host_session = false;
 
 	if (hub == NULL || c == NULL || req == NULL || login == NULL)
@@ -1099,7 +1090,7 @@ UINT HubResolveSessionPolicy(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN 
 		return ERR_INTERNAL_ERROR;
 	}
 
-	qos = req->QoS;
+	bool qos = req->QoS;
 
 	if (StrCmpi(req->Username, ADMINISTRATOR_USERNAME) != 0)
 	{
@@ -1342,7 +1333,6 @@ UINT HubResolveSessionPolicy(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN 
 // log after hub->lock is released, so on an error hub->lock is no longer held and login->Policy is freed.
 UINT HubAdmitSession(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN *login, HUB_SESSION_SLOT *slot)
 {
-	POLICY *policy;
 	bool use_client_license = false, use_bridge_license = false;
 
 	if (hub == NULL)
@@ -1357,7 +1347,7 @@ UINT HubAdmitSession(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN *login, 
 
 	Zero(slot, sizeof(HUB_SESSION_SLOT));
 
-	policy = login->Policy;
+	POLICY *policy = login->Policy;
 
 	if (login->LocalHostSession == false)
 	{
@@ -1523,14 +1513,12 @@ UINT HubAdmitSession(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN *login, 
 // Takes the licence counters of an admitted session's slot on Cedar
 void HubAssignSessionLicense(HUB_SESSION_SLOT *slot)
 {
-	CEDAR *cedar;
-
 	if (slot == NULL || slot->Hub == NULL)
 	{
 		return;
 	}
 
-	cedar = slot->Hub->Cedar;
+	CEDAR *cedar = slot->Hub->Cedar;
 
 	if (slot->UseBridgeLicense)
 	{
@@ -1549,16 +1537,13 @@ void HubAssignSessionLicense(HUB_SESSION_SLOT *slot)
 // slot. Does nothing for an empty slot.
 void HubReleaseSessionSlot(HUB_SESSION_SLOT *slot)
 {
-	HUB *hub;
-	CEDAR *cedar;
-
 	if (slot == NULL || slot->Hub == NULL)
 	{
 		return;
 	}
 
-	hub = slot->Hub;
-	cedar = hub->Cedar;
+	HUB *hub = slot->Hub;
+	CEDAR *cedar = hub->Cedar;
 
 	Lock(hub->lock);
 	{
@@ -1598,19 +1583,15 @@ void HubReleaseSessionSlot(HUB_SESSION_SLOT *slot)
 // socket (NewUdpAccel) is created under it.
 SESSION *NewLoginSession(CONNECTION *c, HUB *hub, SERVER_SESSION_PARAMS *prm, HUB_SESSION_SLOT *slot)
 {
-	SESSION *s;
-	SERVER *server;
-	POLICY *policy;
-
 	if (c == NULL || hub == NULL || prm == NULL || prm->Policy == NULL || slot == NULL)
 	{
 		return NULL;
 	}
 
-	server = c->Cedar->Server;
-	policy = prm->Policy;
+	SERVER *server = c->Cedar->Server;
+	POLICY *policy = prm->Policy;
 
-	s = NewServerSession(c->Cedar, c, hub, prm->Username, policy);
+	SESSION *s = NewServerSession(c->Cedar, c, hub, prm->Username, policy);
 
 	s->LocalHostSession = prm->LocalHostSession;
 	s->NormalClient = true;
@@ -1709,13 +1690,12 @@ SESSION *NewLoginSession(CONNECTION *c, HUB *hub, SERVER_SESSION_PARAMS *prm, HU
 
 PACK *PackWelcome(SESSION *s)
 {
-	PACK *p;
 	if (s == NULL)
 	{
 		return NULL;
 	}
 
-	p = NewPack();
+	PACK *p = NewPack();
 
 	PackAddStr(p, "session_name", s->Name);
 
@@ -1768,13 +1748,12 @@ PACK *PackWelcome(SESSION *s)
 
 void PackAddPolicy(PACK *p, POLICY *y)
 {
-	UINT i;
 	if (p == NULL || y == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < NUM_POLICY_ITEM;i++)
+	for (UINT i = 0;i < NUM_POLICY_ITEM;i++)
 	{
 		POLICY_ITEM *item = &policy_item[i];
 		char name[MAX_SIZE];
@@ -1797,7 +1776,6 @@ void PackAddPolicy(PACK *p, POLICY *y)
 
 bool ServerUploadHello(CONNECTION *c)
 {
-	PACK *p;
 	if (c == NULL)
 	{
 		return false;
@@ -1805,7 +1783,7 @@ bool ServerUploadHello(CONNECTION *c)
 
 	Rand(c->Random, SHA1_SIZE);
 
-	p = PackHello(c->Random, c->ServerVer, c->ServerBuild, c->ServerStr);
+	PACK *p = PackHello(c->Random, c->ServerVer, c->ServerBuild, c->ServerStr);
 	if (HttpServerSend(c->FirstSock, p) == false)
 	{
 		FreePack(p);
@@ -1823,7 +1801,6 @@ bool ServerDownloadSignature(CONNECTION *c)
 	HTTP_HEADER *h;
 	UCHAR *data;
 	UINT data_size;
-	SOCK *s;
 	UINT num = 0, max = 19;
 	char *vpn_http_target = HTTP_VPN_TARGET2;
 	if (c == NULL)
@@ -1831,7 +1808,7 @@ bool ServerDownloadSignature(CONNECTION *c)
 		return false;
 	}
 
-	s = c->FirstSock;
+	SOCK *s = c->FirstSock;
 
 	while (true)
 	{
@@ -1923,13 +1900,12 @@ bool ServerDownloadSignature(CONNECTION *c)
 
 PACK *PackHello(void *random, UINT ver, UINT build, char *server_str)
 {
-	PACK *p;
 	if (random == NULL || server_str == NULL)
 	{
 		return NULL;
 	}
 
-	p = NewPack();
+	PACK *p = NewPack();
 	PackAddStr(p, "hello", server_str);
 	PackAddInt(p, "version", ver);
 	PackAddInt(p, "build", build);

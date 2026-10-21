@@ -27,7 +27,7 @@
 #include <IcmpAPI.h>
 #include "NetworkInternal.h"
 
-static void Win32Cancel(CANCEL *c)
+static void Win32Cancel(const CANCEL *c)
 {
 	if (c == NULL)
 	{
@@ -62,7 +62,7 @@ static CANCEL *Win32NewCancel()
 	return c;
 }
 
-static bool Win32WaitSockEvent(SOCK_EVENT *event, UINT timeout)
+static bool Win32WaitSockEvent(const SOCK_EVENT *event, UINT timeout)
 {
 	if (event == NULL || timeout == 0)
 	{
@@ -91,7 +91,7 @@ static void Win32CleanupSockEvent(SOCK_EVENT *event)
 	Free(event);
 }
 
-static void Win32SetSockEvent(SOCK_EVENT *event)
+static void Win32SetSockEvent(const SOCK_EVENT *event)
 {
 	if (event == NULL)
 	{
@@ -113,7 +113,6 @@ static SOCK_EVENT *Win32NewSockEvent()
 
 static void Win32JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event)
 {
-	HANDLE hEvent;
 	if (sock == NULL || event == NULL || sock->AsyncMode)
 	{
 		return;
@@ -125,7 +124,7 @@ static void Win32JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event)
 
 	sock->AsyncMode = true;
 
-	hEvent = event->hEvent;
+	HANDLE hEvent = event->hEvent;
 
 	WSAEventSelect(sock->socket, hEvent, FD_READ | FD_WRITE | FD_CLOSE);
 
@@ -155,17 +154,16 @@ static void Win32InitAsyncSocket(SOCK *sock)
 	WSAEventSelect(sock->socket, sock->hEvent, FD_READ | FD_WRITE | FD_CLOSE);
 }
 
-static void Win32Select(SOCKSET *set, UINT timeout, CANCEL *c1, CANCEL *c2)
+static void Win32Select(SOCKSET *set, UINT timeout, const CANCEL *c1, const CANCEL *c2)
 {
 	HANDLE array[MAXIMUM_WAIT_OBJECTS];
-	UINT n, i;
 	SOCK *s;
 	Zero(array, sizeof(array));
-	n = 0;
+	UINT n = 0;
 
 	if (set != NULL)
 	{
-		for (i = 0; i < set->NumSocket; i++)
+		for (UINT i = 0; i < set->NumSocket; i++)
 		{
 			s = set->Sock[i];
 			if (s != NULL)
@@ -251,13 +249,12 @@ void JoinSockToSockEvent(SOCK *sock, SOCK_EVENT *event)
 
 CANCEL *NewCancelSpecial(void *hEvent)
 {
-	CANCEL *c;
 	if (hEvent == NULL)
 	{
 		return NULL;
 	}
 
-	c = ZeroMalloc(sizeof(CANCEL));
+	CANCEL *c = ZeroMalloc(sizeof(CANCEL));
 	c->ref = NewRef();
 	c->SpecialFlag = true;
 
@@ -361,14 +358,12 @@ static void UdpSockAddrToIP(IP *ip, UINT *port, struct sockaddr_storage *sa, boo
 // Whether a datagram to this address needs SO_BROADCAST: the IPv4 limited broadcast, or a multicast address
 static bool UdpNeedsBroadcast(bool ipv6, const IP *ip)
 {
-	const BYTE *ipv4;
-
 	if (ipv6)
 	{
 		return (GetIPAddrType6(ip) & IPV6_ADDR_MULTICAST) != 0;
 	}
 
-	ipv4 = IPV4(ip->address);
+	const BYTE *ipv4 = IPV4(ip->address);
 
 	return (ipv4[0] == 255 && ipv4[1] == 255 && ipv4[2] == 255 && ipv4[3] == 255) ||
 		(ipv4[0] >= 224 && ipv4[0] <= 239);
@@ -446,8 +441,6 @@ UINT RecvFrom(SOCK *sock, IP *src_addr, UINT *src_port, void *data, UINT size)
 UINT SendTo(SOCK *sock, const IP *dest_addr, UINT dest_port, const void *data, UINT size)
 {
 	struct sockaddr_storage addr;
-	int addrlen;
-	int ret;
 
 	if (sock != NULL)
 	{
@@ -470,7 +463,7 @@ UINT SendTo(SOCK *sock, const IP *dest_addr, UINT dest_port, const void *data, U
 		return 0;
 	}
 
-	addrlen = UdpSockAddr(&addr, sock->IPv6, dest_addr, dest_port);
+	int addrlen = UdpSockAddr(&addr, sock->IPv6, dest_addr, dest_port);
 	if (addrlen == 0)
 	{
 		return 0;
@@ -485,7 +478,7 @@ UINT SendTo(SOCK *sock, const IP *dest_addr, UINT dest_port, const void *data, U
 		(void)setsockopt(sock->socket, SOL_SOCKET, SO_BROADCAST, (char *)&yes, sizeof(yes));
 	}
 
-	ret = sendto(sock->socket, data, size, 0, (struct sockaddr *)&addr, addrlen);
+	int ret = sendto(sock->socket, data, size, 0, (struct sockaddr *)&addr, addrlen);
 	if (ret != (int)size)
 	{
 		return UdpIoFailed(sock, true);
@@ -519,19 +512,16 @@ SOCK *NewUDP(UINT port)
 }
 SOCK *NewUDPEx2(UINT port, bool ipv6, IP *ip)
 {
-	SOCK *sock;
-	SOCKET s;
 	struct sockaddr_storage addr;
-	int addrlen;
 	UINT true_flag = 1;
 
-	addrlen = UdpSockAddr(&addr, ipv6, ip, port);
+	int addrlen = UdpSockAddr(&addr, ipv6, ip, port);
 	if (addrlen == 0)
 	{
 		return NULL;
 	}
 
-	s = socket(ipv6 ? AF_INET6 : AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	SOCKET s = socket(ipv6 ? AF_INET6 : AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	if (s == INVALID_SOCKET)
 	{
 		return NULL;
@@ -561,7 +551,7 @@ SOCK *NewUDPEx2(UINT port, bool ipv6, IP *ip)
 		}
 	}
 
-	sock = NewSock();
+	SOCK *sock = NewSock();
 
 	sock->Type = SOCK_UDP;
 	sock->Connected = false;
@@ -623,7 +613,7 @@ void InitSockSet(SOCKSET *set)
 
 bool RecvAll(SOCK *sock, void *data, UINT size, bool secure)
 {
-	UINT recv_size, sz, ret;
+	UINT sz, ret;
 	if (sock == NULL || data == NULL)
 	{
 		return false;
@@ -637,7 +627,7 @@ bool RecvAll(SOCK *sock, void *data, UINT size, bool secure)
 		return false;
 	}
 
-	recv_size = 0;
+	UINT recv_size = 0;
 
 	while (true)
 	{
@@ -663,7 +653,6 @@ bool RecvAll(SOCK *sock, void *data, UINT size, bool secure)
 
 bool SendNow(SOCK *sock, int secure)
 {
-	bool ret;
 	if (sock == NULL || sock->AsyncMode != false)
 	{
 		return false;
@@ -673,7 +662,7 @@ bool SendNow(SOCK *sock, int secure)
 		return true;
 	}
 
-	ret = SendAll(sock, sock->SendBuf->Buf, sock->SendBuf->Size, secure);
+	bool ret = SendAll(sock, sock->SendBuf->Buf, sock->SendBuf->Size, secure);
 	ClearBuf(sock->SendBuf);
 
 	return ret;
@@ -691,8 +680,6 @@ void SendAdd(SOCK *sock, void *data, UINT size)
 
 bool SendAll(SOCK *sock, void *data, UINT size, bool secure)
 {
-	UCHAR *buf;
-	UINT sent_size;
 	UINT ret;
 	if (sock == NULL || data == NULL)
 	{
@@ -707,8 +694,8 @@ bool SendAll(SOCK *sock, void *data, UINT size, bool secure)
 		return true;
 	}
 
-	buf = (UCHAR *)data;
-	sent_size = 0;
+	UCHAR *buf = (UCHAR *)data;
+	UINT sent_size = 0;
 
 	while (true)
 	{
@@ -839,7 +826,6 @@ static SOCKET ListenBind(struct sockaddr *addr, int addr_size, bool v6only, bool
 SOCK *Listen(UINT port, IP *listen_ip, bool ipv4_only)
 {
 	SOCKET s = INVALID_SOCKET;
-	SOCK *sock;
 	struct sockaddr_in addr4;
 	struct sockaddr_in6 addr6;
 	bool is_ipv6 = false;
@@ -898,7 +884,7 @@ SOCK *Listen(UINT port, IP *listen_ip, bool ipv4_only)
 		return NULL;
 	}
 
-	sock = NewSock();
+	SOCK *sock = NewSock();
 	sock->Connected = false;
 	sock->AsyncMode = false;
 	sock->ServerMode = true;
@@ -959,11 +945,9 @@ static char *PrintError(int ErrorCode)
 	return Message;
 }
 
-static int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, bool *cancel_flag)
+static int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeout, const bool *cancel_flag)
 {
-	UINT64 end_time;
 	bool ok = false;
-	WSAEVENT hEvent;
 	UINT zero = 0;
 	UINT tmp = 0;
 	DWORD ret_size = 0;
@@ -976,13 +960,13 @@ static int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeou
 		timeout = TIMEOUT_TCP_PORT_CHECK;
 	}
 
-	hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+	WSAEVENT hEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 
 	// WSAEventSelect puts the socket in non-blocking mode; connect() is issued once and
 	// its result arrives as FD_CONNECT, polled in 25 ms slices so the cancel flag is honoured
 	WSAEventSelect(s, hEvent, FD_CONNECT);
 
-	end_time = Tick64() + (UINT64)timeout;
+	UINT64 end_time = Tick64() + (UINT64)timeout;
 
 	if (connect(s, addr, size) == 0)
 	{
@@ -1028,7 +1012,7 @@ static int connect_timeout(SOCKET s, struct sockaddr *addr, int size, int timeou
 	}
 }
 
-static int bind_sock(SOCKET sock, IP *ip, UINT port)
+static int bind_sock(SOCKET sock, const IP *ip, UINT port)
 {
 
 	if (IsIP4(ip))
@@ -1064,9 +1048,8 @@ static int bind_sock(SOCKET sock, IP *ip, UINT port)
 	}
 }
 
-static SOCKET BindConnectTimeout(bool ipv6, IP *localIP, UINT localport, IP *ip, UINT port, UINT timeout, bool *cancel_flag)
+static SOCKET BindConnectTimeout(bool ipv6, IP *localIP, UINT localport, const IP *ip, UINT port, UINT timeout, const bool *cancel_flag)
 {
-	SOCKET s;
 	struct sockaddr_in sockaddr4;
 	struct sockaddr_in6 sockaddr6;
 	struct sockaddr *addr;
@@ -1095,7 +1078,7 @@ static SOCKET BindConnectTimeout(bool ipv6, IP *localIP, UINT localport, IP *ip,
 		addr_size = sizeof(sockaddr4);
 	}
 
-	s = socket(ipv6 ? AF_INET6 : AF_INET, SOCK_STREAM, 0);
+	SOCKET s = socket(ipv6 ? AF_INET6 : AF_INET, SOCK_STREAM, 0);
 	if (s == INVALID_SOCKET)
 	{
 		return INVALID_SOCKET;
@@ -1130,7 +1113,6 @@ static SOCKET BindConnectTimeout(bool ipv6, IP *localIP, UINT localport, IP *ip,
 
 static void BindConnectThread(THREAD *thread, void *param)
 {
-	UINT i;
 	CONNECT_SERIAL_PARAM *p = (CONNECT_SERIAL_PARAM *)param;
 	if (thread == NULL || p == NULL)
 	{
@@ -1142,9 +1124,8 @@ static void BindConnectThread(THREAD *thread, void *param)
 		WaitEx(NULL, p->Delay, p->NoDelayFlag);
 	}
 
-	for (i = 0; i < LIST_NUM(p->IpList); ++i)
+	for (UINT i = 0; i < LIST_NUM(p->IpList); ++i)
 	{
-		SOCKET s;
 		IP *ip = LIST_DATA(p->IpList, i);
 
 		if (IsZeroIP(ip))
@@ -1162,7 +1143,7 @@ static void BindConnectThread(THREAD *thread, void *param)
 			break;
 		}
 
-		s = BindConnectTimeout(p->IPv6, p->LocalIP, p->LocalPort, ip, p->Port, p->Timeout, p->CancelFlag);
+		SOCKET s = BindConnectTimeout(p->IPv6, p->LocalIP, p->LocalPort, ip, p->Port, p->Timeout, p->CancelFlag);
 
 		if (s != INVALID_SOCKET)
 		{
@@ -1181,7 +1162,6 @@ static void BindConnectThread(THREAD *thread, void *param)
 
 SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, char *hostname_original)
 {
-	SOCK *sock;
 	UINT true_flag = 1;
 
 	if (s == INVALID_SOCKET)
@@ -1189,7 +1169,7 @@ SOCK *CreateTCPSock(SOCKET s, bool is_ipv6, char *hostname_original)
 		return NULL;
 	}
 
-	sock = NewSock();
+	SOCK *sock = NewSock();
 	sock->socket = s;
 	sock->Type = SOCK_TCP;
 	sock->ServerMode = false;
@@ -1230,11 +1210,9 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 	CONNECT_SERIAL_PARAM params[2];
 	THREAD *threads[2] = {NULL, NULL};
 	IP ret_ips[2];
-	EVENT *finish_event;
 	bool cancel_flag2 = false;
 	bool no_delay_flag = false;
 	SOCK *ret = NULL;
-	UINT i;
 	if (hostname == NULL || port == 0 || port >= 65536 || IsEmptyStr(hostname))
 	{
 		return NULL;
@@ -1269,12 +1247,12 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 		}
 	}
 
-	finish_event = NewEvent();
+	EVENT *finish_event = NewEvent();
 
 	Zero(params, sizeof(params));
 	Zero(ret_ips, sizeof(ret_ips));
 
-	for (i = 0; i < 2; ++i)
+	for (UINT i = 0; i < 2; ++i)
 	{
 		CONNECT_SERIAL_PARAM *p = &params[i];
 
@@ -1343,7 +1321,7 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 	cancel_flag2 = true;
 	no_delay_flag = true;
 
-	for (i = 0; i < 2; ++i)
+	for (UINT i = 0; i < 2; ++i)
 	{
 		WaitThread(threads[i], INFINITE);
 		ReleaseThread(threads[i]);
@@ -1353,7 +1331,7 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 	FreeHostIPAddressList(iplists[1]);
 
 	// IPv6 wins over IPv4 when both connected; the losing socket (or both, on cancel) is closed
-	for (i = 0; i < 2; ++i)
+	for (UINT i = 0; i < 2; ++i)
 	{
 		if (*cancel_flag == false && ret == NULL && params[i].Ok)
 		{
@@ -1372,20 +1350,18 @@ SOCK *BindConnectEx4(IP *localIP, UINT localport, char *hostname, UINT port, UIN
 
 void AddProtocolDetailsStr(char *dst, UINT dst_size, char *str)
 {
-	TOKEN_LIST *t1, *t2;
-	UINT i, j;
 	if (dst == NULL || str == NULL)
 	{
 		return;
 	}
 
-	t1 = ParseTokenWithoutNullStr(dst, " ");
-	t2 = ParseTokenWithoutNullStr(str, " ");
+	TOKEN_LIST *t1 = ParseTokenWithoutNullStr(dst, " ");
+	TOKEN_LIST *t2 = ParseTokenWithoutNullStr(str, " ");
 
-	for (i = 0; i < t2->NumTokens; i++)
+	for (UINT i = 0; i < t2->NumTokens; i++)
 	{
 		bool exists = false;
-		for (j = 0; j < t1->NumTokens; j++)
+		for (UINT j = 0; j < t1->NumTokens; j++)
 		{
 			if (StrCmpi(t1->Token[j], t2->Token[i]) == 0)
 			{
@@ -1405,7 +1381,7 @@ void AddProtocolDetailsStr(char *dst, UINT dst_size, char *str)
 	FreeToken(t2);
 }
 
-static void AddProtocolDetailsKeyValueStr(char *dst, UINT dst_size, char *key, char *value)
+static void AddProtocolDetailsKeyValueStr(char *dst, UINT dst_size, const char *key, const char *value)
 {
 	char tmp[128];
 	StrCpy(tmp, sizeof(tmp), key);

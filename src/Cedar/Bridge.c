@@ -26,9 +26,7 @@ bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename)
 	{
 		LockList(c->LocalBridgeList);
 		{
-			UINT i;
-
-			for (i = 0;i < LIST_NUM(c->LocalBridgeList);i++)
+			for (UINT i = 0;i < LIST_NUM(c->LocalBridgeList);i++)
 			{
 				LOCALBRIDGE *br = LIST_DATA(c->LocalBridgeList, i);
 
@@ -60,7 +58,6 @@ bool DeleteLocalBridge(CEDAR *c, char *hubname, char *devicename)
 
 void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool monitor, bool limit_broadcast)
 {
-	UINT i;
 	HUB *h = NULL;
 	LOCALBRIDGE *br = NULL;
 	if (c == NULL || hubname == NULL || devicename == NULL)
@@ -74,7 +71,7 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 		{
 			bool exists = false;
 
-			for (i = 0;i < LIST_NUM(c->LocalBridgeList);i++)
+			for (UINT i = 0;i < LIST_NUM(c->LocalBridgeList);i++)
 			{
 				LOCALBRIDGE *br = LIST_DATA(c->LocalBridgeList, i);
 				if (StrCmpi(br->DeviceName, devicename) == 0)
@@ -98,7 +95,7 @@ void AddLocalBridge(CEDAR *c, char *hubname, char *devicename, bool local, bool 
 
 				Add(c->LocalBridgeList, br);
 
-				for (i = 0;i < LIST_NUM(c->HubList);i++)
+				for (UINT i = 0;i < LIST_NUM(c->HubList);i++)
 				{
 					HUB *hub = LIST_DATA(c->HubList, i);
 					if (StrCmpi(hub->Name, br->HubName) == 0)
@@ -151,13 +148,12 @@ void InitLocalBridgeList(CEDAR *c)
 
 void FreeLocalBridgeList(CEDAR *c)
 {
-	UINT i;
 	if (c == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < LIST_NUM(c->LocalBridgeList);i++)
+	for (UINT i = 0;i < LIST_NUM(c->LocalBridgeList);i++)
 	{
 		LOCALBRIDGE *br = LIST_DATA(c->LocalBridgeList, i);
 		Free(br);
@@ -169,25 +165,21 @@ void FreeLocalBridgeList(CEDAR *c)
 
 static void BrBridgeThread(THREAD *thread, void *param)
 {
-	BRIDGE *b;
-	CONNECTION *c;
-	SESSION *s;
-	HUB *h;
 	char name[MAX_SIZE];
 	if (thread == NULL || param == NULL)
 	{
 		return;
 	}
 
-	b = (BRIDGE *)param;
+	BRIDGE *b = (BRIDGE *)param;
 
-	c = NewServerConnection(b->Cedar, NULL, thread);
+	CONNECTION *c = NewServerConnection(b->Cedar, NULL, thread);
 	c->Protocol = CONNECTION_HUB_BRIDGE;
 
-	s = NewServerSession(b->Cedar, c, b->Hub, BRIDGE_USER_NAME, b->Policy);
+	SESSION *s = NewServerSession(b->Cedar, c, b->Hub, BRIDGE_USER_NAME, b->Policy);
 	HLog(b->Hub, "LH_START_BRIDGE", b->Name, s->Name);
 	StrCpy(name, sizeof(name), b->Name);
-	h = b->Hub;
+	HUB *h = b->Hub;
 	AddRef(h->ref);
 	s->BridgeMode = true;
 	s->Bridge = b;
@@ -230,17 +222,14 @@ void BrFreeBridge(BRIDGE *b)
 
 BRIDGE *BrNewBridge(HUB *h, LOCALBRIDGE *parent_local_bridge)
 {
-	BRIDGE *b;
-	POLICY *policy;
-	THREAD *t;
 	if (h == NULL || parent_local_bridge == NULL)
 	{
 		return NULL;
 	}
 
-	policy = ClonePolicy(GetDefaultPolicy());
+	POLICY *policy = ClonePolicy(GetDefaultPolicy());
 
-	b = ZeroMalloc(sizeof(BRIDGE));
+	BRIDGE *b = ZeroMalloc(sizeof(BRIDGE));
 	b->Cedar = h->Cedar;
 	b->Hub = h;
 	StrCpy(b->Name, sizeof(b->Name), parent_local_bridge->DeviceName);
@@ -257,7 +246,7 @@ BRIDGE *BrNewBridge(HUB *h, LOCALBRIDGE *parent_local_bridge)
 		policy->NoBroadcastLimiter = true;
 	}
 
-	t = NewThread(BrBridgeThread, b);
+	THREAD *t = NewThread(BrBridgeThread, b);
 	WaitThreadInit(t);
 	ReleaseThread(t);
 
@@ -267,17 +256,14 @@ BRIDGE *BrNewBridge(HUB *h, LOCALBRIDGE *parent_local_bridge)
 // Sends the blocks queued on a Local Bridge connection to its Ethernet device
 void BrSendBlocks(CONNECTION *c)
 {
-	SESSION *s;
-	HUB *hub;
-	BRIDGE *b;
 	if (c == NULL)
 	{
 		return;
 	}
 
-	s = c->Session;
-	hub = s->Hub;
-	b = s->Bridge;
+	SESSION *s = c->Session;
+	HUB *hub = s->Hub;
+	BRIDGE *b = s->Bridge;
 
 	if (b != NULL)
 	{
@@ -290,9 +276,8 @@ void BrSendBlocks(CONNECTION *c)
 			{
 				void **datas = Malloc(sizeof(void *) * num_packet);
 				UINT *sizes = Malloc(sizeof(UINT) * num_packet);
-				UINT i;
 
-				i = 0;
+				UINT i = 0;
 				while (block = GetNext(c->SendBlocks))
 				{
 					if (hub != NULL && hub->Option->DisableUdpFilterForLocalBridgeNic == false &&
@@ -327,18 +312,15 @@ void BrSendBlocks(CONNECTION *c)
 // opens the device again while the bridge is not active
 void BrReceiveBlocks(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 {
-	SESSION *s;
-	HUB *hub;
-	BRIDGE *b;
 	bool no_spinlock_for_delay = false;
 	if (c == NULL)
 	{
 		return;
 	}
 
-	s = c->Session;
-	hub = s->Hub;
-	b = s->Bridge;
+	SESSION *s = c->Session;
+	HUB *hub = s->Hub;
+	BRIDGE *b = s->Bridge;
 
 	if (hub != NULL)
 	{

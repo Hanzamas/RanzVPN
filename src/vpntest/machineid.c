@@ -58,7 +58,7 @@ static bool MachineIdCheck(MACHINEID_CTX *ctx, bool ok, char *what)
 }
 
 // Check an identity against its expected value in hex; a failure also prints the identity
-static void MachineIdCheckHex(MACHINEID_CTX *ctx, UCHAR *id, char *expect, char *what)
+static void MachineIdCheckHex(MACHINEID_CTX *ctx, const UCHAR *id, char *expect, char *what)
 {
 	char hex[SHA1_SIZE * 2 + 1];
 
@@ -73,9 +73,7 @@ static void MachineIdCheckHex(MACHINEID_CTX *ctx, UCHAR *id, char *expect, char 
 // Fill a known-answer salt: first, first + 1, ...
 static void MachineIdKatSalt(UCHAR *salt, UCHAR first)
 {
-	UINT i;
-
-	for (i = 0;i < MACHINEID_KAT_SALT_SIZE;i++)
+	for (UINT i = 0;i < MACHINEID_KAT_SALT_SIZE;i++)
 	{
 		salt[i] = (UCHAR)(first + i);
 	}
@@ -122,7 +120,6 @@ static bool MachineIdReadGuid(char *guid, UINT size)
 	HKEY key;
 	DWORD type = 0;
 	DWORD bytes = size - 1;		// The zeroed last byte stays the terminator
-	LONG ret;
 
 	Zero(guid, size);
 
@@ -131,7 +128,7 @@ static bool MachineIdReadGuid(char *guid, UINT size)
 		return false;
 	}
 
-	ret = RegQueryValueExA(key, "MachineGuid", NULL, &type, (BYTE *)guid, &bytes);
+	LONG ret = RegQueryValueExA(key, "MachineGuid", NULL, &type, (BYTE *)guid, &bytes);
 
 	RegCloseKey(key);
 
@@ -186,7 +183,6 @@ static bool MachineIdLoadKeeps(CEDAR *c, UINT size)
 	UCHAR before[MACHINE_ID_SALT_SIZE];
 	UCHAR item[MACHINE_ID_SALT_SIZE * 2];
 	FOLDER *f = CfgCreateFolder(NULL, TAG_ROOT);
-	bool ret;
 
 	Copy(before, c->MachineIdSalt, sizeof(before));
 	Rand(item, sizeof(item));
@@ -198,7 +194,7 @@ static bool MachineIdLoadKeeps(CEDAR *c, UINT size)
 
 	SiLoadMachineIdCfg(c, f);
 
-	ret = (Cmp(before, c->MachineIdSalt, sizeof(before)) == 0);
+	bool ret = (Cmp(before, c->MachineIdSalt, sizeof(before)) == 0);
 
 	CfgDeleteFolder(f);
 
@@ -214,8 +210,6 @@ static void MachineIdTestCfg(MACHINEID_CTX *ctx)
 	UCHAR id1[SHA1_SIZE];
 	UCHAR id2[SHA1_SIZE];
 	FOLDER *f = CfgCreateFolder(NULL, TAG_ROOT);
-	FOLDER *f2;
-	BUF *b;
 
 	MachineIdCheck(ctx, MachineIdLoadKeeps(c2, 0), "a config file without MachineIdSalt keeps the salt of NewCedar");
 	MachineIdCheck(ctx, MachineIdLoadKeeps(c2, MACHINE_ID_SALT_SIZE / 2), "a MachineIdSalt of half the size is ignored");
@@ -223,9 +217,9 @@ static void MachineIdTestCfg(MACHINEID_CTX *ctx)
 	MachineIdCheck(ctx, MachineIdLoadKeeps(c2, MACHINE_ID_SALT_SIZE) == false, "a MachineIdSalt of the right size replaces the salt");
 
 	SiWriteMachineIdCfg(f, c1);
-	b = CfgFolderToBuf(f);
+	BUF *b = CfgFolderToBuf(f);
 	SeekBufToBegin(b);
-	f2 = CfgBufTextToFolder(b);
+	FOLDER *f2 = CfgBufTextToFolder(b);
 
 	if (MachineIdCheck(ctx, f2 != NULL && CfgIsItem(f2, "MachineIdSalt"), "SiWriteMachineIdCfg writes the MachineIdSalt item"))
 	{

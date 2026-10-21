@@ -249,7 +249,6 @@ static bool FatalExitCanShowBox()
 	HWINSTA station = GetProcessWindowStation();
 	USEROBJECTFLAGS flags;
 	HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
-	HWND console;
 
 	Zero(&flags, sizeof(flags));
 	if (station == NULL || GetUserObjectInformationW(station, UOI_FLAGS, &flags, sizeof(flags), NULL) == FALSE ||
@@ -263,7 +262,7 @@ static bool FatalExitCanShowBox()
 		return true;
 	}
 
-	console = GetConsoleWindow();
+	HWND console = GetConsoleWindow();
 
 	return GetFileType(err) == FILE_TYPE_CHAR && console != NULL && IsWindowVisible(console);
 }
@@ -418,9 +417,7 @@ void PrintKernelStatus()
 
 void InitKernelStatus()
 {
-	UINT i;
-
-	for (i = 0;i < NUM_KERNEL_STATUS;i++)
+	for (UINT i = 0;i < NUM_KERNEL_STATUS;i++)
 	{
 		kernel_status[i] = 0;
 		kernel_status_max[i] = 0;

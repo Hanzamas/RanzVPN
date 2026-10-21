@@ -27,15 +27,13 @@ typedef struct LOG_WRITER
 } LOG_WRITER;
 
 static bool LogThreadWriteGeneral(LOG *log_object, LOG_WRITER *w);
-static UINT LogWriterWaitTime(LOG_WRITER *w);
+static UINT LogWriterWaitTime(const LOG_WRITER *w);
 
 // Map the control characters of size bytes of UTF-8 text (bytes below 0x20 and 0x7F, never part of a
 // multi-byte sequence) to '?': a CR or LF from untrusted input cannot start a forged log line or syslog message
 void LogMapControlChars(UCHAR *s, UINT size)
 {
-	UINT i;
-
-	for (i = 0;i < size;i++)
+	for (UINT i = 0;i < size;i++)
 	{
 		if (s[i] < 0x20 || s[i] == 0x7F)
 		{
@@ -77,15 +75,13 @@ static char *StringRecordParseProc(RECORD *rec)
 
 void InsertUnicodeRecord(LOG *g, wchar_t *unistr)
 {
-	char *str;
-	UINT size;
 	if (g == NULL || unistr == NULL)
 	{
 		return;
 	}
 
-	size = CalcUniToUtf8(unistr) + 32;
-	str = ZeroMalloc(size);
+	UINT size = CalcUniToUtf8(unistr) + 32;
+	char *str = ZeroMalloc(size);
 
 	UniToUtf8((BYTE *)str, size, unistr);
 	LogMapControlChars((UCHAR *)str, StrLen(str));
@@ -96,13 +92,12 @@ void InsertUnicodeRecord(LOG *g, wchar_t *unistr)
 
 void InsertStringRecord(LOG *g, char *str)
 {
-	char *str_copy;
 	if (g == NULL || str == NULL)
 	{
 		return;
 	}
 
-	str_copy = CopyStr(str);
+	char *str_copy = CopyStr(str);
 	LogMapControlChars((UCHAR *)str_copy, StrLen(str_copy));
 
 	InsertRecord(g, str_copy, StringRecordParseProc, Free, false);
@@ -120,14 +115,13 @@ static void FreeRecord(RECORD *rec)
 // is dropped, is_csv separates the date and the time of the line with commas
 void InsertRecord(LOG *g, void *data, RECORD_PARSE_PROC *proc, RECORD_FREE_PROC *free_proc, bool is_csv)
 {
-	RECORD *rec;
 	bool dropped = false;
 	if (g == NULL || data == NULL || proc == NULL || free_proc == NULL)
 	{
 		return;
 	}
 
-	rec = ZeroMalloc(sizeof(RECORD));
+	RECORD *rec = ZeroMalloc(sizeof(RECORD));
 	rec->Tick = Tick64();
 	rec->ParseProc = proc;
 	rec->FreeProc = free_proc;
@@ -179,7 +173,6 @@ void UnlockLog(LOG *g)
 
 static void MakeLogFileNameStringFromTick(LOG *g, char *str, UINT size, UINT64 tick, UINT switch_type)
 {
-	UINT64 time;
 	SYSTEMTIME st;
 
 	if (str == NULL || g == NULL)
@@ -197,7 +190,7 @@ static void MakeLogFileNameStringFromTick(LOG *g, char *str, UINT size, UINT64 t
 		}
 	}
 
-	time = Tick64ToTime64(tick);
+	UINT64 time = Tick64ToTime64(tick);
 	UINT64ToSystem(&st, SystemToLocal64(time));
 
 	switch (switch_type)
@@ -359,14 +352,12 @@ void SetMaxLogSize(LOG *g, UINT64 size)
 
 UINT64 GetMaxLogSize(LOG *g)
 {
-	UINT64 ret;
-
 	if (g == NULL)
 	{
 		return MAX_LOG_SIZE_DEFAULT;
 	}
 
-	ret = g->MaxLogSize;
+	UINT64 ret = g->MaxLogSize;
 
 	if (ret == 0)
 	{
@@ -398,7 +389,6 @@ static void LogWriterSetPriority(LOG_WRITER *w, bool realtime)
 
 static void LogThread(THREAD *thread, void *param)
 {
-	LOG *g;
 	LOG_WRITER w;
 	bool flag = false;
 	if (thread == NULL || param == NULL)
@@ -408,7 +398,7 @@ static void LogThread(THREAD *thread, void *param)
 
 	Zero(&w, sizeof(w));
 
-	g = (LOG *)param;
+	LOG *g = (LOG *)param;
 
 	w.Buffer = NewBuf();
 
@@ -473,16 +463,14 @@ static void LogThread(THREAD *thread, void *param)
 
 // Milliseconds the writer thread waits for a new record: while records wait in the buffer for a file that
 // could not be opened, only until the next try to open it
-static UINT LogWriterWaitTime(LOG_WRITER *w)
+static UINT LogWriterWaitTime(const LOG_WRITER *w)
 {
-	UINT64 now;
-
 	if (w->Io != NULL || w->Buffer->Size == 0 || IsEmptyStr(w->FileName))
 	{
 		return 9821;
 	}
 
-	now = Tick64();
+	UINT64 now = Tick64();
 	if (w->RetryTick <= now)
 	{
 		return 1;
@@ -686,12 +674,10 @@ static bool LogThreadWriteGeneral(LOG *log_object, LOG_WRITER *w)
 
 		if (log_date_changed)
 		{
-			UINT i;
-
 			log_object->CurrentLogNumber = 0;
 			MakeLogFileName(log_object, file_name, sizeof(file_name),
 			                rec->Tick, log_object->SwitchType, 0, w->DateName, sizeof(w->DateName));
-			for (i = 0;; i++)
+			for (UINT i = 0;; i++)
 			{
 				char tmp[MAX_SIZE];
 				MakeLogFileName(log_object, tmp, sizeof(tmp),
@@ -756,16 +742,14 @@ static bool LogThreadWriteGeneral(LOG *log_object, LOG_WRITER *w)
 
 void WriteRecordToBuffer(BUF *b, RECORD *r)
 {
-	UINT64 time;
 	char time_str[MAX_SIZE];
 	char date_str[MAX_SIZE];
-	char *s;
 	if (b == NULL || r == NULL)
 	{
 		return;
 	}
 
-	time = SystemToLocal64(Tick64ToTime64(r->Tick));
+	UINT64 time = SystemToLocal64(Tick64ToTime64(r->Tick));
 
 	GetDateStr64(date_str, sizeof(date_str), time);
 	GetTimeStrMilli64(time_str, sizeof(time_str), time);
@@ -785,7 +769,7 @@ void WriteRecordToBuffer(BUF *b, RECORD *r)
 		WriteBuf(b, ",", 1);
 	}
 
-	s = r->ParseProc(r);
+	char *s = r->ParseProc(r);
 	WriteBuf(b, s, StrLen(s));
 	Free(s);
 
@@ -827,9 +811,7 @@ void FreeLog(LOG *g)
 // MAX_LOG_SIZE_DEFAULT, see SetMaxLogSize)
 LOG *NewLog(char *dir, char *prefix, UINT switch_type, UINT64 max_size)
 {
-	LOG *g;
-
-	g = ZeroMalloc(sizeof(LOG));
+	LOG *g = ZeroMalloc(sizeof(LOG));
 	g->lock = NewLock();
 	g->DirName = CopyStr(dir == NULL ? "" : dir);
 	g->Prefix = CopyStr(prefix == NULL ? "log" : prefix);

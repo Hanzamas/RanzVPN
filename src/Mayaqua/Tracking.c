@@ -76,13 +76,12 @@ void MemoryDebugMenu()
 
 static int SortObjectView(void *p1, void *p2)
 {
-	TRACKING_OBJECT *o1, *o2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	o1 = *(TRACKING_OBJECT **)p1;
-	o2 = *(TRACKING_OBJECT **)p2;
+	TRACKING_OBJECT *o1 = *(TRACKING_OBJECT **)p1;
+	TRACKING_OBJECT *o2 = *(TRACKING_OBJECT **)p2;
 	if (o1 == NULL || o2 == NULL)
 	{
 		return 0;
@@ -123,13 +122,10 @@ static void PrintObjectInfo(TRACKING_OBJECT *o)
 
 void DebugPrintObjectInfo(UINT id)
 {
-	UINT i;
-	TRACKING_OBJECT *o;
-
-	o = NULL;
+	TRACKING_OBJECT *o = NULL;
 	RawLock(obj_lock);
 	{
-		for (i = 0;i < TRACKING_NUM_ARRAY;i++)
+		for (UINT i = 0;i < TRACKING_NUM_ARRAY;i++)
 		{
 			if (hashlist[i] != NULL)
 			{
@@ -183,13 +179,10 @@ static void PrintObjectList(TRACKING_OBJECT *o)
 
 void DebugPrintAllObjects()
 {
-	UINT i;
-	LIST *view;
-
-	view = NewListFast(SortObjectView);
+	LIST *view = NewListFast(SortObjectView);
 	RawLock(obj_lock);
 	{
-		for (i = 0;i < TRACKING_NUM_ARRAY;i++)
+		for (UINT i = 0;i < TRACKING_NUM_ARRAY;i++)
 		{
 			if (hashlist[i] != NULL)
 			{
@@ -213,7 +206,7 @@ void DebugPrintAllObjects()
 
 	Sort(view);
 
-	for (i = 0;i < LIST_NUM(view);i++)
+	for (UINT i = 0;i < LIST_NUM(view);i++)
 	{
 		TRACKING_OBJECT *o = (TRACKING_OBJECT *)LIST_DATA(view, i);
 		PrintObjectList(o);
@@ -236,7 +229,7 @@ void DebugPrintCommandList()
 
 void GetMemoryStatus(MEMORY_STATUS *status)
 {
-	UINT i, num, size;
+	UINT num, size;
 	if (status == NULL)
 	{
 		return;
@@ -246,7 +239,7 @@ void GetMemoryStatus(MEMORY_STATUS *status)
 	{
 		size = num = 0;
 
-		for (i = 0;i < TRACKING_NUM_ARRAY;i++)
+		for (UINT i = 0;i < TRACKING_NUM_ARRAY;i++)
 		{
 			if (hashlist[i] != NULL)
 			{
@@ -303,8 +296,6 @@ void TrackGetObjSymbolInfo(TRACKING_OBJECT *o)
 
 void TrackNewObj(UINT64 addr, char *name, UINT size)
 {
-	TRACKING_OBJECT *o;
-	UINT new_id;
 	if (addr == 0 || name == NULL)
 	{
 		return;
@@ -315,9 +306,9 @@ void TrackNewObj(UINT64 addr, char *name, UINT size)
 		return;
 	}
 
-	new_id = (UINT)InterlockedIncrement(&obj_id);
+	UINT new_id = (UINT)InterlockedIncrement(&obj_id);
 
-	o = Win32MemoryAlloc(sizeof(TRACKING_OBJECT));
+	TRACKING_OBJECT *o = Win32MemoryAlloc(sizeof(TRACKING_OBJECT));
 	o->Id = new_id;
 	o->Address = addr;
 	o->Name = name;
@@ -395,13 +386,12 @@ void TrackChangeObjSize(UINT64 addr, UINT size, UINT64 new_addr)
 
 TRACKING_OBJECT *SearchTrackingList(UINT64 Address)
 {
-	UINT i;
 	if (Address == 0)
 	{
 		return NULL;
 	}
 
-	i = TRACKING_HASH(Address);
+	UINT i = TRACKING_HASH(Address);
 
 	if (hashlist[i] != NULL)
 	{
@@ -428,13 +418,12 @@ TRACKING_OBJECT *SearchTrackingList(UINT64 Address)
 
 void DeleteTrackingList(TRACKING_OBJECT *o, bool free_object_memory)
 {
-	UINT i;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	i = TRACKING_HASH(o->Address);
+	UINT i = TRACKING_HASH(o->Address);
 
 	if (hashlist[i] != NULL)
 	{
@@ -484,18 +473,16 @@ void DeleteTrackingList(TRACKING_OBJECT *o, bool free_object_memory)
 
 void InsertTrackingList(TRACKING_OBJECT *o)
 {
-	UINT i;
-	TRACKING_LIST *t;
 	if (o == NULL)
 	{
 		return;
 	}
 
-	t = Win32MemoryAlloc(sizeof(TRACKING_LIST));
+	TRACKING_LIST *t = Win32MemoryAlloc(sizeof(TRACKING_LIST));
 	t->Object = o;
 	t->Next = NULL;
 
-	i = TRACKING_HASH(o->Address);
+	UINT i = TRACKING_HASH(o->Address);
 
 	if (hashlist[i] == NULL)
 	{
@@ -519,12 +506,9 @@ void InsertTrackingList(TRACKING_OBJECT *o)
 
 void InitTracking()
 {
-	UINT i;
-	CALLSTACK_DATA *s;
-
 	hashlist = (TRACKING_LIST **)Win32MemoryAlloc(sizeof(TRACKING_LIST *) * TRACKING_NUM_ARRAY);
 
-	for (i = 0;i < TRACKING_NUM_ARRAY;i++)
+	for (UINT i = 0;i < TRACKING_NUM_ARRAY;i++)
 	{
 		hashlist[i] = NULL;
 	}
@@ -534,7 +518,7 @@ void InitTracking()
 	obj_lock = NewRawLock();
 	cs_lock = NewRawLock();
 
-	s = GetCallStack();
+	CALLSTACK_DATA *s = GetCallStack();
 	if (s == NULL)
 	{
 		do_not_get_callstack = true;
@@ -548,13 +532,12 @@ void InitTracking()
 
 void FreeTracking()
 {
-	UINT i;
 	DeleteRawLock(obj_lock);
 	DeleteRawLock(cs_lock);
 	cs_lock = NULL;
 	obj_lock = NULL;
 
-	for (i = 0;i < TRACKING_NUM_ARRAY;i++)
+	for (UINT i = 0;i < TRACKING_NUM_ARRAY;i++)
 	{
 		if (hashlist[i] != NULL)
 		{
@@ -685,15 +668,14 @@ bool GetCallStackSymbolInfo(CALLSTACK_DATA *s)
 
 CALLSTACK_DATA *WalkDownCallStack(CALLSTACK_DATA *s, UINT num)
 {
-	CALLSTACK_DATA *cs, *tmp;
-	UINT i;
+	CALLSTACK_DATA *tmp;
 	if (s == NULL)
 	{
 		return NULL;
 	}
 
-	cs = s;
-	i = 0;
+	CALLSTACK_DATA *cs = s;
+	UINT i = 0;
 
 	while (true)
 	{

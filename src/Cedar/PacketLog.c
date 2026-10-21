@@ -17,18 +17,13 @@
 
 bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packet, UINT64 now)
 {
-	UINT level;
-	PKT *p;
-	PACKET_LOG *pl;
-	SERVER *s;
-	UINT syslog_setting;
 	HUB_OPTION *opt = NULL;
 	if (hub == NULL || src_session == NULL || packet == NULL)
 	{
 		return true;
 	}
 
-	s = hub->Cedar->Server;
+	SERVER *s = hub->Cedar->Server;
 
 	if (hub->LogSetting.SavePacketLog == false)
 	{
@@ -43,7 +38,7 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 
 	opt = hub->Option;
 
-	level = CalcPacketLoggingLevel(&hub->LogSetting, packet);
+	UINT level = CalcPacketLoggingLevel(&hub->LogSetting, packet);
 	if (level == PACKET_LOG_NONE)
 	{
 		return true;
@@ -67,11 +62,11 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 		}
 	}
 
-	syslog_setting = SiGetSysLogSaveStatus(s);
+	UINT syslog_setting = SiGetSysLogSaveStatus(s);
 
-	p = ClonePacket(packet, level == PACKET_LOG_ALL ? true : false);
+	PKT *p = ClonePacket(packet, level == PACKET_LOG_ALL ? true : false);
 
-	pl = ZeroMalloc(sizeof(PACKET_LOG));
+	PACKET_LOG *pl = ZeroMalloc(sizeof(PACKET_LOG));
 
 	pl->Cedar = hub->Cedar;
 	pl->Packet = p;
@@ -122,7 +117,6 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 	if (syslog_setting == SYSLOG_SERVER_AND_HUB_ALL_LOG)
 	{
 		RECORD rec;
-		char *buf;
 		wchar_t tmp[1024];
 		bool self_syslog_packet = false;
 
@@ -151,7 +145,7 @@ bool PacketLog(HUB *hub, SESSION *src_session, SESSION *dest_session, PKT *packe
 		Zero(&rec, sizeof(rec));
 		rec.Data = pl;
 
-		buf = PacketLogParseProc(&rec);
+		char *buf = PacketLogParseProc(&rec);
 		StrToUni(tmp, sizeof(tmp), buf);
 
 		if (self_syslog_packet == false)
@@ -243,16 +237,14 @@ UINT CalcPacketLoggingLevel(HUB_LOG *g, PKT *packet)
 
 static char *BuildHttpLogStr(HTTPLOG *h)
 {
-	BUF *b;
 	char url[MAX_SIZE];
 	char nullchar = 0;
-	char *ret;
 	if (h == NULL)
 	{
 		return CopyStr("");
 	}
 
-	b = NewBuf();
+	BUF *b = NewBuf();
 
 	if (StartWith(h->Path, "http://") || StartWith(h->Path, "https://"))
 	{
@@ -296,7 +288,7 @@ static char *BuildHttpLogStr(HTTPLOG *h)
 
 	WriteBuf(b, &nullchar, 1);
 
-	ret = CopyStr(b->Buf);
+	char *ret = CopyStr(b->Buf);
 
 	FreeBuf(b);
 
@@ -337,7 +329,6 @@ void AddLogBufToStr(BUF *b, char *name, char *value)
 
 void MakeSafeLogStr(char *str)
 {
-	UINT i, len;
 	bool is_http = false;
 	if (str == NULL)
 	{
@@ -352,8 +343,8 @@ void MakeSafeLogStr(char *str)
 
 	EnPrintableAsciiStr(str, '?');
 
-	len = StrLen(str);
-	for (i = 0; i < len; i++)
+	UINT len = StrLen(str);
+	for (UINT i = 0; i < len; i++)
 	{
 		if (str[i] == ',')
 		{
@@ -391,12 +382,10 @@ static void PacketLogTcp(TOKEN_LIST *t, PACKET_LOG *pl, PKT *p, char *suffix)
 
 	if (p->HttpLog != NULL)
 	{
-		char *tmp2;
-		UINT tmp2_size;
 		char *http_str = BuildHttpLogStr(p->HttpLog);
 
-		tmp2_size = StrLen(http_str) + 16 + StrLen(tmp);
-		tmp2 = Malloc(tmp2_size);
+		UINT tmp2_size = StrLen(http_str) + 16 + StrLen(tmp);
+		char *tmp2 = Malloc(tmp2_size);
 
 		StrCpy(tmp2, tmp2_size, tmp);
 
@@ -417,7 +406,7 @@ static void PacketLogTcp(TOKEN_LIST *t, PACKET_LOG *pl, PKT *p, char *suffix)
 }
 
 // The packet log tokens of an IKE connection packet. suffix is "v4" or "v6"
-static void PacketLogIke(TOKEN_LIST *t, PKT *p, char *suffix)
+static void PacketLogIke(TOKEN_LIST *t, const PKT *p, char *suffix)
 {
 	char tmp[MAX_SIZE];
 
@@ -450,7 +439,7 @@ static void PacketLogIke(TOKEN_LIST *t, PKT *p, char *suffix)
 }
 
 // The packet log tokens of a DNS query. suffix is "v4" or "v6"
-static void PacketLogDns(TOKEN_LIST *t, PKT *p, char *suffix)
+static void PacketLogDns(TOKEN_LIST *t, const PKT *p, char *suffix)
 {
 	char tmp[MAX_SIZE];
 
@@ -463,7 +452,7 @@ static void PacketLogDns(TOKEN_LIST *t, PKT *p, char *suffix)
 }
 
 // The packet log tokens of a UDP datagram. suffix is "v4" or "v6"
-static void PacketLogUdp(TOKEN_LIST *t, PACKET_LOG *pl, PKT *p, char *suffix)
+static void PacketLogUdp(TOKEN_LIST *t, PACKET_LOG *pl, const PKT *p, char *suffix)
 {
 	char tmp[MAX_SIZE];
 
@@ -516,7 +505,7 @@ static void PacketLogUdp(TOKEN_LIST *t, PACKET_LOG *pl, PKT *p, char *suffix)
 }
 
 // The packet log tokens of an ARP packet: the request and the response differ only in the text
-static void PacketLogArp(TOKEN_LIST *t, PKT *p)
+static void PacketLogArp(TOKEN_LIST *t, const PKT *p)
 {
 	ARPV4_HEADER *a = p->L3.ARPv4Header;
 	char tmp[MAX_SIZE];
@@ -573,21 +562,16 @@ static void PacketLogArp(TOKEN_LIST *t, PKT *p)
 
 char *PacketLogParseProc(RECORD *rec)
 {
-	PACKET_LOG *pl;
-	PKT *p;
-	char *s;
-	TOKEN_LIST *t;
 	char tmp[MAX_SIZE];
-	UINT i;
 	if (rec == NULL)
 	{
 		return NULL;
 	}
 
-	pl = (PACKET_LOG *)rec->Data;
-	p = pl->Packet;
+	PACKET_LOG *pl = (PACKET_LOG *)rec->Data;
+	PKT *p = pl->Packet;
 
-	t = ZeroMalloc(sizeof(TOKEN_LIST));
+	TOKEN_LIST *t = ZeroMalloc(sizeof(TOKEN_LIST));
 	t->NumTokens = 16;
 	if (pl->WritePhysicalIP)
 	{
@@ -767,7 +751,7 @@ char *PacketLogParseProc(RECORD *rec)
 				snprintf(tmp, sizeof(tmp), "TargetLinkLayer=%s ", tmp2);
 				StrCat(info, sizeof(info), tmp);
 			}
-			for (i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++)
+			for (UINT i = 0; i < ICMPV6_OPTION_PREFIXES_MAX_COUNT; i++)
 			{
 				if (ol->Prefix[i] != NULL)
 				{
@@ -846,7 +830,7 @@ char *PacketLogParseProc(RECORD *rec)
 		t->Token[17] = CopyStr(pl->DestPhysicalIP);
 	}
 
-	s = GenCsvLine(t);
+	char *s = GenCsvLine(t);
 	FreeToken(t);
 
 	FreeClonePacket(p);
@@ -933,13 +917,12 @@ char *TcpFlagStr(UCHAR flag)
 char *PortStr(CEDAR *cedar, UINT port, bool udp)
 {
 	char tmp[MAX_SIZE];
-	char *name;
 	if (cedar == NULL)
 	{
 		return NULL;
 	}
 
-	name = GetSvcName(cedar, udp, port);
+	char *name = GetSvcName(cedar, udp, port);
 
 	if (name == NULL)
 	{
@@ -955,16 +938,13 @@ char *PortStr(CEDAR *cedar, UINT port, bool udp)
 
 char *GenCsvLine(TOKEN_LIST *t)
 {
-	UINT i;
-	BUF *b;
-	char *ret;
 	if (t == NULL)
 	{
 		return NULL;
 	}
 
-	b = NewBuf();
-	for (i = 0; i < t->NumTokens; i++)
+	BUF *b = NewBuf();
+	for (UINT i = 0; i < t->NumTokens; i++)
 	{
 		if (t->Token[i] != NULL)
 		{
@@ -989,7 +969,7 @@ char *GenCsvLine(TOKEN_LIST *t)
 	}
 	WriteBuf(b, "\0", 1);
 
-	ret = (char *)b->Buf;
+	char *ret = (char *)b->Buf;
 
 	Free(b);
 
@@ -998,16 +978,15 @@ char *GenCsvLine(TOKEN_LIST *t)
 
 void ReplaceForCsv(char *str)
 {
-	UINT i, len;
 	if (str == NULL)
 	{
 		return;
 	}
 
-	len = StrLen(str);
+	UINT len = StrLen(str);
 
 	// A comma, a CR, an LF or another control character would split the record (a NUL ends the token)
-	for (i = 0; i < len; i++)
+	for (UINT i = 0; i < len; i++)
 	{
 		if (str[i] == ',' || (UCHAR)str[i] < 0x20 || (UCHAR)str[i] == 0x7F)
 		{

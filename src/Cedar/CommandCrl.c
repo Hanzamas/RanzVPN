@@ -22,7 +22,6 @@
 
 UINT PsCrlList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_ENUM_CRL t;
@@ -33,7 +32,7 @@ UINT PsCrlList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, NULL, 0);
+	LIST *o = ParseCommandList(c, cmd_name, str, NULL, 0);
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -52,13 +51,12 @@ UINT PsCrlList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	}
 	else
 	{
-		UINT i;
 		CT *ct = CtNew();
 
 		CtInsertColumn(ct, _UU("CMD_ID"), false);
 		CtInsertColumn(ct, _UU("SM_CRL_COLUMN_1"), false);
 
-		for (i = 0;i < t.NumItem;i++)
+		for (UINT i = 0;i < t.NumItem;i++)
 		{
 			wchar_t tmp[64];
 			RPC_ENUM_CRL_ITEM *e = &t.Items[i];
@@ -79,7 +77,6 @@ UINT PsCrlList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsCrlAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_CRL t;
@@ -102,7 +99,7 @@ UINT PsCrlAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -114,10 +111,9 @@ UINT PsCrlAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 	{
 		bool param_exists = false;
 		CRL *crl = ZeroMalloc(sizeof(CRL));
-		NAME *n;
 
 		// Each option in its own field; NewName copies only the non-empty ones and FreeName frees them
-		n = crl->Name = NewName(GetParamUniStr(o, "CN"), GetParamUniStr(o, "O"), GetParamUniStr(o, "OU"),
+		NAME *n = crl->Name = NewName(GetParamUniStr(o, "CN"), GetParamUniStr(o, "O"), GetParamUniStr(o, "OU"),
 			GetParamUniStr(o, "C"), GetParamUniStr(o, "ST"), GetParamUniStr(o, "L"));
 
 		if (n->CommonName != NULL || n->Organization != NULL || n->Unit != NULL ||
@@ -128,9 +124,7 @@ UINT PsCrlAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 		if (IsEmptyStr(GetParamStr(o, "SERIAL")) == false)
 		{
-			BUF *b;
-
-			b = StrToBin(GetParamStr(o, "SERIAL"));
+			BUF *b = StrToBin(GetParamStr(o, "SERIAL"));
 
 			if (b != NULL && b->Size >= 1)
 			{
@@ -143,9 +137,7 @@ UINT PsCrlAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 		if (IsEmptyStr(GetParamStr(o, "MD5")) == false)
 		{
-			BUF *b;
-
-			b = StrToBin(GetParamStr(o, "MD5"));
+			BUF *b = StrToBin(GetParamStr(o, "MD5"));
 
 			if (b != NULL && b->Size == MD5_SIZE)
 			{
@@ -158,9 +150,7 @@ UINT PsCrlAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 		if (IsEmptyStr(GetParamStr(o, "SHA1")) == false)
 		{
-			BUF *b;
-
-			b = StrToBin(GetParamStr(o, "SHA1"));
+			BUF *b = StrToBin(GetParamStr(o, "SHA1"));
 
 			if (b != NULL && b->Size == SHA1_SIZE)
 			{
@@ -201,7 +191,6 @@ UINT PsCrlAdd(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsCrlDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_CRL t;
@@ -216,7 +205,7 @@ UINT PsCrlDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;
@@ -244,7 +233,6 @@ UINT PsCrlDel(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 UINT PsCrlGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 {
-	LIST *o;
 	PS *ps = (PS *)param;
 	UINT ret = 0;
 	RPC_CRL t;
@@ -259,7 +247,7 @@ UINT PsCrlGet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 		return ERR_INVALID_PARAMETER;
 	}
 
-	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	LIST *o = ParseCommandList(c, cmd_name, str, args, _countof(args));
 	if (o == NULL)
 	{
 		return ERR_INVALID_PARAMETER;

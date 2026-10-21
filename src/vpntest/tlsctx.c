@@ -84,11 +84,10 @@ static void TlsCtxCheck(TLSCTX_TEST *t, bool ok, char *what, char *detail_fmt, .
 static void TlsCtxServerThread(THREAD *thread, void *param)
 {
 	TLSCTX_SERVER *srv = (TLSCTX_SERVER *)param;
-	UINT i;
 
 	srv->SameCtx = true;
 
-	for (i = 0;i < srv->Count;i++)
+	for (UINT i = 0;i < srv->Count;i++)
 	{
 		SOCK *s = Accept(srv->Listen);
 		UINT ssl_err = 0;
@@ -136,11 +135,9 @@ static void TlsCtxServerThread(THREAD *thread, void *param)
 // One client connection to the loopback listener: the certificate, cipher and version it was given
 static void TlsCtxClient(TLSCTX_RESULT *r)
 {
-	SOCK *s;
-
 	Zero(r, sizeof(TLSCTX_RESULT));
 
-	s = Connect("127.0.0.1", TLSCTX_PORT);
+	SOCK *s = Connect("127.0.0.1", TLSCTX_PORT);
 	if (s == NULL)
 	{
 		return;
@@ -171,17 +168,14 @@ static void TlsCtxClient(TLSCTX_RESULT *r)
 // Run count connections against a server thread. result (count entries) gets what each client saw
 static void TlsCtxRun(TLSCTX_SERVER *srv, TLSCTX_RESULT *result, UINT count)
 {
-	THREAD *thread;
-	UINT i;
-
 	srv->Count = count;
 	srv->NumOk = 0;
 	srv->FirstCtx = NULL;
 	srv->SameCtx = true;
 
-	thread = NewThread(TlsCtxServerThread, srv);
+	THREAD *thread = NewThread(TlsCtxServerThread, srv);
 
-	for (i = 0;i < count;i++)
+	for (UINT i = 0;i < count;i++)
 	{
 		TlsCtxClient(&result[i]);
 	}
@@ -232,8 +226,6 @@ static bool TlsCtxOne(TLSCTX_SERVER *srv, TLSCTX_RESULT *r)
 static UINT64 TlsCtxBench(TLSCTX_SERVER *srv, bool shared)
 {
 	TLSCTX_RESULT *result = ZeroMalloc(sizeof(TLSCTX_RESULT) * TLSCTX_BENCH_CONNS);
-	UINT64 start, ret;
-	UINT i;
 	bool ok = true;
 
 	srv->Shared = shared;
@@ -244,11 +236,11 @@ static UINT64 TlsCtxBench(TLSCTX_SERVER *srv, bool shared)
 		return 0;
 	}
 
-	start = Tick64();
+	UINT64 start = Tick64();
 	TlsCtxRun(srv, result, TLSCTX_BENCH_CONNS);
-	ret = Tick64() - start;
+	UINT64 ret = Tick64() - start;
 
-	for (i = 0;i < TLSCTX_BENCH_CONNS;i++)
+	for (UINT i = 0;i < TLSCTX_BENCH_CONNS;i++)
 	{
 		if (result[i].Ok == false)
 		{
@@ -296,19 +288,14 @@ void tlsctx_test(UINT num, char **arg)
 	TLSCTX_RESULT same[TLSCTX_SAME];
 	UCHAR digest_a[SHA1_SIZE], digest_b[SHA1_SIZE];
 	K *priv_a, *priv_b;
-	X *x_a, *x_b;
-	CEDAR *cedar;
-	UINT i;
-	UINT num_same;
-	UINT64 ms_each, ms_shared;
 
 	Zero(&t, sizeof(t));
 	Zero(&srv, sizeof(srv));
 
 	Print("Shared server SSL_CTX test (GetCedarServerSslCtx, StartSSLServer)\n");
 
-	x_a = TlsCtxNewCert(L"Ranz VPN tlsctx test A", &priv_a);
-	x_b = TlsCtxNewCert(L"Ranz VPN tlsctx test B", &priv_b);
+	X *x_a = TlsCtxNewCert(L"Ranz VPN tlsctx test A", &priv_a);
+	X *x_b = TlsCtxNewCert(L"Ranz VPN tlsctx test B", &priv_b);
 	TlsCtxCheck(&t, x_a != NULL && x_b != NULL, "two certificates are made", "RsaGen or NewRootX failed");
 
 	if (x_a == NULL || x_b == NULL)
@@ -325,7 +312,7 @@ void tlsctx_test(UINT num, char **arg)
 	GetXDigest(x_b, digest_b, true);
 
 	// TLS 1.2 with one cipher, so that both are seen in the result
-	cedar = NewCedar(x_a, priv_a);
+	CEDAR *cedar = NewCedar(x_a, priv_a);
 	cedar->SslAcceptSettings.Tls_Disable1_3 = true;
 	SetCedarCipherList(cedar, TLSCTX_CIPHER_128);
 
@@ -335,12 +322,12 @@ void tlsctx_test(UINT num, char **arg)
 	srv.Key = priv_a;
 
 	// Connections with an unchanged configuration
-	num_same = 0;
+	UINT num_same = 0;
 	if (TlsCtxListen(&srv))
 	{
 		TlsCtxRun(&srv, same, TLSCTX_SAME);
 
-		for (i = 0;i < TLSCTX_SAME;i++)
+		for (UINT i = 0;i < TLSCTX_SAME;i++)
 		{
 			if (same[i].Ok && Cmp(same[i].Digest, digest_a, SHA1_SIZE) == 0 &&
 				StrCmp(same[i].Cipher, TLSCTX_CIPHER_128) == 0 && StrCmp(same[i].Version, "TLSv1.2") == 0)
@@ -370,8 +357,8 @@ void tlsctx_test(UINT num, char **arg)
 		"SslAcceptSettings: the next connection negotiates TLS 1.3 after it was switched on", "version %s", r.Version);
 
 	// The accept rate of a context per connection against the shared one (informational)
-	ms_each = TlsCtxBench(&srv, false);
-	ms_shared = TlsCtxBench(&srv, true);
+	UINT64 ms_each = TlsCtxBench(&srv, false);
+	UINT64 ms_shared = TlsCtxBench(&srv, true);
 	TlsCtxCheck(&t, ms_each != 0 && ms_shared != 0, "accept rate: both runs completed", "%u ms and %u ms", (UINT)ms_each, (UINT)ms_shared);
 
 	if (ms_each != 0 && ms_shared != 0)

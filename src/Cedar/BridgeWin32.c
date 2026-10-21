@@ -20,10 +20,10 @@
 
 #include <Ws2tcpip.h>
 
-static RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, char *name);
+static RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, const char *name);
 static bool EnumEthVLanMain(RPC_ENUM_ETH_VLAN *t, LIST *netclass);
-static void Win32EthMakeCombinedName(char *dst, UINT dst_size, char *nicname, char *guid);
-static UINT Win32EthGenIdFromGuid(char *guid);
+static void Win32EthMakeCombinedName(char *dst, UINT dst_size, char *nicname, const char *guid);
+static UINT Win32EthGenIdFromGuid(const char *guid);
 static void InitEthAdaptersList(SU *su, LIST *netclass);
 static void FreeEthAdaptersList();
 
@@ -68,13 +68,12 @@ bool Win32EthGetShowAllIf()
 
 static int CmpRpcEnumEthVLan(void *p1, void *p2)
 {
-	RPC_ENUM_ETH_VLAN_ITEM *v1, *v2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	v1 = *((RPC_ENUM_ETH_VLAN_ITEM **)p1);
-	v2 = *((RPC_ENUM_ETH_VLAN_ITEM **)p2);
+	RPC_ENUM_ETH_VLAN_ITEM *v1 = *((RPC_ENUM_ETH_VLAN_ITEM **)p1);
+	RPC_ENUM_ETH_VLAN_ITEM *v2 = *((RPC_ENUM_ETH_VLAN_ITEM **)p2);
 	if (v1 == NULL || v2 == NULL)
 	{
 		return 0;
@@ -86,17 +85,15 @@ static int CmpRpcEnumEthVLan(void *p1, void *p2)
 bool SetVLanEnableStatus(char *title, bool enable)
 {
 	RPC_ENUM_ETH_VLAN t;
-	RPC_ENUM_ETH_VLAN_ITEM *e;
 	bool ret = false;
 	char tcpkey[MAX_SIZE];
-	LIST *netclass;
 	if (title == NULL)
 	{
 		return false;
 	}
 
 	// One net-class pass for the VLAN enumeration and for the Class key of the adapter
-	netclass = MsNetClassEnum();
+	LIST *netclass = MsNetClassEnum();
 
 	Zero(&t, sizeof(t));
 	if (EnumEthVLanMain(&t, netclass) == false)
@@ -105,7 +102,7 @@ bool SetVLanEnableStatus(char *title, bool enable)
 		return false;
 	}
 
-	e = FindEthVLanItem(&t, title);
+	RPC_ENUM_ETH_VLAN_ITEM *e = FindEthVLanItem(&t, title);
 
 	if (e != NULL)
 	{
@@ -200,15 +197,14 @@ bool SetVLanEnableStatus(char *title, bool enable)
 	return ret;
 }
 
-static RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, char *name)
+static RPC_ENUM_ETH_VLAN_ITEM *FindEthVLanItem(RPC_ENUM_ETH_VLAN *t, const char *name)
 {
-	UINT i;
 	if (t == NULL || name == NULL)
 	{
 		return NULL;
 	}
 
-	for (i = 0;i < t->NumItem;i++)
+	for (UINT i = 0;i < t->NumItem;i++)
 	{
 		if (StrCmpi(t->Items[i].DeviceName, name) == 0)
 		{
@@ -288,7 +284,6 @@ static void GetVLanEnableStatus(RPC_ENUM_ETH_VLAN_ITEM *e, char *key)
 
 static void GetVLanSupportStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
 {
-	BUF *b;
 	char filename[MAX_SIZE];
 	if (e == NULL)
 	{
@@ -298,7 +293,7 @@ static void GetVLanSupportStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
 	ConbinePath(filename, sizeof(filename), MsGetSystem32Dir(), "drivers");
 	ConbinePath(filename, sizeof(filename), filename, e->DriverName);
 
-	b = ReadDump(filename);
+	BUF *b = ReadDump(filename);
 
 	if (b != NULL)
 	{
@@ -349,9 +344,6 @@ static void GetVLanSupportStatus(RPC_ENUM_ETH_VLAN_ITEM *e)
 // One SeLow probe, which also reads the adapter list
 static bool EnumEthVLanMain(RPC_ENUM_ETH_VLAN *t, LIST *netclass)
 {
-	UINT i;
-	LIST *o;
-	SU *su;
 	if (t == NULL)
 	{
 		return false;
@@ -359,7 +351,7 @@ static bool EnumEthVLanMain(RPC_ENUM_ETH_VLAN *t, LIST *netclass)
 
 	Zero(t, sizeof(RPC_ENUM_ETH_VLAN));
 
-	su = SuInitEx(0);
+	SU *su = SuInitEx(0);
 	if (su == NULL)
 	{
 		return false;
@@ -369,9 +361,9 @@ static bool EnumEthVLanMain(RPC_ENUM_ETH_VLAN *t, LIST *netclass)
 
 	InitEthAdaptersList(su, netclass);
 
-	o = NewListFast(CmpRpcEnumEthVLan);
+	LIST *o = NewListFast(CmpRpcEnumEthVLan);
 
-	for (i = 0;i < LIST_NUM(eth_list);i++)
+	for (UINT i = 0;i < LIST_NUM(eth_list);i++)
 	{
 		WP_ADAPTER *a = LIST_DATA(eth_list, i);
 		MS_NETCLASS_DEVICE *d = MsNetClassFind(netclass, a->Guid);
@@ -396,7 +388,7 @@ static bool EnumEthVLanMain(RPC_ENUM_ETH_VLAN *t, LIST *netclass)
 	t->NumItem = LIST_NUM(o);
 	t->Items = ZeroMalloc(sizeof(RPC_ENUM_ETH_VLAN_ITEM) * t->NumItem);
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		RPC_ENUM_ETH_VLAN_ITEM *e = LIST_DATA(o, i);
 
@@ -426,7 +418,6 @@ bool EnumEthVLanWin32(RPC_ENUM_ETH_VLAN *t)
 
 void EthPutPackets(ETH *e, UINT num, void **datas, UINT *sizes)
 {
-	UINT i;
 	bool ok = true;
 	if (e == NULL || num == 0 || datas == NULL || sizes == NULL)
 	{
@@ -437,7 +428,7 @@ void EthPutPackets(ETH *e, UINT num, void **datas, UINT *sizes)
 		return;
 	}
 
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		UCHAR *data = datas[i];
 		UINT size = sizes[i];
@@ -528,17 +519,15 @@ void CloseEth(ETH *e)
 
 static struct WP_ADAPTER *Win32EthSearch(char *name)
 {
-	UINT i;
-	UINT id;
 	char simple_name[MAX_SIZE];
 	WP_ADAPTER *ret = NULL;
 
-	id = Win32EthGetNameAndIdFromCombinedName(simple_name, sizeof(simple_name), name);
+	UINT id = Win32EthGetNameAndIdFromCombinedName(simple_name, sizeof(simple_name), name);
 
 	if (id != 0)
 	{
 		UINT num_match = 0;
-		for (i = 0;i < LIST_NUM(eth_list);i++)
+		for (UINT i = 0;i < LIST_NUM(eth_list);i++)
 		{
 			WP_ADAPTER *a = LIST_DATA(eth_list, i);
 
@@ -551,7 +540,7 @@ static struct WP_ADAPTER *Win32EthSearch(char *name)
 
 		if (num_match >= 2)
 		{
-			for (i = 0;i < LIST_NUM(eth_list);i++)
+			for (UINT i = 0;i < LIST_NUM(eth_list);i++)
 			{
 				WP_ADAPTER *a = LIST_DATA(eth_list, i);
 
@@ -568,7 +557,7 @@ static struct WP_ADAPTER *Win32EthSearch(char *name)
 	}
 	else
 	{
-		for (i = 0;i < LIST_NUM(eth_list);i++)
+		for (UINT i = 0;i < LIST_NUM(eth_list);i++)
 		{
 			WP_ADAPTER *a = LIST_DATA(eth_list, i);
 
@@ -585,14 +574,9 @@ static struct WP_ADAPTER *Win32EthSearch(char *name)
 
 ETH *OpenEth(char *name)
 {
-	WP_ADAPTER *t;
-	ETH *e;
-	HANDLE h;
-	CANCEL *c;
 	char name_with_id[MAX_SIZE];
 	SU *su = NULL;
 	SU_ADAPTER *su_adapter = NULL;
-	LIST *netclass;
 	if (name == NULL || Win32GetEnableSeLow() == false)
 	{
 		return NULL;
@@ -606,7 +590,7 @@ ETH *OpenEth(char *name)
 		return NULL;
 	}
 
-	netclass = MsNetClassEnum();
+	LIST *netclass = MsNetClassEnum();
 
 	Lock(eth_list_lock);
 
@@ -614,7 +598,7 @@ ETH *OpenEth(char *name)
 
 	MsNetClassFree(netclass);
 
-	t = Win32EthSearch(name);
+	WP_ADAPTER *t = Win32EthSearch(name);
 
 	if (t == NULL)
 	{
@@ -632,7 +616,7 @@ ETH *OpenEth(char *name)
 		return NULL;
 	}
 
-	e = ZeroMalloc(sizeof(ETH));
+	ETH *e = ZeroMalloc(sizeof(ETH));
 	e->Name = CopyStr(t->Name);
 
 	Win32EthMakeCombinedName(name_with_id, sizeof(name_with_id), t->Title, t->Guid);
@@ -641,9 +625,9 @@ ETH *OpenEth(char *name)
 	e->SuAdapter = su_adapter;
 	e->Su = su;
 
-	h = e->SuAdapter->hEvent;
+	HANDLE h = e->SuAdapter->hEvent;
 
-	c = NewCancelSpecial(h);
+	CANCEL *c = NewCancelSpecial(h);
 	e->Cancel = c;
 
 	Copy(e->MacAddress, t->MacAddress, sizeof(e->MacAddress));
@@ -653,7 +637,7 @@ ETH *OpenEth(char *name)
 	return e;
 }
 
-static void Win32EthMakeCombinedName(char *dst, UINT dst_size, char *nicname, char *guid)
+static void Win32EthMakeCombinedName(char *dst, UINT dst_size, char *nicname, const char *guid)
 {
 	if (dst == NULL || nicname == NULL || guid == NULL)
 	{
@@ -674,7 +658,6 @@ UINT Win32EthGetNameAndIdFromCombinedName(char *name, UINT name_size, char *str)
 {
 	UINT ret = 0;
 	char id_str[MAX_SIZE];
-	UINT len;
 	if (name == NULL)
 	{
 		return 0;
@@ -686,7 +669,7 @@ UINT Win32EthGetNameAndIdFromCombinedName(char *name, UINT name_size, char *str)
 	}
 	StrCpy(name, name_size, str);
 
-	len = StrLen(str);
+	UINT len = StrLen(str);
 
 	if (len >= 15)
 	{
@@ -716,7 +699,7 @@ UINT Win32EthGetNameAndIdFromCombinedName(char *name, UINT name_size, char *str)
 	return ret;
 }
 
-static UINT Win32EthGenIdFromGuid(char *guid)
+static UINT Win32EthGenIdFromGuid(const char *guid)
 {
 	char tmp[MAX_SIZE];
 	UCHAR hash[SHA1_SIZE];
@@ -747,19 +730,17 @@ static UINT Win32EthGenIdFromGuid(char *guid)
 TOKEN_LIST *GetEthList(void)
 {
 	RPC_ENUM_ETH t;
-	TOKEN_LIST *ret;
-	UINT i;
 
 	if (EnumEthWin32(&t) == false)
 	{
 		return NULL;
 	}
 
-	ret = ZeroMalloc(sizeof(TOKEN_LIST));
+	TOKEN_LIST *ret = ZeroMalloc(sizeof(TOKEN_LIST));
 	ret->NumTokens = t.NumItem;
 	ret->Token = ZeroMalloc(sizeof(char *) * ret->NumTokens);
 
-	for (i = 0;i < t.NumItem;i++)
+	for (UINT i = 0;i < t.NumItem;i++)
 	{
 		ret->Token[i] = CopyStr(t.Items[i].DeviceName);
 	}
@@ -774,11 +755,6 @@ TOKEN_LIST *GetEthList(void)
 // connection name is the interface alias that IP Helper reports. False when SeLow is not usable
 bool EnumEthWin32(RPC_ENUM_ETH *t)
 {
-	SU *su;
-	LIST *netclass;
-	LIST *o;
-	MS_ADAPTER_LIST *adapter_list;
-	UINT i;
 	if (t == NULL)
 	{
 		return false;
@@ -793,21 +769,21 @@ bool EnumEthWin32(RPC_ENUM_ETH *t)
 	}
 
 	// Listing the devices for a Local Bridge is the first step of creating one: install SeLow when needed
-	su = SuInitInstall();
+	SU *su = SuInitInstall();
 	if (su == NULL)
 	{
 		return false;
 	}
 
-	netclass = MsNetClassEnum();
-	adapter_list = MsCreateAdapterList();
-	o = NewListFast(NULL);
+	LIST *netclass = MsNetClassEnum();
+	MS_ADAPTER_LIST *adapter_list = MsCreateAdapterList();
+	LIST *o = NewListFast(NULL);
 
 	Lock(eth_list_lock);
 
 	InitEthAdaptersList(su, netclass);
 
-	for (i = 0;i < LIST_NUM(eth_list);i++)
+	for (UINT i = 0;i < LIST_NUM(eth_list);i++)
 	{
 		WP_ADAPTER *a = LIST_DATA(eth_list, i);
 		MS_ADAPTER *msa = MsGetAdapterByGuidFromList(adapter_list, a->Guid);
@@ -836,7 +812,7 @@ bool EnumEthWin32(RPC_ENUM_ETH *t)
 	t->NumItem = LIST_NUM(o);
 	t->Items = ZeroMalloc(sizeof(RPC_ENUM_ETH_ITEM) * t->NumItem);
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		RPC_ENUM_ETH_ITEM *e = LIST_DATA(o, i);
 
@@ -855,19 +831,17 @@ bool EnumEthWin32(RPC_ENUM_ETH *t)
 
 static int CompareWpAdapter(void *p1, void *p2)
 {
-	int i;
-	WP_ADAPTER *a1, *a2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	a1 = *(WP_ADAPTER **)p1;
-	a2 = *(WP_ADAPTER **)p2;
+	WP_ADAPTER *a1 = *(WP_ADAPTER **)p1;
+	WP_ADAPTER *a2 = *(WP_ADAPTER **)p2;
 	if (a1 == NULL || a2 == NULL)
 	{
 		return 0;
 	}
-	i = StrCmpi(a1->Title, a2->Title);
+	int i = StrCmpi(a1->Title, a2->Title);
 	if (i != 0)
 	{
 		return i;
@@ -896,13 +870,10 @@ static void Win32EthTrimTitle(char *title)
 // SeLow is turned off. netclass: the net-class table of the caller (MsNetClassEnum)
 static LIST *GetEthAdapterList(SU *su, LIST *netclass)
 {
-	LIST *o;
-	LIST *ret;
-	UINT i, j;
 	char *qos_tag = "(Microsoft's Packet Scheduler)";
 	LIST *su_adapter_list = NULL;
 
-	o = NewListFast(CompareWpAdapter);
+	LIST *o = NewListFast(CompareWpAdapter);
 
 	if (su != NULL && Win32GetEnableSeLow())
 	{
@@ -913,7 +884,7 @@ static LIST *GetEthAdapterList(SU *su, LIST *netclass)
 
 	if (su_adapter_list != NULL)
 	{
-		for (i = 0;i < LIST_NUM(su_adapter_list);i++)
+		for (UINT i = 0;i < LIST_NUM(su_adapter_list);i++)
 		{
 			SU_ADAPTER_LIST *t = LIST_DATA(su_adapter_list, i);
 			WP_ADAPTER *a = ZeroMalloc(sizeof(WP_ADAPTER));
@@ -940,19 +911,16 @@ static LIST *GetEthAdapterList(SU *su, LIST *netclass)
 		SuFreeAdapterList(su_adapter_list);
 	}
 
-	ret = NewListFast(CompareWpAdapter);
+	LIST *ret = NewListFast(CompareWpAdapter);
 
-	for (i = 0;i < LIST_NUM(o);i++)
+	for (UINT i = 0;i < LIST_NUM(o);i++)
 	{
 		WP_ADAPTER *a = LIST_DATA(o, i);
 		char tmp[MAX_SIZE];
-		UINT k;
 
 		// Every SeLow adapter is listed here; EnumEthWin32 hides the ones that are no wired LAN
-		for (k = 0;;k++)
+		for (UINT k = 0;;k++)
 		{
-			bool ok;
-
 			if (k == 0)
 			{
 				StrCpy(tmp, sizeof(tmp), a->Title);
@@ -962,8 +930,8 @@ static LIST *GetEthAdapterList(SU *su, LIST *netclass)
 				Format(tmp, sizeof(tmp), "%s(%u)", a->Title, k + 1);
 			}
 
-			ok = true;
-			for (j = 0;j < LIST_NUM(ret);j++)
+			bool ok = true;
+			for (UINT j = 0;j < LIST_NUM(ret);j++)
 			{
 				WP_ADAPTER *aa = LIST_DATA(ret, j);
 				if (StrCmpi(aa->Title, tmp) == 0)
@@ -1004,12 +972,11 @@ static void InitEthAdaptersList(SU *su, LIST *netclass)
 
 static void FreeEthAdaptersList()
 {
-	UINT i;
 	if (eth_list == NULL)
 	{
 		return;
 	}
-	for (i = 0;i < LIST_NUM(eth_list);i++)
+	for (UINT i = 0;i < LIST_NUM(eth_list);i++)
 	{
 		WP_ADAPTER *a = LIST_DATA(eth_list, i);
 		Free(a);
@@ -1023,14 +990,13 @@ static void FreeEthAdaptersList()
 bool Win32EthIsSuSupported()
 {
 	bool ret = false;
-	SU *su;
 
 	if (Win32GetEnableSeLow() == false)
 	{
 		return false;
 	}
 
-	su = SuInitEx(0);
+	SU *su = SuInitEx(0);
 
 	if (su != NULL)
 	{
@@ -1048,14 +1014,13 @@ bool Win32EthIsSuSupported()
 bool Win32EthInstallSu()
 {
 	bool ret = false;
-	SU *su;
 
 	if (Win32GetEnableSeLow() == false)
 	{
 		return false;
 	}
 
-	su = SuInitInstall();
+	SU *su = SuInitInstall();
 
 	if (su != NULL)
 	{
@@ -1094,14 +1059,13 @@ UINT GetEthDeviceHash()
 {
 	MS_ADAPTER_LIST *a = MsCreateAdapterList();
 	UINT num;
-	UINT i;
 	char tmp[4096];
 	UCHAR hash[SHA1_SIZE];
 
 	tmp[0] = 0;
 	if (a != NULL)
 	{
-		for (i = 0;i < a->Num;i++)
+		for (UINT i = 0;i < a->Num;i++)
 		{
 			StrCat(tmp, sizeof(tmp), a->Adapters[i]->Title);
 		}

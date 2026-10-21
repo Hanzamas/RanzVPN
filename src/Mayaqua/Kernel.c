@@ -77,8 +77,6 @@ UINT GetNumberOfCpu()
 // A value longer than the buffer is truncated
 bool GetEnv(char *name, char *data, UINT size)
 {
-	DWORD len;
-	char *tmp;
 	if (name == NULL || data == NULL)
 	{
 		return false;
@@ -87,13 +85,13 @@ bool GetEnv(char *name, char *data, UINT size)
 	StrCpy(data, size, "");
 
 	// The size with the terminating null; 0 when the variable is not set
-	len = GetEnvironmentVariableA(name, NULL, 0);
+	DWORD len = GetEnvironmentVariableA(name, NULL, 0);
 	if (len == 0)
 	{
 		return false;
 	}
 
-	tmp = ZeroMalloc(len);
+	char *tmp = ZeroMalloc(len);
 	if (GetEnvironmentVariableA(name, tmp, len) < len)
 	{
 		StrCpy(data, size, tmp);
@@ -107,7 +105,6 @@ bool GetEnv(char *name, char *data, UINT size)
 INSTANCE *NewSingleInstance(char *instance_name)
 {
 	char name[MAX_SIZE];
-	INSTANCE *ret;
 	void *data;
 
 	if (instance_name != NULL)
@@ -126,7 +123,7 @@ INSTANCE *NewSingleInstance(char *instance_name)
 		return NULL;
 	}
 
-	ret = ZeroMalloc(sizeof(INSTANCE));
+	INSTANCE *ret = ZeroMalloc(sizeof(INSTANCE));
 	if (instance_name != NULL)
 	{
 		ret->Name = CopyStr(instance_name);
@@ -298,14 +295,12 @@ static UINT64 SystemToTicks(SYSTEMTIME *st)
 // lower limit encode as 0: the result is unsigned
 static UINT64 TicksToTime64(UINT64 ticks, UINT64 add_ms)
 {
-	UINT64 sec;
-
 	if (ticks < TIME_UNIX_EPOCH_TICKS)
 	{
 		return 0;
 	}
 
-	sec = (ticks - TIME_UNIX_EPOCH_TICKS) / TIME_TICKS_PER_SEC;
+	UINT64 sec = (ticks - TIME_UNIX_EPOCH_TICKS) / TIME_TICKS_PER_SEC;
 	if (sec < TIME_ENCODE_MIN_SEC)
 	{
 		return 0;
@@ -316,13 +311,12 @@ static UINT64 TicksToTime64(UINT64 ticks, UINT64 add_ms)
 
 UINT64 FileTimeToUINT64(FILETIME *ft)
 {
-	UINT64 ticks;
 	if (ft == NULL)
 	{
 		return 0;
 	}
 
-	ticks = FileTimeToTicks(ft);
+	UINT64 ticks = FileTimeToTicks(ft);
 
 	return TicksToTime64(ticks, (ticks % TIME_TICKS_PER_SEC) / TIME_TICKS_PER_MS);
 }
@@ -403,7 +397,6 @@ void FreeThreading()
 static void NTAPI ThreadPoolCallback(PTP_CALLBACK_INSTANCE instance, void *param)
 {
 	THREAD *thread = (THREAD *)param;
-	HRESULT hr;
 	if (thread == NULL)
 	{
 		return;
@@ -414,7 +407,7 @@ static void NTAPI ThreadPoolCallback(PTP_CALLBACK_INSTANCE instance, void *param
 	// CallbackMayRunLong on such a callback raises STATUS_INVALID_PARAMETER in ntdll.
 	Win32InitNewThread();
 
-	hr = CoInitialize(NULL);
+	HRESULT hr = CoInitialize(NULL);
 
 	thread->ThreadId = ThreadId();
 
@@ -480,14 +473,13 @@ void SetThreadName(UINT thread_id, char *name, void *param)
 
 THREAD *NewThreadNamed(THREAD_PROC *thread_proc, void *param, char *name)
 {
-	THREAD *ret;
 	UINT retry = 0;
 	if (thread_proc == NULL)
 	{
 		return NULL;
 	}
 
-	ret = ZeroMalloc(sizeof(THREAD));
+	THREAD *ret = ZeroMalloc(sizeof(THREAD));
 	ret->ref = NewRef();
 	ret->thread_proc = thread_proc;
 	ret->param = param;
@@ -556,20 +548,18 @@ static void CleanupThread(THREAD *t)
 
 void ReleaseThread(THREAD *t)
 {
-	UINT ret;
-	EVENT *e;
 	if (t == NULL)
 	{
 		return;
 	}
 
-	e = t->release_event;
+	EVENT *e = t->release_event;
 	if (e != NULL)
 	{
 		AddRef(e->ref);
 	}
 
-	ret = Release(t->ref);
+	UINT ret = Release(t->ref);
 	Set(e);
 
 	ReleaseEvent(e);
@@ -660,14 +650,13 @@ static UINT __stdcall HostThreadProc(void *param)
 
 THREAD *NewThreadInternal(THREAD_PROC *thread_proc, void *param)
 {
-	THREAD *t;
 	UINT retry = 0;
 	if (thread_proc == NULL)
 	{
 		return NULL;
 	}
 
-	t = ZeroMalloc(sizeof(THREAD));
+	THREAD *t = ZeroMalloc(sizeof(THREAD));
 	t->init_finished_event = NewEvent();
 
 	t->param = param;
@@ -676,9 +665,7 @@ THREAD *NewThreadInternal(THREAD_PROC *thread_proc, void *param)
 
 	while (true)
 	{
-		HOST_THREAD_STARTUP *info;
 		HOST_THREAD *host;
-		HANDLE h;
 
 		if ((retry++) > 60)
 		{
@@ -687,13 +674,13 @@ THREAD *NewThreadInternal(THREAD_PROC *thread_proc, void *param)
 		}
 
 		// Creating the startup information: the new thread holds one reference
-		info = Win32MemoryAlloc(sizeof(HOST_THREAD_STARTUP));
+		HOST_THREAD_STARTUP *info = Win32MemoryAlloc(sizeof(HOST_THREAD_STARTUP));
 		info->thread_proc = t->thread_proc;
 		info->param = t->param;
 		info->thread = t;
 		AddRef(t->ref);
 
-		h = (HANDLE)_beginthreadex(NULL, 0, HostThreadProc, info, 0, NULL);
+		HANDLE h = (HANDLE)_beginthreadex(NULL, 0, HostThreadProc, info, 0, NULL);
 		if (h != NULL)
 		{
 			// Save the thread handle
@@ -730,14 +717,13 @@ void ReleaseThreadInternal(THREAD *t)
 
 void CleanupThreadInternal(THREAD *t)
 {
-	HOST_THREAD *host;
 	if (t == NULL)
 	{
 		return;
 	}
 
 	// Close the thread handle
-	host = (HOST_THREAD *)t->pData;
+	HOST_THREAD *host = (HOST_THREAD *)t->pData;
 	if (host != NULL)
 	{
 		CloseHandle(host->hThread);
@@ -753,13 +739,12 @@ void CleanupThreadInternal(THREAD *t)
 
 bool WaitThreadInternal(THREAD *t)
 {
-	HOST_THREAD *host;
 	if (t == NULL)
 	{
 		return false;
 	}
 
-	host = (HOST_THREAD *)t->pData;
+	HOST_THREAD *host = (HOST_THREAD *)t->pData;
 	if (host == NULL)
 	{
 		return false;
@@ -889,13 +874,12 @@ static char *DateStrMilli(char *p, SYSTEMTIME *st)
 void GetTimeStrMilli(char *str, UINT size, SYSTEMTIME *st)
 {
 	char tmp[DATE_STR_SIZE];
-	char *p;
 	if (st == NULL || str == NULL)
 	{
 		return;
 	}
 
-	p = DateStrTime(tmp, st);
+	char *p = DateStrTime(tmp, st);
 	p = DateStrMilli(p, st);
 	*p = 0;
 
@@ -905,13 +889,12 @@ void GetTimeStrMilli(char *str, UINT size, SYSTEMTIME *st)
 void GetDateStr(char *str, UINT size, SYSTEMTIME *st)
 {
 	char tmp[DATE_STR_SIZE];
-	char *p;
 	if (str == NULL || st == NULL)
 	{
 		return;
 	}
 
-	p = DateStrDate(tmp, st);
+	char *p = DateStrDate(tmp, st);
 	*p = 0;
 
 	StrCpy(str, size, tmp);
@@ -920,13 +903,12 @@ void GetDateStr(char *str, UINT size, SYSTEMTIME *st)
 void GetDateTimeStr(char *str, UINT size, SYSTEMTIME *st)
 {
 	char tmp[DATE_STR_SIZE];
-	char *p;
 	if (str == NULL || st == NULL)
 	{
 		return;
 	}
 
-	p = DateStrDate(tmp, st);
+	char *p = DateStrDate(tmp, st);
 	*p++ = ' ';
 	p = DateStrTime(p, st);
 	*p = 0;
@@ -937,13 +919,12 @@ void GetDateTimeStr(char *str, UINT size, SYSTEMTIME *st)
 void GetDateTimeStrMilli(char *str, UINT size, SYSTEMTIME *st)
 {
 	char tmp[DATE_STR_SIZE];
-	char *p;
 	if (str == NULL || st == NULL)
 	{
 		return;
 	}
 
-	p = DateStrDate(tmp, st);
+	char *p = DateStrDate(tmp, st);
 	*p++ = ' ';
 	p = DateStrTime(p, st);
 	p = DateStrMilli(p, st);
@@ -959,7 +940,6 @@ void GetDateTimeStrMilli(char *str, UINT size, SYSTEMTIME *st)
 void GetDateTimeStrRFC3339(char *str, UINT size, SYSTEMTIME *st, int timezone_min)
 {
 	char tmp[DATE_STR_SIZE];
-	char *p;
 	UINT abs_min;
 	if (str == NULL || st == NULL)
 	{
@@ -967,7 +947,7 @@ void GetDateTimeStrRFC3339(char *str, UINT size, SYSTEMTIME *st, int timezone_mi
 		return;
 	}
 
-	p = DateStrDate(tmp, st);
+	char *p = DateStrDate(tmp, st);
 	*p++ = 'T';
 	p = DateStrTime(p, st);
 	p = DateStrMilli(p, st);
@@ -992,12 +972,10 @@ void GetDateTimeStrRFC3339(char *str, UINT size, SYSTEMTIME *st, int timezone_mi
 
 // Read count decimal digits at str. Stops at the first character that is not a digit, so it
 // never reads past the end of the string
-static bool ParseRFC3339Digits(char *str, UINT count, UINT *value)
+static bool ParseRFC3339Digits(const char *str, UINT count, UINT *value)
 {
-	UINT i;
-
 	*value = 0;
-	for (i = 0; i < count; i++)
+	for (UINT i = 0; i < count; i++)
 	{
 		if (str[i] < '0' || str[i] > '9')
 		{
@@ -1022,8 +1000,6 @@ bool DateTimeStrRFC3339ToSystemTime(SYSTEMTIME *st, char *str)
 	INT64 offset_sign = 0;
 	SYSTEMTIME tmp;
 	FILETIME ft;
-	UINT64 t;
-	char *p;
 	if (st == NULL)
 	{
 		return false;
@@ -1047,7 +1023,7 @@ bool DateTimeStrRFC3339ToSystemTime(SYSTEMTIME *st, char *str)
 		return false;
 	}
 
-	p = str + 19;
+	char *p = str + 19;
 
 	// Fraction of a second: at least one digit, the first three kept
 	if (*p == '.')
@@ -1110,7 +1086,7 @@ bool DateTimeStrRFC3339ToSystemTime(SYSTEMTIME *st, char *str)
 	}
 
 	// Local time minus the offset is UTC (FILETIME counts 100 ns units)
-	t = FileTimeToTicks(&ft);
+	UINT64 t = FileTimeToTicks(&ft);
 	t = (UINT64)((INT64)t - offset_sign * (INT64)(offset_hour * 60 + offset_minute) * (INT64)(60ULL * TIME_TICKS_PER_SEC));
 	TicksToFileTime(&ft, t);
 
@@ -1177,14 +1153,12 @@ void SetLocale(wchar_t *str)
 
 bool LoadLocale(LOCALE *locale, wchar_t *str)
 {
-	UNI_TOKEN_LIST *tokens;
-	UINT i;
 	if (locale == NULL || str == NULL)
 	{
 		return false;
 	}
 
-	tokens = UniParseToken(str, L" ");
+	UNI_TOKEN_LIST *tokens = UniParseToken(str, L" ");
 	if (tokens->NumTokens != 18)
 	{
 		UniFreeToken(tokens);
@@ -1199,7 +1173,7 @@ bool LoadLocale(LOCALE *locale, wchar_t *str)
 	COPY_LOCALE_STR(locale->MinuteStr, sizeof(locale->MinuteStr), tokens->Token[4]);
 	COPY_LOCALE_STR(locale->SecondStr, sizeof(locale->SecondStr), tokens->Token[5]);
 
-	for (i = 0;i < 7;i++)
+	for (UINT i = 0;i < 7;i++)
 	{
 		COPY_LOCALE_STR(locale->DayOfWeek[i], sizeof(locale->DayOfWeek[i]),
 			tokens->Token[6 + i]);
@@ -1243,13 +1217,12 @@ void TimeToSystem(SYSTEMTIME *st, time_64t t)
 
 void NormalizeSystem(SYSTEMTIME *st)
 {
-	UINT64 sec64;
 	if (st == NULL)
 	{
 		return;
 	}
 
-	sec64 = SystemToUINT64(st);
+	UINT64 sec64 = SystemToUINT64(st);
 	UINT64ToSystem(st, sec64);
 }
 
@@ -1271,25 +1244,23 @@ UINT64 SystemToLocal64(UINT64 t)
 
 void LocalToSystem(SYSTEMTIME *system, SYSTEMTIME *local)
 {
-	UINT64 sec64;
 	if (local == NULL || system == NULL)
 	{
 		return;
 	}
 
-	sec64 = (UINT64)((INT64)SystemToUINT64(local) - GetTimeDiffEx(local, true));
+	UINT64 sec64 = (UINT64)((INT64)SystemToUINT64(local) - GetTimeDiffEx(local, true));
 	UINT64ToSystem(system, sec64);
 }
 
 void SystemToLocal(SYSTEMTIME *local, SYSTEMTIME *system)
 {
-	UINT64 sec64;
 	if (local == NULL || system == NULL)
 	{
 		return;
 	}
 
-	sec64 = (UINT64)((INT64)SystemToUINT64(system) + GetTimeDiffEx(system, false));
+	UINT64 sec64 = (UINT64)((INT64)SystemToUINT64(system) + GetTimeDiffEx(system, false));
 	UINT64ToSystem(local, sec64);
 }
 
@@ -1297,14 +1268,13 @@ INT64 GetTimeDiffEx(SYSTEMTIME *basetime, bool local_time)
 {
 	FILETIME ft;
 	SYSTEMTIME base, other;
-	UINT64 base_ticks, other_ticks;
 	if (basetime == NULL)
 	{
 		return 0;
 	}
 
 	// Clamp and normalize the fields as SystemToUINT64 does
-	base_ticks = SystemToTicks(basetime);
+	UINT64 base_ticks = SystemToTicks(basetime);
 	if (base_ticks == 0)
 	{
 		return 0;
@@ -1337,7 +1307,7 @@ INT64 GetTimeDiffEx(SYSTEMTIME *basetime, bool local_time)
 	{
 		return 0;
 	}
-	other_ticks = FileTimeToTicks(&ft);
+	UINT64 other_ticks = FileTimeToTicks(&ft);
 
 	// Local time minus UTC, in milliseconds
 	if (local_time == false)
@@ -1507,13 +1477,12 @@ void AbortExitEx(char *msg)
 // daylight or standard bias in effect, with the sign turned around
 int GetTimezoneInfoOffsetWin32(TIME_ZONE_INFORMATION *info, UINT zone_id)
 {
-	LONG bias;
 	if (info == NULL)
 	{
 		return 0;
 	}
 
-	bias = info->Bias;
+	LONG bias = info->Bias;
 
 	if (zone_id == TIME_ZONE_ID_DAYLIGHT)
 	{
@@ -1532,10 +1501,9 @@ int GetTimezoneInfoOffsetWin32(TIME_ZONE_INFORMATION *info, UINT zone_id)
 int GetCurrentTimezone()
 {
 	TIME_ZONE_INFORMATION info;
-	DWORD zone_id;
 	Zero(&info, sizeof(info));
 
-	zone_id = GetTimeZoneInformation(&info);
+	DWORD zone_id = GetTimeZoneInformation(&info);
 	if (zone_id == TIME_ZONE_ID_INVALID)
 	{
 		return 0;

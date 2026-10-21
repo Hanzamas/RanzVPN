@@ -40,8 +40,6 @@ static void NodeInfoSetIp(UINT *ip4, UCHAR *ip6, IP *ip)
 
 static void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
 {
-	SESSION *s;
-	OS_INFO *os;
 	IP ip;
 	wchar_t namew[256];
 	char namea[256];
@@ -50,8 +48,8 @@ static void CreateNodeInfo(NODE_INFO *info, CONNECTION *c)
 		return;
 	}
 
-	s = c->Session;
-	os = GetOsInfo();
+	SESSION *s = c->Session;
+	OS_INFO *os = GetOsInfo();
 
 
 	Zero(info, sizeof(NODE_INFO));
@@ -125,13 +123,12 @@ static void ConnectingSockRemove(CONNECTION *c, SOCK *s)
 
 static SOCK *ClientAdditionalConnectToServer(CONNECTION *c)
 {
-	SOCK *s;
 	if (c == NULL)
 	{
 		return NULL;
 	}
 
-	s = ClientConnectGetSocket(c, true);
+	SOCK *s = ClientConnectGetSocket(c, true);
 	if (s == NULL)
 	{
 		return NULL;
@@ -634,9 +631,6 @@ CLEANUP:
 bool ClientUploadAuth(CONNECTION *c)
 {
 	PACK *p = NULL;
-	CLIENT_AUTH *a;
-	CLIENT_OPTION *o;
-	bool ret;
 	NODE_INFO info;
 	UCHAR secure_password[SHA1_SIZE];
 	UCHAR sign[4096 / 8];
@@ -649,8 +643,8 @@ bool ClientUploadAuth(CONNECTION *c)
 
 	Zero(sign, sizeof(sign));
 
-	a = c->Session->ClientAuth;
-	o = c->Session->ClientOption;
+	CLIENT_AUTH *a = c->Session->ClientAuth;
+	CLIENT_OPTION *o = c->Session->ClientOption;
 
 	switch (a->AuthType)
 	{
@@ -747,7 +741,7 @@ bool ClientUploadAuth(CONNECTION *c)
 	GetWinVer(&v);
 	OutRpcWinVer(p, &v);
 
-	ret = HttpClientSend(c->FirstSock, p);
+	bool ret = HttpClientSend(c->FirstSock, p);
 	if (ret == false)
 	{
 		c->Err = ERR_DISCONNECTED;
@@ -788,16 +782,14 @@ bool ParseWelcomeFromPack(PACK *p, char *session_name, UINT session_name_size,
 
 POLICY *PackGetPolicy(PACK *p)
 {
-	POLICY *y;
-	UINT i;
 	if (p == NULL)
 	{
 		return NULL;
 	}
 
-	y = ZeroMalloc(sizeof(POLICY));
+	POLICY *y = ZeroMalloc(sizeof(POLICY));
 
-	for (i = 0;i < NUM_POLICY_ITEM;i++)
+	for (UINT i = 0;i < NUM_POLICY_ITEM;i++)
 	{
 		POLICY_ITEM *item = &policy_item[i];
 		char name[MAX_SIZE];
@@ -849,7 +841,6 @@ void PackAddClientVersion(PACK *p, CONNECTION *c)
 
 bool ClientDownloadHello(CONNECTION *c, SOCK *s)
 {
-	PACK *p;
 	UINT err;
 	UCHAR random[SHA1_SIZE];
 	if (c == NULL)
@@ -857,7 +848,7 @@ bool ClientDownloadHello(CONNECTION *c, SOCK *s)
 		return false;
 	}
 
-	p = HttpClientRecvEx(s, HTTP_PACK_MAX_SIZE);
+	PACK *p = HttpClientRecvEx(s, HTTP_PACK_MAX_SIZE);
 	if (p == NULL)
 	{
 		c->Err = ERR_SERVER_IS_NOT_VPN;
@@ -890,9 +881,6 @@ bool ClientDownloadHello(CONNECTION *c, SOCK *s)
 
 bool ClientUploadSignature(SOCK *s)
 {
-	HTTP_HEADER *h;
-	UINT water_size, rand_size;
-	UCHAR *water;
 	char ip_str[128];
 	if (s == NULL)
 	{
@@ -901,15 +889,15 @@ bool ClientUploadSignature(SOCK *s)
 
 	IPToStr(ip_str, sizeof(ip_str), &s->RemoteIP);
 
-	h = NewHttpHeader("POST", HTTP_VPN_TARGET2, "HTTP/1.1");
+	HTTP_HEADER *h = NewHttpHeader("POST", HTTP_VPN_TARGET2, "HTTP/1.1");
 	AddHttpValue(h, NewHttpValue("Host", ip_str));
 	AddHttpValue(h, NewHttpValue("Content-Type", HTTP_CONTENT_TYPE3));
 	AddHttpValue(h, NewHttpValue("Connection", "Keep-Alive"));
 
 
-	rand_size = Rand32() % (HTTP_PACK_RAND_SIZE_MAX * 2);
-	water_size = WaterMarkSize + rand_size;
-	water = Malloc(water_size);
+	UINT rand_size = Rand32() % (HTTP_PACK_RAND_SIZE_MAX * 2);
+	UINT water_size = WaterMarkSize + rand_size;
+	UCHAR *water = Malloc(water_size);
 	Copy(water, WaterMark, WaterMarkSize);
 	Rand(&water[WaterMarkSize], rand_size);
 
@@ -1006,8 +994,6 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 	char hostname[MAX_HOST_NAME_LEN];
 
 	bool save_resolved_ip = false;
-	CLIENT_OPTION *o;
-	SESSION *sess;
 	SOCK *sock = NULL;
 	IP resolved_ip;
 	IP *bind_ip;
@@ -1018,8 +1004,8 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 	}
 
 	cancel_flag = &c->Halt;
-	sess = c->Session;
-	o = c->Session->ClientOption;
+	SESSION *sess = c->Session;
+	CLIENT_OPTION *o = c->Session->ClientOption;
 
 	Zero(&resolved_ip, sizeof(resolved_ip));
 
@@ -1083,7 +1069,6 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 	{
 		PROXY_PARAM_OUT out;
 		PROXY_PARAM_IN in;
-		UINT ret;
 
 		Zero(&in, sizeof(in));
 
@@ -1105,7 +1090,7 @@ SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect)
 		in.BindLocalPort = bind_port;
 
 		// An unknown proxy type gives PROXY_ERROR_PARAMETER, which is ERR_INTERNAL_ERROR
-		ret = ProxyConnect(o->ProxyType, &out, &in, cancel_flag);
+		UINT ret = ProxyConnect(o->ProxyType, &out, &in, cancel_flag);
 
 		c->Err = ProxyCodeToCedar(ret);
 
@@ -1208,20 +1193,18 @@ bool GetHello(PACK *p, void *random, UINT *ver, UINT *build, char *server_str, U
 
 PACK *PackLoginWithCert(char *hubname, char *username, X *x, void *sign, UINT sign_size)
 {
-	PACK *p;
-	BUF *b;
 	if (hubname == NULL || username == NULL)
 	{
 		return NULL;
 	}
 
-	p = NewPack();
+	PACK *p = NewPack();
 	PackAddStr(p, "method", "login");
 	PackAddStr(p, "hubname", hubname);
 	PackAddStr(p, "username", username);
 	PackAddInt(p, "authtype", CLIENT_AUTHTYPE_CERT);
 
-	b = XToBuf(x, false);
+	BUF *b = XToBuf(x, false);
 	PackAddData(p, "cert", b->Buf, b->Size);
 	FreeBuf(b);
 
@@ -1232,13 +1215,12 @@ PACK *PackLoginWithCert(char *hubname, char *username, X *x, void *sign, UINT si
 
 PACK *PackLoginWithPlainPassword(char *hubname, char *username, void *plain_password)
 {
-	PACK *p;
 	if (hubname == NULL || username == NULL)
 	{
 		return NULL;
 	}
 
-	p = NewPack();
+	PACK *p = NewPack();
 	PackAddStr(p, "method", "login");
 	PackAddStr(p, "hubname", hubname);
 	PackAddStr(p, "username", username);
@@ -1250,13 +1232,12 @@ PACK *PackLoginWithPlainPassword(char *hubname, char *username, void *plain_pass
 
 PACK *PackLoginWithPassword(char *hubname, char *username, void *secure_password)
 {
-	PACK *p;
 	if (hubname == NULL || username == NULL)
 	{
 		return NULL;
 	}
 
-	p = NewPack();
+	PACK *p = NewPack();
 	PackAddStr(p, "method", "login");
 	PackAddStr(p, "hubname", hubname);
 	PackAddStr(p, "username", username);
@@ -1268,13 +1249,12 @@ PACK *PackLoginWithPassword(char *hubname, char *username, void *secure_password
 
 PACK *PackLoginWithAnonymous(char *hubname, char *username)
 {
-	PACK *p;
 	if (hubname == NULL || username == NULL)
 	{
 		return NULL;
 	}
 
-	p = NewPack();
+	PACK *p = NewPack();
 	PackAddStr(p, "method", "login");
 	PackAddStr(p, "hubname", hubname);
 	PackAddStr(p, "username", username);
@@ -1285,13 +1265,12 @@ PACK *PackLoginWithAnonymous(char *hubname, char *username)
 
 PACK *PackAdditionalConnect(UCHAR *session_key)
 {
-	PACK *p;
 	if (session_key == NULL)
 	{
 		return NULL;
 	}
 
-	p = NewPack();
+	PACK *p = NewPack();
 	PackAddStr(p, "method", "additional_connect");
 	PackAddData(p, "session_key", session_key, SHA1_SIZE);
 

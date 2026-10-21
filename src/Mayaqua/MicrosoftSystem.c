@@ -80,9 +80,8 @@ static bool MsIsHypervisorGuest()
 static void MsSmbiosAddString(char *dst, UINT dst_size, UCHAR *str_set, UINT str_set_size, UINT index)
 {
 	UINT pos = 0;
-	UINT i;
 
-	for (i = 1; index != 0 && pos < str_set_size; i++)
+	for (UINT i = 1; index != 0 && pos < str_set_size; i++)
 	{
 		UINT len = 0;
 
@@ -124,32 +123,26 @@ static bool MsIsVmFirmware()
 		"hvm", "domu", "xvm", "oracle vm", "amazon ec2", "google compute engine",
 	};
 	char names[MAX_SIZE];
-	UCHAR *buf;
-	UINT size;
-	UINT table_size;
-	UINT end;
-	UINT pos;
-	UINT i;
 	bool ret = false;
 
-	size = GetSystemFirmwareTable(MS_SMBIOS_PROVIDER, 0, NULL, 0);
+	UINT size = GetSystemFirmwareTable(MS_SMBIOS_PROVIDER, 0, NULL, 0);
 	if (size <= MS_SMBIOS_HEADER_SIZE)
 	{
 		return false;
 	}
 
-	buf = ZeroMalloc(size);
+	UCHAR *buf = ZeroMalloc(size);
 	if (GetSystemFirmwareTable(MS_SMBIOS_PROVIDER, 0, buf, size) != size)
 	{
 		Free(buf);
 		return false;
 	}
 
-	table_size = (UINT)buf[4] | ((UINT)buf[5] << 8) | ((UINT)buf[6] << 16) | ((UINT)buf[7] << 24);
-	end = MS_SMBIOS_HEADER_SIZE + MIN(table_size, size - MS_SMBIOS_HEADER_SIZE);
+	UINT table_size = (UINT)buf[4] | ((UINT)buf[5] << 8) | ((UINT)buf[6] << 16) | ((UINT)buf[7] << 24);
+	UINT end = MS_SMBIOS_HEADER_SIZE + MIN(table_size, size - MS_SMBIOS_HEADER_SIZE);
 
 	names[0] = 0;
-	pos = MS_SMBIOS_HEADER_SIZE;
+	UINT pos = MS_SMBIOS_HEADER_SIZE;
 
 	while (pos + 4 <= end)
 	{
@@ -190,7 +183,7 @@ static bool MsIsVmFirmware()
 
 	Free(buf);
 
-	for (i = 0; i < sizeof(vm_names) / sizeof(vm_names[0]); i++)
+	for (UINT i = 0; i < sizeof(vm_names) / sizeof(vm_names[0]); i++)
 	{
 		if (InStrEx(names, vm_names[i], false))
 		{
@@ -247,7 +240,6 @@ static wchar_t ms_computer_name_full_cache[MAX_SIZE] = {0};
 
 void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache)
 {
-	DWORD size2;
 	if (name == NULL || size < sizeof(wchar_t))
 	{
 		return;
@@ -256,7 +248,7 @@ void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache)
 	UniStrCpy(name, size, L"");
 
 	// size counts bytes; GetComputerNameExW counts wide characters
-	size2 = size / sizeof(wchar_t);
+	DWORD size2 = size / sizeof(wchar_t);
 
 	if (with_cache)
 	{
@@ -284,13 +276,12 @@ void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache)
 
 void MsGetComputerName(char *name, UINT size)
 {
-	DWORD sz;
 	if (name == NULL)
 	{
 		return;
 	}
 
-	sz = size;
+	DWORD sz = size;
 	GetComputerName(name, &sz);
 }
 

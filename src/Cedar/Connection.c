@@ -29,7 +29,7 @@
 #define	IS_RECV_TCP_SOCK(ts)		\
 	((ts->Direction == TCP_BOTH) || ((ts->Direction == TCP_SERVER_TO_CLIENT) && (s->ServerMode == false)) || ((ts->Direction == TCP_CLIENT_TO_SERVER) && (s->ServerMode)))
 
-static void WriteSendFifo(TCPSOCK *ts, void *data, UINT size)
+static void WriteSendFifo(TCPSOCK *ts, const void *data, UINT size)
 {
 	if (ts == NULL || data == NULL)
 	{
@@ -39,7 +39,7 @@ static void WriteSendFifo(TCPSOCK *ts, void *data, UINT size)
 	WriteFifo(ts->SendFifo, data, size);
 }
 
-static void WriteRecvFifo(TCPSOCK *ts, void *data, UINT size)
+static void WriteRecvFifo(TCPSOCK *ts, const void *data, UINT size)
 {
 	if (ts == NULL || data == NULL)
 	{
@@ -51,13 +51,12 @@ static void WriteRecvFifo(TCPSOCK *ts, void *data, UINT size)
 
 void InsertReceivedBlockToQueue(CONNECTION *c, BLOCK *block)
 {
-	SESSION *s;
 	if (c == NULL || block == NULL)
 	{
 		return;
 	}
 
-	s = c->Session;
+	SESSION *s = c->Session;
 	
 	if (c->Protocol == CONNECTION_TCP)
 	{
@@ -102,15 +101,14 @@ static void ConnectionEnqueueReceivedBlock(CONNECTION *c, BLOCK *b, UINT *packet
 // Randomize the Keep-Alive interval to spread network load.
 UINT GenNextKeepAliveSpan(CONNECTION *c)
 {
-	UINT a, b;
 	if (c == NULL)
 	{
 		return INFINITE;
 	}
 
 	// Clamped to the bounds of ServerAccept: a timeout below 2 would divide by zero
-	a = MAKESURE(c->Session->Timeout, TIMEOUT_MIN, TIMEOUT_MAX);
-	b = Rand32() % (a / 2);
+	UINT a = MAKESURE(c->Session->Timeout, TIMEOUT_MIN, TIMEOUT_MAX);
+	UINT b = Rand32() % (a / 2);
 	b = MAX(b, a / 5);
 
 	return b;
@@ -118,29 +116,25 @@ UINT GenNextKeepAliveSpan(CONNECTION *c)
 
 static void SendKeepAlive(CONNECTION *c, TCPSOCK *ts)
 {
-	UINT size, num;
-	UINT size_be;
-	SESSION *s;
-	UCHAR *buf;
 	if (c == NULL || ts == NULL)
 	{
 		return;
 	}
 
-	s = c->Session;
+	SESSION *s = c->Session;
 	if (s == NULL)
 	{
 		return;
 	}
 
-	size = Rand32() % MAX_KEEPALIVE_SIZE;
-	num = KEEP_ALIVE_MAGIC;
+	UINT size = Rand32() % MAX_KEEPALIVE_SIZE;
+	UINT num = KEEP_ALIVE_MAGIC;
 
-	buf = Malloc(size);
+	UCHAR *buf = Malloc(size);
 	Rand(buf, size);
 
 	num = Endian32(num);
-	size_be = Endian32(size);
+	UINT size_be = Endian32(size);
 	WriteSendFifo(ts, &num, sizeof(UINT));
 	WriteSendFifo(ts, &size_be, sizeof(UINT));
 	WriteSendFifo(ts, buf, size);
@@ -260,7 +254,6 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 		if (ts != NULL && ts_hp != NULL)
 		{
 			TCPSOCK *tss;
-			UINT j;
 			QUEUE *q;
 
 			if (s->UdpAccel != NULL)
@@ -268,7 +261,7 @@ void ConnectionSend(CONNECTION *c, UINT64 now)
 				UdpAccelSetTick(s->UdpAccel, now);
 			}
 
-			for (j = 0;j < 2;j++)
+			for (UINT j = 0;j < 2;j++)
 			{
 				if (j == 0)
 				{
@@ -500,8 +493,7 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 			{
 				LockList(tcp->TcpSockList);
 				{
-					UINT i;
-					for (i = 0;i < LIST_NUM(tcp->TcpSockList);i++)
+					for (UINT i = 0;i < LIST_NUM(tcp->TcpSockList);i++)
 					{
 						TCPSOCK *ts = LIST_DATA(tcp->TcpSockList, i);
 						if (ts->DisconnectTick != 0 &&
@@ -520,14 +512,14 @@ void ConnectionReceive(CONNECTION *c, CANCEL *c1, CANCEL *c2)
 			// If the connection count is at the limit and all sockets share one direction, disconnect one.
 			LockList(tcp->TcpSockList);
 			{
-				UINT i, num;
+				UINT num;
 				UINT c2s, s2c;
 				c2s = s2c = 0;
 				num = LIST_NUM(tcp->TcpSockList);
 				if (num >= s->MaxConnection)
 				{
 					TCPSOCK *ts;
-					for (i = 0;i < num;i++)
+					for (UINT i = 0;i < num;i++)
 					{
 						ts = LIST_DATA(tcp->TcpSockList, i);
 						if (ts->Direction == TCP_SERVER_TO_CLIENT)
@@ -906,13 +898,12 @@ void FreeBlockQueue(QUEUE *q)
 
 BLOCK *NewBlock(void *data, UINT size, int compress)
 {
-	BLOCK *b;
 	if (data == NULL)
 	{
 		return NULL;
 	}
 
-	b = Malloc(sizeof(BLOCK));
+	BLOCK *b = Malloc(sizeof(BLOCK));
 
 	b->IsFlooding = false;
 
@@ -927,10 +918,8 @@ BLOCK *NewBlock(void *data, UINT size, int compress)
 	}
 	else if (compress == 1)
 	{
-		UINT max_size;
-
 		b->Compressed = true;
-		max_size = CalcCompress(size);
+		UINT max_size = CalcCompress(size);
 		b->Buf = Malloc(max_size);
 		b->Size = Compress(b->Buf, max_size, data, size);
 		b->SizeofData = size;
@@ -939,10 +928,8 @@ BLOCK *NewBlock(void *data, UINT size, int compress)
 	}
 	else
 	{
-		UINT max_size;
-
 		b->Compressed = false;
-		max_size = MAX_PACKET_SIZE;
+		UINT max_size = MAX_PACKET_SIZE;
 		b->Buf = Malloc(max_size);
 		b->Size = Uncompress(b->Buf, max_size, data, size);
 		b->SizeofData = size;
@@ -955,13 +942,12 @@ BLOCK *NewBlock(void *data, UINT size, int compress)
 
 TCPSOCK *NewTcpSock(SOCK *s)
 {
-	TCPSOCK *ts;
 	if (s == NULL)
 	{
 		return NULL;
 	}
 
-	ts = ZeroMalloc(sizeof(TCPSOCK));
+	TCPSOCK *ts = ZeroMalloc(sizeof(TCPSOCK));
 
 	ts->Sock = s;
 	AddRef(s->ref);
@@ -1006,14 +992,13 @@ void EndTunnelingMode(CONNECTION *c)
 void StartTunnelingMode(CONNECTION *c)
 {
 	SOCK *s;
-	TCP *tcp;
 	TCPSOCK *ts;
 	if (c == NULL)
 	{
 		return;
 	}
 
-	tcp = c->Tcp;
+	TCP *tcp = c->Tcp;
 
 	if (c->Protocol == CONNECTION_TCP)
 	{
@@ -1145,7 +1130,7 @@ FINAL:
 
 void StopAllAdditionalConnectThread(CONNECTION *c)
 {
-	UINT i, num;
+	UINT num;
 	SOCK **socks;
 	THREAD **threads;
 	if (c == NULL || c->ServerMode != false)
@@ -1160,7 +1145,7 @@ void StopAllAdditionalConnectThread(CONNECTION *c)
 		DeleteAll(c->ConnectingSocks);
 	}
 	UnlockList(c->ConnectingSocks);
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		Disconnect(socks[i]);
 		ReleaseSock(socks[i]);
@@ -1174,7 +1159,7 @@ void StopAllAdditionalConnectThread(CONNECTION *c)
 		DeleteAll(c->ConnectingThreads);
 	}
 	UnlockList(c->ConnectingThreads);
-	for (i = 0;i < num;i++)
+	for (UINT i = 0;i < num;i++)
 	{
 		WaitThread(threads[i], INFINITE);
 		ReleaseThread(threads[i]);
@@ -1216,8 +1201,7 @@ void StopConnection(CONNECTION *c, bool no_wait)
 
 void DisconnectTcpSockets(CONNECTION *c)
 {
-	UINT i, num;
-	TCP *tcp;
+	UINT num;
 	TCPSOCK **tcpsocks;
 	if (c == NULL)
 	{
@@ -1228,7 +1212,7 @@ void DisconnectTcpSockets(CONNECTION *c)
 		return;
 	}
 
-	tcp = c->Tcp;
+	TCP *tcp = c->Tcp;
 	LockList(tcp->TcpSockList);
 	{
 		tcpsocks = ToArray(tcp->TcpSockList);
@@ -1239,7 +1223,7 @@ void DisconnectTcpSockets(CONNECTION *c)
 
 	if (num != 0)
 	{
-		for (i = 0;i < num;i++)
+		for (UINT i = 0;i < num;i++)
 		{
 			TCPSOCK *ts = tcpsocks[i];
 			FreeTcpSock(ts);
@@ -1251,7 +1235,7 @@ void DisconnectTcpSockets(CONNECTION *c)
 
 static void CleanupConnection(CONNECTION *c)
 {
-	UINT i, num;
+	UINT num;
 	if (c == NULL)
 	{
 		return;
@@ -1304,7 +1288,7 @@ static void CleanupConnection(CONNECTION *c)
 		{
 			num = LIST_NUM(c->ConnectingThreads);
 			threads = ToArray(c->ConnectingThreads);
-			for (i = 0;i < num;i++)
+			for (UINT i = 0;i < num;i++)
 			{
 				ReleaseThread(threads[i]);
 			}
@@ -1321,7 +1305,7 @@ static void CleanupConnection(CONNECTION *c)
 		{
 			num = LIST_NUM(c->ConnectingSocks);
 			socks = ToArray(c->ConnectingSocks);
-			for (i = 0;i < num;i++)
+			for (UINT i = 0;i < num;i++)
 			{
 				Disconnect(socks[i]);
 				ReleaseSock(socks[i]);
@@ -1377,13 +1361,12 @@ void ReleaseConnection(CONNECTION *c)
 
 int CompareConnection(void *p1, void *p2)
 {
-	CONNECTION *c1, *c2;
 	if (p1 == NULL || p2 == NULL)
 	{
 		return 0;
 	}
-	c1 = *(CONNECTION **)p1;
-	c2 = *(CONNECTION **)p2;
+	CONNECTION *c1 = *(CONNECTION **)p1;
+	CONNECTION *c2 = *(CONNECTION **)p2;
 	if (c1 == NULL || c2 == NULL)
 	{
 		return 0;
@@ -1395,9 +1378,7 @@ int CompareConnection(void *p1, void *p2)
 // The fields both constructors set the same way: the TCP state, the three block queues and the connection counter
 static CONNECTION *NewConnectionBase(CEDAR *cedar, bool server_mode)
 {
-	CONNECTION *c;
-
-	c = ZeroMalloc(sizeof(CONNECTION));
+	CONNECTION *c = ZeroMalloc(sizeof(CONNECTION));
 	c->ConnectedTick = Tick64();
 	c->lock = NewLock();
 	c->ref = NewRef();
@@ -1419,13 +1400,12 @@ static CONNECTION *NewConnectionBase(CEDAR *cedar, bool server_mode)
 
 CONNECTION *NewServerConnection(CEDAR *cedar, SOCK *s, THREAD *t)
 {
-	CONNECTION *c;
 	if (cedar == NULL)
 	{
 		return NULL;
 	}
 
-	c = NewConnectionBase(cedar, true);
+	CONNECTION *c = NewConnectionBase(cedar, true);
 	c->Type = CONNECTION_TYPE_INIT;
 	c->FirstSock = s;
 	if (s != NULL)
@@ -1454,9 +1434,7 @@ CONNECTION *NewServerConnection(CEDAR *cedar, SOCK *s, THREAD *t)
 
 CONNECTION *NewClientConnectionEx(SESSION *s, char *client_str)
 {
-	CONNECTION *c;
-
-	c = NewConnectionBase(s->Cedar, false);
+	CONNECTION *c = NewConnectionBase(s->Cedar, false);
 	c->Status = CONNECTION_STATUS_CONNECTING;
 	c->Name = CopyStr("CLIENT_CONNECTION");
 	c->Session = s;

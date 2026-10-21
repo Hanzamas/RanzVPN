@@ -94,7 +94,7 @@ static void PktTestCheck(PKTTEST_CTX *ctx, bool ok, char *what, char *detail_fmt
 
 // Ethernet header from src_mac to dst_mac for the EtherType type, with a VLAN tag (tpid, VLAN ID
 // PKTTEST_VLAN_ID) in front of the type when tpid is not 0. Returns its size: 14, or 18 with the tag
-static UINT PktTestEthernet(UCHAR *buf, UCHAR *dst_mac, UCHAR *src_mac, USHORT tpid, USHORT type)
+static UINT PktTestEthernet(UCHAR *buf, const UCHAR *dst_mac, const UCHAR *src_mac, USHORT tpid, USHORT type)
 {
 	UINT size = 12;
 
@@ -118,23 +118,19 @@ static UINT PktTestEthernet(UCHAR *buf, UCHAR *dst_mac, UCHAR *src_mac, USHORT t
 // Ethernet frame from src_mac to dst_mac (tagged as PktTestEthernet does) with an IPv4 UDP datagram
 // from src:sport to dst:dport that carries the payload, with a valid IPv4 checksum and UDP checksum 0
 // (none), in a heap block of exactly its size (*size)
-static UCHAR *PktTestUdpFrame(UCHAR *dst_mac, UCHAR *src_mac, USHORT tpid, UCHAR *src, UCHAR *dst,
-	USHORT sport, USHORT dport, void *payload, UINT payload_size, UINT *size)
+static UCHAR *PktTestUdpFrame(const UCHAR *dst_mac, const UCHAR *src_mac, USHORT tpid, const UCHAR *src, const UCHAR *dst,
+	USHORT sport, USHORT dport, const void *payload, UINT payload_size, UINT *size)
 {
 	UCHAR l2[18];
 	UINT l2_size = PktTestEthernet(l2, dst_mac, src_mac, tpid, MAC_PROTO_IPV4);
 	UINT udp_size = 8 + payload_size;
 	UINT ip_size = 20 + udp_size;
-	UCHAR *buf;
-	UCHAR *ip;
-	UCHAR *udp;
-	USHORT sum;
 
 	*size = l2_size + ip_size;
-	buf = ZeroMalloc(*size);
+	UCHAR *buf = ZeroMalloc(*size);
 	Copy(buf, l2, l2_size);
-	ip = buf + l2_size;
-	udp = ip + 20;
+	UCHAR *ip = buf + l2_size;
+	UCHAR *udp = ip + 20;
 
 	ip[0] = 0x45;								// Version 4, 20-byte header
 	ip[2] = (UCHAR)(ip_size >> 8);
@@ -143,7 +139,7 @@ static UCHAR *PktTestUdpFrame(UCHAR *dst_mac, UCHAR *src_mac, USHORT tpid, UCHAR
 	ip[9] = IP_PROTO_UDP;
 	Copy(ip + 12, src, 4);
 	Copy(ip + 16, dst, 4);
-	sum = IpChecksum(ip, 20);
+	USHORT sum = IpChecksum(ip, 20);
 	Copy(ip + 10, &sum, sizeof(USHORT));
 
 	udp[0] = (UCHAR)(sport >> 8);
@@ -166,12 +162,11 @@ static UCHAR PktTestLabelChar(UINT i)
 // DNS query message (RFC 1035 4.1) with the first flag byte flag1 and one question for type A, class
 // IN. Its name is num_labels labels, each a length byte from labels[] and that many letters, then the
 // root label. A length above 63 is written as it is
-static BUF *PktTestDnsQuery(UCHAR flag1, UINT *labels, UINT num_labels)
+static BUF *PktTestDnsQuery(UCHAR flag1, const UINT *labels, UINT num_labels)
 {
 	BUF *b = NewBuf();
 	UCHAR header[12];
 	UCHAR tail[5] = {0x00, 0x00, 0x01, 0x00, 0x01};	// Root label, type A, class IN
-	UINT i, j;
 
 	Zero(header, sizeof(header));
 	header[0] = 0x52;								// Transaction ID
@@ -180,13 +175,13 @@ static BUF *PktTestDnsQuery(UCHAR flag1, UINT *labels, UINT num_labels)
 	header[5] = 1;									// One question
 	WriteBuf(b, header, sizeof(header));
 
-	for (i = 0; i < num_labels; i++)
+	for (UINT i = 0; i < num_labels; i++)
 	{
 		UCHAR len = (UCHAR)labels[i];
 
 		WriteBuf(b, &len, 1);
 
-		for (j = 0; j < labels[i]; j++)
+		for (UINT j = 0; j < labels[i]; j++)
 		{
 			UCHAR c = PktTestLabelChar(j);
 
@@ -200,20 +195,18 @@ static BUF *PktTestDnsQuery(UCHAR flag1, UINT *labels, UINT num_labels)
 }
 
 // Name of the labels of PktTestDnsQuery as ParseDnsQuery gives it: the labels joined with dots
-static void PktTestDnsName(char *name, UINT name_size, UINT *labels, UINT num_labels)
+static void PktTestDnsName(char *name, UINT name_size, const UINT *labels, UINT num_labels)
 {
-	UINT i, j;
-
 	StrCpy(name, name_size, "");
 
-	for (i = 0; i < num_labels; i++)
+	for (UINT i = 0; i < num_labels; i++)
 	{
 		if (i != 0)
 		{
 			StrCat(name, name_size, ".");
 		}
 
-		for (j = 0; j < labels[i]; j++)
+		for (UINT j = 0; j < labels[i]; j++)
 		{
 			char c[2];
 
@@ -227,7 +220,7 @@ static void PktTestDnsName(char *name, UINT name_size, UINT *labels, UINT num_la
 // One DNS case: the query of PktTestDnsQuery from the client to port 53, through ParsePacket. With
 // parsed true the frame must give a DNS query (L7_DNS) with the name of the labels, as far as
 // PKT.DnsQueryHost holds it; with parsed false it must give none
-static void PktTestDnsCase(PKTTEST_CTX *ctx, char *what, UCHAR flag1, UINT *labels, UINT num_labels, bool parsed)
+static void PktTestDnsCase(PKTTEST_CTX *ctx, char *what, UCHAR flag1, const UINT *labels, UINT num_labels, bool parsed)
 {
 	UCHAR client[4] = {10, 0, 0, 1};
 	UCHAR server[4] = {10, 0, 0, 53};
@@ -306,7 +299,7 @@ static void PktTestDns(PKTTEST_CTX *ctx)
 }
 
 // The option of the list with the id, as GetDhcpOption finds it, holds exactly expect (expect_size bytes)
-static bool PktTestHasOption(LIST *o, UINT id, void *expect, UINT expect_size)
+static bool PktTestHasOption(LIST *o, UINT id, const void *expect, UINT expect_size)
 {
 	DHCP_OPTION *opt = GetDhcpOption(o, id);
 
@@ -315,8 +308,8 @@ static bool PktTestHasOption(LIST *o, UINT id, void *expect, UINT expect_size)
 
 // One ParseDhcpOptions case on the options, in a heap block of exactly options_size bytes: the list
 // must hold expect_num options, the option expect_id among them with the bytes expect (expect_size)
-static void PktTestOptionsCase(PKTTEST_CTX *ctx, char *what, UCHAR *options, UINT options_size,
-	UINT expect_num, UINT expect_id, void *expect, UINT expect_size)
+static void PktTestOptionsCase(PKTTEST_CTX *ctx, char *what, const UCHAR *options, UINT options_size,
+	UINT expect_num, UINT expect_id, const void *expect, UINT expect_size)
 {
 	UCHAR *data = Clone(options, options_size);
 	LIST *o = ParseDhcpOptions(data, options_size);
@@ -380,7 +373,7 @@ static void PktTestDhcpOptions(PKTTEST_CTX *ctx)
 
 // DHCP payload of a BOOTREQUEST of the client in a zeroed heap block of PKTTEST_DHCP_SIZE bytes: the
 // fixed header, the magic cookie at PKTTEST_COOKIE_OFFSET and the options (if any) behind it
-static UCHAR *PktTestDhcpRequest(UCHAR *options, UINT options_size)
+static UCHAR *PktTestDhcpRequest(const UCHAR *options, UINT options_size)
 {
 	UCHAR *p = ZeroMalloc(PKTTEST_DHCP_SIZE);
 
@@ -404,7 +397,7 @@ static UCHAR *PktTestDhcpRequest(UCHAR *options, UINT options_size)
 
 // Frame of the DHCP payload (PKTTEST_DHCP_SIZE bytes) from the client 0.0.0.0:68 to
 // 255.255.255.255:67, tagged as PktTestEthernet does, in a heap block of exactly its size (*size)
-static UCHAR *PktTestDhcpFrame(USHORT tpid, UCHAR *payload, UINT *size)
+static UCHAR *PktTestDhcpFrame(USHORT tpid, const UCHAR *payload, UINT *size)
 {
 	UCHAR src[4] = {0, 0, 0, 0};
 	UCHAR dst[4] = {255, 255, 255, 255};
@@ -415,7 +408,7 @@ static UCHAR *PktTestDhcpFrame(USHORT tpid, UCHAR *payload, UINT *size)
 
 // One DhcpOpCode case: ParsePacket on the frame of the payload must give a DHCP packet with the
 // message type expect (0: none)
-static void PktTestOpCodeCase(PKTTEST_CTX *ctx, char *what, UCHAR *payload, UINT expect)
+static void PktTestOpCodeCase(PKTTEST_CTX *ctx, char *what, const UCHAR *payload, UINT expect)
 {
 	UINT size;
 	UCHAR *f = PktTestDhcpFrame(0, payload, &size);
@@ -436,9 +429,8 @@ static void PktTestOpCode(PKTTEST_CTX *ctx)
 	UCHAR discover[] = {53, 1, 1, 255};
 	UCHAR request[] = {53, 1, 3, 255};
 	UCHAR pad_first[] = {0, 53, 1, 1, 255};
-	UCHAR *p;
 
-	p = PktTestDhcpRequest(discover, sizeof(discover));
+	UCHAR *p = PktTestDhcpRequest(discover, sizeof(discover));
 	PktTestOpCodeCase(ctx, "ParsePacket gives the message type of a well-formed DISCOVER", p, DHCP_DISCOVER);
 
 	// Cookie bytes and the options of a REQUEST planted in sname: only the cookie at offset 236 counts
@@ -500,13 +492,11 @@ static UCHAR *PktTestArpFrame(USHORT tpid, UINT *size)
 {
 	UCHAR l2[18];
 	UINT l2_size = PktTestEthernet(l2, pkttest_mac_broadcast, pkttest_mac_client, tpid, MAC_PROTO_ARPV4);
-	UCHAR *buf;
-	UCHAR *arp;
 
 	*size = l2_size + 28;
-	buf = ZeroMalloc(*size);
+	UCHAR *buf = ZeroMalloc(*size);
 	Copy(buf, l2, l2_size);
-	arp = buf + l2_size;
+	UCHAR *arp = buf + l2_size;
 
 	arp[1] = 1;									// Hardware type: Ethernet
 	arp[2] = 0x08;								// Protocol type: IPv4
@@ -548,13 +538,12 @@ static void PktTestTpidParse(PKTTEST_CTX *ctx)
 {
 	UCHAR discover[] = {53, 1, 1, 255};
 	UCHAR *payload = PktTestDhcpRequest(discover, sizeof(discover));
-	UCHAR *dhcp_8021ad, *dhcp_8021q, *dhcp_untagged, *arp_8021ad;
 	UINT dhcp_8021ad_size, dhcp_8021q_size, dhcp_untagged_size, arp_8021ad_size;
 
-	dhcp_8021ad = PktTestDhcpFrame(PKTTEST_TPID_8021AD, payload, &dhcp_8021ad_size);
-	dhcp_8021q = PktTestDhcpFrame(MAC_PROTO_TAGVLAN, payload, &dhcp_8021q_size);
-	dhcp_untagged = PktTestDhcpFrame(0, payload, &dhcp_untagged_size);
-	arp_8021ad = PktTestArpFrame(PKTTEST_TPID_8021AD, &arp_8021ad_size);
+	UCHAR *dhcp_8021ad = PktTestDhcpFrame(PKTTEST_TPID_8021AD, payload, &dhcp_8021ad_size);
+	UCHAR *dhcp_8021q = PktTestDhcpFrame(MAC_PROTO_TAGVLAN, payload, &dhcp_8021q_size);
+	UCHAR *dhcp_untagged = PktTestDhcpFrame(0, payload, &dhcp_untagged_size);
+	UCHAR *arp_8021ad = PktTestArpFrame(PKTTEST_TPID_8021AD, &arp_8021ad_size);
 
 	PktTestTpidCase(ctx, "TPID 0x88A8: a 0x88A8-tagged DHCP DISCOVER is IPv4, UDP and DHCP with its VLAN ID (the old parser left it at L3_UNKNOWN)",
 		dhcp_8021ad, dhcp_8021ad_size, PKTTEST_TPID_8021AD, L3_IPV4, PKTTEST_VLAN_ID);
@@ -585,12 +574,10 @@ static void PktTestIdleThread(THREAD *thread, void *param)
 // policy, made like the sessions of the storepacket test
 static SESSION *PktTestNewSession(PKTTEST_HUB *h, char *username)
 {
-	CONNECTION *c;
-	SESSION *s;
 	POLICY *policy = ClonePolicy(GetDefaultPolicy());
 
-	c = NewServerConnection(h->Cedar, NULL, h->Thread);
-	s = NewServerSession(h->Cedar, c, h->Hub, username, policy);
+	CONNECTION *c = NewServerConnection(h->Cedar, NULL, h->Thread);
+	SESSION *s = NewServerSession(h->Cedar, c, h->Hub, username, policy);
 	c->Session = s;
 	ReleaseConnection(c);
 
@@ -612,7 +599,7 @@ static void PktTestFreeSession(SESSION *s)
 // One hub case: the sender stores a broadcast IPv4 UDP frame from 10.5.0.1 to dst, tagged with tpid
 // (VLAN ID PKTTEST_VLAN_ID), into the hub. With pass true the receiver must get it once and
 // unchanged, with pass false not at all
-static void PktTestHubCase(PKTTEST_CTX *ctx, PKTTEST_HUB *h, char *what, USHORT tpid, UCHAR *dst, bool pass)
+static void PktTestHubCase(PKTTEST_CTX *ctx, const PKTTEST_HUB *h, char *what, USHORT tpid, const UCHAR *dst, bool pass)
 {
 	UCHAR src[4] = {10, 5, 0, 1};
 	UCHAR data[8] = {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7};
@@ -740,7 +727,6 @@ void icmpv6ns_test(UINT num, char **arg)
 	PKTTEST_CTX ctx;
 	IPV6_ADDR src;
 	IPV6_ADDR target;
-	BUF *b;
 
 	Zero(&ctx, sizeof(ctx));
 
@@ -758,7 +744,7 @@ void icmpv6ns_test(UINT num, char **arg)
 	target.Value[3] = 0xB8;
 	target.Value[15] = 0x07;
 
-	b = BuildNeighborSolicitation(&src, &target, pkttest_mac_server);
+	BUF *b = BuildNeighborSolicitation(&src, &target, pkttest_mac_server);
 
 	PktTestCheck(&ctx, b != NULL && b->Size == sizeof(pkttest_ns_golden),
 		"BuildNeighborSolicitation gives the 72 bytes of the packet", "size %u", (b == NULL) ? 0 : b->Size);

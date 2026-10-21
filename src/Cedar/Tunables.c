@@ -55,9 +55,7 @@ UINT TunablesGet(UINT id)
 // f == NULL resets every tunable to its default
 void TunablesLoad(FOLDER *f)
 {
-	UINT i;
-
-	for (i = 0;i < NUM_TUNABLES;i++)
+	for (UINT i = 0;i < NUM_TUNABLES;i++)
 	{
 		vpn_global_parameters[tunables[i].Id] = CfgGetInt(f, tunables[i].Key);
 	}
@@ -67,14 +65,12 @@ void TunablesLoad(FOLDER *f)
 
 void TunablesSave(FOLDER *f)
 {
-	UINT i;
-
 	if (f == NULL)
 	{
 		return;
 	}
 
-	for (i = 0;i < NUM_TUNABLES;i++)
+	for (UINT i = 0;i < NUM_TUNABLES;i++)
 	{
 		CfgAddInt(f, tunables[i].Key, TunablesGet(tunables[i].Id));
 	}
