@@ -667,7 +667,8 @@ class Module:
                 continue
             out.append(t)
             i += 1
-        if int_included:
+        if int_included and self.int_name not in kept:
+            # the god file's preamble may include the internal header already (an earlier run made it)
             out.append(f'#include "{self.int_name}"')
             kept.append(self.int_name)
         lines = []
