@@ -6,6 +6,7 @@
 #include "Cfg.h"
 #include "Memory.h"
 #include "Str.h"
+#include "TcpIpInternal.h"
 
 bool AdjustTcpMssL2(UCHAR *src, UINT src_size, UINT mss, USHORT tag_vlan_tpid)
 {

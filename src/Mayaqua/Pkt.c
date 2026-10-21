@@ -6,6 +6,7 @@
 #include "Cfg.h"
 #include "Memory.h"
 #include "Str.h"
+#include "TcpIpInternal.h"
 
 // Offset of the DHCP magic cookie (RFC 2131): the fixed header, then sname (64 bytes) and file
 // (128 bytes). The options follow the cookie.

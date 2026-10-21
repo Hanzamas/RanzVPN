@@ -4,6 +4,7 @@
 #include "TcpIp.h"
 
 #include "Memory.h"
+#include "TcpIpInternal.h"
 
 // Adds v to a 64-bit one's complement sum: the carry out of the top is added back at the bottom
 // (RFC 1071), so the sum stays congruent to the total modulo 2^64-1 and so modulo 0xFFFF

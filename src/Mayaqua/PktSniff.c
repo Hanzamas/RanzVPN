@@ -6,6 +6,7 @@
 #include "Cfg.h"
 #include "Memory.h"
 #include "Str.h"
+#include "TcpIpInternal.h"
 
 HTTPLOG *ParseHttpsAccessLog(PKT *pkt)
 {

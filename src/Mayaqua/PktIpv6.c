@@ -5,6 +5,7 @@
 
 #include "Cfg.h"
 #include "Memory.h"
+#include "TcpIpInternal.h"
 
 // Builds the IPv6 packet of a Neighbor Solicitation (RFC 4861 4.3) from src_ip to target_ip, sent to
 // the unicast address of the target: IPv6 header, ICMPv6 header, the target address and the source

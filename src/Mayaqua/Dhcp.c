@@ -5,6 +5,7 @@
 
 #include "Cfg.h"
 #include "Memory.h"
+#include "TcpIpInternal.h"
 
 bool IsDhcpPacketForSpecificMac(UCHAR *data, UINT size, UCHAR *mac_address)
 {
