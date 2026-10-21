@@ -2553,8 +2553,6 @@ void SiLoadServerCfg(SERVER *s, FOLDER *f)
 
 		s->NoHighPriorityProcess = CfgGetBool(f, "NoHighPriorityProcess");
 
-		s->NoDebugDump = CfgGetBool(f, "NoDebugDump");
-
 		s->SaveDebugLog = CfgGetBool(f, "SaveDebugLog");
 		if (s->SaveDebugLog)
 		{
@@ -2738,8 +2736,6 @@ void SiWriteServerCfg(FOLDER *f, SERVER *s)
 
 
 		CfgAddBool(f, "NoHighPriorityProcess", s->NoHighPriorityProcess);
-
-		CfgAddBool(f, "NoDebugDump", s->NoDebugDump);
 
 		CfgAddBool(f, "SaveDebugLog", s->SaveDebugLog);
 

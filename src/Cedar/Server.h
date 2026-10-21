@@ -67,7 +67,6 @@ struct SERVER
 	bool SaveDebugLog;
 	bool NoSendSignature;
 	bool NoHighPriorityProcess;
-	bool NoDebugDump;
 	bool NoMoreSave;
 
 	volatile bool Halt;
