@@ -10,6 +10,10 @@
 // - A u-coordinate with bit 255 set, or not below 2^255 - 19, is refused, where the RFC asks to
 //   mask the bit and reduce the value; a u of zero is refused at import, a point of low order at
 //   the secret agreement.
+// - Windows 11 24H2 and Server 2025 (build 26100) also refuse, at import, a public key outside the
+//   prime-order subgroup, such as the u of the first RFC 7748 5.2 vector. X25519 takes any u: the
+//   clamped scalar is a multiple of the cofactor 8, which removes the small-order part. So a peer
+//   key is imported with BCRYPT_NO_KEY_VALIDATION; a point of low order still gives no secret.
 // - BCRYPT_KDF_RAW_SECRET returns the shared secret byte-reversed (big-endian).
 // The NCrypt key storage provider behaves the same; it also needs the curve name to import a
 // curve25519 blob (NCRYPTBUFFER_ECC_CURVE_NAME).
@@ -155,7 +159,7 @@ bool CryptoX25519(UCHAR *shared, const UCHAR *priv, const UCHAR *peer_pub) {
 	BCRYPT_KEY_HANDLE key = CryptoX25519ImportPrivate(priv);
 	if (key != NULL) {
 		CryptoX25519PublicBlob(blob, peer_pub);
-		if (CNG_SUCCESS(BCryptImportKeyPair(crypto_x25519, NULL, BCRYPT_ECCPUBLIC_BLOB, &peer, blob, sizeof(blob), 0))) {
+		if (CNG_SUCCESS(BCryptImportKeyPair(crypto_x25519, NULL, BCRYPT_ECCPUBLIC_BLOB, &peer, blob, sizeof(blob), BCRYPT_NO_KEY_VALIDATION))) {
 			if (CNG_SUCCESS(BCryptSecretAgreement(key, peer, &secret, 0))) {
 				if (CNG_SUCCESS(BCryptDeriveKey(secret, BCRYPT_KDF_RAW_SECRET, NULL, raw, sizeof(raw), &size, 0)) && size == sizeof(raw))
 					ok = CryptoX25519FromRawSecret(shared, raw);
@@ -322,7 +326,8 @@ bool CryptoIdentityDh(CRYPTO_IDENTITY *id, UCHAR *shared, const UCHAR *peer_pub)
 		return false;
 	}
 
-	// The peer key is an ephemeral key of the same provider, as NCryptSecretAgreement requires
+	// The peer key is an ephemeral key of the same provider, as NCryptSecretAgreement requires,
+	// imported without the subgroup check, as in CryptoX25519()
 	param.cbBuffer = sizeof(BCRYPT_ECC_CURVE_25519);
 	param.BufferType = NCRYPTBUFFER_ECC_CURVE_NAME;
 	param.pvBuffer = (PVOID)BCRYPT_ECC_CURVE_25519;
@@ -331,7 +336,7 @@ bool CryptoIdentityDh(CRYPTO_IDENTITY *id, UCHAR *shared, const UCHAR *peer_pub)
 	params.pBuffers = &param;
 
 	CryptoX25519PublicBlob(blob, peer_pub);
-	if (NCryptImportKey(id->Provider, 0, BCRYPT_ECCPUBLIC_BLOB, &params, &peer, blob, sizeof(blob), NCRYPT_SILENT_FLAG) == ERROR_SUCCESS) {
+	if (NCryptImportKey(id->Provider, 0, BCRYPT_ECCPUBLIC_BLOB, &params, &peer, blob, sizeof(blob), NCRYPT_NO_KEY_VALIDATION | NCRYPT_SILENT_FLAG) == ERROR_SUCCESS) {
 		if (NCryptSecretAgreement(id->Key, peer, &secret, NCRYPT_SILENT_FLAG) == ERROR_SUCCESS) {
 			if (NCryptDeriveKey(secret, BCRYPT_KDF_RAW_SECRET, NULL, raw, sizeof(raw), &size, 0) == ERROR_SUCCESS && size == sizeof(raw))
 				ok = CryptoX25519FromRawSecret(shared, raw);

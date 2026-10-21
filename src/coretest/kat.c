@@ -6,6 +6,8 @@
 
 #include <string.h>
 
+#include <bcrypt.h>
+
 // The system random generator: no known answer exists, so sizes, distinct outputs and the share
 // of zero bytes (1/256: 4096 of 1 MiB, standard deviation 64; the bounds are about 9 of them)
 void rand_test() {
@@ -250,6 +252,56 @@ void aesgcm_test() {
 	coretest_check(CryptoAeadInit(&a, key, 24) == false && a.Key == NULL && CryptoAeadInit(&a, NULL, 16) == false, "a 192-bit or missing key is refused");
 }
 
+// What CNG answers at each step of one X25519 agreement, printed when a known answer fails, so
+// that the job log shows which step refused it: the private import, the public import with and
+// without key validation, the agreement and the raw secret
+static void x25519_diagnose(const UCHAR *k, const UCHAR *u) {
+	BCRYPT_ALG_HANDLE alg = NULL;
+	UCHAR priv_blob[sizeof(BCRYPT_ECCKEY_BLOB) + 3 * CRYPTO_X25519_SIZE];
+	UCHAR pub_blob[sizeof(BCRYPT_ECCKEY_BLOB) + 2 * CRYPTO_X25519_SIZE];
+	UCHAR raw[CRYPTO_X25519_SIZE];
+	BCRYPT_ECCKEY_BLOB *head;
+
+	if (BCryptOpenAlgorithmProvider(&alg, BCRYPT_ECDH_ALGORITHM, NULL, 0) < 0)
+		return;
+	BCryptSetProperty(alg, BCRYPT_ECC_CURVE_NAME, (PUCHAR)BCRYPT_ECC_CURVE_25519, sizeof(BCRYPT_ECC_CURVE_25519), 0);
+
+	ZeroMemory(priv_blob, sizeof(priv_blob));
+	head = (BCRYPT_ECCKEY_BLOB *)priv_blob;
+	head->dwMagic = BCRYPT_ECDH_PRIVATE_GENERIC_MAGIC;
+	head->cbKey = CRYPTO_X25519_SIZE;
+	CopyMemory(priv_blob + sizeof(BCRYPT_ECCKEY_BLOB) + 2 * CRYPTO_X25519_SIZE, k, CRYPTO_X25519_SIZE);
+	priv_blob[sizeof(priv_blob) - CRYPTO_X25519_SIZE] &= 248;
+	priv_blob[sizeof(priv_blob) - 1] = (UCHAR)((priv_blob[sizeof(priv_blob) - 1] & 127) | 64);
+
+	ZeroMemory(pub_blob, sizeof(pub_blob));
+	head = (BCRYPT_ECCKEY_BLOB *)pub_blob;
+	head->dwMagic = BCRYPT_ECDH_PUBLIC_GENERIC_MAGIC;
+	head->cbKey = CRYPTO_X25519_SIZE;
+	CopyMemory(pub_blob + sizeof(BCRYPT_ECCKEY_BLOB), u, CRYPTO_X25519_SIZE);
+	pub_blob[sizeof(BCRYPT_ECCKEY_BLOB) + CRYPTO_X25519_SIZE - 1] &= 0x7F;
+
+	for (ULONG flags = 0; flags <= BCRYPT_NO_KEY_VALIDATION; flags += BCRYPT_NO_KEY_VALIDATION) {
+		BCRYPT_KEY_HANDLE key = NULL, peer = NULL;
+		BCRYPT_SECRET_HANDLE secret = NULL;
+		ULONG size = 0;
+		NTSTATUS r1 = BCryptImportKeyPair(alg, NULL, BCRYPT_ECCPRIVATE_BLOB, &key, priv_blob, sizeof(priv_blob), 0);
+		NTSTATUS r2 = BCryptImportKeyPair(alg, NULL, BCRYPT_ECCPUBLIC_BLOB, &peer, pub_blob, sizeof(pub_blob), flags);
+		NTSTATUS r3 = (r1 >= 0 && r2 >= 0) ? BCryptSecretAgreement(key, peer, &secret, 0) : -1;
+		NTSTATUS r4 = r3 >= 0 ? BCryptDeriveKey(secret, BCRYPT_KDF_RAW_SECRET, NULL, raw, sizeof(raw), &size, 0) : -1;
+		coretest_info("CNG, public import flags 0x%lX: private import 0x%08lX, public import 0x%08lX, agreement 0x%08lX, raw secret 0x%08lX",
+		              (unsigned long)flags, (unsigned long)r1, (unsigned long)r2, (unsigned long)r3, (unsigned long)r4);
+		if (secret != NULL)
+			BCryptDestroySecret(secret);
+		if (peer != NULL)
+			BCryptDestroyKey(peer);
+		if (key != NULL)
+			BCryptDestroyKey(key);
+	}
+
+	BCryptCloseAlgorithmProvider(alg, 0);
+}
+
 // One X25519 known answer
 static void x25519_case(const char *what, const char *k_hex, const char *u_hex, const char *expect_hex) {
 	UCHAR k[CRYPTO_X25519_SIZE], u[CRYPTO_X25519_SIZE], out[CRYPTO_X25519_SIZE];
@@ -258,6 +310,8 @@ static void x25519_case(const char *what, const char *k_hex, const char *u_hex, 
 	coretest_unhex(u, sizeof(u), u_hex);
 	if (coretest_check(CryptoX25519(out, k, u), what))
 		coretest_check_hex(out, sizeof(out), expect_hex, what);
+	else
+		x25519_diagnose(k, u);
 }
 
 // RFC 7748: section 5.2 (the first vector, whose scalar is not clamped, and the iterated test
@@ -368,6 +422,15 @@ void identity_test() {
 		coretest_check_hex(pub, sizeof(pub), alice_pub, "public key of the opened key");
 		coretest_check(CryptoIdentityDelete(&id) && id.Key == 0 && id.Provider == 0, "deleted");
 		coretest_check(CryptoIdentityOpen(&id, name, scope) == false && id.Key == 0, "gone after the delete");
+	}
+	// RFC 7748 5.2, first vector: a scalar that is not clamped, and a u outside the prime-order subgroup
+	coretest_unhex(priv, sizeof(priv), "a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4");
+	coretest_unhex(peer, sizeof(peer), "e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c");
+	if (coretest_check(CryptoIdentityImport(&id, name, priv, scope), "the first RFC 7748 5.2 scalar stored")) {
+		coretest_check(CryptoIdentityDh(&id, s1, peer), "secret agreement in the provider with a u outside the subgroup");
+		coretest_check_hex(s1, sizeof(s1), "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552",
+		                   "RFC 7748 5.2 first vector through the key storage provider");
+		coretest_check(CryptoIdentityDelete(&id), "deleted");
 	}
 	SecureZeroMemory(priv, sizeof(priv));
 
