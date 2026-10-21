@@ -1273,7 +1273,7 @@ bool DumpBufWIfNecessary(BUF *b, wchar_t *filename) {
 		return DumpBufW(b, filename);
 }
 
-bool BufToFile(const IO *o, BUF *b) {
+bool BufToFile(IO *o, BUF *b) {
 	UCHAR hash[MD5_SIZE];
 
 	if (o == NULL || b == NULL)
