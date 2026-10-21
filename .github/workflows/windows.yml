@@ -186,13 +186,14 @@ jobs:
     # The new core links no OpenSSL and no liboqs (ADR-0022, CORE-F1 #61): the linker map of
     # coretest, which links the crypto module and the system libraries only, names no object,
     # library or symbol of either. src/CMakeLists.txt checks the same at configure time
-    # (ranz_core_check_links).
+    # (ranz_core_check_links). String literals (the ??_C@ symbols) are left out: their names carry
+    # the text, and coretest's messages mention the OpenSSL 3 PFX it imports.
     - name: Core links no OpenSSL or liboqs
       shell: pwsh
       run: |
         $map = Get-Content -Raw -LiteralPath build/coretest.map
         if ($map -notmatch 'corecrypto') { throw 'build/coretest.map names no corecrypto object: not the map of the crypto module' }
-        $hits = @([regex]::Matches($map, '(?im)^.*(openssl|libcrypto|libssl|liboqs|oqsprovider|\bOQS_|\bEVP_|\bOSSL_|\bSSL_CTX_|\bX509_new\b).*$') | ForEach-Object { $_.Value.Trim() })
+        $hits = @([regex]::Matches($map, '(?im)^.*(openssl|libcrypto|libssl|liboqs|oqsprovider|\bOQS_|\bEVP_|\bOSSL_|\bSSL_CTX_|\bX509_new\b).*$') | ForEach-Object { $_.Value.Trim() } | Where-Object { $_ -notmatch '\?\?_C@' })
         $hits | Select-Object -First 20 | ForEach-Object { Write-Host $_ }
         if ($hits.Count -gt 0) { throw "coretest links OpenSSL or liboqs: $($hits.Count) lines of build/coretest.map" }
         Write-Host "build/coretest.map (${{ matrix.platform.ARCHITECTURE }}): corecrypto linked, no OpenSSL or liboqs object, library or symbol"
