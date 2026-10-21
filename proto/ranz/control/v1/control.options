@@ -14,5 +14,12 @@ ranz.control.v1.Peer.vrf_ids max_count:16
 ranz.control.v1.Prefix.address max_size:16
 ranz.control.v1.ObjectKey.name max_size:64
 ranz.control.v1.Refuse.message max_size:256
+ranz.control.v1.Refuse.leader max_size:256
 ranz.control.v1.Update.set max_count:64
 ranz.control.v1.Update.remove max_count:64
+# A cluster has 3 or 5 members (ADR-0026); an address is host:port of at most 255 characters
+# (controller/internal/intent).
+ranz.control.v1.Controllers.controllers max_count:8
+ranz.control.v1.Controller.name max_size:64
+ranz.control.v1.Controller.address max_size:256
+ranz.control.v1.Controller.public_key max_size:32

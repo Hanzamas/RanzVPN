@@ -2,9 +2,9 @@
 // The C side of the control protocol schema (SDN-2, #178)
 //
 // Every control message that the controller conformance tests sent or received
-// (controller/internal/controller, written with RANZ_CONTROL_WIRE) is decoded with the code that
-// nanopb generates from proto/ranz/control/v1/control.proto and control.options, then encoded
-// again. The bytes must come out the same, so the C node and the controller agree on every field
+// (controller/internal/controller and the cluster tests of controller/cmd/ranz-controller, written
+// with RANZ_CONTROL_WIRE) is decoded with the code that nanopb generates from
+// proto/ranz/control/v1/control.proto and control.options, then encoded again. The bytes must come out the same, so the C node and the controller agree on every field
 // of the messages the controller sends and of the ones a node sends.
 //
 // Usage: nanopb_roundtrip FILE...   (exit status 0 when every file round trips)
@@ -34,6 +34,8 @@ static const char *body_name(pb_size_t which) {
 		return "Ack";
 	case ranz_control_v1_ControlMessage_refuse_tag:
 		return "Refuse";
+	case ranz_control_v1_ControlMessage_controllers_tag:
+		return "Controllers";
 	default:
 		return "nothing";
 	}
@@ -85,7 +87,11 @@ static int roundtrip(const char *path) {
 		printf("%s: Ack generation %llu\n", path, (unsigned long long)msg.body.ack.generation);
 		break;
 	case ranz_control_v1_ControlMessage_refuse_tag:
-		printf("%s: Refuse %d \"%s\"\n", path, (int)msg.body.refuse.reason, msg.body.refuse.message);
+		printf("%s: Refuse %d \"%s\" leader \"%s\"\n", path, (int)msg.body.refuse.reason, msg.body.refuse.message,
+			   msg.body.refuse.leader);
+		break;
+	case ranz_control_v1_ControlMessage_controllers_tag:
+		printf("%s: Controllers, %u members\n", path, (unsigned)msg.body.controllers.controllers_count);
 		break;
 	default:
 		fprintf(stderr, "%s: a control message with no body\n", path);
