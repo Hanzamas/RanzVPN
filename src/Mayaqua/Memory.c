@@ -46,6 +46,9 @@
 
 #define	INIT_NUM_RESERVED		32
 
+#define	QUEUE_INIT_NUM_RESERVED		16		// Slots of a new queue ring (a power of two)
+#define	QUEUE_SHRINK_NUM_RESERVED	512		// A ring halves only above this, the 4096-byte block of the former queue FIFO
+
 static UINT fifo_current_realloc_mem_size = FIFO_REALLOC_MEM_SIZE;
 
 bool IsInHashListKey(HASH_LIST *h, UINT key)
@@ -571,6 +574,21 @@ void *Pop(SK *s)
 	return ret;
 }
 
+// Move the items of the ring into a new one of num_reserved slots (a power of two), the oldest item first
+static void ResizeQueue(QUEUE *q, UINT num_reserved)
+{
+	void **p = Malloc(sizeof(void *) * num_reserved);
+	UINT first = MIN(q->num_item, q->num_reserved - q->head);
+
+	Copy(p, q->p + q->head, sizeof(void *) * first);
+	Copy(p + first, q->p, sizeof(void *) * (q->num_item - first));
+
+	Free(q->p);
+	q->p = p;
+	q->head = 0;
+	q->num_reserved = num_reserved;
+}
+
 UINT GetQueueNum(QUEUE *q)
 {
 	if (q == NULL)
@@ -594,8 +612,15 @@ void *GetNext(QUEUE *q)
 		return NULL;
 	}
 
-	ReadFifo(q->fifo, &p, sizeof(void *));
+	p = q->p[q->head];
+	q->head = (q->head + 1) & (q->num_reserved - 1);
 	q->num_item--;
+
+	// A large ring gives back half its slots once a quarter or less of them is in use
+	if (q->num_reserved > QUEUE_SHRINK_NUM_RESERVED && q->num_item <= (q->num_reserved / 4))
+	{
+		ResizeQueue(q, q->num_reserved / 2);
+	}
 
 	KS_INC(KS_GETNEXT_COUNT);
 
@@ -622,7 +647,12 @@ void InsertQueue(QUEUE *q, void *p)
 		return;
 	}
 
-	WriteFifo(q->fifo, &p, sizeof(void *));
+	if (q->num_item == q->num_reserved)
+	{
+		ResizeQueue(q, q->num_reserved * 2);
+	}
+
+	q->p[(q->head + q->num_item) & (q->num_reserved - 1)] = p;
 
 	q->num_item++;
 
@@ -666,7 +696,7 @@ void CleanupQueue(QUEUE *q)
 		return;
 	}
 
-	ReleaseFifo(q->fifo);
+	Free(q->p);
 	DeleteLock(q->lock);
 	Free(q);
 
@@ -680,7 +710,8 @@ QUEUE *NewQueue()
 	q = ZeroMalloc(sizeof(QUEUE));
 	q->lock = NewLock();
 	q->num_item = 0;
-	q->fifo = NewFifo();
+	q->num_reserved = QUEUE_INIT_NUM_RESERVED;
+	q->p = Malloc(sizeof(void *) * QUEUE_INIT_NUM_RESERVED);
 
 	KS_INC(KS_NEWQUEUE_COUNT);
 
@@ -693,7 +724,8 @@ QUEUE *NewQueueFast()
 	q = ZeroMalloc(sizeof(QUEUE));
 	q->lock = NULL;
 	q->num_item = 0;
-	q->fifo = NewFifoFast();
+	q->num_reserved = QUEUE_INIT_NUM_RESERVED;
+	q->p = Malloc(sizeof(void *) * QUEUE_INIT_NUM_RESERVED);
 
 	KS_INC(KS_NEWQUEUE_COUNT);
 
@@ -1428,6 +1460,17 @@ void WriteFifo(FIFO *f, void *p, UINT size)
 	f->size += size;
 	need_size = f->pos + f->size;
 	realloc_flag = false;
+
+	// Compact before growing: when the write does not fit behind the live bytes and the bytes already read in
+	// front of them are at least as many, move the live bytes to the front. Each byte moved is paid by a byte
+	// read since the last move, and a producer and a consumer that never fully drain the FIFO keep it at its
+	// size instead of growing it x3 at each wrap until ShrinkFifoMemory steps in
+	if (need_size > f->memsize && f->pos != 0 && f->pos >= i)
+	{
+		Move(f->p, (UCHAR *)f->p + f->pos, i);
+		f->pos = 0;
+		need_size = f->size;
+	}
 
 	while (need_size > f->memsize)
 	{
