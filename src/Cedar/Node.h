@@ -22,12 +22,19 @@
 // The roles of a node without a Roles item in its configuration
 #define NODE_DEFAULT_ROLES NODE_ROLE_SERVER
 
-// The files of a node in its data directory
-#define NODE_CONFIG_FILE_NAME L"ranz_node.config"
+// The files of a node in its data directory, besides the configuration store (CS_FILE_NAME)
 #define NODE_LOG_DIR_NAME     L"node_log"
 #define NODE_LOG_PREFIX       "node"
+#define NODE_IMPORT_FILE_NAME L"ranz_server.config" // A fork configuration that NewNode imports once into an empty store
+#define NODE_IMPORTED_SUFFIX  L".imported"          // ... and then renames with this suffix
 
-// The node identity key in the software key storage provider (ADR-0022) without an IdentityKey item
+// The settings of a node in its configuration store
+#define NODE_SETTING_ROLES        "Roles"       // A list of role names; without it NODE_DEFAULT_ROLES, "none" for no role
+#define NODE_SETTING_WORKERS      "NumWorkers"  // The number of workers; without it, or 0, one per core
+#define NODE_SETTING_RELAY_PORT   "RelayPort"   // The UDP port of the relay role; without it, or 0, one that the system picks
+#define NODE_SETTING_IDENTITY_KEY "IdentityKey" // The name of the node identity key; without it NODE_IDENTITY_KEY_NAME
+
+// The node identity key in the software key storage provider (ADR-0022) without the IdentityKey setting
 #define NODE_IDENTITY_KEY_NAME "Ranz Node"
 
 #define NODE_MAX_WORKERS       256      // Workers of one node at most, whatever the number of cores
@@ -102,10 +109,10 @@ struct NODE_QUEUE {
 // data path reads the snapshot, and Lock serialises only start, stop and role changes.
 struct NODE {
 	LOCK *Lock;                   // Start, stop and role changes; never taken on the data path
-	wchar_t DataDir[MAX_PATH];    // The data directory: the configuration and the node log
+	wchar_t DataDir[MAX_PATH];    // The data directory: the configuration store and the node log
 	LOG *Log;                     // The node log (LogWriter)
 	CEDAR *Cedar;                 // The Cedar of the Hubs of the server role
-	FOLDER *Config;               // The configuration (Cfg), NULL when the file is missing or unreadable
+	CONFIG_STORE *Store;          // The configuration store (ConfigStore), NULL when it cannot be opened
 	UINT ConfigRoles;             // The roles that the configuration selects (NODE_ROLE_*)
 	UINT ConfigWorkers;           // The workers that the configuration asks for, 0 for one per core
 	bool Running;                 // Between NodeStart and NodeStop
@@ -123,7 +130,7 @@ struct NODE {
 
 	// The peers and the relay role (CORE-S5-2, #78), under Lock
 	UINT ConfigRelayPort;       // The UDP port of the relay role (RelayPort), 0 for one that the system picks
-	char IdentityKey[MAX_SIZE]; // The name of the identity key (IdentityKey), NODE_IDENTITY_KEY_NAME without the item
+	char IdentityKey[MAX_SIZE]; // The name of the identity key (IdentityKey), NODE_IDENTITY_KEY_NAME without the setting
 	PEER_INFO *Peers;           // The peers that the control plane set (NodeSetPeers)
 	UINT NumPeers;              // ... their number
 	PEER_KEY RelayKey;          // The identity key, while the relay role runs
@@ -162,6 +169,7 @@ void NodeSetPeers(NODE *n, PEER_INFO *peers, UINT num);
 UINT NodeParseRoles(char *str, char *unknown, UINT unknown_size);
 void NodeRolesToStr(char *str, UINT size, UINT roles);
 void NodeDefaultDataDir(wchar_t *dir, UINT size);
+bool NodeMakeDataDir(wchar_t *dir);
 
 // NodeWorker.c
 bool NodePost(NODE *n, UINT index, NODE_WORK_PROC *proc, void *param);

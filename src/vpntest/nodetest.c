@@ -9,24 +9,27 @@
 // sees a torn, wiped or older snapshot; a swap waits while a reader still holds the old snapshot, and the
 // other workers go on meanwhile. The Hubs of the server role are fork Hubs, whose users (Account) the fork's
 // Sam checks through NodeAuthenticate; the node writes its log through LogWriter and reads its configuration
-// through Cfg.
+// from its configuration store (ConfigStore, CORE-F5 #65).
 // The relay role (CORE-S5-2 #78) listens on a UDP port under the node identity key: two peer layers of the new
 // core (Core/Peer.h) on UDP sockets of their own bind to it, come up after one signal each way and reach each
 // other through it, and it forwards nothing once the control plane takes their peers away.
 // nodesvc: ranz-node installs as the ranzvpnserver service and, for each role of its configuration, runs it
 // and stops cleanly: the service reports no error, the process exits with code 0, and the node log holds the
-// start and the stop of that role alone. It needs administrator rights and leaves an installed node alone.
-// Both tests use the identity key NODETEST_IDENTITY_KEY, not the one of an installed node, and delete it.
+// start and the stop of that role alone. The first run starts without a configuration store: the service creates
+// it under %ProgramData%\Hanzcodes\Ranz VPN, whose DACL is protected and gives SYSTEM and the Administrators
+// alone access (CORE-F5 #65). It needs administrator rights and leaves an installed node alone.
+// Both tests run the relay role under the identity key NODETEST_IDENTITY_KEY, not the one of an installed node,
+// and delete it.
 // Print "NODE TEST OK" and "NODESVC TEST OK" only when every check passes.
 
 #include "Cedar/Account.h"
 #include "Cedar/Cedar.h"
+#include "Cedar/ConfigStore.h"
 #include "Cedar/Hub.h"
 #include "Cedar/Node.h"
 #include "Cedar/Sam.h"
 #include "Cedar/Server.h"
 
-#include "Mayaqua/Cfg.h"
 #include "Mayaqua/Encrypt.h"
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
@@ -36,6 +39,8 @@
 #include "Mayaqua/Str.h"
 #include "Mayaqua/Table.h"
 #include "Mayaqua/Tick64.h"
+
+#include <AclAPI.h>
 
 #define	NODETEST_BUDGET			300000		// The whole node test (ms): the watchdog ends a hung run
 #define	NODETEST_BOUND			10000		// A bounded wait on observable state (ms)
@@ -214,36 +219,35 @@ static void NodeTestDeleteDir(wchar_t *dir)
 	NodeTestDeleteFiles(dir, true);
 }
 
-// Write the configuration of a data directory: Roles (no item for NULL), NumWorkers (no item for 0), one hub
-// under Hubs (none for NULL), and IdentityKey, the identity key of the test nodes
+// Write the configuration store of a data directory: the Roles setting (none for NULL), the NumWorkers setting
+// (none for 0), one online L2 network (none for NULL), and the IdentityKey setting, the identity key of the test
+// nodes
 static void NodeTestWriteConfig(wchar_t *dir, char *roles, UINT num_workers, char *hub)
 {
 	wchar_t path[MAX_PATH];
-	FOLDER *root = CfgCreateFolder(NULL, TAG_ROOT);
+	char workers[MAX_SIZE];
 
-	CfgAddStr(root, "IdentityKey", NODETEST_IDENTITY_KEY);
+	ConbinePathW(path, sizeof(path), dir, CS_FILE_NAME);
+	CONFIG_STORE *s = CsOpen(path);
 
-	if (roles != NULL)
+	if (s == NULL)
 	{
-		CfgAddStr(root, "Roles", roles);
+		Print("  configuration store %S cannot be opened\n", path);
+		return;
 	}
 
-	if (num_workers != 0)
-	{
-		CfgAddInt(root, "NumWorkers", num_workers);
-	}
+	CsSetSetting(s, NODE_SETTING_IDENTITY_KEY, NODETEST_IDENTITY_KEY);
+	CsSetSetting(s, NODE_SETTING_ROLES, roles);
+
+	ToStr(workers, num_workers);
+	CsSetSetting(s, NODE_SETTING_WORKERS, num_workers != 0 ? workers : NULL);
 
 	if (hub != NULL)
 	{
-		CfgCreateFolder(CfgCreateFolder(root, "Hubs"), hub);
+		CsAddNetwork(s, hub, CS_MODE_L2, true);
 	}
 
-	BUF *b = CfgFolderToBuf(root);
-	ConbinePathW(path, sizeof(path), dir, NODE_CONFIG_FILE_NAME);
-	DumpBufW(b, path);
-	FreeBuf(b);
-
-	CfgDeleteFolder(root);
+	CsClose(s);
 }
 
 // The text of every node log file of a data directory, NULL when there is none; the caller frees it
@@ -1483,8 +1487,9 @@ static bool NodeSvcWaitGone()
 	return true;
 }
 
-// One service run with the role role alone: install (which starts the service), stop, uninstall
-static void NodeSvcRoleCase(NODETEST_CTX *ctx, wchar_t *exe, wchar_t *exe_dir, UINT role)
+// One service run with the role role alone: install (which starts the service), stop, uninstall. Without a store
+// (no_store) the service starts with the default roles and creates its configuration store.
+static void NodeSvcRoleCase(NODETEST_CTX *ctx, wchar_t *exe, wchar_t *data_dir, UINT role, bool no_store)
 {
 	wchar_t log_dir[MAX_PATH];
 	char role_name[MAX_SIZE];
@@ -1496,10 +1501,13 @@ static void NodeSvcRoleCase(NODETEST_CTX *ctx, wchar_t *exe, wchar_t *exe_dir, U
 	NodeRolesToStr(role_name, sizeof(role_name), role);
 
 	// The node log of this run only
-	ConbinePathW(log_dir, sizeof(log_dir), exe_dir, NODE_LOG_DIR_NAME);
+	ConbinePathW(log_dir, sizeof(log_dir), data_dir, NODE_LOG_DIR_NAME);
 	NodeTestDeleteFiles(log_dir, false);
 
-	NodeTestWriteConfig(exe_dir, role_name, NODETEST_ROLE_WORKERS, NULL);
+	if (no_store == false)
+	{
+		NodeTestWriteConfig(data_dir, role_name, NODETEST_ROLE_WORKERS, NULL);
+	}
 
 	NodeSvcRun(exe, "/install");
 	bool running = NodeSvcWaitState(SERVICE_RUNNING, &ss);
@@ -1525,8 +1533,8 @@ static void NodeSvcRoleCase(NODETEST_CTX *ctx, wchar_t *exe, wchar_t *exe_dir, U
 	Format(what, sizeof(what), "Role %s: /uninstall removes the service", role_name);
 	NodeTestCheck(ctx, NodeSvcWaitGone(), what, "still installed after %u ms", NODESVC_START_WAIT);
 
-	// The service wrote the node log next to the executable, its data directory
-	char *log = NodeTestReadLog(exe_dir);
+	// The service wrote the node log in its data directory
+	char *log = NodeTestReadLog(data_dir);
 	bool ok = (log != NULL);
 	char missing[MAX_SIZE];
 	StrCpy(missing, sizeof(missing), "");
@@ -1553,7 +1561,107 @@ static void NodeSvcRoleCase(NODETEST_CTX *ctx, wchar_t *exe, wchar_t *exe_dir, U
 
 	Format(what, sizeof(what), "Role %s: the node log of the service holds the start and the stop of that role alone", role_name);
 	NodeTestCheck(ctx, ok, what, "%s", log == NULL ? "no node log" : missing);
+
+	if (no_store)
+	{
+		NodeTestCheck(ctx, NodeTestLogHas(log, "Configuration store ") && NodeTestLogHas(log, "ranz_node.db opened (winsqlite3 ") &&
+			NodeTestLogHas(log, ": SYSTEM and the Administrators only"),
+			"Without a store the service creates it (winsqlite3) in its data directory, which it protects first",
+			"%s", log == NULL ? "no node log" : "a line is missing");
+	}
+
 	Free(log);
+}
+
+// Whether the DACL of path gives SYSTEM and the Administrators full control and nobody else anything; for the data
+// directory (dir) also that the DACL is protected, so nothing of ProgramData is inherited, and that no user owns it
+static bool NodeSvcAdminOnly(wchar_t *path, bool dir, char *detail, UINT detail_size)
+{
+	PSECURITY_DESCRIPTOR sd = NULL;
+	PACL dacl = NULL;
+	PSID owner = NULL;
+	SECURITY_DESCRIPTOR_CONTROL control = 0;
+	DWORD revision = 0;
+	bool system = false;
+	bool admins = false;
+	UINT others = 0;
+
+	DWORD err = GetNamedSecurityInfoW(path, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION, &owner, NULL, &dacl, NULL, &sd);
+	if (err != ERROR_SUCCESS)
+	{
+		Format(detail, detail_size, "GetNamedSecurityInfoW: error %u", (UINT)err);
+		return false;
+	}
+
+	GetSecurityDescriptorControl(sd, &control, &revision);
+
+	for (DWORD i = 0;dacl != NULL && i < dacl->AceCount;i++)
+	{
+		ACCESS_ALLOWED_ACE *ace = NULL;
+
+		if (GetAce(dacl, i, (LPVOID *)&ace) == FALSE || ace->Header.AceType != ACCESS_ALLOWED_ACE_TYPE)
+		{
+			others++;
+			continue;
+		}
+
+		PSID sid = (PSID)&ace->SidStart;
+		bool full = ((ace->Mask & FILE_ALL_ACCESS) == FILE_ALL_ACCESS);
+
+		if (full && IsWellKnownSid(sid, WinLocalSystemSid))
+		{
+			system = true;
+		}
+		else if (full && IsWellKnownSid(sid, WinBuiltinAdministratorsSid))
+		{
+			admins = true;
+		}
+		else
+		{
+			others++;
+		}
+	}
+
+	bool is_protected = ((control & SE_DACL_PROTECTED) != 0);
+	bool owned = (owner != NULL && (IsWellKnownSid(owner, WinBuiltinAdministratorsSid) || IsWellKnownSid(owner, WinLocalSystemSid)));
+
+	LocalFree(sd);
+
+	Format(detail, detail_size, "SYSTEM %u, Administrators %u, %u other ACEs, protected %u, owned by SYSTEM or the Administrators %u",
+		(UINT)system, (UINT)admins, others, (UINT)is_protected, (UINT)owned);
+
+	return (system && admins && others == 0 && (dir == false || (is_protected && owned)));
+}
+
+// The data directory of the service and its configuration store: under ProgramData, and for SYSTEM and the
+// Administrators only
+static void NodeSvcDataDirCase(NODETEST_CTX *ctx, wchar_t *data_dir, wchar_t *store)
+{
+	char detail[MAX_SIZE];
+
+	NodeTestCheck(ctx, IsFileExistsW(store), "The service created its configuration store in %ProgramData%\\Hanzcodes\\Ranz VPN",
+		"%S is missing", store);
+
+	bool ok = NodeSvcAdminOnly(data_dir, true, detail, sizeof(detail));
+	NodeTestCheck(ctx, ok, "The data directory has a protected DACL: SYSTEM and the Administrators alone have access, and no user owns it",
+		"%s", detail);
+
+	ok = NodeSvcAdminOnly(store, false, detail, sizeof(detail));
+	NodeTestCheck(ctx, ok, "The configuration store inherits it: SYSTEM and the Administrators alone have access", "%s", detail);
+}
+
+// Delete a configuration store with the write-ahead log files that a store left open would have
+static void NodeSvcDeleteStore(wchar_t *store)
+{
+	wchar_t tmp[MAX_PATH];
+
+	FileDeleteW(store);
+
+	UniFormat(tmp, sizeof(tmp), L"%s-wal", store);
+	FileDeleteW(tmp);
+
+	UniFormat(tmp, sizeof(tmp), L"%s-shm", store);
+	FileDeleteW(tmp);
 }
 
 // nodesvc: ranz-node as the ranzvpnserver service, once per role
@@ -1563,7 +1671,8 @@ void nodesvc_test(UINT num, char **arg)
 	NODETEST_WATCHDOG wd;
 	wchar_t exe_dir[MAX_PATH];
 	wchar_t exe[MAX_PATH];
-	wchar_t config[MAX_PATH];
+	wchar_t data_dir[MAX_PATH];
+	wchar_t store[MAX_PATH];
 	wchar_t backup[MAX_PATH];
 
 	Zero(&ctx, sizeof(ctx));
@@ -1573,8 +1682,9 @@ void nodesvc_test(UINT num, char **arg)
 
 	GetExeDirW(exe_dir, sizeof(exe_dir));
 	ConbinePathW(exe, sizeof(exe), exe_dir, L"ranz-node.exe");
-	ConbinePathW(config, sizeof(config), exe_dir, NODE_CONFIG_FILE_NAME);
-	UniFormat(backup, sizeof(backup), L"%s.nodesvc-backup", config);
+	NodeDefaultDataDir(data_dir, sizeof(data_dir));
+	ConbinePathW(store, sizeof(store), data_dir, CS_FILE_NAME);
+	UniFormat(backup, sizeof(backup), L"%s.nodesvc-backup", store);
 
 	bool ready = NodeTestCheck(&ctx, IsFileExistsW(exe), "ranz-node.exe is next to vpntest.exe", "%S is missing", exe);
 	ready = NodeTestCheck(&ctx, StrCmp(_SS("SVC_" GC_SVC_NAME_NODE "_NAME"), NODESVC_NAME) == 0,
@@ -1585,18 +1695,22 @@ void nodesvc_test(UINT num, char **arg)
 
 	if (ready)
 	{
-		// A configuration of this directory is set aside and put back afterwards
-		bool had_config = IsFileExistsW(config);
-		if (had_config)
+		// The configuration store of the data directory is set aside and put back afterwards
+		bool had_store = IsFileExistsW(store);
+		if (had_store)
 		{
 			FileDeleteW(backup);
-			FileRenameW(config, backup);
+			FileRenameW(store, backup);
 		}
 
-		NodeSvcRoleCase(&ctx, exe, exe_dir, NODE_ROLE_SERVER);
-		NodeSvcRoleCase(&ctx, exe, exe_dir, NODE_ROLE_CLIENT);
-		NodeSvcRoleCase(&ctx, exe, exe_dir, NODE_ROLE_BRIDGE);
-		NodeSvcRoleCase(&ctx, exe, exe_dir, NODE_ROLE_RELAY);
+		// The first run has no store: the default roles (server), and the service creates the store
+		NodeSvcDeleteStore(store);
+		NodeSvcRoleCase(&ctx, exe, data_dir, NODE_ROLE_SERVER, true);
+		NodeSvcDataDirCase(&ctx, data_dir, store);
+
+		NodeSvcRoleCase(&ctx, exe, data_dir, NODE_ROLE_CLIENT, false);
+		NodeSvcRoleCase(&ctx, exe, data_dir, NODE_ROLE_BRIDGE, false);
+		NodeSvcRoleCase(&ctx, exe, data_dir, NODE_ROLE_RELAY, false);
 
 		// Leave no service behind
 		if (MsIsServiceInstalled(NODESVC_NAME))
@@ -1604,10 +1718,10 @@ void nodesvc_test(UINT num, char **arg)
 			NodeSvcRun(exe, "/uninstall");
 		}
 
-		FileDeleteW(config);
-		if (had_config)
+		NodeSvcDeleteStore(store);
+		if (had_store)
 		{
-			FileRenameW(backup, config);
+			FileRenameW(backup, store);
 		}
 
 		// The identity key that the relay role of the service created, in the machine key set

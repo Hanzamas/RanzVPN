@@ -1,17 +1,19 @@
 // Node.c
 // The node of the new core (ADR-0011): one process, the ranzvpnserver service of ranz-node, that runs the
 // roles of its configuration over the per-core workers and adapter queues of NodeWorker.c and the table
-// snapshot of NodeTable.c. It reuses the fork's Hub, Account, Sam, Logging and Cfg modules in-process, and runs
-// the relay role on the peer module of the new core (src/Core/Peer.c).
+// snapshot of NodeTable.c. Its configuration is the SQLite store of ConfigStore.c in its data directory under
+// ProgramData (CORE-F5, #65). It reuses the fork's Hub, Account, Sam and Logging modules in-process, and Cfg
+// for the one-time import of a fork configuration. It runs the relay role on the peer module of the new core
+// (src/Core/Peer.c).
 
 #include "Node.h"
 
 #include "Cedar.h"
+#include "ConfigStore.h"
 #include "Hub.h"
 #include "Sam.h"
 #include "Server.h"
 
-#include "Mayaqua/Cfg.h"
 #include "Mayaqua/FileIO.h"
 #include "Mayaqua/Internat.h"
 #include "Mayaqua/Memory.h"
@@ -19,6 +21,15 @@
 #include "Mayaqua/Str.h"
 
 #include "NodeInternal.h"
+
+#include <AclAPI.h>
+#include <ShlObj.h>
+#include <sddl.h>
+
+// The DACL of the default data directory: full control for SYSTEM and the Administrators, inherited by the
+// configuration store and the node log, and nothing for anyone else. It is protected, so the ACL of ProgramData,
+// which lets every user create files and folders, is not inherited.
+#define NODE_DATA_DIR_SDDL L"O:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
 
 // Starts a role while the node runs: false when it cannot run. The caller holds the node lock.
 typedef bool(NODE_ROLE_START)(NODE *n);
@@ -128,13 +139,50 @@ void NodeRolesToStr(char *str, UINT size, UINT roles) {
 		StrCpy(str, size, "none");
 }
 
-// The data directory of a node created without one: the directory of the executable, as for the fork's
-// server, until the configuration module (CORE-F5, #65) moves new-core data to ProgramData
+// The data directory of a node created without one: %ProgramData%\Hanzcodes\Ranz VPN, named like the registry
+// key of the product. ProgramData holds the data of the new core only; the fork keeps its data next to its
+// executable (ADR-0020 decision 2). The directory of the executable when Windows names no ProgramData folder.
 void NodeDefaultDataDir(wchar_t *dir, UINT size) {
+	wchar_t *program_data = NULL;
 	if (dir == NULL)
 		return;
 
-	GetExeDirW(dir, size);
+	if (SUCCEEDED(SHGetKnownFolderPath(&FOLDERID_ProgramData, 0, NULL, &program_data)))
+		ConbinePathW(dir, size, program_data, L"" GC_REG_COMPANY_NAME);
+	else
+		GetExeDirW(dir, size);
+
+	CoTaskMemFree(program_data);
+}
+
+// Create a data directory, or take over the one that exists, with the owner Administrators and the protected DACL
+// NODE_DATA_DIR_SDDL, which also replaces the ACL of what the directory holds. A directory that a user created
+// before the node so keeps no access for that user. Without the right to set the owner (a process that is not
+// elevated), only the DACL is set.
+bool NodeMakeDataDir(wchar_t *dir) {
+	PSECURITY_DESCRIPTOR sd = NULL;
+	PSID owner = NULL;
+	PACL dacl = NULL;
+	BOOL present = FALSE;
+	BOOL defaulted = FALSE;
+	if (UniIsEmptyStr(dir))
+		return false;
+
+	MakeDirExW(dir);
+
+	if (ConvertStringSecurityDescriptorToSecurityDescriptorW(NODE_DATA_DIR_SDDL, SDDL_REVISION_1, &sd, NULL) == FALSE)
+		return false;
+
+	GetSecurityDescriptorOwner(sd, &owner, &defaulted);
+	GetSecurityDescriptorDacl(sd, &present, &dacl, &defaulted);
+
+	DWORD err = SetNamedSecurityInfoW(dir, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, owner, NULL, dacl, NULL);
+	if (err != ERROR_SUCCESS)
+		err = SetNamedSecurityInfoW(dir, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, NULL, NULL, dacl, NULL);
+
+	LocalFree(sd);
+
+	return (err == ERROR_SUCCESS);
 }
 
 // Log the names of the Roles item that are no role
@@ -151,54 +199,92 @@ static void NodeLogUnknownRoles(NODE *n, char *unknown) {
 	FreeToken(t);
 }
 
-// Read the configuration (NODE_CONFIG_FILE_NAME in the data directory, a Cfg text file): the Roles item, a
-// list of role names (without the item NODE_DEFAULT_ROLES, "none" for no role), NumWorkers, the number of
-// workers (0 for one per core), RelayPort, the UDP port of the relay role (0 or no item for one that the system
-// picks), and IdentityKey, the name of the node identity key (NODE_IDENTITY_KEY_NAME without the item). The Hubs
-// folder is read by the server role.
+// Import the fork configuration NODE_IMPORT_FILE_NAME of the data directory once, into an empty store, and rename
+// the file with NODE_IMPORTED_SUFFIX, so the next start does not find it again
+static void NodeImportForkConfig(NODE *n) {
+	wchar_t path[MAX_PATH];
+	wchar_t done[MAX_PATH];
+	CS_IMPORT r;
+
+	ConbinePathW(path, sizeof(path), n->DataDir, NODE_IMPORT_FILE_NAME);
+	if (IsFileExistsW(path) == false)
+		return;
+
+	UINT err = CsImportForkConfig(n->Store, path, &r);
+	if (err != ERR_NO_ERROR) {
+		NodeLog(n, "Fork configuration %S not imported: error %u%s", path, err, err == ERR_OBJECT_EXISTS ? " (the configuration store is not empty)" : "");
+		return;
+	}
+
+	NodeLog(n, "Fork configuration %S imported: %u networks, %u users, %u listeners, %u certificates, %u admins, %u skipped", path, r.NumNetworks, r.NumUsers, r.NumListeners, r.NumCerts, r.NumAdmins, r.NumSkipped);
+
+	if (r.NumPasswordsDropped != 0)
+		NodeLog(n, "Fork configuration: %u SHA-0 passwords not carried over (ADR-0022): set those passwords again", r.NumPasswordsDropped);
+
+	if (r.ServerKeyDropped)
+		NodeLog(n, "Fork configuration: the server key not carried over: it belongs in a CNG key storage provider");
+
+	UniFormat(done, sizeof(done), L"%s%s", path, NODE_IMPORTED_SUFFIX);
+	FileDeleteW(done);
+	FileRenameW(path, done);
+}
+
+// Open the configuration store (CS_FILE_NAME in the data directory), import a fork configuration into it once,
+// then read the settings: Roles (NODE_SETTING_ROLES; without it NODE_DEFAULT_ROLES, "none" for no role),
+// NumWorkers (NODE_SETTING_WORKERS; 0 for one per core), RelayPort (NODE_SETTING_RELAY_PORT; without it, or 0, a
+// port that the system picks) and IdentityKey (NODE_SETTING_IDENTITY_KEY; without it NODE_IDENTITY_KEY_NAME). The
+// networks are read by the server role.
 static void NodeLoadConfig(NODE *n) {
 	wchar_t path[MAX_PATH];
 	char roles[MAX_SIZE];
 	char unknown[MAX_SIZE];
+	char workers[MAX_SIZE];
+	char relay_port[MAX_SIZE];
 
-	ConbinePathW(path, sizeof(path), n->DataDir, NODE_CONFIG_FILE_NAME);
-
-	n->Config = CfgReadW(path);
 	n->ConfigRoles = NODE_DEFAULT_ROLES;
 	n->ConfigWorkers = 0;
 	n->ConfigRelayPort = 0;
 	StrCpy(n->IdentityKey, sizeof(n->IdentityKey), NODE_IDENTITY_KEY_NAME);
 
-	if (n->Config == NULL) {
-		NodeLog(n, "No configuration in %S: the default roles", path);
+	ConbinePathW(path, sizeof(path), n->DataDir, CS_FILE_NAME);
+	n->Store = CsOpen(path);
+
+	if (n->Store == NULL) {
+		NodeLog(n, "Configuration store %S cannot be opened: the default roles", path);
 		return;
 	}
 
-	if (CfgIsItem(n->Config, "Roles")) {
-		CfgGetStr(n->Config, "Roles", roles, sizeof(roles));
+	NodeLog(n, "Configuration store %S opened (winsqlite3 %s)", path, CsLibVersion());
+
+	NodeImportForkConfig(n);
+
+	if (CsGetSetting(n->Store, NODE_SETTING_ROLES, roles, sizeof(roles))) {
 		n->ConfigRoles = NodeParseRoles(roles, unknown, sizeof(unknown));
 
 		if (IsEmptyStr(unknown) == false)
 			NodeLogUnknownRoles(n, unknown);
 	}
 
-	UINT num_workers = CfgGetInt(n->Config, "NumWorkers");
-	n->ConfigWorkers = MIN(num_workers, NODE_MAX_WORKERS);
+	if (CsGetSetting(n->Store, NODE_SETTING_WORKERS, workers, sizeof(workers))) {
+		UINT num_workers = ToInt(workers);
+		n->ConfigWorkers = MIN(num_workers, NODE_MAX_WORKERS);
+	}
 
-	UINT relay_port = CfgGetInt(n->Config, "RelayPort");
-	n->ConfigRelayPort = (relay_port <= 65535 ? relay_port : 0);
+	if (CsGetSetting(n->Store, NODE_SETTING_RELAY_PORT, relay_port, sizeof(relay_port))) {
+		UINT port = ToInt(relay_port);
+		n->ConfigRelayPort = (port <= 65535 ? port : 0);
+	}
 
-	if (CfgGetStr(n->Config, "IdentityKey", n->IdentityKey, sizeof(n->IdentityKey)) == false || IsEmptyStr(n->IdentityKey))
+	if (CsGetSetting(n->Store, NODE_SETTING_IDENTITY_KEY, n->IdentityKey, sizeof(n->IdentityKey)) == false || IsEmptyStr(n->IdentityKey))
 		StrCpy(n->IdentityKey, sizeof(n->IdentityKey), NODE_IDENTITY_KEY_NAME);
-
-	NodeLog(n, "Configuration %S read", path);
 }
 
-// A node with its data directory (NULL for NodeDefaultDataDir). It opens the node log and reads the
-// configuration, but starts nothing until NodeStart.
+// A node with its data directory: NULL for NodeDefaultDataDir, which NodeMakeDataDir protects. It opens the node
+// log and the configuration store and reads the configuration, but starts nothing until NodeStart.
 NODE *NewNode(wchar_t *data_dir) {
 	wchar_t log_dir_w[MAX_PATH];
 	char log_dir[MAX_PATH];
+	bool protect = UniIsEmptyStr(data_dir);
 
 	NODE *n = ZeroMalloc(sizeof(NODE));
 	n->Lock = NewLock();
@@ -210,16 +296,20 @@ NODE *NewNode(wchar_t *data_dir) {
 	// An online reader never publishes epoch 0, which means offline
 	n->Epoch = 1;
 
-	if (UniIsEmptyStr(data_dir))
+	if (protect)
 		NodeDefaultDataDir(n->DataDir, sizeof(n->DataDir));
 	else
 		UniStrCpy(n->DataDir, sizeof(n->DataDir), data_dir);
 
-	MakeDirExW(n->DataDir);
+	// The DACL is set before the store and the log exist, so both inherit it
+	bool protected_dir = (protect ? NodeMakeDataDir(n->DataDir) : MakeDirExW(n->DataDir));
 
 	ConbinePathW(log_dir_w, sizeof(log_dir_w), n->DataDir, NODE_LOG_DIR_NAME);
 	UniToStr(log_dir, sizeof(log_dir), log_dir_w);
 	n->Log = NewLog(log_dir, NODE_LOG_PREFIX, LOG_SWITCH_DAY, 0);
+
+	if (protect)
+		NodeLog(n, protected_dir ? "Data directory %S: SYSTEM and the Administrators only" : "Data directory %S: its DACL could not be set", n->DataDir);
 
 	n->Cedar = NewCedar(NULL, NULL);
 
@@ -235,7 +325,7 @@ void FreeNode(NODE *n) {
 
 	NodeStop(n);
 
-	CfgDeleteFolder(n->Config);
+	CsClose(n->Store);
 	ReleaseCedar(n->Cedar);
 
 	// The last lines of the node log are written before FreeLog returns
@@ -399,9 +489,9 @@ void NodeGetStatus(NODE *n, NODE_STATUS *st) {
 	st->Generation = (UINT64)ReadAcquire64(&n->Generation);
 }
 
-// Bring the Hub name of the configuration online in the Cedar of the node: a fork Hub with the default options
-// of a new hub. The caller holds the node lock.
-static void NodeAddHub(NODE *n, char *name) {
+// Bring the Hub name of the configuration up in the Cedar of the node, online or offline: a fork Hub with the
+// default options of a new hub. The caller holds the node lock.
+static void NodeAddHub(NODE *n, char *name, bool online) {
 	HUB_OPTION o;
 
 	if (IsEmptyStr(name) || StrLen(name) > MAX_HUBNAME_LEN || IsSafeStr(name) == false || IsHub(n->Cedar, name)) {
@@ -414,28 +504,33 @@ static void NodeAddHub(NODE *n, char *name) {
 
 	HUB *h = NewHub(n->Cedar, name, &o);
 	AddHub(n->Cedar, h);
-	HubApplyInitialState(h, true);
+	HubApplyInitialState(h, online);
 
 	// The reference of NewHub stays in the list until the role stops
 	Add(n->HubList, h);
 
-	NodeLog(n, "Hub %s online", h->Name);
+	NodeLog(n, "Hub %s %s", h->Name, online ? "online" : "offline");
 }
 
-// The server role: the Hubs of the configuration, one folder each under Hubs, or the DEFAULT hub when the
-// configuration names none. The sessions of the QUIC and TLS transports (CORE-S1-1 #67, CORE-S2-1 #69) end
-// in them.
+// The server role: a Hub for each L2 network of the configuration store, or the DEFAULT hub when the store has no
+// network. The L3 networks come with the routed networks (CORE-S6-1, #80). The sessions of the QUIC and TLS
+// transports (CORE-S1-1 #67, CORE-S2-1 #69) end in the Hubs.
 static bool NodeServerStart(NODE *n) {
-	TOKEN_LIST *names = CfgEnumFolderToTokenList(CfgFindFolder(n->Config, "Hubs"));
+	LIST *o = CsEnumNetworks(n->Store);
 
-	if (names == NULL || names->NumTokens == 0) {
-		NodeAddHub(n, SERVER_DEFAULT_HUB_NAME);
-	} else {
-		for (UINT i = 0; i < names->NumTokens; i++)
-			NodeAddHub(n, names->Token[i]);
+	if (LIST_NUM(o) == 0)
+		NodeAddHub(n, SERVER_DEFAULT_HUB_NAME, true);
+
+	for (UINT i = 0; i < LIST_NUM(o); i++) {
+		CS_NETWORK *net = LIST_DATA(o, i);
+
+		if (net->Mode == CS_MODE_L2)
+			NodeAddHub(n, net->Name, net->Online);
+		else
+			NodeLog(n, "Network %s skipped: L3 networks come with CORE-S6-1 (#80)", net->Name);
 	}
 
-	FreeToken(names);
+	CsFreeNetworkList(o);
 
 	return (LIST_NUM(n->HubList) != 0);
 }
