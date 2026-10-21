@@ -56,6 +56,8 @@ ranz_add_executable(vpntest HAMCORE
     osinfo.c
     # Named FIFO and queue test of FND-215 (#174)
     fifo.c
+    # Named node tests of CORE-F3 (#63)
+    nodetest.c
   # The resources test (runtime.c) compares every hamcore file the executable serves with its source
   # file. A C-only definition, so the resource scripts of vpntest do not get the quoted path.
   C_DEFINITIONS
