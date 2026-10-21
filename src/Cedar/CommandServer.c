@@ -1072,3 +1072,538 @@ UINT PsUserAnonymousSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
 
 	return 0;
 }
+
+UINT PsUserPasswordSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_SET_USER t;
+	PARAM args[] =
+	{
+		{"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+		{"PASSWORD", CmdPromptChoosePassword, NULL, NULL, NULL},
+	};
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "[name]"));
+
+	ret = ScGetUser(ps->Rpc, &t);
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	FreeAuthData(t.AuthType, t.AuthData);
+
+	{
+		AUTHPASSWORD *pw;
+
+		pw = NewPasswordAuthData(t.Name, GetParamStr(o, "PASSWORD"));
+
+		t.AuthType = AUTHTYPE_PASSWORD;
+		t.AuthData = pw;
+	}
+
+	ret = ScSetUser(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	FreeRpcSetUser(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsUserCertSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_SET_USER t;
+	X *x;
+	PARAM args[] =
+	{
+		{"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+		{"LOADCERT", CmdPrompt, _UU("CMD_LOADCERTPATH"), CmdEvalIsFile, NULL},
+	};
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	x = FileToXW(GetParamUniStr(o, "LOADCERT"));
+	if (x == NULL)
+	{
+		c->Write(c, _UU("CMD_LOADCERT_FAILED"));
+
+		FreeParamValueList(o);
+
+		return ERR_INTERNAL_ERROR;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "[name]"));
+
+	ret = ScGetUser(ps->Rpc, &t);
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		FreeX(x);
+		return ret;
+	}
+
+	FreeAuthData(t.AuthType, t.AuthData);
+
+	{
+		AUTHUSERCERT *c;
+
+		c = NewUserCertAuthData(x);
+
+		FreeX(x);
+
+		t.AuthType = AUTHTYPE_USERCERT;
+		t.AuthData = c;
+	}
+
+	ret = ScSetUser(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	FreeRpcSetUser(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsUserSignedSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_SET_USER t;
+	PARAM args[] =
+	{
+		{"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+		{"CN", CmdPrompt, _UU("CMD_UserSignedSet_Prompt_CN"), NULL, NULL},
+		{"SERIAL", CmdPrompt, _UU("CMD_UserSignedSet_Prompt_SERIAL"), NULL, NULL},
+	};
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "[name]"));
+
+	ret = ScGetUser(ps->Rpc, &t);
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	FreeAuthData(t.AuthType, t.AuthData);
+
+	{
+		AUTHROOTCERT *c;
+		BUF *b;
+		X_SERIAL *serial = NULL;
+
+		b = StrToBin(GetParamStr(o, "SERIAL"));
+
+		if (b != NULL && b->Size >= 1)
+		{
+			serial = NewXSerial(b->Buf, b->Size);
+		}
+
+		FreeBuf(b);
+
+		c = NewRootCertAuthData(serial, GetParamUniStr(o, "CN"));
+
+		FreeXSerial(serial);
+
+		t.AuthType = AUTHTYPE_ROOTCERT;
+		t.AuthData = c;
+	}
+
+	ret = ScSetUser(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	FreeRpcSetUser(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsUserNTLMSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_SET_USER t;
+	PARAM args[] =
+	{
+		{"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+		{"ALIAS", CmdPrompt, _UU("CMD_UserRadiusSet_Prompt_ALIAS"), NULL, NULL},
+	};
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "[name]"));
+
+	ret = ScGetUser(ps->Rpc, &t);
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	FreeAuthData(t.AuthType, t.AuthData);
+
+	{
+		AUTHNT *a;
+
+		a = NewNTAuthData(GetParamUniStr(o, "ALIAS"));
+
+		t.AuthType = AUTHTYPE_NT;
+		t.AuthData = a;
+	}
+
+	ret = ScSetUser(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	FreeRpcSetUser(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsUserPolicyRemove(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_SET_USER t;
+	PARAM args[] =
+	{
+		{"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+	};
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "[name]"));
+
+	ret = ScGetUser(ps->Rpc, &t);
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	if (t.Policy != NULL)
+	{
+		Free(t.Policy);
+		t.Policy = NULL;
+	}
+
+	ret = ScSetUser(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	FreeRpcSetUser(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+static UINT64 StrToDateTime64(char *str)
+{
+	UINT64 ret = 0;
+	TOKEN_LIST *t;
+	UINT a, b, c, d, e, f;
+	if (str == NULL)
+	{
+		return INFINITE;
+	}
+
+	if (IsEmptyStr(str) || StrCmpi(str, "none") == 0)
+	{
+		return 0;
+	}
+
+	t = ParseToken(str, ":/,. \"");
+	if (t->NumTokens != 6)
+	{
+		FreeToken(t);
+		return INFINITE;
+	}
+
+	a = ToInt(t->Token[0]);
+	b = ToInt(t->Token[1]);
+	c = ToInt(t->Token[2]);
+	d = ToInt(t->Token[3]);
+	e = ToInt(t->Token[4]);
+	f = ToInt(t->Token[5]);
+
+	ret = INFINITE;
+
+	if (a >= 1000 && a <= 9999 && b >= 1 && b <= 12 && c >= 1 && c <= 31 &&
+		d <= 23 && e <= 59 && f <= 59)
+	{
+		SYSTEMTIME t;
+
+		Zero(&t, sizeof(t));
+		t.wYear = a;
+		t.wMonth = b;
+		t.wDay = c;
+		t.wHour = d;
+		t.wMinute = e;
+		t.wSecond = f;
+
+		ret = SystemToUINT64(&t);
+	}
+
+	FreeToken(t);
+
+	return ret;
+}
+
+static bool CmdEvalDateTime(CONSOLE *c, wchar_t *str, void *param)
+{
+	UINT64 ret;
+	char tmp[MAX_SIZE];
+	if (c == NULL || str == NULL)
+	{
+		return false;
+	}
+
+	UniToStr(tmp, sizeof(tmp), str);
+
+	ret = StrToDateTime64(tmp);
+
+	if (ret == INFINITE)
+	{
+		c->Write(c, _UU("CMD_EVAL_DATE_TIME_FAILED"));
+		return false;
+	}
+
+	return true;
+}
+
+UINT PsUserExpiresSet(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_SET_USER t;
+	UINT64 expires;
+	PARAM args[] =
+	{
+		{"[name]", CmdPrompt, _UU("CMD_UserCreate_Prompt_NAME"), CmdEvalNotEmpty, NULL},
+		{"EXPIRES", CmdPrompt, _UU("CMD_UserExpiresSet_Prompt_EXPIRES"), CmdEvalDateTime, NULL},
+	};
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, args, sizeof(args) / sizeof(args[0]));
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+	StrCpy(t.Name, sizeof(t.Name), GetParamStr(o, "[name]"));
+
+	ret = ScGetUser(ps->Rpc, &t);
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	expires = StrToDateTime64(GetParamStr(o, "EXPIRES"));
+
+	if (expires != 0)
+	{
+		expires = LocalToSystem64(expires);
+	}
+
+	t.ExpireTime = expires;
+
+	ret = ScSetUser(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+
+	FreeRpcSetUser(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
+
+UINT PsGroupList(CONSOLE *c, char *cmd_name, wchar_t *str, void *param)
+{
+	LIST *o;
+	PS *ps = (PS *)param;
+	UINT ret = 0;
+	RPC_ENUM_GROUP t;
+
+	if (ps->HubName == NULL)
+	{
+		c->Write(c, _UU("CMD_Hub_Not_Selected"));
+		return ERR_INVALID_PARAMETER;
+	}
+
+	o = ParseCommandList(c, cmd_name, str, NULL, 0);
+	if (o == NULL)
+	{
+		return ERR_INVALID_PARAMETER;
+	}
+
+	Zero(&t, sizeof(t));
+	StrCpy(t.HubName, sizeof(t.HubName), ps->HubName);
+
+	ret = ScEnumGroup(ps->Rpc, &t);
+
+	if (ret != ERR_NO_ERROR)
+	{
+		CmdPrintError(c, ret);
+		FreeParamValueList(o);
+		return ret;
+	}
+	else
+	{
+		CT *ct = CtNew();
+		UINT i;
+
+		CtInsertColumn(ct, _UU("SM_GROUPLIST_NAME"), false);
+		CtInsertColumn(ct, _UU("SM_GROUPLIST_REALNAME"), false);
+		CtInsertColumn(ct, _UU("SM_GROUPLIST_NOTE"), false);
+		CtInsertColumn(ct, _UU("SM_GROUPLIST_NUMUSERS"), false);
+
+		for (i = 0;i < t.NumGroup;i++)
+		{
+			wchar_t tmp1[MAX_SIZE];
+			wchar_t tmp2[MAX_SIZE];
+			RPC_ENUM_GROUP_ITEM *e = &t.Groups[i];
+
+			StrToUni(tmp1, sizeof(tmp1), e->Name);
+			UniToStru(tmp2, e->NumUsers);
+
+			CtInsert(ct, tmp1, e->Realname, e->Note, tmp2);
+		}
+
+		CtFreeEx(ct, c, true);
+	}
+
+	FreeRpcEnumGroup(&t);
+
+	FreeParamValueList(o);
+
+	return 0;
+}
