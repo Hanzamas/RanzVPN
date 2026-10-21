@@ -109,67 +109,28 @@ struct SERVER_LOGIN
 };
 
 bool ParseLoginRequest(PACK *p, LOGIN_REQ *req);
-UINT HubResolveSessionPolicy(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN *login);
-UINT HubAdmitSession(HUB *hub, CONNECTION *c, LOGIN_REQ *req, HUB_LOGIN *login, HUB_SESSION_SLOT *slot);
-void HubAssignSessionLicense(HUB_SESSION_SLOT *slot);
-void HubReleaseSessionSlot(HUB_SESSION_SLOT *slot);
-SESSION *NewLoginSession(CONNECTION *c, HUB *hub, SERVER_SESSION_PARAMS *prm, HUB_SESSION_SLOT *slot);
 bool ServerAccept(CONNECTION *c, SERVER_LOGIN *login);
 void ServerRunSession(CONNECTION *c, SERVER_LOGIN *login);
 bool ClientConnect(CONNECTION *c);
 SOCK *ClientConnectToServer(CONNECTION *c);
 
-// Bind* functions bind the outgoing connection to a specific local address.
-SOCK* BindTcpIpConnectEx(IP *localIP, UINT localport, char *hostname, UINT port, bool *cancel_flag, IP *ret_ip);
-
 bool ClientUploadSignature(SOCK *s);
 bool ClientDownloadHello(CONNECTION *c, SOCK *s);
-bool ServerDownloadSignature(CONNECTION *c);
-bool ServerUploadHello(CONNECTION *c);
-bool ClientUploadAuth(CONNECTION *c);
-SOCK *ClientConnectGetSocket(CONNECTION *c, bool additional_connect);
-
-UINT ProxyCodeToCedar(UINT code);
 
 
 POLICY *PackGetPolicy(PACK *p);
 void PackAddPolicy(PACK *p, POLICY *y);
-PACK *PackWelcome(SESSION *s);
 PACK *PackHello(void *random, UINT ver, UINT build, char *server_str);
 bool GetHello(PACK *p, void *random, UINT *ver, UINT *build, char *server_str, UINT server_str_size);
-PACK *PackLoginWithAnonymous(char *hubname, char *username);
-PACK *PackLoginWithPassword(char *hubname, char *username, void *secure_password);
-PACK *PackLoginWithPlainPassword(char *hubname, char *username, void *plain_password);
-PACK *PackLoginWithCert(char *hubname, char *username, X *x, void *sign, UINT sign_size);
-bool GetMethodFromPack(PACK *p, char *method, UINT size);
-bool GetHubnameAndUsernameFromPack(PACK *p, char *username, UINT username_size,
-								   char *hubname, UINT hubname_size);
-PACK *PackAdditionalConnect(UCHAR *session_key);
-UINT GetAuthTypeFromPack(PACK *p);
-UINT GetProtocolFromPack(PACK *p);
-bool ParseWelcomeFromPack(PACK *p, char *session_name, UINT session_name_size,
-						  char *connection_name, UINT connection_name_size,
-						  POLICY **policy);
 
 
 bool ClientAdditionalConnect(CONNECTION *c);
-bool ClientUploadAuth2(CONNECTION *c, SOCK *s);
-bool GetSessionKeyFromPack(PACK *p, UCHAR *session_key, UINT *session_key_32);
 
 void PackAddClientVersion(PACK *p, CONNECTION *c);
 void GenerateMachineUniqueHash(CEDAR *c, void *data);
 void SetCedarMachineIdSalt(CEDAR *c, void *salt);
 void ComputeMachineUniqueHash(void *data, char *machine_guid, void *salt, UINT salt_size);
 
-LIST *NewCertList(bool load_root_and_chain);
-void FreeCertList(LIST *o);
-bool IsXInCertList(LIST *o, X *x);
-void AddAllRootCertsToCertList(LIST *o);
-void AddAllChainCertsToCertList(LIST *o);
-X *DownloadCert(char *url);
-X *FindCertIssuerFromCertList(LIST *o, X *x);
-bool TryGetRootCertChain(LIST *o, X *x, bool auto_save, X **found_root_x);
-bool TryGetParentCertFromCertList(LIST *o, X *x, LIST *found_chain);
 bool DownloadAndSaveIntermediateCertificatesIfNecessary(X *x);
 
 #endif

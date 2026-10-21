@@ -27,6 +27,7 @@
 #include "Mayaqua/Tick64.h"
 
 #include <winhttp.h>
+#include "ProtocolInternal.h"
 
 bool DownloadAndSaveIntermediateCertificatesIfNecessary(X *x)
 {

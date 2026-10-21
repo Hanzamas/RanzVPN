@@ -22,6 +22,7 @@
 #include "Mayaqua/Tick64.h"
 
 #include <winhttp.h>
+#include "ProtocolInternal.h"
 
 // A plain password that starts with this tag is dropped: it used to select the MS-CHAPv2 path of IPC sessions
 #define	PLAIN_PASSWORD_RETIRED_MSCHAPV2_TAG	"xH7DiNlurDhcYV4a:"

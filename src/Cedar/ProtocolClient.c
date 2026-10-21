@@ -23,6 +23,7 @@
 #include "Mayaqua/Tick64.h"
 
 #include <winhttp.h>
+#include "ProtocolInternal.h"
 
 // An address goes into the IPv4 field of a NODE_INFO, or into its IPv6 field when it is an IPv6 address
 static void NodeInfoSetIp(UINT *ip4, UCHAR *ip6, IP *ip)
