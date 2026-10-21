@@ -1,0 +1,71 @@
+# Layout of the Ranz VPN sources (spec #24, pass 11). Pinned formatter: clang-format 22.1.8
+# (.github/workflows/format.yml). Scope: src/Cedar, src/Mayaqua (not 3rdparty), src/vpnserver,
+# src/vpncmd; .github/scripts/format_check.py lists the files and the exclusions.
+#
+# The aim is attached braces and nothing else: no rewrapping, no include sorting, blank lines and
+# one-line statements left as they are, comments moved only to follow the indentation of their
+# code. Every option that could change a token is pinned off, so the token stream of a file is
+# identical before and after (format_check.py identical).
+# The one-time brace removal runs this file with RemoveBracesLLVM switched to true
+# (format_check.py braces proves that only braces around single statements went).
+---
+Language: Cpp
+BasedOnStyle: LLVM
+
+# Braces and indentation
+BreakBeforeBraces: Attach
+UseTab: ForIndentation
+IndentWidth: 4
+TabWidth: 4
+ContinuationIndentWidth: 4
+IndentCaseLabels: false
+IndentPPDirectives: None
+
+# No rewrapping: keep the line breaks of the input. With ColumnLimit 0 clang-format never joins
+# lines that are separate in the input, so the AllowShort* options below only keep the one-line
+# statements that already exist (Never would split them). Enums stay false: true parses the body
+# as one braced list, whose lines would then be indented with spaces instead of tabs.
+ColumnLimit: 0
+BreakStringLiterals: false
+ReflowComments: Never
+AllowShortBlocksOnASingleLine: Always
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortEnumsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: AllIfsAndElse
+AllowShortLoopsOnASingleLine: true
+
+# Comments and blank lines. The sources align trailing comments and #define values with tabs;
+# that alignment is redone with spaces, consecutive lines only. A comment on its own line follows
+# the indentation of the code (Kind: Leave would keep its old column after the braces move, and
+# would turn each alignment tab into one space).
+AlignTrailingComments:
+  Kind: Always
+  OverEmptyLines: 0
+AlignConsecutiveMacros:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+SpacesInLineCommentPrefix:
+  Minimum: 0
+  Maximum: -1
+MaxEmptyLinesToKeep: 4
+KeepEmptyLines:
+  AtEndOfFile: true
+  AtStartOfBlock: true
+  AtStartOfFile: true
+
+# Include order is significant for the Windows headers
+SortIncludes: Never
+IncludeBlocks: Preserve
+
+# Options that would change tokens stay off
+InsertBraces: false
+RemoveBracesLLVM: false
+RemoveParentheses: Leave
+RemoveSemicolon: false
+QualifierAlignment: Leave
+SortUsingDeclarations: Never
+FixNamespaceComments: false
+InsertNewlineAtEOF: false
+LineEnding: DeriveLF
