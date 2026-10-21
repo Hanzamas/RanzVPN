@@ -123,7 +123,6 @@ void MsFree();
 bool MsRegIsKeyEx2(UINT root, char *name, bool force32bit);
 
 bool MsRegIsValue(UINT root, char *keyname, char *valuename);
-bool MsRegIsValueEx2(UINT root, char *keyname, char *valuename, bool force32bit);
 
 char *MsRegReadStr(UINT root, char *keyname, char *valuename);
 char *MsRegReadStrEx2(UINT root, char *keyname, char *valuename, bool force32bit);
@@ -132,27 +131,15 @@ wchar_t *MsRegReadStrEx2W(UINT root, char *keyname, char *valuename, bool force3
 UINT MsRegReadInt(UINT root, char *keyname, char *valuename);
 UINT MsRegReadIntEx2(UINT root, char *keyname, char *valuename, bool force32bit);
 
-bool MsRegNewKeyEx2(UINT root, char *keyname, bool force32bit);
-
-bool MsRegWriteValueEx2(UINT root, char *keyname, char *valuename, UINT type, void *data, UINT size, bool force32bit);
-
 bool MsRegWriteStr(UINT root, char *keyname, char *valuename, char *str);
-bool MsRegWriteStrEx2(UINT root, char *keyname, char *valuename, char *str, bool force32bit);
 
 bool MsRegWriteInt(UINT root, char *keyname, char *valuename, UINT value);
 bool MsRegWriteIntEx2(UINT root, char *keyname, char *valuename, UINT value, bool force32bit);
 
-TOKEN_LIST *MsRegEnumKey(UINT root, char *keyname);
-TOKEN_LIST *MsRegEnumKeyEx2(UINT root, char *keyname, bool force32bit);
-
-bool MsRegDeleteKeyEx2(UINT root, char *keyname, bool force32bit);
 bool MsRegDeleteValue(UINT root, char *keyname, char *valuename);
-bool MsRegDeleteValueEx2(UINT root, char *keyname, char *valuename, bool force32bit);
 
 bool MsIsAdmin();
-bool MsEnablePrivilege(char *name, bool enable);
 UINT MsGetCurrentProcessId();
-char *MsGetExeDirName();
 wchar_t *MsCopyProcessArgsW();
 
 bool MsCheckLogon(wchar_t *username, char *password);
@@ -161,7 +148,6 @@ LIST *MsNetClassEnum();
 MS_NETCLASS_DEVICE *MsNetClassFind(LIST *o, char *guid);
 void MsNetClassFree(LIST *o);
 
-void MsGenLockFile(wchar_t *name, UINT size, wchar_t *temp_dir);
 void MsDeleteAllFileW(wchar_t *dir);
 
 void MsSetThreadPriorityIdle();
@@ -171,16 +157,10 @@ char *MsGetSystem32Dir();
 char *MsGetTempDir();
 char *MsGetMyTempDir();
 wchar_t *MsGetWindowsDirW();
-wchar_t *MsGetExeFileNameW();
 wchar_t *MsGetSystem32DirW();
 wchar_t *MsGetMyTempDirW();
-wchar_t *MsGetUserNameW();
 bool MsIsServiceInstalled(char *name);
-bool MsInstallServiceExW(char *name, wchar_t *title, wchar_t *description, wchar_t *path);
-bool MsUpdateServiceConfig(char *name);
-bool MsUninstallService(char *name);
 bool MsStartService(char *name);
-bool MsStopService(char *name);
 bool MsIsServiceRunning(char *name);
 UINT MsService(char *name, SERVICE_FUNCTION *start, SERVICE_FUNCTION *stop, char *cmd_line);
 const MS_SVC_ARG *MsSvcArgs(UINT *num);
@@ -190,17 +170,14 @@ bool MsIsUserMode();
 
 void MsFreeAdapter(MS_ADAPTER *a);
 void MsFreeAdapterList(MS_ADAPTER_LIST *o);
-MS_ADAPTER *MsCloneAdapter(MS_ADAPTER *a);
 MS_ADAPTER_LIST *MsCreateAdapterList();
 MS_ADAPTER *MsGetAdapterByGuidFromList(MS_ADAPTER_LIST *o, char *guid);
 bool MsIsBridgeableIf(UINT type, UINT media_type, UINT physical_medium_type, bool hardware_interface);
 
 UINT MsGetConsoleWidth();
 
-void MsRegistWindowsFirewallEx(char *title, char *exe);
 void MsRegistWindowsFirewallEx2(char *title, char *exe, char *dir);
 
-void MsGetComputerName(char *name, UINT size);
 void MsGetComputerNameFullEx(wchar_t *name, UINT size, bool with_cache);
 
 UINT MsGetUserLocaleId();

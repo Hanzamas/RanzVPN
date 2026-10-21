@@ -33,6 +33,7 @@
 #if defined(_M_X64) || defined(_M_IX86)
 #include <intrin.h>		// __cpuid() of the VM detection
 #endif	// defined(_M_X64) || defined(_M_IX86)
+#include "MicrosoftInternal.h"
 
 // Access mask that forces the 32-bit registry view. The process is 64-bit (x64 or arm64), so
 // without it the key opens in the 64-bit view.

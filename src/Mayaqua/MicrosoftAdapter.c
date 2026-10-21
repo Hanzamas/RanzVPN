@@ -37,6 +37,7 @@
 #if defined(_M_X64) || defined(_M_IX86)
 #include <intrin.h>		// __cpuid() of the VM detection
 #endif	// defined(_M_X64) || defined(_M_IX86)
+#include "MicrosoftInternal.h"
 
 void MsRegistWindowsFirewallEx2(char *title, char *exe, char *dir)
 {

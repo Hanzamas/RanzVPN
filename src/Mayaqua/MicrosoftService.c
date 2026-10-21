@@ -38,6 +38,7 @@
 #if defined(_M_X64) || defined(_M_IX86)
 #include <intrin.h>		// __cpuid() of the VM detection
 #endif	// defined(_M_X64) || defined(_M_IX86)
+#include "MicrosoftInternal.h"
 
 // Write one entry to the Application event log, with the message as its only insertion string;
 // type is an EVENTLOG_*_TYPE value. Plain Win32 calls only, so that the service code can write

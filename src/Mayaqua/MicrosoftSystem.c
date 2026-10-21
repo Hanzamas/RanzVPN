@@ -33,6 +33,7 @@
 #if defined(_M_X64) || defined(_M_IX86)
 #include <intrin.h>		// __cpuid() of the VM detection
 #endif	// defined(_M_X64) || defined(_M_IX86)
+#include "MicrosoftInternal.h"
 
 // Raw SMBIOS table of GetSystemFirmwareTable
 #define	MS_SMBIOS_PROVIDER			0x52534D42		// Firmware table provider 'RSMB'
